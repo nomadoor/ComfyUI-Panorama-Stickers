@@ -138,7 +138,7 @@ with gr.Blocks(title="FLUX.2 Klein 4B 360 ERP Outpaint LoRA Demo", head=_head_ht
             """
 # 🌐 FLUX.2 Klein 4B 360 ERP Outpaint LoRA Demo
 
-This is a standalone demo for **FLUX.2 Klein 4B 360 ERP Outpaint LoRA**.  
+This is a standalone demo for **[FLUX.2 Klein 4B 360 ERP Outpaint LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)**.  
 Arrange one or more source images on the panorama canvas, generate an ERP panorama, then frame a cutout shot inside it.
 
 The first **Generate** may download the base model from Hugging Face into your local cache. Model weights are not stored in this git repo.
