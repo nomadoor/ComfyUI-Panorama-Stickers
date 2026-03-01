@@ -134,16 +134,32 @@ def on_render_cutout(generated_erp_image, cutout_state_json: str, output_megapix
 
 with gr.Blocks(title="FLUX.2 Klein 4B 360 ERP Outpaint LoRA Demo", head=_head_html()) as demo:
     with gr.Column(elem_id="pano-demo-root"):
-        gr.Markdown(
-            """
-# 🌐 FLUX.2 Klein 4B 360 ERP Outpaint LoRA Demo
-
+        sample_image_urls = [
+            "https://i.gyazo.com/7bdeb7082dc145343067f3066c472085.png",
+            "https://i.gyazo.com/ed3e8ee2f226549f6f2c622142890756.png",
+            "https://i.gyazo.com/f3725e2bf068252647604a95bab065d2.png",
+        ]
+        gr.Markdown("# 🌐 FLUX.2 Klein 4B 360 ERP Outpaint LoRA Demo")
+        with gr.Row(elem_classes=["pano-demo-hero"]):
+            with gr.Column(scale=7):
+                gr.Markdown(
+                    """
 This is a standalone demo for **[FLUX.2 Klein 4B 360 ERP Outpaint LoRA](https://huggingface.co/nomadoor/flux-2-klein-4B-360-erp-outpaint-lora)**.  
 Arrange one or more source images on the panorama canvas, generate an ERP panorama, then frame a cutout shot inside it.
 
-The first **Generate** may download the base model from Hugging Face into your local cache. Model weights are not stored in this git repo.
+Create your own panorama, step into the scene, and have fun. 😎
 """
-        )
+                )
+            with gr.Column(scale=3):
+                gr.HTML(
+                    f"""
+<section class="pano-demo-sample">
+  <img src="{sample_image_urls[0]}" alt="Sample input image 1">
+  <img src="{sample_image_urls[1]}" alt="Sample input image 2">
+  <img src="{sample_image_urls[2]}" alt="Sample input image 3">
+</section>
+"""
+                )
 
         gr.Markdown("---")
 

@@ -2,12 +2,37 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1rem;
 }
 
 #pano-demo-root .prose hr {
   border: 0;
   border-top: 1px solid #4a4a4a;
+}
+
+#pano-demo-root .pano-demo-hero {
+  align-items: flex-start;
+}
+
+#pano-demo-root .pano-demo-sample {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+#pano-demo-root .pano-demo-sample img {
+  display: block;
+  width: 88px;
+  min-width: 88px;
+  max-width: 88px;
+  height: auto;
+  max-height: 88px;
+  object-fit: cover;
+  aspect-ratio: 1 / 1;
+  border-radius: 0.5rem;
 }
 
 #pano-demo-root .html-container:has(> .pano-demo-editor) {
@@ -139,6 +164,38 @@
 #pano-demo-root .pano-view-toggle[data-selected="pano"] button.pano-view-btn[data-view="unwrap"]:hover,
 #pano-demo-root .pano-view-toggle[data-selected="unwrap"] button.pano-view-btn[data-view="pano"]:hover {
   color: var(--pano-muted-strong);
+}
+
+#pano-demo-root button.pano-output-preview-toggle.pano-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  line-height: 1;
+  aspect-ratio: 1 / 1;
+  border-radius: 999px;
+  box-shadow: none;
+  font-size: 0;
+}
+
+#pano-demo-root button.pano-output-preview-toggle.pano-btn-icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+#pano-demo-root button.pano-output-preview-toggle.pano-btn-icon svg path:not([fill]),
+#pano-demo-root button.pano-output-preview-toggle.pano-btn-icon svg rect:not([fill]),
+#pano-demo-root button.pano-output-preview-toggle.pano-btn-icon svg circle:not([fill]),
+#pano-demo-root button.pano-output-preview-toggle.pano-btn-icon svg line:not([fill]),
+#pano-demo-root button.pano-output-preview-toggle.pano-btn-icon svg polyline:not([fill]),
+#pano-demo-root button.pano-output-preview-toggle.pano-btn-icon svg polygon:not([fill]) {
+  stroke: currentColor;
+  fill: none;
 }
 
 #pano-generate-btn,
