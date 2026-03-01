@@ -1,0 +1,172 @@
+#pano-demo-root {
+  position: relative;
+}
+
+#pano-demo-root .pano-demo-editor {
+  min-height: 420px;
+  height: 44vh;
+}
+
+#pano-demo-root .pano-demo-editor .pano-modal {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  box-shadow: none;
+}
+
+#pano-demo-root button.pano-btn {
+  background: var(--pano-bg-control);
+  color: var(--pano-text-secondary);
+  border: 0;
+  border-radius: var(--pano-space-md);
+  height: 40px;
+  padding: 0 var(--pano-space-lg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  font-family: inherit;
+  text-transform: none;
+}
+
+#pano-demo-root button.pano-btn:hover {
+  background: var(--pano-surface-hover);
+  color: var(--pano-text);
+}
+
+#pano-demo-root button.pano-btn:disabled {
+  opacity: 0.46;
+  cursor: default;
+  pointer-events: none;
+}
+
+#pano-demo-root button.pano-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--pano-accent);
+}
+
+#pano-demo-root button.pano-btn.active:not(.pano-view-btn) {
+  background: var(--pano-surface-3);
+  color: var(--pano-text);
+}
+
+#pano-demo-root button.pano-btn-primary {
+  background: var(--pano-accent);
+  color: var(--pano-text-reversed);
+}
+
+#pano-demo-root button.pano-btn-primary:hover,
+#pano-demo-root button.pano-btn-primary:focus-visible {
+  background: var(--pano-accent-dark);
+}
+
+#pano-demo-root button.pano-btn-primary:active {
+  background: var(--pano-accent-extra-dark);
+}
+
+#pano-demo-root button.pano-btn-primary:disabled {
+  opacity: 0.5;
+}
+
+#pano-demo-root .pano-view-toggle button.pano-view-btn {
+  position: relative;
+  z-index: 1;
+  border-radius: 0;
+  width: 124px;
+  min-width: 124px;
+  height: 40px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  color: var(--pano-muted);
+  font-family: inherit;
+  text-transform: none;
+}
+
+#pano-demo-root .pano-view-toggle button.pano-view-btn:active,
+#pano-demo-root .pano-view-toggle button.pano-view-btn:focus-visible {
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+#pano-demo-root .pano-view-toggle[data-selected="pano"] button.pano-view-btn[data-view="pano"],
+#pano-demo-root .pano-view-toggle[data-selected="unwrap"] button.pano-view-btn[data-view="unwrap"] {
+  color: var(--pano-text);
+}
+
+#pano-demo-root .pano-view-toggle[data-selected="pano"] button.pano-view-btn[data-view="unwrap"]:hover,
+#pano-demo-root .pano-view-toggle[data-selected="unwrap"] button.pano-view-btn[data-view="pano"]:hover {
+  color: var(--pano-muted-strong);
+}
+
+#pano-generate-btn,
+#pano-render-cutout-btn,
+#pano-save-erp-btn,
+#pano-save-frame-btn {
+  width: 100%;
+}
+
+#pano-generate-btn button,
+#pano-render-cutout-btn button,
+#pano-save-erp-btn button,
+#pano-save-frame-btn button {
+  min-height: 38px;
+  box-shadow: none;
+}
+
+#pano-prompt textarea {
+  min-height: 6.75rem;
+}
+
+#pano-frame-preview img {
+  max-height: 180px;
+  object-fit: contain;
+}
+
+#pano-stickers-state,
+#pano-cutout-state {
+  display: none;
+}
+
+#pano-generated-erp-image {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  max-width: 1px;
+  max-height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  inset: auto auto auto -9999px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+#pano-generated-erp-image > div,
+#pano-generated-erp-image img {
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  max-width: 1px;
+  max-height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

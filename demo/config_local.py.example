@@ -1,0 +1,14 @@
+from __future__ import annotations
+
+# Copy this file to demo/config_local.py for machine-specific overrides.
+
+# Use a Hugging Face repo ID by default. You may also point to a local
+# diffusers-format model directory, but not a single .safetensors file.
+MODEL_ID = "black-forest-labs/FLUX.2-klein-base-4B"
+
+# Leave empty until your public LoRA repo exists, or set a repo ID / local path.
+LORA_SOURCE = ""
+LORA_ADAPTER = "pano_demo"
+
+# Set True only when MODEL_ID/LORA_SOURCE point to local cached paths.
+LOCAL_FILES_ONLY = False
