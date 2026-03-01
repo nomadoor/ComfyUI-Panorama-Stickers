@@ -15,6 +15,18 @@ import numpy as np
 from demo import config
 from demo.backend.inference import generate_erp, render_cutout
 
+try:
+    import spaces
+except ImportError:
+    class _SpacesShim:
+        @staticmethod
+        def GPU(fn=None, **_kwargs):
+            if fn is None:
+                return lambda wrapped: wrapped
+            return fn
+
+    spaces = _SpacesShim()
+
 
 DEMO_DIR = Path(__file__).resolve().parent
 STATIC_DIR = DEMO_DIR / "static"
@@ -64,6 +76,7 @@ def _update_generate_progress(progress: gr.Progress, stage: str, current: int | 
         progress(0.95, desc="Finalizing panorama...")
 
 
+@spaces.GPU
 def on_generate(
     prompt: str,
     seed: int,
