@@ -11,6 +11,8 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn('from "./pano_cutout_camera.js"', editor_js)
         self.assertIn("const cutoutPreviewCamera = type === \"cutout\"", editor_js)
         self.assertIn("cutoutPreviewCamera.renderShotToContext", editor_js)
+        self.assertIn('uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();', editor_js)
+        self.assertIn('const drew = renderCutoutPreviewToContext(ctx, rect, shot, { quality: previewQuality }) === true;', editor_js)
 
     def test_cutout_frame_entry_points_are_not_stubbed(self):
         editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
@@ -20,6 +22,8 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("else if (action === \"add-or-look\") addCutoutFrame();", editor_js)
         self.assertIn("const itemIsShot = isShotItem(item);", editor_js)
         self.assertIn("if (!itemIsSticker && !itemIsShot) {", editor_js)
+        self.assertIn('const activeShot = editor.mode === "frame" && supportsFramePainting() ? getActiveCutoutShot() : null;', editor_js)
+        self.assertIn('editor.interaction = { kind: "pan_frame", last: p };', editor_js)
 
     def test_vue_shell_hosts_camera_preview(self):
         modal_vue = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")

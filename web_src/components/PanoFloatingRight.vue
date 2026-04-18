@@ -23,13 +23,15 @@ defineProps({
     />
   </div>
   <div
-    v-if="preview.visible"
+    v-show="preview.visible"
     class="pano-camera-preview-anchor"
+    :data-settled="preview.settled === true ? 'true' : 'false'"
   >
     <div
       class="pano-camera-preview"
       :class="{ 'pano-camera-preview-expanded': preview.expanded === true }"
       :data-ready="preview.ready ? 'true' : 'false'"
+      :data-settled="preview.settled === true ? 'true' : 'false'"
       :style="{
         width: `${preview.width || (preview.expanded ? 320 : 220)}px`,
         height: `${preview.height || (preview.expanded ? 192 : 132)}px`,
@@ -45,7 +47,7 @@ defineProps({
         :data-tip="previewToggle.tip || 'Expand preview'"
         v-html="previewToggle.icon"
       />
-      <div v-if="!preview.ready" class="pano-camera-preview-label">{{ preview.label || "Preview unavailable" }}</div>
+      <div v-if="preview.ready !== true && preview.settled !== true" class="pano-camera-preview-label">{{ preview.label || "Preview unavailable" }}</div>
     </div>
   </div>
 </template>

@@ -1653,6 +1653,16 @@ async function showEditor(node, type, options = {}) {
       state.active.selected_shot_id = null;
     }
   }
+  const initialCutoutPreviewShot = type === "cutout"
+    ? (() => {
+      const shots = Array.isArray(state.shots) ? state.shots : [];
+      const selectedId = String(state?.active?.selected_shot_id || "");
+      return shots.find((item) => String(item?.id || "") === selectedId) || shots[0] || null;
+    })()
+    : null;
+  const initialCutoutPreviewSize = initialCutoutPreviewShot
+    ? getCutoutPreviewViewportSize(initialCutoutPreviewShot, false)
+    : { width: 220, height: 132 };
   const shellPreset = buildModalShellPreset(type);
   const uiState = reactive({
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
@@ -1700,7 +1710,15 @@ async function showEditor(node, type, options = {}) {
     selectionMenu: { visible: false, left: 0, top: 0, items: [] },
     tooltip: { visible: false, text: "", left: 0, top: 0, variant: "" },
     confirmDialog: { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null },
-    cameraPreview: { visible: type === "cutout", ready: false, label: "Add Frame to preview" },
+    cameraPreview: {
+      visible: type === "cutout",
+      ready: false,
+      settled: false,
+      expanded: false,
+      width: initialCutoutPreviewSize.width,
+      height: initialCutoutPreviewSize.height,
+      label: initialCutoutPreviewShot ? "Loading preview" : "Add Frame to preview",
+    },
   });
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
@@ -3188,6 +3206,9 @@ async function showEditor(node, type, options = {}) {
     if (type === "cutout" && uiState.cameraPreview) {
       uiState.cameraPreview.visible = true;
       uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
+      uiState.cameraPreview.settled = uiState.cameraPreview.settled === true
+        && runtime.pendingStableLayoutFrames <= 0
+        && runtime.hasPresentedFrame;
     }
     if (isPaintCursorEnabled()) updateCursor(editor.pointerPos);
     else canvas.style.cursor = editor.mode === "pano" ? "grab" : "default";
@@ -4872,23 +4893,25 @@ async function showEditor(node, type, options = {}) {
   function drawCameraFrameBody(geom, selected, locked) {
     const corners = Array.isArray(geom?.corners) ? geom.corners : [];
     if (corners.length < 4) return;
-    const accent = selected
-      ? "rgba(255, 255, 255, 0.98)"
-      : (locked ? "rgba(255, 116, 116, 0.92)" : "rgba(240, 240, 240, 0.82)");
-    const fill = selected
-      ? "rgba(255, 255, 255, 0.08)"
-      : (locked ? "rgba(255, 89, 89, 0.09)" : "rgba(255, 255, 255, 0.035)");
-    const cornerLen = selected ? 18 : 14;
+    const accent = locked
+      ? "rgba(255, 116, 116, 0.96)"
+      : (selected ? "rgba(255, 221, 87, 0.98)" : "rgba(255, 214, 64, 0.92)");
+    const fill = locked
+      ? "rgba(255, 89, 89, 0.08)"
+      : (selected ? "rgba(255, 221, 87, 0.08)" : "rgba(255, 214, 64, 0.05)");
+    const edgeStroke = selected ? 3.2 : 2.6;
+    const bracketStroke = selected ? 4.4 : 3.4;
+    const cornerLen = selected ? 24 : 20;
     traceQuad(ctx, corners);
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.strokeStyle = accent;
-    ctx.lineWidth = selected ? 2.6 : 1.6;
+    ctx.lineWidth = edgeStroke;
     ctx.stroke();
 
     ctx.save();
     ctx.strokeStyle = accent;
-    ctx.lineWidth = selected ? 3.2 : 2.2;
+    ctx.lineWidth = bracketStroke;
     ctx.lineCap = "round";
     for (let i = 0; i < 4; i += 1) {
       const current = corners[i];
@@ -4907,6 +4930,29 @@ async function showEditor(node, type, options = {}) {
       ctx.lineTo(current.x + (vx1 / len1) * cornerLen, current.y + (vy1 / len1) * cornerLen);
       ctx.stroke();
     }
+
+    const edgeMidpoints = Array.isArray(geom?.edgeMidpoints) && geom.edgeMidpoints.length >= 4
+      ? geom.edgeMidpoints
+      : [
+        { edge: "top", x: (corners[0].x + corners[1].x) * 0.5, y: (corners[0].y + corners[1].y) * 0.5 },
+        { edge: "right", x: (corners[1].x + corners[2].x) * 0.5, y: (corners[1].y + corners[2].y) * 0.5 },
+        { edge: "bottom", x: (corners[2].x + corners[3].x) * 0.5, y: (corners[2].y + corners[3].y) * 0.5 },
+        { edge: "left", x: (corners[3].x + corners[0].x) * 0.5, y: (corners[3].y + corners[0].y) * 0.5 },
+      ];
+    const center = {
+      x: (corners[0].x + corners[1].x + corners[2].x + corners[3].x) * 0.25,
+      y: (corners[0].y + corners[1].y + corners[2].y + corners[3].y) * 0.25,
+    };
+    const indicatorLen = selected ? 12 : 9;
+    edgeMidpoints.forEach((mid) => {
+      const vx = center.x - mid.x;
+      const vy = center.y - mid.y;
+      const len = Math.hypot(vx, vy) || 1;
+      ctx.beginPath();
+      ctx.moveTo(mid.x, mid.y);
+      ctx.lineTo(mid.x + (vx / len) * indicatorLen, mid.y + (vy / len) * indicatorLen);
+      ctx.stroke();
+    });
     ctx.restore();
   }
 
@@ -5093,6 +5139,16 @@ async function showEditor(node, type, options = {}) {
       : { width: Math.max(1, Math.round(longSide * aspect)), height: longSide };
   }
 
+  function isCutoutPreviewLayoutStable(targetSize) {
+    if (!cutoutPreviewHost || !targetSize) return false;
+    const previewShell = cutoutPreviewHost.closest(".pano-camera-preview");
+    if (!previewShell) return false;
+    const hostWidth = Math.round(Number(previewShell.clientWidth || cutoutPreviewHost.clientWidth || 0));
+    const hostHeight = Math.round(Number(previewShell.clientHeight || cutoutPreviewHost.clientHeight || 0));
+    return Math.abs(hostWidth - Number(targetSize.width || 0)) <= 1
+      && Math.abs(hostHeight - Number(targetSize.height || 0)) <= 1;
+  }
+
   function getCutoutPreviewObjectRevision() {
     const stickers = Array.isArray(state.stickers) ? state.stickers : [];
     const rasters = Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [];
@@ -5152,14 +5208,21 @@ async function showEditor(node, type, options = {}) {
 
   function drawCutoutOutputPreview() {
     editor.outputPreviewRect = null;
-    uiState.outputPreviewToggle.visible = !!getActiveCutoutShot();
+    uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();
     if (type !== "cutout" || !uiState.cameraPreview) return;
+    if (editor.mode === "frame") {
+      uiState.cameraPreview.visible = false;
+      uiState.cameraPreview.settled = false;
+      return;
+    }
+    uiState.cameraPreview.visible = true;
     const shot = getActiveCutoutShot();
     const bgImg = getConnectedErpImage();
     if (!shot || !cutoutPreviewCamera || !cutoutPreviewMount) {
       uiState.cameraPreview.ready = false;
       uiState.cameraPreview.label = shot ? "Preview unavailable" : "Add Frame to preview";
       uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
+      uiState.cameraPreview.settled = false;
       uiState.cameraPreview.width = 220;
       uiState.cameraPreview.height = 132;
       cutoutPreviewCamera?.clearScene?.();
@@ -5167,6 +5230,9 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     const previewSize = getCutoutPreviewViewportSize(shot, !!editor.outputPreviewExpanded);
+    uiState.cameraPreview.width = previewSize.width;
+    uiState.cameraPreview.height = previewSize.height;
+    uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
     const scene = buildModalBackgroundScene();
     const textures = buildModalBackgroundTextures(scene);
     const bgReady = !!bgImg
@@ -5208,21 +5274,30 @@ async function showEditor(node, type, options = {}) {
     if (!hasContent) {
       uiState.cameraPreview.ready = false;
       uiState.cameraPreview.label = "Connect ERP image";
-      uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
-      uiState.cameraPreview.width = previewSize.width;
-      uiState.cameraPreview.height = previewSize.height;
+      uiState.cameraPreview.settled = false;
+      cutoutPreviewCamera.clearScene();
+      cutoutPreviewMount.requestRender();
+      return;
+    }
+    if (!bgReady || !editor.showPanorama) {
+      uiState.cameraPreview.ready = false;
+      uiState.cameraPreview.label = bgImg ? "Loading preview" : "Connect ERP image";
+      uiState.cameraPreview.settled = false;
       cutoutPreviewCamera.clearScene();
       cutoutPreviewMount.requestRender();
       return;
     }
     cutoutPreviewCamera.syncScene(descriptor);
     cutoutPreviewMount.setView(buildCutoutViewParamsFromShot(shot));
-    cutoutPreviewMount.requestRender();
+    const layoutStable = isCutoutPreviewLayoutStable(previewSize);
+    const presented = layoutStable ? cutoutPreviewMount.present() : false;
+    if (!layoutStable) cutoutPreviewMount.requestRender();
     uiState.cameraPreview.ready = true;
-    uiState.cameraPreview.label = "";
-    uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
-    uiState.cameraPreview.width = previewSize.width;
-    uiState.cameraPreview.height = previewSize.height;
+    uiState.cameraPreview.label = layoutStable && presented ? "" : "Loading preview";
+    uiState.cameraPreview.settled = layoutStable
+      && presented
+      && runtime.pendingStableLayoutFrames <= 0
+      && runtime.hasPresentedFrame;
   }
 
   function renderCutoutPreviewToContext(targetCtx, rect, shot, options = {}) {
@@ -6060,7 +6135,6 @@ async function showEditor(node, type, options = {}) {
   function drawFrameViewBackground() {
     const shot = getActiveCutoutShot();
     const rect = getFrameViewRect(shot);
-    const img = getConnectedErpImage();
     if (!shot || !rect) return false;
     ctx.save();
     ctx.fillStyle = "#050505";
@@ -6076,72 +6150,9 @@ async function showEditor(node, type, options = {}) {
     ctx.beginPath();
     ctx.rect(rect.x, rect.y, rect.w, rect.h);
     ctx.clip();
-    if (img && (img.complete || img.naturalWidth || img.width) && Number(img.naturalWidth || img.width || 0) > 1 && Number(img.naturalHeight || img.height || 0) > 1) {
-      const previewQuality = editor.interaction ? "draft" : String(state.ui_settings?.preview_quality || "balanced");
-      let drew = false;
-      if (editor.showPanorama) {
-        drew = drawCutoutProjectionPreview(ctx, node, img, rect, shot, previewQuality) || drew;
-      }
-      const orderedGroupIds = getOrderedPaintGroupIds();
-      const erpTarget = editor.paintEngine?.getErpTarget?.(orderedGroupIds) || null;
-      if (editor.showObjects) {
-        const stickers = [...(Array.isArray(state.stickers) ? state.stickers : [])]
-          .filter((item) => item?.visible !== false)
-          .sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0));
-        for (const item of stickers) {
-          const stickerImg = getStickerImage(item);
-          if (stickerImg && (stickerImg.complete || stickerImg.width)) {
-            const geom = objectGeom(item);
-            const corners = Array.isArray(geom?.corners) ? geom.corners : [];
-            if (corners.length < 4) continue;
-            const crop = item?.crop && typeof item.crop === "object" ? item.crop : {};
-            const iw = Number(stickerImg.naturalWidth || stickerImg.width || 0);
-            const ih = Number(stickerImg.naturalHeight || stickerImg.height || 0);
-            if (iw <= 1 || ih <= 1) continue;
-            const sx0 = clamp(Math.min(Number(crop.x0 ?? 0), Number(crop.x1 ?? 1)), 0, 1) * iw;
-            const sy0 = clamp(Math.min(Number(crop.y0 ?? 0), Number(crop.y1 ?? 1)), 0, 1) * ih;
-            const sx1 = clamp(Math.max(Number(crop.x0 ?? 0), Number(crop.x1 ?? 1)), 0, 1) * iw;
-            const sy1 = clamp(Math.max(Number(crop.y0 ?? 0), Number(crop.y1 ?? 1)), 0, 1) * ih;
-            const prevAlpha = ctx.globalAlpha;
-            ctx.globalAlpha = getStickerDisplayAlpha(item);
-            drawImageTri(
-              stickerImg,
-              { x: sx0, y: sy0 },
-              { x: sx1, y: sy0 },
-              { x: sx1, y: sy1 },
-              corners[0],
-              corners[1],
-              corners[2],
-            );
-            drawImageTri(
-              stickerImg,
-              { x: sx0, y: sy0 },
-              { x: sx1, y: sy1 },
-              { x: sx0, y: sy1 },
-              corners[0],
-              corners[2],
-              corners[3],
-            );
-            ctx.globalAlpha = prevAlpha;
-            drew = true;
-          }
-        }
-        const paintCanvas = erpTarget?.displayPaint?.canvas || null;
-        if (paintCanvas) {
-          drew = drawCutoutProjectionPreview(ctx, node, paintCanvas, rect, shot, previewQuality) || drew;
-        }
-      }
-      if (editor.showMask) {
-        const maskCanvas = editor.paintEngine?.getMaskDisplayCanvas?.() || null;
-        if (maskCanvas) {
-          drew = drawCutoutProjectionPreview(ctx, node, maskCanvas, rect, shot, previewQuality) || drew;
-        }
-      }
-      if (!drew) {
-        ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
-        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-      }
-    } else {
+    const previewQuality = editor.interaction ? "draft" : String(state.ui_settings?.preview_quality || "balanced");
+    const drew = renderCutoutPreviewToContext(ctx, rect, shot, { quality: previewQuality }) === true;
+    if (!drew) {
       ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
@@ -6217,6 +6228,9 @@ async function showEditor(node, type, options = {}) {
     if (!runtime.hasPresentedFrame) {
       runtime.hasPresentedFrame = true;
       backgroundCanvas.style.opacity = "1";
+    }
+    if (type === "cutout" && uiState.cameraPreview) {
+      uiState.cameraPreview.settled = runtime.pendingStableLayoutFrames <= 0 && runtime.hasPresentedFrame && editor.mode !== "frame";
     }
     const stageLoadingKind = getStageLoadingKind();
     if (stageLoadingKind) {
@@ -8453,7 +8467,9 @@ async function showEditor(node, type, options = {}) {
     viewController.state.inertia.vy = 0;
     if (e.button === 1) {
       e.preventDefault();
-      if (editor.mode !== "frame") {
+      if (editor.mode === "frame") {
+        editor.interaction = { kind: "pan_frame", last: p };
+      } else {
         const dragPos = editor.mode === "unwrap" ? p : screenPosCss(e);
         editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
         viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
@@ -8480,7 +8496,7 @@ async function showEditor(node, type, options = {}) {
     if ((editor.primaryTool === "paint" || editor.primaryTool === "mask") && (supportsErpPainting() || supportsFramePainting())) {
       const layerKind = editor.primaryTool === "mask" ? "mask" : "paint";
       const toolKind = editor.primaryTool === "mask" ? editor.maskTool : editor.paintTool;
-      const activeShot = supportsFramePainting() ? getActiveCutoutShot() : null;
+      const activeShot = editor.mode === "frame" && supportsFramePainting() ? getActiveCutoutShot() : null;
       // Always use ERP_GLOBAL: frame-view strokes are converted to world-space ERP UV
       // via the frame's projection so they stay fixed in the panorama when the frame moves.
       const targetSpace = { kind: "ERP_GLOBAL" };
