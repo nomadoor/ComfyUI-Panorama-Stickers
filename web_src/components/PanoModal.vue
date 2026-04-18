@@ -159,17 +159,14 @@ watch(() => props.open, (nextOpen) => {
 
         <PanoViewToggle :buttons="uiState.viewButtons || shellPreset.viewButtons || []" />
 
-        <PanoFloatingRight :buttons="uiState.floatingButtons || floatingButtons" :fov-value="uiState.fovValue || '100°'" />
+        <PanoFloatingRight
+          :buttons="uiState.floatingButtons || floatingButtons"
+          :fov-value="uiState.fovValue || '100°'"
+          :preview="uiState.cameraPreview || {}"
+          :preview-toggle="uiState.outputPreviewToggle || {}"
+        />
 
         <PanoSelectionMenu :model="uiState.selectionMenu || {}" />
-        <button
-          class="pano-btn pano-btn-icon pano-output-preview-toggle"
-          data-action="toggle-output-preview-size"
-          :aria-label="uiState.outputPreviewToggle?.label || 'Expand Preview'"
-          :data-tip="uiState.outputPreviewToggle?.tip || 'Expand preview'"
-          :style="{ display: uiState.outputPreviewToggle?.visible ? '' : 'none' }"
-          v-html="uiState.outputPreviewToggle?.icon || ICON.fullscreen"
-        />
         <PanoTooltip :model="uiState.tooltip || {}" />
         <PanoConfirmDialog :model="uiState.confirmDialog || {}" />
       </div>

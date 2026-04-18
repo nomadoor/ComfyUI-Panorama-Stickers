@@ -22,6 +22,7 @@ import {
   buildStickerTexturesFromState,
 } from "./pano_gl_scene.js";
 import { drawCutoutProjectionPreview } from "./pano_cutout_projection.js";
+import { createCutoutCamera } from "./pano_cutout_camera.js";
 import { buildPanoramaCompositeDescriptor } from "./pano_render_descriptors.js";
 import {
   buildEditorSidePanelModel,
@@ -1699,6 +1700,7 @@ async function showEditor(node, type, options = {}) {
     selectionMenu: { visible: false, left: 0, top: 0, items: [] },
     tooltip: { visible: false, text: "", left: 0, top: 0, variant: "" },
     confirmDialog: { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null },
+    cameraPreview: { visible: type === "cutout", ready: false, label: "Add Frame to preview" },
   });
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
@@ -1758,11 +1760,15 @@ async function showEditor(node, type, options = {}) {
   stageWrap?.appendChild(paintSizePreviewEl);
   const ctx = canvas.getContext("2d");
   const modalPanoCore = createPanoramaRenderCore();
+  const cutoutPreviewCamera = type === "cutout"
+    ? createCutoutCamera({ targetId: `cutout_modal_${String(node?.id ?? "0")}` })
+    : null;
   // Vue owns modal DOM structure. The references below are bridge-only:
   // canvas mounting, geometry measurement, low-level pointer wiring, and fullscreen integration.
   const side = root.querySelector("[data-side]");
   const selectionMenu = root.querySelector("[data-selection-menu]");
   const tooltipEl = root.querySelector("[data-tooltip]");
+  const cutoutPreviewHost = root.querySelector("[data-camera-preview-host]");
   const paintColorRow = root.querySelector("[data-paint-color-row]");
   const paintColorPop = root.querySelector("[data-paint-color-pop]");
   const paintColorSv = root.querySelector("[data-paint-color-sv]");
@@ -1828,7 +1834,7 @@ async function showEditor(node, type, options = {}) {
 
   const initialSelectedId = type === "stickers"
     ? state.active.selected_sticker_id
-    : (type === "cutout" ? state.active.selected_sticker_id : state.active.selected_shot_id);
+    : (type === "cutout" ? state.active.selected_shot_id : state.active.selected_shot_id);
   const initialHistorySnapshot = JSON.stringify(cloneStateForHistorySnapshot(state));
   const editor = {
     mode: "pano",
@@ -1883,6 +1889,9 @@ async function showEditor(node, type, options = {}) {
     fullscreen: false,
     fullscreenPrevShowGrid: null,
   };
+  const cutoutPreviewMount = cutoutPreviewCamera && cutoutPreviewHost
+    ? cutoutPreviewCamera.mount(cutoutPreviewHost, { shot: null })
+    : null;
   if (type === "stickers") {
     editor.selectedId = null;
     state.active.selected_sticker_id = null;
@@ -2307,10 +2316,12 @@ async function showEditor(node, type, options = {}) {
     return `_${interactionKind}_${groupId || rasterId || "active"}_${editor.livePaintInteractionRevision}`;
   }
   function getCutoutSelectableItems() {
-    return [...(Array.isArray(state.stickers) ? state.stickers : [])];
+    const shots = Array.isArray(state.shots) ? state.shots : [];
+    const stickers = Array.isArray(state.stickers) ? state.stickers : [];
+    return [...shots, ...stickers];
   }
   function isShotItem(item) {
-    return false;
+    return !!item && Array.isArray(state.shots) && state.shots.includes(item);
   }
   function isStickerItem(item) {
     return !!item && Array.isArray(state.stickers) && state.stickers.includes(item);
@@ -2705,6 +2716,11 @@ async function showEditor(node, type, options = {}) {
     else if (!nextIds.length) state.active.selected_shot_id = null;
   }
   function getCutoutInspectorItems() {
+    const shots = (Array.isArray(state.shots) ? state.shots : []).map((item, index) => ({
+      kind: "frame",
+      item,
+      label: String(item?.label || `Frame ${index + 1}`),
+    }));
     const images = (Array.isArray(state.stickers) ? state.stickers : []).map((item, index) => {
       const baseLabel = isExternalSticker(item)
         ? String(item.id || EXTERNAL_STICKER_ID)
@@ -2715,7 +2731,7 @@ async function showEditor(node, type, options = {}) {
         label: baseLabel,
       };
     });
-    return images;
+    return [...shots, ...images];
   }
 
   function getSelectionItemIcon(kind) {
@@ -3142,21 +3158,37 @@ async function showEditor(node, type, options = {}) {
   }
   function applyInitialCutoutFocus() {
     if (type !== "cutout") return;
+    const activeShot = getActiveCutoutShot();
+    if (!activeShot) return;
+    setSelectedItem(activeShot);
   }
   function syncLookAtFrameButtonState() {
-    patchUiButton(uiState.toolButtons, "value", "add-or-look", { visible: false });
+    if (type !== "cutout") return;
+    const shot = getActiveCutoutShot();
+    patchUiButton(uiState.toolButtons, "value", "add-or-look", {
+      visible: true,
+      accent: !shot,
+      label: shot ? "Look At Frame" : "Add Frame",
+      tip: shot ? "Look at frame" : "Add frame",
+      icon: shot ? ICON.camera : ICON.plus_circle,
+    });
   }
 
   function syncViewToggleState() {
-    if (editor.mode === "frame") editor.mode = "pano";
+    const hasFrame = !!getActiveCutoutShot();
+    if (editor.mode === "frame" && !hasFrame) editor.mode = "pano";
     editor.outputPreviewRect = null;
     uiState.viewButtons.forEach((button) => {
       const active = button.key === editor.mode;
       button.pressed = active ? "true" : "false";
-      button.visible = button.key !== "frame";
-      button.disabled = button.key === "frame";
+      button.visible = !(button.key === "frame" && type !== "cutout");
+      button.disabled = button.key === "frame" ? !hasFrame : false;
     });
-    uiState.outputPreviewToggle.visible = false;
+    uiState.outputPreviewToggle.visible = type === "cutout" && !!getActiveCutoutShot();
+    if (type === "cutout" && uiState.cameraPreview) {
+      uiState.cameraPreview.visible = true;
+      uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
+    }
     if (isPaintCursorEnabled()) updateCursor(editor.pointerPos);
     else canvas.style.cursor = editor.mode === "pano" ? "grab" : "default";
   }
@@ -4532,6 +4564,7 @@ async function showEditor(node, type, options = {}) {
     if (editor.mode === "frame") {
       const shot = frameShot || getActiveCutoutShot();
       const rect = frameRect || getFrameViewRect(shot);
+      if (!shot || !rect) return null;
       const local = shot ? worldDirToFrameLocalPoint(shot, dir) : null;
       return local ? {
         x: Number(rect.x || 0) + (Number(local.x || 0) * Number(rect.w || 0)),
@@ -4569,10 +4602,14 @@ async function showEditor(node, type, options = {}) {
     if (!center) return { visible: false };
     const frame = getStickerFrame(item);
     const cornersDir = stickerCornersDir(item);
-    const corners = cornersDir.map((d) => projectSceneItemDir(d, center.x, frameShot, frameRect));
+    const corners = cornersDir
+      .map((d) => projectSceneItemDir(d, center.x, frameShot, frameRect))
+      .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y));
+    if (corners.length < 4) return { visible: false };
     const rotateStemBaseDir = stickerDirFromFrame(frame, 0, frame.tanY);
     const rotateHandleDir = stickerDirFromFrame(frame, 0, frame.tanY + Math.max(frame.tanY * 0.43, 0.053));
     const rotateStemBase = projectSceneItemDir(rotateStemBaseDir, center.x, frameShot, frameRect);
+    if (!rotateStemBase) return { visible: false };
     const rotateHandleHint = projectSceneItemDir(rotateHandleDir, rotateStemBase?.x ?? center.x, frameShot, frameRect);
     const handleDx = (rotateHandleHint?.x ?? rotateStemBase.x) - rotateStemBase.x;
     const handleDy = (rotateHandleHint?.y ?? rotateStemBase.y) - rotateStemBase.y;
@@ -4585,6 +4622,7 @@ async function showEditor(node, type, options = {}) {
     const rightEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, frame.tanX, 0), center.x, frameShot, frameRect);
     const bottomEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, 0, -frame.tanY), center.x, frameShot, frameRect);
     const leftEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, -frame.tanX, 0), center.x, frameShot, frameRect);
+    if (!topEdgeCenter || !rightEdgeCenter || !bottomEdgeCenter || !leftEdgeCenter) return { visible: false };
     const edgeMidpoints = [
       {
         edge: "top",
@@ -4810,15 +4848,17 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getCutoutSelectableItemsForDisplay() {
+    const shots = [...(Array.isArray(state.shots) ? state.shots : [])];
     const stickers = [...(Array.isArray(state.stickers) ? state.stickers : [])]
       .sort((a, b) => Number(a.z_index || 0) - Number(b.z_index || 0));
-    return stickers;
+    return [...shots, ...stickers];
   }
 
   function getCutoutSelectableItemsForHit() {
+    const shots = [...(Array.isArray(state.shots) ? state.shots : [])];
     const stickers = [...(Array.isArray(state.stickers) ? state.stickers : [])]
       .sort((a, b) => Number(b.z_index || 0) - Number(a.z_index || 0));
-    return stickers;
+    return [...stickers, ...shots];
   }
 
   function traceQuad(ctx2d, corners = []) {
@@ -4829,7 +4869,52 @@ async function showEditor(node, type, options = {}) {
     ctx2d.closePath();
   }
 
+  function drawCameraFrameBody(geom, selected, locked) {
+    const corners = Array.isArray(geom?.corners) ? geom.corners : [];
+    if (corners.length < 4) return;
+    const accent = selected
+      ? "rgba(255, 255, 255, 0.98)"
+      : (locked ? "rgba(255, 116, 116, 0.92)" : "rgba(240, 240, 240, 0.82)");
+    const fill = selected
+      ? "rgba(255, 255, 255, 0.08)"
+      : (locked ? "rgba(255, 89, 89, 0.09)" : "rgba(255, 255, 255, 0.035)");
+    const cornerLen = selected ? 18 : 14;
+    traceQuad(ctx, corners);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = selected ? 2.6 : 1.6;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = selected ? 3.2 : 2.2;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 4; i += 1) {
+      const current = corners[i];
+      const prev = corners[(i + 3) % 4];
+      const next = corners[(i + 1) % 4];
+      const vx0 = current.x - prev.x;
+      const vy0 = current.y - prev.y;
+      const len0 = Math.hypot(vx0, vy0) || 1;
+      const vx1 = next.x - current.x;
+      const vy1 = next.y - current.y;
+      const len1 = Math.hypot(vx1, vy1) || 1;
+      ctx.beginPath();
+      ctx.moveTo(current.x, current.y);
+      ctx.lineTo(current.x - (vx0 / len0) * cornerLen, current.y - (vy0 / len0) * cornerLen);
+      ctx.moveTo(current.x, current.y);
+      ctx.lineTo(current.x + (vx1 / len1) * cornerLen, current.y + (vy1 / len1) * cornerLen);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function drawObjectBody(item, geom, selected, locked) {
+    if (isShotItem(item)) {
+      drawCameraFrameBody(geom, selected, locked);
+      return;
+    }
     if (isStickerItem(item)) {
       const prevAlpha = ctx.globalAlpha;
       ctx.globalAlpha = getStickerDisplayAlpha(item);
@@ -4914,8 +4999,9 @@ async function showEditor(node, type, options = {}) {
       if (editor.mode === "frame" && !selected) continue;
       if (!editor.showObjects && !isShotItem(item)) continue;
       const itemIsSticker = isStickerItem(item);
+      const itemIsShot = isShotItem(item);
       const itemLocked = isItemLocked(item);
-      if (!itemIsSticker) {
+      if (!itemIsSticker && !itemIsShot) {
         continue;
       }
       const g = objectGeom(item);
@@ -4999,6 +5085,14 @@ async function showEditor(node, type, options = {}) {
       : { width: Math.max(1, Math.round(longSide * aspect)), height: longSide };
   }
 
+  function getCutoutPreviewViewportSize(shot, expanded = false) {
+    const aspect = clamp(deriveCutoutAspectFromFov(shot), 0.05, 20.0);
+    const longSide = expanded ? 320 : 220;
+    return aspect >= 1
+      ? { width: longSide, height: Math.max(1, Math.round(longSide / aspect)) }
+      : { width: Math.max(1, Math.round(longSide * aspect)), height: longSide };
+  }
+
   function getCutoutPreviewObjectRevision() {
     const stickers = Array.isArray(state.stickers) ? state.stickers : [];
     const rasters = Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [];
@@ -5058,11 +5152,105 @@ async function showEditor(node, type, options = {}) {
 
   function drawCutoutOutputPreview() {
     editor.outputPreviewRect = null;
-    uiState.outputPreviewToggle.visible = false;
+    uiState.outputPreviewToggle.visible = !!getActiveCutoutShot();
+    if (type !== "cutout" || !uiState.cameraPreview) return;
+    const shot = getActiveCutoutShot();
+    const bgImg = getConnectedErpImage();
+    if (!shot || !cutoutPreviewCamera || !cutoutPreviewMount) {
+      uiState.cameraPreview.ready = false;
+      uiState.cameraPreview.label = shot ? "Preview unavailable" : "Add Frame to preview";
+      uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
+      uiState.cameraPreview.width = 220;
+      uiState.cameraPreview.height = 132;
+      cutoutPreviewCamera?.clearScene?.();
+      cutoutPreviewMount?.requestRender?.();
+      return;
+    }
+    const previewSize = getCutoutPreviewViewportSize(shot, !!editor.outputPreviewExpanded);
+    const scene = buildModalBackgroundScene();
+    const textures = buildModalBackgroundTextures(scene);
+    const bgReady = !!bgImg
+      && !!bgImg.complete
+      && Number(bgImg.naturalWidth || bgImg.width || 0) > 1
+      && Number(bgImg.naturalHeight || bgImg.height || 0) > 1;
+    const bgRevision = bgReady
+      ? [
+        String(bgImg.currentSrc || bgImg.src || ""),
+        Number(bgImg.naturalWidth || bgImg.width || 0),
+        Number(bgImg.naturalHeight || bgImg.height || 0),
+      ].join("|")
+      : "none";
+    const rasterEntries = editor.showObjects
+      ? buildModalInterleavedLayerEntries()
+      : appendMaskDisplayLayerEntry([]);
+    const descriptor = buildPanoramaCompositeDescriptor({
+      stateRevision: [
+        "cutout_preview_camera",
+        bgRevision,
+        Array.isArray(scene?.stickers) ? scene.stickers.map((item) => String(item?.id || "")).join(",") : "none",
+        Array.isArray(textures) ? textures.map((item) => `${String(item?.assetId || "")}:${String(item?.revision || "")}`).join(",") : "none",
+        rasterEntries.length ? rasterEntries.map((entry) => `${String(entry?.id || "")}:${String(entry?.revision || "")}:${Number(entry?.zIndex || 0)}`).join(",") : "paint:none",
+        editor.showPanorama ? "panorama:1" : "panorama:0",
+        editor.showObjects ? "objects:1" : "objects:0",
+        editor.showMask ? "showMask:1" : "showMask:0",
+        normalizeCoverageValue(state.coverage),
+      ].join("|"),
+      backgroundSource: bgReady && editor.showPanorama ? bgImg : null,
+      backgroundRevision: bgReady ? `cutout_preview:${bgRevision}` : "",
+      coverageDeg: normalizeCoverageValue(state.coverage),
+      scene,
+      textures,
+      rasterEntries,
+      backgroundOpacity: 1,
+      showMaskTint: false,
+    });
+    const hasContent = bgReady || textures.length > 0 || rasterEntries.length > 0;
+    if (!hasContent) {
+      uiState.cameraPreview.ready = false;
+      uiState.cameraPreview.label = "Connect ERP image";
+      uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
+      uiState.cameraPreview.width = previewSize.width;
+      uiState.cameraPreview.height = previewSize.height;
+      cutoutPreviewCamera.clearScene();
+      cutoutPreviewMount.requestRender();
+      return;
+    }
+    cutoutPreviewCamera.syncScene(descriptor);
+    cutoutPreviewMount.setView(buildCutoutViewParamsFromShot(shot));
+    cutoutPreviewMount.requestRender();
+    uiState.cameraPreview.ready = true;
+    uiState.cameraPreview.label = "";
+    uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
+    uiState.cameraPreview.width = previewSize.width;
+    uiState.cameraPreview.height = previewSize.height;
   }
 
   function renderCutoutPreviewToContext(targetCtx, rect, shot, options = {}) {
-    return false;
+    if (!cutoutPreviewCamera || !shot) return false;
+    const bgImg = getConnectedErpImage();
+    const scene = buildModalBackgroundScene();
+    const textures = buildModalBackgroundTextures(scene);
+    const bgReady = !!bgImg
+      && !!bgImg.complete
+      && Number(bgImg.naturalWidth || bgImg.width || 0) > 1
+      && Number(bgImg.naturalHeight || bgImg.height || 0) > 1;
+    const rasterEntries = editor.showObjects
+      ? buildModalInterleavedLayerEntries()
+      : appendMaskDisplayLayerEntry([]);
+    const hasContent = bgReady || textures.length > 0 || rasterEntries.length > 0;
+    if (!hasContent) return false;
+    cutoutPreviewCamera.syncScene(buildPanoramaCompositeDescriptor({
+      stateRevision: getCutoutPreviewSurfaceRevision(shot, options),
+      backgroundSource: bgReady && editor.showPanorama ? bgImg : null,
+      backgroundRevision: bgReady ? String(bgImg.currentSrc || bgImg.src || "") : "",
+      coverageDeg: normalizeCoverageValue(state.coverage),
+      scene,
+      textures,
+      rasterEntries,
+      backgroundOpacity: 1,
+      showMaskTint: false,
+    }));
+    return cutoutPreviewCamera.renderShotToContext(targetCtx, rect, shot, options);
   }
 
   function projectErpStrokeToCurrentView(stroke) {
@@ -6019,10 +6207,13 @@ async function showEditor(node, type, options = {}) {
     if (editor.mode === "frame") drawFrameViewBackground();
     else if (editor.mode === "unwrap") drawGridUnwrap(false);
     else drawGridPano(false);
+    if (type === "cutout") drawCutoutOutputPreview();
     drawObjects();
     drawLassoOutlineOverlay();
     uiState.fovValue = `${Math.round(editor.viewFov)}°`;
-    updateSelectionMenu();
+    if (Math.abs(Number(editor.outputPreviewAnim || 0) - Number(editor.outputPreviewAnimTo || 0)) < 1e-6) {
+      updateSelectionMenu();
+    }
     if (!runtime.hasPresentedFrame) {
       runtime.hasPresentedFrame = true;
       backgroundCanvas.style.opacity = "1";
@@ -6626,7 +6817,45 @@ async function showEditor(node, type, options = {}) {
   }
 
   function addCutoutFrame() {
-    return;
+    if (readOnly || type !== "cutout") return;
+    const existing = getActiveCutoutShot();
+    if (existing) {
+      setSelectedItem(existing);
+      editor.mode = "pano";
+      startViewTween(
+        wrapYaw(Number(existing.yaw_deg || 0)),
+        clamp(Number(existing.pitch_deg || 0), -89.9, 89.9),
+        editor.viewFov,
+      );
+      updateSidePanel();
+      updateSelectionMenu();
+      requestDraw({ cause: "cutout_frame" });
+      return;
+    }
+    const aspect = Math.max(0.1, Number(canvas?.width || 1) / Math.max(1, Number(canvas?.height || 1)));
+    // New frames should appear clearly inside the current panorama view,
+    // not consume the whole visible area on spawn.
+    const baseViewFov = clamp(Number(editor.viewFov || 90), 1, 179);
+    const hFOV = clamp(Math.min(42, baseViewFov * 0.42), 8, 96);
+    const vFOV = clamp(RAD2DEG * (2 * Math.atan(Math.tan(hFOV * DEG2RAD * 0.5) / Math.max(0.1, aspect))), 6, 72);
+    const shot = normalizeCutoutShotItem({
+      id: `frame_${Date.now().toString(36)}`,
+      label: "Frame 1",
+      yaw_deg: wrapYaw(Number(editor.viewYaw || 0)),
+      pitch_deg: clamp(Number(editor.viewPitch || 0), -89.9, 89.9),
+      roll_deg: 0,
+      hFOV_deg: hFOV,
+      vFOV_deg: vFOV,
+      locked: false,
+    });
+    state.shots = [shot];
+    setSelectedItem(shot);
+    editor.mode = "pano";
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    updateSelectionMenu();
+    requestDraw({ cause: "cutout_frame" });
   }
 
   function clearCutoutFrame() {
@@ -7089,15 +7318,40 @@ async function showEditor(node, type, options = {}) {
 
   function getActiveCutoutShot() {
     if (type !== "cutout") return null;
-    return null;
+    const shots = Array.isArray(state.shots) ? state.shots : [];
+    if (!shots.length) return null;
+    const selectedId = String(state.active.selected_shot_id || "");
+    return shots.find((item) => String(item?.id || "") === selectedId) || shots[0] || null;
   }
 
   function getFrameViewRect(shot = getActiveCutoutShot()) {
-    return null;
+    if (!shot || !canvas) return null;
+    const outer = {
+      x: 24,
+      y: 24,
+      w: Math.max(1, Number(canvas.width || 0) - 48),
+      h: Math.max(1, Number(canvas.height || 0) - 48),
+    };
+    const aspect = clamp(deriveCutoutAspectFromFov(shot), 0.1, 10.0);
+    let width = outer.w;
+    let height = Math.max(1, Math.round(width / aspect));
+    if (height > outer.h) {
+      height = outer.h;
+      width = Math.max(1, Math.round(height * aspect));
+    }
+    const zoom = Math.max(0.1, Number(editor.frameView?.zoom || 1));
+    width *= zoom;
+    height *= zoom;
+    return {
+      x: Math.round(outer.x + (outer.w - width) * 0.5 + Number(editor.frameView?.panX || 0)),
+      y: Math.round(outer.y + (outer.h - height) * 0.5 + Number(editor.frameView?.panY || 0)),
+      w: Math.max(1, Math.round(width)),
+      h: Math.max(1, Math.round(height)),
+    };
   }
 
   function supportsFramePainting() {
-    return false;
+    return type === "cutout" && !!getActiveCutoutShot();
   }
 
   function screenPosToErpPoint(pos, ts = performance.now()) {
@@ -8089,8 +8343,8 @@ async function showEditor(node, type, options = {}) {
     }
     uiState.selectionMenu = {
       visible: true,
-      left: model.left,
-      top: model.top,
+      left: uiState.selectionMenu?.left ?? model.left ?? 0,
+      top: uiState.selectionMenu?.top ?? model.top ?? 0,
       items: model.items,
     };
     requestAnimationFrame(() => {
@@ -9202,6 +9456,7 @@ async function showEditor(node, type, options = {}) {
         else if (action === "redo") restoreHistory(1);
         else if (action === "clear") clearAll();
         else if (action === "add" || action === "add-image") addImageSticker();
+        else if (action === "add-or-look") addCutoutFrame();
         return;
       }
       if (actionTarget.matches("[data-paint-tool]")) {
@@ -9569,6 +9824,8 @@ async function showEditor(node, type, options = {}) {
     hideTooltip();
     stopRenderLoop();
     modalPanoCore?.dispose?.();
+    cutoutPreviewMount?.unmount?.();
+    cutoutPreviewCamera?.dispose?.();
     setDropCue(false);
     window.removeEventListener("keydown", onEscClose, true);
     window.removeEventListener("keydown", onDeleteKey, true);

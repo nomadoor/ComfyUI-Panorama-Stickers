@@ -217,7 +217,7 @@ export function buildSelectionMenuModel({
         open: !!cutoutAspectOpen,
         choices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value, active: activeAspect === value })),
       },
-      { key: "rotate-90", kind: "button", action: "rotate-90", label: "Rotate 90°", tip: "Rotate 90°", icon: iconSet.rotate_90 },
+      { key: "rotate-90", kind: "button", action: "rotate-90", label: "Toggle Portrait/Landscape", tip: "Toggle portrait/landscape", icon: iconSet.rotate_90 },
       { key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed },
       { key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete },
     ];
