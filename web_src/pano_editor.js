@@ -54,7 +54,6 @@ const LASSO_CURSOR_HOTSPOT_X = 4;
 const LASSO_CURSOR_HOTSPOT_Y = 4;
 
 // Global registry: nodeId → Promise for in-flight paint layer uploads.
-// beforeQueuePrompt waits for all pending promises before sending the graph.
 const _paintLayerUploadRegistry = new Map();
 const _paintLayerSyncRegistry = new Map();
 const _stickerAssetUploadRegistry = new Map();
@@ -1097,8 +1096,8 @@ function hideWidget(node, widgetName) {
     w.type = "hidden";
     w.hidden = true;
     w.options = { ...(w.options || {}), hidden: true };
-    if (w.inputEl?.style) w.inputEl.style.display = "none";
-    if (w.parentEl?.style) w.parentEl.style.display = "none";
+      if (w.element?.style) w.element.style.display = "none";
+      if (w.parentEl?.style) w.parentEl.style.display = "none";
   });
 }
 
@@ -1111,7 +1110,7 @@ function ensureActionButtonWidget(node, buttonText, callback) {
     widget.hidden = false;
     widget.__panoHidden = false;
     widget.type = "button";
-    if (widget.inputEl?.style) widget.inputEl.style.display = "";
+    if (widget.element?.style) widget.element.style.display = "";
     if (widget.parentEl?.style) widget.parentEl.style.display = "";
     if (typeof widget.computeSize !== "function" || widget.computeSize() == null || widget.hidden) {
       widget.computeSize = () => [Math.max(120, Number(node?.size?.[0] || 0) - 20), 30];
@@ -1735,7 +1734,7 @@ async function showEditor(node, type, options = {}) {
       cssColor: colorToCss(swatch.color, 1),
     })),
     uiState,
-    onClose: () => closeEditor(),
+    onClose: () => { void closeEditor(); },
   });
   try {
     vueApp.mount(mountHost);
@@ -3718,7 +3717,9 @@ async function showEditor(node, type, options = {}) {
     const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
     const body = new FormData();
     body.append("image", blob, filename);
-    body.append("type", "temp");
+    // Cutout export resolves these layers on the backend during prompt execution,
+    // so store them like other editor assets instead of relying on temp lifetime.
+    body.append("type", "input");
     body.append("subfolder", "panorama_stickers");
     body.append("overwrite", "1");
     const resp = await api.fetchApi("/upload/image", { method: "POST", body });
@@ -7289,6 +7290,15 @@ async function showEditor(node, type, options = {}) {
     node.setDirtyCanvas?.(true, true);
   }
 
+  function triggerBackgroundPersistenceOnClose() {
+    if (readOnly) return;
+    if (needsPaintingLayerSync()) {
+      void syncPaintingLayerAsync().catch((error) => {
+        console.error("[PanoramaPaintingLayerSync] background close sync failed", error);
+      });
+    }
+  }
+
   function syncCoverageChangeToNodePreviews(options = {}) {
     const syncPreview = options.syncPreview !== false;
     const syncGraph = options.syncGraph !== false;
@@ -9400,16 +9410,16 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (action === "close-preview") {
-      closeEditor();
+      void closeEditor();
       return;
     }
     if (action === "cancel-close") {
-      closeEditor();
+      void closeEditor();
       return;
     }
     if (action === "save-close") {
       apply();
-      closeEditor();
+      void closeEditor();
     }
   });
   side?.addEventListener("input", (ev) => {
@@ -9818,47 +9828,54 @@ async function showEditor(node, type, options = {}) {
   }
   if (!readOnly) {
     _paintLayerSyncRegistry.set(String(node.id ?? "0"), () => syncPaintingLayerAsync());
-    if (needsPaintingLayerSync()) {
-      syncPaintingLayerAsync();
-    }
   }
 
-  const closeEditor = () => {
-    _paintLayerSyncRegistry.delete(String(node.id ?? "0"));
-    if (!readOnly) {
-      syncPaintingLayerAsync();
-    }
-    if (document.fullscreenElement === overlay) {
-      document.exitFullscreen?.().catch(() => { });
-    }
-    document.removeEventListener("fullscreenchange", onFullscreenChange);
-    node.__panoLiveStateOverride = null;
-    node.__panoLivePaintSurface = null;
-    node.__panoDomPreview?.requestDraw?.();
-    node.graph?.setDirtyCanvas?.(true, true);
-    app?.canvas?.setDirty?.(true, true);
-    hideTooltip();
-    stopRenderLoop();
-    modalPanoCore?.dispose?.();
-    cutoutPreviewMount?.unmount?.();
-    cutoutPreviewCamera?.dispose?.();
-    setDropCue(false);
-    window.removeEventListener("keydown", onEscClose, true);
-    window.removeEventListener("keydown", onDeleteKey, true);
-    window.removeEventListener("keydown", onModifierKeyChange, true);
-    window.removeEventListener("keyup", onModifierKeyChange, true);
-    window.removeEventListener("keydown", onUndoRedoKey, true);
-    window.removeEventListener("dragenter", onWindowDragEnter, true);
-    window.removeEventListener("dragover", onWindowDragOver, true);
-    window.removeEventListener("dragleave", onWindowDragLeave, true);
-    window.removeEventListener("drop", onWindowDrop, true);
-    if (!readOnly && type === "stickers") {
-      if (node.onExecuted === modalOnExecuted) node.onExecuted = modalPrevOnExecuted;
-      if (node.onConnectionsChange === modalOnConnectionsChange) node.onConnectionsChange = modalPrevOnConnectionsChange;
-      if (node.__panoExternalStickerSync === modalExternalStickerSync) node.__panoExternalStickerSync = null;
-    }
-    vueApp.unmount();
-    mountHost.remove();
+  let closeEditorPromise = null;
+  const closeEditor = async () => {
+    if (closeEditorPromise) return closeEditorPromise;
+    closeEditorPromise = (async () => {
+      _paintLayerSyncRegistry.delete(String(node.id ?? "0"));
+      if (!readOnly) commitState();
+      if (document.fullscreenElement === overlay) {
+        document.exitFullscreen?.().catch(() => { });
+      }
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      node.__panoLiveStateOverride = null;
+      node.__panoLivePaintSurface = null;
+      node.__panoDomPreview?.requestDraw?.();
+      node.graph?.setDirtyCanvas?.(true, true);
+      app?.canvas?.setDirty?.(true, true);
+      hideTooltip();
+      stopRenderLoop();
+      modalPanoCore?.dispose?.();
+      cutoutPreviewMount?.unmount?.();
+      cutoutPreviewCamera?.dispose?.();
+      setDropCue(false);
+      window.removeEventListener("keydown", onEscClose, true);
+      window.removeEventListener("keydown", onDeleteKey, true);
+      window.removeEventListener("keydown", onModifierKeyChange, true);
+      window.removeEventListener("keyup", onModifierKeyChange, true);
+      window.removeEventListener("keydown", onUndoRedoKey, true);
+      window.removeEventListener("dragenter", onWindowDragEnter, true);
+      window.removeEventListener("dragover", onWindowDragOver, true);
+      window.removeEventListener("dragleave", onWindowDragLeave, true);
+      window.removeEventListener("drop", onWindowDrop, true);
+      if (!readOnly && type === "stickers") {
+        if (node.onExecuted === modalOnExecuted) node.onExecuted = modalPrevOnExecuted;
+        if (node.onConnectionsChange === modalOnConnectionsChange) node.onConnectionsChange = modalPrevOnConnectionsChange;
+        if (node.__panoExternalStickerSync === modalExternalStickerSync) node.__panoExternalStickerSync = null;
+      }
+      vueApp.unmount();
+      mountHost.remove();
+      triggerBackgroundPersistenceOnClose();
+      closeEditorPromise = null;
+      return true;
+    })().catch((error) => {
+      console.error("[PanoramaCutoutSync] closeEditor failed", error);
+      closeEditorPromise = null;
+      return false;
+    });
+    return closeEditorPromise;
   };
   const onEscClose = (ev) => {
     if (ev.key !== "Escape") return;
@@ -9879,7 +9896,7 @@ async function showEditor(node, type, options = {}) {
     ev.preventDefault();
     ev.stopPropagation();
     ev.stopImmediatePropagation?.();
-    closeEditor();
+    void closeEditor();
   };
   const onDeleteKey = (ev) => {
     const key = String(ev.key || "");
@@ -9924,7 +9941,7 @@ async function showEditor(node, type, options = {}) {
   window.addEventListener("keyup", onModifierKeyChange, true);
   window.addEventListener("keydown", onUndoRedoKey, true);
   overlay.addEventListener("pointerdown", (ev) => {
-    if (ev.target === overlay) closeEditor();
+    if (ev.target === overlay) void closeEditor();
   });
 
   applyInitialCutoutFocus();
@@ -10097,29 +10114,6 @@ function installStandalonePreviewInstance(node) {
 
 app.registerExtension({
   name: "ComfyUI.PanoramaSuite.Editor",
-  async beforeQueuePrompt() {
-    const requested = [..._paintLayerSyncRegistry.values()]
-      .map((fn) => {
-        try {
-          return typeof fn === "function" ? fn() : null;
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
-    if (requested.length > 0) {
-      await Promise.allSettled(requested);
-    }
-    // Wait for all in-flight paint layer uploads before sending the prompt.
-    const pending = [..._paintLayerUploadRegistry.values()];
-    if (pending.length > 0) {
-      await Promise.allSettled(pending);
-    }
-    const pendingStickerUploads = [..._stickerAssetUploadRegistry.values()];
-    if (pendingStickerUploads.length > 0) {
-      await Promise.allSettled(pendingStickerUploads);
-    }
-  },
   beforeRegisterNodeDef(nodeType, nodeData) {
     const name = String(nodeData?.name || "");
     if (name === "PanoramaStickers" || name === "Panorama Stickers") {

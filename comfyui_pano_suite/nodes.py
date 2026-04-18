@@ -2,6 +2,7 @@ import json
 import math
 from pathlib import Path
 import logging
+import time
 
 import numpy as np
 import torch
@@ -15,7 +16,7 @@ except ImportError:
     nodes = None
 
 from .comfy_image_resolver import resolve_painting_layer_payload
-from .core.cutout import cutout_from_erp
+from .core.cutout import build_cutout_sampling_map, cutout_from_erp, sample_cutout_from_sampling_map
 from .core.math import (
     calculate_dimensions_from_megapixels,
     calculate_output_dimensions,
@@ -29,7 +30,7 @@ from .core.painting import (
     render_painting_to_erp,
 )
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
-from .core.stickers import compose_stickers_to_erp
+from .core.stickers import compose_single_sticker_to_canvas_erp, compose_stickers_to_erp
 from .core.stickers import render_stickers_to_rgba_erp
 
 
@@ -424,6 +425,23 @@ def _build_remaining_flat_painting_state(painting: dict | None) -> dict | None:
     }
 
 
+def _build_visual_paint_only_state(painting: dict | None) -> dict | None:
+    if not isinstance(painting, dict):
+        return None
+    paint_layer = painting.get("paint") if isinstance(painting.get("paint"), dict) else {}
+    paint_strokes = paint_layer.get("strokes") if isinstance(paint_layer.get("strokes"), list) else []
+    raster_objects = painting.get("raster_objects") if isinstance(painting.get("raster_objects"), list) else []
+    groups = painting.get("groups") if isinstance(painting.get("groups"), list) else []
+    if not paint_strokes and not raster_objects:
+        return None
+    return {
+        "paint": {"strokes": [stroke for stroke in paint_strokes if isinstance(stroke, dict)]},
+        "mask": {"strokes": []},
+        "groups": [group for group in groups if isinstance(group, dict)],
+        "raster_objects": [item for item in raster_objects if isinstance(item, dict)],
+    }
+
+
 def _render_remaining_flat_paint_layer_from_state(painting: dict | None, width: int, height: int):
     remainder = _build_remaining_flat_painting_state(painting)
     if remainder is None:
@@ -439,50 +457,105 @@ def _compose_display_list_to_erp(
     painting_payload: dict | None = None,
     base_dir: Path | None = None,
     quality: str = "export",
-) -> tuple[np.ndarray, bool]:
+) -> tuple[np.ndarray, bool, dict]:
     canvas = np.clip(base_rgb.astype(np.float32), 0.0, 1.0)
     payload = painting_payload if isinstance(painting_payload, dict) else None
     group_layers = payload.get("groups", {}) if payload else {}
-    painting = state.get("painting") if isinstance(state.get("painting"), dict) else {}
     used_paint_entries = False
+    allow_backend_paint_fallback = bool(payload and (
+        payload.get("paint") is not None
+        or payload.get("mask") is not None
+        or group_layers
+    ))
+    assets = state.get("assets") if isinstance(state.get("assets"), dict) else {}
+    coverage = state.get("coverage", 360)
+    stats = {
+        "entries": 0,
+        "stickers": 0,
+        "stroke_groups": 0,
+        "rasters": 0,
+        "sticker_ms": 0.0,
+        "stroke_group_ms": 0.0,
+        "raster_ms": 0.0,
+    }
     for entry in _get_display_list_entries(state):
+        stats["entries"] += 1
         entry_type = str(entry.get("type") or "")
         if entry_type == "sticker":
-            canvas = compose_stickers_to_erp(
-                state=state,
-                output_w=int(canvas.shape[1]),
-                output_h=int(canvas.shape[0]),
-                bg_erp=canvas,
+            item_start = time.perf_counter()
+            compose_single_sticker_to_canvas_erp(
+                canvas,
+                entry.get("item"),
+                assets,
                 base_dir=base_dir,
                 quality=quality,
-                stickers_override=[entry.get("item")],
+                coverage=coverage,
             )
+            stats["stickers"] += 1
+            stats["sticker_ms"] += (time.perf_counter() - item_start) * 1000.0
+            continue
+        if not allow_backend_paint_fallback:
             continue
         layer = None
         if entry_type == "strokeGroup":
+            item_start = time.perf_counter()
             action_group_id = str(entry.get("actionGroupId") or "").strip()
             layer = group_layers.get(action_group_id)
-            if layer is None:
-                layer = _render_group_layer_from_state(painting, action_group_id, int(canvas.shape[1]), int(canvas.shape[0]))
+            stats["stroke_groups"] += 1
+            stats["stroke_group_ms"] += (time.perf_counter() - item_start) * 1000.0
         elif entry_type == "rasterObject":
+            item_start = time.perf_counter()
             layer = _render_raster_layer_from_state(entry.get("item"), int(canvas.shape[1]), int(canvas.shape[0]))
+            stats["rasters"] += 1
+            stats["raster_ms"] += (time.perf_counter() - item_start) * 1000.0
         if layer is None:
             continue
         canvas = alpha_composite_over_rgb(canvas, layer)
         used_paint_entries = True
-    return canvas, used_paint_entries
+    return canvas, used_paint_entries, stats
 
 
 def _alpha_composite_over_rgba(base_rgba: np.ndarray, overlay_rgba: np.ndarray) -> np.ndarray:
     if base_rgba is None:
         return np.clip(overlay_rgba.astype(np.float32), 0.0, 1.0)
-    dst = np.clip(base_rgba.astype(np.float32), 0.0, 1.0)
-    src = np.clip(overlay_rgba.astype(np.float32), 0.0, 1.0)
-    src_a = src[..., 3:4]
-    dst_a = dst[..., 3:4]
+    dst = base_rgba.astype(np.float32, copy=False)
+    src = overlay_rgba.astype(np.float32, copy=False)
+    if src.ndim != 3 or src.shape[-1] != 4:
+        return dst
+    src_alpha = src[..., 3]
+    alpha_pixels = np.argwhere(src_alpha > 1e-6)
+    if alpha_pixels.size == 0:
+        return dst
+    y0, x0 = alpha_pixels.min(axis=0)
+    y1, x1 = alpha_pixels.max(axis=0) + 1
+    dst_roi = dst[y0:y1, x0:x1]
+    src_roi = src[y0:y1, x0:x1]
+    src_a = np.clip(src_roi[..., 3:4], 0.0, 1.0)
+    if float(np.max(src_a)) <= 1e-6:
+        return dst
+    src_rgb = np.clip(src_roi[..., :3], 0.0, 1.0)
+    dst_a = np.clip(dst_roi[..., 3:4], 0.0, 1.0)
+    dst_rgb = np.clip(dst_roi[..., :3], 0.0, 1.0)
     out_a = src_a + dst_a * (1.0 - src_a)
-    out_rgb = src[..., :3] * src_a + dst[..., :3] * (1.0 - src_a)
-    return np.concatenate([out_rgb, out_a], axis=-1).astype(np.float32)
+    numer_rgb = src_rgb * src_a + dst_rgb * dst_a * (1.0 - src_a)
+    safe_out_a = np.maximum(out_a, 1e-6)
+    out_rgb = np.where(out_a > 1e-6, numer_rgb / safe_out_a, 0.0)
+    dst_roi[..., :3] = out_rgb
+    dst_roi[..., 3:4] = out_a
+    return dst
+
+
+def _sample_overlay_rgba_from_sampling_map(overlay_rgba: np.ndarray, sampling_map: dict) -> np.ndarray:
+    if overlay_rgba is None or overlay_rgba.ndim != 3 or overlay_rgba.shape[-1] != 4:
+        return np.zeros((int(sampling_map["out_h"]), int(sampling_map["out_w"]), 4), dtype=np.float32)
+    src = np.clip(overlay_rgba.astype(np.float32, copy=False), 0.0, 1.0)
+    alpha = np.clip(src[..., 3], 0.0, 1.0)
+    premult = src[..., :3] * alpha[..., None]
+    warped_premult = sample_cutout_from_sampling_map(premult, sampling_map)
+    warped_alpha = sample_cutout_from_sampling_map(alpha, sampling_map)
+    safe_alpha = np.maximum(warped_alpha[..., None], 1e-6)
+    warped_rgb = np.where(warped_alpha[..., None] > 1e-6, warped_premult / safe_alpha, 0.0)
+    return np.dstack([np.clip(warped_rgb, 0.0, 1.0), np.clip(warped_alpha, 0.0, 1.0)]).astype(np.float32)
 
 
 def _compose_display_list_to_overlay_rgba(
@@ -493,7 +566,7 @@ def _compose_display_list_to_overlay_rgba(
     painting_payload: dict | None = None,
     base_dir: Path | None = None,
     quality: str = "export",
-) -> tuple[np.ndarray, bool]:
+) -> tuple[np.ndarray, bool, dict]:
     canvas = np.zeros((height, width, 4), dtype=np.float32)
     payload = painting_payload if isinstance(painting_payload, dict) else None
     group_layers = payload.get("groups", {}) if payload else {}
@@ -501,10 +574,23 @@ def _compose_display_list_to_overlay_rgba(
     used_paint_entries = False
     sticker_state = dict(state)
     sticker_state["coverage"] = 360
+    stats = {
+        "entries": 0,
+        "stickers": 0,
+        "stroke_groups": 0,
+        "rasters": 0,
+        "sticker_ms": 0.0,
+        "stroke_group_ms": 0.0,
+        "raster_ms": 0.0,
+        "group_payload_hits": 0,
+        "group_fallback_renders": 0,
+    }
     for entry in _get_display_list_entries(state):
+        stats["entries"] += 1
         entry_type = str(entry.get("type") or "")
         layer = None
         if entry_type == "sticker":
+            item_start = time.perf_counter()
             layer = render_stickers_to_rgba_erp(
                 sticker_state,
                 width,
@@ -514,18 +600,29 @@ def _compose_display_list_to_overlay_rgba(
                 stickers_override=[entry.get("item")],
                 coverage_override=360,
             )
+            stats["stickers"] += 1
+            stats["sticker_ms"] += (time.perf_counter() - item_start) * 1000.0
         elif entry_type == "strokeGroup":
+            item_start = time.perf_counter()
             action_group_id = str(entry.get("actionGroupId") or "").strip()
             layer = group_layers.get(action_group_id)
             if layer is None:
                 layer = _render_group_layer_from_state(painting, action_group_id, width, height)
+                stats["group_fallback_renders"] += 1
+            else:
+                stats["group_payload_hits"] += 1
+            stats["stroke_groups"] += 1
+            stats["stroke_group_ms"] += (time.perf_counter() - item_start) * 1000.0
         elif entry_type == "rasterObject":
+            item_start = time.perf_counter()
             layer = _render_raster_layer_from_state(entry.get("item"), width, height)
+            stats["rasters"] += 1
+            stats["raster_ms"] += (time.perf_counter() - item_start) * 1000.0
         if layer is None:
             continue
         canvas = _alpha_composite_over_rgba(canvas, layer)
         used_paint_entries = True
-    return canvas, used_paint_entries
+    return canvas, used_paint_entries, stats
 
 
 def _should_use_uploaded_group_layers(state: dict, painting_payload: dict | None) -> bool:
@@ -709,7 +806,7 @@ class PanoramaStickersNode(io.ComfyNode):
         )
         overlay_state = dict(render_state)
         overlay_state["coverage"] = 360
-        overlay_rgba, used_group_layers = _compose_display_list_to_overlay_rgba(
+        overlay_rgba, used_group_layers, _overlay_stats_unused = _compose_display_list_to_overlay_rgba(
             overlay_state,
             workspace_w,
             workspace_h,
@@ -803,8 +900,24 @@ class PanoramaCutoutNode(io.ComfyNode):
             max_side=cls.MAX_OUTPUT_SIDE,
         )
 
+    @staticmethod
+    def _log_timing(label: str, start_ts: float, extra: str = "") -> float:
+        now = time.perf_counter()
+        suffix = f" {extra}" if extra else ""
+        print(f"[PanoramaCutoutTiming] {label}: {(now - start_ts) * 1000.0:.1f}ms{suffix}")
+        return now
+
+    @staticmethod
+    def _payload_has_layers(payload: dict | None) -> bool:
+        return isinstance(payload, dict) and (
+            payload.get("paint") is not None
+            or payload.get("mask") is not None
+            or bool(payload.get("groups"))
+        )
+
     @classmethod
     def execute(cls, erp_image, coverage, state_json, output_megapixels=1.0):
+        run_start = time.perf_counter()
         output_megapixels = max(0.01, finite_float(output_megapixels, 1.0))
         state = merge_state(state_in=None, internal_state=state_json)
         coverage_value = normalize_coverage(coverage)
@@ -844,7 +957,7 @@ class PanoramaCutoutNode(io.ComfyNode):
                 erp_width=ow,
                 erp_height=oh,
             )
-            out, used_group_layers = _compose_display_list_to_erp(
+            out, used_group_layers, _compose_stats_unused = _compose_display_list_to_erp(
                 state,
                 src,
                 painting_payload=painting_payload,
@@ -901,83 +1014,116 @@ class PanoramaCutoutNode(io.ComfyNode):
         empty_mask = torch.zeros((1, oh, ow), dtype=torch.float32)
 
         try:
+            stage_ts = time.perf_counter()
             painting_payload = resolve_painting_layer_payload(
                 state.get("painting_layer"),
                 erp_width=int(src.shape[1]),
                 erp_height=int(src.shape[0]),
             )
-            src, used_group_layers = _compose_display_list_to_erp(
-                state,
-                src,
+            stage_ts = cls._log_timing(
+                "resolve_painting_layer_payload",
+                stage_ts,
+                f"payload_revision={bool(isinstance(painting_payload, dict) and str(painting_payload.get('revision') or '').strip())} payload_has_layers={cls._payload_has_layers(painting_payload)}",
+            )
+            sampling_map = build_cutout_sampling_map(
+                src.shape,
+                yaw,
+                pitch,
+                hfov,
+                vfov,
+                roll,
+                ow,
+                oh,
+                coverage_value,
+            )
+            stage_ts = cls._log_timing("build_cutout_sampling_map", stage_ts, f"out={ow}x{oh}")
+            out = sample_cutout_from_sampling_map(src, sampling_map)
+            stage_ts = cls._log_timing("sample_cutout_from_sampling_map", stage_ts)
+            used_group_layers = False
+            painting_state = state.get("painting")
+            overlay_rgba = None
+            overlay_state = dict(state)
+            overlay_state["coverage"] = 360
+            overlay_rgba, used_group_layers, overlay_stats = _compose_display_list_to_overlay_rgba(
+                overlay_state,
+                int(src.shape[1]),
+                int(src.shape[0]),
                 painting_payload=painting_payload,
                 base_dir=Path.cwd(),
                 quality="export",
             )
-            out = cutout_from_erp(src, yaw, pitch, hfov, vfov, roll, ow, oh, coverage_value)
-            if out.ndim != 3 or out.shape[-1] != 3:
-                out = np.zeros((oh, ow, 3), dtype=np.float32)
-            painting_state = state.get("painting")
-            if painting_state_has_renderables(painting_state):
-                payload_has_revision = isinstance(painting_payload, dict) and bool(str(painting_payload.get("revision") or "").strip())
-                if not payload_has_revision:
-                    _push_ui_warning(
-                        ui_ret,
-                        "pano_cutout_warnings",
-                        "Cutout export fell back to backend stroke rendering because uploaded paint layers were unavailable.",
-                    )
-            if painting_state_has_renderables(painting_state):
-                if used_group_layers:
-                    paint_rgba, _paint_mask_unused = render_painting_to_cutout(
-                        _build_remaining_flat_painting_state(painting_state),
-                        shot,
-                        ow,
-                        oh,
-                        erp_width=src.shape[1],
-                        erp_height=src.shape[0],
-                        painting_layer_payload=None,
-                        coverage=coverage_value,
-                    )
-                    _paint_unused, mask_bw = render_painting_to_cutout(
-                        state.get("painting"),
-                        shot,
-                        ow,
-                        oh,
-                        erp_width=src.shape[1],
-                        erp_height=src.shape[0],
-                        painting_layer_payload=painting_payload,
-                        coverage=coverage_value,
-                    )
+            stage_ts = cls._log_timing(
+                "compose_display_list_to_overlay_rgba",
+                stage_ts,
+                " ".join([
+                    f"used_group_layers={used_group_layers}",
+                    f"entries={int(overlay_stats.get('entries', 0))}",
+                    f"stickers={int(overlay_stats.get('stickers', 0))}",
+                    f"sticker_ms={float(overlay_stats.get('sticker_ms', 0.0)):.1f}",
+                    f"stroke_groups={int(overlay_stats.get('stroke_groups', 0))}",
+                    f"stroke_group_ms={float(overlay_stats.get('stroke_group_ms', 0.0)):.1f}",
+                    f"group_payload_hits={int(overlay_stats.get('group_payload_hits', 0))}",
+                    f"group_fallback_renders={int(overlay_stats.get('group_fallback_renders', 0))}",
+                    f"rasters={int(overlay_stats.get('rasters', 0))}",
+                    f"raster_ms={float(overlay_stats.get('raster_ms', 0.0)):.1f}",
+                ]),
+            )
+            remaining_flat_rgba = _render_remaining_flat_paint_layer_from_state(
+                painting_state,
+                int(src.shape[1]),
+                int(src.shape[0]),
+            )
+            if remaining_flat_rgba is not None:
+                if overlay_rgba is None:
+                    overlay_rgba = remaining_flat_rgba.astype(np.float32, copy=False)
                 else:
-                    paint_rgba, mask_bw = render_painting_to_cutout(
-                        state.get("painting"),
-                        shot,
-                        ow,
-                        oh,
-                        erp_width=src.shape[1],
-                        erp_height=src.shape[0],
-                        painting_layer_payload=painting_payload,
-                        coverage=coverage_value,
-                    )
+                    overlay_rgba = _alpha_composite_over_rgba(overlay_rgba, remaining_flat_rgba)
+                stage_ts = cls._log_timing("render_remaining_flat_paint_to_erp", stage_ts)
+            if isinstance(overlay_rgba, np.ndarray):
+                overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
+                out = alpha_composite_over_rgb(out, overlay_cutout)
+                stage_ts = cls._log_timing("sample_overlay_from_sampling_map", stage_ts)
+            paint_stroke_count = len(painting_state.get("paint", {}).get("strokes") or []) if isinstance(painting_state, dict) else 0
+            mask_stroke_count = len(painting_state.get("mask", {}).get("strokes") or []) if isinstance(painting_state, dict) else 0
+            raster_objects = painting_state.get("raster_objects") if isinstance(painting_state, dict) else []
+            paint_raster_count = 0
+            mask_raster_count = 0
+            if isinstance(raster_objects, list):
+                for item in raster_objects:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("layerKind") or "paint") == "mask":
+                        mask_raster_count += 1
+                    else:
+                        paint_raster_count += 1
+            payload_mask = painting_payload.get("mask") if isinstance(painting_payload, dict) else None
+            stage_ts = cls._log_timing(
+                "painting_mask_contract",
+                stage_ts,
+                (
+                    f"payload_mask={isinstance(payload_mask, np.ndarray)} "
+                    f"paint_strokes={paint_stroke_count} "
+                    f"mask_strokes={mask_stroke_count} "
+                    f"paint_rasters={paint_raster_count} "
+                    f"mask_rasters={mask_raster_count}"
+                ),
+            )
+            if isinstance(payload_mask, np.ndarray):
+                mask_bw = sample_cutout_from_sampling_map(payload_mask, sampling_map)
+                stage_ts = cls._log_timing("sample_mask_from_sampling_map", stage_ts)
             else:
-                paint_rgba = np.zeros((oh, ow, 4), dtype=np.float32)
                 mask_bw = np.zeros((oh, ow), dtype=np.float32)
-            if paint_rgba is not None:
-                out = alpha_composite_over_rgb(out, paint_rgba)
             out_t = torch.from_numpy(out)[None, ...]
             mask_t = torch.from_numpy(mask_bw.astype(np.float32))[None, ...]
+            cls._log_timing(
+                "total_execute",
+                run_start,
+                f"used_group_layers={used_group_layers} has_paint={painting_state_has_renderables(painting_state)} out={ow}x{oh}",
+            )
             return io.NodeOutput(out_t, sticker_state_json, mask_t, ui=ui_ret)
         except Exception as ex:
-            print(f"[PanoramaCutout] run failed, fallback passthrough: {ex}")
-            try:
-                if erp_image is not None and hasattr(erp_image, "shape") and len(erp_image.shape) == 4 and int(erp_image.shape[0]) > 0:
-                    t = erp_image[..., :3].to(dtype=torch.float32)
-                    t = t.permute(0, 3, 1, 2)
-                    t = F.interpolate(t, size=(oh, ow), mode="bilinear", align_corners=False)
-                    t = t.permute(0, 2, 3, 1).clamp(0.0, 1.0)
-                    return io.NodeOutput(t[:1], sticker_state_json, empty_mask, ui=ui_ret)
-            except Exception as ex2:
-                print(f"[PanoramaCutout] fallback resize failed: {ex2}")
-            return io.NodeOutput(torch.zeros((1, oh, ow, 3), dtype=torch.float32), sticker_state_json, empty_mask, ui=ui_ret)
+            print(f"[PanoramaCutout] strict export failed: {ex}")
+            raise
 
 
 class PanoramaPreviewNode(io.ComfyNode):

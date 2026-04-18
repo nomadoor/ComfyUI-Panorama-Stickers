@@ -3,6 +3,7 @@ import io
 import numpy as np
 from PIL import Image
 
+from comfyui_pano_suite.core.cutout import build_cutout_sampling_map, cutout_from_erp, sample_cutout_from_sampling_map
 from comfyui_pano_suite.core.painting import (
     _uv_bbox_to_pixels,
     painting_state_has_renderables,
@@ -123,6 +124,33 @@ def test_render_painting_to_cutout_projects_raster_objects_into_frame():
     center_y, center_x = alpha_nonzero.mean(axis=0)
     assert 48 <= center_x <= 80
     assert 40 <= center_y <= 88
+
+
+def test_cutout_sampling_map_matches_direct_cutout_render():
+    erp = np.zeros((64, 128, 3), dtype=np.float32)
+    erp[:, :, 1] = np.linspace(0.0, 1.0, 128, dtype=np.float32)[None, :]
+    shot = {
+        "id": "frame_sampling",
+        "yaw_deg": 5.0,
+        "pitch_deg": -3.0,
+        "roll_deg": 8.0,
+        "hFOV_deg": 80.0,
+        "vFOV_deg": 60.0,
+    }
+    sampling_map = build_cutout_sampling_map(
+        erp.shape,
+        shot["yaw_deg"],
+        shot["pitch_deg"],
+        shot["hFOV_deg"],
+        shot["vFOV_deg"],
+        shot["roll_deg"],
+        96,
+        72,
+        360,
+    )
+    direct = cutout_from_erp(erp, 5.0, -3.0, 80.0, 60.0, 8.0, 96, 72, 360)
+    mapped = sample_cutout_from_sampling_map(erp, sampling_map)
+    assert np.allclose(direct, mapped, atol=1e-5)
 
 
 def test_uv_bbox_to_pixels_keeps_thin_non_wrapping_bbox_non_wrapped():

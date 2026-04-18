@@ -131,7 +131,9 @@ def _alpha_over_rgba(dst_rgba: np.ndarray, src_rgba: np.ndarray) -> np.ndarray:
     src_a = np.clip(src_rgba[..., 3:4], 0.0, 1.0)
     dst_a = np.clip(dst_rgba[..., 3:4], 0.0, 1.0)
     out_a = src_a + dst_a * (1.0 - src_a)
-    out_rgb = src_rgba[..., :3] * src_a + dst_rgba[..., :3] * (1.0 - src_a)
+    numer_rgb = src_rgba[..., :3] * src_a + dst_rgba[..., :3] * dst_a * (1.0 - src_a)
+    safe_out_a = np.maximum(out_a, 1e-6)
+    out_rgb = np.where(out_a > 1e-6, numer_rgb / safe_out_a, 0.0)
     return np.concatenate([out_rgb, out_a], axis=-1)
 
 
@@ -391,3 +393,31 @@ def compose_stickers_to_erp(
         )
 
     return np.clip(canvas, 0.0, 1.0).astype(np.float32)
+
+
+def compose_single_sticker_to_canvas_erp(
+    canvas: np.ndarray,
+    sticker: dict,
+    assets: dict,
+    *,
+    base_dir: Path | None = None,
+    quality: str = "export",
+    coverage: int = 360,
+) -> np.ndarray:
+    if canvas is None or not isinstance(sticker, dict):
+        return canvas
+    if sticker.get("visible", True) is False:
+        return canvas
+    img = _normalize_runtime_sticker_image(sticker, assets if isinstance(assets, dict) else {}, base_dir=base_dir)
+    if img is None:
+        return canvas
+    _compose_sticker_patch(
+        canvas,
+        img,
+        sticker,
+        int(canvas.shape[1]),
+        int(canvas.shape[0]),
+        quality=quality,
+        coverage=_normalize_coverage(coverage),
+    )
+    return canvas

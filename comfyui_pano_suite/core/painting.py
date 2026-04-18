@@ -8,12 +8,13 @@ from collections import OrderedDict
 import numpy as np
 from PIL import Image, ImageDraw
 
-from .cutout import cutout_from_erp
+from .cutout import build_cutout_sampling_map, cutout_from_erp, sample_cutout_from_sampling_map
 from .paint_state import normalize_painting_state
 
 
 _ERP_RENDER_CACHE: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]" = OrderedDict()
 _CUTOUT_RENDER_CACHE: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]" = OrderedDict()
+_PAINTING_LAYER_PAYLOAD_CACHE: "OrderedDict[str, dict]" = OrderedDict()
 _RENDER_CACHE_LIMIT = 8
 
 
@@ -32,6 +33,21 @@ def _cache_get(cache: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]", key: st
 
 def _cache_put(cache: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]", key: str, pair: tuple[np.ndarray, np.ndarray]) -> None:
     cache[key] = _clone_render_pair(pair)
+    cache.move_to_end(key)
+    while len(cache) > _RENDER_CACHE_LIMIT:
+        cache.popitem(last=False)
+
+
+def _payload_cache_get(cache: "OrderedDict[str, dict]", key: str) -> dict | None:
+    value = cache.get(key)
+    if value is None:
+        return None
+    cache.move_to_end(key)
+    return value
+
+
+def _payload_cache_put(cache: "OrderedDict[str, dict]", key: str, value: dict) -> None:
+    cache[key] = value
     cache.move_to_end(key)
     while len(cache) > _RENDER_CACHE_LIMIT:
         cache.popitem(last=False)
@@ -599,6 +615,22 @@ def painting_state_has_renderables(painting_state: dict | None) -> bool:
     return False
 
 
+def painting_state_has_mask_renderables(painting_state: dict | None) -> bool:
+    if not isinstance(painting_state, dict):
+        return False
+    mask = painting_state.get("mask")
+    if isinstance(mask, dict) and isinstance(mask.get("strokes"), list) and mask.get("strokes"):
+        return True
+    raster_objects = painting_state.get("raster_objects")
+    if isinstance(raster_objects, list):
+        for item in raster_objects:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("layerKind") or "paint") == "mask":
+                return True
+    return False
+
+
 def render_painting_to_erp(painting_state: dict, width: int, height: int) -> tuple[np.ndarray, np.ndarray]:
     if not painting_state_has_renderables(painting_state):
         return _empty_rgba(width, height), _empty_mask(width, height)
@@ -627,28 +659,48 @@ def render_painting_to_erp(painting_state: dict, width: int, height: int) -> tup
     return _clone_render_pair(result)
 
 
-def _warp_erp_layer_to_cutout(erp_layer: np.ndarray, shot: dict, width: int, height: int, coverage: int = 360) -> np.ndarray:
+def _warp_erp_layer_to_cutout(
+    erp_layer: np.ndarray,
+    shot: dict,
+    width: int,
+    height: int,
+    coverage: int = 360,
+    sampling_map: dict | None = None,
+) -> np.ndarray:
     yaw = float(shot.get("yaw_deg", 0.0))
     pitch = float(shot.get("pitch_deg", 0.0))
     roll = float(shot.get("roll_deg", 0.0))
     h_fov = max(0.1, float(shot.get("hFOV_deg", 90.0)))
     v_fov = max(0.1, float(shot.get("vFOV_deg", 60.0)))
     coverage_value = 180 if int(coverage) == 180 else 360
+    active_sampling_map = sampling_map
+    if active_sampling_map is None:
+        active_sampling_map = build_cutout_sampling_map(
+            erp_layer.shape,
+            yaw,
+            pitch,
+            h_fov,
+            v_fov,
+            roll,
+            width,
+            height,
+            coverage_value,
+        )
     if erp_layer.ndim == 2:
         rgb = np.repeat(np.clip(erp_layer[..., None].astype(np.float32), 0.0, 1.0), 3, axis=2)
-        warped = cutout_from_erp(rgb, yaw, pitch, h_fov, v_fov, roll, width, height, coverage_value)
+        warped = sample_cutout_from_sampling_map(rgb, active_sampling_map)
         return np.clip(warped[..., 0], 0.0, 1.0).astype(np.float32)
     if erp_layer.ndim == 3 and erp_layer.shape[2] in {3, 4}:
         src = np.clip(erp_layer[..., :3].astype(np.float32), 0.0, 1.0)
         if erp_layer.shape[2] == 4:
             alpha = np.clip(erp_layer[..., 3].astype(np.float32), 0.0, 1.0)
             premult = src * alpha[..., None]
-            warped_premult = cutout_from_erp(premult, yaw, pitch, h_fov, v_fov, roll, width, height, coverage_value)
-            warped_alpha = _warp_erp_layer_to_cutout(alpha, shot, width, height, coverage_value)
+            warped_premult = sample_cutout_from_sampling_map(premult, active_sampling_map)
+            warped_alpha = _warp_erp_layer_to_cutout(alpha, shot, width, height, coverage_value, sampling_map=active_sampling_map)
             safe_alpha = np.maximum(warped_alpha[..., None], 1e-6)
             warped_rgb = np.where(warped_alpha[..., None] > 1e-6, warped_premult / safe_alpha, 0.0)
             return np.dstack([np.clip(warped_rgb, 0.0, 1.0), np.clip(warped_alpha, 0.0, 1.0)]).astype(np.float32)
-        warped_rgb = cutout_from_erp(src, yaw, pitch, h_fov, v_fov, roll, width, height, coverage_value)
+        warped_rgb = sample_cutout_from_sampling_map(src, active_sampling_map)
         return np.clip(warped_rgb, 0.0, 1.0).astype(np.float32)
     return _empty_rgba(width, height) if erp_layer.ndim == 3 else _empty_mask(width, height)
 
@@ -696,6 +748,17 @@ def load_painting_layer_payload(
     revision = str(painting_layer.get("revision") or "").strip()
     target_w = int(erp_width) if erp_width is not None else None
     target_h = int(erp_height) if erp_height is not None else None
+    cache_key = ""
+    if revision:
+        cache_key = _hash_render_payload({
+            "kind": "painting_layer_payload",
+            "revision": revision,
+            "width": target_w,
+            "height": target_h,
+        })
+        cached_payload = _payload_cache_get(_PAINTING_LAYER_PAYLOAD_CACHE, cache_key)
+        if cached_payload is not None:
+            return cached_payload
     paint_erp = painting_layer.get("paint") if isinstance(painting_layer.get("paint"), np.ndarray) else None
     mask_erp = painting_layer.get("mask") if isinstance(painting_layer.get("mask"), np.ndarray) else None
     if target_w is not None and target_h is not None:
@@ -715,12 +778,15 @@ def load_painting_layer_payload(
 
     if paint_erp is None and mask_erp is None and not groups:
         return None
-    return {
+    result = {
         "paint": paint_erp,
         "mask": mask_erp,
         "groups": groups,
         "revision": revision,
     }
+    if cache_key:
+        _payload_cache_put(_PAINTING_LAYER_PAYLOAD_CACHE, cache_key, result)
+    return result
 
 
 def render_painting_to_cutout(
@@ -733,22 +799,41 @@ def render_painting_to_cutout(
     erp_height: int = 1024,
     painting_layer_payload: dict | None = None,
     coverage: int = 360,
+    sampling_map: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     coverage_value = 180 if int(coverage) == 180 else 360
+    active_sampling_map = sampling_map
+    if active_sampling_map is None:
+        active_sampling_map = build_cutout_sampling_map(
+            (erp_height, erp_width),
+            float(shot.get("yaw_deg", 0.0)),
+            float(shot.get("pitch_deg", 0.0)),
+            float(shot.get("hFOV_deg", 90.0)),
+            float(shot.get("vFOV_deg", 60.0)),
+            float(shot.get("roll_deg", 0.0)),
+            width,
+            height,
+            coverage_value,
+        )
     payload = load_painting_layer_payload(
         painting_layer_payload,
         erp_width=erp_width,
         erp_height=erp_height,
     )
-    if payload is not None and str(payload.get("revision") or "").strip():
+    payload_has_layers = payload is not None and (
+        payload.get("paint") is not None
+        or payload.get("mask") is not None
+        or bool(payload.get("groups"))
+    )
+    if payload_has_layers:
         paint_erp = payload.get("paint")
         mask_erp = payload.get("mask")
         if paint_erp is None:
             paint_erp = _empty_rgba(erp_width, erp_height)
         if mask_erp is None:
             mask_erp = _empty_mask(erp_width, erp_height)
-        paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value)
-        mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value)
+        paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value, sampling_map=active_sampling_map)
+        mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value, sampling_map=active_sampling_map)
         return paint, mask
     if not painting_state_has_renderables(painting_state):
         return _empty_rgba(width, height), _empty_mask(width, height)
@@ -775,8 +860,8 @@ def render_painting_to_cutout(
     ss_w = min(max(64, int(erp_width)) * 2, 8192)
     ss_h = min(max(32, int(erp_height)) * 2, 4096)
     paint_erp, mask_erp = render_painting_to_erp(normalized, ss_w, ss_h)
-    paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value)
-    mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value)
+    paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value, sampling_map=active_sampling_map)
+    mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value, sampling_map=active_sampling_map)
     result = (paint.astype(np.float32), mask.astype(np.float32))
     _cache_put(_CUTOUT_RENDER_CACHE, cache_key, result)
     return _clone_render_pair(result)

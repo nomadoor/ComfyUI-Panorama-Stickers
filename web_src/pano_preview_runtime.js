@@ -1,7 +1,7 @@
 import * as appModule from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { createPanoramaRenderCore } from "./pano_render_core.js";
-import { buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
+import { buildPanoramaCompositeDescriptor, buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import {
   createPanoInteractionController,
@@ -712,6 +712,8 @@ const executedRefreshMonitor = {
         const upstreamIds = getLinkedOriginIds(node, ["erp_image", "bg_erp"]);
         const upstreamHit = upstreamIds.some((id) => executionIdMatches(executedId, id));
         const reason = selfHit ? "self" : (upstreamHit ? "upstream" : "global_executed");
+        const mode = String(node.__panoPreviewMode || "");
+        if (mode === "cutout" && !selfHit) return;
         panoPreviewLog(node, "exec-refresh", { executedId, reason });
         invalidatePreviewImageCaches(node);
         panoPreviewLog(node, "invalidate", { cachesCleared: true });
@@ -1144,25 +1146,41 @@ function findLinkedInputImageSource(node, preferredInputNames = []) {
   return { src: "", sourceType: "", inputName: "" };
 }
 
-function getLinkedInputImage(node, preferredInputNames = []) {
+function getLinkedInputImage(node, preferredInputNames = [], options = {}) {
   const resolved = findLinkedInputImageSource(node, preferredInputNames);
   const srcRaw = String(resolved?.src || "").trim();
   if (!srcRaw) return null;
   const candidates = buildImageSrcCandidates(srcRaw);
   if (!candidates.length) return null;
+  const preserveReadyWhilePending = options?.preserveReadyWhilePending !== false;
   if (!node.__panoLinkedInputImageCache) node.__panoLinkedInputImageCache = new Map();
   const key = preferredInputNames.join("|") || "image";
   const cached = node.__panoLinkedInputImageCache.get(key);
   if (cached && cached.srcRaw === srcRaw && cached.img) return cached.img;
+  if (cached && cached.pendingSrcRaw === srcRaw && cached.pendingImg) {
+    return (preserveReadyWhilePending && cached.img && (cached.img.complete || cached.img.naturalWidth || cached.img.width))
+      ? cached.img
+      : cached.pendingImg;
+  }
 
   const img = new Image();
-  const cacheEntry = { srcRaw, resolvedSrc: "", img };
+  const cacheEntry = cached || { srcRaw: "", resolvedSrc: "", img: null, pendingSrcRaw: "", pendingResolvedSrc: "", pendingImg: null };
+  cacheEntry.pendingSrcRaw = srcRaw;
+  cacheEntry.pendingResolvedSrc = "";
+  cacheEntry.pendingImg = img;
   node.__panoLinkedInputImageCache.set(key, cacheEntry);
   let attempt = -1;
   const tryLoadNext = () => {
     attempt += 1;
     if (attempt >= candidates.length) {
-      try { node.__panoLinkedInputImageCache?.delete?.(key); } catch { }
+      if (node.__panoLinkedInputImageCache?.get?.(key) === cacheEntry && cacheEntry.pendingImg === img) {
+        cacheEntry.pendingSrcRaw = "";
+        cacheEntry.pendingResolvedSrc = "";
+        cacheEntry.pendingImg = null;
+        if (!cacheEntry.img) {
+          try { node.__panoLinkedInputImageCache?.delete?.(key); } catch { }
+        }
+      }
       panoPreviewLog(node, "image-load", {
         ok: false,
         src: srcRaw,
@@ -1174,15 +1192,23 @@ function getLinkedInputImage(node, preferredInputNames = []) {
       return;
     }
     const nextSrc = candidates[attempt];
-    cacheEntry.resolvedSrc = nextSrc;
+    cacheEntry.pendingResolvedSrc = nextSrc;
     img.src = nextSrc;
   };
 
   img.onload = () => {
+    if (node.__panoLinkedInputImageCache?.get?.(key) === cacheEntry && cacheEntry.pendingImg === img) {
+      cacheEntry.srcRaw = srcRaw;
+      cacheEntry.resolvedSrc = String(cacheEntry.pendingResolvedSrc || img.src || "");
+      cacheEntry.img = img;
+      cacheEntry.pendingSrcRaw = "";
+      cacheEntry.pendingResolvedSrc = "";
+      cacheEntry.pendingImg = null;
+    }
     panoPreviewLog(node, "image-load", {
       ok: true,
       src: srcRaw,
-      resolvedSrc: String(cacheEntry.resolvedSrc || img.src || ""),
+      resolvedSrc: String(cacheEntry.pendingResolvedSrc || cacheEntry.resolvedSrc || img.src || ""),
       preferredInputNames,
       sourceType: String(resolved?.sourceType || ""),
       attemptCount: attempt + 1,
@@ -1194,11 +1220,18 @@ function getLinkedInputImage(node, preferredInputNames = []) {
       tryLoadNext();
       return;
     }
-    try { node.__panoLinkedInputImageCache?.delete?.(key); } catch { }
+    if (node.__panoLinkedInputImageCache?.get?.(key) === cacheEntry && cacheEntry.pendingImg === img) {
+      cacheEntry.pendingSrcRaw = "";
+      cacheEntry.pendingResolvedSrc = "";
+      cacheEntry.pendingImg = null;
+      if (!cacheEntry.img) {
+        try { node.__panoLinkedInputImageCache?.delete?.(key); } catch { }
+      }
+    }
     panoPreviewLog(node, "image-load", {
       ok: false,
       src: srcRaw,
-      resolvedSrc: String(cacheEntry.resolvedSrc || ""),
+      resolvedSrc: String(cacheEntry.pendingResolvedSrc || cacheEntry.resolvedSrc || ""),
       preferredInputNames,
       sourceType: String(resolved?.sourceType || ""),
       attemptCount: attempt + 1,
@@ -1206,11 +1239,13 @@ function getLinkedInputImage(node, preferredInputNames = []) {
     });
   };
   tryLoadNext();
-  return img;
+  return (preserveReadyWhilePending && cacheEntry.img && (cacheEntry.img.complete || cacheEntry.img.naturalWidth || cacheEntry.img.width))
+    ? cacheEntry.img
+    : img;
 }
 
-export function getLinkedInputImageForPreview(node, preferredInputNames = [], onLoad = null) {
-  const img = getLinkedInputImage(node, preferredInputNames);
+export function getLinkedInputImageForPreview(node, preferredInputNames = [], onLoad = null, options = {}) {
+  const img = getLinkedInputImage(node, preferredInputNames, options);
   if (!img) return null;
   if (typeof onLoad === "function") {
     if (!(img.complete && (img.naturalWidth || img.width))) {
@@ -1590,6 +1625,27 @@ function getNodePreviewImage(node, assetId, asset) {
   return img;
 }
 
+function waitForImageReady(img, timeoutMs = 3000) {
+  if (!img) return Promise.resolve(false);
+  if (img.complete && Number(img.naturalWidth || img.width || 0) > 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      img.removeEventListener?.("load", onLoad);
+      img.removeEventListener?.("error", onError);
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const onLoad = () => finish(true);
+    const onError = () => finish(false);
+    const timer = setTimeout(() => finish(!!(img.complete && Number(img.naturalWidth || img.width || 0) > 0)), timeoutMs);
+    img.addEventListener?.("load", onLoad, { once: true });
+    img.addEventListener?.("error", onError, { once: true });
+  });
+}
+
 function getSortedStickers(node, state) {
   const stickers = Array.isArray(state?.stickers) ? state.stickers : [];
   const cache = node.__panoStickerSortCache;
@@ -1609,6 +1665,53 @@ function buildRuntimePreviewScene(node, state) {
 function buildRuntimePreviewTextures(node, state, scene) {
   return buildStickerTexturesFromState(state, (assetId, asset) => getNodePreviewImage(node, assetId, asset), { scene });
 }
+
+async function ensureRuntimePreviewTextures(node, state, scene, timeoutMs = 3000) {
+  const assets = (state && typeof state === "object" && state.assets && typeof state.assets === "object")
+    ? state.assets
+    : {};
+  const seen = new Set();
+  const pending = [];
+  const stickers = Array.isArray(scene?.stickers) ? scene.stickers : [];
+  stickers.forEach((item) => {
+    const assetId = String(item?.assetId || "").trim();
+    const textureId = assetId || (item?.external ? String(item?.id || "").trim() : "");
+    if (!textureId || seen.has(textureId)) return;
+    seen.add(textureId);
+    const asset = assetId ? assets[assetId] : null;
+    const img = getNodePreviewImage(node, textureId, asset);
+    if (img) pending.push(waitForImageReady(img, timeoutMs));
+  });
+  if (pending.length > 0) {
+    await Promise.allSettled(pending);
+  }
+  return buildRuntimePreviewTextures(node, state, scene);
+}
+
+function buildRuntimeCutoutLayerEntries(node, state) {
+  const engine = getNodePreviewPaintEngine(node, state);
+  if (!engine) return [];
+  const orderedGroups = getPreviewOrderedGroupIds(state);
+  const groups = Array.isArray(state?.painting?.groups) ? state.painting.groups : [];
+  const zByGroup = new Map(
+    groups
+      .filter((group) => group && typeof group === "object")
+      .map((group) => [String(group?.actionGroupId || group?.id || "").trim(), Number(group?.z_index || 0)]),
+  );
+  return orderedGroups.map((gid) => {
+    const source = engine.getGroupDisplayCanvas(gid);
+    if (!source) return null;
+    return {
+      id: `paint_group:${gid}`,
+      source,
+      revision: `${String(node.__panoPreviewPaintRevisionKey || "")}:${gid}`,
+      zIndex: Number(zByGroup.get(gid) || 0),
+      opacity: 1,
+      visible: true,
+    };
+  }).filter(Boolean);
+}
+
 
 function expandTri(d0, d1, d2, px = 0.45) {
   const cx = (d0.x + d1.x + d2.x) / 3;
@@ -2127,20 +2230,10 @@ function attachLegacyStickersPreview(node) {
 // Returns the display paint canvas for a node's paint state, or null if there are no strokes.
 // Creates and caches a lightweight paint engine per node; rebuilds only when the stroke list changes.
 function getDesiredPreviewPaintDescriptor(node, state) {
-  const connected = getLinkedInputImageForPreview(
-    node,
-    ["erp_image", "bg_erp"],
-    () => node.__panoDomPreview?.requestDraw?.(),
-  );
-  const connectedWidth = Number(connected?.naturalWidth || connected?.width || 0);
-  const connectedHeight = Number(connected?.naturalHeight || connected?.height || 0);
-  if (connectedWidth > 1 && connectedHeight > 1) {
-    return {
-      kind: "ERP_GLOBAL",
-      width: Math.max(1, Math.round(connectedWidth)),
-      height: Math.max(1, Math.round(connectedHeight)),
-    };
-  }
+  // Match the modal editor's ERP paint workspace exactly.
+  // Paint strokes are authored in panorama UV space, so inheriting arbitrary
+  // linked-image dimensions here can squash/stretch the node preview and any
+  // browser-rendered cutout export built from this preview engine.
   const presetWidth = Math.max(1, Number(state?.output_preset || 2048));
   return {
     kind: "ERP_GLOBAL",
@@ -2368,10 +2461,6 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
   const mode = String(node.__panoPreviewMode || "stickers");
   ensureRenderCache(node, mode);
   const state = getCachedState(node);
-  const ownOut = mode === "cutout"
-    ? getNodeOwnOutputImage(node, () => node.__panoDomPreview?.requestDraw?.())
-    : null;
-  const ownOutReady = !!(ownOut && ownOut.complete && (ownOut.naturalWidth || ownOut.width));
   const wrap = canvas.parentElement;
   const dpr = 1;
   const cw = Math.max(1, Number(wrap?.clientWidth || canvas.clientWidth || 0));
@@ -2388,6 +2477,7 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
       node,
       ["erp_image", "bg_erp"],
       () => node.__panoDomPreview?.requestDraw?.(),
+      { preserveReadyWhilePending: false },
     );
     const bgReady = !!(bgImg && bgImg.complete && (bgImg.naturalWidth || bgImg.width));
     if (canvas.width !== surfW || canvas.height !== surfH) {
@@ -2395,11 +2485,9 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
       canvas.height = surfH;
     }
     const rect = { x: 0, y: 0, w: surfW, h: surfH };
-    const ownAspect = ownOutReady
-      ? clamp(Number((ownOut.naturalWidth || ownOut.width) / Math.max(1, Number(ownOut.naturalHeight || ownOut.height || 1))), 0.05, 20.0)
-      : (bgReady
-        ? clamp(Number((bgImg.naturalWidth || bgImg.width) / Math.max(1, Number(bgImg.naturalHeight || bgImg.height || 1))), 0.05, 20.0)
-        : 1);
+    const ownAspect = bgReady
+      ? clamp(Number((bgImg.naturalWidth || bgImg.width) / Math.max(1, Number(bgImg.naturalHeight || bgImg.height || 1))), 0.05, 20.0)
+      : 1;
     const cutoutView = shot ? buildCutoutViewParamsFromShot(shot) : null;
     const aspect = clamp(Number(cutoutView?.aspect || ownAspect || 1), 0.05, 20.0);
     const contain = containRect(rect, aspect);
@@ -2413,33 +2501,61 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
     let hintText = "Open editor and add frame";
     let loadingSrc = "";
 
-    if (ownOutReady) {
-      ctx.drawImage(ownOut, contain.x, contain.y, contain.w, contain.h);
-    } else {
-      loadingSrc = String(bgImg?.src || "");
-      if (!shot) {
-        if (bgReady) {
-          const paintSurface = getNodePreviewPaintSurface(node, state);
-          const previewSource = (paintSurface?.source)
-            ? buildBgPaintCanvas(node, bgImg, paintSurface.source, paintSurface.revision || "")
-            : bgImg;
-          drawContainedImagePreview(ctx, previewSource, rect, 0.44);
-        }
-        statusType = "empty";
-        hintText = "Open editor and add frame";
-      } else if (bgImg && !bgReady) {
-        statusType = "loading";
-      } else if (bgReady) {
+    loadingSrc = String(bgImg?.src || "");
+    if (!shot) {
+      if (bgReady) {
+        const paintSurface = getNodePreviewPaintSurface(node, state);
+        const previewSource = (paintSurface?.source)
+          ? buildBgPaintCanvas(node, bgImg, paintSurface.source, paintSurface.revision || "")
+          : bgImg;
+        drawContainedImagePreview(ctx, previewSource, rect, 0.44);
+      }
+      statusType = "empty";
+      hintText = "Open editor and add frame";
+    } else if (bgImg && !bgReady) {
+      statusType = "loading";
+    } else if (bgReady) {
+      const scene = buildRuntimePreviewScene(node, state);
+      const textures = buildRuntimePreviewTextures(node, state, scene);
+      const layerEntries = buildRuntimeCutoutLayerEntries(node, state);
+      const descriptor = buildPanoramaCompositeDescriptor({
+        stateRevision: [
+          "runtime_cutout_scene",
+          String(bgImg.currentSrc || bgImg.src || ""),
+          Number(bgImg.naturalWidth || bgImg.width || 0),
+          Number(bgImg.naturalHeight || bgImg.height || 0),
+          Number(state?.coverage || 360) === 180 ? 180 : 360,
+          String(shot?.id || ""),
+          Array.isArray(textures) ? textures.map((item) => `${String(item?.assetId || "")}:${String(item?.revision || "")}`).join(",") : "",
+          Array.isArray(layerEntries) ? layerEntries.map((entry) => `${String(entry?.id || "")}:${String(entry?.revision || "")}:${Number(entry?.zIndex || 0)}`).join(",") : "",
+        ].join("|"),
+        backgroundSource: bgImg,
+        backgroundRevision: String(bgImg.currentSrc || bgImg.src || ""),
+        coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
+        scene,
+        textures,
+        rasterEntries: layerEntries,
+        backgroundOpacity: 1,
+        showMaskTint: false,
+      });
+      if (!node.__panoRuntimeCore) node.__panoRuntimeCore = createPanoramaRenderCore();
+      node.__panoRuntimeCore.syncState(descriptor);
+      const liveCutoutDrawn = node.__panoRuntimeCore.renderToContext(
+        ctx,
+        contain,
+        buildCutoutViewParamsFromShot(shot),
+        { width: contain.w, height: contain.h, dpr: 1 },
+      );
+      if (!liveCutoutDrawn) {
         statusType = "empty";
         hintText = "Open editor or run node";
-      } else {
-        statusType = "empty";
-        hintText = "Connect ERP image";
       }
+    } else {
+      statusType = "empty";
+      hintText = "Connect ERP image";
     }
 
     if (statusType === "loading") {
-      drawLoadingOverlay(ctx, contain, uiScale);
       setCutoutEmptyHint(node, false);
       setRenderLoading(node, true, loadingSrc);
     } else if (statusType === "empty") {
