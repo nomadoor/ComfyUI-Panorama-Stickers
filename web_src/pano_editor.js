@@ -6882,6 +6882,7 @@ async function showEditor(node, type, options = {}) {
     });
     state.shots = [shot];
     setSelectedItem(shot);
+    forceCursorTool();
     editor.mode = "pano";
     pushHistory();
     commitAndRefreshNode();

@@ -4,6 +4,7 @@ import io
 import json
 import math
 from collections import OrderedDict
+import threading
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -16,6 +17,7 @@ _ERP_RENDER_CACHE: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]" = OrderedDi
 _CUTOUT_RENDER_CACHE: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]" = OrderedDict()
 _PAINTING_LAYER_PAYLOAD_CACHE: "OrderedDict[str, dict]" = OrderedDict()
 _RENDER_CACHE_LIMIT = 8
+_PAYLOAD_CACHE_LOCK = threading.Lock()
 
 
 def _clone_render_pair(pair: tuple[np.ndarray, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
@@ -39,6 +41,29 @@ def _clone_painting_layer_payload(payload: dict) -> dict:
     }
 
 
+def _composite_group_layers_to_rgba(groups: dict | None, width: int, height: int) -> np.ndarray | None:
+    if not isinstance(groups, dict) or not groups:
+        return None
+    canvas = None
+    for layer in groups.values():
+        if not isinstance(layer, np.ndarray):
+            continue
+        src = _resize_rgba_layer(layer, width, height)
+        if src is None:
+            continue
+        if canvas is None:
+            canvas = _empty_rgba(width, height)
+        src = np.clip(src.astype(np.float32), 0.0, 1.0)
+        dst = canvas
+        sa = src[..., 3:4]
+        da = dst[..., 3:4]
+        out_a = sa + da * (1.0 - sa)
+        safe = np.where(out_a > 0, out_a, 1.0)
+        dst[..., :3] = (src[..., :3] * sa + dst[..., :3] * da * (1.0 - sa)) / safe
+        dst[..., 3:4] = out_a
+    return canvas
+
+
 def _cache_get(cache: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]", key: str) -> tuple[np.ndarray, np.ndarray] | None:
     pair = cache.get(key)
     if pair is None:
@@ -55,18 +80,20 @@ def _cache_put(cache: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]", key: st
 
 
 def _payload_cache_get(cache: "OrderedDict[str, dict]", key: str) -> dict | None:
-    value = cache.get(key)
-    if value is None:
-        return None
-    cache.move_to_end(key)
-    return _clone_painting_layer_payload(value)
+    with _PAYLOAD_CACHE_LOCK:
+        value = cache.get(key)
+        if value is None:
+            return None
+        cache.move_to_end(key)
+        return _clone_painting_layer_payload(value)
 
 
 def _payload_cache_put(cache: "OrderedDict[str, dict]", key: str, value: dict) -> None:
-    cache[key] = _clone_painting_layer_payload(value)
-    cache.move_to_end(key)
-    while len(cache) > _RENDER_CACHE_LIMIT:
-        cache.popitem(last=False)
+    with _PAYLOAD_CACHE_LOCK:
+        cache[key] = _clone_painting_layer_payload(value)
+        cache.move_to_end(key)
+        while len(cache) > _RENDER_CACHE_LIMIT:
+            cache.popitem(last=False)
 
 
 def _hash_render_payload(payload) -> str:
@@ -852,6 +879,9 @@ def render_painting_to_cutout(
     if payload_has_layers:
         paint_erp = payload.get("paint")
         mask_erp = payload.get("mask")
+        group_paint_erp = _composite_group_layers_to_rgba(payload.get("groups"), erp_width, erp_height)
+        if paint_erp is None and isinstance(group_paint_erp, np.ndarray):
+            paint_erp = group_paint_erp
         if paint_erp is None:
             paint_erp = _empty_rgba(erp_width, erp_height)
         if mask_erp is None:

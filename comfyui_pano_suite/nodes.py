@@ -25,6 +25,7 @@ from .core.math import (
 )
 from .core.painting import (
     alpha_composite_over_rgb,
+    painting_state_has_mask_renderables,
     painting_state_has_renderables,
     render_painting_to_cutout,
     render_painting_to_erp,
@@ -617,7 +618,7 @@ def _build_overlay_erp_rgba_and_mask(
 
     mask_bw = painting_payload.get("mask") if isinstance(painting_payload, dict) else None
     if mask_bw is None:
-        if warning_key and isinstance(ui_ret, dict) and painting_state_has_renderables(painting_state):
+        if warning_key and isinstance(ui_ret, dict) and painting_state_has_mask_renderables(painting_state):
             _push_ui_warning(
                 ui_ret,
                 warning_key,
