@@ -88,13 +88,28 @@ Active
 ## カメラ契約（Camera Contract）
 
 ```js
-CameraParams = {
+BaseCameraParams = {
   yawDeg:   number,   // -180 〜 +180
   pitchDeg: number,   // -90 〜 +90
   rollDeg:  number,   // -180 〜 +180（ロール）
-  hFovDeg:  number,   // 水平画角（degrees）
-  vFovDeg:  number,   // 垂直画角（degrees） ← aspect から自動導出も可
 }
+
+PanoramaCameraParams = {
+  mode: "panorama" | "unwrap",
+  ...BaseCameraParams,
+  fovDeg: number,          // panorama/unwrap の view FOV
+  coverageDeg?: 180 | 360,
+}
+
+CutoutCameraParams = {
+  mode: "cutout",
+  ...BaseCameraParams,
+  hFovDeg: number,         // 水平画角（degrees）
+  vFovDeg: number,         // 垂直画角（degrees）
+  coverageDeg?: 180 | 360,
+}
+
+CameraParams = PanoramaCameraParams | CutoutCameraParams
 
 OutputParams = {
   width:  number,     // px
@@ -150,23 +165,26 @@ camera.renderFrame(
   camera: CameraParams,
   output: OutputParams,
 ): HTMLCanvasElement | null
-// null → GL 非対応（空白表示、フォールバック禁止）
+// null → GPU/GL path unavailable
 ```
 
-`CameraParams` は consumer ごとの mode を持てる共通 view とする。
+`renderFrame()` が `null` を返した場合の契約は次の通り。
+- GL 可否は factory 作成時または最初の mount/render 時に一度確定し、その後は instance 内で固定する
+- consumer は `null` を「この camera instance では GPU path が使えない」と解釈し、空白または `"Preview unavailable"` 等の非レンダリング UI を出す
+- consumer ごとに CPU fallback renderer を実装してはいけない。fallback 実装は camera backend 自体の責務であり、consumer 側では分岐しない
+- 必要なら consumer は `null` を受けた時点で mount/render を止め、再試行は新しい camera instance を作り直す
 
-```js
-{
-  mode: "panorama" | "cutout" | "unwrap",
-  yawDeg: number,
-  pitchDeg: number,
-  rollDeg?: number,
-  fovDeg?: number,     // panorama
-  hFovDeg?: number,    // cutout
-  vFovDeg?: number,    // cutout
-  coverageDeg?: 180 | 360,
-}
-```
+つまり、「no fallback」は
+- `consumer 側で独自の別 renderer に逃がさない`
+という意味であり、
+- `null を無視して描画を続ける`
+ことではない
+
+将来 `isSupported()` のような明示 API を足す余地はあるが、現時点の canonical 契約は `renderFrame() === null` を unsupported signal とする。
+
+`CameraParams` の canonical 定義は上記の union とする。`mode` ごとの必須項目は次の通り。
+- `panorama` / `unwrap`: `fovDeg`
+- `cutout`: `hFovDeg`, `vFovDeg`
 
 ### マウント（ライブプレビュー用）
 
@@ -203,6 +221,30 @@ const blobs: Blob[] = await camera.exportVideoFrames({
 
 `exportFrame` はプレビュー用 canvas とは独立した offscreen canvas にレンダリングする。プレビューを止めない。
 
+### Scene Subscription
+
+`subscribeSceneChanges` は camera API ではなく、editor/node 側の scene publisher utility とする。
+
+```js
+type UnsubscribeSceneChanges = () => void
+
+subscribeSceneChanges(
+  node: PanoramaNode,
+  callback: (descriptor: SceneDescriptor) => void,
+): UnsubscribeSceneChanges
+```
+
+契約:
+- `callback` は publish ごとに最新 `SceneDescriptor` を受け取る
+- return value は explicit unsubscribe function
+- cleanup は caller の責務で、modal close / node teardown / camera dispose 時に必ず呼ぶ
+- `camera.unmount()` は DOM mount の cleanup だけを担当し、scene subscription の自動解除までは保証しない
+
+つまり consumer 側は通常、
+- `const unsubscribe = subscribeSceneChanges(node, onSceneChanged)`
+- teardown 時に `unsubscribe()`
+を行う
+
 ---
 
 ## サブスクリプションモデル
@@ -223,7 +265,10 @@ function onSceneChanged(descriptor) {
 }
 
 // メイン編集側が publishSceneState() を呼ぶたびに onSceneChanged が動く
-subscribeSceneChanges(node, onSceneChanged);
+const unsubscribe = subscribeSceneChanges(node, onSceneChanged);
+
+// teardown
+unsubscribe();
 ```
 
 ### シーン変更の発生タイミング
@@ -248,6 +293,17 @@ subscribeSceneChanges(node, onSceneChanged);
 ```
 
 GPU 1 draw call。CPU 処理なし。60fps を維持できる。
+
+UX 制約:
+- ユーザー操作の熱パスに `JSON.stringify(state)` / `JSON.parse(...)` / upload / durable save / full state clone を入れてはいけない
+- pointermove / drag / frame move / frame rotate / frame scale 中は、camera params と軽量 view state だけを更新する
+- preview invalidation が必要な場合も、hot path では revision counter や dirty flag の更新に留める
+- 「型安定」や「永続化都合」のために、操作中の render ループへ重い整形処理を差し込んではいけない
+- user gesture に干渉する対策は不採用とし、必要なら commit 後または冷パスへ移す
+
+言い換えると、
+- 操作中に守るべきなのは correctness だけでなく latency でもある
+- UX を崩す corrective action は architecture violation とみなす
 
 ### 温パス（ストロークライブ中）
 

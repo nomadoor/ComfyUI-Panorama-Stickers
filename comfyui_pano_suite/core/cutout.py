@@ -2,6 +2,7 @@ import hashlib
 import json
 import math
 from collections import OrderedDict
+import threading
 
 import numpy as np
 
@@ -10,33 +11,36 @@ from .math import DEG2RAD, dir_to_lon_lat, lon_lat_to_erp, sample_erp_bilinear, 
 
 _CUTOUT_SAMPLING_MAP_CACHE: "OrderedDict[str, dict]" = OrderedDict()
 _CUTOUT_SAMPLING_MAP_CACHE_LIMIT = 8
+_CUTOUT_SAMPLING_MAP_CACHE_LOCK = threading.Lock()
 
 
 def _cutout_sampling_cache_get(key: str) -> dict | None:
-    entry = _CUTOUT_SAMPLING_MAP_CACHE.get(key)
-    if entry is None:
-        return None
-    _CUTOUT_SAMPLING_MAP_CACHE.move_to_end(key)
-    return {
-        "u": entry["u"],
-        "v": entry["v"],
-        "valid": entry.get("valid"),
-        "out_w": int(entry["out_w"]),
-        "out_h": int(entry["out_h"]),
-    }
+    with _CUTOUT_SAMPLING_MAP_CACHE_LOCK:
+        entry = _CUTOUT_SAMPLING_MAP_CACHE.get(key)
+        if entry is None:
+            return None
+        _CUTOUT_SAMPLING_MAP_CACHE.move_to_end(key)
+        return {
+            "u": entry["u"].copy(),
+            "v": entry["v"].copy(),
+            "valid": entry.get("valid").copy() if isinstance(entry.get("valid"), np.ndarray) else entry.get("valid"),
+            "out_w": int(entry["out_w"]),
+            "out_h": int(entry["out_h"]),
+        }
 
 
 def _cutout_sampling_cache_put(key: str, sampling_map: dict) -> None:
-    _CUTOUT_SAMPLING_MAP_CACHE[key] = {
-        "u": sampling_map["u"],
-        "v": sampling_map["v"],
-        "valid": sampling_map.get("valid"),
-        "out_w": int(sampling_map["out_w"]),
-        "out_h": int(sampling_map["out_h"]),
-    }
-    _CUTOUT_SAMPLING_MAP_CACHE.move_to_end(key)
-    while len(_CUTOUT_SAMPLING_MAP_CACHE) > _CUTOUT_SAMPLING_MAP_CACHE_LIMIT:
-        _CUTOUT_SAMPLING_MAP_CACHE.popitem(last=False)
+    with _CUTOUT_SAMPLING_MAP_CACHE_LOCK:
+        _CUTOUT_SAMPLING_MAP_CACHE[key] = {
+            "u": sampling_map["u"].copy(),
+            "v": sampling_map["v"].copy(),
+            "valid": sampling_map.get("valid").copy() if isinstance(sampling_map.get("valid"), np.ndarray) else sampling_map.get("valid"),
+            "out_w": int(sampling_map["out_w"]),
+            "out_h": int(sampling_map["out_h"]),
+        }
+        _CUTOUT_SAMPLING_MAP_CACHE.move_to_end(key)
+        while len(_CUTOUT_SAMPLING_MAP_CACHE) > _CUTOUT_SAMPLING_MAP_CACHE_LIMIT:
+            _CUTOUT_SAMPLING_MAP_CACHE.popitem(last=False)
 
 
 def _cutout_sampling_cache_key(
@@ -78,8 +82,10 @@ def build_cutout_sampling_map(
 ) -> dict:
     out_w = max(8, int(out_w))
     out_h = max(8, int(out_h))
-    erp_h = max(1, int(erp_shape[0])) if len(erp_shape) >= 1 else 1
-    erp_w = max(1, int(erp_shape[1])) if len(erp_shape) >= 2 else 1
+    if len(erp_shape) < 2:
+        raise ValueError(f"erp_shape must have at least 2 dimensions, got {len(erp_shape)}")
+    erp_h = max(1, int(erp_shape[0]))
+    erp_w = max(1, int(erp_shape[1]))
     coverage = 180 if int(coverage_deg) == 180 else 360
     cache_key = _cutout_sampling_cache_key(
         (erp_h, erp_w),

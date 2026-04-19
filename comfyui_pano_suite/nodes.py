@@ -522,6 +522,8 @@ def _alpha_composite_over_rgba(base_rgba: np.ndarray, overlay_rgba: np.ndarray) 
     src = overlay_rgba.astype(np.float32, copy=False)
     if src.ndim != 3 or src.shape[-1] != 4:
         return dst
+    if dst.shape[0] != src.shape[0] or dst.shape[1] != src.shape[1]:
+        return dst
     src_alpha = src[..., 3]
     alpha_pixels = np.argwhere(src_alpha > 1e-6)
     if alpha_pixels.size == 0:
@@ -1072,6 +1074,8 @@ class PanoramaCutoutNode(io.ComfyNode):
                 painting_payload=painting_payload,
                 base_dir=Path.cwd(),
                 quality="export",
+                ui_ret=ui_ret,
+                warning_key="pano_cutout_warnings",
             )
             if isinstance(overlay_rgba, np.ndarray):
                 overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
@@ -1085,7 +1089,7 @@ class PanoramaCutoutNode(io.ComfyNode):
             mask_t = torch.from_numpy(mask_bw.astype(np.float32))[None, ...]
             return io.NodeOutput(out_t, sticker_state_json, mask_t, ui=ui_ret)
         except Exception as ex:
-            print(f"[PanoramaCutout] strict export failed: {ex}")
+            logging.getLogger(__name__).exception("[PanoramaCutout] strict export failed")
             raise
 
 

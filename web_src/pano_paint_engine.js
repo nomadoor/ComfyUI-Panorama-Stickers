@@ -996,11 +996,13 @@ export function createPaintEngineManager(options = {}) {
 
   // ─── Composition ────────────────────────────────────────────────────────────
 
-  // Composite all groups in display order, then overlay the mask tint.
-  // orderedGroupIds: bottom → top (matches objects[] z-order).
-  // Groups not in the map are silently skipped.
-  // Composes directly from each group's committedPaint into globalDisplay —
-  // no per-group displayPaint intermediate canvas needed.
+// Composite all paint groups in display order.
+// Mask remains an independent layer and must be consumed explicitly via
+// committedMask / getMaskDisplayCanvas rather than being baked into displayPaint.
+// orderedGroupIds: bottom → top (matches objects[] z-order).
+// Groups not in the map are silently skipped.
+// Composes directly from each group's committedPaint into globalDisplay —
+// no per-group displayPaint intermediate canvas needed.
   function composeAllLayers(orderedGroupIds) {
     const orderChanged = !previousOrderedGroupIds
       || previousOrderedGroupIds.length !== orderedGroupIds.length
@@ -1008,14 +1010,12 @@ export function createPaintEngineManager(options = {}) {
     const activePaintStroke = activeLayerKind === "paint"
       ? ((activeGroupId ? groupTargets.get(activeGroupId) : paintScratchTarget)?.activeStroke || null)
       : null;
-    const isMaskActive = activeLayerKind === "mask";
-    const maskAs = maskTarget.activeStroke;
     let anyDirty = maskTarget.displayDirty || paintScratchTarget.displayDirty || orderChanged;
     for (const gid of orderedGroupIds) {
       const group = groupTargets.get(gid);
       if (group?.displayDirty) { anyDirty = true; break; }
     }
-    if (activePaintStroke || (isMaskActive && maskAs)) anyDirty = true;
+    if (activePaintStroke) anyDirty = true;
     if (!anyDirty) return;
 
     // Reset dirty flags before drawing.
@@ -1059,21 +1059,6 @@ export function createPaintEngineManager(options = {}) {
       }
     }
 
-    // Mask overlay: committed mask tint + optional live stroke tint or eraser preview.
-    if (isMaskActive && maskAs?.isEraser) {
-      // Mask eraser preview: show committed minus current eraser stroke.
-      _eraserTmp = resizeSurface(_eraserTmp, ERP_W, ERP_H);
-      clearSurface(_eraserTmp);
-      _eraserTmp.ctx.drawImage(maskTarget.committedMask.canvas, 0, 0);
-      applyEraserToSurface(_eraserTmp.ctx, sharedCurrentStroke.canvas);
-      drawMaskTint(gCtx, _eraserTmp.canvas);
-    } else {
-      drawMaskTint(gCtx, maskTarget.committedMask.canvas);
-      if (isMaskActive && maskAs) {
-        // Live mask stroke tint (drawing in progress).
-        drawMaskTint(gCtx, sharedCurrentStroke.canvas);
-      }
-    }
   }
 
   // ─── Rebuild ────────────────────────────────────────────────────────────────
@@ -1286,7 +1271,7 @@ export function createPaintEngineManager(options = {}) {
   }
 
   // Returns a view compatible with the old single-target interface:
-  //   .displayPaint.canvas  — composited ERP (all groups in z-order + mask overlay)
+  //   .displayPaint.canvas  — composited ERP paint only (all paint groups in z-order)
   //   .committedMask.canvas — raw mask ERP for WebGL setMaskErp
   //   .descriptor
   // orderedGroupIds: optional display-order from editor's objects[] (bottom → top).

@@ -396,14 +396,14 @@ def compose_stickers_to_erp(
 
 
 def compose_single_sticker_to_canvas_erp(
-    canvas: np.ndarray,
+    canvas: np.ndarray | None,
     sticker: dict,
     assets: dict,
     *,
     base_dir: Path | None = None,
     quality: str = "export",
     coverage: int = 360,
-) -> np.ndarray:
+) -> np.ndarray | None:
     if canvas is None or not isinstance(sticker, dict):
         return canvas
     if sticker.get("visible", True) is False:

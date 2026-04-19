@@ -1644,7 +1644,8 @@ async function showEditor(node, type, options = {}) {
     String(bgWidget?.value || "#00ff00"),
     normalizeCoverageValue(coverageWidget?.value),
   );
-  node.__panoLiveStateOverride = JSON.stringify(state);
+  node.__panoLiveStateOverride = state;
+  node.__panoLiveStateVersion = 0;
 
   if (type === "cutout") {
     state.shots = Array.isArray(state.shots) ? state.shots.slice(0, 1) : [];
@@ -4188,7 +4189,10 @@ async function showEditor(node, type, options = {}) {
     const source = getModalLayerMaskDisplaySource();
     if (!source) return entries;
     const revision = getMaskDisplayRevisionKey();
-    const topZ = entries.reduce((max, entry) => Math.max(max, Number(entry?.zIndex || 0)), -1);
+    const topLayerZ = entries.reduce((max, entry) => Math.max(max, Number(entry?.zIndex || 0)), -1);
+    const topStickerZ = (Array.isArray(state.stickers) ? state.stickers : [])
+      .reduce((max, item) => Math.max(max, Number(item?.z_index || 0)), -1);
+    const topZ = Math.max(topLayerZ, topStickerZ);
     entries.push({
       id: "mask_display",
       source,
@@ -5292,7 +5296,7 @@ async function showEditor(node, type, options = {}) {
       cutoutPreviewMount.requestRender();
       return;
     }
-    if (!bgReady || !editor.showPanorama) {
+    if (editor.showPanorama && !bgReady && textures.length === 0 && rasterEntries.length === 0) {
       uiState.cameraPreview.ready = false;
       uiState.cameraPreview.label = bgImg ? "Loading preview" : "Connect ERP image";
       uiState.cameraPreview.settled = false;
@@ -6275,6 +6279,7 @@ async function showEditor(node, type, options = {}) {
 
   function syncNodeLivePreviewSources() {
     node.__panoLiveStateOverride = state;
+    node.__panoLiveStateVersion = Number(node.__panoLiveStateVersion || 0) + 1;
     node.__panoLivePaintSurface = getSharedLivePaintSurface();
   }
 

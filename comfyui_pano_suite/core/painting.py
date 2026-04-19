@@ -23,6 +23,22 @@ def _clone_render_pair(pair: tuple[np.ndarray, np.ndarray]) -> tuple[np.ndarray,
     return paint.copy(), mask.copy()
 
 
+def _clone_painting_layer_payload(payload: dict) -> dict:
+    paint = payload.get("paint")
+    mask = payload.get("mask")
+    groups = payload.get("groups")
+    return {
+        "paint": paint.copy() if isinstance(paint, np.ndarray) else None,
+        "mask": mask.copy() if isinstance(mask, np.ndarray) else None,
+        "groups": {
+            key: value.copy()
+            for key, value in (groups.items() if isinstance(groups, dict) else [])
+            if isinstance(value, np.ndarray)
+        },
+        "revision": str(payload.get("revision") or ""),
+    }
+
+
 def _cache_get(cache: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]", key: str) -> tuple[np.ndarray, np.ndarray] | None:
     pair = cache.get(key)
     if pair is None:
@@ -43,11 +59,11 @@ def _payload_cache_get(cache: "OrderedDict[str, dict]", key: str) -> dict | None
     if value is None:
         return None
     cache.move_to_end(key)
-    return value
+    return _clone_painting_layer_payload(value)
 
 
 def _payload_cache_put(cache: "OrderedDict[str, dict]", key: str, value: dict) -> None:
-    cache[key] = value
+    cache[key] = _clone_painting_layer_payload(value)
     cache.move_to_end(key)
     while len(cache) > _RENDER_CACHE_LIMIT:
         cache.popitem(last=False)

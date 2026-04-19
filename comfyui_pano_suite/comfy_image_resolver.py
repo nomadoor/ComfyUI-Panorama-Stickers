@@ -47,7 +47,9 @@ def _resolve_asset_cache_key(asset: dict | None) -> tuple[str, int, int] | None:
 @lru_cache(maxsize=64)
 def _load_comfy_rgba_cached(path_str: str, mtime_ns: int, size_bytes: int) -> np.ndarray | None:
     try:
-        return np.asarray(Image.open(path_str).convert("RGBA"), dtype=np.float32) / 255.0
+        arr = np.asarray(Image.open(path_str).convert("RGBA"), dtype=np.float32) / 255.0
+        arr.flags.writeable = False
+        return arr
     except Exception:
         return None
 
@@ -56,7 +58,8 @@ def _load_comfy_rgba(asset: dict) -> np.ndarray | None:
     cache_key = _resolve_asset_cache_key(asset)
     if cache_key is None:
         return None
-    return _load_comfy_rgba_cached(*cache_key)
+    cached = _load_comfy_rgba_cached(*cache_key)
+    return cached.copy() if cached is not None else None
 
 
 def resolve_comfy_image_rgba(asset: dict | None) -> np.ndarray | None:

@@ -569,15 +569,16 @@ function getEffectiveStateSource(node) {
 
 function getCachedState(node) {
   const source = getEffectiveStateSource(node);
+  const liveVersion = Number(node?.__panoLiveStateVersion || 0);
   const bg = String(getWidget(node, "bg_color")?.value || "#1a1a1e");
   const coverage = Number(getWidget(node, "coverage")?.value || 360) === 180 ? 180 : 360;
   const cache = node.__panoStateCache;
-  if (cache && cache.source === source && cache.bg === bg && cache.coverage === coverage) {
+  if (cache && cache.source === source && cache.liveVersion === liveVersion && cache.bg === bg && cache.coverage === coverage) {
     return cache.parsed;
   }
   const parsed = parseState(source, bg);
   parsed.coverage = coverage;
-  node.__panoStateCache = { source, bg, coverage, parsed };
+  node.__panoStateCache = { source, liveVersion, bg, coverage, parsed };
   return parsed;
 }
 
