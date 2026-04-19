@@ -33,6 +33,7 @@ from .core.painting import (
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import compose_single_sticker_to_canvas_erp, compose_stickers_to_erp
 from .core.stickers import render_stickers_to_rgba_erp
+from .core.video import encode_frames_to_mp4, make_video_ui_payload
 
 
 def _save_input_preview(images, key="pano_input_images"):
@@ -210,6 +211,90 @@ def _single_image_to_numpy(image, warnings: list[str]) -> np.ndarray | None:
     elif img.shape[-1] > 4:
         img = img[..., :4]
     return np.clip(img.astype(np.float32), 0.0, 1.0)
+
+
+def _images_to_numpy_batch(image, warnings: list[str], *, allow_alpha: bool = False) -> np.ndarray | None:
+    if image is None or not hasattr(image, "detach"):
+        return None
+    try:
+        arr = image.detach().cpu().numpy().astype(np.float32)
+    except Exception:
+        return None
+    if arr.ndim == 3:
+        arr = arr[None, ...]
+    if arr.ndim != 4 or arr.shape[0] <= 0:
+        return None
+    batch = np.clip(arr.astype(np.float32), 0.0, 1.0)
+    if batch.shape[-1] < 3:
+        batch = np.repeat(batch[..., :1], 3, axis=-1)
+    elif not allow_alpha and batch.shape[-1] > 3:
+        batch = batch[..., :3]
+    elif allow_alpha and batch.shape[-1] == 3:
+        alpha = np.ones((batch.shape[0], batch.shape[1], batch.shape[2], 1), dtype=np.float32)
+        batch = np.concatenate([batch, alpha], axis=-1)
+    elif allow_alpha and batch.shape[-1] > 4:
+        batch = batch[..., :4]
+    return batch
+
+
+def _repeat_mask_batch(mask_bw: np.ndarray, batch_size: int) -> np.ndarray:
+    src = np.clip(np.asarray(mask_bw, dtype=np.float32), 0.0, 1.0)
+    if src.ndim == 3:
+        return src
+    return np.repeat(src[None, ...], max(1, int(batch_size)), axis=0)
+
+
+def _batch_to_torch(batch: np.ndarray):
+    arr = np.asarray(batch, dtype=np.float32)
+    if arr.ndim == 2:
+        arr = arr[None, ...]
+    return torch.from_numpy(arr.astype(np.float32, copy=False))
+
+
+def _merge_ui_payload(ui_ret: dict, payload: dict | None):
+    if not isinstance(ui_ret, dict) or not isinstance(payload, dict):
+        return ui_ret
+    for key, value in payload.items():
+        ui_ret[key] = value
+    return ui_ret
+
+
+def _append_video_payload(
+    ui_ret: dict,
+    frames: np.ndarray | None,
+    fps: float,
+    audio,
+    *,
+    warning_key: str,
+    include_comfy_preview: bool = False,
+    video_key: str = "pano_videos",
+    meta_key: str = "pano_video_meta",
+):
+    if frames is None:
+        return
+    batch = np.asarray(frames)  # preserve dtype — uint8 fast path in encode_frames_to_mp4
+    if batch.dtype not in (np.uint8, np.float32, np.float16):
+        batch = batch.astype(np.float32)
+    if batch.ndim == 3:
+        batch = batch[None, ...]
+    if batch.ndim != 4 or batch.shape[0] <= 1:
+        return
+    try:
+        mp4_path = encode_frames_to_mp4(batch, fps, audio=audio)
+        payload = make_video_ui_payload(
+            mp4_path,
+            fps,
+            int(batch.shape[0]),
+            include_comfy_preview=include_comfy_preview,
+            video_key=video_key,
+            meta_key=meta_key,
+        )
+        meta = payload.get(meta_key)
+        if isinstance(meta, list) and meta:
+            meta[0]["has_audio"] = isinstance(audio, dict) and audio.get("waveform") is not None
+        _merge_ui_payload(ui_ret, payload)
+    except Exception as ex:
+        _push_ui_warning(ui_ret, warning_key, f"Video UI cache generation failed: {ex}")
 
 
 def _first_image_tensor(image):
@@ -781,22 +866,42 @@ class PanoramaStickersNode(io.ComfyNode):
         return f"#{s.lower()}"
 
     @classmethod
-    def execute(cls, output_preset, coverage, bg_color, state_json, bg_erp=None, sticker_image=None, sticker_state=""):
+    def execute(cls, output_preset, coverage, bg_color, state_json, bg_erp=None, sticker_image=None, sticker_state="", fps=24.0, audio=None):
         out_w = cls._parse_output_preset(output_preset, max_val=cls.MAX_OUTPUT_SIDE)
         coverage_value = normalize_coverage(coverage)
         out_h = max(1, out_w if coverage_value == 180 else (out_w // 2))
         workspace_w = out_w
         workspace_h = max(1, workspace_w // 2)
         bg_hex = cls._normalize_hex_color(bg_color)
+        fps_value = max(1.0, finite_float(fps, 24.0))
         state = merge_state(state_in=None, internal_state=state_json, fallback_preset=out_w, fallback_bg=bg_hex)
         warnings = []
 
-        bg_np = None
+        # Keep background as torch tensor until encode time — resize+composite on CUDA if available
+        _bg_tensor = None  # (B, H, W, 3) float32 torch tensor
+        _cuda_device = torch.device("cuda") if torch.cuda.is_available() else None
         if bg_erp is not None:
-            bg_np = _single_image_to_numpy(bg_erp, warnings)
-            bg_np = _apply_coverage_to_rgb(bg_np, coverage_value, out_w, out_h)
-        if bg_np is None:
-            bg_np = np.broadcast_to(_hex_color_to_rgb01(bg_hex), (out_h, out_w, 3)).copy()
+            import torch.nn.functional as _F
+            _erp_input = bg_erp
+            # Move to CUDA for fast resize+composite, fall back to input device
+            _compute_device = _cuda_device if _cuda_device is not None else bg_erp.device
+            if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4:
+                _in_h, _in_w = int(bg_erp.shape[1]), int(bg_erp.shape[2])
+                if _in_h != out_h or _in_w != out_w:
+                    # bg_erp is (B, H, W, C) — interpolate expects (B, C, H, W)
+                    _t = bg_erp.to(_compute_device).permute(0, 3, 1, 2).float()
+                    _t = _F.interpolate(_t, size=(out_h, out_w), mode="bilinear", align_corners=False)
+                    _erp_input = _t.permute(0, 2, 3, 1)
+                else:
+                    _erp_input = bg_erp.to(_compute_device)
+            # Channels: keep only first 3
+            _nc = _erp_input.shape[-1] if hasattr(_erp_input, "shape") else 0
+            if _nc < 3:
+                _bg_tensor = _erp_input[..., :1].float().expand(*_erp_input.shape[:-1], 3).clamp(0, 1)
+            elif _nc > 3:
+                _bg_tensor = _erp_input[..., :3].float().clamp(0, 1)
+            else:
+                _bg_tensor = _erp_input.float().clamp(0, 1)
 
         state["output_preset"] = out_w
         state["bg_color"] = bg_hex
@@ -867,7 +972,7 @@ class PanoramaStickersNode(io.ComfyNode):
 
         render_state = dict(state)
         render_state["stickers"] = render_stickers
-        ui_ret = _save_input_preview(bg_erp) if bg_erp is not None else {}
+        ui_ret = _save_input_preview(_first_image_tensor(bg_erp)) if bg_erp is not None else {}
 
         painting_payload = resolve_painting_layer_payload(
             state.get("painting_layer"),
@@ -885,17 +990,56 @@ class PanoramaStickersNode(io.ComfyNode):
             warning_key="pano_sticker_warnings",
         )
         overlay_rgba = _apply_overlay_coverage_to_rgba(overlay_rgba, coverage_value, out_w, out_h)
-        out = alpha_composite_over_rgb(bg_np, overlay_rgba) if overlay_rgba is not None else bg_np
         mask_bw = _apply_overlay_coverage_to_mask(mask_bw, coverage_value, out_w, out_h)
         if mask_bw is None:
             mask_bw = np.zeros((out_h, out_w), dtype=np.float32)
 
-        out_t = torch.from_numpy(out)[None, ...]
-        mask_t = torch.from_numpy(np.clip(mask_bw.astype(np.float32), 0.0, 1.0))[None, ...]
+        _comp_device = _bg_tensor.device if _bg_tensor is not None else (_cuda_device or torch.device("cpu"))
+        if _bg_tensor is not None:
+            if overlay_rgba is not None:
+                # Composite on same device as bg (CUDA if available)
+                _ov_t = torch.from_numpy(overlay_rgba.astype(np.float32)).to(_comp_device)
+                _alpha_t = _ov_t[None, ..., 3:4]    # (1, H, W, 1)
+                _rgb_t = _ov_t[None, ..., :3]        # (1, H, W, 3)
+                out_t = (_rgb_t * _alpha_t + _bg_tensor * (1.0 - _alpha_t)).clamp(0.0, 1.0)
+            else:
+                out_t = _bg_tensor
+        else:
+            # solid color fallback
+            _solid = torch.zeros((1, out_h, out_w, 3), dtype=torch.float32, device=_comp_device)
+            _solid[:] = torch.tensor(_hex_color_to_rgb01(bg_hex), dtype=torch.float32, device=_comp_device)
+            if overlay_rgba is not None:
+                _ov_t = torch.from_numpy(overlay_rgba.astype(np.float32)).to(_comp_device)
+                _alpha_t = _ov_t[None, ..., 3:4]
+                _rgb_t = _ov_t[None, ..., :3]
+                out_t = (_rgb_t * _alpha_t + _solid * (1.0 - _alpha_t)).clamp(0.0, 1.0)
+            else:
+                out_t = _solid
+
+        _batch_size = int(out_t.shape[0])
+        mask_batch = _repeat_mask_batch(mask_bw, _batch_size)
+        mask_t = _batch_to_torch(mask_batch)
+        # Ensure out_t is a contiguous CPU tensor (ComfyUI convention)
+        out_t = out_t.contiguous().cpu()
         if sticker_image is not None:
             ui_ret.update(_save_input_preview(_first_image_tensor(sticker_image), key="pano_sticker_input_images"))
         if external_pose_ui is not None:
             ui_ret["pano_sticker_input_pose"] = [external_pose_ui]
+        # CPU transfer for encode — convert to uint8 on GPU first (157MB vs 629MB float32)
+        if _bg_tensor is not None:
+            bg_batch = (_bg_tensor * 255.0).clamp(0, 255).to(torch.uint8).detach().cpu().numpy()
+        else:
+            _solid_f = np.broadcast_to(_hex_color_to_rgb01(bg_hex), (1, out_h, out_w, 3)).copy()
+            bg_batch = np.clip(_solid_f * 255.0, 0, 255).astype(np.uint8)
+        _append_video_payload(
+            ui_ret,
+            bg_batch,
+            fps_value,
+            audio,
+            warning_key="pano_sticker_warnings",
+            video_key="pano_input_videos",
+            meta_key="pano_input_video_meta",
+        )
         if warnings:
             for warning in warnings:
                 _push_ui_warning(ui_ret, "pano_sticker_warnings", str(warning))
@@ -954,38 +1098,48 @@ class PanoramaCutoutNode(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, erp_image, coverage, state_json, output_megapixels=1.0):
+    def execute(cls, erp_image, coverage, state_json, output_megapixels=1.0, fps=24.0, audio=None):
         output_megapixels = max(0.01, finite_float(output_megapixels, 1.0))
+        fps_value = max(1.0, finite_float(fps, 24.0))
         state = merge_state(state_in=None, internal_state=state_json)
         coverage_value = normalize_coverage(coverage)
         state["coverage"] = coverage_value
         shots = state.get("shots", []) if isinstance(state, dict) else []
-        src = None
+        src_batch = None
         try:
             if erp_image is not None and hasattr(erp_image, "detach"):
                 arr = erp_image.detach().cpu().numpy().astype(np.float32)
                 if arr.ndim == 4 and arr.shape[0] > 0:
-                    src = arr[0]
+                    src_batch = arr
                 elif arr.ndim == 3:
-                    src = arr
+                    src_batch = arr[None, ...]
         except Exception:
-            src = None
+            src_batch = None
 
-        if src is None:
-            src = np.zeros((512, 1024, 3), dtype=np.float32)
+        if src_batch is None:
+            src_batch = np.zeros((1, 512, 1024, 3), dtype=np.float32)
 
-        if src.ndim != 3:
-            src = np.zeros((512, 1024, 3), dtype=np.float32)
+        if src_batch.ndim != 4:
+            src_batch = np.zeros((1, 512, 1024, 3), dtype=np.float32)
         else:
-            h, w, c = src.shape
-            if h <= 1 or w <= 1:
-                src = np.zeros((512, 1024, 3), dtype=np.float32)
-            elif c < 3:
-                src = np.repeat(src[..., :1], 3, axis=-1)
-            elif c > 3:
-                src = src[..., :3]
+            normalized_frames = []
+            for src in src_batch:
+                if src.ndim != 3:
+                    normalized_frames.append(np.zeros((512, 1024, 3), dtype=np.float32))
+                    continue
+                h, w, c = src.shape
+                if h <= 1 or w <= 1:
+                    normalized_frames.append(np.zeros((512, 1024, 3), dtype=np.float32))
+                elif c < 3:
+                    normalized_frames.append(np.repeat(src[..., :1], 3, axis=-1))
+                elif c > 3:
+                    normalized_frames.append(src[..., :3])
+                else:
+                    normalized_frames.append(src)
+            src_batch = np.clip(np.stack(normalized_frames, axis=0).astype(np.float32), 0.0, 1.0)
+        src = src_batch[0]
 
-        ui_ret = _save_input_preview(erp_image) if erp_image is not None else {}
+        ui_ret = _save_input_preview(_first_image_tensor(erp_image)) if erp_image is not None else {}
         if not shots:
             oh = int(src.shape[0])
             ow = int(src.shape[1])
@@ -994,13 +1148,18 @@ class PanoramaCutoutNode(io.ComfyNode):
                 erp_width=ow,
                 erp_height=oh,
             )
-            out, used_group_layers, _compose_stats_unused = _compose_display_list_to_erp(
-                state,
-                src,
-                painting_payload=painting_payload,
-                base_dir=Path.cwd(),
-                quality="export",
-            )
+            out_frames = []
+            used_group_layers = False
+            for frame in src_batch:
+                frame_out, frame_used_group_layers, _compose_stats_unused = _compose_display_list_to_erp(
+                    state,
+                    frame,
+                    painting_payload=painting_payload,
+                    base_dir=Path.cwd(),
+                    quality="export",
+                )
+                out_frames.append(frame_out)
+                used_group_layers = used_group_layers or bool(frame_used_group_layers)
             painting_state = state.get("painting")
             paint_rgba = None
             if used_group_layers:
@@ -1016,7 +1175,7 @@ class PanoramaCutoutNode(io.ComfyNode):
                         )
                     paint_rgba, _mask_bw = render_painting_to_erp(state.get("painting"), ow, oh)
             if paint_rgba is not None:
-                out = alpha_composite_over_rgb(out, paint_rgba)
+                out_frames = [alpha_composite_over_rgb(frame, paint_rgba) for frame in out_frames]
             mask_bw = painting_payload.get("mask") if isinstance(painting_payload, dict) else None
             if mask_bw is None:
                 if painting_state_has_renderables(painting_state):
@@ -1033,8 +1192,11 @@ class PanoramaCutoutNode(io.ComfyNode):
                 "pano_cutout_warnings",
                 "Panorama Cutout has no frame, so the ERP geometry was passed through unchanged while display-list layers, paint, and mask output were still applied.",
             )
-            out_t = torch.from_numpy(out.astype(np.float32, copy=False))[None, ...]
-            mask_t = torch.from_numpy(np.clip(mask_bw.astype(np.float32), 0.0, 1.0))[None, ...]
+            out_batch = np.stack(out_frames, axis=0).astype(np.float32, copy=False)
+            mask_batch = _repeat_mask_batch(mask_bw, int(src_batch.shape[0]))
+            out_t = _batch_to_torch(out_batch)
+            mask_t = _batch_to_torch(mask_batch)
+            _append_video_payload(ui_ret, out_batch, fps_value, audio, warning_key="pano_cutout_warnings")
             return io.NodeOutput(out_t, '{"stickers":[],"version":1}', mask_t, ui=ui_ret)
 
         shot = shots[0]
@@ -1048,8 +1210,6 @@ class PanoramaCutoutNode(io.ComfyNode):
         )
 
         sticker_state_json = _build_sticker_state_json(shot, ow, oh)
-        empty_mask = torch.zeros((1, oh, ow), dtype=torch.float32)
-
         try:
             painting_payload = resolve_painting_layer_payload(
                 state.get("painting_layer"),
@@ -1067,7 +1227,7 @@ class PanoramaCutoutNode(io.ComfyNode):
                 oh,
                 coverage_value,
             )
-            out = sample_cutout_from_sampling_map(src, sampling_map)
+            out_frames = [sample_cutout_from_sampling_map(frame, sampling_map) for frame in src_batch]
             overlay_rgba, overlay_mask_bw, _overlay_stats_unused, _used_group_layers_unused = _build_overlay_erp_rgba_and_mask(
                 state,
                 erp_width=int(src.shape[1]),
@@ -1080,7 +1240,7 @@ class PanoramaCutoutNode(io.ComfyNode):
             )
             if isinstance(overlay_rgba, np.ndarray):
                 overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
-                out = alpha_composite_over_rgb(out, overlay_cutout)
+                out_frames = [alpha_composite_over_rgb(frame, overlay_cutout) for frame in out_frames]
             selected_mask = overlay_mask_bw if isinstance(overlay_mask_bw, np.ndarray) else (
                 painting_payload.get("mask") if isinstance(painting_payload, dict) else None
             )
@@ -1088,8 +1248,11 @@ class PanoramaCutoutNode(io.ComfyNode):
                 mask_bw = sample_cutout_from_sampling_map(selected_mask, sampling_map)
             else:
                 mask_bw = np.zeros((oh, ow), dtype=np.float32)
-            out_t = torch.from_numpy(out)[None, ...]
-            mask_t = torch.from_numpy(mask_bw.astype(np.float32))[None, ...]
+            out_batch = np.stack(out_frames, axis=0).astype(np.float32, copy=False)
+            mask_batch = _repeat_mask_batch(mask_bw, int(out_batch.shape[0]))
+            out_t = _batch_to_torch(out_batch)
+            mask_t = _batch_to_torch(mask_batch)
+            _append_video_payload(ui_ret, out_batch, fps_value, audio, warning_key="pano_cutout_warnings")
             return io.NodeOutput(out_t, sticker_state_json, mask_t, ui=ui_ret)
         except Exception as ex:
             logging.getLogger(__name__).exception("[PanoramaCutout] strict export failed")
@@ -1118,8 +1281,14 @@ class PanoramaPreviewNode(io.ComfyNode):
     @classmethod
     def execute(cls, erp_image, coverage="360"):
         ui_ret = {}
+        warnings = []
         if erp_image is not None:
-            ui_ret = _save_input_preview(erp_image)
+            ui_ret = _save_input_preview(_first_image_tensor(erp_image))
+            batch = _images_to_numpy_batch(erp_image, warnings)
+            _append_video_payload(ui_ret, batch, 24.0, None, warning_key="pano_preview_warnings")
+        if warnings:
+            for warning in warnings:
+                _push_ui_warning(ui_ret, "pano_preview_warnings", str(warning))
         return io.NodeOutput(ui=ui_ret)
 
 

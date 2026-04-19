@@ -72,6 +72,34 @@ function imageSourceFromCandidate(candidate) {
   return comfyImageEntryToUrl(candidate);
 }
 
+function isRenderableMediaReady(media) {
+  if (!media) return false;
+  if (media instanceof HTMLVideoElement) {
+    return Number(media.videoWidth || 0) > 0
+      && Number(media.videoHeight || 0) > 0
+      && Number(media.readyState || 0) >= 2;
+  }
+  return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
+}
+
+function getRenderableMediaRevisionToken(media) {
+  if (media instanceof HTMLVideoElement) {
+    return [
+      String(media.currentSrc || media.src || ""),
+      Number(media.videoWidth || 0),
+      Number(media.videoHeight || 0),
+      Number(media.currentTime || 0).toFixed(3),
+      Number(media.readyState || 0),
+      media.paused ? "paused" : "playing",
+    ].join("|");
+  }
+  return [
+    String(media?.currentSrc || media?.src || ""),
+    Number(media?.naturalWidth || media?.width || 0),
+    Number(media?.naturalHeight || media?.height || 0),
+  ].join("|");
+}
+
 function lookupNodeOutputEntry(nodeId) {
   const store = app?.nodeOutputs;
   if (!store || nodeId == null) return null;
@@ -93,6 +121,25 @@ function lookupNodeOutputEntry(nodeId) {
     }
   }
   return null;
+}
+
+function getSelfVideoUrl(node) {
+  const outputs = lookupNodeOutputEntry(node?.id);
+  const groups = [
+    outputs?.ui?.pano_videos,
+    outputs?.pano_videos,
+    outputs?.ui?.images,
+    outputs?.images,
+  ];
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    for (const cand of group) {
+      const src = imageSourceFromCandidate(cand);
+      if (src && /\.mp4(\?|$)/i.test(src)) return src;
+      if (src && String(cand?.format || "").toLowerCase() === "video/mp4") return src;
+    }
+  }
+  return "";
 }
 
 function getLinkedImageUrl(node, imageInputName = "erp_image") {
@@ -173,7 +220,7 @@ function drawPreview(node, ctx, width, height, view, img) {
   ctx.fillStyle = "#070707";
   ctx.fillRect(0, 0, width, height);
 
-  if (!img || !img.complete || !(img.naturalWidth || img.width) || width <= 1 || height <= 1) {
+  if (!isRenderableMediaReady(img) || width <= 1 || height <= 1) {
     drawGrid(ctx, width, height);
     return;
   }
@@ -181,20 +228,15 @@ function drawPreview(node, ctx, width, height, view, img) {
   const tanHalfY = Math.tan((Number(view.fov || 100) * DEG2RAD) * 0.5);
   const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
   if (!node.__panoStandaloneCore) node.__panoStandaloneCore = createPanoramaRenderCore();
+  const mediaRevision = getRenderableMediaRevisionToken(img);
   const descriptor = buildStickerRenderDescriptor({
     stateRevision: [
       "standalone_preview_scene",
-      String(img.currentSrc || img.src || ""),
-      Number(img.naturalWidth || img.width || 0),
-      Number(img.naturalHeight || img.height || 0),
+      mediaRevision,
       coverageDeg,
     ].join("|"),
     backgroundSource: img,
-    backgroundRevision: [
-      String(img.currentSrc || img.src || ""),
-      Number(img.naturalWidth || img.width || 0),
-      Number(img.naturalHeight || img.height || 0),
-    ].join("|"),
+    backgroundRevision: mediaRevision,
     coverageDeg,
     scene: buildStickerSceneFromState(null, {}),
     textures: [],
@@ -240,6 +282,8 @@ class PreviewNodeRuntime {
     this.queuedDuringTick = false;
     this.img = null;
     this.imgSrc = "";
+    this.mediaCleanup = null;
+    this.videoPaused = false;
     this.view = { yaw: 0, pitch: 0, fov: 100 };
     this.controller = createPanoInteractionController({
       getView: () => this.view,
@@ -442,6 +486,31 @@ class PreviewNodeRuntime {
       ev.stopPropagation();
       ev.stopImmediatePropagation?.();
     }, { passive: false, capture: true });
+    canvas.addEventListener("dblclick", (ev) => {
+      this.togglePlayback();
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation?.();
+    });
+    root.addEventListener("keydown", (ev) => {
+      if (ev.key !== " " && ev.key !== "Spacebar") return;
+      this.togglePlayback();
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation?.();
+    });
+  }
+
+  togglePlayback() {
+    if (!(this.img instanceof HTMLVideoElement) || !isRenderableMediaReady(this.img)) return;
+    if (this.img.paused) {
+      this.videoPaused = false;
+      void this.img.play().catch(() => {});
+    } else {
+      this.videoPaused = true;
+      this.img.pause();
+    }
+    this.requestDraw();
   }
 
   attachLegacy() {
@@ -547,14 +616,53 @@ class PreviewNodeRuntime {
   }
 
   refreshImage() {
+    const nextVideoSrc = getSelfVideoUrl(this.node);
+    if (nextVideoSrc) {
+      if (nextVideoSrc === this.imgSrc && this.img instanceof HTMLVideoElement) return;
+      this.mediaCleanup?.();
+      this.imgSrc = nextVideoSrc;
+      this.videoPaused = false;
+      const video = document.createElement("video");
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.crossOrigin = "anonymous";
+      const onReady = () => {
+        if (this.imgSrc !== nextVideoSrc) return;
+        this.img = video;
+        if (!this.videoPaused) void video.play().catch(() => {});
+        this.requestDraw();
+      };
+      const onTick = () => this.requestDraw();
+      video.addEventListener("loadedmetadata", onReady);
+      video.addEventListener("canplay", onReady);
+      video.addEventListener("timeupdate", onTick);
+      video.addEventListener("play", onTick);
+      video.addEventListener("pause", onTick);
+      video.src = nextVideoSrc;
+      video.load();
+      this.mediaCleanup = () => {
+        video.pause();
+        video.removeEventListener("loadedmetadata", onReady);
+        video.removeEventListener("canplay", onReady);
+        video.removeEventListener("timeupdate", onTick);
+        video.removeEventListener("play", onTick);
+        video.removeEventListener("pause", onTick);
+      };
+      return;
+    }
     const nextSrc = getLinkedImageUrl(this.node, this.imageInputName);
     if (!nextSrc) {
+      this.mediaCleanup?.();
+      this.mediaCleanup = null;
       this.img = null;
       this.imgSrc = "";
       this.requestDraw();
       return;
     }
     if (nextSrc === this.imgSrc && this.img) return;
+    this.mediaCleanup?.();
+    this.mediaCleanup = null;
     this.imgSrc = nextSrc;
     const img = new Image();
     img.onload = () => {
@@ -601,7 +709,10 @@ class PreviewNodeRuntime {
       this.node.setDirtyCanvas?.(true, false);
     }
     this.inTick = false;
-    const shouldContinue = moving || this.needsDraw || this.queuedDuringTick;
+    const shouldContinue = moving
+      || this.needsDraw
+      || this.queuedDuringTick
+      || (this.img instanceof HTMLVideoElement && !this.img.paused && !this.img.ended);
     if (shouldContinue && !this.rafId) this.rafId = requestAnimationFrame(this.tick);
   }
 
@@ -624,6 +735,8 @@ class PreviewNodeRuntime {
     }
     this.resizeObserver?.disconnect?.();
     this.resizeObserver = null;
+    this.mediaCleanup?.();
+    this.mediaCleanup = null;
     try {
       this.root?.remove?.();
     } catch {

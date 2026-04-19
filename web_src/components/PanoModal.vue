@@ -8,6 +8,7 @@ import PanoSelectionMenu from "./PanoSelectionMenu.vue";
 import PanoSidePanel from "./PanoSidePanel.vue";
 import PanoTooltip from "./PanoTooltip.vue";
 import PanoToolRail from "./PanoToolRail.vue";
+import PanoVideoTransport from "./PanoVideoTransport.vue";
 import PanoViewToggle from "./PanoViewToggle.vue";
 import { buildModalShellPreset } from "../modal_shell_presets.js";
 
@@ -156,6 +157,8 @@ watch(() => props.open, (nextOpen) => {
             :state="uiState.paintDock || {}"
           />
         </template>
+
+        <PanoVideoTransport :state="uiState.videoTransport || {}" />
 
         <PanoViewToggle :buttons="uiState.viewButtons || shellPreset.viewButtons || []" />
 
