@@ -1067,7 +1067,7 @@ class PanoramaCutoutNode(io.ComfyNode):
                 coverage_value,
             )
             out = sample_cutout_from_sampling_map(src, sampling_map)
-            overlay_rgba, _mask_bw_unused, _overlay_stats_unused, _used_group_layers_unused = _build_overlay_erp_rgba_and_mask(
+            overlay_rgba, overlay_mask_bw, _overlay_stats_unused, _used_group_layers_unused = _build_overlay_erp_rgba_and_mask(
                 state,
                 erp_width=int(src.shape[1]),
                 erp_height=int(src.shape[0]),
@@ -1080,9 +1080,11 @@ class PanoramaCutoutNode(io.ComfyNode):
             if isinstance(overlay_rgba, np.ndarray):
                 overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
                 out = alpha_composite_over_rgb(out, overlay_cutout)
-            payload_mask = painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-            if isinstance(payload_mask, np.ndarray):
-                mask_bw = sample_cutout_from_sampling_map(payload_mask, sampling_map)
+            selected_mask = overlay_mask_bw if isinstance(overlay_mask_bw, np.ndarray) else (
+                painting_payload.get("mask") if isinstance(painting_payload, dict) else None
+            )
+            if isinstance(selected_mask, np.ndarray):
+                mask_bw = sample_cutout_from_sampling_map(selected_mask, sampling_map)
             else:
                 mask_bw = np.zeros((oh, ow), dtype=np.float32)
             out_t = torch.from_numpy(out)[None, ...]

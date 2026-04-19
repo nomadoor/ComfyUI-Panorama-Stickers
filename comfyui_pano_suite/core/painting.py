@@ -817,6 +817,14 @@ def render_painting_to_cutout(
     coverage: int = 360,
     sampling_map: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
+    def _sampling_map_matches_erp_shape(active_map: dict | None, expected_w: int, expected_h: int) -> bool:
+        if not isinstance(active_map, dict):
+            return False
+        return (
+            int(active_map.get("erp_w", 0)) == int(expected_w)
+            and int(active_map.get("erp_h", 0)) == int(expected_h)
+        )
+
     coverage_value = 180 if int(coverage) == 180 else 360
     active_sampling_map = sampling_map
     if active_sampling_map is None:
@@ -875,9 +883,22 @@ def render_painting_to_cutout(
     # Render from stroke records with 2× supersampling for antialiasing.
     ss_w = min(max(64, int(erp_width)) * 2, 8192)
     ss_h = min(max(32, int(erp_height)) * 2, 4096)
+    ss_sampling_map = active_sampling_map
+    if not _sampling_map_matches_erp_shape(ss_sampling_map, ss_w, ss_h):
+        ss_sampling_map = build_cutout_sampling_map(
+            (ss_h, ss_w),
+            float(shot.get("yaw_deg", 0.0)),
+            float(shot.get("pitch_deg", 0.0)),
+            float(shot.get("hFOV_deg", 90.0)),
+            float(shot.get("vFOV_deg", 60.0)),
+            float(shot.get("roll_deg", 0.0)),
+            width,
+            height,
+            coverage_value,
+        )
     paint_erp, mask_erp = render_painting_to_erp(normalized, ss_w, ss_h)
-    paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value, sampling_map=active_sampling_map)
-    mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value, sampling_map=active_sampling_map)
+    paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value, sampling_map=ss_sampling_map)
+    mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value, sampling_map=ss_sampling_map)
     result = (paint.astype(np.float32), mask.astype(np.float32))
     _cache_put(_CUTOUT_RENDER_CACHE, cache_key, result)
     return _clone_render_pair(result)

@@ -53,10 +53,10 @@ function normalizeObject(entry = {}, index = 0) {
 }
 
 export function normalizePanoramaSceneDescriptor(scene = {}) {
-  if (scene?.background && scene?.objectPass && Array.isArray(scene.objectPass.objects)) {
+  if (scene?.objectPass && Array.isArray(scene.objectPass.objects)) {
     return buildPanoramaRenderDescriptor({
       stateRevision: String(scene?.stateRevision || ""),
-      background: normalizeBackground(scene.background || {}),
+      background: normalizeBackground(scene?.background || {}),
       objectPass: {
         selectedId: scene?.objectPass?.selectedId ?? null,
         hoveredId: scene?.objectPass?.hoveredId ?? null,

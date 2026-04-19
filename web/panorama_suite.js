@@ -8420,10 +8420,10 @@ function gf(e = {}, t = 0) {
 }
 function ob(e = {}) {
   var r, a;
-  if (e != null && e.background && (e != null && e.objectPass) && Array.isArray(e.objectPass.objects))
+  if (e != null && e.objectPass && Array.isArray(e.objectPass.objects))
     return hi({
       stateRevision: String((e == null ? void 0 : e.stateRevision) || ""),
-      background: hf(e.background || {}),
+      background: hf((e == null ? void 0 : e.background) || {}),
       objectPass: {
         selectedId: ((r = e == null ? void 0 : e.objectPass) == null ? void 0 : r.selectedId) ?? null,
         hoveredId: ((a = e == null ? void 0 : e.objectPass) == null ? void 0 : a.hoveredId) ?? null,
@@ -8540,16 +8540,19 @@ function cb(e, t, n) {
   });
 }
 async function lb(e, t = {}) {
+  var g, y;
   if (!e || typeof e.renderFrame != "function")
     throw new Error("exportPanoramaSceneCameraFrame requires a valid camera instance.");
-  const n = ra((t == null ? void 0 : t.camera) || (t == null ? void 0 : t.view) || {}), r = Po({
-    width: (t == null ? void 0 : t.width) || 1,
-    height: (t == null ? void 0 : t.height) || 1,
-    dpr: (t == null ? void 0 : t.dpr) || 1
-  }), a = e.renderFrame(n, r);
-  if (!a) throw new Error("Panorama scene camera render returned null.");
-  const s = String((t == null ? void 0 : t.format) || "png").toLowerCase() === "jpeg" ? "image/jpeg" : "image/png", u = (t == null ? void 0 : t.quality) == null ? 0.92 : Number(t.quality);
-  return cb(a, s, u);
+  const n = ra((t == null ? void 0 : t.camera) || (t == null ? void 0 : t.view) || {}), r = (t == null ? void 0 : t.output) || ((g = t == null ? void 0 : t.camera) == null ? void 0 : g.output) || ((y = t == null ? void 0 : t.view) == null ? void 0 : y.output) || null, a = Po(
+    r || {
+      width: t == null ? void 0 : t.width,
+      height: t == null ? void 0 : t.height,
+      dpr: t == null ? void 0 : t.dpr
+    }
+  ), s = e.renderFrame(n, a);
+  if (!s) throw new Error("Panorama scene camera render returned null.");
+  const u = String((t == null ? void 0 : t.format) || "png").toLowerCase() === "jpeg" ? "image/jpeg" : "image/png", f = (t == null ? void 0 : t.quality) == null ? 0.92 : Number(t.quality);
+  return cb(s, u, f);
 }
 function ub(e, t, n = {}) {
   if (!e || !t || typeof t.appendChild != "function")
@@ -8584,7 +8587,7 @@ function ub(e, t, n = {}) {
       s = ra(w || {}), v();
     },
     getView() {
-      return s;
+      return { ...s };
     },
     present: y,
     requestRender: v,

@@ -17,11 +17,14 @@ export async function exportPanoramaSceneCameraFrame(camera, options = {}) {
     throw new Error("exportPanoramaSceneCameraFrame requires a valid camera instance.");
   }
   const view = normalizePanoramaCameraView(options?.camera || options?.view || {});
-  const output = normalizePanoramaCameraOutput({
-    width: options?.width || 1,
-    height: options?.height || 1,
-    dpr: options?.dpr || 1,
-  });
+  const explicitOutput = options?.output || options?.camera?.output || options?.view?.output || null;
+  const output = normalizePanoramaCameraOutput(
+    explicitOutput || {
+      width: options?.width,
+      height: options?.height,
+      dpr: options?.dpr,
+    }
+  );
   const surface = camera.renderFrame(view, output);
   if (!surface) throw new Error("Panorama scene camera render returned null.");
   const format = String(options?.format || "png").toLowerCase() === "jpeg" ? "image/jpeg" : "image/png";

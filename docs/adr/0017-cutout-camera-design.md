@@ -122,7 +122,7 @@ OutputParams = {
 
 ## レンダーパイプライン（2ステップ）
 
-```
+```text
 Step 1: syncScene(descriptor)
   → GPU テクスチャアップロード（revision が変わった時のみ）
   → シーンジオメトリの確定
@@ -171,6 +171,7 @@ camera.renderFrame(
 `renderFrame()` が `null` を返した場合の契約は次の通り。
 - GL 可否は factory 作成時または最初の mount/render 時に一度確定し、その後は instance 内で固定する
 - consumer は `null` を「この camera instance では GPU path が使えない」と解釈し、空白または `"Preview unavailable"` 等の非レンダリング UI を出す
+- consumer は scene camera の `isSupported()` が利用可能な場合、それを capability check に使ってよい。ただし canonical な unsupported signal は引き続き `renderFrame() === null` とする
 - consumer ごとに CPU fallback renderer を実装してはいけない。fallback 実装は camera backend 自体の責務であり、consumer 側では分岐しない
 - 必要なら consumer は `null` を受けた時点で mount/render を止め、再試行は新しい camera instance を作り直す
 
@@ -180,8 +181,6 @@ camera.renderFrame(
 - `null を無視して描画を続ける`
 ことではない
 
-将来 `isSupported()` のような明示 API を足す余地はあるが、現時点の canonical 契約は `renderFrame() === null` を unsupported signal とする。
-
 `CameraParams` の canonical 定義は上記の union とする。`mode` ごとの必須項目は次の通り。
 - `panorama` / `unwrap`: `fovDeg`
 - `cutout`: `hFovDeg`, `vFovDeg`
@@ -189,11 +188,13 @@ camera.renderFrame(
 ### マウント（ライブプレビュー用）
 
 ```js
-camera.mount(container: HTMLElement, options: {
+const cameraMount = camera.mount(container: HTMLElement, options: {
   onCameraChange?: (camera: CameraParams) => void,
 })
-camera.unmount()
+cameraMount.unmount()
 ```
+
+`mount()` は controller/handle を返し、その `unmount()` が DOM mount と observer / RAF cleanup を担当する。
 
 マウント後は RAF ループが動作する。
 ユーザーがドラッグすると `onCameraChange` が呼ばれ、呼び出し側が新しい camera params を `renderFrame` に渡す。
@@ -288,7 +289,7 @@ unsubscribe();
 
 ### 熱パス（ユーザー操作中）
 
-```
+```text
 カメラドラッグ → renderFrame のみ（< 1ms / frame）
 ```
 
@@ -307,7 +308,7 @@ UX 制約:
 
 ### 温パス（ストロークライブ中）
 
-```
+```text
 appendStrokePoint → paint canvas dirty → syncScene（差分テクスチャ転送）→ renderFrame
 ```
 
@@ -315,7 +316,7 @@ appendStrokePoint → paint canvas dirty → syncScene（差分テクスチャ�
 
 ### 冷パス（状態確定後）
 
-```
+```text
 commitState → full syncScene → renderFrame
 ```
 
@@ -325,7 +326,7 @@ commitState → full syncScene → renderFrame
 
 ### 変更禁止ファイル
 
-```
+```text
 web_src/pano_editor.js
 web_src/pano_paint_engine.js
 web_src/pano_gl_renderer.js
@@ -336,7 +337,7 @@ web_src/pano_render_targets.js
 
 ### 共通 Camera の実装ファイル（新規作成）
 
-```
+```text
 web_src/pano_scene_camera.js        ← カメラ本体
 web_src/pano_scene_camera_dom.js    ← DOM マウント・インタラクション
 web_src/pano_scene_camera_export.js ← 静止画・動画エクスポート
@@ -345,7 +346,7 @@ web_src/pano_cutout_camera.js       ← cutout 向け thin adapter
 
 ### メイン編集側が提供するもの（読み取り専用）
 
-```
+```text
 node.__panoState        → シーンの source of truth
 node.__panoPaintSurface → ライブペイントサーフェス（dirty flag 付き）
 ```

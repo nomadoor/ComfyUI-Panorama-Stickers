@@ -80,10 +80,16 @@
 .pano-modal.pano-modal-fullscreen .pano-side,
 .pano-modal.pano-modal-fullscreen .pano-floating-top,
 .pano-modal.pano-modal-fullscreen .pano-floating-right,
+.pano-modal.pano-modal-fullscreen .pano-camera-preview-anchor,
 .pano-modal.pano-modal-fullscreen .pano-selection-menu,
 .pano-modal.pano-modal-fullscreen .pano-output-preview-toggle,
 .pano-modal.pano-modal-fullscreen .pano-tooltip {
   display: none !important;
+}
+.pano-modal.pano-modal-fullscreen .pano-camera-preview-anchor,
+.pano-modal.pano-modal-fullscreen .pano-camera-preview-anchor[data-settled="true"] {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 .pano-modal button {
   cursor: pointer;
@@ -418,11 +424,15 @@
   padding: 0;
 }
 .pano-camera-preview-toggle:hover,
-.pano-camera-preview-toggle:focus-visible,
 .pano-camera-preview-toggle:active {
   background: transparent !important;
   box-shadow: none !important;
   color: #ffffff;
+}
+.pano-camera-preview-toggle:focus-visible {
+  background: transparent;
+  color: #ffffff;
+  box-shadow: 0 0 0 1px var(--pano-accent);
 }
 .pano-selection-menu {
   position: absolute;

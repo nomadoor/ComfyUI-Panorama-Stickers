@@ -67,7 +67,7 @@ export function mountPanoramaSceneCamera(camera, container, options = {}) {
       requestRender();
     },
     getView() {
-      return currentView;
+      return { ...currentView };
     },
     present,
     requestRender,

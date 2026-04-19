@@ -26,6 +26,8 @@ def _cutout_sampling_cache_get(key: str) -> dict | None:
             "valid": entry.get("valid").copy() if isinstance(entry.get("valid"), np.ndarray) else entry.get("valid"),
             "out_w": int(entry["out_w"]),
             "out_h": int(entry["out_h"]),
+            "erp_w": int(entry.get("erp_w", 0)),
+            "erp_h": int(entry.get("erp_h", 0)),
         }
 
 
@@ -37,6 +39,8 @@ def _cutout_sampling_cache_put(key: str, sampling_map: dict) -> None:
             "valid": sampling_map.get("valid").copy() if isinstance(sampling_map.get("valid"), np.ndarray) else sampling_map.get("valid"),
             "out_w": int(sampling_map["out_w"]),
             "out_h": int(sampling_map["out_h"]),
+            "erp_w": int(sampling_map.get("erp_w", 0)),
+            "erp_h": int(sampling_map.get("erp_h", 0)),
         }
         _CUTOUT_SAMPLING_MAP_CACHE.move_to_end(key)
         while len(_CUTOUT_SAMPLING_MAP_CACHE) > _CUTOUT_SAMPLING_MAP_CACHE_LIMIT:
@@ -146,6 +150,8 @@ def build_cutout_sampling_map(
         "valid": valid,
         "out_w": out_w,
         "out_h": out_h,
+        "erp_w": erp_w,
+        "erp_h": erp_h,
     }
     _cutout_sampling_cache_put(cache_key, sampling_map)
     return sampling_map

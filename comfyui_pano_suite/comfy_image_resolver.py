@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from .core.painting import load_painting_layer_payload
 
@@ -39,7 +39,7 @@ def _resolve_asset_cache_key(asset: dict | None) -> tuple[str, int, int] | None:
         return None
     try:
         stat = path.stat()
-    except Exception:
+    except (FileNotFoundError, OSError):
         return None
     return (str(path), int(stat.st_mtime_ns), int(stat.st_size))
 
@@ -47,10 +47,11 @@ def _resolve_asset_cache_key(asset: dict | None) -> tuple[str, int, int] | None:
 @lru_cache(maxsize=64)
 def _load_comfy_rgba_cached(path_str: str, mtime_ns: int, size_bytes: int) -> np.ndarray | None:
     try:
-        arr = np.asarray(Image.open(path_str).convert("RGBA"), dtype=np.float32) / 255.0
+        with Image.open(path_str) as img:
+            arr = np.asarray(img.convert("RGBA"), dtype=np.float32) / 255.0
         arr.flags.writeable = False
         return arr
-    except Exception:
+    except (FileNotFoundError, OSError, UnidentifiedImageError, ValueError):
         return None
 
 
