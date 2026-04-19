@@ -1718,6 +1718,10 @@ async function showEditor(node, type, options = {}) {
       frameCount: 0,
       fps: 24,
       mode: "playback",
+      hasAudio: false,
+      muted: false,
+      volume: 1,
+      volumePct: 100,
     },
     sidePanel: {},
     selectionMenu: { visible: false, left: 0, top: 0, items: [] },
@@ -1973,6 +1977,26 @@ async function showEditor(node, type, options = {}) {
     const fps = Math.max(1, Number(uiState.videoTransport.fps || 24));
     return Math.max(1 / 120, Math.min(0.05, 0.5 / fps));
   };
+  const detectVideoHasAudio = (video) => {
+    if (!(video instanceof HTMLVideoElement)) return false;
+    try {
+      if (Array.isArray(video.audioTracks) && video.audioTracks.length > 0) return true;
+      if (video.audioTracks && typeof video.audioTracks.length === "number" && video.audioTracks.length > 0) return true;
+    } catch {
+      // Ignore browser-specific audioTracks access issues.
+    }
+    try {
+      if (typeof video.mozHasAudio === "boolean") return video.mozHasAudio;
+    } catch {
+      // Ignore Firefox-only property access issues.
+    }
+    try {
+      if (Number(video.webkitAudioDecodedByteCount || 0) > 0) return true;
+    } catch {
+      // Ignore WebKit-only property access issues.
+    }
+    return !!uiState.videoTransport.hasAudio;
+  };
   const frameNumberForTime = (time) => {
     const fps = Math.max(1, Number(uiState.videoTransport.fps || 24));
     return Math.max(0, Math.round(Math.max(0, Number(time || 0)) * fps));
@@ -2119,6 +2143,21 @@ async function showEditor(node, type, options = {}) {
       refreshModalVideoSource();
       requestDraw({ cause: "frame_view" });
     };
+    const onVolumeChange = () => {
+      syncVideoTransportState({
+        ready: !!videoEl.getAttribute("src"),
+        playing: !videoEl.paused && !videoEl.ended,
+        visible: !!videoEl.getAttribute("src") && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+        currentTime: videoState.editorTime,
+        duration: uiState.videoTransport.duration,
+        frameCount: uiState.videoTransport.frameCount,
+        fps: uiState.videoTransport.fps,
+        mode: videoState.mode,
+        hasAudio: uiState.videoTransport.hasAudio,
+        muted: videoEl.muted,
+        volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
+      });
+    };
     const onSeeked = () => {
       const hadExplicitSeek = videoState.seeking || videoState.pendingPlaybackResume || videoState.mode === "scrub";
       videoState.seeking = false;
@@ -2148,12 +2187,14 @@ async function showEditor(node, type, options = {}) {
     videoEl.addEventListener("canplay", onVideoReady);
     videoEl.addEventListener("play", onPlay);
     videoEl.addEventListener("pause", onPause);
+    videoEl.addEventListener("volumechange", onVolumeChange);
     videoEl.addEventListener("seeked", onSeeked);
     videoCleanupFns.push(() => videoEl.removeEventListener("loadedmetadata", onVideoReady));
     videoCleanupFns.push(() => videoEl.removeEventListener("loadeddata", onVideoReady));
     videoCleanupFns.push(() => videoEl.removeEventListener("canplay", onVideoReady));
     videoCleanupFns.push(() => videoEl.removeEventListener("play", onPlay));
     videoCleanupFns.push(() => videoEl.removeEventListener("pause", onPause));
+    videoCleanupFns.push(() => videoEl.removeEventListener("volumechange", onVolumeChange));
     videoCleanupFns.push(() => videoEl.removeEventListener("seeked", onSeeked));
   }
 
@@ -3140,6 +3181,17 @@ async function showEditor(node, type, options = {}) {
   function syncVideoTransportState(extra = {}) {
     const current = Number(extra.currentTime ?? videoState.editorTime ?? 0);
     const duration = Number(extra.duration ?? uiState.videoTransport.duration ?? 0);
+    const muted = Object.prototype.hasOwnProperty.call(extra, "muted")
+      ? !!extra.muted
+      : !!(videoEl instanceof HTMLVideoElement ? videoEl.muted : uiState.videoTransport.muted);
+    const volume = Number(
+      Object.prototype.hasOwnProperty.call(extra, "volume")
+        ? extra.volume
+        : (videoEl instanceof HTMLVideoElement ? videoEl.volume : uiState.videoTransport.volume)
+    );
+    const hasAudio = Object.prototype.hasOwnProperty.call(extra, "hasAudio")
+      ? !!extra.hasAudio
+      : detectVideoHasAudio(videoEl);
     Object.assign(uiState.videoTransport, {
       ready: !!extra.ready,
       playing: !!extra.playing,
@@ -3152,6 +3204,10 @@ async function showEditor(node, type, options = {}) {
       frameCount: Math.max(0, Number(extra.frameCount ?? uiState.videoTransport.frameCount ?? 0)),
       fps: Math.max(1, Number(extra.fps ?? uiState.videoTransport.fps ?? 24)),
       mode: String(extra.mode || videoState.mode || "playback"),
+      hasAudio,
+      muted,
+      volume: Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1)),
+      volumePct: Math.round(Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1)) * 100),
     });
   }
   function captureStillFrameFromVideo() {
@@ -3213,11 +3269,14 @@ async function showEditor(node, type, options = {}) {
     const frameCount = Math.max(0, Number(meta?.frames || 0));
     const fps = Math.max(1, Number(meta?.fps || 24));
     const duration = Number(meta?.duration || (frameCount > 0 ? frameCount / fps : 0));
+    const hasAudio = !!meta?.has_audio || detectVideoHasAudio(videoEl);
     if (nextSrc && videoEl.dataset.panoSrc !== nextSrc) {
       videoEl.pause();
       videoEl.dataset.panoSrc = nextSrc;
       videoEl.dataset.panoFrameIdx = "0";
       videoEl.loop = true;
+      videoEl.muted = !!uiState.videoTransport.muted;
+      videoEl.volume = Math.max(0, Math.min(1, Number(uiState.videoTransport.volume ?? 1)));
       videoEl.src = nextSrc;
       videoEl.load();
     } else if (!nextSrc && videoEl.getAttribute("src")) {
@@ -3234,6 +3293,9 @@ async function showEditor(node, type, options = {}) {
       frameCount,
       fps,
       mode: videoState.mode,
+      hasAudio,
+      muted: !!videoEl.muted,
+      volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
     });
     return nextSrc || null;
   }
@@ -9935,6 +9997,31 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ cause: "frame_view" });
       return;
     }
+    if (action === "video-audio-toggle") {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (!(videoEl instanceof HTMLVideoElement)) return;
+      if (!uiState.videoTransport.hasAudio) return;
+      const nextMuted = !videoEl.muted;
+      videoEl.muted = nextMuted;
+      if (!nextMuted && Number(videoEl.volume || 0) <= 0) {
+        videoEl.volume = Math.max(0.01, Number(uiState.videoTransport.volume || 1));
+      }
+      syncVideoTransportState({
+        ready: !!videoEl.getAttribute("src"),
+        playing: !videoEl.paused && !videoEl.ended,
+        visible: !!videoEl.getAttribute("src") && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+        currentTime: videoState.editorTime,
+        duration: uiState.videoTransport.duration,
+        frameCount: uiState.videoTransport.frameCount,
+        fps: uiState.videoTransport.fps,
+        mode: videoState.mode,
+        hasAudio: uiState.videoTransport.hasAudio,
+        muted: videoEl.muted,
+        volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
+      });
+      return;
+    }
     if (!readOnly) {
       if (action === "aspect") {
         editor.cutoutAspectOpen = !editor.cutoutAspectOpen;
@@ -10070,6 +10157,27 @@ async function showEditor(node, type, options = {}) {
         requestDraw({ cause: "frame_view" });
       }
       issueVideoSeek(nextTime);
+      return;
+    }
+    const videoVolume = ev.target.closest("[data-video-volume]");
+    if (videoVolume) {
+      if (!(videoEl instanceof HTMLVideoElement)) return;
+      const nextVolume = clamp(Number(videoVolume.value || 0), 0, 1);
+      videoEl.volume = nextVolume;
+      videoEl.muted = nextVolume <= 0.0001;
+      syncVideoTransportState({
+        ready: !!videoEl.getAttribute("src"),
+        playing: !videoEl.paused && !videoEl.ended,
+        visible: !!videoEl.getAttribute("src") && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+        currentTime: videoState.editorTime,
+        duration: uiState.videoTransport.duration,
+        frameCount: uiState.videoTransport.frameCount,
+        fps: uiState.videoTransport.fps,
+        mode: videoState.mode,
+        hasAudio: uiState.videoTransport.hasAudio,
+        muted: videoEl.muted,
+        volume: nextVolume,
+      });
       return;
     }
     const slider = ev.target.closest("[data-paint-size-slider]");

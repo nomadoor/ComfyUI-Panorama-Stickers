@@ -1,8 +1,8 @@
 import {
   attachPanoramaPreview as runtimeAttachPanoramaPreview,
   attachCutoutPreview as runtimeAttachCutoutPreview,
+  attachStandalonePreviewAuto as runtimeAttachStandalonePreviewAuto,
 } from "./pano_preview_runtime.js";
-import { attachPreviewNodeRuntime } from "./pano_preview_previewnode.js";
 import { patchNodeLifecycle } from "./pano_preview_hooks.js";
 
 function isNodeType(value) {
@@ -15,7 +15,7 @@ function wrapOnOpen(node, onOpen) {
 
 export function attachPreviewNode(target, options = {}) {
   if (isNodeType(target)) return;
-  attachPreviewNodeRuntime(target, {
+  runtimeAttachStandalonePreviewAuto(target, {
     ...options,
     onOpen: wrapOnOpen(target, options.onOpen),
   });

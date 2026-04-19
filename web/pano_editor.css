@@ -462,7 +462,7 @@
 }
 .pano-video-transport-bar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
@@ -528,6 +528,16 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
+}
+.pano-video-audio-wrap {
+  display: grid;
+  grid-template-columns: auto minmax(72px, 96px);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pano-video-volume-slider {
+  min-width: 72px;
 }
 .pano-selection-menu {
   position: absolute;
@@ -1785,5 +1795,9 @@
   }
   .pano-video-track-wrap {
     grid-column: 1 / -1;
+  }
+  .pano-video-audio-wrap {
+    grid-column: 1 / -1;
+    grid-template-columns: auto minmax(0, 1fr);
   }
 }

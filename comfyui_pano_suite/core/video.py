@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import tempfile
 import uuid
 from fractions import Fraction
@@ -55,6 +56,139 @@ def _normalize_frames(frames) -> np.ndarray:
     return arr
 
 
+def _audio_has_waveform(audio) -> bool:
+    if audio is None or not hasattr(audio, "get"):
+        return False
+    try:
+        return audio.get("waveform") is not None and int(audio.get("sample_rate") or 0) > 0
+    except Exception:
+        return False
+
+
+def _audio_get(audio, key, default=None):
+    if audio is None or not hasattr(audio, "get"):
+        return default
+    try:
+        return audio.get(key)
+    except TypeError:
+        try:
+            return audio.get(key, default)
+        except Exception:
+            return default
+    except Exception:
+        return default
+
+
+def _extract_audio_tensor(audio):
+    # ComfyUI V3 audio inputs can arrive as LazyAudioMap instead of a plain dict.
+    if not _audio_has_waveform(audio):
+        return None, 0
+    waveform = _audio_get(audio, "waveform")
+    sample_rate = int(_audio_get(audio, "sample_rate") or 0)
+    if waveform is None or sample_rate <= 0:
+        return None, 0
+    try:
+        import torch
+    except Exception:
+        return None, 0
+    if isinstance(waveform, np.ndarray):
+        waveform = torch.from_numpy(waveform)
+    if hasattr(waveform, "detach"):
+        waveform = waveform.detach()
+    if hasattr(waveform, "cpu"):
+        waveform = waveform.cpu()
+    waveform = waveform.float().contiguous()
+    if waveform.ndim == 1:
+        waveform = waveform[None, :]
+    elif waveform.ndim == 3 and int(waveform.shape[0]) > 0:
+        waveform = waveform[0]
+    elif waveform.ndim != 2:
+        return None, 0
+    if waveform.numel() <= 0:
+        return None, 0
+    return waveform, sample_rate
+
+
+def _trim_or_pad_audio(waveform, target_samples: int):
+    target = max(0, int(target_samples))
+    if waveform is None:
+        return None
+    current = int(waveform.shape[-1])
+    if current == target:
+        return waveform.contiguous()
+    if current > target:
+        return waveform[..., :target].contiguous()
+    if target <= 0:
+        return waveform[..., :0].contiguous()
+    try:
+        import torch
+    except Exception:
+        return waveform.contiguous()
+    pad = torch.zeros((int(waveform.shape[0]), target - current), dtype=waveform.dtype, device=waveform.device)
+    return torch.cat([waveform, pad], dim=-1).contiguous()
+
+
+def _target_audio_sample_count(frame_count: int, frame_rate, sample_rate: int) -> int:
+    return max(0, int(round((float(frame_count) / float(frame_rate)) * sample_rate)))
+
+
+def _stretch_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[np.ndarray | None, int]:
+    waveform, sample_rate = _extract_audio_tensor(audio)
+    if waveform is None or sample_rate <= 0:
+        return None, 0
+    target_samples = _target_audio_sample_count(frame_count, frame_rate, sample_rate)
+    if target_samples <= 0:
+        return np.zeros((int(waveform.shape[0]), 0), dtype=np.float32), sample_rate
+
+    source_samples = int(waveform.shape[-1])
+    tolerance = max(1, int(round(sample_rate * 0.002)))
+    if abs(source_samples - target_samples) <= tolerance:
+        fitted = _trim_or_pad_audio(waveform, target_samples)
+        return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
+
+    try:
+        import torch
+        import torchaudio.functional as AF
+
+        # Keep preview pitch stable while fitting audio to the preview duration.
+        n_fft = 2048
+        win_length = 2048
+        hop_length = 512
+        rate = max(1e-6, float(source_samples) / float(target_samples))
+        window = torch.hann_window(win_length, dtype=waveform.dtype, device=waveform.device)
+        spec = torch.stft(
+            waveform,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            window=window,
+            center=True,
+            return_complex=True,
+        )
+        phase_advance = torch.linspace(
+            0,
+            math.pi * hop_length,
+            spec.size(-2),
+            dtype=waveform.dtype,
+            device=waveform.device,
+        )[..., None]
+        stretched_spec = AF.phase_vocoder(spec, rate=rate, phase_advance=phase_advance)
+        stretched = torch.istft(
+            stretched_spec,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            window=window,
+            center=True,
+            length=target_samples,
+        )
+        stretched = _trim_or_pad_audio(stretched, target_samples)
+        return np.ascontiguousarray(stretched.cpu().numpy(), dtype=np.float32), sample_rate
+    except Exception:
+        fitted = _trim_or_pad_audio(waveform, target_samples)
+        return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
+
+
 def _entry_from_path(path: Path, *, media_type: str) -> dict:
     root = _ensure_temp_root().resolve()
     target = path.resolve()
@@ -78,13 +212,12 @@ def encode_frames_to_mp4(frames, fps: float, audio=None) -> Path:
 
     fps_value = max(1e-3, float(fps or 24.0))
     output_path = _ensure_temp_root() / f"pano_video_{uuid.uuid4().hex[:12]}.mp4"
-
     batch = _normalize_frames(frames)
     frame_count, height, width, _channels = batch.shape
+    frame_rate = Fraction(round(fps_value * 1000), 1000)
 
     container = av.open(str(output_path), mode="w")
     try:
-        frame_rate = Fraction(round(fps_value * 1000), 1000)
         # Try hardware encoding first, fall back to software
         video_stream = None
         for _codec in ("h264_nvenc", "h264"):
@@ -103,26 +236,15 @@ def encode_frames_to_mp4(frames, fps: float, audio=None) -> Path:
             raise RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
 
         audio_stream = None
-        planar = None
+        waveform_np = None
         sample_rate = 0
         layout = "mono"
-        if isinstance(audio, dict) and audio.get("waveform") is not None:
-            waveform = audio.get("waveform")
-            sample_rate = int(audio.get("sample_rate") or 0)
-            if hasattr(waveform, "detach"):
-                waveform = waveform.detach().cpu().numpy()
-            waveform = np.asarray(waveform, dtype=np.float32)
-            if waveform.ndim == 2:
-                waveform = waveform[None, ...]
-            if waveform.ndim == 3 and waveform.shape[0] > 0 and sample_rate > 0:
-                sample = waveform[0]
-                channels = int(sample.shape[0]) if sample.ndim >= 2 else 1
-                layout = "stereo" if channels >= 2 else "mono"
-                audio_stream = container.add_stream("aac", rate=sample_rate)
-                audio_stream.layout = layout
-                audio_stream.sample_rate = sample_rate
-                planar = sample if sample.ndim == 2 else sample.reshape(1, -1)
-                planar = np.clip(planar, -1.0, 1.0).astype(np.float32, copy=False)
+        if _audio_has_waveform(audio):
+            waveform_np, sample_rate = _stretch_audio_to_frame_count(audio, frame_count, frame_rate)
+            if waveform_np is not None and int(waveform_np.ndim) == 2 and sample_rate > 0:
+                channels = int(waveform_np.shape[0])
+                layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(channels, "stereo")
+                audio_stream = container.add_stream("aac", rate=sample_rate, layout=layout)
 
         _batch_is_u8 = batch.dtype == np.uint8
         _codec_name = video_stream.codec_context.name
@@ -137,17 +259,13 @@ def encode_frames_to_mp4(frames, fps: float, audio=None) -> Path:
         for packet in video_stream.encode():
             container.mux(packet)
 
-        if audio_stream is not None and planar is not None and sample_rate > 0:
-            chunk_size = 1024
-            for start in range(0, int(planar.shape[1]), chunk_size):
-                chunk = planar[:, start:start + chunk_size]
-                if chunk.size <= 0:
-                    continue
-                audio_frame = av.AudioFrame.from_ndarray(chunk, format="fltp", layout=layout)
-                audio_frame.sample_rate = sample_rate
-                for packet in audio_stream.encode(audio_frame):
-                    container.mux(packet)
-            for packet in audio_stream.encode():
+        if audio_stream is not None and waveform_np is not None and sample_rate > 0:
+            audio_frame = av.AudioFrame.from_ndarray(waveform_np, format="fltp", layout=layout)
+            audio_frame.sample_rate = sample_rate
+            audio_frame.pts = 0
+            for packet in audio_stream.encode(audio_frame):
+                container.mux(packet)
+            for packet in audio_stream.encode(None):
                 container.mux(packet)
     finally:
         container.close()

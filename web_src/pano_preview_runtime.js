@@ -19,6 +19,7 @@ import { clamp, wrapYaw } from "./pano_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import {
   buildCutoutViewParamsFromShot,
+  buildPreviewNodeViewParams,
   buildPanoramaViewParamsFromRuntime,
   buildStickerSceneFromState,
   buildStickerTexturesFromState,
@@ -884,6 +885,35 @@ function imageSourceFromCandidate(candidate) {
   return comfyImageEntryToUrl(candidate);
 }
 
+function isRenderableMediaReady(media) {
+  if (!media) return false;
+  if (media instanceof HTMLVideoElement) {
+    return Number(media.videoWidth || 0) > 0
+      && Number(media.videoHeight || 0) > 0
+      && Number(media.readyState || 0) >= 2;
+  }
+  return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
+}
+
+function getRenderableMediaRevisionToken(media) {
+  if (!media) return "";
+  if (media instanceof HTMLVideoElement) {
+    return [
+      String(media.currentSrc || media.src || ""),
+      Number(media.videoWidth || 0),
+      Number(media.videoHeight || 0),
+      Number(media.currentTime || 0).toFixed(3),
+      Number(media.readyState || 0),
+      media.paused ? "paused" : "playing",
+    ].join("|");
+  }
+  return [
+    String(media.currentSrc || media.src || ""),
+    Number(media.naturalWidth || media.width || 0),
+    Number(media.naturalHeight || media.height || 0),
+  ].join("|");
+}
+
 function appendImageRevision(src, rev) {
   const raw = String(src || "").trim();
   if (!raw) return "";
@@ -942,6 +972,80 @@ function syncOwnOutputSourceFromExecuted(node, output) {
   } catch {
     panoPreviewLog(node, "cutout.output-sync", { hasOutputImage: false });
   }
+}
+
+function getNodeOwnOutputVideo(node, onLoad = null) {
+  const id = node?.id;
+  if (id == null) return null;
+  const ownOutput = lookupNodeOutputEntry(id);
+  const groups = [
+    ownOutput?.ui?.pano_videos,
+    ownOutput?.pano_videos,
+    ownOutput?.ui?.images,
+    ownOutput?.images,
+  ];
+  let src = "";
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    for (const cand of group) {
+      const next = imageSourceFromCandidate(cand);
+      if (!next) continue;
+      if (/\.mp4(\?|$)/i.test(next) || String(cand?.format || "").toLowerCase() === "video/mp4") {
+        src = next;
+        break;
+      }
+    }
+    if (src) break;
+  }
+  if (!src) return null;
+  const rev = Number(node?.__panoOwnOutputRev || 0);
+  const srcKey = appendImageRevision(src, rev);
+  if (!node.__panoOwnOutputVideoCache) {
+    node.__panoOwnOutputVideoCache = { src: "", video: null };
+  }
+  const cached = node.__panoOwnOutputVideoCache;
+  if (cached.video && cached.src === srcKey) return cached.video;
+  const video = document.createElement("video");
+  video.muted = true;
+  video.loop = true;
+  video.playsInline = true;
+  video.crossOrigin = "anonymous";
+  let frameCallbackId = 0;
+  const supportsVideoFrameCallback = typeof video.requestVideoFrameCallback === "function";
+  const queueFramePump = () => {
+    if (!supportsVideoFrameCallback || frameCallbackId || video.paused || video.ended) return;
+    frameCallbackId = video.requestVideoFrameCallback(() => {
+      frameCallbackId = 0;
+      onLoad?.();
+      queueFramePump();
+    });
+  };
+  const onReady = () => {
+    onLoad?.();
+    void video.play().then(() => {
+      queueFramePump();
+    }).catch(() => {});
+  };
+  const onTick = () => onLoad?.();
+  const onPlay = () => {
+    onLoad?.();
+    queueFramePump();
+  };
+  const onPause = () => {
+    onLoad?.();
+  };
+  video.addEventListener("loadedmetadata", onReady, { once: true });
+  video.addEventListener("canplay", onReady, { once: true });
+  if (!supportsVideoFrameCallback) {
+    video.addEventListener("timeupdate", onTick);
+  }
+  video.addEventListener("play", onPlay);
+  video.addEventListener("pause", onPause);
+  video.src = srcKey;
+  video.load();
+  cached.src = srcKey;
+  cached.video = video;
+  return video;
 }
 
 function getNodeOwnOutputImage(node, onLoad = null) {
@@ -1260,6 +1364,7 @@ function invalidatePreviewImageCaches(node) {
   if (!node) return;
   try { node.__panoLinkedInputImageCache?.clear?.(); } catch { }
   node.__panoOwnOutputImageCache = null;
+  node.__panoOwnOutputVideoCache = null;
   node.__panoWrappedErpCache = null;
 }
 
@@ -2683,20 +2788,15 @@ export function drawErpBackground(node, ctx, rect, viewBasis, tanHalfY, img, mes
   const state = getCachedState(node);
   const view = node?.__panoPreviewView || { yaw: 0, pitch: 0, fov: 100 };
   if (!node.__panoBackgroundCore) node.__panoBackgroundCore = createPanoramaRenderCore();
+  const bgRevision = getRenderableMediaRevisionToken(img);
   const descriptor = buildStickerRenderDescriptor({
       stateRevision: [
         "runtime_bg_only",
-        String(img?.currentSrc || img?.src || ""),
-        Number(img?.naturalWidth || img?.width || 0),
-        Number(img?.naturalHeight || img?.height || 0),
+        bgRevision,
         Number(state?.coverage || 360) === 180 ? 180 : 360,
     ].join("|"),
     backgroundSource: img,
-    backgroundRevision: [
-      String(img?.currentSrc || img?.src || ""),
-      Number(img?.naturalWidth || img?.width || 0),
-      Number(img?.naturalHeight || img?.height || 0),
-    ].join("|"),
+    backgroundRevision: bgRevision,
     coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
     scene: { stickers: [], selectedId: null, hoveredId: null },
     textures: [],
@@ -3136,55 +3236,74 @@ function drawStandalonePanorama(node, ctx, rect, imageInputName = "erp_image", m
   const basis = cameraBasis(Number(view.yaw || 0), Number(view.pitch || 0), 0);
   const tanHalfY = Math.tan((Number(view.fov || 100) * DEG2RAD) * 0.5);
   const preferredInputs = preferredImageInputsForNode(node, [imageInputName, "erp_image", "bg_erp"]);
-  const bgImg = getLinkedInputImageForPreview(
-    node,
-    preferredInputs,
-    () => node.__panoDomPreview?.requestDraw?.(),
-  );
-  const bgReady = !!(bgImg && bgImg.complete && (bgImg.naturalWidth || bgImg.width));
-  const src = String(bgImg?.src || "");
-  const state = getCachedState(node);
-  const coverageDeg = Number(state?.coverage || 360) === 180 ? 180 : 360;
-  if (!node.__panoStandaloneRuntimeCore) node.__panoStandaloneRuntimeCore = createPanoramaRenderCore();
+  const standalonePreview = isStandalonePreviewNode(node);
+  const bgImg = standalonePreview
+    ? (getNodeOwnOutputVideo(node, () => node.__panoDomPreview?.requestDraw?.())
+      || getNodeOwnOutputImage(node, () => node.__panoDomPreview?.requestDraw?.()))
+    : getLinkedInputImageForPreview(
+      node,
+      preferredInputs,
+      () => node.__panoDomPreview?.requestDraw?.(),
+    );
+  const bgReady = isRenderableMediaReady(bgImg);
+  const src = String(bgImg?.currentSrc || bgImg?.src || "");
+  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
+  const bgRevision = getRenderableMediaRevisionToken(bgImg);
+  const lastFrameSrc = String(node.__panoStandaloneLastFrameSrc || "");
+  const canReuseLastFrame = !!node.__panoStandaloneLastFrameCanvas
+    && !!src
+    && src === lastFrameSrc;
+  if (!node.__panoStandaloneCore) node.__panoStandaloneCore = createPanoramaRenderCore();
   if (bgReady) {
     const descriptor = buildStickerRenderDescriptor({
       stateRevision: [
         "standalone_preview_scene",
-        String(bgImg.currentSrc || bgImg.src || ""),
-        Number(bgImg.naturalWidth || bgImg.width || 0),
-        Number(bgImg.naturalHeight || bgImg.height || 0),
+        bgRevision,
         coverageDeg,
       ].join("|"),
       backgroundSource: bgImg,
-      backgroundRevision: [
-        String(bgImg.currentSrc || bgImg.src || ""),
-        Number(bgImg.naturalWidth || bgImg.width || 0),
-        Number(bgImg.naturalHeight || bgImg.height || 0),
-      ].join("|"),
+      backgroundRevision: bgRevision,
       coverageDeg,
-      scene: { stickers: [], selectedId: null, hoveredId: null },
+      scene: buildStickerSceneFromState(null, {}),
       textures: [],
       backgroundOpacity: 1,
       showMaskTint: false,
     });
-    const synced = node.__panoStandaloneRuntimeCore.syncState(descriptor);
+    const synced = node.__panoStandaloneCore.syncState(descriptor);
     const surface = synced
-      ? node.__panoStandaloneRuntimeCore.renderToTarget("preview_node", buildPreviewNodeViewParams(view, coverageDeg), {
+      ? node.__panoStandaloneCore.renderToTarget("preview_node", buildPreviewNodeViewParams(view, coverageDeg), {
         width: rect.w,
         height: rect.h,
         dpr: window.devicePixelRatio || 1,
       })
       : null;
     const drawn = !!surface;
-    if (surface) ctx.drawImage(surface, rect.x, rect.y, rect.w, rect.h);
+    if (surface) {
+      ctx.drawImage(surface, rect.x, rect.y, rect.w, rect.h);
+      const lastFrameCanvas = getOrCreateSizedCanvas(node, "__panoStandaloneLastFrameCanvas", rect.w, rect.h);
+      const lastFrameCtx = lastFrameCanvas.getContext("2d");
+      if (lastFrameCtx) {
+        lastFrameCtx.clearRect(0, 0, rect.w, rect.h);
+        lastFrameCtx.drawImage(surface, 0, 0, rect.w, rect.h);
+        node.__panoStandaloneLastFrameSrc = src;
+      }
+    }
     if (!drawn) {
-      ctx.fillStyle = "#070707";
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-      drawErpBackground(node, ctx, rect, basis, tanHalfY, bgImg, mesh);
+      if (canReuseLastFrame) {
+        ctx.drawImage(node.__panoStandaloneLastFrameCanvas, rect.x, rect.y, rect.w, rect.h);
+      } else {
+        ctx.fillStyle = "#070707";
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+        drawErpBackground(node, ctx, rect, basis, tanHalfY, bgImg, mesh);
+      }
     }
   } else {
-    ctx.fillStyle = "#070707";
-    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    if (canReuseLastFrame) {
+      ctx.drawImage(node.__panoStandaloneLastFrameCanvas, rect.x, rect.y, rect.w, rect.h);
+    } else {
+      ctx.fillStyle = "#070707";
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
   }
   const overlay = setRenderLoading(node, !!bgImg && !bgReady, src);
   if (overlay) drawLoadingOverlay(ctx, rect, uiScale);
@@ -3799,21 +3918,12 @@ export function attachStandalonePreviewDom(node, options = {}) {
     root.style.cssText = "width:100%;height:100%;position:relative;display:block;min-height:56px;overflow:hidden;";
     root.setAttribute("data-capture-wheel", "true");
     root.setAttribute("tabindex", "-1");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = node.__panoPreviewButtonText;
-    btn.style.cssText = "height:34px;position:absolute;top:8px;left:8px;z-index:4;border:1px solid rgba(98,98,105,0.9);background:rgba(32,32,35,0.96);color:rgba(244,244,246,0.95);border-radius:8px;font:500 12px 'Plus Jakarta Sans', Geist, sans-serif;cursor:pointer;";
     const wrap = document.createElement("div");
     wrap.style.cssText = "position:absolute;inset:0;min-height:56px;border-radius:8px;overflow:hidden;border:1px solid rgba(63,63,70,1);background:#070707;";
     const canvas = document.createElement("canvas");
     canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;touch-action:none;cursor:grab;";
     wrap.appendChild(canvas);
     root.appendChild(wrap);
-    root.appendChild(btn);
-    btn.addEventListener("click", (ev) => {
-      stopCanvasEvent(ev);
-      openStandaloneModal(node, String(options.modalTitle || "Panorama Preview"), imageInputName);
-    });
 
     armPreviewBootMinHeight(node, 56, () => node.__panoDomPreview?.requestDraw?.());
     const widget = node.addDOMWidget(
