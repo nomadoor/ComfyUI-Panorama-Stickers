@@ -3184,7 +3184,7 @@ async function showEditor(node, type, options = {}) {
     const shot = getActiveCutoutShot();
     patchUiButton(uiState.toolButtons, "value", "add-or-look", {
       visible: true,
-      accent: !shot,
+      accent: true,
       label: shot ? "Look At Frame" : "Add Frame",
       tip: shot ? "Look at frame" : "Add frame",
       icon: shot ? ICON.camera : ICON.plus_circle,
@@ -5216,8 +5216,20 @@ async function showEditor(node, type, options = {}) {
       uiState.cameraPreview.settled = false;
       return;
     }
-    uiState.cameraPreview.visible = true;
     const shot = getActiveCutoutShot();
+    if (!shot) {
+      uiState.cameraPreview.visible = true;
+      uiState.cameraPreview.ready = false;
+      uiState.cameraPreview.settled = false;
+      uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
+      uiState.cameraPreview.width = 220;
+      uiState.cameraPreview.height = 132;
+      uiState.cameraPreview.label = "Add Frame to preview";
+      cutoutPreviewCamera?.clearScene?.();
+      cutoutPreviewMount?.requestRender?.();
+      return;
+    }
+    uiState.cameraPreview.visible = true;
     const bgImg = getConnectedErpImage();
     if (!shot || !cutoutPreviewCamera || !cutoutPreviewMount) {
       uiState.cameraPreview.ready = false;
