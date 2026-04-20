@@ -3313,7 +3313,7 @@ async function showEditor(node, type, options = {}) {
     if (isPanoramaPreviewNodeName(nodeName)) {
       return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
     }
-    if (type === "stickers") {
+    if (type === "stickers" || type === "cutout") {
       return { videoKey: "pano_input_videos", metaKey: "pano_input_video_meta" };
     }
     return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
@@ -4468,6 +4468,19 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getConnectedErpImage() {
+    if (type === "cutout") {
+      const displaySource = getDisplayBackgroundSource();
+      if (displaySource) return displaySource;
+      const linked = getPreferredExactLinkedInputImage(
+        node,
+        ["erp_image", "bg_erp"],
+        () => requestDraw(),
+        "background:cutout:erp_image|bg_erp",
+      );
+      if (linked) return linked;
+      const uiImg = getFirstNodeUiImage(node, "pano_input_images", imageCache, () => requestDraw());
+      return uiImg || null;
+    }
     const displaySource = getDisplayBackgroundSource();
     if (displaySource) return displaySource;
     const uiImg = getFirstNodeUiImage(node, "pano_input_images", imageCache, () => requestDraw());
@@ -5817,12 +5830,8 @@ async function showEditor(node, type, options = {}) {
   function getCutoutPreviewSurfaceRevision(shot, options = {}) {
     if (!shot) return "";
     const bgImage = getConnectedErpImage();
-    const bgKey = bgImage && (bgImage.complete || bgImage.naturalWidth || bgImage.width)
-      ? [
-        String(bgImage.currentSrc || bgImage.src || ""),
-        Number(bgImage.naturalWidth || bgImage.width || 0),
-        Number(bgImage.naturalHeight || bgImage.height || 0),
-      ].join("|")
+    const bgKey = bgImage && isDecodedImageReady(bgImage)
+      ? getMediaRevisionToken(bgImage)
       : "no_bg";
     const size = getCutoutPreviewSurfaceSize(shot);
     return [
@@ -5950,7 +5959,7 @@ async function showEditor(node, type, options = {}) {
     cutoutPreviewCamera.syncScene(buildPanoramaCompositeDescriptor({
       stateRevision: getCutoutPreviewSurfaceRevision(shot, options),
       backgroundSource: bgReady && editor.showPanorama ? bgImg : null,
-      backgroundRevision: bgReady ? String(bgImg.currentSrc || bgImg.src || "") : "",
+      backgroundRevision: bgReady ? `cutout_frame:${getMediaRevisionToken(bgImg)}` : "",
       coverageDeg: normalizeCoverageValue(state.coverage),
       scene,
       textures,
@@ -7481,7 +7490,19 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ cause: "cutout_frame" });
       return;
     }
-    const aspect = Math.max(0.1, Number(canvas?.width || 1) / Math.max(1, Number(canvas?.height || 1)));
+    const bgImg = getConnectedErpImage();
+    const bgReady = isDecodedImageReady(bgImg);
+    const srcWidth = Math.max(1, Number(
+      (bgReady ? (bgImg?.videoWidth || bgImg?.naturalWidth || bgImg?.width) : 0)
+      || canvas?.width
+      || 1
+    ));
+    const srcHeight = Math.max(1, Number(
+      (bgReady ? (bgImg?.videoHeight || bgImg?.naturalHeight || bgImg?.height) : 0)
+      || canvas?.height
+      || 1
+    ));
+    const aspect = Math.max(0.1, srcWidth / srcHeight);
     // New frames should appear clearly inside the current panorama view,
     // not consume the whole visible area on spawn.
     const baseViewFov = clamp(Number(editor.viewFov || 90), 1, 179);
