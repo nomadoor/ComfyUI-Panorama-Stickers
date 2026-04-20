@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { ICON } from "../icons.js";
 import PanoIconButton from "./PanoIconButton.vue";
 
@@ -46,6 +46,22 @@ const thumbnailItems = computed(() => {
     label: "",
   }));
 });
+const loadedThumbnailKeys = ref(new Set());
+const getThumbnailKey = (thumb) => String(thumb?.id || thumb?.src || thumb?.label || "");
+const isThumbnailLoaded = (thumb) => loadedThumbnailKeys.value.has(getThumbnailKey(thumb));
+const markThumbnailLoaded = (thumb) => {
+  const next = new Set(loadedThumbnailKeys.value);
+  next.add(getThumbnailKey(thumb));
+  loadedThumbnailKeys.value = next;
+};
+watch(thumbnailItems, (items) => {
+  const validKeys = new Set(items.map(getThumbnailKey));
+  const next = new Set();
+  for (const key of loadedThumbnailKeys.value) {
+    if (validKeys.has(key)) next.add(key);
+  }
+  loadedThumbnailKeys.value = next;
+}, { immediate: true });
 const transportStyle = computed(() => ({
   "--pano-video-shell-max": `${Math.max(320, Number(props.state?.shellMaxWidthPx || 640))}px`,
 }));
@@ -82,11 +98,20 @@ const transportStyle = computed(() => ({
         <div class="pano-video-filmstrip-track" aria-hidden="true">
           <div
             v-for="thumb in thumbnailItems"
-            :key="thumb.id || thumb.src || thumb.label"
+            :key="getThumbnailKey(thumb)"
             class="pano-video-thumb"
-            :class="{ 'is-placeholder': !thumb.src }"
+            :class="{
+              'is-placeholder': !thumb.src,
+              'is-loaded': thumb.src && isThumbnailLoaded(thumb),
+            }"
           >
-            <img v-if="thumb.src" :src="thumb.src" alt="" draggable="false">
+            <img
+              v-if="thumb.src"
+              :src="thumb.src"
+              alt=""
+              draggable="false"
+              @load="markThumbnailLoaded(thumb)"
+            >
             <span v-else class="pano-video-thumb-placeholder" />
           </div>
         </div>

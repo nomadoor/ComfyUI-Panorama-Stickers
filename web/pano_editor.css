@@ -369,11 +369,8 @@
   border: 0;
   background: transparent;
   box-shadow: none;
-  transition: width 180ms cubic-bezier(0.2, 0, 0, 1), height 180ms cubic-bezier(0.2, 0, 0, 1);
-  will-change: width, height;
-}
-.pano-camera-preview[data-settled="false"] {
-  transition-duration: 0ms, 0ms;
+  transition: none;
+  will-change: auto;
 }
 .pano-camera-preview-host {
   width: 100%;
@@ -489,6 +486,13 @@
   position: relative;
   min-width: 0;
   height: 40px;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition:
+    opacity 180ms cubic-bezier(0.2, 0, 0, 1),
+    transform 180ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 0s;
 }
 .pano-video-filmstrip-track {
   display: grid;
@@ -517,6 +521,15 @@
   object-position: center;
   user-select: none;
   pointer-events: none;
+  opacity: 0;
+  transform: scale(1.02);
+  transition:
+    opacity 180ms cubic-bezier(0.2, 0, 0, 1),
+    transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+.pano-video-thumb.is-loaded img {
+  opacity: 1;
+  transform: scale(1);
 }
 .pano-video-thumb-placeholder {
   background:
@@ -530,6 +543,10 @@
   transform: translateX(-50%);
   pointer-events: none;
   z-index: 2;
+  opacity: 1;
+  transition:
+    opacity 180ms cubic-bezier(0.2, 0, 0, 1),
+    transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 .pano-video-playhead-line {
   position: absolute;
@@ -564,6 +581,26 @@
   cursor: pointer;
   background: transparent;
   outline: none;
+  visibility: visible;
+  transition: visibility 0s linear 0s;
+}
+.pano-video-transport.is-hidden .pano-video-filmstrip,
+.pano-video-transport[data-video-ready="false"] .pano-video-filmstrip {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition:
+    opacity 140ms cubic-bezier(0.2, 0, 0, 1),
+    transform 140ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 140ms;
+}
+.pano-video-transport.is-hidden .pano-video-playhead,
+.pano-video-transport[data-video-ready="false"] .pano-video-playhead {
+  opacity: 0;
+}
+.pano-video-transport.is-hidden .pano-video-seek-hit,
+.pano-video-transport[data-video-ready="false"] .pano-video-seek-hit {
+  visibility: hidden;
 }
 .pano-video-seek-hit::-webkit-slider-thumb {
   appearance: none;
@@ -622,10 +659,10 @@
   pointer-events: none;
   transform: translate(-50%, -8px);
   transition:
-    opacity 140ms cubic-bezier(0.2, 0, 0, 1),
-    transform 140ms cubic-bezier(0.2, 0, 0, 1),
-    visibility 0s linear 220ms;
-  transition-delay: 80ms, 80ms, 80ms;
+    opacity 220ms cubic-bezier(0.2, 0, 0, 1),
+    transform 220ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 340ms;
+  transition-delay: 120ms, 120ms, 120ms;
 }
 .pano-video-volume-stack:hover .pano-video-volume-pop,
 .pano-video-volume-stack:focus-within .pano-video-volume-pop {

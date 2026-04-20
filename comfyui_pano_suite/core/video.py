@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import tempfile
 import uuid
+import logging
 from fractions import Fraction
 from pathlib import Path
 
@@ -17,6 +18,8 @@ try:
     import folder_paths
 except Exception:  # pragma: no cover - optional in tests
     folder_paths = None
+
+_log = logging.getLogger(__name__)
 
 
 def _resolve_temp_root() -> Path:
@@ -206,69 +209,128 @@ def _entry_from_path(path: Path, *, media_type: str) -> dict:
     }
 
 
-def encode_frames_to_mp4(frames, fps: float, audio=None) -> Path:
+def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None) -> Path:
     if av is None:
         raise RuntimeError("PyAV is not available in this environment.")
 
     fps_value = max(1e-3, float(fps or 24.0))
     output_path = _ensure_temp_root() / f"pano_video_{uuid.uuid4().hex[:12]}.mp4"
-    batch = _normalize_frames(frames)
-    frame_count, height, width, _channels = batch.shape
     frame_rate = Fraction(round(fps_value * 1000), 1000)
 
-    container = av.open(str(output_path), mode="w")
+    # Streaming mode: torch tensor → process one frame at a time (no full-batch numpy allocation)
+    # Batch mode: numpy array → existing fast path (uint8 fast path preserved)
     try:
-        # Try hardware encoding first, fall back to software
-        video_stream = None
-        for _codec in ("h264_nvenc", "h264"):
-            try:
-                _s = container.add_stream(_codec, rate=frame_rate)
-                _s.width = int(width)
-                _s.height = int(height)
-                _s.pix_fmt = "yuv420p"
-                if _codec == "h264_nvenc":
-                    _s.options = {"preset": "p4"}
-                video_stream = _s
-                break
-            except Exception:
-                continue
-        if video_stream is None:
-            raise RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
+        import torch as _torch
+        _streaming = isinstance(frames, _torch.Tensor)
+    except ImportError:
+        _streaming = False
 
-        audio_stream = None
-        waveform_np = None
-        sample_rate = 0
-        layout = "mono"
-        if _audio_has_waveform(audio):
-            waveform_np, sample_rate = _stretch_audio_to_frame_count(audio, frame_count, frame_rate)
-            if waveform_np is not None and int(waveform_np.ndim) == 2 and sample_rate > 0:
-                channels = int(waveform_np.shape[0])
-                layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(channels, "stereo")
+    if _streaming:
+        if frames.ndim == 3:
+            frames = frames.unsqueeze(0)
+        frame_count = int(frames.shape[0])
+        height = int(frames.shape[1])
+        width = int(frames.shape[2])
+        batch = None
+    else:
+        batch = _normalize_frames(frames)
+        frame_count, height, width, _channels = batch.shape
+
+    waveform_np = None
+    sample_rate = 0
+    layout = "mono"
+    if _audio_has_waveform(audio):
+        waveform_np, sample_rate = _stretch_audio_to_frame_count(audio, frame_count, frame_rate)
+        if waveform_np is not None and int(waveform_np.ndim) == 2 and sample_rate > 0:
+            channels = int(waveform_np.shape[0])
+            layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(channels, "stereo")
+
+    _log.warning(
+        "[video] Encoding preview mp4: frames=%d fps=%.3f size=%dx%d audio=%s",
+        frame_count,
+        fps_value,
+        width,
+        height,
+        "yes" if waveform_np is not None and sample_rate > 0 else "no",
+    )
+
+    last_error = None
+    for codec_name in ("h264_nvenc", "h264"):
+        _log.warning("[video] Trying encoder: %s", codec_name)
+        container = av.open(str(output_path), mode="w")
+        try:
+            video_stream = container.add_stream(codec_name, rate=frame_rate)
+            video_stream.width = int(width)
+            video_stream.height = int(height)
+            video_stream.pix_fmt = "yuv420p"
+            if codec_name == "h264_nvenc":
+                video_stream.options = {"preset": "p4"}
+
+            audio_stream = None
+            if waveform_np is not None and sample_rate > 0:
                 audio_stream = container.add_stream("aac", rate=sample_rate, layout=layout)
 
-        _batch_is_u8 = batch.dtype == np.uint8
-        _codec_name = video_stream.codec_context.name
-        for frame in batch:
-            frame_u8 = frame if _batch_is_u8 else np.clip(frame * 255.0, 0.0, 255.0).astype(np.uint8)
-            video_frame = av.VideoFrame.from_ndarray(frame_u8, format="rgb24")
-            # nvenc does not reliably handle implicit rgb24→yuv420p conversion; reformat explicitly
-            if _codec_name == "h264_nvenc":
-                video_frame = video_frame.reformat(format="yuv420p")
-            for packet in video_stream.encode(video_frame):
+            if _streaming:
+                for index in range(frame_count):
+                    f = frames[index].detach().cpu().numpy()
+                    f = np.asarray(f, dtype=np.float32)
+                    if f.shape[-1] < 3:
+                        f = np.repeat(f[..., :1], 3, axis=-1)
+                    elif f.shape[-1] > 3:
+                        f = f[..., :3]
+                    frame_u8 = np.clip(f * 255.0, 0.0, 255.0).astype(np.uint8)
+                    video_frame = av.VideoFrame.from_ndarray(frame_u8, format="rgb24")
+                    if codec_name == "h264_nvenc":
+                        video_frame = video_frame.reformat(format="yuv420p")
+                    for packet in video_stream.encode(video_frame):
+                        container.mux(packet)
+                    if progress_callback is not None:
+                        try:
+                            progress_callback(index + 1, frame_count)
+                        except Exception:
+                            pass
+            else:
+                _batch_is_u8 = batch.dtype == np.uint8
+                for index, frame in enumerate(batch):
+                    frame_u8 = frame if _batch_is_u8 else np.clip(frame * 255.0, 0.0, 255.0).astype(np.uint8)
+                    video_frame = av.VideoFrame.from_ndarray(frame_u8, format="rgb24")
+                    if codec_name == "h264_nvenc":
+                        video_frame = video_frame.reformat(format="yuv420p")
+                    for packet in video_stream.encode(video_frame):
+                        container.mux(packet)
+                    if progress_callback is not None:
+                        try:
+                            progress_callback(index + 1, frame_count)
+                        except Exception:
+                            pass
+            for packet in video_stream.encode():
                 container.mux(packet)
-        for packet in video_stream.encode():
-            container.mux(packet)
 
-        if audio_stream is not None and waveform_np is not None and sample_rate > 0:
-            audio_frame = av.AudioFrame.from_ndarray(waveform_np, format="fltp", layout=layout)
-            audio_frame.sample_rate = sample_rate
-            audio_frame.pts = 0
-            for packet in audio_stream.encode(audio_frame):
-                container.mux(packet)
-            for packet in audio_stream.encode(None):
-                container.mux(packet)
-    finally:
-        container.close()
+            if audio_stream is not None:
+                audio_frame = av.AudioFrame.from_ndarray(waveform_np, format="fltp", layout=layout)
+                audio_frame.sample_rate = sample_rate
+                audio_frame.pts = 0
+                for packet in audio_stream.encode(audio_frame):
+                    container.mux(packet)
+                for packet in audio_stream.encode(None):
+                    container.mux(packet)
+
+            container.close()
+            _log.warning("[video] Encoded preview mp4 with %s -> %s", codec_name, output_path)
+            return output_path
+        except Exception as ex:
+            last_error = ex
+            _log.warning("[video] Encoder %s failed, trying fallback: %s", codec_name, ex)
+            try:
+                container.close()
+            except Exception:
+                pass
+            try:
+                output_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            continue
+    raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
     return output_path
 
 
