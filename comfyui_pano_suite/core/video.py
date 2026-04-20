@@ -218,6 +218,35 @@ def _stretch_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[
         return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
 
 
+def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np.ndarray | None, int, str]:
+    if waveform_np is None or sample_rate <= 0:
+        return None, 0, "mono"
+    waveform_np = np.ascontiguousarray(waveform_np, dtype=np.float32)
+    if waveform_np.ndim != 2 or waveform_np.shape[0] <= 0:
+        return None, 0, "mono"
+
+    channels = int(waveform_np.shape[0])
+    explicit_layout = {
+        1: "mono",
+        2: "stereo",
+        6: "5.1",
+    }.get(channels)
+    if explicit_layout:
+        return waveform_np, sample_rate, explicit_layout
+
+    if channels == 1:
+        return waveform_np, sample_rate, "mono"
+
+    # Unsupported channel counts are downmixed so frame data and advertised
+    # layout stay consistent for AudioFrame.from_ndarray.
+    left_indices = np.arange(0, channels, 2)
+    right_indices = np.arange(1, channels, 2)
+    left = waveform_np[left_indices].mean(axis=0, dtype=np.float32) if left_indices.size else waveform_np.mean(axis=0, dtype=np.float32)
+    right = waveform_np[right_indices].mean(axis=0, dtype=np.float32) if right_indices.size else left
+    downmixed = np.stack([left, right], axis=0).astype(np.float32, copy=False)
+    return np.ascontiguousarray(downmixed), sample_rate, "stereo"
+
+
 def _entry_from_path(path: Path, *, media_type: str) -> dict:
     root = _ensure_temp_root().resolve()
     target = path.resolve()
@@ -267,9 +296,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
     layout = "mono"
     if _audio_has_waveform(audio):
         waveform_np, sample_rate = _stretch_audio_to_frame_count(audio, frame_count, frame_rate)
-        if waveform_np is not None and int(waveform_np.ndim) == 2 and sample_rate > 0:
-            channels = int(waveform_np.shape[0])
-            layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(channels, "stereo")
+        waveform_np, sample_rate, layout = _prepare_audio_layout(waveform_np, sample_rate)
 
     _log.warning(
         "[video] Encoding preview mp4: frames=%d fps=%.3f size=%dx%d audio=%s",
@@ -362,7 +389,6 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
                 pass
             continue
     raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
-    return output_path
 
 
 def make_video_ui_payload(

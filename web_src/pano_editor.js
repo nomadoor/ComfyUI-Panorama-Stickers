@@ -6180,6 +6180,13 @@ async function showEditor(node, type, options = {}) {
     editor.paintEngineRevisionKey = getPaintingRevisionKey();
   }
 
+  function invalidatePaintingLayerState() {
+    if (state.painting_layer !== null) {
+      state.painting_layer = null;
+    }
+    _paintLayerSyncRevision = "";
+  }
+
   function markObjectVisualsDirty() {
     editor.objectVisualRevision = Number(editor.objectVisualRevision || 0) + 1;
     invalidateObjectVisualCaches();
@@ -6188,6 +6195,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function markPaintStrokeVisualsDirty({ rebuildPaintEngine = false } = {}) {
+    invalidatePaintingLayerState();
     bumpPaintingStrokeRevision();
     markObjectVisualsDirty();
     if (rebuildPaintEngine) {
@@ -6196,6 +6204,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function markPaintCompositeVisualsDirty() {
+    invalidatePaintingLayerState();
     bumpPaintingCompositeRevision();
     markObjectVisualsDirty();
   }
@@ -10947,19 +10956,13 @@ function installEditorButton(nodeType, nodeData, matchType, buttonText) {
 function installStandalonePreviewNode(nodeType) {
   if (!nodeType?.prototype) return;
   const ensurePreviewSize = function () {
-    if (!Array.isArray(this.size) || this.size[0] < 100 || this.size[1] < 100) {
+    if (!Array.isArray(this.size) || this.size[0] < 10 || this.size[1] < 10) {
       this.size = [360, 260];
     }
   };
   const prev = nodeType.prototype.onNodeCreated;
   nodeType.prototype.onNodeCreated = function () {
     const r = prev ? prev.apply(this, arguments) : undefined;
-    ensurePreviewSize.call(this);
-    return r;
-  };
-  const prevConfigure = nodeType.prototype.onConfigure;
-  nodeType.prototype.onConfigure = function () {
-    const r = prevConfigure ? prevConfigure.apply(this, arguments) : undefined;
     ensurePreviewSize.call(this);
     return r;
   };

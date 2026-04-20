@@ -3098,17 +3098,13 @@ function ensureNodeDefaultSize(node, minW = 320, minH = 260) {
 
 function ensureStandalonePreviewBootstrapSize(node, minW = 360, minH = 260) {
   if (!node || node.__panoUserResized === true || node.__panoStandaloneBootSized === true) return;
-  const size = getNodeSize(node);
-  const w = Number(size?.[0] || 0);
-  const h = Number(size?.[1] || 0);
-  if (!Number.isFinite(w) || !Number.isFinite(h)) return;
-  if (w >= minW && h >= minH) return;
-  const next = [Math.max(minW, w), Math.max(minH, h)];
+  if (!isNodeSizeInvalid(node)) return;
+  const next = [Math.max(1, Number(minW || 1)), Math.max(1, Number(minH || 1))];
   try {
     if (typeof node.setSize === "function") node.setSize(next);
     else node.size = next;
     node.__panoStandaloneBootSized = true;
-    panoPreviewLog(node, "size.bootstrap", { from: [w, h], to: next });
+    panoPreviewLog(node, "size.bootstrap", { to: next });
   } catch (err) {
     panoPreviewLog(node, "size.bootstrap.error", { message: String(err?.message || err || "unknown") });
   }
@@ -3863,7 +3859,6 @@ function tryAttachDomWithProbe(node, options = {}, mountKey = null) {
 }
 
 export function attachStandalonePreviewUnified(node, options = {}) {
-  ensureStandalonePreviewBootstrapSize(node);
   const mountKey = `standalone_unified|${String(options.imageInputName || "erp_image")}|${String(options.buttonText || "Open Preview")}`;
   if (node.__panoPreviewAttached === true && node.__panoPreviewMountKey === mountKey) return;
   panoPreviewLog(node, "attach.unified.begin", {

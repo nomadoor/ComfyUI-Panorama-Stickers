@@ -479,7 +479,7 @@ def _repeat_mask_batch(mask_bw: np.ndarray, batch_size: int) -> np.ndarray:
         if int(src.shape[0]) <= 0:
             return np.zeros((target_batch, *src.shape[1:]), dtype=np.float32)
         repeats = int(math.ceil(target_batch / float(src.shape[0])))
-        return np.repeat(src, repeats, axis=0)[:target_batch]
+        return np.tile(src, (repeats, 1, 1))[:target_batch]
     return np.repeat(src[None, ...], target_batch, axis=0)
 
 
