@@ -8066,6 +8066,8 @@ async function showEditor(node, type, options = {}) {
       x: (Number(pos.x) - rect.x) / Math.max(1, rect.w),
       y: (Number(pos.y) - rect.y) / Math.max(1, rect.h),
     };
+    // Out-of-frame: caller must handle null (do not project outside the frame's FOV)
+    if (framePoint.x < 0 || framePoint.x > 1 || framePoint.y < 0 || framePoint.y > 1) return null;
     const dir = frameLocalPointToWorldDir(shot, framePoint);
     if (!dir) return null;
     const { lon, lat } = dirToLonLat(dir);
@@ -8395,9 +8397,11 @@ async function showEditor(node, type, options = {}) {
       const shot = getActiveCutoutShot();
       if (!shot) return false;
       next = screenPosToFrameAsErpPoint(pos, shot, ts);
+      if (!next) return false; // out-of-frame — caller (pointermove) handles segmentation
     } else {
       next = screenPosToErpPoint(pos, ts);
     }
+    if (!next) return false;
     const rawPoints = interaction.stroke.geometry.rawPoints || interaction.stroke.geometry.points;
     const points = interaction.stroke.geometry.points;
     // Dedup against raw coords so OEF smoothing doesn't cause points to be incorrectly skipped
@@ -8730,6 +8734,37 @@ async function showEditor(node, type, options = {}) {
     state.painting.raster_objects = nextRasterObjects.sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0));
     clearSelection({ preservePanelValues: false });
     return true;
+  }
+
+  // Commit the current frame-stroke segment to state and start a fresh stroke with the
+  // same action group.  Called when the pointer crosses the frame boundary mid-drag so
+  // that the segment drawn inside the frame is preserved without a "teleport" line to
+  // wherever the pointer re-enters.
+  function _segmentFrameStroke(it) {
+    const rawPoints = it.stroke?.geometry?.rawPoints || it.stroke?.geometry?.points || [];
+    if (rawPoints.length >= 1) {
+      // Save the completed inside-frame segment.
+      commitPaintInteraction(it);
+      const targetDescriptor = getActivePaintTargetDescriptor(it);
+      if (targetDescriptor) {
+        if (String(it.stroke?.toolKind || "") === "eraser") {
+          editor.paintEngine.cancelActiveStroke(targetDescriptor);
+        } else {
+          editor.paintEngine.commitActiveStroke(it.stroke, targetDescriptor);
+        }
+      }
+      it._hasCommittedSegments = true;
+    }
+    // Start a new blank stroke — same tool/layer/style but fresh geometry.
+    const prev = it.stroke;
+    const targetSpace = { kind: "ERP_GLOBAL", viewMode: String(editor.mode || "frame") };
+    const newStroke = buildFreehandStrokeRecord(it.layerKind, prev.toolKind, [], targetSpace);
+    newStroke.actionGroupId = prev.actionGroupId; // keep same undo group
+    it.stroke = newStroke;
+    const targetDescriptor = getActivePaintTargetDescriptor(it);
+    if (targetDescriptor) {
+      editor.paintEngine.beginStroke(newStroke, targetDescriptor);
+    }
   }
 
   function commitPaintInteraction(interaction) {
@@ -9452,6 +9487,25 @@ async function showEditor(node, type, options = {}) {
       let changed = false;
       samples.forEach((sample) => {
         const sp = screenPos(sample);
+        if (editor.mode === "frame") {
+          // Frame-boundary guard: segment the stroke on exit, restart on re-entry.
+          const shot = getActiveCutoutShot();
+          const rect = shot ? getFrameViewRect(shot) : null;
+          if (rect) {
+            const fx = (sp.x - rect.x) / Math.max(1, rect.w);
+            const fy = (sp.y - rect.y) / Math.max(1, rect.h);
+            const inFrame = fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1;
+            if (!inFrame) {
+              it._outOfFrame = true;
+              return; // drop point — no artifact
+            }
+            if (it._outOfFrame) {
+              // Re-entered: commit previous inside-frame segment, start fresh
+              it._outOfFrame = false;
+              _segmentFrameStroke(it);
+            }
+          }
+        }
         // appendPaintPoint now calls appendStrokePoint internally (O(1) incremental rendering)
         if (appendPaintPoint(it, sp, performance.now())) changed = true;
       });
@@ -9742,7 +9796,12 @@ async function showEditor(node, type, options = {}) {
     const ended = editor.interaction;
     if (editor.interaction?.kind === "paint_stroke" || editor.interaction?.kind === "paint_lasso_fill") {
       invalidateLivePaintPreviewCaches();
-      if (commitPaintInteraction(editor.interaction)) {
+      const didCommit = commitPaintInteraction(editor.interaction);
+      // _hasCommittedSegments: set when frame boundary segmented a stroke mid-drag.
+      // Even if the final segment is empty (pointer ended outside frame), we still need
+      // to push history for the previously committed inside-frame segments.
+      const hadSegments = Boolean(editor.interaction._hasCommittedSegments);
+      if (didCommit || hadSegments) {
         markPaintStrokeVisualsDirty();
         // Invalidate the persistent frame so objectGeom() recomputes bbox on next select.
         const committedGroupId = String(editor.interaction.stroke?.actionGroupId || "").trim();
@@ -9752,7 +9811,10 @@ async function showEditor(node, type, options = {}) {
         }
         const targetDescriptor = getActivePaintTargetDescriptor(editor.interaction);
         if (targetDescriptor) {
-          if (String(editor.interaction.stroke?.toolKind || "") === "eraser") {
+          if (!didCommit) {
+            // Final segment was empty (stroke ended outside frame); cancel engine stroke.
+            editor.paintEngine.cancelActiveStroke(targetDescriptor);
+          } else if (String(editor.interaction.stroke?.toolKind || "") === "eraser") {
             editor.paintEngine.cancelActiveStroke(targetDescriptor);
             refreshPaintEngineRevisionCache();
           } else {
