@@ -87,7 +87,7 @@ class _NodeProgress:
         self.total = max(1.0, float(total))
         self.value = 0.0
         self.label = str(label or "Node")
-        self._progress_bar = ComfyProgressBar(self.total, node_id=self.node_id) if ComfyProgressBar is not None else None
+        self._progress_bar = ComfyProgressBar(self.total) if ComfyProgressBar is not None else None
         self._last_stage = None
 
     def set(self, value: float):
