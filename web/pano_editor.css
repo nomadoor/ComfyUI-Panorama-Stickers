@@ -680,8 +680,6 @@
   -webkit-appearance: none;
   transform: rotate(-90deg);
   background: linear-gradient(to right, var(--pano-accent) 0%, var(--pano-accent) var(--v, 50%), rgba(255,255,255,0.16) var(--v, 50%));
-  height: 3px;
-  border-radius: 999px;
   cursor: pointer;
 }
 .pano-video-volume-slider::-webkit-slider-runnable-track {

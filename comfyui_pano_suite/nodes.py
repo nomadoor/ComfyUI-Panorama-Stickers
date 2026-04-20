@@ -59,6 +59,11 @@ PREVIEW_UI_KEYS = {
         "video": "pano_input_videos",
         "meta": "pano_input_video_meta",
     },
+    "stickers_output": {
+        "image": "pano_input_images",
+        "video": "pano_videos",
+        "meta": "pano_video_meta",
+    },
     "stickers_input": {
         "image": "pano_sticker_input_images",
     },
@@ -1419,6 +1424,7 @@ class PanoramaStickersNode(io.ComfyNode):
         render_state = dict(state)
         render_state["stickers"] = render_stickers
         stickers_bg_contract = _get_preview_ui_contract("stickers_bg")
+        stickers_output_contract = _get_preview_ui_contract("stickers_output")
         stickers_input_contract = _get_preview_ui_contract("stickers_input")
         ui_ret = _init_ui_preview(bg_erp, key=stickers_bg_contract["image"])
 
@@ -1466,8 +1472,8 @@ class PanoramaStickersNode(io.ComfyNode):
             fps=fps_value,
             audio=audio,
             warning_key="pano_sticker_warnings",
-            video_key=stickers_bg_contract["video"],
-            meta_key=stickers_bg_contract["meta"],
+            video_key=stickers_output_contract["video"],
+            meta_key=stickers_output_contract["meta"],
             progress_callback=progress.frame_callback(output_encode_start, video_span) if video_span > 0 else None,
         )
         progress.set(output_encode_start + video_span)
@@ -1583,19 +1589,27 @@ class PanoramaCutoutNode(io.ComfyNode):
                     meta[0]["has_audio"] = _audio_has_waveform(audio)
                 _merge_ui_payload(ui_ret, payload)
             else:
-                input_mp4_path = encode_frames_to_mp4(erp_image, fps_value, audio=audio)
-                _cutout_video_cache_put(input_video_cache_key, input_mp4_path)
-                payload = make_video_ui_payload(
-                    input_mp4_path,
-                    fps_value,
-                    batch_frames,
-                    video_key=input_video_contract["video"],
-                    meta_key=input_video_contract["meta"],
-                )
-                meta = payload.get(input_video_contract["meta"])
-                if isinstance(meta, list) and meta:
-                    meta[0]["has_audio"] = _audio_has_waveform(audio)
-                _merge_ui_payload(ui_ret, payload)
+                try:
+                    input_mp4_path = encode_frames_to_mp4(erp_image, fps_value, audio=audio)
+                except Exception as ex:
+                    _push_ui_warning(
+                        ui_ret,
+                        "pano_cutout_warnings",
+                        f"MP4 preview encoding unavailable; install PyAV/encoders for preview ({ex})",
+                    )
+                else:
+                    _cutout_video_cache_put(input_video_cache_key, input_mp4_path)
+                    payload = make_video_ui_payload(
+                        input_mp4_path,
+                        fps_value,
+                        batch_frames,
+                        video_key=input_video_contract["video"],
+                        meta_key=input_video_contract["meta"],
+                    )
+                    meta = payload.get(input_video_contract["meta"])
+                    if isinstance(meta, list) and meta:
+                        meta[0]["has_audio"] = _audio_has_waveform(audio)
+                    _merge_ui_payload(ui_ret, payload)
         if not shots:
             video_span = batch_frames if batch_frames > 1 else 0
             progress = _NodeProgress(unique_id, 1 + batch_frames + video_span + 1, label="PanoramaCutout")
@@ -1785,24 +1799,32 @@ class PanoramaCutoutNode(io.ComfyNode):
                     _merge_ui_payload(ui_ret, payload)
                 else:
                     progress.stage("Encoding preview video")
-                    mp4_path = encode_frames_to_mp4(
-                        out_batch,
-                        fps_value,
-                        audio=audio,
-                        progress_callback=progress.frame_callback(encode_start, video_span),
-                    )
-                    _cutout_video_cache_put(cutout_video_key, mp4_path)
-                    payload = make_video_ui_payload(
-                        mp4_path,
-                        fps_value,
-                        int(out_batch.shape[0]),
-                        video_key=preview_contract["video"],
-                        meta_key=preview_contract["meta"],
-                    )
-                    meta = payload.get(preview_contract["meta"])
-                    if isinstance(meta, list) and meta:
-                        meta[0]["has_audio"] = _audio_has_waveform(audio)
-                    _merge_ui_payload(ui_ret, payload)
+                    try:
+                        mp4_path = encode_frames_to_mp4(
+                            out_batch,
+                            fps_value,
+                            audio=audio,
+                            progress_callback=progress.frame_callback(encode_start, video_span),
+                        )
+                    except Exception as ex:
+                        _push_ui_warning(
+                            ui_ret,
+                            "pano_cutout_warnings",
+                            f"MP4 preview encoding unavailable; install PyAV/encoders for preview ({ex})",
+                        )
+                    else:
+                        _cutout_video_cache_put(cutout_video_key, mp4_path)
+                        payload = make_video_ui_payload(
+                            mp4_path,
+                            fps_value,
+                            int(out_batch.shape[0]),
+                            video_key=preview_contract["video"],
+                            meta_key=preview_contract["meta"],
+                        )
+                        meta = payload.get(preview_contract["meta"])
+                        if isinstance(meta, list) and meta:
+                            meta[0]["has_audio"] = _audio_has_waveform(audio)
+                        _merge_ui_payload(ui_ret, payload)
             progress.set(encode_start + video_span)
             progress.stage("Done")
             progress.finish()

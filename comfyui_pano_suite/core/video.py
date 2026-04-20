@@ -59,6 +59,32 @@ def _normalize_frames(frames) -> np.ndarray:
     return arr
 
 
+def _pad_to_even_dimensions(frames):
+    height = int(frames.shape[-3])
+    width = int(frames.shape[-2])
+    padded_height = height + (height % 2)
+    padded_width = width + (width % 2)
+    if padded_height == height and padded_width == width:
+        return frames, height, width
+
+    pad_h = padded_height - height
+    pad_w = padded_width - width
+
+    try:
+        import torch as _torch
+        if isinstance(frames, _torch.Tensor):
+            return _torch.nn.functional.pad(frames, (0, 0, 0, pad_w, 0, pad_h)), padded_height, padded_width
+    except Exception:
+        pass
+
+    padded = np.pad(
+        np.asarray(frames),
+        ((0, 0), (0, pad_h), (0, pad_w), (0, 0)),
+        mode="edge",
+    )
+    return padded, padded_height, padded_width
+
+
 def _audio_has_waveform(audio) -> bool:
     if audio is None or not hasattr(audio, "get"):
         return False
@@ -228,13 +254,13 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
     if _streaming:
         if frames.ndim == 3:
             frames = frames.unsqueeze(0)
+        frames, height, width = _pad_to_even_dimensions(frames)
         frame_count = int(frames.shape[0])
-        height = int(frames.shape[1])
-        width = int(frames.shape[2])
         batch = None
     else:
         batch = _normalize_frames(frames)
-        frame_count, height, width, _channels = batch.shape
+        batch, height, width = _pad_to_even_dimensions(batch)
+        frame_count, _height, _width, _channels = batch.shape
 
     waveform_np = None
     sample_rate = 0
