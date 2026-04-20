@@ -494,6 +494,12 @@
     transform 180ms cubic-bezier(0.2, 0, 0, 1),
     visibility 0s linear 0s;
 }
+.pano-video-filmstrip:focus-within {
+  box-shadow:
+    0 0 0 2px rgba(14, 165, 233, 0.95),
+    0 0 0 4px rgba(14, 165, 233, 0.22);
+  border-radius: calc(var(--pano-float-radius) - 2px);
+}
 .pano-video-filmstrip-track {
   display: grid;
   grid-auto-flow: column;
@@ -655,19 +661,16 @@
   box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(12px);
   opacity: 0;
-  visibility: hidden;
   pointer-events: none;
   transform: translate(-50%, -8px);
   transition:
     opacity 220ms cubic-bezier(0.2, 0, 0, 1),
-    transform 220ms cubic-bezier(0.2, 0, 0, 1),
-    visibility 0s linear 340ms;
-  transition-delay: 120ms, 120ms, 120ms;
+    transform 220ms cubic-bezier(0.2, 0, 0, 1);
+  transition-delay: 120ms, 120ms;
 }
 .pano-video-volume-stack[data-has-audio="true"]:hover .pano-video-volume-pop,
 .pano-video-volume-stack[data-has-audio="true"]:focus-within .pano-video-volume-pop {
   opacity: 1;
-  visibility: visible;
   pointer-events: auto;
   transform: translate(-50%, -12px);
   transition-delay: 0s;
@@ -679,13 +682,18 @@
   appearance: none;
   -webkit-appearance: none;
   transform: rotate(-90deg);
-  background: linear-gradient(to right, var(--pano-accent) 0%, var(--pano-accent) var(--v, 50%), rgba(255,255,255,0.16) var(--v, 50%));
+  background: transparent;
   cursor: pointer;
 }
 .pano-video-volume-slider::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 999px;
-  background: transparent;
+  background: linear-gradient(
+    to right,
+    var(--pano-accent) 0%,
+    var(--pano-accent) var(--v, 50%),
+    rgba(255,255,255,0.16) var(--v, 50%)
+  );
 }
 .pano-video-volume-slider::-webkit-slider-thumb {
   appearance: none;
@@ -1504,7 +1512,7 @@
 }
 .pano-field {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 60px;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
   gap: var(--pano-space-md);
   align-items: center;
   height: 28px;
@@ -1957,6 +1965,9 @@
   padding: 0 6px;
   -moz-appearance: textfield;
   appearance: textfield;
+  width: calc(6ch + 12px);
+  min-width: calc(6ch + 12px);
+  font-variant-numeric: tabular-nums;
 }
 .pano-field input[type="number"]::-webkit-outer-spin-button,
 .pano-field input[type="number"]::-webkit-inner-spin-button {

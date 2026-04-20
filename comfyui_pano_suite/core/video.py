@@ -298,13 +298,18 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
 
             if _streaming:
                 for index in range(frame_count):
-                    f = frames[index].detach().cpu().numpy()
-                    f = np.asarray(f, dtype=np.float32)
+                    frame_tensor = frames[index].detach().cpu()
+                    frame_is_u8 = str(getattr(frame_tensor, "dtype", "")) == "torch.uint8"
+                    f = frame_tensor.numpy()
                     if f.shape[-1] < 3:
                         f = np.repeat(f[..., :1], 3, axis=-1)
                     elif f.shape[-1] > 3:
                         f = f[..., :3]
-                    frame_u8 = np.clip(f * 255.0, 0.0, 255.0).astype(np.uint8)
+                    if frame_is_u8:
+                        frame_u8 = np.clip(f, 0, 255).astype(np.uint8, copy=False)
+                    else:
+                        f = np.asarray(f, dtype=np.float32)
+                        frame_u8 = np.clip(f * 255.0, 0.0, 255.0).astype(np.uint8)
                     video_frame = av.VideoFrame.from_ndarray(frame_u8, format="rgb24")
                     if codec_name == "h264_nvenc":
                         video_frame = video_frame.reformat(format="yuv420p")

@@ -472,9 +472,15 @@ def _images_to_numpy_batch(
 
 def _repeat_mask_batch(mask_bw: np.ndarray, batch_size: int) -> np.ndarray:
     src = np.clip(np.asarray(mask_bw, dtype=np.float32), 0.0, 1.0)
+    target_batch = max(1, int(batch_size))
     if src.ndim == 3:
-        return src
-    return np.repeat(src[None, ...], max(1, int(batch_size)), axis=0)
+        if int(src.shape[0]) == target_batch:
+            return src
+        if int(src.shape[0]) <= 0:
+            return np.zeros((target_batch, *src.shape[1:]), dtype=np.float32)
+        repeats = int(math.ceil(target_batch / float(src.shape[0])))
+        return np.repeat(src, repeats, axis=0)[:target_batch]
+    return np.repeat(src[None, ...], target_batch, axis=0)
 
 
 def _batch_to_torch(batch: np.ndarray):

@@ -138,7 +138,7 @@ const transportStyle = computed(() => ({
           class="pano-video-volume-stack"
           :data-has-audio="state.hasAudio === true ? 'true' : 'false'"
         >
-          <div class="pano-video-volume-pop" aria-hidden="true">
+          <div class="pano-video-volume-pop">
             <input
               class="pano-video-volume-slider"
               data-video-volume

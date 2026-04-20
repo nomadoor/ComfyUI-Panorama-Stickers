@@ -9700,10 +9700,7 @@ const Ue = {
 }, K_ = ["src", "onLoad"], G_ = {
   key: 1,
   class: "pano-video-thumb-placeholder"
-}, W_ = ["max", "value", "disabled"], q_ = { class: "pano-video-controls-right" }, Y_ = ["data-has-audio"], X_ = {
-  class: "pano-video-volume-pop",
-  "aria-hidden": "true"
-}, Z_ = ["value", "disabled"], J_ = {
+}, W_ = ["max", "value", "disabled"], q_ = { class: "pano-video-controls-right" }, Y_ = ["data-has-audio"], X_ = { class: "pano-video-volume-pop" }, Z_ = ["value", "disabled"], J_ = {
   __name: "PanoVideoTransport",
   props: {
     state: { type: Object, default: () => ({}) }
