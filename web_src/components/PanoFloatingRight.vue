@@ -3,7 +3,6 @@ import PanoIconButton from "./PanoIconButton.vue";
 
 defineProps({
   buttons: { type: Array, default: () => [] },
-  fovValue: { type: String, default: "100°" },
   preview: { type: Object, default: () => ({}) },
   previewToggle: { type: Object, default: () => ({}) },
 });
@@ -11,7 +10,6 @@ defineProps({
 
 <template>
   <div class="pano-floating-right">
-    <span class="pano-fov-value" data-fov-value aria-label="Field of view">{{ fovValue }}</span>
     <PanoIconButton
       v-for="button in buttons"
       :key="button.action"

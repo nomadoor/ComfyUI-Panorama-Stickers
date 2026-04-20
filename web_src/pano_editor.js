@@ -57,6 +57,8 @@ const LASSO_CURSOR_HOTSPOT_Y = 4;
 const _paintLayerUploadRegistry = new Map();
 const _paintLayerSyncRegistry = new Map();
 const _stickerAssetUploadRegistry = new Map();
+const _videoThumbnailCache = new Map();
+const VIDEO_THUMBNAIL_CACHE_LIMIT = 12;
 const ICON = {
   // Source: @geist-ui/icons globe.js (v1.0.2)
   globe: "<svg viewBox='0 0 24 24' aria-hidden='true' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' shape-rendering='geometricPrecision'><circle cx='12' cy='12' r='10'/><path d='M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z'/></svg>",
@@ -117,6 +119,35 @@ function easeInOutCubic(t) {
 }
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
+}
+
+function getCachedVideoThumbnails(src) {
+  const key = String(src || "").trim();
+  if (!key) return null;
+  const cached = _videoThumbnailCache.get(key);
+  if (!cached || !Array.isArray(cached.thumbnails) || !cached.thumbnails.length) return null;
+  _videoThumbnailCache.delete(key);
+  _videoThumbnailCache.set(key, cached);
+  return cached;
+}
+
+function setCachedVideoThumbnails(src, entry) {
+  const key = String(src || "").trim();
+  if (!key) return;
+  const thumbnails = Array.isArray(entry?.thumbnails) ? entry.thumbnails : [];
+  if (!thumbnails.length) return;
+  _videoThumbnailCache.delete(key);
+  _videoThumbnailCache.set(key, {
+    thumbnails,
+    thumbnailCount: Math.max(1, Number(entry?.thumbnailCount || thumbnails.length)),
+    duration: Math.max(0, Number(entry?.duration || 0)),
+    fps: Math.max(1, Number(entry?.fps || 24)),
+  });
+  while (_videoThumbnailCache.size > VIDEO_THUMBNAIL_CACHE_LIMIT) {
+    const oldestKey = _videoThumbnailCache.keys().next().value;
+    if (!oldestKey) break;
+    _videoThumbnailCache.delete(oldestKey);
+  }
 }
 function easeInCubic(t) {
   return t * t * t;
@@ -1722,6 +1753,9 @@ async function showEditor(node, type, options = {}) {
       muted: false,
       volume: 1,
       volumePct: 100,
+      thumbnails: [],
+      thumbnailCount: 9,
+      shellMaxWidthPx: 640,
     },
     sidePanel: {},
     selectionMenu: { visible: false, left: 0, top: 0, items: [] },
@@ -1802,6 +1836,7 @@ async function showEditor(node, type, options = {}) {
   // canvas mounting, geometry measurement, low-level pointer wiring, and fullscreen integration.
   const side = root.querySelector("[data-side]");
   const videoEl = root.querySelector("[data-video-element]");
+  const floatingRightEl = root.querySelector(".pano-floating-right");
   const selectionMenu = root.querySelector("[data-selection-menu]");
   const tooltipEl = root.querySelector("[data-tooltip]");
   const cutoutPreviewHost = root.querySelector("[data-camera-preview-host]");
@@ -1950,6 +1985,11 @@ async function showEditor(node, type, options = {}) {
     backgroundDirty: true,
     backgroundWasVisible: false,
   };
+  const setCanvasCursor = (nextCursor) => {
+    const cursor = String(nextCursor || "default");
+    if (canvas.style.cursor === cursor) return;
+    canvas.style.cursor = cursor;
+  };
   const tooltip = {
     timer: 0,
     target: null,
@@ -1970,9 +2010,31 @@ async function showEditor(node, type, options = {}) {
     frameCache: new Map(),
     frameCacheOrder: [],
     currentFrameNumber: 0,
+    thumbnailJobId: 0,
+    thumbnailSrc: "",
   };
   const SCRUB_FRAME_CACHE_LIMIT = 4;
+  const VIDEO_THUMBNAIL_COUNT = 9;
   const videoCleanupFns = [];
+  let videoTransportLayoutRaf = 0;
+  const syncVideoTransportLayout = () => {
+    const stageRect = stageWrap?.getBoundingClientRect?.();
+    const rightRect = floatingRightEl?.getBoundingClientRect?.();
+    const stageWidth = Math.max(0, Number(stageRect?.width || 0));
+    const rightWidth = rightRect ? Math.max(0, Number(rightRect.width || 0)) : 0;
+    const modalSideInset = 14;
+    const transportGap = 12;
+    const rightReserve = rightWidth > 0 ? (rightWidth + modalSideInset + transportGap) : 72;
+    const shellMaxWidthPx = Math.max(280, Math.floor(stageWidth - (rightReserve * 2)));
+    uiState.videoTransport.shellMaxWidthPx = shellMaxWidthPx;
+  };
+  const queueVideoTransportLayout = () => {
+    if (videoTransportLayoutRaf) return;
+    videoTransportLayoutRaf = window.requestAnimationFrame(() => {
+      videoTransportLayoutRaf = 0;
+      syncVideoTransportLayout();
+    });
+  };
   const frameTolerance = () => {
     const fps = Math.max(1, Number(uiState.videoTransport.fps || 24));
     return Math.max(1 / 120, Math.min(0.05, 0.5 / fps));
@@ -1996,6 +2058,118 @@ async function showEditor(node, type, options = {}) {
       // Ignore WebKit-only property access issues.
     }
     return !!uiState.videoTransport.hasAudio;
+  };
+  const transportLayoutObserver = typeof ResizeObserver !== "undefined"
+    ? new ResizeObserver(() => queueVideoTransportLayout())
+    : null;
+  transportLayoutObserver?.observe(stageWrap);
+  if (floatingRightEl) transportLayoutObserver?.observe(floatingRightEl);
+  videoCleanupFns.push(() => {
+    if (videoTransportLayoutRaf) {
+      window.cancelAnimationFrame(videoTransportLayoutRaf);
+      videoTransportLayoutRaf = 0;
+    }
+    transportLayoutObserver?.disconnect?.();
+  });
+  queueVideoTransportLayout();
+  const resetVideoThumbnails = () => {
+    videoState.thumbnailJobId += 1;
+    videoState.thumbnailSrc = "";
+    uiState.videoTransport.thumbnails = [];
+    uiState.videoTransport.thumbnailCount = VIDEO_THUMBNAIL_COUNT;
+  };
+  const buildVideoThumbnails = async (src, duration, fps) => {
+    const safeSrc = String(src || "").trim();
+    if (!safeSrc) {
+      resetVideoThumbnails();
+      return;
+    }
+    const cached = getCachedVideoThumbnails(safeSrc);
+    if (cached) {
+      videoState.thumbnailSrc = safeSrc;
+      uiState.videoTransport.thumbnails = cached.thumbnails;
+      uiState.videoTransport.thumbnailCount = cached.thumbnailCount;
+      return;
+    }
+    if (videoState.thumbnailSrc === safeSrc && Array.isArray(uiState.videoTransport.thumbnails) && uiState.videoTransport.thumbnails.length) {
+      return;
+    }
+    const jobId = ++videoState.thumbnailJobId;
+    videoState.thumbnailSrc = safeSrc;
+    uiState.videoTransport.thumbnails = [];
+    uiState.videoTransport.thumbnailCount = VIDEO_THUMBNAIL_COUNT;
+    const thumbVideo = document.createElement("video");
+    thumbVideo.preload = "auto";
+    thumbVideo.muted = true;
+    thumbVideo.playsInline = true;
+    thumbVideo.crossOrigin = "anonymous";
+    const loaded = await new Promise((resolve) => {
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+      thumbVideo.addEventListener("loadedmetadata", () => finish(true), { once: true });
+      thumbVideo.addEventListener("canplay", () => finish(true), { once: true });
+      thumbVideo.addEventListener("error", () => finish(false), { once: true });
+      thumbVideo.src = safeSrc;
+      thumbVideo.load();
+    });
+    if (!loaded || videoState.thumbnailJobId !== jobId) return;
+    const videoWidth = Math.max(1, Number(thumbVideo.videoWidth || 0));
+    const videoHeight = Math.max(1, Number(thumbVideo.videoHeight || 0));
+    if (videoWidth < 1 || videoHeight < 1) return;
+    const sampleDuration = Math.max(0, Number(thumbVideo.duration || duration || 0));
+    const canvas = document.createElement("canvas");
+    const thumbHeight = 46;
+    const thumbWidth = Math.max(72, Math.round((videoWidth / videoHeight) * thumbHeight));
+    canvas.width = thumbWidth;
+    canvas.height = thumbHeight;
+    const ctx2d = canvas.getContext("2d");
+    if (!ctx2d) return;
+    const thumbnails = [];
+    const seekTo = (time) => new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      thumbVideo.addEventListener("seeked", finish, { once: true });
+      thumbVideo.addEventListener("error", finish, { once: true });
+      try {
+        thumbVideo.currentTime = time;
+      } catch {
+        finish();
+      }
+    });
+    for (let index = 0; index < VIDEO_THUMBNAIL_COUNT; index += 1) {
+      if (videoState.thumbnailJobId !== jobId) return;
+      const ratio = VIDEO_THUMBNAIL_COUNT <= 1 ? 0 : index / (VIDEO_THUMBNAIL_COUNT - 1);
+      const target = sampleDuration > 0
+        ? Math.max(0, Math.min(sampleDuration - Math.max(0.001, 0.5 / Math.max(1, Number(fps || 24))), sampleDuration * ratio))
+        : 0;
+      await seekTo(target);
+      if (videoState.thumbnailJobId !== jobId) return;
+      ctx2d.clearRect(0, 0, thumbWidth, thumbHeight);
+      ctx2d.drawImage(thumbVideo, 0, 0, thumbWidth, thumbHeight);
+      thumbnails.push({
+        id: `thumb-${index}`,
+        src: canvas.toDataURL("image/jpeg", 0.72),
+        time: target,
+        label: formatVideoTime(target),
+      });
+    }
+    if (videoState.thumbnailJobId !== jobId) return;
+    uiState.videoTransport.thumbnails = thumbnails;
+    uiState.videoTransport.thumbnailCount = thumbnails.length || VIDEO_THUMBNAIL_COUNT;
+    setCachedVideoThumbnails(safeSrc, {
+      thumbnails,
+      thumbnailCount: thumbnails.length || VIDEO_THUMBNAIL_COUNT,
+      duration: sampleDuration,
+      fps,
+    });
   };
   const frameNumberForTime = (time) => {
     const fps = Math.max(1, Number(uiState.videoTransport.fps || 24));
@@ -2046,6 +2220,9 @@ async function showEditor(node, type, options = {}) {
     videoState.currentFrameNumber = frameNumber;
     return copyCanvasIntoStill(cachedCanvas, time);
   };
+  videoCleanupFns.push(() => {
+    resetVideoThumbnails();
+  });
   if (videoEl instanceof HTMLVideoElement) {
     const pumpVideoFrame = () => {
       if (typeof videoEl.requestVideoFrameCallback !== "function") return;
@@ -2065,14 +2242,14 @@ async function showEditor(node, type, options = {}) {
             syncVideoTransportState({
               ready: true,
               playing: false,
-              visible: editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+              visible: getVideoTransportVisible(),
               currentTime: videoState.editorTime,
               duration: uiState.videoTransport.duration,
               frameCount: uiState.videoTransport.frameCount,
               fps: uiState.videoTransport.fps,
               mode: "scrub",
             });
-            requestDraw({ cause: "frame_view" });
+            requestDraw({ cause: "frame_view", localOnly: true });
           }
         } else {
           videoState.editorTime = actualTime;
@@ -2087,14 +2264,14 @@ async function showEditor(node, type, options = {}) {
           syncVideoTransportState({
             ready: true,
             playing: !videoEl.paused && !videoEl.ended,
-            visible: editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+            visible: getVideoTransportVisible(),
             currentTime: actualTime,
             duration: uiState.videoTransport.duration,
             frameCount: uiState.videoTransport.frameCount,
             fps: uiState.videoTransport.fps,
             mode: "playback",
           });
-          requestDraw({ cause: "frame_view" });
+          requestDraw({ cause: "frame_view", localOnly: true });
         }
         if (runtime.running && (!videoEl.paused || videoState.mode === "scrub")) {
           pumpVideoFrame();
@@ -2125,7 +2302,7 @@ async function showEditor(node, type, options = {}) {
       }
       refreshModalVideoSource();
       pumpVideoFrame();
-      requestDraw({ cause: "frame_view" });
+      requestDraw({ cause: "frame_view", localOnly: true });
     };
     const onPlay = () => {
       videoState.mode = "playback";
@@ -2133,7 +2310,7 @@ async function showEditor(node, type, options = {}) {
       videoState.requestedTime = null;
       refreshModalVideoSource();
       pumpVideoFrame();
-      requestDraw({ cause: "frame_view" });
+      requestDraw({ cause: "frame_view", localOnly: true });
     };
     const onPause = () => {
       if (videoState.mode === "playback" && captureStillFrameFromVideo()) {
@@ -2141,13 +2318,13 @@ async function showEditor(node, type, options = {}) {
         runtime.dirty = true;
       }
       refreshModalVideoSource();
-      requestDraw({ cause: "frame_view" });
+      requestDraw({ cause: "frame_view", localOnly: true });
     };
     const onVolumeChange = () => {
       syncVideoTransportState({
         ready: !!videoEl.getAttribute("src"),
         playing: !videoEl.paused && !videoEl.ended,
-        visible: !!videoEl.getAttribute("src") && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+        visible: getVideoTransportVisible(),
         currentTime: videoState.editorTime,
         duration: uiState.videoTransport.duration,
         frameCount: uiState.videoTransport.frameCount,
@@ -2176,7 +2353,7 @@ async function showEditor(node, type, options = {}) {
         captureStillFrameFromVideo();
         runtime.backgroundDirty = true;
         runtime.dirty = true;
-        requestDraw({ cause: "frame_view" });
+        requestDraw({ cause: "frame_view", localOnly: true });
       }
       videoState.requestedTime = null;
       maybeResumePlayback();
@@ -3181,6 +3358,15 @@ async function showEditor(node, type, options = {}) {
   function syncVideoTransportState(extra = {}) {
     const current = Number(extra.currentTime ?? videoState.editorTime ?? 0);
     const duration = Number(extra.duration ?? uiState.videoTransport.duration ?? 0);
+    const ready = Object.prototype.hasOwnProperty.call(extra, "ready")
+      ? !!extra.ready
+      : !!uiState.videoTransport.ready;
+    const playing = Object.prototype.hasOwnProperty.call(extra, "playing")
+      ? !!extra.playing
+      : !!uiState.videoTransport.playing;
+    const visible = Object.prototype.hasOwnProperty.call(extra, "visible")
+      ? !!extra.visible
+      : !!uiState.videoTransport.visible;
     const muted = Object.prototype.hasOwnProperty.call(extra, "muted")
       ? !!extra.muted
       : !!(videoEl instanceof HTMLVideoElement ? videoEl.muted : uiState.videoTransport.muted);
@@ -3193,9 +3379,9 @@ async function showEditor(node, type, options = {}) {
       ? !!extra.hasAudio
       : detectVideoHasAudio(videoEl);
     Object.assign(uiState.videoTransport, {
-      ready: !!extra.ready,
-      playing: !!extra.playing,
-      visible: !!extra.visible,
+      ready,
+      playing,
+      visible,
       currentTime: Number.isFinite(current) ? current : 0,
       duration: Number.isFinite(duration) ? duration : 0,
       progressPct: duration > 1e-6 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0,
@@ -3208,6 +3394,19 @@ async function showEditor(node, type, options = {}) {
       muted,
       volume: Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1)),
       volumePct: Math.round(Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1)) * 100),
+      thumbnails: Array.isArray(extra.thumbnails) ? extra.thumbnails : uiState.videoTransport.thumbnails,
+      thumbnailCount: Math.max(1, Number(extra.thumbnailCount ?? uiState.videoTransport.thumbnailCount ?? VIDEO_THUMBNAIL_COUNT)),
+    });
+  }
+  function getVideoTransportVisible() {
+    return !!(videoEl instanceof HTMLVideoElement
+      && videoEl.getAttribute("src")
+      && editor.primaryTool !== "paint"
+      && editor.primaryTool !== "mask");
+  }
+  function syncVideoTransportVisibility() {
+    syncVideoTransportState({
+      visible: getVideoTransportVisible(),
     });
   }
   function captureStillFrameFromVideo() {
@@ -3279,10 +3478,18 @@ async function showEditor(node, type, options = {}) {
       videoEl.volume = Math.max(0, Math.min(1, Number(uiState.videoTransport.volume ?? 1)));
       videoEl.src = nextSrc;
       videoEl.load();
+      void buildVideoThumbnails(nextSrc, duration, fps);
     } else if (!nextSrc && videoEl.getAttribute("src")) {
       videoEl.pause();
       videoEl.removeAttribute("src");
       videoEl.load();
+      resetVideoThumbnails();
+    }
+    if (nextSrc && (!Array.isArray(uiState.videoTransport.thumbnails) || uiState.videoTransport.thumbnails.length === 0)) {
+      void buildVideoThumbnails(nextSrc, duration, fps);
+    }
+    if (!nextSrc) {
+      resetVideoThumbnails();
     }
     syncVideoTransportState({
       ready: !!nextSrc,
@@ -3296,6 +3503,7 @@ async function showEditor(node, type, options = {}) {
       hasAudio,
       muted: !!videoEl.muted,
       volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
+      thumbnailCount: uiState.videoTransport.thumbnailCount,
     });
     return nextSrc || null;
   }
@@ -3638,7 +3846,7 @@ async function showEditor(node, type, options = {}) {
         && runtime.hasPresentedFrame;
     }
     if (isPaintCursorEnabled()) updateCursor(editor.pointerPos);
-    else canvas.style.cursor = editor.mode === "pano" ? "grab" : "default";
+    else setCanvasCursor(editor.mode === "pano" ? "grab" : "default");
   }
 
   function stickerCornerOrderSanity() {
@@ -6864,6 +7072,7 @@ async function showEditor(node, type, options = {}) {
       isActiveLassoTool,
     });
     Object.assign(uiState.paintDock, nextPaintDock);
+    syncVideoTransportVisibility();
     if (!nextPaintDock.visible) {
       if (paintColorPop) paintColorPop.hidden = true;
       return;
@@ -8721,27 +8930,27 @@ async function showEditor(node, type, options = {}) {
   function updateCursor(p) {
     syncPaintCursorElement();
     if (editor.interaction) {
-      if (editor.interaction.kind === "paint_stroke" || editor.interaction.kind === "paint_lasso_fill") canvas.style.cursor = "none";
-      else if (editor.interaction.kind === "view") canvas.style.cursor = "grabbing";
-      else if (editor.interaction.kind === "pan_frame") canvas.style.cursor = "grabbing";
-    else if (editor.interaction.kind === "move" || editor.interaction.kind === "move_multi" || editor.interaction.kind === "move_stroke_group" || editor.interaction.kind === "move_raster_object") canvas.style.cursor = "move";
-      else if (editor.interaction.kind === "scale" || editor.interaction.kind === "scale_x" || editor.interaction.kind === "scale_y" || editor.interaction.kind === "scale_raster_object") canvas.style.cursor = editor.interaction.cursor || "nwse-resize";
-      else if (editor.interaction.kind === "rotate") canvas.style.cursor = "grabbing";
-      else canvas.style.cursor = "default";
+      if (editor.interaction.kind === "paint_stroke" || editor.interaction.kind === "paint_lasso_fill") setCanvasCursor("none");
+      else if (editor.interaction.kind === "view") setCanvasCursor("grabbing");
+      else if (editor.interaction.kind === "pan_frame") setCanvasCursor("grabbing");
+    else if (editor.interaction.kind === "move" || editor.interaction.kind === "move_multi" || editor.interaction.kind === "move_stroke_group" || editor.interaction.kind === "move_raster_object") setCanvasCursor("move");
+      else if (editor.interaction.kind === "scale" || editor.interaction.kind === "scale_x" || editor.interaction.kind === "scale_y" || editor.interaction.kind === "scale_raster_object") setCanvasCursor(editor.interaction.cursor || "nwse-resize");
+      else if (editor.interaction.kind === "rotate") setCanvasCursor("grabbing");
+      else setCanvasCursor("default");
       return;
     }
     if (isActivePaintCursorVisible()) {
-      canvas.style.cursor = "none";
+      setCanvasCursor("none");
       return;
     }
     if (editor.mode === "frame") {
       if (editor.primaryTool !== "cursor") {
-        canvas.style.cursor = "default";
+        setCanvasCursor("default");
         return;
       }
     }
     if (editor.primaryTool === "cursor" && editor.marqueeModifier) {
-      canvas.style.cursor = "default";
+      setCanvasCursor("default");
       return;
     }
     const selected = getSelected();
@@ -8749,17 +8958,17 @@ async function showEditor(node, type, options = {}) {
     const selectedLocked = selected ? isItemLocked(selected) : false;
     const h = selectedLocked ? { kind: "none", cursor: "default" } : handleHit(geom, p);
     if (!selectedLocked && h.kind !== "none") {
-      canvas.style.cursor = h.cursor;
+      setCanvasCursor(h.cursor);
       return;
     }
     if (editor.primaryTool === "cursor") {
       const hit = hitObjectAt(p);
       if (hit) {
-        canvas.style.cursor = "default";
+        setCanvasCursor("default");
         return;
       }
     }
-    canvas.style.cursor = editor.mode === "pano" ? "grab" : "default";
+    setCanvasCursor(editor.mode === "pano" ? "grab" : "default");
   }
 
   function updateSelectionMenu() {
@@ -9968,8 +10177,9 @@ async function showEditor(node, type, options = {}) {
         const duration = Number(uiState.videoTransport.duration || videoEl.duration || 0);
         const currentTime = Number(videoEl.currentTime || videoState.editorTime || 0);
         const restartFrom = (duration > 0 && currentTime >= (duration - 0.001)) ? 0 : Number(videoState.editorTime || currentTime || 0);
+        const playSeekTolerance = Math.max(frameTolerance(), 0.04);
         videoState.editorTime = restartFrom;
-        if (Math.abs(currentTime - restartFrom) > 0.001) {
+        if (Math.abs(currentTime - restartFrom) > playSeekTolerance) {
           videoState.seeking = false;
           videoState.pendingPlaybackResume = true;
           issueVideoSeek(restartFrom);
@@ -9987,14 +10197,14 @@ async function showEditor(node, type, options = {}) {
       syncVideoTransportState({
         ready: !!videoEl.getAttribute("src"),
         playing: !videoEl.paused && !videoEl.ended,
-        visible: !!videoEl.getAttribute("src") && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+        visible: getVideoTransportVisible(),
         currentTime: videoState.editorTime,
         duration: uiState.videoTransport.duration,
         frameCount: uiState.videoTransport.frameCount,
         fps: uiState.videoTransport.fps,
         mode: videoState.mode,
       });
-      requestDraw({ cause: "frame_view" });
+      requestDraw({ cause: "frame_view", localOnly: true });
       return;
     }
     if (action === "video-audio-toggle") {
@@ -10010,7 +10220,7 @@ async function showEditor(node, type, options = {}) {
       syncVideoTransportState({
         ready: !!videoEl.getAttribute("src"),
         playing: !videoEl.paused && !videoEl.ended,
-        visible: !!videoEl.getAttribute("src") && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+        visible: getVideoTransportVisible(),
         currentTime: videoState.editorTime,
         duration: uiState.videoTransport.duration,
         frameCount: uiState.videoTransport.frameCount,
@@ -10020,6 +10230,7 @@ async function showEditor(node, type, options = {}) {
         muted: videoEl.muted,
         volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
       });
+      if (typeof actionTarget?.blur === "function") actionTarget.blur();
       return;
     }
     if (!readOnly) {
@@ -10144,7 +10355,7 @@ async function showEditor(node, type, options = {}) {
       syncVideoTransportState({
         ready: !!videoEl.getAttribute("src"),
         playing: false,
-        visible: !!videoEl.getAttribute("src") && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+        visible: getVideoTransportVisible(),
         currentTime: nextTime,
         duration: uiState.videoTransport.duration,
         frameCount: uiState.videoTransport.frameCount,
@@ -10154,7 +10365,7 @@ async function showEditor(node, type, options = {}) {
       if (Number(stillCanvas.__panoFrameIdx || 0) > 0) {
         runtime.backgroundDirty = true;
         runtime.dirty = true;
-        requestDraw({ cause: "frame_view" });
+        requestDraw({ cause: "frame_view", localOnly: true });
       }
       issueVideoSeek(nextTime);
       return;
@@ -10168,7 +10379,7 @@ async function showEditor(node, type, options = {}) {
       syncVideoTransportState({
         ready: !!videoEl.getAttribute("src"),
         playing: !videoEl.paused && !videoEl.ended,
-        visible: !!videoEl.getAttribute("src") && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+        visible: getVideoTransportVisible(),
         currentTime: videoState.editorTime,
         duration: uiState.videoTransport.duration,
         frameCount: uiState.videoTransport.frameCount,
@@ -10213,17 +10424,29 @@ async function showEditor(node, type, options = {}) {
           void videoEl.play().catch(() => {});
         } else {
           captureStillFrameFromVideo();
-          requestDraw({ cause: "frame_view" });
+          requestDraw({ cause: "frame_view", localOnly: true });
         }
       }
+      return;
+    }
+    if (ev.target.closest("[data-video-volume]")) {
+      if (typeof ev.target?.blur === "function") ev.target.blur();
       return;
     }
     if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
   });
   root.addEventListener("pointerup", (ev) => {
+    if (ev.target.closest("[data-video-volume]")) {
+      if (typeof ev.target?.blur === "function") ev.target.blur();
+      return;
+    }
     if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
   });
   root.addEventListener("pointercancel", (ev) => {
+    if (ev.target.closest("[data-video-volume]")) {
+      if (typeof ev.target?.blur === "function") ev.target.blur();
+      return;
+    }
     if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
   });
   root.addEventListener("focusout", (ev) => {
