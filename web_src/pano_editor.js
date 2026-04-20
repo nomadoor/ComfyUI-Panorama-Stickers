@@ -5796,35 +5796,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getCutoutPreviewObjectRevision() {
-    const stickers = Array.isArray(state.stickers) ? state.stickers : [];
-    const rasters = Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [];
-    return JSON.stringify({
-      stickers: stickers.map((item) => ({
-        id: String(item?.id || ""),
-        asset_id: String(item?.asset_id || item?.assetId || ""),
-        source_kind: String(item?.source_kind || ""),
-        source_link_id: Number(item?.source_link_id ?? -1),
-        source_state_hash: String(item?.source_state_hash || ""),
-        visible: item?.visible !== false,
-        z_index: Number(item?.z_index || 0),
-        yaw_deg: Number(item?.yaw_deg || 0),
-        pitch_deg: Number(item?.pitch_deg || 0),
-        hFOV_deg: Number(item?.hFOV_deg || 0),
-        vFOV_deg: Number(item?.vFOV_deg || 0),
-        rot_deg: Number(item?.rot_deg || 0),
-        roll_deg: Number(item?.roll_deg || 0),
-        crop: item?.crop || null,
-      })),
-      rasters: rasters
-        .filter((item) => String(item?.layerKind || "paint") === "paint")
-        .map((item) => ({
-          id: String(item?.id || ""),
-          visible: item?.visible !== false,
-          z_index: Number(item?.z_index || 0),
-          transform: item?.transform || null,
-          bbox: item?.bbox || null,
-        })),
-    });
+    return `obj:${Number(editor.objectVisualRevision || 0)}`;
   }
 
   function getCutoutPreviewSurfaceRevision(shot, options = {}) {
@@ -8767,6 +8739,25 @@ async function showEditor(node, type, options = {}) {
     }
   }
 
+  function _segmentFrameLassoFill(it) {
+    const points = it.stroke?.geometry?.points || [];
+    if (points.length >= 3) {
+      commitPaintInteraction(it);
+      const targetDescriptor = getActivePaintTargetDescriptor(it);
+      if (targetDescriptor) editor.paintEngine.commitActiveStroke(it.stroke, targetDescriptor);
+      it._hasCommittedSegments = true;
+    }
+    const prev = it.stroke;
+    const targetSpace = { kind: "ERP_GLOBAL", viewMode: String(editor.mode || "frame") };
+    const newStroke = buildLassoFillStrokeRecord(it.layerKind, prev.toolKind, [], targetSpace);
+    newStroke.actionGroupId = prev.actionGroupId;
+    it.stroke = newStroke;
+    const targetDescriptor = getActivePaintTargetDescriptor(it);
+    if (targetDescriptor) {
+      editor.paintEngine.beginStroke(newStroke, targetDescriptor);
+    }
+  }
+
   function commitPaintInteraction(interaction) {
     const geometry = interaction?.stroke?.geometry || null;
     if (!geometry) return false;
@@ -9204,6 +9195,10 @@ async function showEditor(node, type, options = {}) {
       const startPoint = activeShot
         ? screenPosToFrameAsErpPoint(p, activeShot, performance.now())
         : screenPosToErpPoint(p, performance.now());
+      if (!startPoint) {
+        updateCursor(p);
+        return;
+      }
       editor.interaction = {
         kind: toolKind === "lasso_fill" ? "paint_lasso_fill" : "paint_stroke",
         layerKind,
@@ -9518,6 +9513,23 @@ async function showEditor(node, type, options = {}) {
       let changed = false;
       samples.forEach((sample) => {
         const sp = screenPos(sample);
+        if (editor.mode === "frame") {
+          const shot = getActiveCutoutShot();
+          const rect = shot ? getFrameViewRect(shot) : null;
+          if (rect) {
+            const fx = (sp.x - rect.x) / Math.max(1, rect.w);
+            const fy = (sp.y - rect.y) / Math.max(1, rect.h);
+            const inFrame = fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1;
+            if (!inFrame) {
+              it._outOfFrame = true;
+              return;
+            }
+            if (it._outOfFrame) {
+              it._outOfFrame = false;
+              _segmentFrameLassoFill(it);
+            }
+          }
+        }
         if (appendLassoPoint(it, sp, performance.now())) changed = true;
       });
       if (changed) {
@@ -10868,13 +10880,12 @@ function installEditorButton(nodeType, nodeData, matchType, buttonText) {
         return r;
       };
     }
-    const bg = getWidget(node, "bg_color");
-    if (bg && (bg.value == null || String(bg.value).trim() === "" || String(bg.value).toLowerCase() === "#000000")) {
-      bg.value = "#00ff00";
-      bg.callback?.("#00ff00");
-    }
-
     if (matchType === "PanoramaStickers") {
+      const bg = getWidget(node, "bg_color");
+      if (bg && (bg.value == null || String(bg.value).trim() === "" || String(bg.value).toLowerCase() === "#000000")) {
+        bg.value = "#00ff00";
+        bg.callback?.("#00ff00");
+      }
       ensureActionButtonWidget(node, buttonText, () => showEditor(node, "stickers"));
       if (ENABLE_STICKERS_NODE_PREVIEW) {
         attachStickersNodePreview(node, {

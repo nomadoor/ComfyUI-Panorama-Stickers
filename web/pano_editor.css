@@ -664,8 +664,8 @@
     visibility 0s linear 340ms;
   transition-delay: 120ms, 120ms, 120ms;
 }
-.pano-video-volume-stack:hover .pano-video-volume-pop,
-.pano-video-volume-stack:focus-within .pano-video-volume-pop {
+.pano-video-volume-stack[data-has-audio="true"]:hover .pano-video-volume-pop,
+.pano-video-volume-stack[data-has-audio="true"]:focus-within .pano-video-volume-pop {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;

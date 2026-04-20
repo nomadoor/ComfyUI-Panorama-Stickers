@@ -95,6 +95,18 @@ A lightweight scheduler owns all writes to `videoEl.currentTime` during scrub mo
 - Does **not** do prefetch. all-intra MP4 makes single-seek latency acceptable.
   Prefetch can be added later if telemetry shows it is needed.
 
+#### Handling rapid scrubbing
+
+- New scrub input supersedes older pending intent, but does **not** issue an immediate second
+  `videoEl.currentTime` write while `seeking === true`
+- Instead, the scheduler updates `requestedFrameNumber` / latest desired target and keeps at most
+  one browser seek in-flight
+- On `seeked`, compare the just-delivered frame against the latest requested target:
+  - If it matches within tolerance, capture it to `stillCanvas` and mark the seek complete
+  - If it differs, issue exactly one follow-up seek to the latest requested target
+- This coalesces rapid slider movement into at most one active seek plus one latest pending target,
+  preventing queue buildup and reducing scrub lag / state desynchronization
+
 ### Frame cache
 
 Initial size: **1 frame** (`stillCanvas` only).  
