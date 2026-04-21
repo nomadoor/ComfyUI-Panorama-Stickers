@@ -1,6 +1,6 @@
 // Tabler icon data shared across Vue components.
 // Icons are rendered through SvgIcon.vue so stroke width and sizing stay centralized.
-export const ICON = {
+export const ICON = Object.freeze({
   globe: "globe",
   pano: "pano",
   unwrap: "unwrap",
@@ -43,7 +43,7 @@ export const ICON = {
   paintbrush_vertical_tool: "paintbrush_vertical_tool",
   eraser_tool: "eraser_tool",
   lasso_tool: "lasso_tool",
-};
+});
 
 const parseAttrs = (raw) => {
   const attrs = {};
@@ -58,7 +58,7 @@ const parseElements = (body) => Array.from(body.matchAll(/<(path|circle|rect|lin
 
 const TABLER_BODIES = {
   globe: { name: "world", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0' /><path d='M3.6 9h16.8' /><path d='M3.6 15h16.8' /><path d='M11.5 3a17 17 0 0 0 0 18' /><path d='M12.5 3a17 17 0 0 1 0 18' />` },
-  pano: { name: "view-360", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 13c2.667 -6 15.333 -6 18 0' /><path d='M8 13a4 4 0 1 0 8 0a4 4 0 0 0 -8 0' /><path d='M5 19a1 1 0 0 0 1 1h1.5a1 1 0 0 0 1 -1v-3' /><path d='M16.5 16v3a1 1 0 0 0 1 1h1.5a1 1 0 0 0 1 -1' />` },
+  pano: { name: "view-360", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0' /><path d='M12 12m-4 0a4 9 0 1 0 8 0a4 9 0 1 0 -8 0' /><path d='M3 12c0 2.21 4.03 4 9 4s9 -1.79 9 -4s-4.03 -4 -9 -4s-9 1.79 -9 4z' />` },
   unwrap: { name: "panorama-horizontal", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4.338 5.53c5.106 1.932 10.211 1.932 15.317 0a1 1 0 0 1 1.345 .934v11c0 .692 -.692 1.2 -1.34 .962c-5.107 -1.932 -10.214 -1.932 -15.321 0c-.648 .246 -1.339 -.242 -1.339 -.935v-11.027a1 1 0 0 1 1.338 -.935l0 .001' />` },
   camera: { name: "camera", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2' /><path d='M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0' />` },
   play: { name: "player-play", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M7 4v16l13 -8l-13 -8' />` },

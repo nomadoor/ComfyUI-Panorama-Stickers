@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import PanoModal from "../components/PanoModal.vue";
 import { ICON } from "../icons.js";
+import SvgIcon from "../components/SvgIcon.vue";
 
 const isOpen = ref(true);
 const paintSwatches = [
@@ -26,7 +27,7 @@ const paintSwatches = [
     />
     <div v-if="!isOpen" class="pano-vue-launch">
       <button type="button" class="pano-btn pano-btn-primary pano-btn-texticon" @click="isOpen = true">
-        <span aria-hidden="true" v-html="ICON.globe" />
+        <SvgIcon :icon="ICON.globe" />
         <span class="label">Open Modal</span>
       </button>
     </div>

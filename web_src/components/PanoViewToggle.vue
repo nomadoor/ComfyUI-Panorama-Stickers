@@ -1,4 +1,6 @@
 <script setup>
+import SvgIcon from "./SvgIcon.vue";
+
 defineProps({
   buttons: { type: Array, default: () => [] },
 });
@@ -22,7 +24,7 @@ defineProps({
         :disabled="button.disabled === true"
         v-show="button.visible !== false"
       >
-        <span v-html="button.icon" />
+        <SvgIcon :icon="button.icon" />
         <span class="label">{{ button.label }}</span>
       </button>
     </div>

@@ -1,5 +1,6 @@
 <script setup>
 import PanoIconButton from "./PanoIconButton.vue";
+import SvgIcon from "./SvgIcon.vue";
 
 defineProps({
   buttons: { type: Array, default: () => [] },
@@ -43,8 +44,9 @@ defineProps({
         data-action="toggle-output-preview-size"
         :aria-label="previewToggle.label || 'Expand Preview'"
         :data-tip="previewToggle.tip || 'Expand preview'"
-        v-html="previewToggle.icon"
-      />
+      >
+        <SvgIcon :icon="previewToggle.icon" />
+      </button>
       <div v-if="preview.ready !== true && preview.settled !== true" class="pano-camera-preview-label">{{ preview.label || "Preview unavailable" }}</div>
     </div>
   </div>

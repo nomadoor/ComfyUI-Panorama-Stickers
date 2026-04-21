@@ -9,7 +9,7 @@ const props = defineProps({
 
 const iconDef = computed(() => {
   const key = String(props.icon || "");
-  return ICON_PATHS[key] || null;
+  return Object.prototype.hasOwnProperty.call(ICON_PATHS, key) ? ICON_PATHS[key] : null;
 });
 
 </script>

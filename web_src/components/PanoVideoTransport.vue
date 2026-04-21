@@ -10,6 +10,9 @@ const props = defineProps({
 const playLabel = computed(() => props.state?.playing === true ? "Pause" : "Play");
 const playTip = computed(() => props.state?.playing === true ? "Pause video" : "Play video");
 const playIcon = computed(() => props.state?.playing === true ? ICON.pause : ICON.play);
+const loopLabel = computed(() => props.state?.loop === false ? "Enable loop" : "Disable loop");
+const loopTip = computed(() => props.state?.loop === false ? "Enable loop playback" : "Disable loop playback");
+const loopIcon = computed(() => props.state?.loop === false ? ICON.loop_off : ICON.loop);
 const muteLabel = computed(() => props.state?.muted === true || Number(props.state?.volume ?? 1) <= 0 ? "Unmute" : "Mute");
 const muteIcon = computed(() => {
   if (props.state?.hasAudio !== true) return ICON.volume;
@@ -85,7 +88,10 @@ const transportStyle = computed(() => ({
     <div class="pano-video-transport-shell">
       <div class="pano-video-controls-left">
         <PanoIconButton
-          extra-class="pano-video-control"
+          :extra-class="[
+            'pano-video-control',
+            { 'pano-video-control-play': state.playing !== true },
+          ]"
           :icon="playIcon"
           :label="playLabel"
           :tip="playTip"
@@ -134,6 +140,17 @@ const transportStyle = computed(() => ({
 
       <div class="pano-video-controls-right">
         <div class="pano-video-time pano-video-time-end" :style="timeStyle">{{ state.durationLabel || "0:00" }}</div>
+        <PanoIconButton
+          extra-class="pano-video-control"
+          :icon="loopIcon"
+          :label="loopLabel"
+          :tip="loopTip"
+          :attrs="{
+            'data-action': 'video-loop-toggle',
+            disabled: state.ready !== true,
+            'data-loop-enabled': state.loop === false ? 'false' : 'true',
+          }"
+        />
         <div
           class="pano-video-volume-stack"
           :data-has-audio="state.hasAudio === true ? 'true' : 'false'"

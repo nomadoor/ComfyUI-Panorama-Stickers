@@ -273,11 +273,6 @@
 .pano-view-btn svg {
   width: 18px;
   height: 18px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .pano-view-btn .label {
   font-size: 12px;
@@ -494,12 +489,6 @@
     transform 180ms cubic-bezier(0.2, 0, 0, 1),
     visibility 0s linear 0s;
 }
-.pano-video-filmstrip:focus-within {
-  box-shadow:
-    0 0 0 2px rgba(14, 165, 233, 0.95),
-    0 0 0 4px rgba(14, 165, 233, 0.22);
-  border-radius: calc(var(--pano-float-radius) - 2px);
-}
 .pano-video-filmstrip-track {
   display: grid;
   grid-auto-flow: column;
@@ -640,8 +629,11 @@
   height: 14px;
   transform: translateX(-50%);
 }
-.pano-video-volume-stack .pano-btn-icon[data-muted="true"] {
-  color: rgba(255, 255, 255, 0.6);
+.pano-video-control {
+  color: inherit;
+}
+.pano-video-control-play svg {
+  transform: translateX(-0.75px);
 }
 .pano-video-volume-stack[data-has-audio="false"] {
   opacity: 0.48;
@@ -913,6 +905,12 @@
 .pano-btn-texticon svg {
   width: 18px;
   height: 18px;
+  display: block;
+  overflow: visible;
+}
+.pano-modal .icon-tabler,
+.pano-modal .icons-tabler-outline {
+  stroke-width: var(--pano-icon-stroke, 2.3);
 }
 .pano-btn-icon svg path:not([fill]),
 .pano-btn-icon svg rect:not([fill]),
@@ -928,7 +926,7 @@
 .pano-btn-texticon svg polygon:not([fill]) {
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: var(--pano-icon-stroke, 2.3);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1693,11 +1691,6 @@
 .pano-picker-item-icon svg {
   width: 14px;
   height: 14px;
-  stroke: currentcolor;
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .pano-picker-item:hover {
   background: var(--pano-surface-2);
@@ -1732,11 +1725,6 @@
 .pano-btn-copy svg {
   width: 14px;
   height: 14px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .pano-btn.subtle:hover {
   color: var(--pano-text);
@@ -1780,11 +1768,6 @@
 .pano-ui-caret svg {
   width: 14px;
   height: 14px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .pano-ui-settings[open] .pano-ui-caret {
   transform: rotate(180deg);

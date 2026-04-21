@@ -1,4 +1,6 @@
 <script setup>
+import SvgIcon from "./SvgIcon.vue";
+
 defineProps({
   model: { type: Object, default: () => ({}) },
 });
@@ -18,8 +20,9 @@ defineProps({
           data-action="aspect"
           aria-label="Aspect Ratio"
           data-tip="Aspect ratio"
-          v-html="item.icon"
-        />
+        >
+          <SvgIcon :icon="item.icon" />
+        </button>
         <div class="pano-aspect-popover" :class="{ open: item.open === true }" role="dialog" aria-label="Aspect Ratio">
           <button
             v-for="choice in item.choices || []"
@@ -40,8 +43,9 @@ defineProps({
         :aria-label="item.label"
         :data-tip="item.tip"
         :disabled="item.disabled === true"
-        v-html="item.icon"
-      />
+      >
+        <SvgIcon :icon="item.icon" />
+      </button>
     </template>
   </div>
 </template>

@@ -1,25 +1,12 @@
 <script setup>
 import { computed } from "vue";
 import { ICON } from "../icons.js";
+import SvgIcon from "./SvgIcon.vue";
 
 const props = defineProps({
   nodeTitle: { type: String, default: "Panorama Stickers" },
   model: { type: Object, default: () => ({}) },
 });
-
-function escapeHtml(value) {
-  return String(value || "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#39;",
-  }[char]));
-}
-
-const sideTitleHtml = computed(() => (
-  `<span class="pano-side-title-icon" aria-hidden="true">${ICON.globe}</span><span>${escapeHtml(props.nodeTitle)}</span>`
-));
 
 const hasModel = computed(() => {
   const model = props.model;
@@ -38,8 +25,13 @@ function isParamDisabled(param, model) {
 
 <template>
   <div class="pano-side" data-side>
-    <div class="pano-side-head">
-      <div class="pano-side-title" v-html="sideTitleHtml" />
+      <div class="pano-side-head">
+      <div class="pano-side-title">
+        <span class="pano-side-title-icon" aria-hidden="true">
+          <SvgIcon :icon="ICON.globe" />
+        </span>
+        <span>{{ nodeTitle }}</span>
+      </div>
       <div class="pano-side-actions" />
     </div>
     <div class="pano-divider" />
@@ -87,7 +79,16 @@ function isParamDisabled(param, model) {
               data-action="toggle-selection-picker"
               :disabled="model.selectionPicker.disabled === true"
             >
-              <span class="pano-picker-label" v-html="model.selectionPicker.currentLabelHtml" />
+              <span class="pano-picker-label">
+                <span
+                  v-if="model.selectionPicker.currentIcon"
+                  class="pano-picker-item-icon"
+                  aria-hidden="true"
+                >
+                  <SvgIcon :icon="model.selectionPicker.currentIcon" />
+                </span>
+                <span>{{ model.selectionPicker.currentLabel }}</span>
+              </span>
               <span class="pano-picker-caret">▾</span>
             </button>
             <div class="pano-picker-pop" :hidden="model.selectionPicker.open !== true">
@@ -99,8 +100,16 @@ function isParamDisabled(param, model) {
                 :class="{ active: item.active === true }"
                 data-action="select-picker-item"
                 :data-selection-id="item.id"
-                v-html="item.labelHtml"
-              />
+              >
+                <span
+                  v-if="item.icon"
+                  class="pano-picker-item-icon"
+                  aria-hidden="true"
+                >
+                  <SvgIcon :icon="item.icon" />
+                </span>
+                <span>{{ item.label }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -112,7 +121,7 @@ function isParamDisabled(param, model) {
             data-action="copy-state-inline"
             :disabled="model.copyStateButton.disabled === true"
           >
-            <span v-html="ICON.copy" />
+            <SvgIcon :icon="ICON.copy" />
             <span>{{ model.copyStateButton.label }}</span>
           </button>
         </div>
@@ -171,7 +180,9 @@ function isParamDisabled(param, model) {
                 :data-visibility-row="row.key"
               >
                 <span class="pano-visibility-name">
-                  <span class="pano-visibility-name-icon" aria-hidden="true" v-html="row.icon" />
+                  <span class="pano-visibility-name-icon" aria-hidden="true">
+                    <SvgIcon :icon="row.icon" />
+                  </span>
                   <span>{{ row.label }}</span>
                 </span>
                 <button
@@ -184,8 +195,9 @@ function isParamDisabled(param, model) {
                   :data-tip="row.tip"
                   :disabled="row.enabled === false"
                   :class="{ active: row.visible === true }"
-                  v-html="row.visible === true ? ICON.eye : ICON.eye_dashed"
-                />
+                >
+                  <SvgIcon :icon="row.visible === true ? ICON.eye : ICON.eye_dashed" />
+                </button>
               </div>
             </div>
           </div>
@@ -194,7 +206,9 @@ function isParamDisabled(param, model) {
         <details v-if="model.uiSettings" class="pano-ui-settings" :open="model.uiSettings.open === true">
           <summary>
             <span class="pano-ui-summary-label">UI Settings</span>
-            <span class="pano-ui-caret" aria-hidden="true" v-html="ICON.chevron" />
+            <span class="pano-ui-caret" aria-hidden="true">
+              <SvgIcon :icon="ICON.chevron" />
+            </span>
           </summary>
           <div class="pano-ui-settings-body">
             <div class="pano-ui-row">
