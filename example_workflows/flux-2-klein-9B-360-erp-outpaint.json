@@ -1,8 +1,8 @@
 {
   "id": "e47d064a-cb92-4da7-b92b-be9f1ddd26f5",
   "revision": 0,
-  "last_node_id": 68,
-  "last_link_id": 100,
+  "last_node_id": 70,
+  "last_link_id": 104,
   "nodes": [
     {
       "id": 33,
@@ -86,42 +86,6 @@
       "bgcolor": "#653"
     },
     {
-      "id": 43,
-      "type": "VAELoader",
-      "pos": [
-        520.2735954205992,
-        751.5950256347664
-      ],
-      "size": [
-        269.8313103058076,
-        58
-      ],
-      "flags": {},
-      "order": 1,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "VAE",
-          "type": "VAE",
-          "links": [
-            62,
-            76
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.3.39",
-        "Node name for S&R": "VAELoader"
-      },
-      "widgets_values": [
-        "flux2-vae.safetensors"
-      ],
-      "color": "#322",
-      "bgcolor": "#533"
-    },
-    {
       "id": 52,
       "type": "VAEEncode",
       "pos": [
@@ -133,13 +97,13 @@
         46
       ],
       "flags": {},
-      "order": 8,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
           "name": "pixels",
           "type": "IMAGE",
-          "link": 86
+          "link": 101
         },
         {
           "name": "vae",
@@ -304,13 +268,13 @@
         258
       ],
       "flags": {},
-      "order": 9,
+      "order": 8,
       "mode": 0,
       "inputs": [
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 89
+          "link": 102
         }
       ],
       "outputs": [],
@@ -333,7 +297,7 @@
         82
       ],
       "flags": {},
-      "order": 2,
+      "order": 1,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -400,51 +364,6 @@
       "bgcolor": "#535"
     },
     {
-      "id": 59,
-      "type": "PanoramaCutout",
-      "pos": [
-        1817.711607004872,
-        534.0964764114023
-      ],
-      "size": [
-        370.0209972239654,
-        257.77311172800773
-      ],
-      "flags": {},
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "erp_image",
-          "type": "IMAGE",
-          "link": 88
-        }
-      ],
-      "outputs": [
-        {
-          "name": "rect_image",
-          "type": "IMAGE",
-          "links": [
-            99
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "panorama-stickers",
-        "ver": "d8b0f77f4d741089c553cac9938e16d5fe996920",
-        "Node name for S&R": "PanoramaCutout",
-        "aux_id": "nomadoor/ComfyUI-Panorama-Stickers"
-      },
-      "widgets_values": [
-        "{\"version\":1,\"projection_model\":\"pinhole_rectilinear\",\"alpha_mode\":\"straight\",\"bg_color\":\"#00ff00\",\"output_preset\":2048,\"assets\":{},\"stickers\":[],\"shots\":[{\"id\":\"sh_cd59dca1\",\"yaw_deg\":-40.26597661719347,\"pitch_deg\":9.592884798208313,\"hFOV_deg\":95.41452440211535,\"vFOV_deg\":59.634077751322096,\"roll_deg\":0,\"out_w\":1024,\"out_h\":1024,\"aspect_id\":\"1:1\"}],\"ui_settings\":{\"invert_view_x\":false,\"invert_view_y\":false,\"preview_quality\":\"balanced\"},\"active\":{\"selected_sticker_id\":null,\"selected_shot_id\":\"sh_cd59dca1\"}}",
-        1,
-        null,
-        ""
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
-    },
-    {
       "id": 66,
       "type": "SaveImage",
       "pos": [
@@ -462,7 +381,7 @@
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 99
+          "link": 104
         }
       ],
       "outputs": [],
@@ -507,7 +426,7 @@
           "slot_index": 0,
           "links": [
             87,
-            88
+            103
           ]
         }
       ],
@@ -517,52 +436,6 @@
         "Node name for S&R": "VAEDecode"
       },
       "widgets_values": []
-    },
-    {
-      "id": 56,
-      "type": "PanoramaStickers",
-      "pos": [
-        520.1049057264069,
-        579.5488468801722
-      ],
-      "size": [
-        270,
-        106
-      ],
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "bg_erp",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "cond_erp",
-          "type": "IMAGE",
-          "links": [
-            86,
-            89
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "panorama-stickers",
-        "ver": "d8b0f77f4d741089c553cac9938e16d5fe996920",
-        "Node name for S&R": "PanoramaStickers",
-        "aux_id": "nomadoor/ComfyUI-Panorama-Stickers"
-      },
-      "widgets_values": [
-        "2048 x 1024",
-        "#00ff00",
-        "{\"version\":1,\"projection_model\":\"pinhole_rectilinear\",\"alpha_mode\":\"straight\",\"bg_color\":\"#00ff00\",\"output_preset\":2048,\"assets\":{\"asset_91dd650d\":{\"type\":\"comfy_image\",\"filename\":\"000133_00006_.png\",\"subfolder\":\"panorama_stickers\",\"storage\":\"input\",\"name\":\"000133_00006_.png\"}},\"stickers\":[{\"id\":\"st_d1305c87\",\"asset_id\":\"asset_91dd650d\",\"yaw_deg\":-16.59304581325364,\"pitch_deg\":23.27140430678283,\"hFOV_deg\":62.9859925822807,\"vFOV_deg\":92.0564506971795,\"rot_deg\":0,\"z_index\":0}],\"shots\":[],\"ui_settings\":{\"invert_view_x\":false,\"invert_view_y\":false,\"preview_quality\":\"balanced\"},\"active\":{\"selected_sticker_id\":null,\"selected_shot_id\":null}}"
-      ],
-      "color": "#232",
-      "bgcolor": "#353"
     },
     {
       "id": 31,
@@ -644,6 +517,12 @@
           "name": "erp_image",
           "type": "IMAGE",
           "link": 87
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
         }
       ],
       "outputs": [],
@@ -653,7 +532,10 @@
         "Node name for S&R": "PanoramaPreview",
         "aux_id": "nomadoor/ComfyUI-Panorama-Stickers"
       },
-      "widgets_values": [],
+      "widgets_values": [
+        "360",
+        24
+      ],
       "color": "#232",
       "bgcolor": "#353"
     },
@@ -669,7 +551,7 @@
         256.2520882868414
       ],
       "flags": {},
-      "order": 4,
+      "order": 2,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -679,6 +561,172 @@
       ],
       "color": "#323",
       "bgcolor": "#535"
+    },
+    {
+      "id": 69,
+      "type": "PanoramaStickers",
+      "pos": [
+        520.1049057264069,
+        579.5488468801722
+      ],
+      "size": [
+        270,
+        214
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "bg_erp",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "sticker_image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "sticker_state",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "cond_erp",
+          "type": "IMAGE",
+          "links": [
+            101,
+            102
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "panorama-stickers",
+        "ver": "2663addf35cedcca1539d5f65190146d4d6637cb",
+        "Node name for S&R": "PanoramaStickers"
+      },
+      "widgets_values": [
+        "2048",
+        "360",
+        "#00ff00",
+        "",
+        24
+      ]
+    },
+    {
+      "id": 43,
+      "type": "VAELoader",
+      "pos": [
+        518.6444005254552,
+        848.5321218958388
+      ],
+      "size": [
+        269.8313103058076,
+        58
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            62,
+            76
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.39",
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "flux2-vae.safetensors"
+      ],
+      "color": "#322",
+      "bgcolor": "#533"
+    },
+    {
+      "id": 70,
+      "type": "PanoramaCutout",
+      "pos": [
+        1817.711607004872,
+        534.0964764114023
+      ],
+      "size": [
+        373.8481566087248,
+        279.55033874172886
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "erp_image",
+          "type": "IMAGE",
+          "link": 103
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "rect_image",
+          "type": "IMAGE",
+          "links": [
+            104
+          ]
+        },
+        {
+          "name": "sticker_state",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "panorama-stickers",
+        "ver": "2663addf35cedcca1539d5f65190146d4d6637cb",
+        "Node name for S&R": "PanoramaCutout"
+      },
+      "widgets_values": [
+        "360",
+        "",
+        1,
+        24,
+        null,
+        ""
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
     }
   ],
   "links": [
@@ -779,34 +827,10 @@
       "CONDITIONING"
     ],
     [
-      86,
-      56,
-      0,
-      52,
-      0,
-      "IMAGE"
-    ],
-    [
       87,
       8,
       0,
       58,
-      0,
-      "IMAGE"
-    ],
-    [
-      88,
-      8,
-      0,
-      59,
-      0,
-      "IMAGE"
-    ],
-    [
-      89,
-      56,
-      0,
-      60,
       0,
       "IMAGE"
     ],
@@ -827,8 +851,32 @@
       "MODEL"
     ],
     [
-      99,
-      59,
+      101,
+      69,
+      0,
+      52,
+      0,
+      "IMAGE"
+    ],
+    [
+      102,
+      69,
+      0,
+      60,
+      0,
+      "IMAGE"
+    ],
+    [
+      103,
+      8,
+      0,
+      70,
+      0,
+      "IMAGE"
+    ],
+    [
+      104,
+      70,
       0,
       66,
       0,
@@ -839,13 +887,13 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6929483166639314,
+      "scale": 0.9223142094796932,
       "offset": [
-        121.96333901363025,
-        584.6020432231649
+        -143.96265105341408,
+        261.27396796238196
       ]
     },
-    "frontendVersion": "1.39.16",
+    "frontendVersion": "1.44.6",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,

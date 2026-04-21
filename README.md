@@ -5,9 +5,9 @@
 [![Live Demo](https://img.shields.io/badge/Spaces-Live%20Demo-orange)](https://huggingface.co/spaces/nomadoor/flux2-klein-4b-erp-outpaint-lora-demo)
 [![Guide](https://img.shields.io/badge/Guide-English-3b82f6.svg)](https://comfyui.nomadoor.net/en/notes/panorama-stickers/)
 
-ComfyUI Panorama Stickers is a small node set for laying out image stickers on a 360 equirectangular panorama, previewing the panorama interactively, and extracting framed cutouts from it.
+ComfyUI Panorama Stickers is a small node set and frontend extension for handling 360 equirectangular panoramas inside ComfyUI, including interactive preview, framed cutouts, and compositing.
 
-It is designed for my FLUX.2 Klein panorama workflow and can be used with both 4B and 9B variants.
+It was built around my FLUX.2 Klein panorama workflow and can be used with both 4B and 9B variants.
 
 This workflow was built to support my FLUX.2 Klein 4B 360 ERP outpaint LoRA:
 
@@ -28,6 +28,9 @@ Usage details are documented here:
 
 https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
+- v1.2.0 demo: https://gyazo.com/d4c2517589d7c96d27942af76a1ead27
+- v1.3.0 demo: https://gyazo.com/3da5973bb661df8fb1d11dd1e71a2b1f
+
 ## Nodes
 
 - `Panorama Stickers`: Place, scale, and rotate sticker images onto an ERP canvas and output a composited conditioning panorama.
@@ -37,10 +40,20 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## Workflow
 
-- [flux-2-klein-4B-360-erp-outpaint.json](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)
-- [flux-2-klein-9B-360-erp-outpaint.json](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)
+- Panorama image workflows
+  - [flux-2-klein-4B-360-erp-outpaint.json](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)
+  - [flux-2-klein-9B-360-erp-outpaint.json](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)
+- 360 panoramic video workflow
+  - By using the [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA created by the author of that model, you can generate 360 panoramic video from text.
+  - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
 
 ## Changelog
+
+### 1.3.0
+
+- Added video support.
+- Added 180 panorama support.
+- Large performance improvements through refactoring.
 
 ### 1.2.0
 
@@ -55,7 +68,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 - Add tools to split panoramas into multiple images for external upscaling and merge them back afterward.
 - Estimate camera intrinsics automatically from input images.
-- Add video workflow support.
+- Add 3D scene support.
 - Add integration with Hugin.
 
 ## Acknowledgements
