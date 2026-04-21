@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import SvgIcon from "./SvgIcon.vue";
 
 const props = defineProps({
   tag: { type: String, default: "button" },
@@ -28,6 +29,7 @@ const buttonAttrs = computed(() => {
     class="pano-btn pano-btn-icon"
     :class="extraClass"
     v-bind="buttonAttrs"
-    v-html="icon"
-  />
+  >
+    <SvgIcon :icon="icon" />
+  </component>
 </template>
