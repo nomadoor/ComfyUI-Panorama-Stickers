@@ -30,7 +30,7 @@ const iconDef = computed(() => {
     ]"
     aria-hidden="true"
   >
-    <template v-for="(element, index) in iconDef.elements" :key="`${iconDef.name || icon}-${index}`">
+    <template v-for="(element, index) in iconDef.elements" :key="`${iconDef.name || icon || 'icon'}-${element.tag}-${index}`">
       <path v-if="element.tag === 'path'" v-bind="element.attrs" />
       <circle v-else-if="element.tag === 'circle'" v-bind="element.attrs" />
       <rect v-else-if="element.tag === 'rect'" v-bind="element.attrs" />

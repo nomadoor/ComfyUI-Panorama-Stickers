@@ -10661,6 +10661,7 @@ async function showEditor(node, type, options = {}) {
     }
     syncGridToggleButton();
     syncFullscreenButton();
+    queueVideoTransportLayout();
     requestDraw();
   };
   const isOverlayFullscreen = () => document.fullscreenElement === overlay;

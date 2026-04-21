@@ -25,7 +25,7 @@ function isParamDisabled(param, model) {
 
 <template>
   <div class="pano-side" data-side>
-      <div class="pano-side-head">
+    <div class="pano-side-head">
       <div class="pano-side-title">
         <span class="pano-side-title-icon" aria-hidden="true">
           <SvgIcon :icon="ICON.globe" />
