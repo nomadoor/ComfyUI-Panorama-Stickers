@@ -215,7 +215,12 @@ def _cutout_video_cache_put(key: tuple, value: Path):
         _CUTOUT_VIDEO_CACHE[key] = value
         _CUTOUT_VIDEO_CACHE.move_to_end(key)
         while len(_CUTOUT_VIDEO_CACHE) > _CUTOUT_VIDEO_CACHE_LIMIT:
-            _CUTOUT_VIDEO_CACHE.popitem(last=False)
+            _old_key, old_value = _CUTOUT_VIDEO_CACHE.popitem(last=False)
+            try:
+                if isinstance(old_value, Path):
+                    old_value.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def _tensor_cache_identity(image) -> tuple | None:
@@ -1633,55 +1638,31 @@ class PanoramaCutoutNode(io.ComfyNode):
             _payload_has_content = cls._payload_has_layers(painting_payload)
             _has_renderables = painting_state_has_renderables(painting_state)
 
-            used_group_layers = False
             if not _has_display_entries and not _payload_has_content and not _has_renderables:
                 # Pure passthrough: nothing to composite — reuse input directly
                 out_batch = src_batch.astype(np.float32, copy=False)
+                mask_bw = np.zeros((oh, ow), dtype=np.float32)
                 progress.set(1 + batch_frames)
             else:
                 progress.stage("Compositing passthrough frames")
+                overlay_rgba, mask_bw, _overlay_stats_unused, _used_group_layers_unused = _build_overlay_erp_rgba_and_mask(
+                    state,
+                    erp_width=ow,
+                    erp_height=oh,
+                    painting_payload=painting_payload,
+                    base_dir=Path.cwd(),
+                    quality="export",
+                    ui_ret=ui_ret,
+                    warning_key="pano_cutout_warnings",
+                )
                 # Pre-allocate to avoid list accumulation + np.stack peak
                 out_batch = np.empty((batch_frames, oh, ow, 3), dtype=np.float32)
                 for index, frame in enumerate(src_batch):
-                    frame_out, frame_used_group_layers, _ = _compose_display_list_to_erp(
-                        state,
-                        frame,
-                        painting_payload=painting_payload,
-                        base_dir=Path.cwd(),
-                        quality="export",
-                    )
+                    frame_out = frame.astype(np.float32, copy=False)
+                    if overlay_rgba is not None:
+                        frame_out = alpha_composite_over_rgb(frame_out, overlay_rgba)
                     out_batch[index] = frame_out
-                    used_group_layers = used_group_layers or bool(frame_used_group_layers)
                     progress.set(1 + index + 1)
-
-            paint_rgba = None
-            if used_group_layers:
-                paint_rgba = _render_remaining_flat_paint_layer_from_state(painting_state, ow, oh)
-            else:
-                paint_rgba = painting_payload.get("paint") if isinstance(painting_payload, dict) else None
-                if paint_rgba is None:
-                    if _has_renderables:
-                        _push_ui_warning(
-                            ui_ret,
-                            "pano_cutout_warnings",
-                            "Cutout passthrough fell back to backend stroke rendering because uploaded paint layers were unavailable.",
-                        )
-                    paint_rgba, _ = render_painting_to_erp(painting_state, ow, oh)
-            if paint_rgba is not None:
-                if out_batch is src_batch:
-                    out_batch = src_batch.copy()
-                for i in range(int(out_batch.shape[0])):
-                    out_batch[i] = alpha_composite_over_rgb(out_batch[i], paint_rgba)
-
-            mask_bw = painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-            if mask_bw is None:
-                if _has_renderables:
-                    _push_ui_warning(
-                        ui_ret,
-                        "pano_cutout_warnings",
-                        "Cutout passthrough mask fell back to backend stroke rendering because uploaded mask layers were unavailable.",
-                    )
-                _, mask_bw = render_painting_to_erp(painting_state, ow, oh)
             if mask_bw is None:
                 mask_bw = np.zeros((oh, ow), dtype=np.float32)
 
