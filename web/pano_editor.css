@@ -924,7 +924,7 @@
 .pano-btn-texticon svg line:not([fill]),
 .pano-btn-texticon svg polyline:not([fill]),
 .pano-btn-texticon svg polygon:not([fill]) {
-  stroke: currentColor;
+  stroke: currentcolor;
   fill: none;
   stroke-width: var(--pano-icon-stroke, 2.3);
   stroke-linecap: round;

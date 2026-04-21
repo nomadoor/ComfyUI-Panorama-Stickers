@@ -3338,7 +3338,7 @@ async function showEditor(node, type, options = {}) {
       : detectVideoHasAudio(videoEl);
     const loop = Object.prototype.hasOwnProperty.call(extra, "loop")
       ? !!extra.loop
-      : !!(videoEl instanceof HTMLVideoElement ? videoEl.loop : uiState.videoTransport.loop);
+      : !!uiState.videoTransport.loop;
     Object.assign(uiState.videoTransport, {
       ready,
       playing,
@@ -7126,6 +7126,7 @@ async function showEditor(node, type, options = {}) {
       }];
       if (type === "stickers") {
         getList().forEach((item, i) => {
+          if (!item) return;
           const baseLabel = isExternalSticker(item)
             ? String(item.id || EXTERNAL_STICKER_ID)
             : String(state.assets?.[item.asset_id]?.name || item.asset_id || item.id);
@@ -7135,6 +7136,7 @@ async function showEditor(node, type, options = {}) {
         });
       } else {
         getCutoutInspectorItems().forEach((entry) => {
+          if (!entry?.item) return;
           const labelData = getSelectionItemLabelData(entry);
           items.push({ id: entry.item.id, label: labelData.label, icon: labelData.icon, item: entry.item, kind: entry.kind });
         });
