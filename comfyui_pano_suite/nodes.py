@@ -1285,7 +1285,7 @@ class PanoramaStickersNode(io.ComfyNode):
             inputs=[
                 io.Combo.Input(
                     "output_preset",
-                    options=["1024", "2048", "4096"],
+                    options=["1024", "2048", "4096", "auto"],
                     default="2048",
                 ),
                 io.Combo.Input(
@@ -1329,6 +1329,39 @@ class PanoramaStickersNode(io.ComfyNode):
         return int(np.clip(val, 8, max_val))
 
     @staticmethod
+    def _is_auto_output_preset(v) -> bool:
+        return isinstance(v, str) and v.strip().lower() in {"auto", "bg", "background"}
+
+    @staticmethod
+    def _bg_erp_size(bg_erp) -> tuple[int, int] | None:
+        if bg_erp is None or not hasattr(bg_erp, "shape"):
+            return None
+        try:
+            shape = tuple(int(x) for x in bg_erp.shape)
+        except Exception:
+            return None
+        if len(shape) == 4 and shape[1] > 0 and shape[2] > 0:
+            return shape[2], shape[1]
+        if len(shape) == 3 and shape[0] > 0 and shape[1] > 0:
+            return shape[1], shape[0]
+        return None
+
+    @classmethod
+    def _resolve_output_size(cls, output_preset, coverage, bg_erp=None) -> tuple[int, int, bool]:
+        coverage_value = normalize_coverage(coverage)
+        if cls._is_auto_output_preset(output_preset):
+            bg_size = cls._bg_erp_size(bg_erp)
+            if bg_size is not None:
+                out_w = bg_size[0]
+                out_h = max(1, out_w if coverage_value == 180 else bg_size[1])
+                return out_w, out_h, True
+            out_w = cls._parse_output_preset("2048", max_val=cls.MAX_OUTPUT_SIDE)
+        else:
+            out_w = cls._parse_output_preset(output_preset, max_val=cls.MAX_OUTPUT_SIDE)
+        out_h = max(1, out_w if coverage_value == 180 else (out_w // 2))
+        return out_w, out_h, False
+
+    @staticmethod
     def _normalize_hex_color(v):
         s = str(v or "").strip()
         if s.startswith("#"):
@@ -1345,15 +1378,16 @@ class PanoramaStickersNode(io.ComfyNode):
 
     @classmethod
     def execute(cls, output_preset, coverage, bg_color, state_json, bg_erp=None, sticker_image=None, sticker_state="", fps=24.0, audio=None, unique_id=None):
-        out_w = cls._parse_output_preset(output_preset, max_val=cls.MAX_OUTPUT_SIDE)
         coverage_value = normalize_coverage(coverage)
-        out_h = max(1, out_w if coverage_value == 180 else (out_w // 2))
+        out_w, out_h, output_uses_bg_size = cls._resolve_output_size(output_preset, coverage_value, bg_erp=bg_erp)
         workspace_w = out_w
-        workspace_h = max(1, workspace_w // 2)
+        workspace_h = out_h if output_uses_bg_size else max(1, workspace_w // 2)
         bg_hex = cls._normalize_hex_color(bg_color)
         fps_value = max(1.0, finite_float(fps, 24.0))
         state = merge_state(state_in=None, internal_state=state_json, fallback_preset=out_w, fallback_bg=bg_hex)
         warnings = []
+        if cls._is_auto_output_preset(output_preset) and not output_uses_bg_size:
+            warnings.append("Output preset is auto, but bg_erp is not connected; using 2048 instead.")
         external_payloads = list(_iter_external_sticker_payloads(sticker_image=sticker_image, sticker_state=sticker_state))
         batch_frames = int(bg_erp.shape[0]) if bg_erp is not None and hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else 1
         render_span = max(1, batch_frames if bg_erp is not None else 1)

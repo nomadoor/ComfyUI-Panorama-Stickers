@@ -287,7 +287,7 @@ Flux.2向けに「パノラマ画像（主にERP: equirectangular projection）�
 入出力（例）
 
 * In: bg_erp（任意）
-* In: output_preset（1024/2048/4096）
+* In: output_preset（1024/2048/4096/auto。auto は bg_erp 接続時に背景実サイズへ合わせる）
 * In: initial_patches / initial_meta（任意。再編集用）
 * Out: cond_erp（2:1 ERP）
 * Out: cond_meta（JSON）
