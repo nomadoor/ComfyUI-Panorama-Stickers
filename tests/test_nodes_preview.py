@@ -189,6 +189,22 @@ class TestNodesPreview(unittest.TestCase):
             assert isinstance(res, dict)
             assert res["ui"] == {}
 
+    def test_stickers_auto_180_keeps_overlay_workspace_2_to_1(self):
+        PanoramaStickersNode = self.nodes_module.PanoramaStickersNode
+        bg_erp = SimpleNamespace(shape=(1, 2048, 4096, 3))
+
+        out_w, out_h, output_uses_bg_size = PanoramaStickersNode._resolve_output_size(
+            "auto",
+            "180",
+            bg_erp=bg_erp,
+        )
+        workspace_w, workspace_h = PanoramaStickersNode._resolve_overlay_workspace_size(out_w, out_h, "180")
+
+        assert (out_w, out_h) == (4096, 4096)
+        assert output_uses_bg_size is True
+        assert workspace_w == 4096
+        assert workspace_h == 2048
+
     def test_cutout_node_saves_preview(self):
         PanoramaCutoutNode = self.nodes_module.PanoramaCutoutNode
         assert PanoramaCutoutNode.OUTPUT_NODE is True

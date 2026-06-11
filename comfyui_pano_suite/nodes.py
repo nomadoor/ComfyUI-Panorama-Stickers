@@ -1362,6 +1362,14 @@ class PanoramaStickersNode(io.ComfyNode):
         return out_w, out_h, False
 
     @staticmethod
+    def _resolve_overlay_workspace_size(out_w: int, out_h: int, coverage) -> tuple[int, int]:
+        workspace_w = max(1, int(out_w))
+        coverage_value = normalize_coverage(coverage)
+        if coverage_value == 180:
+            return workspace_w, max(1, workspace_w // 2)
+        return workspace_w, max(1, int(out_h))
+
+    @staticmethod
     def _normalize_hex_color(v):
         s = str(v or "").strip()
         if s.startswith("#"):
@@ -1380,8 +1388,7 @@ class PanoramaStickersNode(io.ComfyNode):
     def execute(cls, output_preset, coverage, bg_color, state_json, bg_erp=None, sticker_image=None, sticker_state="", fps=24.0, audio=None, unique_id=None):
         coverage_value = normalize_coverage(coverage)
         out_w, out_h, output_uses_bg_size = cls._resolve_output_size(output_preset, coverage_value, bg_erp=bg_erp)
-        workspace_w = out_w
-        workspace_h = out_h if output_uses_bg_size else max(1, workspace_w // 2)
+        workspace_w, workspace_h = cls._resolve_overlay_workspace_size(out_w, out_h, coverage_value)
         bg_hex = cls._normalize_hex_color(bg_color)
         fps_value = max(1.0, finite_float(fps, 24.0))
         state = merge_state(state_in=None, internal_state=state_json, fallback_preset=out_w, fallback_bg=bg_hex)
