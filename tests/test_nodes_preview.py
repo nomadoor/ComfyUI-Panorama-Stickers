@@ -86,6 +86,7 @@ class TestNodesPreview(unittest.TestCase):
             Float=_PortFactory("FLOAT"),
             Int=_PortFactory("INT"),
             Mask=_PortFactory("MASK"),
+            Audio=_PortFactory("AUDIO"),
             Hidden=SimpleNamespace(unique_id="UNIQUE_ID"),
         )
         comfy_api_module = ModuleType("comfy_api")
@@ -238,7 +239,9 @@ class TestNodesPreview(unittest.TestCase):
 
     def test_preview_frontend_route_is_isolated(self):
         preview_wire = self._web_source_path("pano_node_preview.js").read_text(encoding="utf-8")
+        assert 'from "./pano_preview_previewnode.js"' in preview_wire
         assert "attachPreviewNodeRuntime" in preview_wire
+        assert "attachStandalonePreviewAuto" not in preview_wire
         assert 'mode: "stickers"' not in preview_wire.split("export function attachPreviewNode", 1)[1].split("export function attachStickersNodePreview", 1)[0]
         assert "runtimeAttachPanoramaPreview(target" not in preview_wire
 
