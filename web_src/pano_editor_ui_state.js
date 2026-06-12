@@ -223,16 +223,22 @@ export function buildSelectionMenuModel({
     ];
   }
 
-  const xs = geom.corners.map((point) => point.x);
-  const ys = geom.corners.map((point) => point.y);
+  const finiteCorners = geom.corners
+    .map((point) => ({ x: Number(point?.x), y: Number(point?.y) }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  if (!finiteCorners.length) return { visible: false, left: 0, top: 0, items: [] };
+
+  const xs = finiteCorners.map((point) => point.x);
+  const ys = finiteCorners.map((point) => point.y);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
   return {
     visible: true,
     left: (minX + maxX) * 0.5,
     top: maxY + 18,
     items,
-    anchor: { minX, maxX, maxY },
+    anchor: { minX, maxX, minY, maxY },
   };
 }

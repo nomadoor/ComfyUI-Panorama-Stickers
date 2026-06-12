@@ -75,6 +75,11 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
+function smoothstep(edge0, edge1, x) {
+  const t = clamp((Number(x || 0) - edge0) / Math.max(edge1 - edge0, 1e-6), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
 function getCachedVideoThumbnails(src) {
   const key = String(src || "").trim();
   if (!key) return null;
@@ -5210,19 +5215,28 @@ async function showEditor(node, type, options = {}) {
     const cx = dot(dir, right);
     const cy = dot(dir, up);
     const cz = dot(dir, fwd);
+    if (!Number.isFinite(cz) || cz <= 1e-4) return null;
     const w = canvas.width;
     const h = canvas.height;
     const hfov = editor.viewFov * DEG2RAD;
     const vfov = 2 * Math.atan(Math.tan(hfov / 2) * (h / Math.max(w, 1)));
     const sx = (w / 2) / Math.tan(hfov / 2);
     const sy = (h / 2) / Math.tan(vfov / 2);
-    const z = Math.max(cz, 1e-4);
     const guard = Math.max(w, h) * 2.0;
     return {
-      x: clamp(w / 2 + (cx / z) * sx, -guard, w + guard),
-      y: clamp(h / 2 - (cy / z) * sy, -guard, h + guard),
-      z,
+      x: clamp(w / 2 + (cx / cz) * sx, -guard, w + guard),
+      y: clamp(h / 2 - (cy / cz) * sy, -guard, h + guard),
+      z: cz,
     };
+  }
+
+  function sceneItemVisibilityAlpha(points = []) {
+    if (editor.mode !== "pano") return 1;
+    const depths = points
+      .map((point) => Number(point?.z))
+      .filter((z) => Number.isFinite(z));
+    if (!depths.length) return 1;
+    return smoothstep(0.035, 0.2, Math.min(...depths));
   }
 
   function buildSceneItemGeom(item) {
@@ -5256,6 +5270,16 @@ async function showEditor(node, type, options = {}) {
     const bottomEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, 0, -frame.tanY), center.x, frameShot, frameRect);
     const leftEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, -frame.tanX, 0), center.x, frameShot, frameRect);
     if (!topEdgeCenter || !rightEdgeCenter || !bottomEdgeCenter || !leftEdgeCenter) return { visible: false };
+    const visibilityAlpha = sceneItemVisibilityAlpha([
+      center,
+      ...corners,
+      rotateStemBase,
+      rotateHandleHint,
+      topEdgeCenter,
+      rightEdgeCenter,
+      bottomEdgeCenter,
+      leftEdgeCenter,
+    ]);
     const edgeMidpoints = [
       {
         edge: "top",
@@ -5293,6 +5317,7 @@ async function showEditor(node, type, options = {}) {
       rotateStemBase: { x: rotateStemBase.x, y: rotateStemBase.y },
       rotateHandle,
       topEdge: { a: 0, b: 1 },
+      visibilityAlpha,
       visible: true,
     };
   }
@@ -5505,6 +5530,10 @@ async function showEditor(node, type, options = {}) {
   function drawCameraFrameBody(geom, selected, locked) {
     const corners = Array.isArray(geom?.corners) ? geom.corners : [];
     if (corners.length < 4) return;
+    const visibilityAlpha = clamp(Number(geom?.visibilityAlpha ?? 1), 0, 1);
+    if (visibilityAlpha <= 0.01) return;
+    const prevAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = prevAlpha * visibilityAlpha;
     const accent = locked
       ? "rgba(255, 116, 116, 0.96)"
       : (selected ? "rgba(255, 221, 87, 0.98)" : "rgba(255, 214, 64, 0.92)");
@@ -5512,8 +5541,6 @@ async function showEditor(node, type, options = {}) {
       ? "rgba(255, 89, 89, 0.08)"
       : (selected ? "rgba(255, 221, 87, 0.08)" : "rgba(255, 214, 64, 0.05)");
     const edgeStroke = selected ? 3.2 : 2.6;
-    const bracketStroke = selected ? 4.4 : 3.4;
-    const cornerLen = selected ? 24 : 20;
     traceQuad(ctx, corners);
     ctx.fillStyle = fill;
     ctx.fill();
@@ -5523,26 +5550,8 @@ async function showEditor(node, type, options = {}) {
 
     ctx.save();
     ctx.strokeStyle = accent;
-    ctx.lineWidth = bracketStroke;
+    ctx.lineWidth = selected ? 3.2 : 2.6;
     ctx.lineCap = "round";
-    for (let i = 0; i < 4; i += 1) {
-      const current = corners[i];
-      const prev = corners[(i + 3) % 4];
-      const next = corners[(i + 1) % 4];
-      const vx0 = current.x - prev.x;
-      const vy0 = current.y - prev.y;
-      const len0 = Math.hypot(vx0, vy0) || 1;
-      const vx1 = next.x - current.x;
-      const vy1 = next.y - current.y;
-      const len1 = Math.hypot(vx1, vy1) || 1;
-      ctx.beginPath();
-      ctx.moveTo(current.x, current.y);
-      ctx.lineTo(current.x - (vx0 / len0) * cornerLen, current.y - (vy0 / len0) * cornerLen);
-      ctx.moveTo(current.x, current.y);
-      ctx.lineTo(current.x + (vx1 / len1) * cornerLen, current.y + (vy1 / len1) * cornerLen);
-      ctx.stroke();
-    }
-
     const edgeMidpoints = Array.isArray(geom?.edgeMidpoints) && geom.edgeMidpoints.length >= 4
       ? geom.edgeMidpoints
       : [
@@ -5551,14 +5560,16 @@ async function showEditor(node, type, options = {}) {
         { edge: "bottom", x: (corners[2].x + corners[3].x) * 0.5, y: (corners[2].y + corners[3].y) * 0.5 },
         { edge: "left", x: (corners[3].x + corners[0].x) * 0.5, y: (corners[3].y + corners[0].y) * 0.5 },
       ];
-    const center = {
-      x: (corners[0].x + corners[1].x + corners[2].x + corners[3].x) * 0.25,
-      y: (corners[0].y + corners[1].y + corners[2].y + corners[3].y) * 0.25,
-    };
+    const oppositeEdge = { top: "bottom", right: "left", bottom: "top", left: "right" };
     const indicatorLen = selected ? 12 : 9;
     edgeMidpoints.forEach((mid) => {
-      const vx = center.x - mid.x;
-      const vy = center.y - mid.y;
+      const opposite = edgeMidpoints.find((candidate) => candidate?.edge === oppositeEdge[mid?.edge]);
+      const target = opposite || {
+        x: (corners[0].x + corners[1].x + corners[2].x + corners[3].x) * 0.25,
+        y: (corners[0].y + corners[1].y + corners[2].y + corners[3].y) * 0.25,
+      };
+      const vx = target.x - mid.x;
+      const vy = target.y - mid.y;
       const len = Math.hypot(vx, vy) || 1;
       ctx.beginPath();
       ctx.moveTo(mid.x, mid.y);
@@ -5566,16 +5577,19 @@ async function showEditor(node, type, options = {}) {
       ctx.stroke();
     });
     ctx.restore();
+    ctx.globalAlpha = prevAlpha;
   }
 
   function drawObjectBody(item, geom, selected, locked) {
+    const visibilityAlpha = clamp(Number(geom?.visibilityAlpha ?? 1), 0, 1);
+    if (visibilityAlpha <= 0.01) return;
     if (isShotItem(item)) {
       drawCameraFrameBody(geom, selected, locked);
       return;
     }
     if (isStickerItem(item)) {
       const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = getStickerDisplayAlpha(item);
+      ctx.globalAlpha = prevAlpha * getStickerDisplayAlpha(item) * visibilityAlpha;
       if (editor.mode === "frame") {
         ctx.strokeStyle = selected
           ? "rgba(250, 250, 250, 0.9)"
@@ -5590,6 +5604,8 @@ async function showEditor(node, type, options = {}) {
       return;
     }
 
+    const prevAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = prevAlpha * visibilityAlpha;
     ctx.fillStyle = selected
       ? "rgba(0, 112, 243, 0.24)"
       : (locked ? "rgba(255, 89, 89, 0.12)" : "rgba(255, 255, 255, 0.12)");
@@ -5601,6 +5617,7 @@ async function showEditor(node, type, options = {}) {
     ctx.lineWidth = selected ? 2.8 : 1.9;
     traceQuad(ctx, geom.corners);
     ctx.stroke();
+    ctx.globalAlpha = prevAlpha;
   }
 
   function drawSelectedObjectAffordances(item, geom, accent) {
@@ -5666,11 +5683,16 @@ async function showEditor(node, type, options = {}) {
       if (type !== "stickers" && !g.visible) {
         continue;
       }
+      const visibilityAlpha = clamp(Number(g?.visibilityAlpha ?? 1), 0, 1);
+      if (visibilityAlpha <= 0.01) continue;
       drawObjectBody(item, g, selected, itemLocked);
 
       if (selected && g.visible) {
         const accent = itemLocked ? "#ff4d4f" : ((itemIsSticker && isExternalSticker(item)) ? "#f59e0b" : "#0070f3");
+        const prevAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = prevAlpha * visibilityAlpha;
         drawSelectedObjectAffordances(item, g, accent);
+        ctx.globalAlpha = prevAlpha;
       }
     }
 
@@ -9037,10 +9059,33 @@ async function showEditor(node, type, options = {}) {
       uiState.selectionMenu = { visible: false, left: 0, top: 0, items: [] };
       return;
     }
+
+    const placeSelectionMenu = (menuW, menuH, { requireFitsBelow = true } = {}) => {
+      const pad = 14;
+      const minX = Number(model.anchor?.minX);
+      const maxX = Number(model.anchor?.maxX);
+      const maxY = Number(model.anchor?.maxY);
+      if (![minX, maxX, maxY].every(Number.isFinite)) return null;
+      const maxLeft = Math.max(pad, canvas.width - menuW - pad);
+      const x = clamp(((minX + maxX) * 0.5) - menuW * 0.5, pad, maxLeft);
+      const y = maxY + 18;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      if (requireFitsBelow && y + menuH > canvas.height - pad) return null;
+      return { left: x, top: y };
+    };
+
+    const estimatedW = Math.max(1, Number(editor.menuSize?.w || 220));
+    const estimatedH = Math.max(1, Number(editor.menuSize?.h || 40));
+    const initialPlacement = placeSelectionMenu(estimatedW, estimatedH, { requireFitsBelow: false });
+    if (!initialPlacement) {
+      uiState.selectionMenu = { visible: false, left: 0, top: 0, items: [] };
+      return;
+    }
+
     uiState.selectionMenu = {
       visible: true,
-      left: uiState.selectionMenu?.left ?? model.left ?? 0,
-      top: uiState.selectionMenu?.top ?? model.top ?? 0,
+      left: initialPlacement.left,
+      top: initialPlacement.top,
       items: model.items,
     };
     requestAnimationFrame(() => {
@@ -9048,15 +9093,14 @@ async function showEditor(node, type, options = {}) {
       const rect = selectionMenu.getBoundingClientRect();
       const menuW = Math.round(Number(rect?.width || 0)) || 220;
       const menuH = Math.round(Number(rect?.height || 0)) || 40;
-      const pad = 14;
-      let x = clamp((Number(model.anchor?.minX || 0) + Number(model.anchor?.maxX || 0)) * 0.5 - menuW * 0.5, pad, canvas.width - menuW - pad);
-      let y = Number(model.anchor?.maxY || 0) + 18;
-      if (!Number.isFinite(x) || !Number.isFinite(y) || y + menuH > canvas.height - pad) {
+      editor.menuSize = { w: menuW, h: menuH, measured: true };
+      const measuredPlacement = placeSelectionMenu(menuW, menuH);
+      if (!measuredPlacement) {
         uiState.selectionMenu.visible = false;
         return;
       }
-      uiState.selectionMenu.left = x;
-      uiState.selectionMenu.top = y;
+      uiState.selectionMenu.left = measuredPlacement.left;
+      uiState.selectionMenu.top = measuredPlacement.top;
     });
   }
 
