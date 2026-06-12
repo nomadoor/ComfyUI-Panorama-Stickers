@@ -278,6 +278,12 @@ class TestNodesPreview(unittest.TestCase):
         assert 'document.createElement("button")' not in preview_js
         assert "getLegacyButtonRect" not in preview_js
 
+    def test_preview_node_prefers_self_rendered_input_over_upstream_preview(self):
+        preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
+        candidate_block = preview_js.split("const candidateGroups = [", 1)[1].split("];", 1)[0]
+        assert candidate_block.index("selfOutput?.ui?.pano_input_images") < candidate_block.index("outputs?.ui?.pano_input_images")
+        assert candidate_block.index("selfOutput?.pano_input_images") < candidate_block.index("outputs?.pano_input_images")
+
     def test_webgl_preview_renderer_is_present(self):
         gl_renderer_js = self._web_source_path("pano_gl_renderer.js").read_text(encoding="utf-8")
         gl_scene_js = self._web_source_path("pano_gl_scene.js").read_text(encoding="utf-8")

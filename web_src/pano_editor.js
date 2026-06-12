@@ -803,7 +803,14 @@ function drawPanoramaNodePreview(node, ctx) {
   const stateWidget = getWidget(node, STATE_WIDGET);
   const raw = String(stateWidget?.value || "");
   const bg = String(getWidget(node, "bg_color")?.value || "#00ff00");
-  const preset = parseOutputPresetValue(getWidget(node, "output_preset")?.value, 2048);
+  const preset = resolveNodeOutputPresetWidth(
+    node,
+    getWidget(node, "output_preset")?.value,
+    2048,
+    ["bg_erp", "erp_image"],
+    () => node.setDirtyCanvas?.(true, true),
+    "node_preview:auto:bg_erp|erp_image",
+  );
   const coverage = normalizeCoverageValue(getWidget(node, "coverage")?.value);
   const state = parseState(raw, preset, bg, coverage);
 
@@ -1114,6 +1121,22 @@ function parseOutputPresetValue(v, fallback = 2048) {
   const head = s.includes("x") ? s.split("x", 1)[0].trim() : s;
   const n = Number(head);
   return Number.isFinite(n) ? Math.round(n) : fallback;
+}
+
+function isAutoOutputPresetValue(v) {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "auto" || s === "bg" || s === "background";
+}
+
+function getMediaWidthForSizing(media) {
+  const width = Number(media?.naturalWidth || media?.videoWidth || media?.width || 0);
+  return Number.isFinite(width) && width > 0 ? Math.round(width) : null;
+}
+
+function resolveNodeOutputPresetWidth(node, rawPreset, fallback = 2048, inputNames = ["bg_erp", "erp_image"], onLoad = null, cacheKey = "output_preset_auto_bg") {
+  if (!isAutoOutputPresetValue(rawPreset)) return parseOutputPresetValue(rawPreset, fallback);
+  const img = getPreferredExactLinkedInputImage(node, inputNames, onLoad, cacheKey);
+  return getMediaWidthForSizing(img) || Math.max(1, Math.round(Number(fallback || 2048)));
 }
 
 function panoPaintDebugEnabled() {
@@ -1620,9 +1643,32 @@ async function showEditor(node, type, options = {}) {
   const bgWidget = getWidget(node, "bg_color");
   const stateWidget = getWidget(node, STATE_WIDGET);
 
+  const getLinkedBackgroundImageForSizing = () => {
+    const inputNames = type === "stickers" ? ["bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
+    return getPreferredExactLinkedInputImage(
+      node,
+      inputNames,
+      () => requestDraw(),
+      `background:size:${inputNames.join("|")}`,
+    );
+  };
+
+  const getLinkedBackgroundWidthForAuto = () => {
+    const img = getLinkedBackgroundImageForSizing();
+    return getMediaWidthForSizing(img);
+  };
+
+  const resolveEditorOutputPresetWidth = (fallback = 2048) => {
+    const raw = presetWidget?.value;
+    if (isAutoOutputPresetValue(raw)) {
+      return getLinkedBackgroundWidthForAuto() || Math.max(1, Math.round(Number(fallback || 2048)));
+    }
+    return parseOutputPresetValue(raw, fallback);
+  };
+
   const state = parseState(
     String(stateWidget?.value || ""),
-    parseOutputPresetValue(presetWidget?.value, 2048),
+    resolveEditorOutputPresetWidth(2048),
     String(bgWidget?.value || "#00ff00"),
     normalizeCoverageValue(coverageWidget?.value),
   );
@@ -5198,7 +5244,7 @@ async function showEditor(node, type, options = {}) {
     return geom;
   }
 
-  function projectSceneItemDir(dir, refX = null, frameShot = null, frameRect = null) {
+  function projectSceneItemDir(dir, refX = null, frameShot = null, frameRect = null, options = {}) {
     if (editor.mode === "frame") {
       const shot = frameShot || getActiveCutoutShot();
       const rect = frameRect || getFrameViewRect(shot);
@@ -5215,7 +5261,10 @@ async function showEditor(node, type, options = {}) {
     const cx = dot(dir, right);
     const cy = dot(dir, up);
     const cz = dot(dir, fwd);
-    if (!Number.isFinite(cz) || cz <= 1e-4) return null;
+    const nearZ = 1e-4;
+    if (!Number.isFinite(cz)) return null;
+    if (cz <= nearZ && !options?.clipBehind) return null;
+    const z = Math.max(cz, nearZ);
     const w = canvas.width;
     const h = canvas.height;
     const hfov = editor.viewFov * DEG2RAD;
@@ -5224,16 +5273,18 @@ async function showEditor(node, type, options = {}) {
     const sy = (h / 2) / Math.tan(vfov / 2);
     const guard = Math.max(w, h) * 2.0;
     return {
-      x: clamp(w / 2 + (cx / cz) * sx, -guard, w + guard),
-      y: clamp(h / 2 - (cy / cz) * sy, -guard, h + guard),
-      z: cz,
+      x: clamp(w / 2 + (cx / z) * sx, -guard, w + guard),
+      y: clamp(h / 2 - (cy / z) * sy, -guard, h + guard),
+      z,
+      rawZ: cz,
+      clipped: cz <= nearZ,
     };
   }
 
-  function sceneItemVisibilityAlpha(points = []) {
-    if (editor.mode !== "pano") return 1;
+  function sceneItemVisibilityAlpha(item, points = []) {
+    if (editor.mode !== "pano" || isStickerItem(item)) return 1;
     const depths = points
-      .map((point) => Number(point?.z))
+      .map((point) => Number(point?.rawZ ?? point?.z))
       .filter((z) => Number.isFinite(z));
     if (!depths.length) return 1;
     return smoothstep(0.035, 0.2, Math.min(...depths));
@@ -5243,21 +5294,23 @@ async function showEditor(node, type, options = {}) {
     const centerDir = yawPitchToDir(Number(item.yaw_deg || 0), Number(item.pitch_deg || 0));
     const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
     const frameRect = frameShot ? getFrameViewRect(frameShot) : null;
+    const clipBehind = editor.mode === "pano" && (isStickerItem(item) || isShotItem(item));
+    const projectOptions = clipBehind ? { clipBehind: true } : null;
     const center = (() => {
-      return projectSceneItemDir(centerDir, null, frameShot, frameRect);
+      return projectSceneItemDir(centerDir, null, frameShot, frameRect, projectOptions);
     })();
     if (!center) return { visible: false };
     const frame = getStickerFrame(item);
     const cornersDir = stickerCornersDir(item);
     const corners = cornersDir
-      .map((d) => projectSceneItemDir(d, center.x, frameShot, frameRect))
+      .map((d) => projectSceneItemDir(d, center.x, frameShot, frameRect, projectOptions))
       .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y));
     if (corners.length < 4) return { visible: false };
     const rotateStemBaseDir = stickerDirFromFrame(frame, 0, frame.tanY);
     const rotateHandleDir = stickerDirFromFrame(frame, 0, frame.tanY + Math.max(frame.tanY * 0.43, 0.053));
-    const rotateStemBase = projectSceneItemDir(rotateStemBaseDir, center.x, frameShot, frameRect);
+    const rotateStemBase = projectSceneItemDir(rotateStemBaseDir, center.x, frameShot, frameRect, projectOptions);
     if (!rotateStemBase) return { visible: false };
-    const rotateHandleHint = projectSceneItemDir(rotateHandleDir, rotateStemBase?.x ?? center.x, frameShot, frameRect);
+    const rotateHandleHint = projectSceneItemDir(rotateHandleDir, rotateStemBase?.x ?? center.x, frameShot, frameRect, projectOptions);
     const handleDx = (rotateHandleHint?.x ?? rotateStemBase.x) - rotateStemBase.x;
     const handleDy = (rotateHandleHint?.y ?? rotateStemBase.y) - rotateStemBase.y;
     const handleLen = Math.hypot(handleDx, handleDy) || 1;
@@ -5265,12 +5318,12 @@ async function showEditor(node, type, options = {}) {
       x: rotateStemBase.x + (handleDx / handleLen) * 30,
       y: rotateStemBase.y + (handleDy / handleLen) * 30,
     };
-    const topEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, 0, frame.tanY), center.x, frameShot, frameRect);
-    const rightEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, frame.tanX, 0), center.x, frameShot, frameRect);
-    const bottomEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, 0, -frame.tanY), center.x, frameShot, frameRect);
-    const leftEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, -frame.tanX, 0), center.x, frameShot, frameRect);
+    const topEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, 0, frame.tanY), center.x, frameShot, frameRect, projectOptions);
+    const rightEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, frame.tanX, 0), center.x, frameShot, frameRect, projectOptions);
+    const bottomEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, 0, -frame.tanY), center.x, frameShot, frameRect, projectOptions);
+    const leftEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, -frame.tanX, 0), center.x, frameShot, frameRect, projectOptions);
     if (!topEdgeCenter || !rightEdgeCenter || !bottomEdgeCenter || !leftEdgeCenter) return { visible: false };
-    const visibilityAlpha = sceneItemVisibilityAlpha([
+    const projectedPoints = [
       center,
       ...corners,
       rotateStemBase,
@@ -5279,7 +5332,9 @@ async function showEditor(node, type, options = {}) {
       rightEdgeCenter,
       bottomEdgeCenter,
       leftEdgeCenter,
-    ]);
+    ];
+    if (clipBehind && !projectedPoints.some((point) => Number(point?.rawZ ?? point?.z) > 1e-4)) return { visible: false };
+    const visibilityAlpha = sceneItemVisibilityAlpha(item, projectedPoints);
     const edgeMidpoints = [
       {
         edge: "top",
@@ -6215,7 +6270,7 @@ async function showEditor(node, type, options = {}) {
     // Root treatment: the ERP paint/mask workspace is its own coordinate space.
     // It must not inherit arbitrary connected-image dimensions, otherwise non-ERP
     // inputs can distort all panorama paint rendering.
-    const presetWidth = Math.max(1, Number(state?.output_preset || 2048));
+    const presetWidth = Math.max(1, resolveEditorOutputPresetWidth(Number(state?.output_preset || 2048)));
     return {
       kind: "ERP_GLOBAL",
       width: presetWidth,
@@ -7902,7 +7957,7 @@ async function showEditor(node, type, options = {}) {
     if (readOnly) return;
     state.projection_model = "pinhole_rectilinear";
     state.alpha_mode = "straight";
-    if (presetWidget) state.output_preset = parseOutputPresetValue(presetWidget.value, Number(state.output_preset || 2048));
+    if (presetWidget) state.output_preset = resolveEditorOutputPresetWidth(Number(state.output_preset || 2048));
     if (coverageWidget) state.coverage = normalizeCoverageValue(coverageWidget.value);
     if (bgWidget) state.bg_color = String(bgWidget.value || state.bg_color || "#00ff00");
     commitState();
