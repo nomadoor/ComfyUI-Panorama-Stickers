@@ -177,6 +177,23 @@
 .pano-stage-wrap[data-stage-ready] .pano-stage-loading {
   opacity: 0;
 }
+.pano-stage-failed {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 3;
+  max-width: min(560px, calc(100% - 32px));
+  padding: 8px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  border-radius: 8px;
+  background: rgba(24, 18, 8, 0.9);
+  color: #fde68a;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
 .pano-modal-fullscreen .pano-stage-loading {
   border-radius: 0;
 }

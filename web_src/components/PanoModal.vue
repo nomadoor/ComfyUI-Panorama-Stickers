@@ -31,6 +31,14 @@ const modalRef = ref(null);
 
 const previewMode = computed(() => props.readOnly === true);
 const shellPreset = computed(() => props.shellPreset || buildModalShellPreset(props.type));
+const stageFailureMessage = computed(() => {
+  const detail = String(props.uiState?.stageStatusDetail || "");
+  if (detail === "background") return "Background preview unavailable. Re-run the node to refresh it.";
+  if (detail === "stickers") return "One or more sticker previews are unavailable.";
+  if (detail === "frame") return "The editor hit a rendering error. Check the browser console for details.";
+  if (detail.startsWith("boot:")) return "Part of the editor failed to initialize. Check the browser console for details.";
+  return "Some image previews are unavailable. Re-run the node to refresh them.";
+});
 const floatingButtons = computed(() => {
   const base = Array.isArray(shellPreset.value?.floatingButtons) ? shellPreset.value.floatingButtons.slice() : [];
   if (previewMode.value) {
@@ -145,6 +153,9 @@ watch(() => props.open, (nextOpen) => {
         <canvas class="pano-stage pano-stage-bg" data-stage-background width="1600" height="800" />
         <canvas class="pano-stage pano-stage-overlay" data-stage-overlay width="1600" height="800" />
         <div class="pano-stage-loading" aria-hidden="true" />
+        <div v-if="uiState.stageStatus === 'failed'" class="pano-stage-failed" role="status">
+          {{ stageFailureMessage }}
+        </div>
         <div class="pano-stage-drop-hint" aria-hidden="true">
           <div class="pano-stage-drop-hint-text">Drag and drop image here</div>
         </div>

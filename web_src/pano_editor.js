@@ -35,6 +35,17 @@ import {
 import PanoModal from "./components/PanoModal.vue";
 import { buildModalShellPreset } from "./modal_shell_presets.js";
 import { ICON } from "./icons.js";
+import {
+  IMAGE_FAILED,
+  IMAGE_LOADING,
+  IMAGE_READY,
+  getImageLoadState,
+  isImageLoadFailed,
+  markImageFailed,
+  markImageLoading,
+  markImageReady,
+  stageImageStatus,
+} from "./pano_image_state.js";
 
 const STATE_WIDGET = "state_json";
 const EXTERNAL_STICKER_ID = "sticker_image_1";
@@ -1356,7 +1367,13 @@ function getFirstNodeUiImage(node, key, imageCache, onLoad = null) {
   if (cached && cached.__panoSrc === src) return cached;
   const img = new Image();
   img.__panoSrc = src;
+  markImageLoading(img, src);
   img.onload = () => {
+    markImageReady(img, src);
+    if (typeof onLoad === "function") onLoad(img);
+  };
+  img.onerror = () => {
+    markImageFailed(img, src);
     if (typeof onLoad === "function") onLoad(img);
   };
   img.src = src;
@@ -1520,13 +1537,16 @@ function loadLinkedInputImageFromSource(node, cacheKey, srcRaw, onLoad = null) {
   if (cached && cached.srcRaw === sourceText && cached.img) return cached.img;
 
   const img = new Image();
+  markImageLoading(img, sourceText);
   const cacheEntry = { srcRaw: sourceText, resolvedSrc: "", img };
   node.__panoLinkedInputImageCache.set(key, cacheEntry);
   let attempt = -1;
   const tryLoadNext = () => {
     attempt += 1;
     if (attempt >= candidates.length) {
-      try { node.__panoLinkedInputImageCache?.delete?.(key); } catch { }
+      markImageFailed(img, sourceText);
+      onLoad?.();
+      node.setDirtyCanvas?.(true, true);
       return;
     }
     const nextSrc = candidates[attempt];
@@ -1535,6 +1555,7 @@ function loadLinkedInputImageFromSource(node, cacheKey, srcRaw, onLoad = null) {
   };
 
   img.onload = () => {
+    markImageReady(img, sourceText);
     onLoad?.();
     node.setDirtyCanvas?.(true, true);
   };
@@ -1543,7 +1564,9 @@ function loadLinkedInputImageFromSource(node, cacheKey, srcRaw, onLoad = null) {
       tryLoadNext();
       return;
     }
-    try { node.__panoLinkedInputImageCache?.delete?.(key); } catch { }
+    markImageFailed(img, sourceText);
+    onLoad?.();
+    node.setDirtyCanvas?.(true, true);
   };
   tryLoadNext();
   return img;
@@ -1573,13 +1596,16 @@ function loadLinkedInputImageFromCandidates(node, cacheKey, srcCandidates, onLoa
   if (!candidates.length) return null;
 
   const img = new Image();
+  markImageLoading(img, cacheKeyText);
   const cacheEntry = { srcRaw: cacheKeyText, resolvedSrc: "", img };
   node.__panoLinkedInputImageCache.set(key, cacheEntry);
   let attempt = -1;
   const tryLoadNext = () => {
     attempt += 1;
     if (attempt >= candidates.length) {
-      try { node.__panoLinkedInputImageCache?.delete?.(key); } catch { }
+      markImageFailed(img, cacheKeyText);
+      onLoad?.();
+      node.setDirtyCanvas?.(true, true);
       return;
     }
     const nextSrc = candidates[attempt];
@@ -1588,6 +1614,7 @@ function loadLinkedInputImageFromCandidates(node, cacheKey, srcCandidates, onLoa
   };
 
   img.onload = () => {
+    markImageReady(img, cacheKeyText);
     onLoad?.();
     node.setDirtyCanvas?.(true, true);
   };
@@ -1596,7 +1623,9 @@ function loadLinkedInputImageFromCandidates(node, cacheKey, srcCandidates, onLoa
       tryLoadNext();
       return;
     }
-    try { node.__panoLinkedInputImageCache?.delete?.(key); } catch { }
+    markImageFailed(img, cacheKeyText);
+    onLoad?.();
+    node.setDirtyCanvas?.(true, true);
   };
   tryLoadNext();
   return img;
@@ -1693,6 +1722,8 @@ async function showEditor(node, type, options = {}) {
     : { width: 220, height: 132 };
   const shellPreset = buildModalShellPreset(type);
   const uiState = reactive({
+    stageStatus: IMAGE_LOADING,
+    stageStatusDetail: "boot",
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
     toolButtons: (shellPreset.toolButtons || []).map((button) => ({ ...button, disabled: false })),
     floatingButtons: [
@@ -1982,6 +2013,8 @@ async function showEditor(node, type, options = {}) {
     hasPresentedFrame: false,
     backgroundDirty: true,
     backgroundWasVisible: false,
+    tickErrorSignature: "",
+    bootErrorDetail: "",
   };
   const setCanvasCursor = (nextCursor) => {
     const cursor = String(nextCursor || "default");
@@ -3553,7 +3586,14 @@ async function showEditor(node, type, options = {}) {
     if (cached && cached.__panoSrc === src) return cached;
     const img = new Image();
     img.__panoSrc = src;
+    markImageLoading(img, src);
     img.onload = () => {
+      markImageReady(img, src);
+      if (typeof onLoad === "function") onLoad(img);
+      else requestDraw();
+    };
+    img.onerror = () => {
+      markImageFailed(img, src);
       if (typeof onLoad === "function") onLoad(img);
       else requestDraw();
     };
@@ -3950,7 +3990,15 @@ async function showEditor(node, type, options = {}) {
     const src = stickerAssetToPreviewSrc(asset);
     if (!src) return null;
     const img = new Image();
-    img.onload = () => requestDraw();
+    markImageLoading(img, src);
+    img.onload = () => {
+      markImageReady(img, src);
+      requestDraw();
+    };
+    img.onerror = () => {
+      markImageFailed(img, src);
+      requestDraw();
+    };
     img.src = src;
     imageCache.set(assetId, img);
     return img;
@@ -4501,7 +4549,7 @@ async function showEditor(node, type, options = {}) {
     const displaySource = getDisplayBackgroundSource();
     if (displaySource) return displaySource;
     const uiImg = getFirstNodeUiImage(node, "pano_input_images", imageCache, () => requestDraw());
-    if (uiImg) return uiImg;
+    if (uiImg && !isImageLoadFailed(uiImg)) return uiImg;
     const inputNames = Array.isArray(node?.inputs)
       ? node.inputs.map((i) => String(i?.name || ""))
       : [];
@@ -4514,7 +4562,7 @@ async function showEditor(node, type, options = {}) {
       preferred = type === "stickers" ? ["bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
     }
     const img = getPreferredExactLinkedInputImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
-    return img;
+    return img || uiImg || null;
   }
 
   function isDecodedImageReady(img) {
@@ -4533,29 +4581,29 @@ async function showEditor(node, type, options = {}) {
       && Number(img.height || img.naturalHeight || 0) > 0;
   }
 
-  function getStageLoadingKind() {
-    if (!runtime.hasPresentedFrame) return "boot";
-    let backgroundPending = false;
-    let stickersPending = false;
+  function getStageImageStatus() {
+    if (runtime.bootErrorDetail) {
+      return { status: IMAGE_FAILED, detail: runtime.bootErrorDetail };
+    }
+    let backgroundState = IMAGE_READY;
+    const stickerStates = [];
     if (editor.showPanorama) {
       const bgImg = getConnectedErpImage();
-      backgroundPending = !!bgImg && !isDecodedImageReady(bgImg);
+      backgroundState = getImageLoadState(bgImg, isDecodedImageReady);
     }
     if (editor.showObjects) {
       const stickers = Array.isArray(state.stickers) ? state.stickers : [];
       for (const item of stickers) {
         if (item?.visible === false) continue;
         const img = getStickerImage(item);
-        if (img && !isDecodedImageReady(img)) {
-          stickersPending = true;
-          break;
-        }
+        stickerStates.push(getImageLoadState(img, isDecodedImageReady));
       }
     }
-    if (backgroundPending && stickersPending) return "mixed";
-    if (backgroundPending) return "background";
-    if (stickersPending) return "stickers";
-    return "";
+    return stageImageStatus({
+      presented: runtime.hasPresentedFrame,
+      background: backgroundState,
+      stickers: stickerStates,
+    });
   }
 
   function drawErpBackgroundUnwrap(rect) {
@@ -6898,10 +6946,12 @@ async function showEditor(node, type, options = {}) {
     if (type === "cutout" && uiState.cameraPreview) {
       uiState.cameraPreview.settled = runtime.pendingStableLayoutFrames <= 0 && runtime.hasPresentedFrame && editor.mode !== "frame";
     }
-    const stageLoadingKind = getStageLoadingKind();
-    if (stageLoadingKind) {
+    const stageStatus = getStageImageStatus();
+    uiState.stageStatus = stageStatus.status;
+    uiState.stageStatusDetail = stageStatus.detail;
+    if (stageStatus.status === IMAGE_LOADING) {
       stageWrap?.removeAttribute("data-stage-ready");
-      stageWrap?.setAttribute("data-stage-loading-kind", stageLoadingKind);
+      stageWrap?.setAttribute("data-stage-loading-kind", stageStatus.detail);
     } else {
       stageWrap?.setAttribute("data-stage-ready", "");
       stageWrap?.removeAttribute("data-stage-loading-kind");
@@ -6992,8 +7042,7 @@ async function showEditor(node, type, options = {}) {
     return false;
   }
 
-  function tick(ts = performance.now()) {
-    if (!runtime.running) return;
+  function tickFrame(ts = performance.now()) {
     const dt = runtime.lastTickTs > 0 ? Math.max(0.001, (ts - runtime.lastTickTs) / 1000) : (1 / 60);
     runtime.lastTickTs = ts;
     if (editor.outputPreviewAnim !== editor.outputPreviewAnimTo) {
@@ -7041,13 +7090,30 @@ async function showEditor(node, type, options = {}) {
     }
     if (runtime.dirty) {
       if (runtime.pendingStableLayoutFrames > 0) {
-        runtime.rafId = requestAnimationFrame(tick);
         return;
       }
       runtime.dirty = false;
       drawScene();
     }
-    runtime.rafId = requestAnimationFrame(tick);
+  }
+
+  function tick(ts = performance.now()) {
+    if (!runtime.running) return;
+    try {
+      tickFrame(ts);
+    } catch (error) {
+      const signature = String(error?.stack || error?.message || error || "unknown editor frame error");
+      if (runtime.tickErrorSignature !== signature) {
+        runtime.tickErrorSignature = signature;
+        console.error("[PanoramaStickers] editor frame failed", error);
+      }
+      uiState.stageStatus = IMAGE_FAILED;
+      uiState.stageStatusDetail = "frame";
+      stageWrap?.setAttribute("data-stage-ready", "");
+      stageWrap?.removeAttribute("data-stage-loading-kind");
+    } finally {
+      if (runtime.running) runtime.rafId = requestAnimationFrame(tick);
+    }
   }
 
   function stopRenderLoop() {
@@ -10942,19 +11008,43 @@ async function showEditor(node, type, options = {}) {
     if (ev.target === overlay) void closeEditor();
   });
 
-  applyInitialCutoutFocus();
-  if (!readOnly && type === "stickers") {
-    reconcileExternalStickerFromInputs("open");
+  function runBootStep(label, fn, { rollbackState = false } = {}) {
+    let snapshot = "";
+    try {
+      if (rollbackState) snapshot = JSON.stringify(state);
+      fn();
+    } catch (error) {
+      if (snapshot) {
+        try {
+          const restored = JSON.parse(snapshot);
+          Object.keys(state).forEach((key) => delete state[key]);
+          Object.assign(state, restored);
+        } catch (restoreError) {
+          console.error(`[PanoramaStickers] editor boot step "${label}" rollback failed`, restoreError);
+        }
+      }
+      runtime.bootErrorDetail = `boot:${label}`;
+      console.error(`[PanoramaStickers] editor boot step "${label}" failed`, error);
+    }
   }
-  void migrateLegacyEmbeddedAssets();
-  pushHistory();
-  syncUndoRedoButtons();
-  syncPaintUi();
-  updateSidePanel();
-  syncLookAtFrameButtonState();
-  refreshModalVideoSource();
-  syncCanvasSize();
-  updateCursor(editor.pointerPos);
+
+  runBootStep("cutout-focus", applyInitialCutoutFocus);
+  if (!readOnly && type === "stickers") {
+    runBootStep("external-sticker-sync", () => reconcileExternalStickerFromInputs("open"), { rollbackState: true });
+  }
+  void migrateLegacyEmbeddedAssets().catch((error) => {
+    runtime.bootErrorDetail = "boot:asset-migration";
+    console.error('[PanoramaStickers] editor boot step "asset-migration" failed', error);
+    requestDraw();
+  });
+  runBootStep("history", pushHistory);
+  runBootStep("undo-redo", syncUndoRedoButtons);
+  runBootStep("paint-ui", syncPaintUi);
+  runBootStep("side-panel", updateSidePanel);
+  runBootStep("look-at-frame", syncLookAtFrameButtonState);
+  runBootStep("video-source", refreshModalVideoSource);
+  runBootStep("canvas-size", syncCanvasSize);
+  runBootStep("cursor", () => updateCursor(editor.pointerPos));
   requestDraw();
   runtime.rafId = requestAnimationFrame(tick);
 }
