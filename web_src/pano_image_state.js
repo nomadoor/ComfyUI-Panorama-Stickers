@@ -24,6 +24,7 @@ export function markImageFailed(image, source = "") {
 }
 
 export function getImageLoadState(image, isDecodedReady) {
+  // Stage aggregation treats an absent optional image as settled, not pending.
   if (!image) return IMAGE_READY;
   if (image.__panoLoadState === IMAGE_FAILED) return IMAGE_FAILED;
   if (typeof isDecodedReady === "function" && isDecodedReady(image)) return IMAGE_READY;

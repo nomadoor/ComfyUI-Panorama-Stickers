@@ -39,6 +39,14 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
         connected = function_block(self.editor, "getConnectedErpImage", "isDecodedImageReady")
         self.assertIn("uiImg && !isImageLoadFailed(uiImg)", connected)
         self.assertIn("return img || uiImg || null", connected)
+        self.assertIn("linked && !isImageLoadFailed(linked)", connected)
+        self.assertIn("return uiImg || linked || null", connected)
+
+    def test_reopening_editor_retries_only_failed_linked_sources(self):
+        show_editor_prefix = function_block(self.editor, "showEditor", "getWidget")
+        self.assertIn("__panoLinkedInputImageCache?.forEach", show_editor_prefix)
+        self.assertIn("isImageLoadFailed(entry.img)", show_editor_prefix)
+        self.assertIn("cache.delete(key)", show_editor_prefix)
 
     def test_render_loop_reschedules_after_frame_errors(self):
         tick = function_block(self.editor, "tick", "stopRenderLoop")
@@ -49,7 +57,15 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
     def test_failed_state_is_rendered_by_the_vue_modal(self):
         modal = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
         self.assertIn("uiState.stageStatus === 'failed'", modal)
+        self.assertIn("uiState.stageStatus === 'ready' && uiState.stageWarningDetail", modal)
         self.assertIn('class="pano-stage-failed"', modal)
+
+    def test_boot_warning_does_not_override_image_loading_state(self):
+        stage_status = function_block(self.editor, "getStageImageStatus", "drawErpBackgroundUnwrap")
+        self.assertNotIn("stageWarningDetail", stage_status)
+        boot = function_block(self.editor, "runBootStep", "installEditorButton")
+        self.assertIn("uiState.stageWarningDetail", boot)
+        self.assertIn("if (!readOnly) commitState()", boot)
 
 
 if __name__ == "__main__":

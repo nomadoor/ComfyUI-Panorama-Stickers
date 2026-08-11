@@ -1662,6 +1662,13 @@ function getPreferredExactLinkedInputImage(node, inputNames = [], onLoad = null,
 }
 
 async function showEditor(node, type, options = {}) {
+  try {
+    node.__panoLinkedInputImageCache?.forEach?.((entry, key, cache) => {
+      if (entry?.img && isImageLoadFailed(entry.img)) cache.delete(key);
+    });
+  } catch {
+    // A stale cache must never prevent the editor from opening.
+  }
   const readOnly = options?.readOnly === true;
   const hideSidebar = options?.hideSidebar ?? readOnly;
   const previewMode = readOnly;
@@ -1724,6 +1731,7 @@ async function showEditor(node, type, options = {}) {
   const uiState = reactive({
     stageStatus: IMAGE_LOADING,
     stageStatusDetail: "boot",
+    stageWarningDetail: "",
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
     toolButtons: (shellPreset.toolButtons || []).map((button) => ({ ...button, disabled: false })),
     floatingButtons: [
@@ -2014,7 +2022,6 @@ async function showEditor(node, type, options = {}) {
     backgroundDirty: true,
     backgroundWasVisible: false,
     tickErrorSignature: "",
-    bootErrorDetail: "",
   };
   const setCanvasCursor = (nextCursor) => {
     const cursor = String(nextCursor || "default");
@@ -4542,9 +4549,9 @@ async function showEditor(node, type, options = {}) {
         () => requestDraw(),
         "background:cutout:erp_image|bg_erp",
       );
-      if (linked) return linked;
+      if (linked && !isImageLoadFailed(linked)) return linked;
       const uiImg = getFirstNodeUiImage(node, "pano_input_images", imageCache, () => requestDraw());
-      return uiImg || null;
+      return uiImg || linked || null;
     }
     const displaySource = getDisplayBackgroundSource();
     if (displaySource) return displaySource;
@@ -4582,9 +4589,6 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getStageImageStatus() {
-    if (runtime.bootErrorDetail) {
-      return { status: IMAGE_FAILED, detail: runtime.bootErrorDetail };
-    }
     let backgroundState = IMAGE_READY;
     const stickerStates = [];
     if (editor.showPanorama) {
@@ -11019,11 +11023,12 @@ async function showEditor(node, type, options = {}) {
           const restored = JSON.parse(snapshot);
           Object.keys(state).forEach((key) => delete state[key]);
           Object.assign(state, restored);
+          if (!readOnly) commitState();
         } catch (restoreError) {
           console.error(`[PanoramaStickers] editor boot step "${label}" rollback failed`, restoreError);
         }
       }
-      runtime.bootErrorDetail = `boot:${label}`;
+      uiState.stageWarningDetail = `boot:${label}`;
       console.error(`[PanoramaStickers] editor boot step "${label}" failed`, error);
     }
   }
@@ -11033,9 +11038,7 @@ async function showEditor(node, type, options = {}) {
     runBootStep("external-sticker-sync", () => reconcileExternalStickerFromInputs("open"), { rollbackState: true });
   }
   void migrateLegacyEmbeddedAssets().catch((error) => {
-    runtime.bootErrorDetail = "boot:asset-migration";
     console.error('[PanoramaStickers] editor boot step "asset-migration" failed', error);
-    requestDraw();
   });
   runBootStep("history", pushHistory);
   runBootStep("undo-redo", syncUndoRedoButtons);

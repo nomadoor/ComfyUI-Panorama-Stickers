@@ -180,8 +180,8 @@
 .pano-stage-failed {
   position: absolute;
   left: 50%;
-  bottom: 16px;
-  z-index: 3;
+  bottom: 84px;
+  z-index: 5;
   max-width: min(560px, calc(100% - 32px));
   padding: 8px 12px;
   border: 1px solid rgba(251, 191, 36, 0.5);
