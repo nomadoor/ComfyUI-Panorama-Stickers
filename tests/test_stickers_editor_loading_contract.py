@@ -66,6 +66,7 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
         boot = function_block(self.editor, "runBootStep", "installEditorButton")
         self.assertIn("uiState.stageWarningDetail", boot)
         self.assertIn("if (!readOnly) commitState()", boot)
+        self.assertIn('uiState.stageWarningDetail = "boot:asset-migration"', boot)
 
 
 if __name__ == "__main__":

@@ -16388,7 +16388,7 @@ async function ya(e, t, n = {}) {
     }
   }
   En("cutout-focus", Rp), !i && t === "stickers" && En("external-sticker-sync", () => Kc("open"), { rollbackState: !0 }), Jm().catch((r) => {
-    console.error('[PanoramaStickers] editor boot step "asset-migration" failed', r);
+    P.stageWarningDetail = "boot:asset-migration", console.error('[PanoramaStickers] editor boot step "asset-migration" failed', r);
   }), En("history", lt), En("undo-redo", Zs), En("paint-ui", on), En("side-panel", He), En("look-at-frame", Rs), En("video-source", ii), En("canvas-size", du), En("cursor", () => ft(h.pointerPos)), ge(), J.rafId = requestAnimationFrame(hu);
 }
 function ud(e, t, n, i) {
