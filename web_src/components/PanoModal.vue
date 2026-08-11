@@ -32,11 +32,11 @@ const modalRef = ref(null);
 const previewMode = computed(() => props.readOnly === true);
 const shellPreset = computed(() => props.shellPreset || buildModalShellPreset(props.type));
 const stageFailureMessage = computed(() => {
-  const detail = String(
+  const detail = String((
     props.uiState?.stageStatus === "failed"
       ? props.uiState?.stageStatusDetail
-      : props.uiState?.stageWarningDetail,
-  );
+      : props.uiState?.stageWarningDetail
+  ) ?? "");
   if (detail === "background") return "Background preview unavailable. Re-run the node to refresh it.";
   if (detail === "stickers") return "One or more sticker previews are unavailable.";
   if (detail === "frame") return "The editor hit a rendering error. Check the browser console for details.";

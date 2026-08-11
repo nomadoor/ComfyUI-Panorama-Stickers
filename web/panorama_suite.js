@@ -10162,9 +10162,7 @@ const Nx = ["aria-label"], Mx = { class: "pano-stage-wrap" }, kx = {
     let a = "", l = !1, u = null;
     const f = /* @__PURE__ */ $o(null), m = bt(() => n.readOnly === !0), b = bt(() => n.shellPreset || Wh(n.type)), _ = bt(() => {
       var E, F, Y;
-      const D = String(
-        ((E = n.uiState) == null ? void 0 : E.stageStatus) === "failed" ? (F = n.uiState) == null ? void 0 : F.stageStatusDetail : (Y = n.uiState) == null ? void 0 : Y.stageWarningDetail
-      );
+      const D = String((((E = n.uiState) == null ? void 0 : E.stageStatus) === "failed" ? (F = n.uiState) == null ? void 0 : F.stageStatusDetail : (Y = n.uiState) == null ? void 0 : Y.stageWarningDetail) ?? "");
       return D === "background" ? "Background preview unavailable. Re-run the node to refresh it." : D === "stickers" ? "One or more sticker previews are unavailable." : D === "frame" ? "The editor hit a rendering error. Check the browser console for details." : D.startsWith("boot:") ? "Part of the editor failed to initialize. Check the browser console for details." : "Some image previews are unavailable. Re-run the node to refresh them.";
     }), x = bt(() => {
       var E;
