@@ -10,8 +10,13 @@
   justify-content: center;
 }
 .pano-modal {
-  width: min(1200px, 94vw);
-  height: min(760px, 92vh);
+  /* Sized relative to the window, not in absolute pixels, so the editor keeps
+     the same proportions from a laptop screen up to a large monitor. The min
+     floor only matters on very small windows. */
+  width: max(720px, 80vw);
+  height: max(520px, 82vh);
+  max-width: 96vw;
+  max-height: 94vh;
   background: var(--pano-bg-panel);
   border: 0;
   border-radius: 12px;
@@ -1379,6 +1384,47 @@
   padding: var(--pano-space-lg) 0 var(--pano-space-xl);
   border-top: 1px solid rgba(255,255,255,0.08);
   background: var(--pano-surface-0);
+}
+.pano-frame-rail {
+  position: absolute;
+  right: var(--pano-space-lg);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  background: var(--pano-float-bg);
+  border-radius: var(--pano-float-radius);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  backdrop-filter: blur(12px);
+}
+.pano-frame-rail .pano-btn-icon {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+}
+.pano-frame-aspect-control {
+  position: relative;
+}
+.pano-frame-aspect-popover {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(54px, 1fr));
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--pano-float-radius);
+  background: var(--pano-float-bg);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  backdrop-filter: blur(12px);
+}
+.pano-frame-aspect-choice {
+  min-width: 54px;
+  min-height: 32px;
+  padding: 0 8px;
 }
 .pano-side-head {
   display: flex;

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ICON } from "../icons.js";
 import PanoFloatingRight from "./PanoFloatingRight.vue";
+import PanoFrameRail from "./PanoFrameRail.vue";
 import PanoConfirmDialog from "./PanoConfirmDialog.vue";
 import PanoPaintDock from "./PanoPaintDock.vue";
 import PanoSelectionMenu from "./PanoSelectionMenu.vue";
@@ -170,6 +171,7 @@ watch(() => props.open, (nextOpen) => {
 
         <template v-if="!previewMode">
           <PanoToolRail :buttons="uiState.toolButtons || shellPreset.toolButtons || []" />
+          <PanoFrameRail :model="uiState.frameRail || {}" />
           <PanoPaintDock
             :paint-swatches="paintSwatches"
             :panes="shellPreset.paintPanes || []"
