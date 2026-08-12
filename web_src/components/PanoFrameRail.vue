@@ -1,5 +1,6 @@
 <script setup>
 import PanoIconButton from "./PanoIconButton.vue";
+import PanoFrameRollKnob from "./PanoFrameRollKnob.vue";
 
 defineProps({
   model: { type: Object, default: () => ({}) },
@@ -7,7 +8,7 @@ defineProps({
 </script>
 
 <template>
-  <div v-show="model.visible === true" class="pano-frame-rail" data-frame-rail>
+  <div class="pano-frame-rail" :class="{ 'is-hidden': model.visible !== true }" data-frame-rail>
     <div class="pano-frame-aspect-control">
       <PanoIconButton
         :icon="model.aspectIcon"
@@ -35,5 +36,6 @@ defineProps({
       tip="Toggle portrait/landscape"
       :attrs="{ 'data-action': 'frame-rotate-90', disabled: model.disabled === true }"
     />
+    <PanoFrameRollKnob :model="model.rollKnob || {}" />
   </div>
 </template>

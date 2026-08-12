@@ -330,6 +330,22 @@
   cursor: default;
   opacity: 0.5;
 }
+.pano-floating-bottom,
+.pano-floating-right,
+.pano-floating-left,
+.pano-frame-rail,
+.pano-selection-menu {
+  padding: var(--pano-float-pad);
+  border-radius: var(--pano-float-radius);
+}
+.pano-floating-bottom .pano-btn-icon,
+.pano-floating-right .pano-btn-icon,
+.pano-floating-left .pano-btn-icon,
+.pano-frame-rail .pano-btn-icon,
+.pano-selection-menu .pano-btn-icon {
+  margin: 0;
+  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad));
+}
 .pano-floating-bottom {
   position: absolute;
   left: 50%;
@@ -337,8 +353,6 @@
   transform: translateX(-50%);
   display: flex;
   gap: var(--pano-float-gap);
-  padding: var(--pano-float-pad);
-  border-radius: var(--pano-float-radius);
   border: 0;
   background: var(--pano-float-bg);
   backdrop-filter: blur(12px);
@@ -351,10 +365,7 @@
   display: flex;
   align-items: center;
   gap: var(--pano-float-gap);
-  padding: var(--pano-float-pad);
-  padding-left: 0.5rem;
   min-height: 40px;
-  border-radius: var(--pano-float-radius);
   border: 0;
   background: var(--pano-float-bg);
   backdrop-filter: blur(12px);
@@ -745,8 +756,6 @@
   position: absolute;
   display: none;
   gap: 4px;
-  padding: var(--pano-float-pad);
-  border-radius: var(--pano-float-radius);
   border: 0;
   background: var(--pano-float-bg);
   backdrop-filter: blur(12px);
@@ -823,12 +832,13 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
   opacity: 0;
   visibility: hidden;
-  transition: opacity 100ms ease;
+  transition: opacity 160ms ease, visibility 0s linear 160ms;
   z-index: 8;
 }
 .pano-tooltip.show {
   opacity: 1;
   visibility: visible;
+  transition: opacity 160ms ease, visibility 0s linear 0s;
 }
 .pano-tooltip.pano-tooltip-footer {
   padding: 0;
@@ -838,11 +848,15 @@
   font-size: 10px;
   letter-spacing: 0.01em;
 }
-.pano-tooltip.pano-tooltip-tool-rail {
+.pano-tooltip.pano-tooltip-tool-rail,
+.pano-tooltip.pano-tooltip-frame-rail {
   padding: 7px 10px;
   border-radius: var(--pano-space-md);
   background: color-mix(in srgb, var(--pano-surface-1) 94%, black);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+}
+.pano-tooltip.pano-tooltip-roll {
+  transform: translateX(-50%);
 }
 .pano-canvas-confirm {
   position: absolute;
@@ -1023,10 +1037,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 4px;
   background: var(--pano-float-bg);
   border: 0;
-  border-radius: var(--pano-float-radius);
   box-shadow: 0 8px 30px rgba(0,0,0,0.35);
   backdrop-filter: blur(12px);
 }
@@ -1394,12 +1406,45 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 4px;
   background: var(--pano-float-bg);
-  border-radius: var(--pano-float-radius);
   box-shadow: 0 8px 30px rgba(0,0,0,0.35);
   backdrop-filter: blur(12px);
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+  transition: opacity 220ms ease, visibility 0s linear 0s;
+  will-change: opacity;
 }
+.pano-frame-rail.is-hidden {
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms ease, visibility 0s linear 220ms;
+}
+.pano-frame-rail {
+  background: color-mix(in srgb, var(--pano-float-bg) 92%, rgb(255, 221, 87));
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 221, 87, 0.62),
+    0 8px 30px rgba(0,0,0,0.35);
+}
+.pano-frame-roll-knob {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad));
+  color: var(--pano-text-secondary);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.pano-frame-roll-knob.dragging { cursor: grabbing; }
+.pano-frame-roll-knob.armed { color: rgb(255, 221, 87); }
+.pano-frame-roll-knob svg { width: 28px; height: 28px; }
+.pano-frame-roll-knob-ring { fill: none; stroke: currentColor; stroke-width: 1; opacity: 0.42; }
+.pano-frame-roll-knob-tick { stroke: currentColor; stroke-width: 1; opacity: 0.55; }
+.pano-frame-roll-knob-tick.zero { stroke-width: 2; opacity: 1; }
+.pano-frame-roll-knob-needle { stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.pano-frame-roll-knob-center { fill: currentColor; }
 .pano-frame-rail .pano-btn-icon {
   width: 40px;
   min-width: 40px;
@@ -1614,6 +1659,10 @@
   border-radius: var(--pano-space-md);
   height: 30px;
   padding: 0 var(--pano-space-md);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
 }
 .pano-picker-trigger:disabled {
   opacity: 0.62;
@@ -1740,7 +1789,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: inherit;
   font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
 }
 .pano-picker-item-icon {

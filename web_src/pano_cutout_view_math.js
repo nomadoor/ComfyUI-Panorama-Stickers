@@ -14,6 +14,26 @@ export const CUTOUT_FOV_MAX_DEG = 179;
 export const CUTOUT_OVERSCAN_MAX = 1.5;
 export const CUTOUT_OVERSCAN_SAFE_HALF_ANGLE_DEG = 85;
 
+export function wrapRollDeg(value) {
+  const wrapped = ((finiteOr(value, 0) + 180) % 360 + 360) % 360 - 180;
+  return wrapped <= -180 ? 180 : wrapped;
+}
+
+export function shortestAngleDeltaRad(current, previous) {
+  let delta = finiteOr(current, 0) - finiteOr(previous, 0);
+  while (delta <= -Math.PI) delta += Math.PI * 2;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  return delta;
+}
+
+export function resolveFrameRollDeg(startRollDeg, accumulatedRad, { shiftKey = false, altKey = false } = {}) {
+  let roll = finiteOr(startRollDeg, 0) + finiteOr(accumulatedRad, 0) * RAD2DEG;
+  if (shiftKey) roll = Math.round(roll / 15) * 15;
+  else if (!altKey && Math.abs(wrapRollDeg(roll)) <= 1) roll = 0;
+  return wrapRollDeg(roll);
+}
+
+
 function finiteOr(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : Number(fallback);

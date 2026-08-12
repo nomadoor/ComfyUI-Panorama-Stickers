@@ -17,6 +17,9 @@ import {
   getCutoutOverscanScale,
   canvasToFilmTangent,
   scaleCutoutFovPair,
+  shortestAngleDeltaRad,
+  resolveFrameRollDeg,
+  wrapRollDeg,
   worldDirToCutoutFilmPoint,
 } from "../web_src/pano_cutout_view_math.js";
 
@@ -229,4 +232,36 @@ test("landscape fills the width and portrait fills the height", () => {
   shot = withAspect(safeRect, shot, 16 / 9);
   close(gateFor(safeRect, shot).w, landscape.w, 1e-6);
   close(gateFor(safeRect, shot).h, landscape.h, 1e-6);
+});
+
+test("frame roll accumulation stays continuous across the atan2 seam", () => {
+  let accumulated = 0;
+  let previous = 170 * Math.PI / 180;
+  for (const degrees of [175, 179, -179, -175, -170]) {
+    const current = degrees * Math.PI / 180;
+    accumulated += shortestAngleDeltaRad(current, previous);
+    previous = current;
+  }
+  close(accumulated * 180 / Math.PI, 20, 1e-9);
+  close(resolveFrameRollDeg(12, accumulated), 32, 1e-9);
+});
+
+test("frame roll snapping and normalization follow the interaction contract", () => {
+  close(resolveFrameRollDeg(0, 14.1 * Math.PI / 180, { shiftKey: true }), 15);
+  close(resolveFrameRollDeg(0, 0.8 * Math.PI / 180), 0);
+  close(resolveFrameRollDeg(0, 0.8 * Math.PI / 180, { altKey: true }), 0.8);
+  assert.equal(wrapRollDeg(-180), 180);
+  assert.equal(wrapRollDeg(541), -179);
+});
+
+test("roll never changes frame fit or gate geometry", () => {
+  const safeRect = { x: 100, y: 80, w: 1200, h: 700 };
+  const base = { hFOV_deg: 75, vFOV_deg: 48, roll_deg: 0 };
+  const focal = fitFocalPx(safeRect, base);
+  const gate = gateRectFromFocal(safeRect, base, focal);
+  for (let roll = -180; roll <= 180; roll += 5) {
+    const shot = { ...base, roll_deg: roll };
+    assert.equal(fitFocalPx(safeRect, shot), focal);
+    assert.deepEqual(gateRectFromFocal(safeRect, shot, focal), gate);
+  }
 });
