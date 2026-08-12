@@ -33,7 +33,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 ## Nodes
 
 - `Panorama Stickers`: Place, scale, and rotate sticker images onto an ERP canvas and output a composited conditioning panorama.
-- `Panorama Cutout`: Extract a framed perspective view from an ERP image using a saved camera/frame state.
+- `Panorama Cutout`: Compose and extract a framed perspective view from an ERP image with interactive camera, aspect-ratio, and roll controls.
 - `Panorama Preview`: Show an interactive panorama preview inside ComfyUI without duplicating the default image preview.
 - `Panorama Seam Prep`: Shift an ERP seam into the center and generate hard / blurred vertical seam masks for seam-focused inpainting.
 
@@ -47,6 +47,11 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
   - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
 
 ## Changelog
+
+### 1.4.0
+
+- Rebuilt the Panorama Cutout Frame view as an interactive crop-style camera editor.
+- Added direct camera framing, aspect-ratio, orientation, and roll controls while keeping the Panorama view state independent.
 
 ### 1.3.0
 
