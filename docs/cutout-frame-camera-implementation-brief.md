@@ -1,9 +1,14 @@
 # Cutout Frame ビュー 実装指示書（クロップ型モデルへの移行）
 
+> **Status: Superseded.** 最終仕様は
+> [`docs/adr/0021-cutout-frame-crop-view.md`](adr/0021-cutout-frame-crop-view.md) です。
+> 本書は設計過程の記録として残しています。保存された `editor.frameScalePx`、
+> `clampFovPairToGate` の必須化、ゲート基準の overscan 上限は ADR 0021 で覆されています。
+> 実装時は本書ではなく ADR 0021 を参照してください。
+
 対象ブランチ: `feat/cutout-frame-camera-editing`（未コミットのプロトタイプが載っている状態）
 
-この文書が最終仕様です。`docs/cutout-frame-camera-view-plan.md` と矛盾する箇所は
-**この文書を優先**してください（該当箇所は §8 に列挙。plan 側の更新も作業に含みます）。
+以下は当時の実装指示を変更せず保存したものです。
 
 ---
 

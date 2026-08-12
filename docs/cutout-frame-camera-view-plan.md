@@ -2,10 +2,11 @@
 
 ## Status
 
-Revised after implementation review. The final Frame product model is the
-crop model specified in `cutout-frame-camera-implementation-brief.md`. One
-transient scalar `editor.frameScalePx` is the presentation authority; the
-background remains fixed while camera FOV changes resize the gate.
+Revised after implementation review. The authoritative Frame product model is
+[`ADR 0021`](adr/0021-cutout-frame-crop-view.md). `getFrameViewLayout()` derives
+the focal scale every frame from `runtime.frameSafeRect` and the active shot;
+no presentation scale is stored. The background remains fixed while camera FOV
+changes resize the gate.
 
 ## Goal
 
@@ -138,16 +139,16 @@ availableRect = canvasRect inset by fixed editor padding
 tx = tan(hFOV / 2)
 ty = tan(vFOV / 2)
 fitFocal = min(availableRect.width / (2 * tx), availableRect.height / (2 * ty))
-frameScalePx = 0.9 * fitFocal  // only on Frame entry / active-shot change
-gateRect = centeredRect(2 * frameScalePx * tx, 2 * frameScalePx * ty, availableRect.center)
+focalPx = fitFocalPx(availableRect, shot)  // getFrameViewLayout で毎フレーム導出
+gateRect = centeredRect(2 * focalPx * tx, 2 * focalPx * ty, availableRect.center)
 ```
 
 Properties:
 
 - centered in the available viewport
 - stable while yaw, pitch, or roll changes
-- resized by wheel/aspect/swap because `frameScalePx` remains fixed
-- on safe-rectangle changes, `frameScalePx` follows the smaller dimensional ratio
+- wheel/aspect/swap 後も `runtime.frameSafeRect` と shot から純粋に再導出される
+- safe rectangle の変化には、保存scaleを追従させず次フレームの導出結果で応答する
 - not draggable and not independently zoomable
 - uses one scalar focal length for both axes; it is never axis-clamped
 - uses the camera's tangent-space aspect ratio
@@ -162,7 +163,8 @@ into workflows.
 ### Overscan and passepartout
 
 The editor renders the same perspective camera projection as the shot beyond the
-normalized output gate, but only within an explicitly bounded context region.
+normalized output gate. The context region is bounded by the canvas and the
+absolute safe half-angle, never relative to the gate.
 The gate is not a crop of an otherwise black canvas.
 
 The area outside the gate and inside the context region receives a dark
@@ -174,22 +176,18 @@ the projection inside the gate.
 
 Treat the gate as the canonical sensor/output area and evaluate the same camera
 rays outside it using film-plane coordinates beyond the normal `[-1, 1]` range.
-This continuation is bounded independently per axis. The effective multiplier
-is derived from both an initial maximum multiplier of `1.5` and an initial safe
-half-angle of 85 degrees:
+`contextHalfExtentsPx(canvasSize, focalPx)` limits this continuation by canvas
+half-size and `focalPx * tan(85deg)` independently per axis:
 
 ```text
-kEffective = min(1.5, tan(85deg) / tan(axisFOV / 2))
+halfW = min(canvasW / 2, focalPx * tan(85deg))
+halfH = min(canvasH / 2, focalPx * tan(85deg))
 ```
 
-The angle limit takes priority while it is wider than the shot itself. Thus very
-wide legacy shots receive progressively less context instead of extending toward
-a numerically valid but visually useless 180-degree rectilinear edge. If the shot
-half-angle already exceeds the safe context angle, `kEffective` is clamped to
-`1.0`: the gate remains intact and no additional context is rendered on that
-axis. Both constants may be tuned before release, but must remain explicit and
-tested. Canvas area beyond the bounded context region uses the neutral editor
-background.
+This bound is deliberately gate-independent. Bounding context by gate size or
+`getCutoutOverscanScale` makes the rendered background shrink with the crop and
+reintroduces black margins. Canvas area beyond the absolute context region uses
+the neutral editor background.
 
 Overscan is required only for the GL Frame editor path. Node preview and export
 render the output gate only. The existing coarse 2D fallback mesh is not extended
@@ -226,10 +224,10 @@ preserves the existing `screenPosToFrameAsErpPoint()` boundary.
 
 Control mapping preserves current conventions:
 
-- middle-button drag: update active shot yaw/pitch
+- cursor-tool left drag or middle-button drag: update active shot yaw/pitch
 - wheel: update active shot FOV
 - existing roll control: update active shot roll
-- left-button object/paint tools: keep their existing meaning
+- Frame is camera-only; its cursor-tool left drag always starts `pan_frame`
 
 Camera interaction uses a transient draft shot. Pointer movement updates only
 the draft used by render, projection, hit-test, and Inspector preview. On
@@ -247,8 +245,9 @@ use the same draft-during-gesture and one-commit-on-release contract.
 
 ### Field of view and aspect
 
-Wheel zoom changes camera FOV and therefore resizes the gate on screen. The
-background stays fixed because `frameScalePx` is unchanged.
+Wheel zoom changes camera FOV while the focal scale is re-derived from the same
+safe rectangle and shot aspect. This keeps the fitted gate stable and zooms the
+ERP behind it without storing compensating presentation state.
 
 Each wheel step scales both tangent-space half extents by the same factor:
 
@@ -279,7 +278,8 @@ Projection clamps remain compatible at `[1, 179]`. The initial Inspector control
 may present a safer recommended range up to approximately 120 degrees without
 changing the accepted legacy range.
 
-Changing aspect changes `aspect_id`, explicitly derives `vFOV_deg`, and changes
+Changing aspect changes `aspect_id`, explicitly derives `hFOV_deg` from the held
+`vFOV_deg`, and changes
 the camera gate shape and the subsequently quantized output dimensions. It does
 not arbitrarily scale or pan the gate.
 Orientation swap reuses the existing `aspect_id` landscape/portrait inversion;
@@ -368,15 +368,15 @@ Acceptance criteria:
 - backend output quantization is allowed to introduce only its documented
   multiple-of-8 aspect rounding; pixel-grid identity is not a gate invariant
 - a wheel step preserves `tan(hFOV/2) / tan(vFOV/2)` within `1e-9`
-- gate rays match gate-only render rays within `1e-6` radians under overscan
-- effective overscan half-angle remains below the documented safe limit when
-  the shot itself does; wider legacy shots receive an overscan scale of `1.0`
+- gate rays match gate-only render rays within `1e-6` radians in the context render
+- context extents remain bounded by the canvas and absolute safe half-angle,
+  independently of the gate dimensions
 - non-zero roll plus non-square aspect round-trips within tolerance
 - resizing the canvas does not mutate any shot value
 
 ### Phase 2: Camera gate rendering and active-shot navigation
 
-- Replace pasted-frame layout with a gate derived from transient `frameScalePx`.
+- Replace pasted-frame layout with a gate derived per frame from the safe rect and shot.
 - Render bounded perspective scene context outside the gate through the GL path.
 - Apply translucent passepartout outside the gate.
 - Keep gate interior ray-equivalent to cutout preview/output.
@@ -467,23 +467,21 @@ Required tests include:
 2. Camera navigation supports cursor-tool left drag and middle drag.
 3. Persistent FOV compatibility range remains `[1, 179]`; UI may recommend a
    narrower practical range.
-4. Explicit aspect actions hold horizontal FOV and derive vertical FOV in
+4. Explicit aspect actions hold vertical FOV and derive horizontal FOV in
    tangent space. Persisted authority remains the existing FOV pair.
 5. Orientation swap reuses `aspect_id` inversion without new size fields.
 6. Legacy/unknown stroke data is preserved only; no `FRAME_LOCAL` renderer is added.
 7. Camera manipulation uses draft values, disables inertia, and commits once on
    pointer-up.
-8. Gate context uses the same perspective continuation within a bounded
-   overscan multiplier; no second projection is introduced.
+8. Gate context uses the same perspective continuation within a canvas- and
+   absolute-angle-bounded region; no gate-relative overscan or second projection is introduced.
 9. `docs/Panorama Paint Rebuild2.md` and related statements that describe Frame
    as a `FRAME_LOCAL` editor must be superseded, not treated as current design.
 
 ## Remaining product tuning
 
 - exact camera gate padding and target screen occupancy
-- exact maximum overscan multiplier (initial design value: `1.5`)
-- exact safe overscan half-angle (initial design value: 85 degrees; takes
-  priority over the multiplier)
+- exact safe context half-angle (current design value: 85 degrees)
 - passepartout opacity and border styling
 - practical Inspector FOV slider range within the legacy accepted range
 

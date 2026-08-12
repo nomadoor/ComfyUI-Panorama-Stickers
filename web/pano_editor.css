@@ -1440,11 +1440,11 @@
 .pano-frame-roll-knob.dragging { cursor: grabbing; }
 .pano-frame-roll-knob.armed { color: rgb(255, 221, 87); }
 .pano-frame-roll-knob svg { width: 28px; height: 28px; }
-.pano-frame-roll-knob-ring { fill: none; stroke: currentColor; stroke-width: 1; opacity: 0.42; }
-.pano-frame-roll-knob-tick { stroke: currentColor; stroke-width: 1; opacity: 0.55; }
+.pano-frame-roll-knob-ring { fill: none; stroke: currentcolor; stroke-width: 1; opacity: 0.42; }
+.pano-frame-roll-knob-tick { stroke: currentcolor; stroke-width: 1; opacity: 0.55; }
 .pano-frame-roll-knob-tick.zero { stroke-width: 2; opacity: 1; }
-.pano-frame-roll-knob-needle { stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.pano-frame-roll-knob-center { fill: currentColor; }
+.pano-frame-roll-knob-needle { stroke: currentcolor; stroke-width: 2; stroke-linecap: round; }
+.pano-frame-roll-knob-center { fill: currentcolor; }
 .pano-frame-rail .pano-btn-icon {
   width: 40px;
   min-width: 40px;

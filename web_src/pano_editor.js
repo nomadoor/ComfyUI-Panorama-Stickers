@@ -2096,8 +2096,12 @@ async function showEditor(node, type, options = {}) {
     backgroundDirty: true,
     backgroundWasVisible: false,
     frameSafeRect: null,
+    frameCanvasScale: 1,
     tickErrorSignature: "",
   };
+  const frameGateCssRadius = Number.parseFloat(
+    getComputedStyle(root).getPropertyValue("--pano-float-radius"),
+  ) || 10;
   const setCanvasCursor = (nextCursor) => {
     const cursor = String(nextCursor || "default");
     if (canvas.style.cursor === cursor) return;
@@ -7043,12 +7047,8 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getFrameGateRadius(rect) {
-    const canvasBounds = canvas.getBoundingClientRect?.();
-    const cssRadius = Number.parseFloat(getComputedStyle(root).getPropertyValue("--pano-float-radius")) || 10;
-    const radiusScale = Number(canvasBounds?.width || 0) > 0 && Number(canvasBounds?.height || 0) > 0
-      ? Math.min(canvas.width / canvasBounds.width, canvas.height / canvasBounds.height)
-      : 1;
-    return Math.min(cssRadius * radiusScale, Number(rect?.w || 0) * 0.5, Number(rect?.h || 0) * 0.5);
+    const radiusScale = Math.max(1e-6, Number(runtime.frameCanvasScale || 1));
+    return Math.min(frameGateCssRadius * radiusScale, Number(rect?.w || 0) * 0.5, Number(rect?.h || 0) * 0.5);
   }
 
   function syncFrameRollKnob() {
@@ -7116,7 +7116,7 @@ async function showEditor(node, type, options = {}) {
     const rect = getFrameViewRect(visual.shot);
     if (!rect) return;
     const center = { x: rect.x + rect.w * 0.5, y: rect.y + rect.h * 0.5 };
-    const angle = Number(visual.shot.roll_deg || 0) * DEG2RAD;
+    const angle = Number(visual.shot.roll_deg ?? visual.shot.rot_deg ?? 0) * DEG2RAD;
     const radius = Math.hypot(rect.w, rect.h) * 0.55;
     const dx = Math.cos(angle) * radius;
     const dy = Math.sin(angle) * radius;
@@ -8517,6 +8517,7 @@ async function showEditor(node, type, options = {}) {
     const canvasBounds = canvas.getBoundingClientRect?.();
     const scaleX = Number(canvasBounds?.width || 0) > 0 ? canvas.width / canvasBounds.width : 1;
     const scaleY = Number(canvasBounds?.height || 0) > 0 ? canvas.height / canvasBounds.height : 1;
+    runtime.frameCanvasScale = Math.min(scaleX, scaleY);
     let left = 24;
     let top = 24;
     const right = Math.max(left + 1, canvas.width - 24);
@@ -9927,7 +9928,7 @@ async function showEditor(node, type, options = {}) {
   });
   frameRollKnobEl?.addEventListener("dblclick", (event) => {
     const shot = editor.mode === "frame" && !readOnly ? getActiveCutoutShot() : null;
-    if (!shot || Math.abs(Number(shot.roll_deg || 0)) <= 1e-9) return;
+    if (!shot || Math.abs(Number(shot.roll_deg ?? shot.rot_deg ?? 0)) <= 1e-9) return;
     shot.roll_deg = 0;
     pushHistory();
     commitAndRefreshNode();
