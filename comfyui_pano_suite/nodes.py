@@ -1173,9 +1173,9 @@ class PanoramaCutoutNode(io.ComfyNode):
                 oh,
                 coverage_value,
             )
-            out_frames = []
+            out_batch = np.empty((batch_frames, oh, ow, 3), dtype=np.float32)
             for index, frame in enumerate(src_batch):
-                out_frames.append(sample_cutout_from_sampling_map(frame, sampling_map))
+                out_batch[index] = sample_cutout_from_sampling_map(frame, sampling_map)
                 progress.set(1 + index + 1)
             overlay_rgba, overlay_mask_bw, _overlay_stats_unused, _used_group_layers_unused = _build_overlay_erp_rgba_and_mask(
                 state,
@@ -1189,7 +1189,8 @@ class PanoramaCutoutNode(io.ComfyNode):
             )
             if isinstance(overlay_rgba, np.ndarray):
                 overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
-                out_frames = [alpha_composite_over_rgb(frame, overlay_cutout) for frame in out_frames]
+                for index in range(batch_frames):
+                    out_batch[index] = alpha_composite_over_rgb(out_batch[index], overlay_cutout)
             selected_mask = overlay_mask_bw if isinstance(overlay_mask_bw, np.ndarray) else (
                 painting_payload.get("mask") if isinstance(painting_payload, dict) else None
             )
@@ -1197,7 +1198,6 @@ class PanoramaCutoutNode(io.ComfyNode):
                 mask_bw = sample_cutout_from_sampling_map(selected_mask, sampling_map)
             else:
                 mask_bw = np.zeros((oh, ow), dtype=np.float32)
-            out_batch = np.stack(out_frames, axis=0).astype(np.float32, copy=False)
             encode_start = progress.value
             out_t, mask_t, _out_batch_unused = _make_batched_image_and_mask_outputs(out_batch, mask_bw)
             if video_span > 0:

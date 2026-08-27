@@ -1,4 +1,5 @@
 import importlib
+import json
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
@@ -6,6 +7,9 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import torch
+
+
+_MISSING = object()
 
 
 class TestNodesPreview(unittest.TestCase):
@@ -77,6 +81,10 @@ class TestNodesPreview(unittest.TestCase):
             "ui": {"images": [{"filename": "test.png", "type": "temp"}]}
         }
 
+        self.package_module = importlib.import_module("comfyui_pano_suite")
+        self.original_nodes_module = sys.modules.pop("comfyui_pano_suite.nodes", None)
+        self.original_package_nodes = self.package_module.__dict__.pop("nodes", _MISSING)
+
         # Create a dictionary of modules to patch
         self.modules_patch = {
             "nodes": self.mock_nodes,
@@ -88,12 +96,21 @@ class TestNodesPreview(unittest.TestCase):
         self.patcher = patch.dict("sys.modules", self.modules_patch)
         self.patcher.start()
 
-        # Import the module under test *after* patching sys.modules
-        import comfyui_pano_suite.nodes
-        self.nodes_module = importlib.reload(comfyui_pano_suite.nodes)
+        # Import an isolated module instance *after* patching sys.modules.
+        self.nodes_module = importlib.import_module("comfyui_pano_suite.nodes")
 
     def tearDown(self):
+        sys.modules.pop("comfyui_pano_suite.nodes", None)
+        self.package_module.__dict__.pop("nodes", None)
         self.patcher.stop()
+        if self.original_nodes_module is not None:
+            sys.modules["comfyui_pano_suite.nodes"] = self.original_nodes_module
+        if self.original_package_nodes is not _MISSING:
+            self.package_module.nodes = self.original_package_nodes
+
+    def test_preview_tests_use_an_isolated_nodes_module(self):
+        if self.original_nodes_module is not None:
+            assert self.nodes_module is not self.original_nodes_module
 
     def test_stickers_node_saves_preview(self):
         PanoramaStickersNode = self.nodes_module.PanoramaStickersNode
@@ -190,6 +207,33 @@ class TestNodesPreview(unittest.TestCase):
         assert res.result[1] == '{"stickers":[],"version":1}'
         assert tuple(res.result[2].shape) == (1, 4, 8)
         assert "pano_input_images" in res.ui
+
+    def test_cutout_node_preserves_each_frame_in_a_sampled_batch(self):
+        PanoramaCutoutNode = self.nodes_module.PanoramaCutoutNode
+        dummy_erp = torch.stack([
+            torch.zeros((8, 16, 3), dtype=torch.float32),
+            torch.ones((8, 16, 3), dtype=torch.float32),
+        ])
+        state_json = json.dumps({
+            "shots": [{
+                "yaw_deg": 0.0,
+                "pitch_deg": 0.0,
+                "roll_deg": 0.0,
+                "hFOV_deg": 90.0,
+                "vFOV_deg": 60.0,
+            }],
+        })
+
+        res = PanoramaCutoutNode.execute(
+            erp_image=dummy_erp,
+            coverage="360",
+            state_json=state_json,
+            output_megapixels=0.01,
+        )
+
+        assert res.result[0].shape[0] == 2
+        assert torch.allclose(res.result[0][0], torch.zeros_like(res.result[0][0]))
+        assert torch.allclose(res.result[0][1], torch.ones_like(res.result[0][1]))
 
     def test_preview_node_saves_preview(self):
         PanoramaPreviewNode = self.nodes_module.PanoramaPreviewNode

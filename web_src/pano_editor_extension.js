@@ -41,25 +41,19 @@ function looksLikeJsonObjectString(value) {
 }
 
 function migratePanoramaStickersWidgetOrder(node) {
-  if (!node || node.__panoCoverageWidgetOrderMigrated) return;
+  if (!node) return;
   const coverage = getWidget(node, "coverage");
   const background = getWidget(node, "bg_color");
   const stateWidget = getWidget(node, STATE_WIDGET);
   const stickerState = getWidget(node, "sticker_state");
-  if (!coverage || !background || !stateWidget) {
-    node.__panoCoverageWidgetOrderMigrated = true;
-    return;
-  }
+  if (!coverage || !background || !stateWidget) return;
   const coverageRaw = String(coverage.value ?? "").trim();
   const backgroundRaw = String(background.value ?? "").trim();
   const stateRaw = String(stateWidget.value ?? "").trim();
   const needsMigration = !/^(180|360)$/.test(coverageRaw)
     && isHexColorString(coverageRaw)
     && (looksLikeJsonObjectString(backgroundRaw) || backgroundRaw === "");
-  if (!needsMigration) {
-    node.__panoCoverageWidgetOrderMigrated = true;
-    return;
-  }
+  if (!needsMigration) return;
   let migratedCoverage = "360";
   if (looksLikeJsonObjectString(backgroundRaw)) {
     try {
@@ -79,7 +73,6 @@ function migratePanoramaStickersWidgetOrder(node) {
     stickerState.callback?.(stateRaw);
   }
   node.setDirtyCanvas?.(true, true);
-  node.__panoCoverageWidgetOrderMigrated = true;
 }
 
 function hideWidget(node, widgetName) {
@@ -198,7 +191,6 @@ function installEditorButton(nodeType, {
     const mountKey = `editor_btn|${matchType}`;
     if (node.__panoPreviewAttached === true && node.__panoPreviewMountKey === mountKey) return;
     cleanupPreviewBindings(node);
-    if (matchType === "PanoramaStickers") migratePanoramaStickersWidgetOrder(node);
     syncCoverageWidgetRedraw(node, app);
     hideWidget(node, STATE_WIDGET);
 
@@ -248,6 +240,9 @@ function installEditorButton(nodeType, {
     const previous = nodeType.prototype[hook];
     nodeType.prototype[hook] = function () {
       const result = previous ? previous.apply(this, arguments) : undefined;
+      if (hook === "onConfigure" && matchType === "PanoramaStickers" && this.widgets) {
+        migratePanoramaStickersWidgetOrder(this);
+      }
       if (hook === "onNodeCreated" || this.widgets) installOrUpdate(this);
       return result;
     };
