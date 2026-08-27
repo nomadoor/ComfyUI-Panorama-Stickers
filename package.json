@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "build:web": "vite build --config vite.lib.config.js",
+    "check:web": "node tools/check_panorama_bundle.mjs",
     "dev:web": "vite",
+    "test:bundle-sync": "node --test tests/check_panorama_bundle.test.mjs",
     "build:web:legacy": "node tools/build_panorama_bundle.mjs"
   },
   "devDependencies": {

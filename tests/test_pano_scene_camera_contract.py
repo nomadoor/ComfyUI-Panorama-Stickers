@@ -1,3 +1,5 @@
+import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -27,11 +29,48 @@ class TestPanoSceneCameraContract(unittest.TestCase):
         self.assertIn("buildCutoutViewParamsFromShot(shot)", cutout_js)
 
     def test_scene_camera_accepts_render_descriptor_shape(self):
-        camera_js = (REPO_ROOT / "web_src" / "pano_scene_camera.js").read_text(encoding="utf-8")
-        self.assertIn("scene?.background && scene?.objectPass && Array.isArray(scene.objectPass.objects)", camera_js)
-        self.assertIn("selectedId: scene?.objectPass?.selectedId ?? null", camera_js)
-        self.assertIn("transform: entry?.transform || null", camera_js)
-        self.assertIn("params: entry?.params || null", camera_js)
+        script = """
+          import { normalizePanoramaSceneDescriptor } from './web_src/pano_scene_camera.js';
+          const descriptor = normalizePanoramaSceneDescriptor({
+            stateRevision: 'rev-1',
+            background: { coverageDeg: 180, revision: 'bg-1' },
+            objectPass: {
+              selectedId: 'sticker-1',
+              hoveredId: 'sticker-2',
+              objects: [{
+                id: 'sticker-1',
+                type: 'sticker',
+                opacity: 0.5,
+                zIndex: 3,
+                transform: { yawDeg: 10, pitchDeg: -5, hFovDeg: 200, vFovDeg: 20 },
+                params: { assetId: 'asset-1' },
+              }],
+            },
+            overlay: { showMaskTint: true },
+          });
+          console.log(JSON.stringify(descriptor));
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        descriptor = json.loads(result.stdout)
+
+        self.assertEqual(descriptor["stateRevision"], "rev-1")
+        self.assertEqual(descriptor["background"]["coverageDeg"], 180)
+        self.assertEqual(descriptor["background"]["revision"], "bg-1")
+        self.assertEqual(descriptor["objectPass"]["selectedId"], "sticker-1")
+        self.assertEqual(descriptor["objectPass"]["hoveredId"], "sticker-2")
+        self.assertEqual(len(descriptor["objectPass"]["objects"]), 1)
+        sticker = descriptor["objectPass"]["objects"][0]
+        self.assertEqual(sticker["id"], "sticker-1")
+        self.assertEqual(sticker["transform"]["yawDeg"], 10)
+        self.assertEqual(sticker["transform"]["hFovDeg"], 179)
+        self.assertEqual(sticker["params"]["assetId"], "asset-1")
+        self.assertEqual(descriptor["overlay"], {"showMaskTint": True})
 
 
 if __name__ == "__main__":

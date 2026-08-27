@@ -15,6 +15,11 @@ import { createHistoryController } from "./pano_paint_history.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 import {
+  makePanoEditorHistorySnapshot,
+  normalizeCoverageValue,
+  parsePanoEditorState,
+} from "./pano_editor_state.js";
+import {
   buildCutoutViewParamsFromShot,
   HIDDEN_PREVIEW_OPACITY,
   buildPanoramaViewParamsFromEditor,
@@ -25,12 +30,16 @@ import { drawCutoutProjectionPreview } from "./pano_cutout_projection.js";
 import { createCutoutCamera } from "./pano_cutout_camera.js";
 import {
   contextHalfExtentsPx,
+  deriveCutoutAspectFromFov,
+  deriveCutoutAspectLabelFromFov,
   deriveHorizontalFovDeg,
   aspectFitGateSize,
   fitFocalPx,
   fovPairForGate,
   gateRectFromFocal,
+  getCutoutAspectLabel,
   getCutoutCameraParams,
+  normalizeCutoutShotItem,
   resolveFrameRollDeg,
   scaleCutoutFovPair,
   shortestAngleDeltaRad,
@@ -102,9 +111,6 @@ const _paintLayerSyncRegistry = new Map();
 const _stickerAssetUploadRegistry = new Map();
 const _videoThumbnailCache = new Map();
 const VIDEO_THUMBNAIL_CACHE_LIMIT = 12;
-function normalizeCoverageValue(value) {
-  return Number(value) === 180 ? 180 : 360;
-}
 
 function getCoverageLabel(value) {
   return normalizeCoverageValue(value) === 180 ? "180° Front" : "360° Full";
@@ -301,64 +307,6 @@ function formatParamValue(v) {
   if (!Number.isFinite(n)) return "0";
   return Number(n.toFixed(3)).toString();
 }
-function toPositiveFinite(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : Number(fallback);
-}
-function ratioTextFromPair(w, h) {
-  const ww = toPositiveFinite(w, 1);
-  const hh = toPositiveFinite(h, 1);
-  if (ww <= 0 || hh <= 0) return "1:1";
-  const scale = 1000;
-  const wi = Math.max(1, Math.round(ww * scale));
-  const hi = Math.max(1, Math.round(hh * scale));
-  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
-  const g = gcd(wi, hi) || 1;
-  const rw = Math.max(1, Math.round(wi / g));
-  const rh = Math.max(1, Math.round(hi / g));
-  return `${rw}:${rh}`;
-}
-function deriveCutoutAspectFromFov(item) {
-  const hf = clamp(Number(item?.hFOV_deg || 90), 1, 179) * DEG2RAD;
-  const vf = clamp(Number(item?.vFOV_deg || 60), 1, 179) * DEG2RAD;
-  return Math.max(0.05, Math.min(20, Math.tan(hf * 0.5) / Math.max(1e-6, Math.tan(vf * 0.5))));
-}
-function getCanonicalCutoutAspectId(aspect) {
-  const value = Number(aspect);
-  if (!Number.isFinite(value) || value <= 0) return "1:1";
-  const presets = [
-    ["1:1", 1],
-    ["4:3", 4 / 3],
-    ["3:2", 3 / 2],
-    ["16:9", 16 / 9],
-    ["9:16", 9 / 16],
-    ["2:3", 2 / 3],
-    ["3:4", 3 / 4],
-  ];
-  const epsilon = 0.015;
-  for (const [label, preset] of presets) {
-    if (Math.abs(value - preset) <= epsilon) return label;
-  }
-  return "";
-}
-function deriveCutoutAspectLabelFromFov(item) {
-  const aspect = deriveCutoutAspectFromFov(item);
-  return getCanonicalCutoutAspectId(aspect) || ratioTextFromPair(aspect, 1);
-}
-function normalizeCutoutShotItem(raw) {
-  if (!raw || typeof raw !== "object") return raw;
-  const next = { ...raw, locked: raw.locked === true };
-  delete next.out_w;
-  delete next.out_h;
-  next.aspect_id = deriveCutoutAspectLabelFromFov(next);
-  return next;
-}
-function getCutoutAspectLabel(item) {
-  if (!item || typeof item !== "object") return "1:1";
-  const stored = String(item.aspect_id || "").trim();
-  if (/^\d+:\d+$/.test(stored)) return stored;
-  return deriveCutoutAspectLabelFromFov(item);
-}
 function expandTri(d0, d1, d2, px = 1.1) {
   const cx = (d0.x + d1.x + d2.x) / 3;
   const cy = (d0.y + d1.y + d2.y) / 3;
@@ -407,7 +355,6 @@ const SHARED_UI_SETTINGS_KEY = "pano_suite.ui_settings.v1";
 const NODE_GRID_VISIBILITY_KEY = "pano_suite.node_grid_visibility.v1";
 let sharedUiSettingsMemory = null;
 let nodeGridVisibilityMemory = null;
-let parseStateJsonCache = { text: null, parsed: null };
 
 function normalizeUiSettings(raw) {
   const src = (raw && typeof raw === "object") ? raw : {};
@@ -483,28 +430,6 @@ function setNodeGridVisibility(nodeId, visible) {
   }
 }
 
-function cloneAssetMap(raw) {
-  if (!raw || typeof raw !== "object") return {};
-  const out = {};
-  Object.entries(raw).forEach(([k, v]) => {
-    out[k] = (v && typeof v === "object") ? { ...v } : v;
-  });
-  return out;
-}
-
-function cloneStickerList(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) => {
-    if (!item || typeof item !== "object") return item;
-    const next = { ...item };
-    if (next.crop && typeof next.crop === "object") next.crop = { ...next.crop };
-    if (next.initial_pose && typeof next.initial_pose === "object") next.initial_pose = { ...next.initial_pose };
-    next.visible = next.visible !== false;
-    next.locked = next.locked === true;
-    return next;
-  });
-}
-
 function paintingStrokeCount(painting) {
   const paintCount = Array.isArray(painting?.paint?.strokes) ? painting.paint.strokes.length : 0;
   const maskCount = Array.isArray(painting?.mask?.strokes) ? painting.mask.strokes.length : 0;
@@ -545,90 +470,6 @@ function normalizeEditorHistory(raw) {
     entries,
     index: Math.max(-1, Math.min(entries.length - 1, index)),
   };
-}
-
-function cloneStateForHistorySnapshot(raw) {
-  if (!raw || typeof raw !== "object") return raw;
-  const next = JSON.parse(JSON.stringify(raw));
-  delete next.editor_history;
-  delete next.painting_layer;
-  return next;
-}
-
-function cloneShotList(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) => {
-    if (!item || typeof item !== "object") return item;
-    return normalizeCutoutShotItem(item);
-  });
-}
-
-function parseState(text, preset = 2048, bg = "#00ff00", coverage = 360) {
-  const sharedUi = loadSharedUiSettings();
-  const base = {
-    version: 1,
-    projection_model: "pinhole_rectilinear",
-    alpha_mode: "straight",
-    coverage: normalizeCoverageValue(coverage),
-    bg_color: bg,
-    output_preset: preset,
-    assets: {},
-    stickers: [],
-    shots: [],
-    painting: normalizePaintingState(null),
-    painting_layer: null,
-    ui_settings: {
-      invert_view_x: !!sharedUi?.invert_view_x,
-      invert_view_y: !!sharedUi?.invert_view_y,
-      preview_quality: String(sharedUi?.preview_quality || "balanced"),
-    },
-    active: { selected_sticker_id: null, selected_shot_id: null },
-  };
-  const textTrimmed = String(text || "").trim();
-  if (!textTrimmed) return base;
-  try {
-    let p = null;
-    if (parseStateJsonCache.text === textTrimmed) {
-      p = parseStateJsonCache.parsed;
-    } else {
-      p = JSON.parse(textTrimmed);
-      parseStateJsonCache = { text: textTrimmed, parsed: p };
-    }
-    if (!p || typeof p !== "object" || Array.isArray(p)) return base;
-    const merged = {
-      ...base,
-      ...p,
-      version: 1,
-      projection_model: "pinhole_rectilinear",
-      alpha_mode: "straight",
-      assets: cloneAssetMap(p.assets),
-      stickers: cloneStickerList(p.stickers),
-      shots: cloneShotList(p.shots),
-      // source of truth persists target-local stroke geometry, never view coordinates.
-      painting: normalizePaintingState(p.painting),
-      painting_layer: (p.painting_layer && typeof p.painting_layer === "object") ? p.painting_layer : null,
-      ui_settings: {
-        invert_view_x: !!(p.ui_settings && p.ui_settings.invert_view_x),
-        invert_view_y: !!(p.ui_settings && p.ui_settings.invert_view_y),
-        preview_quality: (() => {
-          const q = String(p.ui_settings?.preview_quality || "balanced");
-          return (q === "draft" || q === "balanced" || q === "high") ? q : "balanced";
-        })(),
-      },
-      active: p.active && typeof p.active === "object" ? { ...p.active } : { ...base.active },
-    };
-    if (sharedUi) {
-      merged.ui_settings = normalizeUiSettings({ ...merged.ui_settings, ...sharedUi });
-    }
-    merged.output_preset = parseOutputPresetValue(preset, Number(merged.output_preset || base.output_preset));
-    merged.bg_color = String(bg || merged.bg_color || base.bg_color);
-    merged.coverage = normalizeCoverageValue(coverage);
-    delete merged.editor_history;
-    return merged;
-  } catch {
-    parseStateJsonCache = { text: textTrimmed, parsed: null };
-    return base;
-  }
 }
 
 function cameraBasis(yawDeg, pitchDeg, rollDeg = 0) {
@@ -854,7 +695,12 @@ function drawPanoramaNodePreview(node, ctx) {
     "node_preview:auto:bg_erp|erp_image",
   );
   const coverage = normalizeCoverageValue(getWidget(node, "coverage")?.value);
-  const state = parseState(raw, preset, bg, coverage);
+  const state = parsePanoEditorState(raw, {
+    outputPreset: preset,
+    backgroundColor: bg,
+    coverage,
+    sharedUiSettings: loadSharedUiSettings(),
+  });
 
   const rect = getNodePreviewRect(node);
   if (!rect) return;
@@ -1733,12 +1579,12 @@ async function showEditor(node, type, options = {}) {
     return parseOutputPresetValue(raw, fallback);
   };
 
-  const state = parseState(
-    String(stateWidget?.value || ""),
-    resolveEditorOutputPresetWidth(2048),
-    String(bgWidget?.value || "#00ff00"),
-    normalizeCoverageValue(coverageWidget?.value),
-  );
+  const state = parsePanoEditorState(String(stateWidget?.value || ""), {
+    outputPreset: resolveEditorOutputPresetWidth(2048),
+    backgroundColor: String(bgWidget?.value || "#00ff00"),
+    coverage: normalizeCoverageValue(coverageWidget?.value),
+    sharedUiSettings: loadSharedUiSettings(),
+  });
   node.__panoLiveStateOverride = state;
   node.__panoLiveStateVersion = 0;
 
@@ -2000,7 +1846,7 @@ async function showEditor(node, type, options = {}) {
   const initialSelectedId = type === "stickers"
     ? state.active.selected_sticker_id
     : (type === "cutout" ? state.active.selected_shot_id : state.active.selected_shot_id);
-  const initialHistorySnapshot = JSON.stringify(cloneStateForHistorySnapshot(state));
+  const initialHistorySnapshot = JSON.stringify(makePanoEditorHistorySnapshot(state));
   const editor = {
     mode: "pano",
     selectedId: initialSelectedId,
@@ -7470,7 +7316,7 @@ async function showEditor(node, type, options = {}) {
 
   function pushHistory() {
     if (readOnly) return;
-    editor.historyController.commitActionGroup(JSON.stringify(cloneStateForHistorySnapshot(state)));
+    editor.historyController.commitActionGroup(JSON.stringify(makePanoEditorHistorySnapshot(state)));
     syncUndoRedoButtons();
   }
 

@@ -191,7 +191,7 @@ def test_render_painting_to_cutout_ignores_stale_painting_layer_payload():
         shot,
         128,
         128,
-        painting_layer=stale_layer,
+        painting_layer_payload=stale_layer,
     )
 
     assert paint_rgba.shape == (128, 128, 4)

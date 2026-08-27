@@ -82,7 +82,7 @@ def test_compose_display_list_to_overlay_rgba_keeps_workspace_shape():
         "painting": {"groups": [{"id": "group_1", "type": "strokeGroup", "actionGroupId": "ag_1", "z_index": 0}]},
     }
 
-    out, used = nodes_module._compose_display_list_to_overlay_rgba(
+    out, used, stats = nodes_module._compose_display_list_to_overlay_rgba(
         state,
         2048,
         1024,
@@ -92,6 +92,8 @@ def test_compose_display_list_to_overlay_rgba_keeps_workspace_shape():
     assert used is True
     assert out.shape == (1024, 2048, 4)
     assert float(np.max(out[..., 1])) > 0.9
+    assert stats["stroke_groups"] == 1
+    assert stats["group_payload_hits"] == 1
 
 
 def test_apply_overlay_coverage_to_rgba_for_180_crops_center_before_resize():

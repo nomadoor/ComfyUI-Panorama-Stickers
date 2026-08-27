@@ -195,6 +195,60 @@ export function deriveHorizontalFovDeg(vFovDeg, aspect) {
   );
 }
 
+function positiveFinite(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : Number(fallback);
+}
+
+function ratioTextFromPair(width, height) {
+  const safeWidth = positiveFinite(width, 1);
+  const safeHeight = positiveFinite(height, 1);
+  if (safeWidth <= 0 || safeHeight <= 0) return "1:1";
+  const scale = 1000;
+  const widthInt = Math.max(1, Math.round(safeWidth * scale));
+  const heightInt = Math.max(1, Math.round(safeHeight * scale));
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  const divisor = gcd(widthInt, heightInt) || 1;
+  return `${Math.max(1, Math.round(widthInt / divisor))}:${Math.max(1, Math.round(heightInt / divisor))}`;
+}
+
+export function deriveCutoutAspectFromFov(item) {
+  const horizontal = clamp(Number(item?.hFOV_deg || 90), 1, 179) * DEG2RAD;
+  const vertical = clamp(Number(item?.vFOV_deg || 60), 1, 179) * DEG2RAD;
+  return Math.max(0.05, Math.min(20, Math.tan(horizontal * 0.5) / Math.max(1e-6, Math.tan(vertical * 0.5))));
+}
+
+export function deriveCutoutAspectLabelFromFov(item) {
+  const aspect = deriveCutoutAspectFromFov(item);
+  const presets = [
+    ["1:1", 1],
+    ["4:3", 4 / 3],
+    ["3:2", 3 / 2],
+    ["16:9", 16 / 9],
+    ["9:16", 9 / 16],
+    ["2:3", 2 / 3],
+    ["3:4", 3 / 4],
+  ];
+  const canonical = presets.find(([, value]) => Math.abs(aspect - value) <= 0.015);
+  return canonical?.[0] || ratioTextFromPair(aspect, 1);
+}
+
+export function normalizeCutoutShotItem(raw) {
+  if (!raw || typeof raw !== "object") return raw;
+  const next = { ...raw, locked: raw.locked === true };
+  delete next.out_w;
+  delete next.out_h;
+  next.aspect_id = deriveCutoutAspectLabelFromFov(next);
+  return next;
+}
+
+export function getCutoutAspectLabel(item) {
+  if (!item || typeof item !== "object") return "1:1";
+  const stored = String(item.aspect_id || "").trim();
+  if (/^\d+:\d+$/.test(stored)) return stored;
+  return deriveCutoutAspectLabelFromFov(item);
+}
+
 export function scaleCutoutFovPair(shot, scale) {
   const camera = getCutoutCameraParams(shot);
   const factor = finiteOr(scale, 1);

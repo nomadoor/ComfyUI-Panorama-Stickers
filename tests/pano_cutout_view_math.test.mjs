@@ -6,6 +6,8 @@ import {
   contextHalfExtentsPx,
   cutoutFilmPointToWorldDir,
   deriveHorizontalFovDeg,
+  deriveCutoutAspectFromFov,
+  deriveCutoutAspectLabelFromFov,
   deriveVerticalFovDeg,
   fitFovPairToGate,
   filmTangentToCanvas,
@@ -14,11 +16,13 @@ import {
   fovPairForGate,
   gateRectFromFocal,
   getCutoutCameraParams,
+  getCutoutAspectLabel,
   getCutoutOverscanScale,
   canvasToFilmTangent,
   scaleCutoutFovPair,
   shortestAngleDeltaRad,
   resolveFrameRollDeg,
+  normalizeCutoutShotItem,
   wrapRollDeg,
   worldDirToCutoutFilmPoint,
 } from "../web_src/pano_cutout_view_math.js";
@@ -73,6 +77,28 @@ test("explicit aspect keeps vertical FOV and derives horizontal FOV in tangent s
   const hFov = deriveHorizontalFovDeg(vFov, 9 / 16);
   const camera = getCutoutCameraParams({ hFOV_deg: hFov, vFOV_deg: vFov });
   close(camera.aspect, 9 / 16, 1e-12);
+});
+
+test("cutout shot normalization derives the canonical aspect and removes legacy output dimensions", () => {
+  const normalized = normalizeCutoutShotItem({
+    id: "shot_1",
+    hFOV_deg: 90,
+    vFOV_deg: 90,
+    out_w: 1920,
+    out_h: 1080,
+    locked: 1,
+  });
+
+  assert.deepEqual(normalized, {
+    id: "shot_1",
+    hFOV_deg: 90,
+    vFOV_deg: 90,
+    locked: false,
+    aspect_id: "1:1",
+  });
+  close(deriveCutoutAspectFromFov(normalized), 1);
+  assert.equal(deriveCutoutAspectLabelFromFov(normalized), "1:1");
+  assert.equal(getCutoutAspectLabel({ ...normalized, aspect_id: "16:9" }), "16:9");
 });
 
 test("wheel scaling preserves tangent aspect and rejects an out-of-range pair atomically", () => {
