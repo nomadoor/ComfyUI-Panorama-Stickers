@@ -8,6 +8,7 @@ import {
   mul,
   norm,
 } from "./pano_camera_math.js";
+import { PANO_FOV_WHEEL_STEP_DEG } from "./pano_wheel.js";
 
 export const CUTOUT_FOV_MIN_DEG = 1;
 export const CUTOUT_FOV_MAX_DEG = 179;
@@ -276,6 +277,21 @@ export function scaleCutoutFovPair(shot, scale) {
   if (nextH < CUTOUT_FOV_MIN_DEG || nextH > CUTOUT_FOV_MAX_DEG
     || nextV < CUTOUT_FOV_MIN_DEG || nextV > CUTOUT_FOV_MAX_DEG) return null;
   return { hFOV_deg: nextH, vFOV_deg: nextV };
+}
+
+export function stepCutoutFovPairByWheel(
+  shot,
+  direction,
+  stepDeg = PANO_FOV_WHEEL_STEP_DEG,
+) {
+  const sign = Math.sign(finiteOr(direction, 0));
+  const step = Math.abs(finiteOr(stepDeg, PANO_FOV_WHEEL_STEP_DEG));
+  if (!sign || !(step > 0)) return null;
+  const camera = getCutoutCameraParams(shot);
+  const nextHorizontal = camera.hFovDeg + sign * step;
+  if (nextHorizontal < CUTOUT_FOV_MIN_DEG || nextHorizontal > CUTOUT_FOV_MAX_DEG) return null;
+  const nextTanHalfX = Math.tan(nextHorizontal * DEG2RAD * 0.5);
+  return scaleCutoutFovPair(shot, nextTanHalfX / camera.tanHalfX);
 }
 
 export function cutoutFilmPointToWorldDir(shot, filmPoint) {

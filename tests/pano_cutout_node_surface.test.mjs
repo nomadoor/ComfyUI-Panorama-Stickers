@@ -188,6 +188,19 @@ test("wheel FOV action scales both tangent axes together and preserves roll", ()
   assert.equal(initial.shots[0], shot);
 });
 
+test("wheel step changes Cutout horizontal FOV by the shared three degrees", () => {
+  const initial = stateWithShots([{
+    id: "frame",
+    hFOV_deg: 100,
+    vFOV_deg: 55,
+    roll_deg: 17,
+  }], "frame");
+  const result = applyCutoutNodeSurfaceAction(initial, { type: "step-fov", direction: 1 });
+  assert.equal(result.changed, true);
+  assert.ok(Math.abs(result.state.shots[0].hFOV_deg - 103) < 1e-9);
+  assert.equal(result.state.shots[0].roll_deg, 17);
+});
+
 test("node context render covers the full surface while preserving the output frame", () => {
   const viewport = { width: 400, height: 300 };
   const shot = {
@@ -343,6 +356,30 @@ test("roll gesture publishes a live draft and commits once", () => {
   assert.equal(session.commitGesture(), true);
   assert.equal(commits.length, 1);
   assert.equal(stored.shots[0].roll_deg, 40);
+});
+
+test("a rejected boundary wheel step keeps the preceding valid draft commit-ready", () => {
+  let stored = stateWithShots([{
+    id: "frame",
+    hFOV_deg: 176,
+    vFOV_deg: 80,
+  }], "frame");
+  const commits = [];
+  const session = createCutoutNodeSurfaceSession({
+    readState: () => stored,
+    commitState: (state) => {
+      commits.push(state);
+      stored = state;
+    },
+  });
+
+  session.beginGesture();
+  assert.equal(session.updateGesture({ type: "step-fov", direction: 1 }), true);
+  assert.equal(session.updateGesture({ type: "step-fov", direction: 1 }), false);
+  assert.equal(session.hasGestureChanges(), true);
+  assert.equal(session.commitGesture(), true);
+  assert.equal(commits.length, 1);
+  assert.ok(Math.abs(stored.shots[0].hFOV_deg - 179) < 1e-9);
 });
 
 test("missing and locked frames reject every shape edit", () => {

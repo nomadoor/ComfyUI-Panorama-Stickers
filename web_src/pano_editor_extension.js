@@ -322,6 +322,7 @@ function installStandalonePreviewInstance(node, {
       imageInputName: "erp_image",
       onOpen: openPreview,
     });
+    if (node.__panoPreviewNodeSurface) hideWidget(node, "Open Preview");
     node.__panoStandaloneInstallDone = true;
     node.__panoStandaloneInstallProbeActive = false;
   };

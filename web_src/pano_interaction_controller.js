@@ -1,9 +1,10 @@
 import { clamp, wrapYaw } from "./pano_math.js";
+import { PANO_FOV_WHEEL_STEP_DEG, readWheelDirection } from "./pano_wheel.js";
 
 const DEG2RAD = Math.PI / 180;
 
 export const PANO_DRAG_SENSITIVITY = 0.12;
-export const PANO_WHEEL_STEP = 3;
+export const PANO_WHEEL_STEP = PANO_FOV_WHEEL_STEP_DEG;
 export const PANO_FOV_MIN = 35;
 export const PANO_FOV_MAX = 140;
 export const PANO_INITIAL_FOV = 100;
@@ -18,13 +19,6 @@ function deriveVerticalFovDeg(horizontalFovDeg, width, height) {
   const h = Math.max(1, Number(height || 1));
   const hf = clamp(Number(horizontalFovDeg || PANO_INITIAL_FOV), 1, 179) * DEG2RAD;
   return (2 * Math.atan(Math.tan(hf * 0.5) * (h / w))) / DEG2RAD;
-}
-
-function readWheelDelta(ev) {
-  if (Number.isFinite(Number(ev?.deltaY))) return Number(ev.deltaY);
-  if (Number.isFinite(Number(ev?.wheelDelta))) return -Number(ev.wheelDelta);
-  if (Number.isFinite(Number(ev?.detail))) return Number(ev.detail) * 40;
-  return 0;
 }
 
 export function createPanoInteractionController(options = {}) {
@@ -184,8 +178,8 @@ export function createPanoInteractionController(options = {}) {
     return true;
   }
 
-  function applyWheelEvent(ev) {
-    return applyWheel(Math.sign(readWheelDelta(ev)));
+  function applyWheelEvent(ev, fallbackDelta = 0) {
+    return applyWheel(readWheelDirection(ev, fallbackDelta));
   }
 
   function resetView() {

@@ -178,6 +178,33 @@ test("cutout lifecycle restores a visible fallback button when a later node surf
   assert.ok(button.computeSize()[1] > 0);
 });
 
+test("Preview hides its modal fallback button only after the fullscreen surface mounts", () => {
+  const makePreview = (surfaceMounted) => {
+    const extension = createPanoEditorExtension({
+      app: { canvas: { setDirty() {} } },
+      openEditor() {},
+      attachStickers() {},
+      attachCutout() {},
+      attachPreview(node) {
+        node.__panoPreviewNodeSurface = surfaceMounted ? { mounted: true } : null;
+      },
+      requestFrame(callback) { callback(); },
+    });
+    const node = makeNode([360, 260]);
+    node.id = 12;
+    node.comfyClass = "PanoramaPreview";
+    extension.nodeCreated(node);
+    return node.widgets.find((widget) => widget.name === "Open Preview");
+  };
+
+  const mountedButton = makePreview(true);
+  assert.equal(mountedButton.hidden, true);
+  assert.deepEqual(mountedButton.computeSize(), [0, 0]);
+
+  const fallbackButton = makePreview(false);
+  assert.notEqual(fallbackButton.hidden, true);
+});
+
 test("coverage changes preserve the widget callback and invalidate every preview cache", () => {
   const dirtied = [];
   const node = makeNode();

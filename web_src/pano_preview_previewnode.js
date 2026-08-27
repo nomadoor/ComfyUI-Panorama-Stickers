@@ -1,10 +1,19 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
+import { createApp, reactive } from "vue";
 import { cameraBasis, DEG2RAD, clamp, wrapYaw } from "./pano_camera_math.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
+import {
+  createPreviewFullscreenController,
+  measurePreviewCanvasSize,
+  shouldTogglePreviewPlaybackFromKey,
+} from "./pano_preview_node_surface.js";
+import { bindWheelCaptureRoot } from "./pano_wheel.js";
 import { createPanoramaRenderCore } from "./pano_render_core.js";
 import { buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
 import { buildPreviewNodeViewParams, buildStickerSceneFromState } from "./pano_gl_scene.js";
+import { installPanoSuiteStylesheet } from "./pano_styles.js";
+import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import {
   drawErpBackground,
   STANDALONE_MESH_LOW,
@@ -275,6 +284,12 @@ class PreviewNodeRuntime {
     this.canvas = null;
     this.ctx = null;
     this.widget = null;
+    this.surfaceHost = null;
+    this.surfaceApp = null;
+    this.surfaceModel = null;
+    this.fullscreenController = null;
+    this.wheelCaptureCleanup = null;
+    this.tearingDown = false;
     this.resizeObserver = null;
     this.rafId = 0;
     this.needsDraw = false;
@@ -390,7 +405,7 @@ class PreviewNodeRuntime {
   attachDom() {
     try {
       this.root = document.createElement("div");
-      this.root.className = "pano-node-preview-dom pano-node-preview--stickers";
+      this.root.className = "pano-node-preview-dom pano-node-preview--preview";
       this.root.setAttribute("data-capture-wheel", "true");
       this.root.setAttribute("tabindex", "0");
       this.root.style.cssText = [
@@ -442,15 +457,59 @@ class PreviewNodeRuntime {
         : null;
       this.resizeObserver?.observe(this.root);
       this.bindDomInput(this.canvas, this.root);
+      this.mountNodeSurface();
       this.onResizeDom();
-      this.logProbeFrames();
     } catch (err) {
       this.errorText = "Preview mount failed";
       this.installErrorForeground();
     }
   }
 
+  mountNodeSurface() {
+    if (!this.root || this.surfaceApp) return false;
+    try {
+      void installPanoSuiteStylesheet();
+      this.surfaceHost = document.createElement("div");
+      this.surfaceHost.className = "pano-preview-node-surface-host";
+      this.root.appendChild(this.surfaceHost);
+      this.surfaceModel = reactive({ fullscreen: false });
+      this.fullscreenController = createPreviewFullscreenController({
+        root: this.root,
+        documentRef: document,
+        onChange: (fullscreen) => {
+          if (this.surfaceModel) this.surfaceModel.fullscreen = fullscreen;
+          this.requestDraw();
+        },
+        onFallback: () => this.options.onOpen?.(this.node),
+      });
+      this.surfaceApp = createApp(PanoPreviewNodeSurface, {
+        model: this.surfaceModel,
+        onAction: (action) => {
+          if (action?.type === "toggle-fullscreen") void this.fullscreenController?.toggle?.();
+        },
+      });
+      this.surfaceApp.mount(this.surfaceHost);
+      this.node.__panoPreviewNodeSurface = {
+        mounted: true,
+        toggleFullscreen: () => this.fullscreenController?.toggle?.(),
+      };
+      return true;
+    } catch {
+      this.fullscreenController?.destroy?.();
+      this.fullscreenController = null;
+      this.surfaceApp?.unmount?.();
+      this.surfaceApp = null;
+      this.surfaceHost?.remove?.();
+      this.surfaceHost = null;
+      this.surfaceModel = null;
+      this.node.__panoPreviewNodeSurface = null;
+      return false;
+    }
+  }
+
   bindDomInput(canvas, root) {
+    this.wheelCaptureCleanup?.();
+    this.wheelCaptureCleanup = bindWheelCaptureRoot(root);
     canvas.addEventListener("pointerdown", (ev) => {
       if (ev.button !== 0) return;
       root.focus?.({ preventScroll: true });
@@ -493,7 +552,7 @@ class PreviewNodeRuntime {
       ev.stopImmediatePropagation?.();
     });
     root.addEventListener("keydown", (ev) => {
-      if (ev.key !== " " && ev.key !== "Spacebar") return;
+      if (!shouldTogglePreviewPlaybackFromKey(ev, root)) return;
       this.togglePlayback();
       ev.preventDefault();
       ev.stopPropagation();
@@ -558,9 +617,8 @@ class PreviewNodeRuntime {
       if (!p || !isPointInRect(p.x, p.y, previewRect)) {
         return self.orig.onMouseWheel ? self.orig.onMouseWheel.apply(this, arguments) : undefined;
       }
-      const raw = Number(e?.deltaY ?? e?.wheelDeltaY ?? (typeof arg2 === "number" ? arg2 : 0));
       const before = Number(self.view?.fov || 100);
-      const changed = self.controller.applyWheel(Math.sign(raw));
+      const changed = self.controller.applyWheelEvent(e, typeof arg2 === "number" ? arg2 : 0);
       const after = Number(self.view?.fov || 100);
       if (changed) this.setDirtyCanvas?.(true, false);
       e?.preventDefault?.();
@@ -604,15 +662,21 @@ class PreviewNodeRuntime {
 
   onResizeDom() {
     if (!this.root || !this.canvas) return;
+    // Keep the previous bitmap stretched by CSS until the next animation frame.
+    // Changing an intrinsic canvas dimension here would clear it immediately.
+    this.requestDraw();
+  }
+
+  syncCanvasSize() {
+    if (!this.root || !this.canvas) return false;
     const rect = this.root.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const width = Math.max(1, Math.round(rect.width * dpr));
-    const height = Math.max(1, Math.round(rect.height * dpr));
+    const { width, height } = measurePreviewCanvasSize(rect, window.devicePixelRatio || 1);
     if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width;
       this.canvas.height = height;
-      this.requestDraw();
+      return true;
     }
+    return false;
   }
 
   refreshImage() {
@@ -679,6 +743,7 @@ class PreviewNodeRuntime {
   }
 
   requestDraw() {
+    if (this.tearingDown) return;
     this.needsDraw = true;
     if (this.inTick) {
       this.queuedDuringTick = true;
@@ -695,6 +760,9 @@ class PreviewNodeRuntime {
     this.needsDraw = false;
     const moving = this.controller.stepInertia(ts);
     if (this.canvas && this.ctx) {
+      // Resize and repaint in one frame so the cleared backing store is never
+      // presented between a ResizeObserver callback and this draw.
+      this.syncCanvasSize();
       drawPreview(this.node, this.ctx, this.canvas.width, this.canvas.height, this.view, this.img);
       if (this.errorText) {
         this.ctx.fillStyle = "rgba(18,18,22,0.92)";
@@ -716,25 +784,25 @@ class PreviewNodeRuntime {
     if (shouldContinue && !this.rafId) this.rafId = requestAnimationFrame(this.tick);
   }
 
-  logProbeFrames() {
-    if (!this.root || !this.canvas) return;
-    let frame = 0;
-    const probe = () => {
-      if (!this.root || !this.canvas || frame >= 3) return;
-      frame += 1;
-      requestAnimationFrame(probe);
-    };
-    requestAnimationFrame(probe);
-  }
-
   teardown() {
     if (this.node?.__panoPreviewNodeRuntime !== this) return;
+    this.tearingDown = true;
     if (this.rafId) {
       cancelAnimationFrame(this.rafId);
       this.rafId = 0;
     }
     this.resizeObserver?.disconnect?.();
     this.resizeObserver = null;
+    this.fullscreenController?.destroy?.();
+    this.fullscreenController = null;
+    this.wheelCaptureCleanup?.();
+    this.wheelCaptureCleanup = null;
+    this.surfaceApp?.unmount?.();
+    this.surfaceApp = null;
+    this.surfaceHost?.remove?.();
+    this.surfaceHost = null;
+    this.surfaceModel = null;
+    this.node.__panoPreviewNodeSurface = null;
     this.mediaCleanup?.();
     this.mediaCleanup = null;
     try {

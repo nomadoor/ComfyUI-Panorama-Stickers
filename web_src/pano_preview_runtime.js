@@ -38,6 +38,15 @@ import {
 import { fitFocalPx } from "./pano_cutout_view_math.js";
 import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
+import {
+  createLoopingPreviewVideo,
+  isNodeOutputMediaCurrent,
+  isTrackedMediaInputConnectionChange,
+  markNodeOutputMediaCurrent,
+  markNodeOutputMediaStale,
+  resolvePreviewVideoSource,
+} from "./pano_preview_video.js";
+import { bindWheelCaptureRoot, readWheelDirection } from "./pano_wheel.js";
 const { app } = appModule;
 
 function getAnimPreviewWidgetName() {
@@ -984,78 +993,38 @@ function syncOwnOutputSourceFromExecuted(node, output) {
   }
 }
 
-function getNodeOwnOutputVideo(node, onLoad = null) {
+function disposeNodeOutputVideoCache(node) {
+  node?.__panoOwnOutputVideoCache?.destroy?.();
+  if (node) node.__panoOwnOutputVideoCache = null;
+}
+
+function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null) {
   const id = node?.id;
   if (id == null) return null;
-  const ownOutput = lookupNodeOutputEntry(id);
-  const groups = [
-    ownOutput?.ui?.pano_videos,
-    ownOutput?.pano_videos,
-    ownOutput?.ui?.images,
-    ownOutput?.images,
-  ];
-  let src = "";
-  for (const group of groups) {
-    if (!Array.isArray(group)) continue;
-    for (const cand of group) {
-      const next = imageSourceFromCandidate(cand);
-      if (!next) continue;
-      if (/\.mp4(\?|$)/i.test(next) || String(cand?.format || "").toLowerCase() === "video/mp4") {
-        src = next;
-        break;
-      }
-    }
-    if (src) break;
+  if (!isNodeOutputMediaCurrent(node)) {
+    disposeNodeOutputVideoCache(node);
+    return null;
   }
-  if (!src) return null;
+  const ownOutput = lookupNodeOutputEntry(id);
+  const src = resolvePreviewVideoSource(ownOutput, videoKeys, imageSourceFromCandidate);
+  if (!src) {
+    disposeNodeOutputVideoCache(node);
+    return null;
+  }
   const rev = Number(node?.__panoOwnOutputRev || 0);
   const srcKey = appendImageRevision(src, rev);
-  if (!node.__panoOwnOutputVideoCache) {
-    node.__panoOwnOutputVideoCache = { src: "", video: null };
-  }
+  const cacheKey = `${videoKeys.join("|")}:${srcKey}`;
   const cached = node.__panoOwnOutputVideoCache;
-  if (cached.video && cached.src === srcKey) return cached.video;
-  const video = document.createElement("video");
-  video.muted = true;
-  video.loop = true;
-  video.playsInline = true;
-  video.crossOrigin = "anonymous";
-  let frameCallbackId = 0;
-  const supportsVideoFrameCallback = typeof video.requestVideoFrameCallback === "function";
-  const queueFramePump = () => {
-    if (!supportsVideoFrameCallback || frameCallbackId || video.paused || video.ended) return;
-    frameCallbackId = video.requestVideoFrameCallback(() => {
-      frameCallbackId = 0;
-      onLoad?.();
-      queueFramePump();
-    });
-  };
-  const onReady = () => {
-    onLoad?.();
-    void video.play().then(() => {
-      queueFramePump();
-    }).catch(() => {});
-  };
-  const onTick = () => onLoad?.();
-  const onPlay = () => {
-    onLoad?.();
-    queueFramePump();
-  };
-  const onPause = () => {
-    onLoad?.();
-  };
-  video.addEventListener("loadedmetadata", onReady, { once: true });
-  video.addEventListener("canplay", onReady, { once: true });
-  if (!supportsVideoFrameCallback) {
-    video.addEventListener("timeupdate", onTick);
-  }
-  video.addEventListener("play", onPlay);
-  video.addEventListener("pause", onPause);
-  video.src = srcKey;
-  video.load();
-  cached.src = srcKey;
-  cached.video = video;
-  return video;
+  if (cached?.video && cached.key === cacheKey) return cached.video;
+  disposeNodeOutputVideoCache(node);
+  const player = createLoopingPreviewVideo({
+    documentRef: document,
+    src: srcKey,
+    onFrame: onLoad,
+  });
+  if (!player) return null;
+  node.__panoOwnOutputVideoCache = { key: cacheKey, ...player };
+  return player.video;
 }
 
 function getNodeOwnOutputImage(node, onLoad = null) {
@@ -1242,7 +1211,7 @@ function findLinkedInputImageSource(node, preferredInputNames = []) {
   // Fallback: Check if the current node has explicitly saved input images (e.g. from upstream non-file nodes)
   // We do this check regardless of linked inputs if preferred inputs are exhausted, to support
   // scenarios where the link exists but provides no image data (e.g. some custom nodes).
-  const selfOutput = lookupNodeOutputEntry(node?.id);
+  const selfOutput = isNodeOutputMediaCurrent(node) ? lookupNodeOutputEntry(node?.id) : null;
   const fallbackCandidates = [];
   if (Array.isArray(selfOutput?.pano_input_images)) fallbackCandidates.push(...selfOutput.pano_input_images);
   if (Array.isArray(selfOutput?.ui?.pano_input_images)) fallbackCandidates.push(...selfOutput.ui.pano_input_images);
@@ -1374,7 +1343,7 @@ function invalidatePreviewImageCaches(node) {
   if (!node) return;
   try { node.__panoLinkedInputImageCache?.clear?.(); } catch { }
   node.__panoOwnOutputImageCache = null;
-  node.__panoOwnOutputVideoCache = null;
+  disposeNodeOutputVideoCache(node);
   node.__panoWrappedErpCache = null;
 }
 
@@ -1832,19 +1801,21 @@ function syncRuntimeCutoutComposite(node, state, bgImg, revisionScope = "") {
   const scene = buildRuntimePreviewScene(node, state);
   const textures = buildRuntimePreviewTextures(node, state, scene);
   const layerEntries = buildRuntimeCutoutLayerEntries(node, state);
+  const mediaRevision = getRenderableMediaRevisionToken(bgImg);
+  const mediaSize = getSourcePixelSize(bgImg);
   const descriptor = buildPanoramaCompositeDescriptor({
     stateRevision: [
       "runtime_cutout_scene",
-      String(bgImg.currentSrc || bgImg.src || ""),
-      Number(bgImg.naturalWidth || bgImg.width || 0),
-      Number(bgImg.naturalHeight || bgImg.height || 0),
+      mediaRevision,
+      mediaSize.width,
+      mediaSize.height,
       Number(state?.coverage || 360) === 180 ? 180 : 360,
       String(revisionScope || ""),
       Array.isArray(textures) ? textures.map((item) => `${String(item?.assetId || "")}:${String(item?.revision || "")}`).join(",") : "",
       Array.isArray(layerEntries) ? layerEntries.map((entry) => `${String(entry?.id || "")}:${String(entry?.revision || "")}:${Number(entry?.zIndex || 0)}`).join(",") : "",
     ].join("|"),
     backgroundSource: bgImg,
-    backgroundRevision: String(bgImg.currentSrc || bgImg.src || ""),
+    backgroundRevision: mediaRevision,
     coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
     scene,
     textures,
@@ -2331,8 +2302,7 @@ function attachLegacyStickersPreview(node) {
       const rect = getNodePreviewRect(this);
       if (!p || !pointInRect(p.x, p.y, rect)) return prevMouseWheel ? prevMouseWheel.apply(this, arguments) : undefined;
 
-      const raw = Number(e?.deltaY ?? e?.wheelDeltaY ?? (typeof arg2 === "number" ? arg2 : 0));
-      if (interaction.applyWheel(Math.sign(raw))) {
+      if (interaction.applyWheelEvent(e, typeof arg2 === "number" ? arg2 : 0)) {
         this.setDirtyCanvas?.(true, false);
       }
       if (typeof e?.preventDefault === "function") e.preventDefault();
@@ -2622,21 +2592,24 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
 
   if (mode === "cutout") {
     const shot = getActiveShot(state);
-    const bgImg = getLinkedInputImageForPreview(
+    const bgImg = getNodeOwnOutputVideo(
+      node,
+      ["pano_input_videos"],
+      () => node.__panoDomPreview?.requestDraw?.(),
+    ) || getLinkedInputImageForPreview(
       node,
       ["erp_image", "bg_erp"],
       () => node.__panoDomPreview?.requestDraw?.(),
       { preserveReadyWhilePending: false },
     );
-    const bgReady = !!(bgImg && bgImg.complete && (bgImg.naturalWidth || bgImg.width));
+    const bgReady = isRenderableMediaReady(bgImg);
     if (canvas.width !== surfW || canvas.height !== surfH) {
       canvas.width = surfW;
       canvas.height = surfH;
     }
     const rect = { x: 0, y: 0, w: surfW, h: surfH };
-    const ownAspect = bgReady
-      ? clamp(Number((bgImg.naturalWidth || bgImg.width) / Math.max(1, Number(bgImg.naturalHeight || bgImg.height || 1))), 0.05, 20.0)
-      : 1;
+    const bgSize = getSourcePixelSize(bgImg);
+    const ownAspect = bgReady ? clamp(Number(bgSize.width / bgSize.height), 0.05, 20.0) : 1;
     const cutoutView = shot ? buildCutoutViewParamsFromShot(shot) : null;
     const aspect = clamp(Number(cutoutView?.aspect || ownAspect || 1), 0.05, 20.0);
     const frame = fitCutoutNodeFrame(rect, aspect);
@@ -2651,7 +2624,7 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
     let hintText = "Connect ERP image";
     let loadingSrc = "";
 
-    loadingSrc = String(bgImg?.src || "");
+    loadingSrc = String(bgImg?.currentSrc || bgImg?.src || "");
     if (!shot) {
       const lastShot = node.__panoLastCutoutShot;
       if (!node.__panoPreviewView) {
@@ -3149,13 +3122,6 @@ function isWheelEventInside(root, ev) {
   return !!(target && typeof root.contains === "function" && root.contains(target));
 }
 
-function readWheelDelta(ev) {
-  if (Number.isFinite(Number(ev?.deltaY))) return Number(ev.deltaY);
-  if (Number.isFinite(Number(ev?.wheelDelta))) return -Number(ev.wheelDelta);
-  if (Number.isFinite(Number(ev?.detail))) return Number(ev.detail) * 40;
-  return 0;
-}
-
 export function lockGraphViewportSnapshot() {
   const ds = app?.canvas?.ds;
   if (!ds) return null;
@@ -3210,7 +3176,13 @@ function armPreviewBootMinHeight(node, minHeight = 0, requestDraw = null, durati
   }, Math.max(0, Number(durationMs || 0)));
 }
 
-function createCoreManagedDomWidgetOptions(node, requestDraw = null, bootMinHeight = 0, minHeight = 0) {
+function createCoreManagedDomWidgetOptions(
+  node,
+  requestDraw = null,
+  bootMinHeight = 0,
+  minHeight = 0,
+  invalidateHostCanvasOnResize = true,
+) {
   const persistentMinHeight = Math.max(0, Number(minHeight || 0));
   return {
     serialize: false,
@@ -3236,7 +3208,7 @@ function createCoreManagedDomWidgetOptions(node, requestDraw = null, bootMinHeig
       node.__panoUserResized = true;
       markPreviewResizing(node, 150);
       requestDraw?.();
-      scheduleResizeSettleDraw(node, 180, requestDraw);
+      if (invalidateHostCanvasOnResize) scheduleResizeSettleDraw(node, 180, requestDraw);
     },
   };
 }
@@ -3322,7 +3294,7 @@ function drawStandalonePanorama(node, ctx, rect, imageInputName = "erp_image", m
   const preferredInputs = preferredImageInputsForNode(node, [imageInputName, "erp_image", "bg_erp"]);
   const standalonePreview = isStandalonePreviewNode(node);
   const bgImg = standalonePreview
-    ? (getNodeOwnOutputVideo(node, () => node.__panoDomPreview?.requestDraw?.())
+    ? (getNodeOwnOutputVideo(node, ["pano_videos"], () => node.__panoDomPreview?.requestDraw?.())
       || getNodeOwnOutputImage(node, () => node.__panoDomPreview?.requestDraw?.()))
     : getLinkedInputImageForPreview(
       node,
@@ -3552,10 +3524,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   // Node 2.0 decides whether the graph owns wheel input before the nested
   // listener runs. Match the supported frontend protocol used by the
   // Perspective Editor: focus the declared wheel-capture root on entry.
-  const onWheelCapturePointerEnter = () => {
-    root.focus({ preventScroll: true });
-  };
-  wrap.addEventListener("pointerenter", onWheelCapturePointerEnter);
+  const wheelCaptureCleanup = bindWheelCaptureRoot(root);
 
   const nodeSurfaceHost = stickersMode ? null : document.createElement("div");
   if (nodeSurfaceHost) {
@@ -3579,6 +3548,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         () => node.__panoDomPreview?.requestDraw?.(),
         bootMinHeight,
         surfaceMinHeight,
+        stickersMode,
       ),
     );
   } catch {
@@ -3590,6 +3560,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   const state = {
     raf: 0,
     inTick: false,
+    destroyed: false,
     needsDraw: true,
     dragging: false,
     lastX: 0,
@@ -3598,6 +3569,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   };
 
   const requestDraw = () => {
+    if (state.destroyed) return;
     state.needsDraw = true;
     if (!state.inTick && !state.raf) state.raf = requestAnimationFrame(tick);
   };
@@ -3997,22 +3969,22 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (!stickersMode) {
       const shot = resolveCutoutNodeSurfaceShot(getCachedState(node));
       if (shot && shot.locked !== true && nodeSurfaceSession) {
-        const delta = readWheelDelta(ev);
-        if (delta !== 0) {
+        const direction = readWheelDirection(ev);
+        if (direction !== 0) {
           if (!nodeSurfaceWheelActive) {
             flushNodeSurfaceGesture();
             nodeSurfaceSession.beginGesture();
             nodeSurfaceWheelActive = true;
           }
           const changed = nodeSurfaceSession.updateGesture({
-            type: "scale-fov",
-            scale: delta < 0 ? (1 / 1.1) : 1.1,
+            type: "step-fov",
+            direction,
           });
           if (changed) {
             if (nodeSurfaceWheelCommitTimer) clearTimeout(nodeSurfaceWheelCommitTimer);
             nodeSurfaceWheelCommitTimer = setTimeout(commitNodeSurfaceWheel, 180);
             requestDraw();
-          } else {
+          } else if (!nodeSurfaceSession.hasGestureChanges()) {
             nodeSurfaceSession.cancelGesture();
             nodeSurfaceWheelActive = false;
           }
@@ -4079,6 +4051,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   node.onExecuted = function (output) {
     syncOwnOutputSourceFromExecuted(node, output);
     invalidatePreviewImageCaches(node);
+    markNodeOutputMediaCurrent(node);
     suppressBuiltInPreviewImgs(node);
     requestDraw();
     const out = onExecutedPrev ? onExecutedPrev.apply(this, arguments) : undefined;
@@ -4086,8 +4059,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     return out;
   };
   const onConnectionsChangePrev = node.onConnectionsChange;
-  node.onConnectionsChange = function () {
-    invalidatePreviewImageCaches(node);
+  node.onConnectionsChange = function (type, slotIndex) {
+    if (isTrackedMediaInputConnectionChange(node, type, slotIndex)) {
+      markNodeOutputMediaStale(node);
+      invalidatePreviewImageCaches(node);
+    }
     suppressBuiltInPreviewImgs(node);
     requestDraw();
     return onConnectionsChangePrev ? onConnectionsChangePrev.apply(this, arguments) : undefined;
@@ -4097,7 +4073,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     this.__panoUserResized = true;
     markPreviewResizing(this, 150);
     requestDraw();
-    this.setDirtyCanvas?.(true, false);
+    if (stickersMode) this.setDirtyCanvas?.(true, false);
     return out;
   };
   node.onRemoved = function () {
@@ -4108,11 +4084,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   };
 
   const restoreDom = () => {
+    state.destroyed = true;
     resizeObserver?.disconnect?.();
     cancelCutoutDrag();
     flushNodeSurfaceGesture();
     canvas.removeEventListener("lostpointercapture", cancelCutoutDrag);
-    wrap.removeEventListener("pointerenter", onWheelCapturePointerEnter);
+    wheelCaptureCleanup();
     root.removeEventListener("keydown", onNodeSurfaceKeyDown);
     node.__panoStateFlushers?.delete?.(nodeSurfaceQueueFlusher);
     if (node.__panoStateFlushers instanceof Set && node.__panoStateFlushers.size === 0) {
@@ -4120,6 +4097,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     }
     nodeSurfaceSession?.destroy?.();
     nodeSurfaceVueApp?.unmount?.();
+    disposeNodeOutputVideoCache(node);
     if (state.raf) cancelAnimationFrame(state.raf);
     state.raf = 0;
     if (node.__panoCutoutNodeSurface?.session === nodeSurfaceSession) node.__panoCutoutNodeSurface = null;
@@ -4349,6 +4327,7 @@ export function attachStandalonePreviewDom(node, options = {}) {
     root.style.cssText = "width:100%;height:100%;position:relative;display:block;min-height:56px;overflow:hidden;";
     root.setAttribute("data-capture-wheel", "true");
     root.setAttribute("tabindex", "-1");
+    const wheelCaptureCleanup = bindWheelCaptureRoot(root);
     const wrap = document.createElement("div");
     wrap.style.cssText = "position:absolute;inset:0;min-height:56px;border-radius:8px;overflow:hidden;border:1px solid rgba(63,63,70,1);background:#070707;";
     const canvas = document.createElement("canvas");
@@ -4591,15 +4570,19 @@ export function attachStandalonePreviewDom(node, options = {}) {
       inspectNodeLayout(node, "onExecuted");
       syncOwnOutputSourceFromExecuted(node, output);
       invalidatePreviewImageCaches(node);
+      markNodeOutputMediaCurrent(node);
       suppressBuiltInPreviewImgs(node);
       requestDraw();
       const out = onExecutedPrev ? onExecutedPrev.apply(this, arguments) : undefined;
       suppressBuiltInPreviewImgs(node);
       return out;
     };
-    node.onConnectionsChange = function () {
+    node.onConnectionsChange = function (type, slotIndex) {
       inspectNodeLayout(node, "onConnectionsChange");
-      invalidatePreviewImageCaches(node);
+      if (isTrackedMediaInputConnectionChange(node, type, slotIndex)) {
+        markNodeOutputMediaStale(node);
+        invalidatePreviewImageCaches(node);
+      }
       suppressBuiltInPreviewImgs(node);
       requestDraw();
       return onConnectionsChangePrev ? onConnectionsChangePrev.apply(this, arguments) : undefined;
@@ -4621,6 +4604,7 @@ export function attachStandalonePreviewDom(node, options = {}) {
         disposeCounts.raf += 1;
       }
       detachWindowPointerBridge?.();
+      wheelCaptureCleanup();
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
@@ -4668,6 +4652,7 @@ export function attachStandalonePreviewDom(node, options = {}) {
         disposeCounts.raf += 1;
       }
       detachWindowPointerBridge?.();
+      wheelCaptureCleanup();
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);

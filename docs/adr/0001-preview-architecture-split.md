@@ -103,3 +103,18 @@ What actually stabilized the feature was not more fallback; it was stricter sepa
 
 interactionとstateの契約は
 [`docs/cutout-node-frame-surface-spec.md`](../cutout-node-frame-surface-spec.md)に記録する。
+
+## 2026-08-28 Amendment
+
+`PanoramaPreview` のdedicated runtimeを維持したまま、Node2 DOM pathへ最小のVue surfaceを許可する。
+
+1. PreviewをCutout shared runtimeへ統合しない。image / video、interaction、lifecycle、Legacy fallbackは
+   `web_src/pano_preview_previewnode.js` が引き続き所有する。
+2. Vue surfaceはfullscreen toggle 1つだけを持つ。editor、FOV、playback、camera parameterなどの
+   actionはnode surfaceへ追加しない。
+3. fullscreen actionはDOM preview rootを直接fullscreen表示する。read-only modalを第二のnode surfaceとして
+   埋め込まない。
+4. 標準 `Open Preview` buttonはLegacyとVue mount失敗時のfallbackとして維持し、mount成功後だけ非表示にする。
+5. node id、port semantics、cameraの非永続契約を変更しない。
+
+詳細は [`docs/panorama-preview-node-surface-spec.md`](../panorama-preview-node-surface-spec.md) に記録する。

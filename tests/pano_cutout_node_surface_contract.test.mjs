@@ -145,7 +145,7 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   assert.match(runtime, /cutoutDrag\.kind === "pan"[\s\S]*?type:\s*"pan-camera"/);
   assert.match(runtime, /beginCutoutRollGesture\(/);
   assert.match(runtime, /updateCutoutRollGesture\(/);
-  assert.match(runtime, /type:\s*"scale-fov"/);
+  assert.match(runtime, /type:\s*"step-fov"/);
   assert.match(runtime, /action\?\.type === "add-frame"[\s\S]*?yawDeg:[\s\S]*?pitchDeg:[\s\S]*?viewFovDeg:/);
   assert.match(
     runtime,
@@ -161,11 +161,26 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   assert.match(runtime, /const wheelTargets = stickersMode \? \[wrap, canvas\] : \[wrap\]/);
   assert.match(runtime, /root\.setAttribute\("data-capture-wheel", "true"\)/);
   assert.match(runtime, /root\.tabIndex\s*=\s*0/);
-  assert.match(runtime, /wrap\.addEventListener\("pointerenter", onWheelCapturePointerEnter\)/);
-  assert.match(runtime, /root\.focus\(\{ preventScroll: true \}\)/);
-  assert.match(runtime, /wrap\.removeEventListener\("pointerenter", onWheelCapturePointerEnter\)/);
+  assert.match(runtime, /const wheelCaptureCleanup = bindWheelCaptureRoot\(root\)/);
+  assert.match(runtime, /wheelCaptureCleanup\(\)/);
   assert.match(runtime, /nodeSurfaceWheelCommitTimer/);
+  assert.match(runtime, /else if \(!nodeSurfaceSession\.hasGestureChanges\(\)\)[\s\S]*?cancelGesture\(\)/);
   assert.doesNotMatch(runtime, /button:active\s*\{[\s\S]*?translateY\(1px\)/);
+});
+
+test("node and modal wheel adapters use the shared direction and Cutout step", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const editor = await read("../web_src/pano_editor.js");
+  const controller = await read("../web_src/pano_interaction_controller.js");
+
+  assert.match(runtime, /readWheelDirection\(ev\)/);
+  assert.match(runtime, /type:\s*"step-fov"/);
+  assert.doesNotMatch(runtime, /scale:\s*delta\s*<\s*0\s*\?\s*\(1\s*\/\s*1\.1\)/);
+  assert.match(editor, /readWheelDirection\(e\)/);
+  assert.match(editor, /stepCutoutFovPairByWheel\(shot,\s*direction\)/);
+  assert.match(editor, /function zoomFrameViewAt\([\s\S]*?if \(!shot \|\| shot\.locked === true\) return false;/);
+  assert.doesNotMatch(editor, /e\.deltaY\s*<\s*0\s*\?\s*1\.1/);
+  assert.match(controller, /readWheelDirection\(ev,\s*fallbackDelta\)/);
 });
 
 test("modal frame view adds shared Shift-roll without removing legacy Alt-roll", async () => {
@@ -205,6 +220,23 @@ test("DOM preview camera frames do not repaint the host graph canvas", async () 
   assert.match(runtime, /if \(mode === "cutout" && node\.__panoCutoutNodeSurfaceState !== state\)/);
 });
 
+test("Cutout node surface loops the input ERP video and revisions each presented frame", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const cutoutStart = runtime.indexOf('if (mode === "cutout") {');
+  const stickersStart = runtime.indexOf("  } else {", cutoutStart);
+  assert.ok(cutoutStart >= 0 && stickersStart > cutoutStart);
+  const cutout = runtime.slice(cutoutStart, stickersStart);
+
+  assert.match(cutout, /getNodeOwnOutputVideo\([\s\S]*?\["pano_input_videos"\]/);
+  assert.match(cutout, /isRenderableMediaReady\(bgImg\)/);
+  assert.match(runtime, /function syncRuntimeCutoutComposite[\s\S]*?getRenderableMediaRevisionToken\(bgImg\)/);
+  assert.match(runtime, /function syncRuntimeCutoutComposite[\s\S]*?getSourcePixelSize\(bgImg\)/);
+  assert.match(runtime, /invalidatePreviewImageCaches[\s\S]*?disposeNodeOutputVideoCache\(node\)/);
+  assert.match(runtime, /getNodeOwnOutputVideo[\s\S]*?isNodeOutputMediaCurrent\(node\)/);
+  assert.match(runtime, /node\.onConnectionsChange = function \(type, slotIndex\)[\s\S]*?isTrackedMediaInputConnectionChange\(node, type, slotIndex\)[\s\S]*?markNodeOutputMediaStale\(node\)/);
+  assert.match(runtime, /node\.onExecuted = function[\s\S]*?markNodeOutputMediaCurrent\(node\)[\s\S]*?requestDraw\(\)/);
+});
+
 test("zero-shot wheel zoom does not repaint the host graph canvas", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const wheelStart = runtime.indexOf("  const onPreviewWheel = (ev) => {");
@@ -225,4 +257,20 @@ test("DOM preview inertia keeps at most one animation frame scheduled", async ()
 
   assert.match(runtime, /const requestDraw = \(\) => \{[\s\S]*?if \(!state\.inTick && !state\.raf\)/);
   assert.match(runtime, /const tick = \(ts\) => \{[\s\S]*?state\.inTick = true;[\s\S]*?state\.inTick = false;[\s\S]*?if \(\(moving \|\| state\.needsDraw\) && !state\.raf\)/);
+});
+
+test("Cutout resize redraws only its DOM surface instead of the host graph canvas", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const optionsStart = runtime.indexOf("function createCoreManagedDomWidgetOptions(");
+  const optionsEnd = runtime.indexOf("\nfunction scheduleResizeSettleDraw", optionsStart);
+  const options = runtime.slice(optionsStart, optionsEnd);
+  const resizeStart = runtime.indexOf("  node.onResize = function () {", optionsEnd);
+  const resizeEnd = runtime.indexOf("\n  node.onRemoved = function", resizeStart);
+  const resize = runtime.slice(resizeStart, resizeEnd);
+
+  assert.match(options, /invalidateHostCanvasOnResize\s*=\s*true/);
+  assert.match(options, /if \(invalidateHostCanvasOnResize\)[\s\S]*?scheduleResizeSettleDraw/);
+  assert.match(runtime, /createCoreManagedDomWidgetOptions\([\s\S]*?surfaceMinHeight,[\s\S]*?stickersMode,[\s\S]*?\)/);
+  assert.match(resize, /if \(stickersMode\)[\s\S]*?setDirtyCanvas/);
+  assert.doesNotMatch(resize, /requestDraw\(\);\s*this\.setDirtyCanvas/);
 });

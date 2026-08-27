@@ -43,9 +43,10 @@ import {
   getCutoutCameraParams,
   normalizeCutoutShotItem,
   resolveFrameRollDeg,
-  scaleCutoutFovPair,
   shortestAngleDeltaRad,
+  stepCutoutFovPairByWheel,
 } from "./pano_cutout_view_math.js";
+import { readWheelDirection } from "./pano_wheel.js";
 import {
   beginCutoutRollGesture,
   panCutoutShotByScreenDelta,
@@ -7773,11 +7774,11 @@ async function showEditor(node, type, options = {}) {
     };
   }
 
-  function zoomFrameViewAt(anchor, factor) {
+  function zoomFrameViewAt(anchor, direction) {
     const shot = getActiveCutoutShot();
-    if (!shot) return false;
-    const zoomingOut = Number(factor || 1) < 1;
-    const next = scaleCutoutFovPair(shot, 1 / Number(factor || 1));
+    if (!shot || shot.locked === true) return false;
+    const zoomingOut = Number(direction) > 0;
+    const next = stepCutoutFovPairByWheel(shot, direction);
     if (!next) return false;
     // The gate keeps its screen size on its own: scaling both tangents by k
     // scales the aspect fit by 1/k, so no presentation compensation is needed.
@@ -9965,8 +9966,8 @@ async function showEditor(node, type, options = {}) {
   canvas.onwheel = (e) => {
     if (editor.mode === "frame") {
       const p = screenPos(e);
-      const factor = e.deltaY < 0 ? 1.1 : (1 / 1.1);
-      if (zoomFrameViewAt(p, factor)) requestDraw({ localOnly: true });
+      const direction = readWheelDirection(e);
+      if (direction && zoomFrameViewAt(p, direction)) requestDraw({ localOnly: true });
       e.preventDefault();
       return;
     }

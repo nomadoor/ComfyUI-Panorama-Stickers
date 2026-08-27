@@ -10,6 +10,7 @@ import {
   getCutoutAspectLabel,
   resolveFrameRollDeg,
   scaleCutoutFovPair,
+  stepCutoutFovPairByWheel,
   shortestAngleDeltaRad,
   wrapRollDeg,
 } from "./pano_cutout_view_math.js";
@@ -268,6 +269,13 @@ export function applyCutoutNodeSurfaceAction(state, action = {}) {
       return { ...shot, ...next };
     });
   }
+  if (action.type === "step-fov") {
+    return replaceActiveShot(state, (shot) => {
+      const next = stepCutoutFovPairByWheel(shot, action.direction);
+      if (!next) return shot;
+      return { ...shot, ...next };
+    });
+  }
   if (action.type === "pan-camera") {
     return replaceActiveShot(state, (shot) => {
       const next = panCutoutShotByScreenDelta(action.startShot || shot, action);
@@ -390,6 +398,9 @@ export function createCutoutNodeSurfaceSession({
       publishLiveState(draft);
       notify();
       return true;
+    },
+    hasGestureChanges() {
+      return draft != null && gestureChanged;
     },
     commitGesture() {
       if (!draft) return false;

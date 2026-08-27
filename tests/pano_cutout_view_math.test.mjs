@@ -21,6 +21,7 @@ import {
   getCutoutOverscanScale,
   canvasToFilmTangent,
   scaleCutoutFovPair,
+  stepCutoutFovPairByWheel,
   shortestAngleDeltaRad,
   resolveFrameRollDeg,
   normalizeCutoutShotItem,
@@ -123,6 +124,21 @@ test("wheel scaling preserves tangent aspect and rejects an out-of-range pair at
   assert.ok(next);
   close(getCutoutCameraParams(next).aspect, before, 1e-12);
   assert.equal(scaleCutoutFovPair({ hFOV_deg: 179, vFOV_deg: 60 }, 2), null);
+});
+
+test("Cutout wheel step matches the shared three-degree horizontal FOV step", () => {
+  const shot = { hFOV_deg: 100, vFOV_deg: 55 };
+  const beforeAspect = getCutoutCameraParams(shot).aspect;
+  const wider = stepCutoutFovPairByWheel(shot, 1);
+  assert.ok(wider);
+  close(wider.hFOV_deg, 103);
+  close(getCutoutCameraParams(wider).aspect, beforeAspect, 1e-12);
+
+  const restored = stepCutoutFovPairByWheel(wider, -1);
+  assert.ok(restored);
+  close(restored.hFOV_deg, 100);
+  close(restored.vFOV_deg, 55, 1e-9);
+  assert.equal(stepCutoutFovPairByWheel(shot, 0), null);
 });
 
 test("wheel changes the gate while the focal scalar stays fixed", () => {
