@@ -104,17 +104,12 @@ startAngle = atan2(p.y - center.y, p.x - center.x)
 
 ### 修飾キーの衝突（重要）
 
-`resolveFrameRollDeg()` は現在 **Alt を「0° 磁石の無効化」**に使っている。
-Alt でドラッグを開始すると Alt は押されっぱなしになるため、磁石が常時無効になってしまう。
+> 現行実装では、この節にあった 0° 磁石を廃止した。微小角度も入力どおり保持し、
+> 0° へ戻す操作は roll 表示のダブルクリックに統一する。Shift の 15° スナップは維持する。
 
-**解決**: interaction に `altStarted` を持たせ、Alt 起動のドラッグでは `altKey: false` を渡す。
+Alt でドラッグを開始した場合も、通常の roll 更新と同じ経路を使う。
 
-```text
-altStarted = true  → resolveFrameRollDeg(..., { shiftKey, altKey: false })
-altStarted = false → 従来どおり altKey を渡す（ノブからのドラッグ）
-```
-
-`resolveFrameRollDeg()` 自体は変更しない。
+`resolveFrameRollDeg()` へは Shift のスナップ指定だけを渡す。
 
 ### 修飾キーの追跡
 

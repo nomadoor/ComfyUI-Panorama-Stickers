@@ -78,6 +78,15 @@ function cloneShotList(raw) {
   return raw.map((item) => normalizeCutoutShotItem(item));
 }
 
+export function retainActiveCutoutShot(shots, selectedShotId) {
+  const list = Array.isArray(shots) ? shots : [];
+  if (list.length === 0) return { shots: [], selectedShotId: null };
+  const selectedId = String(selectedShotId || "");
+  const selected = list.find((shot) => String(shot?.id || "") === selectedId) || list[0];
+  const retainedId = String(selected?.id || "") || null;
+  return { shots: [selected], selectedShotId: retainedId };
+}
+
 export function parsePanoEditorState(text, options = {}) {
   const resolvedOptions = {
     outputPreset: 2048,

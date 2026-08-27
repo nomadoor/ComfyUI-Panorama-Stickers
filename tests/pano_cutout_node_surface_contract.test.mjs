@@ -1,0 +1,228 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
+
+test("node surface reuses the shared aspect picker and existing icon components", async () => {
+  const nodeSurface = await read("../web_src/components/PanoCutoutNodeSurface.vue");
+  const frameRail = await read("../web_src/components/PanoFrameRail.vue");
+  const help = await read("../web_src/components/PanoCutoutNodeHelp.vue");
+  const css = await read("../web/pano_editor.css");
+  const icons = await read("../web_src/icons.js");
+
+  assert.ok(nodeSurface.includes('import PanoCutoutAspectPicker from "./PanoCutoutAspectPicker.vue"'));
+  assert.ok(frameRail.includes('import PanoCutoutAspectPicker from "./PanoCutoutAspectPicker.vue"'));
+  assert.ok(nodeSurface.includes('import PanoIconButton from "./PanoIconButton.vue"'));
+  assert.ok(nodeSurface.includes("Full Editor"));
+  assert.ok(nodeSurface.includes("model.rollLabel"));
+  assert.ok(nodeSurface.includes('aria-label="Current roll"'));
+  assert.ok(nodeSurface.includes("ICON.roll"));
+  assert.ok(nodeSurface.includes("PanoCutoutNodeHelp"));
+  assert.match(nodeSurface, /model\.hasShot \? ICON\.delete : ICON\.plus_circle/);
+  assert.match(nodeSurface, /model\.hasShot \? 'delete-frame' : 'add-frame'/);
+  assert.ok(nodeSurface.includes("Choose a view · + Add Frame"));
+  assert.match(nodeSurface, /@dblclick[^\n]*emitAction\(\{ type: 'set-roll', value: 0 \}\)/);
+  const template = nodeSurface.slice(nodeSurface.indexOf("<template>"));
+  assert.ok(template.indexOf("pano-cutout-node-full-editor") < template.indexOf("PanoCutoutAspectPicker"));
+  assert.ok(help.includes("Drag"));
+  assert.ok(help.includes("Shift + Drag"));
+  assert.ok(help.includes("Wheel"));
+  assert.ok(help.includes("Add / Delete"));
+  assert.ok(help.includes("Aspect / Rotate"));
+  assert.ok(help.includes("Double-click roll"));
+  assert.ok(help.includes("Full Editor"));
+  assert.ok(help.includes("Detailed editing"));
+  assert.ok(icons.includes('roll: "roll"'));
+  assert.match(css, /\.pano-cutout-node-toolbar\s*\{[\s\S]*?display:\s*grid/);
+  assert.match(css, /\.pano-cutout-node-roll-value\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums/);
+  assert.match(css, /\.pano-cutout-node-roll-value\s+\.value\s*\{[\s\S]*?width:/);
+  assert.ok(nodeSurface.includes('aria-label="Cutout frame controls"'));
+  for (const label of ["Yaw", "Pitch", "H FOV", "V FOV"]) {
+    assert.ok(!nodeSurface.includes(label), `unexpected detailed control ${label}`);
+  }
+});
+
+test("shared aspect picker exposes presets, custom ratio, and the existing modal action contract", async () => {
+  const picker = await read("../web_src/components/PanoCutoutAspectPicker.vue");
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+
+  for (const value of ["1:1", "4:3", "3:2", "16:9"]) {
+    assert.ok(picker.includes(value), `missing ${value}`);
+  }
+  assert.ok(picker.includes('data-action="frame-aspect"'));
+  assert.ok(picker.includes('data-action="frame-aspect-set"'));
+  assert.ok(picker.includes('data-action="frame-aspect-custom"'));
+  assert.ok(picker.includes("customWidth"));
+  assert.ok(picker.includes("customHeight"));
+  assert.match(picker, /active: activeValue \? value === activeValue : choice\?\.active === true/);
+  assert.match(picker, /document\.addEventListener\("pointerdown", onDocumentPointerDown, true\)/);
+  assert.match(picker, /document\.removeEventListener\("pointerdown", onDocumentPointerDown, true\)/);
+  assert.match(picker, /rootElement\.value\?\.contains\(event\.target\)/);
+  assert.match(picker, /type:\s*"close-aspect"/);
+  assert.match(runtime, /action\?\.type === "close-aspect"[\s\S]*?aspectOpen = false/);
+});
+
+test("node toolbar follows the Perspective Editor control tokens", async () => {
+  const css = await read("../web/pano_editor.css");
+
+  assert.match(css, /\.pano-cutout-node-toolbar \.pano-btn\s*\{[\s\S]*?border-radius:\s*6px/);
+  assert.match(css, /\.pano-cutout-node-toolbar \.pano-btn\s*\{[\s\S]*?background:\s*#1b1e25/);
+  assert.match(css, /\.pano-cutout-node-toolbar \.pano-btn\s*\{[\s\S]*?color:\s*rgba\(255, 255, 255, 0\.62\)/);
+  assert.match(css, /\.pano-cutout-node-toolbar \.pano-btn-icon\s*\{[\s\S]*?height:\s*26px/);
+  assert.match(css, /\.pano-cutout-node-toolbar \.pano-btn-icon svg\s*\{[\s\S]*?stroke-width:\s*2\.3px/);
+  assert.match(css, /\.pano-cutout-node-toolbar\s*\{[\s\S]*?pointer-events:\s*none/);
+  assert.match(css, /\.pano-cutout-node-toolbar\s*>\s*\*\s*\{[\s\S]*?pointer-events:\s*auto/);
+  assert.match(
+    css,
+    /\.pano-cutout-node-full-editor\s*\{[^}]*background:\s*var\(--pano-emphasis-bg\) !important/,
+  );
+  assert.match(
+    css,
+    /\.pano-cutout-node-toolbar \.pano-cutout-node-full-editor:is\(:hover, :focus-visible\):not\(:disabled\)\s*\{[^}]*background:\s*var\(--pano-emphasis-bg-hover\) !important/,
+  );
+  assert.match(
+    css,
+    /\.pano-cutout-node-toolbar \.pano-cutout-node-full-editor:active:not\(:disabled\)\s*\{[^}]*background:\s*var\(--pano-emphasis-bg-active\) !important/,
+  );
+  assert.doesNotMatch(css, /\.pano-cutout-node-toolbar \.pano-btn\s*\{[^}]*backdrop-filter/);
+});
+
+test("Node 2.0 fully collapses hidden state rows even when advanced inputs are shown", async () => {
+  const css = await read("../web/pano_editor.css");
+
+  assert.match(css, /\.lg-node-widget:has\(> \[node-type="PanoramaStickers"\] textarea\[placeholder="state_json"\]\)/);
+  assert.match(css, /\.lg-node-widget:has\(> \[node-type="PanoramaCutout"\] textarea\[placeholder="state_json"\]\)/);
+  assert.match(css, /display:\s*none !important/);
+  assert.match(css, /\.lg-node-widgets:has\(> \.lg-node-widget > \[node-type="PanoramaStickers"\][^\n]+state_json[^\n]+\)\s*\{[\s\S]*?grid-template-rows:\s*24px 24px 32px 24px 24px !important/);
+  assert.match(css, /\.lg-node-widgets:has\(> \.lg-node-widget > \[node-type="PanoramaCutout"\][^\n]+state_json[^\n]+\)\s*\{[\s\S]*?grid-template-rows:\s*24px 24px 24px minmax\(260px, 1fr\) !important/);
+  assert.match(css, /\.lg-node-widgets:[^\n]+PanoramaCutout[^\n]+state_json[^\n]+:has\(> \.lg-node-widget > \[node-type="PanoramaCutout"\] > button\)\s*\{[\s\S]*?grid-template-rows:\s*24px 24px 24px 24px minmax\(260px, 1fr\) !important/);
+});
+
+test("cutout node renders panorama context across the canvas behind the fixed frame", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const surface = await read("../web_src/pano_cutout_node_surface.js");
+
+  assert.match(runtime, /createApp\(PanoCutoutNodeSurface/);
+  assert.match(runtime, /fitCutoutNodeFrame\(/);
+  assert.match(runtime, /surfaceMinHeight = stickersMode \|\| noPreview \? 0 : CUTOUT_NODE_SURFACE_MIN_HEIGHT/);
+  assert.match(runtime, /createCoreManagedDomWidgetOptions\([\s\S]*?surfaceMinHeight/);
+  assert.match(runtime, /const wrap = document\.createElement\("div"\);[\s\S]*?"inset:0"/);
+  assert.ok(!runtime.includes('"inset:0 0 82px 0"'));
+  assert.match(runtime, /layoutCutoutNodeContext/);
+  assert.match(surface, /contextHalfExtentsPx/);
+  assert.match(runtime, /const contextRect =/);
+  assert.match(runtime, /const contextShot =/);
+  assert.match(runtime, /renderToContext\(\s*ctx,\s*contextRect,\s*contextShot,/);
+  assert.match(runtime, /contextLayout\.fallback[\s\S]*?fallbackRect[\s\S]*?fallbackShot/);
+  assert.match(runtime, /renderToContext\(\s*ctx,\s*frame,\s*buildCutoutViewParamsFromShot\(shot\)/);
+  assert.doesNotMatch(runtime, /renderToContext\(\s*ctx,\s*contain,/);
+  assert.match(runtime, /ctx\.rect\(frame\.x/);
+  assert.match(runtime, /ctx\.fill\("evenodd"\)/);
+  assert.match(runtime, /strokeRect\(frame\.x/);
+});
+
+test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const attachStart = runtime.indexOf("function attachPanoramaPreviewImpl(");
+  const tickStart = runtime.indexOf("  const tick = (ts) => {", attachStart);
+  const controllerStart = runtime.indexOf("  const interaction = createPanoInteractionController({", tickStart);
+  const controllerEnd = runtime.indexOf("  const eventSurface =", controllerStart);
+  assert.ok(attachStart >= 0 && tickStart > attachStart && controllerStart > tickStart && controllerEnd > controllerStart);
+  const controller = runtime.slice(controllerStart, controllerEnd);
+
+  assert.match(runtime, /layoutCutoutNodeContext/);
+  assert.match(controller, /\.\.\.\(stickersMode \? \{\} : \{/);
+  assert.match(controller, /getViewportSize:\s*\(\) =>/);
+  assert.match(controller, /canvas\.getBoundingClientRect\(\)/);
+  assert.match(controller, /getInvert:\s*\(\) =>/);
+  assert.match(controller, /const uiSettings = loadSharedUiSettings\(\)/);
+  assert.doesNotMatch(controller, /getCachedState/);
+  assert.match(controller, /invert_view_x/);
+  assert.match(controller, /invert_view_y/);
+  assert.match(runtime, /kind:\s*"pan"/);
+  assert.match(runtime, /kind:\s*"roll"/);
+  assert.match(runtime, /cutoutDrag\.kind === "pan"[\s\S]*?type:\s*"pan-camera"/);
+  assert.match(runtime, /beginCutoutRollGesture\(/);
+  assert.match(runtime, /updateCutoutRollGesture\(/);
+  assert.match(runtime, /type:\s*"scale-fov"/);
+  assert.match(runtime, /action\?\.type === "add-frame"[\s\S]*?yawDeg:[\s\S]*?pitchDeg:[\s\S]*?viewFovDeg:/);
+  assert.match(
+    runtime,
+    /function syncRuntimeCutoutComposite[\s\S]*?buildRuntimePreviewScene[\s\S]*?buildRuntimePreviewTextures[\s\S]*?buildRuntimeCutoutLayerEntries[\s\S]*?rasterEntries:\s*layerEntries/,
+  );
+  assert.match(
+    runtime,
+    /if \(!shot\)[\s\S]*?syncRuntimeCutoutComposite\([\s\S]*?renderToContext\([\s\S]*?buildPanoramaViewParamsFromRuntime/,
+  );
+  assert.match(runtime, /const zeroShotRenderScale = [\s\S]*?interaction\?\.state\?\.drag\?\.active[\s\S]*?interaction\?\.state\?\.inertia\?\.active[\s\S]*?0\.5[\s\S]*?: 1/);
+  assert.match(runtime, /renderToContext\([\s\S]*?renderScale: zeroShotRenderScale/);
+  assert.doesNotMatch(runtime, /Open editor and add frame/);
+  assert.match(runtime, /const wheelTargets = stickersMode \? \[wrap, canvas\] : \[wrap\]/);
+  assert.match(runtime, /root\.setAttribute\("data-capture-wheel", "true"\)/);
+  assert.match(runtime, /root\.tabIndex\s*=\s*0/);
+  assert.match(runtime, /wrap\.addEventListener\("pointerenter", onWheelCapturePointerEnter\)/);
+  assert.match(runtime, /root\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(runtime, /wrap\.removeEventListener\("pointerenter", onWheelCapturePointerEnter\)/);
+  assert.match(runtime, /nodeSurfaceWheelCommitTimer/);
+  assert.doesNotMatch(runtime, /button:active\s*\{[\s\S]*?translateY\(1px\)/);
+});
+
+test("modal frame view adds shared Shift-roll without removing legacy Alt-roll", async () => {
+  const editor = await read("../web_src/pano_editor.js");
+
+  assert.match(editor, /beginCutoutRollGesture\(/);
+  assert.match(editor, /updateCutoutRollGesture\(/);
+  assert.match(editor, /e\.altKey \|\| e\.shiftKey/);
+  assert.match(editor, /allowAlt: true/);
+  assert.match(editor, /uiState\.frameRail\.disabled = readOnly \|\| frameShot\?\.locked === true/);
+  assert.match(editor, /uiState\.frameRail\.aspectLabel = frameShot \? getCutoutAspectLabel\(frameShot\) : ""/);
+  assert.match(editor, /!shot \|\| shot\.locked === true \|\| !rect/);
+  assert.match(editor, /const enabled = !!inspectorSelected && !isItemLocked\(inspectorSelected\)/);
+  assert.match(editor, /selectedKind === "stroke" \|\| isItemLocked\(selected\)/);
+});
+
+test("node surface owns teardown and keeps the Full Editor state barrier", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const editor = await read("../web_src/pano_editor.js");
+
+  assert.match(runtime, /nodeSurfaceSession\?\.destroy\?\.\(\)/);
+  assert.match(runtime, /nodeSurfaceVueApp\?\.unmount\?\.\(\)/);
+  assert.match(runtime, /nodeSurfaceSession && nodeSurfaceMounted/);
+  assert.match(runtime, /releasePointerCapture/);
+  assert.ok(editor.includes("await flushPanoStateProducers(node);"));
+});
+
+test("DOM preview camera frames do not repaint the host graph canvas", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const tickStart = runtime.indexOf("  const tick = (ts) => {");
+  const tickEnd = runtime.indexOf("  const interaction = createPanoInteractionController({", tickStart);
+  assert.ok(tickStart >= 0 && tickEnd > tickStart);
+  const tick = runtime.slice(tickStart, tickEnd);
+
+  assert.match(tick, /drawCanvas\(node, canvas, null, interaction\)/);
+  assert.doesNotMatch(tick, /node\.setDirtyCanvas/);
+  assert.match(runtime, /if \(mode === "cutout" && node\.__panoCutoutNodeSurfaceState !== state\)/);
+});
+
+test("zero-shot wheel zoom does not repaint the host graph canvas", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const wheelStart = runtime.indexOf("  const onPreviewWheel = (ev) => {");
+  const wheelEnd = runtime.indexOf("  const wheelTargets =", wheelStart);
+  assert.ok(wheelStart >= 0 && wheelEnd > wheelStart);
+  const wheel = runtime.slice(wheelStart, wheelEnd);
+  const zeroShotStart = wheel.indexOf("      } else if (!shot) {");
+  const zeroShotEnd = wheel.indexOf("      }\n      ev.preventDefault", zeroShotStart);
+  assert.ok(zeroShotStart >= 0 && zeroShotEnd > zeroShotStart);
+  const zeroShotWheel = wheel.slice(zeroShotStart, zeroShotEnd);
+
+  assert.match(zeroShotWheel, /interaction\.applyWheelEvent\(ev\)/);
+  assert.doesNotMatch(zeroShotWheel, /setDirty/);
+});
+
+test("DOM preview inertia keeps at most one animation frame scheduled", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+
+  assert.match(runtime, /const requestDraw = \(\) => \{[\s\S]*?if \(!state\.inTick && !state\.raf\)/);
+  assert.match(runtime, /const tick = \(ts\) => \{[\s\S]*?state\.inTick = true;[\s\S]*?state\.inTick = false;[\s\S]*?if \(\(moving \|\| state\.needsDraw\) && !state\.raf\)/);
+});

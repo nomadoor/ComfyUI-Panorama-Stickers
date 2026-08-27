@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   clampFovPairToGate,
   contextHalfExtentsPx,
+  createDefaultCutoutShot,
   cutoutFilmPointToWorldDir,
   deriveHorizontalFovDeg,
   deriveCutoutAspectFromFov,
@@ -99,6 +100,20 @@ test("cutout shot normalization derives the canonical aspect and removes legacy 
   close(deriveCutoutAspectFromFov(normalized), 1);
   assert.equal(deriveCutoutAspectLabelFromFov(normalized), "1:1");
   assert.equal(getCutoutAspectLabel({ ...normalized, aspect_id: "16:9" }), "16:9");
+});
+
+test("a newly added cutout frame starts square instead of inheriting the ERP aspect", () => {
+  const shot = createDefaultCutoutShot({
+    id: "frame_1",
+    yawDeg: 18,
+    pitchDeg: -7,
+    viewFovDeg: 100,
+  });
+
+  assert.equal(shot.id, "frame_1");
+  assert.equal(shot.aspect_id, "1:1");
+  assert.equal(shot.hFOV_deg, shot.vFOV_deg);
+  assert.equal(deriveCutoutAspectFromFov(shot), 1);
 });
 
 test("wheel scaling preserves tangent aspect and rejects an out-of-range pair atomically", () => {
@@ -274,7 +289,7 @@ test("frame roll accumulation stays continuous across the atan2 seam", () => {
 
 test("frame roll snapping and normalization follow the interaction contract", () => {
   close(resolveFrameRollDeg(0, 14.1 * Math.PI / 180, { shiftKey: true }), 15);
-  close(resolveFrameRollDeg(0, 0.8 * Math.PI / 180), 0);
+  close(resolveFrameRollDeg(0, 0.8 * Math.PI / 180), 0.8);
   close(resolveFrameRollDeg(0, 0.8 * Math.PI / 180, { altKey: true }), 0.8);
   assert.equal(wrapRollDeg(-180), 180);
   assert.equal(wrapRollDeg(541), -179);

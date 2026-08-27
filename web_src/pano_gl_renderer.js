@@ -1039,10 +1039,8 @@ export function createPanoGlRenderer(options = {}) {
     return surface;
   }
 
-  function renderScene(input = {}) {
-    if (!init()) return null;
-    setViewport(input.width, input.height, input.dpr || 1);
-    if (!setupFrame()) return null;
+  function applySceneState(input = {}) {
+    if (!init()) return false;
     const hasBackgroundSource = Object.prototype.hasOwnProperty.call(input, "backgroundSource");
     const hasPaintSource = Object.prototype.hasOwnProperty.call(input, "paintSource");
     const hasMaskSource = Object.prototype.hasOwnProperty.call(input, "maskSource");
@@ -1076,6 +1074,14 @@ export function createPanoGlRenderer(options = {}) {
     if (Object.prototype.hasOwnProperty.call(input, "coverageDeg")) {
       currentState.coverageDeg = Number(input.coverageDeg || 360) === 180 ? 180 : 360;
     }
+    return true;
+  }
+
+  function renderScene(input = {}) {
+    if (!init()) return null;
+    setViewport(input.width, input.height, input.dpr || 1);
+    if (!setupFrame()) return null;
+    if (!applySceneState(input)) return null;
     if (backgroundRevision) {
       drawBackground(input.view, {
         ...currentState,
@@ -1092,15 +1098,7 @@ export function createPanoGlRenderer(options = {}) {
   }
 
   function syncState(input = {}) {
-    if (!init()) return false;
-    const ok = renderScene({
-      ...input,
-      view: { mode: "panorama", yawDeg: 0, pitchDeg: 0, fovDeg: 100, coverageDeg: Number(input.coverageDeg || 360) === 180 ? 180 : 360 },
-      width: Number(surface.width || 1),
-      height: Number(surface.height || 1),
-      dpr: 1,
-    });
-    return !!ok;
+    return applySceneState(input);
   }
 
   function screenToErpUv(params, x, y) {

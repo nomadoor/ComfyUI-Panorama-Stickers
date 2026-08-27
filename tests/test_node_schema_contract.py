@@ -47,7 +47,7 @@ EXPECTED_SCHEMAS = {
             },
             "state_json": {
                 "default": "",
-                "multiline": False,
+                "multiline": True,
                 "dynamic_prompts": False,
                 "force_input": None,
             },
@@ -245,3 +245,12 @@ def test_v3_schema_preserves_public_ports(node_id):
         for output in schema.outputs
     ] == expected["outputs"]
     assert [hidden.value for hidden in schema.hidden] == expected["hidden"]
+
+
+@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaCutout"])
+def test_internal_state_widget_is_advanced_in_v3_schema(node_id):
+    schema = NODE_CLASS_MAPPINGS[node_id].define_schema()
+    state_input = next(input_ for input_ in schema.inputs if input_.id == "state_json")
+
+    assert state_input.advanced is True
+    assert state_input.multiline is True

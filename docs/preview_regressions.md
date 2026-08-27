@@ -2,7 +2,7 @@
 
 This file is the permanent regression log for node preview sizing and interaction.
 
-## Current Baseline (2026-02-28)
+## Current Baseline (2026-08-27)
 
 This file contains historical incidents, including superseded approaches.
 The current stable baseline is:
@@ -10,14 +10,18 @@ The current stable baseline is:
 1. Public preview node is `PanoramaPreview` only.
 2. `PanoramaPreview` uses the dedicated runtime in `web/pano_preview_previewnode.js`.
 3. `PanoramaCutout` remains on the shared runtime in `web/pano_preview_runtime.js`.
-4. Editor entry is widget-only for `PanoramaStickers`, `PanoramaCutout`, and `PanoramaPreview`.
-5. Embedded editor buttons inside preview surfaces are not part of the stable design.
+4. `PanoramaStickers`と`PanoramaPreview`のeditor導線はwidget-onlyとする。
+5. `PanoramaCutout`だけは承認済みの例外とし、Vue frame surfaceに`Full Editor`を置く。
+   標準LiteGraph buttonはsurfaceのmount失敗時にも利用できる状態を保ち、mount成功後に限って
+   非表示にする。
 6. Runtime `node.size` correction is not an acceptable fix for live preview layout.
 7. On Node2, `PanoramaPreview` wheel capture requires both:
    - `data-capture-wheel="true"` on the DOM widget root
    - actual focus inside that same root (current implementation: `tabindex="0"` + focus on pointerdown)
 8. For Node2 wheel issues, do not start by moving listeners between `root/canvas/wrap`.
    First verify the frontend wheel handoff contract (`data-capture-wheel` + focus) is satisfied.
+9. `PanoramaCutout`のframe surfaceはPerspective Editorと同じく、stageへのpointer enterで
+   focusable DOM widget rootへfocusを移す。属性だけではNode 2.0のgraph zoomを防げない。
 
 ## Incident ID Convention
 - Format: `PREVIEW-YYYYMMDD-XX`

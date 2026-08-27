@@ -5,6 +5,7 @@ import {
   makePanoEditorHistorySnapshot,
   normalizeCoverageValue,
   parsePanoEditorState,
+  retainActiveCutoutShot,
 } from "../web_src/pano_editor_state.js";
 
 test("coverage accepts only the supported front or full panorama values", () => {
@@ -163,6 +164,19 @@ test("history snapshots are detached and exclude runtime-only state", () => {
   snapshot.stickers[0].crop.x = 0.75;
   assert.equal(state.assets.asset_1.name, "source.png");
   assert.equal(state.stickers[0].crop.x, 0.25);
+});
+
+test("clearing Cutout content retains the active frame and legacy empty state stays empty", () => {
+  const shots = [{ id: "frame_a" }, { id: "frame_b" }];
+
+  assert.deepEqual(retainActiveCutoutShot(shots, "frame_b"), {
+    shots: [{ id: "frame_b" }],
+    selectedShotId: "frame_b",
+  });
+  assert.deepEqual(retainActiveCutoutShot([], "missing"), {
+    shots: [],
+    selectedShotId: null,
+  });
 });
 
 test("omitted parse options retain the existing widget defaults", () => {

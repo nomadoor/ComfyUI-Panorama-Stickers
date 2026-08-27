@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createPanoEditorExtension,
+  flushPanoStateProducers,
   queuePendingStickerOperation,
 } from "../web_src/pano_editor_extension.js";
 
@@ -93,7 +94,88 @@ test("cutout lifecycle attaches once and initializes only an invalid node size",
   assert.deepEqual(node.size, [360, 260]);
   assert.equal(attached.length, 1);
   assert.equal(node.widgets.filter((widget) => widget.name === "Open Cutout Editor").length, 1);
+  assert.notEqual(node.widgets.find((widget) => widget.name === "Open Cutout Editor").hidden, true);
   assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
+  const initialState = JSON.parse(node.widgets.find((widget) => widget.name === "state_json").value);
+  assert.equal(initialState.shots.length, 1);
+  assert.equal(initialState.shots[0].aspect_id, "1:1");
+  assert.equal(initialState.active.selected_shot_id, initialState.shots[0].id);
+});
+
+test("restoring legacy empty Cutout states overrides the new-node default", () => {
+  function NodeType() {}
+  NodeType.prototype.onConfigure = function ({ stateJson }) {
+    this.widgets.find((widget) => widget.name === "state_json").value = stateJson;
+  };
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaCutout" });
+  const node = makeNode([360, 260]);
+
+  NodeType.prototype.onNodeCreated.call(node);
+  assert.equal(JSON.parse(node.widgets.find((widget) => widget.name === "state_json").value).shots.length, 1);
+
+  for (const legacyEmpty of [
+    "",
+    JSON.stringify({ shots: [], active: { selected_shot_id: null } }),
+  ]) {
+    NodeType.prototype.onConfigure.call(node, { stateJson: legacyEmpty });
+    assert.equal(node.widgets.find((widget) => widget.name === "state_json").value, legacyEmpty);
+  }
+});
+
+test("cutout lifecycle hides the fallback editor button only after the node surface mounts", () => {
+  function NodeType() {}
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout(node) { node.__panoCutoutNodeSurface = { mounted: true }; },
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaCutout" });
+  const node = makeNode([360, 260]);
+
+  NodeType.prototype.onNodeCreated.call(node);
+
+  assert.equal(node.widgets.find((widget) => widget.name === "Open Cutout Editor").hidden, true);
+});
+
+test("cutout lifecycle restores a visible fallback button when a later node surface mount fails", () => {
+  function NodeType() {}
+  let mountSucceeds = true;
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout(node) {
+      node.__panoCutoutNodeSurface = mountSucceeds ? { mounted: true } : null;
+    },
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaCutout" });
+  const node = makeNode([360, 260]);
+
+  NodeType.prototype.onNodeCreated.call(node);
+  const button = node.widgets.find((widget) => widget.name === "Open Cutout Editor");
+  assert.deepEqual(button.computeSize(), [0, 0]);
+
+  mountSucceeds = false;
+  node.__panoPreviewAttached = false;
+  NodeType.prototype.onConfigure.call(node);
+
+  assert.equal(button.hidden, false);
+  assert.equal(button.options.hidden, false);
+  assert.ok(button.computeSize()[0] > 0);
+  assert.ok(button.computeSize()[1] > 0);
 });
 
 test("coverage changes preserve the widget callback and invalidate every preview cache", () => {
@@ -224,6 +306,50 @@ test("state serialization waits for pending sticker uploads before flushing the 
 
   resolveUpload();
   assert.equal(await serialized, "replacement-state");
+});
+
+test("state serialization flushes every registered state producer before reading the widget", async () => {
+  function NodeType() {}
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaCutout" });
+  const node = makeNode();
+  NodeType.prototype.onNodeCreated.call(node);
+  const stateWidget = node.widgets.find((widget) => widget.name === "state_json");
+  const calls = [];
+  node.__panoStateFlushers = new Set([
+    async () => {
+      await Promise.resolve();
+      calls.push("node-surface");
+      stateWidget.value = "node-surface-state";
+    },
+    () => calls.push("secondary"),
+  ]);
+
+  assert.equal(await stateWidget.serializeValue(node, 0), "node-surface-state");
+  assert.deepEqual(calls, ["node-surface", "secondary"]);
+});
+
+test("state producers can be flushed through the same public seam before opening an editor", async () => {
+  const calls = [];
+  const node = {
+    __panoStateFlushers: new Set([
+      async () => {
+        await Promise.resolve();
+        calls.push("node-surface");
+      },
+    ]),
+    __panoFlushStateBeforeQueue: () => calls.push("modal"),
+  };
+
+  await flushPanoStateProducers(node);
+  assert.deepEqual(calls, ["node-surface", "modal"]);
 });
 
 test("state serialization rejects instead of queueing stale state when a sticker upload fails", async () => {

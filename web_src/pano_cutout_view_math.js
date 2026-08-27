@@ -26,10 +26,9 @@ export function shortestAngleDeltaRad(current, previous) {
   return delta;
 }
 
-export function resolveFrameRollDeg(startRollDeg, accumulatedRad, { shiftKey = false, altKey = false } = {}) {
+export function resolveFrameRollDeg(startRollDeg, accumulatedRad, { shiftKey = false } = {}) {
   let roll = finiteOr(startRollDeg, 0) + finiteOr(accumulatedRad, 0) * RAD2DEG;
   if (shiftKey) roll = Math.round(roll / 15) * 15;
-  else if (!altKey && Math.abs(wrapRollDeg(roll)) <= 1) roll = 0;
   return wrapRollDeg(roll);
 }
 
@@ -240,6 +239,25 @@ export function normalizeCutoutShotItem(raw) {
   delete next.out_h;
   next.aspect_id = deriveCutoutAspectLabelFromFov(next);
   return next;
+}
+
+export function createDefaultCutoutShot({
+  id = "",
+  yawDeg = 0,
+  pitchDeg = 0,
+  viewFovDeg = 100,
+} = {}) {
+  const fov = clamp(Math.min(42, finiteOr(viewFovDeg, 100) * 0.42), 8, 96);
+  return normalizeCutoutShotItem({
+    id: String(id),
+    label: "Frame 1",
+    yaw_deg: finiteOr(yawDeg, 0),
+    pitch_deg: clamp(finiteOr(pitchDeg, 0), -89.9, 89.9),
+    roll_deg: 0,
+    hFOV_deg: fov,
+    vFOV_deg: fov,
+    locked: false,
+  });
 }
 
 export function getCutoutAspectLabel(item) {

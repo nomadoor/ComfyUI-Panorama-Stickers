@@ -721,8 +721,9 @@ class PanoramaStickersNode(io.ComfyNode):
                 io.String.Input(
                     "state_json",
                     default="",
-                    multiline=False,
+                    multiline=True,
                     dynamic_prompts=False,
+                    advanced=True,
                 ),
                 io.Image.Input("bg_erp", optional=True),
                 io.Image.Input("sticker_image", optional=True),
@@ -1004,6 +1005,7 @@ class PanoramaCutoutNode(io.ComfyNode):
                     default="",
                     multiline=True,
                     dynamic_prompts=False,
+                    advanced=True,
                 ),
                 io.Float.Input("output_megapixels", default=1.0, min=0.01, step=0.05),
             ] + _common_video_preview_inputs(),

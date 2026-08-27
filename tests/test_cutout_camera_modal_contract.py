@@ -144,7 +144,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         preview_js = (REPO_ROOT / "web_src" / "pano_preview_runtime.js").read_text(encoding="utf-8")
         self.assertIn('buildPanoramaCompositeDescriptor', preview_js)
         self.assertIn('buildCutoutViewParamsFromShot(shot)', preview_js)
-        self.assertIn('const liveCutoutDrawn = node.__panoRuntimeCore.renderToContext(', preview_js)
+        self.assertIn('const liveCutoutDrawn = runtimeCore.renderToContext(', preview_js)
         self.assertNotIn('} else if (bgReady) {\n        statusType = "empty";\n        hintText = "Open editor or run node";', preview_js)
 
     def test_linked_input_preview_cache_keeps_ready_image_during_reload(self):

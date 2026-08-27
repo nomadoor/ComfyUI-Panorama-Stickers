@@ -25,6 +25,15 @@ def run_node_json(script: str):
 
 
 class TestPanoRenderCore(unittest.TestCase):
+    def test_renderer_state_sync_does_not_render_a_hidden_default_view(self):
+        renderer_js = (REPO_ROOT / "web_src" / "pano_gl_renderer.js").read_text(encoding="utf-8")
+        sync_start = renderer_js.index("  function syncState(input = {}) {")
+        sync_end = renderer_js.index("\n  function screenToErpUv", sync_start)
+        sync_source = renderer_js[sync_start:sync_end]
+
+        assert "applySceneState(input)" in sync_source
+        assert "renderScene(" not in sync_source
+
     def test_state_controller_normalizes_descriptor(self):
         script = textwrap.dedent(
             """
@@ -230,6 +239,52 @@ class TestPanoRenderCore(unittest.TestCase):
         assert result["calls"][0] == ["ensureTarget", "preview", 64, 32]
         assert result["calls"][1] == ["clearRect", 0, 0, 64, 32]
         assert result["calls"][2] == ["drawImage", "surface", 0, 0, 64, 32]
+
+    def test_render_to_context_can_lower_internal_resolution_without_shrinking_destination(self):
+        script = textwrap.dedent(
+            """
+            import { createPanoramaRenderCore } from "./web_src/pano_render_core.js";
+
+            const calls = [];
+            const core = createPanoramaRenderCore({
+              rendererFactory() {
+                return {
+                  renderScene(input) {
+                    calls.push(["render", input.width, input.height]);
+                    return { tag: "surface" };
+                  },
+                  isSupported() { return true; },
+                  dispose() {},
+                };
+              },
+              targetPoolFactory() {
+                return { ensureTarget() { return null; }, clearTarget() {}, dispose() {} };
+              },
+            });
+            core.syncState({ stateRevision: "r1" });
+            const ctx = {
+              canvas: { tag: "destination" },
+              drawImage(surface, x, y, width, height) {
+                calls.push(["present", surface.tag, x, y, width, height]);
+              },
+            };
+            const drawn = core.renderToContext(
+              ctx,
+              { x: 5, y: 7, w: 200, h: 100 },
+              { mode: "panorama", yawDeg: 10, pitchDeg: 5, fovDeg: 90 },
+              { renderScale: 0.5, dpr: 1 },
+            );
+            console.log(JSON.stringify({ drawn, calls }));
+            """
+        )
+        result = run_node_json(script)
+        assert result == {
+            "drawn": True,
+            "calls": [
+                ["render", 100, 50],
+                ["present", "surface", 5, 7, 200, 100],
+            ],
+        }
 
 
 if __name__ == "__main__":

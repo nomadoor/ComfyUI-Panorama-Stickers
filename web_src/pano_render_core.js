@@ -52,10 +52,11 @@ export function createPanoramaRenderCore(options = {}) {
 
   function renderToContext(ctx, rect, view = {}, params = {}) {
     if (!rect) return false;
+    const renderScale = Math.min(1, Math.max(0.1, Number(params.renderScale ?? 1)));
     const surface = renderView(view, {
       ...params,
-      width: rect.w,
-      height: rect.h,
+      width: Math.max(1, Math.round(rect.w * renderScale)),
+      height: Math.max(1, Math.round(rect.h * renderScale)),
     });
     if (!surface) return false;
     if (!ctx) {

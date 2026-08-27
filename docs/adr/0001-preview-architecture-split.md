@@ -88,3 +88,18 @@ The stable implementation that finally held was stricter than the original fallb
 
 The original “single public node + internal fallback” direction was correct at the public API level, but too loose operationally.
 What actually stabilized the feature was not more fallback; it was stricter separation of responsibilities.
+
+## 2026-08-27 Amendment
+
+`PanoramaCutout` には、widget-only のeditor導線ルールに対する例外を1つ設ける。
+
+1. Cutoutはshared runtimeと既存のDOM preview mountを維持する。
+2. Vue node surfaceは、そのpreview上にframe shape controlと`Full Editor` actionを配置してよい。
+   これは第二のeditorではない。詳細なcamera編集は引き続き既存modalが担当する。
+3. 標準LiteGraph editor buttonはmount失敗時のfallbackとして残す。Vue surfaceのmount成功後に
+   限って非表示にし、editorへの導線を失わないようにする。
+4. `PanoramaStickers`と`PanoramaPreview`はwidget-onlyを維持する。このamendmentは、それらの
+   preview surfaceへのeditor action埋め込みを許可しない。
+
+interactionとstateの契約は
+[`docs/cutout-node-frame-surface-spec.md`](../cutout-node-frame-surface-spec.md)に記録する。

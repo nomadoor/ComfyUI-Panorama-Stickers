@@ -1,5 +1,6 @@
 import * as appModule from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
+import { createApp, reactive } from "vue";
 import { createPanoramaRenderCore } from "./pano_render_core.js";
 import { buildPanoramaCompositeDescriptor, buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
@@ -24,6 +25,19 @@ import {
   buildStickerSceneFromState,
   buildStickerTexturesFromState,
 } from "./pano_gl_scene.js";
+import {
+  beginCutoutRollGesture,
+  createCutoutNodeSurfaceSession,
+  CUTOUT_NODE_SURFACE_MIN_HEIGHT,
+  cutoutNodeSurfaceModel,
+  fitCutoutNodeFrame,
+  layoutCutoutNodeContext,
+  resolveCutoutNodeSurfaceShot,
+  updateCutoutRollGesture,
+} from "./pano_cutout_node_surface.js";
+import { fitFocalPx } from "./pano_cutout_view_math.js";
+import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
+import { installPanoSuiteStylesheet } from "./pano_styles.js";
 const { app } = appModule;
 
 function getAnimPreviewWidgetName() {
@@ -139,10 +153,6 @@ function ensurePreviewModeCss() {
       border-color: rgba(120,120,130,1) !important;
       color: #fff !important;
       box-shadow: 0 0 8px rgba(0,0,0,0.4);
-    }
-    .pano-node-preview-dom button:active {
-      background: rgba(28,28,30,1) !important;
-      transform: translateY(1px);
     }
   `;
   document.head.appendChild(style);
@@ -1519,10 +1529,10 @@ function drawCenteredAutoFitHint(ctx, rect, text, options = {}) {
   ctx.restore();
 }
 
-function setCutoutEmptyHint(node, visible, text = "Open editor and add frame") {
+function setCutoutEmptyHint(node, visible, text = "Connect ERP image") {
   const el = node?.__panoDomPreview?.emptyHintEl;
   if (!el) return;
-  el.textContent = String(text || "Open editor and add frame");
+  el.textContent = String(text || "Connect ERP image");
   el.style.display = visible ? "flex" : "none";
 }
 
@@ -1816,6 +1826,35 @@ function buildRuntimeCutoutLayerEntries(node, state) {
       visible: true,
     };
   }).filter(Boolean);
+}
+
+function syncRuntimeCutoutComposite(node, state, bgImg, revisionScope = "") {
+  const scene = buildRuntimePreviewScene(node, state);
+  const textures = buildRuntimePreviewTextures(node, state, scene);
+  const layerEntries = buildRuntimeCutoutLayerEntries(node, state);
+  const descriptor = buildPanoramaCompositeDescriptor({
+    stateRevision: [
+      "runtime_cutout_scene",
+      String(bgImg.currentSrc || bgImg.src || ""),
+      Number(bgImg.naturalWidth || bgImg.width || 0),
+      Number(bgImg.naturalHeight || bgImg.height || 0),
+      Number(state?.coverage || 360) === 180 ? 180 : 360,
+      String(revisionScope || ""),
+      Array.isArray(textures) ? textures.map((item) => `${String(item?.assetId || "")}:${String(item?.revision || "")}`).join(",") : "",
+      Array.isArray(layerEntries) ? layerEntries.map((entry) => `${String(entry?.id || "")}:${String(entry?.revision || "")}:${Number(entry?.zIndex || 0)}`).join(",") : "",
+    ].join("|"),
+    backgroundSource: bgImg,
+    backgroundRevision: String(bgImg.currentSrc || bgImg.src || ""),
+    coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
+    scene,
+    textures,
+    rasterEntries: layerEntries,
+    backgroundOpacity: 1,
+    showMaskTint: false,
+  });
+  if (!node.__panoRuntimeCore) node.__panoRuntimeCore = createPanoramaRenderCore();
+  node.__panoRuntimeCore.syncState(descriptor);
+  return node.__panoRuntimeCore;
 }
 
 
@@ -2567,6 +2606,10 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
   const mode = String(node.__panoPreviewMode || "stickers");
   ensureRenderCache(node, mode);
   const state = getCachedState(node);
+  if (mode === "cutout" && node.__panoCutoutNodeSurfaceState !== state) {
+    node.__panoCutoutNodeSurfaceState = state;
+    node.__panoCutoutNodeSurface?.session?.refresh?.();
+  }
   const wrap = canvas.parentElement;
   const dpr = 1;
   const cw = Math.max(1, Number(wrap?.clientWidth || canvas.clientWidth || 0));
@@ -2596,7 +2639,8 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
       : 1;
     const cutoutView = shot ? buildCutoutViewParamsFromShot(shot) : null;
     const aspect = clamp(Number(cutoutView?.aspect || ownAspect || 1), 0.05, 20.0);
-    const contain = containRect(rect, aspect);
+    const frame = fitCutoutNodeFrame(rect, aspect);
+    node.__panoCutoutNodeFrame = frame;
     const uiScale = getNodeUiScale(canvas, rect);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2604,61 +2648,99 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
     ctx.fillRect(0, 0, surfW, surfH);
 
     let statusType = "none";
-    let hintText = "Open editor and add frame";
+    let hintText = "Connect ERP image";
     let loadingSrc = "";
 
     loadingSrc = String(bgImg?.src || "");
     if (!shot) {
-      if (bgReady) {
-        const paintSurface = getNodePreviewPaintSurface(node, state);
-        const previewSource = (paintSurface?.source)
-          ? buildBgPaintCanvas(node, bgImg, paintSurface.source, paintSurface.revision || "")
-          : bgImg;
-        drawContainedImagePreview(ctx, previewSource, rect, 0.44);
+      const lastShot = node.__panoLastCutoutShot;
+      if (!node.__panoPreviewView) {
+        node.__panoPreviewView = lastShot
+          ? {
+            yaw: Number(lastShot.yaw_deg || 0),
+            pitch: Number(lastShot.pitch_deg || 0),
+            fov: 100,
+          }
+          : { yaw: 0, pitch: 0, fov: 100 };
       }
-      statusType = "empty";
-      hintText = "Open editor and add frame";
+      if (bgReady) {
+        const runtimeCore = syncRuntimeCutoutComposite(node, state, bgImg, "zero_shot_viewer");
+        const zeroShotRenderScale = (
+          interaction?.state?.drag?.active === true
+          || interaction?.state?.inertia?.active === true
+        ) ? 0.5 : 1;
+        const panoramaDrawn = runtimeCore.renderToContext(
+          ctx,
+          rect,
+          buildPanoramaViewParamsFromRuntime(node.__panoPreviewView, state?.coverage),
+          { width: rect.w, height: rect.h, dpr: 1, renderScale: zeroShotRenderScale },
+        );
+        if (!panoramaDrawn) {
+          statusType = "empty";
+          hintText = "Open editor or run node";
+        }
+      } else if (bgImg) {
+        statusType = "loading";
+      } else {
+        statusType = "empty";
+        hintText = "Connect ERP image";
+      }
     } else if (bgImg && !bgReady) {
       statusType = "loading";
     } else if (bgReady) {
-      const scene = buildRuntimePreviewScene(node, state);
-      const textures = buildRuntimePreviewTextures(node, state, scene);
-      const layerEntries = buildRuntimeCutoutLayerEntries(node, state);
-      const descriptor = buildPanoramaCompositeDescriptor({
-        stateRevision: [
-          "runtime_cutout_scene",
-          String(bgImg.currentSrc || bgImg.src || ""),
-          Number(bgImg.naturalWidth || bgImg.width || 0),
-          Number(bgImg.naturalHeight || bgImg.height || 0),
-          Number(state?.coverage || 360) === 180 ? 180 : 360,
-          String(shot?.id || ""),
-          Array.isArray(textures) ? textures.map((item) => `${String(item?.assetId || "")}:${String(item?.revision || "")}`).join(",") : "",
-          Array.isArray(layerEntries) ? layerEntries.map((entry) => `${String(entry?.id || "")}:${String(entry?.revision || "")}:${Number(entry?.zIndex || 0)}`).join(",") : "",
-        ].join("|"),
-        backgroundSource: bgImg,
-        backgroundRevision: String(bgImg.currentSrc || bgImg.src || ""),
-        coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
-        scene,
-        textures,
-        rasterEntries: layerEntries,
-        backgroundOpacity: 1,
-        showMaskTint: false,
-      });
-      if (!node.__panoRuntimeCore) node.__panoRuntimeCore = createPanoramaRenderCore();
-      node.__panoRuntimeCore.syncState(descriptor);
-      const liveCutoutDrawn = node.__panoRuntimeCore.renderToContext(
+      const runtimeCore = syncRuntimeCutoutComposite(node, state, bgImg, shot?.id || "");
+      const contextLayout = layoutCutoutNodeContext({ width: surfW, height: surfH }, frame, shot);
+      const contextRect = contextLayout.rect;
+      const contextShot = buildCutoutViewParamsFromShot(contextLayout.shot);
+      let fallbackDrawn = true;
+      if (contextLayout.fallback) {
+        const fallbackRect = contextLayout.fallback.rect;
+        const fallbackShot = buildCutoutViewParamsFromShot(contextLayout.fallback.shot);
+        fallbackDrawn = runtimeCore.renderToContext(
+          ctx,
+          fallbackRect,
+          fallbackShot,
+          { width: fallbackRect.w, height: fallbackRect.h, dpr: 1 },
+        );
+      }
+      const liveCutoutDrawn = runtimeCore.renderToContext(
         ctx,
-        contain,
-        buildCutoutViewParamsFromShot(shot),
-        { width: contain.w, height: contain.h, dpr: 1 },
+        contextRect,
+        contextShot,
+        { width: contextRect.w, height: contextRect.h, dpr: 1 },
       );
-      if (!liveCutoutDrawn) {
+      let exactFrameDrawn = true;
+      if (contextLayout.fallback) {
+        exactFrameDrawn = runtimeCore.renderToContext(
+          ctx,
+          frame,
+          buildCutoutViewParamsFromShot(shot),
+          { width: frame.w, height: frame.h, dpr: 1 },
+        );
+      }
+      if (!fallbackDrawn || !liveCutoutDrawn || !exactFrameDrawn) {
         statusType = "empty";
         hintText = "Open editor or run node";
       }
     } else {
       statusType = "empty";
       hintText = "Connect ERP image";
+    }
+
+    if (shot) {
+      node.__panoLastCutoutShot = { ...shot };
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.58)";
+      ctx.beginPath();
+      ctx.rect(0, 0, surfW, surfH);
+      ctx.rect(frame.x, frame.y, frame.w, frame.h);
+      ctx.fill("evenodd");
+      ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,221,87,0.72)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(frame.x + 0.5, frame.y + 0.5, Math.max(0, frame.w - 1), Math.max(0, frame.h - 1));
+      ctx.restore();
     }
 
     if (statusType === "loading") {
@@ -3128,20 +3210,26 @@ function armPreviewBootMinHeight(node, minHeight = 0, requestDraw = null, durati
   }, Math.max(0, Number(durationMs || 0)));
 }
 
-function createCoreManagedDomWidgetOptions(node, requestDraw = null, bootMinHeight = 0) {
+function createCoreManagedDomWidgetOptions(node, requestDraw = null, bootMinHeight = 0, minHeight = 0) {
+  const persistentMinHeight = Math.max(0, Number(minHeight || 0));
   return {
     serialize: false,
     hideOnZoom: false,
     getValue() { return ""; },
     setValue() { },
     getMinHeight() {
-      if (node?.__panoBootMinHeightActive) return Math.max(0, Number(bootMinHeight || 0));
-      return 0;
+      if (node?.__panoBootMinHeightActive) {
+        return Math.max(persistentMinHeight, Math.max(0, Number(bootMinHeight || 0)));
+      }
+      return persistentMinHeight;
     },
     // Node2 can collapse DOM widget height to 0 when only "auto" is returned.
     // While bootstrapping, provide an explicit numeric height contract.
     getHeight() {
-      if (node?.__panoBootMinHeightActive) return Math.max(0, Number(bootMinHeight || 0));
+      if (node?.__panoBootMinHeightActive) {
+        return Math.max(persistentMinHeight, Math.max(0, Number(bootMinHeight || 0)));
+      }
+      if (persistentMinHeight > 0) return persistentMinHeight;
       return "auto";
     },
     afterResize() {
@@ -3328,7 +3416,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   executedRefreshMonitor.register(node);
   const stickersMode = node.__panoPreviewMode === "stickers";
   const noLegacyFallback = options.__noLegacyFallback === true;
-  const interactiveView = node.__panoPreviewMode !== "cutout";
+  const panoramaInteractiveView = node.__panoPreviewMode !== "cutout";
   node.__panoAttachOptions = { ...options, mode: node.__panoPreviewMode };
   node.__panoPreviewNoPreview = options.noPreview === true;
   node.__panoPreviewButtonText = String(options.buttonText || (node.__panoPreviewMode === "cutout" ? "Open Cutout Editor" : "Open Stickers Editor"));
@@ -3385,6 +3473,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
 
   const noPreview = options.noPreview === true;
   const bootMinHeight = stickersMode || noPreview ? 0 : 56;
+  const surfaceMinHeight = stickersMode || noPreview ? 0 : CUTOUT_NODE_SURFACE_MIN_HEIGHT;
 
   const root = document.createElement("div");
   ensurePreviewModeCss();
@@ -3392,14 +3481,14 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   root.classList.add(stickersMode ? "pano-node-preview--stickers" : "pano-node-preview--cutout");
   if (noPreview) root.classList.add("pano-node-preview--no-preview");
   root.setAttribute("data-capture-wheel", "true");
-  root.setAttribute("tabindex", "-1");
+  root.tabIndex = 0;
 
   root.style.cssText = [
     "width:100%",
     noPreview ? "height:auto" : "height:100%",
+    surfaceMinHeight > 0 ? `min-height:${surfaceMinHeight}px` : "min-height:0",
     "position:relative",
     "display:block",
-    "min-height:0",
     "padding:0",
     "margin:0",
     "overflow:hidden",
@@ -3454,11 +3543,26 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     "padding:0 10px",
     "z-index:2",
   ].join(";");
-  cutoutHint.textContent = "Open editor and add frame";
+  cutoutHint.textContent = "Connect ERP image";
 
   wrap.appendChild(canvas);
   wrap.appendChild(cutoutHint);
   root.appendChild(wrap);
+
+  // Node 2.0 decides whether the graph owns wheel input before the nested
+  // listener runs. Match the supported frontend protocol used by the
+  // Perspective Editor: focus the declared wheel-capture root on entry.
+  const onWheelCapturePointerEnter = () => {
+    root.focus({ preventScroll: true });
+  };
+  wrap.addEventListener("pointerenter", onWheelCapturePointerEnter);
+
+  const nodeSurfaceHost = stickersMode ? null : document.createElement("div");
+  if (nodeSurfaceHost) {
+    nodeSurfaceHost.className = "pano-cutout-node-surface-host";
+    nodeSurfaceHost.style.cssText = "position:absolute;inset:0;z-index:3;pointer-events:none";
+    root.appendChild(nodeSurfaceHost);
+  }
 
   initNodeSizeIfInvalid(node, 120, 120);
   suppressBuiltInPreviewImgs(node);
@@ -3470,7 +3574,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       getAnimPreviewWidgetName(),
       "preview",
       root,
-      createCoreManagedDomWidgetOptions(node, () => node.__panoDomPreview?.requestDraw?.(), bootMinHeight),
+      createCoreManagedDomWidgetOptions(
+        node,
+        () => node.__panoDomPreview?.requestDraw?.(),
+        bootMinHeight,
+        surfaceMinHeight,
+      ),
     );
   } catch {
     if (stickersMode) {
@@ -3480,6 +3589,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   }
   const state = {
     raf: 0,
+    inTick: false,
     needsDraw: true,
     dragging: false,
     lastX: 0,
@@ -3489,8 +3599,127 @@ function attachPanoramaPreviewImpl(node, options = {}) {
 
   const requestDraw = () => {
     state.needsDraw = true;
-    if (!state.raf) state.raf = requestAnimationFrame(tick);
+    if (!state.inTick && !state.raf) state.raf = requestAnimationFrame(tick);
   };
+  const nodeSurfaceUiModel = nodeSurfaceHost
+    ? reactive({
+      ...cutoutNodeSurfaceModel(getCachedState(node)),
+      aspectOpen: false,
+      aspectChoices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value })),
+    })
+    : null;
+  let nodeSurfaceLiveState = null;
+  const nodeSurfaceSession = nodeSurfaceHost
+    ? createCutoutNodeSurfaceSession({
+      readState: () => getCachedState(node),
+      publishLiveState: (nextState) => {
+        if (nextState) {
+          nodeSurfaceLiveState = nextState;
+          node.__panoLiveStateOverride = nextState;
+        } else {
+          if (node.__panoLiveStateOverride === nodeSurfaceLiveState) node.__panoLiveStateOverride = null;
+          nodeSurfaceLiveState = null;
+        }
+        node.__panoLiveStateVersion = Number(node.__panoLiveStateVersion || 0) + 1;
+        node.__panoStateCache = null;
+        requestDraw();
+      },
+      commitState: (nextState) => {
+        const stateWidget = getWidget(node, "state_json");
+        if (!stateWidget) return;
+        const text = JSON.stringify(nextState);
+        stateWidget.value = text;
+        stateWidget.callback?.(text);
+        node.__panoStateCache = null;
+        node.setDirtyCanvas?.(true, true);
+        node.graph?.setDirtyCanvas?.(true, true);
+      },
+      onChange: (nextModel) => Object.assign(nodeSurfaceUiModel, nextModel),
+    })
+    : null;
+  let cutoutDrag = null;
+  let nodeSurfaceWheelCommitTimer = null;
+  let nodeSurfaceWheelActive = false;
+  const commitNodeSurfaceWheel = () => {
+    if (nodeSurfaceWheelCommitTimer) {
+      clearTimeout(nodeSurfaceWheelCommitTimer);
+      nodeSurfaceWheelCommitTimer = null;
+    }
+    if (!nodeSurfaceWheelActive) return false;
+    nodeSurfaceWheelActive = false;
+    return nodeSurfaceSession?.commitGesture?.() ?? false;
+  };
+  const flushNodeSurfaceGesture = () => {
+    const wheelCommitted = commitNodeSurfaceWheel();
+    const pointerId = cutoutDrag?.pointerId;
+    cutoutDrag = null;
+    if (pointerId != null) {
+      try {
+        if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture?.(pointerId);
+      } catch { }
+      canvas.style.cursor = "grab";
+    }
+    const pointerCommitted = nodeSurfaceSession?.commitGesture?.() ?? false;
+    return wheelCommitted || pointerCommitted;
+  };
+  const nodeSurfaceQueueFlusher = () => flushNodeSurfaceGesture();
+  if (nodeSurfaceSession) {
+    if (!(node.__panoStateFlushers instanceof Set)) node.__panoStateFlushers = new Set();
+    node.__panoStateFlushers.add(nodeSurfaceQueueFlusher);
+  }
+  let nodeSurfaceVueApp = null;
+  let nodeSurfaceMounted = false;
+  if (nodeSurfaceHost && nodeSurfaceSession) {
+    try {
+      void installPanoSuiteStylesheet();
+      nodeSurfaceVueApp = createApp(PanoCutoutNodeSurface, {
+        model: nodeSurfaceUiModel,
+        onAction: (action) => {
+          if (action?.type === "toggle-aspect") {
+            nodeSurfaceUiModel.aspectOpen = !nodeSurfaceUiModel.aspectOpen;
+            return;
+          }
+          if (action?.type === "close-aspect") {
+            nodeSurfaceUiModel.aspectOpen = false;
+            return;
+          }
+          if (action?.type === "open-editor") {
+            flushNodeSurfaceGesture();
+            nodeSurfaceUiModel.aspectOpen = false;
+            node.__panoOpenEditor?.();
+            return;
+          }
+          let resolvedAction = action;
+          if (action?.type === "add-frame") {
+            const view = node.__panoPreviewView || { yaw: 0, pitch: 0, fov: 100 };
+            resolvedAction = {
+              ...action,
+              yawDeg: Number(view.yaw || 0),
+              pitchDeg: Number(view.pitch || 0),
+              viewFovDeg: 100,
+            };
+          } else if (action?.type === "delete-frame") {
+            const shot = resolveCutoutNodeSurfaceShot(getCachedState(node));
+            if (shot) {
+              node.__panoPreviewView = {
+                yaw: Number(shot.yaw_deg || 0),
+                pitch: Number(shot.pitch_deg || 0),
+                fov: 100,
+              };
+            }
+          }
+          const safeRect = node.__panoCutoutNodeFrame?.safeRect || null;
+          nodeSurfaceUiModel.aspectOpen = false;
+          if (nodeSurfaceSession.apply({ ...resolvedAction, safeRect })) requestDraw();
+        },
+      });
+      nodeSurfaceVueApp.mount(nodeSurfaceHost);
+      nodeSurfaceMounted = true;
+    } catch {
+      nodeSurfaceVueApp = null;
+      nodeSurfaceMounted = false;
+    }
+  }
   const resizeObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(() => {
       markPreviewResizing(node, 150);
@@ -3547,13 +3776,18 @@ function attachPanoramaPreviewImpl(node, options = {}) {
 
   const tick = (ts) => {
     state.raf = 0;
-    const moving = interaction.stepInertia(ts);
-    if (state.needsDraw || moving) {
-      state.needsDraw = false;
-      if (!node.flags?.collapsed) drawCanvas(node, canvas, null, interaction);
-      node.setDirtyCanvas?.(true, false);
+    state.inTick = true;
+    let moving = false;
+    try {
+      moving = interaction.stepInertia(ts);
+      if (state.needsDraw || moving) {
+        state.needsDraw = false;
+        if (!node.flags?.collapsed) drawCanvas(node, canvas, null, interaction);
+      }
+    } finally {
+      state.inTick = false;
     }
-    if (moving || state.needsDraw) state.raf = requestAnimationFrame(tick);
+    if ((moving || state.needsDraw) && !state.raf) state.raf = requestAnimationFrame(tick);
     if (panoPreviewDebugEnabled()) {
       if (!node.__panoDebugLastTs || (ts - node.__panoDebugLastTs) > 1200) {
         node.__panoDebugLastTs = ts;
@@ -3579,15 +3813,81 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     setView: (v) => {
       node.__panoPreviewView = v;
     },
+    ...(stickersMode ? {} : {
+      getViewportSize: () => {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          w: Math.max(1, Number(rect.width || canvas.clientWidth || 0)),
+          h: Math.max(1, Number(rect.height || canvas.clientHeight || 0)),
+        };
+      },
+      getInvert: () => {
+        const uiSettings = loadSharedUiSettings();
+        return {
+          x: uiSettings.invert_view_x ? -1 : 1,
+          y: uiSettings.invert_view_y ? -1 : 1,
+        };
+      },
+    }),
     onInteraction: () => {
       requestDraw();
     },
   });
+  const eventSurface = stickersMode ? wrap : root;
+  const cutoutCanvasPoint = (ev) => {
+    const bounds = canvas.getBoundingClientRect();
+    return {
+      x: (Number(ev.clientX) - bounds.left) * (canvas.width / Math.max(1, bounds.width)),
+      y: (Number(ev.clientY) - bounds.top) * (canvas.height / Math.max(1, bounds.height)),
+    };
+  };
 
   canvas.addEventListener("pointerdown", (ev) => {
-    if (!stopCanvasEventUnlessResizeGrip(ev, wrap)) return;
-    if (!interactiveView) return;
+    if (!stopCanvasEventUnlessResizeGrip(ev, eventSurface)) return;
     if (ev.button !== 0) return;
+    if (!stickersMode) {
+      const shot = resolveCutoutNodeSurfaceShot(getCachedState(node));
+      const frame = node.__panoCutoutNodeFrame;
+      if (!shot) {
+        root.focus?.({ preventScroll: true });
+        canvas.setPointerCapture?.(ev.pointerId);
+        canvas.style.cursor = "grabbing";
+        interaction.startDrag(ev.clientX, ev.clientY, ev.pointerId);
+        return;
+      }
+      if (shot.locked === true || !frame || !nodeSurfaceSession) return;
+      const point = cutoutCanvasPoint(ev);
+      let drag;
+      if (ev.shiftKey) {
+        const rollGesture = beginCutoutRollGesture({
+          frame,
+          point,
+          startRollDeg: Number(shot.roll_deg ?? shot.rot_deg ?? 0),
+          shiftKey: true,
+        });
+        if (!rollGesture) return;
+        drag = { kind: "roll", pointerId: ev.pointerId, rollGesture };
+      } else {
+        const uiSettings = getCachedState(node)?.ui_settings || loadSharedUiSettings();
+        drag = {
+          kind: "pan",
+          pointerId: ev.pointerId,
+          startPoint: point,
+          startShot: { ...shot },
+          focalPx: fitFocalPx(frame, shot),
+          invertX: uiSettings.invert_view_x === true,
+          invertY: uiSettings.invert_view_y === true,
+        };
+      }
+      flushNodeSurfaceGesture();
+      root.focus?.({ preventScroll: true });
+      canvas.setPointerCapture?.(ev.pointerId);
+      canvas.style.cursor = "grabbing";
+      nodeSurfaceSession.beginGesture();
+      cutoutDrag = drag;
+      return;
+    }
+    if (!panoramaInteractiveView) return;
     root.focus?.();
     canvas.setPointerCapture?.(ev.pointerId);
     canvas.style.cursor = "grabbing";
@@ -3595,14 +3895,81 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   });
 
   canvas.addEventListener("pointermove", (ev) => {
-    if (!interactiveView || !interaction.state.drag.active) return;
-    stopCanvasEventUnlessResizeGrip(ev, wrap);
+    if (!stickersMode) {
+      if (!cutoutDrag) {
+        if (!interaction.state.drag.active) return;
+        stopCanvasEventUnlessResizeGrip(ev, eventSurface);
+        interaction.moveDrag(ev.clientX, ev.clientY, "pano");
+        return;
+      }
+      if (cutoutDrag.pointerId !== ev.pointerId || !nodeSurfaceSession) return;
+      stopCanvasEventUnlessResizeGrip(ev, eventSurface);
+      if (cutoutDrag.kind === "pan") {
+        const point = cutoutCanvasPoint(ev);
+        nodeSurfaceSession.updateGesture({
+          type: "pan-camera",
+          startShot: cutoutDrag.startShot,
+          dx: point.x - cutoutDrag.startPoint.x,
+          dy: point.y - cutoutDrag.startPoint.y,
+          focalPx: cutoutDrag.focalPx,
+          invertX: cutoutDrag.invertX,
+          invertY: cutoutDrag.invertY,
+        });
+        return;
+      }
+      const next = updateCutoutRollGesture(cutoutDrag.rollGesture, cutoutCanvasPoint(ev), ev);
+      if (!next) return;
+      cutoutDrag.rollGesture = next.gesture;
+      nodeSurfaceSession.updateGesture({ type: "set-roll", value: next.rollDeg });
+      return;
+    }
+    if (!panoramaInteractiveView || !interaction.state.drag.active) return;
+    stopCanvasEventUnlessResizeGrip(ev, eventSurface);
     interaction.moveDrag(ev.clientX, ev.clientY, "pano");
   });
 
-  const endDrag = (ev) => {
-    if (!interactiveView || !interaction.state.drag.active) return;
-    stopCanvasEventUnlessResizeGrip(ev, wrap);
+  const cancelCutoutDrag = () => {
+    if (!cutoutDrag) {
+      if (!interaction.state.drag.active) return;
+      interaction.endDrag();
+      canvas.style.cursor = "grab";
+      requestDraw();
+      return;
+    }
+    if (!nodeSurfaceSession) return;
+    const pointerId = cutoutDrag.pointerId;
+    cutoutDrag = null;
+    try {
+      if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture?.(pointerId);
+    } catch { }
+    nodeSurfaceSession.cancelGesture();
+    canvas.style.cursor = "grab";
+    requestDraw();
+  };
+
+  const endDrag = (ev, cancelled = false) => {
+    if (!stickersMode) {
+      if (!cutoutDrag) {
+        if (!interaction.state.drag.active) return;
+        stopCanvasEventUnlessResizeGrip(ev, eventSurface);
+        canvas.releasePointerCapture?.(ev.pointerId);
+        canvas.style.cursor = "grab";
+        interaction.endDrag();
+        requestDraw();
+        return;
+      }
+      if (cutoutDrag.pointerId !== ev.pointerId || !nodeSurfaceSession) return;
+      stopCanvasEventUnlessResizeGrip(ev, eventSurface);
+      cutoutDrag = null;
+      canvas.releasePointerCapture?.(ev.pointerId);
+      canvas.style.cursor = "grab";
+      if (cancelled) nodeSurfaceSession.cancelGesture();
+      else nodeSurfaceSession.commitGesture();
+      requestDraw();
+      return;
+    }
+    if (!panoramaInteractiveView || !interaction.state.drag.active) return;
+    stopCanvasEventUnlessResizeGrip(ev, eventSurface);
     canvas.releasePointerCapture?.(ev.pointerId);
     canvas.style.cursor = "grab";
     interaction.endDrag();
@@ -3610,16 +3977,59 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     requestDraw();
   };
   canvas.addEventListener("pointerup", endDrag);
-  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("pointercancel", (ev) => endDrag(ev, true));
+  canvas.addEventListener("lostpointercapture", cancelCutoutDrag);
   canvas.addEventListener("pointerleave", (ev) => {
+    if (!stickersMode && cutoutDrag) return;
     if (!interaction.state.drag.active) return;
     endDrag(ev);
   });
+  const onNodeSurfaceKeyDown = (ev) => {
+    if (ev.key !== "Escape" || !cutoutDrag || !nodeSurfaceSession) return;
+    cancelCutoutDrag();
+    stopCanvasEvent(ev);
+  };
+  root.addEventListener("keydown", onNodeSurfaceKeyDown);
 
   const onPreviewWheel = (ev) => {
-    panoPreviewLog(node, "event", { kind: "wheel", via: "stickers", interactiveView });
-    if (!stopCanvasEventUnlessResizeGrip(ev, wrap)) return;
-    if (!interactiveView) return;
+    panoPreviewLog(node, "event", { kind: "wheel", via: stickersMode ? "stickers" : "cutout", panoramaInteractiveView });
+    if (!stopCanvasEventUnlessResizeGrip(ev, eventSurface)) return;
+    if (!stickersMode) {
+      const shot = resolveCutoutNodeSurfaceShot(getCachedState(node));
+      if (shot && shot.locked !== true && nodeSurfaceSession) {
+        const delta = readWheelDelta(ev);
+        if (delta !== 0) {
+          if (!nodeSurfaceWheelActive) {
+            flushNodeSurfaceGesture();
+            nodeSurfaceSession.beginGesture();
+            nodeSurfaceWheelActive = true;
+          }
+          const changed = nodeSurfaceSession.updateGesture({
+            type: "scale-fov",
+            scale: delta < 0 ? (1 / 1.1) : 1.1,
+          });
+          if (changed) {
+            if (nodeSurfaceWheelCommitTimer) clearTimeout(nodeSurfaceWheelCommitTimer);
+            nodeSurfaceWheelCommitTimer = setTimeout(commitNodeSurfaceWheel, 180);
+            requestDraw();
+          } else {
+            nodeSurfaceSession.cancelGesture();
+            nodeSurfaceWheelActive = false;
+          }
+        }
+      } else if (!shot) {
+        const graphSnapshot = lockGraphViewportSnapshot();
+        if (interaction.applyWheelEvent(ev)) requestDraw();
+        requestAnimationFrame(() => {
+          restoreGraphViewportSnapshot(graphSnapshot);
+        });
+      }
+      ev.preventDefault?.();
+      ev.stopPropagation?.();
+      ev.stopImmediatePropagation?.();
+      return;
+    }
+    if (!panoramaInteractiveView) return;
     const graphSnapshot = lockGraphViewportSnapshot();
     if (interaction.applyWheelEvent(ev)) {
       requestDraw();
@@ -3632,14 +4042,14 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       app?.canvas?.setDirty?.(true, true);
     });
   };
+  const wheelTargets = stickersMode ? [wrap, canvas] : [wrap];
   ["wheel", "mousewheel", "DOMMouseScroll"].forEach((name) => {
-    wrap.addEventListener(name, onPreviewWheel, { passive: false, capture: true });
-    canvas.addEventListener(name, onPreviewWheel, { passive: false, capture: true });
+    wheelTargets.forEach((target) => target.addEventListener(name, onPreviewWheel, { passive: false, capture: true }));
   });
 
   ["contextmenu", "mousedown", "mouseup", "mousemove", "click", "dblclick"].forEach((name) => {
-    canvas.addEventListener(name, (ev) => stopCanvasEventUnlessResizeGrip(ev, wrap));
-    wrap.addEventListener(name, (ev) => stopCanvasEventUnlessResizeGrip(ev, wrap));
+    canvas.addEventListener(name, (ev) => stopCanvasEventUnlessResizeGrip(ev, eventSurface));
+    wrap.addEventListener(name, (ev) => stopCanvasEventUnlessResizeGrip(ev, eventSurface));
   });
 
   const sw = getWidget(node, "state_json");
@@ -3698,8 +4108,23 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   };
 
   const restoreDom = () => {
-    if (state.raf) cancelAnimationFrame(state.raf);
     resizeObserver?.disconnect?.();
+    cancelCutoutDrag();
+    flushNodeSurfaceGesture();
+    canvas.removeEventListener("lostpointercapture", cancelCutoutDrag);
+    wrap.removeEventListener("pointerenter", onWheelCapturePointerEnter);
+    root.removeEventListener("keydown", onNodeSurfaceKeyDown);
+    node.__panoStateFlushers?.delete?.(nodeSurfaceQueueFlusher);
+    if (node.__panoStateFlushers instanceof Set && node.__panoStateFlushers.size === 0) {
+      node.__panoStateFlushers = null;
+    }
+    nodeSurfaceSession?.destroy?.();
+    nodeSurfaceVueApp?.unmount?.();
+    if (state.raf) cancelAnimationFrame(state.raf);
+    state.raf = 0;
+    if (node.__panoCutoutNodeSurface?.session === nodeSurfaceSession) node.__panoCutoutNodeSurface = null;
+    node.__panoCutoutNodeSurfaceState = null;
+    node.__panoCutoutNodeFrame = null;
     if (node.__panoResizeSettleTimer) {
       clearTimeout(node.__panoResizeSettleTimer);
       node.__panoResizeSettleTimer = null;
@@ -3715,7 +4140,18 @@ function attachPanoramaPreviewImpl(node, options = {}) {
 
   node.__panoPreviewHooked = true;
   node.__panoActiveBackend = "dom";
-  node.__panoDomPreview = { widget, root, canvas, requestDraw, state, emptyHintEl: cutoutHint };
+  node.__panoCutoutNodeSurface = nodeSurfaceSession && nodeSurfaceMounted
+    ? { session: nodeSurfaceSession, model: nodeSurfaceUiModel }
+    : null;
+  node.__panoDomPreview = {
+    widget,
+    root,
+    canvas,
+    requestDraw,
+    state,
+    emptyHintEl: cutoutHint,
+    nodeSurface: node.__panoCutoutNodeSurface,
+  };
 
   runDomProbeForStickers();
   requestDraw();
