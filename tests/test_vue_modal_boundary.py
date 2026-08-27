@@ -6,6 +6,52 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestVueModalBoundary(unittest.TestCase):
+    def test_modal_shell_owns_paint_overlay_structure_and_exposes_refs(self):
+        modal_vue = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
+        overlays_vue = (REPO_ROOT / "web_src" / "components" / "PanoPaintOverlays.vue").read_text(encoding="utf-8")
+
+        self.assertIn('import PanoPaintOverlays from "./PanoPaintOverlays.vue";', modal_vue)
+        self.assertIn('<PanoPaintOverlays ref="paintOverlaysRef" />', modal_vue)
+        self.assertIn("getPaintOverlayRefs", modal_vue)
+        self.assertIn('class="pano-paint-size-preview"', overlays_vue)
+        self.assertIn('class="pano-paint-size-preview-sample"', overlays_vue)
+        self.assertIn("cursorRef", overlays_vue)
+        self.assertIn("sizePreviewRef", overlays_vue)
+        self.assertIn("sizeSampleRef", overlays_vue)
+
+    def test_modal_shell_owns_image_picker_and_forwards_intent_with_file_events(self):
+        modal_vue = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
+        picker_vue = (REPO_ROOT / "web_src" / "components" / "PanoImageFilePicker.vue").read_text(encoding="utf-8")
+
+        self.assertIn('import PanoImageFilePicker from "./PanoImageFilePicker.vue";', modal_vue)
+        self.assertIn("openImagePicker", modal_vue)
+        self.assertIn('emit("image-file-selected", payload)', modal_vue)
+        self.assertIn('emit("image-file-cancelled", payload)', modal_vue)
+        self.assertIn('type="file"', picker_vue)
+        self.assertIn('accept="image/*"', picker_vue)
+        self.assertIn("input.value = \"\"", picker_vue)
+        self.assertIn('emit("file-selected", { intent, file })', picker_vue)
+        self.assertIn('emit("file-cancelled", { intent })', picker_vue)
+        self.assertIn("defineExpose({ open })", picker_vue)
+
+    def test_editor_consumes_vue_paint_refs_and_routes_image_picker_intents(self):
+        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+
+        self.assertIn("vueModal = vueApp.mount(mountHost)", editor_js)
+        self.assertIn("vueModal?.getPaintOverlayRefs?.()", editor_js)
+        self.assertNotIn('paintCursorEl = document.createElement("div")', editor_js)
+        self.assertNotIn('paintSizePreviewEl = document.createElement("div")', editor_js)
+        self.assertNotIn('paintSizePreviewSampleEl = document.createElement("div")', editor_js)
+        self.assertIn("onImageFileSelected", editor_js)
+        self.assertIn("onImageFileCancelled", editor_js)
+        self.assertIn('if (intent === "add")', editor_js)
+        self.assertIn("void addImageStickerFromFile(file)", editor_js)
+        self.assertIn('if (intent === "replace") void replaceSelectedImageFromFile(file)', editor_js)
+        self.assertIn('vueModal?.openImagePicker?.("add")', editor_js)
+        self.assertIn('vueModal?.openImagePicker?.("replace")', editor_js)
+        self.assertNotIn("function pickImageFile(", editor_js)
+        self.assertNotIn('document.createElement("input")', editor_js)
+
     def test_editor_no_longer_builds_side_panel_or_selection_menu_html(self):
         editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
         self.assertNotIn("side.innerHTML =", editor_js)

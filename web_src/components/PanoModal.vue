@@ -4,7 +4,9 @@ import { ICON } from "../icons.js";
 import PanoFloatingRight from "./PanoFloatingRight.vue";
 import PanoFrameRail from "./PanoFrameRail.vue";
 import PanoConfirmDialog from "./PanoConfirmDialog.vue";
+import PanoImageFilePicker from "./PanoImageFilePicker.vue";
 import PanoPaintDock from "./PanoPaintDock.vue";
+import PanoPaintOverlays from "./PanoPaintOverlays.vue";
 import PanoSelectionMenu from "./PanoSelectionMenu.vue";
 import PanoSidePanel from "./PanoSidePanel.vue";
 import PanoTooltip from "./PanoTooltip.vue";
@@ -24,11 +26,35 @@ const props = defineProps({
   uiState: { type: Object, default: () => ({}) },
 });
 
-const emit = defineEmits(["close"]);
+const emit = defineEmits(["close", "image-file-selected", "image-file-cancelled"]);
 let previousOverflow = "";
 let didLockBody = false;
 let previousFocusedElement = null;
 const modalRef = ref(null);
+const imageFilePickerRef = ref(null);
+const paintOverlaysRef = ref(null);
+
+function getPaintOverlayRefs() {
+  return paintOverlaysRef.value?.getRefs?.() || {
+    cursor: null,
+    sizePreview: null,
+    sizeSample: null,
+  };
+}
+
+function openImagePicker(intent) {
+  return imageFilePickerRef.value?.open?.(intent) === true;
+}
+
+function onImageFileSelected(payload) {
+  emit("image-file-selected", payload);
+}
+
+function onImageFileCancelled(payload) {
+  emit("image-file-cancelled", payload);
+}
+
+defineExpose({ getPaintOverlayRefs, openImagePicker });
 
 const previewMode = computed(() => props.readOnly === true);
 const shellPreset = computed(() => props.shellPreset || buildModalShellPreset(props.type));
@@ -168,6 +194,12 @@ watch(() => props.open, (nextOpen) => {
         <div class="pano-stage-drop-hint" aria-hidden="true">
           <div class="pano-stage-drop-hint-text">Drag and drop image here</div>
         </div>
+        <PanoPaintOverlays ref="paintOverlaysRef" />
+        <PanoImageFilePicker
+          ref="imageFilePickerRef"
+          @file-selected="onImageFileSelected"
+          @file-cancelled="onImageFileCancelled"
+        />
 
         <template v-if="!previewMode">
           <PanoToolRail :buttons="uiState.toolButtons || shellPreset.toolButtons || []" />

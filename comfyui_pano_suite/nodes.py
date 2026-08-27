@@ -2,31 +2,28 @@ import json
 import math
 from pathlib import Path
 import logging
-import time
-from collections import OrderedDict
-import threading
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
 from comfy_api.latest import io
-try:
-    from comfy_api.v0_0_2 import ComfyAPISync
-except Exception:
-    ComfyAPISync = None
-try:
-    from comfy.utils import ProgressBar as ComfyProgressBar
-except Exception:
-    ComfyProgressBar = None
-
-try:
-    import nodes
-except ImportError:
-    nodes = None
 
 from .comfy_image_resolver import resolve_painting_layer_payload
+from .node_runtime import PREVIEW_UI_KEYS, NodeProgress, create_default_runtime
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
+from .core.display_list import (
+    alpha_composite_over_rgba as _alpha_composite_over_rgba,
+    build_display_entries,
+)
+from .core.display_layers import (
+    build_visual_paint_only_state as _build_visual_paint_only_state,
+    compose_display_list_to_erp as _compose_display_list_to_erp,
+    compose_display_list_to_overlay_rgba as _compose_display_list_to_overlay_rgba,
+    render_remaining_flat_paint_layer_from_state as _render_remaining_flat_paint_layer_from_state,
+    sample_overlay_rgba_from_sampling_map as _sample_overlay_rgba_from_sampling_map,
+    should_use_uploaded_group_layers as _should_use_uploaded_group_layers,
+)
 from .core.math import (
     calculate_dimensions_from_megapixels,
     calculate_output_dimensions,
@@ -39,205 +36,20 @@ from .core.painting import (
     render_painting_to_erp,
 )
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
-from .core.stickers import compose_single_sticker_to_canvas_erp
-from .core.stickers import render_stickers_to_rgba_erp
-from .core.video import encode_frames_to_mp4, make_video_ui_payload
-
-PREVIEW_UI_KEYS = {
-    "default": {
-        "image": "pano_input_images",
-        "video": "pano_videos",
-        "meta": "pano_video_meta",
-    },
-    "input_video": {
-        "image": "pano_input_images",
-        "video": "pano_input_videos",
-        "meta": "pano_input_video_meta",
-    },
-    "stickers_bg": {
-        "image": "pano_input_images",
-        "video": "pano_input_videos",
-        "meta": "pano_input_video_meta",
-    },
-    "stickers_output": {
-        "image": "pano_input_images",
-        "video": "pano_videos",
-        "meta": "pano_video_meta",
-    },
-    "stickers_input": {
-        "image": "pano_sticker_input_images",
-    },
-}
-
-_api_sync = ComfyAPISync() if ComfyAPISync is not None else None
 _log = logging.getLogger(__name__)
-_STICKERS_BG_CACHE: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
-_CUTOUT_OUTPUT_CACHE: "OrderedDict[tuple, tuple[np.ndarray, np.ndarray]]" = OrderedDict()
-_CUTOUT_VIDEO_CACHE: "OrderedDict[tuple, Path]" = OrderedDict()
-_CACHE_LOCK = threading.Lock()
-_STICKERS_BG_CACHE_LIMIT = 1
-_CUTOUT_OUTPUT_CACHE_LIMIT_BYTES = 8 * 1024 * 1024 * 1024
-_CUTOUT_VIDEO_CACHE_LIMIT = 8
-_cutout_output_cache_bytes = 0
+NODE_RUNTIME = create_default_runtime(logger=_log)
 
 
-class _NodeProgress:
-    def __init__(self, node_id: str | None, total: float, label: str = "Node"):
-        self.node_id = str(node_id) if node_id is not None else None
-        self.total = max(1.0, float(total))
-        self.value = 0.0
-        self.label = str(label or "Node")
-        self._progress_bar = ComfyProgressBar(self.total) if ComfyProgressBar is not None else None
-        self._last_stage = None
-
-    def set(self, value: float):
-        self.value = max(0.0, min(self.total, float(value)))
-        if self._progress_bar is not None:
-            try:
-                self._progress_bar.update_absolute(self.value, self.total)
-                return
-            except Exception:
-                pass
-        if _api_sync is None:
-            return
-        try:
-            _api_sync.execution.set_progress(self.value, self.total, node_id=self.node_id)
-        except Exception:
-            pass
-
-    def advance(self, delta: float = 1.0):
-        self.set(self.value + float(delta))
-
-    def frame_callback(self, start: float, span: float):
-        span_value = max(0.0, float(span))
-        start_value = float(start)
-
-        def _cb(done: int, total: int):
-            denom = max(1, int(total))
-            self.set(start_value + (min(max(int(done), 0), denom) / denom) * span_value)
-
-        return _cb
-
-    def finish(self):
-        self.set(self.total)
-
-    def stage(self, text: str):
-        text_value = str(text or "").strip()
-        if not text_value or text_value == self._last_stage:
-            return
-        self._last_stage = text_value
-        _log.warning("[%s] %s", self.label, text_value)
-
-
-def _cache_get(cache: "OrderedDict[tuple, np.ndarray]", key: tuple):
-    with _CACHE_LOCK:
-        value = cache.get(key)
-        if value is None:
-            return None
-        cache.move_to_end(key)
-        return value
-
-
-def _cache_put(cache: "OrderedDict[tuple, np.ndarray]", key: tuple, value: np.ndarray, limit: int):
-    with _CACHE_LOCK:
-        cache[key] = value
-        cache.move_to_end(key)
-        while len(cache) > max(1, int(limit)):
-            cache.popitem(last=False)
+def _NodeProgress(node_id: str | None, total: float, label: str = "Node") -> NodeProgress:
+    return NODE_RUNTIME.progress(node_id, total, label)
 
 
 def _audio_signature(audio) -> tuple:
-    if not _audio_has_waveform(audio):
-        return ("no-audio",)
-    waveform = None
-    sample_rate = 0
-    try:
-        waveform = audio.get("waveform")
-        sample_rate = int(audio.get("sample_rate") or 0)
-    except Exception:
-        return ("audio", "unknown")
-    shape = tuple(int(x) for x in getattr(waveform, "shape", ()) or ())
-    data_ptr = None
-    try:
-        data_ptr = int(waveform.data_ptr())
-    except Exception:
-        data_ptr = None
-    return ("audio", sample_rate, shape, data_ptr)
-
-
-def _cutout_output_cache_item_bytes(value: tuple[np.ndarray, np.ndarray]) -> int:
-    out_batch, mask_bw = value
-    total = 0
-    if isinstance(out_batch, np.ndarray):
-        total += int(out_batch.nbytes)
-    if isinstance(mask_bw, np.ndarray):
-        total += int(mask_bw.nbytes)
-    return total
-
-
-def _cutout_output_cache_get(key: tuple):
-    with _CACHE_LOCK:
-        value = _CUTOUT_OUTPUT_CACHE.get(key)
-        if value is None:
-            return None
-        _CUTOUT_OUTPUT_CACHE.move_to_end(key)
-        return value
-
-
-def _cutout_output_cache_put(key: tuple, value: tuple[np.ndarray, np.ndarray]):
-    global _cutout_output_cache_bytes
-    item_bytes = _cutout_output_cache_item_bytes(value)
-    if item_bytes <= 0 or item_bytes > _CUTOUT_OUTPUT_CACHE_LIMIT_BYTES:
-        return
-    with _CACHE_LOCK:
-        existing = _CUTOUT_OUTPUT_CACHE.pop(key, None)
-        if existing is not None:
-            _cutout_output_cache_bytes -= _cutout_output_cache_item_bytes(existing)
-        _CUTOUT_OUTPUT_CACHE[key] = value
-        _CUTOUT_OUTPUT_CACHE.move_to_end(key)
-        _cutout_output_cache_bytes += item_bytes
-        while _CUTOUT_OUTPUT_CACHE and _cutout_output_cache_bytes > _CUTOUT_OUTPUT_CACHE_LIMIT_BYTES:
-            _old_key, old_value = _CUTOUT_OUTPUT_CACHE.popitem(last=False)
-            _cutout_output_cache_bytes -= _cutout_output_cache_item_bytes(old_value)
-
-
-def _cutout_video_cache_get(key: tuple):
-    with _CACHE_LOCK:
-        value = _CUTOUT_VIDEO_CACHE.get(key)
-        if value is None:
-            return None
-        _CUTOUT_VIDEO_CACHE.move_to_end(key)
-        return value
-
-
-def _cutout_video_cache_put(key: tuple, value: Path):
-    with _CACHE_LOCK:
-        _CUTOUT_VIDEO_CACHE[key] = value
-        _CUTOUT_VIDEO_CACHE.move_to_end(key)
-        while len(_CUTOUT_VIDEO_CACHE) > _CUTOUT_VIDEO_CACHE_LIMIT:
-            _old_key, old_value = _CUTOUT_VIDEO_CACHE.popitem(last=False)
-            try:
-                if isinstance(old_value, Path):
-                    old_value.unlink(missing_ok=True)
-            except Exception:
-                pass
+    return NODE_RUNTIME.audio_signature(audio)
 
 
 def _tensor_cache_identity(image) -> tuple | None:
-    if image is None or not hasattr(image, "shape"):
-        return None
-    try:
-        shape = tuple(int(x) for x in image.shape)
-    except Exception:
-        return None
-    dtype = str(getattr(image, "dtype", ""))
-    device = str(getattr(image, "device", ""))
-    data_ptr = None
-    try:
-        data_ptr = int(image.data_ptr())
-    except Exception:
-        data_ptr = None
-    return (data_ptr, shape, dtype, device)
+    return NODE_RUNTIME.tensor_identity(image)
 
 
 def _common_video_preview_inputs(*, default_fps: float = 24.0) -> list:
@@ -259,24 +71,11 @@ def _common_video_preview_inputs(*, default_fps: float = 24.0) -> list:
 
 
 def _audio_has_waveform(audio) -> bool:
-    if audio is None or not hasattr(audio, "get"):
-        return False
-    try:
-        return audio.get("waveform") is not None and int(audio.get("sample_rate") or 0) > 0
-    except Exception:
-        return False
+    return NODE_RUNTIME.audio_has_waveform(audio)
 
 
 def _save_input_preview(images, key="pano_input_images"):
-    if nodes is None or images is None:
-        return {}
-    try:
-        res = nodes.PreviewImage().save_images(images)
-        if "ui" in res and "images" in res["ui"]:
-            return {key: res["ui"]["images"]}
-    except Exception:
-        logging.getLogger(__name__).exception("Failed to save preview image for %s", key)
-    return {}
+    return NODE_RUNTIME.save_preview(images, key=key)
 
 
 def _crop_erp_for_coverage(arr: np.ndarray, coverage: int, out_w: int, out_h: int) -> np.ndarray:
@@ -364,18 +163,7 @@ def _apply_overlay_coverage_to_mask(arr, coverage: int, out_w: int, out_h: int):
 
 
 def _push_ui_warning(ui_ret: dict, key: str, message: str):
-    if not isinstance(ui_ret, dict):
-        return
-    text = str(message or "").strip()
-    if not text:
-        return
-    bucket = ui_ret.get(key)
-    if not isinstance(bucket, list):
-        bucket = []
-        ui_ret[key] = bucket
-    if text not in bucket:
-        bucket.append(text)
-    logging.getLogger(__name__).warning(text)
+    NODE_RUNTIME.warn(ui_ret, key, message)
 
 
 def _iter_external_sticker_payloads(sticker_image=None, sticker_state=None):
@@ -496,11 +284,7 @@ def _batch_to_torch(batch: np.ndarray):
 
 
 def _merge_ui_payload(ui_ret: dict, payload: dict | None):
-    if not isinstance(ui_ret, dict) or not isinstance(payload, dict):
-        return ui_ret
-    for key, value in payload.items():
-        ui_ret[key] = value
-    return ui_ret
+    return NODE_RUNTIME.merge_ui_payload(ui_ret, payload)
 
 
 def _append_video_payload(
@@ -515,55 +299,25 @@ def _append_video_payload(
     meta_key: str = "pano_video_meta",
     progress_callback=None,
 ):
-    if frames is None:
-        return
-    # Torch tensor: pass directly to encoder for streaming (1 frame at a time, no full-batch copy)
-    try:
-        import torch as _torch
-        _is_tensor = isinstance(frames, _torch.Tensor)
-    except ImportError:
-        _is_tensor = False
-    if _is_tensor:
-        if frames.ndim == 3:
-            frames = frames.unsqueeze(0)
-        if frames.ndim != 4 or int(frames.shape[0]) <= 1:
-            return
-        batch = frames
-    else:
-        batch = np.asarray(frames)  # preserve dtype — uint8 fast path in encode_frames_to_mp4
-        if batch.dtype not in (np.uint8, np.float32, np.float16):
-            batch = batch.astype(np.float32)
-        if batch.ndim == 3:
-            batch = batch[None, ...]
-        if batch.ndim != 4 or batch.shape[0] <= 1:
-            return
-    try:
-        mp4_path = encode_frames_to_mp4(batch, fps, audio=audio, progress_callback=progress_callback)
-        payload = make_video_ui_payload(
-            mp4_path,
-            fps,
-            int(batch.shape[0]),
-            include_comfy_preview=include_comfy_preview,
-            video_key=video_key,
-            meta_key=meta_key,
-        )
-        meta = payload.get(meta_key)
-        if isinstance(meta, list) and meta:
-            meta[0]["has_audio"] = _audio_has_waveform(audio)
-        _merge_ui_payload(ui_ret, payload)
-    except Exception as ex:
-        _push_ui_warning(ui_ret, warning_key, f"Video UI cache generation failed: {ex}")
+    NODE_RUNTIME.append_video(
+        ui_ret,
+        frames,
+        fps,
+        audio,
+        warning_key=warning_key,
+        include_comfy_preview=include_comfy_preview,
+        video_key=video_key,
+        meta_key=meta_key,
+        progress_callback=progress_callback,
+    )
 
 
 def _init_ui_preview(image, *, key="pano_input_images") -> dict:
-    return _save_input_preview(_first_image_tensor(image), key=key) if image is not None else {}
+    return NODE_RUNTIME.init_preview(image, key=key)
 
 
 def _flush_warnings(ui_ret: dict, warning_key: str, warnings: list[str] | None):
-    if not warnings:
-        return
-    for warning in warnings:
-        _push_ui_warning(ui_ret, warning_key, str(warning))
+    NODE_RUNTIME.flush_warnings(ui_ret, warning_key, warnings)
 
 
 def _make_batched_image_and_mask_outputs(out_batch: np.ndarray, mask_bw: np.ndarray):
@@ -600,7 +354,7 @@ def _append_preview_video_from_batch(
 
 
 def _get_preview_ui_contract(kind: str = "default") -> dict:
-    return dict(PREVIEW_UI_KEYS.get(kind, PREVIEW_UI_KEYS["default"]))
+    return NODE_RUNTIME.preview_contract(kind)
 
 
 def _finalize_batched_node_output(
@@ -684,7 +438,7 @@ def _render_sticker_output_batches(
     bg_cache_identity = _tensor_cache_identity(bg_erp)
     bg_cache_key = ("stickers_bg", bg_cache_identity, int(out_h), int(out_w))
     if bg_cache_identity is not None:
-        cached_bg_batch = _cache_get(_STICKERS_BG_CACHE, bg_cache_key)
+        cached_bg_batch = NODE_RUNTIME.cache.get("stickers_bg", bg_cache_key)
         if cached_bg_batch is not None:
             bg_batch = cached_bg_batch
             bg_rgb_batch = bg_batch.astype(np.float32) / 255.0
@@ -771,19 +525,12 @@ def _render_sticker_output_batches(
             ) from None
 
     if bg_cache_identity is not None:
-        _cache_put(_STICKERS_BG_CACHE, bg_cache_key, bg_batch, _STICKERS_BG_CACHE_LIMIT)
+        NODE_RUNTIME.cache.put("stickers_bg", bg_cache_key, bg_batch)
     return out_batch, bg_batch
 
 
 def _first_image_tensor(image):
-    if image is None or not hasattr(image, "shape"):
-        return image
-    try:
-        if len(image.shape) >= 4 and int(image.shape[0]) > 1:
-            return image[:1]
-    except Exception:
-        return image
-    return image
+    return NODE_RUNTIME._first_image(image)
 
 
 def _vfov_from_hfov(hfov_deg: float, image_w: int, image_h: int) -> float:
@@ -880,248 +627,7 @@ def _build_sticker_state_json(shot: dict, frame_w: int, frame_h: int) -> str:
 
 
 def _get_display_list_entries(state: dict) -> list[dict]:
-    stickers = []
-    for item in state.get("stickers", []):
-        if not isinstance(item, dict):
-            continue
-        stickers.append({
-            "type": "sticker",
-            "z_index": _safe_int(item.get("z_index", 0), 0),
-            "item": item,
-        })
-    groups = []
-    painting = state.get("painting") if isinstance(state.get("painting"), dict) else {}
-    for item in painting.get("groups", []):
-        if not isinstance(item, dict):
-            continue
-        groups.append({
-            "type": "strokeGroup",
-            "z_index": _safe_int(item.get("z_index", 0), 0),
-            "actionGroupId": str(item.get("actionGroupId") or item.get("id") or "").strip(),
-        })
-    raster_objects = []
-    for item in painting.get("raster_objects", []):
-        if not isinstance(item, dict):
-            continue
-        if str(item.get("layerKind") or "paint") != "paint":
-            continue
-        raster_objects.append({
-            "type": "rasterObject",
-            "z_index": _safe_int(item.get("z_index", 0), 0),
-            "item": item,
-        })
-    return sorted(stickers + groups + raster_objects, key=lambda entry: float(entry.get("z_index", 0)))
-
-
-def _render_group_layer_from_state(painting: dict | None, action_group_id: str, width: int, height: int):
-    gid = str(action_group_id or "").strip()
-    if not gid or not isinstance(painting, dict):
-        return None
-    paint_layer = painting.get("paint") if isinstance(painting.get("paint"), dict) else {}
-    all_paint_strokes = paint_layer.get("strokes") if isinstance(paint_layer.get("strokes"), list) else []
-    strokes = []
-    for stroke in all_paint_strokes:
-        if not isinstance(stroke, dict):
-            continue
-        stroke_gid = str(stroke.get("actionGroupId") or "").strip()
-        tool_kind = str(stroke.get("toolKind") or stroke.get("tool") or stroke.get("mode") or "").strip().lower()
-        eraser_flag = stroke.get("eraser") is True or tool_kind in {"eraser", "erase"}
-        if stroke_gid == gid or (eraser_flag and not stroke_gid):
-            strokes.append(stroke)
-    if not strokes:
-        return None
-    groups = painting.get("groups") if isinstance(painting.get("groups"), list) else []
-    layer, _mask = render_painting_to_erp({
-        "paint": {"strokes": strokes},
-        "mask": {"strokes": []},
-        "groups": groups,
-        "raster_objects": [],
-    }, width, height)
-    return layer
-
-
-def _render_raster_layer_from_state(item: dict | None, width: int, height: int):
-    if not isinstance(item, dict):
-        return None
-    layer, _mask = render_painting_to_erp({
-        "paint": {"strokes": []},
-        "mask": {"strokes": []},
-        "groups": [],
-        "raster_objects": [item],
-    }, width, height)
-    return layer
-
-
-def _build_remaining_flat_painting_state(painting: dict | None) -> dict | None:
-    if not isinstance(painting, dict):
-        return None
-    paint_layer = painting.get("paint") if isinstance(painting.get("paint"), dict) else {}
-    all_paint_strokes = paint_layer.get("strokes") if isinstance(paint_layer.get("strokes"), list) else []
-    if not all_paint_strokes:
-        return None
-    known_group_ids = set()
-    for group in painting.get("groups", []):
-        if not isinstance(group, dict):
-            continue
-        gid = str(group.get("actionGroupId") or group.get("id") or "").strip()
-        if gid:
-            known_group_ids.add(gid)
-    strokes = []
-    for stroke in all_paint_strokes:
-        if not isinstance(stroke, dict):
-            continue
-        stroke_gid = str(stroke.get("actionGroupId") or "").strip()
-        tool_kind = str(stroke.get("toolKind") or stroke.get("tool") or stroke.get("mode") or "").strip().lower()
-        eraser_flag = stroke.get("eraser") is True or tool_kind in {"eraser", "erase"}
-        # Group display-list composition already applies group-owned paint. Keep only legacy or
-        # ungrouped flat paint here, and avoid replaying group-owned erasers twice.
-        if eraser_flag and stroke_gid and stroke_gid in known_group_ids:
-            continue
-        if not stroke_gid or stroke_gid not in known_group_ids:
-            strokes.append(stroke)
-    if not strokes:
-        return None
-    return {
-        "paint": {"strokes": strokes},
-        "mask": {"strokes": []},
-        "groups": [],
-        "raster_objects": [],
-    }
-
-
-def _build_visual_paint_only_state(painting: dict | None) -> dict | None:
-    if not isinstance(painting, dict):
-        return None
-    paint_layer = painting.get("paint") if isinstance(painting.get("paint"), dict) else {}
-    paint_strokes = paint_layer.get("strokes") if isinstance(paint_layer.get("strokes"), list) else []
-    raster_objects = painting.get("raster_objects") if isinstance(painting.get("raster_objects"), list) else []
-    groups = painting.get("groups") if isinstance(painting.get("groups"), list) else []
-    if not paint_strokes and not raster_objects:
-        return None
-    return {
-        "paint": {"strokes": [stroke for stroke in paint_strokes if isinstance(stroke, dict)]},
-        "mask": {"strokes": []},
-        "groups": [group for group in groups if isinstance(group, dict)],
-        "raster_objects": [item for item in raster_objects if isinstance(item, dict)],
-    }
-
-
-def _render_remaining_flat_paint_layer_from_state(painting: dict | None, width: int, height: int):
-    remainder = _build_remaining_flat_painting_state(painting)
-    if remainder is None:
-        return None
-    layer, _mask = render_painting_to_erp(remainder, width, height)
-    return layer
-
-
-def _compose_display_list_to_erp(
-    state: dict,
-    base_rgb: np.ndarray,
-    *,
-    painting_payload: dict | None = None,
-    base_dir: Path | None = None,
-    quality: str = "export",
-) -> tuple[np.ndarray, bool, dict]:
-    canvas = np.clip(base_rgb.astype(np.float32), 0.0, 1.0)
-    payload = painting_payload if isinstance(painting_payload, dict) else None
-    group_layers = payload.get("groups", {}) if payload else {}
-    used_paint_entries = False
-    allow_backend_paint_fallback = bool(payload and (
-        payload.get("paint") is not None
-        or payload.get("mask") is not None
-        or group_layers
-    ))
-    assets = state.get("assets") if isinstance(state.get("assets"), dict) else {}
-    coverage = state.get("coverage", 360)
-    stats = {
-        "entries": 0,
-        "stickers": 0,
-        "stroke_groups": 0,
-        "rasters": 0,
-        "sticker_ms": 0.0,
-        "stroke_group_ms": 0.0,
-        "raster_ms": 0.0,
-    }
-    for entry in _get_display_list_entries(state):
-        stats["entries"] += 1
-        entry_type = str(entry.get("type") or "")
-        if entry_type == "sticker":
-            item_start = time.perf_counter()
-            compose_single_sticker_to_canvas_erp(
-                canvas,
-                entry.get("item"),
-                assets,
-                base_dir=base_dir,
-                quality=quality,
-                coverage=coverage,
-            )
-            stats["stickers"] += 1
-            stats["sticker_ms"] += (time.perf_counter() - item_start) * 1000.0
-            continue
-        if not allow_backend_paint_fallback:
-            continue
-        layer = None
-        if entry_type == "strokeGroup":
-            item_start = time.perf_counter()
-            action_group_id = str(entry.get("actionGroupId") or "").strip()
-            layer = group_layers.get(action_group_id)
-            stats["stroke_groups"] += 1
-            stats["stroke_group_ms"] += (time.perf_counter() - item_start) * 1000.0
-        elif entry_type == "rasterObject":
-            item_start = time.perf_counter()
-            layer = _render_raster_layer_from_state(entry.get("item"), int(canvas.shape[1]), int(canvas.shape[0]))
-            stats["rasters"] += 1
-            stats["raster_ms"] += (time.perf_counter() - item_start) * 1000.0
-        if layer is None:
-            continue
-        canvas = alpha_composite_over_rgb(canvas, layer)
-        used_paint_entries = True
-    return canvas, used_paint_entries, stats
-
-
-def _alpha_composite_over_rgba(base_rgba: np.ndarray, overlay_rgba: np.ndarray) -> np.ndarray:
-    if base_rgba is None:
-        return np.clip(overlay_rgba.astype(np.float32), 0.0, 1.0)
-    dst = base_rgba.astype(np.float32, copy=False)
-    src = overlay_rgba.astype(np.float32, copy=False)
-    if src.ndim != 3 or src.shape[-1] != 4:
-        return dst
-    if dst.shape[0] != src.shape[0] or dst.shape[1] != src.shape[1]:
-        return dst
-    src_alpha = src[..., 3]
-    alpha_pixels = np.argwhere(src_alpha > 1e-6)
-    if alpha_pixels.size == 0:
-        return dst
-    y0, x0 = alpha_pixels.min(axis=0)
-    y1, x1 = alpha_pixels.max(axis=0) + 1
-    dst_roi = dst[y0:y1, x0:x1]
-    src_roi = src[y0:y1, x0:x1]
-    src_a = np.clip(src_roi[..., 3:4], 0.0, 1.0)
-    if float(np.max(src_a)) <= 1e-6:
-        return dst
-    src_rgb = np.clip(src_roi[..., :3], 0.0, 1.0)
-    dst_a = np.clip(dst_roi[..., 3:4], 0.0, 1.0)
-    dst_rgb = np.clip(dst_roi[..., :3], 0.0, 1.0)
-    out_a = src_a + dst_a * (1.0 - src_a)
-    numer_rgb = src_rgb * src_a + dst_rgb * dst_a * (1.0 - src_a)
-    safe_out_a = np.maximum(out_a, 1e-6)
-    out_rgb = np.where(out_a > 1e-6, numer_rgb / safe_out_a, 0.0)
-    dst_roi[..., :3] = out_rgb
-    dst_roi[..., 3:4] = out_a
-    return dst
-
-
-def _sample_overlay_rgba_from_sampling_map(overlay_rgba: np.ndarray, sampling_map: dict) -> np.ndarray:
-    if overlay_rgba is None or overlay_rgba.ndim != 3 or overlay_rgba.shape[-1] != 4:
-        return np.zeros((int(sampling_map["out_h"]), int(sampling_map["out_w"]), 4), dtype=np.float32)
-    src = np.clip(overlay_rgba.astype(np.float32, copy=False), 0.0, 1.0)
-    alpha = np.clip(src[..., 3], 0.0, 1.0)
-    premult = src[..., :3] * alpha[..., None]
-    warped_premult = sample_cutout_from_sampling_map(premult, sampling_map)
-    warped_alpha = sample_cutout_from_sampling_map(alpha, sampling_map)
-    safe_alpha = np.maximum(warped_alpha[..., None], 1e-6)
-    warped_rgb = np.where(warped_alpha[..., None] > 1e-6, warped_premult / safe_alpha, 0.0)
-    return np.dstack([np.clip(warped_rgb, 0.0, 1.0), np.clip(warped_alpha, 0.0, 1.0)]).astype(np.float32)
+    return list(build_display_entries(state))
 
 
 def _build_overlay_erp_rgba_and_mask(
@@ -1189,88 +695,6 @@ def _build_overlay_erp_rgba_and_mask(
             )
         _paint_rgba_unused, mask_bw = render_painting_to_erp(state.get("painting"), int(erp_width), int(erp_height))
     return overlay_rgba, mask_bw, overlay_stats, used_group_layers
-
-
-def _compose_display_list_to_overlay_rgba(
-    state: dict,
-    width: int,
-    height: int,
-    *,
-    painting_payload: dict | None = None,
-    base_dir: Path | None = None,
-    quality: str = "export",
-) -> tuple[np.ndarray, bool, dict]:
-    canvas = np.zeros((height, width, 4), dtype=np.float32)
-    payload = painting_payload if isinstance(painting_payload, dict) else None
-    group_layers = payload.get("groups", {}) if payload else {}
-    painting = state.get("painting") if isinstance(state.get("painting"), dict) else {}
-    used_paint_entries = False
-    sticker_state = dict(state)
-    sticker_state["coverage"] = 360
-    stats = {
-        "entries": 0,
-        "stickers": 0,
-        "stroke_groups": 0,
-        "rasters": 0,
-        "sticker_ms": 0.0,
-        "stroke_group_ms": 0.0,
-        "raster_ms": 0.0,
-        "group_payload_hits": 0,
-        "group_fallback_renders": 0,
-    }
-    for entry in _get_display_list_entries(state):
-        stats["entries"] += 1
-        entry_type = str(entry.get("type") or "")
-        layer = None
-        if entry_type == "sticker":
-            item_start = time.perf_counter()
-            layer = render_stickers_to_rgba_erp(
-                sticker_state,
-                width,
-                height,
-                base_dir=base_dir,
-                quality=quality,
-                stickers_override=[entry.get("item")],
-                coverage_override=360,
-            )
-            stats["stickers"] += 1
-            stats["sticker_ms"] += (time.perf_counter() - item_start) * 1000.0
-        elif entry_type == "strokeGroup":
-            item_start = time.perf_counter()
-            action_group_id = str(entry.get("actionGroupId") or "").strip()
-            layer = group_layers.get(action_group_id)
-            if layer is None:
-                layer = _render_group_layer_from_state(painting, action_group_id, width, height)
-                stats["group_fallback_renders"] += 1
-            else:
-                stats["group_payload_hits"] += 1
-            stats["stroke_groups"] += 1
-            stats["stroke_group_ms"] += (time.perf_counter() - item_start) * 1000.0
-        elif entry_type == "rasterObject":
-            item_start = time.perf_counter()
-            layer = _render_raster_layer_from_state(entry.get("item"), width, height)
-            stats["rasters"] += 1
-            stats["raster_ms"] += (time.perf_counter() - item_start) * 1000.0
-        if layer is None:
-            continue
-        canvas = _alpha_composite_over_rgba(canvas, layer)
-        used_paint_entries = True
-    return canvas, used_paint_entries, stats
-
-
-def _should_use_uploaded_group_layers(state: dict, painting_payload: dict | None) -> bool:
-    if not isinstance(painting_payload, dict):
-        return False
-    groups = painting_payload.get("groups")
-    if not isinstance(groups, dict) or not groups:
-        return False
-    painting = state.get("painting") if isinstance(state.get("painting"), dict) else {}
-    raster_objects = painting.get("raster_objects")
-    if isinstance(raster_objects, list) and raster_objects:
-        return False
-    state_groups = painting.get("groups")
-    expected = len(state_groups) if isinstance(state_groups, list) else 0
-    return expected > 0 and len(groups) >= expected
 
 
 class PanoramaStickersNode(io.ComfyNode):
@@ -1415,9 +839,12 @@ class PanoramaStickersNode(io.ComfyNode):
                 render_stickers.append(dict(sticker))
 
         external_pose_ui = None
+        external_state_hash_ui = None
         for payload in external_payloads:
             parsed_state = parse_sticker_state(payload.get("state_raw"))
             payload_state_hash = _hash_text(payload.get("state_raw"))
+            if external_state_hash_ui is None:
+                external_state_hash_ui = payload_state_hash
             if external_pose_ui is None and parsed_state is not None:
                 external_pose_ui = {
                     "yaw_deg": float(parsed_state.get("yaw_deg", 0.0)),
@@ -1533,6 +960,8 @@ class PanoramaStickersNode(io.ComfyNode):
             ui_ret.update(_init_ui_preview(sticker_image, key=stickers_input_contract["image"]))
         if external_pose_ui is not None:
             ui_ret["pano_sticker_input_pose"] = [external_pose_ui]
+        if external_state_hash_ui is not None:
+            ui_ret["pano_sticker_input_state_hash"] = [external_state_hash_ui]
         input_encode_start = progress.value
         if video_span > 0:
             progress.stage("Encoding background preview video")
@@ -1627,41 +1056,16 @@ class PanoramaCutoutNode(io.ComfyNode):
                 float(fps_value),
                 _audio_signature(audio),
             )
-            cached_input_mp4_path = _cutout_video_cache_get(input_video_cache_key)
-            if isinstance(cached_input_mp4_path, Path) and cached_input_mp4_path.exists():
-                payload = make_video_ui_payload(
-                    cached_input_mp4_path,
-                    fps_value,
-                    batch_frames,
-                    video_key=input_video_contract["video"],
-                    meta_key=input_video_contract["meta"],
-                )
-                meta = payload.get(input_video_contract["meta"])
-                if isinstance(meta, list) and meta:
-                    meta[0]["has_audio"] = _audio_has_waveform(audio)
-                _merge_ui_payload(ui_ret, payload)
-            else:
-                try:
-                    input_mp4_path = encode_frames_to_mp4(erp_image, fps_value, audio=audio)
-                except Exception as ex:
-                    _push_ui_warning(
-                        ui_ret,
-                        "pano_cutout_warnings",
-                        f"MP4 preview encoding unavailable; install PyAV/encoders for preview ({ex})",
-                    )
-                else:
-                    _cutout_video_cache_put(input_video_cache_key, input_mp4_path)
-                    payload = make_video_ui_payload(
-                        input_mp4_path,
-                        fps_value,
-                        batch_frames,
-                        video_key=input_video_contract["video"],
-                        meta_key=input_video_contract["meta"],
-                    )
-                    meta = payload.get(input_video_contract["meta"])
-                    if isinstance(meta, list) and meta:
-                        meta[0]["has_audio"] = _audio_has_waveform(audio)
-                    _merge_ui_payload(ui_ret, payload)
+            NODE_RUNTIME.append_cached_video(
+                ui_ret,
+                erp_image,
+                fps_value,
+                audio,
+                cache_key=input_video_cache_key,
+                warning_key="pano_cutout_warnings",
+                video_key=input_video_contract["video"],
+                meta_key=input_video_contract["meta"],
+            )
         if not shots:
             video_span = batch_frames if batch_frames > 1 else 0
             progress = _NodeProgress(unique_id, 1 + batch_frames + video_span + 1, label="PanoramaCutout")
@@ -1745,114 +1149,78 @@ class PanoramaCutoutNode(io.ComfyNode):
             progress = _NodeProgress(unique_id, 1 + batch_frames + video_span + 1, label="PanoramaCutout")
             progress.advance(1)
             source_identity = _tensor_cache_identity(erp_image)
-            cutout_output_key = (
-                "cutout_output",
+            cutout_render_signature = (
                 source_identity,
                 _hash_text(state_json),
                 int(coverage_value),
                 int(ow),
                 int(oh),
             )
-            cached_output = _cutout_output_cache_get(cutout_output_key)
-            if cached_output is not None:
-                progress.stage("Using cached cutout frames")
-                out_batch, mask_bw = cached_output
-                progress.set(1 + batch_frames)
+            progress.stage("Sampling cutout frames")
+            painting_payload = resolve_painting_layer_payload(
+                state.get("painting_layer"),
+                erp_width=int(src.shape[1]),
+                erp_height=int(src.shape[0]),
+            )
+            sampling_map = build_cutout_sampling_map(
+                src.shape,
+                yaw,
+                pitch,
+                hfov,
+                vfov,
+                roll,
+                ow,
+                oh,
+                coverage_value,
+            )
+            out_frames = []
+            for index, frame in enumerate(src_batch):
+                out_frames.append(sample_cutout_from_sampling_map(frame, sampling_map))
+                progress.set(1 + index + 1)
+            overlay_rgba, overlay_mask_bw, _overlay_stats_unused, _used_group_layers_unused = _build_overlay_erp_rgba_and_mask(
+                state,
+                erp_width=int(src.shape[1]),
+                erp_height=int(src.shape[0]),
+                painting_payload=painting_payload,
+                base_dir=Path.cwd(),
+                quality="export",
+                ui_ret=ui_ret,
+                warning_key="pano_cutout_warnings",
+            )
+            if isinstance(overlay_rgba, np.ndarray):
+                overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
+                out_frames = [alpha_composite_over_rgb(frame, overlay_cutout) for frame in out_frames]
+            selected_mask = overlay_mask_bw if isinstance(overlay_mask_bw, np.ndarray) else (
+                painting_payload.get("mask") if isinstance(painting_payload, dict) else None
+            )
+            if isinstance(selected_mask, np.ndarray):
+                mask_bw = sample_cutout_from_sampling_map(selected_mask, sampling_map)
             else:
-                progress.stage("Sampling cutout frames")
-                painting_payload = resolve_painting_layer_payload(
-                    state.get("painting_layer"),
-                    erp_width=int(src.shape[1]),
-                    erp_height=int(src.shape[0]),
-                )
-                sampling_map = build_cutout_sampling_map(
-                    src.shape,
-                    yaw,
-                    pitch,
-                    hfov,
-                    vfov,
-                    roll,
-                    ow,
-                    oh,
-                    coverage_value,
-                )
-                out_frames = []
-                for index, frame in enumerate(src_batch):
-                    out_frames.append(sample_cutout_from_sampling_map(frame, sampling_map))
-                    progress.set(1 + index + 1)
-                overlay_rgba, overlay_mask_bw, _overlay_stats_unused, _used_group_layers_unused = _build_overlay_erp_rgba_and_mask(
-                    state,
-                    erp_width=int(src.shape[1]),
-                    erp_height=int(src.shape[0]),
-                    painting_payload=painting_payload,
-                    base_dir=Path.cwd(),
-                    quality="export",
-                    ui_ret=ui_ret,
-                    warning_key="pano_cutout_warnings",
-                )
-                if isinstance(overlay_rgba, np.ndarray):
-                    overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
-                    out_frames = [alpha_composite_over_rgb(frame, overlay_cutout) for frame in out_frames]
-                selected_mask = overlay_mask_bw if isinstance(overlay_mask_bw, np.ndarray) else (
-                    painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-                )
-                if isinstance(selected_mask, np.ndarray):
-                    mask_bw = sample_cutout_from_sampling_map(selected_mask, sampling_map)
-                else:
-                    mask_bw = np.zeros((oh, ow), dtype=np.float32)
-                out_batch = np.stack(out_frames, axis=0).astype(np.float32, copy=False)
-                _cutout_output_cache_put(cutout_output_key, (out_batch, mask_bw))
+                mask_bw = np.zeros((oh, ow), dtype=np.float32)
+            out_batch = np.stack(out_frames, axis=0).astype(np.float32, copy=False)
             encode_start = progress.value
             out_t, mask_t, _out_batch_unused = _make_batched_image_and_mask_outputs(out_batch, mask_bw)
             if video_span > 0:
                 cutout_video_key = (
                     "cutout_video",
-                    cutout_output_key,
+                    cutout_render_signature,
                     float(fps_value),
                     _audio_signature(audio),
                 )
-                cached_mp4_path = _cutout_video_cache_get(cutout_video_key)
-                if isinstance(cached_mp4_path, Path) and cached_mp4_path.exists():
-                    progress.stage("Using cached preview video")
-                    payload = make_video_ui_payload(
-                        cached_mp4_path,
-                        fps_value,
-                        int(out_batch.shape[0]),
-                        video_key=preview_contract["video"],
-                        meta_key=preview_contract["meta"],
-                    )
-                    meta = payload.get(preview_contract["meta"])
-                    if isinstance(meta, list) and meta:
-                        meta[0]["has_audio"] = _audio_has_waveform(audio)
-                    _merge_ui_payload(ui_ret, payload)
-                else:
-                    progress.stage("Encoding preview video")
-                    try:
-                        mp4_path = encode_frames_to_mp4(
-                            out_batch,
-                            fps_value,
-                            audio=audio,
-                            progress_callback=progress.frame_callback(encode_start, video_span),
-                        )
-                    except Exception as ex:
-                        _push_ui_warning(
-                            ui_ret,
-                            "pano_cutout_warnings",
-                            f"MP4 preview encoding unavailable; install PyAV/encoders for preview ({ex})",
-                        )
-                    else:
-                        _cutout_video_cache_put(cutout_video_key, mp4_path)
-                        payload = make_video_ui_payload(
-                            mp4_path,
-                            fps_value,
-                            int(out_batch.shape[0]),
-                            video_key=preview_contract["video"],
-                            meta_key=preview_contract["meta"],
-                        )
-                        meta = payload.get(preview_contract["meta"])
-                        if isinstance(meta, list) and meta:
-                            meta[0]["has_audio"] = _audio_has_waveform(audio)
-                        _merge_ui_payload(ui_ret, payload)
+                NODE_RUNTIME.append_cached_video(
+                    ui_ret,
+                    out_batch,
+                    fps_value,
+                    audio,
+                    cache_key=cutout_video_key,
+                    warning_key="pano_cutout_warnings",
+                    video_key=preview_contract["video"],
+                    meta_key=preview_contract["meta"],
+                    progress_callback=progress.frame_callback(encode_start, video_span),
+                    status_callback=lambda status: progress.stage(
+                        "Using cached preview video" if status == "hit" else "Encoding preview video"
+                    ),
+                )
             progress.set(encode_start + video_span)
             progress.stage("Done")
             progress.finish()

@@ -13,27 +13,22 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
     def setUp(self):
         self.editor = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
 
-    def test_all_modal_image_loaders_settle_failures(self):
-        blocks = [
-            function_block(self.editor, "getFirstNodeUiImage", "findLinkedInputImageSource"),
-            function_block(self.editor, "loadLinkedInputImageFromSource", "loadLinkedInputImageFromCandidates"),
-            function_block(self.editor, "loadLinkedInputImageFromCandidates", "getLinkedInputImage"),
-            function_block(self.editor, "getStickerUiImage", "getExternalStickerPreviewImage"),
-            function_block(self.editor, "getStickerImage", "getRasterObjectImage"),
-        ]
-        for block in blocks:
-            self.assertIn("onerror", block)
-            self.assertIn("markImageFailed", block)
+    def test_editor_routes_comfy_media_through_the_adapter(self):
+        self.assertIn('from "./pano_comfy_media.js"', self.editor)
+        self.assertIn("createComfyMediaAdapter({", self.editor)
+        self.assertIn("loadPreferredExactLinkedImage", self.editor)
+        self.assertIn("mediaUiImage", self.editor)
+        self.assertNotIn("function findLinkedInputImageSource", self.editor)
+        self.assertNotIn("function loadLinkedInputImageFromSource", self.editor)
 
-    def test_failed_linked_sources_remain_cached(self):
-        source_loader = function_block(
-            self.editor, "loadLinkedInputImageFromSource", "loadLinkedInputImageFromCandidates"
+    def test_external_sticker_reads_only_its_dedicated_self_preview(self):
+        external_loader = function_block(
+            self.editor,
+            "getExternalStickerPreviewImage",
+            "computeStickerVFov",
         )
-        candidate_loader = function_block(
-            self.editor, "loadLinkedInputImageFromCandidates", "getLinkedInputImage"
-        )
-        self.assertNotIn("__panoLinkedInputImageCache?.delete", source_loader)
-        self.assertNotIn("__panoLinkedInputImageCache?.delete", candidate_loader)
+        self.assertIn("getStickerUiImage(EXTERNAL_STICKER_PREVIEW_KEY", external_loader)
+        self.assertNotIn("loadPreferredExactLinkedImage", external_loader)
 
     def test_failed_self_preview_falls_back_to_linked_background(self):
         connected = function_block(self.editor, "getConnectedErpImage", "isDecodedImageReady")
@@ -44,9 +39,7 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
 
     def test_reopening_editor_retries_only_failed_linked_sources(self):
         show_editor_prefix = function_block(self.editor, "showEditor", "getWidget")
-        self.assertIn("__panoLinkedInputImageCache?.forEach", show_editor_prefix)
-        self.assertIn("isImageLoadFailed(entry.img)", show_editor_prefix)
-        self.assertIn("cache.delete(key)", show_editor_prefix)
+        self.assertIn("comfyMedia.clearFailedLinkedImages(node)", show_editor_prefix)
 
     def test_render_loop_reschedules_after_frame_errors(self):
         tick = function_block(self.editor, "tick", "stopRenderLoop")
@@ -63,7 +56,10 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
     def test_boot_warning_does_not_override_image_loading_state(self):
         stage_status = function_block(self.editor, "getStageImageStatus", "drawErpBackgroundUnwrap")
         self.assertNotIn("stageWarningDetail", stage_status)
-        boot = function_block(self.editor, "runBootStep", "installEditorButton")
+        boot = self.editor.split("function runBootStep", 1)[1].split(
+            "\napp.registerExtension(",
+            1,
+        )[0]
         self.assertIn("uiState.stageWarningDetail", boot)
         self.assertIn("if (!readOnly) commitState()", boot)
         self.assertIn('uiState.stageWarningDetail = "boot:asset-migration"', boot)

@@ -136,6 +136,21 @@ class TestNodesPreview(unittest.TestCase):
         assert tuple(res.result[0].shape) == (1, 512, 1024, 3)
         assert tuple(res.result[1].shape) == (1, 512, 1024)
 
+    def test_stickers_node_reports_the_exact_external_state_hash_to_the_editor(self):
+        PanoramaStickersNode = self.nodes_module.PanoramaStickersNode
+        state_raw = '{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":12,"pitch_deg":-3,"roll_deg":4,"hFOV_deg":55},"source_aspect":1.5}'
+
+        res = PanoramaStickersNode.execute(
+            output_preset="1024",
+            coverage="360",
+            bg_color="#000000",
+            state_json="",
+            sticker_image=torch.zeros((1, 2, 3, 3), dtype=torch.float32),
+            sticker_state=state_raw,
+        )
+
+        assert res.ui["pano_sticker_input_state_hash"] == ["575416577"]
+
     def test_stickers_auto_180_keeps_overlay_workspace_2_to_1(self):
         PanoramaStickersNode = self.nodes_module.PanoramaStickersNode
         bg_erp = SimpleNamespace(shape=(1, 2048, 4096, 3))
@@ -214,16 +229,20 @@ class TestNodesPreview(unittest.TestCase):
         assert "runtimeAttachPanoramaPreview(target" not in preview_wire
 
     def test_preview_editor_attach_is_node_created_only(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
-        install_block = editor_js.split("function installStandalonePreviewNode", 1)[1].split("function installStandalonePreviewInstance", 1)[0]
+        lifecycle_js = self._web_source_path("pano_editor_extension.js").read_text(encoding="utf-8")
+        install_block = lifecycle_js.split("function installStandalonePreviewNode", 1)[1].split("function installStandalonePreviewInstance", 1)[0]
         assert "attachPreviewNode(nodeType" not in install_block
-        assert "attachPreviewNode(node, {" in editor_js
+        instance_block = lifecycle_js.split("function installStandalonePreviewInstance", 1)[1].split("export function createPanoEditorExtension", 1)[0]
+        assert "attachPreview(node, {" in instance_block
 
-    def test_editor_buttons_use_widget_route(self):
+    def test_editor_lifecycle_is_delegated_to_the_extension_boundary(self):
         editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
-        assert 'ensureActionButtonWidget(node, buttonText, () => showEditor(node, "stickers"))' in editor_js
-        assert 'ensureActionButtonWidget(node, buttonText, () => showEditor(node, "cutout"))' in editor_js
-        assert 'ensureActionButtonWidget(node, "Open Preview", () => showEditor(node, "stickers", { readOnly: true, hideSidebar: false }))' in editor_js
+        assert 'from "./pano_editor_extension.js";' in editor_js
+        assert "createPanoEditorExtension" in editor_js
+        assert "queuePendingStickerOperation" in editor_js
+        assert "app.registerExtension(createPanoEditorExtension({" in editor_js
+        assert "function installEditorButton" not in editor_js
+        assert "function installStandalonePreviewInstance" not in editor_js
 
     def test_preview_runtime_has_no_embedded_button(self):
         preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
@@ -304,17 +323,28 @@ class TestNodesPreview(unittest.TestCase):
         assert "if (pointInRect(p.x, p.y, btn))" not in legacy_block
 
     def test_stickers_without_preview_do_not_force_large_node_size(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
-        assert "Without node preview, let LiteGraph size the node from widgets only." in editor_js
+        lifecycle_js = self._web_source_path("pano_editor_extension.js").read_text(encoding="utf-8")
+        stickers_block = lifecycle_js.split('if (matchType === "PanoramaStickers") {', 1)[1].split(
+            'ensureActionButtonWidget(node, buttonText, () => openEditor(node, "cutout"))',
+            1,
+        )[0]
+        preview_block = stickers_block.split("if (enableStickersPreview) {", 1)[1]
+        assert "attachStickers(node" in preview_block
+        assert "node.size = [360, 260]" in preview_block
 
     def test_external_input_preview_contract_strings(self):
+        from comfyui_pano_suite.node_runtime import NodeRuntime
+
         repo_root = Path(__file__).resolve().parent.parent
         editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
         nodes_py = (repo_root / "comfyui_pano_suite" / "nodes.py").read_text(encoding="utf-8")
         assert 'pano_sticker_input_images' in editor_js
         assert 'getLinkedInputImage(node, ["sticker_image"])' not in editor_js
-        assert 'pano_sticker_input_images' in nodes_py
+        assert NodeRuntime().preview_contract("stickers_input")["image"] == "pano_sticker_input_images"
         assert 'pano_sticker_input_pose' in nodes_py
+        assert 'pano_sticker_input_state_hash' in nodes_py
+        assert 'comfyMedia.externalStateHash(node, stateRaw)' in editor_js
+        assert 'hashStringSimple(JSON.stringify(inputPose))' not in editor_js
         assert 'sticker_state_json' in nodes_py
 
     def test_paint_rebuild_ui_scaffold_strings(self):

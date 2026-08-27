@@ -67,6 +67,11 @@ import {
   markImageReady,
   stageImageStatus,
 } from "./pano_image_state.js";
+import { createComfyMediaAdapter } from "./pano_comfy_media.js";
+import {
+  createPanoEditorExtension,
+  queuePendingStickerOperation,
+} from "./pano_editor_extension.js";
 
 const STATE_WIDGET = "state_json";
 const EXTERNAL_STICKER_ID = "sticker_image_1";
@@ -108,9 +113,26 @@ const LASSO_CURSOR_HOTSPOT_Y = 4;
 // Global registry: nodeId → Promise for in-flight paint layer uploads.
 const _paintLayerUploadRegistry = new Map();
 const _paintLayerSyncRegistry = new Map();
-const _stickerAssetUploadRegistry = new Map();
 const _videoThumbnailCache = new Map();
 const VIDEO_THUMBNAIL_CACHE_LIMIT = 12;
+
+const comfyMedia = createComfyMediaAdapter({
+  app,
+  api,
+  ImageCtor: Image,
+  imageState: {
+    isImageLoadFailed,
+    markImageFailed,
+    markImageLoading,
+    markImageReady,
+  },
+});
+const mediaAssetSource = comfyMedia.assetSource;
+const mediaSource = comfyMedia.source;
+const mediaUiImage = comfyMedia.uiImage;
+const invalidateMediaUiImage = comfyMedia.invalidateUiImage;
+const resolvePreferredExactLinkedSource = comfyMedia.resolvePreferredExactLinkedSource;
+const loadPreferredExactLinkedImage = comfyMedia.loadPreferredExactLinkedImage;
 
 function getCoverageLabel(value) {
   return normalizeCoverageValue(value) === 180 ? "180° Front" : "360° Full";
@@ -510,7 +532,7 @@ function getNodePreviewImage(node, assetId, asset) {
   if (!node.__panoPreviewImageCache) node.__panoPreviewImageCache = new Map();
   const key = String(assetId || "");
   if (!key) return null;
-  const src = stickerAssetToPreviewSrc(asset);
+  const src = mediaAssetSource(asset);
   if (!src) return null;
   const cached = node.__panoPreviewImageCache.get(key);
   if (cached && cached.src === src) return cached.img;
@@ -874,79 +896,6 @@ function getNodePreviewResetButtonRect(rect) {
 }
 
 function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
-function syncCoverageWidgetRedraw(node) {
-  if (!node || node.__panoCoverageWidgetSyncInstalled) return;
-  const coverageWidget = getWidget(node, "coverage");
-  if (!coverageWidget) return;
-  const prevCallback = typeof coverageWidget.callback === "function" ? coverageWidget.callback.bind(coverageWidget) : null;
-  coverageWidget.callback = function (...args) {
-    const result = prevCallback ? prevCallback(...args) : undefined;
-    node.__panoStateCache = null;
-    node.__panoLiveStateOverride = null;
-    node.__panoWrappedErpCache = null;
-    node.__panoPanoBackgroundCache = null;
-    node.__panoPreviewNodeRuntime?.requestDraw?.();
-    node.__panoDomPreview?.requestDraw?.();
-    node.setDirtyCanvas?.(true, true);
-    node.graph?.setDirtyCanvas?.(true, true);
-    app?.canvas?.setDirty?.(true, true);
-    return result;
-  };
-  node.__panoCoverageWidgetSyncInstalled = true;
-}
-function isHexColorString(value) {
-  const text = String(value ?? "").trim();
-  return /^#?[0-9a-fA-F]{6}$/.test(text) || /^#?[0-9a-fA-F]{3}$/.test(text);
-}
-function looksLikeJsonObjectString(value) {
-  const text = String(value ?? "").trim();
-  return text.startsWith("{") && text.endsWith("}");
-}
-function migratePanoramaStickersWidgetOrder(node) {
-  if (!node || node.__panoCoverageWidgetOrderMigrated) return;
-  const coverage = getWidget(node, "coverage");
-  const bg = getWidget(node, "bg_color");
-  const stateWidget = getWidget(node, STATE_WIDGET);
-  const stickerState = getWidget(node, "sticker_state");
-  if (!coverage || !bg || !stateWidget) {
-    node.__panoCoverageWidgetOrderMigrated = true;
-    return;
-  }
-  const coverageRaw = String(coverage.value ?? "").trim();
-  const bgRaw = String(bg.value ?? "").trim();
-  const stateRaw = String(stateWidget.value ?? "").trim();
-  const needsMigration = !/^(180|360)$/.test(coverageRaw)
-    && isHexColorString(coverageRaw)
-    && (looksLikeJsonObjectString(bgRaw) || bgRaw === "");
-  if (!needsMigration) {
-    node.__panoCoverageWidgetOrderMigrated = true;
-    return;
-  }
-  let migratedCoverage = "360";
-  if (looksLikeJsonObjectString(bgRaw)) {
-    try {
-      const parsed = JSON.parse(bgRaw);
-      migratedCoverage = String(normalizeCoverageValue(parsed?.coverage));
-    } catch {
-      migratedCoverage = "360";
-    }
-  }
-  const migratedBg = coverageRaw;
-  const migratedState = bgRaw;
-  const migratedStickerState = stateRaw;
-  coverage.value = migratedCoverage;
-  coverage.callback?.(migratedCoverage);
-  bg.value = migratedBg;
-  bg.callback?.(migratedBg);
-  stateWidget.value = migratedState;
-  stateWidget.callback?.(migratedState);
-  if (stickerState) {
-    stickerState.value = migratedStickerState;
-    stickerState.callback?.(migratedStickerState);
-  }
-  node.setDirtyCanvas?.(true, true);
-  node.__panoCoverageWidgetOrderMigrated = true;
-}
 function getEditorNodeTitle(node, type) {
   const rawType = String(node?.comfyClass || node?.type || node?.title || "").trim();
   const titleMap = {
@@ -961,44 +910,6 @@ function getEditorNodeTitle(node, type) {
   if (rawType) return rawType;
   if (type === "cutout") return "Panorama Cutout";
   return "Panorama Stickers";
-}
-function hideWidget(node, widgetName) {
-  const widgets = Array.isArray(node?.widgets) ? node.widgets : [];
-  widgets.forEach((w) => {
-    const n = String(w?.name || "");
-    if (!(n === widgetName || n.trim() === widgetName || n.toLowerCase().includes(String(widgetName).toLowerCase()))) return;
-    if (w.__panoHidden) return;
-    w.__panoHidden = true;
-    w.computeSize = () => [0, 0];
-    w.type = "hidden";
-    w.hidden = true;
-    w.options = { ...(w.options || {}), hidden: true };
-      if (w.element?.style) w.element.style.display = "none";
-      if (w.parentEl?.style) w.parentEl.style.display = "none";
-  });
-}
-
-function ensureActionButtonWidget(node, buttonText, callback) {
-  if (!node || typeof node.addWidget !== "function") return null;
-  const widgets = Array.isArray(node.widgets) ? node.widgets : [];
-  let widget = widgets.find((w) => String(w?.name || "") === String(buttonText));
-  if (widget) {
-    widget.callback = callback;
-    widget.hidden = false;
-    widget.__panoHidden = false;
-    widget.type = "button";
-    if (widget.element?.style) widget.element.style.display = "";
-    if (widget.parentEl?.style) widget.parentEl.style.display = "";
-    if (typeof widget.computeSize !== "function" || widget.computeSize() == null || widget.hidden) {
-      widget.computeSize = () => [Math.max(120, Number(node?.size?.[0] || 0) - 20), 30];
-    }
-    return widget;
-  }
-  widget = node.addWidget("button", buttonText, null, callback);
-  if (widget) {
-    widget.serialize = false;
-  }
-  return widget;
 }
 function uid(prefix) { return `${prefix}_${Math.random().toString(16).slice(2, 10)}`; }
 
@@ -1023,7 +934,7 @@ function getMediaWidthForSizing(media) {
 
 function resolveNodeOutputPresetWidth(node, rawPreset, fallback = 2048, inputNames = ["bg_erp", "erp_image"], onLoad = null, cacheKey = "output_preset_auto_bg") {
   if (!isAutoOutputPresetValue(rawPreset)) return parseOutputPresetValue(rawPreset, fallback);
-  const img = getPreferredExactLinkedInputImage(node, inputNames, onLoad, cacheKey);
+  const img = loadPreferredExactLinkedImage(node, inputNames, onLoad, cacheKey);
   return getMediaWidthForSizing(img) || Math.max(1, Math.round(Number(fallback || 2048)));
 }
 
@@ -1042,510 +953,8 @@ function logPaintDebug(phase, payload) {
   return;
 }
 
-function getGraphLinkById(graph, linkId) {
-  if (!graph || linkId == null) return null;
-  const links = graph.links;
-  if (!links) return null;
-  if (links instanceof Map) return links.get(linkId) || links.get(Number(linkId)) || links.get(String(linkId)) || null;
-  return links[linkId] || links[String(linkId)] || null;
-}
-
-function getGraphNodeById(graph, id) {
-  if (!graph || id == null) return null;
-  if (typeof graph.getNodeById === "function") return graph.getNodeById(id);
-  return graph._nodes_by_id?.[id] || graph._nodes_by_id?.[String(id)] || null;
-}
-
-function resolveOriginFromLinkInfo(linkInfo) {
-  if (!linkInfo) return { originId: null, originSlot: 0 };
-  if (typeof linkInfo === "object" && !Array.isArray(linkInfo)) {
-    return {
-      originId: linkInfo.origin_id ?? null,
-      originSlot: Number(linkInfo.origin_slot ?? 0),
-    };
-  }
-  if (Array.isArray(linkInfo)) {
-    return {
-      originId: linkInfo[1] ?? null,
-      originSlot: Number(linkInfo[2] ?? 0),
-    };
-  }
-  return { originId: null, originSlot: 0 };
-}
-
-function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
-  let originNode = null;
-  try {
-    originNode = typeof node?.getInputNode === "function" ? node.getInputNode(inputIndex) : null;
-  } catch {
-    originNode = null;
-  }
-  if (originNode?.isSubgraphNode?.()) {
-    try {
-      const inputLink = typeof node?.getInputLink === "function" ? node.getInputLink(inputIndex) : null;
-      const resolved = inputLink ? originNode.resolveSubgraphOutputLink?.(Number(inputLink.origin_slot ?? 0)) : null;
-      if (resolved?.outputNode) originNode = resolved.outputNode;
-    } catch {
-      // ignore
-    }
-  }
-  if (!originNode && fallbackOriginId != null) {
-    originNode = getGraphNodeById(node?.graph, fallbackOriginId);
-  }
-  return originNode;
-}
-
-function comfyImageEntryToUrl(entry) {
-  if (!entry || typeof entry !== "object") return "";
-  const filename = String(entry.filename || "");
-  if (!filename) return "";
-  const params = new URLSearchParams();
-  params.set("filename", filename);
-  params.set("type", String(entry.type || "output"));
-  if (entry.subfolder) params.set("subfolder", String(entry.subfolder));
-  const q = `/view?${params.toString()}`;
-  return typeof api?.apiURL === "function" ? api.apiURL(q) : q;
-}
-
-function isDirectImageUrl(src) {
-  const s = String(src || "").trim();
-  if (!s) return false;
-  return (
-    /^https?:\/\//i.test(s)
-    || s.startsWith("/")
-    || s.startsWith("blob:")
-    || s.startsWith("data:")
-  );
-}
-
-function splitFilenameAndSubfolder(pathish) {
-  const normalized = String(pathish || "").trim().replaceAll("\\", "/");
-  const trimmed = normalized.replace(/^\.\/+/, "").replace(/^\/+/, "");
-  if (!trimmed) return { filename: "", subfolder: "" };
-  const parts = trimmed.split("/").filter(Boolean);
-  if (!parts.length) return { filename: "", subfolder: "" };
-  const filename = String(parts.pop() || "").trim();
-  const subfolder = parts.join("/");
-  return { filename, subfolder };
-}
-
-function uniqStrings(values) {
-  const out = [];
-  const seen = new Set();
-  values.forEach((v) => {
-    const s = String(v || "").trim();
-    if (!s || seen.has(s)) return;
-    seen.add(s);
-    out.push(s);
-  });
-  return out;
-}
-
-function buildImageSrcCandidates(srcRaw) {
-  const src = String(srcRaw || "").trim();
-  if (!src) return [];
-  if (isDirectImageUrl(src)) return [src];
-  const { filename, subfolder } = splitFilenameAndSubfolder(src);
-  if (!filename) return [src];
-  const byView = ["temp", "output", "input"].map((type) => comfyImageEntryToUrl({
-    filename,
-    subfolder,
-    type,
-  }));
-  return uniqStrings([...byView, src]);
-}
-
-function stickerAssetToPreviewSrc(asset) {
-  if (!asset || typeof asset !== "object") return "";
-  const type = String(asset.type || "").trim().toLowerCase();
-  if (type === "dataurl") return String(asset.value || "");
-  if (type === "comfy_image") {
-    const filename = String(asset.filename || "").trim();
-    if (!filename) return "";
-    return comfyImageEntryToUrl({
-      filename,
-      subfolder: String(asset.subfolder || ""),
-      type: String(asset.storage || "input"),
-    });
-  }
-  return "";
-}
-
-function lookupNodeOutputEntry(nodeId) {
-  const store = app?.nodeOutputs;
-  if (!store || nodeId == null) return null;
-  // Performance fix: Use strictly direct lookup.
-  // Iterating all outputs every frame causes massive lag when many nodes are present.
-  const raw = String(nodeId);
-  if (store instanceof Map) {
-    return store.get(nodeId) || store.get(raw) || store.get(Number(raw)) || null;
-  }
-  return store[nodeId] || store[raw] || null;
-}
-
-function imageSourceFromCandidate(candidate) {
-  if (!candidate) return "";
-  if (typeof candidate === "string") return String(candidate || "").trim();
-  if (Array.isArray(candidate)) {
-    if (candidate.length === 0) return "";
-    if (candidate.length === 1) return imageSourceFromCandidate(candidate[0]);
-    const filename = String(candidate[0] || "").trim();
-    if (filename) {
-      const subfolder = String(candidate[1] || "").trim();
-      const type = String(candidate[2] || "output").trim() || "output";
-      return comfyImageEntryToUrl({ filename, subfolder, type });
-    }
-    for (const entry of candidate) {
-      const src = imageSourceFromCandidate(entry);
-      if (src) return src;
-    }
-    return "";
-  }
-  if (typeof candidate?.src === "string" && candidate.src) return candidate.src;
-  if (typeof candidate?.url === "string" && candidate.url) return candidate.url;
-  return comfyImageEntryToUrl(candidate);
-}
-
-function orderedLinkedOutputImageCandidates(outputEntry, preferredSlot = -1) {
-  const groups = [];
-  if (Array.isArray(outputEntry?.images) && outputEntry.images.length) groups.push(outputEntry.images);
-  if (Array.isArray(outputEntry?.ui?.images) && outputEntry.ui.images.length) groups.push(outputEntry.ui.images);
-  const ordered = [];
-  for (const group of groups) {
-    if (!Array.isArray(group) || !group.length) continue;
-    if (preferredSlot >= 0 && preferredSlot < group.length) ordered.push(group[preferredSlot]);
-    ordered.push(...group);
-  }
-  return ordered;
-}
-
-function resolveImageSourceCandidates(candidates) {
-  const out = [];
-  const seen = new Set();
-  for (const cand of candidates || []) {
-    const src = imageSourceFromCandidate(cand);
-    if (!src || seen.has(src)) continue;
-    seen.add(src);
-    out.push(src);
-  }
-  return out;
-}
-
-function getFirstNodeUiImage(node, key, imageCache, onLoad = null) {
-  const outputs = lookupNodeOutputEntry(node?.id);
-  const list = Array.isArray(outputs?.ui?.[key]) ? outputs.ui[key]
-    : Array.isArray(outputs?.[key]) ? outputs[key]
-      : [];
-  const first = Array.isArray(list) && list.length ? list[0] : null;
-  const src = imageSourceFromCandidate(first);
-  if (!src) return null;
-  const cacheKey = `__ui__${key}`;
-  const cached = imageCache.get(cacheKey);
-  if (cached && cached.__panoSrc === src) return cached;
-  const img = new Image();
-  img.__panoSrc = src;
-  markImageLoading(img, src);
-  img.onload = () => {
-    markImageReady(img, src);
-    if (typeof onLoad === "function") onLoad(img);
-  };
-  img.onerror = () => {
-    markImageFailed(img, src);
-    if (typeof onLoad === "function") onLoad(img);
-  };
-  img.src = src;
-  imageCache.set(cacheKey, img);
-  return img;
-}
-
-function findLinkedInputImageSource(node, preferredInputNames = []) {
-  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  if (!inputs.length) return { src: "", sourceType: "", inputName: "" };
-  const preferred = preferredInputNames
-    .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
-    .filter((idx) => idx >= 0);
-  const imageTyped = inputs
-    .map((input, idx) => ({ input, idx }))
-    .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
-    .map(({ idx }) => idx);
-  const indices = [...new Set([...preferred, ...imageTyped])];
-
-  for (const idx of indices) {
-    const input = inputs[idx];
-    const linkId = input?.link;
-    if (linkId == null) continue;
-    const linkInfo = getGraphLinkById(node.graph, linkId);
-    const { originId, originSlot } = resolveOriginFromLinkInfo(linkInfo);
-    if (originId == null) continue;
-    const originNode = resolveInputOriginNode(node, idx, originId);
-    const resolvedOriginSlot = Number(originSlot || 0);
-    if (!originNode) continue;
-
-    let appNodeImageUrls = [];
-    try {
-      appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
-    } catch {
-      appNodeImageUrls = [];
-    }
-    if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length) {
-      const ordered = [];
-      if (resolvedOriginSlot >= 0 && resolvedOriginSlot < appNodeImageUrls.length) ordered.push(appNodeImageUrls[resolvedOriginSlot]);
-      ordered.push(...appNodeImageUrls);
-      const srcCandidates = resolveImageSourceCandidates(ordered);
-      if (srcCandidates.length) {
-        return { src: srcCandidates[0], srcCandidates, sourceType: "appNodeImageUrls", inputName: String(input?.name || "") };
-      }
-    }
-
-    const outputs = lookupNodeOutputEntry(originNode?.id ?? originId);
-    const outputCandidates = orderedLinkedOutputImageCandidates(outputs, resolvedOriginSlot);
-    const outputSrcCandidates = resolveImageSourceCandidates(outputCandidates);
-    if (outputSrcCandidates.length) {
-      return { src: outputSrcCandidates[0], srcCandidates: outputSrcCandidates, sourceType: "nodeOutputs", inputName: String(input?.name || "") };
-    }
-
-    const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
-    if (nodeImgs.length) {
-      const ordered = [];
-      if (resolvedOriginSlot >= 0 && resolvedOriginSlot < nodeImgs.length) ordered.push(nodeImgs[resolvedOriginSlot]);
-      ordered.push(...nodeImgs);
-      const srcCandidates = resolveImageSourceCandidates(ordered);
-      if (srcCandidates.length) {
-        return { src: srcCandidates[0], srcCandidates, sourceType: "nodeImgs", inputName: String(input?.name || "") };
-      }
-    }
-
-    const imageWidget = originNode?.widgets?.find((w) => String(w?.name || "").toLowerCase() === "image");
-    if (imageWidget) {
-      let src = imageSourceFromCandidate(imageWidget.value);
-      if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
-        src = api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`);
-      }
-      if (src) {
-        return { src, sourceType: "widget", inputName: String(input?.name || "") };
-      }
-    }
-  }
-
-  // Fallback: Check if the current node has explicitly saved input images (e.g. from upstream non-file nodes)
-  // We do this check regardless of linked inputs if preferred inputs are exhausted, to support
-  // scenarios where the link exists but provides no image data (e.g. some custom nodes).
-  const selfOutput = lookupNodeOutputEntry(node?.id);
-  const fallbackCandidates = [];
-  if (Array.isArray(selfOutput?.pano_input_images)) fallbackCandidates.push(...selfOutput.pano_input_images);
-  if (Array.isArray(selfOutput?.ui?.pano_input_images)) fallbackCandidates.push(...selfOutput.ui.pano_input_images);
-
-  if (fallbackCandidates.length > 0) {
-    for (const item of fallbackCandidates) {
-      const src = imageSourceFromCandidate(item);
-      if (src) {
-        return { src, sourceType: "selfOutput", inputName: "fallback" };
-      }
-    }
-  }
-
-  return { src: "", sourceType: "", inputName: "" };
-}
-
-function findExactLinkedInputImageSource(node, inputName) {
-  const wanted = String(inputName || "").trim();
-  if (!wanted) return { src: "", sourceType: "", inputName: "" };
-  const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  const idx = inputs.findIndex((input) => String(input?.name || "") === wanted);
-  if (idx < 0) return { src: "", sourceType: "", inputName: wanted };
-  const input = inputs[idx];
-  const linkId = input?.link;
-  if (linkId == null) return { src: "", sourceType: "", inputName: wanted };
-  const linkInfo = getGraphLinkById(node.graph, linkId);
-  const { originId, originSlot } = resolveOriginFromLinkInfo(linkInfo);
-  if (originId == null) return { src: "", sourceType: "", inputName: wanted };
-  const originNode = resolveInputOriginNode(node, idx, originId);
-  const resolvedOriginSlot = Number(originSlot || 0);
-  if (!originNode) return { src: "", sourceType: "", inputName: wanted };
-
-  let appNodeImageUrls = [];
-  try {
-    appNodeImageUrls = typeof app?.getNodeImageUrls === "function" ? (app.getNodeImageUrls(originNode) || []) : [];
-  } catch {
-    appNodeImageUrls = [];
-  }
-  if (Array.isArray(appNodeImageUrls) && appNodeImageUrls.length) {
-    const ordered = [];
-    if (resolvedOriginSlot >= 0 && resolvedOriginSlot < appNodeImageUrls.length) ordered.push(appNodeImageUrls[resolvedOriginSlot]);
-    ordered.push(...appNodeImageUrls);
-    const srcCandidates = resolveImageSourceCandidates(ordered);
-    if (srcCandidates.length) return { src: srcCandidates[0], srcCandidates, sourceType: "appNodeImageUrls", inputName: wanted };
-  }
-
-  const outputs = lookupNodeOutputEntry(originNode?.id ?? originId);
-  const outputCandidates = orderedLinkedOutputImageCandidates(outputs, resolvedOriginSlot);
-  const outputSrcCandidates = resolveImageSourceCandidates(outputCandidates);
-  if (outputSrcCandidates.length) return { src: outputSrcCandidates[0], srcCandidates: outputSrcCandidates, sourceType: "nodeOutputs", inputName: wanted };
-
-  const nodeImgs = Array.isArray(originNode?.imgs) ? originNode.imgs : [];
-  if (nodeImgs.length) {
-    const ordered = [];
-    if (resolvedOriginSlot >= 0 && resolvedOriginSlot < nodeImgs.length) ordered.push(nodeImgs[resolvedOriginSlot]);
-    ordered.push(...nodeImgs);
-    const srcCandidates = resolveImageSourceCandidates(ordered);
-    if (srcCandidates.length) return { src: srcCandidates[0], srcCandidates, sourceType: "nodeImgs", inputName: wanted };
-  }
-
-  const imageWidget = originNode?.widgets?.find((w) => String(w?.name || "").toLowerCase() === "image");
-  if (imageWidget) {
-    let src = imageSourceFromCandidate(imageWidget.value);
-    if (src && !src.includes("/") && !src.includes(":") && (originNode.comfyClass === "LoadImage" || originNode.type === "LoadImage")) {
-      src = api.apiURL(`/view?filename=${encodeURIComponent(src)}&type=input&subfolder=`);
-    }
-    if (src) return { src, sourceType: "widget", inputName: wanted };
-  }
-
-  return { src: "", sourceType: "", inputName: wanted };
-}
-
-function loadLinkedInputImageFromSource(node, cacheKey, srcRaw, onLoad = null) {
-  const sourceText = String(srcRaw || "").trim();
-  if (!sourceText) return null;
-  const candidates = buildImageSrcCandidates(sourceText);
-  if (!candidates.length) return null;
-  if (!node.__panoLinkedInputImageCache) node.__panoLinkedInputImageCache = new Map();
-  const key = String(cacheKey || "image");
-  const cached = node.__panoLinkedInputImageCache.get(key);
-  if (cached && cached.srcRaw === sourceText && cached.img) return cached.img;
-
-  const img = new Image();
-  markImageLoading(img, sourceText);
-  const cacheEntry = { srcRaw: sourceText, resolvedSrc: "", img };
-  node.__panoLinkedInputImageCache.set(key, cacheEntry);
-  let attempt = -1;
-  const tryLoadNext = () => {
-    attempt += 1;
-    if (attempt >= candidates.length) {
-      markImageFailed(img, sourceText);
-      onLoad?.();
-      node.setDirtyCanvas?.(true, true);
-      return;
-    }
-    const nextSrc = candidates[attempt];
-    cacheEntry.resolvedSrc = nextSrc;
-    img.src = nextSrc;
-  };
-
-  img.onload = () => {
-    markImageReady(img, sourceText);
-    onLoad?.();
-    node.setDirtyCanvas?.(true, true);
-  };
-  img.onerror = () => {
-    if (attempt + 1 < candidates.length) {
-      tryLoadNext();
-      return;
-    }
-    markImageFailed(img, sourceText);
-    onLoad?.();
-    node.setDirtyCanvas?.(true, true);
-  };
-  tryLoadNext();
-  return img;
-}
-
-function loadLinkedInputImageFromCandidates(node, cacheKey, srcCandidates, onLoad = null) {
-  const rawCandidates = Array.isArray(srcCandidates)
-    ? srcCandidates.map((entry) => String(entry || "").trim()).filter(Boolean)
-    : [];
-  if (!rawCandidates.length) return null;
-  if (!node.__panoLinkedInputImageCache) node.__panoLinkedInputImageCache = new Map();
-  const key = String(cacheKey || "image");
-  const cacheKeyText = rawCandidates.join("\n");
-  const cached = node.__panoLinkedInputImageCache.get(key);
-  if (cached && cached.srcRaw === cacheKeyText && cached.img) return cached.img;
-
-  const candidates = [];
-  const seen = new Set();
-  rawCandidates.forEach((raw) => {
-    buildImageSrcCandidates(raw).forEach((candidate) => {
-      const s = String(candidate || "").trim();
-      if (!s || seen.has(s)) return;
-      seen.add(s);
-      candidates.push(s);
-    });
-  });
-  if (!candidates.length) return null;
-
-  const img = new Image();
-  markImageLoading(img, cacheKeyText);
-  const cacheEntry = { srcRaw: cacheKeyText, resolvedSrc: "", img };
-  node.__panoLinkedInputImageCache.set(key, cacheEntry);
-  let attempt = -1;
-  const tryLoadNext = () => {
-    attempt += 1;
-    if (attempt >= candidates.length) {
-      markImageFailed(img, cacheKeyText);
-      onLoad?.();
-      node.setDirtyCanvas?.(true, true);
-      return;
-    }
-    const nextSrc = candidates[attempt];
-    cacheEntry.resolvedSrc = nextSrc;
-    img.src = nextSrc;
-  };
-
-  img.onload = () => {
-    markImageReady(img, cacheKeyText);
-    onLoad?.();
-    node.setDirtyCanvas?.(true, true);
-  };
-  img.onerror = () => {
-    if (attempt + 1 < candidates.length) {
-      tryLoadNext();
-      return;
-    }
-    markImageFailed(img, cacheKeyText);
-    onLoad?.();
-    node.setDirtyCanvas?.(true, true);
-  };
-  tryLoadNext();
-  return img;
-}
-
-function getLinkedInputImage(node, preferredInputNames = [], onLoad = null) {
-  const resolved = findLinkedInputImageSource(node, preferredInputNames);
-  const srcCandidates = Array.isArray(resolved?.srcCandidates) ? resolved.srcCandidates : [];
-  const key = preferredInputNames.join("|") || "image";
-  if (srcCandidates.length) return loadLinkedInputImageFromCandidates(node, key, srcCandidates, onLoad);
-  const srcRaw = String(resolved?.src || "").trim();
-  if (!srcRaw) return null;
-  return loadLinkedInputImageFromSource(node, key, srcRaw, onLoad);
-}
-
-function findPreferredExactLinkedImageSource(node, inputNames = []) {
-  const orderedNames = Array.isArray(inputNames) ? inputNames : [inputNames];
-  for (const name of orderedNames) {
-    const resolved = findExactLinkedInputImageSource(node, name);
-    if (String(resolved?.src || "").trim()) return resolved;
-  }
-  return { src: "", sourceType: "", inputName: "" };
-}
-
-function getPreferredExactLinkedInputImage(node, inputNames = [], onLoad = null, cacheKey = "") {
-  const orderedNames = Array.isArray(inputNames) ? inputNames : [inputNames];
-  const resolved = findPreferredExactLinkedImageSource(node, orderedNames);
-  const key = String(cacheKey || orderedNames.join("|") || "image_exact");
-  const srcCandidates = Array.isArray(resolved?.srcCandidates) ? resolved.srcCandidates : [];
-  if (srcCandidates.length) return loadLinkedInputImageFromCandidates(node, key, srcCandidates, onLoad);
-  const srcRaw = String(resolved?.src || "").trim();
-  if (!srcRaw) return null;
-  return loadLinkedInputImageFromSource(node, key, srcRaw, onLoad);
-}
-
 async function showEditor(node, type, options = {}) {
-  try {
-    node.__panoLinkedInputImageCache?.forEach?.((entry, key, cache) => {
-      if (entry?.img && isImageLoadFailed(entry.img)) cache.delete(key);
-    });
-  } catch {
-    // A stale cache must never prevent the editor from opening.
-  }
+  comfyMedia.clearFailedLinkedImages(node);
   const readOnly = options?.readOnly === true;
   const hideSidebar = options?.hideSidebar ?? readOnly;
   const previewMode = readOnly;
@@ -1558,7 +967,7 @@ async function showEditor(node, type, options = {}) {
 
   const getLinkedBackgroundImageForSizing = () => {
     const inputNames = type === "stickers" ? ["bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
-    return getPreferredExactLinkedInputImage(
+    return loadPreferredExactLinkedImage(
       node,
       inputNames,
       () => requestDraw(),
@@ -1704,6 +1113,17 @@ async function showEditor(node, type, options = {}) {
   });
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
+  const onImageFileSelected = ({ intent, file } = {}) => {
+    if (!isImageFile(file)) return;
+    if (intent === "add") {
+      void addImageStickerFromFile(file);
+      return;
+    }
+    if (intent === "replace") void replaceSelectedImageFromFile(file);
+  };
+  const onImageFileCancelled = ({ intent } = {}) => {
+    void intent;
+  };
   const vueApp = createApp(PanoModal, {
     open: true,
     type,
@@ -1718,9 +1138,12 @@ async function showEditor(node, type, options = {}) {
     })),
     uiState,
     onClose: () => { void closeEditor(); },
+    onImageFileSelected,
+    onImageFileCancelled,
   });
+  let vueModal = null;
   try {
-    vueApp.mount(mountHost);
+    vueModal = vueApp.mount(mountHost);
   } catch (error) {
     try {
       vueApp.unmount();
@@ -1736,28 +1159,24 @@ async function showEditor(node, type, options = {}) {
   const canvas = root?.querySelector("[data-stage-overlay]");
   const backgroundCanvas = root?.querySelector("[data-stage-background]");
   const stageWrap = root?.querySelector(".pano-stage-wrap");
-  if (!overlay || !root || !canvas || !backgroundCanvas || !stageWrap) {
+  const paintOverlayRefs = vueModal?.getPaintOverlayRefs?.() || {};
+  const paintCursorEl = paintOverlayRefs.cursor || null;
+  const paintSizePreviewEl = paintOverlayRefs.sizePreview || null;
+  const paintSizePreviewSampleEl = paintOverlayRefs.sizeSample || null;
+  if (
+    !overlay
+    || !root
+    || !canvas
+    || !backgroundCanvas
+    || !stageWrap
+    || !paintCursorEl
+    || !paintSizePreviewEl
+    || !paintSizePreviewSampleEl
+  ) {
     vueApp.unmount();
     mountHost.remove();
     throw new Error("Failed to mount Panorama Vue modal shell");
   }
-  const paintCursorEl = document.createElement("div");
-  paintCursorEl.setAttribute("aria-hidden", "true");
-  paintCursorEl.style.position = "absolute";
-  paintCursorEl.style.left = "0";
-  paintCursorEl.style.top = "0";
-  paintCursorEl.style.pointerEvents = "none";
-  paintCursorEl.style.zIndex = "12";
-  paintCursorEl.style.display = "none";
-  paintCursorEl.style.willChange = "transform,width,height,background,border-radius";
-  stageWrap?.appendChild(paintCursorEl);
-  const paintSizePreviewEl = document.createElement("div");
-  paintSizePreviewEl.className = "pano-paint-size-preview";
-  paintSizePreviewEl.setAttribute("aria-hidden", "true");
-  const paintSizePreviewSampleEl = document.createElement("div");
-  paintSizePreviewSampleEl.className = "pano-paint-size-preview-sample";
-  paintSizePreviewEl.appendChild(paintSizePreviewSampleEl);
-  stageWrap?.appendChild(paintSizePreviewEl);
   const ctx = canvas.getContext("2d");
   const modalPanoCore = createPanoramaRenderCore();
   const cutoutPreviewCamera = type === "cutout"
@@ -3271,16 +2690,10 @@ async function showEditor(node, type, options = {}) {
     );
   }
   function getNodeUiList(key) {
-    const outputs = lookupNodeOutputEntry(node?.id);
-    if (Array.isArray(outputs?.ui?.[key])) return outputs.ui[key];
-    if (Array.isArray(outputs?.[key])) return outputs[key];
-    return [];
+    return comfyMedia.uiList(node, key);
   }
   function getNodeUiValue(key) {
-    const outputs = lookupNodeOutputEntry(node?.id);
-    if (outputs?.ui && Object.prototype.hasOwnProperty.call(outputs.ui, key)) return outputs.ui[key];
-    if (outputs && Object.prototype.hasOwnProperty.call(outputs, key)) return outputs[key];
-    return null;
+    return comfyMedia.uiValue(node, key);
   }
   function getModalVideoUiKeys() {
     const nodeName = String(node?.comfyClass || node?.type || node?.title || "");
@@ -3441,7 +2854,7 @@ async function showEditor(node, type, options = {}) {
     if (!(videoEl instanceof HTMLVideoElement)) return null;
     const { videoKey } = getModalVideoUiKeys();
     const entry = getNodeUiList(videoKey)[0] || null;
-    const nextSrc = entry && typeof entry === "object" ? comfyImageEntryToUrl(entry) : imageSourceFromCandidate(entry);
+    const nextSrc = mediaSource(entry);
     const meta = getVideoMetaEntry();
     const frameCount = Math.max(0, Number(meta?.frames || 0));
     const fps = Math.max(1, Number(meta?.fps || 24));
@@ -3509,46 +2922,13 @@ async function showEditor(node, type, options = {}) {
     return null;
   }
   function getStickerUiImage(key, onLoad = null) {
-    const list = getNodeUiList(key);
-    const first = Array.isArray(list) && list.length ? list[0] : null;
-    const src = imageSourceFromCandidate(first);
-    if (!src) return null;
-    const cacheKey = `__ui__${key}`;
-    const cached = imageCache.get(cacheKey);
-    if (cached && cached.__panoSrc === src) return cached;
-    const img = new Image();
-    img.__panoSrc = src;
-    markImageLoading(img, src);
-    img.onload = () => {
-      markImageReady(img, src);
-      if (typeof onLoad === "function") onLoad(img);
-      else requestDraw();
-    };
-    img.onerror = () => {
-      markImageFailed(img, src);
-      if (typeof onLoad === "function") onLoad(img);
-      else requestDraw();
-    };
-    img.src = src;
-    imageCache.set(cacheKey, img);
-    return img;
+    return mediaUiImage(node, key, imageCache, onLoad || (() => requestDraw()));
   }
 
   function getExternalStickerPreviewImage(onLoad = null) {
-    const linked = getPreferredExactLinkedInputImage(node, ["sticker_image"], onLoad, "sticker_image_exact");
-    if (linked) return linked;
     return getStickerUiImage(EXTERNAL_STICKER_PREVIEW_KEY, onLoad);
   }
 
-  function hashStringSimple(text) {
-    const s = String(text || "");
-    let h = 2166136261;
-    for (let i = 0; i < s.length; i += 1) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return String(h >>> 0);
-  }
   function computeStickerVFov(hFovDeg, width, height) {
     const w = Math.max(1, Number(width || 1));
     const h = Math.max(1, Number(height || 1));
@@ -3647,30 +3027,7 @@ async function showEditor(node, type, options = {}) {
     };
   }
   function getLinkedStringInputValue(inputName) {
-    const input = Array.isArray(node?.inputs)
-      ? node.inputs.find((entry) => String(entry?.name || "") === String(inputName))
-      : null;
-    const linkId = input?.link;
-    if (linkId != null) {
-      const linkInfo = getGraphLinkById(node.graph, linkId);
-      const { originId, originSlot } = resolveOriginFromLinkInfo(linkInfo);
-      const outputs = lookupNodeOutputEntry(originId);
-      const groups = [
-        outputs?.output,
-        outputs?.result,
-        outputs?.data?.output,
-        outputs?.data?.result,
-        outputs?.ui?.output,
-        outputs?.ui?.result,
-      ];
-      for (const group of groups) {
-        if (!Array.isArray(group)) continue;
-        const idx = Number(originSlot || 0);
-        const val = group[idx];
-        if (typeof val === "string" && val.trim()) return val;
-      }
-    }
-    return String(getWidget(node, inputName)?.value || "");
+    return comfyMedia.linkedValue(node, inputName);
   }
   function buildExternalInitialPose(inputPose, stateRaw, previewImg) {
     const parsed = (inputPose && typeof inputPose === "object")
@@ -3713,9 +3070,7 @@ async function showEditor(node, type, options = {}) {
     });
     const inputPose = normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null);
     const stateRaw = getLinkedStringInputValue("sticker_state");
-    const stateHash = inputPose && typeof inputPose === "object"
-      ? hashStringSimple(JSON.stringify(inputPose))
-      : hashStringSimple(stateRaw);
+    const stateHash = comfyMedia.externalStateHash(node, stateRaw);
     const stickers = Array.isArray(state.stickers) ? state.stickers : (state.stickers = []);
     const existingIndex = stickers.findIndex((item) => String(item?.id || "") === EXTERNAL_STICKER_ID);
     if (linkId == null) {
@@ -3958,7 +3313,7 @@ async function showEditor(node, type, options = {}) {
     const cached = imageCache.get(assetId);
     if (cached) return cached;
     const asset = state.assets?.[assetId];
-    const src = stickerAssetToPreviewSrc(asset);
+    const src = mediaAssetSource(asset);
     if (!src) return null;
     const img = new Image();
     markImageLoading(img, src);
@@ -4507,19 +3862,19 @@ async function showEditor(node, type, options = {}) {
     if (type === "cutout") {
       const displaySource = getDisplayBackgroundSource();
       if (displaySource) return displaySource;
-      const linked = getPreferredExactLinkedInputImage(
+      const linked = loadPreferredExactLinkedImage(
         node,
         ["erp_image", "bg_erp"],
         () => requestDraw(),
         "background:cutout:erp_image|bg_erp",
       );
       if (linked && !isImageLoadFailed(linked)) return linked;
-      const uiImg = getFirstNodeUiImage(node, "pano_input_images", imageCache, () => requestDraw());
+      const uiImg = mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw());
       return uiImg || linked || null;
     }
     const displaySource = getDisplayBackgroundSource();
     if (displaySource) return displaySource;
-    const uiImg = getFirstNodeUiImage(node, "pano_input_images", imageCache, () => requestDraw());
+    const uiImg = mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw());
     if (uiImg && !isImageLoadFailed(uiImg)) return uiImg;
     const inputNames = Array.isArray(node?.inputs)
       ? node.inputs.map((i) => String(i?.name || ""))
@@ -4532,7 +3887,7 @@ async function showEditor(node, type, options = {}) {
     } else {
       preferred = type === "stickers" ? ["bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
     }
-    const img = getPreferredExactLinkedInputImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
+    const img = loadPreferredExactLinkedImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
     return img || uiImg || null;
   }
 
@@ -7541,7 +6896,7 @@ async function showEditor(node, type, options = {}) {
     const paintStrokeCount = Array.isArray(state?.painting?.paint?.strokes) ? state.painting.paint.strokes.length : 0;
     const maskStrokeCount = Array.isArray(state?.painting?.mask?.strokes) ? state.painting.mask.strokes.length : 0;
     const panoramaInputNames = Array.isArray(node?.inputs) ? node.inputs.map((entry) => String(entry?.name || "")) : [];
-    const linkedPanoramaSource = findPreferredExactLinkedImageSource(
+    const linkedPanoramaSource = resolvePreferredExactLinkedSource(
       node,
       panoramaInputNames.includes("erp_image") ? ["erp_image", "bg_erp"] : ["bg_erp", "erp_image"],
     );
@@ -7586,33 +6941,33 @@ async function showEditor(node, type, options = {}) {
     if (type !== "stickers" && type !== "cutout") return;
     if (!isImageFile(file)) return;
     const aid = uid("asset");
-    const tempUrl = URL.createObjectURL(file);
-    try {
-      const img = await new Promise((resolve, reject) => {
-        const i = new Image();
-        i.onload = () => resolve(i);
-        i.onerror = () => reject(new Error("image load failed"));
-        i.src = tempUrl;
-      });
-      imageCache.set(aid, img);
-      const id = uid("st");
-      state.stickers.push({
-        id,
-        asset_id: aid,
-        yaw_deg: editor.viewYaw,
-        pitch_deg: editor.viewPitch,
-        hFOV_deg: 30,
-        vFOV_deg: computeStickerVFov(30, Number(img.naturalWidth || img.width || 1), Number(img.naturalHeight || img.height || 1)),
-        rot_deg: 0,
-        z_index: getNextStickerZIndex(),
-      });
-      setSelectedItem(state.stickers[state.stickers.length - 1]);
-      forceCursorTool();
-      pushHistory();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-      const uploadPromise = (async () => {
+    const operation = queuePendingStickerOperation(node, `add:${aid}`, async () => {
+      const tempUrl = URL.createObjectURL(file);
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error("image load failed"));
+          i.src = tempUrl;
+        });
+        imageCache.set(aid, img);
+        const id = uid("st");
+        state.stickers.push({
+          id,
+          asset_id: aid,
+          yaw_deg: editor.viewYaw,
+          pitch_deg: editor.viewPitch,
+          hFOV_deg: 30,
+          vFOV_deg: computeStickerVFov(30, Number(img.naturalWidth || img.width || 1), Number(img.naturalHeight || img.height || 1)),
+          rot_deg: 0,
+          z_index: getNextStickerZIndex(),
+        });
+        setSelectedItem(state.stickers[state.stickers.length - 1]);
+        forceCursorTool();
+        pushHistory();
+        updateSidePanel();
+        updateSelectionMenu();
+        requestDraw();
         const uploaded = await uploadStickerAssetFile(file, String(file.name || aid));
         const liveStickers = Array.isArray(state.stickers) ? state.stickers : [];
         const matching = liveStickers.filter((item) => String(item?.asset_id || "") === aid);
@@ -7623,50 +6978,35 @@ async function showEditor(node, type, options = {}) {
         updateSidePanel();
         updateSelectionMenu();
         requestDraw();
-      })();
-      _stickerAssetUploadRegistry.set(aid, uploadPromise);
-      try {
-        await uploadPromise;
-      } finally {
-        _stickerAssetUploadRegistry.delete(aid);
-      }
-    } catch {
-      delete state.assets[aid];
-      imageCache.delete(aid);
-      const liveStickers = Array.isArray(state.stickers) ? state.stickers : [];
-      const removed = liveStickers.filter((item) => String(item?.asset_id || "") === aid);
-      if (removed.length) {
-        state.stickers = liveStickers.filter((item) => String(item?.asset_id || "") !== aid);
-        if (removed.some((item) => String(item?.id || "") === String(editor.selection?.id || ""))) {
-          setSelectedItem(null);
+      } catch (error) {
+        delete state.assets[aid];
+        imageCache.delete(aid);
+        const liveStickers = Array.isArray(state.stickers) ? state.stickers : [];
+        const removed = liveStickers.filter((item) => String(item?.asset_id || "") === aid);
+        if (removed.length) {
+          state.stickers = liveStickers.filter((item) => String(item?.asset_id || "") !== aid);
+          if (removed.some((item) => String(item?.id || "") === String(editor.selection?.id || ""))) {
+            setSelectedItem(null);
+          }
+          updateSidePanel();
+          updateSelectionMenu();
+          requestDraw();
+          commitAndRefreshNode();
         }
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
+        throw error;
+      } finally {
+        URL.revokeObjectURL(tempUrl);
       }
-    } finally {
-      URL.revokeObjectURL(tempUrl);
-    }
-  }
-
-  function pickImageFile(onFile) {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file || typeof onFile !== "function") return;
-      onFile(file);
-    };
-    input.click();
+    });
+    try {
+      await operation;
+    } catch { }
   }
 
   function addImageSticker() {
     if (readOnly) return;
     if (type !== "stickers" && type !== "cutout") return;
-    pickImageFile((file) => {
-      void addImageStickerFromFile(file);
-    });
+    vueModal?.openImagePicker?.("add");
   }
 
   async function replaceSelectedImageFromFile(file) {
@@ -7676,82 +7016,79 @@ async function showEditor(node, type, options = {}) {
     if (!selected || !isStickerItem(selected) || isExternalSticker(selected)) return;
     if (!isImageFile(file)) return;
     const selectedId = String(selected.id || "");
-    const previousAssetId = String(selected.asset_id || "");
-    const previousAsset = previousAssetId ? cloneJson(state.assets?.[previousAssetId] || null) : null;
-    const previousVfov = Number(selected.vFOV_deg || 0);
-    const previousCrop = selected.crop && typeof selected.crop === "object"
-      ? { ...selected.crop }
-      : null;
     const nextAssetId = uid("asset");
-    const tempUrl = URL.createObjectURL(file);
-    try {
-      const img = await new Promise((resolve, reject) => {
-        const i = new Image();
-        i.onload = () => resolve(i);
-        i.onerror = () => reject(new Error("image load failed"));
-        i.src = tempUrl;
-      });
-      imageCache.set(nextAssetId, img);
-      selected.asset_id = nextAssetId;
-      selected.vFOV_deg = computeStickerVFov(
-        Number(selected.hFOV_deg || 30),
-        Number(img.naturalWidth || img.width || 1),
-        Number(img.naturalHeight || img.height || 1),
-      );
-      selected.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
-      markObjectVisualsDirty();
-      pushHistory();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-      const uploadPromise = (async () => {
+    const operation = queuePendingStickerOperation(node, `replace:${selectedId}:${nextAssetId}`, async () => {
+      const liveSelected = (Array.isArray(state.stickers) ? state.stickers : [])
+        .find((item) => String(item?.id || "") === selectedId) || null;
+      if (!liveSelected || !isStickerItem(liveSelected) || isExternalSticker(liveSelected)) return;
+      const previousAssetId = String(liveSelected.asset_id || "");
+      const previousAsset = previousAssetId ? cloneJson(state.assets?.[previousAssetId] || null) : null;
+      const previousVfov = Number(liveSelected.vFOV_deg || 0);
+      const previousCrop = liveSelected.crop && typeof liveSelected.crop === "object"
+        ? { ...liveSelected.crop }
+        : null;
+      const tempUrl = URL.createObjectURL(file);
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error("image load failed"));
+          i.src = tempUrl;
+        });
+        imageCache.set(nextAssetId, img);
+        liveSelected.asset_id = nextAssetId;
+        liveSelected.vFOV_deg = computeStickerVFov(
+          Number(liveSelected.hFOV_deg || 30),
+          Number(img.naturalWidth || img.width || 1),
+          Number(img.naturalHeight || img.height || 1),
+        );
+        liveSelected.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
+        markObjectVisualsDirty();
+        pushHistory();
+        updateSidePanel();
+        updateSelectionMenu();
+        requestDraw();
         const uploaded = await uploadStickerAssetFile(file, String(file.name || nextAssetId));
-        const liveStickers = Array.isArray(state.stickers) ? state.stickers : [];
-        const stillCurrent = liveStickers.some((item) => (
-          String(item?.id || "") === selectedId
-          && String(item?.asset_id || "") === nextAssetId
-        ));
-        if (!stillCurrent) return;
+        const currentSticker = (Array.isArray(state.stickers) ? state.stickers : [])
+          .find((item) => String(item?.id || "") === selectedId) || null;
+        if (!currentSticker || String(currentSticker.asset_id || "") !== nextAssetId) return;
         state.assets[nextAssetId] = uploaded;
         pruneUnusedAssets();
         commitAndRefreshNode();
         updateSidePanel();
         updateSelectionMenu();
         requestDraw();
-      })();
-      _stickerAssetUploadRegistry.set(nextAssetId, uploadPromise);
-      try {
-        await uploadPromise;
+      } catch (error) {
+        delete state.assets[nextAssetId];
+        imageCache.delete(nextAssetId);
+        const currentSticker = (Array.isArray(state.stickers) ? state.stickers : [])
+          .find((item) => String(item?.id || "") === selectedId) || null;
+        if (currentSticker && String(currentSticker.asset_id || "") === nextAssetId) {
+          if (previousAssetId && previousAsset) state.assets[previousAssetId] = previousAsset;
+          currentSticker.asset_id = previousAssetId;
+          currentSticker.vFOV_deg = previousVfov;
+          currentSticker.crop = previousCrop ? { ...previousCrop } : null;
+        }
+        markObjectVisualsDirty();
+        commitAndRefreshNode();
+        updateSidePanel();
+        updateSelectionMenu();
+        requestDraw();
+        throw error;
       } finally {
-        _stickerAssetUploadRegistry.delete(nextAssetId);
+        URL.revokeObjectURL(tempUrl);
       }
-    } catch {
-      delete state.assets[nextAssetId];
-      imageCache.delete(nextAssetId);
-      const liveSelected = (Array.isArray(state.stickers) ? state.stickers : [])
-        .find((item) => String(item?.id || "") === selectedId) || null;
-      if (liveSelected && String(liveSelected.asset_id || "") === nextAssetId) {
-        if (previousAssetId && previousAsset) state.assets[previousAssetId] = previousAsset;
-        liveSelected.asset_id = previousAssetId;
-        liveSelected.vFOV_deg = previousVfov;
-        liveSelected.crop = previousCrop ? { ...previousCrop } : null;
-      }
-      markObjectVisualsDirty();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-    } finally {
-      URL.revokeObjectURL(tempUrl);
-    }
+    });
+    try {
+      await operation;
+    } catch { }
   }
 
   function replaceSelectedImage() {
     if (readOnly) return;
     const selected = getSelected();
     if (!selected || !isStickerItem(selected) || isExternalSticker(selected)) return;
-    pickImageFile((file) => {
-      void replaceSelectedImageFromFile(file);
-    });
+    vueModal?.openImagePicker?.("replace");
   }
 
   async function migrateLegacyEmbeddedAssets() {
@@ -8288,6 +7625,8 @@ async function showEditor(node, type, options = {}) {
       stateWidget.callback?.(text);
     }
   }
+  const flushStateBeforeQueue = () => commitState();
+  if (!readOnly) node.__panoFlushStateBeforeQueue = flushStateBeforeQueue;
   function persistUiSettings() {
     state.ui_settings = saveSharedUiSettings(state.ui_settings);
     if (!readOnly) {
@@ -11471,6 +10810,7 @@ async function showEditor(node, type, options = {}) {
       if (typeof modalPrevOnExecuted === "function") {
         modalPrevOnExecuted.apply(this, args);
       }
+      invalidateMediaUiImage(imageCache, EXTERNAL_STICKER_PREVIEW_KEY);
       this.__panoExternalStickerSync?.("executed");
     };
     node.onExecuted = modalOnExecuted;
@@ -11499,6 +10839,9 @@ async function showEditor(node, type, options = {}) {
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       node.__panoLiveStateOverride = null;
       node.__panoLivePaintSurface = null;
+      if (node.__panoFlushStateBeforeQueue === flushStateBeforeQueue) {
+        node.__panoFlushStateBeforeQueue = null;
+      }
       node.__panoDomPreview?.requestDraw?.();
       node.graph?.setDirtyCanvas?.(true, true);
       app?.canvas?.setDirty?.(true, true);
@@ -11663,169 +11006,12 @@ async function showEditor(node, type, options = {}) {
   runtime.rafId = requestAnimationFrame(tick);
 }
 
-function installEditorButton(nodeType, nodeData, matchType, buttonText) {
-  if (!nodeType?.prototype) return;
-  const cleanupPreviewBindings = (node) => {
-    try { node.__panoDomRestore?.(); } catch { }
-    try { node.__panoLegacyRestore?.(); } catch { }
-    node.__panoDomPreview = null;
-    node.__panoLegacyPreviewHooked = false;
-    node.__panoPreviewHooked = false;
-    node.__panoPreviewAttached = false;
-    node.__panoPreviewMountKey = null;
-  };
-
-  function installOrUpdate(node) {
-    const mountKey = `editor_btn|${matchType}`;
-    const alreadyAttached = node.__panoPreviewAttached === true && node.__panoPreviewMountKey === mountKey;
-
-    // Avoid redundant cleanup/re-attach if already attached with the same key
-    if (alreadyAttached) return;
-
-    cleanupPreviewBindings(node);
-    if (matchType === "PanoramaStickers") migratePanoramaStickersWidgetOrder(node);
-    syncCoverageWidgetRedraw(node);
-    hideWidget(node, STATE_WIDGET);
-
-    const sw = getWidget(node, STATE_WIDGET);
-    if (sw && !sw.__panoPreviewPatchedCb) {
-      sw.__panoPreviewPatchedCb = true;
-      const prevCb = sw.callback;
-      sw.callback = (v) => {
-        const r = prevCb ? prevCb(v) : undefined;
-        // Only trigger soft repaint, avoid forcing a full workflow persistence on every move if storage is tight
-        node.setDirtyCanvas?.(true, false);
-        return r;
-      };
-    }
-    if (matchType === "PanoramaStickers") {
-      const bg = getWidget(node, "bg_color");
-      if (bg && (bg.value == null || String(bg.value).trim() === "" || String(bg.value).toLowerCase() === "#000000")) {
-        bg.value = "#00ff00";
-        bg.callback?.("#00ff00");
-      }
-      ensureActionButtonWidget(node, buttonText, () => showEditor(node, "stickers"));
-      if (ENABLE_STICKERS_NODE_PREVIEW) {
-        attachStickersNodePreview(node, {
-          enabled: true,
-          buttonText,
-          onOpen: () => showEditor(node, "stickers"),
-        });
-        // Respect user-sized nodes; initialize only when preview is enabled and size is invalid.
-        if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) {
-          node.size = [360, 260];
-        }
-      } else {
-        // Without node preview, let LiteGraph size the node from widgets only.
-        node.__panoPreviewAttached = true;
-        node.__panoPreviewMountKey = mountKey;
-        return;
-      }
-      node.__panoPreviewAttached = true;
-      node.__panoPreviewMountKey = mountKey;
-      return;
-    }
-
-    ensureActionButtonWidget(node, buttonText, () => showEditor(node, "cutout"));
-    attachCutoutPreview(node, {
-      buttonText,
-      onOpen: () => showEditor(node, "cutout"),
-    });
-
-    if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) {
-      node.size = [360, 260];
-    }
-
-    node.__panoPreviewAttached = true;
-    node.__panoPreviewMountKey = mountKey;
-  }
-
-  const onNodeCreated = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
-    const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
-    installOrUpdate(this);
-    return r;
-  };
-
-  const onConfigure = nodeType.prototype.onConfigure;
-  nodeType.prototype.onConfigure = function () {
-    const r = onConfigure ? onConfigure.apply(this, arguments) : undefined;
-    if (this.widgets) installOrUpdate(this);
-    return r;
-  };
-
-  const onAdded = nodeType.prototype.onAdded;
-  nodeType.prototype.onAdded = function () {
-    const r = onAdded ? onAdded.apply(this, arguments) : undefined;
-    if (this.widgets) installOrUpdate(this);
-    return r;
-  };
-}
-
-function installStandalonePreviewNode(nodeType) {
-  if (!nodeType?.prototype) return;
-  const ensurePreviewSize = function () {
-    if (!Array.isArray(this.size) || this.size[0] < 10 || this.size[1] < 10) {
-      this.size = [360, 260];
-    }
-  };
-  const prev = nodeType.prototype.onNodeCreated;
-  nodeType.prototype.onNodeCreated = function () {
-    const r = prev ? prev.apply(this, arguments) : undefined;
-    ensurePreviewSize.call(this);
-    return r;
-  };
-}
-
-function installStandalonePreviewInstance(node) {
-  if (!node) return;
-  if (node.__panoStandaloneInstallDone) return;
-  if (node.__panoStandaloneInstallProbeActive) return;
-  node.__panoStandaloneInstallProbeActive = true;
-
-  const tryInstall = () => {
-    const nodeId = Number(node?.id ?? -1);
-    const ready = nodeId >= 0 && !!node?.graph;
-    const tries = Number(node.__panoStandaloneInstallProbeTries || 0) + 1;
-    node.__panoStandaloneInstallProbeTries = tries;
-
-    if (!ready && tries < 40) {
-      requestAnimationFrame(tryInstall);
-      return;
-    }
-    syncCoverageWidgetRedraw(node);
-    ensureActionButtonWidget(node, "Open Preview", () => showEditor(node, "stickers", { readOnly: true, hideSidebar: false }));
-    attachPreviewNode(node, {
-      buttonText: "Open Preview",
-      modalTitle: "Panorama Preview",
-      imageInputName: "erp_image",
-      onOpen: (n) => showEditor(n, "stickers", { readOnly: true, hideSidebar: false }),
-    });
-    node.__panoStandaloneInstallDone = true;
-    node.__panoStandaloneInstallProbeActive = false;
-  };
-
-  requestAnimationFrame(tryInstall);
-}
-
-app.registerExtension({
-  name: "ComfyUI.PanoramaSuite.Editor",
-  beforeRegisterNodeDef(nodeType, nodeData) {
-    const name = String(nodeData?.name || "");
-    if (name === "PanoramaStickers" || name === "Panorama Stickers") {
-      installEditorButton(nodeType, nodeData, "PanoramaStickers", "Open Stickers Editor");
-    }
-    if (name === "PanoramaCutout" || name === "Panorama Cutout") {
-      installEditorButton(nodeType, nodeData, "PanoramaCutout", "Open Cutout Editor");
-    }
-    if (isPanoramaPreviewNodeName(name)) {
-      installStandalonePreviewNode(nodeType);
-    }
-  },
-  nodeCreated(node) {
-    const name = String(node?.comfyClass || node?.type || node?.title || "");
-    syncCoverageWidgetRedraw(node);
-    if (!isPanoramaPreviewNodeName(name)) return;
-    installStandalonePreviewInstance(node);
-  },
-});
+app.registerExtension(createPanoEditorExtension({
+  app,
+  openEditor: showEditor,
+  attachStickers: attachStickersNodePreview,
+  attachCutout: attachCutoutPreview,
+  attachPreview: attachPreviewNode,
+  requestFrame: requestAnimationFrame,
+  enableStickersPreview: ENABLE_STICKERS_NODE_PREVIEW,
+}));

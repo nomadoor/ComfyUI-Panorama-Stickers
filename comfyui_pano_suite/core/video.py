@@ -298,7 +298,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
         waveform_np, sample_rate = _stretch_audio_to_frame_count(audio, frame_count, frame_rate)
         waveform_np, sample_rate, layout = _prepare_audio_layout(waveform_np, sample_rate)
 
-    _log.warning(
+    _log.debug(
         "[video] Encoding preview mp4: frames=%d fps=%.3f size=%dx%d audio=%s",
         frame_count,
         fps_value,
@@ -309,7 +309,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
 
     last_error = None
     for codec_name in ("h264_nvenc", "h264"):
-        _log.warning("[video] Trying encoder: %s", codec_name)
+        _log.debug("[video] Trying encoder: %s", codec_name)
         container = av.open(str(output_path), mode="w")
         try:
             video_stream = container.add_stream(codec_name, rate=frame_rate)
@@ -374,11 +374,11 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
                     container.mux(packet)
 
             container.close()
-            _log.warning("[video] Encoded preview mp4 with %s -> %s", codec_name, output_path)
+            _log.debug("[video] Encoded preview mp4 with %s -> %s", codec_name, output_path)
             return output_path
         except Exception as ex:
             last_error = ex
-            _log.warning("[video] Encoder %s failed, trying fallback: %s", codec_name, ex)
+            _log.debug("[video] Encoder %s failed, trying fallback: %s", codec_name, ex)
             try:
                 container.close()
             except Exception:
