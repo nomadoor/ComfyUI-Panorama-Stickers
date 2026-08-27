@@ -57,3 +57,11 @@ Do not rely on chat history as the source of truth.
 
 `AGENT_STATE.md` is a local working-memory file and should not be committed.
 Use `AGENT_STATE.example.md` as the shared template.
+
+## Agent skills
+
+- Read `docs/agents/workflow.md` before starting repository work.
+- Use `docs/agents/issue-tracker.md`, `docs/agents/labels.md`, and
+  `docs/agents/domain.md` for issue, label, and domain-document decisions.
+- For ComfyUI custom-node work, use the installed `comfyui-node-*` skills while
+  preserving every non-negotiable and stop condition above.
