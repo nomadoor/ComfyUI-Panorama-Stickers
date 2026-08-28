@@ -10314,9 +10314,8 @@ async function showEditor(node, type, options = {}) {
       }
       if (action === "frame-aspect-custom") {
         const shot = editor.mode === "frame" ? getActiveCutoutShot() : null;
-        const popover = actionTarget.closest?.(".pano-frame-aspect-popover");
-        const width = popover?.querySelector?.('input[name="customWidth"]')?.value;
-        const height = popover?.querySelector?.('input[name="customHeight"]')?.value;
+        const width = actionTarget.getAttribute("data-custom-width");
+        const height = actionTarget.getAttribute("data-custom-height");
         if (!shot || !applyCutoutAspectCustom(shot, width, height)) return;
         uiState.frameRail.aspectOpen = false;
         syncSidePanelControls();

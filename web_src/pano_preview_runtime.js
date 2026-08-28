@@ -24,6 +24,7 @@ import {
   buildPanoramaViewParamsFromRuntime,
   buildStickerSceneFromState,
   buildStickerTexturesFromState,
+  normalizeStickerItem,
 } from "./pano_gl_scene.js";
 import {
   beginCutoutRollGesture,
@@ -1900,6 +1901,8 @@ function projectDirToPreview(dir, viewBasis, rect, tanHalfY) {
 
 
 function drawSticker(ctx, node, rect, viewBasis, tanHalfY, state, item, Nu = 12, Nv = 9) {
+  const previewItem = normalizeStickerItem(item);
+  if (!previewItem || previewItem.visible === false) return;
   const hf = clamp(Number(item.hFOV_deg || 30), 1, 179) * DEG2RAD;
   const vf = clamp(Number(item.vFOV_deg || 30), 1, 179) * DEG2RAD;
   const tx = Math.tan(hf * 0.5);
@@ -1961,8 +1964,9 @@ function drawSticker(ctx, node, rect, viewBasis, tanHalfY, state, item, Nu = 12,
     }
   }
 
-  const asset = state.assets?.[item.asset_id];
-  const img = getNodePreviewImage(node, item.asset_id, asset);
+  const textureId = String(previewItem?.assetId || "");
+  const asset = state.assets?.[textureId];
+  const img = getNodePreviewImage(node, textureId, asset, previewItem);
   if (!img || !img.complete || !(img.naturalWidth || 0)) return;
   const iw = Number(img.naturalWidth || img.width || 1);
   const ih = Number(img.naturalHeight || img.height || 1);

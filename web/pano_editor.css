@@ -2146,6 +2146,7 @@
   --pano-emphasis-text: #fff;
   --pano-float-bg: rgba(10, 10, 10, 0.82);
   --pano-float-radius: 8px;
+
   box-sizing: border-box;
   position: absolute;
   inset: 0;
@@ -2371,6 +2372,7 @@
 }
 .pano-preview-node-surface {
   --pano-text: #f5f5f5;
+
   box-sizing: border-box;
   position: absolute;
   inset: 0;
@@ -2423,6 +2425,7 @@
   --pano-emphasis-bg-active: #114f9d;
   --pano-float-bg: rgba(10, 10, 10, 0.82);
   --pano-float-radius: 8px;
+
   box-sizing: border-box;
   position: absolute;
   inset: 0;

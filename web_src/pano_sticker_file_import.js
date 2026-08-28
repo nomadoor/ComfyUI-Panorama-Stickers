@@ -35,9 +35,11 @@ export function bindStickerDropTarget(target, options = {}) {
     onActive(false);
   };
   const drop = (event) => {
-    if (!dragHasStickerImageFile(event?.dataTransfer)) return;
     const file = Array.from(event?.dataTransfer?.files || []).find((entry) => isStickerImageFile(entry));
-    if (!file) return;
+    if (!file) {
+      onActive(false);
+      return;
+    }
     stopAcceptedEvent(event);
     onActive(false);
     onDrop(file);

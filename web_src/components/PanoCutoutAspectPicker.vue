@@ -176,6 +176,8 @@ function applyCustom() {
           class="pano-btn"
           type="button"
           data-action="frame-aspect-custom"
+          :data-custom-width="customWidth"
+          :data-custom-height="customHeight"
           :disabled="disabled"
           @click="applyCustom"
         >Apply</button>

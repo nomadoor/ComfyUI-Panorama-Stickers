@@ -83,6 +83,46 @@ test("the DOM preview surface accepts an image drop and releases every listener"
   assert.equal(target.listeners.size, 0);
 });
 
+test("the dropped File decides acceptance when the drag item has a generic MIME type", () => {
+  const target = new DropTargetBoundary();
+  const dropped = [];
+  const image = { type: "application/octet-stream", name: "sticker.WEBP" };
+  const cleanup = bindStickerDropTarget(target, { onDrop: (file) => dropped.push(file) });
+  const event = dropEvent({
+    items: [{ kind: "file", type: "application/octet-stream" }],
+    files: [image],
+  });
+
+  target.dispatch("drop", event);
+
+  assert.equal(event.prevented, true);
+  assert.equal(event.stopped, true);
+  assert.deepEqual(dropped, [image]);
+  cleanup();
+});
+
+test("an unsupported drop clears drag feedback without consuming the host event", () => {
+  const target = new DropTargetBoundary();
+  const active = [];
+  const cleanup = bindStickerDropTarget(target, { onActive: (value) => active.push(value) });
+  target.dispatch("dragover", dropEvent({
+    items: [{ kind: "file", type: "" }],
+    files: [],
+  }));
+  assert.equal(active.at(-1), true);
+  const event = dropEvent({
+    items: [{ kind: "file", type: "" }],
+    files: [{ type: "application/octet-stream", name: "archive.bin" }],
+  });
+
+  target.dispatch("drop", event);
+
+  assert.equal(active.at(-1), false);
+  assert.equal(event.prevented, false);
+  assert.equal(event.stopped, false);
+  cleanup();
+});
+
 test("the DOM preview surface leaves a non-image drop to the host", () => {
   const target = new DropTargetBoundary();
   const dropped = [];

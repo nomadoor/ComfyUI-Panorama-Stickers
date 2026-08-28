@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { normalizeStickerItem } from "../web_src/pano_gl_scene.js";
+
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("node surface reuses the shared aspect picker and existing icon components", async () => {
@@ -46,6 +48,7 @@ test("node surface reuses the shared aspect picker and existing icon components"
 test("shared aspect picker exposes presets, custom ratio, and the existing modal action contract", async () => {
   const picker = await read("../web_src/components/PanoCutoutAspectPicker.vue");
   const runtime = await read("../web_src/pano_preview_runtime.js");
+  const editor = await read("../web_src/pano_editor.js");
 
   for (const value of ["1:1", "4:3", "3:2", "16:9"]) {
     assert.ok(picker.includes(value), `missing ${value}`);
@@ -55,6 +58,14 @@ test("shared aspect picker exposes presets, custom ratio, and the existing modal
   assert.ok(picker.includes('data-action="frame-aspect-custom"'));
   assert.ok(picker.includes("customWidth"));
   assert.ok(picker.includes("customHeight"));
+  assert.match(picker, /:data-custom-width="customWidth"/);
+  assert.match(picker, /:data-custom-height="customHeight"/);
+  const customStart = editor.indexOf('if (action === "frame-aspect-custom")');
+  const customEnd = editor.indexOf('\n      if (action === "frame-rotate-90")', customStart);
+  const customAction = editor.slice(customStart, customEnd);
+  assert.match(customAction, /getAttribute\("data-custom-width"\)/);
+  assert.match(customAction, /getAttribute\("data-custom-height"\)/);
+  assert.doesNotMatch(customAction, /closest|querySelector/);
   assert.match(picker, /active: activeValue \? value === activeValue : choice\?\.active === true/);
   assert.match(picker, /document\.addEventListener\("pointerdown", onDocumentPointerDown, true\)/);
   assert.match(picker, /document\.removeEventListener\("pointerdown", onDocumentPointerDown, true\)/);
@@ -235,6 +246,29 @@ test("Cutout node surface loops the input ERP video and revisions each presented
   assert.match(runtime, /getNodeOwnOutputVideo[\s\S]*?isNodeOutputMediaCurrent\(node, "background"\)/);
   assert.match(runtime, /node\.onConnectionsChange = function \(type, slotIndex\)[\s\S]*?isTrackedMediaInputConnectionChange\(node, type, slotIndex\)[\s\S]*?markNodeOutputMediaStale\(node, "background"\)/);
   assert.match(runtime, /node\.onExecuted = function[\s\S]*?markNodeOutputMediaCurrent\(node\)[\s\S]*?requestDraw\(\)/);
+});
+
+test("the canvas fallback normalizes raw external sticker identity before image resolution", async () => {
+  const rawExternal = {
+    id: "sticker_image_1",
+    source_kind: "external_image",
+    hFOV_deg: 30,
+    vFOV_deg: 20,
+  };
+  const normalized = normalizeStickerItem(rawExternal);
+  assert.equal(normalized.assetId, "sticker_image_1");
+  assert.equal(normalized.external, true);
+  assert.equal(normalizeStickerItem({ ...rawExternal, visible: false }).visible, false);
+
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const start = runtime.indexOf("function drawSticker(");
+  const end = runtime.indexOf("\nfunction stepInertia", start);
+  const fallback = runtime.slice(start, end);
+
+  assert.match(fallback, /const previewItem = normalizeStickerItem\(item\)/);
+  assert.match(fallback, /if \(!previewItem \|\| previewItem\.visible === false\) return/);
+  assert.match(fallback, /const textureId = String\(previewItem\?\.assetId \|\| ""\)/);
+  assert.match(fallback, /getNodePreviewImage\(node, textureId, asset, previewItem\)/);
 });
 
 test("zero-shot wheel zoom does not repaint the host graph canvas", async () => {
