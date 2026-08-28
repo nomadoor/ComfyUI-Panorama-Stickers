@@ -254,7 +254,10 @@ test("Stickers canvas wires selection and direct transform gestures through the 
   assert.match(editor, /drawStickerSelectionBoundary\(/);
   assert.match(editor, /hitStickerSelectionAffordance\(/);
   assert.doesNotMatch(editor, /STICKER_NODE_ROTATE_HANDLE_OFFSET_PX/);
-  assert.match(editor, /rotateHandle:\s*\{[\s\S]*?\*\s*30/);
+  const stickerGeometryStart = editor.indexOf("function buildSceneItemGeom(item) {");
+  const stickerGeometryEnd = editor.indexOf("\n  function ", stickerGeometryStart + 1);
+  const stickerGeometry = editor.slice(stickerGeometryStart, stickerGeometryEnd);
+  assert.match(stickerGeometry, /const rotateHandle\s*=\s*\{\s*x:\s*rotateStemBase\.x\s*\+\s*\(handleDx\s*\/\s*handleLen\)\s*\*\s*30,\s*y:\s*rotateStemBase\.y\s*\+\s*\(handleDy\s*\/\s*handleLen\)\s*\*\s*30,/);
   assert.match(runtime, /nodeSurfaceSession\.apply\(\{\s*type:\s*"select-sticker"/);
   assert.match(runtime, /nodeSurfaceSession\.beginGesture\(\)/);
   assert.match(runtime, /type:\s*"set-transform"/);
