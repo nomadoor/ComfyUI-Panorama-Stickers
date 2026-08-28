@@ -66,6 +66,10 @@ test("sticker geometry is centered, ordered, and exposes modal-compatible handle
   assert.ok(geom.corners[0].x < geom.corners[1].x);
   assert.ok(geom.corners[0].y < geom.corners[3].y);
   assert.ok(geom.rotateHandle.y < geom.rotateStemBase.y);
+  assert.ok(Math.abs(Math.hypot(
+    geom.rotateHandle.x - geom.rotateStemBase.x,
+    geom.rotateHandle.y - geom.rotateStemBase.y,
+  ) - 24) < 1e-9);
   assert.deepEqual(hitStickerGeometry(geom, geom.center), { kind: "move", cursor: "default" });
   assert.deepEqual(hitStickerGeometry(geom, geom.corners[0]), { kind: "scale", cornerIndex: 0, cursor: "nwse-resize" });
   assert.deepEqual(hitStickerGeometry(geom, geom.corners[1]), { kind: "scale", cornerIndex: 1, cursor: "nesw-resize" });

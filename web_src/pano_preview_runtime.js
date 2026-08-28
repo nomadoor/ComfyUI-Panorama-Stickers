@@ -89,6 +89,7 @@ import {
   runExternalStickerSync,
 } from "./pano_external_sticker_sync.js";
 import {
+  assignFreshDomWidgetRenderIdentity,
   removeTrackedDomWidget,
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
@@ -3291,9 +3292,9 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   ].join(";");
 
   if (noPreview) {
-    const widget = trackDomWidgetRemoval(
+    const widget = trackDomWidgetRemoval(assignFreshDomWidgetRenderIdentity(
       node.addDOMWidget(getAnimPreviewWidgetName(), "preview", root, createCoreManagedDomWidgetOptions(node, null)),
-    );
+    ));
     suppressBuiltInPreviewImgs(node);
     node.__panoDomPreview = { widget, root, requestDraw: () => { } };
     node.__panoPreviewHooked = true;
@@ -3365,7 +3366,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   let widget = null;
   try {
     armPreviewBootMinHeight(node, bootMinHeight, () => node.__panoDomPreview?.requestDraw?.());
-    widget = trackDomWidgetRemoval(node.addDOMWidget(
+    widget = trackDomWidgetRemoval(assignFreshDomWidgetRenderIdentity(node.addDOMWidget(
       getAnimPreviewWidgetName(),
       "preview",
       root,
@@ -3376,7 +3377,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       surfaceMinHeight,
       false,
       ),
-    ));
+    )));
   } catch {
     return;
   }
@@ -4432,12 +4433,12 @@ export function attachStandalonePreviewDom(node, options = {}) {
     root.appendChild(wrap);
 
     armPreviewBootMinHeight(node, 56, () => node.__panoDomPreview?.requestDraw?.());
-    const widget = trackDomWidgetRemoval(node.addDOMWidget(
+    const widget = trackDomWidgetRemoval(assignFreshDomWidgetRenderIdentity(node.addDOMWidget(
       getAnimPreviewWidgetName(),
       "preview",
       root,
       createCoreManagedDomWidgetOptions(node, () => node.__panoDomPreview?.requestDraw?.(), 56),
-    ));
+    )));
     if (widget) widget.serialize = false;
     suppressBuiltInPreviewImgs(node);
 

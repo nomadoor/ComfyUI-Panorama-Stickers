@@ -63,7 +63,7 @@ test("shared sticker hit descriptor owns modal-compatible hover cursors", () => 
   assert.deepEqual(hitStickerSelectionAffordance(geometry, geometry.center), { kind: "move", cursor: "default" });
 });
 
-test("shared sticker handles use the modal circle sizes and white rotation stem", () => {
+test("shared sticker handles use compact circle sizes and a white rotation stem", () => {
   const ctx = recordingContext();
   const geometry = {
     corners: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
@@ -73,7 +73,7 @@ test("shared sticker handles use the modal circle sizes and white rotation stem"
 
   drawStickerSelectionHandles(ctx, geometry, { accent: "#0070f3" });
 
-  assert.deepEqual(ctx.arcs.map((arc) => arc.radius), [6.5, 6.5, 6.5, 6.5, 10]);
+  assert.deepEqual(ctx.arcs.map((arc) => arc.radius), [5.5, 5.5, 5.5, 5.5, 8]);
   assert.deepEqual(ctx.arcs.map((arc) => arc.color), Array(5).fill("#0070f3"));
   assert.deepEqual(ctx.lines, [{
     points: [{ x: 5, y: 0 }, { x: 5, y: -30 }],

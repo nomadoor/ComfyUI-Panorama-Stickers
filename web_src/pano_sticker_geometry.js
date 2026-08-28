@@ -12,7 +12,10 @@ import {
   wrapYaw,
   yawPitchToDir,
 } from "./pano_camera_math.js";
-import { hitStickerSelectionAffordance } from "./pano_sticker_affordance.js";
+import {
+  STICKER_NODE_ROTATE_HANDLE_OFFSET_PX,
+  hitStickerSelectionAffordance,
+} from "./pano_sticker_affordance.js";
 
 export { hitStickerSelectionAffordance as hitStickerGeometry } from "./pano_sticker_affordance.js";
 
@@ -135,8 +138,8 @@ export function buildStickerGeometry(item, camera, viewport) {
     boundaryEdges,
     rotateStemBase: { x: rotateStemBase.x, y: rotateStemBase.y },
     rotateHandle: {
-      x: rotateStemBase.x + (handleDx / handleLength) * 30,
-      y: rotateStemBase.y + (handleDy / handleLength) * 30,
+      x: rotateStemBase.x + (handleDx / handleLength) * STICKER_NODE_ROTATE_HANDLE_OFFSET_PX,
+      y: rotateStemBase.y + (handleDy / handleLength) * STICKER_NODE_ROTATE_HANDLE_OFFSET_PX,
     },
     visible: true,
   };

@@ -1,3 +1,5 @@
+export const STICKER_NODE_ROTATE_HANDLE_OFFSET_PX = 24;
+
 export function stickerSelectionAccent(item = {}) {
   if (item?.locked === true) return "#ff4d4f";
   if (String(item?.source_kind || "") === "external_image" || String(item?.id || "") === "sticker_image_1") {
@@ -69,7 +71,7 @@ export function drawStickerSelectionHandles(ctx, geometry, { accent = "#0070f3" 
   ctx.fillStyle = accent;
   geometry.corners.forEach((point) => {
     ctx.beginPath();
-    ctx.arc(point.x, point.y, 6.5, 0, Math.PI * 2);
+    ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
     ctx.fill();
   });
   ctx.strokeStyle = "rgba(250, 250, 250, 0.9)";
@@ -80,6 +82,6 @@ export function drawStickerSelectionHandles(ctx, geometry, { accent = "#0070f3" 
   ctx.stroke();
   ctx.fillStyle = accent;
   ctx.beginPath();
-  ctx.arc(geometry.rotateHandle.x, geometry.rotateHandle.y, 10, 0, Math.PI * 2);
+  ctx.arc(geometry.rotateHandle.x, geometry.rotateHandle.y, 8, 0, Math.PI * 2);
   ctx.fill();
 }

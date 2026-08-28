@@ -253,6 +253,8 @@ test("Stickers canvas wires selection and direct transform gestures through the 
   assert.match(editor, /drawStickerSelectionHandles\(/);
   assert.match(editor, /drawStickerSelectionBoundary\(/);
   assert.match(editor, /hitStickerSelectionAffordance\(/);
+  assert.doesNotMatch(editor, /STICKER_NODE_ROTATE_HANDLE_OFFSET_PX/);
+  assert.match(editor, /rotateHandle:\s*\{[\s\S]*?\*\s*30/);
   assert.match(runtime, /nodeSurfaceSession\.apply\(\{\s*type:\s*"select-sticker"/);
   assert.match(runtime, /nodeSurfaceSession\.beginGesture\(\)/);
   assert.match(runtime, /type:\s*"set-transform"/);

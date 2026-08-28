@@ -14,6 +14,7 @@ import { buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
 import { buildPreviewNodeViewParams, buildStickerSceneFromState } from "./pano_gl_scene.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
+  assignFreshDomWidgetRenderIdentity,
   removeTrackedDomWidget,
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
@@ -438,9 +439,9 @@ class PreviewNodeRuntime {
         afterResize: () => this.requestDraw(),
       };
 
-      this.widget = trackDomWidgetRemoval(
+      this.widget = trackDomWidgetRemoval(assignFreshDomWidgetRenderIdentity(
         this.node.addDOMWidget("preview", "preview", this.root, widgetOptions),
-      );
+      ));
       if (this.widget) {
         this.widget.serialize = false;
         const prevComputeLayoutSize = typeof this.widget.computeLayoutSize === "function"

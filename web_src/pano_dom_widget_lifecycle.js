@@ -1,4 +1,18 @@
 const trackedWidgets = new WeakSet();
+const preparedWidgets = new WeakSet();
+let domWidgetGeneration = 0;
+
+// Node 2.0 keys its WidgetDOM component by the stable node/widget identity plus
+// widget.type. Undo can replace a node with the same IDs in one Vue update, so
+// a fresh type is required to mount the replacement widget.element.
+export function assignFreshDomWidgetRenderIdentity(widget) {
+  if (!widget || typeof widget !== "object" || preparedWidgets.has(widget)) return widget;
+  const baseType = String(widget.type || "preview");
+  domWidgetGeneration += 1;
+  widget.type = `${baseType}:pano-${domWidgetGeneration}`;
+  preparedWidgets.add(widget);
+  return widget;
+}
 
 export function trackDomWidgetRemoval(widget) {
   if (!widget || typeof widget !== "object" || trackedWidgets.has(widget)) return widget;

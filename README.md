@@ -29,13 +29,19 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 - v1.2.0 demo: https://gyazo.com/d4c2517589d7c96d27942af76a1ead27
 - v1.3.0 demo: https://gyazo.com/3da5973bb661df8fb1d11dd1e71a2b1f
+- v1.4.0 demo: https://gyazo.com/26ceba6dcc3516ce6b8c461fcfde4dad
+- v1.5.0 demo: 
 
 ## Nodes
 
-- `Panorama Stickers`: Place, scale, and rotate sticker images onto an ERP canvas and output a composited conditioning panorama.
-- `Panorama Cutout`: Compose and extract a framed perspective view from an ERP image with interactive camera, aspect-ratio, and roll controls.
-- `Panorama Preview`: Show an interactive panorama preview inside ComfyUI without duplicating the default image preview.
+- `Panorama Stickers`: Place and adjust sticker images on an ERP canvas, then output the composited panorama.
+- `Panorama Cutout`: Compose and extract a framed perspective view from an ERP image.
+- `Panorama Preview`: Inspect still or animated ERP inputs in an interactive panorama viewer.
 - `Panorama Seam Prep`: Shift an ERP seam into the center and generate hard / blurred vertical seam masks for seam-focused inpainting.
+
+### On-node panorama controls
+
+`Panorama Stickers`, `Panorama Cutout`, and `Panorama Preview` now include lightweight on-node UIs for completing common interactions without opening the Full Editor. Both the legacy canvas and Node 2.0 are supported.
 
 ## Workflow
 
@@ -47,6 +53,11 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
   - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
 
 ## Changelog
+
+### 1.5.0
+
+- Added lightweight on-node UIs to `Panorama Cutout`, `Panorama Preview`, and `Panorama Stickers`, allowing common interactions to be completed without opening the Full Editor.
+- Improved preview performance and reliability across the legacy canvas and Node 2.0.
 
 ### 1.4.0
 
