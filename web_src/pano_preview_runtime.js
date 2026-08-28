@@ -28,6 +28,8 @@ import {
 } from "./pano_gl_scene.js";
 import {
   beginCutoutRollGesture,
+  buildCutoutAddFrameAction,
+  buildCutoutPanoramaViewFromShot,
   createCutoutNodeSurfaceSession,
   CUTOUT_NODE_SURFACE_MIN_HEIGHT,
   cutoutNodeSurfaceModel,
@@ -82,6 +84,15 @@ import {
   isStickerImageFile,
   uploadStickerAssetFile,
 } from "./pano_sticker_file_import.js";
+import {
+  registerExternalStickerSync,
+  runExternalStickerSync,
+} from "./pano_external_sticker_sync.js";
+import {
+  removeTrackedDomWidget,
+  trackDomWidgetRemoval,
+} from "./pano_dom_widget_lifecycle.js";
+import { createViewportRestoreScheduler } from "./pano_viewport_restore.js";
 const { app } = appModule;
 const sharedPreviewImageCache = createSharedImageCache();
 
@@ -409,16 +420,16 @@ function teardownPreview(node, options = {}) {
   try {
     if (Array.isArray(node.widgets)) {
       // Ensure we remove the DOM widget even if name/type mapping varies by frontend version.
-      node.widgets = node.widgets.filter((w) => {
-        if (w === dom?.widget) return false;
+      const removable = node.widgets.filter((w) => {
+        if (w === dom?.widget) return true;
         const name = String(w?.name || "");
         const type = String(w?.type || "");
         const animWidgetName = getAnimPreviewWidgetName();
-        if (name === animWidgetName || type === animWidgetName) return false;
-        if (name === "pano_preview" || type === "pano_preview") return false;
-        if (name === "preview" && type === "pano_preview") return false;
-        return true;
+        if (name === animWidgetName || type === animWidgetName) return true;
+        if (name === "pano_preview" || type === "pano_preview") return true;
+        return name === "preview" && type === "pano_preview";
       });
+      removable.forEach((widget) => removeNodeWidget(node, widget));
     }
   } catch {
     // ignore
@@ -1594,14 +1605,7 @@ function getNodeWidgetsBottom(node, excludeWidget = null) {
 }
 
 function removeNodeWidget(node, widget) {
-  if (!node || !widget || !Array.isArray(node.widgets)) return false;
-  const idx = node.widgets.indexOf(widget);
-  if (idx < 0) return false;
-  node.widgets.splice(idx, 1);
-  if (Array.isArray(node.widgets_values) && node.widgets_values.length > idx) {
-    node.widgets_values.splice(idx, 1);
-  }
-  return true;
+  return removeTrackedDomWidget(node, widget);
 }
 
 function getNodePreviewRect(node) {
@@ -1664,7 +1668,6 @@ function drawNodeEditorButton(node, ctx) {
 }
 
 function getNodePreviewImage(node, assetId, asset, sceneItem = null) {
-  if (!node.__panoPreviewImageCache) node.__panoPreviewImageCache = new Map();
   const key = String(assetId || "");
   if (!key) return null;
   let src = stickerAssetToPreviewSrc(asset);
@@ -1685,15 +1688,12 @@ function getNodePreviewImage(node, assetId, asset, sceneItem = null) {
   const revision = sceneItem?.external ? Number(node.__panoOwnOutputRev || 0) : 0;
   const resolvedSrc = sceneItem?.external ? appendImageRevision(src, revision) : src;
   const sharedKey = buildSharedImageCacheKey(src, stateHash, revision);
-  const cached = node.__panoPreviewImageCache.get(key);
-  if (cached && cached.src === resolvedSrc) return cached.img;
-  const img = sharedPreviewImageCache.get(node, sharedKey, resolvedSrc, () => {
-    if (sceneItem?.external) node.__panoExternalStickerSync?.("image-loaded");
+  const img = sharedPreviewImageCache.get(node, sharedKey, resolvedSrc, (image, succeeded) => {
+    if (!succeeded) return;
+    if (sceneItem?.external) runExternalStickerSync(node, "image-loaded");
     node.__panoDomPreview?.requestDraw?.();
   });
-  if (!img) return null;
-  node.__panoPreviewImageCache.set(key, { src: resolvedSrc, img });
-  return img;
+  return img || null;
 }
 
 function waitForImageReady(img, timeoutMs = 3000) {
@@ -2501,14 +2501,11 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
     loadingSrc = String(bgImg?.currentSrc || bgImg?.src || "");
     if (!shot) {
       const lastShot = node.__panoLastCutoutShot;
-      if (!node.__panoPreviewView) {
-        node.__panoPreviewView = lastShot
-          ? {
-            yaw: Number(lastShot.yaw_deg || 0),
-            pitch: Number(lastShot.pitch_deg || 0),
-            fov: 100,
-          }
-          : { yaw: 0, pitch: 0, fov: 100 };
+      if (lastShot) {
+        node.__panoPreviewView = buildCutoutPanoramaViewFromShot(lastShot, { width: surfW, height: surfH });
+        node.__panoLastCutoutShot = null;
+      } else if (!node.__panoPreviewView) {
+        node.__panoPreviewView = { yaw: 0, pitch: 0, fov: 100 };
       }
       if (bgReady) {
         const runtimeCore = syncRuntimeCutoutComposite(node, state, bgImg, "zero_shot_viewer");
@@ -3294,7 +3291,9 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   ].join(";");
 
   if (noPreview) {
-    const widget = node.addDOMWidget(getAnimPreviewWidgetName(), "preview", root, createCoreManagedDomWidgetOptions(node, null));
+    const widget = trackDomWidgetRemoval(
+      node.addDOMWidget(getAnimPreviewWidgetName(), "preview", root, createCoreManagedDomWidgetOptions(node, null)),
+    );
     suppressBuiltInPreviewImgs(node);
     node.__panoDomPreview = { widget, root, requestDraw: () => { } };
     node.__panoPreviewHooked = true;
@@ -3366,7 +3365,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   let widget = null;
   try {
     armPreviewBootMinHeight(node, bootMinHeight, () => node.__panoDomPreview?.requestDraw?.());
-    widget = node.addDOMWidget(
+    widget = trackDomWidgetRemoval(node.addDOMWidget(
       getAnimPreviewWidgetName(),
       "preview",
       root,
@@ -3377,7 +3376,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       surfaceMinHeight,
       false,
       ),
-    );
+    ));
   } catch {
     return;
   }
@@ -3468,7 +3467,9 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     void reason;
     return changed;
   };
-  node.__panoExternalStickerSync = syncExternalSticker;
+  const unregisterExternalStickerSync = stickersMode
+    ? registerExternalStickerSync(node, syncExternalSticker)
+    : () => {};
   let stickerImportCount = 0;
   const addNodeStickerFile = async (file) => {
     if (!stickersMode || !nodeSurfaceSession || !isStickerImageFile(file)) return false;
@@ -3534,6 +3535,20 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const pointerCommitted = nodeSurfaceSession?.commitGesture?.() ?? false;
     return wheelCommitted || pointerCommitted;
   };
+  const cancelCutoutNodeSurfaceGesture = () => {
+    const wheelCommitted = commitNodeSurfaceWheel();
+    const pointerId = cutoutDrag?.pointerId;
+    cutoutDrag = null;
+    node.__panoStickerDrag = null;
+    if (pointerId != null) {
+      try {
+        if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture?.(pointerId);
+      } catch { }
+      canvas.style.cursor = "grab";
+    }
+    const pointerCancelled = nodeSurfaceSession?.cancelGesture?.() ?? false;
+    return wheelCommitted || pointerCancelled;
+  };
   const nodeSurfaceQueueFlusher = () => flushNodeSurfaceGesture();
   if (nodeSurfaceSession) {
     if (!(node.__panoStateFlushers instanceof Set)) node.__panoStateFlushers = new Set();
@@ -3574,18 +3589,18 @@ function attachPanoramaPreviewImpl(node, options = {}) {
             const view = node.__panoPreviewView || { yaw: 0, pitch: 0, fov: 100 };
             resolvedAction = {
               ...action,
-              yawDeg: Number(view.yaw || 0),
-              pitchDeg: Number(view.pitch || 0),
-              viewFovDeg: 100,
+              ...buildCutoutAddFrameAction(view, {
+                width: canvas.width,
+                height: canvas.height,
+              }),
             };
           } else if (action?.type === "delete-frame") {
             const shot = resolveCutoutNodeSurfaceShot(getCachedState(node));
             if (shot) {
-              node.__panoPreviewView = {
-                yaw: Number(shot.yaw_deg || 0),
-                pitch: Number(shot.pitch_deg || 0),
-                fov: 100,
-              };
+              node.__panoPreviewView = buildCutoutPanoramaViewFromShot(shot, {
+                width: canvas.width,
+                height: canvas.height,
+              });
             }
           }
           const safeRect = node.__panoCutoutNodeFrame?.safeRect || null;
@@ -3941,6 +3956,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     stopCanvasEvent(ev);
   };
   window.addEventListener("keydown", onNodeSurfaceKeyDown, true);
+  const viewportRestoreScheduler = createViewportRestoreScheduler({
+    requestFrame: (callback) => requestAnimationFrame(callback),
+    cancelFrame: (id) => cancelAnimationFrame(id),
+    restore: (snapshot) => restoreGraphViewportSnapshot(snapshot),
+  });
 
   const onPreviewWheel = (ev) => {
     panoPreviewLog(node, "event", { kind: "wheel", via: stickersMode ? "stickers" : "cutout", panoramaInteractiveView });
@@ -3971,9 +3991,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       } else if (!shot) {
         const graphSnapshot = lockGraphViewportSnapshot();
         if (interaction.applyWheelEvent(ev)) requestDraw();
-        requestAnimationFrame(() => {
-          restoreGraphViewportSnapshot(graphSnapshot);
-        });
+        viewportRestoreScheduler.schedule(graphSnapshot);
       }
       ev.preventDefault?.();
       ev.stopPropagation?.();
@@ -3988,9 +4006,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     ev.preventDefault?.();
     ev.stopPropagation?.();
     ev.stopImmediatePropagation?.();
-    requestAnimationFrame(() => {
-      restoreGraphViewportSnapshot(graphSnapshot);
-    });
+    viewportRestoreScheduler.schedule(graphSnapshot);
   };
   const wheelTargets = stickersMode ? [wrap, canvas] : [wrap];
   ["wheel", "mousewheel", "DOMMouseScroll"].forEach((name) => {
@@ -4144,7 +4160,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   const restoreDom = () => {
     state.destroyed = true;
     resizeObserver?.disconnect?.();
-    flushNodeSurfaceGesture();
+    stickersMode ? flushNodeSurfaceGesture() : cancelCutoutNodeSurfaceGesture();
     canvas.removeEventListener("lostpointercapture", cancelCutoutDrag);
     stickerDropTargetCleanup();
     wheelCaptureCleanup();
@@ -4160,7 +4176,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     node.__panoRasterObjectSurfaceCache?.dispose?.();
     node.__panoRasterObjectSurfaceCache = null;
     node.__panoRasterObjectReady = null;
-    node.__panoExternalStickerSync = null;
+    unregisterExternalStickerSync();
+    viewportRestoreScheduler.dispose();
     if (dropCueTimer) clearTimeout(dropCueTimer);
     dropCueTimer = null;
     sharedPreviewImageCache.disposeOwner(node);
@@ -4415,12 +4432,12 @@ export function attachStandalonePreviewDom(node, options = {}) {
     root.appendChild(wrap);
 
     armPreviewBootMinHeight(node, 56, () => node.__panoDomPreview?.requestDraw?.());
-    const widget = node.addDOMWidget(
+    const widget = trackDomWidgetRemoval(node.addDOMWidget(
       getAnimPreviewWidgetName(),
       "preview",
       root,
       createCoreManagedDomWidgetOptions(node, () => node.__panoDomPreview?.requestDraw?.(), 56),
-    );
+    ));
     if (widget) widget.serialize = false;
     suppressBuiltInPreviewImgs(node);
 
@@ -4429,6 +4446,14 @@ export function attachStandalonePreviewDom(node, options = {}) {
     panoPreviewLog(node, "bind", { nodeId: node?.id ?? null, bindingSeq, route: "standalone_dom" });
     panoPreviewLog(node, "modal-parity", PANO_MODAL_PARITY_CONSTANTS);
     const state = { raf: 0, needsDraw: true, dragging: false, pointerId: null };
+    const viewportRestoreScheduler = createViewportRestoreScheduler({
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      cancelFrame: (id) => cancelAnimationFrame(id),
+      restore: (snapshot) => {
+        restoreGraphViewportSnapshot(snapshot);
+        app?.canvas?.setDirty?.(true, true);
+      },
+    });
     const disposeCounts = { listeners: 0, raf: 0, widget: 0 };
     const controller = createPanoInteractionController({
       getView: () => ensureStandaloneView(node),
@@ -4621,10 +4646,7 @@ export function attachStandalonePreviewDom(node, options = {}) {
       ev.preventDefault?.();
       ev.stopPropagation?.();
       ev.stopImmediatePropagation?.();
-      requestAnimationFrame(() => {
-        restoreGraphViewportSnapshot(graphSnapshot);
-        app?.canvas?.setDirty?.(true, true);
-      });
+      viewportRestoreScheduler.schedule(graphSnapshot);
     };
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
@@ -4683,6 +4705,7 @@ export function attachStandalonePreviewDom(node, options = {}) {
         disposeCounts.raf += 1;
       }
       detachWindowPointerBridge?.();
+      viewportRestoreScheduler.dispose();
       wheelCaptureCleanup();
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
@@ -4731,6 +4754,7 @@ export function attachStandalonePreviewDom(node, options = {}) {
         disposeCounts.raf += 1;
       }
       detachWindowPointerBridge?.();
+      viewportRestoreScheduler.dispose();
       wheelCaptureCleanup();
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);

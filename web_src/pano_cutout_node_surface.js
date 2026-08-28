@@ -1,7 +1,9 @@
 import {
   aspectFitGateSize,
+  canvasToFilmTangent,
   CUTOUT_OVERSCAN_SAFE_HALF_ANGLE_DEG,
   createDefaultCutoutShot,
+  cutoutFilmPointToWorldDir,
   deriveCutoutAspectFromFov,
   deriveHorizontalFovDeg,
   contextHalfExtentsPx,
@@ -14,6 +16,7 @@ import {
   shortestAngleDeltaRad,
   wrapRollDeg,
 } from "./pano_cutout_view_math.js";
+import { cameraBasis, dot } from "./pano_camera_math.js";
 import { clamp, wrapYaw } from "./pano_math.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 
@@ -111,6 +114,89 @@ export function fitCutoutNodeFrame(viewport, aspect, padding = CUTOUT_NODE_FRAME
   };
 }
 
+export function buildCutoutAddFrameAction(view = {}, viewport = {}) {
+  const width = Math.max(1, Number(viewport?.width ?? viewport?.w ?? 1));
+  const height = Math.max(1, Number(viewport?.height ?? viewport?.h ?? 1));
+  const frame = fitCutoutNodeFrame({ width, height }, 1);
+  const panoramaFovDeg = clamp(Number(view?.fov || 100), 1, 179);
+  const focalPx = width / (2 * Math.tan(panoramaFovDeg * DEG2RAD * 0.5));
+  const frameCenter = { x: frame.x + frame.w * 0.5, y: frame.y + frame.h * 0.5 };
+  const sourceShot = {
+    yaw_deg: Number(view?.yaw || 0),
+    pitch_deg: Number(view?.pitch || 0),
+    roll_deg: 0,
+  };
+  const direction = cutoutFilmPointToWorldDir(sourceShot, canvasToFilmTangent(
+    { x: width * 0.5, y: height * 0.5 },
+    focalPx,
+    frameCenter,
+  ));
+  const pose = directionToYawPitchRoll(direction, cameraBasis(
+    sourceShot.yaw_deg,
+    sourceShot.pitch_deg,
+    sourceShot.roll_deg,
+  ).right);
+  const frameFov = fovPairForGate({ width: frame.w, height: frame.h }, focalPx);
+  return {
+    type: "add-frame",
+    yawDeg: pose.yaw,
+    pitchDeg: pose.pitch,
+    rollDeg: pose.roll,
+    frameFovDeg: frameFov.hFOV_deg,
+  };
+}
+
+function directionToYawPitch(direction) {
+  return {
+    yaw: wrapYaw(Math.atan2(Number(direction?.x || 0), Number(direction?.z || 0)) * RAD2DEG),
+    pitch: clamp(Math.asin(clamp(Number(direction?.y || 0), -1, 1)) * RAD2DEG, -89.9, 89.9),
+  };
+}
+
+function directionToYawPitchRoll(direction, referenceRight) {
+  const pose = directionToYawPitch(direction);
+  const basis = cameraBasis(pose.yaw, pose.pitch, 0);
+  const alongForward = dot(referenceRight, direction);
+  const projectedRight = {
+    x: Number(referenceRight?.x || 0) - Number(direction?.x || 0) * alongForward,
+    y: Number(referenceRight?.y || 0) - Number(direction?.y || 0) * alongForward,
+    z: Number(referenceRight?.z || 0) - Number(direction?.z || 0) * alongForward,
+  };
+  const length = Math.hypot(projectedRight.x, projectedRight.y, projectedRight.z);
+  if (!(length > 1e-8)) return { ...pose, roll: 0 };
+  const desiredRight = {
+    x: projectedRight.x / length,
+    y: projectedRight.y / length,
+    z: projectedRight.z / length,
+  };
+  return {
+    ...pose,
+    roll: wrapRollDeg(Math.atan2(
+      dot(desiredRight, basis.up),
+      dot(desiredRight, basis.right),
+    ) * RAD2DEG),
+  };
+}
+
+export function buildCutoutPanoramaViewFromShot(shot, viewport = {}) {
+  const width = Math.max(1, Number(viewport?.width ?? viewport?.w ?? 1));
+  const height = Math.max(1, Number(viewport?.height ?? viewport?.h ?? 1));
+  const frame = fitCutoutNodeFrame({ width, height }, deriveCutoutAspectFromFov(shot));
+  const focalPx = fitFocalPx(frame, shot);
+  const frameCenter = { x: frame.x + frame.w * 0.5, y: frame.y + frame.h * 0.5 };
+  const direction = cutoutFilmPointToWorldDir(shot, canvasToFilmTangent(
+    frameCenter,
+    focalPx,
+    { x: width * 0.5, y: height * 0.5 },
+  ));
+  const pose = directionToYawPitch(direction);
+  return {
+    yaw: pose.yaw,
+    pitch: pose.pitch,
+    fov: clamp(2 * Math.atan(width / (2 * focalPx)) * RAD2DEG, 1, 179),
+  };
+}
+
 export function layoutCutoutNodeContext(viewport, frame, shot) {
   const width = Math.max(1, Number(viewport?.width ?? viewport?.w ?? 1));
   const height = Math.max(1, Number(viewport?.height ?? viewport?.h ?? 1));
@@ -204,7 +290,9 @@ export function applyCutoutNodeSurfaceAction(state, action = {}) {
       id,
       yawDeg: action.yawDeg,
       pitchDeg: action.pitchDeg,
+      rollDeg: action.rollDeg,
       viewFovDeg: action.viewFovDeg,
+      frameFovDeg: action.frameFovDeg,
     });
     return {
       state: {

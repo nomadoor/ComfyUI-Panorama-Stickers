@@ -27,3 +27,30 @@ test("the sole Cutout frame exposes an explicit delete action", () => {
   assert.equal(model.visible, true);
   assert.ok(model.items.some((item) => item.action === "delete"));
 });
+
+test("locked modal selections disable destructive and ordering actions", () => {
+  const selected = { id: "sticker_1", locked: true };
+  const model = buildSelectionMenuModel({
+    type: "stickers",
+    selected,
+    selectedItems: [selected],
+    selectedKind: "image",
+    geom: {
+      visible: true,
+      corners: [{ x: 20, y: 20 }, { x: 80, y: 20 }, { x: 80, y: 60 }, { x: 20, y: 60 }],
+    },
+    allLocked: true,
+    anyLocked: true,
+    selectedLocked: true,
+    activeAspect: "1:1",
+    cutoutAspectOpen: false,
+    isExternalSticker: () => false,
+    isStickerHidden: () => false,
+    canRestoreSelectedToInitial: () => false,
+    iconSet: new Proxy({}, { get: (_, key) => String(key) }),
+  });
+
+  for (const action of ["bring-front", "send-back", "delete"]) {
+    assert.equal(model.items.find((item) => item.action === action)?.disabled, true);
+  }
+});

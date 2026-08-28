@@ -13,6 +13,10 @@ import { createPanoramaRenderCore } from "./pano_render_core.js";
 import { buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
 import { buildPreviewNodeViewParams, buildStickerSceneFromState } from "./pano_gl_scene.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
+import {
+  removeTrackedDomWidget,
+  trackDomWidgetRemoval,
+} from "./pano_dom_widget_lifecycle.js";
 import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import {
   drawErpBackground,
@@ -431,11 +435,12 @@ class PreviewNodeRuntime {
         setValue() {},
         getMinHeight() { return PREVIEW_MIN_HEIGHT; },
         getHeight() { return PREVIEW_MIN_HEIGHT; },
-        onRemove: () => this.teardown(),
         afterResize: () => this.requestDraw(),
       };
 
-      this.widget = this.node.addDOMWidget("preview", "preview", this.root, widgetOptions);
+      this.widget = trackDomWidgetRemoval(
+        this.node.addDOMWidget("preview", "preview", this.root, widgetOptions),
+      );
       if (this.widget) {
         this.widget.serialize = false;
         const prevComputeLayoutSize = typeof this.widget.computeLayoutSize === "function"
@@ -739,6 +744,10 @@ class PreviewNodeRuntime {
       this.img = null;
       this.requestDraw();
     };
+    this.mediaCleanup = () => {
+      img.onload = null;
+      img.onerror = null;
+    };
     img.src = nextSrc;
   }
 
@@ -805,18 +814,14 @@ class PreviewNodeRuntime {
     this.node.__panoPreviewNodeSurface = null;
     this.mediaCleanup?.();
     this.mediaCleanup = null;
+    this.img = null;
+    this.imgSrc = "";
     try {
       this.root?.remove?.();
     } catch {
       // ignore
     }
-    if (Array.isArray(this.node?.widgets) && this.widget) {
-      try {
-        this.node.widgets = this.node.widgets.filter((widget) => widget !== this.widget);
-      } catch {
-        // ignore
-      }
-    }
+    try { removeTrackedDomWidget(this.node, this.widget); } catch { }
     this.node.onDrawForeground = this.orig.onDrawForeground;
     this.node.onMouseDown = this.orig.onMouseDown;
     this.node.onMouseMove = this.orig.onMouseMove;

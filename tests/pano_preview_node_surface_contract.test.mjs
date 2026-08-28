@@ -57,3 +57,19 @@ test("Preview resizes its canvas only in the frame that redraws it", async () =>
   assert.doesNotMatch(resize, /this\.canvas\.(?:width|height)\s*=/);
   assert.match(tick, /this\.syncCanvasSize\(\)[\s\S]*?drawPreview\(/);
 });
+
+test("Preview teardown owns its DOM widget and pending still-image handlers", async () => {
+  const runtime = await read("../web_src/pano_preview_previewnode.js");
+  const refreshStart = runtime.indexOf("  refreshImage() {");
+  const refreshEnd = runtime.indexOf("\n  requestDraw() {", refreshStart);
+  const refresh = runtime.slice(refreshStart, refreshEnd);
+  const teardownStart = runtime.indexOf("  teardown() {");
+  const teardownEnd = runtime.indexOf("\n}\n\nexport function", teardownStart);
+  const teardown = runtime.slice(teardownStart, teardownEnd);
+
+  assert.match(runtime, /trackDomWidgetRemoval\(/);
+  assert.match(teardown, /removeTrackedDomWidget\(this\.node, this\.widget\)/);
+  assert.match(refresh, /this\.mediaCleanup = \(\) => \{[\s\S]*?img\.onload = null;[\s\S]*?img\.onerror = null;/);
+  assert.match(teardown, /this\.img = null;/);
+  assert.match(teardown, /this\.imgSrc = "";/);
+});

@@ -157,7 +157,14 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   assert.match(runtime, /beginCutoutRollGesture\(/);
   assert.match(runtime, /updateCutoutRollGesture\(/);
   assert.match(runtime, /type:\s*"step-fov"/);
-  assert.match(runtime, /action\?\.type === "add-frame"[\s\S]*?yawDeg:[\s\S]*?pitchDeg:[\s\S]*?viewFovDeg:/);
+  assert.match(
+    runtime,
+    /action\?\.type === "add-frame"[\s\S]*?buildCutoutAddFrameAction\(view, \{[\s\S]*?width: canvas\.width,[\s\S]*?height: canvas\.height/,
+  );
+  assert.match(
+    runtime,
+    /if \(lastShot\) \{[\s\S]*?buildCutoutPanoramaViewFromShot\(lastShot, \{[\s\S]*?width: surfW,[\s\S]*?height: surfH[\s\S]*?node\.__panoLastCutoutShot = null;[\s\S]*?else if \(!node\.__panoPreviewView\)/,
+  );
   assert.match(
     runtime,
     /function syncRuntimeCutoutComposite[\s\S]*?buildRuntimePreviewScene[\s\S]*?buildRuntimePreviewTextures[\s\S]*?buildRuntimeCutoutLayerEntries[\s\S]*?rasterEntries:\s*layerEntries/,
@@ -221,6 +228,18 @@ test("node surface owns teardown and keeps the Full Editor state barrier", async
   assert.match(runtime, /nodeSurfaceSession && nodeSurfaceMounted/);
   assert.match(runtime, /releasePointerCapture/);
   assert.ok(editor.includes("await flushPanoStateProducers(node, { tolerateOperationFailure: true });"));
+});
+
+test("Cutout teardown cancels pointer drafts while retaining the wheel flush contract", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const restoreStart = runtime.indexOf("  const restoreDom = () => {");
+  const restoreEnd = runtime.indexOf("\n  node.__panoDomRestore = restoreDom;", restoreStart);
+  const restore = runtime.slice(restoreStart, restoreEnd);
+
+  assert.match(restore, /stickersMode\s*\?\s*flushNodeSurfaceGesture\(\)\s*:\s*cancelCutoutNodeSurfaceGesture\(\)/);
+  assert.match(runtime, /const cancelCutoutNodeSurfaceGesture/);
+  assert.match(runtime, /commitNodeSurfaceWheel\(\)/);
+  assert.match(runtime, /nodeSurfaceSession\?\.cancelGesture\?\.\(\)/);
 });
 
 test("DOM preview camera frames do not repaint the host graph canvas", async () => {

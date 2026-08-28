@@ -36,15 +36,16 @@ export function createSharedImageCache({ ImageCtor = null, maxEntries = 32 } = {
     entry.listeners.add(record);
   }
 
-  function settle(entry) {
+  function settle(entry, succeeded) {
     if (entry.settled) return;
     entry.settled = true;
     entry.image.onload = null;
     entry.image.onerror = null;
+    if (!succeeded && entries.get(entry.key) === entry) entries.delete(entry.key);
     [...entry.listeners].forEach((record) => {
       detach(record);
       try {
-        record.callback(entry.image);
+        record.callback(entry.image, succeeded);
       } catch {
         // One node callback must not prevent other subscribers from settling.
       }
@@ -73,10 +74,10 @@ export function createSharedImageCache({ ImageCtor = null, maxEntries = 32 } = {
       const Ctor = ImageCtor || globalThis.Image;
       if (typeof Ctor !== "function") return null;
       const image = new Ctor();
-      entry = { image, listeners: new Set(), settled: false };
+      entry = { key: cacheKey, image, listeners: new Set(), settled: false };
       entries.set(cacheKey, entry);
-      image.onload = () => settle(entry);
-      image.onerror = () => settle(entry);
+      image.onload = () => settle(entry, true);
+      image.onerror = () => settle(entry, false);
       image.src = source;
     } else {
       entries.delete(cacheKey);

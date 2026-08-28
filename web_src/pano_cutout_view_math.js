@@ -246,15 +246,22 @@ export function createDefaultCutoutShot({
   id = "",
   yawDeg = 0,
   pitchDeg = 0,
+  rollDeg = 0,
   viewFovDeg = 100,
+  frameFovDeg = null,
 } = {}) {
-  const fov = clamp(Math.min(42, finiteOr(viewFovDeg, 100) * 0.42), 8, 96);
+  const explicitFrameFov = frameFovDeg == null || String(frameFovDeg).trim() === ""
+    ? NaN
+    : Number(frameFovDeg);
+  const fov = Number.isFinite(explicitFrameFov)
+    ? clamp(explicitFrameFov, CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG)
+    : clamp(Math.min(42, finiteOr(viewFovDeg, 100) * 0.42), 8, 96);
   return normalizeCutoutShotItem({
     id: String(id),
     label: "Frame 1",
     yaw_deg: finiteOr(yawDeg, 0),
     pitch_deg: clamp(finiteOr(pitchDeg, 0), -89.9, 89.9),
-    roll_deg: 0,
+    roll_deg: wrapRollDeg(rollDeg),
     hFOV_deg: fov,
     vFOV_deg: fov,
     locked: false,

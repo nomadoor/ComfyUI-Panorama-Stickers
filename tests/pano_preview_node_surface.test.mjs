@@ -82,6 +82,31 @@ test("preview fullscreen controller falls back to the existing read-only Preview
   assert.equal(boundary.listeners.size, 0);
 });
 
+test("destroying Preview during a pending fullscreen request suppresses late fallback and updates", async () => {
+  let rejectRequest;
+  const pendingRequest = new Promise((_, reject) => { rejectRequest = reject; });
+  const boundary = makeFullscreenBoundary();
+  boundary.root.requestFullscreen = () => pendingRequest;
+  const states = [];
+  let fallbackCalls = 0;
+  const controller = createPreviewFullscreenController({
+    root: boundary.root,
+    documentRef: boundary.documentRef,
+    onChange: (active) => states.push(active),
+    onFallback: () => { fallbackCalls += 1; },
+  });
+
+  const toggle = controller.toggle();
+  controller.destroy();
+  const stateCountAfterDestroy = states.length;
+  rejectRequest(new Error("removed"));
+  await toggle;
+
+  assert.equal(fallbackCalls, 0);
+  assert.equal(states.length, stateCountAfterDestroy);
+  assert.equal(boundary.listeners.size, 0);
+});
+
 test("preview playback shortcut ignores keys from the fullscreen button", () => {
   const root = {};
   const button = {};

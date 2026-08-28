@@ -43,6 +43,17 @@ test("disposing one node removes only its pending subscription", () => {
   assert.deepEqual(settled, ["second"]);
 });
 
+test("a failed shared image is retried on the next request", () => {
+  const cache = createSharedImageCache({ ImageCtor: FakeImage });
+  const owner = {};
+  const first = cache.get(owner, "same", "/same.png");
+
+  first.onerror();
+  const retry = cache.get(owner, "same", "/same.png");
+
+  assert.notEqual(retry, first);
+});
+
 test("the same URL and state hash select a fresh image after each execution revision", () => {
   const cache = createSharedImageCache({ ImageCtor: FakeImage });
   const owner = {};

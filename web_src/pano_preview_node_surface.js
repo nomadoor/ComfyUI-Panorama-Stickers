@@ -45,12 +45,14 @@ export function createPreviewFullscreenController({
       } catch {
         // A browser-owned fullscreen transition may already be in progress.
       }
+      if (destroyed) return false;
       publish();
       return isActive();
     }
     if (documentRef.fullscreenEnabled && typeof root.requestFullscreen === "function") {
       try {
         await root.requestFullscreen();
+        if (destroyed) return false;
         if (isActive()) {
           publish();
           return true;
@@ -59,6 +61,7 @@ export function createPreviewFullscreenController({
         // Preserve the existing read-only Preview as the supported fallback.
       }
     }
+    if (destroyed) return false;
     openFallback();
     publish();
     return false;

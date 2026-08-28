@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   applyCutoutNodeSurfaceAction,
   beginCutoutRollGesture,
+  buildCutoutAddFrameAction,
+  buildCutoutPanoramaViewFromShot,
   CUTOUT_NODE_FRAME_PADDING,
   CUTOUT_NODE_SURFACE_MIN_HEIGHT,
   createCutoutNodeSurfaceSession,
@@ -14,6 +16,8 @@ import {
   parseCutoutAspectPair,
   updateCutoutRollGesture,
 } from "../web_src/pano_cutout_node_surface.js";
+import { cameraBasis, yawPitchToDir } from "../web_src/pano_camera_math.js";
+import { screenPointToWorldDirection } from "../web_src/pano_sticker_geometry.js";
 
 function stateWithShots(shots, selectedId = null) {
   return {
@@ -434,4 +438,79 @@ test("node surface can add a square frame to empty state and explicitly remove i
   assert.equal(removed.changed, true);
   assert.deepEqual(removed.state.shots, []);
   assert.equal(removed.state.active.selected_shot_id, null);
+});
+
+test("adding the first frame preserves the panorama center and on-screen scale", () => {
+  const view = { yaw: 33, pitch: -14, fov: 100 };
+  const viewport = { width: 400, height: 300 };
+  const action = buildCutoutAddFrameAction(
+    view,
+    viewport,
+  );
+
+  assert.equal(action.type, "add-frame");
+  assert.ok(Math.abs(action.frameFovDeg - 64.066012133414) < 1e-9);
+
+  const frame = fitCutoutNodeFrame(viewport, 1);
+  const priorDirection = screenPointToWorldDirection({
+    x: frame.x + frame.w * 0.5,
+    y: frame.y + frame.h * 0.5,
+  }, view, viewport);
+  const frameDirection = yawPitchToDir(action.yawDeg, action.pitchDeg);
+  assert.ok(Math.hypot(
+    priorDirection.x - frameDirection.x,
+    priorDirection.y - frameDirection.y,
+    priorDirection.z - frameDirection.z,
+  ) < 1e-12);
+
+  const added = applyCutoutNodeSurfaceAction(stateWithShots([]), {
+    ...action,
+    id: "frame_at_view",
+  });
+  assert.equal(added.state.shots[0].hFOV_deg, action.frameFovDeg);
+  assert.equal(added.state.shots[0].vFOV_deg, action.frameFovDeg);
+
+  const restoredView = buildCutoutPanoramaViewFromShot(added.state.shots[0], viewport);
+  assert.ok(Math.abs(restoredView.yaw - view.yaw) < 1e-12);
+  assert.ok(Math.abs(restoredView.pitch - view.pitch) < 1e-12);
+  assert.ok(Math.abs(restoredView.fov - view.fov) < 1e-12);
+});
+
+test("deleting a frame derives the panorama view instead of resetting to 100 degrees", () => {
+  const viewport = { width: 400, height: 300 };
+  const shot = {
+    yaw_deg: 18,
+    pitch_deg: -7,
+    roll_deg: 0,
+    hFOV_deg: 42,
+    vFOV_deg: 42,
+  };
+  const view = buildCutoutPanoramaViewFromShot(shot, viewport);
+
+  assert.ok(Math.abs(view.fov - 72.34627204895013) < 1e-9);
+  assert.notEqual(view.fov, 100);
+});
+
+test("first-frame camera continuity survives crossing a panorama pole", () => {
+  const view = { yaw: 33, pitch: -86, fov: 100 };
+  const viewport = { width: 400, height: 300 };
+  const action = buildCutoutAddFrameAction(view, viewport);
+  const added = applyCutoutNodeSurfaceAction(stateWithShots([]), {
+    ...action,
+    id: "polar_frame",
+  });
+  const shot = added.state.shots[0];
+  const restoredView = buildCutoutPanoramaViewFromShot(shot, viewport);
+
+  assert.ok(Math.abs(Number(shot.roll_deg || 0)) > 90);
+  const sourceRight = cameraBasis(view.yaw, view.pitch, 0).right;
+  const frameRight = cameraBasis(shot.yaw_deg, shot.pitch_deg, shot.roll_deg).right;
+  assert.ok(Math.hypot(
+    sourceRight.x - frameRight.x,
+    sourceRight.y - frameRight.y,
+    sourceRight.z - frameRight.z,
+  ) < 1e-9);
+  assert.ok(Math.abs(restoredView.yaw - view.yaw) < 1e-9);
+  assert.ok(Math.abs(restoredView.pitch - view.pitch) < 1e-9);
+  assert.ok(Math.abs(restoredView.fov - view.fov) < 1e-9);
 });

@@ -59,6 +59,28 @@ test("modal image drag feedback reuses the shared generic-MIME detector", async 
   assert.doesNotMatch(detector, /startsWith\("image\/"\)/);
 });
 
+test("modal lock changes refresh both selection actions and inspector controls", async () => {
+  const editor = await read("../web_src/pano_editor.js");
+  const start = editor.indexOf("  function toggleSelectedLock() {");
+  const end = editor.indexOf("\n  function ", start + 1);
+  const toggleLock = editor.slice(start, end);
+
+  assert.notEqual(start, -1);
+  assert.match(toggleLock, /updateSelectionMenu\(\);/);
+  assert.match(toggleLock, /updateSidePanel\(\);/);
+});
+
+test("modal destructive and ordering commands reject selections containing locked items", async () => {
+  const editor = await read("../web_src/pano_editor.js");
+  for (const functionName of ["deleteSelected", "bringSelectedToFront", "sendSelectedToBack"]) {
+    const start = editor.indexOf(`  function ${functionName}() {`);
+    const end = editor.indexOf("\n  function ", start + 1);
+    const body = editor.slice(start, end);
+    assert.notEqual(start, -1);
+    assert.match(body, /selectedItems\.some\(\(item\) => isItemLocked\(item\)\)/);
+  }
+});
+
 test("a completed image import settles any active pointer gesture before changing selection", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const start = runtime.indexOf("  const addNodeStickerFile = async (file) => {");
@@ -197,6 +219,17 @@ test("external sticker textures resolve only from the node's current dedicated o
   assert.doesNotMatch(runtime, /getLinkedInputImageForPreview\(\s*node,\s*\["stickers"\]/);
 });
 
+test("failed sticker image loads do not schedule an immediate retry loop", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const start = runtime.indexOf("function getNodePreviewImage(");
+  const end = runtime.indexOf("\nfunction ", start + 1);
+  const resolver = runtime.slice(start, end);
+
+  assert.notEqual(start, -1);
+  assert.match(resolver, /\(image, succeeded\) => \{/);
+  assert.match(resolver, /if \(!succeeded\) return;/);
+});
+
 test("runtime advances and applies the public external media revision seam", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const start = runtime.indexOf("function syncOwnOutputSourceFromExecuted(");
@@ -229,7 +262,7 @@ test("Stickers canvas wires selection and direct transform gestures through the 
   assert.match(runtime, /if \(!stickerDrag && !interaction\.state\.drag\.active\)[\s\S]*?updateStickerHoverCursor\(ev\)/);
 });
 
-test("DOM teardown retains the mount record and restores owned widget callbacks", async () => {
+test("DOM teardown retains the mount record, unregisters widgets, and restores owned callbacks", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const teardownStart = runtime.indexOf("function teardownPreview(node, options = {}) {");
   const teardownEnd = runtime.indexOf("\nfunction ", teardownStart + 1);
@@ -240,7 +273,8 @@ test("DOM teardown retains the mount record and restores owned widget callbacks"
 
   assert.ok(teardown.indexOf("const dom = node.__panoDomPreview;") < teardown.indexOf("node.__panoDomRestore?.();"));
   assert.match(teardown, /dom\.root\?\.remove\?\.\(\)/);
-  assert.match(teardown, /if \(w === dom\?\.widget\) return false/);
+  assert.match(teardown, /if \(w === dom\?\.widget\) return true/);
+  assert.match(teardown, /removable\.forEach\(\(widget\) => removeNodeWidget\(node, widget\)\)/);
   assert.match(restore, /sw\?\.callback === swCallbackWrapper/);
   assert.match(restore, /delete sw\.__panoPreviewPatchedCb/);
   assert.match(restore, /bgw\?\.callback === bgwCallbackWrapper/);

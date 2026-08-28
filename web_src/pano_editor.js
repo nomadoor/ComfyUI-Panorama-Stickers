@@ -95,6 +95,10 @@ import {
   isStickerImageFile,
   uploadStickerAssetFile,
 } from "./pano_sticker_file_import.js";
+import {
+  registerExternalStickerSync,
+  runExternalStickerSync,
+} from "./pano_external_sticker_sync.js";
 
 const STATE_WIDGET = "state_json";
 const EXTERNAL_STICKER_ID = "sticker_image_1";
@@ -2503,6 +2507,7 @@ async function showEditor(node, type, options = {}) {
     pushHistory();
     commitAndRefreshNode();
     updateSelectionMenu();
+    updateSidePanel();
     requestDraw();
   }
   function setSelectedItem(item) {
@@ -3045,7 +3050,7 @@ async function showEditor(node, type, options = {}) {
       : null;
     const linkId = input?.link ?? null;
     const previewImg = getExternalStickerPreviewImage(() => {
-      node.__panoExternalStickerSync?.("image-loaded");
+      runExternalStickerSync(node, "image-loaded");
     });
     const inputPose = normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null);
     const stateRaw = getLinkedStringInputValue("sticker_state");
@@ -3244,7 +3249,7 @@ async function showEditor(node, type, options = {}) {
     if (stickerOrAssetId && typeof stickerOrAssetId === "object"
       && (isExternalSticker(stickerOrAssetId) || stickerOrAssetId.external === true)) {
       return getExternalStickerPreviewImage(() => {
-        node.__panoExternalStickerSync?.("image-loaded");
+        runExternalStickerSync(node, "image-loaded");
       });
     }
     const assetId = (stickerOrAssetId && typeof stickerOrAssetId === "object")
@@ -7182,6 +7187,7 @@ async function showEditor(node, type, options = {}) {
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected && selectedItems.length === 0) return;
+    if (selectedItems.some((item) => isItemLocked(item))) return;
     if (selectedItems.length > 1) {
       const paintStrokeIds = new Set(selectedItems
         .filter((item) => isStrokeGroupItem(item))
@@ -7389,6 +7395,7 @@ async function showEditor(node, type, options = {}) {
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected || selectedItems.length === 0) return;
+    if (selectedItems.some((item) => isItemLocked(item))) return;
     normalizeDisplayZIndices();
     const ordered = getDisplayListObjects();
     const selectedKeys = new Set(selectedItems.map((item) => {
@@ -7426,6 +7433,7 @@ async function showEditor(node, type, options = {}) {
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected || selectedItems.length === 0) return;
+    if (selectedItems.some((item) => isItemLocked(item))) return;
     normalizeDisplayZIndices();
     const ordered = getDisplayListObjects();
     const selectedKeys = new Set(selectedItems.map((item) => {
@@ -8732,6 +8740,7 @@ async function showEditor(node, type, options = {}) {
       selectedKind,
       geom: selectedItems.length > 1 ? getMultiSelectionGeom(selectedItems) : objectGeom(selected),
       allLocked: areAllSelectedItemsLocked(selectedItems),
+      anyLocked: selectedItems.some((item) => isItemLocked(item)),
       selectedLocked: isItemLocked(selected),
       activeAspect: getCutoutAspectLabel(selected),
       cutoutAspectOpen: editor.cutoutAspectOpen,
@@ -10685,24 +10694,25 @@ async function showEditor(node, type, options = {}) {
   let modalOnExecuted = null;
   let modalOnConnectionsChange = null;
   let modalExternalStickerSync = null;
+  let unregisterModalExternalStickerSync = () => {};
   if (!readOnly && type === "stickers") {
     modalExternalStickerSync = (reason = "sync") => {
       reconcileExternalStickerFromInputs(reason);
     };
-    node.__panoExternalStickerSync = modalExternalStickerSync;
+    unregisterModalExternalStickerSync = registerExternalStickerSync(node, modalExternalStickerSync);
     modalOnExecuted = function onPanoEditorExecuted(...args) {
       if (typeof modalPrevOnExecuted === "function") {
         modalPrevOnExecuted.apply(this, args);
       }
       invalidateMediaUiImage(imageCache, EXTERNAL_STICKER_PREVIEW_KEY);
-      this.__panoExternalStickerSync?.("executed");
+      runExternalStickerSync(this, "executed");
     };
     node.onExecuted = modalOnExecuted;
     modalOnConnectionsChange = function onPanoEditorConnectionsChange(...args) {
       if (typeof modalPrevOnConnectionsChange === "function") {
         modalPrevOnConnectionsChange.apply(this, args);
       }
-      this.__panoExternalStickerSync?.("connections");
+      runExternalStickerSync(this, "connections");
     };
     node.onConnectionsChange = modalOnConnectionsChange;
   }
@@ -10752,7 +10762,7 @@ async function showEditor(node, type, options = {}) {
       if (!readOnly && type === "stickers") {
         if (node.onExecuted === modalOnExecuted) node.onExecuted = modalPrevOnExecuted;
         if (node.onConnectionsChange === modalOnConnectionsChange) node.onConnectionsChange = modalPrevOnConnectionsChange;
-        if (node.__panoExternalStickerSync === modalExternalStickerSync) node.__panoExternalStickerSync = null;
+        unregisterModalExternalStickerSync();
       }
       vueApp.unmount();
       mountHost.remove();
