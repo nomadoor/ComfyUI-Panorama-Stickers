@@ -206,6 +206,10 @@ test("modal frame view adds shared Shift-roll without removing legacy Alt-roll",
   assert.match(editor, /!shot \|\| shot\.locked === true \|\| !rect/);
   assert.match(editor, /const enabled = !!inspectorSelected && !isItemLocked\(inspectorSelected\)/);
   assert.match(editor, /selectedKind === "stroke" \|\| isItemLocked\(selected\)/);
+  const syncStart = editor.indexOf("  function syncFrameRollKnob() {");
+  const syncEnd = editor.indexOf("\n  function ", syncStart + 1);
+  const syncRollKnob = editor.slice(syncStart, syncEnd);
+  assert.match(syncRollKnob, /visible = !!shot && !readOnly && shot\.locked !== true/);
 });
 
 test("node surface owns teardown and keeps the Full Editor state barrier", async () => {

@@ -8290,7 +8290,10 @@ function Qn(e) {
 }
 function Am(e) {
   var t;
-  return e ? (t = e.items) != null && t.length ? Array.from(e.items).some((n) => (n == null ? void 0 : n.kind) === "file" && (!String(n.type || "").trim() || String(n.type).toLowerCase().startsWith("image/"))) : Array.from(e.files || []).some((n) => Qn(n)) : !1;
+  return e ? (t = e.items) != null && t.length ? Array.from(e.items).some((n) => {
+    const r = String((n == null ? void 0 : n.type) || "").trim().toLowerCase();
+    return (n == null ? void 0 : n.kind) === "file" && (!r || r.startsWith("image/") || r === "application/octet-stream");
+  }) : Array.from(e.files || []).some((n) => Qn(n)) : !1;
 }
 function cx(e, t = {}) {
   if (!(e != null && e.addEventListener) || !(e != null && e.removeEventListener)) return () => {
@@ -16440,7 +16443,7 @@ async function TN(e, t, n = {}) {
   function Mr() {
     var s;
     const i = d.mode === "frame" ? Be() : null;
-    P.frameRollKnob.visible = !!i && !r, P.frameRollKnob.rollDeg = Number((i == null ? void 0 : i.roll_deg) ?? (i == null ? void 0 : i.rot_deg) ?? 0), P.frameRollKnob.displayValue = Zi(P.frameRollKnob.rollDeg), P.frameRollKnob.dragging = ((s = d.interaction) == null ? void 0 : s.kind) === "roll_frame", P.frameRollKnob.armed = !!i && d.altModifier === !0;
+    P.frameRollKnob.visible = !!i && !r && i.locked !== !0, P.frameRollKnob.rollDeg = Number((i == null ? void 0 : i.roll_deg) ?? (i == null ? void 0 : i.rot_deg) ?? 0), P.frameRollKnob.displayValue = Zi(P.frameRollKnob.rollDeg), P.frameRollKnob.dragging = ((s = d.interaction) == null ? void 0 : s.kind) === "roll_frame", P.frameRollKnob.armed = !!i && d.altModifier === !0;
   }
   function E0() {
     var w, k;

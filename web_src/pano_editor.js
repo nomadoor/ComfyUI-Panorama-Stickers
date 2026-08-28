@@ -6173,7 +6173,7 @@ async function showEditor(node, type, options = {}) {
 
   function syncFrameRollKnob() {
     const shot = editor.mode === "frame" ? getActiveCutoutShot() : null;
-    uiState.frameRollKnob.visible = !!shot && !readOnly;
+    uiState.frameRollKnob.visible = !!shot && !readOnly && shot.locked !== true;
     uiState.frameRollKnob.rollDeg = Number(shot?.roll_deg ?? shot?.rot_deg ?? 0);
     uiState.frameRollKnob.displayValue = formatParamValue(uiState.frameRollKnob.rollDeg);
     uiState.frameRollKnob.dragging = editor.interaction?.kind === "roll_frame";

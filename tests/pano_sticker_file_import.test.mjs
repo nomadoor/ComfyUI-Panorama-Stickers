@@ -85,14 +85,24 @@ test("the DOM preview surface accepts an image drop and releases every listener"
 
 test("the dropped File decides acceptance when the drag item has a generic MIME type", () => {
   const target = new DropTargetBoundary();
+  const active = [];
   const dropped = [];
   const image = { type: "application/octet-stream", name: "sticker.WEBP" };
-  const cleanup = bindStickerDropTarget(target, { onDrop: (file) => dropped.push(file) });
-  const event = dropEvent({
+  const cleanup = bindStickerDropTarget(target, {
+    onActive: (value) => active.push(value),
+    onDrop: (file) => dropped.push(file),
+  });
+  const transfer = {
     items: [{ kind: "file", type: "application/octet-stream" }],
     files: [image],
-  });
+  };
+  const over = dropEvent(transfer);
+  target.dispatch("dragover", over);
+  assert.equal(over.prevented, true);
+  assert.equal(over.dataTransfer.dropEffect, "copy");
+  assert.equal(active.at(-1), true);
 
+  const event = dropEvent(transfer);
   target.dispatch("drop", event);
 
   assert.equal(event.prevented, true);

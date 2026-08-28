@@ -9,8 +9,11 @@ export function isStickerImageFile(file) {
 export function dragHasStickerImageFile(dataTransfer) {
   if (!dataTransfer) return false;
   if (dataTransfer.items?.length) {
-    return Array.from(dataTransfer.items).some((item) => item?.kind === "file"
-      && (!String(item.type || "").trim() || String(item.type).toLowerCase().startsWith("image/")));
+    return Array.from(dataTransfer.items).some((item) => {
+      const type = String(item?.type || "").trim().toLowerCase();
+      return item?.kind === "file"
+        && (!type || type.startsWith("image/") || type === "application/octet-stream");
+    });
   }
   return Array.from(dataTransfer.files || []).some((file) => isStickerImageFile(file));
 }
