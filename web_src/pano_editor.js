@@ -91,6 +91,7 @@ import {
 } from "./pano_sticker_affordance.js";
 import {
   decodeStickerImageFile,
+  dragHasStickerImageFile,
   isStickerImageFile,
   uploadStickerAssetFile,
 } from "./pano_sticker_file_import.js";
@@ -1768,20 +1769,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function dragHasImageFiles(e) {
-    const dt = e?.dataTransfer;
-    if (!dt) return false;
-    if (dt.items && dt.items.length) {
-      for (const item of dt.items) {
-        if (!item || item.kind !== "file") continue;
-        const t = String(item.type || "").toLowerCase();
-        if (!t || t.startsWith("image/")) return true;
-      }
-      return false;
-    }
-    if (dt.files && dt.files.length) {
-      return Array.from(dt.files).some((f) => isStickerImageFile(f));
-    }
-    return false;
+    return dragHasStickerImageFile(e?.dataTransfer);
   }
 
   function setDropCue(on) {

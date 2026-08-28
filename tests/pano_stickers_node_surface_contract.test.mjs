@@ -48,6 +48,17 @@ test("Stickers DOM preview is itself an image drop target in Legacy and Node 2.0
   assert.match(runtime, /stickerDropTargetCleanup\(\)/);
 });
 
+test("modal image drag feedback reuses the shared generic-MIME detector", async () => {
+  const editor = await read("../web_src/pano_editor.js");
+  const start = editor.indexOf("  function dragHasImageFiles(e) {");
+  const end = editor.indexOf("\n  function ", start + 1);
+  const detector = editor.slice(start, end);
+
+  assert.match(editor, /dragHasStickerImageFile,/);
+  assert.match(detector, /return dragHasStickerImageFile\(e\?\.dataTransfer\);/);
+  assert.doesNotMatch(detector, /startsWith\("image\/"\)/);
+});
+
 test("a completed image import settles any active pointer gesture before changing selection", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const start = runtime.indexOf("  const addNodeStickerFile = async (file) => {");
