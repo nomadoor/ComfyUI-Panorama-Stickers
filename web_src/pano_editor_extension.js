@@ -138,12 +138,16 @@ function ensureActionButtonWidget(node, buttonText, callback) {
   return widget;
 }
 
-async function waitForPendingStickerUploads(node) {
+async function waitForPendingStickerUploads(node, { tolerateOperationFailure = false } = {}) {
   const pending = node?.__panoPendingStickerUploads;
   if (!(pending instanceof Map)) return;
   while (pending.size > 0) {
     const entries = Array.from(pending.entries());
-    await Promise.all(entries.map(([, promise]) => promise));
+    if (tolerateOperationFailure) {
+      await Promise.allSettled(entries.map(([, promise]) => promise));
+    } else {
+      await Promise.all(entries.map(([, promise]) => promise));
+    }
     entries.forEach(([assetId, promise]) => {
       if (pending.get(assetId) === promise) pending.delete(assetId);
     });
@@ -177,7 +181,8 @@ export function queuePendingStickerOperation(node, operationId, operation) {
   return pending;
 }
 
-export async function flushPanoStateProducers(node) {
+export async function flushPanoStateProducers(node, options = {}) {
+  await waitForPendingStickerUploads(node, options);
   const flushers = node?.__panoStateFlushers instanceof Set
     ? Array.from(node.__panoStateFlushers)
     : [];
@@ -192,7 +197,6 @@ function installStateQueueBarrier(node, stateWidget) {
     ? stateWidget.serializeValue
     : null;
   stateWidget.serializeValue = async function (...args) {
-    await waitForPendingStickerUploads(node);
     await flushPanoStateProducers(node);
     return previousSerializeValue
       ? previousSerializeValue.apply(this, args)
@@ -253,6 +257,7 @@ function installEditorButton(nodeType, {
           buttonText,
           onOpen: () => openEditor(node, "stickers"),
         });
+        if (node.__panoStickersNodeSurface) hideWidget(node, buttonText);
         if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) node.size = [360, 260];
       }
       node.__panoPreviewAttached = true;

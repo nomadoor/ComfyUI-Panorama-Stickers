@@ -83,12 +83,23 @@ import {
   flushPanoStateProducers,
   queuePendingStickerOperation,
 } from "./pano_editor_extension.js";
+import { reconcileExternalStickerState } from "./pano_stickers_node_surface.js";
+import {
+  drawStickerSelectionBoundary,
+  drawStickerSelectionHandles,
+  hitStickerSelectionAffordance,
+} from "./pano_sticker_affordance.js";
+import {
+  decodeStickerImageFile,
+  isStickerImageFile,
+  uploadStickerAssetFile,
+} from "./pano_sticker_file_import.js";
 
 const STATE_WIDGET = "state_json";
 const EXTERNAL_STICKER_ID = "sticker_image_1";
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
 const EXTERNAL_STICKER_PREVIEW_KEY = "pano_sticker_input_images";
-const ENABLE_STICKERS_NODE_PREVIEW = false;
+const ENABLE_STICKERS_NODE_PREVIEW = true;
 const PAINT_COLOR_SWATCHES = [
   { id: "green", label: "Green", color: { r: 0, g: 1, b: 0, a: 1 } },
   { id: "red", label: "Red", color: { r: 1, g: 0, b: 0, a: 1 } },
@@ -933,7 +944,7 @@ function logPaintDebug(phase, payload) {
 }
 
 async function showEditor(node, type, options = {}) {
-  await flushPanoStateProducers(node);
+  await flushPanoStateProducers(node, { tolerateOperationFailure: true });
   comfyMedia.clearFailedLinkedImages(node);
   const readOnly = options?.readOnly === true;
   const hideSidebar = options?.hideSidebar ?? readOnly;
@@ -1094,7 +1105,7 @@ async function showEditor(node, type, options = {}) {
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
   const onImageFileSelected = ({ intent, file } = {}) => {
-    if (!isImageFile(file)) return;
+    if (!isStickerImageFile(file)) return;
     if (intent === "add") {
       void addImageStickerFromFile(file);
       return;
@@ -1768,7 +1779,7 @@ async function showEditor(node, type, options = {}) {
       return false;
     }
     if (dt.files && dt.files.length) {
-      return Array.from(dt.files).some((f) => isImageFile(f));
+      return Array.from(dt.files).some((f) => isStickerImageFile(f));
     }
     return false;
   }
@@ -3051,61 +3062,22 @@ async function showEditor(node, type, options = {}) {
     const inputPose = normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null);
     const stateRaw = getLinkedStringInputValue("sticker_state");
     const stateHash = comfyMedia.externalStateHash(node, stateRaw);
-    const stickers = Array.isArray(state.stickers) ? state.stickers : (state.stickers = []);
-    const existingIndex = stickers.findIndex((item) => String(item?.id || "") === EXTERNAL_STICKER_ID);
-    if (linkId == null) {
-      if (existingIndex >= 0) {
-        stickers.splice(existingIndex, 1);
-        if (editor.selectedId === EXTERNAL_STICKER_ID) {
-          editor.selectedId = null;
-          editor.selectedIds = [];
-          state.active.selected_sticker_id = null;
-        }
-        commitAndRefreshNode();
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
+    const pose = linkId == null ? null : buildExternalInitialPose(inputPose, stateRaw, previewImg);
+    const result = reconcileExternalStickerState(state, {
+      connected: linkId != null,
+      linkId,
+      stateHash,
+      pose,
+      imageWidth: Number(previewImg?.naturalWidth || previewImg?.width || 0),
+      imageHeight: Number(previewImg?.naturalHeight || previewImg?.height || 0),
+    });
+    if (result.changed) {
+      state.stickers = result.state.stickers;
+      state.active = result.state.active;
+      if (linkId == null && editor.selectedId === EXTERNAL_STICKER_ID) {
+        editor.selectedId = null;
+        editor.selectedIds = [];
       }
-      return;
-    }
-    const maxZ = stickers.reduce((acc, item) => Math.max(acc, Number(item?.z_index || 0)), -1);
-    let target = existingIndex >= 0 ? stickers[existingIndex] : null;
-    const sourceChanged = !target
-      || Number(target.source_link_id ?? -1) !== Number(linkId)
-      || String(target.source_state_hash || "") !== stateHash;
-    if (!target) {
-      target = {
-        id: EXTERNAL_STICKER_ID,
-        source_kind: EXTERNAL_STICKER_SOURCE_KIND,
-      };
-      stickers.push(target);
-    }
-    target.id = EXTERNAL_STICKER_ID;
-    target.source_kind = EXTERNAL_STICKER_SOURCE_KIND;
-    target.source_link_id = Number(linkId);
-    target.source_state_hash = stateHash;
-    target.visible = target.visible !== false;
-    let stateChanged = false;
-    if (sourceChanged) {
-      const pose = buildExternalInitialPose(inputPose, stateRaw, previewImg);
-      Object.assign(target, pose, {
-        initial_pose: { ...pose },
-        visible: true,
-        z_index: maxZ + 1,
-      });
-      stateChanged = true;
-    } else if (previewImg && (previewImg.complete || previewImg.naturalWidth || previewImg.width)) {
-      const nextVFov = computeStickerVFov(
-        Number(target.hFOV_deg || 30),
-        Number(previewImg.naturalWidth || previewImg.width || 1),
-        Number(previewImg.naturalHeight || previewImg.height || 1),
-      );
-      if (Math.abs(Number(target.vFOV_deg || 0) - nextVFov) > 1e-6) {
-        target.vFOV_deg = nextVFov;
-        stateChanged = true;
-      }
-    }
-    if (stateChanged) {
       commitAndRefreshNode();
       updateSidePanel();
       updateSelectionMenu();
@@ -3691,29 +3663,6 @@ async function showEditor(node, type, options = {}) {
     if (!surface) return false;
     ctx.drawImage(surface, rect.x, rect.y, rect.w, rect.h);
     return true;
-  }
-
-  async function uploadStickerAssetFile(file, fallbackName = "sticker.png") {
-    const body = new FormData();
-    body.append("image", file);
-    body.append("type", "input");
-    body.append("subfolder", "panorama_stickers");
-    const resp = await api.fetchApi("/upload/image", { method: "POST", body });
-    if (!resp || resp.status !== 200) {
-      throw new Error(`upload failed (${resp?.status || "no-response"})`);
-    }
-    const data = await resp.json();
-    const filename = String(data?.name || "").trim();
-    if (!filename) {
-      throw new Error("upload response missing filename");
-    }
-    return {
-      type: "comfy_image",
-      filename,
-      subfolder: String(data?.subfolder || "panorama_stickers"),
-      storage: String(data?.type || "input"),
-      name: String(file?.name || fallbackName),
-    };
   }
 
   async function uploadCanvasAsPaintLayer(canvas, filename) {
@@ -4863,22 +4812,7 @@ async function showEditor(node, type, options = {}) {
       sampleStickerEdge(item, 3, steps, refX),
     ];
 
-    ctx.strokeStyle = selected ? "rgba(250, 250, 250, 0.9)" : "#71717a";
-    ctx.lineWidth = selected ? 2 : 1;
-    ctx.beginPath();
-    let started = false;
-    for (const edge of edges) {
-      for (const p of edge) {
-        if (!started) {
-          ctx.moveTo(p.x, p.y);
-          started = true;
-        } else {
-          ctx.lineTo(p.x, p.y);
-        }
-      }
-    }
-    ctx.closePath();
-    ctx.stroke();
+    drawStickerSelectionBoundary(ctx, edges, { selected });
   }
 
   function renderModalStickerBodyFallback() {
@@ -5028,6 +4962,10 @@ async function showEditor(node, type, options = {}) {
   }
 
   function drawSelectedObjectAffordances(item, geom, accent) {
+    if (isStickerItem(item)) {
+      drawStickerSelectionHandles(ctx, geom, { accent });
+      return;
+    }
     ctx.fillStyle = accent;
     geom.corners.forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 6.5, 0, Math.PI * 2); ctx.fill(); });
     if (isShotItem(item)) {
@@ -6909,28 +6847,14 @@ async function showEditor(node, type, options = {}) {
     });
   }
 
-  function isImageFile(file) {
-    if (!file) return false;
-    const t = String(file.type || "").toLowerCase();
-    if (t.startsWith("image/")) return true;
-    const n = String(file.name || "").toLowerCase();
-    return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".webp") || n.endsWith(".gif") || n.endsWith(".bmp");
-  }
-
   async function addImageStickerFromFile(file) {
     if (readOnly) return;
     if (type !== "stickers" && type !== "cutout") return;
-    if (!isImageFile(file)) return;
+    if (!isStickerImageFile(file)) return;
     const aid = uid("asset");
     const operation = queuePendingStickerOperation(node, `add:${aid}`, async () => {
-      const tempUrl = URL.createObjectURL(file);
       try {
-        const img = await new Promise((resolve, reject) => {
-          const i = new Image();
-          i.onload = () => resolve(i);
-          i.onerror = () => reject(new Error("image load failed"));
-          i.src = tempUrl;
-        });
+        const { image: img } = await decodeStickerImageFile(file);
         imageCache.set(aid, img);
         const id = uid("st");
         state.stickers.push({
@@ -6945,16 +6869,18 @@ async function showEditor(node, type, options = {}) {
         });
         setSelectedItem(state.stickers[state.stickers.length - 1]);
         forceCursorTool();
-        pushHistory();
         updateSidePanel();
         updateSelectionMenu();
         requestDraw();
-        const uploaded = await uploadStickerAssetFile(file, String(file.name || aid));
+        const uploaded = await uploadStickerAssetFile(file, {
+          fetchApi: (path, options) => api.fetchApi(path, options),
+        });
         const liveStickers = Array.isArray(state.stickers) ? state.stickers : [];
         const matching = liveStickers.filter((item) => String(item?.asset_id || "") === aid);
         if (!matching.length) return;
         state.assets[aid] = uploaded;
         pruneUnusedAssets();
+        pushHistory();
         commitAndRefreshNode();
         updateSidePanel();
         updateSelectionMenu();
@@ -6966,7 +6892,7 @@ async function showEditor(node, type, options = {}) {
         const removed = liveStickers.filter((item) => String(item?.asset_id || "") === aid);
         if (removed.length) {
           state.stickers = liveStickers.filter((item) => String(item?.asset_id || "") !== aid);
-          if (removed.some((item) => String(item?.id || "") === String(editor.selection?.id || ""))) {
+          if (removed.some((item) => String(item?.id || "") === String(editor.selectedId || ""))) {
             setSelectedItem(null);
           }
           updateSidePanel();
@@ -6975,8 +6901,6 @@ async function showEditor(node, type, options = {}) {
           commitAndRefreshNode();
         }
         throw error;
-      } finally {
-        URL.revokeObjectURL(tempUrl);
       }
     });
     try {
@@ -6995,7 +6919,7 @@ async function showEditor(node, type, options = {}) {
     if (type !== "stickers" && type !== "cutout") return;
     const selected = getSelected();
     if (!selected || !isStickerItem(selected) || isExternalSticker(selected)) return;
-    if (!isImageFile(file)) return;
+    if (!isStickerImageFile(file)) return;
     const selectedId = String(selected.id || "");
     const nextAssetId = uid("asset");
     const operation = queuePendingStickerOperation(node, `replace:${selectedId}:${nextAssetId}`, async () => {
@@ -7008,14 +6932,8 @@ async function showEditor(node, type, options = {}) {
       const previousCrop = liveSelected.crop && typeof liveSelected.crop === "object"
         ? { ...liveSelected.crop }
         : null;
-      const tempUrl = URL.createObjectURL(file);
       try {
-        const img = await new Promise((resolve, reject) => {
-          const i = new Image();
-          i.onload = () => resolve(i);
-          i.onerror = () => reject(new Error("image load failed"));
-          i.src = tempUrl;
-        });
+        const { image: img } = await decodeStickerImageFile(file);
         imageCache.set(nextAssetId, img);
         liveSelected.asset_id = nextAssetId;
         liveSelected.vFOV_deg = computeStickerVFov(
@@ -7025,16 +6943,18 @@ async function showEditor(node, type, options = {}) {
         );
         liveSelected.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
         markObjectVisualsDirty();
-        pushHistory();
         updateSidePanel();
         updateSelectionMenu();
         requestDraw();
-        const uploaded = await uploadStickerAssetFile(file, String(file.name || nextAssetId));
+        const uploaded = await uploadStickerAssetFile(file, {
+          fetchApi: (path, options) => api.fetchApi(path, options),
+        });
         const currentSticker = (Array.isArray(state.stickers) ? state.stickers : [])
           .find((item) => String(item?.id || "") === selectedId) || null;
         if (!currentSticker || String(currentSticker.asset_id || "") !== nextAssetId) return;
         state.assets[nextAssetId] = uploaded;
         pruneUnusedAssets();
+        pushHistory();
         commitAndRefreshNode();
         updateSidePanel();
         updateSelectionMenu();
@@ -7056,8 +6976,6 @@ async function showEditor(node, type, options = {}) {
         updateSelectionMenu();
         requestDraw();
         throw error;
-      } finally {
-        URL.revokeObjectURL(tempUrl);
       }
     });
     try {
@@ -7090,7 +7008,9 @@ async function showEditor(node, type, options = {}) {
         const ext = String(blob.type || "image/png").split("/")[1] || "png";
         const name = String(asset?.name || `${assetId}.${ext}`);
         const file = new File([blob], name, { type: blob.type || "image/png" });
-        const uploaded = await uploadStickerAssetFile(file, name);
+        const uploaded = await uploadStickerAssetFile(file, {
+          fetchApi: (path, options) => api.fetchApi(path, options),
+        });
         state.assets[assetId] = {
           ...uploaded,
           w: Number(asset?.w || 0),
@@ -8671,8 +8591,9 @@ async function showEditor(node, type, options = {}) {
     return null;
   }
 
-  function handleHit(geom, p) {
+  function handleHit(geom, p, item = null) {
     if (!geom || !geom.visible) return { kind: "none", cursor: editor.mode === "pano" ? "grab" : "default" };
+    if (isStickerItem(item)) return hitStickerSelectionAffordance(geom, p);
     if (geom.kind === "strokeGroup") {
       const cornerIdx = geom.corners.findIndex((c) => dist2(c, p) <= 11 * 11);
       if (cornerIdx >= 0) {
@@ -8788,7 +8709,7 @@ async function showEditor(node, type, options = {}) {
     const selected = getSelected();
     const geom = selected ? objectGeom(selected) : null;
     const selectedLocked = selected ? isItemLocked(selected) : false;
-    const h = selectedLocked ? { kind: "none", cursor: "default" } : handleHit(geom, p);
+    const h = selectedLocked ? { kind: "none", cursor: "default" } : handleHit(geom, p, selected);
     if (!selectedLocked && h.kind !== "none") {
       setCanvasCursor(h.cursor);
       return;
@@ -9283,7 +9204,7 @@ async function showEditor(node, type, options = {}) {
         return;
       }
     } else if (selected && selGeom?.visible) {
-      const h = isItemLocked(selected) ? { kind: "none" } : handleHit(selGeom, p);
+      const h = isItemLocked(selected) ? { kind: "none" } : handleHit(selGeom, p, selected);
       if (h.kind === "scale") {
         editor.interaction = isStrokeGroupItem(selected)
           ? {
@@ -9989,7 +9910,7 @@ async function showEditor(node, type, options = {}) {
     dragCue.depth = 0;
     setDropCue(false);
     const files = Array.from(e.dataTransfer?.files || []);
-    const file = files.find((f) => isImageFile(f));
+    const file = files.find((f) => isStickerImageFile(f));
     if (!file) return;
     void addImageStickerFromFile(file);
   };

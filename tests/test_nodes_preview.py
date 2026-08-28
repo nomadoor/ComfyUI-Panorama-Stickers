@@ -360,11 +360,10 @@ class TestNodesPreview(unittest.TestCase):
         assert "this.inTick = false;" in preview_js
         assert "this.queuedDuringTick = false;" in preview_js
 
-    def test_shared_runtime_has_no_embedded_editor_button_for_cutout(self):
+    def test_shared_runtime_discards_the_dormant_legacy_stickers_surface(self):
         runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        legacy_block = runtime_js.split("function attachLegacyStickersPreview", 1)[1].split("function drawCanvas", 1)[0]
-        assert "drawNodeEditorButton(this, ctx);" not in legacy_block
-        assert "if (pointInRect(p.x, p.y, btn))" not in legacy_block
+        assert "function attachLegacyStickersPreview" not in runtime_js
+        assert "legacy_draw_auto" not in runtime_js
 
     def test_stickers_without_preview_do_not_force_large_node_size(self):
         lifecycle_js = self._web_source_path("pano_editor_extension.js").read_text(encoding="utf-8")

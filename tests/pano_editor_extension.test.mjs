@@ -73,6 +73,25 @@ test("stickers lifecycle preserves prior hooks and installs one editor button wi
   assert.equal(attachCalls.length, 0);
 });
 
+test("stickers lifecycle hides the fallback button only after the shared DOM surface mounts", () => {
+  function NodeType() {}
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers(node) { node.__panoStickersNodeSurface = { mounted: true }; },
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStickers" });
+  const node = makeNode([360, 260]);
+
+  NodeType.prototype.onNodeCreated.call(node);
+
+  assert.equal(node.widgets.find((widget) => widget.name === "Open Stickers Editor").hidden, true);
+});
+
 test("cutout lifecycle attaches once and initializes only an invalid node size", () => {
   function NodeType() {}
   const attached = [];
@@ -376,6 +395,45 @@ test("state producers can be flushed through the same public seam before opening
   };
 
   await flushPanoStateProducers(node);
+  assert.deepEqual(calls, ["node-surface", "modal"]);
+});
+
+test("the public state barrier waits for image operations before opening an editor", async () => {
+  const calls = [];
+  const node = {
+    __panoStateFlushers: new Set([() => calls.push("node-surface")]),
+    __panoFlushStateBeforeQueue: () => calls.push("modal"),
+  };
+  let releaseUpload;
+  const uploadGate = new Promise((resolve) => { releaseUpload = resolve; });
+  queuePendingStickerOperation(node, "add-image", async () => {
+    calls.push("upload:start");
+    await uploadGate;
+    calls.push("upload:end");
+  });
+
+  let settled = false;
+  const flushing = flushPanoStateProducers(node).then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(settled, false);
+  assert.deepEqual(calls, ["upload:start"]);
+
+  releaseUpload();
+  await flushing;
+  assert.deepEqual(calls, ["upload:start", "upload:end", "node-surface", "modal"]);
+});
+
+test("an editor barrier can continue after a failed image operation has settled", async () => {
+  const calls = [];
+  const node = {
+    __panoStateFlushers: new Set([() => calls.push("node-surface")]),
+    __panoFlushStateBeforeQueue: () => calls.push("modal"),
+  };
+  queuePendingStickerOperation(node, "failed-add", async () => {
+    throw new Error("upload failed");
+  });
+
+  await flushPanoStateProducers(node, { tolerateOperationFailure: true });
   assert.deepEqual(calls, ["node-surface", "modal"]);
 });
 

@@ -118,3 +118,21 @@ interactionとstateの契約は
 5. node id、port semantics、cameraの非永続契約を変更しない。
 
 詳細は [`docs/panorama-preview-node-surface-spec.md`](../panorama-preview-node-surface-spec.md) に記録する。
+
+## 2026-08-29 Amendment
+
+`PanoramaStickers` の未使用preview実装を互換対象から外し、Cutout / Previewと同じDOM surface構成へ置き換える。
+
+1. Node 2.0とLegacy node rendererの両方で、同じDOM widget、canvas、Vue overlayを使う。
+   renderer別に編集UIを二重実装しない。
+2. 旧Stickers previewの自動backend切替、probe、Legacy canvas描画は廃止する。
+   DOM surfaceをmountできない場合は標準 `Open Stickers Editor` widgetだけをfallbackとして残す。
+3. node surfaceは既存modalを置き換えない。画像file picker / dropによる追加と、単一stickerの選択・基本変形を担当する。
+   画像追加はmodalと同じ共有upload seamを使う。replace、paint、multi-selectionなどの高度な操作はmodalへ残す。
+4. surface内の `Full Editor` actionは、Vue mount成功後に標準buttonを隠す場合に限って許可する。
+   mount失敗時は標準buttonを表示したままにする。
+5. shared render core、camera interaction、state queue barrierを再利用する。node id、port semantics、
+   `state_json` format、backend出力を変更しない。
+6. stickerの選択affordanceとcursor判定はmodalとnode surfaceで共有し、renderer別の見た目・操作差を作らない。
+
+詳細は [`docs/panorama-stickers-node-surface-spec.md`](../panorama-stickers-node-surface-spec.md) に記録する。

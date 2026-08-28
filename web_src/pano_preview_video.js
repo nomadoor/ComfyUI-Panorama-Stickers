@@ -1,13 +1,39 @@
-export function isNodeOutputMediaCurrent(node) {
+function mediaFreshnessByChannel(node) {
+  if (!node) return null;
+  if (!node.__panoNodeOutputMediaFreshness || typeof node.__panoNodeOutputMediaFreshness !== "object") {
+    node.__panoNodeOutputMediaFreshness = Object.create(null);
+  }
+  return node.__panoNodeOutputMediaFreshness;
+}
+
+export function isNodeOutputMediaCurrent(node, channel = "") {
+  const key = String(channel || "").trim();
+  if (!key) return node?.__panoNodeOutputMediaCurrent !== false;
+  const freshness = mediaFreshnessByChannel(node);
+  if (Object.prototype.hasOwnProperty.call(freshness, key)) return freshness[key] !== false;
   return node?.__panoNodeOutputMediaCurrent !== false;
 }
 
-export function markNodeOutputMediaStale(node) {
-  if (node) node.__panoNodeOutputMediaCurrent = false;
+export function markNodeOutputMediaStale(node, channel = "") {
+  if (!node) return;
+  const key = String(channel || "").trim();
+  if (key) {
+    mediaFreshnessByChannel(node)[key] = false;
+    return;
+  }
+  node.__panoNodeOutputMediaCurrent = false;
 }
 
-export function markNodeOutputMediaCurrent(node) {
-  if (node) node.__panoNodeOutputMediaCurrent = true;
+export function markNodeOutputMediaCurrent(node, channel = "") {
+  if (!node) return;
+  const key = String(channel || "").trim();
+  if (key) {
+    mediaFreshnessByChannel(node)[key] = true;
+    return;
+  }
+  node.__panoNodeOutputMediaCurrent = true;
+  const freshness = mediaFreshnessByChannel(node);
+  Object.keys(freshness).forEach((name) => { freshness[name] = true; });
 }
 
 export function isTrackedMediaInputConnectionChange(

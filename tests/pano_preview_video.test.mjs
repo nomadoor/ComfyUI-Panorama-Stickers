@@ -130,8 +130,25 @@ test("connection changes keep previous UI output stale until the node executes a
   assert.equal(isNodeOutputMediaCurrent(node), true);
   markNodeOutputMediaStale(node);
   assert.equal(isNodeOutputMediaCurrent(node), false);
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), false);
   markNodeOutputMediaCurrent(node);
   assert.equal(isNodeOutputMediaCurrent(node), true);
+});
+
+test("background and external sticker output freshness are independent", () => {
+  const node = {};
+
+  markNodeOutputMediaStale(node, "background");
+
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), true);
+
+  markNodeOutputMediaStale(node, "external-sticker");
+  markNodeOutputMediaCurrent(node, "background");
+
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), false);
 });
 
 test("only a tracked ERP input connection change invalidates node output media", () => {

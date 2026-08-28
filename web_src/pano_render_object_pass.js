@@ -67,8 +67,7 @@ export function buildPanoramaObjectPassState(options = {}) {
     .sort((a, b) => {
       const za = Number(a?.zIndex || 0);
       const zb = Number(b?.zIndex || 0);
-      if (za !== zb) return za - zb;
-      return String(a?.id || "").localeCompare(String(b?.id || ""));
+      return za - zb;
     });
   return {
     objects: normalized,

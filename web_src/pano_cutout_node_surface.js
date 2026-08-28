@@ -15,6 +15,7 @@ import {
   wrapRollDeg,
 } from "./pano_cutout_view_math.js";
 import { clamp, wrapYaw } from "./pano_math.js";
+import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
@@ -368,71 +369,12 @@ export function createCutoutNodeSurfaceSession({
   commitState,
   onChange = () => {},
 } = {}) {
-  if (typeof readState !== "function" || typeof commitState !== "function") {
-    throw new TypeError("Cutout node surface requires readState and commitState.");
-  }
-  let draft = null;
-  let gestureChanged = false;
-  const currentState = () => draft || readState();
-  const notify = () => onChange(cutoutNodeSurfaceModel(currentState()));
-
-  return {
-    model: () => cutoutNodeSurfaceModel(currentState()),
-    refresh() {
-      notify();
-      return this.model();
-    },
-    beginGesture() {
-      if (draft) return false;
-      draft = readState();
-      gestureChanged = false;
-      notify();
-      return true;
-    },
-    updateGesture(action) {
-      if (!draft) this.beginGesture();
-      const result = applyCutoutNodeSurfaceAction(draft, action);
-      if (!result.changed) return false;
-      draft = result.state;
-      gestureChanged = true;
-      publishLiveState(draft);
-      notify();
-      return true;
-    },
-    hasGestureChanges() {
-      return draft != null && gestureChanged;
-    },
-    commitGesture() {
-      if (!draft) return false;
-      const committed = gestureChanged;
-      if (committed) commitState(draft);
-      draft = null;
-      gestureChanged = false;
-      publishLiveState(null);
-      notify();
-      return committed;
-    },
-    cancelGesture() {
-      if (!draft) return false;
-      draft = null;
-      gestureChanged = false;
-      publishLiveState(null);
-      notify();
-      return true;
-    },
-    apply(action) {
-      if (draft) this.cancelGesture();
-      const result = applyCutoutNodeSurfaceAction(readState(), action);
-      if (!result.changed) return false;
-      commitState(result.state);
-      notify();
-      return true;
-    },
-    destroy() {
-      if (!draft) return;
-      draft = null;
-      gestureChanged = false;
-      publishLiveState(null);
-    },
-  };
+  return createNodeSurfaceSession({
+    readState,
+    reduce: applyCutoutNodeSurfaceAction,
+    projectModel: cutoutNodeSurfaceModel,
+    publishLiveState,
+    commitState,
+    onChange,
+  });
 }

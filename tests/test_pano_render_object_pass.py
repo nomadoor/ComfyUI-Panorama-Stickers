@@ -69,8 +69,8 @@ class TestPanoRenderObjectPass(unittest.TestCase):
         )
         result = run_node_json(script)
         self.assertEqual(result["selectedId"], "paint-1")
-        self.assertEqual(result["ids"], ["mask-1", "paint-1", "z-last"])
-        self.assertEqual(result["types"], ["mask", "paint", "sticker"])
+        self.assertEqual(result["ids"], ["paint-1", "mask-1", "z-last"])
+        self.assertEqual(result["types"], ["paint", "mask", "sticker"])
 
     def test_paint_mask_raster_are_not_coverage_aware(self):
         script = textwrap.dedent(

@@ -103,9 +103,9 @@ test("cutout node renders panorama context across the canvas behind the fixed fr
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const surface = await read("../web_src/pano_cutout_node_surface.js");
 
-  assert.match(runtime, /createApp\(PanoCutoutNodeSurface/);
+  assert.match(runtime, /createApp\(stickersMode \? PanoStickersNodeSurface : PanoCutoutNodeSurface/);
   assert.match(runtime, /fitCutoutNodeFrame\(/);
-  assert.match(runtime, /surfaceMinHeight = stickersMode \|\| noPreview \? 0 : CUTOUT_NODE_SURFACE_MIN_HEIGHT/);
+  assert.match(runtime, /surfaceMinHeight = noPreview \? 0 : CUTOUT_NODE_SURFACE_MIN_HEIGHT/);
   assert.match(runtime, /createCoreManagedDomWidgetOptions\([\s\S]*?surfaceMinHeight/);
   assert.match(runtime, /const wrap = document\.createElement\("div"\);[\s\S]*?"inset:0"/);
   assert.ok(!runtime.includes('"inset:0 0 82px 0"'));
@@ -132,7 +132,7 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   const controller = runtime.slice(controllerStart, controllerEnd);
 
   assert.match(runtime, /layoutCutoutNodeContext/);
-  assert.match(controller, /\.\.\.\(stickersMode \? \{\} : \{/);
+  assert.doesNotMatch(controller, /stickersMode\s*\?\s*\{\}\s*:/);
   assert.match(controller, /getViewportSize:\s*\(\) =>/);
   assert.match(controller, /canvas\.getBoundingClientRect\(\)/);
   assert.match(controller, /getInvert:\s*\(\) =>/);
@@ -205,7 +205,7 @@ test("node surface owns teardown and keeps the Full Editor state barrier", async
   assert.match(runtime, /nodeSurfaceVueApp\?\.unmount\?\.\(\)/);
   assert.match(runtime, /nodeSurfaceSession && nodeSurfaceMounted/);
   assert.match(runtime, /releasePointerCapture/);
-  assert.ok(editor.includes("await flushPanoStateProducers(node);"));
+  assert.ok(editor.includes("await flushPanoStateProducers(node, { tolerateOperationFailure: true });"));
 });
 
 test("DOM preview camera frames do not repaint the host graph canvas", async () => {
@@ -232,8 +232,8 @@ test("Cutout node surface loops the input ERP video and revisions each presented
   assert.match(runtime, /function syncRuntimeCutoutComposite[\s\S]*?getRenderableMediaRevisionToken\(bgImg\)/);
   assert.match(runtime, /function syncRuntimeCutoutComposite[\s\S]*?getSourcePixelSize\(bgImg\)/);
   assert.match(runtime, /invalidatePreviewImageCaches[\s\S]*?disposeNodeOutputVideoCache\(node\)/);
-  assert.match(runtime, /getNodeOwnOutputVideo[\s\S]*?isNodeOutputMediaCurrent\(node\)/);
-  assert.match(runtime, /node\.onConnectionsChange = function \(type, slotIndex\)[\s\S]*?isTrackedMediaInputConnectionChange\(node, type, slotIndex\)[\s\S]*?markNodeOutputMediaStale\(node\)/);
+  assert.match(runtime, /getNodeOwnOutputVideo[\s\S]*?isNodeOutputMediaCurrent\(node, "background"\)/);
+  assert.match(runtime, /node\.onConnectionsChange = function \(type, slotIndex\)[\s\S]*?isTrackedMediaInputConnectionChange\(node, type, slotIndex\)[\s\S]*?markNodeOutputMediaStale\(node, "background"\)/);
   assert.match(runtime, /node\.onExecuted = function[\s\S]*?markNodeOutputMediaCurrent\(node\)[\s\S]*?requestDraw\(\)/);
 });
 
@@ -259,18 +259,17 @@ test("DOM preview inertia keeps at most one animation frame scheduled", async ()
   assert.match(runtime, /const tick = \(ts\) => \{[\s\S]*?state\.inTick = true;[\s\S]*?state\.inTick = false;[\s\S]*?if \(\(moving \|\| state\.needsDraw\) && !state\.raf\)/);
 });
 
-test("Cutout resize redraws only its DOM surface instead of the host graph canvas", async () => {
+test("Cutout and Stickers resize redraw only their DOM surface instead of the host graph canvas", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const optionsStart = runtime.indexOf("function createCoreManagedDomWidgetOptions(");
   const optionsEnd = runtime.indexOf("\nfunction scheduleResizeSettleDraw", optionsStart);
   const options = runtime.slice(optionsStart, optionsEnd);
-  const resizeStart = runtime.indexOf("  node.onResize = function () {", optionsEnd);
-  const resizeEnd = runtime.indexOf("\n  node.onRemoved = function", resizeStart);
+  const resizeStart = runtime.indexOf("  const onResizeHook = function () {", optionsEnd);
+  const resizeEnd = runtime.indexOf("\n  node.onResize = onResizeHook;", resizeStart);
   const resize = runtime.slice(resizeStart, resizeEnd);
 
   assert.match(options, /invalidateHostCanvasOnResize\s*=\s*true/);
   assert.match(options, /if \(invalidateHostCanvasOnResize\)[\s\S]*?scheduleResizeSettleDraw/);
-  assert.match(runtime, /createCoreManagedDomWidgetOptions\([\s\S]*?surfaceMinHeight,[\s\S]*?stickersMode,[\s\S]*?\)/);
-  assert.match(resize, /if \(stickersMode\)[\s\S]*?setDirtyCanvas/);
-  assert.doesNotMatch(resize, /requestDraw\(\);\s*this\.setDirtyCanvas/);
+  assert.match(runtime, /createCoreManagedDomWidgetOptions\([\s\S]*?surfaceMinHeight,[\s\S]*?false,[\s\S]*?\)/);
+  assert.doesNotMatch(resize, /setDirtyCanvas/);
 });

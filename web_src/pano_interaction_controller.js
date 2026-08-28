@@ -166,6 +166,20 @@ export function createPanoInteractionController(options = {}) {
     return state.inertia.active;
   }
 
+  function stopMotion() {
+    const hadMotion = state.drag.active
+      || state.inertia.active
+      || state.inertia.vx !== 0
+      || state.inertia.vy !== 0;
+    state.drag.active = false;
+    state.drag.pointerId = null;
+    state.inertia.active = false;
+    state.inertia.vx = 0;
+    state.inertia.vy = 0;
+    state.velHistory = [];
+    return hadMotion;
+  }
+
   function applyWheel(deltaSign) {
     const sign = Math.sign(Number(deltaSign || 0));
     if (!sign) return false;
@@ -196,6 +210,7 @@ export function createPanoInteractionController(options = {}) {
     moveDrag,
     endDrag,
     stepInertia,
+    stopMotion,
     applyWheel,
     applyWheelEvent,
     resetView,
