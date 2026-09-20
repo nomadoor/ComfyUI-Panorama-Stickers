@@ -62,10 +62,6 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## 更新履歴
 
-### 1.5.1
-
-- CutoutとStickerのcamera orientationをJS／GLSL／Pythonで統一しました。通常角度のframingは維持されますが、`|pitch|`が約87.44°を超える既存workflowでは、旧basisの急な切り替えに代えて極まで連続するorientationを使用します。
-
 ### 1.5.0
 
 - `Panorama Cutout`、`Panorama Preview`、`Panorama Stickers`に軽量なノード上UIを追加し、Full Editorを開かずに一般的な操作を完結できるようにしました。

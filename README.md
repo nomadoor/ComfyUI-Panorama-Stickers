@@ -62,10 +62,6 @@ The panorama editors rely on browser hardware acceleration. If a large editor is
 
 ## Changelog
 
-### 1.5.1
-
-- Unified Cutout and Sticker camera orientation across JS, GLSL, and Python. Existing framing is preserved at ordinary angles; views with `|pitch|` above approximately 87.44° now use a continuous pole orientation instead of the legacy abrupt basis switch.
-
 ### 1.5.0
 
 - Added lightweight on-node UIs to `Panorama Cutout`, `Panorama Preview`, and `Panorama Stickers`, allowing common interactions to be completed without opening the Full Editor.
