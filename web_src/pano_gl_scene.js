@@ -1,5 +1,5 @@
-import { getCutoutShotParams } from "./pano_cutout_projection.js";
 import { clamp } from "./pano_math.js";
+import { getCutoutCameraParams } from "./pano_cutout_view_math.js";
 
 export const HIDDEN_PREVIEW_OPACITY = 0.28;
 
@@ -115,14 +115,14 @@ export function buildPreviewNodeViewParams(nodeState, coverage = 360) {
 }
 
 export function buildCutoutViewParamsFromShot(shot) {
-  const params = getCutoutShotParams(shot || {});
+  const params = getCutoutCameraParams(shot || {});
   return {
     mode: "cutout",
-    yawDeg: Number(shot?.yaw_deg || 0),
-    pitchDeg: Number(shot?.pitch_deg || 0),
-    rollDeg: Number(params?.roll ?? shot?.roll_deg ?? shot?.rot_deg ?? 0),
-    hFovDeg: clamp(Number(shot?.hFOV_deg || 90), 1, 179),
-    vFovDeg: clamp(Number(shot?.vFOV_deg || 60), 1, 179),
-    aspect: Number(params?.aspect || 1),
+    yawDeg: params.yawDeg,
+    pitchDeg: params.pitchDeg,
+    rollDeg: params.rollDeg,
+    hFovDeg: params.hFovDeg,
+    vFovDeg: params.vFovDeg,
+    aspect: clamp(params.aspect, 0.1, 10),
   };
 }

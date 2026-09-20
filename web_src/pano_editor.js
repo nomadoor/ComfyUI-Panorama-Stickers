@@ -10,6 +10,7 @@ import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import { createPanoramaRenderCore } from "./pano_render_core.js";
 import { clamp, wrapYaw, shortestYawDelta } from "./pano_math.js";
+import { cameraBasis, yawPitchToDir } from "./pano_camera_math.js";
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createHistoryController } from "./pano_paint_history.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
@@ -27,7 +28,6 @@ import {
   buildStickerSceneFromState,
   buildStickerTexturesFromState,
 } from "./pano_gl_scene.js";
-import { drawCutoutProjectionPreview } from "./pano_cutout_projection.js";
 import { createCutoutCamera } from "./pano_cutout_camera.js";
 import {
   contextHalfExtentsPx,
@@ -223,12 +223,6 @@ function norm(a) {
   const l = Math.hypot(a.x, a.y, a.z) || 1e-8;
   return vec3(a.x / l, a.y / l, a.z / l);
 }
-function yawPitchToDir(yawDeg, pitchDeg) {
-  const yaw = yawDeg * DEG2RAD;
-  const pitch = pitchDeg * DEG2RAD;
-  const cp = Math.cos(pitch);
-  return vec3(cp * Math.sin(yaw), Math.sin(pitch), cp * Math.cos(yaw));
-}
 function dirToYawPitch(d) {
   return {
     yaw: wrapYaw(Math.atan2(d.x, d.z) * RAD2DEG),
@@ -356,18 +350,6 @@ function formatParamValue(v) {
   if (!Number.isFinite(n)) return "0";
   return Number(n.toFixed(3)).toString();
 }
-function expandTri(d0, d1, d2, px = 1.1) {
-  const cx = (d0.x + d1.x + d2.x) / 3;
-  const cy = (d0.y + d1.y + d2.y) / 3;
-  const grow = (p) => {
-    const vx = p.x - cx;
-    const vy = p.y - cy;
-    const ll = Math.hypot(vx, vy) || 1;
-    return { x: p.x + (vx / ll) * px, y: p.y + (vy / ll) * px };
-  };
-  return [grow(d0), grow(d1), grow(d2)];
-}
-
 const SHARED_UI_SETTINGS_KEY = "pano_suite.ui_settings.v1";
 const NODE_GRID_VISIBILITY_KEY = "pano_suite.node_grid_visibility.v1";
 let sharedUiSettingsMemory = null;
@@ -487,21 +469,6 @@ function normalizeEditorHistory(raw) {
     entries,
     index: Math.max(-1, Math.min(entries.length - 1, index)),
   };
-}
-
-function cameraBasis(yawDeg, pitchDeg, rollDeg = 0) {
-  const fwd = yawPitchToDir(yawDeg, pitchDeg);
-  const worldUp = vec3(0, 1, 0);
-  let right = cross(worldUp, fwd);
-  if (Math.hypot(right.x, right.y, right.z) < 1e-6) right = vec3(1, 0, 0);
-  right = norm(right);
-  let up = norm(cross(fwd, right));
-  const rr = rollDeg * DEG2RAD;
-  const cr = Math.cos(rr);
-  const sr = Math.sin(rr);
-  const r2 = add(mul(right, cr), mul(up, sr));
-  const u2 = add(mul(right, -sr), mul(up, cr));
-  return { fwd, right: norm(r2), up: norm(u2) };
 }
 
 function stickerCornerDirs(item) {
@@ -3188,17 +3155,12 @@ async function showEditor(node, type, options = {}) {
     return dirs[0].y >= dirs[3].y;
   }
 
-  function cameraBasis() {
-    const fwd = yawPitchToDir(editor.viewYaw, editor.viewPitch);
-    let upWorld = vec3(0, 1, 0);
-    if (Math.abs(dot(fwd, upWorld)) > 0.999) upWorld = vec3(0, 0, 1);
-    const right = norm(cross(upWorld, fwd));
-    const up = norm(cross(fwd, right));
-    return { right, up, fwd };
+  function currentViewBasis() {
+    return cameraBasis(editor.viewYaw, editor.viewPitch, 0);
   }
 
   function projectDir(dir) {
-    const { right, up, fwd } = cameraBasis();
+    const { right, up, fwd } = currentViewBasis();
     const cx = dot(dir, right);
     const cy = dot(dir, up);
     const cz = dot(dir, fwd);
@@ -3217,7 +3179,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function screenToWorldDir(x, y) {
-    const { right, up, fwd } = cameraBasis();
+    const { right, up, fwd } = currentViewBasis();
     const w = canvas.width;
     const h = canvas.height;
     const hfov = editor.viewFov * DEG2RAD;
@@ -3937,32 +3899,25 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getStickerFrame(item) {
-    const centerDir = yawPitchToDir(Number(item.yaw_deg || 0), Number(item.pitch_deg || 0));
-    let upWorld = vec3(0, 1, 0);
-    if (Math.abs(dot(centerDir, upWorld)) > 0.999) upWorld = vec3(0, 0, 1);
-    const right = norm(cross(upWorld, centerDir));
-    const up = norm(cross(centerDir, right));
+    const basis = cameraBasis(
+      Number(item.yaw_deg || 0),
+      Number(item.pitch_deg || 0),
+      Number(item.rot_deg || item.roll_deg || 0),
+    );
 
     const tanX = Math.tan(clamp(Number(item.hFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
     const tanY = Math.tan(clamp(Number(item.vFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
-    const rot = Number(item.rot_deg || item.roll_deg || 0) * DEG2RAD;
-    const cr = Math.cos(rot);
-    const sr = Math.sin(rot);
     return {
-      centerDir,
-      right,
-      up,
+      centerDir: basis.fwd,
+      right: basis.right,
+      up: basis.up,
       tanX,
       tanY,
-      cr,
-      sr,
     };
   }
 
   function stickerDirFromFrame(frame, x, y) {
-    const xr = x * frame.cr - y * frame.sr;
-    const yr = x * frame.sr + y * frame.cr;
-    return norm(add(add(frame.centerDir, mul(frame.right, xr)), mul(frame.up, yr)));
+    return norm(add(add(frame.centerDir, mul(frame.right, x)), mul(frame.up, y)));
   }
 
   function stickerCornersDir(item) {
@@ -3987,34 +3942,6 @@ async function showEditor(node, type, options = {}) {
     const x = (u * 2 - 1) * frame.tanX;
     const y = (1 - v * 2) * frame.tanY;
     return stickerDirFromFrame(frame, x, y);
-  }
-
-  function drawImageTriTo(targetCtx, img, s0, s1, s2, d0, d1, d2) {
-    const denom = (s0.x * (s1.y - s2.y)) + (s1.x * (s2.y - s0.y)) + (s2.x * (s0.y - s1.y));
-    if (Math.abs(denom) < 1e-6) return;
-
-    const a = ((d0.x * (s1.y - s2.y)) + (d1.x * (s2.y - s0.y)) + (d2.x * (s0.y - s1.y))) / denom;
-    const b = ((d0.x * (s2.x - s1.x)) + (d1.x * (s0.x - s2.x)) + (d2.x * (s1.x - s0.x))) / denom;
-    const c = ((d0.x * (s1.x * s2.y - s2.x * s1.y)) + (d1.x * (s2.x * s0.y - s0.x * s2.y)) + (d2.x * (s0.x * s1.y - s1.x * s0.y))) / denom;
-    const d = ((d0.y * (s1.y - s2.y)) + (d1.y * (s2.y - s0.y)) + (d2.y * (s0.y - s1.y))) / denom;
-    const e = ((d0.y * (s2.x - s1.x)) + (d1.y * (s0.x - s2.x)) + (d2.y * (s1.x - s0.x))) / denom;
-    const f = ((d0.y * (s1.x * s2.y - s2.x * s1.y)) + (d1.y * (s2.x * s0.y - s0.x * s2.y)) + (d2.y * (s0.x * s1.y - s1.x * s0.y))) / denom;
-
-    const [e0, e1, e2] = expandTri(d0, d1, d2, 0.45);
-    targetCtx.save();
-    targetCtx.beginPath();
-    targetCtx.moveTo(e0.x, e0.y);
-    targetCtx.lineTo(e1.x, e1.y);
-    targetCtx.lineTo(e2.x, e2.y);
-    targetCtx.closePath();
-    targetCtx.clip();
-    targetCtx.setTransform(a, d, b, e, c, f);
-    targetCtx.drawImage(img, 0, 0);
-    targetCtx.restore();
-  }
-
-  function drawImageTri(img, s0, s1, s2, d0, d1, d2) {
-    drawImageTriTo(ctx, img, s0, s1, s2, d0, d1, d2);
   }
 
   function getRasterObjectCenterUv(item) {
@@ -4551,7 +4478,7 @@ async function showEditor(node, type, options = {}) {
       } : null;
     }
     if (editor.mode === "unwrap") return projectDirUnwrap(dir, refX);
-    const { right, up, fwd } = cameraBasis();
+    const { right, up, fwd } = currentViewBasis();
     const cx = dot(dir, right);
     const cy = dot(dir, up);
     const cz = dot(dir, fwd);
@@ -4696,85 +4623,6 @@ async function showEditor(node, type, options = {}) {
     return geom;
   }
 
-  function drawStickerMeshMapped(item, img, dstRect, srcRect, alpha = 1) {
-    const dx0 = clamp(Math.min(Number(dstRect.x0 ?? 0), Number(dstRect.x1 ?? 1)), 0, 1);
-    const dy0 = clamp(Math.min(Number(dstRect.y0 ?? 0), Number(dstRect.y1 ?? 1)), 0, 1);
-    const dx1 = clamp(Math.max(Number(dstRect.x0 ?? 0), Number(dstRect.x1 ?? 1)), 0, 1);
-    const dy1 = clamp(Math.max(Number(dstRect.y0 ?? 0), Number(dstRect.y1 ?? 1)), 0, 1);
-    const sx0 = clamp(Math.min(Number(srcRect.x0 ?? 0), Number(srcRect.x1 ?? 1)), 0, 1);
-    const sy0 = clamp(Math.min(Number(srcRect.y0 ?? 0), Number(srcRect.y1 ?? 1)), 0, 1);
-    const sx1 = clamp(Math.max(Number(srcRect.x0 ?? 0), Number(srcRect.x1 ?? 1)), 0, 1);
-    const sy1 = clamp(Math.max(Number(srcRect.y0 ?? 0), Number(srcRect.y1 ?? 1)), 0, 1);
-
-    const iw = img.naturalWidth || img.width;
-    const ih = img.naturalHeight || img.height;
-    const [Nu, Nv] = getMeshDivisions();
-    const centerDir = yawPitchToDir(Number(item.yaw_deg || 0), Number(item.pitch_deg || 0));
-    const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
-    const frameRect = frameShot ? getFrameViewRect(frameShot) : null;
-    const centerProj = projectSceneItemDir(centerDir, null, frameShot, frameRect);
-    const refX = editor.mode === "unwrap" ? centerProj?.x ?? null : null;
-
-    const verts = [];
-    for (let j = 0; j <= Nv; j += 1) {
-      for (let i = 0; i <= Nu; i += 1) {
-        const u = i / Nu;
-        const v = j / Nv;
-        const wu = dx0 + (dx1 - dx0) * u;
-        const wv = dy0 + (dy1 - dy0) * v;
-        const su = (sx0 + (sx1 - sx0) * u) * iw;
-        const sv = (sy0 + (sy1 - sy0) * v) * ih;
-        const d = stickerSampleDir(item, wu, wv);
-        const p = projectSceneItemDir(d, refX, frameShot, frameRect);
-        verts.push({ p, s: { x: su, y: sv } });
-      }
-    }
-
-    const W = canvas.width;
-    let drawnTriangles = 0;
-    for (let j = 0; j < Nv; j += 1) {
-      for (let i = 0; i < Nu; i += 1) {
-        const idx = (jj, ii) => jj * (Nu + 1) + ii;
-        const v00 = verts[idx(j, i)];
-        const v10 = verts[idx(j, i + 1)];
-        const v11 = verts[idx(j + 1, i + 1)];
-        const v01 = verts[idx(j + 1, i)];
-        if (!v00.p || !v10.p || !v11.p || !v01.p) continue;
-
-        const prevAlpha = ctx.globalAlpha;
-        ctx.globalAlpha = alpha;
-        drawImageTri(img, v00.s, v10.s, v11.s, v00.p, v10.p, v11.p);
-        drawImageTri(img, v00.s, v11.s, v01.s, v00.p, v11.p, v01.p);
-        ctx.globalAlpha = prevAlpha;
-        drawnTriangles += 2;
-
-        if (editor.mode === "unwrap") {
-          const p00p = { x: v00.p.x + W, y: v00.p.y };
-          const p10p = { x: v10.p.x + W, y: v10.p.y };
-          const p11p = { x: v11.p.x + W, y: v11.p.y };
-          const p01p = { x: v01.p.x + W, y: v01.p.y };
-          const p00m = { x: v00.p.x - W, y: v00.p.y };
-          const p10m = { x: v10.p.x - W, y: v10.p.y };
-          const p11m = { x: v11.p.x - W, y: v11.p.y };
-          const p01m = { x: v01.p.x - W, y: v01.p.y };
-          const prevAlpha2 = ctx.globalAlpha;
-          ctx.globalAlpha = alpha;
-          drawImageTri(img, v00.s, v10.s, v11.s, p00p, p10p, p11p);
-          drawImageTri(img, v00.s, v11.s, v01.s, p00p, p11p, p01p);
-          drawImageTri(img, v00.s, v10.s, v11.s, p00m, p10m, p11m);
-          drawImageTri(img, v00.s, v11.s, v01.s, p00m, p11m, p01m);
-          ctx.globalAlpha = prevAlpha2;
-          drawnTriangles += 4;
-        }
-      }
-    }
-    return drawnTriangles > 0;
-  }
-
-  function drawStickerMesh(item, img) {
-    return drawStickerMeshMapped(item, img, { x0: 0, y0: 0, x1: 1, y1: 1 }, { x0: 0, y0: 0, x1: 1, y1: 1 }, 1);
-  }
-
   function sampleStickerEdge(item, edge, steps, refX = null) {
     const out = [];
     for (let i = 0; i <= steps; i += 1) {
@@ -4806,37 +4654,6 @@ async function showEditor(node, type, options = {}) {
     ];
 
     drawStickerSelectionBoundary(ctx, edges, { selected });
-  }
-
-  function renderModalStickerBodyFallback() {
-    if (editor.mode !== "pano" && editor.mode !== "unwrap") return false;
-    if (!Array.isArray(state.stickers) || state.stickers.length === 0) return false;
-    let anyDrawn = false;
-    const items = [...state.stickers].sort((a, b) => Number(a.z_index || 0) - Number(b.z_index || 0));
-    for (const item of items) {
-      if (item?.visible === false) continue;
-      const g = objectGeom(item);
-      const img = getStickerImage(item);
-      const alpha = getStickerDisplayAlpha(item);
-      if (img && (img.complete || img.width)) {
-        if (drawStickerMeshMapped(item, img, { x0: 0, y0: 0, x1: 1, y1: 1 }, { x0: 0, y0: 0, x1: 1, y1: 1 }, alpha)) {
-          anyDrawn = true;
-        }
-        continue;
-      }
-      if (!g.visible) continue;
-      const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.beginPath();
-      ctx.moveTo(g.corners[0].x, g.corners[0].y);
-      for (let i = 1; i < 4; i += 1) ctx.lineTo(g.corners[i].x, g.corners[i].y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = prevAlpha;
-      anyDrawn = true;
-    }
-    return anyDrawn;
   }
 
   function getCutoutSelectableItemsForDisplay() {
@@ -5988,10 +5805,8 @@ async function showEditor(node, type, options = {}) {
     const frame = getStickerFrame(shot);
     const cz = dot(dir, frame.centerDir);
     if (!Number.isFinite(cz) || cz <= 1e-6) return null;
-    const xr = dot(dir, frame.right) / cz;
-    const yr = dot(dir, frame.up) / cz;
-    const x = (xr * frame.cr) + (yr * frame.sr);
-    const y = (-xr * frame.sr) + (yr * frame.cr);
+    const x = dot(dir, frame.right) / cz;
+    const y = dot(dir, frame.up) / cz;
     return {
       x: (x / Math.max(1e-6, frame.tanX) + 1) * 0.5,
       y: (1 - (y / Math.max(1e-6, frame.tanY))) * 0.5,

@@ -1,15 +1,14 @@
 import numpy as np
 import pytest
 from comfyui_pano_suite.core.math import (
+    camera_basis,
     calculate_output_dimensions,
     calculate_dimensions_from_megapixels,
     derive_rectilinear_aspect_ratio,
-    orthonormal_basis_from_forward,
     round_to_multiple,
     finite_float,
     finite_int,
     dir_to_lon_lat,
-    yaw_pitch_to_dir,
 )
 
 
@@ -28,68 +27,39 @@ def is_orthonormal(right, up, forward, tol=1e-6):
     assert np.allclose(np.cross(right, up), forward, atol=tol)
 
 
-def test_orthonormal_basis_normal():
-    forward = np.array([1.0, 0.0, 0.0])
-    right, up, f = orthonormal_basis_from_forward(forward)
-    assert not np.isnan(right).any()
-    assert not np.isnan(up).any()
-    assert not np.isnan(f).any()
-    is_orthonormal(right, up, f)
+def test_camera_basis_uses_the_shared_erp_axis_and_rotation_contract():
+    right, up, forward = camera_basis(90.0, 0.0, 0.0)
+    is_orthonormal(right, up, forward)
+
+    assert np.allclose(right, [0.0, 0.0, -1.0], atol=1e-6)
+    assert np.allclose(up, [0.0, 1.0, 0.0], atol=1e-6)
+    assert np.allclose(forward, [1.0, 0.0, 0.0], atol=1e-6)
+
+    right, up, forward = camera_basis(0.0, 0.0, 90.0)
+    is_orthonormal(right, up, forward)
+
+    assert np.allclose(right, [0.0, 1.0, 0.0], atol=1e-6)
+    assert np.allclose(up, [-1.0, 0.0, 0.0], atol=1e-6)
+    assert np.allclose(forward, [0.0, 0.0, 1.0], atol=1e-6)
 
 
-def test_orthonormal_basis_singularity_up():
-    forward = np.array([0.0, 1.0, 0.0])
-    right, up, f = orthonormal_basis_from_forward(forward)
-    assert not np.isnan(right).any()
-    assert not np.isnan(up).any()
-    assert not np.isnan(f).any()
-    is_orthonormal(right, up, f)
+def test_camera_basis_remains_continuous_across_the_old_pole_threshold():
+    before = camera_basis(0.0, 87.43, 0.0)
+    after = camera_basis(0.0, 87.45, 0.0)
+
+    assert float(np.dot(before[0], after[0])) > 0.999999
+    assert float(np.dot(before[1], after[1])) > 0.999999
+    assert before[0][0] > 0.999999
+    assert after[0][0] > 0.999999
 
 
-def test_orthonormal_basis_singularity_down():
-    forward = np.array([0.0, -1.0, 0.0])
-    right, up, f = orthonormal_basis_from_forward(forward)
-    assert not np.isnan(right).any()
-    assert not np.isnan(up).any()
-    assert not np.isnan(f).any()
-    is_orthonormal(right, up, f)
+def test_camera_basis_keeps_yaw_defined_at_the_pole():
+    right, up, forward = camera_basis(90.0, 90.0, 0.0)
+    is_orthonormal(right, up, forward)
 
-
-def test_orthonormal_basis_near_singularity():
-    # Vector very close to [0, 1, 0]
-    # dot([0, 0.9995, 0.0316], [0, 1, 0]) = 0.9995 > 0.999
-    forward = np.array([0.0, 0.9995, 0.0316])
-    right, up, f = orthonormal_basis_from_forward(forward)
-    assert not np.isnan(right).any()
-    assert not np.isnan(up).any()
-    assert not np.isnan(f).any()
-    is_orthonormal(right, up, f)
-
-
-def test_orthonormal_basis_zero_vector():
-    forward = np.array([0.0, 0.0, 0.0])
-    right, up, f = orthonormal_basis_from_forward(forward)
-    assert not np.isnan(right).any()
-    assert not np.isnan(up).any()
-    assert not np.isnan(f).any()
-
-    # orthonormal_basis_from_forward yields zero vectors for zero input due to its
-    # epsilon-normalization logic (v / (norm(v) + 1e-8)).
-    # We assert this contract instead of calling is_orthonormal.
-    assert np.allclose(right, 0.0)
-    assert np.allclose(up, 0.0)
-    assert np.allclose(f, 0.0)
-
-
-def test_orthonormal_basis_random():
-    for _ in range(100):
-        forward = np.random.randn(3)
-        right, up, f = orthonormal_basis_from_forward(forward)
-        assert not np.isnan(right).any()
-        assert not np.isnan(up).any()
-        assert not np.isnan(f).any()
-        is_orthonormal(right, up, f)
-
+    assert np.allclose(right, [0.0, 0.0, -1.0], atol=1e-6)
+    assert np.allclose(up, [-1.0, 0.0, 0.0], atol=1e-6)
+    assert np.allclose(forward, [0.0, 1.0, 0.0], atol=1e-6)
 
 def test_round_to_multiple():
     assert round_to_multiple(10, 8) == 8
@@ -205,7 +175,13 @@ def test_dir_to_lon_lat_axes():
 def test_dir_to_lon_lat_roundtrip():
     for yaw_deg in [-179, -90, 0, 90, 179]:  # Avoid 180/-180 ambiguity
         for pitch_deg in [-89, -45, 0, 45, 89]:  # Avoid poles where lon is undefined
-            d = yaw_pitch_to_dir(yaw_deg, pitch_deg)
+            yaw = np.deg2rad(yaw_deg)
+            pitch = np.deg2rad(pitch_deg)
+            d = np.array([
+                np.cos(pitch) * np.sin(yaw),
+                np.sin(pitch),
+                np.cos(pitch) * np.cos(yaw),
+            ])
             lon, lat = dir_to_lon_lat(d)
 
             lon_deg = lon * 180.0 / np.pi

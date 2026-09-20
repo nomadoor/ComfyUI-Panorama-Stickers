@@ -1,3 +1,5 @@
+import { cameraBasis } from "./pano_camera_math.js";
+
 const DEG2RAD = Math.PI / 180;
 const TWO_PI = Math.PI * 2.0;
 const MAX_RENDER_SIDE = 2048;
@@ -56,40 +58,9 @@ function dot(a, b) {
   return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-function cross(a, b) {
-  return vec3(
-    a.y * b.z - a.z * b.y,
-    a.z * b.x - a.x * b.z,
-    a.x * b.y - a.y * b.x,
-  );
-}
-
 function norm(a) {
   const len = Math.hypot(a.x, a.y, a.z) || 1e-8;
   return vec3(a.x / len, a.y / len, a.z / len);
-}
-
-function yawPitchToDir(yawDeg, pitchDeg) {
-  const yaw = Number(yawDeg || 0) * DEG2RAD;
-  const pitch = Number(pitchDeg || 0) * DEG2RAD;
-  const cp = Math.cos(pitch);
-  return vec3(cp * Math.sin(yaw), Math.sin(pitch), cp * Math.cos(yaw));
-}
-
-function cameraBasis(yawDeg, pitchDeg, rollDeg = 0) {
-  const fwd = yawPitchToDir(yawDeg, pitchDeg);
-  let worldUp = vec3(0, 1, 0);
-  if (Math.abs(dot(fwd, worldUp)) > 0.999) worldUp = vec3(0, 0, 1);
-  let right = norm(cross(worldUp, fwd));
-  let up = norm(cross(fwd, right));
-  const rr = Number(rollDeg || 0) * DEG2RAD;
-  const cr = Math.cos(rr);
-  const sr = Math.sin(rr);
-  const r2 = add(mul(right, cr), mul(up, sr));
-  const u2 = add(mul(right, -sr), mul(up, cr));
-  right = norm(r2);
-  up = norm(u2);
-  return { fwd, right, up };
 }
 
 function lonLatToDir(u, v) {
@@ -159,6 +130,26 @@ void main() {
   v_uv = vec2(a_position.x * 0.5 + 0.5, 1.0 - (a_position.y * 0.5 + 0.5));
 }`;
 
+// Shared camera contract: +Y up, +Z forward at zero rotation, with
+// Ry(yaw) * Rx(-pitch) * Rz(roll). This is the GLSL equivalent of
+// pano_camera_math.js and stays continuous at pitch +/-90 degrees. Keep the
+// algebraic reference in tests/test_camera_orientation.py in sync.
+const CAMERA_BASIS_GLSL = `
+mat3 cameraBasis(float yaw, float pitch, float roll) {
+  float cy = cos(yaw);
+  float sy = sin(yaw);
+  float cp = cos(pitch);
+  float sp = sin(pitch);
+  float cr = cos(roll);
+  float sr = sin(roll);
+  vec3 fwd = normalize(vec3(cp * sy, sp, cp * cy));
+  vec3 right = vec3(cy, 0.0, -sy);
+  vec3 up = normalize(cross(fwd, right));
+  vec3 rolledRight = normalize(right * cr + up * sr);
+  vec3 rolledUp = normalize(right * (-sr) + up * cr);
+  return mat3(rolledRight, rolledUp, fwd);
+}`;
+
 const BACKGROUND_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 in vec2 v_uv;
@@ -178,26 +169,7 @@ uniform int u_coverage;
 const float PI = 3.1415926535897932384626433832795;
 const float TWO_PI = 6.283185307179586476925286766559;
 
-vec3 rotateCameraForward(float yaw, float pitch) {
-  float cy = cos(yaw);
-  float sy = sin(yaw);
-  float cp = cos(pitch);
-  float sp = sin(pitch);
-  return vec3(cp * sy, sp, cp * cy);
-}
-
-mat3 cameraBasis(float yaw, float pitch, float roll) {
-  vec3 fwd = normalize(rotateCameraForward(yaw, pitch));
-  vec3 worldUp = vec3(0.0, 1.0, 0.0);
-  if (abs(dot(fwd, worldUp)) > 0.999) worldUp = vec3(0.0, 0.0, 1.0);
-  vec3 right = normalize(cross(worldUp, fwd));
-  vec3 up = normalize(cross(fwd, right));
-  float cr = cos(roll);
-  float sr = sin(roll);
-  vec3 r2 = normalize(right * cr + up * sr);
-  vec3 u2 = normalize(right * (-sr) + up * cr);
-  return mat3(r2, u2, fwd);
-}
+${CAMERA_BASIS_GLSL}
 
 vec2 unwrapUv() {
   return vec2(v_uv.x, clamp(v_uv.y, 0.0, 1.0));
@@ -259,26 +231,7 @@ uniform vec3 u_maskTint;
 const float PI = 3.1415926535897932384626433832795;
 const float TWO_PI = 6.283185307179586476925286766559;
 
-vec3 rotateCameraForward(float yaw, float pitch) {
-  float cy = cos(yaw);
-  float sy = sin(yaw);
-  float cp = cos(pitch);
-  float sp = sin(pitch);
-  return vec3(cp * sy, sp, cp * cy);
-}
-
-mat3 cameraBasis(float yaw, float pitch, float roll) {
-  vec3 fwd = normalize(rotateCameraForward(yaw, pitch));
-  vec3 worldUp = vec3(0.0, 1.0, 0.0);
-  if (abs(dot(fwd, worldUp)) > 0.999) worldUp = vec3(0.0, 0.0, 1.0);
-  vec3 right = normalize(cross(worldUp, fwd));
-  vec3 up = normalize(cross(fwd, right));
-  float cr = cos(roll);
-  float sr = sin(roll);
-  vec3 r2 = normalize(right * cr + up * sr);
-  vec3 u2 = normalize(right * (-sr) + up * cr);
-  return mat3(r2, u2, fwd);
-}
+${CAMERA_BASIS_GLSL}
 
 vec2 unwrapUv() {
   return vec2(v_uv.x, clamp(v_uv.y, 0.0, 1.0));

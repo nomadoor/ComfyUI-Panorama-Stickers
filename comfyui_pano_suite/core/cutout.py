@@ -6,7 +6,7 @@ import threading
 
 import numpy as np
 
-from .math import DEG2RAD, dir_to_lon_lat, lon_lat_to_erp, sample_erp_bilinear, yaw_pitch_to_dir, orthonormal_basis_from_forward
+from .math import DEG2RAD, camera_basis, dir_to_lon_lat, lon_lat_to_erp, sample_erp_bilinear
 
 
 _CUTOUT_SAMPLING_MAP_CACHE: "OrderedDict[str, dict]" = OrderedDict()
@@ -109,8 +109,7 @@ def build_cutout_sampling_map(
     h_tan = math.tan(max(1e-3, h_fov_deg) * 0.5 * DEG2RAD)
     v_tan = math.tan(max(1e-3, v_fov_deg) * 0.5 * DEG2RAD)
 
-    forward = yaw_pitch_to_dir(yaw_deg, pitch_deg)
-    right, up, fwd = orthonormal_basis_from_forward(forward)
+    right, up, fwd = camera_basis(yaw_deg, pitch_deg, roll_deg)
 
     xs = (np.arange(out_w, dtype=np.float32) + 0.5) / out_w * 2.0 - 1.0
     ys = 1.0 - (np.arange(out_h, dtype=np.float32) + 0.5) / out_h * 2.0
@@ -118,14 +117,6 @@ def build_cutout_sampling_map(
 
     x = xg * h_tan
     y = yg * v_tan
-
-    if abs(roll_deg) > 1e-6:
-        rr = roll_deg * DEG2RAD
-        cr = math.cos(rr)
-        sr = math.sin(rr)
-        xr = x * cr - y * sr
-        yr = x * sr + y * cr
-        x, y = xr, yr
 
     dirs = fwd[None, None, :] + x[..., None] * right[None, None, :] + y[..., None] * up[None, None, :]
     norm = np.linalg.norm(dirs, axis=-1, keepdims=True)
