@@ -62,10 +62,6 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## 更新日志
 
-### 1.5.1
-
-- 统一了 Cutout 和 Sticker 在 JS、GLSL 与 Python 中的 camera orientation。常规角度下的 framing 保持不变；对于 `|pitch|` 超过约 87.44° 的现有 workflow，将以连续到极点的 orientation 取代旧 basis 的突变切换。
-
 ### 1.5.0
 
 - 为 `Panorama Cutout`、`Panorama Preview` 和 `Panorama Stickers` 添加轻量级节点内 UI，无需打开 Full Editor 即可完成常用操作。
