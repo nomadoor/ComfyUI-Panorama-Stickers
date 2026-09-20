@@ -56,7 +56,15 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
   - モデル作者が作成した[LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRAを使うことで、テキストから360度パノラマ動画を生成できます。
   - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
 
+## トラブルシューティング
+
+パノラマeditorはブラウザのハードウェアアクセラレーションを利用します。小さなノード上プレビューは軽いのに、大きなeditorだけ極端に遅い場合は、`chrome://gpu`（Edgeでは`edge://gpu`）を開き、Canvas、Compositing、Rasterization、WebGLがhardware acceleratedになっているか確認してください。`Software only`の場合はブラウザを完全終了して再起動し、改善しなければブラウザとGPU driverの設定を確認してください。
+
 ## 更新履歴
+
+### 1.5.1
+
+- CutoutとStickerのcamera orientationをJS／GLSL／Pythonで統一しました。通常角度のframingは維持されますが、`|pitch|`が約87.44°を超える既存workflowでは、旧basisの急な切り替えに代えて極まで連続するorientationを使用します。
 
 ### 1.5.0
 

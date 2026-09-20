@@ -27,15 +27,42 @@ def wrap_yaw_deg(yaw: float) -> float:
     return (yaw + 180.0) % 360.0 - 180.0
 
 
-def yaw_pitch_to_dir(yaw_deg: float, pitch_deg: float) -> np.ndarray:
-    yaw = yaw_deg * DEG2RAD
-    pitch = pitch_deg * DEG2RAD
-    cp = math.cos(pitch)
-    return np.array([
-        cp * math.sin(yaw),
-        math.sin(pitch),
-        cp * math.cos(yaw),
+def camera_basis(
+    yaw_deg: float,
+    pitch_deg: float,
+    roll_deg: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return ERP camera right, up, and forward axes.
+
+    Camera-local axes are +X right, +Y up, and +Z forward. Orientation is
+    ``Ry(yaw) @ Rx(-pitch) @ Rz(roll)``: positive yaw looks right, positive
+    pitch looks up, and positive roll turns the image clockwise. The explicit
+    angle construction stays continuous at the poles and must match the JS
+    reference implementation in ``web_src/pano_camera_math.js``.
+    """
+    yaw = float(yaw_deg) * DEG2RAD
+    pitch = float(pitch_deg) * DEG2RAD
+    roll = float(roll_deg) * DEG2RAD
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cr, sr = math.cos(roll), math.sin(roll)
+
+    right = np.array([
+        cy * cr - sy * sp * sr,
+        cp * sr,
+        -sy * cr - cy * sp * sr,
     ], dtype=np.float32)
+    up = np.array([
+        -cy * sr - sy * sp * cr,
+        cp * cr,
+        sy * sr - cy * sp * cr,
+    ], dtype=np.float32)
+    forward = np.array([
+        sy * cp,
+        sp,
+        cy * cp,
+    ], dtype=np.float32)
+    return right, up, forward
 
 
 def dir_to_lon_lat(d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -184,18 +211,6 @@ def calculate_dimensions_from_megapixels(
 
     return w_final, h_final
 
-
-def orthonormal_basis_from_forward(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    f = forward.astype(np.float32)
-    f = f / (np.linalg.norm(f) + 1e-8)
-    world_up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
-    if abs(float(np.dot(f, world_up))) > 0.999:
-        world_up = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-    right = np.cross(world_up, f)
-    right = right / (np.linalg.norm(right) + 1e-8)
-    up = np.cross(f, right)
-    up = up / (np.linalg.norm(up) + 1e-8)
-    return right, up, f
 
 def finite_float(value, default: float = 0.0) -> float:
     try:

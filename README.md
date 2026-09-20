@@ -56,7 +56,15 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
   - By using the [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA created by the author of that model, you can generate 360 panoramic video from text.
   - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
 
+## Troubleshooting
+
+The panorama editors rely on browser hardware acceleration. If a large editor is unusually slow while the small on-node preview remains responsive, open `chrome://gpu` (or `edge://gpu`) and check that Canvas, Compositing, Rasterization, and WebGL are hardware accelerated. If they show `Software only`, fully exit and restart the browser, then check the browser and GPU-driver settings.
+
 ## Changelog
+
+### 1.5.1
+
+- Unified Cutout and Sticker camera orientation across JS, GLSL, and Python. Existing framing is preserved at ordinary angles; views with `|pitch|` above approximately 87.44° now use a continuous pole orientation instead of the legacy abrupt basis switch.
 
 ### 1.5.0
 

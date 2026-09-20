@@ -4,13 +4,10 @@ import {
   add,
   cameraBasis,
   clamp,
-  cross,
   dot,
   mul,
   norm,
-  vec3,
   wrapYaw,
-  yawPitchToDir,
 } from "./pano_camera_math.js";
 import {
   STICKER_NODE_ROTATE_HANDLE_OFFSET_PX,
@@ -66,29 +63,24 @@ function projectWorldDirection(direction, camera, viewport) {
 }
 
 function stickerFrame(item) {
-  const centerDir = yawPitchToDir(Number(item?.yaw_deg || 0), Number(item?.pitch_deg || 0));
-  let worldUp = vec3(0, 1, 0);
-  if (Math.abs(dot(centerDir, worldUp)) > 0.999) worldUp = vec3(0, 0, 1);
-  const right = norm(cross(worldUp, centerDir));
-  const up = norm(cross(centerDir, right));
-  const rotation = Number(item?.rot_deg ?? item?.roll_deg ?? 0) * DEG2RAD;
+  const basis = cameraBasis(
+    Number(item?.yaw_deg || 0),
+    Number(item?.pitch_deg || 0),
+    Number(item?.rot_deg ?? item?.roll_deg ?? 0),
+  );
   return {
-    centerDir,
-    right,
-    up,
+    centerDir: basis.fwd,
+    right: basis.right,
+    up: basis.up,
     tanX: Math.tan(clamp(Number(item?.hFOV_deg || 20), 0.1, 179) * DEG2RAD * 0.5),
     tanY: Math.tan(clamp(Number(item?.vFOV_deg || 20), 0.1, 179) * DEG2RAD * 0.5),
-    cosRotation: Math.cos(rotation),
-    sinRotation: Math.sin(rotation),
   };
 }
 
 function stickerDirection(frame, x, y) {
-  const rotatedX = x * frame.cosRotation - y * frame.sinRotation;
-  const rotatedY = x * frame.sinRotation + y * frame.cosRotation;
   return norm(add(
-    add(frame.centerDir, mul(frame.right, rotatedX)),
-    mul(frame.up, rotatedY),
+    add(frame.centerDir, mul(frame.right, x)),
+    mul(frame.up, y),
   ));
 }
 

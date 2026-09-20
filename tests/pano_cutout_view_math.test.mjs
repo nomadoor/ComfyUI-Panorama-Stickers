@@ -81,6 +81,14 @@ test("explicit aspect keeps vertical FOV and derives horizontal FOV in tangent s
   close(camera.aspect, 9 / 16, 1e-12);
 });
 
+test("legacy falsy Cutout FOV values retain their default framing", () => {
+  for (const value of [0, "", null, false]) {
+    const camera = getCutoutCameraParams({ hFOV_deg: value, vFOV_deg: value });
+    assert.equal(camera.hFovDeg, 90);
+    assert.equal(camera.vFovDeg, 60);
+  }
+});
+
 test("cutout shot normalization derives the canonical aspect and removes legacy output dimensions", () => {
   const normalized = normalizeCutoutShotItem({
     id: "shot_1",

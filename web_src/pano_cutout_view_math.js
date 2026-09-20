@@ -40,8 +40,10 @@ function finiteOr(value, fallback) {
 }
 
 export function getCutoutCameraParams(shot = {}) {
-  const hFovDeg = clamp(finiteOr(shot.hFOV_deg, 90), CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
-  const vFovDeg = clamp(finiteOr(shot.vFOV_deg, 60), CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
+  // Intentional legacy compatibility: falsy serialized FOV values mean the
+  // historical 90/60-degree defaults, not the 1-degree clamp minimum.
+  const hFovDeg = clamp(finiteOr(shot.hFOV_deg || 90, 90), CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
+  const vFovDeg = clamp(finiteOr(shot.vFOV_deg || 60, 60), CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
   const tanHalfX = Math.tan(hFovDeg * DEG2RAD * 0.5);
   const tanHalfY = Math.tan(vFovDeg * DEG2RAD * 0.5);
   return {

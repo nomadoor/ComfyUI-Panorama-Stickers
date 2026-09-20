@@ -560,7 +560,10 @@ Incident ID: `PREVIEW-20260224-10`
 4. `cutout.draw` ログで `drawnTriCount > 0` のときのみ `liveDrawnValidated === true`。
 
 ### Static Gate
+
+上記の旧 Cutout 三角メッシュ projector はその後削除された。
+現在の Cutout preview は共有 WebGL render core を使用する。
+
 ```bash
-node --check web/pano_cutout_projection.js
-node --check web/pano_node_preview.js
+npm run check:web
 ```

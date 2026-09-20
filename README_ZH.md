@@ -56,7 +56,15 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
   - 使用该模型作者制作的 [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA，可以通过文本生成 360° 全景视频。
   - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
 
+## 故障排除
+
+全景编辑器依赖浏览器硬件加速。如果小型节点内预览流畅，但大型编辑器异常卡顿，请打开 `chrome://gpu`（Edge 使用 `edge://gpu`），确认 Canvas、Compositing、Rasterization 和 WebGL 均显示为硬件加速。如果显示 `Software only`，请完全退出并重新启动浏览器；若问题仍然存在，请检查浏览器和 GPU 驱动设置。
+
 ## 更新日志
+
+### 1.5.1
+
+- 统一了 Cutout 和 Sticker 在 JS、GLSL 与 Python 中的 camera orientation。常规角度下的 framing 保持不变；对于 `|pitch|` 超过约 87.44° 的现有 workflow，将以连续到极点的 orientation 取代旧 basis 的突变切换。
 
 ### 1.5.0
 

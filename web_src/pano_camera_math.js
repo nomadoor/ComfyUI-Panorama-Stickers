@@ -42,16 +42,30 @@ export function yawPitchToDir(yawDeg, pitchDeg) {
 }
 
 export function cameraBasis(yawDeg, pitchDeg, rollDeg = 0) {
-  const fwd = yawPitchToDir(yawDeg, pitchDeg);
-  const worldUp = vec3(0, 1, 0);
-  let right = cross(worldUp, fwd);
-  if (Math.hypot(right.x, right.y, right.z) < 1e-6) right = vec3(1, 0, 0);
-  right = norm(right);
-  const up0 = norm(cross(fwd, right));
+  // Camera-local axes are +X right, +Y up, and +Z forward. Applying
+  // Ry(yaw) * Rx(-pitch) * Rz(roll) keeps the orientation continuous at the
+  // poles: positive yaw looks right, positive pitch looks up, and positive
+  // roll turns the image clockwise. Keep this in parity with core/math.py.
+  const yaw = Number(yawDeg || 0) * DEG2RAD;
+  const pitch = Number(pitchDeg || 0) * DEG2RAD;
   const rr = rollDeg * DEG2RAD;
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
   const cr = Math.cos(rr);
   const sr = Math.sin(rr);
-  const r2 = add(mul(right, cr), mul(up0, sr));
-  const u2 = add(mul(right, -sr), mul(up0, cr));
-  return { fwd, right: norm(r2), up: norm(u2) };
+  return {
+    right: vec3(
+      cy * cr - sy * sp * sr,
+      cp * sr,
+      -sy * cr - cy * sp * sr,
+    ),
+    up: vec3(
+      -cy * sr - sy * sp * cr,
+      cp * cr,
+      sy * sr - cy * sp * cr,
+    ),
+    fwd: vec3(sy * cp, sp, cy * cp),
+  };
 }

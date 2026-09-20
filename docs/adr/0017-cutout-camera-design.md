@@ -32,9 +32,9 @@ Active
 
 1. **カメラはシーンの純粋消費者（read-only consumer）である**
 2. **`render(scene, camera)` は決定論的・副作用なし**
-3. **メイン編集コンポーネントは変更しない**
+3. **メイン編集の state / interaction semantics は変更しない**
 4. **画面に映っているものがそのまま出力される（WYSIWYG）**
-5. **カメラ変更はGPUのみで完結する（CPUへのフォールバックなし）**
+5. **通常描画はGPUで完結し、既存のCPU fallbackは互換用途に限定する**
 
 ---
 
@@ -86,6 +86,20 @@ Active
 ---
 
 ## カメラ契約（Camera Contract）
+
+座標系と回転規約は次を canonical とする。
+
+- world axis: `+Y` up、zero rotation の forward は `+Z`、right は `+X`
+- camera-local axis: `+X` right、`+Y` up、`+Z` forward
+- rotation order: standard right-handed column-vector matricesで
+  `Ry(yaw) @ Rx(-pitch) @ Rz(roll)`
+- positive yaw: right を向く
+- positive pitch: up を向く
+- positive roll: 画面を時計回りに回す
+
+reference implementation は JS の `web_src/pano_camera_math.js` と Python の
+`comfyui_pano_suite/core/math.py` とする。GLSL は同じ basis を
+`web_src/pano_gl_renderer.js` 内に実装し、parity test で一致を維持する。
 
 ```js
 BaseCameraParams = {
@@ -324,18 +338,35 @@ commitState → full syncScene → renderFrame
 
 ## メインコンポーネントとの境界
 
-### 変更禁止ファイル
+### 既存 renderer との境界
 
 ```text
-web_src/pano_editor.js
+web_src/pano_camera_math.js              ← JS reference implementation
+web_src/pano_gl_renderer.js              ← GLSL equivalent と GPU renderer
+web_src/pano_cutout_view_math.js         ← Cutout view adapter
+comfyui_pano_suite/core/math.py           ← Python reference implementation
+```
+
+これらの既存 module は、node identifier、port semantics、state schema、interaction semanticsを
+変えない範囲で camera math の共有と renderer の整合性維持のために変更してよい。
+`pano_editor.js` は共通 math を消費できるが、独自の camera convention を追加してはいけない。
+
+### 保護する既存責務
+
+次の module は既存の責務と公開契約を維持する。camera math の整理を理由に、paint semantics、
+renderer state、render target ownership、interaction hot path を変更してはいけない。
+
+```text
 web_src/pano_paint_engine.js
-web_src/pano_gl_renderer.js
 web_src/pano_render_core.js
 web_src/pano_render_state.js
 web_src/pano_render_targets.js
 ```
 
-### 共通 Camera の実装ファイル（新規作成）
+`pano_editor.js` と `pano_gl_renderer.js` の変更は、共有 camera contract の消費と
+JS / GLSL parityの維持に必要な最小範囲に限定する。
+
+### 共通 Camera の実装ファイル
 
 ```text
 web_src/pano_scene_camera.js        ← カメラ本体

@@ -76,6 +76,20 @@ test("sticker geometry is centered, ordered, and exposes modal-compatible handle
   assert.deepEqual(hitStickerGeometry(geom, geom.rotateHandle), { kind: "rotate", cursor: "grab" });
 });
 
+test("sticker geometry keeps its frame orientation at the exact pole", () => {
+  const polarCamera = { yawDeg: 90, pitchDeg: 90, fovDeg: 100 };
+  const polarSticker = {
+    ...sticker,
+    yaw_deg: 90,
+    pitch_deg: 90,
+  };
+  const geom = buildStickerGeometry(polarSticker, polarCamera, viewport);
+
+  assert.equal(geom.visible, true);
+  assert.ok(geom.corners[0].x < geom.corners[1].x, "top edge must run screen-left to screen-right");
+  assert.ok(geom.corners[0].y < geom.corners[3].y, "left edge must run screen-top to screen-bottom");
+});
+
 test("moving a sticker maps the pointer ray back to yaw and pitch", () => {
   const moved = moveStickerToScreenPoint(sticker, { x: 750, y: 125 }, camera, viewport);
 

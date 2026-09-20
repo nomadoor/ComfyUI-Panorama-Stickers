@@ -2,11 +2,21 @@
 
 ## Status
 
-Active
+Superseded
 
 ## Date
 
 2026-04-18
+
+## Superseded
+
+この移行手順は完了済みであり、現在の renderer 境界は ADR 0005 と ADR 0017 を正とする。
+通常描画は共有 WebGL render core を使用する。移行時に作られた
+`pano_render_background_pass.js` は実行経路から参照されなくなったため削除した。
+Preview node の既存 CPU triangle fallback は ADR 0005 の互換経路として維持する。
+
+以下は移行時の判断記録として残すが、現在の変更可能ファイルや fallback policy を
+規定するものではない。
 
 ## Context
 

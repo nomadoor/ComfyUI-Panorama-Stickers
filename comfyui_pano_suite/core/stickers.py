@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .math import DEG2RAD, orthonormal_basis_from_forward, yaw_pitch_to_dir
+from .math import DEG2RAD, camera_basis
 
 try:
     import folder_paths
@@ -217,8 +217,7 @@ def _compose_sticker_patch(
     if cx1 - cx0 < 1e-6 or cy1 - cy0 < 1e-6:
         return
 
-    cdir = yaw_pitch_to_dir(yaw, pitch)
-    right, up, fwd = orthonormal_basis_from_forward(cdir)
+    right, up, fwd = camera_basis(yaw, pitch, rot)
 
     max_fov = max(h_fov, v_fov)
     yaw_span = 180.0 if coverage == 180 else 360.0
@@ -268,14 +267,8 @@ def _compose_sticker_patch(
         local_x = np.sum(dirs * right[None, None, :], axis=-1) / np.maximum(z, 1e-6)
         local_y = np.sum(dirs * up[None, None, :], axis=-1) / np.maximum(z, 1e-6)
 
-        rr = -rot * DEG2RAD
-        cr = math.cos(rr)
-        sr = math.sin(rr)
-        xr = local_x * cr - local_y * sr
-        yr = local_x * sr + local_y * cr
-
-        xn = xr / math.tan(h_fov * 0.5 * DEG2RAD)
-        yn = yr / math.tan(v_fov * 0.5 * DEG2RAD)
+        xn = local_x / math.tan(h_fov * 0.5 * DEG2RAD)
+        yn = local_y / math.tan(v_fov * 0.5 * DEG2RAD)
 
         inside = front & (np.abs(xn) <= 1.0) & (np.abs(yn) <= 1.0)
         if not np.any(inside):
