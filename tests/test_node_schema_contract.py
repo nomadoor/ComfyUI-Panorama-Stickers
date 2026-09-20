@@ -146,7 +146,9 @@ EXPECTED_SCHEMAS = {
             },
             "audio": {},
         },
-        "outputs": [],
+        "outputs": [
+            ("image", "image", "IMAGE"),
+        ],
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
     },

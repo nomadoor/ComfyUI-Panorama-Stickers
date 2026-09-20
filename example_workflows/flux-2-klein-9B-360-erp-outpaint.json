@@ -525,7 +525,13 @@
           "link": null
         }
       ],
-      "outputs": [],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
       "properties": {
         "cnr_id": "panorama-stickers",
         "ver": "d8b0f77f4d741089c553cac9938e16d5fe996920",

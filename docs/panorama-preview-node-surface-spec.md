@@ -9,7 +9,8 @@ Previewへ編集機能やcamera stateの永続化は追加しない。
 ## Compatibility Contract
 
 - node id `PanoramaPreview` を維持する。
-- `erp_image`、`coverage`、`fps`、`audio` のport semanticsとoutputなしの契約を維持する。
+- `erp_image`、`coverage`、`fps`、`audio` のinput port semanticsを維持する。
+- `image: IMAGE` outputは、core `PreviewImage` と同様に入力 `erp_image` tensorを加工・copyせずそのまま返す。
 - dedicated runtime `web_src/pano_preview_previewnode.js` を維持し、Cutout shared runtimeへ統合しない。
 - image解決、video muted / loop / autoplay、double-click / Space再生切替、coverage、drag、wheel、inertiaを維持する。
 - cameraは一時状態のままとし、workflowへ新しいparameterやstateを保存しない。
@@ -45,3 +46,4 @@ Previewへ編集機能やcamera stateの永続化は追加しない。
 6. 動画のautoplay / loopとdouble-click / Space再生切替を維持する。
 7. Legacy Previewの表示、drag、wheel、標準buttonを維持する。
 8. Node2 / LegacyのCutout表示と操作を変更しない。
+9. `image` outputは入力 `erp_image` と同一tensorで、後続のTerminate系nodeへ接続できる。

@@ -242,7 +242,8 @@ class TestNodesPreview(unittest.TestCase):
         res = PanoramaPreviewNode.execute(erp_image=dummy_erp, coverage="360")
 
         self.mock_preview_image.save_images.assert_called_once()
-        assert res.result == ()
+        assert res.result == (dummy_erp,)
+        assert res.result[0] is dummy_erp
         assert "pano_input_images" in res.ui
         # Should NOT have standard images to prevent double preview
         assert "images" not in res.ui
@@ -254,7 +255,9 @@ class TestNodesPreview(unittest.TestCase):
 
         assert schema.node_id == "PanoramaPreview"
         assert schema.is_output_node is True
-        assert schema.outputs == []
+        assert [(port.id, port.kind) for port in schema.outputs] == [
+            ("image", "IMAGE"),
+        ]
         assert [(port.id, port.kind, port.optional) for port in schema.inputs] == [
             ("erp_image", "IMAGE", False),
             ("coverage", "COMBO", False),
