@@ -1247,7 +1247,9 @@ class PanoramaPreviewNode(io.ComfyNode):
                     default="360",
                 ),
             ] + _common_video_preview_inputs(),
-            outputs=[],
+            outputs=[
+                io.Image.Output("image", display_name="image"),
+            ],
             hidden=[io.Hidden.unique_id],
             is_output_node=True,
         )
@@ -1280,7 +1282,7 @@ class PanoramaPreviewNode(io.ComfyNode):
             progress.stage("Done")
             progress.finish()
         _flush_warnings(ui_ret, "pano_preview_warnings", warnings)
-        return io.NodeOutput(ui=ui_ret)
+        return io.NodeOutput(erp_image, ui=ui_ret)
 
 
 class PanoramaSeamPrepNode(io.ComfyNode):

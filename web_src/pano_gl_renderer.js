@@ -2,7 +2,7 @@ import { cameraBasis } from "./pano_camera_math.js";
 
 const DEG2RAD = Math.PI / 180;
 const TWO_PI = Math.PI * 2.0;
-const MAX_RENDER_SIDE = 2048;
+export const MAX_RENDER_SIDE = 2048;
 
 function panoGlDebugEnabled() {
   try {

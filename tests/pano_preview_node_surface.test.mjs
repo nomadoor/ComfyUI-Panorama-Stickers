@@ -127,3 +127,22 @@ test("preview canvas size follows the CSS box at device resolution", () => {
     { width: 1, height: 1 },
   );
 });
+
+test("preview canvas size preserves DPR below the render cap and scales down above it", () => {
+  assert.deepEqual(
+    measurePreviewCanvasSize({ width: 800, height: 450 }, 2, 2048),
+    { width: 1600, height: 900 },
+  );
+  assert.deepEqual(
+    measurePreviewCanvasSize({ width: 2560, height: 1440 }, 1.5),
+    { width: 2048, height: 1152 },
+  );
+  assert.deepEqual(
+    measurePreviewCanvasSize({ width: 1440, height: 2560 }, 1.5, 2048),
+    { width: 1152, height: 2048 },
+  );
+  assert.deepEqual(
+    measurePreviewCanvasSize({ width: 2560, height: 1440 }, 1.5, 1024),
+    { width: 1024, height: 576 },
+  );
+});

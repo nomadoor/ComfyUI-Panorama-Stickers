@@ -214,6 +214,14 @@ function cleanupPreviewBindings(node) {
   node.__panoPreviewMountKey = null;
 }
 
+function ensurePanoramaPreviewImageOutput(node) {
+  const outputs = Array.isArray(node?.outputs) ? node.outputs : [];
+  const hasImageOutput = outputs.some((output) => (
+    String(output?.name || "") === "image" && String(output?.type || "") === "IMAGE"
+  ));
+  if (!hasImageOutput) node?.addOutput?.("image", "IMAGE");
+}
+
 function installEditorButton(nodeType, {
   app,
   matchType,
@@ -298,6 +306,12 @@ function installStandalonePreviewNode(nodeType) {
   nodeType.prototype.onNodeCreated = function () {
     const result = previous ? previous.apply(this, arguments) : undefined;
     if (!Array.isArray(this.size) || this.size[0] < 10 || this.size[1] < 10) this.size = [360, 260];
+    return result;
+  };
+  const previousConfigure = nodeType.prototype.onConfigure;
+  nodeType.prototype.onConfigure = function () {
+    const result = previousConfigure ? previousConfigure.apply(this, arguments) : undefined;
+    ensurePanoramaPreviewImageOutput(this);
     return result;
   };
 }

@@ -1,16 +1,26 @@
+import { MAX_RENDER_SIDE } from "./pano_gl_renderer.js";
+
 export function shouldTogglePreviewPlaybackFromKey(event, root) {
   if (!event || event.target !== root) return false;
   return event.key === " " || event.key === "Spacebar";
 }
 
-export function measurePreviewCanvasSize(rect, devicePixelRatio = 1) {
+export function measurePreviewCanvasSize(rect, devicePixelRatio = 1, maxSide = MAX_RENDER_SIDE) {
   const candidateScale = Number(devicePixelRatio);
   const scale = Number.isFinite(candidateScale) && candidateScale > 0 ? candidateScale : 1;
   const cssWidth = Number(rect?.width);
   const cssHeight = Number(rect?.height);
+  const physicalWidth = Math.max(0, Number.isFinite(cssWidth) ? cssWidth : 0) * scale;
+  const physicalHeight = Math.max(0, Number.isFinite(cssHeight) ? cssHeight : 0) * scale;
+  const candidateMaxSide = Number(maxSide);
+  const limit = Number.isFinite(candidateMaxSide) && candidateMaxSide > 0
+    ? candidateMaxSide
+    : MAX_RENDER_SIDE;
+  const largestSide = Math.max(physicalWidth, physicalHeight);
+  const fitScale = largestSide > 0 ? Math.min(1, limit / largestSide) : 1;
   return {
-    width: Math.max(1, Math.round((Number.isFinite(cssWidth) ? cssWidth : 0) * scale)),
-    height: Math.max(1, Math.round((Number.isFinite(cssHeight) ? cssHeight : 0) * scale)),
+    width: Math.max(1, Math.round(physicalWidth * fitScale)),
+    height: Math.max(1, Math.round(physicalHeight * fitScale)),
   };
 }
 

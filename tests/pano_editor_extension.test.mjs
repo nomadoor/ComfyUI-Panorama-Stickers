@@ -224,6 +224,34 @@ test("Preview hides its modal fallback button only after the fullscreen surface 
   assert.notEqual(fallbackButton.hidden, true);
 });
 
+test("legacy Preview workflows regain the pass-through image output after configure", () => {
+  function NodeType() {}
+  NodeType.prototype.onConfigure = function (serialized) {
+    this.outputs = Array.isArray(serialized?.outputs) ? [...serialized.outputs] : this.outputs;
+  };
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaPreview" });
+  const node = makeNode([360, 260]);
+  node.outputs = [{ name: "image", type: "IMAGE", links: null }];
+  node.addOutput = function (name, type) {
+    const output = { name, type, links: null };
+    this.outputs.push(output);
+    return output;
+  };
+
+  NodeType.prototype.onConfigure.call(node, { outputs: [] });
+  NodeType.prototype.onConfigure.call(node, { outputs: node.outputs });
+
+  assert.deepEqual(node.outputs, [{ name: "image", type: "IMAGE", links: null }]);
+});
+
 test("coverage changes preserve the widget callback and invalidate every preview cache", () => {
   const dirtied = [];
   const node = makeNode();
