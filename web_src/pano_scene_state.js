@@ -312,6 +312,50 @@ export function loadSceneState(raw) {
   return version === 1 ? migrateV1(parsed) : normalizeV2(parsed);
 }
 
+function rebaseGroup(src, rebase, anchor, newAnchor) {
+  return {
+    value: src.value,
+    keyframes: src.keyframes.map((key) => ({ ...key, frame: rebase(anchor + key.frame) - newAnchor })),
+  };
+}
+
+// Rounds the clip's Timeline events (start, content anchor start - in, end) and rebuilds in and duration from them.
+function rebaseClip(src, rebase) {
+  const start = rebase(src.start);
+  const anchor = rebase(src.start - src.in);
+  const duration = src.duration === null ? null : rebase(src.start + src.duration) - start;
+  return { clip: { start, in: start - anchor, duration }, anchor: src.start - src.in, newAnchor: anchor };
+}
+
+// Rescales every stored frame of a loaded state from its timeline.fps to fps. Every Timeline event
+// (Keyframe, Clip range start and end, content anchor) rounds to the nearest frame of the new fps,
+// so it moves by at most half a new frame and events at one time stay together.
+export function rebaseSceneState(state, fps) {
+  if (positive(fps, null) === null) {
+    throw new Error(`Cannot rebase state_json to fps ${JSON.stringify(fps)}; fps must be a positive number.`);
+  }
+  const ratio = fps / state.timeline.fps;
+  const rebase = (frame) => frameNumber(frame * ratio);
+  const { length } = state.timeline;
+  const scene = rebaseClip(state.scene.clip, rebase);
+  return normalizeV2({
+    timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
+    camera: { aspect: state.camera.aspect, transform: rebaseGroup(state.camera.transform, rebase, 0, 0) },
+    scene: { clip: scene.clip, transform: rebaseGroup(state.scene.transform, rebase, scene.anchor, scene.newAnchor) },
+    stickers: state.stickers.map((item) => {
+      const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
+      return {
+        ...item,
+        clip,
+        transform: rebaseGroup(item.transform, rebase, anchor, newAnchor),
+        opacity: rebaseGroup(item.opacity, rebase, anchor, newAnchor),
+      };
+    }),
+    painting: state.painting,
+    painting_layer: state.painting_layer,
+  });
+}
+
 function wrapYawDeg(value) {
   return ((((value + 180) % 360) + 360) % 360) - 180;
 }

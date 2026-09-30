@@ -1,0 +1,74 @@
+{
+  "version": 2,
+  "timeline": {"fps": 30.0, "length": 150},
+  "camera": {
+    "aspect": 1.5,
+    "transform": {
+      "value": {"position": [0.0, 1.6, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0},
+      "keyframes": [
+        {"frame": 0, "value": {"position": [0.0, 1.6, 0.0], "yaw_deg": 170.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0}, "easing": "auto"},
+        {"frame": 12, "value": {"position": [1.0, 1.6, -1.0], "yaw_deg": -160.0, "pitch_deg": 20.0, "roll_deg": 10.0, "hFOV_deg": 70.0}, "easing": "auto", "handles": {"out": [0.5, 0.2, 0.0]}},
+        {"frame": 40, "value": {"position": [3.0, 2.0, -2.0], "yaw_deg": -90.0, "pitch_deg": 70.0, "roll_deg": 0.0, "hFOV_deg": 60.0}, "easing": [0.42, 0.0, 0.58, 1.0]},
+        {"frame": 60, "value": {"position": [3.0, 2.0, -4.0], "yaw_deg": 90.0, "pitch_deg": 70.0, "roll_deg": 180.0, "hFOV_deg": 100.0}, "easing": "hold"},
+        {"frame": 75, "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": -80.0, "roll_deg": -30.0, "hFOV_deg": 40.0}, "easing": "auto", "handles": {"in": [0.0, 1.0, 0.0], "out": [1.0, 0.0, 0.0]}},
+        {"frame": 90, "value": {"position": [2.0, 0.0, 0.0], "yaw_deg": 45.0, "pitch_deg": -80.0, "roll_deg": 0.0, "hFOV_deg": 50.0}, "easing": "auto"},
+        {"frame": 130, "value": {"position": [2.0, 0.0, 5.0], "yaw_deg": 45.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 179.0}, "easing": "auto"}
+      ]
+    }
+  },
+  "scene": {
+    "clip": {"start": 12, "in": 4, "duration": 80},
+    "transform": {
+      "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.0},
+      "keyframes": [
+        {"frame": 0, "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.0}, "easing": [0.25, 0.1, 0.25, 1.0]},
+        {"frame": 30, "value": {"position": [0.0, 0.0, -3.0], "yaw_deg": 30.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 2.0}, "easing": "auto"},
+        {"frame": 50, "value": {"position": [1.0, 0.0, -3.0], "yaw_deg": 60.0, "pitch_deg": 10.0, "roll_deg": 0.0, "scale": 0.5}, "easing": "auto"},
+        {"frame": 90, "value": {"position": [1.0, 1.0, -3.0], "yaw_deg": 60.0, "pitch_deg": 10.0, "roll_deg": 20.0, "scale": 1.0}, "easing": "auto"}
+      ]
+    }
+  },
+  "stickers": [
+    {
+      "id": "st_sky",
+      "placement": "sky",
+      "source": {"kind": "file", "filename": "logo.png", "subfolder": "panorama_stickers", "storage": "input"},
+      "clip": {"start": 20, "in": 10, "duration": 60},
+      "transform": {
+        "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 20.0, "vFOV_deg": 20.0},
+        "keyframes": [
+          {"frame": 10, "value": {"yaw_deg": -30.0, "pitch_deg": 10.0, "roll_deg": 0.0, "hFOV_deg": 20.0, "vFOV_deg": 10.0}, "easing": "auto"},
+          {"frame": 20, "value": {"yaw_deg": 0.0, "pitch_deg": 30.0, "roll_deg": 45.0, "hFOV_deg": 40.0, "vFOV_deg": 20.0}, "easing": "auto"},
+          {"frame": 50, "value": {"yaw_deg": 60.0, "pitch_deg": 10.0, "roll_deg": 0.0, "hFOV_deg": 20.0, "vFOV_deg": 10.0}, "easing": [0.0, 0.0, 1.0, 1.0]},
+          {"frame": 60, "value": {"yaw_deg": 60.0, "pitch_deg": -10.0, "roll_deg": 0.0, "hFOV_deg": 25.0, "vFOV_deg": 12.0}, "easing": "auto"}
+        ]
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": [
+          {"frame": 10, "value": 0.0, "easing": "auto"},
+          {"frame": 12, "value": 1.0, "easing": "auto"},
+          {"frame": 40, "value": 1.0, "easing": [0.0, 1.5, 1.0, -0.5]},
+          {"frame": 60, "value": 0.0, "easing": "auto"}
+        ]
+      }
+    },
+    {
+      "id": "st_world",
+      "placement": "world",
+      "source": {"kind": "port"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "transform": {
+        "value": {"position": [0.0, 0.0, -2.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.0},
+        "keyframes": [
+          {"frame": 0, "value": {"position": [0.0, 1.0, -2.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.0}, "easing": "auto", "handles": {"out": [0.5, 0.0, 0.0]}},
+          {"frame": 30, "value": {"position": [1.0, 1.0, -2.0], "yaw_deg": 350.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.5}, "easing": "auto", "handles": {"in": [-0.5, 0.0, 0.0]}},
+          {"frame": 45, "value": {"position": [1.0, 2.0, -2.0], "yaw_deg": 370.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.0}, "easing": "auto"}
+        ]
+      },
+      "opacity": {"value": 0.8, "keyframes": []}
+    }
+  ],
+  "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
+  "painting_layer": null
+}

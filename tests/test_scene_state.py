@@ -148,21 +148,6 @@ def test_evaluate_result_does_not_alias_state():
     assert state["camera"]["transform"]["keyframes"][0]["value"]["position"][0] == 0.0
 
 
-@pytest.mark.parametrize("easing", ["auto", [0.25, 0.1, 0.25, 1.0]])
-def test_interpolating_easing_is_not_implemented_yet(easing):
-    state = load_scene_state({
-        "version": 2,
-        "camera": {"transform": {"keyframes": [
-            {"frame": 0, "value": {"yaw_deg": 0}, "easing": easing},
-            {"frame": 10, "value": {"yaw_deg": 90}},
-        ]}},
-    })
-    assert evaluate_scene_state(state, 0.0)["camera"]["yaw_deg"] == 0.0
-    assert evaluate_scene_state(state, 10.0)["camera"]["yaw_deg"] == 90.0
-    with pytest.raises(NotImplementedError):
-        evaluate_scene_state(state, 5.0)
-
-
 def _cut_state():
     return load_scene_state({
         "version": 2,

@@ -41,7 +41,7 @@ def world_to_pano(v) -> np.ndarray:
 
 
 def world_rotation(yaw_deg: float, pitch_deg: float, roll_deg: float = 0.0) -> np.ndarray:
-    right, up, forward = camera_basis(yaw_deg, pitch_deg, roll_deg)
+    right, up, forward = camera_basis(yaw_deg, pitch_deg, roll_deg, dtype=np.float64)
     return np.stack([pano_to_world(right), pano_to_world(up), -pano_to_world(forward)], axis=1)
 
 
