@@ -39,7 +39,8 @@
           {"frame": 15, "value": 0.5, "easing": "hold"},
           {"frame": 25, "value": 1.0, "easing": "auto"}
         ]
-      }
+      },
+      "z_index": 2
     },
     {
       "id": "st_world",
@@ -70,7 +71,8 @@
         "value": {"yaw_deg": -45.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 30.0, "vFOV_deg": 30.0},
         "keyframes": []
       },
-      "opacity": {"value": 1.0, "keyframes": []}
+      "opacity": {"value": 1.0, "keyframes": []},
+      "z_index": 0
     }
   ],
   "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},

@@ -188,7 +188,7 @@ def _sticker(raw):
         return None
     placement = raw.get("placement") if raw.get("placement") in PLACEMENTS else "sky"
     world = placement == "world"
-    return {
+    sticker = {
         "id": raw.get("id"),
         "placement": placement,
         "source": source,
@@ -199,6 +199,10 @@ def _sticker(raw):
         "transform": _group(raw.get("transform"), _world_value if world else _sky_value, world),
         "opacity": _group(raw.get("opacity"), _opacity_value, False),
     }
+    if not world:
+        z_index = _frame(raw.get("z_index"))
+        sticker["z_index"] = 0 if z_index is None else z_index
+    return sticker
 
 
 def _stickers(raw):
@@ -306,6 +310,7 @@ def _migrate_v1(raw):
             "visible": item.get("visible"),
             "locked": item.get("locked"),
             "crop": item.get("crop"),
+            "z_index": item.get("z_index"),
             "transform": {"value": {
                 "yaw_deg": item.get("yaw_deg"),
                 "pitch_deg": item.get("pitch_deg"),

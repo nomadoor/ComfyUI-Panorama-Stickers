@@ -112,7 +112,8 @@
             "easing": "hold"
           }
         ]
-      }
+      },
+      "z_index": 0
     },
     {
       "id": "dup",
@@ -188,7 +189,8 @@
       "opacity": {
         "value": 1.0,
         "keyframes": []
-      }
+      },
+      "z_index": 2
     }
   ],
   "painting": {

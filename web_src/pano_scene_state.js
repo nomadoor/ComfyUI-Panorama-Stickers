@@ -164,7 +164,7 @@ function sticker(raw) {
   if (!src) return null;
   const placement = PLACEMENTS.includes(raw.placement) ? raw.placement : "sky";
   const world = placement === "world";
-  return {
+  const out = {
     id: raw.id,
     placement,
     source: src,
@@ -175,6 +175,8 @@ function sticker(raw) {
     transform: group(raw.transform, world ? worldValue : skyValue, world),
     opacity: group(raw.opacity, opacityValue, false),
   };
+  if (!world) out.z_index = frameNumber(raw.z_index) ?? 0;
+  return out;
 }
 
 function stickers(raw) {
@@ -278,6 +280,7 @@ function migrateV1(raw) {
       visible: item.visible,
       locked: item.locked,
       crop: item.crop,
+      z_index: item.z_index,
       transform: {
         value: {
           yaw_deg: item.yaw_deg,

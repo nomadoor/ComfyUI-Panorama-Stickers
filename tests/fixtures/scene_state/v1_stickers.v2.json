@@ -78,7 +78,8 @@
       "opacity": {
         "value": 1.0,
         "keyframes": []
-      }
+      },
+      "z_index": 1
     },
     {
       "id": "st_b",
@@ -113,7 +114,8 @@
       "opacity": {
         "value": 1.0,
         "keyframes": []
-      }
+      },
+      "z_index": 2
     },
     {
       "id": "sticker_image_1",
@@ -147,7 +149,8 @@
       "opacity": {
         "value": 1.0,
         "keyframes": []
-      }
+      },
+      "z_index": 3
     }
   ],
   "painting": {

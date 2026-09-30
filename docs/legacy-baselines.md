@@ -9,7 +9,7 @@
   - 平均の絶対誤差が 0.5/255 以内。
   - チャンネル方向の最大誤差が 8/255 を超える画素が、全画素の 0.1% 以下。
 - 生成とテストでは、ノードのランタイムを描画だけのもの（`render_only_runtime`）に差し替える。プレビュー画像と MP4 を作らず、ComfyUI の temp に書き込まない。
-- 保存先：`tests/fixtures/legacy_goldens/`。`<case>.image.png`（16-bit RGB）と `<case>.mask.png`（16-bit グレー）の組で、合計約 520KB。
+- 保存先：`tests/fixtures/legacy_goldens/`。`<case>.image.png`（16-bit RGB）と `<case>.mask.png`（16-bit グレー）の組で、合計約 530KB。
 - 入力はすべてスクリプト内で合成する。背景は 512x256 の 8-bit ERP（経緯線の格子と、継ぎ目・赤道・極の目印）で、`output_preset` は `auto`。
 
 | case | 内容 | 出力サイズ |
@@ -20,6 +20,7 @@
 | `stickers_sky_overlap` | 半透明の Sticker を `z_index` で前に重ねる | 512x256 |
 | `stickers_paint` | ペイントのストローク 2 本 | 512x256 |
 | `stickers_paint_mask` | ペイントマスクのストローク（MASK 出力） | 512x256 |
+| `stickers_paint_interleaved` | ストロークのグループ（`z_index` 0）→ Sticker（1）→ 別のグループ（2）の順に重ねる | 512x256 |
 | `stickers_coverage_180` | `coverage` 180、Sticker あり | 512x512 |
 | `cutout_single_shot` | Cutout の単一ショット（yaw 30°、pitch 10°、roll 15°、90°x60°） | 224x128 |
 
@@ -38,7 +39,7 @@
   - 各ノードを 1 回ずつ捨てて暖めた後、10 回計測し、最小値を採る。
   - CUDA では、計測の前後に `torch.cuda.synchronize()` を入れる。
   - 背景のキャッシュが効かないよう、実行ごとに新しいテンソルを渡す。
-  - 新旧のノードは、同じプロセスで交互に（ABAB）計る。新しい Stickers ができたら、スクリプトの `CANDIDATES` に同じ場面で追加する。
+  - 新旧のノードは、同じプロセスで交互に（ABAB）計る。スクリプトの `CANDIDATES` には、旧ノード（`legacy`）と新しい Stickers（`new`、`PanoramaStickersNode`）を同じ場面で入れている。
 - 仕様の目標は、新しいノードの最小値を、旧ノードの最小値の 1.2 倍以内に収めること。
 
 ### 基準値の再計測（ユーザーに依頼）

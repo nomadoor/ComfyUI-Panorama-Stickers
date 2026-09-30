@@ -57,7 +57,15 @@ class TestNodesPreview(unittest.TestCase):
         class _ComfyNode:
             pass
 
-        io_module = SimpleNamespace(
+        class _IoModule(SimpleNamespace):
+            # Port types these tests do not look at, such as the new Stickers node's media ports.
+            def __getattr__(self, name):
+                return _PortFactory(name)
+
+            def Custom(self, io_type):
+                return _PortFactory(io_type)
+
+        io_module = _IoModule(
             ComfyNode=_ComfyNode,
             Schema=_Schema,
             NodeOutput=_NodeOutput,
@@ -74,6 +82,8 @@ class TestNodesPreview(unittest.TestCase):
         comfy_api_latest_module = ModuleType("comfy_api.latest")
         comfy_api_latest_module.io = io_module
         comfy_api_latest_module.ComfyExtension = type("ComfyExtension", (), {})
+        comfy_api_latest_module.Input = SimpleNamespace(Video=type("VideoInput", (), {}))
+        comfy_api_latest_module.Types = SimpleNamespace(MESH=type("MESH", (), {}), SPLAT=type("SPLAT", (), {}), File3D=type("File3D", (), {}))
 
         self.mock_nodes = MagicMock()
         self.mock_preview_image = MagicMock()

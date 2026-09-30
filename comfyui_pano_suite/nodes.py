@@ -7,7 +7,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from comfy_api.latest import ComfyExtension, io
+import comfy.model_management
+from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
@@ -29,6 +30,7 @@ from .core.math import (
     calculate_dimensions_from_megapixels,
     calculate_output_dimensions,
     finite_float,
+    vfov_from_hfov,
 )
 from .core.painting import (
     alpha_composite_over_rgb,
@@ -36,7 +38,11 @@ from .core.painting import (
     painting_state_has_renderables,
     render_painting_to_erp,
 )
+from .core.render import Projection, SceneSources, StickerSource, render_frame
+from .core.scene_eval import evaluate_scene_state
+from .core.scene_state import load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
+from .core.stickers import load_source_rgba
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -534,21 +540,13 @@ def _first_image_tensor(image):
     return NODE_RUNTIME._first_image(image)
 
 
-def _vfov_from_hfov(hfov_deg: float, image_w: int, image_h: int) -> float:
-    width = max(1, int(image_w))
-    height = max(1, int(image_h))
-    hfov = float(np.clip(hfov_deg, 0.1, 179.0))
-    vfov = 2.0 * math.degrees(math.atan(math.tan(math.radians(hfov) * 0.5) * (height / width)))
-    return float(np.clip(vfov, 0.1, 179.0))
-
-
 def _default_pose_for_sticker(image_w: int, image_h: int) -> dict:
     hfov = 30.0
     return {
         "yaw_deg": 0.0,
         "pitch_deg": 0.0,
         "hFOV_deg": hfov,
-        "vFOV_deg": _vfov_from_hfov(hfov, image_w, image_h),
+        "vFOV_deg": vfov_from_hfov(hfov, image_w, image_h),
         "rot_deg": 0.0,
     }
 
@@ -568,7 +566,7 @@ def _pose_from_sticker_state(parsed_state: dict | None, image_w: int, image_h: i
         "yaw_deg": finite_float(parsed_state.get("yaw_deg", default_pose["yaw_deg"]), default_pose["yaw_deg"]),
         "pitch_deg": finite_float(parsed_state.get("pitch_deg", default_pose["pitch_deg"]), default_pose["pitch_deg"]),
         "hFOV_deg": hfov,
-        "vFOV_deg": _vfov_from_hfov(hfov, image_w, image_h),
+        "vFOV_deg": vfov_from_hfov(hfov, image_w, image_h),
         "rot_deg": finite_float(parsed_state.get("roll_deg", default_pose["rot_deg"]), default_pose["rot_deg"]),
     }
 
@@ -599,7 +597,7 @@ def _build_runtime_external_sticker(
     if parsed_pose is not None and str(runtime_sticker.get("source_state_hash", "")) != payload_state_hash:
         runtime_sticker.update(parsed_pose)
     else:
-        runtime_sticker["vFOV_deg"] = _vfov_from_hfov(
+        runtime_sticker["vFOV_deg"] = vfov_from_hfov(
             runtime_sticker.get("hFOV_deg", 30.0),
             image_w,
             image_h,
@@ -982,6 +980,176 @@ class PanoramaStickersNode(io.ComfyNode):
         progress.stage("Done")
         progress.finish()
         return io.NodeOutput(out_t, mask_t, ui=ui_ret)
+
+
+MoGeGeometry = io.Custom("MOGE_GEOMETRY")
+PanoScene = io.Custom("PANO_SCENE")
+MESH_FILE_TYPES = [io.File3DGLB, io.File3DGLTF, io.File3DFBX, io.File3DOBJ, io.File3DSTL, io.File3DUSDZ, io.File3DAny]
+SPLAT_FILE_TYPES = [io.File3DPLY, io.File3DSPLAT, io.File3DSPZ, io.File3DKSPLAT, io.File3DSplatAny]
+
+
+def _input_type_name(value) -> str:
+    if isinstance(value, torch.Tensor):
+        return "IMAGE"
+    if isinstance(value, Input.Video):
+        return "VIDEO"
+    if isinstance(value, Types.MESH):
+        return "MESH"
+    if isinstance(value, Types.SPLAT):
+        return "SPLAT"
+    if isinstance(value, Types.File3D):
+        return "3D file"
+    if isinstance(value, dict):
+        return "MOGE_GEOMETRY"
+    return type(value).__name__
+
+
+def _reject_unsupported_inputs(bg_media, scene, sticker):
+    # Temporary on the integration branch: VIDEO, scene, 3D, and IMAGE batch stickers are added by later tickets.
+    for name, value in (("bg_media", bg_media), ("scene", scene), ("sticker", sticker)):
+        if value is None or (name != "scene" and isinstance(value, torch.Tensor)):
+            continue
+        raise NotImplementedError(f"Panorama Stickers: {_input_type_name(value)} on the {name} input is not supported yet.")
+    if sticker is not None and sticker.shape[0] > 1:
+        raise NotImplementedError("Panorama Stickers: an IMAGE batch on the sticker input is not supported yet.")
+
+
+def _unused_sticker_id(stickers: list[dict]) -> str:
+    used = {sticker["id"] for sticker in stickers}
+    index = 1
+    while f"sticker_{index}" in used:
+        index += 1
+    return f"sticker_{index}"
+
+
+def _port_sticker(state: dict, sticker_state) -> dict:
+    """The port Sticker appended when the state has none, posed by `sticker_state` when given."""
+    transform = {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 30.0}
+    parsed = load_sticker_state(sticker_state)
+    if parsed is not None:
+        if len(parsed["camera"]) > 1:
+            raise NotImplementedError("Panorama Stickers: a sticker_state with more than one Camera Keyframe is not supported yet.")
+        pose = parsed["camera"][0]["value"]
+        transform = {key: pose[key] for key in transform}
+    # Above every other sky Sticker, as the legacy node placed it (paint layers are not counted).
+    z_index = max((sticker["z_index"] for sticker in state["stickers"] if sticker["placement"] == "sky"), default=-1) + 1
+    raw = {"id": _unused_sticker_id(state["stickers"]), "source": {"kind": "port"}, "transform": {"value": transform}, "z_index": z_index}
+    return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
+
+
+def _port_rgba(sticker: torch.Tensor) -> np.ndarray:
+    image = sticker[0].detach().cpu().float().clamp(0.0, 1.0).numpy()
+    alpha = image[..., 3:4] if image.shape[-1] == 4 else np.ones((*image.shape[:2], 1), dtype=np.float32)
+    return np.concatenate([image[..., :3], alpha], axis=-1)
+
+
+def _resolve_sources(state: dict, sticker, sticker_state) -> SceneSources:
+    """Read every Sticker source into memory. Appends the port Sticker to `state` when it is missing."""
+    stickers = {}
+    port_image = None
+    if sticker is not None:
+        if not any(item["source"]["kind"] == "port" for item in state["stickers"]):
+            state["stickers"].append(_port_sticker(state, sticker_state))
+        port_image = _port_rgba(sticker)
+    for item in state["stickers"]:
+        source = item["source"]
+        if source["kind"] == "port":
+            if port_image is not None:
+                stickers[item["id"]] = StickerSource(port_image, item["crop"], item.get("z_index", 0), derive_vfov=True)
+            continue
+        rgba = load_source_rgba(source)
+        if rgba is None:
+            _log.warning("Panorama Stickers: could not read the source of Sticker %s; it is not drawn.", item["id"])
+            continue
+        stickers[item["id"]] = StickerSource(rgba, item["crop"], item.get("z_index", 0))
+    return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
+
+
+def _decide_timeline(state: dict, bg_media) -> tuple[float, list[tuple[float, int | None]]]:
+    """(a) Timeline: fps, and per output frame the Timeline frame to evaluate and the bg_media frame to draw."""
+    bg_count = 0 if bg_media is None else int(bg_media.shape[0])
+    length = state["timeline"]["length"] or (bg_count if bg_count > 1 else 1)
+    if bg_count > 1:
+        frames = [(float(index), index if index < bg_count else None) for index in range(length)]
+    else:
+        frames = [(float(index), 0 if bg_count else None) for index in range(length)]
+    return state["timeline"]["fps"], frames
+
+
+def _render_timeline(state: dict, sources: SceneSources, projection: Projection, frames, bg_media, bg_color) -> tuple[torch.Tensor, torch.Tensor]:
+    """(b) Render each output frame with the shared render function."""
+    device = comfy.model_management.get_torch_device()
+    images = torch.empty((len(frames), projection.height, projection.width, 3), dtype=torch.float32)
+    masks = torch.empty((len(frames), projection.height, projection.width), dtype=torch.float32)
+    cache = {}
+    previous = None
+    for index, (frame, bg_index) in enumerate(frames):
+        evaluated = evaluate_scene_state(state, frame)
+        color, mask, _depth = render_frame(
+            evaluated,
+            sources,
+            evaluated["camera"],
+            projection,
+            bg=None if bg_index is None else bg_media[bg_index],
+            bg_key=bg_index,
+            bg_color=bg_color,
+            device=device,
+            cache=cache,
+        )
+        # A reused frame is copied from the previous output row instead of transferred from the device again.
+        if color is previous:
+            images[index] = images[index - 1]
+            masks[index] = masks[index - 1]
+        else:
+            images[index] = color
+            masks[index] = mask
+        previous = color
+    return images, masks
+
+
+def _assemble_outputs(images: torch.Tensor, masks: torch.Tensor, fps: float) -> io.NodeOutput:
+    """(c) Output ports in order: IMAGE, MASK, AUDIO (none yet), fps, PANO_SCENE (not built yet)."""
+    return io.NodeOutput(images, masks, None, fps, None)
+
+
+# TODO(#78): rename to PanoramaStickersNode, matching the node_id, once the legacy class is removed.
+class PanoramaStickersSceneNode(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="PanoramaStickersNode",
+            display_name="Panorama Stickers",
+            category="Panorama Suite",
+            inputs=[
+                io.MultiType.Input(io.Image.Input("bg_media"), types=[io.Video], optional=True),
+                io.MultiType.Input("scene", types=[io.Splat, io.Mesh, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry], optional=True),
+                io.MultiType.Input(io.Image.Input("sticker"), types=[io.Video, io.Mesh, io.Splat, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES], optional=True),
+                io.String.Input("sticker_state", default="", multiline=False, dynamic_prompts=False, optional=True, force_input=True),
+                io.Color.Input("bg_color", default="#00ff00"),
+                io.Combo.Input("coverage", options=["360", "180"], default="360"),
+                io.Combo.Input("output_preset", options=["1024", "2048", "4096", "auto"], default="2048"),
+                io.String.Input("state_json", default="", multiline=True, dynamic_prompts=False, advanced=True),
+            ],
+            outputs=[
+                io.Image.Output("image"),
+                io.Mask.Output("mask"),
+                io.Audio.Output("audio"),
+                io.Float.Output("fps"),
+                PanoScene.Output("pano_scene"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
+        _reject_unsupported_inputs(bg_media, scene, sticker)
+        state = load_scene_state(state_json)
+        sources = _resolve_sources(state, sticker, sticker_state)
+        out_w, out_h, _uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg_media)
+        projection = Projection.erp(out_w, out_h, normalize_coverage(coverage))
+        bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
+        fps, frames = _decide_timeline(state, bg_media)
+        images, masks = _render_timeline(state, sources, projection, frames, bg_media, bg_rgb)
+        return _assemble_outputs(images, masks, fps)
 
 
 class PanoramaCutoutNode(io.ComfyNode):
@@ -1402,6 +1570,7 @@ class PanoramaSuiteExtension(ComfyExtension):
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return [
             PanoramaStickersNode,
+            PanoramaStickersSceneNode,
             PanoramaCutoutNode,
             PanoramaPreviewNode,
             PanoramaSeamPrepNode,
