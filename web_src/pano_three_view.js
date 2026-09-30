@@ -10,17 +10,21 @@ import {
   ClampToEdgeWrapping,
   CustomBlending,
   LinearFilter,
+  Matrix3,
+  Matrix4,
   Mesh,
   NoBlending,
   OneFactor,
   OneMinusSrcAlphaFactor,
   PerspectiveCamera,
   PlaneGeometry,
+  Quaternion,
   RepeatWrapping,
   Scene,
   ShaderMaterial,
   SphereGeometry,
   Texture,
+  Vector4,
   WebGLRenderer,
 } from "three";
 
@@ -73,6 +77,42 @@ void main() {
   gl_FragColor = texture2D(map, vUv) * opacity;
 }`;
 
+// The Unwrap view draws every layer on a full-view quad in the ERP layout: longitude runs across
+// the view and latitude down it, with the ERP's own pixels for the ERP layers.
+const UNWRAP_VERTEX = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}`;
+
+const UNWRAP_ERP_FRAGMENT = `
+uniform sampler2D map;
+uniform float opacity;
+varying vec2 vUv;
+void main() {
+  gl_FragColor = texture2D(map, vec2(vUv.x, 1.0 - vUv.y)) * opacity;
+}`;
+
+// A sky Sticker seen along each ERP pixel's World direction, in the Sticker's own frame (looking
+// down -Z) where its image plane is rect one unit ahead.
+const UNWRAP_STICKER_FRAGMENT = `
+uniform sampler2D map;
+uniform float opacity;
+uniform mat3 toSticker;
+uniform vec4 rect;
+varying vec2 vUv;
+const float PI = 3.1415926535897932384626433832795;
+void main() {
+  float lon = (vUv.x - 0.5) * 2.0 * PI;
+  float lat = (vUv.y - 0.5) * PI;
+  vec3 local = toSticker * vec3(cos(lat) * sin(lon), sin(lat), -cos(lat) * cos(lon));
+  if (local.z >= -1e-5) discard;
+  vec2 plane = local.xy / -local.z;
+  if (plane.x < rect.x || plane.x > rect.z || plane.y < rect.y || plane.y > rect.w) discard;
+  gl_FragColor = texture2D(map, (plane - rect.xy) / (rect.zw - rect.xy)) * opacity;
+}`;
+
 export function applyViewportCamera(camera, setup) {
   const { quaternion } = setup;
   camera.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
@@ -91,6 +131,16 @@ export function placeSticker(mesh, layer) {
     .multiplyScalar(STICKER_DISTANCE)
     .applyQuaternion(mesh.quaternion);
   mesh.scale.set((rect.x1 - rect.x0) * STICKER_DISTANCE, (rect.y1 - rect.y0) * STICKER_DISTANCE, 1);
+}
+
+// The Unwrap sticker shader's uniforms: World to the Sticker's frame, and its rect as (x0, y0, x1, y1).
+export function unwrapStickerUniforms(layer) {
+  const { quaternion, rect } = layer;
+  const rotation = new Matrix4().makeRotationFromQuaternion(new Quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w));
+  return {
+    toSticker: new Matrix3().setFromMatrix4(rotation).transpose(),
+    rect: new Vector4(rect.x0, rect.y0, rect.x1, rect.y1),
+  };
 }
 
 function mediaSize(media) {
@@ -136,6 +186,12 @@ function createErpMesh(geometry, blending) {
   return new Mesh(geometry, material);
 }
 
+function createQuad(geometry, fragmentShader, uniforms, blending = CustomBlending) {
+  const mesh = new Mesh(geometry, createMaterial(UNWRAP_VERTEX, fragmentShader, uniforms, blending));
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
 export function createThreeView() {
   const canvas = document.createElement("canvas");
   const renderer = new WebGLRenderer({
@@ -151,13 +207,38 @@ export function createThreeView() {
   const scene = new Scene();
   const domeGeometry = new SphereGeometry(DOME_RADIUS, 64, 32);
   const planeGeometry = new PlaneGeometry(1, 1);
+  const quadGeometry = new PlaneGeometry(2, 2);
   // The background replaces what is below it like the previous renderer; the other layers blend.
-  const backgroundMesh = createErpMesh(domeGeometry, NoBlending);
-  const erpMeshes = [];
-  const stickerMeshes = [];
+  // Each projection keeps its meshes: the background, and pools of ERP and Sticker meshes.
+  const panorama = {
+    background: createErpMesh(domeGeometry, NoBlending),
+    erp: [],
+    sticker: [],
+    createErp: () => createErpMesh(domeGeometry, CustomBlending),
+    createSticker: () => new Mesh(planeGeometry, createMaterial(STICKER_VERTEX, STICKER_FRAGMENT, {})),
+    placeErp(mesh, halfCoverage) {
+      mesh.material.uniforms.halfCoverage.value = halfCoverage;
+    },
+    placeSticker,
+  };
+  // The Unwrap view lays a 180 ERP over the whole width like the previous renderer.
+  const unwrap = {
+    background: createQuad(quadGeometry, UNWRAP_ERP_FRAGMENT, {}, NoBlending),
+    erp: [],
+    sticker: [],
+    createErp: () => createQuad(quadGeometry, UNWRAP_ERP_FRAGMENT, {}),
+    createSticker: () => createQuad(quadGeometry, UNWRAP_STICKER_FRAGMENT, { toSticker: { value: null }, rect: { value: null } }),
+    placeErp() {},
+    placeSticker(mesh, layer) {
+      const { toSticker, rect } = unwrapStickerUniforms(layer);
+      mesh.material.uniforms.toSticker.value = toSticker;
+      mesh.material.uniforms.rect.value = rect;
+    },
+  };
   // Per owner: its textures by layer id and the size it last rendered at. Surfaces that share this
-  // view (the on-node Previews) pass their own owner, so rendering one does not drop the textures
-  // of the others, and the canvas keeps the largest size in use instead of resizing per owner.
+  // view (the on-node Previews, the Cutout camera preview) pass their own owner, so rendering one
+  // does not drop the textures of the others, and the canvas keeps the largest size in use instead
+  // of resizing per owner.
   const owners = new Map();
   renderer.setScissorTest(true);
 
@@ -181,31 +262,23 @@ export function createThreeView() {
     return entry.texture;
   }
 
-  function erpMesh(index) {
-    if (!erpMeshes[index]) erpMeshes[index] = createErpMesh(domeGeometry, CustomBlending);
-    return erpMeshes[index];
+  function pooled(meshes, index, create) {
+    if (!meshes[index]) meshes[index] = create();
+    return meshes[index];
   }
 
-  function stickerMesh(index) {
-    if (!stickerMeshes[index]) {
-      stickerMeshes[index] = new Mesh(planeGeometry, createMaterial(STICKER_VERTEX, STICKER_FRAGMENT, {}));
-    }
-    return stickerMeshes[index];
-  }
-
-  function addErp(owned, mesh, layer, halfCoverage) {
+  function addErp(owned, projection, mesh, layer, halfCoverage) {
     mesh.material.uniforms.map.value = texture(owned, layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
     mesh.material.uniforms.opacity.value = layer.opacity;
-    mesh.material.uniforms.halfCoverage.value = halfCoverage;
+    projection.placeErp(mesh, halfCoverage);
     scene.add(mesh);
     return mesh;
   }
 
-  function addSticker(owned, layer, stickerIndex) {
-    const mesh = stickerMesh(stickerIndex);
+  function addSticker(owned, projection, mesh, layer) {
     mesh.material.uniforms.map.value = texture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true);
     mesh.material.uniforms.opacity.value = layer.opacity;
-    placeSticker(mesh, layer);
+    projection.placeSticker(mesh, layer);
     scene.add(mesh);
     return mesh;
   }
@@ -215,12 +288,7 @@ export function createThreeView() {
     return size.width > 0 && size.height > 0;
   }
 
-  // input: { width, height, camera, background, layers, owner }. camera is a viewportCamera()
-  // setup, background is { media, revision, coverage } or null, and layers are the Sky layers from
-  // back to front: { kind: "erp", id, media, revision, opacity } or
-  // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. owner is optional.
-  // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
-  function render(input) {
+  function draw(projection, input) {
     const scale = Math.min(1, MAX_RENDER_SIDE / Math.max(input.width, input.height));
     const width = Math.max(1, Math.round(input.width * scale));
     const height = Math.max(1, Math.round(input.height * scale));
@@ -237,21 +305,20 @@ export function createThreeView() {
     if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) renderer.setSize(canvasWidth, canvasHeight, false);
     renderer.setViewport(0, 0, width, height);
     renderer.setScissor(0, 0, width, height);
-    applyViewportCamera(camera, input.camera);
     scene.clear();
     const owned = entry.textures;
     owned.forEach((item) => { item.used = false; });
     const background = input.background;
     if (background && hasSize(background.media)) {
-      addErp(owned, backgroundMesh, { id: "background", opacity: 1, ...background }, background.coverage === 180);
+      addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
     }
     let erpIndex = 0;
     let stickerIndex = 0;
     input.layers.forEach((layer, index) => {
       if (!hasSize(layer.media)) return;
       const mesh = layer.kind === "erp"
-        ? addErp(owned, erpMesh(erpIndex++), layer, false)
-        : addSticker(owned, layer, stickerIndex++);
+        ? addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false)
+        : addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
       mesh.renderOrder = index + 1;
     });
     owned.forEach((item, id) => {
@@ -264,6 +331,21 @@ export function createThreeView() {
     return { canvas, x: 0, y: canvas.height - height, width, height };
   }
 
+  // input: { width, height, camera, background, layers, owner }. camera is a viewportCamera() or
+  // shotCamera() setup, background is { media, revision, coverage } or null, and layers are the Sky
+  // layers from back to front: { kind: "erp", id, media, revision, opacity } or
+  // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. owner is optional.
+  // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
+  function render(input) {
+    applyViewportCamera(camera, input.camera);
+    return draw(panorama, input);
+  }
+
+  // input: render()'s input without camera; the frame is the layers laid out as an ERP.
+  function renderUnwrap(input) {
+    return draw(unwrap, input);
+  }
+
   // Frees the textures of an owner that stops drawing; the canvas shrinks on the next render if
   // this owner was the largest.
   function release(owner) {
@@ -274,14 +356,17 @@ export function createThreeView() {
   function dispose() {
     owners.forEach((entry) => entry.textures.forEach((item) => item.texture.dispose()));
     owners.clear();
-    [backgroundMesh, ...erpMeshes, ...stickerMeshes].forEach((mesh) => mesh.material.dispose());
+    [panorama, unwrap].forEach((projection) => {
+      [projection.background, ...projection.erp, ...projection.sticker].forEach((mesh) => mesh.material.dispose());
+    });
     domeGeometry.dispose();
     planeGeometry.dispose();
+    quadGeometry.dispose();
     renderer.dispose();
     // Release the WebGL context now instead of when the canvas is collected, so reopening the
     // editor does not pile up contexts.
     renderer.forceContextLoss();
   }
 
-  return { render, release, dispose };
+  return { render, renderUnwrap, release, dispose };
 }

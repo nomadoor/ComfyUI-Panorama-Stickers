@@ -33,3 +33,21 @@ three.js は `colorSpace` が `NoColorSpace` のテクスチャを `UNPACK_COLOR
 - ノード上の Preview は、グラフ上のすべての Preview ノードで three.js のビューを一つ共有する（`pano_preview_view.js`）。各ノードは描いた直後の画面を自分の 2D の canvas に `drawImage` で写す。以前は Preview ノードごとに WebGL コンテキストを一つ持っていたが、ノードの数によらず一つになる。テクスチャはノードごとに持ち（`render` の `owner`）、素材が外れたときとノードを消したときに解放し、最後のノードが消えるとコンテキストも解放する。共有の canvas は使っているノードの中で最大の大きさに保ち、各ノードは左下から自分の大きさの範囲だけに描いて、その矩形を写す。
 - チャンクは、ノード上の Preview に表示する IMAGE / VIDEO が初めて用意できたときに読み込む。`LoadImage` などにつながった Preview があるワークフローでは、グラフを開いた直後に読み込まれる。読み込みが終わるまでは、画像のない状態と同じ格子を表示する。
 - チャンクか WebGL が使えないときは、ノード上の Preview もモーダルも以前の描画経路で表示する（#69 で削除する）。ノード上の Preview は、すべての Preview ノードが消えたあと、次に描くときに読み込みをやり直す。
+
+## Cutout エディタ（#67）
+
+Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_three_view.js` で描く。新しい描画系統は作らない。
+
+- Panorama タブは Stickers と同じ描画を使う。
+- Frame タブは `shotCamera` で shot から覗く three.js のカメラを作り、`frameViewContext` が ADR 0021 のとおりゲートの外まで同じ焦点距離で描く範囲を決める。presentation scale・ゲート・FOV の関係は変えていない。表示する撮影範囲が Cutout ノードの出力と一致することは、`tests/test_legacy_goldens.py` が #48 の Cutout の基準画像で確かめている。
+- カメラプレビューは、エディタのビューを `owner` を分けて共有する（WebGL コンテキストはエディタで一つ）。描画先の 2D の canvas は Vue の `PanoFloatingRight.vue` が持つ。shot・背景・レイヤーが変わらない tick では描き直さない。
+- Unwrap 表示も three.js で描く（`renderUnwrap`）。Stickers のエディタと Preview のモーダルの Unwrap も同じ経路になる。180 の ERP を横幅いっぱいに引き伸ばす点は以前の描画と同じにしている。
+- three.js を読み込めないときは、Stickers と同じく以前の描画経路に戻る。
+
+### #69 で消すもの
+
+- エディタは `pano_cutout_camera.js` の `mount` と `pano_scene_camera_dom.js` を使わなくなった。以前の描画経路とともに #69 で削除する。
+
+### 既知の食い違い（変更していない）
+
+- shot の FOV が 0 のとき、エディタの `getCutoutCameraParams` は以前からの互換で 90° / 60° とみなす。状態 v2 への移行（`pano_scene_state.js` の `v1Camera`）とノード（`nodes.py`）は最小値（1° または 0.1°）に丸めるので、この場合だけエディタの表示とノードの出力が一致しない。また `v1Camera` は shot の `rot_deg` を roll として読まない。

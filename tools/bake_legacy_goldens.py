@@ -30,6 +30,7 @@ from tools.golden_png import write_png16
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "legacy_goldens"
 BG_WIDTH = 512
 BG_HEIGHT = 256
+CUTOUT_SHOT = {"id": "shot_1", "yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 15.0, "hFOV_deg": 90.0, "vFOV_deg": 60.0}
 ROTATED_POSE = {"yaw_deg": 172.0, "pitch_deg": 20.0, "hFOV_deg": 50.0, "vFOV_deg": 38.0, "rot_deg": 30.0}
 
 
@@ -183,9 +184,7 @@ CASES = {
     "stickers_coverage_180": lambda: _run_stickers("180", [
         _sticker("front", "quadrants", 0, yaw_deg=45.0, pitch_deg=15.0, hFOV_deg=40.0, vFOV_deg=30.0, rot_deg=10.0),
     ]),
-    "cutout_single_shot": lambda: _run_cutout(
-        {"id": "shot_1", "yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 15.0, "hFOV_deg": 90.0, "vFOV_deg": 60.0},
-    ),
+    "cutout_single_shot": lambda: _run_cutout(CUTOUT_SHOT),
 }
 
 

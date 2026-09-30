@@ -36,7 +36,9 @@ defineProps({
         height: `${preview.height || (preview.expanded ? 192 : 132)}px`,
       }"
     >
-      <div class="pano-camera-preview-host" data-camera-preview-host />
+      <div class="pano-camera-preview-host" data-camera-preview-host>
+        <canvas data-camera-preview-canvas />
+      </div>
       <button
         v-if="previewToggle.visible"
         class="pano-btn pano-btn-icon pano-camera-preview-toggle"

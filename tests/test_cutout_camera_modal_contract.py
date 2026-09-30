@@ -12,7 +12,11 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("const cutoutPreviewCamera = type === \"cutout\"", editor_js)
         self.assertIn("cutoutPreviewCamera.renderShotToContext", editor_js)
         self.assertIn('uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();', editor_js)
-        self.assertIn('const drew = renderCutoutPreviewToContext(ctx, contextRect, contextShot, { quality: previewQuality }) === true;', editor_js)
+        # The Frame view and the camera preview draw with three.js, and with the previous renderer
+        # only when three.js cannot load.
+        self.assertIn("? drawEditorViewShot(ctx, contextRect, contextShot)", editor_js)
+        self.assertIn(": renderCutoutPreviewToContext(ctx, contextRect, contextShot, { quality: previewQuality }) === true;", editor_js)
+        self.assertIn('drawEditorViewShot(previewCtx, rect, shot, "camera_preview")', editor_js)
 
     def test_cutout_frame_entry_points_are_not_stubbed(self):
         editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
