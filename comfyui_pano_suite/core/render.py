@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 from .display_layers import compose_display_list_to_overlay_rgba, render_remaining_flat_paint_layer_from_state
 from .display_list import alpha_composite_over_rgba
-from .math import vfov_from_hfov
+from .math import camera_basis, vfov_from_hfov
 from .painting import load_painting_layer_payload, render_painting_to_erp
 
 
@@ -68,19 +68,19 @@ class SceneSources:
     painting_layer: dict | None = None
 
 
-def composite_frame(bg_color, bg: torch.Tensor | None, sky: torch.Tensor, world=()) -> tuple[torch.Tensor, torch.Tensor]:
+def composite_frame(bg_color, bg: torch.Tensor | None, sky: torch.Tensor, world=(), bg_valid: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     """Composite one frame back to front: `bg_color`, `bg`, `sky`, then the `world` layers from far to near.
 
-    `bg` is an opaque (H, W, 3) image or None. `sky` and each World layer's color are straight-alpha (H, W, 4);
+    `bg` is an opaque (H, W, 3) image or None, and `bg_valid` an optional bool (H, W) of where `bg` has an
+    image; `bg_color` shows elsewhere. `sky` and each World layer's color are straight-alpha (H, W, 4);
     `world` is a sequence of (rgba, depth) with depth (H, W), +inf where the layer is empty. Layers at the same
     depth keep their list order. Returns color (H, W, 3) and depth (H, W): the nearest World layer with
     alpha > 0, +inf (Sky) elsewhere.
     """
     height, width = sky.shape[:2]
-    if bg is None:
-        color = torch.as_tensor(bg_color, dtype=sky.dtype, device=sky.device).expand(height, width, 3)
-    else:
-        color = bg
+    color = torch.as_tensor(bg_color, dtype=sky.dtype, device=sky.device).expand(height, width, 3)
+    if bg is not None:
+        color = bg if bg_valid is None else torch.where(bg_valid[..., None], bg, color)
     color = torch.lerp(color, sky[..., :3], sky[..., 3:])
     depth = torch.full((height, width), math.inf, dtype=sky.dtype, device=sky.device)
     if world:
@@ -145,41 +145,66 @@ def _sky_stickers(evaluated: dict, sources: SceneSources) -> list[dict]:
     return stickers
 
 
-def _to_projection(layer: np.ndarray, projection: Projection, device) -> torch.Tensor:
-    """Map a 360 ERP layer, straight-alpha (h, w, 4) or a mask (h, w), onto an ERP projection.
+def _view(camera: dict, projection: Projection, device) -> torch.Tensor:
+    """Where each output pixel looks, as `grid_sample` coordinates (H, W, 2) in a 360 ERP of the Scene
+    (align_corners=False): x from longitude -180 to 180 and y from the zenith to the nadir.
 
-    180 keeps the center half of the longitudes. Color is resized premultiplied so that transparent pixels
-    do not bleed into Sticker edges.
+    The output is an ERP around the Camera's orientation (`camera_basis`); 180 spans its front hemisphere. The
+    Camera's position does not enter: the background and the Sky are infinitely far away.
     """
-    layer = torch.from_numpy(np.ascontiguousarray(layer, dtype=np.float32)).to(device)
-    if projection.coverage == 180:
-        width = layer.shape[1]
-        x0 = (width - width // 2) // 2
-        layer = layer[:, x0:x0 + width // 2]
-    if layer.ndim == 2 or (layer.shape[0] == projection.height and layer.shape[1] == projection.width):
-        return _resize(layer, projection.height, projection.width)
-    alpha = layer[..., 3:]
-    premultiplied = _resize(torch.cat([layer[..., :3] * alpha, alpha], dim=-1), projection.height, projection.width)
-    alpha = premultiplied[..., 3:]
-    rgb = torch.where(alpha > 1e-6, premultiplied[..., :3] / alpha.clamp_min(1e-6), 0.0)
-    return torch.cat([rgb, alpha], dim=-1)
+    span = math.pi if projection.coverage == 180 else 2.0 * math.pi
+    lon = ((torch.arange(projection.width, dtype=torch.float32, device=device) + 0.5) / projection.width - 0.5) * span
+    lat = (0.5 - (torch.arange(projection.height, dtype=torch.float32, device=device) + 0.5) / projection.height) * math.pi
+    cos_lat, sin_lat = lat.cos()[:, None], lat.sin()[:, None]
+    sin_lon, cos_lon = lon.sin(), lon.cos()
+    # A direction (x, y, z) seen from the Camera is x * right + y * up + z * forward in the Scene.
+    right, up, forward = (axis.tolist() for axis in camera_basis(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]))
+    x, y, z = (torch.addcmul(up[i] * sin_lat, cos_lat, right[i] * sin_lon + forward[i] * cos_lon) for i in range(3))
+    return torch.stack([torch.atan2(x, z).div_(math.pi), torch.atan2(y, torch.hypot(x, z)).mul_(-2.0 / math.pi)], dim=-1)
+
+
+def _sample(image: torch.Tensor, grid: torch.Tensor) -> torch.Tensor:
+    """Bilinear samples of `image` (h, w, C) at `grid` (H, W, 2), clamped at the edges."""
+    sampled = F.grid_sample(image.permute(2, 0, 1)[None], grid[None], mode="bilinear", padding_mode="border", align_corners=False)
+    return sampled[0].permute(1, 2, 0)
+
+
+def _sample_erp(erp: torch.Tensor, view: torch.Tensor) -> torch.Tensor:
+    """Sample a 360 ERP (h, w, C) at `view`, wrapping around the seam through a column copied from the
+    opposite side at each edge."""
+    width = erp.shape[1]
+    grid = view.clone()
+    grid[..., 0] *= width / (width + 2)
+    return _sample(torch.cat([erp[:, -1:], erp, erp[:, :1]], dim=1), grid)
 
 
 def _resize(image: torch.Tensor, height: int, width: int) -> torch.Tensor:
     if image.shape[0] == height and image.shape[1] == width:
         return image
-    channels_last = image.ndim == 3
-    work = image.permute(2, 0, 1)[None] if channels_last else image[None, None]
-    work = F.interpolate(work, size=(height, width), mode="bilinear", align_corners=False)
-    return work[0].permute(1, 2, 0) if channels_last else work[0, 0]
+    work = F.interpolate(image.permute(2, 0, 1)[None], size=(height, width), mode="bilinear", align_corners=False)
+    return work[0].permute(1, 2, 0)
 
 
 def _render_sky(evaluated: dict, sources: SceneSources, projection: Projection, device) -> tuple[torch.Tensor, torch.Tensor]:
-    # The Sky is drawn as a 360 ERP and then projected, as the legacy node drew its overlay.
+    """The Sky as a 360 ERP on `device`: straight-alpha color (h, w, 4) and the paint mask (h, w).
+
+    It is drawn at the output width over 360 degrees, as the legacy node drew its overlay, so that a 360 output
+    without Camera rotation uses it as it is.
+    """
     width = projection.width
     height = projection.height if projection.coverage == 360 else max(1, width // 2)
     rgba, mask = _sky_erp(evaluated, sources, width, height)
-    return _to_projection(rgba, projection, device), _to_projection(mask, projection, device)
+    return torch.tensor(rgba, dtype=torch.float32, device=device), torch.tensor(mask, dtype=torch.float32, device=device)
+
+
+def _project_sky(rgba: torch.Tensor, mask: torch.Tensor, view: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    # Color is sampled premultiplied so that transparent pixels do not bleed into Sticker edges.
+    alpha = rgba[..., 3:]
+    sampled = _sample_erp(torch.cat([rgba[..., :3] * alpha, alpha, mask[..., None]], dim=-1), view)
+    alpha = sampled[..., 3:4]
+    rgb = torch.where(alpha > 1e-6, sampled[..., :3] / alpha.clamp_min(1e-6), 0.0)
+    # A copy of the mask so that the sampled layer is not kept alive through it.
+    return torch.cat([rgb, alpha], dim=-1), sampled[..., 4].clone()
 
 
 def _sky_key(evaluated: dict, projection: Projection) -> tuple:
@@ -190,11 +215,23 @@ def _sky_key(evaluated: dict, projection: Projection) -> tuple:
     ))
 
 
-def _background(bg: torch.Tensor, projection: Projection, device) -> torch.Tensor:
-    # A 180 output reads bg_media as the front-hemisphere ERP, as the legacy node did.
+def _background(bg: torch.Tensor, device) -> torch.Tensor:
+    """`bg_media` as opaque RGB on `device`."""
     bg = bg.to(device=device, dtype=torch.float32)
-    bg = bg[..., :1].expand(-1, -1, 3) if bg.shape[-1] < 3 else bg[..., :3]
-    return _resize(bg, projection.height, projection.width).clamp(0.0, 1.0)
+    return (bg[..., :1].expand(-1, -1, 3) if bg.shape[-1] < 3 else bg[..., :3]).clamp(0.0, 1.0)
+
+
+def _project_background(bg: torch.Tensor, projection: Projection, view: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Sample `bg_media` at `view`, and where it has an image (None: everywhere).
+
+    A 360 output reads it as a 360 ERP. A 180 output reads it as the ERP of the Scene's front hemisphere, as
+    the legacy node did, so a turned Camera also sees directions it does not cover.
+    """
+    if projection.coverage == 360:
+        return _sample_erp(bg, view), None
+    grid = view.clone()
+    grid[..., 0] *= 2.0
+    return _sample(bg, grid), grid[..., 0].abs() <= 1.0
 
 
 def render_frame(
@@ -211,43 +248,55 @@ def render_frame(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Draw one frame. Returns float32 color (H, W, 3), mask (H, W), and depth (H, W) on `device`.
 
-    `evaluated` is `evaluate_scene_state` at the frame and `camera` the evaluated Camera value. `bg` is this
-    frame's `bg_media` image (h, w, C) or None, and `bg_key` a hashable that names it (the bg_media frame
-    index); without a key the background is not reused. `bg_color` is three floats in 0..1. The mask is the
-    painted mask and the depth is +inf where only the Sky is visible.
+    `evaluated` is `evaluate_scene_state` at the frame and `camera` the evaluated Camera value; the ERP output
+    turns with the Camera's rotation. `bg` is this frame's `bg_media` image (h, w, C) or None, and `bg_key` a
+    hashable that names it (the bg_media frame index); without a key the background is not reused. `bg_color`
+    is three floats in 0..1. The mask is the painted mask and the depth is +inf where only the Sky is visible.
 
     `cache` is an optional dict owned by the caller for one execution, in which `sources`, `bg_color`, and
-    `device` stay the same. It keeps the previous frame's Sky, projected background, and result: a frame whose
-    Sky values and `bg_key` both repeat returns the previous frame's tensors themselves.
+    `device` stay the same. It keeps the previous frame's Sky, the Sky turned by the Camera, the background, and
+    the result: a frame whose Sky values, Camera rotation, and `bg_key` all repeat returns the previous frame's
+    tensors themselves.
     """
     if projection.kind != "erp":
         raise NotImplementedError("Panorama Stickers: perspective projection is not supported yet.")
-    if any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg")):
-        raise NotImplementedError("Panorama Stickers: Camera rotation is not supported in ERP output yet.")
     if any(sticker["active"] and sticker["placement"] == "world" for sticker in evaluated["stickers"]):
         raise NotImplementedError("Panorama Stickers: world Stickers are not supported yet.")
     if cache is None:
         cache = {}
     sky_key = _sky_key(evaluated, projection)
+    # A 360 output without Camera rotation is the Sky and the background as they are.
+    turned = projection.coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
+    view_key = (camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]) if turned else None
     bg_entry = None if bg is None else ("bg", bg_key)
     # A background without a key cannot be told apart from the previous frame's, so it is never reused.
     reusable = bg is None or bg_key is not None
-    if reusable and cache.get("frame_key") == (sky_key, bg_entry):
+    frame_key = (sky_key, view_key, bg_entry)
+    if reusable and cache.get("frame_key") == frame_key:
         return cache["frame"]
-    if cache.get("sky_key") == sky_key:
+    if cache.get("sky_key") != sky_key:
+        cache["sky_key"], cache["sky"] = sky_key, _render_sky(evaluated, sources, projection, device)
+    view = None
+    if not turned:
         sky, mask = cache["sky"]
     else:
-        sky, mask = _render_sky(evaluated, sources, projection, device)
-        cache["sky_key"], cache["sky"] = sky_key, (sky, mask)
-    background = None
+        if cache.get("turned_sky_key") != (sky_key, view_key):
+            view = _view(camera, projection, device)
+            cache["turned_sky_key"], cache["turned_sky"] = (sky_key, view_key), _project_sky(*cache["sky"], view)
+        sky, mask = cache["turned_sky"]
+    background = bg_valid = None
     if bg is not None:
         if reusable and cache.get("bg_key") == bg_entry:
             background = cache["bg"]
         else:
-            background = _background(bg, projection, device)
+            background = _background(bg, device)
             if reusable:
                 cache["bg_key"], cache["bg"] = bg_entry, background
-    color, depth = composite_frame(bg_color, background, sky)
+        if not turned:
+            background = _resize(background, projection.height, projection.width)
+        else:
+            background, bg_valid = _project_background(background, projection, _view(camera, projection, device) if view is None else view)
+    color, depth = composite_frame(bg_color, background, sky, bg_valid=bg_valid)
     if reusable:
-        cache["frame_key"], cache["frame"] = (sky_key, bg_entry), (color, mask, depth)
+        cache["frame_key"], cache["frame"] = frame_key, (color, mask, depth)
     return color, mask, depth

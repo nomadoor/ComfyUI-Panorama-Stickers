@@ -19,7 +19,7 @@ from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.nodes import PanoramaStickersSceneNode
 from test_legacy_goldens import _golden_mismatch
 from tools import bake_legacy_goldens
-from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, build_background_erp
+from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
 from tools.golden_png import read_png16
 
 
@@ -242,3 +242,36 @@ def test_sticker_state_with_several_camera_keyframes_is_not_supported_yet():
 
     with pytest.raises(NotImplementedError, match="more than one Camera Keyframe"):
         _execute(output_preset="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)
+
+
+def _camera_scene(**camera):
+    sticker = {"id": "q", "source": {"kind": "port"}, "transform": {"value": {"yaw_deg": 170.0, "pitch_deg": 20.0, "roll_deg": 30.0, "hFOV_deg": 50.0}}}
+    painting = _painting(
+        paint=[_stroke("red", "paint", [(0.9, 0.3), (0.98, 0.35), (0.05, 0.3)], 10, {"r": 1.0, "g": 0.1, "b": 0.1, "a": 1.0})],
+        mask=[_stroke("mask", "mask", [(0.3, 0.5), (0.5, 0.45), (0.7, 0.5)], 20)],
+    )
+    return {"version": 2, "camera": {"transform": {"value": camera}}, "stickers": [sticker], "painting": painting}
+
+
+def _render_camera_scene(coverage="360", **camera):
+    sticker = torch.from_numpy(bake_legacy_goldens._quadrant_sticker()[None])
+    image, mask = _execute(_camera_scene(**camera), coverage=coverage, bg_media=build_background_erp(), sticker=sticker)[:2]
+    return image[0], mask[0]
+
+
+def test_camera_yaw_by_whole_columns_shifts_the_erp_image_and_mask():
+    columns = 37
+    image, mask = _render_camera_scene()
+    turned_image, turned_mask = _render_camera_scene(yaw_deg=columns * 360.0 / image.shape[1])
+
+    assert float(mask.max()) > 0.5
+    assert torch.allclose(turned_image, torch.roll(image, -columns, dims=1), atol=1e-3)
+    assert torch.allclose(turned_mask, torch.roll(mask, -columns, dims=1), atol=1e-3)
+
+
+@pytest.mark.parametrize("coverage", ["360", "180"])
+def test_camera_position_does_not_move_the_background_or_the_sky(coverage):
+    image, mask = _render_camera_scene(coverage, yaw_deg=40.0, pitch_deg=-15.0, roll_deg=10.0)
+    moved_image, moved_mask = _render_camera_scene(coverage, position=[3.0, -1.0, 2.0], yaw_deg=40.0, pitch_deg=-15.0, roll_deg=10.0)
+
+    assert torch.equal(moved_image, image) and torch.equal(moved_mask, mask)
