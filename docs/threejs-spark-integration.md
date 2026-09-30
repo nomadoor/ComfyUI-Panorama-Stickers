@@ -26,3 +26,10 @@ ComfyUI の `get_extensions` は `glob.glob(os.path.join(dir, "**/*.js"), recurs
 ### 意図した差：画像の色空間
 
 three.js は `colorSpace` が `NoColorSpace` のテクスチャを `UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE` で読み込む。以前の WebGL 描画はブラウザの既定（変換あり）だったため、ICC プロファイル付きの画像（Display P3 の写真など）は、エディタでの色味が変わりうる。PIL はプロファイルを適用しないので、ノードの出力にはむしろ近くなる。コードでは対処しない。
+
+## Preview の表示（#68）
+
+- Preview の読み取り専用のモーダル（「Open Preview」と全画面の代わりに開くもの）は、Stickers のエディタと同じ `createEditorView` で描く。モーダルを開いている間だけ WebGL コンテキストを一つ使い、閉じると `forceContextLoss` で解放する。
+- ノード上の Preview は、グラフ上のすべての Preview ノードで three.js のビューを一つ共有する（`pano_preview_view.js`）。各ノードは描いた直後の画面を自分の 2D の canvas に `drawImage` で写す。以前は Preview ノードごとに WebGL コンテキストを一つ持っていたが、ノードの数によらず一つになる。テクスチャはノードごとに持ち（`render` の `owner`）、素材が外れたときとノードを消したときに解放し、最後のノードが消えるとコンテキストも解放する。共有の canvas は使っているノードの中で最大の大きさに保ち、各ノードは左下から自分の大きさの範囲だけに描いて、その矩形を写す。
+- チャンクは、ノード上の Preview に表示する IMAGE / VIDEO が初めて用意できたときに読み込む。`LoadImage` などにつながった Preview があるワークフローでは、グラフを開いた直後に読み込まれる。読み込みが終わるまでは、画像のない状態と同じ格子を表示する。
+- チャンクか WebGL が使えないときは、ノード上の Preview もモーダルも以前の描画経路で表示する（#69 で削除する）。ノード上の Preview は、すべての Preview ノードが消えたあと、次に描くときに読み込みをやり直す。

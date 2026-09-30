@@ -1329,10 +1329,9 @@ async function showEditor(node, type, options = {}) {
     frameCanvasScale: 1,
     tickErrorSignature: "",
   };
-  // The Stickers editor draws its panorama view with three.js. The Cutout editor (#67) and the
-  // read-only Preview modal (#68) still use the previous renderer, as does the Stickers editor when
-  // three.js cannot load.
-  const editorView = type === "stickers" && !readOnly
+  // The Stickers editor and the read-only Preview modal draw their panorama view with three.js. The
+  // Cutout editor (#67) still uses the previous renderer, as do the others when three.js cannot load.
+  const editorView = type === "stickers"
     ? createEditorView({ onReady: () => requestDraw(), onFailed: () => requestDraw() })
     : null;
   const useEditorView = () => !!editorView && !editorView.failed;
@@ -4295,7 +4294,7 @@ async function showEditor(node, type, options = {}) {
       bg2d.fillStyle = "#070707";
       bg2d.fillRect(0, 0, width, height);
     } else if (surface) {
-      bg2d.drawImage(surface, 0, 0, width, height);
+      bg2d.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, 0, 0, width, height);
     }
     runtime.backgroundWasVisible = !!surface;
     runtime.backgroundDirty = false;

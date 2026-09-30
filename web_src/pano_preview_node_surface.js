@@ -1,4 +1,4 @@
-import { MAX_RENDER_SIDE } from "./pano_gl_renderer.js";
+import { MAX_RENDER_SIDE } from "./pano_editor_view.js";
 
 export function shouldTogglePreviewPlaybackFromKey(event, root) {
   if (!event || event.target !== root) return false;

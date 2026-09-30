@@ -6,6 +6,7 @@ import {
   measurePreviewCanvasSize,
   shouldTogglePreviewPlaybackFromKey,
 } from "../web_src/pano_preview_node_surface.js";
+import { MAX_RENDER_SIDE } from "../web_src/pano_editor_view.js";
 
 function makeClassList() {
   const values = new Set();
@@ -135,7 +136,7 @@ test("preview canvas size preserves DPR below the render cap and scales down abo
   );
   assert.deepEqual(
     measurePreviewCanvasSize({ width: 2560, height: 1440 }, 1.5),
-    { width: 2048, height: 1152 },
+    { width: MAX_RENDER_SIDE, height: MAX_RENDER_SIDE * 9 / 16 },
   );
   assert.deepEqual(
     measurePreviewCanvasSize({ width: 1440, height: 2560 }, 1.5, 2048),

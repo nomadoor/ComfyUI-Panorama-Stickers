@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { createApp, reactive } from "vue";
-import { cameraBasis, DEG2RAD, clamp, wrapYaw } from "./pano_camera_math.js";
+import { clamp, wrapYaw } from "./pano_camera_math.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import {
   createPreviewFullscreenController,
@@ -12,6 +12,7 @@ import { bindWheelCaptureRoot } from "./pano_wheel.js";
 import { createPanoramaRenderCore } from "./pano_render_core.js";
 import { buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
 import { buildPreviewNodeViewParams, buildStickerSceneFromState } from "./pano_gl_scene.js";
+import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
   assignFreshDomWidgetRenderIdentity,
@@ -19,11 +20,7 @@ import {
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
 import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
-import {
-  drawErpBackground,
-  STANDALONE_MESH_LOW,
-  localPosFromEvent,
-} from "./pano_preview_runtime.js";
+import { localPosFromEvent } from "./pano_preview_runtime.js";
 
 const PREVIEW_MIN_HEIGHT = 140;
 const PREVIEW_MIN_WIDTH = 180;
@@ -229,20 +226,9 @@ function drawGrid(ctx, width, height) {
   ctx.stroke();
 }
 
-function drawPreview(node, ctx, width, height, view, img) {
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#070707";
-  ctx.fillRect(0, 0, width, height);
-
-  if (!isRenderableMediaReady(img) || width <= 1 || height <= 1) {
-    drawGrid(ctx, width, height);
-    return;
-  }
-  const basis = cameraBasis(Number(view.yaw || 0), Number(view.pitch || 0), 0);
-  const tanHalfY = Math.tan((Number(view.fov || 100) * DEG2RAD) * 0.5);
-  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
+// The previous renderer, used only when the three.js view cannot load; #69 removes it.
+function renderWithPreviousRenderer(node, width, height, view, img, coverageDeg, mediaRevision) {
   if (!node.__panoStandaloneCore) node.__panoStandaloneCore = createPanoramaRenderCore();
-  const mediaRevision = getRenderableMediaRevisionToken(img);
   const descriptor = buildStickerRenderDescriptor({
     stateRevision: [
       "standalone_preview_scene",
@@ -257,21 +243,38 @@ function drawPreview(node, ctx, width, height, view, img) {
     backgroundOpacity: 1,
     showMaskTint: false,
   });
-  const drawn = !!node.__panoStandaloneCore.syncState(descriptor)
-    && (() => {
-      const surface = node.__panoStandaloneCore.renderToTarget(
-        "preview_node",
-        buildPreviewNodeViewParams(view, coverageDeg),
-        { width, height, dpr: window.devicePixelRatio || 1 },
-      );
-      if (!surface) return false;
-      ctx.drawImage(surface, 0, 0, width, height);
-      return true;
-    })();
-  if (!drawn) {
-    drawErpBackground(node, ctx, { x: 0, y: 0, w: width, h: height }, basis, tanHalfY, img, STANDALONE_MESH_LOW);
+  if (!node.__panoStandaloneCore.syncState(descriptor)) return null;
+  const canvas = node.__panoStandaloneCore.renderToTarget(
+    "preview_node",
+    buildPreviewNodeViewParams(view, coverageDeg),
+    { width, height, dpr: window.devicePixelRatio || 1 },
+  );
+  return canvas ? { canvas, x: 0, y: 0, width: canvas.width, height: canvas.height } : null;
+}
+
+function drawPreview(node, ctx, width, height, view, img, previewView) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#070707";
+  ctx.fillRect(0, 0, width, height);
+
+  if (!isRenderableMediaReady(img) || width <= 1 || height <= 1) {
     drawGrid(ctx, width, height);
+    return;
   }
+  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
+  const mediaRevision = getRenderableMediaRevisionToken(img);
+  const surface = previewView.failed
+    ? renderWithPreviousRenderer(node, width, height, view, img, coverageDeg, mediaRevision)
+    : previewView.render({
+      width,
+      height,
+      camera: previewNodeCamera(view, width, height),
+      background: { media: img, revision: mediaRevision, coverage: coverageDeg },
+      layers: [],
+    });
+  // The grid stays until the view has loaded.
+  if (surface) ctx.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, 0, 0, width, height);
+  else drawGrid(ctx, width, height);
 }
 
 function isPointInRect(x, y, rect) {
@@ -305,6 +308,7 @@ class PreviewNodeRuntime {
     this.mediaCleanup = null;
     this.videoPaused = false;
     this.view = { yaw: 0, pitch: 0, fov: 100 };
+    this.previewView = acquirePreviewView(() => this.requestDraw());
     this.controller = createPanoInteractionController({
       getView: () => this.view,
       setView: (next) => {
@@ -652,7 +656,7 @@ class PreviewNodeRuntime {
 
     ctx.save();
     ctx.translate(rect.x, rect.y);
-    drawPreview(this.node, ctx, rect.w, rect.h, this.view, this.img);
+    drawPreview(this.node, ctx, rect.w, rect.h, this.view, this.img, this.previewView);
 
     if (this.errorText) {
       ctx.fillStyle = "rgba(18,18,22,0.92)";
@@ -726,6 +730,7 @@ class PreviewNodeRuntime {
       this.mediaCleanup?.();
       this.mediaCleanup = null;
       this.img = null;
+      this.previewView.release();
       this.imgSrc = "";
       this.requestDraw();
       return;
@@ -743,6 +748,7 @@ class PreviewNodeRuntime {
     img.onerror = () => {
       if (this.imgSrc !== nextSrc) return;
       this.img = null;
+      this.previewView.release();
       this.requestDraw();
     };
     this.mediaCleanup = () => {
@@ -773,7 +779,7 @@ class PreviewNodeRuntime {
       // Resize and repaint in one frame so the cleared backing store is never
       // presented between a ResizeObserver callback and this draw.
       this.syncCanvasSize();
-      drawPreview(this.node, this.ctx, this.canvas.width, this.canvas.height, this.view, this.img);
+      drawPreview(this.node, this.ctx, this.canvas.width, this.canvas.height, this.view, this.img, this.previewView);
       if (this.errorText) {
         this.ctx.fillStyle = "rgba(18,18,22,0.92)";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -836,6 +842,7 @@ class PreviewNodeRuntime {
     if (coverageWidget) {
       coverageWidget.callback = this.orig.coverageWidgetCallback;
     }
+    this.previewView.dispose();
     this.node.__panoStandaloneCore?.dispose?.();
     this.node.__panoStandaloneCore = null;
     this.node.__panoPreviewNodeRuntime = null;

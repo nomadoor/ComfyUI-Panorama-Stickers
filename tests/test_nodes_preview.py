@@ -327,10 +327,9 @@ class TestNodesPreview(unittest.TestCase):
         preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
         assert 'from "./pano_gl_scene.js"' in editor_js
         assert 'from "./pano_gl_scene.js"' in runtime_js
-        assert 'from "./pano_gl_scene.js"' in preview_node_js
+        assert 'from "./pano_preview_view.js"' in preview_node_js
         assert "buildStickerSceneFromState" in editor_js
         assert "buildStickerSceneFromState" in runtime_js
-        assert "buildStickerSceneFromState" in preview_node_js
         assert "buildCutoutViewParamsFromShot" in editor_js
         assert "buildCutoutViewParamsFromShot" in runtime_js
 
@@ -351,7 +350,7 @@ class TestNodesPreview(unittest.TestCase):
     def test_preview_node_grid_is_fallback_only(self):
         preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
         assert "if (!isRenderableMediaReady(img) || width <= 1 || height <= 1) {" in preview_js
-        assert "if (!drawn) {" in preview_js
+        assert "else drawGrid(ctx, width, height);" in preview_js
         assert preview_js.count("drawGrid(ctx, width, height);") == 2
 
     def test_editor_debug_probe_is_removed_from_normal_path(self):

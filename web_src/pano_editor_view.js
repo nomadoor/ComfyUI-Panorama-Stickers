@@ -5,6 +5,9 @@ import { evaluateSceneState } from "./pano_scene_eval.js";
 import { DEG2RAD, RAD2DEG } from "./pano_camera_math.js";
 import { rotationToQuaternion, worldRotation } from "./pano_world.js";
 
+// The three.js view renders at most this many pixels on a side.
+export const MAX_RENDER_SIDE = 2048;
+
 // The three.js camera for a panorama view with the Camera value's angles. hFOV_deg spans the view
 // width like the previous renderer, so the vertical FOV follows the view's aspect.
 export function viewportCamera(view, width, height) {
@@ -63,7 +66,8 @@ export function createEditorView({ onReady, onFailed }) {
   let disposed = false;
   const editorView = {
     failed: false,
-    // Returns the rendered canvas, or null until the view has loaded.
+    // Returns { canvas, x, y, width, height }, the part of the canvas that holds the frame, or null
+    // until the view has loaded.
     render(input) {
       return view ? view.render(input) : null;
     },
