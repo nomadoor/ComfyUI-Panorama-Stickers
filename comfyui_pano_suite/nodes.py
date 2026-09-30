@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 import comfy.model_management
-from comfy_api.latest import ComfyExtension, Input, Types, io
+from comfy_api.latest import ComfyExtension, Input, InputImpl, Types, io
 from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
@@ -43,6 +43,7 @@ from .core.scene_eval import evaluate_scene_state
 from .core.scene_state import load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
+from .core.video_source import MaterializedVideo, StreamedVideo, coded_size
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -1004,14 +1005,22 @@ def _input_type_name(value) -> str:
     return type(value).__name__
 
 
-def _reject_unsupported_inputs(bg_media, scene, sticker):
-    # Temporary on the integration branch: VIDEO, scene, 3D, and IMAGE batch stickers are added by later tickets.
-    for name, value in (("bg_media", bg_media), ("scene", scene), ("sticker", sticker)):
-        if value is None or (name != "scene" and isinstance(value, torch.Tensor)):
+def _reject_unsupported_inputs(scene, sticker):
+    # Temporary on the integration branch: scene, VIDEO and 3D stickers, and IMAGE batch stickers are added by later tickets.
+    for name, value in (("scene", scene), ("sticker", sticker)):
+        if value is None or (name == "sticker" and isinstance(value, torch.Tensor)):
             continue
         raise NotImplementedError(f"Panorama Stickers: {_input_type_name(value)} on the {name} input is not supported yet.")
     if sticker is not None and sticker.shape[0] > 1:
         raise NotImplementedError("Panorama Stickers: an IMAGE batch on the sticker input is not supported yet.")
+
+
+def _open_bg_video(video) -> StreamedVideo | MaterializedVideo:
+    """Stream a file-backed VIDEO without a crop; read any other VIDEO whole through the core."""
+    # The crop of a VideoFromFile is private; only an uncropped one reports the stream's own size.
+    if isinstance(video, InputImpl.VideoFromFile) and video.get_dimensions() == coded_size(video.get_stream_source()):
+        return StreamedVideo(video.get_stream_source(), *video.get_active_trim_window())
+    return MaterializedVideo(video.get_components())
 
 
 def _unused_sticker_id(stickers: list[dict]) -> str:
@@ -1065,15 +1074,53 @@ def _resolve_sources(state: dict, sticker, sticker_state) -> SceneSources:
     return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
 
 
-def _decide_timeline(state: dict, bg_media) -> tuple[float, list[tuple[float, int | None]]]:
-    """(a) Timeline: fps, and per output frame the Timeline frame to evaluate and the bg_media frame to draw."""
-    bg_count = 0 if bg_media is None else int(bg_media.shape[0])
-    length = state["timeline"]["length"] or (bg_count if bg_count > 1 else 1)
-    if bg_count > 1:
-        frames = [(float(index), index if index < bg_count else None) for index in range(length)]
+def _decide_timeline(state: dict, bg) -> tuple[float, list[tuple[float, int | None]]]:
+    """(a) Timeline: fps, and per output frame the Timeline frame to evaluate and the bg_media frame to draw.
+
+    `bg` is the bg_media IMAGE batch, an opened VIDEO, or None. Times stored in the state are read at the
+    recorded `timeline.fps`, so they keep their seconds when a background VIDEO sets another Timeline fps.
+    """
+    stored_fps = state["timeline"]["fps"]
+    video = isinstance(bg, (StreamedVideo, MaterializedVideo))
+    # TODO(#56): without a background VIDEO, a VIDEO on the sticker input sets the Timeline fps.
+    fps = float(bg.frame_rate) if video else stored_fps
+    times = bg.times if video else []
+    batch = 0 if bg is None or video else int(bg.shape[0])
+
+    def output_frames(frame):
+        return math.floor(frame * fps / stored_fps + 0.5)
+
+    clips = [state["scene"]["clip"], *(sticker["clip"] for sticker in state["stickers"])]
+    clip_ends = [clip["start"] + clip["duration"] for clip in clips if clip["duration"] is not None]
+    keyframes = state["camera"]["transform"]["keyframes"]
+    if state["timeline"]["length"]:
+        length = max(1, output_frames(state["timeline"]["length"]))
+    elif times:
+        length = len(times)
+    elif batch > 1:
+        length = batch
+    elif clip_ends:
+        length = max(1, output_frames(max(clip_ends)))
+    elif keyframes:
+        length = max(1, output_frames(keyframes[-1]["frame"]) + 1)
     else:
-        frames = [(float(index), 0 if bg_count else None) for index in range(length)]
-    return state["timeline"]["fps"], frames
+        length = 1
+
+    frames = []
+    for index in range(length):
+        if index < len(times):
+            frame = float(times[index]) * stored_fps
+        elif times:
+            # Past the end of the background VIDEO, frames continue at the Timeline fps.
+            frame = (float(times[-1]) + (index - len(times) + 1) / fps) * stored_fps
+        else:
+            frame = index * stored_fps / fps
+        if video:
+            bg_index = index if index < len(times) else None
+        else:
+            bg_index = index if index < batch else (0 if batch == 1 else None)
+        frames.append((frame, bg_index))
+    return fps, frames
 
 
 def _render_timeline(state: dict, sources: SceneSources, projection: Projection, frames, bg_media, bg_color) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1107,9 +1154,9 @@ def _render_timeline(state: dict, sources: SceneSources, projection: Projection,
     return images, masks
 
 
-def _assemble_outputs(images: torch.Tensor, masks: torch.Tensor, fps: float) -> io.NodeOutput:
-    """(c) Output ports in order: IMAGE, MASK, AUDIO (none yet), fps, PANO_SCENE (not built yet)."""
-    return io.NodeOutput(images, masks, None, fps, None)
+def _assemble_outputs(images: torch.Tensor, masks: torch.Tensor, audio: dict | None, fps: float) -> io.NodeOutput:
+    """(c) Output ports in order: IMAGE, MASK, AUDIO (None without audio), fps, PANO_SCENE (not built yet)."""
+    return io.NodeOutput(images, masks, audio, fps, None)
 
 
 # TODO(#78): rename to PanoramaStickersNode, matching the node_id, once the legacy class is removed.
@@ -1141,15 +1188,17 @@ class PanoramaStickersSceneNode(io.ComfyNode):
 
     @classmethod
     def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
-        _reject_unsupported_inputs(bg_media, scene, sticker)
+        _reject_unsupported_inputs(scene, sticker)
         state = load_scene_state(state_json)
         sources = _resolve_sources(state, sticker, sticker_state)
-        out_w, out_h, _uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg_media)
+        bg = _open_bg_video(bg_media) if isinstance(bg_media, Input.Video) else bg_media
+        out_w, out_h, _uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg.first_frame if isinstance(bg_media, Input.Video) else bg_media)
         projection = Projection.erp(out_w, out_h, normalize_coverage(coverage))
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
-        fps, frames = _decide_timeline(state, bg_media)
-        images, masks = _render_timeline(state, sources, projection, frames, bg_media, bg_rgb)
-        return _assemble_outputs(images, masks, fps)
+        fps, frames = _decide_timeline(state, bg)
+        images, masks = _render_timeline(state, sources, projection, frames, bg, bg_rgb)
+        audio = bg.audio(len(frames) / fps) if isinstance(bg_media, Input.Video) else None
+        return _assemble_outputs(images, masks, audio, fps)
 
 
 class PanoramaCutoutNode(io.ComfyNode):

@@ -85,9 +85,22 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 | (b) | `_render_timeline` | フレームごとに状態を評価し、`render_frame` を呼ぶ | #55、#56 |
 | (c) | `_assemble_outputs` | 出力（IMAGE・MASK・AUDIO・fps・`PANO_SCENE`）を組み立てる | #53、#57 |
 
-- 現時点の Timeline は、長さを「状態の `timeline.length` → 背景の IMAGE バッチ（2 枚以上）の枚数 → 1」の順で決める。背景のバッチより長い出力では、背景が終わった後は `bg_color` になる。
-- AUDIO は `None`（音声なし）、`PANO_SCENE` は `None`（#57 で作る）を返す。
-- `bg_media` の VIDEO、`scene` の入力、`sticker` の VIDEO・MESH・SPLAT・3D ファイルは、未対応であることを示すエラーにする。
+- Timeline fps は、背景 VIDEO の平均フレームレート（コアの `get_frame_rate()` と同じ `average_rate`、丸めない）、なければ状態の `timeline.fps` とする。`sticker` の VIDEO の fps は #56 で加える。fps 出力はこの値の float である。
+- 出力の長さは「状態の `timeline.length` → 背景 VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数 → Sticker と `scene` の Clip range の終わりのうち最も遅いもの（非表示の Sticker と、未接続の `scene` の Clip range も含む）→ Camera の最後の Keyframe の次のフレーム → 1」の順で決める。状態から決める長さは `timeline.fps` の Timeline frame なので、秒を保って Timeline fps のフレーム数に直す（`floor(x × Timeline fps ÷ timeline.fps + 0.5)`、1 以上）。
+- 各出力フレームは、次の時刻 `t` 秒について `t × timeline.fps` の Timeline frame で評価する（`docs/scene-state-v2.md`）。
+  - 背景 VIDEO のフレーム：そのフレームの PTS。切り出し範囲の最初のフレームを 0 秒とする。可変フレームレートでもフレームごとの PTS を使い、出力は等間隔（fps 出力）に並べる。
+  - 背景 VIDEO が終わった後：最後のフレームの時刻から Timeline fps の間隔で進める。背景は描かず `bg_color` になる。
+  - それ以外：出力フレームの番号 ÷ Timeline fps。
+- 背景の IMAGE バッチは出力フレームと 1 対 1 に対応し、バッチより長い出力では、背景が終わった後は `bg_color` になる。1 枚の IMAGE はすべてのフレームに描く。
+- `bg_media` の VIDEO の読み方（`core/video_source.py`）
+  - `VideoFromFile` で、`get_dimensions()` がストリームの大きさと一致するもの（クロップがない）は、`get_stream_source()` を PyAV で開き、`get_active_trim_window()` の範囲を 1 フレームずつ読む（`StreamedVideo`）。先にパケットだけを読んで PTS を集め、フレーム数と時刻を決める。入力側のメモリは長さに比例しない（`tests/test_stickers_scene_video.py` で計測する）。
+  - 復号したフレームは、パケットで集めた PTS と突き合わせる。シークの後に参照を失った B フレームなど、復号されなかった PTS のフレームは、ログに警告を出して `bg_color` にする。ほかのフレームの時刻はずらさない。パケットにない PTS のフレームは捨てる。1 枚も復号できないときは `ValueError` にする。出力の大きさ（`auto`）は、最初に復号できたフレームで決める。
+  - 復号のエラー（`InvalidDataError`）は、コアのように読み飛ばさず、そのままエラーにする。
+  - 画素の変換（8 ビットの形式は `rgb24`、それ以外は `gbrpf32le`、幅が 32 の倍数でないときの端の引き伸ばし）と回転のメタデータの扱いは、コアの `get_components()` と同じにし、同じ値になることをテストで確かめる。
+  - それ以外の VIDEO（クロップ付き、`VideoFromComponents`、`VideoFromList` など）は `get_components()` で一括で読む（`MaterializedVideo`）。
+- AUDIO は背景 VIDEO の音声を、切り出し範囲の始まりから「出力のフレーム数 ÷ fps」秒で切ったもの（サンプル数は `int` で切り捨て）。音声はコアと同じく切り出し範囲の始まりから始まり、最初のフレームの PTS からではない。形はコアの AUDIO と同じ `{"waveform": (1, C, T), "sample_rate"}`。背景に VIDEO や音声がないときは `None`（音声なし）とする。`PANO_SCENE` は `None`（#57 で作る）を返す。
+- `scene` の入力、`sticker` の VIDEO・MESH・SPLAT・3D ファイルは、未対応であることを示すエラーにする。
 - (b) は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、出力の直前の行から写す。
 - `is_output_node` は `False` で、ノード上の UI と実行結果の `ui`（プレビュー画像、動画、警告の表示）は持たない。これらは、エディタとの結び付け（#70）と、実行前後の素材の表示（#75）が決めて加える。それまで警告はログにだけ出す。
+  - 背景 VIDEO のエディタ用の一時 MP4 とメタ情報（ADR 0018）も、#53 では出さず #75 で加える。旧ノードと同じく `core/video.py` の `encode_frames_to_mp4` / `make_video_ui_payload` を使う想定だが、VIDEO を全フレーム展開して再エンコードしないよう、`VideoFromFile` はストリームのまま渡す方法を #75 で決める。
 - `file` の Source は `core/stickers.py` の `load_source_rgba` で読み、`folder_paths` のディレクトリの中にあるものだけを読む。読めないときは、その Sticker を描かずに警告をログに出す。

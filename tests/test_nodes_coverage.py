@@ -67,6 +67,7 @@ def _load_nodes_module():
     comfy_api_latest_module.io = io_module
     comfy_api_latest_module.ComfyExtension = type("ComfyExtension", (), {})
     comfy_api_latest_module.Input = SimpleNamespace(Video=type("VideoInput", (), {}))
+    comfy_api_latest_module.InputImpl = SimpleNamespace(VideoFromFile=type("VideoFromFile", (), {}))
     comfy_api_latest_module.Types = SimpleNamespace(MESH=type("MESH", (), {}), SPLAT=type("SPLAT", (), {}), File3D=type("File3D", (), {}))
     fake_nodes = MagicMock()
     fake_nodes.PreviewImage = MagicMock(return_value=MagicMock(save_images=MagicMock(return_value={})))
