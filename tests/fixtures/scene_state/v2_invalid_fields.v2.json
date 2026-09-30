@@ -191,6 +191,44 @@
         "keyframes": []
       },
       "z_index": 2
+    },
+    {
+      "id": "padded",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "s.png",
+        "subfolder": "a",
+        "storage": "output"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "transform": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0,
+          "hFOV_deg": 20.0,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 0
     }
   ],
   "painting": {

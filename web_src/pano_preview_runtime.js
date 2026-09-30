@@ -19,6 +19,7 @@ import {
 import { clamp, wrapYaw } from "./pano_math.js";
 import { cameraBasis, yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
+import { editorActive, editorStateText, parsePanoEditorState, setEditorActive } from "./pano_editor_state.js";
 import {
   buildCutoutViewParamsFromShot,
   buildPreviewNodeViewParams,
@@ -526,7 +527,9 @@ function getCachedState(node) {
   if (cache && cache.source === source && cache.liveVersion === liveVersion && cache.bg === bg && cache.coverage === coverage) {
     return cache.parsed;
   }
-  const parsed = parseState(source, bg);
+  const parsed = node.__panoSceneStateV2 && typeof source === "string"
+    ? parsePanoEditorState(source, { backgroundColor: bg, coverage, active: editorActive(node) })
+    : parseState(source, bg);
   parsed.coverage = coverage;
   node.__panoStateCache = { source, liveVersion, bg, coverage, parsed };
   return parsed;
@@ -3390,7 +3393,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       commitState: (nextState) => {
         const stateWidget = getWidget(node, "state_json");
         if (!stateWidget) return;
-        const text = JSON.stringify(nextState);
+        setEditorActive(node, nextState.active);
+        const text = editorStateText(node, nextState);
         stateWidget.value = text;
         stateWidget.callback?.(text);
         node.__panoStateCache = null;
@@ -3400,7 +3404,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       onChange: (nextModel) => Object.assign(nodeSurfaceUiModel, nextModel),
     });
   const syncExternalSticker = (reason = "sync", outputOverride = null) => {
-    if (!stickersMode || !nodeSurfaceSession || nodeSurfaceSession.hasGestureChanges()) return false;
+    // TODO(#75): the port Sticker of PanoramaStickersNode is shown from the node's execution result.
+    if (!stickersMode || node.__panoSceneStateV2 || !nodeSurfaceSession || nodeSurfaceSession.hasGestureChanges()) return false;
     const input = Array.isArray(node?.inputs)
       ? node.inputs.find((entry) => String(entry?.name || "") === "sticker_image")
       : null;

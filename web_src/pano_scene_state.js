@@ -146,11 +146,13 @@ function source(raw) {
   if (raw.kind === "port") return { kind: "port" };
   if (raw.kind !== "file") return null;
   if (typeof raw.filename === "string" && raw.filename.trim()) {
+    // Same rules as the v1 migration, so a migrated source reads back unchanged.
+    const storage = typeof raw.storage === "string" ? raw.storage.trim().toLowerCase() : null;
     return {
       kind: "file",
-      filename: raw.filename,
-      subfolder: typeof raw.subfolder === "string" ? raw.subfolder : "",
-      storage: FILE_STORAGES.includes(raw.storage) ? raw.storage : "input",
+      filename: raw.filename.trim(),
+      subfolder: typeof raw.subfolder === "string" ? raw.subfolder.trim().replace(/^[/\\]+|[/\\]+$/g, "") : "",
+      storage: FILE_STORAGES.includes(storage) ? storage : "input",
     };
   }
   if (typeof raw.data_url === "string" && raw.data_url.startsWith("data:image")) {

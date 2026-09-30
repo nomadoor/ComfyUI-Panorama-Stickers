@@ -1,3 +1,4 @@
+import { stickerHasKeyframes } from "./pano_editor_state.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 
 const EXTERNAL_STICKER_ID = "sticker_image_1";
@@ -277,6 +278,7 @@ export function applyStickersNodeSurfaceAction(state, action = {}) {
   if (!selected) return { state, changed: false };
 
   if (action.type === "toggle-lock") {
+    if (stickerHasKeyframes(state, selected.id)) return { state, changed: false };
     const nextLocked = selected.locked !== true;
     return {
       state: {

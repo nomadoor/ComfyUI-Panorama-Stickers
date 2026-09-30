@@ -16,11 +16,15 @@ import { createHistoryController } from "./pano_paint_history.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 import {
+  editorActive,
   editorSceneState,
+  editorStateText,
   makePanoEditorHistorySnapshot,
   normalizeCoverageValue,
   parsePanoEditorState,
   retainActiveCutoutShot,
+  setEditorActive,
+  stickerHasKeyframes,
 } from "./pano_editor_state.js";
 import {
   buildCutoutViewParamsFromShot,
@@ -864,6 +868,7 @@ function getEditorNodeTitle(node, type) {
   const rawType = String(node?.comfyClass || node?.type || node?.title || "").trim();
   const titleMap = {
     PanoramaStickers: "Panorama Stickers",
+    PanoramaStickersNode: "Panorama Stickers",
     "Panorama Stickers": "Panorama Stickers",
     PanoramaCutout: "Panorama Cutout",
     "Panorama Cutout": "Panorama Cutout",
@@ -958,6 +963,7 @@ async function showEditor(node, type, options = {}) {
     backgroundColor: String(bgWidget?.value || "#00ff00"),
     coverage: normalizeCoverageValue(coverageWidget?.value),
     sharedUiSettings: loadSharedUiSettings(),
+    active: editorActive(node),
   });
   node.__panoLiveStateOverride = state;
   node.__panoLiveStateVersion = 0;
@@ -2467,7 +2473,7 @@ async function showEditor(node, type, options = {}) {
       raster.locked = next;
       return true;
     }
-    if (item.locked === next) return false;
+    if (item.locked === next || stickerHasKeyframes(state, item.id)) return false;
     item.locked = next;
     return true;
   }
@@ -3021,7 +3027,8 @@ async function showEditor(node, type, options = {}) {
     };
   }
   function reconcileExternalStickerFromInputs(reason = "sync") {
-    if (type !== "stickers" || readOnly) return;
+    // TODO(#75): the port Sticker of PanoramaStickersNode is shown from the node's execution result.
+    if (type !== "stickers" || readOnly || node.__panoSceneStateV2) return;
     const input = Array.isArray(node?.inputs)
       ? node.inputs.find((entry) => String(entry?.name || "") === "sticker_image")
       : null;
@@ -7368,7 +7375,8 @@ async function showEditor(node, type, options = {}) {
   function commitState() {
     if (readOnly) return;
     state.coverage = normalizeCoverageValue(state.coverage);
-    const text = JSON.stringify(state);
+    setEditorActive(node, state.active);
+    const text = editorStateText(node, state);
     if (stateWidget) {
       stateWidget.value = text;
       stateWidget.callback?.(text);

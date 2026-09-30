@@ -230,6 +230,7 @@ function installEditorButton(nodeType, {
   attachStickers,
   attachCutout,
   enableStickersPreview,
+  sceneStateV2 = false,
 }) {
   if (!nodeType?.prototype) return;
 
@@ -253,8 +254,10 @@ function installEditorButton(nodeType, {
     }
 
     if (matchType === "PanoramaStickers") {
+      // PanoramaStickersNode keeps state v2 in state_json (see pano_editor_state.js).
+      node.__panoSceneStateV2 = sceneStateV2;
       const background = getWidget(node, "bg_color");
-      if (background && (background.value == null || String(background.value).trim() === "" || String(background.value).toLowerCase() === "#000000")) {
+      if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "" || String(background.value).toLowerCase() === "#000000")) {
         background.value = "#00ff00";
         background.callback?.("#00ff00");
       }
@@ -291,7 +294,7 @@ function installEditorButton(nodeType, {
       if (hook === "onNodeCreated" && matchType === "PanoramaCutout") {
         initializeNewCutoutFrame(this);
       }
-      if (hook === "onConfigure" && matchType === "PanoramaStickers" && this.widgets) {
+      if (hook === "onConfigure" && matchType === "PanoramaStickers" && !sceneStateV2 && this.widgets) {
         migratePanoramaStickersWidgetOrder(this);
       }
       if (hook === "onNodeCreated" || this.widgets) installOrUpdate(this);
@@ -370,6 +373,18 @@ export function createPanoEditorExtension({
           attachStickers,
           attachCutout,
           enableStickersPreview,
+        });
+      }
+      if (name === "PanoramaStickersNode") {
+        installEditorButton(nodeType, {
+          app,
+          matchType: "PanoramaStickers",
+          buttonText: "Open Stickers Editor",
+          openEditor,
+          attachStickers,
+          attachCutout,
+          enableStickersPreview,
+          sceneStateV2: true,
         });
       }
       if (name === "PanoramaCutout" || name === "Panorama Cutout") {

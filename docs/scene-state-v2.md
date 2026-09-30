@@ -201,7 +201,7 @@ Keyframe をまとめて打つ単位である。どのグループも同じ形�
 | 形 | 意味 |
 |---|---|
 | `{"kind": "port"}` | ノードの `sticker` 入力ポートの素材。ポートは一本なので番号を持たない。状態の中に高々一つで、二つ目以降の `port` の Sticker は捨てる |
-| `{"kind": "file", "filename": "...", "subfolder": "...", "storage": "input"}` | ComfyUI のディレクトリにあるファイル。`storage` は `input`・`output`・`temp` のいずれか（既定値 `input`）、`subfolder` の既定値は `""`。投入した画像は `input/panorama_stickers`、3D ファイルは Load3D と同じ場所に保存する。`filename` が空なら不正 |
+| `{"kind": "file", "filename": "...", "subfolder": "...", "storage": "input"}` | ComfyUI のディレクトリにあるファイル。`storage` は `input`・`output`・`temp` のいずれか（既定値 `input`）、`subfolder` の既定値は `""`。投入した画像は `input/panorama_stickers`、3D ファイルは Load3D と同じ場所に保存する。`filename` の前後の空白、`subfolder` の前後の空白と `/`・`\` を除き、`storage` は前後の空白を除いて小文字にする（v1 の読み替えと同じ規則）。`filename` が空なら不正 |
 | `{"kind": "file", "data_url": "data:image/..."}` | 旧 v1 の埋め込み画像。v1 の読み替えでだけ生じる。`data:image` で始まらなければ不正。エディタは開いたときに従来どおりアップロードして上の形に置き換える |
 
 `filename`・`subfolder`・`storage` は信頼しない入力である。ファイルを読む側は、既存の `folder_paths` による範囲の確認を必ず通す。この契約のコードはファイルを読まない。
@@ -380,4 +380,7 @@ Cutout が出力し、Stickers の `sticker_state` 入力が受け取る。
 - #65（Pose handoff）：v1 は `source_state_hash` で「`sticker_state` が変わったときだけ姿勢を上書きする」を判定していた。v2 では捨てているので、同じ挙動が要るなら #65 で項目を追加する。
 - #66（エディタ）：ノード上の UI は今、旧 `active` の選択状態を読んでいる。v2 では状態に置かないので、置き場所（エディタのセッションやブラウザ側など）を #66 で決める。
 - #66 の結果：エディタの作業状態は v1 の形のままで、状態 v2 は `editorSceneState`（`pano_editor_state.js`）で導き、描画に使うだけとした。ウィジェットへの v2 の書き込みと、v2 の `state_json` の読み込みは #70 で行う。旧ノード・ノード上の UI・外部 Sticker の同期が `state_json` を v1 として読み、v1 → v2 → v1 の往復では `path` 資産・`source_state_hash`・`active` が落ちるためである。`active` の置き場所も #70 で決める。
+- #70 の結果：`PanoramaStickersNode` では、エディタとノード上の UI は `state_json` を v2 で読み書きする（旧ノードは v1 のまま）。作業状態は v1 の形のままで、読み込み時に `sky` の Sticker を v1 の Sticker に写し、v1 で持てない項目（`timeline`・`camera`・`scene`、`world` の Sticker、Clip range・Keyframe・`opacity`）は作業状態の `scene_state` に載せて、保存時に `editorSceneState`（`pano_editor_state.js`）で戻す。v2 → 作業状態 → v2 の往復は失われない。エディタの選択状態（旧 `active`）はノードのプロパティ `pano_editor_active` に置く（プロンプトに入らないので、選択しても再実行されない）。新しいノードの `state_json` が v1 のとき（旧ノードの状態を貼った場合など）は、保存時に「v1 から v2 への読み替え」の規則で v2 になり、`path` 資産・`source_state_hash`・`initial_pose` などが落ちる。
+- #73 へ（#70 の暫定の扱い）：#70 の作業状態（v1 の形と `scene_state` の組み合わせ）は、#73 までの暫定の境界の変換である。#73 では `scene_state` を育てずに、エディタの作業状態を v2 そのもの（`loadSceneState` の結果）に切り替え、v1 の形は旧ノードとの境界だけに残す。それまでの間、`transform` か `opacity` に Keyframe を持つ `sky` の Sticker は、エディタとノード上の UI でロック中として扱い（選べるが変形できず、ロックも外せない）、このロックは状態に保存しない（`stickerHasKeyframes`）。複製した Sticker は v2 だけの項目（Clip range・Keyframe・`opacity`）を引き継がない。これも #73 で扱う。
+- #75 へ（#70 で見送ったもの）：新しいノードは `is_output_node` も実行結果の `ui` も持たない。ComfyUI は `ui` を出力ノードでなくても `executed` で送るので、エディタが実行結果を受け取るのに `is_output_node` は要らない（要るのは、出力を繋がずに単独で実行させたい場合だけ）。エディタとノード上の UI が読む `ui` のキーは旧ノードと同じ `pano_input_images`（背景）、`pano_input_videos` / `pano_input_video_meta`（背景の VIDEO）、`pano_videos` / `pano_video_meta`（出力）、`pano_sticker_input_images`（`port` の素材）、`pano_sticker_warnings`（警告）。フロントエンドは入力名を `bg_erp`・`erp_image`・`sticker_image` で探すので、`bg_media`・`sticker` はまだ認識しない。そのため今は、新しいノードのエディタに背景と `port` の素材は出ない。外部 Sticker の同期（`port` の Sticker を id `sticker_image_1` で状態に足す・消す処理）は新しいノードでは止めてある（`TODO(#75)` の 2 か所）。
 - 旧 `path` 型の資産（初期の版だけが書いた、作業ディレクトリからの相対パス）は読み替えで捨てる（ユーザー判断で確定）。#78 で README の移行の注意に書く。

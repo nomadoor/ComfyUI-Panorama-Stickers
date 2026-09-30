@@ -35,7 +35,8 @@
     {"id": "no_source", "placement": "sky"},
     {"id": "bad_file", "placement": "sky", "source": {"kind": "file", "filename": ""}},
     {"id": "bad_data", "placement": "sky", "source": {"kind": "file", "data_url": "javascript:alert(1)"}},
-    {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "data_url": "data:image/png;base64,AAAA"}, "z_index": 1.5}
+    {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "data_url": "data:image/png;base64,AAAA"}, "z_index": 1.5},
+    {"id": "padded", "placement": "sky", "source": {"kind": "file", "filename": " s.png ", "subfolder": "a/", "storage": " Output "}}
   ],
   "painting": null,
   "painting_layer": "x",
