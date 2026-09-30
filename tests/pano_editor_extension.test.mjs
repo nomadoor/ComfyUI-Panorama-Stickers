@@ -92,6 +92,43 @@ test("stickers lifecycle hides the fallback button only after the shared DOM sur
   assert.equal(node.widgets.find((widget) => widget.name === "Open Stickers Editor").hidden, true);
 });
 
+test("the new Stickers node opens the same editor and node surface and keeps state v2", () => {
+  const opened = [];
+  const attached = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor(node, type) { opened.push([node, type]); },
+    attachStickers(node, options) {
+      attached.push(node);
+      node.__panoStickersNodeSurface = { mounted: true };
+      options.onOpen();
+    },
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  function SceneNodeType() {}
+  function LegacyNodeType() {}
+  extension.beforeRegisterNodeDef(SceneNodeType, { name: "PanoramaStickersNode" });
+  extension.beforeRegisterNodeDef(LegacyNodeType, { name: "PanoramaStickers" });
+  const node = makeNode([360, 260]);
+  node.widgets.find((widget) => widget.name === "bg_color").value = "#000000";
+  const legacy = makeNode([360, 260]);
+
+  SceneNodeType.prototype.onNodeCreated.call(node);
+  SceneNodeType.prototype.onConfigure.call(node);
+  LegacyNodeType.prototype.onNodeCreated.call(legacy);
+
+  assert.deepEqual(opened, [[node, "stickers"], [legacy, "stickers"]]);
+  assert.deepEqual(attached, [node, legacy]);
+  assert.equal(node.__panoSceneStateV2, true);
+  assert.equal(legacy.__panoSceneStateV2, false);
+  assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
+  // A black bg_color is the user's choice on the new node; only the legacy node replaces it.
+  assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
+});
+
 test("cutout lifecycle attaches once and initializes only an invalid node size", () => {
   function NodeType() {}
   const attached = [];

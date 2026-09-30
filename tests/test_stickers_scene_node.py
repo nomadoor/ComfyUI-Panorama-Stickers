@@ -1,5 +1,8 @@
 import json
+import shutil
+import subprocess
 from fractions import Fraction
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -45,6 +48,50 @@ def _run_new_node(coverage: str, stickers=(), painting=None):
 def test_v1_state_reproduces_legacy_golden(name, monkeypatch):
     # The golden cases call _run_stickers with v1 states; run the same cases through the new node.
     monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_new_node)
+    image, mask = bake_legacy_goldens.CASES[name]()
+
+    assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{name}.image.png")) is None
+    assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{name}.mask.png")) is None
+
+
+EDITOR_SAVE_JS = """
+import { readFileSync } from "node:fs";
+import { editorStateText, parsePanoEditorState } from "./web_src/pano_editor_state.js";
+
+process.stdout.write(editorStateText({ __panoSceneStateV2: true }, parsePanoEditorState(readFileSync(0, "utf8"))));
+"""
+
+
+def _save_from_editor(state_json: str) -> str:
+    """The state_json the editor writes to PanoramaStickersNode after opening `state_json`."""
+    if shutil.which("node") is None:
+        pytest.skip("node is required to run the editor's state helpers")
+    return subprocess.run(
+        ["node", "--input-type=module", "-e", EDITOR_SAVE_JS],
+        cwd=Path(__file__).resolve().parent.parent,
+        input=state_json,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout
+
+
+def _run_new_node_saved_by_editor(coverage: str, stickers=(), painting=None):
+    state = {"assets": ASSETS, "stickers": list(stickers)}
+    if painting is not None:
+        state["painting"] = painting
+    saved = _save_from_editor(json.dumps(state))
+    assert json.loads(saved)["version"] == 2
+    result = PanoramaStickersSceneNode.execute(
+        bg_color="#00ff00", coverage=coverage, output_preset="auto", state_json=saved, bg_media=build_background_erp(),
+    ).result
+    return result[0][0].numpy(), result[1][0].numpy()
+
+
+@pytest.mark.parametrize("name", [name for name in bake_legacy_goldens.CASES if name.startswith("stickers_")])
+def test_state_saved_by_the_editor_is_v2_and_reproduces_legacy_golden(name, monkeypatch):
+    # The editor opens the golden case's v1 state and saves it for the new node; the node renders what the editor shows.
+    monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_new_node_saved_by_editor)
     image, mask = bake_legacy_goldens.CASES[name]()
 
     assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{name}.image.png")) is None

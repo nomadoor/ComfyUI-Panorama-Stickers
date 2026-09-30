@@ -168,12 +168,14 @@ def _source(raw):
         return None
     filename = raw.get("filename")
     if isinstance(filename, str) and filename.strip():
+        # Same rules as the v1 migration, so a migrated source reads back unchanged.
         subfolder = raw.get("subfolder")
         storage = raw.get("storage")
+        storage = storage.strip().lower() if isinstance(storage, str) else None
         return {
             "kind": "file",
-            "filename": filename,
-            "subfolder": subfolder if isinstance(subfolder, str) else "",
+            "filename": filename.strip(),
+            "subfolder": subfolder.strip().strip("/\\") if isinstance(subfolder, str) else "",
             "storage": storage if storage in FILE_STORAGES else "input",
         }
     data_url = raw.get("data_url")

@@ -108,6 +108,9 @@ export function parsePanoEditorState(text, options = {}) {
       parseStateJsonCache = { text: trimmed, parsed };
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return base;
+    if (parsed.version === 2) {
+      parsed = { ...editorStateFromSceneState(loadSceneState(parsed)), active: resolvedOptions.active };
+    }
     const sharedUiSettings = resolvedOptions.sharedUiSettings && typeof resolvedOptions.sharedUiSettings === "object"
       ? resolvedOptions.sharedUiSettings
       : null;
@@ -152,9 +155,102 @@ export function makePanoEditorHistorySnapshot(state) {
   return snapshot;
 }
 
-// State v2 (docs/scene-state-v2.md) of the editor's working state, which keeps the v1 shape: the
-// legacy node and the node surfaces read `state_json` as v1 until the editor is bound to the new
-// node (#70), so the editor keeps writing v1 and reads the v2 it stands for through the migration.
+// PanoramaStickersNode keeps state v2 (docs/scene-state-v2.md) in `state_json`, while the editor and
+// the node surface work on the v1 shape the legacy node still uses. The sky Stickers become v1
+// Stickers; what v1 cannot hold (Timeline, Camera, scene, world Stickers, Clip ranges, Keyframes,
+// opacity) rides along in `scene_state` and is put back by editorSceneState.
+function hasKeyframes(sticker) {
+  return sticker.transform.keyframes.length > 0 || sticker.opacity.keyframes.length > 0;
+}
+
+// A sky Sticker with Keyframes draws its Keyframe values, which the editor cannot edit until the
+// Timeline (#73). The editor shows it locked; the lock is not saved.
+export function stickerHasKeyframes(state, id) {
+  const sticker = state?.scene_state?.stickers.find((item) => item.id === id);
+  return !!sticker && hasKeyframes(sticker);
+}
+
+function editorStateFromSceneState(scene) {
+  const assets = {};
+  const stickers = [];
+  for (const sticker of scene.stickers) {
+    if (sticker.placement !== "sky") continue;
+    const { yaw_deg, pitch_deg, roll_deg, hFOV_deg, vFOV_deg } = sticker.transform.value;
+    const item = {
+      id: sticker.id,
+      yaw_deg,
+      pitch_deg,
+      hFOV_deg,
+      vFOV_deg,
+      rot_deg: roll_deg,
+      z_index: sticker.z_index,
+      visible: sticker.visible,
+      locked: sticker.locked || hasKeyframes(sticker),
+      crop: { ...sticker.crop },
+    };
+    const { source } = sticker;
+    if (source.kind === "port") {
+      item.source_kind = "external_image";
+    } else {
+      item.asset_id = sticker.id;
+      assets[sticker.id] = source.data_url
+        ? { type: "dataurl", value: source.data_url }
+        : { type: "comfy_image", filename: source.filename, subfolder: source.subfolder, storage: source.storage, name: source.filename };
+    }
+    stickers.push(item);
+  }
+  const { timeline, camera, scene: sceneValue } = scene;
+  return {
+    assets,
+    stickers,
+    painting: scene.painting,
+    painting_layer: scene.painting_layer,
+    scene_state: { timeline, camera, scene: sceneValue, stickers: scene.stickers },
+  };
+}
+
+// State v2 of the editor's working state. The sky Stickers come from the working state; a Sticker
+// read from state v2 keeps its Clip range, Keyframes and opacity, and the rest of state v2 is kept.
 export function editorSceneState(state) {
-  return loadSceneState({ ...state, version: 1 });
+  const migrated = loadSceneState({ ...state, version: 1 });
+  const loaded = state.scene_state;
+  if (!loaded) return migrated;
+  const edited = new Map(migrated.stickers.map((item) => [item.id, item]));
+  const stickers = [];
+  for (const item of loaded.stickers) {
+    if (item.placement !== "sky") {
+      stickers.push(item);
+      continue;
+    }
+    const next = edited.get(item.id);
+    if (!next) continue;
+    edited.delete(item.id);
+    stickers.push({
+      ...next,
+      locked: hasKeyframes(item) ? item.locked : next.locked,
+      clip: item.clip,
+      transform: { value: next.transform.value, keyframes: item.transform.keyframes },
+      opacity: item.opacity,
+    });
+  }
+  stickers.push(...edited.values());
+  return loadSceneState({ ...migrated, timeline: loaded.timeline, camera: loaded.camera, scene: loaded.scene, stickers });
+}
+
+// The editor's selection is not part of state v2. PanoramaStickersNode keeps it in a node property,
+// which the prompt does not include, so selecting does not re-run the node.
+export function editorActive(node) {
+  return node?.__panoSceneStateV2 ? node.properties?.pano_editor_active : undefined;
+}
+
+export function setEditorActive(node, active) {
+  if (!node?.__panoSceneStateV2) return;
+  node.properties ??= {};
+  node.properties.pano_editor_active = { ...active };
+}
+
+// The `state_json` text for the editor's working state: state v2 for PanoramaStickersNode, the
+// working state itself (v1) for the legacy node.
+export function editorStateText(node, state) {
+  return node?.__panoSceneStateV2 ? JSON.stringify(editorSceneState(state)) : JSON.stringify(state);
 }
