@@ -1,0 +1,206 @@
+{
+  "version": 2,
+  "timeline": {
+    "fps": 24.0,
+    "length": null
+  },
+  "camera": {
+    "aspect": 1.0,
+    "transform": {
+      "value": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "yaw_deg": 400.0,
+        "pitch_deg": 90.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 179.0
+      },
+      "keyframes": [
+        {
+          "frame": 2,
+          "value": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0,
+            "hFOV_deg": 90.0
+          },
+          "easing": "auto"
+        },
+        {
+          "frame": 11,
+          "value": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "yaw_deg": 2.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0,
+            "hFOV_deg": 90.0
+          },
+          "easing": "auto"
+        }
+      ]
+    }
+  },
+  "scene": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    },
+    "transform": {
+      "value": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.0
+      },
+      "keyframes": []
+    }
+  },
+  "stickers": [
+    {
+      "id": "sticker_2",
+      "placement": "sky",
+      "source": {
+        "kind": "port"
+      },
+      "clip": {
+        "start": 0,
+        "in": 3,
+        "duration": 1
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.2,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "transform": {
+        "value": {
+          "yaw_deg": 10.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0,
+          "hFOV_deg": 0.1,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": [
+          {
+            "frame": 0,
+            "value": 0.0,
+            "easing": "hold"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dup",
+      "placement": "world",
+      "source": {
+        "kind": "file",
+        "filename": "m.glb",
+        "subfolder": "3d",
+        "storage": "input"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.2,
+        "y0": 0.1,
+        "x1": 0.8,
+        "y1": 0.9
+      },
+      "transform": {
+        "value": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0,
+          "scale": 1.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      }
+    },
+    {
+      "id": "sticker_1",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "data_url": "data:image/png;base64,AAAA"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "transform": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0,
+          "hFOV_deg": 20.0,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      }
+    }
+  ],
+  "painting": {
+    "version": 1,
+    "groups": [],
+    "paint": {
+      "strokes": []
+    },
+    "mask": {
+      "strokes": []
+    },
+    "raster_objects": []
+  },
+  "painting_layer": null
+}

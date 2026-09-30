@@ -1,0 +1,42 @@
+{
+  "version": 2,
+  "timeline": {"fps": -1, "length": 0.4},
+  "camera": {
+    "aspect": "wide",
+    "transform": {
+      "value": {"position": [1, "x", 3], "yaw_deg": 400, "pitch_deg": 120, "roll_deg": null, "hFOV_deg": 500},
+      "keyframes": [
+        {"frame": 10.6, "value": {"position": [1, 2, 3], "yaw_deg": 5}, "easing": "bounce", "handles": {"in": [1, 2], "out": [0, 0, 1]}},
+        {"frame": "3", "value": {}, "easing": "hold"},
+        {"frame": 2, "value": {"yaw_deg": true}, "easing": [2, 0.5, -1, 0.5]},
+        {"frame": 11, "value": {"yaw_deg": 1}, "easing": "hold"},
+        {"frame": 11, "value": {"yaw_deg": 2}, "easing": [0.1, 0.2, 0.3]},
+        "junk"
+      ]
+    },
+    "extra": 1
+  },
+  "scene": "bad",
+  "stickers": [
+    {
+      "id": "",
+      "placement": "orbit",
+      "source": {"kind": "port"},
+      "clip": {"start": -4, "in": 2.5, "duration": 0},
+      "visible": "yes",
+      "locked": 1,
+      "crop": {"x0": -0.5, "y0": 0.2, "x1": 2, "y1": "a"},
+      "transform": {"value": {"position": [0, 0, 0], "yaw_deg": 10, "hFOV_deg": 0}, "keyframes": {}},
+      "opacity": {"value": 3, "keyframes": [{"frame": 0, "value": -1, "easing": "hold", "handles": {"out": [1, 1, 1]}}]}
+    },
+    {"id": "dup", "placement": "world", "source": {"kind": "port"}},
+    {"id": "dup", "placement": "world", "source": {"kind": "file", "filename": "m.glb", "subfolder": "3d", "storage": "bogus"}, "crop": {"x0": 0.8, "y0": 0.9, "x1": 0.2, "y1": 0.1}, "transform": {"value": {"scale": -2}}},
+    {"id": "no_source", "placement": "sky"},
+    {"id": "bad_file", "placement": "sky", "source": {"kind": "file", "filename": ""}},
+    {"id": "bad_data", "placement": "sky", "source": {"kind": "file", "data_url": "javascript:alert(1)"}},
+    {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "data_url": "data:image/png;base64,AAAA"}}
+  ],
+  "painting": null,
+  "painting_layer": "x",
+  "unknown_top_level": true
+}

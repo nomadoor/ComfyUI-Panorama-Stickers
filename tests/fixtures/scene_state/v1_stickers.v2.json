@@ -1,0 +1,172 @@
+{
+  "version": 2,
+  "timeline": {
+    "fps": 24.0,
+    "length": null
+  },
+  "camera": {
+    "aspect": 1.0,
+    "transform": {
+      "value": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 90.0
+      },
+      "keyframes": []
+    }
+  },
+  "scene": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    },
+    "transform": {
+      "value": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.0
+      },
+      "keyframes": []
+    }
+  },
+  "stickers": [
+    {
+      "id": "st_a",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "a.png",
+        "subfolder": "panorama_stickers",
+        "storage": "input"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": false,
+      "locked": true,
+      "crop": {
+        "x0": 0.1,
+        "y0": 0.2,
+        "x1": 0.8,
+        "y1": 0.9
+      },
+      "transform": {
+        "value": {
+          "yaw_deg": 190.0,
+          "pitch_deg": 12.5,
+          "roll_deg": -10.0,
+          "hFOV_deg": 40.0,
+          "vFOV_deg": 30.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      }
+    },
+    {
+      "id": "st_b",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "data_url": "data:image/png;base64,iVBORw0KGgo="
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "transform": {
+        "value": {
+          "yaw_deg": -30.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0,
+          "hFOV_deg": 25.0,
+          "vFOV_deg": 25.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      }
+    },
+    {
+      "id": "sticker_image_1",
+      "placement": "sky",
+      "source": {
+        "kind": "port"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "transform": {
+        "value": {
+          "yaw_deg": 45.0,
+          "pitch_deg": -5.0,
+          "roll_deg": 3.0,
+          "hFOV_deg": 30.0,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      }
+    }
+  ],
+  "painting": {
+    "version": 1,
+    "groups": [],
+    "paint": {
+      "strokes": []
+    },
+    "mask": {
+      "strokes": []
+    },
+    "raster_objects": []
+  },
+  "painting_layer": {
+    "paint": {
+      "filename": "paint.png",
+      "subfolder": "panorama_stickers",
+      "type": "input"
+    },
+    "revision": "r1"
+  }
+}

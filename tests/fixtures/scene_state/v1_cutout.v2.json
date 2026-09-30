@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "timeline": {
+    "fps": 24.0,
+    "length": null
+  },
+  "camera": {
+    "aspect": 1.7320508075688772,
+    "transform": {
+      "value": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "yaw_deg": 120.0,
+        "pitch_deg": -15.0,
+        "roll_deg": 7.5,
+        "hFOV_deg": 90.0
+      },
+      "keyframes": []
+    }
+  },
+  "scene": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    },
+    "transform": {
+      "value": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.0
+      },
+      "keyframes": []
+    }
+  },
+  "stickers": [],
+  "painting": {
+    "version": 1,
+    "groups": [],
+    "paint": {
+      "strokes": []
+    },
+    "mask": {
+      "strokes": []
+    },
+    "raster_objects": []
+  },
+  "painting_layer": null
+}

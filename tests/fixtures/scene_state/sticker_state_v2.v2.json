@@ -1,0 +1,10 @@
+{
+  "kind": "pano_sticker_state",
+  "version": 2,
+  "fps": 30.0,
+  "camera": [
+    {"frame": 0, "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 60.0}, "easing": [0.42, 0.0, 0.58, 1.0], "handles": {"out": [0.2, 0.0, 0.0]}},
+    {"frame": 12, "value": {"position": [1.0, 0.0, -2.0], "yaw_deg": 20.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 60.0}, "easing": "hold"}
+  ],
+  "source_aspect": null
+}

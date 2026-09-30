@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "projection_model": "pinhole_rectilinear",
+  "alpha_mode": "straight",
+  "coverage": 360,
+  "bg_color": "#00ff00",
+  "output_preset": 2048,
+  "assets": {},
+  "stickers": [],
+  "shots": [
+    {"id": "frame_1", "label": "Frame 1", "yaw_deg": 120, "pitch_deg": -15, "roll_deg": 7.5, "hFOV_deg": 90, "vFOV_deg": 60, "locked": false, "aspect_id": "3:2"},
+    {"id": "frame_2", "label": "Frame 2", "yaw_deg": 0, "pitch_deg": 0, "roll_deg": 0, "hFOV_deg": 40, "vFOV_deg": 40}
+  ],
+  "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
+  "painting_layer": null,
+  "active": {"selected_sticker_id": null, "selected_shot_id": "frame_1"}
+}
