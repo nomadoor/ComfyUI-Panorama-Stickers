@@ -13,13 +13,13 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 |---|---|
 | `evaluated` | `evaluate_scene_state(state, frame)` の戻り値（その時刻の Sticker・`scene`・Camera の値） |
 | `sources` | `SceneSources`。実行中に変わらない素材。`stickers`（Sticker の `id` → `StickerSource`）、`painting`（状態のペイント）、`painting_layer`（アップロード済みのペイントのラスタ。`resolve_painting_layer_payload` の戻り値） |
-| `camera` | 評価済みの Camera の値。Stickers では `evaluated["camera"]` |
+| `camera` | 評価済みの Camera の値。Stickers では `evaluated["camera"]`。ERP の出力は Camera の回転（`yaw_deg`・`pitch_deg`・`roll_deg`）に従って回る |
 | `projection` | `Projection` |
 | `bg` | このフレームの `bg_media` の画像 (h, w, C) または `None` |
 | `bg_key` | `bg` を識別するハッシュ可能な値（Stickers では `bg_media` のフレーム番号）。`None` のときは背景を使い回さない |
 | `bg_color` | 0〜1 の 3 つの数値 |
 | `device` | 出力を置く torch の device |
-| `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `sources`・`bg_color`・`device` は変わらない）。直前のフレームの Sky の層、投影した背景（`("bg", bg_key)`）、結果を持つ。Sky の値が同じなら Sky を作り直さず、`bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は Sticker の値だけで、素材のフレームを含まない。#53・#56 で動画の素材を使うときは、その素材のフレームをキーに入れる |
+| `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `sources`・`bg_color`・`device` は変わらない）。直前のフレームの Sky の層、Camera の向きで写した Sky、読み込んだ背景（`("bg", bg_key)`）、結果を持つ。出力の画素ごとの向き（`_view`）は持たず、要るときに作り直す。Sky の値が同じなら Sky を作り直さず、Camera の回転と `bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は Sticker の値だけで、素材のフレームを含まない。#53・#56 で動画の素材を使うときは、その素材のフレームをキーに入れる |
 
 - 戻り値はすべて float32 で、`device` 上にある。
 - `mask` はペイントで描いたマスクで、色と同じ Projection で写す。
@@ -39,10 +39,10 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 
 ## 重なり順と合成
 
-`composite_frame(bg_color, bg, sky, world=())` が合成の規則を持つ。奥から順に次のとおり重ねる。
+`composite_frame(bg_color, bg, sky, world=(), bg_valid=None)` が合成の規則を持つ。奥から順に次のとおり重ねる。
 
 1. `bg_color`
-2. `bg_media`。不透明として扱い、`bg_color` を置き換える。ないフレームは `bg_color` のまま。
+2. `bg_media`。不透明として扱い、`bg_color` を置き換える。ないフレームと、`bg_valid`（`bg_media` が画像を持つ画素）の外の画素は `bg_color` のまま。
 3. Sky。`sky` の Sticker、ペイントのグループ、ラスタを `z_index` の順に重ね、どのグループにも属さないストロークを一番上に重ねた一枚の層（`docs/scene-state-v2.md` の「Sky の重なり順」）。
 4. World の層を奥から手前へ。各層は色 (H, W, 4) と奥行き (H, W) を持ち、画素ごとに奥行きで並べ替える。同じ奥行きではリスト順を保つ（後ろのものが手前）。
 
@@ -55,13 +55,17 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 
 ## Sky の描き方
 
-- Sky は 360 の ERP として描き、それを Projection で写す。旧ノードのオーバーレイと同じ方法で、旧ノードの基準画像（`tests/fixtures/legacy_goldens/`）を再現する（`tests/test_stickers_scene_node.py`）。
+- Sky は 360 の ERP として描き、それを Projection で写す。旧ノードのオーバーレイと同じ方法で、Camera の回転が 0 のとき旧ノードの基準画像（`tests/fixtures/legacy_goldens/`）を再現する（`tests/test_stickers_scene_node.py`）。
   - 360：出力と同じ大きさで描く。
-  - 180：幅を出力と同じにした 2:1 の ERP で描き、経度の中央の半分を切り出して、出力の大きさに引き伸ばす。色はアルファを掛けた状態で引き伸ばす。
+  - 180：幅を出力と同じにした 2:1 の ERP で描く。
+- 写し方：出力の画素ごとに、Camera から見た向き（出力の ERP の経度・緯度）を Camera の回転（`core/math.py` の `camera_basis`）で Scene の向きに直し、その向きの Sky と背景を双線形に標本化する。180 の出力は Camera の前方の半球（経度 −90°〜90°）だけを写す。Sky の色はアルファを掛けた状態で標本化する。経度の継ぎ目は反対側の列とつないで標本化する。
+- 背景と Sky は無限遠にあるので、Camera の位置では変わらない（ADR 0023）。MASK もペイントと同じく Camera の回転に従う。
+- Sky（`sky` の Sticker とペイント）と MASK は全方向にあり、どの向きの Camera でも写す。
+- 360 の出力で Camera の回転が 0 のときは、向きの計算と標本化を飛ばし、描いた Sky と背景をそのまま使う（背景は出力と大きさが違えば引き伸ばす）。
 - `sky` の Sticker の描画は `core/stickers.py`、ペイントは `core/display_layers.py` と `core/painting.py` の既存の処理を使う。
 - Sky の層の並べ方は、旧ノードと同じ `core/display_layers.py` の `compose_display_list_to_overlay_rgba` で行う。Sticker とペイントを交互に重ねた場面は、基準画像 `stickers_paint_interleaved` で固定している。
 - `z_index` は Sticker の Source ではないが、`crop` と同じく描画に要る静的な値なので、`StickerSource` に入れて渡す（評価関数の戻り値は変えない）。
-- `bg_media` は Projection の範囲の ERP とみなす。180 の出力では、旧ノードと同じく前方の半球の ERP として出力の大きさに合わせる。これは暫定で、#55 で Camera の回転を入れるときに、背景も 360 の ERP として投影側で写す形に移る。
+- `bg_media` は `coverage` の範囲の ERP とみなし、Sky と同じく Camera の向きで写す。360 では 360 の ERP、180 では旧ノード・Cutout と同じく Scene の前方（経度 −90°〜90°）の半球の ERP とする。180 の出力で、Camera を回して `bg_media` の半球の外が見える画素は、`bg_media` がない画素として `bg_color` になる。Sky と MASK はその上にも描く。出力の範囲が Camera の前方の半球だけであることは変わらない。
 
 ## まだ描かないもの
 
@@ -70,7 +74,6 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 | 内容 | 解消する ticket |
 |---|---|
 | 透視投影の描画 | #64 |
-| ERP 出力での Camera の回転 | #55 |
 | `world` の Sticker | #59 |
 | `sticker` の IMAGE バッチ（2 枚以上）。出力フレームとの 1 対 1 の対応 | #56 |
 | Camera の Keyframe が 2 つ以上ある `sticker_state`（v2）。軌道ごとの Pose handoff | #65 |

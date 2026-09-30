@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from comfyui_pano_suite.core import render as render_module
+from comfyui_pano_suite.core.math import camera_basis
 from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, composite_frame, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
@@ -130,8 +131,6 @@ def test_projection_represents_erp_and_perspective():
 def test_render_frame_rejects_what_later_tickets_draw():
     with pytest.raises(NotImplementedError, match="perspective"):
         _render(Projection.perspective(32, 32, 90))
-    with pytest.raises(NotImplementedError, match="Camera rotation"):
-        _render(Projection.erp(32, 16), {"camera": {"transform": {"value": {"yaw_deg": 30.0}}}})
 
 
 def _sticker_state(**transform):
@@ -264,3 +263,110 @@ def test_render_frame_never_reuses_a_background_without_a_key(monkeypatch):
 
     assert torch.equal(second[0], torch.ones(8, 16, 3)) and not torch.equal(first[0], second[0])
     assert counts == {"_background": 2, "composite_frame": 2}
+
+
+def _camera(**value):
+    return {"camera": {"transform": {"value": value}}}
+
+
+def _zenith_bg():
+    # Red around the zenith, blue elsewhere.
+    bg = torch.zeros((16, 32, 3))
+    bg[..., 2] = 1.0
+    bg[:2] = torch.tensor([1.0, 0.0, 0.0])
+    return bg
+
+
+def test_camera_pitch_90_looks_at_the_zenith():
+    color, _mask, _depth = _render(Projection.erp(64, 32), _camera(pitch_deg=90.0), bg=_zenith_bg())
+
+    assert torch.allclose(color[16, 32], torch.tensor([1.0, 0.0, 0.0]))
+    assert torch.allclose(color[0, 32], torch.tensor([0.0, 0.0, 1.0]))
+
+
+@pytest.mark.parametrize("roll, column", [(90.0, 48), (-90.0, 16)])
+def test_positive_camera_roll_turns_the_image_clockwise(roll, column):
+    # Turned a quarter clockwise, the zenith that was above the center is now right of it.
+    color, _mask, _depth = _render(Projection.erp(64, 32), _camera(roll_deg=roll), bg=_zenith_bg())
+
+    assert torch.allclose(color[16, column], torch.tensor([1.0, 0.0, 0.0]))
+    assert torch.allclose(color[16, 64 - column], torch.tensor([0.0, 0.0, 1.0]))
+
+
+def test_180_output_draws_bg_color_outside_the_hemisphere_of_the_bg_media():
+    bg = torch.full((16, 16, 3), 0.5)
+
+    front, _mask, _depth = _render(Projection.erp(32, 32, coverage=180), bg=bg)
+    turned, _mask, _depth = _render(Projection.erp(32, 32, coverage=180), _camera(yaw_deg=90.0), bg=bg)
+
+    assert torch.allclose(front, torch.full((32, 32, 3), 0.5))
+    assert torch.allclose(turned[:, :16], torch.full((32, 16, 3), 0.5))
+    assert torch.equal(turned[:, 16:], torch.tensor(GREEN).expand(32, 16, 3))
+
+
+def test_180_output_draws_the_sky_in_every_direction():
+    state = {**_sticker_state(yaw_deg=135.0, hFOV_deg=20.0, vFOV_deg=20.0), **_camera(yaw_deg=90.0)}
+
+    color, _mask, _depth = _render(Projection.erp(64, 64, coverage=180), state, _red_source(), bg=torch.full((16, 16, 3), 0.5))
+
+    assert torch.allclose(color[32, 48], torch.tensor([1.0, 0.0, 0.0]))
+    assert torch.equal(color[32, 60], torch.tensor(GREEN))
+
+
+def test_rotating_camera_reuses_the_sky_and_composites_each_view(monkeypatch):
+    counts = _count_calls(monkeypatch, "_render_sky", "_background", "composite_frame")
+    cache = {}
+
+    first = _render_bg(cache, torch.rand(8, 16, 3), 0)
+    turned = _render_bg(cache, None, None, _camera(yaw_deg=45.0))
+    again = _render_bg(cache, None, None, _camera(yaw_deg=45.0))
+
+    assert not torch.equal(first[0], turned[0])
+    assert all(a is b for a, b in zip(turned, again))
+    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 2}
+
+
+POSE = {"yaw_deg": 130.0, "pitch_deg": 35.0, "roll_deg": 25.0}
+
+
+@pytest.mark.parametrize("projection", [Projection.erp(128, 64), Projection.erp(64, 64, coverage=180)])
+def test_sky_sticker_posed_like_the_camera_is_upright_at_the_output_center(projection):
+    rgba = np.ones((4, 4, 4), dtype=np.float32)
+    rgba[:2, :2, :3] = (1.0, 0.0, 0.0)
+    rgba[:2, 2:, :3] = (0.0, 1.0, 0.0)
+    rgba[2:, :2, :3] = (0.0, 0.0, 1.0)
+    rgba[2:, 2:, :3] = (1.0, 1.0, 0.0)
+    sources = SceneSources({"s": StickerSource(rgba, {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0})}, {})
+    state = {**_sticker_state(hFOV_deg=40.0, vFOV_deg=40.0, **POSE), **_camera(**POSE)}
+
+    color, _mask, _depth = _render(projection, state, sources)
+
+    row, column = projection.height // 2, projection.width // 2
+    # Each quadrant is sampled about 10 degrees from the center.
+    assert torch.allclose(color[row - 4, column - 4], torch.tensor([1.0, 0.0, 0.0]), atol=0.05)
+    assert torch.allclose(color[row - 4, column + 3], torch.tensor([0.0, 1.0, 0.0]), atol=0.05)
+    assert torch.allclose(color[row + 3, column - 4], torch.tensor([0.0, 0.0, 1.0]), atol=0.05)
+    assert torch.allclose(color[row + 3, column + 3], torch.tensor([1.0, 1.0, 0.0]), atol=0.05)
+
+
+def _mask_dot(direction):
+    x, y, z = direction
+    u = math.atan2(x, z) / (2.0 * math.pi) + 0.5
+    v = 0.5 - math.asin(y) / math.pi
+    points = [{"u": u, "v": v, "t": 0}, {"u": u + 1e-4, "v": v, "t": 1}]
+    return {"id": f"dot_{u}", "actionGroupId": f"ag_{u}", "targetSpace": {"kind": "ERP_GLOBAL"}, "layerKind": "mask", "toolKind": "pen", "size": 48, "radiusValue": 0.012,
+            "color": None, "opacity": 1.0, "createdAt": 0, "geometry": {"geometryKind": "freehand_open", "points": points}}
+
+
+def test_mask_follows_the_camera_upright_at_the_output_center():
+    _right, up, forward = camera_basis(POSE["yaw_deg"], POSE["pitch_deg"], POSE["roll_deg"], dtype=np.float64)
+    above = forward * math.cos(math.radians(25.0)) + up * math.sin(math.radians(25.0))
+    painting = {"version": 1, "paint": {"strokes": []}, "mask": {"strokes": [_mask_dot(forward), _mask_dot(above)]}, "groups": []}
+
+    _color, mask, _depth = _render(Projection.erp(128, 64), {"painting": painting, **_camera(**POSE)})
+
+    # 2.8 degrees per pixel: the center dot, and the other 25 degrees straight above it.
+    assert float(mask[31:34, 63:66].max()) > 0.5
+    assert float(mask[22:25, 63:66].max()) > 0.5
+    assert float(mask[40:43, 63:66].max()) == 0.0
+    assert float(mask[22:25, 55:59].max()) == 0.0 and float(mask[22:25, 70:74].max()) == 0.0

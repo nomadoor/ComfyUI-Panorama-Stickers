@@ -334,7 +334,7 @@ Python は `ValueError`、JS は `Error` を投げる。
 | `assets[asset_id]` が `type: "comfy_image"` | `source: {"kind": "file", filename, subfolder, storage}` |
 | `assets[asset_id]` が `type: "dataurl"` | `source: {"kind": "file", "data_url": ...}` |
 | `assets[asset_id]` が `type: "path"`、または資産が見つからない | Sticker を捨てる |
-| `shots[0]`（Cutout） | `camera`。`yaw_deg`・`pitch_deg`・`roll_deg`、`hFOV_deg`（1〜179 に寄せる）、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる |
+| `shots[0]`（Cutout） | `camera`。`yaw_deg`・`pitch_deg`・`roll_deg`、`hFOV_deg`（1〜179 に寄せる）、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
 | `shots` がない、または空 | 既定値の `camera`。v1 の Cutout はこのとき ERP をそのまま出力していたが、その挙動は保たない（意図した挙動変更。素通しは Preview の出力で行う） |
 | `painting`・`painting_layer` | 同名のフィールド |
 | `version`・`projection_model`・`alpha_mode` | 捨てる |
