@@ -3,6 +3,7 @@
 import { HIDDEN_PREVIEW_OPACITY } from "./pano_gl_scene.js";
 import { evaluateSceneState } from "./pano_scene_eval.js";
 import { DEG2RAD, RAD2DEG } from "./pano_camera_math.js";
+import { contextHalfExtentsPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import { rotationToQuaternion, worldRotation } from "./pano_world.js";
 
 // The three.js view renders at most this many pixels on a side.
@@ -17,6 +18,35 @@ export function viewportCamera(view, width, height) {
     quaternion: rotationToQuaternion(worldRotation(view.yaw_deg, view.pitch_deg, view.roll_deg)),
     fovY_deg: 2 * Math.atan(tanHalfH / aspect) * RAD2DEG,
     aspect,
+  };
+}
+
+// The three.js camera that looks through a Cutout shot. hFOV_deg and vFOV_deg span the view
+// whatever its pixel aspect, as the Cutout node stretches them over its output size.
+export function shotCamera(shot) {
+  const camera = getCutoutCameraParams(shot);
+  return {
+    quaternion: rotationToQuaternion(worldRotation(camera.yawDeg, camera.pitchDeg, camera.rollDeg)),
+    fovY_deg: camera.vFovDeg,
+    aspect: camera.aspect,
+  };
+}
+
+// The Frame view (ADR 0021) looks through the shot over the whole canvas, not only its gate: the
+// context around the gate keeps the gate's focal length and stops at 85 degrees off axis. gate is
+// the gateRectFromFocal() layout. Returns the canvas rect to draw into and the shot that spans it.
+export function frameViewContext(shot, gate, canvasSize) {
+  const focal = Math.max(1, gate.focalPx);
+  const { halfW, halfH } = contextHalfExtentsPx(canvasSize, focal);
+  const centerX = gate.x + gate.w * 0.5;
+  const centerY = gate.y + gate.h * 0.5;
+  return {
+    rect: { x: centerX - halfW, y: centerY - halfH, w: halfW * 2, h: halfH * 2 },
+    shot: {
+      ...shot,
+      hFOV_deg: 2 * Math.atan(halfW / focal) * RAD2DEG,
+      vFOV_deg: 2 * Math.atan(halfH / focal) * RAD2DEG,
+    },
   };
 }
 
@@ -59,6 +89,23 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers }) {
   return layers.sort((a, b) => a.zIndex - b.zIndex);
 }
 
+const mediaIds = new WeakMap();
+let nextMediaId = 1;
+
+function mediaId(media) {
+  if (!mediaIds.has(media)) mediaIds.set(media, nextMediaId++);
+  return mediaIds.get(media);
+}
+
+// A key that changes whenever the frame drawn from { background, layers } can change: the media
+// objects and revisions the view uploads textures by, and every placement it draws with.
+export function viewInputKey({ background, layers }) {
+  return JSON.stringify([
+    background && [mediaId(background.media), background.revision, background.coverage],
+    layers.map((layer) => [layer.kind, layer.id, mediaId(layer.media), layer.revision, layer.opacity, layer.quaternion, layer.rect]),
+  ]);
+}
+
 // onReady runs once the view can render. onFailed runs when the chunk or WebGL is unavailable, and
 // the editor then draws with the previous renderer.
 export function createEditorView({ onReady, onFailed }) {
@@ -70,6 +117,10 @@ export function createEditorView({ onReady, onFailed }) {
     // until the view has loaded.
     render(input) {
       return view ? view.render(input) : null;
+    },
+    // The same layers laid out as an ERP (the Unwrap view); input has no camera.
+    renderUnwrap(input) {
+      return view ? view.renderUnwrap(input) : null;
     },
     dispose() {
       disposed = true;

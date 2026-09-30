@@ -166,5 +166,5 @@ test("the on-node Preview draws through the shared three.js view", () => {
 
 test("the read-only Preview modal draws its panorama view with three.js too", () => {
   const editor = source("pano_editor.js");
-  assert.match(editor, /const editorView = type === "stickers"\n\s*\? createEditorView\(/);
+  assert.match(editor, /const editorView = type === "stickers" \|\| type === "cutout"\n\s*\? createEditorView\(/);
 });

@@ -5,11 +5,19 @@ import test from "node:test";
 import { Mesh, PerspectiveCamera, PlaneGeometry, Vector3 } from "three";
 
 import { cameraBasis, DEG2RAD } from "../web_src/pano_camera_math.js";
-import { skyLayers, viewportCamera } from "../web_src/pano_editor_view.js";
+import {
+  canvasToFilmTangent,
+  contextHalfExtentsPx,
+  cutoutFilmPointToWorldDir,
+  fitFocalPx,
+  gateRectFromFocal,
+  getCutoutCameraParams,
+} from "../web_src/pano_cutout_view_math.js";
+import { frameViewContext, shotCamera, skyLayers, viewInputKey, viewportCamera } from "../web_src/pano_editor_view.js";
 import { editorSceneState, parsePanoEditorState } from "../web_src/pano_editor_state.js";
 import { HIDDEN_PREVIEW_OPACITY } from "../web_src/pano_gl_scene.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { applyViewportCamera, placeSticker } from "../web_src/pano_three_view.js";
+import { applyViewportCamera, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
 import { worldToPano } from "../web_src/pano_world.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -63,6 +71,82 @@ test("three.js viewport camera rays match pano_camera_math per pixel", () => {
   }
 });
 
+// The previous cutout view's ray (pano_gl_renderer.js projectCameraUv in cutout mode): hFOV and
+// vFOV span the drawn rect whatever its pixel aspect.
+function legacyShotRay(shot, width, height, x, y) {
+  const camera = getCutoutCameraParams(shot);
+  const { right, up, fwd } = cameraBasis(camera.yawDeg, camera.pitchDeg, camera.rollDeg);
+  const nx = ((x + 0.5) / width * 2 - 1) * camera.tanHalfX;
+  const ny = (1 - (y + 0.5) / height * 2) * camera.tanHalfY;
+  return new Vector3(
+    fwd.x + right.x * nx + up.x * ny,
+    fwd.y + right.y * nx + up.y * ny,
+    fwd.z + right.z * nx + up.z * ny,
+  ).normalize();
+}
+
+test("the shot camera casts the previous cutout view's rays, roll included", () => {
+  const shots = [
+    { yaw_deg: 30, pitch_deg: 10, roll_deg: 15, hFOV_deg: 90, vFOV_deg: 60 },
+    { yaw_deg: -170, pitch_deg: 75, roll_deg: -120, hFOV_deg: 40, vFOV_deg: 110 },
+    { yaw_deg: 400, pitch_deg: -90, rot_deg: 33, hFOV_deg: 170, vFOV_deg: 20 },
+    { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 0, vFOV_deg: 0 },
+  ];
+  const camera = new PerspectiveCamera();
+  for (const shot of shots) {
+    applyViewportCamera(camera, shotCamera(shot));
+    // A different pixel aspect than the shot's: the FOVs still span the view.
+    for (const [width, height] of [[300, 200], [128, 400]]) {
+      for (const [x, y] of [[0, 0], [37, 151], [150, 100], [width - 1, height - 1]]) {
+        const angle = threeRay(camera, width, height, x, y).angleTo(legacyShotRay(shot, width, height, x, y));
+        assert.ok(angle < 1e-6, `${JSON.stringify(shot)} ${width}x${height} pixel ${x},${y}: ${angle} rad`);
+      }
+    }
+  }
+});
+
+test("the Frame view draws each canvas pixel along the ray the Frame tools use there", () => {
+  const shot = { yaw_deg: 30, pitch_deg: 10, roll_deg: 15, hFOV_deg: 90, vFOV_deg: 60 };
+  const camera = new PerspectiveCamera();
+  // Sweep the canvas width so both the width- and the height-limited gates are covered (ADR 0021).
+  for (const [width, height] of [[500, 700], [900, 600], [1600, 600], [2400, 800]]) {
+    const safeRect = { x: 24, y: 24, w: width - 48, h: height - 48 };
+    const gate = gateRectFromFocal(safeRect, shot, fitFocalPx(safeRect, shot));
+    const context = frameViewContext(shot, gate, { width, height });
+    const { halfW, halfH } = contextHalfExtentsPx({ width, height }, gate.focalPx);
+    assert.deepEqual(context.rect, { x: gate.x + gate.w / 2 - halfW, y: gate.y + gate.h / 2 - halfH, w: halfW * 2, h: halfH * 2 });
+    applyViewportCamera(camera, shotCamera(context.shot));
+    const center = { x: gate.x + gate.w / 2, y: gate.y + gate.h / 2 };
+    for (const [fx, fy] of [[0, 0], [0.5, 0.5], [0.13, 0.9], [1, 0.25], [-0.2, 1.1]]) {
+      const point = { x: gate.x + fx * gate.w, y: gate.y + fy * gate.h };
+      const ndc = new Vector3((point.x - context.rect.x) / context.rect.w * 2 - 1, 1 - (point.y - context.rect.y) / context.rect.h * 2, 0.5);
+      const drawn = worldToPano(ndc.unproject(camera).sub(camera.position).normalize());
+      const tool = cutoutFilmPointToWorldDir(shot, canvasToFilmTangent(center, gate.focalPx, point));
+      const angle = new Vector3(drawn.x, drawn.y, drawn.z).angleTo(new Vector3(tool.x, tool.y, tool.z));
+      assert.ok(angle < 1e-6, `${width}x${height} gate point ${fx},${fy}: ${angle} rad`);
+    }
+  }
+});
+
+test("the Frame view context stops at 85 degrees off axis for an extreme shot FOV", () => {
+  const shot = { yaw_deg: 10, pitch_deg: 0, roll_deg: 0, hFOV_deg: 175, vFOV_deg: 30 };
+  const [width, height] = [1600, 600];
+  const safeRect = { x: 24, y: 24, w: width - 48, h: height - 48 };
+  const gate = gateRectFromFocal(safeRect, shot, fitFocalPx(safeRect, shot));
+  const { rect, shot: contextShot } = frameViewContext(shot, gate, { width, height });
+  const reach = gate.focalPx * Math.tan(85 * DEG2RAD);
+  // The gate is wider than 85 degrees reaches, so the context is narrower than the gate and its
+  // height is bounded by the canvas.
+  assert.ok(reach * 2 < gate.w);
+  const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} != ${expected}`);
+  close(rect.w, reach * 2);
+  close(rect.h, height);
+  close(rect.x + rect.w / 2, gate.x + gate.w / 2);
+  close(rect.y + rect.h / 2, gate.y + gate.h / 2);
+  close(contextShot.hFOV_deg, 170);
+  close(Math.tan(contextShot.vFOV_deg * 0.5 * DEG2RAD), height / 2 / gate.focalPx);
+});
+
 // Where the previous sticker shader samples the sticker for a view ray (pano_gl_renderer.js
 // STICKER_FRAGMENT_SHADER): normalized frame coordinates, top-left origin.
 function legacyStickerUv(value, dir) {
@@ -98,6 +182,29 @@ test("sky Sticker planes cover the rays of the previous sticker shader", () => {
   }
 });
 
+test("the Unwrap sticker uniforms sample the previous unwrap sticker shader's texels", () => {
+  const value = { yaw_deg: -120, pitch_deg: 35, roll_deg: -40, hFOV_deg: 80, vFOV_deg: 50 };
+  const crop = { x0: 0.05, y0: 0.3, x1: 0.9, y1: 0.75 };
+  const state = skyState([{ id: "a", source: { kind: "port" }, crop, transform: { value } }]);
+  const [layer] = skyLayers(state, 0, { media: () => ({ media: {}, revision: "" }), zIndex: () => 0, paintLayers: [] });
+  const { toSticker, rect } = unwrapStickerUniforms(layer);
+  for (const [lon, lat] of [[-120, 35], [-95, 50], [-140, 20], [-110, 55]]) {
+    // UNWRAP_STICKER_FRAGMENT for the ERP pixel at lon/lat.
+    const lonRad = lon * DEG2RAD;
+    const latRad = lat * DEG2RAD;
+    const pano = { x: Math.cos(latRad) * Math.sin(lonRad), y: Math.sin(latRad), z: Math.cos(latRad) * Math.cos(lonRad) };
+    const local = new Vector3(pano.x, pano.y, -pano.z).applyMatrix3(toSticker);
+    const plane = { x: local.x / -local.z, y: local.y / -local.z };
+    const uv = { x: (plane.x - rect.x) / (rect.z - rect.x), y: (plane.y - rect.y) / (rect.w - rect.y) };
+    // The previous shader's texel: the crop of the full frame, top-left origin; the sticker texture
+    // loads with flipY, so uv.y = 1 is the image's top row.
+    const full = legacyStickerUv(value, pano);
+    const expected = { x: (full.u - crop.x0) / (crop.x1 - crop.x0), y: 1 - (full.v - crop.y0) / (crop.y1 - crop.y0) };
+    assert.ok(local.z < 0);
+    assert.ok(Math.abs(uv.x - expected.x) < 1e-6 && Math.abs(uv.y - expected.y) < 1e-6, `${lon},${lat}: ${JSON.stringify(uv)} ${JSON.stringify(expected)}`);
+  }
+});
+
 test("sky layers keep the editor's z order with paint and show hidden port Stickers faintly", () => {
   const media = { tag: "image" };
   const state = skyState([
@@ -130,6 +237,30 @@ test("the state v2 derived from the editor's v1 working state has the shape of t
   assert.deepEqual(Object.keys(saved), Object.keys(canonical));
   for (const sticker of saved.stickers) assert.deepEqual(Object.keys(sticker), Object.keys(canonical.stickers[0]));
   assert.deepEqual(loadSceneState(JSON.parse(JSON.stringify(saved))), saved);
+});
+
+test("the view input key changes only with what the view draws", () => {
+  const image = {};
+  const paint = {};
+  const input = (overrides = {}) => ({
+    background: { media: image, revision: "bg:1", coverage: 360 },
+    layers: [
+      { kind: "erp", id: "paint", media: paint, revision: "p:1", opacity: 1, zIndex: 0 },
+      { kind: "sticker", id: "s", media: image, revision: "s:1", opacity: 1, zIndex: 1, quaternion: { x: 0, y: 0, z: 0, w: 1 }, rect: { x0: -1, x1: 1, y0: -1, y1: 1 } },
+    ],
+    ...overrides,
+  });
+  const key = viewInputKey(input());
+  assert.equal(viewInputKey(input()), key);
+  assert.notEqual(viewInputKey(input({ background: { media: {}, revision: "bg:1", coverage: 360 } })), key);
+  assert.notEqual(viewInputKey(input({ background: { media: image, revision: "bg:2", coverage: 360 } })), key);
+  assert.notEqual(viewInputKey(input({ background: null })), key);
+  const moved = input();
+  moved.layers[1].rect = { x0: -1, x1: 1, y0: -1, y1: 0.5 };
+  assert.notEqual(viewInputKey(moved), key);
+  const painted = input();
+  painted.layers[0].revision = "p:2";
+  assert.notEqual(viewInputKey(painted), key);
 });
 
 test("three.js stays out of the eagerly loaded bundle", () => {
