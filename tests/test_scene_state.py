@@ -100,7 +100,8 @@ def test_state_v2_has_no_unread_fields():
     assert list(state["camera"].keys()) == ["aspect", "transform"]
     assert list(state["scene"].keys()) == ["clip", "transform"]
     for sticker in state["stickers"]:
-        assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", "transform", "opacity"]
+        sky_only = ["z_index"] if sticker["placement"] == "sky" else []
+        assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", "transform", "opacity", *sky_only]
 
 
 @pytest.mark.parametrize("name", STICKER_STATE_CASES)

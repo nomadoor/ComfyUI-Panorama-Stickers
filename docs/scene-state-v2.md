@@ -13,7 +13,7 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 ## 共通の規則
 
 - 数値は JSON の数値だけを受け付ける。文字列・真偽値・`null`・非有限値は不正とする。
-- 整数のフィールド（`frame`、Clip range、`length`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化（#54）で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。
+- 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化（#54）で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
 - 正規化は冪等である。`load_scene_state` の結果をもう一度読むと同じ結果になる。
@@ -62,7 +62,7 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 | `camera.transform` | Keyframe group | 下記 | Camera の値（Viewport camera は保存しない） |
 | `scene.clip` | Clip range | 下記 | `scene` 入力が有効な範囲 |
 | `scene.transform` | Keyframe group | 下記 | `scene` 入力に掛ける変形 |
-| `stickers` | 配列 | `[]` | リスト順が重なり順（先頭が奥） |
+| `stickers` | 配列 | `[]` | `sky` の層は `z_index`（ペイントと共通の軸）で並べ、同じ値ならリストの順（先頭が奥）。`world` の Sticker は奥行きで重なる |
 | `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層 |
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
 
@@ -148,7 +148,8 @@ Keyframe をまとめて打つ単位である。どのグループも同じ形�
   "locked": false,
   "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
   "transform": {"value": {...}, "keyframes": []},
-  "opacity": {"value": 1.0, "keyframes": []}
+  "opacity": {"value": 1.0, "keyframes": []},
+  "z_index": 0
 }
 ```
 
@@ -163,6 +164,16 @@ Keyframe をまとめて打つ単位である。どのグループも同じ形�
 | `crop` | `x0`・`y0`・`x1`・`y1`（0〜1） | 全体 | 2D の素材の切り抜き。素材の正規化座標（左上が原点）。0〜1 に寄せた後、`x0 ≤ x1`・`y0 ≤ y1` になるよう並べ替える（旧描画の min / max による正規化と同じ） |
 | `transform` | Keyframe group | 上記 | `placement` に応じて Sky の変形か World の変形 |
 | `opacity` | Keyframe group | `1` | 不透明度 |
+| `z_index` | 整数 | `0` | `sky` の Sticker だけが持つ（`world` では捨てる）。読み込みで `floor(x + 0.5)` に丸める。数値でない・非有限の値は既定値。下記「Sky の重なり順」 |
+
+#### Sky の重なり順
+
+`sky` の Sticker と、ペイントのストロークのグループ（`painting.groups[].z_index`）・ラスタ（`painting.raster_objects[].z_index`）は、同じ `z_index` の軸で奥から手前へ重ねる。旧ノードの display list（`core/display_list.py` の `build_display_entries`）と同じ規則とする。
+
+- 同じ値のときは、Sticker、グループ、ラスタの順。それぞれの中ではリストの順。
+- どのグループにも属さないストロークは、最後に一番手前に重ねる。
+
+`world` の Sticker は奥行きで重なるので `z_index` を持たない。
 
 `world` の 2D の素材（IMAGE / VIDEO）の板の大きさ、3D の素材の置き方は #59・#63 で定める。
 
@@ -176,6 +187,7 @@ Keyframe をまとめて打つ単位である。どのグループも同じ形�
 `sticker` 入力が接続されているのに、状態に `source.kind == "port"` の Sticker がない場合、ノードとエディタは、その素材を次の Sticker としてリストの末尾（最も手前）に加えて扱う。旧ノードの挙動（`nodes.py` の `_build_runtime_external_sticker` を呼ぶ、既存の外部 Sticker が見つからないときの経路）と同じである。
 
 - `placement: "sky"`、Clip range・`opacity` などは既定値。
+- `z_index` は、状態の `sky` の Sticker の最大値 + 1（Sticker がなければ `0`）。ペイントの `z_index` は数えない（旧ノードと同じ）。
 - Sky の変形は既定値で、`hFOV_deg` は `30`、`vFOV_deg` は素材のアスペクト比から求める。
 - `sticker_state` があれば、その姿勢（yaw / pitch / roll、`hFOV_deg`）を使う。
 
@@ -262,6 +274,7 @@ Python は `ValueError`、JS は `Error` を投げる。
 | v1 | v2 |
 |---|---|
 | `stickers[]` | `z_index` の昇順（同じ値は元の順）に並べた `stickers[]`。すべて `placement: "sky"`、Clip range は既定値、`opacity` は `1` |
+| Sticker の `z_index` | 同名のフィールド（ペイントとの重なり順を保つ） |
 | Sticker の `yaw_deg`・`pitch_deg`・`hFOV_deg`・`vFOV_deg` | `transform.value` の同名のフィールド |
 | Sticker の `rot_deg` | `transform.value.roll_deg` |
 | Sticker の `visible`・`locked`・`crop`・`id` | 同名のフィールド |
@@ -275,7 +288,7 @@ Python は `ValueError`、JS は `Error` を投げる。
 | `version`・`projection_model`・`alpha_mode` | 捨てる |
 | `coverage`・`bg_color`・`output_preset` | 捨てる。ノードの入力（ウィジェット）が持つ |
 | `ui_settings`・`active`・`editor_history` | 捨てる。エディタのセッションの状態であり、Scene ではない（`ui_settings` はブラウザ側にも保存されている）。エディタの選択状態（旧 `active`）は状態に置かない |
-| `cutout_render_layer`、`source_state_hash`・`slot_key`・`source_kind`・`asset_id`・`z_index`、`assets` の `name`・`w`・`h` | 捨てる |
+| `cutout_render_layer`、`source_state_hash`・`slot_key`・`source_kind`・`asset_id`、`assets` の `name`・`w`・`h` | 捨てる |
 | `timeline` | 既定値（`fps: 24`、`length: null`）。v1 の `fps` 入力は状態にない |
 
 Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸めない（v1 の描画も丸めない）。

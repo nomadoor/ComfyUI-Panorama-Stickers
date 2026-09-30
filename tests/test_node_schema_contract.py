@@ -92,6 +92,59 @@ EXPECTED_SCHEMAS = {
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
     },
+    "PanoramaStickersNode": {
+        "display_name": "Panorama Stickers",
+        "inputs": [
+            ("bg_media", "COMFY_MULTITYPED_V3", True),
+            ("scene", "COMFY_MULTITYPED_V3", True),
+            ("sticker", "COMFY_MULTITYPED_V3", True),
+            ("sticker_state", "STRING", True),
+            ("bg_color", "COLOR", False),
+            ("coverage", "COMBO", False),
+            ("output_preset", "COMBO", False),
+            ("state_json", "STRING", False),
+        ],
+        "input_metadata": {
+            "bg_media": {},
+            "scene": {},
+            "sticker": {},
+            "sticker_state": {
+                "default": "",
+                "multiline": False,
+                "dynamic_prompts": False,
+                "force_input": True,
+            },
+            "bg_color": {
+                "default": "#00ff00",
+                "force_input": None,
+            },
+            "coverage": {
+                "default": "360",
+                "options": ["360", "180"],
+                "force_input": None,
+            },
+            "output_preset": {
+                "default": "2048",
+                "options": ["1024", "2048", "4096", "auto"],
+                "force_input": None,
+            },
+            "state_json": {
+                "default": "",
+                "multiline": True,
+                "dynamic_prompts": False,
+                "force_input": None,
+            },
+        },
+        "outputs": [
+            ("image", "image", "IMAGE"),
+            ("mask", "mask", "MASK"),
+            ("audio", "audio", "AUDIO"),
+            ("fps", "fps", "FLOAT"),
+            ("pano_scene", "pano_scene", "PANO_SCENE"),
+        ],
+        "hidden": [],
+        "is_output_node": False,
+    },
     "PanoramaCutout": {
         "display_name": "Panorama Cutout",
         "inputs": [
@@ -279,7 +332,19 @@ def test_v3_schema_preserves_public_ports(node_id):
     assert [hidden.value for hidden in schema.hidden] == expected["hidden"]
 
 
-@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaCutout"])
+MESH_FILE_TYPES = "FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D"
+SPLAT_FILE_TYPES = "FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY"
+
+
+def test_stickers_node_media_ports_accept_the_spec_types():
+    inputs = {input_.id: input_ for input_ in REGISTERED_NODES["PanoramaStickersNode"].define_schema().inputs}
+
+    assert inputs["bg_media"].get_io_type() == "IMAGE,VIDEO"
+    assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY"
+    assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES}"
+
+
+@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaStickersNode", "PanoramaCutout"])
 def test_internal_state_widget_is_advanced_in_v3_schema(node_id):
     schema = REGISTERED_NODES[node_id].define_schema()
     state_input = next(input_ for input_ in schema.inputs if input_.id == "state_json")

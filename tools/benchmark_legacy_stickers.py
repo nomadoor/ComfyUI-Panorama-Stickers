@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from comfyui_pano_suite.nodes import PanoramaStickersNode
+from comfyui_pano_suite.nodes import PanoramaStickersNode, PanoramaStickersSceneNode
 from tools.bake_legacy_goldens import ASSETS, ROTATED_POSE, _painting, _sticker, _stroke, build_background_erp, render_only_runtime
 
 
@@ -51,8 +51,17 @@ def run_legacy(bg_erp: torch.Tensor) -> None:
     )
 
 
-# The new Stickers node is added here once it exists, keeping the same scene.
-CANDIDATES = {"legacy": run_legacy}
+def run_new(bg_erp: torch.Tensor) -> None:
+    PanoramaStickersSceneNode.execute(
+        bg_color="#00ff00",
+        coverage="360",
+        output_preset="auto",
+        state_json=STATE_JSON,
+        bg_media=bg_erp,
+    )
+
+
+CANDIDATES = {"legacy": run_legacy, "new": run_new}
 
 
 def _static_batch(frames: int, width: int) -> torch.Tensor:

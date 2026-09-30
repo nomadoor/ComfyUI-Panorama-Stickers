@@ -35,6 +35,42 @@ def _load_dataurl_cached(v: str) -> np.ndarray:
     return arr
 
 
+def _load_comfy_file_rgba(filename: str, subfolder: str, storage: str) -> np.ndarray | None:
+    """Read an image from ComfyUI's input, output, or temp directory; paths outside it are refused."""
+    if folder_paths is None:
+        return None
+    filename = str(filename or "").strip()
+    if not filename:
+        return None
+    subfolder = str(subfolder or "").strip().strip("/\\")
+    storage = str(storage or "input").strip().lower()
+    if storage == "output":
+        base = Path(folder_paths.get_output_directory())
+    elif storage == "temp":
+        base = Path(folder_paths.get_temp_directory())
+    else:
+        base = Path(folder_paths.get_input_directory())
+    p = (base / subfolder / filename).resolve() if subfolder else (base / filename).resolve()
+    try:
+        p.relative_to(base.resolve())
+    except Exception:
+        return None
+    if not p.exists() or not p.is_file():
+        return None
+    img = Image.open(p).convert("RGBA")
+    return np.asarray(img, dtype=np.float32) / 255.0
+
+
+def load_source_rgba(source: dict) -> np.ndarray | None:
+    """Read a state v2 `file` Source as straight-alpha RGBA (h, w, 4) in 0..1, or None when it cannot be read."""
+    try:
+        if "data_url" in source:
+            return _load_dataurl_cached(source["data_url"])
+        return _load_comfy_file_rgba(source["filename"], source["subfolder"], source["storage"])
+    except (OSError, ValueError):
+        return None
+
+
 def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarray | None:
     if not isinstance(asset_info, dict):
         return None
@@ -72,27 +108,8 @@ def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarr
             img = Image.open(p).convert("RGBA")
             return np.asarray(img, dtype=np.float32) / 255.0
 
-        if t == "comfy_image" and folder_paths is not None:
-            filename = str(asset_info.get("filename") or "").strip()
-            if not filename:
-                return None
-            subfolder = str(asset_info.get("subfolder") or "").strip().strip("/\\")
-            storage = str(asset_info.get("storage") or "input").strip().lower()
-            if storage == "output":
-                base = Path(folder_paths.get_output_directory())
-            elif storage == "temp":
-                base = Path(folder_paths.get_temp_directory())
-            else:
-                base = Path(folder_paths.get_input_directory())
-            p = (base / subfolder / filename).resolve() if subfolder else (base / filename).resolve()
-            try:
-                p.relative_to(base.resolve())
-            except Exception:
-                return None
-            if not p.exists() or not p.is_file():
-                return None
-            img = Image.open(p).convert("RGBA")
-            return np.asarray(img, dtype=np.float32) / 255.0
+        if t == "comfy_image":
+            return _load_comfy_file_rgba(asset_info.get("filename"), asset_info.get("subfolder"), asset_info.get("storage"))
     except Exception:
         return None
     return None

@@ -118,8 +118,12 @@ def _stroke(stroke_id: str, layer_kind: str, points: list[tuple[float, float]], 
     }
 
 
-def _painting(paint=(), mask=()) -> dict:
-    return {"version": 1, "paint": {"strokes": list(paint)}, "mask": {"strokes": list(mask)}}
+def _painting(paint=(), mask=(), groups=()) -> dict:
+    return {"version": 1, "paint": {"strokes": list(paint)}, "mask": {"strokes": list(mask)}, "groups": list(groups)}
+
+
+def _group(stroke_id: str, z_index: int) -> dict:
+    return {"id": f"group_{stroke_id}", "type": "strokeGroup", "actionGroupId": f"ag_{stroke_id}", "z_index": z_index}
 
 
 def _run_stickers(coverage: str, stickers=(), painting=None):
@@ -169,6 +173,13 @@ CASES = {
     "stickers_paint_mask": lambda: _run_stickers("360", painting=_painting(mask=[
         _stroke("mask", "mask", [(0.3, 0.5), (0.5, 0.45), (0.7, 0.5)], 20),
     ])),
+    # Stroke group z=0 under the Sticker (z=1), another group z=2 over it.
+    "stickers_paint_interleaved": lambda: _run_stickers("360", [
+        _sticker("middle", "quadrants", 1, yaw_deg=0.0, pitch_deg=0.0, hFOV_deg=60.0, vFOV_deg=45.0, rot_deg=0.0),
+    ], painting=_painting(paint=[
+        _stroke("under", "paint", [(0.35, 0.45), (0.5, 0.5), (0.65, 0.55)], 14, {"r": 1.0, "g": 0.1, "b": 0.1, "a": 1.0}),
+        _stroke("over", "paint", [(0.35, 0.55), (0.5, 0.5), (0.65, 0.45)], 8, {"r": 0.1, "g": 0.2, "b": 1.0, "a": 0.8}),
+    ], groups=[_group("under", 0), _group("over", 2)])),
     "stickers_coverage_180": lambda: _run_stickers("180", [
         _sticker("front", "quadrants", 0, yaw_deg=45.0, pitch_deg=15.0, hFOV_deg=40.0, vFOV_deg=30.0, rot_deg=10.0),
     ]),

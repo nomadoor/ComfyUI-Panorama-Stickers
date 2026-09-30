@@ -212,6 +212,14 @@ def calculate_dimensions_from_megapixels(
     return w_final, h_final
 
 
+def vfov_from_hfov(hfov_deg: float, image_w: int, image_h: int) -> float:
+    width = max(1, int(image_w))
+    height = max(1, int(image_h))
+    hfov = float(np.clip(hfov_deg, 0.1, 179.0))
+    vfov = 2.0 * math.degrees(math.atan(math.tan(math.radians(hfov) * 0.5) * (height / width)))
+    return float(np.clip(vfov, 0.1, 179.0))
+
+
 def finite_float(value, default: float = 0.0) -> float:
     try:
         out = float(value)

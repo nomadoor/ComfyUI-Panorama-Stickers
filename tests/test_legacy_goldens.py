@@ -45,3 +45,10 @@ def test_golden_comparison_detects_small_sticker_shifts(yaw_offset, matches):
     image, _mask = _run_stickers("360", [_sticker("rotated", "quadrants", 0, **pose)])
 
     assert (_golden_mismatch(image, read_png16(FIXTURE_DIR / "stickers_sky_rotation.image.png")) is None) is matches
+
+
+def test_baking_a_case_writes_nothing_to_the_comfyui_temp_directory(tmp_path):
+    # conftest points ComfyUI's temp directory at tmp_path; render_only_runtime must keep it empty.
+    CASES["stickers_paint_interleaved"]()
+
+    assert list(tmp_path.rglob("*")) == []
