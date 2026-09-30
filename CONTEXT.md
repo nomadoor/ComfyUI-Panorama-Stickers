@@ -19,7 +19,7 @@ Camera の位置に依存しない無限遠の層。背景 ERP、`sky` Placement
 _Avoid_: 天球背景, スカイボックス
 
 **Sticker**:
-一つの Source、一つの Placement、一つの Clip range を持つ Scene 内の要素。重なり順はリスト順で決まる。
+一つの Source、一つの Placement、一つの Clip range を持つ Scene 内の要素。`sky` の Sticker の重なり順はペイントと共通の `z_index` で決まり、`world` の Sticker は奥行きで前後が決まる。
 _Avoid_: Layer, Entity, Object
 
 **Placement**:
