@@ -57,6 +57,7 @@ def _load_nodes_module():
     comfy_api_module = ModuleType("comfy_api")
     comfy_api_latest_module = ModuleType("comfy_api.latest")
     comfy_api_latest_module.io = io_module
+    comfy_api_latest_module.ComfyExtension = type("ComfyExtension", (), {})
     fake_nodes = MagicMock()
     fake_nodes.PreviewImage = MagicMock(return_value=MagicMock(save_images=MagicMock(return_value={})))
     with patch.dict(

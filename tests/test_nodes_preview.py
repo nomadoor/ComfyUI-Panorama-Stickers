@@ -73,6 +73,7 @@ class TestNodesPreview(unittest.TestCase):
         comfy_api_module = ModuleType("comfy_api")
         comfy_api_latest_module = ModuleType("comfy_api.latest")
         comfy_api_latest_module.io = io_module
+        comfy_api_latest_module.ComfyExtension = type("ComfyExtension", (), {})
 
         self.mock_nodes = MagicMock()
         self.mock_preview_image = MagicMock()

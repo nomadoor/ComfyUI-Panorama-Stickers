@@ -7,7 +7,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from comfy_api.latest import io
+from comfy_api.latest import ComfyExtension, io
+from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
 from .node_runtime import PREVIEW_UI_KEYS, NodeProgress, create_default_runtime
@@ -1396,16 +1397,16 @@ class PanoramaSeamPrepNode(io.ComfyNode):
         return io.NodeOutput(prepared, mask, mask_blurred)
 
 
-NODE_CLASS_MAPPINGS = {
-    "PanoramaStickers": PanoramaStickersNode,
-    "PanoramaCutout": PanoramaCutoutNode,
-    "PanoramaPreview": PanoramaPreviewNode,
-    "PanoramaSeamPrep": PanoramaSeamPrepNode,
-}
+class PanoramaSuiteExtension(ComfyExtension):
+    @override
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        return [
+            PanoramaStickersNode,
+            PanoramaCutoutNode,
+            PanoramaPreviewNode,
+            PanoramaSeamPrepNode,
+        ]
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "PanoramaStickers": "Panorama Stickers",
-    "PanoramaCutout": "Panorama Cutout",
-    "PanoramaPreview": "Panorama Preview",
-    "PanoramaSeamPrep": "Panorama Seam Prep",
-}
+
+async def comfy_entrypoint() -> PanoramaSuiteExtension:
+    return PanoramaSuiteExtension()
