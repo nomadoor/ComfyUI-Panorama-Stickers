@@ -39,7 +39,7 @@ Timeline fps で数えた整数のフレーム番号。状態に保存する時�
 _Avoid_: 秒, タイムスタンプ
 
 **Clip range**:
-Sticker や 3D シーン入力が Timeline 上で有効な範囲。`start`・`in`・`duration` で表す。
+Sticker や `scene` 入力が Timeline 上で有効な範囲。`start`・`in`・`duration` で表す。
 
 **Keyframe group**:
 まとめて Keyframe を打つプロパティの組。変形一式、不透明度など。
