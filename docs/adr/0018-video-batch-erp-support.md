@@ -2,7 +2,7 @@
 
 ## Status
 
-Active
+Active（`fps` 入力の契約は ADR 0024 で superseded）
 
 ## Date
 
