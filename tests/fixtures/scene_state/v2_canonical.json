@@ -1,0 +1,78 @@
+{
+  "version": 2,
+  "timeline": {"fps": 30.0, "length": 120},
+  "camera": {
+    "aspect": 1.7777777777777777,
+    "transform": {
+      "value": {"position": [0.0, 1.6, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0},
+      "keyframes": [
+        {"frame": 0, "value": {"position": [0.0, 1.6, 0.0], "yaw_deg": 10.0, "pitch_deg": 5.0, "roll_deg": 0.0, "hFOV_deg": 90.0}, "easing": "hold"},
+        {"frame": 24, "value": {"position": [2.0, 1.6, -3.0], "yaw_deg": -120.0, "pitch_deg": -20.0, "roll_deg": 15.0, "hFOV_deg": 60.0}, "easing": "auto", "handles": {"in": [-0.5, 0.0, 0.5]}},
+        {"frame": 48, "value": {"position": [4.0, 1.6, -6.0], "yaw_deg": -90.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 60.0}, "easing": [0.25, 0.1, 0.25, 1.0]}
+      ]
+    }
+  },
+  "scene": {
+    "clip": {"start": 0, "in": 0, "duration": null},
+    "transform": {
+      "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 2.0},
+      "keyframes": []
+    }
+  },
+  "stickers": [
+    {
+      "id": "st_sky",
+      "placement": "sky",
+      "source": {"kind": "file", "filename": "logo.png", "subfolder": "panorama_stickers", "storage": "input"},
+      "clip": {"start": 10, "in": 5, "duration": 40},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "transform": {
+        "value": {"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 5.0, "hFOV_deg": 20.0, "vFOV_deg": 15.0},
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": [
+          {"frame": 5, "value": 0.0, "easing": "hold"},
+          {"frame": 15, "value": 0.5, "easing": "hold"},
+          {"frame": 25, "value": 1.0, "easing": "auto"}
+        ]
+      }
+    },
+    {
+      "id": "st_world",
+      "placement": "world",
+      "source": {"kind": "port"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": true,
+      "crop": {"x0": 0.1, "y0": 0.0, "x1": 0.9, "y1": 1.0},
+      "transform": {
+        "value": {"position": [0.0, 0.0, -2.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.0},
+        "keyframes": [
+          {"frame": 0, "value": {"position": [0.0, 1.0, -2.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.0}, "easing": "hold", "handles": {"out": [0.5, 0.0, 0.0]}},
+          {"frame": 30, "value": {"position": [1.0, 1.0, -2.0], "yaw_deg": 45.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 1.5}, "easing": "auto", "handles": {"in": [-0.5, 0.0, 0.0], "out": [0.5, 0.0, 0.0]}}
+        ]
+      },
+      "opacity": {"value": 0.8, "keyframes": []}
+    },
+    {
+      "id": "st_hidden",
+      "placement": "sky",
+      "source": {"kind": "file", "filename": "old.png", "subfolder": "", "storage": "output"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": false,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "transform": {
+        "value": {"yaw_deg": -45.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 30.0, "vFOV_deg": 30.0},
+        "keyframes": []
+      },
+      "opacity": {"value": 1.0, "keyframes": []}
+    }
+  ],
+  "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
+  "painting_layer": null
+}

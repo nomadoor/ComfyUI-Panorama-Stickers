@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "projection_model": "pinhole_rectilinear",
+  "alpha_mode": "straight",
+  "coverage": 360,
+  "bg_color": "#112233",
+  "output_preset": 4096,
+  "assets": {
+    "asset_a": {"type": "comfy_image", "filename": "a.png", "subfolder": "panorama_stickers", "storage": "input", "name": "a.png", "w": 640, "h": 480},
+    "asset_b": {"type": "dataurl", "value": "data:image/png;base64,iVBORw0KGgo=", "name": "b.png"},
+    "asset_c": {"type": "path", "value": "stickers/c.png"}
+  },
+  "stickers": [
+    {"id": "st_b", "asset_id": "asset_b", "yaw_deg": -30, "pitch_deg": 0, "hFOV_deg": 25, "vFOV_deg": 25, "rot_deg": 0, "z_index": 2, "visible": true},
+    {"id": "st_a", "asset_id": "asset_a", "yaw_deg": 190, "pitch_deg": 12.5, "hFOV_deg": 40, "vFOV_deg": 30, "rot_deg": -10, "z_index": 1, "visible": false, "locked": true, "crop": {"x0": 0.1, "y0": 0.2, "x1": 0.8, "y1": 0.9}},
+    {"id": "sticker_image_1", "source_kind": "external_image", "slot_key": "1", "source_state_hash": "123", "yaw_deg": 45, "pitch_deg": -5, "hFOV_deg": 30, "vFOV_deg": 20, "rot_deg": 3, "z_index": 3, "visible": true},
+    {"id": "st_c", "asset_id": "asset_c", "yaw_deg": 0, "pitch_deg": 0, "hFOV_deg": 20, "vFOV_deg": 20, "rot_deg": 0, "z_index": 0},
+    {"id": "st_missing", "asset_id": "nope", "z_index": 0},
+    "not a sticker"
+  ],
+  "shots": [],
+  "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
+  "painting_layer": {"paint": {"filename": "paint.png", "subfolder": "panorama_stickers", "type": "input"}, "revision": "r1"},
+  "cutout_render_layer": null,
+  "ui_settings": {"invert_view_x": false, "invert_view_y": false, "preview_quality": "balanced"},
+  "active": {"selected_sticker_id": "st_a", "selected_shot_id": null}
+}
