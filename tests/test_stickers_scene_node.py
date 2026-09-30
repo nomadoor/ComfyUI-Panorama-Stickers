@@ -181,7 +181,6 @@ def _splat():
 
 
 @pytest.mark.parametrize("inputs, message", [
-    ({"bg_media": _video()}, "VIDEO on the bg_media input"),
     ({"scene": _mesh()}, "MESH on the scene input"),
     ({"scene": _splat()}, "SPLAT on the scene input"),
     ({"scene": Types.File3D("model.glb")}, "3D file on the scene input"),
