@@ -1,3 +1,7 @@
+import asyncio
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 
@@ -6,12 +10,25 @@ pytest.importorskip(
     reason="ComfyUI's real V3 API is required for schema contract tests",
 )
 
-from comfy_api.latest import io
+from comfy_api.latest import ComfyExtension, io
 
-from comfyui_pano_suite.nodes import (
-    NODE_CLASS_MAPPINGS,
-    NODE_DISPLAY_NAME_MAPPINGS,
-)
+from comfyui_pano_suite.nodes import comfy_entrypoint
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+async def _load_extension_nodes():
+    extension = await comfy_entrypoint()
+    assert isinstance(extension, ComfyExtension)
+    await extension.on_load()
+    return await extension.get_node_list()
+
+
+REGISTERED_NODES = {
+    node_class.GET_SCHEMA().node_id: node_class
+    for node_class in asyncio.run(_load_extension_nodes())
+}
 
 
 EXPECTED_SCHEMAS = {
@@ -215,20 +232,33 @@ def _public_input_metadata(input_):
 
 
 def test_public_node_registration_remains_stable():
-    assert set(NODE_CLASS_MAPPINGS) == set(EXPECTED_SCHEMAS)
-    assert NODE_DISPLAY_NAME_MAPPINGS == {
+    assert set(REGISTERED_NODES) == set(EXPECTED_SCHEMAS)
+    assert {
+        node_id: node_class.GET_SCHEMA().display_name
+        for node_id, node_class in REGISTERED_NODES.items()
+    } == {
         node_id: expected["display_name"]
         for node_id, expected in EXPECTED_SCHEMAS.items()
     }
 
-    for node_id, node_class in NODE_CLASS_MAPPINGS.items():
+    for node_class in REGISTERED_NODES.values():
         assert issubclass(node_class, io.ComfyNode)
-        assert node_class.define_schema().node_id == node_id
+
+
+def test_package_root_registers_only_through_the_extension():
+    spec = importlib.util.spec_from_file_location("panorama_stickers_root", REPO_ROOT / "__init__.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # ComfyUI prefers NODE_CLASS_MAPPINGS over comfy_entrypoint when both exist.
+    assert not hasattr(module, "NODE_CLASS_MAPPINGS")
+    assert module.comfy_entrypoint is comfy_entrypoint
+    assert (REPO_ROOT / module.WEB_DIRECTORY).is_dir()
 
 
 @pytest.mark.parametrize("node_id", EXPECTED_SCHEMAS)
 def test_v3_schema_preserves_public_ports(node_id):
-    schema = NODE_CLASS_MAPPINGS[node_id].define_schema()
+    schema = REGISTERED_NODES[node_id].define_schema()
     expected = EXPECTED_SCHEMAS[node_id]
 
     assert schema.display_name == expected["display_name"]
@@ -251,7 +281,7 @@ def test_v3_schema_preserves_public_ports(node_id):
 
 @pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaCutout"])
 def test_internal_state_widget_is_advanced_in_v3_schema(node_id):
-    schema = NODE_CLASS_MAPPINGS[node_id].define_schema()
+    schema = REGISTERED_NODES[node_id].define_schema()
     state_input = next(input_ for input_ in schema.inputs if input_.id == "state_json")
 
     assert state_input.advanced is True

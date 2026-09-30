@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -9,7 +10,13 @@ pytest.importorskip(
     reason="ComfyUI's real V3 API is required for workflow contract tests",
 )
 
-from comfyui_pano_suite.nodes import NODE_CLASS_MAPPINGS
+from comfyui_pano_suite.nodes import PanoramaSuiteExtension
+
+
+NODE_CLASSES = {
+    node_class.GET_SCHEMA().node_id: node_class
+    for node_class in asyncio.run(PanoramaSuiteExtension().get_node_list())
+}
 
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "example_workflows"
@@ -84,12 +91,12 @@ def test_workflow_links_reference_compatible_slots(workflow_path):
 def test_saved_custom_nodes_match_current_v3_schemas(workflow_path):
     workflow = _load_workflow(workflow_path)
     custom_nodes = [
-        node for node in workflow["nodes"] if node["type"] in NODE_CLASS_MAPPINGS
+        node for node in workflow["nodes"] if node["type"] in NODE_CLASSES
     ]
     assert custom_nodes
 
     for saved_node in custom_nodes:
-        schema = NODE_CLASS_MAPPINGS[saved_node["type"]].define_schema()
+        schema = NODE_CLASSES[saved_node["type"]].define_schema()
         inputs_by_name = {input_.id: input_ for input_ in schema.inputs}
         schema_input_positions = {
             input_.id: position for position, input_ in enumerate(schema.inputs)

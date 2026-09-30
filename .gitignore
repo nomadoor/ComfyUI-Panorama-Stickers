@@ -30,7 +30,7 @@ Thumbs.db
 *.swo
 
 # Node.js
-node_modules/
+node_modules
 package-lock.json
 
 # Project-specific backups and local overrides
