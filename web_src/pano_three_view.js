@@ -24,6 +24,7 @@ import {
   WebGLRenderer,
 } from "three";
 
+// MAX_RENDER_SIDE in pano_editor_view.js; the chunk cannot import it back from the eager bundle.
 const MAX_RENDER_SIDE = 2048;
 const DOME_RADIUS = 100;
 const STICKER_DISTANCE = 50;
@@ -154,19 +155,23 @@ export function createThreeView() {
   const backgroundMesh = createErpMesh(domeGeometry, NoBlending);
   const erpMeshes = [];
   const stickerMeshes = [];
-  const textures = new Map();
+  // Per owner: its textures by layer id and the size it last rendered at. Surfaces that share this
+  // view (the on-node Previews) pass their own owner, so rendering one does not drop the textures
+  // of the others, and the canvas keeps the largest size in use instead of resizing per owner.
+  const owners = new Map();
+  renderer.setScissorTest(true);
 
   // A 360 ERP wraps around horizontally; a 180 ERP and a Sticker clamp at their edges.
-  function texture(id, media, revision, wrapS, flipY) {
+  function texture(owned, id, media, revision, wrapS, flipY) {
     const size = mediaSize(media);
-    let entry = textures.get(id);
+    let entry = owned.get(id);
     if (entry && (entry.media !== media || entry.width !== size.width || entry.height !== size.height)) {
       entry.texture.dispose();
       entry = null;
     }
     if (!entry) {
       entry = { texture: createTexture(media, flipY), media, revision, ...size };
-      textures.set(id, entry);
+      owned.set(id, entry);
     } else if (entry.revision !== revision || entry.texture.wrapS !== wrapS) {
       entry.revision = revision;
       entry.texture.needsUpdate = true;
@@ -188,17 +193,17 @@ export function createThreeView() {
     return stickerMeshes[index];
   }
 
-  function addErp(mesh, layer, halfCoverage) {
-    mesh.material.uniforms.map.value = texture(layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
+  function addErp(owned, mesh, layer, halfCoverage) {
+    mesh.material.uniforms.map.value = texture(owned, layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
     mesh.material.uniforms.opacity.value = layer.opacity;
     mesh.material.uniforms.halfCoverage.value = halfCoverage;
     scene.add(mesh);
     return mesh;
   }
 
-  function addSticker(layer, stickerIndex) {
+  function addSticker(owned, layer, stickerIndex) {
     const mesh = stickerMesh(stickerIndex);
-    mesh.material.uniforms.map.value = texture(layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true);
+    mesh.material.uniforms.map.value = texture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true);
     mesh.material.uniforms.opacity.value = layer.opacity;
     placeSticker(mesh, layer);
     scene.add(mesh);
@@ -210,43 +215,65 @@ export function createThreeView() {
     return size.width > 0 && size.height > 0;
   }
 
-  // input: { width, height, camera, background, layers }. camera is a viewportCamera() setup,
-  // background is { media, revision, coverage } or null, and layers are the Sky layers from back to
-  // front: { kind: "erp", id, media, revision, opacity } or
-  // { kind: "sticker", id, media, revision, opacity, quaternion, rect }.
+  // input: { width, height, camera, background, layers, owner }. camera is a viewportCamera()
+  // setup, background is { media, revision, coverage } or null, and layers are the Sky layers from
+  // back to front: { kind: "erp", id, media, revision, opacity } or
+  // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. owner is optional.
+  // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
   function render(input) {
     const scale = Math.min(1, MAX_RENDER_SIDE / Math.max(input.width, input.height));
     const width = Math.max(1, Math.round(input.width * scale));
     const height = Math.max(1, Math.round(input.height * scale));
-    if (canvas.width !== width || canvas.height !== height) renderer.setSize(width, height, false);
+    let entry = owners.get(input.owner);
+    if (!entry) owners.set(input.owner, entry = { textures: new Map() });
+    entry.width = width;
+    entry.height = height;
+    let canvasWidth = 1;
+    let canvasHeight = 1;
+    owners.forEach((other) => {
+      canvasWidth = Math.max(canvasWidth, other.width);
+      canvasHeight = Math.max(canvasHeight, other.height);
+    });
+    if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) renderer.setSize(canvasWidth, canvasHeight, false);
+    renderer.setViewport(0, 0, width, height);
+    renderer.setScissor(0, 0, width, height);
     applyViewportCamera(camera, input.camera);
     scene.clear();
-    textures.forEach((entry) => { entry.used = false; });
+    const owned = entry.textures;
+    owned.forEach((item) => { item.used = false; });
     const background = input.background;
     if (background && hasSize(background.media)) {
-      addErp(backgroundMesh, { id: "background", opacity: 1, ...background }, background.coverage === 180);
+      addErp(owned, backgroundMesh, { id: "background", opacity: 1, ...background }, background.coverage === 180);
     }
     let erpIndex = 0;
     let stickerIndex = 0;
     input.layers.forEach((layer, index) => {
       if (!hasSize(layer.media)) return;
       const mesh = layer.kind === "erp"
-        ? addErp(erpMesh(erpIndex++), layer, false)
-        : addSticker(layer, stickerIndex++);
+        ? addErp(owned, erpMesh(erpIndex++), layer, false)
+        : addSticker(owned, layer, stickerIndex++);
       mesh.renderOrder = index + 1;
     });
-    textures.forEach((entry, id) => {
-      if (entry.used) return;
-      entry.texture.dispose();
-      textures.delete(id);
+    owned.forEach((item, id) => {
+      if (item.used) return;
+      item.texture.dispose();
+      owned.delete(id);
     });
     renderer.render(scene, camera);
-    return canvas;
+    // The viewport starts at the bottom left of the WebGL canvas.
+    return { canvas, x: 0, y: canvas.height - height, width, height };
+  }
+
+  // Frees the textures of an owner that stops drawing; the canvas shrinks on the next render if
+  // this owner was the largest.
+  function release(owner) {
+    owners.get(owner)?.textures.forEach((entry) => entry.texture.dispose());
+    owners.delete(owner);
   }
 
   function dispose() {
-    textures.forEach((entry) => entry.texture.dispose());
-    textures.clear();
+    owners.forEach((entry) => entry.textures.forEach((item) => item.texture.dispose()));
+    owners.clear();
     [backgroundMesh, ...erpMeshes, ...stickerMeshes].forEach((mesh) => mesh.material.dispose());
     domeGeometry.dispose();
     planeGeometry.dispose();
@@ -256,5 +283,5 @@ export function createThreeView() {
     renderer.forceContextLoss();
   }
 
-  return { render, dispose };
+  return { render, release, dispose };
 }

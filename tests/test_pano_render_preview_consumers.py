@@ -21,15 +21,13 @@ class TestPanoRenderPreviewConsumers(unittest.TestCase):
         self.assertIn("node.__panoBackgroundCore.syncState(", runtime_js)
         self.assertIn("node.__panoStandaloneCore.syncState(descriptor)", runtime_js)
 
-    def test_preview_node_uses_render_core_descriptor(self):
+    def test_preview_node_keeps_render_core_only_as_fallback(self):
         preview_js = (REPO_ROOT / "web_src" / "pano_preview_previewnode.js").read_text(encoding="utf-8")
-        self.assertIn('import { createPanoramaRenderCore } from "./pano_render_core.js";', preview_js)
-        self.assertIn('import { buildStickerRenderDescriptor } from "./pano_render_descriptors.js";', preview_js)
-        self.assertIn("if (!node.__panoStandaloneCore) node.__panoStandaloneCore = createPanoramaRenderCore();", preview_js)
-        self.assertIn("const descriptor = buildStickerRenderDescriptor({", preview_js)
-        self.assertIn("node.__panoStandaloneCore.syncState(descriptor)", preview_js)
-        self.assertIn('node.__panoStandaloneCore.renderToTarget(', preview_js)
-
+        fallback = preview_js.split("function renderWithPreviousRenderer(", 1)[1].split("\nfunction drawPreview(", 1)[0]
+        self.assertIn("if (!node.__panoStandaloneCore) node.__panoStandaloneCore = createPanoramaRenderCore();", fallback)
+        self.assertIn("const descriptor = buildStickerRenderDescriptor({", fallback)
+        self.assertIn("node.__panoStandaloneCore.syncState(descriptor)", fallback)
+        self.assertIn("node.__panoStandaloneCore.renderToTarget(", fallback)
 
 if __name__ == "__main__":
     unittest.main()
