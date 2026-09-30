@@ -1,5 +1,6 @@
 import { normalizePaintingState } from "./pano_paint_types.js";
 import { normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
+import { loadSceneState } from "./pano_scene_state.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
 
@@ -149,4 +150,11 @@ export function makePanoEditorHistorySnapshot(state) {
   delete snapshot.editor_history;
   delete snapshot.painting_layer;
   return snapshot;
+}
+
+// State v2 (docs/scene-state-v2.md) of the editor's working state, which keeps the v1 shape: the
+// legacy node and the node surfaces read `state_json` as v1 until the editor is bound to the new
+// node (#70), so the editor keeps writing v1 and reads the v2 it stands for through the migration.
+export function editorSceneState(state) {
+  return loadSceneState({ ...state, version: 1 });
 }

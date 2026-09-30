@@ -16,6 +16,11 @@ export default defineConfig({
     emptyOutDir: false,
     rollupOptions: {
       external: [/^\.\.\/\.\.\/scripts\//],
+      output: {
+        // ComfyUI loads every web/**/*.js as an extension but skips dot folders, so chunks loaded on
+        // demand (three.js) go to web/.lazy/.
+        chunkFileNames: ".lazy/[name]-[hash].js",
+      },
     },
     assetsInlineLimit: 0,
   },
