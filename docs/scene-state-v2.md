@@ -7,8 +7,9 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 | 状態の読み込み（v1 の読み替えと正規化） | `comfyui_pano_suite/core/scene_state.py` の `load_scene_state` | `web_src/pano_scene_state.js` の `loadSceneState` |
 | `sticker_state` の読み込み | `load_sticker_state` | `loadStickerState` |
 | 評価関数 | `comfyui_pano_suite/core/scene_eval.py` の `evaluate_scene_state` | `web_src/pano_scene_eval.js` の `evaluateSceneState` |
+| fps の再基準化 | `scene_state.py` の `rebase_scene_state` | `rebaseSceneState` |
 
-フィクスチャは `tests/fixtures/scene_state/` にあり、`tests/test_scene_state.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
+フィクスチャは `tests/fixtures/scene_state/` にあり、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
 
 ## 共通の規則
 
@@ -120,7 +121,7 @@ Keyframe をまとめて打つ単位である。どのグループも同じ形�
 - `"hold"` は、次の Keyframe の `frame` まで値を保ち、その時刻で次の値へ瞬時に切り替える。Camera ではこれが Cut になる。
 - `"auto"` は Keyframe で止まらずに通過する補間とする。`auto` の滑らかさは `hold` をまたがない。
 - Motion path のハンドル `handles.in` / `handles.out` は、その Keyframe の `position` からの相対的なずれで、World の glTF 座標で表す。`in` は前の Keyframe から来る軌道、`out` は次の Keyframe へ向かう軌道の接線を決める。どちらも任意で、ないほうは自動で滑らかにする。不正なハンドルは捨て、両方ないときは `handles` 自体を置かない。
-- `auto`・cubic-bezier・ハンドルの計算の詳細は #54 で定める。
+- `auto`・cubic-bezier・ハンドルの計算は「補間」の節で定める。
 
 ### Clip range
 
@@ -239,7 +240,58 @@ evaluateSceneState(state, frame) // -> object
 4. 区間の途中で、区間の始まりの Keyframe の `easing` が `hold` なら、始まりの値。
 
 1〜3 で Keyframe の `frame` と比べるときは、差が `1e-6` 以内なら同じ frame とみなす（`FRAME_EPSILON`）。秒 × fps の浮動小数点の誤差で、Keyframe の直前の値（例：`23.9999999`）になった出力フレームでも、Cut が 1 フレーム遅れないようにするためである。この許容差は浮動小数点の誤差だけを吸収する。`timeline.fps` は丸めずに記録する（例：29.97 fps の素材は `30000 / 1001`）。コアの VIDEO の fps は分数なので、それを float にした値をそのまま記録する。`29.97` と丸めて記録すると、24 番目のフレームは `23.999976` になり、許容差では吸収できない。
-5. それ以外（`auto`・cubic-bezier の区間の途中）は、この ticket の時点では「未実装」のエラーにする（Python は `NotImplementedError`、JS は `Error`）。#54 が補間を加え、シグネチャと戻り値の形は変えない。
+5. それ以外（`auto`・cubic-bezier の区間の途中）は、次の「補間」の節のとおりに補間する。
+
+### 補間
+
+区間 `k`（Keyframe `k` から `k + 1` まで、長さ `dt = frame[k+1] − frame[k]`）の途中の値は、区間内の時間 `u = (frame − frame[k]) ÷ dt` から求める。
+
+- 進み具合 `p`：`auto` の区間では `p = u`。cubic-bezier の区間では、CSS と同じく `x(t) = u` を満たす `t` を求め（`x(t)` は `x1`・`x2` が 0〜1 なので単調。二分法で 50 回）、`p = y(t)` とする。`y1`・`y2` が範囲外なら `p` は 0〜1 を外れる（行き過ぎる）。
+- スプラインが通過する Keyframe：Keyframe `i` の前後の区間がどちらも `auto`（`easing[i−1]` と `easing[i]` が `auto`）で、`i` が最初でも最後でもないとき、`auto` のスプラインは `i` を通過し、`i` の速度（1 Timeline frame あたり）を両側の区間で共有する。そのため、`i` の前後で速度が連続する。それ以外の端（最初・最後の Keyframe、`hold` や cubic-bezier の区間との境）では、その区間自身の変化 `v[k+1] − v[k]` を速度 × `dt` として使う。したがって、cubic-bezier の区間は、ハンドルがなければ端の値の間の直線（回転は slerp）を `p` で進み、Keyframe 二つだけの `auto` は等速になる。
+- 通過する Keyframe の速度 `m`：前後の弦の傾き `s0 = (v[i] − v[i−1]) ÷ dt0`、`s1 = (v[i+1] − v[i]) ÷ dt1`（`dt0`・`dt1` は前後の区間の長さ）から、次のように決める（Fritsch–Carlson 型の制限）。
+  1. 前後の変化が逆向きなら `m = 0` とする。
+     - スカラー：`s0 × s1 ≤ 0`（符号が違う、またはどちらかが 0）。
+     - ベクトル（位置と回転）：内積 `s0 · s1 < 0`（真に後ろへ折り返すときだけ）。向きの変化が 90° 以下なら止まらずに通過する。どちらかの弦が 0 のときは、2 の上限が 0 になるので `m = 0` になる。
+     - 実装は、スカラーを 1 次元のベクトルとして同じ式（`< 0` と 2 の上限）で扱う。符号が同じで片方が 0 のときも上限が 0 になるので、結果はスカラーの規則と一致する。
+  2. それ以外は、前後の Keyframe を通る放物線の傾き `m = (s0 × dt1 + s1 × dt0) ÷ (dt0 + dt1)` とし、`|m|` が `3 × min(|s0|, |s1|)` を超えるときは、向きを保ってその長さに縮める。
+  - 素早く動いて止まる（間隔の比が大きい）場合も、値が前後の Keyframe を越えて行き過ぎない。
+- スカラー（`hFOV_deg`・`vFOV_deg`・`scale`・`opacity`）と位置：3 次ベジェ `B(v[k], v[k] + m0 × dt ÷ 3, v[k+1] − m1 × dt ÷ 3, v[k+1]; p)`。`m0`・`m1` は区間の始まりと終わりの速度。位置は 3 成分を一つのベクトルとして扱い、上の内積と長さもベクトルで計算する（World の軸の向きに依存しない）。
+- 位置のハンドル：Keyframe `k` の `handles.out` があれば 2 番目の制御点を `position[k] + handles.out` に、Keyframe `k+1` の `handles.in` があれば 3 番目の制御点を `position[k+1] + handles.in` に置き換える。ないほうは自動の接線のままとする。ハンドルは自動の接線より優先し、速度の連続は保証しない。
+- 回転：yaw / pitch / roll を #50 の `world_rotation` / `worldRotation`（float64）と `rotation_to_quaternion` / `rotationToQuaternion` で四元数にする。区間の計算に使うのは Keyframe `k−1`〜`k+2` だけで、`q[k+1]` は `q[k]` に、`q[k−1]` は `q[k]` に、`q[k+2]` は `q[k+1]` に対して、次の規則で符号を揃える（前の Keyframe → 後の Keyframe の向きで判断する）。
+  - 内積が `1e-6` より大きければそのまま、`−1e-6` より小さければ符号を反転する（最短の向き）。
+  - 内積の絶対値が `1e-6` 以下（ちょうど 180°）なら、前の Keyframe の glTF のローカル座標での回転ベクトル `log(q_前⁻¹ q_後)` を見て、`−y`・`x`・`z` の順に最初に絶対値が `1e-6` を超える成分が正になる符号を選ぶ。右へ、次に上へ、次に時計回り（画像が時計回りに回る roll の向き）に回ることになる。
+- 回転の補間：`log(a⁻¹b)` を「a から b への回転ベクトル（半角）」、`L = log(q[k]⁻¹ q[k+1])` とする。始まりと終わりの速度（`p` あたり）`V0`・`V1` は、通過する Keyframe では上の速度の規則を回転ベクトルに当てはめたもの（`s0 = −log(q[i]⁻¹ q[i−1]) ÷ dt0`、`s1 = log(q[i]⁻¹ q[i+1]) ÷ dt1`。内積が負なら 0、長さは `3 × min(|s0|, |s1|)` まで）に `dt` を掛けたもの、通過しない端では `L` とする。SQUAD `slerp(slerp(q[k], q[k+1], p), slerp(a, b, p), 2p(1 − p))` を評価する。制御点は `a = q[k] · exp((V0 − L) ÷ 2)`、`b = q[k+1] · exp((L − V1) ÷ 2)`。通過しない端では `a = q[k]`・`b = q[k+1]` となり、cubic-bezier の区間は `slerp(q[k], q[k+1], p)` になる。`slerp(x, y, t) = x · exp(t · log(x⁻¹ y))` で、`a`・`b` と外側の slerp の符号は揃え直さない（揃え直すと区間の途中で向きが飛び、端の速度も変わる）。結果は `quaternion_to_rotation` と `panorama_angles` で yaw / pitch / roll に戻す（`pitch_deg` は −90〜90）。
+- 1 区間の回転は、必ず 180° 以下の最短の経路になる。180° を超える回転や多回転（yaw 0 → 720 など）は、途中に Keyframe を打つ。
+- 回転の数値：yaw と roll は、区間の両端に保存された値を `p` で混ぜた `c = a + (b − a) × p` に対して、`c − 180 − 1e-6 ≤ 値 < c + 180 − 1e-6` となるよう 360° の倍数だけずらして返す（ちょうど 180° 離れた同点は負の側、`c − 180` を取る）。区間の両端で保存された値の数値に一致する。最短の向きが保存された数値の向きと逆のとき（例：yaw 0 → 350）は、区間の途中で yaw・roll の値が 360° 跳ぶ。これは数値の表し方だけで、向きは連続している。使う側は回転行列を使うか、値を 360° で回して扱う。
+- 極（pitch ±90 をちょうど通るとき）では、yaw と roll が同じ軸を共有するため、yaw の値は保証しない（その分は roll が受け持つ）。極の近くでも yaw・roll の数値は大きく動きうる。向きの連続は回転行列で判断する。
+- 行き過ぎの扱い：補間の結果が範囲を外れた `hFOV_deg`・`vFOV_deg` は 0.1〜179 に、`opacity` は 0〜1 に、`scale` は `1e-6` 以上に寄せる。
+
+## fps の再基準化
+
+```python
+rebase_scene_state(state: dict, fps: float) -> dict
+```
+
+```js
+rebaseSceneState(state, fps) // -> object
+```
+
+`load_scene_state` の戻り値の、保存されたすべての時刻を `fps ÷ timeline.fps` 倍し、`timeline.fps` を `fps` にした正規化済みの状態を返す。Timeline 上の時刻で丸める。`r(x) = floor(x × fps ÷ timeline.fps + 0.5)` とすると、次のとおり。
+
+| 値 | 新しい値 |
+|---|---|
+| Camera の Keyframe の `frame` | `r(frame)` |
+| Clip range の `start` | `start' = r(start)` |
+| 素材の先頭の位置 | `anchor' = r(start − in)` |
+| Clip range の `in` | `start' − anchor'` |
+| Clip range の `duration`（`null` 以外） | `r(start + duration) − start'` |
+| `scene`・Sticker の Keyframe の `frame` | `r(start − in + frame) − anchor'` |
+| `timeline.length`（`null` 以外） | `max(1, r(length))` |
+
+- Timeline 上のすべての出来事（Keyframe、Clip range の始まりと終わり、素材の先頭）は、新しい fps の半フレーム以内に丸まる。同じ時刻にあった Camera と Sticker の Keyframe は、同じ frame に落ちる。
+- 丸めた結果、同じ Keyframe group で `frame` が重なった Keyframe は、正規化の規則どおり後ろのものを残す。`duration` は正規化で 1 以上になる。
+- ハンドルは空間のずれなので変えない。
+- `fps` が正の有限の数値でなければエラーにする（Python は `ValueError`、JS は `Error`）。文面は `Cannot rebase state_json to fps <値>; fps must be a positive number.` で、`<値>` の書き方は実装ごとに違う（Python は `repr`、JS は `JSON.stringify`）。
 
 ## 版の判定
 
@@ -310,7 +362,7 @@ Cutout が出力し、Stickers の `sticker_state` 入力が受け取る。
 
 ## 後続の ticket への申し送り
 
-- #54：評価関数の規則 5 を補間に置き換える。Timeline fps の再基準化もここで扱う。
+- #54：評価関数の規則 5 を補間に置き換えた。Timeline fps の再基準化も加えた（「補間」「fps の再基準化」の節）。
 - #78（置き換え）：v1 の Cutout の「`shots` が空なら ERP をそのまま出力する」挙動は保たない（ユーザー判断で確定）。README の移行の注意に書く。
 - #65（Pose handoff）：v1 は `source_state_hash` で「`sticker_state` が変わったときだけ姿勢を上書きする」を判定していた。v2 では捨てているので、同じ挙動が要るなら #65 で項目を追加する。
 - #66（エディタ）：ノード上の UI は今、旧 `active` の選択状態を読んでいる。v2 では状態に置かないので、置き場所（エディタのセッションやブラウザ側など）を #66 で決める。

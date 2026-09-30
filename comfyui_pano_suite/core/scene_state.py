@@ -341,6 +341,55 @@ def load_scene_state(raw) -> dict:
     return _migrate_v1(raw) if version == 1 else _normalize_v2(raw)
 
 
+def _rebase_group(group, rebase, anchor, new_anchor):
+    return {
+        "value": group["value"],
+        "keyframes": [{**key, "frame": rebase(anchor + key["frame"]) - new_anchor} for key in group["keyframes"]],
+    }
+
+
+def _rebase_clip(clip, rebase):
+    """Round the clip's Timeline events (start, content anchor start - in, end) and rebuild in and duration from them."""
+    start = rebase(clip["start"])
+    anchor = rebase(clip["start"] - clip["in"])
+    duration = None if clip["duration"] is None else rebase(clip["start"] + clip["duration"]) - start
+    return {"clip": {"start": start, "in": start - anchor, "duration": duration}, "anchor": clip["start"] - clip["in"], "new_anchor": anchor}
+
+
+def rebase_scene_state(state: dict, fps: float) -> dict:
+    """Rescale every stored frame of a loaded state from its `timeline.fps` to `fps`.
+
+    Every Timeline event (Keyframe, Clip range start and end, content anchor) rounds to the nearest
+    frame of the new fps, so it moves by at most half a new frame and events at one time stay together.
+    """
+    if _positive(fps, None) is None:
+        raise ValueError(f"Cannot rebase state_json to fps {fps!r}; fps must be a positive number.")
+    ratio = fps / state["timeline"]["fps"]
+
+    def rebase(frame):
+        return _frame(frame * ratio)
+
+    length = state["timeline"]["length"]
+    scene = _rebase_clip(state["scene"]["clip"], rebase)
+    stickers = []
+    for sticker in state["stickers"]:
+        clip = _rebase_clip(sticker["clip"], rebase)
+        stickers.append({
+            **sticker,
+            "clip": clip["clip"],
+            "transform": _rebase_group(sticker["transform"], rebase, clip["anchor"], clip["new_anchor"]),
+            "opacity": _rebase_group(sticker["opacity"], rebase, clip["anchor"], clip["new_anchor"]),
+        })
+    return _normalize_v2({
+        "timeline": {"fps": fps, "length": None if length is None else max(1, rebase(length))},
+        "camera": {"aspect": state["camera"]["aspect"], "transform": _rebase_group(state["camera"]["transform"], rebase, 0, 0)},
+        "scene": {"clip": scene["clip"], "transform": _rebase_group(state["scene"]["transform"], rebase, scene["anchor"], scene["new_anchor"])},
+        "stickers": stickers,
+        "painting": state["painting"],
+        "painting_layer": state["painting_layer"],
+    })
+
+
 def _v1_pose_number(value):
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return math.nan

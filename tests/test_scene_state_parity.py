@@ -7,35 +7,41 @@ from pathlib import Path
 import pytest
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
-from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state
+from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state, rebase_scene_state
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "scene_state"
 TOLERANCE = 1e-4
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_interpolation", "v2_half_turns"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 EVAL_FRAMES = {
     "v2_canonical": [10.0 - 1e-7, 50.0 - 1e-7] + [case["frame"] for case in json.loads((FIXTURES / "v2_canonical.eval.json").read_text(encoding="utf-8"))] + [0.0, 1.0, 23.999, 24.0 - 5e-7, 24.0 + 5e-7, 48.0, 119.0],
     "v1_stickers": [-1.0, 0.0, 0.5, 7.25, 100.0],
     "v1_cutout": [0.0, 3.5],
     "v2_invalid_fields": [0.0, 2.0, 2.0 - 5e-7, 11.0 - 5e-7, 11.0, 11.5, 30.0],
+    # Every segment kind, key edges, and the zenith crossing at frame 50 approached from both sides.
+    "v2_interpolation": [-2.0 + 0.37 * i for i in range(417)] + [12.0 - 1e-7, 12.0 + 1e-7, 49.9, 50.1, 75.0 + 1e-3, 90.0 - 1e-3],
+    # Exact half turns (their direction and the yaw tie at frame 10), a fast move that stops, and uneven spacing.
+    "v2_half_turns": [0.25 * i for i in range(410)],
 }
+REBASE_CASES = [[name, fps] for name in STATE_CASES for fps in (30000 / 1001, 12.0, 60.0)]
 BAD_STATES = ['{"version":3}', '{"version":"2"}', "{not json", "[1]"]
 
 JS_SCRIPT = textwrap.dedent(
     """
     import { readFileSync } from "node:fs";
-    import { loadSceneState, loadStickerState } from "./web_src/pano_scene_state.js";
+    import { loadSceneState, loadStickerState, rebaseSceneState } from "./web_src/pano_scene_state.js";
     import { evaluateSceneState } from "./web_src/pano_scene_eval.js";
 
     const input = JSON.parse(readFileSync(0, "utf8"));
     const read = (name) => readFileSync(`tests/fixtures/scene_state/${name}.json`, "utf8");
-    const out = { states: {}, eval: {}, sticker_states: {}, errors: [] };
+    const out = { states: {}, eval: {}, rebased: [], sticker_states: {}, errors: [] };
     for (const name of input.states) out.states[name] = loadSceneState(read(name));
     for (const [name, frames] of Object.entries(input.eval_frames)) {
       out.eval[name] = frames.map((frame) => evaluateSceneState(out.states[name], frame));
     }
+    for (const [name, fps] of input.rebase) out.rebased.push(rebaseSceneState(out.states[name], fps));
     for (const name of input.sticker_states) out.sticker_states[name] = loadStickerState(read(name));
     for (const text of input.bad_states) {
       try {
@@ -51,7 +57,7 @@ JS_SCRIPT = textwrap.dedent(
 
 
 def run_js():
-    payload = {"states": STATE_CASES, "eval_frames": EVAL_FRAMES, "sticker_states": STICKER_STATE_CASES, "bad_states": BAD_STATES}
+    payload = {"states": STATE_CASES, "eval_frames": EVAL_FRAMES, "rebase": REBASE_CASES, "sticker_states": STICKER_STATE_CASES, "bad_states": BAD_STATES}
     proc = subprocess.run(
         ["node", "--input-type=module", "-e", JS_SCRIPT],
         cwd=REPO_ROOT,
@@ -99,6 +105,11 @@ def test_js_load_matches_python(js_out, name):
 def test_js_evaluation_matches_python(js_out, name):
     state = load_scene_state(read(name))
     assert_parity([evaluate_scene_state(state, frame) for frame in EVAL_FRAMES[name]], js_out["eval"][name])
+
+
+def test_js_rebase_matches_python(js_out):
+    for (name, fps), js in zip(REBASE_CASES, js_out["rebased"]):
+        assert_parity(rebase_scene_state(load_scene_state(read(name)), fps), js, f"{name}@{fps}")
 
 
 @pytest.mark.parametrize("name", STICKER_STATE_CASES)

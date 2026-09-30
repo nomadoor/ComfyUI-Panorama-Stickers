@@ -31,6 +31,7 @@ def camera_basis(
     yaw_deg: float,
     pitch_deg: float,
     roll_deg: float = 0.0,
+    dtype=np.float32,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return ERP camera right, up, and forward axes.
 
@@ -38,7 +39,8 @@ def camera_basis(
     ``Ry(yaw) @ Rx(-pitch) @ Rz(roll)``: positive yaw looks right, positive
     pitch looks up, and positive roll turns the image clockwise. The explicit
     angle construction stays continuous at the poles and must match the JS
-    reference implementation in ``web_src/pano_camera_math.js``.
+    reference implementation in ``web_src/pano_camera_math.js``. The axes are
+    float32 for the renderers; World conversions ask for float64.
     """
     yaw = float(yaw_deg) * DEG2RAD
     pitch = float(pitch_deg) * DEG2RAD
@@ -51,17 +53,17 @@ def camera_basis(
         cy * cr - sy * sp * sr,
         cp * sr,
         -sy * cr - cy * sp * sr,
-    ], dtype=np.float32)
+    ], dtype=dtype)
     up = np.array([
         -cy * sr - sy * sp * cr,
         cp * cr,
         sy * sr - cy * sp * cr,
-    ], dtype=np.float32)
+    ], dtype=dtype)
     forward = np.array([
         sy * cp,
         sp,
         cy * cp,
-    ], dtype=np.float32)
+    ], dtype=dtype)
     return right, up, forward
 
 
