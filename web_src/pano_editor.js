@@ -16,6 +16,7 @@ import { createHistoryController } from "./pano_paint_history.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 import {
+  editorSceneState,
   makePanoEditorHistorySnapshot,
   normalizeCoverageValue,
   parsePanoEditorState,
@@ -29,6 +30,7 @@ import {
   buildStickerTexturesFromState,
 } from "./pano_gl_scene.js";
 import { createCutoutCamera } from "./pano_cutout_camera.js";
+import { createEditorView, skyLayers, viewportCamera } from "./pano_editor_view.js";
 import {
   contextHalfExtentsPx,
   createDefaultCutoutShot,
@@ -1327,6 +1329,14 @@ async function showEditor(node, type, options = {}) {
     frameCanvasScale: 1,
     tickErrorSignature: "",
   };
+  // The Stickers editor draws its panorama view with three.js. The Cutout editor (#67) and the
+  // read-only Preview modal (#68) still use the previous renderer, as does the Stickers editor when
+  // three.js cannot load.
+  const editorView = type === "stickers" && !readOnly
+    ? createEditorView({ onReady: () => requestDraw(), onFailed: () => requestDraw() })
+    : null;
+  const useEditorView = () => !!editorView && !editorView.failed;
+  let editorViewScene = { key: null, sceneState: null };
   const frameGateCssRadius = Number.parseFloat(
     getComputedStyle(root).getPropertyValue("--pano-float-radius"),
   ) || 10;
@@ -4229,6 +4239,68 @@ async function showEditor(node, type, options = {}) {
     return true;
   }
 
+  function buildEditorViewPaintLayers() {
+    const entries = editor.showObjects
+      ? buildModalInterleavedLayerEntries()
+      : appendMaskDisplayLayerEntry([]);
+    return entries
+      .filter((entry) => entry.visible !== false)
+      .map((entry) => ({ id: entry.id, media: entry.source, revision: entry.revision, opacity: entry.opacity, zIndex: entry.zIndex }));
+  }
+
+  function renderEditorView() {
+    if (!runtime.backgroundDirty && runtime.backgroundWasVisible) return;
+    const bgImg = getConnectedErpImage();
+    const paintLayers = buildEditorViewPaintLayers();
+    const stickersById = new Map((state.stickers || []).map((item) => [String(item?.id || ""), item]));
+    const media = (sticker) => {
+      const img = getStickerImage(stickersById.get(sticker.id));
+      return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
+    };
+    // A dropped or replaced image shows while it uploads, before its asset exists in the state.
+    const assets = { ...state.assets };
+    for (const item of state.stickers || []) {
+      const assetId = String(item?.asset_id || "");
+      if (assetId && !assets[assetId] && imageCache.has(assetId)) assets[assetId] = { type: "comfy_image", filename: assetId };
+    }
+    // The state v2 is rebuilt only when the Stickers or their assets change. Paint comes from the
+    // paint engine's ERP canvases, so the strokes are left out.
+    const sceneKey = JSON.stringify([state.stickers, Object.keys(assets)]);
+    if (editorViewScene.key !== sceneKey) {
+      editorViewScene = { key: sceneKey, sceneState: editorSceneState({ ...state, assets, painting: null }) };
+    }
+    // #73 adds the editor's Timeline position; until then the editor shows Timeline frame 0.
+    const layers = editor.showObjects
+      ? skyLayers(editorViewScene.sceneState, 0, {
+        media,
+        zIndex: (sticker) => Number(stickersById.get(sticker.id)?.z_index || 0),
+        paintLayers,
+      })
+      : paintLayers.map((layer) => ({ kind: "erp", ...layer }));
+    const background = editor.showPanorama && isDecodedImageReady(bgImg)
+      ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage) }
+      : null;
+    const width = backgroundCanvas.width;
+    const height = backgroundCanvas.height;
+    const surface = editorView.render({
+      width,
+      height,
+      camera: viewportCamera({ yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, roll_deg: 0, hFOV_deg: editor.viewFov }, width, height),
+      background,
+      layers,
+    });
+    const bg2d = backgroundCanvas.getContext("2d");
+    bg2d.clearRect(0, 0, width, height);
+    if (!background && !layers.length) {
+      bg2d.fillStyle = "#070707";
+      bg2d.fillRect(0, 0, width, height);
+    } else if (surface) {
+      bg2d.drawImage(surface, 0, 0, width, height);
+    }
+    runtime.backgroundWasVisible = !!surface;
+    runtime.backgroundDirty = false;
+  }
+
   function drawGridUnwrap(skipBackground = false) {
     const w = canvas.width;
     const h = canvas.height;
@@ -4295,14 +4367,15 @@ async function showEditor(node, type, options = {}) {
     const w = canvas.width;
     const h = canvas.height;
     if (!skipBackground) {
-      if (modalBackgroundLayerAvailable()) ctx.clearRect(0, 0, w, h);
+      if (useEditorView() || modalBackgroundLayerAvailable()) ctx.clearRect(0, 0, w, h);
       else {
         ctx.fillStyle = "#070707";
         ctx.fillRect(0, 0, w, h);
       }
     }
     rebuildPaintEngineIfNeeded();
-    drawOrderedDisplayListInView(
+    if (useEditorView()) renderEditorView();
+    else drawOrderedDisplayListInView(
       ctx,
       { x: 0, y: 0, w, h },
       {
@@ -10561,6 +10634,7 @@ async function showEditor(node, type, options = {}) {
         try { fn(); } catch { }
       });
       modalPanoCore?.dispose?.();
+      editorView?.dispose();
       cutoutPreviewMount?.unmount?.();
       cutoutPreviewCamera?.dispose?.();
       setDropCue(false);
