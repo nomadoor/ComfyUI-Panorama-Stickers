@@ -264,12 +264,25 @@ def _entry_from_path(path: Path, *, media_type: str) -> dict:
     }
 
 
+def _temp_mp4_path() -> Path:
+    return _ensure_temp_root() / f"pano_video_{uuid.uuid4().hex[:12]}.mp4"
+
+
+def save_video_to_mp4(video, container_format, codec) -> tuple[Path, bool]:
+    """Save a core VIDEO to a temp MP4 with its own `save_to`, which copies the streams when they already fit and
+    otherwise transcodes them frame by frame. Returns the path and whether the MP4 has audio."""
+    output_path = _temp_mp4_path()
+    video.save_to(str(output_path), format=container_format, codec=codec)
+    with av.open(str(output_path)) as container:
+        return output_path, bool(container.streams.audio)
+
+
 def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None) -> Path:
     if av is None:
         raise RuntimeError("PyAV is not available in this environment.")
 
     fps_value = max(1e-3, float(fps or 24.0))
-    output_path = _ensure_temp_root() / f"pano_video_{uuid.uuid4().hex[:12]}.mp4"
+    output_path = _temp_mp4_path()
     frame_rate = Fraction(round(fps_value * 1000), 1000)
 
     # Streaming mode: torch tensor → process one frame at a time (no full-batch numpy allocation)

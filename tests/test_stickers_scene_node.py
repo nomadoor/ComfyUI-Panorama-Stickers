@@ -19,7 +19,7 @@ import folder_paths
 from comfy_api.latest import InputImpl, Types
 
 from comfyui_pano_suite.core import render as render_module
-from comfyui_pano_suite.nodes import PanoramaStickersSceneNode
+from comfyui_pano_suite.nodes import PanoramaStickersSceneNode, PanoSceneValue
 from test_legacy_goldens import _golden_mismatch
 from tools import bake_legacy_goldens
 from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
@@ -113,7 +113,7 @@ def test_outputs_are_image_mask_audio_fps_and_pano_scene_in_order():
     assert mask.shape == (1, 256, 512) and float(mask.max()) == 0.0
     assert audio is None
     assert fps == 30.0
-    assert pano_scene is None
+    assert isinstance(pano_scene, PanoSceneValue)
 
 
 def test_without_bg_media_the_output_is_bg_color_at_the_preset_size():
