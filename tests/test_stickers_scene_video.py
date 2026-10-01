@@ -19,6 +19,7 @@ from comfy_api.latest import InputImpl, Types
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.video_source import MaterializedVideo, StreamedVideo
+from comfyui_pano_suite.sticker_media import open_video
 from comfyui_pano_suite.nodes import PanoramaStickersSceneNode
 
 
@@ -115,7 +116,7 @@ def test_rotated_video_is_turned_upright_like_the_core_reader(tmp_path):
     expected = video.get_components().images
     assert expected.shape[1:3] == (64, 32)
 
-    streamed = nodes._open_bg_video(video)
+    streamed = open_video(video, "bg_media")
 
     assert isinstance(streamed, StreamedVideo)
     assert torch.equal(streamed[0], expected[0])
@@ -249,7 +250,7 @@ def test_frames_missing_after_a_seek_keep_the_times_of_the_others(tmp_path, capl
     path = _write_gop_video(tmp_path / "bframes.avi", "avi", "mpeg4", {"bf": "2"})
     video = InputImpl.VideoFromFile(path, start_time=0.4)
     decoded = video.get_components().images
-    listed = len(nodes._open_bg_video(video).times)
+    listed = len(open_video(video, "bg_media").times)
     assert listed > decoded.shape[0]
 
     with caplog.at_level(logging.WARNING):
@@ -296,8 +297,8 @@ def test_cropped_file_video_is_read_through_the_core(tmp_path):
 
     image = _execute(bg_media=cropped)[0]
 
-    assert isinstance(nodes._open_bg_video(video), StreamedVideo)
-    assert isinstance(nodes._open_bg_video(cropped), MaterializedVideo)
+    assert isinstance(open_video(video, "bg_media"), StreamedVideo)
+    assert isinstance(open_video(cropped, "bg_media"), MaterializedVideo)
     assert image.shape == (10, 16, 32, 3)
     assert torch.equal(image, cropped.get_components().images)
 
@@ -309,7 +310,7 @@ def _tensor_count() -> int:
 def _peak_while_streaming(video) -> int:
     # The frames are numpy arrays shared with torch without a copy, so their memory shows in tracemalloc.
     tracemalloc.start()
-    streamed = StreamedVideo(video.get_stream_source(), *video.get_active_trim_window())
+    streamed = StreamedVideo(video.get_stream_source(), *video.get_active_trim_window(), "bg_media")
     for index in range(len(streamed.times)):
         assert streamed[index] is not None
     del streamed
@@ -320,7 +321,7 @@ def _peak_while_streaming(video) -> int:
 
 def _most_tensors_while_streaming(video) -> int:
     baseline = _tensor_count()
-    streamed = StreamedVideo(video.get_stream_source(), *video.get_active_trim_window())
+    streamed = StreamedVideo(video.get_stream_source(), *video.get_active_trim_window(), "bg_media")
     most = 0
     for index in range(len(streamed.times)):
         assert streamed[index] is not None

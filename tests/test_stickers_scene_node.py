@@ -1,7 +1,6 @@
 import json
 import shutil
 import subprocess
-from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +15,7 @@ pytest.importorskip(
 )
 
 import folder_paths
-from comfy_api.latest import InputImpl, Types
+from comfy_api.latest import Types
 
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.nodes import PanoramaStickersSceneNode
@@ -215,10 +214,6 @@ def test_file_source_outside_the_input_directory_is_not_read(tmp_path, monkeypat
     assert torch.equal(image, GREEN.expand(1, 512, 1024, 3))
 
 
-def _video():
-    return InputImpl.VideoFromComponents(Types.VideoComponents(images=_solid([0.5, 0.5, 0.5], batch=2), frame_rate=Fraction(24)))
-
-
 def _mesh():
     return Types.MESH(torch.zeros((1, 3, 3)), torch.tensor([[[0, 1, 2]]]))
 
@@ -232,7 +227,6 @@ def _splat():
     ({"scene": _splat()}, "SPLAT on the scene input"),
     ({"scene": Types.File3D("model.glb")}, "3D file on the scene input"),
     ({"scene": {"points": torch.zeros((1, 2, 2, 3))}}, "MOGE_GEOMETRY on the scene input"),
-    ({"sticker": _video()}, "VIDEO on the sticker input"),
     ({"sticker": _mesh()}, "MESH on the sticker input"),
     ({"sticker": _splat()}, "SPLAT on the sticker input"),
     ({"sticker": Types.File3D("model.ply")}, "3D file on the sticker input"),
@@ -273,11 +267,6 @@ def test_background_batch_reuses_the_sky_and_composites_each_frame(monkeypatch):
     _execute({"version": 2, "timeline": {"length": 4}}, bg_media=bg)
 
     assert counts == {"_render_sky": 1, "_background": 3, "composite_frame": 4}
-
-
-def test_image_batch_sticker_is_not_supported_yet():
-    with pytest.raises(NotImplementedError, match="IMAGE batch on the sticker input is not supported yet"):
-        _execute(output_preset="1024", sticker=_solid([1.0, 0.0, 0.0], batch=2))
 
 
 def test_sticker_state_with_several_camera_keyframes_is_not_supported_yet():

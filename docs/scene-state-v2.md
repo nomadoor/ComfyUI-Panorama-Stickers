@@ -133,7 +133,7 @@ Keyframe をまとめて打つ単位である。どのグループも同じ形�
 |---|---|---|---|
 | `start` | 整数 ≥ 0 | `0` | Timeline 上で有効になる最初の Timeline frame |
 | `in` | 整数 ≥ 0 | `0` | 素材の中の開始点（素材の先頭からの Timeline frame） |
-| `duration` | 整数 ≥ 1 または `null` | `null` | 有効な長さ。`null` は Timeline の終わりまで |
+| `duration` | 整数 ≥ 1 または `null` | `null` | 有効な長さ。`null` は Timeline の終わりまで。出力の長さを決めるときは、フレームを持つ `port` の素材（IMAGE バッチ・VIDEO）の終わりを Clip の終わりとみなす（`docs/render-contract.md`） |
 
 有効な範囲は `start ≤ frame < start + duration` とする。端点との比較には評価関数と同じ許容差 `FRAME_EPSILON`（`1e-6`）を使う。`start − 1e-7` は範囲内、`start + duration − 1e-7` は範囲外（終端は含まない）とする。負の値は 0、1 未満の `duration` は 1 に寄せる。
 
@@ -251,7 +251,7 @@ evaluateSceneState(state, frame) // -> object
 3. `frame` がちょうど Keyframe の `frame` なら、その Keyframe の値。
 4. 区間の途中で、区間の始まりの Keyframe の `easing` が `hold` なら、始まりの値。
 
-1〜3 で Keyframe の `frame` と比べるときは、差が `1e-6` 以内なら同じ frame とみなす（`FRAME_EPSILON`）。秒 × fps の浮動小数点の誤差で、Keyframe の直前の値（例：`23.9999999`）になった出力フレームでも、Cut が 1 フレーム遅れないようにするためである。この許容差は浮動小数点の誤差だけを吸収する。`timeline.fps` は丸めずに記録する（例：29.97 fps の素材は `30000 / 1001`）。コアの VIDEO の fps は分数なので、それを float にした値をそのまま記録する。`29.97` と丸めて記録すると、24 番目のフレームは `23.999976` になり、許容差では吸収できない。
+1〜3 で Keyframe の `frame` と比べるときは、差が `1e-6` 以内なら同じ frame とみなす（`FRAME_EPSILON`）。秒 × fps の浮動小数点の誤差で、Keyframe の直前の値（例：`23.9999999`）になった出力フレームでも、Cut が 1 フレーム遅れないようにするためである。この許容差は浮動小数点の誤差だけを吸収する。ただし、VIDEO の PTS の量子化の幅の半分は、許容差に含める（1ms の timebase なら 0.5ms 分の Timeline frame）。PTS は timebase に丸めて記録されるので、29.97 fps の mkv・webm では、整数の Timeline frame のはずの時刻が最大でその分ずれるためである（`docs/render-contract.md`）。`timeline.fps` は丸めずに記録する（例：29.97 fps の素材は `30000 / 1001`）。コアの VIDEO の fps は分数なので、それを float にした値をそのまま記録する。`29.97` と丸めて記録すると、24 番目のフレームは `23.999976` になり、許容差では吸収できない。
 5. それ以外（`auto`・cubic-bezier の区間の途中）は、次の「補間」の節のとおりに補間する。
 
 ### 補間

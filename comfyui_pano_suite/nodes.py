@@ -1,5 +1,6 @@
 import json
 import math
+from dataclasses import replace
 from pathlib import Path
 import logging
 
@@ -8,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 import comfy.model_management
-from comfy_api.latest import ComfyExtension, Input, InputImpl, Types, io
+from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
@@ -43,7 +44,8 @@ from .core.scene_eval import evaluate_scene_state
 from .core.scene_state import load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
-from .core.video_source import MaterializedVideo, StreamedVideo, coded_size
+from .core.video_source import MaterializedVideo, StreamedVideo
+from .sticker_media import PortMedia, open_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -1006,21 +1008,11 @@ def _input_type_name(value) -> str:
 
 
 def _reject_unsupported_inputs(scene, sticker):
-    # Temporary on the integration branch: scene, VIDEO and 3D stickers, and IMAGE batch stickers are added by later tickets.
+    # Temporary on the integration branch: scene and 3D stickers are added by later tickets.
     for name, value in (("scene", scene), ("sticker", sticker)):
-        if value is None or (name == "sticker" and isinstance(value, torch.Tensor)):
+        if value is None or (name == "sticker" and isinstance(value, (torch.Tensor, Input.Video))):
             continue
         raise NotImplementedError(f"Panorama Stickers: {_input_type_name(value)} on the {name} input is not supported yet.")
-    if sticker is not None and sticker.shape[0] > 1:
-        raise NotImplementedError("Panorama Stickers: an IMAGE batch on the sticker input is not supported yet.")
-
-
-def _open_bg_video(video) -> StreamedVideo | MaterializedVideo:
-    """Stream a file-backed VIDEO without a crop; read any other VIDEO whole through the core."""
-    # The crop of a VideoFromFile is private; only an uncropped one reports the stream's own size.
-    if isinstance(video, InputImpl.VideoFromFile) and video.get_dimensions() == coded_size(video.get_stream_source()):
-        return StreamedVideo(video.get_stream_source(), *video.get_active_trim_window())
-    return MaterializedVideo(video.get_components())
 
 
 def _unused_sticker_id(stickers: list[dict]) -> str:
@@ -1046,20 +1038,26 @@ def _port_sticker(state: dict, sticker_state) -> dict:
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
-def _port_rgba(sticker: torch.Tensor) -> np.ndarray:
-    image = sticker[0].detach().cpu().float().clamp(0.0, 1.0).numpy()
+def _port_rgba(image: torch.Tensor) -> np.ndarray:
+    image = image.detach().cpu().float().clamp(0.0, 1.0).numpy()
     alpha = image[..., 3:4] if image.shape[-1] == 4 else np.ones((*image.shape[:2], 1), dtype=np.float32)
     return np.concatenate([image[..., :3], alpha], axis=-1)
 
 
-def _resolve_sources(state: dict, sticker, sticker_state) -> SceneSources:
-    """Read every Sticker source into memory. Appends the port Sticker to `state` when it is missing."""
+def _port_media(state: dict, sticker, sticker_state) -> PortMedia | None:
+    """The media on the sticker input, on the port Sticker. Appends the port Sticker to `state` when it is missing."""
+    if sticker is None:
+        return None
+    if not any(item["source"]["kind"] == "port" for item in state["stickers"]):
+        state["stickers"].append(_port_sticker(state, sticker_state))
+    port = next(item for item in state["stickers"] if item["source"]["kind"] == "port")
+    return PortMedia(port["id"], port["clip"], sticker, state["timeline"]["fps"])
+
+
+def _resolve_sources(state: dict, port: PortMedia | None) -> SceneSources:
+    """Read every Sticker source into memory; the port Sticker's source holds the first frame of `port`."""
     stickers = {}
-    port_image = None
-    if sticker is not None:
-        if not any(item["source"]["kind"] == "port" for item in state["stickers"]):
-            state["stickers"].append(_port_sticker(state, sticker_state))
-        port_image = _port_rgba(sticker)
+    port_image = None if port is None else _port_rgba(port.first_frame)
     for item in state["stickers"]:
         source = item["source"]
         if source["kind"] == "port":
@@ -1074,17 +1072,24 @@ def _resolve_sources(state: dict, sticker, sticker_state) -> SceneSources:
     return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
 
 
-def _decide_timeline(state: dict, bg) -> tuple[float, list[tuple[float, int | None]]]:
-    """(a) Timeline: fps, and per output frame the Timeline frame to evaluate and the bg_media frame to draw.
+def _decide_timeline(state: dict, bg, port: PortMedia | None) -> tuple[float, list[tuple[float, int | None, int | None]]]:
+    """(a) Timeline: fps, and per output frame the Timeline frame to evaluate, the bg_media frame to draw, and the
+    frame of the port media (`port.index_at`).
 
-    `bg` is the bg_media IMAGE batch, an opened VIDEO, or None. Times stored in the state are read at the
-    recorded `timeline.fps`, so they keep their seconds when a background VIDEO sets another Timeline fps.
+    `bg` is the bg_media IMAGE batch, an opened VIDEO, or None. The output frames follow the PTS of the VIDEO
+    that sets the Timeline fps: the background VIDEO, or else the sticker VIDEO. Times stored in the state are
+    read at the recorded `timeline.fps`, so they keep their seconds when a VIDEO sets another Timeline fps.
     """
     stored_fps = state["timeline"]["fps"]
     video = isinstance(bg, (StreamedVideo, MaterializedVideo))
-    # TODO(#56): without a background VIDEO, a VIDEO on the sticker input sets the Timeline fps.
-    fps = float(bg.frame_rate) if video else stored_fps
-    times = bg.times if video else []
+    if video:
+        fps, times, time_base = float(bg.frame_rate), bg.times, bg.time_base
+    elif port is not None and port.times is not None:
+        fps, times, time_base = float(port.frame_rate), port.times, port.time_base
+    else:
+        fps, times, time_base = stored_fps, [], 0
+    # PTS are rounded to the VIDEO's time base, so a frame within half of it of a whole Timeline frame is that frame.
+    tolerance = float(time_base) / 2 * stored_fps
     batch = 0 if bg is None or video else int(bg.shape[0])
 
     def output_frames(frame):
@@ -1092,10 +1097,15 @@ def _decide_timeline(state: dict, bg) -> tuple[float, list[tuple[float, int | No
 
     clips = [state["scene"]["clip"], *(sticker["clip"] for sticker in state["stickers"])]
     clip_ends = [clip["start"] + clip["duration"] for clip in clips if clip["duration"] is not None]
+    if port is not None and port.clip["duration"] is None:
+        # Without a duration, the port Sticker ends with media that has frames.
+        port_end = port.end(fps)
+        if port_end is not None:
+            clip_ends.append(port_end)
     keyframes = state["camera"]["transform"]["keyframes"]
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
-    elif times:
+    elif video:
         length = len(times)
     elif batch > 1:
         length = batch
@@ -1111,30 +1121,53 @@ def _decide_timeline(state: dict, bg) -> tuple[float, list[tuple[float, int | No
         if index < len(times):
             frame = float(times[index]) * stored_fps
         elif times:
-            # Past the end of the background VIDEO, frames continue at the Timeline fps.
+            # Past the end of the VIDEO, frames continue at the Timeline fps.
             frame = (float(times[-1]) + (index - len(times) + 1) / fps) * stored_fps
         else:
             frame = index * stored_fps / fps
+        if abs(frame - round(frame)) <= tolerance:
+            frame = float(round(frame))
         if video:
             bg_index = index if index < len(times) else None
         else:
             bg_index = index if index < batch else (0 if batch == 1 else None)
-        frames.append((frame, bg_index))
+        frames.append((frame, bg_index, None if port is None else port.index_at(frame, fps, tolerance)))
     return fps, frames
 
 
-def _render_timeline(state: dict, sources: SceneSources, projection: Projection, frames, bg_media, bg_color) -> tuple[torch.Tensor, torch.Tensor]:
-    """(b) Render each output frame with the shared render function."""
+def _port_source_at(active: bool, index: int | None, frames, template: StickerSource, current: StickerSource | None) -> StickerSource | None:
+    """The port Sticker's source showing frame `index` of `frames`, or None where it is not drawn. `current` is
+    the previous result, kept while the frame repeats so that it is not converted again."""
+    if not active or index is None:
+        return None
+    if current is not None and current.frame == index:
+        return current
+    image = frames[index]
+    return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
+
+
+def _render_timeline(state: dict, sources: SceneSources, projection: Projection, frames, bg_media, bg_color, port: PortMedia | None) -> tuple[torch.Tensor, torch.Tensor]:
+    """(b) Render each output frame with the shared render function, with the port Sticker's source at the
+    frame of `port` that (a) chose."""
     device = comfy.model_management.get_torch_device()
     images = torch.empty((len(frames), projection.height, projection.width, 3), dtype=torch.float32)
     masks = torch.empty((len(frames), projection.height, projection.width), dtype=torch.float32)
+    if port is not None:
+        port_frames = port.frames()
+        others = {key: value for key, value in sources.stickers.items() if key != port.sticker_id}
     cache = {}
     previous = None
-    for index, (frame, bg_index) in enumerate(frames):
+    port_source = None
+    for index, (frame, bg_index, port_index) in enumerate(frames):
         evaluated = evaluate_scene_state(state, frame)
+        frame_sources = sources
+        if port is not None:
+            active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
+            port_source = _port_source_at(active, port_index, port_frames, sources.stickers[port.sticker_id], port_source)
+            frame_sources = replace(sources, stickers=others if port_source is None else {**others, port.sticker_id: port_source})
         color, mask, _depth = render_frame(
             evaluated,
-            sources,
+            frame_sources,
             evaluated["camera"],
             projection,
             bg=None if bg_index is None else bg_media[bg_index],
@@ -1190,13 +1223,14 @@ class PanoramaStickersSceneNode(io.ComfyNode):
     def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
         _reject_unsupported_inputs(scene, sticker)
         state = load_scene_state(state_json)
-        sources = _resolve_sources(state, sticker, sticker_state)
-        bg = _open_bg_video(bg_media) if isinstance(bg_media, Input.Video) else bg_media
+        port = _port_media(state, sticker, sticker_state)
+        sources = _resolve_sources(state, port)
+        bg = open_video(bg_media, "bg_media") if isinstance(bg_media, Input.Video) else bg_media
         out_w, out_h, _uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg.first_frame if isinstance(bg_media, Input.Video) else bg_media)
         projection = Projection.erp(out_w, out_h, normalize_coverage(coverage))
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
-        fps, frames = _decide_timeline(state, bg)
-        images, masks = _render_timeline(state, sources, projection, frames, bg, bg_rgb)
+        fps, frames = _decide_timeline(state, bg, port)
+        images, masks = _render_timeline(state, sources, projection, frames, bg, bg_rgb, port)
         audio = bg.audio(len(frames) / fps) if isinstance(bg_media, Input.Video) else None
         return _assemble_outputs(images, masks, audio, fps)
 
