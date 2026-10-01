@@ -222,6 +222,26 @@ EXPECTED_SCHEMAS = {
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
     },
+    "PanoramaPreviewNode": {
+        "display_name": "Panorama Preview",
+        "inputs": [
+            ("source", "COMFY_MATCHTYPE_V3", False),
+            ("coverage", "COMBO", False),
+        ],
+        "input_metadata": {
+            "source": {},
+            "coverage": {
+                "default": "360",
+                "options": ["360", "180"],
+                "force_input": None,
+            },
+        },
+        "outputs": [
+            ("output", "output", "COMFY_MATCHTYPE_V3"),
+        ],
+        "hidden": ["UNIQUE_ID"],
+        "is_output_node": True,
+    },
     "PanoramaSeamPrep": {
         "display_name": "Panorama Seam Prep",
         "inputs": [
@@ -342,6 +362,15 @@ def test_stickers_node_media_ports_accept_the_spec_types():
     assert inputs["bg_media"].get_io_type() == "IMAGE,VIDEO"
     assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY"
     assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES}"
+
+
+def test_preview_node_passes_its_source_type_through():
+    schema = REGISTERED_NODES["PanoramaPreviewNode"].define_schema()
+    source = schema.inputs[0]
+    output = schema.outputs[0]
+
+    assert output.template is source.template
+    assert source.template.as_dict() == {"template_id": "source", "allowed_types": "IMAGE,VIDEO,PANO_SCENE"}
 
 
 @pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaStickersNode", "PanoramaCutout"])

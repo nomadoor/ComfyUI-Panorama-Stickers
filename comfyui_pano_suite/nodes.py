@@ -1,6 +1,6 @@
 import json
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 import logging
 
@@ -44,6 +44,7 @@ from .core.scene_eval import evaluate_scene_state
 from .core.scene_state import load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
+from .core.video import make_video_ui_payload, save_video_to_mp4
 from .core.video_source import MaterializedVideo, StreamedVideo
 from .sticker_media import PortMedia, open_video
 _log = logging.getLogger(__name__)
@@ -991,6 +992,31 @@ MESH_FILE_TYPES = [io.File3DGLB, io.File3DGLTF, io.File3DFBX, io.File3DOBJ, io.F
 SPLAT_FILE_TYPES = [io.File3DPLY, io.File3DSPLAT, io.File3DSPZ, io.File3DKSPLAT, io.File3DSplatAny]
 
 
+@dataclass(frozen=True, eq=False)
+class PanoSceneValue:
+    """The PANO_SCENE output: the Stickers state bound to its inputs, derived on each execution (ADR 0025).
+
+    `state` is the loaded `state_json` with the port Sticker appended when missing, and `sources` its Sticker
+    sources read into memory; the port Sticker's source is a template holding the first frame of `port`, the
+    media on the sticker input (None without one), whose frames come from `port.frames()` at `port.index_at`.
+    `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given. `coverage` is the span of `bg_media`,
+    `bg_color` 0..1 RGB. The output size is not part of it; each consumer sets its own. `fps` is the Timeline fps
+    and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, and the
+    `port` frame, as `_decide_timeline` returns them.
+    Consumers must not modify it; the same value reaches every node linked to the output.
+    """
+
+    state: dict
+    sources: SceneSources
+    port: PortMedia | None
+    bg_media: object
+    scene: object
+    coverage: int
+    bg_color: tuple
+    fps: float
+    frames: tuple
+
+
 def _input_type_name(value) -> str:
     if isinstance(value, torch.Tensor):
         return "IMAGE"
@@ -1187,11 +1213,6 @@ def _render_timeline(state: dict, sources: SceneSources, projection: Projection,
     return images, masks
 
 
-def _assemble_outputs(images: torch.Tensor, masks: torch.Tensor, audio: dict | None, fps: float) -> io.NodeOutput:
-    """(c) Output ports in order: IMAGE, MASK, AUDIO (None without audio), fps, PANO_SCENE (not built yet)."""
-    return io.NodeOutput(images, masks, audio, fps, None)
-
-
 # TODO(#78): rename to PanoramaStickersNode, matching the node_id, once the legacy class is removed.
 class PanoramaStickersSceneNode(io.ComfyNode):
     @classmethod
@@ -1227,12 +1248,15 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         sources = _resolve_sources(state, port)
         bg = open_video(bg_media, "bg_media") if isinstance(bg_media, Input.Video) else bg_media
         out_w, out_h, _uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg.first_frame if isinstance(bg_media, Input.Video) else bg_media)
-        projection = Projection.erp(out_w, out_h, normalize_coverage(coverage))
+        coverage_deg = normalize_coverage(coverage)
+        projection = Projection.erp(out_w, out_h, coverage_deg)
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
         fps, frames = _decide_timeline(state, bg, port)
         images, masks = _render_timeline(state, sources, projection, frames, bg, bg_rgb, port)
         audio = bg.audio(len(frames) / fps) if isinstance(bg_media, Input.Video) else None
-        return _assemble_outputs(images, masks, audio, fps)
+        # (c) The outputs, with PANO_SCENE binding the state to the inputs and the decided Timeline.
+        pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
+        return io.NodeOutput(images, masks, audio, fps, pano_scene)
 
 
 class PanoramaCutoutNode(io.ComfyNode):
@@ -1509,32 +1533,87 @@ class PanoramaPreviewNode(io.ComfyNode):
     @classmethod
     def execute(cls, erp_image, coverage="360", fps=24.0, audio=None, unique_id=None):
         ui_ret = {}
-        warnings = []
-        fps_value = max(1.0, finite_float(fps, 24.0))
         if erp_image is not None:
-            preview_contract = _get_preview_ui_contract("default")
-            ui_ret = _init_ui_preview(erp_image, key=preview_contract["image"])
-            frame_count = int(erp_image.shape[0]) if hasattr(erp_image, "shape") and erp_image.ndim == 4 else 1
-            video_span = frame_count if frame_count > 1 else 0
-            progress = _NodeProgress(unique_id, 1 + video_span + 1, label="PanoramaPreview")
-            progress.advance(1)
-            if video_span > 0:
-                progress.stage("Encoding preview video")
-            _append_preview_video_from_batch(
-                ui_ret,
-                erp_image,
-                fps_value,
-                audio,
-                warning_key="pano_preview_warnings",
-                video_key=preview_contract["video"],
-                meta_key=preview_contract["meta"],
-                progress_callback=progress.frame_callback(progress.value, video_span) if video_span > 0 else None,
-            )
-            progress.set(1 + video_span)
-            progress.stage("Done")
-            progress.finish()
-        _flush_warnings(ui_ret, "pano_preview_warnings", warnings)
+            ui_ret = _preview_ui(erp_image, max(1.0, finite_float(fps, 24.0)), audio, unique_id)
         return io.NodeOutput(erp_image, ui=ui_ret)
+
+
+def _preview_ui(images: torch.Tensor, fps: float, audio, unique_id) -> dict:
+    """The execution `ui` of a Preview: the first image, and an MP4 of a batch of two or more."""
+    preview_contract = _get_preview_ui_contract("default")
+    ui_ret = _init_ui_preview(images, key=preview_contract["image"])
+    frame_count = int(images.shape[0]) if hasattr(images, "shape") and images.ndim == 4 else 1
+    video_span = frame_count if frame_count > 1 else 0
+    progress = _NodeProgress(unique_id, 1 + video_span + 1, label="PanoramaPreview")
+    progress.advance(1)
+    if video_span > 0:
+        progress.stage("Encoding preview video")
+    _append_preview_video_from_batch(
+        ui_ret,
+        images,
+        fps,
+        audio,
+        warning_key="pano_preview_warnings",
+        video_key=preview_contract["video"],
+        meta_key=preview_contract["meta"],
+        progress_callback=progress.frame_callback(progress.value, video_span) if video_span > 0 else None,
+    )
+    progress.set(1 + video_span)
+    progress.stage("Done")
+    progress.finish()
+    return ui_ret
+
+
+def _video_preview_ui(video) -> dict:
+    """The Preview `ui` of a VIDEO: its first frame, and the VIDEO saved as MP4 by the core when it has two or more
+    frames. The frames are not read into one batch, and the Timeline fps is decided as in Stickers."""
+    bg = open_video(video, "source")
+    fps, frames = _decide_timeline(load_scene_state(None), bg, None)
+    preview_contract = _get_preview_ui_contract("default")
+    ui_ret = _init_ui_preview(bg.first_frame[None], key=preview_contract["image"])
+    if len(frames) > 1:
+        path, has_audio = save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
+        payload = make_video_ui_payload(path, fps, len(frames), video_key=preview_contract["video"], meta_key=preview_contract["meta"])
+        payload[preview_contract["meta"]][0]["has_audio"] = has_audio
+        _merge_ui_payload(ui_ret, payload)
+    return ui_ret
+
+
+# TODO(#78): rename to PanoramaPreviewNode, matching the node_id, once the legacy class is removed.
+class PanoramaPreviewSceneNode(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        template = io.MatchType.Template("source", [io.Image, io.Video, PanoScene])
+        return io.Schema(
+            node_id="PanoramaPreviewNode",
+            display_name="Panorama Preview",
+            category="Panorama Suite",
+            inputs=[
+                io.MatchType.Input("source", template=template),
+                io.Combo.Input("coverage", options=["360", "180"], default="360"),
+            ],
+            outputs=[
+                io.MatchType.Output(template=template, id="output", display_name="output"),
+            ],
+            hidden=[io.Hidden.unique_id],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, source, coverage="360", unique_id=None):
+        # `coverage` is read by the node's widget on the frontend. A PANO_SCENE carries its own.
+        # TODO(#76): show a PANO_SCENE on the node. Until then it passes through without a preview.
+        if isinstance(source, PanoSceneValue):
+            return io.NodeOutput(source)
+        # TODO(#76): bind the editor frontend to this node id; it reads the same `ui` keys as the legacy Preview.
+        if isinstance(source, Input.Video):
+            return io.NodeOutput(source, ui=_video_preview_ui(source))
+        # MatchType is not checked by the backend, so an API prompt can send another type.
+        if not isinstance(source, torch.Tensor) or source.ndim != 4:
+            shape = f" of shape {tuple(source.shape)}" if isinstance(source, torch.Tensor) else ""
+            raise TypeError(f"Panorama Preview: source must be an IMAGE, a VIDEO, or a PANO_SCENE, not {type(source).__name__}{shape}.")
+        fps = _decide_timeline(load_scene_state(None), source, None)[0]
+        return io.NodeOutput(source, ui=_preview_ui(source, fps, None, unique_id))
 
 
 class PanoramaSeamPrepNode(io.ComfyNode):
@@ -1656,6 +1735,7 @@ class PanoramaSuiteExtension(ComfyExtension):
             PanoramaStickersSceneNode,
             PanoramaCutoutNode,
             PanoramaPreviewNode,
+            PanoramaPreviewSceneNode,
             PanoramaSeamPrepNode,
         ]
 
