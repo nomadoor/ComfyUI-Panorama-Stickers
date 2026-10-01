@@ -22,7 +22,7 @@ from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStickersS
 STATE = {
     "version": 2,
     "timeline": {"fps": 30.0},
-    "camera": {"transform": {"keyframes": [
+    "camera": {"rotation": {"keyframes": [
         {"frame": 0, "value": {"yaw_deg": 0.0}},
         {"frame": 5, "value": {"yaw_deg": 90.0}},
     ]}},

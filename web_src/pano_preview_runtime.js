@@ -6,7 +6,8 @@ import { createPanoInteractionController } from "./pano_interaction_controller.j
 import { clamp } from "./pano_math.js";
 import { yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
-import { editorActive, editorSceneState, editorStateText, parsePanoEditorState, setEditorActive } from "./pano_editor_state.js";
+import { editorActive, editorStateText, parsePanoEditorState, parseSceneEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
+import { loadSceneState } from "./pano_scene_state.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import {
@@ -25,8 +26,10 @@ import { fitFocalPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
 import PanoStickersNodeSurface from "./components/PanoStickersNodeSurface.vue";
 import {
+  NODE_SURFACE_FRAME,
   createStickersNodeSurfaceSession,
   stickersNodeSurfaceModel,
+  surfacePoseStickers,
 } from "./pano_stickers_node_surface.js";
 import {
   buildStickerGeometry,
@@ -420,7 +423,7 @@ function getCachedState(node) {
     return cache.parsed;
   }
   const parsed = node.__panoSceneStateV2 && typeof source === "string"
-    ? parsePanoEditorState(source, { backgroundColor: bg, coverage, active: editorActive(node) })
+    ? parseSceneEditorState(source, { backgroundColor: bg, coverage, active: editorActive(node) })
     : parseState(source, bg);
   parsed.coverage = coverage;
   node.__panoStateCache = { source, liveVersion, bg, coverage, parsed };
@@ -1457,16 +1460,21 @@ function stickersSurfaceProjection(node, width, height) {
 }
 
 // What the on-node surfaces draw with three.js: the background, and the Sky layers of the node's
-// state (its sky Stickers and paint) from back to front, at Timeline frame 0 like the editor.
+// state (its sky Stickers and paint) from back to front, at NODE_SURFACE_FRAME.
 function surfaceViewInput(node, state, bgImg) {
   if (node.__panoSurfaceScene?.state !== state) {
-    node.__panoSurfaceScene = { state, sceneState: editorSceneState({ ...state, painting: null }) };
+    node.__panoSurfaceScene = { state, sceneState: loadSceneState({ ...state, painting: null }) };
   }
   const media = (item) => {
     if (item.visible === false) return null;
-    const external = item.type === "external_image" || item.source_kind === "external_image";
-    const assetId = String(item.asset_id || "") || (external ? String(item.id || "") : "");
-    const img = getNodePreviewImage(node, assetId, state.assets?.[item.asset_id], { external });
+    let img;
+    if (state.version === 2) {
+      img = getNodePreviewImage(node, item.id, sourceAsset(item.source), { external: item.source.kind === "port" });
+    } else {
+      const external = item.type === "external_image" || item.source_kind === "external_image";
+      const assetId = String(item.asset_id || "") || (external ? String(item.id || "") : "");
+      img = getNodePreviewImage(node, assetId, state.assets?.[item.asset_id], { external });
+    }
     return isRenderableMediaReady(img) ? { media: img, revision: getRenderableMediaRevisionToken(img) } : null;
   };
   const paintLayers = buildRuntimeCutoutLayerEntries(node, state)
@@ -1476,7 +1484,7 @@ function surfaceViewInput(node, state, bgImg) {
     background: isRenderableMediaReady(bgImg)
       ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 }
       : null,
-    layers: workingSkyLayers(node.__panoSurfaceScene.sceneState, 0, state.stickers, { media, paintLayers }),
+    layers: workingSkyLayers(node.__panoSurfaceScene.sceneState, NODE_SURFACE_FRAME, state.stickers, { media, paintLayers }),
   };
 }
 
@@ -1617,7 +1625,7 @@ function drawCanvas(node, canvas, surfaceView) {
   if (!bgImg && panoramaDrawn) drawPanoGrid(ctx, projection, getNodeUiScale(canvas, rect));
   const selectedId = String(state?.active?.selected_sticker_id || "");
   const selected = panoramaDrawn
-    ? state.stickers.find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
+    ? surfacePoseStickers(state).find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
     : null;
   if (selected) drawStickerSelectionOverlay(ctx, selected, projection);
 }
@@ -2283,7 +2291,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (!stickersMode || !panoramaInteractiveView) return;
     const currentState = getCachedState(node);
     const picked = pickStickerAtPoint(
-      currentState?.stickers,
+      surfacePoseStickers(currentState),
       String(currentState?.active?.selected_sticker_id || ""),
       cutoutCanvasPoint(ev),
       stickersSurfaceProjection(node, canvas.width, canvas.height),
@@ -2349,7 +2357,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const currentState = getCachedState(node);
     const selectedId = String(currentState?.active?.selected_sticker_id || "");
     const projection = stickersSurfaceProjection(node, canvas.width, canvas.height);
-    const picked = pickStickerAtPoint(currentState?.stickers, selectedId, point, projection);
+    const picked = pickStickerAtPoint(surfacePoseStickers(currentState), selectedId, point, projection);
     root.focus?.({ preventScroll: true });
     if (picked && nodeSurfaceSession) {
       interaction.stopMotion();

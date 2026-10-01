@@ -349,9 +349,8 @@ def _clip_sticker(sticker_id, clip):
     return {"id": sticker_id, "source": source, "clip": clip}
 
 
-def _camera_keyframes(*frames):
-    value = {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0}
-    return {"transform": {"value": value, "keyframes": [{"frame": frame, "value": value} for frame in frames]}}
+def _camera_keyframes(*frames, lane="rotation"):
+    return {lane: {"keyframes": [{"frame": frame, "value": None} for frame in frames]}}
 
 
 def _length(state, **inputs):
@@ -368,8 +367,9 @@ def test_length_comes_from_the_latest_clip_range_end():
     assert _length(state) == 7
 
 
-def test_length_comes_from_the_last_camera_keyframe_without_clip_ends():
+def test_length_comes_from_the_latest_camera_keyframe_over_its_lanes_without_clip_ends():
     assert _length({"camera": _camera_keyframes(0, 9)}) == 10
+    assert _length({"camera": {**_camera_keyframes(0, 4), **_camera_keyframes(6, lane="fov"), **_camera_keyframes(2, 3, lane="position")}}) == 7
 
 
 def test_background_batch_comes_before_clip_ends():
@@ -394,7 +394,7 @@ def test_hold_cut_is_not_late_on_a_video_frame_just_before_the_keyframe(tmp_path
     state = {
         "version": 2,
         "timeline": {"fps": 24.9999975},
-        "camera": {"transform": {"value": {}, "keyframes": [
+        "camera": {"rotation": {"keyframes": [
             {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "hold"},
             {"frame": 3, "value": {"yaw_deg": 180.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
         ]}},

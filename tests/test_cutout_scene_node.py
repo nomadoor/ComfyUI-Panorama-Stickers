@@ -36,8 +36,12 @@ def _solid(rgb, height=8, width=16, batch=1):
     return torch.tensor(rgb, dtype=torch.float32).expand(batch, height, width, 3).clone()
 
 
-def _camera(keyframes=(), fps=24.0, **value):
-    return {"version": 2, "timeline": {"fps": fps}, "camera": {"aspect": 1.0, "transform": {"value": value, "keyframes": list(keyframes)}}}
+def _camera(keyframes=None, fps=24.0, position=None, hFOV_deg=None, **rotation):
+    """A Cutout state; `keyframes` maps Camera Lanes to their Keyframes."""
+    keyframes = keyframes or {}
+    values = {"position": position, "rotation": rotation, "fov": hFOV_deg}
+    camera = {name: {"value": value, "keyframes": keyframes.get(name, [])} for name, value in values.items()}
+    return {"version": 2, "timeline": {"fps": fps}, "camera": {"aspect": 1.0, **camera}}
 
 
 def _halves_erp(height=32, width=64):
@@ -128,7 +132,7 @@ def test_180_erp_is_black_outside_its_hemisphere():
 def test_camera_keyframes_animate_the_cutout():
     keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "hold"}, {"frame": 2, "value": {"yaw_deg": 180.0}}]
 
-    image = _cutout(_halves_erp(), _camera(keyframes))[0]
+    image = _cutout(_halves_erp(), _camera({"rotation": keyframes}))[0]
 
     assert image.shape[0] == 3
     assert [tuple(_center(image, index).tolist()) for index in range(3)] == [(1.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)]
@@ -142,7 +146,11 @@ def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_asp
         "kind": "pano_sticker_state",
         "version": 2,
         "fps": 24.0,
-        "camera": [{"frame": 0, "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 5.0, "hFOV_deg": 60.0}, "easing": "auto"}],
+        "camera": {
+            "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": [0.42, 0.0, 0.58, 1.0]}],
+            "rotation": [{"frame": 0, "value": {"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 5.0}, "easing": [0.42, 0.0, 0.58, 1.0]}],
+            "fov": [{"frame": 0, "value": 60.0, "easing": [0.42, 0.0, 0.58, 1.0]}],
+        },
         "source_aspect": image.shape[2] / image.shape[1],
     }
     assert load_sticker_state(sticker_state)["camera"] == payload["camera"]
@@ -151,7 +159,11 @@ def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_asp
 def test_legacy_shot_becomes_the_sticker_state_camera():
     payload = json.loads(_cutout(build_background_erp(), V1_STATE, output_megapixels=0.03)[1])
 
-    assert payload["camera"][0]["value"] == {"position": [0.0, 0.0, 0.0], "yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 15.0, "hFOV_deg": 90.0}
+    assert {name: [key["value"] for key in keys] for name, keys in payload["camera"].items()} == {
+        "position": [[0.0, 0.0, 0.0]],
+        "rotation": [{"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 15.0}],
+        "fov": [90.0],
+    }
     assert payload["source_aspect"] == 224 / 128
 
 
@@ -191,10 +203,10 @@ def test_video_source_sets_the_timeline_fps_and_cuts_its_audio_to_the_length(tmp
 def test_video_source_rebases_the_camera_keyframes_to_the_timeline_fps(tmp_path):
     keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 24, "value": {"yaw_deg": 90.0}}]
 
-    payload = json.loads(_cutout(_video(tmp_path), _camera(keyframes))[1])
+    payload = json.loads(_cutout(_video(tmp_path), _camera({"rotation": keyframes}))[1])
 
     assert payload["fps"] == 25.0
-    assert [key["frame"] for key in payload["camera"]] == [0, 25]
+    assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 25], "fov": [0]}
 
 
 def _stickers(state=None, **inputs):
@@ -218,7 +230,7 @@ def _record_projections(monkeypatch):
 
 def test_pano_scene_is_shot_from_the_cutout_camera_with_a_perspective_projection(monkeypatch):
     # The Stickers Camera looks elsewhere; only the Cutout Camera decides the shot.
-    scene = _stickers({"version": 2, "camera": {"transform": {"value": {"yaw_deg": 180.0}}}}, bg_media=_halves_erp())[4]
+    scene = _stickers({"version": 2, "camera": {"rotation": {"value": {"yaw_deg": 180.0}}}}, bg_media=_halves_erp())[4]
     cutout_state = _camera(yaw_deg=180.0, hFOV_deg=50.0)
     cutout_state["camera"]["aspect"] = 1.5
     projections = _record_projections(monkeypatch)
@@ -233,7 +245,7 @@ def test_pano_scene_is_shot_from_the_cutout_camera_with_a_perspective_projection
 
 
 def test_pano_scene_draws_its_sky_stickers_and_bg_color():
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": [{"frame": 0, "value": {"yaw_deg": 90.0, "hFOV_deg": 40.0}}]})
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 90.0}}], "fov": [{"frame": 0, "value": 40.0}]}})
     scene = _stickers(sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)[4]
 
     at_sticker = _cutout(scene, _camera(yaw_deg=90.0, hFOV_deg=10.0))[0]
@@ -274,11 +286,11 @@ def test_pano_scene_reads_the_cutout_camera_at_its_own_recorded_fps():
     # Cutout frame 2 at 24 fps is 1/12 s: the second frame of the 12 fps Timeline.
     keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "hold"}, {"frame": 2, "value": {"yaw_deg": 180.0}}]
 
-    cut, sticker_state, *_rest = _cutout(scene, _camera(keyframes, fps=24.0))
+    cut, sticker_state, *_rest = _cutout(scene, _camera({"rotation": keyframes}, fps=24.0))
 
     assert [tuple(_center(cut, index).tolist()) for index in range(3)] == [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0)]
     payload = json.loads(sticker_state)
-    assert payload["fps"] == 12.0 and [key["frame"] for key in payload["camera"]] == [0, 1]
+    assert payload["fps"] == 12.0 and [key["frame"] for key in payload["camera"]["rotation"]] == [0, 1]
 
 
 def test_pano_scene_with_a_video_background_outputs_its_audio(tmp_path):
@@ -314,7 +326,12 @@ def _weighted_center(values):
 def test_perspective_sky_content_lines_up_with_the_background():
     erp, pose = _marker_erp()
     camera = _camera(yaw_deg=pose["yaw_deg"], pitch_deg=pose["pitch_deg"], hFOV_deg=20.0)
-    sticker = {"id": "s", "source": {"kind": "port"}, "transform": {"value": {key: pose[key] for key in ("yaw_deg", "pitch_deg", "hFOV_deg", "vFOV_deg")}}}
+    sticker = {
+        "id": "s",
+        "source": {"kind": "port"},
+        "direction": {"value": {key: pose[key] for key in ("yaw_deg", "pitch_deg")}},
+        "size": {"value": {key: pose[key] for key in ("hFOV_deg", "vFOV_deg")}},
+    }
     scene = _stickers({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[4]
     camera["camera"]["aspect"] = 1.5
 
@@ -347,16 +364,21 @@ def test_perspective_paint_lines_up_with_the_background():
 
 
 def test_sticker_state_round_trips_camera_keyframes_with_easing_and_handles():
-    keyframes = [
-        {"frame": 0, "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0}, "easing": [0.25, 0.1, 0.25, 1.0], "handles": {"out": [1.0, 0.0, 0.0]}},
-        {"frame": 6, "value": {"position": [2.0, 0.5, -1.0], "yaw_deg": 90.0, "hFOV_deg": 60.0}, "easing": "hold", "handles": {"in": [-1.0, 0.0, 0.5]}},
-    ]
+    keyframes = {
+        "position": [
+            {"frame": 0, "value": [0.0, 0.0, 0.0], "easing": [0.25, 0.1, 0.25, 1.0], "handles": {"out": [1.0, 0.0, 0.0]}},
+            {"frame": 6, "value": [2.0, 0.5, -1.0], "easing": "hold", "handles": {"in": [-1.0, 0.0, 0.5]}},
+        ],
+        "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "auto"}, {"frame": 6, "value": {"yaw_deg": 90.0}}],
+        "fov": [{"frame": 3, "value": 70.0, "easing": "hold"}, {"frame": 6, "value": 60.0}],
+    }
     state = _camera(keyframes, fps=12.0)
     image, sticker_state, *_rest = _cutout(_halves_erp(), state)
 
     loaded = load_sticker_state(sticker_state)
     assert loaded["fps"] == 12.0
-    assert loaded["camera"] == load_scene_state(state)["camera"]["transform"]["keyframes"]
+    camera = load_scene_state(state)["camera"]
+    assert loaded["camera"] == {name: camera[name]["keyframes"] for name in ("position", "rotation", "fov")}
     # A Cutout state made from the sticker_state shoots the same frames.
     again = _cutout(_halves_erp(), _camera(loaded["camera"], fps=loaded["fps"]))[0]
     assert torch.equal(again, image)
@@ -378,7 +400,7 @@ def test_pano_scene_with_coverage_180_reads_its_bg_media_as_the_front_hemisphere
 
 def test_world_sticker_is_shot_from_the_cutout_camera_position():
     # A square plane 2 wide at distance 1, facing the Camera at rotation 0.
-    sticker = {"id": "p", "placement": "world", "source": {"kind": "port"}, "transform": {"value": {"position": [0.0, 0.0, -1.0], "scale": 2.0}}}
+    sticker = {"id": "p", "placement": "world", "source": {"kind": "port"}, "position": {"value": [0.0, 0.0, -1.0]}, "scale": {"value": 2.0}}
     scene = _stickers({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[4]
 
     near = _cutout(scene, _camera(hFOV_deg=60.0))[0][0]

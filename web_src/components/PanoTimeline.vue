@@ -1,0 +1,269 @@
+<script setup>
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { ICON } from "../icons.js";
+import { clusterFrames } from "../pano_timeline.js";
+import SvgIcon from "./SvgIcon.vue";
+
+// The Timeline of PanoramaStickersNode's editor. It draws buildTimelineModel() and reports what the
+// pointer does as Timeline frames; the editor owns every state change.
+const props = defineProps({ model: { type: Object, default: () => ({}) } });
+const emit = defineEmits(["action"]);
+
+// Keyframes closer than this on screen show as one pin.
+const PIN_GAP_PX = 10;
+const TICK_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
+
+const rulerRef = ref(null);
+const trackWidth = ref(1);
+let resizeObserver = null;
+// Removes the window listeners of the drag in progress, without reporting its end.
+let stopDrag = null;
+onMounted(() => {
+  resizeObserver = new ResizeObserver(([entry]) => {
+    trackWidth.value = Math.max(1, entry.contentRect.width);
+  });
+  if (rulerRef.value) resizeObserver.observe(rulerRef.value);
+});
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  stopDrag?.();
+});
+
+const span = computed(() => Math.max(1, Number(props.model.span || 1)));
+const pxPerFrame = computed(() => trackWidth.value / span.value);
+const pct = (frame) => `${(frame / span.value) * 100}%`;
+const ticks = computed(() => {
+  const step = TICK_STEPS.find((item) => item * pxPerFrame.value >= 56) || TICK_STEPS[TICK_STEPS.length - 1];
+  const out = [];
+  for (let frame = 0; frame < span.value; frame += step) out.push(frame);
+  return out;
+});
+
+function frameAt(clientX) {
+  const rect = rulerRef.value.getBoundingClientRect();
+  const frame = Math.floor(((clientX - rect.left) / Math.max(1, rect.width)) * span.value);
+  return Math.min(span.value - 1, Math.max(0, frame));
+}
+
+// Pins of a line's Keyframes; frames closer than PIN_GAP_PX on screen merge into one pin. `keys` are
+// { frame, full } (a row: full when every Lane has a Keyframe there) and `selected` the selected frames.
+function pins(lineKey, keys, selected) {
+  const minGap = Math.ceil(PIN_GAP_PX / Math.max(1e-6, pxPerFrame.value));
+  const full = new Map(keys.map((key) => [key.frame, key.full]));
+  return clusterFrames(keys.map((key) => key.frame), minGap).map((pin, index) => ({
+    ...pin,
+    key: `${lineKey}:${index}`,
+    partial: pin.frames.some((frame) => !full.get(frame)),
+    selected: pin.frames.some((frame) => selected.includes(frame)),
+  }));
+}
+
+function rowPins(row) {
+  return pins(row.id, row.keys, row.selectedFrames);
+}
+
+function lanePins(lane) {
+  return pins(lane.key, lane.frames.map((frame) => ({ frame, full: true })), lane.selectedFrames);
+}
+
+function clipStyle(clip) {
+  const end = clip.end === null ? span.value : clip.end;
+  return { left: pct(clip.start), width: pct(Math.max(0, end - clip.start)) };
+}
+
+// Reports a drag as whole-frame offsets from where it started. The scale is fixed at the start, as
+// a drag past the end widens the Timeline. The listeners are on window because the dragged pin's
+// element can be re-rendered away when Keyframes merge.
+function drag(event, onStep) {
+  const startX = event.clientX;
+  const scale = Math.max(1e-6, pxPerFrame.value);
+  let delta = 0;
+  onStep("start", 0, event);
+  const move = (ev) => {
+    if (ev.pointerId !== event.pointerId) return;
+    const next = Math.round((ev.clientX - startX) / scale);
+    if (next === delta) return;
+    delta = next;
+    onStep("move", delta, ev);
+  };
+  const end = (ev) => {
+    if (ev.pointerId !== event.pointerId) return;
+    stopDrag();
+    onStep("end", delta, ev);
+  };
+  stopDrag?.();
+  stopDrag = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", end);
+    window.removeEventListener("pointercancel", end);
+    stopDrag = null;
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", end);
+  window.addEventListener("pointercancel", end);
+}
+
+function onRulerDown(event) {
+  if (event.button !== 0) return;
+  drag(event, (phase, _delta, ev) => emit("action", { type: "seek", frame: frameAt(ev.clientX), phase }));
+}
+
+function onClipDown(event, row, mode) {
+  if (event.button !== 0) return;
+  emit("action", { type: "select-row", id: row.id });
+  drag(event, (phase, delta) => emit("action", { type: "clip", id: row.id, mode, delta, phase }));
+}
+
+// lane is a Lane's name, or null for the row's pins, which stand for every Lane's Keyframes there.
+// Shift-click adds or removes the pin's Keyframes without dragging them.
+function onPinDown(event, row, lane, pin, selected) {
+  if (event.button !== 0) return;
+  if (event.shiftKey) {
+    emit("action", { type: "select-keys", owner: row.id, lane, frames: pin.frames, additive: true });
+    return;
+  }
+  if (!pin.frames.every((frame) => selected.includes(frame))) {
+    emit("action", { type: "select-keys", owner: row.id, lane, frames: pin.frames, additive: false });
+  }
+  drag(event, (phase, delta) => emit("action", { type: "move-keys", delta, phase }));
+}
+
+function onLineDown(event, row, lane) {
+  if (event.button !== 0 || event.target !== event.currentTarget) return;
+  emit("action", { type: "select-keys", owner: row.id, lane, frames: [], additive: false });
+}
+</script>
+
+<template>
+  <section v-show="model.visible" class="pano-timeline" :class="{ expanded: model.expanded }" data-timeline>
+    <div class="pano-timeline-bar">
+      <button
+        class="pano-btn pano-btn-icon pano-timeline-play"
+        type="button"
+        :aria-label="model.playing ? 'Pause' : 'Play'"
+        :data-tip="model.playing ? 'Pause' : 'Play'"
+        @click="emit('action', { type: 'play' })"
+      >
+        <SvgIcon :icon="model.playing ? ICON.pause : ICON.play" />
+      </button>
+      <button
+        v-if="model.hasAudio"
+        class="pano-btn pano-btn-icon pano-timeline-mute"
+        type="button"
+        :aria-label="model.muted ? 'Unmute' : 'Mute'"
+        :data-tip="model.muted ? 'Unmute' : 'Mute'"
+        @click="emit('action', { type: 'mute' })"
+      >
+        <SvgIcon :icon="model.muted ? ICON.volume_muted : ICON.volume2" />
+      </button>
+      <span class="pano-timeline-time">{{ model.label }}</span>
+      <button
+        class="pano-timeline-toggle"
+        type="button"
+        :aria-expanded="model.expanded ? 'true' : 'false'"
+        @click="emit('action', { type: 'toggle-expanded' })"
+      >
+        <span>Timeline</span>
+        <SvgIcon :icon="ICON.chevron" />
+      </button>
+    </div>
+    <div v-show="model.expanded" class="pano-timeline-body">
+      <div class="pano-timeline-grid">
+        <div class="pano-timeline-corner" />
+        <div ref="rulerRef" class="pano-timeline-ruler" @pointerdown="onRulerDown">
+          <span v-for="frame in ticks" :key="frame" class="pano-timeline-tick" :style="{ left: pct(frame) }">{{ frame }}</span>
+          <span class="pano-timeline-playhead" :style="{ left: pct(model.frame + 0.5) }" />
+        </div>
+        <template v-for="row in model.rows || []" :key="row.id">
+          <div class="pano-timeline-head" :class="{ selected: row.selected }">
+            <div class="pano-timeline-name">
+              <button
+                class="pano-timeline-open"
+                type="button"
+                :aria-expanded="row.open ? 'true' : 'false'"
+                :aria-label="row.open ? `Hide ${row.label} parameters` : `Show ${row.label} parameters`"
+                @click.stop="emit('action', { type: 'toggle-row', id: row.id })"
+              >
+                <SvgIcon :icon="ICON.chevron" />
+              </button>
+              <button
+                class="pano-timeline-select"
+                type="button"
+                :title="row.label"
+                :aria-current="row.selected ? 'true' : undefined"
+                @click="emit('action', { type: 'select-row', id: row.id })"
+              >
+                <SvgIcon :icon="row.clip ? ICON.image : ICON.camera" />
+                <span>{{ row.label }}</span>
+              </button>
+              <button
+                class="pano-timeline-key"
+                :class="{ keyed: row.keyed }"
+                type="button"
+                :data-keyed="row.keyed ? 'true' : 'false'"
+                :aria-label="row.keyed ? `Every ${row.label} parameter has a keyframe here; update them` : `Add keyframes for every ${row.label} parameter here`"
+                data-tip="Keyframe every parameter here"
+                @click.stop="emit('action', { type: 'key-row', owner: row.id })"
+              >
+                <SvgIcon :icon="ICON.keyframe" />
+              </button>
+            </div>
+            <template v-if="row.open">
+              <div v-for="lane in row.lanes" :key="lane.key" class="pano-timeline-lane-head">{{ lane.label }}</div>
+            </template>
+          </div>
+          <div class="pano-timeline-track" :class="{ selected: row.selected }">
+            <div class="pano-timeline-row-line" @pointerdown="onLineDown($event, row, null)">
+              <div
+                v-if="row.clip"
+                class="pano-timeline-clip"
+                :class="{ open: row.clip.end === null }"
+                :style="clipStyle(row.clip)"
+                @pointerdown.stop="onClipDown($event, row, 'move')"
+              >
+                <span class="pano-timeline-trim start" @pointerdown.stop="onClipDown($event, row, 'start')" />
+                <span class="pano-timeline-trim end" @pointerdown.stop="onClipDown($event, row, 'end')" />
+              </div>
+              <button
+                v-for="pin in rowPins(row)"
+                :key="pin.key"
+                type="button"
+                class="pano-timeline-pin"
+                :class="{ selected: pin.selected, cluster: pin.frames.length > 1, partial: pin.partial }"
+                :style="{ left: pct(pin.frame + 0.5) }"
+                :aria-label="`${row.label}: ${pin.frames.length > 1 ? `${pin.frames.length} keyframes` : `keyframe at frame ${pin.frames[0]}`}`"
+                :data-tip="pin.frames.length > 1 ? `${pin.frames.length} keyframes` : `Frame ${pin.frames[0]}`"
+                @pointerdown.stop="onPinDown($event, row, null, pin, row.selectedFrames)"
+              >
+                <span v-if="pin.frames.length > 1">{{ pin.frames.length }}</span>
+              </button>
+            </div>
+            <template v-if="row.open">
+              <div
+                v-for="lane in row.lanes"
+                :key="lane.key"
+                class="pano-timeline-lane"
+                @pointerdown="onLineDown($event, row, lane.lane)"
+              >
+                <button
+                  v-for="pin in lanePins(lane)"
+                  :key="pin.key"
+                  type="button"
+                  class="pano-timeline-pin"
+                  :class="{ selected: pin.selected, cluster: pin.frames.length > 1 }"
+                  :style="{ left: pct(pin.frame + 0.5) }"
+                  :aria-label="`${lane.label}: ${pin.frames.length > 1 ? `${pin.frames.length} keyframes` : `keyframe at frame ${pin.frames[0]}`}`"
+                  :data-tip="pin.frames.length > 1 ? `${pin.frames.length} keyframes` : `Frame ${pin.frames[0]}`"
+                  @pointerdown.stop="onPinDown($event, row, lane.lane, pin, lane.selectedFrames)"
+                >
+                  <span v-if="pin.frames.length > 1">{{ pin.frames.length }}</span>
+                </button>
+              </div>
+            </template>
+            <span class="pano-timeline-playhead" :style="{ left: pct(model.frame + 0.5) }" />
+          </div>
+        </template>
+      </div>
+    </div>
+  </section>
+</template>

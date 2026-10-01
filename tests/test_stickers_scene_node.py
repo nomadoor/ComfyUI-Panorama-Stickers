@@ -169,7 +169,7 @@ def test_port_sticker_is_appended_with_the_sticker_state_pose():
 
 
 def test_port_sticker_in_the_state_keeps_its_pose_and_sticker_state_is_ignored():
-    state = {"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "transform": {"value": {"yaw_deg": -90.0, "hFOV_deg": 20.0}}}]}
+    state = {"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "direction": {"value": {"yaw_deg": -90.0}}, "size": {"value": {"hFOV_deg": 20.0}}}]}
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0, "hFOV_deg": 20.0}})
 
     image = _execute(state, output_preset="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
@@ -190,7 +190,7 @@ def _write_png(path, rgb):
 
 def _file_sticker_state(filename, subfolder="panorama_stickers"):
     source = {"kind": "file", "filename": filename, "subfolder": subfolder, "storage": "input"}
-    return {"version": 2, "stickers": [{"id": "f", "source": source, "transform": {"value": {"hFOV_deg": 20.0, "vFOV_deg": 20.0}}}]}
+    return {"version": 2, "stickers": [{"id": "f", "source": source, "size": {"value": {"hFOV_deg": 20.0, "vFOV_deg": 20.0}}}]}
 
 
 def test_file_source_is_read_from_the_input_directory(tmp_path, monkeypatch):
@@ -272,23 +272,28 @@ def test_background_batch_reuses_the_sky_and_composites_each_frame(monkeypatch):
 
 
 def test_sticker_state_with_several_camera_keyframes_is_not_supported_yet():
-    pose = {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 30.0}
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": [
-        {"frame": 0, "value": pose, "easing": "auto"},
-        {"frame": 10, "value": dict(pose, yaw_deg=40.0), "easing": "auto"},
-    ]})
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": {"rotation": [
+        {"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "auto"},
+        {"frame": 10, "value": {"yaw_deg": 40.0}, "easing": "auto"},
+    ]}})
 
     with pytest.raises(NotImplementedError, match="more than one Camera Keyframe"):
         _execute(output_preset="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)
 
 
-def _camera_scene(**camera):
-    sticker = {"id": "q", "source": {"kind": "port"}, "transform": {"value": {"yaw_deg": 170.0, "pitch_deg": 20.0, "roll_deg": 30.0, "hFOV_deg": 50.0}}}
+def _camera_scene(position=None, **rotation):
+    sticker = {
+        "id": "q",
+        "source": {"kind": "port"},
+        "direction": {"value": {"yaw_deg": 170.0, "pitch_deg": 20.0}},
+        "roll": {"value": 30.0},
+        "size": {"value": {"hFOV_deg": 50.0}},
+    }
     painting = _painting(
         paint=[_stroke("red", "paint", [(0.9, 0.3), (0.98, 0.35), (0.05, 0.3)], 10, {"r": 1.0, "g": 0.1, "b": 0.1, "a": 1.0})],
         mask=[_stroke("mask", "mask", [(0.3, 0.5), (0.5, 0.45), (0.7, 0.5)], 20)],
     )
-    return {"version": 2, "camera": {"transform": {"value": camera}}, "stickers": [sticker], "painting": painting}
+    return {"version": 2, "camera": {"position": {"value": position}, "rotation": {"value": rotation}}, "stickers": [sticker], "painting": painting}
 
 
 def _render_camera_scene(coverage="360", **camera):
@@ -317,7 +322,7 @@ def test_camera_position_does_not_move_the_background_or_the_sky(coverage):
 
 def _animated_camera_scene(keyframes, **state):
     scene = _camera_scene()
-    scene["camera"]["transform"]["keyframes"] = [
+    scene["camera"]["rotation"]["keyframes"] = [
         {"frame": frame, "value": {"yaw_deg": yaw, "pitch_deg": pitch, "roll_deg": 0.0}, "easing": easing}
         for frame, yaw, pitch, easing in keyframes
     ]
@@ -337,7 +342,7 @@ def test_camera_keyframes_set_the_length_and_turn_the_image_and_mask_per_frame()
     assert image.shape[0] == 5 and mask.shape[0] == 5
     for index in (1, 3, 4):
         camera = evaluate_scene_state(load_scene_state(json.dumps(state)), index)["camera"]
-        still_image, still_mask = _render_camera_scene(**camera)
+        still_image, still_mask = _render_camera_scene(**{key: camera[key] for key in ("position", "yaw_deg", "pitch_deg", "roll_deg")})
         assert torch.allclose(image[index], still_image, atol=1e-6)
         assert torch.allclose(mask[index], still_mask, atol=1e-6)
     assert not torch.allclose(mask[1], mask[3], atol=1e-3)
@@ -358,13 +363,13 @@ def test_hold_keyframe_cuts_the_camera_at_its_next_keyframe(monkeypatch):
     assert torch.allclose(mask[2], after_mask, atol=1e-6)
 
 
-def _sky_sticker_scene(transform_keyframes=(), opacity_keyframes=(), clip=None):
+def _sky_sticker_scene(pose_keyframes=(), opacity_keyframes=(), clip=None):
     sticker = {
         "id": "s",
         "source": {"kind": "port"},
-        "transform": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 40.0}, "keyframes": [
-            {"frame": frame, "value": {"yaw_deg": yaw, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": hfov}, "easing": easing}
-            for frame, yaw, hfov, easing in transform_keyframes
+        "direction": {"keyframes": [{"frame": frame, "value": {"yaw_deg": yaw}, "easing": easing} for frame, yaw, _hfov, easing in pose_keyframes]},
+        "size": {"value": {"hFOV_deg": 40.0}, "keyframes": [
+            {"frame": frame, "value": {"hFOV_deg": hfov}, "easing": easing} for frame, _yaw, hfov, easing in pose_keyframes
         ]},
         "opacity": {"value": 1.0, "keyframes": [
             {"frame": frame, "value": value, "easing": easing} for frame, value, easing in opacity_keyframes
@@ -379,9 +384,9 @@ def _render_sticker_scene(state):
     return _execute(state, bg_media=_solid([0.5, 0.5, 0.5], height=64, width=128), sticker=_solid([1.0, 0.0, 0.0]))[0]
 
 
-def test_sticker_transform_and_opacity_keyframes_are_drawn_per_frame():
+def test_sticker_lane_keyframes_are_drawn_per_frame():
     state = _sky_sticker_scene(
-        transform_keyframes=[(0, -60.0, 30.0, "auto"), (3, 60.0, 50.0, "auto")],
+        pose_keyframes=[(0, -60.0, 30.0, "auto"), (3, 60.0, 50.0, "auto")],
         opacity_keyframes=[(0, 1.0, "auto"), (3, 0.25, "auto")],
     )
 
@@ -391,7 +396,7 @@ def test_sticker_transform_and_opacity_keyframes_are_drawn_per_frame():
     for index in range(4):
         evaluated = evaluate_scene_state(load_scene_state(json.dumps(state)), index)["stickers"][0]
         still = _render_sticker_scene(_sky_sticker_scene(
-            transform_keyframes=[(0, evaluated["yaw_deg"], evaluated["hFOV_deg"], "auto")],
+            pose_keyframes=[(0, evaluated["yaw_deg"], evaluated["hFOV_deg"], "auto")],
             opacity_keyframes=[(0, evaluated["opacity"], "auto")],
         ))
         assert torch.allclose(image[index], still[0], atol=1e-6)
@@ -400,7 +405,7 @@ def test_sticker_transform_and_opacity_keyframes_are_drawn_per_frame():
 
 def test_held_sticker_keyframes_draw_the_sky_once_per_value(monkeypatch):
     counts = _count_render_calls(monkeypatch)
-    state = _sky_sticker_scene(transform_keyframes=[(0, 0.0, 30.0, "hold"), (2, 90.0, 30.0, "auto")], opacity_keyframes=[(0, 0.5, "auto")])
+    state = _sky_sticker_scene(pose_keyframes=[(0, 0.0, 30.0, "hold"), (2, 90.0, 30.0, "auto")], opacity_keyframes=[(0, 0.5, "auto")])
 
     image = _render_sticker_scene(state)
 
@@ -410,7 +415,7 @@ def test_held_sticker_keyframes_draw_the_sky_once_per_value(monkeypatch):
 
 def test_sticker_moving_outside_its_clip_range_does_not_redraw_the_sky(monkeypatch):
     counts = _count_render_calls(monkeypatch)
-    state = _sky_sticker_scene(transform_keyframes=[(0, 0.0, 30.0, "auto"), (3, 90.0, 30.0, "auto")], clip={"start": 0, "in": 0, "duration": 1})
+    state = _sky_sticker_scene(pose_keyframes=[(0, 0.0, 30.0, "auto"), (3, 90.0, 30.0, "auto")], clip={"start": 0, "in": 0, "duration": 1})
 
     image = _render_sticker_scene(state)
 
@@ -420,12 +425,13 @@ def test_sticker_moving_outside_its_clip_range_does_not_redraw_the_sky(monkeypat
 
 def test_equal_auto_keyframes_do_not_redraw_on_interpolation_noise(monkeypatch):
     # Between equal auto Keyframes the evaluator returns values like 30.00000000000001 instead of 30.0.
-    pose = {"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 0.0, "hFOV_deg": 30.0}
-    keyframes = [{"frame": frame, "value": pose, "easing": "auto"} for frame in (0, 3, 6)]
+    def lane(value):
+        return {"keyframes": [{"frame": frame, "value": value, "easing": "auto"} for frame in (0, 3, 6)]}
+
     state = {
         "version": 2,
-        "camera": {"transform": {"value": {}, "keyframes": [{**key, "value": {k: pose[k] for k in ("yaw_deg", "pitch_deg", "roll_deg")}} for key in keyframes]}},
-        "stickers": [{"id": "s", "source": {"kind": "port"}, "transform": {"value": pose, "keyframes": keyframes}}],
+        "camera": {"rotation": lane({"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 0.0})},
+        "stickers": [{"id": "s", "source": {"kind": "port"}, "direction": lane({"yaw_deg": 30.0, "pitch_deg": 10.0}), "roll": lane(0.0), "size": lane({"hFOV_deg": 30.0})}],
     }
     assert evaluate_scene_state(load_scene_state(json.dumps(state)), 1)["camera"]["yaw_deg"] != 30.0
     counts = _count_render_calls(monkeypatch)

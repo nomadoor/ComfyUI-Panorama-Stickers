@@ -1,3 +1,6 @@
+import { sceneStickerLabel } from "./pano_editor_state.js";
+import { laneNames, rowKeyed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
+
 export function patchUiButton(list, matchKey, key, patch) {
   const entry = Array.isArray(list) ? list.find((item) => String(item?.[matchKey] || "") === String(key || "")) : null;
   if (entry) Object.assign(entry, patch);
@@ -120,7 +123,7 @@ export function buildEditorSidePanelModel({
     transformTitle: true,
     selectionPicker,
     copyStateButton: {
-      disabled: !enabled || selectedKind === "stroke" || selectedItems.length > 1,
+      disabled: !enabled || selectedKind === "stroke" || selectedKind === "camera" || selectedItems.length > 1,
       label: "Copy State",
     },
     params,
@@ -233,4 +236,75 @@ export function buildSelectionMenuModel({
     items,
     anchor: { minX, maxX, minY, maxY },
   };
+}
+
+const LANE_LABELS = {
+  position: "Position",
+  rotation: "Rotation",
+  fov: "FOV",
+  scale: "Scale",
+  direction: "Direction",
+  roll: "Roll",
+  size: "Size",
+  opacity: "Opacity",
+};
+
+// The Timeline (PanoTimeline.vue) of a working state v2: the Camera row, then the Stickers from
+// front to back (sky Stickers by z_index, then world Stickers). A row shows one pin per frame that has
+// a Keyframe on any of its Lanes (`full` when on all of them); an open row (openRows) also shows one
+// line per Lane. Frames in the model are Timeline frames; `offset` turns them back into the owner's own
+// frames. selection is { owner, lane, frames }: `lane` is a Lane's name, or null for the whole row, and
+// frames are in the owner's own frames.
+// audio is { muted } when the background VIDEO has audio, else null.
+export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null }) {
+  const row = (id, owner, rowLabel, clip, offset) => {
+    const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
+    return {
+      id,
+      label: rowLabel,
+      clip,
+      selected: id === selectedId,
+      open: openRows.has(id),
+      keyed: rowKeyed(owner, frame - offset),
+      keys: rowKeyframes(owner).map((key) => ({ frame: key.frame + offset, full: key.full })),
+      selectedFrames: selectedFrames(null),
+      lanes: laneNames(owner).map((name) => ({
+        key: `${id}:${name}`,
+        lane: name,
+        label: LANE_LABELS[name],
+        frames: owner[name].keyframes.map((key) => key.frame + offset),
+        selectedFrames: selectedFrames(name),
+      })),
+    };
+  };
+  const sky = state.stickers.filter((sticker) => sticker.placement === "sky").sort((a, b) => b.z_index - a.z_index);
+  const world = state.stickers.filter((sticker) => sticker.placement === "world");
+  return {
+    visible: true,
+    expanded,
+    playing,
+    hasAudio: !!audio,
+    muted: !!audio?.muted,
+    frame,
+    span,
+    label,
+    rows: [
+      row("camera", state.camera, "Camera", null, 0),
+      ...[...sky, ...world].map((sticker) => {
+        const { start, in: clipIn, duration } = sticker.clip;
+        return row(sticker.id, sticker, sceneStickerLabel(sticker), { start, end: duration === null ? null : start + duration }, start - clipIn);
+      }),
+    ],
+  };
+}
+
+// The Easing panel for the selected Keyframes (frames in the owner's own frames, `offset` to the
+// Timeline) of the Lanes `names`, or null when they have no segment. `easing` is null when the
+// segments differ.
+export function buildEasingModel(owner, names, frames, offset) {
+  const selected = selectedEasing(owner, names, frames);
+  if (!selected) return null;
+  const from = Math.min(...frames) + offset;
+  const to = Math.max(...frames) + offset;
+  return { label: from === to ? `Frame ${from}` : `${from} – ${to}`, ...selected };
 }

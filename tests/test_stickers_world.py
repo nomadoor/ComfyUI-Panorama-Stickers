@@ -15,7 +15,7 @@ from test_world_render import _ball
 
 def _world_port_state(**timeline):
     # A plane 2 wide at distance 1 spans 90 degrees around the output center.
-    sticker = {"id": "p", "placement": "world", "source": {"kind": "port"}, "transform": {"value": {"position": [0.0, 0.0, -1.0], "scale": 2.0}}}
+    sticker = {"id": "p", "placement": "world", "source": {"kind": "port"}, "position": {"value": [0.0, 0.0, -1.0]}, "scale": {"value": 2.0}}
     return {"version": 2, "timeline": timeline, "stickers": [sticker]}
 
 

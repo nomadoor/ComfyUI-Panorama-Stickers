@@ -73,7 +73,8 @@ class TestVueModalBoundary(unittest.TestCase):
         self.assertIn('<PanoSelectionMenu :model="uiState.selectionMenu || {}" />', modal_vue)
         self.assertIn('<PanoConfirmDialog :model="uiState.confirmDialog || {}" />', modal_vue)
         self.assertIn('<PanoTooltip :model="uiState.tooltip || {}" />', modal_vue)
-        self.assertIn('<PanoSidePanel v-if="!hideSidebar" :node-title="nodeTitle" :model="uiState.sidePanel || {}" />', modal_vue)
+        self.assertRegex(modal_vue, r'<PanoSidePanel\s+v-if="!hideSidebar"\s+:node-title="nodeTitle"\s+:model="uiState.sidePanel \|\| \{\}"')
+        self.assertIn('<PanoTimeline :model="uiState.timeline || {}" @action="emit(\'timeline\', $event)" />', modal_vue)
 
     def test_editor_uses_dedicated_ui_state_builder_module(self):
         editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")

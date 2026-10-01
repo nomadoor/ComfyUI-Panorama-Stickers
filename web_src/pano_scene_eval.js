@@ -4,21 +4,19 @@
 import { panoramaAngles, quaternionToRotation, rotationToQuaternion, worldRotation } from "./pano_world.js";
 
 function copyValue(value) {
-  if (!value || typeof value !== "object") return value;
-  const out = {};
-  for (const [key, item] of Object.entries(value)) out[key] = Array.isArray(item) ? [...item] : item;
-  return out;
+  if (Array.isArray(value)) return [...value];
+  return value && typeof value === "object" ? { ...value } : value;
 }
 
 // Fractional frames within this distance of a Keyframe or Clip range edge count as that frame, so a Cut
 // lands on the output frame whose time (seconds x fps) misses the Keyframe only by float rounding.
 export const FRAME_EPSILON = 1e-6;
 
-const ROTATION_FIELDS = ["yaw_deg", "pitch_deg", "roll_deg"];
-// Interpolation may overshoot a key; these fields are brought back into the range the state allows.
-const FIELD_RANGES = { hFOV_deg: [0.1, 179], vFOV_deg: [0.1, 179], scale: [1e-6, Infinity] };
 // Quaternion dot products within this of zero are exact half turns, whose direction a fixed rule picks.
+// Directions this close to exactly opposite also are.
 const HALF_TURN_EPSILON = 1e-6;
+// A direction this close to a pole has no yaw of its own.
+const POLE_EPSILON = 1e-9;
 
 function bezier(p0, p1, p2, p3, t) {
   const s = 1 - t;
@@ -88,7 +86,7 @@ function scalar(keyframes, frames, values, k, p) {
 
 // Position as one vector, so the automatic path does not depend on the World axes; handles replace its offsets.
 function position(keyframes, frames, k, p) {
-  const positions = keyframes.map((key) => key.value.position);
+  const positions = keyframes.map((key) => key.value);
   let [outOffset, inOffset] = controlOffsets(keyframes, frames, positions, k);
   outOffset = keyframes[k].handles?.out ?? outOffset;
   inOffset = keyframes[k + 1].handles?.in ?? inOffset;
@@ -193,32 +191,120 @@ function rotation(keyframes, frames, k, p) {
   };
 }
 
-function interpolate(keyframes, k, frame) {
-  const frames = keyframes.map((key) => key.frame);
-  const p = ease(keyframes[k].easing, (frame - frames[k]) / (frames[k + 1] - frames[k]));
-  const value = keyframes[k].value;
-  if (!value || typeof value !== "object") return scalar(keyframes, frames, keyframes.map((key) => key.value), k, p);
-  const rotated = "yaw_deg" in value ? rotation(keyframes, frames, k, p) : {};
-  const out = {};
-  for (const field of Object.keys(value)) {
-    if (field === "position") {
-      out[field] = position(keyframes, frames, k, p);
-    } else if (ROTATION_FIELDS.includes(field)) {
-      out[field] = rotated[field];
-    } else {
-      out[field] = scalar(keyframes, frames, keyframes.map((key) => key.value[field]), k, p);
-      if (field in FIELD_RANGES) {
-        const [lo, hi] = FIELD_RANGES[field];
-        out[field] = Math.min(hi, Math.max(lo, out[field]));
-      }
-    }
+function dot(a, b) {
+  return a.reduce((sum, c, i) => sum + c * b[i], 0);
+}
+
+function norm(v) {
+  return Math.sqrt(dot(v, v));
+}
+
+// The unit vector of a direction: x right, y up, z ahead at yaw 0.
+function directionVector(value) {
+  const yaw = value.yaw_deg * Math.PI / 180;
+  const pitch = value.pitch_deg * Math.PI / 180;
+  return [Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw)];
+}
+
+// The tangent at a toward b along the great circle, as long as the angle. Exactly opposite points give zero.
+function sphereLog(a, b) {
+  const d = dot(a, b);
+  const w = b.map((c, i) => c - d * a[i]);
+  const length = norm(w);
+  const scale = length > 1e-12 ? Math.atan2(length, d) / length : 1;
+  return w.map((c) => c * scale);
+}
+
+function sphereExp(a, v) {
+  const angle = norm(v);
+  const scale = angle > 1e-12 ? Math.sin(angle) / angle : 1;
+  return a.map((c, i) => Math.cos(angle) * c + scale * v[i]);
+}
+
+function sphereSlerp(a, b, t) {
+  return sphereExp(a, sphereLog(a, b).map((c) => t * c));
+}
+
+// The velocity (per unit of progress) of the great circle from key k to key k + 1, at its start and at
+// its end, and whether the two directions are exactly opposite. Exactly opposite directions turn right
+// from key k: toward increasing yaw of its stored value, defined at a pole too.
+function greatCircle(keyframes, k) {
+  const a = directionVector(keyframes[k].value);
+  const b = directionVector(keyframes[k + 1].value);
+  const d = dot(a, b);
+  const opposite = d < 0 && norm(b.map((c, i) => c - d * a[i])) <= HALF_TURN_EPSILON;
+  let start;
+  if (opposite) {
+    const yaw = keyframes[k].value.yaw_deg * Math.PI / 180;
+    start = [Math.PI * Math.cos(yaw), 0, -Math.PI * Math.sin(yaw)];
+  } else {
+    start = sphereLog(a, b);
   }
+  const angle = norm(start);
+  return [start, start.map((c, i) => Math.cos(angle) * c - angle * Math.sin(angle) * a[i]), opposite];
+}
+
+// A sky Sticker's direction: a spherical Bezier (de Casteljau with slerps) from key k to key k + 1. The
+// control points lie a third of the start and end velocities away, as for a position. Where the spline
+// stops they are the great circle's own, so the segment is the great-circle slerp. A passing key's
+// velocity follows the speed rule in its tangent plane, from the chord of the segment before it carried
+// along its great circle to the key, and the chord of the segment after it.
+function direction(keyframes, frames, k, p) {
+  const a = directionVector(keyframes[k].value);
+  const b = directionVector(keyframes[k + 1].value);
+  const [chordStart, chordEnd, opposite] = greatCircle(keyframes, k);
+  let start = chordStart;
+  let end = chordEnd;
+  const dt = frames[k + 1] - frames[k];
+  if (smooth(keyframes, k)) {
+    start = tangent(frames, k, greatCircle(keyframes, k - 1)[1].map((c) => -c), start).map((c) => c * dt);
+  }
+  if (smooth(keyframes, k + 1)) {
+    end = tangent(frames, k + 1, end.map((c) => -c), greatCircle(keyframes, k + 1)[0]).map((c) => c * dt);
+  }
+  let x;
+  let y;
+  let z;
+  if (opposite) {
+    // The control points of opposite keys can be opposite too, with no great circle between them, so the
+    // segment runs along its own great circle: the arc length is a cubic Bezier in p with the end speeds
+    // along the circle.
+    const angle = Math.PI;
+    const arc = bezier(0, dot(start, chordStart) / angle / 3, angle - dot(end, chordEnd) / angle / 3, angle, p);
+    [x, y, z] = sphereExp(a, chordStart.map((c) => arc * c / angle));
+  } else {
+    const middle = sphereSlerp(sphereExp(a, start.map((c) => c / 3)), sphereExp(b, end.map((c) => -c / 3)), p);
+    const first = sphereSlerp(sphereExp(a, start.map((c) => p * c / 3)), middle, p);
+    const second = sphereSlerp(middle, sphereExp(b, end.map((c) => -(1 - p) * c / 3)), p);
+    [x, y, z] = sphereSlerp(first, second, p);
+  }
+  const horizontal = Math.hypot(x, z);
+  const left = keyframes[k].value.yaw_deg;
+  const right = keyframes[k + 1].value.yaw_deg;
+  // At a pole the yaw follows the stored numbers; elsewhere it is the turn nearest to them, like a rotation's.
+  const yaw = horizontal <= POLE_EPSILON
+    ? left + (right - left) * p
+    : unwrapNearBlend(Math.atan2(x, z) * 180 / Math.PI, left, right, p);
+  return { yaw_deg: yaw, pitch_deg: Math.atan2(y, horizontal) * 180 / Math.PI };
+}
+
+function size(keyframes, frames, k, p) {
+  const out = {};
+  for (const field of ["hFOV_deg", "vFOV_deg"]) out[field] = scalar(keyframes, frames, keyframes.map((key) => key.value[field]), k, p);
   return out;
 }
 
-function evaluateGroup(group, frame) {
-  const keyframes = group.keyframes;
-  if (!keyframes.length) return copyValue(group.value);
+function scalarLane(keyframes, frames, k, p) {
+  return scalar(keyframes, frames, keyframes.map((key) => key.value), k, p);
+}
+
+// How each Lane interpolates inside a segment; the other Lanes (fov, roll, scale, opacity) are scalars.
+const INTERPOLATIONS = { position, rotation, direction, size };
+
+// The value of the Lane `name` of `owner` at a fractional frame of its own time base.
+export function evaluateLane(owner, name, frame) {
+  const { keyframes } = owner[name];
+  if (!keyframes.length) return copyValue(owner[name].value);
   if (frame <= keyframes[0].frame + FRAME_EPSILON) return copyValue(keyframes[0].value);
   const last = keyframes[keyframes.length - 1];
   if (frame >= last.frame - FRAME_EPSILON) return copyValue(last.value);
@@ -226,14 +312,30 @@ function evaluateGroup(group, frame) {
   while (keyframes[k + 1].frame <= frame + FRAME_EPSILON) k += 1;
   const left = keyframes[k];
   if (Math.abs(frame - left.frame) <= FRAME_EPSILON || left.easing === "hold") return copyValue(left.value);
-  return interpolate(keyframes, k, frame);
+  const frames = keyframes.map((key) => key.frame);
+  const p = ease(left.easing, (frame - frames[k]) / (frames[k + 1] - frames[k]));
+  return (INTERPOLATIONS[name] ?? scalarLane)(keyframes, frames, k, p);
+}
+
+// Interpolation may leave a range by rounding; these bring values back into the range the state allows.
+function fov(value) {
+  return Math.min(179, Math.max(0.1, value));
+}
+
+function opacity(value) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function scale(value) {
+  return Math.max(1e-6, value);
 }
 
 function clipFrame(clip, frame) {
   return frame - (clip.start - clip.in);
 }
 
-function clipActive(clip, frame) {
+// Whether a Timeline frame is in the Clip range.
+export function clipActive(clip, frame) {
   return frame >= clip.start - FRAME_EPSILON
     && (clip.duration === null || frame < clip.start + clip.duration - FRAME_EPSILON);
 }
@@ -245,22 +347,49 @@ export function evaluateSceneState(state, frame) {
   const sceneClipFrame = clipFrame(scene.clip, time);
   return {
     frame: time,
-    camera: { ...evaluateGroup(camera.transform, time), aspect: camera.aspect },
+    camera: {
+      position: evaluateLane(camera, "position", time),
+      ...evaluateLane(camera, "rotation", time),
+      hFOV_deg: fov(evaluateLane(camera, "fov", time)),
+      aspect: camera.aspect,
+    },
     scene: {
       active: clipActive(scene.clip, time),
       clip_frame: sceneClipFrame,
-      ...evaluateGroup(scene.transform, sceneClipFrame),
+      position: evaluateLane(scene, "position", sceneClipFrame),
+      ...evaluateLane(scene, "rotation", sceneClipFrame),
+      scale: scale(evaluateLane(scene, "scale", sceneClipFrame)),
     },
-    stickers: state.stickers.map((sticker) => {
-      const stickerClipFrame = clipFrame(sticker.clip, time);
-      return {
-        id: sticker.id,
-        placement: sticker.placement,
-        active: sticker.visible && clipActive(sticker.clip, time),
-        clip_frame: stickerClipFrame,
-        ...evaluateGroup(sticker.transform, stickerClipFrame),
-        opacity: Math.min(1, Math.max(0, evaluateGroup(sticker.opacity, stickerClipFrame))),
-      };
-    }),
+    stickers: state.stickers.map((sticker) => evaluateSticker(sticker, time)),
+  };
+}
+
+function stickerValues(sticker, frame) {
+  if (sticker.placement === "world") {
+    return {
+      position: evaluateLane(sticker, "position", frame),
+      ...evaluateLane(sticker, "rotation", frame),
+      scale: scale(evaluateLane(sticker, "scale", frame)),
+    };
+  }
+  const angles = evaluateLane(sticker, "size", frame);
+  return {
+    ...evaluateLane(sticker, "direction", frame),
+    roll_deg: evaluateLane(sticker, "roll", frame),
+    hFOV_deg: fov(angles.hFOV_deg),
+    vFOV_deg: fov(angles.vFOV_deg),
+  };
+}
+
+// One Sticker of evaluateSceneState().
+export function evaluateSticker(sticker, frame) {
+  const stickerClipFrame = clipFrame(sticker.clip, frame);
+  return {
+    id: sticker.id,
+    placement: sticker.placement,
+    active: sticker.visible && clipActive(sticker.clip, frame),
+    clip_frame: stickerClipFrame,
+    ...stickerValues(sticker, stickerClipFrame),
+    opacity: opacity(evaluateLane(sticker, "opacity", stickerClipFrame)),
   };
 }

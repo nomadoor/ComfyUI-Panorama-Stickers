@@ -15,16 +15,39 @@ import { createHistoryController } from "./pano_paint_history.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 import {
+  duplicateSceneSticker,
   editorActive,
-  editorSceneState,
   editorStateText,
+  fileSource,
   makePanoEditorHistorySnapshot,
+  newSceneSticker,
   normalizeCoverageValue,
   parsePanoEditorState,
+  parseSceneEditorState,
   retainActiveCutoutShot,
+  sceneStickerLabel,
   setEditorActive,
-  stickerHasKeyframes,
+  cameraFields,
+  setCameraField,
+  setStickerOpacity,
+  setStickerPose,
+  sourceAsset,
+  stickerPose,
 } from "./pano_editor_state.js";
+import { clipActive, evaluateSticker } from "./pano_scene_eval.js";
+import { loadSceneState } from "./pano_scene_state.js";
+import {
+  deleteKeyframes,
+  isTimed,
+  keyAllLanes,
+  laneNames,
+  moveClip,
+  moveKeyframes,
+  setSegmentEasing,
+  timelineSpan,
+  trimClipEnd,
+  trimClipStart,
+} from "./pano_timeline.js";
 import {
   HIDDEN_PREVIEW_OPACITY,
   createEditorView,
@@ -60,10 +83,12 @@ import {
 } from "./pano_cutout_node_surface.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
+  buildEasingModel,
   buildEditorSidePanelModel,
   buildPaintDockModel,
   buildPreviewSidePanelModel,
   buildSelectionMenuModel,
+  buildTimelineModel,
   buildUiSettingsModel,
   patchUiButton,
 } from "./pano_editor_ui_state.js";
@@ -522,7 +547,9 @@ async function showEditor(node, type, options = {}) {
     return parseOutputPresetValue(raw, fallback);
   };
 
-  const state = parsePanoEditorState(String(stateWidget?.value || ""), {
+  // PanoramaStickersNode edits state v2 itself (pano_editor_state.js); the legacy nodes edit v1.
+  const sceneV2 = type === "stickers" && node.__panoSceneStateV2 === true;
+  const state = (sceneV2 ? parseSceneEditorState : parsePanoEditorState)(String(stateWidget?.value || ""), {
     outputPreset: resolveEditorOutputPresetWidth(2048),
     backgroundColor: String(bgWidget?.value || "#00ff00"),
     coverage: normalizeCoverageValue(coverageWidget?.value),
@@ -633,6 +660,8 @@ async function showEditor(node, type, options = {}) {
       shellMaxWidthPx: 640,
     },
     sidePanel: {},
+    timeline: { visible: false },
+    easing: null,
     selectionMenu: { visible: false, left: 0, top: 0, items: [] },
     tooltip: { visible: false, text: "", left: 0, top: 0, variant: "" },
     confirmDialog: { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null },
@@ -673,6 +702,7 @@ async function showEditor(node, type, options = {}) {
     })),
     uiState,
     onClose: () => { void closeEditor(); },
+    onTimeline: (action) => onTimelineAction(action),
     onImageFileSelected,
     onImageFileCancelled,
   });
@@ -861,11 +891,20 @@ async function showEditor(node, type, options = {}) {
     marqueeModifier: false,
     altModifier: false,
     panelLastValues: null,
+    // PanoramaStickersNode: the Camera row of the Timeline is selected, so the inspector edits the Camera.
+    inspectCamera: false,
     panelWasEnabled: false,
     viewTween: null,
     fullscreen: false,
     fullscreenPrevShowGrid: null,
+    // The editor's current time, a Timeline frame. PanoramaStickersNode shows and edits its state v2 here.
+    frame: 0,
   };
+  // The Timeline of PanoramaStickersNode. expanded is null until the user toggles it, and the
+  // Timeline then opens only when something is timed. openRows holds the rows showing their Lanes.
+  // selection is { owner, lane, frames }: `lane` a Lane's name, or null for every Lane of the row,
+  // and the frames in the owner's own time base. drag holds what a Timeline drag started from.
+  const timeline = { expanded: null, openRows: new Set(), selection: null, drag: null, playback: 0 };
   if (type === "stickers") {
     editor.selectedId = null;
     state.active.selected_sticker_id = null;
@@ -1195,6 +1234,7 @@ async function showEditor(node, type, options = {}) {
             mode: "playback",
           });
           requestDraw({ cause: "frame_view", localOnly: true });
+          followTimelineVideo(actualTime);
         }
         if (runtime.running && (!videoEl.paused || videoState.mode === "scrub")) {
           pumpVideoFrame();
@@ -1352,7 +1392,27 @@ async function showEditor(node, type, options = {}) {
   const __sanity = stickerCornerOrderSanity();
   void __sanity;
 
-  function getList() { return type === "stickers" ? state.stickers : state.shots; }
+  function getList() { return type === "stickers" ? skyStickers() : state.shots; }
+  // The Stickers the canvas shows and edits. World Stickers of state v2 only appear in the Timeline.
+  function skyStickers() {
+    return sceneV2 ? state.stickers.filter((item) => item.placement === "sky") : state.stickers;
+  }
+  function isSceneSticker(item) {
+    return sceneV2 && isStickerItem(item);
+  }
+  // A Sticker added from a file has no file Source until its upload finishes (addSceneStickerFromFile).
+  function isUploadingSticker(item) {
+    return item.source.kind === "file" && !item.source.filename && !item.source.data_url;
+  }
+  // The pose fields the canvas geometry and the inspector read: a Sticker of state v2 at the
+  // editor's Timeline frame, the item itself otherwise.
+  function poseOf(item) {
+    return isSceneSticker(item) ? stickerPose(item, editor.frame) : item;
+  }
+  function writePose(item, pose) {
+    if (isSceneSticker(item)) setStickerPose(item, editor.frame, pose);
+    else Object.assign(item, pose);
+  }
   function getPaintingGroupList() {
     const painting = state.painting || (state.painting = normalizePaintingState(null));
     if (!Array.isArray(painting.groups)) painting.groups = [];
@@ -1396,7 +1456,7 @@ async function showEditor(node, type, options = {}) {
   }
   function getNextDisplayZIndex() {
     let maxZ = -1;
-    for (const item of (Array.isArray(state.stickers) ? state.stickers : [])) {
+    for (const item of skyStickers()) {
       maxZ = Math.max(maxZ, Number(item?.z_index || 0));
     }
     for (const group of getPaintingGroupList()) {
@@ -1534,7 +1594,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getDisplayListObjects() {
-    const stickers = (Array.isArray(state.stickers) ? state.stickers : []).map((item) => ({
+    const stickers = skyStickers().map((item) => ({
       type: "sticker",
       id: String(item?.id || ""),
       z_index: Number(item?.z_index || 0),
@@ -1998,7 +2058,7 @@ async function showEditor(node, type, options = {}) {
       raster.locked = next;
       return true;
     }
-    if (item.locked === next || stickerHasKeyframes(state, item.id)) return false;
+    if (item.locked === next) return false;
     item.locked = next;
     return true;
   }
@@ -2019,6 +2079,9 @@ async function showEditor(node, type, options = {}) {
     requestDraw();
   }
   function setSelectedItem(item) {
+    editor.inspectCamera = false;
+    // Delete acts on the selection, so a Keyframe selection must not outlive a new selection.
+    timeline.selection = null;
     editor.selectedId = item?.id || null;
     editor.selectedIds = item?.id ? [item.id] : [];
     if (item && isStickerItem(item)) state.active.selected_sticker_id = item.id || null;
@@ -2037,6 +2100,8 @@ async function showEditor(node, type, options = {}) {
       nextIds.push(id);
     });
     editor.selectedIds = nextIds;
+    editor.inspectCamera = false;
+    timeline.selection = null;
     const preferred = String(primaryId || "").trim();
     editor.selectedId = preferred && nextIds.includes(preferred)
       ? preferred
@@ -2088,6 +2153,7 @@ async function showEditor(node, type, options = {}) {
   }
   function isExternalSticker(item) {
     if (!item || typeof item !== "object") return false;
+    if (sceneV2) return item.source?.kind === "port";
     return String(item.id || "") === EXTERNAL_STICKER_ID
       || String(item.source_kind || "") === EXTERNAL_STICKER_SOURCE_KIND;
   }
@@ -2281,11 +2347,36 @@ async function showEditor(node, type, options = {}) {
       thumbnailCount: Math.max(1, Number(extra.thumbnailCount ?? uiState.videoTransport.thumbnailCount ?? VIDEO_THUMBNAIL_COUNT)),
     });
   }
+  // PanoramaStickersNode plays the background VIDEO from the Timeline, so the video's own transport is hidden.
   function getVideoTransportVisible() {
     return !!(videoEl instanceof HTMLVideoElement
+      && !sceneV2
       && videoEl.getAttribute("src")
       && editor.primaryTool !== "paint"
       && editor.primaryTool !== "mask");
+  }
+  // Mutes or unmutes the background VIDEO: the video transport's button, or the Timeline's for PanoramaStickersNode.
+  function toggleVideoMuted() {
+    if (!(videoEl instanceof HTMLVideoElement)) return;
+    if (!uiState.videoTransport.hasAudio) return;
+    const nextMuted = !videoEl.muted;
+    videoEl.muted = nextMuted;
+    if (!nextMuted && Number(videoEl.volume || 0) <= 0) {
+      videoEl.volume = Math.max(0.01, Number(uiState.videoTransport.volume || 1));
+    }
+    syncVideoTransportState({
+      ready: !!videoEl.getAttribute("src"),
+      playing: !videoEl.paused && !videoEl.ended,
+      visible: getVideoTransportVisible(),
+      currentTime: videoState.editorTime,
+      duration: uiState.videoTransport.duration,
+      frameCount: uiState.videoTransport.frameCount,
+      fps: uiState.videoTransport.fps,
+      mode: videoState.mode,
+      hasAudio: uiState.videoTransport.hasAudio,
+      muted: videoEl.muted,
+      volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
+    });
   }
   function syncVideoTransportVisibility() {
     syncVideoTransportState({
@@ -2330,7 +2421,11 @@ async function showEditor(node, type, options = {}) {
   }
   function issueVideoSeek(targetTime) {
     if (!(videoEl instanceof HTMLVideoElement)) return;
-    if (Number(videoEl.videoWidth || 0) < 1 || Number(videoEl.videoHeight || 0) < 1) return;
+    if (Number(videoEl.videoWidth || 0) < 1 || Number(videoEl.videoHeight || 0) < 1) {
+      // Without metadata nothing seeks, so no seek will resume playback either.
+      videoState.pendingPlaybackResume = false;
+      return;
+    }
     const nextTime = Math.max(0, Number(targetTime || 0));
     videoState.requestedTime = nextTime;
     if (videoState.seeking) return;
@@ -2340,6 +2435,51 @@ async function showEditor(node, type, options = {}) {
       videoEl.currentTime = nextTime;
     } catch {
       videoState.seeking = false;
+    }
+  }
+  // ADR 0019: while scrubbing, the background shows confirmed still frames and the video only decodes.
+  function scrubVideoTo(time) {
+    refreshModalVideoSource();
+    const nextTime = clamp(Number(time || 0), 0, Number(uiState.videoTransport.duration || 0));
+    videoState.mode = "scrub";
+    if (!videoState.seeking && !videoEl.paused && !videoEl.ended) {
+      videoState.resumeAfterScrub = true;
+      videoEl.pause();
+    }
+    videoState.editorTime = nextTime;
+    presentCachedFrameForTime(nextTime);
+    syncVideoTransportState({
+      ready: !!videoEl.getAttribute("src"),
+      playing: false,
+      visible: getVideoTransportVisible(),
+      currentTime: nextTime,
+      duration: uiState.videoTransport.duration,
+      frameCount: uiState.videoTransport.frameCount,
+      fps: uiState.videoTransport.fps,
+      mode: "scrub",
+    });
+    if (Number(stillCanvas.__panoFrameIdx || 0) > 0) {
+      runtime.backgroundDirty = true;
+      runtime.dirty = true;
+      requestDraw({ cause: "frame_view", localOnly: true });
+    }
+    issueVideoSeek(nextTime);
+  }
+  function endVideoScrub() {
+    videoState.pendingPlaybackResume = !!videoState.resumeAfterScrub;
+    videoState.resumeAfterScrub = false;
+    if (!videoState.pendingPlaybackResume) {
+      videoState.mode = "scrub";
+    }
+    if (!videoState.seeking) {
+      if (videoState.pendingPlaybackResume) {
+        videoState.pendingPlaybackResume = false;
+        videoState.mode = "playback";
+        void videoEl.play().catch(() => {});
+      } else {
+        captureStillFrameFromVideo();
+        requestDraw({ cause: "frame_view", localOnly: true });
+      }
     }
   }
   function refreshModalVideoSource() {
@@ -2356,7 +2496,7 @@ async function showEditor(node, type, options = {}) {
       videoEl.pause();
       videoEl.dataset.panoSrc = nextSrc;
       videoEl.dataset.panoFrameIdx = "0";
-      videoEl.loop = !!uiState.videoTransport.loop;
+      videoEl.loop = !sceneV2 && !!uiState.videoTransport.loop;
       videoEl.muted = !!uiState.videoTransport.muted;
       videoEl.volume = Math.max(0, Math.min(1, Number(uiState.videoTransport.volume ?? 1)));
       videoEl.src = nextSrc;
@@ -2368,8 +2508,9 @@ async function showEditor(node, type, options = {}) {
       videoEl.load();
       resetVideoThumbnails();
     }
-    if (videoEl.loop !== !!uiState.videoTransport.loop) {
-      videoEl.loop = !!uiState.videoTransport.loop;
+    // The Timeline loops PanoramaStickersNode's playback at its own end.
+    if (videoEl.loop !== (!sceneV2 && !!uiState.videoTransport.loop)) {
+      videoEl.loop = !sceneV2 && !!uiState.videoTransport.loop;
     }
     if (nextSrc && (!Array.isArray(uiState.videoTransport.thumbnails) || uiState.videoTransport.thumbnails.length === 0)) {
       void buildVideoThumbnails(nextSrc, duration, fps);
@@ -2380,7 +2521,7 @@ async function showEditor(node, type, options = {}) {
     syncVideoTransportState({
       ready: !!nextSrc,
       playing: !videoEl.paused && !videoEl.ended,
-      visible: !!nextSrc && editor.primaryTool !== "paint" && editor.primaryTool !== "mask",
+      visible: !!nextSrc && getVideoTransportVisible(),
       currentTime: videoState.editorTime,
       duration,
       frameCount,
@@ -2587,9 +2728,11 @@ async function showEditor(node, type, options = {}) {
     requestDraw();
     void reason;
   }
+  // Clicking empty canvas clears the canvas selection only: a Camera shown in the inspector
+  // (editor.inspectCamera) stays, as the Camera is not on the canvas.
   function clearSelection(options = {}) {
     const preservePanelValues = options.preservePanelValues !== false;
-    const selectedBeforeClear = preservePanelValues ? getSelected() : null;
+    const selectedBeforeClear = preservePanelValues ? poseOf(getSelected()) : null;
     if (selectedBeforeClear) {
       editor.panelLastValues = {
         yaw_deg: Number(selectedBeforeClear.yaw_deg || 0),
@@ -2744,13 +2887,15 @@ async function showEditor(node, type, options = {}) {
         runExternalStickerSync(node, "image-loaded");
       });
     }
-    const assetId = (stickerOrAssetId && typeof stickerOrAssetId === "object")
-      ? String(stickerOrAssetId.asset_id || stickerOrAssetId.assetId || "")
-      : String(stickerOrAssetId || "");
+    const assetId = sceneV2
+      ? stickerImageKey(stickerOrAssetId)
+      : (stickerOrAssetId && typeof stickerOrAssetId === "object")
+        ? String(stickerOrAssetId.asset_id || stickerOrAssetId.assetId || "")
+        : String(stickerOrAssetId || "");
     if (!assetId) return null;
     const cached = imageCache.get(assetId);
     if (cached) return cached;
-    const asset = state.assets?.[assetId];
+    const asset = sceneV2 ? sourceAsset(stickerOrAssetId.source) : state.assets?.[assetId];
     const src = mediaAssetSource(asset);
     if (!src) return null;
     const img = new Image();
@@ -2766,6 +2911,13 @@ async function showEditor(node, type, options = {}) {
     img.src = src;
     imageCache.set(assetId, img);
     return img;
+  }
+
+  // The image cache key of a Sticker of state v2. An image being uploaded or embedded as a data URL
+  // is cached under the Sticker's id.
+  function stickerImageKey(item) {
+    const { source } = item;
+    return source.filename ? `file:${source.storage}:${source.subfolder}:${source.filename}` : `sticker:${item.id}`;
   }
 
   function getRasterObjectImage(item, onLoad = null) {
@@ -3264,8 +3416,7 @@ async function showEditor(node, type, options = {}) {
       backgroundState = getImageLoadState(bgImg, isDecodedImageReady);
     }
     if (editor.showObjects) {
-      const stickers = Array.isArray(state.stickers) ? state.stickers : [];
-      for (const item of stickers) {
+      for (const item of skyStickers()) {
         if (item?.visible === false) continue;
         const img = getStickerImage(item);
         stickerStates.push(getImageLoadState(img, isDecodedImageReady));
@@ -3312,14 +3463,15 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getStickerFrame(item) {
+    const pose = poseOf(item);
     const basis = cameraBasis(
-      Number(item.yaw_deg || 0),
-      Number(item.pitch_deg || 0),
-      Number(item.rot_deg || item.roll_deg || 0),
+      Number(pose.yaw_deg || 0),
+      Number(pose.pitch_deg || 0),
+      Number(pose.rot_deg || pose.roll_deg || 0),
     );
 
-    const tanX = Math.tan(clamp(Number(item.hFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
-    const tanY = Math.tan(clamp(Number(item.vFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
+    const tanX = Math.tan(clamp(Number(pose.hFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
+    const tanY = Math.tan(clamp(Number(pose.vFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
     return {
       centerDir: basis.fwd,
       right: basis.right,
@@ -3404,17 +3556,19 @@ async function showEditor(node, type, options = {}) {
   function getSceneItemGeomCacheKey(item) {
     const itemId = String(item?.id || "");
     const kind = isShotItem(item) ? "frame" : (isStickerItem(item) ? "sticker" : "item");
+    const pose = poseOf(item);
     const base = [
       kind,
       itemId,
       editor.mode,
-      Number(item?.yaw_deg || 0).toFixed(4),
-      Number(item?.pitch_deg || 0).toFixed(4),
-      Number(item?.hFOV_deg || 0).toFixed(4),
-      Number(item?.vFOV_deg || 0).toFixed(4),
-      Number(item?.rot_deg || 0).toFixed(4),
-      Number(item?.roll_deg || 0).toFixed(4),
-      getCutoutAspectLabel(item),
+      Number(pose?.yaw_deg || 0).toFixed(4),
+      Number(pose?.pitch_deg || 0).toFixed(4),
+      Number(pose?.hFOV_deg || 0).toFixed(4),
+      Number(pose?.vFOV_deg || 0).toFixed(4),
+      Number(pose?.rot_deg || 0).toFixed(4),
+      Number(pose?.roll_deg || 0).toFixed(4),
+      getCutoutAspectLabel(pose),
+      isSceneSticker(item) && clipActive(item.clip, editor.frame),
     ].join(":");
     if (editor.mode === "frame") {
       const shot = getActiveCutoutShot();
@@ -3521,21 +3675,26 @@ async function showEditor(node, type, options = {}) {
   function buildEditorViewInput() {
     const bgImg = getConnectedErpImage();
     const paintLayers = buildEditorViewPaintLayers();
-    // A dropped or replaced image shows while it uploads, before its asset exists in the state.
+    // A dropped or replaced image shows while it uploads, before its asset (v1) or file Source
+    // (state v2) exists in the state.
     const assets = { ...state.assets };
-    for (const item of state.stickers || []) {
+    for (const item of sceneV2 ? [] : state.stickers) {
       const assetId = String(item?.asset_id || "");
       if (assetId && !assets[assetId] && imageCache.has(assetId)) assets[assetId] = { type: "comfy_image", filename: assetId };
     }
+    const stickers = sceneV2
+      ? state.stickers.map((item) => (isUploadingSticker(item)
+        ? { ...item, source: { kind: "file", filename: stickerImageKey(item) } }
+        : item))
+      : state.stickers;
     // The state v2 is rebuilt only when the Stickers or their assets change. Paint comes from the
     // paint engine's ERP canvases, so the strokes are left out.
-    const sceneKey = JSON.stringify([state.stickers, Object.keys(assets)]);
+    const sceneKey = JSON.stringify([stickers, Object.keys(assets)]);
     if (editorViewScene.key !== sceneKey) {
-      editorViewScene = { key: sceneKey, sceneState: editorSceneState({ ...state, assets, painting: null }) };
+      editorViewScene = { key: sceneKey, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
     }
-    // #73 adds the editor's Timeline position; until then the editor shows Timeline frame 0.
     const layers = editor.showObjects
-      ? workingSkyLayers(editorViewScene.sceneState, 0, state.stickers || [], {
+      ? workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, {
         media: (item) => {
           const img = getStickerImage(item);
           return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
@@ -3845,7 +4004,9 @@ async function showEditor(node, type, options = {}) {
   }
 
   function buildSceneItemGeom(item) {
-    const centerDir = yawPitchToDir(Number(item.yaw_deg || 0), Number(item.pitch_deg || 0));
+    if (isSceneSticker(item) && !clipActive(item.clip, editor.frame)) return { visible: false };
+    const pose = poseOf(item);
+    const centerDir = yawPitchToDir(Number(pose.yaw_deg || 0), Number(pose.pitch_deg || 0));
     const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
     const frameRect = frameShot ? getFrameViewRect(frameShot) : null;
     const clipBehind = editor.mode === "pano" && (isStickerItem(item) || isShotItem(item));
@@ -3975,7 +4136,8 @@ async function showEditor(node, type, options = {}) {
   }
 
   function drawStickerBoundary(item, selected) {
-    const centerDir = yawPitchToDir(Number(item.yaw_deg || 0), Number(item.pitch_deg || 0));
+    const pose = poseOf(item);
+    const centerDir = yawPitchToDir(Number(pose.yaw_deg || 0), Number(pose.pitch_deg || 0));
     const centerProj = editor.mode === "unwrap" ? projectDirUnwrap(centerDir) : null;
     const refX = centerProj ? centerProj.x : null;
     const steps = editor.mode === "pano" ? 28 : 20;
@@ -4166,6 +4328,7 @@ async function showEditor(node, type, options = {}) {
       if (!itemIsSticker && !itemIsShot) {
         continue;
       }
+      if (isSceneSticker(item) && !clipActive(item.clip, editor.frame)) continue;
       const g = objectGeom(item);
       if (type !== "stickers" && !g.visible) {
         continue;
@@ -5460,6 +5623,8 @@ async function showEditor(node, type, options = {}) {
 
   function pushHistory() {
     if (readOnly) return;
+    // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
+    if (sceneV2 && state.stickers.some(isUploadingSticker)) return;
     editor.historyController.commitActionGroup(JSON.stringify(makePanoEditorHistorySnapshot(state)));
     syncUndoRedoButtons();
   }
@@ -5541,7 +5706,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function syncSidePanelControls() {
-    const selected = type === "cutout" && editor.mode === "frame" ? getActiveCutoutShot() : getSelected();
+    const selected = poseOf(type === "cutout" && editor.mode === "frame" ? getActiveCutoutShot() : getSelected());
     if (!selected) return;
     editor.panelLastValues = {
       yaw_deg: Number(selected.yaw_deg || 0),
@@ -5556,6 +5721,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function updateSidePanel() {
+    syncTimeline();
     if (hideSidebar) return;
     state.ui_settings = state.ui_settings || {};
     // Inspector content is derived data for Vue, not imperative DOM construction.
@@ -5578,22 +5744,27 @@ async function showEditor(node, type, options = {}) {
       editor.panelLastValues = editor.panelLastValues || { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 };
     }
     if (selected && selectedKind !== "stroke") {
+      const pose = poseOf(selected);
       editor.panelLastValues = {
-        yaw_deg: Number(selected.yaw_deg || 0),
-        pitch_deg: Number(selected.pitch_deg || 0),
-        hFOV_deg: Number(selected.hFOV_deg || (selectedKind === "image" ? 30 : 90)),
-        vFOV_deg: Number(selected.vFOV_deg || (selectedKind === "image" ? 30 : 60)),
-        rot_deg: Number(selected.rot_deg || 0),
-        roll_deg: Number(selected.roll_deg || 0),
-        aspect_id: getCutoutAspectLabel(selected),
+        yaw_deg: Number(pose.yaw_deg || 0),
+        pitch_deg: Number(pose.pitch_deg || 0),
+        hFOV_deg: Number(pose.hFOV_deg || (selectedKind === "image" ? 30 : 90)),
+        vFOV_deg: Number(pose.vFOV_deg || (selectedKind === "image" ? 30 : 60)),
+        rot_deg: Number(pose.rot_deg || 0),
+        roll_deg: Number(pose.roll_deg || 0),
+        aspect_id: getCutoutAspectLabel(pose),
       };
+      if (isSceneSticker(selected)) editor.panelLastValues.opacity = evaluateSticker(selected, editor.frame).opacity * 100;
     }
     const fallback = editor.panelLastValues || ((type === "stickers" || selectedKind === "image")
       ? { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 }
       : { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60, roll_deg: 0, aspect_id: "1:1" });
     const inspectorSelected = selectedKind === "stroke" ? null : selected;
-    const effective = inspectorSelected || fallback;
-    const enabled = !!inspectorSelected && !isItemLocked(inspectorSelected);
+    const cameraInspected = sceneV2 && editor.inspectCamera;
+    const effective = cameraInspected
+      ? cameraFields(state.camera, editor.frame)
+      : isSceneSticker(inspectorSelected) ? editor.panelLastValues : (inspectorSelected || fallback);
+    const enabled = cameraInspected || (!!inspectorSelected && !isItemLocked(inspectorSelected));
     editor.panelWasEnabled = enabled;
     syncLookAtFrameButtonState();
 
@@ -5623,9 +5794,11 @@ async function showEditor(node, type, options = {}) {
       if (type === "stickers") {
         getList().forEach((item, i) => {
           if (!item) return;
-          const baseLabel = isExternalSticker(item)
-            ? String(item.id || EXTERNAL_STICKER_ID)
-            : String(state.assets?.[item.asset_id]?.name || item.asset_id || item.id);
+          const baseLabel = sceneV2
+            ? sceneStickerLabel(item)
+            : isExternalSticker(item)
+              ? String(item.id || EXTERNAL_STICKER_ID)
+              : String(state.assets?.[item.asset_id]?.name || item.asset_id || item.id);
           const label = `${i + 1}. ${baseLabel}${isExternalSticker(item) && isStickerHidden(item) ? " (hidden)" : ""}`;
           const labelData = getSelectionItemLabelData({ item, label, kind: "image" });
           items.push({ id: item.id, label: labelData.label, icon: labelData.icon, item, kind: "image" });
@@ -5638,7 +5811,7 @@ async function showEditor(node, type, options = {}) {
         });
       }
       const currentId = inspectorSelected?.id || "";
-      const currentItem = items.find((item) => item.id === currentId) || items[0];
+      const currentItem = cameraInspected ? { label: "Camera", icon: ICON.camera } : items.find((item) => item.id === currentId) || items[0];
       selectionPicker = {
         label: "Selection",
         open: false,
@@ -5670,7 +5843,15 @@ async function showEditor(node, type, options = {}) {
       });
     };
     const notes = [];
-    if (selectedItems.length > 1) {
+    if (cameraInspected) {
+      pushParam("position_x", "X", -100, 100, 0.01);
+      pushParam("position_y", "Y", -100, 100, 0.01);
+      pushParam("position_z", "Z", -100, 100, 0.01);
+      pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
+      pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
+      pushParam("roll_deg", "Roll", -180, 180, 0.1);
+      pushParam("hFOV_deg", "FOV", 1, 179, 0.1);
+    } else if (selectedItems.length > 1) {
       notes.push(`Selected objects: ${selectedItems.length}`);
       notes.push("Multi-selection supports z-order and delete.");
     } else {
@@ -5680,6 +5861,7 @@ async function showEditor(node, type, options = {}) {
       pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
       if (type === "stickers" || selectedKind === "image") pushParam("rot_deg", "Rotation", -180, 180, 0.1);
       else pushParam("roll_deg", "Roll", -180, 180, 0.1);
+      if (sceneV2) pushParam("opacity", "Opacity", 0, 100, 1);
     }
 
     const paintStrokeCount = Array.isArray(state?.painting?.paint?.strokes) ? state.painting.paint.strokes.length : 0;
@@ -5690,7 +5872,7 @@ async function showEditor(node, type, options = {}) {
       panoramaInputNames.includes("erp_image") ? ["erp_image", "bg_erp"] : ["bg_erp", "erp_image"],
     );
     const hasPanoramaLayer = !!String(linkedPanoramaSource?.src || "").trim() || getNodeUiList("pano_input_images").length > 0;
-    const hasObjectLayer = (Array.isArray(getList()) && getList().length > 0) || paintStrokeCount > 0;
+    const hasObjectLayer = getList().length > 0 || paintStrokeCount > 0;
     const hasMaskLayer = maskStrokeCount > 0;
     const visibilityRows = [
       { key: "mask", label: "Mask", icon: ICON.circle_dashed_tool, visible: !!editor.showMask, enabled: hasMaskLayer },
@@ -5707,7 +5889,7 @@ async function showEditor(node, type, options = {}) {
       readOnly,
       selectionPicker,
       enabled,
-      selectedKind,
+      selectedKind: cameraInspected ? "camera" : selectedKind,
       selectedItems,
       params,
       notes,
@@ -5717,10 +5899,343 @@ async function showEditor(node, type, options = {}) {
     });
   }
 
+  function syncTimeline() {
+    if (!sceneV2 || readOnly) return;
+    const span = timelineSpanFrames();
+    const selection = timeline.selection;
+    const owner = selection && timelineOwner(selection.owner);
+    if (selection) {
+      const names = owner ? selectedLanes(selection) : [];
+      selection.frames = selection.frames.filter((frame) => names.some((name) => owner[name].keyframes.some((key) => key.frame === frame)));
+      if (!selection.frames.length) timeline.selection = null;
+    }
+    const fps = state.timeline.fps;
+    uiState.timeline = buildTimelineModel(state, {
+      frame: editor.frame,
+      span,
+      selection: timeline.selection,
+      selectedId: editor.inspectCamera ? "camera" : editor.selectedId,
+      expanded: timeline.expanded ?? isTimed(state),
+      openRows: timeline.openRows,
+      audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
+      playing: timeline.playback !== 0,
+      label: `${editor.frame}f · ${(editor.frame / fps).toFixed(2)}s @ ${Number(fps.toFixed(3))} fps`,
+    });
+    uiState.easing = timeline.selection
+      ? buildEasingModel(owner, selectedLanes(timeline.selection), timeline.selection.frames, timelineOffset(timeline.selection.owner))
+      : null;
+  }
+
+  function timelineSpanFrames(openClip = null) {
+    const fps = state.timeline.fps;
+    const frames = uiState.videoTransport.ready ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0;
+    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip });
+  }
+
+  function timelineOwner(owner) {
+    return owner === "camera" ? state.camera : state.stickers.find((item) => item.id === owner) || null;
+  }
+
+  // The Lanes a Keyframe selection acts on: its Lane, or every Lane of its row.
+  function selectedLanes(selection) {
+    return selection.lane ? [selection.lane] : laneNames(timelineOwner(selection.owner));
+  }
+
+  // Camera Keyframes are on the Timeline; a Sticker's are on its material, which starts at start - in.
+  function timelineOffset(owner) {
+    if (owner === "camera") return 0;
+    const { clip } = timelineOwner(owner);
+    return clip.start - clip.in;
+  }
+
+  function timelineEditable(owner) {
+    const target = timelineOwner(owner);
+    return !!target && target.locked !== true;
+  }
+
+  // A Sticker outside its Clip range is hidden, so it stops being edited.
+  function releaseHiddenSelection() {
+    const selected = getSelected();
+    if (isSceneSticker(selected) && !clipActive(selected.clip, editor.frame)) setSelectedItem(null);
+  }
+
+  function setTimelineFrame(frame) {
+    const next = Math.max(0, Math.round(frame));
+    if (next === editor.frame) return;
+    editor.frame = next;
+    releaseHiddenSelection();
+    markObjectVisualsDirty();
+    updateSidePanel();
+    updateSelectionMenu();
+    requestDraw();
+  }
+
+  function hasTimelineVideo() {
+    return videoEl instanceof HTMLVideoElement && !!videoEl.getAttribute("src");
+  }
+
+  // Moves the playhead and shows the background VIDEO's frame there (ADR 0019 still frame).
+  function jumpTimelineTo(frame) {
+    stopTimelinePlayback();
+    setTimelineFrame(frame);
+    if (!hasTimelineVideo()) return;
+    scrubVideoTo(editor.frame / state.timeline.fps);
+    endVideoScrub();
+  }
+
+  function stopTimelinePlayback() {
+    if (!timeline.playback) return;
+    cancelAnimationFrame(timeline.playback.raf);
+    const { video } = timeline.playback;
+    timeline.playback = 0;
+    if (video) {
+      videoEl.pause();
+      videoState.pendingPlaybackResume = false;
+      videoState.resumeAfterScrub = false;
+      scrubVideoTo(editor.frame / state.timeline.fps);
+      endVideoScrub();
+    }
+    syncTimeline();
+  }
+
+  // Plays the background VIDEO (with its audio) from a time, as its own play button did.
+  function playVideoFrom(time) {
+    refreshModalVideoSource();
+    videoState.mode = "playback";
+    videoState.pendingPlaybackResume = false;
+    videoState.resumeAfterScrub = false;
+    videoState.editorTime = time;
+    if (Math.abs(Number(videoEl.currentTime || 0) - time) > Math.max(frameTolerance(), 0.04)) {
+      videoState.seeking = false;
+      videoState.pendingPlaybackResume = true;
+      issueVideoSeek(time);
+    } else {
+      void videoEl.play().catch(() => {});
+    }
+  }
+
+  // The playing background VIDEO's time sets the playhead. At the end of the Timeline it starts over.
+  function followTimelineVideo(time) {
+    if (!timeline.playback?.video || videoState.seeking || videoState.pendingPlaybackResume) return;
+    const frame = Math.floor(time * state.timeline.fps + 0.5);
+    if (frame >= timelineSpanFrames()) restartTimelineVideo();
+    else setTimelineFrame(frame);
+  }
+
+  function restartTimelineVideo() {
+    timeline.playback.endedAt = null;
+    setTimelineFrame(0);
+    playVideoFrom(0);
+  }
+
+  // PanoramaStickersNode has one transport, the Timeline's play button. With a background VIDEO the
+  // video plays with its audio and its frames set the playhead (requestVideoFrameCallback through the
+  // frame pump, else its currentTime on each animation frame); past the video's end a clock carries on
+  // to the Timeline's end. Without a VIDEO a clock moves the playhead. Both loop at the Timeline's end.
+  function toggleTimelinePlayback() {
+    if (timeline.playback) {
+      stopTimelinePlayback();
+      return;
+    }
+    const fps = state.timeline.fps;
+    const startFrame = editor.frame >= timelineSpanFrames() - 1 ? 0 : editor.frame;
+    const playback = { video: hasTimelineVideo(), raf: 0, endedAt: null };
+    timeline.playback = playback;
+    if (playback.video) {
+      const frameCallback = typeof videoEl.requestVideoFrameCallback === "function";
+      const step = (ts) => {
+        playback.raf = requestAnimationFrame(step);
+        if (videoState.seeking || videoState.pendingPlaybackResume) return;
+        // The VIDEO stopped by itself (play() was refused, or the input changed): so does the Timeline.
+        if (videoEl.paused && !videoEl.ended) {
+          stopTimelinePlayback();
+          return;
+        }
+        if (!videoEl.ended) {
+          if (!frameCallback) followTimelineVideo(Number(videoEl.currentTime || 0));
+          return;
+        }
+        playback.endedAt ??= { ts, frame: editor.frame };
+        const frame = playback.endedAt.frame + Math.floor(((ts - playback.endedAt.ts) / 1000) * fps);
+        if (frame >= timelineSpanFrames()) restartTimelineVideo();
+        else setTimelineFrame(frame);
+      };
+      setTimelineFrame(startFrame);
+      playVideoFrom(startFrame / fps);
+      playback.raf = requestAnimationFrame(step);
+    } else {
+      const startTs = performance.now();
+      const step = (ts) => {
+        playback.raf = requestAnimationFrame(step);
+        setTimelineFrame((startFrame + Math.floor(((ts - startTs) / 1000) * fps)) % timelineSpanFrames());
+      };
+      playback.raf = requestAnimationFrame(step);
+    }
+    syncTimeline();
+  }
+
+  function refreshTimelineEdit() {
+    markObjectVisualsDirty();
+    updateSidePanel();
+    updateSelectionMenu();
+    requestDraw();
+  }
+
+  function commitTimelineEdit() {
+    pushHistory();
+    commitAndRefreshNode();
+    refreshTimelineEdit();
+  }
+
+  function deleteSelectedKeyframes() {
+    const { selection } = timeline;
+    if (!timelineEditable(selection.owner)) return;
+    deleteKeyframes(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, editor.frame - timelineOffset(selection.owner));
+    timeline.selection = null;
+    commitTimelineEdit();
+  }
+
+  function onTimelineAction(action) {
+    if (readOnly || !sceneV2) return;
+    if (action.type === "seek") {
+      if (action.phase === "start") stopTimelinePlayback();
+      setTimelineFrame(action.frame);
+      if (videoEl instanceof HTMLVideoElement && videoEl.getAttribute("src")) {
+        if (action.phase === "end") endVideoScrub();
+        else scrubVideoTo(editor.frame / state.timeline.fps);
+      }
+      return;
+    }
+    if (action.type === "play") {
+      toggleTimelinePlayback();
+      return;
+    }
+    if (action.type === "mute") {
+      toggleVideoMuted();
+      syncTimeline();
+      return;
+    }
+    if (action.type === "toggle-expanded") {
+      timeline.expanded = !(timeline.expanded ?? isTimed(state));
+      timeline.selection = null;
+      syncTimeline();
+      return;
+    }
+    if (action.type === "toggle-row") {
+      if (timeline.openRows.has(action.id)) timeline.openRows.delete(action.id);
+      else timeline.openRows.add(action.id);
+      syncTimeline();
+      return;
+    }
+    if (action.type === "select-row") {
+      // A Sticker is hidden outside its Clip range, so the playhead first moves to where it starts.
+      const sticker = state.stickers.find((item) => item.id === action.id);
+      if (sticker && !clipActive(sticker.clip, editor.frame)) jumpTimelineTo(sticker.clip.start);
+      // Only sky Stickers can be selected on the canvas; the Camera row shows the Camera in the
+      // inspector, and world rows clear the selection.
+      setSelectedItem(getList().find((item) => item.id === action.id) || null);
+      editor.inspectCamera = action.id === "camera";
+      // Delete then acts on the row's Sticker, not on Keyframes selected before.
+      timeline.selection = null;
+      updateSidePanel();
+      updateSelectionMenu();
+      requestDraw();
+      return;
+    }
+    if (action.type === "select-keys") {
+      const offset = timelineOffset(action.owner);
+      const frames = action.frames.map((frame) => frame - offset);
+      const current = timeline.selection;
+      const sameLanes = current?.owner === action.owner && current.lane === action.lane;
+      if (action.additive && sameLanes) {
+        const toggled = new Set(current.frames);
+        for (const frame of frames) {
+          if (toggled.has(frame)) toggled.delete(frame);
+          else toggled.add(frame);
+        }
+        current.frames = [...toggled].sort((a, b) => a - b);
+      } else {
+        timeline.selection = frames.length ? { owner: action.owner, lane: action.lane, frames } : null;
+      }
+      syncTimeline();
+      return;
+    }
+    if (action.type === "move-keys") {
+      const selection = timeline.selection;
+      if (!selection || !timelineEditable(selection.owner)) return;
+      const owner = timelineOwner(selection.owner);
+      const names = selectedLanes(selection);
+      if (action.phase === "start") {
+        timeline.drag = { keyframes: names.map((name) => structuredClone(owner[name].keyframes)), frames: selection.frames };
+        return;
+      }
+      const { drag } = timeline;
+      if (!drag?.keyframes) return;
+      names.forEach((name, index) => {
+        owner[name].keyframes = structuredClone(drag.keyframes[index]);
+      });
+      const delta = moveKeyframes(owner, names, drag.frames, action.delta, -timelineOffset(selection.owner));
+      selection.frames = drag.frames.map((frame) => frame + delta);
+      if (action.phase !== "end") {
+        refreshTimelineEdit();
+        return;
+      }
+      timeline.drag = null;
+      if (delta) commitTimelineEdit();
+      else refreshTimelineEdit();
+      return;
+    }
+    if (action.type === "clip") {
+      const sticker = state.stickers.find((item) => item.id === action.id);
+      if (!sticker || sticker.locked) return;
+      if (action.phase === "start") {
+        // Only the span set by everything else reopens the end, not the span this Clip range widens.
+        timeline.drag = { clip: { ...sticker.clip }, span: timelineSpanFrames(sticker.clip) };
+        return;
+      }
+      const { drag } = timeline;
+      if (!drag?.clip) return;
+      const base = drag.clip;
+      sticker.clip = { ...base };
+      // A click (no movement) leaves the Clip range as it was, an open end included.
+      if (action.delta && action.mode === "move") moveClip(sticker.clip, action.delta);
+      else if (action.delta && action.mode === "start") trimClipStart(sticker.clip, base.start + action.delta);
+      else if (action.delta) trimClipEnd(sticker.clip, (base.duration === null ? drag.span : base.start + base.duration) + action.delta, drag.span);
+      if (action.phase !== "end") {
+        refreshTimelineEdit();
+        return;
+      }
+      timeline.drag = null;
+      releaseHiddenSelection();
+      if (JSON.stringify(sticker.clip) !== JSON.stringify(base)) commitTimelineEdit();
+      else refreshTimelineEdit();
+      return;
+    }
+    if (action.type === "key-row") {
+      if (!timelineEditable(action.owner)) return;
+      // Recording edits stop at the frame shown, so playback stops before a Keyframe is set.
+      stopTimelinePlayback();
+      keyAllLanes(timelineOwner(action.owner), editor.frame - timelineOffset(action.owner));
+      commitTimelineEdit();
+      return;
+    }
+    if (action.type === "easing") {
+      const selection = timeline.selection;
+      if (!selection || !timelineEditable(selection.owner)) return;
+      setSegmentEasing(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, action.easing);
+      if (action.commit) commitTimelineEdit();
+      else refreshTimelineEdit();
+    }
+  }
+
   async function addImageStickerFromFile(file) {
     if (readOnly) return;
     if (type !== "stickers" && type !== "cutout") return;
     if (!isStickerImageFile(file)) return;
+    if (sceneV2) {
+      await addSceneStickerFromFile(file);
+      return;
+    }
     const aid = uid("asset");
     const operation = queuePendingStickerOperation(node, `add:${aid}`, async () => {
       try {
@@ -5784,12 +6299,93 @@ async function showEditor(node, type, options = {}) {
     vueModal?.openImagePicker?.("add");
   }
 
+  // PanoramaStickersNode: the new Sticker shows from the decoded image while it uploads. Its Source
+  // has no file until then, so saving in between leaves it out.
+  async function addSceneStickerFromFile(file) {
+    const id = uid("st");
+    const operation = queuePendingStickerOperation(node, `add:${id}`, async () => {
+      const { image: img } = await decodeStickerImageFile(file);
+      const pose = {
+        yaw_deg: editor.viewYaw,
+        pitch_deg: editor.viewPitch,
+        hFOV_deg: 30,
+        vFOV_deg: computeStickerVFov(30, Number(img.naturalWidth || img.width || 1), Number(img.naturalHeight || img.height || 1)),
+        rot_deg: 0,
+      };
+      const sticker = newSceneSticker(id, { kind: "file", filename: "" }, pose, getNextStickerZIndex());
+      imageCache.set(stickerImageKey(sticker), img);
+      state.stickers.push(sticker);
+      setSelectedItem(sticker);
+      forceCursorTool();
+      updateSidePanel();
+      updateSelectionMenu();
+      requestDraw();
+      try {
+        const uploaded = await uploadStickerAssetFile(file, {
+          fetchApi: (path, options) => api.fetchApi(path, options),
+        });
+        const live = state.stickers.find((item) => item.id === id);
+        if (!live) return;
+        live.source = fileSource(uploaded);
+        imageCache.set(stickerImageKey(live), img);
+        pushHistory();
+        commitAndRefreshNode();
+      } catch (error) {
+        state.stickers = state.stickers.filter((item) => item.id !== id);
+        if (editor.selectedId === id) setSelectedItem(null);
+        // Edits made while it uploaded were not recorded yet.
+        pushHistory();
+        commitAndRefreshNode();
+        throw error;
+      } finally {
+        updateSidePanel();
+        updateSelectionMenu();
+        requestDraw();
+      }
+    });
+    try {
+      await operation;
+    } catch { }
+  }
+
+  // PanoramaStickersNode: the Source changes once the image is uploaded. The vFOV of the value and of
+  // every Keyframe follows the new image's aspect.
+  async function replaceSceneStickerImage(file, id) {
+    const operation = queuePendingStickerOperation(node, `replace:${id}:${uid("asset")}`, async () => {
+      const { image: img } = await decodeStickerImageFile(file);
+      const uploaded = await uploadStickerAssetFile(file, {
+        fetchApi: (path, options) => api.fetchApi(path, options),
+      });
+      const live = state.stickers.find((item) => item.id === id);
+      if (!live) return;
+      live.source = fileSource(uploaded);
+      live.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
+      for (const value of [live.size.value, ...live.size.keyframes.map((key) => key.value)]) {
+        value.vFOV_deg = computeStickerVFov(value.hFOV_deg, Number(img.naturalWidth || img.width || 1), Number(img.naturalHeight || img.height || 1));
+      }
+      imageCache.set(stickerImageKey(live), img);
+      markObjectVisualsDirty();
+      pushHistory();
+      commitAndRefreshNode();
+      updateSidePanel();
+      updateSelectionMenu();
+      requestDraw();
+    });
+    try {
+      await operation;
+    } catch { }
+  }
+
   async function replaceSelectedImageFromFile(file) {
     if (readOnly) return;
     if (type !== "stickers" && type !== "cutout") return;
     const selected = getSelected();
     if (!selected || !isStickerItem(selected) || isExternalSticker(selected)) return;
     if (!isStickerImageFile(file)) return;
+    if (sceneV2) {
+      await replaceSceneStickerImage(file, selected.id);
+      return;
+    }
     const selectedId = String(selected.id || "");
     const nextAssetId = uid("asset");
     const operation = queuePendingStickerOperation(node, `replace:${selectedId}:${nextAssetId}`, async () => {
@@ -5862,6 +6458,10 @@ async function showEditor(node, type, options = {}) {
 
   async function migrateLegacyEmbeddedAssets() {
     if (readOnly || type !== "stickers") return;
+    if (sceneV2) {
+      await uploadEmbeddedSceneSources();
+      return;
+    }
     const assets = state.assets && typeof state.assets === "object" ? state.assets : {};
     const entries = Object.entries(assets).filter(([, asset]) => {
       const t = String(asset?.type || "").toLowerCase();
@@ -5886,6 +6486,30 @@ async function showEditor(node, type, options = {}) {
           w: Number(asset?.w || 0),
           h: Number(asset?.h || 0),
         };
+        changed = true;
+      } catch {
+      }
+    }
+    if (changed) {
+      commitAndRefreshNode();
+      requestDraw();
+    }
+  }
+
+  // A Source of state v2 that embeds a data URL (read from a v1 state) becomes an uploaded file.
+  async function uploadEmbeddedSceneSources() {
+    let changed = false;
+    for (const sticker of state.stickers) {
+      const dataUrl = sticker.source.data_url;
+      if (!dataUrl) continue;
+      try {
+        const blob = await fetch(dataUrl).then((r) => r.blob());
+        const ext = String(blob.type || "image/png").split("/")[1] || "png";
+        const file = new File([blob], `${sticker.id}.${ext}`, { type: blob.type || "image/png" });
+        const uploaded = await uploadStickerAssetFile(file, {
+          fetchApi: (path, options) => api.fetchApi(path, options),
+        });
+        sticker.source = fileSource(uploaded);
         changed = true;
       } catch {
       }
@@ -5981,8 +6605,9 @@ async function showEditor(node, type, options = {}) {
     markPaintStrokeVisualsDirty();
     const keptExternalStickers = collectExternalStickersForClearAll();
     if (type === "stickers") {
-      state.stickers = keptExternalStickers;
-      state.assets = {};
+      // World Stickers are not shown on the canvas, so Clear All keeps them.
+      state.stickers = sceneV2 ? state.stickers.filter((item) => item.placement === "world" || keptExternalStickers.includes(item)) : keptExternalStickers;
+      if (!sceneV2) state.assets = {};
       editor.selectedId = keptExternalStickers[0]?.id || null;
       editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
       state.active.selected_sticker_id = keptExternalStickers[0]?.id || null;
@@ -6043,10 +6668,17 @@ async function showEditor(node, type, options = {}) {
     const selected = getSelected();
     if (!selected) return;
     if (!isStickerItem(selected) || isExternalSticker(selected)) return;
-    const copy = JSON.parse(JSON.stringify(selected));
-    copy.id = uid("st");
-    copy.yaw_deg = wrapYaw((copy.yaw_deg || 0) + 8);
-    copy.z_index = getNextStickerZIndex();
+    // A Sticker whose image is still uploading has no file to copy yet.
+    if (sceneV2 && isUploadingSticker(selected)) return;
+    let copy;
+    if (sceneV2) {
+      copy = duplicateSceneSticker(selected, uid("st"), getNextStickerZIndex());
+    } else {
+      copy = JSON.parse(JSON.stringify(selected));
+      copy.id = uid("st");
+      copy.yaw_deg = wrapYaw((copy.yaw_deg || 0) + 8);
+      copy.z_index = getNextStickerZIndex();
+    }
     state.stickers.push(copy);
     state.active.selected_sticker_id = copy.id;
     editor.selectedId = copy.id;
@@ -6150,9 +6782,9 @@ async function showEditor(node, type, options = {}) {
       state.stickers = state.stickers.filter((s) => s.id !== selected.id);
       pruneUnusedAssets();
       markObjectVisualsDirty();
-      editor.selectedId = state.stickers[0]?.id || null;
+      editor.selectedId = getList()[0]?.id || null;
       editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
-      state.active.selected_sticker_id = state.stickers[0]?.id || null;
+      state.active.selected_sticker_id = editor.selectedId;
       pushHistory();
       commitAndRefreshNode();
       updateSidePanel();
@@ -7782,6 +8414,11 @@ async function showEditor(node, type, options = {}) {
   });
 
   canvas.onpointerdown = (e) => {
+    stopTimelinePlayback();
+    if (timeline.selection) {
+      timeline.selection = null;
+      syncTimeline();
+    }
     const p = screenPos(e);
     setPointerPos(p, true);
     editor.viewTween = null;
@@ -7938,8 +8575,8 @@ async function showEditor(node, type, options = {}) {
             .filter((item) => isStickerItem(item))
             .map((item) => ({
               id: String(item.id || ""),
-              yaw_deg: Number(item.yaw_deg || 0),
-              pitch_deg: Number(item.pitch_deg || 0),
+              yaw_deg: Number(poseOf(item).yaw_deg || 0),
+              pitch_deg: Number(poseOf(item).pitch_deg || 0),
               center: (() => {
                 const geom = objectGeom(item);
                 return geom?.visible ? { x: Number(geom.center?.x || 0), y: Number(geom.center?.y || 0) } : { x: p.x, y: p.y };
@@ -8001,8 +8638,8 @@ async function showEditor(node, type, options = {}) {
             item: selected,
             center: selGeom.center,
             startDist: Math.max(1, Math.hypot(p.x - selGeom.center.x, p.y - selGeom.center.y)),
-            startHFOV: Number(selected.hFOV_deg || 20),
-            startVFOV: Number(selected.vFOV_deg || 20),
+            startHFOV: Number(poseOf(selected).hFOV_deg || 20),
+            startVFOV: Number(poseOf(selected).vFOV_deg || 20),
             cursor: h.cursor,
           };
         updateCursor(p);
@@ -8015,8 +8652,8 @@ async function showEditor(node, type, options = {}) {
           item: selected,
           center: selGeom.center,
           startDist: Math.max(1, Math.hypot(p.x - selGeom.center.x, p.y - selGeom.center.y)),
-          startHFOV: Number(selected.hFOV_deg || 20),
-          startVFOV: Number(selected.vFOV_deg || 20),
+          startHFOV: Number(poseOf(selected).hFOV_deg || 20),
+          startVFOV: Number(poseOf(selected).vFOV_deg || 20),
           cursor: h.cursor,
           edge: h.edge,
         };
@@ -8038,7 +8675,7 @@ async function showEditor(node, type, options = {}) {
             kind: "rotate",
             item: selected,
             center: selGeom.center,
-            startRot: Number(selected.rot_deg || selected.roll_deg || 0),
+            startRot: Number(poseOf(selected).rot_deg || poseOf(selected).roll_deg || 0),
             startAng: Math.atan2(p.y - selGeom.center.y, p.x - selGeom.center.x),
           };
         updateCursor(p);
@@ -8276,19 +8913,16 @@ async function showEditor(node, type, options = {}) {
         const dir = frameLocalPointToWorldDir(shot, framePoint);
         if (!dir) return;
         const yp = dirToYawPitch(dir);
-        it.item.yaw_deg = yp.yaw;
-        it.item.pitch_deg = yp.pitch;
+        writePose(it.item, { yaw_deg: yp.yaw, pitch_deg: yp.pitch });
       } else if (editor.mode === "unwrap") {
         const r = getUnwrapRect();
         const nx = clamp((tx - r.x) / Math.max(r.w, 1), 0, 1);
         const ny = clamp((ty - r.y) / Math.max(r.h, 1), 0, 1);
-        it.item.yaw_deg = wrapYaw(nx * 360 - 180);
-        it.item.pitch_deg = clamp(90 - ny * 180, -90, 90);
+        writePose(it.item, { yaw_deg: wrapYaw(nx * 360 - 180), pitch_deg: clamp(90 - ny * 180, -90, 90) });
       } else {
         const dir = screenToWorldDir(tx, ty);
         const yp = dirToYawPitch(dir);
-        it.item.yaw_deg = yp.yaw;
-        it.item.pitch_deg = yp.pitch;
+        writePose(it.item, { yaw_deg: yp.yaw, pitch_deg: yp.pitch });
       }
       if (isStickerItem(it.item)) {
         markObjectVisualsDirty();
@@ -8367,19 +9001,16 @@ async function showEditor(node, type, options = {}) {
           const dir = frameLocalPointToWorldDir(shot, framePoint);
           if (!dir) continue;
           const yp = dirToYawPitch(dir);
-          sticker.yaw_deg = yp.yaw;
-          sticker.pitch_deg = yp.pitch;
+          writePose(sticker, { yaw_deg: yp.yaw, pitch_deg: yp.pitch });
         } else if (editor.mode === "unwrap") {
           const r = getUnwrapRect();
           const nx = clamp((targetScreen.x - r.x) / Math.max(r.w, 1), 0, 1);
           const ny = clamp((targetScreen.y - r.y) / Math.max(r.h, 1), 0, 1);
-          sticker.yaw_deg = wrapYaw(nx * 360 - 180);
-          sticker.pitch_deg = clamp(90 - ny * 180, -90, 90);
+          writePose(sticker, { yaw_deg: wrapYaw(nx * 360 - 180), pitch_deg: clamp(90 - ny * 180, -90, 90) });
         } else {
           const dir = screenToWorldDir(targetScreen.x, targetScreen.y);
           const yp = dirToYawPitch(dir);
-          sticker.yaw_deg = yp.yaw;
-          sticker.pitch_deg = yp.pitch;
+          writePose(sticker, { yaw_deg: yp.yaw, pitch_deg: yp.pitch });
         }
         changed = true;
       }
@@ -8468,9 +9099,8 @@ async function showEditor(node, type, options = {}) {
     if (it.kind === "scale") {
       const d = Math.max(1, Math.hypot(p.x - it.center.x, p.y - it.center.y));
       const ratio = d / it.startDist;
-      it.item.hFOV_deg = clamp(it.startHFOV * ratio, 1, 179);
-      it.item.vFOV_deg = clamp(it.startVFOV * ratio, 1, 179);
-      it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
+      writePose(it.item, { hFOV_deg: clamp(it.startHFOV * ratio, 1, 179), vFOV_deg: clamp(it.startVFOV * ratio, 1, 179) });
+      if (!isSceneSticker(it.item)) it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
       if (isStickerItem(it.item)) markObjectVisualsDirty();
       requestDraw({ localOnly: true });
       return;
@@ -8479,8 +9109,8 @@ async function showEditor(node, type, options = {}) {
     if (it.kind === "scale_x") {
       const d = Math.max(1, Math.hypot(p.x - it.center.x, p.y - it.center.y));
       const ratio = d / it.startDist;
-      it.item.hFOV_deg = clamp(it.startHFOV * ratio, 1, 179);
-      it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
+      writePose(it.item, { hFOV_deg: clamp(it.startHFOV * ratio, 1, 179) });
+      if (!isSceneSticker(it.item)) it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
       if (isStickerItem(it.item)) markObjectVisualsDirty();
       requestDraw({ localOnly: true });
       return;
@@ -8489,8 +9119,8 @@ async function showEditor(node, type, options = {}) {
     if (it.kind === "scale_y") {
       const d = Math.max(1, Math.hypot(p.x - it.center.x, p.y - it.center.y));
       const ratio = d / it.startDist;
-      it.item.vFOV_deg = clamp(it.startVFOV * ratio, 1, 179);
-      it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
+      writePose(it.item, { vFOV_deg: clamp(it.startVFOV * ratio, 1, 179) });
+      if (!isSceneSticker(it.item)) it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
       if (isStickerItem(it.item)) markObjectVisualsDirty();
       requestDraw({ localOnly: true });
       return;
@@ -8501,8 +9131,7 @@ async function showEditor(node, type, options = {}) {
       let delta = (a - it.startAng) * RAD2DEG;
       let out = it.startRot - delta;
       if (e.shiftKey) out = Math.round(out / 45) * 45;
-      const key = isStickerItem(it.item) ? "rot_deg" : "roll_deg";
-      it.item[key] = out;
+      writePose(it.item, { [isStickerItem(it.item) ? "rot_deg" : "roll_deg"]: out });
       if (isStickerItem(it.item)) markObjectVisualsDirty();
       requestDraw({ localOnly: true });
     }
@@ -8721,17 +9350,27 @@ async function showEditor(node, type, options = {}) {
     patchUiButton(uiState.toolButtons, "value", "redo", { disabled: !canRedo });
   };
   const applySidePanelParam = (key, rawValue, commit = false) => {
+    // Edits during playback would key every frame they pass.
+    stopTimelinePlayback();
     const frameInspectorShot = type === "cutout" && editor.mode === "frame" ? getActiveCutoutShot() : null;
     const selected = frameInspectorShot || getSelected();
     const selectedKind = frameInspectorShot ? "shot" : getSelectedKind();
-    if (!selected || selectedKind === "stroke" || isItemLocked(selected)) return;
+    const cameraInspected = sceneV2 && editor.inspectCamera;
+    if (!cameraInspected && (!selected || selectedKind === "stroke" || isItemLocked(selected))) return;
     const param = (uiState.sidePanel?.params || []).find((item) => item.key === key);
     if (!param || param.enabled === false) return;
     let out = Number(rawValue);
     if (Number.isNaN(out)) out = 0;
     out = clamp(out, Number(param.min), Number(param.max));
     if (key === "yaw_deg") out = wrapYaw(out);
-    selected[key] = out;
+    if (cameraInspected) {
+      setCameraField(state.camera, editor.frame, key, out);
+      updateSidePanel();
+      if (commit) pushHistory();
+      return;
+    }
+    if (key === "opacity") setStickerOpacity(selected, editor.frame, out / 100);
+    else writePose(selected, { [key]: out });
     if (type === "cutout" && (key === "hFOV_deg" || key === "vFOV_deg")) {
       selected.aspect_id = deriveCutoutAspectLabelFromFov(selected);
     }
@@ -8780,9 +9419,10 @@ async function showEditor(node, type, options = {}) {
       }
       setSelectedItem(nextItem || null);
       if (nextItem && !isStrokeGroupItem(nextItem)) {
+        const pose = poseOf(nextItem);
         startViewTween(
-          wrapYaw(Number(nextItem.yaw_deg || 0)),
-          clamp(Number(nextItem.pitch_deg || 0), -89.9, 89.9),
+          wrapYaw(Number(pose.yaw_deg || 0)),
+          clamp(Number(pose.pitch_deg || 0), -89.9, 89.9),
           editor.viewFov,
         );
       }
@@ -8797,7 +9437,7 @@ async function showEditor(node, type, options = {}) {
       if (!selected || selectedKind === "stroke" || getSelectedItems().length > 1) return;
       const text = JSON.stringify(type === "cutout" && selectedKind !== "image"
         ? buildCanonicalCutoutStickerState(selected)
-        : buildCanonicalSelectedStickerState(selected));
+        : buildCanonicalSelectedStickerState(poseOf(selected)));
       try {
         await navigator.clipboard.writeText(text);
         if (uiState.sidePanel?.copyStateButton) {
@@ -9004,26 +9644,7 @@ async function showEditor(node, type, options = {}) {
     if (action === "video-audio-toggle") {
       ev.preventDefault();
       ev.stopPropagation();
-      if (!(videoEl instanceof HTMLVideoElement)) return;
-      if (!uiState.videoTransport.hasAudio) return;
-      const nextMuted = !videoEl.muted;
-      videoEl.muted = nextMuted;
-      if (!nextMuted && Number(videoEl.volume || 0) <= 0) {
-        videoEl.volume = Math.max(0.01, Number(uiState.videoTransport.volume || 1));
-      }
-      syncVideoTransportState({
-        ready: !!videoEl.getAttribute("src"),
-        playing: !videoEl.paused && !videoEl.ended,
-        visible: getVideoTransportVisible(),
-        currentTime: videoState.editorTime,
-        duration: uiState.videoTransport.duration,
-        frameCount: uiState.videoTransport.frameCount,
-        fps: uiState.videoTransport.fps,
-        mode: videoState.mode,
-        hasAudio: uiState.videoTransport.hasAudio,
-        muted: videoEl.muted,
-        volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
-      });
+      toggleVideoMuted();
       if (typeof actionTarget?.blur === "function") actionTarget.blur();
       return;
     }
@@ -9204,31 +9825,7 @@ async function showEditor(node, type, options = {}) {
     const videoSeek = ev.target.closest("[data-video-seek]");
     if (videoSeek) {
       if (!(videoEl instanceof HTMLVideoElement)) return;
-      refreshModalVideoSource();
-      const nextTime = clamp(Number(videoSeek.value || 0), 0, Number(uiState.videoTransport.duration || 0));
-      videoState.mode = "scrub";
-      if (!videoState.seeking && !videoEl.paused && !videoEl.ended) {
-        videoState.resumeAfterScrub = true;
-        videoEl.pause();
-      }
-      videoState.editorTime = nextTime;
-      presentCachedFrameForTime(nextTime);
-      syncVideoTransportState({
-        ready: !!videoEl.getAttribute("src"),
-        playing: false,
-        visible: getVideoTransportVisible(),
-        currentTime: nextTime,
-        duration: uiState.videoTransport.duration,
-        frameCount: uiState.videoTransport.frameCount,
-        fps: uiState.videoTransport.fps,
-        mode: "scrub",
-      });
-      if (Number(stillCanvas.__panoFrameIdx || 0) > 0) {
-        runtime.backgroundDirty = true;
-        runtime.dirty = true;
-        requestDraw({ cause: "frame_view", localOnly: true });
-      }
-      issueVideoSeek(nextTime);
+      scrubVideoTo(videoSeek.value);
       return;
     }
     const videoVolume = ev.target.closest("[data-video-volume]");
@@ -9273,21 +9870,7 @@ async function showEditor(node, type, options = {}) {
   root.addEventListener("change", (ev) => {
     if (ev.target.closest("[data-video-seek]")) {
       if (!(videoEl instanceof HTMLVideoElement)) return;
-      videoState.pendingPlaybackResume = !!videoState.resumeAfterScrub;
-      videoState.resumeAfterScrub = false;
-      if (!videoState.pendingPlaybackResume) {
-        videoState.mode = "scrub";
-      }
-      if (!videoState.seeking) {
-        if (videoState.pendingPlaybackResume) {
-          videoState.pendingPlaybackResume = false;
-          videoState.mode = "playback";
-          void videoEl.play().catch(() => {});
-        } else {
-          captureStillFrameFromVideo();
-          requestDraw({ cause: "frame_view", localOnly: true });
-        }
-      }
+      endVideoScrub();
       return;
     }
     if (ev.target.closest("[data-video-volume]")) {
@@ -9500,6 +10083,7 @@ async function showEditor(node, type, options = {}) {
       app?.canvas?.setDirty?.(true, true);
       hideTooltip();
       stopRenderLoop();
+      stopTimelinePlayback();
       if (videoEl instanceof HTMLVideoElement) videoEl.pause();
       videoCleanupFns.forEach((fn) => {
         try { fn(); } catch { }
@@ -9570,6 +10154,12 @@ async function showEditor(node, type, options = {}) {
     const t = ev.target;
     const tag = (t?.tagName || "").toUpperCase();
     if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
+    if (timeline.selection) {
+      deleteSelectedKeyframes();
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
     const selected = getSelected();
     if (!selected) return;
     deleteSelected();

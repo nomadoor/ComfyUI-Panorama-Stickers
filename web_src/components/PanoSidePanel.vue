@@ -1,12 +1,15 @@
 <script setup>
 import { computed } from "vue";
 import { ICON } from "../icons.js";
+import PanoEasingGraph from "./PanoEasingGraph.vue";
 import SvgIcon from "./SvgIcon.vue";
 
 const props = defineProps({
   nodeTitle: { type: String, default: "Panorama Stickers" },
   model: { type: Object, default: () => ({}) },
+  easing: { type: Object, default: null },
 });
+const emit = defineEmits(["timeline"]);
 
 const hasModel = computed(() => {
   const model = props.model;
@@ -164,6 +167,8 @@ function isParamDisabled(param, model) {
             </div>
           </template>
         </div>
+
+        <PanoEasingGraph :model="easing" @timeline="emit('timeline', $event)" />
 
         <template v-if="(model.visibilityRows || []).length">
           <div class="pano-divider" />

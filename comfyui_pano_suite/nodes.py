@@ -41,7 +41,7 @@ from .core.painting import (
 )
 from .core.render import Projection, SceneSources, StickerSource, render_frame
 from .core.scene_eval import evaluate_scene_state
-from .core.scene_state import STICKER_STATE_KIND, load_scene_state, load_sticker_state, rebase_scene_state
+from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state, rebase_scene_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
 from .core.video import make_video_ui_payload, save_video_to_mp4
@@ -1058,16 +1058,23 @@ def _unused_sticker_id(stickers: list[dict]) -> str:
 
 def _port_sticker(state: dict, sticker_state) -> dict:
     """The port Sticker appended when the state has none, posed by `sticker_state` when given."""
-    transform = {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 30.0}
+    rotation, h_fov = {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, 30.0
     parsed = load_sticker_state(sticker_state)
     if parsed is not None:
-        if len(parsed["camera"]) > 1:
+        camera = parsed["camera"]
+        if any(len(keyframes) > 1 for keyframes in camera.values()):
             raise NotImplementedError("Panorama Stickers: a sticker_state with more than one Camera Keyframe is not supported yet.")
-        pose = parsed["camera"][0]["value"]
-        transform = {key: pose[key] for key in transform}
+        rotation, h_fov = camera["rotation"][0]["value"], camera["fov"][0]["value"]
     # Above every other sky Sticker, as the legacy node placed it (paint layers are not counted).
     z_index = max((sticker["z_index"] for sticker in state["stickers"] if sticker["placement"] == "sky"), default=-1) + 1
-    raw = {"id": _unused_sticker_id(state["stickers"]), "source": {"kind": "port"}, "transform": {"value": transform}, "z_index": z_index}
+    raw = {
+        "id": _unused_sticker_id(state["stickers"]),
+        "source": {"kind": "port"},
+        "direction": {"value": rotation},
+        "roll": {"value": rotation["roll_deg"]},
+        "size": {"value": {"hFOV_deg": h_fov}},
+        "z_index": z_index,
+    }
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
@@ -1140,7 +1147,8 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     scene_origin = scene_clip["start"] - scene_clip["in"]
     if scene is not None and scene.count > 1 and scene_clip["duration"] is None:
         clip_ends.append(scene_origin + scene.count * stored_fps / fps)
-    keyframes = state["camera"]["transform"]["keyframes"]
+    # The latest Keyframe over the Camera's Lanes.
+    last_key = max((state["camera"][name]["keyframes"][-1]["frame"] for name, _value in CAMERA_LANES if state["camera"][name]["keyframes"]), default=None)
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
     elif video:
@@ -1149,8 +1157,8 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         length = batch
     elif clip_ends:
         length = max(1, output_frames(max(clip_ends)))
-    elif keyframes:
-        length = max(1, output_frames(keyframes[-1]["frame"]) + 1)
+    elif last_key is not None:
+        length = max(1, output_frames(last_key) + 1)
     else:
         length = 1
 
@@ -1294,10 +1302,13 @@ CUTOUT_MAX_OUTPUT_SIDE = 4096
 
 
 def _cutout_sticker_state(cutout: dict, fps: float, width: int, height: int) -> str:
-    """`sticker_state` v2: the Cutout Camera's Keyframes at the Timeline `fps`, or its value as one Keyframe."""
-    camera = rebase_scene_state(cutout, fps)["camera"]["transform"]
-    keyframes = camera["keyframes"] or [{"frame": 0, "value": camera["value"], "easing": "auto"}]
-    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": fps, "camera": keyframes, "source_aspect": width / height}
+    """`sticker_state` v2: each Lane of the Cutout Camera as its Keyframes at the Timeline `fps`, or its value as one Keyframe."""
+    camera = rebase_scene_state(cutout, fps)["camera"]
+    lanes = {
+        name: camera[name]["keyframes"] or [{"frame": 0, "value": camera[name]["value"], "easing": list(DEFAULT_EASING)}]
+        for name, _value in CAMERA_LANES
+    }
+    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": fps, "camera": lanes, "source_aspect": width / height}
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
 
 

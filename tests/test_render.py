@@ -143,8 +143,14 @@ def test_perspective_rays_pass_through_the_pixel_centers_of_a_square_pixel_image
     assert np.allclose(rays[0, 0], corner / np.linalg.norm(corner), atol=1e-6)
 
 
-def _sticker_state(**transform):
-    return {"stickers": [{"id": "s", "source": {"kind": "port"}, "transform": {"value": {"hFOV_deg": 90.0, "vFOV_deg": 90.0, **transform}}}]}
+def _sticker_state(yaw_deg=0.0, pitch_deg=0.0, roll_deg=0.0, hFOV_deg=90.0, vFOV_deg=90.0):
+    return {"stickers": [{
+        "id": "s",
+        "source": {"kind": "port"},
+        "direction": {"value": {"yaw_deg": yaw_deg, "pitch_deg": pitch_deg}},
+        "roll": {"value": roll_deg},
+        "size": {"value": {"hFOV_deg": hFOV_deg, "vFOV_deg": vFOV_deg}},
+    }]}
 
 
 def _red_source(**kwargs):
@@ -269,8 +275,8 @@ def test_render_frame_never_reuses_a_background_without_a_key(monkeypatch):
     assert counts == {"_background": 2, "composite_frame": 2}
 
 
-def _camera(**value):
-    return {"camera": {"transform": {"value": value}}}
+def _camera(**rotation):
+    return {"camera": {"rotation": {"value": rotation}}}
 
 
 def _zenith_bg():

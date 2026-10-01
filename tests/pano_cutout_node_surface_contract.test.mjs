@@ -162,7 +162,7 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   );
   assert.match(
     runtime,
-    /function surfaceViewInput[\s\S]*?editorSceneState\([\s\S]*?buildRuntimeCutoutLayerEntries\(node, state\)[\s\S]*?workingSkyLayers\(/,
+    /function surfaceViewInput[\s\S]*?loadSceneState\([\s\S]*?buildRuntimeCutoutLayerEntries\(node, state\)[\s\S]*?workingSkyLayers\(/,
   );
   assert.match(
     runtime,
@@ -204,7 +204,7 @@ test("modal frame view adds shared Shift-roll without removing legacy Alt-roll",
   assert.match(editor, /uiState\.frameRail\.disabled = readOnly \|\| frameShot\?\.locked === true/);
   assert.match(editor, /uiState\.frameRail\.aspectLabel = frameShot \? getCutoutAspectLabel\(frameShot\) : ""/);
   assert.match(editor, /!shot \|\| shot\.locked === true \|\| !rect/);
-  assert.match(editor, /const enabled = !!inspectorSelected && !isItemLocked\(inspectorSelected\)/);
+  assert.match(editor, /const enabled = cameraInspected \|\| \(!!inspectorSelected && !isItemLocked\(inspectorSelected\)\)/);
   assert.match(editor, /selectedKind === "stroke" \|\| isItemLocked\(selected\)/);
   const syncStart = editor.indexOf("  function syncFrameRollKnob() {");
   const syncEnd = editor.indexOf("\n  function ", syncStart + 1);

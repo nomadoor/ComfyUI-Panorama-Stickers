@@ -20,8 +20,10 @@ EVAL_FRAMES = {
     "v1_stickers": [-1.0, 0.0, 0.5, 7.25, 100.0],
     "v1_cutout": [0.0, 3.5],
     "v2_invalid_fields": [0.0, 2.0, 2.0 - 5e-7, 11.0 - 5e-7, 11.0, 11.5, 30.0],
-    # Every segment kind, key edges, and the zenith crossing at frame 50 approached from both sides.
-    "v2_interpolation": [-2.0 + 0.37 * i for i in range(417)] + [12.0 - 1e-7, 12.0 + 1e-7, 49.9, 50.1, 75.0 + 1e-3, 90.0 - 1e-3],
+    # Every segment kind of every Lane type, key edges, the camera's zenith crossing at frame 50 approached from both
+    # sides, the sky direction's pole keys (20, 50, 60), opposite segments (30-40, 50-60) and pole crossing at 75, and
+    # opposite segments between keys that turn back (st_turn_back_*, frames 0-30).
+    "v2_interpolation": [-2.0 + 0.37 * i for i in range(417)] + [12.0 - 1e-7, 12.0 + 1e-7, 49.9, 50.1, 75.0 + 1e-3, 90.0 - 1e-3, 19.99, 20.01, 59.99, 60.01, 74.99, 75.0, 75.01, 15.0, 25.0, 9.99, 10.01],
     # Exact half turns (their direction and the yaw tie at frame 10), a fast move that stops, and uneven spacing.
     "v2_half_turns": [0.25 * i for i in range(410)],
 }

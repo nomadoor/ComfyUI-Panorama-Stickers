@@ -2,8 +2,51 @@
   "kind": "pano_sticker_state",
   "version": 2,
   "fps": 24.0,
-  "camera": [
-    {"frame": 0, "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": -170.0, "pitch_deg": 89.9, "roll_deg": 15.0, "hFOV_deg": 179.0}, "easing": "auto"}
-  ],
+  "camera": {
+    "position": [
+      {
+        "frame": 0,
+        "value": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "easing": [
+          0.42,
+          0.0,
+          0.58,
+          1.0
+        ]
+      }
+    ],
+    "rotation": [
+      {
+        "frame": 0,
+        "value": {
+          "yaw_deg": -170.0,
+          "pitch_deg": 89.9,
+          "roll_deg": 15.0
+        },
+        "easing": [
+          0.42,
+          0.0,
+          0.58,
+          1.0
+        ]
+      }
+    ],
+    "fov": [
+      {
+        "frame": 0,
+        "value": 179.0,
+        "easing": [
+          0.42,
+          0.0,
+          0.58,
+          1.0
+        ]
+      }
+    ]
+  },
   "source_aspect": 1.5
 }

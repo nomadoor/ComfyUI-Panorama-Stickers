@@ -3,17 +3,24 @@
   "timeline": {"fps": -1, "length": 0.4},
   "camera": {
     "aspect": "wide",
-    "transform": {
-      "value": {"position": [1, "x", 3], "yaw_deg": 400, "pitch_deg": 120, "roll_deg": null, "hFOV_deg": 500},
+    "position": {
+      "value": [1, "x", 3],
       "keyframes": [
-        {"frame": 10.6, "value": {"position": [1, 2, 3], "yaw_deg": 5}, "easing": "bounce", "handles": {"in": [1, 2], "out": [0, 0, 1]}},
-        {"frame": "3", "value": {}, "easing": "hold"},
-        {"frame": 2, "value": {"yaw_deg": true}, "easing": [2, 0.5, -1, 0.5]},
-        {"frame": 11, "value": {"yaw_deg": 1}, "easing": "hold"},
-        {"frame": 11, "value": {"yaw_deg": 2}, "easing": [0.1, 0.2, 0.3]},
+        {"frame": 10.6, "value": [1, 2, 3], "easing": "bounce", "handles": {"in": [1, 2], "out": [0, 0, 1]}},
+        {"frame": "3", "value": [], "easing": "hold"},
         "junk"
       ]
     },
+    "rotation": {
+      "value": {"yaw_deg": 400, "pitch_deg": 120, "roll_deg": null},
+      "keyframes": [
+        {"frame": 2, "value": {"yaw_deg": true}, "easing": [0.5, 0.5, 0.5, 0.5], "handles": {"out": [0, 0, 1]}},
+        {"frame": 4, "value": {"yaw_deg": 3}, "easing": [0.2, 1.2, 0.3, 0.9]},
+        {"frame": 11, "value": {"yaw_deg": 1}, "easing": "hold"},
+        {"frame": 11, "value": {"yaw_deg": 2}, "easing": [0.1, 0.2, 0.3]}
+      ]
+    },
+    "fov": 60,
     "extra": 1
   },
   "scene": "bad",
@@ -26,12 +33,15 @@
       "visible": "yes",
       "locked": 1,
       "crop": {"x0": -0.5, "y0": 0.2, "x1": 2, "y1": "a"},
-      "transform": {"value": {"position": [0, 0, 0], "yaw_deg": 10, "hFOV_deg": 0}, "keyframes": {}},
+      "position": {"value": [0, 0, 0]},
+      "direction": {"value": {"yaw_deg": 10, "pitch_deg": "up"}, "keyframes": {}},
+      "roll": {"value": "x", "keyframes": [{"frame": 1, "value": 30, "easing": [-0.1, 0, 1, 1]}]},
+      "size": {"value": {"hFOV_deg": 0}},
       "opacity": {"value": 3, "keyframes": [{"frame": 0, "value": -1, "easing": "hold", "handles": {"out": [1, 1, 1]}}]},
       "z_index": "3"
     },
     {"id": "dup", "placement": "world", "source": {"kind": "port"}, "z_index": 5},
-    {"id": "dup", "placement": "world", "source": {"kind": "file", "filename": "m.glb", "subfolder": "3d", "storage": "bogus"}, "crop": {"x0": 0.8, "y0": 0.9, "x1": 0.2, "y1": 0.1}, "transform": {"value": {"scale": -2}}},
+    {"id": "dup", "placement": "world", "source": {"kind": "file", "filename": "m.glb", "subfolder": "3d", "storage": "bogus"}, "crop": {"x0": 0.8, "y0": 0.9, "x1": 0.2, "y1": 0.1}, "scale": {"value": -2}, "direction": {"value": {"yaw_deg": 5}}},
     {"id": "no_source", "placement": "sky"},
     {"id": "bad_file", "placement": "sky", "source": {"kind": "file", "filename": ""}},
     {"id": "bad_data", "placement": "sky", "source": {"kind": "file", "data_url": "javascript:alert(1)"}},
