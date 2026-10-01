@@ -24,6 +24,21 @@
 | `stickers_coverage_180` | `coverage` 180、Sticker あり | 512x512 |
 | `cutout_single_shot` | Cutout の単一ショット（yaw 30°、pitch 10°、roll 15°、90°x60°） | 224x128 |
 
+
+### 新しいノードの基準画像
+
+旧ノードと意図して変えた出力は、新しいノード自身の出力から別の基準画像として生成する（`tools/bake_legacy_goldens.py` の `NODE_CASES`。`PYTHONPATH=<ComfyUI> python tools/bake_legacy_goldens.py <case>` で一つだけ生成できる）。保存先と比べ方は旧ノードと同じ。
+
+| case | 内容 | 出力サイズ |
+|---|---|---|
+| `cutout_node_single_shot` | 新しい Cutout（`PanoramaCutoutNode`）で `cutout_single_shot` と同じショットと背景 | 224x128 |
+
+- 新しい Cutout は、v1 の状態と v2 に読み替えた状態の両方で `cutout_node_single_shot` と一致する（`tests/test_cutout_scene_node.py`）。
+- `cutout_single_shot` とは意図して違う。新しい描画は ERP を画素の中心で標本化し、透視投影の画素を正方にした。エディタ・Cutout・Stickers の画素の位置を揃えるためである（`docs/render-contract.md`）。
+  - 旧 Cutout は ERP の画素 i を `u = i`（画素の中心ではなく端）とみなし、背景を ERP の半画素ずらして標本化していた。
+  - 旧 Cutout は垂直の FOV を shot の `vFOV_deg`（60°）にしていたが、新しい Cutout は丸めた出力の大きさから決める（224x128 で 59.5°）。
+  - `cutout_single_shot` との差は平均の絶対誤差で 9.7/255、8/255 を超える画素は 22%（RTX 4070 Ti、CUDA）。半画素のずれを戻すと 2.3/255 になり、残りは垂直の FOV の差である。鋭い格子線の背景なので差が大きく出る。テストはこの差の上限（10.5/255 と、ずれを戻したときの 2.5/255）を確かめる。
+- `cutout_node_single_shot` は RTX 4070 Ti（CUDA）で生成した。
 - ペイントは `painting_layer`（フロントエンドがアップロードするラスター）を使わず、バックエンドのストローク描画で出している。
 - 基準画像は RTX 4070 Ti（CUDA）で生成した。CPU 経路でも、各 case の差は 0.001/255 未満だった。
 - 平均の絶対誤差だけでは、小さな Sticker のずれを見逃す。`stickers_sky_rotation` で yaw を 1° ずらしても平均は 0.37/255 で収まる。そこで、目に見える差のある画素の割合も判定する。yaw を 0.25° ずらすと 0.33%、1° ずらすと 0.55% の画素が 8/255 を超え、どちらも不合格になる。この検出はテストで確かめている。

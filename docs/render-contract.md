@@ -5,7 +5,7 @@ Stickers・Cutout・Preview が共有する、バックエンドの描画関数�
 ## 入口
 
 ```python
-render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_color, device, cache=None, scene=None, scene_index=None)
+render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_color, device, cache=None, bg_width=None, scene=None, scene_index=None)
 # -> color (H, W, 3), mask (H, W), depth (H, W)
 ```
 
@@ -20,6 +20,7 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 | `bg_color` | 0〜1 の 3 つの数値 |
 | `device` | 出力を置く torch の device |
 | `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `bg_color`・`device` は変わらず、`sources` は Sticker の素材のフレーム（`StickerSource.frame`）のほかは変わらない）。直前のフレームの Sky の層、Camera の向きで写した Sky、読み込んだ背景（`("bg", bg_key)`）、結果を持つ。出力の画素ごとの向き（`_view`）は持たず、要るときに作り直す。Sky の値が同じなら Sky を作り直さず、Camera の回転と `bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は、表示中の `sky` の Sticker の評価済みの値（変形と不透明度）と素材のフレーム（`StickerSource.frame`、Source がなければ `None`）からなり、表示していない Sticker は `id` だけを入れる（Clip range の外で Keyframe の値が変わっても Sky を作り直さない）。Sky のキーの値と Camera の回転は小数第 9 位で丸めてキーにし、同じ値の Keyframe の間の補間の誤差では作り直さない。World の内容を奥行きで一枚にまとめた層（`world_key`。Sticker ごとの層は持たない）と、描いた `world` の Sticker の素材を `device` に置いたもの（Sticker の `id` ごとに、`StickerSource.frame` が変わったときだけ置き直し、描かなくなった Sticker の分は捨てる）も持つ。World の内容がないフレームでは両方を捨てる。World の内容があるフレームでは、Camera の位置も結果を使い回す条件に入る |
+| `bg_width` | その実行の `bg_media` の画像の幅（`bg_media` がなければ `None`）。透視投影の Sky の解像度に使う。フレームごとの `bg` の有無では変えず、IMAGE バッチが Timeline より短くても途中で Sky の解像度が変わらない。Stickers・Cutout の (b) は `bg_media`（VIDEO なら最初のフレーム）の幅を渡す |
 | `scene` | `scene` 入力の中身（`SceneContent`）または `None`。下記「`scene` の共通処理」 |
 | `scene_index` | このフレームで描く `scene` の要素の番号。`None` なら描かない |
 
@@ -37,7 +38,9 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 | 形 | 意味 |
 |---|---|
 | `Projection.erp(width, height, coverage)` | ERP。`coverage` は 360 または 180。180 は Camera の前方の半球 |
-| `Projection.perspective(width, height, hfov_deg)` | 透視投影。垂直の FOV は `hfov_deg` と出力のアスペクト比から決まる |
+| `Projection.perspective(width, height, hfov_deg, coverage=360)` | 透視投影。正方の画素のピンホールで、`hfov_deg` を幅に当てる。垂直の FOV は出力の大きさから決まる（`tan(vFOV/2) = tan(hFOV/2) × height ÷ width`）。`coverage` は、写す `bg_media` の ERP の範囲（360 または 180） |
+
+- 出力の画素ごとの向き（光線）は、ERP・透視投影とも `core/math.py` の `ray_directions` が画素の中心を通るものとして作る（下記「World の描き方」）。背景と Sky は `_view` でこの向きを ERP の座標に直して標本化し、その ERP も画素の中心で標本化する（`grid_sample` の `align_corners=False`）。エディタ・Cutout・Stickers の画素の位置はこれで一致する。
 
 ## 重なり順と合成
 
@@ -67,6 +70,11 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 - `sky` の Sticker の描画は `core/stickers.py`、ペイントは `core/display_layers.py` と `core/painting.py` の既存の処理を使う。
 - Sky の層の並べ方は、旧ノードと同じ `core/display_layers.py` の `compose_display_list_to_overlay_rgba` で行う。Sticker とペイントを交互に重ねた場面は、基準画像 `stickers_paint_interleaved` で固定している。
 - `z_index` は Sticker の Source ではないが、`crop` と同じく描画に要る静的な値なので、`StickerSource` に入れて渡す（評価関数の戻り値は変えない）。
+- 透視投影の Sky は 2:1 の 360 ERP で描き、その幅は次の大きいほうを、旧 Cutout と同じく 4096 までに抑えたものとする。8192 では CPU で Sky を描き直すたびに約 7 秒・3GB、GPU で約 2GB を使い、1MP の出力でも hFOV 75° 以下で上限に届くためである。
+  - 画素の細かさが出力の中央の画素とほぼ同じになる幅（`π × 出力の幅 ÷ tan(hFOV/2)`）を 2 のべき乗に切り上げたもの（64 以上）。FOV をアニメーションさせても、この幅が変わるときだけ Sky を描き直す。
+  - `bg_media` があるとき、その画素の細かさの 360 の幅（`bg_width` × 360 ÷ `coverage`）。背景より粗い Sky で Sticker やペイントがぼけないようにする。
+  - Sky のキーには Projection ではなくこの大きさを入れ、Camera の向きのキーに Projection を入れる。
+- 旧 Cutout は ERP の画素 i を `u = i`（画素の中心ではなく端）とみなして標本化していたので、新しい Cutout の出力は旧 Cutout から ERP の半画素ずれる（`docs/legacy-baselines.md`）。
 - `bg_media` は `coverage` の範囲の ERP とみなし、Sky と同じく Camera の向きで写す。360 では 360 の ERP、180 では旧ノード・Cutout と同じく Scene の前方（経度 −90°〜90°）の半球の ERP とする。180 の出力で、Camera を回して `bg_media` の半球の外が見える画素は、`bg_media` がない画素として `bg_color` になる。Sky と MASK はその上にも描く。出力の範囲が Camera の前方の半球だけであることは変わらない。
 
 ## World の描き方
@@ -110,7 +118,6 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 
 | 内容 | 解消する ticket |
 |---|---|
-| 透視投影の描画（`render_frame`。World の層を描く `world_layer` は透視投影にも対応済み） | #64 |
 | `scene` 入力の SPLAT・スプラット系の 3D ファイル / MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`（`nodes.py` の `_scene_content`） | #61 / #62 |
 | Camera の Keyframe が 2 つ以上ある `sticker_state`（v2）。軌道ごとの Pose handoff | #65 |
 
@@ -121,7 +128,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 | 入口 | 関数 | 役割 | 変更する ticket |
 |---|---|---|---|
 | (a) | `_decide_timeline` | Timeline fps と、出力フレームごとの評価する Timeline frame・描く `bg_media` のフレーム・`sticker` の素材のフレーム・`scene` の要素 | #53、#56 |
-| (b) | `_render_timeline` | フレームごとに状態を評価し、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される | #55、#56、#58 |
+| (b) | `_render_timeline` | フレームごとに状態を評価し、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source に、`scene` の要素を `scene_index` にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される。描く Camera と Projection は、評価した状態から呼び出し側の `capture` が決める（Stickers は状態の Camera と ERP、Cutout は Cutout の Camera と透視投影） | #55、#56、#58、#64 |
 | (c) | `execute` の末尾 | 出力（IMAGE・MASK・AUDIO・fps・`PANO_SCENE`）を組み立てる | #53、#57 |
 
 - Timeline fps は、背景 VIDEO の平均フレームレート（コアの `get_frame_rate()` と同じ `average_rate`、丸めない）、なければ `sticker` の VIDEO の平均フレームレート、どちらもなければ状態の `timeline.fps` とする。fps 出力はこの値の float である。
@@ -156,7 +163,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 
 ## `PANO_SCENE`
 
-Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen dataclass、比較は同一性）である（#57）。Scene の正は `state_json` だけで、この値は実行のたびに状態と入力から導く派生値である（ADR 0025）。フレームは描画せず、`PANO_SCENE` を入れ子に持たない。Cutout（#62）、Preview の表示（#76）、透視投影（#64）、3D の撮影（#61）は、次のフィールドだけを前提にする。
+Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen dataclass、比較は同一性）である（#57）。Scene の正は `state_json` だけで、この値は実行のたびに状態と入力から導く派生値である（ADR 0025）。フレームは描画せず、`PANO_SCENE` を入れ子に持たない。Cutout（#64）、Preview の表示（#76）、3D の撮影（#61）は、次のフィールドだけを前提にする。
 
 | フィールド | 内容 |
 |---|---|
@@ -174,6 +181,21 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 - 同じ入力からは同じ内容の値になる（乱数や時刻を含まない）。ComfyUI のキャッシュが効くとき、下流には前回の同じ値が渡る。
 - 下流のノードは同じオブジェクトを共有するので、`state` や `sources` を書き換えない。
 - 3D の Sticker を受けるようになったら（#59）、その素材をここに加える。
+
+## Cutout ノード（`PanoramaCutoutNode`）
+
+- Python のクラスは `PanoramaCutoutSceneNode`。旧 `PanoramaCutout` は #78 まで登録を残す。
+- 入力は `source`（`io.MultiType`：IMAGE・VIDEO・`PANO_SCENE`）、`coverage`、`output_megapixels`、`state_json`。出力は rect_image（IMAGE）、sticker_state（STRING）、mask（MASK）、AUDIO、fps（FLOAT）の順。出力は入力の素通しではないので `MatchType` は使わない。
+- `is_output_node` は `False` で、実行結果の `ui` は持たない。エディタとノード上の UI の結び付けは #77 で行う。
+- `state_json` は状態 v2（v1 も読む。旧 Cutout の `shots[0]` は Camera になる。`docs/scene-state-v2.md`）。Cutout の Camera は `state_json` の `camera` で、Keyframe に従って動く。
+- Timeline と各フレームは Stickers の (a)・(b)（`_decide_timeline`・`_render_timeline`）をそのまま使う。各フレームは `render_frame` に `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` を渡して描く。
+  - IMAGE / VIDEO：ERP を Scene の向きに合った背景とみなし、Cutout の状態を Scene として描く（旧 Cutout と同じく、状態の `sky` の Sticker とペイントを重ねる）。Timeline は Cutout の状態に対して `_decide_timeline` で決める（VIDEO は `open_video(source, "source")`）。`coverage` は ERP の範囲。`bg_color` は黒で、180 の ERP の半球の外は黒になる（旧 Cutout は Sky も含めて黒にしていたが、Sky は全方向に描く）。
+  - `PANO_SCENE`：その `state`・`sources`・`port`・`bg_media`・`coverage`・`bg_color` と Timeline（`fps`・`frames`）で描き、Camera だけを Cutout の状態から取る。Cutout の Camera の Keyframe は Cutout の状態の `timeline.fps` で読み、秒を保つ（`frame × Cutout の timeline.fps ÷ Scene の timeline.fps`）。Cutout の状態の Sticker・ペイントは使わない（Scene の正は Stickers の状態、ADR 0025）。`coverage` 入力は使わない。
+- 出力の大きさは、旧 Cutout と同じく `calculate_dimensions_from_megapixels` で `output_megapixels` と画面比（`camera.aspect`）から決める（8 の倍数、長辺は `nodes.py` の `CUTOUT_MAX_OUTPUT_SIDE` の 4096 まで。旧 Cutout と共有する）。FOV をアニメーションさせても大きさは変わらない。画素は正方なので、垂直の FOV は丸めた大きさから決まり、`camera.aspect` から決まる値とわずかに違うことがある。
+- FOV は旧 Cutout と同じく、v1 の `shots[0]` の `hFOV_deg`・`vFOV_deg` を 1〜179 に寄せ、`roll_deg` だけを読む（`rot_deg` は読まない）。shot の FOV が 0 のとき、エディタは 90° / 60° とみなすが、ノードは 1° に寄せるので、この場合だけエディタの表示と出力が一致しない（`docs/threejs-spark-integration.md`）。
+- AUDIO と fps は Stickers と同じ。背景 VIDEO（IMAGE / VIDEO の `source` が VIDEO のとき、`PANO_SCENE` ならその `bg_media` が VIDEO のとき）の音声を「出力のフレーム数 ÷ fps」秒で切ったもの、なければ `None`。fps は Timeline fps。
+- `sticker_state` は v2（`docs/scene-state-v2.md`）。`fps` は Timeline fps、`camera` は Cutout の Camera の Keyframe を Timeline fps に再基準化したもの（`rebase_scene_state`）。Keyframe がなければ Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。
+- World の内容も Stickers と同じく描く。IMAGE / VIDEO では Cutout の状態の `world` の Sticker、`PANO_SCENE` ではその `state` の `world` の Sticker と、`scene` 入力の中身（`_scene_content(scene)` の `SceneContent`。各フレームの要素は `frames` の 4 つ目を `scene_index` にする）。Camera の位置は Cutout の Camera の `position`。
 
 ## Preview ノード（`PanoramaPreviewNode`）
 

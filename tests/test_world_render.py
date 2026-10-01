@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from comfyui_pano_suite.core import render as render_module
-from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, composite_frame, render_frame
+from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.world import world_to_pano
@@ -36,12 +36,6 @@ def _state(stickers=(), camera=None, **state):
 
 def _render(state, sources, projection, frame=0.0, cache=None, bg=None, **kwargs):
     evaluated = evaluate_scene_state(state, frame)
-    if projection.kind == "perspective":
-        # TODO(#64): render_frame draws the Sky in perspective; until then the World layers over an empty Sky.
-        layer = world_layer(evaluated, SceneSources(sources, state["painting"]), evaluated["camera"], projection,
-                            scene=None, scene_index=None, device=CPU, textures={})
-        color, depth = composite_frame(GREEN, None, torch.zeros((projection.height, projection.width, 4)), () if layer is None else (layer,))
-        return color, None, depth
     return render_frame(evaluated, SceneSources(sources, state["painting"]), evaluated["camera"], projection,
                         bg=bg, bg_key=None if bg is None else 0, bg_color=GREEN, device=CPU, cache=cache, **kwargs)
 

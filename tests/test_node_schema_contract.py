@@ -192,6 +192,45 @@ EXPECTED_SCHEMAS = {
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
     },
+    "PanoramaCutoutNode": {
+        "display_name": "Panorama Cutout",
+        "inputs": [
+            ("source", "COMFY_MULTITYPED_V3", False),
+            ("coverage", "COMBO", False),
+            ("output_megapixels", "FLOAT", False),
+            ("state_json", "STRING", False),
+        ],
+        "input_metadata": {
+            "source": {},
+            "coverage": {
+                "default": "360",
+                "options": ["360", "180"],
+                "force_input": None,
+            },
+            "output_megapixels": {
+                "default": 1.0,
+                "min": 0.01,
+                "max": None,
+                "step": 0.05,
+                "force_input": None,
+            },
+            "state_json": {
+                "default": "",
+                "multiline": True,
+                "dynamic_prompts": False,
+                "force_input": None,
+            },
+        },
+        "outputs": [
+            ("rect_image", "rect_image", "IMAGE"),
+            ("sticker_state", "sticker_state", "STRING"),
+            ("mask", "mask", "MASK"),
+            ("audio", "audio", "AUDIO"),
+            ("fps", "fps", "FLOAT"),
+        ],
+        "hidden": [],
+        "is_output_node": False,
+    },
     "PanoramaPreview": {
         "display_name": "Panorama Preview",
         "inputs": [
@@ -364,6 +403,12 @@ def test_stickers_node_media_ports_accept_the_spec_types():
     assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES}"
 
 
+def test_cutout_node_source_accepts_erp_media_and_a_pano_scene():
+    source = REGISTERED_NODES["PanoramaCutoutNode"].define_schema().inputs[0]
+
+    assert source.get_io_type() == "IMAGE,VIDEO,PANO_SCENE"
+
+
 def test_preview_node_passes_its_source_type_through():
     schema = REGISTERED_NODES["PanoramaPreviewNode"].define_schema()
     source = schema.inputs[0]
@@ -373,7 +418,7 @@ def test_preview_node_passes_its_source_type_through():
     assert source.template.as_dict() == {"template_id": "source", "allowed_types": "IMAGE,VIDEO,PANO_SCENE"}
 
 
-@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaStickersNode", "PanoramaCutout"])
+@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaStickersNode", "PanoramaCutout", "PanoramaCutoutNode"])
 def test_internal_state_widget_is_advanced_in_v3_schema(node_id):
     schema = REGISTERED_NODES[node_id].define_schema()
     state_input = next(input_ for input_ in schema.inputs if input_.id == "state_json")
