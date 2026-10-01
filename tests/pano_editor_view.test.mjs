@@ -13,9 +13,17 @@ import {
   gateRectFromFocal,
   getCutoutCameraParams,
 } from "../web_src/pano_cutout_view_math.js";
-import { frameViewContext, shotCamera, skyLayers, viewInputKey, viewportCamera } from "../web_src/pano_editor_view.js";
+import {
+  HIDDEN_PREVIEW_OPACITY,
+  frameViewContext,
+  shotCamera,
+  skyLayers,
+  viewInputKey,
+  viewportCamera,
+  viewProjection,
+  workingSkyLayers,
+} from "../web_src/pano_editor_view.js";
 import { editorSceneState, parsePanoEditorState } from "../web_src/pano_editor_state.js";
-import { HIDDEN_PREVIEW_OPACITY } from "../web_src/pano_gl_scene.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { applyViewportCamera, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
 import { worldToPano } from "../web_src/pano_world.js";
@@ -67,6 +75,29 @@ test("three.js viewport camera rays match pano_camera_math per pixel", () => {
           assert.ok(angle < 1e-6, `${JSON.stringify(view)} ${width}x${height} pixel ${x},${y}: ${angle} rad`);
         }
       }
+    }
+  }
+});
+
+test("the view projection places points where the three.js camera draws them, for any camera setup", () => {
+  const camera = new PerspectiveCamera();
+  const setups = [
+    [viewportCamera({ yaw_deg: 25, pitch_deg: -15, roll_deg: 0, hFOV_deg: 95 }, 1200, 700), 1200, 700],
+    [viewportCamera({ yaw_deg: -140, pitch_deg: 70, roll_deg: 30, hFOV_deg: 60 }, 500, 800), 500, 800],
+    // A shot spans its FOVs over the rect whatever the rect's pixel aspect.
+    [shotCamera({ yaw_deg: 80, pitch_deg: 5, roll_deg: -20, hFOV_deg: 70, vFOV_deg: 50 }), 300, 420],
+  ];
+  for (const [setup, width, height] of setups) {
+    applyViewportCamera(camera, setup);
+    const projection = viewProjection(setup, width, height);
+    for (const [x, y] of [[0, 0], [width * 0.5, height * 0.5], [width * 0.2, height * 0.9], [width, height * 0.3]]) {
+      const ndc = new Vector3(x / width * 2 - 1, 1 - y / height * 2, 0.5).unproject(camera).sub(camera.position).normalize();
+      const expected = worldToPano(ndc);
+      const ray = projection.ray(x, y);
+      const angle = new Vector3(ray.x, ray.y, ray.z).angleTo(new Vector3(expected.x, expected.y, expected.z));
+      assert.ok(angle < 1e-6, `${x},${y}: ${angle} rad`);
+      const point = projection.project(expected);
+      assert.ok(Math.hypot(point.x - x, point.y - y) < 1e-6, `${x},${y} -> ${point.x},${point.y}`);
     }
   }
 });
@@ -239,6 +270,26 @@ test("the state v2 derived from the editor's v1 working state has the shape of t
   assert.deepEqual(loadSceneState(JSON.parse(JSON.stringify(saved))), saved);
 });
 
+test("working Stickers with a numeric, missing or repeated id are left out instead of breaking the frame", () => {
+  const sticker = (id, z) => ({ id, asset_id: `asset_${z}`, yaw_deg: z * 10, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 20, rot_deg: 0, z_index: z });
+  const stickers = [sticker(5, 0), sticker("a", 1), sticker("a", 2), sticker("", 3), sticker("b", 4)];
+  const assets = Object.fromEntries(stickers.map((item) => [item.asset_id, { type: "comfy_image", filename: `${item.asset_id}.png` }]));
+  const editorState = parsePanoEditorState(JSON.stringify({ version: 1, assets, stickers }), {});
+  const sceneState = editorSceneState(editorState);
+  // Loading keeps the first "a" and "b" and renames the others.
+  assert.deepEqual(sceneState.stickers.map((item) => item.id).sort(), ["a", "b", "sticker_1", "sticker_2", "sticker_3"]);
+  const seen = [];
+  const layers = workingSkyLayers(sceneState, 0, editorState.stickers, {
+    media: (item) => {
+      seen.push(item);
+      return { media: {}, revision: item.asset_id };
+    },
+    paintLayers: [],
+  });
+  assert.deepEqual(layers.map((layer) => [layer.id, layer.revision, layer.zIndex]), [["a", "asset_1", 1], ["b", "asset_4", 4]]);
+  assert.ok(seen.every((item) => item === editorState.stickers[1] || item === editorState.stickers[4]));
+});
+
 test("the view input key changes only with what the view draws", () => {
   const image = {};
   const paint = {};
@@ -271,4 +322,21 @@ test("three.js stays out of the eagerly loaded bundle", () => {
   assert.ok(bundle.includes(`import("./.lazy/${chunkName}")`));
   assert.ok(chunk.includes("Three.js Authors"));
   assert.ok(!/^import\s/m.test(chunk));
+});
+
+test("only the background follows a 180 coverage; paint layers cover the whole sphere", () => {
+  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
+  assert.match(view, /addErp\(owned, projection, projection\.background, \{ id: "background", opacity: 1, \.\.\.background \}, background\.coverage === 180\)/);
+  assert.match(view, /layer\.kind === "erp"\s*\? addErp\(owned, projection, pooled\(projection\.erp, erpIndex\+\+, projection\.createErp\), layer, false\)/);
+});
+
+test("the editor hit tests and draws its overlays with the camera its three.js view renders", () => {
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const body = (name) => editor.slice(editor.indexOf(`  function ${name}(`), editor.indexOf("\n  }\n", editor.indexOf(`  function ${name}(`)));
+  assert.match(body("currentViewProjection"), /viewProjection\(currentViewCamera\(\), canvas\.width, canvas\.height\)/);
+  assert.match(body("projectDir"), /currentViewProjection\(\)\.project\(dir\)/);
+  assert.match(body("screenToWorldDir"), /return currentViewProjection\(\)\.ray\(x, y\);/);
+  assert.match(body("projectSceneItemDir"), /currentViewProjection\(\)\.project\(dir, nearZ\)/);
+  assert.match(body("renderEditorView"), /camera: currentViewCamera\(\),/);
+  assert.doesNotMatch(editor, /currentViewBasis/);
 });

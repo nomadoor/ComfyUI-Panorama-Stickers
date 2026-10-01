@@ -9,10 +9,7 @@ import {
   shouldTogglePreviewPlaybackFromKey,
 } from "./pano_preview_node_surface.js";
 import { bindWheelCaptureRoot } from "./pano_wheel.js";
-import { createPanoramaRenderCore } from "./pano_render_core.js";
-import { buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
-import { buildPreviewNodeViewParams, buildStickerSceneFromState } from "./pano_gl_scene.js";
-import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
+import { VIEW_UNAVAILABLE_MESSAGE, acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
   assignFreshDomWidgetRenderIdentity,
@@ -226,32 +223,6 @@ function drawGrid(ctx, width, height) {
   ctx.stroke();
 }
 
-// The previous renderer, used only when the three.js view cannot load; #69 removes it.
-function renderWithPreviousRenderer(node, width, height, view, img, coverageDeg, mediaRevision) {
-  if (!node.__panoStandaloneCore) node.__panoStandaloneCore = createPanoramaRenderCore();
-  const descriptor = buildStickerRenderDescriptor({
-    stateRevision: [
-      "standalone_preview_scene",
-      mediaRevision,
-      coverageDeg,
-    ].join("|"),
-    backgroundSource: img,
-    backgroundRevision: mediaRevision,
-    coverageDeg,
-    scene: buildStickerSceneFromState(null, {}),
-    textures: [],
-    backgroundOpacity: 1,
-    showMaskTint: false,
-  });
-  if (!node.__panoStandaloneCore.syncState(descriptor)) return null;
-  const canvas = node.__panoStandaloneCore.renderToTarget(
-    "preview_node",
-    buildPreviewNodeViewParams(view, coverageDeg),
-    { width, height, dpr: window.devicePixelRatio || 1 },
-  );
-  return canvas ? { canvas, x: 0, y: 0, width: canvas.width, height: canvas.height } : null;
-}
-
 function drawPreview(node, ctx, width, height, view, img, previewView) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#070707";
@@ -261,17 +232,19 @@ function drawPreview(node, ctx, width, height, view, img, previewView) {
     drawGrid(ctx, width, height);
     return;
   }
+  // The node surface shows a failed view; the grid stays behind it.
+  if (previewView.failed) {
+    drawGrid(ctx, width, height);
+    return;
+  }
   const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
-  const mediaRevision = getRenderableMediaRevisionToken(img);
-  const surface = previewView.failed
-    ? renderWithPreviousRenderer(node, width, height, view, img, coverageDeg, mediaRevision)
-    : previewView.render({
-      width,
-      height,
-      camera: previewNodeCamera(view, width, height),
-      background: { media: img, revision: mediaRevision, coverage: coverageDeg },
-      layers: [],
-    });
+  const surface = previewView.render({
+    width,
+    height,
+    camera: previewNodeCamera(view, width, height),
+    background: { media: img, revision: getRenderableMediaRevisionToken(img), coverage: coverageDeg },
+    layers: [],
+  });
   // The grid stays until the view has loaded.
   if (surface) ctx.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, 0, 0, width, height);
   else drawGrid(ctx, width, height);
@@ -482,7 +455,7 @@ class PreviewNodeRuntime {
       this.surfaceHost = document.createElement("div");
       this.surfaceHost.className = "pano-preview-node-surface-host";
       this.root.appendChild(this.surfaceHost);
-      this.surfaceModel = reactive({ fullscreen: false });
+      this.surfaceModel = reactive({ fullscreen: false, viewUnavailable: false });
       this.fullscreenController = createPreviewFullscreenController({
         root: this.root,
         documentRef: document,
@@ -658,14 +631,16 @@ class PreviewNodeRuntime {
     ctx.translate(rect.x, rect.y);
     drawPreview(this.node, ctx, rect.w, rect.h, this.view, this.img, this.previewView);
 
-    if (this.errorText) {
+    // Drawn on the graph canvas, this path has no node surface to show a failed view.
+    const message = this.errorText || (this.previewView.failed ? VIEW_UNAVAILABLE_MESSAGE : "");
+    if (message) {
       ctx.fillStyle = "rgba(18,18,22,0.92)";
       ctx.fillRect(0, 0, rect.w, rect.h);
       ctx.fillStyle = "rgba(236,236,242,0.92)";
       ctx.font = "600 12px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(this.errorText, rect.w * 0.5, rect.h * 0.5);
+      ctx.fillText(message, rect.w * 0.5, rect.h * 0.5);
     }
     ctx.restore();
   }
@@ -780,6 +755,7 @@ class PreviewNodeRuntime {
       // presented between a ResizeObserver callback and this draw.
       this.syncCanvasSize();
       drawPreview(this.node, this.ctx, this.canvas.width, this.canvas.height, this.view, this.img, this.previewView);
+      if (this.surfaceModel) this.surfaceModel.viewUnavailable = this.previewView.failed;
       if (this.errorText) {
         this.ctx.fillStyle = "rgba(18,18,22,0.92)";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -843,8 +819,6 @@ class PreviewNodeRuntime {
       coverageWidget.callback = this.orig.coverageWidgetCallback;
     }
     this.previewView.dispose();
-    this.node.__panoStandaloneCore?.dispose?.();
-    this.node.__panoStandaloneCore = null;
     this.node.__panoPreviewNodeRuntime = null;
   }
 }

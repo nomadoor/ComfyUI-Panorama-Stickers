@@ -1,13 +1,14 @@
 // Editor view: derives what the three.js view draws from state v2 and loads the view on demand.
 // #71 adds the World layers and the Viewport camera's movement in space here.
-import { HIDDEN_PREVIEW_OPACITY } from "./pano_gl_scene.js";
 import { evaluateSceneState } from "./pano_scene_eval.js";
-import { DEG2RAD, RAD2DEG } from "./pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
 import { contextHalfExtentsPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
-import { rotationToQuaternion, worldRotation } from "./pano_world.js";
+import { panoToWorld, quaternionToRotation, rotationToQuaternion, worldRotation, worldToPano } from "./pano_world.js";
 
 // The three.js view renders at most this many pixels on a side.
 export const MAX_RENDER_SIDE = 2048;
+// A hidden port Sticker is drawn this faintly so it can be found and shown again.
+export const HIDDEN_PREVIEW_OPACITY = 0.28;
 
 // The three.js camera for a panorama view with the Camera value's angles. hFOV_deg spans the view
 // width like the previous renderer, so the vertical FOV follows the view's aspect.
@@ -50,6 +51,43 @@ export function frameViewContext(shot, gate, canvasSize) {
   };
 }
 
+// The screen mapping of a width x height view drawn with camera (a viewportCamera() or shotCamera()
+// setup), the same projection the three.js camera renders with. Hit testing and the 2D overlays
+// use it so they line up with the drawn frame. Directions are in the panorama convention.
+export function viewProjection(camera, width, height) {
+  const [[m11, m12, m13], [m21, m22, m23], [m31, m32, m33]] = quaternionToRotation(camera.quaternion);
+  const tanY = Math.tan(camera.fovY_deg * 0.5 * DEG2RAD);
+  const tanX = tanY * camera.aspect;
+  return {
+    width,
+    height,
+    // Where dir lands, and its depth z along the view axis. Points closer than nearZ, behind the
+    // camera included, are placed as if at nearZ; callers decide whether to keep them.
+    project(dir, nearZ = 1e-4) {
+      const world = panoToWorld(dir);
+      const x = m11 * world.x + m21 * world.y + m31 * world.z;
+      const y = m12 * world.x + m22 * world.y + m32 * world.z;
+      const z = -(m13 * world.x + m23 * world.y + m33 * world.z);
+      const depth = Math.max(z, nearZ);
+      return {
+        x: width * 0.5 * (1 + x / depth / tanX),
+        y: height * 0.5 * (1 - y / depth / tanY),
+        z,
+      };
+    },
+    // The unit direction seen at the point (x, y).
+    ray(x, y) {
+      const px = (x / width * 2 - 1) * tanX;
+      const py = (1 - y / height * 2) * tanY;
+      return norm(worldToPano({
+        x: m11 * px + m12 * py - m13,
+        y: m21 * px + m22 * py - m23,
+        z: m31 * px + m32 * py - m33,
+      }));
+    },
+  };
+}
+
 // Sky layers from back to front: the state's sky Stickers evaluated at the Timeline frame, and the
 // paint layers (ERP canvases). Sky Stickers and paint share one z_index axis; #52 adds z_index to
 // the sky Stickers of state v2, and until then the editor's z_index is passed in.
@@ -60,7 +98,6 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers }) {
   sceneState.stickers.forEach((sticker, index) => {
     const value = evaluated.stickers[index];
     if (sticker.placement !== "sky") return;
-    // A hidden port Sticker stays faintly visible so it can be found and shown again.
     const hiddenPort = sticker.source.kind === "port" && !sticker.visible;
     if (!value.active && !hiddenPort) return;
     const shown = media(sticker);
@@ -89,6 +126,24 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers }) {
   return layers.sort((a, b) => a.zIndex - b.zIndex);
 }
 
+// skyLayers() over the editor's working (v1) Stickers: media(item) gets the working Sticker a sky
+// Sticker came from, and its z_index orders it. Loading renames a missing, non-string or repeated
+// id (the first Sticker keeps it), so a renamed Sticker has no working Sticker and is left out.
+export function workingSkyLayers(sceneState, frame, stickers, { media, paintLayers }) {
+  const byId = new Map();
+  for (const item of stickers) {
+    if (typeof item?.id === "string" && item.id && !byId.has(item.id)) byId.set(item.id, item);
+  }
+  return skyLayers(sceneState, frame, {
+    media: (sticker) => {
+      const item = byId.get(sticker.id);
+      return item ? media(item) : null;
+    },
+    zIndex: (sticker) => Number(byId.get(sticker.id)?.z_index || 0),
+    paintLayers,
+  });
+}
+
 const mediaIds = new WeakMap();
 let nextMediaId = 1;
 
@@ -106,12 +161,13 @@ export function viewInputKey({ background, layers }) {
   ]);
 }
 
-// onReady runs once the view can render. onFailed runs when the chunk or WebGL is unavailable, and
-// the editor then draws with the previous renderer.
+// onReady runs once the view can render. onFailed runs when the chunk or WebGL is unavailable; the
+// editor then shows the failure instead of a frame.
 export function createEditorView({ onReady, onFailed }) {
   let view = null;
   let disposed = false;
   const editorView = {
+    ready: false,
     failed: false,
     // Returns { canvas, x, y, width, height }, the part of the canvas that holds the frame, or null
     // until the view has loaded.
@@ -131,9 +187,10 @@ export function createEditorView({ onReady, onFailed }) {
   import("./pano_three_view.js").then((module) => {
     if (disposed) return;
     view = module.createThreeView();
+    editorView.ready = true;
     onReady();
   }).catch((error) => {
-    console.error("[PanoramaStickers] three.js view is unavailable; using the previous renderer", error);
+    console.error("[PanoramaStickers] three.js view is unavailable", error);
     editorView.failed = true;
     onFailed();
   });

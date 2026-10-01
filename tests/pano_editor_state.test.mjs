@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   editorActive,
@@ -60,7 +60,6 @@ test("empty or invalid JSON produces the current editor defaults", () => {
     ui_settings: {
       invert_view_x: true,
       invert_view_y: false,
-      preview_quality: "high",
     },
     active: { selected_sticker_id: null, selected_shot_id: null },
   };
@@ -117,10 +116,10 @@ test("loaded state is normalized while widget and shared settings remain authori
   assert.equal(state.output_preset, 4096);
   assert.equal(state.bg_color, "#123456");
   assert.equal(state.coverage, 180);
+  // A saved preview_quality from before #69 is an unknown key and is dropped.
   assert.deepEqual(state.ui_settings, {
     invert_view_x: true,
     invert_view_y: false,
-    preview_quality: "high",
   });
   assert.equal("editor_history" in state, false);
   assert.deepEqual(state.stickers, [
@@ -306,4 +305,15 @@ test("a sky Sticker with Keyframes shows locked and the lock is not saved", () =
   const selected = applyStickersNodeSurfaceAction(state, { type: "select-sticker", id: "st_sky" }).state;
   assert.equal(applyStickersNodeSurfaceAction(selected, { type: "toggle-lock" }).changed, false);
   assert.equal(applyStickersNodeSurfaceAction(selected, { type: "set-transform", value: { yaw_deg: 90 } }).changed, false);
+});
+
+test("the editor has no Render Quality setting", () => {
+  const dir = new URL("../web_src/", import.meta.url);
+  const sources = [
+    ...readdirSync(dir).filter((name) => name.endsWith(".js")),
+    ...readdirSync(new URL("components/", dir)).map((name) => `components/${name}`),
+  ].map((name) => [name, readFileSync(new URL(name, dir), "utf8")]);
+  for (const [name, text] of sources) {
+    assert.ok(!text.includes("preview_quality") && !text.includes("Render Quality"), name);
+  }
 });

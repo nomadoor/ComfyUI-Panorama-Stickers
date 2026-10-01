@@ -226,26 +226,6 @@ function isParamDisabled(param, model) {
               </div>
             </div>
             <div class="pano-ui-row">
-              <label for="pano-ui-quality">Render Quality</label>
-              <div class="pano-picker pano-ui-picker" data-ui-picker="quality">
-                <button id="pano-ui-quality" class="pano-picker-trigger" type="button" data-action="toggle-quality-picker">
-                  <span class="pano-picker-label">{{ model.uiSettings.qualityLabel }}</span>
-                  <span class="pano-picker-caret">▾</span>
-                </button>
-                <div class="pano-picker-pop" :hidden="model.uiSettings.qualityOpen !== true">
-                  <button
-                    v-for="option in model.uiSettings.qualityOptions || []"
-                    :key="option.value"
-                    type="button"
-                    class="pano-picker-item"
-                    :class="{ active: option.active === true }"
-                    data-action="set-quality"
-                    :data-quality="option.value"
-                  >{{ option.label }}</button>
-                </div>
-              </div>
-            </div>
-            <div class="pano-ui-row">
               <span />
               <button class="pano-btn subtle" type="button" data-action="ui-reset-defaults">Reset Defaults</button>
             </div>

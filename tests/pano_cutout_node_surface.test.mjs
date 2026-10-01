@@ -17,7 +17,8 @@ import {
   updateCutoutRollGesture,
 } from "../web_src/pano_cutout_node_surface.js";
 import { cameraBasis, yawPitchToDir } from "../web_src/pano_camera_math.js";
-import { screenPointToWorldDirection } from "../web_src/pano_sticker_geometry.js";
+import { viewProjection } from "../web_src/pano_editor_view.js";
+import { previewNodeCamera } from "../web_src/pano_preview_view.js";
 
 function stateWithShots(shots, selectedId = null) {
   return {
@@ -452,10 +453,8 @@ test("adding the first frame preserves the panorama center and on-screen scale",
   assert.ok(Math.abs(action.frameFovDeg - 64.066012133414) < 1e-9);
 
   const frame = fitCutoutNodeFrame(viewport, 1);
-  const priorDirection = screenPointToWorldDirection({
-    x: frame.x + frame.w * 0.5,
-    y: frame.y + frame.h * 0.5,
-  }, view, viewport);
+  const priorDirection = viewProjection(previewNodeCamera(view, viewport.width, viewport.height), viewport.width, viewport.height)
+    .ray(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5);
   const frameDirection = yawPitchToDir(action.yawDeg, action.pitchDeg);
   assert.ok(Math.hypot(
     priorDirection.x - frameDirection.x,

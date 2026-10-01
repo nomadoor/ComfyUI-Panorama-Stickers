@@ -4,19 +4,10 @@ export function patchUiButton(list, matchKey, key, patch) {
 }
 
 export function buildUiSettingsModel(uiSettings = {}) {
-  const qualityValue = String(uiSettings.preview_quality || "balanced");
-  const qualityOptions = [
-    { value: "draft", label: "Draft" },
-    { value: "balanced", label: "Balanced" },
-    { value: "high", label: "High" },
-  ];
   return {
     open: false,
     invertX: !!uiSettings.invert_view_x,
     invertY: !!uiSettings.invert_view_y,
-    qualityOpen: false,
-    qualityLabel: (qualityOptions.find((item) => item.value === qualityValue) || qualityOptions[1]).label,
-    qualityOptions: qualityOptions.map((item) => ({ ...item, active: item.value === qualityValue })),
   };
 }
 

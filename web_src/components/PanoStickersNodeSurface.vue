@@ -4,6 +4,7 @@ import { ICON } from "../icons.js";
 import PanoIconButton from "./PanoIconButton.vue";
 import PanoImageFilePicker from "./PanoImageFilePicker.vue";
 import PanoStickersNodeHelp from "./PanoStickersNodeHelp.vue";
+import PanoViewUnavailable from "./PanoViewUnavailable.vue";
 import SvgIcon from "./SvgIcon.vue";
 
 const props = defineProps({
@@ -100,5 +101,6 @@ function onImageFileSelected(payload) {
       ref="imageFilePickerRef"
       @file-selected="onImageFileSelected"
     />
+    <PanoViewUnavailable v-if="model.viewUnavailable" />
   </div>
 </template>

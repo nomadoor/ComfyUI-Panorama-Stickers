@@ -26,10 +26,10 @@ def _normalized_camera_ray(basis, film_x, film_y):
     return ray / np.linalg.norm(ray)
 
 
-def _glsl_reference_camera_basis(yaw_deg, pitch_deg, roll_deg):
-    """Mirror CAMERA_BASIS_GLSL for algebraic parity, not GPU highp precision.
+def _reference_camera_basis(yaw_deg, pitch_deg, roll_deg):
+    """An independent construction of the camera basis: forward, a level right, then roll.
 
-    Keep this reference in sync with web_src/pano_gl_renderer.js.
+    This was the previous WebGL shader's construction; it stays as a fixed reference.
     """
     yaw = np.deg2rad(yaw_deg)
     pitch = np.deg2rad(pitch_deg)
@@ -50,7 +50,7 @@ def _glsl_reference_camera_basis(yaw_deg, pitch_deg, roll_deg):
     return rolled_right, rolled_up, forward
 
 
-def test_js_glsl_and_python_generate_the_same_camera_rays():
+def test_js_and_python_generate_the_same_camera_rays():
     angles = [
         [0.0, 0.0, 0.0],
         [90.0, 0.0, 0.0],
@@ -113,10 +113,10 @@ def test_js_glsl_and_python_generate_the_same_camera_rays():
         ]
         for yaw, pitch, roll in angles
     ])
-    glsl_reference_rays = np.asarray([
+    reference_rays = np.asarray([
         [
             _normalized_camera_ray(
-                _glsl_reference_camera_basis(yaw, pitch, roll),
+                _reference_camera_basis(yaw, pitch, roll),
                 film_x,
                 film_y,
             )
@@ -125,10 +125,10 @@ def test_js_glsl_and_python_generate_the_same_camera_rays():
         for yaw, pitch, roll in angles
     ])
     assert np.allclose(js_rays, python_rays, atol=2e-6)
-    assert np.allclose(glsl_reference_rays, python_rays, atol=2e-6)
+    assert np.allclose(reference_rays, python_rays, atol=2e-6)
 
 
-def test_js_glsl_and_python_agree_on_world_camera_rotation():
+def test_js_and_python_agree_on_world_camera_rotation():
     angles = [
         [0.0, 0.0, 0.0],
         [90.0, 0.0, 0.0],
@@ -180,12 +180,12 @@ def test_js_glsl_and_python_agree_on_world_camera_rotation():
     js = json.loads(result.stdout)
 
     python_rotations = np.asarray([world_rotation(*a) for a in angles])
-    glsl_rotations = []
+    reference_rotations = []
     for yaw, pitch, roll in angles:
-        right, up, forward = _glsl_reference_camera_basis(yaw, pitch, roll)
-        glsl_rotations.append(np.stack([pano_to_world(right), pano_to_world(up), -pano_to_world(forward)], axis=1))
+        right, up, forward = _reference_camera_basis(yaw, pitch, roll)
+        reference_rotations.append(np.stack([pano_to_world(right), pano_to_world(up), -pano_to_world(forward)], axis=1))
     assert np.allclose(js["rotations"], python_rotations, atol=2e-6)
-    assert np.allclose(np.asarray(glsl_rotations), python_rotations, atol=2e-6)
+    assert np.allclose(np.asarray(reference_rotations), python_rotations, atol=2e-6)
     assert np.allclose(js["quaternions"], [rotation_to_quaternion(r) for r in python_rotations], atol=2e-6)
     assert np.allclose(js["angles"], [panorama_angles(r) for r in python_rotations], atol=1e-4)
 
@@ -203,31 +203,6 @@ def test_js_glsl_and_python_agree_on_world_camera_rotation():
         assert np.allclose(js_camera["position"], camera["position"])
         for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg"):
             assert np.isclose(js_camera[key], camera[key], atol=1e-9), key
-
-
-def test_glsl_uses_the_same_explicit_rotation_without_changing_its_scalar_uniform_contract():
-    source = (REPO_ROOT / "web_src" / "pano_gl_renderer.js").read_text(encoding="utf-8")
-    camera_glsl_start = source.index("const CAMERA_BASIS_GLSL")
-    camera_glsl_end = source.index("`;", camera_glsl_start) + 2
-    camera_glsl = source[camera_glsl_start:camera_glsl_end]
-
-    assert 'import { cameraBasis } from "./pano_camera_math.js";' in source
-    assert "const CAMERA_BASIS_GLSL" in source
-    assert camera_glsl.count("mat3 cameraBasis(float yaw, float pitch, float roll)") == 1
-    assert "vec3 fwd = normalize(vec3(cp * sy, sp, cp * cy));" in camera_glsl
-    assert "vec3 right = vec3(cy, 0.0, -sy);" in camera_glsl
-    assert "vec3 up = normalize(cross(fwd, right));" in camera_glsl
-    assert "vec3 rolledRight = normalize(right * cr + up * sr);" in camera_glsl
-    assert "vec3 rolledUp = normalize(right * (-sr) + up * cr);" in camera_glsl
-    assert "return mat3(rolledRight, rolledUp, fwd);" in camera_glsl
-    assert source.count("${CAMERA_BASIS_GLSL}") == 2
-    assert source.count("uniform float u_yaw;") == 2
-    assert source.count("uniform float u_pitch;") == 2
-    assert source.count("uniform float u_roll;") == 2
-    assert "gl.uniform1f(backgroundUniforms.yaw" in source
-    assert "gl.uniform1f(layerUniforms.yaw" in source
-    assert "worldUp" not in camera_glsl
-    assert "> 0.999" not in camera_glsl
 
 
 def test_cutout_sampling_stays_continuous_near_the_north_pole():

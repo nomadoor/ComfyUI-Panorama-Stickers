@@ -1973,21 +1973,6 @@
 .pano-segment-btn[aria-pressed="true"] {
   color: #f5f5f5;
 }
-.pano-ui-picker {
-  width: 126px;
-  position: relative;
-}
-.pano-ui-picker .pano-picker-trigger {
-  height: 28px;
-  border-radius: calc(var(--pano-space-md) - 2px);
-  font-size: 11px;
-  color: var(--pano-muted);
-  background: var(--pano-surface-2);
-}
-.pano-ui-picker .pano-picker-trigger:hover {
-  background: var(--pano-surface-hover);
-  color: var(--pano-text);
-}
 .pano-field input {
   box-sizing: border-box;
   background: var(--pano-bg-control);
@@ -2364,6 +2349,18 @@
 }
 
 /* PanoramaPreview node surface */
+.pano-view-unavailable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  color: rgba(236, 236, 242, 0.92);
+  font: 600 13px "Plus Jakarta Sans", Geist, sans-serif;
+  text-align: center;
+  pointer-events: none;
+}
 .pano-preview-node-surface-host {
   position: absolute;
   inset: 0;

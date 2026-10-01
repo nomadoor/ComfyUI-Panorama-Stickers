@@ -23,18 +23,6 @@ class TestPanoRenderCutoutConsumer(unittest.TestCase):
         self.assertIn("zIndex: topZ + 1,", editor_js)
         self.assertNotIn("maskSource: erpTarget?.committedMask?.canvas || null,", editor_js)
 
-    def test_cutout_preview_resource_revision_does_not_include_whole_shot(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
-        self.assertIn("function getCutoutPreviewSurfaceRevision(shot, options = {}) {", editor_js)
-        self.assertNotIn("JSON.stringify(shot || null)", editor_js)
-        self.assertIn("getCutoutPreviewObjectRevision()", editor_js)
-        self.assertIn("isCutoutTransformInteractionActive()", editor_js)
-
-    def test_cutout_preview_context_path_is_explicitly_stubbed(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
-        self.assertIn("function renderCutoutPreviewToContext(targetCtx, rect, shot, options = {}) {", editor_js)
-        self.assertIn("return false;", editor_js)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -314,45 +314,26 @@ class TestNodesPreview(unittest.TestCase):
         assert candidate_block.index("selfOutput?.ui?.pano_input_images") < candidate_block.index("outputs?.ui?.pano_input_images")
         assert candidate_block.index("selfOutput?.pano_input_images") < candidate_block.index("outputs?.pano_input_images")
 
-    def test_webgl_preview_renderer_is_present(self):
-        gl_renderer_js = self._web_source_path("pano_gl_renderer.js").read_text(encoding="utf-8")
-        gl_scene_js = self._web_source_path("pano_gl_scene.js").read_text(encoding="utf-8")
-        render_core_js = self._web_source_path("pano_render_core.js").read_text(encoding="utf-8")
-        assert "export function createPanoGlRenderer(" in gl_renderer_js
-        assert "export function createPanoramaRenderCore" in render_core_js
-        assert "export function buildStickerSceneFromState" in gl_scene_js
-
-    def test_modal_runtime_and_preview_use_shared_scene_builder(self):
+    def test_editor_runtime_and_preview_draw_with_the_three_js_view(self):
         editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
         runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
         preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'from "./pano_gl_scene.js"' in editor_js
-        assert 'from "./pano_gl_scene.js"' in runtime_js
+        assert 'from "./pano_editor_view.js"' in editor_js
+        assert 'from "./pano_preview_view.js"' in runtime_js
         assert 'from "./pano_preview_view.js"' in preview_node_js
-        assert "buildStickerSceneFromState" in editor_js
-        assert "buildStickerSceneFromState" in runtime_js
-        assert "buildCutoutViewParamsFromShot" in editor_js
-        assert "buildCutoutViewParamsFromShot" in runtime_js
-
-    def test_modal_runtime_and_preview_use_render_core_not_legacy_viewport(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
-        runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'from "./pano_gl_viewport.js"' not in editor_js
-        assert 'from "./pano_gl_viewport.js"' not in runtime_js
-        assert 'from "./pano_gl_viewport.js"' not in preview_node_js
-        assert "createPanoramaRenderCore" in editor_js
-        assert "createPanoramaRenderCore" in runtime_js
-        assert "createPanoramaRenderCore" in preview_node_js
-        assert "renderToTarget(" in editor_js
-        assert "renderToTarget(" in runtime_js
-        assert "renderToTarget(" in preview_node_js
+        for source in (editor_js, runtime_js, preview_node_js):
+            assert "createPanoramaRenderCore" not in source
+            assert "renderToTarget(" not in source
+            assert "pano_gl_scene" not in source
+        for name in ("pano_gl_renderer.js", "pano_gl_scene.js", "pano_render_core.js"):
+            assert not self._web_source_path(name).exists()
 
     def test_preview_node_grid_is_fallback_only(self):
         preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
         assert "if (!isRenderableMediaReady(img) || width <= 1 || height <= 1) {" in preview_js
         assert "else drawGrid(ctx, width, height);" in preview_js
-        assert preview_js.count("drawGrid(ctx, width, height);") == 2
+        # No media, a failed view (its message is on the node surface), and before the view loads.
+        assert preview_js.count("drawGrid(ctx, width, height);") == 3
 
     def test_editor_debug_probe_is_removed_from_normal_path(self):
         editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
