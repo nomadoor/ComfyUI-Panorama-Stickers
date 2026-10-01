@@ -5,7 +5,7 @@ sources, a Camera, and a Projection. The layers are composited back to front: `b
 (`sky` Stickers in list order, then paint), and World content by depth (`world_render.py`).
 """
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import torch
@@ -23,7 +23,8 @@ class Projection:
     """How the Camera turns the Scene into a `width` x `height` image.
 
     `erp` spans `coverage` (360 or 180) degrees of longitude; 180 is the Camera's front hemisphere.
-    `perspective` is a pinhole image with horizontal FOV `hfov_deg`; its vertical FOV follows from the size.
+    `perspective` is a pinhole image with horizontal FOV `hfov_deg` and square pixels, so its vertical FOV
+    follows from the size. Its `coverage` is the span of the `bg_media` ERP it looks into.
     """
 
     kind: str
@@ -37,8 +38,8 @@ class Projection:
         return cls("erp", int(width), int(height), coverage=180 if int(coverage) == 180 else 360)
 
     @classmethod
-    def perspective(cls, width: int, height: int, hfov_deg: float) -> "Projection":
-        return cls("perspective", int(width), int(height), hfov_deg=float(hfov_deg))
+    def perspective(cls, width: int, height: int, hfov_deg: float, coverage: int = 360) -> "Projection":
+        return cls("perspective", int(width), int(height), coverage=180 if int(coverage) == 180 else 360, hfov_deg=float(hfov_deg))
 
 
 @dataclass(frozen=True)
@@ -150,8 +151,8 @@ def _view(camera: dict, projection: Projection, device) -> torch.Tensor:
     """Where each output pixel looks, as `grid_sample` coordinates (H, W, 2) in a 360 ERP of the Scene
     (align_corners=False): x from longitude -180 to 180 and y from the zenith to the nadir.
 
-    The output is an ERP around the Camera's orientation (`camera_basis`); 180 spans its front hemisphere. The
-    Camera's position does not enter: the background and the Sky are infinitely far away.
+    The output turns with the Camera's orientation (`camera_basis`); `ray_directions` gives each pixel's
+    direction. The Camera's position does not enter: the background and the Sky are infinitely far away.
     """
     right, up, forward = (axis.tolist() for axis in camera_basis(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]))
     # Contiguous components keep the angles bit-identical for the legacy goldens: atan2 rounds strided input differently.
@@ -181,15 +182,28 @@ def _resize(image: torch.Tensor, height: int, width: int) -> torch.Tensor:
     return work[0].permute(1, 2, 0)
 
 
-def _render_sky(evaluated: dict, sources: SceneSources, projection: Projection, device) -> tuple[torch.Tensor, torch.Tensor]:
-    """The Sky as a 360 ERP on `device`: straight-alpha color (h, w, 4) and the paint mask (h, w).
+def _sky_size(projection: Projection, bg_width: int | None) -> tuple[int, int]:
+    """The size of the Sky's 360 ERP.
 
-    It is drawn at the output width over 360 degrees, as the legacy node drew its overlay, so that a 360 output
-    without Camera rotation uses it as it is.
+    For an ERP output it is drawn at the output width over 360 degrees, as the legacy node drew its overlay, so
+    that a 360 output without Camera rotation uses it as it is. For a perspective output it is at least as fine
+    as the output's pixels at the center, rounded up to a power of two (from 64) so that an animated FOV draws it
+    again only when that step changes, and at least as fine as `bg_media` (`bg_width` pixels over its coverage),
+    up to 4096 wide as the legacy Cutout drew.
     """
-    width = projection.width
-    height = projection.height if projection.coverage == 360 else max(1, width // 2)
-    rgba, mask = _sky_erp(evaluated, sources, width, height)
+    if projection.kind == "erp":
+        return projection.width, projection.height if projection.coverage == 360 else max(1, projection.width // 2)
+    width = math.pi * projection.width / math.tan(math.radians(projection.hfov_deg) * 0.5)
+    width = 2 ** max(6, math.ceil(math.log2(width)))
+    if bg_width is not None:
+        width = max(width, bg_width * 360 // projection.coverage)
+    width = min(width, 4096)
+    return width, width // 2
+
+
+def _render_sky(evaluated: dict, sources: SceneSources, size: tuple[int, int], device) -> tuple[torch.Tensor, torch.Tensor]:
+    """The Sky as a 360 ERP of `size` (`_sky_size`) on `device`: straight-alpha color (h, w, 4) and the paint mask (h, w)."""
+    rgba, mask = _sky_erp(evaluated, sources, *size)
     return torch.tensor(rgba, dtype=torch.float32, device=device), torch.tensor(mask, dtype=torch.float32, device=device)
 
 
@@ -203,12 +217,12 @@ def _project_sky(rgba: torch.Tensor, mask: torch.Tensor, view: torch.Tensor) -> 
     return torch.cat([rgb, alpha], dim=-1), sampled[..., 4].clone()
 
 
-def _sky_key(evaluated: dict, sources: SceneSources, projection: Projection) -> tuple:
+def _sky_key(evaluated: dict, sources: SceneSources, size: tuple[int, int]) -> tuple:
     # An inactive Sticker is not drawn, so its values changing outside its Clip range keep the Sky. Values are
     # rounded so that interpolation noise between equal Keyframes (30.0 vs 30.00000000000001) keeps it too.
     # A Sticker without a source has no frame (None).
     frames = {sticker_id: source.frame for sticker_id, source in sources.stickers.items()}
-    return (projection, tuple(
+    return (size, tuple(
         (sticker["id"], *(round(sticker[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg", "vFOV_deg", "opacity")),
          frames.get(sticker["id"]))
         if sticker["active"] else (sticker["id"],)
@@ -225,8 +239,8 @@ def _background(bg: torch.Tensor, device) -> torch.Tensor:
 def _project_background(bg: torch.Tensor, projection: Projection, view: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Sample `bg_media` at `view`, and where it has an image (None: everywhere).
 
-    A 360 output reads it as a 360 ERP. A 180 output reads it as the ERP of the Scene's front hemisphere, as
-    the legacy node did, so a turned Camera also sees directions it does not cover.
+    A 360 `coverage` reads it as a 360 ERP. A 180 one reads it as the ERP of the Scene's front hemisphere, as
+    the legacy nodes did, so a turned Camera also sees directions it does not cover.
     """
     if projection.coverage == 360:
         return _sample_erp(bg, view), None
@@ -246,32 +260,36 @@ def render_frame(
     bg_color,
     device,
     cache: dict | None = None,
+    bg_width: int | None = None,
     scene: SceneContent | None = None,
     scene_index: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Draw one frame. Returns float32 color (H, W, 3), mask (H, W), and depth (H, W) on `device`.
 
-    `evaluated` is `evaluate_scene_state` at the frame and `camera` the evaluated Camera value; the ERP output
+    `evaluated` is `evaluate_scene_state` at the frame and `camera` the evaluated Camera value; the output
     turns with the Camera's rotation. `bg` is this frame's `bg_media` image (h, w, C) or None, and `bg_key` a
     hashable that names it (the bg_media frame index); without a key the background is not reused. `bg_color`
-    is three floats in 0..1. `scene` is the `scene` input's content, of which item `scene_index` (None: none) is
+    is three floats in 0..1. `bg_width` is the width of the `bg_media` images of the execution (None: without
+    any), which a perspective output's Sky resolution follows (`_sky_size`). `scene` is the `scene` input's content, of which item `scene_index` (None: none) is
     drawn while `evaluated["scene"]` is active. The mask is the painted mask and the depth is the distance from
     the Camera's position to the nearest World content, +inf where only the Sky is visible.
 
     `cache` is an optional dict owned by the caller for one execution, in which `bg_color`, `device`, and
     `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps the previous frame's
     Sky, the Sky turned by the Camera, the background, the World content as one layer (`world_layer`), the drawn
-    `world` Sticker sources on `device`, and the result: a frame whose Sky values and Sticker frames, Camera rotation, `bg_key`, and World content
-    with the Camera's position (`world_key`) all repeat returns the previous frame's tensors themselves.
+    `world` Sticker sources on `device`, and the result: a frame whose Sky values and Sticker frames, Camera rotation,
+    Projection, `bg_key`, and World content with the Camera's position (`world_key`) all repeat returns the previous
+    frame's tensors themselves.
     """
-    if projection.kind != "erp":
-        raise NotImplementedError("Panorama Stickers: perspective projection is not supported yet.")
     if cache is None:
         cache = {}
-    sky_key = _sky_key(evaluated, sources, projection)
-    # A 360 output without Camera rotation is the Sky and the background as they are.
-    turned = projection.coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
-    view_key = tuple(round(camera[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg")) if turned else None
+    sky_size = _sky_size(projection, bg_width)
+    sky_key = _sky_key(evaluated, sources, sky_size)
+    # A 360 ERP output without Camera rotation is the Sky and the background as they are.
+    turned = projection.kind != "erp" or projection.coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
+    view_key = None
+    if turned:
+        view_key = (replace(projection, hfov_deg=round(projection.hfov_deg, 9)), *(round(camera[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg")))
     bg_entry = None if bg is None else ("bg", bg_key)
     # A background without a key cannot be told apart from the previous frame's, so it is never reused.
     reusable = bg is None or bg_key is not None
@@ -280,7 +298,7 @@ def render_frame(
     if reusable and cache.get("frame_key") == frame_key:
         return cache["frame"]
     if cache.get("sky_key") != sky_key:
-        cache["sky_key"], cache["sky"] = sky_key, _render_sky(evaluated, sources, projection, device)
+        cache["sky_key"], cache["sky"] = sky_key, _render_sky(evaluated, sources, sky_size, device)
     view = None
     if not turned:
         sky, mask = cache["sky"]

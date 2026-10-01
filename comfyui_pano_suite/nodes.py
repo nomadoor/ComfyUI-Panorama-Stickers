@@ -41,7 +41,7 @@ from .core.painting import (
 )
 from .core.render import Projection, SceneSources, StickerSource, render_frame
 from .core.scene_eval import evaluate_scene_state
-from .core.scene_state import load_scene_state, load_sticker_state
+from .core.scene_state import STICKER_STATE_KIND, load_scene_state, load_sticker_state, rebase_scene_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
 from .core.video import make_video_ui_payload, save_video_to_mp4
@@ -1189,13 +1189,18 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
     return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
 
 
-def _render_timeline(state: dict, sources: SceneSources, projection: Projection, frames, bg_media, bg_color, port: PortMedia | None,
-                     scene: SceneContent | None) -> tuple[torch.Tensor, torch.Tensor]:
+def _render_timeline(state: dict, sources: SceneSources, frames, bg_media, bg_color, port: PortMedia | None,
+                     scene: SceneContent | None, capture) -> tuple[torch.Tensor, torch.Tensor]:
     """(b) Render each output frame with the shared render function, with the port Sticker's source at the
-    frame of `port` and the item of `scene` that (a) chose."""
+    frame of `port` and the item of `scene` that (a) chose. `capture` maps the evaluated state of a frame to the
+    Camera value and the Projection to draw it with; the Projection's size is the same for every frame."""
     device = comfy.model_management.get_torch_device()
-    images = torch.empty((len(frames), projection.height, projection.width, 3), dtype=torch.float32)
-    masks = torch.empty((len(frames), projection.height, projection.width), dtype=torch.float32)
+    if not frames:
+        _camera, projection = capture(evaluate_scene_state(state, 0.0))
+        return torch.empty((0, projection.height, projection.width, 3)), torch.empty((0, projection.height, projection.width))
+    bg_width = None
+    if bg_media is not None:
+        bg_width = (bg_media.first_frame if isinstance(bg_media, (StreamedVideo, MaterializedVideo)) else bg_media).shape[-2]
     if port is not None:
         port_frames = port.frames()
         others = {key: value for key, value in sources.stickers.items() if key != port.sticker_id}
@@ -1209,16 +1214,21 @@ def _render_timeline(state: dict, sources: SceneSources, projection: Projection,
             active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
             port_source = _port_source_at(active, port_index, port_frames, sources.stickers[port.sticker_id], port_source)
             frame_sources = replace(sources, stickers=others if port_source is None else {**others, port.sticker_id: port_source})
+        camera, projection = capture(evaluated)
+        if index == 0:
+            images = torch.empty((len(frames), projection.height, projection.width, 3), dtype=torch.float32)
+            masks = torch.empty((len(frames), projection.height, projection.width), dtype=torch.float32)
         color, mask, _depth = render_frame(
             evaluated,
             frame_sources,
-            evaluated["camera"],
+            camera,
             projection,
             bg=None if bg_index is None else bg_media[bg_index],
             bg_key=bg_index,
             bg_color=bg_color,
             device=device,
             cache=cache,
+            bg_width=bg_width,
             scene=scene,
             scene_index=scene_index,
         )
@@ -1273,15 +1283,86 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         projection = Projection.erp(out_w, out_h, coverage_deg)
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
         fps, frames = _decide_timeline(state, bg, port, content)
-        images, masks = _render_timeline(state, sources, projection, frames, bg, bg_rgb, port, content)
+        images, masks = _render_timeline(state, sources, frames, bg, bg_rgb, port, content, lambda evaluated: (evaluated["camera"], projection))
         audio = bg.audio(len(frames) / fps) if isinstance(bg_media, Input.Video) else None
         # (c) The outputs, with PANO_SCENE binding the state to the inputs and the decided Timeline.
         pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
         return io.NodeOutput(images, masks, audio, fps, pano_scene)
 
 
+CUTOUT_MAX_OUTPUT_SIDE = 4096
+
+
+def _cutout_sticker_state(cutout: dict, fps: float, width: int, height: int) -> str:
+    """`sticker_state` v2: the Cutout Camera's Keyframes at the Timeline `fps`, or its value as one Keyframe."""
+    camera = rebase_scene_state(cutout, fps)["camera"]["transform"]
+    keyframes = camera["keyframes"] or [{"frame": 0, "value": camera["value"], "easing": "auto"}]
+    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": fps, "camera": keyframes, "source_aspect": width / height}
+    return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+
+
+# TODO(#78): rename to PanoramaCutoutNode, matching the node_id, once the legacy class is removed.
+class PanoramaCutoutSceneNode(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="PanoramaCutoutNode",
+            display_name="Panorama Cutout",
+            category="Panorama Suite",
+            inputs=[
+                io.MultiType.Input(io.Image.Input("source"), types=[io.Video, PanoScene]),
+                io.Combo.Input("coverage", options=["360", "180"], default="360"),
+                io.Float.Input("output_megapixels", default=1.0, min=0.01, step=0.05),
+                io.String.Input("state_json", default="", multiline=True, dynamic_prompts=False, advanced=True),
+            ],
+            outputs=[
+                io.Image.Output("rect_image"),
+                io.String.Output("sticker_state"),
+                io.Mask.Output("mask"),
+                io.Audio.Output("audio"),
+                io.Float.Output("fps"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, source, coverage, output_megapixels, state_json):
+        # TODO(#77): bind the editor and the on-node UI to this node id; it has no execution `ui` until then.
+        cutout = load_scene_state(state_json)
+        if isinstance(source, PanoSceneValue):
+            # The Scene is the Stickers state; the Cutout state gives only the Camera, at its own recorded fps.
+            state, sources, port, coverage_deg, bg_color = source.state, source.sources, source.port, source.coverage, source.bg_color
+            content = _scene_content(source.scene)
+            bg = open_video(source.bg_media, "bg_media") if isinstance(source.bg_media, Input.Video) else source.bg_media
+            fps, frames = source.fps, source.frames
+            ratio = cutout["timeline"]["fps"] / state["timeline"]["fps"]
+
+            def camera_at(evaluated):
+                return evaluate_scene_state(cutout, evaluated["frame"] * ratio)["camera"]
+        else:
+            # An ERP IMAGE or VIDEO is the background in the Scene's orientation, under the Cutout state's Sky.
+            # Outside a 180 ERP the image is black, as in the legacy Cutout.
+            state, port, content, coverage_deg, bg_color = cutout, None, None, normalize_coverage(coverage), (0.0, 0.0, 0.0)
+            sources = _resolve_sources(state, None)
+            bg = open_video(source, "source") if isinstance(source, Input.Video) else source
+            fps, frames = _decide_timeline(state, bg, None)
+
+            def camera_at(evaluated):
+                return evaluated["camera"]
+        # The output size follows the Camera's aspect, as the legacy Cutout's followed its shot's FOV.
+        width, height = calculate_dimensions_from_megapixels(
+            output_megapixels, 90.0, math.degrees(2.0 * math.atan(1.0 / cutout["camera"]["aspect"])), max_side=CUTOUT_MAX_OUTPUT_SIDE
+        )
+
+        def capture(evaluated):
+            camera = camera_at(evaluated)
+            return camera, Projection.perspective(width, height, camera["hFOV_deg"], coverage_deg)
+
+        images, masks = _render_timeline(state, sources, frames, bg, bg_color, port, content, capture)
+        audio = bg.audio(len(frames) / fps) if isinstance(bg, (StreamedVideo, MaterializedVideo)) else None
+        return io.NodeOutput(images, _cutout_sticker_state(cutout, fps, width, height), masks, audio, fps)
+
+
 class PanoramaCutoutNode(io.ComfyNode):
-    MAX_OUTPUT_SIDE = 4096
     DEFAULT_LONG_SIDE = 1024
 
     @classmethod
@@ -1321,7 +1402,7 @@ class PanoramaCutoutNode(io.ComfyNode):
             hfov_deg=hfov_val,
             vfov_deg=vfov_val,
             long_side=cls.DEFAULT_LONG_SIDE,
-            max_side=cls.MAX_OUTPUT_SIDE,
+            max_side=CUTOUT_MAX_OUTPUT_SIDE,
         )
 
     @staticmethod
@@ -1439,7 +1520,7 @@ class PanoramaCutoutNode(io.ComfyNode):
         vfov = float(np.clip(finite_float(shot.get("vFOV_deg", 60.0), 60.0), 1.0, 179.0))
         roll = finite_float(shot.get("roll_deg", 0.0), 0.0)
         ow, oh = calculate_dimensions_from_megapixels(
-            output_megapixels, hfov, vfov, max_side=cls.MAX_OUTPUT_SIDE
+            output_megapixels, hfov, vfov, max_side=CUTOUT_MAX_OUTPUT_SIDE
         )
 
         sticker_state_json = _build_sticker_state_json(shot, ow, oh)
@@ -1755,6 +1836,7 @@ class PanoramaSuiteExtension(ComfyExtension):
             PanoramaStickersNode,
             PanoramaStickersSceneNode,
             PanoramaCutoutNode,
+            PanoramaCutoutSceneNode,
             PanoramaPreviewNode,
             PanoramaPreviewSceneNode,
             PanoramaSeamPrepNode,

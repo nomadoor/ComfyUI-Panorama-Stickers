@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Bake golden images from the legacy PanoramaStickers and PanoramaCutout nodes.
+"""Bake golden images from the legacy PanoramaStickers and PanoramaCutout nodes, and from the new nodes where
+their output differs from the legacy one on purpose (`NODE_CASES`).
 
-Run from the repository root with ComfyUI on PYTHONPATH:
-    PYTHONPATH=/path/to/ComfyUI python tools/bake_legacy_goldens.py
+Run from the repository root with ComfyUI on PYTHONPATH, optionally naming the cases to bake:
+    PYTHONPATH=/path/to/ComfyUI python tools/bake_legacy_goldens.py [case ...]
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.node_runtime import NodeRuntime
-from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersNode
+from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaCutoutSceneNode, PanoramaStickersNode
 from tools.golden_png import write_png16
 
 
@@ -153,6 +154,16 @@ def _run_cutout(shot: dict):
     return result[0][0].numpy(), result[2][0].numpy()
 
 
+def _run_cutout_node(shot: dict):
+    result = PanoramaCutoutSceneNode.execute(
+        source=build_background_erp(),
+        coverage="360",
+        state_json=json.dumps({"shots": [shot]}),
+        output_megapixels=0.03,
+    ).result
+    return result[0][0].numpy(), result[2][0].numpy()
+
+
 # sky Stickers are the legacy direction-only stickers (yaw/pitch/FOV on the sphere).
 CASES = {
     "stickers_background_only": lambda: _run_stickers("360"),
@@ -187,11 +198,17 @@ CASES = {
     "cutout_single_shot": lambda: _run_cutout(CUTOUT_SHOT),
 }
 
+# The new Cutout samples at pixel centers with square pixels, so it does not reproduce `cutout_single_shot`.
+NODE_CASES = {
+    "cutout_node_single_shot": lambda: _run_cutout_node(CUTOUT_SHOT),
+}
 
-def main() -> int:
+
+def main(names: list[str]) -> int:
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
-    for name, run_case in CASES.items():
-        image, mask = run_case()
+    cases = {**CASES, **NODE_CASES}
+    for name in names or cases:
+        image, mask = cases[name]()
         write_png16(FIXTURE_DIR / f"{name}.image.png", image)
         write_png16(FIXTURE_DIR / f"{name}.mask.png", mask)
         print(f"{name}: image {image.shape[1]}x{image.shape[0]}, mask max {float(mask.max()):.3f}")
@@ -199,4 +216,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

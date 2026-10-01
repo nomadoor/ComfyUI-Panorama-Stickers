@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from comfyui_pano_suite.core import render as render_module
-from comfyui_pano_suite.core.math import camera_basis
+from comfyui_pano_suite.core.math import camera_basis, ray_directions
 from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, composite_frame, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
@@ -125,12 +125,22 @@ def test_projection_represents_erp_and_perspective():
     assert Projection.erp(512, 512, coverage="180") == Projection("erp", 512, 512, coverage=180)
     assert Projection.erp(512, 256, coverage=90).coverage == 360
     perspective = Projection.perspective(640, 360, 75)
-    assert (perspective.kind, perspective.width, perspective.height, perspective.hfov_deg) == ("perspective", 640, 360, 75.0)
+    assert (perspective.kind, perspective.width, perspective.height, perspective.hfov_deg, perspective.coverage) == ("perspective", 640, 360, 75.0, 360)
+    assert Projection.perspective(640, 360, 75, coverage="180").coverage == 180
 
 
-def test_render_frame_rejects_what_later_tickets_draw():
-    with pytest.raises(NotImplementedError, match="perspective"):
-        _render(Projection.perspective(32, 32, 90))
+def test_perspective_rays_pass_through_the_pixel_centers_of_a_square_pixel_image_plane():
+    projection = Projection.perspective(5, 3, 90.0)
+    right, up, forward = camera_basis(POSE["yaw_deg"], POSE["pitch_deg"], POSE["roll_deg"], dtype=np.float64)
+
+    rays = ray_directions(right.tolist(), up.tolist(), forward.tolist(), projection, torch.device("cpu")).double().numpy()
+
+    # The image plane at distance 1 spans tan(45) = 1 to each side and 3 / 5 up and down.
+    corner = forward + (0.5 / 5 * 2 - 1) * right + (1 - 0.5 / 3 * 2) * 0.6 * up
+    assert rays.shape == (3, 5, 3)
+    assert np.allclose(np.linalg.norm(rays, axis=-1), 1.0, atol=1e-6)
+    assert np.allclose(rays[1, 2], forward, atol=1e-6)
+    assert np.allclose(rays[0, 0], corner / np.linalg.norm(corner), atol=1e-6)
 
 
 def _sticker_state(**transform):
@@ -323,7 +333,7 @@ def test_rotating_camera_reuses_the_sky_and_composites_each_view(monkeypatch):
 POSE = {"yaw_deg": 130.0, "pitch_deg": 35.0, "roll_deg": 25.0}
 
 
-@pytest.mark.parametrize("projection", [Projection.erp(128, 64), Projection.erp(64, 64, coverage=180)])
+@pytest.mark.parametrize("projection", [Projection.erp(128, 64), Projection.erp(64, 64, coverage=180), Projection.perspective(32, 32, 90.0)])
 def test_sky_sticker_posed_like_the_camera_is_upright_at_the_output_center(projection):
     rgba = np.ones((4, 4, 4), dtype=np.float32)
     rgba[:2, :2, :3] = (1.0, 0.0, 0.0)
@@ -336,7 +346,7 @@ def test_sky_sticker_posed_like_the_camera_is_upright_at_the_output_center(proje
     color, _mask, _depth = _render(projection, state, sources)
 
     row, column = projection.height // 2, projection.width // 2
-    # Each quadrant is sampled about 10 degrees from the center.
+    # Each quadrant is sampled 10 to 12 degrees from the center.
     assert torch.allclose(color[row - 4, column - 4], torch.tensor([1.0, 0.0, 0.0]), atol=0.05)
     assert torch.allclose(color[row - 4, column + 3], torch.tensor([0.0, 1.0, 0.0]), atol=0.05)
     assert torch.allclose(color[row + 3, column - 4], torch.tensor([0.0, 0.0, 1.0]), atol=0.05)
@@ -364,3 +374,36 @@ def test_mask_follows_the_camera_upright_at_the_output_center():
     assert float(mask[22:25, 63:66].max()) > 0.5
     assert float(mask[40:43, 63:66].max()) == 0.0
     assert float(mask[22:25, 55:59].max()) == 0.0 and float(mask[22:25, 70:74].max()) == 0.0
+
+
+def test_perspective_output_draws_bg_color_outside_the_hemisphere_of_the_bg_media():
+    bg = torch.full((16, 16, 3), 0.5)
+
+    # Turned 90 degrees, the left half of a 90 degree view still looks into the front hemisphere.
+    color, _mask, _depth = _render(Projection.perspective(32, 16, 90.0, coverage=180), _camera(yaw_deg=90.0), bg=bg)
+
+    assert torch.allclose(color[:, :15], torch.full((16, 15, 3), 0.5))
+    assert torch.equal(color[:, 17:], torch.tensor(GREEN).expand(16, 15, 3))
+
+
+def test_perspective_output_reuses_the_sky_while_an_animated_fov_keeps_its_resolution(monkeypatch):
+    counts = _count_calls(monkeypatch, "_render_sky", "_project_sky")
+    cache = {}
+
+    for hfov in (60.0, 61.0, 20.0):
+        _render(Projection.perspective(32, 32, hfov), _sticker_state(), _red_source(), cache=cache)
+
+    # 60 and 61 degrees draw the Sky at the same size; 20 degrees needs a finer one.
+    assert counts == {"_render_sky": 2, "_project_sky": 3}
+
+
+@pytest.mark.parametrize("projection, bg_width, size", [
+    (Projection.perspective(32, 32, 60.0), None, (256, 128)),
+    (Projection.perspective(32, 32, 60.0), 2048, (2048, 1024)),
+    (Projection.perspective(32, 32, 60.0, coverage=180), 1024, (2048, 1024)),
+    (Projection.perspective(32, 32, 60.0, coverage=180), 4096, (4096, 2048)),
+    (Projection.perspective(1024, 1024, 1.0), None, (4096, 2048)),
+    (Projection.perspective(32, 32, 60.0), 10000, (4096, 2048)),
+])
+def test_perspective_sky_is_as_fine_as_the_output_center_and_the_bg_media(projection, bg_width, size):
+    assert render_module._sky_size(projection, bg_width) == size
