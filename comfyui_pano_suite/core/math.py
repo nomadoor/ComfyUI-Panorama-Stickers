@@ -67,6 +67,29 @@ def camera_basis(
     return right, up, forward
 
 
+def ray_directions(right, up, forward, projection, device) -> "torch.Tensor":
+    """Unit directions (H, W, 3) through the output pixel centers of `projection` for a Camera with these axes
+    (three floats each, as `camera_basis` returns them or in any other frame).
+
+    An ERP spans longitude -180 to 180 (coverage 180: -90 to 90) left to right and latitude 90 to -90 top to
+    bottom. A perspective image is a pinhole spanning `hfov_deg` across the width, with square pixels.
+    """
+    width, height = projection.width, projection.height
+    columns = (torch.arange(width, dtype=torch.float32, device=device) + 0.5) / width
+    rows = (torch.arange(height, dtype=torch.float32, device=device) + 0.5) / height
+    if projection.kind == "erp":
+        lon = (columns - 0.5) * (math.pi if projection.coverage == 180 else 2.0 * math.pi)
+        lat = (0.5 - rows) * math.pi
+        cos_lat, sin_lat = lat.cos()[:, None], lat.sin()[:, None]
+        sin_lon, cos_lon = lon.sin(), lon.cos()
+        return torch.stack([torch.addcmul(up[i] * sin_lat, cos_lat, right[i] * sin_lon + forward[i] * cos_lon) for i in range(3)], dim=-1)
+    tan_x = math.tan(math.radians(projection.hfov_deg) * 0.5)
+    x = (columns * 2.0 - 1.0) * tan_x
+    y = ((1.0 - rows * 2.0) * (tan_x * height / width))[:, None]
+    norm = torch.hypot(torch.hypot(x, y), torch.ones((), device=device))
+    return torch.stack([(right[i] * x + up[i] * y + forward[i]) / norm for i in range(3)], dim=-1)
+
+
 def dir_to_lon_lat(d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     x = d[..., 0]
     y = np.clip(d[..., 1], -1.0, 1.0)

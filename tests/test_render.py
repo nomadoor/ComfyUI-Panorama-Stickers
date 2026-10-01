@@ -188,17 +188,11 @@ def test_render_frame_reuses_the_sky_of_an_unchanged_frame():
     assert not torch.equal(first[0], moved[0])
 
 
-def test_render_frame_skips_inactive_stickers_and_rejects_world_stickers():
+def test_render_frame_skips_inactive_stickers():
     hidden = _sticker_state()
     hidden["stickers"][0]["visible"] = False
     color, _mask, _depth = _render(Projection.erp(64, 32), hidden, _red_source())
     assert torch.allclose(color, torch.tensor(GREEN).expand(32, 64, 3))
-
-    world = _sticker_state()
-    world["stickers"][0]["placement"] = "world"
-    world["stickers"][0]["transform"] = {"value": {}}
-    with pytest.raises(NotImplementedError, match="world Stickers"):
-        _render(Projection.erp(64, 32), world, _red_source())
 
 
 def test_render_frame_180_reads_bg_as_the_front_hemisphere():

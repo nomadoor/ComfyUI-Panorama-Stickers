@@ -176,7 +176,7 @@ Keyframe をまとめて打つ単位である。どのグループも同じ形�
 
 `world` の Sticker は奥行きで重なるので `z_index` を持たない。
 
-`world` の 2D の素材（IMAGE / VIDEO）の板の大きさ、3D の素材の置き方は #59・#63 で定める。
+`world` の 2D の素材（IMAGE / VIDEO）は、幅 `scale`（World の単位）、高さは切り抜いた素材のアスペクト比で決まる両面の板として描く（#59、`docs/render-contract.md` の「World の描き方」）。3D の素材の置き方は #63 で定める。
 
 `locked` と `crop` を残す根拠：
 

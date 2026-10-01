@@ -18,6 +18,17 @@ def open_video(video, name: str) -> StreamedVideo | MaterializedVideo:
     return MaterializedVideo(video.get_components(), name)
 
 
+def batch_index(clip_frame: float, count: int, fps: float, stored_fps: float) -> int | None:
+    """The item of a batch of `count` (an IMAGE batch, or the `scene` content) that shows `clip_frame` Timeline
+    frames after its first item, or None outside the batch. A batch is a sequence at the Timeline `fps` without
+    PTS, so each Timeline frame shows its nearest item; a single item shows throughout. Timeline frames are those
+    of the state, at `stored_fps`."""
+    if count == 1:
+        return 0
+    index = math.floor(clip_frame * fps / stored_fps + 0.5)
+    return index if 0 <= index < count else None
+
+
 class PortMedia:
     """The `sticker` input's media for the port Sticker `sticker_id` with the Clip range `clip`: which of its
     frames shows at a Timeline frame.
@@ -66,11 +77,7 @@ class PortMedia:
         if self._starts is not None:
             index = bisect.bisect_right(self._starts, clip_frame + max(FRAME_EPSILON, self._tolerance, tolerance)) - 1
             return index if 0 <= index < len(self._starts) - 1 else None
-        count = self.media.shape[0]
-        if count == 1:
-            return 0
-        index = math.floor(clip_frame * fps / self._stored_fps + 0.5)
-        return index if 0 <= index < count else None
+        return batch_index(clip_frame, self.media.shape[0], fps, self._stored_fps)
 
     def frames(self):
         """The frames to index with `index_at`, in non-decreasing order. A VIDEO is opened again for each pass

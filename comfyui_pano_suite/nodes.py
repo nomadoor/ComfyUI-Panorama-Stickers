@@ -46,7 +46,8 @@ from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
 from .core.video import make_video_ui_payload, save_video_to_mp4
 from .core.video_source import MaterializedVideo, StreamedVideo
-from .sticker_media import PortMedia, open_video
+from .core.world_render import SceneContent
+from .sticker_media import PortMedia, batch_index, open_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -1001,8 +1002,8 @@ class PanoSceneValue:
     media on the sticker input (None without one), whose frames come from `port.frames()` at `port.index_at`.
     `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given. `coverage` is the span of `bg_media`,
     `bg_color` 0..1 RGB. The output size is not part of it; each consumer sets its own. `fps` is the Timeline fps
-    and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, and the
-    `port` frame, as `_decide_timeline` returns them.
+    and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
+    frame, and the `scene` item, as `_decide_timeline` returns them.
     Consumers must not modify it; the same value reaches every node linked to the output.
     """
 
@@ -1033,12 +1034,18 @@ def _input_type_name(value) -> str:
     return type(value).__name__
 
 
-def _reject_unsupported_inputs(scene, sticker):
-    # Temporary on the integration branch: scene and 3D stickers are added by later tickets.
-    for name, value in (("scene", scene), ("sticker", sticker)):
-        if value is None or (name == "sticker" and isinstance(value, (torch.Tensor, Input.Video))):
-            continue
-        raise NotImplementedError(f"Panorama Stickers: {_input_type_name(value)} on the {name} input is not supported yet.")
+def _reject_unsupported_sticker(sticker):
+    # Temporary on the integration branch: 3D stickers are added by #63.
+    if sticker is not None and not isinstance(sticker, (torch.Tensor, Input.Video)):
+        raise NotImplementedError(f"Panorama Stickers: {_input_type_name(sticker)} on the sticker input is not supported yet.")
+
+
+def _scene_content(scene) -> SceneContent | None:
+    """The `scene` input as World content, or None without one."""
+    if scene is None:
+        return None
+    # Temporary on the integration branch: the SPLAT (#61) and MESH / MoGe (#62) rasterizers are added later.
+    raise NotImplementedError(f"Panorama Stickers: {_input_type_name(scene)} on the scene input is not supported yet.")
 
 
 def _unused_sticker_id(stickers: list[dict]) -> str:
@@ -1098,9 +1105,10 @@ def _resolve_sources(state: dict, port: PortMedia | None) -> SceneSources:
     return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
 
 
-def _decide_timeline(state: dict, bg, port: PortMedia | None) -> tuple[float, list[tuple[float, int | None, int | None]]]:
-    """(a) Timeline: fps, and per output frame the Timeline frame to evaluate, the bg_media frame to draw, and the
-    frame of the port media (`port.index_at`).
+def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None) -> tuple[float, list[tuple[float, int | None, int | None, int | None]]]:
+    """(a) Timeline: fps, and per output frame the Timeline frame to evaluate, the bg_media frame to draw, the
+    frame of the port media (`port.index_at`), and the item of the `scene` content (`batch_index`; None without
+    `scene`). A `scene` batch, like an IMAGE batch on the port, ends its Clip range without a duration.
 
     `bg` is the bg_media IMAGE batch, an opened VIDEO, or None. The output frames follow the PTS of the VIDEO
     that sets the Timeline fps: the background VIDEO, or else the sticker VIDEO. Times stored in the state are
@@ -1128,6 +1136,10 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None) -> tuple[float, li
         port_end = port.end(fps)
         if port_end is not None:
             clip_ends.append(port_end)
+    scene_clip = state["scene"]["clip"]
+    scene_origin = scene_clip["start"] - scene_clip["in"]
+    if scene is not None and scene.count > 1 and scene_clip["duration"] is None:
+        clip_ends.append(scene_origin + scene.count * stored_fps / fps)
     keyframes = state["camera"]["transform"]["keyframes"]
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
@@ -1157,7 +1169,12 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None) -> tuple[float, li
             bg_index = index if index < len(times) else None
         else:
             bg_index = index if index < batch else (0 if batch == 1 else None)
-        frames.append((frame, bg_index, None if port is None else port.index_at(frame, fps, tolerance)))
+        frames.append((
+            frame,
+            bg_index,
+            None if port is None else port.index_at(frame, fps, tolerance),
+            None if scene is None else batch_index(frame - scene_origin, scene.count, fps, stored_fps),
+        ))
     return fps, frames
 
 
@@ -1172,9 +1189,10 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
     return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
 
 
-def _render_timeline(state: dict, sources: SceneSources, projection: Projection, frames, bg_media, bg_color, port: PortMedia | None) -> tuple[torch.Tensor, torch.Tensor]:
+def _render_timeline(state: dict, sources: SceneSources, projection: Projection, frames, bg_media, bg_color, port: PortMedia | None,
+                     scene: SceneContent | None) -> tuple[torch.Tensor, torch.Tensor]:
     """(b) Render each output frame with the shared render function, with the port Sticker's source at the
-    frame of `port` that (a) chose."""
+    frame of `port` and the item of `scene` that (a) chose."""
     device = comfy.model_management.get_torch_device()
     images = torch.empty((len(frames), projection.height, projection.width, 3), dtype=torch.float32)
     masks = torch.empty((len(frames), projection.height, projection.width), dtype=torch.float32)
@@ -1184,7 +1202,7 @@ def _render_timeline(state: dict, sources: SceneSources, projection: Projection,
     cache = {}
     previous = None
     port_source = None
-    for index, (frame, bg_index, port_index) in enumerate(frames):
+    for index, (frame, bg_index, port_index, scene_index) in enumerate(frames):
         evaluated = evaluate_scene_state(state, frame)
         frame_sources = sources
         if port is not None:
@@ -1201,6 +1219,8 @@ def _render_timeline(state: dict, sources: SceneSources, projection: Projection,
             bg_color=bg_color,
             device=device,
             cache=cache,
+            scene=scene,
+            scene_index=scene_index,
         )
         # A reused frame is copied from the previous output row instead of transferred from the device again.
         if color is previous:
@@ -1242,7 +1262,8 @@ class PanoramaStickersSceneNode(io.ComfyNode):
 
     @classmethod
     def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
-        _reject_unsupported_inputs(scene, sticker)
+        _reject_unsupported_sticker(sticker)
+        content = _scene_content(scene)
         state = load_scene_state(state_json)
         port = _port_media(state, sticker, sticker_state)
         sources = _resolve_sources(state, port)
@@ -1251,8 +1272,8 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         coverage_deg = normalize_coverage(coverage)
         projection = Projection.erp(out_w, out_h, coverage_deg)
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
-        fps, frames = _decide_timeline(state, bg, port)
-        images, masks = _render_timeline(state, sources, projection, frames, bg, bg_rgb, port)
+        fps, frames = _decide_timeline(state, bg, port, content)
+        images, masks = _render_timeline(state, sources, projection, frames, bg, bg_rgb, port, content)
         audio = bg.audio(len(frames) / fps) if isinstance(bg_media, Input.Video) else None
         # (c) The outputs, with PANO_SCENE binding the state to the inputs and the decided Timeline.
         pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
