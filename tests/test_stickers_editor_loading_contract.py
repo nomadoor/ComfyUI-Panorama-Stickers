@@ -54,7 +54,7 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
         self.assertIn('class="pano-stage-failed"', modal)
 
     def test_boot_warning_does_not_override_image_loading_state(self):
-        stage_status = function_block(self.editor, "getStageImageStatus", "drawErpBackgroundUnwrap")
+        stage_status = function_block(self.editor, "getStageImageStatus", "pruneUnusedAssets")
         self.assertNotIn("stageWarningDetail", stage_status)
         boot = self.editor.split("function runBootStep", 1)[1].split(
             "\napp.registerExtension(",

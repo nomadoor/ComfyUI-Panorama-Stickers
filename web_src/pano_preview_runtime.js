@@ -1,33 +1,14 @@
 import * as appModule from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { createApp, reactive } from "vue";
-import { createPanoramaRenderCore } from "./pano_render_core.js";
-import { buildPanoramaCompositeDescriptor, buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
-import {
-  createPanoInteractionController,
-  PANO_DRAG_SENSITIVITY,
-  PANO_WHEEL_STEP,
-  PANO_FOV_MIN,
-  PANO_FOV_MAX,
-  PANO_INERTIA_BLEND_INST,
-  PANO_INERTIA_DAMPING,
-  PANO_INERTIA_START_SPEED,
-  PANO_INERTIA_STOP_SPEED,
-  PANO_MODAL_PARITY_CONSTANTS,
-} from "./pano_interaction_controller.js";
-import { clamp, wrapYaw } from "./pano_math.js";
-import { cameraBasis, yawPitchToDir } from "./pano_camera_math.js";
+import { createPanoInteractionController } from "./pano_interaction_controller.js";
+import { clamp } from "./pano_math.js";
+import { yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
-import { editorActive, editorStateText, parsePanoEditorState, setEditorActive } from "./pano_editor_state.js";
-import {
-  buildCutoutViewParamsFromShot,
-  buildPreviewNodeViewParams,
-  buildPanoramaViewParamsFromRuntime,
-  buildStickerSceneFromState,
-  buildStickerTexturesFromState,
-  normalizeStickerItem,
-} from "./pano_gl_scene.js";
+import { editorActive, editorSceneState, editorStateText, parsePanoEditorState, setEditorActive } from "./pano_editor_state.js";
+import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
+import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import {
   beginCutoutRollGesture,
   buildCutoutAddFrameAction,
@@ -40,7 +21,7 @@ import {
   resolveCutoutNodeSurfaceShot,
   updateCutoutRollGesture,
 } from "./pano_cutout_node_surface.js";
-import { fitFocalPx } from "./pano_cutout_view_math.js";
+import { fitFocalPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
 import PanoStickersNodeSurface from "./components/PanoStickersNodeSurface.vue";
 import {
@@ -107,24 +88,6 @@ function getAnimPreviewWidgetName() {
   );
 }
 
-const DEG2RAD = Math.PI / 180;
-const RAD2DEG = 180 / Math.PI;
-const STANDALONE_DRAG_SENSITIVITY = PANO_DRAG_SENSITIVITY;
-const STANDALONE_WHEEL_STEP = PANO_WHEEL_STEP;
-const STANDALONE_FOV_MIN = PANO_FOV_MIN;
-const STANDALONE_FOV_MAX = PANO_FOV_MAX;
-const STANDALONE_INERTIA_BLEND = PANO_INERTIA_BLEND_INST;
-const STANDALONE_INERTIA_DECAY = PANO_INERTIA_DAMPING;
-const STANDALONE_INERTIA_START_SPEED = PANO_INERTIA_START_SPEED;
-const STANDALONE_INERTIA_STOP_SPEED = PANO_INERTIA_STOP_SPEED;
-export const STANDALONE_MESH_LOW = { Nu: 14, Nv: 9 };
-const STANDALONE_MESH_BALANCED = { Nu: 24, Nv: 14 };
-const STANDALONE_MESH_HIGH = { Nu: 32, Nv: 20 };
-const STANDALONE_HQ_FRAMES_AFTER_INTERACTION = 10;
-const STANDALONE_FRAME_EMA_ALPHA = 0.16;
-const STANDALONE_FRAME_DEGRADE_MS = 26;
-const STANDALONE_DOM_PROBE_FRAMES = 3;
-const STANDALONE_DOM_PROBE_TIMEOUT_MS = 220;
 const SHARED_UI_SETTINGS_KEY = "pano_suite.ui_settings.v1";
 const PANO_LOADING_MIN_MS = 120;
 
@@ -132,17 +95,14 @@ function loadSharedUiSettings() {
   const base = {
     invert_view_x: false,
     invert_view_y: false,
-    preview_quality: "balanced",
   };
   try {
     const text = String(window?.localStorage?.getItem(SHARED_UI_SETTINGS_KEY) || "").trim();
     if (!text) return base;
     const parsed = JSON.parse(text);
-    const q = String(parsed?.preview_quality || "balanced");
     return {
       invert_view_x: !!parsed?.invert_view_x,
       invert_view_y: !!parsed?.invert_view_y,
-      preview_quality: (q === "draft" || q === "high") ? q : "balanced",
     };
   } catch {
     return base;
@@ -153,15 +113,6 @@ function panoPreviewDebugEnabled() {
   try {
     if (window?.__PANO_PREVIEW_DEBUG__ === true) return true;
     return String(window?.localStorage?.getItem("panoPreviewDebug") || "").trim() === "1";
-  } catch {
-    return false;
-  }
-}
-
-function panoPreviewVerboseEnabled() {
-  try {
-    if (window?.__PANO_PREVIEW_DEBUG_VERBOSE__ === true) return true;
-    return String(window?.localStorage?.getItem("panoPreviewDebugVerbose") || "").trim() === "1";
   } catch {
     return false;
   }
@@ -215,48 +166,6 @@ function ensurePreviewModeCss() {
     }
   `;
   document.head.appendChild(style);
-}
-
-function inspectNodeLayout(node, label, context = {}) {
-  if (!panoPreviewDebugEnabled()) return;
-  const dom = node.__panoDomPreview;
-  const widget = dom?.widget;
-  const root = dom?.root;
-  const wrap = root?.querySelector?.("div");
-  const canvas = dom?.canvas;
-  const parent = root?.parentElement;
-  const grandparent = parent?.parentElement;
-
-  const snap = (el) => {
-    if (!el) return null;
-    const r = el.getBoundingClientRect?.();
-    return {
-      tag: el.tagName.toLowerCase(),
-      cw: el.clientWidth, ch: el.clientHeight,
-      ow: el.offsetWidth, oh: el.offsetHeight,
-      rect: r ? { w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top) } : null,
-      styleH: el.style.height,
-      styleW: el.style.width,
-    };
-  };
-
-  const cvInt = canvas ? { w: canvas.width, h: canvas.height } : null;
-  const nodeSize = getNodeSize(node);
-
-  panoPreviewLog(node, `layout.${label}`, {
-    ...context,
-    nodeSize,
-    widgetCompute: widget?.__lastComputeSize || null,
-    dom: {
-      root: snap(root),
-      wrap: snap(wrap),
-      canvas: snap(canvas),
-      parent: snap(parent),
-      grandparent: snap(grandparent),
-    },
-    canvasIntrinsic: cvInt,
-    dpr: window.devicePixelRatio,
-  });
 }
 
 function getNodeSize(node) {
@@ -317,18 +226,6 @@ function getFrontendSignature(node = null) {
   const domWidgetSignal = typeof node?.addDOMWidget === "function" ? "dom_widget" : "no_dom_widget";
   const canvasCtor = String(app?.canvas?.constructor?.name || "");
   return [frontendVersion, domWidgetSignal, forcePath, canvasCtor].join("|");
-}
-
-function isFrontendC25Compat() {
-  const v = String(window?.__COMFYUI_FRONTEND_VERSION__ || "");
-  return v.includes("c25f9a0e939145c155fbbd0fef24da4b02a40326");
-}
-
-function shouldEnableInputShield() {
-  if (window?.__PANO_PREVIEW_INPUT_SHIELD__ === true) return true;
-  if (window?.__PANO_PREVIEW_INPUT_SHIELD__ === false) return false;
-  // Safe default: keep shield on unless explicitly disabled.
-  return true;
 }
 
 function getPreviewController(node) {
@@ -462,11 +359,6 @@ function teardownPreview(node, options = {}) {
 
 }
 
-function cleanupPanoDomPreview(node) {
-  teardownPreview(node);
-}
-
-function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 function parseState(value, bg = "#00ff00") {
   const base = {
     version: 1,
@@ -536,7 +428,6 @@ function getCachedState(node) {
 }
 
 function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
-function pointInRect(x, y, r) { return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
 
 function getGraphLinkById(graph, linkId) {
   if (!graph || linkId == null) return null;
@@ -971,81 +862,6 @@ function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null)
   return player.video;
 }
 
-function getNodeOwnOutputImage(node, onLoad = null) {
-  const id = node?.id;
-  if (id == null) return null;
-  const ownSrc = String(node?.__panoOwnOutputSrc || "").trim();
-  const ownOutput = lookupNodeOutputEntry(id);
-  const outImgs = Array.isArray(ownOutput?.images) ? ownOutput.images : [];
-  const nodeImgs = Array.isArray(node?.imgs) ? node.imgs : [];
-  const candidates = ownSrc ? [ownSrc, ...outImgs, ...nodeImgs] : [...outImgs, ...nodeImgs];
-  let src = "";
-  for (const cand of candidates) {
-    src = imageSourceFromCandidate(cand);
-    if (src) break;
-  }
-  if (!src) return null;
-  const rev = Number(node?.__panoOwnOutputRev || 0);
-  const rawCandidates = buildImageSrcCandidates(src);
-  const srcCandidates = rawCandidates.map((s) => appendImageRevision(s, rev));
-  if (!srcCandidates.length) return null;
-  const srcKey = `${src}|rev:${rev}`;
-  if (!node.__panoOwnOutputImageCache) {
-    node.__panoOwnOutputImageCache = {
-      src: "",
-      img: null,
-      pendingSrc: "",
-      pendingImg: null,
-    };
-  }
-  const cached = node.__panoOwnOutputImageCache;
-  if (cached.img && cached.src === srcKey) return cached.img;
-  if (cached.pendingImg && cached.pendingSrc === srcKey) {
-    return (cached.img && (cached.img.complete || cached.img.naturalWidth || cached.img.width))
-      ? cached.img
-      : cached.pendingImg;
-  }
-  const img = new Image();
-  let attempt = -1;
-  const tryLoadNext = () => {
-    attempt += 1;
-    if (attempt >= srcCandidates.length) {
-      if (node.__panoOwnOutputImageCache === cached) {
-        cached.pendingSrc = "";
-        cached.pendingImg = null;
-      }
-      return;
-    }
-    img.src = srcCandidates[attempt];
-  };
-  img.onload = () => {
-    if (node.__panoOwnOutputImageCache === cached && cached.pendingImg === img && cached.pendingSrc === srcKey) {
-      cached.src = srcKey;
-      cached.img = img;
-      cached.pendingSrc = "";
-      cached.pendingImg = null;
-    }
-    onLoad?.();
-    node.setDirtyCanvas?.(true, true);
-  };
-  img.onerror = () => {
-    if (attempt + 1 >= srcCandidates.length) {
-      if (node.__panoOwnOutputImageCache === cached && cached.pendingImg === img) {
-        cached.pendingSrc = "";
-        cached.pendingImg = null;
-      }
-      return;
-    }
-    tryLoadNext();
-  };
-  cached.pendingSrc = srcKey;
-  cached.pendingImg = img;
-  tryLoadNext();
-  return (cached.img && (cached.img.complete || cached.img.naturalWidth || cached.img.width))
-    ? cached.img
-    : img;
-}
-
 function findLinkedInputImageSource(node, preferredInputNames = []) {
   const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
   if (!inputs.length) return { src: "", sourceType: "", inputName: "" };
@@ -1379,88 +1195,9 @@ function drawLoadingOverlay(ctx, rect, uiScale = 1) {
   ctx.restore();
 }
 
-function fitHintLines(ctx, text, maxWidth, maxFontPx, minFontPx = 12, maxLines = 2) {
-  const phrase = String(text || "").trim();
-  if (!phrase) {
-    return { lines: [], fontPx: minFontPx, lineHeight: Math.round(minFontPx * 1.25) };
-  }
-  const words = phrase.split(/\s+/).filter(Boolean);
-  const hi = Math.max(1, Math.round(maxFontPx));
-  const lo = Math.max(1, Math.round(minFontPx));
-
-  const tryWrap = (fontPx) => {
-    ctx.font = `600 ${fontPx}px Plus Jakarta Sans, Geist, sans-serif`;
-    if (ctx.measureText(phrase).width <= maxWidth) {
-      return [phrase];
-    }
-    if (words.length <= 1) return null;
-    const lines = [];
-    let current = "";
-    for (const word of words) {
-      const next = current ? `${current} ${word}` : word;
-      if (ctx.measureText(next).width <= maxWidth) {
-        current = next;
-      } else if (!current) {
-        return null;
-      } else {
-        lines.push(current);
-        current = word;
-      }
-    }
-    if (current) lines.push(current);
-    if (lines.length > maxLines) return null;
-    if (lines.some((line) => ctx.measureText(line).width > maxWidth)) return null;
-    return lines;
-  };
-
-  for (let fontPx = hi; fontPx >= lo; fontPx -= 1) {
-    const lines = tryWrap(fontPx);
-    if (lines) {
-      return { lines, fontPx, lineHeight: Math.round(fontPx * 1.25) };
-    }
-  }
-
-  const fontPx = lo;
-  const lineHeight = Math.round(fontPx * 1.25);
-  ctx.font = `600 ${fontPx}px Plus Jakarta Sans, Geist, sans-serif`;
-  let fallback = phrase;
-  const ellipsis = "...";
-  while (fallback.length > 1 && ctx.measureText(`${fallback}${ellipsis}`).width > maxWidth) {
-    fallback = fallback.slice(0, -1);
-  }
-  return { lines: [`${fallback}${ellipsis}`], fontPx, lineHeight };
-}
-
-function drawCenteredAutoFitHint(ctx, rect, text, options = {}) {
-  const x = Number(rect?.x || 0);
-  const y = Number(rect?.y || 0);
-  const w = Math.max(1, Number(rect?.w || 0));
-  const h = Math.max(1, Number(rect?.h || 0));
-  const fontScale = Math.max(0.5, Math.min(2.0, Number(options.fontScale || 1.0)));
-  const maxWidth = Math.max(40, w * Number(options.maxWidthRatio || 0.86));
-  const maxFontPx = Math.max(10, Math.min(34, Math.round(Math.min(w * 0.09, h * 0.24) * fontScale)));
-  const minFontPx = Math.max(8, Math.min(12, Math.round(h * 0.14 * fontScale)));
-  const fit = fitHintLines(ctx, text, maxWidth, maxFontPx, minFontPx, 2);
-  if (!fit.lines.length) return;
-
-  const totalHeight = fit.lineHeight * fit.lines.length;
-  const startY = y + h * 0.5 - totalHeight * 0.5 + fit.lineHeight * 0.5;
-
-  ctx.save();
-  ctx.fillStyle = String(options.color || "rgba(161,161,170,0.95)");
-  ctx.font = `600 ${fit.fontPx}px Plus Jakarta Sans, Geist, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  fit.lines.forEach((line, idx) => {
-    ctx.fillText(line, x + w * 0.5, startY + idx * fit.lineHeight);
-  });
-  ctx.restore();
-}
-
-function setCutoutEmptyHint(node, visible, text = "Connect ERP image") {
+function setCutoutEmptyHint(node, visible) {
   const el = node?.__panoDomPreview?.emptyHintEl;
   if (!el) return;
-  el.textContent = String(text || "Connect ERP image");
   el.style.display = visible ? "flex" : "none";
 }
 
@@ -1475,166 +1212,8 @@ function getActiveShot(state) {
   return shots[0] || null;
 }
 
-function containRect(outer, aspect) {
-  const ox = Number(outer?.x || 0);
-  const oy = Number(outer?.y || 0);
-  const ow = Math.max(1, Number(outer?.w || 0));
-  const oh = Math.max(1, Number(outer?.h || 0));
-  const a = Number(aspect) > 0 ? Number(aspect) : 1;
-  let w = ow;
-  let h = ow / a;
-  if (h > oh) {
-    h = oh;
-    w = oh * a;
-  }
-  return {
-    x: ox + (ow - w) * 0.5,
-    y: oy + (oh - h) * 0.5,
-    w,
-    h,
-  };
-}
-
-function drawContainedImagePreview(ctx, img, outerRect, dimAlpha = 0) {
-  if (!ctx || !img || !outerRect) return false;
-  const iw = Math.max(1, Number(img.naturalWidth || img.width || 0));
-  const ih = Math.max(1, Number(img.naturalHeight || img.height || 0));
-  if (iw <= 1 || ih <= 1) return false;
-  const drawRect = containRect(outerRect, iw / ih);
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "low";
-  ctx.drawImage(img, drawRect.x, drawRect.y, drawRect.w, drawRect.h);
-  const alpha = Math.max(0, Math.min(1, Number(dimAlpha) || 0));
-  if (alpha > 0) {
-    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-    ctx.fillRect(drawRect.x, drawRect.y, drawRect.w, drawRect.h);
-  }
-  ctx.restore();
-  return true;
-}
-
-function getCutoutContainRect(baseRect, shot) {
-  const w = Math.max(1, Number(baseRect?.w || 0));
-  const h = Math.max(1, Number(baseRect?.h || 0));
-  const fallback = { x: Number(baseRect?.x || 0), y: Number(baseRect?.y || 0), w, h };
-  if (!shot) return { drawRect: fallback, targetAspect: null };
-  const view = buildCutoutViewParamsFromShot(shot);
-  const aspect = clamp(Number(view?.aspect || 1), 0.05, 20.0);
-  return {
-    drawRect: containRect(fallback, aspect),
-    targetAspect: aspect,
-  };
-}
-
-function hasValidCutoutStats(node) {
-  const stats = node?.__panoCutoutProjectionStats;
-  const tri = Number(stats?.drawnTriCount || 0);
-  return Number.isFinite(tri) && tri > 0;
-}
-
-function getWrappedErpCanvas(node, img) {
-  const state = getCachedState(node);
-  if (Number(state?.coverage || 360) === 180) return null;
-  if (!img || !img.complete || !(img.naturalWidth || img.width)) return null;
-  const iw = Number(img.naturalWidth || img.width || 0);
-  const ih = Number(img.naturalHeight || img.height || 0);
-  if (iw <= 1 || ih <= 1) return null;
-  if (!node.__panoWrappedErpCache) node.__panoWrappedErpCache = { src: "", w: 0, h: 0, canvas: null };
-  const src = String(img.src || "");
-  const cached = node.__panoWrappedErpCache;
-  if (cached.canvas && cached.src === src && cached.w === iw && cached.h === ih) return cached.canvas;
-  const cv = document.createElement("canvas");
-  cv.width = iw * 2;
-  cv.height = ih;
-  const cctx = cv.getContext("2d");
-  if (!cctx) return null;
-  cctx.drawImage(img, 0, 0, iw, ih);
-  cctx.drawImage(img, iw, 0, iw, ih);
-  node.__panoWrappedErpCache = { src, w: iw, h: ih, canvas: cv };
-  return cv;
-}
-
-function getNodeWidgetsBottom(node, excludeWidget = null) {
-  const widgetTop = 32;
-  const widgets = Array.isArray(node.widgets) ? node.widgets : [];
-  let y = widgetTop;
-  widgets.forEach((w) => {
-    if (w === excludeWidget) return;
-    if (!w || w.hidden || w.type === "hidden") return;
-    let h = 22;
-    try {
-      const size = typeof w.computeSize === "function" ? w.computeSize(getNodeSize(node)?.[0] || 0) : null;
-      if (Array.isArray(size) && Number.isFinite(Number(size[1]))) h = Number(size[1]);
-    } catch {
-      h = 22;
-    }
-    y += h;
-  });
-  return y;
-}
-
 function removeNodeWidget(node, widget) {
   return removeTrackedDomWidget(node, widget);
-}
-
-function getNodePreviewRect(node) {
-  const pad = 8;
-  const top = getNodeWidgetsBottom(node) + 2;
-  const x = pad;
-  const size = getNodeSize(node);
-  const w = Math.max(120, Number(size?.[0] || 0) - pad * 2);
-  const h = Math.max(84, Number(size?.[1] || 0) - top - pad);
-  if (h < 40 || w < 80) return null;
-  return { x, y: top, w, h };
-}
-
-function getNodeEditorButtonRect(node) {
-  if (!node?.__panoPreviewButtonText) return null;
-  const pad = 8;
-  const y = getNodeWidgetsBottom(node) + 2;
-  const size = getNodeSize(node);
-  const w = Math.max(120, Number(size?.[0] || 0) - pad * 2);
-  return { x: pad, y, w, h: 30 };
-}
-
-function getStandaloneLegacyPreviewRect(node) {
-  const pad = 8;
-  const btn = getNodeEditorButtonRect(node);
-  const top = btn ? (btn.y + btn.h + 2) : (getNodeWidgetsBottom(node) + 2);
-  const x = pad;
-  const size = getNodeSize(node);
-  const w = Math.max(120, Number(size?.[0] || 0) - pad * 2);
-  const h = Math.max(84, Number(size?.[1] || 0) - top - pad);
-  if (h < 40 || w < 80) return null;
-  return { x, y: top, w, h };
-}
-
-function getNodePreviewResetButtonRect(rect) {
-  const w = 50;
-  const h = 20;
-  const m = 8;
-  return { x: rect.x + rect.w - w - m, y: rect.y + rect.h - h - m, w, h };
-}
-
-function drawNodeEditorButton(node, ctx) {
-  const r = getNodeEditorButtonRect(node);
-  if (!r) return;
-  const hover = !!node.__panoPreviewBtnHover;
-  ctx.save();
-  ctx.fillStyle = hover ? "rgba(44, 44, 47, 0.96)" : "rgba(32, 32, 35, 0.96)";
-  ctx.strokeStyle = "rgba(98, 98, 105, 0.9)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(r.x, r.y, r.w, r.h, 7);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "rgba(244, 244, 246, 0.95)";
-  ctx.font = "500 12px Plus Jakarta Sans, Geist, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(String(node.__panoPreviewButtonText || "Open Editor"), r.x + r.w * 0.5, r.y + r.h * 0.5 + 0.5);
-  ctx.restore();
 }
 
 function getNodePreviewImage(node, assetId, asset, sceneItem = null) {
@@ -1664,73 +1243,6 @@ function getNodePreviewImage(node, assetId, asset, sceneItem = null) {
     node.__panoDomPreview?.requestDraw?.();
   });
   return img || null;
-}
-
-function waitForImageReady(img, timeoutMs = 3000) {
-  if (!img) return Promise.resolve(false);
-  if (img.complete && Number(img.naturalWidth || img.width || 0) > 0) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (ok) => {
-      if (settled) return;
-      settled = true;
-      img.removeEventListener?.("load", onLoad);
-      img.removeEventListener?.("error", onError);
-      clearTimeout(timer);
-      resolve(ok);
-    };
-    const onLoad = () => finish(true);
-    const onError = () => finish(false);
-    const timer = setTimeout(() => finish(!!(img.complete && Number(img.naturalWidth || img.width || 0) > 0)), timeoutMs);
-    img.addEventListener?.("load", onLoad, { once: true });
-    img.addEventListener?.("error", onError, { once: true });
-  });
-}
-
-function getSortedStickers(node, state) {
-  const stickers = Array.isArray(state?.stickers) ? state.stickers : [];
-  const cache = node.__panoStickerSortCache;
-  if (cache?.source === stickers && Array.isArray(cache.sorted)) return cache.sorted;
-  const sorted = [...stickers].sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0));
-  node.__panoStickerSortCache = { source: stickers, sorted };
-  return sorted;
-}
-
-function buildRuntimePreviewScene(node, state) {
-  return buildStickerSceneFromState(state, {
-    selectedId: null,
-    hoveredId: null,
-  });
-}
-
-function buildRuntimePreviewTextures(node, state, scene) {
-  return buildStickerTexturesFromState(
-    state,
-    (assetId, asset, item) => getNodePreviewImage(node, assetId, asset, item),
-    { scene },
-  );
-}
-
-async function ensureRuntimePreviewTextures(node, state, scene, timeoutMs = 3000) {
-  const assets = (state && typeof state === "object" && state.assets && typeof state.assets === "object")
-    ? state.assets
-    : {};
-  const seen = new Set();
-  const pending = [];
-  const stickers = Array.isArray(scene?.stickers) ? scene.stickers : [];
-  stickers.forEach((item) => {
-    const assetId = String(item?.assetId || "").trim();
-    const textureId = assetId || (item?.external ? String(item?.id || "").trim() : "");
-    if (!textureId || seen.has(textureId)) return;
-    seen.add(textureId);
-    const asset = assetId ? assets[assetId] : null;
-    const img = getNodePreviewImage(node, textureId, asset);
-    if (img) pending.push(waitForImageReady(img, timeoutMs));
-  });
-  if (pending.length > 0) {
-    await Promise.allSettled(pending);
-  }
-  return buildRuntimePreviewTextures(node, state, scene);
 }
 
 function buildRuntimeCutoutLayerEntries(node, state) {
@@ -1792,315 +1304,8 @@ function buildRuntimeCutoutLayerEntries(node, state) {
   return [...groupEntries, ...rasterEntries];
 }
 
-function syncRuntimeCutoutComposite(node, state, bgImg, revisionScope = "") {
-  const scene = buildRuntimePreviewScene(node, state);
-  const textures = buildRuntimePreviewTextures(node, state, scene);
-  const layerEntries = buildRuntimeCutoutLayerEntries(node, state);
-  const mediaRevision = getRenderableMediaRevisionToken(bgImg);
-  const mediaSize = getSourcePixelSize(bgImg);
-  const descriptor = buildPanoramaCompositeDescriptor({
-    stateRevision: [
-      "runtime_cutout_scene",
-      mediaRevision,
-      mediaSize.width,
-      mediaSize.height,
-      Number(state?.coverage || 360) === 180 ? 180 : 360,
-      String(revisionScope || ""),
-      Array.isArray(textures) ? textures.map((item) => `${String(item?.assetId || "")}:${String(item?.revision || "")}`).join(",") : "",
-      Array.isArray(layerEntries) ? layerEntries.map((entry) => `${String(entry?.id || "")}:${String(entry?.revision || "")}:${Number(entry?.zIndex || 0)}`).join(",") : "",
-    ].join("|"),
-    backgroundSource: bgImg,
-    backgroundRevision: mediaRevision,
-    coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
-    scene,
-    textures,
-    rasterEntries: layerEntries,
-    backgroundOpacity: 1,
-    showMaskTint: false,
-  });
-  if (!node.__panoRuntimeCore) node.__panoRuntimeCore = createPanoramaRenderCore();
-  node.__panoRuntimeCore.syncState(descriptor);
-  return node.__panoRuntimeCore;
-}
 
 
-function expandTri(d0, d1, d2, px = 0.45) {
-  const cx = (d0.x + d1.x + d2.x) / 3;
-  const cy = (d0.y + d1.y + d2.y) / 3;
-  const grow = (p) => {
-    const vx = p.x - cx;
-    const vy = p.y - cy;
-    const ll = Math.hypot(vx, vy) || 1;
-    return { x: p.x + (vx / ll) * px, y: p.y + (vy / ll) * px };
-  };
-  return [grow(d0), grow(d1), grow(d2)];
-}
-
-function drawImageTri(ctx, img, s0, s1, s2, d0, d1, d2) {
-  const den = (s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y));
-  if (Math.abs(den) < 1e-6) return;
-  const [e0, e1, e2] = expandTri(d0, d1, d2, Number(ctx.__panoTriExpandPx || 0.45));
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(e0.x, e0.y);
-  ctx.lineTo(e1.x, e1.y);
-  ctx.lineTo(e2.x, e2.y);
-  ctx.closePath();
-  ctx.clip();
-  const m11 = (d0.x * (s1.y - s2.y) + d1.x * (s2.y - s0.y) + d2.x * (s0.y - s1.y)) / den;
-  const m12 = (d0.x * (s2.x - s1.x) + d1.x * (s0.x - s2.x) + d2.x * (s1.x - s0.x)) / den;
-  const m13 = (d0.x * (s1.x * s2.y - s2.x * s1.y) + d1.x * (s2.x * s0.y - s0.x * s2.y) + d2.x * (s0.x * s1.y - s1.x * s0.y)) / den;
-  const m21 = (d0.y * (s1.y - s2.y) + d1.y * (s2.y - s0.y) + d2.y * (s0.y - s1.y)) / den;
-  const m22 = (d0.y * (s2.x - s1.x) + d1.y * (s0.x - s2.x) + d2.y * (s1.x - s0.x)) / den;
-  const m23 = (d0.y * (s1.x * s2.y - s2.x * s1.y) + d1.y * (s2.x * s0.y - s0.x * s2.y) + d2.y * (s0.x * s1.y - s1.x * s0.y)) / den;
-  ctx.transform(m11, m21, m12, m22, m13, m23);
-  ctx.drawImage(img, 0, 0);
-  ctx.restore();
-}
-
-function projectDirToPreview(dir, viewBasis, rect, tanHalfY) {
-  const cx = dot(dir, viewBasis.right);
-  const cy = dot(dir, viewBasis.up);
-  const cz = dot(dir, viewBasis.fwd);
-  if (cz <= 1e-4) return null;
-  const sy = (cy / cz) / tanHalfY;
-  const sx = (cx / cz) / tanHalfY;
-  return { x: rect.x + rect.w * 0.5 + sx * rect.h * 0.5, y: rect.y + rect.h * 0.5 - sy * rect.h * 0.5 };
-}
-
-
-
-function drawSticker(ctx, node, rect, viewBasis, tanHalfY, state, item, Nu = 12, Nv = 9) {
-  const previewItem = normalizeStickerItem(item);
-  if (!previewItem || previewItem.visible === false) return;
-  const hf = clamp(Number(item.hFOV_deg || 30), 1, 179) * DEG2RAD;
-  const vf = clamp(Number(item.vFOV_deg || 30), 1, 179) * DEG2RAD;
-  const tx = Math.tan(hf * 0.5);
-  const ty = Math.tan(vf * 0.5);
-  const crop = item.crop || {};
-  const c0x = clamp(Number(crop.x0 ?? 0), 0, 1);
-  const c0y = clamp(Number(crop.y0 ?? 0), 0, 1);
-  const c1x = clamp(Number(crop.x1 ?? 1), 0, 1);
-  const c1y = clamp(Number(crop.y1 ?? 1), 0, 1);
-  const cw = Math.max(1e-4, c1x - c0x);
-  const ch = Math.max(1e-4, c1y - c0y);
-  const basis = cameraBasis(Number(item.yaw_deg || 0), Number(item.pitch_deg || 0), Number(item.rot_deg || item.roll_deg || 0));
-  const vertsX = [];
-  const vertsY = [];
-  const sampleX = [];
-  const sampleY = [];
-
-  for (let j = 0; j <= Nv; j++) {
-    const v = j / Nv;
-    const vv = c0y + v * ch;
-    const yScaled = (1 - vv * 2) * ty;
-
-    for (let i = 0; i <= Nu; i++) {
-      const u = i / Nu;
-      const uu = c0x + u * cw;
-      const xScaled = (uu * 2 - 1) * tx;
-
-      // Inlined dot, add, mul, norm
-      const dx = basis.fwd.x + basis.right.x * xScaled + basis.up.x * yScaled;
-      const dy = basis.fwd.y + basis.right.y * xScaled + basis.up.y * yScaled;
-      const dz = basis.fwd.z + basis.right.z * xScaled + basis.up.z * yScaled;
-      const mag = Math.hypot(dx, dy, dz) || 1e-8;
-      const nx = dx / mag;
-      const ny = dy / mag;
-      const nz = dz / mag;
-
-      // Inlined projectDirToPreview
-      const pcx = nx * viewBasis.right.x + ny * viewBasis.right.y + nz * viewBasis.right.z;
-      const pcy = nx * viewBasis.up.x + ny * viewBasis.up.y + nz * viewBasis.up.z;
-      const pcz = nx * viewBasis.fwd.x + ny * viewBasis.fwd.y + nz * viewBasis.fwd.z;
-
-      if (pcz <= 1e-4) {
-        if (!vertsX[j]) vertsX[j] = [];
-        if (!vertsY[j]) vertsY[j] = [];
-        vertsX[j][i] = null;
-        vertsY[j][i] = null;
-      } else {
-        const sy = (pcy / pcz) / tanHalfY;
-        const sx = (pcx / pcz) / tanHalfY;
-        if (!vertsX[j]) vertsX[j] = [];
-        if (!vertsY[j]) vertsY[j] = [];
-        vertsX[j][i] = rect.x + rect.w * 0.5 + sx * rect.h * 0.5;
-        vertsY[j][i] = rect.y + rect.h * 0.5 - sy * rect.h * 0.5;
-      }
-      if (!sampleX[j]) sampleX[j] = [];
-      if (!sampleY[j]) sampleY[j] = [];
-      sampleX[j][i] = u;
-      sampleY[j][i] = v;
-    }
-  }
-
-  const textureId = String(previewItem?.assetId || "");
-  const asset = state.assets?.[textureId];
-  const img = getNodePreviewImage(node, textureId, asset, previewItem);
-  if (!img || !img.complete || !(img.naturalWidth || 0)) return;
-  const iw = Number(img.naturalWidth || img.width || 1);
-  const ih = Number(img.naturalHeight || img.height || 1);
-  const triExpand = (Nu < 10) ? 0.35 : 0.45;
-  ctx.__panoTriExpandPx = triExpand;
-
-  for (let j = 0; j < Nv; j++) {
-    for (let i = 0; i < Nu; i++) {
-      const x00 = vertsX[j][i];
-      const y00 = vertsY[j][i];
-      const x10 = vertsX[j][i + 1];
-      const y10 = vertsY[j][i + 1];
-      const x01 = vertsX[j + 1][i];
-      const y01 = vertsY[j + 1][i];
-      const x11 = vertsX[j + 1][i + 1];
-      const y11 = vertsY[j + 1][i + 1];
-      if (x00 === null || x10 === null || x01 === null || x11 === null) continue;
-
-      const s00x = sampleX[j][i] * iw, s00y = sampleY[j][i] * ih;
-      const s10x = sampleX[j][i + 1] * iw, s10y = sampleY[j][i + 1] * ih;
-      const s01x = sampleX[j + 1][i] * iw, s01y = sampleY[j + 1][i] * ih;
-      const s11x = sampleX[j + 1][i + 1] * iw, s11y = sampleY[j + 1][i + 1] * ih;
-
-      drawImageTri(ctx, img, { x: s00x, y: s00y }, { x: s10x, y: s10y }, { x: s11x, y: s11y }, { x: x00, y: y00 }, { x: x10, y: y10 }, { x: x11, y: y11 });
-      drawImageTri(ctx, img, { x: s00x, y: s00y }, { x: s11x, y: s11y }, { x: s01x, y: s01y }, { x: x00, y: y00 }, { x: x11, y: y11 }, { x: x01, y: y01 });
-    }
-  }
-}
-
-function applyPreviewInertia(node, ts = performance.now()) {
-  const m = node.__panoPreviewInertia;
-  if (!m || !m.active || !node.__panoPreviewView) return;
-  const dt = m.lastTs > 0 ? Math.max(0.001, (ts - m.lastTs) / 1000) : (1 / 60);
-  m.lastTs = ts;
-  node.__panoPreviewView.yaw = wrapYaw(Number(node.__panoPreviewView.yaw || 0) + m.vx * dt);
-  node.__panoPreviewView.pitch = clamp(Number(node.__panoPreviewView.pitch || 0) + m.vy * dt, -89.9, 89.9);
-  const damping = Math.exp(-5.5 * dt);
-  m.vx *= damping;
-  m.vy *= damping;
-  if (Math.abs(m.vx) < 0.8 && Math.abs(m.vy) < 0.8) {
-    m.vx = 0;
-    m.vy = 0;
-    m.active = false;
-  } else {
-    node.setDirtyCanvas?.(true, false);
-  }
-}
-
-function drawPanoramaPreview(node, ctx, interaction = null) {
-  const mode = String(node.__panoPreviewMode || "stickers");
-  const state = getCachedState(node);
-  const rect = getNodePreviewRect(node);
-  if (!rect) return;
-
-  if (!node.__panoPreviewView) node.__panoPreviewView = { yaw: 0, pitch: 0, fov: 100 };
-
-  const viewBasis = cameraBasis(Number(node.__panoPreviewView.yaw || 0), Number(node.__panoPreviewView.pitch || 0), 0);
-  const tanHalfY = Math.tan((Number(node.__panoPreviewView.fov || 100) * DEG2RAD) * 0.5);
-
-  ctx.save();
-  ctx.fillStyle = "#1a1a1e";
-  ctx.strokeStyle = "#3f3f46";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 8);
-  ctx.fill();
-  ctx.stroke();
-  ctx.clip();
-
-  const bgImg = getLinkedInputImageForPreview(
-    node,
-    preferredImageInputsForNode(node, ["erp_image", "bg_erp"]),
-    () => { node.__panoDomPreview?.requestDraw?.(); node.setDirtyCanvas?.(true, false); }
-  );
-  const bgReady = !!(bgImg && bgImg.complete && (bgImg.naturalWidth || bgImg.width));
-
-  const resizingNow = isPreviewResizing(node);
-  const movingBase = interaction?.state ? (interaction.state.inertia.active || interaction.state.drag.active) : false;
-  const moving = resizingNow || movingBase;
-  const mesh = STANDALONE_MESH_LOW;
-
-  const scene = buildRuntimePreviewScene(node, state);
-  const textures = buildRuntimePreviewTextures(node, state, scene);
-  const view = buildPanoramaViewParamsFromRuntime(node.__panoPreviewView, state?.coverage);
-  let drawn = false;
-  if (!node.__panoRuntimeCore) node.__panoRuntimeCore = createPanoramaRenderCore();
-  if (bgReady) {
-    const descriptor = buildStickerRenderDescriptor({
-      stateRevision: [
-        "runtime_panorama_scene",
-        String(bgImg.currentSrc || bgImg.src || ""),
-        Number(bgImg.naturalWidth || bgImg.width || 0),
-        Number(bgImg.naturalHeight || bgImg.height || 0),
-        Number(state?.coverage || 360) === 180 ? 180 : 360,
-        Array.isArray(textures) ? textures.map((item) => `${String(item?.assetId || "")}:${String(item?.revision || "")}`).join(",") : "",
-      ].join("|"),
-      backgroundSource: bgImg,
-      backgroundRevision: [
-        String(bgImg.currentSrc || bgImg.src || ""),
-        Number(bgImg.naturalWidth || bgImg.width || 0),
-        Number(bgImg.naturalHeight || bgImg.height || 0),
-      ].join("|"),
-      coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
-      scene,
-      textures,
-      backgroundOpacity: 1,
-      showMaskTint: false,
-    });
-    const synced = node.__panoRuntimeCore.syncState(descriptor);
-    const surface = synced
-      ? node.__panoRuntimeCore.renderToTarget("runtime_preview", view, {
-        width: rect.w,
-        height: rect.h,
-        dpr: window.devicePixelRatio || 1,
-      })
-      : null;
-    drawn = !!surface;
-    if (surface) ctx.drawImage(surface, rect.x, rect.y, rect.w, rect.h);
-  }
-  const stickerNu = moving ? 8 : 12;
-  const stickerNv = moving ? 6 : 9;
-  const stickers = getSortedStickers(node, state);
-
-  // Always draw grid if no background or if specifically needed for orientation
-  if (!bgReady || stickers.length === 0) {
-    const uiScale = getNodeUiScale(ctx?.canvas, rect);
-    drawPanoGrid(ctx, rect, viewBasis, tanHalfY, uiScale);
-  }
-
-  if (!drawn && bgReady) {
-    drawErpBackground(node, ctx, rect, viewBasis, tanHalfY, bgImg, mesh);
-  }
-
-  if (!drawn && stickers.length > 0) {
-    stickers.forEach((item) => drawSticker(ctx, node, rect, viewBasis, tanHalfY, state, item, stickerNu, stickerNv));
-  }
-  ctx.restore();
-}
-
-function buildStickerPreviewDescriptor(bgImg, state, scene, textures, keyPrefix = "preview_scene", bgRevision = "") {
-  const resolvedBgRevision = String(
-    bgRevision
-    || [
-      String(bgImg?.currentSrc || bgImg?.src || ""),
-      Number(bgImg?.naturalWidth || bgImg?.width || 0),
-      Number(bgImg?.naturalHeight || bgImg?.height || 0),
-    ].join("|")
-  );
-  return buildStickerRenderDescriptor({
-    stateRevision: [
-      keyPrefix,
-      resolvedBgRevision,
-      Number(state?.coverage || 360) === 180 ? 180 : 360,
-      Array.isArray(textures) ? textures.map((item) => `${String(item?.assetId || "")}:${String(item?.revision || "")}`).join(",") : "",
-    ].join("|"),
-    backgroundSource: bgImg,
-    backgroundRevision: resolvedBgRevision,
-    coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
-    scene,
-    textures,
-    backgroundOpacity: 1,
-    showMaskTint: false,
-  });
-}
 
 export function localPosFromEvent(node, e, arg2, canvas) {
   if (Array.isArray(arg2) && arg2.length >= 2) return { x: arg2[0], y: arg2[1] };
@@ -2161,15 +1366,6 @@ function localPosFromClientEvent(node, e, canvas) {
     x: graphPos.x - Number(node?.pos?.[0] || 0),
     y: graphPos.y - Number(node?.pos?.[1] || 0),
   };
-}
-
-function isLeftButtonPressed(e) {
-  if (Number(e?.button) === 0 && String(e?.type || "").toLowerCase().includes("down")) return true;
-  if (String(e?.type || "").toLowerCase() === "mouseup") return false;
-  if (typeof e?.buttons === "number") return (e.buttons & 1) === 1;
-  if (typeof e?.which === "number") return e.which === 1;
-  if (typeof e?.button === "number") return e.button === 0;
-  return false;
 }
 
 // Returns the display paint canvas for a node's paint state, or null if there are no strokes.
@@ -2239,63 +1435,6 @@ function getPreviewOrderedGroupIds(state) {
     .filter(Boolean);
 }
 
-function getNodePreviewPaintCanvas(node, state) {
-  const engine = getNodePreviewPaintEngine(node, state);
-  if (!engine) return null;
-  const orderedGroupIds = getPreviewOrderedGroupIds(state);
-  return engine.getErpTarget(orderedGroupIds).displayPaint.canvas;
-}
-
-function getPaintingLayerPaintImage(node, state, onLoad = null) {
-  const asset = state?.painting_layer?.paint;
-  const src = imageSourceFromCandidate(asset);
-  if (!src) return null;
-  if (!node.__panoPaintingLayerImageCache) node.__panoPaintingLayerImageCache = { src: "", img: null };
-  const cached = node.__panoPaintingLayerImageCache;
-  if (cached.img && cached.src === src) return cached.img;
-  const img = new Image();
-  img.onload = () => {
-    onLoad?.();
-    node.setDirtyCanvas?.(true, true);
-  };
-  img.onerror = () => {
-    if (node.__panoPaintingLayerImageCache?.img === img) {
-      node.__panoPaintingLayerImageCache = { src: "", img: null };
-    }
-  };
-  img.src = src;
-  node.__panoPaintingLayerImageCache = { src, img };
-  return img;
-}
-
-function getNodePreviewPaintSurface(node, state) {
-  const livePaint = node?.__panoLivePaintSurface;
-  if (livePaint?.source) {
-    return {
-      source: livePaint.source,
-      revision: String(livePaint.revision || ""),
-    };
-  }
-  const hasRasterObjects = Array.isArray(state?.painting?.raster_objects) && state.painting.raster_objects.length > 0;
-  if (hasRasterObjects) {
-    const uploadedPaint = getPaintingLayerPaintImage(node, state, () => node.__panoDomPreview?.requestDraw?.());
-    if (uploadedPaint && (uploadedPaint.complete || uploadedPaint.naturalWidth || uploadedPaint.width)) {
-      return {
-        source: uploadedPaint,
-        revision: String(state?.painting_layer?.revision || uploadedPaint.currentSrc || uploadedPaint.src || ""),
-      };
-    }
-  }
-  const paintCanvas = getNodePreviewPaintCanvas(node, state);
-  if (paintCanvas) {
-    return {
-      source: paintCanvas,
-      revision: String(node.__panoPreviewPaintRevisionKey || ""),
-    };
-  }
-  return null;
-}
-
 function getSourcePixelSize(source) {
   return {
     width: Math.max(1, Number(source?.naturalWidth || source?.videoWidth || source?.width || 0)),
@@ -2303,117 +1442,45 @@ function getSourcePixelSize(source) {
   };
 }
 
-function getOrCreateSizedCanvas(owner, key, width, height) {
-  let surface = owner?.[key] || null;
-  if (!surface || surface.width !== width || surface.height !== height) {
-    surface = document.createElement("canvas");
-    surface.width = width;
-    surface.height = height;
-    owner[key] = surface;
-  }
-  return surface;
-}
-
-function compositeScaledOverlayOntoOpaqueCanvas(owner, targetCtx, overlaySource, dstW, dstH, scratchKey) {
-  if (!targetCtx || !overlaySource || !(dstW > 0) || !(dstH > 0)) return;
-  const srcSize = getSourcePixelSize(overlaySource);
-  if (srcSize.width === dstW && srcSize.height === dstH) {
-    targetCtx.drawImage(overlaySource, 0, 0, dstW, dstH);
-    return;
-  }
-  const scratch = getOrCreateSizedCanvas(owner, scratchKey, srcSize.width, srcSize.height);
-  const scratchCtx = scratch.getContext("2d", { willReadFrequently: true });
-  if (!scratchCtx) {
-    targetCtx.drawImage(overlaySource, 0, 0, dstW, dstH);
-    return;
-  }
-  try {
-    scratchCtx.clearRect(0, 0, srcSize.width, srcSize.height);
-    scratchCtx.drawImage(overlaySource, 0, 0, srcSize.width, srcSize.height);
-    const srcData = scratchCtx.getImageData(0, 0, srcSize.width, srcSize.height).data;
-    const dstImage = targetCtx.getImageData(0, 0, dstW, dstH);
-    const dstData = dstImage.data;
-    const maxSrcX = Math.max(0, srcSize.width - 1);
-    const maxSrcY = Math.max(0, srcSize.height - 1);
-    for (let y = 0; y < dstH; y += 1) {
-      const sy = ((y + 0.5) * srcSize.height) / dstH - 0.5;
-      const y0 = clamp(Math.floor(sy), 0, maxSrcY);
-      const y1 = clamp(y0 + 1, 0, maxSrcY);
-      const ty = clamp(sy - y0, 0, 1);
-      for (let x = 0; x < dstW; x += 1) {
-        const sx = ((x + 0.5) * srcSize.width) / dstW - 0.5;
-        const x0 = clamp(Math.floor(sx), 0, maxSrcX);
-        const x1 = clamp(x0 + 1, 0, maxSrcX);
-        const tx = clamp(sx - x0, 0, 1);
-        let srcA = 0;
-        let srcR = 0;
-        let srcG = 0;
-        let srcB = 0;
-        const sample = (px, py, weight) => {
-          const idx = (py * srcSize.width + px) * 4;
-          const a = (srcData[idx + 3] || 0) / 255;
-          srcA += a * weight;
-          srcR += ((srcData[idx] || 0) / 255) * a * weight;
-          srcG += ((srcData[idx + 1] || 0) / 255) * a * weight;
-          srcB += ((srcData[idx + 2] || 0) / 255) * a * weight;
-        };
-        sample(x0, y0, (1 - tx) * (1 - ty));
-        sample(x1, y0, tx * (1 - ty));
-        sample(x0, y1, (1 - tx) * ty);
-        sample(x1, y1, tx * ty);
-        if (srcA <= 1e-6) continue;
-        const dstIdx = (y * dstW + x) * 4;
-        const invA = 1 - srcA;
-        dstData[dstIdx] = Math.round(clamp((srcR + (dstData[dstIdx] / 255) * invA) * 255, 0, 255));
-        dstData[dstIdx + 1] = Math.round(clamp((srcG + (dstData[dstIdx + 1] / 255) * invA) * 255, 0, 255));
-        dstData[dstIdx + 2] = Math.round(clamp((srcB + (dstData[dstIdx + 2] / 255) * invA) * 255, 0, 255));
-        dstData[dstIdx + 3] = 255;
-      }
-    }
-    targetCtx.putImageData(dstImage, 0, 0);
-  } catch {
-    targetCtx.drawImage(overlaySource, 0, 0, dstW, dstH);
-  }
-}
-
-// Returns a canvas with bgImg and the paint layer pre-composited (ERP space).
-// Cached and invalidated when either bg or paint changes.
-function buildBgPaintCanvas(node, bgImg, paintCanvas, paintRev) {
-  const bgW = Math.max(1, Number(bgImg.naturalWidth || bgImg.width || 0));
-  const bgH = Math.max(1, Number(bgImg.naturalHeight || bgImg.height || 0));
-  const bgSrc = String(bgImg.currentSrc || bgImg.src || "");
-  const revKey = `${bgSrc}|${bgW}x${bgH}|${paintRev}`;
-
-  let comp = node.__panoPreviewBgPaint;
-  if (!comp || comp.__revKey !== revKey || comp.width !== bgW || comp.height !== bgH) {
-    if (!comp || comp.width !== bgW || comp.height !== bgH) {
-      comp = document.createElement("canvas");
-      comp.width = bgW;
-      comp.height = bgH;
-      node.__panoPreviewBgPaint = comp;
-      // Canvas resize resets context state — revKey will also be stale, so always repaint below.
-    }
-    const compCtx = comp.getContext("2d");
-    compCtx.clearRect(0, 0, bgW, bgH);
-    compCtx.drawImage(bgImg, 0, 0, bgW, bgH);
-    compositeScaledOverlayOntoOpaqueCanvas(node, compCtx, paintCanvas, bgW, bgH, "__panoPreviewOverlayScratch");
-    comp.__revKey = revKey;
-  }
-  return comp;
-}
-
-function drawStickerSelectionOverlay(ctx, item, camera, viewport) {
-  const geometry = buildStickerGeometry(item, camera, viewport);
-  if (!geometry.visible) return null;
-  const accent = stickerSelectionAccent(item);
+function drawStickerSelectionOverlay(ctx, item, projection) {
+  const geometry = buildStickerGeometry(item, projection);
+  if (!geometry.visible) return;
   ctx.save();
   drawStickerSelectionBoundary(ctx, geometry.boundaryEdges, { selected: true });
-  drawStickerSelectionHandles(ctx, geometry, { accent });
+  drawStickerSelectionHandles(ctx, geometry, { accent: stickerSelectionAccent(item) });
   ctx.restore();
-  return geometry;
 }
 
-function drawCanvas(node, canvas, fovBtn, interaction = null) {
+// The camera projection of the on-node Stickers view, for its overlays and hit testing.
+function stickersSurfaceProjection(node, width, height) {
+  return viewProjection(previewNodeCamera(node.__panoPreviewView || { yaw: 0, pitch: 0, fov: 100 }, width, height), width, height);
+}
+
+// What the on-node surfaces draw with three.js: the background, and the Sky layers of the node's
+// state (its sky Stickers and paint) from back to front, at Timeline frame 0 like the editor.
+function surfaceViewInput(node, state, bgImg) {
+  if (node.__panoSurfaceScene?.state !== state) {
+    node.__panoSurfaceScene = { state, sceneState: editorSceneState({ ...state, painting: null }) };
+  }
+  const media = (item) => {
+    if (item.visible === false) return null;
+    const external = item.type === "external_image" || item.source_kind === "external_image";
+    const assetId = String(item.asset_id || "") || (external ? String(item.id || "") : "");
+    const img = getNodePreviewImage(node, assetId, state.assets?.[item.asset_id], { external });
+    return isRenderableMediaReady(img) ? { media: img, revision: getRenderableMediaRevisionToken(img) } : null;
+  };
+  const paintLayers = buildRuntimeCutoutLayerEntries(node, state)
+    .filter((entry) => entry.visible !== false)
+    .map((entry) => ({ id: entry.id, media: entry.source, revision: entry.revision, opacity: entry.opacity, zIndex: entry.zIndex }));
+  return {
+    background: isRenderableMediaReady(bgImg)
+      ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 }
+      : null,
+    layers: workingSkyLayers(node.__panoSurfaceScene.sceneState, 0, state.stickers, { media, paintLayers }),
+  };
+}
+
+function drawCanvas(node, canvas, surfaceView) {
   const mode = String(node.__panoPreviewMode || "stickers");
   ensureRenderCache(node, mode);
   const state = getCachedState(node);
@@ -2425,50 +1492,50 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
     node.__panoStickersNodeSurface?.session?.refresh?.();
   }
   const wrap = canvas.parentElement;
-  const dpr = 1;
-  const cw = Math.max(1, Number(wrap?.clientWidth || canvas.clientWidth || 0));
-  const ch = Math.max(1, Number(wrap?.clientHeight || canvas.clientHeight || 0));
-  const surfW = Math.max(64, Math.round(cw * dpr));
-  const surfH = Math.max(64, Math.round(ch * dpr));
+  const surfW = Math.max(64, Math.round(Number(wrap?.clientWidth || canvas.clientWidth || 0)));
+  const surfH = Math.max(64, Math.round(Number(wrap?.clientHeight || canvas.clientHeight || 0)));
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  if (canvas.width !== surfW || canvas.height !== surfH) {
+    canvas.width = surfW;
+    canvas.height = surfH;
+  }
+  const rect = { x: 0, y: 0, w: surfW, h: surfH };
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#070707";
+  ctx.fillRect(0, 0, surfW, surfH);
+  const bgImg = getNodeOwnOutputVideo(
+    node,
+    ["pano_input_videos"],
+    () => node.__panoDomPreview?.requestDraw?.(),
+  ) || getLinkedInputImageForPreview(
+    node,
+    ["erp_image", "bg_erp"],
+    () => node.__panoDomPreview?.requestDraw?.(),
+    { preserveReadyWhilePending: false },
+  );
+  const bgReady = isRenderableMediaReady(bgImg);
+  // Draws what camera sees into target and reports whether the view could draw it.
+  let input = null;
+  const drawView = (target, camera) => {
+    input ||= surfaceViewInput(node, state, bgImg);
+    const surface = surfaceView.render({ width: target.w, height: target.h, camera, ...input });
+    if (surface) ctx.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, target.x, target.y, target.w, target.h);
+    return !!surface;
+  };
 
   if (mode === "cutout") {
     const shot = getActiveShot(state);
-    const bgImg = getNodeOwnOutputVideo(
-      node,
-      ["pano_input_videos"],
-      () => node.__panoDomPreview?.requestDraw?.(),
-    ) || getLinkedInputImageForPreview(
-      node,
-      ["erp_image", "bg_erp"],
-      () => node.__panoDomPreview?.requestDraw?.(),
-      { preserveReadyWhilePending: false },
-    );
-    const bgReady = isRenderableMediaReady(bgImg);
-    if (canvas.width !== surfW || canvas.height !== surfH) {
-      canvas.width = surfW;
-      canvas.height = surfH;
-    }
-    const rect = { x: 0, y: 0, w: surfW, h: surfH };
     const bgSize = getSourcePixelSize(bgImg);
-    const ownAspect = bgReady ? clamp(Number(bgSize.width / bgSize.height), 0.05, 20.0) : 1;
-    const cutoutView = shot ? buildCutoutViewParamsFromShot(shot) : null;
-    const aspect = clamp(Number(cutoutView?.aspect || ownAspect || 1), 0.05, 20.0);
+    const aspect = shot
+      ? clamp(getCutoutCameraParams(shot).aspect, 0.1, 10)
+      : (bgReady ? clamp(Number(bgSize.width / bgSize.height), 0.05, 20.0) : 1);
     const frame = fitCutoutNodeFrame(rect, aspect);
     node.__panoCutoutNodeFrame = frame;
-    const uiScale = getNodeUiScale(canvas, rect);
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = "#070707";
-    ctx.fillRect(0, 0, surfW, surfH);
 
     let statusType = "none";
-    let hintText = "Connect ERP image";
-    let loadingSrc = "";
-
-    loadingSrc = String(bgImg?.currentSrc || bgImg?.src || "");
+    const loadingSrc = String(bgImg?.currentSrc || bgImg?.src || "");
     if (!shot) {
       const lastShot = node.__panoLastCutoutShot;
       if (lastShot) {
@@ -2478,68 +1545,28 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
         node.__panoPreviewView = { yaw: 0, pitch: 0, fov: 100 };
       }
       if (bgReady) {
-        const runtimeCore = syncRuntimeCutoutComposite(node, state, bgImg, "zero_shot_viewer");
-        const zeroShotRenderScale = (
-          interaction?.state?.drag?.active === true
-          || interaction?.state?.inertia?.active === true
-        ) ? 0.5 : 1;
-        const panoramaDrawn = runtimeCore.renderToContext(
-          ctx,
-          rect,
-          buildPanoramaViewParamsFromRuntime(node.__panoPreviewView, state?.coverage),
-          { width: rect.w, height: rect.h, dpr: 1, renderScale: zeroShotRenderScale },
-        );
-        if (!panoramaDrawn) {
-          statusType = "empty";
-          hintText = "Open editor or run node";
-        }
+        if (!drawView(rect, previewNodeCamera(node.__panoPreviewView, surfW, surfH))) statusType = "loading";
       } else if (bgImg) {
         statusType = "loading";
       } else {
         statusType = "empty";
-        hintText = "Connect ERP image";
       }
     } else if (bgImg && !bgReady) {
       statusType = "loading";
     } else if (bgReady) {
-      const runtimeCore = syncRuntimeCutoutComposite(node, state, bgImg, shot?.id || "");
       const contextLayout = layoutCutoutNodeContext({ width: surfW, height: surfH }, frame, shot);
-      const contextRect = contextLayout.rect;
-      const contextShot = buildCutoutViewParamsFromShot(contextLayout.shot);
-      let fallbackDrawn = true;
-      if (contextLayout.fallback) {
-        const fallbackRect = contextLayout.fallback.rect;
-        const fallbackShot = buildCutoutViewParamsFromShot(contextLayout.fallback.shot);
-        fallbackDrawn = runtimeCore.renderToContext(
-          ctx,
-          fallbackRect,
-          fallbackShot,
-          { width: fallbackRect.w, height: fallbackRect.h, dpr: 1 },
-        );
-      }
-      const liveCutoutDrawn = runtimeCore.renderToContext(
-        ctx,
-        contextRect,
-        contextShot,
-        { width: contextRect.w, height: contextRect.h, dpr: 1 },
-      );
-      let exactFrameDrawn = true;
-      if (contextLayout.fallback) {
-        exactFrameDrawn = runtimeCore.renderToContext(
-          ctx,
-          frame,
-          buildCutoutViewParamsFromShot(shot),
-          { width: frame.w, height: frame.h, dpr: 1 },
-        );
-      }
-      if (!fallbackDrawn || !liveCutoutDrawn || !exactFrameDrawn) {
-        statusType = "empty";
-        hintText = "Open editor or run node";
-      }
+      const drawn = [
+        !contextLayout.fallback || drawView(contextLayout.fallback.rect, shotCamera(contextLayout.fallback.shot)),
+        drawView(contextLayout.rect, shotCamera(contextLayout.shot)),
+        !contextLayout.fallback || drawView(frame, shotCamera(shot)),
+      ];
+      if (!drawn.every(Boolean)) statusType = "loading";
     } else {
       statusType = "empty";
-      hintText = "Connect ERP image";
     }
+    if (!bgReady) surfaceView.release();
+    // The node surface shows a failed view itself.
+    if (surfaceView.failed && statusType === "loading") statusType = "none";
 
     if (shot) {
       node.__panoLastCutoutShot = { ...shot };
@@ -2561,145 +1588,55 @@ function drawCanvas(node, canvas, fovBtn, interaction = null) {
       setCutoutEmptyHint(node, false);
       setRenderLoading(node, true, loadingSrc);
     } else if (statusType === "empty") {
-      setCutoutEmptyHint(node, true, hintText);
+      setCutoutEmptyHint(node, true);
       setRenderLoading(node, false, "");
     } else {
       setCutoutEmptyHint(node, false);
       setRenderLoading(node, false, "");
     }
-  } else {
-    setCutoutEmptyHint(node, false);
-    // Stickers mode: Canvas resolution follows DOM size
-    if (canvas.width !== surfW || canvas.height !== surfH) {
-      canvas.width = surfW;
-      canvas.height = surfH;
-    }
-    const rect = { x: 0, y: 0, w: surfW, h: surfH };
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = "#070707";
-    ctx.fillRect(0, 0, surfW, surfH);
+    return;
+  }
 
-    if (!node.__panoPreviewView) node.__panoPreviewView = { yaw: 0, pitch: 0, fov: 100 };
-    const connectedBg = getNodeOwnOutputVideo(
-      node,
-      ["pano_input_videos"],
-      () => node.__panoDomPreview?.requestDraw?.(),
-    ) || getLinkedInputImageForPreview(
-      node,
-      ["erp_image", "bg_erp"],
-      () => node.__panoDomPreview?.requestDraw?.(),
-      { preserveReadyWhilePending: false },
-    );
-    const bgImg = connectedBg || null;
-    const backgroundReady = !connectedBg || isRenderableMediaReady(bgImg);
-    const view = buildPanoramaViewParamsFromRuntime(node.__panoPreviewView, state?.coverage);
-    let panoramaDrawn = false;
-    if (backgroundReady) {
-      const revisionScope = connectedBg ? "stickers_surface|background:input" : "stickers_surface|background:none";
-      const runtimeCore = syncRuntimeCutoutComposite(node, state, bgImg, revisionScope);
-      const moving = (
-        isPreviewResizing(node)
-        || interaction?.state?.drag?.active === true
-        || interaction?.state?.inertia?.active === true
-        || node.__panoStickerDrag?.active === true
-      );
-      panoramaDrawn = runtimeCore.renderToContext(
-        ctx,
-        rect,
-        view,
-        { width: rect.w, height: rect.h, dpr: 1, renderScale: moving ? 0.5 : 1 },
-      );
-    }
-
-    if (backgroundReady && panoramaDrawn) {
-      setRenderLoading(node, false, "");
+  if (!node.__panoPreviewView) node.__panoPreviewView = { yaw: 0, pitch: 0, fov: 100 };
+  let panoramaDrawn = false;
+  if (!bgImg || bgReady) {
+    input = surfaceViewInput(node, state, bgImg);
+    // With nothing to draw yet, the grid stands alone and the view is not loaded.
+    if (!input.background && !input.layers.length) {
+      surfaceView.release();
+      panoramaDrawn = true;
     } else {
-      const loading = !!connectedBg && !backgroundReady;
-      setRenderLoading(node, loading, String(bgImg?.currentSrc || bgImg?.src || ""));
-      if (loading) {
-        drawLoadingOverlay(ctx, rect, getNodeUiScale(canvas, rect));
-      }
-      setCutoutEmptyHint(node, false);
-    }
-    if (!connectedBg && panoramaDrawn) {
-      const horizontalFov = clamp(Number(view.fovDeg || 100), 1, 179) * DEG2RAD;
-      const tanHalfY = Math.tan(horizontalFov * 0.5) * (rect.h / Math.max(1, rect.w));
-      const viewBasis = cameraBasis(Number(view.yawDeg || 0), Number(view.pitchDeg || 0), 0);
-      drawPanoGrid(ctx, rect, viewBasis, tanHalfY, getNodeUiScale(canvas, rect));
-    }
-    if (panoramaDrawn) {
-      setCutoutEmptyHint(node, false);
-      const selectedId = String(state?.active?.selected_sticker_id || "");
-      const selected = (Array.isArray(state?.stickers) ? state.stickers : [])
-        .find((item) => String(item?.id || "") === selectedId && item?.visible !== false);
-      node.__panoSelectedStickerGeometry = selected
-        ? drawStickerSelectionOverlay(ctx, selected, view, { width: surfW, height: surfH })
-        : null;
-    } else {
-      node.__panoSelectedStickerGeometry = null;
-    }
-
-    if (fovBtn) {
-      fovBtn.textContent = `FOV ${Math.round(Number(node.__panoPreviewView.fov || 100))}`;
+      panoramaDrawn = drawView(rect, previewNodeCamera(node.__panoPreviewView, surfW, surfH));
     }
   }
+  // The node surface shows a failed view itself.
+  const loading = !panoramaDrawn && !surfaceView.failed;
+  setRenderLoading(node, loading, loading ? String(bgImg?.currentSrc || bgImg?.src || "") : "");
+  if (loading) drawLoadingOverlay(ctx, rect, getNodeUiScale(canvas, rect));
+  const projection = stickersSurfaceProjection(node, surfW, surfH);
+  if (!bgImg && panoramaDrawn) drawPanoGrid(ctx, projection, getNodeUiScale(canvas, rect));
+  const selectedId = String(state?.active?.selected_sticker_id || "");
+  const selected = panoramaDrawn
+    ? state.stickers.find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
+    : null;
+  if (selected) drawStickerSelectionOverlay(ctx, selected, projection);
 }
 
-export function drawErpBackground(node, ctx, rect, viewBasis, tanHalfY, img, mesh = STANDALONE_MESH_BALANCED) {
-  void viewBasis;
-  void tanHalfY;
-  void mesh;
-  const state = getCachedState(node);
-  const view = node?.__panoPreviewView || { yaw: 0, pitch: 0, fov: 100 };
-  if (!node.__panoBackgroundCore) node.__panoBackgroundCore = createPanoramaRenderCore();
-  const bgRevision = getRenderableMediaRevisionToken(img);
-  const descriptor = buildStickerRenderDescriptor({
-      stateRevision: [
-        "runtime_bg_only",
-        bgRevision,
-        Number(state?.coverage || 360) === 180 ? 180 : 360,
-    ].join("|"),
-    backgroundSource: img,
-    backgroundRevision: bgRevision,
-    coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
-    scene: { stickers: [], selectedId: null, hoveredId: null },
-    textures: [],
-    backgroundOpacity: 1,
-    showMaskTint: false,
-  });
-  const synced = node.__panoBackgroundCore.syncState(descriptor);
-  if (!synced) return;
-  const surface = node.__panoBackgroundCore.renderToTarget("runtime_preview", {
-    mode: "panorama",
-    yawDeg: Number(view.yaw || 0),
-    pitchDeg: Number(view.pitch || 0),
-    fovDeg: Number(view.fov || 100),
-    coverageDeg: Number(state?.coverage || 360) === 180 ? 180 : 360,
-  }, {
-    width: rect.w,
-    height: rect.h,
-    dpr: window.devicePixelRatio || 1,
-    backgroundOpacity: 1,
-    showMaskTint: false,
-  });
-  if (surface) ctx.drawImage(surface, rect.x, rect.y, rect.w, rect.h);
-}
-
-function drawLineOnSphere(ctx, pointsDir, viewBasis, rect, tanHalfY, color, width = 1) {
+function drawLineOnSphere(ctx, pointsDir, projection, color, width = 1) {
   let started = false;
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
   ctx.beginPath();
   for (const d of pointsDir) {
-    const p = projectDirToPreview(d, viewBasis, rect, tanHalfY);
-    if (!p) { started = false; continue; }
+    const p = projection.project(d);
+    if (p.z <= 1e-4) { started = false; continue; }
     if (!started) { ctx.moveTo(p.x, p.y); started = true; }
     else { ctx.lineTo(p.x, p.y); }
   }
   ctx.stroke();
 }
 
-function drawPanoGrid(ctx, rect, viewBasis, tanHalfY, uiScale = 1) {
+function drawPanoGrid(ctx, projection, uiScale) {
   ctx.save();
   const gridColor = "#3f3f46";
   const equatorColor = "rgba(250, 250, 250, 0.86)";
@@ -2708,14 +1645,14 @@ function drawPanoGrid(ctx, rect, viewBasis, tanHalfY, uiScale = 1) {
   for (let lat = -75; lat <= 75; lat += 15) {
     const pts = [];
     for (let lon = -180; lon <= 180; lon += 4) pts.push(yawPitchToDir(lon, lat));
-    drawLineOnSphere(ctx, pts, viewBasis, rect, tanHalfY, lat === 0 ? equatorColor : gridColor, lat === 0 ? 1.5 : 1);
+    drawLineOnSphere(ctx, pts, projection, lat === 0 ? equatorColor : gridColor, lat === 0 ? 1.5 : 1);
   }
 
   // Longitudes
   for (let lon = -180; lon <= 180; lon += 15) {
     const pts = [];
     for (let lat = -89; lat <= 89; lat += 4) pts.push(yawPitchToDir(lon, lat));
-    drawLineOnSphere(ctx, pts, viewBasis, rect, tanHalfY, gridColor, lon % 90 === 0 ? 1.3 : 1);
+    drawLineOnSphere(ctx, pts, projection, gridColor, lon % 90 === 0 ? 1.3 : 1);
   }
 
   // Labels
@@ -2733,173 +1670,13 @@ function drawPanoGrid(ctx, rect, viewBasis, tanHalfY, uiScale = 1) {
   ctx.textBaseline = "middle";
 
   labels.forEach((l) => {
-    const p = projectDirToPreview(l.dir, viewBasis, rect, tanHalfY);
-    if (p) {
+    const p = projection.project(l.dir);
+    if (p.z > 1e-4) {
       ctx.fillText(l.name, p.x, p.y + 24 * uiScale);
     }
   });
 
   ctx.restore();
-}
-
-function stepStandaloneInertia(node, ts = performance.now()) {
-  const m = node.__panoPreviewInertia;
-  if (!m || !m.active || !node.__panoPreviewView) return false;
-  if (!Number.isFinite(Number(m.vx)) || !Number.isFinite(Number(m.vy))) {
-    m.vx = 0;
-    m.vy = 0;
-    m.active = false;
-    return false;
-  }
-  const dt = m.lastTs > 0 ? Math.max(0.001, (ts - m.lastTs) / 1000) : (1 / 60);
-  m.lastTs = ts;
-  node.__panoPreviewView.yaw = wrapYaw(Number(node.__panoPreviewView.yaw || 0) + m.vx * dt);
-  node.__panoPreviewView.pitch = clamp(Number(node.__panoPreviewView.pitch || 0) + m.vy * dt, -89.9, 89.9);
-  if (!Number.isFinite(Number(node.__panoPreviewView.yaw)) || !Number.isFinite(Number(node.__panoPreviewView.pitch))) {
-    node.__panoPreviewView.yaw = 0;
-    node.__panoPreviewView.pitch = 0;
-    m.vx = 0;
-    m.vy = 0;
-    m.active = false;
-    return false;
-  }
-  const damping = Math.exp(-STANDALONE_INERTIA_DECAY * dt);
-  m.vx *= damping;
-  m.vy *= damping;
-  if (Math.abs(m.vx) < STANDALONE_INERTIA_STOP_SPEED && Math.abs(m.vy) < STANDALONE_INERTIA_STOP_SPEED) {
-    m.vx = 0;
-    m.vy = 0;
-    m.active = false;
-  }
-  return m.active;
-}
-
-function ensureStandaloneRenderState(node) {
-  if (!node.__panoStandaloneRenderState) {
-    node.__panoStandaloneRenderState = { dragging: false, hqFrames: 0, frameEmaMs: 0, lastFrameTs: 0, qualityTier: "balanced" };
-  }
-  return node.__panoStandaloneRenderState;
-}
-
-function markStandaloneInteractionActive(node, active) {
-  const st = ensureStandaloneRenderState(node);
-  st.dragging = !!active;
-  if (active) st.hqFrames = 0;
-}
-
-function markStandaloneInteractionSettled(node) {
-  const st = ensureStandaloneRenderState(node);
-  st.dragging = false;
-  st.hqFrames = STANDALONE_HQ_FRAMES_AFTER_INTERACTION;
-}
-
-function markPreviewResizing(node, windowMs = 150, ts = performance.now()) {
-  if (!node) return;
-  node.__panoResizeUntil = Number(ts || performance.now()) + Math.max(0, Number(windowMs || 0));
-}
-
-function isPreviewResizing(node, ts = performance.now()) {
-  return Number(ts || performance.now()) < Number(node?.__panoResizeUntil || 0);
-}
-
-function recordStandaloneFrame(node, ts = performance.now()) {
-  const st = ensureStandaloneRenderState(node);
-  if (st.lastFrameTs > 0) {
-    const dt = Math.max(1, ts - st.lastFrameTs);
-    if (st.frameEmaMs <= 0) st.frameEmaMs = dt;
-    else st.frameEmaMs = st.frameEmaMs * (1 - STANDALONE_FRAME_EMA_ALPHA) + dt * STANDALONE_FRAME_EMA_ALPHA;
-  }
-  st.lastFrameTs = ts;
-  return st.frameEmaMs;
-}
-
-function pickStandaloneMeshQuality(node, moving = false, frameEmaMs = 0) {
-  const st = ensureStandaloneRenderState(node);
-  const ui = loadSharedUiSettings();
-  let tier = "balanced";
-  if (st.dragging || moving) tier = "low";
-  else if (st.hqFrames > 0) {
-    st.hqFrames -= 1;
-    tier = "high";
-  } else if (ui.preview_quality === "draft") tier = "low";
-  else if (ui.preview_quality === "high") tier = "high";
-
-  if (Number(frameEmaMs || 0) > STANDALONE_FRAME_DEGRADE_MS) {
-    if (tier === "high") tier = "balanced";
-    else if (tier === "balanced") tier = "low";
-  }
-  st.qualityTier = tier;
-  if (tier === "low") return STANDALONE_MESH_LOW;
-  if (tier === "high") return STANDALONE_MESH_HIGH;
-  return STANDALONE_MESH_BALANCED;
-}
-
-function beginStandaloneDrag(node, x, y, ts = performance.now()) {
-  const drag = { active: true, lastX: Number(x || 0), lastY: Number(y || 0), lastTs: Number(ts || performance.now()) };
-  node.__panoPreviewDrag = drag;
-  node.__panoPreviewInertia = { vx: 0, vy: 0, active: false, lastTs: drag.lastTs };
-  markStandaloneInteractionActive(node, true);
-  return drag;
-}
-
-function updateStandaloneDrag(node, x, y, ts = performance.now(), uiSettings = null) {
-  const d = node.__panoPreviewDrag;
-  if (!d?.active) return false;
-  const now = Number(ts || performance.now());
-  const px = Number.isFinite(Number(x)) ? Number(x) : d.lastX;
-  const py = Number.isFinite(Number(y)) ? Number(y) : d.lastY;
-  const dt = Math.max(0.001, (now - (d.lastTs || now)) / 1000);
-  const dx = px - d.lastX;
-  const dy = py - d.lastY;
-  d.lastX = px;
-  d.lastY = py;
-  d.lastTs = now;
-
-  const ui = uiSettings || loadSharedUiSettings();
-  const invX = ui.invert_view_x ? -1 : 1;
-  const invY = ui.invert_view_y ? -1 : 1;
-  const dYaw = -dx * STANDALONE_DRAG_SENSITIVITY * invX;
-  const dPitch = dy * STANDALONE_DRAG_SENSITIVITY * invY;
-  const v = ensureStandaloneView(node);
-  v.yaw = wrapYaw(Number(v.yaw || 0) + dYaw);
-  v.pitch = clamp(Number(v.pitch || 0) + dPitch, -89.9, 89.9);
-  if (!node.__panoPreviewInertia) node.__panoPreviewInertia = { vx: 0, vy: 0, active: false, lastTs: now };
-  node.__panoPreviewInertia.vx = node.__panoPreviewInertia.vx * (1 - STANDALONE_INERTIA_BLEND) + (dYaw / dt) * STANDALONE_INERTIA_BLEND;
-  node.__panoPreviewInertia.vy = node.__panoPreviewInertia.vy * (1 - STANDALONE_INERTIA_BLEND) + (dPitch / dt) * STANDALONE_INERTIA_BLEND;
-  node.__panoPreviewInertia.active = false;
-  node.__panoPreviewInertia.lastTs = now;
-  return true;
-}
-
-function endStandaloneDrag(node, ts = performance.now()) {
-  const d = node.__panoPreviewDrag;
-  if (!d?.active) return false;
-  d.active = false;
-  markStandaloneInteractionSettled(node);
-  const m = node.__panoPreviewInertia;
-  if (m) {
-    const speed = Math.hypot(m.vx || 0, m.vy || 0);
-    m.active = speed > STANDALONE_INERTIA_START_SPEED;
-    m.lastTs = Number(ts || performance.now());
-  }
-  return true;
-}
-
-function resolveStandaloneLocalPos(node, e, arg2, canvas, lastPos = null) {
-  const p = localPosFromEvent(node, e, arg2, canvas);
-  if (p) return p;
-  const cp = localPosFromClientEvent(node, e, canvas);
-  if (cp) return cp;
-  if (lastPos && Number.isFinite(Number(lastPos.x)) && Number.isFinite(Number(lastPos.y))) {
-    return { x: Number(lastPos.x), y: Number(lastPos.y) };
-  }
-  if (canvas && Array.isArray(canvas.graph_mouse) && canvas.graph_mouse.length >= 2) {
-    return {
-      x: Number(canvas.graph_mouse[0]) - Number(node?.pos?.[0] || 0),
-      y: Number(canvas.graph_mouse[1]) - Number(node?.pos?.[1] || 0),
-    };
-  }
-  return null;
 }
 
 function stopCanvasEvent(ev) {
@@ -2923,14 +1700,6 @@ function stopCanvasEventUnlessResizeGrip(ev, element) {
   return true;
 }
 
-function isWheelEventInside(root, ev) {
-  if (!root || !ev) return false;
-  const path = typeof ev.composedPath === "function" ? ev.composedPath() : null;
-  if (Array.isArray(path) && path.includes(root)) return true;
-  const target = ev.target;
-  return !!(target && typeof root.contains === "function" && root.contains(target));
-}
-
 export function lockGraphViewportSnapshot() {
   const ds = app?.canvas?.ds;
   if (!ds) return null;
@@ -2947,10 +1716,6 @@ export function restoreGraphViewportSnapshot(snapshot) {
     ds.offset[0] = snapshot.offset[0];
     ds.offset[1] = snapshot.offset[1];
   }
-}
-
-function ensureNodeDefaultSize(node, minW = 320, minH = 260) {
-  initNodeSizeIfInvalid(node, minW, minH);
 }
 
 function ensureStandalonePreviewBootstrapSize(node, minW = 360, minH = 260) {
@@ -3015,7 +1780,6 @@ function createCoreManagedDomWidgetOptions(
     },
     afterResize() {
       node.__panoUserResized = true;
-      markPreviewResizing(node, 150);
       requestDraw?.();
       if (invalidateHostCanvasOnResize) scheduleResizeSettleDraw(node, 180, requestDraw);
     },
@@ -3040,149 +1804,6 @@ function suppressBuiltInPreviewImgs(node) {
   if (Array.isArray(node.imgs) && node.imgs.length) node.imgs = [];
 }
 
-function ensureStandaloneView(node) {
-  if (!node.__panoStandaloneView) node.__panoStandaloneView = { yaw: 0, pitch: 0, fov: 100 };
-  return node.__panoStandaloneView;
-}
-
-function clearStandaloneUnavailableLabel(node) {
-  if (!node) return;
-  if (typeof node.__panoStandaloneUnavailableRestore === "function") {
-    try {
-      node.__panoStandaloneUnavailableRestore();
-    } catch {
-      // ignore
-    }
-  }
-  node.__panoStandaloneUnavailableRestore = null;
-  node.__panoStandaloneUnavailable = false;
-}
-
-function setStandaloneUnavailableLabel(node, text = "Node 2.0 preview unavailable") {
-  if (!node) return;
-  if (node.__panoStandaloneUnavailable) return;
-  const prevDrawForeground = node.onDrawForeground;
-  node.onDrawForeground = function (ctx) {
-    const out = prevDrawForeground ? prevDrawForeground.apply(this, arguments) : undefined;
-    if (!ctx || this.flags?.collapsed) return out;
-    const x = 8;
-    const y = 44;
-    const w = Math.max(120, Number(this.size?.[0] || 320) - 16);
-    const h = Math.max(70, Number(this.size?.[1] || 240) - 52);
-    ctx.save();
-    ctx.fillStyle = "rgba(20,20,24,0.94)";
-    ctx.strokeStyle = "rgba(78,78,86,0.95)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 8);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "rgba(236,236,242,0.92)";
-    ctx.font = "600 12px Plus Jakarta Sans, Geist, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(String(text), x + w * 0.5, y + h * 0.5);
-    ctx.restore();
-    return out;
-  };
-  node.__panoStandaloneUnavailableRestore = () => {
-    node.onDrawForeground = prevDrawForeground;
-    node.__panoStandaloneUnavailableRestore = null;
-    node.__panoStandaloneUnavailable = false;
-  };
-  node.__panoStandaloneUnavailable = true;
-  node.setDirtyCanvas?.(true, true);
-}
-
-function drawStandalonePanorama(node, ctx, rect, imageInputName = "erp_image", mesh = STANDALONE_MESH_LOW) {
-  ensureRenderCache(node, "standalone");
-  const uiScale = getNodeUiScale(ctx?.canvas, rect);
-  const view = ensureStandaloneView(node);
-  const basis = cameraBasis(Number(view.yaw || 0), Number(view.pitch || 0), 0);
-  const tanHalfY = Math.tan((Number(view.fov || 100) * DEG2RAD) * 0.5);
-  const preferredInputs = preferredImageInputsForNode(node, [imageInputName, "erp_image", "bg_erp"]);
-  const standalonePreview = isStandalonePreviewNode(node);
-  const bgImg = standalonePreview
-    ? (getNodeOwnOutputVideo(node, ["pano_videos"], () => node.__panoDomPreview?.requestDraw?.())
-      || getNodeOwnOutputImage(node, () => node.__panoDomPreview?.requestDraw?.()))
-    : getLinkedInputImageForPreview(
-      node,
-      preferredInputs,
-      () => node.__panoDomPreview?.requestDraw?.(),
-    );
-  const bgReady = isRenderableMediaReady(bgImg);
-  const src = String(bgImg?.currentSrc || bgImg?.src || "");
-  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
-  const bgRevision = getRenderableMediaRevisionToken(bgImg);
-  const lastFrameSrc = String(node.__panoStandaloneLastFrameSrc || "");
-  const canReuseLastFrame = !!node.__panoStandaloneLastFrameCanvas
-    && !!src
-    && src === lastFrameSrc;
-  if (!node.__panoStandaloneCore) node.__panoStandaloneCore = createPanoramaRenderCore();
-  if (bgReady) {
-    const descriptor = buildStickerRenderDescriptor({
-      stateRevision: [
-        "standalone_preview_scene",
-        bgRevision,
-        coverageDeg,
-      ].join("|"),
-      backgroundSource: bgImg,
-      backgroundRevision: bgRevision,
-      coverageDeg,
-      scene: buildStickerSceneFromState(null, {}),
-      textures: [],
-      backgroundOpacity: 1,
-      showMaskTint: false,
-    });
-    const synced = node.__panoStandaloneCore.syncState(descriptor);
-    const surface = synced
-      ? node.__panoStandaloneCore.renderToTarget("preview_node", buildPreviewNodeViewParams(view, coverageDeg), {
-        width: rect.w,
-        height: rect.h,
-        dpr: window.devicePixelRatio || 1,
-      })
-      : null;
-    const drawn = !!surface;
-    if (surface) {
-      ctx.drawImage(surface, rect.x, rect.y, rect.w, rect.h);
-      const lastFrameCanvas = getOrCreateSizedCanvas(node, "__panoStandaloneLastFrameCanvas", rect.w, rect.h);
-      const lastFrameCtx = lastFrameCanvas.getContext("2d");
-      if (lastFrameCtx) {
-        lastFrameCtx.clearRect(0, 0, rect.w, rect.h);
-        lastFrameCtx.drawImage(surface, 0, 0, rect.w, rect.h);
-        node.__panoStandaloneLastFrameSrc = src;
-      }
-    }
-    if (!drawn) {
-      if (canReuseLastFrame) {
-        ctx.drawImage(node.__panoStandaloneLastFrameCanvas, rect.x, rect.y, rect.w, rect.h);
-      } else {
-        ctx.fillStyle = "#070707";
-        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-        drawErpBackground(node, ctx, rect, basis, tanHalfY, bgImg, mesh);
-      }
-    }
-  } else {
-    if (canReuseLastFrame) {
-      ctx.drawImage(node.__panoStandaloneLastFrameCanvas, rect.x, rect.y, rect.w, rect.h);
-    } else {
-      ctx.fillStyle = "#070707";
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    }
-  }
-  const overlay = setRenderLoading(node, !!bgImg && !bgReady, src);
-  if (overlay) drawLoadingOverlay(ctx, rect, uiScale);
-}
-
-function openStandaloneModal(node, title, imageInputName = "erp_image") {
-  if (typeof node?.__panoOpenEditor === "function") {
-    node.__panoOpenEditor();
-    return;
-  }
-  const _ = [title, imageInputName];
-  void _;
-}
-
 function attachPanoramaPreviewImpl(node, options = {}) {
   const allowStandalone = options.__allowStandalone === true;
   const standalonePreview = isStandalonePreviewNode(node);
@@ -3201,7 +1822,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   node.__panoPreviewButtonText = String(options.buttonText || (node.__panoPreviewMode === "cutout" ? "Open Cutout Editor" : "Open Stickers Editor"));
   node.__panoOpenEditor = typeof options.onOpen === "function" ? options.onOpen : null;
   const nodeType = String(node?.comfyClass || node?.type || node?.title || "");
-  const forcedPath = String(options.__panoForcedPath || "").trim();
   const pathInfo = {
     chosenPath: "dom",
     reason: stickersMode ? "stickers_shared_dom_surface" : "cutout_dom_only",
@@ -3366,10 +1986,13 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     state.needsDraw = true;
     if (!state.inTick && !state.raf) state.raf = requestAnimationFrame(tick);
   };
+  // The on-node surface draws through the three.js view it shares with the Preview nodes.
+  const surfaceView = acquirePreviewView(requestDraw);
   const nodeSurfaceUiModel = reactive(stickersMode
-    ? { ...stickersNodeSurfaceModel(getCachedState(node)), importing: false, dropActive: false }
+    ? { ...stickersNodeSurfaceModel(getCachedState(node)), importing: false, dropActive: false, viewUnavailable: false }
     : {
       ...cutoutNodeSurfaceModel(getCachedState(node)),
+      viewUnavailable: false,
       aspectOpen: false,
       aspectChoices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value })),
     });
@@ -3497,7 +2120,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const pointerId = cutoutDrag?.pointerId ?? stickerDrag?.pointerId;
     cutoutDrag = null;
     stickerDrag = null;
-    node.__panoStickerDrag = null;
     if (pointerId != null) {
       try {
         if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture?.(pointerId);
@@ -3511,7 +2133,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const wheelCommitted = commitNodeSurfaceWheel();
     const pointerId = cutoutDrag?.pointerId;
     cutoutDrag = null;
-    node.__panoStickerDrag = null;
     if (pointerId != null) {
       try {
         if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture?.(pointerId);
@@ -3588,10 +2209,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     }
   }
   const resizeObserver = typeof ResizeObserver !== "undefined"
-    ? new ResizeObserver(() => {
-      markPreviewResizing(node, 150);
-      requestDraw();
-    })
+    ? new ResizeObserver(requestDraw)
     : null;
   resizeObserver?.observe(wrap);
 
@@ -3603,7 +2221,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       moving = interaction.stepInertia(ts);
       if (state.needsDraw || moving) {
         state.needsDraw = false;
-        if (!node.flags?.collapsed) drawCanvas(node, canvas, null, interaction);
+        if (!node.flags?.collapsed) drawCanvas(node, canvas, surfaceView);
+        nodeSurfaceUiModel.viewUnavailable = surfaceView.failed;
       }
     } finally {
       state.inTick = false;
@@ -3667,8 +2286,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       currentState?.stickers,
       String(currentState?.active?.selected_sticker_id || ""),
       cutoutCanvasPoint(ev),
-      buildPanoramaViewParamsFromRuntime(node.__panoPreviewView, currentState?.coverage),
-      { width: canvas.width, height: canvas.height },
+      stickersSurfaceProjection(node, canvas.width, canvas.height),
     );
     if (!picked) {
       canvas.style.cursor = "grab";
@@ -3730,14 +2348,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const point = cutoutCanvasPoint(ev);
     const currentState = getCachedState(node);
     const selectedId = String(currentState?.active?.selected_sticker_id || "");
-    const camera = buildPanoramaViewParamsFromRuntime(node.__panoPreviewView, currentState?.coverage);
-    const picked = pickStickerAtPoint(
-      currentState?.stickers,
-      selectedId,
-      point,
-      camera,
-      { width: canvas.width, height: canvas.height },
-    );
+    const projection = stickersSurfaceProjection(node, canvas.width, canvas.height);
+    const picked = pickStickerAtPoint(currentState?.stickers, selectedId, point, projection);
     root.focus?.({ preventScroll: true });
     if (picked && nodeSurfaceSession) {
       interaction.stopMotion();
@@ -3760,10 +2372,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         startSticker: { ...picked.item },
         startDistance: Math.max(1, Math.hypot(startPoint.x - center.x, startPoint.y - center.y)),
         startAngle: Math.atan2(startPoint.y - center.y, startPoint.x - center.x),
-        camera,
-        viewport: { width: canvas.width, height: canvas.height },
+        projection,
       };
-      node.__panoStickerDrag = stickerDrag;
       nodeSurfaceSession.beginGesture();
       canvas.setPointerCapture?.(ev.pointerId);
       canvas.style.cursor = picked.hit.kind === "rotate" ? "grabbing" : (picked.hit.kind === "move" ? "move" : picked.hit.cursor);
@@ -3820,8 +2430,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
             x: stickerDrag.startCenter.x + point.x - stickerDrag.startPoint.x,
             y: stickerDrag.startCenter.y + point.y - stickerDrag.startPoint.y,
           },
-          stickerDrag.camera,
-          stickerDrag.viewport,
+          stickerDrag.projection,
         );
       } else if (stickerDrag.kind === "scale") {
         const distance = Math.hypot(point.x - stickerDrag.startCenter.x, point.y - stickerDrag.startCenter.y);
@@ -3851,7 +2460,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const pointerId = cutoutDrag?.pointerId ?? stickerDrag?.pointerId;
     cutoutDrag = null;
     stickerDrag = null;
-    node.__panoStickerDrag = null;
     try {
       if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture?.(pointerId);
     } catch { }
@@ -3886,7 +2494,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       if (stickerDrag.pointerId !== ev.pointerId || !nodeSurfaceSession) return;
       stopCanvasEventUnlessResizeGrip(ev, eventSurface);
       stickerDrag = null;
-      node.__panoStickerDrag = null;
       canvas.releasePointerCapture?.(ev.pointerId);
       canvas.style.cursor = "grab";
       if (cancelled) nodeSurfaceSession.cancelGesture();
@@ -3899,7 +2506,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     canvas.releasePointerCapture?.(ev.pointerId);
     canvas.style.cursor = "grab";
     interaction.endDrag();
-    markStandaloneInteractionSettled(node);
     requestDraw();
   };
   canvas.addEventListener("pointerup", endDrag);
@@ -4117,7 +2723,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   const onResizeHook = function () {
     const out = onResizePrev ? onResizePrev.apply(this, arguments) : undefined;
     this.__panoUserResized = true;
-    markPreviewResizing(this, 150);
     requestDraw();
     return out;
   };
@@ -4143,8 +2748,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     }
     nodeSurfaceSession?.destroy?.();
     nodeSurfaceVueApp?.unmount?.();
-    node.__panoRuntimeCore?.dispose?.();
-    node.__panoRuntimeCore = null;
+    surfaceView.dispose();
+    node.__panoSurfaceScene = null;
     node.__panoRasterObjectSurfaceCache?.dispose?.();
     node.__panoRasterObjectSurfaceCache = null;
     node.__panoRasterObjectReady = null;
@@ -4203,580 +2808,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   requestDraw();
 }
 
-export function attachStickersPreviewNode2(node, options = {}) {
-  const controller = getPreviewController(node);
-  controller.attach({
-    ...options,
-    mode: "stickers",
-  });
-}
-
 export function attachCutoutPreview(node, options = {}) {
   const controller = getPreviewController(node);
   controller.attach({
     ...options,
     mode: "cutout",
   });
-}
-
-function standaloneDomIsMounted(domPreview) {
-  const root = domPreview?.root;
-  const wrap = root?.querySelector?.("div");
-  const canvas = domPreview?.canvas;
-  if (!root || !canvas) return false;
-  if (!root.isConnected || !canvas.isConnected) return false;
-  const cw = Number(canvas.clientWidth || 0);
-  const ch = Number(canvas.clientHeight || 0);
-  if (cw > 0 && ch > 0) return true;
-  const rw = Number(root.clientWidth || 0);
-  const rh = Number(root.clientHeight || 0);
-  if (rw > 0 && rh > 0) return true;
-  if (wrap) {
-    const ww = Number(wrap.clientWidth || 0);
-    const wh = Number(wrap.clientHeight || 0);
-    if (ww > 0 && wh > 0) return true;
-  }
-  return false;
-}
-
-function tryAttachDomWithProbe(node, options = {}, mountKey = null) {
-  let domOk = false;
-  try {
-    domOk = attachStandalonePreviewDom(node, {
-      ...options,
-      __noAutoFallback: true,
-      __skipRouteLog: true,
-    }) === true;
-  } catch {
-    domOk = false;
-  }
-  if (!domOk || !node.__panoDomPreview?.widget) {
-    setStandaloneUnavailableLabel(node, "Preview mount failed");
-    panoPreviewLog(node, "route.attach", {
-      route: "unified_dom_error",
-      reason: "dom_attach_exception",
-      nodeType: getNodeTypeName(node),
-    });
-    return true;
-  }
-
-  cancelDomMountProbe(node);
-  const probe = { cancelled: false, frame: 0, timeoutId: 0 };
-  node.__panoDomMountProbe = probe;
-
-  const fallback = (reason) => {
-    if (probe.cancelled) return;
-    probe.cancelled = true;
-    if (probe.timeoutId) {
-      clearTimeout(probe.timeoutId);
-      probe.timeoutId = 0;
-    }
-    node.__panoDomMountProbe = null;
-    setStandaloneUnavailableLabel(node, "Preview mount failed");
-    node.__panoDomPreview?.requestDraw?.();
-    node.setDirtyCanvas?.(true, true);
-    if (mountKey) {
-      node.__panoPreviewAttached = true;
-      node.__panoPreviewMountKey = mountKey;
-    }
-    panoPreviewLog(node, "route.attach", {
-      route: "unified_dom_error",
-      reason,
-      nodeType: getNodeTypeName(node),
-    });
-  };
-
-  const confirmDom = () => {
-    if (probe.cancelled) return;
-    const domPreview = node.__panoDomPreview;
-    const rootW = Number(domPreview?.root?.clientWidth || 0);
-    const rootH = Number(domPreview?.root?.clientHeight || 0);
-    const wrapEl = domPreview?.root?.querySelector?.("div");
-    const wrapW = Number(wrapEl?.clientWidth || 0);
-    const wrapH = Number(wrapEl?.clientHeight || 0);
-    const canvasW = Number(domPreview?.canvas?.clientWidth || 0);
-    const canvasH = Number(domPreview?.canvas?.clientHeight || 0);
-    panoPreviewLog(node, "probe.frame", {
-      frame: probe.frame,
-      hasWidget: !!domPreview?.widget,
-      connected: !!(domPreview?.root?.isConnected && domPreview?.canvas?.isConnected),
-      rootW,
-      rootH,
-      wrapW,
-      wrapH,
-      canvasW,
-      canvasH,
-    });
-    if (!domPreview?.widget || !domPreview.root?.isConnected || !domPreview.canvas?.isConnected) {
-      fallback("dom_mount_detached");
-      return;
-    }
-    if (standaloneDomIsMounted(domPreview)) {
-      probe.cancelled = true;
-      if (probe.timeoutId) {
-        clearTimeout(probe.timeoutId);
-        probe.timeoutId = 0;
-      }
-      node.__panoDomMountProbe = null;
-      clearStandaloneUnavailableLabel(node);
-      panoPreviewLog(node, "route.attach", {
-        route: "unified_dom",
-        nodeType: getNodeTypeName(node),
-      });
-      return;
-    }
-    probe.frame += 1;
-    if (probe.frame >= STANDALONE_DOM_PROBE_FRAMES) {
-      fallback("dom_probe_size_zero");
-      return;
-    }
-    requestAnimationFrame(confirmDom);
-  };
-
-  probe.timeoutId = setTimeout(() => {
-    fallback("dom_probe_timeout");
-  }, STANDALONE_DOM_PROBE_TIMEOUT_MS);
-  requestAnimationFrame(confirmDom);
-  return true;
-}
-
-export function attachStandalonePreviewUnified(node, options = {}) {
-  const mountKey = `standalone_unified|${String(options.imageInputName || "erp_image")}|${String(options.buttonText || "Open Preview")}`;
-  if (node.__panoPreviewAttached === true && node.__panoPreviewMountKey === mountKey) return;
-  panoPreviewLog(node, "attach.unified.begin", {
-    nodeType: getNodeTypeName(node),
-    nodeId: node?.id ?? null,
-    mountKey,
-    size: getNodeSize(node),
-    sizeW: Number(getNodeSize(node)?.[0] || 0),
-    sizeH: Number(getNodeSize(node)?.[1] || 0),
-    hasDomWidget: typeof node?.addDOMWidget === "function",
-  });
-  teardownPreview(node, { keepMonitor: false, reason: "attach_standalone_unified_begin" });
-  clearStandaloneUnavailableLabel(node);
-  if (typeof node?.addDOMWidget === "function") {
-    const domPending = tryAttachDomWithProbe(node, options, mountKey);
-    if (domPending) {
-      node.__panoPreviewAttached = true;
-      node.__panoPreviewMountKey = mountKey;
-      return;
-    }
-  }
-  setStandaloneUnavailableLabel(node, "Preview mount failed");
-  node.__panoPreviewAttached = true;
-  node.__panoPreviewMountKey = mountKey;
-  panoPreviewLog(node, "route.attach", {
-    route: "unified_dom_error",
-    reason: "dom_unavailable",
-    nodeType: getNodeTypeName(node),
-  });
-}
-
-export function attachStandalonePreviewDom(node, options = {}) {
-  const mountKey = `standalone_dom|${String(options.imageInputName || "erp_image")}|${String(options.buttonText || "Open Preview")}`;
-  if (node.__panoPreviewAttached === true && node.__panoPreviewMountKey === mountKey && node.__panoDomPreview?.widget) return true;
-  teardownPreview(node, { keepMonitor: false, reason: "attach_standalone_dom_begin" });
-  clearStandaloneUnavailableLabel(node);
-  node.__panoPreviewMode = "standalone_dom";
-  node.__panoPreviewButtonText = String(options.buttonText || "Open Preview");
-  node.__panoOpenEditor = typeof options.onOpen === "function" ? options.onOpen : null;
-  executedRefreshMonitor.register(node);
-  if (options.__skipRouteLog !== true) {
-    panoPreviewLog(node, "route.attach", { route: "standalone_dom", nodeType: getNodeTypeName(node) });
-  }
-  const imageInputName = String(options.imageInputName || "erp_image");
-  ensurePreviewModeCss();
-  try {
-    if (typeof node.addDOMWidget !== "function") throw new Error("addDOMWidget unavailable");
-    if (node.__panoDomPreview?.widget) return true;
-
-    const root = document.createElement("div");
-    root.className = "pano-node-preview-dom pano-node-preview--stickers";
-    root.style.cssText = "width:100%;height:100%;position:relative;display:block;min-height:56px;overflow:hidden;";
-    root.setAttribute("data-capture-wheel", "true");
-    root.setAttribute("tabindex", "-1");
-    const wheelCaptureCleanup = bindWheelCaptureRoot(root);
-    const wrap = document.createElement("div");
-    wrap.style.cssText = "position:absolute;inset:0;min-height:56px;border-radius:8px;overflow:hidden;border:1px solid rgba(63,63,70,1);background:#070707;";
-    const canvas = document.createElement("canvas");
-    canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;touch-action:none;cursor:grab;";
-    wrap.appendChild(canvas);
-    root.appendChild(wrap);
-
-    armPreviewBootMinHeight(node, 56, () => node.__panoDomPreview?.requestDraw?.());
-    const widget = trackDomWidgetRemoval(assignFreshDomWidgetRenderIdentity(node.addDOMWidget(
-      getAnimPreviewWidgetName(),
-      "preview",
-      root,
-      createCoreManagedDomWidgetOptions(node, () => node.__panoDomPreview?.requestDraw?.(), 56),
-    )));
-    if (widget) widget.serialize = false;
-    suppressBuiltInPreviewImgs(node);
-
-    node.__panoBindSeq = Number(node.__panoBindSeq || 0) + 1;
-    const bindingSeq = node.__panoBindSeq;
-    panoPreviewLog(node, "bind", { nodeId: node?.id ?? null, bindingSeq, route: "standalone_dom" });
-    panoPreviewLog(node, "modal-parity", PANO_MODAL_PARITY_CONSTANTS);
-    const state = { raf: 0, needsDraw: true, dragging: false, pointerId: null };
-    const viewportRestoreScheduler = createViewportRestoreScheduler({
-      requestFrame: (callback) => requestAnimationFrame(callback),
-      cancelFrame: (id) => cancelAnimationFrame(id),
-      restore: (snapshot) => {
-        restoreGraphViewportSnapshot(snapshot);
-        app?.canvas?.setDirty?.(true, true);
-      },
-    });
-    const disposeCounts = { listeners: 0, raf: 0, widget: 0 };
-    const controller = createPanoInteractionController({
-      getView: () => ensureStandaloneView(node),
-      setView: (next) => {
-        const view = ensureStandaloneView(node);
-        view.yaw = wrapYaw(Number(next.yaw || 0));
-        view.pitch = clamp(Number(next.pitch || 0), -89.9, 89.9);
-        view.fov = clamp(Number(next.fov || 100), STANDALONE_FOV_MIN, STANDALONE_FOV_MAX);
-      },
-      getViewportSize: () => {
-        const rect = canvas.getBoundingClientRect();
-        return {
-          w: Math.max(1, Number(rect.width || canvas.clientWidth || 0)),
-          h: Math.max(1, Number(rect.height || canvas.clientHeight || 0)),
-        };
-      },
-      getInvert: () => {
-        const ui = loadSharedUiSettings();
-        return {
-          x: ui.invert_view_x ? -1 : 1,
-          y: ui.invert_view_y ? -1 : 1,
-        };
-      },
-      onInteraction: () => {
-        markStandaloneInteractionSettled(node);
-      },
-      onDebug: (tag, payload) => {
-        panoPreviewLog(node, tag, payload);
-      },
-    });
-    node.__panoStandaloneController = controller;
-    let detachWindowPointerBridge = null;
-    const stopInputBubble = (ev) => {
-      ev.preventDefault?.();
-      ev.stopPropagation?.();
-      ev.stopImmediatePropagation?.();
-    };
-    const bindWindowPointerBridge = () => {
-      if (detachWindowPointerBridge) detachWindowPointerBridge();
-      const onWinMove = (ev) => {
-        if (!state.dragging) return;
-        panoPreviewLog(node, "event", { kind: "pointermove", via: "window" });
-        if (!isLeftButtonPressed(ev)) {
-          endDrag(ev, ev?.type || "pointermove_buttons_released");
-          return;
-        }
-        controller.moveDrag(ev.clientX, ev.clientY, "pano", performance.now());
-        requestDraw();
-        stopInputBubble(ev);
-      };
-      const onWinUp = (ev) => {
-        if (!state.dragging) return;
-        endDrag(ev, ev?.type || "pointerup");
-        stopInputBubble(ev);
-      };
-      const onWinCancel = (ev) => {
-        if (!state.dragging) return;
-        endDrag(ev, ev?.type || "pointercancel");
-        stopInputBubble(ev);
-      };
-      window.addEventListener("pointermove", onWinMove, true);
-      window.addEventListener("pointerup", onWinUp, true);
-      window.addEventListener("pointercancel", onWinCancel, true);
-      disposeCounts.listeners += 3;
-      detachWindowPointerBridge = () => {
-        window.removeEventListener("pointermove", onWinMove, true);
-        window.removeEventListener("pointerup", onWinUp, true);
-        window.removeEventListener("pointercancel", onWinCancel, true);
-        disposeCounts.listeners = Math.max(0, disposeCounts.listeners - 3);
-        detachWindowPointerBridge = null;
-      };
-    };
-    const requestDraw = () => {
-      state.needsDraw = true;
-      if (!state.raf) state.raf = requestAnimationFrame(tick);
-    };
-    const resizeObserver = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(() => {
-        markPreviewResizing(node, 150);
-        requestDraw();
-      })
-      : null;
-    resizeObserver?.observe(wrap);
-    let tickCount = 0;
-    const tick = (ts = performance.now()) => {
-      state.raf = 0;
-      tickCount++;
-      if (tickCount <= 20) inspectNodeLayout(node, `tick.${tickCount}`);
-
-      const movingInertia = controller.stepInertia(ts);
-      const resizingNow = isPreviewResizing(node, ts);
-      const moving = movingInertia || resizingNow;
-      recordStandaloneFrame(node, ts);
-      if (!state.needsDraw && !moving && tickCount > 20) return;
-
-      state.needsDraw = false;
-      const dpr = 1;
-      const clientW = Number(canvas.clientWidth || 0);
-      const clientH = Number(canvas.clientHeight || 0);
-      if (node.__panoBootMinHeightActive && clientW > 0 && clientH > 0) {
-        node.__panoBootMinHeightActive = false;
-      }
-      const w = Math.max(64, Math.round(clientW * dpr));
-      const h = Math.max(64, Math.round(clientH * dpr));
-
-      if (tickCount <= 20 || w !== canvas.width || h !== canvas.height) {
-         inspectNodeLayout(node, "tick.resize", { w, h, cw: canvas.clientWidth, ch: canvas.clientHeight });
-      }
-
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-      }
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const rect = { x: 0, y: 0, w, h };
-      const mesh = STANDALONE_MESH_LOW;
-      drawStandalonePanorama(node, ctx, rect, imageInputName, mesh);
-      node.setDirtyCanvas?.(true, false);
-      if (state.needsDraw || moving) state.raf = requestAnimationFrame(tick);
-    };
-
-    const onDown = (ev) => {
-      if (!stopCanvasEventUnlessResizeGrip(ev, wrap)) return;
-      if (ev.button !== 0) return;
-      panoPreviewLog(node, "event", { kind: "pointerdown", via: "viewer" });
-      root.focus?.();
-      canvas.setPointerCapture?.(ev.pointerId);
-      state.pointerId = ev.pointerId;
-      state.dragging = true;
-      canvas.style.cursor = "grabbing";
-      controller.startDrag(ev.clientX, ev.clientY, ev.pointerId, performance.now());
-      panoPreviewLog(node, "drag", { phase: "start", hasCapture: canvas.hasPointerCapture?.(ev.pointerId) === true });
-      bindWindowPointerBridge();
-      requestDraw();
-    };
-    const onMove = (ev) => {
-      if (!state.dragging) return;
-      panoPreviewLog(node, "event", { kind: "pointermove", via: "viewer" });
-      stopCanvasEventUnlessResizeGrip(ev, wrap);
-      if (!isLeftButtonPressed(ev)) {
-        endDrag(ev);
-        return;
-      }
-      controller.moveDrag(ev.clientX, ev.clientY, "pano", performance.now());
-      requestDraw();
-    };
-    const endDrag = (ev, reason = "pointerup") => {
-      if (!state.dragging) return;
-      stopCanvasEventUnlessResizeGrip(ev, wrap);
-      state.dragging = false;
-      state.pointerId = null;
-      canvas.style.cursor = "grab";
-      controller.endDrag(performance.now());
-      panoPreviewLog(node, "event", { kind: reason, via: "viewer" });
-      panoPreviewLog(node, "drag", { phase: "end", reason, hasCapture: false });
-      detachWindowPointerBridge?.();
-      requestDraw();
-    };
-    const onUp = (ev) => endDrag(ev, ev?.type || "pointerup");
-    const onLostCapture = () => {
-      if (!state.dragging) return;
-      state.dragging = false;
-      state.pointerId = null;
-      canvas.style.cursor = "grab";
-      controller.endDrag(performance.now());
-      panoPreviewLog(node, "event", { kind: "lostpointercapture", via: "viewer" });
-      panoPreviewLog(node, "drag", { phase: "end", reason: "lostpointercapture", hasCapture: false });
-      detachWindowPointerBridge?.();
-      requestDraw();
-    };
-    const onWheel = (ev) => {
-      if (!stopCanvasEventUnlessResizeGrip(ev, wrap)) return;
-      panoPreviewLog(node, "event", { kind: "wheel", via: "viewer" });
-      const graphSnapshot = lockGraphViewportSnapshot();
-      const activeElement = document.activeElement;
-      const before = Number(ensureStandaloneView(node).fov || 100);
-      const changed = controller.applyWheelEvent(ev);
-      const after = Number(ensureStandaloneView(node).fov || 100);
-      panoPreviewLog(node, "wheel", {
-        focused: !!activeElement,
-        activeElementIsRoot: activeElement === root,
-        deltaY: Number(ev.deltaY || 0),
-        fovBefore: before,
-        fovAfter: after,
-      });
-      if (changed) {
-        requestDraw();
-      }
-      ev.preventDefault?.();
-      ev.stopPropagation?.();
-      ev.stopImmediatePropagation?.();
-      viewportRestoreScheduler.schedule(graphSnapshot);
-    };
-    canvas.addEventListener("pointerdown", onDown);
-    canvas.addEventListener("pointermove", onMove);
-    canvas.addEventListener("pointerup", onUp);
-    canvas.addEventListener("pointercancel", onUp);
-    canvas.addEventListener("lostpointercapture", onLostCapture);
-    canvas.addEventListener("wheel", onWheel, { passive: false, capture: true });
-    wrap.addEventListener("wheel", onWheel, { passive: false, capture: true });
-    disposeCounts.listeners += 7;
-    const blockedEvents = ["contextmenu", "click", "dblclick"];
-    blockedEvents.forEach((name) => {
-      wrap.addEventListener(name, stopInputBubble, { capture: true });
-      canvas.addEventListener(name, stopInputBubble, { capture: true });
-      disposeCounts.listeners += 2;
-    });
-
-    const onRemovedPrev = node.onRemoved;
-    const onResizePrev = node.onResize;
-    const onExecutedPrev = node.onExecuted;
-    const onConnectionsChangePrev = node.onConnectionsChange;
-    node.onExecuted = function (output) {
-      inspectNodeLayout(node, "onExecuted");
-      syncOwnOutputSourceFromExecuted(node, output);
-      invalidatePreviewImageCaches(node);
-      markNodeOutputMediaCurrent(node);
-      suppressBuiltInPreviewImgs(node);
-      requestDraw();
-      const out = onExecutedPrev ? onExecutedPrev.apply(this, arguments) : undefined;
-      suppressBuiltInPreviewImgs(node);
-      return out;
-    };
-    node.onConnectionsChange = function (type, slotIndex) {
-      inspectNodeLayout(node, "onConnectionsChange");
-      if (isTrackedMediaInputConnectionChange(node, type, slotIndex)) {
-        markNodeOutputMediaStale(node, "background");
-        invalidatePreviewImageCaches(node);
-      }
-      suppressBuiltInPreviewImgs(node);
-      requestDraw();
-      return onConnectionsChangePrev ? onConnectionsChangePrev.apply(this, arguments) : undefined;
-    };
-    node.onResize = function () {
-      const out = onResizePrev ? onResizePrev.apply(this, arguments) : undefined;
-      this.__panoUserResized = true;
-      markPreviewResizing(this, 150);
-      requestDraw();
-      this.setDirtyCanvas?.(true, false);
-      return out;
-    };
-    node.onRemoved = function () {
-      node.__panoStandaloneModal?.dispose?.();
-      node.__panoStandaloneModal = null;
-      cancelDomMountProbe(node);
-      if (state.raf) {
-        cancelAnimationFrame(state.raf);
-        disposeCounts.raf += 1;
-      }
-      detachWindowPointerBridge?.();
-      viewportRestoreScheduler.dispose();
-      wheelCaptureCleanup();
-      canvas.removeEventListener("pointerdown", onDown);
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("pointercancel", onUp);
-      canvas.removeEventListener("lostpointercapture", onLostCapture);
-      canvas.removeEventListener("wheel", onWheel, true);
-      wrap.removeEventListener("wheel", onWheel, true);
-      disposeCounts.listeners = Math.max(0, disposeCounts.listeners - 7);
-      blockedEvents.forEach((name) => {
-        wrap.removeEventListener(name, stopInputBubble, true);
-        canvas.removeEventListener(name, stopInputBubble, true);
-        disposeCounts.listeners = Math.max(0, disposeCounts.listeners - 2);
-      });
-      if (removeNodeWidget(node, widget)) disposeCounts.widget += 1;
-      resizeObserver?.disconnect?.();
-      if (node.__panoResizeSettleTimer) {
-        clearTimeout(node.__panoResizeSettleTimer);
-        node.__panoResizeSettleTimer = null;
-      }
-      if (node.__panoBootMinHeightTimer) {
-        clearTimeout(node.__panoBootMinHeightTimer);
-        node.__panoBootMinHeightTimer = null;
-      }
-      node.__panoBootMinHeightActive = false;
-
-      node.__panoDomPreview = null;
-      node.__panoDomRestore = null;
-      node.__panoStandaloneController = null;
-      node.__panoPreviewAttached = false;
-      node.__panoPreviewMountKey = null;
-      node.onResize = onResizePrev;
-      node.onExecuted = onExecutedPrev;
-      node.onConnectionsChange = onConnectionsChangePrev;
-      executedRefreshMonitor.unregister(node);
-      panoPreviewLog(node, "teardown", { route: "standalone_dom", bindingSeq, disposeCounts: { ...disposeCounts } });
-      node.onRemoved = onRemovedPrev;
-      return onRemovedPrev ? onRemovedPrev.apply(this, arguments) : undefined;
-    };
-    node.__panoDomRestore = () => {
-      node.__panoStandaloneModal?.dispose?.();
-      node.__panoStandaloneModal = null;
-      cancelDomMountProbe(node);
-      if (state.raf) {
-        cancelAnimationFrame(state.raf);
-        disposeCounts.raf += 1;
-      }
-      detachWindowPointerBridge?.();
-      viewportRestoreScheduler.dispose();
-      wheelCaptureCleanup();
-      canvas.removeEventListener("pointerdown", onDown);
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("pointercancel", onUp);
-      canvas.removeEventListener("lostpointercapture", onLostCapture);
-      canvas.removeEventListener("wheel", onWheel, true);
-      wrap.removeEventListener("wheel", onWheel, true);
-      disposeCounts.listeners = Math.max(0, disposeCounts.listeners - 7);
-      blockedEvents.forEach((name) => {
-        wrap.removeEventListener(name, stopInputBubble, true);
-        canvas.removeEventListener(name, stopInputBubble, true);
-        disposeCounts.listeners = Math.max(0, disposeCounts.listeners - 2);
-      });
-      if (removeNodeWidget(node, widget)) disposeCounts.widget += 1;
-      if (node.__panoBootMinHeightTimer) {
-        clearTimeout(node.__panoBootMinHeightTimer);
-        node.__panoBootMinHeightTimer = null;
-      }
-      node.__panoBootMinHeightActive = false;
-      node.__panoDomPreview = null;
-      node.__panoDomRestore = null;
-      node.__panoStandaloneController = null;
-      node.__panoPreviewAttached = false;
-      node.__panoPreviewMountKey = null;
-      node.onResize = onResizePrev;
-      node.onExecuted = onExecutedPrev;
-      node.onConnectionsChange = onConnectionsChangePrev;
-      node.onRemoved = onRemovedPrev;
-      panoPreviewLog(node, "teardown", { route: "standalone_dom", bindingSeq, disposeCounts: { ...disposeCounts } });
-      clearStandaloneUnavailableLabel(node);
-    };
-    node.__panoPreviewHooked = true;
-    node.__panoPreviewAttached = true;
-    node.__panoPreviewMountKey = mountKey;
-    node.__panoDomPreview = { widget, root, canvas, requestDraw, state };
-    requestDraw();
-    return true;
-  } catch {
-    if (options.__noAutoFallback === true) {
-      setStandaloneUnavailableLabel(node, "Node 2.0 preview unavailable");
-      return false;
-    }
-    clearStandaloneUnavailableLabel(node);
-    return false;
-  }
-}
-
-export function attachStandalonePreviewAuto(node, options = {}) {
-  attachStandalonePreviewUnified(node, options);
 }
 
 export function attachPanoramaPreview(node, options = {}) {

@@ -21,14 +21,6 @@ export function dot(a, b) {
   return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-export function cross(a, b) {
-  return vec3(
-    a.y * b.z - a.z * b.y,
-    a.z * b.x - a.x * b.z,
-    a.x * b.y - a.y * b.x,
-  );
-}
-
 export function norm(a) {
   const l = Math.hypot(a.x, a.y, a.z) || 1e-8;
   return vec3(a.x / l, a.y / l, a.z / l);

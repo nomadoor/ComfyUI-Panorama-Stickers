@@ -10,13 +10,9 @@ export function normalizeCoverageValue(value) {
 
 function normalizeUiSettings(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
-  const quality = String(source.preview_quality || "balanced");
   return {
     invert_view_x: !!source.invert_view_x,
     invert_view_y: !!source.invert_view_y,
-    preview_quality: quality === "draft" || quality === "balanced" || quality === "high"
-      ? quality
-      : "balanced",
   };
 }
 

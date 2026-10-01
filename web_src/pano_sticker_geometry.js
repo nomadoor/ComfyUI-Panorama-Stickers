@@ -4,7 +4,6 @@ import {
   add,
   cameraBasis,
   clamp,
-  dot,
   mul,
   norm,
   wrapYaw,
@@ -16,49 +15,15 @@ import {
 
 export { hitStickerSelectionAffordance as hitStickerGeometry } from "./pano_sticker_affordance.js";
 
-function viewportSize(viewport) {
+// Screen points follow projection, a viewProjection() of the view the stickers are drawn in.
+function projectWorldDirection(direction, projection) {
+  const point = projection.project(direction);
+  if (!Number.isFinite(point.z)) return null;
+  const guard = Math.max(projection.width, projection.height) * 2;
   return {
-    width: Math.max(1, Number(viewport?.width ?? viewport?.w ?? 1)),
-    height: Math.max(1, Number(viewport?.height ?? viewport?.h ?? 1)),
-  };
-}
-
-function viewBasis(camera) {
-  return cameraBasis(
-    Number(camera?.yawDeg ?? camera?.yaw ?? 0),
-    Number(camera?.pitchDeg ?? camera?.pitch ?? 0),
-    0,
-  );
-}
-
-export function screenPointToWorldDirection(point, camera, viewport) {
-  const { width, height } = viewportSize(viewport);
-  const { right, up, fwd } = viewBasis(camera);
-  const horizontalFov = clamp(Number(camera?.fovDeg ?? camera?.fov ?? 100), 1, 179) * DEG2RAD;
-  const verticalFov = 2 * Math.atan(Math.tan(horizontalFov * 0.5) * (height / width));
-  const nx = ((Number(point?.x || 0) - width * 0.5) / (width * 0.5)) * Math.tan(horizontalFov * 0.5);
-  const ny = ((height * 0.5 - Number(point?.y || 0)) / (height * 0.5)) * Math.tan(verticalFov * 0.5);
-  return norm(add(add(mul(right, nx), mul(up, ny)), fwd));
-}
-
-function projectWorldDirection(direction, camera, viewport) {
-  const { width, height } = viewportSize(viewport);
-  const { right, up, fwd } = viewBasis(camera);
-  const cx = dot(direction, right);
-  const cy = dot(direction, up);
-  const rawZ = dot(direction, fwd);
-  const nearZ = 1e-4;
-  if (!Number.isFinite(rawZ)) return null;
-  const z = Math.max(rawZ, nearZ);
-  const horizontalFov = clamp(Number(camera?.fovDeg ?? camera?.fov ?? 100), 1, 179) * DEG2RAD;
-  const verticalFov = 2 * Math.atan(Math.tan(horizontalFov * 0.5) * (height / width));
-  const sx = (width * 0.5) / Math.tan(horizontalFov * 0.5);
-  const sy = (height * 0.5) / Math.tan(verticalFov * 0.5);
-  const guard = Math.max(width, height) * 2;
-  return {
-    x: clamp(width * 0.5 + (cx / z) * sx, -guard, width + guard),
-    y: clamp(height * 0.5 - (cy / z) * sy, -guard, height + guard),
-    rawZ,
+    x: clamp(point.x, -guard, projection.width + guard),
+    y: clamp(point.y, -guard, projection.height + guard),
+    rawZ: point.z,
   };
 }
 
@@ -84,17 +49,17 @@ function stickerDirection(frame, x, y) {
   ));
 }
 
-export function buildStickerGeometry(item, camera, viewport) {
+export function buildStickerGeometry(item, projection) {
   if (!item || item.visible === false) return { visible: false };
   const frame = stickerFrame(item);
-  const center = projectWorldDirection(frame.centerDir, camera, viewport);
+  const center = projectWorldDirection(frame.centerDir, projection);
   if (!center) return { visible: false };
   const corners = [
     stickerDirection(frame, -frame.tanX, frame.tanY),
     stickerDirection(frame, frame.tanX, frame.tanY),
     stickerDirection(frame, frame.tanX, -frame.tanY),
     stickerDirection(frame, -frame.tanX, -frame.tanY),
-  ].map((direction) => projectWorldDirection(direction, camera, viewport));
+  ].map((direction) => projectWorldDirection(direction, projection));
   const boundaryEdges = Array.from({ length: 4 }, (_, edge) => {
     const points = [];
     for (let index = 0; index <= 28; index += 1) {
@@ -105,16 +70,15 @@ export function buildStickerGeometry(item, camera, viewport) {
       else if (edge === 1) { x = frame.tanX; y = frame.tanY - (2 * frame.tanY * t); }
       else if (edge === 2) { x = frame.tanX - (2 * frame.tanX * t); y = -frame.tanY; }
       else { x = -frame.tanX; y = -frame.tanY + (2 * frame.tanY * t); }
-      const projected = projectWorldDirection(stickerDirection(frame, x, y), camera, viewport);
+      const projected = projectWorldDirection(stickerDirection(frame, x, y), projection);
       if (projected) points.push({ x: projected.x, y: projected.y });
     }
     return points;
   });
-  const rotateStemBase = projectWorldDirection(stickerDirection(frame, 0, frame.tanY), camera, viewport);
+  const rotateStemBase = projectWorldDirection(stickerDirection(frame, 0, frame.tanY), projection);
   const rotateHint = projectWorldDirection(
     stickerDirection(frame, 0, frame.tanY + Math.max(frame.tanY * 0.43, 0.053)),
-    camera,
-    viewport,
+    projection,
   );
   const projected = [center, ...corners, rotateStemBase, rotateHint];
   if (projected.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
@@ -137,10 +101,10 @@ export function buildStickerGeometry(item, camera, viewport) {
   };
 }
 
-export function pickStickerAtPoint(items, selectedId, point, camera, viewport) {
+export function pickStickerAtPoint(items, selectedId, point, projection) {
   const entries = (Array.isArray(items) ? items : [])
     .filter((item) => item && item.visible !== false)
-    .map((item) => ({ item, geometry: buildStickerGeometry(item, camera, viewport) }))
+    .map((item) => ({ item, geometry: buildStickerGeometry(item, projection) }))
     .filter((entry) => entry.geometry.visible)
     .sort((a, b) => Number(b.item?.z_index || 0) - Number(a.item?.z_index || 0));
   const selected = entries.find((entry) => String(entry.item?.id || "") === String(selectedId || ""));
@@ -155,8 +119,8 @@ export function pickStickerAtPoint(items, selectedId, point, camera, viewport) {
   return null;
 }
 
-export function moveStickerToScreenPoint(item, point, camera, viewport) {
-  const direction = screenPointToWorldDirection(point, camera, viewport);
+export function moveStickerToScreenPoint(item, point, projection) {
+  const direction = projection.ray(point.x, point.y);
   return {
     ...item,
     yaw_deg: wrapYaw(Math.atan2(direction.x, direction.z) * RAD2DEG),

@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { normalizeStickerItem } from "../web_src/pano_gl_scene.js";
-
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("node surface reuses the shared aspect picker and existing icon components", async () => {
@@ -122,12 +120,9 @@ test("cutout node renders panorama context across the canvas behind the fixed fr
   assert.ok(!runtime.includes('"inset:0 0 82px 0"'));
   assert.match(runtime, /layoutCutoutNodeContext/);
   assert.match(surface, /contextHalfExtentsPx/);
-  assert.match(runtime, /const contextRect =/);
-  assert.match(runtime, /const contextShot =/);
-  assert.match(runtime, /renderToContext\(\s*ctx,\s*contextRect,\s*contextShot,/);
-  assert.match(runtime, /contextLayout\.fallback[\s\S]*?fallbackRect[\s\S]*?fallbackShot/);
-  assert.match(runtime, /renderToContext\(\s*ctx,\s*frame,\s*buildCutoutViewParamsFromShot\(shot\)/);
-  assert.doesNotMatch(runtime, /renderToContext\(\s*ctx,\s*contain,/);
+  assert.match(runtime, /drawView\(contextLayout\.fallback\.rect, shotCamera\(contextLayout\.fallback\.shot\)\)/);
+  assert.match(runtime, /drawView\(contextLayout\.rect, shotCamera\(contextLayout\.shot\)\)/);
+  assert.match(runtime, /!contextLayout\.fallback \|\| drawView\(frame, shotCamera\(shot\)\)/);
   assert.match(runtime, /ctx\.rect\(frame\.x/);
   assert.match(runtime, /ctx\.fill\("evenodd"\)/);
   assert.match(runtime, /strokeRect\(frame\.x/);
@@ -167,14 +162,12 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   );
   assert.match(
     runtime,
-    /function syncRuntimeCutoutComposite[\s\S]*?buildRuntimePreviewScene[\s\S]*?buildRuntimePreviewTextures[\s\S]*?buildRuntimeCutoutLayerEntries[\s\S]*?rasterEntries:\s*layerEntries/,
+    /function surfaceViewInput[\s\S]*?editorSceneState\([\s\S]*?buildRuntimeCutoutLayerEntries\(node, state\)[\s\S]*?workingSkyLayers\(/,
   );
   assert.match(
     runtime,
-    /if \(!shot\)[\s\S]*?syncRuntimeCutoutComposite\([\s\S]*?renderToContext\([\s\S]*?buildPanoramaViewParamsFromRuntime/,
+    /if \(!shot\)[\s\S]*?drawView\(rect, previewNodeCamera\(node\.__panoPreviewView, surfW, surfH\)\)/,
   );
-  assert.match(runtime, /const zeroShotRenderScale = [\s\S]*?interaction\?\.state\?\.drag\?\.active[\s\S]*?interaction\?\.state\?\.inertia\?\.active[\s\S]*?0\.5[\s\S]*?: 1/);
-  assert.match(runtime, /renderToContext\([\s\S]*?renderScale: zeroShotRenderScale/);
   assert.doesNotMatch(runtime, /Open editor and add frame/);
   assert.match(runtime, /const wheelTargets = stickersMode \? \[wrap, canvas\] : \[wrap\]/);
   assert.match(runtime, /root\.setAttribute\("data-capture-wheel", "true"\)/);
@@ -249,49 +242,38 @@ test("DOM preview camera frames do not repaint the host graph canvas", async () 
   assert.ok(tickStart >= 0 && tickEnd > tickStart);
   const tick = runtime.slice(tickStart, tickEnd);
 
-  assert.match(tick, /drawCanvas\(node, canvas, null, interaction\)/);
+  assert.match(tick, /drawCanvas\(node, canvas, surfaceView\)/);
   assert.doesNotMatch(tick, /node\.setDirtyCanvas/);
   assert.match(runtime, /if \(mode === "cutout" && node\.__panoCutoutNodeSurfaceState !== state\)/);
 });
 
 test("Cutout node surface loops the input ERP video and revisions each presented frame", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const cutoutStart = runtime.indexOf('if (mode === "cutout") {');
-  const stickersStart = runtime.indexOf("  } else {", cutoutStart);
-  assert.ok(cutoutStart >= 0 && stickersStart > cutoutStart);
-  const cutout = runtime.slice(cutoutStart, stickersStart);
+  const drawStart = runtime.indexOf("function drawCanvas(");
+  const cutoutStart = runtime.indexOf('if (mode === "cutout") {', drawStart);
+  assert.ok(drawStart >= 0 && cutoutStart > drawStart);
+  const draw = runtime.slice(drawStart, cutoutStart);
 
-  assert.match(cutout, /getNodeOwnOutputVideo\([\s\S]*?\["pano_input_videos"\]/);
-  assert.match(cutout, /isRenderableMediaReady\(bgImg\)/);
-  assert.match(runtime, /function syncRuntimeCutoutComposite[\s\S]*?getRenderableMediaRevisionToken\(bgImg\)/);
-  assert.match(runtime, /function syncRuntimeCutoutComposite[\s\S]*?getSourcePixelSize\(bgImg\)/);
+  assert.match(draw, /getNodeOwnOutputVideo\([\s\S]*?\["pano_input_videos"\]/);
+  assert.match(draw, /isRenderableMediaReady\(bgImg\)/);
+  assert.match(runtime, /function surfaceViewInput[\s\S]*?getRenderableMediaRevisionToken\(bgImg\)/);
+  assert.match(runtime, /function drawCanvas[\s\S]*?getSourcePixelSize\(bgImg\)/);
   assert.match(runtime, /invalidatePreviewImageCaches[\s\S]*?disposeNodeOutputVideoCache\(node\)/);
   assert.match(runtime, /getNodeOwnOutputVideo[\s\S]*?isNodeOutputMediaCurrent\(node, "background"\)/);
-  assert.match(runtime, /node\.onConnectionsChange = function \(type, slotIndex\)[\s\S]*?isTrackedMediaInputConnectionChange\(node, type, slotIndex\)[\s\S]*?markNodeOutputMediaStale\(node, "background"\)/);
-  assert.match(runtime, /node\.onExecuted = function[\s\S]*?markNodeOutputMediaCurrent\(node\)[\s\S]*?requestDraw\(\)/);
+  assert.match(runtime, /const onConnectionsChangeHook = function \(type, slotIndex\)[\s\S]*?isTrackedMediaInputConnectionChange\([\s\S]*?\["erp_image", "bg_erp"\][\s\S]*?markNodeOutputMediaStale\(node, "background"\)/);
+  assert.match(runtime, /const onExecutedHook = function[\s\S]*?markNodeOutputMediaCurrent\(node\)[\s\S]*?requestDraw\(\)/);
 });
 
-test("the canvas fallback normalizes raw external sticker identity before image resolution", async () => {
-  const rawExternal = {
-    id: "sticker_image_1",
-    source_kind: "external_image",
-    hFOV_deg: 30,
-    vFOV_deg: 20,
-  };
-  const normalized = normalizeStickerItem(rawExternal);
-  assert.equal(normalized.assetId, "sticker_image_1");
-  assert.equal(normalized.external, true);
-  assert.equal(normalizeStickerItem({ ...rawExternal, visible: false }).visible, false);
-
+test("on-node surfaces resolve an external sticker's image by its id and leave hidden stickers out", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const start = runtime.indexOf("function drawSticker(");
-  const end = runtime.indexOf("\nfunction stepInertia", start);
-  const fallback = runtime.slice(start, end);
+  const start = runtime.indexOf("function surfaceViewInput(");
+  const end = runtime.indexOf("\nfunction ", start + 1);
+  const input = runtime.slice(start, end);
 
-  assert.match(fallback, /const previewItem = normalizeStickerItem\(item\)/);
-  assert.match(fallback, /if \(!previewItem \|\| previewItem\.visible === false\) return/);
-  assert.match(fallback, /const textureId = String\(previewItem\?\.assetId \|\| ""\)/);
-  assert.match(fallback, /getNodePreviewImage\(node, textureId, asset, previewItem\)/);
+  assert.match(input, /if \(item\.visible === false\) return null;/);
+  assert.match(input, /const external = item\.type === "external_image" \|\| item\.source_kind === "external_image"/);
+  assert.match(input, /const assetId = String\(item\.asset_id \|\| ""\) \|\| \(external \? String\(item\.id \|\| ""\) : ""\)/);
+  assert.match(input, /getNodePreviewImage\(node, assetId, state\.assets\?\.\[item\.asset_id\], \{ external \}\)/);
 });
 
 test("zero-shot wheel zoom does not repaint the host graph canvas", async () => {

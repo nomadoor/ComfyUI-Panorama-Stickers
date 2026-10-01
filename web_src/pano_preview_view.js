@@ -1,8 +1,11 @@
-// On-node Preview view. The Preview nodes on the graph draw their IMAGE / VIDEO through one shared
-// three.js view, so they hold one WebGL context between them instead of one each; each node copies
-// the rendered frame into its own canvas right away. The view loads with the first frame that has
-// media to draw and is released with the last node.
+// On-node view. The Preview nodes and the on-node Stickers and Cutout surfaces on the graph draw
+// through one shared three.js view, so they hold one WebGL context between them instead of one each;
+// each node copies the rendered frame into its own canvas right away. The view loads with the first
+// frame a node draws and is released with the last node.
 import { viewportCamera } from "./pano_editor_view.js";
+
+// Shown on a node in place of its frame when the three.js view cannot load.
+export const VIEW_UNAVAILABLE_MESSAGE = "3D view unavailable. Check the browser console.";
 
 // The camera of a Preview node's { yaw, pitch, fov }; fov spans the view width like the previous
 // renderer's panorama view.
@@ -34,7 +37,7 @@ export function createSharedView(load) {
       loading = false;
       if (!users.size) return;
       failed = true;
-      console.error("[PanoramaStickers] three.js view is unavailable; Preview nodes use the previous renderer", error);
+      console.error("[PanoramaStickers] three.js view is unavailable", error);
       users.forEach((user) => user.onChange());
     });
   }

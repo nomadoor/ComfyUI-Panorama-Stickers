@@ -6,16 +6,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestCutoutCameraModalContract(unittest.TestCase):
-    def test_cutout_editor_uses_shared_camera_adapter(self):
+    def test_cutout_editor_draws_frame_and_camera_preview_with_the_editor_view(self):
         editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
-        self.assertIn('from "./pano_cutout_camera.js"', editor_js)
-        self.assertIn("const cutoutPreviewCamera = type === \"cutout\"", editor_js)
-        self.assertIn("cutoutPreviewCamera.renderShotToContext", editor_js)
+        self.assertNotIn("pano_cutout_camera", editor_js)
         self.assertIn('uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();', editor_js)
-        # The Frame view and the camera preview draw with three.js, and with the previous renderer
-        # only when three.js cannot load.
-        self.assertIn("? drawEditorViewShot(ctx, contextRect, contextShot)", editor_js)
-        self.assertIn(": renderCutoutPreviewToContext(ctx, contextRect, contextShot, { quality: previewQuality }) === true;", editor_js)
+        self.assertIn("if (!drawEditorViewShot(ctx, contextRect, contextShot)) {", editor_js)
         self.assertIn('drawEditorViewShot(previewCtx, rect, shot, "camera_preview")', editor_js)
 
     def test_cutout_frame_entry_points_are_not_stubbed(self):
@@ -146,9 +141,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
 
     def test_cutout_node_preview_uses_live_camera_render_before_output_exists(self):
         preview_js = (REPO_ROOT / "web_src" / "pano_preview_runtime.js").read_text(encoding="utf-8")
-        self.assertIn('buildPanoramaCompositeDescriptor', preview_js)
-        self.assertIn('buildCutoutViewParamsFromShot(shot)', preview_js)
-        self.assertIn('const liveCutoutDrawn = runtimeCore.renderToContext(', preview_js)
+        self.assertIn("drawView(contextLayout.rect, shotCamera(contextLayout.shot))", preview_js)
         self.assertNotIn('} else if (bgReady) {\n        statusType = "empty";\n        hintText = "Open editor or run node";', preview_js)
 
     def test_linked_input_preview_cache_keeps_ready_image_during_reload(self):

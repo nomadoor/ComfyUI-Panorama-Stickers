@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { PerspectiveCamera, Vector3 } from "three";
 
+import { cameraBasis, DEG2RAD } from "../web_src/pano_camera_math.js";
 import { MAX_RENDER_SIDE } from "../web_src/pano_editor_view.js";
-import { createPanoGlRenderer } from "../web_src/pano_gl_renderer.js";
-import { buildPreviewNodeViewParams } from "../web_src/pano_gl_scene.js";
 import { createSharedView, previewNodeCamera } from "../web_src/pano_preview_view.js";
 import { applyViewportCamera } from "../web_src/pano_three_view.js";
 
@@ -24,10 +23,26 @@ function threeErpUv(camera, width, height, x, y) {
   };
 }
 
-// The previous renderer's screenToErpUv is the JavaScript form of its projectCameraUv shader for a
-// 360 ERP, so the Preview node's ERP lookup is compared with the previous renderer directly.
+// The ERP coordinates the previous WebGL renderer sampled for a point of the Preview node's view
+// (its screenToErpUv for a 360 ERP): fov spans the view width, and the ray is built on
+// pano_camera_math like core/math.py.
+function referenceErpUv(view, width, height, x, y) {
+  const { right, up, fwd } = cameraBasis(view.yaw, view.pitch, 0);
+  const tanX = Math.tan(view.fov * DEG2RAD * 0.5);
+  const nx = ((x - width * 0.5) / (width * 0.5)) * tanX;
+  const ny = ((height * 0.5 - y) / (height * 0.5)) * tanX * (height / width);
+  const dir = new Vector3(
+    fwd.x + right.x * nx + up.x * ny,
+    fwd.y + right.y * nx + up.y * ny,
+    fwd.z + right.z * nx + up.z * ny,
+  ).normalize();
+  return {
+    u: ((Math.atan2(dir.x, dir.z) / (2 * Math.PI)) + 1.5) % 1,
+    v: 0.5 - Math.asin(Math.max(-1, Math.min(1, dir.y))) / Math.PI,
+  };
+}
+
 test("Preview node samples the same ERP coordinates as the previous renderer per pixel", () => {
-  const legacy = createPanoGlRenderer({ targetCanvas: {} });
   const views = [
     { yaw: 0, pitch: 0, fov: 100 },
     { yaw: 137, pitch: -35, fov: 35 },
@@ -38,12 +53,11 @@ test("Preview node samples the same ERP coordinates as the previous renderer per
   for (const view of views) {
     for (const [width, height] of [[640, 360], [300, 500], [MAX_RENDER_SIDE, 1152]]) {
       applyViewportCamera(camera, previewNodeCamera(view, width, height));
-      const params = { ...buildPreviewNodeViewParams(view, 360), viewportWidth: width, viewportHeight: height };
       for (const fx of [0, 0.25, 0.5, 0.8, 1]) {
         for (const fy of [0, 0.4, 0.5, 1]) {
           const x = Math.min(width - 1, Math.floor(fx * width));
           const y = Math.min(height - 1, Math.floor(fy * height));
-          const expected = legacy.screenToErpUv(params, x + 0.5, y + 0.5);
+          const expected = referenceErpUv(view, width, height, x + 0.5, y + 0.5);
           const actual = threeErpUv(camera, width, height, x, y);
           const du = Math.abs(actual.u - expected.u);
           const where = `${JSON.stringify(view)} ${width}x${height} pixel ${x},${y}`;
@@ -125,7 +139,7 @@ test("on-node Previews share one view that loads on the first frame and goes wit
   assert.equal(loads[1].view.disposed, true, "a view that arrives after every node left is dropped");
 });
 
-test("a failed load switches every node to the previous renderer until every node has gone", async (t) => {
+test("a failed load marks every node failed until every node has gone", async (t) => {
   t.mock.method(console, "error", () => {});
   const { load, loads } = fakeLoader();
   const acquire = createSharedView(load);
@@ -152,19 +166,51 @@ test("a failed load switches every node to the previous renderer until every nod
   assert.deepEqual(c.render({}), { canvas: "canvas" });
 });
 
-test("the on-node Preview draws through the shared three.js view", () => {
+test("the on-node Preview draws through the shared three.js view and its Vue surface shows a failed view", () => {
   const preview = source("pano_preview_previewnode.js");
   assert.ok(preview.includes('from "./pano_preview_view.js"'));
-  assert.ok(!preview.includes("drawErpBackground"));
-  // The previous renderer remains only as the fallback when three.js cannot load (#69 removes it).
   const draw = preview.slice(preview.indexOf("function drawPreview("), preview.indexOf("function isPointInRect("));
-  assert.match(draw, /previewView\.failed\s*\?\s*renderWithPreviousRenderer\(/);
-  assert.ok(!draw.includes("createPanoramaRenderCore"));
-  assert.ok(!source("pano_preview_node_surface.js").includes("pano_gl_renderer"));
-  assert.ok(!source("pano_preview_view.js").match(/pano_(?:render_core|gl_scene|gl_renderer)/));
+  assert.match(draw, /if \(previewView\.failed\) \{\s*drawGrid\(ctx, width, height\);\s*return;/);
+  assert.match(preview, /reactive\(\{ fullscreen: false, viewUnavailable: false \}\)/);
+  assert.match(preview, /this\.surfaceModel\.viewUnavailable = this\.previewView\.failed/);
+  assert.match(source("components/PanoPreviewNodeSurface.vue"), /<PanoViewUnavailable v-if="model\.viewUnavailable" \/>/);
 });
 
-test("the read-only Preview modal draws its panorama view with three.js too", () => {
+test("the on-node Stickers and Cutout surfaces draw through the same shared view and show a failed view in Vue", () => {
+  const runtime = source("pano_preview_runtime.js");
+  assert.match(runtime, /const surfaceView = acquirePreviewView\(requestDraw\)/);
+  assert.match(runtime, /drawCanvas\(node, canvas, surfaceView\);\s*nodeSurfaceUiModel\.viewUnavailable = surfaceView\.failed;/);
+  assert.match(runtime, /surfaceView\.dispose\(\)/);
+  for (const name of ["PanoStickersNodeSurface.vue", "PanoCutoutNodeSurface.vue"]) {
+    assert.match(source(`components/${name}`), /<PanoViewUnavailable v-if="model\.viewUnavailable" \/>/, name);
+  }
+  // One message for every node surface.
+  assert.match(source("components/PanoViewUnavailable.vue"), /VIEW_UNAVAILABLE_MESSAGE/);
+  const files = readdirSync(new URL("../web_src/", import.meta.url)).filter((name) => name.endsWith(".js"));
+  assert.deepEqual(files.filter((name) => source(name).includes("3D view unavailable")), ["pano_preview_view.js"]);
+});
+
+test("an on-node Stickers surface with nothing to draw shows the grid without loading the view", () => {
+  const runtime = source("pano_preview_runtime.js");
+  const draw = runtime.slice(runtime.indexOf("function drawCanvas("), runtime.indexOf("\nfunction drawLineOnSphere("));
+  const stickers = draw.slice(draw.indexOf("  if (!node.__panoPreviewView) node.__panoPreviewView = { yaw: 0, pitch: 0, fov: 100 };\n  let panoramaDrawn"));
+  assert.match(stickers, /if \(!input\.background && !input\.layers\.length\) \{\s*surfaceView\.release\(\);\s*panoramaDrawn = true;\s*\} else \{\s*panoramaDrawn = drawView\(/);
+  assert.match(stickers, /if \(!bgImg && panoramaDrawn\) drawPanoGrid\(/);
+});
+
+test("no module draws with the previous WebGL renderer", () => {
+  const files = readdirSync(new URL("../web_src/", import.meta.url)).filter((name) => name.endsWith(".js"));
+  for (const name of ["pano_render_core.js", "pano_gl_renderer.js", "pano_gl_scene.js", "pano_scene_camera.js", "pano_cutout_camera.js"]) {
+    assert.ok(!files.includes(name), `${name} is gone`);
+  }
+  for (const name of files) {
+    assert.doesNotMatch(source(name), /pano_(?:render_(?:core|state|targets|descriptors|layer_descriptors|object_pass)|gl_(?:renderer|scene)|scene_camera(?:_dom|_export)?|cutout_camera)\.js/, name);
+  }
+});
+
+test("the Stickers and Cutout editors and the read-only Preview modal draw with three.js", () => {
   const editor = source("pano_editor.js");
-  assert.match(editor, /const editorView = type === "stickers" \|\| type === "cutout"\n\s*\? createEditorView\(/);
+  assert.match(editor, /const editorView = createEditorView\(/);
+  assert.match(editor, /if \(editorView\.failed\) return \{ status: IMAGE_FAILED, detail: "renderer" \}/);
+  assert.match(source("components/PanoModal.vue"), /detail === "renderer"/);
 });

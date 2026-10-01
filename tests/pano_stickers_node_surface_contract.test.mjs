@@ -131,26 +131,32 @@ test("shipping Stickers uses the shared DOM surface in both node renderers", asy
   assert.doesNotMatch(runtime, /runDomProbeForStickers\(\);/);
 });
 
-test("Stickers surface uses the shared ordered composite and current image or video input", async () => {
+test("Stickers surface draws the ordered Sky layers over the current image or video input", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const branchStart = runtime.indexOf("// Stickers mode: Canvas resolution follows DOM size");
-  const branchEnd = runtime.indexOf("\n  }\n}\n\nexport function drawErpBackground", branchStart);
+  const drawStart = runtime.indexOf("function drawCanvas(");
+  const branchStart = runtime.indexOf("  if (!node.__panoPreviewView) node.__panoPreviewView", drawStart);
+  const branchEnd = runtime.indexOf("\n}\n", branchStart);
+  assert.notEqual(drawStart, -1);
   assert.notEqual(branchStart, -1);
-  assert.notEqual(branchEnd, -1);
+  const draw = runtime.slice(drawStart, branchStart);
   const branch = runtime.slice(branchStart, branchEnd);
 
-  assert.match(branch, /\["pano_input_videos"\]/);
-  assert.match(branch, /syncRuntimeCutoutComposite\(/);
-  assert.match(branch, /renderToContext\(/);
-  assert.match(branch, /ctx\.fillStyle = "#070707"/);
-  assert.match(branch, /const bgImg = connectedBg \|\| null/);
-  assert.match(branch, /const backgroundReady = !connectedBg \|\| isRenderableMediaReady\(bgImg\)/);
-  assert.match(branch, /if \(!connectedBg && panoramaDrawn\)[\s\S]*?drawPanoGrid\(/);
-  assert.doesNotMatch(branch, /solidErpSourceCache/);
+  assert.match(draw, /\["pano_input_videos"\]/);
+  assert.match(draw, /ctx\.fillStyle = "#070707"/);
+  assert.match(branch, /if \(!bgImg \|\| bgReady\) \{/);
+  assert.match(branch, /drawView\(rect, previewNodeCamera\(node\.__panoPreviewView, surfW, surfH\)\)/);
+  assert.match(branch, /if \(!bgImg && panoramaDrawn\) drawPanoGrid\(ctx, projection/);
+  assert.match(branch, /drawStickerSelectionOverlay\(ctx, selected, projection\)/);
   assert.doesNotMatch(branch, /bg_color/);
   assert.doesNotMatch(branch, /Connect ERP image/);
-  assert.doesNotMatch(branch, /buildBgPaintCanvas\(/);
-  assert.doesNotMatch(branch, /drawSticker\(/);
+});
+
+test("Stickers surface hit testing uses the projection of the drawn view", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+
+  assert.match(runtime, /function stickersSurfaceProjection\(node, width, height\) \{\s*return viewProjection\(previewNodeCamera\(/);
+  assert.match(runtime, /pickStickerAtPoint\([\s\S]*?stickersSurfaceProjection\(node, canvas\.width, canvas\.height\)/);
+  assert.match(runtime, /moveStickerToScreenPoint\([\s\S]*?stickerDrag\.projection/);
 });
 
 test("Stickers camera drag uses the same viewport-aware interaction controller as Preview and Cutout", async () => {
@@ -207,7 +213,7 @@ test("shared composite includes raster paint objects as independent z-ordered la
   assert.match(runtime, /createRasterObjectSurfaceCache/);
   assert.match(runtime, /painting\?\.raster_objects/);
   assert.match(runtime, /id:\s*`raster:/);
-  assert.match(runtime, /rasterEntries:\s*layerEntries/);
+  assert.match(runtime, /const paintLayers = buildRuntimeCutoutLayerEntries\(node, state\)/);
 });
 
 test("external sticker textures resolve only from the node's current dedicated output", async () => {
