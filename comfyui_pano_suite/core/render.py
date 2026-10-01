@@ -2,7 +2,7 @@
 
 One call draws one frame from the evaluated state at a Timeline frame (`evaluate_scene_state`), the resolved
 sources, a Camera, and a Projection. The layers are composited back to front: `bg_color`, `bg_media`, the Sky
-(`sky` Stickers in list order, then paint), and World content by depth.
+(`sky` Stickers in list order, then paint), and World content by depth (`world_render.py`).
 """
 import math
 from dataclasses import dataclass
@@ -13,8 +13,9 @@ import torch.nn.functional as F
 
 from .display_layers import compose_display_list_to_overlay_rgba, render_remaining_flat_paint_layer_from_state
 from .display_list import alpha_composite_over_rgba
-from .math import camera_basis, vfov_from_hfov
+from .math import camera_basis, ray_directions, vfov_from_hfov
 from .painting import load_painting_layer_payload, render_painting_to_erp
+from .world_render import SceneContent, over_by_depth, world_key, world_layer
 
 
 @dataclass(frozen=True)
@@ -75,9 +76,9 @@ def composite_frame(bg_color, bg: torch.Tensor | None, sky: torch.Tensor, world=
 
     `bg` is an opaque (H, W, 3) image or None, and `bg_valid` an optional bool (H, W) of where `bg` has an
     image; `bg_color` shows elsewhere. `sky` and each World layer's color are straight-alpha (H, W, 4);
-    `world` is a sequence of (rgba, depth) with depth (H, W), +inf where the layer is empty. Layers at the same
-    depth keep their list order. Returns color (H, W, 3) and depth (H, W): the nearest World layer with
-    alpha > 0, +inf (Sky) elsewhere.
+    `world` is a sequence of (rgba, depth) with depth (H, W), +inf where the layer is empty, folded in list
+    order by `over_by_depth`; layers at the same depth keep their list order. Returns color (H, W, 3) and depth
+    (H, W): the nearest World layer with alpha > 0, +inf (Sky) elsewhere.
     """
     height, width = sky.shape[:2]
     color = torch.as_tensor(bg_color, dtype=sky.dtype, device=sky.device).expand(height, width, 3)
@@ -86,13 +87,11 @@ def composite_frame(bg_color, bg: torch.Tensor | None, sky: torch.Tensor, world=
     color = torch.lerp(color, sky[..., :3], sky[..., 3:])
     depth = torch.full((height, width), math.inf, dtype=sky.dtype, device=sky.device)
     if world:
-        layers = torch.stack([rgba for rgba, _ in world])
-        depths = torch.stack([layer_depth for _, layer_depth in world])
-        depths, order = torch.sort(depths, dim=0, descending=True, stable=True)
-        layers = layers.gather(0, order[..., None].expand_as(layers))
-        for layer in layers:
-            color = torch.lerp(color, layer[..., :3], layer[..., 3:])
-        depth = torch.where(layers[..., 3] > 0.0, depths, depth).amin(dim=0)
+        composite = None
+        for layer in world:
+            composite = over_by_depth(composite, layer)
+        total, depth = composite
+        color = torch.addcmul(total[..., :3], color, 1.0 - total[..., 3:])
     return color.clamp(0.0, 1.0), depth
 
 
@@ -125,7 +124,7 @@ def _sky_stickers(evaluated: dict, sources: SceneSources) -> list[dict]:
     stickers = []
     for sticker in evaluated["stickers"]:
         source = sources.stickers.get(sticker["id"])
-        if not sticker["active"] or source is None:
+        if sticker["placement"] != "sky" or not sticker["active"] or source is None:
             continue
         rgba = source.rgba
         if sticker["opacity"] < 1.0:
@@ -154,14 +153,9 @@ def _view(camera: dict, projection: Projection, device) -> torch.Tensor:
     The output is an ERP around the Camera's orientation (`camera_basis`); 180 spans its front hemisphere. The
     Camera's position does not enter: the background and the Sky are infinitely far away.
     """
-    span = math.pi if projection.coverage == 180 else 2.0 * math.pi
-    lon = ((torch.arange(projection.width, dtype=torch.float32, device=device) + 0.5) / projection.width - 0.5) * span
-    lat = (0.5 - (torch.arange(projection.height, dtype=torch.float32, device=device) + 0.5) / projection.height) * math.pi
-    cos_lat, sin_lat = lat.cos()[:, None], lat.sin()[:, None]
-    sin_lon, cos_lon = lon.sin(), lon.cos()
-    # A direction (x, y, z) seen from the Camera is x * right + y * up + z * forward in the Scene.
     right, up, forward = (axis.tolist() for axis in camera_basis(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]))
-    x, y, z = (torch.addcmul(up[i] * sin_lat, cos_lat, right[i] * sin_lon + forward[i] * cos_lon) for i in range(3))
+    # Contiguous components keep the angles bit-identical for the legacy goldens: atan2 rounds strided input differently.
+    x, y, z = ray_directions(right, up, forward, projection, device).movedim(-1, 0).contiguous()
     return torch.stack([torch.atan2(x, z).div_(math.pi), torch.atan2(y, torch.hypot(x, z)).mul_(-2.0 / math.pi)], dim=-1)
 
 
@@ -252,23 +246,26 @@ def render_frame(
     bg_color,
     device,
     cache: dict | None = None,
+    scene: SceneContent | None = None,
+    scene_index: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Draw one frame. Returns float32 color (H, W, 3), mask (H, W), and depth (H, W) on `device`.
 
     `evaluated` is `evaluate_scene_state` at the frame and `camera` the evaluated Camera value; the ERP output
     turns with the Camera's rotation. `bg` is this frame's `bg_media` image (h, w, C) or None, and `bg_key` a
     hashable that names it (the bg_media frame index); without a key the background is not reused. `bg_color`
-    is three floats in 0..1. The mask is the painted mask and the depth is +inf where only the Sky is visible.
+    is three floats in 0..1. `scene` is the `scene` input's content, of which item `scene_index` (None: none) is
+    drawn while `evaluated["scene"]` is active. The mask is the painted mask and the depth is the distance from
+    the Camera's position to the nearest World content, +inf where only the Sky is visible.
 
     `cache` is an optional dict owned by the caller for one execution, in which `bg_color`, `device`, and
     `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps the previous frame's
-    Sky, the Sky turned by the Camera, the background, and the result: a frame whose Sky values and Sticker
-    frames, Camera rotation, and `bg_key` all repeat returns the previous frame's tensors themselves.
+    Sky, the Sky turned by the Camera, the background, the World content as one layer (`world_layer`), the drawn
+    `world` Sticker sources on `device`, and the result: a frame whose Sky values and Sticker frames, Camera rotation, `bg_key`, and World content
+    with the Camera's position (`world_key`) all repeat returns the previous frame's tensors themselves.
     """
     if projection.kind != "erp":
         raise NotImplementedError("Panorama Stickers: perspective projection is not supported yet.")
-    if any(sticker["active"] and sticker["placement"] == "world" for sticker in evaluated["stickers"]):
-        raise NotImplementedError("Panorama Stickers: world Stickers are not supported yet.")
     if cache is None:
         cache = {}
     sky_key = _sky_key(evaluated, sources, projection)
@@ -278,7 +275,8 @@ def render_frame(
     bg_entry = None if bg is None else ("bg", bg_key)
     # A background without a key cannot be told apart from the previous frame's, so it is never reused.
     reusable = bg is None or bg_key is not None
-    frame_key = (sky_key, view_key, bg_entry)
+    world = world_key(evaluated, sources, camera, projection, scene, scene_index)
+    frame_key = (sky_key, view_key, bg_entry, world)
     if reusable and cache.get("frame_key") == frame_key:
         return cache["frame"]
     if cache.get("sky_key") != sky_key:
@@ -303,7 +301,17 @@ def render_frame(
             background = _resize(background, projection.height, projection.width)
         else:
             background, bg_valid = _project_background(background, projection, _view(camera, projection, device) if view is None else view)
-    color, depth = composite_frame(bg_color, background, sky, bg_valid=bg_valid)
+    if world is None:
+        for key in ("world_key", "world", "world_textures"):
+            cache.pop(key, None)
+    elif cache.get("world_key") != world:
+        # The previous frame's layer is released before the new one is drawn.
+        cache.pop("world", None)
+        cache["world"] = world_layer(evaluated, sources, camera, projection, scene=scene, scene_index=scene_index,
+                                     device=device, textures=cache.setdefault("world_textures", {}))
+        cache["world_key"] = world
+    layers = () if cache.get("world") is None else (cache["world"],)
+    color, depth = composite_frame(bg_color, background, sky, layers, bg_valid=bg_valid)
     if reusable:
         cache["frame_key"], cache["frame"] = frame_key, (color, mask, depth)
     return color, mask, depth

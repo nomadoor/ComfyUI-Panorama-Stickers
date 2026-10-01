@@ -5,7 +5,7 @@ Stickers・Cutout・Preview が共有する、バックエンドの描画関数�
 ## 入口
 
 ```python
-render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_color, device, cache=None)
+render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_color, device, cache=None, scene=None, scene_index=None)
 # -> color (H, W, 3), mask (H, W), depth (H, W)
 ```
 
@@ -19,11 +19,13 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 | `bg_key` | `bg` を識別するハッシュ可能な値（Stickers では `bg_media` のフレーム番号）。`None` のときは背景を使い回さない |
 | `bg_color` | 0〜1 の 3 つの数値 |
 | `device` | 出力を置く torch の device |
-| `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `bg_color`・`device` は変わらず、`sources` は Sticker の素材のフレーム（`StickerSource.frame`）のほかは変わらない）。直前のフレームの Sky の層、Camera の向きで写した Sky、読み込んだ背景（`("bg", bg_key)`）、結果を持つ。出力の画素ごとの向き（`_view`）は持たず、要るときに作り直す。Sky の値が同じなら Sky を作り直さず、Camera の回転と `bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は、表示中の `sky` の Sticker の評価済みの値（変形と不透明度）と素材のフレーム（`StickerSource.frame`、Source がなければ `None`）からなり、表示していない Sticker は `id` だけを入れる（Clip range の外で Keyframe の値が変わっても Sky を作り直さない）。Sky のキーの値と Camera の回転は小数第 9 位で丸めてキーにし、同じ値の Keyframe の間の補間の誤差では作り直さない |
+| `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `bg_color`・`device` は変わらず、`sources` は Sticker の素材のフレーム（`StickerSource.frame`）のほかは変わらない）。直前のフレームの Sky の層、Camera の向きで写した Sky、読み込んだ背景（`("bg", bg_key)`）、結果を持つ。出力の画素ごとの向き（`_view`）は持たず、要るときに作り直す。Sky の値が同じなら Sky を作り直さず、Camera の回転と `bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は、表示中の `sky` の Sticker の評価済みの値（変形と不透明度）と素材のフレーム（`StickerSource.frame`、Source がなければ `None`）からなり、表示していない Sticker は `id` だけを入れる（Clip range の外で Keyframe の値が変わっても Sky を作り直さない）。Sky のキーの値と Camera の回転は小数第 9 位で丸めてキーにし、同じ値の Keyframe の間の補間の誤差では作り直さない。World の内容を奥行きで一枚にまとめた層（`world_key`。Sticker ごとの層は持たない）と、描いた `world` の Sticker の素材を `device` に置いたもの（Sticker の `id` ごとに、`StickerSource.frame` が変わったときだけ置き直し、描かなくなった Sticker の分は捨てる）も持つ。World の内容がないフレームでは両方を捨てる。World の内容があるフレームでは、Camera の位置も結果を使い回す条件に入る |
+| `scene` | `scene` 入力の中身（`SceneContent`）または `None`。下記「`scene` の共通処理」 |
+| `scene_index` | このフレームで描く `scene` の要素の番号。`None` なら描かない |
 
 - 戻り値はすべて float32 で、`device` 上にある。
 - `mask` はペイントで描いたマスクで、色と同じ Projection で写す。
-- `depth` は Camera からの距離。World の内容がない画素（Sky だけが見える画素）は `+inf` とする。
+- `depth` は Camera の位置から、その画素に見える最も近い World の内容までの距離（光線の長さ。透視投影でも Camera の前方への奥行き z ではない。前方への奥行きで表す深度（#65 の MoGe など）と比べるときは、光線と前方の軸のなす角を θ として `z / cos θ` に直す）で、World の単位で表す。World の内容がない画素（Sky だけが見える画素）は `+inf` とする。
 - ファイルは読まない。素材の読み込み（`file` の Source、ペイントのラスタ）は呼び出し側が行い、`sources` に入れて渡す。
 
 ### `StickerSource`
@@ -44,7 +46,7 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 1. `bg_color`
 2. `bg_media`。不透明として扱い、`bg_color` を置き換える。ないフレームと、`bg_valid`（`bg_media` が画像を持つ画素）の外の画素は `bg_color` のまま。
 3. Sky。`sky` の Sticker、ペイントのグループ、ラスタを `z_index` の順に重ね、どのグループにも属さないストロークを一番上に重ねた一枚の層（`docs/scene-state-v2.md` の「Sky の重なり順」）。
-4. World の層を奥から手前へ。各層は色 (H, W, 4) と奥行き (H, W) を持ち、画素ごとに奥行きで並べ替える。同じ奥行きではリスト順を保つ（後ろのものが手前）。
+4. World の層を奥から手前へ。各層は色 (H, W, 4) と奥行き (H, W) を持ち、リストの順に `over_by_depth`（`core/world_render.py`）で一枚に畳み込む。画素ごとに、それまでに畳み込んだ層の最も近い奥行き以下なら手前に、それより奥なら奥に重ねる。同じ奥行きではリスト順を保つ（後ろのものが手前）。どの層もその画素で、それまでの層すべてより近いか遠いときは奥行きの順に並べ替えたのと同じになる。2 層の間に後から入る層は、両方の奥に重なる（全画面の層をリストの数だけ並べて持たないための近似）。そのため呼び出し側は、できるだけ奥から手前の順に渡す。
 
 - 色はストレートアルファで、`out = src × a + dst × (1 − a)` で重ねる。半透明の Sticker やペイントは、下の層と混ざる。
 - 出力の奥行きは、アルファが 0 より大きい World の層のうち最も近いもの。どの層もなければ `+inf`。
@@ -67,14 +69,49 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 - `z_index` は Sticker の Source ではないが、`crop` と同じく描画に要る静的な値なので、`StickerSource` に入れて渡す（評価関数の戻り値は変えない）。
 - `bg_media` は `coverage` の範囲の ERP とみなし、Sky と同じく Camera の向きで写す。360 では 360 の ERP、180 では旧ノード・Cutout と同じく Scene の前方（経度 −90°〜90°）の半球の ERP とする。180 の出力で、Camera を回して `bg_media` の半球の外が見える画素は、`bg_media` がない画素として `bg_color` になる。Sky と MASK はその上にも描く。出力の範囲が Camera の前方の半球だけであることは変わらない。
 
+## World の描き方
+
+`core/world_render.py` が持つ（#59）。位置は World の glTF 座標、角度はパノラマの規約で、両者の間は `core/world.py` の `world_rotation` だけでつなぐ（ADR 0023）。
+
+- 出力の画素ごとに、Camera の位置から画素の中心を通る光線を作る（`core/math.py` の `ray_directions`）。ERP は Sky と同じ経度・緯度（180 は Camera の前方の半球）、透視投影は `hfov_deg` を幅に当てた正方の画素のピンホールとする。Sky の向き（`_view`）も同じ関数で作る。
+- 各内容は、ストレートアルファの色 (H, W, 4) と距離 (H, W) の層として描き、描くたびに `over_by_depth` で一枚に畳み込む（`world_layer`）。層の順は `scene` の中身、続いて `world` の Sticker を Camera の位置から `position`（板の中心）までの距離の遠い順（同じ距離では状態の順）。画素ごとの距離が同じときは、中心が近い Sticker、次に状態の順で後ろの Sticker が手前になる。交わらない板どうしは、これで奥行きの順と一致する。`scene` の中身は画素ごとに奥行きが変わり並べ替えられないので最初に畳み込み、その手前と奥に Sticker が重なる画素では上記の近似が残る。まとめた一枚を `composite_frame` に渡す。背景と Sky は World の層より常に奥になる。
+- 距離は光線の長さ（上記 `depth`）。
+
+### `world` の Sticker の板
+
+- Sticker の `position` を中心とする平らな板で、`world_rotation(yaw, pitch, roll)` の右・上の軸に沿って広がり、後ろの軸（ローカルの `+Z`）の向きを向く。回転 0 の板を回転 0 の Camera の正面に置くと、Camera の方を向き、素材が正立して見える。
+- 幅は `scale`（World の単位）、高さは `scale` × 切り抜いた素材の高さ ÷ 幅（画素の数で数える）。`crop` の範囲を板全体に貼る。範囲の幅か高さが 0 の Sticker は描かない。
+- 両面に描く。裏からは左右が反転して見える。
+- 素材は双線形に標本化する。`sky` の Sticker と同じく、端の画素の中心を板の端に合わせ（`align_corners=True`）、アルファを掛けた状態で標本化してから戻す（透明な画素の色がにじまない）。不透明度はアルファに掛ける。
+- TODO(#61)：いまは Sticker ごとに出力の全画素で光線と板の交点を求める。#61・#62 の前に、板が写る範囲（bbox）に限って描く。
+- 板の縁はアンチエイリアスしない（`sky` の Sticker と同じ）。光線が板と平行な画素と、Camera の後ろにある板は描かない。
+- Source を持たない Sticker、`active` でない Sticker、不透明度 0 の Sticker は描かない。VIDEO と IMAGE バッチの素材は `sky` と同じく `StickerSource.frame` のフレームを描く。
+
+### `scene` の共通処理
+
+SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(count, render)` を作ってラスタライズだけを受け持つ。
+
+| 処理 | 持ち主 |
+|---|---|
+| `scene` の変形（位置・回転・スケール）と Keyframe | `evaluate_scene_state` の `scene` を、`world_render.py` が Camera に逆に掛ける |
+| Clip range | `evaluated["scene"]["active"]` が偽のフレームでは描かない |
+| バッチと出力フレームの対応 | `sticker_media.py` の `batch_index`（IMAGE バッチの `sticker` と同じ規則）。(a) の `_decide_timeline` が `clip_frame`（`frame − (start − in)`）と Timeline fps から決め、`frames` の 4 つ目に入れる。`render_frame` の `scene_index` にはこの番号を渡し、`PANO_SCENE` を使う側も同じ番号を使う |
+| 出力の長さ | `duration` が `null` で要素が 2 つ以上のとき、`start − in + 要素の数` の Timeline fps のフレームを Clip の終わりとする（(a)） |
+| 奥行きでの合成 | `over_by_depth`（`world_layer` と `composite_frame`） |
+
+- `render(view, index, device)` は、要素 `index` を `view`（`CameraView`）から見た層を返す。`view` は `scene` 自身の座標（`scene` の変形を外した glTF 座標）にある Camera で、`position` (3,)、`rotation`（`world_rotation` と同じく列が右・上・後ろの 3 × 3）、`projection` を持ち、`view.rays(device)` で画素ごとの光線の向き (H, W, 3) を返す。SPLAT のラスタライザが内部パラメータ（焦点距離・主点）を要するなら、#61 で `CameraView` に加える。
+- 戻り値はストレートアルファの色 (H, W, 4) と、`view.position` からの距離 (H, W)（`scene` 自身の単位、空の画素は `+inf`）。World の距離へは `scale` を掛けて直す。
+- `scene` の変形は、`scene` 自身の座標の点 `x` を World の `position + scale × world_rotation(yaw, pitch, roll) @ x` に置く。
+- `render` は、同じ `view` と `index` に対して同じ層を返す（使い回しの条件は `view` の値と `index` だけ）。
+
 ## まだ描かないもの
 
 統合ブランチ内の暫定として、次は `NotImplementedError` にする。
 
 | 内容 | 解消する ticket |
 |---|---|
-| 透視投影の描画 | #64 |
-| `world` の Sticker | #59 |
+| 透視投影の描画（`render_frame`。World の層を描く `world_layer` は透視投影にも対応済み） | #64 |
+| `scene` 入力の SPLAT・スプラット系の 3D ファイル / MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`（`nodes.py` の `_scene_content`） | #61 / #62 |
 | Camera の Keyframe が 2 つ以上ある `sticker_state`（v2）。軌道ごとの Pose handoff | #65 |
 
 ## Stickers ノード（`PanoramaStickersNode`）
@@ -83,7 +120,7 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 
 | 入口 | 関数 | 役割 | 変更する ticket |
 |---|---|---|---|
-| (a) | `_decide_timeline` | Timeline fps と、出力フレームごとの評価する Timeline frame・描く `bg_media` のフレーム・`sticker` の素材のフレーム | #53、#56 |
+| (a) | `_decide_timeline` | Timeline fps と、出力フレームごとの評価する Timeline frame・描く `bg_media` のフレーム・`sticker` の素材のフレーム・`scene` の要素 | #53、#56 |
 | (b) | `_render_timeline` | フレームごとに状態を評価し、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される | #55、#56、#58 |
 | (c) | `execute` の末尾 | 出力（IMAGE・MASK・AUDIO・fps・`PANO_SCENE`）を組み立てる | #53、#57 |
 
@@ -111,7 +148,7 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
   - 同じ `BytesIO` の VIDEO を `bg_media` と `sticker` の両方につないでもよい。`core/video_source.py` は container ごとに同じバイト列の別の読み手を作る（中身は写さない）。
   - 素材のフレームは `StickerSource.frame` で Sky のキーに入るので、Sky は素材のフレームが変わったときだけ作り直す。
   - `file` の Source（エディタで投入した素材）は、今は画像だけで、時間を持たない。
-- `scene` の入力、`sticker` の MESH・SPLAT・3D ファイルは、未対応であることを示すエラーにする。
+- `scene` の入力は `_scene_content` で `SceneContent` にする。いまはどの型も未対応であることを示すエラーにする（#61・#62 が加える）。`sticker` の MESH・SPLAT・3D ファイルも同じくエラーにする（#63）。
 - (b) は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、出力の直前の行から写す。
 - `is_output_node` は `False` で、ノード上の UI と実行結果の `ui`（プレビュー画像、動画、警告の表示）は持たない。これらは、エディタとの結び付け（#70）と、実行前後の素材の表示（#75）が決めて加える。それまで警告はログにだけ出す。
   - 背景 VIDEO のエディタ用の一時 MP4 とメタ情報（ADR 0018）も、#53 では出さず #75 で加える。旧ノードと同じく `core/video.py` の `encode_frames_to_mp4` / `make_video_ui_payload` を使う想定だが、VIDEO を全フレーム展開して再エンコードしないよう、`VideoFromFile` はストリームのまま渡す方法を #75 で決める。
@@ -127,11 +164,11 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 | `sources` | `SceneSources`。`file` の Source は読み込み済み。`port` の Sticker の Source は `port` の最初のフレームを持つテンプレートで、`port` があるときは Stickers の (b) と同じく、フレームごとに `port.frames()` と `frames` の `port` の番号（`port.index_at` の結果）で取り出した素材に差し替えてから `render_frame` に渡す |
 | `port` | `sticker` の素材の `PortMedia`（`sticker_media.py`）、または `None`。開いた stream ではなく VIDEO の入力そのものを持ち、`frames()` を呼ぶたびに開き直すので、Preview と Cutout など複数のノードが同じ `PANO_SCENE` を使っても読み取り位置を取り合わない |
 | `bg_media` | `bg_media` の入力そのもの（IMAGE のテンソル、VIDEO のハンドル、または `None`）。VIDEO は開いた状態で渡さないので、使う側が `sticker_media.py` の `open_video` で開き直す |
-| `scene` | `scene` の入力そのもの（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`、または `None`）。いまは `scene` を受け付けないので常に `None` |
+| `scene` | `scene` の入力そのもの（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`、または `None`）。いまは `scene` を受け付けないので常に `None`。描く側は `_scene_content` で `SceneContent` にし、フレームごとに `frames` の `scene` の番号を `scene_index` として `render_frame` に渡す（Stickers の (b) と同じ） |
 | `coverage` | `bg_media` の範囲（360 または 180） |
 | `bg_color` | 0〜1 の 3 つの数値のタプル |
 | `fps` | Timeline fps（float）。fps 出力と同じ値 |
-| `frames` | `_decide_timeline` が決めた出力フレームごとの `(評価する Timeline frame, 描く bg_media のフレーム番号または None, port のフレーム番号または None)` の 3 つ組のタプル。長さが出力のフレーム数 |
+| `frames` | `_decide_timeline` が決めた出力フレームごとの `(評価する Timeline frame, 描く bg_media のフレーム番号または None, port のフレーム番号または None, scene の要素の番号または None)` の 4 つ組のタプル。`scene` の番号は `scene` の入力がないとき `None` で、Clip range の外のフレームでも番号を持つ（描くかは `evaluated["scene"]["active"]` で決める）。長さが出力のフレーム数 |
 
 - 出力の解像度は入れない。撮影する側がそれぞれの規則（`output_preset`・`output_megapixels` など）で決める。
 - 同じ入力からは同じ内容の値になる（乱数や時刻を含まない）。ComfyUI のキャッシュが効くとき、下流には前回の同じ値が渡る。

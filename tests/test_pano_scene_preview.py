@@ -84,7 +84,7 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
     assert pano_scene.coverage == 180
     assert pano_scene.bg_color == (1.0, 0.0, 0.0)
     assert pano_scene.fps == fps == 30.0
-    assert pano_scene.frames == ((0.0, 0, 0), (1.0, 1, 0), (2.0, 2, 0))
+    assert pano_scene.frames == ((0.0, 0, 0, None), (1.0, 1, 0, None), (2.0, 2, 0, None))
     assert pano_scene.port.media is sticker
     port_id = pano_scene.state["stickers"][0]["id"]
     assert np.array_equal(pano_scene.sources.stickers[port_id].rgba[..., :3], sticker[0].numpy())
@@ -97,7 +97,7 @@ def test_pano_scene_state_is_plain_json_without_a_nested_scene():
     for value in vars(pano_scene).values():
         assert not isinstance(value, PanoSceneValue)
     assert pano_scene.port is None
-    assert pano_scene.frames == tuple((float(frame), None, None) for frame in range(6))
+    assert pano_scene.frames == tuple((float(frame), None, None, None) for frame in range(6))
 
 
 def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):
@@ -108,7 +108,7 @@ def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):
     assert pano_scene.bg_media is video
     assert pano_scene.fps == fps == 25.0
     assert len(pano_scene.frames) == image.shape[0] == 4
-    assert [bg_index for _frame, bg_index, _port_index in pano_scene.frames] == [0, 1, 2, 3]
+    assert [bg_index for _frame, bg_index, _port_index, _scene_index in pano_scene.frames] == [0, 1, 2, 3]
 
 
 def test_pano_scene_is_the_same_for_identical_inputs():
