@@ -6,50 +6,90 @@
   },
   "camera": {
     "aspect": 1.0,
-    "transform": {
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": [
+        {
+          "frame": 11,
+          "value": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "easing": [
+            0.42,
+            0.0,
+            0.58,
+            1.0
+          ],
+          "handles": {
+            "out": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        }
+      ]
+    },
+    "rotation": {
       "value": {
-        "position": [
-          0.0,
-          0.0,
-          0.0
-        ],
         "yaw_deg": 400.0,
         "pitch_deg": 90.0,
-        "roll_deg": 0.0,
-        "hFOV_deg": 179.0
+        "roll_deg": 0.0
       },
       "keyframes": [
         {
           "frame": 2,
           "value": {
-            "position": [
-              0.0,
-              0.0,
-              0.0
-            ],
             "yaw_deg": 0.0,
             "pitch_deg": 0.0,
-            "roll_deg": 0.0,
-            "hFOV_deg": 90.0
+            "roll_deg": 0.0
           },
-          "easing": "auto"
+          "easing": [
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        {
+          "frame": 4,
+          "value": {
+            "yaw_deg": 3.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "easing": [
+            0.42,
+            0.0,
+            0.58,
+            1.0
+          ]
         },
         {
           "frame": 11,
           "value": {
-            "position": [
-              0.0,
-              0.0,
-              0.0
-            ],
             "yaw_deg": 2.0,
             "pitch_deg": 0.0,
-            "roll_deg": 0.0,
-            "hFOV_deg": 90.0
+            "roll_deg": 0.0
           },
-          "easing": "auto"
+          "easing": [
+            0.42,
+            0.0,
+            0.58,
+            1.0
+          ]
         }
       ]
+    },
+    "fov": {
+      "value": 90.0,
+      "keyframes": []
     }
   },
   "scene": {
@@ -58,18 +98,24 @@
       "in": 0,
       "duration": null
     },
-    "transform": {
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
       "value": {
-        "position": [
-          0.0,
-          0.0,
-          0.0
-        ],
         "yaw_deg": 0.0,
         "pitch_deg": 0.0,
-        "roll_deg": 0.0,
-        "scale": 1.0
+        "roll_deg": 0.0
       },
+      "keyframes": []
+    },
+    "scale": {
+      "value": 1.0,
       "keyframes": []
     }
   },
@@ -93,11 +139,30 @@
         "x1": 1.0,
         "y1": 1.0
       },
-      "transform": {
+      "direction": {
         "value": {
           "yaw_deg": 10.0,
-          "pitch_deg": 0.0,
-          "roll_deg": 0.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": [
+          {
+            "frame": 1,
+            "value": 30.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          }
+        ]
+      },
+      "size": {
+        "value": {
           "hFOV_deg": 0.1,
           "vFOV_deg": 20.0
         },
@@ -137,18 +202,24 @@
         "x1": 0.8,
         "y1": 0.9
       },
-      "transform": {
+      "position": {
+        "value": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "keyframes": []
+      },
+      "rotation": {
         "value": {
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
           "yaw_deg": 0.0,
           "pitch_deg": 0.0,
-          "roll_deg": 0.0,
-          "scale": 1.0
+          "roll_deg": 0.0
         },
+        "keyframes": []
+      },
+      "scale": {
+        "value": 1.0,
         "keyframes": []
       },
       "opacity": {
@@ -176,11 +247,19 @@
         "x1": 1.0,
         "y1": 1.0
       },
-      "transform": {
+      "direction": {
         "value": {
           "yaw_deg": 0.0,
-          "pitch_deg": 0.0,
-          "roll_deg": 0.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
           "hFOV_deg": 20.0,
           "vFOV_deg": 20.0
         },
@@ -214,11 +293,19 @@
         "x1": 1.0,
         "y1": 1.0
       },
-      "transform": {
+      "direction": {
         "value": {
           "yaw_deg": 0.0,
-          "pitch_deg": 0.0,
-          "roll_deg": 0.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
           "hFOV_deg": 20.0,
           "vFOV_deg": 20.0
         },

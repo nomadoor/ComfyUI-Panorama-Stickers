@@ -11,8 +11,8 @@ from .world import panorama_angles, quaternion_to_rotation, rotation_to_quaterni
 
 
 def _copy_value(value):
-    if isinstance(value, dict):
-        return {key: list(item) if isinstance(item, list) else item for key, item in value.items()}
+    if isinstance(value, (dict, list)):
+        return value.copy()
     return value
 
 
@@ -21,11 +21,11 @@ def _copy_value(value):
 FRAME_EPSILON = 1e-6
 
 
-ROTATION_FIELDS = ("yaw_deg", "pitch_deg", "roll_deg")
-# Interpolation may overshoot a key; these fields are brought back into the range the state allows.
-FIELD_RANGES = {"hFOV_deg": (0.1, 179.0), "vFOV_deg": (0.1, 179.0), "scale": (1e-6, math.inf)}
 # Quaternion dot products within this of zero are exact half turns, whose direction a fixed rule picks.
+# Directions this close to exactly opposite also are.
 HALF_TURN_EPSILON = 1e-6
+# A direction this close to a pole has no yaw of its own.
+POLE_EPSILON = 1e-9
 
 
 def _bezier(p0, p1, p2, p3, t):
@@ -98,7 +98,7 @@ def _scalar(keyframes, frames, values, k, p):
 
 def _position(keyframes, frames, k, p):
     """Position as one vector, so the automatic path does not depend on the World axes; handles replace its offsets."""
-    positions = [key["value"]["position"] for key in keyframes]
+    positions = [key["value"] for key in keyframes]
     out_offset, in_offset = _control_offsets(keyframes, frames, positions, k)
     out_offset = keyframes[k].get("handles", {}).get("out", out_offset)
     in_offset = keyframes[k + 1].get("handles", {}).get("in", in_offset)
@@ -206,40 +206,134 @@ def _rotation(keyframes, frames, k, p):
     }
 
 
-def _interpolate(keyframes, k, frame):
-    frames = [key["frame"] for key in keyframes]
-    p = _ease(keyframes[k]["easing"], (frame - frames[k]) / (frames[k + 1] - frames[k]))
-    value = keyframes[k]["value"]
-    if not isinstance(value, dict):
-        return _scalar(keyframes, frames, [key["value"] for key in keyframes], k, p)
-    rotation = _rotation(keyframes, frames, k, p) if "yaw_deg" in value else {}
-    out = {}
-    for field in value:
-        if field == "position":
-            out[field] = _position(keyframes, frames, k, p)
-        elif field in ROTATION_FIELDS:
-            out[field] = rotation[field]
-        else:
-            out[field] = _scalar(keyframes, frames, [key["value"][field] for key in keyframes], k, p)
-            if field in FIELD_RANGES:
-                lo, hi = FIELD_RANGES[field]
-                out[field] = min(hi, max(lo, out[field]))
-    return out
+def _dot(a, b):
+    return sum(x * y for x, y in zip(a, b))
 
 
-def _evaluate_group(group, frame):
-    keyframes = group["keyframes"]
+def _norm(v):
+    return math.sqrt(_dot(v, v))
+
+
+def _direction_vector(value):
+    """The unit vector of a direction: x right, y up, z ahead at yaw 0."""
+    yaw, pitch = math.radians(value["yaw_deg"]), math.radians(value["pitch_deg"])
+    return [math.cos(pitch) * math.sin(yaw), math.sin(pitch), math.cos(pitch) * math.cos(yaw)]
+
+
+def _sphere_log(a, b):
+    """The tangent at a toward b along the great circle, as long as the angle. Exactly opposite points give zero."""
+    dot = _dot(a, b)
+    w = [y - dot * x for x, y in zip(a, b)]
+    norm = _norm(w)
+    scale = math.atan2(norm, dot) / norm if norm > 1e-12 else 1.0
+    return [c * scale for c in w]
+
+
+def _sphere_exp(a, v):
+    angle = _norm(v)
+    scale = math.sin(angle) / angle if angle > 1e-12 else 1.0
+    return [math.cos(angle) * x + scale * c for x, c in zip(a, v)]
+
+
+def _sphere_slerp(a, b, t):
+    return _sphere_exp(a, [t * c for c in _sphere_log(a, b)])
+
+
+def _great_circle(keyframes, k):
+    """The velocity (per unit of progress) of the great circle from key k to key k + 1, at its start and at its end,
+    and whether the two directions are exactly opposite.
+
+    Exactly opposite directions turn right from key k: toward increasing yaw of its stored value, defined at a pole too.
+    """
+    a = _direction_vector(keyframes[k]["value"])
+    b = _direction_vector(keyframes[k + 1]["value"])
+    dot = _dot(a, b)
+    opposite = dot < 0.0 and _norm([y - dot * x for x, y in zip(a, b)]) <= HALF_TURN_EPSILON
+    if opposite:
+        yaw = math.radians(keyframes[k]["value"]["yaw_deg"])
+        start = [math.pi * math.cos(yaw), 0.0, -math.pi * math.sin(yaw)]
+    else:
+        start = _sphere_log(a, b)
+    angle = _norm(start)
+    return start, [math.cos(angle) * c - angle * math.sin(angle) * x for c, x in zip(start, a)], opposite
+
+
+def _direction(keyframes, frames, k, p):
+    """A sky Sticker's direction: a spherical Bezier (de Casteljau with slerps) from key k to key k + 1.
+
+    The control points lie a third of the start and end velocities away, as for a position. Where the spline
+    stops they are the great circle's own, so the segment is the great-circle slerp. A passing key's velocity
+    follows the speed rule in its tangent plane, from the chord of the segment before it carried along its great
+    circle to the key, and the chord of the segment after it.
+    """
+    a = _direction_vector(keyframes[k]["value"])
+    b = _direction_vector(keyframes[k + 1]["value"])
+    chord_start, chord_end, opposite = _great_circle(keyframes, k)
+    start, end = chord_start, chord_end
+    dt = frames[k + 1] - frames[k]
+    if _smooth(keyframes, k):
+        start = [c * dt for c in _tangent(frames, k, [-c for c in _great_circle(keyframes, k - 1)[1]], start)]
+    if _smooth(keyframes, k + 1):
+        end = [c * dt for c in _tangent(frames, k + 1, [-c for c in end], _great_circle(keyframes, k + 1)[0])]
+    if opposite:
+        # The control points of opposite keys can be opposite too, with no great circle between them, so the segment
+        # runs along its own great circle: the arc length is a cubic Bezier in p with the end speeds along the circle.
+        angle = math.pi
+        arc = _bezier(0.0, _dot(start, chord_start) / angle / 3.0, angle - _dot(end, chord_end) / angle / 3.0, angle, p)
+        x, y, z = _sphere_exp(a, [arc * c / angle for c in chord_start])
+    else:
+        middle = _sphere_slerp(_sphere_exp(a, [c / 3.0 for c in start]), _sphere_exp(b, [-c / 3.0 for c in end]), p)
+        first = _sphere_slerp(_sphere_exp(a, [p * c / 3.0 for c in start]), middle, p)
+        second = _sphere_slerp(middle, _sphere_exp(b, [-(1.0 - p) * c / 3.0 for c in end]), p)
+        x, y, z = _sphere_slerp(first, second, p)
+    horizontal = math.hypot(x, z)
+    left, right = keyframes[k]["value"]["yaw_deg"], keyframes[k + 1]["value"]["yaw_deg"]
+    # At a pole the yaw follows the stored numbers; elsewhere it is the turn nearest to them, like a rotation's.
+    yaw = left + (right - left) * p if horizontal <= POLE_EPSILON else _unwrap_near_blend(math.degrees(math.atan2(x, z)), left, right, p)
+    return {"yaw_deg": yaw, "pitch_deg": math.degrees(math.atan2(y, horizontal))}
+
+
+def _size(keyframes, frames, k, p):
+    return {field: _scalar(keyframes, frames, [key["value"][field] for key in keyframes], k, p) for field in ("hFOV_deg", "vFOV_deg")}
+
+
+def _scalar_lane(keyframes, frames, k, p):
+    return _scalar(keyframes, frames, [key["value"] for key in keyframes], k, p)
+
+
+# How each Lane interpolates inside a segment; the other Lanes (fov, roll, scale, opacity) are scalars.
+INTERPOLATIONS = {"position": _position, "rotation": _rotation, "direction": _direction, "size": _size}
+
+
+def _evaluate_lane(owner, name, frame):
+    """The value of the Lane `name` of `owner` at a fractional frame of its own time base."""
+    keyframes = owner[name]["keyframes"]
     if not keyframes:
-        return _copy_value(group["value"])
+        return _copy_value(owner[name]["value"])
     if frame <= keyframes[0]["frame"] + FRAME_EPSILON:
         return _copy_value(keyframes[0]["value"])
     if frame >= keyframes[-1]["frame"] - FRAME_EPSILON:
         return _copy_value(keyframes[-1]["value"])
-    k = bisect_right([key["frame"] for key in keyframes], frame + FRAME_EPSILON) - 1
+    frames = [key["frame"] for key in keyframes]
+    k = bisect_right(frames, frame + FRAME_EPSILON) - 1
     left = keyframes[k]
     if abs(frame - left["frame"]) <= FRAME_EPSILON or left["easing"] == "hold":
         return _copy_value(left["value"])
-    return _interpolate(keyframes, k, frame)
+    p = _ease(left["easing"], (frame - frames[k]) / (frames[k + 1] - frames[k]))
+    return INTERPOLATIONS.get(name, _scalar_lane)(keyframes, frames, k, p)
+
+
+# Interpolation may leave a range by rounding; these bring values back into the range the state allows.
+def _fov(value):
+    return min(179.0, max(0.1, value))
+
+
+def _opacity(value):
+    return min(1.0, max(0.0, value))
+
+
+def _scale(value):
+    return max(1e-6, value)
 
 
 def _clip_frame(clip, frame):
@@ -249,6 +343,22 @@ def _clip_frame(clip, frame):
 def _clip_active(clip, frame):
     end = None if clip["duration"] is None else clip["start"] + clip["duration"]
     return frame >= clip["start"] - FRAME_EPSILON and (end is None or frame < end - FRAME_EPSILON)
+
+
+def _sticker_values(sticker, frame):
+    if sticker["placement"] == "world":
+        return {
+            "position": _evaluate_lane(sticker, "position", frame),
+            **_evaluate_lane(sticker, "rotation", frame),
+            "scale": _scale(_evaluate_lane(sticker, "scale", frame)),
+        }
+    size = _evaluate_lane(sticker, "size", frame)
+    return {
+        **_evaluate_lane(sticker, "direction", frame),
+        "roll_deg": _evaluate_lane(sticker, "roll", frame),
+        "hFOV_deg": _fov(size["hFOV_deg"]),
+        "vFOV_deg": _fov(size["vFOV_deg"]),
+    }
 
 
 def evaluate_scene_state(state: dict, frame: float) -> dict:
@@ -265,17 +375,24 @@ def evaluate_scene_state(state: dict, frame: float) -> dict:
             "placement": sticker["placement"],
             "active": sticker["visible"] and _clip_active(clip, frame),
             "clip_frame": clip_frame,
-            **_evaluate_group(sticker["transform"], clip_frame),
-            "opacity": min(1.0, max(0.0, _evaluate_group(sticker["opacity"], clip_frame))),
+            **_sticker_values(sticker, clip_frame),
+            "opacity": _opacity(_evaluate_lane(sticker, "opacity", clip_frame)),
         })
     scene_clip_frame = _clip_frame(scene["clip"], frame)
     return {
         "frame": frame,
-        "camera": {**_evaluate_group(camera["transform"], frame), "aspect": camera["aspect"]},
+        "camera": {
+            "position": _evaluate_lane(camera, "position", frame),
+            **_evaluate_lane(camera, "rotation", frame),
+            "hFOV_deg": _fov(_evaluate_lane(camera, "fov", frame)),
+            "aspect": camera["aspect"],
+        },
         "scene": {
             "active": _clip_active(scene["clip"], frame),
             "clip_frame": scene_clip_frame,
-            **_evaluate_group(scene["transform"], scene_clip_frame),
+            "position": _evaluate_lane(scene, "position", scene_clip_frame),
+            **_evaluate_lane(scene, "rotation", scene_clip_frame),
+            "scale": _scale(_evaluate_lane(scene, "scale", scene_clip_frame)),
         },
         "stickers": stickers,
     }

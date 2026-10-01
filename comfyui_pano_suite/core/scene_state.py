@@ -14,6 +14,8 @@ STATE_VERSION = 2
 STICKER_STATE_KIND = "pano_sticker_state"
 PLACEMENTS = ("sky", "world")
 FILE_STORAGES = ("input", "output", "temp")
+# ease-in-out, the Easing of a Keyframe without a valid one.
+DEFAULT_EASING = (0.42, 0.0, 0.58, 1.0)
 
 
 def _reject_constant(name):
@@ -55,34 +57,42 @@ def _vec3(value):
     return None if None in out else out
 
 
-def _camera_value(raw):
+def _position_value(raw):
+    return _vec3(raw) or [0.0, 0.0, 0.0]
+
+
+def _rotation_value(raw):
     raw = raw if isinstance(raw, dict) else {}
     return {
-        "position": _vec3(raw.get("position")) or [0.0, 0.0, 0.0],
         "yaw_deg": _number(raw.get("yaw_deg"), 0.0),
         "pitch_deg": _clamp(_number(raw.get("pitch_deg"), 0.0), -90.0, 90.0),
         "roll_deg": _number(raw.get("roll_deg"), 0.0),
-        "hFOV_deg": _clamp(_number(raw.get("hFOV_deg"), 90.0), 0.1, 179.0),
     }
 
 
-def _world_value(raw):
+def _fov_value(raw):
+    return _clamp(_number(raw, 90.0), 0.1, 179.0)
+
+
+def _scale_value(raw):
+    return _positive(raw, 1.0)
+
+
+def _direction_value(raw):
     raw = raw if isinstance(raw, dict) else {}
     return {
-        "position": _vec3(raw.get("position")) or [0.0, 0.0, 0.0],
         "yaw_deg": _number(raw.get("yaw_deg"), 0.0),
         "pitch_deg": _clamp(_number(raw.get("pitch_deg"), 0.0), -90.0, 90.0),
-        "roll_deg": _number(raw.get("roll_deg"), 0.0),
-        "scale": _positive(raw.get("scale"), 1.0),
     }
 
 
-def _sky_value(raw):
+def _roll_value(raw):
+    return _number(raw, 0.0)
+
+
+def _size_value(raw):
     raw = raw if isinstance(raw, dict) else {}
     return {
-        "yaw_deg": _number(raw.get("yaw_deg"), 0.0),
-        "pitch_deg": _clamp(_number(raw.get("pitch_deg"), 0.0), -90.0, 90.0),
-        "roll_deg": _number(raw.get("roll_deg"), 0.0),
         "hFOV_deg": _clamp(_number(raw.get("hFOV_deg"), 20.0), 0.1, 179.0),
         "vFOV_deg": _clamp(_number(raw.get("vFOV_deg"), 20.0), 0.1, 179.0),
     }
@@ -92,14 +102,21 @@ def _opacity_value(raw):
     return _clamp(_number(raw, 1.0), 0.0, 1.0)
 
 
+# The Lanes of each owner, in the order they are stored.
+CAMERA_LANES = (("position", _position_value), ("rotation", _rotation_value), ("fov", _fov_value))
+SCENE_LANES = (("position", _position_value), ("rotation", _rotation_value), ("scale", _scale_value))
+SKY_STICKER_LANES = (("direction", _direction_value), ("roll", _roll_value), ("size", _size_value), ("opacity", _opacity_value))
+WORLD_STICKER_LANES = (*SCENE_LANES, ("opacity", _opacity_value))
+
+
 def _easing(raw):
     if raw in ("auto", "hold"):
         return raw
     if isinstance(raw, list) and len(raw) == 4:
         values = [_number(v, None) for v in raw]
-        if None not in values and 0.0 <= values[0] <= 1.0 and 0.0 <= values[2] <= 1.0:
+        if None not in values and all(0.0 <= v <= 1.0 for v in values):
             return values
-    return "auto"
+    return list(DEFAULT_EASING)
 
 
 def _handles(raw):
@@ -113,7 +130,7 @@ def _handles(raw):
     return out or None
 
 
-def _keyframes(raw, value_fn, has_position):
+def _keyframes(raw, value_fn, has_handles):
     by_frame = {}
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict):
@@ -122,19 +139,20 @@ def _keyframes(raw, value_fn, has_position):
         if frame is None:
             continue
         key = {"frame": frame, "value": value_fn(item.get("value")), "easing": _easing(item.get("easing"))}
-        handles = _handles(item.get("handles")) if has_position else None
+        handles = _handles(item.get("handles")) if has_handles else None
         if handles:
             key["handles"] = handles
         by_frame[frame] = key
     return [by_frame[frame] for frame in sorted(by_frame)]
 
 
-def _group(raw, value_fn, has_position):
-    raw = raw if isinstance(raw, dict) else {}
-    return {
-        "value": value_fn(raw.get("value")),
-        "keyframes": _keyframes(raw.get("keyframes"), value_fn, has_position),
-    }
+def _lanes(raw, lanes):
+    """The normalized Lanes of an owner; only `position` Keyframes keep Motion path handles."""
+    out = {}
+    for name, value_fn in lanes:
+        lane = raw.get(name) if isinstance(raw.get(name), dict) else {}
+        out[name] = {"value": value_fn(lane.get("value")), "keyframes": _keyframes(lane.get("keyframes"), value_fn, name == "position")}
+    return out
 
 
 def _clip(raw):
@@ -198,8 +216,7 @@ def _sticker(raw):
         "visible": _bool(raw.get("visible"), True),
         "locked": _bool(raw.get("locked"), False),
         "crop": _crop(raw.get("crop")),
-        "transform": _group(raw.get("transform"), _world_value if world else _sky_value, world),
-        "opacity": _group(raw.get("opacity"), _opacity_value, False),
+        **_lanes(raw, WORLD_STICKER_LANES if world else SKY_STICKER_LANES),
     }
     if not world:
         z_index = _frame(raw.get("z_index"))
@@ -249,14 +266,8 @@ def _normalize_v2(raw):
             "fps": _positive(timeline.get("fps"), 24.0),
             "length": length if length is not None and length >= 1 else None,
         },
-        "camera": {
-            "aspect": _positive(camera.get("aspect"), 1.0),
-            "transform": _group(camera.get("transform"), _camera_value, True),
-        },
-        "scene": {
-            "clip": _clip(scene.get("clip")),
-            "transform": _group(scene.get("transform"), _world_value, True),
-        },
+        "camera": {"aspect": _positive(camera.get("aspect"), 1.0), **_lanes(camera, CAMERA_LANES)},
+        "scene": {"clip": _clip(scene.get("clip")), **_lanes(scene, SCENE_LANES)},
         "stickers": _stickers(raw.get("stickers")),
         "painting": normalize_painting_state(raw.get("painting")),
         "painting_layer": deepcopy(painting_layer) if isinstance(painting_layer, dict) else None,
@@ -291,12 +302,8 @@ def _v1_camera(shots):
     v_fov = _clamp(_number(shot.get("vFOV_deg"), 60.0), 1.0, 179.0)
     return {
         "aspect": math.tan(math.radians(h_fov) * 0.5) / math.tan(math.radians(v_fov) * 0.5),
-        "transform": {"value": {
-            "yaw_deg": shot.get("yaw_deg"),
-            "pitch_deg": shot.get("pitch_deg"),
-            "roll_deg": shot.get("roll_deg"),
-            "hFOV_deg": h_fov,
-        }},
+        "rotation": {"value": {"yaw_deg": shot.get("yaw_deg"), "pitch_deg": shot.get("pitch_deg"), "roll_deg": shot.get("roll_deg")}},
+        "fov": {"value": h_fov},
     }
 
 
@@ -313,13 +320,9 @@ def _migrate_v1(raw):
             "locked": item.get("locked"),
             "crop": item.get("crop"),
             "z_index": item.get("z_index"),
-            "transform": {"value": {
-                "yaw_deg": item.get("yaw_deg"),
-                "pitch_deg": item.get("pitch_deg"),
-                "roll_deg": item.get("rot_deg"),
-                "hFOV_deg": item.get("hFOV_deg"),
-                "vFOV_deg": item.get("vFOV_deg"),
-            }},
+            "direction": {"value": {"yaw_deg": item.get("yaw_deg"), "pitch_deg": item.get("pitch_deg")}},
+            "roll": {"value": item.get("rot_deg")},
+            "size": {"value": {"hFOV_deg": item.get("hFOV_deg"), "vFOV_deg": item.get("vFOV_deg")}},
         }
         for item in v1_stickers
     ]
@@ -348,10 +351,13 @@ def load_scene_state(raw) -> dict:
     return _migrate_v1(raw) if version == 1 else _normalize_v2(raw)
 
 
-def _rebase_group(group, rebase, anchor, new_anchor):
+def _rebase_lanes(owner, lanes, rebase, anchor, new_anchor):
     return {
-        "value": group["value"],
-        "keyframes": [{**key, "frame": rebase(anchor + key["frame"]) - new_anchor} for key in group["keyframes"]],
+        name: {
+            "value": owner[name]["value"],
+            "keyframes": [{**key, "frame": rebase(anchor + key["frame"]) - new_anchor} for key in owner[name]["keyframes"]],
+        }
+        for name, _value_fn in lanes
     }
 
 
@@ -381,16 +387,12 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
     stickers = []
     for sticker in state["stickers"]:
         clip = _rebase_clip(sticker["clip"], rebase)
-        stickers.append({
-            **sticker,
-            "clip": clip["clip"],
-            "transform": _rebase_group(sticker["transform"], rebase, clip["anchor"], clip["new_anchor"]),
-            "opacity": _rebase_group(sticker["opacity"], rebase, clip["anchor"], clip["new_anchor"]),
-        })
+        lanes = WORLD_STICKER_LANES if sticker["placement"] == "world" else SKY_STICKER_LANES
+        stickers.append({**sticker, "clip": clip["clip"], **_rebase_lanes(sticker, lanes, rebase, clip["anchor"], clip["new_anchor"])})
     return _normalize_v2({
         "timeline": {"fps": fps, "length": None if length is None else max(1, rebase(length))},
-        "camera": {"aspect": state["camera"]["aspect"], "transform": _rebase_group(state["camera"]["transform"], rebase, 0, 0)},
-        "scene": {"clip": scene["clip"], "transform": _rebase_group(state["scene"]["transform"], rebase, scene["anchor"], scene["new_anchor"])},
+        "camera": {"aspect": state["camera"]["aspect"], **_rebase_lanes(state["camera"], CAMERA_LANES, rebase, 0, 0)},
+        "scene": {"clip": scene["clip"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
         "stickers": stickers,
         "painting": state["painting"],
         "painting_layer": state["painting_layer"],
@@ -406,22 +408,25 @@ def _v1_pose_number(value):
         return math.nan
 
 
+def _sticker_state_camera(raw):
+    """Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0."""
+    raw = raw if isinstance(raw, dict) else {}
+    return {
+        name: _keyframes(raw.get(name), value_fn, name == "position") or [{"frame": 0, "value": value_fn(None), "easing": list(DEFAULT_EASING)}]
+        for name, value_fn in CAMERA_LANES
+    }
+
+
 def _v1_sticker_state_camera(pose):
     if not isinstance(pose, dict):
         return None
     yaw, pitch, roll, h_fov = (_v1_pose_number(pose.get(key)) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg"))
     if not all(math.isfinite(v) for v in (yaw, pitch, roll, h_fov)):
         return None
-    return _camera_value({
-        "yaw_deg": ((yaw + 180.0) % 360.0) - 180.0,
-        "pitch_deg": _clamp(pitch, -89.9, 89.9),
-        "roll_deg": roll,
-        "hFOV_deg": _clamp(h_fov, 0.1, 179.0),
+    return _sticker_state_camera({
+        "rotation": [{"frame": 0, "value": {"yaw_deg": ((yaw + 180.0) % 360.0) - 180.0, "pitch_deg": _clamp(pitch, -89.9, 89.9), "roll_deg": roll}}],
+        "fov": [{"frame": 0, "value": _clamp(h_fov, 0.1, 179.0)}],
     })
-
-
-def _default_camera_keyframe():
-    return {"frame": 0, "value": _camera_value(None), "easing": "auto"}
 
 
 def load_sticker_state(text) -> dict | None:
@@ -439,15 +444,14 @@ def load_sticker_state(text) -> dict | None:
         return None
     version = raw.get("version")
     if not isinstance(version, bool) and version in (1, "1"):
-        value = _v1_sticker_state_camera(raw.get("pose"))
-        if value is None:
+        camera = _v1_sticker_state_camera(raw.get("pose"))
+        if camera is None:
             return None
-        camera = [{"frame": 0, "value": value, "easing": "auto"}]
         aspect = _v1_pose_number(raw.get("source_aspect"))
         source_aspect = aspect if math.isfinite(aspect) and aspect > 0.0 else None
         fps = 24.0
     elif not isinstance(version, bool) and version == 2:
-        camera = _keyframes(raw.get("camera"), _camera_value, True) or [_default_camera_keyframe()]
+        camera = _sticker_state_camera(raw.get("camera"))
         source_aspect = _positive(raw.get("source_aspect"), None)
         fps = _positive(raw.get("fps"), 24.0)
     else:

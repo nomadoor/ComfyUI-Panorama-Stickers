@@ -9,6 +9,7 @@ import PanoPaintDock from "./PanoPaintDock.vue";
 import PanoPaintOverlays from "./PanoPaintOverlays.vue";
 import PanoSelectionMenu from "./PanoSelectionMenu.vue";
 import PanoSidePanel from "./PanoSidePanel.vue";
+import PanoTimeline from "./PanoTimeline.vue";
 import PanoTooltip from "./PanoTooltip.vue";
 import PanoToolRail from "./PanoToolRail.vue";
 import PanoVideoTransport from "./PanoVideoTransport.vue";
@@ -26,7 +27,7 @@ const props = defineProps({
   uiState: { type: Object, default: () => ({}) },
 });
 
-const emit = defineEmits(["close", "image-file-selected", "image-file-cancelled"]);
+const emit = defineEmits(["close", "image-file-selected", "image-file-cancelled", "timeline"]);
 let previousOverflow = "";
 let didLockBody = false;
 let previousFocusedElement = null;
@@ -181,54 +182,63 @@ watch(() => props.open, (nextOpen) => {
 <template>
   <div v-if="open" class="pano-modal-overlay" @click.self="emit('close')">
     <section ref="modalRef" class="pano-modal" role="dialog" aria-modal="true" :aria-label="nodeTitle" tabindex="-1">
-      <div class="pano-stage-wrap">
-        <canvas class="pano-stage pano-stage-bg" data-stage-background width="1600" height="800" />
-        <canvas class="pano-stage pano-stage-overlay" data-stage-overlay width="1600" height="800" />
-        <div class="pano-stage-loading" aria-hidden="true" />
-        <div
-          v-if="uiState.stageStatus === 'failed' || (uiState.stageStatus === 'ready' && uiState.stageWarningDetail)"
-          class="pano-stage-failed"
-          role="status"
-        >
-          {{ stageFailureMessage }}
-        </div>
-        <div class="pano-stage-drop-hint" aria-hidden="true">
-          <div class="pano-stage-drop-hint-text">Drag and drop image here</div>
-        </div>
-        <PanoPaintOverlays ref="paintOverlaysRef" />
-        <PanoImageFilePicker
-          ref="imageFilePickerRef"
-          @file-selected="onImageFileSelected"
-          @file-cancelled="onImageFileCancelled"
-        />
-
-        <template v-if="!previewMode">
-          <PanoToolRail :buttons="uiState.toolButtons || shellPreset.toolButtons || []" />
-          <PanoFrameRail :model="uiState.frameRail || {}" />
-          <PanoPaintDock
-            :paint-swatches="paintSwatches"
-            :panes="shellPreset.paintPanes || []"
-            :state="uiState.paintDock || {}"
+      <div class="pano-stage-column">
+        <div class="pano-stage-wrap">
+          <canvas class="pano-stage pano-stage-bg" data-stage-background width="1600" height="800" />
+          <canvas class="pano-stage pano-stage-overlay" data-stage-overlay width="1600" height="800" />
+          <div class="pano-stage-loading" aria-hidden="true" />
+          <div
+            v-if="uiState.stageStatus === 'failed' || (uiState.stageStatus === 'ready' && uiState.stageWarningDetail)"
+            class="pano-stage-failed"
+            role="status"
+          >
+            {{ stageFailureMessage }}
+          </div>
+          <div class="pano-stage-drop-hint" aria-hidden="true">
+            <div class="pano-stage-drop-hint-text">Drag and drop image here</div>
+          </div>
+          <PanoPaintOverlays ref="paintOverlaysRef" />
+          <PanoImageFilePicker
+            ref="imageFilePickerRef"
+            @file-selected="onImageFileSelected"
+            @file-cancelled="onImageFileCancelled"
           />
-        </template>
 
-        <PanoVideoTransport :state="uiState.videoTransport || {}" />
+          <template v-if="!previewMode">
+            <PanoToolRail :buttons="uiState.toolButtons || shellPreset.toolButtons || []" />
+            <PanoFrameRail :model="uiState.frameRail || {}" />
+            <PanoPaintDock
+              :paint-swatches="paintSwatches"
+              :panes="shellPreset.paintPanes || []"
+              :state="uiState.paintDock || {}"
+            />
+          </template>
 
-        <PanoViewToggle :buttons="uiState.viewButtons || shellPreset.viewButtons || []" />
+          <PanoVideoTransport :state="uiState.videoTransport || {}" />
 
-        <PanoFloatingRight
-          :buttons="uiState.floatingButtons || floatingButtons"
-          :fov-value="uiState.fovValue || '100°'"
-          :preview="uiState.cameraPreview || {}"
-          :preview-toggle="uiState.outputPreviewToggle || {}"
-        />
+          <PanoViewToggle :buttons="uiState.viewButtons || shellPreset.viewButtons || []" />
 
-        <PanoSelectionMenu :model="uiState.selectionMenu || {}" />
-        <PanoTooltip :model="uiState.tooltip || {}" />
-        <PanoConfirmDialog :model="uiState.confirmDialog || {}" />
+          <PanoFloatingRight
+            :buttons="uiState.floatingButtons || floatingButtons"
+            :fov-value="uiState.fovValue || '100°'"
+            :preview="uiState.cameraPreview || {}"
+            :preview-toggle="uiState.outputPreviewToggle || {}"
+          />
+
+          <PanoSelectionMenu :model="uiState.selectionMenu || {}" />
+          <PanoTooltip :model="uiState.tooltip || {}" />
+          <PanoConfirmDialog :model="uiState.confirmDialog || {}" />
+        </div>
+        <PanoTimeline :model="uiState.timeline || {}" @action="emit('timeline', $event)" />
       </div>
 
-      <PanoSidePanel v-if="!hideSidebar" :node-title="nodeTitle" :model="uiState.sidePanel || {}" />
+      <PanoSidePanel
+        v-if="!hideSidebar"
+        :node-title="nodeTitle"
+        :model="uiState.sidePanel || {}"
+        :easing="uiState.easing || null"
+        @timeline="emit('timeline', $event)"
+      />
     </section>
   </div>
 </template>

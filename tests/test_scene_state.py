@@ -56,7 +56,7 @@ def test_load_scene_state_accepts_parsed_dict():
 
 def test_stored_frames_are_integers():
     state = load_scene_state(read_fixture("v2_invalid_fields"))
-    assert [type(k["frame"]) for k in state["camera"]["transform"]["keyframes"]] == [int, int]
+    assert [type(k["frame"]) for k in state["camera"]["rotation"]["keyframes"]] == [int, int, int]
     assert type(state["stickers"][0]["clip"]["in"]) is int
 
 
@@ -65,13 +65,13 @@ def test_empty_state_is_default_v2():
     assert state == load_scene_state(None) == load_scene_state("  ")
     assert state["version"] == 2
     assert state["stickers"] == []
-    assert state["camera"]["transform"]["keyframes"] == []
+    assert all(state["camera"][lane]["keyframes"] == [] for lane in ("position", "rotation", "fov"))
 
 
 def test_state_without_version_is_read_as_v1():
     state = load_scene_state('{"shots":[{"yaw_deg":30,"hFOV_deg":90,"vFOV_deg":90}]}')
     assert state["version"] == 2
-    assert state["camera"]["transform"]["value"]["yaw_deg"] == 30.0
+    assert state["camera"]["rotation"]["value"]["yaw_deg"] == 30.0
     assert state["camera"]["aspect"] == pytest.approx(1.0)
 
 
@@ -97,11 +97,11 @@ def test_state_v2_has_no_unread_fields():
     state = load_scene_state(read_fixture("v2_canonical"))
     assert list(state.keys()) == ["version", "timeline", "camera", "scene", "stickers", "painting", "painting_layer"]
     assert list(state["timeline"].keys()) == ["fps", "length"]
-    assert list(state["camera"].keys()) == ["aspect", "transform"]
-    assert list(state["scene"].keys()) == ["clip", "transform"]
+    assert list(state["camera"].keys()) == ["aspect", "position", "rotation", "fov"]
+    assert list(state["scene"].keys()) == ["clip", "position", "rotation", "scale"]
+    lanes = {"sky": ["direction", "roll", "size", "opacity", "z_index"], "world": ["position", "rotation", "scale", "opacity"]}
     for sticker in state["stickers"]:
-        sky_only = ["z_index"] if sticker["placement"] == "sky" else []
-        assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", "transform", "opacity", *sky_only]
+        assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", *lanes[sticker["placement"]]]
 
 
 @pytest.mark.parametrize("name", STICKER_STATE_CASES)
@@ -119,13 +119,14 @@ def test_load_sticker_state_rejects_unknown_version():
         load_sticker_state('{"kind":"pano_sticker_state","version":3}')
 
 
-def test_sticker_state_v2_without_camera_gets_one_default_keyframe():
+def test_sticker_state_v2_without_camera_gets_one_default_keyframe_per_lane():
     parsed = load_sticker_state('{"kind":"pano_sticker_state","version":2,"camera":[]}')
-    assert parsed["camera"] == [{
-        "frame": 0,
-        "value": {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0},
-        "easing": "auto",
-    }]
+    easing = [0.42, 0.0, 0.58, 1.0]
+    assert parsed["camera"] == {
+        "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": easing}],
+        "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": easing}],
+        "fov": [{"frame": 0, "value": 90.0, "easing": easing}],
+    }
 
 
 def test_evaluate_canonical_state_matches_fixture():
@@ -146,14 +147,14 @@ def test_evaluate_result_does_not_alias_state():
     state = load_scene_state(read_fixture("v2_canonical"))
     out = evaluate_scene_state(state, 0.0)
     out["camera"]["position"][0] = 99.0
-    assert state["camera"]["transform"]["keyframes"][0]["value"]["position"][0] == 0.0
+    assert state["camera"]["position"]["keyframes"][0]["value"][0] == 0.0
 
 
 def _cut_state():
     return load_scene_state({
         "version": 2,
         "timeline": {"fps": 30000 / 1001},
-        "camera": {"transform": {"keyframes": [
+        "camera": {"rotation": {"keyframes": [
             {"frame": 0, "value": {"yaw_deg": 0}, "easing": "hold"},
             {"frame": 24, "value": {"yaw_deg": 90}, "easing": "auto"},
             {"frame": 48, "value": {"yaw_deg": 180}},
@@ -180,10 +181,36 @@ def test_json_non_finite_constants_are_rejected(constant):
 
 def test_sticker_state_v1_accepts_numeric_strings():
     parsed = load_sticker_state('{"kind":"pano_sticker_state","version":"1","pose":{"yaw_deg":"190","pitch_deg":" -100 ","roll_deg":2,"hFOV_deg":"30"},"source_aspect":"1.5"}')
-    assert parsed["camera"][0]["value"] == {"position": [0.0, 0.0, 0.0], "yaw_deg": -170.0, "pitch_deg": -89.9, "roll_deg": 2.0, "hFOV_deg": 30.0}
+    assert parsed["camera"]["rotation"][0]["value"] == {"yaw_deg": -170.0, "pitch_deg": -89.9, "roll_deg": 2.0}
+    assert parsed["camera"]["fov"][0]["value"] == 30.0
     assert parsed["source_aspect"] == 1.5
     assert load_sticker_state('{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":"","pitch_deg":0,"roll_deg":0,"hFOV_deg":30}}') is None
     assert load_sticker_state('{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":true,"pitch_deg":0,"roll_deg":0,"hFOV_deg":30}}') is None
+
+
+@pytest.mark.parametrize("easing", [None, "smooth", [0.42, 0.0, 0.58], [0.2, -0.1, 0.8, 1.0], [0.2, 0.0, 0.8, 1.1], [1.2, 0.0, 0.5, 1.0]])
+def test_missing_or_invalid_easing_is_ease_in_out(easing):
+    key = {"frame": 0, "value": 0.5} if easing is None else {"frame": 0, "value": 0.5, "easing": easing}
+    state = load_scene_state({"version": 2, "stickers": [{"source": {"kind": "port"}, "opacity": {"keyframes": [key]}}]})
+    assert state["stickers"][0]["opacity"]["keyframes"][0]["easing"] == [0.42, 0.0, 0.58, 1.0]
+
+
+def test_missing_or_invalid_lane_is_the_default_lane():
+    state = load_scene_state({"version": 2, "camera": {"fov": 60, "rotation": None}, "stickers": [{"source": {"kind": "port"}, "size": "big", "roll": {"value": "x"}}]})
+    assert state["camera"]["fov"] == {"value": 90.0, "keyframes": []}
+    assert state["camera"]["rotation"] == {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []}
+    sticker = state["stickers"][0]
+    assert sticker["size"] == {"value": {"hFOV_deg": 20.0, "vFOV_deg": 20.0}, "keyframes": []}
+    assert sticker["roll"] == {"value": 0.0, "keyframes": []}
+
+
+def test_only_position_keyframes_keep_handles():
+    handles = {"in": [0, 1, 0], "out": [1, 0, 0]}
+    key = {"frame": 0, "value": None, "easing": "auto", "handles": handles}
+    state = load_scene_state({"version": 2, "camera": {name: {"keyframes": [key]} for name in ("position", "rotation", "fov")}})
+    assert state["camera"]["position"]["keyframes"][0]["handles"] == {"in": [0.0, 1.0, 0.0], "out": [1.0, 0.0, 0.0]}
+    assert "handles" not in state["camera"]["rotation"]["keyframes"][0]
+    assert "handles" not in state["camera"]["fov"]["keyframes"][0]
 
 
 def test_clip_range_edges_use_frame_epsilon():

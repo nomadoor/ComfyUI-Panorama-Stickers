@@ -7,6 +7,8 @@ export const STATE_VERSION = 2;
 export const STICKER_STATE_KIND = "pano_sticker_state";
 const PLACEMENTS = ["sky", "world"];
 const FILE_STORAGES = ["input", "output", "temp"];
+// ease-in-out, the Easing of a Keyframe without a valid one.
+export const DEFAULT_EASING = [0.42, 0, 0.58, 1];
 
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -40,34 +42,42 @@ function vec3(value) {
   return out.includes(null) ? null : out;
 }
 
-function cameraValue(raw) {
+function positionValue(raw) {
+  return vec3(raw) || [0, 0, 0];
+}
+
+function rotationValue(raw) {
   const src = isObject(raw) ? raw : {};
   return {
-    position: vec3(src.position) || [0, 0, 0],
     yaw_deg: number(src.yaw_deg, 0),
     pitch_deg: clamp(number(src.pitch_deg, 0), -90, 90),
     roll_deg: number(src.roll_deg, 0),
-    hFOV_deg: clamp(number(src.hFOV_deg, 90), 0.1, 179),
   };
 }
 
-function worldValue(raw) {
+function fovValue(raw) {
+  return clamp(number(raw, 90), 0.1, 179);
+}
+
+function scaleValue(raw) {
+  return positive(raw, 1);
+}
+
+function directionValue(raw) {
   const src = isObject(raw) ? raw : {};
   return {
-    position: vec3(src.position) || [0, 0, 0],
     yaw_deg: number(src.yaw_deg, 0),
     pitch_deg: clamp(number(src.pitch_deg, 0), -90, 90),
-    roll_deg: number(src.roll_deg, 0),
-    scale: positive(src.scale, 1),
   };
 }
 
-function skyValue(raw) {
+function rollValue(raw) {
+  return number(raw, 0);
+}
+
+function sizeValue(raw) {
   const src = isObject(raw) ? raw : {};
   return {
-    yaw_deg: number(src.yaw_deg, 0),
-    pitch_deg: clamp(number(src.pitch_deg, 0), -90, 90),
-    roll_deg: number(src.roll_deg, 0),
     hFOV_deg: clamp(number(src.hFOV_deg, 20), 0.1, 179),
     vFOV_deg: clamp(number(src.vFOV_deg, 20), 0.1, 179),
   };
@@ -77,15 +87,19 @@ function opacityValue(raw) {
   return clamp(number(raw, 1), 0, 1);
 }
 
+// The Lanes of each owner, in the order they are stored.
+export const CAMERA_LANES = [["position", positionValue], ["rotation", rotationValue], ["fov", fovValue]];
+export const SCENE_LANES = [["position", positionValue], ["rotation", rotationValue], ["scale", scaleValue]];
+export const SKY_STICKER_LANES = [["direction", directionValue], ["roll", rollValue], ["size", sizeValue], ["opacity", opacityValue]];
+export const WORLD_STICKER_LANES = [...SCENE_LANES, ["opacity", opacityValue]];
+
 function easing(raw) {
   if (raw === "auto" || raw === "hold") return raw;
   if (Array.isArray(raw) && raw.length === 4) {
     const values = raw.map((item) => number(item, null));
-    if (!values.includes(null) && values[0] >= 0 && values[0] <= 1 && values[2] >= 0 && values[2] <= 1) {
-      return values;
-    }
+    if (values.every((value) => value !== null && value >= 0 && value <= 1)) return values;
   }
-  return "auto";
+  return [...DEFAULT_EASING];
 }
 
 function handles(raw) {
@@ -98,26 +112,28 @@ function handles(raw) {
   return Object.keys(out).length ? out : null;
 }
 
-function keyframes(raw, valueFn, hasPosition) {
+function keyframes(raw, valueFn, hasHandles) {
   const byFrame = new Map();
   for (const item of Array.isArray(raw) ? raw : []) {
     if (!isObject(item)) continue;
     const frame = frameNumber(item.frame);
     if (frame === null) continue;
     const key = { frame, value: valueFn(item.value), easing: easing(item.easing) };
-    const keyHandles = hasPosition ? handles(item.handles) : null;
+    const keyHandles = hasHandles ? handles(item.handles) : null;
     if (keyHandles) key.handles = keyHandles;
     byFrame.set(frame, key);
   }
   return [...byFrame.keys()].sort((a, b) => a - b).map((frame) => byFrame.get(frame));
 }
 
-function group(raw, valueFn, hasPosition) {
-  const src = isObject(raw) ? raw : {};
-  return {
-    value: valueFn(src.value),
-    keyframes: keyframes(src.keyframes, valueFn, hasPosition),
-  };
+// The normalized Lanes of an owner; only position Keyframes keep Motion path handles.
+function lanes(raw, list) {
+  const out = {};
+  for (const [name, valueFn] of list) {
+    const lane = isObject(raw[name]) ? raw[name] : {};
+    out[name] = { value: valueFn(lane.value), keyframes: keyframes(lane.keyframes, valueFn, name === "position") };
+  }
+  return out;
 }
 
 function clip(raw) {
@@ -174,8 +190,7 @@ function sticker(raw) {
     visible: bool(raw.visible, true),
     locked: bool(raw.locked, false),
     crop: crop(raw.crop),
-    transform: group(raw.transform, world ? worldValue : skyValue, world),
-    opacity: group(raw.opacity, opacityValue, false),
+    ...lanes(raw, world ? WORLD_STICKER_LANES : SKY_STICKER_LANES),
   };
   if (!world) out.z_index = frameNumber(raw.z_index) ?? 0;
   return out;
@@ -219,14 +234,8 @@ function normalizeV2(raw) {
       fps: positive(timeline.fps, 24),
       length: length !== null && length >= 1 ? length : null,
     },
-    camera: {
-      aspect: positive(camera.aspect, 1),
-      transform: group(camera.transform, cameraValue, true),
-    },
-    scene: {
-      clip: clip(scene.clip),
-      transform: group(scene.transform, worldValue, true),
-    },
+    camera: { aspect: positive(camera.aspect, 1), ...lanes(camera, CAMERA_LANES) },
+    scene: { clip: clip(scene.clip), ...lanes(scene, SCENE_LANES) },
     stickers: stickers(raw.stickers),
     painting: normalizePaintingState(raw.painting),
     painting_layer: isObject(raw.painting_layer) ? structuredClone(raw.painting_layer) : null,
@@ -258,14 +267,8 @@ function v1Camera(shots) {
   const deg2rad = Math.PI / 180;
   return {
     aspect: Math.tan(hFov * deg2rad * 0.5) / Math.tan(vFov * deg2rad * 0.5),
-    transform: {
-      value: {
-        yaw_deg: shot.yaw_deg,
-        pitch_deg: shot.pitch_deg,
-        roll_deg: shot.roll_deg,
-        hFOV_deg: hFov,
-      },
-    },
+    rotation: { value: { yaw_deg: shot.yaw_deg, pitch_deg: shot.pitch_deg, roll_deg: shot.roll_deg } },
+    fov: { value: hFov },
   };
 }
 
@@ -283,15 +286,9 @@ function migrateV1(raw) {
       locked: item.locked,
       crop: item.crop,
       z_index: item.z_index,
-      transform: {
-        value: {
-          yaw_deg: item.yaw_deg,
-          pitch_deg: item.pitch_deg,
-          roll_deg: item.rot_deg,
-          hFOV_deg: item.hFOV_deg,
-          vFOV_deg: item.vFOV_deg,
-        },
-      },
+      direction: { value: { yaw_deg: item.yaw_deg, pitch_deg: item.pitch_deg } },
+      roll: { value: item.rot_deg },
+      size: { value: { hFOV_deg: item.hFOV_deg, vFOV_deg: item.vFOV_deg } },
     })),
     painting: raw.painting,
     painting_layer: raw.painting_layer,
@@ -317,11 +314,15 @@ export function loadSceneState(raw) {
   return version === 1 ? migrateV1(parsed) : normalizeV2(parsed);
 }
 
-function rebaseGroup(src, rebase, anchor, newAnchor) {
-  return {
-    value: src.value,
-    keyframes: src.keyframes.map((key) => ({ ...key, frame: rebase(anchor + key.frame) - newAnchor })),
-  };
+function rebaseLanes(owner, list, rebase, anchor, newAnchor) {
+  const out = {};
+  for (const [name] of list) {
+    out[name] = {
+      value: owner[name].value,
+      keyframes: owner[name].keyframes.map((key) => ({ ...key, frame: rebase(anchor + key.frame) - newAnchor })),
+    };
+  }
+  return out;
 }
 
 // Rounds the clip's Timeline events (start, content anchor start - in, end) and rebuilds in and duration from them.
@@ -345,16 +346,12 @@ export function rebaseSceneState(state, fps) {
   const scene = rebaseClip(state.scene.clip, rebase);
   return normalizeV2({
     timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
-    camera: { aspect: state.camera.aspect, transform: rebaseGroup(state.camera.transform, rebase, 0, 0) },
-    scene: { clip: scene.clip, transform: rebaseGroup(state.scene.transform, rebase, scene.anchor, scene.newAnchor) },
+    camera: { aspect: state.camera.aspect, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
+    scene: { clip: scene.clip, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
-      return {
-        ...item,
-        clip,
-        transform: rebaseGroup(item.transform, rebase, anchor, newAnchor),
-        opacity: rebaseGroup(item.opacity, rebase, anchor, newAnchor),
-      };
+      const list = item.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES;
+      return { ...item, clip, ...rebaseLanes(item, list, rebase, anchor, newAnchor) };
     }),
     painting: state.painting,
     painting_layer: state.painting_layer,
@@ -370,6 +367,17 @@ function v1PoseNumber(value) {
   return typeof value === "number" || typeof value === "string" ? Number(value) : NaN;
 }
 
+// Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0.
+function stickerStateCamera(raw) {
+  const src = isObject(raw) ? raw : {};
+  const out = {};
+  for (const [name, valueFn] of CAMERA_LANES) {
+    const keys = keyframes(src[name], valueFn, name === "position");
+    out[name] = keys.length ? keys : [{ frame: 0, value: valueFn(null), easing: [...DEFAULT_EASING] }];
+  }
+  return out;
+}
+
 function v1StickerStateCamera(pose) {
   if (!isObject(pose)) return null;
   const yaw = v1PoseNumber(pose.yaw_deg);
@@ -377,11 +385,9 @@ function v1StickerStateCamera(pose) {
   const roll = v1PoseNumber(pose.roll_deg);
   const hFov = v1PoseNumber(pose.hFOV_deg);
   if (![yaw, pitch, roll, hFov].every(Number.isFinite)) return null;
-  return cameraValue({
-    yaw_deg: wrapYawDeg(yaw),
-    pitch_deg: clamp(pitch, -89.9, 89.9),
-    roll_deg: roll,
-    hFOV_deg: clamp(hFov, 0.1, 179),
+  return stickerStateCamera({
+    rotation: [{ frame: 0, value: { yaw_deg: wrapYawDeg(yaw), pitch_deg: clamp(pitch, -89.9, 89.9), roll_deg: roll } }],
+    fov: [{ frame: 0, value: clamp(hFov, 0.1, 179) }],
   });
 }
 
@@ -401,15 +407,13 @@ export function loadStickerState(text) {
   let sourceAspect;
   let fps;
   if (version === 1 || version === "1") {
-    const value = v1StickerStateCamera(raw.pose);
-    if (!value) return null;
-    camera = [{ frame: 0, value, easing: "auto" }];
+    camera = v1StickerStateCamera(raw.pose);
+    if (!camera) return null;
     const aspect = v1PoseNumber(raw.source_aspect);
     sourceAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : null;
     fps = 24;
   } else if (version === 2) {
-    camera = keyframes(raw.camera, cameraValue, true);
-    if (!camera.length) camera = [{ frame: 0, value: cameraValue(null), easing: "auto" }];
+    camera = stickerStateCamera(raw.camera);
     sourceAspect = positive(raw.source_aspect, null);
     fps = positive(raw.fps, 24);
   } else {

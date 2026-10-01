@@ -7,7 +7,10 @@ import {
   createStickersNodeSurfaceSession,
   reconcileExternalStickerState,
   stickersNodeSurfaceModel,
+  surfacePoseStickers,
 } from "../web_src/pano_stickers_node_surface.js";
+import { readFileSync } from "node:fs";
+import { parseSceneEditorState } from "../web_src/pano_editor_state.js";
 
 function sampleState() {
   return {
@@ -361,4 +364,37 @@ test("late image sizing preserves an edited external sticker horizontal FOV", ()
   assert.equal(result.state.stickers.at(-1).hFOV_deg, 80);
   assert.ok(Math.abs(result.state.stickers.at(-1).vFOV_deg - 45.520952549233265) < 1e-9);
   assert.ok(Math.abs(result.state.stickers.at(-1).initial_pose.vFOV_deg - 15.261480424860114) < 1e-9);
+});
+
+test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
+  const state = parseSceneEditorState(readFileSync(new URL("./fixtures/scene_state/v2_canonical.json", import.meta.url), "utf8"));
+  // st_sky starts at frame 10, so the node shows it hidden; the world Sticker is not on the node.
+  assert.deepEqual(surfacePoseStickers(state), [
+    { id: "st_sky", z_index: 2, locked: false, visible: false, yaw_deg: 30, pitch_deg: 10, hFOV_deg: 20, vFOV_deg: 15, rot_deg: 5 },
+    { id: "st_hidden", z_index: 0, locked: false, visible: false, yaw_deg: -45, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 },
+  ]);
+  assert.deepEqual(buildStickersDisplayEntries(state).map((entry) => entry.id), ["st_hidden", "st_sky"]);
+
+  const added = applyStickersNodeSurfaceAction(state, {
+    type: "add-sticker",
+    value: {
+      stickerId: "st_new",
+      assetId: "asset_new",
+      asset: { type: "comfy_image", filename: "new.png", subfolder: "panorama_stickers", storage: "input" },
+      imageWidth: 200,
+      imageHeight: 100,
+      yaw_deg: 12,
+      pitch_deg: 3,
+    },
+  });
+  assert.equal(added.changed, true);
+  const sticker = added.state.stickers.at(-1);
+  assert.deepEqual(sticker.source, { kind: "file", filename: "new.png", subfolder: "panorama_stickers", storage: "input" });
+  assert.deepEqual([sticker.z_index, sticker.direction.value.yaw_deg, sticker.roll.value], [3, 12, 0]);
+  assert.equal("assets" in added.state, false);
+  assert.equal(added.state.active.selected_sticker_id, "st_new");
+
+  const deleted = applyStickersNodeSurfaceAction(added.state, { type: "delete-selected" });
+  assert.deepEqual(deleted.state.stickers.map((item) => item.id), ["st_sky", "st_world", "st_hidden"]);
+  assert.equal("assets" in deleted.state, false);
 });

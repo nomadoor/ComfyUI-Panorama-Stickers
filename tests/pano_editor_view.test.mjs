@@ -23,7 +23,7 @@ import {
   viewProjection,
   workingSkyLayers,
 } from "../web_src/pano_editor_view.js";
-import { editorSceneState, parsePanoEditorState } from "../web_src/pano_editor_state.js";
+import { parsePanoEditorState } from "../web_src/pano_editor_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { applyViewportCamera, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
 import { worldToPano } from "../web_src/pano_world.js";
@@ -195,10 +195,14 @@ function skyState(stickers) {
   return loadSceneState({ version: 2, stickers });
 }
 
+function poseLanes({ yaw_deg, pitch_deg, roll_deg, hFOV_deg, vFOV_deg }) {
+  return { direction: { value: { yaw_deg, pitch_deg } }, roll: { value: roll_deg }, size: { value: { hFOV_deg, vFOV_deg } } };
+}
+
 test("sky Sticker planes cover the rays of the previous sticker shader", () => {
   const value = { yaw_deg: 150, pitch_deg: -40, roll_deg: 25, hFOV_deg: 70, vFOV_deg: 40 };
   const crop = { x0: 0.1, y0: 0.2, x1: 0.8, y1: 0.95 };
-  const state = skyState([{ id: "a", source: { kind: "port" }, crop, transform: { value } }]);
+  const state = skyState([{ id: "a", source: { kind: "port" }, crop, ...poseLanes(value) }]);
   const [layer] = skyLayers(state, 0, { media: () => ({ media: {}, revision: "" }), zIndex: () => 0, paintLayers: [] });
   const mesh = new Mesh(new PlaneGeometry(1, 1, 3, 3));
   placeSticker(mesh, layer);
@@ -216,7 +220,7 @@ test("sky Sticker planes cover the rays of the previous sticker shader", () => {
 test("the Unwrap sticker uniforms sample the previous unwrap sticker shader's texels", () => {
   const value = { yaw_deg: -120, pitch_deg: 35, roll_deg: -40, hFOV_deg: 80, vFOV_deg: 50 };
   const crop = { x0: 0.05, y0: 0.3, x1: 0.9, y1: 0.75 };
-  const state = skyState([{ id: "a", source: { kind: "port" }, crop, transform: { value } }]);
+  const state = skyState([{ id: "a", source: { kind: "port" }, crop, ...poseLanes(value) }]);
   const [layer] = skyLayers(state, 0, { media: () => ({ media: {}, revision: "" }), zIndex: () => 0, paintLayers: [] });
   const { toSticker, rect } = unwrapStickerUniforms(layer);
   for (const [lon, lat] of [[-120, 35], [-95, 50], [-140, 20], [-110, 55]]) {
@@ -260,10 +264,10 @@ test("sky layers keep the editor's z order with paint and show hidden port Stick
 
 test("the state v2 derived from the editor's v1 working state has the shape of the fixtures", () => {
   const editorState = parsePanoEditorState(fixture("v1_stickers"), { coverage: 180, backgroundColor: "#ffffff" });
-  assert.deepEqual(editorSceneState(editorState), JSON.parse(fixture("v1_stickers.v2")));
+  assert.deepEqual(loadSceneState(editorState), JSON.parse(fixture("v1_stickers.v2")));
 
   editorState.stickers.push({ id: "st_new", asset_id: "asset_a", yaw_deg: 10, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 20, rot_deg: 0, z_index: 9 });
-  const saved = editorSceneState(editorState);
+  const saved = loadSceneState(editorState);
   const canonical = JSON.parse(fixture("v2_canonical"));
   assert.deepEqual(Object.keys(saved), Object.keys(canonical));
   for (const sticker of saved.stickers) assert.deepEqual(Object.keys(sticker), Object.keys(canonical.stickers[0]));
@@ -275,7 +279,7 @@ test("working Stickers with a numeric, missing or repeated id are left out inste
   const stickers = [sticker(5, 0), sticker("a", 1), sticker("a", 2), sticker("", 3), sticker("b", 4)];
   const assets = Object.fromEntries(stickers.map((item) => [item.asset_id, { type: "comfy_image", filename: `${item.asset_id}.png` }]));
   const editorState = parsePanoEditorState(JSON.stringify({ version: 1, assets, stickers }), {});
-  const sceneState = editorSceneState(editorState);
+  const sceneState = loadSceneState(editorState);
   // Loading keeps the first "a" and "b" and renames the others.
   assert.deepEqual(sceneState.stickers.map((item) => item.id).sort(), ["a", "b", "sticker_1", "sticker_2", "sticker_3"]);
   const seen = [];

@@ -26,12 +26,20 @@ def _solid(color, alpha=1.0, size=(4, 4)):
     return rgba
 
 
-def _world(sticker_id, **transform):
-    return {"id": sticker_id, "placement": "world", "source": {"kind": "file", "filename": f"{sticker_id}.png"}, "transform": {"value": transform}}
+def _world(sticker_id, position=None, scale=None, **rotation):
+    return {
+        "id": sticker_id,
+        "placement": "world",
+        "source": {"kind": "file", "filename": f"{sticker_id}.png"},
+        "position": {"value": position},
+        "rotation": {"value": rotation},
+        "scale": {"value": scale},
+    }
 
 
 def _state(stickers=(), camera=None, **state):
-    return load_scene_state({"version": 2, "stickers": list(stickers), "camera": {"transform": {"value": camera or {}}}, **state})
+    camera = camera or {}
+    return load_scene_state({"version": 2, "stickers": list(stickers), "camera": {"position": {"value": camera.get("position")}, "rotation": {"value": camera}}, **state})
 
 
 def _render(state, sources, projection, frame=0.0, cache=None, bg=None, **kwargs):
@@ -193,7 +201,7 @@ def test_world_sticker_opacity_blends_with_what_is_behind():
 
 
 def test_world_sticker_is_drawn_over_the_background_and_sky_stickers_whatever_their_z_index():
-    sky = {"id": "sky", "source": {"kind": "file", "filename": "sky.png"}, "z_index": 100, "transform": {"value": {"hFOV_deg": 90.0, "vFOV_deg": 90.0}}}
+    sky = {"id": "sky", "source": {"kind": "file", "filename": "sky.png"}, "z_index": 100, "size": {"value": {"hFOV_deg": 90.0, "vFOV_deg": 90.0}}}
     state = _state([_world("w", position=[0.0, 0.0, -100.0], scale=50.0), sky])
     sources = {"w": StickerSource(_solid(RED), FULL), "sky": StickerSource(_solid(BLUE), FULL, z_index=100)}
 
@@ -255,8 +263,7 @@ def test_world_layer_is_kept_while_the_background_changes(monkeypatch):
 
 def test_camera_position_draws_world_content_again_but_not_a_sky_only_frame(monkeypatch):
     counts = _counting(monkeypatch)
-    keyframes = [{"frame": 0, "value": {"position": [0.0, 0.0, 0.0]}}, {"frame": 10, "value": {"position": [1.0, 0.0, 0.0]}}]
-    moving = {"transform": {"value": {}, "keyframes": keyframes}}
+    moving = {"position": {"keyframes": [{"frame": 0, "value": [0.0, 0.0, 0.0]}, {"frame": 10, "value": [1.0, 0.0, 0.0]}]}}
     with_world = load_scene_state({"version": 2, "camera": moving, "stickers": [_world("s", position=[0.0, 0.0, -1.0])]})
     sky_only = load_scene_state({"version": 2, "camera": moving})
     sources = {"s": StickerSource(_solid(RED), FULL)}
@@ -326,8 +333,8 @@ def _ball(radius=0.5, center=(0.0, 0.0, -3.0)):
     return SceneContent(3, render), views
 
 
-def _scene_state(clip=None, **transform):
-    scene = {"transform": {"value": transform}}
+def _scene_state(clip=None, position=None, scale=None, **rotation):
+    scene = {"position": {"value": position}, "rotation": {"value": rotation}, "scale": {"value": scale}}
     if clip is not None:
         scene["clip"] = clip
     return load_scene_state({"version": 2, "scene": scene})
@@ -361,8 +368,8 @@ def test_scene_content_is_drawn_through_the_scene_transform():
 
 def test_scene_content_follows_scene_keyframes_from_its_clip_origin():
     content, _views = _ball()
-    keyframes = [{"frame": 0, "value": {"position": [0.0, 0.0, 0.0]}}, {"frame": 4, "value": {"position": [3.0, 0.0, 3.0]}, "easing": "auto"}]
-    state = load_scene_state({"version": 2, "scene": {"clip": {"start": 4, "in": 2}, "transform": {"value": {}, "keyframes": keyframes}}})
+    keyframes = [{"frame": 0, "value": [0.0, 0.0, 0.0]}, {"frame": 4, "value": [3.0, 0.0, 3.0], "easing": "auto"}]
+    state = load_scene_state({"version": 2, "scene": {"clip": {"start": 4, "in": 2}, "position": {"keyframes": keyframes}}})
     projection = Projection.erp(360, 180)
 
     # Frame 6 is 4 frames after the content's start (start - in = 2): the ball's center is at (3, 0, 0).

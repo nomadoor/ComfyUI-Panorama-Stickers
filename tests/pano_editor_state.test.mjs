@@ -4,17 +4,24 @@ import test from "node:test";
 import { readdirSync, readFileSync } from "node:fs";
 
 import {
+  duplicateSceneSticker,
   editorActive,
-  editorSceneState,
   editorStateText,
   makePanoEditorHistorySnapshot,
   normalizeCoverageValue,
   parsePanoEditorState,
+  parseSceneEditorState,
   retainActiveCutoutShot,
+  cameraFields,
+  sceneStickerLabel,
+  setCameraField,
   setEditorActive,
-  stickerHasKeyframes,
+  setStickerOpacity,
+  setStickerPose,
+  stickerPose,
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
+import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -203,61 +210,104 @@ test("omitted parse options retain the existing widget defaults", () => {
 });
 
 test("state v2 round trips through the editor's working state without loss", () => {
-  for (const name of ["v2_canonical", "v2_interpolation", "v2_half_turns", "v2_invalid_fields"]) {
+  for (const name of ["v2_canonical", "v2_interpolation", "v2_half_turns", "v2_invalid_fields", "v1_stickers"]) {
     const text = readFixture(name);
-    const saved = editorStateText(sceneNode(), parsePanoEditorState(text));
-    assert.deepEqual(JSON.parse(saved), loadSceneState(text), name);
+    const state = parseSceneEditorState(text);
+    assert.deepEqual(JSON.parse(editorStateText(sceneNode(), state)), loadSceneState(text), name);
+    // Undo restores the working state from a history snapshot.
+    const restored = JSON.parse(JSON.stringify(makePanoEditorHistorySnapshot(state)));
+    assert.deepEqual(JSON.parse(editorStateText(sceneNode(), restored)), { ...loadSceneState(text), painting_layer: null }, name);
   }
 });
 
-test("the editor works on the sky Stickers of state v2 in the v1 shape", () => {
-  const state = parsePanoEditorState(readFixture("v2_canonical"));
+test("the editor's working state for PanoramaStickersNode is state v2 itself", () => {
+  const text = readFixture("v2_canonical");
+  const state = parseSceneEditorState(text, { coverage: 180, backgroundColor: "#ffffff", active: { selected_sticker_id: "st_sky" } });
+  const { coverage, bg_color: bgColor, output_preset: outputPreset, ui_settings: uiSettings, active, ...scene } = state;
 
-  assert.deepEqual(state.stickers, [
-    {
-      id: "st_sky", yaw_deg: 30, pitch_deg: 10, hFOV_deg: 20, vFOV_deg: 15, rot_deg: 5, z_index: 2,
-      visible: true, locked: true, crop: { x0: 0, y0: 0, x1: 1, y1: 1 }, asset_id: "st_sky",
-    },
-    {
-      id: "st_hidden", yaw_deg: -45, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0, z_index: 0,
-      visible: false, locked: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 }, asset_id: "st_hidden",
-    },
-  ]);
-  assert.deepEqual(state.assets, {
-    st_sky: { type: "comfy_image", filename: "logo.png", subfolder: "panorama_stickers", storage: "input", name: "logo.png" },
-    st_hidden: { type: "comfy_image", filename: "old.png", subfolder: "", storage: "output", name: "old.png" },
-  });
+  assert.deepEqual(scene, loadSceneState(text));
+  assert.deepEqual(
+    [coverage, bgColor, outputPreset, uiSettings, active],
+    [180, "#ffffff", 2048, { invert_view_x: false, invert_view_y: false }, { selected_sticker_id: "st_sky", selected_shot_id: null }],
+  );
+  assert.equal("scene_state" in state, false);
+  assert.equal("assets" in state, false);
+  assert.deepEqual(parseSceneEditorState("{not json").stickers, []);
+  assert.equal(parseSceneEditorState(readFixture("v1_stickers")).version, 2);
 });
 
-test("editor changes are saved as state v2 and keep what the editor does not edit", () => {
+test("editing a sky Sticker changes its static value, or keys it once it has Keyframes", () => {
   const text = readFixture("v2_canonical");
-  const loaded = loadSceneState(text);
-  const state = parsePanoEditorState(text);
-  Object.assign(state.stickers[1], { yaw_deg: 50, z_index: 5 });
-  state.stickers.splice(0, 1);
-  state.stickers.push({ id: "st_new", asset_id: "asset_new", yaw_deg: 0, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 20, rot_deg: 0, z_index: 6, visible: true });
-  state.assets.asset_new = { type: "comfy_image", filename: "new.png", subfolder: "panorama_stickers", storage: "input" };
+  const state = parseSceneEditorState(text);
+  const [keyed, world, plain] = state.stickers;
+
+  setStickerPose(plain, 30, { yaw_deg: 50, rot_deg: 12 });
+  setStickerOpacity(plain, 30, 0.25);
+  setStickerOpacity(keyed, 22, 0.75);
+  setStickerPose(keyed, 22, { hFOV_deg: 33 });
 
   const saved = JSON.parse(editorStateText(sceneNode(), state));
-
-  assert.equal(saved.version, 2);
+  const loaded = loadSceneState(text);
   assert.deepEqual([saved.timeline, saved.camera, saved.scene], [loaded.timeline, loaded.camera, loaded.scene]);
-  assert.deepEqual(saved.stickers.map((item) => item.id), ["st_world", "st_hidden", "st_new"]);
-  const [world, sky, added] = saved.stickers;
-  assert.deepEqual(world, loaded.stickers[1]);
-  assert.deepEqual(sky, {
-    ...loaded.stickers[2],
-    transform: { ...loaded.stickers[2].transform, value: { ...loaded.stickers[2].transform.value, yaw_deg: 50 } },
-    z_index: 5,
-  });
-  assert.deepEqual(added.source, { kind: "file", filename: "new.png", subfolder: "panorama_stickers", storage: "input" });
-  assert.equal(added.z_index, 6);
-  assert.deepEqual(editorSceneState(state), saved);
+  assert.deepEqual(saved.stickers[1], loaded.stickers[1]);
+  assert.equal(world, state.stickers[1]);
+  assert.deepEqual(saved.stickers[2].direction, { value: { ...loaded.stickers[2].direction.value, yaw_deg: 50 }, keyframes: [] });
+  assert.deepEqual(saved.stickers[2].roll, { value: 12, keyframes: [] });
+  assert.deepEqual(saved.stickers[2].size, loaded.stickers[2].size);
+  assert.deepEqual(saved.stickers[2].opacity, { value: 0.25, keyframes: [] });
+  // st_sky's material starts at frame 10 - 5 = 5, so Timeline frame 22 is its Clip frame 17.
+  assert.deepEqual(saved.stickers[0].opacity.keyframes.map((key) => [key.frame, key.value]), [[5, 0], [15, 0.5], [17, 0.75], [25, 1]]);
+  assert.deepEqual(saved.stickers[0].size, { value: { ...loaded.stickers[0].size.value, hFOV_deg: 33 }, keyframes: [] });
+  assert.deepEqual([saved.stickers[0].direction, saved.stickers[0].roll], [loaded.stickers[0].direction, loaded.stickers[0].roll]);
+  assert.deepEqual(stickerPose(plain, 0), { yaw_deg: 50, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 12 });
+});
+
+test("the pose the editor shows is the evaluator's value at the Timeline frame", () => {
+  const state = parseSceneEditorState(readFixture("v2_interpolation"));
+  const loaded = loadSceneState(readFixture("v2_interpolation"));
+  const sky = state.stickers.filter((sticker) => sticker.placement === "sky");
+  assert.ok(sky.some((sticker) => sticker.direction.keyframes.length > 1 && sticker.size.keyframes.length > 1));
+  for (let frame = -5; frame <= 80; frame += 1.5) {
+    const evaluated = evaluateSceneState(loaded, frame).stickers;
+    for (const sticker of sky) {
+      const value = evaluated[loaded.stickers.findIndex((item) => item.id === sticker.id)];
+      const pose = stickerPose(sticker, frame);
+      assert.deepEqual(pose, {
+        yaw_deg: value.yaw_deg, pitch_deg: value.pitch_deg, hFOV_deg: value.hFOV_deg, vFOV_deg: value.vFOV_deg, rot_deg: value.roll_deg,
+      }, `${sticker.id} at ${frame}`);
+    }
+  }
+});
+
+test("a duplicated Sticker keeps its Clip range, Keyframes and opacity", () => {
+  const state = parseSceneEditorState(readFixture("v2_canonical"));
+  const source = state.stickers[0];
+  source.direction.value.yaw_deg = 175;
+  source.direction.keyframes = [{ frame: 40, value: { ...source.direction.value }, easing: [0.42, 0, 0.58, 1] }];
+  setStickerPose(source, 20, { yaw_deg: 40 });
+  setStickerPose(source, 5, { yaw_deg: 20 });
+  setStickerPose(source, 5, { yaw_deg: 20, rot_deg: 3 });
+  // Only the Lanes an edit changes are keyed: the roll has no Keyframes, so its static value changes.
+  assert.deepEqual(source.roll, { value: 3, keyframes: [] });
+
+  const copy = duplicateSceneSticker(source, "st_copy", 7);
+  state.stickers.push(copy);
+
+  assert.deepEqual(copy.clip, source.clip);
+  assert.deepEqual(copy.opacity, source.opacity);
+  assert.notEqual(copy.opacity, source.opacity);
+  assert.deepEqual(copy.direction.keyframes.map((key) => key.value.yaw_deg), source.direction.keyframes.map((key) => key.value.yaw_deg + 8));
+  assert.equal(copy.direction.keyframes.at(-1).value.yaw_deg, 183, "Keyframes keep their turns");
+  assert.equal(copy.direction.value.yaw_deg, -177, "the static yaw wraps into -180..180");
+  const saved = JSON.parse(editorStateText(sceneNode(), state)).stickers.at(-1);
+  assert.deepEqual(saved, { ...copy, id: "st_copy", z_index: 7 });
+  assert.equal(sceneStickerLabel(copy), "logo.png");
+  assert.equal(sceneStickerLabel(state.stickers[1]), "Sticker input");
 });
 
 test("the editor's selection is kept on the node and not in state v2", () => {
   const node = sceneNode();
-  const state = parsePanoEditorState(readFixture("v2_canonical"));
+  const state = parseSceneEditorState(readFixture("v2_canonical"));
   state.active.selected_sticker_id = "st_sky";
 
   setEditorActive(node, state.active);
@@ -265,7 +315,7 @@ test("the editor's selection is kept on the node and not in state v2", () => {
 
   assert.equal("active" in JSON.parse(text), false);
   assert.deepEqual(node.properties, { pano_editor_active: { selected_sticker_id: "st_sky", selected_shot_id: null } });
-  assert.equal(parsePanoEditorState(text, { active: editorActive(node) }).active.selected_sticker_id, "st_sky");
+  assert.equal(parseSceneEditorState(text, { active: editorActive(node) }).active.selected_sticker_id, "st_sky");
   assert.equal(editorActive({ properties: node.properties }), undefined);
 });
 
@@ -276,12 +326,11 @@ test("the legacy node keeps its state_json in v1", () => {
   assert.equal(editorStateText(node, state), JSON.stringify(state));
   assert.deepEqual(node.properties, {});
   assert.equal(state.version, 1);
-  assert.equal("scene_state" in state, false);
 });
 
 test("changing only the selection keeps the saved state_json text", () => {
   const node = sceneNode();
-  const state = parsePanoEditorState(readFixture("v2_canonical"));
+  const state = parseSceneEditorState(readFixture("v2_canonical"));
   const before = editorStateText(node, state);
 
   state.active.selected_sticker_id = "st_hidden";
@@ -291,20 +340,21 @@ test("changing only the selection keeps the saved state_json text", () => {
   assert.equal(node.properties.pano_editor_active.selected_sticker_id, "st_hidden");
 });
 
-test("a sky Sticker with Keyframes shows locked and the lock is not saved", () => {
+test("a sky Sticker with Keyframes can be locked and edited on the node", () => {
   const text = readFixture("v2_canonical");
-  const loaded = loadSceneState(text);
-  const state = parsePanoEditorState(text);
-
-  assert.equal(stickerHasKeyframes(state, "st_sky"), true);
-  assert.equal(stickerHasKeyframes(state, "st_hidden"), false);
-  assert.equal(stickerHasKeyframes(parsePanoEditorState(readFixture("v1_stickers")), "st_a"), false);
-  assert.deepEqual(state.stickers.map((item) => item.locked), [true, false]);
-  assert.equal(JSON.parse(editorStateText(sceneNode(), state)).stickers[0].locked, loaded.stickers[0].locked);
+  const state = parseSceneEditorState(text);
+  assert.deepEqual(state.stickers.map((item) => item.locked), [false, true, false]);
 
   const selected = applyStickersNodeSurfaceAction(state, { type: "select-sticker", id: "st_sky" }).state;
-  assert.equal(applyStickersNodeSurfaceAction(selected, { type: "toggle-lock" }).changed, false);
-  assert.equal(applyStickersNodeSurfaceAction(selected, { type: "set-transform", value: { yaw_deg: 90 } }).changed, false);
+  const locked = applyStickersNodeSurfaceAction(selected, { type: "toggle-lock" });
+  assert.equal(locked.changed, true);
+  assert.equal(JSON.parse(editorStateText(sceneNode(), locked.state)).stickers[0].locked, true);
+
+  const moved = applyStickersNodeSurfaceAction(selected, { type: "set-transform", value: { yaw_deg: 90 } });
+  assert.equal(moved.changed, true);
+  assert.deepEqual(moved.state.stickers[0].direction.value, { ...loadSceneState(text).stickers[0].direction.value, yaw_deg: 90 });
+  assert.equal(applyStickersNodeSurfaceAction(moved.state, { type: "set-transform", value: { yaw_deg: 90 } }).changed, false);
+  assert.equal(state.stickers[0].direction.value.yaw_deg, 30, "the reducer does not change the state it was given");
 });
 
 test("the editor has no Render Quality setting", () => {
@@ -316,4 +366,40 @@ test("the editor has no Render Quality setting", () => {
   for (const [name, text] of sources) {
     assert.ok(!text.includes("preview_quality") && !text.includes("Render Quality"), name);
   }
+});
+
+test("the inspector edits the Camera's Lanes by the recording rule", () => {
+  const state = parseSceneEditorState(readFixture("v2_canonical"));
+  const { camera } = state;
+  assert.deepEqual(cameraFields(camera, 24), { position_x: 2, position_y: 1.6, position_z: -3, yaw_deg: -120, pitch_deg: -20, roll_deg: 15, hFOV_deg: 60 });
+
+  // A keyed Lane updates the Keyframe at the playhead or adds one; other Lanes are not touched.
+  setCameraField(camera, 24, "position_y", 2);
+  setCameraField(camera, 30, "hFOV_deg", 50);
+  setCameraField(camera, 30, "roll_deg", 5);
+  assert.deepEqual(camera.position.keyframes[1].value, [2, 2, -3]);
+  assert.deepEqual(camera.fov.keyframes.map((key) => [key.frame, key.value]), [[0, 90], [24, 60], [30, 50]]);
+  assert.deepEqual(camera.rotation.keyframes.map((key) => key.frame), [0, 24, 30, 48]);
+  assert.equal(camera.rotation.keyframes[2].value.roll_deg, 5);
+  assert.deepEqual(camera.position.keyframes.map((key) => key.frame), [0, 24, 48]);
+
+  // A Lane without Keyframes changes its static value.
+  const plain = parseSceneEditorState(null).camera;
+  setCameraField(plain, 12, "position_z", -4);
+  setCameraField(plain, 12, "yaw_deg", 30);
+  assert.deepEqual([plain.position, plain.rotation.value.yaw_deg], [{ value: [0, 0, -4], keyframes: [] }, 30]);
+});
+
+test("the node leaves Lanes with Keyframes to the Timeline and edits only the others", () => {
+  const state = parseSceneEditorState(readFixture("v2_canonical"));
+  const sticker = state.stickers[0];
+  sticker.direction.keyframes = [{ frame: 0, value: { yaw_deg: 30, pitch_deg: 10 }, easing: [0.42, 0, 0.58, 1] }];
+  const selected = applyStickersNodeSurfaceAction(state, { type: "select-sticker", id: "st_sky" }).state;
+
+  assert.equal(applyStickersNodeSurfaceAction(selected, { type: "set-transform", value: { yaw_deg: 90, pitch_deg: 0 } }).changed, false);
+  const scaled = applyStickersNodeSurfaceAction(selected, { type: "set-transform", value: { yaw_deg: 90, hFOV_deg: 40 } });
+  assert.equal(scaled.changed, true);
+  const next = scaled.state.stickers[0];
+  assert.deepEqual(next.direction, sticker.direction);
+  assert.deepEqual(next.size, { value: { ...sticker.size.value, hFOV_deg: 40 }, keyframes: [] });
 });

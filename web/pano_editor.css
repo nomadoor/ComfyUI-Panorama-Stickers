@@ -99,8 +99,16 @@
 .pano-modal button {
   cursor: pointer;
 }
+.pano-stage-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pano-space-md);
+  min-width: 0;
+  min-height: 0;
+}
 .pano-stage-wrap {
   position: relative;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
@@ -2609,4 +2617,317 @@
   border: 0 !important;
   border-radius: 0 !important;
   background: #070707;
+}
+
+/* Timeline (PanoTimeline.vue) under the stage of the PanoramaStickersNode editor. */
+.pano-timeline {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pano-space-xs);
+  font-size: 11px;
+  color: var(--pano-text-secondary);
+  user-select: none;
+}
+.pano-timeline-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pano-space-md);
+}
+.pano-timeline-play.pano-btn-icon,
+.pano-timeline-mute.pano-btn-icon {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+}
+.pano-timeline-play svg,
+.pano-timeline-mute svg,
+.pano-timeline-toggle svg,
+.pano-timeline-name svg,
+.pano-timeline-open svg,
+.pano-timeline-key svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+}
+.pano-timeline-time {
+  color: var(--pano-text);
+  font-variant-numeric: tabular-nums;
+}
+.pano-timeline-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pano-space-xs);
+  height: 28px;
+  padding: 0 var(--pano-space-md);
+  border: 0;
+  border-radius: var(--pano-space-md);
+  background: transparent;
+  color: var(--pano-text-secondary);
+  font-size: 11px;
+}
+.pano-timeline-toggle svg {
+  transform: rotate(180deg);
+  transition: transform 150ms ease;
+}
+.pano-timeline.expanded .pano-timeline-toggle svg {
+  transform: none;
+}
+.pano-timeline-body {
+  max-height: 34vh;
+  overflow-y: auto;
+  border-radius: var(--pano-space-md);
+  background: var(--pano-surface-1);
+}
+.pano-timeline-grid {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr);
+}
+.pano-timeline-corner,
+.pano-timeline-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 22px;
+  background: var(--pano-surface-2);
+}
+.pano-timeline-ruler {
+  margin-right: var(--pano-space-md);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.pano-timeline-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 4px 0 0 3px;
+  border-left: 1px solid var(--pano-surface-3);
+  color: var(--pano-muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.pano-timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--pano-accent);
+  pointer-events: none;
+  z-index: 1;
+}
+.pano-timeline-head {
+  padding: 0 var(--pano-space-md);
+  border-top: 1px solid var(--pano-border);
+}
+.pano-timeline-head.selected,
+.pano-timeline-track.selected {
+  background: rgba(255, 255, 255, 0.04);
+}
+.pano-timeline-name,
+.pano-timeline-lane-head,
+.pano-timeline-row-line,
+.pano-timeline-lane {
+  height: 20px;
+}
+.pano-timeline-name {
+  display: flex;
+  align-items: center;
+  gap: var(--pano-space-xs);
+  overflow: hidden;
+  color: var(--pano-text);
+  white-space: nowrap;
+}
+.pano-timeline-select {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--pano-space-xs);
+  min-width: 0;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pano-timeline-select svg {
+  flex: 0 0 auto;
+}
+.pano-timeline-name span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pano-timeline-lane-head {
+  display: flex;
+  align-items: center;
+  padding-left: 40px;
+}
+.pano-timeline-open,
+.pano-timeline-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--pano-text-tertiary);
+}
+.pano-timeline-key.keyed {
+  color: #f5b544;
+}
+.pano-timeline-open svg {
+  transform: rotate(-90deg);
+  transition: transform 150ms ease;
+}
+.pano-timeline-open[aria-expanded="true"] svg {
+  transform: none;
+}
+.pano-timeline-track {
+  position: relative;
+  margin-right: var(--pano-space-md);
+  border-top: 1px solid var(--pano-border);
+}
+.pano-timeline-row-line,
+.pano-timeline-lane {
+  position: relative;
+}
+.pano-timeline-clip {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--pano-accent) 55%, transparent);
+  cursor: grab;
+  touch-action: none;
+}
+.pano-timeline-clip.open {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pano-accent) 55%, transparent) 70%, transparent);
+}
+.pano-timeline-trim {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+.pano-timeline-trim.start {
+  left: 0;
+  border-left: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 4px 0 0 4px;
+}
+.pano-timeline-trim.end {
+  right: 0;
+  border-right: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 0 4px 4px 0;
+}
+.pano-timeline-pin {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  background: #d4d4d8;
+  transform: rotate(45deg);
+  cursor: pointer;
+  touch-action: none;
+  z-index: 2;
+}
+.pano-timeline-pin.selected {
+  background: #f5b544;
+}
+.pano-timeline-pin:focus-visible,
+.pano-timeline-select:focus-visible,
+.pano-timeline-open:focus-visible,
+.pano-timeline-key:focus-visible {
+  outline: 2px solid var(--pano-accent);
+  outline-offset: 1px;
+}
+.pano-timeline-pin.partial {
+  background: linear-gradient(135deg, #d4d4d8 50%, rgba(0, 0, 0, 0.35) 50%);
+}
+.pano-timeline-pin.partial.selected {
+  background: linear-gradient(135deg, #f5b544 50%, rgba(0, 0, 0, 0.35) 50%);
+}
+.pano-timeline-pin.cluster {
+  width: 16px;
+  height: 14px;
+  margin: -7px 0 0 -8px;
+  border-radius: 7px;
+  transform: none;
+  color: #111;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+}
+.pano-easing {
+  display: grid;
+  gap: var(--pano-space-md);
+  margin-top: var(--pano-space-lg);
+}
+.pano-easing-range {
+  color: var(--pano-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.pano-easing-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--pano-space-md);
+  background: var(--pano-surface-1);
+}
+.pano-easing-mode {
+  height: 26px;
+  border: 0;
+  border-radius: calc(var(--pano-space-md) - 2px);
+  background: transparent;
+  color: var(--pano-muted);
+  font-size: 11px;
+}
+.pano-easing-mode[aria-pressed="true"] {
+  background: var(--pano-surface-3);
+  color: #f5f5f5;
+}
+.pano-easing-graph {
+  width: 100%;
+  max-width: 220px;
+  justify-self: center;
+  overflow: visible;
+}
+.pano-easing-square {
+  fill: var(--pano-surface-1);
+  stroke: var(--pano-surface-3);
+}
+.pano-easing-diagonal {
+  stroke: var(--pano-surface-3);
+  stroke-dasharray: 3 3;
+}
+.pano-easing-curve {
+  fill: none;
+  stroke: var(--pano-accent);
+  stroke-width: 2;
+}
+.pano-easing-arm {
+  stroke: #f5b544;
+  stroke-width: 1;
+}
+.pano-easing-handle {
+  fill: #f5b544;
+  stroke: #111;
+  cursor: grab;
+}
+.pano-easing-note {
+  color: var(--pano-muted);
+  font-size: 11px;
 }

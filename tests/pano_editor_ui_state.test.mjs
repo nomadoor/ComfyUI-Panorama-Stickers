@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildSelectionMenuModel } from "../web_src/pano_editor_ui_state.js";
+import { readFileSync } from "node:fs";
+
+import { buildEasingModel, buildSelectionMenuModel, buildTimelineModel } from "../web_src/pano_editor_ui_state.js";
+import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { setSegmentEasing } from "../web_src/pano_timeline.js";
+
+const canonical = () => loadSceneState(readFileSync(new URL("./fixtures/scene_state/v2_canonical.json", import.meta.url), "utf8"));
 
 test("the sole Cutout frame exposes an explicit delete action", () => {
   const shot = { id: "frame_1", locked: false };
@@ -53,4 +59,60 @@ test("locked modal selections disable destructive and ordering actions", () => {
   for (const action of ["bring-front", "send-back", "delete"]) {
     assert.equal(model.items.find((item) => item.action === action)?.disabled, true);
   }
+});
+
+test("the Timeline has one row per object: the Camera, then the Stickers from front to back", () => {
+  const state = canonical();
+  const options = { frame: 24, span: 120, selection: null, selectedId: "st_sky", expanded: true, openRows: new Set(), playing: false, label: "" };
+  const model = buildTimelineModel(state, options);
+
+  assert.deepEqual(model.rows.map((row) => [row.id, row.label, row.selected, row.open]), [
+    ["camera", "Camera", false, false],
+    ["st_sky", "logo.png", true, false],
+    ["st_hidden", "old.png", false, false],
+    ["st_world", "Sticker input", false, false],
+  ]);
+  const [camera, sky, , world] = model.rows;
+  assert.equal(camera.clip, null);
+  // One pin per frame: full where every Lane has a Keyframe, partial where only some do.
+  assert.deepEqual(camera.keys, [{ frame: 0, full: true }, { frame: 24, full: true }, { frame: 48, full: false }]);
+  assert.equal(camera.keyed, true, "every Camera Lane has a Keyframe at the playhead");
+  assert.deepEqual(camera.lanes.map((lane) => [lane.lane, lane.label, lane.frames]), [
+    ["position", "Position", [0, 24, 48]],
+    ["rotation", "Rotation", [0, 24, 48]],
+    ["fov", "FOV", [0, 24]],
+  ]);
+  assert.deepEqual(sky.clip, { start: 10, end: 50 });
+  // st_sky's material starts at 10 - 5 = 5; only its opacity has Keyframes.
+  assert.deepEqual(sky.keys, [{ frame: 10, full: false }, { frame: 20, full: false }, { frame: 30, full: false }]);
+  assert.deepEqual(sky.lanes.map((lane) => lane.label), ["Direction", "Roll", "Size", "Opacity"]);
+  assert.deepEqual(world.lanes.map((lane) => lane.label), ["Position", "Rotation", "Scale", "Opacity"]);
+  assert.deepEqual(world.clip, { start: 0, end: null });
+
+  const selected = buildTimelineModel(state, { ...options, frame: 20, selection: { owner: "st_sky", lane: null, frames: [5, 15] }, openRows: new Set(["st_sky"]) });
+  assert.deepEqual([selected.rows[1].open, selected.rows[1].selectedFrames, selected.rows[1].lanes[3].selectedFrames], [true, [10, 20], []]);
+  const lane = buildTimelineModel(state, { ...options, selection: { owner: "st_sky", lane: "opacity", frames: [5] } });
+  assert.deepEqual([lane.rows[1].selectedFrames, lane.rows[1].lanes[3].selectedFrames], [[], [10]]);
+});
+
+test("the Easing panel shows the selected segments, and Mixed when they differ", () => {
+  const camera = canonical().camera;
+  const names = ["position", "rotation", "fov"];
+  assert.deepEqual(buildEasingModel(camera, names, [0], 0), { label: "Frame 0", easing: "hold", mixed: false });
+  // From 24 the position and rotation are auto; the fov's Keyframe at 24 is its last, whose Easing is not used.
+  assert.deepEqual(buildEasingModel(camera, names, [24], 0), { label: "Frame 24", easing: "auto", mixed: false });
+  setSegmentEasing(camera, ["rotation"], [24], [0, 0, 1, 1]);
+  assert.deepEqual(buildEasingModel(camera, names, [0, 48], 0), { label: "0 – 48", easing: null, mixed: true });
+  setSegmentEasing(camera, names, [0, 48], "hold");
+  assert.deepEqual(buildEasingModel(camera, names, [0, 48], 0).easing, "hold", "choosing one aligns every segment");
+  assert.equal(buildEasingModel(camera, ["fov"], [24], 0), null, "a Lane's last Keyframe has no segment");
+  const sticker = canonical().stickers[0];
+  assert.equal(buildEasingModel(sticker, ["opacity"], [5, 15], 5).label, "10 – 20");
+});
+
+test("the Timeline shows a mute toggle only when the background VIDEO has audio", () => {
+  const options = { frame: 0, span: 10, selection: null, selectedId: null, expanded: false, openRows: new Set(), playing: false, label: "" };
+  assert.deepEqual([buildTimelineModel(canonical(), options).hasAudio, buildTimelineModel(canonical(), options).muted], [false, false]);
+  const muted = buildTimelineModel(canonical(), { ...options, audio: { muted: true } });
+  assert.deepEqual([muted.hasAudio, muted.muted], [true, true]);
 });
