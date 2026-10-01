@@ -41,14 +41,15 @@ _Avoid_: 秒, タイムスタンプ
 **Clip range**:
 Sticker や `scene` 入力が Timeline 上で有効な範囲。`start`・`in`・`duration` で表す。
 
-**Keyframe group**:
-まとめて Keyframe を打つプロパティの組。変形一式、不透明度など。
+**Lane**:
+Keyframe を持つ単位となるパラメータ。位置、回転、方向、サイズ、不透明度など。
+_Avoid_: Keyframe group, トラック
 
 **Keyframe**:
-ある Timeline frame における Keyframe group の値。
+ある Timeline frame における Lane の値。
 
 **Easing**:
-Keyframe 間の時間方向の補間。`auto`（止まらずに通過）、cubic-bezier、`hold` のいずれか。
+Keyframe 間の時間方向の補間。cubic-bezier（既定は ease-in-out）、`auto`（止まらずに通過）、`hold` のいずれか。
 
 **Motion path**:
 位置の Keyframe 間を結ぶ空間方向の軌道。
@@ -56,10 +57,13 @@ Keyframe 間の時間方向の補間。`auto`（止まらずに通過）、cubic
 **Cut**:
 `hold` の Easing によって Camera を次の Keyframe へ瞬時に移すこと。専用の仕組みは持たない。
 
+**Drone**:
+通過点だけを決め、Camera がその道筋を一定の速さで止まらずに通り抜ける撮り方。Keyframe とは別のデータで、Camera はどちらか一方で動く。
+
 ### Capture
 
 **Camera**:
-Scene を撮影する唯一の視点。位置・回転・FOV を持ち、Timeline 全体にわたって Keyframe を打てる。
+Scene を撮影する唯一の視点。位置・回転・FOV を持ち、Keyframe か Drone で Timeline 全体にわたって動かせる。
 _Avoid_: Shot
 
 **Viewport camera**:
