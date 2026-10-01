@@ -1,4 +1,4 @@
-"""Read a background VIDEO one frame at a time (ADR 0024)."""
+"""Read a VIDEO input one frame at a time (ADR 0024)."""
 
 from __future__ import annotations
 
@@ -17,8 +17,10 @@ _log = logging.getLogger(__name__)
 
 
 def _open(source):
+    # Each container reads a BytesIO through a reader of its own, so containers open on one source at once do not
+    # move each other's position. A BytesIO made from bytes shares them; one filled by writes is copied once.
     if isinstance(source, io.BytesIO):
-        source.seek(0)
+        source = io.BytesIO(source.getvalue())
     return av.open(source, mode="r")
 
 
@@ -38,20 +40,23 @@ def coded_size(source) -> tuple[int, int]:
 class StreamedVideo:
     """The frames of a video file inside its trim window, decoded in order and one at a time.
 
-    `source` is `VideoInput.get_stream_source()` and `start_time`/`duration` its `get_active_trim_window()`.
-    `times` holds each frame's presentation time in seconds from the first frame, `frame_rate` the stream's
-    average rate, and `first_frame` the first frame that decodes, which sets the output size. Frames are
+    `source` is `VideoInput.get_stream_source()` and `start_time`/`duration` its `get_active_trim_window()`;
+    `name` is the input it came from, for messages.
+    `times` holds each frame's presentation time in seconds from the first frame, `time_base` the step those
+    times are rounded to, `frame_rate` the stream's average rate, and `first_frame` the first frame that decodes, which sets the output size. Frames are
     float32 RGB (h, w, 3) in 0..1 like `get_components()`, and must be requested in non-decreasing order.
     Unlike the core reader, a decode error is raised instead of skipped.
     """
 
-    def __init__(self, source, start_time: float, duration: float):
+    def __init__(self, source, start_time: float, duration: float, name: str):
         self._source = source
+        self._name = name
         self._start_time = start_time
         self._duration = duration
         with _open(source) as container:
             stream = container.streams.video[0]
             self.frame_rate = Fraction(stream.average_rate) if stream.average_rate else Fraction(1)
+            self.time_base = Fraction(stream.time_base)
             start_pts, end_pts = _trim_pts(stream, start_time, duration)
             if start_pts != 0:
                 container.seek(start_pts, stream=stream)
@@ -61,19 +66,21 @@ class StreamedVideo:
                 if packet.pts is not None and packet.pts >= start_pts and (end_pts is None or packet.pts < end_pts)
             )
             if not pts:
-                raise ValueError("Panorama Stickers: the bg_media VIDEO has no frames in its trim window.")
+                raise ValueError(f"Panorama Stickers: the {name} VIDEO has no frames in its trim window.")
             self.times = [(value - pts[0]) * stream.time_base for value in pts]
         self._pts = pts
         self._frames = self._decode()
         self._next = next(self._frames, None)
         if self._next is None:
-            raise ValueError("Panorama Stickers: no frame of the bg_media VIDEO could be decoded in its trim window.")
+            raise ValueError(f"Panorama Stickers: no frame of the {name} VIDEO could be decoded in its trim window.")
         self.first_frame = self._next[1]
         self._index = -1
         self._current = None
 
     def __getitem__(self, index: int) -> torch.Tensor | None:
         """The frame at `index` of `times`, or None when the decoder never yields a frame with its pts."""
+        if index < self._index:
+            raise ValueError(f"Panorama Stickers: frames of the {self._name} VIDEO must be read in order; frame {index} was requested after frame {self._index}.")
         while self._index < index:
             self._index += 1
             self._current = self._frame_at(self._pts[self._index])
@@ -88,7 +95,7 @@ class StreamedVideo:
             image = self._next[1]
             self._next = next(self._frames, None)
             return image
-        _log.warning("Panorama Stickers: frame %d of the bg_media VIDEO could not be decoded; bg_color is drawn instead.", self._index)
+        _log.warning("Panorama Stickers: frame %d of the %s VIDEO could not be decoded; it is not drawn.", self._index, self._name)
         return None
 
     def _decode(self):
@@ -122,11 +129,7 @@ class StreamedVideo:
                     yield frame.pts, torch.rot90(image, k=quadrant, dims=(0, 1)).contiguous() if quadrant else image
 
     def audio(self, seconds: float) -> dict | None:
-        """The audio of the trim window, cut to `seconds` from its start, or None without an audio stream.
-
-        Ends the frame decoder first, since both read the same source.
-        """
-        self._frames.close()
+        """The audio of the trim window, cut to `seconds` from its start, or None without an audio stream."""
         with _open(self._source) as container:
             # Streams FFmpeg cannot decode have no codec context, as in the core reader.
             stream = next((s for s in reversed(container.streams.audio) if s.codec_context is not None), None)
@@ -174,15 +177,17 @@ def _alignment_graph(frame, time_base):
 
 
 class MaterializedVideo:
-    """A VIDEO read whole through `get_components()`, with the same interface as `StreamedVideo`."""
+    """A VIDEO read whole through `get_components()`, with the same interface as `StreamedVideo`. Its times are
+    exact, so `time_base` is 0."""
 
-    def __init__(self, components):
+    def __init__(self, components, name: str):
         self._images = components.images
         self._audio = components.audio
         self.frame_rate = components.frame_rate
+        self.time_base = Fraction(0)
         self.times = [Fraction(index) / self.frame_rate for index in range(self._images.shape[0])]
         if not self.times:
-            raise ValueError("Panorama Stickers: the bg_media VIDEO has no frames.")
+            raise ValueError(f"Panorama Stickers: the {name} VIDEO has no frames.")
         self.first_frame = self._images[0]
 
     def __getitem__(self, index: int) -> torch.Tensor:

@@ -46,18 +46,20 @@ class StickerSource:
     drawing values: its `crop` and its `z_index` among the Sky layers.
 
     `derive_vfov` is set for `port` sources, whose vFOV follows hFOV and the source aspect because the port
-    image can change outside the state.
+    image can change outside the state. `frame` names which frame of a source with frames `rgba` holds; it is
+    part of the Sky's cache key, so the Sky is drawn again only when it changes.
     """
 
     rgba: np.ndarray
     crop: dict
     z_index: int = 0
     derive_vfov: bool = False
+    frame: int = 0
 
 
 @dataclass(frozen=True)
 class SceneSources:
-    """Sources that stay the same for every frame of one execution.
+    """Sources for one frame.
 
     `stickers` maps Sticker ids to their sources; a Sticker without one is not drawn. `painting` is the state's
     painting and `painting_layer` its uploaded rasters from `resolve_painting_layer_payload`.
@@ -207,11 +209,14 @@ def _project_sky(rgba: torch.Tensor, mask: torch.Tensor, view: torch.Tensor) -> 
     return torch.cat([rgb, alpha], dim=-1), sampled[..., 4].clone()
 
 
-def _sky_key(evaluated: dict, projection: Projection) -> tuple:
+def _sky_key(evaluated: dict, sources: SceneSources, projection: Projection) -> tuple:
     # An inactive Sticker is not drawn, so its values changing outside its Clip range keep the Sky. Values are
     # rounded so that interpolation noise between equal Keyframes (30.0 vs 30.00000000000001) keeps it too.
+    # A Sticker without a source has no frame (None).
+    frames = {sticker_id: source.frame for sticker_id, source in sources.stickers.items()}
     return (projection, tuple(
-        (sticker["id"], *(round(sticker[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg", "vFOV_deg", "opacity")))
+        (sticker["id"], *(round(sticker[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg", "vFOV_deg", "opacity")),
+         frames.get(sticker["id"]))
         if sticker["active"] else (sticker["id"],)
         for sticker in evaluated["stickers"] if sticker["placement"] == "sky"
     ))
@@ -255,10 +260,10 @@ def render_frame(
     hashable that names it (the bg_media frame index); without a key the background is not reused. `bg_color`
     is three floats in 0..1. The mask is the painted mask and the depth is +inf where only the Sky is visible.
 
-    `cache` is an optional dict owned by the caller for one execution, in which `sources`, `bg_color`, and
-    `device` stay the same. It keeps the previous frame's Sky, the Sky turned by the Camera, the background, and
-    the result: a frame whose Sky values, Camera rotation, and `bg_key` all repeat returns the previous frame's
-    tensors themselves.
+    `cache` is an optional dict owned by the caller for one execution, in which `bg_color`, `device`, and
+    `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps the previous frame's
+    Sky, the Sky turned by the Camera, the background, and the result: a frame whose Sky values and Sticker
+    frames, Camera rotation, and `bg_key` all repeat returns the previous frame's tensors themselves.
     """
     if projection.kind != "erp":
         raise NotImplementedError("Panorama Stickers: perspective projection is not supported yet.")
@@ -266,7 +271,7 @@ def render_frame(
         raise NotImplementedError("Panorama Stickers: world Stickers are not supported yet.")
     if cache is None:
         cache = {}
-    sky_key = _sky_key(evaluated, projection)
+    sky_key = _sky_key(evaluated, sources, projection)
     # A 360 output without Camera rotation is the Sky and the background as they are.
     turned = projection.coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
     view_key = tuple(round(camera[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg")) if turned else None
