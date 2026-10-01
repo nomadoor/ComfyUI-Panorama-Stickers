@@ -143,7 +143,7 @@ EXPECTED_SCHEMAS = {
             ("pano_scene", "pano_scene", "PANO_SCENE"),
         ],
         "hidden": [],
-        "is_output_node": False,
+        "is_output_node": True,
     },
     "PanoramaCutout": {
         "display_name": "Panorama Cutout",

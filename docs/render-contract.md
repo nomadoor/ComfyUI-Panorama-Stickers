@@ -157,9 +157,24 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   - `file` の Source（エディタで投入した素材）は、今は画像だけで、時間を持たない。
 - `scene` の入力は `_scene_content` で `SceneContent` にする。いまはどの型も未対応であることを示すエラーにする（#61・#62 が加える）。`sticker` の MESH・SPLAT・3D ファイルも同じくエラーにする（#63）。
 - (b) は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、出力の直前の行から写す。
-- `is_output_node` は `False` で、ノード上の UI と実行結果の `ui`（プレビュー画像、動画、警告の表示）は持たない。これらは、エディタとの結び付け（#70）と、実行前後の素材の表示（#75）が決めて加える。それまで警告はログにだけ出す。
-  - 背景 VIDEO のエディタ用の一時 MP4 とメタ情報（ADR 0018）も、#53 では出さず #75 で加える。旧ノードと同じく `core/video.py` の `encode_frames_to_mp4` / `make_video_ui_payload` を使う想定だが、VIDEO を全フレーム展開して再エンコードしないよう、`VideoFromFile` はストリームのまま渡す方法を #75 で決める。
-- `file` の Source は `core/stickers.py` の `load_source_rgba` で読み、`folder_paths` のディレクトリの中にあるものだけを読む。読めないときは、その Sticker を描かずに警告をログに出す。
+- `is_output_node` は `True`（#75）。ComfyUI は `ui` を出力ノードでなくても `executed` で送るが、出力ノードでなければ下流に出力ノードがつながっていないと実行されず、エディタとノード上の UI が素材を受け取れない。出力ノードにすると、キューに入れるたびに実行され（変わっていなければキャッシュの `ui` が送られる）、素材の表示が下流の接続に左右されない。
+- 実行結果の `ui` は、エディタとノード上の UI に入力の素材を見せるためのもので、キーは旧ノードと同じ（#75）。
+
+  | キー | 内容 |
+  |---|---|
+  | `pano_input_images` | `bg_media` の最初のフレーム |
+  | `pano_input_videos` / `pano_input_video_meta` | `bg_media` が 2 フレーム以上のときの一時 MP4 とメタ情報（`fps`・`frames`・`duration`・`has_audio`） |
+  | `pano_sticker_input_images` | `sticker` の最初のフレーム。`sticker` の MP4 は出さない（エディタでの再生は Timeline と一緒に #73 の後で加える） |
+  | `pano_sticker_input_pose` | 状態に `port` の Sticker がなく、ノードが加えたときの姿勢（`yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`）。エディタが同じ姿勢で状態に加えるために使う |
+  | `pano_sticker_warnings` | 警告（読めない `file` の Source、`bg_media` なしの `auto`）。ログにも出す |
+
+  - 一時 MP4（ADR 0018）：VIDEO は、Preview と同じく VIDEO 自身の `save_to(MP4, H264)`（`core/video.py` の `save_video_to_mp4`）で temp に書き、全フレームを展開して再エンコードしない。メタ情報の `fps` は VIDEO の平均フレームレート、`frames` は切り出し範囲のフレーム数。IMAGE バッチは `encode_frames_to_mp4` でエンコードし、`fps` は Timeline fps とする。1 フレームの素材は MP4 を作らない。音声は `bg_media` の VIDEO が持つものだけが MP4 に入る。サムネイルの帯は作らない（エディタが MP4 から作る）。
+  - 出力ノードは `state_json` が変わるたびに実行されるので、MP4 は入力ごとに 1 度だけ作り、`NODE_RUNTIME` の `video` キャッシュから再利用する。IMAGE バッチは旧 Cutout と同じくテンソルの同一性と fps、VIDEO は `open_video` がストリームのまま開いたもの（クロップのない `VideoFromFile`）ならファイルのパス・更新時刻・トリム範囲、それ以外は VIDEO オブジェクトの同一性をキーにする。キーのためにファイルを開き直さない。
+  - エディタの背景 VIDEO は、実行結果が新しい間だけ読み込む。`PanoramaStickersNode` では動画の再生バーを出さず、エディタを開いたまま実行すると読み込み直して再生ヘッドのフレームを出し、タイムラインの ▶ と再生位置の移動も読み込みと再生を行う（`docs/timeline-ui.md`）。背景の入力をつなぎ変えると、次の実行まで VIDEO を外す。
+  - エディタとノード上の UI は、実行結果が新しいかを入力の接続（link）の変化だけで判断する。接続を変えずに上流の画像を差し替えると、再実行するまで古い素材が表示される。
+  - `sticker_state` が接続されているときは、`port` の Sticker は実行結果に姿勢が届くまで、枠も含めて表示されない。
+  - 出力（IMAGE）のプレビュー MP4 は作らない。Stickers の出力を表示するのは Preview（#76）で、旧ノードの `pano_videos` を読むフロントエンドもない。
+- `file` の Source は `core/stickers.py` の `load_source_rgba` で読み、`folder_paths` のディレクトリの中にあるものだけを読む。読めないときは、その Sticker を描かずに警告を出す（ログと実行結果の `pano_sticker_warnings`）。
 
 ## `PANO_SCENE`
 
@@ -205,7 +220,7 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 - IMAGE と VIDEO の実行結果の `ui` は旧 Preview と同じキー（`pano_input_images`、2 フレーム以上なら `pano_videos`・`pano_video_meta`）。`pano_video_meta` の fps は Timeline fps、`frames` は Timeline の長さ。
   - IMAGE：旧 Preview と同じく、最初の画像を保存し、バッチを MP4 にエンコードする。音声はない。
   - VIDEO：`open_video(video, "source")`（Stickers と同じ）で開き、最初に復号できたフレームをプレビュー画像にし、Timeline は `frame_rate` と `times` から決める。全フレームを一括では展開しない（クロップ付きや `VideoFromFile` 以外で `open_video` が `get_components()` に落ちる場合は、それに従う）。MP4 は VIDEO 自身の `save_to(MP4, H264)` で temp に書く。コアは、コンテナとコーデックが一致しトリムもクロップもなければ再エンコードせずに詰め直し、それ以外は 1 フレームずつ変換する。`VideoFromFile` 以外の VIDEO も同じくコアの `save_to` に任せる（`VideoFromComponents` はすでにメモリにあるフレームを書き、`VideoFromList` は元の VIDEO ごとに読む）。音声は `save_to` がそのまま入れ、`has_audio` は書いた MP4 に音声ストリームがあるかで決める。
-  - 暫定：プレビュー画像と MP4 のために VIDEO を 2 回開く。エディタで背景 VIDEO をストリームのまま表示する方法（#75）が決まったら、それに合わせる。
+  - プレビュー画像と MP4 のために VIDEO を 2 回開く（`open_video` と `save_to`）。Stickers の `bg_media`・`sticker` の VIDEO も同じ方法で MP4 を書く（#75）。
 - `PANO_SCENE` のときは描画も `ui` も作らずに素通しする。ノード上の表示と、エディタの新しい ID への結び付けは #76 で行う。
 - `coverage` 入力は `execute` では読まない（フロントエンドのウィジェットが読む）。`PANO_SCENE` のときは `PanoSceneValue.coverage` が正で、ウィジェットの値は使わない。
 - MatchType はバックエンドで型を検証しないので、`source` が IMAGE（4 次元のテンソル）・VIDEO・`PanoSceneValue` のどれでもなければ `TypeError` にする。

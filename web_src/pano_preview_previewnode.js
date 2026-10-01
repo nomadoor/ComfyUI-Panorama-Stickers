@@ -152,17 +152,13 @@ function getSelfVideoUrl(node) {
 
 function getLinkedImageUrl(node, imageInputName = "erp_image") {
   const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  let linkId = null;
-
-  const preferred = inputs.find((input) => String(input?.name || "") === String(imageInputName));
-  if (preferred?.link != null) linkId = preferred.link;
-  if (linkId == null) {
-    const anyImg = inputs.find((input) => String(input?.type || "").toUpperCase() === "IMAGE" && input?.link != null);
-    if (anyImg?.link != null) linkId = anyImg.link;
+  let slot = inputs.findIndex((input) => String(input?.name || "") === String(imageInputName));
+  if (slot < 0 || !node.isInputConnected(slot)) {
+    slot = inputs.findIndex((input, index) => String(input?.type || "").toUpperCase() === "IMAGE" && node.isInputConnected(index));
   }
-  if (linkId == null) return "";
+  if (slot < 0) return "";
 
-  const link = node?.graph?.links?.[linkId] || app?.graph?.links?.[linkId];
+  const link = node.getInputLink(slot);
   if (!link) return "";
   const originId = Number(link.origin_id);
   if (!Number.isFinite(originId)) return "";

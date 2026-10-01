@@ -1,6 +1,7 @@
 import { normalizeCoverageValue, parsePanoEditorState } from "./pano_editor_state.js";
 import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
+import { runExternalStickerSync } from "./pano_external_sticker_sync.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -297,7 +298,11 @@ function installEditorButton(nodeType, {
       if (hook === "onConfigure" && matchType === "PanoramaStickers" && !sceneStateV2 && this.widgets) {
         migratePanoramaStickersWidgetOrder(this);
       }
+      const attached = !!this.__panoPreviewAttached;
       if (hook === "onNodeCreated" || this.widgets) installOrUpdate(this);
+      // LiteGraph.createNode runs onNodeCreated before graph.add, so a node attached then syncs its
+      // sticker input once it is in the graph.
+      if (hook === "onAdded" && attached) runExternalStickerSync(this, "attach");
       return result;
     };
   }

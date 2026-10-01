@@ -1,13 +1,15 @@
 const handlersByNode = new WeakMap();
 
-export function registerExternalStickerSync(node, handler) {
+// The open editor is the only writer of the state, so its handler wins over the node surface's even
+// when the node surface attaches again after it. Otherwise the newest live handler runs.
+export function registerExternalStickerSync(node, handler, { editor = false } = {}) {
   if (!node || typeof handler !== "function") return () => {};
   let handlers = handlersByNode.get(node);
   if (!handlers) {
     handlers = [];
     handlersByNode.set(node, handlers);
   }
-  const entry = { handler };
+  const entry = { handler, editor };
   handlers.push(entry);
   let active = true;
   return () => {
@@ -23,7 +25,7 @@ export function registerExternalStickerSync(node, handler) {
 
 export function runExternalStickerSync(node, ...args) {
   const handlers = handlersByNode.get(node);
-  const entry = handlers?.[handlers.length - 1];
+  const entry = handlers?.findLast((item) => item.editor) || handlers?.at(-1);
   if (!entry) return false;
   entry.handler(...args);
   return true;

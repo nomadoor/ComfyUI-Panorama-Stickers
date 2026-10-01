@@ -41,6 +41,23 @@ function createImageState() {
   };
 }
 
+// A node as the ComfyUI frontend exposes it: connectivity through getInputLink(slot), an LLink with
+// origin_id and origin_slot. Reading the deprecated input.link fails the test. Like LiteGraph,
+// getInputLink throws before the node is in a graph (graph: null).
+function comfyNode({ inputs, links = [], graph = {}, ...rest }) {
+  return {
+    ...rest,
+    graph,
+    inputs: inputs.map((input) => Object.defineProperty({ ...input }, "link", {
+      get() { throw new Error("input.link is deprecated"); },
+    })),
+    getInputLink(slot) {
+      if (!this.graph) throw new Error("NullGraphError");
+      return links[slot] ?? null;
+    },
+  };
+}
+
 function createAdapter(overrides = {}) {
   const app = overrides.app || { nodeOutputs: {} };
   const api = overrides.api || { apiURL: (route) => `/api${route}` };
@@ -93,24 +110,22 @@ test("reads only directly keyed node outputs and exposes UI payload values", () 
 
 test("resolves only preferred exact inputs using editor source priority and origin slot", () => {
   const origins = [{ id: 101, imgs: [{ src: "/node-erp.png" }] }, { id: 102, imgs: [{ src: "/node-bg.png" }] }];
-  const node = {
+  const node = comfyNode({
     id: 5,
     inputs: [
-      { name: "erp_image", type: "IMAGE", link: 11 },
-      { name: "bg_erp", type: "IMAGE", link: 12 },
-      { name: "other_image", type: "IMAGE", link: 13 },
+      { name: "erp_image", type: "IMAGE" },
+      { name: "bg_erp", type: "IMAGE" },
+      { name: "other_image", type: "IMAGE" },
     ],
-    graph: {
-      links: {
-        11: { origin_id: 101, origin_slot: 0 },
-        12: { origin_id: 102, origin_slot: 1 },
-        13: { origin_id: 103, origin_slot: 0 },
-      },
-    },
+    links: [
+      { origin_id: 101, origin_slot: 0 },
+      { origin_id: 102, origin_slot: 1 },
+      { origin_id: 103, origin_slot: 0 },
+    ],
     getInputNode(index) {
       return origins[index] || { id: 103, imgs: [{ src: "/other.png" }] };
     },
-  };
+  });
   const media = createAdapter({
     app: {
       nodeOutputs: {
@@ -142,13 +157,12 @@ test("follows subgraph outputs and keeps standard and UI image candidates in ord
     isSubgraphNode: () => true,
     resolveSubgraphOutputLink: (slot) => slot === 2 ? { outputNode } : null,
   };
-  const node = {
+  const node = comfyNode({
     id: 6,
-    inputs: [{ name: "erp_image", type: "IMAGE", link: 21 }],
-    graph: { links: new Map([[21, [21, 201, 2]]]) },
+    inputs: [{ name: "erp_image", type: "IMAGE" }],
+    links: [{ origin_id: 201, origin_slot: 2 }],
     getInputNode: () => subgraphNode,
-    getInputLink: () => ({ origin_slot: 2 }),
-  };
+  });
   const media = createAdapter({
     app: {
       nodeOutputs: {
@@ -182,23 +196,21 @@ test("falls back from outputs to node images and LoadImage widgets without chang
     comfyClass: "LoadImage",
     widgets: [{ name: "image", value: "input file.png" }],
   };
-  const node = {
+  const node = comfyNode({
     inputs: [
-      { name: "erp_image", type: "IMAGE", link: 22 },
-      { name: "bg_erp", type: "IMAGE", link: 23 },
+      { name: "erp_image", type: "IMAGE" },
+      { name: "bg_erp", type: "IMAGE" },
     ],
-    graph: {
-      links: {
-        22: { origin_id: 211, origin_slot: 0 },
-        23: { origin_id: 212, origin_slot: 0 },
-      },
-      _nodes_by_id: { 212: widgetOrigin },
-    },
+    links: [
+      { origin_id: 211, origin_slot: 0 },
+      { origin_id: 212, origin_slot: 0 },
+    ],
+    graph: { _nodes_by_id: { 212: widgetOrigin } },
     getInputNode(index) {
       if (index === 0) return nodeImageOrigin;
       throw new Error("graph is still restoring");
     },
-  };
+  });
   const media = createAdapter({ app: { nodeOutputs: {}, getNodeImageUrls: () => [] } });
 
   assert.deepEqual(media.resolvePreferredExactLinkedSource(node, ["erp_image"]), {
@@ -218,13 +230,13 @@ test("loads exact linked images with fallback, terminal failure caching, and fai
   FakeImage.instances = [];
   const origin = { id: 301 };
   const dirtyCalls = [];
-  const node = {
+  const node = comfyNode({
     id: 9,
-    inputs: [{ name: "erp_image", type: "IMAGE", link: 31 }],
-    graph: { links: { 31: { origin_id: 301, origin_slot: 0 } } },
+    inputs: [{ name: "erp_image", type: "IMAGE" }],
+    links: [{ origin_id: 301, origin_slot: 0 }],
     getInputNode: () => origin,
     setDirtyCanvas: (...args) => dirtyCalls.push(args),
-  };
+  });
   const media = createAdapter({
     app: {
       nodeOutputs: {},
@@ -319,18 +331,31 @@ test("reads linked string values from the origin slot before falling back to the
       },
     },
   });
-  const linkedNode = {
-    inputs: [{ name: "sticker_state", link: 41 }],
-    graph: { links: { 41: { origin_id: 401, origin_slot: 1 } } },
+  const linkedNode = comfyNode({
+    inputs: [{ name: "sticker_state" }],
+    links: [{ origin_id: 401, origin_slot: 1 }],
     widgets: [{ name: "sticker_state", value: "widget-state" }],
-  };
-  const widgetNode = {
-    inputs: [{ name: "sticker_state", link: null }],
+  });
+  const widgetNode = comfyNode({
+    inputs: [{ name: "sticker_state" }],
     widgets: [{ name: "sticker_state", value: "widget-state" }],
-  };
+  });
 
   assert.equal(media.linkedValue(linkedNode, "sticker_state"), "linked-state");
   assert.equal(media.linkedValue(widgetNode, "sticker_state"), "widget-state");
+});
+
+test("a node that is not in a graph yet has no linked sources or values", () => {
+  const media = createAdapter({ app: { nodeOutputs: { 401: { data: { result: ["linked-state"] } } } } });
+  const node = comfyNode({
+    graph: null,
+    inputs: [{ name: "bg_media" }, { name: "sticker_state" }],
+    links: [{ origin_id: 400, origin_slot: 0 }, { origin_id: 401, origin_slot: 0 }],
+    widgets: [{ name: "sticker_state", value: "widget-state" }],
+  });
+
+  assert.equal(media.resolvePreferredExactLinkedSource(node, ["bg_media"]).src, "");
+  assert.equal(media.linkedValue(node, "sticker_state"), "widget-state");
 });
 
 test("uses the backend source-state hash and falls back to hashing the exact linked state", () => {
@@ -346,4 +371,56 @@ test("uses the backend source-state hash and falls back to hashing the exact lin
   assert.equal(media.externalStateHash({ id: 10 }, stateRaw), "backend-hash");
   assert.equal(media.externalStateHash({ id: 11 }, stateRaw), "575416577");
   assert.equal(media.externalStateHash({ id: 11 }, '{"note":"🧭"}'), "199228564");
+});
+
+test("PanoramaStickersNode shows linked bg_media before a run and its own result after, also after a reload", () => {
+  const loadImage = { id: 3, comfyClass: "LoadImage", widgets: [{ name: "image", value: "pano.png" }] };
+  const loadSticker = { id: 4, comfyClass: "LoadImage", widgets: [{ name: "image", value: "sticker.png" }] };
+  const node = comfyNode({
+    id: 12,
+    inputs: [
+      { name: "bg_media", type: "IMAGE,VIDEO" },
+      { name: "scene", type: "SPLAT,MESH,MOGE_GEOMETRY" },
+      { name: "sticker", type: "IMAGE,VIDEO,MESH,SPLAT" },
+    ],
+    links: [{ origin_id: 3, origin_slot: 0 }, null, { origin_id: 4, origin_slot: 0 }],
+    getInputNode: (slot) => [loadImage, null, loadSticker][slot],
+  });
+  const app = { nodeOutputs: {}, getNodeImageUrls: () => [] };
+  const media = createAdapter({ app });
+
+  const linked = media.resolvePreferredExactLinkedSource(node, ["bg_media", "bg_erp", "erp_image"]);
+  assert.equal(linked.src, "/api/view?filename=pano.png&type=input&subfolder=");
+  assert.equal(linked.inputName, "bg_media");
+  assert.deepEqual(media.uiList(node, "pano_sticker_input_images"), []);
+
+  // ComfyUI keeps the `ui` of the executed message under the node id, without a `ui` wrapper.
+  const output = {
+    pano_input_images: [{ filename: "bg.png", subfolder: "", type: "temp" }],
+    pano_input_videos: [{ filename: "bg.mp4", subfolder: "", type: "temp", format: "video/mp4" }],
+    pano_input_video_meta: [{ fps: 25, frames: 30, duration: 1.2, has_audio: true }],
+    pano_sticker_input_images: [{ filename: "port.png", subfolder: "", type: "temp" }],
+  };
+  app.nodeOutputs = { 12: output };
+  const executed = [
+    media.source(media.uiList(node, "pano_input_images")[0]),
+    media.source(media.uiList(node, "pano_input_videos")[0]),
+    media.uiValue(node, "pano_input_video_meta")[0].frames,
+    media.source(media.uiList(node, "pano_sticker_input_images")[0]),
+  ];
+  assert.deepEqual(executed, [
+    "/api/view?filename=bg.png&type=temp",
+    "/api/view?filename=bg.mp4&type=temp",
+    30,
+    "/api/view?filename=port.png&type=temp",
+  ]);
+
+  // A reload restores the outputs as a clone keyed by the node locator id.
+  app.nodeOutputs = structuredClone({ "12": output });
+  assert.deepEqual([
+    media.source(media.uiList(node, "pano_input_images")[0]),
+    media.source(media.uiList(node, "pano_input_videos")[0]),
+    media.uiValue(node, "pano_input_video_meta")[0].frames,
+    media.source(media.uiList(node, "pano_sticker_input_images")[0]),
+  ], executed);
 });

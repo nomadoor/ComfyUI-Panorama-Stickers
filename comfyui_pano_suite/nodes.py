@@ -1,5 +1,6 @@
 import json
 import math
+import os
 from dataclasses import dataclass, replace
 from pathlib import Path
 import logging
@@ -1094,8 +1095,9 @@ def _port_media(state: dict, sticker, sticker_state) -> PortMedia | None:
     return PortMedia(port["id"], port["clip"], sticker, state["timeline"]["fps"])
 
 
-def _resolve_sources(state: dict, port: PortMedia | None) -> SceneSources:
-    """Read every Sticker source into memory; the port Sticker's source holds the first frame of `port`."""
+def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -> SceneSources:
+    """Read every Sticker source into memory; the port Sticker's source holds the first frame of `port`.
+    A source that cannot be read adds to `warnings`."""
     stickers = {}
     port_image = None if port is None else _port_rgba(port.first_frame)
     for item in state["stickers"]:
@@ -1106,7 +1108,7 @@ def _resolve_sources(state: dict, port: PortMedia | None) -> SceneSources:
             continue
         rgba = load_source_rgba(source)
         if rgba is None:
-            _log.warning("Panorama Stickers: could not read the source of Sticker %s; it is not drawn.", item["id"])
+            warnings.append(f"Could not read the source of Sticker {item['id']}; it is not drawn.")
             continue
         stickers[item["id"]] = StickerSource(rgba, item["crop"], item.get("z_index", 0))
     return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
@@ -1251,6 +1253,26 @@ def _render_timeline(state: dict, sources: SceneSources, frames, bg_media, bg_co
     return images, masks
 
 
+def _bg_media_ui(bg_media, bg, fps: float) -> dict:
+    """The `ui` of `bg_media`: its first frame, and an MP4 when it has two or more frames. `bg` is the opened VIDEO;
+    an IMAGE batch plays at `fps`. The MP4 is made once per input and reused while the input stays the same."""
+    contract = _get_preview_ui_contract("stickers_bg")
+    if isinstance(bg_media, Input.Video):
+        return _video_ui(bg_media, bg, float(bg.frame_rate), len(bg.times), contract)
+    ui_ret = _init_ui_preview(bg_media, key=contract["image"])
+    NODE_RUNTIME.append_cached_video(
+        ui_ret,
+        bg_media,
+        fps,
+        None,
+        cache_key=("stickers_bg_video", _tensor_cache_identity(bg_media), float(fps)),
+        warning_key="pano_sticker_warnings",
+        video_key=contract["video"],
+        meta_key=contract["meta"],
+    )
+    return ui_ret
+
+
 # TODO(#78): rename to PanoramaStickersNode, matching the node_id, once the legacy class is removed.
 class PanoramaStickersSceneNode(io.ComfyNode):
     @classmethod
@@ -1276,17 +1298,24 @@ class PanoramaStickersSceneNode(io.ComfyNode):
                 io.Float.Output("fps"),
                 PanoScene.Output("pano_scene"),
             ],
+            # An output node runs on every queue, so the editor receives the media in the `ui` even when
+            # nothing downstream consumes the outputs.
+            is_output_node=True,
         )
 
     @classmethod
     def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
         _reject_unsupported_sticker(sticker)
         content = _scene_content(scene)
+        warnings = []
         state = load_scene_state(state_json)
+        has_port = any(item["source"]["kind"] == "port" for item in state["stickers"])
         port = _port_media(state, sticker, sticker_state)
-        sources = _resolve_sources(state, port)
+        sources = _resolve_sources(state, port, warnings)
         bg = open_video(bg_media, "bg_media") if isinstance(bg_media, Input.Video) else bg_media
-        out_w, out_h, _uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg.first_frame if isinstance(bg_media, Input.Video) else bg_media)
+        out_w, out_h, uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg.first_frame if isinstance(bg_media, Input.Video) else bg_media)
+        if PanoramaStickersNode._is_auto_output_preset(output_preset) and not uses_bg_size:
+            warnings.append("Output preset is auto, but bg_media is not connected; using 2048 instead.")
         coverage_deg = normalize_coverage(coverage)
         projection = Projection.erp(out_w, out_h, coverage_deg)
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
@@ -1295,7 +1324,20 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         audio = bg.audio(len(frames) / fps) if isinstance(bg_media, Input.Video) else None
         # (c) The outputs, with PANO_SCENE binding the state to the inputs and the decided Timeline.
         pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
-        return io.NodeOutput(images, masks, audio, fps, pano_scene)
+        # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
+        ui_ret = {}
+        if bg_media is not None:
+            _merge_ui_payload(ui_ret, _bg_media_ui(bg_media, bg, fps))
+        if port is not None:
+            # Only the first frame of the sticker; the editor plays it with the timeline (#73).
+            _merge_ui_payload(ui_ret, _init_ui_preview(port.first_frame[None], key=_get_preview_ui_contract("stickers_input")["image"]))
+            if not has_port:
+                # The pose the port Sticker was added at, for the editor to add it to the state the same way.
+                added = next(item for item in state["stickers"] if item["id"] == port.sticker_id)
+                pose = {**added["direction"]["value"], "roll_deg": added["roll"]["value"], "hFOV_deg": added["size"]["value"]["hFOV_deg"]}
+                ui_ret["pano_sticker_input_pose"] = [pose]
+        _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
+        return io.NodeOutput(images, masks, audio, fps, pano_scene, ui=ui_ret)
 
 
 CUTOUT_MAX_OUTPUT_SIDE = 4096
@@ -1353,7 +1395,11 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             # An ERP IMAGE or VIDEO is the background in the Scene's orientation, under the Cutout state's Sky.
             # Outside a 180 ERP the image is black, as in the legacy Cutout.
             state, port, content, coverage_deg, bg_color = cutout, None, None, normalize_coverage(coverage), (0.0, 0.0, 0.0)
-            sources = _resolve_sources(state, None)
+            warnings = []
+            sources = _resolve_sources(state, None, warnings)
+            # TODO(#77): show these in the Cutout `ui`.
+            for warning in warnings:
+                _log.warning("Panorama Cutout: %s", warning)
             bg = open_video(source, "source") if isinstance(source, Input.Video) else source
             fps, frames = _decide_timeline(state, bg, None)
 
@@ -1677,19 +1723,39 @@ def _preview_ui(images: torch.Tensor, fps: float, audio, unique_id) -> dict:
     return ui_ret
 
 
-def _video_preview_ui(video) -> dict:
-    """The Preview `ui` of a VIDEO: its first frame, and the VIDEO saved as MP4 by the core when it has two or more
-    frames. The frames are not read into one batch, and the Timeline fps is decided as in Stickers."""
-    bg = open_video(video, "source")
-    fps, frames = _decide_timeline(load_scene_state(None), bg, None)
-    preview_contract = _get_preview_ui_contract("default")
-    ui_ret = _init_ui_preview(bg.first_frame[None], key=preview_contract["image"])
-    if len(frames) > 1:
-        path, has_audio = save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
-        payload = make_video_ui_payload(path, fps, len(frames), video_key=preview_contract["video"], meta_key=preview_contract["meta"])
-        payload[preview_contract["meta"]][0]["has_audio"] = has_audio
+def _video_cache_identity(video, opened) -> tuple:
+    """A VIDEO that `open_video` streams from its file (so without a crop) is its file and trim window; any other
+    VIDEO is the object itself."""
+    if isinstance(opened, StreamedVideo):
+        source = video.get_stream_source()
+        if isinstance(source, str):
+            return ("file", source, os.stat(source).st_mtime_ns, video.get_active_trim_window())
+    return NODE_RUNTIME.object_identity(video)
+
+
+def _video_ui(video, opened, fps: float, frame_count: int, contract: dict) -> dict:
+    """The `ui` of a VIDEO opened by `open_video`: its first frame, and the VIDEO saved as MP4 by the core when it
+    has two or more frames. The frames are not read into one batch (ADR 0018), and the MP4 is reused while the
+    VIDEO stays the same."""
+    ui_ret = _init_ui_preview(opened.first_frame[None], key=contract["image"])
+    if frame_count > 1:
+        cache_key = ("video_mp4", _video_cache_identity(video, opened))
+        saved = NODE_RUNTIME.cache.get("video", cache_key)
+        if saved is None or not saved[0].exists():
+            saved = save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
+            NODE_RUNTIME.cache.put("video", cache_key, saved)
+        path, has_audio = saved
+        payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"])
+        payload[contract["meta"]][0]["has_audio"] = has_audio
         _merge_ui_payload(ui_ret, payload)
     return ui_ret
+
+
+def _video_preview_ui(video) -> dict:
+    """The Preview `ui` of a VIDEO, with the Timeline fps decided as in Stickers."""
+    bg = open_video(video, "source")
+    fps, frames = _decide_timeline(load_scene_state(None), bg, None)
+    return _video_ui(video, bg, fps, len(frames), _get_preview_ui_contract("default"))
 
 
 # TODO(#78): rename to PanoramaPreviewNode, matching the node_id, once the legacy class is removed.

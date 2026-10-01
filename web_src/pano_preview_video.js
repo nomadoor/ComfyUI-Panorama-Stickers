@@ -36,11 +36,18 @@ export function markNodeOutputMediaCurrent(node, channel = "") {
   Object.keys(freshness).forEach((name) => { freshness[name] = true; });
 }
 
+// The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
+// and PanoramaStickersNode's bg_media.
+export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media"];
+// The inputs that carry the media of the port Sticker: the legacy Stickers sticker_image and
+// PanoramaStickersNode's sticker.
+export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
+
 export function isTrackedMediaInputConnectionChange(
   node,
   type,
   slotIndex,
-  trackedNames = ["erp_image", "bg_erp"],
+  trackedNames = BACKGROUND_INPUT_NAMES,
 ) {
   const normalizedType = String(type ?? "").trim().toLowerCase();
   const isInput = type === 1 || normalizedType === "input";

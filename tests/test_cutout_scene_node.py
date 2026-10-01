@@ -448,7 +448,7 @@ def test_render_timeline_of_no_frames_outputs_empty_batches():
     state = load_scene_state("")
     projection = nodes.Projection.perspective(40, 24, 90.0)
 
-    images, masks = nodes._render_timeline(state, nodes._resolve_sources(state, None), [], None, (0.0, 0.0, 0.0), None, None,
+    images, masks = nodes._render_timeline(state, nodes._resolve_sources(state, None, []), [], None, (0.0, 0.0, 0.0), None, None,
                                            lambda evaluated: (evaluated["camera"], projection))
 
     assert images.shape == (0, 24, 40, 3) and masks.shape == (0, 24, 40)

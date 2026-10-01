@@ -132,6 +132,9 @@ class ManualCacheStore:
             while len(cache) > limit:
                 _old_key, old_value = cache.popitem(last=False)
                 if namespace == "video":
+                    # A saved VIDEO is cached with whether it has audio.
+                    if isinstance(old_value, tuple):
+                        old_value = old_value[0]
                     try:
                         if isinstance(old_value, Path):
                             old_value.unlink(missing_ok=True)
@@ -263,6 +266,10 @@ class NodeRuntime:
             return audio.get("waveform") is not None and int(audio.get("sample_rate") or 0) > 0
         except Exception:
             return False
+
+    @staticmethod
+    def object_identity(value) -> tuple:
+        return _OBJECT_IDENTITIES.token(value)
 
     @staticmethod
     def tensor_identity(image) -> tuple | None:

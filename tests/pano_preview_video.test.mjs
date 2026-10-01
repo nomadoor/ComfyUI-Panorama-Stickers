@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  BACKGROUND_INPUT_NAMES,
+  STICKER_INPUT_NAMES,
   createLoopingPreviewVideo,
   isNodeOutputMediaCurrent,
   isTrackedMediaInputConnectionChange,
@@ -164,4 +166,20 @@ test("only a tracked ERP input connection change invalidates node output media",
   assert.equal(isTrackedMediaInputConnectionChange(node, 1, 1), false);
   assert.equal(isTrackedMediaInputConnectionChange(node, 2, 0), false);
   assert.equal(isTrackedMediaInputConnectionChange(node, "output", 0), false);
+});
+
+test("the new Stickers node's MultiType bg_media and sticker inputs are tracked by name", () => {
+  const node = {
+    inputs: [
+      { name: "bg_media", type: "IMAGE,VIDEO" },
+      { name: "scene", type: "SPLAT,MESH" },
+      { name: "sticker", type: "IMAGE,VIDEO,MESH,SPLAT" },
+    ],
+  };
+
+  assert.equal(isTrackedMediaInputConnectionChange(node, 1, 0), true);
+  assert.equal(isTrackedMediaInputConnectionChange(node, 1, 2), false);
+  assert.equal(isTrackedMediaInputConnectionChange(node, 1, 2, STICKER_INPUT_NAMES), true);
+  assert.equal(isTrackedMediaInputConnectionChange(node, 1, 0, STICKER_INPUT_NAMES), false);
+  assert.equal(isTrackedMediaInputConnectionChange(node, 1, 1, [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES]), false);
 });

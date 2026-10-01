@@ -188,9 +188,8 @@ test("background connection changes do not invalidate the external sticker textu
   const body = runtime.slice(start, end);
 
   assert.match(body, /backgroundInputChanged[\s\S]*?markNodeOutputMediaStale\(node, "background"\)/);
-  assert.match(body, /if \(stickerInputChanged\) \{\s*markNodeOutputMediaStale\(node, "external-sticker"\);\s*node\.__panoLastExecutedOutput = null;\s*invalidateExternalStickerPreviewImage\(node\);\s*\}/);
+  assert.match(body, /if \(stickerInputChanged\) \{\s*markNodeOutputMediaStale\(node, "external-sticker"\);\s*node\.__panoLastExecutedOutput = null;\s*\}/);
   assert.match(body, /if \(backgroundInputChanged\) \{[\s\S]*?invalidateBackgroundPreviewMedia\(node\);[\s\S]*?\}/);
-  assert.match(body, /if \(stickerInputChanged\) \{[\s\S]*?invalidateExternalStickerPreviewImage\(node\);[\s\S]*?\}/);
   assert.doesNotMatch(body, /invalidatePreviewImageCaches\(node\)/);
   assert.match(runtime, /isNodeOutputMediaCurrent\(node, "external-sticker"\)/);
 });
@@ -301,4 +300,82 @@ test("Stickers teardown commits an active gesture before destroying the surface 
   assert.notEqual(restoreStart, -1);
   assert.ok(restore.indexOf("flushNodeSurfaceGesture();") < restore.indexOf("nodeSurfaceSession?.destroy?.();"));
   assert.doesNotMatch(restore, /cancelCutoutDrag\(\)/);
+});
+
+test("the port Sticker draws as a frame on the node until the node's result has its media", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const drawStart = runtime.indexOf("function drawCanvas(");
+  const drawEnd = runtime.indexOf("\nfunction ", drawStart + 1);
+  const draw = runtime.slice(drawStart, drawEnd);
+
+  assert.match(draw, /surfacePoseStickers\(state\)[\s\S]*?\(item\.external \|\| item\.source_kind === "external_image"\)\)[\s\S]*?!isRenderableMediaReady\(getNodePreviewImage\(node, item\.id, null, \{ external: true \}\)\)[\s\S]*?drawStickerFrame\(ctx, item, projection\)/);
+  assert.ok(draw.indexOf("drawStickerFrame(") < draw.indexOf("drawStickerSelectionOverlay(ctx, selected, projection)"));
+});
+
+test("PanoramaStickersNode syncs its port Sticker in the editor and on the node", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const editor = await read("../web_src/pano_editor.js");
+
+  assert.doesNotMatch(runtime, /TODO\(#75\)/);
+  assert.doesNotMatch(editor, /TODO\(#75\)/);
+  assert.match(runtime, /if \(node\.__panoSceneStateV2\) \{[\s\S]*?type: "sync-port",[\s\S]*?portStickerSyncValue\(node,/);
+  assert.match(editor, /node\.__panoSceneStateV2 \? reconcilePortStickerFromInputs\(\) : reconcileLegacyExternalStickerFromInputs\(\)/);
+  assert.match(editor, /function getExternalStickerPreviewImage\(onLoad = null\) \{\s*if \(!isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;/);
+});
+
+test("connectivity is read through getInputLink and isInputConnected, not the deprecated input.link", async () => {
+  for (const file of ["pano_comfy_media.js", "pano_editor.js", "pano_preview_previewnode.js", "pano_preview_runtime.js"]) {
+    const source = await read(`../web_src/${file}`);
+    assert.doesNotMatch(source, /\.link\b(?!s)/, file);
+  }
+});
+
+test("the node surface syncs the port Sticker through the registry so the open editor is the only writer", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+
+  assert.match(runtime, /registerExternalStickerSync\(node, syncExternalSticker\)/);
+  assert.doesNotMatch(runtime, /[^.\w]syncExternalSticker\(/);
+  for (const reason of ["executed", "connection-change", "attach"]) {
+    assert.match(runtime, new RegExp(`runExternalStickerSync\\(node, "${reason}"`));
+  }
+  const editor = await read("../web_src/pano_editor.js");
+  // The editor's handler wins over a node surface that attaches again, and a result syncs once: the
+  // node's onExecuted runs the handler, which drops the stale sticker image first.
+  assert.match(editor, /registerExternalStickerSync\(node, \(reason = "sync"\) => \{\s*if \(reason === "executed"\) \{\s*invalidateMediaUiImage\(imageCache, EXTERNAL_STICKER_PREVIEW_KEY\);\s*refreshVideoAfterRun\(\);\s*\}\s*reconcileExternalStickerFromInputs\(reason\);\s*\}, \{ editor: true \}\)/);
+  assert.doesNotMatch(editor, /node\.onExecuted =/);
+});
+
+// LiteGraph's getInputLink throws before the node is in a graph (onNodeCreated runs before graph.add),
+// so the node surface reads links only with a graph and syncs the sticker input once it has one.
+test("links are read only once the node is in a graph", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const media = await read("../web_src/pano_comfy_media.js");
+
+  assert.match(runtime, /const syncExternalSticker = \(reason = "sync", outputOverride = null\) => \{\s*if \(!stickersMode \|\| !node\.graph \|\|/);
+  assert.match(runtime, /if \(node\.graph\) runExternalStickerSync\(node, "attach"\);/);
+  for (const [file, source] of [["pano_preview_runtime.js", runtime], ["pano_comfy_media.js", media]]) {
+    for (const match of source.matchAll(/[^\n]*getInputLink\([^\n]*/g)) {
+      const line = match[0];
+      if (line.includes("typeof node?.getInputLink")) continue; // a subgraph origin: in a graph, inside try
+      if (line.includes("slot >= 0 ? node.getInputLink(slot)")) continue; // the legacy sync, behind !node.graph
+      assert.match(line, /node\.graph \? node\.getInputLink|&& node\.graph \? node\.getInputLink/, `${file}: ${line.trim()}`);
+    }
+  }
+});
+
+// A run with the editor open reloads the background VIDEO and shows the playhead's frame; seeking on
+// the ruler picks up a VIDEO that arrived since; a dropped VIDEO loads again when the same MP4 returns.
+test("the editor follows the background VIDEO of a new result", async () => {
+  const editor = await read("../web_src/pano_editor.js");
+
+  assert.match(editor, /function refreshVideoAfterRun\(\) \{[\s\S]*?refreshModalVideoSource\(\);[\s\S]*?scrubVideoTo\(editor\.frame \/ state\.timeline\.fps\);\s*endVideoScrub\(\);/);
+  assert.match(editor, /action\.phase === "start"\) \{\s*stopTimelinePlayback\(\);\s*refreshModalVideoSource\(\);/);
+  assert.match(editor, /videoEl\.removeAttribute\("src"\);\s*delete videoEl\.dataset\.panoSrc;/);
+  // load() drops a seek in flight without `seeked`; a seek state left behind would block every later seek.
+  const refreshStart = editor.indexOf("function refreshModalVideoSource(");
+  const refresh = editor.slice(refreshStart, editor.indexOf("\n  function ", refreshStart + 1));
+  const reset = /videoEl\.pause\(\);\s*videoState\.seeking = false;\s*videoState\.requestedTime = null;\s*videoState\.pendingPlaybackResume = false;/g;
+  assert.equal([...refresh.matchAll(reset)].length, 2);
+  assert.ok(refresh.search(reset) < refresh.indexOf("videoEl.src = nextSrc;"));
+  assert.match(refresh, /videoState\.pendingPlaybackResume = false;\s*videoEl\.removeAttribute\("src"\);/);
 });

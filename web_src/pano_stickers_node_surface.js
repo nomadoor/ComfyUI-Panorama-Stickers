@@ -34,6 +34,7 @@ export function surfacePoseStickers(state) {
     z_index: sticker.z_index,
     locked: sticker.locked,
     visible: evaluateSticker(sticker, NODE_SURFACE_FRAME).active,
+    external: sticker.source.kind === "port",
     ...stickerPose(sticker, NODE_SURFACE_FRAME),
   }));
 }
@@ -157,6 +158,73 @@ export function reconcileExternalStickerState(state, descriptor = {}) {
   return { state: { ...state, stickers: nextStickers }, changed: true };
 }
 
+function isInputConnected(node, name) {
+  const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
+  return slot >= 0 && node.isInputConnected(slot);
+}
+
+// PanoramaStickersNode keeps the Sticker of its `sticker` input as the Sticker with the Source
+// {kind: "port"}. Like the node (docs/scene-state-v2.md), the editor and the node surface add it when
+// the input is connected and the state has none, and remove it when the input is disconnected. Its
+// vFOV follows hFOV and the aspect of the media once the node's result has the media; until then it
+// shows as a frame. `pose` is the pose the node's current result placed the Sticker at
+// (`pano_sticker_input_pose`). With `sticker_state` connected, the Sticker is added only with that
+// pose, so that it keeps the pose of `sticker_state` as the node places it.
+export function portStickerSyncValue(node, { pose = null, image = null } = {}) {
+  return {
+    connected: isInputConnected(node, "sticker"),
+    awaitingPose: !pose && isInputConnected(node, "sticker_state"),
+    pose,
+    imageWidth: Number(image?.naturalWidth || image?.width || 0),
+    imageHeight: Number(image?.naturalHeight || image?.height || 0),
+  };
+}
+
+export function reconcilePortStickerState(state, { connected = false, awaitingPose = false, pose = null, imageWidth = 0, imageHeight = 0 } = {}) {
+  const index = state.stickers.findIndex((item) => isExternalSticker(state, item));
+  const current = index >= 0 ? state.stickers[index] : null;
+  if (!connected) {
+    if (!current) return { state, changed: false };
+    const selected = state.active?.selected_sticker_id === current.id;
+    return {
+      state: {
+        ...state,
+        stickers: state.stickers.filter((_, i) => i !== index),
+        active: selected ? { ...state.active, selected_sticker_id: null } : state.active,
+      },
+      changed: true,
+    };
+  }
+  const hasImageSize = imageWidth > 0 && imageHeight > 0;
+  if (current) {
+    if (!hasImageSize) return { state, changed: false };
+    const values = [current.size.value, ...current.size.keyframes.map((key) => key.value)];
+    const vFOVs = values.map((value) => computeVerticalFov(value.hFOV_deg, imageWidth, imageHeight));
+    if (values.every((value, i) => Math.abs(value.vFOV_deg - vFOVs[i]) <= 1e-6)) return { state, changed: false };
+    const size = {
+      value: { ...current.size.value, vFOV_deg: vFOVs[0] },
+      keyframes: current.size.keyframes.map((key, i) => ({ ...key, value: { ...key.value, vFOV_deg: vFOVs[i + 1] } })),
+    };
+    return {
+      state: { ...state, stickers: state.stickers.map((item, i) => i === index ? { ...item, size } : item) },
+      changed: true,
+    };
+  }
+  if (awaitingPose) return { state, changed: false };
+  const used = new Set(state.stickers.map((item) => item.id));
+  let number = 1;
+  while (used.has(`sticker_${number}`)) number += 1;
+  const hFOV = Math.min(179, Math.max(0.1, Number(pose?.hFOV_deg ?? 30)));
+  const port = newSceneSticker(`sticker_${number}`, { kind: "port" }, {
+    yaw_deg: Number(pose?.yaw_deg ?? 0),
+    pitch_deg: Number(pose?.pitch_deg ?? 0),
+    rot_deg: Number(pose?.roll_deg ?? 0),
+    hFOV_deg: hFOV,
+    vFOV_deg: hasImageSize ? computeVerticalFov(hFOV, imageWidth, imageHeight) : hFOV,
+  }, surfaceStickers(state).reduce((value, item) => Math.max(value, item.z_index), -1) + 1);
+  return { state: { ...state, stickers: [...state.stickers, port] }, changed: true };
+}
+
 export function buildStickersDisplayEntries(state) {
   const stickers = surfaceStickers(state)
     .filter((item) => item && typeof item === "object")
@@ -255,6 +323,7 @@ function pruneUnusedAssets(state) {
 export function applyStickersNodeSurfaceAction(state, action = {}) {
   if (!state || typeof state !== "object") return { state, changed: false };
   if (action.type === "sync-external") return reconcileExternalStickerState(state, action.value);
+  if (action.type === "sync-port") return reconcilePortStickerState(state, action.value);
   if (action.type === "add-sticker") {
     const value = action.value && typeof action.value === "object" ? action.value : {};
     const stickerId = String(value.stickerId || "").trim();
