@@ -19,7 +19,7 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 | `bg_key` | `bg` を識別するハッシュ可能な値（Stickers では `bg_media` のフレーム番号）。`None` のときは背景を使い回さない |
 | `bg_color` | 0〜1 の 3 つの数値 |
 | `device` | 出力を置く torch の device |
-| `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `sources`・`bg_color`・`device` は変わらない）。直前のフレームの Sky の層、Camera の向きで写した Sky、読み込んだ背景（`("bg", bg_key)`）、結果を持つ。出力の画素ごとの向き（`_view`）は持たず、要るときに作り直す。Sky の値が同じなら Sky を作り直さず、Camera の回転と `bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は Sticker の値だけで、素材のフレームを含まない。#53・#56 で動画の素材を使うときは、その素材のフレームをキーに入れる |
+| `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `sources`・`bg_color`・`device` は変わらない）。直前のフレームの Sky の層、Camera の向きで写した Sky、読み込んだ背景（`("bg", bg_key)`）、結果を持つ。出力の画素ごとの向き（`_view`）は持たず、要るときに作り直す。Sky の値が同じなら Sky を作り直さず、Camera の回転と `bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は表示中の `sky` の Sticker の評価済みの値（変形と不透明度）だけで、表示していない Sticker は `id` だけを入れる（Clip range の外で Keyframe の値が変わっても Sky を作り直さない）。Sky のキーの値と Camera の回転は小数第 9 位で丸めてキーにし、同じ値の Keyframe の間の補間の誤差では作り直さない。素材のフレームは含まない。#53・#56 で動画の素材を使うときは、その素材のフレームをキーに入れる |
 
 - 戻り値はすべて float32 で、`device` 上にある。
 - `mask` はペイントで描いたマスクで、色と同じ Projection で写す。
@@ -85,7 +85,7 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 | 入口 | 関数 | 役割 | 変更する ticket |
 |---|---|---|---|
 | (a) | `_decide_timeline` | Timeline fps と、出力フレームごとの評価する Timeline frame・描く `bg_media` のフレーム | #53 |
-| (b) | `_render_timeline` | フレームごとに状態を評価し、`render_frame` を呼ぶ | #55、#56 |
+| (b) | `_render_timeline` | フレームごとに状態を評価し、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される | #55、#56、#58 |
 | (c) | `_assemble_outputs` | 出力（IMAGE・MASK・AUDIO・fps・`PANO_SCENE`）を組み立てる | #53、#57 |
 
 - Timeline fps は、背景 VIDEO の平均フレームレート（コアの `get_frame_rate()` と同じ `average_rate`、丸めない）、なければ状態の `timeline.fps` とする。`sticker` の VIDEO の fps は #56 で加える。fps 出力はこの値の float である。

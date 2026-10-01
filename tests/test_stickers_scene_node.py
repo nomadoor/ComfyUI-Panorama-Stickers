@@ -19,6 +19,8 @@ import folder_paths
 from comfy_api.latest import InputImpl, Types
 
 from comfyui_pano_suite.core import render as render_module
+from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
+from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.nodes import PanoramaStickersSceneNode
 from test_legacy_goldens import _golden_mismatch
 from tools import bake_legacy_goldens
@@ -322,3 +324,124 @@ def test_camera_position_does_not_move_the_background_or_the_sky(coverage):
     moved_image, moved_mask = _render_camera_scene(coverage, position=[3.0, -1.0, 2.0], yaw_deg=40.0, pitch_deg=-15.0, roll_deg=10.0)
 
     assert torch.equal(moved_image, image) and torch.equal(moved_mask, mask)
+
+
+def _animated_camera_scene(keyframes, **state):
+    scene = _camera_scene()
+    scene["camera"]["transform"]["keyframes"] = [
+        {"frame": frame, "value": {"yaw_deg": yaw, "pitch_deg": pitch, "roll_deg": 0.0}, "easing": easing}
+        for frame, yaw, pitch, easing in keyframes
+    ]
+    return {**scene, **state}
+
+
+def _render_state(state):
+    sticker = torch.from_numpy(bake_legacy_goldens._quadrant_sticker()[None])
+    return _execute(state, bg_media=build_background_erp(), sticker=sticker)[:2]
+
+
+def test_camera_keyframes_set_the_length_and_turn_the_image_and_mask_per_frame():
+    state = _animated_camera_scene([(0, 0.0, 0.0, "auto"), (2, 50.0, -10.0, "auto"), (4, 120.0, 20.0, "auto")])
+
+    image, mask = _render_state(state)
+
+    assert image.shape[0] == 5 and mask.shape[0] == 5
+    for index in (1, 3, 4):
+        camera = evaluate_scene_state(load_scene_state(json.dumps(state)), index)["camera"]
+        still_image, still_mask = _render_camera_scene(**camera)
+        assert torch.allclose(image[index], still_image, atol=1e-6)
+        assert torch.allclose(mask[index], still_mask, atol=1e-6)
+    assert not torch.allclose(mask[1], mask[3], atol=1e-3)
+
+
+def test_hold_keyframe_cuts_the_camera_at_its_next_keyframe(monkeypatch):
+    state = _animated_camera_scene([(0, 30.0, 0.0, "hold"), (2, 150.0, 0.0, "auto")], timeline={"length": 4})
+    counts = _count_render_calls(monkeypatch)
+
+    image, mask = _render_state(state)
+
+    # Each held shot is composited once, at its first frame.
+    assert counts["composite_frame"] == 2
+    before, _ = _render_camera_scene(yaw_deg=30.0)
+    after, after_mask = _render_camera_scene(yaw_deg=150.0)
+    assert torch.equal(image[0], image[1]) and torch.allclose(image[1], before, atol=1e-6)
+    assert torch.equal(image[2], image[3]) and torch.allclose(image[2], after, atol=1e-6)
+    assert torch.allclose(mask[2], after_mask, atol=1e-6)
+
+
+def _sky_sticker_scene(transform_keyframes=(), opacity_keyframes=(), clip=None):
+    sticker = {
+        "id": "s",
+        "source": {"kind": "port"},
+        "transform": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 40.0}, "keyframes": [
+            {"frame": frame, "value": {"yaw_deg": yaw, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": hfov}, "easing": easing}
+            for frame, yaw, hfov, easing in transform_keyframes
+        ]},
+        "opacity": {"value": 1.0, "keyframes": [
+            {"frame": frame, "value": value, "easing": easing} for frame, value, easing in opacity_keyframes
+        ]},
+    }
+    if clip is not None:
+        sticker["clip"] = clip
+    return {"version": 2, "timeline": {"length": 4}, "stickers": [sticker]}
+
+
+def _render_sticker_scene(state):
+    return _execute(state, bg_media=_solid([0.5, 0.5, 0.5], height=64, width=128), sticker=_solid([1.0, 0.0, 0.0]))[0]
+
+
+def test_sticker_transform_and_opacity_keyframes_are_drawn_per_frame():
+    state = _sky_sticker_scene(
+        transform_keyframes=[(0, -60.0, 30.0, "auto"), (3, 60.0, 50.0, "auto")],
+        opacity_keyframes=[(0, 1.0, "auto"), (3, 0.25, "auto")],
+    )
+
+    image = _render_sticker_scene(state)
+
+    assert image.shape[0] == 4
+    for index in range(4):
+        evaluated = evaluate_scene_state(load_scene_state(json.dumps(state)), index)["stickers"][0]
+        still = _render_sticker_scene(_sky_sticker_scene(
+            transform_keyframes=[(0, evaluated["yaw_deg"], evaluated["hFOV_deg"], "auto")],
+            opacity_keyframes=[(0, evaluated["opacity"], "auto")],
+        ))
+        assert torch.allclose(image[index], still[0], atol=1e-6)
+    assert not torch.allclose(image[0], image[3], atol=1e-3)
+
+
+def test_held_sticker_keyframes_draw_the_sky_once_per_value(monkeypatch):
+    counts = _count_render_calls(monkeypatch)
+    state = _sky_sticker_scene(transform_keyframes=[(0, 0.0, 30.0, "hold"), (2, 90.0, 30.0, "auto")], opacity_keyframes=[(0, 0.5, "auto")])
+
+    image = _render_sticker_scene(state)
+
+    assert counts == {"_render_sky": 2, "_background": 1, "composite_frame": 2}
+    assert torch.equal(image[0], image[1]) and torch.equal(image[2], image[3])
+
+
+def test_sticker_moving_outside_its_clip_range_does_not_redraw_the_sky(monkeypatch):
+    counts = _count_render_calls(monkeypatch)
+    state = _sky_sticker_scene(transform_keyframes=[(0, 0.0, 30.0, "auto"), (3, 90.0, 30.0, "auto")], clip={"start": 0, "in": 0, "duration": 1})
+
+    image = _render_sticker_scene(state)
+
+    assert counts["_render_sky"] == 2
+    assert torch.equal(image[1], image[3])
+
+
+def test_equal_auto_keyframes_do_not_redraw_on_interpolation_noise(monkeypatch):
+    # Between equal auto Keyframes the evaluator returns values like 30.00000000000001 instead of 30.0.
+    pose = {"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 0.0, "hFOV_deg": 30.0}
+    keyframes = [{"frame": frame, "value": pose, "easing": "auto"} for frame in (0, 3, 6)]
+    state = {
+        "version": 2,
+        "camera": {"transform": {"value": {}, "keyframes": [{**key, "value": {k: pose[k] for k in ("yaw_deg", "pitch_deg", "roll_deg")}} for key in keyframes]}},
+        "stickers": [{"id": "s", "source": {"kind": "port"}, "transform": {"value": pose, "keyframes": keyframes}}],
+    }
+    assert evaluate_scene_state(load_scene_state(json.dumps(state)), 1)["camera"]["yaw_deg"] != 30.0
+    counts = _count_render_calls(monkeypatch)
+
+    image = _render_sticker_scene(state)
+
+    assert image.shape[0] == 7
+    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}

@@ -208,9 +208,11 @@ def _project_sky(rgba: torch.Tensor, mask: torch.Tensor, view: torch.Tensor) -> 
 
 
 def _sky_key(evaluated: dict, projection: Projection) -> tuple:
+    # An inactive Sticker is not drawn, so its values changing outside its Clip range keep the Sky. Values are
+    # rounded so that interpolation noise between equal Keyframes (30.0 vs 30.00000000000001) keeps it too.
     return (projection, tuple(
-        (sticker["id"], sticker["active"], sticker["yaw_deg"], sticker["pitch_deg"], sticker["roll_deg"],
-         sticker["hFOV_deg"], sticker["vFOV_deg"], sticker["opacity"])
+        (sticker["id"], *(round(sticker[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg", "vFOV_deg", "opacity")))
+        if sticker["active"] else (sticker["id"],)
         for sticker in evaluated["stickers"] if sticker["placement"] == "sky"
     ))
 
@@ -267,7 +269,7 @@ def render_frame(
     sky_key = _sky_key(evaluated, projection)
     # A 360 output without Camera rotation is the Sky and the background as they are.
     turned = projection.coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
-    view_key = (camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]) if turned else None
+    view_key = tuple(round(camera[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg")) if turned else None
     bg_entry = None if bg is None else ("bg", bg_key)
     # A background without a key cannot be told apart from the previous frame's, so it is never reused.
     reusable = bg is None or bg_key is not None
