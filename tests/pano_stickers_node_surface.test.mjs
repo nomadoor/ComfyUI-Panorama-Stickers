@@ -5,12 +5,14 @@ import {
   applyStickersNodeSurfaceAction,
   buildStickersDisplayEntries,
   createStickersNodeSurfaceSession,
+  portStickerSyncValue,
   reconcileExternalStickerState,
+  reconcilePortStickerState,
   stickersNodeSurfaceModel,
   surfacePoseStickers,
 } from "../web_src/pano_stickers_node_surface.js";
 import { readFileSync } from "node:fs";
-import { parseSceneEditorState } from "../web_src/pano_editor_state.js";
+import { editorActive, editorStateText, parseSceneEditorState, setEditorActive } from "../web_src/pano_editor_state.js";
 
 function sampleState() {
   return {
@@ -370,8 +372,8 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
   const state = parseSceneEditorState(readFileSync(new URL("./fixtures/scene_state/v2_canonical.json", import.meta.url), "utf8"));
   // st_sky starts at frame 10, so the node shows it hidden; the world Sticker is not on the node.
   assert.deepEqual(surfacePoseStickers(state), [
-    { id: "st_sky", z_index: 2, locked: false, visible: false, yaw_deg: 30, pitch_deg: 10, hFOV_deg: 20, vFOV_deg: 15, rot_deg: 5 },
-    { id: "st_hidden", z_index: 0, locked: false, visible: false, yaw_deg: -45, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 },
+    { id: "st_sky", z_index: 2, locked: false, visible: false, external: false, yaw_deg: 30, pitch_deg: 10, hFOV_deg: 20, vFOV_deg: 15, rot_deg: 5 },
+    { id: "st_hidden", z_index: 0, locked: false, visible: false, external: false, yaw_deg: -45, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 },
   ]);
   assert.deepEqual(buildStickersDisplayEntries(state).map((entry) => entry.id), ["st_hidden", "st_sky"]);
 
@@ -397,4 +399,203 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
   const deleted = applyStickersNodeSurfaceAction(added.state, { type: "delete-selected" });
   assert.deepEqual(deleted.state.stickers.map((item) => item.id), ["st_sky", "st_world", "st_hidden"]);
   assert.equal("assets" in deleted.state, false);
+});
+
+// PanoramaStickersNode as the ComfyUI frontend exposes it: MultiType sockets, and connectivity
+// through isInputConnected(slot). Reading the deprecated input.link fails the test.
+function stickersNode(connected = []) {
+  const inputs = [
+    { name: "bg_media", type: "IMAGE,VIDEO" },
+    { name: "scene", type: "SPLAT,MESH,MOGE_GEOMETRY" },
+    { name: "sticker", type: "IMAGE,VIDEO,MESH,SPLAT" },
+    { name: "sticker_state", type: "STRING" },
+  ].map((input) => Object.defineProperty(input, "link", {
+    get() { throw new Error("input.link is deprecated"); },
+  }));
+  return {
+    __panoSceneStateV2: true,
+    inputs,
+    isInputConnected: (slot) => connected.includes(inputs[slot]?.name),
+  };
+}
+
+function v2EditorState(raw) {
+  return parseSceneEditorState(JSON.stringify({ version: 2, ...raw }));
+}
+
+function portStickers(state) {
+  return state.stickers.filter((item) => item.source.kind === "port");
+}
+
+function poseOf(sticker) {
+  return [sticker.direction.value.yaw_deg, sticker.direction.value.pitch_deg, sticker.roll.value, sticker.size.value.hFOV_deg, sticker.size.value.vFOV_deg];
+}
+
+test("connecting the sticker input adds a port Sticker as the node does, shown as a frame until a result", () => {
+  const state = v2EditorState({
+    stickers: [
+      { id: "sticker_1", source: { kind: "file", filename: "a.png" }, z_index: 3 },
+      { id: "sticker_2", placement: "world", source: { kind: "file", filename: "b.png" } },
+    ],
+  });
+
+  const sync = portStickerSyncValue(stickersNode(["sticker"]), { pose: null, image: null });
+  const result = reconcilePortStickerState(state, sync);
+
+  assert.deepEqual(sync, { connected: true, awaitingPose: false, pose: null, imageWidth: 0, imageHeight: 0 });
+  assert.equal(result.changed, true);
+  const [port] = portStickers(result.state);
+  assert.deepEqual([port.id, port.placement, port.z_index, port.visible, port.locked], ["sticker_3", "sky", 4, true, false]);
+  assert.deepEqual(poseOf(port), [0, 0, 0, 30, 30]);
+  const scene = JSON.parse(editorStateText(stickersNode(["sticker"]), result.state));
+  assert.deepEqual(scene.stickers.map((item) => [item.id, item.source.kind]), [["sticker_1", "file"], ["sticker_2", "file"], ["sticker_3", "port"]]);
+});
+
+test("with sticker_state connected the port Sticker waits for the pose of the node's result", () => {
+  const state = v2EditorState({});
+  const node = stickersNode(["sticker", "sticker_state"]);
+
+  const before = reconcilePortStickerState(state, portStickerSyncValue(node));
+  const pose = { yaw_deg: 40, pitch_deg: -10, roll_deg: 5, hFOV_deg: 50 };
+  const after = reconcilePortStickerState(state, portStickerSyncValue(node, { pose, image: { naturalWidth: 200, naturalHeight: 100 } }));
+
+  assert.equal(before.changed, false);
+  const [port] = portStickers(after.state);
+  assert.deepEqual(poseOf(port).slice(0, 4), [40, -10, 5, 50]);
+  assert.ok(Math.abs(port.size.value.vFOV_deg - 26.248536245583416) < 1e-9);
+});
+
+test("the port Sticker follows the media aspect, in its value and its Keyframes, and is removed with the input", () => {
+  const added = reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(stickersNode(["sticker"]))).state;
+  added.active = { selected_sticker_id: "sticker_1" };
+  const [port] = added.stickers;
+  port.size.value.hFOV_deg = 80;
+  port.size.keyframes = [{ frame: 0, value: { hFOV_deg: 40, vFOV_deg: 40 }, easing: [0.42, 0, 0.58, 1] }];
+
+  const sized = reconcilePortStickerState(added, portStickerSyncValue(stickersNode(["sticker"]), { image: { width: 200, height: 100 } }));
+  const unchanged = reconcilePortStickerState(sized.state, portStickerSyncValue(stickersNode(["sticker"]), { image: { width: 200, height: 100 } }));
+  const removed = reconcilePortStickerState(sized.state, portStickerSyncValue(stickersNode([])));
+
+  const size = sized.state.stickers[0].size;
+  assert.equal(size.value.hFOV_deg, 80);
+  assert.ok(Math.abs(size.value.vFOV_deg - 45.520952549233265) < 1e-9);
+  assert.ok(Math.abs(size.keyframes[0].value.vFOV_deg - 20.62820963123639) < 1e-9);
+  assert.equal(port.size.value.vFOV_deg, 30);
+  assert.equal(unchanged.changed, false);
+  assert.deepEqual(removed.state.stickers, []);
+  assert.equal(removed.state.active.selected_sticker_id, null);
+});
+
+test("a stored port Sticker survives a reload unchanged and is not added twice", () => {
+  const node = stickersNode(["sticker"]);
+  const added = reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node)).state;
+  const text = editorStateText(node, added);
+
+  const reloaded = parseSceneEditorState(text);
+  const synced = reconcilePortStickerState(reloaded, portStickerSyncValue(node, { image: { width: 300, height: 300 } }));
+
+  assert.deepEqual(JSON.parse(text).stickers.map((item) => item.source), [{ kind: "port" }]);
+  assert.deepEqual(portStickers(reloaded).map((item) => item.id), ["sticker_1"]);
+  assert.equal(synced.changed, false);
+  assert.equal(reconcilePortStickerState(reloaded, portStickerSyncValue(node)).changed, false);
+});
+
+test("an image added in the editor and the port media are the same Sticker shape in state v2", () => {
+  const node = stickersNode(["sticker"]);
+  const withPort = reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node)).state;
+  const result = applyStickersNodeSurfaceAction(withPort, {
+    type: "add-sticker",
+    value: {
+      stickerId: "st_dropped",
+      assetId: "asset_dropped",
+      asset: { type: "comfy_image", filename: "drop.png", subfolder: "panorama_stickers", storage: "input", name: "drop.png" },
+      imageWidth: 100,
+      imageHeight: 100,
+    },
+  });
+
+  const scene = JSON.parse(editorStateText(node, result.state));
+  assert.deepEqual(scene.stickers.map((item) => [item.id, item.placement, item.source]), [
+    ["sticker_1", "sky", { kind: "port" }],
+    ["st_dropped", "sky", { kind: "file", filename: "drop.png", subfolder: "panorama_stickers", storage: "input" }],
+  ]);
+});
+
+test("the port sync action goes through the node surface session", () => {
+  const result = applyStickersNodeSurfaceAction(v2EditorState({}), {
+    type: "sync-port",
+    value: portStickerSyncValue(stickersNode(["sticker"])),
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(portStickers(result.state).length, 1);
+});
+
+// Loading a workflow, LiteGraph's LGraphNode.configure restores the properties, then the inputs with
+// their links, calling onConnectionsChange(INPUT, slot, true, ...) for each one, and only then the
+// widget values. The node surface syncs the sticker input there at once and again in a microtask
+// (pano_preview_runtime.js), with the node's state read from and written to state_json as it does.
+test("loading a workflow keeps its port Sticker as saved with the sticker input connected", async () => {
+  const INPUT = 1;
+  const savedState = parseSceneEditorState(JSON.stringify({
+    version: 2,
+    stickers: [
+      { id: "st_file", source: { kind: "file", filename: "a.png" }, z_index: 0 },
+      {
+        id: "sticker_2",
+        source: { kind: "port" },
+        direction: { value: { yaw_deg: 40, pitch_deg: -10 } },
+        roll: { value: 5 },
+        size: { value: { hFOV_deg: 50, vFOV_deg: 26 } },
+        z_index: 1,
+      },
+    ],
+  }));
+  const saved = {
+    properties: { pano_editor_active: { selected_sticker_id: "sticker_2" } },
+    inputs: [null, null, 7, null],
+    widgets_values: ["#00ff00", "360", "2048", editorStateText({ __panoSceneStateV2: true }, savedState)],
+  };
+  const node = {
+    __panoSceneStateV2: true,
+    graph: { links: new Map([[7, { id: 7, origin_id: 3, origin_slot: 0 }]]) },
+    properties: {},
+    inputs: ["bg_media", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: null })),
+    widgets: ["bg_color", "coverage", "output_preset", "state_json"].map((name) => ({ name, value: name === "state_json" ? "" : null })),
+    isInputConnected(slot) {
+      return !!this.graph && this.inputs[slot]?.link != null;
+    },
+  };
+  const stateWidget = node.widgets[3];
+  const commits = [];
+  const session = createStickersNodeSurfaceSession({
+    readState: () => parseSceneEditorState(stateWidget.value, { active: editorActive(node) }),
+    commitState: (next) => {
+      setEditorActive(node, next.active);
+      stateWidget.value = editorStateText(node, next);
+      commits.push(stateWidget.value);
+    },
+  });
+  const sync = () => session.apply({ type: "sync-port", value: portStickerSyncValue(node) });
+  node.onConnectionsChange = (type, slot) => {
+    if (type !== INPUT || node.inputs[slot].name !== "sticker") return;
+    sync();
+    queueMicrotask(sync);
+  };
+
+  Object.assign(node.properties, saved.properties);
+  node.inputs.forEach((input, slot) => {
+    input.link = saved.inputs[slot];
+    node.onConnectionsChange(INPUT, slot, true, node.graph.links.get(input.link) ?? null, input);
+  });
+  saved.widgets_values.forEach((value, index) => { node.widgets[index].value = value; });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(stateWidget.value, saved.widgets_values[3]);
+  const loaded = parseSceneEditorState(stateWidget.value);
+  assert.deepEqual(loaded.stickers.map((item) => [item.id, item.source.kind]), [["st_file", "file"], ["sticker_2", "port"]]);
+  assert.deepEqual(poseOf(loaded.stickers[1]), [40, -10, 5, 50, 26]);
+  assert.equal(node.properties.pano_editor_active.selected_sticker_id, "sticker_2");
+  // The sync before the widget values ran on the empty state; the restored state_json replaced it.
+  assert.deepEqual(commits.map((text) => JSON.parse(text).stickers.map((item) => item.id)), [["sticker_1"]]);
 });

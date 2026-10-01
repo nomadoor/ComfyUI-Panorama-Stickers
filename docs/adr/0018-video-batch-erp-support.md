@@ -4,6 +4,8 @@
 
 Active（`fps` 入力の契約は ADR 0024 で superseded）
 
+新しい Stickers・Preview ノード（#47）では、UI 用の一時 MP4 を次のように扱う（#75）。VIDEO の入力は全フレームを展開して再エンコードせず、VIDEO 自身の `save_to` で MP4 にする（`core/video.py` の `save_video_to_mp4`）。IMAGE バッチは従来どおり `encode_frames_to_mp4` を使う。どちらも入力が同じ間は前の MP4 を再利用する。一時 MP4 は `bg_media` だけに作り、`sticker` は最初のフレームだけを出す（`sticker` の動画の再生は Timeline と一緒に #73 の後で扱う）。サムネイルストリップは backend で作らない。詳細は `docs/render-contract.md`。
+
 ## Date
 
 2026-04-19

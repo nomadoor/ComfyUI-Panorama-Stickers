@@ -28,6 +28,7 @@ import PanoStickersNodeSurface from "./components/PanoStickersNodeSurface.vue";
 import {
   NODE_SURFACE_FRAME,
   createStickersNodeSurfaceSession,
+  portStickerSyncValue,
   stickersNodeSurfaceModel,
   surfacePoseStickers,
 } from "./pano_stickers_node_surface.js";
@@ -54,6 +55,8 @@ import {
   nextMediaRevision,
 } from "./pano_shared_image_cache.js";
 import {
+  BACKGROUND_INPUT_NAMES,
+  STICKER_INPUT_NAMES,
   createLoopingPreviewVideo,
   isNodeOutputMediaCurrent,
   isTrackedMediaInputConnectionChange,
@@ -432,35 +435,10 @@ function getCachedState(node) {
 
 function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
 
-function getGraphLinkById(graph, linkId) {
-  if (!graph || linkId == null) return null;
-  const links = graph.links;
-  if (!links) return null;
-  if (links instanceof Map) return links.get(linkId) || links.get(Number(linkId)) || links.get(String(linkId)) || null;
-  return links[linkId] || links[String(linkId)] || null;
-}
-
 function getGraphNodeById(graph, id) {
   if (!graph || id == null) return null;
   if (typeof graph.getNodeById === "function") return graph.getNodeById(id);
   return graph._nodes_by_id?.[id] || graph._nodes_by_id?.[String(id)] || null;
-}
-
-function resolveOriginFromLinkInfo(linkInfo) {
-  if (!linkInfo) return { originId: null, originSlot: 0 };
-  if (typeof linkInfo === "object" && !Array.isArray(linkInfo)) {
-    return {
-      originId: linkInfo.origin_id ?? null,
-      originSlot: Number(linkInfo.origin_slot ?? 0),
-    };
-  }
-  if (Array.isArray(linkInfo)) {
-    return {
-      originId: linkInfo[1] ?? null,
-      originSlot: Number(linkInfo[2] ?? 0),
-    };
-  }
-  return { originId: null, originSlot: 0 };
 }
 
 function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
@@ -497,7 +475,7 @@ export function preferredImageInputsForNode(node, preferredInputNames = []) {
     if (names.includes(String(name))) out.push(String(name));
   });
   names.forEach((name) => {
-    if ((name === "erp_image" || name === "bg_erp") && !out.includes(name)) out.push(name);
+    if (BACKGROUND_INPUT_NAMES.includes(name) && !out.includes(name)) out.push(name);
   });
   return out.length ? out : preferredInputNames;
 }
@@ -516,7 +494,7 @@ function executionIdMatches(value, target) {
   return a.full === b.full || a.tail === b.full || a.full === b.tail || a.tail === b.tail;
 }
 
-function getLinkedOriginIds(node, preferredInputNames = ["erp_image", "bg_erp"]) {
+function getLinkedOriginIds(node, preferredInputNames = BACKGROUND_INPUT_NAMES) {
   const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
   if (!inputs.length) return [];
   const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
@@ -535,10 +513,7 @@ function getLinkedOriginIds(node, preferredInputNames = ["erp_image", "bg_erp"])
       ids.push(String(originNode.id));
       continue;
     }
-    const linkId = inputs[idx]?.link;
-    if (linkId == null) continue;
-    const linkInfo = getGraphLinkById(node?.graph, linkId);
-    const { originId } = resolveOriginFromLinkInfo(linkInfo);
+    const originId = node.graph ? node.getInputLink(idx)?.origin_id : null;
     if (originId != null) ids.push(String(originId));
   }
   return [...new Set(ids)];
@@ -557,7 +532,7 @@ const executedRefreshMonitor = {
       targets.forEach((node) => {
         if (!node) return;
         const selfHit = executionIdMatches(executedId, node?.id);
-        const upstreamIds = getLinkedOriginIds(node, ["erp_image", "bg_erp"]);
+        const upstreamIds = getLinkedOriginIds(node, BACKGROUND_INPUT_NAMES);
         const upstreamHit = upstreamIds.some((id) => executionIdMatches(executedId, id));
         const reason = selfHit ? "self" : (upstreamHit ? "upstream" : "global_executed");
         const mode = String(node.__panoPreviewMode || "");
@@ -885,14 +860,12 @@ function findLinkedInputImageSource(node, preferredInputNames = []) {
 
   for (const idx of indices) {
     const input = inputs[idx];
-    const linkId = input?.link;
-    if (linkId == null) continue;
-    const linkInfo = getGraphLinkById(node.graph, linkId);
-    const { originId, originSlot } = resolveOriginFromLinkInfo(linkInfo);
-    if (originId == null) continue;
+    const link = node.graph ? node.getInputLink(idx) : null;
+    if (link?.origin_id == null) continue;
+    const originId = link.origin_id;
     const originNode = resolveInputOriginNode(node, idx, originId);
     if (!originNode) continue;
-    const resolvedOriginSlot = Number(originSlot || 0);
+    const resolvedOriginSlot = Number(link.origin_slot ?? 0);
 
     const outputs = lookupNodeOutputEntry(originNode?.id ?? originId);
     const outImgs = Array.isArray(outputs?.images) ? outputs.images : [];
@@ -1106,7 +1079,6 @@ function invalidatePreviewImageCaches(node) {
   if (!node) return;
   sharedPreviewImageCache.disposeOwner(node);
   try { node.__panoLinkedInputImageCache?.clear?.(); } catch { }
-  try { node.__panoPreviewImageCache?.clear?.(); } catch { }
   node.__panoOwnOutputImageCache = null;
   disposeNodeOutputVideoCache(node);
   node.__panoWrappedErpCache = null;
@@ -1118,11 +1090,6 @@ function invalidateBackgroundPreviewMedia(node) {
   node.__panoOwnOutputImageCache = null;
   disposeNodeOutputVideoCache(node);
   node.__panoWrappedErpCache = null;
-}
-
-function invalidateExternalStickerPreviewImage(node) {
-  if (!node) return;
-  try { node.__panoPreviewImageCache?.delete?.("sticker_image_1"); } catch { }
 }
 
 function ensureRenderCache(node, mode) {
@@ -1445,6 +1412,11 @@ function getSourcePixelSize(source) {
   };
 }
 
+function drawStickerFrame(ctx, item, projection) {
+  const geometry = buildStickerGeometry(item, projection);
+  if (geometry.visible) drawStickerSelectionBoundary(ctx, geometry.boundaryEdges, { selected: false });
+}
+
 function drawStickerSelectionOverlay(ctx, item, projection) {
   const geometry = buildStickerGeometry(item, projection);
   if (!geometry.visible) return;
@@ -1519,7 +1491,7 @@ function drawCanvas(node, canvas, surfaceView) {
     () => node.__panoDomPreview?.requestDraw?.(),
   ) || getLinkedInputImageForPreview(
     node,
-    ["erp_image", "bg_erp"],
+    BACKGROUND_INPUT_NAMES,
     () => node.__panoDomPreview?.requestDraw?.(),
     { preserveReadyWhilePending: false },
   );
@@ -1624,9 +1596,17 @@ function drawCanvas(node, canvas, surfaceView) {
   const projection = stickersSurfaceProjection(node, surfW, surfH);
   if (!bgImg && panoramaDrawn) drawPanoGrid(ctx, projection, getNodeUiScale(canvas, rect));
   const selectedId = String(state?.active?.selected_sticker_id || "");
+  const poseStickers = surfacePoseStickers(state);
   const selected = panoramaDrawn
-    ? surfacePoseStickers(state).find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
+    ? poseStickers.find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
     : null;
+  if (panoramaDrawn) {
+    // The Sticker of the sticker input shows as a frame until the node's result has its media.
+    poseStickers
+      .filter((item) => item !== selected && item?.visible !== false && (item.external || item.source_kind === "external_image"))
+      .filter((item) => !isRenderableMediaReady(getNodePreviewImage(node, item.id, null, { external: true })))
+      .forEach((item) => drawStickerFrame(ctx, item, projection));
+  }
   if (selected) drawStickerSelectionOverlay(ctx, selected, projection);
 }
 
@@ -2034,13 +2014,24 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       },
       onChange: (nextModel) => Object.assign(nodeSurfaceUiModel, nextModel),
     });
+  // The links of a node are in its graph: before the node is added (onNodeCreated), it has none to sync with.
   const syncExternalSticker = (reason = "sync", outputOverride = null) => {
-    // TODO(#75): the port Sticker of PanoramaStickersNode is shown from the node's execution result.
-    if (!stickersMode || node.__panoSceneStateV2 || !nodeSurfaceSession || nodeSurfaceSession.hasGestureChanges()) return false;
-    const input = Array.isArray(node?.inputs)
-      ? node.inputs.find((entry) => String(entry?.name || "") === "sticker_image")
-      : null;
-    const linkId = input?.link ?? null;
+    if (!stickersMode || !node.graph || !nodeSurfaceSession || nodeSurfaceSession.hasGestureChanges()) return false;
+    if (node.__panoSceneStateV2) {
+      const current = isNodeOutputMediaCurrent(node, "external-sticker");
+      const port = getCachedState(node).stickers.find((item) => item.source.kind === "port");
+      return nodeSurfaceSession.apply({
+        type: "sync-port",
+        value: portStickerSyncValue(node, {
+          pose: current ? ownOutputUiValue(node, "pano_sticker_input_pose", outputOverride) : null,
+          image: port ? getNodePreviewImage(node, port.id, null, { external: true }) : null,
+        }),
+      });
+    }
+    const slot = Array.isArray(node?.inputs)
+      ? node.inputs.findIndex((entry) => String(entry?.name || "") === "sticker_image")
+      : -1;
+    const linkId = slot >= 0 ? node.getInputLink(slot)?.id ?? null : null;
     if (linkId == null) {
       return nodeSurfaceSession.apply({ type: "sync-external", value: { connected: false } });
     }
@@ -2687,7 +2678,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     node.__panoLastExecutedOutput = output || null;
     invalidatePreviewImageCaches(node);
     markNodeOutputMediaCurrent(node);
-    syncExternalSticker("executed", output);
+    // While the editor is open, its sync handler wins and is the only writer of the state.
+    runExternalStickerSync(node, "executed", output);
     suppressBuiltInPreviewImgs(node);
     requestDraw();
     const out = onExecutedPrev ? onExecutedPrev.apply(this, arguments) : undefined;
@@ -2697,13 +2689,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   node.onExecuted = onExecutedHook;
   const onConnectionsChangePrev = node.onConnectionsChange;
   const onConnectionsChangeHook = function (type, slotIndex) {
-    const stickerInputChanged = isTrackedMediaInputConnectionChange(node, type, slotIndex, ["sticker_image"]);
-    const backgroundInputChanged = isTrackedMediaInputConnectionChange(
-      node,
-      type,
-      slotIndex,
-      ["erp_image", "bg_erp"],
-    );
+    const stickerInputChanged = isTrackedMediaInputConnectionChange(node, type, slotIndex, STICKER_INPUT_NAMES);
+    const backgroundInputChanged = isTrackedMediaInputConnectionChange(node, type, slotIndex, BACKGROUND_INPUT_NAMES);
     const args = arguments;
     const out = onConnectionsChangePrev ? onConnectionsChangePrev.apply(this, args) : undefined;
     const refreshAfterConnectionMutation = () => {
@@ -2716,10 +2703,9 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         if (stickerInputChanged) {
           markNodeOutputMediaStale(node, "external-sticker");
           node.__panoLastExecutedOutput = null;
-          invalidateExternalStickerPreviewImage(node);
         }
       }
-      if (stickerInputChanged) syncExternalSticker("connection-change");
+      if (stickerInputChanged) runExternalStickerSync(node, "connection-change");
       suppressBuiltInPreviewImgs(node);
       requestDraw();
     };
@@ -2812,7 +2798,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   };
 
   executedRefreshMonitor.register(node);
-  syncExternalSticker("attach");
+  // A node attached before it is in a graph syncs from onAdded (pano_editor_extension.js).
+  if (node.graph) runExternalStickerSync(node, "attach");
   requestDraw();
 }
 

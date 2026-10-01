@@ -6,6 +6,7 @@ import {
   flushPanoStateProducers,
   queuePendingStickerOperation,
 } from "../web_src/pano_editor_extension.js";
+import { registerExternalStickerSync } from "../web_src/pano_external_sticker_sync.js";
 
 function makeWidget(name, value = "") {
   return { name, value, callback() {} };
@@ -127,6 +128,39 @@ test("the new Stickers node opens the same editor and node surface and keeps sta
   assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
   // A black bg_color is the user's choice on the new node; only the legacy node replaces it.
   assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
+});
+
+// LiteGraph.createNode runs onNodeCreated before graph.add, and getInputLink throws without a graph.
+test("the sticker input syncs once the Stickers node is in the graph, for the legacy and the new node", () => {
+  const synced = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers(node) {
+      node.__panoStickersNodeSurface = { mounted: true };
+      registerExternalStickerSync(node, (reason) => synced.push([node.title, reason, node.getInputLink(0)]));
+    },
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  for (const name of ["PanoramaStickers", "PanoramaStickersNode"]) {
+    function NodeType() {}
+    extension.beforeRegisterNodeDef(NodeType, { name });
+    const node = { ...makeNode([360, 260]), title: name, graph: null, inputs: [{ name: "sticker" }] };
+    node.getInputLink = function () {
+      if (!this.graph) throw new Error("NullGraphError");
+      return null;
+    };
+
+    NodeType.prototype.onNodeCreated.call(node);
+    node.graph = { setDirtyCanvas() {} };
+    NodeType.prototype.onAdded.call(node);
+    NodeType.prototype.onConfigure.call(node);
+  }
+
+  assert.deepEqual(synced, [["PanoramaStickers", "attach", null], ["PanoramaStickersNode", "attach", null]]);
 });
 
 test("cutout lifecycle attaches once and initializes only an invalid node size", () => {

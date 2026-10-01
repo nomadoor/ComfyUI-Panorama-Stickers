@@ -112,7 +112,12 @@ import {
   flushPanoStateProducers,
   queuePendingStickerOperation,
 } from "./pano_editor_extension.js";
-import { reconcileExternalStickerState } from "./pano_stickers_node_surface.js";
+import {
+  portStickerSyncValue,
+  reconcileExternalStickerState,
+  reconcilePortStickerState,
+} from "./pano_stickers_node_surface.js";
+import { isNodeOutputMediaCurrent } from "./pano_preview_video.js";
 import {
   drawStickerSelectionBoundary,
   drawStickerSelectionHandles,
@@ -525,7 +530,7 @@ async function showEditor(node, type, options = {}) {
   const stateWidget = getWidget(node, STATE_WIDGET);
 
   const getLinkedBackgroundImageForSizing = () => {
-    const inputNames = type === "stickers" ? ["bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
+    const inputNames = type === "stickers" ? ["bg_media", "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
     return loadPreferredExactLinkedImage(
       node,
       inputNames,
@@ -2485,15 +2490,19 @@ async function showEditor(node, type, options = {}) {
   function refreshModalVideoSource() {
     if (!(videoEl instanceof HTMLVideoElement)) return null;
     const { videoKey } = getModalVideoUiKeys();
-    const entry = getNodeUiList(videoKey)[0] || null;
+    const entry = isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
     const nextSrc = mediaSource(entry);
     const meta = getVideoMetaEntry();
     const frameCount = Math.max(0, Number(meta?.frames || 0));
     const fps = Math.max(1, Number(meta?.fps || 24));
     const duration = Number(meta?.duration || (frameCount > 0 ? frameCount / fps : 0));
     const hasAudio = !!meta?.has_audio || detectVideoHasAudio(videoEl);
+    // load() drops a seek in flight without `seeked`, so the seek state starts over with the source.
     if (nextSrc && videoEl.dataset.panoSrc !== nextSrc) {
       videoEl.pause();
+      videoState.seeking = false;
+      videoState.requestedTime = null;
+      videoState.pendingPlaybackResume = false;
       videoEl.dataset.panoSrc = nextSrc;
       videoEl.dataset.panoFrameIdx = "0";
       videoEl.loop = !sceneV2 && !!uiState.videoTransport.loop;
@@ -2504,8 +2513,14 @@ async function showEditor(node, type, options = {}) {
       void buildVideoThumbnails(nextSrc, duration, fps);
     } else if (!nextSrc && videoEl.getAttribute("src")) {
       videoEl.pause();
+      videoState.seeking = false;
+      videoState.requestedTime = null;
+      videoState.pendingPlaybackResume = false;
       videoEl.removeAttribute("src");
+      delete videoEl.dataset.panoSrc;
       videoEl.load();
+      stillCanvas.__panoFrameIdx = 0;
+      runtime.backgroundDirty = true;
       resetVideoThumbnails();
     }
     // The Timeline loops PanoramaStickersNode's playback at its own end.
@@ -2558,7 +2573,10 @@ async function showEditor(node, type, options = {}) {
     return mediaUiImage(node, key, imageCache, onLoad || (() => requestDraw()));
   }
 
+  // The media of the sticker input shows from the node's result only while that result is current;
+  // after the input changes, the Sticker shows as a frame until the node runs again.
   function getExternalStickerPreviewImage(onLoad = null) {
+    if (!isNodeOutputMediaCurrent(node, "external-sticker")) return null;
     return getStickerUiImage(EXTERNAL_STICKER_PREVIEW_KEY, onLoad);
   }
 
@@ -2692,13 +2710,20 @@ async function showEditor(node, type, options = {}) {
       rot_deg: 0,
     };
   }
-  function reconcileExternalStickerFromInputs(reason = "sync") {
-    // TODO(#75): the port Sticker of PanoramaStickersNode is shown from the node's execution result.
-    if (type !== "stickers" || readOnly || node.__panoSceneStateV2) return;
-    const input = Array.isArray(node?.inputs)
-      ? node.inputs.find((entry) => String(entry?.name || "") === "sticker_image")
+  function reconcilePortStickerFromInputs() {
+    const previewImg = getExternalStickerPreviewImage(() => {
+      runExternalStickerSync(node, "image-loaded");
+    });
+    const pose = isNodeOutputMediaCurrent(node, "external-sticker")
+      ? normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null)
       : null;
-    const linkId = input?.link ?? null;
+    return reconcilePortStickerState(state, portStickerSyncValue(node, { pose, image: previewImg }));
+  }
+  function reconcileLegacyExternalStickerFromInputs() {
+    const slot = Array.isArray(node?.inputs)
+      ? node.inputs.findIndex((entry) => String(entry?.name || "") === "sticker_image")
+      : -1;
+    const linkId = slot >= 0 ? node.getInputLink(slot)?.id ?? null : null;
     const previewImg = getExternalStickerPreviewImage(() => {
       runExternalStickerSync(node, "image-loaded");
     });
@@ -2706,7 +2731,7 @@ async function showEditor(node, type, options = {}) {
     const stateRaw = getLinkedStringInputValue("sticker_state");
     const stateHash = comfyMedia.externalStateHash(node, stateRaw);
     const pose = linkId == null ? null : buildExternalInitialPose(inputPose, stateRaw, previewImg);
-    const result = reconcileExternalStickerState(state, {
+    return reconcileExternalStickerState(state, {
       connected: linkId != null,
       linkId,
       stateHash,
@@ -2714,10 +2739,15 @@ async function showEditor(node, type, options = {}) {
       imageWidth: Number(previewImg?.naturalWidth || previewImg?.width || 0),
       imageHeight: Number(previewImg?.naturalHeight || previewImg?.height || 0),
     });
+  }
+  function reconcileExternalStickerFromInputs(reason = "sync") {
+    if (type !== "stickers" || readOnly) return;
+    const result = node.__panoSceneStateV2 ? reconcilePortStickerFromInputs() : reconcileLegacyExternalStickerFromInputs();
     if (result.changed) {
+      const removed = state.stickers.find(isExternalSticker);
       state.stickers = result.state.stickers;
       state.active = result.state.active;
-      if (linkId == null && editor.selectedId === EXTERNAL_STICKER_ID) {
+      if (removed && editor.selectedId === removed.id && !state.stickers.some((item) => item.id === removed.id)) {
         editor.selectedId = null;
         editor.selectedIds = [];
       }
@@ -3373,7 +3403,9 @@ async function showEditor(node, type, options = {}) {
     }
     const displaySource = getDisplayBackgroundSource();
     if (displaySource) return displaySource;
-    const uiImg = mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw());
+    const uiImg = isNodeOutputMediaCurrent(node, "background")
+      ? mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw())
+      : null;
     if (uiImg && !isImageLoadFailed(uiImg)) return uiImg;
     const inputNames = Array.isArray(node?.inputs)
       ? node.inputs.map((i) => String(i?.name || ""))
@@ -3384,7 +3416,7 @@ async function showEditor(node, type, options = {}) {
     if (readOnly && (hasEpr || hasBg)) {
       preferred = hasEpr ? ["erp_image", "bg_erp"] : ["bg_erp", "erp_image"];
     } else {
-      preferred = type === "stickers" ? ["bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
+      preferred = type === "stickers" ? ["bg_media", "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
     }
     const img = loadPreferredExactLinkedImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
     return img || uiImg || null;
@@ -5869,7 +5901,7 @@ async function showEditor(node, type, options = {}) {
     const panoramaInputNames = Array.isArray(node?.inputs) ? node.inputs.map((entry) => String(entry?.name || "")) : [];
     const linkedPanoramaSource = resolvePreferredExactLinkedSource(
       node,
-      panoramaInputNames.includes("erp_image") ? ["erp_image", "bg_erp"] : ["bg_erp", "erp_image"],
+      panoramaInputNames.includes("erp_image") ? ["erp_image", "bg_erp"] : ["bg_media", "bg_erp", "erp_image"],
     );
     const hasPanoramaLayer = !!String(linkedPanoramaSource?.src || "").trim() || getNodeUiList("pano_input_images").length > 0;
     const hasObjectLayer = getList().length > 0 || paintStrokeCount > 0;
@@ -5978,9 +6010,23 @@ async function showEditor(node, type, options = {}) {
   function jumpTimelineTo(frame) {
     stopTimelinePlayback();
     setTimelineFrame(frame);
+    refreshModalVideoSource();
     if (!hasTimelineVideo()) return;
     scrubVideoTo(editor.frame / state.timeline.fps);
     endVideoScrub();
+  }
+
+  // A run with the editor open can bring a new background VIDEO; once it can seek, it shows the frame
+  // at the playhead. While the Timeline plays, the VIDEO pauses on the new source and the playback stops.
+  function refreshVideoAfterRun() {
+    const previous = videoEl instanceof HTMLVideoElement ? videoEl.getAttribute("src") : null;
+    const src = refreshModalVideoSource();
+    if (!sceneV2 || !src || src === previous) return;
+    videoEl.addEventListener("loadedmetadata", () => {
+      if (timeline.playback || videoEl.getAttribute("src") !== src) return;
+      scrubVideoTo(editor.frame / state.timeline.fps);
+      endVideoScrub();
+    }, { once: true });
   }
 
   function stopTimelinePlayback() {
@@ -6039,6 +6085,8 @@ async function showEditor(node, type, options = {}) {
     }
     const fps = state.timeline.fps;
     const startFrame = editor.frame >= timelineSpanFrames() - 1 ? 0 : editor.frame;
+    // The background VIDEO of the node's current result, loaded here when the node ran after the editor opened.
+    refreshModalVideoSource();
     const playback = { video: hasTimelineVideo(), raf: 0, endedAt: null };
     timeline.playback = playback;
     if (playback.video) {
@@ -6098,7 +6146,10 @@ async function showEditor(node, type, options = {}) {
   function onTimelineAction(action) {
     if (readOnly || !sceneV2) return;
     if (action.type === "seek") {
-      if (action.phase === "start") stopTimelinePlayback();
+      if (action.phase === "start") {
+        stopTimelinePlayback();
+        refreshModalVideoSource();
+      }
       setTimelineFrame(action.frame);
       if (videoEl instanceof HTMLVideoElement && videoEl.getAttribute("src")) {
         if (action.phase === "end") endVideoScrub();
@@ -10031,29 +10082,24 @@ async function showEditor(node, type, options = {}) {
     uiState.outputPreviewToggle.tip = expanded ? "Reduce preview" : "Expand preview";
   }
   syncOutputPreviewToggleButton();
-  const modalPrevOnExecuted = node.onExecuted;
   const modalPrevOnConnectionsChange = node.onConnectionsChange;
-  let modalOnExecuted = null;
   let modalOnConnectionsChange = null;
-  let modalExternalStickerSync = null;
   let unregisterModalExternalStickerSync = () => {};
   if (!readOnly && type === "stickers") {
-    modalExternalStickerSync = (reason = "sync") => {
-      reconcileExternalStickerFromInputs(reason);
-    };
-    unregisterModalExternalStickerSync = registerExternalStickerSync(node, modalExternalStickerSync);
-    modalOnExecuted = function onPanoEditorExecuted(...args) {
-      if (typeof modalPrevOnExecuted === "function") {
-        modalPrevOnExecuted.apply(this, args);
+    // The node's onExecuted (pano_preview_runtime.js) runs this once per result.
+    unregisterModalExternalStickerSync = registerExternalStickerSync(node, (reason = "sync") => {
+      if (reason === "executed") {
+        invalidateMediaUiImage(imageCache, EXTERNAL_STICKER_PREVIEW_KEY);
+        refreshVideoAfterRun();
       }
-      invalidateMediaUiImage(imageCache, EXTERNAL_STICKER_PREVIEW_KEY);
-      runExternalStickerSync(this, "executed");
-    };
-    node.onExecuted = modalOnExecuted;
+      reconcileExternalStickerFromInputs(reason);
+    }, { editor: true });
     modalOnConnectionsChange = function onPanoEditorConnectionsChange(...args) {
       if (typeof modalPrevOnConnectionsChange === "function") {
         modalPrevOnConnectionsChange.apply(this, args);
       }
+      // A changed background input drops its stale VIDEO until the node runs again.
+      refreshModalVideoSource();
       runExternalStickerSync(this, "connections");
     };
     node.onConnectionsChange = modalOnConnectionsChange;
@@ -10101,7 +10147,6 @@ async function showEditor(node, type, options = {}) {
       window.removeEventListener("dragleave", onWindowDragLeave, true);
       window.removeEventListener("drop", onWindowDrop, true);
       if (!readOnly && type === "stickers") {
-        if (node.onExecuted === modalOnExecuted) node.onExecuted = modalPrevOnExecuted;
         if (node.onConnectionsChange === modalOnConnectionsChange) node.onConnectionsChange = modalPrevOnConnectionsChange;
         unregisterModalExternalStickerSync();
       }

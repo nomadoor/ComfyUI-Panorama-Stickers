@@ -10,35 +10,10 @@ function comfyImageEntryToUrl(api, entry) {
   return typeof api?.apiURL === "function" ? api.apiURL(route) : route;
 }
 
-function getGraphLinkById(graph, linkId) {
-  if (!graph || linkId == null) return null;
-  const links = graph.links;
-  if (!links) return null;
-  if (links instanceof Map) return links.get(linkId) || links.get(Number(linkId)) || links.get(String(linkId)) || null;
-  return links[linkId] || links[String(linkId)] || null;
-}
-
 function getGraphNodeById(graph, id) {
   if (!graph || id == null) return null;
   if (typeof graph.getNodeById === "function") return graph.getNodeById(id);
   return graph._nodes_by_id?.[id] || graph._nodes_by_id?.[String(id)] || null;
-}
-
-function resolveOriginFromLinkInfo(linkInfo) {
-  if (!linkInfo) return { originId: null, originSlot: 0 };
-  if (typeof linkInfo === "object" && !Array.isArray(linkInfo)) {
-    return {
-      originId: linkInfo.origin_id ?? null,
-      originSlot: Number(linkInfo.origin_slot ?? 0),
-    };
-  }
-  if (Array.isArray(linkInfo)) {
-    return {
-      originId: linkInfo[1] ?? null,
-      originSlot: Number(linkInfo[2] ?? 0),
-    };
-  }
-  return { originId: null, originSlot: 0 };
 }
 
 function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
@@ -194,14 +169,12 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
     const inputIndex = inputs.findIndex((input) => String(input?.name || "") === wanted);
     if (inputIndex < 0) return { src: "", sourceType: "", inputName: wanted };
-    const input = inputs[inputIndex];
-    const linkId = input?.link;
-    if (linkId == null) return { src: "", sourceType: "", inputName: wanted };
-    const { originId, originSlot } = resolveOriginFromLinkInfo(getGraphLinkById(node?.graph, linkId));
-    if (originId == null) return { src: "", sourceType: "", inputName: wanted };
+    const link = node.graph ? node.getInputLink(inputIndex) : null;
+    if (link?.origin_id == null) return { src: "", sourceType: "", inputName: wanted };
+    const originId = link.origin_id;
     const originNode = resolveInputOriginNode(node, inputIndex, originId);
     if (!originNode) return { src: "", sourceType: "", inputName: wanted };
-    const preferredSlot = Number(originSlot || 0);
+    const preferredSlot = Number(link.origin_slot ?? 0);
 
     let appNodeImageUrls = [];
     try {
@@ -364,12 +337,12 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
 
   const linkedValue = (node, inputName) => {
     const wanted = String(inputName || "");
-    const input = Array.isArray(node?.inputs)
-      ? node.inputs.find((entry) => String(entry?.name || "") === wanted)
-      : null;
-    if (input?.link != null) {
-      const { originId, originSlot } = resolveOriginFromLinkInfo(getGraphLinkById(node?.graph, input.link));
-      const payload = output(originId);
+    const inputIndex = Array.isArray(node?.inputs)
+      ? node.inputs.findIndex((entry) => String(entry?.name || "") === wanted)
+      : -1;
+    const link = inputIndex >= 0 && node.graph ? node.getInputLink(inputIndex) : null;
+    if (link) {
+      const payload = output(link.origin_id);
       const groups = [
         payload?.output,
         payload?.result,
@@ -380,7 +353,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
       ];
       for (const group of groups) {
         if (!Array.isArray(group)) continue;
-        const value = group[Number(originSlot || 0)];
+        const value = group[Number(link.origin_slot || 0)];
         if (typeof value === "string" && value.trim()) return value;
       }
     }
