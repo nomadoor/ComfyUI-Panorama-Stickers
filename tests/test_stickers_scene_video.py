@@ -386,3 +386,25 @@ def test_background_video_comes_before_clip_ends_and_the_override_before_the_vid
 
 def test_override_comes_before_the_background_batch():
     assert _length({"timeline": {"length": 2}}, bg_media=torch.zeros((5, 4, 8, 3))) == 2
+
+
+def test_hold_cut_is_not_late_on_a_video_frame_just_before_the_keyframe(tmp_path, monkeypatch):
+    # At 24.9999975 fps the 40 ms frames fall just short of whole Timeline frames: frame 3 is evaluated at 2.9999997.
+    state = {
+        "version": 2,
+        "timeline": {"fps": 24.9999975},
+        "camera": {"transform": {"value": {}, "keyframes": [
+            {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "hold"},
+            {"frame": 3, "value": {"yaw_deg": 180.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+        ]}},
+        "stickers": [{"id": "p", "source": {"kind": "port"}}],
+    }
+    frames = _record_evaluated_frames(monkeypatch)
+    red = torch.tensor([1.0, 0.0, 0.0]).expand(1, 4, 4, 3).clone()
+
+    image = _execute(state, bg_media=_cfr(tmp_path, count=5), sticker=red)[0]
+
+    assert 3.0 - 1e-6 < frames[3] < 3.0
+    center = image[:, image.shape[1] // 2, image.shape[2] // 2]
+    is_red = [bool(torch.allclose(pixel, torch.tensor([1.0, 0.0, 0.0]), atol=1e-3)) for pixel in center]
+    assert is_red == [True, True, True, False, False]
