@@ -50,6 +50,7 @@ from .core.video import editor_ready, encode_editor_mp4, entry_from_path, make_v
 from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world_render import SceneContent
 from .scene_files import write_editor_files
+from .scene_mesh import is_mesh_file, mesh_scene_content, moge_scene_content, read_mesh_file
 from .scene_video import SceneVideo
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
 _log = logging.getLogger(__name__)
@@ -1048,8 +1049,30 @@ def _scene_content(scene) -> SceneContent | None:
     """The `scene` input as World content, or None without one."""
     if scene is None:
         return None
-    # Temporary on the integration branch: the SPLAT (#61) and MESH / MoGe (#62) rasterizers are added later.
+    if isinstance(scene, Types.MESH):
+        return mesh_scene_content(scene)
+    if isinstance(scene, dict):
+        return moge_scene_content(scene)
+    # Temporary on the integration branch: the SPLAT (#61) rasterizer is added later.
     raise NotImplementedError(f"Panorama Stickers: {_input_type_name(scene)} on the scene input is not supported yet.")
+
+
+def _read_scene_file(scene):
+    """A mesh 3D file on the `scene` input as the MESH read from it, read again only when the file changes (a file
+    on disk by its path and modification, else by the object), so that it also keeps its editor files; other
+    inputs as given."""
+    if not is_mesh_file(scene):
+        return scene
+    if scene.is_disk_backed:
+        stat = os.stat(scene.get_source())
+        cache_key = (scene.get_source(), stat.st_mtime_ns, stat.st_size)
+    else:
+        cache_key = NODE_RUNTIME.object_identity(scene)
+    mesh = NODE_RUNTIME.cache.get("mesh_files", cache_key)
+    if mesh is None:
+        mesh = read_mesh_file(scene)
+        NODE_RUNTIME.cache.put("mesh_files", cache_key, mesh)
+    return mesh
 
 
 def _unused_sticker_id(stickers: list[dict]) -> str:
@@ -1257,11 +1280,12 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
 
 
 def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, port: PortMedia | None,
-                   scene: SceneContent | None, capture, device):
+                   scene, capture, device):
     """(b) Render each output frame with the shared render function, with the port Sticker's source at the
-    frame of `port` and the item of `scene` that (a) chose. `capture` maps the evaluated state of a frame to the
-    Camera value and the Projection to draw it with; the Projection's size is the same for every frame. `bg` is
-    the bg_media IMAGE, an opened VIDEO, or None; the port media is opened for this pass.
+    frame of `port` and the item of the `scene` input that (a) chose. `capture` maps the evaluated state of a frame
+    to the Camera value and the Projection to draw it with; the Projection's size is the same for every frame.
+    `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media and the `scene` content are opened for
+    this pass, so nothing they put on `device` outlives it.
     Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
     the same tensors as the previous one."""
     bg_width = None
@@ -1270,6 +1294,7 @@ def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, por
     if port is not None:
         port_frames = port.frames()
         others = {key: value for key, value in sources.stickers.items() if key != port.sticker_id}
+    content = _scene_content(scene)
     cache = {}
     port_source = None
     for frame, bg_index, port_index, scene_index in frames:
@@ -1293,7 +1318,7 @@ def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, por
             device=device,
             cache=cache,
             bg_width=bg_width,
-            scene=scene,
+            scene=content,
             scene_index=scene_index,
         )
         yield color, mask
@@ -1305,10 +1330,10 @@ def _open_media(media, name: str):
 
 
 def _render_outputs(state: dict, sources: SceneSources, frames, bg_media, bg_name: str, bg, bg_color, port: PortMedia | None,
-                    scene: SceneContent | None, capture, size: tuple[int, int]):
+                    scene, capture, size: tuple[int, int]):
     """(c) The first output frame's IMAGE and MASK, rendered now from the opened `bg`, and the `video` of every
-    frame, rendered when it is read with `bg_media` opened again for each pass. `state` is the one (a) decided the
-    Timeline of `frames` for."""
+    frame, rendered when it is read with `bg_media` and the `scene` content opened again for each pass. `state`
+    is the one (a) decided the Timeline of `frames` for."""
     color, mask = next(_render_frames(state, sources, frames, bg, bg_color, port, scene, capture, comfy.model_management.get_torch_device()))
     timing = _timing_video(bg, port)
     rate = _timeline_rate(state, timing)
@@ -1389,6 +1414,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
     @classmethod
     def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
         _reject_unsupported_sticker(sticker)
+        scene = _read_scene_file(scene)
         content = _scene_content(scene)
         warnings = []
         state = load_scene_state(state_json)
@@ -1404,7 +1430,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
         fps, frames = _decide_timeline(state, bg, port, content)
         image, mask, video = _render_outputs(
-            state, sources, frames, bg_media, "bg_media", bg, bg_rgb, port, content, lambda evaluated: (evaluated["camera"], projection), (out_w, out_h)
+            state, sources, frames, bg_media, "bg_media", bg, bg_rgb, port, scene, lambda evaluated: (evaluated["camera"], projection), (out_w, out_h)
         )
         # PANO_SCENE binds the state to the inputs and the decided Timeline.
         pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
@@ -1479,7 +1505,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
         if isinstance(source, PanoSceneValue):
             # The Scene is the Stickers state; the Cutout state gives only the Camera, at its own recorded fps.
             state, sources, port, coverage_deg, bg_color = source.state, source.sources, source.port, source.coverage, source.bg_color
-            content = _scene_content(source.scene)
+            scene = source.scene
             bg_media, bg_name = source.bg_media, "bg_media"
             bg = _open_media(bg_media, bg_name)
             frames = source.frames
@@ -1490,7 +1516,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
         else:
             # An ERP IMAGE or VIDEO is the background in the Scene's orientation, under the Cutout state's Sky.
             # Outside a 180 ERP the image is black, as in the legacy Cutout.
-            state, port, content, coverage_deg, bg_color = cutout, None, None, normalize_coverage(coverage), (0.0, 0.0, 0.0)
+            state, port, scene, coverage_deg, bg_color = cutout, None, None, normalize_coverage(coverage), (0.0, 0.0, 0.0)
             warnings = []
             sources = _resolve_sources(state, None, warnings)
             # TODO(#77): show these in the Cutout `ui`.
@@ -1511,7 +1537,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             camera = camera_at(evaluated)
             return camera, Projection.perspective(width, height, camera["hFOV_deg"], coverage_deg)
 
-        image, mask, video = _render_outputs(state, sources, frames, bg_media, bg_name, bg, bg_color, port, content, capture, (width, height))
+        image, mask, video = _render_outputs(state, sources, frames, bg_media, bg_name, bg, bg_color, port, scene, capture, (width, height))
         return io.NodeOutput(image, _cutout_sticker_state(cutout, width, height), mask, video)
 
 

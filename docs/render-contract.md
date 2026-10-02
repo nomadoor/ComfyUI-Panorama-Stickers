@@ -111,6 +111,31 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 - 戻り値はストレートアルファの色 (H, W, 4) と、`view.position` からの距離 (H, W)（`scene` 自身の単位、空の画素は `+inf`）。World の距離へは `scale` を掛けて直す。
 - `scene` の変形は、`scene` 自身の座標の点 `x` を World の `position + scale × world_rotation(yaw, pitch, roll) @ x` に置く。
 - `render` は、同じ `view` と `index` に対して同じ層を返す（使い回しの条件は `view` の値と `index` だけ）。
+- `SceneContent` は描画のパス（最初のフレーム、`video` を読むたび）ごとに `_render_frames` が `_scene_content` で作り、`render` が device に置いたものはそのパスの間だけ持つ。`video` の出力（ComfyUI の出力キャッシュに残る）が持つのは入力そのものだけで、device のテンソルは持たない（`tests/test_scene_mesh.py`）。(a) は要素の数のためだけに別に作る。
+
+### MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`（#62）
+
+`core/mesh_render.py` が pure torch で三角形を描き、`scene_mesh.py` が入力を要素ごとの `MeshItem`（頂点・面・あれば uv とテクスチャ・頂点色）にする。
+
+- 入力：
+  - MESH：要素ごとに `get_mesh_batch_item`（コア。`vertex_counts`・`face_counts` で切る）と、あれば `texture` の同じ番号。座標はそのまま（glTF）。
+  - メッシュ系の 3D ファイル（GLB・GLTF・OBJ・STL）：Stickers ノードの入口（`_read_scene_file`）で、コアの Get3DComponents で 1 要素の MESH にする。以降（描画・エディタ用ファイル・`PANO_SCENE`）は MESH として扱う。読んだ MESH は `NODE_RUNTIME` の `mesh_files` キャッシュ（2 つ分、CPU）に、ディスク上のファイルはパス・更新時刻・大きさ、それ以外はオブジェクトの同一性をキーに入れ、同じファイルでは読み直さず、同じ MESH なのでエディタ用ファイルも使い回す。FBX・USDZ はコアが読めないので、コアのエラーになる。拡張子のない 3D ファイルとスプラット系のファイルはここでは読まない（#61）。
+  - `MOGE_GEOMETRY`：フレームごとに `moge_grid_mesh`（エディタ用ファイルと同じグリッドのメッシュを間引かずに）と `image` の同じフレームをテクスチャにする。読むキーは `points`・`mask`・`image` と `intrinsics` の有無だけ（`tests/test_scene_mesh.py` で、コアの MoGeInference・MoGePanoramaInference が出す形とあわせて固定）。`mask` の外の画素と、コアと同じ段差の判定（`discontinuity_threshold` 0.04）で切れた画素は描かない。
+- 描き方：出力の画素ごとの光線（`view.rays`）と三角形の交点を Moller–Trumbore で求め、最も近い交点を残す（距離は光線の長さ）。三角形ごとに、交わりうる画素の範囲だけを試す。
+  - 透視投影：Camera の前にある角と、辺が Camera の前の面（`NEAR`）を横切る点のピンホールの像の範囲。
+  - ERP：角の経度を囲む最短の弧と、角・辺（大円の弧）の最も高い点と低い点・囲む極までの緯度の範囲。弧が半周以上なら全経度。経度の継ぎ目は列を周期で回してつなぐ。180 は 360 の列の周期で数え、前方の半球の列だけを描く。
+  - 三角形の前処理は `TRIANGLES`（約 100 万）ずつ行い、三角形ごとには光線の式（float32 × 10）と画素の範囲（int32 × 4）と累積の組の数（int64）だけを残す。画素と三角形の組は `CHUNK` ずつ試し、画素ごとの最も近い交点を距離のビットと三角形の番号の 64 bit の値の最小（`scatter_reduce` の `amin`）で選ぶ。最後に画素ごとに選ばれた三角形だけで重心座標を求め直して色を付ける（これも `CHUNK` 画素ずつ）。距離が有限でない交点は捨てる。
+  - 辺と頂点の上の画素の中心が丸めで抜けないよう、重心座標の判定を `EDGE` だけ広げる（MoGe のグリッドを同じ大きさで描くと、すべての画素の中心が頂点の上に来る）。
+- 色：glTF の base color と同じく、テクスチャ（uv (0, 0) が画像の左上。テクセルの中心で双線形に標本化する。0〜1 の外の uv は glTF の既定の REPEAT で折り返し、範囲内の値はそのまま。双線形の隣の画素は画像の端で延ばす）に頂点色の RGB を掛ける。`EDGE` の内側で三角形の外に出た交点は、重心座標を三角形の中に寄せてから値を補間する。どちらもなければコアの GLB の書き出しの素のジオメトリと同じ灰色（`BARE_COLOR` 0.22）。光源による陰影は付けない（unlit）。頂点色のアルファ・マテリアルの係数・法線などのマップは読まず、当たった画素は不透明にする。
+  - MoGe の uv は画素 `x / (W − 1)` なので、テクセルの中心で標本化すると画像の端で最大半テクセルずれる。エディタ（three.js）の表示と同じである。
+- 両面を描く（MoGe のパノラマの面は外向きで、原点の Camera からは裏面になる）。縁はアンチエイリアスしない。
+- エディタ（#71）は、この描画と揃えるため、`scene` の GLB を光源の影響を受けない材質（`MeshBasicMaterial` 相当）で両面（`DoubleSide`）に描く必要がある。コアの `save_glb` は `unlit` をテクスチャのない場合にしか書かない（`KHR_materials_unlit`）ので、テクスチャ付きの MoGe の GLB には unlit を書けず、エディタ側で扱う。
+- 要素は描画のパスの間だけ、直前に描いた 1 つを device に置いておき、同じ要素の次のフレームでは置き直さない（`mesh_content`）。
+- 描く前に `comfy.model_management.free_memory` で VRAM を空けることはしない（Sky・SPLAT の描画と同じく、モデルの読み込み側の管理に任せる）。
+- MoGe のグリッドは ERP の経度の継ぎ目（最後の列と最初の列の間）と極の周り（最初と最後の行の外）をつながないので、出力が MoGe より細かいとそこに 1〜2 画素の隙間が出る。コアの MoGePointMapToMesh とエディタの GLB も同じである。
+- 計測（1 回、CUDA の割り当てのピークは要素を置いたぶんを含む）：
+  - 2048 × 1024 の MoGe パノラマ相当（約 400 万面、device 上の要素 約 170 MB）：4096 × 2048 の ERP は CUDA で約 0.2 秒・ピーク約 1.2 GB、CPU で約 2.9〜3.4 秒。1920 × 1080 の透視投影は CUDA で約 0.06 秒・ピーク約 0.86 GB、CPU で約 1.2〜1.3 秒。要素の最初のフレームは CPU での三角形分割と転送を含め、CUDA で約 3 秒。
+  - 4096 × 2048 の MoGe パノラマ相当（約 1670 万面、device 上の要素 約 650 MB）：4096 × 2048 の ERP は CUDA で約 0.4 秒・ピーク約 2.5 GB、1920 × 1080 の透視投影は約 0.2 秒・ピーク約 2.5 GB。要素の最初のフレームは三角形分割を含め約 11.5 秒。
 
 ## まだ描かないもの
 
@@ -118,7 +143,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 
 | 内容 | 解消する ticket |
 |---|---|
-| `scene` 入力の SPLAT・スプラット系の 3D ファイル / MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`（`nodes.py` の `_scene_content`） | #61 / #62 |
+| `scene` 入力の SPLAT・スプラット系の 3D ファイル（`nodes.py` の `_scene_content`） | #61 |
 
 ## Stickers ノード（`PanoramaStickersNode`）
 
@@ -155,7 +180,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   - 同じ `BytesIO` の VIDEO を `bg_media` と `sticker` の両方につないでもよい。`core/video_source.py` は container ごとに同じバイト列の別の読み手を作る（中身は写さない）。
   - 素材のフレームは `StickerSource.frame` で Sky のキーに入るので、Sky は素材のフレームが変わったときだけ作り直す。
   - `file` の Source（エディタで投入した素材）は、今は画像だけで、時間を持たない。
-- `scene` の入力は `_scene_content` で `SceneContent` にする。いまはどの型も未対応であることを示すエラーにする（#61・#62 が加える）。`sticker` の MESH・SPLAT・3D ファイルも同じくエラーにする（#63）。
+- `scene` の入力は、メッシュ系の 3D ファイルを MESH に読んでから（`read_mesh_file`）、`_scene_content` で `SceneContent` にする。MESH と `MOGE_GEOMETRY` は上記「MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`」。SPLAT とスプラット系の 3D ファイルは未対応であることを示すエラーにする（#61 が加える）。`sticker` の MESH・SPLAT・3D ファイルも同じくエラーにする（#63）。
 - `video` を読む側（`get_components`・`save_to`）は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、直前のフレームから写す。
 - `is_output_node` は `True`（#75）。ComfyUI は `ui` を出力ノードでなくても `executed` で送るが、出力ノードでなければ下流に出力ノードがつながっていないと実行されず、エディタとノード上の UI が素材を受け取れない。出力ノードにすると、キューに入れるたびに実行され（変わっていなければキャッシュの `ui` が送られる）、素材の表示が下流の接続に左右されない。
 - 実行結果の `ui` は、エディタとノード上の UI に入力の素材を見せるためのもので、キーは旧ノードと同じ（#75）。
@@ -190,8 +215,8 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
     - `pano_scene_files` は要素の順のリストで、要素の数が出力フレームとの対応（`batch_index`）に使う数である。頂点や面のない要素は `null` にし、番号をずらさない。
     - `state_json` だけが変わった実行では作り直さない。MP4 とは別の `NODE_RUNTIME` の `scene_files` キャッシュ（入力 4 つ分）に入れ、SPLAT・MESH はオブジェクトと位置のテンソルの同一性、`MOGE_GEOMETRY`（辞書）は読むテンソルの同一性をキーにする。ファイルが消えていれば書き直す。
     - 大きさの目安：100 万点の SPLAT（SH 3 次）の PLY は約 248 MB、MoGe の 1 フレームの GLB は約 6 MB。キャッシュから追い出しても MP4 と同じくファイルは消さず、ComfyUI が起動時と終了時に temp を消すまで残る。
-    - いまは `_scene_content` がどの型も受け付けないので、実際の実行ではファイルが出る前にエラーになる（#61・#62 で解消）。3D ファイルの入力と 3D の Sticker の書き出しも、それぞれ #61・#62・#63 で `write_editor_files` に加える（それまで `write_editor_files` は SPLAT・MESH 以外を `MOGE_GEOMETRY` として読む）。
-- 必要な ComfyUI は v0.34.0 以降（`mesh_item_to_glb_bytes` が入った版）。`scene_files.py` はコアの書き出し関数をモジュールの先頭で読み込むので、古いコアではパッケージの読み込み時にその名前の `ImportError` になる。
+    - メッシュ系の 3D ファイルは、入口で読んだ MESH として GLB に書き直す（描くものとエディタが見るものが同じになる）。実行ごとに読み直すので、ファイルも実行ごとに書き直す。SPLAT はまだ `_scene_content` が受け付けないので、実際の実行ではファイルが出る前にエラーになる（#61 で解消）。スプラット系の 3D ファイルと 3D の Sticker の書き出しも、それぞれ #61・#63 で `write_editor_files` に加える（それまで `write_editor_files` は SPLAT・MESH 以外を `MOGE_GEOMETRY` として読む）。
+- 必要な ComfyUI は v0.35.0 以降（`mesh_item_to_glb_bytes` と、メッシュ系の 3D ファイルを読む Get3DComponents が入った版）。Get3DComponents はコアで experimental のノードなので、コアの更新で名前や戻り値が変わったら `scene_mesh.py` の `read_mesh_file` を合わせる。`scene_files.py` はコアの書き出し関数をモジュールの先頭で読み込むので、古いコアではパッケージの読み込み時にその名前の `ImportError` になる。
   - 出力（IMAGE）のプレビュー MP4 は作らない。Stickers の出力を表示するのは Preview（#76）で、旧ノードの `pano_videos` を読むフロントエンドもない。
 - `file` の Source は `core/stickers.py` の `load_source_rgba` で読み、`folder_paths` のディレクトリの中にあるものだけを読む。読めないときは、その Sticker を描かずに警告を出す（ログと実行結果の `pano_sticker_warnings`）。
 
@@ -222,7 +247,7 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 | `sources` | `SceneSources`。`file` の Source は読み込み済み。`port` の Sticker の Source は `port` の最初のフレームを持つテンプレートで、`port` があるときは Stickers の (b) と同じく、フレームごとに `port.frames()` と `frames` の `port` の番号（`port.index_at` の結果）で取り出した素材に差し替えてから `render_frame` に渡す |
 | `port` | `sticker` の素材の `PortMedia`（`sticker_media.py`）、または `None`。開いた stream ではなく VIDEO の入力そのものを持ち、`frames()` を呼ぶたびに開き直すので、Preview と Cutout など複数のノードが同じ `PANO_SCENE` を使っても読み取り位置を取り合わない |
 | `bg_media` | `bg_media` の入力そのもの（IMAGE のテンソル、VIDEO のハンドル、または `None`）。VIDEO は開いた状態で渡さないので、使う側が `sticker_media.py` の `open_video` で開き直す |
-| `scene` | `scene` の入力そのもの（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`、または `None`）。いまは `scene` を受け付けないので常に `None`。描く側は `_scene_content` で `SceneContent` にし、フレームごとに `frames` の `scene` の番号を `scene_index` として `render_frame` に渡す（Stickers の (b) と同じ） |
+| `scene` | `scene` の入力（SPLAT・MESH・`MOGE_GEOMETRY`、または `None`）。メッシュ系の 3D ファイルは読んだ MESH にしたもの。描く側は `_scene_content` で `SceneContent` にし、フレームごとに `frames` の `scene` の番号を `scene_index` として `render_frame` に渡す（Stickers の (b) と同じ） |
 | `coverage` | `bg_media` の範囲（360 または 180） |
 | `bg_color` | 0〜1 の 3 つの数値のタプル |
 | `fps` | Timeline fps（float）。`video` の `get_frame_rate()` と同じ値 |

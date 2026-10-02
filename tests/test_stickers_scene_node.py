@@ -229,10 +229,8 @@ def _splat():
 
 
 @pytest.mark.parametrize("inputs, message", [
-    ({"scene": _mesh()}, "MESH on the scene input"),
     ({"scene": _splat()}, "SPLAT on the scene input"),
-    ({"scene": Types.File3D("model.glb")}, "3D file on the scene input"),
-    ({"scene": {"points": torch.zeros((1, 2, 2, 3))}}, "MOGE_GEOMETRY on the scene input"),
+    ({"scene": Types.File3D("model.ply")}, "3D file on the scene input"),
     ({"sticker": _mesh()}, "MESH on the sticker input"),
     ({"sticker": _splat()}, "SPLAT on the sticker input"),
     ({"sticker": Types.File3D("model.ply")}, "3D file on the sticker input"),
