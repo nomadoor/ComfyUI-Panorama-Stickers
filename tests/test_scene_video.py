@@ -206,6 +206,24 @@ def test_preview_shows_the_stream_source_of_the_stickers_video(tmp_path):
     assert len(_probe(video.get_stream_source())[0]) == 3
 
 
+def test_preview_shows_a_proxy_of_a_long_stickers_video_and_keeps_its_stream_source(tmp_path):
+    video = _execute({"version": 2, "timeline": {"length": 30}}, output_preset="1024")[2]
+    source = Path(video.get_stream_source())
+    stream_source = source.read_bytes()
+
+    output = PanoramaPreviewSceneNode.execute(source=video, coverage="360")
+
+    entry = output.ui["pano_videos"][0]
+    proxy = tmp_path / entry["subfolder"] / entry["filename"]
+    assert proxy != source
+    assert nodes.editor_ready(proxy)
+    assert _probe(proxy)[0] == _probe(source)[0]
+    # SaveVideo still copies the stream source as it was encoded.
+    assert source.read_bytes() == stream_source
+    with av.open(str(source)) as container:
+        assert sum(packet.is_keyframe for packet in container.demux(video=0) if packet.size) == 1
+
+
 def test_reading_the_video_stops_when_the_queue_is_interrupted(monkeypatch):
     video = _execute({"version": 2, "timeline": {"length": 3}}, output_preset="1024")[2]
     calls = []
