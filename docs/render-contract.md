@@ -129,7 +129,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 |---|---|---|---|
 | (a) | `_decide_timeline` | Timeline fps と、出力フレームごとの評価する Timeline frame・描く `bg_media` のフレーム・`sticker` の素材のフレーム・`scene` の要素 | #53、#56 |
 | (b) | `_render_timeline` | フレームごとに状態を評価し、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source に、`scene` の要素を `scene_index` にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される。描く Camera と Projection は、評価した状態から呼び出し側の `capture` が決める（Stickers は状態の Camera と ERP、Cutout は Cutout の Camera と透視投影） | #55、#56、#58、#64 |
-| (c) | `execute` の末尾 | 出力（IMAGE・MASK・AUDIO・fps・`PANO_SCENE`）を組み立てる | #53、#57 |
+| (c) | `execute` の末尾 | 出力（IMAGE・MASK・AUDIO・fps・`PANO_SCENE`）を組み立てる。ADR 0027 で `first_frame`・`first_frame_mask`・`video`・`PANO_SCENE` に変える | #53、#57 |
 
 - Timeline fps は、背景 VIDEO の平均フレームレート（コアの `get_frame_rate()` と同じ `average_rate`、丸めない）、なければ `sticker` の VIDEO の平均フレームレート、どちらもなければ状態の `timeline.fps` とする。fps 出力はこの値の float である。
 - 出力の長さは「状態の `timeline.length` → 背景 VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数 → Sticker と `scene` の Clip range の終わりのうち最も遅いもの（非表示の Sticker と、未接続の `scene` の Clip range も含む。`duration` が `null` で、`sticker` が IMAGE バッチか VIDEO の `port` の Sticker は、素材の終わり `start − in + 素材の長さ` を終わりとする）→ Camera の各 Lane の最後の Keyframe のうち最も遅いものの次のフレーム → 1」の順で決める。状態から決める長さは `timeline.fps` の Timeline frame なので、秒を保って Timeline fps のフレーム数に直す（`floor(x × Timeline fps ÷ timeline.fps + 0.5)`、1 以上）。
@@ -203,7 +203,7 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 ## Cutout ノード（`PanoramaCutoutNode`）
 
 - Python のクラスは `PanoramaCutoutSceneNode`。旧 `PanoramaCutout` は #78 まで登録を残す。
-- 入力は `source`（`io.MultiType`：IMAGE・VIDEO・`PANO_SCENE`）、`coverage`、`output_megapixels`、`state_json`。出力は rect_image（IMAGE）、sticker_state（STRING）、mask（MASK）、AUDIO、fps（FLOAT）の順。出力は入力の素通しではないので `MatchType` は使わない。
+- 入力は `source`（`io.MultiType`：IMAGE・VIDEO・`PANO_SCENE`）、`coverage`、`output_megapixels`、`state_json`。出力は rect_image（IMAGE）、sticker_state（STRING）、mask（MASK）、AUDIO、fps（FLOAT）の順（ADR 0027 で `first_frame`・`sticker_state`・`first_frame_mask`・`video` に変える）。出力は入力の素通しではないので `MatchType` は使わない。
 - `is_output_node` は `False` で、実行結果の `ui` は持たない。エディタとノード上の UI の結び付けは #77 で行う。
 - `state_json` は状態 v2（v1 も読む。旧 Cutout の `shots[0]` は Camera になる。`docs/scene-state-v2.md`）。Cutout の Camera は `state_json` の `camera` で、Keyframe に従って動く。
 - Timeline と各フレームは Stickers の (a)・(b)（`_decide_timeline`・`_render_timeline`）をそのまま使う。各フレームは `render_frame` に `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` を渡して描く。
