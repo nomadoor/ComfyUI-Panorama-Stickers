@@ -2686,6 +2686,33 @@
   color: var(--pano-text);
   font-variant-numeric: tabular-nums;
 }
+.pano-timeline-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pano-space-xs);
+  color: var(--pano-text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.pano-timeline-setting input {
+  box-sizing: border-box;
+  width: calc(6ch + 12px);
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--pano-space-md);
+  background: var(--pano-bg-control);
+  color: var(--pano-text);
+  font: inherit;
+  text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.pano-timeline-setting input::-webkit-outer-spin-button,
+.pano-timeline-setting input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 .pano-timeline-toggle {
   margin-left: auto;
   display: inline-flex;

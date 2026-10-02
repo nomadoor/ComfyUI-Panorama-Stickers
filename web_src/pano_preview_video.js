@@ -24,6 +24,13 @@ export function nodeInputOrigins(node) {
   return origins;
 }
 
+// Whether a VIDEO is linked to one of the inputs `names` of a node, by the type of the link.
+export function videoLinked(node, names) {
+  return (Array.isArray(node?.inputs) ? node.inputs : []).some((input, slot) => (
+    names.includes(String(input?.name || "")) && !!node.graph && node.getInputLink(slot)?.type === "VIDEO"
+  ));
+}
+
 // The node of a serialized workflow that a run reports by its execution id ("12" at the root, "12:5" for
 // node 5 inside the subgraph that node 12 instances), with the links of the graph it is in.
 function workflowNode(workflow, executionId) {

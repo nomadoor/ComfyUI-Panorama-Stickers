@@ -255,8 +255,9 @@ const LANE_LABELS = {
 // line per Lane. Frames in the model are Timeline frames; `offset` turns them back into the owner's own
 // frames. selection is { owner, lane, frames }: `lane` is a Lane's name, or null for the whole row, and
 // frames are in the owner's own frames.
-// audio is { muted } when the background VIDEO has audio, else null.
-export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null }) {
+// audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
+// input sets the Timeline fps (ADR 0024).
+export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false }) {
   const row = (id, owner, rowLabel, clip, offset) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
     return {
@@ -288,6 +289,9 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
     frame,
     span,
     label,
+    fps: state.timeline.fps,
+    fpsLocked,
+    length: state.timeline.length,
     rows: [
       row("camera", state.camera, "Camera", null, 0),
       ...[...sky, ...world].map((sticker) => {

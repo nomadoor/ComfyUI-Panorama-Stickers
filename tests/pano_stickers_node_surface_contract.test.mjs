@@ -393,7 +393,7 @@ test("the node surface syncs the port Sticker through the registry so the open e
   const editor = await read("../web_src/pano_editor.js");
   // The editor's handler wins over a node surface that attaches again, and a result syncs once: the
   // node's onExecuted runs the handler, which drops the stale sticker image first.
-  assert.match(editor, /registerExternalStickerSync\(node, \(reason = "sync"\) => \{\s*if \(reason === "executed"\) \{\s*invalidateMediaUiImage\(imageCache, EXTERNAL_STICKER_PREVIEW_KEY\);\s*refreshModalVideoSource\(\);\s*\}\s*reconcileExternalStickerFromInputs\(reason\);\s*\}, \{ editor: true \}\)/);
+  assert.match(editor, /registerExternalStickerSync\(node, \(reason = "sync"\) => \{\s*if \(reason === "executed"\) \{\s*invalidateMediaUiImage\(imageCache, EXTERNAL_STICKER_PREVIEW_KEY\);\s*refreshModalVideoSource\(\);\s*if \(sceneV2\) applyVideoTimelineFps\(\);\s*\}\s*reconcileExternalStickerFromInputs\(reason\);\s*\}, \{ editor: true \}\)/);
   assert.doesNotMatch(editor, /node\.onExecuted =/);
 });
 

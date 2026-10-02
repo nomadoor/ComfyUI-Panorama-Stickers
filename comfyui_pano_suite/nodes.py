@@ -1349,6 +1349,9 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
         # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
         ui_ret = {}
+        if _timing_video(bg, port) is not None:
+            # The editor rebases the state to this fps and does not let it be edited (ADR 0024).
+            ui_ret["pano_timeline_fps"] = [fps]
         if bg_media is not None:
             _merge_ui_payload(ui_ret, _bg_media_ui(bg_media, bg, fps))
         if port is not None:
