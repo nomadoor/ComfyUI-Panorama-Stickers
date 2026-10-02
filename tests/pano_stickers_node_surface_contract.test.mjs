@@ -273,6 +273,8 @@ test("external sticker textures resolve only from the node's current dedicated o
   assert.match(runtime, /isNodeOutputMediaCurrent\(node, "external-sticker"\)/);
   assert.match(runtime, /pano_sticker_input_state_hash/);
   assert.doesNotMatch(runtime, /getLinkedInputImageForPreview\(\s*node,\s*\["stickers"\]/);
+  // The port Sticker's MP4 or PNGs are the node's own current result too.
+  assert.match(runtime, /function portStickerMedia\(node\) \{\s*if \(!isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;[\s\S]*?"pano_sticker_input_video_meta"[\s\S]*?pano_sticker_input_frames[\s\S]*?\["pano_sticker_input_videos"\]/);
 });
 
 test("failed sticker image loads do not schedule an immediate retry loop", async () => {
@@ -480,10 +482,12 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   const keyStart = runtime.indexOf("  const onNodeSurfaceKeyDown = (ev) => {");
   const keyDown = runtime.slice(keyStart, runtime.indexOf("\n  };", keyStart));
 
-  // Only PanoramaStickersNode plays; its hidden VIDEO stays rendered for requestVideoFrameCallback.
+  // Only PanoramaStickersNode plays; its hidden VIDEOs (the background and the port Sticker's MP4)
+  // stay rendered for requestVideoFrameCallback.
   assert.match(runtime, /if \(stickersMode && node\.__panoSceneStateV2\) \{/);
-  assert.match(runtime, /video\.style\.cssText = "[^"]*opacity:0[^"]*"/);
-  assert.doesNotMatch(runtime, /video\.style\.cssText = "[^"]*visibility/);
+  assert.match(runtime, /const \[video, stickerVideo\] = \[0, 1\]\.map\(\(\) => \{\s*const element = document\.createElement\("video"\);/);
+  assert.match(runtime, /element\.style\.cssText = "[^"]*opacity:0[^"]*"/);
+  assert.doesNotMatch(runtime, /element\.style\.cssText = "[^"]*visibility/);
   // Every toolbar action but the play button stops playback first, the Full Editor included.
   assert.match(runtime, /if \(action\?\.type === "toggle-playback"\) \{[\s\S]*?return;\s*\}\s*pauseSurfacePlayback\(\);\s*if \(action\?\.type === "open-editor"\)/);
   assert.match(runtime, /isStickerImageFile\(file\)\) return false;\s*pauseSurfacePlayback\(\);/);
@@ -495,8 +499,8 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   assert.doesNotMatch(keyDown, /" "|Space/);
   // A node out of sight stops and lets its VIDEO go, on each draw and as soon as its surface resizes away.
   assert.match(runtime, /const shown = surfaceShown\(wrap, !!node\.flags\?\.collapsed\);/);
-  assert.match(runtime, /playback\.follow\(\{ shown, sources: shown \? backgroundVideoSources\(node\) : \[\]/);
+  assert.match(runtime, /const sticker = shown \? portStickerMedia\(node\) : null;\s*const playable = playback\.follow\(\{\s*shown,\s*sources: shown \? backgroundVideoSources\(node\) : \[\],\s*state: getCachedState\(node\),\s*sticker,/);
   assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*if \(!node\.flags\?\.collapsed\) drawCanvas/);
   assert.match(runtime, /new ResizeObserver\(\(\) => \{\s*if \(surfacePlayback\) syncSurfacePlayback\(\);\s*requestDraw\(\);/);
-  assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);/);
+  assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);\s*surfacePlayback\.stickerVideo\.remove\(\);/);
 });

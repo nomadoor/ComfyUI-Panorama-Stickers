@@ -123,7 +123,8 @@ import {
   reconcilePortStickerState,
 } from "./pano_stickers_node_surface.js";
 import { isNodeOutputMediaCurrent, videoLinked } from "./pano_preview_video.js";
-import { createVideoPlayback, frameAtTime } from "./pano_video_playback.js";
+import { createVideoFollower, createVideoPlayback, frameAtTime } from "./pano_video_playback.js";
+import { createFrameSequence, portMediaFrames, portMediaTime } from "./pano_port_media.js";
 import {
   drawStickerSelectionBoundary,
   drawStickerSelectionHandles,
@@ -146,6 +147,9 @@ const TEXT_INPUT_TYPES = new Set(["text", "search", "number", "email", "url", "t
 const EXTERNAL_STICKER_ID = "sticker_image_1";
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
 const EXTERNAL_STICKER_PREVIEW_KEY = "pano_sticker_input_images";
+const PORT_VIDEO_KEY = "pano_sticker_input_videos";
+const PORT_FRAMES_KEY = "pano_sticker_input_frames";
+const PORT_VIDEO_META_KEY = "pano_sticker_input_video_meta";
 const ENABLE_STICKERS_NODE_PREVIEW = true;
 const PAINT_COLOR_SWATCHES = [
   { id: "green", label: "Green", color: { r: 0, g: 1, b: 0, a: 1 } },
@@ -768,6 +772,7 @@ async function showEditor(node, type, options = {}) {
   // canvas mounting, geometry measurement, low-level pointer wiring, and fullscreen integration.
   const side = root.querySelector("[data-side]");
   const videoEl = root.querySelector("[data-video-element]");
+  const portVideoEl = root.querySelector("[data-port-video-element]");
   const floatingRightEl = root.querySelector(".pano-floating-right");
   const floatingTopEl = root.querySelector(".pano-floating-top");
   const toolRailEl = root.querySelector("[data-tool-rail]");
@@ -939,6 +944,9 @@ async function showEditor(node, type, options = {}) {
   const rasterErpCanvasCache = new Map();
   const stillCanvas = document.createElement("canvas");
   stillCanvas.__panoFrameIdx = 0;
+  // The still of the port Sticker's MP4 (#83).
+  const portStillCanvas = document.createElement("canvas");
+  portStillCanvas.__panoFrameIdx = 0;
   const runtime = {
     dirty: true,
     rafId: 0,
@@ -1183,6 +1191,37 @@ async function showEditor(node, type, options = {}) {
     },
   });
   videoCleanupFns.push(() => playback.dispose());
+  // PanoramaStickersNode's port Sticker plays its MP4 along the playhead, muted (#83).
+  const portVideo = sceneV2 && portVideoEl instanceof HTMLVideoElement
+    ? createVideoFollower({
+      video: portVideoEl,
+      onCapture: () => {
+        const width = Number(portVideoEl.videoWidth || 0);
+        const height = Number(portVideoEl.videoHeight || 0);
+        if (width < 1 || height < 1) return;
+        portStillCanvas.width = width;
+        portStillCanvas.height = height;
+        portStillCanvas.getContext("2d")?.drawImage(portVideoEl, 0, 0);
+        portStillCanvas.__panoFrameIdx += 1;
+        requestDraw({ cause: "frame_view", localOnly: true });
+      },
+      onChange: () => requestDraw({ cause: "frame_view", localOnly: true }),
+    })
+    : null;
+  if (portVideo) videoCleanupFns.push(() => portVideo.dispose());
+  // An RGBA IMAGE batch on the port shows its PNGs instead, which keep its alpha.
+  const portFrames = sceneV2
+    ? createFrameSequence({
+      createImage: (src, onLoad) => {
+        const image = new Image();
+        image.onload = onLoad;
+        image.onerror = onLoad;
+        image.src = src;
+        return image;
+      },
+      onLoad: () => requestDraw({ cause: "frame_view", localOnly: true }),
+    })
+    : null;
   if (videoEl instanceof HTMLVideoElement) {
     // The VIDEO's length and audio are known from its metadata on.
     const onVideoReady = () => {
@@ -2386,6 +2425,31 @@ async function showEditor(node, type, options = {}) {
     return getStickerUiImage(EXTERNAL_STICKER_PREVIEW_KEY, onLoad);
   }
 
+  // The port Sticker's MP4 ({ src, meta }) or the PNGs of an RGBA IMAGE batch ({ frames, meta }) in
+  // the node's current result, or null.
+  function getPortMedia() {
+    if (!isNodeOutputMediaCurrent(node, "external-sticker")) return null;
+    const meta = getNodeUiList(PORT_VIDEO_META_KEY)[0];
+    if (!meta || typeof meta !== "object") return null;
+    const frames = getNodeUiList(PORT_FRAMES_KEY).map(mediaSource).filter(Boolean);
+    if (frames.length) return { frames, meta };
+    const src = mediaSource(getNodeUiList(PORT_VIDEO_KEY)[0] || null);
+    return src ? { src, meta } : null;
+  }
+
+  // Has the port Sticker's MP4 follow the playhead, and returns the port Sticker's picture there:
+  // the playing VIDEO, the still of its frame, or the PNG of its image, else the first frame until
+  // there is one; null where the media shows nothing (ADR 0024).
+  function followPortSticker() {
+    const port = state.stickers.find(isExternalSticker);
+    const media = port ? getPortMedia() : null;
+    const time = media ? portMediaTime(port.clip, editor.frame, state.timeline.fps, media.meta) : null;
+    portVideo.follow({ src: media?.src || "", time, playing: playback.advancing, fps: state.timeline.fps });
+    const first = port ? getStickerImage(port) : null;
+    if (media?.frames) return portFrames.picture(media.frames, time, media.meta, first);
+    return portVideo.picture(portStillCanvas, first);
+  }
+
   function computeStickerVFov(hFovDeg, width, height) {
     const w = Math.max(1, Number(width || 1));
     const h = Math.max(1, Number(height || 1));
@@ -3528,10 +3592,11 @@ async function showEditor(node, type, options = {}) {
     if (editorViewScene.key !== sceneKey) {
       editorViewScene = { key: sceneKey, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
     }
+    const portPicture = portVideo ? followPortSticker() : null;
     const layers = editor.showObjects
       ? workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, {
         media: (item) => {
-          const img = getStickerImage(item);
+          const img = portVideo && isExternalSticker(item) ? portPicture : getStickerImage(item);
           return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
         },
         paintLayers,
@@ -5783,9 +5848,16 @@ async function showEditor(node, type, options = {}) {
       : null;
   }
 
+  // The Timeline length (5 s without one), widened to the background VIDEO and to the end of the
+  // port Sticker's media.
   function timelineSpanFrames(openClip = null) {
     const fps = state.timeline.fps;
-    const frames = uiState.videoTransport.ready ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0;
+    const port = state.stickers.find(isExternalSticker);
+    const portMedia = port ? getPortMedia() : null;
+    const frames = Math.max(
+      uiState.videoTransport.ready ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0,
+      portMedia ? portMediaFrames(port.clip, fps, portMedia.meta) : 0,
+    );
     return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip });
   }
 

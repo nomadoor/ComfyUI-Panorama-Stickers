@@ -8,6 +8,7 @@ from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 try:
     import av
@@ -250,7 +251,7 @@ def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np
     return np.ascontiguousarray(downmixed), sample_rate, "stereo"
 
 
-def _entry_from_path(path: Path, *, media_type: str) -> dict:
+def entry_from_path(path: Path, *, media_type: str) -> dict:
     root = _ensure_temp_root().resolve()
     target = path.resolve()
     try:
@@ -267,8 +268,13 @@ def _entry_from_path(path: Path, *, media_type: str) -> dict:
     }
 
 
+def temp_file_path(name: str) -> Path:
+    """The path of a file `name` in ComfyUI's temp directory, which ComfyUI clears on start and exit."""
+    return _ensure_temp_root() / name
+
+
 def _temp_mp4_path() -> Path:
-    return _ensure_temp_root() / f"pano_video_{uuid.uuid4().hex[:12]}.mp4"
+    return temp_file_path(f"pano_video_{uuid.uuid4().hex[:12]}.mp4")
 
 
 def save_video_to_mp4(video, container_format, codec) -> tuple[Path, bool]:
@@ -524,6 +530,31 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
     raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
 
 
+def save_editor_frames(images) -> list[Path]:
+    """Each image of an RGBA IMAGE batch as a PNG in temp, with its alpha, which an MP4 cannot hold, for the editor
+    to show the image of the playhead. One image at a time, its longer side at most EDITOR_MAX_SIZE."""
+    stem = f"pano_frames_{uuid.uuid4().hex[:12]}"
+    root = _ensure_temp_root()
+    paths = []
+    for index, image in enumerate(images):
+        picture = Image.fromarray((image.clamp(0.0, 1.0) * 255 + 0.5).byte().cpu().numpy(), "RGBA")
+        scale = min(1, EDITOR_MAX_SIZE / max(picture.size))
+        if scale < 1:
+            picture = picture.resize((max(1, round(picture.width * scale)), max(1, round(picture.height * scale))), Image.BILINEAR)
+        path = root / f"{stem}_{index:05d}.png"
+        picture.save(path, compress_level=1)
+        paths.append(path)
+    return paths
+
+
+def make_frames_ui_payload(paths: list[Path], fps: float, *, frames_key: str, meta_key: str) -> dict:
+    """The `ui` of the PNGs `save_editor_frames` saved, with the meta of an MP4 of them at `fps`."""
+    return {
+        frames_key: [entry_from_path(path, media_type="image/png") for path in paths],
+        meta_key: [{"fps": float(fps), "frames": len(paths), "duration": len(paths) / float(fps), "has_audio": False}],
+    }
+
+
 def make_video_ui_payload(
     mp4_path: Path,
     fps: float,
@@ -533,7 +564,7 @@ def make_video_ui_payload(
     video_key: str = "pano_videos",
     meta_key: str = "pano_video_meta",
 ) -> dict:
-    video_entry = _entry_from_path(Path(mp4_path), media_type="video/mp4")
+    video_entry = entry_from_path(Path(mp4_path), media_type="video/mp4")
     payload = {
         video_key: [video_entry],
         meta_key: [{

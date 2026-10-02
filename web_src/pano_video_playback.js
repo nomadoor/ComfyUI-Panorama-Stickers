@@ -275,6 +275,10 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
     get playing() {
       return playing();
     },
+    // Whether the playhead moves: a follower VIDEO (createVideoFollower) plays only then.
+    get advancing() {
+      return state.name === "playingVideo" || state.name === "playingClock";
+    },
     // The VIDEO itself is on screen only while it plays and has presented a frame; otherwise the still is.
     get showsVideo() {
       return state.name === "playingVideo" && state.shown;
@@ -298,6 +302,141 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
       leave();
       source = false;
       state = { name: "idle" };
+    },
+  };
+}
+
+// A second VIDEO that follows the playhead of a playback without a state machine of its own: the
+// port Sticker's media (#83). follow() runs on each draw with the source, the media time the
+// playhead shows (null where the media shows nothing), whether the playhead advances
+// (playback.advancing) and the Timeline fps. While the playhead advances, the VIDEO plays muted and
+// is sought again only when it drifts more than a frame from the playhead. Otherwise it rests
+// on the playhead's time: one seek in flight, the latest time sought next, and onCapture() once it is
+// there, for the caller to copy the picture into its still. Pausing captures the paused picture at
+// once, so the still never shows a frame from before playback while the seek confirms the time.
+//
+// `video` has the members createVideoPlayback reads, a src, removeAttribute("src") and load(), and
+// the events loadeddata/canplay/seeked/playing/error. onChange() runs when what picture() picks may change.
+export function createVideoFollower({ video, onCapture, onChange }) {
+  let src = "";
+  let failed = false;
+  let wanted = { time: null, playing: false, fps: 1 };
+  // The time of the seek in flight, the time the caller's still shows (NaN for the picture a pause
+  // left), and whether the playing VIDEO has presented since it started.
+  let seeking = null;
+  let still = null;
+  let shown = false;
+
+  function capture(time) {
+    still = time;
+    onCapture();
+  }
+
+  function seek(time) {
+    seeking = time;
+    video.currentTime = time;
+  }
+
+  // Brings the VIDEO to what follow() wants, and tells onChange when the picture switches between
+  // the playing VIDEO and the still.
+  function apply() {
+    const before = shown;
+    step();
+    if (shown !== before) onChange();
+  }
+
+  function step() {
+    if (!src || failed || video.readyState < HAVE_CURRENT_DATA) return;
+    const { time, playing, fps } = wanted;
+    if (time === null) {
+      video.pause();
+      shown = false;
+      return;
+    }
+    if (playing) {
+      if (seeking !== null) return;
+      // The meta's end can be past where the VIDEO really ends (its last frame lasts a frame at the
+      // average rate); there the VIDEO's end is the playhead's time.
+      const duration = Number(video.duration);
+      const target = Number.isFinite(duration) ? Math.min(time, duration) : time;
+      // A frame, plus the half frame the playhead is rounded to.
+      const off = Math.abs(Number(video.currentTime) - target) > 1.5 / fps;
+      // An ended VIDEO stays on its last frame; its play() would start over from 0.
+      if (video.ended && !off) return;
+      if (off) seek(target);
+      if (video.paused) {
+        shown = false;
+        Promise.resolve(video.play()).catch(() => {});
+      }
+      return;
+    }
+    if (!video.paused) {
+      video.pause();
+      shown = false;
+      capture(NaN);
+    }
+    if (seeking !== null || still === time) return;
+    if (Number(video.currentTime) === time) capture(time);
+    else seek(time);
+  }
+
+  const listeners = {
+    loadeddata: apply,
+    // The VIDEO can drop below HAVE_CURRENT_DATA (a seek, a stall) while follow() is not called.
+    canplay: apply,
+    seeked: () => {
+      const landed = seeking;
+      seeking = null;
+      if (!wanted.playing && landed === wanted.time) capture(landed);
+      else apply();
+    },
+    playing: () => {
+      if (!wanted.playing || shown) return;
+      shown = true;
+      onChange();
+    },
+    error: () => {
+      if (!src) return;
+      failed = true;
+      onChange();
+    },
+  };
+  video.muted = true;
+  for (const [type, listener] of Object.entries(listeners)) video.addEventListener(type, listener);
+
+  function setSource(next) {
+    src = next;
+    failed = false;
+    seeking = null;
+    still = null;
+    shown = false;
+    video.pause();
+    if (src) video.src = src;
+    else video.removeAttribute("src");
+    video.load();
+  }
+
+  return {
+    follow({ src: next = "", time = null, playing = false, fps }) {
+      if (next !== src) {
+        setSource(next);
+        onChange();
+      }
+      wanted = { time, playing, fps };
+      apply();
+    },
+    // What to draw: the playing VIDEO once it presents, else the still once captured, else
+    // `fallback` (the first frame); null where the media shows nothing. Without a source that
+    // plays, `fallback`.
+    picture(stillMedia, fallback) {
+      if (!src || failed) return fallback;
+      if (wanted.time === null) return null;
+      if (wanted.playing && shown) return video;
+      return still === null ? fallback : stillMedia;
+    },
+    dispose() {
+      for (const [type, listener] of Object.entries(listeners)) video.removeEventListener(type, listener);
+      setSource("");
     },
   };
 }

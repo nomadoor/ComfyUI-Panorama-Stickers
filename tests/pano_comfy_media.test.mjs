@@ -449,27 +449,32 @@ test("PanoramaStickersNode shows linked bg_media before a run and its own result
     pano_input_videos: [{ filename: "bg.mp4", subfolder: "", type: "temp", format: "video/mp4" }],
     pano_input_video_meta: [{ fps: 25, frames: 30, duration: 1.2, has_audio: true }],
     pano_sticker_input_images: [{ filename: "port.png", subfolder: "", type: "temp" }],
+    pano_sticker_input_videos: [{ filename: "port.mp4", subfolder: "", type: "temp", format: "video/mp4" }],
+    pano_sticker_input_video_meta: [{ kind: "VIDEO", fps: 30, frames: 45, duration: 1.5, has_audio: false }],
+    pano_sticker_input_frames: [{ filename: "port_00000.png", subfolder: "", type: "temp", format: "image/png" }],
   };
   app.nodeOutputs = { 12: output };
-  const executed = [
+  const read = () => [
     media.source(media.uiList(node, "pano_input_images")[0]),
     media.source(media.uiList(node, "pano_input_videos")[0]),
     media.uiValue(node, "pano_input_video_meta")[0].frames,
     media.source(media.uiList(node, "pano_sticker_input_images")[0]),
+    media.source(media.uiList(node, "pano_sticker_input_videos")[0]),
+    media.uiList(node, "pano_sticker_input_video_meta")[0].duration,
+    media.source(media.uiList(node, "pano_sticker_input_frames")[0]),
   ];
+  const executed = read();
   assert.deepEqual(executed, [
     "/api/view?filename=bg.png&type=temp",
     "/api/view?filename=bg.mp4&type=temp",
     30,
     "/api/view?filename=port.png&type=temp",
+    "/api/view?filename=port.mp4&type=temp",
+    1.5,
+    "/api/view?filename=port_00000.png&type=temp",
   ]);
 
   // A reload restores the outputs as a clone keyed by the node locator id.
   app.nodeOutputs = structuredClone({ "12": output });
-  assert.deepEqual([
-    media.source(media.uiList(node, "pano_input_images")[0]),
-    media.source(media.uiList(node, "pano_input_videos")[0]),
-    media.uiValue(node, "pano_input_video_meta")[0].frames,
-    media.source(media.uiList(node, "pano_sticker_input_images")[0]),
-  ], executed);
+  assert.deepEqual(read(), executed);
 });

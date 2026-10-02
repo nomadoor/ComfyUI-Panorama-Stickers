@@ -246,9 +246,11 @@ def test_stickers_ui_encodes_image_batches_at_the_timeline_fps(tmp_path):
     assert ui["pano_input_video_meta"][0]["fps"] == 30.0
     assert ui["pano_input_video_meta"][0]["frames"] == 3
     assert ui["pano_sticker_input_images"]
-    assert "pano_sticker_input_videos" not in ui
+    assert ui["pano_sticker_input_video_meta"][0]["fps"] == 30.0
     with av.open(str(_ui_mp4(ui, "pano_input_videos", tmp_path))) as container:
         assert container.streams.video[0].frames == 3
+    with av.open(str(_ui_mp4(ui, "pano_sticker_input_videos", tmp_path))) as container:
+        assert container.streams.video[0].frames == 2
 
 
 def test_stickers_ui_saves_video_media_without_reading_it_whole(tmp_path, monkeypatch):
@@ -264,10 +266,12 @@ def test_stickers_ui_saves_video_media_without_reading_it_whole(tmp_path, monkey
     assert ui["pano_input_images"]
     assert ui["pano_input_video_meta"][0] == {"fps": 25.0, "frames": 30, "duration": 1.2, "has_audio": True}
     assert ui["pano_sticker_input_images"]
-    assert "pano_sticker_input_videos" not in ui
+    assert ui["pano_sticker_input_video_meta"][0]["frames"] == 12
     with av.open(str(_ui_mp4(ui, "pano_input_videos", tmp_path))) as container:
         assert container.streams.video[0].frames == 30
         assert container.streams.audio
+    with av.open(str(_ui_mp4(ui, "pano_sticker_input_videos", tmp_path))) as container:
+        assert container.streams.video[0].frames == 12
 
 
 def test_stickers_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch):

@@ -46,10 +46,22 @@ from .core.scene_eval import FRAME_EPSILON, evaluate_scene_state
 from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
-from .core.video import editor_ready, encode_editor_mp4, make_video_ui_payload, mp4_has_audio, save_video_to_mp4
+from .core.video import (
+    editor_ready,
+    encode_editor_mp4,
+    entry_from_path,
+    make_frames_ui_payload,
+    make_video_ui_payload,
+    mp4_has_audio,
+    save_editor_frames,
+    save_video_to_mp4,
+)
 from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world_render import SceneContent
+from .scene_files import write_editor_files
+from .scene_mesh import is_mesh_file, mesh_scene_content, moge_scene_content, read_mesh_file
 from .scene_video import SceneVideo
+from .splat_render import read_splat_file, splat_content
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
@@ -1003,9 +1015,9 @@ class PanoSceneValue:
     `state` is the loaded `state_json` with the port Sticker appended when missing, and `sources` its Sticker
     sources read into memory; the port Sticker's source is a template holding the first frame of `port`, the
     media on the sticker input (None without one), whose frames come from `port.frames()` at `port.index_at`.
-    `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given. `coverage` is the span of `bg_media`,
-    `bg_color` 0..1 RGB. The output size is not part of it; each consumer sets its own. `fps` is the Timeline fps
-    and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
+    `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given, a 3D file as the SPLAT or MESH read
+    from it (`_read_scene_file`). `coverage` is the span of `bg_media`, `bg_color` 0..1 RGB. The output size is
+    not part of it; each consumer sets its own. `fps` is the Timeline fps and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
     frame, and the `scene` item, as `_decide_timeline` returns them.
     Consumers must not modify it; the same value reaches every node linked to the output.
     """
@@ -1047,8 +1059,42 @@ def _scene_content(scene) -> SceneContent | None:
     """The `scene` input as World content, or None without one."""
     if scene is None:
         return None
-    # Temporary on the integration branch: the SPLAT (#61) and MESH / MoGe (#62) rasterizers are added later.
+    if isinstance(scene, Types.SPLAT):
+        return splat_content(scene)
+    if isinstance(scene, Types.MESH):
+        return mesh_scene_content(scene)
+    if isinstance(scene, dict):
+        return moge_scene_content(scene)
+    # A 3D file that neither reader took (`_read_scene_file`): a PLY without 3DGS properties, or a non-splat file
+    # without a format.
     raise NotImplementedError(f"Panorama Stickers: {_input_type_name(scene)} on the scene input is not supported yet.")
+
+
+def _read_scene_file(scene):
+    """A 3D file on the `scene` input as what is read from it: a splat file (told by its contents, as Load3D does)
+    as its SPLAT, else a mesh file (by its format) as its MESH; other inputs, and 3D files neither reads, as given.
+    What is read is kept per file (on disk by its path and modification, else by the object) in the cache of its
+    kind, so the same file is not parsed again and keeps its editor files."""
+    if not isinstance(scene, Types.File3D):
+        return scene
+    if scene.is_disk_backed:
+        stat = os.stat(scene.get_source())
+        cache_key = (scene.get_source(), stat.st_mtime_ns, stat.st_size)
+    else:
+        cache_key = NODE_RUNTIME.object_identity(scene)
+    for namespace in ("splat_files", "mesh_files"):
+        value = NODE_RUNTIME.cache.get(namespace, cache_key)
+        if value is not None:
+            return value
+    splat = read_splat_file(scene)
+    if splat is not None:
+        NODE_RUNTIME.cache.put("splat_files", cache_key, splat)
+        return splat
+    if not is_mesh_file(scene):
+        return scene
+    mesh = read_mesh_file(scene)
+    NODE_RUNTIME.cache.put("mesh_files", cache_key, mesh)
+    return mesh
 
 
 def _unused_sticker_id(stickers: list[dict]) -> str:
@@ -1256,11 +1302,12 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
 
 
 def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, port: PortMedia | None,
-                   scene: SceneContent | None, capture, device):
+                   scene, capture, device):
     """(b) Render each output frame with the shared render function, with the port Sticker's source at the
-    frame of `port` and the item of `scene` that (a) chose. `capture` maps the evaluated state of a frame to the
-    Camera value and the Projection to draw it with; the Projection's size is the same for every frame. `bg` is
-    the bg_media IMAGE, an opened VIDEO, or None; the port media is opened for this pass.
+    frame of `port` and the item of the `scene` input that (a) chose. `capture` maps the evaluated state of a frame
+    to the Camera value and the Projection to draw it with; the Projection's size is the same for every frame.
+    `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media and the `scene` content are opened for
+    this pass, so nothing they put on `device` outlives it.
     Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
     the same tensors as the previous one."""
     bg_width = None
@@ -1269,6 +1316,7 @@ def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, por
     if port is not None:
         port_frames = port.frames()
         others = {key: value for key, value in sources.stickers.items() if key != port.sticker_id}
+    content = _scene_content(scene)
     cache = {}
     port_source = None
     for frame, bg_index, port_index, scene_index in frames:
@@ -1292,7 +1340,7 @@ def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, por
             device=device,
             cache=cache,
             bg_width=bg_width,
-            scene=scene,
+            scene=content,
             scene_index=scene_index,
         )
         yield color, mask
@@ -1304,10 +1352,10 @@ def _open_media(media, name: str):
 
 
 def _render_outputs(state: dict, sources: SceneSources, frames, bg_media, bg_name: str, bg, bg_color, port: PortMedia | None,
-                    scene: SceneContent | None, capture, size: tuple[int, int]):
+                    scene, capture, size: tuple[int, int]):
     """(c) The first output frame's IMAGE and MASK, rendered now from the opened `bg`, and the `video` of every
-    frame, rendered when it is read with `bg_media` opened again for each pass. `state` is the one (a) decided the
-    Timeline of `frames` for."""
+    frame, rendered when it is read with `bg_media` and the `scene` content opened again for each pass. `state`
+    is the one (a) decided the Timeline of `frames` for."""
     color, mask = next(_render_frames(state, sources, frames, bg, bg_color, port, scene, capture, comfy.model_management.get_torch_device()))
     timing = _timing_video(bg, port)
     rate = _timeline_rate(state, timing)
@@ -1329,10 +1377,73 @@ def _bg_media_ui(bg_media, bg, fps: float) -> dict:
         return _video_ui(bg_media, bg, float(bg.frame_rate), len(bg.times), contract)
     ui_ret = _init_ui_preview(bg_media, key=contract["image"])
     if bg_media.shape[0] > 1:
-        batch = MaterializedVideo(Types.VideoComponents(images=bg_media, frame_rate=Fraction(round(fps * 1000), 1000)), "bg_media")
-        cache_key = ("editor_mp4", _tensor_cache_identity(bg_media), float(fps))
-        _merge_ui_payload(ui_ret, _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch), fps, len(batch.times), contract))
+        _merge_ui_payload(ui_ret, _batch_mp4_ui(bg_media, "bg_media", fps, contract))
     return ui_ret
+
+
+def _batch_mp4_ui(images: torch.Tensor, name: str, fps: float, contract: dict) -> dict:
+    """The `ui` of the editor MP4 of an IMAGE batch, evenly spaced at `fps`, made once per batch and fps."""
+    batch = MaterializedVideo(Types.VideoComponents(images=images, frame_rate=Fraction(round(fps * 1000), 1000)), name)
+    cache_key = ("editor_mp4", _tensor_cache_identity(images), float(fps))
+    return _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch), fps, len(batch.times), contract)
+
+
+def _editor_frames_ui(images: torch.Tensor, fps: float, contract: dict) -> dict:
+    """The `ui` of an RGBA IMAGE batch as one PNG per image, saved once per batch and reused while the files are
+    there. Each image is a file of its own, so a long batch costs a PNG per image in temp."""
+    cache_key = ("editor_frames", _tensor_cache_identity(images))
+    paths = NODE_RUNTIME.cache.get("video", cache_key)
+    if paths is None or not all(path.exists() for path in paths):
+        paths = save_editor_frames(images)
+        NODE_RUNTIME.cache.put("video", cache_key, paths)
+    return make_frames_ui_payload(paths, fps, frames_key=contract["frames"], meta_key=contract["meta"])
+
+
+def _port_media_ui(port: PortMedia, fps: float, timing) -> dict:
+    """The `ui` of the sticker media: its first frame, and an MP4 for the editor to follow the Timeline with when it
+    has two or more frames, made like the bg_media one. An RGBA IMAGE batch is PNGs instead (`_editor_frames_ui`),
+    since an MP4 drops the alpha that the `video` output keeps. The meta tells how a Timeline frame maps to the MP4 as
+    `PortMedia.index_at` maps it: `kind`, `duration` (where the media ends), and for a VIDEO `pts_tolerance`, the
+    seconds before a PTS that count as its frame (half the time base of the media or of `timing`, the VIDEO that
+    sets the Timeline)."""
+    contract = _get_preview_ui_contract("stickers_input")
+    ui_ret = _init_ui_preview(port.first_frame[None], key=contract["image"])
+    video = port.media
+    if port.times is None:
+        if video.shape[0] < 2:
+            return ui_ret
+        payload = _editor_frames_ui(video, fps, contract) if video.shape[-1] == 4 else _batch_mp4_ui(video, "sticker", fps, contract)
+        payload[contract["meta"]][0]["kind"] = "IMAGE"
+    else:
+        if len(port.times) < 2:
+            return ui_ret
+        # The VIDEO is opened again only to make the MP4; PortMedia does not keep it open.
+        cache_key = ("editor_mp4", _video_cache_identity(video, port.streamed))
+        payload = _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, open_video(video, "sticker")), float(port.frame_rate), len(port.times), contract)
+        time_base = max(port.time_base, 0 if timing is None else timing.time_base)
+        payload[contract["meta"]][0].update(kind="VIDEO", duration=float(port.times[-1] + 1 / port.frame_rate), pts_tolerance=float(time_base) / 2)
+    return _merge_ui_payload(ui_ret, payload)
+
+
+SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary"}
+
+
+def _scene_ui(scene) -> dict:
+    """The `ui` of the `scene` input: a temp file per item for the editor (`write_editor_files`), None for an empty
+    item, and the kind it loads. The files are written once per input and reused while they are there, keyed by
+    the input and the tensors it is read from (a MOGE_GEOMETRY is a dict)."""
+    if isinstance(scene, dict):
+        cache_key = tuple((key, _tensor_cache_identity(scene[key])) for key in ("points", "mask", "image", "intrinsics") if key in scene)
+    else:
+        positions = scene.positions if isinstance(scene, Types.SPLAT) else scene.vertices
+        cache_key = (NODE_RUNTIME.object_identity(scene), _tensor_cache_identity(positions))
+    saved = NODE_RUNTIME.cache.get("scene_files", cache_key)
+    if saved is None or not all(path is None or path.exists() for path in saved[1]):
+        saved = write_editor_files(scene)
+        NODE_RUNTIME.cache.put("scene_files", cache_key, saved)
+    kind, paths = saved
+    files = [None if path is None else entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]]) for path in paths]
+    return {"pano_scene_files": files, "pano_scene_meta": [{"kind": kind}]}
 
 
 # TODO(#78): rename to PanoramaStickersNode, matching the node_id, once the legacy class is removed.
@@ -1367,6 +1478,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
     @classmethod
     def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
         _reject_unsupported_sticker(sticker)
+        scene = _read_scene_file(scene)
         content = _scene_content(scene)
         warnings = []
         state = load_scene_state(state_json)
@@ -1382,7 +1494,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
         fps, frames = _decide_timeline(state, bg, port, content)
         image, mask, video = _render_outputs(
-            state, sources, frames, bg_media, "bg_media", bg, bg_rgb, port, content, lambda evaluated: (evaluated["camera"], projection), (out_w, out_h)
+            state, sources, frames, bg_media, "bg_media", bg, bg_rgb, port, scene, lambda evaluated: (evaluated["camera"], projection), (out_w, out_h)
         )
         # PANO_SCENE binds the state to the inputs and the decided Timeline.
         pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
@@ -1393,9 +1505,10 @@ class PanoramaStickersSceneNode(io.ComfyNode):
             ui_ret["pano_timeline_fps"] = [fps]
         if bg_media is not None:
             _merge_ui_payload(ui_ret, _bg_media_ui(bg_media, bg, fps))
+        if scene is not None:
+            _merge_ui_payload(ui_ret, _scene_ui(scene))
         if port is not None:
-            # Only the first frame of the sticker; the editor plays it with the timeline (#73).
-            _merge_ui_payload(ui_ret, _init_ui_preview(port.first_frame[None], key=_get_preview_ui_contract("stickers_input")["image"]))
+            _merge_ui_payload(ui_ret, _port_media_ui(port, fps, _timing_video(bg, port)))
             if not has_port:
                 # The pose the port Sticker was added at, with the Keyframes of a Camera that moved (Pose handoff),
                 # for the editor to add it to the state the same way.
@@ -1455,7 +1568,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
         if isinstance(source, PanoSceneValue):
             # The Scene is the Stickers state; the Cutout state gives only the Camera, at its own recorded fps.
             state, sources, port, coverage_deg, bg_color = source.state, source.sources, source.port, source.coverage, source.bg_color
-            content = _scene_content(source.scene)
+            scene = source.scene
             bg_media, bg_name = source.bg_media, "bg_media"
             bg = _open_media(bg_media, bg_name)
             frames = source.frames
@@ -1466,7 +1579,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
         else:
             # An ERP IMAGE or VIDEO is the background in the Scene's orientation, under the Cutout state's Sky.
             # Outside a 180 ERP the image is black, as in the legacy Cutout.
-            state, port, content, coverage_deg, bg_color = cutout, None, None, normalize_coverage(coverage), (0.0, 0.0, 0.0)
+            state, port, scene, coverage_deg, bg_color = cutout, None, None, normalize_coverage(coverage), (0.0, 0.0, 0.0)
             warnings = []
             sources = _resolve_sources(state, None, warnings)
             # TODO(#77): show these in the Cutout `ui`.
@@ -1487,7 +1600,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             camera = camera_at(evaluated)
             return camera, Projection.perspective(width, height, camera["hFOV_deg"], coverage_deg)
 
-        image, mask, video = _render_outputs(state, sources, frames, bg_media, bg_name, bg, bg_color, port, content, capture, (width, height))
+        image, mask, video = _render_outputs(state, sources, frames, bg_media, bg_name, bg, bg_color, port, scene, capture, (width, height))
         return io.NodeOutput(image, _cutout_sticker_state(cutout, width, height), mask, video)
 
 
@@ -1795,10 +1908,10 @@ def _preview_ui(images: torch.Tensor, fps: float, audio, unique_id) -> dict:
     return ui_ret
 
 
-def _video_cache_identity(video, opened) -> tuple:
+def _video_cache_identity(video, streamed: bool) -> tuple:
     """A VIDEO that `open_video` streams from its file (so without a crop) is its file and trim window; any other
     VIDEO is the object itself."""
-    if isinstance(opened, StreamedVideo):
+    if streamed:
         source = video.get_stream_source()
         if isinstance(source, str):
             return ("file", source, os.stat(source).st_mtime_ns, video.get_active_trim_window())
@@ -1843,7 +1956,7 @@ def _video_ui(video, opened, fps: float, frame_count: int, contract: dict) -> di
     stays the same."""
     ui_ret = _init_ui_preview(opened.first_frame[None], key=contract["image"])
     if frame_count > 1:
-        cache_key = ("editor_mp4", _video_cache_identity(video, opened))
+        cache_key = ("editor_mp4", _video_cache_identity(video, isinstance(opened, StreamedVideo)))
         _merge_ui_payload(ui_ret, _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, opened), fps, frame_count, contract))
     return ui_ret
 

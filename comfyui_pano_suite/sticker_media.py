@@ -46,7 +46,8 @@ class PortMedia:
     PTS, so each Timeline frame shows its nearest image. A VIDEO plays in real time: each Timeline frame shows
     its last frame that starts at or before it (PTS <= t), and the last frame lasts one frame at the average
     rate. `frame_rate`, `times` (seconds from the first frame of the trim window), and `time_base` are the
-    VIDEO's, None for an IMAGE. Timeline frames are those of the state, at `stored_fps`.
+    VIDEO's, None for an IMAGE; `streamed` is whether `open_video` streams the VIDEO from its file. Timeline frames
+    are those of the state, at `stored_fps`.
     """
 
     def __init__(self, sticker_id: str, clip: dict, media, stored_fps: float):
@@ -57,10 +58,12 @@ class PortMedia:
         self._stored_fps = stored_fps
         if isinstance(media, torch.Tensor):
             self.frame_rate = self.times = self.time_base = self._starts = None
+            self.streamed = False
             self.first_frame = media[0]
             return
         video = open_video(media, "sticker")
         self.frame_rate, self.times, self.time_base, self.first_frame = video.frame_rate, video.times, video.time_base, video.first_frame
+        self.streamed = isinstance(video, StreamedVideo)
         # Half the step its PTS are rounded to, in Timeline frames.
         self._tolerance = float(video.time_base) / 2 * stored_fps
         # Where each frame starts and where the last one ends, in Timeline frames from the first frame.
