@@ -175,23 +175,26 @@ export function hasContent(media) {
   return !(media instanceof HTMLVideoElement) || media.readyState >= HTMLVideoElement.HAVE_CURRENT_DATA;
 }
 
-// The texture of a layer, from `owned` (layer id -> entry). A layer whose media changes keeps its
-// texture until the new media has a picture, so a VIDEO that is loading or seeking never shows
-// an empty upload in place of the frame before. A 360 ERP wraps around horizontally; a 180 ERP and
-// a Sticker clamp at their edges.
-export function layerTexture(owned, id, media, revision, wrapS, flipY) {
+// The texture of a layer, from `owned` (layer id -> entry). `source` names what the media shows (a
+// VIDEO's URL for the VIDEO, its stills and its first frame; the media itself by default). A layer whose
+// media changes within its source keeps its texture until the new media has a picture, so a VIDEO that
+// is loading or seeking never shows an empty upload in place of the frame before. Another source never
+// shows the picture of the one before. A 360 ERP wraps around horizontally; a 180 ERP and a Sticker
+// clamp at their edges.
+export function layerTexture(owned, id, media, revision, wrapS, flipY, source = media) {
   const size = mediaSize(media);
   let entry = owned.get(id);
-  if (entry && (entry.media !== media || entry.width !== size.width || entry.height !== size.height)) {
-    if (!hasContent(media)) {
+  if (entry && (entry.source !== source || entry.media !== media || entry.width !== size.width || entry.height !== size.height)) {
+    if (entry.source === source && !hasContent(media)) {
       entry.used = true;
       return entry.texture;
     }
     entry.texture.dispose();
+    owned.delete(id);
     entry = null;
   }
   if (!entry) {
-    entry = { texture: createTexture(media, flipY), media, revision, ...size };
+    entry = { texture: createTexture(media, flipY), media, source, revision, ...size };
     owned.set(id, entry);
   } else if (entry.revision !== revision || entry.texture.wrapS !== wrapS) {
     entry.revision = revision;
@@ -200,6 +203,12 @@ export function layerTexture(owned, id, media, revision, wrapS, flipY) {
   entry.texture.wrapS = wrapS;
   entry.used = true;
   return entry.texture;
+}
+
+// Whether a layer draws: once its media has a picture, or with the texture its source had (in
+// `owned`) while the new media has none.
+export function layerDrawable(owned, { id, media, source }) {
+  return hasContent(media) || owned.get(id)?.source === (source ?? media);
 }
 
 function createMaterial(vertexShader, fragmentShader, uniforms, blending = CustomBlending) {
@@ -286,7 +295,7 @@ export function createThreeView() {
   }
 
   function addErp(owned, projection, mesh, layer, halfCoverage) {
-    mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
+    mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false, layer.source ?? layer.media);
     mesh.material.uniforms.opacity.value = layer.opacity;
     projection.placeErp(mesh, halfCoverage);
     scene.add(mesh);
@@ -294,16 +303,11 @@ export function createThreeView() {
   }
 
   function addSticker(owned, projection, mesh, layer) {
-    mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true);
+    mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true, layer.source ?? layer.media);
     mesh.material.uniforms.opacity.value = layer.opacity;
     projection.placeSticker(mesh, layer);
     scene.add(mesh);
     return mesh;
-  }
-
-  // A layer draws once its media has a picture, or with the texture it had while the new one has none.
-  function drawable(owned, id, media) {
-    return hasContent(media) || owned.has(id);
   }
 
   function draw(projection, input) {
@@ -327,13 +331,13 @@ export function createThreeView() {
     const owned = entry.textures;
     owned.forEach((item) => { item.used = false; });
     const background = input.background;
-    if (background && drawable(owned, "background", background.media)) {
+    if (background && layerDrawable(owned, { id: "background", ...background })) {
       addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
     }
     let erpIndex = 0;
     let stickerIndex = 0;
     input.layers.forEach((layer, index) => {
-      if (!drawable(owned, layer.id, layer.media)) return;
+      if (!layerDrawable(owned, layer)) return;
       const mesh = layer.kind === "erp"
         ? addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false)
         : addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
@@ -352,7 +356,8 @@ export function createThreeView() {
   // input: { width, height, camera, background, layers, owner }. camera is a viewportCamera() or
   // shotCamera() setup, background is { media, revision, coverage } or null, and layers are the Sky
   // layers from back to front: { kind: "erp", id, media, revision, opacity } or
-  // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. owner is optional.
+  // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. Each may name its `source`
+  // (see layerTexture). owner is optional.
   // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
   function render(input) {
     applyViewportCamera(camera, input.camera);

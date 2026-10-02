@@ -335,11 +335,45 @@ test("the output of a node inside a subgraph is recorded by its execution id", a
   assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
 });
 
-test("a node without a recorded output source treats its output as current", () => {
+test("an output first seen without a record comes from the links as they are then, and a later relink makes it stale", () => {
   const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { id: 31 });
   app.nodeOutputs["31"] = bgOutput("never-recorded");
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
+  rewire(node, "bg_media", 7);
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
+  rewire(node, "bg_media", 4);
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
   assert.equal(isNodeOutputMediaCurrent(graphNode({}, {}, { id: 32 }), "background"), true);
+});
+
+// The owner's swap: a VIDEO on `sticker` ran, its output came back without a record (a workflow tab or a
+// job opened from the queue, before any job is read), and the VIDEO was swapped for an IMAGE without a run.
+test("an unrecorded output of a VIDEO on the port is stale once the port is relinked to an IMAGE", () => {
+  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { bg_media: 1, sticker: 2 }, { id: 33 });
+  app.nodeOutputs["33"] = {
+    pano_sticker_input_videos: [{ filename: "port-video.mp4", subfolder: "", type: "temp" }],
+    pano_sticker_input_video_meta: [{ kind: "VIDEO", fps: 24, frames: 48, duration: 2 }],
+  };
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), true);
+  node.inputs[2].link = null;
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), false);
+  rewire(node, "sticker", 6);
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), false);
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
+});
+
+test("an output that newer ones dropped from the record is recorded again when next seen", () => {
+  const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { id: 34 });
+  app.nodeOutputs["34"] = bgOutput("evicted");
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
+  const other = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { id: 35 });
+  for (let index = 0; index < 300; index += 1) {
+    app.nodeOutputs["35"] = bgOutput(`filler-${index}`);
+    isNodeOutputMediaCurrent(other, "background");
+  }
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
+  rewire(node, "bg_media", 8);
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), false);
 });
 
 test("after a browser reload the nodes of a graph share one look at the job history and keep the inputs each job ran on", async () => {

@@ -124,7 +124,7 @@ import {
 } from "./pano_stickers_node_surface.js";
 import { isNodeOutputMediaCurrent, videoLinked } from "./pano_preview_video.js";
 import { createVideoFollower, createVideoPlayback, frameAtTime } from "./pano_video_playback.js";
-import { createFrameSequence, portMediaFrames, portMediaTime } from "./pano_port_media.js";
+import { createFrameSequence, portMediaFrames, portMediaSource, portMediaTime } from "./pano_port_media.js";
 import {
   drawStickerSelectionBoundary,
   drawStickerSelectionHandles,
@@ -2437,17 +2437,19 @@ async function showEditor(node, type, options = {}) {
     return src ? { src, meta } : null;
   }
 
-  // Has the port Sticker's MP4 follow the playhead, and returns the port Sticker's picture there:
-  // the playing VIDEO, the still of its frame, or the PNG of its image, else the first frame until
-  // there is one; null where the media shows nothing (ADR 0024).
+  // Has the port Sticker's MP4 follow the playhead, and returns the port Sticker's picture there
+  // ({ media, revision, source }): the playing VIDEO, the still of its frame, or the PNG of its image,
+  // else the first frame until there is one; null where the media shows nothing (ADR 0024).
   function followPortSticker() {
     const port = state.stickers.find(isExternalSticker);
     const media = port ? getPortMedia() : null;
     const time = media ? portMediaTime(port.clip, editor.frame, state.timeline.fps, media.meta) : null;
     portVideo.follow({ src: media?.src || "", time, playing: playback.advancing, fps: state.timeline.fps });
     const first = port ? getStickerImage(port) : null;
-    if (media?.frames) return portFrames.picture(media.frames, time, media.meta, first);
-    return portVideo.picture(portStillCanvas, first);
+    const picture = media?.frames
+      ? portFrames.picture(media.frames, time, media.meta, first)
+      : portVideo.picture(portStillCanvas, first);
+    return picture ? { media: picture, revision: getMediaRevisionToken(picture), source: portMediaSource(media, first) } : null;
   }
 
   function computeStickerVFov(hFovDeg, width, height) {
@@ -3596,14 +3598,17 @@ async function showEditor(node, type, options = {}) {
     const layers = editor.showObjects
       ? workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, {
         media: (item) => {
-          const img = portVideo && isExternalSticker(item) ? portPicture : getStickerImage(item);
+          if (portVideo && isExternalSticker(item)) return portPicture;
+          const img = getStickerImage(item);
           return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
         },
         paintLayers,
       })
       : paintLayers.map((layer) => ({ kind: "erp", ...layer }));
+    // The background VIDEO and its still are one source, so a seek keeps the frame before.
+    const bgSource = bgImg && (bgImg === videoEl || bgImg === stillCanvas) ? videoEl.dataset.panoSrc : bgImg;
     const background = editor.showPanorama && isDecodedImageReady(bgImg)
-      ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage) }
+      ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage), source: bgSource }
       : null;
     return { background, layers };
   }

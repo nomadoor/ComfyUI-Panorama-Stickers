@@ -113,6 +113,10 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
       return loaded;
     },
     pause,
+    // The port Sticker's media it follows: { src, meta }, { frames, meta } or null.
+    get stickerMedia() {
+      return sticker;
+    },
     // The port Sticker's picture (createVideoFollower's picture).
     stickerPicture(still, fallback) {
       if (sticker?.frames) return frames.picture(sticker.frames, stickerTime, sticker.meta, fallback);

@@ -12,6 +12,7 @@ import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
 import { createNodePlayback, surfaceShown } from "./pano_node_playback.js";
+import { portMediaSource } from "./pano_port_media.js";
 import {
   beginCutoutRollGesture,
   buildCutoutAddFrameAction,
@@ -1489,9 +1490,11 @@ function surfaceViewInput(node, state, bgImg) {
       img = getNodePreviewImage(node, item.id, sourceAsset(item.source), { external: item.source.kind === "port" });
       const surfacePlayback = node.__panoSurfacePlayback;
       if (item.source.kind === "port" && surfacePlayback) {
-        // The port Sticker's MP4 follows the playhead; the view keeps the texture before while it has no picture.
+        // The port Sticker's MP4 follows the playhead; the view keeps the texture before while the
+        // same media has no picture, and drops it for other media on the port.
         const picture = surfacePlayback.playback.stickerPicture(surfacePlayback.stickerStill, img);
-        return picture ? { media: picture, revision: getRenderableMediaRevisionToken(picture) } : null;
+        const source = portMediaSource(surfacePlayback.playback.stickerMedia, img);
+        return picture ? { media: picture, revision: getRenderableMediaRevisionToken(picture), source } : null;
       }
     } else {
       const external = item.type === "external_image" || item.source_kind === "external_image";

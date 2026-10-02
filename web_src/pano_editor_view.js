@@ -91,7 +91,8 @@ export function viewProjection(camera, width, height) {
 // Sky layers from back to front: the state's sky Stickers evaluated at the Timeline frame, and the
 // paint layers (ERP canvases). Sky Stickers and paint share one z_index axis; #52 adds z_index to
 // the sky Stickers of state v2, and until then the editor's z_index is passed in.
-// media(sticker) returns { media, revision } for a Sticker, or null.
+// media(sticker) returns { media, revision, source? } for a Sticker (source: see pano_three_view.js
+// layerTexture), or null.
 export function skyLayers(sceneState, frame, { media, zIndex, paintLayers }) {
   const evaluated = evaluateSceneState(sceneState, frame);
   const layers = [];
@@ -110,6 +111,7 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers }) {
       id: sticker.id,
       media: shown.media,
       revision: shown.revision,
+      source: shown.source,
       opacity: hiddenPort ? HIDDEN_PREVIEW_OPACITY : value.opacity,
       zIndex: zIndex(sticker),
       quaternion: rotationToQuaternion(worldRotation(value.yaw_deg, value.pitch_deg, value.roll_deg)),
@@ -153,12 +155,17 @@ function mediaId(media) {
   return mediaIds.get(media);
 }
 
+// A layer's source: a URL as it is, media by its id.
+function sourceId(source) {
+  return source && typeof source === "object" ? mediaId(source) : source;
+}
+
 // A key that changes whenever the frame drawn from { background, layers } can change: the media
-// objects and revisions the view uploads textures by, and every placement it draws with.
+// objects, sources and revisions the view uploads textures by, and every placement it draws with.
 export function viewInputKey({ background, layers }) {
   return JSON.stringify([
-    background && [mediaId(background.media), background.revision, background.coverage],
-    layers.map((layer) => [layer.kind, layer.id, mediaId(layer.media), layer.revision, layer.opacity, layer.quaternion, layer.rect]),
+    background && [mediaId(background.media), sourceId(background.source), background.revision, background.coverage],
+    layers.map((layer) => [layer.kind, layer.id, mediaId(layer.media), sourceId(layer.source), layer.revision, layer.opacity, layer.quaternion, layer.rect]),
   ]);
 }
 

@@ -277,6 +277,16 @@ test("external sticker textures resolve only from the node's current dedicated o
   assert.match(runtime, /function portStickerMedia\(node\) \{\s*if \(!isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;[\s\S]*?"pano_sticker_input_video_meta"[\s\S]*?pano_sticker_input_frames[\s\S]*?\["pano_sticker_input_videos"\]/);
 });
 
+// The port Sticker's picture names its media, so the three.js view keeps the frame before only within
+// one media (a seek, a loop) and never shows a swapped-out VIDEO's frame for the next media.
+test("the port Sticker's picture carries its media as the source of its layer, on the node and in the editor", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const editor = await read("../web_src/pano_editor.js");
+  assert.match(runtime, /const source = portMediaSource\(surfacePlayback\.playback\.stickerMedia, img\);\s*return picture \? \{ media: picture, revision: getRenderableMediaRevisionToken\(picture\), source \} : null;/);
+  assert.match(editor, /return picture \? \{ media: picture, revision: getMediaRevisionToken\(picture\), source: portMediaSource\(media, first\) \} : null;/);
+  assert.match(editor, /if \(portVideo && isExternalSticker\(item\)\) return portPicture;/);
+});
+
 test("failed sticker image loads do not schedule an immediate retry loop", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const start = runtime.indexOf("function getNodePreviewImage(");
