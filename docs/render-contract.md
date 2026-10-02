@@ -119,7 +119,6 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 | 内容 | 解消する ticket |
 |---|---|
 | `scene` 入力の SPLAT・スプラット系の 3D ファイル / MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`（`nodes.py` の `_scene_content`） | #61 / #62 |
-| Camera のいずれかの Lane に Keyframe が 2 つ以上ある `sticker_state`（v2。Drone で撮ったものは常にこれに当たる）。軌道ごとの Pose handoff | #65 |
 
 ## Stickers ノード（`PanoramaStickersNode`）
 
@@ -166,7 +165,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   | `pano_input_images` | `bg_media` の最初のフレーム |
   | `pano_input_videos` / `pano_input_video_meta` | `bg_media` が 2 フレーム以上のときの一時 MP4 とメタ情報（`fps`・`frames`・`duration`・`has_audio`） |
   | `pano_sticker_input_images` | `sticker` の最初のフレーム。`sticker` の MP4 は出さない（エディタでの再生は Timeline と一緒に #73 の後で加える） |
-  | `pano_sticker_input_pose` | 状態に `port` の Sticker がなく、ノードが加えたときの姿勢（`yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`）。エディタが同じ姿勢で状態に加えるために使う |
+  | `pano_sticker_input_pose` | 状態に `port` の Sticker がなく、ノードが加えたときの姿勢（`yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`）と、`direction`・`roll`・`size` の Lane の Keyframe（`keyframes`。Camera が動いた `sticker_state` の Pose handoff、`docs/scene-state-v2.md`）。エディタが同じ姿勢と Keyframe で状態に加えるために使う |
   | `pano_sticker_warnings` | 警告（読めない `file` の Source、`bg_media` なしの `auto`）。ログにも出す |
 
   - 一時 MP4（ADR 0018）：エディタの MP4 で、Preview と同じく `nodes.py` の `_editor_mp4` が作る。エディタはシークのたびに直前のキーフレームから復号するので、MP4 はキーフレームの間隔を短くし、表示に足りる幅にする（下の「エディタの MP4」）。メタ情報の `fps` は VIDEO の平均フレームレート、`frames` は切り出し範囲のフレーム数。IMAGE バッチも同じ `encode_editor_mp4` で Timeline fps の等間隔にエンコードし、`fps` は Timeline fps とする。1 フレームの素材は MP4 を作らない。音声は `bg_media` の VIDEO が持つものだけが MP4 に入る。サムネイルの帯は作らない（エディタが MP4 から作る）。
@@ -233,7 +232,7 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 - 出力の大きさは、旧 Cutout と同じく `calculate_dimensions_from_megapixels` で `output_megapixels` と画面比（`camera.aspect`）から決める（8 の倍数、長辺は `nodes.py` の `CUTOUT_MAX_OUTPUT_SIDE` の 4096 まで。旧 Cutout と共有する）。FOV をアニメーションさせても大きさは変わらない。画素は正方なので、垂直の FOV は丸めた大きさから決まり、`camera.aspect` から決まる値とわずかに違うことがある。
 - FOV は旧 Cutout と同じく、v1 の `shots[0]` の `hFOV_deg`・`vFOV_deg` を 1〜179 に寄せ、`roll_deg` だけを読む（`rot_deg` は読まない）。shot の FOV が 0 のとき、エディタは 90° / 60° とみなすが、ノードは 1° に寄せるので、この場合だけエディタの表示と出力が一致しない（`docs/threejs-spark-integration.md`）。
 - `video` の音声と fps は Stickers と同じ。背景 VIDEO（IMAGE / VIDEO の `source` が VIDEO のとき、`PANO_SCENE` ならその `bg_media` が VIDEO のとき）の音声を「出力のフレーム数 ÷ Timeline fps」秒で切ったもの、なければ音声なし。fps は Timeline fps。
-- `sticker_state` は v2（`docs/scene-state-v2.md`）。`fps` は Timeline fps、`camera` は Cutout の Camera の Lane ごとの Keyframe を Timeline fps に再基準化したもの（`rebase_scene_state`）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。
+- `sticker_state` は v2（`docs/scene-state-v2.md`）。`fps` は Cutout の状態の `timeline.fps`、`camera` は Cutout の Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる。#65）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。
 - World の内容も Stickers と同じく描く。IMAGE / VIDEO では Cutout の状態の `world` の Sticker、`PANO_SCENE` ではその `state` の `world` の Sticker と、`scene` 入力の中身（`_scene_content(scene)` の `SceneContent`。各フレームの要素は `frames` の 4 つ目を `scene_index` にする）。Camera の位置は Cutout の Camera の `position`。
 
 ## Preview ノード（`PanoramaPreviewNode`）

@@ -169,8 +169,9 @@ function isInputConnected(node, name) {
 // the input is connected and the state has none, and remove it when the input is disconnected. Its
 // vFOV follows hFOV and the aspect of the media once the node's result has the media; until then it
 // shows as a frame. `pose` is the pose the node's current result placed the Sticker at
-// (`pano_sticker_input_pose`). With `sticker_state` connected, the Sticker is added only with that
-// pose, so that it keeps the pose of `sticker_state` as the node places it.
+// (`pano_sticker_input_pose`), with the Keyframes of a Camera that moved. With `sticker_state`
+// connected, the Sticker is added only with that pose, so that it keeps the pose of `sticker_state`
+// as the node places it.
 export function portStickerSyncValue(node, { pose = null, image = null } = {}) {
   return {
     connected: isInputConnected(node, "sticker"),
@@ -216,13 +217,19 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
   let number = 1;
   while (used.has(`sticker_${number}`)) number += 1;
   const hFOV = Math.min(179, Math.max(0.1, Number(pose?.hFOV_deg ?? 30)));
+  const vFOV = (value) => hasImageSize ? computeVerticalFov(value, imageWidth, imageHeight) : value;
   const port = newSceneSticker(`sticker_${number}`, { kind: "port" }, {
     yaw_deg: Number(pose?.yaw_deg ?? 0),
     pitch_deg: Number(pose?.pitch_deg ?? 0),
     rot_deg: Number(pose?.roll_deg ?? 0),
     hFOV_deg: hFOV,
-    vFOV_deg: hasImageSize ? computeVerticalFov(hFOV, imageWidth, imageHeight) : hFOV,
+    vFOV_deg: vFOV(hFOV),
   }, surfaceStickers(state).reduce((value, item) => Math.max(value, item.z_index), -1) + 1);
+  // A Camera that moved comes with the Keyframes the node baked from its trajectory (Pose handoff).
+  const keyframes = pose?.keyframes ?? {};
+  port.direction.keyframes = keyframes.direction ?? [];
+  port.roll.keyframes = keyframes.roll ?? [];
+  port.size.keyframes = (keyframes.size ?? []).map((key) => ({ ...key, value: { ...key.value, vFOV_deg: vFOV(key.value.hFOV_deg) } }));
   return { state: { ...state, stickers: [...state.stickers, port] }, changed: true };
 }
 

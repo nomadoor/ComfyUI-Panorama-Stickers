@@ -207,13 +207,14 @@ def test_video_source_sets_the_timeline_fps_and_cuts_its_audio_to_the_length(tmp
     assert audio["sample_rate"] == 8000 and audio["waveform"].shape[-1] == int(4 / 25 * 8000)
 
 
-def test_video_source_rebases_the_camera_keyframes_to_the_timeline_fps(tmp_path):
-    keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 24, "value": {"yaw_deg": 90.0}}]
+def test_video_source_keeps_the_camera_keyframes_at_the_recorded_fps(tmp_path):
+    # Rebasing to the 25 fps of the VIDEO would round them; the Pose handoff reads any fps.
+    keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 13, "value": {"yaw_deg": 90.0}}]
 
     payload = json.loads(_cutout(_video(tmp_path), _camera({"rotation": keyframes}))[1])
 
-    assert payload["fps"] == 25.0
-    assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 25], "fov": [0]}
+    assert payload["fps"] == 24.0
+    assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 13], "fov": [0]}
 
 
 def _stickers(state=None, **inputs):
@@ -299,7 +300,7 @@ def test_pano_scene_reads_the_cutout_camera_at_its_own_recorded_fps():
 
     assert [tuple(_center(cut, index).tolist()) for index in range(3)] == [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0)]
     payload = json.loads(sticker_state)
-    assert payload["fps"] == 12.0 and [key["frame"] for key in payload["camera"]["rotation"]] == [0, 1]
+    assert payload["fps"] == 24.0 and [key["frame"] for key in payload["camera"]["rotation"]] == [0, 2]
 
 
 def test_pano_scene_with_a_video_background_outputs_its_audio(tmp_path):

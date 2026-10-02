@@ -191,7 +191,14 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 - `placement: "sky"`、Clip range・`opacity` などは既定値。
 - `z_index` は、状態の `sky` の Sticker の最大値 + 1（Sticker がなければ `0`）。ペイントの `z_index` は数えない（旧ノードと同じ）。
 - `direction`・`roll` は既定値で、`size` の `hFOV_deg` は `30`、`vFOV_deg` は素材のアスペクト比から求める。
-- `sticker_state` があり、その Camera の各 Lane の Keyframe が一つずつなら、その値（frame 0 で評価した値と同じ）の姿勢（`rotation` の yaw / pitch / roll、`fov` の `hFOV_deg`）を使う。いずれかの Lane に Keyframe が 2 つ以上ある `sticker_state`（軌道ごとの Pose handoff）は #65 の責務で、それまでは `NotImplementedError` にする（`docs/render-contract.md` の「まだ描かないもの」）。
+- `sticker_state` があれば、その Camera の軌道に沿って置く（Pose handoff、#65）。Sticker の clip frame（素材の時刻）`c` の姿勢は、`sticker_state` の Camera を `c × sticker_state.fps ÷ timeline.fps` で評価した `rotation` の yaw / pitch（`direction`）・roll（`roll`）と `fov`（`size` の `hFOV_deg`）とする。Camera の位置は使わない（`sky` の Sticker は無限遠にある）。
+  - Camera の Keyframe の範囲（全 Lane の最初の Keyframe から最後の Keyframe まで）の、状態の Timeline frame の整数ごとに評価し、`easing: "auto"` の Keyframe にする（Drone と同じく補間に頼らず軌道を渡す。Camera の回転は四元数で、Sticker の `direction` は球面上の方向と `roll` に分けて補間するので、Keyframe をそのまま写すと間のフレームがずれる）。範囲は `floor(最初 ÷ r)` から `ceil(最後 ÷ r)` まで（`r = sticker_state.fps ÷ timeline.fps`）。
+  - Camera の `rotation`（`direction`・`roll` に対応）または `fov`（`size` に対応）の Lane で、評価した時刻が `easing: "hold"` の区間にあるフレームの Keyframe は `hold` にする。Camera のカット（切り替え）が、間の姿勢を通らずに切り替わる。切り替わるのは、カットの時刻以降で最初の Timeline frame の整数である。
+  - yaw と roll は、一つ前の Keyframe の値に最も近い周回の値にし、±180 をまたいでも一周戻らない。
+  - 値が `1e-9` 以内で同じものは同じとみなす（同じ姿勢の Keyframe の間で、補間の誤差から密な Keyframe を作らない）。
+  - 時刻は秒で合わせる。素材の時刻（`port` の Sticker の clip frame ÷ `timeline.fps`）が、Cutout で撮った時刻と同じでなければならない。VIDEO（Cutout の `video` や、それを加工して実時間を保った VIDEO）はそのまま合う。IMAGE バッチは Timeline fps のフレームの列とみなす（ADR 0027）ので、Cutout と同じ Timeline fps で使う（Stickers の Timeline fps が Cutout と違うときは、Create Video で Cutout の fps を付けてからつなぐ）。
+  - すべての値が同じ Lane（Camera がその Lane を動かさない場合）は Keyframe を置かず、静的な値にする。Camera の各 Lane の Keyframe が一つずつ（v1 の `sticker_state` を含む）なら、すべての Lane が静的な値になり、従来の単一の姿勢と同じになる。
+  - `size` の `vFOV_deg` は、`port` の Sticker では描画時に `hFOV_deg` と素材のアスペクト比から求める（`StickerSource.derive_vfov`）。
 
 読み込み（`load_scene_state`）の側では、この Sticker を自動で生成しない。状態はあくまで保存された内容だけを表す。この扱いの実装は、描画関数と新しい Stickers ノードの ticket（#52）と、Pose handoff の ticket（#65）の責務とする。
 
@@ -381,7 +388,7 @@ Cutout が出力し、Stickers の `sticker_state` 入力が受け取る。
 |---|---|---|---|
 | `kind` | `"pano_sticker_state"` | — | |
 | `version` | `2` | — | |
-| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる Timeline fps |
+| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。Cutout の状態の `timeline.fps`（#65 から。Timeline fps に再基準化しない） |
 | `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる。Camera が Drone で動いたときは、`position`・`rotation` は出力の全フレームに `easing: "auto"` の Keyframe を置き（補間に頼らず軌道を渡す。fps が違っても隣のフレームの間を滑らかにつなぐ）、`fov` は Keyframe 一つにする |
 | `source_aspect` | 数値 または `null` | `null` | 撮影した画面の幅 ÷ 高さ |
 
@@ -407,4 +414,5 @@ Cutout が出力し、Stickers の `sticker_state` 入力が受け取る。
 - #75 へ（#70 で見送ったもの）：新しいノードは `is_output_node` も実行結果の `ui` も持たない。ComfyUI は `ui` を出力ノードでなくても `executed` で送るので、エディタが実行結果を受け取るのに `is_output_node` は要らない（要るのは、出力を繋がずに単独で実行させたい場合だけ）。エディタとノード上の UI が読む `ui` のキーは旧ノードと同じ `pano_input_images`（背景）、`pano_input_videos` / `pano_input_video_meta`（背景の VIDEO）、`pano_videos` / `pano_video_meta`（出力）、`pano_sticker_input_images`（`port` の素材）、`pano_sticker_warnings`（警告）。フロントエンドは入力名を `bg_erp`・`erp_image`・`sticker_image` で探すので、`bg_media`・`sticker` はまだ認識しない。そのため今は、新しいノードのエディタに背景と `port` の素材は出ない。外部 Sticker の同期（`port` の Sticker を id `sticker_image_1` で状態に足す・消す処理）は新しいノードでは止めてある（`TODO(#75)` の 2 か所）。
 - #75 の結果：新しいノードは出力ノードになり、実行結果の `ui` に上の旧ノードのキーで入力の素材を出す（`docs/render-contract.md`）。フロントエンドは `bg_media`・`sticker` を名前で認識する（MultiType の型は `IMAGE,VIDEO` のような連結の文字列なので、型では探さない）。`port` の Sticker の同期は、作業状態（状態 v2）の `source.kind == "port"` の Sticker に対して行う（`pano_stickers_node_surface.js` の `reconcilePortStickerState`）。`sticker` が接続され、状態に `port` の Sticker がなければ、ノードと同じ規則（id は未使用の最小の `sticker_N`、`z_index` は `sky` の Sticker の最大値 + 1、既定の姿勢）で `newSceneSticker` の形で加え、切断で取り除く。素材が届くと、`size` の `value` と各 Keyframe の `vFOV_deg` を、それぞれの `hFOV_deg` と素材のアスペクト比から求め直す。素材は実行結果が新しい間だけ表示し、それまでは枠だけを描く。`sticker_state` が接続されているときは、ノードが加えた姿勢（`pano_sticker_input_pose`）が実行結果に届くまで加えない。エディタを開いている間は、エディタだけがこの同期で状態を書く（ノード上の UI の同期も `runExternalStickerSync` を通し、エディタが `{ editor: true }` で登録した処理が、後からノード上の UI が登録し直しても優先される）。実行結果 1 回につき、同期は 1 度だけ走る。
 - #65 へ（#75 の残り）：`port` の Sticker が状態に入った後で `sticker_state` が変わっても、姿勢は変わらない（旧ノードの `source_state_hash` による上書きはない）。Pose handoff で上書きが要るなら、#65 で決める。
+- #65 の結果：Camera の軌道ごとの Pose handoff を上の「`port` の Sticker が状態にないとき」の規則で実装し、`NotImplementedError` を外した。実行結果の `pano_sticker_input_pose` に `direction`・`roll`・`size` の Keyframe（`keyframes`）を加え、エディタとノード上の UI はその Keyframe ごと `port` の Sticker を状態に加える（`reconcilePortStickerState`）。`port` の Sticker が状態に入った後で `sticker_state` が変わっても、姿勢は変えない（状態 v2 に `source_state_hash` に当たる項目を足さない）。Scene の正は Stickers の状態だけ（ADR 0025）で、実行のたびに `sticker_state` で上書きするとエディタで直した位置が消えるためである。Cutout の Camera を変えて撮り直したときは、`sticker` の接続を外してつなぎ直すと、次の実行で新しい軌道の `port` の Sticker が加わる。
 - 旧 `path` 型の資産（初期の版だけが書いた、作業ディレクトリからの相対パス）は読み替えで捨てる（ユーザー判断で確定）。#78 で README の移行の注意に書く。

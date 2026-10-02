@@ -285,16 +285,6 @@ def test_background_batch_reuses_the_sky_and_composites_each_frame(monkeypatch):
     assert counts == {"_render_sky": 1, "_background": 3, "composite_frame": 4}
 
 
-def test_sticker_state_with_several_camera_keyframes_is_not_supported_yet():
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": {"rotation": [
-        {"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "auto"},
-        {"frame": 10, "value": {"yaw_deg": 40.0}, "easing": "auto"},
-    ]}})
-
-    with pytest.raises(NotImplementedError, match="more than one Camera Keyframe"):
-        _execute(output_preset="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)
-
-
 def _camera_scene(position=None, **rotation):
     sticker = {
         "id": "q",
