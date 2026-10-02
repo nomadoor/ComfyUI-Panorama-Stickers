@@ -42,8 +42,8 @@ from .core.painting import (
     render_painting_to_erp,
 )
 from .core.render import Projection, SceneSources, StickerSource, render_frame
-from .core.scene_eval import evaluate_scene_state
-from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state, rebase_scene_state
+from .core.scene_eval import FRAME_EPSILON, evaluate_scene_state
+from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
 from .core.video import editor_ready, encode_editor_mp4, make_video_ui_payload, mp4_has_audio, save_video_to_mp4
@@ -1059,25 +1059,64 @@ def _unused_sticker_id(stickers: list[dict]) -> str:
     return f"sticker_{index}"
 
 
+def _nearest_turn(angle: float, previous: float) -> float:
+    return previous + (angle - previous + 180.0) % 360.0 - 180.0
+
+
+def _in_hold(keyframes: list[dict], frame: float) -> bool:
+    """Whether `frame` is in a segment that holds its value until the next Keyframe (a cut)."""
+    if not keyframes[0]["frame"] - FRAME_EPSILON <= frame < keyframes[-1]["frame"] - FRAME_EPSILON:
+        return False
+    return [key for key in keyframes if key["frame"] <= frame + FRAME_EPSILON][-1]["easing"] == "hold"
+
+
+def _lane_numbers(value) -> tuple:
+    return tuple(value.values()) if isinstance(value, dict) else (value,)
+
+
+def _handoff_lanes(sticker_state: dict, fps: float) -> dict:
+    """The port Sticker's direction, roll and size Lanes that put it back where the Camera of `sticker_state`
+    shot it (Pose handoff), at the Timeline `fps` of the state. The Sticker's clip frame is the time of its media.
+
+    A Camera that moves is read at every Timeline frame over its Keyframes and baked into `auto` Keyframes,
+    like a Drone's, because a Camera rotation and a Sticker direction interpolate differently between Keyframes.
+    A frame inside a `hold` segment of the Camera is a `hold` Keyframe, so a cut stays a cut. A Lane that the
+    Camera does not move is a static value.
+    """
+    camera = sticker_state["camera"]
+    ratio = sticker_state["fps"] / fps
+    shot = load_scene_state({"version": 2, "timeline": {"fps": sticker_state["fps"]}, "camera": {name: {"keyframes": keys} for name, keys in camera.items()}})
+    first = min(keys[0]["frame"] for keys in camera.values())
+    last = max(keys[-1]["frame"] for keys in camera.values())
+    frames = range(math.floor(first / ratio), math.ceil(last / ratio) + 1)
+    direction, roll, size = [], [], []
+    for frame in frames:
+        value = evaluate_scene_state(shot, frame * ratio)["camera"]
+        # Yaw and roll keep turning past 180 instead of jumping back a whole turn between Keyframes.
+        yaw = value["yaw_deg"] if not direction else _nearest_turn(value["yaw_deg"], direction[-1]["yaw_deg"])
+        direction.append({"yaw_deg": yaw, "pitch_deg": value["pitch_deg"]})
+        roll.append(value["roll_deg"] if not roll else _nearest_turn(value["roll_deg"], roll[-1]))
+        size.append({"hFOV_deg": value["hFOV_deg"]})
+    lanes = {}
+    for name, values, source in (("direction", direction, "rotation"), ("roll", roll, "rotation"), ("size", size, "fov")):
+        moves = any(abs(a - b) > 1e-9 for value in values for a, b in zip(_lane_numbers(value), _lane_numbers(values[0])))
+        keyframes = [
+            {"frame": frame, "value": value, "easing": "hold" if _in_hold(camera[source], frame * ratio) else "auto"}
+            for frame, value in zip(frames, values)
+        ] if moves else []
+        lanes[name] = {"value": values[0], "keyframes": keyframes}
+    return lanes
+
+
 def _port_sticker(state: dict, sticker_state) -> dict:
-    """The port Sticker appended when the state has none, posed by `sticker_state` when given."""
-    rotation, h_fov = {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, 30.0
+    """The port Sticker appended when the state has none, placed by `sticker_state` when given."""
+    lanes = {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0}}}
     parsed = load_sticker_state(sticker_state)
     if parsed is not None:
-        camera = parsed["camera"]
-        if any(len(keyframes) > 1 for keyframes in camera.values()):
-            raise NotImplementedError("Panorama Stickers: a sticker_state with more than one Camera Keyframe is not supported yet.")
-        rotation, h_fov = camera["rotation"][0]["value"], camera["fov"][0]["value"]
+        lanes = _handoff_lanes(parsed, state["timeline"]["fps"])
     # Above every other sky Sticker, as the legacy node placed it (paint layers are not counted).
     z_index = max((sticker["z_index"] for sticker in state["stickers"] if sticker["placement"] == "sky"), default=-1) + 1
-    raw = {
-        "id": _unused_sticker_id(state["stickers"]),
-        "source": {"kind": "port"},
-        "direction": {"value": rotation},
-        "roll": {"value": rotation["roll_deg"]},
-        "size": {"value": {"hFOV_deg": h_fov}},
-        "z_index": z_index,
-    }
+    raw = {"id": _unused_sticker_id(state["stickers"]), "source": {"kind": "port"}, **lanes, "z_index": z_index}
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
@@ -1358,9 +1397,15 @@ class PanoramaStickersSceneNode(io.ComfyNode):
             # Only the first frame of the sticker; the editor plays it with the timeline (#73).
             _merge_ui_payload(ui_ret, _init_ui_preview(port.first_frame[None], key=_get_preview_ui_contract("stickers_input")["image"]))
             if not has_port:
-                # The pose the port Sticker was added at, for the editor to add it to the state the same way.
+                # The pose the port Sticker was added at, with the Keyframes of a Camera that moved (Pose handoff),
+                # for the editor to add it to the state the same way.
                 added = next(item for item in state["stickers"] if item["id"] == port.sticker_id)
-                pose = {**added["direction"]["value"], "roll_deg": added["roll"]["value"], "hFOV_deg": added["size"]["value"]["hFOV_deg"]}
+                pose = {
+                    **added["direction"]["value"],
+                    "roll_deg": added["roll"]["value"],
+                    "hFOV_deg": added["size"]["value"]["hFOV_deg"],
+                    "keyframes": {name: added[name]["keyframes"] for name in ("direction", "roll", "size")},
+                }
                 ui_ret["pano_sticker_input_pose"] = [pose]
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         return io.NodeOutput(image, mask, video, pano_scene, ui=ui_ret)
@@ -1369,14 +1414,15 @@ class PanoramaStickersSceneNode(io.ComfyNode):
 CUTOUT_MAX_OUTPUT_SIDE = 4096
 
 
-def _cutout_sticker_state(cutout: dict, fps: float, width: int, height: int) -> str:
-    """`sticker_state` v2: each Lane of the Cutout Camera as its Keyframes at the Timeline `fps`, or its value as one Keyframe."""
-    camera = rebase_scene_state(cutout, fps)["camera"]
+def _cutout_sticker_state(cutout: dict, width: int, height: int) -> str:
+    """`sticker_state` v2: each Lane of the Cutout Camera as its Keyframes at the fps the Cutout state records them at
+    (not rebased to the Timeline fps, which would move them by up to half a frame), or its value as one Keyframe."""
+    camera = cutout["camera"]
     lanes = {
         name: camera[name]["keyframes"] or [{"frame": 0, "value": camera[name]["value"], "easing": list(DEFAULT_EASING)}]
         for name, _value in CAMERA_LANES
     }
-    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": fps, "camera": lanes, "source_aspect": width / height}
+    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": cutout["timeline"]["fps"], "camera": lanes, "source_aspect": width / height}
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
 
 
@@ -1412,7 +1458,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             content = _scene_content(source.scene)
             bg_media, bg_name = source.bg_media, "bg_media"
             bg = _open_media(bg_media, bg_name)
-            fps, frames = source.fps, source.frames
+            frames = source.frames
             ratio = cutout["timeline"]["fps"] / state["timeline"]["fps"]
 
             def camera_at(evaluated):
@@ -1428,7 +1474,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
                 _log.warning("Panorama Cutout: %s", warning)
             bg_media, bg_name = source, "source"
             bg = _open_media(bg_media, bg_name)
-            fps, frames = _decide_timeline(state, bg, None)
+            frames = _decide_timeline(state, bg, None)[1]
 
             def camera_at(evaluated):
                 return evaluated["camera"]
@@ -1442,7 +1488,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             return camera, Projection.perspective(width, height, camera["hFOV_deg"], coverage_deg)
 
         image, mask, video = _render_outputs(state, sources, frames, bg_media, bg_name, bg, bg_color, port, content, capture, (width, height))
-        return io.NodeOutput(image, _cutout_sticker_state(cutout, fps, width, height), mask, video)
+        return io.NodeOutput(image, _cutout_sticker_state(cutout, width, height), mask, video)
 
 
 class PanoramaCutoutNode(io.ComfyNode):
