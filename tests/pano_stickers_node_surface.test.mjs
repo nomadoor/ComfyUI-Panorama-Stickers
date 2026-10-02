@@ -376,6 +376,8 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
     { id: "st_hidden", z_index: 0, locked: false, visible: false, external: false, yaw_deg: -45, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 },
   ]);
   assert.deepEqual(buildStickersDisplayEntries(state).map((entry) => entry.id), ["st_hidden", "st_sky"]);
+  // While the node plays, the Stickers are posed at the played frame.
+  assert.deepEqual(surfacePoseStickers(state, 12).map((item) => [item.id, item.visible]), [["st_sky", true], ["st_hidden", false]]);
 
   const added = applyStickersNodeSurfaceAction(state, {
     type: "add-sticker",

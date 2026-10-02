@@ -26,16 +26,17 @@ export function surfaceStickers(state) {
 }
 
 // The node's Stickers in the pose fields the geometry helpers (pano_sticker_geometry.js) read. A
-// Sticker of state v2 is posed at NODE_SURFACE_FRAME and counts as hidden outside its Clip range.
-export function surfacePoseStickers(state) {
+// Sticker of state v2 is posed at `frame` (NODE_SURFACE_FRAME but while the node plays) and counts as
+// hidden outside its Clip range.
+export function surfacePoseStickers(state, frame = NODE_SURFACE_FRAME) {
   if (state?.version !== 2) return surfaceStickers(state);
   return surfaceStickers(state).map((sticker) => ({
     id: sticker.id,
     z_index: sticker.z_index,
     locked: sticker.locked,
-    visible: evaluateSticker(sticker, NODE_SURFACE_FRAME).active,
+    visible: evaluateSticker(sticker, frame).active,
     external: sticker.source.kind === "port",
-    ...stickerPose(sticker, NODE_SURFACE_FRAME),
+    ...stickerPose(sticker, frame),
   }));
 }
 

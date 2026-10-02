@@ -10,6 +10,8 @@ import { editorActive, editorStateText, parsePanoEditorState, parseSceneEditorSt
 import { loadSceneState } from "./pano_scene_state.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
+import { createComfyMediaAdapter } from "./pano_comfy_media.js";
+import { createNodePlayback, surfaceShown } from "./pano_node_playback.js";
 import {
   beginCutoutRollGesture,
   buildCutoutAddFrameAction,
@@ -92,6 +94,7 @@ const { app } = appModule;
 setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 trackRunOutputs(api);
 const sharedPreviewImageCache = createSharedImageCache();
+const { linkedVideoFile } = createComfyMediaAdapter({ app, api });
 
 function getAnimPreviewWidgetName() {
   return String(
@@ -103,6 +106,7 @@ function getAnimPreviewWidgetName() {
 
 const SHARED_UI_SETTINGS_KEY = "pano_suite.ui_settings.v1";
 const PANO_LOADING_MIN_MS = 120;
+const NODE_STILL_MAX_WIDTH = 2048;
 
 function loadSharedUiSettings() {
   const base = {
@@ -742,6 +746,9 @@ function getRenderableMediaRevisionToken(media) {
       Number(media.readyState || 0),
       media.paused ? "paused" : "playing",
     ].join("|");
+  }
+  if (typeof HTMLCanvasElement !== "undefined" && media instanceof HTMLCanvasElement) {
+    return ["canvas", media.width, media.height, Number(media.__panoFrameIdx || 0)].join("|");
   }
   return [
     String(media.currentSrc || media.src || ""),
@@ -1436,8 +1443,28 @@ function stickersSurfaceProjection(node, width, height) {
   return viewProjection(previewNodeCamera(node.__panoPreviewView || { yaw: 0, pitch: 0, fov: 100 }, width, height), width, height);
 }
 
+// The Timeline frame the node shows: NODE_SURFACE_FRAME, or the played frame while the node plays.
+function surfaceFrame(node) {
+  return node.__panoSurfacePlayback?.playback.frame ?? NODE_SURFACE_FRAME;
+}
+
+// PanoramaStickersNode's background VIDEO, best first, as the editor picks it: the node's current
+// result, else the file LoadVideo loads into the background input.
+function backgroundVideoSources(node) {
+  const own = isNodeOutputMediaCurrent(node, "background")
+    ? resolvePreviewVideoSource(lookupNodeOutputEntry(node.id), ["pano_input_videos"], imageSourceFromCandidate)
+    : "";
+  return [own, linkedVideoFile(node, BACKGROUND_INPUT_NAMES)];
+}
+
+// ADR 0019: the played VIDEO once it shows a frame, else its still; null without a VIDEO.
+function playbackBackground({ playback, video, still }) {
+  if (!playback.source) return null;
+  return !playback.showsVideo && still.__panoFrameIdx > 0 ? still : video;
+}
+
 // What the on-node surfaces draw with three.js: the background, and the Sky layers of the node's
-// state (its sky Stickers and paint) from back to front, at NODE_SURFACE_FRAME.
+// state (its sky Stickers and paint) from back to front, at surfaceFrame.
 function surfaceViewInput(node, state, bgImg) {
   if (node.__panoSurfaceScene?.state !== state) {
     node.__panoSurfaceScene = { state, sceneState: loadSceneState({ ...state, painting: null }) };
@@ -1461,7 +1488,7 @@ function surfaceViewInput(node, state, bgImg) {
     background: isRenderableMediaReady(bgImg)
       ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 }
       : null,
-    layers: workingSkyLayers(node.__panoSurfaceScene.sceneState, NODE_SURFACE_FRAME, state.stickers, { media, paintLayers }),
+    layers: workingSkyLayers(node.__panoSurfaceScene.sceneState, surfaceFrame(node), state.stickers, { media, paintLayers }),
   };
 }
 
@@ -1490,10 +1517,10 @@ function drawCanvas(node, canvas, surfaceView) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#070707";
   ctx.fillRect(0, 0, surfW, surfH);
-  const bgImg = getNodeOwnOutputVideo(
-    node,
-    ["pano_input_videos"],
-    () => node.__panoDomPreview?.requestDraw?.(),
+  // PanoramaStickersNode plays its background VIDEO with its Timeline; the legacy node loops it.
+  const bgImg = (node.__panoSurfacePlayback
+    ? playbackBackground(node.__panoSurfacePlayback)
+    : getNodeOwnOutputVideo(node, ["pano_input_videos"], () => node.__panoDomPreview?.requestDraw?.())
   ) || getLinkedInputImageForPreview(
     node,
     BACKGROUND_INPUT_NAMES,
@@ -1601,7 +1628,7 @@ function drawCanvas(node, canvas, surfaceView) {
   const projection = stickersSurfaceProjection(node, surfW, surfH);
   if (!bgImg && panoramaDrawn) drawPanoGrid(ctx, projection, getNodeUiScale(canvas, rect));
   const selectedId = String(state?.active?.selected_sticker_id || "");
-  const poseStickers = surfacePoseStickers(state);
+  const poseStickers = surfacePoseStickers(state, surfaceFrame(node));
   const selected = panoramaDrawn
     ? poseStickers.find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
     : null;
@@ -2002,13 +2029,70 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   // The on-node surface draws through the three.js view it shares with the Preview nodes.
   const surfaceView = acquirePreviewView(requestDraw);
   const nodeSurfaceUiModel = reactive(stickersMode
-    ? { ...stickersNodeSurfaceModel(getCachedState(node)), importing: false, dropActive: false, viewUnavailable: false }
+    ? { ...stickersNodeSurfaceModel(getCachedState(node)), importing: false, dropActive: false, viewUnavailable: false, playable: false, playing: false }
     : {
       ...cutoutNodeSurfaceModel(getCachedState(node)),
       viewUnavailable: false,
       aspectOpen: false,
       aspectChoices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value })),
     });
+  // PanoramaStickersNode plays its Timeline on the node. requestVideoFrameCallback runs only for a
+  // rendered VIDEO, so the muted element stays in the surface, out of sight by its opacity.
+  let surfacePlayback = null;
+  if (stickersMode && node.__panoSceneStateV2) {
+    const video = document.createElement("video");
+    video.playsInline = true;
+    video.preload = "auto";
+    video.crossOrigin = "anonymous";
+    video.style.cssText = "position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+    wrap.appendChild(video);
+    const still = document.createElement("canvas");
+    still.__panoFrameIdx = 0;
+    const playback = createNodePlayback({
+      video,
+      clock: {
+        now: () => performance.now(),
+        requestFrame: (callback) => requestAnimationFrame(callback),
+        cancelFrame: (id) => cancelAnimationFrame(id),
+      },
+      pageHidden: () => document.hidden,
+      readState: () => getCachedState(node),
+      onFrame: requestDraw,
+      // The still is at most NODE_STILL_MAX_WIDTH wide; the node shows it small.
+      onCapture: () => {
+        if (!(video.videoWidth > 0 && video.videoHeight > 0)) return;
+        const scale = Math.min(1, NODE_STILL_MAX_WIDTH / video.videoWidth);
+        still.width = Math.round(video.videoWidth * scale);
+        still.height = Math.round(video.videoHeight * scale);
+        still.getContext("2d")?.drawImage(video, 0, 0, still.width, still.height);
+        still.__panoFrameIdx += 1;
+        requestDraw();
+      },
+      onChange: () => {
+        nodeSurfaceUiModel.playing = playback.playing;
+        requestDraw();
+      },
+    });
+    surfacePlayback = { playback, video, still };
+    node.__panoSurfacePlayback = surfacePlayback;
+  }
+  // The Timeline plays on the node only while it is shown: collapsed, in a subgraph or another graph,
+  // the node stops and lets its VIDEO go.
+  const syncSurfacePlayback = () => {
+    const { playback, still } = surfacePlayback;
+    const shown = surfaceShown(wrap, !!node.flags?.collapsed);
+    const source = playback.source;
+    const playable = playback.follow({ shown, sources: shown ? backgroundVideoSources(node) : [], state: getCachedState(node) });
+    // The still of one source must not show for the next, nor hold memory without one.
+    if (playback.source !== source) {
+      still.width = 0;
+      still.__panoFrameIdx = 0;
+    }
+    nodeSurfaceUiModel.playable = playable;
+    nodeSurfaceUiModel.playing = playback.playing;
+  };
+  // Edits apply to NODE_SURFACE_FRAME, so they stop playback first.
+  const stopSurfacePlayback = () => surfacePlayback?.playback.stop();
   let nodeSurfaceLiveState = null;
   const nodeSurfaceSession = (stickersMode
     ? createStickersNodeSurfaceSession
@@ -2093,6 +2177,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   let stickerImportCount = 0;
   const addNodeStickerFile = async (file) => {
     if (!stickersMode || !nodeSurfaceSession || !isStickerImageFile(file)) return false;
+    stopSurfacePlayback();
     const assetId = `asset_${Math.random().toString(16).slice(2, 10)}`;
     const stickerId = `st_${Math.random().toString(16).slice(2, 10)}`;
     const view = { ...(node.__panoPreviewView || { yaw: 0, pitch: 0 }) };
@@ -2180,6 +2265,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       nodeSurfaceVueApp = createApp(stickersMode ? PanoStickersNodeSurface : PanoCutoutNodeSurface, {
         model: nodeSurfaceUiModel,
         onAction: (action) => {
+          if (action?.type === "toggle-playback") {
+            flushNodeSurfaceGesture();
+            surfacePlayback?.playback.toggle();
+            return;
+          }
+          stopSurfacePlayback();
           if (action?.type === "open-editor") {
             flushNodeSurfaceGesture();
             if (!stickersMode) nodeSurfaceUiModel.aspectOpen = false;
@@ -2233,8 +2324,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       nodeSurfaceMounted = false;
     }
   }
+  // A surface that goes out of sight (collapse, subgraph, another graph) releases its playback at once.
   const resizeObserver = typeof ResizeObserver !== "undefined"
-    ? new ResizeObserver(requestDraw)
+    ? new ResizeObserver(() => {
+      if (surfacePlayback) syncSurfacePlayback();
+      requestDraw();
+    })
     : null;
   resizeObserver?.observe(wrap);
 
@@ -2246,6 +2341,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       moving = interaction.stepInertia(ts);
       if (state.needsDraw || moving) {
         state.needsDraw = false;
+        if (surfacePlayback) syncSurfacePlayback();
         if (!node.flags?.collapsed) drawCanvas(node, canvas, surfaceView);
         nodeSurfaceUiModel.viewUnavailable = surfaceView.failed;
       }
@@ -2308,7 +2404,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (!stickersMode || !panoramaInteractiveView) return;
     const currentState = getCachedState(node);
     const picked = pickStickerAtPoint(
-      surfacePoseStickers(currentState),
+      surfacePoseStickers(currentState, surfaceFrame(node)),
       String(currentState?.active?.selected_sticker_id || ""),
       cutoutCanvasPoint(ev),
       stickersSurfaceProjection(node, canvas.width, canvas.height),
@@ -2374,8 +2470,19 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const currentState = getCachedState(node);
     const selectedId = String(currentState?.active?.selected_sticker_id || "");
     const projection = stickersSurfaceProjection(node, canvas.width, canvas.height);
-    const picked = pickStickerAtPoint(surfacePoseStickers(currentState), selectedId, point, projection);
     root.focus?.({ preventScroll: true });
+    // A Sticker grabbed while the node plays stops playback and is selected where frame 0 puts it;
+    // an empty drag only looks around.
+    if (surfacePlayback?.playback.playing) {
+      const played = pickStickerAtPoint(surfacePoseStickers(currentState, surfaceFrame(node)), selectedId, point, projection);
+      if (played) {
+        stopSurfacePlayback();
+        nodeSurfaceSession.apply({ type: "select-sticker", id: played.item.id });
+        requestDraw();
+        return;
+      }
+    }
+    const picked = pickStickerAtPoint(surfacePoseStickers(currentState), selectedId, point, projection);
     if (picked && nodeSurfaceSession) {
       interaction.stopMotion();
       flushNodeSurfaceGesture();
@@ -2554,6 +2661,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const tag = String(target?.tagName || "").toUpperCase();
     if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
     if (nodeSurfaceUiModel.canDelete !== true) return;
+    stopSurfacePlayback();
     flushNodeSurfaceGesture();
     if (nodeSurfaceSession.apply({ type: "delete-selected" })) requestDraw();
     stopCanvasEvent(ev);
@@ -2757,6 +2865,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     }
     nodeSurfaceSession?.destroy?.();
     nodeSurfaceVueApp?.unmount?.();
+    if (surfacePlayback) {
+      surfacePlayback.playback.dispose();
+      surfacePlayback.video.remove();
+      if (node.__panoSurfacePlayback === surfacePlayback) node.__panoSurfacePlayback = null;
+    }
     surfaceView.dispose();
     node.__panoSurfaceScene = null;
     node.__panoRasterObjectSurfaceCache?.dispose?.();
