@@ -16,7 +16,7 @@ export function surfaceShown(element, collapsed) {
   return !collapsed && element.isConnected && element.clientWidth > 0;
 }
 
-export function createNodePlayback({ video, clock, pageHidden, readState, onFrame, onCapture, onChange }) {
+export function createNodePlayback({ video, clock, readState, onFrame, onCapture, onChange }) {
   // The background VIDEO chosen for the node, and the one the element loads: none while out of sight.
   let chosen = "";
   let loaded = "";
@@ -32,7 +32,6 @@ export function createNodePlayback({ video, clock, pageHidden, readState, onFram
   const playback = createVideoPlayback({
     video,
     clock,
-    pageHidden,
     fps,
     span,
     loop: () => true,

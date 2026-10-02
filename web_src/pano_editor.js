@@ -1151,7 +1151,6 @@ async function showEditor(node, type, options = {}) {
       requestFrame: (callback) => requestAnimationFrame(callback),
       cancelFrame: (id) => cancelAnimationFrame(id),
     },
-    pageHidden: () => document.hidden,
     fps: playbackFps,
     span: () => {
       if (sceneV2) return timelineSpanFrames();

@@ -16,20 +16,25 @@
 // `video` is an HTMLVideoElement or anything with the same members: currentTime, duration, seekable,
 // readyState, play(), pause(), ended, events loadeddata/seeked/pause/ended/error, and optionally
 // requestVideoFrameCallback/cancelVideoFrameCallback. `clock` is { now(), requestFrame(cb),
-// cancelFrame(id) }. pageHidden() tells that the page is hidden, which holds back video frame
-// callbacks. fps(), span() and loop() are read when needed: the Timeline's fps, its length
+// cancelFrame(id) }. fps(), span() and loop() are read when needed: the Timeline's fps, its length
 // in frames, and whether playback starts over at its end (else it stops on its last frame).
 // onFrame(frame) runs for each playhead move and each presented VIDEO frame; onCapture() asks the
 // editor to copy the VIDEO's picture into its still; onChange() runs on each change of state.
 
 const HAVE_CURRENT_DATA = 2;
 
-// ADR 0024: a time shows at the nearest Timeline frame.
+// ADR 0024: a frame's time (a PTS, such as a presented frame's mediaTime) is at the nearest Timeline frame.
 export function frameAtTime(time, fps) {
   return Math.floor(time * fps + 0.5);
 }
 
-export function createVideoPlayback({ video, clock, pageHidden, fps, span, loop, onFrame, onCapture, onChange }) {
+// ADR 0024: at a time between frames, such as where a VIDEO paused, the VIDEO shows its last frame
+// with PTS <= the time. A time a hair before a PTS (1/1000 frame) counts as that frame.
+export function frameShownAt(time, fps) {
+  return Math.floor(time * fps + 1e-3);
+}
+
+export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, onCapture, onChange }) {
   let frame = 0;
   let source = false;
   let failed = false;
@@ -130,7 +135,7 @@ export function createVideoPlayback({ video, clock, pageHidden, fps, span, loop,
   // The VIDEO goes on screen with the first frame it presents (`shown`); until then the still keeps
   // the frame before, which a VIDEO just sought or just started has not replaced yet.
   function playVideo() {
-    const owner = enter("playingVideo", { presented: Number(video.currentTime), shown: false });
+    const owner = enter("playingVideo", { shown: false });
     // The VIDEO pauses by itself at its end, or when something else stops it.
     listen(owner, "pause", () => (video.ended ? videoEnded() : stop()));
     listen(owner, "ended", videoEnded);
@@ -144,7 +149,6 @@ export function createVideoPlayback({ video, clock, pageHidden, fps, span, loop,
       });
     }
     const follow = (time, presented) => {
-      owner.presented = time;
       if (presented && !owner.shown) {
         owner.shown = true;
         onChange();
@@ -208,16 +212,22 @@ export function createVideoPlayback({ video, clock, pageHidden, fps, span, loop,
     show("still");
   }
 
-  // Playback stops on the picture on screen: the VIDEO frame last presented (its mediaTime, else
-  // currentTime, also while the hidden page holds back the frame callbacks), and past the VIDEO's
-  // end the clock's frame.
+  // Playback stops on the picture on screen. The paused VIDEO shows the frame at its currentTime,
+  // which can be frames past the last frame callback (callbacks lag or stop for a hidden page or an
+  // element not composited), so the playhead and the still both take that frame and nothing seeks.
+  // Past the VIDEO's end the clock's frame stays.
   function stop() {
     if (state.name === "loading" || state.name === "seeking") {
       state.then = "still";
       onChange();
     } else if (state.name === "playingVideo") {
-      const time = frameCallback() && !pageHidden() ? state.presented : Number(video.currentTime);
-      stopAt(Math.min(frameAtTime(time, fps()), span() - 1));
+      leave();
+      video.pause();
+      const shown = frameShownAt(Number(video.currentTime), fps());
+      setFrame(Math.min(shown, span() - 1));
+      onCapture();
+      if (frame === shown) rest();
+      else show("still");
     } else if (state.name === "playingClock") {
       stopAt(Math.min(frame, span() - 1));
     }

@@ -148,7 +148,6 @@ function setup(state = loadSceneState(null)) {
   const playback = createNodePlayback({
     video,
     clock,
-    pageHidden: () => false,
     readState: () => state,
     onFrame: (frame) => log.frames.push(frame),
     onCapture: () => {

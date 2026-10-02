@@ -2055,7 +2055,6 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         requestFrame: (callback) => requestAnimationFrame(callback),
         cancelFrame: (id) => cancelAnimationFrame(id),
       },
-      pageHidden: () => document.hidden,
       readState: () => getCachedState(node),
       onFrame: requestDraw,
       // The still is at most NODE_STILL_MAX_WIDTH wide; the node shows it small.

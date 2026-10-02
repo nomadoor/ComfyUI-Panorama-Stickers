@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createVideoPlayback, frameAtTime } from "../web_src/pano_video_playback.js";
+import { createVideoPlayback, frameAtTime, frameShownAt } from "../web_src/pano_video_playback.js";
 
 const FPS = 24;
 
@@ -69,8 +69,10 @@ class FakeVideo extends EventTarget {
     return Promise.resolve();
   }
 
+  // A paused VIDEO shows the frame at its currentTime (PTS <= currentTime).
   pause() {
     this.paused = true;
+    if (this.picture !== null) this.picture = Math.floor(this.time * FPS + 1e-3) / FPS;
   }
 
   // The seek lands, at `time` when the browser stops short of the target.
@@ -142,7 +144,7 @@ class FakeClock {
   }
 }
 
-function setup({ video = new FakeVideo(), span = 72, loop = true, source = true, page = { hidden: false } } = {}) {
+function setup({ video = new FakeVideo(), span = 72, loop = true, source = true } = {}) {
   const clock = new FakeClock();
   const log = { frames: [], captures: 0, still: null, blank: 0 };
   // What the editor would draw: the VIDEO while the playback shows it, else the still.
@@ -153,7 +155,6 @@ function setup({ video = new FakeVideo(), span = 72, loop = true, source = true,
   const playback = createVideoPlayback({
     video,
     clock,
-    pageHidden: () => page.hidden,
     fps: () => FPS,
     span: () => span,
     loop: () => loop,
@@ -380,35 +381,33 @@ test("a removed source leaves the playhead on the clock", () => {
   assert.equal(playback.state, "playingClock");
 });
 
-test("stop puts the playhead on the presented frame and shows that frame", () => {
-  const { playback, video, log } = setup();
-  startPlaying({ playback, video });
-  video.present(24 / FPS);
-  // currentTime runs ahead of the frame on screen.
-  video.time = 25.4 / FPS;
-  const captures = log.captures;
-  playback.stop();
-  assert.equal(video.paused, true);
-  assert.equal(playback.frame, 24);
-  assert.equal(log.captures, captures + 1);
-  assert.equal(playback.state, "seeking");
-  assert.deepEqual(video.seeks.at(-1), 24 / FPS);
-  video.land();
-  assert.equal(playback.state, "idle");
-  assert.equal(playback.frame, 24);
-  assert.equal(video.listeners, 0);
-  assert.equal(video.frameCallbacks.size, 0);
-});
+// The last frame callback can lag currentTime by frames (callbacks throttled for an element that is
+// not composited, or stopped on a hidden page). Pause keeps the picture the paused VIDEO shows.
+for (const lag of [0, 1, 2, 3]) {
+  test(`stop with frame callbacks ${lag} frames behind keeps the paused picture and puts the playhead on it`, () => {
+    const { playback, video, log } = setup();
+    startPlaying({ playback, video });
+    video.present(10 / FPS);
+    video.time = (10 + lag + 0.4) / FPS;
+    const seeks = video.seeks.length;
+    const captures = log.captures;
+    playback.stop();
+    assert.equal(video.paused, true);
+    assert.equal(playback.state, "idle");
+    assert.equal(playback.frame, 10 + lag);
+    assert.equal(video.seeks.length, seeks);
+    assert.equal(log.captures, captures + 1);
+    assert.equal(frameShownAt(log.still, FPS), playback.frame);
+    assert.equal(log.frames.at(-1), playback.frame);
+    assert.equal(video.listeners, 0);
+    assert.equal(video.frameCallbacks.size, 0);
+  });
+}
 
-test("stop on a hidden page takes currentTime, since frame callbacks stopped there", () => {
-  const page = { hidden: false };
-  const { playback, video } = setup({ page });
-  startPlaying({ playback, video });
-  video.present(10 / FPS);
-  page.hidden = true;
-  video.time = 30 / FPS;
-  playback.stop();
-  assert.equal(playback.frame, 30);
+test("frameShownAt takes the last frame at or before a time, and a time a hair before a frame as that frame", () => {
+  assert.equal(frameShownAt(12.9 / 24, 24), 12);
+  assert.equal(frameShownAt(13 / 24, 24), 13);
+  assert.equal(frameShownAt(13 / 24 - 1e-9, 24), 13);
 });
 
 test("an ended VIDEO seeks to the playhead before it plays, even when it is on the same frame", () => {

@@ -353,5 +353,4 @@ test("the legacy transport seeks to its own time and leaves looping to the VIDEO
   assert.match(editorFunction("playbackFps"), /return sceneV2 \? state\.timeline\.fps : videoState\.metaFps \|\| 1000;/);
   assert.match(editorSource, /return videoEl\.loop \|\| !\(frames > 0\) \? Infinity : frames;/);
   assert.match(editorSource, /loop: \(\) => sceneV2,/);
-  assert.match(editorSource, /pageHidden: \(\) => document\.hidden,/);
 });
