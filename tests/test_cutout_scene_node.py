@@ -355,8 +355,11 @@ def test_perspective_sky_content_lines_up_with_the_background():
 
 
 def test_perspective_paint_lines_up_with_the_background():
-    erp, pose = _marker_erp()
-    camera = _camera(yaw_deg=pose["yaw_deg"], pitch_deg=pose["pitch_deg"], hFOV_deg=20.0)
+    # A wide FOV keeps the Sky ERP as coarse as the background (512 wide), and the rectangle's center is on a pixel
+    # center, so the stamp has no whole-pixel snapping to hide a half pixel shift.
+    # The center lands on 299.5 / 127.5, which the old round() sent to 300 / 128; keep it on an odd .5 when moving it.
+    erp, pose = _marker_erp(columns=(294, 305), rows=(123, 132))
+    camera = _camera(yaw_deg=pose["yaw_deg"], pitch_deg=pose["pitch_deg"], hFOV_deg=120.0)
     u, v = pose["yaw_deg"] / 360.0 + 0.5, 0.5 - pose["pitch_deg"] / 180.0
     painting = {"version": 1, "paint": {"strokes": []}, "groups": [], "mask": {"strokes": [{
         "id": "m", "actionGroupId": "ag_m", "targetSpace": {"kind": "ERP_GLOBAL"}, "layerKind": "mask", "toolKind": "pen",
@@ -367,10 +370,8 @@ def test_perspective_paint_lines_up_with_the_background():
     background = _cutout(erp, camera, output_megapixels=0.04)[0][0]
     mask = _cutout(erp, {**camera, "painting": painting}, output_megapixels=0.04)[2][0]
 
-    # Paint is rasterized with point (u * w, v * h) on the center of Sky ERP pixel (u * w, v * h), half a pixel of
-    # the 4096 wide Sky ERP (0.43 output pixels here) to the lower right of where a Sticker or the background is.
     found, expected = _weighted_center(mask), _weighted_center(background[..., 0])
-    assert all(abs(a - b) < 0.5 for a, b in zip(found, expected))
+    assert all(abs(a - b) < 0.05 for a, b in zip(found, expected))
 
 
 def test_sticker_state_round_trips_camera_keyframes_with_easing_and_handles():
