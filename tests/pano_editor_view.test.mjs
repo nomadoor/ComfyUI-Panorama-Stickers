@@ -25,7 +25,8 @@ import {
 } from "../web_src/pano_editor_view.js";
 import { parsePanoEditorState } from "../web_src/pano_editor_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { applyViewportCamera, layerTexture, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
+import { portMediaSource } from "../web_src/pano_port_media.js";
+import { applyViewportCamera, layerDrawable, layerTexture, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
 import { worldToPano } from "../web_src/pano_world.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -333,28 +334,79 @@ test("a background VIDEO uploads through a VideoTexture, which sizes its storage
   assert.match(view, /media instanceof HTMLVideoElement \? new VideoTexture\(media\) : new Texture\(media\)/);
 });
 
-// The editor's background switches between its still canvas and the playing <video>. A <video> that
-// is loading or seeking has nothing to upload, so the texture of the frame before stays until it has.
-test("a layer keeps its texture until its new media has a picture", () => {
+function withVideoElement(run) {
   const previous = globalThis.HTMLVideoElement;
   globalThis.HTMLVideoElement = class { static HAVE_CURRENT_DATA = 2; };
   try {
-    const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 1 });
-    const still = { width: 64, height: 32 };
-    const owned = new Map();
-    const stillTexture = layerTexture(owned, "background", still, "1", 0, false);
-    let disposed = 0;
-    stillTexture.addEventListener("dispose", () => { disposed += 1; });
-    assert.equal(layerTexture(owned, "background", video, "v", 0, false), stillTexture);
-    assert.equal(disposed, 0);
-    video.readyState = 2;
-    const videoTexture = layerTexture(owned, "background", video, "v", 0, false);
-    assert.notEqual(videoTexture, stillTexture);
-    assert.equal(videoTexture.isVideoTexture, true);
-    assert.equal(disposed, 1);
+    run();
   } finally {
     globalThis.HTMLVideoElement = previous;
   }
+}
+
+// The editor's background switches between its still canvas and the playing <video> of one source. A
+// <video> that is loading or seeking has nothing to upload, so the texture of the frame before stays
+// until it has.
+test("a layer keeps its texture until new media of the same source has a picture", () => withVideoElement(() => {
+  const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 1 });
+  const still = { width: 64, height: 32 };
+  const owned = new Map();
+  const stillTexture = layerTexture(owned, "background", still, "1", 0, false, "bg.mp4");
+  let disposed = 0;
+  stillTexture.addEventListener("dispose", () => { disposed += 1; });
+  assert.equal(layerDrawable(owned, { id: "background", media: video, source: "bg.mp4" }), true);
+  assert.equal(layerTexture(owned, "background", video, "v", 0, false, "bg.mp4"), stillTexture);
+  assert.equal(disposed, 0);
+  video.readyState = 2;
+  const videoTexture = layerTexture(owned, "background", video, "v", 0, false, "bg.mp4");
+  assert.notEqual(videoTexture, stillTexture);
+  assert.equal(videoTexture.isVideoTexture, true);
+  assert.equal(disposed, 1);
+}));
+
+test("a port Sticker's VIDEO keeps its frame while it seeks or loops", () => withVideoElement(() => {
+  const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 2 });
+  const still = { width: 64, height: 32 };
+  const owned = new Map();
+  const playing = layerTexture(owned, "sticker_1", video, "a", 0, true, "port.mp4");
+  // The playhead seeks: the follower shows its still, then the VIDEO again, which is still seeking.
+  const seeking = layerTexture(owned, "sticker_1", still, "b", 0, true, "port.mp4");
+  video.readyState = 1;
+  assert.equal(layerDrawable(owned, { id: "sticker_1", media: video, source: "port.mp4" }), true);
+  assert.equal(layerTexture(owned, "sticker_1", video, "c", 0, true, "port.mp4"), seeking);
+  assert.notEqual(seeking, playing);
+}));
+
+// A VIDEO on the port Sticker is swapped for an IMAGE without a run. The node surface makes the port
+// Sticker again under the same id, and the IMAGE's first frame may not have loaded yet: the frame of
+// the VIDEO must not stand in for it.
+test("other media on a layer never shows the frame of the media before", () => withVideoElement(() => {
+  const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 2 });
+  const owned = new Map();
+  const videoTexture = layerTexture(owned, "sticker_1", video, "a", 0, true, "port.mp4");
+  let disposed = 0;
+  videoTexture.addEventListener("dispose", () => { disposed += 1; });
+  const loading = { naturalWidth: 0, naturalHeight: 0 };
+  assert.equal(layerDrawable(owned, { id: "sticker_1", media: loading, source: loading }), false);
+  assert.equal(layerDrawable(owned, { id: "sticker_1", media: loading }), false);
+  const image = { naturalWidth: 32, naturalHeight: 32 };
+  const imageTexture = layerTexture(owned, "sticker_1", image, "i", 0, true, image);
+  assert.notEqual(imageTexture, videoTexture);
+  assert.equal(imageTexture.image, image);
+  assert.equal(disposed, 1);
+  // The same <video> element given another source drops the frame of the one before too.
+  const again = layerTexture(owned, "sticker_1", video, "a", 0, true, "other.mp4");
+  assert.notEqual(again, videoTexture);
+  video.readyState = 1;
+  assert.equal(layerDrawable(owned, { id: "sticker_1", media: video, source: "next.mp4" }), false);
+}));
+
+test("the port Sticker's source is its media, so a swap on the port changes it", () => {
+  const first = { naturalWidth: 32, naturalHeight: 32 };
+  assert.equal(portMediaSource({ src: "a.mp4", meta: {} }, first), "a.mp4");
+  assert.equal(portMediaSource({ frames: ["0.png", "1.png"], meta: {} }, first), "0.png\n1.png");
+  assert.equal(portMediaSource(null, first), first);
+  assert.notEqual(portMediaSource({ src: "a.mp4", meta: {} }, first), portMediaSource(null, { naturalWidth: 32 }));
 });
 
 test("only the background follows a 180 coverage; paint layers cover the whole sphere", () => {

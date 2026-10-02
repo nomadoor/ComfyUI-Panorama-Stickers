@@ -86,16 +86,25 @@ function recordOutputInputs(output, origins) {
 }
 
 // Output media stays current while its channel's inputs come from where they came from when it was made.
-// An output with no record is taken to come from the links as they are: one that ran in another browser
-// session and came back with a loaded workflow, or a run's output until its job is read (this is asked again
-// on every draw). Connection events alone change nothing, so the ones LGraphNode.configure fires while
-// loading are harmless. A change upstream that keeps the links, such as another file chosen in LoadVideo, is
-// not seen here: the output stays current until the node runs again.
+// An output first seen without a record (one restored with a workflow tab or a job opened from the queue,
+// a run's output until its job is read, or one dropped from the record by newer ones) is taken to come from
+// the links as they are then, and that is recorded, so a link changed later makes it stale. The job's
+// links replace that record once the job is read. Connection events alone change nothing, so the ones
+// LGraphNode.configure fires while loading are harmless. A change upstream that keeps the links, such as
+// another file chosen in LoadVideo, is not seen here: the output stays current until the node runs again.
 export function isNodeOutputMediaCurrent(node, channel) {
   const output = node ? nodeOutput(node) : null;
-  const recorded = output ? outputInputs.get(outputKey(output)) : null;
-  if (!recorded) return true;
+  if (!output) return true;
   const current = nodeInputOrigins(node);
+  let recorded = outputInputs.get(outputKey(output));
+  if (recorded) {
+    // Reading keeps a record in use, so outputs still shown are not the ones newer records push out.
+    recordOutputInputs(output, recorded);
+  } else {
+    if (!node.graph || !node.inputs?.some((input) => TRACKED_INPUT_NAMES.includes(input?.name))) return true;
+    recordOutputInputs(output, current);
+    recorded = current;
+  }
   return CHANNEL_INPUT_NAMES[channel].every((name) => recorded[name] === current[name]);
 }
 

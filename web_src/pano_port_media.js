@@ -36,6 +36,14 @@ export function portImageIndex(time, meta) {
   return Math.floor(time * meta.fps);
 }
 
+// What the port Sticker's picture shows, as the `source` of its layer (pano_three_view.js
+// layerTexture): the MP4's URL or the PNGs of `media` ({ src } or { frames }), whose stills and first
+// frame `first` are pictures of it too, else `first` itself. A media swap on the port changes it, so
+// the picture of the media before never stands in for the next.
+export function portMediaSource(media, first) {
+  return media?.src || media?.frames?.join("\n") || first;
+}
+
 // Images loaded ahead of the playhead's one, so playback finds them ready.
 const PRELOAD_AHEAD = 4;
 

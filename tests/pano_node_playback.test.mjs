@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createNodePlayback, surfaceShown } from "../web_src/pano_node_playback.js";
+import { portMediaSource } from "../web_src/pano_port_media.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { keyAllLanes } from "../web_src/pano_timeline.js";
 
@@ -441,4 +442,18 @@ test("an RGBA IMAGE batch on the port shows its PNGs along the playhead, without
   log.images.find((image) => image.src === "/f3.png").load();
   assert.equal(playback.stickerPicture("still", "first").src, "/f3.png");
   assert.equal(log.changes > 0, true);
+});
+
+// The VIDEO on the port is swapped for an IMAGE without a run: the node's result is stale, so the
+// playback follows no media, and the picture is the IMAGE's first frame or nothing, under another source.
+test("a swap on the port changes the source of the port Sticker's picture", () => {
+  const { playback, follow, stickerVideo } = setup(portState());
+  follow([], true, STICKER);
+  stickerVideo.loaded(3);
+  assert.equal(portMediaSource(playback.stickerMedia, "first"), "/sticker.mp4");
+  follow([], true, null);
+  assert.equal(stickerVideo.src, "");
+  assert.equal(playback.stickerPicture("still", null), null);
+  assert.equal(playback.stickerPicture("still", "image"), "image");
+  assert.equal(portMediaSource(playback.stickerMedia, "image"), "image");
 });
