@@ -26,6 +26,7 @@ FLUX.2 Kleinのパノラマworkflowを中心に開発しており、4B・9Bの�
 ## インストール
 
 - ComfyUI Managerからインストールしてください。
+- ComfyUI v0.34.0 以降が必要です。
 
 ## デモ
 

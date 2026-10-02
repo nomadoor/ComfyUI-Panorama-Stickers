@@ -26,6 +26,7 @@ ComfyUI Panorama Stickers 是一套小型 ComfyUI 节点与前端扩展，用于
 ## 安装
 
 - 通过 ComfyUI Manager 安装。
+- 需要 ComfyUI v0.34.0 或更高版本。
 
 ## 演示
 

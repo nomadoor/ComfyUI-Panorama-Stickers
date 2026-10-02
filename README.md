@@ -26,6 +26,7 @@ Usage details are documented here:
 ## Installation
 
 - Install via ComfyUI Manager.
+- Requires ComfyUI v0.34.0 or later.
 
 ## Demo
 

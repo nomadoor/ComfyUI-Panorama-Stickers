@@ -46,9 +46,10 @@ from .core.scene_eval import evaluate_scene_state
 from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state, rebase_scene_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
-from .core.video import editor_ready, encode_editor_mp4, make_video_ui_payload, mp4_has_audio, save_video_to_mp4
+from .core.video import editor_ready, encode_editor_mp4, entry_from_path, make_video_ui_payload, mp4_has_audio, save_video_to_mp4
 from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world_render import SceneContent
+from .scene_files import write_editor_files
 from .scene_video import SceneVideo
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
 _log = logging.getLogger(__name__)
@@ -1296,6 +1297,27 @@ def _bg_media_ui(bg_media, bg, fps: float) -> dict:
     return ui_ret
 
 
+SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary"}
+
+
+def _scene_ui(scene) -> dict:
+    """The `ui` of the `scene` input: a temp file per item for the editor (`write_editor_files`), None for an empty
+    item, and the kind it loads. The files are written once per input and reused while they are there, keyed by
+    the input and the tensors it is read from (a MOGE_GEOMETRY is a dict)."""
+    if isinstance(scene, dict):
+        cache_key = tuple((key, _tensor_cache_identity(scene[key])) for key in ("points", "mask", "image", "intrinsics") if key in scene)
+    else:
+        positions = scene.positions if isinstance(scene, Types.SPLAT) else scene.vertices
+        cache_key = (NODE_RUNTIME.object_identity(scene), _tensor_cache_identity(positions))
+    saved = NODE_RUNTIME.cache.get("scene_files", cache_key)
+    if saved is None or not all(path is None or path.exists() for path in saved[1]):
+        saved = write_editor_files(scene)
+        NODE_RUNTIME.cache.put("scene_files", cache_key, saved)
+    kind, paths = saved
+    files = [None if path is None else entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]]) for path in paths]
+    return {"pano_scene_files": files, "pano_scene_meta": [{"kind": kind}]}
+
+
 # TODO(#78): rename to PanoramaStickersNode, matching the node_id, once the legacy class is removed.
 class PanoramaStickersSceneNode(io.ComfyNode):
     @classmethod
@@ -1351,6 +1373,8 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         ui_ret = {}
         if bg_media is not None:
             _merge_ui_payload(ui_ret, _bg_media_ui(bg_media, bg, fps))
+        if scene is not None:
+            _merge_ui_payload(ui_ret, _scene_ui(scene))
         if port is not None:
             # Only the first frame of the sticker; the editor plays it with the timeline (#73).
             _merge_ui_payload(ui_ret, _init_ui_preview(port.first_frame[None], key=_get_preview_ui_contract("stickers_input")["image"]))

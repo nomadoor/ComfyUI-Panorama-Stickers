@@ -168,6 +168,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   | `pano_sticker_input_images` | `sticker` の最初のフレーム。`sticker` の MP4 は出さない（エディタでの再生は Timeline と一緒に #73 の後で加える） |
   | `pano_sticker_input_pose` | 状態に `port` の Sticker がなく、ノードが加えたときの姿勢（`yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`）。エディタが同じ姿勢で状態に加えるために使う |
   | `pano_sticker_warnings` | 警告（読めない `file` の Source、`bg_media` なしの `auto`）。ログにも出す |
+  | `pano_scene_files` / `pano_scene_meta` | `scene` の入力の要素ごとの一時ファイル（下の「`scene` のエディタ用ファイル」）と、`kind`（エディタが使う読み込み方。`splat` か `mesh`） |
 
   - 一時 MP4（ADR 0018）：エディタの MP4 で、Preview と同じく `nodes.py` の `_editor_mp4` が作る。エディタはシークのたびに直前のキーフレームから復号するので、MP4 はキーフレームの間隔を短くし、表示に足りる幅にする（下の「エディタの MP4」）。メタ情報の `fps` は VIDEO の平均フレームレート、`frames` は切り出し範囲のフレーム数。IMAGE バッチも同じ `encode_editor_mp4` で Timeline fps の等間隔にエンコードし、`fps` は Timeline fps とする。1 フレームの素材は MP4 を作らない。音声は `bg_media` の VIDEO が持つものだけが MP4 に入る。サムネイルの帯は作らない（エディタが MP4 から作る）。
   - エディタの MP4：
@@ -180,6 +181,17 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   - 実行結果がどの入力から作られたかは、実行が終わったときに `/api/jobs/{prompt_id}` を一度読んで、そのワークフローの接続から記録する。ブラウザを再読み込みしたときは、同じワークフローの最近のジョブから自ノードの出力を表示用に取り戻す（状態は書き換えない）。サーバーを再起動して履歴と temp が消えた後は、実行し直す。
   - エディタとノード上の UI は、実行結果が新しいかを入力の接続（link）の変化だけで判断する。接続を変えずに上流の画像を差し替えると、再実行するまで古い素材が表示される。
   - `sticker_state` が接続されているときは、`port` の Sticker は実行結果に姿勢が届くまで、枠も含めて表示されない。
+  - `scene` のエディタ用ファイル（#60）：`scene_files.py` の `write_editor_files` が、コアの書き出し関数で要素ごとに 1 つずつ temp に書く。ラスタライザには依存しない。座標は要素自身の glTF 座標（`scene` の変形を掛ける前の World、ADR 0023）で、エディタが状態の `scene` の変形を掛ける。
+    - SPLAT：PLY（コアの `SplatToFile3D` の `ply` と同じ書き出し。SH もすべて持つ）。座標はそのまま。`counts` があれば要素ごとの長さで切る。
+    - MESH：GLB（コアの `mesh_item_to_glb_bytes`）。座標はそのまま。
+    - `MOGE_GEOMETRY`：フレームごとのグリッドのメッシュの GLB（`moge_grid_mesh`）。読むのは `points`、あれば `mask`（外の画素を捨てる）、`intrinsics` の有無、テクスチャの `image` だけ。glTF への変換はコアの MoGePointMapToMesh と同じ（`intrinsics` がなければパノラマとして Z 上から、あれば OpenCV から）で、パノラマの各画素は回転 0 の Camera の ERP の同じ画素の向きに来る（`tests/test_scene_editor_files.py`）。エディタで見るためのものなので、長辺を `MOGE_EDITOR_GRID`（512）点以下に間引き、テクスチャも同じ間隔で間引く。
+      - 面の向き（ワインディング）もコアと同じ。パノラマの面は外向き（原点の Camera からは裏面）なので、エディタ（#71）は両面（`DoubleSide`）で描く。
+      - `mask` の外の画素を捨てるのはコアの MoGePointMapToMesh と異なる（コアは `mask` を読まない）。バックエンドの描画（#62）も同じく `mask` の外を描かず、エディタと揃える。
+    - `pano_scene_files` は要素の順のリストで、要素の数が出力フレームとの対応（`batch_index`）に使う数である。頂点や面のない要素は `null` にし、番号をずらさない。
+    - `state_json` だけが変わった実行では作り直さない。MP4 とは別の `NODE_RUNTIME` の `scene_files` キャッシュ（入力 4 つ分）に入れ、SPLAT・MESH はオブジェクトと位置のテンソルの同一性、`MOGE_GEOMETRY`（辞書）は読むテンソルの同一性をキーにする。ファイルが消えていれば書き直す。
+    - 大きさの目安：100 万点の SPLAT（SH 3 次）の PLY は約 248 MB、MoGe の 1 フレームの GLB は約 6 MB。キャッシュから追い出しても MP4 と同じくファイルは消さず、ComfyUI が起動時と終了時に temp を消すまで残る。
+    - いまは `_scene_content` がどの型も受け付けないので、実際の実行ではファイルが出る前にエラーになる（#61・#62 で解消）。3D ファイルの入力と 3D の Sticker の書き出しも、それぞれ #61・#62・#63 で `write_editor_files` に加える（それまで `write_editor_files` は SPLAT・MESH 以外を `MOGE_GEOMETRY` として読む）。
+- 必要な ComfyUI は v0.34.0 以降（`mesh_item_to_glb_bytes` が入った版）。`scene_files.py` はコアの書き出し関数をモジュールの先頭で読み込むので、古いコアではパッケージの読み込み時にその名前の `ImportError` になる。
   - 出力（IMAGE）のプレビュー MP4 は作らない。Stickers の出力を表示するのは Preview（#76）で、旧ノードの `pano_videos` を読むフロントエンドもない。
 - `file` の Source は `core/stickers.py` の `load_source_rgba` で読み、`folder_paths` のディレクトリの中にあるものだけを読む。読めないときは、その Sticker を描かずに警告を出す（ログと実行結果の `pano_sticker_warnings`）。
 
