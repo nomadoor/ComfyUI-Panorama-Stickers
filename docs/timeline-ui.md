@@ -21,7 +21,8 @@
 - Keyframe を消せるのは、タイムラインで選んで Delete したときだけ。消した後は残った Keyframe で補間し直す。全 Keyframe を一度に消すスイッチは作らない。
 - インスペクタには Keyframe を打つボタンを置かない。
 - 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Cutout の frame タブ、Stickers で Camera の行を選んだときの操作とインスペクタ）だけである。
-- ノード上の UI は Timeline frame 0 だけを表示するので、Keyframe のある Lane はノード上では変えない。Sticker のドラッグは Keyframe のない Lane だけを変え、Keyframe のある Lane にしか効かない操作は無視する（#70 のロックと同じ感触）。Keyframe のある Lane はエディタのタイムラインで直す。この扱いはオーナーの判断待ちの既定値で、`pano_stickers_node_surface.js` の `set-transform`（`unkeyedPose`）だけで決まる。
+- ノード上の UI は（再生中を除いて）Timeline frame 0 だけを表示するので、Keyframe のある Lane はノード上では変えない。Sticker のドラッグは Keyframe のない Lane だけを変え、Keyframe のある Lane にしか効かない操作は無視する（#70 のロックと同じ感触）。Keyframe のある Lane はエディタのタイムラインで直す。この扱いはオーナーの判断待ちの既定値で、`pano_stickers_node_surface.js` の `set-transform`（`unkeyedPose`）だけで決まる。
+- ノード上の UI には再生ボタンが一つだけあり、時間のあるときだけ出る（エディタと同じ `isTimed` か、背景の VIDEO があるとき）。frame 0 から Timeline の fps でループ再生し、背景の VIDEO は音を出さずに同じ状態機械で再生する。止めると frame 0 に戻る。編集（Sticker をつかむ、ツールバーの操作、画像の追加、Delete）とエディタを開く操作で止まる。見回しでは止まらない。Space キーは使わない（ComfyUI のキャンバスの pan）。細かい規則は `docs/panorama-stickers-node-surface-spec.md` にある。
 - Sticker がアップロード中（Source にファイルがまだない）の間は、Undo の履歴を記録しない。アップロードが終わったときに、その間の編集を含めて一度記録する（失敗して Sticker が消えたときも同じ）。
 
 ## Easing
@@ -56,7 +57,7 @@ Camera は Keyframe と Drone の二つのモードを持ち、出力にはい�
 
 ## 再生の状態
 
-再生・シーク・停止は `web_src/pano_video_playback.js` の状態機械だけが決める。エディタは VIDEO 要素と時計を渡し、知らされた再生ヘッドのフレームと静止画を表示する。旧ノードの VIDEO 自身の操作（再生ボタンとシークバー）も同じ状態機械を使う。
+再生・シーク・停止は `web_src/pano_video_playback.js` の状態機械だけが決める。エディタは VIDEO 要素と時計を渡し、知らされた再生ヘッドのフレームと静止画を表示する。旧ノードの VIDEO 自身の操作（再生ボタンとシークバー）と、新しいノードのノード上の再生（`web_src/pano_node_playback.js`）も同じ状態機械を使う。
 
 | 状態 | 意味 |
 |---|---|

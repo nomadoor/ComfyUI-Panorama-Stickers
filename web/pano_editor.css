@@ -2527,6 +2527,34 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pano-stickers-node-play {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 4;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  background: rgba(27, 30, 37, 0.9);
+  color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+}
+.pano-stickers-node-play:hover,
+.pano-stickers-node-play:focus-visible {
+  background: rgba(37, 41, 50, 0.96);
+  color: rgba(255, 255, 255, 0.96);
+}
+.pano-stickers-node-play:active {
+  transform: none;
+}
+.pano-stickers-node-play svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.3px;
+}
 .pano-stickers-node-empty-note {
   position: absolute;
   left: 50%;

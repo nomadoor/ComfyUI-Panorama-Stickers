@@ -45,6 +45,33 @@
 - prompt queue、Full Editor開始、teardown前に未確定gestureをflushする。
 - Full Editor開始時は進行中の画像operationもsettleまで待ち、成功した追加を含む最新stateを読む。
 
+## Playback Contract (PanoramaStickersNode)
+
+新しいノード `PanoramaStickersNode` だけが持つ。旧 `PanoramaStickers` は変えない。
+
+- node surfaceは編集用に Timeline frame 0 を表示する。再生中だけ、その時点のフレームを表示する。
+- 再生・停止を切り替えるボタンを1つだけ、canvas左下に置く。表示するのは、sceneが時間を持つとき
+  （エディタのタイムラインと同じ `isTimed`）か、背景のVIDEOがあるときだけ。背景のVIDEOは、ノードの
+  実行結果の `pano_input_videos`（`bg_media` が2フレーム以上のとき）か、上流のLoadVideoが読むファイルで、
+  エディタと同じ候補順で選ぶ。読めないVIDEOは次の候補へ進む。toolbarには置かず、シークバーや時刻表示も出さない。
+- 再生は frame 0 から Timeline fps で Timeline を繰り返す。各フレームのStickerは共有evaluator（エディタの
+  `workingSkyLayers` / `surfacePoseStickers` と同じ）で評価する。背景のVIDEOはエディタと同じ状態機械
+  `pano_video_playback.js` で同期して再生し、音は出さない（muted）。
+- 停止すると frame 0 に戻る。停止中の背景はVIDEOの frame 0 の静止画（最大幅2048）を描く。
+- 編集の前に再生を止める：toolbarの操作（Full Editor・Add Image・lock・delete・front / back・
+  Back to Initial）、画像のdrop、Delete / Backspace、再生中のSticker上でのpointerdown（停止して選択するだけで、
+  dragは始めない。frame 0 の位置へ戻るため）。見回し（空所drag・wheel）では止めない。
+- Space キーは割り当てない（canvas上の Space は ComfyUI の pan）。
+- 再生していないときはrAFもvideo frame callbackも持たない。再生中は表示されたVIDEOフレーム（VIDEOがないときは
+  時計）ごとに1回描く。
+- VIDEO要素はsurfaceの中に置き、`opacity:0` で隠す（`visibility:hidden` や `display:none` では
+  requestVideoFrameCallback が来ない）。
+- surfaceが見えなくなったノード（collapse、subgraphの中や別のgraphを表示中、widgetが隠れたとき。
+  surfaceの要素がpageにないか幅0）は、再生を止めてVIDEOのsrcを外す。停止中でも外す。ResizeObserverで
+  すぐに、また描画のたびに確かめる。node remove / graph clear では状態機械、VIDEO要素、
+  rAF / video frame callbackを破棄する。
+- 読めなかったVIDEOのURLは、候補から一度消えたら（再実行や接続変更）もう一度試す。
+
 ## Scope Boundary
 
 surfaceに含めない操作:
@@ -85,3 +112,4 @@ surfaceに含めない操作:
 12. 選択枠、handle、accent color、hover cursorがmodalと一致する。
 13. stickerがない状態では追加案内が表示され、選択後はDelete / Backspaceで削除できる。
 14. 外部入力stickerを移動・拡縮・回転した後、`Back to Initial`で接続時のposeへ戻せる。
+15. `PanoramaStickersNode` で時間のあるsceneか背景VIDEOのときだけ再生ボタンが出て、frame 0 からループ再生し、停止・編集・Full Editor・collapse・非表示・removeで止まって frame 0 に戻る。

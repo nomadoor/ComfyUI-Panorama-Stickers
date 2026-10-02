@@ -359,7 +359,7 @@ test("the port Sticker draws as a frame on the node until the node's result has 
   const drawEnd = runtime.indexOf("\nfunction ", drawStart + 1);
   const draw = runtime.slice(drawStart, drawEnd);
 
-  assert.match(draw, /surfacePoseStickers\(state\)[\s\S]*?\(item\.external \|\| item\.source_kind === "external_image"\)\)[\s\S]*?!isRenderableMediaReady\(getNodePreviewImage\(node, item\.id, null, \{ external: true \}\)\)[\s\S]*?drawStickerFrame\(ctx, item, projection\)/);
+  assert.match(draw, /surfacePoseStickers\(state, surfaceFrame\(node\)\)[\s\S]*?\(item\.external \|\| item\.source_kind === "external_image"\)\)[\s\S]*?!isRenderableMediaReady\(getNodePreviewImage\(node, item\.id, null, \{ external: true \}\)\)[\s\S]*?drawStickerFrame\(ctx, item, projection\)/);
   assert.ok(draw.indexOf("drawStickerFrame(") < draw.indexOf("drawStickerSelectionOverlay(ctx, selected, projection)"));
 });
 
@@ -460,4 +460,39 @@ test("the node surface leaves a background VIDEO that failed to load for its ima
   assert.match(runtime, /if \(cached\?\.video && cached\.key === cacheKey\) return cached\.failed\(\) \? null : cached\.video;/);
   // The origin slot indexes the images as the node output them, so video files are left out after it.
   assert.match(runtime, /ordered\.push\(outImgs\[resolvedOriginSlot\]\);\s*ordered\.push\(\.\.\.outImgs\);\s*for \(const cand of ordered\.filter\(\(image\) => !isVideoFile\(image\)\)\)/);
+});
+
+test("PanoramaStickersNode shows one play button on the node only when its Timeline can play", async () => {
+  const source = await read("../web_src/components/PanoStickersNodeSurface.vue");
+  const button = source.slice(source.indexOf("<button\n      v-if=\"model.playable === true\""), source.indexOf("</button>", source.indexOf("pano-stickers-node-play")));
+
+  assert.match(button, /data-action="toggle-playback"/);
+  assert.match(button, /@pointerdown\.stop/);
+  assert.match(button, /model\.playing \? ICON\.stop : ICON\.play/);
+  assert.equal(source.match(/toggle-playback/g).length, 2);
+});
+
+test("node playback stops for edits and the editor, follows the node, and is released with the surface", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const restoreStart = runtime.indexOf("  const restoreDom = () => {");
+  const restore = runtime.slice(restoreStart, runtime.indexOf("\n  node.__panoDomRestore = restoreDom;", restoreStart));
+  const keyStart = runtime.indexOf("  const onNodeSurfaceKeyDown = (ev) => {");
+  const keyDown = runtime.slice(keyStart, runtime.indexOf("\n  };", keyStart));
+
+  // Only PanoramaStickersNode plays; its hidden VIDEO stays rendered for requestVideoFrameCallback.
+  assert.match(runtime, /if \(stickersMode && node\.__panoSceneStateV2\) \{/);
+  assert.match(runtime, /video\.style\.cssText = "[^"]*opacity:0[^"]*"/);
+  assert.doesNotMatch(runtime, /video\.style\.cssText = "[^"]*visibility/);
+  // Every toolbar action but the play button stops playback first, the Full Editor included.
+  assert.match(runtime, /if \(action\?\.type === "toggle-playback"\) \{[\s\S]*?return;\s*\}\s*stopSurfacePlayback\(\);\s*if \(action\?\.type === "open-editor"\)/);
+  assert.match(runtime, /isStickerImageFile\(file\)\) return false;\s*stopSurfacePlayback\(\);/);
+  assert.match(keyDown, /stopSurfacePlayback\(\);\s*flushNodeSurfaceGesture\(\);/);
+  // Space stays ComfyUI's canvas pan.
+  assert.doesNotMatch(keyDown, /" "|Space/);
+  // A node out of sight stops and lets its VIDEO go, on each draw and as soon as its surface resizes away.
+  assert.match(runtime, /const shown = surfaceShown\(wrap, !!node\.flags\?\.collapsed\);/);
+  assert.match(runtime, /playback\.follow\(\{ shown, sources: shown \? backgroundVideoSources\(node\) : \[\]/);
+  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*if \(!node\.flags\?\.collapsed\) drawCanvas/);
+  assert.match(runtime, /new ResizeObserver\(\(\) => \{\s*if \(surfacePlayback\) syncSurfacePlayback\(\);\s*requestDraw\(\);/);
+  assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);/);
 });
