@@ -95,13 +95,13 @@ function onImageFileSelected(payload) {
       class="pano-btn pano-btn-icon pano-stickers-node-play"
       type="button"
       data-action="toggle-playback"
-      :aria-label="model.playing ? 'Stop' : 'Play'"
-      :data-tip="model.playing ? 'Stop' : 'Play'"
+      :aria-label="model.playing ? 'Pause' : 'Play'"
+      :data-tip="model.playing ? 'Pause' : 'Play'"
       @pointerdown.stop
       @wheel.stop
       @click="emitAction({ type: 'toggle-playback' })"
     >
-      <SvgIcon :icon="model.playing ? ICON.stop : ICON.play" />
+      <SvgIcon :icon="model.playing ? ICON.pause : ICON.play" />
     </button>
     <div
       v-if="model.hasStickers === false"

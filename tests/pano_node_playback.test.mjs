@@ -92,6 +92,7 @@ class FakeVideo extends EventTarget {
   loaded(duration = 2) {
     this.duration = duration;
     this.readyState = 4;
+    this.dispatchEvent(new Event("loadedmetadata"));
     this.dispatchEvent(new Event("loadeddata"));
   }
 
@@ -194,32 +195,36 @@ test("a failed VIDEO gives way to the next candidate, as in the editor, until it
   assert.equal(video.src, "/own.mp4");
 });
 
-test("a surface out of sight stops on frame 0 and lets its VIDEO go at once", () => {
-  const { playback, follow, video, clock } = setup(timedState(48));
+test("a surface out of sight pauses, lets its VIDEO go at once and shows the same frame again", () => {
+  const { playback, follow, video, clock, log } = setup(timedState(48));
   follow(["/bg.mp4"]);
   video.loaded(1);
   playback.toggle();
   video.present(6 / FPS);
   assert.equal(follow(["/bg.mp4"], false), false);
   assert.equal(playback.playing, false);
-  assert.equal(playback.frame, 0);
+  assert.equal(playback.frame, 6);
   assert.equal(video.src, "");
   assert.equal(video.frameCallbacks.size, 0);
   assert.equal(clock.callbacks.size, 0);
-  // A collapsed stopped node lets its VIDEO go too.
-  follow(["/bg.mp4"]);
+  // Back in sight, the same VIDEO loads again and shows the paused frame.
+  assert.equal(follow(["/bg.mp4"]), true);
   assert.equal(video.src, "/bg.mp4");
-  follow(["/bg.mp4"], false);
-  assert.equal(video.src, "");
+  video.loaded(1);
+  assert.deepEqual(video.seeks.at(-1), 6 / FPS);
+  video.land();
+  assert.equal(playback.frame, 6);
+  assert.equal(log.captures > 0, true);
 });
 
-test("without a VIDEO, a surface out of sight stops its clock", () => {
+test("without a VIDEO, a surface out of sight pauses its clock on its frame", () => {
   const { playback, follow, clock } = setup(timedState(48));
   follow([]);
   playback.toggle();
   clock.framesAhead(5);
   follow([], false);
   assert.equal(playback.playing, false);
+  assert.equal(playback.frame, 5);
   assert.equal(clock.callbacks.size, 0);
 });
 
@@ -231,8 +236,8 @@ test("the surface is shown when not collapsed, in the page and laid out", () => 
   assert.equal(surfaceShown({ ...element, clientWidth: 0 }, false), false);
 });
 
-test("without a VIDEO, play loops the Timeline from frame 0 at its fps and stop goes back to frame 0", () => {
-  const { playback, follow, clock, log } = setup(timedState(48));
+test("without a VIDEO, play loops the Timeline from frame 0 at its fps; pause keeps the frame and play goes on from it", () => {
+  const { playback, clock, log } = setup(timedState(48));
   assert.equal(playback.frame, 0);
   playback.toggle();
   assert.equal(playback.playing, true);
@@ -241,33 +246,41 @@ test("without a VIDEO, play loops the Timeline from frame 0 at its fps and stop 
   clock.framesAhead(20);
   assert.equal(log.frames.includes(0), true);
   assert.equal(playback.playing, true);
+  const frame = playback.frame;
   playback.toggle();
   assert.equal(playback.playing, false);
-  assert.equal(playback.frame, 0);
-  // Stopped, nothing keeps a frame callback.
+  assert.equal(playback.frame, frame);
+  // Paused, nothing keeps a frame callback.
   assert.equal(clock.callbacks.size, 0);
+  playback.toggle();
+  clock.framesAhead(3);
+  assert.equal(playback.frame, frame + 3);
 });
 
-test("the background VIDEO plays muted in sync and stops back on frame 0", () => {
+test("the background VIDEO plays muted in sync and pauses on the frame it presented", () => {
   const { playback, follow, video, log } = setup();
   assert.equal(video.muted, true);
   follow(["/bg.mp4"]);
   video.loaded(2);
-  // The stopped surface shows frame 0 of the VIDEO.
+  // Before it plays, the surface shows frame 0 of the VIDEO.
   assert.equal(log.captures, 1);
   playback.toggle();
   assert.equal(video.paused, false);
   video.present(12 / FPS);
   assert.equal(playback.frame, 12);
   assert.equal(playback.showsVideo, true);
-  playback.stop();
+  playback.toggle();
   assert.equal(video.paused, true);
   assert.equal(playback.playing, false);
-  assert.equal(playback.frame, 0);
-  assert.deepEqual(video.seeks, [0]);
-  video.land();
-  assert.equal(log.captures, 2);
+  assert.equal(playback.frame, 12);
   assert.equal(video.frameCallbacks.size, 0);
+  // Play goes on from the paused frame.
+  playback.toggle();
+  if (video.seeks.length) video.land();
+  assert.equal(playback.playing, true);
+  assert.equal(video.paused, false);
+  video.present(13 / FPS);
+  assert.equal(playback.frame, 13);
 });
 
 test("a VIDEO that sets the Timeline's span loops by itself", () => {
@@ -277,26 +290,27 @@ test("a VIDEO that sets the Timeline's span loops by itself", () => {
   video.loaded(6);
   playback.toggle();
   assert.equal(video.loop, true);
-  playback.stop();
+  playback.pause();
   assert.equal(video.loop, false);
 });
 
-test("stop while stopped does nothing", () => {
+test("pause while paused does nothing", () => {
   const { playback, follow, video, log } = setup();
   follow(["/bg.mp4"]);
   video.loaded(2);
   const frames = log.frames.length;
-  playback.stop();
+  playback.pause();
   assert.equal(log.frames.length, frames);
   assert.deepEqual(video.seeks, []);
 });
 
-test("a new background source stops playback on frame 0", () => {
+test("another background VIDEO brings the node back to frame 0", () => {
   const { playback, follow, video, clock } = setup(timedState(48));
   follow(["/a.mp4"]);
   video.loaded(1);
   playback.toggle();
   video.present(10 / FPS);
+  playback.pause();
   assert.equal(playback.frame, 10);
   follow(["/b.mp4"]);
   assert.equal(playback.playing, false);
@@ -306,6 +320,37 @@ test("a new background source stops playback on frame 0", () => {
   assert.equal(video.src, "");
   assert.equal(playback.playing, false);
   assert.equal(clock.callbacks.size, 0);
+});
+
+test("a Timeline that no longer reaches the paused frame, or nothing left to play, brings it back to frame 0", () => {
+  const state = timedState(48);
+  const { playback, follow, clock } = setup(state);
+  follow([]);
+  playback.toggle();
+  clock.framesAhead(40);
+  playback.pause();
+  assert.equal(playback.frame, 40);
+  state.timeline.length = 50;
+  follow([]);
+  assert.equal(playback.frame, 40);
+  state.timeline.length = 30;
+  follow([]);
+  assert.equal(playback.frame, 0);
+  playback.toggle();
+  clock.framesAhead(20);
+  playback.pause();
+  assert.equal(playback.frame, 20);
+  state.camera.fov.keyframes = [];
+  state.camera.position.keyframes = [];
+  state.camera.rotation.keyframes = [];
+  assert.equal(follow([]), false);
+  assert.equal(playback.frame, 0);
+});
+
+test("a new playback, as after a reload, starts on frame 0", () => {
+  const { playback } = setup(timedState(48));
+  assert.equal(playback.frame, 0);
+  assert.equal(playback.playing, false);
 });
 
 test("dispose releases the VIDEO, its listeners and the frame callbacks", () => {
@@ -318,7 +363,7 @@ test("dispose releases the VIDEO, its listeners and the frame callbacks", () => 
   playback.dispose();
   assert.equal(video.src, "");
   assert.equal(video.paused, true);
-  assert.equal(video.listeners, idle - 1);
+  assert.equal(video.listeners, idle - 2);
   assert.equal(video.frameCallbacks.size, 0);
   assert.equal(clock.callbacks.size, 0);
 });

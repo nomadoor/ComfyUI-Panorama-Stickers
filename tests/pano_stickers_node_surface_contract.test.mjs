@@ -468,11 +468,12 @@ test("PanoramaStickersNode shows one play button on the node only when its Timel
 
   assert.match(button, /data-action="toggle-playback"/);
   assert.match(button, /@pointerdown\.stop/);
-  assert.match(button, /model\.playing \? ICON\.stop : ICON\.play/);
+  assert.match(button, /model\.playing \? ICON\.pause : ICON\.play/);
+  assert.match(button, /model\.playing \? 'Pause' : 'Play'/);
   assert.equal(source.match(/toggle-playback/g).length, 2);
 });
 
-test("node playback stops for edits and the editor, follows the node, and is released with the surface", async () => {
+test("node playback pauses for edits and the editor, follows the node, and is released with the surface", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const restoreStart = runtime.indexOf("  const restoreDom = () => {");
   const restore = runtime.slice(restoreStart, runtime.indexOf("\n  node.__panoDomRestore = restoreDom;", restoreStart));
@@ -484,9 +485,12 @@ test("node playback stops for edits and the editor, follows the node, and is rel
   assert.match(runtime, /video\.style\.cssText = "[^"]*opacity:0[^"]*"/);
   assert.doesNotMatch(runtime, /video\.style\.cssText = "[^"]*visibility/);
   // Every toolbar action but the play button stops playback first, the Full Editor included.
-  assert.match(runtime, /if \(action\?\.type === "toggle-playback"\) \{[\s\S]*?return;\s*\}\s*stopSurfacePlayback\(\);\s*if \(action\?\.type === "open-editor"\)/);
-  assert.match(runtime, /isStickerImageFile\(file\)\) return false;\s*stopSurfacePlayback\(\);/);
-  assert.match(keyDown, /stopSurfacePlayback\(\);\s*flushNodeSurfaceGesture\(\);/);
+  assert.match(runtime, /if \(action\?\.type === "toggle-playback"\) \{[\s\S]*?return;\s*\}\s*pauseSurfacePlayback\(\);\s*if \(action\?\.type === "open-editor"\)/);
+  assert.match(runtime, /isStickerImageFile\(file\)\) return false;\s*pauseSurfacePlayback\(\);/);
+  assert.match(keyDown, /pauseSurfacePlayback\(\);\s*flushNodeSurfaceGesture\(\);/);
+  // The node shows its playback's frame, which lives only on the node object; a grab pauses there.
+  assert.match(runtime, /return node\.__panoSurfacePlayback\?\.playback\.frame \?\? NODE_SURFACE_FRAME;/);
+  assert.match(runtime, /let picked = pick\(\);\s*\/\/[^\n]*\n[^\n]*\n\s*if \(picked && surfacePlayback\?\.playback\.playing\) \{\s*pauseSurfacePlayback\(\);\s*picked = pick\(\);/);
   // Space stays ComfyUI's canvas pan.
   assert.doesNotMatch(keyDown, /" "|Space/);
   // A node out of sight stops and lets its VIDEO go, on each draw and as soon as its surface resizes away.

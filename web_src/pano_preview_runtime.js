@@ -1443,7 +1443,7 @@ function stickersSurfaceProjection(node, width, height) {
   return viewProjection(previewNodeCamera(node.__panoPreviewView || { yaw: 0, pitch: 0, fov: 100 }, width, height), width, height);
 }
 
-// The Timeline frame the node shows: NODE_SURFACE_FRAME, or the played frame while the node plays.
+// The Timeline frame the node shows: its playback's, NODE_SURFACE_FRAME until it plays.
 function surfaceFrame(node) {
   return node.__panoSurfacePlayback?.playback.frame ?? NODE_SURFACE_FRAME;
 }
@@ -2077,7 +2077,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     node.__panoSurfacePlayback = surfacePlayback;
   }
   // The Timeline plays on the node only while it is shown: collapsed, in a subgraph or another graph,
-  // the node stops and lets its VIDEO go.
+  // the node pauses and lets its VIDEO go.
   const syncSurfacePlayback = () => {
     const { playback, still } = surfacePlayback;
     const shown = surfaceShown(wrap, !!node.flags?.collapsed);
@@ -2091,8 +2091,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     nodeSurfaceUiModel.playable = playable;
     nodeSurfaceUiModel.playing = playback.playing;
   };
-  // Edits apply to NODE_SURFACE_FRAME, so they stop playback first.
-  const stopSurfacePlayback = () => surfacePlayback?.playback.stop();
+  // Edits pause playback first, on the frame on screen.
+  const pauseSurfacePlayback = () => surfacePlayback?.playback.pause();
   let nodeSurfaceLiveState = null;
   const nodeSurfaceSession = (stickersMode
     ? createStickersNodeSurfaceSession
@@ -2177,7 +2177,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   let stickerImportCount = 0;
   const addNodeStickerFile = async (file) => {
     if (!stickersMode || !nodeSurfaceSession || !isStickerImageFile(file)) return false;
-    stopSurfacePlayback();
+    pauseSurfacePlayback();
     const assetId = `asset_${Math.random().toString(16).slice(2, 10)}`;
     const stickerId = `st_${Math.random().toString(16).slice(2, 10)}`;
     const view = { ...(node.__panoPreviewView || { yaw: 0, pitch: 0 }) };
@@ -2270,7 +2270,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
             surfacePlayback?.playback.toggle();
             return;
           }
-          stopSurfacePlayback();
+          pauseSurfacePlayback();
           if (action?.type === "open-editor") {
             flushNodeSurfaceGesture();
             if (!stickersMode) nodeSurfaceUiModel.aspectOpen = false;
@@ -2471,18 +2471,14 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const selectedId = String(currentState?.active?.selected_sticker_id || "");
     const projection = stickersSurfaceProjection(node, canvas.width, canvas.height);
     root.focus?.({ preventScroll: true });
-    // A Sticker grabbed while the node plays stops playback and is selected where frame 0 puts it;
+    const pick = () => pickStickerAtPoint(surfacePoseStickers(currentState, surfaceFrame(node)), selectedId, point, projection);
+    let picked = pick();
+    // A Sticker grabbed while the node plays pauses it on the frame on screen, where the grab goes on;
     // an empty drag only looks around.
-    if (surfacePlayback?.playback.playing) {
-      const played = pickStickerAtPoint(surfacePoseStickers(currentState, surfaceFrame(node)), selectedId, point, projection);
-      if (played) {
-        stopSurfacePlayback();
-        nodeSurfaceSession.apply({ type: "select-sticker", id: played.item.id });
-        requestDraw();
-        return;
-      }
+    if (picked && surfacePlayback?.playback.playing) {
+      pauseSurfacePlayback();
+      picked = pick();
     }
-    const picked = pickStickerAtPoint(surfacePoseStickers(currentState), selectedId, point, projection);
     if (picked && nodeSurfaceSession) {
       interaction.stopMotion();
       flushNodeSurfaceGesture();
@@ -2661,7 +2657,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const tag = String(target?.tagName || "").toUpperCase();
     if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
     if (nodeSurfaceUiModel.canDelete !== true) return;
-    stopSurfacePlayback();
+    pauseSurfacePlayback();
     flushNodeSurfaceGesture();
     if (nodeSurfaceSession.apply({ type: "delete-selected" })) requestDraw();
     stopCanvasEvent(ev);
