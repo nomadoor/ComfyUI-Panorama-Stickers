@@ -260,8 +260,8 @@ test("Cutout node surface loops the input ERP video and revisions each presented
   assert.match(runtime, /function drawCanvas[\s\S]*?getSourcePixelSize\(bgImg\)/);
   assert.match(runtime, /invalidatePreviewImageCaches[\s\S]*?disposeNodeOutputVideoCache\(node\)/);
   assert.match(runtime, /getNodeOwnOutputVideo[\s\S]*?isNodeOutputMediaCurrent\(node, "background"\)/);
-  assert.match(runtime, /const onConnectionsChangeHook = function \(type, slotIndex\)[\s\S]*?isTrackedMediaInputConnectionChange\([\s\S]*?BACKGROUND_INPUT_NAMES[\s\S]*?markNodeOutputMediaStale\(node, "background"\)/);
-  assert.match(runtime, /const onExecutedHook = function[\s\S]*?markNodeOutputMediaCurrent\(node\)[\s\S]*?requestDraw\(\)/);
+  assert.match(runtime, /const onConnectionsChangeHook = function \(type, slotIndex\)[\s\S]*?isTrackedMediaInputConnectionChange\([\s\S]*?BACKGROUND_INPUT_NAMES[\s\S]*?invalidateBackgroundPreviewMedia\(node\)/);
+  assert.match(runtime, /const onExecutedHook = function[\s\S]*?showOwnNodeOutput\(node, output\)[\s\S]*?requestDraw\(\)/);
 });
 
 test("on-node surfaces resolve an external sticker's image by its id and leave hidden stickers out", async () => {

@@ -361,6 +361,42 @@ def test_hold_keyframe_cuts_the_camera_at_its_next_keyframe(monkeypatch):
     assert torch.equal(image[0], image[1]) and torch.allclose(image[1], before, atol=1e-6)
     assert torch.equal(image[2], image[3]) and torch.allclose(image[2], after, atol=1e-6)
     assert torch.allclose(mask[2], after_mask, atol=1e-6)
+    # The frames before the first turned mask keep the held one.
+    before_mask = _render_camera_scene(yaw_deg=30.0)[1]
+    assert mask.stride(0) == mask.shape[1] * mask.shape[2]
+    assert torch.allclose(mask[0], before_mask, atol=1e-6) and torch.equal(mask[0], mask[1])
+
+
+def test_empty_mask_is_one_row_shared_by_every_frame():
+    bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
+
+    image, mask = _execute({"version": 2}, bg_media=bg)[:2]
+
+    assert not torch.equal(image[0], image[2])
+    assert mask.shape == (3, 4, 4) and mask.stride(0) == 0 and float(mask.max()) == 0.0
+
+
+def test_static_painted_mask_is_one_row_shared_by_every_frame():
+    sticker = torch.from_numpy(bake_legacy_goldens._quadrant_sticker()[None])
+    bg = build_background_erp()
+    bg = torch.cat([bg, 1.0 - bg, bg * 0.5])
+
+    image, mask = _execute(_camera_scene(), bg_media=bg, sticker=sticker)[:2]
+
+    assert not torch.equal(image[0], image[1])
+    assert mask.shape[0] == 3 and mask.stride(0) == 0
+    assert float(mask.max()) > 0.5 and torch.equal(mask[2], _render_camera_scene()[1])
+
+
+def test_turning_painted_mask_has_a_row_per_frame():
+    state = _animated_camera_scene([(0, 0.0, 0.0, "auto"), (2, 120.0, 0.0, "auto")])
+
+    mask = _render_state(state)[1]
+
+    assert mask.shape[0] == 3 and mask.stride(0) == mask.shape[1] * mask.shape[2]
+    for index in range(3):
+        yaw = evaluate_scene_state(load_scene_state(json.dumps(state)), index)["camera"]["yaw_deg"]
+        assert torch.allclose(mask[index], _render_camera_scene(yaw_deg=yaw)[1], atol=1e-6)
 
 
 def _sky_sticker_scene(pose_keyframes=(), opacity_keyframes=(), clip=None):

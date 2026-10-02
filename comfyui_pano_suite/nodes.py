@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 import comfy.model_management
+import comfy.utils
 from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
@@ -1199,11 +1200,17 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
     return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
 
 
+# The size of a whole render's output (color and mask of every frame) from which (b) copies the frames from the
+# device through a pinned buffer.
+STAGED_RENDER_BYTES = 16 * 1024 ** 2
+
+
 def _render_timeline(state: dict, sources: SceneSources, frames, bg_media, bg_color, port: PortMedia | None,
                      scene: SceneContent | None, capture) -> tuple[torch.Tensor, torch.Tensor]:
     """(b) Render each output frame with the shared render function, with the port Sticker's source at the
     frame of `port` and the item of `scene` that (a) chose. `capture` maps the evaluated state of a frame to the
-    Camera value and the Projection to draw it with; the Projection's size is the same for every frame."""
+    Camera value and the Projection to draw it with; the Projection's size is the same for every frame.
+    While every frame's mask equals the first one, the MASK output is that one row expanded to all frames."""
     device = comfy.model_management.get_torch_device()
     if not frames:
         _camera, projection = capture(evaluate_scene_state(state, 0.0))
@@ -1216,41 +1223,77 @@ def _render_timeline(state: dict, sources: SceneSources, frames, bg_media, bg_co
         others = {key: value for key, value in sources.stickers.items() if key != port.sticker_id}
     cache = {}
     previous = None
+    first_mask = None
+    masks = None
     port_source = None
-    for index, (frame, bg_index, port_index, scene_index) in enumerate(frames):
-        evaluated = evaluate_scene_state(state, frame)
-        frame_sources = sources
-        if port is not None:
-            active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
-            port_source = _port_source_at(active, port_index, port_frames, sources.stickers[port.sticker_id], port_source)
-            frame_sources = replace(sources, stickers=others if port_source is None else {**others, port.sticker_id: port_source})
-        camera, projection = capture(evaluated)
-        if index == 0:
-            images = torch.empty((len(frames), projection.height, projection.width, 3), dtype=torch.float32)
-            masks = torch.empty((len(frames), projection.height, projection.width), dtype=torch.float32)
-        color, mask, _depth = render_frame(
-            evaluated,
-            frame_sources,
-            camera,
-            projection,
-            bg=None if bg_index is None else bg_media[bg_index],
-            bg_key=bg_index,
-            bg_color=bg_color,
-            device=device,
-            cache=cache,
-            bg_width=bg_width,
-            scene=scene,
-            scene_index=scene_index,
-        )
-        # A reused frame is copied from the previous output row instead of transferred from the device again.
-        if color is previous:
-            images[index] = images[index - 1]
-            masks[index] = masks[index - 1]
-        else:
-            images[index] = color
-            masks[index] = mask
-        previous = color
-    return images, masks
+    staging = None
+    progress = comfy.utils.ProgressBar(len(frames))
+    try:
+        for index, (frame, bg_index, port_index, scene_index) in enumerate(frames):
+            evaluated = evaluate_scene_state(state, frame)
+            frame_sources = sources
+            if port is not None:
+                active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
+                port_source = _port_source_at(active, port_index, port_frames, sources.stickers[port.sticker_id], port_source)
+                frame_sources = replace(sources, stickers=others if port_source is None else {**others, port.sticker_id: port_source})
+            camera, projection = capture(evaluated)
+            if index == 0:
+                images = torch.empty((len(frames), projection.height, projection.width, 3), dtype=torch.float32)
+                shared_mask = torch.empty((1, projection.height, projection.width), dtype=torch.float32)
+                pixels = projection.height * projection.width
+                if not comfy.model_management.is_device_cpu(device) and len(frames) * pixels * 16 >= STAGED_RENDER_BYTES:
+                    # The rows of a large render reach the output through one pinned buffer: copying from the
+                    # device straight into fresh pageable rows is several times slower. A small render is copied
+                    # directly, since pinning can release ComfyUI's RAM cache and other pins for little gain.
+                    # Without a pin (no CUDA/ROCm or no budget), the buffer would only add a copy.
+                    staging = torch.empty(pixels * 4, dtype=torch.float32)
+                    if comfy.model_management.pin_memory(staging, evict_active=False):
+                        staged_color = staging[:pixels * 3].view(projection.height, projection.width, 3)
+                        staged_mask = staging[pixels * 3:].view(projection.height, projection.width)
+                    else:
+                        staging = None
+            color, mask, _depth = render_frame(
+                evaluated,
+                frame_sources,
+                camera,
+                projection,
+                bg=None if bg_index is None else bg_media[bg_index],
+                bg_key=bg_index,
+                bg_color=bg_color,
+                device=device,
+                cache=cache,
+                bg_width=bg_width,
+                scene=scene,
+                scene_index=scene_index,
+            )
+            # A reused frame is copied from the previous output row instead of transferred from the device again.
+            if color is previous:
+                images[index] = images[index - 1]
+                if masks is not None:
+                    masks[index] = masks[index - 1]
+            else:
+                if index == 0:
+                    first_mask = mask
+                elif masks is None and mask is not first_mask and not torch.equal(mask, first_mask):
+                    masks = torch.empty((len(frames), projection.height, projection.width), dtype=torch.float32)
+                    masks[:index] = shared_mask
+                mask_row = shared_mask[0] if index == 0 else None if masks is None else masks[index]
+                if staging is None:
+                    images[index] = color
+                    if mask_row is not None:
+                        mask_row.copy_(mask)
+                else:
+                    staged_color.copy_(color)
+                    images[index] = staged_color
+                    if mask_row is not None:
+                        staged_mask.copy_(mask)
+                        mask_row.copy_(staged_mask)
+            previous = color
+            progress.update(1)
+    finally:
+        if staging is not None:
+            comfy.model_management.unpin_memory(staging)
+    return images, shared_mask.expand(len(frames), -1, -1) if masks is None else masks
 
 
 def _bg_media_ui(bg_media, bg, fps: float) -> dict:
@@ -1279,7 +1322,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="PanoramaStickersNode",
-            display_name="Panorama Stickers",
+            display_name="Panorama Stickers (new)",  # TODO(#78): drop the suffix when the legacy node is replaced.
             category="Panorama Suite",
             inputs=[
                 io.MultiType.Input(io.Image.Input("bg_media"), types=[io.Video], optional=True),
@@ -1360,7 +1403,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="PanoramaCutoutNode",
-            display_name="Panorama Cutout",
+            display_name="Panorama Cutout (new)",  # TODO(#78): drop the suffix when the legacy node is replaced.
             category="Panorama Suite",
             inputs=[
                 io.MultiType.Input(io.Image.Input("source"), types=[io.Video, PanoScene]),
@@ -1765,7 +1808,7 @@ class PanoramaPreviewSceneNode(io.ComfyNode):
         template = io.MatchType.Template("source", [io.Image, io.Video, PanoScene])
         return io.Schema(
             node_id="PanoramaPreviewNode",
-            display_name="Panorama Preview",
+            display_name="Panorama Preview (new)",  # TODO(#78): drop the suffix when the legacy node is replaced.
             category="Panorama Suite",
             inputs=[
                 io.MatchType.Input("source", template=template),

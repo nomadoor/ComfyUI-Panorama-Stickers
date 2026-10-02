@@ -5,6 +5,7 @@ import {
   attachCutoutPreview,
   attachPreviewNode,
   attachStickersNodePreview,
+  restoreNodeOutput,
 } from "./pano_node_preview.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
@@ -22,9 +23,12 @@ import {
   makePanoEditorHistorySnapshot,
   newSceneSticker,
   normalizeCoverageValue,
+  paintingLayerNeedsSync,
   parsePanoEditorState,
   parseSceneEditorState,
+  restoredHistoryState,
   retainActiveCutoutShot,
+  sameEditorStateText,
   sceneStickerLabel,
   setEditorActive,
   cameraFields,
@@ -118,6 +122,7 @@ import {
   reconcilePortStickerState,
 } from "./pano_stickers_node_surface.js";
 import { isNodeOutputMediaCurrent } from "./pano_preview_video.js";
+import { createVideoPlayback, frameAtTime } from "./pano_video_playback.js";
 import {
   drawStickerSelectionBoundary,
   drawStickerSelectionHandles,
@@ -135,6 +140,8 @@ import {
 } from "./pano_external_sticker_sync.js";
 
 const STATE_WIDGET = "state_json";
+// Inputs Space types into; it does not play the Timeline there.
+const TEXT_INPUT_TYPES = new Set(["text", "search", "number", "email", "url", "tel", "password", "date", "time", "datetime-local", "month", "week"]);
 const EXTERNAL_STICKER_ID = "sticker_image_1";
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
 const EXTERNAL_STICKER_PREVIEW_KEY = "pano_sticker_input_images";
@@ -655,7 +662,6 @@ async function showEditor(node, type, options = {}) {
       durationLabel: "0:00",
       frameCount: 0,
       fps: 24,
-      mode: "playback",
       hasAudio: false,
       muted: false,
       volume: 1,
@@ -909,7 +915,9 @@ async function showEditor(node, type, options = {}) {
   // Timeline then opens only when something is timed. openRows holds the rows showing their Lanes.
   // selection is { owner, lane, frames }: `lane` a Lane's name, or null for every Lane of the row,
   // and the frames in the owner's own time base. drag holds what a Timeline drag started from.
-  const timeline = { expanded: null, openRows: new Set(), selection: null, drag: null, playback: 0 };
+  const timeline = { expanded: null, openRows: new Set(), selection: null, drag: null };
+  // Where the pointer went down on the canvas, until its first move.
+  let editPointerDown = null;
   if (type === "stickers") {
     editor.selectedId = null;
     state.active.selected_sticker_id = null;
@@ -926,7 +934,6 @@ async function showEditor(node, type, options = {}) {
     rafId: 0,
     running: true,
     lastTickTs: 0,
-    lastSizeCheckTs: 0,
     pendingStableLayoutFrames: type === "cutout" ? 2 : 0,
     hasPresentedFrame: false,
     backgroundDirty: true,
@@ -963,21 +970,18 @@ async function showEditor(node, type, options = {}) {
     depth: 0,
   };
   const videoState = {
-    mode: "playback",
-    editorTime: 0,
-    requestedTime: null,
-    presentedTime: 0,
-    seeking: false,
-    resumeAfterScrub: false,
-    pendingPlaybackResume: false,
-    frameCounter: 0,
-    frameCache: new Map(),
-    frameCacheOrder: [],
-    currentFrameNumber: 0,
     thumbnailJobId: 0,
     thumbnailSrc: "",
+    // Sources whose filmstrip could not be built; a refresh does not build it again.
+    thumbnailFailedSrcs: new Set(),
+    // Sources that failed to load (a temp MP4 the server deleted) are not tried again in this editor.
+    failedSrcs: new Set(),
+    videoFailed: false,
+    // The legacy transport's slider paused playback and plays again when it is let go.
+    resumeAfterScrub: false,
+    // The fps of the editor's own background VIDEO result, 0 for a file without one.
+    metaFps: 0,
   };
-  const SCRUB_FRAME_CACHE_LIMIT = 4;
   const VIDEO_THUMBNAIL_COUNT = 9;
   const videoCleanupFns = [];
   let videoTransportLayoutRaf = 0;
@@ -1001,10 +1005,6 @@ async function showEditor(node, type, options = {}) {
       videoTransportLayoutRaf = 0;
       syncVideoTransportLayout();
     });
-  };
-  const frameTolerance = () => {
-    const fps = Math.max(1, Number(uiState.videoTransport.fps || 24));
-    return Math.max(1 / 120, Math.min(0.05, 0.5 / fps));
   };
   const detectVideoHasAudio = (video) => {
     if (!(video instanceof HTMLVideoElement)) return false;
@@ -1058,9 +1058,6 @@ async function showEditor(node, type, options = {}) {
       uiState.videoTransport.thumbnailCount = cached.thumbnailCount;
       return;
     }
-    if (videoState.thumbnailSrc === safeSrc && Array.isArray(uiState.videoTransport.thumbnails) && uiState.videoTransport.thumbnails.length) {
-      return;
-    }
     const jobId = ++videoState.thumbnailJobId;
     videoState.thumbnailSrc = safeSrc;
     uiState.videoTransport.thumbnails = [];
@@ -1083,10 +1080,13 @@ async function showEditor(node, type, options = {}) {
       thumbVideo.src = safeSrc;
       thumbVideo.load();
     });
-    if (!loaded || videoState.thumbnailJobId !== jobId) return;
-    const videoWidth = Math.max(1, Number(thumbVideo.videoWidth || 0));
-    const videoHeight = Math.max(1, Number(thumbVideo.videoHeight || 0));
-    if (videoWidth < 1 || videoHeight < 1) return;
+    if (videoState.thumbnailJobId !== jobId) return;
+    const videoWidth = Number(thumbVideo.videoWidth || 0);
+    const videoHeight = Number(thumbVideo.videoHeight || 0);
+    if (!loaded || videoWidth < 1 || videoHeight < 1) {
+      videoState.thumbnailFailedSrcs.add(safeSrc);
+      return;
+    }
     const sampleDuration = Math.max(0, Number(thumbVideo.duration || duration || 0));
     const canvas = document.createElement("canvas");
     const thumbHeight = 46;
@@ -1138,209 +1138,72 @@ async function showEditor(node, type, options = {}) {
       fps,
     });
   };
-  const frameNumberForTime = (time) => {
-    const fps = Math.max(1, Number(uiState.videoTransport.fps || 24));
-    return Math.max(0, Math.round(Math.max(0, Number(time || 0)) * fps));
-  };
-  const cacheFrameCanvas = (frameNumber) => {
-    if (!(videoEl instanceof HTMLVideoElement)) return null;
-    if (Number(videoEl.videoWidth || 0) < 1 || Number(videoEl.videoHeight || 0) < 1) return null;
-    const width = Number(videoEl.videoWidth || 0);
-    const height = Number(videoEl.videoHeight || 0);
-    const frameCanvas = document.createElement("canvas");
-    frameCanvas.width = width;
-    frameCanvas.height = height;
-    frameCanvas.__panoFrameIdx = Number(frameCanvas.__panoFrameIdx || 0) + 1;
-    const ctx2d = frameCanvas.getContext("2d");
-    if (!ctx2d) return null;
-    ctx2d.drawImage(videoEl, 0, 0, width, height);
-    videoState.frameCache.set(frameNumber, frameCanvas);
-    videoState.frameCacheOrder = videoState.frameCacheOrder.filter((entry) => entry !== frameNumber);
-    videoState.frameCacheOrder.push(frameNumber);
-    while (videoState.frameCacheOrder.length > SCRUB_FRAME_CACHE_LIMIT) {
-      const evict = videoState.frameCacheOrder.shift();
-      if (evict != null) videoState.frameCache.delete(evict);
-    }
-    return frameCanvas;
-  };
-  const copyCanvasIntoStill = (sourceCanvas, presentedTime = null) => {
-    if (!(sourceCanvas instanceof HTMLCanvasElement)) return false;
-    const width = Number(sourceCanvas.width || 0);
-    const height = Number(sourceCanvas.height || 0);
-    if (width < 1 || height < 1) return false;
-    if (stillCanvas.width !== width || stillCanvas.height !== height) {
-      stillCanvas.width = width;
-      stillCanvas.height = height;
-    }
-    const ctx2d = stillCanvas.getContext("2d");
-    if (!ctx2d) return false;
-    ctx2d.clearRect(0, 0, width, height);
-    ctx2d.drawImage(sourceCanvas, 0, 0, width, height);
-    stillCanvas.__panoFrameIdx = Number(stillCanvas.__panoFrameIdx || 0) + 1;
-    if (presentedTime != null) videoState.presentedTime = Number(presentedTime || 0);
-    return true;
-  };
-  const presentCachedFrameForTime = (time) => {
-    const frameNumber = frameNumberForTime(time);
-    const cachedCanvas = videoState.frameCache.get(frameNumber) || null;
-    if (!cachedCanvas) return false;
-    videoState.currentFrameNumber = frameNumber;
-    return copyCanvasIntoStill(cachedCanvas, time);
-  };
   videoCleanupFns.push(() => {
     resetVideoThumbnails();
   });
+  // The background VIDEO's playback: PanoramaStickersNode's Timeline, else the legacy transport, on
+  // a Timeline of the VIDEO's own length. The legacy transport loops seamlessly through the VIDEO's
+  // own loop, so its playback then has no end.
+  const playback = createVideoPlayback({
+    video: videoEl instanceof HTMLVideoElement ? videoEl : null,
+    clock: {
+      now: () => performance.now(),
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      cancelFrame: (id) => cancelAnimationFrame(id),
+    },
+    pageHidden: () => document.hidden,
+    fps: playbackFps,
+    span: () => {
+      if (sceneV2) return timelineSpanFrames();
+      const frames = Math.round(Number(uiState.videoTransport.duration || 0) * playbackFps());
+      return videoEl.loop || !(frames > 0) ? Infinity : frames;
+    },
+    loop: () => sceneV2,
+    onFrame: (frame) => {
+      if (sceneV2) setTimelineFrame(frame);
+      else syncVideoTransportState();
+      requestDraw({ cause: "frame_view", localOnly: true });
+    },
+    onCapture: () => {
+      if (captureStillFrameFromVideo()) runtime.backgroundDirty = true;
+    },
+    onChange: () => {
+      syncVideoTransportState();
+      syncTimeline();
+      requestDraw({ cause: "frame_view", localOnly: true });
+    },
+  });
+  videoCleanupFns.push(() => playback.dispose());
   if (videoEl instanceof HTMLVideoElement) {
-    const pumpVideoFrame = () => {
-      if (typeof videoEl.requestVideoFrameCallback !== "function") return;
-      if (videoEl.__panoFramePumpActive) return;
-      videoEl.__panoFramePumpActive = true;
-      const tickVideoFrame = (_now, metadata) => {
-        videoEl.__panoFramePumpActive = false;
-        const actualTime = Number(metadata?.mediaTime ?? videoEl.currentTime ?? 0);
-        const actualFrameNumber = frameNumberForTime(actualTime);
-        const tolerance = frameTolerance();
-        if (videoState.mode === "scrub") {
-          if (Math.abs(actualTime - Number(videoState.editorTime || 0)) <= tolerance) {
-            cacheFrameCanvas(actualFrameNumber);
-            presentCachedFrameForTime(videoState.editorTime);
-            runtime.backgroundDirty = true;
-            runtime.dirty = true;
-            syncVideoTransportState({
-              ready: true,
-              playing: false,
-              visible: getVideoTransportVisible(),
-              currentTime: videoState.editorTime,
-              duration: uiState.videoTransport.duration,
-              frameCount: uiState.videoTransport.frameCount,
-              fps: uiState.videoTransport.fps,
-              mode: "scrub",
-            });
-            requestDraw({ cause: "frame_view", localOnly: true });
-          }
-        } else {
-          videoState.editorTime = actualTime;
-          videoState.presentedTime = actualTime;
-          videoState.requestedTime = null;
-          videoState.currentFrameNumber = actualFrameNumber;
-          cacheFrameCanvas(actualFrameNumber);
-          videoState.frameCounter += 1;
-          videoEl.dataset.panoFrameIdx = String(videoState.frameCounter);
-          runtime.backgroundDirty = true;
-          runtime.dirty = true;
-          syncVideoTransportState({
-            ready: true,
-            playing: !videoEl.paused && !videoEl.ended,
-            visible: getVideoTransportVisible(),
-            currentTime: actualTime,
-            duration: uiState.videoTransport.duration,
-            frameCount: uiState.videoTransport.frameCount,
-            fps: uiState.videoTransport.fps,
-            mode: "playback",
-          });
-          requestDraw({ cause: "frame_view", localOnly: true });
-          followTimelineVideo(actualTime);
-        }
-        if (runtime.running && (!videoEl.paused || videoState.mode === "scrub")) {
-          pumpVideoFrame();
-        }
-      };
-      try {
-        videoEl.requestVideoFrameCallback(tickVideoFrame);
-      } catch {
-        videoEl.__panoFramePumpActive = false;
-      }
-    };
-    const maybeResumePlayback = () => {
-      if (!videoState.pendingPlaybackResume) return;
-      videoState.pendingPlaybackResume = false;
-      videoState.mode = "playback";
-      videoState.requestedTime = null;
-      if (captureStillFrameFromVideo()) {
-        runtime.backgroundDirty = true;
-        runtime.dirty = true;
-      }
-      void videoEl.play().catch(() => {});
-    };
+    // The VIDEO's length and audio are known from its metadata on.
     const onVideoReady = () => {
-      videoState.editorTime = Number(videoEl.currentTime || 0);
-      if (Number(videoEl.readyState || 0) >= 2 && captureStillFrameFromVideo()) {
-        runtime.backgroundDirty = true;
-        runtime.dirty = true;
-      }
-      refreshModalVideoSource();
-      pumpVideoFrame();
-      requestDraw({ cause: "frame_view", localOnly: true });
-    };
-    const onPlay = () => {
-      videoState.mode = "playback";
-      videoState.seeking = false;
-      videoState.requestedTime = null;
-      refreshModalVideoSource();
-      pumpVideoFrame();
-      requestDraw({ cause: "frame_view", localOnly: true });
-    };
-    const onPause = () => {
-      if (videoState.mode === "playback" && captureStillFrameFromVideo()) {
-        runtime.backgroundDirty = true;
-        runtime.dirty = true;
-      }
       refreshModalVideoSource();
       requestDraw({ cause: "frame_view", localOnly: true });
     };
     const onVolumeChange = () => {
       syncVideoTransportState({
-        ready: !!videoEl.getAttribute("src"),
-        playing: !videoEl.paused && !videoEl.ended,
-        visible: getVideoTransportVisible(),
-        currentTime: videoState.editorTime,
-        duration: uiState.videoTransport.duration,
-        frameCount: uiState.videoTransport.frameCount,
-        fps: uiState.videoTransport.fps,
-        mode: videoState.mode,
         hasAudio: uiState.videoTransport.hasAudio,
         muted: videoEl.muted,
         volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
       });
     };
-    const onSeeked = () => {
-      const hadExplicitSeek = videoState.seeking || videoState.pendingPlaybackResume || videoState.mode === "scrub";
-      videoState.seeking = false;
-      if (!hadExplicitSeek) {
-        videoState.requestedTime = null;
-        pumpVideoFrame();
-        return;
-      }
-      const targetTime = Number(videoState.requestedTime ?? videoState.editorTime ?? 0);
-      const actualTime = Number(videoEl.currentTime || 0);
-      if (Math.abs(actualTime - targetTime) > frameTolerance()) {
-        issueVideoSeek(targetTime);
-        return;
-      }
-      if (videoState.mode === "scrub") {
-        captureStillFrameFromVideo();
-        runtime.backgroundDirty = true;
-        runtime.dirty = true;
-        requestDraw({ cause: "frame_view", localOnly: true });
-      }
-      videoState.requestedTime = null;
-      maybeResumePlayback();
-      pumpVideoFrame();
+    const onVideoError = () => {
+      const src = videoEl.dataset.panoSrc;
+      if (!src) return;
+      videoState.failedSrcs.add(src);
+      refreshModalVideoSource();
+      requestDraw();
     };
-    videoEl.addEventListener("loadedmetadata", onVideoReady);
-    videoEl.addEventListener("loadeddata", onVideoReady);
-    videoEl.addEventListener("canplay", onVideoReady);
-    videoEl.addEventListener("play", onPlay);
-    videoEl.addEventListener("pause", onPause);
-    videoEl.addEventListener("volumechange", onVolumeChange);
-    videoEl.addEventListener("seeked", onSeeked);
-    videoCleanupFns.push(() => videoEl.removeEventListener("loadedmetadata", onVideoReady));
-    videoCleanupFns.push(() => videoEl.removeEventListener("loadeddata", onVideoReady));
-    videoCleanupFns.push(() => videoEl.removeEventListener("canplay", onVideoReady));
-    videoCleanupFns.push(() => videoEl.removeEventListener("play", onPlay));
-    videoCleanupFns.push(() => videoEl.removeEventListener("pause", onPause));
-    videoCleanupFns.push(() => videoEl.removeEventListener("volumechange", onVolumeChange));
-    videoCleanupFns.push(() => videoEl.removeEventListener("seeked", onSeeked));
+    for (const [type, listener] of [
+      ["loadedmetadata", onVideoReady],
+      ["loadeddata", onVideoReady],
+      ["canplay", onVideoReady],
+      ["volumechange", onVolumeChange],
+      ["error", onVideoError],
+    ]) {
+      videoEl.addEventListener(type, listener);
+      videoCleanupFns.push(() => videoEl.removeEventListener(type, listener));
+    }
   }
 
   function syncToolButtonModels() {
@@ -2277,12 +2140,12 @@ async function showEditor(node, type, options = {}) {
   }
   function getMediaRevisionToken(media) {
     if (!media) return "none";
+    // A VIDEO's VideoTexture uploads each new frame by itself (pano_three_view.js).
     if (media instanceof HTMLVideoElement) {
       return [
         String(media.currentSrc || media.src || ""),
         Number(media.videoWidth || 0),
         Number(media.videoHeight || 0),
-        String(media.dataset?.panoFrameIdx || "0"),
       ].join("|");
     }
     if (media instanceof HTMLCanvasElement) {
@@ -2305,15 +2168,19 @@ async function showEditor(node, type, options = {}) {
     const secs = total % 60;
     return `${mins}:${String(secs).padStart(2, "0")}`;
   }
+  // Without a known fps the legacy transport counts milliseconds, so its slider seeks to the time itself.
+  function playbackFps() {
+    return sceneV2 ? state.timeline.fps : videoState.metaFps || 1000;
+  }
+  // The transport shows the playback's frame and state; `extra` brings what the source refresh learned.
   function syncVideoTransportState(extra = {}) {
-    const current = Number(extra.currentTime ?? videoState.editorTime ?? 0);
     const duration = Number(extra.duration ?? uiState.videoTransport.duration ?? 0);
+    const fps = Math.max(1, Number(extra.fps ?? uiState.videoTransport.fps ?? 24));
+    const current = playback.frame / playbackFps();
     const ready = Object.prototype.hasOwnProperty.call(extra, "ready")
       ? !!extra.ready
       : !!uiState.videoTransport.ready;
-    const playing = Object.prototype.hasOwnProperty.call(extra, "playing")
-      ? !!extra.playing
-      : !!uiState.videoTransport.playing;
+    const playing = playback.playing;
     const visible = Object.prototype.hasOwnProperty.call(extra, "visible")
       ? !!extra.visible
       : !!uiState.videoTransport.visible;
@@ -2342,8 +2209,7 @@ async function showEditor(node, type, options = {}) {
       currentTimeLabel: formatVideoTime(current),
       durationLabel: formatVideoTime(duration),
       frameCount: Math.max(0, Number(extra.frameCount ?? uiState.videoTransport.frameCount ?? 0)),
-      fps: Math.max(1, Number(extra.fps ?? uiState.videoTransport.fps ?? 24)),
-      mode: String(extra.mode || videoState.mode || "playback"),
+      fps,
       hasAudio,
       muted,
       volume: Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1)),
@@ -2370,14 +2236,6 @@ async function showEditor(node, type, options = {}) {
       videoEl.volume = Math.max(0.01, Number(uiState.videoTransport.volume || 1));
     }
     syncVideoTransportState({
-      ready: !!videoEl.getAttribute("src"),
-      playing: !videoEl.paused && !videoEl.ended,
-      visible: getVideoTransportVisible(),
-      currentTime: videoState.editorTime,
-      duration: uiState.videoTransport.duration,
-      frameCount: uiState.videoTransport.frameCount,
-      fps: uiState.videoTransport.fps,
-      mode: videoState.mode,
       hasAudio: uiState.videoTransport.hasAudio,
       muted: videoEl.muted,
       volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
@@ -2402,12 +2260,12 @@ async function showEditor(node, type, options = {}) {
     ctx2d.clearRect(0, 0, width, height);
     ctx2d.drawImage(videoEl, 0, 0, width, height);
     stillCanvas.__panoFrameIdx = Number(stillCanvas.__panoFrameIdx || 0) + 1;
-    videoState.presentedTime = Number(videoState.editorTime || videoEl.currentTime || 0);
     return true;
   }
+  // ADR 0019: the VIDEO is on screen while it plays; otherwise its last confirmed frame, the still.
   function getDisplayBackgroundSource() {
     if (
-      videoState.mode === "scrub"
+      !playback.showsVideo
       && Number(stillCanvas.width || 0) > 0
       && Number(stillCanvas.height || 0) > 0
       && Number(stillCanvas.__panoFrameIdx || 0) > 0
@@ -2424,110 +2282,52 @@ async function showEditor(node, type, options = {}) {
     }
     return null;
   }
-  function issueVideoSeek(targetTime) {
-    if (!(videoEl instanceof HTMLVideoElement)) return;
-    if (Number(videoEl.videoWidth || 0) < 1 || Number(videoEl.videoHeight || 0) < 1) {
-      // Without metadata nothing seeks, so no seek will resume playback either.
-      videoState.pendingPlaybackResume = false;
-      return;
-    }
-    const nextTime = Math.max(0, Number(targetTime || 0));
-    videoState.requestedTime = nextTime;
-    if (videoState.seeking) return;
-    if (Math.abs(Number(videoEl.currentTime || 0) - nextTime) <= 0.0005) return;
-    videoState.seeking = true;
-    try {
-      videoEl.currentTime = nextTime;
-    } catch {
-      videoState.seeking = false;
-    }
-  }
-  // ADR 0019: while scrubbing, the background shows confirmed still frames and the video only decodes.
-  function scrubVideoTo(time) {
-    refreshModalVideoSource();
-    const nextTime = clamp(Number(time || 0), 0, Number(uiState.videoTransport.duration || 0));
-    videoState.mode = "scrub";
-    if (!videoState.seeking && !videoEl.paused && !videoEl.ended) {
-      videoState.resumeAfterScrub = true;
-      videoEl.pause();
-    }
-    videoState.editorTime = nextTime;
-    presentCachedFrameForTime(nextTime);
-    syncVideoTransportState({
-      ready: !!videoEl.getAttribute("src"),
-      playing: false,
-      visible: getVideoTransportVisible(),
-      currentTime: nextTime,
-      duration: uiState.videoTransport.duration,
-      frameCount: uiState.videoTransport.frameCount,
-      fps: uiState.videoTransport.fps,
-      mode: "scrub",
-    });
-    if (Number(stillCanvas.__panoFrameIdx || 0) > 0) {
-      runtime.backgroundDirty = true;
-      runtime.dirty = true;
-      requestDraw({ cause: "frame_view", localOnly: true });
-    }
-    issueVideoSeek(nextTime);
-  }
-  function endVideoScrub() {
-    videoState.pendingPlaybackResume = !!videoState.resumeAfterScrub;
-    videoState.resumeAfterScrub = false;
-    if (!videoState.pendingPlaybackResume) {
-      videoState.mode = "scrub";
-    }
-    if (!videoState.seeking) {
-      if (videoState.pendingPlaybackResume) {
-        videoState.pendingPlaybackResume = false;
-        videoState.mode = "playback";
-        void videoEl.play().catch(() => {});
-      } else {
-        captureStillFrameFromVideo();
-        requestDraw({ cause: "frame_view", localOnly: true });
-      }
-    }
+  // The still of one source must not show for the next.
+  function dropVideoStill() {
+    stillCanvas.__panoFrameIdx = 0;
+    runtime.backgroundDirty = true;
   }
   function refreshModalVideoSource() {
     if (!(videoEl instanceof HTMLVideoElement)) return null;
     const { videoKey } = getModalVideoUiKeys();
-    const entry = isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
-    const nextSrc = mediaSource(entry);
-    const meta = getVideoMetaEntry();
-    const frameCount = Math.max(0, Number(meta?.frames || 0));
-    const fps = Math.max(1, Number(meta?.fps || 24));
-    const duration = Number(meta?.duration || (frameCount > 0 ? frameCount / fps : 0));
+    const ownEntry = isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
+    const ownSrc = mediaSource(ownEntry);
+    // The node's own result wins. Without one, a video file the background input loads directly plays,
+    // with its length from the file and the Timeline's fps.
+    const candidates = [ownSrc, comfyMedia.linkedVideoFile(node, backgroundInputNames())].filter(Boolean);
+    const nextSrc = candidates.find((src) => !videoState.failedSrcs.has(src)) || "";
+    videoState.videoFailed = !nextSrc && candidates.length > 0;
+    const meta = nextSrc && nextSrc === ownSrc ? getVideoMetaEntry() : null;
+    videoState.metaFps = Number(meta?.fps) > 0 ? Number(meta.fps) : 0;
+    const fps = Math.max(1, Number(meta?.fps || (sceneV2 ? state.timeline.fps : 24)));
+    const fileDuration = videoEl.dataset.panoSrc === nextSrc && Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
+    const duration = Number(meta?.duration || (meta?.frames > 0 ? meta.frames / fps : fileDuration));
+    const frameCount = Math.max(0, Number(meta?.frames || Math.round(duration * fps)));
     const hasAudio = !!meta?.has_audio || detectVideoHasAudio(videoEl);
-    // load() drops a seek in flight without `seeked`, so the seek state starts over with the source.
+    // PanoramaStickersNode shows the playhead's frame of a new source; the legacy transport starts it at 0.
     if (nextSrc && videoEl.dataset.panoSrc !== nextSrc) {
       videoEl.pause();
-      videoState.seeking = false;
-      videoState.requestedTime = null;
-      videoState.pendingPlaybackResume = false;
+      dropVideoStill();
       videoEl.dataset.panoSrc = nextSrc;
-      videoEl.dataset.panoFrameIdx = "0";
       videoEl.loop = !sceneV2 && !!uiState.videoTransport.loop;
       videoEl.muted = !!uiState.videoTransport.muted;
       videoEl.volume = Math.max(0, Math.min(1, Number(uiState.videoTransport.volume ?? 1)));
       videoEl.src = nextSrc;
       videoEl.load();
-      void buildVideoThumbnails(nextSrc, duration, fps);
+      playback.setSource(true);
+      if (!sceneV2) playback.seek(0);
     } else if (!nextSrc && videoEl.getAttribute("src")) {
       videoEl.pause();
-      videoState.seeking = false;
-      videoState.requestedTime = null;
-      videoState.pendingPlaybackResume = false;
       videoEl.removeAttribute("src");
       delete videoEl.dataset.panoSrc;
       videoEl.load();
-      stillCanvas.__panoFrameIdx = 0;
-      runtime.backgroundDirty = true;
+      dropVideoStill();
       resetVideoThumbnails();
+      playback.setSource(false);
     }
-    // The Timeline loops PanoramaStickersNode's playback at its own end.
-    if (videoEl.loop !== (!sceneV2 && !!uiState.videoTransport.loop)) {
-      videoEl.loop = !sceneV2 && !!uiState.videoTransport.loop;
-    }
-    if (nextSrc && (!Array.isArray(uiState.videoTransport.thumbnails) || uiState.videoTransport.thumbnails.length === 0)) {
+    // The legacy transport loops through the VIDEO's own loop; PanoramaStickersNode's playback sets it.
+    if (!sceneV2) videoEl.loop = !!uiState.videoTransport.loop;
+    if (nextSrc && !sceneV2 && videoState.thumbnailSrc !== nextSrc && !videoState.thumbnailFailedSrcs.has(nextSrc)) {
       void buildVideoThumbnails(nextSrc, duration, fps);
     }
     if (!nextSrc) {
@@ -2535,13 +2335,10 @@ async function showEditor(node, type, options = {}) {
     }
     syncVideoTransportState({
       ready: !!nextSrc,
-      playing: !videoEl.paused && !videoEl.ended,
       visible: !!nextSrc && getVideoTransportVisible(),
-      currentTime: videoState.editorTime,
       duration,
       frameCount,
       fps,
-      mode: videoState.mode,
       hasAudio,
       loop: !!videoEl.loop,
       muted: !!videoEl.muted,
@@ -3291,14 +3088,8 @@ async function showEditor(node, type, options = {}) {
 
   function needsPaintingLayerSync() {
     const counts = paintingCompositeCount(state.painting);
-    if (counts.totalPaintCount <= 0 && counts.totalMaskCount <= 0) return false;
-    const layer = state.painting_layer;
-    const currentRevision = getPaintingCompositeRevisionKey();
-    if (!layer || typeof layer !== "object") return true;
-    if (String(layer.revision || "") !== currentRevision) return true;
-    if (counts.totalPaintCount > 0 && !layer.paint) return true;
-    if (counts.totalMaskCount > 0 && !layer.mask) return true;
-    return false;
+    const { width, height } = getDesiredPaintTargetDescriptor();
+    return paintingLayerNeedsSync(state.painting_layer, { paintCount: counts.totalPaintCount, maskCount: counts.totalMaskCount, width, height, nodeId: String(node.id ?? "0") });
   }
 
   function syncPaintingLayerAsync() {
@@ -3407,19 +3198,22 @@ async function showEditor(node, type, options = {}) {
       ? mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw())
       : null;
     if (uiImg && !isImageLoadFailed(uiImg)) return uiImg;
+    // A background video still loading.
+    if (videoEl instanceof HTMLVideoElement && videoEl.dataset.panoSrc) return videoEl;
+    const preferred = backgroundInputNames();
+    const img = loadPreferredExactLinkedImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
+    return img || uiImg || null;
+  }
+
+  function backgroundInputNames() {
+    if (type === "cutout") return ["erp_image", "bg_erp"];
     const inputNames = Array.isArray(node?.inputs)
       ? node.inputs.map((i) => String(i?.name || ""))
       : [];
     const hasEpr = inputNames.includes("erp_image");
     const hasBg = inputNames.includes("bg_erp");
-    let preferred = [];
-    if (readOnly && (hasEpr || hasBg)) {
-      preferred = hasEpr ? ["erp_image", "bg_erp"] : ["bg_erp", "erp_image"];
-    } else {
-      preferred = type === "stickers" ? ["bg_media", "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
-    }
-    const img = loadPreferredExactLinkedImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
-    return img || uiImg || null;
+    if (readOnly && (hasEpr || hasBg)) return hasEpr ? ["erp_image", "bg_erp"] : ["bg_erp", "erp_image"];
+    return type === "stickers" ? ["bg_media", "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
   }
 
   function isDecodedImageReady(img) {
@@ -3445,7 +3239,7 @@ async function showEditor(node, type, options = {}) {
     const stickerStates = [];
     if (editor.showPanorama) {
       const bgImg = getConnectedErpImage();
-      backgroundState = getImageLoadState(bgImg, isDecodedImageReady);
+      backgroundState = videoState.videoFailed ? IMAGE_FAILED : getImageLoadState(bgImg, isDecodedImageReady);
     }
     if (editor.showObjects) {
       for (const item of skyStickers()) {
@@ -5611,10 +5405,6 @@ async function showEditor(node, type, options = {}) {
       runtime.dirty = true;
     }
 
-    if (runtime.dirty || (ts - runtime.lastSizeCheckTs) >= 220) {
-      syncCanvasSize();
-      runtime.lastSizeCheckTs = ts;
-    }
     if (runtime.pendingStableLayoutFrames > 0) {
       runtime.pendingStableLayoutFrames -= 1;
       runtime.dirty = true;
@@ -5628,10 +5418,10 @@ async function showEditor(node, type, options = {}) {
     }
   }
 
-  function tick(ts = performance.now()) {
-    if (!runtime.running) return;
+  // A failing frame shows the stage as failed and logs each distinct error once.
+  function runGuardedFrame(draw) {
     try {
-      tickFrame(ts);
+      draw();
     } catch (error) {
       const signature = String(error?.stack || error?.message || error || "unknown editor frame error");
       if (runtime.tickErrorSignature !== signature) {
@@ -5642,15 +5432,34 @@ async function showEditor(node, type, options = {}) {
       uiState.stageStatusDetail = "frame";
       stageWrap?.setAttribute("data-stage-ready", "");
       stageWrap?.removeAttribute("data-stage-loading-kind");
-    } finally {
-      if (runtime.running) runtime.rafId = requestAnimationFrame(tick);
     }
   }
+
+  function tick(ts = performance.now()) {
+    if (!runtime.running) return;
+    runGuardedFrame(() => tickFrame(ts));
+    if (runtime.running) runtime.rafId = requestAnimationFrame(tick);
+  }
+
+  // Draws the stage at its new size now, leaving the animations and the tick's clock to the next tick.
+  function redrawNow() {
+    if (!runtime.running || !syncCanvasSize()) return;
+    runGuardedFrame(() => {
+      runtime.dirty = false;
+      drawScene();
+    });
+  }
+
+  // The stage follows its layout before the browser paints, in the same frame: a canvas left at
+  // its old size for a frame shows its frame stretched, which made the Timeline's slide judder.
+  const stageResizeObserver = new ResizeObserver(redrawNow);
+  stageResizeObserver.observe(canvas);
 
   function stopRenderLoop() {
     runtime.running = false;
     if (runtime.rafId) cancelAnimationFrame(runtime.rafId);
     runtime.rafId = 0;
+    stageResizeObserver.disconnect();
   }
 
   function pushHistory() {
@@ -5663,17 +5472,19 @@ async function showEditor(node, type, options = {}) {
 
   function restoreHistory(step) {
     if (readOnly) return;
+    stopTimelinePlayback();
     const snapshot = step < 0 ? editor.historyController.undo() : editor.historyController.redo();
     syncUndoRedoButtons();
     if (!snapshot) return;
-    const parsed = JSON.parse(snapshot);
+    const restored = restoredHistoryState(state, snapshot);
     Object.keys(state).forEach((k) => delete state[k]);
-    Object.assign(state, parsed);
+    Object.assign(state, restored.state);
     editor.selectedId = type === "stickers"
       ? state.active.selected_sticker_id
       : (type === "cutout" ? state.active.selected_sticker_id : state.active.selected_shot_id);
     editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
-    markPaintStrokeVisualsDirty();
+    if (restored.paintingChanged) markPaintStrokeVisualsDirty();
+    else markObjectVisualsDirty();
     syncPaintUi();
     updateSidePanel();
     commitState();
@@ -5950,7 +5761,7 @@ async function showEditor(node, type, options = {}) {
       expanded: timeline.expanded ?? isTimed(state),
       openRows: timeline.openRows,
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
-      playing: timeline.playback !== 0,
+      playing: playback.playing,
       label: `${editor.frame}f · ${(editor.frame / fps).toFixed(2)}s @ ${Number(fps.toFixed(3))} fps`,
     });
     uiState.easing = timeline.selection
@@ -6006,120 +5817,25 @@ async function showEditor(node, type, options = {}) {
     return videoEl instanceof HTMLVideoElement && !!videoEl.getAttribute("src");
   }
 
-  // Moves the playhead and shows the background VIDEO's frame there (ADR 0019 still frame).
+  // Moves the playhead and shows the background VIDEO's frame there (ADR 0019 still frame). A VIDEO
+  // that arrived since the last refresh is picked up first.
   function jumpTimelineTo(frame) {
-    stopTimelinePlayback();
-    setTimelineFrame(frame);
     refreshModalVideoSource();
-    if (!hasTimelineVideo()) return;
-    scrubVideoTo(editor.frame / state.timeline.fps);
-    endVideoScrub();
+    playback.seek(frame);
   }
 
-  // A run with the editor open can bring a new background VIDEO; once it can seek, it shows the frame
-  // at the playhead. While the Timeline plays, the VIDEO pauses on the new source and the playback stops.
-  function refreshVideoAfterRun() {
-    const previous = videoEl instanceof HTMLVideoElement ? videoEl.getAttribute("src") : null;
-    const src = refreshModalVideoSource();
-    if (!sceneV2 || !src || src === previous) return;
-    videoEl.addEventListener("loadedmetadata", () => {
-      if (timeline.playback || videoEl.getAttribute("src") !== src) return;
-      scrubVideoTo(editor.frame / state.timeline.fps);
-      endVideoScrub();
-    }, { once: true });
-  }
-
+  // Edits stop PanoramaStickersNode's playback on the frame shown; the legacy transport plays on.
   function stopTimelinePlayback() {
-    if (!timeline.playback) return;
-    cancelAnimationFrame(timeline.playback.raf);
-    const { video } = timeline.playback;
-    timeline.playback = 0;
-    if (video) {
-      videoEl.pause();
-      videoState.pendingPlaybackResume = false;
-      videoState.resumeAfterScrub = false;
-      scrubVideoTo(editor.frame / state.timeline.fps);
-      endVideoScrub();
-    }
-    syncTimeline();
+    if (sceneV2) playback.stop();
   }
 
-  // Plays the background VIDEO (with its audio) from a time, as its own play button did.
-  function playVideoFrom(time) {
-    refreshModalVideoSource();
-    videoState.mode = "playback";
-    videoState.pendingPlaybackResume = false;
-    videoState.resumeAfterScrub = false;
-    videoState.editorTime = time;
-    if (Math.abs(Number(videoEl.currentTime || 0) - time) > Math.max(frameTolerance(), 0.04)) {
-      videoState.seeking = false;
-      videoState.pendingPlaybackResume = true;
-      issueVideoSeek(time);
-    } else {
-      void videoEl.play().catch(() => {});
-    }
-  }
-
-  // The playing background VIDEO's time sets the playhead. At the end of the Timeline it starts over.
-  function followTimelineVideo(time) {
-    if (!timeline.playback?.video || videoState.seeking || videoState.pendingPlaybackResume) return;
-    const frame = Math.floor(time * state.timeline.fps + 0.5);
-    if (frame >= timelineSpanFrames()) restartTimelineVideo();
-    else setTimelineFrame(frame);
-  }
-
-  function restartTimelineVideo() {
-    timeline.playback.endedAt = null;
-    setTimelineFrame(0);
-    playVideoFrom(0);
-  }
-
-  // PanoramaStickersNode has one transport, the Timeline's play button. With a background VIDEO the
-  // video plays with its audio and its frames set the playhead (requestVideoFrameCallback through the
-  // frame pump, else its currentTime on each animation frame); past the video's end a clock carries on
-  // to the Timeline's end. Without a VIDEO a clock moves the playhead. Both loop at the Timeline's end.
-  function toggleTimelinePlayback() {
-    if (timeline.playback) {
-      stopTimelinePlayback();
-      return;
-    }
-    const fps = state.timeline.fps;
-    const startFrame = editor.frame >= timelineSpanFrames() - 1 ? 0 : editor.frame;
+  // PanoramaStickersNode's Timeline play button and the legacy transport's. With a background VIDEO
+  // the video plays with its audio and its presented frames set the playhead; past its end a clock
+  // carries on to the Timeline's end. Without a VIDEO a clock moves the playhead.
+  function togglePlayback() {
     // The background VIDEO of the node's current result, loaded here when the node ran after the editor opened.
     refreshModalVideoSource();
-    const playback = { video: hasTimelineVideo(), raf: 0, endedAt: null };
-    timeline.playback = playback;
-    if (playback.video) {
-      const frameCallback = typeof videoEl.requestVideoFrameCallback === "function";
-      const step = (ts) => {
-        playback.raf = requestAnimationFrame(step);
-        if (videoState.seeking || videoState.pendingPlaybackResume) return;
-        // The VIDEO stopped by itself (play() was refused, or the input changed): so does the Timeline.
-        if (videoEl.paused && !videoEl.ended) {
-          stopTimelinePlayback();
-          return;
-        }
-        if (!videoEl.ended) {
-          if (!frameCallback) followTimelineVideo(Number(videoEl.currentTime || 0));
-          return;
-        }
-        playback.endedAt ??= { ts, frame: editor.frame };
-        const frame = playback.endedAt.frame + Math.floor(((ts - playback.endedAt.ts) / 1000) * fps);
-        if (frame >= timelineSpanFrames()) restartTimelineVideo();
-        else setTimelineFrame(frame);
-      };
-      setTimelineFrame(startFrame);
-      playVideoFrom(startFrame / fps);
-      playback.raf = requestAnimationFrame(step);
-    } else {
-      const startTs = performance.now();
-      const step = (ts) => {
-        playback.raf = requestAnimationFrame(step);
-        setTimelineFrame((startFrame + Math.floor(((ts - startTs) / 1000) * fps)) % timelineSpanFrames());
-      };
-      playback.raf = requestAnimationFrame(step);
-    }
-    syncTimeline();
+    playback.toggle();
   }
 
   function refreshTimelineEdit() {
@@ -6138,6 +5854,7 @@ async function showEditor(node, type, options = {}) {
   function deleteSelectedKeyframes() {
     const { selection } = timeline;
     if (!timelineEditable(selection.owner)) return;
+    stopTimelinePlayback();
     deleteKeyframes(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, editor.frame - timelineOffset(selection.owner));
     timeline.selection = null;
     commitTimelineEdit();
@@ -6146,19 +5863,12 @@ async function showEditor(node, type, options = {}) {
   function onTimelineAction(action) {
     if (readOnly || !sceneV2) return;
     if (action.type === "seek") {
-      if (action.phase === "start") {
-        stopTimelinePlayback();
-        refreshModalVideoSource();
-      }
-      setTimelineFrame(action.frame);
-      if (videoEl instanceof HTMLVideoElement && videoEl.getAttribute("src")) {
-        if (action.phase === "end") endVideoScrub();
-        else scrubVideoTo(editor.frame / state.timeline.fps);
-      }
+      if (action.phase === "start") refreshModalVideoSource();
+      playback.seek(action.frame);
       return;
     }
     if (action.type === "play") {
-      toggleTimelinePlayback();
+      togglePlayback();
       return;
     }
     if (action.type === "mute") {
@@ -6217,6 +5927,7 @@ async function showEditor(node, type, options = {}) {
       const owner = timelineOwner(selection.owner);
       const names = selectedLanes(selection);
       if (action.phase === "start") {
+        stopTimelinePlayback();
         timeline.drag = { keyframes: names.map((name) => structuredClone(owner[name].keyframes)), frames: selection.frames };
         return;
       }
@@ -6240,6 +5951,7 @@ async function showEditor(node, type, options = {}) {
       const sticker = state.stickers.find((item) => item.id === action.id);
       if (!sticker || sticker.locked) return;
       if (action.phase === "start") {
+        stopTimelinePlayback();
         // Only the span set by everything else reopens the end, not the span this Clip range widens.
         timeline.drag = { clip: { ...sticker.clip }, span: timelineSpanFrames(sticker.clip) };
         return;
@@ -6273,6 +5985,7 @@ async function showEditor(node, type, options = {}) {
     if (action.type === "easing") {
       const selection = timeline.selection;
       if (!selection || !timelineEditable(selection.owner)) return;
+      stopTimelinePlayback();
       setSegmentEasing(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, action.easing);
       if (action.commit) commitTimelineEdit();
       else refreshTimelineEdit();
@@ -6284,6 +5997,8 @@ async function showEditor(node, type, options = {}) {
     if (type !== "stickers" && type !== "cutout") return;
     if (!isStickerImageFile(file)) return;
     if (sceneV2) {
+      // A dropped or picked image is added at the frame shown.
+      stopTimelinePlayback();
       await addSceneStickerFromFile(file);
       return;
     }
@@ -6748,6 +6463,7 @@ async function showEditor(node, type, options = {}) {
     const selected = getSelected();
     if (!selected && selectedItems.length === 0) return;
     if (selectedItems.some((item) => isItemLocked(item))) return;
+    stopTimelinePlayback();
     if (selectedItems.length > 1) {
       const paintStrokeIds = new Set(selectedItems
         .filter((item) => isStrokeGroupItem(item))
@@ -7042,7 +6758,7 @@ async function showEditor(node, type, options = {}) {
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
     const text = editorStateText(node, state);
-    if (stateWidget) {
+    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""))) {
       stateWidget.value = text;
       stateWidget.callback?.(text);
     }
@@ -8464,13 +8180,15 @@ async function showEditor(node, type, options = {}) {
     event.preventDefault();
   });
 
+  // Looking around and selecting keep the Timeline playing. A paint stroke stops it at once; any
+  // other edit stops it on its first move (restartEditAtStoppedFrame), so a click only selects.
   canvas.onpointerdown = (e) => {
-    stopTimelinePlayback();
     if (timeline.selection) {
       timeline.selection = null;
       syncTimeline();
     }
     const p = screenPos(e);
+    editPointerDown = p;
     setPointerPos(p, true);
     editor.viewTween = null;
     viewController.state.inertia.active = false;
@@ -8560,6 +8278,7 @@ async function showEditor(node, type, options = {}) {
     }
 
     if ((editor.primaryTool === "paint" || editor.primaryTool === "mask") && (supportsErpPainting() || supportsFramePainting())) {
+      stopTimelinePlayback();
       const layerKind = editor.primaryTool === "mask" ? "mask" : "paint";
       const toolKind = editor.primaryTool === "mask" ? editor.maskTool : editor.paintTool;
       const activeShot = editor.mode === "frame" && supportsFramePainting() ? getActiveCutoutShot() : null;
@@ -8841,6 +8560,46 @@ async function showEditor(node, type, options = {}) {
     }
   };
 
+  // Playback ran on from the pointer going down to its first move. It stops here on the frame shown,
+  // and a Sticker edit starts over from that frame's values, as if the pointer went down there.
+  // Paint strokes and raster objects do not change over time and keep their start.
+  function restartEditAtStoppedFrame(it, down) {
+    if (!sceneV2 || !playback.playing) return;
+    playback.stop();
+    if (it.kind === "move_multi") {
+      const geom = getMultiSelectionGeom(it.items);
+      if (!geom?.visible) return;
+      it.offset = { x: down.x - geom.center.x, y: down.y - geom.center.y };
+      it.startCenter = { x: geom.center.x, y: geom.center.y };
+      for (const snap of it.stickerSnapshots) {
+        const item = it.items.find((entry) => String(entry?.id || "") === snap.id);
+        const itemGeom = item ? objectGeom(item) : null;
+        if (!itemGeom?.visible) continue;
+        snap.yaw_deg = Number(poseOf(item).yaw_deg || 0);
+        snap.pitch_deg = Number(poseOf(item).pitch_deg || 0);
+        snap.center = { x: itemGeom.center.x, y: itemGeom.center.y };
+      }
+      return;
+    }
+    if (!["move", "scale", "scale_x", "scale_y", "rotate"].includes(it.kind)) return;
+    const geom = objectGeom(it.item);
+    if (!geom?.visible) return;
+    const pose = poseOf(it.item);
+    if (it.kind === "move") {
+      it.offset = { x: down.x - geom.center.x, y: down.y - geom.center.y };
+      return;
+    }
+    it.center = geom.center;
+    if (it.kind === "rotate") {
+      it.startRot = Number(pose.rot_deg || pose.roll_deg || 0);
+      it.startAng = Math.atan2(down.y - geom.center.y, down.x - geom.center.x);
+      return;
+    }
+    it.startDist = Math.max(1, Math.hypot(down.x - geom.center.x, down.y - geom.center.y));
+    it.startHFOV = Number(pose.hFOV_deg || 20);
+    it.startVFOV = Number(pose.vFOV_deg || 20);
+  }
+
   canvas.onpointermove = (e) => {
     const p = screenPos(e);
     setPointerPos(p, true);
@@ -8850,6 +8609,11 @@ async function showEditor(node, type, options = {}) {
     }
     updateCursor(p);
     const it = editor.interaction;
+    if (editPointerDown && (p.x !== editPointerDown.x || p.y !== editPointerDown.y)) {
+      const down = editPointerDown;
+      editPointerDown = null;
+      if (it.kind !== "view" && it.kind !== "marquee_select") restartEditAtStoppedFrame(it, down);
+    }
 
     if (it.kind === "paint_stroke") {
       const samples = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e];
@@ -9654,42 +9418,8 @@ async function showEditor(node, type, options = {}) {
       ev.preventDefault();
       ev.stopPropagation();
       if (!(videoEl instanceof HTMLVideoElement)) return;
-      refreshModalVideoSource();
-      if (videoEl.paused) {
-        videoState.mode = "playback";
-        videoState.pendingPlaybackResume = false;
-        videoState.resumeAfterScrub = false;
-        const duration = Number(uiState.videoTransport.duration || videoEl.duration || 0);
-        const currentTime = Number(videoEl.currentTime || videoState.editorTime || 0);
-        const restartFrom = (duration > 0 && currentTime >= (duration - 0.001)) ? 0 : Number(videoState.editorTime || currentTime || 0);
-        const playSeekTolerance = Math.max(frameTolerance(), 0.04);
-        videoState.editorTime = restartFrom;
-        if (Math.abs(currentTime - restartFrom) > playSeekTolerance) {
-          videoState.seeking = false;
-          videoState.pendingPlaybackResume = true;
-          issueVideoSeek(restartFrom);
-        } else {
-          void videoEl.play().catch(() => {});
-        }
-      } else {
-        videoEl.pause();
-        videoState.mode = "scrub";
-        videoState.resumeAfterScrub = false;
-        videoState.pendingPlaybackResume = false;
-        videoState.editorTime = Number(videoEl.currentTime || 0);
-        captureStillFrameFromVideo();
-      }
-      syncVideoTransportState({
-        ready: !!videoEl.getAttribute("src"),
-        playing: !videoEl.paused && !videoEl.ended,
-        visible: getVideoTransportVisible(),
-        currentTime: videoState.editorTime,
-        duration: uiState.videoTransport.duration,
-        frameCount: uiState.videoTransport.frameCount,
-        fps: uiState.videoTransport.fps,
-        mode: videoState.mode,
-      });
-      requestDraw({ cause: "frame_view", localOnly: true });
+      videoState.resumeAfterScrub = false;
+      togglePlayback();
       return;
     }
     if (action === "video-audio-toggle") {
@@ -9707,14 +9437,6 @@ async function showEditor(node, type, options = {}) {
       uiState.videoTransport.loop = nextLoop;
       videoEl.loop = nextLoop;
       syncVideoTransportState({
-        ready: !!videoEl.getAttribute("src"),
-        playing: !videoEl.paused && !videoEl.ended,
-        visible: getVideoTransportVisible(),
-        currentTime: videoState.editorTime,
-        duration: uiState.videoTransport.duration,
-        frameCount: uiState.videoTransport.frameCount,
-        fps: uiState.videoTransport.fps,
-        mode: videoState.mode,
         hasAudio: uiState.videoTransport.hasAudio,
         loop: nextLoop,
         muted: videoEl.muted,
@@ -9876,7 +9598,8 @@ async function showEditor(node, type, options = {}) {
     const videoSeek = ev.target.closest("[data-video-seek]");
     if (videoSeek) {
       if (!(videoEl instanceof HTMLVideoElement)) return;
-      scrubVideoTo(videoSeek.value);
+      if (playback.playing) videoState.resumeAfterScrub = true;
+      playback.seek(frameAtTime(Number(videoSeek.value || 0), playbackFps()));
       return;
     }
     const videoVolume = ev.target.closest("[data-video-volume]");
@@ -9886,14 +9609,6 @@ async function showEditor(node, type, options = {}) {
       videoEl.volume = nextVolume;
       videoEl.muted = nextVolume <= 0.0001;
       syncVideoTransportState({
-        ready: !!videoEl.getAttribute("src"),
-        playing: !videoEl.paused && !videoEl.ended,
-        visible: getVideoTransportVisible(),
-        currentTime: videoState.editorTime,
-        duration: uiState.videoTransport.duration,
-        frameCount: uiState.videoTransport.frameCount,
-        fps: uiState.videoTransport.fps,
-        mode: videoState.mode,
         hasAudio: uiState.videoTransport.hasAudio,
         muted: videoEl.muted,
         volume: nextVolume,
@@ -9921,7 +9636,8 @@ async function showEditor(node, type, options = {}) {
   root.addEventListener("change", (ev) => {
     if (ev.target.closest("[data-video-seek]")) {
       if (!(videoEl instanceof HTMLVideoElement)) return;
-      endVideoScrub();
+      if (videoState.resumeAfterScrub) playback.play();
+      videoState.resumeAfterScrub = false;
       return;
     }
     if (ev.target.closest("[data-video-volume]")) {
@@ -10090,7 +9806,7 @@ async function showEditor(node, type, options = {}) {
     unregisterModalExternalStickerSync = registerExternalStickerSync(node, (reason = "sync") => {
       if (reason === "executed") {
         invalidateMediaUiImage(imageCache, EXTERNAL_STICKER_PREVIEW_KEY);
-        refreshVideoAfterRun();
+        refreshModalVideoSource();
       }
       reconcileExternalStickerFromInputs(reason);
     }, { editor: true });
@@ -10129,7 +9845,6 @@ async function showEditor(node, type, options = {}) {
       app?.canvas?.setDirty?.(true, true);
       hideTooltip();
       stopRenderLoop();
-      stopTimelinePlayback();
       if (videoEl instanceof HTMLVideoElement) videoEl.pause();
       videoCleanupFns.forEach((fn) => {
         try { fn(); } catch { }
@@ -10138,6 +9853,8 @@ async function showEditor(node, type, options = {}) {
       setDropCue(false);
       window.removeEventListener("keydown", onEscClose, true);
       window.removeEventListener("keydown", onDeleteKey, true);
+      window.removeEventListener("keydown", onSpaceKey, true);
+      window.removeEventListener("keyup", onSpaceKeyUp, true);
       window.removeEventListener("keydown", onModifierKeyChange, true);
       window.removeEventListener("keyup", onModifierKeyChange, true);
       window.removeEventListener("blur", onWindowBlur);
@@ -10211,6 +9928,30 @@ async function showEditor(node, type, options = {}) {
     ev.preventDefault();
     ev.stopPropagation();
   };
+  // Space plays and stops the Timeline like its play button, also over a focused button or slider.
+  // Space with Ctrl, Meta or Alt is left to the browser and the OS, and typing keeps its spaces.
+  // Focus outside the editor (another ComfyUI dialog on top) keeps Space for itself.
+  const spaceTogglesPlayback = (ev) => {
+    if (ev.code !== "Space" || ev.ctrlKey || ev.metaKey || ev.altKey) return false;
+    if (readOnly || !sceneV2 || !uiState.timeline.visible || uiState.confirmDialog.visible) return false;
+    const t = ev.composedPath()[0];
+    if (t !== document.body && t !== document.documentElement && !overlay.contains(t)) return false;
+    const tag = (t?.tagName || "").toUpperCase();
+    if (tag === "INPUT") return !TEXT_INPUT_TYPES.has(String(t.type || "text").toLowerCase());
+    return tag !== "TEXTAREA" && tag !== "SELECT" && !t?.isContentEditable;
+  };
+  const onSpaceKey = (ev) => {
+    if (!spaceTogglesPlayback(ev)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!ev.repeat) togglePlayback();
+  };
+  // Firefox clicks a focused button on keyup, so the keyup is held back too.
+  const onSpaceKeyUp = (ev) => {
+    if (!spaceTogglesPlayback(ev)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
   const onModifierKeyChange = (ev) => {
     const next = !!(ev.ctrlKey || ev.metaKey);
     const nextAlt = !!ev.altKey;
@@ -10243,6 +9984,8 @@ async function showEditor(node, type, options = {}) {
   };
   window.addEventListener("keydown", onEscClose, true);
   window.addEventListener("keydown", onDeleteKey, true);
+  window.addEventListener("keydown", onSpaceKey, true);
+  window.addEventListener("keyup", onSpaceKeyUp, true);
   window.addEventListener("keydown", onModifierKeyChange, true);
   window.addEventListener("keyup", onModifierKeyChange, true);
   window.addEventListener("blur", onWindowBlur);
@@ -10298,6 +10041,7 @@ app.registerExtension(createPanoEditorExtension({
   attachStickers: attachStickersNodePreview,
   attachCutout: attachCutoutPreview,
   attachPreview: attachPreviewNode,
+  restoreOutput: restoreNodeOutput,
   requestFrame: requestAnimationFrame,
   enableStickersPreview: ENABLE_STICKERS_NODE_PREVIEW,
 }));

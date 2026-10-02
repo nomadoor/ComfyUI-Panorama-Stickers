@@ -294,7 +294,7 @@ def test_video_failure_is_a_deduplicated_warning_and_single_frame_is_skipped():
     assert ui == {"warnings": ["Video UI cache generation failed: encoder unavailable"]}
 
 
-def test_video_cache_access_refreshes_lru_and_deletes_only_evicted_path(tmp_path):
+def test_video_cache_access_refreshes_lru_and_keeps_evicted_files(tmp_path):
     from comfyui_pano_suite.node_runtime import ManualCacheStore
 
     first = tmp_path / "first.mp4"
@@ -309,6 +309,8 @@ def test_video_cache_access_refreshes_lru_and_deletes_only_evicted_path(tmp_path
     assert store.get("video", ("first",)) == first
     store.put("video", ("third",), third)
 
-    assert first.exists()
-    assert not second.exists()
-    assert third.exists()
+    assert store.get("video", ("second",)) is None
+    assert store.get("video", ("first",)) == first
+    assert store.get("video", ("third",)) == third
+    # Job history and cached `ui` results may still name the evicted file.
+    assert first.exists() and second.exists() and third.exists()

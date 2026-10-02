@@ -65,7 +65,7 @@ const stageFailureMessage = computed(() => {
       ? props.uiState?.stageStatusDetail
       : props.uiState?.stageWarningDetail
   ) ?? "");
-  if (detail === "background") return "Background preview unavailable. Re-run the node to refresh it.";
+  if (detail === "background") return "Background preview unavailable. Run the workflow to load it; nodes ComfyUI still has cached finish instantly.";
   if (detail === "stickers") return "One or more sticker previews are unavailable.";
   if (detail === "frame") return "The editor hit a rendering error. Check the browser console for details.";
   if (detail === "renderer") return "The 3D view could not start (WebGL or its script failed to load). Check the browser console for details.";

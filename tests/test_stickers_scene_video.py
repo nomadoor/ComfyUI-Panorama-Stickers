@@ -344,6 +344,94 @@ def test_streaming_peak_memory_does_not_grow_with_the_video_length(tmp_path):
     assert _most_tensors_while_streaming(long) <= 3
 
 
+
+def _record_progress(monkeypatch, fail_at=None):
+    """The updates of each progress bar in the order the bars were made."""
+    bars = []
+
+    class ProgressBar:
+        def __init__(self, total, node_id=None):
+            self.total = total
+            self.updates = []
+            bars.append(self.updates)
+
+        def update(self, value):
+            # The core hook raises here when the queue is interrupted.
+            if len(self.updates) == fail_at:
+                raise RuntimeError("interrupted")
+            self.updates.append((value, self.total))
+
+    monkeypatch.setattr(nodes.comfy.utils, "ProgressBar", ProgressBar)
+    return bars
+
+
+def _record_pins(monkeypatch, staged_render_bytes=0):
+    pins = []
+    monkeypatch.setattr(nodes, "STAGED_RENDER_BYTES", staged_render_bytes)
+    monkeypatch.setattr(nodes.comfy.model_management, "is_device_cpu", lambda device: False)
+    monkeypatch.setattr(nodes.comfy.model_management, "pin_memory", lambda tensor, evict_active=True: pins.append(("pin", tensor.data_ptr())) or True)
+    monkeypatch.setattr(nodes.comfy.model_management, "unpin_memory", lambda tensor: pins.append(("unpin", tensor.data_ptr())) or True)
+    return pins
+
+
+def test_progress_advances_once_per_output_frame(tmp_path, monkeypatch):
+    bars = _record_progress(monkeypatch)
+    pins = _record_pins(monkeypatch)
+    video = _cfr(tmp_path)
+
+    image = _execute(bg_media=video)[0]
+
+    # The render comes first; the core's transcode of the editor MP4 has a bar of its own.
+    assert bars[0] == [(1, 10)] * 10
+    assert torch.equal(image, video.get_components().images)
+    assert [kind for kind, _ptr in pins] == ["pin", "unpin"] and pins[0][1] == pins[1][1]
+
+
+def test_interrupted_render_releases_the_pinned_buffer(tmp_path, monkeypatch):
+    _record_progress(monkeypatch, fail_at=3)
+    pins = _record_pins(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="interrupted"):
+        _execute(bg_media=_cfr(tmp_path))
+
+    assert [kind for kind, _ptr in pins] == ["pin", "unpin"]
+
+
+def test_pinning_is_decided_by_the_whole_render(tmp_path, monkeypatch):
+    video = _cfr(tmp_path)
+    frames, height, width = video.get_components().images.shape[:3]
+    render_bytes = frames * height * width * 16
+
+    # Each frame is far below the size, the render as a whole reaches it.
+    pins = _record_pins(monkeypatch, staged_render_bytes=render_bytes)
+    image = _execute(bg_media=video)[0]
+    assert [kind for kind, _ptr in pins] == ["pin", "unpin"]
+    assert torch.equal(image, video.get_components().images)
+
+    pins = _record_pins(monkeypatch, staged_render_bytes=render_bytes + 1)
+    image = _execute(bg_media=video)[0]
+    assert pins == []
+    assert torch.equal(image, video.get_components().images)
+
+
+def test_a_buffer_that_cannot_be_pinned_is_not_used(tmp_path, monkeypatch):
+    _record_pins(monkeypatch)
+    buffers = []
+
+    def refuse(tensor, evict_active=True):
+        buffers.append(tensor.fill_(float("nan")))
+        return False
+
+    monkeypatch.setattr(nodes.comfy.model_management, "pin_memory", refuse)
+    video = _cfr(tmp_path)
+
+    image = _execute(bg_media=video)[0]
+
+    # Rows are copied straight from the device, not through the pageable buffer as well.
+    assert len(buffers) == 1 and bool(buffers[0].isnan().all())
+    assert torch.equal(image, video.get_components().images)
+
+
 def _clip_sticker(sticker_id, clip):
     source = {"kind": "file", "filename": "missing.png", "subfolder": "panorama_stickers", "storage": "input"}
     return {"id": sticker_id, "source": source, "clip": clip}

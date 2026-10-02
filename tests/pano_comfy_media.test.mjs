@@ -175,18 +175,67 @@ test("follows subgraph outputs and keeps standard and UI image candidates in ord
     },
   });
 
-  assert.deepEqual(media.resolvePreferredExactLinkedSource(node, ["erp_image"]), {
-    src: "/api/view?filename=first.png&type=output",
+  const resolved = media.resolvePreferredExactLinkedSource(node, ["erp_image"]);
+  const token = new URLSearchParams(resolved.src.split("?")[1]).get("pano_src");
+  assert.ok(token);
+  assert.deepEqual(resolved, {
+    src: `/api/view?filename=first.png&type=output&pano_src=${token}`,
     srcCandidates: [
       "/api/view?filename=first.png&type=output",
       "/api/view?filename=second.png&type=output",
       "/api/view?filename=ui-third.png&type=output",
       "/api/view?filename=ui-first.png&type=output",
       "/api/view?filename=ui-second.png&type=output",
-    ],
+    ].map((src) => `${src}&pano_src=${token}`),
     sourceType: "nodeOutputs",
     inputName: "erp_image",
   });
+});
+
+// LoadVideo after a browser reload: ComfyUI's upload widget puts the chosen file in its output.
+function loadVideoGraph(output) {
+  const app = { nodeOutputs: { 30: output } };
+  const node = comfyNode({
+    id: 9,
+    inputs: [{ name: "bg_media", type: "IMAGE,VIDEO" }],
+    links: [{ origin_id: 30, origin_slot: 0 }],
+    getInputNode: () => ({ id: 30 }),
+  });
+  return { app, node };
+}
+
+test("a background input loading a video file directly gives that file to the editor's video, not to an <img>", () => {
+  const { app, node } = loadVideoGraph({ images: [{ filename: "pano.mp4", subfolder: "", type: "input" }], animated: [true] });
+  const media = createAdapter({ app, ImageCtor: FakeImage, imageState: createImageState() });
+  FakeImage.instances = [];
+
+  const src = media.linkedVideoFile(node, ["bg_media", "bg_erp"]);
+
+  assert.match(src, /^\/api\/view\?filename=pano\.mp4&type=input&pano_src=\w+$/);
+  assert.equal(media.linkedVideoFile(node, ["bg_media"]), src);
+  assert.equal(media.loadPreferredExactLinkedImage(node, ["bg_media"]), null);
+  assert.equal(FakeImage.instances.length, 0);
+});
+
+test("re-uploading a file under the same name gives a new URL, so the browser cache cannot replay the old file", () => {
+  const { app, node } = loadVideoGraph({ images: [{ filename: "pano.mp4", subfolder: "", type: "input" }] });
+  const media = createAdapter({ app });
+  const before = media.linkedVideoFile(node, ["bg_media"]);
+
+  // The upload widget sets a new output object with the same file name.
+  app.nodeOutputs[30] = { images: [{ filename: "pano.mp4", subfolder: "", type: "input" }] };
+
+  const after = media.linkedVideoFile(node, ["bg_media"]);
+  assert.notEqual(after, before);
+  assert.equal(after.split("&pano_src=")[0], before.split("&pano_src=")[0]);
+});
+
+test("only a directly loaded video file plays: an image source or an unlinked input gives none", () => {
+  const { app, node } = loadVideoGraph({ images: [{ filename: "pano.png", subfolder: "", type: "input" }] });
+  const media = createAdapter({ app });
+
+  assert.equal(media.linkedVideoFile(node, ["bg_media"]), "");
+  assert.equal(media.linkedVideoFile(comfyNode({ id: 9, inputs: [{ name: "bg_media" }] }), ["bg_media"]), "");
 });
 
 test("falls back from outputs to node images and LoadImage widgets without changing inputs", () => {

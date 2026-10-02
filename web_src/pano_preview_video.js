@@ -1,47 +1,210 @@
-function mediaFreshnessByChannel(node) {
-  if (!node) return null;
-  if (!node.__panoNodeOutputMediaFreshness || typeof node.__panoNodeOutputMediaFreshness !== "object") {
-    node.__panoNodeOutputMediaFreshness = Object.create(null);
-  }
-  return node.__panoNodeOutputMediaFreshness;
-}
-
-export function isNodeOutputMediaCurrent(node, channel = "") {
-  const key = String(channel || "").trim();
-  if (!key) return node?.__panoNodeOutputMediaCurrent !== false;
-  const freshness = mediaFreshnessByChannel(node);
-  if (Object.prototype.hasOwnProperty.call(freshness, key)) return freshness[key] !== false;
-  return node?.__panoNodeOutputMediaCurrent !== false;
-}
-
-export function markNodeOutputMediaStale(node, channel = "") {
-  if (!node) return;
-  const key = String(channel || "").trim();
-  if (key) {
-    mediaFreshnessByChannel(node)[key] = false;
-    return;
-  }
-  node.__panoNodeOutputMediaCurrent = false;
-}
-
-export function markNodeOutputMediaCurrent(node, channel = "") {
-  if (!node) return;
-  const key = String(channel || "").trim();
-  if (key) {
-    mediaFreshnessByChannel(node)[key] = true;
-    return;
-  }
-  node.__panoNodeOutputMediaCurrent = true;
-  const freshness = mediaFreshnessByChannel(node);
-  Object.keys(freshness).forEach((name) => { freshness[name] = true; });
-}
-
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
 // and PanoramaStickersNode's bg_media.
 export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media"];
 // The inputs that carry the media of the port Sticker: the legacy Stickers sticker_image and
 // PanoramaStickersNode's sticker.
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
+
+const CHANNEL_INPUT_NAMES = {
+  background: BACKGROUND_INPUT_NAMES,
+  "external-sticker": STICKER_INPUT_NAMES,
+};
+
+function originKey(link) {
+  return link?.origin_id == null ? undefined : `${link.origin_id}:${link.origin_slot ?? 0}`;
+}
+
+// Where each linked input of a node comes from, as "<origin node id>:<origin slot>" by input name.
+export function nodeInputOrigins(node) {
+  const origins = {};
+  (Array.isArray(node?.inputs) ? node.inputs : []).forEach((input, slot) => {
+    const origin = originKey(node.graph ? node.getInputLink(slot) : null);
+    if (origin) origins[String(input?.name || "")] = origin;
+  });
+  return origins;
+}
+
+// The node of a serialized workflow that a run reports by its execution id ("12" at the root, "12:5" for
+// node 5 inside the subgraph that node 12 instances), with the links of the graph it is in.
+function workflowNode(workflow, executionId) {
+  const path = String(executionId).split(":");
+  let graph = workflow;
+  for (let depth = 0; ; depth += 1) {
+    const entry = (Array.isArray(graph?.nodes) ? graph.nodes : []).find((item) => String(item?.id) === path[depth]);
+    if (!entry || depth === path.length - 1) return { graph, entry };
+    graph = (workflow?.definitions?.subgraphs || []).find((subgraph) => subgraph?.id === entry.type);
+  }
+}
+
+// The same for a node of a serialized workflow, whose links are arrays (0.4) or objects (1.0).
+export function workflowInputOrigins(workflow, executionId) {
+  const { graph, entry } = workflowNode(workflow, executionId);
+  const links = new Map((Array.isArray(graph?.links) ? graph.links : []).map((link) => (
+    Array.isArray(link) ? [link[0], { origin_id: link[1], origin_slot: link[2] }] : [link?.id, link]
+  )));
+  const origins = {};
+  for (const input of Array.isArray(entry?.inputs) ? entry.inputs : []) {
+    const origin = originKey(links.get(input?.link));
+    if (origin) origins[String(input?.name || "")] = origin;
+  }
+  return origins;
+}
+
+const TRACKED_INPUT_NAMES = [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES];
+const OUTPUT_INPUTS_LIMIT = 256;
+
+// Where the inputs of each output came from, by the output's content. ComfyUI copies an output each time it
+// stores, snapshots (workflow tabs) or restores it, and reloads a graph's nodes on undo and tab switches, so
+// neither the output object nor the node can carry it. Outputs of nodes without tracked inputs are not kept.
+const outputInputs = new Map();
+const outputKeys = new WeakMap();
+let nodeOutput = () => null;
+
+function outputKey(output) {
+  if (!outputKeys.has(output)) outputKeys.set(output, JSON.stringify(output));
+  return outputKeys.get(output);
+}
+
+// Sets how a node's current output is found: the runtime reads it from app.nodeOutputs.
+export function setNodeOutputLookup(lookup) {
+  nodeOutput = lookup;
+}
+
+// Records the inputs an output was made from: the links of the workflow its job ran.
+function recordOutputInputs(output, origins) {
+  const key = outputKey(output);
+  outputInputs.delete(key);
+  outputInputs.set(key, origins);
+  if (outputInputs.size > OUTPUT_INPUTS_LIMIT) outputInputs.delete(outputInputs.keys().next().value);
+}
+
+// Output media stays current while its channel's inputs come from where they came from when it was made.
+// An output with no record is taken to come from the links as they are: one that ran in another browser
+// session and came back with a loaded workflow, or a run's output until its job is read (this is asked again
+// on every draw). Connection events alone change nothing, so the ones LGraphNode.configure fires while
+// loading are harmless. A change upstream that keeps the links, such as another file chosen in LoadVideo, is
+// not seen here: the output stays current until the node runs again.
+export function isNodeOutputMediaCurrent(node, channel) {
+  const output = node ? nodeOutput(node) : null;
+  const recorded = output ? outputInputs.get(outputKey(output)) : null;
+  if (!recorded) return true;
+  const current = nodeInputOrigins(node);
+  return CHANNEL_INPUT_NAMES[channel].every((name) => recorded[name] === current[name]);
+}
+
+// Servers without the jobs API, which answer it with something other than JSON. They are not asked again.
+const withoutJobsApi = new WeakSet();
+
+// The body of a GET of the jobs API, or null.
+async function fetchJobs(api, path) {
+  if (withoutJobsApi.has(api)) return null;
+  let response;
+  try {
+    response = await api.fetchApi(path);
+  } catch {
+    return null;
+  }
+  const body = await response.json().catch(() => undefined);
+  if (body === undefined) withoutJobsApi.add(api);
+  return response.ok && body !== undefined ? body : null;
+}
+
+// The output a job made for node `executionId` and where that node's inputs came from in the workflow the
+// job ran, or null when the node has no tracked input there.
+function jobNodeOutput(job, executionId) {
+  const workflow = job?.workflow?.extra_data?.extra_pnginfo?.workflow;
+  const { entry } = workflowNode(workflow, executionId);
+  const output = job?.outputs?.[executionId];
+  if (!output || !entry?.inputs?.some((input) => TRACKED_INPUT_NAMES.includes(input?.name))) return null;
+  return { output, inputs: workflowInputOrigins(workflow, executionId) };
+}
+
+// Node ids of a workflow whose job history has no output for them, by workflow id, until a run succeeds.
+const withoutHistory = new Map();
+
+// Records the outputs of each run that showed panorama media (`pano_` keys) once it ends, with the links of
+// the workflow it ran, as the server keeps them with the job.
+export function trackRunOutputs(api) {
+  const runs = new Set();
+  api.addEventListener("executed", ({ detail }) => {
+    if (Object.keys(detail?.output || {}).some((key) => key.startsWith("pano_"))) runs.add(detail.prompt_id);
+  });
+  for (const type of ["execution_success", "execution_error", "execution_interrupted"]) {
+    api.addEventListener(type, async ({ detail }) => {
+      if (type === "execution_success") withoutHistory.clear();
+      if (!runs.delete(detail?.prompt_id)) return;
+      const job = await fetchJobs(api, `/jobs/${encodeURIComponent(detail.prompt_id)}`);
+      for (const executionId of Object.keys(job?.outputs || {})) {
+        const made = jobNodeOutput(job, executionId);
+        if (made) recordOutputInputs(made.output, made.inputs);
+      }
+    });
+  }
+}
+
+const RESTORE_JOB_LIMIT = 5;
+
+// ComfyUI's frontend keeps node outputs in memory only, so a browser reload drops them. The server keeps
+// them in its job history, together with the temp files they name, until it restarts. One look at the
+// history serves all nodes of a loaded graph: the job list is read once, and the jobs newest first, one at a
+// time and only as far as some node that still `wants` an output needs.
+function readJobHistory(api, workflowId) {
+  const query = `workflow_id=${encodeURIComponent(workflowId)}&status=completed,failed,cancelled&limit=${RESTORE_JOB_LIMIT}`;
+  const jobs = fetchJobs(api, `/jobs?${query}`).then((body) => body?.jobs || []);
+  const details = new Map();
+  const detail = (id) => {
+    if (!details.has(id)) details.set(id, fetchJobs(api, `/jobs/${encodeURIComponent(id)}`));
+    return details.get(id);
+  };
+  return {
+    async lastNodeOutput(node, wants) {
+      const nodeId = String(node.id);
+      for (const { id } of await jobs) {
+        if (!wants()) return null;
+        const job = await detail(id);
+        if (!job?.outputs?.[nodeId]) continue;
+        if (job.workflow?.prompt?.[nodeId]?.class_type !== node.comfyClass) return null;
+        return jobNodeOutput(job, nodeId);
+      }
+      return null;
+    },
+  };
+}
+
+// A workflow tab ComfyUI switches back to, or undoes in, has its outputs in its change tracker: ComfyUI
+// restores them right after the load, or keeps them.
+function workflowKeepsOutputs(app) {
+  const workflows = app.extensionManager?.workflow?.openWorkflows || [];
+  return workflows.some((workflow) => workflow?.activeState?.id === app.rootGraph.id && workflow.changeTracker?.nodeOutputs);
+}
+
+let loadHistory = null;
+
+// After a graph load, gives a node without an output its last one from the job history, stores it in
+// `app.nodeOutputs` and records the inputs that job ran on. ComfyUI calls loadedGraphNode for all nodes of a
+// load in one synchronous pass, so the nodes of one load share one look at the history. A node the history
+// had nothing for is not looked up again until a run succeeds. Outputs ComfyUI restores itself (a workflow
+// tab's, after the load; a job opened from the queue) win, and a load does not touch the record of any
+// output. Nodes inside subgraphs keep needing a run.
+export async function restoreLoadedNodeOutput(node, app, api) {
+  const id = String(node.id);
+  const workflowId = app.rootGraph.id;
+  const wants = () => node.graph === app.rootGraph && !app.nodeOutputs[id];
+  if (!wants() || withoutJobsApi.has(api) || withoutHistory.get(workflowId)?.has(id) || workflowKeepsOutputs(app)) return null;
+  if (loadHistory?.workflowId !== workflowId) {
+    loadHistory = { workflowId, history: readJobHistory(api, workflowId) };
+    queueMicrotask(() => { loadHistory = null; });
+  }
+  const restored = await loadHistory.history.lastNodeOutput(node, wants);
+  if (!wants()) return null;
+  if (!restored) {
+    if (!withoutJobsApi.has(api)) withoutHistory.set(workflowId, (withoutHistory.get(workflowId) || new Set()).add(id));
+    return null;
+  }
+  recordOutputInputs(restored.output, restored.inputs);
+  app.nodeOutputs[id] = restored.output;
+  return restored.output;
+}
 
 export function isTrackedMediaInputConnectionChange(
   node,
@@ -54,6 +217,60 @@ export function isTrackedMediaInputConnectionChange(
   if (!isInput) return false;
   const input = Array.isArray(node?.inputs) ? node.inputs[Number(slotIndex)] : null;
   return trackedNames.includes(String(input?.name || ""));
+}
+
+const VIDEO_FILE = /\.(mp4|webm|mov|m4v|mkv)$/i;
+
+// A preview entry or /view URL that names a video file, which an <img> cannot load.
+export function isVideoFile(candidate) {
+  if (typeof candidate === "string") {
+    const query = candidate.includes("?") ? candidate.slice(candidate.indexOf("?") + 1) : "";
+    return VIDEO_FILE.test(new URLSearchParams(query).get("filename") || candidate.split("?")[0]);
+  }
+  return VIDEO_FILE.test(String(candidate?.filename || ""));
+}
+
+// A token for the /view URLs of the files an output names, so the browser does not replay a cached copy of a
+// file replaced under the same name. Only uploads do that (type "input"): ComfyUI keeps the file name but gives
+// the node a new output object, so such an output gets a token per object. Run results (temp, output) never
+// reuse a name, so their token stays the same across the copies ComfyUI makes of an output when it stores,
+// snapshots and restores it, and the image is not loaded again.
+const outputTokens = new WeakMap();
+function namesUpload(output) {
+  return [output, output?.ui].some((group) => Object.values(group || {}).some((entries) => (
+    Array.isArray(entries) && entries.some((entry) => entry?.type === "input")
+  )));
+}
+export function outputSourceToken(output) {
+  if (!namesUpload(output)) return "run";
+  if (!outputTokens.has(output)) outputTokens.set(output, Math.random().toString(36).slice(2, 10));
+  return outputTokens.get(output);
+}
+
+// A run that takes a node from ComfyUI's execution cache sends `executed` again with a copy of the output it
+// stored. The copy names the same files (see outputSourceToken), so the media shown for it stays. `seen` keeps
+// the last output by `id`.
+export function isRepeatedOutput(seen, id, output) {
+  const key = JSON.stringify(output ?? null);
+  if (seen.get(id) === key) return true;
+  seen.set(id, key);
+  return false;
+}
+
+// The ids of the nodes that the inputs at `slots` of `node` come from, and of every node above them.
+// `originOf(node, slot)` is the node an input comes from, or null.
+export function sourceNodeIds(node, slots, originOf) {
+  const ids = new Set();
+  const visit = (current, currentSlots) => {
+    for (const slot of currentSlots) {
+      const origin = originOf(current, slot);
+      if (origin?.id == null || ids.has(String(origin.id))) continue;
+      ids.add(String(origin.id));
+      visit(origin, (Array.isArray(origin.inputs) ? origin.inputs : []).map((_input, index) => index));
+    }
+  };
+  visit(node, slots);
+  return ids;
 }
 
 export function resolvePreviewVideoSource(output, videoKeys = [], sourceFromCandidate = null) {
@@ -112,6 +329,11 @@ export function createLoopingPreviewVideo({
     queueFramePump();
   };
   const onPause = () => publishFrame();
+  let failed = false;
+  const onError = () => {
+    failed = true;
+    publishFrame();
+  };
 
   video.muted = true;
   video.loop = true;
@@ -123,6 +345,7 @@ export function createLoopingPreviewVideo({
   if (!supportsVideoFrameCallback) video.addEventListener("timeupdate", onTick);
   video.addEventListener("play", onPlay);
   video.addEventListener("pause", onPause);
+  video.addEventListener("error", onError);
   video.src = src;
   video.load();
 
@@ -138,10 +361,12 @@ export function createLoopingPreviewVideo({
     video.removeEventListener("timeupdate", onTick);
     video.removeEventListener("play", onPlay);
     video.removeEventListener("pause", onPause);
+    video.removeEventListener("error", onError);
     video.pause();
     video.removeAttribute?.("src");
     video.load?.();
   };
 
-  return { video, destroy };
+  // A file that does not load, such as a temp MP4 the server deleted, leaves the caller to its fallback.
+  return { video, destroy, failed: () => failed };
 }

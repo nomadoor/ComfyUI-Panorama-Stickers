@@ -1,3 +1,5 @@
+import { isVideoFile, outputSourceToken } from "./pano_preview_video.js";
+
 function comfyImageEntryToUrl(api, entry) {
   if (!entry || typeof entry !== "object") return "";
   const filename = String(entry.filename || "");
@@ -186,13 +188,16 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
       const ordered = [];
       if (preferredSlot >= 0 && preferredSlot < appNodeImageUrls.length) ordered.push(appNodeImageUrls[preferredSlot]);
       ordered.push(...appNodeImageUrls);
-      const srcCandidates = uniqueSources(ordered);
+      const srcCandidates = uniqueSources(ordered.filter((candidate) => !isVideoFile(candidate)));
       if (srcCandidates.length) {
         return { src: srcCandidates[0], srcCandidates, sourceType: "appNodeImageUrls", inputName: wanted };
       }
     }
 
-    const outputCandidates = uniqueSources(orderedOutputCandidates(output(originNode?.id ?? originId), preferredSlot));
+    const originOutput = output(originNode?.id ?? originId);
+    const outputCandidates = uniqueSources(orderedOutputCandidates(originOutput, preferredSlot)
+      .filter((candidate) => !isVideoFile(candidate)))
+      .map((src) => `${src}&pano_src=${outputSourceToken(originOutput)}`);
     if (outputCandidates.length) {
       return { src: outputCandidates[0], srcCandidates: outputCandidates, sourceType: "nodeOutputs", inputName: wanted };
     }
@@ -220,6 +225,21 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     }
 
     return { src: "", sourceType: "", inputName: wanted };
+  };
+
+  // The video file that the first linked of `inputNames` loads directly, as LoadVideo shows it in its
+  // output. Anything that processes the video in between has no such file and needs a run.
+  const linkedVideoFile = (node, inputNames = []) => {
+    const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+    for (const name of inputNames) {
+      const inputIndex = inputs.findIndex((input) => String(input?.name || "") === name);
+      const link = inputIndex >= 0 && node.graph ? node.getInputLink(inputIndex) : null;
+      if (link?.origin_id == null) continue;
+      const payload = output(resolveInputOriginNode(node, inputIndex, link.origin_id)?.id ?? link.origin_id);
+      const entry = (Array.isArray(payload?.images) ? payload.images : []).find(isVideoFile);
+      return entry ? `${comfyImageEntryToUrl(api, entry)}&pano_src=${outputSourceToken(payload)}` : "";
+    }
+    return "";
   };
 
   const resolvePreferredExactLinkedSource = (node, inputNames = []) => {
@@ -369,6 +389,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     externalStateHash,
     invalidateUiImage,
     linkedValue,
+    linkedVideoFile,
     loadPreferredExactLinkedImage,
     output,
     resolvePreferredExactLinkedSource,

@@ -284,3 +284,74 @@ test("dense Keyframes are grouped into one pin", () => {
   assert.deepEqual(clusterFrames([0, 10, 20], 3).map((pin) => pin.frames), [[0], [10], [20]]);
   assert.deepEqual(clusterFrames([], 3), []);
 });
+
+// The playback itself is tested with a fake VIDEO in tests/pano_video_playback.test.mjs; these check
+// how the editor wires it.
+const editorSource = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+const editorFunction = (name) => editorSource.slice(editorSource.indexOf(`  function ${name}(`), editorSource.indexOf("\n  }\n", editorSource.indexOf(`  function ${name}(`)));
+
+test("the Timeline's playhead and play button follow the playback", () => {
+  assert.match(editorSource, /onFrame: \(frame\) => \{\s*if \(sceneV2\) setTimelineFrame\(frame\);/);
+  assert.match(editorSource, /span: \(\) => \{\s*if \(sceneV2\) return timelineSpanFrames\(\);/);
+  assert.match(editorFunction("syncTimeline"), /playing: playback\.playing,/);
+  // Only PanoramaStickersNode's edits stop playback; the legacy transport plays on.
+  assert.match(editorFunction("stopTimelinePlayback"), /if \(sceneV2\) playback\.stop\(\);/);
+  assert.doesNotMatch(editorSource, /videoState\.(seeking|pendingPlaybackResume|requestedTime|seekLanding|mode)\b/);
+});
+
+test("PanoramaStickersNode builds no filmstrip and a filmstrip is not built again for the same VIDEO", () => {
+  assert.match(editorFunction("refreshModalVideoSource"), /if \(nextSrc && !sceneV2 && videoState\.thumbnailSrc !== nextSrc && !videoState\.thumbnailFailedSrcs\.has\(nextSrc\)\) \{\s*void buildVideoThumbnails\(nextSrc, duration, fps\);/);
+  assert.equal(editorSource.match(/void buildVideoThumbnails\(/g).length, 1);
+  assert.match(editorSource, /if \(!loaded \|\| videoWidth < 1 \|\| videoHeight < 1\) \{\s*videoState\.thumbnailFailedSrcs\.add\(safeSrc\);\s*return;/);
+});
+
+test("Space toggles playback outside text fields, once per press, without clicking a focused button", () => {
+  const filter = editorSource.slice(editorSource.indexOf("const spaceTogglesPlayback = (ev) => {"), editorSource.indexOf("\n  };\n", editorSource.indexOf("const spaceTogglesPlayback = (ev) => {")));
+  assert.match(filter, /if \(ev\.code !== "Space" \|\| ev\.ctrlKey \|\| ev\.metaKey \|\| ev\.altKey\) return false;/);
+  // Focus outside the editor's overlay (another dialog on top) keeps Space.
+  assert.match(filter, /const t = ev\.composedPath\(\)\[0\];\s*if \(t !== document\.body && t !== document\.documentElement && !overlay\.contains\(t\)\) return false;/);
+  assert.match(filter, /if \(tag === "INPUT"\) return !TEXT_INPUT_TYPES\.has\(String\(t\.type \|\| "text"\)\.toLowerCase\(\)\);/);
+  assert.match(filter, /return tag !== "TEXTAREA" && tag !== "SELECT" && !t\?\.isContentEditable;/);
+  const types = editorSource.match(/const TEXT_INPUT_TYPES = new Set\((\[[^\]]*\])\);/);
+  assert.ok(JSON.parse(types[1]).includes("number"));
+  assert.ok(!JSON.parse(types[1]).includes("range"));
+  assert.match(editorSource, /const onSpaceKey = \(ev\) => \{\s*if \(!spaceTogglesPlayback\(ev\)\) return;\s*ev\.preventDefault\(\);\s*ev\.stopPropagation\(\);\s*if \(!ev\.repeat\) togglePlayback\(\);/);
+  // Firefox clicks a focused button on keyup.
+  assert.match(editorSource, /const onSpaceKeyUp = \(ev\) => \{\s*if \(!spaceTogglesPlayback\(ev\)\) return;\s*ev\.preventDefault\(\);/);
+  for (const [type, listener] of [["keydown", "onSpaceKey"], ["keyup", "onSpaceKeyUp"]]) {
+    assert.match(editorSource, new RegExp(`window\\.addEventListener\\("${type}", ${listener}, true\\);`));
+    assert.match(editorSource, new RegExp(`window\\.removeEventListener\\("${type}", ${listener}, true\\);`));
+  }
+  const timelineVue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(timelineVue, /:aria-label="model\.playing \? 'Pause \(Space\)' : 'Play \(Space\)'"/);
+});
+
+test("an edit on the canvas stops playback on its first move and starts from the stopped frame; a click does not stop it", () => {
+  const begin = editorSource.slice(editorSource.indexOf("  canvas.onpointerdown = (e) => {"), editorSource.indexOf("  // Playback ran on from the pointer going down to its first move."));
+  // Only a paint stroke, which draws at once, stops at pointerdown.
+  assert.equal(begin.match(/stopTimelinePlayback\(\);/g).length, 1);
+  assert.match(begin, /supportsFramePainting\(\)\)\) \{\s*stopTimelinePlayback\(\);/);
+  assert.match(begin, /const p = screenPos\(e\);\s*editPointerDown = p;/);
+  const move = editorSource.slice(editorSource.indexOf("  canvas.onpointermove = (e) => {"), editorSource.indexOf("if (it.kind === \"paint_stroke\")"));
+  assert.match(move, /if \(editPointerDown && \(p\.x !== editPointerDown\.x \|\| p\.y !== editPointerDown\.y\)\) \{\s*const down = editPointerDown;\s*editPointerDown = null;\s*if \(it\.kind !== "view" && it\.kind !== "marquee_select"\) restartEditAtStoppedFrame\(it, down\);/);
+  const restart = editorFunction("restartEditAtStoppedFrame");
+  assert.match(restart, /if \(!sceneV2 \|\| !playback\.playing\) return;\s*playback\.stop\(\);/);
+  for (const field of ["it.offset", "it.startCenter", "snap.center", "it.center", "it.startRot", "it.startAng", "it.startDist", "it.startHFOV", "it.startVFOV"]) {
+    assert.ok(restart.indexOf(`${field} =`) > restart.indexOf("playback.stop();"), field);
+  }
+  const wheel = editorSource.slice(editorSource.indexOf("canvas.onwheel = (e) => {"), editorSource.indexOf("\n  };\n", editorSource.indexOf("canvas.onwheel = (e) => {")));
+  assert.doesNotMatch(wheel, /stopTimelinePlayback/);
+});
+
+test("deleting, undo and redo, and adding a Sticker stop playback first", () => {
+  assert.match(editorFunction("deleteSelected"), /if \(selectedItems\.some\(\(item\) => isItemLocked\(item\)\)\) return;\s*stopTimelinePlayback\(\);/);
+  assert.match(editorFunction("restoreHistory"), /if \(readOnly\) return;\s*stopTimelinePlayback\(\);/);
+  assert.match(editorSource, /if \(sceneV2\) \{\s*\/\/[^\n]*\n\s*stopTimelinePlayback\(\);\s*await addSceneStickerFromFile\(file\);/);
+});
+
+test("the legacy transport seeks to its own time and leaves looping to the VIDEO", () => {
+  assert.match(editorFunction("playbackFps"), /return sceneV2 \? state\.timeline\.fps : videoState\.metaFps \|\| 1000;/);
+  assert.match(editorSource, /return videoEl\.loop \|\| !\(frames > 0\) \? Infinity : frames;/);
+  assert.match(editorSource, /loop: \(\) => sceneV2,/);
+  assert.match(editorSource, /pageHidden: \(\) => document\.hidden,/);
+});

@@ -137,6 +137,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   - Timeline fps を決めた VIDEO（背景 VIDEO、なければ `sticker` の VIDEO）のフレーム：そのフレームの PTS。切り出し範囲の最初のフレームを 0 秒とする。可変フレームレートや、1ms の timebase で丸められた PTS（mkv・webm の 29.97 fps など）でもフレームごとの PTS を使い、出力は等間隔（fps 出力）に並べる。評価する Timeline frame が、最も近い整数との差がその VIDEO の PTS の量子化の幅の半分（`time_base ÷ 2 × timeline.fps`）以内なら、その整数に寄せる。Clip range の端や `hold` の Cut が、丸められた PTS で 1 フレーム遅れないようにするためである。`MaterializedVideo` の時刻は厳密なので、幅は 0 とする。
   - その VIDEO が終わった後：最後のフレームの時刻から Timeline fps の間隔で進める。背景 VIDEO なら、背景は描かず `bg_color` になる。
   - それ以外：出力フレームの番号 ÷ Timeline fps。
+- MASK 出力は、すべてのフレームのマスクが最初のフレームと同じとき（ペイントのマスクがない・Camera が回らないなど）、その 1 枚を `expand` で全フレームに見せたもの（バッチの stride が 0、形は (N, H, W)）とし、フレームごとの領域を持たない。マスクが最初のフレームと違うフレームが出た時点で、フレームごとの領域を確保する。stride が 0 の MASK を受けた下流は、書き換える前に複製する（ComfyUI のノードは入力を書き換えない）。
 - 背景の IMAGE バッチは出力フレームと 1 対 1 に対応し、バッチより長い出力では、背景が終わった後は `bg_color` になる。1 枚の IMAGE はすべてのフレームに描く。
 - `bg_media` と `sticker` の VIDEO の読み方（`core/video_source.py`）
   - `VideoFromFile` で、`get_dimensions()` がストリームの大きさと一致するもの（クロップがない）は、`get_stream_source()` を PyAV で開き、`get_active_trim_window()` の範囲を 1 フレームずつ読む（`StreamedVideo`）。先にパケットだけを読んで PTS を集め、フレーム数と時刻を決める。入力側のメモリは長さに比例しない（`tests/test_stickers_scene_video.py` で計測する）。
@@ -170,7 +171,9 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 
   - 一時 MP4（ADR 0018）：VIDEO は、Preview と同じく VIDEO 自身の `save_to(MP4, H264)`（`core/video.py` の `save_video_to_mp4`）で temp に書き、全フレームを展開して再エンコードしない。メタ情報の `fps` は VIDEO の平均フレームレート、`frames` は切り出し範囲のフレーム数。IMAGE バッチは `encode_frames_to_mp4` でエンコードし、`fps` は Timeline fps とする。1 フレームの素材は MP4 を作らない。音声は `bg_media` の VIDEO が持つものだけが MP4 に入る。サムネイルの帯は作らない（エディタが MP4 から作る）。
   - 出力ノードは `state_json` が変わるたびに実行されるので、MP4 は入力ごとに 1 度だけ作り、`NODE_RUNTIME` の `video` キャッシュから再利用する。IMAGE バッチは旧 Cutout と同じくテンソルの同一性と fps、VIDEO は `open_video` がストリームのまま開いたもの（クロップのない `VideoFromFile`）ならファイルのパス・更新時刻・トリム範囲、それ以外は VIDEO オブジェクトの同一性をキーにする。キーのためにファイルを開き直さない。
+  - キャッシュから追い出した MP4 のファイルは消さない。追い出しは次に要るとき作り直すかを決めるだけで、ファイルは ComfyUI が起動時と終了時に消す temp に残る。ジョブ履歴やキャッシュされた `ui` が同じファイルを指し続けるためで、ComfyUI の PreviewVideo と同じ扱いである。
   - エディタの背景 VIDEO は、実行結果が新しい間だけ読み込む。`PanoramaStickersNode` では動画の再生バーを出さず、エディタを開いたまま実行すると読み込み直して再生ヘッドのフレームを出し、タイムラインの ▶ と再生位置の移動も読み込みと再生を行う（`docs/timeline-ui.md`）。背景の入力をつなぎ変えると、次の実行まで VIDEO を外す。
+  - 実行結果がどの入力から作られたかは、実行が終わったときに `/api/jobs/{prompt_id}` を一度読んで、そのワークフローの接続から記録する。ブラウザを再読み込みしたときは、同じワークフローの最近のジョブから自ノードの出力を表示用に取り戻す（状態は書き換えない）。サーバーを再起動して履歴と temp が消えた後は、実行し直す。
   - エディタとノード上の UI は、実行結果が新しいかを入力の接続（link）の変化だけで判断する。接続を変えずに上流の画像を差し替えると、再実行するまで古い素材が表示される。
   - `sticker_state` が接続されているときは、`port` の Sticker は実行結果に姿勢が届くまで、枠も含めて表示されない。
   - 出力（IMAGE）のプレビュー MP4 は作らない。Stickers の出力を表示するのは Preview（#76）で、旧ノードの `pano_videos` を読むフロントエンドもない。

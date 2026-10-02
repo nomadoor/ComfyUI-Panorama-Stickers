@@ -42,10 +42,12 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
         self.assertIn("comfyMedia.clearFailedLinkedImages(node)", show_editor_prefix)
 
     def test_render_loop_reschedules_after_frame_errors(self):
-        tick = function_block(self.editor, "tick", "stopRenderLoop")
-        self.assertIn("finally", tick)
+        guard = function_block(self.editor, "runGuardedFrame", "tick")
+        self.assertIn("catch (error)", guard)
+        self.assertIn("editor frame failed", guard)
+        tick = function_block(self.editor, "tick", "redrawNow")
+        self.assertIn("runGuardedFrame(() => tickFrame(ts));", tick)
         self.assertIn("requestAnimationFrame(tick)", tick)
-        self.assertIn("editor frame failed", tick)
 
     def test_failed_state_is_rendered_by_the_vue_modal(self):
         modal = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")

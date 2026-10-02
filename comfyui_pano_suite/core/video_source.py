@@ -44,7 +44,7 @@ class StreamedVideo:
     `name` is the input it came from, for messages.
     `times` holds each frame's presentation time in seconds from the first frame, `time_base` the step those
     times are rounded to, `frame_rate` the stream's average rate, and `first_frame` the first frame that decodes, which sets the output size. Frames are
-    float32 RGB (h, w, 3) in 0..1 like `get_components()`, and must be requested in non-decreasing order.
+    float32 RGB (h, w, 3) in 0..1 like `get_components()`, possibly not contiguous, and must be requested in non-decreasing order.
     Unlike the core reader, a decode error is raised instead of skipped.
     """
 
@@ -121,10 +121,13 @@ class StreamedVideo:
                             if align is None:
                                 align = _alignment_graph(frame, stream.time_base)
                             align[1].push(frame)
-                            array = align[2].pull().to_ndarray(format="gbrpf32le")[:frame.height, :frame.width]
+                            planes = align[2].pull().reformat(format="gbrpf32le").planes
                         else:
-                            array = frame.to_ndarray(format="gbrpf32le")
-                        image = torch.from_numpy(np.ascontiguousarray(array))
+                            planes = frame.reformat(format="gbrpf32le").planes
+                        # The planes are copied as they are and viewed as (h, w, 3): interleaving them on the CPU, as
+                        # `to_ndarray` does, costs about as much as the conversion.
+                        array = np.stack([np.frombuffer(planes[index], np.float32).reshape(planes[index].height, -1) for index in (2, 0, 1)])
+                        image = torch.from_numpy(array[:, :frame.height, :frame.width].transpose(1, 2, 0))
                     quadrant = int(round(frame.rotation // 90)) % 4 if frame.rotation else 0
                     yield frame.pts, torch.rot90(image, k=quadrant, dims=(0, 1)).contiguous() if quadrant else image
 

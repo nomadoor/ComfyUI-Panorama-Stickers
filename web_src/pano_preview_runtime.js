@@ -6,7 +6,7 @@ import { createPanoInteractionController } from "./pano_interaction_controller.j
 import { clamp } from "./pano_math.js";
 import { yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
-import { editorActive, editorStateText, parsePanoEditorState, parseSceneEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
+import { editorActive, editorStateText, parsePanoEditorState, parseSceneEditorState, sameEditorStateText, setEditorActive, sourceAsset } from "./pano_editor_state.js";
 import { loadSceneState } from "./pano_scene_state.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
@@ -59,10 +59,15 @@ import {
   STICKER_INPUT_NAMES,
   createLoopingPreviewVideo,
   isNodeOutputMediaCurrent,
+  isRepeatedOutput,
   isTrackedMediaInputConnectionChange,
-  markNodeOutputMediaCurrent,
-  markNodeOutputMediaStale,
+  isVideoFile,
+  outputSourceToken,
+  restoreLoadedNodeOutput,
   resolvePreviewVideoSource,
+  setNodeOutputLookup,
+  sourceNodeIds,
+  trackRunOutputs,
 } from "./pano_preview_video.js";
 import { bindWheelCaptureRoot, readWheelDirection } from "./pano_wheel.js";
 import { queuePendingStickerOperation } from "./pano_editor_extension.js";
@@ -84,6 +89,8 @@ import {
 } from "./pano_dom_widget_lifecycle.js";
 import { createViewportRestoreScheduler } from "./pano_viewport_restore.js";
 const { app } = appModule;
+setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
+trackRunOutputs(api);
 const sharedPreviewImageCache = createSharedImageCache();
 
 function getAnimPreviewWidgetName() {
@@ -494,9 +501,15 @@ function executionIdMatches(value, target) {
   return a.full === b.full || a.tail === b.full || a.full === b.tail || a.tail === b.tail;
 }
 
-function getLinkedOriginIds(node, preferredInputNames = BACKGROUND_INPUT_NAMES) {
+function originNodeOf(node, slot) {
+  return resolveInputOriginNode(node, slot, node.graph ? node.getInputLink(slot)?.origin_id : null);
+}
+
+// The nodes whose outputs the media of a node is read from: the nodes its image inputs come from, and every
+// node above them.
+function getMediaSourceIds(node, preferredInputNames = BACKGROUND_INPUT_NAMES) {
   const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  if (!inputs.length) return [];
+  if (!inputs.length) return new Set();
   const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
   const preferred = preferredResolved
     .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
@@ -506,17 +519,7 @@ function getLinkedOriginIds(node, preferredInputNames = BACKGROUND_INPUT_NAMES) 
     .filter(({ input }) => String(input?.type || "").toUpperCase() === "IMAGE")
     .map(({ idx }) => idx);
   const indices = [...new Set([...preferred, ...imageTyped])];
-  const ids = [];
-  for (const idx of indices) {
-    const originNode = resolveInputOriginNode(node, idx);
-    if (originNode?.id != null) {
-      ids.push(String(originNode.id));
-      continue;
-    }
-    const originId = node.graph ? node.getInputLink(idx)?.origin_id : null;
-    if (originId != null) ids.push(String(originId));
-  }
-  return [...new Set(ids)];
+  return sourceNodeIds(node, indices, originNodeOf);
 }
 
 const executedRefreshMonitor = {
@@ -532,11 +535,12 @@ const executedRefreshMonitor = {
       targets.forEach((node) => {
         if (!node) return;
         const selfHit = executionIdMatches(executedId, node?.id);
-        const upstreamIds = getLinkedOriginIds(node, BACKGROUND_INPUT_NAMES);
-        const upstreamHit = upstreamIds.some((id) => executionIdMatches(executedId, id));
-        const reason = selfHit ? "self" : (upstreamHit ? "upstream" : "global_executed");
         const mode = String(node.__panoPreviewMode || "");
         if (mode === "cutout" && !selfHit) return;
+        // The output of a node that the media is not read from changes nothing on this node.
+        if (!selfHit && ![...getMediaSourceIds(node)].some((id) => executionIdMatches(executedId, id))) return;
+        const reason = selfHit ? "self" : "upstream";
+        if (isRepeatedOutput(node.__panoExecutedOutputs ??= new Map(), executedId, detail.output)) return;
         panoPreviewLog(node, "exec-refresh", { executedId, reason });
         invalidatePreviewImageCaches(node);
         panoPreviewLog(node, "invalidate", { cachesCleared: true });
@@ -682,7 +686,7 @@ function lookupNodeOutputEntry(nodeId) {
 }
 
 function ownOutputUiValue(node, key, outputOverride = null) {
-  const output = outputOverride || node?.__panoLastExecutedOutput || lookupNodeOutputEntry(node?.id);
+  const output = outputOverride || lookupNodeOutputEntry(node?.id);
   const value = output?.ui && Object.prototype.hasOwnProperty.call(output.ui, key)
     ? output.ui[key]
     : output?.[key];
@@ -828,7 +832,7 @@ function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null)
   const srcKey = appendImageRevision(src, rev);
   const cacheKey = `${videoKeys.join("|")}:${srcKey}`;
   const cached = node.__panoOwnOutputVideoCache;
-  if (cached?.video && cached.key === cacheKey) return cached.video;
+  if (cached?.video && cached.key === cacheKey) return cached.failed() ? null : cached.video;
   disposeNodeOutputVideoCache(node);
   const player = createLoopingPreviewVideo({
     documentRef: document,
@@ -868,12 +872,13 @@ function findLinkedInputImageSource(node, preferredInputNames = []) {
     const resolvedOriginSlot = Number(link.origin_slot ?? 0);
 
     const outputs = lookupNodeOutputEntry(originNode?.id ?? originId);
+    // LoadVideo shows its file here, which an <img> cannot load.
     const outImgs = Array.isArray(outputs?.images) ? outputs.images : [];
     if (outImgs.length) {
       const ordered = [];
       if (resolvedOriginSlot >= 0 && resolvedOriginSlot < outImgs.length) ordered.push(outImgs[resolvedOriginSlot]);
       ordered.push(...outImgs);
-      for (const cand of ordered) {
+      for (const cand of ordered.filter((image) => !isVideoFile(image))) {
         const src = imageSourceFromCandidate(cand);
         if (src) {
           panoPreviewLog(node, "image-resolve", {
@@ -881,7 +886,7 @@ function findLinkedInputImageSource(node, preferredInputNames = []) {
             sourceType: "nodeOutputs",
             stage: "hit",
           });
-          return { src, sourceType: "nodeOutputs", inputName: String(input?.name || "") };
+          return { src: `${src}&pano_src=${outputSourceToken(outputs)}`, sourceType: "nodeOutputs", inputName: String(input?.name || "") };
         }
       }
     }
@@ -1192,7 +1197,7 @@ function getNodePreviewImage(node, assetId, asset, sceneItem = null) {
   let src = stickerAssetToPreviewSrc(asset);
   if (!src && sceneItem?.external) {
     if (!isNodeOutputMediaCurrent(node, "external-sticker")) return null;
-    const ownOutput = node.__panoLastExecutedOutput || lookupNodeOutputEntry(node?.id);
+    const ownOutput = lookupNodeOutputEntry(node?.id);
     const candidates = ownOutput?.ui?.pano_sticker_input_images
       || ownOutput?.pano_sticker_input_images
       || [];
@@ -1209,7 +1214,7 @@ function getNodePreviewImage(node, assetId, asset, sceneItem = null) {
   const sharedKey = buildSharedImageCacheKey(src, stateHash, revision);
   const img = sharedPreviewImageCache.get(node, sharedKey, resolvedSrc, (image, succeeded) => {
     if (!succeeded) return;
-    if (sceneItem?.external) runExternalStickerSync(node, "image-loaded");
+    if (sceneItem?.external && node.__panoOutputFromRun) runExternalStickerSync(node, "image-loaded");
     node.__panoDomPreview?.requestDraw?.();
   });
   return img || null;
@@ -1792,6 +1797,26 @@ function suppressBuiltInPreviewImgs(node) {
   if (Array.isArray(node.imgs) && node.imgs.length) node.imgs = [];
 }
 
+const shownOwnOutputs = new WeakMap();
+
+// Shows the node's output as its media, and returns whether it is new.
+function showOwnNodeOutput(node, output) {
+  if (isRepeatedOutput(shownOwnOutputs, node, output)) return false;
+  syncOwnOutputSourceFromExecuted(node, output);
+  invalidatePreviewImageCaches(node);
+  suppressBuiltInPreviewImgs(node);
+  return true;
+}
+
+// A restored output is only shown: the port Sticker is synced into the state by a run of the node, so that
+// opening a workflow does not change it.
+export async function restoreNodeOutput(node) {
+  const output = await restoreLoadedNodeOutput(node, app, api);
+  if (!output) return;
+  showOwnNodeOutput(node, output);
+  node.__panoDomPreview?.requestDraw?.();
+}
+
 function attachPanoramaPreviewImpl(node, options = {}) {
   const allowStandalone = options.__allowStandalone === true;
   const standalonePreview = isStandalonePreviewNode(node);
@@ -2006,6 +2031,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         if (!stateWidget) return;
         setEditorActive(node, nextState.active);
         const text = editorStateText(node, nextState);
+        if (sameEditorStateText(node, text, String(stateWidget.value ?? ""))) return;
         stateWidget.value = text;
         stateWidget.callback?.(text);
         node.__panoStateCache = null;
@@ -2674,13 +2700,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     },
   }) : () => {};
   const onExecutedHook = function (output) {
-    syncOwnOutputSourceFromExecuted(node, output);
-    node.__panoLastExecutedOutput = output || null;
-    invalidatePreviewImageCaches(node);
-    markNodeOutputMediaCurrent(node);
-    // While the editor is open, its sync handler wins and is the only writer of the state.
-    runExternalStickerSync(node, "executed", output);
-    suppressBuiltInPreviewImgs(node);
+    node.__panoOutputFromRun = true;
+    const shown = showOwnNodeOutput(node, output);
+    // While the editor is open, its sync handler wins and is the only writer of the state. An output sent
+    // again by a run that took the node from ComfyUI's cache only syncs: the editor keeps its media.
+    runExternalStickerSync(node, shown ? "executed" : "sync", output);
     requestDraw();
     const out = onExecutedPrev ? onExecutedPrev.apply(this, arguments) : undefined;
     suppressBuiltInPreviewImgs(node);
@@ -2695,16 +2719,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const out = onConnectionsChangePrev ? onConnectionsChangePrev.apply(this, args) : undefined;
     const refreshAfterConnectionMutation = () => {
       if (state.destroyed) return;
-      if (backgroundInputChanged || stickerInputChanged) {
-        if (backgroundInputChanged) {
-          markNodeOutputMediaStale(node, "background");
-          invalidateBackgroundPreviewMedia(node);
-        }
-        if (stickerInputChanged) {
-          markNodeOutputMediaStale(node, "external-sticker");
-          node.__panoLastExecutedOutput = null;
-        }
-      }
+      if (backgroundInputChanged) invalidateBackgroundPreviewMedia(node);
       if (stickerInputChanged) runExternalStickerSync(node, "connection-change");
       suppressBuiltInPreviewImgs(node);
       requestDraw();

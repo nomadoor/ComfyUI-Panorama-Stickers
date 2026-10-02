@@ -129,17 +129,10 @@ class ManualCacheStore:
             cache[key] = value
             cache.move_to_end(key)
             limit = self._stickers_bg_limit if namespace == "stickers_bg" else self._video_limit
+            # An evicted MP4 is only encoded again when needed; the file stays in ComfyUI's temp directory,
+            # which ComfyUI clears itself, because job history and cached `ui` results may still name it.
             while len(cache) > limit:
-                _old_key, old_value = cache.popitem(last=False)
-                if namespace == "video":
-                    # A saved VIDEO is cached with whether it has audio.
-                    if isinstance(old_value, tuple):
-                        old_value = old_value[0]
-                    try:
-                        if isinstance(old_value, Path):
-                            old_value.unlink(missing_ok=True)
-                    except Exception:
-                        pass
+                cache.popitem(last=False)
 
 class NodeProgress:
     def __init__(

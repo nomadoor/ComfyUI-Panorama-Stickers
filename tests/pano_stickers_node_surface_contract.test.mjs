@@ -176,7 +176,7 @@ test("background disconnect invalidates after the prior connection hook and redr
   const end = runtime.indexOf("\n  node.onConnectionsChange = onConnectionsChangeHook;", start);
   const body = runtime.slice(start, end);
 
-  assert.ok(body.indexOf("onConnectionsChangePrev") < body.indexOf("markNodeOutputMediaStale"));
+  assert.ok(body.indexOf("onConnectionsChangePrev") < body.indexOf("invalidateBackgroundPreviewMedia"));
   assert.match(body, /const refreshAfterConnectionMutation = \(\) => \{[\s\S]*?invalidateBackgroundPreviewMedia\(node\)[\s\S]*?requestDraw\(\)/);
   assert.match(body, /queueMicrotask\(refreshAfterConnectionMutation\)/);
 });
@@ -187,11 +187,62 @@ test("background connection changes do not invalidate the external sticker textu
   const end = runtime.indexOf("\n  node.onConnectionsChange = onConnectionsChangeHook;", start);
   const body = runtime.slice(start, end);
 
-  assert.match(body, /backgroundInputChanged[\s\S]*?markNodeOutputMediaStale\(node, "background"\)/);
-  assert.match(body, /if \(stickerInputChanged\) \{\s*markNodeOutputMediaStale\(node, "external-sticker"\);\s*node\.__panoLastExecutedOutput = null;\s*\}/);
-  assert.match(body, /if \(backgroundInputChanged\) \{[\s\S]*?invalidateBackgroundPreviewMedia\(node\);[\s\S]*?\}/);
+  assert.match(body, /if \(backgroundInputChanged\) invalidateBackgroundPreviewMedia\(node\);/);
   assert.doesNotMatch(body, /invalidatePreviewImageCaches\(node\)/);
   assert.match(runtime, /isNodeOutputMediaCurrent\(node, "external-sticker"\)/);
+});
+
+test("connection events leave output freshness alone, so the ones configure fires while loading do not hide restored media", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const start = runtime.indexOf("  const onConnectionsChangeHook = function (type, slotIndex) {");
+  const end = runtime.indexOf("\n  node.onConnectionsChange = onConnectionsChangeHook;", start);
+  const body = runtime.slice(start, end);
+
+  assert.doesNotMatch(body, /markNodeOutputMedia|recordOutputInputs/);
+  assert.match(runtime, /export async function restoreNodeOutput\(node\) \{\s*const output = await restoreLoadedNodeOutput\(node, app, api\);/);
+});
+
+// Opening a workflow must not change it: a restored output is shown, and only a run of the node syncs the
+// port Sticker from its output into state_json.
+test("a restored output is only shown, and only a run syncs the port Sticker into the state", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const restoreStart = runtime.indexOf("export async function restoreNodeOutput(node) {");
+  const restore = runtime.slice(restoreStart, runtime.indexOf("\n}\n", restoreStart));
+  const showStart = runtime.indexOf("function showOwnNodeOutput(node, output) {");
+  const show = runtime.slice(showStart, runtime.indexOf("\n}\n", showStart));
+
+  assert.match(restore, /showOwnNodeOutput\(node, output\)/);
+  assert.doesNotMatch(restore + show, /runExternalStickerSync|commitState|state_json|__panoOutputFromRun/);
+  assert.match(runtime, /const onExecutedHook = function \(output\) \{\s*node\.__panoOutputFromRun = true;[\s\S]*?const shown = showOwnNodeOutput\(node, output\);[\s\S]*?runExternalStickerSync\(node, shown \? "executed" : "sync", output\);/);
+  assert.match(runtime, /if \(sceneItem\?\.external && node\.__panoOutputFromRun\) runExternalStickerSync\(node, "image-loaded"\);/);
+});
+
+// A run that takes the node (or its upstream LoadVideo) from ComfyUI's execution cache sends `executed`
+// again with the same output. It must not load the node's media again: no new revision, no dropped video,
+// and the editor is not told to drop its sticker image.
+test("an output that a cached run sends again leaves the node's media as it is", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+  const showStart = runtime.indexOf("function showOwnNodeOutput(node, output) {");
+  const show = runtime.slice(showStart, runtime.indexOf("\n}\n", showStart));
+  const monitorStart = runtime.indexOf("const executedRefreshMonitor = {");
+  const monitor = runtime.slice(monitorStart, runtime.indexOf("\n};\n", monitorStart));
+
+  assert.match(show, /^function showOwnNodeOutput\(node, output\) \{\s*if \(isRepeatedOutput\(shownOwnOutputs, node, output\)\) return false;\s*syncOwnOutputSourceFromExecuted\(node, output\);\s*invalidatePreviewImageCaches\(node\);/);
+  assert.match(show, /return true;$/);
+  assert.match(monitor, /if \(isRepeatedOutput\(node\.__panoExecutedOutputs \?\?= new Map\(\), executedId, detail\.output\)\) return;\s*panoPreviewLog\(node, "exec-refresh"/);
+
+  // A run of a node the media is not read from (not the node, not up its image inputs) leaves the media.
+  assert.doesNotMatch(runtime, /global_executed/);
+  assert.match(monitor, /if \(!selfHit && !\[\.\.\.getMediaSourceIds\(node\)\]\.some\(\(id\) => executionIdMatches\(executedId, id\)\)\) return;[\s\S]*?invalidatePreviewImageCaches\(node\)/);
+  assert.match(runtime, /function getMediaSourceIds\(node, preferredInputNames = BACKGROUND_INPUT_NAMES\) \{[\s\S]*?return sourceNodeIds\(node, indices, /);
+});
+
+test("the node's own output is read from app.nodeOutputs only, so a restored output and ComfyUI's never disagree", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+
+  assert.doesNotMatch(runtime, /__panoLastExecutedOutput/);
+  assert.match(runtime, /setNodeOutputLookup\(\(node\) => lookupNodeOutputEntry\(node\.id\)\)/);
+  assert.match(runtime, /^trackRunOutputs\(api\);$/m);
 });
 
 test("surface teardown restores lifecycle hooks only while it still owns each wrapper", async () => {
@@ -335,13 +386,14 @@ test("the node surface syncs the port Sticker through the registry so the open e
 
   assert.match(runtime, /registerExternalStickerSync\(node, syncExternalSticker\)/);
   assert.doesNotMatch(runtime, /[^.\w]syncExternalSticker\(/);
-  for (const reason of ["executed", "connection-change", "attach"]) {
+  for (const reason of ["connection-change", "attach"]) {
     assert.match(runtime, new RegExp(`runExternalStickerSync\\(node, "${reason}"`));
   }
+  assert.match(runtime, /runExternalStickerSync\(node, shown \? "executed" : "sync", output\)/);
   const editor = await read("../web_src/pano_editor.js");
   // The editor's handler wins over a node surface that attaches again, and a result syncs once: the
   // node's onExecuted runs the handler, which drops the stale sticker image first.
-  assert.match(editor, /registerExternalStickerSync\(node, \(reason = "sync"\) => \{\s*if \(reason === "executed"\) \{\s*invalidateMediaUiImage\(imageCache, EXTERNAL_STICKER_PREVIEW_KEY\);\s*refreshVideoAfterRun\(\);\s*\}\s*reconcileExternalStickerFromInputs\(reason\);\s*\}, \{ editor: true \}\)/);
+  assert.match(editor, /registerExternalStickerSync\(node, \(reason = "sync"\) => \{\s*if \(reason === "executed"\) \{\s*invalidateMediaUiImage\(imageCache, EXTERNAL_STICKER_PREVIEW_KEY\);\s*refreshModalVideoSource\(\);\s*\}\s*reconcileExternalStickerFromInputs\(reason\);\s*\}, \{ editor: true \}\)/);
   assert.doesNotMatch(editor, /node\.onExecuted =/);
 });
 
@@ -363,19 +415,49 @@ test("links are read only once the node is in a graph", async () => {
   }
 });
 
-// A run with the editor open reloads the background VIDEO and shows the playhead's frame; seeking on
-// the ruler picks up a VIDEO that arrived since; a dropped VIDEO loads again when the same MP4 returns.
+// A run with the editor open reloads the background VIDEO, and the playback shows the playhead's frame
+// once it loads (tests/pano_video_playback.test.mjs); seeking on the ruler picks up a VIDEO that
+// arrived since; a dropped VIDEO loads again when the same MP4 returns.
 test("the editor follows the background VIDEO of a new result", async () => {
   const editor = await read("../web_src/pano_editor.js");
 
-  assert.match(editor, /function refreshVideoAfterRun\(\) \{[\s\S]*?refreshModalVideoSource\(\);[\s\S]*?scrubVideoTo\(editor\.frame \/ state\.timeline\.fps\);\s*endVideoScrub\(\);/);
-  assert.match(editor, /action\.phase === "start"\) \{\s*stopTimelinePlayback\(\);\s*refreshModalVideoSource\(\);/);
+  assert.match(editor, /if \(action\.type === "seek"\) \{\s*if \(action\.phase === "start"\) refreshModalVideoSource\(\);\s*playback\.seek\(action\.frame\);/);
   assert.match(editor, /videoEl\.removeAttribute\("src"\);\s*delete videoEl\.dataset\.panoSrc;/);
-  // load() drops a seek in flight without `seeked`; a seek state left behind would block every later seek.
+  // load() drops a seek in flight without `seeked`; the playback starts over with each source.
   const refreshStart = editor.indexOf("function refreshModalVideoSource(");
   const refresh = editor.slice(refreshStart, editor.indexOf("\n  function ", refreshStart + 1));
-  const reset = /videoEl\.pause\(\);\s*videoState\.seeking = false;\s*videoState\.requestedTime = null;\s*videoState\.pendingPlaybackResume = false;/g;
-  assert.equal([...refresh.matchAll(reset)].length, 2);
-  assert.ok(refresh.search(reset) < refresh.indexOf("videoEl.src = nextSrc;"));
-  assert.match(refresh, /videoState\.pendingPlaybackResume = false;\s*videoEl\.removeAttribute\("src"\);/);
+  assert.match(refresh, /videoEl\.src = nextSrc;\s*videoEl\.load\(\);\s*playback\.setSource\(true\);\s*if \(!sceneV2\) playback\.seek\(0\);/);
+  assert.match(refresh, /resetVideoThumbnails\(\);\s*playback\.setSource\(false\);/);
+});
+
+test("the editor plays its own background VIDEO first, then a directly loaded file, and never a failed source", async () => {
+  const editor = await read("../web_src/pano_editor.js");
+  const start = editor.indexOf("  function refreshModalVideoSource() {");
+  const body = editor.slice(start, editor.indexOf("\n  function normalizeInputPoseValue", start));
+
+  assert.match(body, /\[ownSrc, comfyMedia\.linkedVideoFile\(node, backgroundInputNames\(\)\)\]/);
+  assert.match(body, /candidates\.find\(\(src\) => !videoState\.failedSrcs\.has\(src\)\)/);
+  assert.match(body, /const meta = nextSrc && nextSrc === ownSrc \? getVideoMetaEntry\(\) : null;/);
+  assert.match(body, /sceneV2 \? state\.timeline\.fps : 24/);
+  // The still of one source is dropped when another takes its place.
+  assert.match(body, /videoEl\.pause\(\);\s*dropVideoStill\(\);\s*videoEl\.dataset\.panoSrc = nextSrc;/);
+  assert.match(editor, /function dropVideoStill\(\) \{\s*stillCanvas\.__panoFrameIdx = 0;/);
+  assert.match(editor, /const onVideoError = \(\) => \{[\s\S]*?videoState\.failedSrcs\.add\(src\);\s*refreshModalVideoSource\(\);/);
+  assert.match(editor, /backgroundState = videoState\.videoFailed \? IMAGE_FAILED :/);
+});
+
+test("state_json is written only when its meaning changes, in the editor and on the node", async () => {
+  const editor = await read("../web_src/pano_editor.js");
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+
+  assert.match(editor, /function commitState\(\) \{[\s\S]*?if \(stateWidget && !sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\)\)\) \{\s*stateWidget\.value = text;/);
+  assert.match(runtime, /commitState: \(nextState\) => \{[\s\S]*?if \(sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\)\)\) return;\s*stateWidget\.value = text;/);
+});
+
+test("the node surface leaves a background VIDEO that failed to load for its image fallbacks", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+
+  assert.match(runtime, /if \(cached\?\.video && cached\.key === cacheKey\) return cached\.failed\(\) \? null : cached\.video;/);
+  // The origin slot indexes the images as the node output them, so video files are left out after it.
+  assert.match(runtime, /ordered\.push\(outImgs\[resolvedOriginSlot\]\);\s*ordered\.push\(\.\.\.outImgs\);\s*for \(const cand of ordered\.filter\(\(image\) => !isVideoFile\(image\)\)\)/);
 });

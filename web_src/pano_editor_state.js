@@ -151,6 +151,30 @@ export function makePanoEditorHistorySnapshot(state) {
   return snapshot;
 }
 
+// The state an undo or redo step restores from a history snapshot. The snapshot leaves out painting_layer,
+// which stays while the painting is the same: dropping it would upload the same layer again.
+export function restoredHistoryState(current, snapshot) {
+  const state = JSON.parse(snapshot);
+  const paintingChanged = JSON.stringify(state.painting) !== JSON.stringify(current.painting);
+  if (!paintingChanged) state.painting_layer = current.painting_layer;
+  return { state, paintingChanged };
+}
+
+// Whether the painting needs its painting_layer uploaded again for a target of `width`x`height`. A change to
+// the painting drops the layer (pano_editor.js invalidatePaintingLayerState). The counters at the start of
+// the layer's revision start again with each editor session, so only its target size can make it stale.
+export function paintingLayerNeedsSync(layer, { paintCount, maskCount, width, height, nodeId }) {
+  if (paintCount <= 0 && maskCount <= 0) return false;
+  if (!layer || typeof layer !== "object") return true;
+  if (!String(layer.revision || "").endsWith(`:${width}x${height}`)) return true;
+  if (paintCount > 0 && !layer.paint) return true;
+  if (maskCount > 0 && !layer.mask) return true;
+  // Layer files are named after the node, so a pasted or imported node still points at its source's files.
+  if (paintCount > 0 && layer.paint.filename !== `pano_paint_${nodeId}.png`) return true;
+  if (maskCount > 0 && layer.mask.filename !== `pano_mask_${nodeId}.png`) return true;
+  return false;
+}
+
 // PanoramaStickersNode works on state v2 itself: the editor's working state is the loadSceneState()
 // result with the editor's session fields (coverage, bg_color, output_preset, ui_settings, active),
 // which saving drops. The legacy node keeps working on its v1 state (parsePanoEditorState).
@@ -296,4 +320,16 @@ export function setEditorActive(node, active) {
 // working state itself (v1) for the legacy node.
 export function editorStateText(node, state) {
   return JSON.stringify(node?.__panoSceneStateV2 ? loadSceneState(state) : state);
+}
+
+// Whether the widget's `current` text already means `text`. ComfyUI's execution cache compares the
+// text, so rewriting an equivalent one (the empty default, other formatting) would run the node again.
+export function sameEditorStateText(node, text, current) {
+  if (text === current) return true;
+  if (!node?.__panoSceneStateV2) return false;
+  try {
+    return JSON.stringify(loadSceneState(current)) === text;
+  } catch {
+    return false;
+  }
 }

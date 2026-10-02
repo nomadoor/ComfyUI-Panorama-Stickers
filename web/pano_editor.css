@@ -486,6 +486,10 @@
   opacity: 0;
   pointer-events: none;
 }
+/* requestVideoFrameCallback only runs for a rendered video; opacity keeps it out of sight. */
+.pano-video-transport.is-hidden .pano-video-source {
+  visibility: visible;
+}
 .pano-video-transport-shell {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2675,10 +2679,23 @@
   transform: none;
 }
 .pano-timeline-body {
-  max-height: 34vh;
-  overflow-y: auto;
+  height: 0;
+  overflow: hidden;
   border-radius: var(--pano-space-md);
   background: var(--pano-surface-1);
+  transition: height 180ms ease-out;
+}
+.pano-timeline-body.open {
+  height: min(var(--pano-timeline-rows), 34vh);
+  overflow-y: auto;
+}
+.pano-timeline-body.sliding {
+  overflow-y: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pano-timeline-body {
+    transition: none;
+  }
 }
 .pano-timeline-grid {
   display: grid;

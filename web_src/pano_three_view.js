@@ -25,6 +25,7 @@ import {
   SphereGeometry,
   Texture,
   Vector4,
+  VideoTexture,
   WebGLRenderer,
 } from "three";
 
@@ -151,9 +152,11 @@ function mediaSize(media) {
 }
 
 // Textures are premultiplied on upload and sampled without mipmaps, like the previous WebGL
-// renderer, so the blend below composites them the same way.
+// renderer, so the blend below composites them the same way. A plain Texture sizes its storage from
+// width/height, which a <video> leaves at 0, so a VIDEO takes a VideoTexture. A VideoTexture uploads
+// each frame the video presents by itself, so a layer's revision does not decide when it updates.
 function createTexture(media, flipY) {
-  const texture = new Texture(media);
+  const texture = media instanceof HTMLVideoElement ? new VideoTexture(media) : new Texture(media);
   texture.premultiplyAlpha = true;
   texture.generateMipmaps = false;
   texture.minFilter = LinearFilter;
@@ -162,6 +165,41 @@ function createTexture(media, flipY) {
   texture.flipY = flipY;
   texture.needsUpdate = true;
   return texture;
+}
+
+// A <video> has a picture to upload from HAVE_CURRENT_DATA on; before that (loading, seeking) its
+// upload is empty.
+export function hasContent(media) {
+  const size = mediaSize(media);
+  if (!(size.width > 0 && size.height > 0)) return false;
+  return !(media instanceof HTMLVideoElement) || media.readyState >= HTMLVideoElement.HAVE_CURRENT_DATA;
+}
+
+// The texture of a layer, from `owned` (layer id -> entry). A layer whose media changes keeps its
+// texture until the new media has a picture, so a VIDEO that is loading or seeking never shows
+// an empty upload in place of the frame before. A 360 ERP wraps around horizontally; a 180 ERP and
+// a Sticker clamp at their edges.
+export function layerTexture(owned, id, media, revision, wrapS, flipY) {
+  const size = mediaSize(media);
+  let entry = owned.get(id);
+  if (entry && (entry.media !== media || entry.width !== size.width || entry.height !== size.height)) {
+    if (!hasContent(media)) {
+      entry.used = true;
+      return entry.texture;
+    }
+    entry.texture.dispose();
+    entry = null;
+  }
+  if (!entry) {
+    entry = { texture: createTexture(media, flipY), media, revision, ...size };
+    owned.set(id, entry);
+  } else if (entry.revision !== revision || entry.texture.wrapS !== wrapS) {
+    entry.revision = revision;
+    entry.texture.needsUpdate = true;
+  }
+  entry.texture.wrapS = wrapS;
+  entry.used = true;
+  return entry.texture;
 }
 
 function createMaterial(vertexShader, fragmentShader, uniforms, blending = CustomBlending) {
@@ -242,33 +280,13 @@ export function createThreeView() {
   const owners = new Map();
   renderer.setScissorTest(true);
 
-  // A 360 ERP wraps around horizontally; a 180 ERP and a Sticker clamp at their edges.
-  function texture(owned, id, media, revision, wrapS, flipY) {
-    const size = mediaSize(media);
-    let entry = owned.get(id);
-    if (entry && (entry.media !== media || entry.width !== size.width || entry.height !== size.height)) {
-      entry.texture.dispose();
-      entry = null;
-    }
-    if (!entry) {
-      entry = { texture: createTexture(media, flipY), media, revision, ...size };
-      owned.set(id, entry);
-    } else if (entry.revision !== revision || entry.texture.wrapS !== wrapS) {
-      entry.revision = revision;
-      entry.texture.needsUpdate = true;
-    }
-    entry.texture.wrapS = wrapS;
-    entry.used = true;
-    return entry.texture;
-  }
-
   function pooled(meshes, index, create) {
     if (!meshes[index]) meshes[index] = create();
     return meshes[index];
   }
 
   function addErp(owned, projection, mesh, layer, halfCoverage) {
-    mesh.material.uniforms.map.value = texture(owned, layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
+    mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
     mesh.material.uniforms.opacity.value = layer.opacity;
     projection.placeErp(mesh, halfCoverage);
     scene.add(mesh);
@@ -276,16 +294,16 @@ export function createThreeView() {
   }
 
   function addSticker(owned, projection, mesh, layer) {
-    mesh.material.uniforms.map.value = texture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true);
+    mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true);
     mesh.material.uniforms.opacity.value = layer.opacity;
     projection.placeSticker(mesh, layer);
     scene.add(mesh);
     return mesh;
   }
 
-  function hasSize(media) {
-    const size = mediaSize(media);
-    return size.width > 0 && size.height > 0;
+  // A layer draws once its media has a picture, or with the texture it had while the new one has none.
+  function drawable(owned, id, media) {
+    return hasContent(media) || owned.has(id);
   }
 
   function draw(projection, input) {
@@ -309,13 +327,13 @@ export function createThreeView() {
     const owned = entry.textures;
     owned.forEach((item) => { item.used = false; });
     const background = input.background;
-    if (background && hasSize(background.media)) {
+    if (background && drawable(owned, "background", background.media)) {
       addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
     }
     let erpIndex = 0;
     let stickerIndex = 0;
     input.layers.forEach((layer, index) => {
-      if (!hasSize(layer.media)) return;
+      if (!drawable(owned, layer.id, layer.media)) return;
       const mesh = layer.kind === "erp"
         ? addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false)
         : addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);

@@ -25,7 +25,7 @@ import {
 } from "../web_src/pano_editor_view.js";
 import { parsePanoEditorState } from "../web_src/pano_editor_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { applyViewportCamera, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
+import { applyViewportCamera, layerTexture, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
 import { worldToPano } from "../web_src/pano_world.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -328,6 +328,35 @@ test("three.js stays out of the eagerly loaded bundle", () => {
   assert.ok(!/^import\s/m.test(chunk));
 });
 
+test("a background VIDEO uploads through a VideoTexture, which sizes its storage from the video", () => {
+  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
+  assert.match(view, /media instanceof HTMLVideoElement \? new VideoTexture\(media\) : new Texture\(media\)/);
+});
+
+// The editor's background switches between its still canvas and the playing <video>. A <video> that
+// is loading or seeking has nothing to upload, so the texture of the frame before stays until it has.
+test("a layer keeps its texture until its new media has a picture", () => {
+  const previous = globalThis.HTMLVideoElement;
+  globalThis.HTMLVideoElement = class { static HAVE_CURRENT_DATA = 2; };
+  try {
+    const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 1 });
+    const still = { width: 64, height: 32 };
+    const owned = new Map();
+    const stillTexture = layerTexture(owned, "background", still, "1", 0, false);
+    let disposed = 0;
+    stillTexture.addEventListener("dispose", () => { disposed += 1; });
+    assert.equal(layerTexture(owned, "background", video, "v", 0, false), stillTexture);
+    assert.equal(disposed, 0);
+    video.readyState = 2;
+    const videoTexture = layerTexture(owned, "background", video, "v", 0, false);
+    assert.notEqual(videoTexture, stillTexture);
+    assert.equal(videoTexture.isVideoTexture, true);
+    assert.equal(disposed, 1);
+  } finally {
+    globalThis.HTMLVideoElement = previous;
+  }
+});
+
 test("only the background follows a 180 coverage; paint layers cover the whole sphere", () => {
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   assert.match(view, /addErp\(owned, projection, projection\.background, \{ id: "background", opacity: 1, \.\.\.background \}, background\.coverage === 180\)/);
@@ -343,4 +372,42 @@ test("the editor hit tests and draws its overlays with the camera its three.js v
   assert.match(body("projectSceneItemDir"), /currentViewProjection\(\)\.project\(dir, nearZ\)/);
   assert.match(body("renderEditorView"), /camera: currentViewCamera\(\),/);
   assert.doesNotMatch(editor, /currentViewBasis/);
+});
+
+// The Timeline under the stage changes the stage's height. The view keeps its width's field of
+// view and its center, so a shorter stage only crops the top and bottom: nothing zooms or slides
+// sideways, and every direction keeps its distance from the stage's center.
+test("a viewport camera keeps the content's scale and center when the stage gets shorter", () => {
+  const view = { yaw_deg: 40, pitch_deg: 12, roll_deg: 0, hFOV_deg: 100 };
+  const tall = viewProjection(viewportCamera(view, 1200, 760), 1200, 760);
+  const short = viewProjection(viewportCamera(view, 1200, 480), 1200, 480);
+  for (const [x, y] of [[600, 380], [100, 300], [1100, 500], [640, 200]]) {
+    const dir = tall.ray(x, y);
+    const point = short.project(dir);
+    assert.ok(Math.abs(point.x - x) < 1e-6, `${x},${y}: x ${point.x}`);
+    assert.ok(Math.abs(point.y - 240 - (y - 380)) < 1e-6, `${x},${y}: y ${point.y}`);
+  }
+});
+
+// A canvas left at its old size for one painted frame shows its frame stretched; the stage resizes
+// and draws from a ResizeObserver, which runs after layout and before paint, instead of polling.
+test("the editor resizes and redraws the stage in the frame its layout changes", () => {
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  // It only resizes and draws, through the same error guard as the tick, and leaves the animations
+  // and the tick's clock to the next tick.
+  assert.match(editor, /const stageResizeObserver = new ResizeObserver\(redrawNow\);/);
+  const redraw = editor.slice(editor.indexOf("  function redrawNow() {"), editor.indexOf("\n  }\n", editor.indexOf("  function redrawNow() {")));
+  assert.match(redraw, /if \(!runtime\.running \|\| !syncCanvasSize\(\)\) return;\s*runGuardedFrame\(\(\) => \{\s*runtime\.dirty = false;\s*drawScene\(\);/);
+  assert.doesNotMatch(redraw, /tickFrame/);
+  assert.match(editor, /function tick\(ts = performance\.now\(\)\) \{\s*if \(!runtime\.running\) return;\s*runGuardedFrame\(\(\) => tickFrame\(ts\)\);/);
+  assert.match(editor, /stageResizeObserver\.observe\(canvas\);/);
+  assert.doesNotMatch(editor, /lastSizeCheckTs/);
+  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.doesNotMatch(timeline, /v-show="model\.expanded"/);
+  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
+  assert.match(css, /\.pano-timeline-body \{[^}]*transition: height 180ms/);
+  assert.match(css, /\.pano-timeline-body\.open \{\s*height: min\(var\(--pano-timeline-rows\), 34vh\);/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.pano-timeline-body \{\s*transition: none;/);
+  // A transition cut short (the Timeline toggled again mid-slide) ends the slide too.
+  assert.match(timeline, /@transitionend\.self="sliding = false"\s*@transitioncancel\.self="sliding = false"/);
 });

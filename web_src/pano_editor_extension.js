@@ -362,6 +362,7 @@ export function createPanoEditorExtension({
   attachStickers,
   attachCutout,
   attachPreview,
+  restoreOutput,
   requestFrame,
   enableStickersPreview = false,
 }) {
@@ -404,6 +405,10 @@ export function createPanoEditorExtension({
         });
       }
       if (isPanoramaPreviewNodeName(name)) installStandalonePreviewNode(nodeType);
+    },
+    // ComfyUI calls this for each node once a loaded graph is configured, links included.
+    loadedGraphNode(node) {
+      if (node.__panoPreviewAttached) void restoreOutput(node);
     },
     nodeCreated(node) {
       const name = String(node?.comfyClass || node?.type || node?.title || "");

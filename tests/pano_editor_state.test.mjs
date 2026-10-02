@@ -10,8 +10,11 @@ import {
   makePanoEditorHistorySnapshot,
   normalizeCoverageValue,
   parsePanoEditorState,
+  paintingLayerNeedsSync,
   parseSceneEditorState,
+  restoredHistoryState,
   retainActiveCutoutShot,
+  sameEditorStateText,
   cameraFields,
   sceneStickerLabel,
   setCameraField,
@@ -402,4 +405,70 @@ test("the node leaves Lanes with Keyframes to the Timeline and edits only the ot
   const next = scaled.state.stickers[0];
   assert.deepEqual(next.direction, sticker.direction);
   assert.deepEqual(next.size, { value: { ...sticker.size.value, hFOV_deg: 40 }, keyframes: [] });
+});
+
+// ComfyUI's execution cache compares state_json's text: opening and closing the editor without an edit
+// must not rewrite it, or the next run computes everything again.
+test("opening and closing the editor leaves an unedited state_json text alone", () => {
+  const node = { __panoSceneStateV2: true };
+  const options = { coverage: 360, backgroundColor: "#00ff00", active: {} };
+  for (const current of ["", JSON.stringify(loadSceneState(null), null, 2), JSON.stringify(loadSceneState(null))]) {
+    const text = editorStateText(node, parseSceneEditorState(current, options));
+    assert.equal(sameEditorStateText(node, text, current), true, JSON.stringify(current.slice(0, 20)));
+  }
+});
+
+test("an edit, an unreadable text, or the legacy node's other text is written", () => {
+  const node = { __panoSceneStateV2: true };
+  const edited = loadSceneState(null);
+  edited.timeline.fps = 30;
+
+  assert.equal(sameEditorStateText(node, JSON.stringify(edited), ""), false);
+  assert.equal(sameEditorStateText(node, JSON.stringify(loadSceneState(null)), "{not json"), false);
+  assert.equal(sameEditorStateText({}, "{\"version\":1}", "{ \"version\": 1 }"), false);
+  assert.equal(sameEditorStateText({}, "{}", "{}"), true);
+});
+
+// The painting_layer's revision counts changes within one editor session and starts again at 0 in the next.
+// Opening and closing the editor without touching the painting must leave state_json as it is: rewriting
+// the layer with this session's revision makes ComfyUI run the node again.
+test("a painting layer saved in an earlier editor session stays current until its target size changes", () => {
+  const paint = { type: "comfy_image", filename: "pano_paint_1.png", subfolder: "panorama_stickers", storage: "input" };
+  const saved = { paint, mask: null, groups: [], revision: "0:22:2048x1024" };
+  const painted = { paintCount: 1, maskCount: 0, width: 2048, height: 1024, nodeId: "1" };
+
+  assert.equal(paintingLayerNeedsSync(saved, painted), false);
+  assert.equal(paintingLayerNeedsSync(saved, { ...painted, width: 4096, height: 2048 }), true);
+  assert.equal(paintingLayerNeedsSync(null, painted), true);
+  assert.equal(paintingLayerNeedsSync(saved, { ...painted, maskCount: 1 }), true);
+  assert.equal(paintingLayerNeedsSync(null, { ...painted, paintCount: 0 }), false);
+  // A pasted node (new id) still references the source node's files, which that node keeps overwriting.
+  assert.equal(paintingLayerNeedsSync(saved, { ...painted, nodeId: "7" }), true);
+
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  assert.match(editor, /function needsPaintingLayerSync\(\) \{\n[^\n]*\n[^\n]*\n\s*return paintingLayerNeedsSync\(state\.painting_layer, /);
+});
+
+// An undo or redo step restores a snapshot without the painting_layer. Undoing an edit that left the painting
+// as it was must keep the layer: dropping it uploads the same PNG again and rewrites state_json, which makes
+// ComfyUI run the node again.
+test("an undo keeps the painting layer while the painting is the same, and drops it once the painting differs", () => {
+  const layer = { paint: { type: "comfy_image", filename: "pano_paint_1.png" }, mask: null, groups: [], revision: "0:3:2048x1024" };
+  const painting = { strokes: [], groups: [{ id: "g1", z_index: 0 }], raster_objects: [{ id: "r1", transform: { du: 0.4, dv: 0 } }] };
+  const current = { stickers: [{ id: "a", yaw_deg: 10 }], painting, painting_layer: layer };
+  const before = makePanoEditorHistorySnapshot({ ...current, stickers: [{ id: "a", yaw_deg: 0 }] });
+
+  const undone = restoredHistoryState(current, JSON.stringify(before));
+  assert.equal(undone.paintingChanged, false);
+  assert.deepEqual(undone.state.stickers, [{ id: "a", yaw_deg: 0 }]);
+  assert.deepEqual(undone.state.painting_layer, layer);
+
+  const moved = structuredClone(before);
+  moved.painting.raster_objects[0].transform.du = 0.3;
+  const repainted = restoredHistoryState(current, JSON.stringify(moved));
+  assert.equal(repainted.paintingChanged, true);
+  assert.equal(repainted.state.painting_layer, undefined);
+
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  assert.match(editor, /const restored = restoredHistoryState\(state, snapshot\);[\s\S]*?if \(restored\.paintingChanged\) markPaintStrokeVisualsDirty\(\);\s*else markObjectVisualsDirty\(\);/);
 });

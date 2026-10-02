@@ -163,6 +163,30 @@ test("the sticker input syncs once the Stickers node is in the graph, for the le
   assert.deepEqual(synced, [["PanoramaStickers", "attach", null], ["PanoramaStickersNode", "attach", null]]);
 });
 
+test("a loaded graph restores the last output of each editor node and leaves other nodes alone", () => {
+  const restored = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    restoreOutput(node) { restored.push(node); },
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  function NodeType() {}
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStickersNode" });
+  const node = makeNode([360, 260]);
+  NodeType.prototype.onNodeCreated.call(node);
+  NodeType.prototype.onConfigure.call(node);
+
+  extension.loadedGraphNode(node);
+  extension.loadedGraphNode(makeNode());
+
+  assert.deepEqual(restored, [node]);
+});
+
 test("cutout lifecycle attaches once and initializes only an invalid node size", () => {
   function NodeType() {}
   const attached = [];

@@ -14,8 +14,15 @@ const PIN_GAP_PX = 10;
 const TICK_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 
 const rulerRef = ref(null);
+const gridRef = ref(null);
 const trackWidth = ref(1);
+// The rows' natural height. The body eases to it (capped in CSS), so opening the Timeline or a
+// row slides the stage's edge instead of moving it in one step.
+const gridHeight = ref(0);
+// The body hides its scrollbar while its height eases.
+const sliding = ref(false);
 let resizeObserver = null;
+let gridObserver = null;
 // Removes the window listeners of the drag in progress, without reporting its end.
 let stopDrag = null;
 onMounted(() => {
@@ -23,9 +30,14 @@ onMounted(() => {
     trackWidth.value = Math.max(1, entry.contentRect.width);
   });
   if (rulerRef.value) resizeObserver.observe(rulerRef.value);
+  gridObserver = new ResizeObserver(([entry]) => {
+    gridHeight.value = entry.contentRect.height;
+  });
+  if (gridRef.value) gridObserver.observe(gridRef.value);
 });
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
+  gridObserver?.disconnect();
   stopDrag?.();
 });
 
@@ -140,8 +152,8 @@ function onLineDown(event, row, lane) {
       <button
         class="pano-btn pano-btn-icon pano-timeline-play"
         type="button"
-        :aria-label="model.playing ? 'Pause' : 'Play'"
-        :data-tip="model.playing ? 'Pause' : 'Play'"
+        :aria-label="model.playing ? 'Pause (Space)' : 'Play (Space)'"
+        :data-tip="model.playing ? 'Pause (Space)' : 'Play (Space)'"
         @click="emit('action', { type: 'play' })"
       >
         <SvgIcon :icon="model.playing ? ICON.pause : ICON.play" />
@@ -167,8 +179,16 @@ function onLineDown(event, row, lane) {
         <SvgIcon :icon="ICON.chevron" />
       </button>
     </div>
-    <div v-show="model.expanded" class="pano-timeline-body">
-      <div class="pano-timeline-grid">
+    <div
+      class="pano-timeline-body"
+      :class="{ open: model.expanded, sliding }"
+      :style="{ '--pano-timeline-rows': `${gridHeight}px` }"
+      :inert="!model.expanded"
+      @transitionrun.self="sliding = true"
+      @transitionend.self="sliding = false"
+      @transitioncancel.self="sliding = false"
+    >
+      <div ref="gridRef" class="pano-timeline-grid">
         <div class="pano-timeline-corner" />
         <div ref="rulerRef" class="pano-timeline-ruler" @pointerdown="onRulerDown">
           <span v-for="frame in ticks" :key="frame" class="pano-timeline-tick" :style="{ left: pct(frame) }">{{ frame }}</span>

@@ -93,7 +93,7 @@ EXPECTED_SCHEMAS = {
         "is_output_node": True,
     },
     "PanoramaStickersNode": {
-        "display_name": "Panorama Stickers",
+        "display_name": "Panorama Stickers (new)",
         "inputs": [
             ("bg_media", "COMFY_MULTITYPED_V3", True),
             ("scene", "COMFY_MULTITYPED_V3", True),
@@ -193,7 +193,7 @@ EXPECTED_SCHEMAS = {
         "is_output_node": True,
     },
     "PanoramaCutoutNode": {
-        "display_name": "Panorama Cutout",
+        "display_name": "Panorama Cutout (new)",
         "inputs": [
             ("source", "COMFY_MULTITYPED_V3", False),
             ("coverage", "COMBO", False),
@@ -262,7 +262,7 @@ EXPECTED_SCHEMAS = {
         "is_output_node": True,
     },
     "PanoramaPreviewNode": {
-        "display_name": "Panorama Preview",
+        "display_name": "Panorama Preview (new)",
         "inputs": [
             ("source", "COMFY_MATCHTYPE_V3", False),
             ("coverage", "COMBO", False),
