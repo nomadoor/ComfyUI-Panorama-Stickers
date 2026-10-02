@@ -52,6 +52,7 @@ from .core.world_render import SceneContent
 from .scene_files import write_editor_files
 from .scene_mesh import is_mesh_file, mesh_scene_content, moge_scene_content, read_mesh_file
 from .scene_video import SceneVideo
+from .splat_render import read_splat_file, splat_content
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
@@ -1005,9 +1006,9 @@ class PanoSceneValue:
     `state` is the loaded `state_json` with the port Sticker appended when missing, and `sources` its Sticker
     sources read into memory; the port Sticker's source is a template holding the first frame of `port`, the
     media on the sticker input (None without one), whose frames come from `port.frames()` at `port.index_at`.
-    `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given. `coverage` is the span of `bg_media`,
-    `bg_color` 0..1 RGB. The output size is not part of it; each consumer sets its own. `fps` is the Timeline fps
-    and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
+    `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given, a 3D file as the SPLAT or MESH read
+    from it (`_read_scene_file`). `coverage` is the span of `bg_media`, `bg_color` 0..1 RGB. The output size is
+    not part of it; each consumer sets its own. `fps` is the Timeline fps and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
     frame, and the `scene` item, as `_decide_timeline` returns them.
     Consumers must not modify it; the same value reaches every node linked to the output.
     """
@@ -1049,29 +1050,41 @@ def _scene_content(scene) -> SceneContent | None:
     """The `scene` input as World content, or None without one."""
     if scene is None:
         return None
+    if isinstance(scene, Types.SPLAT):
+        return splat_content(scene)
     if isinstance(scene, Types.MESH):
         return mesh_scene_content(scene)
     if isinstance(scene, dict):
         return moge_scene_content(scene)
-    # Temporary on the integration branch: the SPLAT (#61) rasterizer is added later.
+    # A 3D file that neither reader took (`_read_scene_file`): a PLY without 3DGS properties, or a non-splat file
+    # without a format.
     raise NotImplementedError(f"Panorama Stickers: {_input_type_name(scene)} on the scene input is not supported yet.")
 
 
 def _read_scene_file(scene):
-    """A mesh 3D file on the `scene` input as the MESH read from it, read again only when the file changes (a file
-    on disk by its path and modification, else by the object), so that it also keeps its editor files; other
-    inputs as given."""
-    if not is_mesh_file(scene):
+    """A 3D file on the `scene` input as what is read from it: a splat file (told by its contents, as Load3D does)
+    as its SPLAT, else a mesh file (by its format) as its MESH; other inputs, and 3D files neither reads, as given.
+    What is read is kept per file (on disk by its path and modification, else by the object) in the cache of its
+    kind, so the same file is not parsed again and keeps its editor files."""
+    if not isinstance(scene, Types.File3D):
         return scene
     if scene.is_disk_backed:
         stat = os.stat(scene.get_source())
         cache_key = (scene.get_source(), stat.st_mtime_ns, stat.st_size)
     else:
         cache_key = NODE_RUNTIME.object_identity(scene)
-    mesh = NODE_RUNTIME.cache.get("mesh_files", cache_key)
-    if mesh is None:
-        mesh = read_mesh_file(scene)
-        NODE_RUNTIME.cache.put("mesh_files", cache_key, mesh)
+    for namespace in ("splat_files", "mesh_files"):
+        value = NODE_RUNTIME.cache.get(namespace, cache_key)
+        if value is not None:
+            return value
+    splat = read_splat_file(scene)
+    if splat is not None:
+        NODE_RUNTIME.cache.put("splat_files", cache_key, splat)
+        return splat
+    if not is_mesh_file(scene):
+        return scene
+    mesh = read_mesh_file(scene)
+    NODE_RUNTIME.cache.put("mesh_files", cache_key, mesh)
     return mesh
 
 
