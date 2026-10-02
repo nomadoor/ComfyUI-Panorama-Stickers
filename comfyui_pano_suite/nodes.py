@@ -2,6 +2,7 @@ import json
 import math
 import os
 from dataclasses import dataclass, replace
+from fractions import Fraction
 from pathlib import Path
 import logging
 
@@ -10,7 +11,6 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 import comfy.model_management
-import comfy.utils
 from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
@@ -46,10 +46,11 @@ from .core.scene_eval import evaluate_scene_state
 from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state, rebase_scene_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
-from .core.video import make_video_ui_payload, save_video_to_mp4
-from .core.video_source import MaterializedVideo, StreamedVideo
+from .core.video import make_video_ui_payload, mp4_has_audio, save_video_to_mp4
+from .core.video_source import StreamedVideo
 from .core.world_render import SceneContent
-from .sticker_media import PortMedia, batch_index, open_video
+from .scene_video import SceneVideo
+from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -1115,6 +1116,30 @@ def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -
     return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
 
 
+def _timing_video(bg, port: PortMedia | None):
+    """The VIDEO that sets the Timeline fps and the output frames' times (ADR 0024): the opened background VIDEO,
+    else the port's VIDEO, else None. Either has `frame_rate`, `times`, and `time_base`."""
+    if isinstance(bg, OPENED_VIDEOS):
+        return bg
+    if port is not None and port.times is not None:
+        return port
+    return None
+
+
+def _timeline_rate(state: dict, timing) -> Fraction:
+    """The Timeline fps as a fraction: the rate of the VIDEO that sets the Timeline, or the recorded `timeline.fps`."""
+    return Fraction(state["timeline"]["fps"] if timing is None else timing.frame_rate).limit_denominator(1_000_000)
+
+
+def _output_times(timing, rate: Fraction, length: int) -> list[Fraction]:
+    """Each output frame's time in seconds, which (a) evaluates and the `video` output saves: the PTS of the VIDEO
+    that sets the Timeline, continuing at the Timeline fps `rate` after it, or evenly spaced without one."""
+    if timing is None:
+        return [index / rate for index in range(length)]
+    times = list(timing.times[:length])
+    return times + [times[-1] + index / rate for index in range(1, length - len(times) + 1)]
+
+
 def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None) -> tuple[float, list[tuple[float, int | None, int | None, int | None]]]:
     """(a) Timeline: fps, and per output frame the Timeline frame to evaluate, the bg_media frame to draw, the
     frame of the port media (`port.index_at`), and the item of the `scene` content (`batch_index`; None without
@@ -1125,13 +1150,10 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     read at the recorded `timeline.fps`, so they keep their seconds when a VIDEO sets another Timeline fps.
     """
     stored_fps = state["timeline"]["fps"]
-    video = isinstance(bg, (StreamedVideo, MaterializedVideo))
-    if video:
-        fps, times, time_base = float(bg.frame_rate), bg.times, bg.time_base
-    elif port is not None and port.times is not None:
-        fps, times, time_base = float(port.frame_rate), port.times, port.time_base
-    else:
-        fps, times, time_base = stored_fps, [], 0
+    video = isinstance(bg, OPENED_VIDEOS)
+    timing = _timing_video(bg, port)
+    fps = float(_timeline_rate(state, timing))
+    time_base = 0 if timing is None else timing.time_base
     # PTS are rounded to the VIDEO's time base, so a frame within half of it of a whole Timeline frame is that frame.
     tolerance = float(time_base) / 2 * stored_fps
     batch = 0 if bg is None or video else int(bg.shape[0])
@@ -1155,7 +1177,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
     elif video:
-        length = len(times)
+        length = len(bg.times)
     elif batch > 1:
         length = batch
     elif clip_ends:
@@ -1166,18 +1188,12 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         length = 1
 
     frames = []
-    for index in range(length):
-        if index < len(times):
-            frame = float(times[index]) * stored_fps
-        elif times:
-            # Past the end of the VIDEO, frames continue at the Timeline fps.
-            frame = (float(times[-1]) + (index - len(times) + 1) / fps) * stored_fps
-        else:
-            frame = index * stored_fps / fps
+    for index, time in enumerate(_output_times(timing, _timeline_rate(state, timing), length)):
+        frame = float(time * Fraction(stored_fps))
         if abs(frame - round(frame)) <= tolerance:
             frame = float(round(frame))
         if video:
-            bg_index = index if index < len(times) else None
+            bg_index = index if index < len(bg.times) else None
         else:
             bg_index = index if index < batch else (0 if batch == 1 else None)
         frames.append((
@@ -1200,100 +1216,70 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
     return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
 
 
-# The size of a whole render's output (color and mask of every frame) from which (b) copies the frames from the
-# device through a pinned buffer.
-STAGED_RENDER_BYTES = 16 * 1024 ** 2
-
-
-def _render_timeline(state: dict, sources: SceneSources, frames, bg_media, bg_color, port: PortMedia | None,
-                     scene: SceneContent | None, capture) -> tuple[torch.Tensor, torch.Tensor]:
+def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, port: PortMedia | None,
+                   scene: SceneContent | None, capture, device):
     """(b) Render each output frame with the shared render function, with the port Sticker's source at the
     frame of `port` and the item of `scene` that (a) chose. `capture` maps the evaluated state of a frame to the
-    Camera value and the Projection to draw it with; the Projection's size is the same for every frame.
-    While every frame's mask equals the first one, the MASK output is that one row expanded to all frames."""
-    device = comfy.model_management.get_torch_device()
-    if not frames:
-        _camera, projection = capture(evaluate_scene_state(state, 0.0))
-        return torch.empty((0, projection.height, projection.width, 3)), torch.empty((0, projection.height, projection.width))
+    Camera value and the Projection to draw it with; the Projection's size is the same for every frame. `bg` is
+    the bg_media IMAGE, an opened VIDEO, or None; the port media is opened for this pass.
+    Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
+    the same tensors as the previous one."""
     bg_width = None
-    if bg_media is not None:
-        bg_width = (bg_media.first_frame if isinstance(bg_media, (StreamedVideo, MaterializedVideo)) else bg_media).shape[-2]
+    if bg is not None:
+        bg_width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2]
     if port is not None:
         port_frames = port.frames()
         others = {key: value for key, value in sources.stickers.items() if key != port.sticker_id}
     cache = {}
-    previous = None
-    first_mask = None
-    masks = None
     port_source = None
-    staging = None
-    progress = comfy.utils.ProgressBar(len(frames))
-    try:
-        for index, (frame, bg_index, port_index, scene_index) in enumerate(frames):
-            evaluated = evaluate_scene_state(state, frame)
-            frame_sources = sources
-            if port is not None:
-                active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
-                port_source = _port_source_at(active, port_index, port_frames, sources.stickers[port.sticker_id], port_source)
-                frame_sources = replace(sources, stickers=others if port_source is None else {**others, port.sticker_id: port_source})
-            camera, projection = capture(evaluated)
-            if index == 0:
-                images = torch.empty((len(frames), projection.height, projection.width, 3), dtype=torch.float32)
-                shared_mask = torch.empty((1, projection.height, projection.width), dtype=torch.float32)
-                pixels = projection.height * projection.width
-                if not comfy.model_management.is_device_cpu(device) and len(frames) * pixels * 16 >= STAGED_RENDER_BYTES:
-                    # The rows of a large render reach the output through one pinned buffer: copying from the
-                    # device straight into fresh pageable rows is several times slower. A small render is copied
-                    # directly, since pinning can release ComfyUI's RAM cache and other pins for little gain.
-                    # Without a pin (no CUDA/ROCm or no budget), the buffer would only add a copy.
-                    staging = torch.empty(pixels * 4, dtype=torch.float32)
-                    if comfy.model_management.pin_memory(staging, evict_active=False):
-                        staged_color = staging[:pixels * 3].view(projection.height, projection.width, 3)
-                        staged_mask = staging[pixels * 3:].view(projection.height, projection.width)
-                    else:
-                        staging = None
-            color, mask, _depth = render_frame(
-                evaluated,
-                frame_sources,
-                camera,
-                projection,
-                bg=None if bg_index is None else bg_media[bg_index],
-                bg_key=bg_index,
-                bg_color=bg_color,
-                device=device,
-                cache=cache,
-                bg_width=bg_width,
-                scene=scene,
-                scene_index=scene_index,
-            )
-            # A reused frame is copied from the previous output row instead of transferred from the device again.
-            if color is previous:
-                images[index] = images[index - 1]
-                if masks is not None:
-                    masks[index] = masks[index - 1]
-            else:
-                if index == 0:
-                    first_mask = mask
-                elif masks is None and mask is not first_mask and not torch.equal(mask, first_mask):
-                    masks = torch.empty((len(frames), projection.height, projection.width), dtype=torch.float32)
-                    masks[:index] = shared_mask
-                mask_row = shared_mask[0] if index == 0 else None if masks is None else masks[index]
-                if staging is None:
-                    images[index] = color
-                    if mask_row is not None:
-                        mask_row.copy_(mask)
-                else:
-                    staged_color.copy_(color)
-                    images[index] = staged_color
-                    if mask_row is not None:
-                        staged_mask.copy_(mask)
-                        mask_row.copy_(staged_mask)
-            previous = color
-            progress.update(1)
-    finally:
-        if staging is not None:
-            comfy.model_management.unpin_memory(staging)
-    return images, shared_mask.expand(len(frames), -1, -1) if masks is None else masks
+    for frame, bg_index, port_index, scene_index in frames:
+        # Reading the `video` output renders in another node; Cancel stops it between frames.
+        comfy.model_management.throw_exception_if_processing_interrupted()
+        evaluated = evaluate_scene_state(state, frame)
+        frame_sources = sources
+        if port is not None:
+            active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
+            port_source = _port_source_at(active, port_index, port_frames, sources.stickers[port.sticker_id], port_source)
+            frame_sources = replace(sources, stickers=others if port_source is None else {**others, port.sticker_id: port_source})
+        camera, projection = capture(evaluated)
+        color, mask, _depth = render_frame(
+            evaluated,
+            frame_sources,
+            camera,
+            projection,
+            bg=None if bg_index is None else bg[bg_index],
+            bg_key=bg_index,
+            bg_color=bg_color,
+            device=device,
+            cache=cache,
+            bg_width=bg_width,
+            scene=scene,
+            scene_index=scene_index,
+        )
+        yield color, mask
+
+
+def _open_media(media, name: str):
+    """bg_media as `_decide_timeline` and `_render_frames` read it: a VIDEO opened by `open_video`, else as given."""
+    return open_video(media, name) if isinstance(media, Input.Video) else media
+
+
+def _render_outputs(state: dict, sources: SceneSources, frames, bg_media, bg_name: str, bg, bg_color, port: PortMedia | None,
+                    scene: SceneContent | None, capture, size: tuple[int, int]):
+    """(c) The first output frame's IMAGE and MASK, rendered now from the opened `bg`, and the `video` of every
+    frame, rendered when it is read with `bg_media` opened again for each pass. `state` is the one (a) decided the
+    Timeline of `frames` for."""
+    color, mask = next(_render_frames(state, sources, frames, bg, bg_color, port, scene, capture, comfy.model_management.get_torch_device()))
+    timing = _timing_video(bg, port)
+    rate = _timeline_rate(state, timing)
+    audio = bg.audio(len(frames) / float(rate)) if isinstance(bg, OPENED_VIDEOS) else None
+
+    def render(device):
+        return _render_frames(state, sources, frames, _open_media(bg_media, bg_name), bg_color, port, scene, capture, device)
+
+    times = _output_times(timing, rate, len(frames))
+    video = SceneVideo(render, *size, rate, times, 0 if timing is None else timing.time_base, audio)
+    return color[None].to("cpu", copy=True), mask[None].to("cpu", copy=True), video
 
 
 def _bg_media_ui(bg_media, bg, fps: float) -> dict:
@@ -1335,10 +1321,9 @@ class PanoramaStickersSceneNode(io.ComfyNode):
                 io.String.Input("state_json", default="", multiline=True, dynamic_prompts=False, advanced=True),
             ],
             outputs=[
-                io.Image.Output("image"),
-                io.Mask.Output("mask"),
-                io.Audio.Output("audio"),
-                io.Float.Output("fps"),
+                io.Image.Output("first_frame"),
+                io.Mask.Output("first_frame_mask"),
+                io.Video.Output("video"),
                 PanoScene.Output("pano_scene"),
             ],
             # An output node runs on every queue, so the editor receives the media in the `ui` even when
@@ -1355,7 +1340,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         has_port = any(item["source"]["kind"] == "port" for item in state["stickers"])
         port = _port_media(state, sticker, sticker_state)
         sources = _resolve_sources(state, port, warnings)
-        bg = open_video(bg_media, "bg_media") if isinstance(bg_media, Input.Video) else bg_media
+        bg = _open_media(bg_media, "bg_media")
         out_w, out_h, uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg.first_frame if isinstance(bg_media, Input.Video) else bg_media)
         if PanoramaStickersNode._is_auto_output_preset(output_preset) and not uses_bg_size:
             warnings.append("Output preset is auto, but bg_media is not connected; using 2048 instead.")
@@ -1363,9 +1348,10 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         projection = Projection.erp(out_w, out_h, coverage_deg)
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
         fps, frames = _decide_timeline(state, bg, port, content)
-        images, masks = _render_timeline(state, sources, frames, bg, bg_rgb, port, content, lambda evaluated: (evaluated["camera"], projection))
-        audio = bg.audio(len(frames) / fps) if isinstance(bg_media, Input.Video) else None
-        # (c) The outputs, with PANO_SCENE binding the state to the inputs and the decided Timeline.
+        image, mask, video = _render_outputs(
+            state, sources, frames, bg_media, "bg_media", bg, bg_rgb, port, content, lambda evaluated: (evaluated["camera"], projection), (out_w, out_h)
+        )
+        # PANO_SCENE binds the state to the inputs and the decided Timeline.
         pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
         # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
         ui_ret = {}
@@ -1380,7 +1366,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
                 pose = {**added["direction"]["value"], "roll_deg": added["roll"]["value"], "hFOV_deg": added["size"]["value"]["hFOV_deg"]}
                 ui_ret["pano_sticker_input_pose"] = [pose]
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
-        return io.NodeOutput(images, masks, audio, fps, pano_scene, ui=ui_ret)
+        return io.NodeOutput(image, mask, video, pano_scene, ui=ui_ret)
 
 
 CUTOUT_MAX_OUTPUT_SIDE = 4096
@@ -1412,11 +1398,10 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
                 io.String.Input("state_json", default="", multiline=True, dynamic_prompts=False, advanced=True),
             ],
             outputs=[
-                io.Image.Output("rect_image"),
+                io.Image.Output("first_frame"),
                 io.String.Output("sticker_state"),
-                io.Mask.Output("mask"),
-                io.Audio.Output("audio"),
-                io.Float.Output("fps"),
+                io.Mask.Output("first_frame_mask"),
+                io.Video.Output("video"),
             ],
         )
 
@@ -1428,7 +1413,8 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             # The Scene is the Stickers state; the Cutout state gives only the Camera, at its own recorded fps.
             state, sources, port, coverage_deg, bg_color = source.state, source.sources, source.port, source.coverage, source.bg_color
             content = _scene_content(source.scene)
-            bg = open_video(source.bg_media, "bg_media") if isinstance(source.bg_media, Input.Video) else source.bg_media
+            bg_media, bg_name = source.bg_media, "bg_media"
+            bg = _open_media(bg_media, bg_name)
             fps, frames = source.fps, source.frames
             ratio = cutout["timeline"]["fps"] / state["timeline"]["fps"]
 
@@ -1443,7 +1429,8 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             # TODO(#77): show these in the Cutout `ui`.
             for warning in warnings:
                 _log.warning("Panorama Cutout: %s", warning)
-            bg = open_video(source, "source") if isinstance(source, Input.Video) else source
+            bg_media, bg_name = source, "source"
+            bg = _open_media(bg_media, bg_name)
             fps, frames = _decide_timeline(state, bg, None)
 
             def camera_at(evaluated):
@@ -1457,9 +1444,8 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             camera = camera_at(evaluated)
             return camera, Projection.perspective(width, height, camera["hFOV_deg"], coverage_deg)
 
-        images, masks = _render_timeline(state, sources, frames, bg, bg_color, port, content, capture)
-        audio = bg.audio(len(frames) / fps) if isinstance(bg, (StreamedVideo, MaterializedVideo)) else None
-        return io.NodeOutput(images, _cutout_sticker_state(cutout, fps, width, height), masks, audio, fps)
+        image, mask, video = _render_outputs(state, sources, frames, bg_media, bg_name, bg, bg_color, port, content, capture, (width, height))
+        return io.NodeOutput(image, _cutout_sticker_state(cutout, fps, width, height), mask, video)
 
 
 class PanoramaCutoutNode(io.ComfyNode):
@@ -1777,16 +1763,21 @@ def _video_cache_identity(video, opened) -> tuple:
 
 
 def _video_ui(video, opened, fps: float, frame_count: int, contract: dict) -> dict:
-    """The `ui` of a VIDEO opened by `open_video`: its first frame, and the VIDEO saved as MP4 by the core when it
-    has two or more frames. The frames are not read into one batch (ADR 0018), and the MP4 is reused while the
+    """The `ui` of a VIDEO opened by `open_video`: its first frame, and the VIDEO as an MP4 when it has two or more
+    frames, saved by the core or, for the `video` output, its stream source. The frames are not read into one batch (ADR 0018), and the MP4 is reused while the
     VIDEO stays the same."""
     ui_ret = _init_ui_preview(opened.first_frame[None], key=contract["image"])
     if frame_count > 1:
-        cache_key = ("video_mp4", _video_cache_identity(video, opened))
-        saved = NODE_RUNTIME.cache.get("video", cache_key)
-        if saved is None or not saved[0].exists():
-            saved = save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
-            NODE_RUNTIME.cache.put("video", cache_key, saved)
+        if isinstance(video, SceneVideo):
+            # Its stream source is an MP4 in temp already, kept by the video itself; it is shown without a copy.
+            path = Path(video.get_stream_source())
+            saved = path, mp4_has_audio(path)
+        else:
+            cache_key = ("video_mp4", _video_cache_identity(video, opened))
+            saved = NODE_RUNTIME.cache.get("video", cache_key)
+            if saved is None or not saved[0].exists():
+                saved = save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
+                NODE_RUNTIME.cache.put("video", cache_key, saved)
         path, has_audio = saved
         payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"])
         payload[contract["meta"]][0]["has_audio"] = has_audio

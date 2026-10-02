@@ -128,16 +128,16 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
 | 入口 | 関数 | 役割 | 変更する ticket |
 |---|---|---|---|
 | (a) | `_decide_timeline` | Timeline fps と、出力フレームごとの評価する Timeline frame・描く `bg_media` のフレーム・`sticker` の素材のフレーム・`scene` の要素 | #53、#56 |
-| (b) | `_render_timeline` | フレームごとに状態を評価し、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source に、`scene` の要素を `scene_index` にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される。描く Camera と Projection は、評価した状態から呼び出し側の `capture` が決める（Stickers は状態の Camera と ERP、Cutout は Cutout の Camera と透視投影） | #55、#56、#58、#64 |
-| (c) | `execute` の末尾 | 出力（IMAGE・MASK・AUDIO・fps・`PANO_SCENE`）を組み立てる。ADR 0027 で `first_frame`・`first_frame_mask`・`video`・`PANO_SCENE` に変える | #53、#57 |
+| (b) | `_render_frames` | フレームごとに状態を評価し、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source に、`scene` の要素を `scene_index` にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される。描く Camera と Projection は、評価した状態から呼び出し側の `capture` が決める（Stickers は状態の Camera と ERP、Cutout は Cutout の Camera と透視投影）。各フレームの `color`・`mask` を device のまま 1 枚ずつ返すジェネレーターで、`first_frame` と `video` の読み出しが同じ経路を使う | #55、#56、#58、#64、#82 |
+| (c) | `_render_outputs` と `execute` の末尾 | 出力（`first_frame`・`first_frame_mask`・`video`・`PANO_SCENE`）を組み立てる（ADR 0027）。`execute` で描くのは最初の出力フレームだけ | #53、#57、#82 |
 
-- Timeline fps は、背景 VIDEO の平均フレームレート（コアの `get_frame_rate()` と同じ `average_rate`、丸めない）、なければ `sticker` の VIDEO の平均フレームレート、どちらもなければ状態の `timeline.fps` とする。fps 出力はこの値の float である。
+- Timeline fps は、背景 VIDEO の平均フレームレート（コアの `get_frame_rate()` と同じ `average_rate`、丸めない）、なければ `sticker` の VIDEO の平均フレームレート、どちらもなければ状態の `timeline.fps` とする。Timeline fps を決める VIDEO は `_timing_video` が選び、`_timeline_rate` がその fps を分数にする（分母 100 万以下。30000/1001 などは元の分数のまま）。`video` の `get_frame_rate()` はこの分数である。
 - 出力の長さは「状態の `timeline.length` → 背景 VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数 → Sticker と `scene` の Clip range の終わりのうち最も遅いもの（非表示の Sticker と、未接続の `scene` の Clip range も含む。`duration` が `null` で、`sticker` が IMAGE バッチか VIDEO の `port` の Sticker は、素材の終わり `start − in + 素材の長さ` を終わりとする）→ Camera の各 Lane の最後の Keyframe のうち最も遅いものの次のフレーム → 1」の順で決める。状態から決める長さは `timeline.fps` の Timeline frame なので、秒を保って Timeline fps のフレーム数に直す（`floor(x × Timeline fps ÷ timeline.fps + 0.5)`、1 以上）。
-- 各出力フレームは、次の時刻 `t` 秒について `t × timeline.fps` の Timeline frame で評価する（`docs/scene-state-v2.md`）。
-  - Timeline fps を決めた VIDEO（背景 VIDEO、なければ `sticker` の VIDEO）のフレーム：そのフレームの PTS。切り出し範囲の最初のフレームを 0 秒とする。可変フレームレートや、1ms の timebase で丸められた PTS（mkv・webm の 29.97 fps など）でもフレームごとの PTS を使い、出力は等間隔（fps 出力）に並べる。評価する Timeline frame が、最も近い整数との差がその VIDEO の PTS の量子化の幅の半分（`time_base ÷ 2 × timeline.fps`）以内なら、その整数に寄せる。Clip range の端や `hold` の Cut が、丸められた PTS で 1 フレーム遅れないようにするためである。`MaterializedVideo` の時刻は厳密なので、幅は 0 とする。
+- 各出力フレームは、次の時刻 `t` 秒について `t × timeline.fps` の Timeline frame で評価する（`docs/scene-state-v2.md`）。時刻は `_output_times` が分数で決め、(a) の評価と `video` の保存の PTS が同じ値を使う。
+  - Timeline fps を決めた VIDEO（背景 VIDEO、なければ `sticker` の VIDEO）のフレーム：そのフレームの PTS。切り出し範囲の最初のフレームを 0 秒とする。可変フレームレートや、1ms の timebase で丸められた PTS（mkv・webm の 29.97 fps など）でもフレームごとの PTS を使う。`video` を保存すると各フレームはこの時刻に置かれる（下記「`video` 出力」）。評価する Timeline frame が、最も近い整数との差がその VIDEO の PTS の量子化の幅の半分（`time_base ÷ 2 × timeline.fps`）以内なら、その整数に寄せる。Clip range の端や `hold` の Cut が、丸められた PTS で 1 フレーム遅れないようにするためである。`MaterializedVideo` の時刻は厳密なので、幅は 0 とする。
   - その VIDEO が終わった後：最後のフレームの時刻から Timeline fps の間隔で進める。背景 VIDEO なら、背景は描かず `bg_color` になる。
   - それ以外：出力フレームの番号 ÷ Timeline fps。
-- MASK 出力は、すべてのフレームのマスクが最初のフレームと同じとき（ペイントのマスクがない・Camera が回らないなど）、その 1 枚を `expand` で全フレームに見せたもの（バッチの stride が 0、形は (N, H, W)）とし、フレームごとの領域を持たない。マスクが最初のフレームと違うフレームが出た時点で、フレームごとの領域を確保する。stride が 0 の MASK を受けた下流は、書き換える前に複製する（ComfyUI のノードは入力を書き換えない）。
+- `first_frame`（IMAGE、(1, H, W, 3)）と `first_frame_mask`（MASK、(1, H, W)）は、Timeline の最初の出力フレームの色とマスクである。全フレームのマスクは出力しない（ADR 0027）。
 - 背景の IMAGE バッチは出力フレームと 1 対 1 に対応し、バッチより長い出力では、背景が終わった後は `bg_color` になる。1 枚の IMAGE はすべてのフレームに描く。
 - `bg_media` と `sticker` の VIDEO の読み方（`core/video_source.py`）
   - `VideoFromFile` で、`get_dimensions()` がストリームの大きさと一致するもの（クロップがない）は、`get_stream_source()` を PyAV で開き、`get_active_trim_window()` の範囲を 1 フレームずつ読む（`StreamedVideo`）。先にパケットだけを読んで PTS を集め、フレーム数と時刻を決める。入力側のメモリは長さに比例しない（`tests/test_stickers_scene_video.py` で計測する）。
@@ -145,7 +145,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   - 復号のエラー（`InvalidDataError`）は、コアのように読み飛ばさず、そのままエラーにする。
   - 画素の変換（8 ビットの形式は `rgb24`、それ以外は `gbrpf32le`、幅が 32 の倍数でないときの端の引き伸ばし）と回転のメタデータの扱いは、コアの `get_components()` と同じにし、同じ値になることをテストで確かめる。
   - それ以外の VIDEO（クロップ付き、`VideoFromComponents`、`VideoFromList` など）は `get_components()` で一括で読む（`MaterializedVideo`）。
-- AUDIO は背景 VIDEO の音声を、切り出し範囲の始まりから「出力のフレーム数 ÷ fps」秒で切ったもの（サンプル数は `int` で切り捨て）。音声はコアと同じく切り出し範囲の始まりから始まり、最初のフレームの PTS からではない。形はコアの AUDIO と同じ `{"waveform": (1, C, T), "sample_rate"}`。背景に VIDEO や音声がないときは `None`（音声なし）とする。
+- `video` の音声は背景 VIDEO の音声を、切り出し範囲の始まりから「出力のフレーム数 ÷ Timeline fps」秒で切ったもの（サンプル数は `int` で切り捨て）。音声はコアと同じく切り出し範囲の始まりから始まり、最初のフレームの PTS からではない。形はコアの AUDIO と同じ `{"waveform": (1, C, T), "sample_rate"}`。背景に VIDEO や音声がないときは `None`（音声なし）とする。音声は `execute` で一度だけ読み、`video` が持つ。
 - `sticker` の素材の時間（`port` の Sticker）は `sticker_media.py` の `PortMedia` が持ち、(a) と (b) が共有する。
   - Sticker の素材の時刻は、評価関数の `clip_frame`（`frame − (start − in)`）÷ `timeline.fps` 秒とする。素材の先頭は Timeline 上の `start − in` に来る。
   - 1 枚の IMAGE は、Clip range の間ずっと同じ画像を描く。
@@ -157,7 +157,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   - 素材のフレームは `StickerSource.frame` で Sky のキーに入るので、Sky は素材のフレームが変わったときだけ作り直す。
   - `file` の Source（エディタで投入した素材）は、今は画像だけで、時間を持たない。
 - `scene` の入力は `_scene_content` で `SceneContent` にする。いまはどの型も未対応であることを示すエラーにする（#61・#62 が加える）。`sticker` の MESH・SPLAT・3D ファイルも同じくエラーにする（#63）。
-- (b) は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、出力の直前の行から写す。
+- `video` を読む側（`get_components`・`save_to`）は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、直前のフレームから写す。
 - `is_output_node` は `True`（#75）。ComfyUI は `ui` を出力ノードでなくても `executed` で送るが、出力ノードでなければ下流に出力ノードがつながっていないと実行されず、エディタとノード上の UI が素材を受け取れない。出力ノードにすると、キューに入れるたびに実行され（変わっていなければキャッシュの `ui` が送られる）、素材の表示が下流の接続に左右されない。
 - 実行結果の `ui` は、エディタとノード上の UI に入力の素材を見せるためのもので、キーは旧ノードと同じ（#75）。
 
@@ -169,7 +169,7 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   | `pano_sticker_input_pose` | 状態に `port` の Sticker がなく、ノードが加えたときの姿勢（`yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`）。エディタが同じ姿勢で状態に加えるために使う |
   | `pano_sticker_warnings` | 警告（読めない `file` の Source、`bg_media` なしの `auto`）。ログにも出す |
 
-  - 一時 MP4（ADR 0018）：VIDEO は、Preview と同じく VIDEO 自身の `save_to(MP4, H264)`（`core/video.py` の `save_video_to_mp4`）で temp に書き、全フレームを展開して再エンコードしない。メタ情報の `fps` は VIDEO の平均フレームレート、`frames` は切り出し範囲のフレーム数。IMAGE バッチは `encode_frames_to_mp4` でエンコードし、`fps` は Timeline fps とする。1 フレームの素材は MP4 を作らない。音声は `bg_media` の VIDEO が持つものだけが MP4 に入る。サムネイルの帯は作らない（エディタが MP4 から作る）。
+  - 一時 MP4（ADR 0018）：VIDEO は、Preview と同じく VIDEO 自身の `save_to(MP4, H264)`（`core/video.py` の `save_video_to_mp4`）で temp に書き、全フレームを展開して再エンコードしない。メタ情報の `fps` は VIDEO の平均フレームレート、`frames` は切り出し範囲のフレーム数。Stickers・Cutout の `video`（`SceneVideo`）は、その `get_stream_source()` の MP4 をそのまま使う。IMAGE バッチは `encode_frames_to_mp4` でエンコードし、`fps` は Timeline fps とする。1 フレームの素材は MP4 を作らない。音声は `bg_media` の VIDEO が持つものだけが MP4 に入る。サムネイルの帯は作らない（エディタが MP4 から作る）。
   - 出力ノードは `state_json` が変わるたびに実行されるので、MP4 は入力ごとに 1 度だけ作り、`NODE_RUNTIME` の `video` キャッシュから再利用する。IMAGE バッチは旧 Cutout と同じくテンソルの同一性と fps、VIDEO は `open_video` がストリームのまま開いたもの（クロップのない `VideoFromFile`）ならファイルのパス・更新時刻・トリム範囲、それ以外は VIDEO オブジェクトの同一性をキーにする。キーのためにファイルを開き直さない。
   - キャッシュから追い出した MP4 のファイルは消さない。追い出しは次に要るとき作り直すかを決めるだけで、ファイルは ComfyUI が起動時と終了時に消す temp に残る。ジョブ履歴やキャッシュされた `ui` が同じファイルを指し続けるためで、ComfyUI の PreviewVideo と同じ扱いである。
   - エディタの背景 VIDEO は、実行結果が新しい間だけ読み込む。`PanoramaStickersNode` では動画の再生バーを出さず、エディタを開いたまま実行すると読み込み直して再生ヘッドのフレームを出し、タイムラインの ▶ と再生位置の移動も読み込みと再生を行う（`docs/timeline-ui.md`）。背景の入力をつなぎ変えると、次の実行まで VIDEO を外す。
@@ -178,6 +178,23 @@ SPLAT（#61）と MESH・MoGe（#62）のレンダラーは、`SceneContent(coun
   - `sticker_state` が接続されているときは、`port` の Sticker は実行結果に姿勢が届くまで、枠も含めて表示されない。
   - 出力（IMAGE）のプレビュー MP4 は作らない。Stickers の出力を表示するのは Preview（#76）で、旧ノードの `pano_videos` を読むフロントエンドもない。
 - `file` の Source は `core/stickers.py` の `load_source_rgba` で読み、`folder_paths` のディレクトリの中にあるものだけを読む。読めないときは、その Sticker を描かずに警告を出す（ログと実行結果の `pano_sticker_warnings`）。
+
+## `video` 出力
+
+Stickers と Cutout の `video` は、`scene_video.py` の `SceneVideo`（コアの `VideoInput` の実装）である（ADR 0027、#82）。出力した時点では描画せず、読まれるたびに (b) の `_render_frames` で 1 フレームずつ描く。描く device は読むときの `get_torch_device()` で、`bg_media`（Cutout では `source`、`PANO_SCENE` ではその `bg_media`）の VIDEO と `sticker` の VIDEO は読むたびに開き直し、実行をまたいで開いたままにしない。持つのは `PANO_SCENE` と同じ状態・素材・Timeline と、`execute` で読んだ音声である。
+
+| メソッド | 内容 |
+|---|---|
+| `get_components()` | 全フレームを描いて `VideoComponents`（`images`・`frame_rate`・`audio`）を返す。GetVideoComponents につないだときで、全フレームが RAM に載るのはこのときだけ。値は描いたフレームそのもので、旧 IMAGE 出力と一致する（`tests/test_stickers_scene_video.py` などで確かめる）。全体が `STAGED_RENDER_BYTES`（16 MiB）以上で device が CPU でなければ、ピン留めした 1 フレーム分のバッファを通して転送する。進捗はフレームごとに進める |
+| `save_to(path, format, codec, metadata, bit_depth, crf, color_space, preset)` | 1 フレームずつ描いてエンコードし、全フレームを RAM に置かない。コンテナとコーデックの `auto` の決め方、エンコーダー（`h264`・`libsvtav1`）、`crf`・`preset`、10 ビット、音声（AAC、WebM は 48kHz の Opus）、メタデータはコアの `VideoFromComponents.save_to` に合わせる。色は sRGB（BT.709）で、`color_space` に HDR を求めるとエラーにする（コアの `VideoFromFile` と同じ）。各フレームは上の時刻に置く。VIDEO が Timeline を決め、その時刻が PTS（time base が 0 でない。`StreamedVideo`、またはそれから時刻を受け継いだ `video`）のときは、その time base で PTS を保ち（可変フレームレートを保持）、コアがファイルを再エンコードするときと同じく B フレームを使わない。時刻が厳密なとき（VIDEO がない、`MaterializedVideo`）は Timeline fps の等間隔に置く。既定のエンコード（MP4・H.264 で `bit_depth`・`crf`・`color_space`・`preset` が `None`）は `get_stream_source()` の MP4 をコアの `VideoFromFile.save_to` で詰め直すので、描くのは一度だけ |
+| `get_stream_source()` | 既定のエンコードで temp に書いた MP4 のパス。最初に呼ばれたときに描き、ファイルがある間は使い回す。Preview と Stickers の `ui`（エディタの動画）は、このファイルを写さずにそのまま見せる。パッケージの外（コアのノード）向けで、このパッケージの中では読まない |
+| `as_trimmed`・`as_cropped` | `get_stream_source()` の MP4 の `VideoFromFile` に任せる（コアの `VideoFromComponents.as_trimmed` と同じ）。切り抜きが全面なら自分を返す |
+| `get_dimensions`・`get_frame_count`・`get_frame_rate`・`get_duration`・`get_color_space` | 描かずに返す。長さは最後のフレームの時刻 + 1 ÷ Timeline fps、色空間は `sRGB`、ビット深度はコアの既定の 8 |
+
+- `open_video` は `SceneVideo` を `RenderedVideo`（`scene_video.py`）にする。`StreamedVideo` と同じく `frame_rate`・`times`・`time_base`・`first_frame`・前へ読むだけのフレーム・`audio(seconds)` を持ち、フレームは `render` で描いたもの（device 上）をそのまま返す。Cutout の `source`、Stickers の `bg_media`・`sticker` に `video` をつないでも、エンコードを通らず値は変わらない（`tests/test_scene_video.py`）。`OPENED_VIDEOS`（`sticker_media.py`）が `open_video` の返す型である。
+- (b) はフレームごとに `throw_exception_if_processing_interrupted()` を呼び、SaveVideo や GetVideoComponents が読んでいる間もキャンセルで止まる。
+- 同じ `video` を何度読んでも、複数の下流が読んでも、それぞれが一から描く（ComfyUI が出力をキャッシュするので、入力を変えずに再実行したときは `execute` も `video` の作り直しも起きない）。`video` を使う下流が複数あると、それぞれで描画が走る（ADR 0027）。使い回すのは `get_stream_source()` の MP4 だけで、ファイルは ComfyUI が起動時と終了時に消す temp に残る。
+- 進捗バーはコアの `ProgressBar` で、読んだノード（SaveVideo など）に出る。`execute` は最初のフレームだけを描くので進捗を出さない。
 
 ## `PANO_SCENE`
 
@@ -192,7 +209,7 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 | `scene` | `scene` の入力そのもの（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`、または `None`）。いまは `scene` を受け付けないので常に `None`。描く側は `_scene_content` で `SceneContent` にし、フレームごとに `frames` の `scene` の番号を `scene_index` として `render_frame` に渡す（Stickers の (b) と同じ） |
 | `coverage` | `bg_media` の範囲（360 または 180） |
 | `bg_color` | 0〜1 の 3 つの数値のタプル |
-| `fps` | Timeline fps（float）。fps 出力と同じ値 |
+| `fps` | Timeline fps（float）。`video` の `get_frame_rate()` と同じ値 |
 | `frames` | `_decide_timeline` が決めた出力フレームごとの `(評価する Timeline frame, 描く bg_media のフレーム番号または None, port のフレーム番号または None, scene の要素の番号または None)` の 4 つ組のタプル。`scene` の番号は `scene` の入力がないとき `None` で、Clip range の外のフレームでも番号を持つ（描くかは `evaluated["scene"]["active"]` で決める）。長さが出力のフレーム数 |
 
 - 出力の解像度は入れない。撮影する側がそれぞれの規則（`output_preset`・`output_megapixels` など）で決める。
@@ -203,15 +220,15 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 ## Cutout ノード（`PanoramaCutoutNode`）
 
 - Python のクラスは `PanoramaCutoutSceneNode`。旧 `PanoramaCutout` は #78 まで登録を残す。
-- 入力は `source`（`io.MultiType`：IMAGE・VIDEO・`PANO_SCENE`）、`coverage`、`output_megapixels`、`state_json`。出力は rect_image（IMAGE）、sticker_state（STRING）、mask（MASK）、AUDIO、fps（FLOAT）の順（ADR 0027 で `first_frame`・`sticker_state`・`first_frame_mask`・`video` に変える）。出力は入力の素通しではないので `MatchType` は使わない。
+- 入力は `source`（`io.MultiType`：IMAGE・VIDEO・`PANO_SCENE`）、`coverage`、`output_megapixels`、`state_json`。出力は `first_frame`（IMAGE）、`sticker_state`（STRING）、`first_frame_mask`（MASK）、`video`（VIDEO）の順（ADR 0027）。`first_frame`・`first_frame_mask`・`video` は Stickers と同じ規則で作る。出力は入力の素通しではないので `MatchType` は使わない。
 - `is_output_node` は `False` で、実行結果の `ui` は持たない。エディタとノード上の UI の結び付けは #77 で行う。
 - `state_json` は状態 v2（v1 も読む。旧 Cutout の `shots[0]` は Camera になる。`docs/scene-state-v2.md`）。Cutout の Camera は `state_json` の `camera` で、Keyframe に従って動く。
-- Timeline と各フレームは Stickers の (a)・(b)（`_decide_timeline`・`_render_timeline`）をそのまま使う。各フレームは `render_frame` に `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` を渡して描く。
-  - IMAGE / VIDEO：ERP を Scene の向きに合った背景とみなし、Cutout の状態を Scene として描く（旧 Cutout と同じく、状態の `sky` の Sticker とペイントを重ねる）。Timeline は Cutout の状態に対して `_decide_timeline` で決める（VIDEO は `open_video(source, "source")`）。`coverage` は ERP の範囲。`bg_color` は黒で、180 の ERP の半球の外は黒になる（旧 Cutout は Sky も含めて黒にしていたが、Sky は全方向に描く）。
+- Timeline と各フレームは Stickers の (a)・(b)・(c)（`_decide_timeline`・`_render_frames`・`_render_outputs`）をそのまま使う。各フレームは `render_frame` に `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` を渡して描く。
+  - IMAGE / VIDEO：ERP を Scene の向きに合った背景とみなし、Cutout の状態を Scene として描く（旧 Cutout と同じく、状態の `sky` の Sticker とペイントを重ねる）。Timeline は Cutout の状態に対して `_decide_timeline` で決める（VIDEO は `open_video(source, "source")`。Stickers・Cutout の `video` は 1 フレームずつ描いて読む）。`coverage` は ERP の範囲。`bg_color` は黒で、180 の ERP の半球の外は黒になる（旧 Cutout は Sky も含めて黒にしていたが、Sky は全方向に描く）。
   - `PANO_SCENE`：その `state`・`sources`・`port`・`bg_media`・`coverage`・`bg_color` と Timeline（`fps`・`frames`）で描き、Camera だけを Cutout の状態から取る。Cutout の Camera の Keyframe は Cutout の状態の `timeline.fps` で読み、秒を保つ（`frame × Cutout の timeline.fps ÷ Scene の timeline.fps`）。Cutout の状態の Sticker・ペイントは使わない（Scene の正は Stickers の状態、ADR 0025）。`coverage` 入力は使わない。
 - 出力の大きさは、旧 Cutout と同じく `calculate_dimensions_from_megapixels` で `output_megapixels` と画面比（`camera.aspect`）から決める（8 の倍数、長辺は `nodes.py` の `CUTOUT_MAX_OUTPUT_SIDE` の 4096 まで。旧 Cutout と共有する）。FOV をアニメーションさせても大きさは変わらない。画素は正方なので、垂直の FOV は丸めた大きさから決まり、`camera.aspect` から決まる値とわずかに違うことがある。
 - FOV は旧 Cutout と同じく、v1 の `shots[0]` の `hFOV_deg`・`vFOV_deg` を 1〜179 に寄せ、`roll_deg` だけを読む（`rot_deg` は読まない）。shot の FOV が 0 のとき、エディタは 90° / 60° とみなすが、ノードは 1° に寄せるので、この場合だけエディタの表示と出力が一致しない（`docs/threejs-spark-integration.md`）。
-- AUDIO と fps は Stickers と同じ。背景 VIDEO（IMAGE / VIDEO の `source` が VIDEO のとき、`PANO_SCENE` ならその `bg_media` が VIDEO のとき）の音声を「出力のフレーム数 ÷ fps」秒で切ったもの、なければ `None`。fps は Timeline fps。
+- `video` の音声と fps は Stickers と同じ。背景 VIDEO（IMAGE / VIDEO の `source` が VIDEO のとき、`PANO_SCENE` ならその `bg_media` が VIDEO のとき）の音声を「出力のフレーム数 ÷ Timeline fps」秒で切ったもの、なければ音声なし。fps は Timeline fps。
 - `sticker_state` は v2（`docs/scene-state-v2.md`）。`fps` は Timeline fps、`camera` は Cutout の Camera の Lane ごとの Keyframe を Timeline fps に再基準化したもの（`rebase_scene_state`）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。
 - World の内容も Stickers と同じく描く。IMAGE / VIDEO では Cutout の状態の `world` の Sticker、`PANO_SCENE` ではその `state` の `world` の Sticker と、`scene` 入力の中身（`_scene_content(scene)` の `SceneContent`。各フレームの要素は `frames` の 4 つ目を `scene_index` にする）。Camera の位置は Cutout の Camera の `position`。
 

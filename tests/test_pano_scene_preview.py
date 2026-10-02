@@ -73,7 +73,7 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
     bg = _solid([0.5, 0.5, 0.5], batch=3)
     sticker = _solid([0.0, 0.0, 1.0])
 
-    fps, pano_scene = _stickers(bg_media=bg, sticker=sticker)[3:]
+    video, pano_scene = _stickers(bg_media=bg, sticker=sticker)[2:]
 
     assert isinstance(pano_scene, PanoSceneValue)
     expected_state = load_scene_state(json.dumps(STATE))
@@ -84,7 +84,7 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
     assert pano_scene.scene is None
     assert pano_scene.coverage == 180
     assert pano_scene.bg_color == (1.0, 0.0, 0.0)
-    assert pano_scene.fps == fps == 30.0
+    assert pano_scene.fps == float(video.get_frame_rate()) == 30.0
     assert pano_scene.frames == ((0.0, 0, 0, None), (1.0, 1, 0, None), (2.0, 2, 0, None))
     assert pano_scene.port.media is sticker
     port_id = pano_scene.state["stickers"][0]["id"]
@@ -92,7 +92,7 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
 
 
 def test_pano_scene_state_is_plain_json_without_a_nested_scene():
-    pano_scene = _stickers()[4]
+    pano_scene = _stickers()[3]
 
     assert json.loads(json.dumps(pano_scene.state)) == pano_scene.state
     for value in vars(pano_scene).values():
@@ -104,11 +104,11 @@ def test_pano_scene_state_is_plain_json_without_a_nested_scene():
 def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):
     video = _video(tmp_path)
 
-    image, _mask, _audio, fps, pano_scene = _stickers({"version": 2}, bg_media=video)
+    output, pano_scene = _stickers({"version": 2}, bg_media=video)[2:]
 
     assert pano_scene.bg_media is video
-    assert pano_scene.fps == fps == 25.0
-    assert len(pano_scene.frames) == image.shape[0] == 4
+    assert pano_scene.fps == float(output.get_frame_rate()) == 25.0
+    assert len(pano_scene.frames) == output.get_frame_count() == 4
     assert [bg_index for _frame, bg_index, _port_index, _scene_index in pano_scene.frames] == [0, 1, 2, 3]
 
 
@@ -116,8 +116,8 @@ def test_pano_scene_is_the_same_for_identical_inputs():
     bg = _solid([0.5, 0.5, 0.5], batch=2)
     sticker = _solid([0.0, 0.0, 1.0])
 
-    first = _stickers(bg_media=bg, sticker=sticker)[4]
-    second = _stickers(bg_media=bg, sticker=sticker)[4]
+    first = _stickers(bg_media=bg, sticker=sticker)[3]
+    second = _stickers(bg_media=bg, sticker=sticker)[3]
 
     assert first.state == second.state
     assert (first.fps, first.frames, first.coverage, first.bg_color) == (second.fps, second.frames, second.coverage, second.bg_color)
@@ -184,7 +184,7 @@ def test_preview_rejects_a_source_of_another_type():
 
 
 def test_preview_passes_a_pano_scene_through_without_rendering(monkeypatch):
-    pano_scene = _stickers(bg_media=_solid([0.5, 0.5, 0.5], batch=3))[4]
+    pano_scene = _stickers(bg_media=_solid([0.5, 0.5, 0.5], batch=3))[3]
 
     def fail(*args, **kwargs):
         raise AssertionError("Preview must not render a PANO_SCENE")
