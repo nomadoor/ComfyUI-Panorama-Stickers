@@ -168,11 +168,11 @@ export function isTimed(state) {
     || state.stickers.some((sticker) => !defaultClip(sticker.clip));
 }
 
-// The number of Timeline frames the Timeline shows: the Timeline length (or `minimum` without one),
-// widened to `frames` (the video's frame count) and to every Clip range edge and Keyframe. The end
-// of `openClip` counts as open.
+// The number of Timeline frames the Timeline shows: the Timeline length, or without one `minimum`
+// widened to `frames` (the video's frame count), then widened to every Clip range edge and Keyframe.
+// The end of `openClip` counts as open.
 export function timelineSpan(state, { minimum, frames = 0, openClip = null }) {
-  let end = Math.max(state.timeline.length ?? minimum, frames);
+  let end = state.timeline.length ?? Math.max(minimum, frames);
   for (const lane of ownerLanes(state.camera)) {
     for (const key of lane.keyframes) end = Math.max(end, key.frame + 1);
   }

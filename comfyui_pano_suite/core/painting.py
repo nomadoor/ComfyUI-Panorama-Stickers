@@ -407,8 +407,9 @@ def _stroke_freehand_alpha(stroke: dict, width: int, height: int) -> np.ndarray:
     for group in _stroke_point_paths_for_erp_geometry(stroke):
         coords = [(float(pt["u"]) * width, float(pt["v"]) * height) for pt in group]
         for x, y in _stamp_positions_for_path(coords, spacing_px):
-            left = int(round(x)) - half_w
-            top = int(round(y)) - half_h
+            # The stamp's center goes on the pixel whose center (i + 0.5) is nearest to (x, y).
+            left = math.floor(x) - half_w
+            top = math.floor(y) - half_h
             _blend_alpha_mask(stroke_alpha, stamp_alpha, left, top)
             _blend_alpha_mask(stroke_alpha, stamp_alpha, left - width, top)
             _blend_alpha_mask(stroke_alpha, stamp_alpha, left + width, top)
@@ -416,6 +417,7 @@ def _stroke_freehand_alpha(stroke: dict, width: int, height: int) -> np.ndarray:
 
 
 def _polygon_alpha_mask(segments: list[list[tuple[float, float]]], width: int, height: int) -> np.ndarray:
+    # Pillow floors the vertices and fills the pixels on them, which already puts point x on pixel floor(x), as the stamps.
     img = Image.new("L", (max(1, width), max(1, height)), 0)
     draw = ImageDraw.Draw(img, "L")
     for coords in segments:

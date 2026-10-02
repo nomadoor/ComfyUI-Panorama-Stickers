@@ -467,6 +467,28 @@ test("with sticker_state connected the port Sticker waits for the pose of the no
   assert.ok(Math.abs(port.size.value.vFOV_deg - 26.248536245583416) < 1e-9);
 });
 
+test("a port Sticker added from a moving Camera keeps the Keyframes of the node's pose", () => {
+  const node = stickersNode(["sticker", "sticker_state"]);
+  const direction = [
+    { frame: 0, value: { yaw_deg: 0, pitch_deg: 0 }, easing: "auto" },
+    { frame: 1, value: { yaw_deg: 10, pitch_deg: 5 }, easing: "auto" },
+  ];
+  const size = [
+    { frame: 0, value: { hFOV_deg: 60, vFOV_deg: 20 }, easing: "auto" },
+    { frame: 1, value: { hFOV_deg: 40, vFOV_deg: 20 }, easing: "auto" },
+  ];
+  const pose = { yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, keyframes: { direction, roll: [], size } };
+
+  const [port] = portStickers(reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node, { pose, image: { width: 200, height: 100 } })).state);
+
+  assert.deepEqual(port.direction.keyframes, direction);
+  assert.deepEqual(port.roll.keyframes, []);
+  assert.deepEqual(port.size.keyframes.map((key) => key.value.hFOV_deg), [60, 40]);
+  assert.ok(Math.abs(port.size.keyframes[1].value.vFOV_deg - 20.62820963123639) < 1e-9);
+  const saved = JSON.parse(editorStateText(node, { ...v2EditorState({}), stickers: [port] })).stickers[0];
+  assert.deepEqual(saved.direction.keyframes, direction);
+});
+
 test("the port Sticker follows the media aspect, in its value and its Keyframes, and is removed with the input", () => {
   const added = reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(stickersNode(["sticker"]))).state;
   added.active = { selected_sticker_id: "sticker_1" };

@@ -322,5 +322,30 @@ def test_stickers_ui_reports_the_pose_of_an_added_port_sticker():
         sticker_state=sticker_state,
     )
 
-    assert added["pano_sticker_input_pose"] == [{"yaw_deg": 40.0, "pitch_deg": -10.0, "roll_deg": 5.0, "hFOV_deg": 50.0}]
+    assert added["pano_sticker_input_pose"] == [{
+        "yaw_deg": 40.0, "pitch_deg": -10.0, "roll_deg": 5.0, "hFOV_deg": 50.0,
+        "keyframes": {"direction": [], "roll": [], "size": []},
+    }]
     assert "pano_sticker_input_pose" not in stored
+
+
+def test_stickers_ui_reports_the_timeline_fps_a_video_sets(tmp_path):
+    video = _video(tmp_path, count=3)
+
+    assert _stickers_ui(bg_media=video)["pano_timeline_fps"] == [25.0]
+    assert _stickers_ui(sticker=video)["pano_timeline_fps"] == [25.0]
+    assert "pano_timeline_fps" not in _stickers_ui(bg_media=_solid([0.0, 0.0, 1.0], batch=3), sticker=_solid([1.0, 0.0, 0.0]))
+
+
+def test_stickers_ui_reports_the_keyframes_of_a_port_sticker_added_from_a_moving_camera():
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24.0, "camera": {
+        "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 2, "value": {"yaw_deg": 20.0}}],
+    }})
+
+    ui = _stickers_ui({"version": 2}, sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)
+
+    (pose,) = ui["pano_sticker_input_pose"]
+    port = load_scene_state({"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "direction": {"keyframes": pose["keyframes"]["direction"]}}]})["stickers"][0]
+    assert [key["frame"] for key in port["direction"]["keyframes"]] == [0, 1, 2]
+    assert port["direction"]["keyframes"][2]["value"] == {"yaw_deg": 20.0, "pitch_deg": 0.0}
+    assert (pose["keyframes"]["roll"], pose["keyframes"]["size"]) == ([], [])

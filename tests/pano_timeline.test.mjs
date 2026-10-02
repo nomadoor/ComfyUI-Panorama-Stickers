@@ -247,11 +247,12 @@ test("a state is timed when it has a Keyframe or a Clip range other than the who
   assert.equal(isTimed(state), true);
 });
 
-test("the Timeline shows its length widened to the video, Clip ranges and Keyframes", () => {
+test("the Timeline shows its length, or the video's without one, widened to Clip ranges and Keyframes", () => {
   const canonical = loadSceneState(readFixture("v2_canonical"));
   assert.equal(timelineSpan(canonical, { minimum: 10 }), 120);
-  assert.equal(timelineSpan(canonical, { minimum: 10, frames: 300 }), 300);
+  assert.equal(timelineSpan(canonical, { minimum: 10, frames: 300 }), 120, "a set length ends the Timeline before the video does");
   canonical.timeline.length = null;
+  assert.equal(timelineSpan(canonical, { minimum: 10, frames: 300 }), 300);
   assert.equal(timelineSpan(canonical, { minimum: 10 }), 50);
   canonical.stickers[1].scale.keyframes[1].frame = 80;
   assert.equal(timelineSpan(canonical, { minimum: 10 }), 81);
@@ -353,4 +354,13 @@ test("the legacy transport seeks to its own time and leaves looping to the VIDEO
   assert.match(editorFunction("playbackFps"), /return sceneV2 \? state\.timeline\.fps : videoState\.metaFps \|\| 1000;/);
   assert.match(editorSource, /return videoEl\.loop \|\| !\(frames > 0\) \? Infinity : frames;/);
   assert.match(editorSource, /loop: \(\) => sceneV2,/);
+});
+
+test("an fps from a run, an fps edit and undoing one keep the playhead's time", () => {
+  assert.match(editorSource, /if \(reason === "executed"\) \{[^}]*if \(sceneV2\) applyVideoTimelineFps\(\);/);
+  assert.match(editorFunction("applyVideoTimelineFps"), /if \(fps !== null && fps !== state\.timeline\.fps\) changeTimelineFps\(fps\);/);
+  const change = editorFunction("changeTimelineFps");
+  assert.match(change, /const frame = Math\.round\(editor\.frame \* fps \/ state\.timeline\.fps\);\s*setTimelineFps\(state, fps\);/);
+  assert.match(change, /playback\.seek\(frame\);\s*commitTimelineEdit\(\);/);
+  assert.match(editorFunction("restoreHistory"), /if \(sceneV2 && state\.timeline\.fps !== fps\) playback\.seek\(Math\.round\(editor\.frame \* state\.timeline\.fps \/ fps\)\);/);
 });

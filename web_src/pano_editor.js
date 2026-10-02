@@ -35,6 +35,7 @@ import {
   setCameraField,
   setStickerOpacity,
   setStickerPose,
+  setTimelineFps,
   sourceAsset,
   stickerPose,
 } from "./pano_editor_state.js";
@@ -121,7 +122,7 @@ import {
   reconcileExternalStickerState,
   reconcilePortStickerState,
 } from "./pano_stickers_node_surface.js";
-import { isNodeOutputMediaCurrent } from "./pano_preview_video.js";
+import { isNodeOutputMediaCurrent, videoLinked } from "./pano_preview_video.js";
 import { createVideoPlayback, frameAtTime } from "./pano_video_playback.js";
 import {
   drawStickerSelectionBoundary,
@@ -195,6 +196,14 @@ const comfyMedia = createComfyMediaAdapter({
     markImageReady,
   },
 });
+
+// The Timeline fps a VIDEO input set in the node's current result (ADR 0024), or null.
+function videoTimelineFps(node) {
+  if (!isNodeOutputMediaCurrent(node, "background") || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
+  const fps = comfyMedia.uiValue(node, "pano_timeline_fps");
+  return Array.isArray(fps) && fps[0] > 0 ? fps[0] : null;
+}
+
 const mediaAssetSource = comfyMedia.assetSource;
 const mediaSource = comfyMedia.source;
 const mediaUiImage = comfyMedia.uiImage;
@@ -567,6 +576,7 @@ async function showEditor(node, type, options = {}) {
     coverage: normalizeCoverageValue(coverageWidget?.value),
     sharedUiSettings: loadSharedUiSettings(),
     active: editorActive(node),
+    fps: sceneV2 ? videoTimelineFps(node) : null,
   });
   node.__panoLiveStateOverride = state;
   node.__panoLiveStateVersion = 0;
@@ -5476,8 +5486,11 @@ async function showEditor(node, type, options = {}) {
     syncUndoRedoButtons();
     if (!snapshot) return;
     const restored = restoredHistoryState(state, snapshot);
+    const fps = state.timeline?.fps;
     Object.keys(state).forEach((k) => delete state[k]);
     Object.assign(state, restored.state);
+    // Undoing an fps change keeps the playhead's time in seconds.
+    if (sceneV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
     editor.selectedId = type === "stickers"
       ? state.active.selected_sticker_id
       : (type === "cutout" ? state.active.selected_sticker_id : state.active.selected_shot_id);
@@ -5761,7 +5774,9 @@ async function showEditor(node, type, options = {}) {
       openRows: timeline.openRows,
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
       playing: playback.playing,
-      label: `${editor.frame}f · ${(editor.frame / fps).toFixed(2)}s @ ${Number(fps.toFixed(3))} fps`,
+      label: `${editor.frame}f · ${(editor.frame / fps).toFixed(2)}s`,
+      // A VIDEO on bg_media or sticker sets the Timeline fps (ADR 0024).
+      fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker"]),
     });
     uiState.easing = timeline.selection
       ? buildEasingModel(owner, selectedLanes(timeline.selection), timeline.selection.frames, timelineOffset(timeline.selection.owner))
@@ -5857,6 +5872,22 @@ async function showEditor(node, type, options = {}) {
     deleteKeyframes(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, editor.frame - timelineOffset(selection.owner));
     timeline.selection = null;
     commitTimelineEdit();
+  }
+
+  // Rebases the state to fps, keeping its times and the playhead's in seconds, as one history step.
+  function changeTimelineFps(fps) {
+    stopTimelinePlayback();
+    const frame = Math.round(editor.frame * fps / state.timeline.fps);
+    setTimelineFps(state, fps);
+    timeline.selection = null;
+    playback.seek(frame);
+    commitTimelineEdit();
+  }
+
+  // A run that brings another Timeline fps from a VIDEO rebases the open state to it, as opening does.
+  function applyVideoTimelineFps() {
+    const fps = videoTimelineFps(node);
+    if (fps !== null && fps !== state.timeline.fps) changeTimelineFps(fps);
   }
 
   function onTimelineAction(action) {
@@ -5978,6 +6009,25 @@ async function showEditor(node, type, options = {}) {
       // Recording edits stop at the frame shown, so playback stops before a Keyframe is set.
       stopTimelinePlayback();
       keyAllLanes(timelineOwner(action.owner), editor.frame - timelineOffset(action.owner));
+      commitTimelineEdit();
+      return;
+    }
+    if (action.type === "fps") {
+      if (!(action.fps > 0) || action.fps === state.timeline.fps || uiState.timeline.fpsLocked) {
+        syncTimeline();
+        return;
+      }
+      changeTimelineFps(action.fps);
+      return;
+    }
+    if (action.type === "length") {
+      const length = action.length === null ? null : Math.max(1, Math.round(action.length));
+      if (Number.isNaN(length) || length === state.timeline.length) {
+        syncTimeline();
+        return;
+      }
+      stopTimelinePlayback();
+      state.timeline.length = length;
       commitTimelineEdit();
       return;
     }
@@ -9806,6 +9856,7 @@ async function showEditor(node, type, options = {}) {
       if (reason === "executed") {
         invalidateMediaUiImage(imageCache, EXTERNAL_STICKER_PREVIEW_KEY);
         refreshModalVideoSource();
+        if (sceneV2) applyVideoTimelineFps();
       }
       reconcileExternalStickerFromInputs(reason);
     }, { editor: true });

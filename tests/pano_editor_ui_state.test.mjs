@@ -116,3 +116,16 @@ test("the Timeline shows a mute toggle only when the background VIDEO has audio"
   const muted = buildTimelineModel(canonical(), { ...options, audio: { muted: true } });
   assert.deepEqual([muted.hasAudio, muted.muted], [true, true]);
 });
+
+test("the Timeline bar shows the Timeline fps, locked when a video sets it, and the length override", () => {
+  const state = canonical();
+  const options = { frame: 0, span: 120, selection: null, selectedId: null, expanded: false, openRows: new Set(), playing: false, label: "" };
+
+  assert.deepEqual(
+    (({ fps, fpsLocked, length }) => ({ fps, fpsLocked, length }))(buildTimelineModel(state, options)),
+    { fps: 30, fpsLocked: false, length: 120 },
+  );
+  state.timeline.length = null;
+  const locked = buildTimelineModel(state, { ...options, fpsLocked: true });
+  assert.deepEqual([locked.fpsLocked, locked.length], [true, null]);
+});

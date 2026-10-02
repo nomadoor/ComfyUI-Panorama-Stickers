@@ -207,13 +207,14 @@ def test_video_source_sets_the_timeline_fps_and_cuts_its_audio_to_the_length(tmp
     assert audio["sample_rate"] == 8000 and audio["waveform"].shape[-1] == int(4 / 25 * 8000)
 
 
-def test_video_source_rebases_the_camera_keyframes_to_the_timeline_fps(tmp_path):
-    keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 24, "value": {"yaw_deg": 90.0}}]
+def test_video_source_keeps_the_camera_keyframes_at_the_recorded_fps(tmp_path):
+    # Rebasing to the 25 fps of the VIDEO would round them; the Pose handoff reads any fps.
+    keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 13, "value": {"yaw_deg": 90.0}}]
 
     payload = json.loads(_cutout(_video(tmp_path), _camera({"rotation": keyframes}))[1])
 
-    assert payload["fps"] == 25.0
-    assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 25], "fov": [0]}
+    assert payload["fps"] == 24.0
+    assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 13], "fov": [0]}
 
 
 def _stickers(state=None, **inputs):
@@ -299,7 +300,7 @@ def test_pano_scene_reads_the_cutout_camera_at_its_own_recorded_fps():
 
     assert [tuple(_center(cut, index).tolist()) for index in range(3)] == [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0)]
     payload = json.loads(sticker_state)
-    assert payload["fps"] == 12.0 and [key["frame"] for key in payload["camera"]["rotation"]] == [0, 1]
+    assert payload["fps"] == 24.0 and [key["frame"] for key in payload["camera"]["rotation"]] == [0, 2]
 
 
 def test_pano_scene_with_a_video_background_outputs_its_audio(tmp_path):
@@ -355,8 +356,11 @@ def test_perspective_sky_content_lines_up_with_the_background():
 
 
 def test_perspective_paint_lines_up_with_the_background():
-    erp, pose = _marker_erp()
-    camera = _camera(yaw_deg=pose["yaw_deg"], pitch_deg=pose["pitch_deg"], hFOV_deg=20.0)
+    # A wide FOV keeps the Sky ERP as coarse as the background (512 wide), and the rectangle's center is on a pixel
+    # center, so the stamp has no whole-pixel snapping to hide a half pixel shift.
+    # The center lands on 299.5 / 127.5, which the old round() sent to 300 / 128; keep it on an odd .5 when moving it.
+    erp, pose = _marker_erp(columns=(294, 305), rows=(123, 132))
+    camera = _camera(yaw_deg=pose["yaw_deg"], pitch_deg=pose["pitch_deg"], hFOV_deg=120.0)
     u, v = pose["yaw_deg"] / 360.0 + 0.5, 0.5 - pose["pitch_deg"] / 180.0
     painting = {"version": 1, "paint": {"strokes": []}, "groups": [], "mask": {"strokes": [{
         "id": "m", "actionGroupId": "ag_m", "targetSpace": {"kind": "ERP_GLOBAL"}, "layerKind": "mask", "toolKind": "pen",
@@ -367,10 +371,8 @@ def test_perspective_paint_lines_up_with_the_background():
     background = _cutout(erp, camera, output_megapixels=0.04)[0][0]
     mask = _cutout(erp, {**camera, "painting": painting}, output_megapixels=0.04)[2][0]
 
-    # Paint is rasterized with point (u * w, v * h) on the center of Sky ERP pixel (u * w, v * h), half a pixel of
-    # the 4096 wide Sky ERP (0.43 output pixels here) to the lower right of where a Sticker or the background is.
     found, expected = _weighted_center(mask), _weighted_center(background[..., 0])
-    assert all(abs(a - b) < 0.5 for a, b in zip(found, expected))
+    assert all(abs(a - b) < 0.05 for a, b in zip(found, expected))
 
 
 def test_sticker_state_round_trips_camera_keyframes_with_easing_and_handles():

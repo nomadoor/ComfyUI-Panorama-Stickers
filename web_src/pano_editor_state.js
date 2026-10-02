@@ -2,8 +2,8 @@ import { normalizePaintingState } from "./pano_paint_types.js";
 import { wrapYaw } from "./pano_math.js";
 import { normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { loadSceneState } from "./pano_scene_state.js";
-import { setLaneValue } from "./pano_timeline.js";
+import { loadSceneState, rebaseSceneState } from "./pano_scene_state.js";
+import { laneNames, setLaneValue } from "./pano_timeline.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
 
@@ -178,14 +178,16 @@ export function paintingLayerNeedsSync(layer, { paintCount, maskCount, width, he
 // PanoramaStickersNode works on state v2 itself: the editor's working state is the loadSceneState()
 // result with the editor's session fields (coverage, bg_color, output_preset, ui_settings, active),
 // which saving drops. The legacy node keeps working on its v1 state (parsePanoEditorState).
+// `fps` is the Timeline fps a video input sets, from the node's last run; the state is rebased to it.
 export function parseSceneEditorState(text, options = {}) {
-  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active } = options;
+  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, fps = null } = options;
   let scene;
   try {
     scene = loadSceneState(text);
   } catch {
     scene = loadSceneState(null);
   }
+  if (fps && fps !== scene.timeline.fps) scene = rebaseSceneState(scene, fps);
   return {
     ...scene,
     coverage: normalizeCoverageValue(coverage),
@@ -194,6 +196,21 @@ export function parseSceneEditorState(text, options = {}) {
     ui_settings: normalizeUiSettings(sharedUiSettings),
     active: { selected_sticker_id: null, selected_shot_id: null, ...active },
   };
+}
+
+// Sets the Timeline fps of a working state v2, rebasing its times (rebaseSceneState) so they keep their
+// seconds. The objects stay the ones the editor holds; a Sticker still uploading is left as it is.
+export function setTimelineFps(state, fps) {
+  const rebased = rebaseSceneState(state, fps);
+  const stickers = new Map(rebased.stickers.map((item) => [item.id, item]));
+  state.timeline = rebased.timeline;
+  const owners = [[state.camera, rebased.camera], [state.scene, rebased.scene], ...state.stickers.map((item) => [item, stickers.get(item.id)])];
+  for (const [owner, next] of owners) {
+    // Only a Sticker still uploading has no match; it was just added with a default Clip range and no Keyframes.
+    if (!next) continue;
+    if (owner.clip) owner.clip = next.clip;
+    for (const name of laneNames(owner)) owner[name].keyframes = next[name].keyframes;
+  }
 }
 
 // The editor moves, scales and turns Stickers in the v1 pose fields. These map them to the Lanes

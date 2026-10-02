@@ -50,7 +50,7 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ### Video output of the new nodes
 
-`Panorama Stickers (new)` and `Panorama Cutout (new)` output only the first frame as IMAGE / MASK (`first_frame`, `first_frame_mask`). Every frame, with the fps and audio, is in `video` (VIDEO), which is rendered frame by frame when it is saved. To get all frames as IMAGE, connect `video` to Get Video Components. To give an IMAGE batch an fps or audio before connecting it, pass it through Create Video.
+`Panorama Stickers (new)` and `Panorama Cutout (new)` output only the first frame as IMAGE / MASK (`first_frame`, `first_frame_mask`). Every frame, with the fps and audio, is in `video` (VIDEO), which is rendered frame by frame when it is saved. To get all frames as IMAGE, connect `video` to Get Video Components. To give an IMAGE batch an fps or audio before connecting it, pass it through Create Video. When a cut-out goes back into `Panorama Stickers (new)` through `sticker_state`, it is placed by time in seconds: keep a VIDEO in real time, and use an IMAGE batch only at the Cutout's fps (otherwise pass it through Create Video with that fps).
 
 ## Workflow
 
