@@ -4,7 +4,7 @@ import { evaluateSticker } from "./pano_scene_eval.js";
 
 const EXTERNAL_STICKER_ID = "sticker_image_1";
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
-// The node shows state v2 (PanoramaStickersNode) at this Timeline frame.
+// The Timeline frame the node shows state v2 (PanoramaStickersNode) at until it plays, and after a reload.
 export const NODE_SURFACE_FRAME = 0;
 
 function computeVerticalFov(hFovDeg, width, height) {
@@ -26,8 +26,8 @@ export function surfaceStickers(state) {
 }
 
 // The node's Stickers in the pose fields the geometry helpers (pano_sticker_geometry.js) read. A
-// Sticker of state v2 is posed at `frame` (NODE_SURFACE_FRAME but while the node plays) and counts as
-// hidden outside its Clip range.
+// Sticker of state v2 is posed at `frame`, the frame the node shows, and counts as hidden outside its
+// Clip range.
 export function surfacePoseStickers(state, frame = NODE_SURFACE_FRAME) {
   if (state?.version !== 2) return surfaceStickers(state);
   return surfaceStickers(state).map((sticker) => ({
@@ -436,8 +436,9 @@ export function applyStickersNodeSurfaceAction(state, action = {}) {
     });
     if (!Object.keys(patch).length) return { state, changed: false };
     if (state.version === 2) {
-      // The node shows only NODE_SURFACE_FRAME, so Lanes with Keyframes are left to the editor's
-      // Timeline: an edit changes only the Lanes without Keyframes (docs/timeline-ui.md).
+      // Lanes with Keyframes are left to the editor's Timeline: an edit changes only the Lanes without
+      // Keyframes, whose value holds at every frame, so the frame the node shows does not matter
+      // (docs/timeline-ui.md).
       const editable = unkeyedPose(selected, patch);
       if (!Object.keys(editable).length) return { state, changed: false };
       const next = structuredClone(selected);
