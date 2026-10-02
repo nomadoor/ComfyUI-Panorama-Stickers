@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { ICON } from "../icons.js";
 import { clusterFrames } from "../pano_timeline.js";
 import SvgIcon from "./SvgIcon.vue";
@@ -140,6 +140,25 @@ function onPinDown(event, row, lane, pin, selected) {
   drag(event, (phase, delta) => emit("action", { type: "move-keys", delta, phase }));
 }
 
+const fpsText = computed(() => String(Number(Number(props.model.fps || 0).toFixed(3))));
+
+// The editor keeps a value it rejects as it was, so the field shows the model again after the edit.
+async function emitSetting(event, action, shown) {
+  emit("action", action);
+  await nextTick();
+  event.target.value = shown();
+}
+
+function onFpsChange(event) {
+  emitSetting(event, { type: "fps", fps: Number(event.target.value) }, () => fpsText.value);
+}
+
+// An empty length follows the inputs again.
+function onLengthChange(event) {
+  const text = event.target.value.trim();
+  emitSetting(event, { type: "length", length: text ? Number(text) : null }, () => props.model.length ?? "");
+}
+
 function onLineDown(event, row, lane) {
   if (event.button !== 0 || event.target !== event.currentTarget) return;
   emit("action", { type: "select-keys", owner: row.id, lane, frames: [], additive: false });
@@ -169,6 +188,15 @@ function onLineDown(event, row, lane) {
         <SvgIcon :icon="model.muted ? ICON.volume_muted : ICON.volume2" />
       </button>
       <span class="pano-timeline-time">{{ model.label }}</span>
+      <label class="pano-timeline-setting" :data-tip="model.fpsLocked ? 'Set by the video input' : 'Timeline fps'">
+        <span v-if="model.fpsLocked">{{ fpsText }}</span>
+        <input v-else type="number" min="1" step="any" :value="fpsText" aria-label="Timeline fps" @change="onFpsChange">
+        <span>fps</span>
+      </label>
+      <label class="pano-timeline-setting" data-tip="Output length in frames; empty follows the inputs">
+        <span>Length</span>
+        <input type="number" min="1" step="1" placeholder="Auto" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
+      </label>
       <button
         class="pano-timeline-toggle"
         type="button"

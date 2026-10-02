@@ -21,11 +21,12 @@ import {
   setEditorActive,
   setStickerOpacity,
   setStickerPose,
+  setTimelineFps,
   stickerPose,
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
-import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
 const sceneNode = () => ({ __panoSceneStateV2: true });
@@ -471,4 +472,39 @@ test("an undo keeps the painting layer while the painting is the same, and drops
 
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   assert.match(editor, /const restored = restoredHistoryState\(state, snapshot\);[\s\S]*?if \(restored\.paintingChanged\) markPaintStrokeVisualsDirty\(\);\s*else markObjectVisualsDirty\(\);/);
+});
+
+test("opening the editor rebases the state to the fps a video sets, keeping its times in seconds", () => {
+  const text = readFixture("v2_canonical");
+  const scene = (state) => {
+    const { coverage, bg_color: bgColor, output_preset: outputPreset, ui_settings: uiSettings, active, ...rest } = state;
+    return rest;
+  };
+
+  assert.deepEqual(scene(parseSceneEditorState(text, { fps: 24 })), rebaseSceneState(loadSceneState(text), 24));
+  assert.deepEqual(scene(parseSceneEditorState(text, { fps: 30 })), loadSceneState(text));
+  assert.deepEqual(scene(parseSceneEditorState(text)), loadSceneState(text));
+});
+
+test("changing the Timeline fps in the editor keeps every time in seconds and the working objects", () => {
+  const text = readFixture("v2_canonical");
+  const state = parseSceneEditorState(text);
+  const [first] = state.stickers;
+  const uploading = { ...structuredClone(first), id: "st_uploading", source: { kind: "file", filename: "" } };
+  state.stickers.push(uploading);
+
+  setTimelineFps(state, 24);
+
+  const saved = JSON.parse(editorStateText(sceneNode(), state));
+  assert.deepEqual(saved, rebaseSceneState(loadSceneState(text), 24));
+  assert.equal(state.stickers[0], first, "the Sticker objects the editor holds stay the same");
+  assert.equal(state.stickers[3], uploading, "a Sticker still uploading stays");
+  assert.equal(state.coverage, 360);
+});
+
+test("a run's video fps applied to an open state matches opening the editor with it", () => {
+  const text = readFixture("v2_canonical");
+  const open = parseSceneEditorState(text);
+  setTimelineFps(open, 25);
+  assert.deepEqual(JSON.parse(editorStateText(sceneNode(), open)), JSON.parse(editorStateText(sceneNode(), parseSceneEditorState(text, { fps: 25 }))));
 });

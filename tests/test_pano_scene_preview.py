@@ -324,3 +324,11 @@ def test_stickers_ui_reports_the_pose_of_an_added_port_sticker():
 
     assert added["pano_sticker_input_pose"] == [{"yaw_deg": 40.0, "pitch_deg": -10.0, "roll_deg": 5.0, "hFOV_deg": 50.0}]
     assert "pano_sticker_input_pose" not in stored
+
+
+def test_stickers_ui_reports_the_timeline_fps_a_video_sets(tmp_path):
+    video = _video(tmp_path, count=3)
+
+    assert _stickers_ui(bg_media=video)["pano_timeline_fps"] == [25.0]
+    assert _stickers_ui(sticker=video)["pano_timeline_fps"] == [25.0]
+    assert "pano_timeline_fps" not in _stickers_ui(bg_media=_solid([0.0, 0.0, 1.0], batch=3), sticker=_solid([1.0, 0.0, 0.0]))

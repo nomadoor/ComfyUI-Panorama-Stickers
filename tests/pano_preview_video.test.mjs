@@ -15,6 +15,7 @@ import {
   restoreLoadedNodeOutput,
   setNodeOutputLookup,
   trackRunOutputs,
+  videoLinked,
   workflowInputOrigins,
 } from "../web_src/pano_preview_video.js";
 
@@ -524,4 +525,14 @@ test("the new Stickers node's MultiType bg_media and sticker inputs are tracked 
   assert.equal(isTrackedMediaInputConnectionChange(node, 1, 2, STICKER_INPUT_NAMES), true);
   assert.equal(isTrackedMediaInputConnectionChange(node, 1, 0, STICKER_INPUT_NAMES), false);
   assert.equal(isTrackedMediaInputConnectionChange(node, 1, 1, [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES]), false);
+});
+
+test("a VIDEO linked to an input is seen from the link's type", () => {
+  const node = graphNode({ 1: [3, 0], 2: [4, 0] }, { bg_media: 1, sticker: 2 });
+  node.graph.links.get(1).type = "IMAGE";
+  node.graph.links.get(2).type = "VIDEO";
+
+  assert.equal(videoLinked(node, ["bg_media"]), false);
+  assert.equal(videoLinked(node, ["bg_media", "sticker"]), true);
+  assert.equal(videoLinked(graphNode({}, {}), ["bg_media", "sticker"]), false);
 });
