@@ -8,10 +8,9 @@ import av
 import torch
 import comfy.model_management
 import comfy.utils
-from av.video.reformatter import ColorPrimaries, ColorRange, ColorTrc
 from comfy_api.latest import Input, InputImpl, Types
 
-from .core.video import _temp_mp4_path
+from .core.video import _BT709, _set_srgb, _temp_mp4_path
 
 # The size of a whole video (the color of every frame) from which `get_components` copies the frames from the
 # device through a pinned buffer.
@@ -32,17 +31,6 @@ def _container_and_codec(path, format, codec) -> tuple[Types.VideoContainer, Typ
     if format == Types.VideoContainer.WEBM and codec != Types.VideoCodec.AV1:
         raise ValueError("WebM output requires the AV1 codec")
     return format, codec
-
-
-# AVCOL_SPC_BT709, the matrix of the core's sRGB video.
-_BT709 = 1
-
-
-def _set_srgb(target):
-    target.color_primaries = ColorPrimaries.BT709
-    target.color_trc = ColorTrc.IEC61966_2_1
-    target.colorspace = _BT709
-    target.color_range = ColorRange.MPEG
 
 
 class SceneVideo(Input.Video):

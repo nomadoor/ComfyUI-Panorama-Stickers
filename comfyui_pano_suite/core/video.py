@@ -11,6 +11,7 @@ import numpy as np
 
 try:
     import av
+    from av.video.reformatter import ColorPrimaries, ColorRange, ColorTrc
 except Exception:  # pragma: no cover - optional at import time
     av = None
 
@@ -18,6 +19,8 @@ try:
     import folder_paths
 except Exception:  # pragma: no cover - optional in tests
     folder_paths = None
+
+from .video_source import StreamedVideo
 
 _log = logging.getLogger(__name__)
 
@@ -276,6 +279,115 @@ def save_video_to_mp4(video, container_format, codec) -> tuple[Path, bool]:
     return output_path, mp4_has_audio(output_path)
 
 
+# The editor seeks its MP4 by decoding from the keyframe before the frame, so the MP4 it plays has a keyframe at
+# least every EDITOR_KEYINT frames, and its longer side is at most EDITOR_MAX_SIZE, enough to show it.
+EDITOR_KEYINT = 12
+EDITOR_MAX_SIZE = 2048
+
+# AVCOL_SPC_BT709, the matrix of the core's sRGB video.
+_BT709 = 1
+
+
+def _set_srgb(target):
+    target.color_primaries = ColorPrimaries.BT709
+    target.color_trc = ColorTrc.IEC61966_2_1
+    target.colorspace = _BT709
+    target.color_range = ColorRange.MPEG
+
+
+def editor_ready(path) -> bool:
+    """Whether the core's stream copy of the file at `path` into an MP4 seeks fast in the editor: an MP4 of H.264
+    4:2:0 with its longer side at most EDITOR_MAX_SIZE, with a keyframe at least every EDITOR_KEYINT frames. Only packets are read."""
+    with av.open(str(path)) as container:
+        stream = container.streams.video[0]
+        codec = stream.codec_context
+        if "mp4" not in container.format.name.split(",") or codec.name != "h264" or codec.pix_fmt != "yuv420p" or max(stream.width, stream.height) > EDITOR_MAX_SIZE:
+            return False
+        since_keyframe = 0
+        for packet in container.demux(stream):
+            # The demuxer ends with an empty packet.
+            if packet.size:
+                since_keyframe = 0 if packet.is_keyframe else since_keyframe + 1
+                if since_keyframe >= EDITOR_KEYINT:
+                    return False
+        return True
+
+
+def _editor_frames(video):
+    """The frames of an opened VIDEO as PyAV frames, with their times in seconds. A file's frames go to the encoder
+    as they decode, without the conversion to float RGB of reading them."""
+    if isinstance(video, StreamedVideo):
+        for time, frame in video.decoded_frames():
+            if frame.rotation:
+                # Upright, as `StreamedVideo` reads it.
+                quadrant = int(round(frame.rotation // 90)) % 4
+                frame = av.VideoFrame.from_ndarray(np.ascontiguousarray(np.rot90(frame.to_ndarray(format="rgb24"), k=quadrant)), format="rgb24")
+            yield time, frame
+        return
+    for index, time in enumerate(video.times):
+        image = video[index]
+        # An IMAGE batch can be gray or have alpha; it shows as opaque RGB, as `render_frame` draws it.
+        image = image[..., :1].expand(-1, -1, 3) if image.shape[-1] < 3 else image[..., :3]
+        yield time, av.VideoFrame.from_ndarray((image * 255).clamp(0, 255).byte().cpu().numpy(), format="rgb24")
+
+
+def encode_editor_mp4(video) -> tuple[Path, bool]:
+    """Encode a VIDEO opened for reading (`StreamedVideo`, `MaterializedVideo`) one frame at a time into a temp MP4
+    for the editor: H.264 with a keyframe every EDITOR_KEYINT frames and no B-frames, its longer side at most
+    EDITOR_MAX_SIZE, each frame at its time, and the audio as AAC. Returns the path and whether the MP4 has audio."""
+    height, width = video.first_frame.shape[:2]
+    scale = min(1, EDITOR_MAX_SIZE / max(width, height))
+    width, height = max(2, round(width * scale / 2) * 2), max(2, round(height * scale / 2) * 2)
+    time_base = video.time_base or 1 / video.frame_rate
+    audio = video.audio(float(video.times[-1] + 1 / video.frame_rate))
+    output_path = _temp_mp4_path()
+    with av.open(str(output_path), mode="w", options={"movflags": "faststart"}) as output:
+        stream = output.add_stream("h264", rate=video.frame_rate)
+        stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
+        # fastdecode halves the decode time for about 10% more size.
+        stream.options = {"preset": "veryfast", "crf": "23", "tune": "fastdecode"}
+        stream.codec_context.gop_size = EDITOR_KEYINT
+        stream.codec_context.max_b_frames = 0
+        # PyAV asks for slice threads by default, about three times slower than frame threads here.
+        stream.codec_context.thread_type = "AUTO"
+        stream.codec_context.time_base = time_base
+        audio_stream = None
+        if audio is not None:
+            waveform = audio["waveform"][0].float().cpu().contiguous().numpy()
+            sample_rate = int(audio["sample_rate"])
+            layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(waveform.shape[0], "stereo")
+            audio_stream = output.add_stream("aac", rate=sample_rate, layout=layout)
+        codec = stream.codec_context
+        for time, frame in _editor_frames(video):
+            # Any RGB or paletted frame (its alpha dropped) is converted with the BT.709 matrix.
+            if frame.format.is_rgb or frame.format.has_palette:
+                if not codec.is_open:
+                    _set_srgb(codec)
+                if frame.format.has_palette:
+                    # swscale turns a palette into YUV with BT.601 whatever dst_colorspace says.
+                    frame = frame.reformat(format="rgb24")
+                frame = frame.reformat(width=width, height=height, format="yuv420p", dst_colorspace=_BT709, dst_color_range=ColorRange.MPEG, interpolation="AREA")
+            else:
+                # A file's YUV keeps its matrix and is only scaled, and brought to TV range, so it keeps its colors.
+                if not codec.is_open:
+                    codec.colorspace, codec.color_primaries, codec.color_trc = frame.colorspace, frame.color_primaries, frame.color_trc
+                    codec.color_range = ColorRange.MPEG
+                frame = frame.reformat(
+                    width=width, height=height, format="yuv420p", src_color_range=frame.color_range, dst_color_range=ColorRange.MPEG, interpolation="AREA"
+                )
+            frame.pts = round(time / time_base)
+            frame.time_base = time_base
+            output.mux(stream.encode(frame))
+        output.mux(stream.encode(None))
+        if audio_stream is not None:
+            frame = av.AudioFrame.from_ndarray(waveform, format="fltp", layout=layout)
+            frame.sample_rate = sample_rate
+            frame.pts = 0
+            output.mux(audio_stream.encode(frame))
+            output.mux(audio_stream.encode(None))
+    return output_path, audio is not None
+
+
 def mp4_has_audio(path) -> bool:
     with av.open(str(path)) as container:
         return bool(container.streams.audio)
@@ -333,6 +445,10 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
             video_stream.width = int(width)
             video_stream.height = int(height)
             video_stream.pix_fmt = "yuv420p"
+            # Seekable in the editor like `encode_editor_mp4`.
+            video_stream.codec_context.gop_size = EDITOR_KEYINT
+            video_stream.codec_context.max_b_frames = 0
+            video_stream.codec_context.thread_type = "AUTO"
             if codec_name == "h264_nvenc":
                 video_stream.options = {"preset": "p4"}
 

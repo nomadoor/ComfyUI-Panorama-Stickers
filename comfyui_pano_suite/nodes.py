@@ -46,8 +46,8 @@ from .core.scene_eval import evaluate_scene_state
 from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state, rebase_scene_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
-from .core.video import make_video_ui_payload, mp4_has_audio, save_video_to_mp4
-from .core.video_source import StreamedVideo
+from .core.video import editor_ready, encode_editor_mp4, make_video_ui_payload, mp4_has_audio, save_video_to_mp4
+from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world_render import SceneContent
 from .scene_video import SceneVideo
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
@@ -1289,16 +1289,10 @@ def _bg_media_ui(bg_media, bg, fps: float) -> dict:
     if isinstance(bg_media, Input.Video):
         return _video_ui(bg_media, bg, float(bg.frame_rate), len(bg.times), contract)
     ui_ret = _init_ui_preview(bg_media, key=contract["image"])
-    NODE_RUNTIME.append_cached_video(
-        ui_ret,
-        bg_media,
-        fps,
-        None,
-        cache_key=("stickers_bg_video", _tensor_cache_identity(bg_media), float(fps)),
-        warning_key="pano_sticker_warnings",
-        video_key=contract["video"],
-        meta_key=contract["meta"],
-    )
+    if bg_media.shape[0] > 1:
+        batch = MaterializedVideo(Types.VideoComponents(images=bg_media, frame_rate=Fraction(round(fps * 1000), 1000)), "bg_media")
+        cache_key = ("editor_mp4", _tensor_cache_identity(bg_media), float(fps))
+        _merge_ui_payload(ui_ret, _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch), fps, len(batch.times), contract))
     return ui_ret
 
 
@@ -1762,26 +1756,46 @@ def _video_cache_identity(video, opened) -> tuple:
     return NODE_RUNTIME.object_identity(video)
 
 
+def _editor_mp4(video, opened) -> tuple[Path, bool]:
+    """The MP4 the editor plays for a VIDEO opened by `open_video` as `opened`, and whether it has audio. A file the
+    core copies into an MP4 that seeks fast already (`editor_ready`) is copied; a Stickers or Cutout `video` shows
+    its stream source when that seeks fast. Otherwise a proxy is encoded (`encode_editor_mp4`), from the file
+    again for a VIDEO read from its file, since `opened` has moved on, so the frames are never all in memory."""
+    if isinstance(video, SceneVideo):
+        # Its stream source is an MP4 in temp already, kept by the video itself, and is what SaveVideo copies.
+        source = video.get_stream_source()
+        if editor_ready(source):
+            return Path(source), mp4_has_audio(source)
+        return encode_editor_mp4(StreamedVideo(source, 0, 0, "source"))
+    if isinstance(opened, StreamedVideo):
+        source, trim = video.get_stream_source(), video.get_active_trim_window()
+        # The core copies the streams only without a trim window, and reads a file in memory as it is.
+        if isinstance(source, str) and not any(trim) and editor_ready(source):
+            return save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
+        return encode_editor_mp4(StreamedVideo(source, *trim, "source"))
+    return encode_editor_mp4(opened)
+
+
+def _editor_mp4_ui(cache_key: tuple, make, fps: float, frame_count: int, contract: dict) -> dict:
+    """The `ui` of the editor MP4 that `make()` saves, made once per `cache_key` and reused while the file is there."""
+    saved = NODE_RUNTIME.cache.get("video", cache_key)
+    if saved is None or not saved[0].exists():
+        saved = make()
+        NODE_RUNTIME.cache.put("video", cache_key, saved)
+    path, has_audio = saved
+    payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"])
+    payload[contract["meta"]][0]["has_audio"] = has_audio
+    return payload
+
+
 def _video_ui(video, opened, fps: float, frame_count: int, contract: dict) -> dict:
-    """The `ui` of a VIDEO opened by `open_video`: its first frame, and the VIDEO as an MP4 when it has two or more
-    frames, saved by the core or, for the `video` output, its stream source. The frames are not read into one batch (ADR 0018), and the MP4 is reused while the
-    VIDEO stays the same."""
+    """The `ui` of a VIDEO opened by `open_video`: its first frame, and the editor MP4 (`_editor_mp4`) when it has
+    two or more frames. The frames are not read into one batch (ADR 0018), and the MP4 is reused while the VIDEO
+    stays the same."""
     ui_ret = _init_ui_preview(opened.first_frame[None], key=contract["image"])
     if frame_count > 1:
-        if isinstance(video, SceneVideo):
-            # Its stream source is an MP4 in temp already, kept by the video itself; it is shown without a copy.
-            path = Path(video.get_stream_source())
-            saved = path, mp4_has_audio(path)
-        else:
-            cache_key = ("video_mp4", _video_cache_identity(video, opened))
-            saved = NODE_RUNTIME.cache.get("video", cache_key)
-            if saved is None or not saved[0].exists():
-                saved = save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
-                NODE_RUNTIME.cache.put("video", cache_key, saved)
-        path, has_audio = saved
-        payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"])
-        payload[contract["meta"]][0]["has_audio"] = has_audio
-        _merge_ui_payload(ui_ret, payload)
+        cache_key = ("editor_mp4", _video_cache_identity(video, opened))
+        _merge_ui_payload(ui_ret, _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, opened), fps, frame_count, contract))
     return ui_ret
 
 

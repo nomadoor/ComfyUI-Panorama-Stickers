@@ -98,38 +98,48 @@ class StreamedVideo:
         _log.warning("Panorama Stickers: frame %d of the %s VIDEO could not be decoded; it is not drawn.", self._index, self._name)
         return None
 
-    def _decode(self):
+    def decoded_frames(self):
+        """The PyAV frames of the trim window as they decode, in order and not rotated, each with its time in
+        seconds from the first frame as in `times`."""
+        for frame in self._decoded():
+            yield (frame.pts - self._pts[0]) * self.time_base, frame
+
+    def _decoded(self):
         with _open(self._source) as container:
             stream = container.streams.video[0]
             stream.thread_type = "AUTO"
             start_pts, end_pts = _trim_pts(stream, self._start_time, self._duration)
             if start_pts != 0:
                 container.seek(start_pts, stream=stream)
-            align = None
             for packet in container.demux(stream):
                 for frame in packet.decode():
                     if frame.pts < start_pts:
                         continue
                     if end_pts is not None and frame.pts >= end_pts:
                         return
-                    if frame.format.name in _BYTE_FORMATS:
-                        image = torch.from_numpy(frame.to_ndarray(format="rgb24")).float() / 255.0
-                    else:
-                        # Same as the core reader: an unaligned width is padded to 32 with smeared borders so the
-                        # float conversion is deterministic.
-                        if frame.width % 32:
-                            if align is None:
-                                align = _alignment_graph(frame, stream.time_base)
-                            align[1].push(frame)
-                            planes = align[2].pull().reformat(format="gbrpf32le").planes
-                        else:
-                            planes = frame.reformat(format="gbrpf32le").planes
-                        # The planes are copied as they are and viewed as (h, w, 3): interleaving them on the CPU, as
-                        # `to_ndarray` does, costs about as much as the conversion.
-                        array = np.stack([np.frombuffer(planes[index], np.float32).reshape(planes[index].height, -1) for index in (2, 0, 1)])
-                        image = torch.from_numpy(array[:, :frame.height, :frame.width].transpose(1, 2, 0))
-                    quadrant = int(round(frame.rotation // 90)) % 4 if frame.rotation else 0
-                    yield frame.pts, torch.rot90(image, k=quadrant, dims=(0, 1)).contiguous() if quadrant else image
+                    yield frame
+
+    def _decode(self):
+        align = None
+        for frame in self._decoded():
+            if frame.format.name in _BYTE_FORMATS:
+                image = torch.from_numpy(frame.to_ndarray(format="rgb24")).float() / 255.0
+            else:
+                # Same as the core reader: an unaligned width is padded to 32 with smeared borders so the
+                # float conversion is deterministic.
+                if frame.width % 32:
+                    if align is None:
+                        align = _alignment_graph(frame, self.time_base)
+                    align[1].push(frame)
+                    planes = align[2].pull().reformat(format="gbrpf32le").planes
+                else:
+                    planes = frame.reformat(format="gbrpf32le").planes
+                # The planes are copied as they are and viewed as (h, w, 3): interleaving them on the CPU, as
+                # `to_ndarray` does, costs about as much as the conversion.
+                array = np.stack([np.frombuffer(planes[index], np.float32).reshape(planes[index].height, -1) for index in (2, 0, 1)])
+                image = torch.from_numpy(array[:, :frame.height, :frame.width].transpose(1, 2, 0))
+            quadrant = int(round(frame.rotation // 90)) % 4 if frame.rotation else 0
+            yield frame.pts, torch.rot90(image, k=quadrant, dims=(0, 1)).contiguous() if quadrant else image
 
     def audio(self, seconds: float) -> dict | None:
         """The audio of the trim window, cut to `seconds` from its start, or None without an audio stream."""

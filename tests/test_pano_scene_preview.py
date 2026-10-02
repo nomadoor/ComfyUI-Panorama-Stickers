@@ -271,11 +271,9 @@ def test_stickers_ui_saves_video_media_without_reading_it_whole(tmp_path, monkey
 
 
 def test_stickers_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch):
-    saved, encoded = [], []
-    save_video_to_mp4 = nodes.save_video_to_mp4
-    encode_video = nodes.NODE_RUNTIME._encode_video
-    monkeypatch.setattr(nodes, "save_video_to_mp4", lambda *args: saved.append(args) or save_video_to_mp4(*args))
-    monkeypatch.setattr(nodes.NODE_RUNTIME, "_encode_video", lambda *args, **kwargs: encoded.append(args) or encode_video(*args, **kwargs))
+    encoded = []
+    encode_editor_mp4 = nodes.encode_editor_mp4
+    monkeypatch.setattr(nodes, "encode_editor_mp4", lambda opened: encoded.append(opened) or encode_editor_mp4(opened))
     video = _video(tmp_path, count=6)
     images = _solid([0.5, 0.5, 0.5], batch=3)
 
@@ -284,8 +282,7 @@ def test_stickers_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypat
     second = [_stickers_ui(moved, bg_media=media) for media in (video, images)]
     reloaded = _stickers_ui(bg_media=InputImpl.VideoFromFile(video.get_stream_source()))
 
-    assert len(saved) == 1
-    assert len(encoded) == 1
+    assert len(encoded) == 2
     assert [ui["pano_input_videos"] for ui in first] == [ui["pano_input_videos"] for ui in second]
     assert reloaded["pano_input_videos"] == first[0]["pano_input_videos"]
 
