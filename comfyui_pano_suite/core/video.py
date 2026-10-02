@@ -250,7 +250,7 @@ def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np
     return np.ascontiguousarray(downmixed), sample_rate, "stereo"
 
 
-def _entry_from_path(path: Path, *, media_type: str) -> dict:
+def entry_from_path(path: Path, *, media_type: str) -> dict:
     root = _ensure_temp_root().resolve()
     target = path.resolve()
     try:
@@ -267,8 +267,13 @@ def _entry_from_path(path: Path, *, media_type: str) -> dict:
     }
 
 
+def temp_file_path(name: str) -> Path:
+    """The path of a file `name` in ComfyUI's temp directory, which ComfyUI clears on start and exit."""
+    return _ensure_temp_root() / name
+
+
 def _temp_mp4_path() -> Path:
-    return _ensure_temp_root() / f"pano_video_{uuid.uuid4().hex[:12]}.mp4"
+    return temp_file_path(f"pano_video_{uuid.uuid4().hex[:12]}.mp4")
 
 
 def save_video_to_mp4(video, container_format, codec) -> tuple[Path, bool]:
@@ -533,7 +538,7 @@ def make_video_ui_payload(
     video_key: str = "pano_videos",
     meta_key: str = "pano_video_meta",
 ) -> dict:
-    video_entry = _entry_from_path(Path(mp4_path), media_type="video/mp4")
+    video_entry = entry_from_path(Path(mp4_path), media_type="video/mp4")
     payload = {
         video_key: [video_entry],
         meta_key: [{
