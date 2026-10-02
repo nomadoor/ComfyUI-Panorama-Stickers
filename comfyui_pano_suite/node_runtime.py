@@ -101,15 +101,20 @@ class ManualCacheStore:
         stickers_bg_limit: int = 1,
         video_limit: int = 8,
         scene_files_limit: int = 4,
+        splat_files_limit: int = 1,
     ):
         self._stickers_bg = OrderedDict()
         self._video = OrderedDict()
         # The editor files of `scene` inputs; kept apart so that MP4 entries do not evict large PLY / GLB sets.
         self._scene_files = OrderedDict()
+        # The SPLAT read from a splat 3D file on the `scene` input, so that the same file is not parsed again and
+        # keeps its editor files. One entry: a large splat is hundreds of MB.
+        self._splat_files = OrderedDict()
         self._lock = threading.Lock()
         self._stickers_bg_limit = max(1, int(stickers_bg_limit))
         self._video_limit = int(video_limit)
         self._scene_files_limit = int(scene_files_limit)
+        self._splat_files_limit = int(splat_files_limit)
 
     def _cache_for(self, namespace: str):
         if namespace == "stickers_bg":
@@ -118,6 +123,8 @@ class ManualCacheStore:
             return self._video
         if namespace == "scene_files":
             return self._scene_files
+        if namespace == "splat_files":
+            return self._splat_files
         raise ValueError(f"Unknown cache namespace: {namespace}")
 
     def get(self, namespace: str, key: tuple):
@@ -134,7 +141,7 @@ class ManualCacheStore:
             cache = self._cache_for(namespace)
             cache[key] = value
             cache.move_to_end(key)
-            limit = {"stickers_bg": self._stickers_bg_limit, "video": self._video_limit, "scene_files": self._scene_files_limit}[namespace]
+            limit = {"stickers_bg": self._stickers_bg_limit, "video": self._video_limit, "scene_files": self._scene_files_limit, "splat_files": self._splat_files_limit}[namespace]
             # An evicted MP4 is only encoded again when needed; the file stays in ComfyUI's temp directory,
             # which ComfyUI clears itself, because job history and cached `ui` results may still name it.
             while len(cache) > limit:

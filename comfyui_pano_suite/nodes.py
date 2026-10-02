@@ -51,6 +51,7 @@ from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world_render import SceneContent
 from .scene_files import write_editor_files
 from .scene_video import SceneVideo
+from .splat_render import SPLAT_FILE_FORMATS, read_splat_file, splat_content
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
@@ -1004,8 +1005,8 @@ class PanoSceneValue:
     `state` is the loaded `state_json` with the port Sticker appended when missing, and `sources` its Sticker
     sources read into memory; the port Sticker's source is a template holding the first frame of `port`, the
     media on the sticker input (None without one), whose frames come from `port.frames()` at `port.index_at`.
-    `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given. `coverage` is the span of `bg_media`,
-    `bg_color` 0..1 RGB. The output size is not part of it; each consumer sets its own. `fps` is the Timeline fps
+    `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given, a splat file as the SPLAT read from
+    it. `coverage` is the span of `bg_media`, `bg_color` 0..1 RGB. The output size is not part of it; each consumer sets its own. `fps` is the Timeline fps
     and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
     frame, and the `scene` item, as `_decide_timeline` returns them.
     Consumers must not modify it; the same value reaches every node linked to the output.
@@ -1048,8 +1049,30 @@ def _scene_content(scene) -> SceneContent | None:
     """The `scene` input as World content, or None without one."""
     if scene is None:
         return None
-    # Temporary on the integration branch: the SPLAT (#61) and MESH / MoGe (#62) rasterizers are added later.
+    if isinstance(scene, Types.SPLAT):
+        return splat_content(scene)
+    # Temporary on the integration branch: the MESH / MoGe (#62) rasterizer is added later.
     raise NotImplementedError(f"Panorama Stickers: {_input_type_name(scene)} on the scene input is not supported yet.")
+
+
+def _read_splat_file(scene):
+    """A splat 3D file on the `scene` input as the SPLAT read from it, read again only when the file changes (a file
+    on disk by its path and modification, else by the object), so that it also keeps its editor files; other
+    inputs as given."""
+    if not isinstance(scene, Types.File3D) or scene.format not in ("", *SPLAT_FILE_FORMATS):
+        return scene
+    if scene.is_disk_backed:
+        stat = os.stat(scene.get_source())
+        cache_key = (scene.get_source(), stat.st_mtime_ns, stat.st_size)
+    else:
+        cache_key = NODE_RUNTIME.object_identity(scene)
+    splat = NODE_RUNTIME.cache.get("splat_files", cache_key)
+    if splat is None:
+        splat = read_splat_file(scene)
+        if splat is None:
+            return scene
+        NODE_RUNTIME.cache.put("splat_files", cache_key, splat)
+    return splat
 
 
 def _unused_sticker_id(stickers: list[dict]) -> str:
@@ -1389,6 +1412,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
     @classmethod
     def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
         _reject_unsupported_sticker(sticker)
+        scene = _read_splat_file(scene)
         content = _scene_content(scene)
         warnings = []
         state = load_scene_state(state_json)

@@ -16,6 +16,7 @@ pytest.importorskip(
 import folder_paths
 from comfy_api.latest import Types
 from comfy.ldm.moge.panorama import _uv_grid, spherical_uv_to_directions
+from comfy_extras.nodes_gaussian_splat import SplatToFile3D
 from comfy_extras.nodes_moge import MoGePointMapToMesh
 
 from comfyui_pano_suite import nodes, scene_files
@@ -93,9 +94,23 @@ def test_splat_items_are_written_as_ply_in_their_own_coordinates():
     assert ui["pano_scene_meta"] == [{"kind": "splat"}]
     files = ui["pano_scene_files"]
     assert len(files) == 2
-    # The SPLAT is World (glTF) already; the PLY keeps it, each item to its own length.
+    # The PLY keeps the SPLAT's own (3DGS) coordinates, as the core's SplatToFile3D writes them, each item to its
+    # own length; the editor turns it into glTF like the core's Load3D.
     assert np.allclose(_ply_positions(_path(files[0])), positions[0][:2])
     assert np.allclose(_ply_positions(_path(files[1])), positions[1][:1])
+
+
+def test_splat_files_are_written_as_the_ply_of_their_splat():
+    positions = [[[1.0, 2.0, -3.0], [0.5, 0.0, 0.0]]]
+    model = SplatToFile3D.execute(_splat(positions), "spz").result[0]
+
+    ui = nodes._scene_ui(nodes._read_splat_file(model))
+
+    assert ui["pano_scene_meta"] == [{"kind": "splat"}]
+    assert np.allclose(_ply_positions(_path(ui["pano_scene_files"][0])), positions[0], atol=1e-3)
+    # The same file is read once and keeps its PLY.
+    assert nodes._read_splat_file(model) is nodes._read_splat_file(model)
+    assert nodes._scene_ui(nodes._read_splat_file(model)) == ui
 
 
 def test_mesh_items_are_written_as_glb_in_their_own_coordinates():
