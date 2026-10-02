@@ -52,12 +52,15 @@
 - node surfaceが表示するフレーム（表示フレーム）はノードごとの一時状態で、`state_json` にも
   `node.properties` にも保存しない。最初は frame 0 で、reloadやworkflowを開き直すと frame 0 に戻る。
 - 再生・一時停止を切り替えるボタン（play / pause）を1つだけ、canvas左下に置く。表示するのは、sceneが時間を持つとき
-  （エディタのタイムラインと同じ `isTimed`）か、背景のVIDEOがあるときだけ。背景のVIDEOは、ノードの
+  （エディタのタイムラインと同じ `isTimed`）か、背景のVIDEOがあるとき、`port` のStickerの素材のMP4
+  （`pano_sticker_input_videos`、RGBA の IMAGE バッチは PNG の列 `pano_sticker_input_frames`）があるときだけ。背景のVIDEOは、ノードの
   実行結果の `pano_input_videos`（`bg_media` が2フレーム以上のとき）か、上流のLoadVideoが読むファイルで、
   エディタと同じ候補順で選ぶ。読めないVIDEOは次の候補へ進む。toolbarには置かず、シークバーや時刻表示も出さない。
 - 再生は表示フレームから Timeline fps で進み、Timeline の終わりで frame 0 に戻って繰り返す。各フレームのStickerは共有evaluator（エディタの
   `workingSkyLayers` / `surfacePoseStickers` と同じ）で評価する。背景のVIDEOはエディタと同じ状態機械
-  `pano_video_playback.js` で同期して再生し、音は出さない（muted）。
+  `pano_video_playback.js` で同期して再生し、音は出さない（muted）。`port` のStickerの素材のMP4は、
+  エディタと同じく再生ヘッドに従う（`createVideoFollower`、#83）。Timelineの長さは、Clip rangeに長さのない
+  `port` のStickerでは素材の終わりまで延ばす。
 - 一時停止は画面に出ているフレームで止まる（エディタの停止と同じ規則：一時停止したVIDEOが表示する
   PTS ≤ currentTime のフレームに再生ヘッドと静止画を合わせ、シークしない。ADR 0024）。もう一度押すとそのフレームから再生を続ける。一時停止中の背景は、そのフレームの
   VIDEOの静止画（最大幅2048）を描く。
@@ -72,7 +75,7 @@
 - Space キーは割り当てない（canvas上の Space は ComfyUI の pan）。
 - 再生していないときはrAFもvideo frame callbackも持たない。再生中は表示されたVIDEOフレーム（VIDEOがないときは
   時計）ごとに1回描く。
-- VIDEO要素はsurfaceの中に置き、`opacity:0` で隠す（`visibility:hidden` や `display:none` では
+- VIDEO要素（背景と `port` のStickerの素材の2つ）はsurfaceの中に置き、`opacity:0` で隠す（`visibility:hidden` や `display:none` では
   requestVideoFrameCallback が来ない）。
 - surfaceが見えなくなったノード（collapse、subgraphの中や別のgraphを表示中、widgetが隠れたとき。
   surfaceの要素がpageにないか幅0）は、一時停止してVIDEOのsrcを外す（表示フレームは保つ）。
@@ -121,4 +124,4 @@ surfaceに含めない操作:
 12. 選択枠、handle、accent color、hover cursorがmodalと一致する。
 13. stickerがない状態では追加案内が表示され、選択後はDelete / Backspaceで削除できる。
 14. 外部入力stickerを移動・拡縮・回転した後、`Back to Initial`で接続時のposeへ戻せる。
-15. `PanoramaStickersNode` で時間のあるsceneか背景VIDEOのときだけ再生ボタンが出て、ループ再生し、一時停止・編集・Full Editor・collapse・非表示で表示中のフレームに止まり、再生でそこから続く。背景VIDEOの変更とreloadで frame 0 に戻る。
+15. `PanoramaStickersNode` で時間のあるsceneか背景VIDEOか `port` のStickerの素材のMP4のときだけ再生ボタンが出て、ループ再生し、一時停止・編集・Full Editor・collapse・非表示で表示中のフレームに止まり、再生でそこから続く。背景VIDEOの変更とreloadで frame 0 に戻る。

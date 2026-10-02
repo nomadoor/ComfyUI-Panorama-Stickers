@@ -4,11 +4,16 @@
 // here, so a reload shows NODE_SURFACE_FRAME again. The background VIDEO plays muted through the
 // editor's playback state machine (pano_video_playback.js); `video` is the surface's own element.
 //
+// The port Sticker's MP4 follows the playhead in `stickerVideo` (createVideoFollower), muted too; an
+// RGBA IMAGE batch shows its PNGs instead (createFrameSequence, loaded with createImage).
+//
 // readState() is the node's working state v2. onFrame, onCapture and onChange are those of
-// createVideoPlayback; onChange also runs when the VIDEO of a source fails.
+// createVideoPlayback; onChange also runs when the VIDEO of a source fails. onStickerCapture is the
+// follower's onCapture.
+import { createFrameSequence, portMediaFrames, portMediaTime } from "./pano_port_media.js";
 import { NODE_SURFACE_FRAME } from "./pano_stickers_node_surface.js";
 import { isTimed, timelineSpan } from "./pano_timeline.js";
-import { createVideoPlayback } from "./pano_video_playback.js";
+import { createVideoFollower, createVideoPlayback } from "./pano_video_playback.js";
 
 // Whether the node surface is on screen: not collapsed, and its element is in the page and laid out
 // (not inside a subgraph or a graph not shown).
@@ -16,19 +21,32 @@ export function surfaceShown(element, collapsed) {
   return !collapsed && element.isConnected && element.clientWidth > 0;
 }
 
-export function createNodePlayback({ video, clock, readState, onFrame, onCapture, onChange }) {
+export function createNodePlayback({ video, stickerVideo, createImage, clock, readState, onFrame, onCapture, onStickerCapture, onChange }) {
   // The background VIDEO chosen for the node, and the one the element loads: none while out of sight.
   let chosen = "";
   let loaded = "";
   // The chosen VIDEO's length in seconds, kept while the element lets it go.
   let duration = 0;
   const failed = new Set();
+  // The port Sticker's MP4 or PNGs and their meta ({ src, meta } or { frames, meta }), or null, and
+  // the time of it at the playhead.
+  let sticker = null;
+  let stickerTime = null;
   const fps = () => readState().timeline.fps;
-  // The editor's Timeline span: the Timeline length (5 s without one), widened to the VIDEO.
-  const span = () => timelineSpan(readState(), {
-    minimum: Math.round(fps() * 5),
-    frames: chosen ? Math.round(duration * fps()) : 0,
-  });
+  const port = (state) => state.stickers.find((item) => item.source.kind === "port");
+  // The editor's Timeline span: the Timeline length (5 s without one), widened to the VIDEO and to
+  // the end of the port Sticker's media.
+  const span = () => {
+    const state = readState();
+    const portSticker = port(state);
+    return timelineSpan(state, {
+      minimum: Math.round(fps() * 5),
+      frames: Math.max(
+        chosen ? Math.round(duration * fps()) : 0,
+        sticker && portSticker ? portMediaFrames(portSticker.clip, fps(), sticker.meta) : 0,
+      ),
+    });
+  };
   const playback = createVideoPlayback({
     video,
     clock,
@@ -47,6 +65,8 @@ export function createNodePlayback({ video, clock, readState, onFrame, onCapture
     failed.add(loaded);
     onChange();
   };
+  const follower = createVideoFollower({ video: stickerVideo, onCapture: onStickerCapture, onChange });
+  const frames = createFrameSequence({ createImage, onLoad: onChange });
   video.muted = true;
   video.addEventListener("loadedmetadata", onMetadata);
   video.addEventListener("error", onError);
@@ -67,6 +87,18 @@ export function createNodePlayback({ video, clock, readState, onFrame, onCapture
     if (playback.playing) playback.stop();
   }
 
+  // The port Sticker's MP4 at the playhead's frame.
+  function followSticker(state) {
+    const portSticker = port(state);
+    stickerTime = sticker && portSticker ? portMediaTime(portSticker.clip, playback.frame, state.timeline.fps, sticker.meta) : null;
+    follower.follow({
+      src: sticker?.src || "",
+      time: stickerTime,
+      playing: playback.advancing,
+      fps: state.timeline.fps,
+    });
+  }
+
   return {
     get frame() {
       return playback.frame;
@@ -81,18 +113,26 @@ export function createNodePlayback({ video, clock, readState, onFrame, onCapture
       return loaded;
     },
     pause,
+    // The port Sticker's picture (createVideoFollower's picture).
+    stickerPicture(still, fallback) {
+      if (sticker?.frames) return frames.picture(sticker.frames, stickerTime, sticker.meta, fallback);
+      return follower.picture(still, fallback);
+    },
     toggle() {
       if (playback.playing) playback.stop();
       else playback.play();
     },
     // Follows the node on each draw and returns whether the play button shows. `sources` are its
-    // background VIDEO URLs, best first; one that failed is skipped until it leaves them. Out of sight,
-    // the node pauses and lets its VIDEO go, keeping the frame. Another background VIDEO, a Timeline
-    // that no longer reaches the frame, or nothing to play brings the node back to NODE_SURFACE_FRAME.
-    follow({ shown, sources, state }) {
+    // background VIDEO URLs, best first; one that failed is skipped until it leaves them. `sticker`
+    // is the port Sticker's MP4 ({ src, meta }) or PNGs ({ frames, meta }), or null; it plays too. Out of sight, the node pauses
+    // and lets its VIDEOs go, keeping the frame. Another background VIDEO, a Timeline that no longer
+    // reaches the frame, or nothing to play brings the node back to NODE_SURFACE_FRAME.
+    follow({ shown, sources, state, sticker: portMedia = null }) {
+      sticker = shown ? portMedia : null;
       if (!shown) {
         pause();
         load("");
+        followSticker(state);
         return false;
       }
       for (const src of failed) {
@@ -105,14 +145,16 @@ export function createNodePlayback({ video, clock, readState, onFrame, onCapture
         duration = 0;
       }
       load(chosen);
-      const playable = isTimed(state) || (!!chosen && playback.state !== "error");
+      const playable = isTimed(state) || (!!chosen && playback.state !== "error") || !!sticker;
       if (!playable) pause();
       const reset = changed || !playable || (!playback.playing && playback.frame >= span());
       if (reset && playback.frame !== NODE_SURFACE_FRAME) playback.seek(NODE_SURFACE_FRAME);
+      followSticker(state);
       return playable;
     },
     dispose() {
       playback.dispose();
+      follower.dispose();
       video.removeEventListener("loadedmetadata", onMetadata);
       video.removeEventListener("error", onError);
       video.pause();

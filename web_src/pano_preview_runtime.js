@@ -1457,6 +1457,19 @@ function backgroundVideoSources(node) {
   return [own, linkedVideoFile(node, BACKGROUND_INPUT_NAMES)];
 }
 
+// The port Sticker's MP4 ({ src, meta }) or the PNGs of an RGBA IMAGE batch ({ frames, meta }) in the
+// node's current result, or null.
+function portStickerMedia(node) {
+  if (!isNodeOutputMediaCurrent(node, "external-sticker")) return null;
+  const output = lookupNodeOutputEntry(node.id);
+  const meta = ownOutputUiValue(node, "pano_sticker_input_video_meta");
+  if (!meta || typeof meta !== "object") return null;
+  const frames = output?.ui?.pano_sticker_input_frames || output?.pano_sticker_input_frames;
+  if (Array.isArray(frames) && frames.length) return { frames: frames.map(imageSourceFromCandidate), meta };
+  const src = resolvePreviewVideoSource(output, ["pano_sticker_input_videos"], imageSourceFromCandidate);
+  return src ? { src, meta } : null;
+}
+
 // ADR 0019: the played VIDEO once it shows a frame, else its still; null without a VIDEO.
 function playbackBackground({ playback, video, still }) {
   if (!playback.source) return null;
@@ -1474,6 +1487,12 @@ function surfaceViewInput(node, state, bgImg) {
     let img;
     if (state.version === 2) {
       img = getNodePreviewImage(node, item.id, sourceAsset(item.source), { external: item.source.kind === "port" });
+      const surfacePlayback = node.__panoSurfacePlayback;
+      if (item.source.kind === "port" && surfacePlayback) {
+        // The port Sticker's MP4 follows the playhead; the view keeps the texture before while it has no picture.
+        const picture = surfacePlayback.playback.stickerPicture(surfacePlayback.stickerStill, img);
+        return picture ? { media: picture, revision: getRenderableMediaRevisionToken(picture) } : null;
+      }
     } else {
       const external = item.type === "external_image" || item.source_kind === "external_image";
       const assetId = String(item.asset_id || "") || (external ? String(item.id || "") : "");
@@ -2037,19 +2056,33 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       aspectChoices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value })),
     });
   // PanoramaStickersNode plays its Timeline on the node. requestVideoFrameCallback runs only for a
-  // rendered VIDEO, so the muted element stays in the surface, out of sight by its opacity.
+  // rendered VIDEO, so the muted elements stay in the surface, out of sight by their opacity: the
+  // background VIDEO, and the port Sticker's MP4 that follows the playhead.
   let surfacePlayback = null;
   if (stickersMode && node.__panoSceneStateV2) {
-    const video = document.createElement("video");
-    video.playsInline = true;
-    video.preload = "auto";
-    video.crossOrigin = "anonymous";
-    video.style.cssText = "position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
-    wrap.appendChild(video);
+    const [video, stickerVideo] = [0, 1].map(() => {
+      const element = document.createElement("video");
+      element.playsInline = true;
+      element.preload = "auto";
+      element.crossOrigin = "anonymous";
+      element.style.cssText = "position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+      wrap.appendChild(element);
+      return element;
+    });
     const still = document.createElement("canvas");
     still.__panoFrameIdx = 0;
+    const stickerStill = document.createElement("canvas");
+    stickerStill.__panoFrameIdx = 0;
     const playback = createNodePlayback({
       video,
+      stickerVideo,
+      createImage: (src, onLoad) => {
+        const image = new Image();
+        image.onload = onLoad;
+        image.onerror = onLoad;
+        image.src = src;
+        return image;
+      },
       clock: {
         now: () => performance.now(),
         requestFrame: (callback) => requestAnimationFrame(callback),
@@ -2067,21 +2100,40 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         still.__panoFrameIdx += 1;
         requestDraw();
       },
+      onStickerCapture: () => {
+        if (!(stickerVideo.videoWidth > 0 && stickerVideo.videoHeight > 0)) return;
+        stickerStill.width = stickerVideo.videoWidth;
+        stickerStill.height = stickerVideo.videoHeight;
+        stickerStill.getContext("2d")?.drawImage(stickerVideo, 0, 0);
+        stickerStill.__panoFrameIdx += 1;
+        requestDraw();
+      },
       onChange: () => {
         nodeSurfaceUiModel.playing = playback.playing;
         requestDraw();
       },
     });
-    surfacePlayback = { playback, video, still };
+    surfacePlayback = { playback, video, still, stickerVideo, stickerStill, stickerSource: "" };
     node.__panoSurfacePlayback = surfacePlayback;
   }
   // The Timeline plays on the node only while it is shown: collapsed, in a subgraph or another graph,
   // the node pauses and lets its VIDEO go.
   const syncSurfacePlayback = () => {
-    const { playback, still } = surfacePlayback;
+    const { playback, still, stickerStill } = surfacePlayback;
     const shown = surfaceShown(wrap, !!node.flags?.collapsed);
     const source = playback.source;
-    const playable = playback.follow({ shown, sources: shown ? backgroundVideoSources(node) : [], state: getCachedState(node) });
+    const sticker = shown ? portStickerMedia(node) : null;
+    const playable = playback.follow({
+      shown,
+      sources: shown ? backgroundVideoSources(node) : [],
+      state: getCachedState(node),
+      sticker,
+    });
+    // The still of the port Sticker's MP4 is released with its source.
+    if ((sticker?.src || "") !== surfacePlayback.stickerSource) {
+      surfacePlayback.stickerSource = sticker?.src || "";
+      stickerStill.width = 0;
+    }
     // The still of one source must not show for the next, nor hold memory without one.
     if (playback.source !== source) {
       still.width = 0;
@@ -2863,6 +2915,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (surfacePlayback) {
       surfacePlayback.playback.dispose();
       surfacePlayback.video.remove();
+      surfacePlayback.stickerVideo.remove();
       if (node.__panoSurfacePlayback === surfacePlayback) node.__panoSurfacePlayback = null;
     }
     surfaceView.dispose();

@@ -51,6 +51,9 @@ PREVIEW_UI_KEYS = {
     },
     "stickers_input": {
         "image": "pano_sticker_input_images",
+        "video": "pano_sticker_input_videos",
+        "frames": "pano_sticker_input_frames",
+        "meta": "pano_sticker_input_video_meta",
     },
 }
 

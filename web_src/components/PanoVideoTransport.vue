@@ -84,6 +84,15 @@ const transportStyle = computed(() => ({
       playsinline
       crossorigin="anonymous"
     />
+    <!-- The port Sticker's MP4, which follows the Timeline's playhead muted. -->
+    <video
+      class="pano-video-source"
+      data-port-video-element
+      preload="auto"
+      playsinline
+      muted
+      crossorigin="anonymous"
+    />
 
     <div class="pano-video-transport-shell">
       <div class="pano-video-controls-left">

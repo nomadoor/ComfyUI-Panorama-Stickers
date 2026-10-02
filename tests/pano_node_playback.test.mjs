@@ -143,23 +143,33 @@ class FakeClock {
 
 function setup(state = loadSceneState(null)) {
   const video = new FakeVideo();
+  const stickerVideo = new FakeVideo();
   const clock = new FakeClock();
-  const log = { frames: [], captures: 0, changes: 0 };
+  const log = { frames: [], captures: 0, stickerCaptures: 0, changes: 0, images: [] };
   const playback = createNodePlayback({
     video,
+    stickerVideo,
+    createImage: (src, onLoad) => {
+      const image = { src, complete: false, naturalWidth: 0, load: () => Object.assign(image, { complete: true, naturalWidth: 8 }) && onLoad() };
+      log.images.push(image);
+      return image;
+    },
     clock,
     readState: () => state,
     onFrame: (frame) => log.frames.push(frame),
     onCapture: () => {
       log.captures += 1;
     },
+    onStickerCapture: () => {
+      log.stickerCaptures += 1;
+    },
     onChange: () => {
       log.changes += 1;
     },
   });
-  // What each draw of the node passes: the surface shown with these candidates.
-  const follow = (sources, shown = true) => playback.follow({ shown, sources, state });
-  return { playback, video, clock, log, state, follow };
+  // What each draw of the node passes: the surface shown with these candidates and the port Sticker's MP4.
+  const follow = (sources, shown = true, sticker = null) => playback.follow({ shown, sources, state, sticker });
+  return { playback, video, stickerVideo, clock, log, state, follow };
 }
 
 function timedState(length = 48) {
@@ -353,7 +363,7 @@ test("a new playback, as after a reload, starts on frame 0", () => {
 });
 
 test("dispose releases the VIDEO, its listeners and the frame callbacks", () => {
-  const { playback, follow, video, clock } = setup(timedState(48));
+  const { playback, follow, video, stickerVideo, clock } = setup(timedState(48));
   const idle = video.listeners;
   follow(["/bg.mp4"]);
   video.loaded(1);
@@ -363,6 +373,72 @@ test("dispose releases the VIDEO, its listeners and the frame callbacks", () => 
   assert.equal(video.src, "");
   assert.equal(video.paused, true);
   assert.equal(video.listeners, idle - 2);
+  assert.equal(stickerVideo.listeners, 0);
   assert.equal(video.frameCallbacks.size, 0);
   assert.equal(clock.callbacks.size, 0);
+});
+
+// The port Sticker's VIDEO: a 3 s MP4 on a Sticker whose Clip range starts at frame 6, 12 frames in.
+const STICKER = { src: "/sticker.mp4", meta: { kind: "VIDEO", fps: 30, frames: 90, duration: 3 } };
+
+function portState() {
+  return loadSceneState({ version: 2, stickers: [{ id: "p", source: { kind: "port" }, clip: { start: 6, in: 12 } }] });
+}
+
+test("the port Sticker's VIDEO makes the node playable, spans the Timeline and plays muted with the clock", () => {
+  const { playback, follow, stickerVideo, clock, log } = setup(portState());
+  assert.equal(follow([], true, STICKER), true);
+  assert.equal(stickerVideo.src, "/sticker.mp4");
+  assert.equal(stickerVideo.muted, true);
+  stickerVideo.loaded(3);
+  // At rest on frame 0, before the Clip range: nothing shows and nothing seeks.
+  assert.equal(playback.stickerPicture("still", "first"), null);
+  assert.deepEqual(stickerVideo.seeks, []);
+  playback.toggle();
+  clock.framesAhead(10);
+  follow([], true, STICKER);
+  assert.equal(playback.frame, 10);
+  // Frame 10 is 16 frames into the media, which starts at start - in = frame -6.
+  assert.equal(stickerVideo.paused, false);
+  assert.ok(Math.abs(stickerVideo.seeks.at(-1) - 16 / FPS) < 1e-4);
+  stickerVideo.land();
+  stickerVideo.dispatchEvent(new Event("playing"));
+  assert.equal(playback.stickerPicture("still", "first"), stickerVideo);
+  // Pause: the VIDEO pauses with the playhead and rests on its frame.
+  playback.toggle();
+  follow([], true, STICKER);
+  assert.equal(stickerVideo.paused, true);
+  assert.equal(log.stickerCaptures > 0, true);
+  assert.equal(playback.stickerPicture("still", "first"), "still");
+  // Out of sight, the VIDEO is let go.
+  follow([], false, STICKER);
+  assert.equal(stickerVideo.src, "");
+});
+
+test("the port Sticker's media end widens the Timeline span", () => {
+  const state = portState();
+  state.stickers[0].clip.start = 200;
+  const { playback, follow, clock } = setup(state);
+  follow([], true, STICKER);
+  playback.toggle();
+  // The media ends at 200 - 12 + 3 s = frame 260; frame 250 is still on the Timeline.
+  clock.framesAhead(250);
+  assert.equal(playback.frame, 250);
+});
+
+test("an RGBA IMAGE batch on the port shows its PNGs along the playhead, without the VIDEO element", () => {
+  const frames = Array.from({ length: 10 }, (_, index) => `/f${index}.png`);
+  const sticker = { frames, meta: { kind: "IMAGE", fps: 24, frames: 10, duration: 10 / 24 } };
+  const state = loadSceneState({ version: 2, stickers: [{ id: "p", source: { kind: "port" }, clip: { start: 2, in: 0 } }] });
+  const { playback, follow, stickerVideo, clock, log } = setup(state);
+  assert.equal(follow([], true, sticker), true);
+  assert.equal(stickerVideo.src, "");
+  assert.equal(playback.stickerPicture("still", "first"), null);
+  playback.toggle();
+  clock.framesAhead(5);
+  follow([], true, sticker);
+  assert.equal(playback.stickerPicture("still", "first"), "first");
+  log.images.find((image) => image.src === "/f3.png").load();
+  assert.equal(playback.stickerPicture("still", "first").src, "/f3.png");
+  assert.equal(log.changes > 0, true);
 });

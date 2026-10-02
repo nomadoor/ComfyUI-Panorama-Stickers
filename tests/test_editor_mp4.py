@@ -1,3 +1,4 @@
+import json
 from fractions import Fraction
 
 import numpy as np
@@ -11,6 +12,7 @@ pytest.importorskip(
 )
 
 import av
+from PIL import Image
 from comfy_api.latest import InputImpl
 
 from comfyui_pano_suite import nodes
@@ -203,3 +205,96 @@ def test_an_image_batch_with_alpha_or_gray_gets_an_editor_mp4(tmp_path):
 
         entry = ui["pano_input_videos"][0]
         assert len(_packets(tmp_path / entry["subfolder"] / entry["filename"])) == 3
+
+
+def _sticker_ui(sticker, state_json=""):
+    return nodes.PanoramaStickersSceneNode.execute(
+        bg_color="#000000", coverage="360", output_preset="1024", state_json=state_json, sticker=sticker
+    ).ui
+
+
+def _sticker_mp4(ui, tmp_path):
+    entry = ui["pano_sticker_input_videos"][0]
+    return tmp_path / entry["subfolder"] / entry["filename"], ui["pano_sticker_input_video_meta"][0]
+
+
+def test_a_sticker_video_gets_a_proxy_with_its_times_beside_its_first_frame(tmp_path):
+    video = _file(tmp_path, "sticker.mp4", gop=250)
+
+    ui = _sticker_ui(video)
+
+    path, meta = _sticker_mp4(ui, tmp_path)
+    packets = _packets(path)
+    assert max(_keyframe_gaps(packets)) <= core_video.EDITOR_KEYINT
+    assert [time for time, _keyframe, _data in packets] == _times(video)
+    # The media ends one frame at the average rate after its last PTS, as PortMedia.end(); the MP4 time base is 1/16000.
+    assert meta == {"kind": "VIDEO", "fps": 25.0, "frames": len(VFR_MS), "duration": 0.8, "pts_tolerance": 1 / 32000, "has_audio": False}
+    assert ui["pano_sticker_input_images"]
+
+
+def test_a_sticker_video_that_seeks_fast_is_copied(tmp_path, monkeypatch):
+    video = _file(tmp_path, "sticker.mp4", gop=10)
+    encoded = []
+    monkeypatch.setattr(nodes, "encode_editor_mp4", lambda opened: encoded.append(opened))
+
+    path, _meta = _sticker_mp4(_sticker_ui(video), tmp_path)
+
+    assert not encoded
+    assert _packets(path) == _packets(video.get_stream_source())
+
+
+def test_a_sticker_image_batch_gets_an_mp4_at_the_timeline_fps(tmp_path):
+    ui = _sticker_ui(torch.rand((30, 16, 32, 3)), json.dumps({"version": 2, "timeline": {"fps": 12}}))
+
+    path, meta = _sticker_mp4(ui, tmp_path)
+    packets = _packets(path)
+    assert [time for time, _keyframe, _data in packets] == [Fraction(index, 12) for index in range(30)]
+    assert max(_keyframe_gaps(packets)) <= core_video.EDITOR_KEYINT
+    assert meta == {"kind": "IMAGE", "fps": 12.0, "frames": 30, "duration": 2.5, "has_audio": False}
+
+
+def test_a_single_image_or_frame_sticker_has_no_mp4(tmp_path):
+    for sticker in (torch.rand((1, 16, 32, 3)), _file(tmp_path, "one.mp4", gop=10, pts_ms=[0])):
+        ui = _sticker_ui(sticker)
+
+        assert ui["pano_sticker_input_images"]
+        assert "pano_sticker_input_videos" not in ui and "pano_sticker_input_video_meta" not in ui
+
+
+def test_the_sticker_proxy_is_encoded_once_while_its_input_stays_the_same(tmp_path, monkeypatch):
+    encoded = []
+    encode = nodes.encode_editor_mp4
+    monkeypatch.setattr(nodes, "encode_editor_mp4", lambda opened: encoded.append(opened) or encode(opened))
+    video = _file(tmp_path, "sticker.mp4", gop=250)
+    batch = torch.rand((3, 16, 32, 3))
+
+    first = _sticker_mp4(_sticker_ui(video), tmp_path)
+    moved = json.dumps({"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "clip": {"start": 5, "in": 2}}]})
+    second = _sticker_mp4(_sticker_ui(InputImpl.VideoFromFile(video.get_stream_source()), moved), tmp_path)
+    _sticker_ui(batch)
+    _sticker_ui(batch, moved)
+
+    assert len(encoded) == 2
+    assert first == second
+
+
+def test_an_rgba_sticker_image_batch_keeps_its_alpha_as_pngs(tmp_path, monkeypatch):
+    saved = []
+    save = nodes.save_editor_frames
+    monkeypatch.setattr(nodes, "save_editor_frames", lambda images: saved.append(images) or save(images))
+    batch = torch.rand((3, 16, 32, 4))
+    state = json.dumps({"version": 2, "timeline": {"fps": 12}})
+
+    ui = _sticker_ui(batch, state)
+    again = _sticker_ui(batch, json.dumps({"version": 2, "timeline": {"fps": 12}, "stickers": [{"id": "p", "source": {"kind": "port"}, "clip": {"start": 4}}]}))
+
+    assert "pano_sticker_input_videos" not in ui
+    assert ui["pano_sticker_input_video_meta"][0] == {"kind": "IMAGE", "fps": 12.0, "frames": 3, "duration": 0.25, "has_audio": False}
+    entries = ui["pano_sticker_input_frames"]
+    for index, entry in enumerate(entries):
+        with Image.open(tmp_path / entry["subfolder"] / entry["filename"]) as image:
+            assert image.mode == "RGBA"
+            expected = (batch[index].clamp(0, 1) * 255 + 0.5).byte().numpy()
+            assert np.array_equal(np.asarray(image), expected)
+    assert len(saved) == 1
+    assert again["pano_sticker_input_frames"] == entries
