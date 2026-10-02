@@ -47,6 +47,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 `Panorama Stickers`、`Panorama Cutout` 和 `Panorama Preview` 现已提供轻量级节点内 UI，无需打开 Full Editor 即可完成常用操作。Legacy canvas 和 Node 2.0 均受支持。
 
+### 新节点的视频输出
+
+`Panorama Stickers (new)` 和 `Panorama Cutout (new)` 的 IMAGE／MASK 输出（`first_frame`、`first_frame_mask`）只有第一帧。全部帧以及 fps 和音频都在 `video`（VIDEO）中，保存时逐帧渲染。需要以 IMAGE 使用全部帧时，请将 `video` 连接到 Get Video Components。需要为 IMAGE 批次附加 fps 或音频后再连接时，请先经过 Create Video。
+
 ## Workflow
 
 - 全景静态图 workflow

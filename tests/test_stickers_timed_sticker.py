@@ -16,7 +16,7 @@ from comfy_api.latest import InputImpl, Types
 
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.video_source import StreamedVideo
-from test_stickers_scene_video import _cfr, _execute
+from test_stickers_scene_video import _cfr, _execute, _frames
 
 
 def _reds(count):
@@ -82,7 +82,9 @@ def _run(state=None, **inputs):
 
 
 def test_image_batch_sticker_maps_one_to_one_to_output_frames():
-    image, _mask, _audio, fps, _scene = _run(sticker=_reds(4))
+    video = _run(sticker=_reds(4))[2]
+    components = video.get_components()
+    image, fps = components.images, float(components.frame_rate)
 
     # Without anything else that sets the length, the Sticker ends with its last image.
     assert _batch_index_at_center(image) == [0, 1, 2, 3]
@@ -90,32 +92,32 @@ def test_image_batch_sticker_maps_one_to_one_to_output_frames():
 
 
 def test_image_batch_sticker_is_not_drawn_past_its_last_image():
-    image = _run(_port_state(length=6), sticker=_reds(4))[0]
+    image = _frames(_run(_port_state(length=6), sticker=_reds(4)))
 
     assert _batch_index_at_center(image) == [0, 1, 2, 3, None, None]
 
 
 def test_image_batch_sticker_follows_the_output_frames_of_a_background_video(tmp_path):
     # Recorded at 50 fps, the Timeline runs at the 25 fps of the background; the batch still maps to output frames.
-    image = _run(_port_state(fps=50.0), bg_media=_cfr(tmp_path, count=5), sticker=_reds(3))[0]
+    image = _frames(_run(_port_state(fps=50.0), bg_media=_cfr(tmp_path, count=5), sticker=_reds(3)))
 
     assert _batch_index_at_center(image) == [0, 1, 2, None, None]
 
 
 def test_single_image_sticker_is_drawn_only_inside_its_clip_range():
-    image = _run(_port_state({"start": 2, "duration": 3}, length=7), sticker=_reds(3)[2:])[0]
+    image = _frames(_run(_port_state({"start": 2, "duration": 3}, length=7), sticker=_reds(3)[2:]))
 
     assert _batch_index_at_center(image) == [None, None, 2, 2, 2, None, None]
 
 
 def test_clip_in_skips_the_head_of_an_image_batch_sticker():
-    image = _run(_port_state({"start": 2, "in": 1, "duration": 3}, length=6), sticker=_reds(5))[0]
+    image = _frames(_run(_port_state({"start": 2, "in": 1, "duration": 3}, length=6), sticker=_reds(5)))
 
     assert _batch_index_at_center(image) == [None, None, 1, 2, 3, None]
 
 
 def test_clip_range_end_comes_before_the_end_of_the_sticker_media():
-    image = _run(_port_state({"start": 1, "duration": 2}), sticker=_reds(5))[0]
+    image = _frames(_run(_port_state({"start": 1, "duration": 2}), sticker=_reds(5)))
 
     # The media starts at start - in, so frame 1 shows its first image.
     assert _batch_index_at_center(image) == [None, 0, 1]
@@ -126,7 +128,9 @@ def test_video_sticker_plays_in_real_time_at_a_different_fps(tmp_path):
     # 10 fps against the 25 fps Timeline: each output frame shows the last Sticker frame at or before its time.
     sticker = _write_red_video(tmp_path / "slow.mkv", [0, 100, 200, 300], 10)
 
-    image, _mask, _audio, fps, _scene = _run(bg_media=background, sticker=sticker)
+    video = _run(bg_media=background, sticker=sticker)[2]
+    components = video.get_components()
+    image, fps = components.images, float(components.frame_rate)
 
     assert fps == 25.0
     # Output times 0, 0.04, ..., 0.36 s; the Sticker ends 0.1 s after its last frame.
@@ -136,7 +140,7 @@ def test_video_sticker_plays_in_real_time_at_a_different_fps(tmp_path):
 def test_video_sticker_is_not_drawn_after_it_ends(tmp_path):
     sticker = _write_red_video(tmp_path / "short.mkv", [0, 100], 10)
 
-    image = _run(bg_media=_cfr(tmp_path, count=8), sticker=sticker)[0]
+    image = _frames(_run(bg_media=_cfr(tmp_path, count=8), sticker=sticker))
 
     assert _video_index_at_center(image) == [0, 0, 0, 1, 1, None, None, None]
 
@@ -144,7 +148,9 @@ def test_video_sticker_is_not_drawn_after_it_ends(tmp_path):
 def test_trimmed_video_sticker_starts_at_the_trim(tmp_path):
     sticker = _write_red_video(tmp_path / "cfr.mkv", [index * 40 for index in range(10)], 25).as_trimmed(0.12, 0.2)
 
-    image, _mask, _audio, fps, _scene = _run(sticker=sticker)
+    video = _run(sticker=sticker)[2]
+    components = video.get_components()
+    image, fps = components.images, float(components.frame_rate)
 
     assert fps == 25.0
     assert _video_index_at_center(image) == [3, 4, 5, 6, 7]
@@ -153,7 +159,9 @@ def test_trimmed_video_sticker_starts_at_the_trim(tmp_path):
 def test_timeline_fps_comes_from_the_sticker_video_without_a_background_video():
     sticker = InputImpl.VideoFromComponents(Types.VideoComponents(images=_reds(3), frame_rate=Fraction(10)))
 
-    image, _mask, audio, fps, _scene = _run(sticker=sticker)
+    video = _run(sticker=sticker)[2]
+    components = video.get_components()
+    image, audio, fps = components.images, components.audio, float(components.frame_rate)
 
     assert fps == 10.0
     assert _batch_index_at_center(image) == [0, 1, 2]
@@ -164,7 +172,9 @@ def test_recorded_length_keeps_its_seconds_at_the_fps_of_the_sticker_video():
     sticker = InputImpl.VideoFromComponents(Types.VideoComponents(images=_reds(3), frame_rate=Fraction(12)))
 
     # 48 Timeline frames at 24 fps are 2 s, 24 frames at the 12 fps of the Sticker.
-    image, _mask, _audio, fps, _scene = _run(_port_state(fps=24.0, length=48), sticker=sticker)
+    video = _run(_port_state(fps=24.0, length=48), sticker=sticker)[2]
+    components = video.get_components()
+    image, fps = components.images, float(components.frame_rate)
 
     assert fps == 12.0
     assert image.shape[0] == 24
@@ -174,9 +184,9 @@ def test_recorded_length_keeps_its_seconds_at_the_fps_of_the_sticker_video():
 def test_background_video_fps_comes_before_the_sticker_video_fps(tmp_path):
     sticker = InputImpl.VideoFromComponents(Types.VideoComponents(images=_reds(3), frame_rate=Fraction(10)))
 
-    fps = _run(bg_media=_cfr(tmp_path, count=4), sticker=sticker)[3]
+    video = _run(bg_media=_cfr(tmp_path, count=4), sticker=sticker)[2]
 
-    assert fps == 25.0
+    assert video.get_frame_rate() == 25
 
 
 def _count_sky_renders(monkeypatch):
@@ -192,9 +202,10 @@ def _count_sky_renders(monkeypatch):
 
 
 def test_static_scene_with_a_single_image_sticker_renders_the_sky_once(monkeypatch):
+    video = _run(_port_state(length=100), sticker=_reds(1))[2]
     calls = _count_sky_renders(monkeypatch)
 
-    image = _run(_port_state(length=100), sticker=_reds(1))[0]
+    image = video.get_components().images
 
     assert len(calls) == 1
     assert image.shape[0] == 100
@@ -203,18 +214,20 @@ def test_static_scene_with_a_single_image_sticker_renders_the_sky_once(monkeypat
 def test_video_sticker_renders_the_sky_only_when_its_source_frame_changes(tmp_path, monkeypatch):
     background = _cfr(tmp_path, count=10)
     sticker = _write_red_video(tmp_path / "slow.mkv", [0, 100, 200, 300], 10)
+    video = _run(bg_media=background, sticker=sticker)[2]
     calls = _count_sky_renders(monkeypatch)
 
-    _run(bg_media=background, sticker=sticker)
+    video.get_components()
 
     assert len(calls) == 4
 
 
 def test_video_sticker_renders_the_sky_once_before_and_after_its_clip_range(tmp_path, monkeypatch):
     sticker = InputImpl.VideoFromComponents(Types.VideoComponents(images=_reds(3), frame_rate=Fraction(24)))
+    video = _run(_port_state({"start": 4, "duration": 3}, length=10), sticker=sticker)[2]
     calls = _count_sky_renders(monkeypatch)
 
-    image = _run(_port_state({"start": 4, "duration": 3}, length=10), sticker=sticker)[0]
+    image = video.get_components().images
 
     assert _batch_index_at_center(image) == [None] * 4 + [0, 1, 2] + [None] * 3
     # Before the clip, inside it (three frames), and after it.
@@ -224,7 +237,9 @@ def test_video_sticker_renders_the_sky_once_before_and_after_its_clip_range(tmp_
 def test_ntsc_sticker_video_with_millisecond_pts_shows_every_frame_once(tmp_path):
     sticker = _write_red_video(tmp_path / "ntsc.mkv", _ntsc_pts(12), Fraction(30000, 1001))
 
-    image, _mask, _audio, fps, _scene = _run(sticker=sticker)
+    video = _run(sticker=sticker)[2]
+    components = video.get_components()
+    image, fps = components.images, float(components.frame_rate)
 
     assert fps == pytest.approx(30000 / 1001)
     assert _video_index_at_center(image) == list(range(12))
@@ -233,7 +248,7 @@ def test_ntsc_sticker_video_with_millisecond_pts_shows_every_frame_once(tmp_path
 def test_image_batch_sticker_maps_one_to_one_to_a_background_video_with_millisecond_pts(tmp_path):
     background = _write_red_video(tmp_path / "ntsc.mkv", _ntsc_pts(9), Fraction(30000, 1001), red=False)
 
-    image = _run(bg_media=background, sticker=_reds(9))[0]
+    image = _frames(_run(bg_media=background, sticker=_reds(9)))
 
     assert _batch_index_at_center(image) == list(range(9))
 
@@ -241,7 +256,7 @@ def test_image_batch_sticker_maps_one_to_one_to_a_background_video_with_millisec
 def test_variable_frame_rate_sticker_shows_each_frame_from_its_pts(tmp_path):
     sticker = _write_red_video(tmp_path / "vfr.mkv", [0, 40, 60, 120, 200], 25)
 
-    image = _run(bg_media=_cfr(tmp_path, count=8), sticker=sticker)[0]
+    image = _frames(_run(bg_media=_cfr(tmp_path, count=8), sticker=sticker))
 
     # Output times 0, 0.04, ..., 0.28 s; the last frame lasts 0.04 s.
     assert _video_index_at_center(image) == [0, 1, 2, 3, 3, 4, None, None]
@@ -250,7 +265,7 @@ def test_variable_frame_rate_sticker_shows_each_frame_from_its_pts(tmp_path):
 def test_video_sticker_clip_can_end_before_its_media(tmp_path):
     sticker = _write_red_video(tmp_path / "red.mkv", [index * 40 for index in range(8)], 25)
 
-    image = _run(_port_state({"start": 0, "duration": 3}, fps=25.0), bg_media=_cfr(tmp_path, count=6), sticker=sticker)[0]
+    image = _frames(_run(_port_state({"start": 0, "duration": 3}, fps=25.0), bg_media=_cfr(tmp_path, count=6), sticker=sticker))
 
     assert _video_index_at_center(image) == [0, 1, 2, None, None, None]
 
@@ -258,7 +273,7 @@ def test_video_sticker_clip_can_end_before_its_media(tmp_path):
 def test_clip_in_skips_the_head_of_a_video_sticker(tmp_path):
     sticker = _write_red_video(tmp_path / "red.mkv", [index * 40 for index in range(8)], 25)
 
-    image = _run(_port_state({"start": 1, "in": 2}, fps=25.0), bg_media=_cfr(tmp_path, count=8), sticker=sticker)[0]
+    image = _frames(_run(_port_state({"start": 1, "in": 2}, fps=25.0), bg_media=_cfr(tmp_path, count=8), sticker=sticker))
 
     assert _video_index_at_center(image) == [None, 2, 3, 4, 5, 6, 7, None]
 
@@ -282,8 +297,8 @@ def test_one_bytesio_video_on_both_inputs_decodes_like_the_file(tmp_path):
     from_file = InputImpl.VideoFromFile(str(path))
     shared = InputImpl.VideoFromFile(io.BytesIO(path.read_bytes()))
 
-    expected = _run(bg_media=from_file, sticker=from_file)[0]
-    image = _run(bg_media=shared, sticker=shared)[0]
+    expected = _frames(_run(bg_media=from_file, sticker=from_file))
+    image = _frames(_run(bg_media=shared, sticker=shared))
 
     assert torch.equal(image, expected)
 
@@ -313,7 +328,7 @@ NTSC = 30000 / 1001
 def test_ntsc_sticker_video_that_sets_the_grid_keeps_its_frames_after_a_clip_start(tmp_path):
     sticker = _write_red_video(tmp_path / "ntsc.mkv", _ntsc_pts(12), Fraction(30000, 1001))
 
-    image = _run(_port_state({"start": 3}, fps=NTSC), sticker=sticker)[0]
+    image = _frames(_run(_port_state({"start": 3}, fps=NTSC), sticker=sticker))
 
     assert _video_index_at_center(image) == [None] * 3 + list(range(12))
 
@@ -321,6 +336,6 @@ def test_ntsc_sticker_video_that_sets_the_grid_keeps_its_frames_after_a_clip_sta
 def test_clip_range_on_an_ntsc_background_with_millisecond_pts_starts_on_its_frame(tmp_path):
     background = _write_red_video(tmp_path / "ntsc.mkv", _ntsc_pts(10), Fraction(30000, 1001), red=False)
 
-    image = _run(_port_state({"start": 3, "duration": 4}, fps=NTSC), bg_media=background, sticker=_reds(1))[0]
+    image = _frames(_run(_port_state({"start": 3, "duration": 4}, fps=NTSC), bg_media=background, sticker=_reds(1)))
 
     assert _batch_index_at_center(image) == [None] * 3 + [0] * 4 + [None] * 3

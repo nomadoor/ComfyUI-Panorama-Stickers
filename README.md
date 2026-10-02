@@ -47,6 +47,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 `Panorama Stickers`, `Panorama Cutout`, and `Panorama Preview` now include lightweight on-node UIs for completing common interactions without opening the Full Editor. Both the legacy canvas and Node 2.0 are supported.
 
+### Video output of the new nodes
+
+`Panorama Stickers (new)` and `Panorama Cutout (new)` output only the first frame as IMAGE / MASK (`first_frame`, `first_frame_mask`). Every frame, with the fps and audio, is in `video` (VIDEO), which is rendered frame by frame when it is saved. To get all frames as IMAGE, connect `video` to Get Video Components. To give an IMAGE batch an fps or audio before connecting it, pass it through Create Video.
+
 ## Workflow
 
 - Panorama image workflows

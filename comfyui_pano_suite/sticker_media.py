@@ -8,10 +8,18 @@ from comfy_api.latest import InputImpl
 
 from .core.scene_eval import FRAME_EPSILON
 from .core.video_source import MaterializedVideo, StreamedVideo, coded_size
+from .scene_video import RenderedVideo, SceneVideo
+
+# What `open_video` returns; each has `frame_rate`, `times`, `time_base`, `first_frame`, frames read in order by
+# index, and `audio(seconds)`.
+OPENED_VIDEOS = (StreamedVideo, MaterializedVideo, RenderedVideo)
 
 
-def open_video(video, name: str) -> StreamedVideo | MaterializedVideo:
-    """Stream a file-backed VIDEO without a crop; read any other VIDEO whole through the core."""
+def open_video(video, name: str) -> StreamedVideo | MaterializedVideo | RenderedVideo:
+    """Render the `video` output of Stickers and Cutout frame by frame, stream a file-backed VIDEO without a crop,
+    and read any other VIDEO whole through the core."""
+    if isinstance(video, SceneVideo):
+        return RenderedVideo(video)
     # The crop of a VideoFromFile is private; only an uncropped one reports the stream's own size.
     if isinstance(video, InputImpl.VideoFromFile) and video.get_dimensions() == coded_size(video.get_stream_source()):
         return StreamedVideo(video.get_stream_source(), *video.get_active_trim_window(), name)

@@ -21,7 +21,9 @@ from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.nodes import PanoramaStickersSceneNode, PanoSceneValue
+from comfyui_pano_suite.scene_video import SceneVideo
 from test_legacy_goldens import _golden_mismatch
+from test_stickers_scene_video import _frames
 from tools import bake_legacy_goldens
 from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
 from tools.golden_png import read_png16
@@ -107,37 +109,39 @@ GREEN = torch.tensor([0.0, 1.0, 0.0])
 RED = torch.tensor([1.0, 0.0, 0.0])
 
 
-def test_outputs_are_image_mask_audio_fps_and_pano_scene_in_order():
-    image, mask, audio, fps, pano_scene = _execute({"version": 2, "timeline": {"fps": 30.0}}, bg_media=build_background_erp())
+def test_outputs_are_first_frame_first_frame_mask_video_and_pano_scene_in_order():
+    image, mask, video, pano_scene = _execute({"version": 2, "timeline": {"fps": 30.0}}, bg_media=build_background_erp())
 
     assert image.shape == (1, 256, 512, 3) and image.dtype == torch.float32 and image.device.type == "cpu"
     assert mask.shape == (1, 256, 512) and float(mask.max()) == 0.0
-    assert audio is None
-    assert fps == 30.0
+    assert isinstance(video, SceneVideo)
+    assert video.get_frame_rate() == 30 and video.get_frame_count() == 1 and video.get_dimensions() == (512, 256)
     assert isinstance(pano_scene, PanoSceneValue)
 
 
 def test_without_bg_media_the_output_is_bg_color_at_the_preset_size():
-    image, _mask, _audio, fps, _scene = _execute(output_preset="1024", bg_color="#ff0000")
+    image, _mask, video, _scene = _execute(output_preset="1024", bg_color="#ff0000")
 
     assert image.shape == (1, 512, 1024, 3)
     assert torch.equal(image, RED.expand(1, 512, 1024, 3))
-    assert fps == 24.0
+    assert video.get_frame_rate() == 24
 
 
 def test_image_batch_background_maps_one_to_one_to_output_frames():
     bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
 
-    image = _execute(bg_media=bg)[0]
+    first, _mask, video, _scene = _execute(bg_media=bg)
+    image = video.get_components().images
 
     assert image.shape == (3, 4, 4, 3)
+    assert torch.equal(first, image[:1])
     assert torch.allclose(image[:, 0, 0, 0], torch.tensor([0.1, 0.5, 0.9]))
 
 
 def test_length_override_past_the_background_draws_bg_color():
     bg = _solid([0.5, 0.5, 0.5], batch=2)
 
-    image = _execute({"version": 2, "timeline": {"length": 3}}, bg_media=bg)[0]
+    image = _frames(_execute({"version": 2, "timeline": {"length": 3}}, bg_media=bg))
 
     assert image.shape[0] == 3
     assert torch.allclose(image[1], bg[1])
@@ -145,7 +149,7 @@ def test_length_override_past_the_background_draws_bg_color():
 
 
 def test_single_background_image_stays_for_the_whole_timeline():
-    image = _execute({"version": 2, "timeline": {"length": 2}}, bg_media=_solid([0.5, 0.5, 0.5]))[0]
+    image = _frames(_execute({"version": 2, "timeline": {"length": 2}}, bg_media=_solid([0.5, 0.5, 0.5])))
 
     assert image.shape[0] == 2
     assert torch.allclose(image, torch.full((2, 4, 4, 3), 0.5))
@@ -251,22 +255,32 @@ def _count_render_calls(monkeypatch):
     return counts
 
 
-def test_static_scene_renders_and_composites_once_for_all_frames(monkeypatch):
-    counts = _count_render_calls(monkeypatch)
-    state = {"version": 2, "timeline": {"length": 3}, "stickers": [{"id": "p", "source": {"kind": "port"}}]}
-
-    image, mask = _execute(state, bg_media=_solid([0.5, 0.5, 0.5]), sticker=_solid([1.0, 0.0, 0.0]))[:2]
-
-    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}
-    assert torch.equal(image[0], image[1]) and torch.equal(image[0], image[2])
-    assert torch.equal(mask[0], mask[2])
-
-
-def test_background_batch_reuses_the_sky_and_composites_each_frame(monkeypatch):
+def test_execute_renders_only_the_first_frame(monkeypatch):
     counts = _count_render_calls(monkeypatch)
     bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
 
     _execute({"version": 2, "timeline": {"length": 4}}, bg_media=bg)
+
+    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}
+
+
+def test_static_scene_renders_and_composites_once_for_all_frames(monkeypatch):
+    state = {"version": 2, "timeline": {"length": 3}, "stickers": [{"id": "p", "source": {"kind": "port"}}]}
+    video = _execute(state, bg_media=_solid([0.5, 0.5, 0.5]), sticker=_solid([1.0, 0.0, 0.0]))[2]
+    counts = _count_render_calls(monkeypatch)
+
+    image = video.get_components().images
+
+    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}
+    assert torch.equal(image[0], image[1]) and torch.equal(image[0], image[2])
+
+
+def test_background_batch_reuses_the_sky_and_composites_each_frame(monkeypatch):
+    bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
+    video = _execute({"version": 2, "timeline": {"length": 4}}, bg_media=bg)[2]
+    counts = _count_render_calls(monkeypatch)
+
+    video.get_components()
 
     assert counts == {"_render_sky": 1, "_background": 3, "composite_frame": 4}
 
@@ -331,72 +345,45 @@ def _animated_camera_scene(keyframes, **state):
 
 def _render_state(state):
     sticker = torch.from_numpy(bake_legacy_goldens._quadrant_sticker()[None])
-    return _execute(state, bg_media=build_background_erp(), sticker=sticker)[:2]
+    return _execute(state, bg_media=build_background_erp(), sticker=sticker)
 
 
-def test_camera_keyframes_set_the_length_and_turn_the_image_and_mask_per_frame():
+def test_camera_keyframes_set_the_length_and_turn_each_frame():
     state = _animated_camera_scene([(0, 0.0, 0.0, "auto"), (2, 50.0, -10.0, "auto"), (4, 120.0, 20.0, "auto")])
 
-    image, mask = _render_state(state)
+    image = _frames(_render_state(state))
 
-    assert image.shape[0] == 5 and mask.shape[0] == 5
+    assert image.shape[0] == 5
     for index in (1, 3, 4):
         camera = evaluate_scene_state(load_scene_state(json.dumps(state)), index)["camera"]
-        still_image, still_mask = _render_camera_scene(**{key: camera[key] for key in ("position", "yaw_deg", "pitch_deg", "roll_deg")})
+        still_image, _still_mask = _render_camera_scene(**{key: camera[key] for key in ("position", "yaw_deg", "pitch_deg", "roll_deg")})
         assert torch.allclose(image[index], still_image, atol=1e-6)
-        assert torch.allclose(mask[index], still_mask, atol=1e-6)
-    assert not torch.allclose(mask[1], mask[3], atol=1e-3)
 
 
 def test_hold_keyframe_cuts_the_camera_at_its_next_keyframe(monkeypatch):
     state = _animated_camera_scene([(0, 30.0, 0.0, "hold"), (2, 150.0, 0.0, "auto")], timeline={"length": 4})
+    video = _render_state(state)[2]
     counts = _count_render_calls(monkeypatch)
 
-    image, mask = _render_state(state)
+    image = video.get_components().images
 
     # Each held shot is composited once, at its first frame.
     assert counts["composite_frame"] == 2
     before, _ = _render_camera_scene(yaw_deg=30.0)
-    after, after_mask = _render_camera_scene(yaw_deg=150.0)
+    after, _ = _render_camera_scene(yaw_deg=150.0)
     assert torch.equal(image[0], image[1]) and torch.allclose(image[1], before, atol=1e-6)
     assert torch.equal(image[2], image[3]) and torch.allclose(image[2], after, atol=1e-6)
-    assert torch.allclose(mask[2], after_mask, atol=1e-6)
-    # The frames before the first turned mask keep the held one.
-    before_mask = _render_camera_scene(yaw_deg=30.0)[1]
-    assert mask.stride(0) == mask.shape[1] * mask.shape[2]
-    assert torch.allclose(mask[0], before_mask, atol=1e-6) and torch.equal(mask[0], mask[1])
 
 
-def test_empty_mask_is_one_row_shared_by_every_frame():
-    bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
+def test_first_frame_mask_is_the_mask_of_the_first_output_frame():
+    state = _animated_camera_scene([(0, 30.0, 0.0, "auto"), (2, 150.0, 0.0, "auto")])
 
-    image, mask = _execute({"version": 2}, bg_media=bg)[:2]
+    first, mask = _render_state(state)[:2]
 
-    assert not torch.equal(image[0], image[2])
-    assert mask.shape == (3, 4, 4) and mask.stride(0) == 0 and float(mask.max()) == 0.0
-
-
-def test_static_painted_mask_is_one_row_shared_by_every_frame():
-    sticker = torch.from_numpy(bake_legacy_goldens._quadrant_sticker()[None])
-    bg = build_background_erp()
-    bg = torch.cat([bg, 1.0 - bg, bg * 0.5])
-
-    image, mask = _execute(_camera_scene(), bg_media=bg, sticker=sticker)[:2]
-
-    assert not torch.equal(image[0], image[1])
-    assert mask.shape[0] == 3 and mask.stride(0) == 0
-    assert float(mask.max()) > 0.5 and torch.equal(mask[2], _render_camera_scene()[1])
-
-
-def test_turning_painted_mask_has_a_row_per_frame():
-    state = _animated_camera_scene([(0, 0.0, 0.0, "auto"), (2, 120.0, 0.0, "auto")])
-
-    mask = _render_state(state)[1]
-
-    assert mask.shape[0] == 3 and mask.stride(0) == mask.shape[1] * mask.shape[2]
-    for index in range(3):
-        yaw = evaluate_scene_state(load_scene_state(json.dumps(state)), index)["camera"]["yaw_deg"]
-        assert torch.allclose(mask[index], _render_camera_scene(yaw_deg=yaw)[1], atol=1e-6)
+    still_image, still_mask = _render_camera_scene(yaw_deg=30.0)
+    assert first.shape[0] == 1 and mask.shape[0] == 1
+    assert float(mask.max()) > 0.5
+    assert torch.allclose(first[0], still_image, atol=1e-6) and torch.allclose(mask[0], still_mask, atol=1e-6)
 
 
 def _sky_sticker_scene(pose_keyframes=(), opacity_keyframes=(), clip=None):
@@ -416,8 +403,12 @@ def _sky_sticker_scene(pose_keyframes=(), opacity_keyframes=(), clip=None):
     return {"version": 2, "timeline": {"length": 4}, "stickers": [sticker]}
 
 
+def _sticker_scene_video(state):
+    return _execute(state, bg_media=_solid([0.5, 0.5, 0.5], height=64, width=128), sticker=_solid([1.0, 0.0, 0.0]))[2]
+
+
 def _render_sticker_scene(state):
-    return _execute(state, bg_media=_solid([0.5, 0.5, 0.5], height=64, width=128), sticker=_solid([1.0, 0.0, 0.0]))[0]
+    return _sticker_scene_video(state).get_components().images
 
 
 def test_sticker_lane_keyframes_are_drawn_per_frame():
@@ -440,20 +431,22 @@ def test_sticker_lane_keyframes_are_drawn_per_frame():
 
 
 def test_held_sticker_keyframes_draw_the_sky_once_per_value(monkeypatch):
-    counts = _count_render_calls(monkeypatch)
     state = _sky_sticker_scene(pose_keyframes=[(0, 0.0, 30.0, "hold"), (2, 90.0, 30.0, "auto")], opacity_keyframes=[(0, 0.5, "auto")])
+    video = _sticker_scene_video(state)
+    counts = _count_render_calls(monkeypatch)
 
-    image = _render_sticker_scene(state)
+    image = video.get_components().images
 
     assert counts == {"_render_sky": 2, "_background": 1, "composite_frame": 2}
     assert torch.equal(image[0], image[1]) and torch.equal(image[2], image[3])
 
 
 def test_sticker_moving_outside_its_clip_range_does_not_redraw_the_sky(monkeypatch):
-    counts = _count_render_calls(monkeypatch)
     state = _sky_sticker_scene(pose_keyframes=[(0, 0.0, 30.0, "auto"), (3, 90.0, 30.0, "auto")], clip={"start": 0, "in": 0, "duration": 1})
+    video = _sticker_scene_video(state)
+    counts = _count_render_calls(monkeypatch)
 
-    image = _render_sticker_scene(state)
+    image = video.get_components().images
 
     assert counts["_render_sky"] == 2
     assert torch.equal(image[1], image[3])
@@ -470,9 +463,10 @@ def test_equal_auto_keyframes_do_not_redraw_on_interpolation_noise(monkeypatch):
         "stickers": [{"id": "s", "source": {"kind": "port"}, "direction": lane({"yaw_deg": 30.0, "pitch_deg": 10.0}), "roll": lane(0.0), "size": lane({"hFOV_deg": 30.0})}],
     }
     assert evaluate_scene_state(load_scene_state(json.dumps(state)), 1)["camera"]["yaw_deg"] != 30.0
+    video = _sticker_scene_video(state)
     counts = _count_render_calls(monkeypatch)
 
-    image = _render_sticker_scene(state)
+    image = video.get_components().images
 
     assert image.shape[0] == 7
     assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}

@@ -8,7 +8,7 @@ pytest.importorskip(
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.world_render import SceneContent
-from test_stickers_scene_video import _cfr
+from test_stickers_scene_video import _cfr, _frames
 from test_stickers_timed_sticker import _batch_index_at_center, _reds, _run, _video_index_at_center, _write_red_video
 from test_world_render import _ball
 
@@ -20,7 +20,7 @@ def _world_port_state(**timeline):
 
 
 def test_image_batch_world_sticker_maps_one_to_one_to_output_frames():
-    image = _run(_world_port_state(), sticker=_reds(4))[0]
+    image = _frames(_run(_world_port_state(), sticker=_reds(4)))
 
     assert _batch_index_at_center(image) == [0, 1, 2, 3]
 
@@ -28,7 +28,7 @@ def test_image_batch_world_sticker_maps_one_to_one_to_output_frames():
 def test_video_world_sticker_plays_in_real_time_at_a_different_fps(tmp_path):
     sticker = _write_red_video(tmp_path / "slow.mkv", [0, 100, 200, 300], 10)
 
-    image = _run(_world_port_state(), bg_media=_cfr(tmp_path, count=10), sticker=sticker)[0]
+    image = _frames(_run(_world_port_state(), bg_media=_cfr(tmp_path, count=10), sticker=sticker))
 
     assert _video_index_at_center(image) == [0, 0, 0, 1, 1, 2, 2, 2, 3, 3]
 
@@ -43,7 +43,7 @@ def _with_ball(monkeypatch, count=3):
 def test_scene_batch_maps_one_to_one_to_output_frames_and_sets_the_length(monkeypatch):
     _with_ball(monkeypatch)
 
-    image = _run(scene=object())[0]
+    image = _frames(_run(scene=object()))
 
     assert _batch_index_at_center(image) == [0, 1, 2]
 
@@ -51,9 +51,10 @@ def test_scene_batch_maps_one_to_one_to_output_frames_and_sets_the_length(monkey
 def test_scene_batch_follows_its_clip_range(monkeypatch):
     _with_ball(monkeypatch, count=5)
 
-    image, *_rest, pano_scene = _run({"version": 2, "scene": {"clip": {"start": 2, "in": 1, "duration": 3}}, "timeline": {"length": 6}}, scene=object())
+    result = _run({"version": 2, "scene": {"clip": {"start": 2, "in": 1, "duration": 3}}, "timeline": {"length": 6}}, scene=object())
+    pano_scene = result[-1]
 
-    assert _batch_index_at_center(image) == [None, None, 1, 2, 3, None]
+    assert _batch_index_at_center(_frames(result)) == [None, None, 1, 2, 3, None]
     # The item is decided in (a) from the content's start (start - in = 1), outside the Clip range too.
     assert [scene_index for *_indices, scene_index in pano_scene.frames] == [None, 0, 1, 2, 3, 4]
 
@@ -71,8 +72,9 @@ def test_frames_carry_the_scene_item_only_with_scene_content(monkeypatch):
 def test_single_scene_item_shows_for_the_whole_timeline(monkeypatch):
     views = _with_ball(monkeypatch, count=1)
 
-    image = _run({"version": 2, "timeline": {"length": 4}}, scene=object())[0]
+    video = _run({"version": 2, "timeline": {"length": 4}}, scene=object())[2]
+    views.clear()
 
-    assert _batch_index_at_center(image) == [0, 0, 0, 0]
+    assert _batch_index_at_center(video.get_components().images) == [0, 0, 0, 0]
     # The static scene and Camera are drawn once.
     assert len(views) == 1

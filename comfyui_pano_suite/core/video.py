@@ -273,8 +273,12 @@ def save_video_to_mp4(video, container_format, codec) -> tuple[Path, bool]:
     otherwise transcodes them frame by frame. Returns the path and whether the MP4 has audio."""
     output_path = _temp_mp4_path()
     video.save_to(str(output_path), format=container_format, codec=codec)
-    with av.open(str(output_path)) as container:
-        return output_path, bool(container.streams.audio)
+    return output_path, mp4_has_audio(output_path)
+
+
+def mp4_has_audio(path) -> bool:
+    with av.open(str(path)) as container:
+        return bool(container.streams.audio)
 
 
 def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None) -> Path:
