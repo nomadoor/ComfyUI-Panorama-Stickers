@@ -241,7 +241,7 @@ def test_warnings_of_a_3d_sticker_with_sticker_state_and_auto_come_in_order():
 def _size(state=None, output_size="auto", coverage="360", bg=None):
     warnings = []
     loaded = load_scene_state(json.dumps({"version": 2, **(state or {})}))
-    frames = [(float(frame), None, None, None) for frame in range(3)]
+    frames = [(None, ((float(frame), None, None),)) for frame in range(3)]
     size = nodes._studio_output_size(loaded, frames, output_size, int(coverage), bg, warnings)
     return size, warnings
 
@@ -323,8 +323,8 @@ def test_scene_output_is_the_stickers_pano_scene_without_the_camera():
     scene = _outputs(state, bg_media=bg, sticker=_solid([1.0, 0.0, 0.0]), output_size="1024")[3]
 
     assert isinstance(scene, PanoSceneValue)
-    assert scene.state["camera"] is None
-    assert [item["id"] for item in scene.state["stickers"]] == ["s", "w"]
+    assert scene.layers[-1].state["camera"] is None
+    assert [item["id"] for item in scene.layers[-1].state["stickers"]] == ["s", "w"]
     assert scene.bg_media is bg and scene.coverage == 360 and scene.bg_color == (0.0, 1.0, 0.0)
     assert scene.fps == 24.0 and len(scene.frames) == 3
     assert scene.media_ui["pano_input_images"]

@@ -77,29 +77,29 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
 
     assert isinstance(pano_scene, PanoSceneValue)
     expected_state = load_scene_state(json.dumps(STATE))
-    assert pano_scene.state["camera"] == expected_state["camera"]
-    assert pano_scene.state["timeline"] == expected_state["timeline"]
-    assert [item["source"]["kind"] for item in pano_scene.state["stickers"]] == ["port"]
+    assert pano_scene.layers[-1].state["camera"] == expected_state["camera"]
+    assert pano_scene.layers[-1].state["timeline"] == expected_state["timeline"]
+    assert [item["source"]["kind"] for item in pano_scene.layers[-1].state["stickers"]] == ["port"]
     assert pano_scene.bg_media is bg
-    assert pano_scene.scene is None
+    assert pano_scene.layers[-1].scene is None
     assert pano_scene.coverage == 180
     assert pano_scene.bg_color == (1.0, 0.0, 0.0)
     assert pano_scene.fps == float(video.get_frame_rate()) == 30.0
-    assert pano_scene.frames == ((0.0, 0, 0, None), (1.0, 1, 0, None), (2.0, 2, 0, None))
-    assert pano_scene.port.media is sticker
-    port_id = pano_scene.state["stickers"][0]["id"]
-    assert np.array_equal(pano_scene.sources.stickers[port_id].rgba[..., :3], sticker[0].numpy())
+    assert pano_scene.frames == ((0, ((0.0, 0, None),)), (1, ((1.0, 0, None),)), (2, ((2.0, 0, None),)))
+    assert pano_scene.layers[-1].port.media is sticker
+    port_id = pano_scene.layers[-1].state["stickers"][0]["id"]
+    assert np.array_equal(pano_scene.layers[-1].sources.stickers[port_id].rgba[..., :3], sticker[0].numpy())
 
 
 def test_pano_scene_state_is_plain_json_without_a_nested_scene():
     pano_scene = _stickers()[3]
 
-    assert json.loads(json.dumps(pano_scene.state)) == pano_scene.state
+    assert json.loads(json.dumps(pano_scene.layers[-1].state)) == pano_scene.layers[-1].state
     for value in vars(pano_scene).values():
         assert not isinstance(value, PanoSceneValue)
-    assert pano_scene.port is None
+    assert pano_scene.layers[-1].port is None
     # The Keyframes of the state's Camera do not set the length of Stickers (ADR 0028).
-    assert pano_scene.frames == ((0.0, None, None, None),)
+    assert pano_scene.frames == ((None, ((0.0, None, None),)),)
 
 
 def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):
@@ -110,7 +110,7 @@ def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):
     assert pano_scene.bg_media is video
     assert pano_scene.fps == float(output.get_frame_rate()) == 25.0
     assert len(pano_scene.frames) == output.get_frame_count() == 4
-    assert [bg_index for _frame, bg_index, _port_index, _scene_index in pano_scene.frames] == [0, 1, 2, 3]
+    assert [bg_index for bg_index, _layers in pano_scene.frames] == [0, 1, 2, 3]
 
 
 def test_pano_scene_is_the_same_for_identical_inputs():
@@ -120,11 +120,11 @@ def test_pano_scene_is_the_same_for_identical_inputs():
     first = _stickers(bg_media=bg, sticker=sticker)[3]
     second = _stickers(bg_media=bg, sticker=sticker)[3]
 
-    assert first.state == second.state
+    assert first.layers[-1].state == second.layers[-1].state
     assert (first.fps, first.frames, first.coverage, first.bg_color) == (second.fps, second.frames, second.coverage, second.bg_color)
-    assert first.sources.stickers.keys() == second.sources.stickers.keys()
-    for sticker_id, source in first.sources.stickers.items():
-        assert np.array_equal(source.rgba, second.sources.stickers[sticker_id].rgba)
+    assert first.layers[-1].sources.stickers.keys() == second.layers[-1].sources.stickers.keys()
+    for sticker_id, source in first.layers[-1].sources.stickers.items():
+        assert np.array_equal(source.rgba, second.layers[-1].sources.stickers[sticker_id].rgba)
 
 
 def _preview(source):

@@ -5,29 +5,38 @@ Stickers・Cutout・Preview が共有する、バックエンドの描画関数�
 ## 入口
 
 ```python
-render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_color, device, cache=None, bg_width=None, scene=None, scene_index=None)
+render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, cache=None, bg_width=None)
 # -> color (H, W, 3), mask (H, W), depth (H, W)
 ```
 
 | 引数 | 内容 |
 |---|---|
-| `evaluated` | `evaluate_scene_state(state, frame)` の戻り値（その時刻の Sticker・`scene`・Camera の値） |
-| `sources` | `SceneSources`。そのフレームの素材。`stickers`（Sticker の `id` → `StickerSource`）、`painting`（状態のペイント）、`painting_layer`（アップロード済みのペイントのラスタ。`resolve_painting_layer_payload` の戻り値） |
+| `layers` | `RenderLayer` の列（下の層から）。各層は Panorama Studio 一つ分の Scene で、`evaluated`・`sources`・`scene`・`scene_index` を持つ（下記「層」）。上流の Scene を受けない描画では層は一つ |
+| `RenderLayer.evaluated` | `evaluate_scene_state(state, frame)` の戻り値（その時刻の Sticker・`scene`・Camera の値） |
+| `RenderLayer.sources` | `SceneSources`。そのフレームの素材。`stickers`（Sticker の `id` → `StickerSource`）、`painting`（状態のペイント）、`painting_layer`（アップロード済みのペイントのラスタ。`resolve_painting_layer_payload` の戻り値） |
 | `camera` | 評価済みの Camera の値（`position`・`yaw_deg`・`pitch_deg`・`roll_deg`）。Stickers は Camera を持たず、常に `STICKERS_CAMERA`（World の原点、回転 0。ADR 0028）を渡す。Cutout は Cutout の状態の Camera を渡す。Panorama Studio は、Camera が無ければ `STICKERS_CAMERA`、あれば評価した Camera を渡す（下記「Panorama Studio」）。ERP の Projection の出力も Camera の回転に従って回る（描画関数の性質。Stickers では回転は常に 0） |
 | `projection` | `Projection` |
 | `bg` | このフレームの `bg_media` の画像 (h, w, C) または `None` |
 | `bg_key` | `bg` を識別するハッシュ可能な値（Stickers では `bg_media` のフレーム番号）。`None` のときは背景を使い回さない |
 | `bg_color` | 0〜1 の 3 つの数値 |
 | `device` | 出力を置く torch の device |
-| `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `bg_color`・`device` は変わらず、`sources` は Sticker の素材のフレーム（`StickerSource.frame`）のほかは変わらない）。直前のフレームの Sky の層、Camera の向きで写した Sky、読み込んだ背景（`("bg", bg_key)`）、結果を持つ。出力の画素ごとの向き（`_view`）は持たず、要るときに作り直す。Sky の値が同じなら Sky を作り直さず、Camera の回転と `bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は、表示中の `sky` の Sticker の評価済みの値（変形と不透明度）と素材のフレーム（`StickerSource.frame`、Source がなければ `None`）からなり、表示していない Sticker は `id` だけを入れる（Clip range の外で Keyframe の値が変わっても Sky を作り直さない）。Sky のキーの値と Camera の回転は小数第 9 位で丸めてキーにし、同じ値の Keyframe の間の補間の誤差では作り直さない。World の内容を奥行きで一枚にまとめた層（`world_key`。Sticker ごとの層は持たない）と、描いた `world` の Sticker の素材を `device` に置いたもの（Sticker の `id` ごとに、`StickerSource.frame` が変わったときだけ置き直し、描かなくなった Sticker の分は捨てる）も持つ。World の内容がないフレームでは両方を捨てる。World の内容があるフレームでは、Camera の位置も結果を使い回す条件に入る |
+| `cache` | 呼び出し側が 1 回の実行の間だけ持つ辞書（その間 `bg_color`・`device`・層の数は変わらず、各層の `sources` は Sticker の素材のフレーム（`StickerSource.frame`）のほかは変わらない）。直前のフレームの Sky の層、Camera の向きで写した Sky、読み込んだ背景（`("bg", bg_key)`）、結果を持つ。出力の画素ごとの向き（`_view`）は持たず、要るときに作り直す。Sky の値が同じなら Sky を作り直さず、Camera の回転と `bg_key` も同じなら直前の `color`・`mask`・`depth` をそのまま返す。Sky のキー（`_sky_key`）は、表示中の `sky` の Sticker の評価済みの値（変形と不透明度）と素材のフレーム（`StickerSource.frame`、Source がなければ `None`）からなり、表示していない Sticker は `id` だけを入れる（Clip range の外で Keyframe の値が変わっても Sky を作り直さない）。Sky のキーの値と Camera の回転は小数第 9 位で丸めてキーにし、同じ値の Keyframe の間の補間の誤差では作り直さない。World の内容を奥行きで一枚にまとめた層（`world_key`。Sticker ごとの層は持たない）と、描いた `world` の Sticker の素材を `device` に置いたもの（Sticker の `id` ごとに、`StickerSource.frame` が変わったときだけ置き直し、描かなくなった Sticker の分は捨てる）も持つ。World の内容がないフレームでは両方を捨てる。World の内容があるフレームでは、Camera の位置も結果を使い回す条件に入る |
 | `bg_width` | その実行の `bg_media` の画像の幅（`bg_media` がなければ `None`）。透視投影の Sky の解像度に使う。フレームごとの `bg` の有無では変えず、IMAGE バッチが Timeline より短くても途中で Sky の解像度が変わらない。Stickers・Cutout の (b) は `bg_media`（VIDEO なら最初のフレーム）の幅を渡す |
-| `scene` | `scene` 入力の中身（`SceneContent`）または `None`。下記「`scene` の共通処理」 |
-| `scene_index` | このフレームで描く `scene` の要素の番号。`None` なら描かない |
+| `RenderLayer.scene` | `scene` 入力の中身（`SceneContent`）または `None`。下記「`scene` の共通処理」 |
+| `RenderLayer.scene_index` | このフレームで描く `scene` の要素の番号。`None` なら描かない |
 
 - 戻り値はすべて float32 で、`device` 上にある。
-- `mask` はペイントで描いたマスクで、色と同じ Projection で写す。
+- `mask` はペイントで描いたマスクで、色と同じ Projection で写す。層が複数あれば、各層のマスクの画素ごとの最大値とする。
 - `depth` は Camera の位置から、その画素に見える最も近い World の内容までの距離（光線の長さ。透視投影でも Camera の前方への奥行き z ではない。前方への奥行きで表す深度（#65 の MoGe など）と比べるときは、光線と前方の軸のなす角を θ として `z / cos θ` に直す）で、World の単位で表す。World の内容がない画素（Sky だけが見える画素）は `+inf` とする。
 - ファイルは読まない。素材の読み込み（`file` の Source、ペイントのラスタ）は呼び出し側が行い、`sources` に入れて渡す。
+
+### 層（#88）
+
+- `layers` の各層は、Panorama Studio 一つの状態とその入力（ADR 0029 の「`scene` 出力と上流の Scene」）。最初が最も上流で、最後が撮影するノード自身の層。
+- Sky は層ごとに描き（Sticker・ペイントの重なり順は層の中だけで決まる）、下の層の Sky の上に上の層の Sky をストレートアルファで重ねる（上流の Sky が下になる）。Sky は無限遠なので、どの層の Sky もすべての層の World の内容より奥にある。
+- World の内容は、すべての層をまとめて `world_layer` で一枚にする（奥行きで混ざる。上の層が上に来るわけではない）。各層の `scene` の中身を先に描き、すべての層の `world` の Sticker を中心の距離でまとめて遠い順に並べて（同じ距離では層の順、層の中では状態の順）一度に畳む。層ごとに一枚にしてから畳むと、3 枚以上が重なる画素で間の面が消えるためである。`world_key` もすべての層の内容から作る。
+- `cache` は Sky の作業を層ごとに分けて持つ（`cache["layers"][i]`）。Sky のキーと `sky_textures` は層の中だけで Sticker の `id` で引き、`world_textures` は `(層の番号, id)` で引くので、層が違えば同じ `id`（`port` の Sticker も）でも混ざらない。状態の `id` は書き換えない。
+- `port` の Sticker は層ごとに一つまで（各層の `port` は、その層のノードの `sticker` 入力）。
 
 ### `StickerSource`
 
@@ -196,8 +205,8 @@ FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コア�
 
 | 入口 | 関数 | 役割 | 変更する ticket |
 |---|---|---|---|
-| (a) | `_decide_timeline` | Timeline fps と、出力フレームごとの評価する Timeline frame・描く `bg_media` のフレーム・`sticker` の素材のフレーム・`scene` の要素 | #53、#56 |
-| (b) | `_render_frames` | フレームごとに状態を評価し、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source に、`scene` の要素を `scene_index` にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される。描く Camera と Projection は、評価した状態から呼び出し側の `capture` が決める（Stickers は原点・回転 0 の `STICKERS_CAMERA` と ERP で、状態の `camera` は読まない。Cutout は Cutout の Camera と透視投影）。各フレームの `color`・`mask` を device のまま 1 枚ずつ返すジェネレーターで、`first_frame` と `video` の読み出しが同じ経路を使う | #55、#56、#58、#64、#82 |
+| (a) | `_decide_timeline` | Timeline fps、出力フレームごとの時刻（秒）とその丸めの幅（`time_base`）、出力フレームごとの描く `bg_media` のフレームと、層ごとの評価する Timeline frame・`sticker` の素材のフレーム・`scene` の要素（`_layer_frames`） | #53、#56、#88 |
+| (b) | `_render_frames` | フレームごとに層ごとの状態を評価し（層の数だけ `RenderLayer` を作る）、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source に、`scene` の要素を `scene_index` にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される。描く Camera と Projection は、評価した状態から呼び出し側の `capture` が決める（Stickers は原点・回転 0 の `STICKERS_CAMERA` と ERP で、状態の `camera` は読まない。Cutout は Cutout の Camera と透視投影）。各フレームの `color`・`mask` を device のまま 1 枚ずつ返すジェネレーターで、`first_frame` と `video` の読み出しが同じ経路を使う | #55、#56、#58、#64、#82、#88 |
 | (c) | `_render_outputs` と `execute` の末尾 | 出力（`first_frame`・`first_frame_mask`・`video`・`PANO_SCENE`）を組み立てる（ADR 0027）。`execute` で描くのは最初の出力フレームだけ | #53、#57、#82 |
 
 - Stickers は Camera を持たない（ADR 0028、#84）。ERP の出力は、World の原点から回転 0 で撮った `coverage` の範囲に固定する（`nodes.py` の `STICKERS_CAMERA`）。背景 ERP と `sky` の Sticker・ペイントは保存した向きのまま出し、`world` の Sticker と `scene` は原点から見た位置に描く。状態の `camera` は値も Keyframe も読まず、書き換えもしない（`PANO_SCENE` の `state` にもそのまま入る）。状態 v2 の `camera` は Cutout の状態の項目として残る。原点に置いた 3D の素材の中を確かめるときは、エディタの Viewport camera で見回すか Cutout で撮る。
@@ -297,25 +306,36 @@ Stickers と Cutout の `video` は、`scene_video.py` の `SceneVideo`（コア
 
 ## `PANO_SCENE`
 
-Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen dataclass、比較は同一性）である（#57）。Scene の正は `state_json` だけで、この値は実行のたびに状態と入力から導く派生値である（ADR 0025）。フレームは描画せず、`PANO_SCENE` を入れ子に持たない。Cutout（#64）、Preview の表示（#76）、3D の撮影（#61）は、次のフィールドだけを前提にする。
+新しい Stickers の `pano_scene` 出力と Panorama Studio の `scene` 出力は、`nodes.py` の `PanoSceneValue`（frozen dataclass、比較は同一性）である（#57、#88）。Scene の正は各ノードの `state_json` だけで、この値は実行のたびに状態と入力から導く派生値である（ADR 0025、ADR 0029）。フレームは描画せず、`PANO_SCENE` を入れ子に持たない。上流の Scene を受けたノードの値は、上流の層の後ろに自分の層を足した平らな列になる。Cutout（#64）、Preview の表示（#76）、3D の撮影（#61）、Studio の `scene` 入力（#88）は、次のフィールドだけを前提にする。
 
 | フィールド | 内容 |
 |---|---|
-| `state` | `load_scene_state(state_json)` の戻り値。`sticker` の入力があり、状態に `port` の Sticker がないときは、Stickers が描いたときと同じく `port` の Sticker を加えたもの |
+| `layers` | `SceneLayer` のタプル。最も上流のノードの層から、この値を作ったノードの層まで（下記） |
+| `bg_media` | `bg_media` の入力そのもの（IMAGE のテンソル、VIDEO のハンドル、または `None`）。層のうち最も上流で `bg_media` を持つノードのもの。VIDEO は開いた状態で渡さないので、使う側が `sticker_media.py` の `open_video` で開き直す |
+| `coverage` | `bg_media` の範囲（360 または 180）。`bg_media` と同じノードのもの（どの層も持たなければ、この値を作ったノードのもの） |
+| `bg_color` | 0〜1 の 3 つの数値のタプル。`coverage` と同じノードのもの |
+| `rate` | Timeline fps の分数（(a) が決めたもの。`video` の `get_frame_rate()` と同じ値）。`fps` はこれを float にしたもの（プロパティ） |
+| `times` | 出力フレームごとの時刻（秒、`Fraction`）のタプル。`video` の PTS と同じ値（`_output_times`）。長さが出力のフレーム数 |
+| `time_base` | `times` が丸められている幅（Timeline を決めた VIDEO の time base。厳密なときは `0`） |
+| `frames` | 出力フレームごとの `(描く bg_media のフレーム番号または None, 層ごとの (評価する Timeline frame, port のフレーム番号または None, scene の要素の番号または None) のタプル)`。層の並びは `layers` と同じ。`scene` の番号は、その層に `scene` の入力がないとき `None` で、Clip range の外のフレームでも番号を持つ（描くかは `evaluated["scene"]["active"]` で決める） |
+| `bg_ui` | `bg_media` をエディタに見せる `ui`（`pano_input_images`・`pano_input_videos`・`pano_input_video_meta`）。`bg_media` がなければ空 |
+| `media_ui` | この値を作ったノードの実行結果の `ui` のうち、素材をエディタに見せる部分（下記「Panorama Studio」の `ui`。上流がなければ、背景、`pano_scene_files`・`pano_sticker_files` などの #60・#63 のエディタ用ファイル、`port` の素材、`pano_timeline_fps`）。`pano_sticker_input_pose` と警告は入らない。参照するファイルは作ったノードが書いたもので、使う側は自分の `ui` にそのまま入れ、書き直さない（#77） |
+
+`SceneLayer`（層）のフィールド：
+
+| フィールド | 内容 |
+|---|---|
+| `state` | `load_scene_state(state_json)` の戻り値。`sticker` の入力があり、状態に `port` の Sticker がないときは、Stickers が描いたときと同じく `port` の Sticker を加えたもの。Studio の `scene` 出力では `camera` を `null` にする（ADR 0029） |
 | `sources` | `SceneSources`。`file` の Source は読み込み済み。`port` の Sticker の Source は `port` の最初のフレームを持つテンプレートで、`port` があるときは Stickers の (b) と同じく、フレームごとに `port.frames()` と `frames` の `port` の番号（`port.index_at` の結果）で取り出した素材に差し替えてから `render_frame` に渡す |
 | `port` | `sticker` の素材の `PortMedia`（`sticker_media.py`）、または `None`。開いた stream ではなく VIDEO の入力そのものを持ち、`frames()` を呼ぶたびに開き直すので、Preview と Cutout など複数のノードが同じ `PANO_SCENE` を使っても読み取り位置を取り合わない |
-| `bg_media` | `bg_media` の入力そのもの（IMAGE のテンソル、VIDEO のハンドル、または `None`）。VIDEO は開いた状態で渡さないので、使う側が `sticker_media.py` の `open_video` で開き直す |
-| `scene` | `scene` の入力（SPLAT・MESH・`MOGE_GEOMETRY`、または `None`）。3D ファイルは `_read_scene_file` で読んだ SPLAT・MESH にして持つ（どちらも読まないファイルはエラーになり、`PANO_SCENE` は出ない）。描く側は `_scene_content` で `SceneContent` にし、フレームごとに `frames` の `scene` の番号を `scene_index` として `render_frame` に渡す（Stickers の (b) と同じ） |
-| `coverage` | `bg_media` の範囲（360 または 180） |
-| `bg_color` | 0〜1 の 3 つの数値のタプル |
-| `fps` | Timeline fps（float）。`video` の `get_frame_rate()` と同じ値 |
-| `frames` | `_decide_timeline` が決めた出力フレームごとの `(評価する Timeline frame, 描く bg_media のフレーム番号または None, port のフレーム番号または None, scene の要素の番号または None)` の 4 つ組のタプル。`scene` の番号は `scene` の入力がないとき `None` で、Clip range の外のフレームでも番号を持つ（描くかは `evaluated["scene"]["active"]` で決める）。長さが出力のフレーム数 |
-| `media_ui` | Stickers の実行結果の `ui` のうち、素材をエディタに見せる部分（`pano_input_images`・`pano_input_videos` などの背景、`pano_scene_files`・`pano_sticker_files` などの #60・#63 のエディタ用ファイル、`port` の素材、`pano_timeline_fps`）。`pano_sticker_input_pose` と警告は入らない。参照するファイルは Stickers が書いたもので、使う側は自分の `ui` にそのまま入れ、書き直さない（#77） |
+| `scene` | `scene` の入力の 3D の素材（SPLAT・MESH・`MOGE_GEOMETRY`、または `None`。`scene` に上流の Scene をつないだ層では `None`）。3D ファイルは `_read_scene_file` で読んだ SPLAT・MESH にして持つ（どちらも読まないファイルはエラーになり、`PANO_SCENE` は出ない）。描く側は `_scene_content` で `SceneContent` にし、フレームごとに `frames` の `scene` の番号を `scene_index` として `render_frame` に渡す（Stickers の (b) と同じ） |
+| `media_ui` | その層の素材をエディタに見せる `ui`（`port` の素材の `pano_sticker_input_*`・`pano_sticker_files` / `pano_sticker_meta`、`scene` の `pano_scene_files` / `pano_scene_meta`）。背景は入らない（`PanoSceneValue.bg_ui`） |
 
-- 出力の解像度は入れない。撮影する側がそれぞれの規則（`output_preset`・`output_megapixels` など）で決める。
+- 出力の解像度は入れない。撮影する側がそれぞれの規則（`output_size`・`output_megapixels` など）で決める。
 - 同じ入力からは同じ内容の値になる（乱数や時刻を含まない）。ComfyUI のキャッシュが効くとき、下流には前回の同じ値が渡る。
-- 下流のノードは同じオブジェクトを共有するので、`state` や `sources` を書き換えない。
-- 3D の Sticker（#63）の素材は `port`（`is_3d`、`media` は SPLAT か MESH）が持ち、`sources` には入らない。使う側は Stickers の (b) と同じく `_render_frames` を通す。
+- 下流のノードは同じオブジェクトを共有するので、`layers` の `state` や `sources` を書き換えない。上流の層は、下流の値でも同じ `SceneLayer` のオブジェクトである。
+- 3D の Sticker（#63）の素材は層の `port`（`is_3d`、`media` は SPLAT か MESH）が持ち、`sources` には入らない。使う側は Stickers の (b) と同じく `_render_frames` を通す。
+- 撮影するノードの Camera は、最後の層（撮影するノード自身）の状態の `camera` から取る。`PANO_SCENE` は Camera を持たない。
 
 ## Cutout ノード（`PanoramaCutoutNode`）
 
@@ -323,23 +343,23 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 - 入力は `source`（`io.MultiType`：IMAGE・VIDEO・`PANO_SCENE`）、`coverage`、`output_megapixels`、`state_json`。出力は `first_frame`（IMAGE）、`sticker_state`（STRING）、`first_frame_mask`（MASK）、`video`（VIDEO）の順（ADR 0027）。`first_frame`・`first_frame_mask`・`video` は Stickers と同じ規則で作る。出力は入力の素通しではないので `MatchType` は使わない。
 - `is_output_node` は `True`（#77。Stickers と同じく、キューに入れるたびに実行され、下流の接続に関わらずエディタが実行結果を受け取る）。実行結果の `ui` はエディタのためのもの（#77）：
   - IMAGE / VIDEO：Stickers の `bg_media` と同じ `_bg_media_ui` で `pano_input_images`（2 フレーム以上なら `pano_input_videos`・`pano_input_video_meta`）。VIDEO が Timeline fps を決めたときは `pano_timeline_fps`。読めない `file` の Source の警告は `pano_sticker_warnings`（ログにも出す）。
-  - `PANO_SCENE`：その `media_ui` をそのまま入れ、`pano_timeline_fps`（Scene の Timeline fps。常に出す）、`pano_timeline_frames`（出力のフレーム数）、`pano_scene_state`（`PANO_SCENE` の `state`）、`pano_scene_coverage`（その `coverage`）を足す。Stickers の一時ファイル（MP4・PNG・#60 の PLY / GLB）は作り直さない。
+  - `PANO_SCENE`：その `media_ui` をそのまま入れ、`pano_timeline_fps`（Scene の Timeline fps。常に出す）、`pano_timeline_frames`（出力のフレーム数）、`pano_scene_state`（`PANO_SCENE` の最後の層の `state`）、`pano_scene_coverage`（その `coverage`）を足す。層が複数ある Scene でも、エディタに渡す状態は最後の層のものだけ（上流の層はエディタに出ないが、描画には入る。#92 で外すまでの扱い）。Stickers の一時ファイル（MP4・PNG・#60 の PLY / GLB）は作り直さない。
   - エディタは `source` の接続が実行時と同じ間だけこの `ui` を使う（`pano_preview_video.js` の `background`・`scene`・`external-sticker` のチャンネルに `source` を入れた）。エディタは `docs/threejs-spark-integration.md` の「Cutout の Camera（#77）」。ノード上の Cutout の表示は新しいノードにはまだない。
 - `state_json` は状態 v2（v1 も読む。旧 Cutout の `shots[0]` は Camera になる。`docs/scene-state-v2.md`）。Cutout の Camera は `state_json` の `camera` で、Keyframe に従って動く。
 - Timeline と各フレームは Stickers の (a)・(b)・(c)（`_decide_timeline`・`_render_frames`・`_render_outputs`）をそのまま使う。各フレームは `render_frame` に `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` を渡して描く。
   - IMAGE / VIDEO：ERP を Scene の向きに合った背景とみなし、Cutout の状態を Scene として描く（旧 Cutout と同じく、状態の `sky` の Sticker とペイントを重ねる）。Timeline は Cutout の状態に対して `_decide_timeline` で決める（VIDEO は `open_video(source, "source")`。Stickers・Cutout の `video` は 1 フレームずつ描いて読む）。`coverage` は ERP の範囲。`bg_color` は黒で、180 の ERP の半球の外は黒になる（旧 Cutout は Sky も含めて黒にしていたが、Sky は全方向に描く）。
-  - `PANO_SCENE`：その `state`・`sources`・`port`・`bg_media`・`coverage`・`bg_color` と Timeline（`fps`・`frames`）で描き、Camera だけを Cutout の状態から取る。Cutout の Camera の Keyframe は Cutout の状態の `timeline.fps` で読み、秒を保つ（`frame × Cutout の timeline.fps ÷ Scene の timeline.fps`）。Cutout の状態の Sticker・ペイントは使わない（Scene の正は Stickers の状態、ADR 0025）。`coverage` 入力は使わない。
+  - `PANO_SCENE`：その `layers`・`bg_media`・`coverage`・`bg_color` と Timeline（`fps`・`times`・`frames`）で描き、Camera だけを Cutout の状態から取る。Cutout の Camera の Keyframe は Cutout の状態の `timeline.fps` で読み、秒を保つ（`frame × Cutout の timeline.fps ÷ 最後の層の timeline.fps`。`frame` は最後の層の評価する Timeline frame）。Cutout の状態の Sticker・ペイントは使わない（Scene の正は Stickers の状態、ADR 0025）。`coverage` 入力は使わない。
 - 出力の大きさは、旧 Cutout と同じく `calculate_dimensions_from_megapixels` で `output_megapixels` と画面比（`camera.aspect`）から決める（8 の倍数、長辺は `nodes.py` の `CUTOUT_MAX_OUTPUT_SIDE` の 4096 まで。旧 Cutout と共有する）。FOV をアニメーションさせても大きさは変わらない。画素は正方なので、垂直の FOV は丸めた大きさから決まり、`camera.aspect` から決まる値とわずかに違うことがある。
 - FOV は旧 Cutout と同じく、v1 の `shots[0]` の `hFOV_deg`・`vFOV_deg` を 1〜179 に寄せ、`roll_deg` だけを読む（`rot_deg` は読まない）。shot の FOV が 0 のとき、エディタは 90° / 60° とみなすが、ノードは 1° に寄せるので、この場合だけエディタの表示と出力が一致しない（`docs/threejs-spark-integration.md`）。
 - `video` の音声と fps は Stickers と同じ。背景 VIDEO（IMAGE / VIDEO の `source` が VIDEO のとき、`PANO_SCENE` ならその `bg_media` が VIDEO のとき）の音声を「出力のフレーム数 ÷ Timeline fps」秒で切ったもの、なければ音声なし。fps は Timeline fps。
 - `sticker_state` は v2（`docs/scene-state-v2.md`）。`fps` は Cutout の状態の `timeline.fps`、`camera` は Cutout の Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる。#65）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。
-- World の内容も Stickers と同じく描く。IMAGE / VIDEO では Cutout の状態の `world` の Sticker、`PANO_SCENE` ではその `state` の `world` の Sticker と、`scene` 入力の中身（`_scene_content(scene)` の `SceneContent`。各フレームの要素は `frames` の 4 つ目を `scene_index` にする）。Camera の位置は Cutout の Camera の `position`。
+- World の内容も Stickers と同じく描く。IMAGE / VIDEO では Cutout の状態の `world` の Sticker、`PANO_SCENE` では各層の `state` の `world` の Sticker と、`scene` 入力の中身（`_scene_content(scene)` の `SceneContent`。各フレームの要素は `frames` のその層の 3 つ目を `scene_index` にする）。Camera の位置は Cutout の Camera の `position`。
 
 ## Panorama Studio（`PanoramaStudio`）
 
 Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラスは `PanoramaStudioNode`。新しい Stickers・Cutout（`PanoramaStickersNode`・`PanoramaCutoutNode`）は #92 で外すまで今のまま残し、Studio はその経路を共有する。
 
-- 入力は `bg_media`（IMAGE・VIDEO）、`sticker`（Stickers と同じ型）、`sticker_state`、`scene`、`bg_color`、`coverage`、`output_size`（`1024`・`1536`・`2048`・`2560`・`3072`・`4096`・`auto`、既定 `2048`）、`state_json` の順。`scene` は今は 3D の素材（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`）だけを受け、Stickers の `scene` と同じに扱う。別の Panorama Studio の `scene` 出力（`PANO_SCENE`）を受けるのは #88。
+- 入力は `bg_media`（IMAGE・VIDEO）、`sticker`（Stickers と同じ型）、`sticker_state`、`scene`、`bg_color`、`coverage`、`output_size`（`1024`・`1536`・`2048`・`2560`・`3072`・`4096`・`auto`、既定 `2048`）、`state_json` の順。`scene` は 3D の素材（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`。Stickers の `scene` と同じに扱う）か、別の Panorama Studio（または新しい Stickers）の `scene` 出力（`PANO_SCENE`。下記「上流の Scene（#88）」）を受ける。
 - 出力は `first_frame`（IMAGE）、`first_frame_mask`（MASK）、`video`（VIDEO）、`scene`（`PANO_SCENE`）、`sticker_state`（STRING）の順。`is_output_node` は `True`。
 - Scene の組み立ては Stickers と同じ `_build_scene`（状態の読み込み、`port` の Sticker、Source、(a) の `_decide_timeline`、エディタ用の `ui`）で、描画は (b)・(c)（`_render_frames`・`_render_outputs`）をそのまま使う。違うのは撮り方（`capture`）と出力の大きさだけ。
 - Camera の判定：状態 v2 の `camera`（`docs/scene-state-v2.md`）。`null`（欠け・空の `state_json` を含む）なら Camera が無い。Timeline の長さは Cutout と同じく `_decide_timeline(..., camera=True)` で決め、Camera があるときだけ Camera の Keyframe が長さに入る。`erp` の Camera でも、描画に使わない `fov` の Keyframe を含めてすべての Lane の Keyframe が長さに入る。
@@ -356,20 +376,49 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 
   - ERP の出力は画素の細かさが `W` の 360° の ERP と同じになる。`auto` は新しい Stickers の `auto` と同じ大きさになる。ただし 360 では高さを `W ÷ 2` にそろえ、`bg_media` の高さは引き継がない（2:1 でない背景では Stickers と違う）。`coverage` 180 の `auto` は `bg_media` と同じ大きさになる（固定の値では、新しい Stickers は `coverage` 180 で選んだ値を出力の幅にしていたので、Studio はその半分の幅になる）。ERP には上限を設けない（`auto` は大きな `bg_media` ならそのまま大きくなる。新しい Stickers の `auto` と同じ）。
   - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV が動いても大きさは変わらない。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
-- `scene` 出力は新しい Stickers の `pano_scene` と同じ `PanoSceneValue` で、`state` の `camera` だけを `null` にする（撮影する世界で、Camera を含まない）。Timeline（`fps`・`frames`）は Camera の Keyframe を数えて決めたもの。
+- `scene` 出力は新しい Stickers の `pano_scene` と同じ `PanoSceneValue` で、自分の層（最後の層）の `state` の `camera` だけを `null` にする（撮影する世界で、Camera を含まない。`_scene_output`）。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
 - `sticker_state` は `projection` が `perspective` のときだけ、新しい Cutout と同じ `_cutout_sticker_state`（`source_aspect` は出力の幅 ÷ 高さ）。Camera が無いときと `erp` のときは空文字列。
-- 実行結果の `ui` は新しい Stickers と同じキー（`pano_input_images` などの素材、`pano_sticker_input_pose`、`pano_sticker_warnings`）。エディタは #89 で結んだ（`docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」）。ノード上の表示は今の新しい Stickers のものを使い、作り直すのは #91。Cutout が `PANO_SCENE` を撮るときに出していた `pano_timeline_frames`・`pano_scene_state`・`pano_scene_coverage` は、上流の Scene を受ける #88 まで出さない。
+- 実行結果の `ui` は新しい Stickers と同じキー（`pano_input_images` などの素材、`pano_sticker_input_pose`、`pano_sticker_warnings`）。上流の Scene を受けたときのキーは下記。エディタは #89 で結んだ（`docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」）。ノード上の表示は今の新しい Stickers のものを使い、作り直すのは #91。上流の Scene を受けたときのエディタの表示は #90。
+
+### 上流の Scene（#88）
+
+`scene` に別の Panorama Studio の `scene` 出力（`PANO_SCENE`）をつなぐと、その Scene の上に自分の Scene を重ねて撮る（ADR 0029）。`_build_scene` が上流の層の後ろに自分の層を足す。
+
+- 重ね方：上流の各層と自分の層を `RenderLayer` にして `render_frame` に渡す（上記「層」）。`sky` は上流の上に自分を重ね、`world` は奥行きで混ざる。Sticker の `id` と `port` は層ごとに分かれるので、上流と同じ `id` や、上流にも `port` の Sticker があっても、それぞれ描く。撮るのは自分の Camera（自分の状態の `camera`、上の「Camera の判定」）で、上流の Camera は無い（`scene` 出力は Camera を含まない）。
+- Timeline fps は上流の `rate`。出力フレームの時刻は上流の `times` で、上流より長いときはその後を Timeline fps の間隔で続ける（`_output_times`）。丸めの幅も上流の `time_base`。自分の `bg_media`・`sticker` の VIDEO は Timeline fps を決めない。
+- 長さ：自分の `timeline.length` があればそれ（秒を保って Timeline fps のフレーム数に直す。上流より短くも長くもできる）。なければ、上流の出力フレーム数と、自分の状態から通常の規則（上記「Stickers ノード」の長さの規則。背景 VIDEO の段は、自分の `bg_media` を使うときだけで、その VIDEO の最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）で決まる長さの、長いほう。
+- 時刻の評価：各層は、出力フレームの時刻 `t` 秒について `t × その層の timeline.fps` の Timeline frame で評価する（`_layer_frames`。上流の Timeline frame から見れば `frame × 層の timeline.fps ÷ 上流の timeline.fps`）。上流と自分の fps が違っても、自分の Keyframe と Clip range は秒を保つ。状態は再基準化しない（整数の Timeline frame に丸めない）。各層の `port` と `scene` の番号も、その層の Timeline frame から通常の規則（`PortMedia.index_at`・`batch_index`）で選ぶ。上流の層の番号は、上流で決めたものと同じ規則で、延ばした分も含めて選び直す。
+- 背景：上流が `bg_media` を持てば、その `bg_media`・`coverage`・`bg_color` を使い、自分の `bg_media` は使わない。自分の `bg_media` も接続されていれば `bg_media is not used: the scene input has a background of its own.` と警告する（ログと `pano_sticker_warnings`）。自分の `coverage`・`bg_color` も使わない。上流が `bg_media` を持たなければ、自分の `bg_media`・`coverage`・`bg_color` を使う。
+  - 背景のフレーム（`_bg_frames`）：IMAGE バッチは出力フレームと 1 対 1、1 枚の IMAGE は全フレーム。VIDEO は、Timeline を決めた VIDEO（上流がないとき）なら 1 対 1。上流がある（Timeline fps を上流が決めた）ときは、各出力フレームの時刻以前に始まる最後のフレーム（PTS ≤ `t`、比較の許容差は出力の時刻と VIDEO の time base の大きいほうの半分）で、最後のフレームが平均フレームレートの 1 フレームの間続いた後は描かない（`bg_color`）。上流の背景の VIDEO が終わった先も同じく `bg_color`。
+  - 下流が延ばした区間でも、上流の背景の VIDEO は時刻で続き、最後のフレームが終わった後は `bg_color` になる。上流の背景は下流の長さの規則には入らない（上流の出力フレーム数がすでにそれを含み、上流の `timeline.length` で短くした分もそのまま保つ）。
+  - `output_size` の `auto` は、使う背景（上流のものを含む）の幅で決める。
+- マスク：`first_frame_mask` は、上流の各層のペイントのマスクも含む（層ごとのマスクの画素ごとの最大値）。
+- `sticker_state` 入力と Pose handoff は自分の層の `port` の Sticker だけに効く。
+- 実行結果の `ui`（エディタ用。#89・#90 が読む）：
+
+  | キー | 内容 |
+  |---|---|
+  | `pano_scene_files` / `pano_scene_meta`、`pano_sticker_input_*`、`pano_sticker_files` / `pano_sticker_meta`、`pano_sticker_input_pose` | 自分の層の素材と姿勢。上流がないときと同じキー |
+  | `pano_input_images` / `pano_input_videos` / `pano_input_video_meta` | 自分の `bg_media` を使うとき（上流が背景を持たないとき）だけ出す |
+  | `pano_upstream_layers` | 上流の層のリスト（最も上流から）。各要素は `{"state": その層の状態 v2（camera は null）, "ui": その層の素材の ui}`。`ui` のキーは自分の層と同じ（`pano_sticker_input_images`・`pano_sticker_input_videos`・`pano_sticker_input_video_meta`・`pano_sticker_input_frames`・`pano_sticker_files`・`pano_sticker_meta`・`pano_scene_files`・`pano_scene_meta` のうち、その層が持つもの）で、背景は入らない。ファイルは上流のノードが書いたもので、書き直さない |
+  | `pano_upstream_input_images` / `pano_upstream_input_videos` / `pano_upstream_input_video_meta` | 上流が背景を持つときの、その背景（`pano_input_*` と同じ形）。このとき自分の `pano_input_*` は出さない |
+  | `pano_upstream_coverage` | 上流が背景を持つときの、その `coverage`（`[360]` か `[180]`） |
+  | `pano_upstream_bg_color` | 上流が背景を持つときの、その `bg_color`（`[[r, g, b]]`、0〜1） |
+  | `pano_timeline_fps` | 上流があるときは常に出す（Timeline fps は上流が決める）。エディタは fps の欄をロックし、自分の状態をこの fps に再基準化して表示する（VIDEO が fps を決めたときと同じ） |
+  | `pano_timeline_frames` | 上流があるときは常に出す。出力のフレーム数（上流と自分の長いほう、または自分の `timeline.length`） |
+
+  - エディタは上流の要素を見せるが、選べず動かせない。上流の要素は自分のタイムラインに出さない（ADR 0029）。上流の層の Keyframe はその層の `timeline.fps` で記録されているので、表示する時刻 `t` 秒ではその層の `t × timeline.fps` で評価する（再基準化しない）。
 
 ## Preview ノード（`PanoramaPreviewNode`）
 
 - Python のクラスは `PanoramaPreviewSceneNode`。旧 `PanoramaPreview` は #78 まで登録を残す。
 - `source` は `io.MatchType`（テンプレート `source`、IMAGE・VIDEO・`PANO_SCENE`）で、出力は入力と同じ型の同じオブジェクトを返す。`is_output_node` は `True`。
-- Timeline は `source` から Stickers と同じ `_decide_timeline` で決める。IMAGE と VIDEO は既定の状態（`timeline.fps` 24）に対して決める。`PANO_SCENE` の Timeline はその `fps`・`frames` で、表示する #76 が使う。
+- Timeline は `source` から Stickers と同じ `_decide_timeline` で決める。IMAGE と VIDEO は既定の状態（`timeline.fps` 24）に対して決める。`PANO_SCENE` の Timeline はその `fps`・`times`・`frames`。
 - IMAGE と VIDEO の実行結果の `ui` は旧 Preview と同じキー（`pano_input_images`、2 フレーム以上なら `pano_videos`・`pano_video_meta`）。`pano_video_meta` の fps は Timeline fps、`frames` は Timeline の長さ。
   - IMAGE：旧 Preview と同じく、最初の画像を保存し、バッチを MP4 にエンコードする（`encode_frames_to_mp4`。キーフレームは `EDITOR_KEYINT` フレームごと、B フレームなし）。音声はない。
   - VIDEO：`open_video(video, "source")`（Stickers と同じ）で開き、最初に復号できたフレームをプレビュー画像にし、Timeline は `frame_rate` と `times` から決める。全フレームを一括では展開しない（クロップ付きや `VideoFromFile` 以外で `open_video` が `get_components()` に落ちる場合は、それに従う）。MP4 は Stickers と同じエディタの MP4（`_editor_mp4`）で、シークしやすいファイルはコアの `save_to(MP4, H264)` でストリームコピーし、それ以外はプロキシを作る。`has_audio` はコピーなら書いた MP4 に音声ストリームがあるか、プロキシなら音声を入れたかで決める。
   - プレビュー画像と MP4 のために VIDEO を 2 回開く（`open_video` と、コピーの `save_to` またはプロキシの `StreamedVideo`）。Stickers の `bg_media` の VIDEO も同じ方法で MP4 を書く（#75）。
-- `PANO_SCENE` のときは描画も `ui` も作らずに素通しする。ノード上の表示と、エディタの新しい ID への結び付けは #76 で行う。
+- `PANO_SCENE` のときは描画も `ui` も作らずに素通しする（層が複数ある Scene も同じ。#88 で確かめるのは、受けて落ちないことまで）。表示（ノード上の表示と、エディタの新しい ID への結び付け）は #76 で行う。
 - `coverage` 入力は `execute` では読まない（フロントエンドのウィジェットが読む）。`PANO_SCENE` のときは `PanoSceneValue.coverage` が正で、ウィジェットの値は使わない。
 - MatchType はバックエンドで型を検証しないので、`source` が IMAGE（4 次元のテンソル）・VIDEO・`PanoSceneValue` のどれでもなければ `TypeError` にする。
 - #76 への申し送り：旧 Preview 用の `ensurePanoramaPreviewImageOutput`（`web_src/pano_editor_extension.js`）は、足りない `image` 出力を足す。新しい ID に適用すると MatchType の `output` とは別に `image` 出力が増えるので、新しいノードには適用しない。

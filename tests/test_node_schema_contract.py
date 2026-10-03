@@ -446,12 +446,13 @@ MESH_FILE_TYPES = "FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,
 SPLAT_FILE_TYPES = "FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY"
 
 
-@pytest.mark.parametrize("node_id", ["PanoramaStickersNode", "PanoramaStudio"])
-def test_stickers_node_media_ports_accept_the_spec_types(node_id):
+@pytest.mark.parametrize("node_id, upstream", [("PanoramaStickersNode", ""), ("PanoramaStudio", ",PANO_SCENE")])
+def test_stickers_node_media_ports_accept_the_spec_types(node_id, upstream):
     inputs = {input_.id: input_ for input_ in REGISTERED_NODES[node_id].define_schema().inputs}
 
     assert inputs["bg_media"].get_io_type() == "IMAGE,VIDEO"
-    assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY"
+    # Studio's `scene` also takes the `scene` output of another Studio (ADR 0029).
+    assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY{upstream}"
     assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES}"
 
 

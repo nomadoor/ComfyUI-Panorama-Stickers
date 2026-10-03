@@ -171,13 +171,13 @@ def test_a_state_without_a_camera_is_shot_with_the_default_camera(state):
 def test_timeline_of_a_state_without_a_camera_has_no_camera_keyframes_to_count():
     state = load_scene_state({"version": 2, "timeline": {"fps": 24.0}})
 
-    assert nodes._decide_timeline(state, None, None, camera=True)[1] == nodes._decide_timeline(state, None, None)[1]
-    assert len(nodes._decide_timeline(state, None, None, camera=True)[1]) == 1
+    assert nodes._decide_timeline(state, None, None, camera=True)[3] == nodes._decide_timeline(state, None, None)[3]
+    assert len(nodes._decide_timeline(state, None, None, camera=True)[3]) == 1
 
 
 def test_pano_scene_from_stickers_without_a_camera_is_shot_from_the_cutout_camera():
     scene = _stickers({"version": 2, "camera": None}, bg_media=_halves_erp())[3]
-    assert scene.state["camera"] is None
+    assert scene.layers[-1].state["camera"] is None
 
     image = _cutout(scene, _camera(yaw_deg=180.0))[0]
 
@@ -250,9 +250,9 @@ def _record_projections(monkeypatch):
     projections = []
     original = nodes.render_frame
 
-    def recording(evaluated, sources, camera, projection, **kwargs):
+    def recording(layers, camera, projection, **kwargs):
         projections.append((camera, projection))
-        return original(evaluated, sources, camera, projection, **kwargs)
+        return original(layers, camera, projection, **kwargs)
 
     monkeypatch.setattr(nodes, "render_frame", recording)
     return projections
@@ -524,7 +524,7 @@ def test_pano_scene_ui_passes_on_the_scene_state_and_the_stickers_editor_files(m
     assert written == []
     for key in ("pano_scene_files", "pano_scene_meta", "pano_input_images"):
         assert ui[key] == stickers.ui[key]
-    assert ui["pano_scene_state"] == [pano_scene.state]
+    assert ui["pano_scene_state"] == [pano_scene.layers[-1].state]
     assert ui["pano_timeline_fps"] == [12.0] and ui["pano_timeline_frames"] == [3] and ui["pano_scene_coverage"] == [360]
     assert "pano_sticker_input_pose" not in ui and "pano_sticker_input_pose" not in pano_scene.media_ui
     json.dumps(ui)

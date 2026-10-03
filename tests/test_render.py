@@ -7,7 +7,7 @@ import torch
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.math import camera_basis, ray_directions
 from comfyui_pano_suite.core.painting import load_painting_layer_payload
-from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, composite_frame, render_frame
+from comfyui_pano_suite.core.render import Projection, RenderLayer, SceneSources, StickerSource, composite_frame, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 
@@ -86,8 +86,7 @@ def _render(projection, state=None, sources=None, bg=None, cache=None):
     loaded, evaluated = _scene(**(state or {}))
     sources = sources or SceneSources({}, loaded["painting"])
     return render_frame(
-        evaluated,
-        sources,
+        [RenderLayer(evaluated, sources)],
         evaluated["camera"],
         projection,
         bg=bg,
@@ -116,7 +115,7 @@ def test_render_frame_keeps_every_output_on_the_requested_device():
     loaded, evaluated = _scene()
     device = torch.device("cuda")
 
-    outputs = render_frame(evaluated, SceneSources({}, loaded["painting"]), evaluated["camera"], Projection.erp(16, 8),
+    outputs = render_frame([RenderLayer(evaluated, SceneSources({}, loaded["painting"]))], evaluated["camera"], Projection.erp(16, 8),
                            bg=torch.rand(8, 16, 3), bg_color=GREEN, device=device)
 
     assert all(output.device.type == "cuda" for output in outputs)
@@ -196,11 +195,11 @@ def test_render_frame_derives_port_vfov_from_the_source_aspect():
 def test_render_frame_reuses_the_sky_of_an_unchanged_frame():
     cache = {}
     first = _render(Projection.erp(64, 32), _sticker_state(), _red_source(), cache=cache)
-    sky = cache["sky"]
+    sky = cache["layers"][0]["sky"]
     second = _render(Projection.erp(64, 32), _sticker_state(), _red_source(), cache=cache)
     moved = _render(Projection.erp(64, 32), _sticker_state(yaw_deg=90.0), _red_source(), cache=cache)
 
-    assert cache["sky"] is not sky
+    assert cache["layers"][0]["sky"] is not sky
     assert torch.equal(first[0], second[0])
     assert not torch.equal(first[0], moved[0])
 
@@ -238,7 +237,7 @@ def _count_calls(monkeypatch, *names):
 
 def _render_bg(cache, bg, bg_key, state=None):
     loaded, evaluated = _scene(**(state or {}))
-    return render_frame(evaluated, SceneSources({}, loaded["painting"]), evaluated["camera"], Projection.erp(16, 8),
+    return render_frame([RenderLayer(evaluated, SceneSources({}, loaded["painting"]))], evaluated["camera"], Projection.erp(16, 8),
                         bg=bg, bg_key=bg_key, bg_color=GREEN, device=torch.device("cpu"), cache=cache)
 
 
@@ -573,7 +572,7 @@ def test_perspective_sky_keeps_its_paint_and_ripmaps_while_only_stickers_and_the
         state = {**_sticker_state(yaw_deg=yaw, hFOV_deg=30.0, vFOV_deg=30.0), **_camera(yaw_deg=yaw), "painting": painting}
         loaded, evaluated = _scene(**state)
         sources = SceneSources({"s": StickerSource(rgba, {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0})}, loaded["painting"])
-        render_frame(evaluated, sources, evaluated["camera"], Projection.perspective(24, 16, 120.0), bg=bg, bg_key=0, bg_color=GREEN,
+        render_frame([RenderLayer(evaluated, sources)], evaluated["camera"], Projection.perspective(24, 16, 120.0), bg=bg, bg_key=0, bg_color=GREEN,
                      device=torch.device("cpu"), cache=cache)
         shrunk.append(counts["_shrink"])
 

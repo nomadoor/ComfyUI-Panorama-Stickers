@@ -99,7 +99,7 @@ def test_moving_camera_is_baked_into_auto_keyframes_at_every_timeline_frame():
         "fov": [{"frame": 0, "value": 40.0}],
     }})
 
-    port = _stickers({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].state["stickers"][0]
+    port = _stickers({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].layers[-1].state["stickers"][0]
 
     # Two frames at 12 fps are four at the 24 fps of the state; the Camera is read between its Keyframes too.
     assert [key["frame"] for key in port["direction"]["keyframes"]] == [0, 1, 2, 3, 4]
@@ -121,7 +121,7 @@ def test_camera_cut_stays_a_cut_at_another_fps():
     # The 30 fps Cutout `video` sets the Timeline of a Stickers state recorded at 24 fps.
     scene = _stickers(sticker=shot[3], sticker_state=shot[1], output_preset="1024")[3]
 
-    yaws = [evaluate_scene_state(scene.state, frame)["stickers"][0]["yaw_deg"] for frame, *_rest in scene.frames]
+    yaws = [evaluate_scene_state(scene.layers[-1].state, frame)["stickers"][0]["yaw_deg"] for _bg_index, ((frame, *_rest),) in scene.frames]
     assert yaws == pytest.approx([0.0] * 10 + [90.0])
 
 
@@ -132,7 +132,7 @@ def test_camera_keyframes_of_one_rotation_keep_the_direction_static():
         "fov": [{"frame": 0, "value": 60.0}, {"frame": 10, "value": 40.0}],
     }})
 
-    port = _stickers({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].state["stickers"][0]
+    port = _stickers({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].layers[-1].state["stickers"][0]
 
     assert (port["direction"]["keyframes"], port["roll"]["keyframes"]) == ([], [])
     assert port["direction"]["value"] == pytest.approx({"yaw_deg": 33.0, "pitch_deg": 21.0})

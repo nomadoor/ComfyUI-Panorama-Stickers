@@ -6,7 +6,7 @@ import torch
 
 from comfyui_pano_suite.core.math import ray_directions
 from comfyui_pano_suite.core.mesh_render import BARE_COLOR, EDGE, MeshItem, mesh_content, render_mesh
-from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, render_frame
+from comfyui_pano_suite.core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.world import world_rotation
@@ -154,8 +154,8 @@ def test_mesh_is_ordered_by_depth_with_world_stickers():
     white = np.ones((4, 4, 4), dtype=np.float32)
     evaluated = evaluate_scene_state(state, 0.0)
 
-    color, _mask, depth = render_frame(evaluated, SceneSources({"near": StickerSource(blue, FULL), "far": StickerSource(white, FULL)}, state["painting"]),
-                                       evaluated["camera"], Projection.erp(360, 180), bg=None, bg_color=(0.0, 1.0, 0.0), device=CPU, scene=content, scene_index=0)
+    color, _mask, depth = render_frame([RenderLayer(evaluated, SceneSources({"near": StickerSource(blue, FULL), "far": StickerSource(white, FULL)}, state["painting"]), content, 0)],
+                                       evaluated["camera"], Projection.erp(360, 180), bg=None, bg_color=(0.0, 1.0, 0.0), device=CPU)
 
     assert torch.allclose(color[89, 180], torch.tensor([0.0, 0.0, 1.0]))
     assert torch.allclose(color[89, 210], torch.tensor([1.0, 0.0, 0.0]))

@@ -185,7 +185,7 @@ def test_mesh_files_are_drawn_and_written_for_the_editor(tmp_path):
 
     for name, color in (("quad.glb", [1.0, 0.0, 0.0]), (_write_obj(tmp_path / "quad.obj").name, [0.22] * 3)):
         result = _stickers(scene=Types.File3D(str(tmp_path / name)))
-        ui = nodes._scene_ui(result[3].scene)
+        ui = nodes._scene_ui(result[3].layers[-1].scene)
 
         assert torch.allclose(result[0][0, 256, 512], torch.tensor(color), atol=1e-3)
         assert np.allclose(np.sort(_glb_positions(_path(ui["pano_scene_files"][0])), axis=0), np.sort(np.asarray(QUAD), axis=0))
