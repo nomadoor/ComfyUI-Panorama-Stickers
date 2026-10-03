@@ -134,6 +134,44 @@ def test_depth_is_where_the_accumulated_alpha_first_exceeds_half():
     assert math.isinf(float(alone[0, 0])) and float(rgba[0, 0, 3]) == 0.0
 
 
+def _seen_from_both_sides(splat):
+    """The color at the center of a 30 degree view of the SPLAT's origin from 3 units along glTF +Z and -Z."""
+    colors = []
+    for z, yaw in ((3.0, 0.0), (-3.0, 180.0)):
+        view = CameraView(np.array([0.0, 0.0, z]), world_rotation(yaw, 0.0, 0.0), Projection.perspective(16, 16, 30.0))
+        rgba, _depth = splat_content(splat).render(view, 0, CPU)
+        colors.append(rgba[8, 8, :3])
+    return colors
+
+
+def _with_sh(splat, rest):
+    return Types.SPLAT(splat.positions, splat.scales, splat.rotations, splat.opacities, torch.cat([splat.sh, rest], dim=2))
+
+
+def test_degree_1_harmonics_change_the_color_with_the_view_direction():
+    # The direction from the Camera to the center in the 3DGS frame is +Z from glTF +Z (SPLAT -Z) and -Z from the
+    # other side; the degree 1 harmonic along Z (the third coefficient) adds or takes away 0.3 there.
+    base = _blobs(_blob((0.0, 0.0, 0.0), (0.5, 0.5, 0.5), size=0.2))
+    rest = torch.zeros((1, 1, 3, 3))
+    rest[0, 0, 1] = 0.3 / splat_render._SH_C1
+
+    front, back = _seen_from_both_sides(_with_sh(base, rest))
+
+    assert torch.allclose(front, torch.full((3,), 0.8), atol=1e-3)
+    assert torch.allclose(back, torch.full((3,), 0.2), atol=1e-3)
+
+
+def test_base_color_alone_is_the_same_from_every_side():
+    base = _blobs(_blob((0.0, 0.0, 0.0), (0.7, 0.4, 0.2), size=0.2))
+
+    front, back = _seen_from_both_sides(base)
+    padded = _seen_from_both_sides(_with_sh(base, torch.zeros((1, 1, 15, 3))))
+
+    assert torch.equal(front, back)
+    assert torch.allclose(front, torch.tensor([0.7, 0.4, 0.2]), atol=1e-3)
+    assert all(torch.allclose(value, front, atol=1e-6) for value in padded)
+
+
 def _world_sticker(sticker_id, distance, scale=0.6):
     return {"id": sticker_id, "placement": "world", "source": {"kind": "file", "filename": f"{sticker_id}.png"},
             "position": {"value": [0.0, 0.0, -distance]}, "scale": {"value": scale}}
