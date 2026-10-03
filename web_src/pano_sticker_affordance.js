@@ -46,6 +46,30 @@ export function hitStickerSelectionAffordance(geometry, point) {
   return { kind: "none" };
 }
 
+// The handle of a frame (a Cutout shot, or the box of a multi-selection) at point: with `edges` the edge
+// midpoints scale one axis, the corners scale both, the rotate handle turns it, and inside moves it.
+// Without `resize` (Panorama Studio's 360-degree Camera, which reads no FOV, #89) only the rotate handle and
+// the move are left. `emptyCursor` is the cursor off the frame.
+export function hitFrameAffordance(geometry, point, { edges = false, resize = true, emptyCursor = "default" } = {}) {
+  if (resize && edges && Array.isArray(geometry.edgeMidpoints)) {
+    const mid = geometry.edgeMidpoints.find((candidate) => distanceSquared(candidate, point) <= 13 * 13);
+    if (mid) {
+      const horiz = mid.edge === "left" || mid.edge === "right";
+      return { kind: horiz ? "scale_x" : "scale_y", cursor: horiz ? "ew-resize" : "ns-resize", edge: mid.edge, mid };
+    }
+  }
+  const cornerIdx = resize ? geometry.corners.findIndex((corner) => distanceSquared(corner, point) <= 11 * 11) : -1;
+  if (cornerIdx >= 0) {
+    const corner = geometry.corners[cornerIdx];
+    const vx = corner.x - geometry.center.x;
+    const vy = corner.y - geometry.center.y;
+    return { kind: "scale", cornerIdx, cursor: (vx * vy) >= 0 ? "nwse-resize" : "nesw-resize" };
+  }
+  if (distanceSquared(geometry.rotateHandle, point) <= 12 * 12) return { kind: "rotate", cursor: "grab" };
+  if (pointInPolygon(point, geometry.corners)) return { kind: "move", cursor: "default" };
+  return { kind: "none", cursor: emptyCursor };
+}
+
 export function drawStickerSelectionBoundary(ctx, boundaryEdges, { selected = true } = {}) {
   if (!ctx || !Array.isArray(boundaryEdges)) return false;
   ctx.strokeStyle = selected ? "rgba(250, 250, 250, 0.9)" : "#71717a";

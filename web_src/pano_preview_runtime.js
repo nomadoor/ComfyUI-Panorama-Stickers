@@ -2092,6 +2092,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         cancelFrame: (id) => cancelAnimationFrame(id),
       },
       readState: () => getCachedState(node),
+      // Panorama Studio plays its Camera's Keyframes too, as its editor does (#89).
+      camera: node.__panoStudio === true,
       onFrame: requestDraw,
       // The still is at most NODE_STILL_MAX_WIDTH wide; the node shows it small.
       onCapture: () => {

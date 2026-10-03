@@ -170,6 +170,20 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 - インスペクタ：Camera を選ぶと、従来の Yaw・Pitch・H FOV・V FOV・Roll に加え、World の内容があるときは X・Y・Z（World の glTF 座標、上限なし）を出す（`cameraFields`・`setCameraField`）。
 - 出力との一致：エディタの Camera はノードと同じ評価関数の値で、Frame 表示はその位置・向き・画角の透視投影で描く。`PANO_SCENE` の Keyframe はエディタでは Scene の fps に再基準化して扱い、保存した Keyframe をノードは `frame × Cutout の fps ÷ Scene の fps` で読むので、同じ秒の値になる。既知の差：画角 1° 未満（エディタは 1° に寄せる）、出力の大きさの丸めによる縦の画角のわずかな差（上の「既知の食い違い」と同じ）、World の内容の読み込み中の表示（「空間の表示」と同じ）。
 
+## Panorama Studio のエディタ（#89）
+
+`PanoramaStudio` のエディタは、新しい Stickers のエディタ（状態 v2、`type` は `stickers`）に、上の「Cutout の Camera（#77）」の部品をそのまま足したものである。分岐は `pano_editor.js` の `studio`（ノードの `__panoStudio`、`pano_editor_extension.js` が付ける）・`cameraV2`（状態 v2 の Camera を shot で編集する：Cutout と Studio）・`shotEditor`（shot と Frame 表示を持つ：Cutout と Studio）と、Camera の有無の `hasCamera()` にまとめた。Cutout と旧ノードの経路は変えていない。新しい Stickers・Cutout は #92 で外すまでこのまま動く。
+
+- Camera が無いとき（`camera: null`）：新しい Stickers と同じに動く。shot は無く（`state.shots` は空）、3DoF は World の原点に立ち、Camera のプレビュー・Panorama 上の枠・タイムラインの Camera の行は出ない。違いは、左のツールバーの「Add Camera」と、無効の Frame タブだけである。
+- Add Camera：左のツールバー（`modal_shell_presets.js` の `studio`、`PanoToolRail.vue`）の Add World Image の下にある。Camera があるときは無効にし、消さない（下のボタンが動かない）。押すと Camera を 1 台足して選ぶ（`addStudioCamera`、`newStudioCamera`）。初期値は、今の Viewport camera の位置（3DoF では原点、6DoF ではその位置）、yaw と pitch（roll は 0）、hFOV 90°、`aspect` 16:9（vFOV は約 58.7°）、`projection` は `perspective`、Keyframe なし。視点はそのままで、足した Camera の位置は今の視点の位置なので、3DoF の立ち位置も変わらない。
+- 削除：Camera を選んで Delete キーか、選択メニュー（Panorama 表示の枠のメニュー、6DoF のギズモのメニュー）の Delete。状態は `camera: null` になり、保存される。Undo で戻る。
+- Camera の出入りと視点（`followCameraChange`）：3DoF は Camera があればその位置に立つ（Cutout と同じ）ので、Camera を消すと原点へ、Undo などで Camera が戻るとその位置へ立ち位置が移る。World の内容があり 3DoF の Panorama 表示のときは、瞬時に飛ばず、6DoF で今の位置から行き先まで遷移し（`pano_view_transition.js`）、着いてから 3DoF に入る（6DoF から 3DoF に戻るときと同じ仕組み）。Frame 表示にいるときに Camera を消すと Panorama 表示に移り、視点は Camera が見ていた向きと画角（6DoF ならその位置も）から始まる（`leaveFrameView`）。
+- Frame タブ（`PanoViewToggle.vue`、`frameViewButton`）：常に出す。Camera が無いときと、Camera が 360°（`erp`）のときは無効にし、ツールチップで理由を示す（「Add a camera to use the Frame view」「A 360° camera has no frame」）。無効のタブでもツールチップが出るように、`disabled` ではなく `aria-disabled` にし、エディタがクリックを無視する。無効のタブは Tab キーで止まらず（`tabindex` -1）、ポインタを載せても色が変わらない。Cutout の Frame タブも同じ部品で、ツールチップは出さない。
+- 画角のプリセット：Camera の枠の比率のプリセット（選択メニューと Frame 表示のレール、`cameraAspectChoices`）の最後に「360°」（`coverage` が 180 なら「180°」）を足した。選ぶと `projection` を `erp` にし、比率のプリセットを選ぶと `perspective` に戻して、その比率にする（`setShotAspect`）。どちらも Undo の 1 段。`erp` のとき、インスペクタの H FOV と V FOV は無効にし（消さない）、選択メニューの縦横の切り替えも無効にする。Frame 表示は使えない（上）ので、Frame 表示のレールで 360° を選ぶと Panorama 表示に移る。Camera のプレビューも出さない。Panorama 上の枠と 6DoF の視錐台は、`fov` と `aspect` の値のまま描く（Camera を選ぶための印。撮る範囲ではない）。枠には辺と角の大きさのハンドルを出さず（`pano_sticker_affordance.js` の `hitFrameAffordance` の `resize`）、`fov` の Lane を書き換えない。回転（roll）のハンドルと移動は残す。
+- Camera があるときの操作は Cutout と同じ：Panorama 表示の枠（選ぶ・動かす・拡大縮小・回転）、6DoF の視錐台とギズモ、Frame 表示、インスペクタ、タイムラインの Camera の行。インスペクタの Camera には Roll があり、Opacity は無い。インスペクタの選択の一覧の先頭にも Camera が入る。Cutout と違い、Panorama 表示で枠の外を暗くするのは Camera を選んでいる間だけで（Sticker を編集する間は暗くしない）、Camera のプレビューの大きさの切り替えボタン（押すたびに切り替わる）は出さない。
+- `state_json`：開いて閉じただけでは書き換えない。Camera の有無によらず、開くときに VIDEO の fps へ再基準化しても、`sameEditorStateText` の `rebased`（Cutout と同じ）で同じ意味なら書かない。`default_camera` の印（Cutout 用）は使わない（`parseSceneEditorState` の `camera` を渡さない）。Camera を足す・消すのは編集で、Camera のオブジェクトか `null` を保存する。
+- ノード上の表示は今の Stickers のもの（`attachStickers`）をそのまま使う（#91 で作り直す）。
+
 ## 当たり判定（GPU）
 
 空間の表示と Cutout の Frame 表示で、ポインタの下の World の内容（点と、それがどの Sticker か）を GPU で求める（`pano_three_view.js` の `pickAt`。`pick` が点を、`pickSticker` が Sticker の id を返す）。以前の three.js の Raycaster は CPU で全三角形を調べ、MoGe のパノラマの MESH（約 1,610 万三角形）で 1 回 0.44〜0.52 秒かかっていた。何もない所を押すと 2 回走り（`pickSticker` と、続く視点のドラッグの `pickSpace`）、約 1 秒止まっていた。

@@ -15,6 +15,7 @@ import {
   rowKeyed,
   rowKeyframes,
   selectedEasing,
+  timelineOpens,
   setLaneValue,
   setSegmentEasing,
   timelineSpan,
@@ -371,4 +372,20 @@ test("an fps from a run, an fps edit and undoing one keep the playhead's time", 
   assert.match(change, /const frame = Math\.round\(editor\.frame \* fps \/ state\.timeline\.fps\);\s*setTimelineFps\(state, fps\);/);
   assert.match(change, /playback\.seek\(frame\);\s*commitTimelineEdit\(\);/);
   assert.match(editorFunction("restoreHistory"), /if \(stateV2 && state\.timeline\.fps !== fps\) playback\.seek\(Math\.round\(editor\.frame \* state\.timeline\.fps \/ fps\)\);/);
+});
+
+test("the Timeline opens by itself on the Camera's Keyframes in the Cutout and Panorama Studio, not in Stickers (#89)", () => {
+  const state = loadSceneState({ version: 2, camera: {} });
+  assert.equal(timelineOpens(state), false);
+  keyAllLanes(state.camera, 0);
+  assert.equal(timelineOpens(state), false, "Stickers has no Camera (ADR 0028)");
+  assert.equal(timelineOpens(state, { camera: true }), true, "Panorama Studio");
+  assert.equal(timelineOpens(state, { cameraOnly: true }), true, "the Cutout");
+  // Panorama Studio counts the rest too; the Cutout shows only its Camera.
+  const sticker = loadSceneState({ version: 2, camera: {} });
+  keyAllLanes(sticker.scene, 0);
+  assert.equal(timelineOpens(sticker, { camera: true }), true);
+  assert.equal(timelineOpens(sticker, { cameraOnly: true }), false);
+  // Without a Camera there is nothing of it to count.
+  assert.equal(timelineOpens(loadSceneState({ version: 2 }), { camera: true }), false);
 });

@@ -21,7 +21,7 @@
 - Keyframe を消せるのは、タイムラインで選んで Delete したときだけ。消した後は残った Keyframe で補間し直す。全 Keyframe を一度に消すスイッチは作らない。
 - インスペクタには Keyframe を打つボタンを置かない。
 - `world` の Sticker（#72）も同じ規則で記録する。ギズモのドラッグはモードの Lane（Move は `position`、Rotate は `rotation`、Scale は `scale`）だけを、インスペクタは変えた欄の Lane だけを変える。Clip range があるので、`sky` の Sticker と同じく素材基準のフレームで比べる。ギズモとインスペクタは `docs/threejs-spark-integration.md` の「`world` の Sticker の操作（#72）」。
-- 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Cutout の frame タブと、Cutout で Camera の行を選んだときの操作とインスペクタ）だけである。Stickers は Camera を持たない（ADR 0028）。Stickers のエディタの空間の表示では、3DoF の見回しは原点（ERP を撮る位置）に立ったまま向きを変え、6DoF は Viewport camera を空間の中で動かす（`docs/threejs-spark-integration.md` の「空間の表示」）。
+- 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Cutout と Panorama Studio の frame タブと、Camera の行を選んだときの操作とインスペクタ）だけである。Stickers は Camera を持たない（ADR 0028）。Stickers のエディタの空間の表示では、3DoF の見回しは原点（ERP を撮る位置）に立ったまま向きを変え、6DoF は Viewport camera を空間の中で動かす（`docs/threejs-spark-integration.md` の「空間の表示」）。
 - ノード上の UI には Keyframe の操作がないので、Keyframe のある Lane はノード上では変えない。表示しているフレーム（最初は frame 0、一時停止したフレーム）によらず、Sticker のドラッグは Keyframe のない Lane（どのフレームでも同じ値）の静的な値だけを変え、Keyframe のある Lane にしか効かない操作は無視する（#70 のロックと同じ感触）。Keyframe のある Lane はエディタのタイムラインで直す。この扱いはオーナーの判断待ちの既定値で、`pano_stickers_node_surface.js` の `set-transform`（`unkeyedPose`）だけで決まる。
 - ノード上の UI には再生ボタンが一つだけあり、時間のあるときだけ出る（エディタと同じ `isTimed` か、背景の VIDEO か `port` の Sticker の素材の MP4 があるとき）。ボタンは再生と一時停止を切り替える。Timeline の fps でループ再生し、背景の VIDEO は音を出さずに同じ状態機械で再生する。一時停止は画面に出ているフレームで止まり（エディタの停止と同じ）、もう一度押すとそこから続く。そのフレームはノードごとの一時状態で保存せず、reload すると frame 0 に戻る。背景の VIDEO が替わったときと Timeline がそのフレームより短くなったときも frame 0 に戻る。編集（Sticker をつかむ、ツールバーの操作、画像の追加、Delete）とエディタを開く操作で一時停止する。見回しでは止まらない。Space キーは使わない（ComfyUI のキャンバスの pan）。細かい規則は `docs/panorama-stickers-node-surface-spec.md` にある。
 - Sticker がアップロード中（Source にファイルがまだない）の間は、Undo の履歴を記録しない。アップロードが終わったときに、その間の編集を含めて一度記録する（失敗して Sticker が消えたときも同じ）。
@@ -45,7 +45,12 @@
   - エディタを開いたとき、現在の実行結果の `pano_timeline_fps` が状態の `timeline.fps` と違えば、状態をその fps に再基準化する。ウィジェットの `state_json` は次の編集かキューまで変わらない（ノードは記録された fps で秒を保って読むので、書き込む前でも出力は同じ）。
   - エディタを開いている間に届いた実行結果が違う `pano_timeline_fps` を持つときも、同じく再基準化する。これは Undo の 1 段になる。Cutout（`PanoramaCutoutNode`、#77）は例外で、開いている間に届いた実行結果では再基準化しない（Scene の状態も開いたときのまま。下の Cutout の項）。
 - Clip range の外にある Sticker の行を選ぶと、再生ヘッドがその Clip range の始まりへ移ってから選ばれる。
-- Stickers のタイムラインには Camera の行を出さず、インスペクタにも Camera の欄を出さない（ADR 0028）。状態に `camera` の値や Keyframe が残っていても、表示・再生の可否（`isTimed`）・タイムラインの長さ（`timelineSpan`）には数えず、消したり書き換えたりもしない（保存しても `state_json` の `camera` は変わらない）。ノード上の UI の再生ボタンも同じ `isTimed` で決まる。Camera の行（`buildTimelineModel` の `camera`）と、その Keyframe を数える `isTimed`・`timelineSpan` の `camera` は Cutout のためのものである。
+- Stickers のタイムラインには Camera の行を出さず、インスペクタにも Camera の欄を出さない（ADR 0028）。状態に `camera` の値や Keyframe が残っていても、表示・再生の可否（`isTimed`）・タイムラインの長さ（`timelineSpan`）には数えず、消したり書き換えたりもしない（保存しても `state_json` の `camera` は変わらない）。ノード上の UI の再生ボタンも同じ `isTimed` で決まる。Camera の行（`buildTimelineModel` の `camera`）と、その Keyframe を数える `isTimed`・`timelineSpan` の `camera` は Cutout と Panorama Studio のためのものである。
+- Panorama Studio（`PanoramaStudio`、#89）のタイムラインは、Camera・Sticker・`scene` の行を 1 本に並べる（上から Camera、Sticker（手前から奥、`world` の Sticker）、`scene`）。
+  - Camera の行は Camera があるときだけ出る（`buildTimelineModel` の `camera` に Camera の有無を渡す）。Camera の Keyframe は Cutout と同じ記録の規則で、Timeline frame そのもので比べる。再生の可否（`isTimed` の `camera: true`）とタイムラインの長さ（`timelineSpan` の `camera: true`）にも数える。Camera が無ければ（`camera: null`）どちらも数えない。
+  - Camera の行が出入りしても、タイムラインのバー（再生ボタン・fps・長さ・開閉）は変わらない（`node --test` で確かめている）。行の一覧は Sticker を足したときと同じく 1 行増え、下の行が 1 行分下がる。タイムラインを開いているときは、行の分だけタイムラインが高くなり（34% まで）、ビューが低くなる。これも Sticker を足したときと同じである。
+  - `scene` の行（アイコンは箱）は、`scene` 入力がつながっているとき、または `scene` が Keyframe か既定でない Clip range を持つとき（`pano_timeline.js` の `ownerTimed`）に出る。`scene` の位置・回転・大きさを変える操作とインスペクタはまだ無いので、`scene` の行は Clip range（移動と両端の切り詰め。Sticker の行と同じ）だけを持ち、行のポチと Lane の行は出さない（行のモデルの `keyable: false`。エディタも `scene` の `key-row` を無視する。行を開くボタンは無効）。状態に `scene` の Keyframe があれば、行にポチの印だけは出る。行を選んでもキャンバスの選択は外れるだけで、何も選ばれない。新しい Stickers（`PanoramaStickersNode`）のタイムラインも同じ行を同じ扱いで出す（Cutout は出さない）。
+  - ノード上の UI の再生ボタンも、Panorama Studio では Camera の Keyframe を数える（`pano_node_playback.js` の `camera`。エディタの `timelineOpens` と同じ判断）。
 - Cutout（`PanoramaCutoutNode`、#77）のタイムラインは Camera の行だけを出す（`buildTimelineModel` の `camera: true`・`stickers: false`）。Sticker の行は、Cutout の状態の Sticker も、撮影する `PANO_SCENE` の Sticker も出さない。Camera の Keyframe は上の記録の規則のとおりで、Frame 表示・Panorama 表示（3DoF の枠の操作と 6DoF のギズモ）・インスペクタで Camera を変えると、変えた Lane にだけ入る。行のポチで全 Lane（位置・回転・画角）に入る。Camera の Lane は Timeline frame そのもので比べる（Clip range を持たない）。
   - ERP（IMAGE / VIDEO）の `source`：fps は VIDEO があるときだけ固定で、長さは Cutout の状態の `timeline.length`（空なら入力と Camera の Keyframe から。`timelineSpan` の `camera: true`）。
   - `PANO_SCENE` の `source`：Timeline は Scene のもの（`docs/render-contract.md` の「Cutout ノード」）なので、fps と長さはどちらも値だけを表示し（ツールチップ「Set by the scene」）、タイムラインの長さは実行結果の `pano_timeline_frames`（ノードの出力のフレーム数）にする。Camera の Keyframe をその長さより後に打っても出力は延びない。開いたとき、Cutout の状態は Scene の Timeline fps に再基準化して扱う（秒を保つので、ノードの `frame × Cutout の fps ÷ Scene の fps` と同じ時刻になる）。保存するのは Cutout の状態（その fps と Camera）だけである。編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`。今の `state_json` を再基準化したものと保存しようとする状態が同じなら書かない）ので、ノードは再実行されず、Keyframe も丸められない。Camera を編集したときは、Cutout の状態を Scene の fps のまま保存する（編集していない Lane の Keyframe も、このとき一度だけ再基準化の丸めで最大で半フレーム動く）。ERP の VIDEO の fps に合わせるときも同じ。
@@ -66,7 +71,7 @@
 
 ## Camera のモード
 
-Camera は Keyframe と Drone の二つのモードを持ち、出力にはいま選ばれている方だけを使う。両方のデータは独立に保持し、切り替えても他方は消えない。一本のタイムラインの中で混ぜることはしない。Camera のタイムラインは Cutout だけが持つ（ADR 0028）。画角はどちらのモードでもインスペクタで変える値で、Drone では Keyframe を持たない一定の値である。Drone モードのとき、Camera の行にポチは出さない（位置と回転は通過点から決まる）。Drone の通過点・道筋・状態の項目は Drone の ticket で定める。
+Camera は Keyframe と Drone の二つのモードを持ち、出力にはいま選ばれている方だけを使う。両方のデータは独立に保持し、切り替えても他方は消えない。一本のタイムラインの中で混ぜることはしない。Camera のタイムラインは Cutout と Panorama Studio が持つ（ADR 0029）。画角はどちらのモードでもインスペクタで変える値で、Drone では Keyframe を持たない一定の値である。Drone モードのとき、Camera の行にポチは出さない（位置と回転は通過点から決まる）。Drone の通過点・道筋・状態の項目は Drone の ticket で定める。
 
 ## 再生の状態
 

@@ -731,7 +731,7 @@ test("PanoramaCutoutNode's editor edits its Camera: the shot follows it, the Fra
   assert.match(editor, /if \(keep && shot && cutoutShotBase\) setCameraShot\(state\.camera, editor\.frame, shot, cutoutShotBase\);/);
   // Only the Camera is edited: no image, paint or clear tools, and the Stickers shown are not selectable.
   assert.match(editor, /const CUTOUT_V2_HIDDEN_TOOLS = new Set\(\["paint", "mask", "add-image", "clear"\]\);/);
-  assert.match(editor, /return cutoutV2 \|\| !Array\.isArray\(state\.stickers\) \? \[\] : state\.stickers;/);
+  assert.match(editor, /return cutoutV2 \|\| !Array\.isArray\(state\.stickers\) \? \[\] : skyStickers\(\);/);
   // With World content the Frame view's drags of the 3D view controls orbit and pan the Camera, and the wheel
   // moves it toward the point under the pointer.
   assert.match(editor, /if \(direction && isFreeFrameView\(\)\) zoomFrameAt\(p, -direction\);/);
@@ -740,9 +740,30 @@ test("PanoramaCutoutNode's editor edits its Camera: the shot follows it, the Fra
   assert.match(editor, /return placedCamera\(shotCamera\(shot\), shot\.position, frameViewDistance\(\), content\.sphere\);/);
   // In 6DoF the gizmo writes the Camera's Lane of its mode by the recording rule.
   assert.match(editor, /setLaneValue\(state\.camera, name, editor\.frame, value\)/);
-  assert.match(editor, /if \(cutoutV2 && isShotItem\(item\) && isFreeSpaceView\(\)\) return \{ visible: false \};/);
+  assert.match(editor, /if \(cameraV2 && isShotItem\(item\) && isFreeSpaceView\(\)\) return \{ visible: false \};/);
   // A Frame view drag that stops playback picks its point again on the stopped frame, as a gizmo drag takes its base.
   assert.match(editor, /if \(it\.kind === "frame_orbit" \|\| it\.kind === "frame_pan"\) \{[\s\S]*?const target = frameTarget\(context, view, down\);\s*if \(it\.kind === "frame_orbit"\) it\.pivot = target;\s*else it\.depth = depthOf\(view, target\);/);
   // Closing the editor without an edit leaves state_json as it is, though the editor rebased it.
-  assert.match(editor, /sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cutoutV2 \}\)/);
+  assert.match(editor, /sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)/);
+});
+
+test("Panorama Studio's editor adds and deletes its one Camera without moving the view at once (#89)", () => {
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  // The Stickers editor of state v2 with the Cutout's Camera, which the node marks.
+  assert.match(editor, /const studio = sceneV2 && node\.__panoStudio === true;/);
+  assert.match(editor, /const shellPreset = buildModalShellPreset\(studio \? "studio" : type\);/);
+  // Studio opens its state as it is: the default Camera of the Cutout is not used.
+  assert.match(editor, /scene: capture\?\.state \?\? null,\s*camera: cutoutV2,/);
+  // Add Camera: where the view stands and looks, disabled while there is one.
+  assert.match(editor, /state\.camera = newStudioCamera\(spaceViewState\(\)\);/);
+  assert.match(editor, /patchUiButton\(uiState\.toolButtons, "value", "add-camera", \{ disabled: hasCamera\(\) \}\);/);
+  // Delete saves no Camera, and the shot goes with it.
+  assert.match(editor, /function deleteStudioCamera\(\) \{[\s\S]*?state\.camera = null;/);
+  assert.match(editor, /if \(studio && isShotItem\(selected\)\) \{\s*deleteStudioCamera\(\);/);
+  assert.match(editor, /if \(!state\.camera\) \{\s*cutoutShotBase = null;\s*if \(state\.shots\?\.length\) state\.shots = \[\];\s*if \(before\) followCameraChange\(before, null\);/);
+  // 3DoF moves to where it stands now over a transition, which enters 3DoF when it arrives.
+  assert.match(editor, /applySpaceMode\(\{ mode: "6dof", position: from, moved: true \}\);[\s\S]*?transitionView\(\{ \.\.\.view, position: to \}, \{ mode: "3dof", moved: false \}\);/);
+  // The Frame tab is always there; without a frame to show it is disabled, and Studio leaves it for the panorama.
+  assert.match(editor, /if \(editor\.mode === "frame" && frameButton\.disabled\) \{\s*if \(studio\) leaveFrameView\(getActiveCutoutShot\(\)\);/);
+  assert.match(editor, /button\.visible = !\(button\.key === "frame" && !shotEditor\);/);
 });

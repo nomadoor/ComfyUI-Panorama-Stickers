@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, floatingRightState, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { ERP_ASPECT, cameraParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { setSegmentEasing } from "../web_src/pano_timeline.js";
@@ -150,7 +150,7 @@ test("a world Sticker's position and scale sliders reach past any value, which h
   assert.equal(worldFieldRange(1000), 1000);
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   // Typed values are not clamped to the slider; the scale only stays above 0.
-  assert.match(editor, /if \(\(worldInspected \|\| cutoutV2\) && WORLD_UNLIMITED_FIELDS\.has\(key\)\) out = key === "scale" \? Math\.max\(out, WORLD_MIN_SCALE\) : out;/);
+  assert.match(editor, /if \(\(worldInspected \|\| cameraV2\) && WORLD_UNLIMITED_FIELDS\.has\(key\)\) out = key === "scale" \? Math\.max\(out, WORLD_MIN_SCALE\) : out;/);
 });
 
 test("a world Sticker's selection menu holds the Move | Rotate | Scale segments, below its corners", () => {
@@ -295,4 +295,128 @@ test("the Cutout's Camera has Move | Rotate in its gizmo menu, and its frame men
     cameraShot: true,
   });
   assert.deepEqual(model.items.map((item) => item.key), ["aspect", "rotate-90"]);
+});
+
+// --- Panorama Studio (#89): the Stickers editor of state v2 with the Cutout's Camera.
+
+test("Panorama Studio's editor has the Stickers tools with Add Camera, and always shows the Frame tab", () => {
+  const studio = buildModalShellPreset("studio");
+  const stickers = buildModalShellPreset("stickers");
+  assert.deepEqual(studio.viewButtons.map((button) => button.key), ["pano", "unwrap", "frame"]);
+  assert.deepEqual(studio.viewButtons.map((button) => button.key), buildModalShellPreset("cutout").viewButtons.map((button) => button.key));
+  const keys = (preset) => preset.toolButtons.map((button) => button.key);
+  assert.deepEqual(keys(studio), ["cursor", "paint", "mask", "add", "add-world", "add-camera", "clear", "undo", "redo"]);
+  assert.equal(keys(stickers).includes("add-camera"), false);
+  assert.equal(keys(buildModalShellPreset("cutout")).includes("add-camera"), false);
+  // Add Camera is an action, not a mode: it is never pressed, and it is never hidden (only disabled).
+  const add = studio.toolButtons.find((button) => button.key === "add-camera");
+  assert.deepEqual([add.attr, add.value, add.pressed, "visible" in add, add.label, add.tip], ["data-tool-ui-action", "add-camera", null, false, "Add Camera", "Add camera"]);
+  assert.equal(add.icon, "camera_plus");
+});
+
+test("the Frame tab stays in place, disabled with the reason while Panorama Studio has no frame to show", () => {
+  assert.deepEqual(frameViewButton({ hasShot: false, studio: true }), { disabled: true, tip: "Add a camera to use the Frame view" });
+  assert.deepEqual(frameViewButton({ hasShot: true, studio: true }), { disabled: false, tip: null });
+  assert.deepEqual(frameViewButton({ hasShot: true, erp: true, studio: true }), { disabled: true, tip: "A 360° camera has no frame" });
+  // The Cutout keeps its tab as before.
+  assert.deepEqual(frameViewButton({ hasShot: false }), { disabled: true, tip: null });
+  assert.deepEqual(frameViewButton({ hasShot: true }), { disabled: false, tip: null });
+  // A disabled tab keeps its tooltip: it is aria-disabled, and the editor ignores its clicks.
+  const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
+  assert.match(toggle, /:aria-disabled="button\.disabled === true \? 'true' : null"/);
+  assert.match(toggle, /:data-tip="button\.tip \|\| null"/);
+  assert.doesNotMatch(toggle, /:disabled=/);
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  assert.match(editor, /if \(viewTarget\.getAttribute\("aria-disabled"\) === "true"\) return;/);
+  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
+  assert.match(css, /\.pano-view-btn\[aria-disabled="true"\] \{/);
+});
+
+test("Panorama Studio's Timeline shows the Camera, the Stickers and the `scene` on one Timeline, and its bar stays as it is", () => {
+  const state = canonical();
+  const options = { frame: 24, span: 120, selection: null, selectedId: null, expanded: true, openRows: new Set(), playing: false, label: "" };
+  const rows = (model) => model.rows.map((row) => [row.id, row.icon]);
+
+  const withoutCamera = buildTimelineModel(state, options);
+  const withCamera = buildTimelineModel(state, { ...options, camera: true });
+  const withScene = buildTimelineModel(state, { ...options, camera: true, scene: true });
+
+  assert.deepEqual(rows(withoutCamera), [["st_sky", "image"], ["st_hidden", "image"], ["st_world", "image"]]);
+  assert.deepEqual(rows(withCamera), [["camera", "camera"], ["st_sky", "image"], ["st_hidden", "image"], ["st_world", "image"]]);
+  assert.deepEqual(rows(withScene).at(-1), ["scene", "box"]);
+  // The Camera row only adds a row: the bar above the rows is the same.
+  const bar = ({ rows: _rows, ...rest }) => rest;
+  assert.deepEqual(bar(withCamera), bar(withoutCamera));
+
+  // The `scene` row has its Clip range and Keyframes in the Timeline frames of its material.
+  const scene = withScene.rows.at(-1);
+  assert.deepEqual([scene.label, scene.clip], ["Scene", { start: state.scene.clip.start, end: state.scene.clip.duration === null ? null : state.scene.clip.start + state.scene.clip.duration }]);
+  // Nothing in the editor moves the `scene` yet: its row has only its Clip range, no key button and no Lanes.
+  assert.deepEqual([scene.keyable, scene.lanes, scene.open], [false, [], false]);
+  assert.equal(buildTimelineModel(state, { ...options, scene: true, openRows: new Set(["scene"]) }).rows.at(-1).open, false);
+  assert.equal(withScene.rows[0].keyable, true);
+  const timelineVue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(timelineVue, /v-if="row\.keyable"\s*class="pano-timeline-key"/);
+  const editorJs = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  assert.match(editorJs, /if \(action\.owner === "scene" \|\| !timelineEditable\(action\.owner\)\) return;/);
+  // Without its input, the `scene` row shows only while the `scene` changes over time; the Cutout has none.
+  const still = loadSceneState({ version: 2 });
+  assert.equal(buildTimelineModel(still, options).rows.some((row) => row.id === "scene"), false);
+  still.scene.clip.start = 5;
+  assert.equal(buildTimelineModel(still, options).rows.some((row) => row.id === "scene"), true);
+  assert.equal(buildTimelineModel(still, { ...options, stickers: false, scene: true }).rows.some((row) => row.id === "scene"), false);
+  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(timeline, /<SvgIcon :icon="row\.icon" \/>/);
+});
+
+test("Panorama Studio's Camera menu has the 360° preset and Delete, and a 360° Camera has no frame to turn", () => {
+  const shot = { id: "camera", locked: false };
+  const menu = (options) => buildSelectionMenuModel({
+    type: "stickers",
+    selected: shot,
+    selectedItems: [shot],
+    selectedKind: "frame",
+    geom: { visible: true, corners: [{ x: 20, y: 20 }, { x: 80, y: 20 }, { x: 80, y: 60 }, { x: 20, y: 60 }] },
+    selectedLocked: false,
+    activeAspect: "16:9",
+    cutoutAspectOpen: false,
+    isExternalSticker: () => false,
+    isStickerHidden: () => false,
+    canRestoreSelectedToInitial: () => false,
+    iconSet: new Proxy({}, { get: (_, key) => String(key) }),
+    cameraShot: true,
+    cameraDeletable: true,
+    erpChoice: true,
+    ...options,
+  });
+
+  const perspective = menu({});
+  assert.deepEqual(perspective.items.map((item) => item.key), ["aspect", "rotate-90", "delete"]);
+  assert.deepEqual(perspective.items[0].choices.map((choice) => [choice.value, choice.label, choice.active]), [
+    ["1:1", "1:1", false], ["4:3", "4:3", false], ["3:2", "3:2", false], ["16:9", "16:9", true], [ERP_ASPECT, "360°", false],
+  ]);
+  assert.equal(perspective.items[1].disabled, false);
+  const erp = menu({ activeAspect: ERP_ASPECT, coverage: 180 });
+  assert.deepEqual(erp.items[0].choices.at(-1), { value: ERP_ASPECT, label: "180°", active: true });
+  assert.equal(erp.items[1].disabled, true);
+  // The Cutout's Camera has neither.
+  assert.deepEqual(cameraAspectChoices("1:1").map((choice) => choice.value), ["1:1", "4:3", "3:2", "16:9"]);
+
+  // In 6DoF its gizmo menu has Delete after Move | Rotate.
+  const gizmo = buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate", camera: true, deletable: true });
+  assert.deepEqual(gizmo.items.map((item) => [item.key, item.action]), [["gizmo-mode", undefined], ["delete", "delete"]]);
+  assert.equal(buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate" }).items.length, 1);
+});
+
+test("a 360° Camera's FOV fields are disabled, and the others stay as they are (#89)", () => {
+  for (const key of ["hFOV_deg", "vFOV_deg"]) {
+    assert.equal(cameraParamEnabled(key, { erp: true }), false);
+    assert.equal(cameraParamEnabled(key), true);
+  }
+  for (const key of ["yaw_deg", "pitch_deg", "roll_deg", "position_x"]) assert.equal(cameraParamEnabled(key, { erp: true }), true);
+  // The disabled tab is left out of the Tab order, and keeps its colour under the pointer.
+  const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
+  assert.match(toggle, /:tabindex="button\.disabled === true \? -1 : null"/);
+  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /\.pano-view-btn\[data-view="frame"\]:hover/);
 });

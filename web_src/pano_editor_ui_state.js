@@ -1,6 +1,6 @@
 import { ICON } from "./icons.js";
 import { sceneStickerLabel } from "./pano_editor_state.js";
-import { laneNames, rowKeyed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
+import { laneNames, ownerTimed, rowKeyed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
 
 export function patchUiButton(list, matchKey, key, patch) {
   const entry = Array.isArray(list) ? list.find((item) => String(item?.[matchKey] || "") === String(key || "")) : null;
@@ -138,6 +138,34 @@ export function floatingRightState({ spaceView, spaceMode, readOnly, frameMode, 
   };
 }
 
+// The Frame tab (PanoViewToggle.vue). The editors with a shot always show it, so the tabs never move, and
+// disable it while there is no frame to look through. Panorama Studio says why in its tooltip (#89): it has
+// no Camera yet (Add Camera is on the left), or its Camera shoots a 360-degree ERP, which has no frame.
+export function frameViewButton({ hasShot, erp = false, studio = false }) {
+  const disabled = !hasShot || erp;
+  const tip = studio && disabled ? (hasShot ? "A 360° camera has no frame" : "Add a camera to use the Frame view") : null;
+  return { disabled, tip };
+}
+
+// Whether the inspector edits a Camera field: a 360-degree ERP Camera reads no FOV, so its H FOV and V FOV
+// stay, disabled (ADR 0029, #89).
+export function cameraParamEnabled(key, { erp = false } = {}) {
+  return !(erp && (key === "hFOV_deg" || key === "vFOV_deg"));
+}
+
+// The aspect preset that makes Panorama Studio's Camera shoot an ERP (`projection: "erp"`, ADR 0029).
+export const ERP_ASPECT = "erp";
+const ASPECT_PRESETS = ["1:1", "4:3", "3:2", "16:9"];
+
+// The aspect presets of the Camera's frame in the selection menu and the Frame rail, `active` marked.
+// With `erp` (Panorama Studio, #89) they end with 360°, named 180° for a 180 coverage.
+export function cameraAspectChoices(active, { erp = false, coverage = 360 } = {}) {
+  return [
+    ...ASPECT_PRESETS.map((value) => ({ value, label: value, active: active === value })),
+    ...(erp ? [{ value: ERP_ASPECT, label: Number(coverage) === 180 ? "180°" : "360°", active: active === ERP_ASPECT }] : []),
+  ];
+}
+
 export function buildEditorSidePanelModel({
   coverage,
   readOnly,
@@ -186,8 +214,12 @@ export function buildSelectionMenuModel({
   isStickerHidden,
   canRestoreSelectedToInitial,
   iconSet,
-  // PanoramaCutoutNode's shot is its Camera (#77), which is always there and is not locked.
+  // PanoramaCutoutNode's shot is its Camera (#77), which is always there and is not locked. Panorama
+  // Studio's Camera is deleted from its menu and has the 360° preset (#89).
   cameraShot = false,
+  cameraDeletable = false,
+  erpChoice = false,
+  coverage = 360,
 }) {
   if (!geom?.visible) return { visible: false, left: 0, top: 0, items: [] };
 
@@ -206,7 +238,7 @@ export function buildSelectionMenuModel({
       { key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed },
       { key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked },
     ];
-  } else if (type === "stickers" || selectedKind === "image") {
+  } else if (selectedKind === "image") {
     items = [
       { key: "bring-front", kind: "button", action: "bring-front", label: "Bring to Front", tip: "Bring to front", icon: iconSet.bring_front, disabled: !!selectedLocked },
       { key: "send-back", kind: "button", action: "send-back", label: "Send to Back", tip: "Send to back", icon: iconSet.send_back, disabled: !!selectedLocked },
@@ -245,15 +277,18 @@ export function buildSelectionMenuModel({
         kind: "aspect",
         icon: iconSet.aspect,
         open: !!cutoutAspectOpen,
-        choices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value, active: activeAspect === value })),
+        choices: cameraAspectChoices(activeAspect, { erp: erpChoice, coverage }),
       },
-      { key: "rotate-90", kind: "button", action: "rotate-90", label: "Toggle Portrait/Landscape", tip: "Toggle portrait/landscape", icon: iconSet.rotate_90 },
+      // A 360-degree ERP has no frame to turn.
+      { key: "rotate-90", kind: "button", action: "rotate-90", label: "Toggle Portrait/Landscape", tip: "Toggle portrait/landscape", icon: iconSet.rotate_90, disabled: activeAspect === ERP_ASPECT },
     ];
     if (!cameraShot) {
       items.push(
         { key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed },
         { key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked },
       );
+    } else if (cameraDeletable) {
+      items.push({ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete });
     }
   }
 
@@ -272,7 +307,7 @@ const GIZMO_MODES = [
 // Scale (Move | Rotate) segments that pick its gizmo mode. It is placed around both its corners on the
 // canvas and gizmoBox, the box its gizmo covers (pano_space.js gizmoScreenBox, null when not in front), so
 // it stays clear of the handles.
-export function buildWorldSelectionMenuModel({ corners, gizmoBox = null, gizmoMode, camera = false }) {
+export function buildWorldSelectionMenuModel({ corners, gizmoBox = null, gizmoMode, camera = false, deletable = false }) {
   const box = gizmoBox ? [{ x: gizmoBox.minX, y: gizmoBox.minY }, { x: gizmoBox.maxX, y: gizmoBox.maxY }] : [];
   const modes = camera ? GIZMO_MODES.filter((mode) => mode.cameraTip) : GIZMO_MODES;
   return selectionMenuAt([...corners, ...box], [{
@@ -281,7 +316,9 @@ export function buildWorldSelectionMenuModel({ corners, gizmoBox = null, gizmoMo
     attr: "data-gizmo-mode",
     label: "Gizmo mode",
     buttons: modes.map(({ key, label, tip, cameraTip }) => ({ key, label, tip: camera ? cameraTip : tip, pressed: key === gizmoMode ? "true" : "false" })),
-  }]);
+  },
+  // Panorama Studio's Camera is deleted from its menu too (#89).
+  ...(deletable ? [{ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: ICON.delete }] : [])]);
 }
 
 // Where a menuW x menuH selection menu goes in a canvasW x canvasH canvas for its anchor (the box of
@@ -335,9 +372,10 @@ const LANE_LABELS = {
   opacity: "Opacity",
 };
 
-// The Timeline (PanoTimeline.vue) of a working state v2: the Camera row when `camera` is set (only
-// Cutout shoots with the state's Camera; Stickers has none, ADR 0028), then the Stickers from front
-// to back (sky Stickers by z_index, then world Stickers). A row shows one pin per frame that has a
+// The Timeline (PanoTimeline.vue) of a working state v2, one row per object on one Timeline: the Camera
+// row when `camera` is set (Cutout, and Panorama Studio while it has a Camera; Stickers has none,
+// ADR 0028), then the Stickers from front to back (sky Stickers by z_index, then world Stickers), then the
+// `scene` row when `scene` is set (its input is linked) or the `scene` changes over time (#89). A row shows one pin per frame that has a
 // Keyframe on any of its Lanes (`full` when on all of them); an open row (openRows) also shows one
 // line per Lane. Frames in the model are Timeline frames; `offset` turns them back into the owner's own
 // frames. selection is { owner, lane, frames }: `lane` is a Lane's name, or null for the whole row, and
@@ -345,19 +383,22 @@ const LANE_LABELS = {
 // audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
 // input sets the Timeline fps (ADR 0024); with sceneLocked a PANO_SCENE sets both the fps and the length
 // (a Cutout shoots the Scene's Timeline, #77), and the Cutout shows only its Camera row.
-export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false, stickers = true, sceneLocked = false }) {
-  const row = (id, owner, rowLabel, clip, offset) => {
+export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false, stickers = true, scene = false, sceneLocked = false }) {
+  // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
+  const row = (id, owner, rowLabel, icon, clip, offset, keyable = true) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
     return {
       id,
       label: rowLabel,
+      icon,
       clip,
       selected: id === selectedId,
-      open: openRows.has(id),
+      keyable,
+      open: keyable && openRows.has(id),
       keyed: rowKeyed(owner, frame - offset),
       keys: rowKeyframes(owner).map((key) => ({ frame: key.frame + offset, full: key.full })),
       selectedFrames: selectedFrames(null),
-      lanes: laneNames(owner).map((name) => ({
+      lanes: (keyable ? laneNames(owner) : []).map((name) => ({
         key: `${id}:${name}`,
         lane: name,
         label: LANE_LABELS[name],
@@ -369,6 +410,7 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
   const shown = stickers ? state.stickers : [];
   const sky = shown.filter((sticker) => sticker.placement === "sky").sort((a, b) => b.z_index - a.z_index);
   const world = shown.filter((sticker) => sticker.placement === "world");
+  const clipRange = ({ start, in: clipIn, duration }) => ({ clip: { start, end: duration === null ? null : start + duration }, offset: start - clipIn });
   return {
     visible: true,
     expanded,
@@ -384,11 +426,16 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
     lockTip: sceneLocked ? "Set by the scene" : "Set by the video input",
     length: sceneLocked ? span : state.timeline.length,
     rows: [
-      ...(camera ? [row("camera", state.camera, "Camera", null, 0)] : []),
+      ...(camera ? [row("camera", state.camera, "Camera", ICON.camera, null, 0)] : []),
       ...[...sky, ...world].map((sticker) => {
-        const { start, in: clipIn, duration } = sticker.clip;
-        return row(sticker.id, sticker, sceneStickerLabel(sticker), { start, end: duration === null ? null : start + duration }, start - clipIn);
+        const { clip, offset } = clipRange(sticker.clip);
+        return row(sticker.id, sticker, sceneStickerLabel(sticker), ICON.image, clip, offset);
       }),
+      ...(stickers && (scene || ownerTimed(state.scene)) ? [(() => {
+        const { clip, offset } = clipRange(state.scene.clip);
+        // The editor has no way to move the `scene` yet, so its row has only its Clip range (#89).
+        return row("scene", state.scene, "Scene", ICON.box, clip, offset, false);
+      })()] : []),
     ],
   };
 }

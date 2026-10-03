@@ -9,7 +9,7 @@
 //
 // readState() is the node's working state v2. onFrame, onCapture and onChange are those of
 // createVideoPlayback; onChange also runs when the VIDEO of a source fails. onStickerCapture is the
-// follower's onCapture.
+// follower's onCapture. With `camera` (Panorama Studio, #89) the Camera's Keyframes count, as in its editor.
 import { createFrameSequence, portMediaFrames, portMediaTime } from "./pano_port_media.js";
 import { NODE_SURFACE_FRAME } from "./pano_stickers_node_surface.js";
 import { isTimed, timelineSpan } from "./pano_timeline.js";
@@ -21,7 +21,7 @@ export function surfaceShown(element, collapsed) {
   return !collapsed && element.isConnected && element.clientWidth > 0;
 }
 
-export function createNodePlayback({ video, stickerVideo, createImage, clock, readState, onFrame, onCapture, onStickerCapture, onChange }) {
+export function createNodePlayback({ video, stickerVideo, createImage, clock, readState, onFrame, onCapture, onStickerCapture, onChange, camera = false }) {
   // The background VIDEO chosen for the node, and the one the element loads: none while out of sight.
   let chosen = "";
   let loaded = "";
@@ -45,6 +45,7 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
         chosen ? Math.round(duration * fps()) : 0,
         sticker && portSticker ? portMediaFrames(portSticker.clip, fps(), sticker.meta) : 0,
       ),
+      camera,
     });
   };
   const playback = createVideoPlayback({
@@ -149,7 +150,7 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
         duration = 0;
       }
       load(chosen);
-      const playable = isTimed(state) || (!!chosen && playback.state !== "error") || !!sticker;
+      const playable = isTimed(state, { camera }) || (!!chosen && playback.state !== "error") || !!sticker;
       if (!playable) pause();
       const reset = changed || !playable || (!playback.playing && playback.frame >= span());
       if (reset && playback.frame !== NODE_SURFACE_FRAME) playback.seek(NODE_SURFACE_FRAME);

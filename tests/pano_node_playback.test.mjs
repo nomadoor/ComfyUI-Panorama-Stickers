@@ -142,7 +142,7 @@ class FakeClock {
   }
 }
 
-function setup(state = loadSceneState(null)) {
+function setup(state = loadSceneState(null), { camera = false } = {}) {
   const video = new FakeVideo();
   const stickerVideo = new FakeVideo();
   const clock = new FakeClock();
@@ -167,6 +167,7 @@ function setup(state = loadSceneState(null)) {
     onChange: () => {
       log.changes += 1;
     },
+    camera,
   });
   // What each draw of the node passes: the surface shown with these candidates and the port Sticker's MP4.
   const follow = (sources, shown = true, sticker = null) => playback.follow({ shown, sources, state, sticker });
@@ -192,6 +193,13 @@ test("the play button shows for a timed scene or a background VIDEO that loads",
   const camera = loadSceneState({ version: 2, camera: {} });
   keyAllLanes(camera.camera, 0);
   assert.equal(setup(camera).follow([]), false);
+  // Panorama Studio shoots through its Camera, so its Keyframes make the node play and set its span (#89).
+  camera.camera.fov.keyframes.push({ frame: 200, value: 50, easing: "auto" });
+  const studio = setup(camera, { camera: true });
+  assert.equal(studio.follow([]), true);
+  studio.playback.toggle();
+  studio.clock.framesAhead(150);
+  assert.ok(studio.log.frames.at(-1) > 120, "the span reaches the Camera's last Keyframe");
 });
 
 test("a failed VIDEO gives way to the next candidate, as in the editor, until it leaves the candidates", () => {

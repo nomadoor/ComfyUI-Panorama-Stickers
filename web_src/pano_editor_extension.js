@@ -233,6 +233,7 @@ function installEditorButton(nodeType, {
   attachCutout,
   enableStickersPreview,
   sceneStateV2 = false,
+  studio = false,
 }) {
   if (!nodeType?.prototype) return;
 
@@ -256,8 +257,10 @@ function installEditorButton(nodeType, {
     }
 
     if (matchType === "PanoramaStickers") {
-      // PanoramaStickersNode keeps state v2 in state_json (see pano_editor_state.js).
+      // PanoramaStickersNode keeps state v2 in state_json (see pano_editor_state.js). Panorama Studio is
+      // the same editor with a Camera the user adds (#89), and the same node surface for now (#91).
       node.__panoSceneStateV2 = sceneStateV2;
+      node.__panoStudio = studio;
       const background = getWidget(node, "bg_color");
       if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "" || String(background.value).toLowerCase() === "#000000")) {
         background.value = "#00ff00";
@@ -399,6 +402,19 @@ export function createPanoEditorExtension({
           attachCutout,
           enableStickersPreview,
           sceneStateV2: true,
+        });
+      }
+      if (name === "PanoramaStudio") {
+        installEditorButton(nodeType, {
+          app,
+          matchType: "PanoramaStickers",
+          buttonText: "Open Studio Editor",
+          openEditor,
+          attachStickers,
+          attachCutout,
+          enableStickersPreview,
+          sceneStateV2: true,
+          studio: true,
         });
       }
       if (name === "PanoramaCutout" || name === "Panorama Cutout") {

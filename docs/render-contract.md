@@ -378,7 +378,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
   - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV が動いても大きさは変わらない。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
 - `scene` 出力は新しい Stickers の `pano_scene` と同じ `PanoSceneValue` で、自分の層（最後の層）の `state` の `camera` だけを `null` にする（撮影する世界で、Camera を含まない。`_scene_output`）。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
 - `sticker_state` は `projection` が `perspective` のときだけ、新しい Cutout と同じ `_cutout_sticker_state`（`source_aspect` は出力の幅 ÷ 高さ）。Camera が無いときと `erp` のときは空文字列。
-- 実行結果の `ui` は新しい Stickers と同じキー（`pano_input_images` などの素材、`pano_sticker_input_pose`、`pano_sticker_warnings`）。上流の Scene を受けたときのキーは下記。エディタとノード上の表示の結び付けは #89 で、今はフロントエンドに結んでいない。
+- 実行結果の `ui` は新しい Stickers と同じキー（`pano_input_images` などの素材、`pano_sticker_input_pose`、`pano_sticker_warnings`）。上流の Scene を受けたときのキーは下記。エディタは #89 で結んだ（`docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」）。ノード上の表示は今の新しい Stickers のものを使い、作り直すのは #91。上流の Scene を受けたときのエディタの表示は #90。
 
 ### 上流の Scene（#88）
 
