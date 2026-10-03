@@ -346,6 +346,16 @@
 .pano-space-toggle .pano-view-btn:not(.active):hover {
   color: var(--pano-muted-strong);
 }
+/* Move / Rotate / Scale of the selected world Sticker's gizmo (#72): the same control, three segments. */
+.pano-gizmo-toggle .pano-view-btn {
+  width: 72px;
+}
+.pano-gizmo-toggle[data-selected="rotate"]::before {
+  transform: translateX(100%);
+}
+.pano-gizmo-toggle[data-selected="scale"]::before {
+  transform: translateX(200%);
+}
 .pano-view-btn:disabled {
   color: var(--pano-text-tertiary);
   cursor: default;

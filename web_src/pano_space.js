@@ -10,7 +10,7 @@
 // pivot at that point's depth, so the pivot stays in sight.
 import { DEG2RAD, RAD2DEG, clamp, wrapYaw } from "./pano_camera_math.js";
 import { evaluateLane } from "./pano_scene_eval.js";
-import { quaternionToRotation, rotationToQuaternion, worldRotation } from "./pano_world.js";
+import { panoramaAngles, quaternionToRotation, rotationToQuaternion, worldRotation } from "./pano_world.js";
 
 // A zoom step toward a point is this part of the distance to it.
 export const ZOOM_STEP = 0.15;
@@ -352,6 +352,69 @@ function planeCorners(plane) {
   const halfH = plane.height / 2;
   return [[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]]
     .map(([x, y]) => add(plane.position, apply(plane.rotation, [x, y, 0])));
+}
+
+// --- Placing and transforming world Stickers (#72).
+
+// A new world Sticker without World content goes this far ahead of the view, as far as the node puts a
+// 3D port Sticker from the origin (WORLD_STICKER_POSITION). With content it goes half the radius of the
+// content's bounding sphere ahead.
+export const NEW_WORLD_STICKER_DISTANCE = 2;
+const NEW_WORLD_STICKER_RADIUS_RATIO = 0.5;
+// A new world Sticker is as wide as a new sky Sticker (30 degrees) seen from the view.
+const NEW_STICKER_HFOV = 30;
+
+// The rotation of a world Sticker at `at` that faces the point `from`: its forward (local -Z) points
+// from `from` to it, so its plane faces back at `from` upright, as a plane of rotation 0 faces a
+// Camera of rotation 0 in front of it (docs/render-contract.md).
+export function facingRotation(from, at) {
+  const d = sub(at, from);
+  // In the panorama convention forward is +Z, so World's -Z is the panorama's +Z.
+  const yaw = Math.atan2(d[0], -d[2]) * RAD2DEG;
+  const pitch = Math.atan2(d[1], Math.hypot(d[0], d[2])) * RAD2DEG;
+  return { yaw_deg: yaw + 0, pitch_deg: pitch, roll_deg: 0 };
+}
+
+// Where a world Sticker added at a point of the view goes ({ position, rotation, scale }): on the World
+// content under that point (hit, from pick()), else ahead of the view at half the radius of the
+// content's bounding sphere (sphere, null without content), else NEW_WORLD_STICKER_DISTANCE ahead. It
+// faces the view, and is as wide as a new sky Sticker looks from there.
+export function newWorldStickerTransform(view, hit, sphere = null) {
+  const radius = sphere?.radius > 0 ? sphere.radius : 0;
+  const ahead = radius ? radius * NEW_WORLD_STICKER_RADIUS_RATIO : NEW_WORLD_STICKER_DISTANCE;
+  const position = hit ? [...hit] : add(view.position, viewAxes(view.yaw_deg, view.pitch_deg).forward, ahead);
+  const distance = Math.hypot(...sub(position, view.position));
+  const rotation = distance > 0 ? facingRotation(view.position, position) : { yaw_deg: view.yaw_deg, pitch_deg: view.pitch_deg, roll_deg: 0 };
+  const scale = 2 * Math.max(distance, 1e-3) * Math.tan(NEW_STICKER_HFOV * 0.5 * DEG2RAD);
+  return { position, rotation, scale };
+}
+
+function multiply(a, b) {
+  return a.map((row) => [0, 1, 2].map((index) => row[0] * b[0][index] + row[1] * b[1][index] + row[2] * b[2][index]));
+}
+
+function transpose(m) {
+  return [0, 1, 2].map((index) => column(m, index));
+}
+
+// The Lane a gizmo drag sets on a world Sticker, for the gizmo's mode ("translate", "rotate" or
+// "scale"): the drag took the gizmo from `start` to `moved` (transforms as sceneTransform() gives them,
+// moved.scale per axis), and that change applies to `base`, the Sticker's evaluated value where it is
+// edited. They differ when playback stopped on the drag's first move, on another frame than the one the
+// gizmo was grabbed on.
+export function gizmoDragLanes(mode, base, start, moved) {
+  if (mode === "translate") return { position: add(base.position, sub(moved.position, start.position)) };
+  if (mode === "scale") return { scale: base.scale * uniformScale(start.scale, moved.scale) / start.scale };
+  const turn = multiply(quaternionToRotation(moved.quaternion), transpose(quaternionToRotation(start.quaternion)));
+  const { yawDeg, pitchDeg, rollDeg } = panoramaAngles(multiply(turn, worldRotation(base.yaw_deg, base.pitch_deg, base.roll_deg)));
+  return { rotation: { yaw_deg: yawDeg + 0, pitch_deg: pitchDeg, roll_deg: rollDeg + 0 } };
+}
+
+// A gizmo's scale is uniform: of the three axes the one the drag changed the most from `start`
+// (a scale handle changes one axis, the center handle all three). Never 0 or below.
+export function uniformScale(start, [x, y, z]) {
+  const changed = [x, y, z].reduce((best, value) => (Math.abs(value - start) > Math.abs(best - start) ? value : best), start);
+  return Math.max(changed, start * 1e-3, 1e-6);
 }
 
 // The ground grid on the World XZ plane for content of size radius: lines every power of ten that

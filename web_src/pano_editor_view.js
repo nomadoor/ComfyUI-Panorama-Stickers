@@ -241,6 +241,15 @@ export function createEditorView({ onReady, onFailed, onUpdate = () => {} }) {
     pick(camera, x, y, width, height) {
       return view ? view.pick(camera, x, y, width, height) : null;
     },
+    // The id of the world Sticker under (x, y) in the last space frame (pano_three_view.js pickSticker),
+    // or null.
+    pickSticker(camera, x, y, width, height) {
+      return view ? view.pickSticker(camera, x, y, width, height) : null;
+    },
+    // The pointer on the selected world Sticker's gizmo (pano_three_view.js gizmoPointer).
+    gizmoPointer(phase, camera, x, y, width, height) {
+      return view ? view.gizmoPointer(phase, camera, x, y, width, height) : null;
+    },
     // What pick() hits, as a string that changes with it (pano_three_view.js contentKey).
     contentKey() {
       return view ? view.contentKey() : "";

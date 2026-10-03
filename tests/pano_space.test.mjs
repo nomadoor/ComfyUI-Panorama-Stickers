@@ -4,7 +4,7 @@ import test from "node:test";
 import { BoxGeometry, BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Texture, Vector3 } from "three";
 
 import { makeUnlit } from "../web_src/pano_scene_loaders.js";
-import { raycastPoint } from "../web_src/pano_three_view.js";
+import { raycastPoint, raycastStickerId } from "../web_src/pano_three_view.js";
 
 import {
   DEFAULT_DISTANCE,
@@ -15,11 +15,15 @@ import {
   cameraView,
   contentPoints,
   depthOf,
+  facingRotation,
   frameView,
+  gizmoDragLanes,
   gridSpec,
   hasWorldContent,
   initialSpaceView,
   navigationTarget,
+  newWorldStickerTransform,
+  NEW_WORLD_STICKER_DISTANCE,
   orbitView,
   panView,
   pivotOf,
@@ -37,11 +41,13 @@ import {
   stickerContentUrls,
   switchSpaceMode,
   transformPoint,
+  uniformScale,
   viewAxes,
   worldStickerPlane,
   zoomView,
 } from "../web_src/pano_space.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { worldRotation } from "../web_src/pano_world.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 
 function close(actual, expected, tolerance = 1e-9) {
@@ -592,4 +598,116 @@ test("the 3D Sticker's items stay loaded only while the state has a world port S
   assert.deepEqual(stickerContentUrls(files, state("sky")), []);
   assert.deepEqual(stickerContentUrls(files, loadSceneState({ version: 2, stickers: [] })), []);
   assert.deepEqual(stickerContentUrls(null, state("world")), []);
+});
+
+// The plane of a world Sticker at rotation faces `from` upright: its local +Z points at `from` and
+// its local +Y has no part across the line of sight to the left or right.
+function assertFaces(rotation, at, from) {
+  const matrix = worldRotation(rotation.yaw_deg, rotation.pitch_deg, rotation.roll_deg);
+  const back = [matrix[0][2], matrix[1][2], matrix[2][2]];
+  const toView = from.map((value, axis) => value - at[axis]);
+  const length = Math.hypot(...toView);
+  closeVec(back, toView.map((value) => value / length), 1e-9);
+  const right = [matrix[0][0], matrix[1][0], matrix[2][0]];
+  close(right[1], 0, 1e-9);
+}
+
+test("a new world Sticker goes on the surface under the pointer, facing the view", () => {
+  const width = 640;
+  const height = 360;
+  const start = { position: [0.5, 1, 2], yaw_deg: 10, pitch_deg: -5, hFOV_deg: 90, distance: 1 };
+  const camera = spaceCamera(start, width, height);
+  const box = new Mesh(new BoxGeometry(4, 4, 1), new MeshBasicMaterial());
+  box.position.set(0, 0, -6);
+  box.updateMatrixWorld();
+  // The pointer over a point of the box's front face hits that point.
+  const onFace = [0.8, 0.4, -5.5];
+  const pointer = projectPoint(camera, onFace, width, height);
+  const hit = raycastPoint([box], camera, pointer.x, pointer.y, width, height);
+  closeVec(hit, onFace, 1e-6);
+  const placed = newWorldStickerTransform(start, hit, { center: [0, 0, -6], radius: 3 });
+  closeVec(placed.position, hit);
+  assertFaces(placed.rotation, placed.position, start.position);
+  // As wide as a new sky Sticker (30 degrees) looks from the view.
+  const distance = Math.hypot(...hit.map((value, axis) => value - start.position[axis]));
+  close(placed.scale, 2 * distance * Math.tan(15 * Math.PI / 180));
+});
+
+test("without a surface under the pointer a new world Sticker goes ahead at half the content's radius", () => {
+  const start = { position: [0.5, 1, 2], yaw_deg: 40, pitch_deg: 20, hFOV_deg: 90, distance: 1 };
+  const placed = newWorldStickerTransform(start, null, { center: [9, 9, 9], radius: 6 });
+  closeVec(placed.position, start.position.map((value, axis) => value + viewAxes(40, 20).forward[axis] * 3));
+  // Straight ahead it has the view's own angles, so it faces the view.
+  close(placed.rotation.yaw_deg, 40);
+  close(placed.rotation.pitch_deg, 20);
+  close(placed.rotation.roll_deg, 0);
+  assertFaces(placed.rotation, placed.position, start.position);
+  // Without content it goes the default distance ahead; in 3DoF that is from the ERP origin.
+  const origin = { ...start, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 };
+  const empty = newWorldStickerTransform(origin, null, null);
+  closeVec(empty.position, [0, 0, -NEW_WORLD_STICKER_DISTANCE]);
+  assert.deepEqual(empty.rotation, { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
+  // A sphere without size counts as no content.
+  closeVec(newWorldStickerTransform(origin, null, { center: [0, 0, -1], radius: 0 }).position, [0, 0, -NEW_WORLD_STICKER_DISTANCE]);
+});
+
+test("a plane facing a point keeps rotation 0 for a view of rotation 0 behind it", () => {
+  assert.deepEqual(facingRotation([0, 0, 0], [0, 0, -3]), { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
+  for (const at of [[2, 0, 0], [-1, 2, 3], [0.3, -4, -1]]) assertFaces(facingRotation([0, 0, 0], at), at, [0, 0, 0]);
+});
+
+test("a gizmo drag sets only its mode's Lane, from the Sticker's value where it is edited", () => {
+  const value = { position: [1, -2, 3], yaw_deg: 120, pitch_deg: -35, roll_deg: 20, scale: 2.5 };
+  const start = sceneTransform(value);
+  // Not moved, it gives the value back.
+  const still = { ...start, scale: [2.5, 2.5, 2.5] };
+  closeVec(gizmoDragLanes("translate", value, start, still).position, value.position);
+  const same = gizmoDragLanes("rotate", value, start, still).rotation;
+  closeVec([same.yaw_deg, same.pitch_deg, same.roll_deg], [120, -35, 20], 1e-9);
+  assert.deepEqual(gizmoDragLanes("scale", value, start, still), { scale: 2.5 });
+
+  // The drag's change applies to the base: here playback stopped on another frame than the grab's.
+  const base = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 };
+  assert.deepEqual(gizmoDragLanes("translate", base, start, { ...still, position: [2, -2, 4] }), { position: [1, 0, 1] });
+  assert.deepEqual(gizmoDragLanes("scale", base, start, { ...still, scale: [5, 2.5, 2.5] }), { scale: 2 });
+  // A turn of 90 degrees about World +Y turns a Sticker of rotation 0 to yaw -90 (World +Y turns -Z toward -X, the left).
+  const turned = { ...still, quaternion: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 } };
+  const startIdentity = { ...start, quaternion: { x: 0, y: 0, z: 0, w: 1 } };
+  const { rotation } = gizmoDragLanes("rotate", base, startIdentity, turned);
+  closeVec([rotation.yaw_deg, rotation.pitch_deg, rotation.roll_deg], [-90, 0, 0], 1e-9);
+  assert.deepEqual(Object.keys(gizmoDragLanes("rotate", base, startIdentity, turned)), ["rotation"]);
+});
+
+test("a gizmo's scale stays uniform, taking the axis the drag changed", () => {
+  assert.equal(uniformScale(2, [3, 2, 2]), 3);
+  assert.equal(uniformScale(2, [2, 1, 2]), 1);
+  assert.equal(uniformScale(2, [4, 4, 4]), 4);
+  // A drag through the center does not turn it inside out.
+  assert.equal(uniformScale(2, [-1, 2, 2]), 2e-3);
+});
+
+test("the world Sticker under the pointer is the one its nearest hit belongs to", () => {
+  const width = 640;
+  const height = 360;
+  const camera = spaceCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 1 }, width, height);
+  const plane = new Mesh(new PlaneGeometry(2, 2), new MeshBasicMaterial({ side: DoubleSide }));
+  plane.position.set(0, 0, -4);
+  plane.userData.stickerId = "plane";
+  // A 3D Sticker's group carries its id; the item inside it is what the ray hits.
+  const item = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+  const group = new Group();
+  group.userData.stickerId = "mesh";
+  group.position.set(2.5, 0, -4);
+  group.add(item);
+  const scene = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+  scene.position.set(-0.5, 0.5, -2);
+  const objects = [plane, group, scene];
+  objects.forEach((object) => object.updateMatrixWorld(true));
+  const at = (p) => projectPoint(camera, p, width, height);
+  const idAt = (p) => raycastStickerId(objects, camera, at(p).x, at(p).y, width, height);
+  assert.equal(idAt([0.5, -0.5, -4]), "plane");
+  assert.equal(idAt([2.5, 0, -3.5]), "mesh");
+  // The `scene` content in front of a plane hides it, and is not a Sticker.
+  assert.equal(idAt([-0.5, 0.5, -1.5]), null);
+  assert.equal(raycastStickerId(objects, camera, 2, 2, width, height), null);
 });

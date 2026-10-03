@@ -25,6 +25,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   NoBlending,
+  Object3D,
   OneFactor,
   OneMinusSrcAlphaFactor,
   PerspectiveCamera,
@@ -41,6 +42,7 @@ import {
   VideoTexture,
   WebGLRenderer,
 } from "three";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
 
@@ -285,17 +287,37 @@ function setCamera(target, setup) {
   target.updateMatrixWorld();
 }
 
-// The nearest point of `objects` (three.js objects in the World, searched with their children) seen at
-// (x, y) of a width x height view drawn with camera (a spaceCamera() setup, pano_space.js), as [x, y, z],
-// or null. Meshes and planes hit on their triangles; a SPLAT's SplatMesh hits with Spark's own raycast
+// (x, y) of a width x height view as three.js normalized device coordinates.
+function devicePoint(x, y, width, height) {
+  return new Vector2(x / width * 2 - 1, 1 - y / height * 2);
+}
+
+// The nearest intersection of `objects` (three.js objects in the World, searched with their children)
+// seen at (x, y) of a width x height view drawn with camera (a spaceCamera() setup, pano_space.js), or
+// undefined. Meshes and planes hit on their triangles; a SPLAT's SplatMesh hits with Spark's own raycast
 // (its splats with enough opacity). The objects' World matrices must be current.
-export function raycastPoint(objects, camera, x, y, width, height) {
+function raycastHit(objects, camera, x, y, width, height) {
   const ray = new PerspectiveCamera();
   setCamera(ray, camera);
   const raycaster = new Raycaster();
-  raycaster.setFromCamera(new Vector2(x / width * 2 - 1, 1 - y / height * 2), ray);
-  const hit = raycaster.intersectObjects(objects, true)[0];
+  raycaster.setFromCamera(devicePoint(x, y, width, height), ray);
+  return raycaster.intersectObjects(objects, true)[0];
+}
+
+// The World point of raycastHit() as [x, y, z], or null.
+export function raycastPoint(objects, camera, x, y, width, height) {
+  const hit = raycastHit(objects, camera, x, y, width, height);
   return hit ? hit.point.toArray() : null;
+}
+
+// The world Sticker of the nearest intersection at (x, y), as raycastHit() finds it: the id its object or
+// an ancestor carries (userData.stickerId), or null when the nearest is not a Sticker (the `scene`
+// content) or nothing is there.
+export function raycastStickerId(objects, camera, x, y, width, height) {
+  for (let object = raycastHit(objects, camera, x, y, width, height)?.object; object; object = object.parent) {
+    if (object.userData.stickerId) return object.userData.stickerId;
+  }
+  return null;
 }
 
 // onUpdate runs when something the view draws changes by itself: a `scene` item finished loading, or
@@ -338,6 +360,11 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   let pickKey = "";
   let spark = null;
   let closed = false;
+  // The gizmo of the selected world Sticker (#72): three.js TransformControls on a stand-in object that
+  // takes the Sticker's transform each render. The editor feeds it the pointer (gizmoPointer) and writes
+  // what it moved back to the state, which the next render draws. Made the first time one shows.
+  let gizmo = null;
+  let gizmoShown = false;
   const sceneItems = createSceneItems({
     load: loadSceneItem,
     dispose: disposeSceneItem,
@@ -438,6 +465,8 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     group.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
     group.scale.setScalar(transform.scale);
     group.add(item.object);
+    // A 3D Sticker is picked as that Sticker.
+    if (input.id) group.userData.stickerId = input.id;
     return { group, splat: item.kind === "splat", object: item.object, transform };
   }
 
@@ -458,6 +487,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   }
 
   function addWorldSticker(owned, mesh, layer) {
+    mesh.userData.stickerId = layer.id;
     pickable.push(mesh);
     pickParts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
     const { uniforms } = mesh.material;
@@ -511,6 +541,27 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       world.add(line);
     }
     pickKey = JSON.stringify(pickParts);
+    gizmoShown = !!space.gizmo;
+    if (gizmoShown) addGizmo(space.gizmo);
+  }
+
+  // The gizmo at a { mode, transform } (mode "translate", "rotate" or "scale"; transform
+  // { position, quaternion, scale } as pano_space.js sceneTransform() gives it). It draws over the World
+  // (its materials do not test depth).
+  function addGizmo({ mode, transform }) {
+    if (!gizmo) {
+      const controls = new TransformControls(worldCamera);
+      const target = new Object3D();
+      controls.attach(target);
+      gizmo = { controls, target };
+    }
+    const { controls, target } = gizmo;
+    controls.mode = mode;
+    target.position.set(...transform.position);
+    target.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
+    target.scale.setScalar(transform.scale);
+    world.add(target);
+    world.add(controls.getHelper());
   }
 
   function draw(projection, input, space = null) {
@@ -576,7 +627,8 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   // (urls to load ahead), transform ({ position, quaternion, scale }), itemQuaternion (the item's turn into
   // the `scene` frame) }. sticker is the same for the `sticker` input's 3D media with its opacity, and
   // stickerUrls its item URLs. stickers are world Sticker planes { id, media, revision, source, opacity,
-  // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }.
+  // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }. gizmo is
+  // null or the selected world Sticker's gizmo { mode, transform } (addGizmo).
   // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
   function render(input) {
     applyViewportCamera(camera, input.camera);
@@ -594,6 +646,44 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   function pick(camera, x, y, width, height) {
     world.updateMatrixWorld();
     return raycastPoint(pickable, camera, x, y, width, height);
+  }
+
+  // The id of the world Sticker under (x, y) in the last space render (raycastStickerId), or null.
+  function pickSticker(camera, x, y, width, height) {
+    world.updateMatrixWorld();
+    return raycastStickerId(pickable, camera, x, y, width, height);
+  }
+
+  // The pointer at (x, y) of a width x height view from camera (a spaceCamera()) on the gizmo of the last
+  // space render. phase "hover" finds the handle under it and returns its axis (null over none), "down"
+  // grabs that handle and returns whether it did, "move" drags it and returns the stand-in's transform
+  // ({ position, quaternion, scale: [x, y, z] }) or null when nothing is grabbed, and "up" lets go.
+  // Without a gizmo shown, every phase returns null.
+  function gizmoPointer(phase, camera, x, y, width, height) {
+    if (!gizmo || !gizmoShown) return null;
+    const { controls, target } = gizmo;
+    setCamera(worldCamera, camera);
+    controls.getHelper().updateMatrixWorld(true);
+    const { x: px, y: py } = devicePoint(x, y, width, height);
+    if (phase === "hover") {
+      controls.pointerHover({ x: px, y: py, button: -1 });
+      return controls.axis;
+    }
+    if (phase === "down") {
+      controls.pointerDown({ x: px, y: py, button: 0 });
+      return controls.dragging;
+    }
+    if (phase === "move") {
+      if (!controls.dragging) return null;
+      controls.pointerMove({ x: px, y: py, button: -1 });
+      return {
+        position: target.position.toArray(),
+        quaternion: { x: target.quaternion.x, y: target.quaternion.y, z: target.quaternion.z, w: target.quaternion.w },
+        scale: target.scale.toArray(),
+      };
+    }
+    controls.pointerUp({ x: px, y: py, button: 0 });
+    return null;
   }
 
   // What pick() hits in the last space render, as a string that changes with it (a MoGe VIDEO's next
@@ -620,6 +710,8 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     stickerItems.close();
     if (guides) disposeObject(guides.group);
     lines.forEach((line) => disposeObject(line));
+    // TransformControls.dispose() would unhook pointer listeners it never had (no DOM element here).
+    gizmo?.controls.getHelper().dispose();
     worldStickers.forEach((mesh) => mesh.material.dispose());
     spark?.dispose();
     owners.forEach((entry) => entry.textures.forEach((item) => item.texture.dispose()));
@@ -636,5 +728,5 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     renderer.forceContextLoss();
   }
 
-  return { render, renderUnwrap, sceneBox, pick, contentKey, release, dispose };
+  return { render, renderUnwrap, sceneBox, pick, pickSticker, gizmoPointer, contentKey, release, dispose };
 }

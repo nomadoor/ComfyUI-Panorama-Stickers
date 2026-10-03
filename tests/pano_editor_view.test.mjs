@@ -511,7 +511,7 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   // An orbit turns about the point under the pointer; a pan moves at its depth.
   const start = editor.slice(editor.indexOf("  function startSpaceDrag(action, p, pointerId) {"));
   assert.match(start, /const target = spaceTarget\(spaceViewState\(\), pickSpace\(p\)\);\s*editor\.interaction = action === "orbit"\s*\? \{ kind: "space_orbit", last: p, pivot: target \}\s*: \{ kind: "space_pan", last: p, depth: depthOf\(spaceViewState\(\), target\) \};/);
-  assert.match(editor, /return editorView\.pick\(camera, p\.x, p\.y, canvas\.width, canvas\.height\);/);
+  assert.match(editor, /return editorView\.pick\(currentSpaceCamera\(\), p\.x, p\.y, canvas\.width, canvas\.height\);/);
   assert.match(editor, /return navigationTarget\(view, hit, editor\.viewMoved \? null : contentSphere\(\)\?\.center, spaceScale\(\)\);/);
   const move = editor.slice(editor.indexOf('    if (it.kind === "space_pan" || it.kind === "space_orbit") {'));
   assert.match(move, /\? panView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.width, canvas\.height, it\.depth\)\s*: orbitView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.height, it\.pivot\)\);/);
@@ -572,7 +572,7 @@ test("the space view starts in 3DoF each time the editor opens, and a 3DoF | 6Do
 test("the three.js view picks the World content it last drew, not its guides", () => {
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   assert.match(view, /if \(content\.splat && !spark\) continue;\s*world\.add\(content\.group\);\s*pickable\.push\(content\.group\);/);
-  assert.match(view, /function addWorldSticker\(owned, mesh, layer\) \{\s*pickable\.push\(mesh\);/);
+  assert.match(view, /function addWorldSticker\(owned, mesh, layer\) \{\s*mesh\.userData\.stickerId = layer\.id;\s*pickable\.push\(mesh\);/);
   assert.match(view, /world\.updateMatrixWorld\(\);\s*return raycastPoint\(pickable, camera, x, y, width, height\);/);
   // Its content key changes with the items drawn and their transforms, and with the Sticker planes.
   assert.match(view, /pickParts\.push\(\[content\.object\.uuid, content\.transform\]\);/);
@@ -593,4 +593,46 @@ test("a 3D world port Sticker (#63) has no plane: the space view draws its item 
   // A see-through GLB does not write depth, and writes it again at full opacity.
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   assert.match(view, /material\.transparent = opacity < 1;\s*material\.depthWrite = opacity >= 1;/);
+});
+
+test("in the space view a press picks the gizmo first, then a world Sticker, then the sky Stickers", () => {
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"), editor.indexOf("  // A left drag on empty space of the panorama view looks around;"));
+  const press = down.indexOf('if (editor.primaryTool === "cursor" && isSpaceView() && startWorldStickerPress(e, p)) return;');
+  assert.ok(press > down.indexOf('kind: "marquee_select"'));
+  assert.ok(press < down.indexOf("if (selectedItems.length > 1 && selGeom?.visible) {"));
+  assert.ok(press < down.indexOf("const hit = hitObjectAt(p);"));
+  const start = editor.slice(editor.indexOf("  function startWorldStickerPress(e, p) {"), editor.indexOf("  // The gizmo highlights the handle under the pointer"));
+  assert.ok(start.indexOf('worldGizmoPointer("down", p)') < start.indexOf("editorView.pickSticker("));
+  // Only a world Sticker of the state is selected by its id; the `scene` content leaves the press to the Sky.
+  assert.match(start, /if \(!state\.stickers\.some\(\(item\) => item\.id === id && item\.placement === "world"\)\) return false;/);
+  assert.match(start, /selectWorldSticker\(id\);/);
+  // Selecting does not stop playback; a gizmo drag stops it on its first move and starts over from that frame.
+  assert.match(editor, /if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
+  const restart = editor.slice(editor.indexOf("  function restartEditAtStoppedFrame(it, down) {"));
+  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = state\.stickers\.find\(\(item\) => item\.id === it\.id\);\s*if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
+  // The drag writes the gizmo mode's Lane by the recording rule, and a changed drag is one Undo step.
+  assert.match(editor, /setWorldStickerTransform\(sticker, editor\.frame, gizmoDragLanes\(it\.mode, it\.base, it\.start, moved\)\);/);
+  assert.match(editor, /if \(ended\.changed\) \{\s*pushHistory\(\);\s*commitAndRefreshNode\(\);/);
+  // The inspector edits the same Lanes.
+  assert.match(editor, /setWorldStickerField\(worldInspected, editor\.frame, key, out\);/);
+});
+
+test("a Move | Rotate | Scale segmented control picks the gizmo mode; no key or toggle button flips it", () => {
+  const preset = buildModalShellPreset("stickers");
+  assert.deepEqual(preset.gizmoButtons.map((button) => [button.key, button.label]), [["translate", "Move"], ["rotate", "Rotate"], ["scale", "Scale"]]);
+  assert.deepEqual(buildModalShellPreset("cutout").gizmoButtons, []);
+  const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
+  assert.match(toggle, /:data-gizmo-mode="button\.key"/);
+  const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
+  assert.match(modal, /:gizmo-buttons="uiState\.gizmoButtons \|\| \[\]"/);
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  assert.match(editor, /editor\.gizmoMode = gizmoModeTarget\.getAttribute\("data-gizmo-mode"\);/);
+  // W and R are ComfyUI's own shortcuts (workflows, refresh), so the editor binds no gizmo keys.
+  assert.doesNotMatch(editor, /gizmoMode = (?!gizmoModeTarget)/);
+  // The gizmo is three.js TransformControls in the lazily loaded view, drawn in the World pass.
+  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
+  assert.match(view, /import \{ TransformControls \} from "three\/examples\/jsm\/controls\/TransformControls\.js";/);
+  assert.match(view, /world\.add\(controls\.getHelper\(\)\);/);
+  assert.doesNotMatch(editor, /TransformControls/);
 });

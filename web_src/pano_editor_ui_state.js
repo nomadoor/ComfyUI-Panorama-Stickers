@@ -123,7 +123,7 @@ export function buildEditorSidePanelModel({
     transformTitle: true,
     selectionPicker,
     copyStateButton: {
-      disabled: !enabled || selectedKind === "stroke" || selectedKind === "camera" || selectedItems.length > 1,
+      disabled: !enabled || selectedKind === "stroke" || selectedKind === "camera" || selectedKind === "world" || selectedItems.length > 1,
       label: "Copy State",
     },
     params,

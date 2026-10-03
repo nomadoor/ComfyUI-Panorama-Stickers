@@ -105,8 +105,8 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
   - 既知の挙動：サーバーを再起動して temp のファイルが消えた後（404）は、その要素の代わりに、上と同じく前の最も近い読み込み済みの要素を出し続ける（どれも読めなければ何も出さない）。エラーは URL ごとに 1 回だけコンソールに出し、同じ URL は読み直さない。実行し直すと新しいファイルになる。
   - SPLAT の PLY は Spark の `SplatMesh` で読み、コアの Load3D と同じく X 軸まわりに 180° 回してから（`SPLAT_TO_SCENE`）`scene` の変形を掛ける。並べ替えが終わるたびに描き直す。
   - MESH・MoGe の GLB は GLTFLoader で読み、材質を `MeshBasicMaterial`（光源なし、両面、base color・テクスチャ・頂点色を保つ）に置き換える（`makeUnlit`）。素のジオメトリの灰色は glTF の定義どおり（線形の値）に表示するので、ノードの出力（`BARE_COLOR` をそのまま出す）より明るく見える。
-  - `world` の Sticker は、評価した位置・回転・`scale` の両面の板として、切り抜いた素材を貼って描く（`worldStickerLayers`）。奥行きで前後する。選択と操作は #72 で加える。
-  - 3D の `world` の Sticker（`sticker` に MESH・SPLAT・3D ファイルをつないだ `port` の Sticker、#63）：実行結果の `pano_sticker_files`・`pano_sticker_meta`（`pano_scene_files` と同じ形）を、`sticker` 入力の接続が実行時と同じ間だけ使う（`pano_preview_video.js` の `external-sticker` のチャンネル）。Sticker の Clip range の中で表示しているときだけ、Sticker の clip frame から `scene` と同じ規則（ノードの `batch_index`）で要素を選び、評価した位置・回転・`scale` を `scene` の変形と同じ意味で掛けて、不透明度で描く（`pano_space.js` の `stickerContentRequest`）。状態に `world` の `port` の Sticker がない間は要素を持たず、読み込み済みの要素は捨てる（`stickerContentUrls`）。SPLAT は X 軸まわりに 180° 回してから変形を掛け、不透明度は `SplatMesh` の `opacity` にする。メッシュは `scene` と同じく unlit・両面で、不透明度は材質の `opacity` にする。読み込みは `scene` と同じ部品（`pano_scene_items.js`・`pano_scene_loaders.js`）の、Sticker 用の別のキューで行う（`scene` と同じファイルでも、three.js のオブジェクトは一つの親しか持てないので別に読む）。要素の箱は Frame Content と注視点の距離の内容の大きさに入る。ギズモでの移動・配置は #72。
+  - `world` の Sticker は、評価した位置・回転・`scale` の両面の板として、切り抜いた素材を貼って描く（`worldStickerLayers`）。奥行きで前後する。選択と操作は下の「`world` の Sticker の操作（#72）」。
+  - 3D の `world` の Sticker（`sticker` に MESH・SPLAT・3D ファイルをつないだ `port` の Sticker、#63）：実行結果の `pano_sticker_files`・`pano_sticker_meta`（`pano_scene_files` と同じ形）を、`sticker` 入力の接続が実行時と同じ間だけ使う（`pano_preview_video.js` の `external-sticker` のチャンネル）。Sticker の Clip range の中で表示しているときだけ、Sticker の clip frame から `scene` と同じ規則（ノードの `batch_index`）で要素を選び、評価した位置・回転・`scale` を `scene` の変形と同じ意味で掛けて、不透明度で描く（`pano_space.js` の `stickerContentRequest`）。状態に `world` の `port` の Sticker がない間は要素を持たず、読み込み済みの要素は捨てる（`stickerContentUrls`）。SPLAT は X 軸まわりに 180° 回してから変形を掛け、不透明度は `SplatMesh` の `opacity` にする。メッシュは `scene` と同じく unlit・両面で、不透明度は材質の `opacity` にする。読み込みは `scene` と同じ部品（`pano_scene_items.js`・`pano_scene_loaders.js`）の、Sticker 用の別のキューで行う（`scene` と同じファイルでも、three.js のオブジェクトは一つの親しか持てないので別に読む）。要素の箱は Frame Content と注視点の距離の内容の大きさに入る。ギズモでの操作は下の「`world` の Sticker の操作（#72）」。
   - ノード上の表示（`pano_stickers_node_surface.js`・Preview）は空間の表示を持たず（`scene` も描かない）、3D の Sticker も描かない。
   - 視点の three.js のカメラの near・far は、内容の外接球とグリッドから決める（`pano_space.js` の `spaceCamera`。far は内容と原点のまわりのグリッドの先まで、near は注視点の距離の 1/100 と内容の大きさの 1/10000 の大きいほう）。注視点の距離の 1/100 より近い内容は切れる。
 - ノードの出力との差（意図して残しているもの）：
@@ -114,3 +114,29 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
   - 3D の Sticker の不透明度：エディタのメッシュは両面のまま、不透明度が 1 より小さい間は深度を書かずに半透明にする（1 に戻すと深度を書く）。そのため不透明度を下げると、裏の面や奥の面も透けて重なって見える（ノードは手前の面だけを描く）。
   - 半透明の重なり：Spark はスプラットを深度を書かずに重ね、板は深度を書く。半透明のスプラットと `world` の Sticker が重なる画素の前後と混ざり方は、ノード（`over_by_depth`、スプラットの奥行きは積算アルファ 0.5 の位置）と一致しない。
 - #77（Cutout）向けの部品：Camera の視錐台（`cameraFrustumSegments`）、Timeline 上の軌道（`cameraTrajectory`、評価関数で標本化）、Camera から覗く視点（`cameraView`）と、`render` の `space.lines`（線分の描画）。Stickers のエディタでは使わない。
+
+## `world` の Sticker の操作（#72）
+
+`PanoramaStickersNode` のエディタで、`world` の Sticker（画像・動画の板と、3D の `port` の Sticker の両方）を、空間の表示のギズモとインスペクタで動かす。3DoF・6DoF のどちらでも使える。
+
+- 選択：カーソルのツールで左ボタンを押すと、次の順に決める。
+  1. 選んでいる `world` の Sticker のギズモのハンドル（下記）。
+  2. 選んでいる `sky` の Sticker の拡大縮小・回転のハンドル（従来どおり）。
+  3. ポインタの下の `world` の Sticker。`raycastPoint` と同じ Raycaster で最も近い当たりを求め、それが Sticker の板か 3D の Sticker の要素なら、その Sticker を選ぶ（`pano_three_view.js` の `pickSticker`・`raycastStickerId`。板のメッシュと 3D の Sticker のグループが `userData.stickerId` を持つ）。World は Sky より手前に描くので、`sky` の Sticker と重なっていれば `world` の Sticker が先になる。
+  4. 従来どおり、`sky` の Sticker（選んでいる Sticker の本体を含む）と、何もないところ。最も近い当たりが `scene` の中身なら Sticker ではないので、その奥の `sky` の Sticker が選ばれる（`scene` の中身は選べず、#71 までの `sky` の Sticker の選び方を変えない）。
+  - `world` の Sticker の本体を押してドラッグしても選ぶだけで、動かさない（動かすのはギズモ）。視点も動かさない。選ぶだけでは再生は止まらない。
+  - タイムラインの `world` の Sticker の行を選んでも選べる（以前は選択を外していた）。キャンバスの選択（`sky` の Sticker）と `world` の Sticker の選択は排他で、どちらかを選ぶともう一方は外れる。何もないところを押すと外れる。選択は状態にもノードのプロパティにも保存しない。
+  - Delete キーで、選んでいる `world` の Sticker を消す。`port` の Sticker は `sticker` 入力に従うので、`sky` の `port` の Sticker と同じく非表示にする。
+- ギズモ：three.js の `TransformControls`（three に含まれる examples、依存は増やしていない）を、遅延読み込みのチャンク（`pano_three_view.js`）の World のパスに描く。DOM のイベントにはつながず、エディタがポインタを渡す（`gizmoPointer` の `hover`・`down`・`move`・`up`）。ギズモの位置・向き・大きさは、毎回の描画で Sticker の評価した値から作る。ギズモが動かすのは代わりのオブジェクトで、その変化を Sticker の Lane に書き、次の描画がそれを描く。
+  - ギズモは、選んでいる `world` の Sticker が再生ヘッドで表示されていて（`visible` かつ Clip range の中）、ロックされておらず、Paint / Images の表示が出ているときだけ出る。
+  - モードの切り替えは、3DoF | 6DoF の隣の「Move | Rotate | Scale」のセグメントコントロール（`PanoViewToggle.vue`、3DoF | 6DoF と同じ部品と見た目）で行う。ギズモが出ているときだけ出る。押すたびに切り替わるボタンは使わない。キー（W / E / R）は割り当てない。W と R は ComfyUI のコアのショートカット（Workflows のサイドバー、ノード定義の再読み込み）と同じキーだからである。モードはエディタを開くたびに Move から始まり、保存しない。
+  - 移動と回転の軸は World の軸（`TransformControls` の既定の `space: "world"`）。拡大縮小は一様で、どのハンドルでも、ドラッグで最も変わった軸の倍率を `scale` にする（`uniformScale`。0 以下にはしない）。
+  - ギズモのハンドルの上ではカーソルが grab になり、ハンドルが強調される。ギズモのドラッグ中は視点を動かさない。
+- 記録：ギズモのドラッグは、モードの Lane（`position`・`rotation`・`scale` のどれか一つ）だけを、`docs/timeline-ui.md` の記録の規則で書く（`setWorldStickerTransform`、内部は `setLaneValue`）。ドラッグの変化は、つかんだときのギズモからの差として、Sticker のその時点の値に掛ける（`gizmoDragLanes`）。再生中につかむと、最初の動きで再生が止まり、止まったフレームの値から変形を始める。変化のあったドラッグは Undo の 1 段になる。
+- インスペクタ（Vue の `PanoSidePanel.vue`、`sky` の Sticker と Camera と同じ部品）：`world` の Sticker を選ぶと、X・Y・Z（World の glTF 座標）・Yaw・Pitch・Roll・Scale・Opacity を数値で変えられる（`worldStickerFields`・`setWorldStickerField`）。記録の規則・再生の停止・Undo は `sky` の Sticker のインスペクタと同じ。Copy State は使えない。
+- 新しく置く `world` の Sticker：ツールバーの「Add World Image」（`PanoramaStickersNode` だけ。地球のアイコン）で画像を選ぶと、`world` の画像の Sticker として置く（`newWorldSceneSticker`）。それまでエディタには `world` の Sticker を新しく置く経路がなかった（`port` の 3D の Sticker はノードが置く）。置いた Sticker を選んだ状態にする。
+  - 置く場所（`pano_space.js` の `newWorldStickerTransform`）：画面上の点の下に World の内容（`scene` の中身・Sticker）の表面があれば、その点。なければ、Viewport camera の前方の、内容のバウンディング球の半径 × 0.5 の距離の点。内容がなければ前方 2（`NEW_WORLD_STICKER_DISTANCE`。ノードが 3D の `port` の Sticker を置く `WORLD_STICKER_POSITION` と同じ距離）。3DoF では視点は原点なので、原点からの距離になる。
+  - ボタンを押すときポインタはビューの上にないので、画面上の点にはビューの中心を使う（照準の代わり）。関数は任意の点を受け取るので、ドロップした位置やクリックした位置に置く経路を後で足せる。
+  - 向き：板の前方（ローカルの `-Z`）が視点から置く点への向きになる回転（`facingRotation`、roll 0）。板は視点の方を向き、正立して見える（`docs/render-contract.md` の「回転 0 の板は回転 0 の Camera の正面で Camera を向く」と同じ規則）。
+  - 大きさ：視点から見て、新しい `sky` の Sticker（hFOV 30°）と同じ幅に見える `scale`（`2 × 距離 × tan 15°`）。
+- Placement：エディタには、既存の Sticker の `placement` を `sky` と `world` の間で切り替える UI も経路もない（テストで、エディタのコードが `placement` を書き換えないこと、Vue の部品が `placement` を扱わないことを確かめている）。`placement` を決めるのは Sticker を作るときだけである。ノードによる `port` の Sticker の置き換え（#63）はそのまま。

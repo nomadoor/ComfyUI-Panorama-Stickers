@@ -204,7 +204,7 @@ test("modal frame view adds shared Shift-roll without removing legacy Alt-roll",
   assert.match(editor, /uiState\.frameRail\.disabled = readOnly \|\| frameShot\?\.locked === true/);
   assert.match(editor, /uiState\.frameRail\.aspectLabel = frameShot \? getCutoutAspectLabel\(frameShot\) : ""/);
   assert.match(editor, /!shot \|\| shot\.locked === true \|\| !rect/);
-  assert.match(editor, /const enabled = cameraInspected \|\| \(!!inspectorSelected && !isItemLocked\(inspectorSelected\)\)/);
+  assert.match(editor, /const enabled = cameraInspected \|\| \(worldInspected \? worldStickerEditable\(worldInspected\) : \(!!inspectorSelected && !isItemLocked\(inspectorSelected\)\)\)/);
   assert.match(editor, /selectedKind === "stroke" \|\| isItemLocked\(selected\)/);
   const syncStart = editor.indexOf("  function syncFrameRollKnob() {");
   const syncEnd = editor.indexOf("\n  function ", syncStart + 1);

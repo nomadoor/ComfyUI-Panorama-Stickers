@@ -219,6 +219,7 @@ watch(() => props.open, (nextOpen) => {
           <PanoViewToggle
             :buttons="uiState.viewButtons || shellPreset.viewButtons || []"
             :space-buttons="uiState.spaceButtons || []"
+            :gizmo-buttons="uiState.gizmoButtons || []"
           />
 
           <PanoFloatingRight

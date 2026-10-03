@@ -13,6 +13,12 @@ export function buildModalShellPreset(type = "stickers") {
       { key: "3dof", label: "3DoF", tip: "Look around from the ERP origin", pressed: "true" },
       { key: "6dof", label: "6DoF", tip: "Move freely in space", pressed: "false" },
     ],
+    // The gizmo mode of the selected world Sticker (#72), next to them while one is selected in space.
+    gizmoButtons: isCutout ? [] : [
+      { key: "translate", label: "Move", tip: "Move the world sticker", pressed: "true" },
+      { key: "rotate", label: "Rotate", tip: "Rotate the world sticker", pressed: "false" },
+      { key: "scale", label: "Scale", tip: "Scale the world sticker", pressed: "false" },
+    ],
     toolButtons: [
       { key: "cursor", attr: "data-tool-mode", value: "cursor", label: "Cursor", tip: "Cursor", active: true, accent: false, icon: ICON.cursor_tool, pressed: "true" },
       { key: "paint", attr: "data-tool-mode", value: "paint", label: "Paint", tip: "Paint", active: false, accent: false, icon: ICON.palette_tool, pressed: "false" },
@@ -24,6 +30,8 @@ export function buildModalShellPreset(type = "stickers") {
           ]
         : [
             { key: "add", attr: "data-tool-ui-action", value: "add", label: "Add Image", tip: "Add image", active: false, accent: true, icon: ICON.image, pressed: null },
+            // PanoramaStickersNode only (#72): an image placed in space as a world Sticker.
+            { key: "add-world", attr: "data-tool-ui-action", value: "add-world", label: "Add World Image", tip: "Add image in space", active: false, accent: false, icon: ICON.globe, pressed: null, visible: false },
           ]),
       { key: "clear", attr: "data-tool-ui-action", value: "clear", label: "Clear All", tip: "Clear all", active: false, accent: false, icon: ICON.clear, pressed: null },
       { key: "undo", attr: "data-tool-ui-action", value: "undo", label: "Undo", tip: "Undo", active: false, accent: false, icon: ICON.undo, pressed: null },

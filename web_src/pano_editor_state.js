@@ -275,6 +275,63 @@ export function setStickerOpacity(sticker, frame, opacity) {
   setLaneValue(sticker, "opacity", frame - (sticker.clip.start - sticker.clip.in), opacity);
 }
 
+// A world Sticker at a Timeline frame, in the inspector's fields (opacity in percent).
+export function worldStickerFields(sticker, frame) {
+  const value = evaluateSticker(sticker, frame);
+  return {
+    ...Object.fromEntries(POSITION_FIELDS.map((field, axis) => [field, value.position[axis]])),
+    yaw_deg: value.yaw_deg,
+    pitch_deg: value.pitch_deg,
+    roll_deg: value.roll_deg,
+    scale: value.scale,
+    opacity: value.opacity * 100,
+  };
+}
+
+// An inspector edit of one world Sticker field at a Timeline frame, by the recording rule of its Lane.
+export function setWorldStickerField(sticker, frame, field, value) {
+  const clipFrame = frame - (sticker.clip.start - sticker.clip.in);
+  const axis = POSITION_FIELDS.indexOf(field);
+  if (axis >= 0) {
+    const position = evaluateLane(sticker, "position", clipFrame);
+    position[axis] = value;
+    setLaneValue(sticker, "position", clipFrame, position);
+  } else if (field === "scale") {
+    setLaneValue(sticker, "scale", clipFrame, value);
+  } else if (field === "opacity") {
+    setLaneValue(sticker, "opacity", clipFrame, value / 100);
+  } else {
+    setLaneValue(sticker, "rotation", clipFrame, { [field]: value });
+  }
+}
+
+// A gizmo edit of a world Sticker at a Timeline frame: only the Lanes of the parts it has
+// ({ position, rotation, scale }), each by the recording rule.
+export function setWorldStickerTransform(sticker, frame, transform) {
+  const clipFrame = frame - (sticker.clip.start - sticker.clip.in);
+  for (const name of ["position", "rotation", "scale"]) {
+    if (transform[name] !== undefined) setLaneValue(sticker, name, clipFrame, transform[name]);
+  }
+}
+
+// A world Sticker over the whole Timeline at a World transform ({ position, rotation, scale }, as
+// pano_space.js newWorldStickerTransform gives it).
+export function newWorldSceneSticker(id, source, transform) {
+  return {
+    id,
+    placement: "world",
+    source,
+    clip: { start: 0, in: 0, duration: null },
+    visible: true,
+    locked: false,
+    crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
+    position: { value: [...transform.position], keyframes: [] },
+    rotation: { value: { ...transform.rotation }, keyframes: [] },
+    scale: { value: transform.scale, keyframes: [] },
+    opacity: { value: 1, keyframes: [] },
+  };
+}
+
 // The Source of an uploaded image (uploadStickerAssetFile).
 export function fileSource(asset) {
   return { kind: "file", filename: asset.filename, subfolder: asset.subfolder, storage: asset.storage };
