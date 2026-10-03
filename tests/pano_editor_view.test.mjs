@@ -552,10 +552,12 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
   // Each frame's input checks the content, so 6DoF without it goes back to 3DoF.
   assert.match(editor, /applySpaceMode\(spaceModeWithContent\(spaceModeState\(\), hasSpaceContent\(\)\)\);\s*const space = isSpaceView\(\)/);
   // The modes are icon buttons (3 and 6) with the view buttons at the bottom right (Vue), not in the view
-  // toggle, with Frame Content beside them.
+  // toggle, with Frame Selected / All beside them.
   const preset = buildModalShellPreset("stickers");
   assert.deepEqual(preset.spaceButtons.map((button) => [button.key, button.label, button.icon]), [["3dof", "3DoF", "dof_3"], ["6dof", "6DoF", "dof_6"]]);
   assert.equal(preset.spaceFrameButton.action, "frame-view");
+  assert.equal(preset.spaceFrameButton.label, "Frame Selected / All");
+  assert.equal(preset.spaceFrameButton.tip, "Frame the selected sticker, or everything when nothing is selected");
   assert.equal(preset.floatingButtons.some((button) => button.action === "space-mode" || button.action === "frame-view"), false);
   assert.deepEqual(buildModalShellPreset("cutout").spaceButtons, []);
   assert.equal(buildModalShellPreset("cutout").spaceFrameButton, null);

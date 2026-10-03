@@ -9,13 +9,13 @@ export function buildModalShellPreset(type = "stickers") {
       ...(isCutout ? [{ key: "frame", label: "Frame", icon: ICON.camera, pressed: "false", extraClass: "pano-view-btn-icon" }] : []),
     ],
     // How the panorama view moves in space (#71): at the left end of the bottom-right buttons, the
-    // 3DoF | 6DoF icon buttons and Frame Content show together while the panorama view shows World content
+    // 3DoF | 6DoF icon buttons and Frame Selected / All show together while the panorama view shows World content
     // (PanoFloatingRight.vue).
     spaceButtons: isCutout ? [] : [
       { key: "3dof", label: "3DoF", tip: "3DoF view (stay at the origin)", icon: ICON.dof_3 },
       { key: "6dof", label: "6DoF", tip: "6DoF view (move freely)", icon: ICON.dof_6 },
     ],
-    spaceFrameButton: isCutout ? null : { action: "frame-view", label: "Frame Content", tip: "Frame content", icon: ICON.focus },
+    spaceFrameButton: isCutout ? null : { action: "frame-view", label: "Frame Selected / All", tip: "Frame the selected sticker, or everything when nothing is selected", icon: ICON.focus },
     toolButtons: [
       { key: "cursor", attr: "data-tool-mode", value: "cursor", label: "Cursor", tip: "Cursor", active: true, accent: false, icon: ICON.cursor_tool, pressed: "true" },
       { key: "paint", attr: "data-tool-mode", value: "paint", label: "Paint", tip: "Paint", active: false, accent: false, icon: ICON.palette_tool, pressed: "false" },

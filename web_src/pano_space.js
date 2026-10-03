@@ -355,6 +355,21 @@ export function planeCorners(plane) {
     .map(([x, y]) => add(plane.position, apply(plane.rotation, [x, y, 0])));
 }
 
+// The sphere Frame Selected / All fits, like Blender's View Selected: around the selected Sticker where
+// it shows in the World, else around all the content (content, null without content). selected is
+// { sticker, value, plane, item }: the state v2 Sticker, its evaluated value at the playhead, its plane
+// (a worldStickerPlane(), null before its media has a size), and its 3D item ({ kind, box }: the loaded
+// item's own box, null while it loads). A plane is bounded by its corners and a 3D item by its box moved
+// by the Sticker's transform; until either is known, a sphere as big as its scale at its position. A sky
+// Sticker lies at infinity, so with one selected all the content is framed.
+export function frameSphere(content, selected = null) {
+  const { sticker, value, plane, item } = selected ?? {};
+  if (sticker?.placement !== "world" || !value?.active) return content;
+  if (plane) return boundingSphere(planeCorners(plane));
+  if (item?.box) return boundingSphere(boxCorners(sceneItemBox(item.kind, item.box)).map((p) => transformPoint(value, p)));
+  return { center: [...value.position], radius: value.scale };
+}
+
 // --- Placing and transforming world Stickers (#72).
 
 // A new world Sticker without World content goes this far ahead of the view, as far as the node puts a

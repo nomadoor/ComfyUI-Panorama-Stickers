@@ -72,6 +72,7 @@ import {
   boundingSphere,
   contentPoints,
   depthOf,
+  frameSphere,
   frameView,
   gizmoDragLanes,
   gizmoScreenBox,
@@ -2923,9 +2924,20 @@ async function showEditor(node, type, options = {}) {
     return contentSphere()?.radius || DEFAULT_DISTANCE;
   }
 
-  // The Frame button: the view keeps its direction and moves back until the content fits.
+  // Frame Selected / All: the view keeps its direction and moves until the selected world Sticker fits,
+  // or all the content without one (pano_space.js frameSphere).
   function frameSpaceContent() {
-    const sphere = contentSphere();
+    const space = editorViewInput().space;
+    const sceneState = editorViewScene.sceneState;
+    const id = editor.worldSelectedId || editor.selectedId;
+    const index = sceneState.stickers.findIndex((sticker) => sticker.id === id);
+    const selected = index < 0 ? null : {
+      sticker: sceneState.stickers[index],
+      value: evaluateSceneState(sceneState, editor.frame).stickers[index],
+      plane: space.stickers.find((layer) => layer.id === id) ?? null,
+      item: space.sticker?.id === id && space.sticker.url ? { kind: space.sticker.kind, box: editorView.sceneBox(space.sticker.url) } : null,
+    };
+    const sphere = frameSphere(contentSphere(), selected);
     if (!sphere) return;
     setSpaceView(frameView(spaceViewState(), sphere, canvas.width, canvas.height));
   }
