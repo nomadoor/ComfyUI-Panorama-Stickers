@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, Quaternion, Texture, Vector3 } from "three";
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Texture, Vector3 } from "three";
 
 import { makeUnlit } from "../web_src/pano_scene_loaders.js";
+import { raycastPoint } from "../web_src/pano_three_view.js";
 
 import {
   DEFAULT_DISTANCE,
@@ -13,11 +14,12 @@ import {
   cameraTrajectory,
   cameraView,
   contentPoints,
-  dollyView,
+  depthOf,
   frameView,
   gridSpec,
   hasWorldContent,
   initialSpaceView,
+  navigationTarget,
   orbitView,
   panView,
   pivotOf,
@@ -36,6 +38,7 @@ import {
   transformPoint,
   viewAxes,
   worldStickerPlane,
+  zoomView,
 } from "../web_src/pano_space.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
@@ -86,41 +89,149 @@ test("orbiting stops short of the poles", () => {
   assert.equal(orbitView(view(), 0, -10000, 400).pitch_deg, 89.9);
 });
 
-test("panning moves the pivot's plane with the pointer", () => {
+// Where a World point lands on a width x height view.
+function onScreen(v, p, width = 800, height = 400) {
+  return projectPoint(spaceCamera(v, width, height), p, width, height);
+}
+
+test("orbiting about a point under the pointer keeps it in its place on the screen and turns like OrbitControls", () => {
   const start = view();
   const width = 800;
   const height = 400;
-  const pivot = pivotOf(start);
+  // A point off the view's axis, ahead of it.
+  const { right, up, forward } = viewAxes(start.yaw_deg, start.pitch_deg);
+  const point = [0, 1, 2].map((axis) => start.position[axis] + forward[axis] * 3 + right[axis] * 1.2 - up[axis] * 0.5);
+  const before = onScreen(start, point, width, height);
+  let turned = start;
+  for (const [dx, dy] of [[40, 0], [0, -25], [-70, 30], [15, 15]]) turned = orbitView(turned, dx, dy, height, point);
+  const after = onScreen(turned, point, width, height);
+  close(after.x, before.x, 1e-6);
+  close(after.y, before.y, 1e-6);
+  close(after.z, before.z, 1e-9);
+  // The angles turn as the drags add up, and the distance to the point stays.
+  close(turned.yaw_deg, start.yaw_deg - 15 / height * 360);
+  close(turned.pitch_deg, start.pitch_deg - 20 / height * 360);
+  const distance = (v) => Math.hypot(...v.position.map((value, axis) => value - point[axis]));
+  close(distance(turned), distance(start));
+  // The view's pivot goes to the point's depth, so it stays in sight.
+  close(turned.distance, depthOf(turned, point));
+  assert.ok(turned.distance > 0);
+});
+
+test("the point a drag or a wheel step works on is the content under the pointer, else the content center until the view moves, else the pivot", () => {
+  const start = view();
+  const hit = [1, 1, 1];
+  assert.deepEqual(navigationTarget(start, hit, [5, 5, 5]), hit);
+  const { forward } = viewAxes(start.yaw_deg, start.pitch_deg);
+  const ahead = start.position.map((value, axis) => value + forward[axis] * 7);
+  assert.deepEqual(navigationTarget(start, null, ahead), ahead);
+  // A center behind the view is not turned about; neither is one once the view has moved (null).
+  const behind = start.position.map((value, axis) => value - forward[axis] * 7);
+  closeVec(navigationTarget(start, null, behind), pivotOf(start));
+  closeVec(navigationTarget(start, null, null), pivotOf(start));
+});
+
+test("panning moves the grabbed point with the pointer exactly, at its depth", () => {
+  const start = view();
+  const width = 800;
+  const height = 400;
+  const { right, up, forward } = viewAxes(start.yaw_deg, start.pitch_deg);
+  for (const depth of [0.02, 3, 250]) {
+    const grabbed = [0, 1, 2].map((axis) => start.position[axis] + forward[axis] * depth + right[axis] * depth * 0.3 + up[axis] * depth * 0.1);
+    let moved = { ...start, distance: depth };
+    const before = onScreen(moved, grabbed, width, height);
+    for (const [dx, dy] of [[30, -12], [-5, 40], [100, 0]]) moved = panView(moved, dx, dy, width, height, depthOf(start, grabbed));
+    const after = onScreen(moved, grabbed, width, height);
+    close(after.x - before.x, 125, 1e-6 * Math.max(1, depth));
+    close(after.y - before.y, 28, 1e-6 * Math.max(1, depth));
+    close(moved.distance, depth, 1e-9 * depth);
+  }
+  // Without a grabbed point, the pivot's plane follows the pointer.
   const moved = panView(start, 30, -12, width, height);
   close(moved.distance, start.distance);
-  const before = projectPoint(spaceCamera(start, width, height), pivot, width, height);
-  const after = projectPoint(spaceCamera(moved, width, height), pivot, width, height);
+  const before = onScreen(start, pivotOf(start), width, height);
+  const after = onScreen(moved, pivotOf(start), width, height);
   close(after.x - before.x, 30, 1e-6);
   close(after.y - before.y, -12, 1e-6);
 });
 
-test("a pan from a pivot that came close still moves through the content", () => {
-  const close = view({ distance: 1e-4 });
-  const moved = panView(close, 100, 0, 800, 400, 10);
-  assert.ok(Math.hypot(...moved.position.map((value, axis) => value - close.position[axis])) > 0.1);
-});
-
-test("a dolly step moves toward the pivot by a part of the distance, and back out", () => {
+test("a wheel step moves toward the point under the pointer, which stays under it", () => {
   const start = view();
-  const closer = dollyView(start, 1);
-  closeVec(pivotOf(closer), pivotOf(start));
-  close(closer.distance, start.distance * 0.85);
-  const back = dollyView(start, -1);
-  close(back.distance, start.distance * 1.15);
-  closeVec(pivotOf(back), pivotOf(start));
+  const width = 800;
+  const height = 400;
+  const { right, up, forward } = viewAxes(start.yaw_deg, start.pitch_deg);
+  const target = [0, 1, 2].map((axis) => start.position[axis] + forward[axis] * 4 + right[axis] * 1.5 + up[axis] * 0.8);
+  const distance = (v) => Math.hypot(...v.position.map((value, axis) => value - target[axis]));
+  const before = onScreen(start, target, width, height);
+  const closer = zoomView(start, target, 1, 1);
+  close(distance(closer), distance(start) * 0.85);
+  const after = onScreen(closer, target, width, height);
+  close(after.x, before.x, 1e-6);
+  close(after.y, before.y, 1e-6);
+  assert.equal(closer.yaw_deg, start.yaw_deg);
+  close(closer.distance, depthOf(closer, target));
+  // A step out undoes a step in.
+  closeVec(zoomView(closer, target, -1, 1).position, start.position, 1e-9);
+  // Without content under the pointer, the target is the pivot, which the view does not push ahead.
+  const pivot = pivotOf(start);
+  const toPivot = zoomView(start, pivot, 1, 1);
+  closeVec(pivotOf(toPivot), pivot, 1e-9);
+  close(toPivot.distance, start.distance * 0.85);
 });
 
-test("a dolly past the closest pivot distance flies the pivot ahead with the view", () => {
-  const start = view({ distance: 0.01 });
-  const next = dollyView(start, 1, 1);
-  close(next.distance, 0.01);
-  const { forward } = viewAxes(start.yaw_deg, start.pitch_deg);
-  closeVec(next.position, start.position.map((value, axis) => value + forward[axis] * 0.01));
+test("wheel steps toward a point do not stall as they come close, and stop short of it", () => {
+  const scale = 2;
+  const target = [0, 0, -10];
+  let current = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 10 };
+  const distances = [];
+  for (let step = 0; step < 400; step += 1) {
+    current = zoomView(current, target, 1, scale);
+    distances.push(Math.hypot(...current.position.map((value, axis) => value - target[axis])));
+  }
+  // Every step moves closer until the last stop, which is still in front of the point.
+  const stop = distances.at(-1);
+  assert.ok(stop > 0 && stop < scale * 0.01, String(stop));
+  assert.ok(current.position[2] > target[2]);
+  const reached = distances.indexOf(stop);
+  assert.ok(reached < 100, `reached after ${reached} steps`);
+  for (let index = 1; index <= reached; index += 1) assert.ok(distances[index] < distances[index - 1]);
+  // Near the point a step is still a part of the content's size, not of the shrinking distance.
+  const near = { ...current, position: [0, 0, -9.9], distance: 0.1 };
+  close(Math.hypot(...zoomView(near, target, 1, scale).position.map((value, axis) => value - near.position[axis])), scale * 0.01);
+  // At the stop it stays.
+  closeVec(zoomView(current, target, 1, scale).position, current.position, 1e-12);
+});
+
+test("the point under the pointer is the nearest hit on the meshes and the planes, through their groups", () => {
+  const width = 640;
+  const height = 360;
+  const start = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 1 };
+  const camera = spaceCamera(start, width, height, { center: [0, 0, -5], radius: 3 });
+  // A `scene` item: a 2 x 2 x 2 box, its group moved and scaled as the `scene` transform does.
+  const group = new Group();
+  group.position.set(0, 0, -6);
+  group.scale.setScalar(2);
+  group.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ side: DoubleSide })));
+  // A world Sticker plane in front of its left half, turned to face the view from its back.
+  const plane = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ side: DoubleSide }));
+  plane.position.set(-0.6, 0, -3);
+  plane.rotation.y = Math.PI;
+  const objects = [group, plane];
+  objects.forEach((object) => object.updateMatrixWorld());
+  // The center of the view hits the box's front face.
+  closeVec(raycastPoint(objects, camera, width / 2, height / 2, width, height), [0, 0, -5], 1e-6);
+  // A point on the box's face hits where it lands on the screen.
+  const onFace = [0.7, -0.4, -5];
+  const at = projectPoint(camera, onFace, width, height);
+  closeVec(raycastPoint(objects, camera, at.x, at.y, width, height), onFace, 1e-6);
+  // The plane is in front of the box, and hits from its back too.
+  const onPlane = [-0.6, 0.2, -3];
+  const planeAt = projectPoint(camera, onPlane, width, height);
+  closeVec(raycastPoint(objects, camera, planeAt.x, planeAt.y, width, height), onPlane, 1e-6);
+  // Empty space hits nothing, and so does content behind the view.
+  assert.equal(raycastPoint(objects, camera, 2, 2, width, height), null);
+  const behind = spaceCamera({ ...start, yaw_deg: 180 }, width, height);
+  assert.equal(raycastPoint(objects, behind, width / 2, height / 2, width, height), null);
 });
 
 test("framing fits a sphere in the view without turning it", () => {
@@ -340,7 +451,7 @@ test("3DoF keeps the view at the World origin, where the ERP is taken from, what
   let moved = view({ position: [0, 0, 0] });
   moved = orbitView(moved, 120, -40, 600);
   moved = panView(moved, 30, 10, 800, 600, 2);
-  moved = dollyView(moved, 1, 2);
+  moved = zoomView(moved, pivotOf(moved), 1, 2);
   assert.notDeepEqual(moved.position, [0, 0, 0]);
   const fixed = spaceModeView("3dof", moved);
   assert.deepEqual(fixed.position, [0, 0, 0]);

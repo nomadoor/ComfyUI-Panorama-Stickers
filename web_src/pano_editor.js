@@ -68,10 +68,11 @@ import {
   DEFAULT_DISTANCE,
   boundingSphere,
   contentPoints,
-  dollyView,
+  depthOf,
   frameView,
   gridSpec,
   hasWorldContent,
+  navigationTarget,
   orbitView,
   panView,
   projectPoint,
@@ -84,6 +85,7 @@ import {
   stickerContentRequest,
   stickerContentUrls,
   switchSpaceMode,
+  zoomView,
 } from "./pano_space.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
 import {
@@ -630,6 +632,7 @@ async function showEditor(node, type, options = {}) {
     stageStatusDetail: "boot",
     stageWarningDetail: "",
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
+    spaceButtons: (shellPreset.spaceButtons || []).map((button) => ({ ...button, visible: false })),
     toolButtons: (shellPreset.toolButtons || []).map((button) => ({ ...button, disabled: false })),
     floatingButtons: [
       ...(shellPreset.floatingButtons || []).map((button) => ({ ...button, disabled: false })),
@@ -1011,6 +1014,8 @@ async function showEditor(node, type, options = {}) {
   // The input keys the camera preview and the Unwrap view last drew, to skip unchanged redraws.
   let cameraPreviewKey = null;
   let unwrapKey = null;
+  // The point the last 6DoF wheel step zoomed toward, with where the pointer and the view were.
+  let spaceWheel = null;
   const frameGateCssRadius = Number.parseFloat(
     getComputedStyle(root).getPropertyValue("--pano-float-radius"),
   ) || 10;
@@ -2717,13 +2722,12 @@ async function showEditor(node, type, options = {}) {
     patchUiButton(uiState.floatingButtons, "action", "reset-view", {
       disabled: readOnly || frameMode,
     });
+    // The 3DoF / 6DoF segments show the mode while the panorama view shows World content.
     const spaceView = isSpaceView();
     const free = spaceView && editor.spaceMode === "6dof";
-    patchUiButton(uiState.floatingButtons, "action", "space-mode", {
-      visible: spaceView,
-      pressed: free ? "true" : "false",
-      label: free ? "3DoF View" : "6DoF View",
-      tip: free ? "Back to the ERP origin (3DoF)" : "Move freely in space (6DoF)",
+    uiState.spaceButtons.forEach((button) => {
+      button.visible = spaceView;
+      button.pressed = button.key === editor.spaceMode ? "true" : "false";
     });
     patchUiButton(uiState.floatingButtons, "action", "frame-view", {
       visible: free,
@@ -2886,6 +2890,38 @@ async function showEditor(node, type, options = {}) {
     const sphere = contentSphere();
     if (!sphere) return;
     setSpaceView(frameView(spaceViewState(), sphere, canvas.width, canvas.height));
+  }
+
+  // The point a 6DoF drag or wheel step at canvas point p works on (pano_space.js navigationTarget): the
+  // World content under p in the frame on screen, else the content's center until the view moves, else
+  // the pivot.
+  function spaceTarget(p) {
+    const view = spaceViewState();
+    const camera = spaceCamera(view, canvas.width, canvas.height, contentSphere());
+    const hit = editorView.pick(camera, p.x, p.y, canvas.width, canvas.height);
+    return navigationTarget(view, hit, editor.viewMoved ? null : contentSphere()?.center);
+  }
+
+  // One 6DoF wheel step at canvas point p toward the point under it (direction > 0) or away. Steps with
+  // the pointer and the view's direction still keep that point, which stays under the pointer, so the
+  // content is hit once per spot instead of once per step.
+  function zoomSpaceAt(p, direction) {
+    const last = spaceWheel;
+    const same = last && last.x === p.x && last.y === p.y && last.position === editor.viewPosition
+      && last.yaw === editor.viewYaw && last.pitch === editor.viewPitch;
+    const target = same ? last.target : spaceTarget(p);
+    setSpaceView(zoomView(spaceViewState(), target, direction, spaceScale()));
+    spaceWheel = { x: p.x, y: p.y, position: editor.viewPosition, yaw: editor.viewYaw, pitch: editor.viewPitch, target };
+  }
+
+  // Starts a 6DoF orbit or pan at canvas point p, about or with the point under it.
+  function startSpaceDrag(action, p, pointerId) {
+    const target = spaceTarget(p);
+    editor.interaction = action === "orbit"
+      ? { kind: "space_orbit", last: p, pivot: target }
+      : { kind: "space_pan", last: p, depth: depthOf(spaceViewState(), target) };
+    updateCursor(p);
+    canvas.setPointerCapture(pointerId);
   }
 
   function currentViewProjection() {
@@ -8506,19 +8542,26 @@ async function showEditor(node, type, options = {}) {
     viewController.state.inertia.active = false;
     viewController.state.inertia.vx = 0;
     viewController.state.inertia.vy = 0;
-    // In 6DoF the drags of the 3D view controls move the view with any tool (pano_view_controls.js).
-    const spaceAction = isFreeSpaceView() ? viewDragAction(viewControls(), e) : null;
-    if (spaceAction) {
+    // In 6DoF the drags of the 3D view controls move the view with any tool (pano_view_controls.js); the
+    // middle and the right button do nothing else there.
+    const freeSpace = isFreeSpaceView();
+    const spaceAction = freeSpace ? viewDragAction(viewControls(), e) : null;
+    if (spaceAction === "look") {
       e.preventDefault();
-      if (spaceAction === "look") {
-        const dragPos = screenPosCss(e);
-        editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
-        viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
-      } else {
-        editor.interaction = { kind: `space_${spaceAction}`, last: p };
-      }
+      const dragPos = screenPosCss(e);
+      editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
+      viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
       updateCursor(p);
       canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (spaceAction) {
+      e.preventDefault();
+      startSpaceDrag(spaceAction, p, e.pointerId);
+      return;
+    }
+    if (freeSpace && e.button !== 0) {
+      e.preventDefault();
       return;
     }
     if (e.button === 1) {
@@ -8591,13 +8634,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (readOnly) {
-      if (editor.mode === "pano") {
-        const dragPos = screenPosCss(e);
-        editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
-        viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
-        updateCursor(p);
-        canvas.setPointerCapture(e.pointerId);
-      }
+      if (editor.mode === "pano") startEmptyDrag(e, p);
       return;
     }
     if (paintColorPop && !paintColorPop.hidden) {
@@ -8878,14 +8915,23 @@ async function showEditor(node, type, options = {}) {
     updateSelectionMenu();
     requestDraw();
 
-    if (editor.mode === "pano") {
-      const dragPos = screenPosCss(e);
-      editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
-      viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
-      updateCursor(p);
-      canvas.setPointerCapture(e.pointerId);
-    }
+    if (editor.mode === "pano") startEmptyDrag(e, p);
   };
+
+  // A left drag on empty space of the panorama view looks around; in 6DoF it does what the 3D view
+  // controls preset does there (pano_view_controls.js emptyLeft), or nothing.
+  function startEmptyDrag(e, p) {
+    if (isFreeSpaceView()) {
+      const action = viewControls().emptyLeft;
+      if (action) startSpaceDrag(action, p, e.pointerId);
+      return;
+    }
+    const dragPos = screenPosCss(e);
+    editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
+    viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
+    updateCursor(p);
+    canvas.setPointerCapture(e.pointerId);
+  }
 
   // Playback ran on from the pointer going down to its first move. It stops here on the frame shown,
   // and a Sticker edit starts over from that frame's values, as if the pointer went down there.
@@ -9018,8 +9064,8 @@ async function showEditor(node, type, options = {}) {
     if (it.kind === "space_pan" || it.kind === "space_orbit") {
       const view = spaceViewState();
       setSpaceView(it.kind === "space_pan"
-        ? panView(view, p.x - it.last.x, p.y - it.last.y, canvas.width, canvas.height, spaceScale())
-        : orbitView(view, p.x - it.last.x, p.y - it.last.y, canvas.height));
+        ? panView(view, p.x - it.last.x, p.y - it.last.y, canvas.width, canvas.height, it.depth)
+        : orbitView(view, p.x - it.last.x, p.y - it.last.y, canvas.height, it.pivot));
       it.last = p;
       return;
     }
@@ -9455,8 +9501,9 @@ async function showEditor(node, type, options = {}) {
     if (editor.mode !== "pano") return;
     if (isFreeSpaceView()) {
       const direction = readWheelDirection(e);
-      // The wheel zooms the panorama view in (direction < 0); in space it dollies the same way.
-      if (direction) setSpaceView(dollyView(spaceViewState(), -direction, spaceScale()));
+      // The wheel zooms the panorama view in (direction < 0); in space it moves toward the point under
+      // the pointer the same way.
+      if (direction) zoomSpaceAt(screenPos(e), -direction);
     } else if (viewController.applyWheelEvent(e)) {
       requestDraw({ localOnly: true });
     }
@@ -9682,6 +9729,11 @@ async function showEditor(node, type, options = {}) {
       const resolver = uiState.confirmDialog?.resolve;
       uiState.confirmDialog = { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null };
       resolver?.(false);
+      return;
+    }
+    const spaceModeTarget = ev.target.closest("[data-space-mode]");
+    if (spaceModeTarget) {
+      setSpaceMode(spaceModeTarget.getAttribute("data-space-mode"));
       return;
     }
     const viewTarget = ev.target.closest("[data-view]");
@@ -9917,10 +9969,6 @@ async function showEditor(node, type, options = {}) {
     if (action === "frame-view") {
       if (!isFreeSpaceView()) return;
       frameSpaceContent();
-      return;
-    }
-    if (action === "space-mode") {
-      setSpaceMode(editor.spaceMode === "6dof" ? "3dof" : "6dof");
       return;
     }
     if (action === "toggle-grid") {

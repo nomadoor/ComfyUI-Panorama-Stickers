@@ -30,11 +30,13 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   Quaternion,
+  Raycaster,
   RepeatWrapping,
   Scene,
   ShaderMaterial,
   SphereGeometry,
   Texture,
+  Vector2,
   Vector4,
   VideoTexture,
   WebGLRenderer,
@@ -283,6 +285,19 @@ function setCamera(target, setup) {
   target.updateMatrixWorld();
 }
 
+// The nearest point of `objects` (three.js objects in the World, searched with their children) seen at
+// (x, y) of a width x height view drawn with camera (a spaceCamera() setup, pano_space.js), as [x, y, z],
+// or null. Meshes and planes hit on their triangles; a SPLAT's SplatMesh hits with Spark's own raycast
+// (its splats with enough opacity). The objects' World matrices must be current.
+export function raycastPoint(objects, camera, x, y, width, height) {
+  const ray = new PerspectiveCamera();
+  setCamera(ray, camera);
+  const raycaster = new Raycaster();
+  raycaster.setFromCamera(new Vector2(x / width * 2 - 1, 1 - y / height * 2), ray);
+  const hit = raycaster.intersectObjects(objects, true)[0];
+  return hit ? hit.point.toArray() : null;
+}
+
 // onUpdate runs when something the view draws changes by itself: a `scene` item finished loading, or
 // Spark finished sorting the splats for the last view.
 // Loads of `scene` items running at once; scrubbing a MoGe VIDEO queues the rest.
@@ -315,6 +330,9 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   };
   let guides = null;
   let lines = [];
+  // The World content the last space render drew, which pick() hits: the `scene` and 3D Sticker items
+  // and the world Sticker planes, not the guides.
+  let pickable = [];
   let spark = null;
   let closed = false;
   const sceneItems = createSceneItems({
@@ -437,6 +455,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   }
 
   function addWorldSticker(owned, mesh, layer) {
+    pickable.push(mesh);
     const { uniforms } = mesh.material;
     uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true, layer.source ?? layer.media);
     uniforms.opacity.value = layer.opacity;
@@ -453,6 +472,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     world.clear();
     lines.forEach((line) => disposeObject(line));
     lines = [];
+    pickable = [];
     if (space.grid) world.add(guideGroup(space.grid));
     sceneItems.retain(space.sceneUrls ?? []);
     stickerItems.retain(space.stickerUrls ?? []);
@@ -470,7 +490,9 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       }).catch((error) => console.error("[PanoramaStickers] Spark is unavailable", error));
     }
     for (const content of contents) {
-      if (!content.splat || spark) world.add(content.group);
+      if (content.splat && !spark) continue;
+      world.add(content.group);
+      pickable.push(content.group);
     }
     if (splat && spark) world.add(spark);
     let index = 0;
@@ -560,6 +582,13 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     return sceneItems.box(url) ?? stickerItems.box(url);
   }
 
+  // The World point of the content the last space render drew at (x, y) of a width x height view from
+  // camera (a spaceCamera()), or null over empty space (raycastPoint).
+  function pick(camera, x, y, width, height) {
+    world.updateMatrixWorld();
+    return raycastPoint(pickable, camera, x, y, width, height);
+  }
+
   // input: render()'s input without camera; the frame is the layers laid out as an ERP.
   function renderUnwrap(input) {
     return draw(unwrap, input);
@@ -594,5 +623,5 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     renderer.forceContextLoss();
   }
 
-  return { render, renderUnwrap, sceneBox, release, dispose };
+  return { render, renderUnwrap, sceneBox, pick, release, dispose };
 }

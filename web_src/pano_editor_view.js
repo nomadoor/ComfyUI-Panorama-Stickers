@@ -236,6 +236,11 @@ export function createEditorView({ onReady, onFailed, onUpdate = () => {} }) {
     sceneBox(url) {
       return view ? view.sceneBox(url) : null;
     },
+    // The World point of the content under (x, y) in the last space frame (pano_three_view.js pick), or
+    // null.
+    pick(camera, x, y, width, height) {
+      return view ? view.pick(camera, x, y, width, height) : null;
+    },
     dispose() {
       disposed = true;
       view?.dispose();
