@@ -241,6 +241,10 @@ export function createEditorView({ onReady, onFailed, onUpdate = () => {} }) {
     pick(camera, x, y, width, height) {
       return view ? view.pick(camera, x, y, width, height) : null;
     },
+    // What pick() hits, as a string that changes with it (pano_three_view.js contentKey).
+    contentKey() {
+      return view ? view.contentKey() : "";
+    },
     dispose() {
       disposed = true;
       view?.dispose();

@@ -76,6 +76,7 @@ import {
   orbitView,
   panView,
   projectPoint,
+  reuseWheelPick,
   sceneFilesOf,
   sceneItemBox,
   sceneRequest,
@@ -1014,7 +1015,7 @@ async function showEditor(node, type, options = {}) {
   // The input keys the camera preview and the Unwrap view last drew, to skip unchanged redraws.
   let cameraPreviewKey = null;
   let unwrapKey = null;
-  // The point the last 6DoF wheel step zoomed toward, with where the pointer and the view were.
+  // The pick of the last 6DoF wheel step (pano_space.js reuseWheelPick).
   let spaceWheel = null;
   const frameGateCssRadius = Number.parseFloat(
     getComputedStyle(root).getPropertyValue("--pano-float-radius"),
@@ -2892,31 +2893,40 @@ async function showEditor(node, type, options = {}) {
     setSpaceView(frameView(spaceViewState(), sphere, canvas.width, canvas.height));
   }
 
-  // The point a 6DoF drag or wheel step at canvas point p works on (pano_space.js navigationTarget): the
-  // World content under p in the frame on screen, else the content's center until the view moves, else
-  // the pivot.
-  function spaceTarget(p) {
-    const view = spaceViewState();
-    const camera = spaceCamera(view, canvas.width, canvas.height, contentSphere());
-    const hit = editorView.pick(camera, p.x, p.y, canvas.width, canvas.height);
-    return navigationTarget(view, hit, editor.viewMoved ? null : contentSphere()?.center);
+  // The World point of the content under canvas point p in the frame on screen, or null.
+  function pickSpace(p) {
+    const camera = spaceCamera(spaceViewState(), canvas.width, canvas.height, contentSphere());
+    return editorView.pick(camera, p.x, p.y, canvas.width, canvas.height);
   }
 
-  // One 6DoF wheel step at canvas point p toward the point under it (direction > 0) or away. Steps with
-  // the pointer and the view's direction still keep that point, which stays under the pointer, so the
-  // content is hit once per spot instead of once per step.
+  // The point a 6DoF drag or wheel step works on (pano_space.js navigationTarget): the content hit under
+  // the pointer, else the content's center until the view moves, else the pivot.
+  function spaceTarget(view, hit) {
+    return navigationTarget(view, hit, editor.viewMoved ? null : contentSphere()?.center, spaceScale());
+  }
+
+  function spaceViewKey() {
+    return JSON.stringify([editor.viewPosition, editor.viewYaw, editor.viewPitch]);
+  }
+
+  // One 6DoF wheel step at canvas point p toward the point under it (direction > 0) or away. A step
+  // reuses the pick of an earlier one as reuseWheelPick() allows.
   function zoomSpaceAt(p, direction) {
-    const last = spaceWheel;
-    const same = last && last.x === p.x && last.y === p.y && last.position === editor.viewPosition
-      && last.yaw === editor.viewYaw && last.pitch === editor.viewPitch;
-    const target = same ? last.target : spaceTarget(p);
-    setSpaceView(zoomView(spaceViewState(), target, direction, spaceScale()));
-    spaceWheel = { x: p.x, y: p.y, position: editor.viewPosition, yaw: editor.viewYaw, pitch: editor.viewPitch, target };
+    const now = performance.now();
+    const next = { x: p.x, y: p.y, time: now, key: editorView.contentKey(), view: spaceViewKey() };
+    if (!reuseWheelPick(spaceWheel, next)) {
+      const hit = pickSpace(p);
+      spaceWheel = { ...next, cost: performance.now() - now, hit };
+    }
+    const view = spaceViewState();
+    setSpaceView(zoomView(view, spaceTarget(view, spaceWheel.hit), direction, spaceScale()));
+    spaceWheel.view = spaceViewKey();
+    spaceWheel.wheelTime = now;
   }
 
   // Starts a 6DoF orbit or pan at canvas point p, about or with the point under it.
   function startSpaceDrag(action, p, pointerId) {
-    const target = spaceTarget(p);
+    const target = spaceTarget(spaceViewState(), pickSpace(p));
     editor.interaction = action === "orbit"
       ? { kind: "space_orbit", last: p, pivot: target }
       : { kind: "space_pan", last: p, depth: depthOf(spaceViewState(), target) };
@@ -3842,6 +3852,9 @@ async function showEditor(node, type, options = {}) {
     runtime.backgroundWasVisible = !!surface;
     runtime.backgroundDirty = false;
     unwrapKey = null;
+    // The frame's input may have taken 6DoF back to 3DoF (its World content went away); the 3DoF / 6DoF
+    // segments show it with this frame.
+    syncFloatingViewButtonState();
   }
 
   // Draws what the shot sees into rect, or returns false when there is nothing to draw yet.

@@ -331,8 +331,11 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   let guides = null;
   let lines = [];
   // The World content the last space render drew, which pick() hits: the `scene` and 3D Sticker items
-  // and the world Sticker planes, not the guides.
+  // and the world Sticker planes, not the guides. pickKey names what they are and where, so a point
+  // picked before can be reused while it stays the same.
   let pickable = [];
+  let pickParts = [];
+  let pickKey = "";
   let spark = null;
   let closed = false;
   const sceneItems = createSceneItems({
@@ -435,7 +438,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     group.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
     group.scale.setScalar(transform.scale);
     group.add(item.object);
-    return { group, splat: item.kind === "splat", object: item.object };
+    return { group, splat: item.kind === "splat", object: item.object, transform };
   }
 
   // A 3D Sticker's opacity: a SPLAT's own, a GLB's on its unlit materials. A see-through GLB does not
@@ -456,6 +459,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
 
   function addWorldSticker(owned, mesh, layer) {
     pickable.push(mesh);
+    pickParts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
     const { uniforms } = mesh.material;
     uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true, layer.source ?? layer.media);
     uniforms.opacity.value = layer.opacity;
@@ -473,6 +477,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     lines.forEach((line) => disposeObject(line));
     lines = [];
     pickable = [];
+    pickParts = [];
     if (space.grid) world.add(guideGroup(space.grid));
     sceneItems.retain(space.sceneUrls ?? []);
     stickerItems.retain(space.stickerUrls ?? []);
@@ -493,6 +498,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       if (content.splat && !spark) continue;
       world.add(content.group);
       pickable.push(content.group);
+      pickParts.push([content.object.uuid, content.transform]);
     }
     if (splat && spark) world.add(spark);
     let index = 0;
@@ -504,6 +510,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       lines.push(line);
       world.add(line);
     }
+    pickKey = JSON.stringify(pickParts);
   }
 
   function draw(projection, input, space = null) {
@@ -589,6 +596,12 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     return raycastPoint(pickable, camera, x, y, width, height);
   }
 
+  // What pick() hits in the last space render, as a string that changes with it (a MoGe VIDEO's next
+  // item, a moved Sticker).
+  function contentKey() {
+    return pickKey;
+  }
+
   // input: render()'s input without camera; the frame is the layers laid out as an ERP.
   function renderUnwrap(input) {
     return draw(unwrap, input);
@@ -623,5 +636,5 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     renderer.forceContextLoss();
   }
 
-  return { render, renderUnwrap, sceneBox, pick, release, dispose };
+  return { render, renderUnwrap, sceneBox, pick, contentKey, release, dispose };
 }

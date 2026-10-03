@@ -45,7 +45,6 @@ defineProps({
         :data-space-mode="button.key"
         :data-tip="button.tip"
         :aria-pressed="button.pressed"
-        :aria-label="button.label"
       >
         <span class="label">{{ button.label }}</span>
       </button>

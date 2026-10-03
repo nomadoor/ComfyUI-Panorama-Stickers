@@ -24,6 +24,7 @@ import {
   panView,
   pivotOf,
   projectPoint,
+  reuseWheelPick,
   sceneFilesOf,
   sceneItemBox,
   sceneItemIndex,
@@ -129,6 +130,54 @@ test("the point a drag or a wheel step works on is the content under the pointer
   const behind = start.position.map((value, axis) => value - forward[axis] * 7);
   closeVec(navigationTarget(start, null, behind), pivotOf(start));
   closeVec(navigationTarget(start, null, null), pivotOf(start));
+});
+
+test("over empty space a view stuck to its pivot or to the content's center still pans, zooms in and orbits", () => {
+  const scale = 2;
+  const width = 800;
+  const height = 400;
+  const moved = (a, b) => Math.hypot(...a.position.map((value, axis) => value - b.position[axis]));
+  // Zoomed up to the pivot, and standing next to the content's center.
+  const stuck = { position: [0, 0, 0], yaw_deg: 20, pitch_deg: -5, hFOV_deg: 90, distance: 1e-5 };
+  const { forward } = viewAxes(stuck.yaw_deg, stuck.pitch_deg);
+  const nearCenter = stuck.position.map((value, axis) => value + forward[axis] * 1e-5);
+  for (const center of [null, nearCenter]) {
+    const target = navigationTarget(stuck, null, center, scale);
+    close(Math.hypot(...target.map((value, axis) => value - stuck.position[axis])), scale * 0.05, 1e-9);
+    // A 100 px pan moves the view by a part of the content's size.
+    assert.ok(moved(panView(stuck, 100, 0, width, height, depthOf(stuck, target)), stuck) > scale * 0.01);
+    // Each wheel step in moves at least the shortest step, step after step.
+    let view = stuck;
+    for (let step = 0; step < 10; step += 1) {
+      const next = zoomView(view, navigationTarget(view, null, null, scale), 1, scale);
+      assert.ok(moved(next, view) >= scale * 0.01 - 1e-12);
+      view = next;
+    }
+    // An orbit swings the view around the point ahead.
+    assert.ok(moved(orbitView(stuck, 100, 0, height, target), stuck) > scale * 0.01);
+  }
+  // A hit is used as it is, however close.
+  assert.deepEqual(navigationTarget(stuck, nearCenter, null, scale), nearCenter);
+  // A pivot farther than the minimum stays.
+  closeVec(navigationTarget(view(), null, null, scale), pivotOf(view()));
+});
+
+test("a wheel step reuses the last pick near it in place and time, for longer after a slow pick, and never once the content or the view changed", () => {
+  const last = { x: 100, y: 50, time: 1000, cost: 5, key: "a", view: "v", wheelTime: 1000, hit: [0, 0, -1] };
+  const at = (overrides) => ({ x: 100, y: 50, time: 1100, key: "a", view: "v", ...overrides });
+  assert.equal(reuseWheelPick(null, at({})), false);
+  assert.equal(reuseWheelPick(last, at({})), true);
+  assert.equal(reuseWheelPick(last, at({ x: 103, y: 52 })), true);
+  assert.equal(reuseWheelPick(last, at({ x: 104, y: 53 })), false);
+  assert.equal(reuseWheelPick(last, at({ time: 1250 })), false);
+  assert.equal(reuseWheelPick(last, at({ key: "b" })), false);
+  assert.equal(reuseWheelPick(last, at({ view: "w" })), false);
+  // A pick over 16 ms holds while the wheel keeps turning (steps under 250 ms apart).
+  const slow = { ...last, cost: 40, wheelTime: 1900 };
+  assert.equal(reuseWheelPick(slow, at({ time: 2100 })), true);
+  assert.equal(reuseWheelPick(slow, at({ time: 2200 })), false);
+  assert.equal(reuseWheelPick({ ...last, wheelTime: 1900 }, at({ time: 2100 })), false);
+  assert.equal(reuseWheelPick(slow, at({ time: 2100, key: "b" })), false);
 });
 
 test("panning moves the grabbed point with the pointer exactly, at its depth", () => {

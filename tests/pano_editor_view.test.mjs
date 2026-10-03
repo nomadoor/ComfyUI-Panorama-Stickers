@@ -510,9 +510,9 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   assert.doesNotMatch(down, /isSpaceView\(\)/);
   // An orbit turns about the point under the pointer; a pan moves at its depth.
   const start = editor.slice(editor.indexOf("  function startSpaceDrag(action, p, pointerId) {"));
-  assert.match(start, /const target = spaceTarget\(p\);\s*editor\.interaction = action === "orbit"\s*\? \{ kind: "space_orbit", last: p, pivot: target \}\s*: \{ kind: "space_pan", last: p, depth: depthOf\(spaceViewState\(\), target\) \};/);
-  const target = editor.slice(editor.indexOf("  function spaceTarget(p) {"));
-  assert.match(target, /const hit = editorView\.pick\(camera, p\.x, p\.y, canvas\.width, canvas\.height\);\s*return navigationTarget\(view, hit, editor\.viewMoved \? null : contentSphere\(\)\?\.center\);/);
+  assert.match(start, /const target = spaceTarget\(spaceViewState\(\), pickSpace\(p\)\);\s*editor\.interaction = action === "orbit"\s*\? \{ kind: "space_orbit", last: p, pivot: target \}\s*: \{ kind: "space_pan", last: p, depth: depthOf\(spaceViewState\(\), target\) \};/);
+  assert.match(editor, /return editorView\.pick\(camera, p\.x, p\.y, canvas\.width, canvas\.height\);/);
+  assert.match(editor, /return navigationTarget\(view, hit, editor\.viewMoved \? null : contentSphere\(\)\?\.center, spaceScale\(\)\);/);
   const move = editor.slice(editor.indexOf('    if (it.kind === "space_pan" || it.kind === "space_orbit") {'));
   assert.match(move, /\? panView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.width, canvas\.height, it\.depth\)\s*: orbitView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.height, it\.pivot\)\);/);
   // A left drag on empty space looks around, and in 6DoF does the preset's emptyLeft.
@@ -523,7 +523,10 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   const wheel = editor.slice(editor.indexOf("  canvas.onwheel = (e) => {"), editor.indexOf("\n  };\n", editor.indexOf("  canvas.onwheel = (e) => {")));
   assert.match(wheel, /if \(isFreeSpaceView\(\)\) \{\s*const direction = readWheelDirection\(e\);[\s\S]*if \(direction\) zoomSpaceAt\(screenPos\(e\), -direction\);\s*\} else if \(viewController\.applyWheelEvent\(e\)\)/);
   const zoom = editor.slice(editor.indexOf("  function zoomSpaceAt(p, direction) {"));
-  assert.match(zoom, /setSpaceView\(zoomView\(spaceViewState\(\), target, direction, spaceScale\(\)\)\);/);
+  // It picks again only as reuseWheelPick allows, and keeps a miss as a miss so the target follows the view.
+  assert.match(zoom, /if \(!reuseWheelPick\(spaceWheel, next\)\) \{\s*const hit = pickSpace\(p\);\s*spaceWheel = \{ \.\.\.next, cost: performance\.now\(\) - now, hit \};/);
+  assert.match(zoom, /const next = \{ x: p\.x, y: p\.y, time: now, key: editorView\.contentKey\(\), view: spaceViewKey\(\) \};/);
+  assert.match(zoom, /setSpaceView\(zoomView\(view, spaceTarget\(view, spaceWheel\.hit\), direction, spaceScale\(\)\)\);/);
   assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(isFreeSpaceView\(\) && presetUsesButton\(viewControls\(\), 2\)\) e\.preventDefault\(\);/);
   // The preset is ComfyUI's setting; 3DoF keeps the view at the origin.
   assert.match(editor, /viewControlsPreset\(app\.ui\?\.settings\?\.getSettingValue\?\.\(VIEW_CONTROLS_SETTING_ID\)\)/);
@@ -556,6 +559,12 @@ test("the space view starts in 3DoF each time the editor opens, and a 3DoF | 6Do
   const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
   assert.match(toggle, /class="pano-view-toggle pano-space-toggle"/);
   assert.match(toggle, /:data-space-mode="button\.key"/);
+  // The segments' text names them; no aria-label repeats it.
+  const segments = toggle.slice(toggle.indexOf('class="pano-view-toggle pano-space-toggle"'));
+  assert.doesNotMatch(segments, /aria-label="button\.label"/);
+  // A frame whose content went away shows 3DoF on the segments with it.
+  const render = editor.slice(editor.indexOf("  function renderEditorView() {"), editor.indexOf("\n  }\n", editor.indexOf("  function renderEditorView() {")));
+  assert.match(render, /syncFloatingViewButtonState\(\);$/);
   const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
   assert.match(modal, /:space-buttons="uiState\.spaceButtons \|\| \[\]"/);
 });
@@ -565,6 +574,10 @@ test("the three.js view picks the World content it last drew, not its guides", (
   assert.match(view, /if \(content\.splat && !spark\) continue;\s*world\.add\(content\.group\);\s*pickable\.push\(content\.group\);/);
   assert.match(view, /function addWorldSticker\(owned, mesh, layer\) \{\s*pickable\.push\(mesh\);/);
   assert.match(view, /world\.updateMatrixWorld\(\);\s*return raycastPoint\(pickable, camera, x, y, width, height\);/);
+  // Its content key changes with the items drawn and their transforms, and with the Sticker planes.
+  assert.match(view, /pickParts\.push\(\[content\.object\.uuid, content\.transform\]\);/);
+  assert.match(view, /pickParts\.push\(\[layer\.id, layer\.position, layer\.quaternion, layer\.width, layer\.height\]\);/);
+  assert.match(view, /pickKey = JSON\.stringify\(pickParts\);/);
 });
 
 test("a 3D world port Sticker (#63) has no plane: the space view draws its item instead", async () => {

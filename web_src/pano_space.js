@@ -18,6 +18,14 @@ export const ZOOM_STEP = 0.15;
 // keeps going as it comes close; it still stops ZOOM_STOP_RATIO of that size short of the point.
 const MIN_ZOOM_RATIO = 0.01;
 const ZOOM_STOP_RATIO = 0.001;
+// Over empty space the point a drag or a wheel step works on is never closer than this part of the
+// content's size, so a view that came up to its pivot or to the content's center still moves.
+const MIN_TARGET_RATIO = 0.05;
+// A wheel step reuses the point picked for an earlier one within this many pixels of the pointer and this
+// many ms of the pick; a pick that took longer than the budget is reused while the wheel keeps turning.
+const WHEEL_PICK_SLOP = 4;
+const WHEEL_PICK_MS = 250;
+const WHEEL_PICK_BUDGET_MS = 16;
 // Pivot distance of a view that has nothing to frame yet.
 export const DEFAULT_DISTANCE = 1;
 // An SPLAT is in 3DGS coordinates (Y down, Z forward); the `scene` glTF frame turns it 180 degrees about
@@ -87,10 +95,30 @@ export function depthOf(view, p) {
 
 // The point a drag or a wheel step works on: the World content under the pointer (hit, from the three.js
 // view's raycast), else the content's center while the view has not moved and the center is ahead
-// (center is null once it has), else the view's pivot.
-export function navigationTarget(view, hit, center = null) {
+// (center is null once it has), else the view's pivot. Without a hit the point is at least
+// MIN_TARGET_RATIO of the content's size (scale) away, so the view does not stick to it.
+export function navigationTarget(view, hit, center = null, scale = DEFAULT_DISTANCE) {
   if (hit) return hit;
-  return center && depthOf(view, center) > 0 ? center : pivotOf(view);
+  const minimum = Math.max(scale, 1e-6) * MIN_TARGET_RATIO;
+  if (center && depthOf(view, center) > 0) {
+    const offset = sub(center, view.position);
+    const distance = Math.hypot(...offset);
+    return distance >= minimum ? center : add(view.position, offset, minimum / distance);
+  }
+  return add(view.position, viewAxes(view.yaw_deg, view.pitch_deg).forward, Math.max(view.distance, minimum));
+}
+
+// Whether a wheel step `next` ({ x, y, time, key, view }) reuses the point the step `last` picked
+// ({ x, y, time, cost, key, view, wheelTime, hit }: where and when it picked, how long the pick took, the
+// content and the view after its last step, and when that step was). Picking a large mesh or SPLAT takes
+// tens of ms, and a zoom keeps the point under a still pointer. The content (key) and the view must be as
+// the last step left them, and the pointer within WHEEL_PICK_SLOP pixels of the pick; then it reuses the
+// point for WHEEL_PICK_MS after the pick, or, after a pick over WHEEL_PICK_BUDGET_MS, for as long as the
+// wheel keeps turning.
+export function reuseWheelPick(last, next) {
+  if (!last || last.key !== next.key || last.view !== next.view) return false;
+  if (Math.hypot(next.x - last.x, next.y - last.y) > WHEEL_PICK_SLOP) return false;
+  return next.time - last.time < WHEEL_PICK_MS || (last.cost > WHEEL_PICK_BUDGET_MS && next.time - last.wheelTime < WHEEL_PICK_MS);
 }
 
 function tanHalfFov(view, width, height) {
