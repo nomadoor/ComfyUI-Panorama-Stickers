@@ -362,6 +362,21 @@ test("an unrecorded output of a VIDEO on the port is stale once the port is reli
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
 });
 
+// The editor loads the `scene` items of the node's result only while `scene` comes from where it ran.
+test("the scene files of an output are stale once the scene input is relinked, and only they are", () => {
+  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { bg_media: 1, scene: 2 }, { id: 34 });
+  app.nodeOutputs["34"] = {
+    pano_scene_files: [{ filename: "pano_scene_a_0.glb", subfolder: "", type: "temp" }],
+    pano_scene_meta: [{ kind: "mesh" }],
+  };
+  assert.equal(isNodeOutputMediaCurrent(node, "scene"), true);
+  rewire(node, "scene", 8);
+  assert.equal(isNodeOutputMediaCurrent(node, "scene"), false);
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
+  rewire(node, "scene", 5);
+  assert.equal(isNodeOutputMediaCurrent(node, "scene"), true);
+});
+
 test("an output that newer ones dropped from the record is recorded again when next seen", () => {
   const node = graphNode({ 1: [4, 0] }, { bg_media: 1 }, { id: 34 });
   app.nodeOutputs["34"] = bgOutput("evicted");

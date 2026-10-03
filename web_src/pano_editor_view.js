@@ -1,8 +1,10 @@
 // Editor view: derives what the three.js view draws from state v2 and loads the view on demand.
-// #71 adds the World layers and the Viewport camera's movement in space here.
+// The World (the `scene` input and the world Stickers) and the Viewport camera's movement in space
+// are in pano_space.js.
 import { evaluateSceneState } from "./pano_scene_eval.js";
 import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
 import { contextHalfExtentsPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
+import { worldStickerPlane } from "./pano_space.js";
 import { panoToWorld, quaternionToRotation, rotationToQuaternion, worldRotation, worldToPano } from "./pano_world.js";
 
 // The three.js view renders at most this many pixels on a side.
@@ -147,6 +149,49 @@ export function workingSkyLayers(sceneState, frame, stickers, { media, paintLaye
   });
 }
 
+function mediaSize(media) {
+  return {
+    width: Number(media.videoWidth || media.naturalWidth || media.width || 0),
+    height: Number(media.videoHeight || media.naturalHeight || media.height || 0),
+  };
+}
+
+// The planes of the world Stickers shown at a Timeline frame, for the space view's `stickers`: each is
+// a worldStickerPlane() with its media (media(item) as in workingSkyLayers, by the working Sticker of
+// the same id) and opacity. A Sticker without media, or whose media has no size yet, is left out.
+export function worldStickerLayers(sceneState, frame, stickers, { media }) {
+  const byId = new Map();
+  for (const item of stickers) {
+    if (typeof item?.id === "string" && item.id && !byId.has(item.id)) byId.set(item.id, item);
+  }
+  const evaluated = evaluateSceneState(sceneState, frame);
+  const layers = [];
+  sceneState.stickers.forEach((sticker, index) => {
+    const value = evaluated.stickers[index];
+    if (sticker.placement !== "world" || !value.active) return;
+    const item = byId.get(sticker.id);
+    const shown = item ? media(item) : null;
+    if (!shown) return;
+    const { width, height } = mediaSize(shown.media);
+    const plane = worldStickerPlane(value, sticker.crop, width, height);
+    if (!plane) return;
+    layers.push({
+      id: sticker.id,
+      media: shown.media,
+      revision: shown.revision,
+      source: shown.source,
+      opacity: value.opacity,
+      position: plane.position,
+      quaternion: plane.quaternion,
+      rotation: plane.rotation,
+      width: plane.width,
+      height: plane.height,
+      crop: sticker.crop,
+    });
+  });
+  return layers;
+}
+
 const mediaIds = new WeakMap();
 let nextMediaId = 1;
 
@@ -170,8 +215,9 @@ export function viewInputKey({ background, layers }) {
 }
 
 // onReady runs once the view can render. onFailed runs when the chunk or WebGL is unavailable; the
-// editor then shows the failure instead of a frame.
-export function createEditorView({ onReady, onFailed }) {
+// editor then shows the failure instead of a frame. onUpdate runs when the space view changes by itself
+// (a `scene` item loaded, Spark sorted the splats), so the editor draws again.
+export function createEditorView({ onReady, onFailed, onUpdate = () => {} }) {
   let view = null;
   let disposed = false;
   const editorView = {
@@ -186,6 +232,10 @@ export function createEditorView({ onReady, onFailed }) {
     renderUnwrap(input) {
       return view ? view.renderUnwrap(input) : null;
     },
+    // The box of a loaded `scene` item (pano_three_view.js sceneBox), or null.
+    sceneBox(url) {
+      return view ? view.sceneBox(url) : null;
+    },
     dispose() {
       disposed = true;
       view?.dispose();
@@ -194,7 +244,7 @@ export function createEditorView({ onReady, onFailed }) {
   };
   import("./pano_three_view.js").then((module) => {
     if (disposed) return;
-    view = module.createThreeView();
+    view = module.createThreeView({ onUpdate });
     editorView.ready = true;
     onReady();
   }).catch((error) => {

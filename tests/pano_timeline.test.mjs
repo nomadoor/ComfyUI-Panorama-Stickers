@@ -334,7 +334,7 @@ test("an edit on the canvas stops playback on its first move and starts from the
   assert.match(begin, /supportsFramePainting\(\)\)\) \{\s*stopTimelinePlayback\(\);/);
   assert.match(begin, /const p = screenPos\(e\);\s*editPointerDown = p;/);
   const move = editorSource.slice(editorSource.indexOf("  canvas.onpointermove = (e) => {"), editorSource.indexOf("if (it.kind === \"paint_stroke\")"));
-  assert.match(move, /if \(editPointerDown && \(p\.x !== editPointerDown\.x \|\| p\.y !== editPointerDown\.y\)\) \{\s*const down = editPointerDown;\s*editPointerDown = null;\s*if \(it\.kind !== "view" && it\.kind !== "marquee_select"\) restartEditAtStoppedFrame\(it, down\);/);
+  assert.match(move, /if \(editPointerDown && \(p\.x !== editPointerDown\.x \|\| p\.y !== editPointerDown\.y\)\) \{\s*const down = editPointerDown;\s*editPointerDown = null;\s*if \(!\["view", "marquee_select", "space_pan", "space_orbit"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
   const restart = editorFunction("restartEditAtStoppedFrame");
   assert.match(restart, /if \(!sceneV2 \|\| !playback\.playing\) return;\s*playback\.stop\(\);/);
   for (const field of ["it.offset", "it.startCenter", "snap.center", "it.center", "it.startRot", "it.startAng", "it.startDist", "it.startHFOV", "it.startVFOV"]) {

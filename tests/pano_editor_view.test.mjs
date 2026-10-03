@@ -422,7 +422,8 @@ test("the editor hit tests and draws its overlays with the camera its three.js v
   assert.match(body("projectDir"), /currentViewProjection\(\)\.project\(dir\)/);
   assert.match(body("screenToWorldDir"), /return currentViewProjection\(\)\.ray\(x, y\);/);
   assert.match(body("projectSceneItemDir"), /currentViewProjection\(\)\.project\(dir, nearZ\)/);
-  assert.match(body("renderEditorView"), /camera: currentViewCamera\(\),/);
+  // In space the same angles stand at the Viewport camera's position (pano_space.js spaceCamera).
+  assert.match(body("renderEditorView"), /camera: space \? spaceCamera\(spaceViewState\(\), width, height, space\.sphere\) : currentViewCamera\(\),/);
   assert.doesNotMatch(editor, /currentViewBasis/);
 });
 
@@ -462,4 +463,51 @@ test("the editor resizes and redraws the stage in the frame its layout changes",
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.pano-timeline-body \{\s*transition: none;/);
   // A transition cut short (the Timeline toggled again mid-slide) ends the slide too.
   assert.match(timeline, /@transitionend\.self="sliding = false"\s*@transitioncancel\.self="sliding = false"/);
+});
+
+test("the space view draws the world Stickers shown at the playhead as planes of their cropped media", async () => {
+  const { worldStickerLayers } = await import("../web_src/pano_editor_view.js");
+  const world = (id, extra = {}) => ({
+    id,
+    placement: "world",
+    source: { kind: "file", filename: `${id}.png` },
+    position: { value: [1, 2, -3], keyframes: [] },
+    rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
+    scale: { value: 2, keyframes: [] },
+    opacity: { value: 0.5, keyframes: [] },
+    ...extra,
+  });
+  const state = loadSceneState({
+    version: 2,
+    stickers: [
+      world("w1", { crop: { x0: 0, y0: 0, x1: 1, y1: 0.5 } }),
+      world("w2", { clip: { start: 10, in: 0, duration: null } }),
+      world("w3", { visible: false }),
+      { id: "s1", placement: "sky", source: { kind: "file", filename: "s1.png" } },
+      world("w4"),
+    ],
+  });
+  const image = { naturalWidth: 400, naturalHeight: 200 };
+  const layers = worldStickerLayers(state, 0, state.stickers, { media: (item) => (item.id === "w4" ? null : { media: image, revision: 1 }) });
+  assert.deepEqual(layers.map((layer) => layer.id), ["w1"]);
+  assert.deepEqual(layers[0].position, [1, 2, -3]);
+  assert.equal(layers[0].width, 2);
+  assert.equal(layers[0].height, 0.5);
+  assert.equal(layers[0].opacity, 0.5);
+  assert.deepEqual(layers[0].crop, { x0: 0, y0: 0, x1: 1, y1: 0.5 });
+  assert.deepEqual(worldStickerLayers(state, 12, state.stickers, { media: () => ({ media: image, revision: 1 }) }).map((layer) => layer.id), ["w1", "w2", "w4"]);
+});
+
+test("in space the right button looks around, Alt with the left button orbits, the middle button pans and the wheel dollies", () => {
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"), editor.indexOf("    if (e.button !== 0) return;", editor.indexOf("  canvas.onpointerdown = (e) => {")));
+  assert.match(down, /if \(e\.button === 1\) \{[\s\S]*\} else if \(isSpaceView\(\)\) \{\s*editor\.interaction = \{ kind: "space_pan", last: p \};/);
+  assert.match(down, /if \(isSpaceView\(\) && \(e\.button === 2 \|\| \(e\.button === 0 && e\.altKey\)\)\) \{/);
+  assert.match(down, /if \(e\.button === 2\) \{\s*const dragPos = screenPosCss\(e\);\s*editor\.interaction = \{ kind: "view"/);
+  assert.match(down, /editor\.interaction = \{ kind: "space_orbit", last: p \};/);
+  const move = editor.slice(editor.indexOf('    if (it.kind === "space_pan" || it.kind === "space_orbit") {'));
+  assert.match(move, /\? panView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.width, canvas\.height, spaceScale\(\)\)\s*: orbitView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.height\)\);/);
+  const wheel = editor.slice(editor.indexOf("  canvas.onwheel = (e) => {"), editor.indexOf("\n  };\n", editor.indexOf("  canvas.onwheel = (e) => {")));
+  assert.match(wheel, /if \(isSpaceView\(\)\) \{\s*const direction = readWheelDirection\(e\);[\s\S]*setSpaceView\(dollyView\(spaceViewState\(\), -direction, spaceScale\(\)\)\);/);
+  assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(isSpaceView\(\)\) e\.preventDefault\(\);/);
 });

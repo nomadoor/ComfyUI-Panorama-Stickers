@@ -1,18 +1,29 @@
-// three.js view of the editor. Vite emits this module and three.js as a chunk in web/.lazy/, which
-// ComfyUI does not load as an extension, and pano_editor_view.js imports it when an editor opens.
-// Keep it free of modules the eager bundle also uses, so the chunk holds only three.js and this
-// file instead of importing back from panorama_suite.js; pano_editor_view.js does the math.
+// three.js view of the editor. Vite emits this module, three.js (with its GLTFLoader) and the `scene`
+// item loading as a chunk in web/.lazy/, which ComfyUI does not load as an extension, and
+// pano_editor_view.js imports it when an editor opens. Spark is a chunk of its own, imported when a
+// SPLAT first loads. Keep it free of modules the eager bundle also uses, so the chunk holds only these
+// libraries and these files instead of importing back from panorama_suite.js; pano_editor_view.js and
+// pano_space.js do the math.
 //
-// Every render rebuilds the scene from the given layers. Only GPU resources (meshes, materials and
-// textures) are reused between renders; nothing here is saved.
+// Every render rebuilds the scene from the given layers. Only GPU resources (meshes, materials,
+// textures and the loaded `scene` items) are reused between renders; nothing here is saved.
 import {
+  AxesHelper,
   BackSide,
+  BufferGeometry,
   ClampToEdgeWrapping,
   CustomBlending,
+  DoubleSide,
+  Float32BufferAttribute,
+  GridHelper,
+  Group,
+  LineBasicMaterial,
+  LineSegments,
   LinearFilter,
   Matrix3,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   NoBlending,
   OneFactor,
   OneMinusSrcAlphaFactor,
@@ -28,11 +39,16 @@ import {
   VideoTexture,
   WebGLRenderer,
 } from "three";
+import { createSceneItems } from "./pano_scene_items.js";
+import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
 
 // MAX_RENDER_SIDE in pano_editor_view.js; the chunk cannot import it back from the eager bundle.
 const MAX_RENDER_SIDE = 2048;
 const DOME_RADIUS = 100;
 const STICKER_DISTANCE = 50;
+// Loaded `scene` items kept at once (a MoGe VIDEO has one GLB per frame).
+const SCENE_ITEM_LIMIT = 8;
+const ORIGIN_COLOR = 0xffdd57;
 
 // The ERP is laid out in the panorama convention (forward +Z); World is glTF (forward -Z).
 const ERP_VERTEX = `
@@ -76,6 +92,18 @@ uniform float opacity;
 varying vec2 vUv;
 void main() {
   gl_FragColor = texture2D(map, vUv) * opacity;
+}`;
+
+// A world Sticker's plane shows its crop (x0, v of y1, x1, v of y0) of the image; v runs up the image.
+const WORLD_STICKER_FRAGMENT = `
+uniform sampler2D map;
+uniform float opacity;
+uniform vec4 crop;
+varying vec2 vUv;
+void main() {
+  vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, vUv.x), mix(crop.y, crop.w, vUv.y))) * opacity;
+  if (color.a <= 0.0) discard;
+  gl_FragColor = color;
 }`;
 
 // The Unwrap view draws every layer on a full-view quad in the ERP layout: longitude runs across
@@ -239,19 +267,63 @@ function createQuad(geometry, fragmentShader, uniforms, blending = CustomBlendin
   return mesh;
 }
 
-export function createThreeView() {
+// Line segments [[a, b], ...] in one color.
+function createLines({ segments, color }) {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(segments.flat(2), 3));
+  return new LineSegments(geometry, new LineBasicMaterial({ color }));
+}
+
+function setCamera(target, setup) {
+  applyViewportCamera(target, setup);
+  target.position.set(...setup.position);
+  target.near = setup.near;
+  target.far = setup.far;
+  target.updateProjectionMatrix();
+  target.updateMatrixWorld();
+}
+
+// onUpdate runs when something the view draws changes by itself: a `scene` item finished loading, or
+// Spark finished sorting the splats for the last view.
+// Loads of `scene` items running at once; scrubbing a MoGe VIDEO queues the rest.
+const SCENE_LOADS = 2;
+
+export function createThreeView({ onUpdate = () => {} } = {}) {
   const canvas = document.createElement("canvas");
+  // The World is depth tested, so the canvas has a depth buffer; the Sky draws without it.
   const renderer = new WebGLRenderer({
     canvas,
     alpha: true,
     premultipliedAlpha: true,
     antialias: false,
-    depth: false,
+    depth: true,
     stencil: false,
   });
   renderer.setClearColor(0x000000, 0);
   const camera = new PerspectiveCamera(60, 1, 0.1, 100000);
   const scene = new Scene();
+  // The World draws over the Sky in a second pass, from the view's position.
+  const worldCamera = new PerspectiveCamera();
+  const world = new Scene();
+  const worldStickers = [];
+  const createWorldSticker = () => {
+    const material = createMaterial(STICKER_VERTEX, WORLD_STICKER_FRAGMENT, { crop: { value: new Vector4() } });
+    material.side = DoubleSide;
+    material.depthTest = true;
+    material.depthWrite = true;
+    return new Mesh(planeGeometry, material);
+  };
+  let guides = null;
+  let lines = [];
+  let spark = null;
+  let closed = false;
+  const sceneItems = createSceneItems({
+    load: loadSceneItem,
+    dispose: disposeSceneItem,
+    onUpdate,
+    concurrency: SCENE_LOADS,
+    limit: SCENE_ITEM_LIMIT,
+  });
   const domeGeometry = new SphereGeometry(DOME_RADIUS, 64, 32);
   const planeGeometry = new PlaneGeometry(1, 1);
   const quadGeometry = new PlaneGeometry(2, 2);
@@ -310,7 +382,78 @@ export function createThreeView() {
     return mesh;
   }
 
-  function draw(projection, input) {
+  // The grid, axes and origin marker for a gridSpec(); rebuilt when the spacing changes.
+  function guideGroup(grid) {
+    if (guides?.step === grid.step) return guides.group;
+    if (guides) disposeObject(guides.group);
+    const group = new Group();
+    group.add(new GridHelper(grid.size, grid.divisions, 0x52525b, 0x3f3f46));
+    group.add(new AxesHelper(grid.step * 2));
+    const origin = new Mesh(new SphereGeometry(1, 16, 8), new MeshBasicMaterial({ color: ORIGIN_COLOR }));
+    origin.scale.setScalar(grid.step * 0.12);
+    group.add(origin);
+    guides = { step: grid.step, group };
+    return group;
+  }
+
+  // The `scene` item for input.scene, or the one shown before while it loads (an item of the same
+  // input), in a group with the `scene` transform.
+  function sceneGroup(input) {
+    const { transform, itemQuaternion } = input;
+    const item = sceneItems.request(input);
+    if (!item) return null;
+    item.object.quaternion.set(itemQuaternion.x, itemQuaternion.y, itemQuaternion.z, itemQuaternion.w);
+    const group = new Group();
+    group.position.set(...transform.position);
+    group.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
+    group.scale.setScalar(transform.scale);
+    group.add(item.object);
+    return { group, splat: item.kind === "splat" };
+  }
+
+  function addWorldSticker(owned, mesh, layer) {
+    const { uniforms } = mesh.material;
+    uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true, layer.source ?? layer.media);
+    uniforms.opacity.value = layer.opacity;
+    uniforms.crop.value.set(layer.crop.x0, 1 - layer.crop.y1, layer.crop.x1, 1 - layer.crop.y0);
+    mesh.position.set(...layer.position);
+    mesh.quaternion.set(layer.quaternion.x, layer.quaternion.y, layer.quaternion.z, layer.quaternion.w);
+    mesh.scale.set(layer.width, layer.height, 1);
+    world.add(mesh);
+  }
+
+  // The World of a space input: the guides, the `scene` item, the world Sticker planes and lines.
+  function buildWorld(owned, space) {
+    world.clear();
+    lines.forEach((line) => disposeObject(line));
+    lines = [];
+    if (space.grid) world.add(guideGroup(space.grid));
+    sceneItems.retain(space.sceneUrls ?? []);
+    const content = space.scene ? sceneGroup(space.scene) : null;
+    // A SPLAT draws through Spark's renderer, made the first time one shows (its module is loaded by
+    // then); until it is there the SPLAT waits a render.
+    if (content?.splat && !spark) {
+      loadSpark().then(({ SparkRenderer }) => {
+        if (closed) return;
+        spark ||= new SparkRenderer({ renderer, onDirty: onUpdate });
+        onUpdate();
+      });
+    } else if (content) {
+      world.add(content.group);
+      if (content.splat) world.add(spark);
+    }
+    let index = 0;
+    for (const layer of space.stickers) {
+      if (layerDrawable(owned, layer)) addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
+    }
+    for (const set of space.lines ?? []) {
+      const line = createLines(set);
+      lines.push(line);
+      world.add(line);
+    }
+  }
+
+  function draw(projection, input, space = null) {
     const scale = Math.min(1, MAX_RENDER_SIDE / Math.max(input.width, input.height));
     const width = Math.max(1, Math.round(input.width * scale));
     const height = Math.max(1, Math.round(input.height * scale));
@@ -343,12 +486,20 @@ export function createThreeView() {
         : addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
       mesh.renderOrder = index + 1;
     });
+    if (space) buildWorld(owned, space);
     owned.forEach((item, id) => {
       if (item.used) return;
       item.texture.dispose();
       owned.delete(id);
     });
     renderer.render(scene, camera);
+    if (space) {
+      setCamera(worldCamera, input.camera);
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      renderer.render(world, worldCamera);
+      renderer.autoClear = true;
+    }
     // The viewport starts at the bottom left of the WebGL canvas.
     return { canvas, x: 0, y: canvas.height - height, width, height };
   }
@@ -358,10 +509,23 @@ export function createThreeView() {
   // layers from back to front: { kind: "erp", id, media, revision, opacity } or
   // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. Each may name its `source`
   // (see layerTexture). owner is optional.
+  // With `space`, the view stands at camera.position (a spaceCamera(), pano_space.js) and draws the World
+  // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickers, lines }. sceneUrls are the
+  // item URLs of the `scene` input; loaded items of other URLs are dropped. grid is a gridSpec()
+  // or null. scene is null or { kind ("splat" or "mesh"), url, urls (every item of the input), prefetch
+  // (urls to load ahead), transform ({ position, quaternion, scale }), itemQuaternion (the item's turn into
+  // the `scene` frame) }. stickers are world Sticker planes { id, media, revision, source, opacity,
+  // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }.
   // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
   function render(input) {
     applyViewportCamera(camera, input.camera);
-    return draw(panorama, input);
+    return draw(panorama, input, input.space ?? null);
+  }
+
+  // The box of the loaded `scene` item at url in its own frame ({ min, max }; a SPLAT's in 3DGS
+  // coordinates), or null while it loads.
+  function sceneBox(url) {
+    return sceneItems.box(url);
   }
 
   // input: render()'s input without camera; the frame is the layers laid out as an ERP.
@@ -377,6 +541,12 @@ export function createThreeView() {
   }
 
   function dispose() {
+    closed = true;
+    sceneItems.close();
+    if (guides) disposeObject(guides.group);
+    lines.forEach((line) => disposeObject(line));
+    worldStickers.forEach((mesh) => mesh.material.dispose());
+    spark?.dispose();
     owners.forEach((entry) => entry.textures.forEach((item) => item.texture.dispose()));
     owners.clear();
     [panorama, unwrap].forEach((projection) => {
@@ -391,5 +561,5 @@ export function createThreeView() {
     renderer.forceContextLoss();
   }
 
-  return { render, renderUnwrap, release, dispose };
+  return { render, renderUnwrap, sceneBox, release, dispose };
 }

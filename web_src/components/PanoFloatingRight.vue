@@ -13,6 +13,7 @@ defineProps({
   <div class="pano-floating-right">
     <PanoIconButton
       v-for="button in buttons"
+      v-show="button.visible !== false"
       :key="button.action"
       :icon="button.icon"
       :label="button.label"

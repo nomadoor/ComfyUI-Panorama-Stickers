@@ -39,7 +39,7 @@ import {
   sourceAsset,
   stickerPose,
 } from "./pano_editor_state.js";
-import { clipActive, evaluateSticker } from "./pano_scene_eval.js";
+import { clipActive, evaluateSceneState, evaluateSticker } from "./pano_scene_eval.js";
 import { loadSceneState } from "./pano_scene_state.js";
 import {
   deleteKeyframes,
@@ -62,7 +62,24 @@ import {
   viewportCamera,
   viewProjection,
   workingSkyLayers,
+  worldStickerLayers,
 } from "./pano_editor_view.js";
+import {
+  DEFAULT_DISTANCE,
+  boundingSphere,
+  contentPoints,
+  dollyView,
+  frameView,
+  gridSpec,
+  hasWorldContent,
+  orbitView,
+  panView,
+  projectPoint,
+  sceneFilesOf,
+  sceneItemBox,
+  sceneRequest,
+  spaceCamera,
+} from "./pano_space.js";
 import {
   contextHalfExtentsPx,
   createDefaultCutoutShot,
@@ -122,7 +139,7 @@ import {
   reconcileExternalStickerState,
   reconcilePortStickerState,
 } from "./pano_stickers_node_surface.js";
-import { isNodeOutputMediaCurrent, videoLinked } from "./pano_preview_video.js";
+import { isNodeOutputMediaCurrent, nodeInputOrigins, videoLinked } from "./pano_preview_video.js";
 import { createVideoFollower, createVideoPlayback, frameAtTime } from "./pano_video_playback.js";
 import { createFrameSequence, portMediaFrames, portMediaSource, portMediaTime } from "./pano_port_media.js";
 import {
@@ -860,6 +877,12 @@ async function showEditor(node, type, options = {}) {
     viewYaw: 0,
     viewPitch: 0,
     viewFov: 100,
+    // PanoramaStickersNode with World content: where the Viewport camera stands (World glTF) and how far
+    // ahead its pivot is (pano_space.js). It starts at the World origin, where the ERP is taken from,
+    // and is not saved. Until it moves (viewMoved), its pivot is as far ahead as the content is large.
+    viewPosition: [0, 0, 0],
+    viewDistance: DEFAULT_DISTANCE,
+    viewMoved: false,
     coverage: normalizeCoverageValue(state.coverage),
     historyController: createHistoryController(80, { version: 1, entries: [initialHistorySnapshot], index: 0 }),
     primaryTool: "cursor",
@@ -962,7 +985,15 @@ async function showEditor(node, type, options = {}) {
   };
   // The Stickers and Cutout editors and the read-only Preview modal draw with three.js. The Cutout
   // camera preview draws through the same view as its own owner.
-  const editorView = createEditorView({ onReady: () => requestDraw(), onFailed: () => requestDraw() });
+  // A `scene` item that loaded, or Spark's sorted splats, change only the stage.
+  const editorView = createEditorView({
+    onReady: () => requestDraw(),
+    onFailed: () => requestDraw(),
+    onUpdate: () => {
+      runtime.backgroundDirty = true;
+      requestDraw({ localOnly: true });
+    },
+  });
   // The panorama view's projection, rebuilt when its camera or the canvas size changes.
   let viewProjectionCache = { key: "", projection: null };
   let editorViewScene = { key: null, sceneState: null };
@@ -2677,6 +2708,11 @@ async function showEditor(node, type, options = {}) {
     patchUiButton(uiState.floatingButtons, "action", "reset-view", {
       disabled: readOnly || frameMode,
     });
+    const spaceView = isSpaceView();
+    patchUiButton(uiState.floatingButtons, "action", "frame-view", {
+      visible: spaceView,
+      disabled: readOnly || !spaceView,
+    });
     patchUiButton(uiState.floatingButtons, "action", "toggle-grid", {
       icon: gridVisible ? ICON.eye : ICON.eye_dashed,
       pressed: gridVisible ? "true" : "false",
@@ -2746,6 +2782,52 @@ async function showEditor(node, type, options = {}) {
   // match the drawn frame.
   function currentViewCamera() {
     return viewportCamera({ yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, roll_deg: 0, hFOV_deg: editor.viewFov }, canvas.width, canvas.height);
+  }
+
+  // The `scene` input's editor files in the node's current result (docs/render-contract.md): the kind
+  // the editor loads and a URL per item, null for an empty item. null without a current result.
+  function sceneFiles() {
+    if (!sceneV2 || !isNodeOutputMediaCurrent(node, "scene")) return null;
+    return sceneFilesOf(getNodeUiList("pano_scene_files"), getNodeUiList("pano_scene_meta"), mediaSource);
+  }
+
+  // PanoramaStickersNode's panorama view shows the World when there is World content (a `scene` input or
+  // a world Sticker), and the Viewport camera moves in it. Without it the view only looks around.
+  function isSpaceView() {
+    if (!sceneV2 || editor.mode !== "pano") return false;
+    return hasWorldContent({ sceneLinked: !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
+  }
+
+  function spaceViewState() {
+    const distance = editor.viewMoved ? editor.viewDistance : contentSphere()?.radius || DEFAULT_DISTANCE;
+    return { position: editor.viewPosition, yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, hFOV_deg: editor.viewFov, distance };
+  }
+
+  // The sphere around the World content shown in this frame (pano_space.js boundingSphere), or null.
+  function contentSphere() {
+    return editorViewInput().space?.sphere ?? null;
+  }
+
+  function setSpaceView(view) {
+    editor.viewPosition = view.position;
+    editor.viewYaw = view.yaw_deg;
+    editor.viewPitch = view.pitch_deg;
+    editor.viewDistance = view.distance;
+    editor.viewMoved = true;
+    runtime.backgroundDirty = true;
+    requestDraw({ localOnly: true });
+  }
+
+  // The size of the World content shown, which scales the navigation steps.
+  function spaceScale() {
+    return contentSphere()?.radius || DEFAULT_DISTANCE;
+  }
+
+  // The Frame button: the view keeps its direction and moves back until the content fits.
+  function frameSpaceContent() {
+    const sphere = contentSphere();
+    if (!sphere) return;
+    setSpaceView(frameView(spaceViewState(), sphere, canvas.width, canvas.height));
   }
 
   function currentViewProjection() {
@@ -3590,44 +3672,59 @@ async function showEditor(node, type, options = {}) {
       : state.stickers;
     // The state v2 is rebuilt only when the Stickers or their assets change. Paint comes from the
     // paint engine's ERP canvases, so the strokes are left out.
-    const sceneKey = JSON.stringify([stickers, Object.keys(assets)]);
+    const sceneKey = JSON.stringify([stickers, Object.keys(assets), state.scene]);
     if (editorViewScene.key !== sceneKey) {
       editorViewScene = { key: sceneKey, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
     }
     const portPicture = portVideo ? followPortSticker() : null;
+    const media = (item) => {
+      if (portVideo && isExternalSticker(item)) return portPicture;
+      const img = getStickerImage(item);
+      return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
+    };
     const layers = editor.showObjects
-      ? workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, {
-        media: (item) => {
-          if (portVideo && isExternalSticker(item)) return portPicture;
-          const img = getStickerImage(item);
-          return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
-        },
-        paintLayers,
-      })
+      ? workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers })
       : paintLayers.map((layer) => ({ kind: "erp", ...layer }));
     // The background VIDEO and its still are one source, so a seek keeps the frame before.
     const bgSource = bgImg && (bgImg === videoEl || bgImg === stillCanvas) ? videoEl.dataset.panoSrc : bgImg;
     const background = editor.showPanorama && isDecodedImageReady(bgImg)
       ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage), source: bgSource }
       : null;
-    return { background, layers };
+    const space = isSpaceView() ? buildSpaceInput(editorViewScene.sceneState, media) : null;
+    return { background, layers, space };
+  }
+
+  // The World of the space view at the playhead: the `scene` item the node draws at this frame with the
+  // `scene` transform, the world Sticker planes, the grid, and the sphere around the content (null
+  // without content) that frames it and scales the navigation.
+  function buildSpaceInput(sceneState, media) {
+    const evaluated = evaluateSceneState(sceneState, editor.frame);
+    const files = sceneFiles();
+    const scene = sceneRequest(files, evaluated.scene);
+    const box = scene?.url ? editorView.sceneBox(scene.url) : null;
+    const sceneBox = box && sceneItemBox(scene.kind, box);
+    const stickers = editor.showObjects ? worldStickerLayers(sceneState, editor.frame, state.stickers, { media }) : [];
+    const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers));
+    const grid = editor.showGrid && !editor.fullscreen ? gridSpec(sphere?.radius || DEFAULT_DISTANCE) : null;
+    return { grid, sceneUrls: files ? files.urls.filter(Boolean) : [], scene, stickers, sphere };
   }
 
   function renderEditorView() {
     if (!runtime.backgroundDirty && runtime.backgroundWasVisible) return;
-    const { background, layers } = editorViewInput();
+    const { background, layers, space } = editorViewInput();
     const width = backgroundCanvas.width;
     const height = backgroundCanvas.height;
     const surface = editorView.render({
       width,
       height,
-      camera: currentViewCamera(),
+      camera: space ? spaceCamera(spaceViewState(), width, height, space.sphere) : currentViewCamera(),
       background,
       layers,
+      space,
     });
     const bg2d = backgroundCanvas.getContext("2d");
     bg2d.clearRect(0, 0, width, height);
-    if (!background && !layers.length) {
+    if (!background && !layers.length && !space) {
       bg2d.fillStyle = "#070707";
       bg2d.fillRect(0, 0, width, height);
     } else if (surface) {
@@ -3721,7 +3818,9 @@ async function showEditor(node, type, options = {}) {
     rebuildPaintEngineIfNeeded();
     renderEditorView();
 
-    if (editor.showGrid && !editor.fullscreen) {
+    if (editor.showGrid && !editor.fullscreen && editorViewInput().space) {
+      drawErpOriginLabel();
+    } else if (editor.showGrid && !editor.fullscreen) {
       for (let lon = -180; lon <= 180; lon += 15) {
         const pts = [];
         for (let lat = -89; lat <= 89; lat += 4) pts.push(yawPitchToDir(lon, lat));
@@ -3747,6 +3846,18 @@ async function showEditor(node, type, options = {}) {
         if (p) ctx.fillText(l.name, p.x, p.y + 24);
       });
     }
+  }
+
+  // The space view's grid has its origin marker at the World origin, where the Stickers ERP is taken
+  // from; this names it.
+  function drawErpOriginLabel() {
+    const camera = spaceCamera(spaceViewState(), canvas.width, canvas.height, contentSphere());
+    const origin = projectPoint(camera, [0, 0, 0], canvas.width, canvas.height);
+    if (!origin) return;
+    ctx.fillStyle = "rgba(255, 221, 87, 0.9)";
+    ctx.font = "500 11px Geist, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("ERP origin", origin.x, origin.y - 12);
   }
 
   function projectEditorPoints(points, frameShot = null, frameRect = null, unwrapRefU = null) {
@@ -7974,6 +8085,8 @@ async function showEditor(node, type, options = {}) {
       if (editor.interaction.kind === "paint_stroke" || editor.interaction.kind === "paint_lasso_fill") setCanvasCursor("none");
       else if (editor.interaction.kind === "view") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "pan_frame") setCanvasCursor("grabbing");
+      else if (editor.interaction.kind === "space_pan") setCanvasCursor("move");
+      else if (editor.interaction.kind === "space_orbit") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "roll_frame") setCanvasCursor("grabbing");
     else if (editor.interaction.kind === "move" || editor.interaction.kind === "move_multi" || editor.interaction.kind === "move_stroke_group" || editor.interaction.kind === "move_raster_object") setCanvasCursor("move");
       else if (editor.interaction.kind === "scale" || editor.interaction.kind === "scale_x" || editor.interaction.kind === "scale_y" || editor.interaction.kind === "scale_raster_object") setCanvasCursor(editor.interaction.cursor || "nwse-resize");
@@ -8335,10 +8448,26 @@ async function showEditor(node, type, options = {}) {
           },
           changed: false,
         };
+      } else if (isSpaceView()) {
+        editor.interaction = { kind: "space_pan", last: p };
       } else {
         const dragPos = editor.mode === "unwrap" ? p : screenPosCss(e);
         editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
         viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
+      }
+      updateCursor(p);
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+    // In space the right button looks around with any tool, and Alt orbits around the pivot.
+    if (isSpaceView() && (e.button === 2 || (e.button === 0 && e.altKey))) {
+      e.preventDefault();
+      if (e.button === 2) {
+        const dragPos = screenPosCss(e);
+        editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
+        viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
+      } else {
+        editor.interaction = { kind: "space_orbit", last: p };
       }
       updateCursor(p);
       canvas.setPointerCapture(e.pointerId);
@@ -8738,7 +8867,7 @@ async function showEditor(node, type, options = {}) {
     if (editPointerDown && (p.x !== editPointerDown.x || p.y !== editPointerDown.y)) {
       const down = editPointerDown;
       editPointerDown = null;
-      if (it.kind !== "view" && it.kind !== "marquee_select") restartEditAtStoppedFrame(it, down);
+      if (!["view", "marquee_select", "space_pan", "space_orbit"].includes(it.kind)) restartEditAtStoppedFrame(it, down);
     }
 
     if (it.kind === "paint_stroke") {
@@ -8811,6 +8940,15 @@ async function showEditor(node, type, options = {}) {
       it.lastTs = now;
       it.last = dragPos;
       requestDraw({ localOnly: true });
+      return;
+    }
+
+    if (it.kind === "space_pan" || it.kind === "space_orbit") {
+      const view = spaceViewState();
+      setSpaceView(it.kind === "space_pan"
+        ? panView(view, p.x - it.last.x, p.y - it.last.y, canvas.width, canvas.height, spaceScale())
+        : orbitView(view, p.x - it.last.x, p.y - it.last.y, canvas.height));
+      it.last = p;
       return;
     }
 
@@ -9081,6 +9219,11 @@ async function showEditor(node, type, options = {}) {
   canvas.onpointerup = () => {
     const ended = editor.interaction;
     if (ended?.kind === "roll_frame" && ended.source === "knob") return;
+    if (ended?.kind === "space_pan" || ended?.kind === "space_orbit") {
+      editor.interaction = null;
+      updateCursor(editor.pointerPos);
+      return;
+    }
     if (editor.interaction?.kind === "paint_stroke" || editor.interaction?.kind === "paint_lasso_fill") {
       invalidateLivePaintPreviewCaches();
       const didCommit = commitPaintInteraction(editor.interaction);
@@ -9207,6 +9350,10 @@ async function showEditor(node, type, options = {}) {
   canvas.onauxclick = (e) => {
     if (e.button === 1) e.preventDefault();
   };
+  // The right button looks around in space.
+  canvas.oncontextmenu = (e) => {
+    if (isSpaceView()) e.preventDefault();
+  };
 
   canvas.onmousemove = (e) => {
     const p = screenPos(e);
@@ -9233,7 +9380,13 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (editor.mode !== "pano") return;
-    if (viewController.applyWheelEvent(e)) requestDraw({ localOnly: true });
+    if (isSpaceView()) {
+      const direction = readWheelDirection(e);
+      // The wheel zooms the panorama view in (direction < 0); in space it dollies the same way.
+      if (direction) setSpaceView(dollyView(spaceViewState(), -direction, spaceScale()));
+    } else if (viewController.applyWheelEvent(e)) {
+      requestDraw({ localOnly: true });
+    }
     e.preventDefault();
   };
 
@@ -9683,6 +9836,13 @@ async function showEditor(node, type, options = {}) {
     if (action === "reset-view") {
       if (editor.mode === "frame") return;
       startViewTween(0, 0, 100, 180, 680);
+      // In space the view also goes back to the World origin, where the ERP is taken from, as it opened.
+      editor.viewPosition = [0, 0, 0];
+      editor.viewMoved = false;
+      return;
+    }
+    if (action === "frame-view") {
+      frameSpaceContent();
       return;
     }
     if (action === "toggle-grid") {
