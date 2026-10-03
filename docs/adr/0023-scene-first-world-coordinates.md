@@ -16,7 +16,7 @@ Accepted
 
 Scene を位置を持つ World と無限遠の Sky の二層として扱い、ERP・透視投影・将来のステレオは Camera による Projection の一つとする。VR まで見据えると視差が必要であり、ERP を主役とする 3DoF の構造では拡張できないためである。
 
-World の座標は glTF（右手系・Y 上・前方 `-Z`）とし、長さの単位は入力素材のままとする。既存の ERP と yaw / pitch / roll の規約は左手系（`+Z` 前方）なので、World へ渡す一か所でだけ Z を反転する。角度は常に既存のパノラマ規約で定義し、位置だけが glTF 座標となる。SPLAT や MoGe などの変換はコアの定義に従う。背景 ERP と `sky` Placement の Sticker は無限遠にあり、Camera の回転だけを受ける。ERP 出力には Camera の回転も反映する。
+World の座標は glTF（右手系・Y 上・前方 `-Z`）とし、長さの単位は入力素材のままとする。既存の ERP と yaw / pitch / roll の規約は左手系（`+Z` 前方）なので、World へ渡す一か所でだけ Z を反転する。角度は常に既存のパノラマ規約で定義し、位置だけが glTF 座標となる。SPLAT や MoGe などの変換はコアの定義に従う。背景 ERP と `sky` Placement の Sticker は無限遠にあり、Camera の回転だけを受ける。ERP 出力には Camera の回転も反映する（Stickers の ERP 出力は ADR 0028 で原点・回転 0 に固定した。Camera を持つのは Cutout だけである）。
 
 ## Considered Options
 

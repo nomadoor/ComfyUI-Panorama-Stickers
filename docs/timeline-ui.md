@@ -20,7 +20,7 @@
 - Keyframe と Keyframe の間に入れた Keyframe の Easing は、入れた区間の Easing を引き継ぐ。前後の区間がどちらも元の区間と同じ Easing になる。手で曲げた cubic-bezier も同じ値をそのまま写す（元の動きと厳密には一致しない）。最初の Keyframe より前に入れたときは、新しい Keyframe の Easing を既定値の ease-in-out とする。最後の Keyframe より後に入れたときは、それまで最後だった Keyframe の Easing（使われていなかった値）が新しい区間に掛かり、新しい Keyframe の Easing は既定値とする。
 - Keyframe を消せるのは、タイムラインで選んで Delete したときだけ。消した後は残った Keyframe で補間し直す。全 Keyframe を一度に消すスイッチは作らない。
 - インスペクタには Keyframe を打つボタンを置かない。
-- 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Cutout の frame タブ、Stickers で Camera の行を選んだときの操作とインスペクタ）だけである。
+- 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Cutout の frame タブと、Cutout で Camera の行を選んだときの操作とインスペクタ）だけである。Stickers は Camera を持たない（ADR 0028）。
 - ノード上の UI には Keyframe の操作がないので、Keyframe のある Lane はノード上では変えない。表示しているフレーム（最初は frame 0、一時停止したフレーム）によらず、Sticker のドラッグは Keyframe のない Lane（どのフレームでも同じ値）の静的な値だけを変え、Keyframe のある Lane にしか効かない操作は無視する（#70 のロックと同じ感触）。Keyframe のある Lane はエディタのタイムラインで直す。この扱いはオーナーの判断待ちの既定値で、`pano_stickers_node_surface.js` の `set-transform`（`unkeyedPose`）だけで決まる。
 - ノード上の UI には再生ボタンが一つだけあり、時間のあるときだけ出る（エディタと同じ `isTimed` か、背景の VIDEO か `port` の Sticker の素材の MP4 があるとき）。ボタンは再生と一時停止を切り替える。Timeline の fps でループ再生し、背景の VIDEO は音を出さずに同じ状態機械で再生する。一時停止は画面に出ているフレームで止まり（エディタの停止と同じ）、もう一度押すとそこから続く。そのフレームはノードごとの一時状態で保存せず、reload すると frame 0 に戻る。背景の VIDEO が替わったときと Timeline がそのフレームより短くなったときも frame 0 に戻る。編集（Sticker をつかむ、ツールバーの操作、画像の追加、Delete）とエディタを開く操作で一時停止する。見回しでは止まらない。Space キーは使わない（ComfyUI のキャンバスの pan）。細かい規則は `docs/panorama-stickers-node-surface-spec.md` にある。
 - Sticker がアップロード中（Source にファイルがまだない）の間は、Undo の履歴を記録しない。アップロードが終わったときに、その間の編集を含めて一度記録する（失敗して Sticker が消えたときも同じ）。
@@ -60,7 +60,7 @@
 
 ## Camera のモード
 
-Camera は Keyframe と Drone の二つのモードを持ち、出力にはいま選ばれている方だけを使う。両方のデータは独立に保持し、切り替えても他方は消えない。一本のタイムラインの中で混ぜることはしない。Camera のタイムラインは Stickers（ERP 出力の向き）と Cutout の両方が持つ。画角はどちらのモードでもインスペクタで変える値で、Drone では Keyframe を持たない一定の値である。Drone モードのとき、Camera の行にポチは出さない（位置と回転は通過点から決まる）。Drone の通過点・道筋・状態の項目は Drone の ticket で定める。
+Camera は Keyframe と Drone の二つのモードを持ち、出力にはいま選ばれている方だけを使う。両方のデータは独立に保持し、切り替えても他方は消えない。一本のタイムラインの中で混ぜることはしない。Camera のタイムラインは Cutout だけが持つ（ADR 0028）。画角はどちらのモードでもインスペクタで変える値で、Drone では Keyframe を持たない一定の値である。Drone モードのとき、Camera の行にポチは出さない（位置と回転は通過点から決まる）。Drone の通過点・道筋・状態の項目は Drone の ticket で定める。
 
 ## 再生の状態
 

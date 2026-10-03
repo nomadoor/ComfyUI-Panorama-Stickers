@@ -63,7 +63,7 @@ Keyframe 間の時間方向の補間。cubic-bezier（既定は ease-in-out）�
 ### Capture
 
 **Camera**:
-Scene を撮影する唯一の視点。位置・回転・FOV を持ち、Keyframe か Drone で Timeline 全体にわたって動かせる。
+Scene を撮影する唯一の視点。Cutout だけが持つ（Stickers の ERP 出力は原点・回転 0 に固定）。位置・回転・FOV を持ち、Keyframe か Drone で Timeline 全体にわたって動かせる。
 _Avoid_: Shot
 
 **Viewport camera**:
