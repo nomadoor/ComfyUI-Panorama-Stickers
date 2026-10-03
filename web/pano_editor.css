@@ -333,7 +333,7 @@
 .pano-view-toggle[data-selected="frame"] .pano-view-btn[data-view="unwrap"]:hover {
   color: var(--pano-muted-strong);
 }
-.pano-view-btn:disabled {
+.pano-view-btn[aria-disabled="true"] {
   color: var(--pano-text-tertiary);
   cursor: default;
   opacity: 0.5;

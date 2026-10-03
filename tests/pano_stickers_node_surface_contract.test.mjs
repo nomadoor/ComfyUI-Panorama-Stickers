@@ -462,7 +462,7 @@ test("state_json is written only when its meaning changes, in the editor and on 
   const editor = await read("../web_src/pano_editor.js");
   const runtime = await read("../web_src/pano_preview_runtime.js");
 
-  assert.match(editor, /function commitState\(\) \{[\s\S]*?if \(stateWidget && !sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cutoutV2 \}\)\) \{\s*stateWidget\.value = text;/);
+  assert.match(editor, /function commitState\(\) \{[\s\S]*?if \(stateWidget && !sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)\) \{\s*stateWidget\.value = text;/);
   assert.match(runtime, /commitState: \(nextState\) => \{[\s\S]*?if \(sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\)\)\) return;\s*stateWidget\.value = text;/);
 });
 

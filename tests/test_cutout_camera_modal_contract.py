@@ -45,7 +45,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         floating_body = ui_state_js.split("export function floatingRightState(", 1)[1].split("\nexport function ", 1)[0]
         self.assertIn('"reset-view": { disabled: !!readOnly || !!frameMode },', floating_body)
         self.assertIn("disabled: !!readOnly || !!frameMode,", floating_body.split('"toggle-grid"', 1)[1])
-        self.assertIn('frameMode: type === "cutout" && editor.mode === "frame",', editor_js)
+        self.assertIn('frameMode: shotEditor && editor.mode === "frame",', editor_js)
         self.assertIn('if (action === "reset-view") {\n      if (editor.mode === "frame") return;', editor_js)
         self.assertIn('if (editor.mode === "frame") return;\n      editor.showGrid = !editor.showGrid;', editor_js)
         self.assertIn("function drawCutoutPanoPassepartout()", editor_js)
@@ -57,7 +57,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("editor.cutoutPanoDimCorners = liveCorners", editor_js)
         self.assertIn("cutoutPanoFrameVisual: null", editor_js)
         self.assertIn("cutoutPanoFrameAlpha: 0", editor_js)
-        self.assertIn('const nextFrameTarget = type === "cutout" && getActiveCutoutShot() ? 1 : 0;', editor_js)
+        self.assertIn('const nextFrameTarget = shotEditor && getActiveCutoutShot() ? 1 : 0;', editor_js)
         self.assertIn("drawCameraFrameBody(visual.geom, visual.selected, visual.locked)", editor_js)
         self.assertIn('kind: "roll_frame"', editor_js)
         self.assertIn('shortestAngleDeltaRad(angle, interaction.lastAngle)', editor_js)
@@ -117,7 +117,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("[paintDockEl, videoTransportEl].forEach", measure_body)
         self.assertNotIn("floatingRightEl].forEach", measure_body)
         self.assertIn("FLOATING_RIGHT_RESERVED_PX", measure_body)
-        self.assertIn('uiState.cameraPreview.visible = editor.mode !== "frame";', editor_js)
+        self.assertIn('uiState.cameraPreview.visible = editor.mode !== "frame" && cameraPreviewShown();', editor_js)
 
     def test_vue_shell_hosts_camera_preview(self):
         editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")

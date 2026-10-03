@@ -242,7 +242,7 @@ function onLineDown(event, row, lane) {
                 :aria-current="row.selected ? 'true' : undefined"
                 @click="emit('action', { type: 'select-row', id: row.id })"
               >
-                <SvgIcon :icon="row.clip ? ICON.image : ICON.camera" />
+                <SvgIcon :icon="row.icon" />
                 <span>{{ row.label }}</span>
               </button>
               <button

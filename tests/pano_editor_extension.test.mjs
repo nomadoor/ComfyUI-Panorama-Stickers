@@ -130,6 +130,39 @@ test("the new Stickers node opens the same editor and node surface and keeps sta
   assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
 });
 
+test("Panorama Studio opens the Stickers editor on state v2 with its Camera, and keeps the Stickers node surface (#89)", () => {
+  const opened = [];
+  const attached = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor(node, type) { opened.push([node, type]); },
+    attachStickers(node, options) {
+      attached.push(node);
+      node.__panoStickersNodeSurface = { mounted: true };
+      options.onOpen();
+    },
+    attachCutout() { throw new Error("Panorama Studio has no Cutout surface"); },
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  function StudioNodeType() {}
+  function StickersNodeType() {}
+  extension.beforeRegisterNodeDef(StudioNodeType, { name: "PanoramaStudio" });
+  extension.beforeRegisterNodeDef(StickersNodeType, { name: "PanoramaStickersNode" });
+  const node = makeNode([360, 260]);
+  const stickers = makeNode([360, 260]);
+
+  StudioNodeType.prototype.onNodeCreated.call(node);
+  StickersNodeType.prototype.onNodeCreated.call(stickers);
+
+  assert.deepEqual(opened, [[node, "stickers"], [stickers, "stickers"]]);
+  assert.deepEqual(attached, [node, stickers]);
+  assert.deepEqual([node.__panoSceneStateV2, node.__panoStudio], [true, true]);
+  assert.deepEqual([stickers.__panoSceneStateV2, stickers.__panoStudio], [true, false]);
+  assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
+});
+
 // LiteGraph.createNode runs onNodeCreated before graph.add, and getInputLink throws without a graph.
 test("the sticker input syncs once the Stickers node is in the graph, for the legacy and the new node", () => {
   const synced = [];

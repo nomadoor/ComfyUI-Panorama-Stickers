@@ -10,6 +10,7 @@ import {
   editorActive,
   editorStateText,
   makePanoEditorHistorySnapshot,
+  newStudioCamera,
   newWorldSceneSticker,
   normalizeCoverageValue,
   parsePanoEditorState,
@@ -822,4 +823,62 @@ test("a fps change of a Cutout showing a PANO_SCENE rebases the state it saves t
   assert.equal(saved.timeline.fps, 12);
   assert.equal(saved.timeline.length, 24);
   assert.deepEqual(saved.camera.fov.keyframes.map((key) => key.frame), [0, 12]);
+});
+
+// Panorama Studio (#89) opens on its state as it is: without a Camera it has none (no default_camera), with
+// one it edits it through the shot. Opening and closing without an edit, on the fps a video sets too,
+// leaves the text alone.
+test("opening and closing Panorama Studio without an edit leaves its state_json as it is, with or without a Camera", () => {
+  const node = { __panoSceneStateV2: true, __panoStudio: true };
+  const keyed = JSON.stringify(loadSceneState({
+    version: 2,
+    timeline: { fps: 24 },
+    camera: { rotation: { value: {}, keyframes: [{ frame: 0, value: { yaw_deg: 0 } }, { frame: 1, value: { yaw_deg: 5 } }, { frame: 25, value: { yaw_deg: 90 } }] } },
+  }));
+  const texts = ["", readFixture("v2_no_camera"), readFixture("v2_canonical"), readFixture("v2_erp_camera"), keyed];
+  for (const current of texts) {
+    for (const fps of [null, 12]) {
+      const state = parseSceneEditorState(current, { fps });
+      assert.equal("default_camera" in state, false);
+      if (state.camera) {
+        // The editor derives the shot and writes back what changed in it: nothing.
+        for (const frame of [0, 7]) {
+          const base = cameraShot(state.camera, frame);
+          setCameraShot(state.camera, frame, { ...base, position: [...base.position] }, base);
+        }
+      }
+      const text = editorStateText(node, state);
+      assert.equal(sameEditorStateText(node, text, current, { rebased: true }), true, `${current.slice(0, 30)} at ${fps}`);
+    }
+  }
+});
+
+// Add Camera puts the one Camera where the Viewport camera stands and looks; deleting it saves `camera: null`.
+test("Panorama Studio adds its Camera at the view and saves none once it is deleted", () => {
+  const node = { __panoSceneStateV2: true, __panoStudio: true };
+  const state = parseSceneEditorState(readFixture("v2_no_camera"));
+  const view = { position: [1, 2, 3], yaw_deg: 200, pitch_deg: -10, hFOV_deg: 100, distance: 2 };
+
+  state.camera = newStudioCamera(view);
+
+  assert.deepEqual(state.camera, loadSceneState({ version: 2, camera: state.camera }).camera, "a normalized Camera");
+  assert.deepEqual(evaluateCamera(state.camera, 0), { position: [1, 2, 3], yaw_deg: -160, pitch_deg: -10, roll_deg: 0, hFOV_deg: 90, aspect: 16 / 9 });
+  assert.equal(state.camera.projection, "perspective");
+  assert.deepEqual(["position", "rotation", "fov"].map((name) => state.camera[name].keyframes), [[], [], []]);
+  const added = loadSceneState(editorStateText(node, state));
+  assert.deepEqual(added.camera, state.camera);
+  assert.equal(sameEditorStateText(node, editorStateText(node, state), readFixture("v2_no_camera"), { rebased: true }), false);
+  // The shot frames 16:9 at 90 degrees.
+  assert.ok(Math.abs(cameraShot(state.camera, 0).vFOV_deg - 58.7155) < 1e-3);
+
+  state.camera = null;
+  const text = editorStateText(node, state);
+  assert.equal(JSON.parse(text).camera, null);
+  assert.equal(sameEditorStateText(node, text, readFixture("v2_no_camera"), { rebased: true }), true);
+  // Deleting a Camera the state had is an edit too.
+  const had = parseSceneEditorState(readFixture("v2_canonical"));
+  had.camera = null;
+  const deleted = editorStateText(node, had);
+  assert.equal(JSON.parse(deleted).camera, null);
+  assert.equal(sameEditorStateText(node, deleted, readFixture("v2_canonical"), { rebased: true }), false);
 });

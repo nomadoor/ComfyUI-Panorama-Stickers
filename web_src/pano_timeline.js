@@ -161,12 +161,15 @@ function ownerLanes(owner) {
   return laneNames(owner).map((name) => owner[name]);
 }
 
-// Whether anything in the state changes over time: a Keyframe or a Clip range other than the whole Timeline.
-// The Camera's Keyframes count only with `camera` (Cutout); Stickers has no Camera (ADR 0028).
+// Whether an owner changes over time: a Keyframe, or a Clip range other than the whole Timeline.
+export function ownerTimed(owner) {
+  return ownerLanes(owner).some((lane) => lane.keyframes.length > 0) || (!!owner.clip && !defaultClip(owner.clip));
+}
+
+// Whether anything in the state changes over time. The Camera's Keyframes count only with `camera`
+// (Cutout, Panorama Studio); Stickers has no Camera (ADR 0028).
 export function isTimed(state, { camera = false } = {}) {
-  return [...(camera && state.camera ? [state.camera] : []), state.scene, ...state.stickers].some((owner) => ownerLanes(owner).some((lane) => lane.keyframes.length > 0))
-    || !defaultClip(state.scene.clip)
-    || state.stickers.some((sticker) => !defaultClip(sticker.clip));
+  return [...(camera && state.camera ? [state.camera] : []), state.scene, ...state.stickers].some(ownerTimed);
 }
 
 // The number of Timeline frames the Timeline shows: the Timeline length, or without one `minimum`

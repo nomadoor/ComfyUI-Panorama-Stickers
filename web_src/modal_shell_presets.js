@@ -1,12 +1,15 @@
 import { ICON } from "./icons.js";
 
+// "studio" is Panorama Studio's editor (#89): the Stickers tools with Add Camera, and the Frame tab of the
+// Cutout, which it always shows (disabled without a Camera) so the tabs never move.
 export function buildModalShellPreset(type = "stickers") {
   const isCutout = String(type || "stickers") === "cutout";
+  const isStudio = type === "studio";
   return {
     viewButtons: [
       { key: "pano", label: "Panorama", icon: ICON.pano, pressed: "true", extraClass: "" },
       { key: "unwrap", label: "Unwrap", icon: ICON.unwrap, pressed: "false", extraClass: "" },
-      ...(isCutout ? [{ key: "frame", label: "Frame", icon: ICON.camera, pressed: "false", extraClass: "pano-view-btn-icon" }] : []),
+      ...(isCutout || isStudio ? [{ key: "frame", label: "Frame", icon: ICON.camera, pressed: "false", extraClass: "pano-view-btn-icon" }] : []),
     ],
     // How the panorama view moves in space (#71): at the left end of the bottom-right buttons, the
     // 3DoF | 6DoF icon buttons and Frame Selected show together while the panorama view shows World content
@@ -29,6 +32,8 @@ export function buildModalShellPreset(type = "stickers") {
             { key: "add", attr: "data-tool-ui-action", value: "add", label: "Add Image", tip: "Add image", active: false, accent: true, icon: ICON.image, pressed: null },
             // PanoramaStickersNode only (#72): an image placed in space as a world Sticker.
             { key: "add-world", attr: "data-tool-ui-action", value: "add-world", label: "Add World Image", tip: "Add image in space", active: false, accent: false, icon: ICON.globe, pressed: null, visible: false },
+            // Panorama Studio's one Camera; disabled, not hidden, while it has one.
+            ...(isStudio ? [{ key: "add-camera", attr: "data-tool-ui-action", value: "add-camera", label: "Add Camera", tip: "Add camera", active: false, accent: false, icon: ICON.camera_plus, pressed: null }] : []),
           ]),
       { key: "clear", attr: "data-tool-ui-action", value: "clear", label: "Clear All", tip: "Clear all", active: false, accent: false, icon: ICON.clear, pressed: null },
       { key: "undo", attr: "data-tool-ui-action", value: "undo", label: "Undo", tip: "Undo", active: false, accent: false, icon: ICON.undo, pressed: null },

@@ -288,6 +288,20 @@ export function cameraShot(camera, frame) {
   });
 }
 
+// Panorama Studio's Camera as Add Camera places it (#89): where the Viewport camera `view` stands and
+// looks (pano_space.js), level, with a 90 degree hFOV and a 16:9 frame, and without Keyframes.
+export function newStudioCamera(view) {
+  return loadSceneState({
+    version: 2,
+    camera: {
+      aspect: 16 / 9,
+      position: { value: [...view.position] },
+      rotation: { value: { yaw_deg: wrapYaw(view.yaw_deg), pitch_deg: view.pitch_deg, roll_deg: 0 } },
+      fov: { value: 90 },
+    },
+  }).camera;
+}
+
 function nearestTurn(delta) {
   return delta - 360 * Math.round(delta / 360);
 }

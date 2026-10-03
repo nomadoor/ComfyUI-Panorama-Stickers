@@ -25,6 +25,7 @@ import {
   fileSource,
   makePanoEditorHistorySnapshot,
   newSceneSticker,
+  newStudioCamera,
   newWorldSceneSticker,
   normalizeCoverageValue,
   noteCameraEdit,
@@ -137,14 +138,17 @@ import {
 } from "./pano_cutout_node_surface.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
+  ERP_ASPECT,
   buildEasingModel,
   buildEditorSidePanelModel,
+  cameraAspectChoices,
   buildPaintDockModel,
   buildPreviewSidePanelModel,
   buildSelectionMenuModel,
   buildTimelineModel,
   buildWorldSelectionMenuModel,
   floatingRightState,
+  frameViewButton,
   selectionMenuPlacement,
   buildUiSettingsModel,
   patchUiButton,
@@ -571,6 +575,7 @@ function getEditorNodeTitle(node, type) {
   const titleMap = {
     PanoramaStickers: "Panorama Stickers",
     PanoramaStickersNode: "Panorama Stickers",
+    PanoramaStudio: "Panorama Studio",
     "Panorama Stickers": "Panorama Stickers",
     PanoramaCutout: "Panorama Cutout",
     "Panorama Cutout": "Panorama Cutout",
@@ -650,6 +655,12 @@ async function showEditor(node, type, options = {}) {
   const stateV2 = node.__panoSceneStateV2 === true;
   const sceneV2 = type === "stickers" && stateV2;
   const cutoutV2 = type === "cutout" && stateV2;
+  // Panorama Studio (#89) is the Stickers editor of state v2 with the Cutout's Camera, which the user adds
+  // and deletes. cameraV2 edits state v2's Camera through the Cutout's shot (cameraShot / setCameraShot);
+  // shotEditor has the shot and the Frame view, which have nothing to show while Studio has no Camera.
+  const studio = sceneV2 && node.__panoStudio === true;
+  const cameraV2 = cutoutV2 || studio;
+  const shotEditor = type === "cutout" || studio;
   // A Cutout that shot a PANO_SCENE shows that Scene and edits only its Camera; the Scene sets its Timeline.
   const capture = cutoutV2 ? shotScene(node) : null;
   const state = (stateV2 ? parseSceneEditorState : parsePanoEditorState)(String(stateWidget?.value || ""), {
@@ -665,14 +676,15 @@ async function showEditor(node, type, options = {}) {
   node.__panoLiveStateOverride = state;
   node.__panoLiveStateVersion = 0;
 
-  // PanoramaCutoutNode's Camera is the one shot of the Cutout editor, at the playhead (cameraShot).
-  // cutoutShotBase is the shot as it was last derived; an edit since then is written back to the
-  // Camera's Lanes (syncCutoutShot).
+  // PanoramaCutoutNode's Camera is the one shot of the Cutout editor, at the playhead (cameraShot), and so
+  // is Panorama Studio's while it has one. cutoutShotBase is the shot as it was last derived (null without a
+  // Camera); an edit since then is written back to the Camera's Lanes (syncCutoutShot).
   let cutoutShotBase = null;
-  if (cutoutV2) {
-    cutoutShotBase = cameraShot(state.camera, 0);
-    state.shots = [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }];
-    state.active.selected_shot_id = CAMERA_SHOT_ID;
+  if (cameraV2) {
+    cutoutShotBase = state.camera ? cameraShot(state.camera, 0) : null;
+    state.shots = cutoutShotBase ? [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }] : [];
+    // Panorama Studio opens with nothing selected, as the Stickers editor.
+    state.active.selected_shot_id = cutoutShotBase && cutoutV2 ? CAMERA_SHOT_ID : null;
   } else if (type === "cutout") {
     state.shots = Array.isArray(state.shots) ? state.shots.slice(0, 1) : [];
     if (!state.shots.length) {
@@ -689,7 +701,7 @@ async function showEditor(node, type, options = {}) {
   const initialCutoutPreviewSize = initialCutoutPreviewShot
     ? getCutoutPreviewViewportSize(initialCutoutPreviewShot, false)
     : { width: 220, height: 132 };
-  const shellPreset = buildModalShellPreset(type);
+  const shellPreset = buildModalShellPreset(studio ? "studio" : type);
   const uiState = reactive({
     stageStatus: IMAGE_LOADING,
     stageStatusDetail: "boot",
@@ -943,7 +955,7 @@ async function showEditor(node, type, options = {}) {
       el.hidden = true;
     });
     closePaintColorPop(true);
-    if (type === "cutout" && editor.cutoutAspectOpen && !ev.target.closest(".pano-aspect-popover") && !ev.target.closest("[data-action='aspect']")) {
+    if (shotEditor && editor.cutoutAspectOpen && !ev.target.closest(".pano-aspect-popover") && !ev.target.closest("[data-action='aspect']")) {
       editor.cutoutAspectOpen = false;
       editor.menuMode = "";
       editor.menuSize.measured = false;
@@ -1780,9 +1792,10 @@ async function showEditor(node, type, options = {}) {
     return `_${interactionKind}_${groupId || rasterId || "active"}_${editor.livePaintInteractionRevision}`;
   }
   // The Stickers the Cutout editor selects and moves: none in PanoramaCutoutNode's, which edits only its
-  // Camera and shows the Stickers of its state or of the Scene it shoots (#77).
+  // Camera and shows the Stickers of its state or of the Scene it shoots (#77); the sky ones in Panorama
+  // Studio's, as the Stickers editor (#89).
   function cutoutStickers() {
-    return cutoutV2 || !Array.isArray(state.stickers) ? [] : state.stickers;
+    return cutoutV2 || !Array.isArray(state.stickers) ? [] : skyStickers();
   }
   function getCutoutSelectableItems() {
     const shots = Array.isArray(state.shots) ? state.shots : [];
@@ -2017,7 +2030,7 @@ async function showEditor(node, type, options = {}) {
     if (groupItem) return groupItem;
     const rasterItem = getRasterObjectItem(id);
     if (rasterItem) return rasterItem;
-    if (type === "cutout") {
+    if (shotEditor) {
       return getCutoutSelectableItems().find((item) => String(item?.id || "") === id) || null;
     }
     return getList().find((s) => String(s?.id || "") === id) || null;
@@ -2035,7 +2048,7 @@ async function showEditor(node, type, options = {}) {
       const item = key === String(editor.selectedId || "") ? getSelected() : (
         getStrokeGroupItem(key)
         || getRasterObjectItem(key)
-        || (type === "cutout"
+        || (shotEditor
           ? getCutoutSelectableItems().find((entry) => String(entry?.id || "") === key)
           : getList().find((entry) => String(entry?.id || "") === key))
       );
@@ -2828,6 +2841,8 @@ async function showEditor(node, type, options = {}) {
     editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
   }
   function syncLookAtFrameButtonState() {
+    // Panorama Studio has Add Camera instead, disabled rather than hidden while it has its Camera (#89).
+    if (studio) patchUiButton(uiState.toolButtons, "value", "add-camera", { disabled: hasCamera() });
     if (type !== "cutout") return;
     const shot = getActiveCutoutShot();
     patchUiButton(uiState.toolButtons, "value", "add-or-look", {
@@ -2844,7 +2859,7 @@ async function showEditor(node, type, options = {}) {
       spaceView: isSpaceView(),
       spaceMode: shownSpaceMode(editor.spaceMode, editor.viewTransition),
       readOnly,
-      frameMode: type === "cutout" && editor.mode === "frame",
+      frameMode: shotEditor && editor.mode === "frame",
       showGrid: editor.showGrid,
     });
     if (uiState.space) Object.assign(uiState.space, floating.space);
@@ -2852,16 +2867,20 @@ async function showEditor(node, type, options = {}) {
   }
 
   function syncViewToggleState() {
-    const hasFrame = !!getActiveCutoutShot();
-    if (editor.mode === "frame" && !hasFrame) editor.mode = "pano";
+    const frameButton = frameViewButton({ hasShot: !!getActiveCutoutShot(), erp: isErpCamera(), studio });
+    if (editor.mode === "frame" && frameButton.disabled) {
+      if (studio) leaveFrameView(getActiveCutoutShot());
+      else editor.mode = "pano";
+    }
     editor.outputPreviewRect = null;
     uiState.viewButtons.forEach((button) => {
       const active = button.key === editor.mode;
       button.pressed = active ? "true" : "false";
-      button.visible = !(button.key === "frame" && type !== "cutout");
-      button.disabled = button.key === "frame" ? !hasFrame : false;
+      button.visible = !(button.key === "frame" && !shotEditor);
+      if (button.key === "frame") Object.assign(button, frameButton);
+      else button.disabled = false;
     });
-    const frameShot = type === "cutout" && editor.mode === "frame" ? getActiveCutoutShot() : null;
+    const frameShot = shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : null;
     uiState.frameRail.visible = !!frameShot;
     uiState.frameRail.disabled = readOnly || frameShot?.locked === true;
     uiState.frameRollKnob.visible = !!frameShot && !readOnly && frameShot.locked !== true;
@@ -2872,21 +2891,17 @@ async function showEditor(node, type, options = {}) {
     uiState.frameRollKnob.armed = !!frameShot && editor.altModifier === true;
     uiState.frameRail.rollKnob = uiState.frameRollKnob;
     uiState.frameRail.aspectLabel = frameShot ? getCutoutAspectLabel(frameShot) : "";
-    uiState.frameRail.aspectChoices = ["1:1", "4:3", "3:2", "16:9"].map((value) => ({
-      value,
-      label: value,
-      active: !!frameShot && String(getCutoutAspectLabel(frameShot)) === value,
-    }));
+    uiState.frameRail.aspectChoices = cameraAspectChoices(frameShot ? String(getCutoutAspectLabel(frameShot)) : null, { erp: studio, coverage: state.coverage });
     if (!frameShot) uiState.frameRail.aspectOpen = false;
     uiState.outputPreviewToggle.visible = type === "cutout" && editor.mode !== "frame" && !!getActiveCutoutShot();
-    if (type === "cutout" && uiState.cameraPreview) {
+    if (shotEditor && uiState.cameraPreview) {
       // Frame view already shows the exact output inside the gate, so the
       // floating preview is redundant there. Keeping it in sync with
       // drawCutoutOutputPreview() also matters for correctness: its box height
       // follows the shot aspect, and it is measured by measureFrameSafeRect().
       // Letting it appear in Frame — even for one frame — feeds the shot back
       // into the safe rect and therefore into the background scale.
-      uiState.cameraPreview.visible = editor.mode !== "frame";
+      uiState.cameraPreview.visible = editor.mode !== "frame" && cameraPreviewShown();
       uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
       uiState.cameraPreview.settled = uiState.cameraPreview.settled === true
         && runtime.pendingStableLayoutFrames <= 0
@@ -2895,6 +2910,18 @@ async function showEditor(node, type, options = {}) {
     syncFloatingViewButtonState();
     if (isPaintCursorEnabled()) updateCursor(editor.pointerPos);
     else setCanvasCursor(editor.mode === "pano" ? "grab" : "default");
+  }
+
+  // The camera preview shows the Cutout's frame, or asks for one; Panorama Studio's shows only a Camera
+  // with a frame, and nothing without one (#89).
+  function cameraPreviewShown() {
+    return !studio || (hasCamera() && !isErpCamera());
+  }
+
+  // Whether Panorama Studio's Camera shoots a 360-degree ERP (ADR 0029); the Cutout shoots every Camera
+  // through its frame.
+  function isErpCamera() {
+    return studio && hasCamera() && state.camera.projection === "erp";
   }
 
   function stickerCornerOrderSanity() {
@@ -2985,10 +3012,16 @@ async function showEditor(node, type, options = {}) {
     return spaceModeView(editor.spaceMode, view, spaceOrigin());
   }
 
-  // Where 3DoF stands: the World origin, where the Stickers ERP is taken from, or in the Cutout editor the
-  // Camera's position at the playhead, so the frame on the panorama is what the Camera sees (#77).
+  // Where 3DoF stands: the World origin, where the Stickers ERP is taken from, or in the Cutout editor and
+  // Panorama Studio with a Camera the Camera's position at the playhead, so the frame on the panorama is
+  // what the Camera sees (#77, #89).
   function spaceOrigin() {
-    return cutoutV2 ? cutoutCamera().position : [0, 0, 0];
+    return hasCamera() ? cutoutCamera().position : [0, 0, 0];
+  }
+
+  // Whether the editor has a Camera: always in the Cutout's, while the user keeps one in Panorama Studio's.
+  function hasCamera() {
+    return cameraV2 && state.camera !== null;
   }
 
   // PanoramaCutoutNode's Camera at the playhead, by the evaluator the node shoots with (#77).
@@ -3995,9 +4028,9 @@ async function showEditor(node, type, options = {}) {
   function spaceGuides(content) {
     const radius = content.sphere?.radius || DEFAULT_DISTANCE;
     return {
-      gizmo: cutoutV2 ? cameraGizmo() : worldGizmo(content.evaluated),
+      gizmo: isCameraSelected() ? cameraGizmo() : worldGizmo(content.evaluated),
       grid: editor.showGrid && !editor.fullscreen ? gridSpec(radius) : null,
-      lines: cutoutV2 ? cameraLines(radius) : [],
+      lines: hasCamera() ? cameraLines(radius) : [],
     };
   }
 
@@ -4033,7 +4066,7 @@ async function showEditor(node, type, options = {}) {
 
   // The Camera's selection is the canvas selection of its shot, as the frame's selection always was.
   function isCameraSelected() {
-    return cutoutV2 && editor.selectedId === CAMERA_SHOT_ID;
+    return hasCamera() && editor.selectedId === CAMERA_SHOT_ID;
   }
 
   function cameraLines(radius) {
@@ -4054,7 +4087,7 @@ async function showEditor(node, type, options = {}) {
   // frustum it selects the Camera. Returns whether the press was taken.
   function startCameraPress(e, p) {
     const gizmo = editorViewInput().space?.gizmo;
-    if (gizmo && worldGizmoPointer("hover", p) !== null && worldGizmoPointer("down", p)) {
+    if (isCameraSelected() && gizmo && worldGizmoPointer("hover", p) !== null && worldGizmoPointer("down", p)) {
       editor.interaction = { kind: "world_gizmo", camera: true, mode: gizmo.mode, start: gizmo.transform, base: cutoutCamera(), changed: false };
       canvas.setPointerCapture(e.pointerId);
       updateCursor(p);
@@ -4488,7 +4521,7 @@ async function showEditor(node, type, options = {}) {
 
   function objectGeom(item) {
     // In 6DoF the Cutout's Camera is its frustum in space, picked and moved with the gizmo (#77).
-    if (cutoutV2 && isShotItem(item) && isFreeSpaceView()) return { visible: false };
+    if (cameraV2 && isShotItem(item) && isFreeSpaceView()) return { visible: false };
     if (isStrokeGroupItem(item)) {
       const actionGroupId = String(item.actionGroupId || item.id || "").trim();
       const cacheKey = getStrokeGeomCacheKey(actionGroupId, item.layerKind);
@@ -4704,7 +4737,7 @@ async function showEditor(node, type, options = {}) {
   function drawObjects() {
     const selectedItems = editor.mode === "frame" ? [] : getSelectedItems();
     const multiSelected = selectedItems.length > 1;
-    const rawList = type === "cutout" ? getCutoutSelectableItemsForDisplay() : getList();
+    const rawList = shotEditor ? getCutoutSelectableItemsForDisplay() : getList();
     const orderKey = rawList.map((item) => `${String(item?.id || "")}:${isShotItem(item) ? "frame" : Number(item?.z_index || 0)}`).join("|");
     if (!editor._sortedItemsCache || editor._sortedItemsCache.src !== rawList || editor._sortedItemsCache.orderKey !== orderKey) {
       editor._sortedItemsCache = {
@@ -4731,7 +4764,7 @@ async function showEditor(node, type, options = {}) {
       }
       const visibilityAlpha = clamp(Number(g?.visibilityAlpha ?? 1), 0, 1);
       if (visibilityAlpha <= 0.01) continue;
-      const frameTransitionAlpha = itemIsShot && type === "cutout" && editor.mode === "pano"
+      const frameTransitionAlpha = itemIsShot && shotEditor && editor.mode === "pano"
         ? clamp(Number(editor.cutoutPanoFrameAlpha || 0), 0, 1)
         : 1;
       ctx.save();
@@ -4748,7 +4781,7 @@ async function showEditor(node, type, options = {}) {
       ctx.restore();
     }
 
-    if (type === "cutout" && editor.mode === "pano" && !getActiveCutoutShot()
+    if (shotEditor && editor.mode === "pano" && !getActiveCutoutShot()
       && editor.cutoutPanoFrameVisual && editor.cutoutPanoFrameAlpha > 1e-4) {
       const visual = editor.cutoutPanoFrameVisual;
       const fade = clamp(Number(editor.cutoutPanoFrameAlpha || 0), 0, 1);
@@ -4841,8 +4874,10 @@ async function showEditor(node, type, options = {}) {
   function drawCutoutOutputPreview() {
     editor.outputPreviewRect = null;
     uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();
-    if (type !== "cutout" || !uiState.cameraPreview) return;
-    if (editor.mode === "frame") {
+    // Panorama Studio's preview keeps one size: it has no size toggle (#89).
+    if (studio) uiState.outputPreviewToggle.visible = false;
+    if (!shotEditor || !uiState.cameraPreview) return;
+    if (editor.mode === "frame" || !cameraPreviewShown()) {
       uiState.cameraPreview.visible = false;
       uiState.cameraPreview.settled = false;
       return;
@@ -5712,14 +5747,15 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getCutoutPanoDimTarget() {
-    // In 6DoF the Camera is its frustum, not a frame on the panorama to dim around.
-    if (type !== "cutout" || !getActiveCutoutShot() || (cutoutV2 && isFreeSpaceView())) return 0;
+    // In 6DoF the Camera is its frustum, not a frame on the panorama to dim around. Panorama Studio dims
+    // around its Camera's frame only while the Camera is selected, so its Stickers stay in full view (#89).
+    if (!shotEditor || !getActiveCutoutShot() || (cameraV2 && isFreeSpaceView()) || (studio && !isCameraSelected())) return 0;
     return CUTOUT_PANO_DIM_ALPHA;
   }
 
   function drawCutoutPanoPassepartout() {
     const alpha = clamp(Number(editor.cutoutPanoDimAlpha || 0), 0, 1);
-    if (alpha <= 1e-4 || type !== "cutout" || editor.mode !== "pano") return;
+    if (alpha <= 1e-4 || !shotEditor || editor.mode !== "pano") return;
     const shot = getActiveCutoutShot();
     const geom = shot ? objectGeom(shot) : null;
     const liveCorners = Array.isArray(geom?.corners) && geom.corners.length >= 4
@@ -5762,7 +5798,7 @@ async function showEditor(node, type, options = {}) {
     else if (editor.mode === "unwrap") drawGridUnwrap(false);
     else drawGridPano(false);
     drawCutoutPanoPassepartout();
-    if (type === "cutout") drawCutoutOutputPreview();
+    if (shotEditor) drawCutoutOutputPreview();
     drawObjects();
     syncFrameRollKnob();
     drawLassoOutlineOverlay();
@@ -5775,7 +5811,7 @@ async function showEditor(node, type, options = {}) {
       runtime.hasPresentedFrame = true;
       backgroundCanvas.style.opacity = "1";
     }
-    if (type === "cutout" && uiState.cameraPreview) {
+    if (shotEditor && uiState.cameraPreview) {
       uiState.cameraPreview.settled = runtime.pendingStableLayoutFrames <= 0 && runtime.hasPresentedFrame && editor.mode !== "frame";
     }
     const stageStatus = getStageImageStatus();
@@ -5860,7 +5896,7 @@ async function showEditor(node, type, options = {}) {
       backgroundCanvas.height = nextH;
       runtime.backgroundDirty = true;
       runtime.dirty = true;
-      if (type === "cutout") {
+      if (shotEditor) {
         runtime.pendingStableLayoutFrames = Math.max(Number(runtime.pendingStableLayoutFrames || 0), 1);
       }
       return true;
@@ -5922,7 +5958,7 @@ async function showEditor(node, type, options = {}) {
       }
       runtime.dirty = true;
     }
-    const nextFrameTarget = type === "cutout" && getActiveCutoutShot() ? 1 : 0;
+    const nextFrameTarget = shotEditor && getActiveCutoutShot() ? 1 : 0;
     if (Math.abs(nextFrameTarget - Number(editor.cutoutPanoFrameTarget || 0)) > 1e-6) {
       editor.cutoutPanoFrameFrom = Number(editor.cutoutPanoFrameAlpha || 0);
       editor.cutoutPanoFrameTarget = nextFrameTarget;
@@ -6069,6 +6105,8 @@ async function showEditor(node, type, options = {}) {
     editor.selectedId = type === "stickers"
       ? state.active.selected_sticker_id
       : (type === "cutout" ? state.active.selected_sticker_id : state.active.selected_shot_id);
+    // Panorama Studio's Camera stays selected while the restored state has it (#89).
+    if (studio && !editor.selectedId && state.active.selected_shot_id) editor.selectedId = getActiveCutoutShot()?.id ?? null;
     editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
     if (editor.selectedId) clearWorldSelection();
     runtime.backgroundDirty = true;
@@ -6138,7 +6176,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function syncSidePanelControls() {
-    const selected = poseOf(type === "cutout" && editor.mode === "frame" ? getActiveCutoutShot() : getSelected());
+    const selected = poseOf(shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : getSelected());
     if (!selected) return;
     editor.panelLastValues = {
       yaw_deg: Number(selected.yaw_deg || 0),
@@ -6169,7 +6207,7 @@ async function showEditor(node, type, options = {}) {
     }
 
     const canvasSelected = getSelected();
-    const frameInspectorShot = type === "cutout" && editor.mode === "frame" ? getActiveCutoutShot() : null;
+    const frameInspectorShot = shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : null;
     const selected = frameInspectorShot || canvasSelected;
     const selectedItems = frameInspectorShot ? [frameInspectorShot] : getSelectedItems();
     const selectedKind = frameInspectorShot ? "shot" : getSelectedKind();
@@ -6195,7 +6233,7 @@ async function showEditor(node, type, options = {}) {
     const inspectorSelected = selectedKind === "stroke" ? null : selected;
     const worldInspected = selectedWorldSticker();
     // PanoramaCutoutNode's Camera has a position in space too (#77).
-    const cameraPositionShown = cutoutV2 && (selectedKind === "shot" || selectedKind === "frame") && hasSpaceContent();
+    const cameraPositionShown = cameraV2 && (selectedKind === "shot" || selectedKind === "frame") && hasSpaceContent();
     const effective = worldInspected ? worldStickerFields(worldInspected, editor.frame)
       : cameraPositionShown ? { ...inspectorSelected, ...cameraFields(state.camera, editor.frame), vFOV_deg: inspectorSelected.vFOV_deg }
         : isSceneSticker(inspectorSelected) ? editor.panelLastValues : (inspectorSelected || fallback);
@@ -6227,6 +6265,9 @@ async function showEditor(node, type, options = {}) {
         item: null,
       }];
       if (type === "stickers") {
+        // Panorama Studio's Camera comes first, as on its Timeline (#89).
+        const shot = getActiveCutoutShot();
+        if (shot) items.push({ id: shot.id, label: "Camera", icon: getSelectionItemIcon("frame"), item: shot, kind: "frame" });
         getList().forEach((item, i) => {
           if (!item) return;
           const baseLabel = sceneV2
@@ -6294,13 +6335,17 @@ async function showEditor(node, type, options = {}) {
       notes.push(`Selected objects: ${selectedItems.length}`);
       notes.push("Multi-selection supports z-order and delete.");
     } else {
+      // Panorama Studio's Camera is a shot in the Stickers editor (#89): it has a roll and no opacity.
+      const shotInspected = selectedKind === "shot" || selectedKind === "frame";
       pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
       pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
       pushParam("hFOV_deg", "H FOV", 1, 179, 0.1);
       pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
-      if (type === "stickers" || selectedKind === "image") pushParam("rot_deg", "Rotation", -180, 180, 0.1);
+      // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
+      if (shotInspected && isErpCamera()) params.slice(-2).forEach((param) => { param.enabled = false; });
+      if (selectedKind === "image" || (type === "stickers" && !shotInspected)) pushParam("rot_deg", "Rotation", -180, 180, 0.1);
       else pushParam("roll_deg", "Roll", -180, 180, 0.1);
-      if (sceneV2) pushParam("opacity", "Opacity", 0, 100, 1);
+      if (sceneV2 && !shotInspected) pushParam("opacity", "Opacity", 0, 100, 1);
       if (cameraPositionShown) {
         for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
           const range = worldFieldRange(effective[key]);
@@ -6367,9 +6412,11 @@ async function showEditor(node, type, options = {}) {
       label: `${editor.frame}f · ${(editor.frame / fps).toFixed(2)}s`,
       // A VIDEO on bg_media, sticker or the Cutout's source sets the Timeline fps (ADR 0024).
       fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker", "source"]),
-      // The Cutout shows only its Camera; with a PANO_SCENE it shoots the Scene's Timeline (#77).
-      camera: cutoutV2,
+      // The Cutout shows only its Camera; with a PANO_SCENE it shoots the Scene's Timeline (#77). Panorama
+      // Studio shows its Camera, its Stickers and its `scene` on one Timeline (#89).
+      camera: hasCamera(),
       stickers: !cutoutV2,
+      scene: sceneV2 && !!nodeInputOrigins(node).scene,
       sceneLocked: !!capture,
     });
     uiState.easing = timeline.selection
@@ -6377,9 +6424,10 @@ async function showEditor(node, type, options = {}) {
       : null;
   }
 
-  // Whether the Timeline opens by itself: something in the state changes over time (the Cutout's Camera).
+  // Whether the Timeline opens by itself: something in the state changes over time (the Cutout's Camera,
+  // also Panorama Studio's).
   function timelineTimed() {
-    return cutoutV2 ? laneNames(state.camera).some((name) => state.camera[name].keyframes.length > 0) : isTimed(state);
+    return cutoutV2 ? laneNames(state.camera).some((name) => state.camera[name].keyframes.length > 0) : isTimed(state, { camera: studio });
   }
 
   // The Timeline length (5 s without one), widened to the background VIDEO and to the end of the
@@ -6394,11 +6442,12 @@ async function showEditor(node, type, options = {}) {
       uiState.videoTransport.ready ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0,
       portMedia ? portMediaFrames(port.clip, fps, portMedia.meta) : 0,
     );
-    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: cutoutV2 && !capture });
+    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: (cutoutV2 && !capture) || studio });
   }
 
   function timelineOwner(owner) {
-    if (owner === "camera") return cutoutV2 ? state.camera : null;
+    if (owner === "camera") return hasCamera() ? state.camera : null;
+    if (owner === "scene") return sceneV2 ? state.scene : null;
     return state.stickers.find((item) => item.id === owner) || null;
   }
 
@@ -6538,6 +6587,7 @@ async function showEditor(node, type, options = {}) {
       // The canvas selection holds sky Stickers; a world row selects its world Sticker for the gizmo and
       // the inspector.
       if (sticker?.placement === "world") selectWorldSticker(sticker.id);
+      else if (action.id === "camera") setSelectedItem(getActiveCutoutShot());
       else setSelectedItem(getList().find((item) => item.id === action.id) || null);
       syncFloatingViewButtonState();
       // Delete then acts on the row's Sticker, not on Keyframes selected before.
@@ -6592,7 +6642,8 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (action.type === "clip") {
-      const sticker = state.stickers.find((item) => item.id === action.id);
+      // A Sticker's Clip range, or the `scene`'s.
+      const sticker = action.id === "scene" ? timelineOwner("scene") : state.stickers.find((item) => item.id === action.id);
       if (!sticker || sticker.locked) return;
       if (action.phase === "start") {
         stopTimelinePlayback();
@@ -7007,6 +7058,46 @@ async function showEditor(node, type, options = {}) {
     requestDraw({ cause: "cutout_frame" });
   }
 
+  // Add Camera (Panorama Studio, #89): one Camera where the Viewport camera stands and looks
+  // (newStudioCamera), selected. The view stays where it is.
+  function addStudioCamera() {
+    if (readOnly || !studio || hasCamera()) return;
+    stopTimelinePlayback();
+    state.camera = newStudioCamera(spaceViewState());
+    syncCutoutShot();
+    setSelectedItem(getActiveCutoutShot());
+    forceCursorTool();
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    updateSelectionMenu();
+    requestDraw({ cause: "cutout_frame" });
+  }
+
+  // Delete on Panorama Studio's selected Camera: the state has no Camera (`camera: null`), and the Frame view
+  // and 3DoF follow (followCameraChange). Undo brings it back.
+  function deleteStudioCamera() {
+    stopTimelinePlayback();
+    state.camera = null;
+    setSelectedItem(null);
+    syncCutoutShot();
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    updateSelectionMenu();
+    requestDraw({ cause: "cutout_frame" });
+  }
+
+  // An aspect preset of the selected shot. Panorama Studio's 360° preset makes its Camera shoot an ERP, and a
+  // ratio makes it shoot through its frame again (ADR 0029).
+  function setShotAspect(shot, aspect) {
+    if (studio && isShotItem(shot)) {
+      state.camera.projection = aspect === ERP_ASPECT ? "erp" : "perspective";
+      if (aspect === ERP_ASPECT) return;
+    }
+    applyCutoutAspect(shot, aspect);
+  }
+
   function clearCutoutFrame() {
     if (readOnly || type !== "cutout") return;
     state.shots = [];
@@ -7241,6 +7332,10 @@ async function showEditor(node, type, options = {}) {
       requestDraw();
       return;
     }
+    if (studio && isShotItem(selected)) {
+      deleteStudioCamera();
+      return;
+    }
     if (type === "stickers" || isStickerItem(selected)) {
       if (isExternalSticker(selected)) {
         if (isStickerHidden(selected)) return;
@@ -7467,7 +7562,7 @@ async function showEditor(node, type, options = {}) {
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
     const text = editorStateText(node, state);
-    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""), { rebased: cutoutV2 })) {
+    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""), { rebased: cameraV2 })) {
       stateWidget.value = text;
       stateWidget.callback?.(text);
     }
@@ -7540,17 +7635,63 @@ async function showEditor(node, type, options = {}) {
   // playhead (setCameraShot, by the recording rule), then derives the shot from the Camera again, so it
   // follows the playhead, Keyframe edits and Undo. The shot stays the same object, which interactions
   // hold. `keep` false drops an edit instead (the state was replaced).
+  // Panorama Studio's shot comes and goes with its Camera (#89).
   function syncCutoutShot(keep = true) {
-    if (!cutoutV2) return;
+    if (!cameraV2) return;
+    const before = cutoutShotBase;
+    if (!state.camera) {
+      cutoutShotBase = null;
+      if (state.shots?.length) state.shots = [];
+      if (before) followCameraChange(before, null);
+      return;
+    }
     const shot = state.shots?.[0];
     if (keep && shot && cutoutShotBase) setCameraShot(state.camera, editor.frame, shot, cutoutShotBase);
     cutoutShotBase = cameraShot(state.camera, editor.frame);
     if (shot) Object.assign(shot, cutoutShotBase, { position: [...cutoutShotBase.position] });
     else state.shots = [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }];
+    if (!before) followCameraChange(null, cutoutShotBase);
+  }
+
+  // Panorama Studio's Camera came or went (#89), by an edit or by Undo. The Frame view ends without one,
+  // and 3DoF, which stands at the Camera (spaceOrigin), moves to where it stands now. The view goes there
+  // over a transition instead of jumping.
+  function followCameraChange(before, after) {
+    if (!after && editor.mode === "frame") leaveFrameView(before);
+    const to = after?.position ?? [0, 0, 0];
+    // A way back to 3DoF on the way goes to where 3DoF stands now.
+    if (editor.viewTransition?.end?.mode === "3dof") {
+      transitionView({ ...spaceViewState(), position: to }, editor.viewTransition.end);
+      return;
+    }
+    if (editor.mode !== "pano" || editor.spaceMode !== "3dof" || !hasSpaceContent()) return;
+    const from = before?.position ?? [0, 0, 0];
+    if (from.every((value, axis) => value === to[axis])) return;
+    // The way there moves in 6DoF and enters 3DoF when it arrives, as the way back from 6DoF does.
+    const view = { ...spaceViewState(), position: from };
+    applySpaceMode({ mode: "6dof", position: from, moved: true });
+    editor.viewDistance = view.distance;
+    transitionView({ ...view, position: to }, { mode: "3dof", moved: false });
+  }
+
+  // The Frame view ends while it shows Panorama Studio's shot (its Camera went, or shoots a 360-degree ERP,
+  // #89): the panorama view looks where the shot looked, and in 6DoF stands where it stood, so the view does
+  // not jump.
+  function leaveFrameView(shot) {
+    editor.mode = "pano";
+    if (!shot) return;
+    cancelViewTransition();
+    const distance = spaceViewState().distance;
+    editor.viewYaw = wrapYaw(shot.yaw_deg);
+    editor.viewPitch = clamp(shot.pitch_deg, -89.9, 89.9);
+    editor.viewFov = clamp(shot.hFOV_deg, 35, 140);
+    if (editor.spaceMode === "6dof") applySpaceMode({ mode: "6dof", position: [...shot.position], moved: true });
+    editor.viewDistance = distance;
+    runtime.backgroundDirty = true;
   }
 
   function getActiveCutoutShot() {
-    if (type !== "cutout") return null;
+    if (!shotEditor) return null;
     const shots = Array.isArray(state.shots) ? state.shots : [];
     if (!shots.length) return null;
     const selectedId = String(state.active.selected_shot_id || "");
@@ -7641,7 +7782,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function supportsFramePainting() {
-    return type === "cutout" && !!getActiveCutoutShot();
+    return shotEditor && !!getActiveCutoutShot();
   }
 
   function screenPosToErpPoint(pos, ts = performance.now()) {
@@ -7737,7 +7878,7 @@ async function showEditor(node, type, options = {}) {
   // (pano_view_controls.js, pano_space.js), the wheel moves it toward the point under the pointer, and a
   // left drag still turns it where it stands, as in the Frame view of an ERP.
   function isFreeFrameView() {
-    return cutoutV2 && editor.mode === "frame" && hasSpaceContent();
+    return cameraV2 && editor.mode === "frame" && hasSpaceContent();
   }
 
   // The Frame view's context (frameViewContext): the canvas rect drawn through the shot and the shot that
@@ -8488,7 +8629,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function hitObjectAt(p) {
-    if (type === "cutout" && editor.mode === "frame") {
+    if (shotEditor && editor.mode === "frame") {
       const shot = getActiveCutoutShot();
       const rect = getFrameViewRect(shot);
       if (!shot || !rect) return null;
@@ -8563,7 +8704,7 @@ async function showEditor(node, type, options = {}) {
         return entry.item;
       })
       .filter(Boolean),
-      ...(type === "cutout" ? getCutoutSelectableItemsForHit().filter((item) => isShotItem(item)) : []),
+      ...(shotEditor ? getCutoutSelectableItemsForHit().filter((item) => isShotItem(item)) : []),
     ];
     for (const item of items) {
       if (isStrokeGroupItem(item)) {
@@ -8631,7 +8772,7 @@ async function showEditor(node, type, options = {}) {
       if (pointInPoly(p, geom.corners)) return { kind: "move", cursor: "default" };
       return { kind: "none", cursor: editor.mode === "pano" ? "grab" : "default" };
     }
-    if (type === "cutout" && Array.isArray(geom.edgeMidpoints)) {
+    if ((type === "cutout" || isShotItem(item)) && Array.isArray(geom.edgeMidpoints)) {
       const mid = geom.edgeMidpoints.find((m) => dist2(m, p) <= 13 * 13);
       if (mid) {
         const horiz = (mid.edge === "left" || mid.edge === "right");
@@ -8764,13 +8905,16 @@ async function showEditor(node, type, options = {}) {
       allLocked: areAllSelectedItemsLocked(selectedItems),
       anyLocked: selectedItems.some((item) => isItemLocked(item)),
       selectedLocked: isItemLocked(selected),
-      activeAspect: getCutoutAspectLabel(selected),
+      activeAspect: isShotItem(selected) && isErpCamera() ? ERP_ASPECT : getCutoutAspectLabel(selected),
       cutoutAspectOpen: editor.cutoutAspectOpen,
       isExternalSticker,
       isStickerHidden,
       canRestoreSelectedToInitial,
       iconSet: ICON,
-      cameraShot: cutoutV2,
+      cameraShot: cameraV2,
+      cameraDeletable: studio,
+      erpChoice: studio,
+      coverage: state.coverage,
     });
     showSelectionMenu(model);
   }
@@ -8786,7 +8930,7 @@ async function showEditor(node, type, options = {}) {
     const points = plane ? planeCorners(plane) : [space.gizmo.transform.position];
     const corners = points.map((point) => projectPoint(camera, point, canvas.width, canvas.height)).filter(Boolean);
     const gizmoBox = gizmoScreenBox(camera, space.gizmo.transform.position, space.gizmo.mode, canvas.width, canvas.height);
-    return buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: space.gizmo.mode, camera: cutoutV2 });
+    return buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: space.gizmo.mode, camera: isCameraSelected(), deletable: studio && isCameraSelected() });
   }
 
   function showSelectionMenu(model) {
@@ -8853,6 +8997,8 @@ async function showEditor(node, type, options = {}) {
       let variant = "";
       let x = rect.left - hostRect.left + rect.width * 0.5 - mw * 0.5;
       let y = rect.top - hostRect.top - mh - topGap;
+      // The view tabs are at the top of the stage, so their tooltip goes below them.
+      if (expectedTarget.closest(".pano-floating-top")) y = rect.bottom - hostRect.top + topGap;
       if (inToolRail) {
         variant = "tool-rail";
         x = rect.right - hostRect.left + 10;
@@ -9200,7 +9346,7 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ localOnly: true });
       return;
     }
-    if (editor.primaryTool === "cursor" && cutoutV2 && isFreeSpaceView() && startCameraPress(e, p)) return;
+    if (editor.primaryTool === "cursor" && hasCamera() && isFreeSpaceView() && startCameraPress(e, p)) return;
     if (editor.primaryTool === "cursor" && sceneV2 && isSpaceView() && startWorldStickerPress(e, p)) return;
 
     if (selectedItems.length > 1 && selGeom?.visible) {
@@ -9377,7 +9523,7 @@ async function showEditor(node, type, options = {}) {
         commitState();
       }
       setSelectedItem(hit.item);
-      if (type === "cutout" && isNewSelection) editor.cutoutAspectOpen = false;
+      if (shotEditor && isNewSelection) editor.cutoutAspectOpen = false;
       if (isNewSelection) updateSidePanel();
       updateSelectionMenu();
       requestDraw();
@@ -9739,7 +9885,7 @@ async function showEditor(node, type, options = {}) {
     if (it.kind === "move") {
       const tx = p.x - it.offset.x;
       const ty = p.y - it.offset.y;
-      if (editor.mode === "frame" && type === "cutout") {
+      if (editor.mode === "frame" && shotEditor) {
         const shot = getActiveCutoutShot();
         const rect = getFrameViewRect(shot);
         if (!shot || !rect) return;
@@ -9827,7 +9973,7 @@ async function showEditor(node, type, options = {}) {
           x: Number(snap.center?.x || 0) + dx,
           y: Number(snap.center?.y || 0) + dy,
         };
-        if (editor.mode === "frame" && type === "cutout") {
+        if (editor.mode === "frame" && shotEditor) {
           const shot = getActiveCutoutShot();
           const rect = getFrameViewRect(shot);
           if (!shot || !rect) continue;
@@ -10035,7 +10181,7 @@ async function showEditor(node, type, options = {}) {
       ];
       const hits = pool.filter((item) => rectIntersectsGeom(rect, objectGeom(item)));
       setSelectedItems(hits, hits[hits.length - 1]?.id || null);
-      if (type === "cutout" && hits.length) editor.cutoutAspectOpen = false;
+      if (shotEditor && hits.length) editor.cutoutAspectOpen = false;
       updateSidePanel();
       updateSelectionMenu();
       requestDraw();
@@ -10225,7 +10371,7 @@ async function showEditor(node, type, options = {}) {
   const applySidePanelParam = (key, rawValue, commit = false) => {
     // Edits during playback would key every frame they pass.
     stopTimelinePlayback();
-    const frameInspectorShot = type === "cutout" && editor.mode === "frame" ? getActiveCutoutShot() : null;
+    const frameInspectorShot = shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : null;
     const selected = frameInspectorShot || getSelected();
     const selectedKind = frameInspectorShot ? "shot" : getSelectedKind();
     const worldInspected = selectedWorldSticker();
@@ -10236,10 +10382,10 @@ async function showEditor(node, type, options = {}) {
     let out = Number(rawValue);
     if (Number.isNaN(out)) out = 0;
     // A world Sticker's position has no limit, and its scale only stays above 0. Nor has the Camera's.
-    if ((worldInspected || cutoutV2) && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
+    if ((worldInspected || cameraV2) && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
     else out = clamp(out, Number(param.min), Number(param.max));
     if (key === "yaw_deg") out = wrapYaw(out);
-    if (cutoutV2 && key.startsWith("position_")) {
+    if (!worldInspected && cameraV2 && key.startsWith("position_")) {
       syncCutoutShot();
       setCameraField(state.camera, editor.frame, key, out);
       updateSidePanel();
@@ -10257,7 +10403,7 @@ async function showEditor(node, type, options = {}) {
     }
     if (key === "opacity") setStickerOpacity(selected, editor.frame, out / 100);
     else writePose(selected, { [key]: out });
-    if (type === "cutout" && (key === "hFOV_deg" || key === "vFOV_deg")) {
+    if (shotEditor && !isSceneSticker(selected) && (key === "hFOV_deg" || key === "vFOV_deg")) {
       selected.aspect_id = deriveCutoutAspectLabelFromFov(selected);
     }
     updateSidePanel();
@@ -10300,7 +10446,7 @@ async function showEditor(node, type, options = {}) {
       const selectedId = String(target.getAttribute("data-selection-id") || "");
       let nextItem = null;
       if (selectedId) {
-        if (type === "stickers") nextItem = getList().find((item) => String(item?.id || "") === selectedId) || null;
+        if (type === "stickers") nextItem = [...getList(), ...(studio ? state.shots : [])].find((item) => String(item?.id || "") === selectedId) || null;
         else nextItem = getCutoutInspectorItems().find((entry) => String(entry?.item?.id || "") === selectedId)?.item || null;
       }
       setSelectedItem(nextItem || null);
@@ -10317,7 +10463,7 @@ async function showEditor(node, type, options = {}) {
       const selected = getSelected();
       const selectedKind = getSelectedKind();
       if (!selected || selectedKind === "stroke" || getSelectedItems().length > 1) return;
-      const text = JSON.stringify(type === "cutout" && selectedKind !== "image"
+      const text = JSON.stringify(shotEditor && selectedKind !== "image"
         ? buildCanonicalCutoutStickerState(selected)
         : buildCanonicalSelectedStickerState(poseOf(selected)));
       try {
@@ -10414,10 +10560,10 @@ async function showEditor(node, type, options = {}) {
     }
     const viewTarget = ev.target.closest("[data-view]");
     if (viewTarget) {
-      if (viewTarget.disabled) return;
+      if (viewTarget.getAttribute("aria-disabled") === "true") return;
       const previousMode = editor.mode;
       editor.mode = String(viewTarget.getAttribute("data-view") || "pano");
-      if (type === "cutout" && editor.mode === "frame") {
+      if (shotEditor && editor.mode === "frame") {
         if (previousMode !== "frame") runtime.frameSafeRect = null;
         updateSidePanel();
         updateSelectionMenu();
@@ -10448,6 +10594,7 @@ async function showEditor(node, type, options = {}) {
         else if (action === "add" || action === "add-image") addImageSticker();
         else if (action === "add-world") addWorldImageSticker();
         else if (action === "add-or-look") addCutoutFrame();
+        else if (action === "add-camera") addStudioCamera();
         return;
       }
       if (actionTarget.matches("[data-paint-tool]")) {
@@ -10534,12 +10681,15 @@ async function showEditor(node, type, options = {}) {
       if (action === "frame-aspect-set") {
         const shot = editor.mode === "frame" ? getActiveCutoutShot() : null;
         if (!shot || shot.locked === true) return;
-        applyCutoutAspect(shot, String(actionTarget.getAttribute("data-aspect") || "1:1"));
+        setShotAspect(shot, String(actionTarget.getAttribute("data-aspect") || "1:1"));
         uiState.frameRail.aspectOpen = false;
         syncSidePanelControls();
         pushHistory();
         commitAndRefreshNode();
         syncViewToggleState();
+        // 360° leaves the Frame view (Panorama Studio), whose inspector shows the shot.
+        updateSidePanel();
+        updateSelectionMenu();
         requestDraw();
         return;
       }
@@ -10579,7 +10729,7 @@ async function showEditor(node, type, options = {}) {
         const selected = getSelected();
         if (!selected) return;
         const aspect = String(actionTarget.getAttribute("data-aspect") || "1:1");
-        applyCutoutAspect(selected, aspect);
+        setShotAspect(selected, aspect);
         editor.cutoutAspectOpen = false;
         editor.menuSize.measured = false;
         syncSidePanelControls();
@@ -10591,7 +10741,7 @@ async function showEditor(node, type, options = {}) {
       }
       if (action === "rotate-90") {
         const selected = getSelected();
-        if (!selected) return;
+        if (!selected || isErpCamera()) return;
         rotateCutoutAspect90(selected);
         editor.cutoutAspectOpen = false;
         editor.menuSize.measured = false;
