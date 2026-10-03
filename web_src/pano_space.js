@@ -57,23 +57,24 @@ export function initialSpaceView(yawDeg, pitchDeg, hFovDeg) {
   return { position: [0, 0, 0], yaw_deg: yawDeg, pitch_deg: pitchDeg, hFOV_deg: hFovDeg, distance: DEFAULT_DISTANCE };
 }
 
-// The view in a space view mode: 3DoF stands at the World origin, where the Stickers ERP is taken from,
-// so it shows what the ERP shows; 6DoF moves freely.
-export function spaceModeView(mode, view) {
-  return mode === "6dof" ? view : { ...view, position: [0, 0, 0] };
+// The view in a space view mode: 3DoF stands at `origin`, where the output is taken from (the World
+// origin for the Stickers ERP, the Camera's position in the Cutout editor), so it shows what the output
+// sees around; 6DoF moves freely.
+export function spaceModeView(mode, view, origin = [0, 0, 0]) {
+  return mode === "6dof" ? view : { ...view, position: [...origin] };
 }
 
 // The space view's mode and place ({ mode, position, moved }) switched to mode. Back in 3DoF the view
-// stands at the origin again and its pivot goes back to the content's size (moved false); 6DoF starts
+// stands at `origin` again and its pivot goes back to the content's size (moved false); 6DoF starts
 // where 3DoF stands. The direction and the FOV are not here, so they stay.
-export function switchSpaceMode(space, mode) {
-  return mode === "3dof" ? { mode, position: [0, 0, 0], moved: false } : { ...space, mode };
+export function switchSpaceMode(space, mode, origin = [0, 0, 0]) {
+  return mode === "3dof" ? { mode, position: [...origin], moved: false } : { ...space, mode };
 }
 
 // The same once it is known whether there is World content: without it a 6DoF view goes back to 3DoF,
 // so content that shows again starts in 3DoF.
-export function spaceModeWithContent(space, hasContent) {
-  return hasContent || space.mode === "3dof" ? space : switchSpaceMode(space, "3dof");
+export function spaceModeWithContent(space, hasContent, origin = [0, 0, 0]) {
+  return hasContent || space.mode === "3dof" ? space : switchSpaceMode(space, "3dof", origin);
 }
 
 export function pivotOf(view) {
@@ -186,15 +187,24 @@ export function frameView(view, sphere, width, height) {
 // a hundredth of the pivot distance but no less than a ten-thousandth of the content's size, so the depth
 // buffer keeps its precision.
 export function spaceCamera(view, width, height, sphere = null) {
-  const { center, radius } = sphere ?? { center: [0, 0, 0], radius: DEFAULT_DISTANCE };
-  const toCenter = Math.hypot(center[0] - view.position[0], center[1] - view.position[1], center[2] - view.position[2]);
-  const reach = Math.max(toCenter + radius, Math.hypot(...view.position) + 6 * radius);
-  return {
-    position: [...view.position],
+  return placedCamera({
     quaternion: rotationToQuaternion(worldRotation(view.yaw_deg, view.pitch_deg, view.roll_deg ?? 0)),
     fovY_deg: 2 * Math.atan(tanHalfFov(view, width, height).tanY) * RAD2DEG,
     aspect: width / height,
-    near: Math.max(view.distance * 1e-2, radius * 1e-4),
+  }, view.position, view.distance, sphere);
+}
+
+// A three.js camera setup ({ quaternion, fovY_deg, aspect }, as pano_editor_view.js shotCamera() makes it)
+// placed at a World position, with the near and far of spaceCamera() for a pivot `distance` ahead. The
+// Cutout's Frame view and its camera preview look through the Camera this way (#77).
+export function placedCamera(camera, position, distance, sphere = null) {
+  const { center, radius } = sphere ?? { center: [0, 0, 0], radius: DEFAULT_DISTANCE };
+  const toCenter = Math.hypot(center[0] - position[0], center[1] - position[1], center[2] - position[2]);
+  const reach = Math.max(toCenter + radius, Math.hypot(...position) + 6 * radius);
+  return {
+    ...camera,
+    position: [...position],
+    near: Math.max(distance * 1e-2, radius * 1e-4),
     far: reach * 2,
   };
 }
@@ -523,6 +533,26 @@ export function cameraFrustumSegments(camera, length) {
   const top = [at(-halfW * 0.5, halfH * 1.1, -length), at(0, halfH * 1.5, -length), at(halfW * 0.5, halfH * 1.1, -length)];
   segments.push([top[0], top[1]], [top[1], top[2]], [top[2], top[0]]);
   return segments;
+}
+
+// Whether the canvas point p is within `tolerance` pixels of one of the World segments (a Camera's
+// frustum, cameraFrustumSegments()) in a width x height view from camera (a spaceCamera()). A segment
+// counts where both its ends are in front of the view.
+export function segmentsHit(camera, segments, p, width, height, tolerance = 6) {
+  return segments.some(([a, b]) => {
+    const pa = projectPoint(camera, a, width, height);
+    const pb = projectPoint(camera, b, width, height);
+    if (!pa || !pb) return false;
+    const dx = pb.x - pa.x;
+    const dy = pb.y - pa.y;
+    const t = clamp(((p.x - pa.x) * dx + (p.y - pa.y) * dy) / Math.max(dx * dx + dy * dy, 1e-12), 0, 1);
+    return Math.hypot(pa.x + dx * t - p.x, pa.y + dy * t - p.y) <= tolerance;
+  });
+}
+
+// The segments of a polyline through points (a cameraTrajectory()).
+export function polylineSegments(points) {
+  return points.slice(1).map((point, index) => [points[index], point]);
 }
 
 // The Camera's positions over the Timeline frames [0, frames), at most `samples` of them evenly spaced

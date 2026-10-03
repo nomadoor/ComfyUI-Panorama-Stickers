@@ -1,7 +1,8 @@
 import { normalizePaintingState } from "./pano_paint_types.js";
 import { wrapYaw } from "./pano_math.js";
-import { normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
-import { evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
+import { DEG2RAD } from "./pano_camera_math.js";
+import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
+import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { loadSceneState, rebaseSceneState } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 
@@ -179,8 +180,14 @@ export function paintingLayerNeedsSync(layer, { paintCount, maskCount, width, he
 // result with the editor's session fields (coverage, bg_color, output_preset, ui_settings, active),
 // which saving drops. The legacy node keeps working on its v1 state (parsePanoEditorState).
 // `fps` is the Timeline fps a video input sets, from the node's last run; the state is rebased to it.
+// PanoramaCutoutNode works on its own state the same way (#77). Given `scene`, the state of the
+// PANO_SCENE its last run shot, the working state is that Scene with the Cutout's Camera: the editor
+// shows the Scene as Stickers made it and edits only the Camera. The Cutout's own state rides along in
+// `cutout_state`, which editorStateText() saves with the Camera; the Scene is not saved (ADR 0025).
+// Both are rebased to `fps`, the Scene's Timeline fps, so the Camera's Keyframes keep their seconds as
+// the node reads them.
 export function parseSceneEditorState(text, options = {}) {
-  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, fps = null } = options;
+  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, fps = null, scene: shot = null } = options;
   let scene;
   try {
     scene = loadSceneState(text);
@@ -188,6 +195,11 @@ export function parseSceneEditorState(text, options = {}) {
     scene = loadSceneState(null);
   }
   if (fps && fps !== scene.timeline.fps) scene = rebaseSceneState(scene, fps);
+  if (shot) {
+    let shown = loadSceneState(shot);
+    if (fps && fps !== shown.timeline.fps) shown = rebaseSceneState(shown, fps);
+    scene = { ...shown, camera: scene.camera, cutout_state: scene };
+  }
   return {
     ...scene,
     coverage: normalizeCoverageValue(coverage),
@@ -243,6 +255,50 @@ export function setStickerPose(sticker, frame, pose) {
 }
 
 const POSITION_FIELDS = ["position_x", "position_y", "position_z"];
+
+// --- The Cutout Camera (#77). The Cutout editor moves its Camera through the shot fields it has always
+// edited (yaw_deg, pitch_deg, roll_deg, hFOV_deg, vFOV_deg), and with a PANO_SCENE also its position.
+// PanoramaCutoutNode keeps them in the Camera of state v2: cameraShot() is the Camera at a Timeline
+// frame as a shot, by the evaluator the node uses, and setCameraShot() writes an edited shot back.
+
+export const CAMERA_SHOT_ID = "camera";
+
+export function cameraShot(camera, frame) {
+  const value = evaluateCamera(camera, frame);
+  return normalizeCutoutShotItem({
+    id: CAMERA_SHOT_ID,
+    label: "Camera",
+    yaw_deg: value.yaw_deg,
+    pitch_deg: value.pitch_deg,
+    roll_deg: value.roll_deg,
+    hFOV_deg: value.hFOV_deg,
+    vFOV_deg: deriveVerticalFovDeg(value.hFOV_deg, camera.aspect),
+    position: value.position,
+    locked: false,
+  });
+}
+
+function nearestTurn(delta) {
+  return delta - 360 * Math.round(delta / 360);
+}
+
+// Writes the fields of `shot` that differ from `base` (the cameraShot() it was edited from) to the
+// Camera at a Timeline frame, each Lane by the recording rule: the angles to `rotation`, hFOV_deg to
+// `fov`, the position to `position`. An angle keeps the turn of its base, so a yaw wrapped across 180
+// degrees does not send the Camera the long way round. The aspect is not keyed: a change of either FOV
+// sets it from the pair.
+export function setCameraShot(camera, frame, shot, base) {
+  const rotation = {};
+  for (const field of ["yaw_deg", "pitch_deg", "roll_deg"]) {
+    if (shot[field] !== base[field]) rotation[field] = base[field] + nearestTurn(shot[field] - base[field]);
+  }
+  if (Object.keys(rotation).length) setLaneValue(camera, "rotation", frame, rotation);
+  if (shot.hFOV_deg !== base.hFOV_deg) setLaneValue(camera, "fov", frame, shot.hFOV_deg);
+  if (shot.hFOV_deg !== base.hFOV_deg || shot.vFOV_deg !== base.vFOV_deg) {
+    camera.aspect = Math.tan(shot.hFOV_deg * DEG2RAD * 0.5) / Math.tan(shot.vFOV_deg * DEG2RAD * 0.5);
+  }
+  if (shot.position.some((value, axis) => value !== base.position[axis])) setLaneValue(camera, "position", frame, [...shot.position]);
+}
 
 // The Camera of state v2 at a Timeline frame, in the inspector's fields.
 export function cameraFields(camera, frame) {
@@ -399,10 +455,12 @@ export function setEditorActive(node, active) {
   node.properties.pano_editor_active = { ...active };
 }
 
-// The `state_json` text for the editor's working state: state v2 for PanoramaStickersNode, the
-// working state itself (v1) for the legacy node.
+// The `state_json` text for the editor's working state: state v2 for PanoramaStickersNode and
+// PanoramaCutoutNode (a Cutout showing a PANO_SCENE saves its own state with the Camera), the working
+// state itself (v1) for the legacy nodes.
 export function editorStateText(node, state) {
-  return JSON.stringify(node?.__panoSceneStateV2 ? loadSceneState(state) : state);
+  if (!node?.__panoSceneStateV2) return JSON.stringify(state);
+  return JSON.stringify(loadSceneState(state.cutout_state ? { ...state.cutout_state, camera: state.camera } : state));
 }
 
 // Whether the widget's `current` text already means `text`. ComfyUI's execution cache compares the

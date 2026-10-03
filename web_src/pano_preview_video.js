@@ -1,6 +1,9 @@
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
 // and PanoramaStickersNode's bg_media.
 export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media"];
+// PanoramaCutoutNode's source (#77): an ERP IMAGE or VIDEO, or a PANO_SCENE that brings the Scene's
+// background, `scene` and `sticker` media.
+const SOURCE_INPUT_NAMES = ["source"];
 // The inputs that carry the media of the port Sticker: the legacy Stickers sticker_image and
 // PanoramaStickersNode's sticker.
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
@@ -8,9 +11,9 @@ export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
 export const SCENE_INPUT_NAMES = ["scene"];
 
 const CHANNEL_INPUT_NAMES = {
-  background: BACKGROUND_INPUT_NAMES,
-  "external-sticker": STICKER_INPUT_NAMES,
-  scene: SCENE_INPUT_NAMES,
+  background: [...BACKGROUND_INPUT_NAMES, ...SOURCE_INPUT_NAMES],
+  "external-sticker": [...STICKER_INPUT_NAMES, ...SOURCE_INPUT_NAMES],
+  scene: [...SCENE_INPUT_NAMES, ...SOURCE_INPUT_NAMES],
 };
 
 function originKey(link) {
@@ -60,7 +63,7 @@ export function workflowInputOrigins(workflow, executionId) {
   return origins;
 }
 
-const TRACKED_INPUT_NAMES = [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES, ...SCENE_INPUT_NAMES];
+const TRACKED_INPUT_NAMES = [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES, ...SCENE_INPUT_NAMES, ...SOURCE_INPUT_NAMES];
 const OUTPUT_INPUTS_LIMIT = 256;
 
 // Where the inputs of each output came from, by the output's content. ComfyUI copies an output each time it

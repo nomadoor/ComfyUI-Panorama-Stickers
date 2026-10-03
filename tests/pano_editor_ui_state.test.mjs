@@ -150,7 +150,7 @@ test("a world Sticker's position and scale sliders reach past any value, which h
   assert.equal(worldFieldRange(1000), 1000);
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   // Typed values are not clamped to the slider; the scale only stays above 0.
-  assert.match(editor, /if \(worldInspected && WORLD_UNLIMITED_FIELDS\.has\(key\)\) out = key === "scale" \? Math\.max\(out, WORLD_MIN_SCALE\) : out;/);
+  assert.match(editor, /if \(\(worldInspected \|\| cutoutV2\) && WORLD_UNLIMITED_FIELDS\.has\(key\)\) out = key === "scale" \? Math\.max\(out, WORLD_MIN_SCALE\) : out;/);
 });
 
 test("a world Sticker's selection menu holds the Move | Rotate | Scale segments, below its corners", () => {
@@ -255,4 +255,44 @@ test("no bottom-right button moves when another one shows, hides or changes", ()
   assert.deepEqual(row.match(/v-show="[^"]*"|v-if="[^"]*"/g), ['v-if="space"', 'v-show="space.visible"']);
   const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
   assert.match(css, /\.pano-floating-right \{\s*position: absolute;\s*right: var\(--pano-space-xl\);/);
+});
+
+test("the Cutout's Timeline shows only its Camera row; with a PANO_SCENE the Scene sets its fps and length (#77)", () => {
+  const state = canonical();
+  const options = { frame: 24, span: 90, selection: null, selectedId: "camera", expanded: true, openRows: new Set(), playing: false, label: "", camera: true, stickers: false };
+
+  const erp = buildTimelineModel(state, options);
+  const scene = buildTimelineModel(state, { ...options, sceneLocked: true });
+
+  assert.deepEqual(erp.rows.map((row) => [row.id, row.selected]), [["camera", true]]);
+  assert.deepEqual([erp.fpsLocked, erp.lengthLocked, erp.length], [false, false, state.timeline.length]);
+  assert.deepEqual([scene.fpsLocked, scene.lengthLocked, scene.length, scene.lockTip], [true, true, 90, "Set by the scene"]);
+  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(timeline, /<span v-if="model\.lengthLocked">\{\{ model\.length \}\}<\/span>\s*<input v-else type="number"/);
+});
+
+test("the Cutout's Camera has Move | Rotate in its gizmo menu, and its frame menu has no lock or delete (#77)", () => {
+  const menu = buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "rotate", camera: true });
+  assert.deepEqual(menu.items[0].buttons.map((button) => [button.key, button.tip, button.pressed]), [
+    ["translate", "Move the camera", "false"],
+    ["rotate", "Rotate the camera", "true"],
+  ]);
+
+  const shot = { id: "camera", locked: false };
+  const model = buildSelectionMenuModel({
+    type: "cutout",
+    selected: shot,
+    selectedItems: [shot],
+    selectedKind: "frame",
+    geom: { visible: true, corners: [{ x: 20, y: 20 }, { x: 80, y: 20 }, { x: 80, y: 60 }, { x: 20, y: 60 }] },
+    selectedLocked: false,
+    activeAspect: "1:1",
+    cutoutAspectOpen: false,
+    isExternalSticker: () => false,
+    isStickerHidden: () => false,
+    canRestoreSelectedToInitial: () => false,
+    iconSet: new Proxy({}, { get: (_, key) => String(key) }),
+    cameraShot: true,
+  });
+  assert.deepEqual(model.items.map((item) => item.key), ["aspect", "rotate-90"]);
 });

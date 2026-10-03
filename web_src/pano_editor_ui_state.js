@@ -186,6 +186,8 @@ export function buildSelectionMenuModel({
   isStickerHidden,
   canRestoreSelectedToInitial,
   iconSet,
+  // PanoramaCutoutNode's shot is its Camera (#77), which is always there and is not locked.
+  cameraShot = false,
 }) {
   if (!geom?.visible) return { visible: false, left: 0, top: 0, items: [] };
 
@@ -246,32 +248,39 @@ export function buildSelectionMenuModel({
         choices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value, active: activeAspect === value })),
       },
       { key: "rotate-90", kind: "button", action: "rotate-90", label: "Toggle Portrait/Landscape", tip: "Toggle portrait/landscape", icon: iconSet.rotate_90 },
-      { key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed },
-      { key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked },
     ];
+    if (!cameraShot) {
+      items.push(
+        { key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed },
+        { key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked },
+      );
+    }
   }
 
   return selectionMenuAt(geom.corners, items);
 }
 
-// The gizmo modes of a world Sticker (#72), as segments of its selection menu.
+// The gizmo modes of a world Sticker (#72), as segments of its selection menu. The Cutout's Camera
+// (#77) has no scale.
 const GIZMO_MODES = [
-  { key: "translate", label: "Move", tip: "Move the world sticker" },
-  { key: "rotate", label: "Rotate", tip: "Rotate the world sticker" },
+  { key: "translate", label: "Move", tip: "Move the world sticker", cameraTip: "Move the camera" },
+  { key: "rotate", label: "Rotate", tip: "Rotate the world sticker", cameraTip: "Rotate the camera" },
   { key: "scale", label: "Scale", tip: "Scale the world sticker" },
 ];
 
-// The selection menu of the selected world Sticker: the Move | Rotate | Scale segments that pick its gizmo
-// mode. It is placed around both its corners on the canvas and gizmoBox, the box its gizmo covers
-// (pano_space.js gizmoScreenBox, null when not in front), so it stays clear of the handles.
-export function buildWorldSelectionMenuModel({ corners, gizmoBox = null, gizmoMode }) {
+// The selection menu of the selected world Sticker, or of the Camera with `camera`: the Move | Rotate |
+// Scale (Move | Rotate) segments that pick its gizmo mode. It is placed around both its corners on the
+// canvas and gizmoBox, the box its gizmo covers (pano_space.js gizmoScreenBox, null when not in front), so
+// it stays clear of the handles.
+export function buildWorldSelectionMenuModel({ corners, gizmoBox = null, gizmoMode, camera = false }) {
   const box = gizmoBox ? [{ x: gizmoBox.minX, y: gizmoBox.minY }, { x: gizmoBox.maxX, y: gizmoBox.maxY }] : [];
+  const modes = camera ? GIZMO_MODES.filter((mode) => mode.cameraTip) : GIZMO_MODES;
   return selectionMenuAt([...corners, ...box], [{
     key: "gizmo-mode",
     kind: "segments",
     attr: "data-gizmo-mode",
     label: "Gizmo mode",
-    buttons: GIZMO_MODES.map((mode) => ({ ...mode, pressed: mode.key === gizmoMode ? "true" : "false" })),
+    buttons: modes.map(({ key, label, tip, cameraTip }) => ({ key, label, tip: camera ? cameraTip : tip, pressed: key === gizmoMode ? "true" : "false" })),
   }]);
 }
 
@@ -334,8 +343,9 @@ const LANE_LABELS = {
 // frames. selection is { owner, lane, frames }: `lane` is a Lane's name, or null for the whole row, and
 // frames are in the owner's own frames.
 // audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
-// input sets the Timeline fps (ADR 0024).
-export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false }) {
+// input sets the Timeline fps (ADR 0024); with sceneLocked a PANO_SCENE sets both the fps and the length
+// (a Cutout shoots the Scene's Timeline, #77), and the Cutout shows only its Camera row.
+export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false, stickers = true, sceneLocked = false }) {
   const row = (id, owner, rowLabel, clip, offset) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
     return {
@@ -356,8 +366,9 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
       })),
     };
   };
-  const sky = state.stickers.filter((sticker) => sticker.placement === "sky").sort((a, b) => b.z_index - a.z_index);
-  const world = state.stickers.filter((sticker) => sticker.placement === "world");
+  const shown = stickers ? state.stickers : [];
+  const sky = shown.filter((sticker) => sticker.placement === "sky").sort((a, b) => b.z_index - a.z_index);
+  const world = shown.filter((sticker) => sticker.placement === "world");
   return {
     visible: true,
     expanded,
@@ -368,8 +379,10 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
     span,
     label,
     fps: state.timeline.fps,
-    fpsLocked,
-    length: state.timeline.length,
+    fpsLocked: fpsLocked || sceneLocked,
+    lengthLocked: sceneLocked,
+    lockTip: sceneLocked ? "Set by the scene" : "Set by the video input",
+    length: sceneLocked ? span : state.timeline.length,
     rows: [
       ...(camera ? [row("camera", state.camera, "Camera", null, 0)] : []),
       ...[...sky, ...world].map((sticker) => {

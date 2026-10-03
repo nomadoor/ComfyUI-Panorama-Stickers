@@ -661,3 +661,34 @@ test("sticker operations serialize consecutive replacements", async () => {
   await second;
   assert.deepEqual(events, ["first:start", "first:end", "second:start", "second:end"]);
 });
+
+test("PanoramaCutoutNode opens the Cutout editor on state v2 from its button, without the legacy on-node surface (#77)", () => {
+  const opened = [];
+  const attached = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor(node, type) { opened.push([node, type]); },
+    attachStickers() {},
+    attachCutout(node) { attached.push(node); },
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  function SceneNodeType() {}
+  function LegacyNodeType() {}
+  extension.beforeRegisterNodeDef(SceneNodeType, { name: "PanoramaCutoutNode" });
+  extension.beforeRegisterNodeDef(LegacyNodeType, { name: "PanoramaCutout" });
+  const node = makeNode([360, 260]);
+  const legacy = makeNode([360, 260]);
+
+  SceneNodeType.prototype.onNodeCreated.call(node);
+  LegacyNodeType.prototype.onNodeCreated.call(legacy);
+  node.widgets.find((widget) => widget.name === "Open Cutout Editor").callback();
+
+  assert.equal(node.__panoSceneStateV2, true);
+  assert.equal(legacy.__panoSceneStateV2, false);
+  assert.deepEqual(attached, [legacy]);
+  assert.deepEqual(opened, [[node, "cutout"]]);
+  // The legacy node starts with a frame in v1; the new node's Camera is always in its state v2.
+  assert.equal(node.widgets.find((widget) => widget.name === "state_json").value, "{}");
+  assert.match(legacy.widgets.find((widget) => widget.name === "state_json").value, /"shots"/);
+});

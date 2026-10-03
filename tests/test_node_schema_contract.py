@@ -227,7 +227,7 @@ EXPECTED_SCHEMAS = {
             ("video", "video", "VIDEO"),
         ],
         "hidden": [],
-        "is_output_node": False,
+        "is_output_node": True,
     },
     "PanoramaPreview": {
         "display_name": "Panorama Preview",

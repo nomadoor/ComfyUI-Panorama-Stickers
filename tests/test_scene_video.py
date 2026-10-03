@@ -175,6 +175,8 @@ def test_cutout_of_the_stickers_video_renders_its_frames_exactly(monkeypatch):
     stickers_video = _execute({"version": 2, "timeline": {"length": 4}}, bg_media=torch.rand((4, 32, 64, 3)), output_preset="1024")[2]
     expected = _cutout_frames(stickers_video.get_components().images)
     _forbid_encoding(monkeypatch)
+    # The Cutout's editor still receives the MP4 of the video, as Stickers' does (#77); the frames are rendered.
+    monkeypatch.setattr(nodes, "_bg_media_ui", lambda *args: {})
 
     assert isinstance(open_video(stickers_video, "source"), RenderedVideo)
     assert torch.equal(_cutout_frames(stickers_video), expected)

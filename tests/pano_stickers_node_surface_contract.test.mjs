@@ -438,7 +438,7 @@ test("the editor follows the background VIDEO of a new result", async () => {
   // load() drops a seek in flight without `seeked`; the playback starts over with each source.
   const refreshStart = editor.indexOf("function refreshModalVideoSource(");
   const refresh = editor.slice(refreshStart, editor.indexOf("\n  function ", refreshStart + 1));
-  assert.match(refresh, /videoEl\.src = nextSrc;\s*videoEl\.load\(\);\s*playback\.setSource\(true\);\s*if \(!sceneV2\) playback\.seek\(0\);/);
+  assert.match(refresh, /videoEl\.src = nextSrc;\s*videoEl\.load\(\);\s*playback\.setSource\(true\);\s*if \(!stateV2\) playback\.seek\(0\);/);
   assert.match(refresh, /resetVideoThumbnails\(\);\s*playback\.setSource\(false\);/);
 });
 
@@ -450,7 +450,7 @@ test("the editor plays its own background VIDEO first, then a directly loaded fi
   assert.match(body, /\[ownSrc, comfyMedia\.linkedVideoFile\(node, backgroundInputNames\(\)\)\]/);
   assert.match(body, /candidates\.find\(\(src\) => !videoState\.failedSrcs\.has\(src\)\)/);
   assert.match(body, /const meta = nextSrc && nextSrc === ownSrc \? getVideoMetaEntry\(\) : null;/);
-  assert.match(body, /sceneV2 \? state\.timeline\.fps : 24/);
+  assert.match(body, /stateV2 \? state\.timeline\.fps : 24/);
   // The still of one source is dropped when another takes its place.
   assert.match(body, /videoEl\.pause\(\);\s*dropVideoStill\(\);\s*videoEl\.dataset\.panoSrc = nextSrc;/);
   assert.match(editor, /function dropVideoStill\(\) \{\s*stillCanvas\.__panoFrameIdx = 0;/);

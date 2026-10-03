@@ -340,6 +340,16 @@ export function clipActive(clip, frame) {
     && (clip.duration === null || frame < clip.start + clip.duration - FRAME_EPSILON);
 }
 
+// The Camera of a state at a fractional Timeline frame, as evaluateSceneState() gives it.
+export function evaluateCamera(camera, frame) {
+  return {
+    position: evaluateLane(camera, "position", frame),
+    ...evaluateLane(camera, "rotation", frame),
+    hFOV_deg: fov(evaluateLane(camera, "fov", frame)),
+    aspect: camera.aspect,
+  };
+}
+
 // Evaluates a state returned by loadSceneState at a fractional Timeline frame.
 export function evaluateSceneState(state, frame) {
   const time = Number(frame);
@@ -347,12 +357,7 @@ export function evaluateSceneState(state, frame) {
   const sceneClipFrame = clipFrame(scene.clip, time);
   return {
     frame: time,
-    camera: {
-      position: evaluateLane(camera, "position", time),
-      ...evaluateLane(camera, "rotation", time),
-      hFOV_deg: fov(evaluateLane(camera, "fov", time)),
-      aspect: camera.aspect,
-    },
+    camera: evaluateCamera(camera, time),
     scene: {
       active: clipActive(scene.clip, time),
       clip_frame: sceneClipFrame,

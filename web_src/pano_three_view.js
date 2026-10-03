@@ -602,8 +602,10 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       world.add(line);
     }
     pickKey = JSON.stringify(pickParts);
+    // A space without `gizmo` (the Cutout's camera preview, #77) leaves the gizmo of the view as it is, so
+    // drawing the preview between two frames of the view does not end a drag.
     if (space.gizmo) (gizmo ||= createGizmo(worldCamera)).show(world, space.gizmo);
-    else gizmo?.hide();
+    else if (space.gizmo === null) gizmo?.hide();
   }
 
   function draw(projection, input, space = null) {

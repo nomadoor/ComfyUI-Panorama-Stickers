@@ -45,7 +45,11 @@
   - エディタを開いたとき、現在の実行結果の `pano_timeline_fps` が状態の `timeline.fps` と違えば、状態をその fps に再基準化する。ウィジェットの `state_json` は次の編集かキューまで変わらない（ノードは記録された fps で秒を保って読むので、書き込む前でも出力は同じ）。
   - エディタを開いている間に届いた実行結果が違う `pano_timeline_fps` を持つときも、同じく再基準化する。これは Undo の 1 段になる。
 - Clip range の外にある Sticker の行を選ぶと、再生ヘッドがその Clip range の始まりへ移ってから選ばれる。
-- Stickers のタイムラインには Camera の行を出さず、インスペクタにも Camera の欄を出さない（ADR 0028）。状態に `camera` の値や Keyframe が残っていても、表示・再生の可否（`isTimed`）・タイムラインの長さ（`timelineSpan`）には数えず、消したり書き換えたりもしない（保存しても `state_json` の `camera` は変わらない）。ノード上の UI の再生ボタンも同じ `isTimed` で決まる。Camera の行（`buildTimelineModel` の `camera`）と、その Keyframe を数える `isTimed`・`timelineSpan` の `camera` は Cutout のためのもので、Cutout のエディタに結ぶのは #77。
+- Stickers のタイムラインには Camera の行を出さず、インスペクタにも Camera の欄を出さない（ADR 0028）。状態に `camera` の値や Keyframe が残っていても、表示・再生の可否（`isTimed`）・タイムラインの長さ（`timelineSpan`）には数えず、消したり書き換えたりもしない（保存しても `state_json` の `camera` は変わらない）。ノード上の UI の再生ボタンも同じ `isTimed` で決まる。Camera の行（`buildTimelineModel` の `camera`）と、その Keyframe を数える `isTimed`・`timelineSpan` の `camera` は Cutout のためのものである。
+- Cutout（`PanoramaCutoutNode`、#77）のタイムラインは Camera の行だけを出す（`buildTimelineModel` の `camera: true`・`stickers: false`）。Sticker の行は、Cutout の状態の Sticker も、撮影する `PANO_SCENE` の Sticker も出さない。Camera の Keyframe は上の記録の規則のとおりで、Frame 表示・Panorama 表示（3DoF の枠の操作と 6DoF のギズモ）・インスペクタで Camera を変えると、変えた Lane にだけ入る。行のポチで全 Lane（位置・回転・画角）に入る。Camera の Lane は Timeline frame そのもので比べる（Clip range を持たない）。
+  - ERP（IMAGE / VIDEO）の `source`：fps は VIDEO があるときだけ固定で、長さは Cutout の状態の `timeline.length`（空なら入力と Camera の Keyframe から。`timelineSpan` の `camera: true`）。
+  - `PANO_SCENE` の `source`：Timeline は Scene のもの（`docs/render-contract.md` の「Cutout ノード」）なので、fps と長さはどちらも値だけを表示し（ツールチップ「Set by the scene」）、タイムラインの長さは実行結果の `pano_timeline_frames`（ノードの出力のフレーム数）にする。Camera の Keyframe をその長さより後に打っても出力は延びない。開いたとき、Cutout の状態は Scene の Timeline fps に再基準化して扱う（秒を保つので、ノードの `frame × Cutout の fps ÷ Scene の fps` と同じ時刻になる）。保存するのは Cutout の状態（その fps と Camera）だけである。
+  - 行が開いた状態で始まるのは、Camera の Lane に Keyframe があるとき。
 - タイムラインはビューの下にある。開閉や行の開閉で高さが変わるときは 180 ms かけて伸び縮みし、ビューは同じフレームのうちに新しい大きさで描き直す（横の画角と中心は保ち、上下が切れるだけ）。高さは画面の高さの 34% までで、それを超える行は中でスクロールする。prefers-reduced-motion では動かさずに切り替える。
 
 タイムラインはオブジェクトごとに一行である。閉じた行が基本で、▶ で開くと Lane ごとの行が出る。

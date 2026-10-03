@@ -1,4 +1,5 @@
 import json
+import math
 from fractions import Fraction
 
 import numpy as np
@@ -22,6 +23,7 @@ from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersSceneNo
 from comfyui_pano_suite.scene_video import SceneVideo
 from scene_test_helpers import center as _center, cutout as _cutout, cutout_camera as _camera, cutout_frames as _frames
 from test_legacy_goldens import _golden_mismatch
+from test_scene_editor_files import _mesh
 from test_world_render import _ball
 from tools.bake_legacy_goldens import CUTOUT_SHOT, FIXTURE_DIR, build_background_erp
 from tools.golden_png import read_png16
@@ -451,3 +453,49 @@ def test_sky_resolution_follows_the_bg_media_of_the_execution_not_of_each_frame(
 
     assert image.shape[0] == 4
     assert sizes == [(1024, 512)]
+
+
+def _cutout_ui(source, state=None):
+    state_json = "" if state is None else json.dumps(state)
+    return nodes.PanoramaCutoutSceneNode.execute(source=source, state_json=state_json, coverage="360", output_megapixels=0.01).ui
+
+
+def test_erp_source_shows_its_first_frame_in_the_ui():
+    ui = _cutout_ui(_halves_erp())
+
+    assert len(ui["pano_input_images"]) == 1
+    assert "pano_scene_state" not in ui and "pano_timeline_fps" not in ui
+
+
+def test_video_source_tells_the_editor_its_timeline_fps(tmp_path):
+    ui = _cutout_ui(_video(tmp_path, count=4))
+
+    assert ui["pano_timeline_fps"] == [25.0] and len(ui["pano_input_images"]) == 1
+
+
+def test_pano_scene_ui_passes_on_the_scene_state_and_the_stickers_editor_files(monkeypatch):
+    def render(view, index, device):
+        height, width = view.projection.height, view.projection.width
+        return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
+
+    monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(1, render))
+    mesh = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]])
+    stickers = PanoramaStickersSceneNode.execute(
+        bg_color="#00ff00", coverage="360", output_preset="1024", state_json=json.dumps({"version": 2, "timeline": {"fps": 12.0, "length": 3}}),
+        bg_media=_halves_erp(), scene=mesh,
+    )
+    pano_scene = stickers.result[3]
+    written = []
+    monkeypatch.setattr(nodes, "write_editor_files", lambda value: written.append(value))
+    monkeypatch.setattr(nodes, "_init_ui_preview", lambda *args, **kwargs: written.append(args))
+
+    ui = _cutout_ui(pano_scene, _camera())
+
+    # The Cutout passes on the Stickers' files instead of writing its own.
+    assert written == []
+    for key in ("pano_scene_files", "pano_scene_meta", "pano_input_images"):
+        assert ui[key] == stickers.ui[key]
+    assert ui["pano_scene_state"] == [pano_scene.state]
+    assert ui["pano_timeline_fps"] == [12.0] and ui["pano_timeline_frames"] == [3] and ui["pano_scene_coverage"] == [360]
+    assert "pano_sticker_input_pose" not in ui and "pano_sticker_input_pose" not in pano_scene.media_ui
+    json.dumps(ui)

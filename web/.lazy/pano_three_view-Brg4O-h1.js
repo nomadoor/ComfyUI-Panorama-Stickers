@@ -26889,7 +26889,7 @@ function qo(r, e, t) {
 }
 let Yo = null;
 function wl() {
-  return Yo || (Yo = import("./spark.module-CB1F8_1X.js")), Yo;
+  return Yo || (Yo = import("./spark.module-C_O13_3L.js")), Yo;
 }
 function vg(r) {
   return r.traverse((e) => {
@@ -27239,7 +27239,7 @@ function Dg({ onUpdate: r = () => {
       const We = Lg(Ee);
       u.push(We), a.add(We);
     }
-    f = JSON.stringify(h), z.gizmo ? (m || (m = Fl(s))).show(a, z.gizmo) : m == null || m.hide();
+    f = JSON.stringify(h), z.gizmo ? (m || (m = Fl(s))).show(a, z.gizmo) : z.gizmo === null && (m == null || m.hide());
   }
   function G(W, z, j = null) {
     const ie = Math.min(1, yg / Math.max(z.width, z.height)), _e = Math.max(1, Math.round(z.width * ie)), ze = Math.max(1, Math.round(z.height * ie));
