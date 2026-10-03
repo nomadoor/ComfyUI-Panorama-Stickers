@@ -13,7 +13,7 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 |---|---|
 | `evaluated` | `evaluate_scene_state(state, frame)` の戻り値（その時刻の Sticker・`scene`・Camera の値） |
 | `sources` | `SceneSources`。そのフレームの素材。`stickers`（Sticker の `id` → `StickerSource`）、`painting`（状態のペイント）、`painting_layer`（アップロード済みのペイントのラスタ。`resolve_painting_layer_payload` の戻り値） |
-| `camera` | 評価済みの Camera の値（`position`・`yaw_deg`・`pitch_deg`・`roll_deg`）。Stickers は Camera を持たず、常に `STICKERS_CAMERA`（World の原点、回転 0。ADR 0028）を渡す。Cutout は Cutout の状態の Camera を渡す。ERP の Projection の出力も Camera の回転に従って回る（描画関数の性質。Stickers では回転は常に 0） |
+| `camera` | 評価済みの Camera の値（`position`・`yaw_deg`・`pitch_deg`・`roll_deg`）。Stickers は Camera を持たず、常に `STICKERS_CAMERA`（World の原点、回転 0。ADR 0028）を渡す。Cutout は Cutout の状態の Camera を渡す。Panorama Studio は、Camera が無ければ `STICKERS_CAMERA`、あれば評価した Camera を渡す（下記「Panorama Studio」）。ERP の Projection の出力も Camera の回転に従って回る（描画関数の性質。Stickers では回転は常に 0） |
 | `projection` | `Projection` |
 | `bg` | このフレームの `bg_media` の画像 (h, w, C) または `None` |
 | `bg_key` | `bg` を識別するハッシュ可能な値（Stickers では `bg_media` のフレーム番号）。`None` のときは背景を使い回さない |
@@ -334,6 +334,31 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 - `video` の音声と fps は Stickers と同じ。背景 VIDEO（IMAGE / VIDEO の `source` が VIDEO のとき、`PANO_SCENE` ならその `bg_media` が VIDEO のとき）の音声を「出力のフレーム数 ÷ Timeline fps」秒で切ったもの、なければ音声なし。fps は Timeline fps。
 - `sticker_state` は v2（`docs/scene-state-v2.md`）。`fps` は Cutout の状態の `timeline.fps`、`camera` は Cutout の Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる。#65）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。
 - World の内容も Stickers と同じく描く。IMAGE / VIDEO では Cutout の状態の `world` の Sticker、`PANO_SCENE` ではその `state` の `world` の Sticker と、`scene` 入力の中身（`_scene_content(scene)` の `SceneContent`。各フレームの要素は `frames` の 4 つ目を `scene_index` にする）。Camera の位置は Cutout の Camera の `position`。
+
+## Panorama Studio（`PanoramaStudio`）
+
+Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラスは `PanoramaStudioNode`。新しい Stickers・Cutout（`PanoramaStickersNode`・`PanoramaCutoutNode`）は #92 で外すまで今のまま残し、Studio はその経路を共有する。
+
+- 入力は `bg_media`（IMAGE・VIDEO）、`sticker`（Stickers と同じ型）、`sticker_state`、`scene`、`bg_color`、`coverage`、`output_size`（`1024`・`1536`・`2048`・`2560`・`3072`・`4096`・`auto`、既定 `2048`）、`state_json` の順。`scene` は今は 3D の素材（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`）だけを受け、Stickers の `scene` と同じに扱う。別の Panorama Studio の `scene` 出力（`PANO_SCENE`）を受けるのは #88。
+- 出力は `first_frame`（IMAGE）、`first_frame_mask`（MASK）、`video`（VIDEO）、`scene`（`PANO_SCENE`）、`sticker_state`（STRING）の順。`is_output_node` は `True`。
+- Scene の組み立ては Stickers と同じ `_build_scene`（状態の読み込み、`port` の Sticker、Source、(a) の `_decide_timeline`、エディタ用の `ui`）で、描画は (b)・(c)（`_render_frames`・`_render_outputs`）をそのまま使う。違うのは撮り方（`capture`）と出力の大きさだけ。
+- Camera の判定：状態 v2 の `camera`（`docs/scene-state-v2.md`）。`null`（欠け・空の `state_json` を含む）なら Camera が無い。Timeline の長さは Cutout と同じく `_decide_timeline(..., camera=True)` で決め、Camera があるときだけ Camera の Keyframe が長さに入る。`erp` の Camera でも、描画に使わない `fov` の Keyframe を含めてすべての Lane の Keyframe が長さに入る。
+  - Camera が無い：World の原点から回転 0（`STICKERS_CAMERA`）で、`coverage` の範囲の ERP を撮る。新しい Stickers の出力と画素単位で同じ（`tests/test_studio_node.py` が Stickers の基準画像と、Stickers の全フレームとで確かめる）。
+  - `projection` が `erp`：評価した Camera の位置と回転から ERP を撮る（`Projection.erp`。ERP は Camera の回転に従って回り、`world` の Sticker と `scene` は Camera の位置から見る）。`fov`・`aspect` は読まない。`coverage` が 180 なら Camera の前方の半球。原点・回転 0 なら Camera が無いときと同じ出力になる。
+  - `projection` が `perspective`：新しい Cutout と同じく、評価した Camera と `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` で撮る。同じ大きさを与えた新しい Cutout（IMAGE / VIDEO の `source`、`bg_color` 黒）と画素単位で同じになる。
+- 出力の大きさ（`_studio_output_size`）：`output_size` は全体（360°）の ERP の幅 `W` を選ぶ。`auto` は `bg_media`（VIDEO は最初に復号できたフレーム）の幅を 360° に換算した値（`coverage` が 180 なら 2 倍）で、`bg_media` が無ければ 2048 にして警告する（ログと `pano_sticker_warnings`）。
+
+  | 撮り方 | 幅 | 高さ |
+  |---|---|---|
+  | Camera が無い・`erp`（`coverage` 360） | `W` | `W ÷ 2`（切り捨て） |
+  | Camera が無い・`erp`（`coverage` 180） | `W ÷ 2` | `W ÷ 2` |
+  | `perspective` | `2·f·tan(hFOV_max ÷ 2)`、`f = W ÷ 2π` | 幅 ÷ `camera.aspect` |
+
+  - ERP の出力は画素の細かさが `W` の 360° の ERP と同じになる。`auto` は新しい Stickers の `auto` と同じ大きさになる。ただし 360 では高さを `W ÷ 2` にそろえ、`bg_media` の高さは引き継がない（2:1 でない背景では Stickers と違う）。`coverage` 180 の `auto` は `bg_media` と同じ大きさになる（固定の値では、新しい Stickers は `coverage` 180 で選んだ値を出力の幅にしていたので、Studio はその半分の幅になる）。ERP には上限を設けない（`auto` は大きな `bg_media` ならそのまま大きくなる。新しい Stickers の `auto` と同じ）。
+  - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV が動いても大きさは変わらない。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
+- `scene` 出力は新しい Stickers の `pano_scene` と同じ `PanoSceneValue` で、`state` の `camera` だけを `null` にする（撮影する世界で、Camera を含まない）。Timeline（`fps`・`frames`）は Camera の Keyframe を数えて決めたもの。
+- `sticker_state` は `projection` が `perspective` のときだけ、新しい Cutout と同じ `_cutout_sticker_state`（`source_aspect` は出力の幅 ÷ 高さ）。Camera が無いときと `erp` のときは空文字列。
+- 実行結果の `ui` は新しい Stickers と同じキー（`pano_input_images` などの素材、`pano_sticker_input_pose`、`pano_sticker_warnings`）。エディタとノード上の表示の結び付けは #89 で、今はフロントエンドに結んでいない。Cutout が `PANO_SCENE` を撮るときに出していた `pano_timeline_frames`・`pano_scene_state`・`pano_scene_coverage` は、上流の Scene を受ける #88 まで出さない。
 
 ## Preview ノード（`PanoramaPreviewNode`）
 

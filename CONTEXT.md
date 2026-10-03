@@ -63,7 +63,7 @@ Keyframe 間の時間方向の補間。cubic-bezier（既定は ease-in-out）�
 ### Capture
 
 **Camera**:
-Scene を撮影する唯一の視点。Cutout だけが持つ（Stickers の ERP 出力は原点・回転 0 に固定）。位置・回転・FOV を持ち、Keyframe か Drone で Timeline 全体にわたって動かせる。
+Scene を撮影する唯一の視点。Panorama Studio が 1 台まで持ち、無いときは World の原点から回転 0 で撮った ERP を出す（ADR 0029）。位置・回転・FOV と、静的な撮り方（透視投影か ERP）を持ち、Keyframe か Drone で Timeline 全体にわたって動かせる。
 _Avoid_: Shot
 
 **Viewport camera**:
@@ -73,7 +73,7 @@ _Avoid_: Shot
 Camera で Scene を画像にする方法。ERP、透視投影など。
 
 **Pose handoff**:
-Cutout で撮影したときの Camera の軌道を Stickers に渡し、切り抜いた内容を撮影した位置へ戻すこと。
+透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した向きへ戻すこと。Camera の位置は渡さない。
 
 **PANO_SCENE**:
-Stickers が出力する Scene の値。状態と入力素材を結び付けた派生値であり、正は Stickers の状態にある。
+Panorama Studio が出力する Scene の値。Camera を含まない。状態と入力素材を結び付けた派生値であり、正は各ノードの `state_json` にある。
