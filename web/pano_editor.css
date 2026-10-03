@@ -333,29 +333,6 @@
 .pano-view-toggle[data-selected="frame"] .pano-view-btn[data-view="unwrap"]:hover {
   color: var(--pano-muted-strong);
 }
-/* The space view's 3DoF / 6DoF segments (#71): the same control with shorter text-only segments. */
-.pano-space-toggle .pano-view-btn {
-  width: 64px;
-}
-.pano-space-toggle[data-selected="6dof"]::before {
-  transform: translateX(100%);
-}
-.pano-space-toggle .pano-view-btn.active {
-  color: var(--pano-text);
-}
-.pano-space-toggle .pano-view-btn:not(.active):hover {
-  color: var(--pano-muted-strong);
-}
-/* Move / Rotate / Scale of the selected world Sticker's gizmo (#72): the same control, three segments. */
-.pano-gizmo-toggle .pano-view-btn {
-  width: 72px;
-}
-.pano-gizmo-toggle[data-selected="rotate"]::before {
-  transform: translateX(100%);
-}
-.pano-gizmo-toggle[data-selected="scale"]::before {
-  transform: translateX(200%);
-}
 .pano-view-btn:disabled {
   color: var(--pano-text-tertiary);
   cursor: default;
@@ -801,6 +778,65 @@
   width: 35px;
   min-width: 35px;
   height: 35px;
+}
+/* A small segmented control (PanoSegments.vue) among the floating buttons: 3DoF | 6DoF next to the
+   view buttons (#71), Move | Rotate | Scale in a world Sticker's selection menu (#72). Its segments are
+   as wide as the widest one, so the marker slides by whole segments. */
+.pano-segments {
+  --pano-segment-pad: 3px;
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  height: 40px;
+  padding: var(--pano-segment-pad);
+  box-sizing: border-box;
+  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad));
+  background: var(--pano-bg-control);
+}
+.pano-selection-menu .pano-segments {
+  height: 35px;
+}
+.pano-segments::before {
+  content: "";
+  position: absolute;
+  top: var(--pano-segment-pad);
+  bottom: var(--pano-segment-pad);
+  left: var(--pano-segment-pad);
+  width: calc((100% - var(--pano-segment-pad) * 2) / var(--pano-segment-count, 2));
+  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad) - var(--pano-segment-pad));
+  background: var(--pano-surface-3);
+  transform: translateX(calc(var(--pano-segment-index, 0) * 100%));
+  transition: transform 170ms cubic-bezier(0.2, 0, 0, 1);
+  pointer-events: none;
+}
+.pano-segment {
+  position: relative;
+  z-index: 1;
+  min-width: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--pano-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: color 100ms ease;
+}
+.pano-segment:not(.active):hover {
+  color: var(--pano-muted-strong);
+}
+.pano-segment.active {
+  color: var(--pano-text);
+}
+.pano-segment:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--pano-accent);
+  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad) - var(--pano-segment-pad));
 }
 .pano-floating-left .pano-btn.pano-btn-icon.pano-btn-icon-accent {
   color: var(--pano-emphasis-text);

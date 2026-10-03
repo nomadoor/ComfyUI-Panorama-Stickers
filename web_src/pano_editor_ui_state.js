@@ -225,7 +225,30 @@ export function buildSelectionMenuModel({
     ];
   }
 
-  const finiteCorners = geom.corners
+  return selectionMenuAt(geom.corners, items);
+}
+
+// The gizmo modes of a world Sticker (#72), as segments of its selection menu.
+const GIZMO_MODES = [
+  { key: "translate", label: "Move", tip: "Move the world sticker" },
+  { key: "rotate", label: "Rotate", tip: "Rotate the world sticker" },
+  { key: "scale", label: "Scale", tip: "Scale the world sticker" },
+];
+
+// The selection menu of the selected world Sticker, below its corners on the canvas: the Move | Rotate |
+// Scale segments that pick its gizmo mode.
+export function buildWorldSelectionMenuModel({ corners, gizmoMode }) {
+  return selectionMenuAt(corners, [{
+    key: "gizmo-mode",
+    kind: "segments",
+    attr: "data-gizmo-mode",
+    label: "Gizmo mode",
+    buttons: GIZMO_MODES.map((mode) => ({ ...mode, pressed: mode.key === gizmoMode ? "true" : "false" })),
+  }]);
+}
+
+function selectionMenuAt(corners, items) {
+  const finiteCorners = corners
     .map((point) => ({ x: Number(point?.x), y: Number(point?.y) }))
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
   if (!finiteCorners.length) return { visible: false, left: 0, top: 0, items: [] };

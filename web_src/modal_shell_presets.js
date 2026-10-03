@@ -8,16 +8,11 @@ export function buildModalShellPreset(type = "stickers") {
       { key: "unwrap", label: "Unwrap", icon: ICON.unwrap, pressed: "false", extraClass: "" },
       ...(isCutout ? [{ key: "frame", label: "Frame", icon: ICON.camera, pressed: "false", extraClass: "pano-view-btn-icon" }] : []),
     ],
-    // The space view's mode (#71), next to the view toggle while the panorama view shows World content.
+    // How the panorama view moves in space (#71): segments next to the view buttons at the bottom
+    // right while the panorama view shows World content (PanoFloatingRight.vue).
     spaceButtons: isCutout ? [] : [
       { key: "3dof", label: "3DoF", tip: "Look around from the ERP origin", pressed: "true" },
       { key: "6dof", label: "6DoF", tip: "Move freely in space", pressed: "false" },
-    ],
-    // The gizmo mode of the selected world Sticker (#72), next to them while one is selected in space.
-    gizmoButtons: isCutout ? [] : [
-      { key: "translate", label: "Move", tip: "Move the world sticker", pressed: "true" },
-      { key: "rotate", label: "Rotate", tip: "Rotate the world sticker", pressed: "false" },
-      { key: "scale", label: "Scale", tip: "Scale the world sticker", pressed: "false" },
     ],
     toolButtons: [
       { key: "cursor", attr: "data-tool-mode", value: "cursor", label: "Cursor", tip: "Cursor", active: true, accent: false, icon: ICON.cursor_tool, pressed: "true" },
