@@ -511,3 +511,10 @@ test("in space the right button looks around, Alt with the left button orbits, t
   assert.match(wheel, /if \(isSpaceView\(\)\) \{\s*const direction = readWheelDirection\(e\);[\s\S]*setSpaceView\(dollyView\(spaceViewState\(\), -direction, spaceScale\(\)\)\);/);
   assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(isSpaceView\(\)\) e\.preventDefault\(\);/);
 });
+
+test("a 3D world port Sticker (#63) is left out of the space view until #72 draws it", async () => {
+  const { worldStickerLayers } = await import("../web_src/pano_editor_view.js");
+  const state = loadSceneState({ version: 2, stickers: [{ id: "sticker_image_1", placement: "world", source: { kind: "port" }, position: { value: [0, 0, -2], keyframes: [] } }] });
+  // The node gives a 3D port Sticker no image (pano_sticker_input_images), so the editor has no media.
+  assert.deepEqual(worldStickerLayers(state, 0, state.stickers, { media: () => null }), []);
+});
