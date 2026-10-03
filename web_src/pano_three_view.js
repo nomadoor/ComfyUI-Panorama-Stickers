@@ -437,7 +437,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
         if (closed) return;
         spark ||= new SparkRenderer({ renderer, onDirty: onUpdate });
         onUpdate();
-      });
+      }).catch((error) => console.error("[PanoramaStickers] Spark is unavailable", error));
     } else if (content) {
       world.add(content.group);
       if (content.splat) world.add(spark);

@@ -6255,7 +6255,7 @@ function BS({ onReady: e, onFailed: t, onUpdate: n = () => {
       o = !0, r == null || r.dispose(), r = null;
     }
   };
-  return import("./.lazy/pano_three_view-DJ5uQ2a7.js").then((l) => l.$).then((l) => {
+  return import("./.lazy/pano_three_view-D_Zw7Oif.js").then((l) => l.$).then((l) => {
     o || (r = l.createThreeView({ onUpdate: n }), a.ready = !0, e());
   }).catch((l) => {
     console.error("[PanoramaStickers] three.js view is unavailable", l), a.failed = !0, t();
@@ -6302,7 +6302,7 @@ function WS(e) {
   };
 }
 const M0 = WS(
-  () => import("./.lazy/pano_three_view-DJ5uQ2a7.js").then((e) => e.$).then((e) => e.createThreeView())
+  () => import("./.lazy/pano_three_view-D_Zw7Oif.js").then((e) => e.$).then((e) => e.createThreeView())
 ), Ai = ["erp_image", "bg_erp", "bg_media"], qf = ["sticker_image", "sticker"], N0 = ["scene"], US = {
   background: Ai,
   "external-sticker": qf,

@@ -2798,6 +2798,9 @@ async function showEditor(node, type, options = {}) {
     return hasWorldContent({ sceneLinked: !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
   }
 
+  // The content sphere comes from the frame's input (editorViewInput), which the pointer and wheel
+  // handlers between frames read as the last frame built it: that is the content on screen, and
+  // rebuilding it per event would evaluate the whole state again for nothing.
   function spaceViewState() {
     const distance = editor.viewMoved ? editor.viewDistance : contentSphere()?.radius || DEFAULT_DISTANCE;
     return { position: editor.viewPosition, yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, hFOV_deg: editor.viewFov, distance };
