@@ -516,3 +516,69 @@ def test_bg_media_shrunk_to_an_unturned_erp_output_is_averaged():
     color, _mask, _depth = _render(Projection.erp(32, 16), bg=bg)
 
     assert torch.allclose(color, torch.full_like(color, 0.25), atol=0.02)
+
+
+def test_direct_sky_sticker_matches_the_sky_erp_inside_and_covers_its_edges_partly():
+    # A rolled, pitched, cropped Sticker with a smooth source: inside it both ways sample the same color; across its
+    # edges the direct one covers the pixels in part.
+    rows, columns = np.mgrid[0:48, 0:64].astype(np.float32)
+    rgba = np.ones((48, 64, 4), dtype=np.float32)
+    rgba[..., 0], rgba[..., 1], rgba[..., 2] = columns / 63.0, rows / 47.0, 0.5
+    sources = SceneSources({"s": StickerSource(rgba, {"x0": 0.1, "y0": 0.2, "x1": 0.9, "y1": 0.7})}, {})
+    pose = {"yaw_deg": 30.0, "pitch_deg": 20.0, "roll_deg": 25.0}
+    state = {**_sticker_state(hFOV_deg=40.0, vFOV_deg=30.0, **pose), **_camera(**pose)}
+    projection = Projection.perspective(96, 64, 50.0)
+
+    color, _mask, _depth = _render(projection, state, sources)
+    _loaded, evaluated = _scene(**state)
+    sky = render_module._shoot_sky(*render_module._sky_layers(evaluated, sources, (64, 32), torch.device("cpu"), {}, {"size": (64, 32)}),
+                                   render_module._rays(evaluated["camera"], projection, torch.device("cpu")),
+                                   render_module._view(render_module._rays(evaluated["camera"], projection, torch.device("cpu"))))[0]
+    through_erp, _capped_mask = _through_the_capped_sky_erp(evaluated, sources, projection)
+
+    inside = (sky[..., 3] > 0.999) & (through_erp[..., 3] > 0.999)
+    assert int(inside.sum()) > 2000
+    assert torch.allclose(sky[..., :3][inside], through_erp[..., :3][inside], atol=0.02)
+    assert torch.allclose(color[inside], sky[..., :3][inside])
+    assert int(((sky[..., 3] > 0.1) & (sky[..., 3] < 0.9)).sum()) > 50
+
+
+@pytest.mark.parametrize("width", [64, 100])
+def test_shrinking_a_wrapped_erp_reaches_across_the_seam_symmetrically(width):
+    # Two bright columns on either side of the seam: the shrunk image is the same mirrored about the seam, and
+    # (when the seam is on a whole number of output columns from the middle) the same as the pair in the middle.
+    image = torch.zeros((4, width, 1))
+    image[:, [0, width - 1]] = 1.0
+    image[:, [width // 2 - 1, width // 2]] = 1.0
+
+    shrunk = render_module._shrink(image, 2, 16, wrap=True)[0, :, 0]
+    clamped = render_module._shrink(image, 2, 16, wrap=False)[0, :, 0]
+
+    assert torch.allclose(shrunk, shrunk.flip(0), atol=1e-6)
+    if width == 64:
+        assert torch.allclose(shrunk, torch.roll(shrunk, 8), atol=1e-6)
+        assert not torch.allclose(clamped, torch.roll(clamped, 8), atol=1e-3)
+
+
+def test_perspective_sky_keeps_its_paint_and_ripmaps_while_only_stickers_and_the_camera_move(monkeypatch):
+    counts = _count_calls(monkeypatch, "_sky_layers", "_premultiplied", "_shrink")
+    stroke = {**_mask_dot((0.0, 0.0, 1.0)), "layerKind": "paint", "color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}}
+    painting = {"version": 1, "paint": {"strokes": [stroke]}, "mask": {"strokes": []}, "groups": []}
+    rgba = np.random.default_rng(0).random((256, 256, 4), dtype=np.float32)
+    bg = torch.rand((256, 512, 3), generator=torch.Generator().manual_seed(0))
+    cache = {}
+    shrunk = []
+
+    for yaw in (0.0, 5.0, 10.0):
+        state = {**_sticker_state(yaw_deg=yaw, hFOV_deg=30.0, vFOV_deg=30.0), **_camera(yaw_deg=yaw), "painting": painting}
+        loaded, evaluated = _scene(**state)
+        sources = SceneSources({"s": StickerSource(rgba, {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0})}, loaded["painting"])
+        render_frame(evaluated, sources, evaluated["camera"], Projection.perspective(24, 16, 120.0), bg=bg, bg_key=0, bg_color=GREEN,
+                     device=torch.device("cpu"), cache=cache)
+        shrunk.append(counts["_shrink"])
+
+    # Each frame orders the Sky again, but the Sticker source and the paint go to the device once, and the shrunk
+    # copies of the background and the Sticker are made on the first frame only.
+    assert counts["_sky_layers"] == 3
+    assert counts["_premultiplied"] == 2
+    assert shrunk[0] > 0 and shrunk[0] == shrunk[-1]

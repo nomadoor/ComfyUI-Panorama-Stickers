@@ -158,57 +158,73 @@ def _sky_stickers(evaluated: dict, sources: SceneSources) -> list[dict]:
     return stickers
 
 
-def _sky_layers(evaluated: dict, sources: SceneSources, size: tuple[int, int], device, textures: dict) -> tuple[list, torch.Tensor | None]:
+def _sky_layers(evaluated: dict, sources: SceneSources, size: tuple[int, int], device, textures: dict, paint: dict) -> tuple[list, tuple | None]:
     """The Sky of a perspective output as its layers in the order `_sky_erp` draws them, for `_shoot_sky` to sample
     each from its own pixels, and the paint mask.
 
-    A `sky` Sticker is ("sticker", its source as premultiplied RGBA on `device`, its values). A paint layer is
-    ("erp", premultiplied RGBA 360 ERP on `device`): the rasters the editor uploaded (`painting_layer`) at their own
-    size, and the paint only the state holds (strokes without an uploaded raster, raster objects) drawn at `size`.
-    The mask is a 360 ERP in the same way, or None when nothing is masked. `textures` keeps each Sticker's source
-    on `device` while its frame (`StickerSource.frame`) stays.
+    A `sky` Sticker is ("sticker", its source as premultiplied RGBA on `device`, its ripmap levels, its values). A
+    paint layer is ("erp", premultiplied RGBA 360 ERP on `device`, its ripmap levels): the rasters the editor
+    uploaded (`painting_layer`) at their own size, and the paint only the state holds (strokes without an uploaded
+    raster, raster objects) drawn at `size`. The mask is (360 ERP (h, w, 1), its levels) in the same way, or None
+    when nothing is masked. The levels are filled by `_sample_filtered`.
+
+    `textures` keeps each Sticker's source on `device` while its frame (`StickerSource.frame`) stays, and `paint`
+    the paint layers and the mask for this `size`, so a new Sky only orders the Stickers among them again.
     """
     width, height = size
     painting = sources.painting
-    payload = load_painting_layer_payload(sources.painting_layer)
-    groups = payload.get("groups", {}) if payload else {}
+
+    def payload():
+        if "payload" not in paint:
+            paint["payload"] = load_painting_layer_payload(sources.painting_layer) or {}
+        return paint["payload"]
+
+    def paint_layer(key, draw):
+        # (whether the layer exists, the layer on `device` with its levels or None when it is empty)
+        if key not in paint:
+            layer = draw()
+            paint[key] = (layer is not None, None if layer is None or not np.any(layer[..., 3] > 0.0) else (_premultiplied(layer, device), {}))
+        return paint[key]
+
+    def group_layer(group_id):
+        layer = payload().get("groups", {}).get(group_id)
+        return render_group_layer_from_state(painting, group_id, width, height) if layer is None else layer
+
+    def flat_layer(used_layers):
+        if used_layers:
+            return render_remaining_flat_paint_layer_from_state(painting, width, height)
+        flat = payload().get("paint")
+        return render_painting_to_erp(painting, width, height)[0] if flat is None else flat
+
     stickers = [
         {"z_index": source.z_index, "sticker": sticker, "source": source, "vfov": vfov}
         for sticker, source, vfov in _drawn_sky_stickers(evaluated, sources)
     ]
     layers = []
     used_layers = False
-    for entry in build_display_entries({"stickers": stickers, "painting": painting}):
+    for index, entry in enumerate(build_display_entries({"stickers": stickers, "painting": painting})):
         if entry["type"] == "sticker":
             item = entry["item"]
-            layers.append(("sticker", _sticker_texture(item["sticker"]["id"], item["source"], textures, device), item))
+            layers.append(("sticker", *_sticker_texture(item["sticker"]["id"], item["source"], textures, device), item))
             used_layers = True
             continue
         if entry["type"] == "strokeGroup":
-            layer = groups.get(entry["actionGroupId"])
-            if layer is None:
-                layer = render_group_layer_from_state(painting, entry["actionGroupId"], width, height)
+            exists, layer = paint_layer(("group", entry["actionGroupId"]), lambda: group_layer(entry["actionGroupId"]))
         else:
-            layer = render_raster_layer_from_state(entry["item"], width, height)
-        if layer is None:
-            continue
-        used_layers = True
-        layers.append(("erp", _premultiplied(layer, device)))
-    if used_layers:
-        flat = render_remaining_flat_paint_layer_from_state(painting, width, height)
-    else:
-        flat = payload.get("paint") if payload else None
-        if flat is None:
-            flat, _mask = render_painting_to_erp(painting, width, height)
+            # Raster objects keep their order among the paint entries whichever Stickers are drawn between them.
+            exists, layer = paint_layer(("raster", id(entry["item"])), lambda: render_raster_layer_from_state(entry["item"], width, height))
+        used_layers = used_layers or exists
+        if layer is not None:
+            layers.append(("erp", *layer))
+    _exists, flat = paint_layer(("flat", used_layers), lambda: flat_layer(used_layers))
     if flat is not None:
-        layers.append(("erp", _premultiplied(flat, device)))
-    mask = payload.get("mask") if payload else None
-    if mask is None:
-        _paint, mask = render_painting_to_erp(painting, width, height)
-    # Empty layers are left out; they would only be sampled to nothing.
-    layers = [layer for layer in layers if layer[0] == "sticker" or bool(layer[1][..., 3].any())]
-    mask = torch.tensor(mask, dtype=torch.float32, device=device)[..., None] if np.any(mask > 0.0) else None
-    return layers, mask
+        layers.append(("erp", *flat))
+    if "mask" not in paint:
+        mask = payload().get("mask")
+        if mask is None:
+            _paint, mask = render_painting_to_erp(painting, width, height)
+        paint["mask"] = (torch.tensor(mask, dtype=torch.float32, device=device)[..., None], {}) if np.any(mask > 0.0) else None
+    return layers, paint["mask"]
 
 
 def _premultiplied(rgba: np.ndarray, device) -> torch.Tensor:
@@ -216,12 +232,13 @@ def _premultiplied(rgba: np.ndarray, device) -> torch.Tensor:
     return torch.cat([rgba[..., :3] * rgba[..., 3:], rgba[..., 3:]], dim=-1)
 
 
-def _sticker_texture(sticker_id: str, source: StickerSource, textures: dict, device) -> torch.Tensor:
+def _sticker_texture(sticker_id: str, source: StickerSource, textures: dict, device) -> tuple[torch.Tensor, dict]:
+    """The Sticker's source on `device` and its ripmap levels, kept in `textures` while its frame stays."""
     entry = textures.get(sticker_id)
     if entry is None or entry[0] != source.frame:
         textures.pop(sticker_id, None)
-        entry = textures[sticker_id] = (source.frame, _premultiplied(source.rgba[..., :4], device))
-    return entry[1]
+        entry = textures[sticker_id] = (source.frame, _premultiplied(source.rgba[..., :4], device), {})
+    return entry[1:]
 
 
 def _rays(camera: dict, projection: Projection, device) -> torch.Tensor:
@@ -280,7 +297,8 @@ def _footprint(grid: torch.Tensor, size: tuple[int, int], wrap: bool) -> torch.T
     return _pixel_steps(grid, wrap) * grid.new_tensor([size[1] * 0.5, size[0] * 0.5])
 
 
-def _sample_filtered(image: torch.Tensor, grid: torch.Tensor, *, wrap: bool = False, select: torch.Tensor | None = None) -> torch.Tensor:
+def _sample_filtered(image: torch.Tensor, grid: torch.Tensor, *, wrap: bool = False, select: torch.Tensor | None = None,
+                     levels: dict | None = None) -> torch.Tensor:
     """Samples of `image` (h, w, C) at `grid` (H, W, 2) as `_sample` (`_sample_erp` with `wrap`) takes them, from
     copies of the image averaged down to each output pixel's footprint where it covers more than one image pixel.
 
@@ -289,6 +307,10 @@ def _sample_filtered(image: torch.Tensor, grid: torch.Tensor, *, wrap: bool = Fa
     an ERP are not blurred across. Each copy is the previous one shrunk with a triangle filter, which keeps where a
     small feature is (a box filter moves it to the center of its pair of pixels). A footprint of at most one image
     pixel samples the image itself. `select` (H, W) limits the samples to its pixels; the others are 0.
+
+    `levels` is an optional dict owned by the caller in which the shrunk copies of this `image` are kept, so that
+    they are made once while the image stays. The copies a sampling needs are made as it needs them; all of them
+    together are at most three times the image.
     """
     sample = _sample_erp if wrap else _sample
     footprint = _footprint(grid, image.shape[:2], wrap)
@@ -308,13 +330,16 @@ def _sample_filtered(image: torch.Tensor, grid: torch.Tensor, *, wrap: bool = Fa
     points = grid if select is None else grid[select]
     lod_shape = lod.shape[:-1]
     base, fraction, points = base.reshape(-1, 2), fraction.reshape(-1, 2), points.reshape(-1, 2)
-    levels = {(0, 0): image}
+    if levels is None:
+        levels = {}
 
     def level(i, j):
-        if (i, j) not in levels:
+        if i == j == 0:
+            return image
+        if (i, j, wrap) not in levels:
             source = level(i - 1, j) if i > 0 else level(i, j - 1)
-            levels[i, j] = _shrink(source, max(1, height >> j), max(1, width >> i), wrap)
-        return levels[i, j]
+            levels[i, j, wrap] = _shrink(source, max(1, height >> j), max(1, width >> i), wrap)
+        return levels[i, j, wrap]
 
     def weights(axis):
         values = {}
@@ -337,16 +362,25 @@ def _sample_filtered(image: torch.Tensor, grid: torch.Tensor, *, wrap: bool = Fa
 
 
 def _shrink(image: torch.Tensor, height: int, width: int, wrap: bool) -> torch.Tensor:
-    """`image` (h, w, C) made smaller with a triangle filter as wide as the pixels it is shrunk to
-    (`antialias`). With `wrap`, x is a longitude and the filter reaches across the seam: the image is extended on
-    both sides by the smallest number of columns that is a whole number of columns at both sizes."""
-    pad = 0
-    if wrap and width < image.shape[1]:
-        common = math.gcd(image.shape[1], width)
-        source_pad, pad = image.shape[1] // common, width // common
-        image = torch.cat([image[:, -source_pad:], image, image[:, :source_pad]], dim=1)
-    work = F.interpolate(image.permute(2, 0, 1)[None], size=(height, width + 2 * pad), mode="bilinear", align_corners=False, antialias=True)
-    return work[0, :, :, pad:pad + width].permute(1, 2, 0)
+    """`image` (h, w, C) made smaller with a triangle filter as wide as the pixels it is shrunk to (`antialias`).
+
+    With `wrap`, x is a longitude and the filter reaches across the seam. Only the first and the last columns
+    reach that far (the filter is one output pixel to each side), and `interpolate` cuts the filter at the edge
+    there, so those two are taken again from the columns around the seam with the same weights.
+    """
+    work = F.interpolate(image.permute(2, 0, 1)[None], size=(height, width), mode="bilinear", align_corners=False, antialias=True)[0].permute(1, 2, 0)
+    if not wrap or width >= image.shape[1]:
+        return work
+    scale = image.shape[1] / width
+    for column in {0, width - 1}:
+        center = (column + 0.5) * scale
+        source = torch.arange(math.floor(center - scale), math.ceil(center + scale) + 1, device=image.device)
+        weight = (1.0 - ((source + 0.5) - center).abs() / scale).clamp_min(0.0)
+        picked = image[:, source.remainder(image.shape[1])]
+        # The columns keep their count, so this only filters along y as `interpolate` does above.
+        picked = F.interpolate(picked.permute(2, 0, 1)[None], size=(height, picked.shape[1]), mode="bilinear", align_corners=False, antialias=True)[0].permute(1, 2, 0)
+        work[:, column] = (picked * (weight / weight.sum())[:, None].to(picked.dtype)).sum(dim=1)
+    return work
 
 
 def _resize(image: torch.Tensor, height: int, width: int) -> torch.Tensor:
@@ -387,7 +421,7 @@ def _render_sky(evaluated: dict, sources: SceneSources, size: tuple[int, int], d
     return torch.tensor(rgba, dtype=torch.float32, device=device), torch.tensor(mask, dtype=torch.float32, device=device)
 
 
-def _shoot_sticker(texture: torch.Tensor, item: dict, rays: torch.Tensor) -> torch.Tensor:
+def _shoot_sticker(texture: torch.Tensor, levels: dict, item: dict, rays: torch.Tensor) -> torch.Tensor:
     """A `sky` Sticker seen along `rays` (H, W, 3), premultiplied (H, W, 4) and 0 outside it, sampled from its source
     `texture` (`_sky_layers`) at the place `core/stickers.py` draws into the Sky ERP (`_compose_sticker_patch`).
     Its edges cover the output pixels they cross by how much of each pixel is inside them."""
@@ -411,19 +445,19 @@ def _shoot_sticker(texture: torch.Tensor, item: dict, rays: torch.Tensor) -> tor
     u = (left + (right_edge - left) * (across * 0.5 + 0.5)) * (width - 1)
     v = (top + (bottom - top) * (0.5 - down * 0.5)) * (height - 1)
     grid = torch.stack([(u * 2.0 + 1.0) / width - 1.0, (v * 2.0 + 1.0) / height - 1.0], dim=-1)
-    return _sample_filtered(texture, grid, select=inside) * (coverage * sticker["opacity"])[..., None]
+    return _sample_filtered(texture, grid, select=inside, levels=levels) * (coverage * sticker["opacity"])[..., None]
 
 
-def _shoot_sky(layers: list, mask: torch.Tensor | None, rays: torch.Tensor, view: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def _shoot_sky(layers: list, mask: tuple | None, rays: torch.Tensor, view: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """The Sky layers of `_sky_layers` seen along `rays` (`view` in the 360 ERP), composited over each other in
     order as `_sky_erp` composites them, as straight-alpha color (H, W, 4) and the mask (H, W)."""
     total = rays.new_zeros((*rays.shape[:2], 4))
-    for kind, layer, *item in layers:
-        color = _shoot_sticker(layer, item[0], rays) if kind == "sticker" else _sample_filtered(layer, view, wrap=True)
+    for kind, layer, levels, *item in layers:
+        color = _shoot_sticker(layer, levels, item[0], rays) if kind == "sticker" else _sample_filtered(layer, view, wrap=True, levels=levels)
         total = torch.addcmul(color, total, 1.0 - color[..., 3:])
     alpha = total[..., 3:]
     rgb = torch.where(alpha > 1e-6, total[..., :3] / alpha.clamp_min(1e-6), 0.0)
-    shot_mask = rays.new_zeros(rays.shape[:2]) if mask is None else _sample_filtered(mask, view, wrap=True)[..., 0]
+    shot_mask = rays.new_zeros(rays.shape[:2]) if mask is None else _sample_filtered(mask[0], view, wrap=True, levels=mask[1])[..., 0]
     return torch.cat([rgb.clamp(0.0, 1.0), alpha], dim=-1), shot_mask
 
 
@@ -456,18 +490,18 @@ def _background(bg: torch.Tensor, device) -> torch.Tensor:
     return (bg[..., :1].expand(-1, -1, 3) if bg.shape[-1] < 3 else bg[..., :3]).clamp(0.0, 1.0)
 
 
-def _project_background(bg: torch.Tensor, projection: Projection, view: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+def _project_background(bg: torch.Tensor, projection: Projection, view: torch.Tensor, levels: dict | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Sample `bg_media` at `view`, and where it has an image (None: everywhere).
 
     A 360 `coverage` reads it as a 360 ERP. A 180 one reads it as the ERP of the Scene's front hemisphere, as
     the legacy nodes did, so a turned Camera also sees directions it does not cover.
     """
     if projection.coverage == 360:
-        return _sample_filtered(bg, view, wrap=True), None
+        return _sample_filtered(bg, view, wrap=True, levels=levels), None
     grid = view.clone()
     grid[..., 0] *= 2.0
     valid = grid[..., 0].abs() <= 1.0
-    return _sample_filtered(bg, grid, select=valid), valid
+    return _sample_filtered(bg, grid, select=valid, levels=levels), valid
 
 
 def render_frame(
@@ -497,8 +531,9 @@ def render_frame(
 
     `cache` is an optional dict owned by the caller for one execution, in which `bg_color`, `device`, and
     `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps the previous frame's
-    Sky (for a perspective output its layers, with the `sky` Sticker sources on `device`), the Sky turned by the
-    Camera, the background, the World content as one layer (`world_layer`), the drawn
+    Sky (for a perspective output its layers, with the `sky` Sticker sources and the paint layers of its size on
+    `device`), the Sky turned by the Camera, the background, the ripmap levels `_sample_filtered` made of the
+    background, the Sticker sources, and the paint layers (released with them), the World content as one layer (`world_layer`), the drawn
     `world` Sticker sources on `device`, and the result: a frame whose Sky values and Sticker frames, Camera rotation,
     Projection, `bg_key`, and World content with the Camera's position (`world_key`) all repeat returns the previous
     frame's tensors themselves.
@@ -525,7 +560,11 @@ def render_frame(
         # The previous Sky is released before the new one is drawn.
         cache.pop("sky", None)
         if direct:
-            cache["sky"] = _sky_layers(evaluated, sources, sky_size, device, cache.setdefault("sky_textures", {}))
+            if cache.get("sky_paint", {}).get("size") != sky_size:
+                # The paint of the previous size is released before the new one is drawn.
+                cache.pop("sky_paint", None)
+                cache["sky_paint"] = {"size": sky_size}
+            cache["sky"] = _sky_layers(evaluated, sources, sky_size, device, cache.setdefault("sky_textures", {}), cache["sky_paint"])
         else:
             cache["sky"] = _render_sky(evaluated, sources, sky_size, device)
         cache["sky_key"] = sky_key
@@ -541,16 +580,22 @@ def render_frame(
         sky, mask = cache["turned_sky"]
     background = bg_valid = None
     if bg is not None:
+        levels = None
         if reusable and cache.get("bg_key") == bg_entry:
-            background = cache["bg"]
+            background, levels = cache["bg"], cache["bg_levels"]
         else:
+            # The previous background and its ripmap levels are released before the new one is read.
+            for key in ("bg_key", "bg", "bg_levels"):
+                cache.pop(key, None)
             background = _background(bg, device)
             if reusable:
-                cache["bg_key"], cache["bg"] = bg_entry, background
+                levels = {}
+                cache["bg_key"], cache["bg"], cache["bg_levels"] = bg_entry, background, levels
         if not turned:
             background = _resize(background, projection.height, projection.width)
         else:
-            background, bg_valid = _project_background(background, projection, _view(_rays(camera, projection, device)) if view is None else view)
+            view = _view(_rays(camera, projection, device)) if view is None else view
+            background, bg_valid = _project_background(background, projection, view, levels)
     if world is None:
         for key in ("world_key", "world", "world_textures"):
             cache.pop(key, None)

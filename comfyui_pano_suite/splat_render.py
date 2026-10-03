@@ -55,12 +55,18 @@ def _is_gaussian_ply(data: bytes) -> bool:
 
 
 def splat_content(splat: Types.SPLAT) -> SceneContent:
+    # The harmonics of the item last drawn, on its device, while the same item is drawn again.
+    harmonics = {}
+
     def render(view: CameraView, index: int, device):
         xyz, rgb, opacity, scale, rot = _gaussian_item(splat, index, device)
-        sh = splat.sh[index, :xyz.shape[0]]
-        if sh.shape[1] > 1:
+        if splat.sh.shape[2] > 1:
+            if harmonics.get("key") != (index, device):
+                harmonics.clear()
+                harmonics["sh"] = splat.sh[index, :xyz.shape[0]].to(device=device, dtype=torch.float32)
+                harmonics["key"] = (index, device)
             eye = torch.tensor(_GLTF_TO_SPLAT @ view.position, dtype=torch.float32, device=device)
-            rgb = _view_colors(sh.to(device=device, dtype=torch.float32), xyz - eye)
+            rgb = _view_colors(harmonics["sh"], xyz - eye)
         return render_gaussians(xyz, rgb, opacity, scale, rot, view)
 
     return SceneContent(splat.positions.shape[0], render)
@@ -83,8 +89,7 @@ def _view_colors(sh: torch.Tensor, offset: torch.Tensor) -> torch.Tensor:
                 _SH_C3[5] * z * (xx - yy), _SH_C3[6] * x * (xx - 3.0 * yy),
             ]
     count = min(len(basis), sh.shape[1])
-    basis = torch.stack(basis[:count], dim=-1)
-    return ((basis[:, :, None] * sh[:, :count]).sum(1) + 0.5).clamp(0, 1)
+    return (torch.einsum("nk,nkc->nc", torch.stack(basis[:count], dim=-1), sh[:, :count]) + 0.5).clamp(0, 1)
 
 
 def _levels(half: torch.Tensor) -> list[int]:

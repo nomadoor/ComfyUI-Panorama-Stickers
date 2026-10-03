@@ -438,9 +438,9 @@ def test_sky_resolution_follows_the_bg_media_of_the_execution_not_of_each_frame(
     sizes = []
     sky_layers = render_module._sky_layers
 
-    def recording(evaluated, sources, size, device, textures):
+    def recording(evaluated, sources, size, *args):
         sizes.append(size)
-        return sky_layers(evaluated, sources, size, device, textures)
+        return sky_layers(evaluated, sources, size, *args)
 
     monkeypatch.setattr(render_module, "_sky_layers", recording)
     state = _camera()
