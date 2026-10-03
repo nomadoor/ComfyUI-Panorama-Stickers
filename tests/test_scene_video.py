@@ -67,9 +67,7 @@ def test_get_video_components_reads_every_frame_and_the_audio(tmp_path):
 
 
 def test_each_read_renders_the_same_frames_again(monkeypatch):
-    video = _execute({"version": 2, "camera": {"rotation": {"keyframes": [
-        {"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 3, "value": {"yaw_deg": 90.0}},
-    ]}}}, bg_media=torch.rand((4, 16, 32, 3)))[2]
+    video = _execute({"version": 2}, bg_media=torch.rand((4, 16, 32, 3)))[2]
     passes = _count_renders(monkeypatch)
 
     first = video.get_components().images

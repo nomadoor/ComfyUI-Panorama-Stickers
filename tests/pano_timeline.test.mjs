@@ -244,7 +244,8 @@ test("a state is timed when it has a Keyframe or a Clip range other than the who
   state.stickers[0].clip.in = 0;
   assert.equal(isTimed(state), false);
   keyAllLanes(state.camera, 0);
-  assert.equal(isTimed(state), true);
+  assert.equal(isTimed(state), false, "Stickers has no Camera (ADR 0028)");
+  assert.equal(isTimed(state, { camera: true }), true, "Cutout shoots with the Camera");
 });
 
 test("the Timeline shows its length, or the video's without one, widened to Clip ranges and Keyframes", () => {
@@ -257,6 +258,10 @@ test("the Timeline shows its length, or the video's without one, widened to Clip
   canonical.stickers[1].scale.keyframes[1].frame = 80;
   assert.equal(timelineSpan(canonical, { minimum: 10 }), 81);
   assert.equal(timelineSpan(loadSceneState(null), { minimum: 120 }), 120);
+  const camera = loadSceneState(null);
+  keyAllLanes(camera.camera, 200);
+  assert.equal(timelineSpan(camera, { minimum: 120 }), 120, "Stickers has no Camera (ADR 0028)");
+  assert.equal(timelineSpan(camera, { minimum: 120, camera: true }), 201, "Cutout shoots with the Camera");
 });
 
 test("a Clip range end reopens at the span set by everything else", () => {
@@ -264,7 +269,7 @@ test("a Clip range end reopens at the span set by everything else", () => {
   state.timeline.length = null;
   const { clip } = state.stickers[0];
   assert.equal(timelineSpan(state, { minimum: 10 }), 50, "this Clip range ends at 50");
-  const span = timelineSpan(state, { minimum: 10, openClip: clip });
+  const span = timelineSpan(state, { minimum: 10, openClip: clip, camera: true });
   assert.equal(span, 49, "the last Camera Keyframe is at 48");
 
   trimClipEnd(clip, 51, span);

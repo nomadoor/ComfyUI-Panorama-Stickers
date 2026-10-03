@@ -32,9 +32,7 @@ import {
   sameEditorStateText,
   sceneStickerLabel,
   setEditorActive,
-  cameraFields,
   deleteWorldSticker,
-  setCameraField,
   setStickerOpacity,
   setStickerPose,
   setTimelineFps,
@@ -975,8 +973,6 @@ async function showEditor(node, type, options = {}) {
     marqueeModifier: false,
     altModifier: false,
     panelLastValues: null,
-    // PanoramaStickersNode: the Camera row of the Timeline is selected, so the inspector edits the Camera.
-    inspectCamera: false,
     // PanoramaStickersNode: the id of the world Sticker selected in the space view or on its Timeline row
     // (#72). The canvas selection (selectedId) holds sky Stickers only; selecting one clears the other.
     worldSelectedId: null,
@@ -2070,7 +2066,6 @@ async function showEditor(node, type, options = {}) {
     requestDraw();
   }
   function setSelectedItem(item) {
-    editor.inspectCamera = false;
     clearWorldSelection();
     // Delete acts on the selection, so a Keyframe selection must not outlive a new selection.
     timeline.selection = null;
@@ -2092,7 +2087,6 @@ async function showEditor(node, type, options = {}) {
       nextIds.push(id);
     });
     editor.selectedIds = nextIds;
-    editor.inspectCamera = false;
     clearWorldSelection();
     timeline.selection = null;
     const preferred = String(primaryId || "").trim();
@@ -2707,8 +2701,6 @@ async function showEditor(node, type, options = {}) {
     requestDraw();
     void reason;
   }
-  // Clicking empty canvas clears the canvas selection only: a Camera shown in the inspector
-  // (editor.inspectCamera) stays, as the Camera is not on the canvas.
   function clearSelection(options = {}) {
     const preservePanelValues = options.preservePanelValues !== false;
     const selectedBeforeClear = preservePanelValues ? poseOf(getSelected()) : null;
@@ -5985,13 +5977,10 @@ async function showEditor(node, type, options = {}) {
       ? { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 }
       : { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60, roll_deg: 0, aspect_id: "1:1" });
     const inspectorSelected = selectedKind === "stroke" ? null : selected;
-    const cameraInspected = sceneV2 && editor.inspectCamera;
     const worldInspected = selectedWorldSticker();
-    const effective = cameraInspected
-      ? cameraFields(state.camera, editor.frame)
-      : worldInspected ? worldStickerFields(worldInspected, editor.frame)
+    const effective = worldInspected ? worldStickerFields(worldInspected, editor.frame)
       : isSceneSticker(inspectorSelected) ? editor.panelLastValues : (inspectorSelected || fallback);
-    const enabled = cameraInspected || (worldInspected ? worldStickerEditable(worldInspected) : (!!inspectorSelected && !isItemLocked(inspectorSelected)));
+    const enabled = worldInspected ? worldStickerEditable(worldInspected) : (!!inspectorSelected && !isItemLocked(inspectorSelected));
     editor.panelWasEnabled = enabled;
     syncLookAtFrameButtonState();
 
@@ -6038,8 +6027,7 @@ async function showEditor(node, type, options = {}) {
         });
       }
       const currentId = inspectorSelected?.id || "";
-      const currentItem = cameraInspected ? { label: "Camera", icon: ICON.camera }
-        : worldInspected ? { label: sceneStickerLabel(worldInspected), icon: ICON.globe }
+      const currentItem = worldInspected ? { label: sceneStickerLabel(worldInspected), icon: ICON.globe }
         : items.find((item) => item.id === currentId) || items[0];
       selectionPicker = {
         label: "Selection",
@@ -6072,15 +6060,7 @@ async function showEditor(node, type, options = {}) {
       });
     };
     const notes = [];
-    if (cameraInspected) {
-      pushParam("position_x", "X", -100, 100, 0.01);
-      pushParam("position_y", "Y", -100, 100, 0.01);
-      pushParam("position_z", "Z", -100, 100, 0.01);
-      pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
-      pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
-      pushParam("roll_deg", "Roll", -180, 180, 0.1);
-      pushParam("hFOV_deg", "FOV", 1, 179, 0.1);
-    } else if (worldInspected) {
+    if (worldInspected) {
       // Positions and the scale have no limit; their sliders reach past the value (worldFieldRange).
       for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
         const range = worldFieldRange(effective[key]);
@@ -6129,7 +6109,7 @@ async function showEditor(node, type, options = {}) {
       readOnly,
       selectionPicker,
       enabled,
-      selectedKind: cameraInspected ? "camera" : worldInspected ? "world" : selectedKind,
+      selectedKind: worldInspected ? "world" : selectedKind,
       selectedItems,
       params,
       notes,
@@ -6154,7 +6134,7 @@ async function showEditor(node, type, options = {}) {
       frame: editor.frame,
       span,
       selection: timeline.selection,
-      selectedId: editor.inspectCamera ? "camera" : (editor.worldSelectedId || editor.selectedId),
+      selectedId: editor.worldSelectedId || editor.selectedId,
       expanded: timeline.expanded ?? isTimed(state),
       openRows: timeline.openRows,
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
@@ -6182,7 +6162,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function timelineOwner(owner) {
-    return owner === "camera" ? state.camera : state.stickers.find((item) => item.id === owner) || null;
+    return state.stickers.find((item) => item.id === owner) || null;
   }
 
   // The Lanes a Keyframe selection acts on: its Lane, or every Lane of its row.
@@ -6190,9 +6170,8 @@ async function showEditor(node, type, options = {}) {
     return selection.lane ? [selection.lane] : laneNames(timelineOwner(selection.owner));
   }
 
-  // Camera Keyframes are on the Timeline; a Sticker's are on its material, which starts at start - in.
+  // A Sticker's Keyframes are on its material, which starts at start - in.
   function timelineOffset(owner) {
-    if (owner === "camera") return 0;
     const { clip } = timelineOwner(owner);
     return clip.start - clip.in;
   }
@@ -6315,10 +6294,9 @@ async function showEditor(node, type, options = {}) {
       const sticker = state.stickers.find((item) => item.id === action.id);
       if (sticker && !clipActive(sticker.clip, editor.frame)) jumpTimelineTo(sticker.clip.start);
       // The canvas selection holds sky Stickers; a world row selects its world Sticker for the gizmo and
-      // the inspector, and the Camera row shows the Camera in the inspector.
+      // the inspector.
       if (sticker?.placement === "world") selectWorldSticker(sticker.id);
       else setSelectedItem(getList().find((item) => item.id === action.id) || null);
-      editor.inspectCamera = action.id === "camera";
       syncFloatingViewButtonState();
       // Delete then acts on the row's Sticker, not on Keyframes selected before.
       timeline.selection = null;
@@ -9846,10 +9824,9 @@ async function showEditor(node, type, options = {}) {
     const frameInspectorShot = type === "cutout" && editor.mode === "frame" ? getActiveCutoutShot() : null;
     const selected = frameInspectorShot || getSelected();
     const selectedKind = frameInspectorShot ? "shot" : getSelectedKind();
-    const cameraInspected = sceneV2 && editor.inspectCamera;
     const worldInspected = selectedWorldSticker();
     if (worldInspected && !worldStickerEditable(worldInspected)) return;
-    if (!cameraInspected && !worldInspected && (!selected || selectedKind === "stroke" || isItemLocked(selected))) return;
+    if (!worldInspected && (!selected || selectedKind === "stroke" || isItemLocked(selected))) return;
     const param = (uiState.sidePanel?.params || []).find((item) => item.key === key);
     if (!param || param.enabled === false) return;
     let out = Number(rawValue);
@@ -9858,12 +9835,6 @@ async function showEditor(node, type, options = {}) {
     if (worldInspected && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
     else out = clamp(out, Number(param.min), Number(param.max));
     if (key === "yaw_deg") out = wrapYaw(out);
-    if (cameraInspected) {
-      setCameraField(state.camera, editor.frame, key, out);
-      updateSidePanel();
-      if (commit) pushHistory();
-      return;
-    }
     if (worldInspected) {
       setWorldStickerField(worldInspected, editor.frame, key, out);
       markObjectVisualsDirty();

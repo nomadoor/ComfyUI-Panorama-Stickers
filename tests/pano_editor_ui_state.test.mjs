@@ -61,9 +61,20 @@ test("locked modal selections disable destructive and ordering actions", () => {
   }
 });
 
-test("the Timeline has one row per object: the Camera, then the Stickers from front to back", () => {
+test("the Timeline of Stickers has no Camera row, though its state keeps the Camera (ADR 0028)", () => {
   const state = canonical();
+  const before = structuredClone(state.camera);
   const options = { frame: 24, span: 120, selection: null, selectedId: "st_sky", expanded: true, openRows: new Set(), playing: false, label: "" };
+
+  const model = buildTimelineModel(state, options);
+
+  assert.deepEqual(model.rows.map((row) => row.id), ["st_sky", "st_hidden", "st_world"]);
+  assert.deepEqual(state.camera, before);
+});
+
+test("the Timeline has one row per object: the Camera with `camera`, then the Stickers from front to back", () => {
+  const state = canonical();
+  const options = { frame: 24, span: 120, selection: null, selectedId: "st_sky", expanded: true, openRows: new Set(), playing: false, label: "", camera: true };
   const model = buildTimelineModel(state, options);
 
   assert.deepEqual(model.rows.map((row) => [row.id, row.label, row.selected, row.open]), [

@@ -298,15 +298,16 @@ const LANE_LABELS = {
   opacity: "Opacity",
 };
 
-// The Timeline (PanoTimeline.vue) of a working state v2: the Camera row, then the Stickers from
-// front to back (sky Stickers by z_index, then world Stickers). A row shows one pin per frame that has
-// a Keyframe on any of its Lanes (`full` when on all of them); an open row (openRows) also shows one
+// The Timeline (PanoTimeline.vue) of a working state v2: the Camera row when `camera` is set (only
+// Cutout shoots with the state's Camera; Stickers has none, ADR 0028), then the Stickers from front
+// to back (sky Stickers by z_index, then world Stickers). A row shows one pin per frame that has a
+// Keyframe on any of its Lanes (`full` when on all of them); an open row (openRows) also shows one
 // line per Lane. Frames in the model are Timeline frames; `offset` turns them back into the owner's own
 // frames. selection is { owner, lane, frames }: `lane` is a Lane's name, or null for the whole row, and
 // frames are in the owner's own frames.
 // audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
 // input sets the Timeline fps (ADR 0024).
-export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false }) {
+export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false }) {
   const row = (id, owner, rowLabel, clip, offset) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
     return {
@@ -342,7 +343,7 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
     fpsLocked,
     length: state.timeline.length,
     rows: [
-      row("camera", state.camera, "Camera", null, 0),
+      ...(camera ? [row("camera", state.camera, "Camera", null, 0)] : []),
       ...[...sky, ...world].map((sticker) => {
         const { start, in: clipIn, duration } = sticker.clip;
         return row(sticker.id, sticker, sceneStickerLabel(sticker), { start, end: duration === null ? null : start + duration }, start - clipIn);

@@ -270,11 +270,13 @@ def test_background_batch_reuses_the_sky_and_composites_each_frame(monkeypatch):
     assert counts == {"_render_sky": 1, "_background": 3, "composite_frame": 4}
 
 
-def _camera_scene(position=None, **rotation):
+def _painted_scene(*direction_keyframes):
     sticker = {
         "id": "q",
         "source": {"kind": "port"},
-        "direction": {"value": {"yaw_deg": 170.0, "pitch_deg": 20.0}},
+        "direction": {"value": {"yaw_deg": 170.0, "pitch_deg": 20.0}, "keyframes": [
+            {"frame": frame, "value": {"yaw_deg": yaw, "pitch_deg": 20.0}, "easing": "auto"} for frame, yaw in direction_keyframes
+        ]},
         "roll": {"value": 30.0},
         "size": {"value": {"hFOV_deg": 50.0}},
     }
@@ -282,40 +284,7 @@ def _camera_scene(position=None, **rotation):
         paint=[_stroke("red", "paint", [(0.9, 0.3), (0.98, 0.35), (0.05, 0.3)], 10, {"r": 1.0, "g": 0.1, "b": 0.1, "a": 1.0})],
         mask=[_stroke("mask", "mask", [(0.3, 0.5), (0.5, 0.45), (0.7, 0.5)], 20)],
     )
-    return {"version": 2, "camera": {"position": {"value": position}, "rotation": {"value": rotation}}, "stickers": [sticker], "painting": painting}
-
-
-def _render_camera_scene(coverage="360", **camera):
-    sticker = torch.from_numpy(bake_legacy_goldens._quadrant_sticker()[None])
-    image, mask = _execute(_camera_scene(**camera), coverage=coverage, bg_media=build_background_erp(), sticker=sticker)[:2]
-    return image[0], mask[0]
-
-
-def test_camera_yaw_by_whole_columns_shifts_the_erp_image_and_mask():
-    columns = 37
-    image, mask = _render_camera_scene()
-    turned_image, turned_mask = _render_camera_scene(yaw_deg=columns * 360.0 / image.shape[1])
-
-    assert float(mask.max()) > 0.5
-    assert torch.allclose(turned_image, torch.roll(image, -columns, dims=1), atol=1e-3)
-    assert torch.allclose(turned_mask, torch.roll(mask, -columns, dims=1), atol=1e-3)
-
-
-@pytest.mark.parametrize("coverage", ["360", "180"])
-def test_camera_position_does_not_move_the_background_or_the_sky(coverage):
-    image, mask = _render_camera_scene(coverage, yaw_deg=40.0, pitch_deg=-15.0, roll_deg=10.0)
-    moved_image, moved_mask = _render_camera_scene(coverage, position=[3.0, -1.0, 2.0], yaw_deg=40.0, pitch_deg=-15.0, roll_deg=10.0)
-
-    assert torch.equal(moved_image, image) and torch.equal(moved_mask, mask)
-
-
-def _animated_camera_scene(keyframes, **state):
-    scene = _camera_scene()
-    scene["camera"]["rotation"]["keyframes"] = [
-        {"frame": frame, "value": {"yaw_deg": yaw, "pitch_deg": pitch, "roll_deg": 0.0}, "easing": easing}
-        for frame, yaw, pitch, easing in keyframes
-    ]
-    return {**scene, **state}
+    return {"version": 2, "stickers": [sticker], "painting": painting}
 
 
 def _render_state(state):
@@ -323,42 +292,15 @@ def _render_state(state):
     return _execute(state, bg_media=build_background_erp(), sticker=sticker)
 
 
-def test_camera_keyframes_set_the_length_and_turn_each_frame():
-    state = _animated_camera_scene([(0, 0.0, 0.0, "auto"), (2, 50.0, -10.0, "auto"), (4, 120.0, 20.0, "auto")])
-
-    image = _frames(_render_state(state))
-
-    assert image.shape[0] == 5
-    for index in (1, 3, 4):
-        camera = evaluate_scene_state(load_scene_state(json.dumps(state)), index)["camera"]
-        still_image, _still_mask = _render_camera_scene(**{key: camera[key] for key in ("position", "yaw_deg", "pitch_deg", "roll_deg")})
-        assert torch.allclose(image[index], still_image, atol=1e-6)
-
-
-def test_hold_keyframe_cuts_the_camera_at_its_next_keyframe(monkeypatch):
-    state = _animated_camera_scene([(0, 30.0, 0.0, "hold"), (2, 150.0, 0.0, "auto")], timeline={"length": 4})
-    video = _render_state(state)[2]
-    counts = _count_render_calls(monkeypatch)
+def test_first_frame_mask_is_the_mask_of_the_first_output_frame():
+    first, mask, video = _render_state({**_painted_scene((0, 30.0), (2, 150.0)), "timeline": {"length": 3}})[:3]
 
     image = video.get_components().images
-
-    # Each held shot is composited once, at its first frame.
-    assert counts["composite_frame"] == 2
-    before, _ = _render_camera_scene(yaw_deg=30.0)
-    after, _ = _render_camera_scene(yaw_deg=150.0)
-    assert torch.equal(image[0], image[1]) and torch.allclose(image[1], before, atol=1e-6)
-    assert torch.equal(image[2], image[3]) and torch.allclose(image[2], after, atol=1e-6)
-
-
-def test_first_frame_mask_is_the_mask_of_the_first_output_frame():
-    state = _animated_camera_scene([(0, 30.0, 0.0, "auto"), (2, 150.0, 0.0, "auto")])
-
-    first, mask = _render_state(state)[:2]
-
-    still_image, still_mask = _render_camera_scene(yaw_deg=30.0)
+    still_image, still_mask = _render_state(_painted_scene((0, 30.0)))[:2]
+    assert image.shape[0] == 3 and not torch.allclose(image[0], image[2], atol=1e-3)
     assert first.shape[0] == 1 and mask.shape[0] == 1
     assert float(mask.max()) > 0.5
-    assert torch.allclose(first[0], still_image, atol=1e-6) and torch.allclose(mask[0], still_mask, atol=1e-6)
+    assert torch.allclose(first, still_image, atol=1e-6) and torch.allclose(mask, still_mask, atol=1e-6)
 
 
 def _sky_sticker_scene(pose_keyframes=(), opacity_keyframes=(), clip=None):
@@ -434,10 +376,10 @@ def test_equal_auto_keyframes_do_not_redraw_on_interpolation_noise(monkeypatch):
 
     state = {
         "version": 2,
-        "camera": {"rotation": lane({"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 0.0})},
+        "timeline": {"length": 7},
         "stickers": [{"id": "s", "source": {"kind": "port"}, "direction": lane({"yaw_deg": 30.0, "pitch_deg": 10.0}), "roll": lane(0.0), "size": lane({"hFOV_deg": 30.0})}],
     }
-    assert evaluate_scene_state(load_scene_state(json.dumps(state)), 1)["camera"]["yaw_deg"] != 30.0
+    assert evaluate_scene_state(load_scene_state(json.dumps(state)), 1)["stickers"][0]["yaw_deg"] != 30.0
     video = _sticker_scene_video(state)
     counts = _count_render_calls(monkeypatch)
 

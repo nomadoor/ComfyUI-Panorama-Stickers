@@ -125,6 +125,17 @@ def test_camera_keyframes_animate_the_cutout():
     assert [tuple(_center(image, index).tolist()) for index in range(3)] == [(1.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)]
 
 
+def test_length_of_an_erp_source_comes_from_the_latest_camera_keyframe_over_its_lanes():
+    def keys(*frames):
+        return [{"frame": frame, "value": None} for frame in frames]
+
+    def length(keyframes):
+        return _frames(_cutout(_halves_erp(), _camera(keyframes))).shape[0]
+
+    assert length({"rotation": keys(0, 9)}) == 10
+    assert length({"rotation": keys(0, 4), "fov": keys(6), "position": keys(2, 3)}) == 7
+
+
 def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_aspect():
     image, sticker_state, *_rest = _cutout(_solid([0.5, 0.5, 0.5]), _camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0, hFOV_deg=60.0))
 

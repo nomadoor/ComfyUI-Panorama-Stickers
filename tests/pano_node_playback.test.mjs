@@ -175,7 +175,7 @@ function setup(state = loadSceneState(null)) {
 
 function timedState(length = 48) {
   const state = loadSceneState(null);
-  keyAllLanes(state.camera, 0);
+  keyAllLanes(state.scene, 0);
   state.timeline.length = length;
   return state;
 }
@@ -188,6 +188,10 @@ test("the play button shows for a timed scene or a background VIDEO that loads",
   assert.equal(follow(["/view?filename=bg.mp4"]), false);
   const timed = setup(timedState());
   assert.equal(timed.follow([]), true);
+  // Stickers has no Camera (ADR 0028): the Keyframes of the state's Camera do not make it play.
+  const camera = loadSceneState(null);
+  keyAllLanes(camera.camera, 0);
+  assert.equal(setup(camera).follow([]), false);
 });
 
 test("a failed VIDEO gives way to the next candidate, as in the editor, until it leaves the candidates", () => {
@@ -350,9 +354,9 @@ test("a Timeline that no longer reaches the paused frame, or nothing left to pla
   clock.framesAhead(20);
   playback.pause();
   assert.equal(playback.frame, 20);
-  state.camera.fov.keyframes = [];
-  state.camera.position.keyframes = [];
-  state.camera.rotation.keyframes = [];
+  state.scene.position.keyframes = [];
+  state.scene.rotation.keyframes = [];
+  state.scene.scale.keyframes = [];
   assert.equal(follow([]), false);
   assert.equal(playback.frame, 0);
 });
