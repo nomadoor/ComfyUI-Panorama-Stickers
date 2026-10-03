@@ -1,12 +1,12 @@
 <script setup>
 import PanoIconButton from "./PanoIconButton.vue";
-import PanoSegments from "./PanoSegments.vue";
 import SvgIcon from "./SvgIcon.vue";
 
 defineProps({
   buttons: { type: Array, default: () => [] },
-  // How the panorama view moves in space: 3DoF | 6DoF (#71), shown with World content.
-  spaceButtons: { type: Array, default: () => [] },
+  // The space group (#71): { visible, mode, frameDisabled, modes, frame } (floatingRightState), null
+  // without one. It shows or hides as a whole at the left end, so the buttons right of it never move.
+  space: { type: Object, default: null },
   preview: { type: Object, default: () => ({}) },
   previewToggle: { type: Object, default: () => ({}) },
 });
@@ -14,15 +14,28 @@ defineProps({
 
 <template>
   <div class="pano-floating-right">
-    <PanoSegments
-      v-show="spaceButtons.some((button) => button.visible !== false)"
-      :buttons="spaceButtons"
-      attr="data-space-mode"
-      label="Space view mode"
-    />
+    <div v-if="space" v-show="space.visible" class="pano-floating-space">
+      <div class="pano-space-modes" role="group" aria-label="Space view mode">
+        <PanoIconButton
+          v-for="button in space.modes"
+          :key="button.key"
+          :extra-class="{ active: button.key === space.mode }"
+          :icon="button.icon"
+          :label="button.label"
+          :tip="button.tip"
+          :pressed="button.key === space.mode ? 'true' : 'false'"
+          :attrs="{ 'data-space-mode': button.key }"
+        />
+      </div>
+      <PanoIconButton
+        :icon="space.frame.icon"
+        :label="space.frame.label"
+        :tip="space.frame.tip"
+        :attrs="{ 'data-action': space.frame.action, disabled: space.frameDisabled === true }"
+      />
+    </div>
     <PanoIconButton
       v-for="button in buttons"
-      v-show="button.visible !== false"
       :key="button.action"
       :icon="button.icon"
       :label="button.label"

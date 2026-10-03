@@ -22,7 +22,7 @@ const selected = computed(() => Math.max(0, props.buttons.findIndex((button) => 
     <button
       v-for="button in buttons"
       :key="button.key"
-      class="pano-segment"
+      class="pano-segments-item"
       :class="{ active: button.pressed === 'true' }"
       type="button"
       v-bind="{ [attr]: button.key }"

@@ -76,6 +76,7 @@ import {
   depthOf,
   frameView,
   gizmoDragLanes,
+  gizmoScreenBox,
   gridSpec,
   hasWorldContent,
   navigationTarget,
@@ -130,6 +131,7 @@ import {
   buildSelectionMenuModel,
   buildTimelineModel,
   buildWorldSelectionMenuModel,
+  floatingRightState,
   selectionMenuPlacement,
   buildUiSettingsModel,
   patchUiButton,
@@ -648,7 +650,10 @@ async function showEditor(node, type, options = {}) {
     stageStatusDetail: "boot",
     stageWarningDetail: "",
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
-    spaceButtons: (shellPreset.spaceButtons || []).map((button) => ({ ...button, visible: false })),
+    // The space group of the bottom-right buttons (floatingRightState); none in the Cutout editor.
+    space: shellPreset.spaceButtons?.length
+      ? { visible: false, mode: "3dof", frameDisabled: true, modes: shellPreset.spaceButtons, frame: shellPreset.spaceFrameButton }
+      : null,
     // Only PanoramaStickersNode places images in space.
     toolButtons: (shellPreset.toolButtons || []).map((button) => ({ ...button, disabled: false, ...(button.key === "add-world" ? { visible: sceneV2 } : {}) })),
     floatingButtons: [
@@ -2772,29 +2777,15 @@ async function showEditor(node, type, options = {}) {
   }
 
   function syncFloatingViewButtonState() {
-    const frameMode = type === "cutout" && editor.mode === "frame";
-    const gridVisible = !frameMode && !!editor.showGrid;
-    patchUiButton(uiState.floatingButtons, "action", "reset-view", {
-      disabled: readOnly || frameMode,
+    const floating = floatingRightState({
+      spaceView: isSpaceView(),
+      spaceMode: editor.spaceMode,
+      readOnly,
+      frameMode: type === "cutout" && editor.mode === "frame",
+      showGrid: editor.showGrid,
     });
-    // The 3DoF / 6DoF segments show the mode while the panorama view shows World content.
-    const spaceView = isSpaceView();
-    const free = spaceView && editor.spaceMode === "6dof";
-    uiState.spaceButtons.forEach((button) => {
-      button.visible = spaceView;
-      button.pressed = button.key === editor.spaceMode ? "true" : "false";
-    });
-    patchUiButton(uiState.floatingButtons, "action", "frame-view", {
-      visible: free,
-      disabled: readOnly || !free,
-    });
-    patchUiButton(uiState.floatingButtons, "action", "toggle-grid", {
-      icon: gridVisible ? ICON.eye : ICON.eye_dashed,
-      pressed: gridVisible ? "true" : "false",
-      label: gridVisible ? "Hide Grid" : "Show Grid",
-      tip: gridVisible ? "Hide grid" : "Show grid",
-      disabled: readOnly || frameMode,
-    });
+    if (uiState.space) Object.assign(uiState.space, floating.space);
+    for (const [action, patch] of Object.entries(floating.buttons)) patchUiButton(uiState.floatingButtons, "action", action, patch);
   }
 
   function syncViewToggleState() {
@@ -8428,7 +8419,8 @@ async function showEditor(node, type, options = {}) {
   }
 
   // The selected world Sticker's menu shows while its gizmo does (worldGizmo: in the space view, not
-  // locked, in an editor that edits, inside its Clip range), below its plane or its 3D item's origin.
+  // locked, in an editor that edits, inside its Clip range), clear of its plane (or its 3D item's origin)
+  // and of the gizmo's handles.
   function worldSelectionMenuModel() {
     const space = isSpaceView() && !editor.interaction ? editorViewInput().space : null;
     if (!space?.gizmo) return { visible: false };
@@ -8436,7 +8428,8 @@ async function showEditor(node, type, options = {}) {
     const plane = space.stickers.find((layer) => layer.id === editor.worldSelectedId);
     const points = plane ? planeCorners(plane) : [space.gizmo.transform.position];
     const corners = points.map((point) => projectPoint(camera, point, canvas.width, canvas.height)).filter(Boolean);
-    return buildWorldSelectionMenuModel({ corners, gizmoMode: editor.gizmoMode });
+    const gizmoBox = gizmoScreenBox(camera, space.gizmo.transform.position, space.gizmo.mode, canvas.width, canvas.height);
+    return buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: editor.gizmoMode });
   }
 
   function showSelectionMenu(model) {
