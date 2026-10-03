@@ -221,23 +221,10 @@ def test_file_source_outside_the_input_directory_is_not_read(tmp_path, monkeypat
     assert torch.equal(image, GREEN.expand(1, 512, 1024, 3))
 
 
-def _mesh():
-    return Types.MESH(torch.zeros((1, 3, 3)), torch.tensor([[[0, 1, 2]]]))
-
-
-def _splat():
-    return Types.SPLAT(torch.zeros((1, 1, 3)), torch.ones((1, 1, 3)), torch.tensor([[[1.0, 0.0, 0.0, 0.0]]]), torch.ones((1, 1, 1)), torch.zeros((1, 1, 1, 3)))
-
-
-@pytest.mark.parametrize("inputs, message", [
-    ({"scene": Types.File3D(BytesIO(b"not a model"))}, "3D file on the scene input"),
-    ({"sticker": _mesh()}, "MESH on the sticker input"),
-    ({"sticker": _splat()}, "SPLAT on the sticker input"),
-    ({"sticker": Types.File3D("model.ply")}, "3D file on the sticker input"),
-])
-def test_unsupported_inputs_name_what_is_not_supported(inputs, message):
-    with pytest.raises(NotImplementedError, match=f"{message} is not supported yet"):
-        _execute(output_preset="1024", **inputs)
+@pytest.mark.parametrize("name", ["scene", "sticker"])
+def test_3d_files_neither_reader_takes_name_the_input(name):
+    with pytest.raises(ValueError, match=f"3D file on the {name} input is neither a splat file .* nor a mesh file"):
+        _execute(output_preset="1024", **{name: Types.File3D(BytesIO(b"not a model"))})
 
 
 def _count_render_calls(monkeypatch):
