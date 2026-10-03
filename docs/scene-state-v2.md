@@ -8,6 +8,8 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 | `sticker_state` の読み込み | `load_sticker_state` | `loadStickerState` |
 | 評価関数 | `comfyui_pano_suite/core/scene_eval.py` の `evaluate_scene_state` | `web_src/pano_scene_eval.js` の `evaluateSceneState` |
 | fps の再基準化 | `scene_state.py` の `rebase_scene_state` | `rebaseSceneState` |
+| 既定の Camera（Camera の無い状態を Camera で撮るノード用） | `default_camera` | `defaultCamera` |
+| 保存するテキスト | — | `sceneStateText` |
 
 フィクスチャは `tests/fixtures/scene_state/` にあり、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
 
@@ -44,7 +46,7 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 {
   "version": 2,
   "timeline": {"fps": 24.0, "length": null},
-  "camera": {"aspect": 1.0, "position": {...}, "rotation": {...}, "fov": {...}},
+  "camera": {"aspect": 1.0, "projection": "perspective", "position": {...}, "rotation": {...}, "fov": {...}},
   "scene": {"clip": {...}, "position": {...}, "rotation": {...}, "scale": {...}},
   "stickers": [],
   "painting": {...},
@@ -59,7 +61,9 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 | `version` | `2` | — | 下記「版の判定」 |
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。記録された Timeline fps |
 | `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。`null` なら入力から決める（#53） |
-| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。ERP の Projection では使わない。`camera` は Cutout の状態の項目で、Stickers は読まない（ADR 0028。下記） |
+| `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
+| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない |
+| `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方で、Keyframe を持たない。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` を読まない |
 | `camera.position`・`camera.rotation`・`camera.fov` | Lane | 下記 | Camera の値（Viewport camera は保存しない） |
 | `scene.clip` | Clip range | 下記 | `scene` 入力が有効な範囲 |
 | `scene.position`・`scene.rotation`・`scene.scale` | Lane | 下記 | `scene` 入力に掛ける変形 |
@@ -69,7 +73,11 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 
 `scene` は、`scene` 入力が接続されていなくても常に存在する。
 
-`camera` も、どのノードの状態でも常に存在する（形は一つ）。撮るのは Cutout だけで（ADR 0028）、Stickers の状態の `camera` は描画にも出力の長さにも使わない。Stickers の状態に `camera` の値や Keyframe があっても読み込みで捨てず、エディタも保存で変えない（ノードのキャッシュが外れないようにするため。fps の再基準化だけは状態全体と同じく `camera` の時刻も直す）。
+`camera` は、Camera を 1 台まで持つ（ADR 0029）。`null` は Camera が無いことを表し、Camera が無いときは World の原点から回転 0 で撮った ERP を出す。オブジェクトのときは、正規化した結果は常に `aspect`・`projection`・`position`・`rotation`・`fov` をこの順に持つ。
+
+- 今のノードでの扱い（Panorama Studio の #87 まで）：新しい Stickers（`PanoramaStickersNode`）は `camera` を読まない（ADR 0028）。`null` でもオブジェクトでも、描画にも出力の長さにも使わない。新しい Cutout（`PanoramaCutoutNode`）とそのエディタは常に Camera で撮るので、`camera` が `null` の状態は既定の Camera（`default_camera` / `defaultCamera`、`{}` を読んだ Camera）で撮る。この読み替えは Python では `nodes.py` の `_cutout_state`、JS では `parseSceneEditorState` の `camera` の指定だけが行う。エディタは、既定の Camera を一度も編集せずに保存したときは `camera: null` のまま書き戻す。一度でも既定から外れたら（`noteCameraEdit`。保存の `commitState` で見る）、後で既定の値に戻しても Camera のオブジェクトを書く（Panorama Studio では `null` は Camera が無いことなので、編集した Camera を黙って消さない）。Undo で最初の状態まで戻ったときは、この判定も最初に戻る。`projection` が `erp` の描画は #87 で行い、今の Cutout は `perspective` として撮る。
+- 既存の状態：この版より前の v2 の状態は `camera` のオブジェクトを持つので、そのまま「Camera あり」で `projection` は `perspective` になる。読み込みでも保存でも Camera を消したり書き換えたりしない（ノードのキャッシュが外れないようにするため）。fps の再基準化だけは状態全体と同じく `camera` の時刻も直し、`null` は `null` のまま、`projection` はそのまま保つ。
+- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、`camera.projection` が既定値の `perspective` のときは書かない。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、`projection` を書くと、この版より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。`erp` のときだけ書く。Python は `state_json` を書かないので、この関数を持たない。
 
 ### Lane
 
@@ -248,7 +256,7 @@ evaluateSceneState(state, frame) // -> object
 | フィールド | 意味 |
 |---|---|
 | `frame` | 受け取った Timeline frame |
-| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`）、`aspect` |
+| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`）、`aspect`。状態の `camera` が `null` なら `null`。`projection` は時間で変わらないので、状態の `camera.projection` を読む |
 | `scene` | `active`（`frame` が `scene.clip` の範囲内か）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
 | `clip_frame` | 素材の先頭からの経過（Timeline frame、端数あり）。`frame − (start − in)`。素材の時刻（秒）は `clip_frame ÷ timeline.fps` |
 | `stickers[]` | `state.stickers` と同じ順。`id`・`placement`、`active`（`visible` かつ Clip range の範囲内）、`clip_frame`、各 Lane の値のフィールド（`sky` は `yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`、`world` は `position`・`yaw_deg`・`pitch_deg`・`roll_deg`・`scale`）、`opacity` |
@@ -315,7 +323,7 @@ rebaseSceneState(state, fps) // -> object
 
 | 値 | 新しい値 |
 |---|---|
-| Camera の Keyframe の `frame` | `r(frame)` |
+| Camera の Keyframe の `frame`（`camera` が `null` なら `null` のまま。`aspect`・`projection` は変えない） | `r(frame)` |
 | Clip range の `start` | `start' = r(start)` |
 | 素材の先頭の位置 | `anchor' = r(start − in)` |
 | Clip range の `in` | `start' − anchor'` |
@@ -358,8 +366,8 @@ Python は `ValueError`、JS は `Error` を投げる。
 | `assets[asset_id]` が `type: "comfy_image"` | `source: {"kind": "file", filename, subfolder, storage}` |
 | `assets[asset_id]` が `type: "dataurl"` | `source: {"kind": "file", "data_url": ...}` |
 | `assets[asset_id]` が `type: "path"`、または資産が見つからない | Sticker を捨てる |
-| `shots[0]`（Cutout） | `camera`。`yaw_deg`・`pitch_deg`・`roll_deg` は `rotation.value`、`hFOV_deg`（1〜179 に寄せる）は `fov.value`、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
-| `shots` がない、または空 | 既定値の `camera`。v1 の Cutout はこのとき ERP をそのまま出力していたが、その挙動は保たない（意図した挙動変更。素通しは Preview の出力で行う） |
+| `shots[0]`（Cutout） | `camera`（Camera あり、`projection` は `perspective`）。`yaw_deg`・`pitch_deg`・`roll_deg` は `rotation.value`、`hFOV_deg`（1〜179 に寄せる）は `fov.value`、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
+| `shots` がない、空、または先頭がオブジェクトでない | `camera: null`（Camera が無い）。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは `null` になる。v1 の Cutout はこのとき ERP をそのまま出力していた。今の新しい Cutout は `null` を既定の Camera で撮るので、その挙動は保たない（意図した挙動変更。素通しは Preview の出力で行う）。Camera の無い ERP は Panorama Studio（#87）で撮れる |
 | `painting`・`painting_layer` | 同名のフィールド |
 | `version`・`projection_model`・`alpha_mode` | 捨てる |
 | `coverage`・`bg_color`・`output_preset` | 捨てる。ノードの入力（ウィジェット）が持つ |
@@ -427,3 +435,4 @@ Cutout が出力し、Stickers の `sticker_state` 入力が受け取る。
 - #79 へ：エディタに投入した 3D ファイル（`file` の Source）は、ノードではまだ読まない（`load_source_rgba` が画像として読めず、警告になる）。`port` と同じく `_read_scene_file` で SPLAT・MESH に読み、`_render_frames` でパスごとに `content_of` から `ContentSource` を作れば、描画は `port` と同じ経路で行える。
 - #84 の結果（ADR 0028）：Stickers から Camera を外した。Stickers の ERP 出力は World の原点から回転 0 で撮ったものに固定し（`nodes.py` の `STICKERS_CAMERA`）、状態の `camera` の値と Keyframe は描画にも出力の長さ（`_decide_timeline` の Camera の段は Cutout だけ）にも使わない。エディタは Stickers でタイムラインの Camera の行とインスペクタの Camera の欄を出さず、`isTimed`・`timelineSpan` も Camera の Keyframe を数えない（ノード上の UI の再生ボタンも同じ）。状態 v2 の形は変えていない。Stickers の状態に残った `camera` は読み込みでも保存でもそのまま保つので、既存のワークフローの `state_json` は変わらず、ノードのキャッシュも外れない。ただし、Camera を回していた Stickers の状態は、出力の向きが回転 0 に変わり、Camera の Keyframe だけで決まっていた長さは 1 フレーム（ほかに長さを決めるものがなければ）になる。Pose handoff（Cutout の Camera の `sticker_state`）は変わらない。Cutout の `camera` と、その行・欄を出す部品（`buildTimelineModel` の `camera`、`cameraFields` / `setCameraField`）は #77 で Cutout のエディタに結ぶ。
 - #77 の結果：`PanoramaCutoutNode` のエディタは状態 v2 を読み書きする（`parseSceneEditorState`・`editorStateText`。旧 Cutout は v1 のまま）。Cutout の状態の形は変えていない。エディタは `camera` だけを編集し、shot の形（yaw・pitch・roll・H FOV・V FOV）と Camera の Lane を `cameraShot`・`setCameraShot`（`pano_editor_state.js`）で写す。評価は `evaluateSceneState` と同じ `evaluateCamera`（`pano_scene_eval.js`）。記録の規則は `docs/timeline-ui.md`。`PANO_SCENE` を撮るときは、エディタは Scene の状態（実行結果の `pano_scene_state`）を Scene の Timeline fps に再基準化して表示し、Cutout の状態も同じ fps に再基準化して Camera を編集する。保存するのは Cutout の状態だけで、その `timeline.fps` は Scene の Timeline fps になる（秒を保って再基準化するので Camera の動きは変わらないが、Keyframe は整数の Timeline frame への丸めで最大で半フレーム動く）。編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`）。書き換えるのは Camera を編集したときだけで、そのとき状態全体が Scene の fps になる。Cutout の状態の Sticker・ペイントはエディタでは表示だけで編集しない（Add Image・Paint などは後続）。
+- #86 の結果（ADR 0029）：`camera` を `null`（Camera が無い）か Camera のオブジェクトにし、Camera に静的な `projection`（`perspective`・`erp`）を加えた。読み込み・評価関数・再基準化・フィクスチャ（`v2_no_camera`・`v2_erp_camera` を追加。`v1_stickers.v2` は `camera: null`）を Python と JS で合わせた。`version` は 2 のまま（前の v2 はそのまま読める）。`_decide_timeline` と `isTimed`・`timelineSpan` は、`camera` の指定があっても Camera が無ければ Camera の Keyframe を数えない。新しい Stickers・Cutout の扱いと、保存するテキストで `projection` の既定値を省く理由は「`state_json` v2」の節に書いた。Panorama Studio のノードと `erp` の描画は #87。`CONTEXT.md` と `docs/render-contract.md` の Camera の記述（Stickers は Camera を持たない、など）も #87 で直す。

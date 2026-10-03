@@ -43,7 +43,7 @@ from .core.painting import (
 )
 from .core.render import Projection, SceneSources, StickerSource, render_frame
 from .core.scene_eval import FRAME_EPSILON, evaluate_scene_state
-from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state
+from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, default_camera, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
 from .core.video import (
@@ -1237,8 +1237,8 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     """(a) Timeline: fps, and per output frame the Timeline frame to evaluate, the bg_media frame to draw, the
     frame of the port media (`port.index_at`), and the item of the `scene` content (`batch_index`; None without
     `scene`). A `scene` batch, like an IMAGE batch on the port, ends its Clip range without a duration.
-    With `camera`, the state's Camera shoots the frames (Cutout) and its Keyframes count for the length;
-    Stickers has no Camera (ADR 0028).
+    With `camera`, the state's Camera (if it has one) shoots the frames (Cutout) and its Keyframes count for
+    the length; Stickers has no Camera (ADR 0028).
 
     `bg` is the bg_media IMAGE batch, an opened VIDEO, or None. The output frames follow the PTS of the VIDEO
     that sets the Timeline fps: the background VIDEO, or else the sticker VIDEO. Times stored in the state are
@@ -1269,7 +1269,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         clip_ends.append(scene_origin + scene.count * stored_fps / fps)
     # The latest Keyframe over the Camera's Lanes.
     last_key = None
-    if camera:
+    if camera and state["camera"] is not None:
         last_key = max((state["camera"][name]["keyframes"][-1]["frame"] for name, _value in CAMERA_LANES if state["camera"][name]["keyframes"]), default=None)
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
@@ -1553,6 +1553,13 @@ class PanoramaStickersSceneNode(io.ComfyNode):
 CUTOUT_MAX_OUTPUT_SIDE = 4096
 
 
+def _cutout_state(state_json: str) -> dict:
+    """The Cutout state. The Cutout always shoots through a Camera: a state without one has the default Camera,
+    as before the Camera could be absent (ADR 0029), and the Cutout editor edits it the same way."""
+    cutout = load_scene_state(state_json)
+    return cutout if cutout["camera"] is not None else {**cutout, "camera": default_camera()}
+
+
 def _cutout_sticker_state(cutout: dict, width: int, height: int) -> str:
     """`sticker_state` v2: each Lane of the Cutout Camera as its Keyframes at the fps the Cutout state records them at
     (not rebased to the Timeline fps, which would move them by up to half a frame), or its value as one Keyframe."""
@@ -1592,7 +1599,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
 
     @classmethod
     def execute(cls, source, coverage, output_megapixels, state_json):
-        cutout = load_scene_state(state_json)
+        cutout = _cutout_state(state_json)
         if isinstance(source, PanoSceneValue):
             # The Scene is the Stickers state; the Cutout state gives only the Camera, at its own recorded fps.
             state, sources, port, coverage_deg, bg_color = source.state, source.sources, source.port, source.coverage, source.bg_color

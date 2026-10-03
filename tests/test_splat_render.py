@@ -45,7 +45,7 @@ def _shell(count, center, radius, seed=0):
 
 
 def _render(splat, projection, state=None, sources=None, bg=None, bg_color=BLACK):
-    state = state or load_scene_state({"version": 2})
+    state = state or load_scene_state({"version": 2, "camera": {}})
     evaluated = evaluate_scene_state(state, 0.0)
     return render_frame(evaluated, SceneSources(sources or {}, state["painting"]), evaluated["camera"], projection,
                         bg=bg, bg_key=None if bg is None else 0, bg_color=bg_color, device=CPU, scene=splat_content(splat), scene_index=0)
@@ -233,7 +233,7 @@ def test_splat_and_world_stickers_are_ordered_by_depth(distance, front):
     # A solid red ball of gaussians 2 ahead (the Camera looks down glTF -Z, the SPLAT's +Z), a blue Sticker in
     # front of or behind it, and nothing else but the bg_color.
     splat = _blobs(_blob((0.0, 0.0, 2.0), (1.0, 0.0, 0.0), size=0.15))
-    state = load_scene_state({"version": 2, "stickers": [_world_sticker("s", distance, scale=0.1 * distance)]})
+    state = load_scene_state({"version": 2, "camera": {}, "stickers": [_world_sticker("s", distance, scale=0.1 * distance)]})
     sources = {"s": StickerSource(_solid((0.0, 0.0, 1.0)), FULL)}
 
     color, _mask, depth = _render(splat, Projection.perspective(64, 64, 30.0), state, sources, bg_color=GREEN)

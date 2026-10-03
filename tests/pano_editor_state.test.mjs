@@ -21,6 +21,7 @@ import {
   cameraFields,
   deleteWorldSticker,
   sceneStickerLabel,
+  noteCameraEdit,
   setCameraField,
   setCameraShot,
   setEditorActive,
@@ -34,7 +35,7 @@ import {
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
 import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
-import { loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
+import { defaultCamera, loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
 const sceneNode = () => ({ __panoSceneStateV2: true });
@@ -225,10 +226,10 @@ test("state v2 round trips through the editor's working state without loss", () 
   for (const name of ["v2_canonical", "v2_interpolation", "v2_half_turns", "v2_invalid_fields", "v1_stickers"]) {
     const text = readFixture(name);
     const state = parseSceneEditorState(text);
-    assert.deepEqual(JSON.parse(editorStateText(sceneNode(), state)), loadSceneState(text), name);
+    assert.deepEqual(loadSceneState(editorStateText(sceneNode(), state)), loadSceneState(text), name);
     // Undo restores the working state from a history snapshot.
     const restored = JSON.parse(JSON.stringify(makePanoEditorHistorySnapshot(state)));
-    assert.deepEqual(JSON.parse(editorStateText(sceneNode(), restored)), { ...loadSceneState(text), painting_layer: null }, name);
+    assert.deepEqual(loadSceneState(editorStateText(sceneNode(), restored)), { ...loadSceneState(text), painting_layer: null }, name);
   }
 });
 
@@ -258,7 +259,7 @@ test("editing a sky Sticker changes its static value, or keys it once it has Key
   setStickerOpacity(keyed, 22, 0.75);
   setStickerPose(keyed, 22, { hFOV_deg: 33 });
 
-  const saved = JSON.parse(editorStateText(sceneNode(), state));
+  const saved = loadSceneState(editorStateText(sceneNode(), state));
   const loaded = loadSceneState(text);
   assert.deepEqual([saved.timeline, saved.camera, saved.scene], [loaded.timeline, loaded.camera, loaded.scene]);
   assert.deepEqual(saved.stickers[1], loaded.stickers[1]);
@@ -311,7 +312,7 @@ test("a duplicated Sticker keeps its Clip range, Keyframes and opacity", () => {
   assert.deepEqual(copy.direction.keyframes.map((key) => key.value.yaw_deg), source.direction.keyframes.map((key) => key.value.yaw_deg + 8));
   assert.equal(copy.direction.keyframes.at(-1).value.yaw_deg, 183, "Keyframes keep their turns");
   assert.equal(copy.direction.value.yaw_deg, -177, "the static yaw wraps into -180..180");
-  const saved = JSON.parse(editorStateText(sceneNode(), state)).stickers.at(-1);
+  const saved = loadSceneState(editorStateText(sceneNode(), state)).stickers.at(-1);
   assert.deepEqual(saved, { ...copy, id: "st_copy", z_index: 7 });
   assert.equal(sceneStickerLabel(copy), "logo.png");
   assert.equal(sceneStickerLabel(state.stickers[1]), "Sticker input");
@@ -360,7 +361,7 @@ test("a sky Sticker with Keyframes can be locked and edited on the node", () => 
   const selected = applyStickersNodeSurfaceAction(state, { type: "select-sticker", id: "st_sky" }).state;
   const locked = applyStickersNodeSurfaceAction(selected, { type: "toggle-lock" });
   assert.equal(locked.changed, true);
-  assert.equal(JSON.parse(editorStateText(sceneNode(), locked.state)).stickers[0].locked, true);
+  assert.equal(loadSceneState(editorStateText(sceneNode(), locked.state)).stickers[0].locked, true);
 
   const moved = applyStickersNodeSurfaceAction(selected, { type: "set-transform", value: { yaw_deg: 90 } });
   assert.equal(moved.changed, true);
@@ -396,7 +397,7 @@ test("the inspector edits the Camera's Lanes by the recording rule", () => {
   assert.deepEqual(camera.position.keyframes.map((key) => key.frame), [0, 24, 48]);
 
   // A Lane without Keyframes changes its static value.
-  const plain = parseSceneEditorState(null).camera;
+  const plain = parseSceneEditorState(null, { camera: true }).camera;
   setCameraField(plain, 12, "position_z", -4);
   setCameraField(plain, 12, "yaw_deg", 30);
   assert.deepEqual([plain.position, plain.rotation.value.yaw_deg], [{ value: [0, 0, -4], keyframes: [] }, 30]);
@@ -425,6 +426,75 @@ test("opening and closing the editor leaves an unedited state_json text alone", 
     const text = editorStateText(node, parseSceneEditorState(current, options));
     assert.equal(sameEditorStateText(node, text, current), true, JSON.stringify(current.slice(0, 20)));
   }
+});
+
+// A v2 state saved before the Camera had a projection reads as a Camera that shoots in perspective;
+// saving it again writes the same text, so the node's execution cache still hits.
+test("a state saved before the Camera had a projection is saved as the same text", () => {
+  const node = { __panoSceneStateV2: true };
+  for (const name of ["v2_canonical", "v2_interpolation"]) {
+    const loaded = loadSceneState(readFixture(name));
+    const { projection, ...camera } = loaded.camera;
+    const before = JSON.stringify({ ...loaded, camera });
+    for (const options of [{}, { camera: true }]) {
+      const state = parseSceneEditorState(before, options);
+      assert.equal(state.camera.projection, "perspective");
+      assert.equal(editorStateText(node, state), before, name);
+    }
+  }
+  const erp = loadSceneState(readFixture("v2_erp_camera"));
+  assert.equal(editorStateText(node, parseSceneEditorState(JSON.stringify(erp))), JSON.stringify(erp));
+});
+
+test("the Stickers editor keeps a state without a Camera without one", () => {
+  const node = { __panoSceneStateV2: true };
+  const text = readFixture("v2_no_camera");
+  const state = parseSceneEditorState(text);
+  assert.equal(state.camera, null);
+  assert.equal("default_camera" in state, false);
+  setTimelineFps(state, 60);
+  const saved = loadSceneState(editorStateText(node, state));
+  assert.deepEqual(saved, rebaseSceneState(loadSceneState(text), 60));
+  assert.equal(saved.camera, null);
+});
+
+// The Cutout always shoots through a Camera: without one it edits the default Camera, as the node shoots it.
+test("the Cutout editor edits the default Camera of a state without one, and saves none until it is edited", () => {
+  const node = { __panoSceneStateV2: true };
+  for (const current of ["", readFixture("v2_no_camera")]) {
+    const state = parseSceneEditorState(current, { camera: true });
+    assert.deepEqual(state.camera, defaultCamera());
+    const text = editorStateText(node, state);
+    assert.equal(JSON.parse(text).camera, null);
+    assert.equal(sameEditorStateText(node, text, current, { rebased: true }), true);
+
+    // The editor notes each edit as it saves it (commitState).
+    noteCameraEdit(state);
+    assert.equal(state.default_camera, true, "opening and closing keeps the mark");
+    setCameraField(state.camera, 0, "yaw_deg", 30);
+    noteCameraEdit(state);
+    const edited = loadSceneState(editorStateText(node, state));
+    assert.deepEqual(edited.camera, { ...defaultCamera(), rotation: { value: { yaw_deg: 30, pitch_deg: 0, roll_deg: 0 }, keyframes: [] } });
+
+    // Set back to the default values, the edited Camera is still saved: in Panorama Studio null is no Camera.
+    setCameraField(state.camera, 0, "yaw_deg", 0);
+    noteCameraEdit(state);
+    const back = JSON.parse(editorStateText(node, state));
+    assert.notEqual(back.camera, null);
+    assert.deepEqual(loadSceneState(back).camera, defaultCamera());
+  }
+  // An erp Camera is never folded to null, whatever its other values.
+  const erp = parseSceneEditorState("", { camera: true });
+  erp.camera.projection = "erp";
+  noteCameraEdit(erp);
+  assert.equal(loadSceneState(editorStateText(node, erp)).camera.projection, "erp");
+  const unnoted = parseSceneEditorState("", { camera: true });
+  unnoted.camera.projection = "erp";
+  assert.equal(loadSceneState(editorStateText(node, unnoted)).camera.projection, "erp");
+  // Shooting a PANO_SCENE, the Cutout's own state without a Camera stays without one too.
+  const shooting = parseSceneEditorState("", { camera: true, fps: 12, scene: { version: 2, timeline: { fps: 12 } } });
+  assert.deepEqual(shooting.camera, defaultCamera());
+  assert.equal(loadSceneState(editorStateText(node, shooting)).camera, null);
 });
 
 test("an edit, an unreadable text, or the legacy node's other text is written", () => {
@@ -503,7 +573,7 @@ test("changing the Timeline fps in the editor keeps every time in seconds and th
 
   setTimelineFps(state, 24);
 
-  const saved = JSON.parse(editorStateText(sceneNode(), state));
+  const saved = loadSceneState(editorStateText(sceneNode(), state));
   assert.deepEqual(saved, rebaseSceneState(loadSceneState(text), 24));
   assert.equal(state.stickers[0], first, "the Sticker objects the editor holds stay the same");
   assert.equal(state.stickers[3], uploading, "a Sticker still uploading stays");
@@ -514,7 +584,7 @@ test("a run's video fps applied to an open state matches opening the editor with
   const text = readFixture("v2_canonical");
   const open = parseSceneEditorState(text);
   setTimelineFps(open, 25);
-  assert.deepEqual(JSON.parse(editorStateText(sceneNode(), open)), JSON.parse(editorStateText(sceneNode(), parseSceneEditorState(text, { fps: 25 }))));
+  assert.deepEqual(loadSceneState(editorStateText(sceneNode(), open)), loadSceneState(editorStateText(sceneNode(), parseSceneEditorState(text, { fps: 25 }))));
 });
 
 const worldSticker = (overrides = {}) => loadSceneState({
@@ -712,7 +782,7 @@ test("a Cutout shooting a PANO_SCENE works on the Scene with its own Camera, and
   assert.equal(state.camera.aspect, 1.5);
 
   state.camera.fov.value = 55;
-  const saved = JSON.parse(editorStateText(sceneNode(), state));
+  const saved = loadSceneState(editorStateText(sceneNode(), state));
 
   assert.deepEqual(saved, loadSceneState({ ...rebaseSceneState(loadSceneState(own), 12), camera: state.camera }));
   assert.deepEqual(saved.stickers, []);
@@ -747,7 +817,7 @@ test("a fps change of a Cutout showing a PANO_SCENE rebases the state it saves t
   const state = parseSceneEditorState(JSON.stringify(own), { fps: 24, scene: { version: 2, timeline: { fps: 24 } } });
 
   setTimelineFps(state, 12);
-  const saved = JSON.parse(editorStateText(sceneNode(), state));
+  const saved = loadSceneState(editorStateText(sceneNode(), state));
 
   assert.equal(saved.timeline.fps, 12);
   assert.equal(saved.timeline.length, 24);

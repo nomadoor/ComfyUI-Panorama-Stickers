@@ -3,7 +3,7 @@ import { wrapYaw } from "./pano_math.js";
 import { DEG2RAD } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { loadSceneState, rebaseSceneState } from "./pano_scene_state.js";
+import { defaultCamera, loadSceneState, rebaseSceneState, sceneStateText } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
@@ -186,8 +186,12 @@ export function paintingLayerNeedsSync(layer, { paintCount, maskCount, width, he
 // `cutout_state`, which editorStateText() saves with the Camera; the Scene is not saved (ADR 0025).
 // Both are rebased to `fps`, the Scene's Timeline fps, so the Camera's Keyframes keep their seconds as
 // the node reads them.
+// With `camera` (the Cutout editor, which always shoots through a Camera) a state without a Camera
+// is edited with the default one, as the node shoots it; `default_camera` marks it until the Camera
+// is first edited (noteCameraEdit), so that
+// editorStateText() saves the state without a Camera again while that Camera is left as it is.
 export function parseSceneEditorState(text, options = {}) {
-  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, fps = null, scene: shot = null } = options;
+  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, fps = null, scene: shot = null, camera = false } = options;
   let scene;
   try {
     scene = loadSceneState(text);
@@ -195,6 +199,8 @@ export function parseSceneEditorState(text, options = {}) {
     scene = loadSceneState(null);
   }
   if (fps && fps !== scene.timeline.fps) scene = rebaseSceneState(scene, fps);
+  const defaulted = camera && scene.camera === null;
+  if (defaulted) scene = { ...scene, camera: defaultCamera() };
   if (shot) {
     let shown = loadSceneState(shot);
     if (fps && fps !== shown.timeline.fps) shown = rebaseSceneState(shown, fps);
@@ -202,6 +208,7 @@ export function parseSceneEditorState(text, options = {}) {
   }
   return {
     ...scene,
+    ...(defaulted ? { default_camera: true } : {}),
     coverage: normalizeCoverageValue(coverage),
     bg_color: backgroundColor,
     output_preset: parseOutputPresetValue(outputPreset),
@@ -220,7 +227,8 @@ export function setTimelineFps(state, fps) {
   state.timeline = rebased.timeline;
   const owners = [[state.camera, rebased.camera], [state.scene, rebased.scene], ...state.stickers.map((item) => [item, stickers.get(item.id)])];
   for (const [owner, next] of owners) {
-    // Only a Sticker still uploading has no match; it was just added with a default Clip range and no Keyframes.
+    // A state without a Camera has none to rebase. Only a Sticker still uploading has no match; it was
+    // just added with a default Clip range and no Keyframes.
     if (!next) continue;
     if (owner.clip) owner.clip = next.clip;
     for (const name of laneNames(owner)) owner[name].keyframes = next[name].keyframes;
@@ -460,9 +468,19 @@ export function setEditorActive(node, active) {
 // The `state_json` text for the editor's working state: state v2 for PanoramaStickersNode and
 // PanoramaCutoutNode (a Cutout showing a PANO_SCENE saves its own state with the Camera), the working
 // state itself (v1) for the legacy nodes.
+// Drops the `default_camera` mark once the Camera has left the default one, so that a Camera edited
+// and then set back to the default values is still saved: it was added by an edit, not left as it was.
+export function noteCameraEdit(state) {
+  if (state.default_camera && JSON.stringify(loadSceneState({ version: 2, camera: state.camera }).camera) !== JSON.stringify(defaultCamera())) {
+    delete state.default_camera;
+  }
+}
+
 export function editorStateText(node, state) {
   if (!node?.__panoSceneStateV2) return JSON.stringify(state);
-  return JSON.stringify(loadSceneState(state.cutout_state ? { ...state.cutout_state, camera: state.camera } : state));
+  const saved = loadSceneState(state.cutout_state ? { ...state.cutout_state, camera: state.camera } : state);
+  if (state.default_camera && JSON.stringify(saved.camera) === JSON.stringify(defaultCamera())) saved.camera = null;
+  return sceneStateText(saved);
 }
 
 // Whether the widget's `current` text already means `text`. ComfyUI's execution cache compares the
@@ -475,9 +493,9 @@ export function sameEditorStateText(node, text, current, { rebased = false } = {
   if (!node?.__panoSceneStateV2) return false;
   try {
     const loaded = loadSceneState(current);
-    if (JSON.stringify(loaded) === text) return true;
+    if (sceneStateText(loaded) === text) return true;
     const { fps } = JSON.parse(text).timeline;
-    return rebased && fps !== loaded.timeline.fps && JSON.stringify(loadSceneState(rebaseSceneState(loaded, fps))) === text;
+    return rebased && fps !== loaded.timeline.fps && sceneStateText(rebaseSceneState(loaded, fps)) === text;
   } catch {
     return false;
   }

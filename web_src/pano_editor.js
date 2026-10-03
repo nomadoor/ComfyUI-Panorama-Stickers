@@ -27,6 +27,7 @@ import {
   newSceneSticker,
   newWorldSceneSticker,
   normalizeCoverageValue,
+  noteCameraEdit,
   paintingLayerNeedsSync,
   parsePanoEditorState,
   parseSceneEditorState,
@@ -659,6 +660,7 @@ async function showEditor(node, type, options = {}) {
     active: editorActive(node),
     fps: stateV2 ? videoTimelineFps(node) : null,
     scene: capture?.state ?? null,
+    camera: cutoutV2,
   });
   node.__panoLiveStateOverride = state;
   node.__panoLiveStateVersion = 0;
@@ -6043,6 +6045,8 @@ async function showEditor(node, type, options = {}) {
   function pushHistory() {
     if (readOnly) return;
     syncCutoutShot();
+    // The snapshot keeps whether the Camera was edited, so only undoing to the first one brings the mark back.
+    noteCameraEdit(state);
     // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
     if (stateV2 && state.stickers.some(isUploadingSticker)) return;
     editor.historyController.commitActionGroup(JSON.stringify(makePanoEditorHistorySnapshot(state)));
@@ -7459,6 +7463,7 @@ async function showEditor(node, type, options = {}) {
   function commitState() {
     if (readOnly) return;
     syncCutoutShot();
+    noteCameraEdit(state);
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
     const text = editorStateText(node, state);

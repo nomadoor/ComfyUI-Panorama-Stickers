@@ -6,6 +6,7 @@
   },
   "camera": {
     "aspect": 1.7320508075688772,
+    "projection": "perspective",
     "position": {
       "value": [
         0.0,

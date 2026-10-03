@@ -3,6 +3,7 @@
   "timeline": {"fps": -1, "length": 0.4},
   "camera": {
     "aspect": "wide",
+    "projection": "fisheye",
     "position": {
       "value": [1, "x", 3],
       "keyframes": [

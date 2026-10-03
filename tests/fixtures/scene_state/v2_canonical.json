@@ -3,6 +3,7 @@
   "timeline": {"fps": 30.0, "length": 120},
   "camera": {
     "aspect": 1.7777777777777777,
+    "projection": "perspective",
     "position": {
       "value": [0.0, 1.6, 0.0],
       "keyframes": [

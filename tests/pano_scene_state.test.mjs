@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { loadSceneState, loadStickerState, rebaseSceneState } from "../web_src/pano_scene_state.js";
+import { defaultCamera, loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -20,9 +20,38 @@ function assertClose(actual, expected, path = "$") {
 
 test("state_json v1 and v2 fixtures load as the documented v2 state", () => {
   assertClose(loadSceneState(fixture("v2_canonical")), JSON.parse(fixture("v2_canonical")));
-  for (const name of ["v1_stickers", "v1_cutout", "v2_invalid_fields"]) {
+  for (const name of ["v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera"]) {
     assertClose(loadSceneState(fixture(name)), JSON.parse(fixture(`${name}.v2`)));
   }
+});
+
+test("a state has no Camera unless `camera` is an object, and a Camera has a projection", () => {
+  for (const camera of ["", ',"camera":null', ',"camera":"front"', ',"camera":[1]']) {
+    assert.equal(loadSceneState(`{"version":2${camera}}`).camera, null);
+  }
+  assert.deepEqual(loadSceneState('{"version":2,"camera":{}}').camera, defaultCamera());
+  assert.equal(defaultCamera().projection, "perspective");
+  for (const [projection, expected] of [["erp", "erp"], ["perspective", "perspective"], ["ERP", "perspective"], [null, "perspective"], [1, "perspective"]]) {
+    assert.equal(loadSceneState({ version: 2, camera: { projection } }).camera.projection, expected);
+  }
+  assert.equal(loadSceneState(fixture("v1_stickers")).camera, null);
+  assert.equal(loadSceneState(fixture("v1_cutout")).camera.projection, "perspective");
+  assert.equal(rebaseSceneState(loadSceneState(fixture("v2_no_camera")), 60).camera, null);
+  assert.equal(rebaseSceneState(loadSceneState(fixture("v2_erp_camera")), 12).camera.projection, "erp");
+  assert.equal(evaluateSceneState(loadSceneState(fixture("v2_no_camera")), 10).camera, null);
+});
+
+test("the state text leaves out the default projection and reads back the same", () => {
+  const perspective = loadSceneState(fixture("v1_cutout"));
+  const text = sceneStateText(perspective);
+  assert.equal(JSON.parse(text).camera.projection, undefined);
+  assert.deepEqual(Object.keys(JSON.parse(text).camera), ["aspect", "position", "rotation", "fov"]);
+  assert.deepEqual(loadSceneState(text), perspective);
+  const erp = loadSceneState(fixture("v2_erp_camera"));
+  assert.equal(sceneStateText(erp), JSON.stringify(erp));
+  const none = loadSceneState(fixture("v2_no_camera"));
+  assert.equal(sceneStateText(none), JSON.stringify(none));
+  assert.equal(JSON.parse(sceneStateText(none)).camera, null);
 });
 
 test("sticker_state v1 and v2 fixtures load as sticker_state v2", () => {
