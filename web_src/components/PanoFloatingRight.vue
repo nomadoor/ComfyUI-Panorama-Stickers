@@ -1,9 +1,12 @@
 <script setup>
 import PanoIconButton from "./PanoIconButton.vue";
+import PanoSegments from "./PanoSegments.vue";
 import SvgIcon from "./SvgIcon.vue";
 
 defineProps({
   buttons: { type: Array, default: () => [] },
+  // How the panorama view moves in space: 3DoF | 6DoF (#71), shown with World content.
+  spaceButtons: { type: Array, default: () => [] },
   preview: { type: Object, default: () => ({}) },
   previewToggle: { type: Object, default: () => ({}) },
 });
@@ -11,6 +14,12 @@ defineProps({
 
 <template>
   <div class="pano-floating-right">
+    <PanoSegments
+      v-show="spaceButtons.some((button) => button.visible !== false)"
+      :buttons="spaceButtons"
+      attr="data-space-mode"
+      label="Space view mode"
+    />
     <PanoIconButton
       v-for="button in buttons"
       v-show="button.visible !== false"

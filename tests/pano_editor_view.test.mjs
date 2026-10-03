@@ -551,22 +551,25 @@ test("the space view starts in 3DoF each time the editor opens, and a 3DoF | 6Do
   assert.match(editor, /if \(action === "frame-view"\) \{\s*if \(!isFreeSpaceView\(\)\) return;/);
   // Each frame's input checks the content, so 6DoF without it goes back to 3DoF.
   assert.match(editor, /applySpaceMode\(spaceModeWithContent\(spaceModeState\(\), hasSpaceContent\(\)\)\);\s*const space = isSpaceView\(\)/);
-  // The segments are the view toggle's control, next to it (Vue).
+  // The segments sit with the view buttons at the bottom right (Vue), not in the view toggle.
   const preset = buildModalShellPreset("stickers");
   assert.deepEqual(preset.spaceButtons.map((button) => [button.key, button.label]), [["3dof", "3DoF"], ["6dof", "6DoF"]]);
   assert.equal(preset.floatingButtons.some((button) => button.action === "space-mode"), false);
   assert.deepEqual(buildModalShellPreset("cutout").spaceButtons, []);
+  const floating = readFileSync(new URL("../web_src/components/PanoFloatingRight.vue", import.meta.url), "utf8");
+  assert.match(floating, /<PanoSegments\s+v-show="spaceButtons\.some\(\(button\) => button\.visible !== false\)"\s+:buttons="spaceButtons"\s+attr="data-space-mode"/);
   const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
-  assert.match(toggle, /class="pano-view-toggle pano-space-toggle"/);
-  assert.match(toggle, /:data-space-mode="button\.key"/);
+  assert.doesNotMatch(toggle, /space|gizmo/i);
+  const segments = readFileSync(new URL("../web_src/components/PanoSegments.vue", import.meta.url), "utf8");
+  assert.match(segments, /v-bind="\{ \[attr\]: button\.key \}"/);
   // The segments' text names them; no aria-label repeats it.
-  const segments = toggle.slice(toggle.indexOf('class="pano-view-toggle pano-space-toggle"'));
   assert.doesNotMatch(segments, /aria-label="button\.label"/);
   // A frame whose content went away shows 3DoF on the segments with it.
   const render = editor.slice(editor.indexOf("  function renderEditorView() {"), editor.indexOf("\n  }\n", editor.indexOf("  function renderEditorView() {")));
-  assert.match(render, /syncFloatingViewButtonState\(\);$/);
+  assert.match(render, /syncFloatingViewButtonState\(\);\n[^\n]*\n\s*if \(editor\.worldSelectedId \|\| worldMenuShown\) updateSelectionMenu\(\);$/);
   const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
-  assert.match(modal, /:space-buttons="uiState\.spaceButtons \|\| \[\]"/);
+  assert.match(modal, /<PanoFloatingRight\s+:buttons="uiState\.floatingButtons \|\| floatingButtons"\s+:space-buttons="uiState\.spaceButtons \|\| \[\]"/);
+  assert.match(modal, /<PanoViewToggle :buttons="uiState\.viewButtons \|\| shellPreset\.viewButtons \|\| \[\]" \/>/);
 });
 
 test("the three.js view picks the World content it last drew, not its guides", () => {
@@ -618,14 +621,12 @@ test("in the space view a press picks the gizmo first, then a world Sticker, the
   assert.match(editor, /setWorldStickerField\(worldInspected, editor\.frame, key, out\);/);
 });
 
-test("a Move | Rotate | Scale segmented control picks the gizmo mode; no key or toggle button flips it", () => {
-  const preset = buildModalShellPreset("stickers");
-  assert.deepEqual(preset.gizmoButtons.map((button) => [button.key, button.label]), [["translate", "Move"], ["rotate", "Rotate"], ["scale", "Scale"]]);
-  assert.deepEqual(buildModalShellPreset("cutout").gizmoButtons, []);
-  const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
-  assert.match(toggle, /:data-gizmo-mode="button\.key"/);
+test("a Move | Rotate | Scale segmented control in the world Sticker's selection menu picks the gizmo mode; no key or toggle button flips it", () => {
+  assert.equal("gizmoButtons" in buildModalShellPreset("stickers"), false);
+  const menu = readFileSync(new URL("../web_src/components/PanoSelectionMenu.vue", import.meta.url), "utf8");
+  assert.match(menu, /<PanoSegments\s+v-else-if="item\.kind === 'segments'"\s+:buttons="item\.buttons \|\| \[\]"\s+:attr="item\.attr"/);
   const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
-  assert.match(modal, /:gizmo-buttons="uiState\.gizmoButtons \|\| \[\]"/);
+  assert.doesNotMatch(modal, /gizmo-buttons/);
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   assert.match(editor, /editor\.gizmoMode = gizmoModeTarget\.getAttribute\("data-gizmo-mode"\);/);
   // W and R are ComfyUI's own shortcuts (workflows, refresh), so the editor binds no gizmo keys.
@@ -635,4 +636,29 @@ test("a Move | Rotate | Scale segmented control picks the gizmo mode; no key or 
   assert.match(view, /import \{ TransformControls \} from "three\/examples\/jsm\/controls\/TransformControls\.js";/);
   assert.match(view, /world\.add\(controls\.getHelper\(\)\);/);
   assert.doesNotMatch(editor, /TransformControls/);
+});
+
+test("the world Sticker's selection menu shows exactly while its gizmo does, and follows it", () => {
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  // A selected world Sticker takes the menu instead of the canvas selection's.
+  const update = editor.slice(editor.indexOf("  function updateSelectionMenu() {"), editor.indexOf("  function showSelectionMenu(model) {"));
+  assert.ok(update.indexOf('if (editor.mode === "frame")') < update.indexOf("if (editor.worldSelectedId) {"));
+  assert.ok(update.indexOf("if (editor.worldSelectedId) {") < update.indexOf("const selected = getSelected();"));
+  // It is the gizmo's own condition (worldGizmo: shown, editable, i.e. not locked and not read-only, and
+  // active at the playhead), in the space view, hidden during a press or a drag like the canvas menu.
+  const world = update.slice(update.indexOf("  function worldSelectionMenuModel() {"));
+  assert.match(world, /const space = isSpaceView\(\) && !editor\.interaction \? editorViewInput\(\)\.space : null;\s*if \(!space\?\.gizmo\) return \{ visible: false \};/);
+  assert.match(editor, /if \(!editor\.showObjects \|\| !worldStickerEditable\(sticker\) \|\| !value\?\.active\) return null;/);
+  assert.match(editor, /function worldStickerEditable\(sticker\) \{\s*return !!sticker && !readOnly && !sticker\.locked;/);
+  // A world selection is a single Sticker: selecting one clears the canvas selection, and the reverse.
+  assert.match(editor, /function selectWorldSticker\(id\) \{\s*setSelectedItem\(null\);/);
+  assert.match(editor, /function setSelectedItems\(items, primaryId = null\) \{[\s\S]*?clearWorldSelection\(\);/);
+  // Each frame of the view keeps it under the Sticker (view, playhead) and takes it away with the gizmo.
+  assert.match(editor, /syncFloatingViewButtonState\(\);\s*\/\/ [^\n]*\n\s*if \(editor\.worldSelectedId \|\| worldMenuShown\) updateSelectionMenu\(\);/);
+  // Both menus are placed by selectionMenuPlacement, which never hides them (also after measuring).
+  const show = editor.slice(editor.indexOf("  function showSelectionMenu(model) {"), editor.indexOf("  function hideTooltip() {"));
+  assert.match(show, /selectionMenuPlacement\(model\.anchor, menuW, menuH, canvas\.width, canvas\.height\)/);
+  assert.doesNotMatch(show, /uiState\.selectionMenu\.visible = false/);
+  // A segment marks its mode at once.
+  assert.match(editor, /editor\.gizmoMode = gizmoModeTarget\.getAttribute\("data-gizmo-mode"\);\s*runtime\.backgroundDirty = true;\s*updateSelectionMenu\(\);/);
 });

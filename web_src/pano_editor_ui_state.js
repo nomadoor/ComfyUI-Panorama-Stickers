@@ -225,7 +225,49 @@ export function buildSelectionMenuModel({
     ];
   }
 
-  const finiteCorners = geom.corners
+  return selectionMenuAt(geom.corners, items);
+}
+
+// The gizmo modes of a world Sticker (#72), as segments of its selection menu.
+const GIZMO_MODES = [
+  { key: "translate", label: "Move", tip: "Move the world sticker" },
+  { key: "rotate", label: "Rotate", tip: "Rotate the world sticker" },
+  { key: "scale", label: "Scale", tip: "Scale the world sticker" },
+];
+
+// The selection menu of the selected world Sticker, below its corners on the canvas: the Move | Rotate |
+// Scale segments that pick its gizmo mode.
+export function buildWorldSelectionMenuModel({ corners, gizmoMode }) {
+  return selectionMenuAt(corners, [{
+    key: "gizmo-mode",
+    kind: "segments",
+    attr: "data-gizmo-mode",
+    label: "Gizmo mode",
+    buttons: GIZMO_MODES.map((mode) => ({ ...mode, pressed: mode.key === gizmoMode ? "true" : "false" })),
+  }]);
+}
+
+// Where a menuW x menuH selection menu goes in a canvasW x canvasH canvas for its anchor (the box of
+// its target): centered below the target, above it when it does not fit below, and moved into the
+// canvas when it fits neither, so it always shows. null when the anchor is not finite.
+export function selectionMenuPlacement(anchor, menuW, menuH, canvasW, canvasH) {
+  const pad = 14;
+  const gap = 18;
+  const { minX, maxX, minY, maxY } = anchor || {};
+  if (![minX, maxX, minY, maxY].every(Number.isFinite)) return null;
+  const left = Math.min(Math.max(((minX + maxX) * 0.5) - menuW * 0.5, pad), Math.max(pad, canvasW - menuW - pad));
+  const maxTop = Math.max(pad, canvasH - menuH - pad);
+  const below = maxY + gap;
+  const above = minY - gap - menuH;
+  let top;
+  if (below <= maxTop) top = Math.max(below, pad);
+  else if (above >= pad) top = Math.min(above, maxTop);
+  else top = Math.min(Math.max(below, pad), maxTop);
+  return { left, top };
+}
+
+function selectionMenuAt(corners, items) {
+  const finiteCorners = corners
     .map((point) => ({ x: Number(point?.x), y: Number(point?.y) }))
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
   if (!finiteCorners.length) return { visible: false, left: 0, top: 0, items: [] };

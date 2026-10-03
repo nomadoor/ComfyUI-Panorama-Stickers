@@ -347,7 +347,8 @@ export function worldStickerPlane(value, crop, mediaWidth, mediaHeight) {
   };
 }
 
-function planeCorners(plane) {
+// The World corners of a worldStickerPlane() (or a world Sticker layer of the same shape).
+export function planeCorners(plane) {
   const halfW = plane.width / 2;
   const halfH = plane.height / 2;
   return [[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]]

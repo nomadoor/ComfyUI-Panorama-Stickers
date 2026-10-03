@@ -82,6 +82,7 @@ import {
   newWorldStickerTransform,
   orbitView,
   panView,
+  planeCorners,
   projectPoint,
   reuseWheelPick,
   sceneFilesOf,
@@ -128,6 +129,8 @@ import {
   buildPreviewSidePanelModel,
   buildSelectionMenuModel,
   buildTimelineModel,
+  buildWorldSelectionMenuModel,
+  selectionMenuPlacement,
   buildUiSettingsModel,
   patchUiButton,
   worldFieldRange,
@@ -646,7 +649,6 @@ async function showEditor(node, type, options = {}) {
     stageWarningDetail: "",
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
     spaceButtons: (shellPreset.spaceButtons || []).map((button) => ({ ...button, visible: false })),
-    gizmoButtons: (shellPreset.gizmoButtons || []).map((button) => ({ ...button, visible: false })),
     // Only PanoramaStickersNode places images in space.
     toolButtons: (shellPreset.toolButtons || []).map((button) => ({ ...button, disabled: false, ...(button.key === "add-world" ? { visible: sceneV2 } : {}) })),
     floatingButtons: [
@@ -826,6 +828,8 @@ async function showEditor(node, type, options = {}) {
   const paintDockEl = root.querySelector("[data-paint-dock]");
   const videoTransportEl = root.querySelector(".pano-video-transport");
   const selectionMenu = root.querySelector("[data-selection-menu]");
+  // Whether the selection menu shows the world Sticker's menu, which renderEditorView() keeps current.
+  let worldMenuShown = false;
   const tooltipEl = root.querySelector("[data-tooltip]");
   const cutoutPreviewHost = root.querySelector("[data-camera-preview-host]");
   const cutoutPreviewCanvas = root.querySelector("[data-camera-preview-canvas]");
@@ -2780,12 +2784,6 @@ async function showEditor(node, type, options = {}) {
       button.visible = spaceView;
       button.pressed = button.key === editor.spaceMode ? "true" : "false";
     });
-    // Move | Rotate | Scale while the selected world Sticker's gizmo shows in the frame (worldGizmo).
-    const gizmo = spaceView && !!editorViewInput().space?.gizmo;
-    uiState.gizmoButtons.forEach((button) => {
-      button.visible = gizmo;
-      button.pressed = button.key === editor.gizmoMode ? "true" : "false";
-    });
     patchUiButton(uiState.floatingButtons, "action", "frame-view", {
       visible: free,
       disabled: readOnly || !free,
@@ -3920,6 +3918,8 @@ async function showEditor(node, type, options = {}) {
     // The frame's input may have taken 6DoF back to 3DoF (its World content went away); the 3DoF / 6DoF
     // segments show it with this frame.
     syncFloatingViewButtonState();
+    // The world Sticker's menu follows it with the view and the playhead, and goes with its gizmo.
+    if (editor.worldSelectedId || worldMenuShown) updateSelectionMenu();
   }
 
   // Draws what the shot sees into rect, or returns false when there is nothing to draw yet.
@@ -8390,8 +8390,15 @@ async function showEditor(node, type, options = {}) {
 
   function updateSelectionMenu() {
     if (!selectionMenu) return;
+    worldMenuShown = false;
     if (editor.mode === "frame") {
       uiState.selectionMenu = { visible: false, left: 0, top: 0, items: [] };
+      return;
+    }
+    if (editor.worldSelectedId) {
+      const model = worldSelectionMenuModel();
+      worldMenuShown = model.visible;
+      showSelectionMenu(model);
       return;
     }
     const selected = getSelected();
@@ -8417,29 +8424,31 @@ async function showEditor(node, type, options = {}) {
       canRestoreSelectedToInitial,
       iconSet: ICON,
     });
+    showSelectionMenu(model);
+  }
 
+  // The selected world Sticker's menu shows while its gizmo does (worldGizmo: in the space view, not
+  // locked, in an editor that edits, inside its Clip range), below its plane or its 3D item's origin.
+  function worldSelectionMenuModel() {
+    const space = isSpaceView() && !editor.interaction ? editorViewInput().space : null;
+    if (!space?.gizmo) return { visible: false };
+    const camera = currentSpaceCamera();
+    const plane = space.stickers.find((layer) => layer.id === editor.worldSelectedId);
+    const points = plane ? planeCorners(plane) : [space.gizmo.transform.position];
+    const corners = points.map((point) => projectPoint(camera, point, canvas.width, canvas.height)).filter(Boolean);
+    return buildWorldSelectionMenuModel({ corners, gizmoMode: editor.gizmoMode });
+  }
+
+  function showSelectionMenu(model) {
     if (!model.visible) {
       uiState.selectionMenu = { visible: false, left: 0, top: 0, items: [] };
       return;
     }
 
-    const placeSelectionMenu = (menuW, menuH, { requireFitsBelow = true } = {}) => {
-      const pad = 14;
-      const minX = Number(model.anchor?.minX);
-      const maxX = Number(model.anchor?.maxX);
-      const maxY = Number(model.anchor?.maxY);
-      if (![minX, maxX, maxY].every(Number.isFinite)) return null;
-      const maxLeft = Math.max(pad, canvas.width - menuW - pad);
-      const x = clamp(((minX + maxX) * 0.5) - menuW * 0.5, pad, maxLeft);
-      const y = maxY + 18;
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-      if (requireFitsBelow && y + menuH > canvas.height - pad) return null;
-      return { left: x, top: y };
-    };
-
+    const placeSelectionMenu = (menuW, menuH) => selectionMenuPlacement(model.anchor, menuW, menuH, canvas.width, canvas.height);
     const estimatedW = Math.max(1, Number(editor.menuSize?.w || 220));
     const estimatedH = Math.max(1, Number(editor.menuSize?.h || 40));
-    const initialPlacement = placeSelectionMenu(estimatedW, estimatedH, { requireFitsBelow: false });
+    const initialPlacement = placeSelectionMenu(estimatedW, estimatedH);
     if (!initialPlacement) {
       uiState.selectionMenu = { visible: false, left: 0, top: 0, items: [] };
       return;
@@ -8458,10 +8467,7 @@ async function showEditor(node, type, options = {}) {
       const menuH = Math.round(Number(rect?.height || 0)) || 40;
       editor.menuSize = { w: menuW, h: menuH, measured: true };
       const measuredPlacement = placeSelectionMenu(menuW, menuH);
-      if (!measuredPlacement) {
-        uiState.selectionMenu.visible = false;
-        return;
-      }
+      if (!measuredPlacement) return;
       uiState.selectionMenu.left = measuredPlacement.left;
       uiState.selectionMenu.top = measuredPlacement.top;
     });
@@ -9597,6 +9603,7 @@ async function showEditor(node, type, options = {}) {
     if (ended?.kind === "space_pan" || ended?.kind === "space_orbit") {
       editor.interaction = null;
       updateCursor(editor.pointerPos);
+      updateSelectionMenu();
       return;
     }
     if (ended?.kind === "world_select" || ended?.kind === "world_gizmo") {
@@ -10022,7 +10029,7 @@ async function showEditor(node, type, options = {}) {
     if (gizmoModeTarget) {
       editor.gizmoMode = gizmoModeTarget.getAttribute("data-gizmo-mode");
       runtime.backgroundDirty = true;
-      syncFloatingViewButtonState();
+      updateSelectionMenu();
       requestDraw({ localOnly: true });
       return;
     }

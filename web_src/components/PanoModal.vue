@@ -216,14 +216,11 @@ watch(() => props.open, (nextOpen) => {
 
           <PanoVideoTransport :state="uiState.videoTransport || {}" />
 
-          <PanoViewToggle
-            :buttons="uiState.viewButtons || shellPreset.viewButtons || []"
-            :space-buttons="uiState.spaceButtons || []"
-            :gizmo-buttons="uiState.gizmoButtons || []"
-          />
+          <PanoViewToggle :buttons="uiState.viewButtons || shellPreset.viewButtons || []" />
 
           <PanoFloatingRight
             :buttons="uiState.floatingButtons || floatingButtons"
+            :space-buttons="uiState.spaceButtons || []"
             :fov-value="uiState.fovValue || '100°'"
             :preview="uiState.cameraPreview || {}"
             :preview-toggle="uiState.outputPreviewToggle || {}"
