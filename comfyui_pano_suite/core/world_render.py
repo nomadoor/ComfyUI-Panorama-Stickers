@@ -146,7 +146,8 @@ def _texture(textures: dict, sticker_id: str, source, device) -> torch.Tensor:
     """The source as premultiplied (1, 4, h, w) on `device`, so that transparent texels do not bleed into edges."""
     entry = textures.get(sticker_id)
     if entry is None or entry[0] != source.frame:
-        rgba = torch.as_tensor(source.rgba, dtype=torch.float32).to(device)
+        # A copy: a source can be a read-only array, which torch does not take without one.
+        rgba = torch.tensor(source.rgba, dtype=torch.float32, device=device)
         alpha = rgba[..., 3:]
         entry = textures[sticker_id] = (source.frame, torch.cat([rgba[..., :3] * alpha, alpha], dim=-1).permute(2, 0, 1)[None])
     return entry[1]

@@ -1,8 +1,9 @@
 """Backend render function shared by Stickers, Cutout, and Preview.
 
-One call draws one frame from the evaluated state at a Timeline frame (`evaluate_scene_state`), the resolved
-sources, a Camera, and a Projection. The layers are composited back to front: `bg_color`, `bg_media`, the Sky
-(`sky` Stickers in list order, then paint), and World content by depth (`world_render.py`).
+One call draws one frame from the layers of a Scene (`RenderLayer`: a state evaluated at a Timeline frame by
+`evaluate_scene_state` and its resolved sources), a Camera, and a Projection. They are composited back to front:
+`bg_color`, `bg_media`, the Sky of each layer from the bottom (`sky` Stickers in list order, then paint), and the
+World content of all layers by depth (`world_render.py`).
 """
 import math
 from dataclasses import dataclass, replace
@@ -75,6 +76,18 @@ class SceneSources:
     stickers: dict
     painting: dict
     painting_layer: dict | None = None
+
+
+@dataclass(frozen=True)
+class RenderLayer:
+    """One layer of a frame: `evaluate_scene_state` of its state at the frame (`evaluated`), its `SceneSources`,
+    and its `scene` content (`SceneContent` or None), of which item `scene_index` (None: none) is drawn while
+    `evaluated["scene"]` is active. Each Panorama Studio of a chain of `scene` inputs is one layer."""
+
+    evaluated: dict
+    sources: SceneSources
+    scene: SceneContent | None = None
+    scene_index: int | None = None
 
 
 def composite_frame(bg_color, bg: torch.Tensor | None, sky: torch.Tensor, world=(), bg_valid: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
@@ -505,8 +518,7 @@ def _project_background(bg: torch.Tensor, projection: Projection, view: torch.Te
 
 
 def render_frame(
-    evaluated: dict,
-    sources: SceneSources,
+    layers,
     camera: dict,
     projection: Projection,
     *,
@@ -516,32 +528,31 @@ def render_frame(
     device,
     cache: dict | None = None,
     bg_width: int | None = None,
-    scene: SceneContent | None = None,
-    scene_index: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Draw one frame. Returns float32 color (H, W, 3), mask (H, W), and depth (H, W) on `device`.
 
-    `evaluated` is `evaluate_scene_state` at the frame and `camera` the evaluated Camera value; the output
-    turns with the Camera's rotation. `bg` is this frame's `bg_media` image (h, w, C) or None, and `bg_key` a
-    hashable that names it (the bg_media frame index); without a key the background is not reused. `bg_color`
-    is three floats in 0..1. `bg_width` is the width of the `bg_media` images of the execution (None: without
-    any), which a perspective output's Sky resolution follows (`_sky_size`). `scene` is the `scene` input's content, of which item `scene_index` (None: none) is
-    drawn while `evaluated["scene"]` is active. The mask is the painted mask and the depth is the distance from
-    the Camera's position to the nearest World content, +inf where only the Sky is visible.
+    `layers` is a sequence of `RenderLayer`, from the bottom: each one's Sky is drawn over the Skies before it, and
+    the World content of all of them meets by depth. `camera` is the evaluated Camera value; the output turns with
+    the Camera's rotation. `bg` is this frame's `bg_media` image (h, w, C) or None, and `bg_key` a hashable that
+    names it (the bg_media frame index); without a key the background is not reused. `bg_color` is three floats in
+    0..1. `bg_width` is the width of the `bg_media` images of the execution (None: without any), which a perspective
+    output's Sky resolution follows (`_sky_size`). The mask is the painted masks of all layers (the largest at each
+    pixel) and the depth is the distance from the Camera's position to the nearest World content, +inf where only
+    the Sky is visible.
 
-    `cache` is an optional dict owned by the caller for one execution, in which `bg_color`, `device`, and
-    `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps the previous frame's
-    Sky (for a perspective output its layers, with the `sky` Sticker sources and the paint layers of its size on
-    `device`), the Sky turned by the Camera, the background, the ripmap levels `_sample_filtered` made of the
-    background, the Sticker sources, and the paint layers (released with them), the World content as one layer (`world_layer`), the drawn
-    `world` Sticker sources on `device`, and the result: a frame whose Sky values and Sticker frames, Camera rotation,
-    Projection, `bg_key`, and World content with the Camera's position (`world_key`) all repeat returns the previous
-    frame's tensors themselves.
+    `cache` is an optional dict owned by the caller for one execution, in which `bg_color`, `device`, the number of
+    layers, and each layer's `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps
+    the background, the ripmap levels `_sample_filtered` made of it, and the result, and for each layer apart (so
+    Sticker ids of different layers never meet) the previous frame's Sky (for a perspective output its layers, with
+    the `sky` Sticker sources and the paint layers of its size on `device`), the Sky turned by the Camera, the
+    ripmap levels of the Sticker sources and the paint layers (released with them), the World content as one layer
+    (`world_layer`), and the drawn `world` Sticker sources on `device`. A frame whose Sky values and Sticker frames,
+    Camera rotation, Projection, `bg_key`, and World content with the Camera's position (`world_key`) all repeat in
+    every layer returns the previous frame's tensors themselves.
     """
     if cache is None:
         cache = {}
     sky_size = _sky_size(projection, bg_width)
-    sky_key = _sky_key(evaluated, sources, sky_size)
     # A perspective output samples the Sky's layers from their own pixels instead of an ERP drawn at `sky_size`.
     direct = projection.kind == "perspective"
     # A 360 ERP output without Camera rotation is the Sky and the background as they are.
@@ -552,32 +563,38 @@ def render_frame(
     bg_entry = None if bg is None else ("bg", bg_key)
     # A background without a key cannot be told apart from the previous frame's, so it is never reused.
     reusable = bg is None or bg_key is not None
-    world = world_key(evaluated, sources, camera, projection, scene, scene_index)
-    frame_key = (sky_key, view_key, bg_entry, world)
+    sky_keys = tuple(_sky_key(layer.evaluated, layer.sources, sky_size) for layer in layers)
+    worlds = tuple(world_key(layer.evaluated, layer.sources, camera, projection, layer.scene, layer.scene_index) for layer in layers)
+    frame_key = (sky_keys, view_key, bg_entry, worlds)
     if reusable and cache.get("frame_key") == frame_key:
         return cache["frame"]
-    if cache.get("sky_key") != sky_key:
-        # The previous Sky is released before the new one is drawn.
-        cache.pop("sky", None)
-        if direct:
-            if cache.get("sky_paint", {}).get("size") != sky_size:
-                # The paint of the previous size is released before the new one is drawn.
-                cache.pop("sky_paint", None)
-                cache["sky_paint"] = {"size": sky_size}
-            cache["sky"] = _sky_layers(evaluated, sources, sky_size, device, cache.setdefault("sky_textures", {}), cache["sky_paint"])
-        else:
-            cache["sky"] = _render_sky(evaluated, sources, sky_size, device)
-        cache["sky_key"] = sky_key
-    view = None
-    if not turned:
-        sky, mask = cache["sky"]
-    else:
-        if cache.get("turned_sky_key") != (sky_key, view_key):
-            rays = _rays(camera, projection, device)
-            view = _view(rays)
-            shot = _shoot_sky(*cache["sky"], rays, view) if direct else _project_sky(*cache["sky"], view)
-            cache["turned_sky_key"], cache["turned_sky"] = (sky_key, view_key), shot
-        sky, mask = cache["turned_sky"]
+    caches = cache.setdefault("layers", [])
+    caches.extend({} for _ in range(len(layers) - len(caches)))
+    looks = {}
+
+    def look():
+        # The direction of each output pixel and where it looks in the 360 ERP, made once for the frame when needed.
+        if not looks:
+            looks["rays"] = _rays(camera, projection, device)
+            looks["view"] = _view(looks["rays"])
+        return looks["rays"], looks["view"]
+
+    sky = mask = None
+    world_layers = []
+    for layer, layer_cache, sky_key, world in zip(layers, caches, sky_keys, worlds):
+        layer_sky = _layer_sky(layer, layer_cache, sky_key, sky_size, direct, view_key, look, device)
+        sky, mask = layer_sky if sky is None else (_sky_over(sky, layer_sky[0]), torch.maximum(mask, layer_sky[1]))
+        if world is None:
+            for key in ("world_key", "world", "world_textures"):
+                layer_cache.pop(key, None)
+        elif layer_cache.get("world_key") != world:
+            # The previous frame's layer is released before the new one is drawn.
+            layer_cache.pop("world", None)
+            layer_cache["world"] = world_layer(layer.evaluated, layer.sources, camera, projection, scene=layer.scene, scene_index=layer.scene_index,
+                                               device=device, textures=layer_cache.setdefault("world_textures", {}))
+            layer_cache["world_key"] = world
+        if layer_cache.get("world") is not None:
+            world_layers.append(layer_cache["world"])
     background = bg_valid = None
     if bg is not None:
         levels = None
@@ -594,19 +611,40 @@ def render_frame(
         if not turned:
             background = _resize(background, projection.height, projection.width)
         else:
-            view = _view(_rays(camera, projection, device)) if view is None else view
-            background, bg_valid = _project_background(background, projection, view, levels)
-    if world is None:
-        for key in ("world_key", "world", "world_textures"):
-            cache.pop(key, None)
-    elif cache.get("world_key") != world:
-        # The previous frame's layer is released before the new one is drawn.
-        cache.pop("world", None)
-        cache["world"] = world_layer(evaluated, sources, camera, projection, scene=scene, scene_index=scene_index,
-                                     device=device, textures=cache.setdefault("world_textures", {}))
-        cache["world_key"] = world
-    layers = () if cache.get("world") is None else (cache["world"],)
-    color, depth = composite_frame(bg_color, background, sky, layers, bg_valid=bg_valid)
+            background, bg_valid = _project_background(background, projection, look()[1], levels)
+    color, depth = composite_frame(bg_color, background, sky, world_layers, bg_valid=bg_valid)
     if reusable:
         cache["frame_key"], cache["frame"] = frame_key, (color, mask, depth)
     return color, mask, depth
+
+
+def _layer_sky(layer: RenderLayer, cache: dict, sky_key: tuple, sky_size: tuple[int, int], direct: bool, view_key, look, device) -> tuple[torch.Tensor, torch.Tensor]:
+    """A layer's Sky in the output (straight-alpha color (H, W, 4)) and its paint mask (H, W), kept in the layer's
+    `cache` while its `sky_key` stays, and turned by the Camera while `view_key` (None: not turned) stays too."""
+    if cache.get("sky_key") != sky_key:
+        # The previous Sky is released before the new one is drawn.
+        cache.pop("sky", None)
+        if direct:
+            if cache.get("sky_paint", {}).get("size") != sky_size:
+                # The paint of the previous size is released before the new one is drawn.
+                cache.pop("sky_paint", None)
+                cache["sky_paint"] = {"size": sky_size}
+            cache["sky"] = _sky_layers(layer.evaluated, layer.sources, sky_size, device, cache.setdefault("sky_textures", {}), cache["sky_paint"])
+        else:
+            cache["sky"] = _render_sky(layer.evaluated, layer.sources, sky_size, device)
+        cache["sky_key"] = sky_key
+    if view_key is None:
+        return cache["sky"]
+    if cache.get("turned_sky_key") != (sky_key, view_key):
+        rays, view = look()
+        shot = _shoot_sky(*cache["sky"], rays, view) if direct else _project_sky(*cache["sky"], view)
+        cache["turned_sky_key"], cache["turned_sky"] = (sky_key, view_key), shot
+    return cache["turned_sky"]
+
+
+def _sky_over(below: torch.Tensor, above: torch.Tensor) -> torch.Tensor:
+    """The straight-alpha Sky `above` (H, W, 4) composited over `below`, straight-alpha."""
+    alpha = above[..., 3:]
+    total = alpha + below[..., 3:] * (1.0 - alpha)
+    rgb = above[..., :3] * alpha + below[..., :3] * below[..., 3:] * (1.0 - alpha)
+    return torch.cat([torch.where(total > 1e-6, rgb / total.clamp_min(1e-6), 0.0), total], dim=-1)

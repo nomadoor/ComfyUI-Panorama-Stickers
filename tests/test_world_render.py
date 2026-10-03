@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from comfyui_pano_suite.core import render as render_module
-from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, render_frame
+from comfyui_pano_suite.core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.world import world_to_pano
@@ -42,10 +42,10 @@ def _state(stickers=(), camera=None, **state):
     return load_scene_state({"version": 2, "stickers": list(stickers), "camera": {"position": {"value": camera.get("position")}, "rotation": {"value": camera}}, **state})
 
 
-def _render(state, sources, projection, frame=0.0, cache=None, bg=None, **kwargs):
+def _render(state, sources, projection, frame=0.0, cache=None, bg=None, scene=None, scene_index=None):
     evaluated = evaluate_scene_state(state, frame)
-    return render_frame(evaluated, SceneSources(sources, state["painting"]), evaluated["camera"], projection,
-                        bg=bg, bg_key=None if bg is None else 0, bg_color=GREEN, device=CPU, cache=cache, **kwargs)
+    return render_frame([RenderLayer(evaluated, SceneSources(sources, state["painting"]), scene, scene_index)], evaluated["camera"], projection,
+                        bg=bg, bg_key=None if bg is None else 0, bg_color=GREEN, device=CPU, cache=cache)
 
 
 def _centroid(color, rgb):
@@ -255,7 +255,7 @@ def test_world_layer_is_kept_while_the_background_changes(monkeypatch):
     cache = {}
     evaluated = evaluate_scene_state(state, 0.0)
     for key in range(3):
-        render_frame(evaluated, SceneSources(sources, state["painting"]), evaluated["camera"], Projection.erp(64, 32),
+        render_frame([RenderLayer(evaluated, SceneSources(sources, state["painting"]))], evaluated["camera"], Projection.erp(64, 32),
                      bg=torch.full((32, 64, 3), key / 4), bg_key=key, bg_color=GREEN, device=CPU, cache=cache)
 
     assert counts == {"world_layer": 1, "composite_frame": 3}
@@ -304,9 +304,9 @@ def test_sources_of_world_stickers_no_longer_drawn_are_released():
     cache = {}
 
     _render(state, sources, Projection.erp(32, 16), cache=cache)
-    assert "s" in cache["world_textures"] and cache["world"] is not None
+    assert "s" in cache["layers"][0]["world_textures"] and cache["layers"][0]["world"] is not None
     _render(state, sources, Projection.erp(32, 16), frame=1.0, cache=cache)
-    assert "world" not in cache and "world_textures" not in cache
+    assert "world" not in cache["layers"][0] and "world_textures" not in cache["layers"][0]
 
 
 # The `scene` common processing, with a test geometry in place of a SPLAT or MESH rasterizer.

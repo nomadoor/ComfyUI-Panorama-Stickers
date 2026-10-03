@@ -58,7 +58,7 @@ def test_scene_batch_follows_its_clip_range(monkeypatch):
 
     assert _batch_index_at_center(_frames(result)) == [None, None, 1, 2, 3, None]
     # The item is decided in (a) from the content's start (start - in = 1), outside the Clip range too.
-    assert [scene_index for *_indices, scene_index in pano_scene.frames] == [None, 0, 1, 2, 3, 4]
+    assert [layers[-1][2] for _bg_index, layers in pano_scene.frames] == [None, 0, 1, 2, 3, 4]
 
 
 def test_frames_carry_the_scene_item_only_with_scene_content(monkeypatch):
@@ -67,8 +67,8 @@ def test_frames_carry_the_scene_item_only_with_scene_content(monkeypatch):
     with_scene = _run({"version": 2, "timeline": {"length": 2}}, scene=object())[-1]
     without = _run({"version": 2, "timeline": {"length": 2}})[-1]
 
-    assert with_scene.frames == ((0.0, None, None, 0), (1.0, None, None, 0))
-    assert without.frames == ((0.0, None, None, None), (1.0, None, None, None))
+    assert with_scene.frames == ((None, ((0.0, None, 0),)), (None, ((1.0, None, 0),)))
+    assert without.frames == ((None, ((0.0, None, None),)), (None, ((1.0, None, None),)))
 
 
 def test_single_scene_item_shows_for_the_whole_timeline(monkeypatch):
