@@ -4,7 +4,7 @@ import test from "node:test";
 import { BoxGeometry, BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, Texture, Vector3 } from "three";
 
 import { makeUnlit } from "../web_src/pano_scene_loaders.js";
-import { createGizmo, raycastPoint, raycastStickerId } from "../web_src/pano_three_view.js";
+import { applyViewportCamera, createGizmo, raycastPoint, raycastStickerId } from "../web_src/pano_three_view.js";
 
 import {
   DEFAULT_DISTANCE,
@@ -18,6 +18,7 @@ import {
   facingRotation,
   frameView,
   gizmoDragLanes,
+  gizmoScreenBox,
   gridSpec,
   hasWorldContent,
   initialSpaceView,
@@ -753,6 +754,62 @@ test("the gizmo drags its handle with the pointer and lets go when it stops show
   assert.equal(gizmo.pointer("down", grab.x, grab.y), true);
   closeVec(gizmo.pointer("move", to.x, to.y).position, [1, 0, -5], 1e-6);
   gizmo.dispose();
+});
+
+test("the box a gizmo covers on screen holds all its handles and their pickers", () => {
+  const width = 800;
+  const height = 450;
+  const views = [
+    { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 1 },
+    { position: [1, 0.5, 2], yaw_deg: 30, pitch_deg: -20, hFOV_deg: 50, distance: 1 },
+  ];
+  const quaternion = new Quaternion().setFromAxisAngle(new Vector3(1, 2, 3).normalize(), 0.7);
+  for (const view of views) {
+    const setup = spaceCamera(view, width, height);
+    const camera = new PerspectiveCamera();
+    camera.position.set(...setup.position);
+    applyViewportCamera(camera, setup);
+    const gizmo = createGizmo(camera);
+    const world = new Scene();
+    const { right, forward } = viewAxes(view.yaw_deg, view.pitch_deg);
+    // At the view's center and off to its side, near and far.
+    const points = [[0, 3], [1.5, 3], [-4, 6], [0.3, 1.2]].map(([side, ahead]) => setup.position.map((value, i) => value + right[i] * side + forward[i] * ahead));
+    for (const mode of ["translate", "rotate", "scale"]) {
+      for (const position of points) {
+        world.clear();
+        gizmo.show(world, { mode, transform: { position, quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w }, scale: 1 } });
+        world.updateMatrixWorld(true);
+        const box = gizmoScreenBox(setup, position, mode, width, height);
+        const handles = world.children[1].children[0];
+        const seen = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+        for (const group of [handles.gizmo[mode], handles.picker[mode]]) {
+          group.traverse((object) => {
+            const vertices = object.isMesh ? object.geometry.getAttribute("position") : null;
+            for (let i = 0; vertices && i < vertices.count; i++) {
+              const p = new Vector3().fromBufferAttribute(vertices, i).applyMatrix4(object.matrixWorld).project(camera);
+              const x = (p.x + 1) * 0.5 * width;
+              const y = (1 - p.y) * 0.5 * height;
+              seen.minX = Math.min(seen.minX, x);
+              seen.maxX = Math.max(seen.maxX, x);
+              seen.minY = Math.min(seen.minY, y);
+              seen.maxY = Math.max(seen.maxY, y);
+            }
+          });
+        }
+        const where = `${mode} at ${position.map((value) => value.toFixed(2))}`;
+        assert.ok(box.minX <= seen.minX + 1e-6 && seen.maxX <= box.maxX + 1e-6, where);
+        assert.ok(box.minY <= seen.minY + 1e-6 && seen.maxY <= box.maxY + 1e-6, where);
+        // And not much more than they need.
+        assert.ok(seen.maxX - seen.minX > 0.6 * (box.maxX - box.minX), where);
+      }
+    }
+    gizmo.dispose();
+  }
+  // Behind the camera there is none on screen. In a view so wide that the gizmo's sphere takes in the
+  // camera, it covers the whole view.
+  assert.equal(gizmoScreenBox(spaceCamera(views[0], width, height), [0, 0, 3], "translate", width, height), null);
+  const wide = spaceCamera({ ...views[0], hFOV_deg: 170 }, 300, 800);
+  assert.deepEqual(gizmoScreenBox(wide, [0, 0, -3], "rotate", 300, 800), { minX: 0, maxX: 300, minY: 0, maxY: 800 });
 });
 
 test("near a pole a gizmo turn keeps the Sticker's yaw and turns its roll", () => {

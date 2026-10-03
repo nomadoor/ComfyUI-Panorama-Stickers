@@ -533,7 +533,7 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   assert.match(editor, /return spaceModeView\(editor\.spaceMode, view\);/);
 });
 
-test("the space view starts in 3DoF each time the editor opens, and a 3DoF | 6DoF segmented control shows and picks the mode", () => {
+test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF icon buttons show and pick the mode", () => {
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   assert.match(editor, /spaceMode: "3dof",/);
   assert.doesNotMatch(editor, /state\.[a-z_.]*space_?mode/i);
@@ -544,31 +544,40 @@ test("the space view starts in 3DoF each time the editor opens, and a 3DoF | 6Do
   const setMode = editor.slice(editor.indexOf("  function setSpaceMode(mode) {"), editor.indexOf("\n  }\n", editor.indexOf("  function setSpaceMode(mode) {")));
   assert.match(setMode, /applySpaceMode\(switchSpaceMode\(spaceModeState\(\), mode\)\);/);
   assert.doesNotMatch(setMode, /viewYaw|viewPitch/);
-  // The segments show only with World content and mark the current mode; Frame Content only in 6DoF.
+  // The space group shows with World content and marks the current mode (floatingRightState).
   const sync = editor.slice(editor.indexOf("  function syncFloatingViewButtonState() {"), editor.indexOf("  function syncViewToggleState() {"));
-  assert.match(sync, /uiState\.spaceButtons\.forEach\(\(button\) => \{\s*button\.visible = spaceView;\s*button\.pressed = button\.key === editor\.spaceMode \? "true" : "false";/);
-  assert.match(sync, /"frame-view", \{\s*visible: free,/);
+  assert.match(sync, /spaceView: isSpaceView\(\),\s*spaceMode: editor\.spaceMode,/);
+  assert.match(sync, /if \(uiState\.space\) Object\.assign\(uiState\.space, floating\.space\);/);
   assert.match(editor, /if \(action === "frame-view"\) \{\s*if \(!isFreeSpaceView\(\)\) return;/);
   // Each frame's input checks the content, so 6DoF without it goes back to 3DoF.
   assert.match(editor, /applySpaceMode\(spaceModeWithContent\(spaceModeState\(\), hasSpaceContent\(\)\)\);\s*const space = isSpaceView\(\)/);
-  // The segments sit with the view buttons at the bottom right (Vue), not in the view toggle.
+  // The modes are icon buttons (3 and 6) with the view buttons at the bottom right (Vue), not in the view
+  // toggle, with Frame Content beside them.
   const preset = buildModalShellPreset("stickers");
-  assert.deepEqual(preset.spaceButtons.map((button) => [button.key, button.label]), [["3dof", "3DoF"], ["6dof", "6DoF"]]);
-  assert.equal(preset.floatingButtons.some((button) => button.action === "space-mode"), false);
+  assert.deepEqual(preset.spaceButtons.map((button) => [button.key, button.label, button.icon]), [["3dof", "3DoF", "dof_3"], ["6dof", "6DoF", "dof_6"]]);
+  assert.equal(preset.spaceFrameButton.action, "frame-view");
+  assert.equal(preset.floatingButtons.some((button) => button.action === "space-mode" || button.action === "frame-view"), false);
   assert.deepEqual(buildModalShellPreset("cutout").spaceButtons, []);
+  assert.equal(buildModalShellPreset("cutout").spaceFrameButton, null);
   const floating = readFileSync(new URL("../web_src/components/PanoFloatingRight.vue", import.meta.url), "utf8");
-  assert.match(floating, /<PanoSegments\s+v-show="spaceButtons\.some\(\(button\) => button\.visible !== false\)"\s+:buttons="spaceButtons"\s+attr="data-space-mode"/);
+  assert.match(floating, /<PanoIconButton\s+v-for="button in space\.modes"\s+:key="button\.key"\s+:extra-class="\{ active: button\.key === space\.mode \}"/);
+  assert.match(floating, /:attrs="\{ 'data-space-mode': button\.key \}"/);
+  assert.match(floating, /:attrs="\{ 'data-action': space\.frame\.action, disabled: space\.frameDisabled === true \}"/);
   const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
   assert.doesNotMatch(toggle, /space|gizmo/i);
+  // The text segments of the selection menu do not share the side panel's .pano-segment class, whose rules
+  // would cover them.
   const segments = readFileSync(new URL("../web_src/components/PanoSegments.vue", import.meta.url), "utf8");
   assert.match(segments, /v-bind="\{ \[attr\]: button\.key \}"/);
+  assert.match(segments, /class="pano-segments-item"/);
+  assert.doesNotMatch(segments, /class="pano-segment"/);
   // The segments' text names them; no aria-label repeats it.
   assert.doesNotMatch(segments, /aria-label="button\.label"/);
   // A frame whose content went away shows 3DoF on the segments with it.
   const render = editor.slice(editor.indexOf("  function renderEditorView() {"), editor.indexOf("\n  }\n", editor.indexOf("  function renderEditorView() {")));
   assert.match(render, /syncFloatingViewButtonState\(\);\n[^\n]*\n\s*if \(editor\.worldSelectedId \|\| worldMenuShown\) updateSelectionMenu\(\);$/);
   const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
-  assert.match(modal, /<PanoFloatingRight\s+:buttons="uiState\.floatingButtons \|\| floatingButtons"\s+:space-buttons="uiState\.spaceButtons \|\| \[\]"/);
+  assert.match(modal, /<PanoFloatingRight\s+:buttons="uiState\.floatingButtons \|\| floatingButtons"\s+:space="uiState\.space \|\| null"/);
   assert.match(modal, /<PanoViewToggle :buttons="uiState\.viewButtons \|\| shellPreset\.viewButtons \|\| \[\]" \/>/);
 });
 

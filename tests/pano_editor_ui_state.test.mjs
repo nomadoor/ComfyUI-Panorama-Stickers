@@ -3,7 +3,8 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, floatingRightState, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { setSegmentEasing } from "../web_src/pano_timeline.js";
 
@@ -183,4 +184,75 @@ test("a selection menu goes below its target, above it when it does not fit, and
   // And sideways it stays inside too.
   assert.deepEqual(place({ minX: 380, maxX: 500, minY: 100, maxY: 150 }), { left: 286, top: 168 });
   assert.equal(place({ minX: NaN, maxX: 1, minY: 1, maxY: 1 }), null);
+});
+
+test("a world Sticker's menu stays clear of both the Sticker and its gizmo's handles", () => {
+  const overlaps = (a, b) => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
+  const menuW = 160;
+  const menuH = 35;
+  const place = (corners, gizmoBox) => {
+    const model = buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: "translate" });
+    const { left, top } = selectionMenuPlacement(model.anchor, menuW, menuH, 800, 450);
+    return { minX: left, maxX: left + menuW, minY: top, maxY: top + menuH };
+  };
+  const plane = (minX, minY, maxX, maxY) => [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }];
+  const cases = [
+    // A small Sticker whose gizmo reaches far past it: below the gizmo.
+    [plane(380, 200, 420, 230), { minX: 330, maxX: 470, minY: 145, maxY: 285 }],
+    // Near the bottom: above the gizmo.
+    [plane(380, 330, 420, 360), { minX: 330, maxX: 470, minY: 275, maxY: 415 }],
+    // A large Sticker around its gizmo: below the Sticker.
+    [plane(250, 60, 550, 260), { minX: 330, maxX: 470, minY: 90, maxY: 230 }],
+    // A 3D Sticker's origin only.
+    [[{ x: 600, y: 120 }], { minX: 530, maxX: 670, minY: 50, maxY: 190 }],
+  ];
+  for (const [corners, gizmoBox] of cases) {
+    const menu = place(corners, gizmoBox);
+    const xs = corners.map((point) => point.x);
+    const ys = corners.map((point) => point.y);
+    const target = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    assert.equal(overlaps(menu, gizmoBox), false, JSON.stringify(menu));
+    assert.equal(overlaps(menu, target), false, JSON.stringify(menu));
+    // With the gap of the selection menu between them.
+    assert.ok(menu.minY >= gizmoBox.maxY + 18 || menu.maxY <= gizmoBox.minY - 18, JSON.stringify(menu));
+  }
+  // Without the gizmo on screen it goes by the Sticker as before.
+  assert.deepEqual(place(plane(380, 200, 420, 230), null), { minX: 320, maxX: 480, minY: 248, maxY: 283 });
+});
+
+test("no bottom-right button moves when another one shows, hides or changes", () => {
+  const states = [];
+  for (const spaceView of [false, true]) {
+    for (const spaceMode of ["3dof", "6dof"]) {
+      for (const readOnly of [false, true]) {
+        for (const frameMode of [false, true]) {
+          for (const showGrid of [false, true]) states.push({ spaceView, spaceMode, readOnly, frameMode, showGrid });
+        }
+      }
+    }
+  }
+  for (const preset of [buildModalShellPreset("stickers"), buildModalShellPreset("cutout")]) {
+    for (const state of states) {
+      const floating = floatingRightState(state);
+      // The buttons right of the space group always show: nothing here hides one.
+      for (const patch of Object.values(floating.buttons)) assert.equal("visible" in patch, false);
+      assert.deepEqual(Object.keys(floating.buttons).filter((action) => !preset.floatingButtons.some((button) => button.action === action)), []);
+      assert.equal(preset.floatingButtons.some((button) => "visible" in button), false);
+      // The space group shows as a whole with World content; Frame Content in it is only disabled outside 6DoF.
+      assert.equal(floating.space.visible, state.spaceView);
+      assert.equal(floating.space.frameDisabled, state.readOnly || !state.spaceView || state.spaceMode !== "6dof");
+      assert.equal(floating.space.mode, state.spaceMode);
+    }
+  }
+  // The group's buttons carry no visibility of their own.
+  const preset = buildModalShellPreset("stickers");
+  assert.equal([...preset.spaceButtons, preset.spaceFrameButton].some((button) => "visible" in button), false);
+  // The group is at the left end of the row, which is anchored on the right, so it grows away from the
+  // other buttons. Only the group shows or hides.
+  const floatingRight = readFileSync(new URL("../web_src/components/PanoFloatingRight.vue", import.meta.url), "utf8");
+  const row = floatingRight.slice(floatingRight.indexOf('<div class="pano-floating-right">'), floatingRight.indexOf('<div\n    v-show="preview.visible"'));
+  assert.ok(row.indexOf('class="pano-floating-space"') < row.indexOf('v-for="button in buttons"'));
+  assert.deepEqual(row.match(/v-show="[^"]*"|v-if="[^"]*"/g), ['v-if="space"', 'v-show="space.visible"']);
+  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
+  assert.match(css, /\.pano-floating-right \{\s*position: absolute;\s*right: var\(--pano-space-xl\);/);
 });

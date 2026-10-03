@@ -779,9 +779,20 @@
   min-width: 35px;
   height: 35px;
 }
-/* A small segmented control (PanoSegments.vue) among the floating buttons: 3DoF | 6DoF next to the
-   view buttons (#71), Move | Rotate | Scale in a world Sticker's selection menu (#72). Its segments are
-   as wide as the widest one, so the marker slides by whole segments. */
+/* The space group at the left end of the bottom-right buttons (#71): the 3DoF | 6DoF icon buttons, the
+   chosen one marked as .active, and Frame Content. It shows or hides as a whole (PanoFloatingRight.vue). */
+.pano-floating-space,
+.pano-space-modes {
+  display: flex;
+  align-items: center;
+  gap: var(--pano-float-gap);
+}
+.pano-space-modes {
+  gap: 2px;
+}
+/* A small segmented control of text segments (PanoSegments.vue): Move | Rotate | Scale in a world
+   Sticker's selection menu (#72). Its segments are as wide as the widest one, so the marker slides by
+   whole segments. Its items are not .pano-segment, which the side panel's settings use. */
 .pano-segments {
   --pano-segment-pad: 3px;
   position: relative;
@@ -810,7 +821,7 @@
   transition: transform 170ms cubic-bezier(0.2, 0, 0, 1);
   pointer-events: none;
 }
-.pano-segment {
+.pano-segments-item {
   position: relative;
   z-index: 1;
   min-width: 44px;
@@ -827,13 +838,13 @@
   -webkit-appearance: none;
   transition: color 100ms ease;
 }
-.pano-segment:not(.active):hover {
+.pano-segments-item:not(.active):hover {
   color: var(--pano-muted-strong);
 }
-.pano-segment.active {
+.pano-segments-item.active {
   color: var(--pano-text);
 }
-.pano-segment:focus-visible {
+.pano-segments-item:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--pano-accent);
   border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad) - var(--pano-segment-pad));

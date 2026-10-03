@@ -428,6 +428,43 @@ function rollAtYaw(rotation, yawDeg) {
   return Math.atan2(sy * -up[2] - cy * up[0], cy * right[0] - sy * -right[2]) * RAD2DEG + 0;
 }
 
+// How far the handles of a gizmo (three.js TransformControls, pano_three_view.js createGizmo) reach from
+// its center per mode, in its handle units, with the pickers that grab them: the translate and scale
+// pickers (cones 0.6 long, 0.2 wide) to 0.64, the rotate view ring (0.75) with its picker's tube to 0.85.
+const GIZMO_REACH = { translate: 0.64, rotate: 0.85, scale: 0.64 };
+
+// The box that the gizmo at World point `position` in `mode` covers in a width x height view from camera
+// (a spaceCamera()), as { minX, maxX, minY, maxY }, or null when its center is not in front. The gizmo
+// keeps its size on screen: TransformControls scales a handle unit to distance * min(1.9 tan(fovY / 2),
+// 7) / 4 World units (size 1), so its handles stay inside a sphere around its center. The box holds that
+// sphere's outline, between the planes through the camera that touch the sphere; a sphere around the
+// camera covers the whole view.
+export function gizmoScreenBox(camera, position, mode, width, height) {
+  if (!projectPoint(camera, position, width, height)) return null;
+  const { right, up, forward } = cameraAxes(camera);
+  const d = sub(position, camera.position);
+  const x = dot(d, right);
+  const y = dot(d, up);
+  const z = dot(d, forward);
+  const tanY = Math.tan(camera.fovY_deg * 0.5 * DEG2RAD);
+  const tanX = tanY * camera.aspect;
+  const r = Math.hypot(x, y, z) * GIZMO_REACH[mode] * Math.min(1.9 * tanY, 7) / 4;
+  if (!(z > r)) return { minX: 0, maxX: width, minY: 0, maxY: height };
+  // The slopes k (offset over depth) of the two touching planes along one axis.
+  const slopes = (c) => {
+    const root = r * Math.sqrt(c * c + z * z - r * r);
+    return [(c * z - root) / (z * z - r * r), (c * z + root) / (z * z - r * r)];
+  };
+  const [left, rightSlope] = slopes(x);
+  const [bottom, top] = slopes(y);
+  return {
+    minX: width * 0.5 * (1 + left / tanX),
+    maxX: width * 0.5 * (1 + rightSlope / tanX),
+    minY: height * 0.5 * (1 - top / tanY),
+    maxY: height * 0.5 * (1 - bottom / tanY),
+  };
+}
+
 // A gizmo's scale is uniform: of the three axes the one the drag changed the most from `start`
 // (a scale handle changes one axis, the center handle all three). Never 0 or below.
 export function uniformScale(start, [x, y, z]) {

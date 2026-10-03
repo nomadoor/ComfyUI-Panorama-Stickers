@@ -1,3 +1,4 @@
+import { ICON } from "./icons.js";
 import { sceneStickerLabel } from "./pano_editor_state.js";
 import { laneNames, rowKeyed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
 
@@ -110,6 +111,31 @@ export function buildPreviewSidePanelModel({ coverage, uiSettings, normalizeCove
 export function worldFieldRange(value) {
   const magnitude = Math.abs(Number(value) || 0);
   return magnitude <= 100 ? 100 : 10 ** Math.ceil(Math.log10(magnitude));
+}
+
+// The state of the bottom-right buttons (PanoFloatingRight.vue). No button there shows or hides on its
+// own, so none moves when another changes: the space group (3DoF | 6DoF and Frame Content) shows or hides
+// as a whole at the left end of the row, where the row grows away from the other buttons, and Frame
+// Content is disabled outside 6DoF instead of hidden. `buttons` patches the other buttons by action.
+export function floatingRightState({ spaceView, spaceMode, readOnly, frameMode, showGrid }) {
+  const gridVisible = !frameMode && !!showGrid;
+  return {
+    space: {
+      visible: !!spaceView,
+      mode: spaceMode,
+      frameDisabled: !!readOnly || !spaceView || spaceMode !== "6dof",
+    },
+    buttons: {
+      "reset-view": { disabled: !!readOnly || !!frameMode },
+      "toggle-grid": {
+        icon: gridVisible ? ICON.eye : ICON.eye_dashed,
+        pressed: gridVisible ? "true" : "false",
+        label: gridVisible ? "Hide Grid" : "Show Grid",
+        tip: gridVisible ? "Hide grid" : "Show grid",
+        disabled: !!readOnly || !!frameMode,
+      },
+    },
+  };
 }
 
 export function buildEditorSidePanelModel({
@@ -235,10 +261,12 @@ const GIZMO_MODES = [
   { key: "scale", label: "Scale", tip: "Scale the world sticker" },
 ];
 
-// The selection menu of the selected world Sticker, below its corners on the canvas: the Move | Rotate |
-// Scale segments that pick its gizmo mode.
-export function buildWorldSelectionMenuModel({ corners, gizmoMode }) {
-  return selectionMenuAt(corners, [{
+// The selection menu of the selected world Sticker: the Move | Rotate | Scale segments that pick its gizmo
+// mode. It is placed around both its corners on the canvas and gizmoBox, the box its gizmo covers
+// (pano_space.js gizmoScreenBox, null when not in front), so it stays clear of the handles.
+export function buildWorldSelectionMenuModel({ corners, gizmoBox = null, gizmoMode }) {
+  const box = gizmoBox ? [{ x: gizmoBox.minX, y: gizmoBox.minY }, { x: gizmoBox.maxX, y: gizmoBox.maxY }] : [];
+  return selectionMenuAt([...corners, ...box], [{
     key: "gizmo-mode",
     kind: "segments",
     attr: "data-gizmo-mode",
