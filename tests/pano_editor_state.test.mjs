@@ -8,6 +8,7 @@ import {
   editorActive,
   editorStateText,
   makePanoEditorHistorySnapshot,
+  newWorldSceneSticker,
   normalizeCoverageValue,
   parsePanoEditorState,
   paintingLayerNeedsSync,
@@ -16,13 +17,17 @@ import {
   retainActiveCutoutShot,
   sameEditorStateText,
   cameraFields,
+  deleteWorldSticker,
   sceneStickerLabel,
   setCameraField,
   setEditorActive,
   setStickerOpacity,
   setStickerPose,
   setTimelineFps,
+  setWorldStickerField,
+  setWorldStickerTransform,
   stickerPose,
+  worldStickerFields,
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
@@ -507,4 +512,119 @@ test("a run's video fps applied to an open state matches opening the editor with
   const open = parseSceneEditorState(text);
   setTimelineFps(open, 25);
   assert.deepEqual(JSON.parse(editorStateText(sceneNode(), open)), JSON.parse(editorStateText(sceneNode(), parseSceneEditorState(text, { fps: 25 }))));
+});
+
+const worldSticker = (overrides = {}) => loadSceneState({
+  version: 2,
+  stickers: [{
+    id: "w",
+    placement: "world",
+    source: { kind: "file", filename: "a.png" },
+    clip: { start: 10, in: 4, duration: null },
+    position: { value: [1, 2, -3] },
+    rotation: { value: { yaw_deg: 10, pitch_deg: 5, roll_deg: 0 } },
+    scale: { value: 2 },
+    ...overrides,
+  }],
+}).stickers[0];
+
+test("the inspector edits a world Sticker's Lanes by the recording rule, in its clip frames", () => {
+  const sticker = worldSticker({
+    rotation: { value: { yaw_deg: 10, pitch_deg: 5, roll_deg: 0 }, keyframes: [{ frame: 0, value: { yaw_deg: 10, pitch_deg: 5, roll_deg: 0 } }, { frame: 20, value: { yaw_deg: 50, pitch_deg: 5, roll_deg: 0 } }] },
+  });
+  // Timeline frame 16 is clip frame 10 (start 10, in 4), halfway between the rotation Keyframes.
+  const fields = worldStickerFields(sticker, 16);
+  assert.deepEqual([fields.position_x, fields.position_y, fields.position_z, fields.scale, fields.opacity], [1, 2, -3, 2, 100]);
+  assert.ok(fields.yaw_deg > 10 && fields.yaw_deg < 50);
+
+  // A Lane without Keyframes changes its static value; one with Keyframes gets a Keyframe at the playhead.
+  setWorldStickerField(sticker, 16, "position_y", 4);
+  setWorldStickerField(sticker, 16, "scale", 3);
+  setWorldStickerField(sticker, 16, "opacity", 40);
+  setWorldStickerField(sticker, 16, "roll_deg", 15);
+  assert.deepEqual(sticker.position, { value: [1, 4, -3], keyframes: [] });
+  assert.deepEqual(sticker.scale, { value: 3, keyframes: [] });
+  assert.equal(sticker.opacity.value, 0.4);
+  assert.deepEqual(sticker.rotation.keyframes.map((key) => key.frame), [0, 10, 20]);
+  assert.equal(sticker.rotation.keyframes[1].value.roll_deg, 15);
+  assert.equal(sticker.rotation.keyframes[1].value.yaw_deg, fields.yaw_deg);
+  assert.deepEqual(sticker.rotation.value, { yaw_deg: 10, pitch_deg: 5, roll_deg: 0 });
+});
+
+test("a gizmo edit changes only the Lanes it has, and a drag updates the Keyframe it added", () => {
+  const sticker = worldSticker({
+    position: { value: [1, 2, -3], keyframes: [{ frame: 0, value: [1, 2, -3] }] },
+  });
+  setWorldStickerTransform(sticker, 16, { position: [5, 5, 5] });
+  setWorldStickerTransform(sticker, 16, { position: [6, 5, 5] });
+  assert.deepEqual(sticker.position.keyframes.map((key) => [key.frame, key.value]), [[0, [1, 2, -3]], [10, [6, 5, 5]]]);
+  assert.deepEqual(sticker.position.value, [1, 2, -3]);
+  assert.deepEqual(sticker.rotation, { value: { yaw_deg: 10, pitch_deg: 5, roll_deg: 0 }, keyframes: [] });
+  assert.deepEqual(sticker.scale, { value: 2, keyframes: [] });
+  setWorldStickerTransform(sticker, 16, { rotation: { yaw_deg: -30, pitch_deg: 0, roll_deg: 2 }, scale: 0.5 });
+  assert.deepEqual(sticker.rotation.value, { yaw_deg: -30, pitch_deg: 0, roll_deg: 2 });
+  assert.equal(sticker.scale.value, 0.5);
+  assert.equal(sticker.placement, "world");
+});
+
+test("a new world Sticker keeps its transform through state v2", () => {
+  const transform = { position: [0.5, 1, -2], rotation: { yaw_deg: 20, pitch_deg: -10, roll_deg: 0 }, scale: 1.2 };
+  const sticker = newWorldSceneSticker("st_1", { kind: "file", filename: "a.png", subfolder: "", storage: "input" }, transform);
+  const loaded = loadSceneState({ version: 2, stickers: [sticker] }).stickers[0];
+  assert.deepEqual(loaded, sticker);
+  assert.equal(loaded.placement, "world");
+  assert.equal("z_index" in loaded, false);
+  transform.position[0] = 9;
+  assert.equal(sticker.position.value[0], 0.5, "the transform is copied");
+});
+
+test("the editor has no way to switch a Sticker's Placement between sky and world", () => {
+  const dir = new URL("../web_src/", import.meta.url);
+  const sources = [
+    ...readdirSync(dir).filter((name) => name.endsWith(".js")),
+    ...readdirSync(new URL("components/", dir)).map((name) => `components/${name}`),
+  ].map((name) => [name, readFileSync(new URL(name, dir), "utf8")]);
+  // Nothing assigns a Placement after a Sticker is made, and no UI shows one.
+  for (const [name, text] of sources) {
+    assert.doesNotMatch(text, /\.placement\s*=[^=]/, name);
+    if (name.startsWith("components/")) assert.doesNotMatch(text, /placement/i, name);
+  }
+  // A Placement is written only where a Sticker is made: loading state v2, the evaluated copy, the
+  // editor's new Stickers, and the port Sticker the node replaces by a world one (#63).
+  const writers = sources.filter(([, text]) => /placement\s*:/.test(text.replace(/^\s*\/\/.*$/gm, ""))).map(([name]) => name).sort();
+  assert.deepEqual(writers, ["pano_editor_state.js", "pano_scene_eval.js", "pano_scene_state.js", "pano_stickers_node_surface.js"]);
+
+  // The edits the editor makes keep each Sticker's Placement, as the saved state reads it back: the
+  // inspector and the gizmo on world Stickers, Delete, and Undo and Redo.
+  const state = parseSceneEditorState(JSON.stringify({
+    version: 2,
+    stickers: [
+      { id: "s", placement: "sky", source: { kind: "file", filename: "s.png" } },
+      { id: "w", placement: "world", source: { kind: "file", filename: "w.png" } },
+      { id: "p", placement: "world", source: { kind: "port" } },
+    ],
+  }));
+  const saved = () => Object.fromEntries(loadSceneState(JSON.parse(JSON.stringify(state))).stickers.map((item) => [item.id, [item.placement, item.visible]]));
+  const before = JSON.stringify(makePanoEditorHistorySnapshot(state));
+  for (const id of ["w", "p"]) {
+    const sticker = state.stickers.find((item) => item.id === id);
+    for (const field of ["position_x", "position_y", "position_z", "yaw_deg", "pitch_deg", "roll_deg", "scale", "opacity"]) {
+      setWorldStickerField(sticker, 12, field, 50);
+    }
+    setWorldStickerTransform(sticker, 12, { position: [0, 0, -1], rotation: { yaw_deg: 1, pitch_deg: 2, roll_deg: 3 }, scale: 2 });
+  }
+  assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
+  assert.deepEqual(state.stickers.find((item) => item.id === "w").position.value, [0, 0, -1]);
+  const edited = JSON.stringify(makePanoEditorHistorySnapshot(state));
+  // Delete takes the world Sticker away and hides the port one; a sky Sticker is not its to delete.
+  deleteWorldSticker(state, "w");
+  deleteWorldSticker(state, "p");
+  deleteWorldSticker(state, "s");
+  assert.deepEqual(saved(), { s: ["sky", true], p: ["world", false] });
+  // Undo and Redo bring back the snapshots with their Placements.
+  Object.assign(state, restoredHistoryState(state, edited).state);
+  assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
+  Object.assign(state, restoredHistoryState(state, before).state);
+  assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
+  assert.deepEqual(state.stickers.find((item) => item.id === "w").position.value, [0, 0, 0]);
 });

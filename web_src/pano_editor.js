@@ -22,6 +22,7 @@ import {
   fileSource,
   makePanoEditorHistorySnapshot,
   newSceneSticker,
+  newWorldSceneSticker,
   normalizeCoverageValue,
   paintingLayerNeedsSync,
   parsePanoEditorState,
@@ -32,12 +33,16 @@ import {
   sceneStickerLabel,
   setEditorActive,
   cameraFields,
+  deleteWorldSticker,
   setCameraField,
   setStickerOpacity,
   setStickerPose,
   setTimelineFps,
+  setWorldStickerField,
+  setWorldStickerTransform,
   sourceAsset,
   stickerPose,
+  worldStickerFields,
 } from "./pano_editor_state.js";
 import { clipActive, evaluateSceneState, evaluateSticker } from "./pano_scene_eval.js";
 import { loadSceneState } from "./pano_scene_state.js";
@@ -70,9 +75,11 @@ import {
   contentPoints,
   depthOf,
   frameView,
+  gizmoDragLanes,
   gridSpec,
   hasWorldContent,
   navigationTarget,
+  newWorldStickerTransform,
   orbitView,
   panView,
   projectPoint,
@@ -80,6 +87,7 @@ import {
   sceneFilesOf,
   sceneItemBox,
   sceneRequest,
+  sceneTransform,
   spaceCamera,
   spaceModeView,
   spaceModeWithContent,
@@ -122,6 +130,7 @@ import {
   buildTimelineModel,
   buildUiSettingsModel,
   patchUiButton,
+  worldFieldRange,
 } from "./pano_editor_ui_state.js";
 import PanoModal from "./components/PanoModal.vue";
 import { buildModalShellPreset } from "./modal_shell_presets.js";
@@ -171,6 +180,9 @@ const STATE_WIDGET = "state_json";
 // Inputs Space types into; it does not play the Timeline there.
 const TEXT_INPUT_TYPES = new Set(["text", "search", "number", "email", "url", "tel", "password", "date", "time", "datetime-local", "month", "week"]);
 const EXTERNAL_STICKER_ID = "sticker_image_1";
+// A world Sticker's inspector fields that have no upper limit (#72), and the smallest scale it sets.
+const WORLD_UNLIMITED_FIELDS = new Set(["position_x", "position_y", "position_z", "scale"]);
+const WORLD_MIN_SCALE = 0.01;
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
 const EXTERNAL_STICKER_PREVIEW_KEY = "pano_sticker_input_images";
 const PORT_VIDEO_KEY = "pano_sticker_input_videos";
@@ -634,7 +646,9 @@ async function showEditor(node, type, options = {}) {
     stageWarningDetail: "",
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
     spaceButtons: (shellPreset.spaceButtons || []).map((button) => ({ ...button, visible: false })),
-    toolButtons: (shellPreset.toolButtons || []).map((button) => ({ ...button, disabled: false })),
+    gizmoButtons: (shellPreset.gizmoButtons || []).map((button) => ({ ...button, visible: false })),
+    // Only PanoramaStickersNode places images in space.
+    toolButtons: (shellPreset.toolButtons || []).map((button) => ({ ...button, disabled: false, ...(button.key === "add-world" ? { visible: sceneV2 } : {}) })),
     floatingButtons: [
       ...(shellPreset.floatingButtons || []).map((button) => ({ ...button, disabled: false })),
       ...(previewMode ? [{ action: "toggle-fullscreen", label: "Fullscreen", tip: "Fullscreen", pressed: null, icon: ICON.fullscreen, disabled: false }] : []),
@@ -733,6 +747,10 @@ async function showEditor(node, type, options = {}) {
     if (!isStickerImageFile(file)) return;
     if (intent === "add") {
       void addImageStickerFromFile(file);
+      return;
+    }
+    if (intent === "add-world") {
+      void addWorldStickerFromFile(file);
       return;
     }
     if (intent === "replace") void replaceSelectedImageFromFile(file);
@@ -955,6 +973,13 @@ async function showEditor(node, type, options = {}) {
     panelLastValues: null,
     // PanoramaStickersNode: the Camera row of the Timeline is selected, so the inspector edits the Camera.
     inspectCamera: false,
+    // PanoramaStickersNode: the id of the world Sticker selected in the space view or on its Timeline row
+    // (#72). The canvas selection (selectedId) holds sky Stickers only; selecting one clears the other.
+    worldSelectedId: null,
+    // The mode of the selected world Sticker's gizmo: "translate", "rotate" or "scale".
+    gizmoMode: "translate",
+    // The gizmo handle under the pointer, or null.
+    gizmoAxis: null,
     panelWasEnabled: false,
     viewTween: null,
     fullscreen: false,
@@ -2042,6 +2067,7 @@ async function showEditor(node, type, options = {}) {
   }
   function setSelectedItem(item) {
     editor.inspectCamera = false;
+    clearWorldSelection();
     // Delete acts on the selection, so a Keyframe selection must not outlive a new selection.
     timeline.selection = null;
     editor.selectedId = item?.id || null;
@@ -2063,6 +2089,7 @@ async function showEditor(node, type, options = {}) {
     });
     editor.selectedIds = nextIds;
     editor.inspectCamera = false;
+    clearWorldSelection();
     timeline.selection = null;
     const preferred = String(primaryId || "").trim();
     editor.selectedId = preferred && nextIds.includes(preferred)
@@ -2694,9 +2721,32 @@ async function showEditor(node, type, options = {}) {
     }
     editor.selectedId = null;
     editor.selectedIds = [];
+    clearWorldSelection();
     editor.cutoutAspectOpen = false;
     state.active.selected_sticker_id = null;
     state.active.selected_shot_id = null;
+  }
+  // The selected world Sticker of state v2 (#72), or null. It is selected in the space view or on its
+  // Timeline row, and the gizmo and the inspector edit it.
+  function selectedWorldSticker() {
+    if (!sceneV2 || !editor.worldSelectedId) return null;
+    return state.stickers.find((item) => item.id === editor.worldSelectedId && item.placement === "world") || null;
+  }
+  function selectWorldSticker(id) {
+    setSelectedItem(null);
+    editor.worldSelectedId = id;
+    // The gizmo draws in the three.js frame.
+    runtime.backgroundDirty = true;
+  }
+  function clearWorldSelection() {
+    if (!editor.worldSelectedId) return;
+    editor.worldSelectedId = null;
+    editor.gizmoAxis = null;
+    runtime.backgroundDirty = true;
+  }
+  // Whether the selected world Sticker can be edited: not locked, and in an editor that edits.
+  function worldStickerEditable(sticker) {
+    return !!sticker && !readOnly && !sticker.locked;
   }
   function applyInitialCutoutFocus() {
     if (type !== "cutout") return;
@@ -2729,6 +2779,12 @@ async function showEditor(node, type, options = {}) {
     uiState.spaceButtons.forEach((button) => {
       button.visible = spaceView;
       button.pressed = button.key === editor.spaceMode ? "true" : "false";
+    });
+    // Move | Rotate | Scale while the selected world Sticker's gizmo shows in the frame (worldGizmo).
+    const gizmo = spaceView && !!editorViewInput().space?.gizmo;
+    uiState.gizmoButtons.forEach((button) => {
+      button.visible = gizmo;
+      button.pressed = button.key === editor.gizmoMode ? "true" : "false";
     });
     patchUiButton(uiState.floatingButtons, "action", "frame-view", {
       visible: free,
@@ -2895,8 +2951,7 @@ async function showEditor(node, type, options = {}) {
 
   // The World point of the content under canvas point p in the frame on screen, or null.
   function pickSpace(p) {
-    const camera = spaceCamera(spaceViewState(), canvas.width, canvas.height, contentSphere());
-    return editorView.pick(camera, p.x, p.y, canvas.width, canvas.height);
+    return editorView.pick(currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
   }
 
   // The point a 6DoF drag or wheel step works on (pano_space.js navigationTarget): the content hit under
@@ -3818,6 +3873,7 @@ async function showEditor(node, type, options = {}) {
     const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers, items));
     const grid = editor.showGrid && !editor.fullscreen ? gridSpec(sphere?.radius || DEFAULT_DISTANCE) : null;
     return {
+      gizmo: worldGizmo(evaluated),
       grid,
       sceneUrls: files ? files.urls.filter(Boolean) : [],
       scene,
@@ -3826,6 +3882,15 @@ async function showEditor(node, type, options = {}) {
       stickers,
       sphere,
     };
+  }
+
+  // The gizmo of the selected world Sticker where it shows at the playhead (its evaluated value in
+  // `evaluated`), or null while it is hidden, outside its Clip range or not editable.
+  function worldGizmo(evaluated) {
+    const sticker = selectedWorldSticker();
+    const value = evaluated.stickers.find((item) => item.id === sticker?.id);
+    if (!editor.showObjects || !worldStickerEditable(sticker) || !value?.active) return null;
+    return { mode: editor.gizmoMode, transform: sceneTransform(value) };
   }
 
   function renderEditorView() {
@@ -5798,6 +5863,8 @@ async function showEditor(node, type, options = {}) {
       ? state.active.selected_sticker_id
       : (type === "cutout" ? state.active.selected_sticker_id : state.active.selected_shot_id);
     editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
+    if (editor.selectedId) clearWorldSelection();
+    runtime.backgroundDirty = true;
     if (restored.paintingChanged) markPaintStrokeVisualsDirty();
     else markObjectVisualsDirty();
     syncPaintUi();
@@ -5919,10 +5986,12 @@ async function showEditor(node, type, options = {}) {
       : { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60, roll_deg: 0, aspect_id: "1:1" });
     const inspectorSelected = selectedKind === "stroke" ? null : selected;
     const cameraInspected = sceneV2 && editor.inspectCamera;
+    const worldInspected = selectedWorldSticker();
     const effective = cameraInspected
       ? cameraFields(state.camera, editor.frame)
+      : worldInspected ? worldStickerFields(worldInspected, editor.frame)
       : isSceneSticker(inspectorSelected) ? editor.panelLastValues : (inspectorSelected || fallback);
-    const enabled = cameraInspected || (!!inspectorSelected && !isItemLocked(inspectorSelected));
+    const enabled = cameraInspected || (worldInspected ? worldStickerEditable(worldInspected) : (!!inspectorSelected && !isItemLocked(inspectorSelected)));
     editor.panelWasEnabled = enabled;
     syncLookAtFrameButtonState();
 
@@ -5969,7 +6038,9 @@ async function showEditor(node, type, options = {}) {
         });
       }
       const currentId = inspectorSelected?.id || "";
-      const currentItem = cameraInspected ? { label: "Camera", icon: ICON.camera } : items.find((item) => item.id === currentId) || items[0];
+      const currentItem = cameraInspected ? { label: "Camera", icon: ICON.camera }
+        : worldInspected ? { label: sceneStickerLabel(worldInspected), icon: ICON.globe }
+        : items.find((item) => item.id === currentId) || items[0];
       selectionPicker = {
         label: "Selection",
         open: false,
@@ -6009,6 +6080,17 @@ async function showEditor(node, type, options = {}) {
       pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
       pushParam("roll_deg", "Roll", -180, 180, 0.1);
       pushParam("hFOV_deg", "FOV", 1, 179, 0.1);
+    } else if (worldInspected) {
+      // Positions and the scale have no limit; their sliders reach past the value (worldFieldRange).
+      for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
+        const range = worldFieldRange(effective[key]);
+        pushParam(key, label, -range, range, 0.01);
+      }
+      pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
+      pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
+      pushParam("roll_deg", "Roll", -180, 180, 0.1);
+      pushParam("scale", "Scale", WORLD_MIN_SCALE, worldFieldRange(effective.scale), 0.01);
+      pushParam("opacity", "Opacity", 0, 100, 1);
     } else if (selectedItems.length > 1) {
       notes.push(`Selected objects: ${selectedItems.length}`);
       notes.push("Multi-selection supports z-order and delete.");
@@ -6047,7 +6129,7 @@ async function showEditor(node, type, options = {}) {
       readOnly,
       selectionPicker,
       enabled,
-      selectedKind: cameraInspected ? "camera" : selectedKind,
+      selectedKind: cameraInspected ? "camera" : worldInspected ? "world" : selectedKind,
       selectedItems,
       params,
       notes,
@@ -6072,7 +6154,7 @@ async function showEditor(node, type, options = {}) {
       frame: editor.frame,
       span,
       selection: timeline.selection,
-      selectedId: editor.inspectCamera ? "camera" : editor.selectedId,
+      selectedId: editor.inspectCamera ? "camera" : (editor.worldSelectedId || editor.selectedId),
       expanded: timeline.expanded ?? isTimed(state),
       openRows: timeline.openRows,
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
@@ -6232,10 +6314,12 @@ async function showEditor(node, type, options = {}) {
       // A Sticker is hidden outside its Clip range, so the playhead first moves to where it starts.
       const sticker = state.stickers.find((item) => item.id === action.id);
       if (sticker && !clipActive(sticker.clip, editor.frame)) jumpTimelineTo(sticker.clip.start);
-      // Only sky Stickers can be selected on the canvas; the Camera row shows the Camera in the
-      // inspector, and world rows clear the selection.
-      setSelectedItem(getList().find((item) => item.id === action.id) || null);
+      // The canvas selection holds sky Stickers; a world row selects its world Sticker for the gizmo and
+      // the inspector, and the Camera row shows the Camera in the inspector.
+      if (sticker?.placement === "world") selectWorldSticker(sticker.id);
+      else setSelectedItem(getList().find((item) => item.id === action.id) || null);
       editor.inspectCamera = action.id === "camera";
+      syncFloatingViewButtonState();
       // Delete then acts on the row's Sticker, not on Keyframes selected before.
       timeline.selection = null;
       updateSidePanel();
@@ -6424,9 +6508,31 @@ async function showEditor(node, type, options = {}) {
     vueModal?.openImagePicker?.("add");
   }
 
+  // PanoramaStickersNode (#72): Add World Image picks an image to place in space.
+  function addWorldImageSticker() {
+    if (readOnly || !sceneV2) return;
+    vueModal?.openImagePicker?.("add-world");
+  }
+
+  async function addWorldStickerFromFile(file) {
+    if (readOnly || !sceneV2 || !isStickerImageFile(file)) return;
+    stopTimelinePlayback();
+    await addSceneStickerFromFile(file, "world");
+  }
+
+  // Where a world Sticker added now goes (pano_space.js newWorldStickerTransform): on the World content
+  // at the center of the view, else ahead of the view. The button that adds it is not over the view, so
+  // the center of the view stands for the pointer.
+  function newWorldStickerPlace() {
+    const center = { x: canvas.width / 2, y: canvas.height / 2 };
+    const hit = isSpaceView() ? pickSpace(center) : null;
+    return newWorldStickerTransform(spaceViewState(), hit, contentSphere());
+  }
+
   // PanoramaStickersNode: the new Sticker shows from the decoded image while it uploads. Its Source
-  // has no file until then, so saving in between leaves it out.
-  async function addSceneStickerFromFile(file) {
+  // has no file until then, so saving in between leaves it out. A sky Sticker goes where the view looks;
+  // a world one where newWorldStickerPlace() puts it.
+  async function addSceneStickerFromFile(file, placement = "sky") {
     const id = uid("st");
     const operation = queuePendingStickerOperation(node, `add:${id}`, async () => {
       const { image: img } = await decodeStickerImageFile(file);
@@ -6437,10 +6543,14 @@ async function showEditor(node, type, options = {}) {
         vFOV_deg: computeStickerVFov(30, Number(img.naturalWidth || img.width || 1), Number(img.naturalHeight || img.height || 1)),
         rot_deg: 0,
       };
-      const sticker = newSceneSticker(id, { kind: "file", filename: "" }, pose, getNextStickerZIndex());
+      const source = { kind: "file", filename: "" };
+      const sticker = placement === "world"
+        ? newWorldSceneSticker(id, source, newWorldStickerPlace())
+        : newSceneSticker(id, source, pose, getNextStickerZIndex());
       imageCache.set(stickerImageKey(sticker), img);
       state.stickers.push(sticker);
-      setSelectedItem(sticker);
+      if (placement === "world") selectWorldSticker(id);
+      else setSelectedItem(sticker);
       forceCursorTool();
       updateSidePanel();
       updateSelectionMenu();
@@ -6458,6 +6568,7 @@ async function showEditor(node, type, options = {}) {
       } catch (error) {
         state.stickers = state.stickers.filter((item) => item.id !== id);
         if (editor.selectedId === id) setSelectedItem(null);
+        if (editor.worldSelectedId === id) clearWorldSelection();
         // Edits made while it uploaded were not recorded yet.
         pushHistory();
         commitAndRefreshNode();
@@ -6814,6 +6925,24 @@ async function showEditor(node, type, options = {}) {
     updateSelectionMenu();
     updateSidePanel();
     requestDraw();
+  }
+
+  // Delete on the selected world Sticker (deleteWorldSticker). Returns whether a world Sticker was selected.
+  function deleteSelectedWorldSticker() {
+    const sticker = selectedWorldSticker();
+    if (!sticker) return false;
+    if (!worldStickerEditable(sticker)) return true;
+    stopTimelinePlayback();
+    deleteWorldSticker(state, sticker.id);
+    clearWorldSelection();
+    markObjectVisualsDirty();
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    updateSelectionMenu();
+    syncFloatingViewButtonState();
+    requestDraw();
+    return true;
   }
 
   function deleteSelected() {
@@ -8209,6 +8338,7 @@ async function showEditor(node, type, options = {}) {
       else if (editor.interaction.kind === "pan_frame") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "space_pan") setCanvasCursor("move");
       else if (editor.interaction.kind === "space_orbit") setCanvasCursor("grabbing");
+      else if (editor.interaction.kind === "world_gizmo") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "roll_frame") setCanvasCursor("grabbing");
     else if (editor.interaction.kind === "move" || editor.interaction.kind === "move_multi" || editor.interaction.kind === "move_stroke_group" || editor.interaction.kind === "move_raster_object") setCanvasCursor("move");
       else if (editor.interaction.kind === "scale" || editor.interaction.kind === "scale_x" || editor.interaction.kind === "scale_y" || editor.interaction.kind === "scale_raster_object") setCanvasCursor(editor.interaction.cursor || "nwse-resize");
@@ -8234,6 +8364,10 @@ async function showEditor(node, type, options = {}) {
     }
     if (editor.primaryTool === "cursor" && editor.marqueeModifier) {
       setCanvasCursor("default");
+      return;
+    }
+    if (editor.gizmoAxis) {
+      setCanvasCursor("grab");
       return;
     }
     const selected = getSelected();
@@ -8709,6 +8843,7 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ localOnly: true });
       return;
     }
+    if (editor.primaryTool === "cursor" && isSpaceView() && startWorldStickerPress(e, p)) return;
 
     if (selectedItems.length > 1 && selGeom?.visible) {
       const h = selectedItems.some((item) => isItemLocked(item)) ? { kind: "none" } : handleHit(selGeom, p);
@@ -8931,6 +9066,103 @@ async function showEditor(node, type, options = {}) {
     if (editor.mode === "pano") startEmptyDrag(e, p);
   };
 
+  // The three.js camera of the space view as the last frame drew it, for picking at canvas points.
+  function currentSpaceCamera() {
+    return spaceCamera(spaceViewState(), canvas.width, canvas.height, contentSphere());
+  }
+
+  // The selected world Sticker's gizmo at canvas point p (pano_three_view.js gizmoPointer): "hover",
+  // "down", "move" or "up".
+  function worldGizmoPointer(phase, p) {
+    return editorView.gizmoPointer(phase, currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
+  }
+
+  // A left press with the cursor tool in the space view (#72): on a handle of the selected world
+  // Sticker's gizmo it grabs the handle; on a world Sticker (the nearest content under the pointer, by
+  // pick) it selects it. A world Sticker is in front of the Sky, so it comes before the sky Stickers,
+  // except for the scale and rotate handles of a selected sky Sticker. The `scene` content is not
+  // selectable and leaves the press to the sky Stickers, as before. Dragging a world Sticker itself only
+  // selects it; the gizmo moves it. Returns whether the press was taken.
+  function startWorldStickerPress(e, p) {
+    const gizmo = editorViewInput().space?.gizmo;
+    if (gizmo && worldGizmoPointer("hover", p) !== null && worldGizmoPointer("down", p)) {
+      editor.interaction = {
+        kind: "world_gizmo",
+        id: editor.worldSelectedId,
+        mode: gizmo.mode,
+        // The transform the gizmo was grabbed at, and the value its drag applies to.
+        start: gizmo.transform,
+        base: evaluateSticker(selectedWorldSticker(), editor.frame),
+        changed: false,
+      };
+      canvas.setPointerCapture(e.pointerId);
+      updateCursor(p);
+      return true;
+    }
+    // The handles of the canvas selection, as the press would find them below.
+    const selectedItems = getSelectedItems();
+    const selected = getSelected();
+    const handle = selectedItems.length > 1
+      ? (selectedItems.some((item) => isItemLocked(item)) ? "none" : handleHit(getMultiSelectionGeom(selectedItems), p).kind)
+      : (selected && !isItemLocked(selected) ? handleHit(objectGeom(selected), p, selected).kind : "none");
+    if (handle !== "none" && handle !== "move") return false;
+    const id = editorView.pickSticker(currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
+    if (!state.stickers.some((item) => item.id === id && item.placement === "world")) return false;
+    if (editor.worldSelectedId !== id) {
+      if (editor.selectedId) {
+        pushHistory();
+        commitState();
+      }
+      selectWorldSticker(id);
+      updateSidePanel();
+      updateSelectionMenu();
+      syncFloatingViewButtonState();
+      requestDraw();
+    }
+    editor.interaction = { kind: "world_select" };
+    canvas.setPointerCapture(e.pointerId);
+    return true;
+  }
+
+  // The gizmo highlights the handle under the pointer, and the cursor shows it can be grabbed.
+  function hoverWorldGizmo(p) {
+    const shown = !!editor.worldSelectedId && editor.primaryTool === "cursor" && isSpaceView() && !!editorViewInput().space?.gizmo;
+    const axis = shown ? worldGizmoPointer("hover", p) : null;
+    if (axis === editor.gizmoAxis) return;
+    editor.gizmoAxis = axis;
+    runtime.backgroundDirty = true;
+    requestDraw({ localOnly: true });
+  }
+
+  // A gizmo drag of the selected world Sticker: the Lane of the gizmo's mode, by the recording rule.
+  function dragWorldGizmo(it, p) {
+    const moved = worldGizmoPointer("move", p);
+    const sticker = state.stickers.find((item) => item.id === it.id);
+    if (!moved || !sticker) return;
+    setWorldStickerTransform(sticker, editor.frame, gizmoDragLanes(it.mode, it.base, it.start, moved));
+    it.changed = true;
+    markObjectVisualsDirty();
+    updateSidePanel();
+    requestDraw({ localOnly: true });
+  }
+
+  // A press of startWorldStickerPress() ends: a gizmo drag that changed the Sticker is one Undo step.
+  function endWorldStickerPress(ended) {
+    editor.interaction = null;
+    editor.gizmoAxis = null;
+    if (ended.kind === "world_gizmo") {
+      worldGizmoPointer("up", editor.pointerPos);
+      runtime.backgroundDirty = true;
+      if (ended.changed) {
+        pushHistory();
+        commitAndRefreshNode();
+        updateSidePanel();
+      }
+    }
+    updateCursor(editor.pointerPos);
+    requestDraw();
+  }
+
   // A left drag on empty space of the panorama view looks around; in 6DoF it does what the 3D view
   // controls preset does there (pano_view_controls.js emptyLeft), or nothing.
   function startEmptyDrag(e, p) {
@@ -8952,6 +9184,11 @@ async function showEditor(node, type, options = {}) {
   function restartEditAtStoppedFrame(it, down) {
     if (!sceneV2 || !playback.playing) return;
     playback.stop();
+    if (it.kind === "world_gizmo") {
+      const sticker = state.stickers.find((item) => item.id === it.id);
+      if (sticker) it.base = evaluateSticker(sticker, editor.frame);
+      return;
+    }
     if (it.kind === "move_multi") {
       const geom = getMultiSelectionGeom(it.items);
       if (!geom?.visible) return;
@@ -8990,6 +9227,7 @@ async function showEditor(node, type, options = {}) {
     const p = screenPos(e);
     setPointerPos(p, true);
     if (!editor.interaction) {
+      hoverWorldGizmo(p);
       updateCursor(p);
       return;
     }
@@ -8998,7 +9236,13 @@ async function showEditor(node, type, options = {}) {
     if (editPointerDown && (p.x !== editPointerDown.x || p.y !== editPointerDown.y)) {
       const down = editPointerDown;
       editPointerDown = null;
-      if (!["view", "marquee_select", "space_pan", "space_orbit"].includes(it.kind)) restartEditAtStoppedFrame(it, down);
+      if (!["view", "marquee_select", "space_pan", "space_orbit", "world_select"].includes(it.kind)) restartEditAtStoppedFrame(it, down);
+    }
+
+    if (it.kind === "world_select") return;
+    if (it.kind === "world_gizmo") {
+      dragWorldGizmo(it, p);
+      return;
     }
 
     if (it.kind === "paint_stroke") {
@@ -9355,6 +9599,10 @@ async function showEditor(node, type, options = {}) {
       updateCursor(editor.pointerPos);
       return;
     }
+    if (ended?.kind === "world_select" || ended?.kind === "world_gizmo") {
+      endWorldStickerPress(ended);
+      return;
+    }
     if (editor.interaction?.kind === "paint_stroke" || editor.interaction?.kind === "paint_lasso_fill") {
       invalidateLivePaintPreviewCaches();
       const didCommit = commitPaintInteraction(editor.interaction);
@@ -9460,6 +9708,10 @@ async function showEditor(node, type, options = {}) {
 
   canvas.onpointercancel = () => {
     if (cancelFrameCameraGesture()) return;
+    if (editor.interaction?.kind === "world_select" || editor.interaction?.kind === "world_gizmo") {
+      endWorldStickerPress(editor.interaction);
+      return;
+    }
     if (editor.interaction?.kind === "view") {
       viewController.endDrag(performance.now());
     }
@@ -9495,6 +9747,11 @@ async function showEditor(node, type, options = {}) {
     if (pointerChanged && editor.mode === "frame" && editor.primaryTool === "cursor") {
       requestDraw({ localOnly: true });
     }
+  };
+
+  // Off the view no gizmo handle is under the pointer.
+  canvas.onpointerleave = () => {
+    if (!editor.interaction) hoverWorldGizmo({ x: -1e6, y: -1e6 });
   };
 
   canvas.onmouseleave = () => {
@@ -9583,16 +9840,28 @@ async function showEditor(node, type, options = {}) {
     const selected = frameInspectorShot || getSelected();
     const selectedKind = frameInspectorShot ? "shot" : getSelectedKind();
     const cameraInspected = sceneV2 && editor.inspectCamera;
-    if (!cameraInspected && (!selected || selectedKind === "stroke" || isItemLocked(selected))) return;
+    const worldInspected = selectedWorldSticker();
+    if (worldInspected && !worldStickerEditable(worldInspected)) return;
+    if (!cameraInspected && !worldInspected && (!selected || selectedKind === "stroke" || isItemLocked(selected))) return;
     const param = (uiState.sidePanel?.params || []).find((item) => item.key === key);
     if (!param || param.enabled === false) return;
     let out = Number(rawValue);
     if (Number.isNaN(out)) out = 0;
-    out = clamp(out, Number(param.min), Number(param.max));
+    // A world Sticker's position has no limit, and its scale only stays above 0.
+    if (worldInspected && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
+    else out = clamp(out, Number(param.min), Number(param.max));
     if (key === "yaw_deg") out = wrapYaw(out);
     if (cameraInspected) {
       setCameraField(state.camera, editor.frame, key, out);
       updateSidePanel();
+      if (commit) pushHistory();
+      return;
+    }
+    if (worldInspected) {
+      setWorldStickerField(worldInspected, editor.frame, key, out);
+      markObjectVisualsDirty();
+      updateSidePanel();
+      requestDraw();
       if (commit) pushHistory();
       return;
     }
@@ -9749,6 +10018,14 @@ async function showEditor(node, type, options = {}) {
       setSpaceMode(spaceModeTarget.getAttribute("data-space-mode"));
       return;
     }
+    const gizmoModeTarget = ev.target.closest("[data-gizmo-mode]");
+    if (gizmoModeTarget) {
+      editor.gizmoMode = gizmoModeTarget.getAttribute("data-gizmo-mode");
+      runtime.backgroundDirty = true;
+      syncFloatingViewButtonState();
+      requestDraw({ localOnly: true });
+      return;
+    }
     const viewTarget = ev.target.closest("[data-view]");
     if (viewTarget) {
       if (viewTarget.disabled) return;
@@ -9783,6 +10060,7 @@ async function showEditor(node, type, options = {}) {
         else if (action === "redo") restoreHistory(1);
         else if (action === "clear") clearAll();
         else if (action === "add" || action === "add-image") addImageSticker();
+        else if (action === "add-world") addWorldImageSticker();
         else if (action === "add-or-look") addCutoutFrame();
         return;
       }
@@ -10344,6 +10622,11 @@ async function showEditor(node, type, options = {}) {
     if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
     if (timeline.selection) {
       deleteSelectedKeyframes();
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    if (deleteSelectedWorldSticker()) {
       ev.preventDefault();
       ev.stopPropagation();
       return;
