@@ -4,6 +4,8 @@ import test from "node:test";
 import { readdirSync, readFileSync } from "node:fs";
 
 import {
+  CAMERA_SHOT_ID,
+  cameraShot,
   duplicateSceneSticker,
   editorActive,
   editorStateText,
@@ -20,6 +22,7 @@ import {
   deleteWorldSticker,
   sceneStickerLabel,
   setCameraField,
+  setCameraShot,
   setEditorActive,
   setStickerOpacity,
   setStickerPose,
@@ -30,7 +33,7 @@ import {
   worldStickerFields,
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
-import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
+import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -452,7 +455,7 @@ test("a painting layer saved in an earlier editor session stays current until it
   assert.equal(paintingLayerNeedsSync(saved, { ...painted, nodeId: "7" }), true);
 
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
-  assert.match(editor, /function needsPaintingLayerSync\(\) \{\n[^\n]*\n[^\n]*\n\s*return paintingLayerNeedsSync\(state\.painting_layer, /);
+  assert.match(editor, /function needsPaintingLayerSync\(\) \{\n\s*if \(cutoutV2\) return false;\n[^\n]*\n[^\n]*\n\s*return paintingLayerNeedsSync\(state\.painting_layer, /);
 });
 
 // An undo or redo step restores a snapshot without the painting_layer. Undoing an edit that left the painting
@@ -627,4 +630,126 @@ test("the editor has no way to switch a Sticker's Placement between sky and worl
   Object.assign(state, restoredHistoryState(state, before).state);
   assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
   assert.deepEqual(state.stickers.find((item) => item.id === "w").position.value, [0, 0, 0]);
+});
+
+// --- PanoramaCutoutNode (#77): the Cutout editor edits the Camera of state v2 as its shot.
+
+function cutoutState(camera = {}, fps = 24) {
+  return loadSceneState({ version: 2, timeline: { fps }, camera });
+}
+
+test("the Cutout's shot is its Camera at a Timeline frame, by the evaluator the node uses", () => {
+  const state = cutoutState({
+    aspect: 1.5,
+    position: { value: [1, 2, 3], keyframes: [] },
+    rotation: { value: {}, keyframes: [{ frame: 0, value: { yaw_deg: 0 } }, { frame: 10, value: { yaw_deg: 40, roll_deg: 10 } }] },
+    fov: { value: 60, keyframes: [] },
+  });
+
+  const shot = cameraShot(state.camera, 5);
+  const camera = evaluateCamera(state.camera, 5);
+
+  assert.equal(shot.id, CAMERA_SHOT_ID);
+  assert.deepEqual([shot.yaw_deg, shot.pitch_deg, shot.roll_deg, shot.hFOV_deg], [camera.yaw_deg, camera.pitch_deg, camera.roll_deg, 60]);
+  assert.deepEqual(shot.position, [1, 2, 3]);
+  // The vertical FOV follows the Camera's aspect, as the node's output size does.
+  assert.ok(Math.abs(Math.tan(shot.hFOV_deg * Math.PI / 360) / Math.tan(shot.vFOV_deg * Math.PI / 360) - 1.5) < 1e-9);
+  assert.equal(shot.locked, false);
+});
+
+test("an edited shot writes only its changed fields to the Camera's Lanes by the recording rule", () => {
+  const state = cutoutState({ rotation: { value: {}, keyframes: [{ frame: 0, value: { yaw_deg: 0 } }, { frame: 20, value: { yaw_deg: 90 } }] } });
+  const base = cameraShot(state.camera, 10);
+
+  setCameraShot(state.camera, 10, { ...base, pitch_deg: 15 }, base);
+
+  // The rotation Lane has Keyframes, so the edit keys frame 10; the FOV and position Lanes keep their static values.
+  assert.deepEqual(state.camera.rotation.keyframes.map((key) => key.frame), [0, 10, 20]);
+  assert.equal(state.camera.rotation.keyframes[1].value.pitch_deg, 15);
+  assert.equal(state.camera.fov.keyframes.length, 0);
+  assert.equal(state.camera.position.keyframes.length, 0);
+
+  // Without Keyframes the static value changes.
+  const plain = cutoutState();
+  const shot = cameraShot(plain.camera, 0);
+  setCameraShot(plain.camera, 0, { ...shot, hFOV_deg: 50, vFOV_deg: shot.vFOV_deg, position: [0, 1, 0] }, shot);
+  assert.equal(plain.camera.fov.value, 50);
+  assert.deepEqual(plain.camera.position.value, [0, 1, 0]);
+  assert.equal(plain.camera.fov.keyframes.length + plain.camera.position.keyframes.length, 0);
+  // Changing one FOV of the pair sets the aspect, which is not keyed.
+  assert.ok(Math.abs(plain.camera.aspect - Math.tan(25 * Math.PI / 180) / Math.tan(shot.vFOV_deg * Math.PI / 360)) < 1e-12);
+});
+
+test("a yaw wrapped across 180 degrees keeps the Camera's turn", () => {
+  const state = cutoutState({ rotation: { value: { yaw_deg: 170 }, keyframes: [] } });
+  const base = cameraShot(state.camera, 0);
+
+  setCameraShot(state.camera, 0, { ...base, yaw_deg: -170 }, base);
+
+  assert.equal(state.camera.rotation.value.yaw_deg, 190);
+});
+
+test("a Cutout shooting a PANO_SCENE works on the Scene with its own Camera, and saves only its own state", () => {
+  const sceneState = {
+    version: 2,
+    timeline: { fps: 12, length: 30 },
+    stickers: [{ id: "w", placement: "world", source: { kind: "port" }, position: { value: [0, 0, -2], keyframes: [] } }],
+    camera: { fov: { value: 10, keyframes: [] } },
+  };
+  const own = {
+    version: 2,
+    timeline: { fps: 24, length: 7 },
+    camera: { aspect: 1.5, fov: { value: 70, keyframes: [{ frame: 0, value: 70 }, { frame: 24, value: 40 }] } },
+  };
+
+  const state = parseSceneEditorState(JSON.stringify(own), { fps: 12, scene: sceneState });
+
+  // The Scene's Stickers and Timeline, the Cutout's Camera at the Scene's fps (its seconds kept).
+  assert.deepEqual(state.stickers.map((item) => item.id), ["w"]);
+  assert.equal(state.timeline.fps, 12);
+  assert.equal(state.timeline.length, 30);
+  assert.deepEqual(state.camera.fov.keyframes.map((key) => key.frame), [0, 12]);
+  assert.equal(state.camera.aspect, 1.5);
+
+  state.camera.fov.value = 55;
+  const saved = JSON.parse(editorStateText(sceneNode(), state));
+
+  assert.deepEqual(saved, loadSceneState({ ...rebaseSceneState(loadSceneState(own), 12), camera: state.camera }));
+  assert.deepEqual(saved.stickers, []);
+  // Its own length stays its own, in seconds.
+  assert.equal(saved.timeline.length, 4);
+});
+
+test("opening and closing a Cutout on another fps without an edit leaves its state_json as it is", () => {
+  const own = JSON.stringify(loadSceneState({
+    version: 2,
+    timeline: { fps: 24 },
+    camera: { rotation: { value: {}, keyframes: [{ frame: 0, value: { yaw_deg: 0 } }, { frame: 1, value: { yaw_deg: 5 } }, { frame: 25, value: { yaw_deg: 90 } }] } },
+  }));
+  const cutoutNode = () => ({ __panoSceneStateV2: true });
+
+  for (const scene of [null, { version: 2, timeline: { fps: 12 } }]) {
+    const state = parseSceneEditorState(own, { fps: 12, scene });
+    const text = editorStateText(cutoutNode(), state);
+
+    // The editor works at 12 fps with its Keyframes rounded there; without an edit the text is not rewritten.
+    assert.notEqual(text, own);
+    assert.equal(sameEditorStateText(cutoutNode(), text, own, { rebased: true }), true);
+    // Stickers keeps its own rule, and an edit is written.
+    assert.equal(sameEditorStateText(cutoutNode(), text, own), false);
+    state.camera.fov.value = 50;
+    assert.equal(sameEditorStateText(cutoutNode(), editorStateText(cutoutNode(), state), own, { rebased: true }), false);
+  }
+});
+
+test("a fps change of a Cutout showing a PANO_SCENE rebases the state it saves too", () => {
+  const own = { version: 2, timeline: { fps: 24, length: 48 }, camera: { fov: { value: 60, keyframes: [{ frame: 0, value: 60 }, { frame: 24, value: 30 }] } } };
+  const state = parseSceneEditorState(JSON.stringify(own), { fps: 24, scene: { version: 2, timeline: { fps: 24 } } });
+
+  setTimelineFps(state, 12);
+  const saved = JSON.parse(editorStateText(sceneNode(), state));
+
+  assert.equal(saved.timeline.fps, 12);
+  assert.equal(saved.timeline.length, 24);
+  assert.deepEqual(saved.camera.fov.keyframes.map((key) => key.frame), [0, 12]);
 });

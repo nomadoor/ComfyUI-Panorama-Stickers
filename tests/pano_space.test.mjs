@@ -29,6 +29,8 @@ import {
   orbitView,
   panView,
   pivotOf,
+  placedCamera,
+  polylineSegments,
   projectPoint,
   reuseWheelPick,
   sceneFilesOf,
@@ -36,6 +38,7 @@ import {
   sceneItemIndex,
   sceneRequest,
   sceneTransform,
+  segmentsHit,
   spaceCamera,
   spaceModeView,
   spaceModeWithContent,
@@ -860,4 +863,47 @@ test("near a pole a gizmo turn keeps the Sticker's yaw and turns its roll", () =
   const down = { ...base, pitch_deg: -89.95 };
   const kept = gizmoDragLanes("rotate", down, sceneTransform(down), { ...sceneTransform(down), scale: [1, 1, 1] }).rotation;
   closeVec([kept.yaw_deg, kept.pitch_deg, kept.roll_deg], [30, -89.95, 10], 1e-6);
+});
+
+// --- The Cutout's Camera in space (#77).
+
+test("3DoF of the Cutout editor stands at the Camera's position, and 6DoF starts from there", () => {
+  const view = { position: [5, 5, 5], yaw_deg: 30, pitch_deg: 10, hFOV_deg: 90, distance: 1 };
+  const origin = [1, 2, 3];
+
+  assert.deepEqual(spaceModeView("3dof", view, origin).position, origin);
+  assert.deepEqual(spaceModeView("6dof", view, origin), view);
+  assert.deepEqual(switchSpaceMode({ mode: "6dof", position: [9, 9, 9], moved: true }, "3dof", origin), { mode: "3dof", position: origin, moved: false });
+  // The Stickers editor keeps the World origin.
+  assert.deepEqual(spaceModeView("3dof", view).position, [0, 0, 0]);
+});
+
+test("the Frame view looks through the Camera from its position with the space view's depth range", () => {
+  const camera = { quaternion: { x: 0, y: 0, z: 0, w: 1 }, fovY_deg: 40, aspect: 1.5 };
+  const sphere = { center: [0, 0, -5], radius: 2 };
+
+  const placed = placedCamera(camera, [0, 1, 0], 4, sphere);
+  const space = spaceCamera({ position: [0, 1, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 4 }, 300, 200, sphere);
+
+  assert.deepEqual(placed.position, [0, 1, 0]);
+  assert.equal(placed.fovY_deg, 40);
+  assert.deepEqual([placed.near, placed.far], [space.near, space.far]);
+});
+
+test("the Camera is picked within a few pixels of its frustum's lines on screen", () => {
+  const view = spaceCamera({ position: [0, 0, 5], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 5 }, 200, 200);
+  const frustum = cameraFrustumSegments({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, aspect: 1 }, 1);
+  const center = projectPoint(view, [0, 0, 0], 200, 200);
+  const edge = projectPoint(view, frustum[1][1], 200, 200);
+
+  assert.equal(segmentsHit(view, frustum, center, 200, 200), true);
+  assert.equal(segmentsHit(view, frustum, { x: (center.x + edge.x) / 2 + 3, y: (center.y + edge.y) / 2 }, 200, 200), true);
+  assert.equal(segmentsHit(view, frustum, { x: 5, y: 5 }, 200, 200), false);
+  // Segments behind the view are not picked.
+  assert.equal(segmentsHit(view, [[[0, 0, 6], [1, 0, 7]]], { x: 100, y: 100 }, 200, 200), false);
+});
+
+test("the trajectory is drawn as the segments between its positions", () => {
+  assert.deepEqual(polylineSegments([[0, 0, 0], [1, 0, 0], [1, 1, 0]]), [[[0, 0, 0], [1, 0, 0]], [[1, 0, 0], [1, 1, 0]]]);
+  assert.deepEqual(polylineSegments([[0, 0, 0]]), []);
 });

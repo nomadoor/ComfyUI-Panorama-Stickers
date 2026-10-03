@@ -278,11 +278,16 @@ function installEditorButton(nodeType, {
       return;
     }
 
+    // PanoramaCutoutNode keeps state v2 in state_json. Its on-node surface still edits the legacy shot, so
+    // it opens the editor from the button only.
+    node.__panoSceneStateV2 = sceneStateV2;
     ensureActionButtonWidget(node, buttonText, () => openEditor(node, "cutout"));
-    attachCutout(node, {
-      buttonText,
-      onOpen: () => openEditor(node, "cutout"),
-    });
+    if (!sceneStateV2) {
+      attachCutout(node, {
+        buttonText,
+        onOpen: () => openEditor(node, "cutout"),
+      });
+    }
     if (node.__panoCutoutNodeSurface) hideWidget(node, buttonText);
     if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) node.size = [360, 260];
     node.__panoPreviewAttached = true;
@@ -293,7 +298,7 @@ function installEditorButton(nodeType, {
     const previous = nodeType.prototype[hook];
     nodeType.prototype[hook] = function () {
       const result = previous ? previous.apply(this, arguments) : undefined;
-      if (hook === "onNodeCreated" && matchType === "PanoramaCutout") {
+      if (hook === "onNodeCreated" && matchType === "PanoramaCutout" && !sceneStateV2) {
         initializeNewCutoutFrame(this);
       }
       if (hook === "onConfigure" && matchType === "PanoramaStickers" && !sceneStateV2 && this.widgets) {
@@ -405,6 +410,18 @@ export function createPanoEditorExtension({
           attachStickers,
           attachCutout,
           enableStickersPreview,
+        });
+      }
+      if (name === "PanoramaCutoutNode") {
+        installEditorButton(nodeType, {
+          app,
+          matchType: "PanoramaCutout",
+          buttonText: "Open Cutout Editor",
+          openEditor,
+          attachStickers,
+          attachCutout,
+          enableStickersPreview,
+          sceneStateV2: true,
         });
       }
       if (isPanoramaPreviewNodeName(name)) installStandalonePreviewNode(nodeType);

@@ -16,6 +16,9 @@ import { createHistoryController } from "./pano_paint_history.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 import {
+  CAMERA_SHOT_ID,
+  cameraFields,
+  cameraShot,
   duplicateSceneSticker,
   editorActive,
   editorStateText,
@@ -31,6 +34,8 @@ import {
   retainActiveCutoutShot,
   sameEditorStateText,
   sceneStickerLabel,
+  setCameraField,
+  setCameraShot,
   setEditorActive,
   deleteWorldSticker,
   setStickerOpacity,
@@ -42,7 +47,7 @@ import {
   stickerPose,
   worldStickerFields,
 } from "./pano_editor_state.js";
-import { clipActive, evaluateSceneState, evaluateSticker } from "./pano_scene_eval.js";
+import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from "./pano_scene_eval.js";
 import { loadSceneState } from "./pano_scene_state.js";
 import {
   deleteKeyframes,
@@ -51,6 +56,7 @@ import {
   laneNames,
   moveClip,
   moveKeyframes,
+  setLaneValue,
   setSegmentEasing,
   timelineSpan,
   trimClipEnd,
@@ -70,8 +76,11 @@ import {
 import {
   DEFAULT_DISTANCE,
   boundingSphere,
+  cameraFrustumSegments,
+  cameraTrajectory,
   contentPoints,
   depthOf,
+  facingRotation,
   frameSphere,
   frameView,
   gizmoDragLanes,
@@ -82,13 +91,16 @@ import {
   newWorldStickerTransform,
   orbitView,
   panView,
+  placedCamera,
   planeCorners,
+  polylineSegments,
   projectPoint,
   reuseWheelPick,
   sceneFilesOf,
   sceneItemBox,
   sceneRequest,
   sceneTransform,
+  segmentsHit,
   spaceCamera,
   spaceModeView,
   spaceModeWithContent,
@@ -209,6 +221,9 @@ const RAD2DEG = 180 / Math.PI;
 // carries the padding that keeps the gate clear of the floating UI.
 const FRAME_GATE_OCCUPANCY = 1;
 const CUTOUT_FRAME_ACCENT = "rgb(255, 221, 87)";
+// PanoramaCutoutNode's Camera in space (#77): its frustum (the accent while selected) and its trajectory.
+const CUTOUT_FRUSTUM_COLOR = "rgb(228, 228, 231)";
+const CUTOUT_TRAJECTORY_COLOR = "rgb(180, 150, 60)";
 const FRAME_ROLL_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M19 8a8 8 0 1 0 1 6M19 3v5h-5' fill='none' stroke='black' stroke-opacity='.7' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M19 8a8 8 0 1 0 1 6M19 3v5h-5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 12 12, crosshair`;
 // Vertical room kept for `.pano-floating-right` when measuring the Frame safe
 // rect: its CSS bottom offset plus its collapsed min-height. Deliberately a
@@ -249,6 +264,20 @@ function videoTimelineFps(node) {
   if (!isNodeOutputMediaCurrent(node, "background") || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
   const fps = comfyMedia.uiValue(node, "pano_timeline_fps");
   return Array.isArray(fps) && fps[0] > 0 ? fps[0] : null;
+}
+
+// The tools of the Cutout editor that PanoramaCutoutNode's editor does not have (#77).
+const CUTOUT_V2_HIDDEN_TOOLS = new Set(["paint", "mask", "add-image", "clear"]);
+
+// The PANO_SCENE that PanoramaCutoutNode's current result shot (#77): the Scene's state, its Timeline
+// length in frames and the span of its background ERP; null for an ERP source or without a current result.
+function shotScene(node) {
+  if (!isNodeOutputMediaCurrent(node, "background")) return null;
+  const [state] = comfyMedia.uiValue(node, "pano_scene_state") || [];
+  if (!state || typeof state !== "object") return null;
+  const [frames] = comfyMedia.uiValue(node, "pano_timeline_frames") || [];
+  const [coverage] = comfyMedia.uiValue(node, "pano_scene_coverage") || [];
+  return { state, frames: Number(frames) > 0 ? Number(frames) : null, coverage: normalizeCoverageValue(coverage) };
 }
 
 const mediaAssetSource = comfyMedia.assetSource;
@@ -615,20 +644,34 @@ async function showEditor(node, type, options = {}) {
     return parseOutputPresetValue(raw, fallback);
   };
 
-  // PanoramaStickersNode edits state v2 itself (pano_editor_state.js); the legacy nodes edit v1.
-  const sceneV2 = type === "stickers" && node.__panoSceneStateV2 === true;
-  const state = (sceneV2 ? parseSceneEditorState : parsePanoEditorState)(String(stateWidget?.value || ""), {
+  // PanoramaStickersNode and PanoramaCutoutNode edit state v2 itself (pano_editor_state.js); the legacy
+  // nodes edit v1. sceneV2 is the Stickers editor of state v2, cutoutV2 the Cutout one (#77).
+  const stateV2 = node.__panoSceneStateV2 === true;
+  const sceneV2 = type === "stickers" && stateV2;
+  const cutoutV2 = type === "cutout" && stateV2;
+  // A Cutout that shot a PANO_SCENE shows that Scene and edits only its Camera; the Scene sets its Timeline.
+  const capture = cutoutV2 ? shotScene(node) : null;
+  const state = (stateV2 ? parseSceneEditorState : parsePanoEditorState)(String(stateWidget?.value || ""), {
     outputPreset: resolveEditorOutputPresetWidth(2048),
     backgroundColor: String(bgWidget?.value || "#00ff00"),
-    coverage: normalizeCoverageValue(coverageWidget?.value),
+    coverage: capture ? capture.coverage : normalizeCoverageValue(coverageWidget?.value),
     sharedUiSettings: loadSharedUiSettings(),
     active: editorActive(node),
-    fps: sceneV2 ? videoTimelineFps(node) : null,
+    fps: stateV2 ? videoTimelineFps(node) : null,
+    scene: capture?.state ?? null,
   });
   node.__panoLiveStateOverride = state;
   node.__panoLiveStateVersion = 0;
 
-  if (type === "cutout") {
+  // PanoramaCutoutNode's Camera is the one shot of the Cutout editor, at the playhead (cameraShot).
+  // cutoutShotBase is the shot as it was last derived; an edit since then is written back to the
+  // Camera's Lanes (syncCutoutShot).
+  let cutoutShotBase = null;
+  if (cutoutV2) {
+    cutoutShotBase = cameraShot(state.camera, 0);
+    state.shots = [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }];
+    state.active.selected_shot_id = CAMERA_SHOT_ID;
+  } else if (type === "cutout") {
     state.shots = Array.isArray(state.shots) ? state.shots.slice(0, 1) : [];
     if (!state.shots.length) {
       state.active.selected_shot_id = null;
@@ -655,7 +698,13 @@ async function showEditor(node, type, options = {}) {
       ? { visible: false, mode: "3dof", frameDisabled: true, modes: shellPreset.spaceButtons, frame: shellPreset.spaceFrameButton }
       : null,
     // Only PanoramaStickersNode places images in space.
-    toolButtons: (shellPreset.toolButtons || []).map((button) => ({ ...button, disabled: false, ...(button.key === "add-world" ? { visible: sceneV2 } : {}) })),
+    // PanoramaCutoutNode's editor edits only its Camera (#77), so it has no image, paint or clear tools.
+    toolButtons: (shellPreset.toolButtons || []).map((button) => ({
+      ...button,
+      disabled: false,
+      ...(button.key === "add-world" ? { visible: sceneV2 } : {}),
+      ...(cutoutV2 && CUTOUT_V2_HIDDEN_TOOLS.has(button.key) ? { visible: false } : {}),
+    })),
     floatingButtons: [
       ...(shellPreset.floatingButtons || []).map((button) => ({ ...button, disabled: false })),
       ...(previewMode ? [{ action: "toggle-fullscreen", label: "Fullscreen", tip: "Fullscreen", pressed: null, icon: ICON.fullscreen, disabled: false }] : []),
@@ -987,6 +1036,8 @@ async function showEditor(node, type, options = {}) {
     gizmoMode: "translate",
     // The gizmo handle under the pointer, or null.
     gizmoAxis: null,
+    // PanoramaCutoutNode's Frame view with World content: the pivot distance its last move left (#77).
+    frameDistance: null,
     panelWasEnabled: false,
     // The view moving to another over a short time (pano_view_transition.js), or null.
     viewTransition: null,
@@ -1250,13 +1301,13 @@ async function showEditor(node, type, options = {}) {
     },
     fps: playbackFps,
     span: () => {
-      if (sceneV2) return timelineSpanFrames();
+      if (stateV2) return timelineSpanFrames();
       const frames = Math.round(Number(uiState.videoTransport.duration || 0) * playbackFps());
       return videoEl.loop || !(frames > 0) ? Infinity : frames;
     },
-    loop: () => sceneV2,
+    loop: () => stateV2,
     onFrame: (frame) => {
-      if (sceneV2) setTimelineFrame(frame);
+      if (stateV2) setTimelineFrame(frame);
       else syncVideoTransportState();
       requestDraw({ cause: "frame_view", localOnly: true });
     },
@@ -1271,7 +1322,7 @@ async function showEditor(node, type, options = {}) {
   });
   videoCleanupFns.push(() => playback.dispose());
   // PanoramaStickersNode's port Sticker plays its MP4 along the playhead, muted (#83).
-  const portVideo = sceneV2 && portVideoEl instanceof HTMLVideoElement
+  const portVideo = stateV2 && portVideoEl instanceof HTMLVideoElement
     ? createVideoFollower({
       video: portVideoEl,
       onCapture: () => {
@@ -1289,7 +1340,7 @@ async function showEditor(node, type, options = {}) {
     : null;
   if (portVideo) videoCleanupFns.push(() => portVideo.dispose());
   // An RGBA IMAGE batch on the port shows its PNGs instead, which keep its alpha.
-  const portFrames = sceneV2
+  const portFrames = stateV2
     ? createFrameSequence({
       createImage: (src, onLoad) => {
         const image = new Image();
@@ -1375,7 +1426,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function applyViewTransitionEnd(end) {
-    applySpaceMode(switchSpaceMode({ ...spaceModeState(), moved: end.moved }, end.mode));
+    applySpaceMode(switchSpaceMode({ ...spaceModeState(), moved: end.moved }, end.mode, spaceOrigin()));
     runtime.backgroundDirty = true;
   }
 
@@ -1724,10 +1775,14 @@ async function showEditor(node, type, options = {}) {
     const rasterId = String(interaction?.item?.rasterObjectId || interaction?.item?.id || "");
     return `_${interactionKind}_${groupId || rasterId || "active"}_${editor.livePaintInteractionRevision}`;
   }
+  // The Stickers the Cutout editor selects and moves: none in PanoramaCutoutNode's, which edits only its
+  // Camera and shows the Stickers of its state or of the Scene it shoots (#77).
+  function cutoutStickers() {
+    return cutoutV2 || !Array.isArray(state.stickers) ? [] : state.stickers;
+  }
   function getCutoutSelectableItems() {
     const shots = Array.isArray(state.shots) ? state.shots : [];
-    const stickers = Array.isArray(state.stickers) ? state.stickers : [];
-    return [...shots, ...stickers];
+    return [...shots, ...cutoutStickers()];
   }
   function isShotItem(item) {
     return !!item && Array.isArray(state.shots) && state.shots.includes(item);
@@ -2121,7 +2176,7 @@ async function showEditor(node, type, options = {}) {
       item,
       label: String(item?.label || `Frame ${index + 1}`),
     }));
-    const images = (Array.isArray(state.stickers) ? state.stickers : []).map((item, index) => {
+    const images = cutoutStickers().map((item, index) => {
       const baseLabel = isExternalSticker(item)
         ? String(item.id || EXTERNAL_STICKER_ID)
         : String(state.assets?.[item.asset_id]?.name || item.asset_id || item.id || `Image ${index + 1}`);
@@ -2157,7 +2212,7 @@ async function showEditor(node, type, options = {}) {
   }
   function isExternalSticker(item) {
     if (!item || typeof item !== "object") return false;
-    if (sceneV2) return item.source?.kind === "port";
+    if (stateV2) return item.source?.kind === "port";
     return String(item.id || "") === EXTERNAL_STICKER_ID
       || String(item.source_kind || "") === EXTERNAL_STICKER_SOURCE_KIND;
   }
@@ -2306,7 +2361,7 @@ async function showEditor(node, type, options = {}) {
   }
   // Without a known fps the legacy transport counts milliseconds, so its slider seeks to the time itself.
   function playbackFps() {
-    return sceneV2 ? state.timeline.fps : videoState.metaFps || 1000;
+    return stateV2 ? state.timeline.fps : videoState.metaFps || 1000;
   }
   // The transport shows the playback's frame and state; `extra` brings what the source refresh learned.
   function syncVideoTransportState(extra = {}) {
@@ -2357,7 +2412,7 @@ async function showEditor(node, type, options = {}) {
   // PanoramaStickersNode plays the background VIDEO from the Timeline, so the video's own transport is hidden.
   function getVideoTransportVisible() {
     return !!(videoEl instanceof HTMLVideoElement
-      && !sceneV2
+      && !stateV2
       && videoEl.getAttribute("src")
       && editor.primaryTool !== "paint"
       && editor.primaryTool !== "mask");
@@ -2435,7 +2490,7 @@ async function showEditor(node, type, options = {}) {
     videoState.videoFailed = !nextSrc && candidates.length > 0;
     const meta = nextSrc && nextSrc === ownSrc ? getVideoMetaEntry() : null;
     videoState.metaFps = Number(meta?.fps) > 0 ? Number(meta.fps) : 0;
-    const fps = Math.max(1, Number(meta?.fps || (sceneV2 ? state.timeline.fps : 24)));
+    const fps = Math.max(1, Number(meta?.fps || (stateV2 ? state.timeline.fps : 24)));
     const fileDuration = videoEl.dataset.panoSrc === nextSrc && Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
     const duration = Number(meta?.duration || (meta?.frames > 0 ? meta.frames / fps : fileDuration));
     const frameCount = Math.max(0, Number(meta?.frames || Math.round(duration * fps)));
@@ -2445,13 +2500,13 @@ async function showEditor(node, type, options = {}) {
       videoEl.pause();
       dropVideoStill();
       videoEl.dataset.panoSrc = nextSrc;
-      videoEl.loop = !sceneV2 && !!uiState.videoTransport.loop;
+      videoEl.loop = !stateV2 && !!uiState.videoTransport.loop;
       videoEl.muted = !!uiState.videoTransport.muted;
       videoEl.volume = Math.max(0, Math.min(1, Number(uiState.videoTransport.volume ?? 1)));
       videoEl.src = nextSrc;
       videoEl.load();
       playback.setSource(true);
-      if (!sceneV2) playback.seek(0);
+      if (!stateV2) playback.seek(0);
     } else if (!nextSrc && videoEl.getAttribute("src")) {
       videoEl.pause();
       videoEl.removeAttribute("src");
@@ -2462,8 +2517,8 @@ async function showEditor(node, type, options = {}) {
       playback.setSource(false);
     }
     // The legacy transport loops through the VIDEO's own loop; PanoramaStickersNode's playback sets it.
-    if (!sceneV2) videoEl.loop = !!uiState.videoTransport.loop;
-    if (nextSrc && !sceneV2 && videoState.thumbnailSrc !== nextSrc && !videoState.thumbnailFailedSrcs.has(nextSrc)) {
+    if (!stateV2) videoEl.loop = !!uiState.videoTransport.loop;
+    if (nextSrc && !stateV2 && videoState.thumbnailSrc !== nextSrc && !videoState.thumbnailFailedSrcs.has(nextSrc)) {
       void buildVideoThumbnails(nextSrc, duration, fps);
     }
     if (!nextSrc) {
@@ -2857,13 +2912,13 @@ async function showEditor(node, type, options = {}) {
   // The `scene` input's editor files in the node's current result (docs/render-contract.md): the kind
   // the editor loads and a URL per item, null for an empty item. null without a current result.
   function sceneFiles() {
-    if (!sceneV2 || !isNodeOutputMediaCurrent(node, "scene")) return null;
+    if (!stateV2 || !isNodeOutputMediaCurrent(node, "scene")) return null;
     return sceneFilesOf(getNodeUiList("pano_scene_files"), getNodeUiList("pano_scene_meta"), mediaSource);
   }
 
   // The `sticker` input's 3D media (#63) in the node's current result, in the shape of sceneFiles().
   function stickerFiles() {
-    if (!sceneV2 || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
+    if (!stateV2 || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
     return sceneFilesOf(getNodeUiList("pano_sticker_files"), getNodeUiList("pano_sticker_meta"), mediaSource);
   }
 
@@ -2875,7 +2930,8 @@ async function showEditor(node, type, options = {}) {
   }
 
   function hasSpaceContent() {
-    return sceneV2 && hasWorldContent({ sceneLinked: !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
+    // The Cutout sees the World of the PANO_SCENE it shot, or the world Stickers of its own state.
+    return stateV2 && hasWorldContent({ sceneLinked: sceneV2 && !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
   }
 
   // The space view in 6DoF, where the Viewport camera moves through the World with the 3D view controls.
@@ -2905,11 +2961,12 @@ async function showEditor(node, type, options = {}) {
     const choice = spaceModeChoice(editor.spaceMode, editor.viewTransition, mode);
     if (choice === "keep") return;
     if (choice === "return") {
-      transitionView({ ...spaceViewState(), position: [0, 0, 0], distance: contentSphere()?.radius || DEFAULT_DISTANCE }, { mode, moved: false });
+      transitionView({ ...spaceViewState(), position: spaceOrigin(), distance: contentSphere()?.radius || DEFAULT_DISTANCE }, { mode, moved: false });
       return;
     }
     cancelViewTransition();
-    applySpaceMode(switchSpaceMode(spaceModeState(), mode));
+    // 6DoF starts where 3DoF stands now (the Cutout's Camera may have moved since 3DoF began).
+    applySpaceMode(switchSpaceMode({ ...spaceModeState(), position: spaceViewState().position }, mode, spaceOrigin()));
     runtime.backgroundDirty = true;
     syncFloatingViewButtonState();
     requestDraw({ localOnly: true });
@@ -2921,12 +2978,24 @@ async function showEditor(node, type, options = {}) {
   function spaceViewState() {
     const distance = editor.viewMoved ? editor.viewDistance : contentSphere()?.radius || DEFAULT_DISTANCE;
     const view = { position: editor.viewPosition, yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, hFOV_deg: editor.viewFov, distance };
-    return spaceModeView(editor.spaceMode, view);
+    return spaceModeView(editor.spaceMode, view, spaceOrigin());
+  }
+
+  // Where 3DoF stands: the World origin, where the Stickers ERP is taken from, or in the Cutout editor the
+  // Camera's position at the playhead, so the frame on the panorama is what the Camera sees (#77).
+  function spaceOrigin() {
+    return cutoutV2 ? cutoutCamera().position : [0, 0, 0];
+  }
+
+  // PanoramaCutoutNode's Camera at the playhead, by the evaluator the node shoots with (#77).
+  function cutoutCamera() {
+    return evaluateCamera(state.camera, editor.frame);
   }
 
   // The sphere around the World content shown in this frame (pano_space.js boundingSphere), or null.
   function contentSphere() {
-    return editorViewInput().space?.sphere ?? null;
+    const input = editorViewInput();
+    return (input.space ?? input.content)?.sphere ?? null;
   }
 
   function setSpaceView(view) {
@@ -2957,7 +3026,7 @@ async function showEditor(node, type, options = {}) {
       plane: space.stickers.find((layer) => layer.id === id) ?? null,
       item: space.sticker?.id === id && space.sticker.url ? { kind: space.sticker.kind, box: editorView.sceneBox(space.sticker.url) } : null,
     };
-    const sphere = frameSphere(contentSphere(), selected);
+    const sphere = isCameraSelected() ? cameraSphere() : frameSphere(contentSphere(), selected);
     if (!sphere) return;
     const view = spaceViewState();
     // The pivot moves with the view from the one in use now.
@@ -3047,7 +3116,7 @@ async function showEditor(node, type, options = {}) {
         runExternalStickerSync(node, "image-loaded");
       });
     }
-    const assetId = sceneV2
+    const assetId = stateV2
       ? stickerImageKey(stickerOrAssetId)
       : (stickerOrAssetId && typeof stickerOrAssetId === "object")
         ? String(stickerOrAssetId.asset_id || stickerOrAssetId.assetId || "")
@@ -3055,7 +3124,7 @@ async function showEditor(node, type, options = {}) {
     if (!assetId) return null;
     const cached = imageCache.get(assetId);
     if (cached) return cached;
-    const asset = sceneV2 ? sourceAsset(stickerOrAssetId.source) : state.assets?.[assetId];
+    const asset = stateV2 ? sourceAsset(stickerOrAssetId.source) : state.assets?.[assetId];
     const src = mediaAssetSource(asset);
     if (!src) return null;
     const img = new Image();
@@ -3419,7 +3488,10 @@ async function showEditor(node, type, options = {}) {
   let _paintLayerSyncRevision = null;
   let _paintLayerSyncPending = false;
 
+  // PanoramaCutoutNode's editor does not paint (#77): the painting it shows is its state's or the Scene's,
+  // and its layer stays as it was saved.
   function needsPaintingLayerSync() {
+    if (cutoutV2) return false;
     const counts = paintingCompositeCount(state.painting);
     const { width, height } = getDesiredPaintTargetDescriptor();
     return paintingLayerNeedsSync(state.painting_layer, { paintCount: counts.totalPaintCount, maskCount: counts.totalMaskCount, width, height, nodeId: String(node.id ?? "0") });
@@ -3512,7 +3584,9 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getConnectedErpImage() {
-    if (type === "cutout") {
+    // PanoramaCutoutNode reads its background from its result as Stickers does: the ERP on `source`, or the
+    // background of the PANO_SCENE it shot.
+    if (type === "cutout" && !cutoutV2) {
       const displaySource = getDisplayBackgroundSource();
       if (displaySource) return displaySource;
       const linked = loadPreferredExactLinkedImage(
@@ -3538,8 +3612,16 @@ async function showEditor(node, type, options = {}) {
     return img || uiImg || null;
   }
 
+  // The type of the link into PanoramaCutoutNode's source, or "" without one.
+  function sourceLinkType() {
+    const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === "source");
+    return slot >= 0 && node.graph ? String(node.getInputLink(slot)?.type || "") : "";
+  }
+
   function backgroundInputNames() {
-    if (type === "cutout") return ["erp_image", "bg_erp"];
+    // An ERP on PanoramaCutoutNode's source shows before the node runs; a PANO_SCENE's background comes
+    // only with the Cutout's result.
+    if (type === "cutout") return cutoutV2 ? (sourceLinkType() === "PANO_SCENE" ? [] : ["source"]) : ["erp_image", "bg_erp"];
     const inputNames = Array.isArray(node?.inputs)
       ? node.inputs.map((i) => String(i?.name || ""))
       : [];
@@ -3837,11 +3919,11 @@ async function showEditor(node, type, options = {}) {
     // A dropped or replaced image shows while it uploads, before its asset (v1) or file Source
     // (state v2) exists in the state.
     const assets = { ...state.assets };
-    for (const item of sceneV2 ? [] : state.stickers) {
+    for (const item of stateV2 ? [] : state.stickers) {
       const assetId = String(item?.asset_id || "");
       if (assetId && !assets[assetId] && imageCache.has(assetId)) assets[assetId] = { type: "comfy_image", filename: assetId };
     }
-    const stickers = sceneV2
+    const stickers = stateV2
       ? state.stickers.map((item) => (isUploadingSticker(item)
         ? { ...item, source: { kind: "file", filename: stickerImageKey(item) } }
         : item))
@@ -3867,18 +3949,21 @@ async function showEditor(node, type, options = {}) {
       ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage), source: bgSource }
       : null;
     // When the World content goes away, 6DoF goes back to 3DoF at the origin at once, ending a transition.
-    const spaceMode = spaceModeWithContent(spaceModeState(), hasSpaceContent());
+    const hasContent = hasSpaceContent();
+    const spaceMode = spaceModeWithContent(spaceModeState(), hasContent, spaceOrigin());
     if (spaceMode.mode !== editor.spaceMode) cancelViewTransition();
     applySpaceMode(spaceMode);
-    const space = isSpaceView() ? buildSpaceInput(editorViewScene.sceneState, media) : null;
-    return { background, layers, space };
+    // `content` is the World alone, as the Cutout's Camera sees it in the Frame view and the camera
+    // preview (#77); `space` adds the guides of the panorama view.
+    const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, media) : null;
+    const space = isSpaceView() ? { ...content, ...spaceGuides(content) } : null;
+    return { background, layers, space, content };
   }
 
-  // The World of the space view at the playhead: the `scene` item the node draws at this frame with the
-  // `scene` transform, the item of the 3D port Sticker with its transform and opacity, the world Sticker
-  // planes, the grid, and the sphere around the content (null without content) that frames it and
-  // scales the navigation.
-  function buildSpaceInput(sceneState, media) {
+  // The World at the playhead: the `scene` item the node draws at this frame with the `scene` transform,
+  // the item of the 3D port Sticker with its transform and opacity, the world Sticker planes, and the
+  // sphere around the content (null without content) that frames it and scales the navigation.
+  function buildSpaceContent(sceneState, media) {
     const evaluated = evaluateSceneState(sceneState, editor.frame);
     const files = sceneFiles();
     const scene = sceneRequest(files, evaluated.scene);
@@ -3890,16 +3975,25 @@ async function showEditor(node, type, options = {}) {
     const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
     const stickers = editor.showObjects ? worldStickerLayers(sceneState, editor.frame, state.stickers, { media }) : [];
     const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers, items));
-    const grid = editor.showGrid && !editor.fullscreen ? gridSpec(sphere?.radius || DEFAULT_DISTANCE) : null;
     return {
-      gizmo: worldGizmo(evaluated),
-      grid,
+      evaluated,
       sceneUrls: files ? files.urls.filter(Boolean) : [],
       scene,
       stickerUrls: stickerContentUrls(portFiles, sceneState),
       sticker,
       stickers,
       sphere,
+    };
+  }
+
+  // The guides of the panorama view over the World `content`: the grid, the gizmo, and in the Cutout
+  // editor its Camera's frustum and trajectory.
+  function spaceGuides(content) {
+    const radius = content.sphere?.radius || DEFAULT_DISTANCE;
+    return {
+      gizmo: cutoutV2 ? cameraGizmo() : worldGizmo(content.evaluated),
+      grid: editor.showGrid && !editor.fullscreen ? gridSpec(radius) : null,
+      lines: cutoutV2 ? cameraLines(radius) : [],
     };
   }
 
@@ -3910,6 +4004,69 @@ async function showEditor(node, type, options = {}) {
     const value = evaluated.stickers.find((item) => item.id === sticker?.id);
     if (!editor.showObjects || !worldStickerEditable(sticker) || !value?.active) return null;
     return { mode: editor.gizmoMode, transform: sceneTransform(value) };
+  }
+
+  // --- PanoramaCutoutNode's Camera in space (#77). In 6DoF the panorama view draws its frustum at the
+  // playhead and its trajectory over the Timeline, and the Camera is selected by its frustum and moved and
+  // turned with the gizmo, as a world Sticker is. In 3DoF the view stands at the Camera and shows its frame
+  // on the panorama as before.
+
+  // How far ahead the frustum reaches: a fifth of the content's size.
+  function cameraFrustumLength(radius) {
+    return radius * 0.2;
+  }
+
+  // The sphere Frame Selected and Look At Frame fit for the Camera: around its frustum.
+  function cameraSphere() {
+    return { center: cutoutCamera().position, radius: cameraFrustumLength(spaceScale()) };
+  }
+
+  // The view turned to look at the World point `at` from where it stands.
+  function lookingAt(view, at) {
+    const { yaw_deg, pitch_deg } = facingRotation(view.position, at);
+    return { ...view, yaw_deg, pitch_deg };
+  }
+
+  // The Camera's selection is the canvas selection of its shot, as the frame's selection always was.
+  function isCameraSelected() {
+    return cutoutV2 && editor.selectedId === CAMERA_SHOT_ID;
+  }
+
+  function cameraLines(radius) {
+    const segments = editor.showObjects ? polylineSegments(cameraTrajectory(state, timelineSpanFrames())) : [];
+    const lines = segments.length ? [{ segments, color: CUTOUT_TRAJECTORY_COLOR }] : [];
+    if (!isFreeSpaceView()) return lines;
+    const color = isCameraSelected() ? CUTOUT_FRAME_ACCENT : CUTOUT_FRUSTUM_COLOR;
+    return [...lines, { segments: cameraFrustumSegments(cutoutCamera(), cameraFrustumLength(radius)), color }];
+  }
+
+  // The selected Camera's gizmo in 6DoF: Move or Rotate (it has no scale).
+  function cameraGizmo() {
+    if (!isFreeSpaceView() || !isCameraSelected() || readOnly) return null;
+    return { mode: editor.gizmoMode === "rotate" ? "rotate" : "translate", transform: sceneTransform({ ...cutoutCamera(), scale: 1 }) };
+  }
+
+  // A left press with the cursor tool in 6DoF on the selected Camera's gizmo grabs it; on the Camera's
+  // frustum it selects the Camera. Returns whether the press was taken.
+  function startCameraPress(e, p) {
+    const gizmo = editorViewInput().space?.gizmo;
+    if (gizmo && worldGizmoPointer("hover", p) !== null && worldGizmoPointer("down", p)) {
+      editor.interaction = { kind: "world_gizmo", camera: true, mode: gizmo.mode, start: gizmo.transform, base: cutoutCamera(), changed: false };
+      canvas.setPointerCapture(e.pointerId);
+      updateCursor(p);
+      return true;
+    }
+    const frustum = cameraFrustumSegments(cutoutCamera(), cameraFrustumLength(spaceScale()));
+    if (!segmentsHit(currentSpaceCamera(), frustum, p, canvas.width, canvas.height)) return false;
+    if (!isCameraSelected()) {
+      setSelectedItem(getActiveCutoutShot());
+      updateSidePanel();
+      updateSelectionMenu();
+      requestDraw();
+    }
+    editor.interaction = { kind: "world_select" };
+    canvas.setPointerCapture(e.pointerId);
+    return true;
   }
 
   function renderEditorView() {
@@ -3940,14 +4097,23 @@ async function showEditor(node, type, options = {}) {
     // segments show it with this frame.
     syncFloatingViewButtonState();
     // The world Sticker's menu follows it with the view and the playhead, and goes with its gizmo.
-    if (editor.worldSelectedId || worldMenuShown) updateSelectionMenu();
+    if (editor.worldSelectedId || isCameraSelected() || worldMenuShown) updateSelectionMenu();
+  }
+
+  // The three.js camera that looks through the shot. With World content (PanoramaCutoutNode, #77) it
+  // stands at the shot's position and draws the World too, as the node shoots it.
+  function shotViewCamera(shot) {
+    const { content } = editorViewInput();
+    if (!content || !shot.position) return shotCamera(shot);
+    return placedCamera(shotCamera(shot), shot.position, frameViewDistance(), content.sphere);
   }
 
   // Draws what the shot sees into rect, or returns false when there is nothing to draw yet.
   function drawEditorViewShot(targetCtx, rect, shot, owner) {
-    const { background, layers } = editorViewInput();
-    if (!background && !layers.length) return false;
-    const surface = editorView.render({ width: rect.w, height: rect.h, camera: shotCamera(shot), background, layers, owner });
+    const { background, layers, content } = editorViewInput();
+    if (!background && !layers.length && !content) return false;
+    const space = content && shot.position ? content : null;
+    const surface = editorView.render({ width: rect.w, height: rect.h, camera: shotViewCamera(shot), background, layers, space, owner });
     if (!surface) return false;
     targetCtx.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, rect.x, rect.y, rect.w, rect.h);
     return true;
@@ -4317,6 +4483,8 @@ async function showEditor(node, type, options = {}) {
   }
 
   function objectGeom(item) {
+    // In 6DoF the Cutout's Camera is its frustum in space, picked and moved with the gizmo (#77).
+    if (cutoutV2 && isShotItem(item) && isFreeSpaceView()) return { visible: false };
     if (isStrokeGroupItem(item)) {
       const actionGroupId = String(item.actionGroupId || item.id || "").trim();
       const cacheKey = getStrokeGeomCacheKey(actionGroupId, item.layerKind);
@@ -4377,14 +4545,14 @@ async function showEditor(node, type, options = {}) {
 
   function getCutoutSelectableItemsForDisplay() {
     const shots = [...(Array.isArray(state.shots) ? state.shots : [])];
-    const stickers = [...(Array.isArray(state.stickers) ? state.stickers : [])]
+    const stickers = [...cutoutStickers()]
       .sort((a, b) => Number(a.z_index || 0) - Number(b.z_index || 0));
     return [...shots, ...stickers];
   }
 
   function getCutoutSelectableItemsForHit() {
     const shots = [...(Array.isArray(state.shots) ? state.shots : [])];
-    const stickers = [...(Array.isArray(state.stickers) ? state.stickers : [])]
+    const stickers = [...cutoutStickers()]
       .sort((a, b) => Number(b.z_index || 0) - Number(a.z_index || 0));
     return [...stickers, ...shots];
   }
@@ -4699,7 +4867,10 @@ async function showEditor(node, type, options = {}) {
       cutoutPreviewCanvas.width = rect.w;
       cutoutPreviewCanvas.height = rect.h;
     }
-    const key = JSON.stringify([rect, getCutoutCameraParams(shot), viewInputKey(editorViewInput())]);
+    // With World content the preview also follows the Camera's position and the World it sees (#77).
+    const { content } = editorViewInput();
+    const world = content && [shot.position, editorView.contentKey(), content.stickers.map((layer) => [layer.id, layer.revision, layer.opacity, layer.position, layer.quaternion, layer.width])];
+    const key = JSON.stringify([rect, getCutoutCameraParams(shot), viewInputKey(editorViewInput()), world]);
     let drew = key === cameraPreviewKey;
     if (!drew) {
       previewCtx.clearRect(0, 0, rect.w, rect.h);
@@ -5537,7 +5708,8 @@ async function showEditor(node, type, options = {}) {
   }
 
   function getCutoutPanoDimTarget() {
-    if (type !== "cutout" || !getActiveCutoutShot()) return 0;
+    // In 6DoF the Camera is its frustum, not a frame on the panorama to dim around.
+    if (type !== "cutout" || !getActiveCutoutShot() || (cutoutV2 && isFreeSpaceView())) return 0;
     return CUTOUT_PANO_DIM_ALPHA;
   }
 
@@ -5693,6 +5865,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function tickFrame(ts = performance.now()) {
+    syncCutoutShot();
     const dt = runtime.lastTickTs > 0 ? Math.max(0.001, (ts - runtime.lastTickTs) / 1000) : (1 / 60);
     runtime.lastTickTs = ts;
     const activeRoll = editor.mode === "frame" && editor.interaction?.kind === "roll_frame"
@@ -5867,8 +6040,9 @@ async function showEditor(node, type, options = {}) {
 
   function pushHistory() {
     if (readOnly) return;
+    syncCutoutShot();
     // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
-    if (sceneV2 && state.stickers.some(isUploadingSticker)) return;
+    if (stateV2 && state.stickers.some(isUploadingSticker)) return;
     editor.historyController.commitActionGroup(JSON.stringify(makePanoEditorHistorySnapshot(state)));
     syncUndoRedoButtons();
   }
@@ -5883,8 +6057,9 @@ async function showEditor(node, type, options = {}) {
     const fps = state.timeline?.fps;
     Object.keys(state).forEach((k) => delete state[k]);
     Object.assign(state, restored.state);
+    syncCutoutShot(false);
     // Undoing an fps change keeps the playhead's time in seconds.
-    if (sceneV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
+    if (stateV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
     editor.selectedId = type === "stickers"
       ? state.active.selected_sticker_id
       : (type === "cutout" ? state.active.selected_sticker_id : state.active.selected_shot_id);
@@ -5972,6 +6147,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function updateSidePanel() {
+    syncCutoutShot();
     syncTimeline();
     if (hideSidebar) return;
     state.ui_settings = state.ui_settings || {};
@@ -6012,8 +6188,11 @@ async function showEditor(node, type, options = {}) {
       : { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60, roll_deg: 0, aspect_id: "1:1" });
     const inspectorSelected = selectedKind === "stroke" ? null : selected;
     const worldInspected = selectedWorldSticker();
+    // PanoramaCutoutNode's Camera has a position in space too (#77).
+    const cameraPositionShown = cutoutV2 && (selectedKind === "shot" || selectedKind === "frame") && hasSpaceContent();
     const effective = worldInspected ? worldStickerFields(worldInspected, editor.frame)
-      : isSceneSticker(inspectorSelected) ? editor.panelLastValues : (inspectorSelected || fallback);
+      : cameraPositionShown ? { ...inspectorSelected, ...cameraFields(state.camera, editor.frame), vFOV_deg: inspectorSelected.vFOV_deg }
+        : isSceneSticker(inspectorSelected) ? editor.panelLastValues : (inspectorSelected || fallback);
     const enabled = worldInspected ? worldStickerEditable(worldInspected) : (!!inspectorSelected && !isItemLocked(inspectorSelected));
     editor.panelWasEnabled = enabled;
     syncLookAtFrameButtonState();
@@ -6116,6 +6295,12 @@ async function showEditor(node, type, options = {}) {
       if (type === "stickers" || selectedKind === "image") pushParam("rot_deg", "Rotation", -180, 180, 0.1);
       else pushParam("roll_deg", "Roll", -180, 180, 0.1);
       if (sceneV2) pushParam("opacity", "Opacity", 0, 100, 1);
+      if (cameraPositionShown) {
+        for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
+          const range = worldFieldRange(effective[key]);
+          pushParam(key, label, -range, range, 0.01);
+        }
+      }
     }
 
     const paintStrokeCount = Array.isArray(state?.painting?.paint?.strokes) ? state.painting.paint.strokes.length : 0;
@@ -6154,7 +6339,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function syncTimeline() {
-    if (!sceneV2 || readOnly) return;
+    if (!stateV2 || readOnly) return;
     const span = timelineSpanFrames();
     const selection = timeline.selection;
     const owner = selection && timelineOwner(selection.owner);
@@ -6169,22 +6354,33 @@ async function showEditor(node, type, options = {}) {
       span,
       selection: timeline.selection,
       selectedId: editor.worldSelectedId || editor.selectedId,
-      expanded: timeline.expanded ?? isTimed(state),
+      expanded: timeline.expanded ?? timelineTimed(),
       openRows: timeline.openRows,
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
       playing: playback.playing,
       label: `${editor.frame}f · ${(editor.frame / fps).toFixed(2)}s`,
-      // A VIDEO on bg_media or sticker sets the Timeline fps (ADR 0024).
-      fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker"]),
+      // A VIDEO on bg_media, sticker or the Cutout's source sets the Timeline fps (ADR 0024).
+      fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker", "source"]),
+      // The Cutout shows only its Camera; with a PANO_SCENE it shoots the Scene's Timeline (#77).
+      camera: cutoutV2,
+      stickers: !cutoutV2,
+      sceneLocked: !!capture,
     });
     uiState.easing = timeline.selection
       ? buildEasingModel(owner, selectedLanes(timeline.selection), timeline.selection.frames, timelineOffset(timeline.selection.owner))
       : null;
   }
 
+  // Whether the Timeline opens by itself: something in the state changes over time (the Cutout's Camera).
+  function timelineTimed() {
+    return cutoutV2 ? laneNames(state.camera).some((name) => state.camera[name].keyframes.length > 0) : isTimed(state);
+  }
+
   // The Timeline length (5 s without one), widened to the background VIDEO and to the end of the
-  // port Sticker's media.
+  // port Sticker's media. The Cutout's Camera Keyframes widen it as they lengthen its output; a Cutout
+  // that shoots a PANO_SCENE has the Scene's length (#77).
   function timelineSpanFrames(openClip = null) {
+    if (capture?.frames) return capture.frames;
     const fps = state.timeline.fps;
     const port = state.stickers.find(isExternalSticker);
     const portMedia = port ? getPortMedia() : null;
@@ -6192,10 +6388,11 @@ async function showEditor(node, type, options = {}) {
       uiState.videoTransport.ready ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0,
       portMedia ? portMediaFrames(port.clip, fps, portMedia.meta) : 0,
     );
-    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip });
+    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: cutoutV2 && !capture });
   }
 
   function timelineOwner(owner) {
+    if (owner === "camera") return cutoutV2 ? state.camera : null;
     return state.stickers.find((item) => item.id === owner) || null;
   }
 
@@ -6204,8 +6401,9 @@ async function showEditor(node, type, options = {}) {
     return selection.lane ? [selection.lane] : laneNames(timelineOwner(selection.owner));
   }
 
-  // A Sticker's Keyframes are on its material, which starts at start - in.
+  // A Sticker's Keyframes are on its material, which starts at start - in; the Camera's on the Timeline.
   function timelineOffset(owner) {
+    if (owner === "camera") return 0;
     const { clip } = timelineOwner(owner);
     return clip.start - clip.in;
   }
@@ -6224,7 +6422,10 @@ async function showEditor(node, type, options = {}) {
   function setTimelineFrame(frame) {
     const next = Math.max(0, Math.round(frame));
     if (next === editor.frame) return;
+    // An edit of the Cutout's shot belongs to the frame it was made on.
+    syncCutoutShot();
     editor.frame = next;
+    syncCutoutShot();
     releaseHiddenSelection();
     markObjectVisualsDirty();
     updateSidePanel();
@@ -6245,7 +6446,7 @@ async function showEditor(node, type, options = {}) {
 
   // Edits stop PanoramaStickersNode's playback on the frame shown; the legacy transport plays on.
   function stopTimelinePlayback() {
-    if (sceneV2) playback.stop();
+    if (stateV2) playback.stop();
   }
 
   // PanoramaStickersNode's Timeline play button and the legacy transport's. With a background VIDEO
@@ -6258,6 +6459,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function refreshTimelineEdit() {
+    syncCutoutShot();
     markObjectVisualsDirty();
     updateSidePanel();
     updateSelectionMenu();
@@ -6296,7 +6498,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function onTimelineAction(action) {
-    if (readOnly || !sceneV2) return;
+    if (readOnly || !stateV2) return;
     if (action.type === "seek") {
       if (action.phase === "start") refreshModalVideoSource();
       playback.seek(action.frame);
@@ -6312,7 +6514,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (action.type === "toggle-expanded") {
-      timeline.expanded = !(timeline.expanded ?? isTimed(state));
+      timeline.expanded = !(timeline.expanded ?? timelineTimed());
       timeline.selection = null;
       syncTimeline();
       return;
@@ -6448,7 +6650,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   async function addImageStickerFromFile(file) {
-    if (readOnly) return;
+    if (readOnly || cutoutV2) return;
     if (type !== "stickers" && type !== "cutout") return;
     if (!isStickerImageFile(file)) return;
     if (sceneV2) {
@@ -6774,7 +6976,9 @@ async function showEditor(node, type, options = {}) {
     if (existing) {
       setSelectedItem(existing);
       editor.mode = "pano";
-      turnViewTo(wrapYaw(Number(existing.yaw_deg || 0)), clamp(Number(existing.pitch_deg || 0), -89.9, 89.9));
+      // In 6DoF the view turns to the Camera and comes close enough to show its frustum (#77).
+      if (cutoutV2 && isFreeSpaceView()) transitionView(frameView(lookingAt(spaceViewState(), existing.position), cameraSphere(), canvas.width, canvas.height));
+      else turnViewTo(wrapYaw(Number(existing.yaw_deg || 0)), clamp(Number(existing.pitch_deg || 0), -89.9, 89.9));
       updateSidePanel();
       updateSelectionMenu();
       requestDraw({ cause: "cutout_frame" });
@@ -6954,7 +7158,8 @@ async function showEditor(node, type, options = {}) {
   }
 
   function deleteSelected() {
-    if (readOnly) return;
+    // The Cutout's Camera stays; the editor of PanoramaCutoutNode edits nothing else (#77).
+    if (readOnly || cutoutV2) return;
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected && selectedItems.length === 0) return;
@@ -7251,10 +7456,11 @@ async function showEditor(node, type, options = {}) {
 
   function commitState() {
     if (readOnly) return;
+    syncCutoutShot();
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
     const text = editorStateText(node, state);
-    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""))) {
+    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""), { rebased: cutoutV2 })) {
       stateWidget.value = text;
       stateWidget.callback?.(text);
     }
@@ -7321,6 +7527,19 @@ async function showEditor(node, type, options = {}) {
 
   function supportsErpPainting() {
     return editor.mode === "pano" || editor.mode === "unwrap";
+  }
+
+  // PanoramaCutoutNode (#77): writes an edit of the shot since it was last derived to the Camera at the
+  // playhead (setCameraShot, by the recording rule), then derives the shot from the Camera again, so it
+  // follows the playhead, Keyframe edits and Undo. The shot stays the same object, which interactions
+  // hold. `keep` false drops an edit instead (the state was replaced).
+  function syncCutoutShot(keep = true) {
+    if (!cutoutV2) return;
+    const shot = state.shots?.[0];
+    if (keep && shot && cutoutShotBase) setCameraShot(state.camera, editor.frame, shot, cutoutShotBase);
+    cutoutShotBase = cameraShot(state.camera, editor.frame);
+    if (shot) Object.assign(shot, cutoutShotBase, { position: [...cutoutShotBase.position] });
+    else state.shots = [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }];
   }
 
   function getActiveCutoutShot() {
@@ -7487,6 +7706,13 @@ async function showEditor(node, type, options = {}) {
     shot.hFOV_deg = next.hFOV_deg;
     shot.vFOV_deg = next.vFOV_deg;
     void anchor;
+    scheduleFrameWheelCommit();
+    updateSidePanel();
+    return true;
+  }
+
+  // A run of wheel steps in the Frame view is one Undo step, taken once the wheel rests.
+  function scheduleFrameWheelCommit() {
     editor.frameWheelChanged = true;
     if (editor.frameWheelCommitTimer) window.clearTimeout(editor.frameWheelCommitTimer);
     editor.frameWheelCommitTimer = window.setTimeout(() => {
@@ -7497,8 +7723,97 @@ async function showEditor(node, type, options = {}) {
       commitAndRefreshNode();
       updateSidePanel();
     }, 180);
+  }
+
+  // --- The Frame view of PanoramaCutoutNode with World content (#77): moving the view moves the Camera
+  // itself, as Blender's camera locked to the view. The drags of the 3D view controls orbit and pan it
+  // (pano_view_controls.js, pano_space.js), the wheel moves it toward the point under the pointer, and a
+  // left drag still turns it where it stands, as in the Frame view of an ERP.
+  function isFreeFrameView() {
+    return cutoutV2 && editor.mode === "frame" && hasSpaceContent();
+  }
+
+  // The Frame view's context (frameViewContext): the canvas rect drawn through the shot and the shot that
+  // spans it, or null without a shot.
+  function frameContext() {
+    const shot = getActiveCutoutShot();
+    const layout = getFrameViewLayout(shot);
+    return shot && layout ? frameViewContext(shot, layout, { width: canvas.width, height: canvas.height }) : null;
+  }
+
+  // The pivot distance of the Frame view's moves: where the last one left it, else the content's size.
+  function frameViewDistance() {
+    return editor.frameDistance || contentSphere()?.radius || DEFAULT_DISTANCE;
+  }
+
+  // The Camera as a space view (pano_space.js) over the context rect.
+  function frameSpaceView(context) {
+    const { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg } = context.shot;
+    return { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg, distance: frameViewDistance() };
+  }
+
+  // The point a Frame view move at canvas point p works on: the content under it, else the pivot.
+  function frameTarget(context, view, p) {
+    const { rect } = context;
+    const hit = editorView.pick(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
+    return navigationTarget(view, hit, null, spaceScale());
+  }
+
+  function moveCutoutShot(view) {
+    const shot = getActiveCutoutShot();
+    shot.position = [...view.position];
+    shot.yaw_deg = view.yaw_deg;
+    shot.pitch_deg = view.pitch_deg;
+    editor.frameDistance = view.distance;
+  }
+
+  // A drag that turns the Camera where it stands (the Frame view's left drag).
+  function startPanFrame(p, pointerId) {
+    const shot = getActiveCutoutShot();
+    if (!shot || readOnly || shot.locked === true) return;
+    editor.interaction = {
+      kind: "pan_frame", shot, last: p,
+      start: { yaw_deg: Number(shot.yaw_deg || 0), pitch_deg: Number(shot.pitch_deg || 0) },
+      changed: false,
+    };
+    updateCursor(p);
+    canvas.setPointerCapture(pointerId);
+  }
+
+  function startFrameDrag(action, p, pointerId) {
+    const context = frameContext();
+    if (!context || readOnly) return;
+    const view = frameSpaceView(context);
+    const target = frameTarget(context, view, p);
+    editor.interaction = action === "orbit"
+      ? { kind: "frame_orbit", last: p, pivot: target, changed: false }
+      : { kind: "frame_pan", last: p, depth: depthOf(view, target), changed: false };
+    updateCursor(p);
+    canvas.setPointerCapture(pointerId);
+  }
+
+  function dragFrame(it, p) {
+    const context = frameContext();
+    if (!context) return;
+    const view = frameSpaceView(context);
+    const dx = p.x - it.last.x;
+    const dy = p.y - it.last.y;
+    moveCutoutShot(it.kind === "frame_pan"
+      ? panView(view, dx, dy, context.rect.w, context.rect.h, it.depth)
+      : orbitView(view, dx, dy, canvas.height, it.pivot));
+    it.changed = it.changed || dx !== 0 || dy !== 0;
+    it.last = p;
+    requestDraw({ localOnly: true, cause: "frame_view" });
+  }
+
+  function zoomFrameAt(p, direction) {
+    const context = frameContext();
+    if (!context || readOnly) return;
+    const view = frameSpaceView(context);
+    moveCutoutShot(zoomView(view, frameTarget(context, view, p), direction, spaceScale()));
+    scheduleFrameWheelCommit();
     updateSidePanel();
-    return true;
+    requestDraw({ localOnly: true, cause: "frame_view" });
   }
 
   function flushFrameWheelCommit() {
@@ -8344,8 +8659,8 @@ async function showEditor(node, type, options = {}) {
       if (editor.interaction.kind === "paint_stroke" || editor.interaction.kind === "paint_lasso_fill") setCanvasCursor("none");
       else if (editor.interaction.kind === "view") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "pan_frame") setCanvasCursor("grabbing");
-      else if (editor.interaction.kind === "space_pan") setCanvasCursor("move");
-      else if (editor.interaction.kind === "space_orbit") setCanvasCursor("grabbing");
+      else if (editor.interaction.kind === "space_pan" || editor.interaction.kind === "frame_pan") setCanvasCursor("move");
+      else if (editor.interaction.kind === "space_orbit" || editor.interaction.kind === "frame_orbit") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "world_gizmo") setCanvasCursor("grabbing");
       else if (editor.interaction.kind === "roll_frame") setCanvasCursor("grabbing");
     else if (editor.interaction.kind === "move" || editor.interaction.kind === "move_multi" || editor.interaction.kind === "move_stroke_group" || editor.interaction.kind === "move_raster_object") setCanvasCursor("move");
@@ -8403,7 +8718,7 @@ async function showEditor(node, type, options = {}) {
       uiState.selectionMenu = { visible: false, left: 0, top: 0, items: [] };
       return;
     }
-    if (editor.worldSelectedId) {
+    if (editor.worldSelectedId || (isCameraSelected() && isFreeSpaceView())) {
       const model = worldSelectionMenuModel();
       worldMenuShown = model.visible;
       showSelectionMenu(model);
@@ -8431,6 +8746,7 @@ async function showEditor(node, type, options = {}) {
       isStickerHidden,
       canRestoreSelectedToInitial,
       iconSet: ICON,
+      cameraShot: cutoutV2,
     });
     showSelectionMenu(model);
   }
@@ -8446,7 +8762,7 @@ async function showEditor(node, type, options = {}) {
     const points = plane ? planeCorners(plane) : [space.gizmo.transform.position];
     const corners = points.map((point) => projectPoint(camera, point, canvas.width, canvas.height)).filter(Boolean);
     const gizmoBox = gizmoScreenBox(camera, space.gizmo.transform.position, space.gizmo.mode, canvas.width, canvas.height);
-    return buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: editor.gizmoMode });
+    return buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: space.gizmo.mode, camera: cutoutV2 });
   }
 
   function showSelectionMenu(model) {
@@ -8709,7 +9025,15 @@ async function showEditor(node, type, options = {}) {
     // In 6DoF the drags of the 3D view controls move the view with any tool (pano_view_controls.js); the
     // middle and the right button do nothing else there.
     const freeSpace = isFreeSpaceView();
-    const spaceAction = freeSpace ? viewDragAction(viewControls(), e) : null;
+    const freeFrame = isFreeFrameView();
+    const spaceAction = freeSpace || freeFrame ? viewDragAction(viewControls(), e) : null;
+    if (freeFrame && spaceAction) {
+      e.preventDefault();
+      // Looking around turns the Camera where it stands, as a left drag in the Frame view does.
+      if (spaceAction === "look") startPanFrame(p, e.pointerId);
+      else startFrameDrag(spaceAction, p, e.pointerId);
+      return;
+    }
     if (spaceAction === "look") {
       e.preventDefault();
       const dragPos = screenPosCss(e);
@@ -8724,7 +9048,7 @@ async function showEditor(node, type, options = {}) {
       startSpaceDrag(spaceAction, p, e.pointerId);
       return;
     }
-    if (freeSpace && e.button !== 0) {
+    if ((freeSpace || freeFrame) && e.button !== 0) {
       e.preventDefault();
       return;
     }
@@ -8785,15 +9109,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (editor.mode === "frame" && editor.primaryTool === "cursor") {
-      const shot = getActiveCutoutShot();
-      if (!shot || readOnly || shot.locked === true) return;
-      editor.interaction = {
-        kind: "pan_frame", shot, last: p,
-        start: { yaw_deg: Number(shot.yaw_deg || 0), pitch_deg: Number(shot.pitch_deg || 0) },
-        changed: false,
-      };
-      updateCursor(p);
-      canvas.setPointerCapture(e.pointerId);
+      startPanFrame(p, e.pointerId);
       e.preventDefault();
       return;
     }
@@ -8860,7 +9176,8 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ localOnly: true });
       return;
     }
-    if (editor.primaryTool === "cursor" && isSpaceView() && startWorldStickerPress(e, p)) return;
+    if (editor.primaryTool === "cursor" && cutoutV2 && isFreeSpaceView() && startCameraPress(e, p)) return;
+    if (editor.primaryTool === "cursor" && sceneV2 && isSpaceView() && startWorldStickerPress(e, p)) return;
 
     if (selectedItems.length > 1 && selGeom?.visible) {
       const h = selectedItems.some((item) => isItemLocked(item)) ? { kind: "none" } : handleHit(selGeom, p);
@@ -9143,7 +9460,7 @@ async function showEditor(node, type, options = {}) {
 
   // The gizmo highlights the handle under the pointer, and the cursor shows it can be grabbed.
   function hoverWorldGizmo(p) {
-    const shown = !!editor.worldSelectedId && editor.primaryTool === "cursor" && isSpaceView() && !!editorViewInput().space?.gizmo;
+    const shown = !!(editor.worldSelectedId || isCameraSelected()) && editor.primaryTool === "cursor" && isSpaceView() && !!editorViewInput().space?.gizmo;
     const axis = shown ? worldGizmoPointer("hover", p) : null;
     if (axis === editor.gizmoAxis) return;
     editor.gizmoAxis = axis;
@@ -9154,6 +9471,15 @@ async function showEditor(node, type, options = {}) {
   // A gizmo drag of the selected world Sticker: the Lane of the gizmo's mode, by the recording rule.
   function dragWorldGizmo(it, p) {
     const moved = worldGizmoPointer("move", p);
+    if (moved && it.camera) {
+      // The Camera's Lane of the gizmo's mode, by the recording rule; the shot follows it.
+      for (const [name, value] of Object.entries(gizmoDragLanes(it.mode, it.base, it.start, moved))) setLaneValue(state.camera, name, editor.frame, value);
+      syncCutoutShot();
+      it.changed = true;
+      updateSidePanel();
+      requestDraw({ localOnly: true });
+      return;
+    }
     const sticker = state.stickers.find((item) => item.id === it.id);
     if (!moved || !sticker) return;
     setWorldStickerTransform(sticker, editor.frame, gizmoDragLanes(it.mode, it.base, it.start, moved));
@@ -9199,11 +9525,22 @@ async function showEditor(node, type, options = {}) {
   // and a Sticker edit starts over from that frame's values, as if the pointer went down there.
   // Paint strokes and raster objects do not change over time and keep their start.
   function restartEditAtStoppedFrame(it, down) {
-    if (!sceneV2 || !playback.playing) return;
+    if (!stateV2 || !playback.playing) return;
     playback.stop();
+    if (it.kind === "frame_orbit" || it.kind === "frame_pan") {
+      // The Camera moved with playback: the point the drag works on is picked again from where it stopped.
+      const context = frameContext();
+      if (!context) return;
+      const view = frameSpaceView(context);
+      const target = frameTarget(context, view, down);
+      if (it.kind === "frame_orbit") it.pivot = target;
+      else it.depth = depthOf(view, target);
+      return;
+    }
     if (it.kind === "world_gizmo") {
       const sticker = state.stickers.find((item) => item.id === it.id);
-      if (sticker) it.base = evaluateSticker(sticker, editor.frame);
+      if (it.camera) it.base = cutoutCamera();
+      else if (sticker) it.base = evaluateSticker(sticker, editor.frame);
       return;
     }
     if (it.kind === "move_multi") {
@@ -9332,6 +9669,11 @@ async function showEditor(node, type, options = {}) {
       it.lastTs = now;
       it.last = dragPos;
       requestDraw({ localOnly: true });
+      return;
+    }
+
+    if (it.kind === "frame_pan" || it.kind === "frame_orbit") {
+      dragFrame(it, p);
       return;
     }
 
@@ -9673,7 +10015,7 @@ async function showEditor(node, type, options = {}) {
       updateSidePanel();
       updateSelectionMenu();
       requestDraw();
-    } else if (editor.interaction?.kind === "pan_frame" || editor.interaction?.kind === "roll_frame") {
+    } else if (["pan_frame", "roll_frame", "frame_pan", "frame_orbit"].includes(editor.interaction?.kind)) {
       if (editor.interaction.changed) {
         pushHistory();
         commitAndRefreshNode();
@@ -9754,7 +10096,7 @@ async function showEditor(node, type, options = {}) {
   // A right drag of the 3D view controls opens no context menu. The canvas has no right-click action
   // of its own.
   canvas.oncontextmenu = (e) => {
-    if (isFreeSpaceView() && presetUsesButton(viewControls(), 2)) e.preventDefault();
+    if ((isFreeSpaceView() || isFreeFrameView()) && presetUsesButton(viewControls(), 2)) e.preventDefault();
   };
 
   canvas.onmousemove = (e) => {
@@ -9782,7 +10124,11 @@ async function showEditor(node, type, options = {}) {
     if (editor.mode === "frame") {
       const p = screenPos(e);
       const direction = readWheelDirection(e);
-      if (direction && zoomFrameViewAt(p, direction)) requestDraw({ localOnly: true });
+      // Edits stop PanoramaCutoutNode's playback, so the wheel keys the frame shown.
+      if (direction) stopTimelinePlayback();
+      // With World content the wheel moves the Camera toward the point under the pointer, as in 6DoF.
+      if (direction && isFreeFrameView()) zoomFrameAt(p, -direction);
+      else if (direction && zoomFrameViewAt(p, direction)) requestDraw({ localOnly: true });
       e.preventDefault();
       return;
     }
@@ -9865,10 +10211,18 @@ async function showEditor(node, type, options = {}) {
     if (!param || param.enabled === false) return;
     let out = Number(rawValue);
     if (Number.isNaN(out)) out = 0;
-    // A world Sticker's position has no limit, and its scale only stays above 0.
-    if (worldInspected && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
+    // A world Sticker's position has no limit, and its scale only stays above 0. Nor has the Camera's.
+    if ((worldInspected || cutoutV2) && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
     else out = clamp(out, Number(param.min), Number(param.max));
     if (key === "yaw_deg") out = wrapYaw(out);
+    if (cutoutV2 && key.startsWith("position_")) {
+      syncCutoutShot();
+      setCameraField(state.camera, editor.frame, key, out);
+      updateSidePanel();
+      requestDraw();
+      if (commit) pushHistory();
+      return;
+    }
     if (worldInspected) {
       setWorldStickerField(worldInspected, editor.frame, key, out);
       markObjectVisualsDirty();
@@ -10259,9 +10613,10 @@ async function showEditor(node, type, options = {}) {
     }
     if (action === "reset-view") {
       if (editor.mode === "frame") return;
-      // In space the view also goes back to the World origin, where the ERP is taken from, as it opened.
+      // In space the view also goes back to where 3DoF stands (the World origin, where the ERP is taken from,
+      // or the Cutout's Camera), as it opened.
       transitionView(
-        { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100, distance: contentSphere()?.radius || DEFAULT_DISTANCE },
+        { position: spaceOrigin(), yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100, distance: contentSphere()?.radius || DEFAULT_DISTANCE },
         { mode: shownSpaceMode(editor.spaceMode, editor.viewTransition), moved: false },
       );
       return;
@@ -10534,7 +10889,7 @@ async function showEditor(node, type, options = {}) {
     };
     node.onConnectionsChange = modalOnConnectionsChange;
   }
-  if (!readOnly) {
+  if (!readOnly && !cutoutV2) {
     _paintLayerSyncRegistry.set(String(node.id ?? "0"), () => syncPaintingLayerAsync());
   }
 
@@ -10652,7 +11007,7 @@ async function showEditor(node, type, options = {}) {
   // Focus outside the editor (another ComfyUI dialog on top) keeps Space for itself.
   const spaceTogglesPlayback = (ev) => {
     if (ev.code !== "Space" || ev.ctrlKey || ev.metaKey || ev.altKey) return false;
-    if (readOnly || !sceneV2 || !uiState.timeline.visible || uiState.confirmDialog.visible) return false;
+    if (readOnly || !stateV2 || !uiState.timeline.visible || uiState.confirmDialog.visible) return false;
     const t = ev.composedPath()[0];
     if (t !== document.body && t !== document.documentElement && !overlay.contains(t)) return false;
     const tag = (t?.tagName || "").toUpperCase();

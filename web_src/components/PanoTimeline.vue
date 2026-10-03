@@ -188,14 +188,15 @@ function onLineDown(event, row, lane) {
         <SvgIcon :icon="model.muted ? ICON.volume_muted : ICON.volume2" />
       </button>
       <span class="pano-timeline-time">{{ model.label }}</span>
-      <label class="pano-timeline-setting" :data-tip="model.fpsLocked ? 'Set by the video input' : 'Timeline fps'">
+      <label class="pano-timeline-setting" :data-tip="model.fpsLocked ? model.lockTip : 'Timeline fps'">
         <span v-if="model.fpsLocked">{{ fpsText }}</span>
         <input v-else type="number" min="1" step="any" :value="fpsText" aria-label="Timeline fps" @change="onFpsChange">
         <span>fps</span>
       </label>
-      <label class="pano-timeline-setting" data-tip="Output length in frames; empty follows the inputs">
+      <label class="pano-timeline-setting" :data-tip="model.lengthLocked ? model.lockTip : 'Output length in frames; empty follows the inputs'">
         <span>Length</span>
-        <input type="number" min="1" step="1" placeholder="Auto" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
+        <span v-if="model.lengthLocked">{{ model.length }}</span>
+        <input v-else type="number" min="1" step="1" placeholder="Auto" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
       </label>
       <button
         class="pano-timeline-toggle"

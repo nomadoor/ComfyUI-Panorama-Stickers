@@ -504,9 +504,9 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"), editor.indexOf("    if (e.button !== 0) return;", editor.indexOf("  canvas.onpointerdown = (e) => {")));
   // The preset decides before any tool, and only in 6DoF; there the middle and the right button do
   // nothing else (no look around in place unless the preset binds it).
-  assert.match(down, /const spaceAction = freeSpace \? viewDragAction\(viewControls\(\), e\) : null;\s*if \(spaceAction === "look"\) \{/);
+  assert.match(down, /const spaceAction = freeSpace \|\| freeFrame \? viewDragAction\(viewControls\(\), e\) : null;[\s\S]*?if \(spaceAction === "look"\) \{/);
   assert.ok(down.indexOf("const spaceAction") < down.indexOf("if (e.button === 1) {"));
-  assert.match(down, /if \(spaceAction\) \{\s*e\.preventDefault\(\);\s*startSpaceDrag\(spaceAction, p, e\.pointerId\);\s*return;\s*\}\s*if \(freeSpace && e\.button !== 0\) \{\s*e\.preventDefault\(\);\s*return;/);
+  assert.match(down, /if \(spaceAction\) \{\s*e\.preventDefault\(\);\s*startSpaceDrag\(spaceAction, p, e\.pointerId\);\s*return;\s*\}\s*if \(\(freeSpace \|\| freeFrame\) && e\.button !== 0\) \{\s*e\.preventDefault\(\);\s*return;/);
   assert.doesNotMatch(down, /isSpaceView\(\)/);
   // An orbit turns about the point under the pointer; a pan moves at its depth.
   const start = editor.slice(editor.indexOf("  function startSpaceDrag(action, p, pointerId) {"));
@@ -527,10 +527,10 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   assert.match(zoom, /if \(!reuseWheelPick\(spaceWheel, next\)\) \{\s*const hit = pickSpace\(p\);\s*spaceWheel = \{ \.\.\.next, cost: performance\.now\(\) - now, hit \};/);
   assert.match(zoom, /const next = \{ x: p\.x, y: p\.y, time: now, key: editorView\.contentKey\(\), view: spaceViewKey\(\) \};/);
   assert.match(zoom, /setSpaceView\(zoomView\(view, spaceTarget\(view, spaceWheel\.hit\), direction, spaceScale\(\)\)\);/);
-  assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(isFreeSpaceView\(\) && presetUsesButton\(viewControls\(\), 2\)\) e\.preventDefault\(\);/);
+  assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(\(isFreeSpaceView\(\) \|\| isFreeFrameView\(\)\) && presetUsesButton\(viewControls\(\), 2\)\) e\.preventDefault\(\);/);
   // The preset is ComfyUI's setting; 3DoF keeps the view at the origin.
   assert.match(editor, /viewControlsPreset\(app\.ui\?\.settings\?\.getSettingValue\?\.\(VIEW_CONTROLS_SETTING_ID\)\)/);
-  assert.match(editor, /return spaceModeView\(editor\.spaceMode, view\);/);
+  assert.match(editor, /return spaceModeView\(editor\.spaceMode, view, spaceOrigin\(\)\);/);
 });
 
 test("Reset View, Frame Selected and 6DoF back to 3DoF move the view over a transition that grabbing the view stops", () => {
@@ -540,7 +540,7 @@ test("Reset View, Frame Selected and 6DoF back to 3DoF move the view over a tran
   const tick = editor.slice(editor.indexOf("  function tickFrame("), editor.indexOf("  function runGuardedFrame("));
   assert.match(tick, /const \{ view, done \} = viewTransitionFrame\(editor\.viewTransition, ts\);/);
   assert.match(tick, /if \(end\) applyViewTransitionEnd\(end\);/);
-  assert.match(editor, /function applyViewTransitionEnd\(end\) \{\s*applySpaceMode\(switchSpaceMode\(\{ \.\.\.spaceModeState\(\), moved: end\.moved \}, end\.mode\)\);/);
+  assert.match(editor, /function applyViewTransitionEnd\(end\) \{\s*applySpaceMode\(switchSpaceMode\(\{ \.\.\.spaceModeState\(\), moved: end\.moved \}, end\.mode, spaceOrigin\(\)\)\);/);
   // A view already there gets the end at once (Reset View's moved: false, the 3DoF).
   assert.match(editor, /if \(!editor\.viewTransition && end\) applyViewTransitionEnd\(end\);/);
   // Wherever a transition is dropped, the 3DoF | 6DoF buttons follow the mode the view is in.
@@ -558,9 +558,9 @@ test("Reset View, Frame Selected and 6DoF back to 3DoF move the view over a tran
   assert.match(editor, /transitionView\(frameView\(view, sphere, canvas\.width, canvas\.height\)\);/);
   const setMode = editor.slice(editor.indexOf("  function setSpaceMode(mode) {"), editor.indexOf("\n  }\n", editor.indexOf("  function setSpaceMode(mode) {")));
   assert.match(setMode, /const choice = spaceModeChoice\(editor\.spaceMode, editor\.viewTransition, mode\);/);
-  assert.match(setMode, /transitionView\(\{ \.\.\.spaceViewState\(\), position: \[0, 0, 0\], distance: contentSphere\(\)\?\.radius \|\| DEFAULT_DISTANCE \}, \{ mode, moved: false \}\)/);
+  assert.match(setMode, /transitionView\(\{ \.\.\.spaceViewState\(\), position: spaceOrigin\(\), distance: contentSphere\(\)\?\.radius \|\| DEFAULT_DISTANCE \}, \{ mode, moved: false \}\)/);
   // 6DoF chosen on the way back drops the transition where it shows and keeps that view.
-  assert.match(setMode, /cancelViewTransition\(\);\s*applySpaceMode\(switchSpaceMode\(spaceModeState\(\), mode\)\);/);
+  assert.match(setMode, /cancelViewTransition\(\);\s*\/\/[^\n]*\n\s*applySpaceMode\(switchSpaceMode\(\{ \.\.\.spaceModeState\(\), position: spaceViewState\(\)\.position \}, mode, spaceOrigin\(\)\)\);/);
 });
 
 test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF icon buttons show and pick the mode", () => {
@@ -572,7 +572,7 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
   assert.doesNotMatch(editor, /"space-mode"/);
   // Back in 3DoF the view returns to the origin, keeping its direction.
   const setMode = editor.slice(editor.indexOf("  function setSpaceMode(mode) {"), editor.indexOf("\n  }\n", editor.indexOf("  function setSpaceMode(mode) {")));
-  assert.match(setMode, /applySpaceMode\(switchSpaceMode\(spaceModeState\(\), mode\)\);/);
+  assert.match(setMode, /applySpaceMode\(switchSpaceMode\(\{ \.\.\.spaceModeState\(\), position: spaceViewState\(\)\.position \}, mode, spaceOrigin\(\)\)\);/);
   assert.doesNotMatch(setMode, /viewYaw|viewPitch/);
   // The space group shows with World content and marks the current mode (floatingRightState).
   const sync = editor.slice(editor.indexOf("  function syncFloatingViewButtonState() {"), editor.indexOf("  function syncViewToggleState() {"));
@@ -581,7 +581,7 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
   assert.match(sync, /if \(uiState\.space\) Object\.assign\(uiState\.space, floating\.space\);/);
   assert.match(editor, /if \(action === "frame-view"\) \{\s*\/\/[^\n]*\n\s*if \(!isFreeSpaceView\(\) \|\| shownSpaceMode\(editor\.spaceMode, editor\.viewTransition\) !== "6dof"\) return;/);
   // Each frame's input checks the content, so 6DoF without it goes back to 3DoF at once.
-  assert.match(editor, /const spaceMode = spaceModeWithContent\(spaceModeState\(\), hasSpaceContent\(\)\);\s*if \(spaceMode\.mode !== editor\.spaceMode\) cancelViewTransition\(\);\s*applySpaceMode\(spaceMode\);\s*const space = isSpaceView\(\)/);
+  assert.match(editor, /const spaceMode = spaceModeWithContent\(spaceModeState\(\), hasContent, spaceOrigin\(\)\);\s*if \(spaceMode\.mode !== editor\.spaceMode\) cancelViewTransition\(\);\s*applySpaceMode\(spaceMode\);[\s\S]*?const space = isSpaceView\(\)/);
   // The modes are icon buttons (3 and 6) with the view buttons at the bottom right (Vue), not in the view
   // toggle, with Frame Selected beside them. The tooltips are as short as the other buttons'.
   const preset = buildModalShellPreset("stickers");
@@ -590,8 +590,9 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
   assert.equal(preset.spaceFrameButton.label, "Frame Selected");
   assert.equal(preset.spaceFrameButton.tip, "Frame selected");
   assert.equal(preset.floatingButtons.some((button) => button.action === "space-mode" || button.action === "frame-view"), false);
-  assert.deepEqual(buildModalShellPreset("cutout").spaceButtons, []);
-  assert.equal(buildModalShellPreset("cutout").spaceFrameButton, null);
+  // The Cutout editor has the same group; it shows for a PANO_SCENE with World content (#77).
+  assert.deepEqual(buildModalShellPreset("cutout").spaceButtons, buildModalShellPreset("stickers").spaceButtons);
+  assert.deepEqual(buildModalShellPreset("cutout").spaceFrameButton, buildModalShellPreset("stickers").spaceFrameButton);
   const floating = readFileSync(new URL("../web_src/components/PanoFloatingRight.vue", import.meta.url), "utf8");
   assert.match(floating, /<PanoIconButton\s+v-for="button in space\.modes"\s+:key="button\.key"\s+:extra-class="\{ active: button\.key === space\.mode \}"/);
   assert.match(floating, /:attrs="\{ 'data-space-mode': button\.key \}"/);
@@ -608,7 +609,7 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
   assert.doesNotMatch(segments, /aria-label="button\.label"/);
   // A frame whose content went away shows 3DoF on the segments with it.
   const render = editor.slice(editor.indexOf("  function renderEditorView() {"), editor.indexOf("\n  }\n", editor.indexOf("  function renderEditorView() {")));
-  assert.match(render, /syncFloatingViewButtonState\(\);\n[^\n]*\n\s*if \(editor\.worldSelectedId \|\| worldMenuShown\) updateSelectionMenu\(\);$/);
+  assert.match(render, /syncFloatingViewButtonState\(\);\n[^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| worldMenuShown\) updateSelectionMenu\(\);$/);
   const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
   assert.match(modal, /<PanoFloatingRight\s+:buttons="uiState\.floatingButtons \|\| floatingButtons"\s+:space="uiState\.space \|\| null"/);
   assert.match(modal, /<PanoViewToggle :buttons="uiState\.viewButtons \|\| shellPreset\.viewButtons \|\| \[\]" \/>/);
@@ -643,7 +644,7 @@ test("a 3D world port Sticker (#63) has no plane: the space view draws its item 
 test("in the space view a press picks the gizmo first, then a world Sticker, then the sky Stickers", () => {
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"), editor.indexOf("  // A left drag on empty space of the panorama view looks around;"));
-  const press = down.indexOf('if (editor.primaryTool === "cursor" && isSpaceView() && startWorldStickerPress(e, p)) return;');
+  const press = down.indexOf('if (editor.primaryTool === "cursor" && sceneV2 && isSpaceView() && startWorldStickerPress(e, p)) return;');
   assert.ok(press > down.indexOf('kind: "marquee_select"'));
   assert.ok(press < down.indexOf("if (selectedItems.length > 1 && selGeom?.visible) {"));
   assert.ok(press < down.indexOf("const hit = hitObjectAt(p);"));
@@ -655,7 +656,7 @@ test("in the space view a press picks the gizmo first, then a world Sticker, the
   // Selecting does not stop playback; a gizmo drag stops it on its first move and starts over from that frame.
   assert.match(editor, /if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
   const restart = editor.slice(editor.indexOf("  function restartEditAtStoppedFrame(it, down) {"));
-  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = state\.stickers\.find\(\(item\) => item\.id === it\.id\);\s*if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
+  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "frame_orbit" \|\| it\.kind === "frame_pan"\) \{[\s\S]*?\n    \}\n\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = state\.stickers\.find\(\(item\) => item\.id === it\.id\);\s*if \(it\.camera\) it\.base = cutoutCamera\(\);\s*else if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
   // The drag writes the gizmo mode's Lane by the recording rule, and a changed drag is one Undo step.
   assert.match(editor, /setWorldStickerTransform\(sticker, editor\.frame, gizmoDragLanes\(it\.mode, it\.base, it\.start, moved\)\);/);
   assert.match(editor, /if \(ended\.changed\) \{\s*pushHistory\(\);\s*commitAndRefreshNode\(\);/);
@@ -684,8 +685,9 @@ test("the world Sticker's selection menu shows exactly while its gizmo does, and
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   // A selected world Sticker takes the menu instead of the canvas selection's.
   const update = editor.slice(editor.indexOf("  function updateSelectionMenu() {"), editor.indexOf("  function showSelectionMenu(model) {"));
-  assert.ok(update.indexOf('if (editor.mode === "frame")') < update.indexOf("if (editor.worldSelectedId) {"));
-  assert.ok(update.indexOf("if (editor.worldSelectedId) {") < update.indexOf("const selected = getSelected();"));
+  const takes = 'if (editor.worldSelectedId || (isCameraSelected() && isFreeSpaceView())) {';
+  assert.ok(update.indexOf('if (editor.mode === "frame")') < update.indexOf(takes));
+  assert.ok(update.indexOf(takes) < update.indexOf("const selected = getSelected();"));
   // It is the gizmo's own condition (worldGizmo: shown, editable, i.e. not locked and not read-only, and
   // active at the playhead), in the space view, hidden during a press or a drag like the canvas menu.
   const world = update.slice(update.indexOf("  function worldSelectionMenuModel() {"));
@@ -696,11 +698,34 @@ test("the world Sticker's selection menu shows exactly while its gizmo does, and
   assert.match(editor, /function selectWorldSticker\(id\) \{\s*setSelectedItem\(null\);/);
   assert.match(editor, /function setSelectedItems\(items, primaryId = null\) \{[\s\S]*?clearWorldSelection\(\);/);
   // Each frame of the view keeps it under the Sticker (view, playhead) and takes it away with the gizmo.
-  assert.match(editor, /syncFloatingViewButtonState\(\);\s*\/\/ [^\n]*\n\s*if \(editor\.worldSelectedId \|\| worldMenuShown\) updateSelectionMenu\(\);/);
+  assert.match(editor, /syncFloatingViewButtonState\(\);\s*\/\/ [^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| worldMenuShown\) updateSelectionMenu\(\);/);
   // Both menus are placed by selectionMenuPlacement, which never hides them (also after measuring).
   const show = editor.slice(editor.indexOf("  function showSelectionMenu(model) {"), editor.indexOf("  function hideTooltip() {"));
   assert.match(show, /selectionMenuPlacement\(model\.anchor, menuW, menuH, canvas\.width, canvas\.height\)/);
   assert.doesNotMatch(show, /uiState\.selectionMenu\.visible = false/);
   // A segment marks its mode at once.
   assert.match(editor, /editor\.gizmoMode = gizmoModeTarget\.getAttribute\("data-gizmo-mode"\);\s*runtime\.backgroundDirty = true;\s*updateSelectionMenu\(\);/);
+});
+
+test("PanoramaCutoutNode's editor edits its Camera: the shot follows it, the Frame view moves it in space, the gizmo moves it in 6DoF (#77)", () => {
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  // The shot is the Camera at the playhead; an edit goes back to its Lanes before the playhead moves.
+  assert.match(editor, /function setTimelineFrame\(frame\) \{[\s\S]*?syncCutoutShot\(\);\s*editor\.frame = next;\s*syncCutoutShot\(\);/);
+  assert.match(editor, /if \(keep && shot && cutoutShotBase\) setCameraShot\(state\.camera, editor\.frame, shot, cutoutShotBase\);/);
+  // Only the Camera is edited: no image, paint or clear tools, and the Stickers shown are not selectable.
+  assert.match(editor, /const CUTOUT_V2_HIDDEN_TOOLS = new Set\(\["paint", "mask", "add-image", "clear"\]\);/);
+  assert.match(editor, /return cutoutV2 \|\| !Array\.isArray\(state\.stickers\) \? \[\] : state\.stickers;/);
+  // With World content the Frame view's drags of the 3D view controls orbit and pan the Camera, and the wheel
+  // moves it toward the point under the pointer.
+  assert.match(editor, /if \(direction && isFreeFrameView\(\)\) zoomFrameAt\(p, -direction\);/);
+  assert.match(editor, /if \(freeFrame && spaceAction\) \{[\s\S]*?startFrameDrag\(spaceAction, p, e\.pointerId\);/);
+  // The frame and the camera preview see the World from the Camera's position.
+  assert.match(editor, /return placedCamera\(shotCamera\(shot\), shot\.position, frameViewDistance\(\), content\.sphere\);/);
+  // In 6DoF the gizmo writes the Camera's Lane of its mode by the recording rule.
+  assert.match(editor, /setLaneValue\(state\.camera, name, editor\.frame, value\)/);
+  assert.match(editor, /if \(cutoutV2 && isShotItem\(item\) && isFreeSpaceView\(\)\) return \{ visible: false \};/);
+  // A Frame view drag that stops playback picks its point again on the stopped frame, as a gizmo drag takes its base.
+  assert.match(editor, /if \(it\.kind === "frame_orbit" \|\| it\.kind === "frame_pan"\) \{[\s\S]*?const target = frameTarget\(context, view, down\);\s*if \(it\.kind === "frame_orbit"\) it\.pivot = target;\s*else it\.depth = depthOf\(view, target\);/);
+  // Closing the editor without an edit leaves state_json as it is, though the editor rebased it.
+  assert.match(editor, /sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cutoutV2 \}\)/);
 });

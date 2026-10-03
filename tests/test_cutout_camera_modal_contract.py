@@ -39,8 +39,14 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("function applyGateAspectAtCurrentScale(selected, ratio)", editor_js)
         self.assertIn("applyGateAspectAtCurrentScale(selected, inverted)", editor_js)
         self.assertIn("frameRailBounds.width > 0 && frameRailBounds.height > 0", editor_js)
-        self.assertIn('disabled: readOnly || frameMode,', editor_js)
-        self.assertIn('if (editor.mode === "frame") return;\n      startViewTween', editor_js)
+        # Reset View and the grid toggle do nothing in the Frame view, so they are disabled there (#71 moved the
+        # rule into floatingRightState, which the editor feeds with the Frame view's mode).
+        ui_state_js = (REPO_ROOT / "web_src" / "pano_editor_ui_state.js").read_text(encoding="utf-8")
+        floating_body = ui_state_js.split("export function floatingRightState(", 1)[1].split("\nexport function ", 1)[0]
+        self.assertIn('"reset-view": { disabled: !!readOnly || !!frameMode },', floating_body)
+        self.assertIn("disabled: !!readOnly || !!frameMode,", floating_body.split('"toggle-grid"', 1)[1])
+        self.assertIn('frameMode: type === "cutout" && editor.mode === "frame",', editor_js)
+        self.assertIn('if (action === "reset-view") {\n      if (editor.mode === "frame") return;', editor_js)
         self.assertIn('if (editor.mode === "frame") return;\n      editor.showGrid = !editor.showGrid;', editor_js)
         self.assertIn("function drawCutoutPanoPassepartout()", editor_js)
         dim_target_body = editor_js.split("function getCutoutPanoDimTarget()", 1)[1].split("function drawCutoutPanoPassepartout()", 1)[0]
@@ -55,7 +61,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("drawCameraFrameBody(visual.geom, visual.selected, visual.locked)", editor_js)
         self.assertIn('kind: "roll_frame"', editor_js)
         self.assertIn('shortestAngleDeltaRad(angle, interaction.lastAngle)', editor_js)
-        self.assertIn('editor.interaction?.kind === "pan_frame" || editor.interaction?.kind === "roll_frame"', editor_js)
+        self.assertIn('["pan_frame", "roll_frame", "frame_pan", "frame_orbit"].includes(editor.interaction?.kind)', editor_js)
         roll_overlay = editor_js.split("function drawFrameRollOverlay", 1)[1].split("function ", 1)[0]
         self.assertNotIn("fillText", roll_overlay)
         self.assertNotIn("function drawFrameRollHandles", editor_js)

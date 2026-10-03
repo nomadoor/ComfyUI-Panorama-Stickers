@@ -297,16 +297,16 @@ const editorSource = readFileSync(new URL("../web_src/pano_editor.js", import.me
 const editorFunction = (name) => editorSource.slice(editorSource.indexOf(`  function ${name}(`), editorSource.indexOf("\n  }\n", editorSource.indexOf(`  function ${name}(`)));
 
 test("the Timeline's playhead and play button follow the playback", () => {
-  assert.match(editorSource, /onFrame: \(frame\) => \{\s*if \(sceneV2\) setTimelineFrame\(frame\);/);
-  assert.match(editorSource, /span: \(\) => \{\s*if \(sceneV2\) return timelineSpanFrames\(\);/);
+  assert.match(editorSource, /onFrame: \(frame\) => \{\s*if \(stateV2\) setTimelineFrame\(frame\);/);
+  assert.match(editorSource, /span: \(\) => \{\s*if \(stateV2\) return timelineSpanFrames\(\);/);
   assert.match(editorFunction("syncTimeline"), /playing: playback\.playing,/);
   // Only PanoramaStickersNode's edits stop playback; the legacy transport plays on.
-  assert.match(editorFunction("stopTimelinePlayback"), /if \(sceneV2\) playback\.stop\(\);/);
+  assert.match(editorFunction("stopTimelinePlayback"), /if \(stateV2\) playback\.stop\(\);/);
   assert.doesNotMatch(editorSource, /videoState\.(seeking|pendingPlaybackResume|requestedTime|seekLanding|mode)\b/);
 });
 
 test("PanoramaStickersNode builds no filmstrip and a filmstrip is not built again for the same VIDEO", () => {
-  assert.match(editorFunction("refreshModalVideoSource"), /if \(nextSrc && !sceneV2 && videoState\.thumbnailSrc !== nextSrc && !videoState\.thumbnailFailedSrcs\.has\(nextSrc\)\) \{\s*void buildVideoThumbnails\(nextSrc, duration, fps\);/);
+  assert.match(editorFunction("refreshModalVideoSource"), /if \(nextSrc && !stateV2 && videoState\.thumbnailSrc !== nextSrc && !videoState\.thumbnailFailedSrcs\.has\(nextSrc\)\) \{\s*void buildVideoThumbnails\(nextSrc, duration, fps\);/);
   assert.equal(editorSource.match(/void buildVideoThumbnails\(/g).length, 1);
   assert.match(editorSource, /if \(!loaded \|\| videoWidth < 1 \|\| videoHeight < 1\) \{\s*videoState\.thumbnailFailedSrcs\.add\(safeSrc\);\s*return;/);
 });
@@ -341,12 +341,13 @@ test("an edit on the canvas stops playback on its first move and starts from the
   const move = editorSource.slice(editorSource.indexOf("  canvas.onpointermove = (e) => {"), editorSource.indexOf("if (it.kind === \"paint_stroke\")"));
   assert.match(move, /if \(editPointerDown && \(p\.x !== editPointerDown\.x \|\| p\.y !== editPointerDown\.y\)\) \{\s*const down = editPointerDown;\s*editPointerDown = null;\s*if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
   const restart = editorFunction("restartEditAtStoppedFrame");
-  assert.match(restart, /if \(!sceneV2 \|\| !playback\.playing\) return;\s*playback\.stop\(\);/);
+  assert.match(restart, /if \(!stateV2 \|\| !playback\.playing\) return;\s*playback\.stop\(\);/);
   for (const field of ["it.offset", "it.startCenter", "snap.center", "it.center", "it.startRot", "it.startAng", "it.startDist", "it.startHFOV", "it.startVFOV"]) {
     assert.ok(restart.indexOf(`${field} =`) > restart.indexOf("playback.stop();"), field);
   }
+  // Looking around with the wheel keeps playing; in the Cutout's Frame view the wheel edits the Camera (#77).
   const wheel = editorSource.slice(editorSource.indexOf("canvas.onwheel = (e) => {"), editorSource.indexOf("\n  };\n", editorSource.indexOf("canvas.onwheel = (e) => {")));
-  assert.doesNotMatch(wheel, /stopTimelinePlayback/);
+  assert.doesNotMatch(wheel.slice(wheel.indexOf('if (editor.mode !== "pano") return;')), /stopTimelinePlayback/);
 });
 
 test("deleting, undo and redo, and adding a Sticker stop playback first", () => {
@@ -356,9 +357,9 @@ test("deleting, undo and redo, and adding a Sticker stop playback first", () => 
 });
 
 test("the legacy transport seeks to its own time and leaves looping to the VIDEO", () => {
-  assert.match(editorFunction("playbackFps"), /return sceneV2 \? state\.timeline\.fps : videoState\.metaFps \|\| 1000;/);
+  assert.match(editorFunction("playbackFps"), /return stateV2 \? state\.timeline\.fps : videoState\.metaFps \|\| 1000;/);
   assert.match(editorSource, /return videoEl\.loop \|\| !\(frames > 0\) \? Infinity : frames;/);
-  assert.match(editorSource, /loop: \(\) => sceneV2,/);
+  assert.match(editorSource, /loop: \(\) => stateV2,/);
 });
 
 test("an fps from a run, an fps edit and undoing one keep the playhead's time", () => {
@@ -367,5 +368,5 @@ test("an fps from a run, an fps edit and undoing one keep the playhead's time", 
   const change = editorFunction("changeTimelineFps");
   assert.match(change, /const frame = Math\.round\(editor\.frame \* fps \/ state\.timeline\.fps\);\s*setTimelineFps\(state, fps\);/);
   assert.match(change, /playback\.seek\(frame\);\s*commitTimelineEdit\(\);/);
-  assert.match(editorFunction("restoreHistory"), /if \(sceneV2 && state\.timeline\.fps !== fps\) playback\.seek\(Math\.round\(editor\.frame \* state\.timeline\.fps \/ fps\)\);/);
+  assert.match(editorFunction("restoreHistory"), /if \(stateV2 && state\.timeline\.fps !== fps\) playback\.seek\(Math\.round\(editor\.frame \* state\.timeline\.fps \/ fps\)\);/);
 });

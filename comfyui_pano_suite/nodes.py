@@ -1019,7 +1019,10 @@ class PanoSceneValue:
     `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given, a 3D file as the SPLAT or MESH read
     from it (`_read_scene_file`), as is the 3D media in `port`. `coverage` is the span of `bg_media`, `bg_color`
     0..1 RGB. The output size is not part of it; each consumer sets its own. `fps` is the Timeline fps and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
-    frame, and the `scene` item, as `_decide_timeline` returns them.
+    frame, and the `scene` item, as `_decide_timeline` returns them. `media_ui` is the part of the Stickers
+    execution `ui` that shows its media in an editor (the first frames, the editor MP4s, the `scene` and 3D
+    Sticker editor files, `pano_timeline_fps`); a consumer passes it on in its own `ui`, so the files are the
+    Stickers' and are not written again.
     Consumers must not modify it; the same value reaches every node linked to the output.
     """
 
@@ -1032,6 +1035,7 @@ class PanoSceneValue:
     bg_color: tuple
     fps: float
     frames: tuple
+    media_ui: dict
 
 
 def _scene_content(scene) -> SceneContent | None:
@@ -1509,19 +1513,22 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         image, mask, video = _render_outputs(
             state, sources, frames, bg_media, "bg_media", bg, bg_rgb, port, scene, lambda evaluated: (STICKERS_CAMERA, projection), (out_w, out_h)
         )
-        # PANO_SCENE binds the state to the inputs and the decided Timeline.
-        pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
         # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
-        ui_ret = {}
+        media_ui = {}
         if _timing_video(bg, port) is not None:
             # The editor rebases the state to this fps and does not let it be edited (ADR 0024).
-            ui_ret["pano_timeline_fps"] = [fps]
+            media_ui["pano_timeline_fps"] = [fps]
         if bg_media is not None:
-            _merge_ui_payload(ui_ret, _bg_media_ui(bg_media, bg, fps))
+            _merge_ui_payload(media_ui, _bg_media_ui(bg_media, bg, fps))
         if scene is not None:
-            _merge_ui_payload(ui_ret, _scene_ui(scene))
+            _merge_ui_payload(media_ui, _scene_ui(scene))
         if port is not None:
-            _merge_ui_payload(ui_ret, _port_media_ui(port, fps, _timing_video(bg, port)))
+            _merge_ui_payload(media_ui, _port_media_ui(port, fps, _timing_video(bg, port)))
+        # PANO_SCENE binds the state to the inputs and the decided Timeline, with the media `ui` for the
+        # editors downstream.
+        pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames), media_ui)
+        ui_ret = dict(media_ui)
+        if port is not None:
             added = next(item for item in state["stickers"] if item["id"] == port.sticker_id)
             if added is not stored_port:
                 # The pose the port Sticker was added at, with the Keyframes of a Camera that moved (Pose handoff),
@@ -1578,11 +1585,13 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
                 io.Mask.Output("first_frame_mask"),
                 io.Video.Output("video"),
             ],
+            # As Stickers: an output node runs on every queue, so the editor receives the `ui` even when nothing
+            # downstream consumes the outputs.
+            is_output_node=True,
         )
 
     @classmethod
     def execute(cls, source, coverage, output_megapixels, state_json):
-        # TODO(#77): bind the editor and the on-node UI to this node id; it has no execution `ui` until then.
         cutout = load_scene_state(state_json)
         if isinstance(source, PanoSceneValue):
             # The Scene is the Stickers state; the Cutout state gives only the Camera, at its own recorded fps.
@@ -1595,21 +1604,34 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
 
             def camera_at(evaluated):
                 return evaluate_scene_state(cutout, evaluated["frame"] * ratio)["camera"]
+
+            # The editor shows the Scene from its state and the Stickers' media files with the span of its
+            # background, on the Scene's Timeline: its fps (always set by the Scene here) and its number of frames.
+            ui_ret = {
+                **source.media_ui,
+                "pano_timeline_fps": [source.fps],
+                "pano_timeline_frames": [len(frames)],
+                "pano_scene_state": [state],
+                "pano_scene_coverage": [coverage_deg],
+            }
         else:
             # An ERP IMAGE or VIDEO is the background in the Scene's orientation, under the Cutout state's Sky.
             # Outside a 180 ERP the image is black, as in the legacy Cutout.
             state, port, scene, coverage_deg, bg_color = cutout, None, None, normalize_coverage(coverage), (0.0, 0.0, 0.0)
             warnings = []
             sources = _resolve_sources(state, None, warnings)
-            # TODO(#77): show these in the Cutout `ui`.
-            for warning in warnings:
-                _log.warning("Panorama Cutout: %s", warning)
             bg_media, bg_name = source, "source"
             bg = _open_media(bg_media, bg_name)
-            frames = _decide_timeline(state, bg, None, camera=True)[1]
+            fps, frames = _decide_timeline(state, bg, None, camera=True)
 
             def camera_at(evaluated):
                 return evaluated["camera"]
+
+            # The editor shows the ERP under the legacy keys, as Stickers shows its bg_media.
+            ui_ret = _bg_media_ui(bg_media, bg, fps)
+            if _timing_video(bg, None) is not None:
+                ui_ret["pano_timeline_fps"] = [fps]
+            _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         # The output size follows the Camera's aspect, as the legacy Cutout's followed its shot's FOV.
         width, height = calculate_dimensions_from_megapixels(
             output_megapixels, 90.0, math.degrees(2.0 * math.atan(1.0 / cutout["camera"]["aspect"])), max_side=CUTOUT_MAX_OUTPUT_SIDE
@@ -1620,7 +1642,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
             return camera, Projection.perspective(width, height, camera["hFOV_deg"], coverage_deg)
 
         image, mask, video = _render_outputs(state, sources, frames, bg_media, bg_name, bg, bg_color, port, scene, capture, (width, height))
-        return io.NodeOutput(image, _cutout_sticker_state(cutout, width, height), mask, video)
+        return io.NodeOutput(image, _cutout_sticker_state(cutout, width, height), mask, video, ui=ui_ret)
 
 
 class PanoramaCutoutNode(io.ComfyNode):

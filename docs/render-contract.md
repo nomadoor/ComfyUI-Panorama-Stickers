@@ -299,6 +299,7 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 | `bg_color` | 0〜1 の 3 つの数値のタプル |
 | `fps` | Timeline fps（float）。`video` の `get_frame_rate()` と同じ値 |
 | `frames` | `_decide_timeline` が決めた出力フレームごとの `(評価する Timeline frame, 描く bg_media のフレーム番号または None, port のフレーム番号または None, scene の要素の番号または None)` の 4 つ組のタプル。`scene` の番号は `scene` の入力がないとき `None` で、Clip range の外のフレームでも番号を持つ（描くかは `evaluated["scene"]["active"]` で決める）。長さが出力のフレーム数 |
+| `media_ui` | Stickers の実行結果の `ui` のうち、素材をエディタに見せる部分（`pano_input_images`・`pano_input_videos` などの背景、`pano_scene_files`・`pano_sticker_files` などの #60・#63 のエディタ用ファイル、`port` の素材、`pano_timeline_fps`）。`pano_sticker_input_pose` と警告は入らない。参照するファイルは Stickers が書いたもので、使う側は自分の `ui` にそのまま入れ、書き直さない（#77） |
 
 - 出力の解像度は入れない。撮影する側がそれぞれの規則（`output_preset`・`output_megapixels` など）で決める。
 - 同じ入力からは同じ内容の値になる（乱数や時刻を含まない）。ComfyUI のキャッシュが効くとき、下流には前回の同じ値が渡る。
@@ -309,7 +310,10 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 
 - Python のクラスは `PanoramaCutoutSceneNode`。旧 `PanoramaCutout` は #78 まで登録を残す。
 - 入力は `source`（`io.MultiType`：IMAGE・VIDEO・`PANO_SCENE`）、`coverage`、`output_megapixels`、`state_json`。出力は `first_frame`（IMAGE）、`sticker_state`（STRING）、`first_frame_mask`（MASK）、`video`（VIDEO）の順（ADR 0027）。`first_frame`・`first_frame_mask`・`video` は Stickers と同じ規則で作る。出力は入力の素通しではないので `MatchType` は使わない。
-- `is_output_node` は `False` で、実行結果の `ui` は持たない。エディタとノード上の UI の結び付けは #77 で行う。
+- `is_output_node` は `True`（#77。Stickers と同じく、キューに入れるたびに実行され、下流の接続に関わらずエディタが実行結果を受け取る）。実行結果の `ui` はエディタのためのもの（#77）：
+  - IMAGE / VIDEO：Stickers の `bg_media` と同じ `_bg_media_ui` で `pano_input_images`（2 フレーム以上なら `pano_input_videos`・`pano_input_video_meta`）。VIDEO が Timeline fps を決めたときは `pano_timeline_fps`。読めない `file` の Source の警告は `pano_sticker_warnings`（ログにも出す）。
+  - `PANO_SCENE`：その `media_ui` をそのまま入れ、`pano_timeline_fps`（Scene の Timeline fps。常に出す）、`pano_timeline_frames`（出力のフレーム数）、`pano_scene_state`（`PANO_SCENE` の `state`）、`pano_scene_coverage`（その `coverage`）を足す。Stickers の一時ファイル（MP4・PNG・#60 の PLY / GLB）は作り直さない。
+  - エディタは `source` の接続が実行時と同じ間だけこの `ui` を使う（`pano_preview_video.js` の `background`・`scene`・`external-sticker` のチャンネルに `source` を入れた）。エディタは `docs/threejs-spark-integration.md` の「Cutout の Camera（#77）」。ノード上の Cutout の表示は新しいノードにはまだない。
 - `state_json` は状態 v2（v1 も読む。旧 Cutout の `shots[0]` は Camera になる。`docs/scene-state-v2.md`）。Cutout の Camera は `state_json` の `camera` で、Keyframe に従って動く。
 - Timeline と各フレームは Stickers の (a)・(b)・(c)（`_decide_timeline`・`_render_frames`・`_render_outputs`）をそのまま使う。各フレームは `render_frame` に `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` を渡して描く。
   - IMAGE / VIDEO：ERP を Scene の向きに合った背景とみなし、Cutout の状態を Scene として描く（旧 Cutout と同じく、状態の `sky` の Sticker とペイントを重ねる）。Timeline は Cutout の状態に対して `_decide_timeline` で決める（VIDEO は `open_video(source, "source")`。Stickers・Cutout の `video` は 1 フレームずつ描いて読む）。`coverage` は ERP の範囲。`bg_color` は黒で、180 の ERP の半球の外は黒になる（旧 Cutout は Sky も含めて黒にしていたが、Sky は全方向に描く）。
