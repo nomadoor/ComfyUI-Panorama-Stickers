@@ -97,6 +97,7 @@ import {
   switchSpaceMode,
   zoomView,
 } from "./pano_space.js";
+import { shownSpaceMode, spaceModeChoice, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
 import {
   contextHalfExtentsPx,
@@ -987,7 +988,8 @@ async function showEditor(node, type, options = {}) {
     // The gizmo handle under the pointer, or null.
     gizmoAxis: null,
     panelWasEnabled: false,
-    viewTween: null,
+    // The view moving to another over a short time (pano_view_transition.js), or null.
+    viewTransition: null,
     fullscreen: false,
     fullscreenPrevShowGrid: null,
     // The editor's current time, a Timeline frame. PanoramaStickersNode shows and edits its state v2 here.
@@ -1358,27 +1360,36 @@ async function showEditor(node, type, options = {}) {
     stageWrap.classList.toggle("drop-active", next);
   }
 
-  function startViewTween(targetYaw, targetPitch, targetFov = editor.viewFov, minMs = 140, maxMs = 620) {
-    const dyaw = shortestYawDelta(editor.viewYaw, targetYaw);
-    const dpitch = targetPitch - editor.viewPitch;
-    const dfov = targetFov - editor.viewFov;
-    const dist = Math.hypot(dyaw, dpitch) + Math.abs(dfov) * 0.6;
-    const durationMs = Math.round(clamp(minMs + dist * 2.2, minMs, maxMs));
-    editor.viewTween = {
-      active: true,
-      startTs: performance.now(),
-      durationMs,
-      startYaw: editor.viewYaw,
-      startPitch: editor.viewPitch,
-      startFov: editor.viewFov,
-      targetPitch,
-      targetFov,
-      deltaYaw: dyaw,
-    };
-    editor.viewInertia.active = false;
-    editor.viewInertia.vx = 0;
-    editor.viewInertia.vy = 0;
-    requestDraw();
+  // Moves the view to `target` over a short transition (pano_view_transition.js) from the view shown
+  // now, where a running transition has got to, which this one replaces. `end` ({ mode, moved }) is
+  // applied when it arrives, or at once when the view is there already.
+  function transitionView(target, end = null) {
+    const from = spaceViewState();
+    editor.viewTransition = startViewTransition(from, target, performance.now(), { scale: spaceScale(), end });
+    if (!editor.viewTransition && end) applyViewTransitionEnd(end);
+    viewController.state.inertia.active = false;
+    viewController.state.inertia.vx = 0;
+    viewController.state.inertia.vy = 0;
+    syncFloatingViewButtonState();
+    requestDraw({ localOnly: true });
+  }
+
+  function applyViewTransitionEnd(end) {
+    applySpaceMode(switchSpaceMode({ ...spaceModeState(), moved: end.moved }, end.mode));
+    runtime.backgroundDirty = true;
+  }
+
+  // Drops a running transition where it shows. The 3DoF | 6DoF buttons follow: a way back to 3DoF
+  // dropped on the way stays in 6DoF.
+  function cancelViewTransition() {
+    if (!editor.viewTransition) return;
+    editor.viewTransition = null;
+    syncFloatingViewButtonState();
+  }
+
+  // Turns the view to look at yaw / pitch.
+  function turnViewTo(yawDeg, pitchDeg) {
+    transitionView({ ...spaceViewState(), yaw_deg: yawDeg, pitch_deg: pitchDeg });
   }
 
   // Coordinate sanity: front-facing sticker should have top edge above bottom edge.
@@ -2772,7 +2783,7 @@ async function showEditor(node, type, options = {}) {
   function syncFloatingViewButtonState() {
     const floating = floatingRightState({
       spaceView: isSpaceView(),
-      spaceMode: editor.spaceMode,
+      spaceMode: shownSpaceMode(editor.spaceMode, editor.viewTransition),
       readOnly,
       frameMode: type === "cutout" && editor.mode === "frame",
       showGrid: editor.showGrid,
@@ -2887,8 +2898,17 @@ async function showEditor(node, type, options = {}) {
     editor.viewMoved = space.moved;
   }
 
-  // Back in 3DoF the view returns to the origin keeping its direction; 6DoF starts from there.
+  // Back in 3DoF the view returns to the origin keeping its direction; 6DoF starts from there. The way
+  // back moves in 6DoF and enters 3DoF when it arrives, so its frames are 6DoF frames throughout; 6DoF
+  // chosen on the way stops it where it shows.
   function setSpaceMode(mode) {
+    const choice = spaceModeChoice(editor.spaceMode, editor.viewTransition, mode);
+    if (choice === "keep") return;
+    if (choice === "return") {
+      transitionView({ ...spaceViewState(), position: [0, 0, 0], distance: contentSphere()?.radius || DEFAULT_DISTANCE }, { mode, moved: false });
+      return;
+    }
+    cancelViewTransition();
     applySpaceMode(switchSpaceMode(spaceModeState(), mode));
     runtime.backgroundDirty = true;
     syncFloatingViewButtonState();
@@ -2924,7 +2944,7 @@ async function showEditor(node, type, options = {}) {
     return contentSphere()?.radius || DEFAULT_DISTANCE;
   }
 
-  // Frame Selected / All: the view keeps its direction and moves until the selected world Sticker fits,
+  // Frame Selected: the view keeps its direction and moves until the selected world Sticker fits,
   // or all the content without one (pano_space.js frameSphere).
   function frameSpaceContent() {
     const space = editorViewInput().space;
@@ -2939,7 +2959,11 @@ async function showEditor(node, type, options = {}) {
     };
     const sphere = frameSphere(contentSphere(), selected);
     if (!sphere) return;
-    setSpaceView(frameView(spaceViewState(), sphere, canvas.width, canvas.height));
+    const view = spaceViewState();
+    // The pivot moves with the view from the one in use now.
+    editor.viewDistance = view.distance;
+    editor.viewMoved = true;
+    transitionView(frameView(view, sphere, canvas.width, canvas.height));
   }
 
   // The World point of the content under canvas point p in the frame on screen, or null.
@@ -3842,8 +3866,10 @@ async function showEditor(node, type, options = {}) {
     const background = editor.showPanorama && isDecodedImageReady(bgImg)
       ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage), source: bgSource }
       : null;
-    // When the World content goes away, 6DoF goes back to 3DoF at the origin.
-    applySpaceMode(spaceModeWithContent(spaceModeState(), hasSpaceContent()));
+    // When the World content goes away, 6DoF goes back to 3DoF at the origin at once, ending a transition.
+    const spaceMode = spaceModeWithContent(spaceModeState(), hasSpaceContent());
+    if (spaceMode.mode !== editor.spaceMode) cancelViewTransition();
+    applySpaceMode(spaceMode);
     const space = isSpaceView() ? buildSpaceInput(editorViewScene.sceneState, media) : null;
     return { background, layers, space };
   }
@@ -5615,7 +5641,7 @@ async function showEditor(node, type, options = {}) {
       || interactionKind === "view"
       || interactionKind === "pan_frame"
       || isModalBackgroundObjectInteraction()
-      || !!editor.viewTween?.active
+      || !!editor.viewTransition
       || cause === "mode"
       || cause === "frame_view"
       || cause === "cutout_frame";
@@ -5754,16 +5780,21 @@ async function showEditor(node, type, options = {}) {
       }
     }
 
-    if (editor.viewTween?.active) {
-      const tw = editor.viewTween;
-      const t = clamp((ts - tw.startTs) / tw.durationMs, 0, 1);
-      const eased = easeInOutCubic(t);
-      editor.viewYaw = wrapYaw(tw.startYaw + tw.deltaYaw * eased);
-      editor.viewPitch = tw.startPitch + (tw.targetPitch - tw.startPitch) * eased;
-      editor.viewFov = tw.startFov + (tw.targetFov - tw.startFov) * eased;
+    if (editor.viewTransition) {
+      const { view, done } = viewTransitionFrame(editor.viewTransition, ts);
+      editor.viewPosition = view.position;
+      editor.viewYaw = view.yaw_deg;
+      editor.viewPitch = view.pitch_deg;
+      editor.viewFov = view.hFOV_deg;
+      editor.viewDistance = view.distance;
+      if (done) {
+        const { end } = editor.viewTransition;
+        editor.viewTransition = null;
+        if (end) applyViewTransitionEnd(end);
+        syncFloatingViewButtonState();
+      }
       runtime.backgroundDirty = true;
       runtime.dirty = true;
-      if (t >= 1) editor.viewTween = null;
     }
 
     editor.viewInertia.vx = Number(viewController.state.inertia.vx || 0);
@@ -6743,11 +6774,7 @@ async function showEditor(node, type, options = {}) {
     if (existing) {
       setSelectedItem(existing);
       editor.mode = "pano";
-      startViewTween(
-        wrapYaw(Number(existing.yaw_deg || 0)),
-        clamp(Number(existing.pitch_deg || 0), -89.9, 89.9),
-        editor.viewFov,
-      );
+      turnViewTo(wrapYaw(Number(existing.yaw_deg || 0)), clamp(Number(existing.pitch_deg || 0), -89.9, 89.9));
       updateSidePanel();
       updateSelectionMenu();
       requestDraw({ cause: "cutout_frame" });
@@ -8674,7 +8701,8 @@ async function showEditor(node, type, options = {}) {
     const p = screenPos(e);
     editPointerDown = p;
     setPointerPos(p, true);
-    editor.viewTween = null;
+    // Grabbing the view stops a transition where it shows, and the drag starts from there.
+    cancelViewTransition();
     viewController.state.inertia.active = false;
     viewController.state.inertia.vx = 0;
     viewController.state.inertia.vy = 0;
@@ -9759,6 +9787,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (editor.mode !== "pano") return;
+    cancelViewTransition();
     if (isFreeSpaceView()) {
       const direction = readWheelDirection(e);
       // The wheel zooms the panorama view in (direction < 0); in space it moves toward the point under
@@ -9899,11 +9928,7 @@ async function showEditor(node, type, options = {}) {
       setSelectedItem(nextItem || null);
       if (nextItem && !isStrokeGroupItem(nextItem)) {
         const pose = poseOf(nextItem);
-        startViewTween(
-          wrapYaw(Number(pose.yaw_deg || 0)),
-          clamp(Number(pose.pitch_deg || 0), -89.9, 89.9),
-          editor.viewFov,
-        );
+        turnViewTo(wrapYaw(Number(pose.yaw_deg || 0)), clamp(Number(pose.pitch_deg || 0), -89.9, 89.9));
       }
       updateSidePanel();
       updateSelectionMenu();
@@ -10234,14 +10259,16 @@ async function showEditor(node, type, options = {}) {
     }
     if (action === "reset-view") {
       if (editor.mode === "frame") return;
-      startViewTween(0, 0, 100, 180, 680);
       // In space the view also goes back to the World origin, where the ERP is taken from, as it opened.
-      editor.viewPosition = [0, 0, 0];
-      editor.viewMoved = false;
+      transitionView(
+        { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100, distance: contentSphere()?.radius || DEFAULT_DISTANCE },
+        { mode: shownSpaceMode(editor.spaceMode, editor.viewTransition), moved: false },
+      );
       return;
     }
     if (action === "frame-view") {
-      if (!isFreeSpaceView()) return;
+      // As the button shows it: not on the way back to 3DoF.
+      if (!isFreeSpaceView() || shownSpaceMode(editor.spaceMode, editor.viewTransition) !== "6dof") return;
       frameSpaceContent();
       return;
     }

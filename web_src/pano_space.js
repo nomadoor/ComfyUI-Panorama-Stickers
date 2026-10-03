@@ -355,7 +355,7 @@ export function planeCorners(plane) {
     .map(([x, y]) => add(plane.position, apply(plane.rotation, [x, y, 0])));
 }
 
-// The sphere Frame Selected / All fits, like Blender's View Selected: around the selected Sticker where
+// The sphere Frame Selected fits, like Blender's View Selected: around the selected Sticker where
 // it shows in the World, else around all the content (content, null without content). selected is
 // { sticker, value, plane, item }: the state v2 Sticker, its evaluated value at the playhead, its plane
 // (a worldStickerPlane(), null before its media has a size), and its 3D item ({ kind, box }: the loaded
