@@ -1,3 +1,4 @@
+import io
 import json
 import math
 import struct
@@ -6,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from PIL import Image
 
 
 pytest.importorskip(
@@ -160,12 +162,26 @@ def test_moge_mask_drops_the_pixels_it_excludes():
     assert vertices.shape == (4 * 16, 3) and (vertices[:, 1] < 0.0).all()
 
 
-def test_large_moge_frames_are_thinned_for_the_editor():
-    size = scene_files.MOGE_EDITOR_GRID * 2
+def test_moge_frames_keep_every_pixel_and_the_whole_image():
+    height, width = 24, 48
+    geometry = _moge(_panorama_points(height, width))
 
-    vertices = _glb_positions(_path(nodes._scene_ui(_moge(_panorama_points(size // 2, size)))["pano_scene_files"][0]))
+    path = _path(nodes._scene_ui(geometry)["pano_scene_files"][0])
 
-    assert vertices.shape[0] == (scene_files.MOGE_EDITOR_GRID // 2) * scene_files.MOGE_EDITOR_GRID
+    assert _glb_positions(path).shape[0] == height * width
+    data = path.read_bytes()
+    image = _glb_json(path)["bufferViews"][_glb_json(path)["images"][0]["bufferView"]]
+    start = 20 + struct.unpack_from("<I", data, 12)[0] + 8 + image.get("byteOffset", 0)
+    assert Image.open(io.BytesIO(data[start:start + image["byteLength"]])).size == (width, height)
+
+
+def test_moge_frames_without_faces_are_empty_items():
+    mask = torch.zeros((2, 4, 8), dtype=torch.bool)
+    mask[1] = True
+
+    files = nodes._scene_ui(_moge(_panorama_points(4, 8).repeat(2, 1, 1, 1), mask=mask))["pano_scene_files"]
+
+    assert files[0] is None and _path(files[1]).exists()
 
 
 def test_same_input_reuses_its_files(monkeypatch):
@@ -223,8 +239,7 @@ def _stepped_panorama(height, width):
     return _panorama_points(height, width, 1.0) * distance[None, :, :, None]
 
 
-def test_moge_grid_meshes_are_thinned_like_their_moge_geometry(monkeypatch):
-    monkeypatch.setattr(scene_files, "MOGE_EDITOR_GRID", 8)
+def test_moge_grid_meshes_are_written_like_their_moge_geometry():
     rows, columns = torch.meshgrid(torch.linspace(-1.0, 1.0, 12), torch.linspace(-1.0, 1.0, 20), indexing="ij")
     depth = 2.0 + 0.02 * columns + torch.where(columns > 0.3, 1.0, 0.0)
     perspective = torch.stack([columns * depth, rows * depth, depth], dim=-1)[None]
@@ -236,17 +251,15 @@ def test_moge_grid_meshes_are_thinned_like_their_moge_geometry(monkeypatch):
         mesh = MoGePointMapToMesh.execute(geometry, 0, 1, 0.04, True).result[0]
         assert mesh.vertices.shape[1] < points.shape[1] * points.shape[2]
 
-        thinned = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
+        grid = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
         moge = _path(nodes._scene_ui(geometry)["pano_scene_files"][0])
 
-        # The same vertices, faces, uvs and texture as the MOGE_GEOMETRY's file, at a third of the grid.
-        assert thinned.read_bytes() == moge.read_bytes()
-        assert _glb_positions(thinned).shape[0] < mesh.vertices.shape[1]
+        # The same vertices, faces, uvs and texture as the MOGE_GEOMETRY's file, each at full resolution.
+        assert grid.read_bytes() == moge.read_bytes() == mesh_item_to_glb_bytes(mesh, 0)
 
 
-def test_meshes_over_the_face_limit_are_clustered_for_the_editor(monkeypatch):
-    monkeypatch.setattr(scene_files, "MESH_EDITOR_FACES", 300)
-    # A sphere whose uvs are not a grid (they are bent), with a texture and vertex colors.
+def test_meshes_are_written_as_the_core_writes_them():
+    # A sphere with a texture, vertex colors and normals: the editor gets all that the core's SaveGLB writes.
     rows, columns = torch.meshgrid(torch.linspace(0.05, 0.95, 40), torch.linspace(0.0, 1.0, 40), indexing="ij")
     theta, phi = rows * math.pi, columns * 2.0 * math.pi
     vertices = torch.stack([theta.sin() * phi.cos(), theta.cos(), theta.sin() * phi.sin()], dim=-1).reshape(-1, 3)
@@ -254,53 +267,20 @@ def test_meshes_over_the_face_limit_are_clustered_for_the_editor(monkeypatch):
     index = torch.arange(40 * 40).reshape(40, 40)
     a, b, c, d = index[:-1, :-1], index[:-1, 1:], index[1:, 1:], index[1:, :-1]
     faces = torch.cat([torch.stack([a, b, c], -1).reshape(-1, 3), torch.stack([a, c, d], -1).reshape(-1, 3)])
-    mesh = Types.MESH(vertices[None], faces[None], uvs=uvs[None], vertex_colors=torch.rand((1, 1600, 3)), texture=torch.rand((1, 16, 32, 3)))
+    mesh = Types.MESH(
+        vertices[None], faces[None], uvs=uvs[None], vertex_colors=torch.rand((1, 1600, 3)), texture=torch.rand((1, 16, 32, 3)),
+        normals=vertices[None],
+    )
 
     path = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
 
-    assert 0 < _glb_faces(path).shape[0] <= 300
-    positions = _glb_positions(path)
-    assert positions.shape[0] < 1600
-    # Cluster means stay on the content (in the unit ball, near the sphere).
-    radius = np.linalg.norm(positions, axis=-1)
-    assert (radius <= 1.0 + 1e-6).all() and (radius > 0.8).all()
-    gltf = _glb_json(path)
-    attributes = gltf["meshes"][0]["primitives"][0]["attributes"]
-    assert "TEXCOORD_0" in attributes and "COLOR_0" in attributes
-    assert len(gltf["images"]) == 1
+    assert path.read_bytes() == mesh_item_to_glb_bytes(mesh, 0)
+    assert _glb_faces(path).shape[0] == faces.shape[0]
 
 
-def test_small_meshes_are_written_as_they_are(monkeypatch):
-    monkeypatch.setattr(scene_files, "MESH_EDITOR_FACES", 300)
-    general = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]])
-    geometry = _moge(_stepped_panorama(12, 24))
-    geometry["depth"] = geometry["points"].norm(dim=-1)
-    # A grid MESH within MOGE_EDITOR_GRID, though over the face limit for any other MESH.
-    grid = MoGePointMapToMesh.execute(geometry, 0, 1, 0.04, True).result[0]
-    assert grid.faces.shape[1] > 300
+def test_meshes_without_faces_are_empty_items():
+    mesh = Types.MESH(torch.zeros((2, 3, 3)), torch.tensor([[[0, 1, 2]], [[0, 1, 2]]]), vertex_counts=torch.tensor([3, 3]), face_counts=torch.tensor([0, 1]))
 
-    for mesh in (general, grid):
-        path = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
-        assert path.read_bytes() == mesh_item_to_glb_bytes(mesh, 0)
+    files = nodes._scene_ui(mesh)["pano_scene_files"]
 
-
-def test_clustering_that_leaves_no_face_tries_a_finer_grid(monkeypatch):
-    monkeypatch.setattr(scene_files, "MESH_EDITOR_FACES", 8)
-    # Twelve small triangles in a corner of a box that a far vertex (in no face) makes large: a coarse grid puts
-    # each of them in one cell.
-    corners = torch.tensor([[0.0, 0.0, 0.0], [0.004, 0.0, 0.0], [0.0, 0.004, 0.0]])
-    small = torch.cat([corners + torch.tensor([0.01 * k, 0.0, 0.0]) for k in range(12)])
-    vertices = torch.cat([small, torch.tensor([[1.0, 1.0, 1.0]])])
-    faces = torch.arange(36).reshape(12, 3)
-
-    path = _path(nodes._scene_ui(Types.MESH(vertices[None], faces[None]))["pano_scene_files"][0])
-
-    assert _glb_faces(path).shape[0] > 0
-
-
-def test_clustering_that_keeps_no_face_writes_an_empty_item(monkeypatch):
-    monkeypatch.setattr(scene_files, "MESH_EDITOR_FACES", 1)
-    # Every vertex in one place: no grid keeps a face.
-    mesh = Types.MESH(torch.zeros((1, 6, 3)), torch.arange(6).reshape(1, 2, 3))
-
-    assert nodes._scene_ui(mesh)["pano_scene_files"] == [None]
+    assert files[0] is None and _path(files[1]).exists()

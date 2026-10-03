@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSceneItems } from "../web_src/pano_scene_items.js";
+import { aheadFits, createSceneItems, overBudget, SCENE_ITEM_BUDGET } from "../web_src/pano_scene_items.js";
 
-// Loads that end when the test says so: each call is { kind, url, signal, resolve, reject }.
+// Loads that end when the test says so: each call is { kind, url, signal, resolve(size), reject }.
 function harness(options = {}) {
   const calls = [];
   const disposed = [];
@@ -11,7 +11,7 @@ function harness(options = {}) {
   const items = createSceneItems({
     load: (kind, url, signal) => new Promise((resolve, reject) => {
       signal.addEventListener("abort", () => reject(new Error("aborted")));
-      calls.push({ kind, url, signal, resolve: () => resolve({ object: { url }, box: { min: [0, 0, 0], max: [1, 1, 1] } }), reject });
+      calls.push({ kind, url, signal, resolve: (size = 1) => resolve({ object: { url }, box: { min: [0, 0, 0], max: [1, 1, 1] }, size }), reject });
     }),
     dispose: (item) => disposed.push(item.object.url),
     onUpdate: () => { updates += 1; },
@@ -111,8 +111,33 @@ test("a load still running when its input goes away is aborted and its result di
   assert.deepEqual(calls.map((call) => call.url), ["f0", "g0"]);
 });
 
-test("loaded items beyond the limit go least recently used first, never the shown or wanted ones", async () => {
-  const { items, calls, disposed } = harness({ concurrency: 4, limit: 3 });
+test("the budget drops the least recently used loaded items first, never the shown or wanted ones", () => {
+  const loaded = (size) => ({ state: "loaded", size });
+  const entries = [["f0", loaded(4)], ["f1", loaded(4)], ["f2", { state: "loading", size: undefined }], ["f3", loaded(4)], ["f4", loaded(4)]];
+  assert.deepEqual(overBudget(entries, new Set(["f3", "f4"]), 16), []);
+  assert.deepEqual(overBudget(entries, new Set(["f3", "f4"]), 12), ["f0"]);
+  assert.deepEqual(overBudget(entries, new Set(["f0", "f4"]), 8), ["f1", "f3"]);
+  // Kept items stay even when they alone are over the budget; failed and loading ones count nothing.
+  assert.deepEqual(overBudget([["f0", loaded(10)], ["f1", { state: "failed" }], ["f2", loaded(20)]], new Set(["f2"]), 8), ["f0"]);
+});
+
+test("an item loads ahead only while it fits beside the kept and running ones, and never past one item over the budget", () => {
+  const loaded = (size) => ({ state: "loaded", size });
+  // Nothing loaded yet: its size is unknown, so nothing loads ahead.
+  assert.equal(aheadFits([["f0", { state: "loading" }]], new Set(["f0", "f1"]), 100), false);
+  // The shown 30 and one more as large as the largest (30) fit in 60; a running load counts as 30 too.
+  assert.equal(aheadFits([["f0", loaded(30)]], new Set(["f0", "f1"]), 60), true);
+  assert.equal(aheadFits([["f0", loaded(30)], ["f1", { state: "loading" }]], new Set(["f0", "f1", "f2"]), 60), false);
+  // Items not kept will be dropped, so they do not count; the largest loaded one still sizes the next.
+  assert.equal(aheadFits([["f0", loaded(50)], ["f1", loaded(10)]], new Set(["f1", "f2"]), 60), true);
+  assert.equal(aheadFits([["f0", loaded(50)], ["f1", loaded(20)]], new Set(["f1", "f2"]), 60), false);
+  // An item over the budget on its own is shown, and nothing loads ahead of it.
+  assert.equal(aheadFits([["f0", loaded(80)]], new Set(["f0", "f1"]), 60), false);
+  assert.ok(SCENE_ITEM_BUDGET >= 1024 ** 3);
+});
+
+test("loaded items over the budget go least recently used first, never the shown or wanted ones", async () => {
+  const { items, calls, disposed } = harness({ concurrency: 4, budget: 3 });
   for (const url of ["f0", "f1", "f2", "f3"]) {
     ask(items, url);
     calls.at(-1).resolve();
@@ -125,6 +150,41 @@ test("loaded items beyond the limit go least recently used first, never the show
   await settle();
   assert.deepEqual(disposed, ["f0", "f2"]);
   assert.deepEqual([...items.items.keys()], ["f3", "f1", "f4"]);
+});
+
+test("an item over the budget on its own is shown, loads nothing ahead, and the one before it goes once it shows", async () => {
+  const { items, calls, disposed } = harness({ concurrency: 2, budget: 100 });
+  ask(items, "f0", ["f1", "f2"]);
+  assert.deepEqual(calls.map((call) => call.url), ["f0"]);
+  calls[0].resolve(150);
+  await settle();
+  assert.deepEqual(ask(items, "f0", ["f1", "f2"]).object, { url: "f0" });
+  assert.deepEqual(calls.map((call) => call.url), ["f0"]);
+  // The next shown item loads while the loaded one still shows; then the old one goes.
+  assert.deepEqual(ask(items, "f1", ["f2"]).object, { url: "f0" });
+  assert.deepEqual(calls.map((call) => call.url), ["f0", "f1"]);
+  calls[1].resolve(150);
+  await settle();
+  assert.deepEqual(ask(items, "f1", ["f2"]).object, { url: "f1" });
+  assert.deepEqual(disposed, ["f0"]);
+  assert.deepEqual(calls.map((call) => call.url), ["f0", "f1"]);
+});
+
+test("items load ahead while they fit the budget", async () => {
+  const { items, calls } = harness({ concurrency: 2, budget: 100 });
+  ask(items, "f0", ["f1", "f2", "f3"]);
+  calls[0].resolve(30);
+  await settle();
+  // Beside f0 (30), f1 and then f2 running (each taken as 30) fit in 100.
+  assert.deepEqual(calls.map((call) => call.url), ["f0", "f1", "f2"]);
+  calls[1].resolve(30);
+  calls[2].resolve(30);
+  await settle();
+  // f3 would make 120.
+  assert.deepEqual(calls.map((call) => call.url), ["f0", "f1", "f2"]);
+  assert.deepEqual(ask(items, "f1", ["f2", "f3"]).object, { url: "f1" });
+  // Once f0 is no longer wanted it does not count, and f3 fits.
+  assert.deepEqual(calls.map((call) => call.url), ["f0", "f1", "f2", "f3"]);
 });
 
 test("items of another input are dropped at once", async () => {

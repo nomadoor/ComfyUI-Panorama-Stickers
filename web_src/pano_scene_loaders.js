@@ -49,11 +49,13 @@ async function fetchBytes(url, signal) {
 
 const gltfLoader = new GLTFLoader();
 
-// load() of createSceneItems (pano_scene_items.js): the item's object and its box in its own frame (a
-// SPLAT's in 3DGS coordinates).
+// load() of createSceneItems (pano_scene_items.js): the item's object, its box in its own frame (a
+// SPLAT's in 3DGS coordinates) and the bytes it loaded, for the budget of loaded items. The fetched bytes
+// are let go once handed to the parser, so only the parsed item stays.
 export async function loadSceneItem(kind, url, signal) {
-  const bytes = await fetchBytes(url, signal);
+  let bytes = await fetchBytes(url, signal);
   signal.throwIfAborted();
+  const size = bytes.byteLength;
   if (kind === "splat") {
     const { SplatMesh } = await loadSpark();
     signal.throwIfAborted();
@@ -61,11 +63,14 @@ export async function loadSceneItem(kind, url, signal) {
     // The editor picks a SPLAT on its box (pano_three_view.js pickAt): Spark's raycast walks every splat
     // on the main thread.
     const mesh = new SplatMesh({ fileBytes: bytes, fileType: "ply", raycastable: false });
+    bytes = null;
     await mesh.initialized;
-    return { object: mesh, box: boxValue(mesh.getBoundingBox(true)) };
+    return { object: mesh, box: boxValue(mesh.getBoundingBox(true)), size };
   }
-  const gltf = await gltfLoader.parseAsync(bytes, "");
-  return { object: makeUnlit(gltf.scene), box: boxValue(new Box3().setFromObject(gltf.scene)) };
+  const parsing = gltfLoader.parseAsync(bytes, "");
+  bytes = null;
+  const gltf = await parsing;
+  return { object: makeUnlit(gltf.scene), box: boxValue(new Box3().setFromObject(gltf.scene)), size };
 }
 
 export function disposeSceneItem(item) {

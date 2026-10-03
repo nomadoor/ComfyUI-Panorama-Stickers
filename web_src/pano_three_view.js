@@ -56,8 +56,6 @@ import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pan
 const MAX_RENDER_SIDE = 2048;
 const DOME_RADIUS = 100;
 const STICKER_DISTANCE = 50;
-// Loaded `scene` items kept at once (a MoGe VIDEO has one GLB per frame).
-const SCENE_ITEM_LIMIT = 8;
 const ORIGIN_COLOR = 0xffdd57;
 
 // The ERP is laid out in the panorama convention (forward +Z); World is glTF (forward -Z).
@@ -469,7 +467,6 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     dispose: disposeSceneItem,
     onUpdate,
     concurrency: SCENE_LOADS,
-    limit: SCENE_ITEM_LIMIT,
   });
   // The items of the `sticker` input's 3D media (#63), loaded the same way. An item loads here even when
   // `scene` has the same file, since an object has one parent.
@@ -478,7 +475,6 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     dispose: disposeSceneItem,
     onUpdate,
     concurrency: SCENE_LOADS,
-    limit: SCENE_ITEM_LIMIT,
   });
   const domeGeometry = new SphereGeometry(DOME_RADIUS, 64, 32);
   const planeGeometry = new PlaneGeometry(1, 1);
