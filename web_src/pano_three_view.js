@@ -5,8 +5,8 @@
 // libraries and these files instead of importing back from panorama_suite.js; pano_editor_view.js and
 // pano_space.js do the math.
 //
-// Every render rebuilds the scene from the given layers. Only GPU resources (meshes, materials,
-// textures and the loaded `scene` items) are reused between renders; nothing here is saved.
+// Every render sets the scene up from the given layers. Only GPU resources (meshes, materials, textures,
+// the loaded `scene` items and the World's objects) are reused between renders; nothing here is saved.
 import {
   AxesHelper,
   BackSide,
@@ -15,6 +15,7 @@ import {
   CustomBlending,
   DoubleSide,
   Float32BufferAttribute,
+  FloatType,
   GridHelper,
   Group,
   LineBasicMaterial,
@@ -29,20 +30,25 @@ import {
   OneFactor,
   OneMinusSrcAlphaFactor,
   PerspectiveCamera,
+  NearestFilter,
   PlaneGeometry,
   Quaternion,
-  Raycaster,
+  RGBAFormat,
   RepeatWrapping,
   Scene,
   ShaderMaterial,
   SphereGeometry,
   Texture,
+  UnsignedByteType,
   Vector2,
+  Vector3,
   Vector4,
   VideoTexture,
+  WebGLRenderTarget,
   WebGLRenderer,
 } from "three";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
 
@@ -292,32 +298,50 @@ function devicePoint(x, y, width, height) {
   return new Vector2(x / width * 2 - 1, 1 - y / height * 2);
 }
 
-// The nearest intersection of `objects` (three.js objects in the World, searched with their children)
-// seen at (x, y) of a width x height view drawn with camera (a spaceCamera() setup, pano_space.js), or
-// undefined. Meshes and planes hit on their triangles; a SPLAT's SplatMesh hits with Spark's own raycast
-// (its splats with enough opacity). The objects' World matrices must be current.
-function raycastHit(objects, camera, x, y, width, height) {
-  const ray = new PerspectiveCamera();
-  setCamera(ray, camera);
-  const raycaster = new Raycaster();
-  raycaster.setFromCamera(devicePoint(x, y, width, height), ray);
-  return raycaster.intersectObjects(objects, true)[0];
+// The pick of the World content (pick() below) draws the pixel under the pointer with only the pickable
+// objects of `world`: entries are { object, stickerId } for its children that are hit on their
+// triangles, and entry i draws its meshes in materialOf(i). The other children of `world` (the guides,
+// the lines, the gizmo, Spark's renderer) and the lines or points inside an entry are hidden meanwhile.
+// Runs draw() and puts every object and material back after it.
+export function pickPass(world, entries, materialOf, draw) {
+  const roots = new Set(entries.map((entry) => entry.object));
+  const hidden = world.children.filter((child) => child.visible && !roots.has(child));
+  const swapped = [];
+  entries.forEach((entry, index) => {
+    const material = materialOf(index);
+    entry.object.traverse((object) => {
+      if (object.isMesh) {
+        swapped.push([object, object.material]);
+        object.material = material;
+      } else if ((object.isLine || object.isPoints || object.isSprite) && object.visible) {
+        hidden.push(object);
+      }
+    });
+  });
+  hidden.forEach((object) => { object.visible = false; });
+  const result = draw();
+  hidden.forEach((object) => { object.visible = true; });
+  swapped.forEach(([object, material]) => { object.material = material; });
+  return result;
 }
 
-// The World point of raycastHit() as [x, y, z], or null.
-export function raycastPoint(objects, camera, x, y, width, height) {
-  const hit = raycastHit(objects, camera, x, y, width, height);
-  return hit ? hit.point.toArray() : null;
+// Puts children in parent in this order, unless it holds them so already. Returns whether it changed.
+export function setChildren(parent, children) {
+  if (parent.children.length === children.length && children.every((child, index) => parent.children[index] === child)) return false;
+  parent.clear();
+  if (children.length) parent.add(...children);
+  return true;
 }
 
-// The world Sticker of the nearest intersection at (x, y), as raycastHit() finds it: the id its object or
-// an ancestor carries (userData.stickerId), or null when the nearest is not a Sticker (the `scene`
-// content) or nothing is there.
-export function raycastStickerId(objects, camera, x, y, width, height) {
-  for (let object = raycastHit(objects, camera, x, y, width, height)?.object; object; object = object.parent) {
-    if (object.userData.stickerId) return object.userData.stickerId;
-  }
-  return null;
+// The line objects of `sets` ([{ segments, color }], createLines) kept in cache ({ key, lines }): made
+// again only when the sets change, and the ones before are freed then.
+export function cachedLines(cache, sets) {
+  const key = JSON.stringify(sets);
+  if (cache.key === key) return cache.lines;
+  cache.lines.forEach((line) => disposeObject(line));
+  cache.key = key;
+  cache.lines = sets.map(createLines);
+  return cache.lines;
 }
 
 // The gizmo of the selected world Sticker (#72): three.js TransformControls seen from camera, on a
@@ -329,11 +353,12 @@ export function createGizmo(camera) {
   controls.attach(target);
   let shown = false;
   return {
-    // Adds it to `world` (just cleared) at { mode ("translate", "rotate" or "scale"), transform
-    // ({ position, quaternion, scale }, as pano_space.js sceneTransform() gives it) }. It draws over the
-    // World (its materials do not test depth). While a handle is dragged the stand-in keeps where the drag
-    // took it, so it follows the pointer even when the Sticker's value is taken at another frame.
-    show(world, { mode, transform }) {
+    // Shows it at { mode ("translate", "rotate" or "scale"), transform ({ position, quaternion, scale }, as
+    // pano_space.js sceneTransform() gives it) }, and returns the objects to add to the World. It draws
+    // over the World (its materials do not test depth). While a handle is dragged the stand-in keeps
+    // where the drag took it, so it follows the pointer even when the Sticker's value is taken at another
+    // frame.
+    show({ mode, transform }) {
       shown = true;
       if (!controls.dragging) {
         controls.mode = mode;
@@ -341,8 +366,7 @@ export function createGizmo(camera) {
         target.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
         target.scale.setScalar(transform.scale);
       }
-      world.add(target);
-      world.add(controls.getHelper());
+      return [target, controls.getHelper()];
     },
     // Not shown in this frame: a drag in progress ends, so the gizmo can be grabbed when it shows again.
     hide() {
@@ -415,13 +439,21 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     return new Mesh(planeGeometry, material);
   };
   let guides = null;
-  let lines = [];
-  // The World content the last space render drew, which pick() hits: the `scene` and 3D Sticker items
-  // and the world Sticker planes, not the guides. pickKey names what they are and where, so a point
-  // picked before can be reused while it stays the same.
+  const lines = { key: null, lines: [] };
+  // The `scene` and 3D Sticker items' groups (by item object), kept while the item is drawn.
+  const contentGroups = new WeakMap();
+  // The World content the last space render drew, which pick() hits, not the guides: pickable are
+  // pickPass() entries of what is hit on its triangles, pickBoxes the SPLATs, hit on their boxes
+  // ({ object, box, stickerId }). contentKey names what they are and where.
   let pickable = [];
-  let pickParts = [];
-  let pickKey = "";
+  let pickBoxes = [];
+  let contentKey = "";
+  // The last pick ({ key, hit }, pickCacheKey()) and what it draws with: a 1 x 1 target (a float one
+  // where the GPU can draw to it), its camera and the pick materials by entry.
+  let lastPick = { key: null, hit: null };
+  let pickTarget = null;
+  const pickCamera = new PerspectiveCamera();
+  const pickMaterials = [];
   let spark = null;
   let closed = false;
   // The selected world Sticker's gizmo (createGizmo), made the first time one shows.
@@ -521,14 +553,17 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     const item = items.request(input);
     if (!item) return null;
     item.object.quaternion.set(itemQuaternion.x, itemQuaternion.y, itemQuaternion.z, itemQuaternion.w);
-    const group = new Group();
+    let group = contentGroups.get(item.object);
+    if (!group) {
+      group = new Group();
+      group.add(item.object);
+      contentGroups.set(item.object, group);
+    }
     group.position.set(...transform.position);
     group.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
     group.scale.setScalar(transform.scale);
-    group.add(item.object);
     // A 3D Sticker is picked as that Sticker.
-    if (input.id) group.userData.stickerId = input.id;
-    return { group, splat: item.kind === "splat", object: item.object, transform };
+    return { group, splat: item.kind === "splat", object: item.object, box: item.box, transform, stickerId: input.id ?? null };
   }
 
   // A 3D Sticker's opacity: a SPLAT's own, a GLB's on its unlit materials. A see-through GLB does not
@@ -548,9 +583,6 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   }
 
   function addWorldSticker(owned, mesh, layer) {
-    mesh.userData.stickerId = layer.id;
-    pickable.push(mesh);
-    pickParts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
     const { uniforms } = mesh.material;
     uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true, layer.source ?? layer.media);
     uniforms.opacity.value = layer.opacity;
@@ -558,18 +590,18 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     mesh.position.set(...layer.position);
     mesh.quaternion.set(layer.quaternion.x, layer.quaternion.y, layer.quaternion.z, layer.quaternion.w);
     mesh.scale.set(layer.width, layer.height, 1);
-    world.add(mesh);
+    return mesh;
   }
 
   // The World of a space input: the guides, the `scene` item, the 3D Sticker's item, the world Sticker
-  // planes and lines.
+  // planes and lines. The objects are kept between renders, and `world` is filled again only when they
+  // change. What is not seen (opacity 0) is not picked.
   function buildWorld(owned, space) {
-    world.clear();
-    lines.forEach((line) => disposeObject(line));
-    lines = [];
+    const children = [];
+    const parts = [];
     pickable = [];
-    pickParts = [];
-    if (space.grid) world.add(guideGroup(space.grid));
+    pickBoxes = [];
+    if (space.grid) children.push(guideGroup(space.grid));
     sceneItems.retain(space.sceneUrls ?? []);
     stickerItems.retain(space.stickerUrls ?? []);
     const sticker = space.sticker ? contentGroup(stickerItems, space.sticker) : null;
@@ -581,31 +613,37 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     if (splat && !spark) {
       loadSpark().then(({ SparkRenderer }) => {
         if (closed) return;
-        spark ||= new SparkRenderer({ renderer, onDirty: onUpdate });
+        // The editor does not page or LoD its SPLATs, so Spark's LoD worker is not started.
+        spark ||= new SparkRenderer({ renderer, onDirty: onUpdate, enableLod: false });
         onUpdate();
       }).catch((error) => console.error("[PanoramaStickers] Spark is unavailable", error));
     }
     for (const content of contents) {
       if (content.splat && !spark) continue;
-      world.add(content.group);
-      pickable.push(content.group);
-      pickParts.push([content.object.uuid, content.transform]);
+      children.push(content.group);
+      const opacity = content === sticker ? space.sticker.opacity : 1;
+      if (!(opacity > 0)) continue;
+      if (content.splat) pickBoxes.push({ object: content.object, box: content.box, stickerId: content.stickerId });
+      else pickable.push({ object: content.group, stickerId: content.stickerId });
+      parts.push([content.object.uuid, content.transform]);
     }
-    if (splat && spark) world.add(spark);
+    if (splat && spark) children.push(spark);
     let index = 0;
     for (const layer of space.stickers) {
-      if (layerDrawable(owned, layer)) addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
+      if (!layerDrawable(owned, layer)) continue;
+      const mesh = addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
+      children.push(mesh);
+      if (!(layer.opacity > 0)) continue;
+      pickable.push({ object: mesh, stickerId: layer.id });
+      parts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
     }
-    for (const set of space.lines ?? []) {
-      const line = createLines(set);
-      lines.push(line);
-      world.add(line);
-    }
-    pickKey = JSON.stringify(pickParts);
+    children.push(...cachedLines(lines, space.lines ?? []));
+    contentKey = JSON.stringify(parts);
     // A space without `gizmo` (the Cutout's camera preview, #77) leaves the gizmo of the view as it is, so
     // drawing the preview between two frames of the view does not end a drag.
-    if (space.gizmo) (gizmo ||= createGizmo(worldCamera)).show(world, space.gizmo);
+    if (space.gizmo) children.push(...(gizmo ||= createGizmo(worldCamera)).show(space.gizmo));
     else if (space.gizmo === null) gizmo?.hide();
+    setChildren(world, children);
   }
 
   function draw(projection, input, space = null) {
@@ -685,17 +723,94 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     return sceneItems.box(url) ?? stickerItems.box(url);
   }
 
-  // The World point of the content the last space render drew at (x, y) of a width x height view from
-  // camera (a spaceCamera()), or null over empty space (raycastPoint).
-  function pick(camera, x, y, width, height) {
-    world.updateMatrixWorld();
-    return raycastPoint(pickable, camera, x, y, width, height);
+  function pickMaterial(index) {
+    if (!pickMaterials[index]) {
+      pickMaterials[index] = new ShaderMaterial({
+        vertexShader: PICK_VERTEX,
+        fragmentShader: PICK_FRAGMENT,
+        uniforms: { pickId: { value: index + 1 }, pickMode: { value: 0 }, far: { value: 1 } },
+        side: DoubleSide,
+        blending: NoBlending,
+      });
+    }
+    return pickMaterials[index];
   }
 
-  // The id of the world Sticker under (x, y) in the last space render (raycastStickerId), or null.
-  function pickSticker(camera, x, y, width, height) {
+  // The 1 x 1 target picks draw to: RGBA float where the GPU can draw to it, else RGBA8.
+  function ensurePickTarget() {
+    if (pickTarget) return pickTarget;
+    const float = renderer.extensions.has("EXT_color_buffer_float");
+    pickTarget = new WebGLRenderTarget(1, 1, {
+      type: float ? FloatType : UnsignedByteType,
+      format: RGBAFormat,
+      minFilter: NearestFilter,
+      magFilter: NearestFilter,
+      generateMipmaps: false,
+      depthBuffer: true,
+    });
+    return pickTarget;
+  }
+
+  // Draws the pixel at (x, y) with the pickable meshes and reads it back: { id (1 + pickable index),
+  // depth } or null.
+  function drawPick(camera, x, y, width, height) {
+    if (!pickable.length) return null;
+    const target = ensurePickTarget();
+    const float = target.texture.type === FloatType;
+    setCamera(pickCamera, camera);
+    const offset = pickWindow(x, y, width, height);
+    pickCamera.setViewOffset(offset.fullWidth, offset.fullHeight, offset.x, offset.y, offset.width, offset.height);
+    const pixel = float ? new Float32Array(4) : new Uint8Array(4);
+    const read = (mode) => {
+      pickMaterials.forEach((material) => {
+        material.uniforms.pickMode.value = mode;
+        material.uniforms.far.value = camera.far;
+      });
+      renderer.setRenderTarget(target);
+      renderer.render(world, pickCamera);
+      renderer.setRenderTarget(null);
+      renderer.readRenderTargetPixels(target, 0, 0, 1, 1, pixel);
+      return [...pixel];
+    };
+    return pickPass(world, pickable, pickMaterial, () => (float ? readPickFloat(read(0)) : readPickBytes(read(1), read(2), camera.far)));
+  }
+
+  // The nearest content of the last space render at (x, y) of a width x height view from camera (a
+  // spaceCamera()): { point (World [x, y, z]), stickerId (the Sticker it is, or null for the `scene`
+  // content) } or null over empty space. Meshes and planes hit on their triangles, from both sides; a
+  // SPLAT on its box. The same pixel of the same view over the same content gives the pick before.
+  function pickAt(camera, x, y, width, height) {
+    const key = pickCacheKey(camera, x, y, width, height, contentKey);
+    if (lastPick.key === key) return lastPick.hit;
     world.updateMatrixWorld();
-    return raycastStickerId(pickable, camera, x, y, width, height);
+    const ray = pickRay(camera, x, y, width, height);
+    const hits = [];
+    const drawn = drawPick(camera, x, y, width, height);
+    if (drawn) hits.push({ depth: drawn.depth, stickerId: pickable[drawn.id - 1].stickerId });
+    for (const { object, box, stickerId } of pickBoxes) {
+      if (!box) continue;
+      // The ray in the SPLAT's own frame keeps its parameter, which is the depth along the view axis.
+      const inverse = new Matrix4().copy(object.matrixWorld).invert();
+      const origin = new Vector3(...ray.origin).applyMatrix4(inverse).toArray();
+      const direction = new Vector3(...ray.direction).applyMatrix3(new Matrix3().setFromMatrix4(inverse)).toArray();
+      const depth = rayBoxDepth(origin, direction, box);
+      if (depth !== null) hits.push({ depth, stickerId });
+    }
+    const nearest = nearestHit(hits, camera);
+    const hit = nearest && { point: pointAt(ray, nearest.depth), stickerId: nearest.stickerId };
+    lastPick = { key, hit };
+    return hit;
+  }
+
+  // The World point of the content under (x, y) in the last space render (pickAt), or null.
+  function pick(camera, x, y, width, height) {
+    return pickAt(camera, x, y, width, height)?.point ?? null;
+  }
+
+  // The id of the world or 3D Sticker under (x, y) in the last space render (pickAt), or null over the
+  // `scene` content or empty space.
+  function pickSticker(camera, x, y, width, height) {
+    return pickAt(camera, x, y, width, height)?.stickerId ?? null;
   }
 
   // The pointer at (x, y) of a width x height view from camera (a spaceCamera()) on the gizmo of the last
@@ -709,8 +824,8 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
 
   // What pick() hits in the last space render, as a string that changes with it (a MoGe VIDEO's next
   // item, a moved Sticker).
-  function contentKey() {
-    return pickKey;
+  function pickContentKey() {
+    return contentKey;
   }
 
   // input: render()'s input without camera; the frame is the layers laid out as an ERP.
@@ -730,9 +845,11 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     sceneItems.close();
     stickerItems.close();
     if (guides) disposeObject(guides.group);
-    lines.forEach((line) => disposeObject(line));
+    lines.lines.forEach((line) => disposeObject(line));
     gizmo?.dispose();
     worldStickers.forEach((mesh) => mesh.material.dispose());
+    pickMaterials.forEach((material) => material.dispose());
+    pickTarget?.dispose();
     spark?.dispose();
     owners.forEach((entry) => entry.textures.forEach((item) => item.texture.dispose()));
     owners.clear();
@@ -748,5 +865,5 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     renderer.forceContextLoss();
   }
 
-  return { render, renderUnwrap, sceneBox, pick, pickSticker, gizmoPointer, contentKey, release, dispose };
+  return { render, renderUnwrap, sceneBox, pick, pickSticker, gizmoPointer, contentKey: pickContentKey, release, dispose };
 }

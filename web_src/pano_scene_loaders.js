@@ -58,7 +58,9 @@ export async function loadSceneItem(kind, url, signal) {
     const { SplatMesh } = await loadSpark();
     signal.throwIfAborted();
     // The node writes a SPLAT item as PLY; its URL (/view?filename=...) does not end in the extension.
-    const mesh = new SplatMesh({ fileBytes: bytes, fileType: "ply" });
+    // The editor picks a SPLAT on its box (pano_three_view.js pickAt): Spark's raycast walks every splat
+    // on the main thread.
+    const mesh = new SplatMesh({ fileBytes: bytes, fileType: "ply", raycastable: false });
     await mesh.initialized;
     return { object: mesh, box: boxValue(mesh.getBoundingBox(true)) };
   }

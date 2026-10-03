@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, Texture, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Quaternion, Scene, Texture, Vector3 } from "three";
 
 import { makeUnlit } from "../web_src/pano_scene_loaders.js";
-import { applyViewportCamera, createGizmo, raycastPoint, raycastStickerId } from "../web_src/pano_three_view.js";
+import { applyViewportCamera, createGizmo } from "../web_src/pano_three_view.js";
+import { pickRay, pointAt } from "../web_src/pano_pick.js";
 
 import {
   DEFAULT_DISTANCE,
@@ -260,38 +261,6 @@ test("wheel steps toward a point do not stall as they come close, and stop short
   close(Math.hypot(...zoomView(near, target, 1, scale).position.map((value, axis) => value - near.position[axis])), scale * 0.01);
   // At the stop it stays.
   closeVec(zoomView(current, target, 1, scale).position, current.position, 1e-12);
-});
-
-test("the point under the pointer is the nearest hit on the meshes and the planes, through their groups", () => {
-  const width = 640;
-  const height = 360;
-  const start = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 1 };
-  const camera = spaceCamera(start, width, height, { center: [0, 0, -5], radius: 3 });
-  // A `scene` item: a 2 x 2 x 2 box, its group moved and scaled as the `scene` transform does.
-  const group = new Group();
-  group.position.set(0, 0, -6);
-  group.scale.setScalar(2);
-  group.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ side: DoubleSide })));
-  // A world Sticker plane in front of its left half, turned to face the view from its back.
-  const plane = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ side: DoubleSide }));
-  plane.position.set(-0.6, 0, -3);
-  plane.rotation.y = Math.PI;
-  const objects = [group, plane];
-  objects.forEach((object) => object.updateMatrixWorld());
-  // The center of the view hits the box's front face.
-  closeVec(raycastPoint(objects, camera, width / 2, height / 2, width, height), [0, 0, -5], 1e-6);
-  // A point on the box's face hits where it lands on the screen.
-  const onFace = [0.7, -0.4, -5];
-  const at = projectPoint(camera, onFace, width, height);
-  closeVec(raycastPoint(objects, camera, at.x, at.y, width, height), onFace, 1e-6);
-  // The plane is in front of the box, and hits from its back too.
-  const onPlane = [-0.6, 0.2, -3];
-  const planeAt = projectPoint(camera, onPlane, width, height);
-  closeVec(raycastPoint(objects, camera, planeAt.x, planeAt.y, width, height), onPlane, 1e-6);
-  // Empty space hits nothing, and so does content behind the view.
-  assert.equal(raycastPoint(objects, camera, 2, 2, width, height), null);
-  const behind = spaceCamera({ ...start, yaw_deg: 180 }, width, height);
-  assert.equal(raycastPoint(objects, behind, width / 2, height / 2, width, height), null);
 });
 
 test("framing fits a sphere in the view without turning it", () => {
@@ -649,13 +618,10 @@ test("a new world Sticker goes on the surface under the pointer, facing the view
   const height = 360;
   const start = { position: [0.5, 1, 2], yaw_deg: 10, pitch_deg: -5, hFOV_deg: 90, distance: 1 };
   const camera = spaceCamera(start, width, height);
-  const box = new Mesh(new BoxGeometry(4, 4, 1), new MeshBasicMaterial());
-  box.position.set(0, 0, -6);
-  box.updateMatrixWorld();
-  // The pointer over a point of the box's front face hits that point.
+  // The pointer over a point of a surface picks that point at its depth.
   const onFace = [0.8, 0.4, -5.5];
   const pointer = projectPoint(camera, onFace, width, height);
-  const hit = raycastPoint([box], camera, pointer.x, pointer.y, width, height);
+  const hit = pointAt(pickRay(camera, pointer.x, pointer.y, width, height), pointer.z);
   closeVec(hit, onFace, 1e-6);
   const placed = newWorldStickerTransform(start, hit, { center: [0, 0, -6], radius: 3 });
   closeVec(placed.position, hit);
@@ -718,32 +684,6 @@ test("a gizmo's scale stays uniform, taking the axis the drag changed", () => {
   assert.equal(uniformScale(2, [-1, 2, 2]), 2e-3);
 });
 
-test("the world Sticker under the pointer is the one its nearest hit belongs to", () => {
-  const width = 640;
-  const height = 360;
-  const camera = spaceCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, distance: 1 }, width, height);
-  const plane = new Mesh(new PlaneGeometry(2, 2), new MeshBasicMaterial({ side: DoubleSide }));
-  plane.position.set(0, 0, -4);
-  plane.userData.stickerId = "plane";
-  // A 3D Sticker's group carries its id; the item inside it is what the ray hits.
-  const item = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
-  const group = new Group();
-  group.userData.stickerId = "mesh";
-  group.position.set(2.5, 0, -4);
-  group.add(item);
-  const scene = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
-  scene.position.set(-0.5, 0.5, -2);
-  const objects = [plane, group, scene];
-  objects.forEach((object) => object.updateMatrixWorld(true));
-  const at = (p) => projectPoint(camera, p, width, height);
-  const idAt = (p) => raycastStickerId(objects, camera, at(p).x, at(p).y, width, height);
-  assert.equal(idAt([0.5, -0.5, -4]), "plane");
-  assert.equal(idAt([2.5, 0, -3.5]), "mesh");
-  // The `scene` content in front of a plane hides it, and is not a Sticker.
-  assert.equal(idAt([-0.5, 0.5, -1.5]), null);
-  assert.equal(raycastStickerId(objects, camera, 2, 2, width, height), null);
-});
-
 test("the gizmo drags its handle with the pointer and lets go when it stops showing", () => {
   const camera = new PerspectiveCamera(60, 16 / 9, 0.01, 100);
   camera.updateMatrixWorld();
@@ -753,7 +693,7 @@ test("the gizmo drags its handle with the pointer and lets go when it stops show
   const transform = (position) => ({ position, quaternion: { x: 0, y: 0, z: 0, w: 1 }, scale: 1 });
   const show = (position) => {
     world.clear();
-    gizmo.show(world, { mode: "translate", transform: transform(position) });
+    world.add(...gizmo.show({ mode: "translate", transform: transform(position) }));
     world.updateMatrixWorld(true);
   };
   show([0, 0, -5]);
@@ -808,7 +748,7 @@ test("the box a gizmo covers on screen holds all its handles and their pickers",
     for (const mode of ["translate", "rotate", "scale"]) {
       for (const position of points) {
         world.clear();
-        gizmo.show(world, { mode, transform: { position, quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w }, scale: 1 } });
+        world.add(...gizmo.show({ mode, transform: { position, quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w }, scale: 1 } }));
         world.updateMatrixWorld(true);
         const box = gizmoScreenBox(setup, position, mode, width, height);
         const handles = world.children[1].children[0];

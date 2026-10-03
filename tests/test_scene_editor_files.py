@@ -1,4 +1,6 @@
+import json
 import math
+import struct
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +17,7 @@ from comfy_api.latest import Types
 from comfy.ldm.moge.panorama import _uv_grid, spherical_uv_to_directions
 from comfy_extras.nodes_gaussian_splat import SplatToFile3D
 from comfy_extras.nodes_moge import MoGePointMapToMesh
+from comfy_extras.nodes_save_3d import mesh_item_to_glb_bytes
 
 from comfyui_pano_suite import nodes, scene_files
 from comfyui_pano_suite.core.math import ray_directions
@@ -207,3 +210,75 @@ def test_stickers_node_shows_the_scene_files_after_running(monkeypatch):
     assert output.ui["pano_scene_meta"] == [{"kind": "mesh"}] and len(output.ui["pano_scene_files"]) == 2
     assert all(_path(entry).exists() for entry in output.ui["pano_scene_files"])
     assert "pano_scene_files" not in without.ui
+
+
+def _glb_json(path: Path) -> dict:
+    data = path.read_bytes()
+    return json.loads(data[20:20 + struct.unpack_from("<I", data, 12)[0]])
+
+
+def _stepped_panorama(height, width):
+    """MoGe panorama points with a depth step across them, so the core's edge check drops pixels along it."""
+    distance = torch.where(torch.arange(width) < width // 2, 2.0, 5.0).expand(height, width)
+    return _panorama_points(height, width, 1.0) * distance[None, :, :, None]
+
+
+def test_moge_grid_meshes_are_thinned_like_their_moge_geometry(monkeypatch):
+    monkeypatch.setattr(scene_files, "MOGE_EDITOR_GRID", 8)
+    rows, columns = torch.meshgrid(torch.linspace(-1.0, 1.0, 12), torch.linspace(-1.0, 1.0, 20), indexing="ij")
+    depth = 2.0 + 0.02 * columns + torch.where(columns > 0.3, 1.0, 0.0)
+    perspective = torch.stack([columns * depth, rows * depth, depth], dim=-1)[None]
+
+    for points, intrinsics in ((_stepped_panorama(12, 24), False), (perspective, True)):
+        geometry = _moge(points, intrinsics=intrinsics)
+        if not intrinsics:
+            geometry["depth"] = points.norm(dim=-1)
+        mesh = MoGePointMapToMesh.execute(geometry, 0, 1, 0.04, True).result[0]
+        assert mesh.vertices.shape[1] < points.shape[1] * points.shape[2]
+
+        thinned = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
+        moge = _path(nodes._scene_ui(geometry)["pano_scene_files"][0])
+
+        # The same vertices, faces, uvs and texture as the MOGE_GEOMETRY's file, at a third of the grid.
+        assert thinned.read_bytes() == moge.read_bytes()
+        assert _glb_positions(thinned).shape[0] < mesh.vertices.shape[1]
+
+
+def test_meshes_over_the_face_limit_are_clustered_for_the_editor(monkeypatch):
+    monkeypatch.setattr(scene_files, "MESH_EDITOR_FACES", 300)
+    # A sphere whose uvs are not a grid (they are bent), with a texture and vertex colors.
+    rows, columns = torch.meshgrid(torch.linspace(0.05, 0.95, 40), torch.linspace(0.0, 1.0, 40), indexing="ij")
+    theta, phi = rows * math.pi, columns * 2.0 * math.pi
+    vertices = torch.stack([theta.sin() * phi.cos(), theta.cos(), theta.sin() * phi.sin()], dim=-1).reshape(-1, 3)
+    uvs = torch.stack([columns, rows ** 2], dim=-1).reshape(-1, 2)
+    index = torch.arange(40 * 40).reshape(40, 40)
+    a, b, c, d = index[:-1, :-1], index[:-1, 1:], index[1:, 1:], index[1:, :-1]
+    faces = torch.cat([torch.stack([a, b, c], -1).reshape(-1, 3), torch.stack([a, c, d], -1).reshape(-1, 3)])
+    mesh = Types.MESH(vertices[None], faces[None], uvs=uvs[None], vertex_colors=torch.rand((1, 1600, 3)), texture=torch.rand((1, 16, 32, 3)))
+
+    path = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
+
+    assert 0 < _glb_faces(path).shape[0] <= 300
+    positions = _glb_positions(path)
+    assert positions.shape[0] < 1600
+    # Cluster means stay on the content (in the unit ball, near the sphere).
+    radius = np.linalg.norm(positions, axis=-1)
+    assert (radius <= 1.0 + 1e-6).all() and (radius > 0.8).all()
+    gltf = _glb_json(path)
+    attributes = gltf["meshes"][0]["primitives"][0]["attributes"]
+    assert "TEXCOORD_0" in attributes and "COLOR_0" in attributes
+    assert len(gltf["images"]) == 1
+
+
+def test_small_meshes_are_written_as_they_are(monkeypatch):
+    monkeypatch.setattr(scene_files, "MESH_EDITOR_FACES", 300)
+    general = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]])
+    geometry = _moge(_stepped_panorama(12, 24))
+    geometry["depth"] = geometry["points"].norm(dim=-1)
+    # A grid MESH within MOGE_EDITOR_GRID, though over the face limit for any other MESH.
+    grid = MoGePointMapToMesh.execute(geometry, 0, 1, 0.04, True).result[0]
+    assert grid.faces.shape[1] > 300
+
+    for mesh in (general, grid):
+        path = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
+        assert path.read_bytes() == mesh_item_to_glb_bytes(mesh, 0)
