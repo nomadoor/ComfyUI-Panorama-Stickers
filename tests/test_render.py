@@ -6,6 +6,7 @@ import torch
 
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.math import camera_basis, ray_directions
+from comfyui_pano_suite.core.painting import load_painting_layer_payload
 from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, composite_frame, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
@@ -419,14 +420,15 @@ def test_perspective_output_draws_bg_color_outside_the_hemisphere_of_the_bg_medi
 
 
 def test_perspective_output_reuses_the_sky_while_an_animated_fov_keeps_its_resolution(monkeypatch):
-    counts = _count_calls(monkeypatch, "_render_sky", "_project_sky")
+    counts = _count_calls(monkeypatch, "_render_sky", "_sky_layers", "_shoot_sky")
     cache = {}
 
     for hfov in (60.0, 61.0, 20.0):
         _render(Projection.perspective(32, 32, hfov), _sticker_state(), _red_source(), cache=cache)
 
-    # 60 and 61 degrees draw the Sky at the same size; 20 degrees needs a finer one.
-    assert counts == {"_render_sky": 2, "_project_sky": 3}
+    # The Sky is not drawn into an ERP. 60 and 61 degrees draw the state's paint at the same size; 20 degrees
+    # needs a finer one.
+    assert counts == {"_render_sky": 0, "_sky_layers": 2, "_shoot_sky": 3}
 
 
 @pytest.mark.parametrize("projection, bg_width, size", [
@@ -439,3 +441,144 @@ def test_perspective_output_reuses_the_sky_while_an_animated_fov_keeps_its_resol
 ])
 def test_perspective_sky_is_as_fine_as_the_output_center_and_the_bg_media(projection, bg_width, size):
     assert render_module._sky_size(projection, bg_width) == size
+
+
+def _through_the_capped_sky_erp(evaluated, sources, projection):
+    """The Sky as perspective outputs drew it before, through a 360 ERP at most 4096 wide."""
+    sky_erp = render_module._render_sky(evaluated, sources, (4096, 2048), torch.device("cpu"))
+    return render_module._project_sky(*sky_erp, render_module._view(render_module._rays(evaluated["camera"], projection, torch.device("cpu"))))
+
+
+def test_narrow_perspective_sky_sticker_keeps_the_lines_of_its_source():
+    # Stripes 4 source pixels wide on a Sticker 2 degrees wide, shot by a 2 degree Camera at one source pixel per
+    # output pixel. A 4096 ERP has 23 pixels over the Sticker, so it blurs the 64 stripes away.
+    rgba = np.ones((256, 256, 4), dtype=np.float32)
+    rgba[:, (np.arange(256) // 4) % 2 == 1, :3] = 0.0
+    sources = SceneSources({"s": StickerSource(rgba, {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0})}, {})
+    projection = Projection.perspective(256, 256, 2.0)
+    state = _sticker_state(hFOV_deg=2.0, vFOV_deg=2.0)
+
+    color, _mask, _depth = _render(projection, state, sources)
+    _loaded, evaluated = _scene(**state)
+    capped, _capped_mask = _through_the_capped_sky_erp(evaluated, sources, projection)
+
+    # Only the pixels across each edge between stripes differ from the source; through the ERP the stripes are lost.
+    source = torch.tensor(rgba[128, 8:248, 0])
+    assert float((color[128, 8:248, 0] - source).abs().mean()) < 0.1
+    assert float((capped[128, 8:248, 0] - source).abs().mean()) > 0.4
+
+
+def test_narrow_perspective_paint_samples_the_uploaded_raster_at_its_own_resolution():
+    # An uploaded mask 8192 wide with stripes one pixel wide; at 0.5 degrees each covers 5.7 output pixels. Resized
+    # to a 4096 ERP, each pair of stripes becomes one gray pixel.
+    mask = np.zeros((64, 8192), dtype=np.float32)
+    mask[:, 1::2] = 1.0
+    sources = SceneSources({}, load_scene_state({"version": 2})["painting"], load_painting_layer_payload({"revision": "stripes", "mask": mask}))
+    projection = Projection.perspective(64, 16, 0.5)
+
+    _color, shot, _depth = _render(projection, sources=sources)
+    _loaded, evaluated = _scene()
+    _capped, capped = _through_the_capped_sky_erp(evaluated, sources, projection)
+
+    assert float(shot[8].min()) < 0.05 and float(shot[8].max()) > 0.95
+    assert float(capped[8].max() - capped[8].min()) < 0.05
+
+
+def test_minified_bg_media_is_averaged_over_each_output_pixel():
+    # Columns alternating black and white, 10 ERP pixels to each output pixel: point samples would land on either.
+    bg = torch.zeros((512, 1024, 3))
+    bg[:, 1::2] = 1.0
+
+    for projection, state in ((Projection.perspective(48, 32, 90.0), None), (Projection.erp(96, 48), _camera(pitch_deg=30.0))):
+        color, _mask, _depth = _render(projection, state, bg=bg)
+        # The ERP's top and bottom rows are slivers narrower than a column of the bg_media.
+        color = color[1:-1]
+        assert torch.allclose(color, torch.full_like(color, 0.5), atol=0.05)
+
+
+def test_magnified_bg_media_is_sampled_bilinearly_as_before():
+    bg = torch.rand((32, 64, 3), generator=torch.Generator().manual_seed(1))
+    projection = Projection.perspective(64, 48, 60.0)
+    _loaded, evaluated = _scene()
+
+    color, _mask, _depth = _render(projection, bg=bg)
+
+    view = render_module._view(render_module._rays(evaluated["camera"], projection, torch.device("cpu")))
+    assert torch.equal(color, render_module._sample_erp(bg, view))
+
+
+def test_bg_media_shrunk_to_an_unturned_erp_output_is_averaged():
+    # Every fourth column is white; a 4x smaller output is a quarter gray, where a bilinear sample between two
+    # black columns would be black.
+    bg = torch.zeros((64, 128, 3))
+    bg[:, ::4] = 1.0
+
+    color, _mask, _depth = _render(Projection.erp(32, 16), bg=bg)
+
+    assert torch.allclose(color, torch.full_like(color, 0.25), atol=0.02)
+
+
+def test_direct_sky_sticker_matches_the_sky_erp_inside_and_covers_its_edges_partly():
+    # A rolled, pitched, cropped Sticker with a smooth source: inside it both ways sample the same color; across its
+    # edges the direct one covers the pixels in part.
+    rows, columns = np.mgrid[0:48, 0:64].astype(np.float32)
+    rgba = np.ones((48, 64, 4), dtype=np.float32)
+    rgba[..., 0], rgba[..., 1], rgba[..., 2] = columns / 63.0, rows / 47.0, 0.5
+    sources = SceneSources({"s": StickerSource(rgba, {"x0": 0.1, "y0": 0.2, "x1": 0.9, "y1": 0.7})}, {})
+    pose = {"yaw_deg": 30.0, "pitch_deg": 20.0, "roll_deg": 25.0}
+    state = {**_sticker_state(hFOV_deg=40.0, vFOV_deg=30.0, **pose), **_camera(**pose)}
+    projection = Projection.perspective(96, 64, 50.0)
+
+    color, _mask, _depth = _render(projection, state, sources)
+    _loaded, evaluated = _scene(**state)
+    sky = render_module._shoot_sky(*render_module._sky_layers(evaluated, sources, (64, 32), torch.device("cpu"), {}, {"size": (64, 32)}),
+                                   render_module._rays(evaluated["camera"], projection, torch.device("cpu")),
+                                   render_module._view(render_module._rays(evaluated["camera"], projection, torch.device("cpu"))))[0]
+    through_erp, _capped_mask = _through_the_capped_sky_erp(evaluated, sources, projection)
+
+    inside = (sky[..., 3] > 0.999) & (through_erp[..., 3] > 0.999)
+    assert int(inside.sum()) > 2000
+    assert torch.allclose(sky[..., :3][inside], through_erp[..., :3][inside], atol=0.02)
+    assert torch.allclose(color[inside], sky[..., :3][inside])
+    assert int(((sky[..., 3] > 0.1) & (sky[..., 3] < 0.9)).sum()) > 50
+
+
+@pytest.mark.parametrize("width", [64, 100])
+def test_shrinking_a_wrapped_erp_reaches_across_the_seam_symmetrically(width):
+    # Two bright columns on either side of the seam: the shrunk image is the same mirrored about the seam, and
+    # (when the seam is on a whole number of output columns from the middle) the same as the pair in the middle.
+    image = torch.zeros((4, width, 1))
+    image[:, [0, width - 1]] = 1.0
+    image[:, [width // 2 - 1, width // 2]] = 1.0
+
+    shrunk = render_module._shrink(image, 2, 16, wrap=True)[0, :, 0]
+    clamped = render_module._shrink(image, 2, 16, wrap=False)[0, :, 0]
+
+    assert torch.allclose(shrunk, shrunk.flip(0), atol=1e-6)
+    if width == 64:
+        assert torch.allclose(shrunk, torch.roll(shrunk, 8), atol=1e-6)
+        assert not torch.allclose(clamped, torch.roll(clamped, 8), atol=1e-3)
+
+
+def test_perspective_sky_keeps_its_paint_and_ripmaps_while_only_stickers_and_the_camera_move(monkeypatch):
+    counts = _count_calls(monkeypatch, "_sky_layers", "_premultiplied", "_shrink")
+    stroke = {**_mask_dot((0.0, 0.0, 1.0)), "layerKind": "paint", "color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}}
+    painting = {"version": 1, "paint": {"strokes": [stroke]}, "mask": {"strokes": []}, "groups": []}
+    rgba = np.random.default_rng(0).random((256, 256, 4), dtype=np.float32)
+    bg = torch.rand((256, 512, 3), generator=torch.Generator().manual_seed(0))
+    cache = {}
+    shrunk = []
+
+    for yaw in (0.0, 5.0, 10.0):
+        state = {**_sticker_state(yaw_deg=yaw, hFOV_deg=30.0, vFOV_deg=30.0), **_camera(yaw_deg=yaw), "painting": painting}
+        loaded, evaluated = _scene(**state)
+        sources = SceneSources({"s": StickerSource(rgba, {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0})}, loaded["painting"])
+        render_frame(evaluated, sources, evaluated["camera"], Projection.perspective(24, 16, 120.0), bg=bg, bg_key=0, bg_color=GREEN,
+                     device=torch.device("cpu"), cache=cache)
+        shrunk.append(counts["_shrink"])
+
+    # Each frame orders the Sky again, but the Sticker source and the paint go to the device once, and the shrunk
+    # copies of the background and the Sticker are made on the first frame only.
+    assert counts["_sky_layers"] == 3
+    assert counts["_premultiplied"] == 2
+    assert shrunk[0] > 0 and shrunk[0] == shrunk[-1]

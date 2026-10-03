@@ -14,7 +14,7 @@ from io import BytesIO
 import numpy as np
 import torch
 from comfy_api.latest import Types
-from comfy_extras.nodes_gaussian_splat import File3DToSplat, _detect_splat_format, _gaussian_item, _linear_to_srgb, _quantile, _quat_to_mat, _srgb_to_linear
+from comfy_extras.nodes_gaussian_splat import _C0, File3DToSplat, _detect_splat_format, _gaussian_item, _linear_to_srgb, _quantile, _quat_to_mat, _srgb_to_linear
 
 from .core.math import ray_directions
 from .core.world_render import CameraView, SceneContent
@@ -25,6 +25,10 @@ SHARPEN = 2.0
 # A SPLAT is in the 3DGS frame (Y down, Z forward); its glTF frame is a half turn about X, as the core's Load3D
 # and RenderSplat place it.
 _GLTF_TO_SPLAT = np.diag([1.0, -1.0, -1.0])
+# The constants of the real spherical harmonics of degrees 1 to 3, in the order 3DGS stores their coefficients.
+_SH_C1 = 0.4886025119029199
+_SH_C2 = (1.0925484305920792, -1.0925484305920792, 0.31539156525252005, -1.0925484305920792, 0.5462742152960396)
+_SH_C3 = (-0.5900435899266435, 2.890611442640554, -0.4570457994644658, 0.3731763325901154, -0.4570457994644658, 1.445305721320277, -0.5900435899266435)
 
 
 def read_splat_file(model_3d: Types.File3D) -> Types.SPLAT | None:
@@ -51,10 +55,41 @@ def _is_gaussian_ply(data: bytes) -> bool:
 
 
 def splat_content(splat: Types.SPLAT) -> SceneContent:
+    # The harmonics of the item last drawn, on its device, while the same item is drawn again.
+    harmonics = {}
+
     def render(view: CameraView, index: int, device):
-        return render_gaussians(*_gaussian_item(splat, index, device), view)
+        xyz, rgb, opacity, scale, rot = _gaussian_item(splat, index, device)
+        if splat.sh.shape[2] > 1:
+            if harmonics.get("key") != (index, device):
+                harmonics.clear()
+                harmonics["sh"] = splat.sh[index, :xyz.shape[0]].to(device=device, dtype=torch.float32)
+                harmonics["key"] = (index, device)
+            eye = torch.tensor(_GLTF_TO_SPLAT @ view.position, dtype=torch.float32, device=device)
+            rgb = _view_colors(harmonics["sh"], xyz - eye)
+        return render_gaussians(xyz, rgb, opacity, scale, rot, view)
 
     return SceneContent(splat.positions.shape[0], render)
+
+
+def _view_colors(sh: torch.Tensor, offset: torch.Tensor) -> torch.Tensor:
+    """The colors (N, 3) of gaussians with spherical harmonics `sh` (N, K, 3) seen along `offset` (N, 3), from the
+    Camera to their centers, by the formula of 3DGS: the harmonics up to degree 3 at that direction, plus 0.5. Both
+    are in the SPLAT's own 3DGS frame, as its harmonics were fitted. The colors are clamped to 0..1, as the core's
+    `_gaussian_item` clamps the base color it uses alone."""
+    x, y, z = torch.nn.functional.normalize(offset, dim=-1).unbind(-1)
+    basis = [torch.full_like(x, _C0), -_SH_C1 * y, _SH_C1 * z, -_SH_C1 * x]
+    if sh.shape[1] >= 9:
+        xx, yy, zz = x * x, y * y, z * z
+        basis += [_SH_C2[0] * x * y, _SH_C2[1] * y * z, _SH_C2[2] * (2.0 * zz - xx - yy), _SH_C2[3] * x * z, _SH_C2[4] * (xx - yy)]
+        if sh.shape[1] >= 16:
+            basis += [
+                _SH_C3[0] * y * (3.0 * xx - yy), _SH_C3[1] * x * y * z, _SH_C3[2] * y * (4.0 * zz - xx - yy),
+                _SH_C3[3] * z * (2.0 * zz - 3.0 * xx - 3.0 * yy), _SH_C3[4] * x * (4.0 * zz - xx - yy),
+                _SH_C3[5] * z * (xx - yy), _SH_C3[6] * x * (xx - 3.0 * yy),
+            ]
+    count = min(len(basis), sh.shape[1])
+    return (torch.einsum("nk,nkc->nc", torch.stack(basis[:count], dim=-1), sh[:, :count]) + 0.5).clamp(0, 1)
 
 
 def _levels(half: torch.Tensor) -> list[int]:

@@ -253,7 +253,8 @@ def test_pano_scene_draws_its_sky_stickers_and_bg_color():
     at_sticker = _cutout(scene, _camera(yaw_deg=90.0, hFOV_deg=10.0))[0]
     away = _cutout(scene, _camera(yaw_deg=-90.0, hFOV_deg=20.0))[0]
 
-    assert torch.allclose(at_sticker[0], torch.tensor([0.0, 0.0, 1.0]).expand_as(at_sticker[0]))
+    # Bilinear weights may sum to just under 1 in float32.
+    assert torch.allclose(at_sticker[0], torch.tensor([0.0, 0.0, 1.0]).expand_as(at_sticker[0]), atol=1e-6)
     assert torch.allclose(away[0], torch.tensor([0.0, 1.0, 0.0]).expand_as(away[0]))
 
 
@@ -435,13 +436,13 @@ def test_pano_scene_content_is_shot_at_the_scene_item_of_each_frame(monkeypatch)
 
 def test_sky_resolution_follows_the_bg_media_of_the_execution_not_of_each_frame(monkeypatch):
     sizes = []
-    render_sky = render_module._render_sky
+    sky_layers = render_module._sky_layers
 
-    def recording(evaluated, sources, size, device):
+    def recording(evaluated, sources, size, *args):
         sizes.append(size)
-        return render_sky(evaluated, sources, size, device)
+        return sky_layers(evaluated, sources, size, *args)
 
-    monkeypatch.setattr(render_module, "_render_sky", recording)
+    monkeypatch.setattr(render_module, "_sky_layers", recording)
     state = _camera()
     state["timeline"]["length"] = 4
 

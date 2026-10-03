@@ -64,20 +64,31 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 
 ## Sky の描き方
 
-- Sky は 360 の ERP として描き、それを Projection で写す。旧ノードのオーバーレイと同じ方法で、Camera の回転が 0 のとき旧ノードの基準画像（`tests/fixtures/legacy_goldens/`）を再現する（`tests/test_stickers_scene_node.py`）。
+- ERP の出力では、Sky は 360 の ERP として描き、それを Projection で写す。旧ノードのオーバーレイと同じ方法で、Camera の回転が 0 のとき旧ノードの基準画像（`tests/fixtures/legacy_goldens/`）を再現する（`tests/test_stickers_scene_node.py`）。
   - 360：出力と同じ大きさで描く。
   - 180：幅を出力と同じにした 2:1 の ERP で描く。
+- 透視投影の出力では、Sky を中間の ERP に描かず、層ごとに出力の画素の向きから直接標本化する（下記「透視投影の Sky」）。
 - 写し方：出力の画素ごとに、Camera から見た向き（出力の ERP の経度・緯度）を Camera の回転（`core/math.py` の `camera_basis`）で Scene の向きに直し、その向きの Sky と背景を双線形に標本化する。180 の出力は Camera の前方の半球（経度 −90°〜90°）だけを写す。Sky の色はアルファを掛けた状態で標本化する。経度の継ぎ目は反対側の列とつないで標本化する。
+- 画像を縮めて写す画素（出力の画素 1 つが元の画像の 1 画素より広い範囲を覆う画素）は、その範囲で平均した値にする（`_sample_filtered`）。元の画像を幅と高さで別々に半分ずつ縮めた段（ripmap）を、前の段から三角形のフィルターで縮めて作り、出力の隣の画素への `grid_sample` の座標の動き（左右と上下で大きいほう）から、画素の覆う範囲を x と y で別々に求め、その前後の段を x・y とも線形に混ぜる。ERP の極の近くのような細長い範囲で、細いほうの向きまでぼかさないためである。三角形のフィルターは小さな形の位置を保つ（箱のフィルターは 2 画素の組の中心へ動かす）。ERP は縮めるときも経度の継ぎ目の向こうの列を使う（`_shrink`。フィルターが継ぎ目に届くのは最初と最後の列だけなので、その 2 列を継ぎ目の両側の列から同じ重みで取り直す。画像を広げて縮めることはしないので、一時的なメモリは増えない）。覆う範囲が 1 画素以下の画素は、今までどおり元の画像を双線形に標本化する（拡大する透視投影の出力は以前と同じ値になる）。
+  - 背景（`bg_media`）：透視投影と、Camera を回した ERP・180 の ERP の出力。
+  - 透視投影の Sky の各層（Sticker の素材、ペイントのラスタ、MASK）。
+  - ERP の出力の Sky は、出力と同じ大きさの ERP なので、今までどおり双線形に写す。
+  - 段は、元の画像と一緒に `render_frame` の `cache` に持ち（背景は `bg_levels`、Sticker の素材は `sky_textures`、ペイントの層は `sky_paint`）、元の画像を捨てるときに一緒に捨てる。段は標本化に要るものだけを作るので、1 枚の画像の段は全部作っても元の画像の 3 倍まで。キーのない背景（`bg_key` が None）の段はそのフレームだけで捨てる。
+  - 制限：ERP の出力の一番上と下の行のように、出力の画素が元の画像の 1 画素より細いところは、その向きには平均しない（画素の覆う範囲そのものが細いため）。
 - 背景と Sky は無限遠にあるので、Camera の位置では変わらない（ADR 0023）。MASK もペイントと同じく Camera の回転に従う。
 - Sky（`sky` の Sticker とペイント）と MASK は全方向にあり、どの向きの Camera でも写す。
-- 360 の出力で Camera の回転が 0 のときは、向きの計算と標本化を飛ばし、描いた Sky と背景をそのまま使う（背景は出力と大きさが違えば引き伸ばす）。
-- `sky` の Sticker の描画は `core/stickers.py`、ペイントは `core/display_layers.py` と `core/painting.py` の既存の処理を使う。
-- Sky の層の並べ方は、旧ノードと同じ `core/display_layers.py` の `compose_display_list_to_overlay_rgba` で行う。Sticker とペイントを交互に重ねた場面は、基準画像 `stickers_paint_interleaved` で固定している。
+- 360 の出力で Camera の回転が 0 のときは、向きの計算と標本化を飛ばし、描いた Sky と背景をそのまま使う。背景は出力と大きさが違えば大きさを合わせる（`_resize`）。どちらかの向きに縮めるときは、三角形のフィルターで出力の画素の範囲を平均し（`antialias=True`。経度の継ぎ目の向こうの列も使う）、拡大だけのときは今までどおり双線形にする。
+- ERP の Sky の `sky` の Sticker の描画は `core/stickers.py`、ペイントは `core/display_layers.py` と `core/painting.py` の既存の処理を使う。
+- Sky の層の並べ方は、旧ノードと同じ `core/display_layers.py` の `compose_display_list_to_overlay_rgba` で行う。Sticker とペイントを交互に重ねた場面は、基準画像 `stickers_paint_interleaved` で固定している。透視投影の Sky（`_sky_layers`）も同じ並べ方（`build_display_entries`）と同じ規則（どの層もなければ、アップロード済みのペイントを一枚で使う、など）で層を並べる。
 - `z_index` は Sticker の Source ではないが、`crop` と同じく描画に要る静的な値なので、`StickerSource` に入れて渡す（評価関数の戻り値は変えない）。
-- 透視投影の Sky は 2:1 の 360 ERP で描き、その幅は次の大きいほうを、旧 Cutout と同じく 4096 までに抑えたものとする。8192 では CPU で Sky を描き直すたびに約 7 秒・3GB、GPU で約 2GB を使い、1MP の出力でも hFOV 75° 以下で上限に届くためである。
-  - 画素の細かさが出力の中央の画素とほぼ同じになる幅（`π × 出力の幅 ÷ tan(hFOV/2)`）を 2 のべき乗に切り上げたもの（64 以上）。FOV をアニメーションさせても、この幅が変わるときだけ Sky を描き直す。
-  - `bg_media` があるとき、その画素の細かさの 360 の幅（`bg_width` × 360 ÷ `coverage`）。背景より粗い Sky で Sticker やペイントがぼけないようにする。
-  - Sky のキーには Projection ではなくこの大きさを入れ、Camera の向きのキーに Projection を入れる。
+- 透視投影の Sky：中間の ERP を経由すると、狭い画角ではその ERP が巨大になる（画角 5°・幅 1024 の出力で幅数万）か、上限で粗くなる（以前は 4096 で抑えていたので、狭い画角の Cutout で Sticker やペイントがぼけた）。そのため、各層を出力の画素の向きから直接、その層の画素で標本化し（`_sky_layers` で層を用意し、`_shoot_sky` で写す）、`compose_display_list_to_overlay_rgba` と同じ順に、同じストレートアルファの「上に重ねる」規則で重ねる（アルファを掛けた状態で重ね、最後に戻す）。
+  - `sky` の Sticker：出力の画素の向きを、Sticker の向き（`camera_basis(yaw, pitch, roll)`）の平面に投影し、`core/stickers.py` の `_compose_sticker_patch` と同じ式で素材の uv を求める（FOV は 0.1° 以上、`crop` の範囲、uv 0 と 1 を端の画素の中心に置く `align_corners=True` の置き方、前方の外と FOV の外は描かない）。Sticker の縁が横切る出力の画素は、画素のうち縁の内側にある割合（縁までの距離を、隣の画素への uv の動きで割ったもの）をアルファに掛ける。ERP の Sky では縁は ERP の画素で切れ、それを写すときの双線形の標本化でぼけていた。素材はアルファを掛けた状態で標本化し、不透明度はその 4 チャンネルに掛ける。素材は `device` に置いて、フレーム（`StickerSource.frame`）が変わるまで実行の中で使い回す（`render_frame` の `cache` の `sky_textures`）。
+  - ペイント：エディタがアップロードしたラスタ（`painting_layer` の `paint`・`mask`・グループ）は、その大きさのまま 360 の ERP として、出力の画素の向きで標本化する（以前は Sky の ERP の大きさに 8 bit で縮めていた）。
+  - 状態だけが持つペイント（アップロードされていないストロークのグループ、ストロークのどのグループにも属さない分、ラスタオブジェクト、アップロードのない MASK）は、バックエンドが ERP に描いてから同じく標本化する。その幅は次の大きいほうを 4096 までに抑えたもの（`_sky_size`）。ストロークを 8192 の ERP に描くと、描き直すたびに CPU で約 7 秒・3GB を使うためである。
+    - 画素の細かさが出力の中央の画素とほぼ同じになる幅（`π × 出力の幅 ÷ tan(hFOV/2)`）を 2 のべき乗に切り上げたもの（64 以上）。FOV をアニメーションさせても、この幅が変わるときだけ描き直す。
+    - `bg_media` があるとき、その画素の細かさの 360 の幅（`bg_width` × 360 ÷ `coverage`）。
+  - Sky のキー（`_sky_key`）は ERP の Sky と同じく、この大きさと、`sky` の Sticker の値と素材のフレーム。Camera の向きのキーに Projection を入れる。キーが変われば層の並びを組み直し（ペイントの層と MASK は、`device` に置いたものを `cache` の `sky_paint` に大きさごとに持ち、大きさが変わるまで使い回す）、向きのキーが変われば写し直す。
+  - 計測（RTX 4070 Ti の CUDA、1920 × 1080、1024 × 1024 の Sticker 3 枚と 2048 × 1024 のペイント・MASK のアップロード、`bg_width` 4096、hFOV 10°・60°・120°、初回の準備を除く）：以前の 4096 × 2048 の ERP 経由は、Sky を描くフレームで約 190〜280 ms（CPU で ERP に描く分）、Camera だけが動くフレームで約 6〜8 ms。直接の標本化は、層を用意するフレームで約 17〜27 ms、Camera だけが動くフレームで約 8〜19 ms。背景の標本化は、拡大では約 1〜3 ms で以前とほぼ同じ、4096 × 2048 の背景を hFOV 120° で縮めるときは段を作るので約 16 ms（以前は約 1 ms）。
 - 旧 Cutout は ERP の画素 i を `u = i`（画素の中心ではなく端）とみなして標本化していたので、新しい Cutout の出力は旧 Cutout から ERP の半画素ずれる（`docs/legacy-baselines.md`）。
 - `bg_media` は `coverage` の範囲の ERP とみなし、Sky と同じく Camera の向きで写す。360 では 360 の ERP、180 では旧ノード・Cutout と同じく Scene の前方（経度 −90°〜90°）の半球の ERP とする。180 の出力で、Camera を回して `bg_media` の半球の外が見える画素は、`bg_media` がない画素として `bg_color` になる。Sky と MASK はその上にも描く。出力の範囲が Camera の前方の半球だけであることは変わらない。
 
@@ -103,7 +114,7 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 - 両面に描く。裏からは左右が反転して見える。
 - 素材は双線形に標本化する。`sky` の Sticker と同じく、端の画素の中心を板の端に合わせ（`align_corners=True`）、アルファを掛けた状態で標本化してから戻す（透明な画素の色がにじまない）。不透明度はアルファに掛ける。
 - TODO(#61)：いまは Sticker ごとに出力の全画素で光線と板の交点を求める。#61・#62 の前に、板が写る範囲（bbox）に限って描く。
-- 板の縁はアンチエイリアスしない（`sky` の Sticker と同じ）。光線が板と平行な画素と、Camera の後ろにある板は描かない。
+- 板の縁はアンチエイリアスしない（ERP の出力の `sky` の Sticker と同じ。透視投影の `sky` の Sticker は縁をアンチエイリアスする。上記「透視投影の Sky」）。光線が板と平行な画素と、Camera の後ろにある板は描かない。
 - Source を持たない Sticker、`active` でない Sticker、不透明度 0 の Sticker は描かない。VIDEO と IMAGE バッチの素材は `sky` と同じく `StickerSource.frame` のフレームを描く。
 
 ### `scene` の共通処理
@@ -155,7 +166,7 @@ SPLAT（#61、下の「SPLAT の描き方」）と MESH・MoGe（#62）のレン
 - スプラット系の 3D ファイルは、Stickers の `execute` の入口で `_read_scene_file`（`nodes.py`）が、メッシュより先に一度だけ SPLAT に読み、以降（`_scene_content`・`_scene_ui`・`PANO_SCENE`）は SPLAT として扱う。読むのはコアの File3DToSplat。`format` が `splat`・`spz`・`ksplat` のもの、頂点に 3DGS の属性（`f_dc_0`、または `scale_0` と `rot_0`）を持つ PLY（Load3D と同じく中身で見分ける。持たない PLY はスプラットとしては読まない。コアの Get3DComponents も PLY を読まないので、そのような PLY は下の「読めない 3D ファイル」のエラーになる）、`format` のないものはコアの `_detect_splat_format` で中身から決まるものを読む。読んだ SPLAT は `NODE_RUNTIME` の `splat_files` キャッシュ（1 つ）に、ディスクのファイルならパス・更新時刻・大きさ、それ以外はオブジェクトの同一性をキーにして持ち、同じファイルは実行をまたいで読み直さず、エディタ用ファイルも同じ SPLAT として使い回す（#62 の `mesh_files` と同じ作り）。
 - `splat_content(splat)` が `SceneContent` を作り、`render` は要素ごとにコアの `_gaussian_item` で SPLAT を `device` に置いて描く（実行をまたいで device に持たない。`SceneContent` 自体も描画のパスごとに作る。上記「`scene` の共通処理」）。
 - 座標：SPLAT は 3DGS の座標（Y 下・Z 前方）で、`scene` 自身の glTF の座標はそれを X 軸まわりに 180° 回したもの（`(x, y, z)` → `(x, −y, −z)`）とする。コアの RenderSplat と Load3D の定義で、ADR 0023 の「SPLAT の変換はコアに従う」による。
-- 描き方はコアの RenderSplat（`_render_gaussian`、`render_style` は `color`）と同じ。各ガウシアンを、画素の光線に沿った 3D の密度の最大値で重み付けし、奥行きの slab ごとに手前から奥へ線形の光で重ねる。色は SH の DC（基本色）だけを使う。`sharpen` は RenderSplat の既定の 2.0、`splat_scale` は 1、`opacity_threshold` は 0 で、ノードの入力にはしない。結果はストレートアルファの sRGB に戻して `over_by_depth` に渡すので、背景との合成は sRGB で行う（RenderSplat は線形の光で背景と合成する。半透明の縁だけが違う）。
+- 描き方はコアの RenderSplat（`_render_gaussian`、`render_style` は `color`）と同じ。各ガウシアンを、画素の光線に沿った 3D の密度の最大値で重み付けし、奥行きの slab ごとに手前から奥へ線形の光で重ねる。色は、SH が 1 次以上の係数を持つとき、標準の 3DGS と同じ式で、Camera の位置から各ガウシアンの中心への向きで 3 次までの SH を評価し、0.5 を足したもの（`_view_colors`）。向きは SPLAT 自身の 3DGS の座標で求める（Camera の位置を glTF から X 軸まわりに 180° 回して SPLAT の座標に直し、ガウシアンの中心から引く）。SH はその座標で学習されているためである。値はコアの `_gaussian_item` が基本色を寄せるのと同じく 0〜1 に寄せる（標準の 3DGS は 0 未満だけを寄せる）。DC（基本色）だけの SPLAT はコアと同じく `_gaussian_item` の基本色をそのまま使う。コアの RenderSplat は DC だけを使うので、1 次以上の係数を持つ SPLAT では、コアの描画と色が違う。`sharpen` は RenderSplat の既定の 2.0、`splat_scale` は 1、`opacity_threshold` は 0 で、ノードの入力にはしない。結果はストレートアルファの sRGB に戻して `over_by_depth` に渡すので、背景との合成は sRGB で行う（RenderSplat は線形の光で背景と合成する。半透明の縁だけが違う）。
 - 光線は `ray_directions` の画素の中心を通るもの。コアは画素 i の中心を i に置くので、同じ Camera でも半画素ずれる。この差を除くと、コアとの差は平均で 0.05/255 程度になる（`tests/test_splat_render.py`）。
 - 透視投影の slab は、コアと同じく Camera の前方への奥行きの順。ERP は Camera の位置からの距離の順で、画素の光線で直接球面に描く（立方体の面に分けない）。距離は Camera の向きに変えずに測るので、360 の ERP は Camera の yaw を列の角度の整数倍だけ回すと、列方向にずらした同じ画像になる。180 の ERP は、極の近くで背後の継ぎ目をまたぐ幅の広いガウシアンだけがわずかに変わる。
 - 各ガウシアンは、投影した 4σ の楕円を囲む箱の中の画素で評価する。箱の半分の大きさの上限はコアの窓の上限と同じで、ERP の行方向は極に近いほど広げ、行の全体まで許す（極の近くのガウシアンが Camera の向きで切れ方を変えないため）。箱の大きさは 4 から倍々の段に分けて束ねる（コアは 16・64・256。細かくしたのは速さのため）。
@@ -263,7 +274,7 @@ FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コア�
     - `state_json` だけが変わった実行では作り直さない。MP4 とは別の `NODE_RUNTIME` の `scene_files` キャッシュ（入力 4 つ分）に入れ、SPLAT・MESH はオブジェクトと位置のテンソルの同一性、`MOGE_GEOMETRY`（辞書）は読むテンソルの同一性をキーにする。ファイルが消えていれば書き直す。
     - 大きさの目安：100 万点の SPLAT（SH 3 次）の PLY は約 248 MB。MoGe のパノラマ（4096 x 2048、約 840 万頂点・1,680 万三角形）の 1 フレームの GLB は約 390 MB（CPU で約 3 秒）で、MESH にしたものも同じ。エディタは読み込んだ要素を大きさの上限で持つ（`docs/threejs-spark-integration.md` の `scene` の項）。キャッシュから追い出しても MP4 と同じくファイルは消さず、ComfyUI が起動時と終了時に temp を消すまで残る。
     - 3D ファイルは、入口（`_read_scene_file`）で読んだ SPLAT・MESH として PLY・GLB に書き直す（描くものとエディタが見るものが同じになる）。読んだものはファイルごとに `splat_files`・`mesh_files` のキャッシュに入るので、同じファイルなら同じオブジェクトになり、ここでも書き直さない。3D の Sticker（#63）も同じ `write_editor_files` と `scene_files` のキャッシュで書き、`pano_sticker_files` / `pano_sticker_meta` に出す。座標は中身自身の glTF 座標（SPLAT は上と同じく 3DGS の座標）で、エディタが状態の Sticker の変形を掛ける。
-- 必要な ComfyUI は v0.35.0 以降（`mesh_item_to_glb_bytes` と、メッシュ系の 3D ファイルを読む Get3DComponents が入った版）。Get3DComponents はコアで experimental のノードなので、コアの更新で名前や戻り値が変わったら `scene_mesh.py` の `read_mesh_file` を合わせる。`splat_render.py` はコアの `comfy_extras.nodes_gaussian_splat` の非公開の関数（`_gaussian_item`・`_quat_to_mat`・`_srgb_to_linear`・`_linear_to_srgb`・`_quantile`・`_detect_splat_format`）にも依存し、これらの名前や意味が変わると読み込みか描画で失敗する。`scene_files.py`・`scene_mesh.py` はコアの関数をモジュールの先頭で読み込むので、古いコアではパッケージの読み込み時にその名前の `ImportError` になる。
+- 必要な ComfyUI は v0.35.0 以降（`mesh_item_to_glb_bytes` と、メッシュ系の 3D ファイルを読む Get3DComponents が入った版）。Get3DComponents はコアで experimental のノードなので、コアの更新で名前や戻り値が変わったら `scene_mesh.py` の `read_mesh_file` を合わせる。`splat_render.py` はコアの `comfy_extras.nodes_gaussian_splat` の非公開の関数と定数（`_C0`・`_gaussian_item`・`_quat_to_mat`・`_srgb_to_linear`・`_linear_to_srgb`・`_quantile`・`_detect_splat_format`）にも依存し、これらの名前や意味が変わると読み込みか描画で失敗する。`scene_files.py`・`scene_mesh.py` はコアの関数をモジュールの先頭で読み込むので、古いコアではパッケージの読み込み時にその名前の `ImportError` になる。
   - 出力（IMAGE）のプレビュー MP4 は作らない。Stickers の出力を表示するのは Preview（#76）で、旧ノードの `pano_videos` を読むフロントエンドもない。
 - `file` の Source は `core/stickers.py` の `load_source_rgba` で読み、`folder_paths` のディレクトリの中にあるものだけを読む。読めないときは、その Sticker を描かずに警告を出す（ログと実行結果の `pano_sticker_warnings`）。
 
