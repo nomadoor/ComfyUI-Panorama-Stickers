@@ -422,7 +422,7 @@ test("the content bounds hold the moved scene box and the Sticker planes", () =>
   assert.equal(boundingSphere([]), null);
 });
 
-test("Frame Selected / All fits the selected world Sticker, else all the content", () => {
+test("Frame Selected fits the selected world Sticker, else all the content", () => {
   const content = { center: [0, 0, 0], radius: 50 };
   const world = { placement: "world" };
   const value = { active: true, position: [3, 0, -5], yaw_deg: 90, pitch_deg: 0, roll_deg: 0, scale: 2 };

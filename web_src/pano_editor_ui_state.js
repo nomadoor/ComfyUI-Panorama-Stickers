@@ -114,7 +114,7 @@ export function worldFieldRange(value) {
 }
 
 // The state of the bottom-right buttons (PanoFloatingRight.vue). No button there shows or hides on its
-// own, so none moves when another changes: the space group (3DoF | 6DoF and Frame Selected / All) shows or hides
+// own, so none moves when another changes: the space group (3DoF | 6DoF and Frame Selected) shows or hides
 // as a whole at the left end of the row, where the row grows away from the other buttons, and Frame
 // Content is disabled outside 6DoF instead of hidden. `buttons` patches the other buttons by action.
 export function floatingRightState({ spaceView, spaceMode, readOnly, frameMode, showGrid }) {
