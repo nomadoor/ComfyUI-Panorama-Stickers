@@ -16,7 +16,7 @@ from comfy_api.latest import Types
 from comfy_extras.nodes_gaussian_splat import _C0, _linear_to_srgb, _quat_mul, _srgb_to_linear, RenderSplat, SplatToFile3D
 
 from comfyui_pano_suite import nodes, splat_render
-from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSource, render_frame
+from comfyui_pano_suite.core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.world import world_rotation
@@ -47,8 +47,8 @@ def _shell(count, center, radius, seed=0):
 def _render(splat, projection, state=None, sources=None, bg=None, bg_color=BLACK):
     state = state or load_scene_state({"version": 2, "camera": {}})
     evaluated = evaluate_scene_state(state, 0.0)
-    return render_frame(evaluated, SceneSources(sources or {}, state["painting"]), evaluated["camera"], projection,
-                        bg=bg, bg_key=None if bg is None else 0, bg_color=bg_color, device=CPU, scene=splat_content(splat), scene_index=0)
+    return render_frame([RenderLayer(evaluated, SceneSources(sources or {}, state["painting"]), splat_content(splat), 0)], evaluated["camera"], projection,
+                        bg=bg, bg_key=None if bg is None else 0, bg_color=bg_color, device=CPU)
 
 
 def _core(splat, size, fov, quaternion=(0.0, 0.0, 0.0, 1.0)):
@@ -286,7 +286,7 @@ def test_splat_files_on_the_scene_input_are_drawn_and_written_for_the_editor(fil
     assert output.ui["pano_scene_meta"] == [{"kind": "splat"}]
     assert [entry["filename"].endswith(".ply") for entry in output.ui["pano_scene_files"]] == [True]
     # PANO_SCENE holds the SPLAT read from the file, so its consumers do not read the file again.
-    assert isinstance(output.result[3].scene, Types.SPLAT)
+    assert isinstance(output.result[3].layers[-1].scene, Types.SPLAT)
 
 
 def test_a_splat_file_is_read_once_while_it_does_not_change(monkeypatch, tmp_path):
@@ -299,7 +299,7 @@ def test_a_splat_file_is_read_once_while_it_does_not_change(monkeypatch, tmp_pat
     first = _execute(Types.File3D(str(path)))
     second = _execute(Types.File3D(str(path)))
 
-    assert len(reads) == 1 and second.result[3].scene is first.result[3].scene
+    assert len(reads) == 1 and second.result[3].layers[-1].scene is first.result[3].layers[-1].scene
 
 
 def test_splat_files_are_told_by_their_contents():
