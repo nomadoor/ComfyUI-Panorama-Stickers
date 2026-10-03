@@ -21,6 +21,7 @@ import {
   cameraFields,
   deleteWorldSticker,
   sceneStickerLabel,
+  noteCameraEdit,
   setCameraField,
   setCameraShot,
   setEditorActive,
@@ -467,10 +468,29 @@ test("the Cutout editor edits the default Camera of a state without one, and sav
     assert.equal(JSON.parse(text).camera, null);
     assert.equal(sameEditorStateText(node, text, current, { rebased: true }), true);
 
+    // The editor notes each edit as it saves it (commitState).
+    noteCameraEdit(state);
+    assert.equal(state.default_camera, true, "opening and closing keeps the mark");
     setCameraField(state.camera, 0, "yaw_deg", 30);
+    noteCameraEdit(state);
     const edited = loadSceneState(editorStateText(node, state));
     assert.deepEqual(edited.camera, { ...defaultCamera(), rotation: { value: { yaw_deg: 30, pitch_deg: 0, roll_deg: 0 }, keyframes: [] } });
+
+    // Set back to the default values, the edited Camera is still saved: in Panorama Studio null is no Camera.
+    setCameraField(state.camera, 0, "yaw_deg", 0);
+    noteCameraEdit(state);
+    const back = JSON.parse(editorStateText(node, state));
+    assert.notEqual(back.camera, null);
+    assert.deepEqual(loadSceneState(back).camera, defaultCamera());
   }
+  // An erp Camera is never folded to null, whatever its other values.
+  const erp = parseSceneEditorState("", { camera: true });
+  erp.camera.projection = "erp";
+  noteCameraEdit(erp);
+  assert.equal(loadSceneState(editorStateText(node, erp)).camera.projection, "erp");
+  const unnoted = parseSceneEditorState("", { camera: true });
+  unnoted.camera.projection = "erp";
+  assert.equal(loadSceneState(editorStateText(node, unnoted)).camera.projection, "erp");
   // Shooting a PANO_SCENE, the Cutout's own state without a Camera stays without one too.
   const shooting = parseSceneEditorState("", { camera: true, fps: 12, scene: { version: 2, timeline: { fps: 12 } } });
   assert.deepEqual(shooting.camera, defaultCamera());

@@ -187,7 +187,8 @@ export function paintingLayerNeedsSync(layer, { paintCount, maskCount, width, he
 // Both are rebased to `fps`, the Scene's Timeline fps, so the Camera's Keyframes keep their seconds as
 // the node reads them.
 // With `camera` (the Cutout editor, which always shoots through a Camera) a state without a Camera
-// is edited with the default one, as the node shoots it; `default_camera` marks it so that
+// is edited with the default one, as the node shoots it; `default_camera` marks it until the Camera
+// is first edited (noteCameraEdit), so that
 // editorStateText() saves the state without a Camera again while that Camera is left as it is.
 export function parseSceneEditorState(text, options = {}) {
   const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, fps = null, scene: shot = null, camera = false } = options;
@@ -467,6 +468,14 @@ export function setEditorActive(node, active) {
 // The `state_json` text for the editor's working state: state v2 for PanoramaStickersNode and
 // PanoramaCutoutNode (a Cutout showing a PANO_SCENE saves its own state with the Camera), the working
 // state itself (v1) for the legacy nodes.
+// Drops the `default_camera` mark once the Camera has left the default one, so that a Camera edited
+// and then set back to the default values is still saved: it was added by an edit, not left as it was.
+export function noteCameraEdit(state) {
+  if (state.default_camera && JSON.stringify(loadSceneState({ version: 2, camera: state.camera }).camera) !== JSON.stringify(defaultCamera())) {
+    delete state.default_camera;
+  }
+}
+
 export function editorStateText(node, state) {
   if (!node?.__panoSceneStateV2) return JSON.stringify(state);
   const saved = loadSceneState(state.cutout_state ? { ...state.cutout_state, camera: state.camera } : state);

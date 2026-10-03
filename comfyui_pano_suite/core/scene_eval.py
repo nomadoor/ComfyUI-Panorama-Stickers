@@ -364,7 +364,7 @@ def _sticker_values(sticker, frame):
 def evaluate_scene_state(state: dict, frame: float) -> dict:
     """Evaluate a state returned by `load_scene_state` at a fractional Timeline frame."""
     frame = float(frame)
-    camera = state["camera"]
+    camera = state.get("camera")
     scene = state["scene"]
     stickers = []
     for sticker in state["stickers"]:
