@@ -2,6 +2,7 @@ import { normalizeCoverageValue, parsePanoEditorState } from "./pano_editor_stat
 import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { runExternalStickerSync } from "./pano_external_sticker_sync.js";
+import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -368,6 +369,8 @@ export function createPanoEditorExtension({
 }) {
   return {
     name: "ComfyUI.PanoramaSuite.Editor",
+    // ComfyUI shows these in its settings dialog and saves them.
+    settings: [VIEW_CONTROLS_SETTING],
     beforeRegisterNodeDef(nodeType, nodeData) {
       const name = String(nodeData?.name || "");
       if (name === "PanoramaStickers" || name === "Panorama Stickers") {

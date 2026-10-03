@@ -79,7 +79,10 @@ import {
   sceneItemBox,
   sceneRequest,
   spaceCamera,
+  spaceModeView,
+  stickerContentRequest,
 } from "./pano_space.js";
+import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
 import {
   contextHalfExtentsPx,
   createDefaultCutoutShot,
@@ -883,6 +886,9 @@ async function showEditor(node, type, options = {}) {
     viewPosition: [0, 0, 0],
     viewDistance: DEFAULT_DISTANCE,
     viewMoved: false,
+    // "3dof" stands at the World origin and shows what the ERP shows; "6dof" moves through the World.
+    // Each opening starts in 3DoF; it is not saved.
+    spaceMode: "3dof",
     coverage: normalizeCoverageValue(state.coverage),
     historyController: createHistoryController(80, { version: 1, entries: [initialHistorySnapshot], index: 0 }),
     primaryTool: "cursor",
@@ -2709,9 +2715,16 @@ async function showEditor(node, type, options = {}) {
       disabled: readOnly || frameMode,
     });
     const spaceView = isSpaceView();
-    patchUiButton(uiState.floatingButtons, "action", "frame-view", {
+    const free = spaceView && editor.spaceMode === "6dof";
+    patchUiButton(uiState.floatingButtons, "action", "space-mode", {
       visible: spaceView,
-      disabled: readOnly || !spaceView,
+      pressed: free ? "true" : "false",
+      label: free ? "3DoF View" : "6DoF View",
+      tip: free ? "Back to the ERP origin (3DoF)" : "Move freely in space (6DoF)",
+    });
+    patchUiButton(uiState.floatingButtons, "action", "frame-view", {
+      visible: free,
+      disabled: readOnly || !free,
     });
     patchUiButton(uiState.floatingButtons, "action", "toggle-grid", {
       icon: gridVisible ? ICON.eye : ICON.eye_dashed,
@@ -2791,11 +2804,40 @@ async function showEditor(node, type, options = {}) {
     return sceneFilesOf(getNodeUiList("pano_scene_files"), getNodeUiList("pano_scene_meta"), mediaSource);
   }
 
+  // The `sticker` input's 3D media (#63) in the node's current result, in the shape of sceneFiles().
+  function stickerFiles() {
+    if (!sceneV2 || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
+    return sceneFilesOf(getNodeUiList("pano_sticker_files"), getNodeUiList("pano_sticker_meta"), mediaSource);
+  }
+
   // PanoramaStickersNode's panorama view shows the World when there is World content (a `scene` input or
-  // a world Sticker), and the Viewport camera moves in it. Without it the view only looks around.
+  // a world Sticker), from the origin in 3DoF and moving through it in 6DoF. Without it the view only
+  // looks around.
   function isSpaceView() {
     if (!sceneV2 || editor.mode !== "pano") return false;
     return hasWorldContent({ sceneLinked: !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
+  }
+
+  // The space view in 6DoF, where the Viewport camera moves through the World with the 3D view controls.
+  function isFreeSpaceView() {
+    return editor.spaceMode === "6dof" && isSpaceView();
+  }
+
+  // The preset of the 3D view controls chosen in ComfyUI's settings (pano_view_controls.js).
+  function viewControls() {
+    return viewControlsPreset(app.ui?.settings?.getSettingValue?.(VIEW_CONTROLS_SETTING_ID));
+  }
+
+  // Back in 3DoF the view returns to the origin keeping its direction; 6DoF starts from there.
+  function setSpaceMode(mode) {
+    if (mode === "3dof") {
+      editor.viewPosition = [0, 0, 0];
+      editor.viewMoved = false;
+    }
+    editor.spaceMode = mode;
+    runtime.backgroundDirty = true;
+    syncFloatingViewButtonState();
+    requestDraw({ localOnly: true });
   }
 
   // The content sphere comes from the frame's input (editorViewInput), which the pointer and wheel
@@ -2803,7 +2845,8 @@ async function showEditor(node, type, options = {}) {
   // rebuilding it per event would evaluate the whole state again for nothing.
   function spaceViewState() {
     const distance = editor.viewMoved ? editor.viewDistance : contentSphere()?.radius || DEFAULT_DISTANCE;
-    return { position: editor.viewPosition, yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, hFOV_deg: editor.viewFov, distance };
+    const view = { position: editor.viewPosition, yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, hFOV_deg: editor.viewFov, distance };
+    return spaceModeView(editor.spaceMode, view);
   }
 
   // The sphere around the World content shown in this frame (pano_space.js boundingSphere), or null.
@@ -3698,18 +3741,31 @@ async function showEditor(node, type, options = {}) {
   }
 
   // The World of the space view at the playhead: the `scene` item the node draws at this frame with the
-  // `scene` transform, the world Sticker planes, the grid, and the sphere around the content (null
-  // without content) that frames it and scales the navigation.
+  // `scene` transform, the item of the 3D port Sticker with its transform and opacity, the world Sticker
+  // planes, the grid, and the sphere around the content (null without content) that frames it and
+  // scales the navigation.
   function buildSpaceInput(sceneState, media) {
     const evaluated = evaluateSceneState(sceneState, editor.frame);
     const files = sceneFiles();
     const scene = sceneRequest(files, evaluated.scene);
     const box = scene?.url ? editorView.sceneBox(scene.url) : null;
     const sceneBox = box && sceneItemBox(scene.kind, box);
+    const portFiles = stickerFiles();
+    const sticker = editor.showObjects ? stickerContentRequest(portFiles, sceneState, evaluated) : null;
+    const stickerBox = sticker?.url ? editorView.sceneBox(sticker.url) : null;
+    const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
     const stickers = editor.showObjects ? worldStickerLayers(sceneState, editor.frame, state.stickers, { media }) : [];
-    const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers));
+    const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers, items));
     const grid = editor.showGrid && !editor.fullscreen ? gridSpec(sphere?.radius || DEFAULT_DISTANCE) : null;
-    return { grid, sceneUrls: files ? files.urls.filter(Boolean) : [], scene, stickers, sphere };
+    return {
+      grid,
+      sceneUrls: files ? files.urls.filter(Boolean) : [],
+      scene,
+      stickerUrls: portFiles ? portFiles.urls.filter(Boolean) : [],
+      sticker,
+      stickers,
+      sphere,
+    };
   }
 
   function renderEditorView() {
@@ -8436,6 +8492,21 @@ async function showEditor(node, type, options = {}) {
     viewController.state.inertia.active = false;
     viewController.state.inertia.vx = 0;
     viewController.state.inertia.vy = 0;
+    // In 6DoF the drags of the 3D view controls move the view with any tool (pano_view_controls.js).
+    const spaceAction = isFreeSpaceView() ? viewDragAction(viewControls(), e) : null;
+    if (spaceAction) {
+      e.preventDefault();
+      if (spaceAction === "look") {
+        const dragPos = screenPosCss(e);
+        editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
+        viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
+      } else {
+        editor.interaction = { kind: `space_${spaceAction}`, last: p };
+      }
+      updateCursor(p);
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
     if (e.button === 1) {
       e.preventDefault();
       if (editor.mode === "frame") {
@@ -8451,26 +8522,10 @@ async function showEditor(node, type, options = {}) {
           },
           changed: false,
         };
-      } else if (isSpaceView()) {
-        editor.interaction = { kind: "space_pan", last: p };
       } else {
         const dragPos = editor.mode === "unwrap" ? p : screenPosCss(e);
         editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
         viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
-      }
-      updateCursor(p);
-      canvas.setPointerCapture(e.pointerId);
-      return;
-    }
-    // In space the right button looks around with any tool, and Alt orbits around the pivot.
-    if (isSpaceView() && (e.button === 2 || (e.button === 0 && e.altKey))) {
-      e.preventDefault();
-      if (e.button === 2) {
-        const dragPos = screenPosCss(e);
-        editor.interaction = { kind: "view", last: dragPos, lastTs: performance.now() };
-        viewController.startDrag(dragPos.x, dragPos.y, e.pointerId, performance.now());
-      } else {
-        editor.interaction = { kind: "space_orbit", last: p };
       }
       updateCursor(p);
       canvas.setPointerCapture(e.pointerId);
@@ -9353,9 +9408,10 @@ async function showEditor(node, type, options = {}) {
   canvas.onauxclick = (e) => {
     if (e.button === 1) e.preventDefault();
   };
-  // The right button looks around in space.
+  // A right drag of the 3D view controls opens no context menu. The canvas has no right-click action
+  // of its own.
   canvas.oncontextmenu = (e) => {
-    if (isSpaceView()) e.preventDefault();
+    if (isFreeSpaceView() && presetUsesButton(viewControls(), 2)) e.preventDefault();
   };
 
   canvas.onmousemove = (e) => {
@@ -9383,7 +9439,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (editor.mode !== "pano") return;
-    if (isSpaceView()) {
+    if (isFreeSpaceView()) {
       const direction = readWheelDirection(e);
       // The wheel zooms the panorama view in (direction < 0); in space it dollies the same way.
       if (direction) setSpaceView(dollyView(spaceViewState(), -direction, spaceScale()));
@@ -9846,6 +9902,10 @@ async function showEditor(node, type, options = {}) {
     }
     if (action === "frame-view") {
       frameSpaceContent();
+      return;
+    }
+    if (action === "space-mode") {
+      setSpaceMode(editor.spaceMode === "6dof" ? "3dof" : "6dof");
       return;
     }
     if (action === "toggle-grid") {

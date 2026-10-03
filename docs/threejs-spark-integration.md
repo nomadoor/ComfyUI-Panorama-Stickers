@@ -62,22 +62,32 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 
 ## 空間の表示（#71）
 
-`PanoramaStickersNode` のエディタの Panorama 表示は、World の内容（`scene` 入力の接続・実行結果の `scene` のエディタ用ファイル・`world` の Sticker のどれか）があるとき、Viewport camera で空間内を移動できる表示になる。内容がなければ、従来どおりの見回しだけの表示のままである。Unwrap 表示と旧ノードは変えていない。
+`PanoramaStickersNode` のエディタの Panorama 表示は、World の内容（`scene` 入力の接続・実行結果の `scene` のエディタ用ファイル・`world` の Sticker のどれか）があるとき、World を奥行き付きで描く空間の表示になる（下の 3DoF・6DoF）。内容がなければ、従来どおりの見回しだけの表示のままである。Unwrap 表示と旧ノードは変えていない。
 
 - Stickers は撮影用の Camera を持たない。Stickers の ERP は常に World の原点から回転 0 で撮る。そのため Viewport camera は、エディタを開くたびに World の原点（ERP を撮る位置）から始まり、保存しない。グリッドの原点に黄色の印と「ERP origin」の表示を置く。
-- 操作（Unity のシーンビューに近い組み合わせ。左ドラッグの見回しは従来どおり）：
+- 表示のモード：右上の Reset View の隣に 3DoF と 6DoF の切り替えのボタンがある（World の内容があるときだけ出る）。エディタを開くたびに 3DoF から始まり、モードは状態にも設定にも保存しない。
+  - 3DoF（既定）：視点は World の原点に固定する。Stickers の ERP 出力と同じ見え方になる。操作は従来の Panorama 表示と同じ（何もないところの左ドラッグと中ボタンのドラッグで見回し、ホイールで画角）。右ドラッグは使わず、右クリックのメニューも抑止しない。World の内容は原点から奥行き付きで描く（下の 2 パスの描画）。
+  - 6DoF：Viewport camera で空間を自由に動く。操作は下の「3D view controls」の割り当てに従う。Frame Content ボタンは 6DoF のときだけ出る。
+  - 6DoF から 3DoF に戻すと、視点は原点に戻る（向きと画角は保つ）。注視点の距離も、内容の大きさに戻る。
+- 6DoF の操作（`web_src/pano_view_controls.js`）：ボタンと修飾キーから動きを決める表をプリセットごとにデータで持ち、`viewDragAction` が決める。プリセットは ComfyUI の設定の「Panorama Suite › Editor › 3D view controls」（id `PanoramaSuite.Editor.ViewControls`、拡張の `settings` で登録し、保存は ComfyUI のコアが行う）で選ぶ。動きは三つ：見回し（その場で向きを変える。慣性あり）、オービット（注視点のまわりを回る。three.js の OrbitControls・コアの Load3D と同じ向きと速さ）、パン（注視点の距離の面がポインタに付いて動く）。
 
-  | 操作 | 動き |
-  |---|---|
-  | 何もないところを左ドラッグ | その場で見回す（従来と同じ。慣性あり） |
-  | 右ドラッグ | その場で見回す（ペイントのツールを選んでいても効く） |
-  | 中ボタンのドラッグ | 平行移動（パン）。注視点の距離の面がポインタに付いて動く |
-  | Alt + 左ドラッグ | 注視点のまわりを回る（オービット。three.js の OrbitControls・コアの Load3D と同じ向きと速さ） |
-  | ホイール | 注視点へ近づく・離れる（ドリー）。注視点より手前の最小の距離に来ると、注視点ごと前へ進む |
-  | 右上の Frame Content ボタン | 向きを保ったまま、内容全体が収まる位置へ下がる |
-  | Reset View ボタン | 原点に戻り、従来と同じ向きと画角に戻す |
+  | 操作 | Default（既定） | Blender 風 | Unity 風 |
+  |---|---|---|---|
+  | 何もないところを左ドラッグ | 見回し | 見回し | 見回し |
+  | オブジェクトの上で左ドラッグ | オブジェクトの操作 | オブジェクトの操作 | オブジェクトの操作 |
+  | 中ボタンのドラッグ | 見回し | オービット | パン |
+  | Shift + 中ボタンのドラッグ | パン | パン | — |
+  | 右ドラッグ | オービット | 見回し | 見回し |
+  | Shift + 右ドラッグ | パン | — | — |
+  | Alt + 左ドラッグ | — | — | オービット |
+  | ホイール | 注視点への出入り | 注視点への出入り | 注視点への出入り |
 
-  空間の表示では、ホイールは画角を変えない。注視点は視点の前方 `distance` の点で、内容の大きさが分かると（視点をまだ動かしていなければ）その半径になる。見回し・移動は再生を止めない。計算は `web_src/pano_space.js` にある。
+  - 表のボタンの操作は、オブジェクトの上でもどのツールでも視点だけを動かす。どのプリセットにも、オブジェクトに触れずに見回す手段（Default は中ボタン、Blender 風と Unity 風は右ドラッグ）がある。修飾キーなしの左ドラッグはどのプリセットにも入れず、3DoF と同じくエディタのツールが受け持つ。Ctrl・Meta との組み合わせ（範囲選択）は表に入れない。表にない組み合わせ（Default の Alt + 中ボタンなど）は従来の扱い（中ボタンは見回し、右ボタンは何もしない）になる。
+  - ホイールは注視点へ近づく・離れる（ドリー）。注視点より手前の最小の距離に来ると、注視点ごと前へ進む。6DoF では、ホイールは画角を変えない。
+  - 右ドラッグを使うプリセット（三つとも）では、6DoF の間はキャンバスの右クリックのメニューを抑止する。キャンバスには右クリックだけの操作はもともとない。
+  - Reset View ボタンは、原点に戻り、従来と同じ向きと画角に戻す（モードは変えない）。Frame Content ボタンは、向きを保ったまま、内容全体が収まる位置へ下がる。
+
+  注視点は視点の前方 `distance` の点で、内容の大きさが分かると（視点をまだ動かしていなければ）その半径になる。見回し・移動は再生を止めない。計算は `web_src/pano_space.js`（3DoF の原点への固定は `spaceModeView`）にある。
 - `sky` の Sticker・ペイント・背景は無限遠にあるので、視点の位置によらず同じ向きに見え、選択・移動・ペイントは従来どおり方向で当たり判定をする（`viewProjection`）。空間の表示では球面の格子の代わりに、地面（World の XZ 平面）のグリッドと軸（X 赤・Y 緑・Z 青）と原点を three.js で描く。グリッドの間隔は内容の大きさに合わせた 10 のべき乗である。
 - 描き方：`pano_three_view.js` の `render` に `space` を渡すと、まず従来どおり Sky を回転だけのカメラで描き、深度をクリアしてから、World を視点の位置のカメラで深度を使って重ねる（キャンバスに深度バッファを持たせた）。
   - `scene`：実行結果の `pano_scene_files`・`pano_scene_meta`（#60）を、`scene` 入力の接続が実行時と同じ間だけ使う（`pano_preview_video.js` の `scene` のチャンネル）。再生ヘッドの Timeline frame で評価した `scene` の Clip range の中だけ、ノードと同じ規則（`batch_index`）で選んだ要素を、`scene` の変形を掛けて描く。MoGe の VIDEO のように要素ごとにファイルがあるものは、次の要素を先に読み込む。
@@ -87,9 +97,12 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
   - 既知の挙動：サーバーを再起動して temp のファイルが消えた後（404）は、その要素の代わりに、上と同じく前の最も近い読み込み済みの要素を出し続ける（どれも読めなければ何も出さない）。エラーは URL ごとに 1 回だけコンソールに出し、同じ URL は読み直さない。実行し直すと新しいファイルになる。
   - SPLAT の PLY は Spark の `SplatMesh` で読み、コアの Load3D と同じく X 軸まわりに 180° 回してから（`SPLAT_TO_SCENE`）`scene` の変形を掛ける。並べ替えが終わるたびに描き直す。
   - MESH・MoGe の GLB は GLTFLoader で読み、材質を `MeshBasicMaterial`（光源なし、両面、base color・テクスチャ・頂点色を保つ）に置き換える（`makeUnlit`）。素のジオメトリの灰色は glTF の定義どおり（線形の値）に表示するので、ノードの出力（`BARE_COLOR` をそのまま出す）より明るく見える。
-  - `world` の Sticker は、評価した位置・回転・`scale` の両面の板として、切り抜いた素材を貼って描く（`worldStickerLayers`）。奥行きで前後する。選択と操作は #72 で加える。3D の `world` の Sticker（#63）はまだ描かない（#72）。
+  - `world` の Sticker は、評価した位置・回転・`scale` の両面の板として、切り抜いた素材を貼って描く（`worldStickerLayers`）。奥行きで前後する。選択と操作は #72 で加える。
+  - 3D の `world` の Sticker（`sticker` に MESH・SPLAT・3D ファイルをつないだ `port` の Sticker、#63）：実行結果の `pano_sticker_files`・`pano_sticker_meta`（`pano_scene_files` と同じ形）を、`sticker` 入力の接続が実行時と同じ間だけ使う（`pano_preview_video.js` の `external-sticker` のチャンネル）。Sticker の Clip range の中で表示しているときだけ、Sticker の clip frame から `scene` と同じ規則（ノードの `batch_index`）で要素を選び、評価した位置・回転・`scale` を `scene` の変形と同じ意味で掛けて、不透明度で描く（`pano_space.js` の `stickerContentRequest`）。SPLAT は X 軸まわりに 180° 回してから変形を掛け、不透明度は `SplatMesh` の `opacity` にする。メッシュは `scene` と同じく unlit・両面で、不透明度は材質の `opacity` にする。読み込みは `scene` と同じ部品（`pano_scene_items.js`・`pano_scene_loaders.js`）の、Sticker 用の別のキューで行う（`scene` と同じファイルでも、three.js のオブジェクトは一つの親しか持てないので別に読む）。要素の箱は Frame Content と注視点の距離の内容の大きさに入る。ギズモでの移動・配置は #72。
+  - ノード上の表示（`pano_stickers_node_surface.js`・Preview）は空間の表示を持たず（`scene` も描かない）、3D の Sticker も描かない。
   - 視点の three.js のカメラの near・far は、内容の外接球とグリッドから決める（`pano_space.js` の `spaceCamera`。far は内容と原点のまわりのグリッドの先まで、near は注視点の距離の 1/100 と内容の大きさの 1/10000 の大きいほう）。注視点の距離の 1/100 より近い内容は切れる。
 - ノードの出力との差（意図して残しているもの）：
   - 要素の読み込み中と読めなかったときは、前の最も近い読み込み済みの要素を出す（ノードは必ずそのフレームの要素を描く）。再生中は要素を間引いて出す。要素のないフレーム（バッチの外、頂点や面のない要素）はノードと同じく何も描かない。
+  - 3D の Sticker の不透明度：エディタのメッシュは両面のまま半透明にするので、不透明度を下げると裏の面も透けて見える（ノードは手前の面だけを描く）。
   - 半透明の重なり：Spark はスプラットを深度を書かずに重ね、板は深度を書く。半透明のスプラットと `world` の Sticker が重なる画素の前後と混ざり方は、ノード（`over_by_depth`、スプラットの奥行きは積算アルファ 0.5 の位置）と一致しない。
 - #77（Cutout）向けの部品：Camera の視錐台（`cameraFrustumSegments`）、Timeline 上の軌道（`cameraTrajectory`、評価関数で標本化）、Camera から覗く視点（`cameraView`）と、`render` の `space.lines`（線分の描画）。Stickers のエディタでは使わない。

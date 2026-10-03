@@ -324,6 +324,15 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     concurrency: SCENE_LOADS,
     limit: SCENE_ITEM_LIMIT,
   });
+  // The items of the `sticker` input's 3D media (#63), loaded the same way. An item loads here even when
+  // `scene` has the same file, since an object has one parent.
+  const stickerItems = createSceneItems({
+    load: loadSceneItem,
+    dispose: disposeSceneItem,
+    onUpdate,
+    concurrency: SCENE_LOADS,
+    limit: SCENE_ITEM_LIMIT,
+  });
   const domeGeometry = new SphereGeometry(DOME_RADIUS, 64, 32);
   const planeGeometry = new PlaneGeometry(1, 1);
   const quadGeometry = new PlaneGeometry(2, 2);
@@ -396,11 +405,11 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     return group;
   }
 
-  // The `scene` item for input.scene, or the one shown before while it loads (an item of the same
-  // input), in a group with the `scene` transform.
-  function sceneGroup(input) {
+  // The item of `items` for input (a `scene` or 3D Sticker request), or the one shown before while it
+  // loads (an item of the same input), in a group with the input's transform.
+  function contentGroup(items, input) {
     const { transform, itemQuaternion } = input;
-    const item = sceneItems.request(input);
+    const item = items.request(input);
     if (!item) return null;
     item.object.quaternion.set(itemQuaternion.x, itemQuaternion.y, itemQuaternion.z, itemQuaternion.w);
     const group = new Group();
@@ -408,7 +417,21 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     group.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
     group.scale.setScalar(transform.scale);
     group.add(item.object);
-    return { group, splat: item.kind === "splat" };
+    return { group, splat: item.kind === "splat", object: item.object };
+  }
+
+  // A 3D Sticker's opacity: a SPLAT's own, a GLB's on its unlit materials.
+  function setContentOpacity(content, opacity) {
+    if (content.splat) {
+      content.object.opacity = opacity;
+      return;
+    }
+    content.object.traverse((object) => {
+      for (const material of object.isMesh ? [object.material].flat() : []) {
+        material.opacity = opacity;
+        material.transparent = opacity < 1;
+      }
+    });
   }
 
   function addWorldSticker(owned, mesh, layer) {
@@ -422,26 +445,32 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     world.add(mesh);
   }
 
-  // The World of a space input: the guides, the `scene` item, the world Sticker planes and lines.
+  // The World of a space input: the guides, the `scene` item, the 3D Sticker's item, the world Sticker
+  // planes and lines.
   function buildWorld(owned, space) {
     world.clear();
     lines.forEach((line) => disposeObject(line));
     lines = [];
     if (space.grid) world.add(guideGroup(space.grid));
     sceneItems.retain(space.sceneUrls ?? []);
-    const content = space.scene ? sceneGroup(space.scene) : null;
+    stickerItems.retain(space.stickerUrls ?? []);
+    const sticker = space.sticker ? contentGroup(stickerItems, space.sticker) : null;
+    if (sticker) setContentOpacity(sticker, space.sticker.opacity);
+    const contents = [space.scene ? contentGroup(sceneItems, space.scene) : null, sticker].filter(Boolean);
     // A SPLAT draws through Spark's renderer, made the first time one shows (its module is loaded by
-    // then); until it is there the SPLAT waits a render.
-    if (content?.splat && !spark) {
+    // then); until it is there the SPLATs wait a render.
+    const splat = contents.some((content) => content.splat);
+    if (splat && !spark) {
       loadSpark().then(({ SparkRenderer }) => {
         if (closed) return;
         spark ||= new SparkRenderer({ renderer, onDirty: onUpdate });
         onUpdate();
       }).catch((error) => console.error("[PanoramaStickers] Spark is unavailable", error));
-    } else if (content) {
-      world.add(content.group);
-      if (content.splat) world.add(spark);
     }
+    for (const content of contents) {
+      if (!content.splat || spark) world.add(content.group);
+    }
+    if (splat && spark) world.add(spark);
     let index = 0;
     for (const layer of space.stickers) {
       if (layerDrawable(owned, layer)) addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
@@ -510,11 +539,12 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. Each may name its `source`
   // (see layerTexture). owner is optional.
   // With `space`, the view stands at camera.position (a spaceCamera(), pano_space.js) and draws the World
-  // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickers, lines }. sceneUrls are the
-  // item URLs of the `scene` input; loaded items of other URLs are dropped. grid is a gridSpec()
-  // or null. scene is null or { kind ("splat" or "mesh"), url, urls (every item of the input), prefetch
+  // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickerUrls, sticker,
+  // stickers, lines }. sceneUrls are the item URLs of the `scene` input; loaded items of other URLs are
+  // dropped. grid is a gridSpec() or null. scene is null or { kind ("splat" or "mesh"), url, urls (every item of the input), prefetch
   // (urls to load ahead), transform ({ position, quaternion, scale }), itemQuaternion (the item's turn into
-  // the `scene` frame) }. stickers are world Sticker planes { id, media, revision, source, opacity,
+  // the `scene` frame) }. sticker is the same for the `sticker` input's 3D media with its opacity, and
+  // stickerUrls its item URLs. stickers are world Sticker planes { id, media, revision, source, opacity,
   // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }.
   // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
   function render(input) {
@@ -522,10 +552,10 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     return draw(panorama, input, input.space ?? null);
   }
 
-  // The box of the loaded `scene` item at url in its own frame ({ min, max }; a SPLAT's in 3DGS
-  // coordinates), or null while it loads.
+  // The box of the loaded `scene` or 3D Sticker item at url in its own frame ({ min, max }; a SPLAT's in
+  // 3DGS coordinates), or null while it loads.
   function sceneBox(url) {
-    return sceneItems.box(url);
+    return sceneItems.box(url) ?? stickerItems.box(url);
   }
 
   // input: render()'s input without camera; the frame is the layers laid out as an ERP.
@@ -543,6 +573,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   function dispose() {
     closed = true;
     sceneItems.close();
+    stickerItems.close();
     if (guides) disposeObject(guides.group);
     lines.forEach((line) => disposeObject(line));
     worldStickers.forEach((mesh) => mesh.material.dispose());
