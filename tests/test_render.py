@@ -78,7 +78,7 @@ def test_composite_depth_ignores_fully_transparent_world_pixels():
 
 
 def _scene(**state):
-    loaded = load_scene_state({"version": 2, **state})
+    loaded = load_scene_state({"version": 2, "camera": {}, **state})
     return loaded, evaluate_scene_state(loaded, 0.0)
 
 

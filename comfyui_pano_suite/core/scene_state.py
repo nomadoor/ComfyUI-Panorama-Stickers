@@ -13,6 +13,8 @@ from .paint_state import normalize_painting_state
 STATE_VERSION = 2
 STICKER_STATE_KIND = "pano_sticker_state"
 PLACEMENTS = ("sky", "world")
+# How the Camera shoots; the first is the default.
+PROJECTIONS = ("perspective", "erp")
 FILE_STORAGES = ("input", "output", "temp")
 # ease-in-out, the Easing of a Keyframe without a valid one.
 DEFAULT_EASING = (0.42, 0.0, 0.58, 1.0)
@@ -254,9 +256,21 @@ def _stickers(raw):
     return stickers
 
 
+def _camera(raw):
+    """The Camera, or None when the state has none (`camera` missing, null or not an object)."""
+    if not isinstance(raw, dict):
+        return None
+    projection = raw.get("projection") if raw.get("projection") in PROJECTIONS else PROJECTIONS[0]
+    return {"aspect": _positive(raw.get("aspect"), 1.0), "projection": projection, **_lanes(raw, CAMERA_LANES)}
+
+
+def default_camera() -> dict:
+    """The Camera of a state that has none, for the nodes that always shoot through one (PanoramaCutoutNode)."""
+    return _camera({})
+
+
 def _normalize_v2(raw):
     timeline = raw.get("timeline") if isinstance(raw.get("timeline"), dict) else {}
-    camera = raw.get("camera") if isinstance(raw.get("camera"), dict) else {}
     scene = raw.get("scene") if isinstance(raw.get("scene"), dict) else {}
     length = _frame(timeline.get("length"))
     painting_layer = raw.get("painting_layer")
@@ -266,7 +280,7 @@ def _normalize_v2(raw):
             "fps": _positive(timeline.get("fps"), 24.0),
             "length": length if length is not None and length >= 1 else None,
         },
-        "camera": {"aspect": _positive(camera.get("aspect"), 1.0), **_lanes(camera, CAMERA_LANES)},
+        "camera": _camera(raw.get("camera")),
         "scene": {"clip": _clip(scene.get("clip")), **_lanes(scene, SCENE_LANES)},
         "stickers": _stickers(raw.get("stickers")),
         "painting": normalize_painting_state(raw.get("painting")),
@@ -295,9 +309,10 @@ def _v1_source(sticker, assets):
 
 
 def _v1_camera(shots):
+    """The Cutout's shot as the Camera; a state without one (Stickers) has no Camera."""
     shot = shots[0] if isinstance(shots, list) and shots else None
     if not isinstance(shot, dict):
-        return {}
+        return None
     h_fov = _clamp(_number(shot.get("hFOV_deg"), 90.0), 1.0, 179.0)
     v_fov = _clamp(_number(shot.get("vFOV_deg"), 60.0), 1.0, 179.0)
     return {
@@ -383,6 +398,7 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
         return _frame(frame * ratio)
 
     length = state["timeline"]["length"]
+    camera = state["camera"]
     scene = _rebase_clip(state["scene"]["clip"], rebase)
     stickers = []
     for sticker in state["stickers"]:
@@ -391,7 +407,7 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
         stickers.append({**sticker, "clip": clip["clip"], **_rebase_lanes(sticker, lanes, rebase, clip["anchor"], clip["new_anchor"])})
     return _normalize_v2({
         "timeline": {"fps": fps, "length": None if length is None else max(1, rebase(length))},
-        "camera": {"aspect": state["camera"]["aspect"], **_rebase_lanes(state["camera"], CAMERA_LANES, rebase, 0, 0)},
+        "camera": None if camera is None else {**camera, **_rebase_lanes(camera, CAMERA_LANES, rebase, 0, 0)},
         "scene": {"clip": scene["clip"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
         "stickers": stickers,
         "painting": state["painting"],

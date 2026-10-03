@@ -239,10 +239,11 @@ test("a state is timed when it has a Keyframe or a Clip range other than the who
   assert.equal(isTimed(loadSceneState(null)), false);
   assert.equal(isTimed(loadSceneState(readFixture("v1_stickers"))), false);
   assert.equal(isTimed(loadSceneState(readFixture("v2_canonical"))), true);
-  const state = loadSceneState({ version: 2, stickers: [{ source: { kind: "port" }, clip: { start: 0, in: 3 } }] });
+  const state = loadSceneState({ version: 2, camera: {}, stickers: [{ source: { kind: "port" }, clip: { start: 0, in: 3 } }] });
   assert.equal(isTimed(state), true);
   state.stickers[0].clip.in = 0;
   assert.equal(isTimed(state), false);
+  assert.equal(isTimed({ ...state, camera: null }, { camera: true }), false, "a state without a Camera");
   keyAllLanes(state.camera, 0);
   assert.equal(isTimed(state), false, "Stickers has no Camera (ADR 0028)");
   assert.equal(isTimed(state, { camera: true }), true, "Cutout shoots with the Camera");
@@ -258,7 +259,8 @@ test("the Timeline shows its length, or the video's without one, widened to Clip
   canonical.stickers[1].scale.keyframes[1].frame = 80;
   assert.equal(timelineSpan(canonical, { minimum: 10 }), 81);
   assert.equal(timelineSpan(loadSceneState(null), { minimum: 120 }), 120);
-  const camera = loadSceneState(null);
+  assert.equal(timelineSpan(loadSceneState(null), { minimum: 120, camera: true }), 120, "a state without a Camera");
+  const camera = loadSceneState({ version: 2, camera: {} });
   keyAllLanes(camera.camera, 200);
   assert.equal(timelineSpan(camera, { minimum: 120 }), 120, "Stickers has no Camera (ADR 0028)");
   assert.equal(timelineSpan(camera, { minimum: 120, camera: true }), 201, "Cutout shoots with the Camera");

@@ -381,7 +381,7 @@ def evaluate_scene_state(state: dict, frame: float) -> dict:
     scene_clip_frame = _clip_frame(scene["clip"], frame)
     return {
         "frame": frame,
-        "camera": {
+        "camera": None if camera is None else {
             "position": _evaluate_lane(camera, "position", frame),
             **_evaluate_lane(camera, "rotation", frame),
             "hFOV_deg": _fov(_evaluate_lane(camera, "fov", frame)),

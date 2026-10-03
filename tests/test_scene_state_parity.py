@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "scene_state"
 TOLERANCE = 1e-4
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_interpolation", "v2_half_turns"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_interpolation", "v2_half_turns", "v2_no_camera", "v2_erp_camera"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 EVAL_FRAMES = {
     "v2_canonical": [10.0 - 1e-7, 50.0 - 1e-7] + [case["frame"] for case in json.loads((FIXTURES / "v2_canonical.eval.json").read_text(encoding="utf-8"))] + [0.0, 1.0, 23.999, 24.0 - 5e-7, 24.0 + 5e-7, 48.0, 119.0],
@@ -26,6 +26,8 @@ EVAL_FRAMES = {
     "v2_interpolation": [-2.0 + 0.37 * i for i in range(417)] + [12.0 - 1e-7, 12.0 + 1e-7, 49.9, 50.1, 75.0 + 1e-3, 90.0 - 1e-3, 19.99, 20.01, 59.99, 60.01, 74.99, 75.0, 75.01, 15.0, 25.0, 9.99, 10.01],
     # Exact half turns (their direction and the yaw tie at frame 10), a fast move that stops, and uneven spacing.
     "v2_half_turns": [0.25 * i for i in range(410)],
+    "v2_no_camera": [0.0, 5.0, 6.0, 10.0, 20.0, 36.0, 44.9, 45.0],
+    "v2_erp_camera": [0.0, 12.0, 18.0, 23.999, 24.0, 30.0, 36.0, 40.0],
 }
 REBASE_CASES = [[name, fps] for name in STATE_CASES for fps in (30000 / 1001, 12.0, 60.0)]
 BAD_STATES = ['{"version":3}', '{"version":"2"}', "{not json", "[1]"]

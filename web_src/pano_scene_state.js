@@ -6,6 +6,8 @@ import { normalizePaintingState } from "./pano_paint_types.js";
 export const STATE_VERSION = 2;
 export const STICKER_STATE_KIND = "pano_sticker_state";
 const PLACEMENTS = ["sky", "world"];
+// How the Camera shoots; the first is the default.
+const PROJECTIONS = ["perspective", "erp"];
 const FILE_STORAGES = ["input", "output", "temp"];
 // ease-in-out, the Easing of a Keyframe without a valid one.
 export const DEFAULT_EASING = [0.42, 0, 0.58, 1];
@@ -223,9 +225,20 @@ function stickers(raw) {
   return out;
 }
 
+// The Camera, or null when the state has none (`camera` missing, null or not an object).
+function camera(raw) {
+  if (!isObject(raw)) return null;
+  const projection = PROJECTIONS.includes(raw.projection) ? raw.projection : PROJECTIONS[0];
+  return { aspect: positive(raw.aspect, 1), projection, ...lanes(raw, CAMERA_LANES) };
+}
+
+// The Camera of a state that has none, for the editors that always shoot through one (PanoramaCutoutNode).
+export function defaultCamera() {
+  return camera({});
+}
+
 function normalizeV2(raw) {
   const timeline = isObject(raw.timeline) ? raw.timeline : {};
-  const camera = isObject(raw.camera) ? raw.camera : {};
   const scene = isObject(raw.scene) ? raw.scene : {};
   const length = frameNumber(timeline.length);
   return {
@@ -234,7 +247,7 @@ function normalizeV2(raw) {
       fps: positive(timeline.fps, 24),
       length: length !== null && length >= 1 ? length : null,
     },
-    camera: { aspect: positive(camera.aspect, 1), ...lanes(camera, CAMERA_LANES) },
+    camera: camera(raw.camera),
     scene: { clip: clip(scene.clip), ...lanes(scene, SCENE_LANES) },
     stickers: stickers(raw.stickers),
     painting: normalizePaintingState(raw.painting),
@@ -259,9 +272,10 @@ function v1Source(item, assets) {
   return null;
 }
 
+// The Cutout's shot as the Camera; a state without one (Stickers) has no Camera.
 function v1Camera(shots) {
   const shot = Array.isArray(shots) && shots.length ? shots[0] : null;
-  if (!isObject(shot)) return {};
+  if (!isObject(shot)) return null;
   const hFov = clamp(number(shot.hFOV_deg, 90), 1, 179);
   const vFov = clamp(number(shot.vFOV_deg, 60), 1, 179);
   const deg2rad = Math.PI / 180;
@@ -314,6 +328,14 @@ export function loadSceneState(raw) {
   return version === 1 ? migrateV1(parsed) : normalizeV2(parsed);
 }
 
+// The `state_json` text of a loaded state. The default `projection` is left out, so the text of a
+// state saved before the Camera had one stays the same and the node's execution cache still hits.
+export function sceneStateText(state) {
+  if (state.camera?.projection !== PROJECTIONS[0]) return JSON.stringify(state);
+  const { projection, ...camera } = state.camera;
+  return JSON.stringify({ ...state, camera });
+}
+
 function rebaseLanes(owner, list, rebase, anchor, newAnchor) {
   const out = {};
   for (const [name] of list) {
@@ -346,7 +368,7 @@ export function rebaseSceneState(state, fps) {
   const scene = rebaseClip(state.scene.clip, rebase);
   return normalizeV2({
     timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
-    camera: { aspect: state.camera.aspect, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
+    camera: state.camera === null ? null : { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
     scene: { clip: scene.clip, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);

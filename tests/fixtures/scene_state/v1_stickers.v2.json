@@ -4,29 +4,7 @@
     "fps": 24.0,
     "length": null
   },
-  "camera": {
-    "aspect": 1.0,
-    "position": {
-      "value": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "keyframes": []
-    },
-    "rotation": {
-      "value": {
-        "yaw_deg": 0.0,
-        "pitch_deg": 0.0,
-        "roll_deg": 0.0
-      },
-      "keyframes": []
-    },
-    "fov": {
-      "value": 90.0,
-      "keyframes": []
-    }
-  },
+  "camera": null,
   "scene": {
     "clip": {
       "start": 0,

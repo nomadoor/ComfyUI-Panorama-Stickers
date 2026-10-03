@@ -148,7 +148,7 @@ def test_mesh_is_ordered_by_depth_with_world_stickers():
         {"id": id_, "placement": "world", "source": {"kind": "file", "filename": f"{id_}.png"}, "position": {"value": position}, "scale": {"value": scale}}
         for id_, position, scale in (("near", [0.0, 0.0, -1.0], 0.5), ("far", [0.0, 0.0, -10.0], 40.0))
     ]
-    state = load_scene_state({"version": 2, "stickers": stickers})
+    state = load_scene_state({"version": 2, "camera": {}, "stickers": stickers})
     blue = np.zeros((4, 4, 4), dtype=np.float32)
     blue[..., 2:] = 1.0
     white = np.ones((4, 4, 4), dtype=np.float32)

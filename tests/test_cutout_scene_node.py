@@ -156,6 +156,34 @@ def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_asp
     assert load_sticker_state(sticker_state)["camera"] == payload["camera"]
 
 
+@pytest.mark.parametrize("state", [None, {"version": 2, "camera": None}, {"version": 2, "timeline": {"fps": 24.0}}], ids=["empty", "null", "missing"])
+def test_a_state_without_a_camera_is_shot_with_the_default_camera(state):
+    # The Cutout always shoots through a Camera; without one in its state, the default one (ADR 0029).
+    erp = _halves_erp()
+    expected = _cutout(erp, {"version": 2, "camera": {}})
+
+    image, sticker_state, mask, _video = _cutout(erp, state)
+
+    assert torch.equal(image, expected[0]) and torch.equal(mask, expected[2])
+    assert sticker_state == expected[1]
+
+
+def test_timeline_of_a_state_without_a_camera_has_no_camera_keyframes_to_count():
+    state = load_scene_state({"version": 2, "timeline": {"fps": 24.0}})
+
+    assert nodes._decide_timeline(state, None, None, camera=True)[1] == nodes._decide_timeline(state, None, None)[1]
+    assert len(nodes._decide_timeline(state, None, None, camera=True)[1]) == 1
+
+
+def test_pano_scene_from_stickers_without_a_camera_is_shot_from_the_cutout_camera():
+    scene = _stickers({"version": 2, "camera": None}, bg_media=_halves_erp())[3]
+    assert scene.state["camera"] is None
+
+    image = _cutout(scene, _camera(yaw_deg=180.0))[0]
+
+    assert torch.allclose(_center(image), torch.tensor([0.0, 0.0, 1.0]))
+
+
 def test_legacy_shot_becomes_the_sticker_state_camera():
     payload = json.loads(_cutout(build_background_erp(), V1_STATE, output_megapixels=0.03)[1])
 

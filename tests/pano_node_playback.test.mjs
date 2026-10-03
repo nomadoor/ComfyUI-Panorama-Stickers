@@ -189,7 +189,7 @@ test("the play button shows for a timed scene or a background VIDEO that loads",
   const timed = setup(timedState());
   assert.equal(timed.follow([]), true);
   // Stickers has no Camera (ADR 0028): the Keyframes of the state's Camera do not make it play.
-  const camera = loadSceneState(null);
+  const camera = loadSceneState({ version: 2, camera: {} });
   keyAllLanes(camera.camera, 0);
   assert.equal(setup(camera).follow([]), false);
 });

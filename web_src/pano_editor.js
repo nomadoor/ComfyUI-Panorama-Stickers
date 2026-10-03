@@ -659,6 +659,7 @@ async function showEditor(node, type, options = {}) {
     active: editorActive(node),
     fps: stateV2 ? videoTimelineFps(node) : null,
     scene: capture?.state ?? null,
+    camera: cutoutV2,
   });
   node.__panoLiveStateOverride = state;
   node.__panoLiveStateVersion = 0;

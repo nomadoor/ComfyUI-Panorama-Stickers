@@ -337,7 +337,7 @@ def _scene_state(clip=None, position=None, scale=None, **rotation):
     scene = {"position": {"value": position}, "rotation": {"value": rotation}, "scale": {"value": scale}}
     if clip is not None:
         scene["clip"] = clip
-    return load_scene_state({"version": 2, "scene": scene})
+    return load_scene_state({"version": 2, "camera": {}, "scene": scene})
 
 
 def _ball_at(color):
@@ -369,7 +369,7 @@ def test_scene_content_is_drawn_through_the_scene_transform():
 def test_scene_content_follows_scene_keyframes_from_its_clip_origin():
     content, _views = _ball()
     keyframes = [{"frame": 0, "value": [0.0, 0.0, 0.0]}, {"frame": 4, "value": [3.0, 0.0, 3.0], "easing": "auto"}]
-    state = load_scene_state({"version": 2, "scene": {"clip": {"start": 4, "in": 2}, "position": {"keyframes": keyframes}}})
+    state = load_scene_state({"version": 2, "camera": {}, "scene": {"clip": {"start": 4, "in": 2}, "position": {"keyframes": keyframes}}})
     projection = Projection.erp(360, 180)
 
     # Frame 6 is 4 frames after the content's start (start - in = 2): the ball's center is at (3, 0, 0).
@@ -394,7 +394,7 @@ def test_scene_content_is_drawn_only_inside_its_clip_range_and_with_an_item():
 def test_scene_content_is_ordered_by_depth_with_world_stickers():
     content, _views = _ball(radius=1.0)
     stickers = [_world("near", position=[0.0, 0.0, -1.0], scale=0.5), _world("far", position=[0.0, 0.0, -10.0], scale=40.0)]
-    state = load_scene_state({"version": 2, "stickers": stickers})
+    state = load_scene_state({"version": 2, "camera": {}, "stickers": stickers})
     sources = {"near": StickerSource(_solid(BLUE), FULL), "far": StickerSource(_solid((1.0, 1.0, 1.0)), FULL)}
 
     color, _mask, depth = _render(state, sources, Projection.erp(360, 180), scene=content, scene_index=0)
@@ -417,7 +417,7 @@ def test_3d_world_sticker_is_its_content_through_its_transform():
     content, views = _ball()
     projection = Projection.erp(360, 180)
     # As the scene transform: the ball's center (0, 0, -3) lands at (6, 1, 0).
-    state = load_scene_state({"version": 2, "stickers": [_content_sticker("ball", position=[0.0, 1.0, 0.0], scale=2.0, yaw_deg=90.0)]})
+    state = load_scene_state({"version": 2, "camera": {}, "stickers": [_content_sticker("ball", position=[0.0, 1.0, 0.0], scale=2.0, yaw_deg=90.0)]})
 
     color, _mask, depth = _render(state, {"ball": ContentSource(content, 1)}, projection)
 
@@ -430,7 +430,7 @@ def test_3d_world_sticker_is_its_content_through_its_transform():
 
 def test_3d_world_sticker_opacity_is_on_its_alpha():
     content, _views = _ball()
-    state = load_scene_state({"version": 2, "stickers": [_content_sticker("ball", opacity=0.5)]})
+    state = load_scene_state({"version": 2, "camera": {}, "stickers": [_content_sticker("ball", opacity=0.5)]})
 
     color, _mask, _depth = _render(state, {"ball": ContentSource(content, 0)}, Projection.erp(360, 180))
 
@@ -441,7 +441,7 @@ def test_3d_world_sticker_is_ordered_by_depth_with_planes_and_drawn_over_the_sky
     content, _views = _ball()
     sky = {"id": "sky", "source": {"kind": "file", "filename": "sky.png"}, "z_index": 9, "size": {"value": {"hFOV_deg": 60.0, "vFOV_deg": 60.0}}}
     stickers = [sky, _content_sticker("ball"), _world("near", position=[0.0, 0.0, -1.0], scale=0.2)]
-    state = load_scene_state({"version": 2, "stickers": stickers})
+    state = load_scene_state({"version": 2, "camera": {}, "stickers": stickers})
     sources = {"sky": StickerSource(_solid((1.0, 1.0, 1.0)), FULL, 9), "ball": ContentSource(content, 0), "near": StickerSource(_solid(BLUE), FULL)}
 
     color, _mask, depth = _render(state, sources, Projection.erp(360, 180))

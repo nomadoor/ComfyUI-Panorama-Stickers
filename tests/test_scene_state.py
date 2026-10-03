@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
-from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state
+from comfyui_pano_suite.core.scene_state import default_camera, load_scene_state, load_sticker_state, rebase_scene_state
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 
 
@@ -65,7 +65,7 @@ def test_empty_state_is_default_v2():
     assert state == load_scene_state(None) == load_scene_state("  ")
     assert state["version"] == 2
     assert state["stickers"] == []
-    assert all(state["camera"][lane]["keyframes"] == [] for lane in ("position", "rotation", "fov"))
+    assert state["camera"] is None
 
 
 def test_state_without_version_is_read_as_v1():
@@ -73,6 +73,44 @@ def test_state_without_version_is_read_as_v1():
     assert state["version"] == 2
     assert state["camera"]["rotation"]["value"]["yaw_deg"] == 30.0
     assert state["camera"]["aspect"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("camera", ["", ',"camera":null', ',"camera":"front"', ',"camera":[1]'])
+def test_state_without_a_camera_object_has_no_camera(camera):
+    assert load_scene_state(f'{{"version":2{camera}}}')["camera"] is None
+
+
+def test_camera_object_has_the_default_camera_fields():
+    state = load_scene_state('{"version":2,"camera":{}}')
+    assert state["camera"] == default_camera()
+    assert default_camera()["projection"] == "perspective"
+    assert default_camera()["aspect"] == 1.0
+
+
+@pytest.mark.parametrize("projection, expected", [("erp", "erp"), ("perspective", "perspective"), ("ERP", "perspective"), (None, "perspective"), (1, "perspective")])
+def test_camera_projection_is_perspective_or_erp(projection, expected):
+    state = load_scene_state({"version": 2, "camera": {"projection": projection}})
+    assert state["camera"]["projection"] == expected
+
+
+def test_v1_cutout_has_a_camera_and_v1_stickers_has_none():
+    assert load_scene_state(read_fixture("v1_cutout"))["camera"]["projection"] == "perspective"
+    assert load_scene_state(read_fixture("v1_stickers"))["camera"] is None
+    assert load_scene_state('{"version":1,"shots":["bad"]}')["camera"] is None
+
+
+def test_rebase_keeps_no_camera_and_the_projection():
+    assert rebase_scene_state(load_scene_state(read_fixture("v2_no_camera")), 60.0)["camera"] is None
+    rebased = rebase_scene_state(load_scene_state(read_fixture("v2_erp_camera")), 12.0)
+    assert rebased["camera"]["projection"] == "erp"
+    assert [key["frame"] for key in rebased["camera"]["position"]["keyframes"]] == [0, 18]
+
+
+def test_evaluating_a_state_without_camera_gives_no_camera():
+    state = load_scene_state(read_fixture("v2_no_camera"))
+    evaluated = evaluate_scene_state(state, 30.0)
+    assert evaluated["camera"] is None
+    assert evaluated["stickers"][0]["yaw_deg"] == pytest.approx(20.0)
 
 
 @pytest.mark.parametrize("text, fragment", [
@@ -97,7 +135,7 @@ def test_state_v2_has_no_unread_fields():
     state = load_scene_state(read_fixture("v2_canonical"))
     assert list(state.keys()) == ["version", "timeline", "camera", "scene", "stickers", "painting", "painting_layer"]
     assert list(state["timeline"].keys()) == ["fps", "length"]
-    assert list(state["camera"].keys()) == ["aspect", "position", "rotation", "fov"]
+    assert list(state["camera"].keys()) == ["aspect", "projection", "position", "rotation", "fov"]
     assert list(state["scene"].keys()) == ["clip", "position", "rotation", "scale"]
     lanes = {"sky": ["direction", "roll", "size", "opacity", "z_index"], "world": ["position", "rotation", "scale", "opacity"]}
     for sticker in state["stickers"]:
@@ -138,7 +176,9 @@ def test_evaluate_canonical_state_matches_fixture():
 def test_evaluate_returns_static_values_without_keyframes():
     state = load_scene_state(read_fixture("v1_stickers"))
     out = evaluate_scene_state(state, 3.25)
-    assert out["camera"] == {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "aspect": 1.0}
+    assert out["camera"] is None
+    camera = evaluate_scene_state(load_scene_state('{"version":2,"camera":{}}'), 3.25)["camera"]
+    assert camera == {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "aspect": 1.0}
     assert [s["active"] for s in out["stickers"]] == [False, True, True]
     assert out["stickers"][0]["yaw_deg"] == 190.0
 
