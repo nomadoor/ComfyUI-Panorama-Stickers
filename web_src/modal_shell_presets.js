@@ -8,6 +8,11 @@ export function buildModalShellPreset(type = "stickers") {
       { key: "unwrap", label: "Unwrap", icon: ICON.unwrap, pressed: "false", extraClass: "" },
       ...(isCutout ? [{ key: "frame", label: "Frame", icon: ICON.camera, pressed: "false", extraClass: "pano-view-btn-icon" }] : []),
     ],
+    // The space view's mode (#71), next to the view toggle while the panorama view shows World content.
+    spaceButtons: isCutout ? [] : [
+      { key: "3dof", label: "3DoF", tip: "Look around from the ERP origin", pressed: "true" },
+      { key: "6dof", label: "6DoF", tip: "Move freely in space", pressed: "false" },
+    ],
     toolButtons: [
       { key: "cursor", attr: "data-tool-mode", value: "cursor", label: "Cursor", tip: "Cursor", active: true, accent: false, icon: ICON.cursor_tool, pressed: "true" },
       { key: "paint", attr: "data-tool-mode", value: "paint", label: "Paint", tip: "Paint", active: false, accent: false, icon: ICON.palette_tool, pressed: "false" },
@@ -26,10 +31,8 @@ export function buildModalShellPreset(type = "stickers") {
     ],
     floatingButtons: [
       { action: "reset-view", label: "Reset View", tip: "Reset view", pressed: null, icon: ICON.reset },
-      // Shown only while the panorama view is in space (#71): the 3DoF / 6DoF switch, and Frame Content
-      // in 6DoF.
+      // Shown only while the panorama view is in space in 6DoF (#71).
       ...(isCutout ? [] : [
-        { action: "space-mode", label: "6DoF View", tip: "Move freely in space (6DoF)", pressed: "false", icon: ICON.space, visible: false },
         { action: "frame-view", label: "Frame Content", tip: "Frame content", pressed: null, icon: ICON.focus, visible: false },
       ]),
       { action: "toggle-grid", label: "Hide Grid", tip: "Hide grid", pressed: "true", icon: ICON.eye },

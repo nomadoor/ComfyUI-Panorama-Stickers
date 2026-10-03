@@ -216,7 +216,10 @@ watch(() => props.open, (nextOpen) => {
 
           <PanoVideoTransport :state="uiState.videoTransport || {}" />
 
-          <PanoViewToggle :buttons="uiState.viewButtons || shellPreset.viewButtons || []" />
+          <PanoViewToggle
+            :buttons="uiState.viewButtons || shellPreset.viewButtons || []"
+            :space-buttons="uiState.spaceButtons || []"
+          />
 
           <PanoFloatingRight
             :buttons="uiState.floatingButtons || floatingButtons"

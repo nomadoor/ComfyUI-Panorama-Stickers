@@ -4,17 +4,28 @@
 // through worldRotation (pano_world.js).
 //
 // The Viewport camera is { position, yaw_deg, pitch_deg, hFOV_deg, distance }: the editor's own view,
-// never saved (CONTEXT.md). distance is how far ahead its pivot is, the point it orbits around and
-// dollies toward; it also sets how far a pan or a dolly step moves.
+// never saved (CONTEXT.md). distance is how far ahead its pivot is: the point on its axis that a drag or a
+// wheel step over empty space turns around, pans at the depth of, and zooms toward. A drag or a wheel step
+// over the World content works on the point under the pointer instead (navigationTarget), and leaves the
+// pivot at that point's depth, so the pivot stays in sight.
 import { DEG2RAD, RAD2DEG, clamp, wrapYaw } from "./pano_camera_math.js";
 import { evaluateLane } from "./pano_scene_eval.js";
 import { quaternionToRotation, rotationToQuaternion, worldRotation } from "./pano_world.js";
 
-// A dolly step is this part of the distance to the pivot.
-export const DOLLY_STEP = 0.15;
-// The pivot never comes closer than this part of the content's size (or of 1 without content); a dolly
-// past it moves the pivot ahead with the view, so the view can fly through the content.
-const MIN_DISTANCE_RATIO = 0.01;
+// A zoom step toward a point is this part of the distance to it.
+export const ZOOM_STEP = 0.15;
+// A zoom step is never shorter than this part of the content's size (or of 1 without content), so it
+// keeps going as it comes close; it still stops ZOOM_STOP_RATIO of that size short of the point.
+const MIN_ZOOM_RATIO = 0.01;
+const ZOOM_STOP_RATIO = 0.001;
+// Over empty space the point a drag or a wheel step works on is never closer than this part of the
+// content's size, so a view that came up to its pivot or to the content's center still moves.
+const MIN_TARGET_RATIO = 0.05;
+// A wheel step reuses the point picked for an earlier one within this many pixels of the pointer and this
+// many ms of the pick; a pick that took longer than the budget is reused while the wheel keeps turning.
+const WHEEL_PICK_SLOP = 4;
+const WHEEL_PICK_MS = 250;
+const WHEEL_PICK_BUDGET_MS = 16;
 // Pivot distance of a view that has nothing to frame yet.
 export const DEFAULT_DISTANCE = 1;
 // An SPLAT is in 3DGS coordinates (Y down, Z forward); the `scene` glTF frame turns it 180 degrees about
@@ -69,41 +80,95 @@ export function pivotOf(view) {
   return add(view.position, viewAxes(view.yaw_deg, view.pitch_deg).forward, view.distance);
 }
 
+function sub(a, b) {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function dot(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+// How far ahead of the view p is, along its axis.
+export function depthOf(view, p) {
+  return dot(sub(p, view.position), viewAxes(view.yaw_deg, view.pitch_deg).forward);
+}
+
+// The point a drag or a wheel step works on: the World content under the pointer (hit, from the three.js
+// view's raycast), else the content's center while the view has not moved and the center is ahead
+// (center is null once it has), else the view's pivot. Without a hit the point is at least
+// MIN_TARGET_RATIO of the content's size (scale) away, so the view does not stick to it.
+export function navigationTarget(view, hit, center = null, scale = DEFAULT_DISTANCE) {
+  if (hit) return hit;
+  const minimum = Math.max(scale, 1e-6) * MIN_TARGET_RATIO;
+  if (center && depthOf(view, center) > 0) {
+    const offset = sub(center, view.position);
+    const distance = Math.hypot(...offset);
+    return distance >= minimum ? center : add(view.position, offset, minimum / distance);
+  }
+  return add(view.position, viewAxes(view.yaw_deg, view.pitch_deg).forward, Math.max(view.distance, minimum));
+}
+
+// Whether a wheel step `next` ({ x, y, time, key, view }) reuses the point the step `last` picked
+// ({ x, y, time, cost, key, view, wheelTime, hit }: where and when it picked, how long the pick took, the
+// content and the view after its last step, and when that step was). Picking a large mesh or SPLAT takes
+// tens of ms, and a zoom keeps the point under a still pointer. The content (key) and the view must be as
+// the last step left them, and the pointer within WHEEL_PICK_SLOP pixels of the pick; then it reuses the
+// point for WHEEL_PICK_MS after the pick, or, after a pick over WHEEL_PICK_BUDGET_MS, for as long as the
+// wheel keeps turning.
+export function reuseWheelPick(last, next) {
+  if (!last || last.key !== next.key || last.view !== next.view) return false;
+  if (Math.hypot(next.x - last.x, next.y - last.y) > WHEEL_PICK_SLOP) return false;
+  return next.time - last.time < WHEEL_PICK_MS || (last.cost > WHEEL_PICK_BUDGET_MS && next.time - last.wheelTime < WHEEL_PICK_MS);
+}
+
 function tanHalfFov(view, width, height) {
   const tanX = Math.tan(view.hFOV_deg * 0.5 * DEG2RAD);
   return { tanX, tanY: tanX * height / width };
 }
 
-// Turns the view about its pivot by a pointer drag of (dx, dy) pixels on a view `height` pixels tall,
-// like three.js OrbitControls (and core's Load3D): a drag across the view's height turns it a full turn,
-// and the content follows the pointer.
-export function orbitView(view, dx, dy, height) {
-  const pivot = pivotOf(view);
+// Turns the view about the point `pivot` (its own pivot by default) by a pointer drag of (dx, dy) pixels
+// on a view `height` pixels tall, like three.js OrbitControls (and core's Load3D): a drag across the view's
+// height turns it a full turn, and the content follows the pointer. The pivot stays where it is on the
+// screen, so turning about a point off the view's axis does not jump; the view's own pivot moves to its
+// depth.
+export function orbitView(view, dx, dy, height, pivot = pivotOf(view)) {
   const yaw = wrapYaw(view.yaw_deg + dx / height * 360);
   const pitch = clamp(view.pitch_deg - dy / height * 360, -89.9, 89.9);
-  const { forward } = viewAxes(yaw, pitch);
-  return { ...view, yaw_deg: yaw, pitch_deg: pitch, position: add(pivot, forward, -view.distance) };
+  const before = worldRotation(view.yaw_deg, view.pitch_deg, 0);
+  const after = worldRotation(yaw, pitch, 0);
+  // The view's offset from the pivot in its own frame stays, so the pivot keeps its place on the screen.
+  const offset = sub(view.position, pivot);
+  const local = [0, 1, 2].map((axis) => dot(column(before, axis), offset));
+  const turned = { ...view, yaw_deg: yaw, pitch_deg: pitch, position: add(pivot, apply(after, local)) };
+  return { ...turned, distance: depthOf(turned, pivot) };
 }
 
-// A pan moves at least as if the pivot were this part of the content's size away, so a view whose pivot
-// came close still pans through the content.
-const MIN_PAN_RATIO = 0.05;
-
-// Moves the view and its pivot across the view by a drag of (dx, dy) pixels, so the pivot's plane
-// follows the pointer. scale is the content's size.
-export function panView(view, dx, dy, width, height, scale = DEFAULT_DISTANCE) {
+// Moves the view across itself by a drag of (dx, dy) pixels, so a point `depth` ahead (the point grabbed,
+// or the pivot's depth by default) follows the pointer exactly. The pivot goes to that depth.
+export function panView(view, dx, dy, width, height, depth = view.distance) {
   const { right, up } = viewAxes(view.yaw_deg, view.pitch_deg);
-  const depth = Math.max(view.distance, scale * MIN_PAN_RATIO);
   const perPixel = 2 * depth * tanHalfFov(view, width, height).tanY / height;
-  return { ...view, position: add(add(view.position, right, -dx * perPixel), up, dy * perPixel) };
+  return { ...view, position: add(add(view.position, right, -dx * perPixel), up, dy * perPixel), distance: depth };
 }
 
-// One wheel step toward the pivot (direction > 0) or away from it. scale is the content's size.
-export function dollyView(view, direction, scale = DEFAULT_DISTANCE) {
-  const minimum = Math.max(scale, 1e-6) * MIN_DISTANCE_RATIO;
-  const step = Math.max(view.distance * DOLLY_STEP, minimum) * Math.sign(direction);
-  const { forward } = viewAxes(view.yaw_deg, view.pitch_deg);
-  return { ...view, position: add(view.position, forward, step), distance: Math.max(view.distance - step, minimum) };
+// One wheel step toward the point `target` (direction > 0) or away from it, along the line from the view
+// to it, so the point stays under the pointer (zoom to cursor). A step is ZOOM_STEP of the distance to
+// the point, and at least a part of the content's size (scale) so it does not stall as it comes close,
+// but never reaches the point: it stops just short of it. Out, a step of ZOOM_STEP undoes one in. The pivot goes to
+// the point's depth.
+export function zoomView(view, target, direction, scale = DEFAULT_DISTANCE) {
+  const offset = sub(target, view.position);
+  const distance = Math.hypot(...offset);
+  if (!(distance > 0) || !direction) return view;
+  const size = Math.max(scale, 1e-6);
+  const minimum = size * MIN_ZOOM_RATIO;
+  const step = direction > 0
+    ? Math.min(Math.max(distance * ZOOM_STEP, minimum), distance - size * ZOOM_STOP_RATIO)
+    : -Math.max(distance * ZOOM_STEP / (1 - ZOOM_STEP), minimum);
+  // Already as close as it goes.
+  if (direction > 0 && step <= 0) return view;
+  const moved = { ...view, position: add(view.position, offset, step / distance) };
+  return { ...moved, distance: depthOf(moved, target) };
 }
 
 // The view keeping its direction that fits the sphere { center, radius } in a width x height view.

@@ -333,6 +333,19 @@
 .pano-view-toggle[data-selected="frame"] .pano-view-btn[data-view="unwrap"]:hover {
   color: var(--pano-muted-strong);
 }
+/* The space view's 3DoF / 6DoF segments (#71): the same control with shorter text-only segments. */
+.pano-space-toggle .pano-view-btn {
+  width: 64px;
+}
+.pano-space-toggle[data-selected="6dof"]::before {
+  transform: translateX(100%);
+}
+.pano-space-toggle .pano-view-btn.active {
+  color: var(--pano-text);
+}
+.pano-space-toggle .pano-view-btn:not(.active):hover {
+  color: var(--pano-muted-strong);
+}
 .pano-view-btn:disabled {
   color: var(--pano-text-tertiary);
   cursor: default;
