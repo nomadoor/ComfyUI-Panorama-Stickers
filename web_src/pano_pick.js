@@ -116,16 +116,20 @@ export function rayBoxDepth(origin, direction, box) {
   return enter >= 0 ? enter : leave;
 }
 
-// The nearest of the hits ({ depth, ... }) within the camera's near and far, or null.
-export function nearestHit(hits, camera) {
+// The nearest of the hits ({ depth, ... }) within the camera's near and far, or null. With `preferred`, the
+// nearest hit it accepts comes before any other.
+export function nearestHit(hits, camera, preferred = () => false) {
   let best = null;
   for (const hit of hits) {
-    if (hit && hit.depth >= camera.near && hit.depth <= camera.far && !(best && best.depth <= hit.depth)) best = hit;
+    if (!hit || hit.depth < camera.near || hit.depth > camera.far) continue;
+    const rank = preferred(hit) ? 0 : 1;
+    if (!best || rank < best.rank || (rank === best.rank && hit.depth < best.hit.depth)) best = { hit, rank };
   }
-  return best;
+  return best?.hit ?? null;
 }
 
-// A pick is reused while this stays the same: the pixel, the view and what the view drew (contentKey).
+// A pick is reused while this stays the same: the pixel, the view and what the view drew (contentKey). A
+// change to what is drawn that moves what is hit (geometry, transforms, visibility) must change contentKey.
 export function pickCacheKey(camera, x, y, width, height, contentKey) {
   return JSON.stringify([camera, x, y, width, height, contentKey]);
 }

@@ -302,7 +302,8 @@ function devicePoint(x, y, width, height) {
 // objects of `world`: entries are { object, stickerId } for its children that are hit on their
 // triangles, and entry i draws its meshes in materialOf(i). The other children of `world` (the guides,
 // the lines, the gizmo, Spark's renderer) and the lines or points inside an entry are hidden meanwhile.
-// Runs draw() and puts every object and material back after it.
+// Runs draw() and puts every object and material back after it, also when it throws (a lost WebGL
+// context, a target the GPU will not draw to), so the next render draws the World as it is.
 export function pickPass(world, entries, materialOf, draw) {
   const roots = new Set(entries.map((entry) => entry.object));
   const hidden = world.children.filter((child) => child.visible && !roots.has(child));
@@ -319,10 +320,12 @@ export function pickPass(world, entries, materialOf, draw) {
     });
   });
   hidden.forEach((object) => { object.visible = false; });
-  const result = draw();
-  hidden.forEach((object) => { object.visible = true; });
-  swapped.forEach(([object, material]) => { object.material = material; });
-  return result;
+  try {
+    return draw();
+  } finally {
+    hidden.forEach((object) => { object.visible = true; });
+    swapped.forEach(([object, material]) => { object.material = material; });
+  }
 }
 
 // Puts children in parent in this order, unless it holds them so already. Returns whether it changed.
@@ -452,6 +455,9 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   // where the GPU can draw to it), its camera and the pick materials by entry.
   let lastPick = { key: null, hit: null };
   let pickTarget = null;
+  // After a float target failed picks use RGBA8; after that failed too only the SPLAT boxes are picked.
+  let pickFloat = true;
+  let pickFailed = false;
   const pickCamera = new PerspectiveCamera();
   const pickMaterials = [];
   let spark = null;
@@ -624,7 +630,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       const opacity = content === sticker ? space.sticker.opacity : 1;
       if (!(opacity > 0)) continue;
       if (content.splat) pickBoxes.push({ object: content.object, box: content.box, stickerId: content.stickerId });
-      else pickable.push({ object: content.group, stickerId: content.stickerId });
+      else pickable.push({ object: content.group, stickerId: content.stickerId, plane: false });
       parts.push([content.object.uuid, content.transform]);
     }
     if (splat && spark) children.push(spark);
@@ -634,10 +640,12 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       const mesh = addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
       children.push(mesh);
       if (!(layer.opacity > 0)) continue;
-      pickable.push({ object: mesh, stickerId: layer.id });
+      pickable.push({ object: mesh, stickerId: layer.id, plane: true });
       parts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
     }
     children.push(...cachedLines(lines, space.lines ?? []));
+    // Picks are reused while this key stays (pickCacheKey): whatever changes what is hit (an item's object
+    // or geometry, a transform, a plane's place or size, what is pickable) must change it too.
     contentKey = JSON.stringify(parts);
     // A space without `gizmo` (the Cutout's camera preview, #77) leaves the gizmo of the view as it is, so
     // drawing the preview between two frames of the view does not end a drag.
@@ -739,7 +747,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   // The 1 x 1 target picks draw to: RGBA float where the GPU can draw to it, else RGBA8.
   function ensurePickTarget() {
     if (pickTarget) return pickTarget;
-    const float = renderer.extensions.has("EXT_color_buffer_float");
+    const float = pickFloat && renderer.extensions.has("EXT_color_buffer_float");
     pickTarget = new WebGLRenderTarget(1, 1, {
       type: float ? FloatType : UnsignedByteType,
       format: RGBAFormat,
@@ -752,9 +760,9 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   }
 
   // Draws the pixel at (x, y) with the pickable meshes and reads it back: { id (1 + pickable index),
-  // depth } or null.
+  // depth }, null over nothing, or false when drawing failed (the next pick tries RGBA8, then gives up).
   function drawPick(camera, x, y, width, height) {
-    if (!pickable.length) return null;
+    if (!pickable.length || pickFailed) return null;
     const target = ensurePickTarget();
     const float = target.texture.type === FloatType;
     setCamera(pickCamera, camera);
@@ -767,12 +775,24 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
         material.uniforms.far.value = camera.far;
       });
       renderer.setRenderTarget(target);
-      renderer.render(world, pickCamera);
-      renderer.setRenderTarget(null);
+      try {
+        renderer.render(world, pickCamera);
+      } finally {
+        renderer.setRenderTarget(null);
+      }
       renderer.readRenderTargetPixels(target, 0, 0, 1, 1, pixel);
       return [...pixel];
     };
-    return pickPass(world, pickable, pickMaterial, () => (float ? readPickFloat(read(0)) : readPickBytes(read(1), read(2), camera.far)));
+    try {
+      return pickPass(world, pickable, pickMaterial, () => (float ? readPickFloat(read(0)) : readPickBytes(read(1), read(2), camera.far)));
+    } catch (error) {
+      console.error("[PanoramaStickers] Picking on the GPU failed", error);
+      target.dispose();
+      pickTarget = null;
+      if (float) pickFloat = false;
+      else pickFailed = true;
+      return false;
+    }
   }
 
   // The nearest content of the last space render at (x, y) of a width x height view from camera (a
@@ -786,7 +806,8 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     const ray = pickRay(camera, x, y, width, height);
     const hits = [];
     const drawn = drawPick(camera, x, y, width, height);
-    if (drawn) hits.push({ depth: drawn.depth, stickerId: pickable[drawn.id - 1].stickerId });
+    const entry = drawn && pickable[drawn.id - 1];
+    if (entry) hits.push({ depth: drawn.depth, stickerId: entry.stickerId, plane: entry.plane });
     for (const { object, box, stickerId } of pickBoxes) {
       if (!box) continue;
       // The ray in the SPLAT's own frame keeps its parameter, which is the depth along the view axis.
@@ -796,9 +817,12 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       const depth = rayBoxDepth(origin, direction, box);
       if (depth !== null) hits.push({ depth, stickerId });
     }
+    // The point is the nearest hit. A SPLAT's box is larger than what shows of it, so a world Sticker plane
+    // hit takes the Sticker before a nearer box.
     const nearest = nearestHit(hits, camera);
-    const hit = nearest && { point: pointAt(ray, nearest.depth), stickerId: nearest.stickerId };
-    lastPick = { key, hit };
+    const hit = nearest && { point: pointAt(ray, nearest.depth), stickerId: nearestHit(hits, camera, (each) => each.plane).stickerId };
+    // A failed draw is not kept, so the next pick draws again.
+    if (drawn !== false) lastPick = { key, hit };
     return hit;
   }
 

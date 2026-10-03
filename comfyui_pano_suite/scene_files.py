@@ -96,11 +96,14 @@ def _thin_grid(vertices, faces, grid, decimation):
 def _cluster(vertices, faces, uvs, limit):
     """Vertex clustering to at most `limit` faces: the vertices in one cell of a grid over the mesh's box (and in
     one cell across the uvs, MESH_EDITOR_UV_CELLS) become one vertex at their mean, and the faces left with
-    fewer than three vertices or twice over are dropped. The grid gets coarser until the faces fit. Returns
-    each vertex's cluster, the cluster count and the faces."""
+    fewer than three vertices or twice over are dropped. The grid gets coarser until the faces fit; a grid that
+    leaves no face gets finer again, and a coarser one stays finer than that. Returns each vertex's cluster, the
+    cluster count and the faces (none only when no grid up to 4095 cells keeps a face)."""
     low = vertices.min(dim=0).values
     extent = float((vertices.max(dim=0).values - low).max().clamp_min(1e-12))
     cells = min(4095, max(1, int(math.sqrt(limit / 2))))
+    # The most cells known to leave no face.
+    empty = 0
     while True:
         cell = ((vertices - low) / (extent / cells)).floor().long().clamp(0, cells)
         key = (cell[:, 0] * 4096 + cell[:, 1]) * 4096 + cell[:, 2]
@@ -114,9 +117,16 @@ def _cluster(vertices, faces, uvs, limit):
         whole = (clustered[:, 0] != clustered[:, 1]) & (clustered[:, 1] != clustered[:, 2]) & (clustered[:, 0] != clustered[:, 2])
         clustered = clustered[whole]
         clustered = clustered[_first_faces(clustered.sort(dim=1).values, count)]
-        if clustered.shape[0] <= limit or cells == 1:
+        if clustered.shape[0] == 0 and cells < 4095:
+            empty = cells
+            cells = min(4095, cells * 2)
+            continue
+        if clustered.shape[0] <= limit:
             return cluster, count, clustered
-        cells = max(1, int(cells * math.sqrt(limit / clustered.shape[0]) * 0.9))
+        coarser = max(empty + 1, int(cells * math.sqrt(limit / clustered.shape[0]) * 0.9))
+        if coarser >= cells:
+            return cluster, count, clustered
+        cells = coarser
 
 
 def _first_faces(faces, count):
@@ -167,8 +177,9 @@ def _mesh_glb(mesh: Types.MESH, index: int) -> bytes | None:
         colors = _mean(colors.float(), cluster, count) if colors is not None else None
     else:
         return mesh_item_to_glb_bytes(mesh, index)
+    # Nothing left to see, as a MOGE_GEOMETRY frame without faces.
     if faces.shape[0] == 0:
-        return mesh_item_to_glb_bytes(mesh, index)
+        return None
     return save_glb(
         vertices, faces, uvs=uvs, vertex_colors=colors, texture_image=_image(texture) if texture is not None else None,
         unlit=mesh.unlit, material=mesh.material,

@@ -282,3 +282,25 @@ def test_small_meshes_are_written_as_they_are(monkeypatch):
     for mesh in (general, grid):
         path = _path(nodes._scene_ui(mesh)["pano_scene_files"][0])
         assert path.read_bytes() == mesh_item_to_glb_bytes(mesh, 0)
+
+
+def test_clustering_that_leaves_no_face_tries_a_finer_grid(monkeypatch):
+    monkeypatch.setattr(scene_files, "MESH_EDITOR_FACES", 8)
+    # Twelve small triangles in a corner of a box that a far vertex (in no face) makes large: a coarse grid puts
+    # each of them in one cell.
+    corners = torch.tensor([[0.0, 0.0, 0.0], [0.004, 0.0, 0.0], [0.0, 0.004, 0.0]])
+    small = torch.cat([corners + torch.tensor([0.01 * k, 0.0, 0.0]) for k in range(12)])
+    vertices = torch.cat([small, torch.tensor([[1.0, 1.0, 1.0]])])
+    faces = torch.arange(36).reshape(12, 3)
+
+    path = _path(nodes._scene_ui(Types.MESH(vertices[None], faces[None]))["pano_scene_files"][0])
+
+    assert _glb_faces(path).shape[0] > 0
+
+
+def test_clustering_that_keeps_no_face_writes_an_empty_item(monkeypatch):
+    monkeypatch.setattr(scene_files, "MESH_EDITOR_FACES", 1)
+    # Every vertex in one place: no grid keeps a face.
+    mesh = Types.MESH(torch.zeros((1, 6, 3)), torch.arange(6).reshape(1, 2, 3))
+
+    assert nodes._scene_ui(mesh)["pano_scene_files"] == [None]

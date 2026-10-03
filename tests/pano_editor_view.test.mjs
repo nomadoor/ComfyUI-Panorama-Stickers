@@ -623,10 +623,14 @@ test("the three.js view picks the World content it last drew, not its guides", (
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   // What is seen is picked: meshes on the GPU, a SPLAT on its box (Spark's own raycast is off).
   assert.match(view, /if \(content\.splat && !spark\) continue;\s*children\.push\(content\.group\);/);
-  assert.match(view, /if \(!\(opacity > 0\)\) continue;\s*if \(content\.splat\) pickBoxes\.push\(\{ object: content\.object, box: content\.box, stickerId: content\.stickerId \}\);\s*else pickable\.push\(\{ object: content\.group, stickerId: content\.stickerId \}\);/);
-  assert.match(view, /if \(!\(layer\.opacity > 0\)\) continue;\s*pickable\.push\(\{ object: mesh, stickerId: layer\.id \}\);/);
+  assert.match(view, /if \(!\(opacity > 0\)\) continue;\s*if \(content\.splat\) pickBoxes\.push\(\{ object: content\.object, box: content\.box, stickerId: content\.stickerId \}\);\s*else pickable\.push\(\{ object: content\.group, stickerId: content\.stickerId, plane: false \}\);/);
+  assert.match(view, /if \(!\(layer\.opacity > 0\)\) continue;\s*pickable\.push\(\{ object: mesh, stickerId: layer\.id, plane: true \}\);/);
   assert.match(view, /return pickAt\(camera, x, y, width, height\)\?\.point \?\? null;/);
   assert.match(view, /return pickPass\(world, pickable, pickMaterial, /);
+  // A failed draw switches from the float target to RGBA8, then gives up, and is not kept as a pick.
+  assert.match(view, /if \(float\) pickFloat = false;\s*else pickFailed = true;\s*return false;/);
+  assert.match(view, /renderer\.setRenderTarget\(target\);\s*try \{\s*renderer\.render\(world, pickCamera\);\s*\} finally \{\s*renderer\.setRenderTarget\(null\);/);
+  assert.match(view, /if \(drawn !== false\) lastPick = \{ key, hit \};/);
   const loaders = readFileSync(new URL("../web_src/pano_scene_loaders.js", import.meta.url), "utf8");
   assert.match(loaders, /new SplatMesh\(\{ fileBytes: bytes, fileType: "ply", raycastable: false \}\)/);
   // Its content key changes with the items drawn and their transforms, and with the Sticker planes; a

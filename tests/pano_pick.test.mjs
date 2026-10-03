@@ -106,6 +106,10 @@ test("the nearest hit within the view's depth range wins", () => {
   assert.deepEqual(nearestHit([{ depth: 3, id: "a" }, { depth: 2, id: "b" }, null], camera), { depth: 2, id: "b" });
   assert.deepEqual(nearestHit([{ depth: 0.1, id: "a" }, { depth: 60, id: "b" }, { depth: 7, id: "c" }], camera), { depth: 7, id: "c" });
   assert.equal(nearestHit([], camera), null);
+  // A preferred hit (a world Sticker plane) comes before a nearer one (a SPLAT's box).
+  const hits = [{ depth: 2, id: "box" }, { depth: 5, id: "plane", plane: true }, { depth: 60, id: "far", plane: true }];
+  assert.equal(nearestHit(hits, camera, (hit) => hit.plane).id, "plane");
+  assert.equal(nearestHit(hits.slice(0, 1), camera, (hit) => hit.plane).id, "box");
 });
 
 test("a pick is reused for the same pixel of the same view over the same content", () => {
@@ -146,6 +150,20 @@ test("the pick pass draws only the pickable meshes, each in its pick material, a
   assert.equal(hiddenPlane.visible, false);
   assert.equal(item.material, itemMaterial);
   assert.equal(plane.material, planeMaterial);
+});
+
+test("the pick pass puts all back when drawing throws", () => {
+  const world = new Scene();
+  const guides = new Group();
+  const material = new MeshBasicMaterial();
+  const item = new Mesh(new BoxGeometry(), material);
+  world.add(guides, item);
+  assert.throws(() => pickPass(world, [{ object: item }], () => new ShaderMaterial(), () => {
+    assert.equal(guides.visible, false);
+    throw new Error("context lost");
+  }), /context lost/);
+  assert.equal(guides.visible, true);
+  assert.equal(item.material, material);
 });
 
 test("the World is filled again only when what it holds changes", () => {
