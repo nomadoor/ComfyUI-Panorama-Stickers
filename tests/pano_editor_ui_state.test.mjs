@@ -238,7 +238,7 @@ test("no bottom-right button moves when another one shows, hides or changes", ()
       for (const patch of Object.values(floating.buttons)) assert.equal("visible" in patch, false);
       assert.deepEqual(Object.keys(floating.buttons).filter((action) => !preset.floatingButtons.some((button) => button.action === action)), []);
       assert.equal(preset.floatingButtons.some((button) => "visible" in button), false);
-      // The space group shows as a whole with World content; Frame Content in it is only disabled outside 6DoF.
+      // The space group shows as a whole with World content; Frame Selected / All in it is only disabled outside 6DoF.
       assert.equal(floating.space.visible, state.spaceView);
       assert.equal(floating.space.frameDisabled, state.readOnly || !state.spaceView || state.spaceMode !== "6dof");
       assert.equal(floating.space.mode, state.spaceMode);
