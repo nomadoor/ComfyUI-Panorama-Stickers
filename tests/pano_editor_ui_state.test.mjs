@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { setSegmentEasing } from "../web_src/pano_timeline.js";
 
@@ -156,4 +156,20 @@ test("a world Sticker's selection menu holds the Move | Rotate | Scale segments,
   ]);
   // Without a corner in front of the view there is nowhere to put it.
   assert.equal(buildWorldSelectionMenuModel({ corners: [], gizmoMode: "translate" }).visible, false);
+});
+
+test("a selection menu goes below its target, above it when it does not fit, and inside the canvas otherwise", () => {
+  // 400 x 300 canvas, a 100 x 40 menu; 14px from the edges, 18px from the target.
+  const place = (anchor) => selectionMenuPlacement(anchor, 100, 40, 400, 300);
+  assert.deepEqual(place({ minX: 150, maxX: 250, minY: 100, maxY: 150 }), { left: 150, top: 168 });
+  // Near the bottom it goes above the target.
+  assert.deepEqual(place({ minX: 150, maxX: 250, minY: 200, maxY: 260 }), { left: 150, top: 142 });
+  // A target filling the canvas: neither fits, so the menu stays at the bottom edge inside it.
+  assert.deepEqual(place({ minX: 0, maxX: 400, minY: 20, maxY: 290 }), { left: 150, top: 246 });
+  // A target off the canvas below or above still gets a menu inside it.
+  assert.deepEqual(place({ minX: 150, maxX: 250, minY: 600, maxY: 700 }), { left: 150, top: 246 });
+  assert.deepEqual(place({ minX: 150, maxX: 250, minY: -300, maxY: -200 }), { left: 150, top: 14 });
+  // And sideways it stays inside too.
+  assert.deepEqual(place({ minX: 380, maxX: 500, minY: 100, maxY: 150 }), { left: 286, top: 168 });
+  assert.equal(place({ minX: NaN, maxX: 1, minY: 1, maxY: 1 }), null);
 });

@@ -130,6 +130,7 @@ import {
   buildSelectionMenuModel,
   buildTimelineModel,
   buildWorldSelectionMenuModel,
+  selectionMenuPlacement,
   buildUiSettingsModel,
   patchUiButton,
   worldFieldRange,
@@ -8444,23 +8445,10 @@ async function showEditor(node, type, options = {}) {
       return;
     }
 
-    const placeSelectionMenu = (menuW, menuH, { requireFitsBelow = true } = {}) => {
-      const pad = 14;
-      const minX = Number(model.anchor?.minX);
-      const maxX = Number(model.anchor?.maxX);
-      const maxY = Number(model.anchor?.maxY);
-      if (![minX, maxX, maxY].every(Number.isFinite)) return null;
-      const maxLeft = Math.max(pad, canvas.width - menuW - pad);
-      const x = clamp(((minX + maxX) * 0.5) - menuW * 0.5, pad, maxLeft);
-      const y = maxY + 18;
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-      if (requireFitsBelow && y + menuH > canvas.height - pad) return null;
-      return { left: x, top: y };
-    };
-
+    const placeSelectionMenu = (menuW, menuH) => selectionMenuPlacement(model.anchor, menuW, menuH, canvas.width, canvas.height);
     const estimatedW = Math.max(1, Number(editor.menuSize?.w || 220));
     const estimatedH = Math.max(1, Number(editor.menuSize?.h || 40));
-    const initialPlacement = placeSelectionMenu(estimatedW, estimatedH, { requireFitsBelow: false });
+    const initialPlacement = placeSelectionMenu(estimatedW, estimatedH);
     if (!initialPlacement) {
       uiState.selectionMenu = { visible: false, left: 0, top: 0, items: [] };
       return;
@@ -8479,10 +8467,7 @@ async function showEditor(node, type, options = {}) {
       const menuH = Math.round(Number(rect?.height || 0)) || 40;
       editor.menuSize = { w: menuW, h: menuH, measured: true };
       const measuredPlacement = placeSelectionMenu(menuW, menuH);
-      if (!measuredPlacement) {
-        uiState.selectionMenu.visible = false;
-        return;
-      }
+      if (!measuredPlacement) return;
       uiState.selectionMenu.left = measuredPlacement.left;
       uiState.selectionMenu.top = measuredPlacement.top;
     });

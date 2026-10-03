@@ -655,6 +655,10 @@ test("the world Sticker's selection menu shows exactly while its gizmo does, and
   assert.match(editor, /function setSelectedItems\(items, primaryId = null\) \{[\s\S]*?clearWorldSelection\(\);/);
   // Each frame of the view keeps it under the Sticker (view, playhead) and takes it away with the gizmo.
   assert.match(editor, /syncFloatingViewButtonState\(\);\s*\/\/ [^\n]*\n\s*if \(editor\.worldSelectedId \|\| worldMenuShown\) updateSelectionMenu\(\);/);
+  // Both menus are placed by selectionMenuPlacement, which never hides them (also after measuring).
+  const show = editor.slice(editor.indexOf("  function showSelectionMenu(model) {"), editor.indexOf("  function hideTooltip() {"));
+  assert.match(show, /selectionMenuPlacement\(model\.anchor, menuW, menuH, canvas\.width, canvas\.height\)/);
+  assert.doesNotMatch(show, /uiState\.selectionMenu\.visible = false/);
   // A segment marks its mode at once.
   assert.match(editor, /editor\.gizmoMode = gizmoModeTarget\.getAttribute\("data-gizmo-mode"\);\s*runtime\.backgroundDirty = true;\s*updateSelectionMenu\(\);/);
 });
