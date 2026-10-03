@@ -1,6 +1,4 @@
-import json
 import math
-import struct
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +11,6 @@ pytest.importorskip(
     reason="ComfyUI core is required to write the editor's scene files",
 )
 
-import folder_paths
 from comfy_api.latest import Types
 from comfy.ldm.moge.panorama import _uv_grid, spherical_uv_to_directions
 from comfy_extras.nodes_gaussian_splat import SplatToFile3D
@@ -23,27 +20,10 @@ from comfyui_pano_suite import nodes, scene_files
 from comfyui_pano_suite.core.math import ray_directions
 from comfyui_pano_suite.core.render import Projection
 from comfyui_pano_suite.core.world_render import SceneContent
+from scene_test_helpers import glb_accessor as _glb_accessor, glb_positions as _glb_positions, temp_entry_path as _path
 
 
-def _path(entry) -> Path:
-    assert entry["type"] == "temp"
-    return Path(folder_paths.get_temp_directory()) / entry["subfolder"] / entry["filename"]
 
-
-def _glb_accessor(path: Path, accessor_of) -> np.ndarray:
-    data = path.read_bytes()
-    json_length = struct.unpack_from("<I", data, 12)[0]
-    gltf = json.loads(data[20:20 + json_length])
-    accessor = gltf["accessors"][accessor_of(gltf["meshes"][0]["primitives"][0])]
-    view = gltf["bufferViews"][accessor["bufferView"]]
-    offset = 20 + json_length + 8 + view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
-    dtype = {5125: np.uint32, 5126: np.float32}[accessor["componentType"]]
-    width = {"SCALAR": 1, "VEC3": 3}[accessor["type"]]
-    return np.frombuffer(data, dtype, accessor["count"] * width, offset)
-
-
-def _glb_positions(path: Path) -> np.ndarray:
-    return _glb_accessor(path, lambda primitive: primitive["attributes"]["POSITION"]).reshape(-1, 3)
 
 
 def _glb_faces(path: Path) -> np.ndarray:
@@ -104,13 +84,13 @@ def test_splat_files_are_written_as_the_ply_of_their_splat():
     positions = [[[1.0, 2.0, -3.0], [0.5, 0.0, 0.0]]]
     model = SplatToFile3D.execute(_splat(positions), "spz").result[0]
 
-    ui = nodes._scene_ui(nodes._read_scene_file(model))
+    ui = nodes._scene_ui(nodes._read_scene_file(model, "scene"))
 
     assert ui["pano_scene_meta"] == [{"kind": "splat"}]
     assert np.allclose(_ply_positions(_path(ui["pano_scene_files"][0])), positions[0], atol=1e-3)
     # The same file is read once and keeps its PLY.
-    assert nodes._read_scene_file(model) is nodes._read_scene_file(model)
-    assert nodes._scene_ui(nodes._read_scene_file(model)) == ui
+    assert nodes._read_scene_file(model, "scene") is nodes._read_scene_file(model, "scene")
+    assert nodes._scene_ui(nodes._read_scene_file(model, "scene")) == ui
 
 
 def test_mesh_items_are_written_as_glb_in_their_own_coordinates():

@@ -405,7 +405,9 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
 
 // PanoramaStickersNode as the ComfyUI frontend exposes it: MultiType sockets, and connectivity
 // through isInputConnected(slot). Reading the deprecated input.link fails the test.
-function stickersNode(connected = []) {
+// `types` maps connected inputs to their link type; the sticker input carries an IMAGE by default.
+function stickersNode(connected = [], types = {}) {
+  const linkTypes = { sticker: "IMAGE", ...types };
   const inputs = [
     { name: "bg_media", type: "IMAGE,VIDEO" },
     { name: "scene", type: "SPLAT,MESH,MOGE_GEOMETRY" },
@@ -414,11 +416,14 @@ function stickersNode(connected = []) {
   ].map((input) => Object.defineProperty(input, "link", {
     get() { throw new Error("input.link is deprecated"); },
   }));
-  return {
+  const node = {
     __panoSceneStateV2: true,
     inputs,
+    graph: { getNodeById: () => null },
     isInputConnected: (slot) => connected.includes(inputs[slot]?.name),
+    getInputLink: (slot) => (node.isInputConnected(slot) ? { type: linkTypes[inputs[slot].name] ?? "STRING", origin_id: 1, origin_slot: 0 } : null),
   };
+  return node;
 }
 
 function v2EditorState(raw) {
@@ -582,12 +587,15 @@ test("loading a workflow keeps its port Sticker as saved with the sticker input 
   };
   const node = {
     __panoSceneStateV2: true,
-    graph: { links: new Map([[7, { id: 7, origin_id: 3, origin_slot: 0 }]]) },
+    graph: { links: new Map([[7, { id: 7, origin_id: 3, origin_slot: 0, type: "IMAGE" }]]) },
     properties: {},
     inputs: ["bg_media", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: null })),
     widgets: ["bg_color", "coverage", "output_preset", "state_json"].map((name) => ({ name, value: name === "state_json" ? "" : null })),
     isInputConnected(slot) {
       return !!this.graph && this.inputs[slot]?.link != null;
+    },
+    getInputLink(slot) {
+      return this.graph.links.get(this.inputs[slot]?.link) ?? null;
     },
   };
   const stateWidget = node.widgets[3];
@@ -622,4 +630,56 @@ test("loading a workflow keeps its port Sticker as saved with the sticker input 
   assert.equal(node.properties.pano_editor_active.selected_sticker_id, "sticker_2");
   // The sync before the widget values ran on the empty state; the restored state_json replaced it.
   assert.deepEqual(commits.map((text) => JSON.parse(text).stickers.map((item) => item.id)), [["sticker_1"]]);
+});
+
+test("3D media on the sticker input waits for the node and adds the world Sticker it placed", () => {
+  const node = stickersNode(["sticker"], { sticker: "MESH" });
+  const state = v2EditorState({ stickers: [{ id: "sticker_1", source: { kind: "file", filename: "a.png" } }] });
+
+  const before = reconcilePortStickerState(state, portStickerSyncValue(node));
+  const pose = { placement: "world", position: [0, 0, -2], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 };
+  const after = reconcilePortStickerState(state, portStickerSyncValue(node, { pose }));
+  const [port] = portStickers(after.state);
+  // The media has no image, and a world Sticker has no vFOV to follow.
+  const unchanged = reconcilePortStickerState(after.state, portStickerSyncValue(node, { pose, image: { width: 200, height: 100 } }));
+
+  assert.equal(before.changed, false);
+  assert.deepEqual([port.id, port.placement, port.z_index], ["sticker_2", "world", undefined]);
+  assert.deepEqual([port.position.value, port.rotation.value, port.scale.value, port.opacity.value], [[0, 0, -2], pose.rotation, 1, 1]);
+  assert.equal(unchanged.changed, false);
+  const saved = JSON.parse(editorStateText(node, after.state)).stickers[1];
+  assert.deepEqual([saved.placement, saved.source, saved.position.value], ["world", { kind: "port" }, [0, 0, -2]]);
+});
+
+test("a link that does not tell its type is read from the output it comes from, else waits for the node", () => {
+  const state = v2EditorState({});
+  const throughReroute = (outputType) => {
+    const node = stickersNode(["sticker"], { sticker: "*" });
+    node.graph.getNodeById = (id) => (id === 1 && outputType ? { outputs: [{ type: outputType }] } : null);
+    return node;
+  };
+
+  const image = reconcilePortStickerState(state, portStickerSyncValue(throughReroute("IMAGE")));
+  const mesh = reconcilePortStickerState(state, portStickerSyncValue(throughReroute("FILE_3D_GLB")));
+  const unknown = throughReroute(null);
+  const waiting = reconcilePortStickerState(state, portStickerSyncValue(unknown));
+  // The node's pose decides: without a placement it is a sky Sticker.
+  const sky = reconcilePortStickerState(state, portStickerSyncValue(unknown, { pose: { yaw_deg: 10, pitch_deg: 0, roll_deg: 0, hFOV_deg: 30 } }));
+
+  assert.deepEqual(portStickers(image.state).map((item) => item.placement), ["sky"]);
+  assert.deepEqual([mesh.changed, waiting.changed], [false, false]);
+  assert.deepEqual(portStickers(sky.state).map((item) => [item.placement, item.direction.value.yaw_deg]), [["sky", 10]]);
+});
+
+test("the node's replace pose turns a sky port Sticker into a world one under the same id, once", () => {
+  const node = stickersNode(["sticker"], { sticker: "SPLAT" });
+  const state = v2EditorState({ stickers: [{ id: "sticker_4", source: { kind: "port" }, clip: { start: 2, duration: 5 }, locked: true, z_index: 2 }] });
+  const pose = { placement: "world", position: [0, 0, -2], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1, replace: true };
+
+  const replaced = reconcilePortStickerState(state, portStickerSyncValue(node, { pose }));
+  const again = reconcilePortStickerState(replaced.state, portStickerSyncValue(node, { pose }));
+
+  const [port] = portStickers(replaced.state);
+  assert.deepEqual([port.id, port.placement, port.clip.start, port.clip.duration, port.locked, port.direction], ["sticker_4", "world", 2, 5, true, undefined]);
+  assert.equal(again.changed, false);
 });

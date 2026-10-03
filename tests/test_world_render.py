@@ -9,7 +9,7 @@ from comfyui_pano_suite.core.render import Projection, SceneSources, StickerSour
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.world import world_to_pano
-from comfyui_pano_suite.core.world_render import SceneContent, world_layer
+from comfyui_pano_suite.core.world_render import ContentSource, SceneContent, world_layer
 
 
 GREEN = (0.0, 1.0, 0.0)
@@ -404,3 +404,50 @@ def test_scene_content_is_ordered_by_depth_with_world_stickers():
     assert torch.allclose(color[89, 195], torch.tensor([0.1, 0.0, 0.0]), atol=1e-4)
     assert torch.allclose(color[89, 240], torch.ones(3), atol=1e-4)
     assert 2.0 < float(depth[89, 195]) < 2.5
+
+
+def _content_sticker(sticker_id, position=None, scale=None, opacity=None, **rotation):
+    sticker = _world(sticker_id, position, scale, **rotation)
+    sticker["source"] = {"kind": "port"}
+    sticker["opacity"] = {"value": opacity}
+    return sticker
+
+
+def test_3d_world_sticker_is_its_content_through_its_transform():
+    content, views = _ball()
+    projection = Projection.erp(360, 180)
+    # As the scene transform: the ball's center (0, 0, -3) lands at (6, 1, 0).
+    state = load_scene_state({"version": 2, "stickers": [_content_sticker("ball", position=[0.0, 1.0, 0.0], scale=2.0, yaw_deg=90.0)]})
+
+    color, _mask, depth = _render(state, {"ball": ContentSource(content, 1)}, projection)
+
+    x, y, item = _ball_at(color)
+    expected_x, expected_y = _erp_pixel([6.0, 1.0, 0.0], [0.0, 0.0, 0.0], projection)
+    assert abs(x - expected_x) < 0.5 and abs(y - expected_y) < 0.5 and item == 1
+    assert abs(float(depth[int(y), int(x)]) - (math.hypot(6.0, 1.0) - 1.0)) < 0.02
+    assert views[0][1] == 1 and np.allclose(views[0][0].position, [0.0, -0.5, 0.0])
+
+
+def test_3d_world_sticker_opacity_is_on_its_alpha():
+    content, _views = _ball()
+    state = load_scene_state({"version": 2, "stickers": [_content_sticker("ball", opacity=0.5)]})
+
+    color, _mask, _depth = _render(state, {"ball": ContentSource(content, 0)}, Projection.erp(360, 180))
+
+    assert torch.allclose(color[89, 180], torch.tensor([0.05, 0.5, 0.0]), atol=1e-4)
+
+
+def test_3d_world_sticker_is_ordered_by_depth_with_planes_and_drawn_over_the_sky():
+    content, _views = _ball()
+    sky = {"id": "sky", "source": {"kind": "file", "filename": "sky.png"}, "z_index": 9, "size": {"value": {"hFOV_deg": 60.0, "vFOV_deg": 60.0}}}
+    stickers = [sky, _content_sticker("ball"), _world("near", position=[0.0, 0.0, -1.0], scale=0.2)]
+    state = load_scene_state({"version": 2, "stickers": stickers})
+    sources = {"sky": StickerSource(_solid((1.0, 1.0, 1.0)), FULL, 9), "ball": ContentSource(content, 0), "near": StickerSource(_solid(BLUE), FULL)}
+
+    color, _mask, depth = _render(state, sources, Projection.erp(360, 180))
+
+    # The near plane covers the ball's center, the ball covers the Sky around it, and the Sky shows past it.
+    assert torch.allclose(color[89, 180], torch.tensor(BLUE), atol=1e-4)
+    assert torch.allclose(color[89, 188], torch.tensor([0.1, 0.0, 0.0]), atol=1e-4)
+    assert torch.allclose(color[89, 200], torch.ones(3), atol=1e-4)
+    assert 2.5 < float(depth[89, 188]) < 3.0 and math.isinf(float(depth[89, 200]))

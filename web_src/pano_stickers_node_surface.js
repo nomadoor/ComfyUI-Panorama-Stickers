@@ -1,6 +1,7 @@
 import { fileSource, newSceneSticker, setStickerPose, stickerPose, unkeyedPose } from "./pano_editor_state.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 import { evaluateSticker } from "./pano_scene_eval.js";
+import { loadSceneState } from "./pano_scene_state.js";
 
 const EXTERNAL_STICKER_ID = "sticker_image_1";
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
@@ -164,6 +165,25 @@ function isInputConnected(node, name) {
   return slot >= 0 && node.isInputConnected(slot);
 }
 
+const MEDIA_KINDS_2D = ["IMAGE", "VIDEO"];
+
+function mediaKind(type) {
+  const types = String(type || "").split(",").filter(Boolean);
+  if (types.length && types.every((item) => item === "MESH" || item === "SPLAT" || item.startsWith("FILE_3D"))) return "3d";
+  if (types.length && types.every((item) => MEDIA_KINDS_2D.includes(item))) return "2d";
+  return null;
+}
+
+// What the input carries: "2d" (IMAGE, VIDEO), "3d" (MESH, SPLAT, a 3D file), or null when its link
+// does not tell (a `*` link through a Reroute, say), read from the link and else from the output it
+// comes from.
+function inputMediaKind(node, name) {
+  const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
+  const link = slot >= 0 && node.graph ? node.getInputLink?.(slot) : null;
+  if (!link) return null;
+  return mediaKind(link.type) ?? mediaKind(node.graph.getNodeById?.(link.origin_id)?.outputs?.[link.origin_slot]?.type);
+}
+
 // PanoramaStickersNode keeps the Sticker of its `sticker` input as the Sticker with the Source
 // {kind: "port"}. Like the node (docs/scene-state-v2.md), the editor and the node surface add it when
 // the input is connected and the state has none, and remove it when the input is disconnected. Its
@@ -172,14 +192,30 @@ function isInputConnected(node, name) {
 // (`pano_sticker_input_pose`), with the Keyframes of a Camera that moved. With `sticker_state`
 // connected, the Sticker is added only with that pose, so that it keeps the pose of `sticker_state`
 // as the node places it.
+// 3D media (MESH, SPLAT, a 3D file) is a world Sticker that the node places, and only the node knows
+// what an input of an unknown type carries: unless the input is an IMAGE or a VIDEO, the Sticker is
+// added only with the node's pose, as a world one when the pose says `placement: "world"`. A pose
+// with `replace` replaces a sky port Sticker by the world one under the same id.
 export function portStickerSyncValue(node, { pose = null, image = null } = {}) {
   return {
     connected: isInputConnected(node, "sticker"),
-    awaitingPose: !pose && isInputConnected(node, "sticker_state"),
+    awaitingPose: !pose && (isInputConnected(node, "sticker_state") || inputMediaKind(node, "sticker") !== "2d"),
     pose,
     imageWidth: Number(image?.naturalWidth || image?.width || 0),
     imageHeight: Number(image?.naturalHeight || image?.height || 0),
   };
+}
+
+function worldPortSticker(id, pose) {
+  const raw = {
+    id,
+    placement: "world",
+    source: { kind: "port" },
+    position: { value: pose.position },
+    rotation: { value: pose.rotation },
+    scale: { value: pose.scale },
+  };
+  return loadSceneState({ version: 2, stickers: [raw] }).stickers[0];
 }
 
 export function reconcilePortStickerState(state, { connected = false, awaitingPose = false, pose = null, imageWidth = 0, imageHeight = 0 } = {}) {
@@ -198,8 +234,13 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
     };
   }
   const hasImageSize = imageWidth > 0 && imageHeight > 0;
+  if (current && pose?.placement === "world" && pose.replace && current.placement === "sky") {
+    // 3D media on a stored sky port Sticker: the node replaced it by a world one under the same id.
+    const port = { ...worldPortSticker(current.id, pose), clip: current.clip, visible: current.visible, locked: current.locked };
+    return { state: { ...state, stickers: state.stickers.map((item, i) => i === index ? port : item) }, changed: true };
+  }
   if (current) {
-    if (!hasImageSize) return { state, changed: false };
+    if (!hasImageSize || current.placement !== "sky") return { state, changed: false };
     const values = [current.size.value, ...current.size.keyframes.map((key) => key.value)];
     const vFOVs = values.map((value) => computeVerticalFov(value.hFOV_deg, imageWidth, imageHeight));
     if (values.every((value, i) => Math.abs(value.vFOV_deg - vFOVs[i]) <= 1e-6)) return { state, changed: false };
@@ -216,6 +257,9 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
   const used = new Set(state.stickers.map((item) => item.id));
   let number = 1;
   while (used.has(`sticker_${number}`)) number += 1;
+  if (pose?.placement === "world") {
+    return { state: { ...state, stickers: [...state.stickers, worldPortSticker(`sticker_${number}`, pose)] }, changed: true };
+  }
   const hFOV = Math.min(179, Math.max(0.1, Number(pose?.hFOV_deg ?? 30)));
   const vFOV = (value) => hasImageSize ? computeVerticalFov(value, imageWidth, imageHeight) : value;
   const port = newSceneSticker(`sticker_${number}`, { kind: "port" }, {
