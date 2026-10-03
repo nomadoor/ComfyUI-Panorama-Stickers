@@ -656,7 +656,7 @@ test("in the space view a press picks the gizmo first, then a world Sticker, the
   // Selecting does not stop playback; a gizmo drag stops it on its first move and starts over from that frame.
   assert.match(editor, /if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
   const restart = editor.slice(editor.indexOf("  function restartEditAtStoppedFrame(it, down) {"));
-  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = state\.stickers\.find\(\(item\) => item\.id === it\.id\);\s*if \(it\.camera\) it\.base = cutoutCamera\(\);\s*else if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
+  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "frame_orbit" \|\| it\.kind === "frame_pan"\) \{[\s\S]*?\n    \}\n\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = state\.stickers\.find\(\(item\) => item\.id === it\.id\);\s*if \(it\.camera\) it\.base = cutoutCamera\(\);\s*else if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
   // The drag writes the gizmo mode's Lane by the recording rule, and a changed drag is one Undo step.
   assert.match(editor, /setWorldStickerTransform\(sticker, editor\.frame, gizmoDragLanes\(it\.mode, it\.base, it\.start, moved\)\);/);
   assert.match(editor, /if \(ended\.changed\) \{\s*pushHistory\(\);\s*commitAndRefreshNode\(\);/);
@@ -724,4 +724,8 @@ test("PanoramaCutoutNode's editor edits its Camera: the shot follows it, the Fra
   // In 6DoF the gizmo writes the Camera's Lane of its mode by the recording rule.
   assert.match(editor, /setLaneValue\(state\.camera, name, editor\.frame, value\)/);
   assert.match(editor, /if \(cutoutV2 && isShotItem\(item\) && isFreeSpaceView\(\)\) return \{ visible: false \};/);
+  // A Frame view drag that stops playback picks its point again on the stopped frame, as a gizmo drag takes its base.
+  assert.match(editor, /if \(it\.kind === "frame_orbit" \|\| it\.kind === "frame_pan"\) \{[\s\S]*?const target = frameTarget\(context, view, down\);\s*if \(it\.kind === "frame_orbit"\) it\.pivot = target;\s*else it\.depth = depthOf\(view, target\);/);
+  // Closing the editor without an edit leaves state_json as it is, though the editor rebased it.
+  assert.match(editor, /sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cutoutV2 \}\)/);
 });

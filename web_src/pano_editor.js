@@ -7460,7 +7460,7 @@ async function showEditor(node, type, options = {}) {
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
     const text = editorStateText(node, state);
-    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""))) {
+    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""), { rebased: cutoutV2 })) {
       stateWidget.value = text;
       stateWidget.callback?.(text);
     }
@@ -9527,6 +9527,16 @@ async function showEditor(node, type, options = {}) {
   function restartEditAtStoppedFrame(it, down) {
     if (!stateV2 || !playback.playing) return;
     playback.stop();
+    if (it.kind === "frame_orbit" || it.kind === "frame_pan") {
+      // The Camera moved with playback: the point the drag works on is picked again from where it stopped.
+      const context = frameContext();
+      if (!context) return;
+      const view = frameSpaceView(context);
+      const target = frameTarget(context, view, down);
+      if (it.kind === "frame_orbit") it.pivot = target;
+      else it.depth = depthOf(view, target);
+      return;
+    }
     if (it.kind === "world_gizmo") {
       const sticker = state.stickers.find((item) => item.id === it.id);
       if (it.camera) it.base = cutoutCamera();

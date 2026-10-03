@@ -213,6 +213,8 @@ export function parseSceneEditorState(text, options = {}) {
 // Sets the Timeline fps of a working state v2, rebasing its times (rebaseSceneState) so they keep their
 // seconds. The objects stay the ones the editor holds; a Sticker still uploading is left as it is.
 export function setTimelineFps(state, fps) {
+  // A Cutout showing a PANO_SCENE saves its own state, which keeps the same fps (#77).
+  if (state.cutout_state) state.cutout_state = rebaseSceneState(state.cutout_state, fps);
   const rebased = rebaseSceneState(state, fps);
   const stickers = new Map(rebased.stickers.map((item) => [item.id, item]));
   state.timeline = rebased.timeline;
@@ -465,11 +467,17 @@ export function editorStateText(node, state) {
 
 // Whether the widget's `current` text already means `text`. ComfyUI's execution cache compares the
 // text, so rewriting an equivalent one (the empty default, other formatting) would run the node again.
-export function sameEditorStateText(node, text, current) {
+// With `rebased` (PanoramaCutoutNode, #77) `current` rebased to the fps of `text` counts too: the editor
+// works at the Timeline fps of its input, and opening and closing it without an edit must leave the text
+// as it is (the node reads the recorded fps and keeps the seconds), so its Keyframes are not rounded.
+export function sameEditorStateText(node, text, current, { rebased = false } = {}) {
   if (text === current) return true;
   if (!node?.__panoSceneStateV2) return false;
   try {
-    return JSON.stringify(loadSceneState(current)) === text;
+    const loaded = loadSceneState(current);
+    if (JSON.stringify(loaded) === text) return true;
+    const { fps } = JSON.parse(text).timeline;
+    return rebased && fps !== loaded.timeline.fps && JSON.stringify(loadSceneState(rebaseSceneState(loaded, fps))) === text;
   } catch {
     return false;
   }

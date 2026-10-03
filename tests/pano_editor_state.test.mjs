@@ -719,3 +719,37 @@ test("a Cutout shooting a PANO_SCENE works on the Scene with its own Camera, and
   // Its own length stays its own, in seconds.
   assert.equal(saved.timeline.length, 4);
 });
+
+test("opening and closing a Cutout on another fps without an edit leaves its state_json as it is", () => {
+  const own = JSON.stringify(loadSceneState({
+    version: 2,
+    timeline: { fps: 24 },
+    camera: { rotation: { value: {}, keyframes: [{ frame: 0, value: { yaw_deg: 0 } }, { frame: 1, value: { yaw_deg: 5 } }, { frame: 25, value: { yaw_deg: 90 } }] } },
+  }));
+  const cutoutNode = () => ({ __panoSceneStateV2: true });
+
+  for (const scene of [null, { version: 2, timeline: { fps: 12 } }]) {
+    const state = parseSceneEditorState(own, { fps: 12, scene });
+    const text = editorStateText(cutoutNode(), state);
+
+    // The editor works at 12 fps with its Keyframes rounded there; without an edit the text is not rewritten.
+    assert.notEqual(text, own);
+    assert.equal(sameEditorStateText(cutoutNode(), text, own, { rebased: true }), true);
+    // Stickers keeps its own rule, and an edit is written.
+    assert.equal(sameEditorStateText(cutoutNode(), text, own), false);
+    state.camera.fov.value = 50;
+    assert.equal(sameEditorStateText(cutoutNode(), editorStateText(cutoutNode(), state), own, { rebased: true }), false);
+  }
+});
+
+test("a fps change of a Cutout showing a PANO_SCENE rebases the state it saves too", () => {
+  const own = { version: 2, timeline: { fps: 24, length: 48 }, camera: { fov: { value: 60, keyframes: [{ frame: 0, value: 60 }, { frame: 24, value: 30 }] } } };
+  const state = parseSceneEditorState(JSON.stringify(own), { fps: 24, scene: { version: 2, timeline: { fps: 24 } } });
+
+  setTimelineFps(state, 12);
+  const saved = JSON.parse(editorStateText(sceneNode(), state));
+
+  assert.equal(saved.timeline.fps, 12);
+  assert.equal(saved.timeline.length, 24);
+  assert.deepEqual(saved.camera.fov.keyframes.map((key) => key.frame), [0, 12]);
+});
