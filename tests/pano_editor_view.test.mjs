@@ -498,23 +498,57 @@ test("the space view draws the world Stickers shown at the playhead as planes of
   assert.deepEqual(worldStickerLayers(state, 12, state.stickers, { media: () => ({ media: image, revision: 1 }) }).map((layer) => layer.id), ["w1", "w2", "w4"]);
 });
 
-test("in space the right button looks around, Alt with the left button orbits, the middle button pans and the wheel dollies", () => {
+test("in 6DoF the drags of the 3D view controls preset move the view, and 3DoF looks around like the panorama view", () => {
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"), editor.indexOf("    if (e.button !== 0) return;", editor.indexOf("  canvas.onpointerdown = (e) => {")));
-  assert.match(down, /if \(e\.button === 1\) \{[\s\S]*\} else if \(isSpaceView\(\)\) \{\s*editor\.interaction = \{ kind: "space_pan", last: p \};/);
-  assert.match(down, /if \(isSpaceView\(\) && \(e\.button === 2 \|\| \(e\.button === 0 && e\.altKey\)\)\) \{/);
-  assert.match(down, /if \(e\.button === 2\) \{\s*const dragPos = screenPosCss\(e\);\s*editor\.interaction = \{ kind: "view"/);
-  assert.match(down, /editor\.interaction = \{ kind: "space_orbit", last: p \};/);
+  // The preset decides before any tool, and only in 6DoF.
+  assert.match(down, /const spaceAction = isFreeSpaceView\(\) \? viewDragAction\(viewControls\(\), e\) : null;\s*if \(spaceAction\) \{/);
+  assert.ok(down.indexOf("const spaceAction") < down.indexOf("if (e.button === 1) {"));
+  assert.match(down, /if \(spaceAction === "look"\) \{\s*const dragPos = screenPosCss\(e\);\s*editor\.interaction = \{ kind: "view"/);
+  assert.match(down, /editor\.interaction = \{ kind: `space_\$\{spaceAction\}`, last: p \};/);
+  // The middle button looks around in 3DoF as in the panorama view; the old Alt orbit is gone.
+  assert.doesNotMatch(down, /isSpaceView\(\)/);
+  assert.doesNotMatch(down, /e\.altKey\)\)\) \{/);
   const move = editor.slice(editor.indexOf('    if (it.kind === "space_pan" || it.kind === "space_orbit") {'));
   assert.match(move, /\? panView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.width, canvas\.height, spaceScale\(\)\)\s*: orbitView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.height\)\);/);
+  // The wheel dollies in 6DoF and zooms (FOV) in 3DoF.
   const wheel = editor.slice(editor.indexOf("  canvas.onwheel = (e) => {"), editor.indexOf("\n  };\n", editor.indexOf("  canvas.onwheel = (e) => {")));
-  assert.match(wheel, /if \(isSpaceView\(\)\) \{\s*const direction = readWheelDirection\(e\);[\s\S]*setSpaceView\(dollyView\(spaceViewState\(\), -direction, spaceScale\(\)\)\);/);
-  assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(isSpaceView\(\)\) e\.preventDefault\(\);/);
+  assert.match(wheel, /if \(isFreeSpaceView\(\)\) \{\s*const direction = readWheelDirection\(e\);[\s\S]*setSpaceView\(dollyView\(spaceViewState\(\), -direction, spaceScale\(\)\)\);\s*\} else if \(viewController\.applyWheelEvent\(e\)\)/);
+  assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(isFreeSpaceView\(\) && presetUsesButton\(viewControls\(\), 2\)\) e\.preventDefault\(\);/);
+  // The preset is ComfyUI's setting; 3DoF keeps the view at the origin.
+  assert.match(editor, /viewControlsPreset\(app\.ui\?\.settings\?\.getSettingValue\?\.\(VIEW_CONTROLS_SETTING_ID\)\)/);
+  assert.match(editor, /return spaceModeView\(editor\.spaceMode, view\);/);
 });
 
-test("a 3D world port Sticker (#63) is left out of the space view until #72 draws it", async () => {
+test("the space view starts in 3DoF each time the editor opens, and its button switches modes", () => {
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  assert.match(editor, /spaceMode: "3dof",/);
+  assert.doesNotMatch(editor, /state\.[a-z_.]*space_?mode/i);
+  assert.match(editor, /if \(action === "space-mode"\) \{\s*setSpaceMode\(editor\.spaceMode === "6dof" \? "3dof" : "6dof"\);/);
+  // Back in 3DoF the view returns to the origin, keeping its direction.
+  const setMode = editor.slice(editor.indexOf("  function setSpaceMode(mode) {"), editor.indexOf("\n  }\n", editor.indexOf("  function setSpaceMode(mode) {")));
+  assert.match(setMode, /applySpaceMode\(switchSpaceMode\(spaceModeState\(\), mode\)\);/);
+  assert.doesNotMatch(setMode, /viewYaw|viewPitch/);
+  // The switch shows only with World content, Frame Content only in 6DoF.
+  const sync = editor.slice(editor.indexOf("  function syncFloatingViewButtonState() {"), editor.indexOf("  function syncViewToggleState() {"));
+  assert.match(sync, /"space-mode", \{\s*visible: spaceView,/);
+  assert.match(sync, /"frame-view", \{\s*visible: free,/);
+  assert.match(editor, /if \(action === "frame-view"\) \{\s*if \(!isFreeSpaceView\(\)\) return;/);
+  // Each frame's input checks the content, so 6DoF without it goes back to 3DoF.
+  assert.match(editor, /applySpaceMode\(spaceModeWithContent\(spaceModeState\(\), hasSpaceContent\(\)\)\);\s*const space = isSpaceView\(\)/);
+});
+
+test("a 3D world port Sticker (#63) has no plane: the space view draws its item instead", async () => {
   const { worldStickerLayers } = await import("../web_src/pano_editor_view.js");
   const state = loadSceneState({ version: 2, stickers: [{ id: "sticker_image_1", placement: "world", source: { kind: "port" }, position: { value: [0, 0, -2], keyframes: [] } }] });
   // The node gives a 3D port Sticker no image (pano_sticker_input_images), so the editor has no media.
   assert.deepEqual(worldStickerLayers(state, 0, state.stickers, { media: () => null }), []);
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  // Its files are used while the `sticker` input comes from where the run's did.
+  assert.match(editor, /isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;\s*return sceneFilesOf\(getNodeUiList\("pano_sticker_files"\), getNodeUiList\("pano_sticker_meta"\), mediaSource\);/);
+  assert.match(editor, /const sticker = editor\.showObjects \? stickerContentRequest\(portFiles, sceneState, evaluated\) : null;/);
+  assert.match(editor, /stickerUrls: stickerContentUrls\(portFiles, sceneState\),/);
+  // A see-through GLB does not write depth, and writes it again at full opacity.
+  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
+  assert.match(view, /material\.transparent = opacity < 1;\s*material\.depthWrite = opacity >= 1;/);
 });

@@ -585,3 +585,19 @@ test("a VIDEO linked to an input is seen from the link's type", () => {
   assert.equal(videoLinked(node, ["bg_media", "sticker"]), true);
   assert.equal(videoLinked(graphNode({}, {}), ["bg_media", "sticker"]), false);
 });
+
+test("the 3D sticker files of an output are stale once the sticker input is relinked", () => {
+  const node = graphNode({ 1: [4, 0], 2: [6, 0] }, { bg_media: 1, sticker: 2 }, { id: 35 });
+  app.nodeOutputs["35"] = {
+    pano_sticker_files: [{ filename: "pano_scene_b_0.ply", subfolder: "", type: "temp" }],
+    pano_sticker_meta: [{ kind: "splat" }],
+  };
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), true);
+  rewire(node, "scene", 8);
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), true);
+  rewire(node, "sticker", 7);
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), false);
+  assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
+  rewire(node, "sticker", 6);
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), true);
+});

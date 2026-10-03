@@ -46,6 +46,25 @@ export function initialSpaceView(yawDeg, pitchDeg, hFovDeg) {
   return { position: [0, 0, 0], yaw_deg: yawDeg, pitch_deg: pitchDeg, hFOV_deg: hFovDeg, distance: DEFAULT_DISTANCE };
 }
 
+// The view in a space view mode: 3DoF stands at the World origin, where the Stickers ERP is taken from,
+// so it shows what the ERP shows; 6DoF moves freely.
+export function spaceModeView(mode, view) {
+  return mode === "6dof" ? view : { ...view, position: [0, 0, 0] };
+}
+
+// The space view's mode and place ({ mode, position, moved }) switched to mode. Back in 3DoF the view
+// stands at the origin again and its pivot goes back to the content's size (moved false); 6DoF starts
+// where 3DoF stands. The direction and the FOV are not here, so they stay.
+export function switchSpaceMode(space, mode) {
+  return mode === "3dof" ? { mode, position: [0, 0, 0], moved: false } : { ...space, mode };
+}
+
+// The same once it is known whether there is World content: without it a 6DoF view goes back to 3DoF,
+// so content that shows again starts in 3DoF.
+export function spaceModeWithContent(space, hasContent) {
+  return hasContent || space.mode === "3dof" ? space : switchSpaceMode(space, "3dof");
+}
+
 export function pivotOf(view) {
   return add(view.position, viewAxes(view.yaw_deg, view.pitch_deg).forward, view.distance);
 }
@@ -168,6 +187,26 @@ export function sceneRequest(files, evaluatedScene) {
   };
 }
 
+// What the space view asks pano_three_view.js to draw of the `sticker` input's 3D media (its editor files
+// in the node result, sceneFilesOf of `pano_sticker_files`), as sceneRequest() does for `scene`: the item
+// of the port Sticker's batch at its clip frame, with the Sticker's evaluated transform and opacity. null
+// without files or a world port Sticker, or where the Sticker is not active.
+export function stickerContentRequest(files, sceneState, evaluated) {
+  const index = sceneState.stickers.findIndex((sticker) => sticker.source.kind === "port");
+  const sticker = sceneState.stickers[index];
+  if (!files || sticker?.placement !== "world") return null;
+  const value = evaluated.stickers[index];
+  const request = sceneRequest(files, value);
+  return request && { ...request, id: sticker.id, opacity: value.opacity, value };
+}
+
+// The item URLs of the `sticker` input's 3D media the space view keeps loaded: none while the state has no
+// world port Sticker, so its loaded items are freed.
+export function stickerContentUrls(files, sceneState) {
+  const port = sceneState.stickers.find((sticker) => sticker.source.kind === "port");
+  return files && port?.placement === "world" ? files.urls.filter(Boolean) : [];
+}
+
 // The item of the `scene` input's `count` items shown at its clip frame: the nearest one, as the
 // node picks it (sticker_media.py batch_index; the editor's Timeline fps is the state's). A single item
 // shows throughout; null outside the batch.
@@ -216,12 +255,14 @@ export function boundingSphere(points) {
 }
 
 // The World points that bound the content at an evaluated state: the box of the shown `scene` item
-// (its box in the `scene` frame, null while it loads) moved by the `scene` transform, and the corners of
-// the world Sticker planes.
-export function contentPoints(evaluated, sceneBox, planes) {
+// (its box in the `scene` frame, null while it loads) moved by the `scene` transform, the corners of
+// the world Sticker planes, and the boxes of the 3D Stickers' items ({ box, value }: the item's box in
+// the `scene` frame, and the Sticker's evaluated transform).
+export function contentPoints(evaluated, sceneBox, planes, items = []) {
   const points = [];
   if (sceneBox && evaluated.scene.active) points.push(...boxCorners(sceneBox).map((p) => transformPoint(evaluated.scene, p)));
   for (const plane of planes) points.push(...planeCorners(plane));
+  for (const { box, value } of items) points.push(...boxCorners(box).map((p) => transformPoint(value, p)));
   return points;
 }
 

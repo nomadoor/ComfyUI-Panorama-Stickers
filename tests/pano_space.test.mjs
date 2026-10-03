@@ -28,6 +28,11 @@ import {
   sceneRequest,
   sceneTransform,
   spaceCamera,
+  spaceModeView,
+  spaceModeWithContent,
+  stickerContentRequest,
+  stickerContentUrls,
+  switchSpaceMode,
   transformPoint,
   viewAxes,
   worldStickerPlane,
@@ -329,4 +334,102 @@ test("the scene request names the item of the frame, the next one ahead, and the
   assert.equal(sceneRequest(files, { ...scene, active: false }), null);
   assert.equal(sceneRequest(null, scene), null);
   assert.deepEqual(sceneRequest({ kind: "splat", urls: ["s"] }, { ...scene, clip_frame: 40 }).itemQuaternion, SPLAT_TO_SCENE);
+});
+
+test("3DoF keeps the view at the World origin, where the ERP is taken from, whatever 6DoF did", () => {
+  let moved = view({ position: [0, 0, 0] });
+  moved = orbitView(moved, 120, -40, 600);
+  moved = panView(moved, 30, 10, 800, 600, 2);
+  moved = dollyView(moved, 1, 2);
+  assert.notDeepEqual(moved.position, [0, 0, 0]);
+  const fixed = spaceModeView("3dof", moved);
+  assert.deepEqual(fixed.position, [0, 0, 0]);
+  // The direction and the FOV stay.
+  assert.equal(fixed.yaw_deg, moved.yaw_deg);
+  assert.equal(fixed.pitch_deg, moved.pitch_deg);
+  assert.equal(fixed.hFOV_deg, moved.hFOV_deg);
+  assert.deepEqual(spaceCamera(fixed, 800, 600).position, [0, 0, 0]);
+  // 6DoF moves freely, and starts from the origin 3DoF stood at.
+  assert.equal(spaceModeView("6dof", moved), moved);
+  assert.deepEqual(spaceModeView("6dof", fixed).position, [0, 0, 0]);
+});
+
+test("the content bounds hold the boxes of the 3D Stickers' items moved by their transforms", () => {
+  const evaluated = { scene: { active: false } };
+  const value = { position: [0, 0, -2], yaw_deg: 90, pitch_deg: 0, roll_deg: 0, scale: 2 };
+  const points = contentPoints(evaluated, null, [], [{ box: { min: [0, 0, 0], max: [1, 1, 1] }, value }]);
+  assert.equal(points.length, 8);
+  // Yaw 90 looks down +X: the item's +X goes to World +Z and its +Z (back) to World -X.
+  closeVec(points[0], [0, 0, -2]);
+  assert.ok(points.some((p) => Math.hypot(p[0], p[1], p[2]) < 1e-9));
+  assert.ok(points.some((p) => Math.hypot(p[0] + 2, p[1], p[2] + 2) < 1e-9));
+  closeVec(boundingSphere(points).center, transformPoint(value, [0.5, 0.5, 0.5]));
+});
+
+test("a 3D port Sticker (#63) draws the item of its batch at its clip frame with its transform and opacity", () => {
+  const port = (extra = {}) => ({
+    id: "sticker_1",
+    placement: "world",
+    source: { kind: "port" },
+    clip: { start: 10, in: 0, duration: 20 },
+    position: { value: [0, 0, -2], keyframes: [{ frame: 0, value: [0, 0, -2] }, { frame: 10, value: [0, 2, -2] }] },
+    rotation: { value: { yaw_deg: 30, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
+    scale: { value: 1.5, keyframes: [] },
+    opacity: { value: 0.25, keyframes: [] },
+    ...extra,
+  });
+  const state = loadSceneState({ version: 2, stickers: [{ id: "a", placement: "sky", source: { kind: "file", filename: "a.png" } }, port()] });
+  const files = { kind: "mesh", urls: ["m0", "m1", "m2", null, "m4", "m5", "m6"] };
+  const at = (frame) => stickerContentRequest(files, state, evaluateSceneState(state, frame));
+  const request = at(15);
+  // Clip frame 5: the nearest item, as the node's batch_index picks it, with the next one ahead.
+  assert.equal(request.url, "m5");
+  assert.deepEqual(request.prefetch, ["m6"]);
+  assert.deepEqual(request.urls, ["m0", "m1", "m2", "m4", "m5", "m6"]);
+  assert.equal(request.id, "sticker_1");
+  assert.equal(request.opacity, 0.25);
+  assert.deepEqual(request.itemQuaternion, { x: 0, y: 0, z: 0, w: 1 });
+  closeVec(request.transform.position, [0, 1, -2]);
+  assert.equal(request.transform.scale, 1.5);
+  const expected = sceneTransform({ position: [0, 1, -2], yaw_deg: 30, pitch_deg: 0, roll_deg: 0, scale: 1.5 });
+  closeVec(Object.values(request.transform.quaternion), Object.values(expected.quaternion));
+  assert.equal(at(13).url, null);
+  assert.equal(at(12.4).url, "m2");
+  // Outside its Clip range and hidden, nothing draws.
+  assert.equal(at(9), null);
+  assert.equal(at(30), null);
+  const hidden = loadSceneState({ version: 2, stickers: [port({ visible: false })] });
+  assert.equal(stickerContentRequest(files, hidden, evaluateSceneState(hidden, 15)), null);
+  // A single item shows throughout the Clip range; a SPLAT turns into the scene frame first.
+  const single = stickerContentRequest({ kind: "splat", urls: ["s"] }, state, evaluateSceneState(state, 29));
+  assert.equal(single.url, "s");
+  assert.deepEqual(single.itemQuaternion, SPLAT_TO_SCENE);
+  // Without the node's files, or while the port Sticker is still sky, nothing draws.
+  assert.equal(stickerContentRequest(null, state, evaluateSceneState(state, 15)), null);
+  const sky = loadSceneState({ version: 2, stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" } }] });
+  assert.equal(stickerContentRequest(files, sky, evaluateSceneState(sky, 0)), null);
+});
+
+test("switching back to 3DoF returns to the origin, as does 6DoF losing its World content", () => {
+  const opened = { mode: "3dof", position: [0, 0, 0], moved: false };
+  const free = switchSpaceMode(opened, "6dof");
+  assert.deepEqual(free, { mode: "6dof", position: [0, 0, 0], moved: false });
+  const moved = { mode: "6dof", position: [3, 1, -2], moved: true };
+  assert.deepEqual(switchSpaceMode(moved, "3dof"), opened);
+  // With content the mode stays; without it 6DoF goes back to 3DoF at the origin.
+  assert.equal(spaceModeWithContent(moved, true), moved);
+  const lost = spaceModeWithContent(moved, false);
+  assert.deepEqual(lost, opened);
+  // Content that shows again starts in 3DoF, at the origin.
+  assert.equal(spaceModeWithContent(lost, true), lost);
+  assert.deepEqual(spaceModeView(lost.mode, view({ position: lost.position })).position, [0, 0, 0]);
+});
+
+test("the 3D Sticker's items stay loaded only while the state has a world port Sticker", () => {
+  const files = { kind: "mesh", urls: ["a", null, "c"] };
+  const state = (placement) => loadSceneState({ version: 2, stickers: [{ id: "p", placement, source: { kind: "port" } }] });
+  assert.deepEqual(stickerContentUrls(files, state("world")), ["a", "c"]);
+  assert.deepEqual(stickerContentUrls(files, state("sky")), []);
+  assert.deepEqual(stickerContentUrls(files, loadSceneState({ version: 2, stickers: [] })), []);
+  assert.deepEqual(stickerContentUrls(null, state("world")), []);
 });
