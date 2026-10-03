@@ -17,6 +17,7 @@ from comfy_api.latest import InputImpl, Types
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.video_source import StreamedVideo
 from test_stickers_scene_video import _cfr, _execute, _frames
+from scene_test_helpers import batch_index_at_center as _batch_index_at_center, red_at_center as _red_at_center
 
 
 def _reds(count):
@@ -52,18 +53,6 @@ def _ntsc_pts(count):
     return [round(index * 1001 / 30) for index in range(count)]
 
 
-def _red_at_center(image, scale):
-    """The frame index of a red Sticker (red (i + 1) / `scale`) at the middle of each output frame, where a
-    Sticker with the default pose is drawn, or None where it is not drawn."""
-    indices = []
-    for frame in image:
-        red, green, blue = (float(value) for value in frame[frame.shape[0] // 2, frame.shape[1] // 2])
-        indices.append(round(red * scale) - 1 if red > 0.03 and green < 0.02 and blue < 0.02 else None)
-    return indices
-
-
-def _batch_index_at_center(image):
-    return _red_at_center(image, 10)
 
 
 def _video_index_at_center(image):

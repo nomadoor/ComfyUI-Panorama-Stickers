@@ -18,36 +18,20 @@ from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state
 from comfyui_pano_suite.core.world_render import SceneContent
-from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaCutoutSceneNode, PanoramaStickersSceneNode
+from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersSceneNode
 from comfyui_pano_suite.scene_video import SceneVideo
+from scene_test_helpers import center as _center, cutout as _cutout, cutout_camera as _camera, cutout_frames as _frames
 from test_legacy_goldens import _golden_mismatch
 from test_world_render import _ball
 from tools.bake_legacy_goldens import CUTOUT_SHOT, FIXTURE_DIR, build_background_erp
 from tools.golden_png import read_png16
 
 
-def _cutout(source, state=None, **inputs):
-    inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_megapixels", 0.01)
-    state_json = state if isinstance(state, str) else ("" if state is None else json.dumps(state))
-    return PanoramaCutoutSceneNode.execute(source=source, state_json=state_json, **inputs).result
-
-
-def _frames(result):
-    """Every output frame, as GetVideoComponents reads them from the `video` output."""
-    return result[3].get_components().images
 
 
 def _solid(rgb, height=8, width=16, batch=1):
     return torch.tensor(rgb, dtype=torch.float32).expand(batch, height, width, 3).clone()
 
-
-def _camera(keyframes=None, fps=24.0, position=None, hFOV_deg=None, **rotation):
-    """A Cutout state; `keyframes` maps Camera Lanes to their Keyframes."""
-    keyframes = keyframes or {}
-    values = {"position": position, "rotation": rotation, "fov": hFOV_deg}
-    camera = {name: {"value": value, "keyframes": keyframes.get(name, [])} for name, value in values.items()}
-    return {"version": 2, "timeline": {"fps": fps}, "camera": {"aspect": 1.0, **camera}}
 
 
 def _halves_erp(height=32, width=64):
@@ -57,9 +41,6 @@ def _halves_erp(height=32, width=64):
     erp[:, :, width // 4:3 * width // 4] = torch.tensor([1.0, 0.0, 0.0])
     return erp
 
-
-def _center(image, index=0):
-    return image[index, image.shape[1] // 2, image.shape[2] // 2]
 
 
 V1_STATE = json.dumps({"shots": [CUTOUT_SHOT]})

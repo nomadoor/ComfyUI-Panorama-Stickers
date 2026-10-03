@@ -177,7 +177,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 
 `world` の Sticker は奥行きで重なるので `z_index` を持たない。
 
-`world` の 2D の素材（IMAGE / VIDEO）は、幅 `scale`（World の単位）、高さは切り抜いた素材のアスペクト比で決まる両面の板として描く（#59、`docs/render-contract.md` の「World の描き方」）。3D の素材の置き方は #63 で定める。
+`world` の 2D の素材（IMAGE / VIDEO）は、幅 `scale`（World の単位）、高さは切り抜いた素材のアスペクト比で決まる両面の板として描く（#59、`docs/render-contract.md` の「World の描き方」）。3D の素材（MESH・SPLAT・3D ファイル）は常に `world` の Sticker で、`position`・`rotation`・`scale` は `scene` の変形と同じく中身自身の glTF 座標を World に置く変形とする（#63、`docs/render-contract.md` の「3D の `world` の Sticker」）。`crop` は使わない。
 
 `locked` と `crop` を残す根拠：
 
@@ -189,6 +189,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 `sticker` 入力が接続されているのに、状態に `source.kind == "port"` の Sticker がない場合、ノードとエディタは、その素材を次の Sticker としてリストの末尾（最も手前）に加えて扱う。旧ノードの挙動（`nodes.py` の `_build_runtime_external_sticker` を呼ぶ、既存の外部 Sticker が見つからないときの経路）と同じである。
 
 - `placement: "sky"`、Clip range・`opacity` などは既定値。
+- `sticker` の素材が 3D（MESH・SPLAT・3D ファイル）のときは `placement: "world"` とし、`position` は `[0, 0, -2]`（World の原点から Stickers の ERP の中央の向きに 2）、`rotation` は 0、`scale` は `1` とする。Stickers の ERP は常に原点から回転 0 で撮るので、Camera の Lane は使わない。Pose handoff（下記）は `sky` の Sticker だけに当てはまり、3D の Sticker には `sticker_state` を使わない（使わなかったことを警告に出す）。状態の `port` の Sticker が `sky` のまま 3D の素材がつながったときは、同じ `id` の `world` の Sticker（上の変形。`clip`・`visible`・`locked` は保ち、`sky` の Lane と Keyframe は捨てる）に置き換えて扱い、エディタも実行結果で同じように置き換える（`docs/render-contract.md`）。逆向き（`world` の `port` の Sticker に 2D の素材）は、2D の `world` の Sticker として正しいので置き換えない。以下の `z_index`・`direction`・`roll`・`size` の規則は `sky` のときだけ。
 - `z_index` は、状態の `sky` の Sticker の最大値 + 1（Sticker がなければ `0`）。ペイントの `z_index` は数えない（旧ノードと同じ）。
 - `direction`・`roll` は既定値で、`size` の `hFOV_deg` は `30`、`vFOV_deg` は素材のアスペクト比から求める。
 - `sticker_state` があれば、その Camera の軌道に沿って置く（Pose handoff、#65）。Sticker の clip frame（素材の時刻）`c` の姿勢は、`sticker_state` の Camera を `c × sticker_state.fps ÷ timeline.fps` で評価した `rotation` の yaw / pitch（`direction`）・roll（`roll`）と `fov`（`size` の `hFOV_deg`）とする。Camera の位置は使わない（`sky` の Sticker は無限遠にある）。
@@ -417,3 +418,6 @@ Cutout が出力し、Stickers の `sticker_state` 入力が受け取る。
 - #65 の結果：Camera の軌道ごとの Pose handoff を上の「`port` の Sticker が状態にないとき」の規則で実装し、`NotImplementedError` を外した。実行結果の `pano_sticker_input_pose` に `direction`・`roll`・`size` の Keyframe（`keyframes`）を加え、エディタとノード上の UI はその Keyframe ごと `port` の Sticker を状態に加える（`reconcilePortStickerState`）。`port` の Sticker が状態に入った後で `sticker_state` が変わっても、姿勢は変えない（状態 v2 に `source_state_hash` に当たる項目を足さない）。Scene の正は Stickers の状態だけ（ADR 0025）で、実行のたびに `sticker_state` で上書きするとエディタで直した位置が消えるためである。Cutout の Camera を変えて撮り直したときは、`sticker` の接続を外してつなぎ直すと、次の実行で新しい軌道の `port` の Sticker が加わる。
 - 旧 `path` 型の資産（初期の版だけが書いた、作業ディレクトリからの相対パス）は読み替えで捨てる（ユーザー判断で確定）。#78 で README の移行の注意に書く。
 - #74 の結果：エディタのタイムラインで Timeline fps（`bg_media` と `sticker` に VIDEO がないときだけ）と `timeline.length` を変えられる。fps の変更と、開いたとき・実行結果が届いたときの VIDEO の fps への合わせ込みは `rebaseSceneState` を使う（`setTimelineFps`・`parseSceneEditorState` の `fps`、`pano_editor_state.js`）。新しいノードの `ui` に、VIDEO が Timeline fps を決めたときだけ `pano_timeline_fps` を足した。規則は `docs/timeline-ui.md`。
+- #63 の結果：`sticker` の 3D の素材は `world` の `port` の Sticker になる（上記「`port` の Sticker が状態にないとき」）。エディタとノード上の UI は、`sticker` の接続の型（接続が `*` のとき（Reroute など）は、つながった先の出力の型）が IMAGE・VIDEO のときだけ、従来どおりすぐに `sky` の `port` の Sticker を加える。MESH・SPLAT・`FILE_3D*` のときと型が分からないときは、ノードの姿勢（`pano_sticker_input_pose`）が実行結果に届くまで加えず、届いたら姿勢の `placement`（なければ `sky`）で加える（`reconcilePortStickerState`）。何を描くかを知っているのはノードなので、型が分からないときにフロントエンドは決め打ちしない。`replace: true` の姿勢は、`sky` の `port` の Sticker を同じ `id` の `world` の Sticker に置き換える（`clip`・`visible`・`locked` を保つ）。置き換えた後は `world` なので、同じ実行結果でもう一度置き換えることはない。`world` の `port` の Sticker には素材のアスペクト比での `vFOV_deg` の求め直しをしない。
+- #71・#72 へ（#63 の残り）：エディタは `world` の `port` の Sticker をまだ描かない。中身は `pano_sticker_files` / `pano_sticker_meta`（`pano_scene_files` と同じ形。SPLAT の PLY は X 軸まわりに 180° 回してから）に Sticker の変形を掛けて、Keyframe と不透明度に従って描く。メッシュは `scene` と同じく unlit・両面。ギズモでの操作と、新しく置く `world` の Sticker の配置の規則は #72。
+- #79 へ：エディタに投入した 3D ファイル（`file` の Source）は、ノードではまだ読まない（`load_source_rgba` が画像として読めず、警告になる）。`port` と同じく `_read_scene_file` で SPLAT・MESH に読み、`_render_frames` でパスごとに `content_of` から `ContentSource` を作れば、描画は `port` と同じ経路で行える。

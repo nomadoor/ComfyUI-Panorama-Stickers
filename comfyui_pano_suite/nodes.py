@@ -57,7 +57,7 @@ from .core.video import (
     save_video_to_mp4,
 )
 from .core.video_source import MaterializedVideo, StreamedVideo
-from .core.world_render import SceneContent
+from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
 from .scene_mesh import is_mesh_file, mesh_scene_content, moge_scene_content, read_mesh_file
 from .scene_video import SceneVideo
@@ -1015,9 +1015,10 @@ class PanoSceneValue:
     `state` is the loaded `state_json` with the port Sticker appended when missing, and `sources` its Sticker
     sources read into memory; the port Sticker's source is a template holding the first frame of `port`, the
     media on the sticker input (None without one), whose frames come from `port.frames()` at `port.index_at`.
+    3D media has no template: `port.frames()` is its content, and `_port_source_at` the item to draw.
     `bg_media` (IMAGE, VIDEO, or None) and `scene` are the inputs as given, a 3D file as the SPLAT or MESH read
-    from it (`_read_scene_file`). `coverage` is the span of `bg_media`, `bg_color` 0..1 RGB. The output size is
-    not part of it; each consumer sets its own. `fps` is the Timeline fps and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
+    from it (`_read_scene_file`), as is the 3D media in `port`. `coverage` is the span of `bg_media`, `bg_color`
+    0..1 RGB. The output size is not part of it; each consumer sets its own. `fps` is the Timeline fps and `frames` holds per output frame the Timeline frame to evaluate, the `bg_media` frame to draw, the `port`
     frame, and the `scene` item, as `_decide_timeline` returns them.
     Consumers must not modify it; the same value reaches every node linked to the output.
     """
@@ -1033,28 +1034,6 @@ class PanoSceneValue:
     frames: tuple
 
 
-def _input_type_name(value) -> str:
-    if isinstance(value, torch.Tensor):
-        return "IMAGE"
-    if isinstance(value, Input.Video):
-        return "VIDEO"
-    if isinstance(value, Types.MESH):
-        return "MESH"
-    if isinstance(value, Types.SPLAT):
-        return "SPLAT"
-    if isinstance(value, Types.File3D):
-        return "3D file"
-    if isinstance(value, dict):
-        return "MOGE_GEOMETRY"
-    return type(value).__name__
-
-
-def _reject_unsupported_sticker(sticker):
-    # Temporary on the integration branch: 3D stickers are added by #63.
-    if sticker is not None and not isinstance(sticker, (torch.Tensor, Input.Video)):
-        raise NotImplementedError(f"Panorama Stickers: {_input_type_name(sticker)} on the sticker input is not supported yet.")
-
-
 def _scene_content(scene) -> SceneContent | None:
     """The `scene` input as World content, or None without one."""
     if scene is None:
@@ -1063,16 +1042,13 @@ def _scene_content(scene) -> SceneContent | None:
         return splat_content(scene)
     if isinstance(scene, Types.MESH):
         return mesh_scene_content(scene)
-    if isinstance(scene, dict):
-        return moge_scene_content(scene)
-    # A 3D file that neither reader took (`_read_scene_file`): a PLY without 3DGS properties, or a non-splat file
-    # without a format.
-    raise NotImplementedError(f"Panorama Stickers: {_input_type_name(scene)} on the scene input is not supported yet.")
+    return moge_scene_content(scene)
 
 
-def _read_scene_file(scene):
-    """A 3D file on the `scene` input as what is read from it: a splat file (told by its contents, as Load3D does)
-    as its SPLAT, else a mesh file (by its format) as its MESH; other inputs, and 3D files neither reads, as given.
+def _read_scene_file(scene, name: str):
+    """A 3D file on the `scene` or `sticker` input (`name`) as what is read from it: a splat file (told by its
+    contents, as Load3D does) as its SPLAT, else a mesh file (by its format) as its MESH; other inputs as given. A 3D
+    file that neither reads (a PLY without 3DGS properties, a non-splat file without a format) is a ValueError.
     What is read is kept per file (on disk by its path and modification, else by the object) in the cache of its
     kind, so the same file is not parsed again and keeps its editor files."""
     if not isinstance(scene, Types.File3D):
@@ -1091,7 +1067,8 @@ def _read_scene_file(scene):
         NODE_RUNTIME.cache.put("splat_files", cache_key, splat)
         return splat
     if not is_mesh_file(scene):
-        return scene
+        raise ValueError(f"Panorama Stickers: the 3D file on the {name} input is neither a splat file (a PLY with 3DGS properties, "
+                         "SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL, FBX, USDZ).")
     mesh = read_mesh_file(scene)
     NODE_RUNTIME.cache.put("mesh_files", cache_key, mesh)
     return mesh
@@ -1154,6 +1131,18 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> dict:
     return lanes
 
 
+# A 3D Sticker that the node adds has its origin here: 2 World units ahead of the World origin along -Z, the
+# center of the Stickers ERP output, which is always taken from the origin at rotation 0.
+WORLD_STICKER_POSITION = [0.0, 0.0, -2.0]
+
+
+def _world_port_sticker(state: dict, sticker_id: str | None = None) -> dict:
+    """The port Sticker for 3D media: `world`, at WORLD_STICKER_POSITION with rotation 0 and scale 1, so the
+    content keeps its own orientation and its front (+Z) faces the origin."""
+    raw = {"id": sticker_id or _unused_sticker_id(state["stickers"]), "placement": "world", "source": {"kind": "port"}, "position": {"value": WORLD_STICKER_POSITION}}
+    return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
+
+
 def _port_sticker(state: dict, sticker_state) -> dict:
     """The port Sticker appended when the state has none, placed by `sticker_state` when given."""
     lanes = {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0}}}
@@ -1172,21 +1161,32 @@ def _port_rgba(image: torch.Tensor) -> np.ndarray:
     return np.concatenate([image[..., :3], alpha], axis=-1)
 
 
-def _port_media(state: dict, sticker, sticker_state) -> PortMedia | None:
-    """The media on the sticker input, on the port Sticker. Appends the port Sticker to `state` when it is missing."""
+def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> PortMedia | None:
+    """The media on the sticker input, on the port Sticker. Appends the port Sticker to `state` when it is missing:
+    a `world` one for 3D media (SPLAT or MESH), which Pose handoff does not place. A stored `sky` port Sticker with
+    3D media is replaced in `state` by the `world` one under the same id, keeping its Clip range, visibility and
+    lock (its sky Lanes do not apply to a world Sticker)."""
     if sticker is None:
         return None
-    if not any(item["source"]["kind"] == "port" for item in state["stickers"]):
-        state["stickers"].append(_port_sticker(state, sticker_state))
-    port = next(item for item in state["stickers"] if item["source"]["kind"] == "port")
+    is_3d = isinstance(sticker, (Types.SPLAT, Types.MESH))
+    index = next((i for i, item in enumerate(state["stickers"]) if item["source"]["kind"] == "port"), None)
+    if index is None:
+        if is_3d and load_sticker_state(sticker_state) is not None:
+            warnings.append("sticker_state places only sky Stickers; the 3D Sticker is placed 2 ahead of the origin.")
+        state["stickers"].append(_world_port_sticker(state) if is_3d else _port_sticker(state, sticker_state))
+        index = len(state["stickers"]) - 1
+    elif is_3d and state["stickers"][index]["placement"] == "sky":
+        stored = state["stickers"][index]
+        state["stickers"][index] = {**_world_port_sticker(state, stored["id"]), **{key: stored[key] for key in ("clip", "visible", "locked")}}
+    port = state["stickers"][index]
     return PortMedia(port["id"], port["clip"], sticker, state["timeline"]["fps"])
 
 
 def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -> SceneSources:
-    """Read every Sticker source into memory; the port Sticker's source holds the first frame of `port`.
-    A source that cannot be read adds to `warnings`."""
+    """Read every Sticker source into memory; the port Sticker's source holds the first frame of `port`, and
+    3D media has none (`_render_frames` makes it for each pass). A source that cannot be read adds to `warnings`."""
     stickers = {}
-    port_image = None if port is None else _port_rgba(port.first_frame)
+    port_image = None if port is None or port.is_3d else _port_rgba(port.first_frame)
     for item in state["stickers"]:
         source = item["source"]
         if source["kind"] == "port":
@@ -1290,13 +1290,15 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     return fps, frames
 
 
-def _port_source_at(active: bool, index: int | None, frames, template: StickerSource, current: StickerSource | None) -> StickerSource | None:
-    """The port Sticker's source showing frame `index` of `frames`, or None where it is not drawn. `current` is
-    the previous result, kept while the frame repeats so that it is not converted again."""
+def _port_source_at(active: bool, index: int | None, frames, template: StickerSource | None, current):
+    """The port Sticker's source showing frame `index` of `frames` (item `index` of 3D content), or None where it
+    is not drawn. `current` is the previous result, kept while the frame repeats so that it is not converted again."""
     if not active or index is None:
         return None
     if current is not None and current.frame == index:
         return current
+    if isinstance(frames, SceneContent):
+        return ContentSource(frames, index)
     image = frames[index]
     return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
 
@@ -1306,8 +1308,8 @@ def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, por
     """(b) Render each output frame with the shared render function, with the port Sticker's source at the
     frame of `port` and the item of the `scene` input that (a) chose. `capture` maps the evaluated state of a frame
     to the Camera value and the Projection to draw it with; the Projection's size is the same for every frame.
-    `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media and the `scene` content are opened for
-    this pass, so nothing they put on `device` outlives it.
+    `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media (and its content when 3D) and the
+    `scene` content are opened for this pass, so nothing they put on `device` outlives it.
     Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
     the same tensors as the previous one."""
     bg_width = None
@@ -1326,7 +1328,7 @@ def _render_frames(state: dict, sources: SceneSources, frames, bg, bg_color, por
         frame_sources = sources
         if port is not None:
             active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
-            port_source = _port_source_at(active, port_index, port_frames, sources.stickers[port.sticker_id], port_source)
+            port_source = _port_source_at(active, port_index, port_frames, sources.stickers.get(port.sticker_id), port_source)
             frame_sources = replace(sources, stickers=others if port_source is None else {**others, port.sticker_id: port_source})
         camera, projection = capture(evaluated)
         color, mask, _depth = render_frame(
@@ -1405,7 +1407,9 @@ def _port_media_ui(port: PortMedia, fps: float, timing) -> dict:
     since an MP4 drops the alpha that the `video` output keeps. The meta tells how a Timeline frame maps to the MP4 as
     `PortMedia.index_at` maps it: `kind`, `duration` (where the media ends), and for a VIDEO `pts_tolerance`, the
     seconds before a PTS that count as its frame (half the time base of the media or of `timing`, the VIDEO that
-    sets the Timeline)."""
+    sets the Timeline). 3D media is its editor files instead (`_scene_ui`)."""
+    if port.is_3d:
+        return _scene_ui(port.media, "pano_sticker_files", "pano_sticker_meta")
     contract = _get_preview_ui_contract("stickers_input")
     ui_ret = _init_ui_preview(port.first_frame[None], key=contract["image"])
     video = port.media
@@ -1428,10 +1432,11 @@ def _port_media_ui(port: PortMedia, fps: float, timing) -> dict:
 SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary"}
 
 
-def _scene_ui(scene) -> dict:
-    """The `ui` of the `scene` input: a temp file per item for the editor (`write_editor_files`), None for an empty
-    item, and the kind it loads. The files are written once per input and reused while they are there, keyed by
-    the input and the tensors it is read from (a MOGE_GEOMETRY is a dict)."""
+def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_scene_meta") -> dict:
+    """The `ui` of the `scene` input, or of 3D media on the `sticker` input under the given keys: a temp file per
+    item for the editor (`write_editor_files`), None for an empty item, and the kind it loads. The files are written
+    once per input and reused while they are there, keyed by the input and the tensors it is read from (a
+    MOGE_GEOMETRY is a dict), so the same SPLAT or MESH on both inputs shares them."""
     if isinstance(scene, dict):
         cache_key = tuple((key, _tensor_cache_identity(scene[key])) for key in ("points", "mask", "image", "intrinsics") if key in scene)
     else:
@@ -1443,7 +1448,7 @@ def _scene_ui(scene) -> dict:
         NODE_RUNTIME.cache.put("scene_files", cache_key, saved)
     kind, paths = saved
     files = [None if path is None else entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]]) for path in paths]
-    return {"pano_scene_files": files, "pano_scene_meta": [{"kind": kind}]}
+    return {files_key: files, meta_key: [{"kind": kind}]}
 
 
 # TODO(#78): rename to PanoramaStickersNode, matching the node_id, once the legacy class is removed.
@@ -1477,13 +1482,13 @@ class PanoramaStickersSceneNode(io.ComfyNode):
 
     @classmethod
     def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
-        _reject_unsupported_sticker(sticker)
-        scene = _read_scene_file(scene)
+        scene = _read_scene_file(scene, "scene")
         content = _scene_content(scene)
+        sticker = _read_scene_file(sticker, "sticker")
         warnings = []
         state = load_scene_state(state_json)
-        has_port = any(item["source"]["kind"] == "port" for item in state["stickers"])
-        port = _port_media(state, sticker, sticker_state)
+        stored_port = next((item for item in state["stickers"] if item["source"]["kind"] == "port"), None)
+        port = _port_media(state, sticker, sticker_state, warnings)
         sources = _resolve_sources(state, port, warnings)
         bg = _open_media(bg_media, "bg_media")
         out_w, out_h, uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg.first_frame if isinstance(bg_media, Input.Video) else bg_media)
@@ -1509,16 +1514,22 @@ class PanoramaStickersSceneNode(io.ComfyNode):
             _merge_ui_payload(ui_ret, _scene_ui(scene))
         if port is not None:
             _merge_ui_payload(ui_ret, _port_media_ui(port, fps, _timing_video(bg, port)))
-            if not has_port:
+            added = next(item for item in state["stickers"] if item["id"] == port.sticker_id)
+            if added is not stored_port:
                 # The pose the port Sticker was added at, with the Keyframes of a Camera that moved (Pose handoff),
-                # for the editor to add it to the state the same way.
-                added = next(item for item in state["stickers"] if item["id"] == port.sticker_id)
-                pose = {
-                    **added["direction"]["value"],
-                    "roll_deg": added["roll"]["value"],
-                    "hFOV_deg": added["size"]["value"]["hFOV_deg"],
-                    "keyframes": {name: added[name]["keyframes"] for name in ("direction", "roll", "size")},
-                }
+                # or the transform of a 3D one, for the editor to add it to the state the same way; `replace` when
+                # it replaced the stored sky port Sticker.
+                if port.is_3d:
+                    pose = {"placement": "world", **{name: added[name]["value"] for name in ("position", "rotation", "scale")}}
+                    if stored_port is not None:
+                        pose["replace"] = True
+                else:
+                    pose = {
+                        **added["direction"]["value"],
+                        "roll_deg": added["roll"]["value"],
+                        "hFOV_deg": added["size"]["value"]["hFOV_deg"],
+                        "keyframes": {name: added[name]["keyframes"] for name in ("direction", "roll", "size")},
+                    }
                 ui_ret["pano_sticker_input_pose"] = [pose]
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         return io.NodeOutput(image, mask, video, pano_scene, ui=ui_ret)

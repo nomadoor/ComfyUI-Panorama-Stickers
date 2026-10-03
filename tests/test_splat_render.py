@@ -22,6 +22,7 @@ from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.world import world_rotation
 from comfyui_pano_suite.core.world_render import CameraView
 from comfyui_pano_suite.splat_render import splat_content
+from scene_test_helpers import blob as _blob, blobs as _blobs, splat_of as _splat
 
 
 CPU = torch.device("cpu")
@@ -29,14 +30,6 @@ BLACK = (0.0, 0.0, 0.0)
 GREEN = (0.0, 1.0, 0.0)
 FULL = {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0}
 
-
-def _splat(positions, scales, opacities, colors, seed=0):
-    """A SPLAT (3DGS frame: Y down, Z forward) of gaussians with random rotations and base colors."""
-    count = positions.shape[0]
-    rotations = torch.randn((count, 4), generator=torch.Generator().manual_seed(seed))
-    rotations = rotations / rotations.norm(dim=-1, keepdim=True)
-    sh = ((colors - 0.5) / _C0)[:, None, :]
-    return Types.SPLAT(positions[None], scales[None], rotations[None], opacities.reshape(1, -1, 1), sh[None])
 
 
 def _shell(count, center, radius, seed=0):
@@ -49,13 +42,6 @@ def _shell(count, center, radius, seed=0):
     return _splat(direction * radius + torch.tensor(center), scales, opacities, 0.5 + 0.4 * direction, seed)
 
 
-def _blob(center, color, opacity=1.0, size=0.3):
-    """One round gaussian."""
-    return (torch.tensor([center], dtype=torch.float32), torch.full((1, 3), size), torch.tensor([opacity]), torch.tensor([color], dtype=torch.float32))
-
-
-def _blobs(*blobs):
-    return _splat(*(torch.cat(parts) for parts in zip(*blobs)))
 
 
 def _render(splat, projection, state=None, sources=None, bg=None, bg_color=BLACK):
@@ -243,7 +229,7 @@ def test_splat_files_are_told_by_their_contents():
     assert isinstance(splat_render.read_splat_file(Types.File3D(BytesIO(_splat_file_bytes(splat)))), Types.SPLAT)
     assert splat_render.read_splat_file(Types.File3D(BytesIO(mesh_ply), file_format="ply")) is None
     assert splat_render.read_splat_file(Types.File3D("model.glb")) is None
-    with pytest.raises(NotImplementedError, match="3D file on the scene input"):
+    with pytest.raises(ValueError, match="3D file on the scene input is neither"):
         _execute(Types.File3D(BytesIO(mesh_ply), file_format="ply"))
 
 

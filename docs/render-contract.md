@@ -33,6 +33,10 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 
 2D の素材を読み込んだもの。`rgba` はストレートアルファの (h, w, 4)、0〜1。`crop` は Sticker の `crop`。`derive_vfov` は `port` の Source で真にし、`vFOV_deg` を `hFOV_deg` と素材のアスペクト比から求め直す（`docs/scene-state-v2.md`）。`frame` は、フレームを持つ素材（IMAGE バッチ・VIDEO）のうち `rgba` がどのフレームかを表す番号で、1 枚の画像では `0`。Source のない Sticker は描かない。
 
+### `ContentSource`
+
+3D（MESH・SPLAT）の `world` の Sticker の Source（#63、`core/world_render.py`）。`content` は `SceneContent`（下記「`scene` の共通処理」）、`frame` はそのうち描く要素の番号で、`StickerSource.frame` と同じく World のキーに入る。`content` は device に置いたものを持つので、描画のパスごとに作る（`PANO_SCENE`・`video` には入れない）。`sky` の Sticker には渡さない。
+
 ### `Projection`
 
 | 形 | 意味 |
@@ -84,6 +88,13 @@ render_frame(evaluated, sources, camera, projection, *, bg, bg_key=None, bg_colo
 - 出力の画素ごとに、Camera の位置から画素の中心を通る光線を作る（`core/math.py` の `ray_directions`）。ERP は Sky と同じ経度・緯度（180 は Camera の前方の半球）、透視投影は `hfov_deg` を幅に当てた正方の画素のピンホールとする。Sky の向き（`_view`）も同じ関数で作る。
 - 各内容は、ストレートアルファの色 (H, W, 4) と距離 (H, W) の層として描き、描くたびに `over_by_depth` で一枚に畳み込む（`world_layer`）。層の順は `scene` の中身、続いて `world` の Sticker を Camera の位置から `position`（板の中心）までの距離の遠い順（同じ距離では状態の順）。画素ごとの距離が同じときは、中心が近い Sticker、次に状態の順で後ろの Sticker が手前になる。交わらない板どうしは、これで奥行きの順と一致する。`scene` の中身は画素ごとに奥行きが変わり並べ替えられないので最初に畳み込み、その手前と奥に Sticker が重なる画素では上記の近似が残る。まとめた一枚を `composite_frame` に渡す。背景と Sky は World の層より常に奥になる。
 - 距離は光線の長さ（上記 `depth`）。
+
+### 3D の `world` の Sticker（#63）
+
+- Source が `ContentSource` の `world` の Sticker は、板ではなくその中身（`content` の要素 `frame`）を描く。Sticker の変形（`position`・`rotation`・`scale`）は `scene` の変形と同じ意味で、中身自身の座標の点 `x` を World の `position + scale × world_rotation(yaw, pitch, roll) @ x` に置く（`_scene_layer` を共有する）。Keyframe と Clip range は評価関数が決める（他の `world` の Sticker と同じ）。
+- 不透明度は層のアルファに掛ける。メッシュは手前の面だけを描く（不透明度を下げても裏の面は透けない）。
+- 層の順は板と同じく `position`（中身の原点）までの距離で決まり、その後は画素ごとの奥行きで `over_by_depth` に畳み込む。`scene` の中身と同じく、中身が大きく原点から離れていると上記の近似が残る。
+- 背景と Sky より常に手前になる。
 
 ### `world` の Sticker の板
 
@@ -141,7 +152,7 @@ SPLAT（#61、下の「SPLAT の描き方」）と MESH・MoGe（#62）のレン
 
 `splat_render.py` が持つ（#61）。
 
-- スプラット系の 3D ファイルは、Stickers の `execute` の入口で `_read_scene_file`（`nodes.py`）が、メッシュより先に一度だけ SPLAT に読み、以降（`_scene_content`・`_scene_ui`・`PANO_SCENE`）は SPLAT として扱う。読むのはコアの File3DToSplat。`format` が `splat`・`spz`・`ksplat` のもの、頂点に 3DGS の属性（`f_dc_0`、または `scale_0` と `rot_0`）を持つ PLY（Load3D と同じく中身で見分ける。持たない PLY はスプラットとしては読まない。コアの Get3DComponents も PLY を読まないので、そのような PLY は未対応のエラーになる）、`format` のないものはコアの `_detect_splat_format` で中身から決まるものを読む。読んだ SPLAT は `NODE_RUNTIME` の `splat_files` キャッシュ（1 つ）に、ディスクのファイルならパス・更新時刻・大きさ、それ以外はオブジェクトの同一性をキーにして持ち、同じファイルは実行をまたいで読み直さず、エディタ用ファイルも同じ SPLAT として使い回す（#62 の `mesh_files` と同じ作り）。
+- スプラット系の 3D ファイルは、Stickers の `execute` の入口で `_read_scene_file`（`nodes.py`）が、メッシュより先に一度だけ SPLAT に読み、以降（`_scene_content`・`_scene_ui`・`PANO_SCENE`）は SPLAT として扱う。読むのはコアの File3DToSplat。`format` が `splat`・`spz`・`ksplat` のもの、頂点に 3DGS の属性（`f_dc_0`、または `scale_0` と `rot_0`）を持つ PLY（Load3D と同じく中身で見分ける。持たない PLY はスプラットとしては読まない。コアの Get3DComponents も PLY を読まないので、そのような PLY は下の「読めない 3D ファイル」のエラーになる）、`format` のないものはコアの `_detect_splat_format` で中身から決まるものを読む。読んだ SPLAT は `NODE_RUNTIME` の `splat_files` キャッシュ（1 つ）に、ディスクのファイルならパス・更新時刻・大きさ、それ以外はオブジェクトの同一性をキーにして持ち、同じファイルは実行をまたいで読み直さず、エディタ用ファイルも同じ SPLAT として使い回す（#62 の `mesh_files` と同じ作り）。
 - `splat_content(splat)` が `SceneContent` を作り、`render` は要素ごとにコアの `_gaussian_item` で SPLAT を `device` に置いて描く（実行をまたいで device に持たない。`SceneContent` 自体も描画のパスごとに作る。上記「`scene` の共通処理」）。
 - 座標：SPLAT は 3DGS の座標（Y 下・Z 前方）で、`scene` 自身の glTF の座標はそれを X 軸まわりに 180° 回したもの（`(x, y, z)` → `(x, −y, −z)`）とする。コアの RenderSplat と Load3D の定義で、ADR 0023 の「SPLAT の変換はコアに従う」による。
 - 描き方はコアの RenderSplat（`_render_gaussian`、`render_style` は `color`）と同じ。各ガウシアンを、画素の光線に沿った 3D の密度の最大値で重み付けし、奥行きの slab ごとに手前から奥へ線形の光で重ねる。色は SH の DC（基本色）だけを使う。`sharpen` は RenderSplat の既定の 2.0、`splat_scale` は 1、`opacity_threshold` は 0 で、ノードの入力にはしない。結果はストレートアルファの sRGB に戻して `over_by_depth` に渡すので、背景との合成は sRGB で行う（RenderSplat は線形の光で背景と合成する。半透明の縁だけが違う）。
@@ -162,14 +173,9 @@ SPLAT（#61、下の「SPLAT の描き方」）と MESH・MoGe（#62）のレン
   | 1.6 下の地面（40 × 40 に一様、水平の σ 0.02〜0.05、厚み 0.002） | 10 万 | 遠いほど小さい | 458 | 0.6 秒 | 1.3 GB |
   | 同上 | 100 万 | 同上 | 449 | 2.0 秒 | 1.9 GB |
 
-## まだ描かないもの
+## 読めない 3D ファイル
 
-統合ブランチ内の暫定として、次は `NotImplementedError` にする。
-
-| 内容 | 解消する ticket |
-|---|---|
-| `sticker` 入力の MESH・SPLAT・3D ファイル（`_reject_unsupported_sticker`） | #63 |
-| `scene` 入力の、どちらの読み手も読まない 3D ファイル（3DGS の属性のない PLY、形式がなくスプラットでもないもの。`nodes.py` の `_scene_content`） | 未定 |
+`scene`・`sticker` 入力の 3D ファイルのうち、どちらの読み手も読まないもの（3DGS の属性のない PLY、形式がなくスプラットでもないもの）は、`_read_scene_file` が入力の名前と読める形式を示す `ValueError` にする（`scene` と `sticker` で同じ文言）。暫定の `NotImplementedError` は残っていない。
 
 FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コアの Get3DComponents が読めないので、コアの `ValueError` になる。
 
@@ -208,7 +214,13 @@ FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コア�
   - 同じ `BytesIO` の VIDEO を `bg_media` と `sticker` の両方につないでもよい。`core/video_source.py` は container ごとに同じバイト列の別の読み手を作る（中身は写さない）。
   - 素材のフレームは `StickerSource.frame` で Sky のキーに入るので、Sky は素材のフレームが変わったときだけ作り直す。
   - `file` の Source（エディタで投入した素材）は、今は画像だけで、時間を持たない。
-- `scene` の入力は、3D ファイルを `_read_scene_file` で SPLAT か MESH に読んでから、`_scene_content` で `SceneContent` にする。SPLAT は上記「SPLAT」、MESH と `MOGE_GEOMETRY` は上記「MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`」。どちらの読み手も読まない 3D ファイルは未対応であることを示すエラーにする。`sticker` の MESH・SPLAT・3D ファイルも同じくエラーにする（#63）。
+- `scene` の入力は、3D ファイルを `_read_scene_file` で SPLAT か MESH に読んでから、`_scene_content` で `SceneContent` にする。SPLAT は上記「SPLAT」、MESH と `MOGE_GEOMETRY` は上記「MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`」。どちらの読み手も読まない 3D ファイルは上記「読めない 3D ファイル」のエラーにする。
+- `sticker` の MESH・SPLAT・3D ファイル（#63）：3D ファイルは `scene` と同じ `_read_scene_file` で SPLAT か MESH に読み（同じ `splat_files`・`mesh_files` のキャッシュ）、どちらも読まないファイルは `scene` と同じエラーにする。読んだ SPLAT・MESH は `PortMedia` の `media` になる（`is_3d`）。
+  - `port` の Sticker が状態になければ、`world` の Sticker として加える（`sky` にはしない）。位置は `WORLD_STICKER_POSITION`（World の原点から `-Z` に 2、Stickers の ERP の中央の向き）、回転 0、スケール 1、不透明度・Clip range は既定値。Stickers の ERP は常に原点から回転 0 で撮るので、状態の Camera の Lane には依らない。中身の位置は合わせ直さない（中身の原点がその位置に来る）。Pose handoff（`sticker_state`）は `sky` の Sticker だけのもので、3D の Sticker を加えるときに `sticker_state` があれば使わずに警告を出す。
+  - 状態の `port` の Sticker が `sky` のとき（2D の素材の後に 3D をつないだ、型の分からない接続でエディタが `sky` で加えた、など）は、同じ `id` の `world` の Sticker に置き換えて描く（上と同じ変形。`clip`・`visible`・`locked` は保ち、`sky` の Lane と Keyframe は捨てる）。実行結果の `pano_sticker_input_pose` に `replace: true` を付け、エディタとノード上の UI が状態を同じように置き換える。置き換えた状態で実行し直すと、ノードはもう状態を変えず、姿勢も出さない。
+  - 逆向き（状態の `port` の Sticker が `world` のまま 2D の素材をつないだ）は置き換えない。2D の素材の `world` の Sticker（板）は正しい状態で、`port` から `world` の画像・動画の Sticker を作る唯一の経路である（#59）。
+  - 要素の数は IMAGE バッチと同じ扱い（`batch_index`）。2 つ以上の要素は出力フレームと 1 対 1 に対応し、`duration` が `null` なら最後の要素で Clip range が終わる。1 つなら Clip range の間ずっと描く。
+  - `SceneSources` には 3D の `port` の Sticker の Source を入れない（テンプレートを持たない）。(b) の `_render_frames` がパスごとに `port.frames()`（`sticker_media.py` の `content_of` で作った `SceneContent`）を作り、`_port_source_at` がフレームごとの `ContentSource` にする。device に置いたものはそのパスの間だけ持つ（`tests/test_stickers_3d.py`）。
 - `video` を読む側（`get_components`・`save_to`）は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、直前のフレームから写す。
 - `is_output_node` は `True`（#75）。ComfyUI は `ui` を出力ノードでなくても `executed` で送るが、出力ノードでなければ下流に出力ノードがつながっていないと実行されず、エディタとノード上の UI が素材を受け取れない。出力ノードにすると、キューに入れるたびに実行され（変わっていなければキャッシュの `ui` が送られる）、素材の表示が下流の接続に左右されない。
 - 実行結果の `ui` は、エディタとノード上の UI に入力の素材を見せるためのもので、キーは旧ノードと同じ（#75）。
@@ -220,10 +232,11 @@ FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コア�
   | `pano_sticker_input_images` | `sticker` の最初のフレーム |
   | `pano_sticker_input_videos` / `pano_sticker_input_video_meta` | `sticker` が 2 フレーム以上のときのエディタの MP4 とメタ情報（#83）。メタ情報は背景と同じ `fps`・`frames`・`duration`・`has_audio` に、`kind`（`VIDEO` か `IMAGE`）を足す。VIDEO の `duration` は素材の終わり（最後の PTS ＋ 平均フレームレートの 1 フレーム、`PortMedia.end`）で、`pts_tolerance` は PTS の手前で同じフレームと見なす秒数（素材と、Timeline を決めた VIDEO の time base の半分の大きいほう）。IMAGE バッチは Timeline fps の等間隔で、`fps` は Timeline fps。エディタとノード上の UI は、これで `port` の Sticker を再生ヘッドに合わせて表示する（`docs/timeline-ui.md`） |
   | `pano_sticker_input_frames` | `sticker` が 4 チャンネル（RGBA）で 2 枚以上の IMAGE バッチのとき、MP4 の代わりに 1 枚ずつの PNG（アルファを保つ。MP4 はアルファを持てず、`video` 出力はアルファを使う）。長辺は `EDITOR_MAX_SIZE` 以下。メタ情報は `pano_sticker_input_video_meta`（`kind` は `IMAGE`）。バッチのテンソルの同一性をキーに `video` キャッシュで 1 度だけ書く。枚数ぶんの PNG が temp に書かれるので、長いバッチほど書き出しの時間と temp の容量がかかる |
-  | `pano_sticker_input_pose` | 状態に `port` の Sticker がなく、ノードが加えたときの姿勢（`yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`）と、`direction`・`roll`・`size` の Lane の Keyframe（`keyframes`。Camera が動いた `sticker_state` の Pose handoff、`docs/scene-state-v2.md`）。エディタが同じ姿勢と Keyframe で状態に加えるために使う |
+  | `pano_sticker_input_pose` | 状態に `port` の Sticker がなく（3D では `sky` の `port` の Sticker を置き換えたときも）、ノードが加えたときの姿勢（`yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`）と、`direction`・`roll`・`size` の Lane の Keyframe（`keyframes`。Camera が動いた `sticker_state` の Pose handoff、`docs/scene-state-v2.md`）。3D の素材では `{"placement": "world", "position", "rotation", "scale"}`（各 Lane の値）で、置き換えたときは `"replace": true` を足す。エディタが同じ姿勢と Keyframe で状態に加えるために使う |
   | `pano_timeline_fps` | VIDEO（`_timing_video` が選んだ `bg_media`、なければ `sticker` の VIDEO）が Timeline fps を決めたときだけ出す。その Timeline fps（float）。エディタは fps の欄のロックと、状態の再基準化（開いたとき・実行結果が届いたとき）に使う |
   | `pano_sticker_warnings` | 警告（読めない `file` の Source、`bg_media` なしの `auto`）。ログにも出す |
   | `pano_scene_files` / `pano_scene_meta` | `scene` の入力の要素ごとの一時ファイル（下の「`scene` のエディタ用ファイル」）と、`kind`（エディタが使う読み込み方。`splat` か `mesh`） |
+  | `pano_sticker_files` / `pano_sticker_meta` | `sticker` が 3D の素材のとき、`pano_scene_files` / `pano_scene_meta` と同じ形のエディタ用ファイル（#63）。このとき `pano_sticker_input_images` と MP4 は出さない。同じ SPLAT・MESH を `scene` と `sticker` につなぐと、同じファイルを使う |
 
   - 一時 MP4（ADR 0018）：エディタの MP4 で、Preview と同じく `nodes.py` の `_editor_mp4` が作る。エディタはシークのたびに直前のキーフレームから復号するので、MP4 はキーフレームの間隔を短くし、表示に足りる幅にする（下の「エディタの MP4」）。メタ情報の `fps` は VIDEO の平均フレームレート、`frames` は切り出し範囲のフレーム数。IMAGE バッチも同じ `encode_editor_mp4` で Timeline fps の等間隔にエンコードし、`fps` は Timeline fps とする。1 フレームの素材は MP4 を作らない。`sticker` の MP4（#83）も同じ規則で作る（`_port_media_ui`）。音声は `bg_media` の VIDEO が持つものだけが使われる（`sticker` の VIDEO の音声が MP4 に入っても、エディタは音を出さない）。サムネイルの帯は作らない（エディタが MP4 から作る）。
   - エディタの MP4：
@@ -247,7 +260,7 @@ FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コア�
     - `pano_scene_files` は要素の順のリストで、要素の数が出力フレームとの対応（`batch_index`）に使う数である。頂点や面のない要素は `null` にし、番号をずらさない。
     - `state_json` だけが変わった実行では作り直さない。MP4 とは別の `NODE_RUNTIME` の `scene_files` キャッシュ（入力 4 つ分）に入れ、SPLAT・MESH はオブジェクトと位置のテンソルの同一性、`MOGE_GEOMETRY`（辞書）は読むテンソルの同一性をキーにする。ファイルが消えていれば書き直す。
     - 大きさの目安：100 万点の SPLAT（SH 3 次）の PLY は約 248 MB、MoGe の 1 フレームの GLB は約 6 MB。キャッシュから追い出しても MP4 と同じくファイルは消さず、ComfyUI が起動時と終了時に temp を消すまで残る。
-    - 3D ファイルは、入口（`_read_scene_file`）で読んだ SPLAT・MESH として PLY・GLB に書き直す（描くものとエディタが見るものが同じになる）。読んだものはファイルごとに `splat_files`・`mesh_files` のキャッシュに入るので、同じファイルなら同じオブジェクトになり、ここでも書き直さない。3D の Sticker の書き出しは #63 で `write_editor_files` に加える（それまで `write_editor_files` は SPLAT・MESH 以外を `MOGE_GEOMETRY` として読む）。
+    - 3D ファイルは、入口（`_read_scene_file`）で読んだ SPLAT・MESH として PLY・GLB に書き直す（描くものとエディタが見るものが同じになる）。読んだものはファイルごとに `splat_files`・`mesh_files` のキャッシュに入るので、同じファイルなら同じオブジェクトになり、ここでも書き直さない。3D の Sticker（#63）も同じ `write_editor_files` と `scene_files` のキャッシュで書き、`pano_sticker_files` / `pano_sticker_meta` に出す。座標は中身自身の glTF 座標（SPLAT は上と同じく 3DGS の座標）で、エディタが状態の Sticker の変形を掛ける。
 - 必要な ComfyUI は v0.35.0 以降（`mesh_item_to_glb_bytes` と、メッシュ系の 3D ファイルを読む Get3DComponents が入った版）。Get3DComponents はコアで experimental のノードなので、コアの更新で名前や戻り値が変わったら `scene_mesh.py` の `read_mesh_file` を合わせる。`splat_render.py` はコアの `comfy_extras.nodes_gaussian_splat` の非公開の関数（`_gaussian_item`・`_quat_to_mat`・`_srgb_to_linear`・`_linear_to_srgb`・`_quantile`・`_detect_splat_format`）にも依存し、これらの名前や意味が変わると読み込みか描画で失敗する。`scene_files.py`・`scene_mesh.py` はコアの関数をモジュールの先頭で読み込むので、古いコアではパッケージの読み込み時にその名前の `ImportError` になる。
   - 出力（IMAGE）のプレビュー MP4 は作らない。Stickers の出力を表示するのは Preview（#76）で、旧ノードの `pano_videos` を読むフロントエンドもない。
 - `file` の Source は `core/stickers.py` の `load_source_rgba` で読み、`folder_paths` のディレクトリの中にあるものだけを読む。読めないときは、その Sticker を描かずに警告を出す（ログと実行結果の `pano_sticker_warnings`）。
@@ -288,7 +301,7 @@ Stickers の `PANO_SCENE` 出力は、`nodes.py` の `PanoSceneValue`（frozen d
 - 出力の解像度は入れない。撮影する側がそれぞれの規則（`output_preset`・`output_megapixels` など）で決める。
 - 同じ入力からは同じ内容の値になる（乱数や時刻を含まない）。ComfyUI のキャッシュが効くとき、下流には前回の同じ値が渡る。
 - 下流のノードは同じオブジェクトを共有するので、`state` や `sources` を書き換えない。
-- 3D の Sticker を受けるようになったら（#59）、その素材をここに加える。
+- 3D の Sticker（#63）の素材は `port`（`is_3d`、`media` は SPLAT か MESH）が持ち、`sources` には入らない。使う側は Stickers の (b) と同じく `_render_frames` を通す。
 
 ## Cutout ノード（`PanoramaCutoutNode`）
 

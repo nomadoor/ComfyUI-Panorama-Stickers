@@ -45,6 +45,16 @@ class SceneContent:
     render: Callable
 
 
+@dataclass(frozen=True)
+class ContentSource:
+    """The source of a 3D (MESH or SPLAT) `world` Sticker: item `frame` of `content`, placed by the Sticker's
+    transform as the `scene` transform places the `scene` content. `frame` is part of the World's cache key like
+    `StickerSource.frame`. `content` uploads to the device, so it is made for each render pass."""
+
+    content: SceneContent
+    frame: int = 0
+
+
 def _transform_key(value: dict) -> tuple:
     return tuple(round(number, 9) for number in (*value["position"], value["yaw_deg"], value["pitch_deg"], value["roll_deg"], value["scale"]))
 
@@ -68,9 +78,10 @@ def world_key(evaluated: dict, sources, camera: dict, projection, scene: SceneCo
 
 def world_layer(evaluated: dict, sources, camera: dict, projection, *, scene: SceneContent | None, scene_index: int | None, device, textures: dict):
     """All World content of a frame as one layer (rgba, depth), or None without any: the `scene` content, then
-    the active `world` Stickers from the farthest center to the nearest (state order on ties), each folded in by
-    depth (`over_by_depth`) as it is drawn. Planes that do not intersect then come out in exact depth order.
-    `textures` keeps each drawn Sticker's source on `device` by id with its frame, so a source is uploaded again
+    the active `world` Stickers from the farthest center (`position`) to the nearest (state order on ties), each
+    folded in by depth (`over_by_depth`) as it is drawn. Planes that do not intersect then come out in exact depth
+    order. A 3D Sticker (`ContentSource`) is its content through its transform, with its opacity on the alpha.
+    `textures` keeps each drawn plane's source on `device` by id with its frame, so a source is uploaded again
     only when its frame changes; the sources of Stickers not drawn are dropped."""
     view = CameraView(np.asarray(camera["position"], dtype=np.float64), world_rotation(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]), projection)
     composite = None
@@ -85,6 +96,10 @@ def world_layer(evaluated: dict, sources, camera: dict, projection, *, scene: Sc
     stickers.sort(key=lambda sticker: -float(np.linalg.norm(np.asarray(sticker["position"], dtype=np.float64) - view.position)))
     for sticker in stickers:
         source = sources.stickers[sticker["id"]]
+        if isinstance(source, ContentSource):
+            rgba, depth = _scene_layer(source.content, source.frame, sticker, view, device)
+            composite = over_by_depth(composite, (torch.cat([rgba[..., :3], rgba[..., 3:] * sticker["opacity"]], dim=-1), depth))
+            continue
         if rays is None:
             rays = view.rays(device)
         drawn.add(sticker["id"])
@@ -118,7 +133,7 @@ def over_by_depth(composite, layer):
 
 
 def _scene_layer(scene: SceneContent, index: int, transform: dict, view: CameraView, device):
-    # The scene transform maps its own frame to World as position + scale * rotation @ x; the content is drawn
+    # The scene transform (or a 3D Sticker's) maps its own frame to World as position + scale * rotation @ x; the content is drawn
     # from the Camera moved into its frame, and its distances are scaled back to World.
     rotation = world_rotation(transform["yaw_deg"], transform["pitch_deg"], transform["roll_deg"])
     scale = transform["scale"]

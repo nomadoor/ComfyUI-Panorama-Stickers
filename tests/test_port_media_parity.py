@@ -57,7 +57,7 @@ def _drawn(state, bg, port, frames):
 
 def _case(state_json, sticker, bg=None):
     state = load_scene_state(json.dumps(state_json))
-    port = nodes._port_media(state, sticker, "")
+    port = nodes._port_media(state, sticker, "", [])
     fps, _frames = nodes._decide_timeline(state, bg, port)
     meta = nodes._port_media_ui(port, fps, nodes._timing_video(bg, port))["pano_sticker_input_video_meta"][0]
     # The editor's playhead is on whole Timeline frames.

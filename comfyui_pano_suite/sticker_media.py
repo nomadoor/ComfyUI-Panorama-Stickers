@@ -4,11 +4,14 @@ import bisect
 import math
 
 import torch
-from comfy_api.latest import InputImpl
+from comfy_api.latest import InputImpl, Types
 
 from .core.scene_eval import FRAME_EPSILON
 from .core.video_source import MaterializedVideo, StreamedVideo, coded_size
+from .core.world_render import SceneContent
+from .scene_mesh import mesh_scene_content
 from .scene_video import RenderedVideo, SceneVideo
+from .splat_render import splat_content
 
 # What `open_video` returns; each has `frame_rate`, `times`, `time_base`, `first_frame`, frames read in order by
 # index, and `audio(seconds)`.
@@ -26,6 +29,16 @@ def open_video(video, name: str) -> StreamedVideo | MaterializedVideo | Rendered
     return MaterializedVideo(video.get_components(), name)
 
 
+def content_of(model: Types.SPLAT | Types.MESH) -> SceneContent:
+    """A SPLAT or MESH as World content. What it uploads lives as long as it, so it is made for each render pass."""
+    return splat_content(model) if isinstance(model, Types.SPLAT) else mesh_scene_content(model)
+
+
+def item_count(model: Types.SPLAT | Types.MESH) -> int:
+    """The number of items of a SPLAT or MESH."""
+    return (model.positions if isinstance(model, Types.SPLAT) else model.vertices).shape[0]
+
+
 def batch_index(clip_frame: float, count: int, fps: float, stored_fps: float) -> int | None:
     """The item of a batch of `count` (an IMAGE batch, or the `scene` content) that shows `clip_frame` Timeline
     frames after its first item, or None outside the batch. A batch is a sequence at the Timeline `fps` without
@@ -41,26 +54,30 @@ class PortMedia:
     """The `sticker` input's media for the port Sticker `sticker_id` with the Clip range `clip`: which of its
     frames shows at a Timeline frame.
 
-    `media` is the IMAGE tensor or the VIDEO input itself. Its first frame is at `start - in` of the Clip range.
-    A single IMAGE shows for the whole Clip range. An IMAGE batch is a sequence at the Timeline fps without
+    `media` is the IMAGE tensor, the VIDEO input itself, or a SPLAT or MESH (`is_3d`; a 3D file is read into
+    one before). Its first frame is at `start - in` of the Clip range. A single IMAGE or 3D item shows for the
+    whole Clip range. An IMAGE batch, like the items of a SPLAT or MESH, is a sequence at the Timeline fps without
     PTS, so each Timeline frame shows its nearest image. A VIDEO plays in real time: each Timeline frame shows
     its last frame that starts at or before it (PTS <= t), and the last frame lasts one frame at the average
     rate. `frame_rate`, `times` (seconds from the first frame of the trim window), and `time_base` are the
-    VIDEO's, None for an IMAGE; `streamed` is whether `open_video` streams the VIDEO from its file. Timeline frames
-    are those of the state, at `stored_fps`.
+    VIDEO's, None otherwise; `first_frame` is None for 3D media; `streamed` is whether `open_video` streams the
+    VIDEO from its file. Timeline frames are those of the state, at `stored_fps`.
     """
 
     def __init__(self, sticker_id: str, clip: dict, media, stored_fps: float):
         self.sticker_id = sticker_id
         self.clip = clip
         self.media = media
+        self.is_3d = isinstance(media, (Types.SPLAT, Types.MESH))
         self._origin = clip["start"] - clip["in"]
         self._stored_fps = stored_fps
-        if isinstance(media, torch.Tensor):
+        if isinstance(media, torch.Tensor) or self.is_3d:
             self.frame_rate = self.times = self.time_base = self._starts = None
             self.streamed = False
-            self.first_frame = media[0]
+            self.first_frame = None if self.is_3d else media[0]
+            self._count = item_count(media) if self.is_3d else media.shape[0]
             return
+        self._count = None
         video = open_video(media, "sticker")
         self.frame_rate, self.times, self.time_base, self.first_frame = video.frame_rate, video.times, video.time_base, video.first_frame
         self.streamed = isinstance(video, StreamedVideo)
@@ -70,11 +87,11 @@ class PortMedia:
         self._starts = [float(time) * stored_fps for time in [*video.times, video.times[-1] + 1 / video.frame_rate]]
 
     def end(self, fps: float) -> float | None:
-        """The Timeline frame where the media ends at the Timeline `fps`, or None for a single IMAGE."""
+        """The Timeline frame where the media ends at the Timeline `fps`, or None for a single IMAGE or 3D item."""
         if self._starts is not None:
             return self._origin + self._starts[-1]
-        if self.media.shape[0] > 1:
-            return self._origin + self.media.shape[0] * self._stored_fps / fps
+        if self._count > 1:
+            return self._origin + self._count * self._stored_fps / fps
         return None
 
     def index_at(self, frame: float, fps: float, tolerance: float) -> int | None:
@@ -88,9 +105,12 @@ class PortMedia:
         if self._starts is not None:
             index = bisect.bisect_right(self._starts, clip_frame + max(FRAME_EPSILON, self._tolerance, tolerance)) - 1
             return index if 0 <= index < len(self._starts) - 1 else None
-        return batch_index(clip_frame, self.media.shape[0], fps, self._stored_fps)
+        return batch_index(clip_frame, self._count, fps, self._stored_fps)
 
     def frames(self):
-        """The frames to index with `index_at`, in non-decreasing order. A VIDEO is opened again for each pass
-        over the Timeline, since an opened `StreamedVideo` reads forward once."""
+        """The frames to index with `index_at`, in non-decreasing order, or for 3D media its `SceneContent`. A
+        VIDEO and the content are made again for each pass over the Timeline, since an opened `StreamedVideo`
+        reads forward once and the content keeps what it uploads."""
+        if self.is_3d:
+            return content_of(self.media)
         return self.media if self._starts is None else open_video(self.media, "sticker")
