@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { buildEasingModel, buildSelectionMenuModel, buildTimelineModel } from "../web_src/pano_editor_ui_state.js";
+import { buildEasingModel, buildSelectionMenuModel, buildTimelineModel, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { setSegmentEasing } from "../web_src/pano_timeline.js";
 
@@ -128,4 +128,15 @@ test("the Timeline bar shows the Timeline fps, locked when a video sets it, and 
   state.timeline.length = null;
   const locked = buildTimelineModel(state, { ...options, fpsLocked: true });
   assert.deepEqual([locked.fpsLocked, locked.length], [true, null]);
+});
+
+test("a world Sticker's position and scale sliders reach past any value, which has no limit", () => {
+  assert.equal(worldFieldRange(0), 100);
+  assert.equal(worldFieldRange(-100), 100);
+  assert.equal(worldFieldRange(150), 1000);
+  assert.equal(worldFieldRange(-2500), 10000);
+  assert.equal(worldFieldRange(1000), 1000);
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  // Typed values are not clamped to the slider; the scale only stays above 0.
+  assert.match(editor, /if \(worldInspected && WORLD_UNLIMITED_FIELDS\.has\(key\)\) out = key === "scale" \? Math\.max\(out, WORLD_MIN_SCALE\) : out;/);
 });

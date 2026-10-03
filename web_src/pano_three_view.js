@@ -320,6 +320,70 @@ export function raycastStickerId(objects, camera, x, y, width, height) {
   return null;
 }
 
+// The gizmo of the selected world Sticker (#72): three.js TransformControls seen from camera, on a
+// stand-in object. The editor feeds it the pointer and writes what it moved back to the state, which the
+// next render draws. It is not hooked to DOM events.
+export function createGizmo(camera) {
+  const controls = new TransformControls(camera);
+  const target = new Object3D();
+  controls.attach(target);
+  let shown = false;
+  return {
+    // Adds it to `world` (just cleared) at { mode ("translate", "rotate" or "scale"), transform
+    // ({ position, quaternion, scale }, as pano_space.js sceneTransform() gives it) }. It draws over the
+    // World (its materials do not test depth). While a handle is dragged the stand-in keeps where the drag
+    // took it, so it follows the pointer even when the Sticker's value is taken at another frame.
+    show(world, { mode, transform }) {
+      shown = true;
+      if (!controls.dragging) {
+        controls.mode = mode;
+        target.position.set(...transform.position);
+        target.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
+        target.scale.setScalar(transform.scale);
+      }
+      world.add(target);
+      world.add(controls.getHelper());
+    },
+    // Not shown in this frame: a drag in progress ends, so the gizmo can be grabbed when it shows again.
+    hide() {
+      shown = false;
+      if (controls.dragging) controls.pointerUp(null);
+    },
+    // The pointer at (x, y) in normalized device coordinates, with the camera where the frame was drawn
+    // from. phase "hover" finds the handle under it and returns its axis (null over none), "down" grabs
+    // that handle and returns whether it did, "move" drags it and returns the stand-in's transform
+    // ({ position, quaternion, scale: [x, y, z] }) or null when nothing is grabbed, and "up" lets go,
+    // shown or not. While it is not shown the other phases return null.
+    pointer(phase, x, y) {
+      if (phase === "up") {
+        controls.pointerUp({ x, y, button: 0 });
+        return null;
+      }
+      if (!shown) return null;
+      controls.getHelper().updateMatrixWorld(true);
+      if (phase === "hover") {
+        controls.pointerHover({ x, y, button: -1 });
+        return controls.axis;
+      }
+      if (phase === "down") {
+        controls.pointerDown({ x, y, button: 0 });
+        return controls.dragging;
+      }
+      if (!controls.dragging) return null;
+      controls.pointerMove({ x, y, button: -1 });
+      return {
+        position: target.position.toArray(),
+        quaternion: { x: target.quaternion.x, y: target.quaternion.y, z: target.quaternion.z, w: target.quaternion.w },
+        scale: target.scale.toArray(),
+      };
+    },
+    // TransformControls.dispose() would unhook pointer listeners it never had (no DOM element here).
+    dispose() {
+      controls.getHelper().dispose();
+    },
+  };
+}
+
 // onUpdate runs when something the view draws changes by itself: a `scene` item finished loading, or
 // Spark finished sorting the splats for the last view.
 // Loads of `scene` items running at once; scrubbing a MoGe VIDEO queues the rest.
@@ -360,11 +424,8 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   let pickKey = "";
   let spark = null;
   let closed = false;
-  // The gizmo of the selected world Sticker (#72): three.js TransformControls on a stand-in object that
-  // takes the Sticker's transform each render. The editor feeds it the pointer (gizmoPointer) and writes
-  // what it moved back to the state, which the next render draws. Made the first time one shows.
+  // The selected world Sticker's gizmo (createGizmo), made the first time one shows.
   let gizmo = null;
-  let gizmoShown = false;
   const sceneItems = createSceneItems({
     load: loadSceneItem,
     dispose: disposeSceneItem,
@@ -541,27 +602,8 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       world.add(line);
     }
     pickKey = JSON.stringify(pickParts);
-    gizmoShown = !!space.gizmo;
-    if (gizmoShown) addGizmo(space.gizmo);
-  }
-
-  // The gizmo at a { mode, transform } (mode "translate", "rotate" or "scale"; transform
-  // { position, quaternion, scale } as pano_space.js sceneTransform() gives it). It draws over the World
-  // (its materials do not test depth).
-  function addGizmo({ mode, transform }) {
-    if (!gizmo) {
-      const controls = new TransformControls(worldCamera);
-      const target = new Object3D();
-      controls.attach(target);
-      gizmo = { controls, target };
-    }
-    const { controls, target } = gizmo;
-    controls.mode = mode;
-    target.position.set(...transform.position);
-    target.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
-    target.scale.setScalar(transform.scale);
-    world.add(target);
-    world.add(controls.getHelper());
+    if (space.gizmo) (gizmo ||= createGizmo(worldCamera)).show(world, space.gizmo);
+    else gizmo?.hide();
   }
 
   function draw(projection, input, space = null) {
@@ -628,7 +670,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   // the `scene` frame) }. sticker is the same for the `sticker` input's 3D media with its opacity, and
   // stickerUrls its item URLs. stickers are world Sticker planes { id, media, revision, source, opacity,
   // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }. gizmo is
-  // null or the selected world Sticker's gizmo { mode, transform } (addGizmo).
+  // null or the selected world Sticker's gizmo { mode, transform } (createGizmo's show).
   // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
   function render(input) {
     applyViewportCamera(camera, input.camera);
@@ -655,35 +697,12 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   }
 
   // The pointer at (x, y) of a width x height view from camera (a spaceCamera()) on the gizmo of the last
-  // space render. phase "hover" finds the handle under it and returns its axis (null over none), "down"
-  // grabs that handle and returns whether it did, "move" drags it and returns the stand-in's transform
-  // ({ position, quaternion, scale: [x, y, z] }) or null when nothing is grabbed, and "up" lets go.
-  // Without a gizmo shown, every phase returns null.
+  // space render (createGizmo's pointer).
   function gizmoPointer(phase, camera, x, y, width, height) {
-    if (!gizmo || !gizmoShown) return null;
-    const { controls, target } = gizmo;
+    if (!gizmo) return null;
     setCamera(worldCamera, camera);
-    controls.getHelper().updateMatrixWorld(true);
     const { x: px, y: py } = devicePoint(x, y, width, height);
-    if (phase === "hover") {
-      controls.pointerHover({ x: px, y: py, button: -1 });
-      return controls.axis;
-    }
-    if (phase === "down") {
-      controls.pointerDown({ x: px, y: py, button: 0 });
-      return controls.dragging;
-    }
-    if (phase === "move") {
-      if (!controls.dragging) return null;
-      controls.pointerMove({ x: px, y: py, button: -1 });
-      return {
-        position: target.position.toArray(),
-        quaternion: { x: target.quaternion.x, y: target.quaternion.y, z: target.quaternion.z, w: target.quaternion.w },
-        scale: target.scale.toArray(),
-      };
-    }
-    controls.pointerUp({ x: px, y: py, button: 0 });
-    return null;
+    return gizmo.pointer(phase, px, py);
   }
 
   // What pick() hits in the last space render, as a string that changes with it (a MoGe VIDEO's next
@@ -710,8 +729,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     stickerItems.close();
     if (guides) disposeObject(guides.group);
     lines.forEach((line) => disposeObject(line));
-    // TransformControls.dispose() would unhook pointer listeners it never had (no DOM element here).
-    gizmo?.controls.getHelper().dispose();
+    gizmo?.dispose();
     worldStickers.forEach((mesh) => mesh.material.dispose());
     spark?.dispose();
     owners.forEach((entry) => entry.textures.forEach((item) => item.texture.dispose()));

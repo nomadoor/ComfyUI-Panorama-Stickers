@@ -314,6 +314,15 @@ export function setWorldStickerTransform(sticker, frame, transform) {
   }
 }
 
+// Delete on the world Sticker `id` of a working state v2 removes it. The port Sticker follows the
+// `sticker` input, so it is hidden instead, as a sky one is.
+export function deleteWorldSticker(state, id) {
+  const sticker = state.stickers.find((item) => item.id === id && item.placement === "world");
+  if (!sticker) return;
+  if (sticker.source.kind === "port") sticker.visible = false;
+  else state.stickers = state.stickers.filter((item) => item !== sticker);
+}
+
 // A world Sticker over the whole Timeline at a World transform ({ position, rotation, scale }, as
 // pano_space.js newWorldStickerTransform gives it).
 export function newWorldSceneSticker(id, source, transform) {

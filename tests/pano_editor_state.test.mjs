@@ -17,6 +17,7 @@ import {
   retainActiveCutoutShot,
   sameEditorStateText,
   cameraFields,
+  deleteWorldSticker,
   sceneStickerLabel,
   setCameraField,
   setEditorActive,
@@ -593,12 +594,37 @@ test("the editor has no way to switch a Sticker's Placement between sky and worl
   const writers = sources.filter(([, text]) => /placement\s*:/.test(text.replace(/^\s*\/\/.*$/gm, ""))).map(([name]) => name).sort();
   assert.deepEqual(writers, ["pano_editor_state.js", "pano_scene_eval.js", "pano_scene_state.js", "pano_stickers_node_surface.js"]);
 
-  // Every edit the inspector and the gizmo make keeps the Placement.
-  const sticker = worldSticker();
-  for (const field of ["position_x", "position_y", "position_z", "yaw_deg", "pitch_deg", "roll_deg", "scale", "opacity"]) {
-    setWorldStickerField(sticker, 12, field, 1);
+  // The edits the editor makes keep each Sticker's Placement, as the saved state reads it back: the
+  // inspector and the gizmo on world Stickers, Delete, and Undo and Redo.
+  const state = parseSceneEditorState(JSON.stringify({
+    version: 2,
+    stickers: [
+      { id: "s", placement: "sky", source: { kind: "file", filename: "s.png" } },
+      { id: "w", placement: "world", source: { kind: "file", filename: "w.png" } },
+      { id: "p", placement: "world", source: { kind: "port" } },
+    ],
+  }));
+  const saved = () => Object.fromEntries(loadSceneState(JSON.parse(JSON.stringify(state))).stickers.map((item) => [item.id, [item.placement, item.visible]]));
+  const before = JSON.stringify(makePanoEditorHistorySnapshot(state));
+  for (const id of ["w", "p"]) {
+    const sticker = state.stickers.find((item) => item.id === id);
+    for (const field of ["position_x", "position_y", "position_z", "yaw_deg", "pitch_deg", "roll_deg", "scale", "opacity"]) {
+      setWorldStickerField(sticker, 12, field, 50);
+    }
+    setWorldStickerTransform(sticker, 12, { position: [0, 0, -1], rotation: { yaw_deg: 1, pitch_deg: 2, roll_deg: 3 }, scale: 2 });
   }
-  setWorldStickerTransform(sticker, 12, { position: [0, 0, -1], rotation: { yaw_deg: 1, pitch_deg: 2, roll_deg: 3 }, scale: 2 });
-  assert.equal(sticker.placement, "world");
-  assert.deepEqual(Object.keys(sticker).filter((key) => ["direction", "roll", "size", "z_index"].includes(key)), []);
+  assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
+  assert.deepEqual(state.stickers.find((item) => item.id === "w").position.value, [0, 0, -1]);
+  const edited = JSON.stringify(makePanoEditorHistorySnapshot(state));
+  // Delete takes the world Sticker away and hides the port one; a sky Sticker is not its to delete.
+  deleteWorldSticker(state, "w");
+  deleteWorldSticker(state, "p");
+  deleteWorldSticker(state, "s");
+  assert.deepEqual(saved(), { s: ["sky", true], p: ["world", false] });
+  // Undo and Redo bring back the snapshots with their Placements.
+  Object.assign(state, restoredHistoryState(state, edited).state);
+  assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
+  Object.assign(state, restoredHistoryState(state, before).state);
+  assert.deepEqual(saved(), { s: ["sky", true], w: ["world", true], p: ["world", true] });
+  assert.deepEqual(state.stickers.find((item) => item.id === "w").position.value, [0, 0, 0]);
 });

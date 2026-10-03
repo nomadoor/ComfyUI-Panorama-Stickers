@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Texture, Vector3 } from "three";
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, Texture, Vector3 } from "three";
 
 import { makeUnlit } from "../web_src/pano_scene_loaders.js";
-import { raycastPoint, raycastStickerId } from "../web_src/pano_three_view.js";
+import { createGizmo, raycastPoint, raycastStickerId } from "../web_src/pano_three_view.js";
 
 import {
   DEFAULT_DISTANCE,
@@ -710,4 +710,69 @@ test("the world Sticker under the pointer is the one its nearest hit belongs to"
   // The `scene` content in front of a plane hides it, and is not a Sticker.
   assert.equal(idAt([-0.5, 0.5, -1.5]), null);
   assert.equal(raycastStickerId(objects, camera, 2, 2, width, height), null);
+});
+
+test("the gizmo drags its handle with the pointer and lets go when it stops showing", () => {
+  const camera = new PerspectiveCamera(60, 16 / 9, 0.01, 100);
+  camera.updateMatrixWorld();
+  const world = new Scene();
+  const gizmo = createGizmo(camera);
+  const at = (x, y, z) => new Vector3(x, y, z).project(camera);
+  const transform = (position) => ({ position, quaternion: { x: 0, y: 0, z: 0, w: 1 }, scale: 1 });
+  const show = (position) => {
+    world.clear();
+    gizmo.show(world, { mode: "translate", transform: transform(position) });
+    world.updateMatrixWorld(true);
+  };
+  show([0, 0, -5]);
+  // The X arrow is grabbed and drags along X with the pointer.
+  const grab = at(0.7, 0, -5);
+  assert.equal(gizmo.pointer("hover", grab.x, grab.y), "X");
+  assert.equal(gizmo.pointer("down", grab.x, grab.y), true);
+  const to = at(1.7, 0.3, -5);
+  closeVec(gizmo.pointer("move", to.x, to.y).position, [1, 0, -5], 1e-6);
+  // While it is dragged a frame does not put it back at the Sticker's value: it stays with the pointer.
+  show([3, 3, -5]);
+  closeVec(gizmo.pointer("move", to.x, to.y).position, [1, 0, -5], 1e-6);
+  gizmo.pointer("up", to.x, to.y);
+  assert.equal(gizmo.pointer("move", to.x, to.y), null);
+
+  // A frame without the gizmo (playback left the Clip range, the Sticker went away) ends a drag, and the
+  // gizmo can be grabbed again when it shows.
+  show([0, 0, -5]);
+  gizmo.pointer("hover", grab.x, grab.y);
+  assert.equal(gizmo.pointer("down", grab.x, grab.y), true);
+  world.clear();
+  gizmo.hide();
+  assert.equal(gizmo.pointer("move", to.x, to.y), null);
+  assert.equal(gizmo.pointer("hover", grab.x, grab.y), null);
+  gizmo.pointer("up", to.x, to.y);
+  show([0, 0, -5]);
+  assert.equal(gizmo.pointer("move", to.x, to.y), null);
+  assert.equal(gizmo.pointer("hover", grab.x, grab.y), "X");
+  assert.equal(gizmo.pointer("down", grab.x, grab.y), true);
+  closeVec(gizmo.pointer("move", to.x, to.y).position, [1, 0, -5], 1e-6);
+  gizmo.dispose();
+});
+
+test("near a pole a gizmo turn keeps the Sticker's yaw and turns its roll", () => {
+  const matrix = ({ yaw_deg, pitch_deg, roll_deg }) => worldRotation(yaw_deg, pitch_deg, roll_deg).flat();
+  const base = { position: [0, 0, 0], yaw_deg: 30, pitch_deg: 90, roll_deg: 10, scale: 1 };
+  const start = sceneTransform(base);
+  // Not turned, the angles stay as they are instead of jumping to another yaw and roll of the same rotation.
+  const still = gizmoDragLanes("rotate", base, start, { ...start, scale: [1, 1, 1] }).rotation;
+  closeVec([still.yaw_deg, still.pitch_deg, still.roll_deg], [30, 90, 10], 1e-9);
+  // A turn of 20 degrees about World +Y (the axis the Sticker faces along here) is a turn of its roll.
+  const turn = { x: 0, y: Math.sin(10 * Math.PI / 180), z: 0, w: Math.cos(10 * Math.PI / 180) };
+  const identity = { ...start, quaternion: { x: 0, y: 0, z: 0, w: 1 } };
+  const turned = gizmoDragLanes("rotate", base, identity, { ...start, quaternion: turn, scale: [1, 1, 1] }).rotation;
+  assert.equal(turned.yaw_deg, 30);
+  close(turned.pitch_deg, 90, 1e-9);
+  const expected = [[Math.cos(20 * Math.PI / 180), 0, Math.sin(20 * Math.PI / 180)], [0, 1, 0], [-Math.sin(20 * Math.PI / 180), 0, Math.cos(20 * Math.PI / 180)]];
+  const want = [0, 1, 2].map((row) => [0, 1, 2].map((col) => [0, 1, 2].reduce((sum, k) => sum + expected[row][k] * worldRotation(30, 90, 10)[k][col], 0)));
+  closeVec(matrix(turned), want.flat(), 1e-9);
+  // Pointing down too.
+  const down = { ...base, pitch_deg: -89.95 };
+  const kept = gizmoDragLanes("rotate", down, sceneTransform(down), { ...sceneTransform(down), scale: [1, 1, 1] }).rotation;
+  closeVec([kept.yaw_deg, kept.pitch_deg, kept.roll_deg], [30, -89.95, 10], 1e-6);
 });

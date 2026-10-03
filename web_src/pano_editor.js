@@ -33,6 +33,7 @@ import {
   sceneStickerLabel,
   setEditorActive,
   cameraFields,
+  deleteWorldSticker,
   setCameraField,
   setStickerOpacity,
   setStickerPose,
@@ -129,6 +130,7 @@ import {
   buildTimelineModel,
   buildUiSettingsModel,
   patchUiButton,
+  worldFieldRange,
 } from "./pano_editor_ui_state.js";
 import PanoModal from "./components/PanoModal.vue";
 import { buildModalShellPreset } from "./modal_shell_presets.js";
@@ -178,6 +180,9 @@ const STATE_WIDGET = "state_json";
 // Inputs Space types into; it does not play the Timeline there.
 const TEXT_INPUT_TYPES = new Set(["text", "search", "number", "email", "url", "tel", "password", "date", "time", "datetime-local", "month", "week"]);
 const EXTERNAL_STICKER_ID = "sticker_image_1";
+// A world Sticker's inspector fields that have no upper limit (#72), and the smallest scale it sets.
+const WORLD_UNLIMITED_FIELDS = new Set(["position_x", "position_y", "position_z", "scale"]);
+const WORLD_MIN_SCALE = 0.01;
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
 const EXTERNAL_STICKER_PREVIEW_KEY = "pano_sticker_input_images";
 const PORT_VIDEO_KEY = "pano_sticker_input_videos";
@@ -2775,8 +2780,8 @@ async function showEditor(node, type, options = {}) {
       button.visible = spaceView;
       button.pressed = button.key === editor.spaceMode ? "true" : "false";
     });
-    // Move | Rotate | Scale for the gizmo of the selected world Sticker.
-    const gizmo = spaceView && editor.showObjects && worldStickerEditable(selectedWorldSticker());
+    // Move | Rotate | Scale while the selected world Sticker's gizmo shows in the frame (worldGizmo).
+    const gizmo = spaceView && !!editorViewInput().space?.gizmo;
     uiState.gizmoButtons.forEach((button) => {
       button.visible = gizmo;
       button.pressed = button.key === editor.gizmoMode ? "true" : "false";
@@ -6076,13 +6081,15 @@ async function showEditor(node, type, options = {}) {
       pushParam("roll_deg", "Roll", -180, 180, 0.1);
       pushParam("hFOV_deg", "FOV", 1, 179, 0.1);
     } else if (worldInspected) {
-      pushParam("position_x", "X", -100, 100, 0.01);
-      pushParam("position_y", "Y", -100, 100, 0.01);
-      pushParam("position_z", "Z", -100, 100, 0.01);
+      // Positions and the scale have no limit; their sliders reach past the value (worldFieldRange).
+      for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
+        const range = worldFieldRange(effective[key]);
+        pushParam(key, label, -range, range, 0.01);
+      }
       pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
       pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
       pushParam("roll_deg", "Roll", -180, 180, 0.1);
-      pushParam("scale", "Scale", 0.01, 100, 0.01);
+      pushParam("scale", "Scale", WORLD_MIN_SCALE, worldFieldRange(effective.scale), 0.01);
       pushParam("opacity", "Opacity", 0, 100, 1);
     } else if (selectedItems.length > 1) {
       notes.push(`Selected objects: ${selectedItems.length}`);
@@ -6920,15 +6927,13 @@ async function showEditor(node, type, options = {}) {
     requestDraw();
   }
 
-  // Delete on the selected world Sticker removes it. The port Sticker follows the `sticker` input, so
-  // it is hidden instead, as a sky one is. Returns whether a world Sticker was selected.
+  // Delete on the selected world Sticker (deleteWorldSticker). Returns whether a world Sticker was selected.
   function deleteSelectedWorldSticker() {
     const sticker = selectedWorldSticker();
     if (!sticker) return false;
     if (!worldStickerEditable(sticker)) return true;
     stopTimelinePlayback();
-    if (isExternalSticker(sticker)) sticker.visible = false;
-    else state.stickers = state.stickers.filter((item) => item !== sticker);
+    deleteWorldSticker(state, sticker.id);
     clearWorldSelection();
     markObjectVisualsDirty();
     pushHistory();
@@ -9094,8 +9099,12 @@ async function showEditor(node, type, options = {}) {
       updateCursor(p);
       return true;
     }
+    // The handles of the canvas selection, as the press would find them below.
+    const selectedItems = getSelectedItems();
     const selected = getSelected();
-    const handle = selected && !isItemLocked(selected) ? handleHit(objectGeom(selected), p, selected).kind : "none";
+    const handle = selectedItems.length > 1
+      ? (selectedItems.some((item) => isItemLocked(item)) ? "none" : handleHit(getMultiSelectionGeom(selectedItems), p).kind)
+      : (selected && !isItemLocked(selected) ? handleHit(objectGeom(selected), p, selected).kind : "none");
     if (handle !== "none" && handle !== "move") return false;
     const id = editorView.pickSticker(currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
     if (!state.stickers.some((item) => item.id === id && item.placement === "world")) return false;
@@ -9140,6 +9149,7 @@ async function showEditor(node, type, options = {}) {
   // A press of startWorldStickerPress() ends: a gizmo drag that changed the Sticker is one Undo step.
   function endWorldStickerPress(ended) {
     editor.interaction = null;
+    editor.gizmoAxis = null;
     if (ended.kind === "world_gizmo") {
       worldGizmoPointer("up", editor.pointerPos);
       runtime.backgroundDirty = true;
@@ -9739,6 +9749,11 @@ async function showEditor(node, type, options = {}) {
     }
   };
 
+  // Off the view no gizmo handle is under the pointer.
+  canvas.onpointerleave = () => {
+    if (!editor.interaction) hoverWorldGizmo({ x: -1e6, y: -1e6 });
+  };
+
   canvas.onmouseleave = () => {
     setPointerPos(editor.pointerPos, false);
     updateCursor(editor.pointerPos);
@@ -9832,7 +9847,9 @@ async function showEditor(node, type, options = {}) {
     if (!param || param.enabled === false) return;
     let out = Number(rawValue);
     if (Number.isNaN(out)) out = 0;
-    out = clamp(out, Number(param.min), Number(param.max));
+    // A world Sticker's position has no limit, and its scale only stays above 0.
+    if (worldInspected && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
+    else out = clamp(out, Number(param.min), Number(param.max));
     if (key === "yaw_deg") out = wrapYaw(out);
     if (cameraInspected) {
       setCameraField(state.camera, editor.frame, key, out);

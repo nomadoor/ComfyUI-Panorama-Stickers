@@ -121,19 +121,20 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 
 - 選択：カーソルのツールで左ボタンを押すと、次の順に決める。
   1. 選んでいる `world` の Sticker のギズモのハンドル（下記）。
-  2. 選んでいる `sky` の Sticker の拡大縮小・回転のハンドル（従来どおり）。
+  2. 選んでいる `sky` の Sticker（複数選択ならその全体の枠）の拡大縮小・回転のハンドル（従来どおり）。
   3. ポインタの下の `world` の Sticker。`raycastPoint` と同じ Raycaster で最も近い当たりを求め、それが Sticker の板か 3D の Sticker の要素なら、その Sticker を選ぶ（`pano_three_view.js` の `pickSticker`・`raycastStickerId`。板のメッシュと 3D の Sticker のグループが `userData.stickerId` を持つ）。World は Sky より手前に描くので、`sky` の Sticker と重なっていれば `world` の Sticker が先になる。
   4. 従来どおり、`sky` の Sticker（選んでいる Sticker の本体を含む）と、何もないところ。最も近い当たりが `scene` の中身なら Sticker ではないので、その奥の `sky` の Sticker が選ばれる（`scene` の中身は選べず、#71 までの `sky` の Sticker の選び方を変えない）。
   - `world` の Sticker の本体を押してドラッグしても選ぶだけで、動かさない（動かすのはギズモ）。視点も動かさない。選ぶだけでは再生は止まらない。
   - タイムラインの `world` の Sticker の行を選んでも選べる（以前は選択を外していた）。キャンバスの選択（`sky` の Sticker）と `world` の Sticker の選択は排他で、どちらかを選ぶともう一方は外れる。何もないところを押すと外れる。選択は状態にもノードのプロパティにも保存しない。
   - Delete キーで、選んでいる `world` の Sticker を消す。`port` の Sticker は `sticker` 入力に従うので、`sky` の `port` の Sticker と同じく非表示にする。
-- ギズモ：three.js の `TransformControls`（three に含まれる examples、依存は増やしていない）を、遅延読み込みのチャンク（`pano_three_view.js`）の World のパスに描く。DOM のイベントにはつながず、エディタがポインタを渡す（`gizmoPointer` の `hover`・`down`・`move`・`up`）。ギズモの位置・向き・大きさは、毎回の描画で Sticker の評価した値から作る。ギズモが動かすのは代わりのオブジェクトで、その変化を Sticker の Lane に書き、次の描画がそれを描く。
+- ギズモ：three.js の `TransformControls`（three に含まれる examples、依存は増やしていない）を、遅延読み込みのチャンク（`pano_three_view.js`）の World のパスに描く。DOM のイベントにはつながず、エディタがポインタを渡す（`gizmoPointer` の `hover`・`down`・`move`・`up`）。ギズモの位置・向き・大きさは、毎回の描画で Sticker の評価した値から作る（`createGizmo`）。ギズモが動かすのは代わりのオブジェクトで、その変化を Sticker の Lane に書き、次の描画がそれを描く。ドラッグの間は代わりのオブジェクトを評価した値で置き直さないので、再生が止まってフレームが変わってもポインタと 1 対 1 で動く。ドラッグの途中でギズモが出なくなった（Clip range の外に出た、Sticker が消えた）ときはドラッグを終え、次に出たときにまたつかめる。ポインタを離したことは、ギズモが出ていなくても必ず伝える。
   - ギズモは、選んでいる `world` の Sticker が再生ヘッドで表示されていて（`visible` かつ Clip range の中）、ロックされておらず、Paint / Images の表示が出ているときだけ出る。
-  - モードの切り替えは、3DoF | 6DoF の隣の「Move | Rotate | Scale」のセグメントコントロール（`PanoViewToggle.vue`、3DoF | 6DoF と同じ部品と見た目）で行う。ギズモが出ているときだけ出る。押すたびに切り替わるボタンは使わない。キー（W / E / R）は割り当てない。W と R は ComfyUI のコアのショートカット（Workflows のサイドバー、ノード定義の再読み込み）と同じキーだからである。モードはエディタを開くたびに Move から始まり、保存しない。
+  - モードの切り替えは、3DoF | 6DoF の隣の「Move | Rotate | Scale」のセグメントコントロール（`PanoViewToggle.vue`、3DoF | 6DoF と同じ部品と見た目）で行う。ギズモが出ているときだけ出る（表示の条件はギズモと同じ）。押すたびに切り替わるボタンは使わない。キー（W / E / R）は割り当てない。W と R は ComfyUI のコアのショートカット（Workflows のサイドバー、ノード定義の再読み込み）と同じキーだからである。モードはエディタを開くたびに Move から始まり、保存しない。
   - 移動と回転の軸は World の軸（`TransformControls` の既定の `space: "world"`）。拡大縮小は一様で、どのハンドルでも、ドラッグで最も変わった軸の倍率を `scale` にする（`uniformScale`。0 以下にはしない）。
-  - ギズモのハンドルの上ではカーソルが grab になり、ハンドルが強調される。ギズモのドラッグ中は視点を動かさない。
+  - ギズモのハンドルの上ではカーソルが grab になり、ハンドルが強調される（ドラッグを終えたときとポインタがビューから出たときに外す）。ギズモのドラッグ中は視点を動かさない。
+  - 回転で pitch の絶対値が 89.9° を超えると、yaw と roll は同じ軸のまわりの回転になり、読み出した yaw が跳ぶ。そこでは Sticker の yaw を保ち、回転の差を roll で表す（`gizmoDragLanes`）。インスペクタの数値が跳ばない。
 - 記録：ギズモのドラッグは、モードの Lane（`position`・`rotation`・`scale` のどれか一つ）だけを、`docs/timeline-ui.md` の記録の規則で書く（`setWorldStickerTransform`、内部は `setLaneValue`）。ドラッグの変化は、つかんだときのギズモからの差として、Sticker のその時点の値に掛ける（`gizmoDragLanes`）。再生中につかむと、最初の動きで再生が止まり、止まったフレームの値から変形を始める。変化のあったドラッグは Undo の 1 段になる。
-- インスペクタ（Vue の `PanoSidePanel.vue`、`sky` の Sticker と Camera と同じ部品）：`world` の Sticker を選ぶと、X・Y・Z（World の glTF 座標）・Yaw・Pitch・Roll・Scale・Opacity を数値で変えられる（`worldStickerFields`・`setWorldStickerField`）。記録の規則・再生の停止・Undo は `sky` の Sticker のインスペクタと同じ。Copy State は使えない。
+- インスペクタ（Vue の `PanoSidePanel.vue`、`sky` の Sticker と Camera と同じ部品）：`world` の Sticker を選ぶと、X・Y・Z（World の glTF 座標）・Yaw・Pitch・Roll・Scale・Opacity を数値で変えられる（`worldStickerFields`・`setWorldStickerField`）。位置には上限・下限がなく、scale は 0.01 以上で上限がない。スライダーの範囲は 100 で、値がそれを超えると 10 のべき乗で広がる（`worldFieldRange`）。記録の規則・再生の停止・Undo は `sky` の Sticker のインスペクタと同じ。Copy State は使えない。
 - 新しく置く `world` の Sticker：ツールバーの「Add World Image」（`PanoramaStickersNode` だけ。地球のアイコン）で画像を選ぶと、`world` の画像の Sticker として置く（`newWorldSceneSticker`）。それまでエディタには `world` の Sticker を新しく置く経路がなかった（`port` の 3D の Sticker はノードが置く）。置いた Sticker を選んだ状態にする。
   - 置く場所（`pano_space.js` の `newWorldStickerTransform`）：画面上の点の下に World の内容（`scene` の中身・Sticker）の表面があれば、その点。なければ、Viewport camera の前方の、内容のバウンディング球の半径 × 0.5 の距離の点。内容がなければ前方 2（`NEW_WORLD_STICKER_DISTANCE`。ノードが 3D の `port` の Sticker を置く `WORLD_STICKER_POSITION` と同じ距離）。3DoF では視点は原点なので、原点からの距離になる。
   - ボタンを押すときポインタはビューの上にないので、画面上の点にはビューの中心を使う（照準の代わり）。関数は任意の点を受け取るので、ドロップした位置やクリックした位置に置く経路を後で足せる。

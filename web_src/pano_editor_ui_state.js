@@ -105,6 +105,13 @@ export function buildPreviewSidePanelModel({ coverage, uiSettings, normalizeCove
   };
 }
 
+// The slider range (0 to it, or minus it to it) of a world Sticker's position or scale field: 100,
+// widened by powers of ten to hold the value. It limits only the slider; the value itself is not limited.
+export function worldFieldRange(value) {
+  const magnitude = Math.abs(Number(value) || 0);
+  return magnitude <= 100 ? 100 : 10 ** Math.ceil(Math.log10(magnitude));
+}
+
 export function buildEditorSidePanelModel({
   coverage,
   readOnly,
