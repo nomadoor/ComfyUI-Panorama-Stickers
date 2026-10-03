@@ -162,19 +162,22 @@ function ownerLanes(owner) {
 }
 
 // Whether anything in the state changes over time: a Keyframe or a Clip range other than the whole Timeline.
-export function isTimed(state) {
-  return [state.camera, state.scene, ...state.stickers].some((owner) => ownerLanes(owner).some((lane) => lane.keyframes.length > 0))
+// The Camera's Keyframes count only with `camera` (Cutout); Stickers has no Camera (ADR 0028).
+export function isTimed(state, { camera = false } = {}) {
+  return [...(camera ? [state.camera] : []), state.scene, ...state.stickers].some((owner) => ownerLanes(owner).some((lane) => lane.keyframes.length > 0))
     || !defaultClip(state.scene.clip)
     || state.stickers.some((sticker) => !defaultClip(sticker.clip));
 }
 
 // The number of Timeline frames the Timeline shows: the Timeline length, or without one `minimum`
-// widened to `frames` (the video's frame count), then widened to every Clip range edge and Keyframe.
-// The end of `openClip` counts as open.
-export function timelineSpan(state, { minimum, frames = 0, openClip = null }) {
+// widened to `frames` (the video's frame count), then widened to every Clip range edge and Keyframe
+// (the Camera's only with `camera`, as in isTimed). The end of `openClip` counts as open.
+export function timelineSpan(state, { minimum, frames = 0, openClip = null, camera = false }) {
   let end = state.timeline.length ?? Math.max(minimum, frames);
-  for (const lane of ownerLanes(state.camera)) {
-    for (const key of lane.keyframes) end = Math.max(end, key.frame + 1);
+  if (camera) {
+    for (const lane of ownerLanes(state.camera)) {
+      for (const key of lane.keyframes) end = Math.max(end, key.frame + 1);
+    }
   }
   for (const owner of [state.scene, ...state.stickers]) {
     const { clip } = owner;

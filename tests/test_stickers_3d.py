@@ -6,6 +6,7 @@ from io import BytesIO
 import numpy as np
 import pytest
 import torch
+from PIL import Image
 
 
 pytest.importorskip(
@@ -13,6 +14,7 @@ pytest.importorskip(
     reason="ComfyUI core is required to read MESH, SPLAT, and 3D files",
 )
 
+import folder_paths
 from comfy_api.latest import Types
 from comfy_extras.nodes_gaussian_splat import SplatToFile3D
 
@@ -20,6 +22,7 @@ from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import mesh_render
 from comfyui_pano_suite.core.world_render import ContentSource
 from scene_test_helpers import batch_index_at_center, blob, blobs, center, cutout, cutout_camera, cutout_frames, glb_positions, temp_entry_path
+from tools.bake_legacy_goldens import _painting, _stroke
 
 
 RED = [1.0, 0.0, 0.0]
@@ -84,6 +87,57 @@ def test_a_new_3d_sticker_is_placed_from_the_origin_whatever_the_camera_lanes():
 
     assert port["position"]["value"] == [0.0, 0.0, -2.0]
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
+
+
+def _state_camera():
+    keys = [{"frame": 0, "value": {"yaw_deg": 70.0, "pitch_deg": 20.0, "roll_deg": 10.0}}, {"frame": 5, "value": {"yaw_deg": -40.0}}]
+    return {
+        "aspect": 1.5,
+        "position": {"value": [1.0, 2.0, 3.0], "keyframes": [{"frame": 0, "value": [1.0, 2.0, 3.0]}, {"frame": 8, "value": [-2.0, 0.0, 1.0]}]},
+        "rotation": {"value": {"yaw_deg": 70.0, "pitch_deg": 20.0, "roll_deg": 10.0}, "keyframes": keys},
+        "fov": {"value": 40.0, "keyframes": [{"frame": 0, "value": 40.0}, {"frame": 3, "value": 70.0}]},
+    }
+
+
+def test_stickers_output_is_taken_from_the_origin_at_rotation_0_whatever_the_state_camera(tmp_path, monkeypatch):
+    # ADR 0028: Stickers has no Camera; the `camera` of its state is neither drawn with nor counted for the length.
+    input_dir = tmp_path / "input"
+    (input_dir / "panorama_stickers").mkdir(parents=True)
+    Image.fromarray(np.full((8, 8, 3), 255, dtype=np.uint8)).save(input_dir / "panorama_stickers" / "white.png")
+    monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(input_dir))
+    sky = {
+        "id": "s",
+        "source": {"kind": "file", "filename": "white.png", "subfolder": "panorama_stickers", "storage": "input"},
+        "direction": {"value": {"yaw_deg": -90.0, "pitch_deg": 0.0}},
+        "size": {"value": {"hFOV_deg": 20.0, "vFOV_deg": 20.0}},
+    }
+    painting = _painting(
+        paint=[_stroke("paint", "paint", [(0.1, 0.3), (0.15, 0.3)], 10, {"r": 1.0, "g": 1.0, "b": 0.0, "a": 1.0})],
+        mask=[_stroke("mask", "mask", [(0.9, 0.7), (0.95, 0.7)], 10)],
+    )
+    scene = Types.MESH(torch.tensor([SQUARE]) + torch.tensor([3.0, 0.0, -3.0]), torch.tensor([SQUARE_FACES]), vertex_colors=torch.tensor([[BLUE] * 4]))
+    bg = torch.zeros((1, 64, 128, 3))
+    bg[:, 32:] = 0.5
+    state = {"version": 2, "timeline": {"length": 2}, "stickers": [sky], "painting": painting}
+
+    def run(state):
+        return _execute(state, bg_media=bg, scene=scene, sticker=_square()).result
+
+    plain = run(state)
+    shot = run({**state, "camera": _state_camera()})
+    del state["timeline"]
+    lengths = [run(item)[2].get_frame_count() for item in (state, {**state, "camera": _state_camera()})]
+
+    assert torch.equal(shot[0], plain[0]) and torch.equal(shot[1], plain[1])
+    assert torch.equal(shot[2].get_components().images, plain[2].get_components().images)
+    assert lengths == [1, 1]
+    image, mask = plain[0][0], plain[1][0]
+    # From the origin at rotation 0: the world Sticker 2 ahead at the center, the `scene` square ahead and right (yaw 45).
+    assert _close(image[256, 512], RED) and _close(image[256, 640], BLUE)
+    # The sky Sticker, the paint, the mask, and the background stay where they are stored.
+    assert _close(image[256, 256], [1.0, 1.0, 1.0]) and _close(image[154, 128], [1.0, 1.0, 0.0])
+    assert float(mask[358, 947]) > 0.5 and float(mask[154, 128]) == 0.0
+    assert _close(image[100, 900], [0.0, 0.0, 0.0]) and _close(image[400, 100], [0.5, 0.5, 0.5])
 
 
 def _splat_file():

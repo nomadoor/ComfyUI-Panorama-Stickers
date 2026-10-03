@@ -336,6 +336,32 @@ def test_rotating_camera_reuses_the_sky_and_composites_each_view(monkeypatch):
     assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 2}
 
 
+def _painted_sky(position=None, **rotation):
+    painting = {"version": 1, "paint": {"strokes": []}, "mask": {"strokes": [_mask_dot((0.6, 0.0, -0.8)), _mask_dot((-0.6, 0.48, -0.64))]}, "groups": []}
+    state = {**_sticker_state(yaw_deg=170.0, pitch_deg=20.0, roll_deg=30.0, hFOV_deg=50.0, vFOV_deg=30.0), "painting": painting}
+    state["camera"] = {"position": {"value": position}, "rotation": {"value": rotation}}
+    bg = torch.rand((64, 128, 3), generator=torch.Generator().manual_seed(0))
+    sources = SceneSources(_red_source().stickers, load_scene_state({"version": 2, "painting": painting})["painting"])
+    return _render(Projection.erp(128, 64), state, sources, bg=bg)[:2]
+
+
+def test_erp_camera_yaw_by_whole_columns_shifts_the_image_and_mask():
+    columns = 11
+    image, mask = _painted_sky()
+    turned_image, turned_mask = _painted_sky(yaw_deg=columns * 360.0 / image.shape[1])
+
+    assert float(mask.max()) > 0.5
+    assert torch.allclose(turned_image, torch.roll(image, -columns, dims=1), atol=1e-3)
+    assert torch.allclose(turned_mask, torch.roll(mask, -columns, dims=1), atol=1e-3)
+
+
+def test_camera_position_does_not_move_the_background_or_the_sky():
+    image, mask = _painted_sky(yaw_deg=40.0, pitch_deg=-15.0, roll_deg=10.0)
+    moved_image, moved_mask = _painted_sky([3.0, -1.0, 2.0], yaw_deg=40.0, pitch_deg=-15.0, roll_deg=10.0)
+
+    assert torch.equal(moved_image, image) and torch.equal(moved_mask, mask)
+
+
 POSE = {"yaw_deg": 130.0, "pitch_deg": 35.0, "roll_deg": 25.0}
 
 

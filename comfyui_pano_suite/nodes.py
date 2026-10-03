@@ -1135,6 +1135,10 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> dict:
 # center of the Stickers ERP output, which is always taken from the origin at rotation 0.
 WORLD_STICKER_POSITION = [0.0, 0.0, -2.0]
 
+# Stickers has no Camera (ADR 0028): its ERP output is taken from the World origin at rotation 0, whatever the
+# `camera` of its state holds.
+STICKERS_CAMERA = {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
+
 
 def _world_port_sticker(state: dict, sticker_id: str | None = None) -> dict:
     """The port Sticker for 3D media: `world`, at WORLD_STICKER_POSITION with rotation 0 and scale 1, so the
@@ -1225,10 +1229,12 @@ def _output_times(timing, rate: Fraction, length: int) -> list[Fraction]:
     return times + [times[-1] + index / rate for index in range(1, length - len(times) + 1)]
 
 
-def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None) -> tuple[float, list[tuple[float, int | None, int | None, int | None]]]:
+def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None, *, camera: bool = False) -> tuple[float, list[tuple[float, int | None, int | None, int | None]]]:
     """(a) Timeline: fps, and per output frame the Timeline frame to evaluate, the bg_media frame to draw, the
     frame of the port media (`port.index_at`), and the item of the `scene` content (`batch_index`; None without
     `scene`). A `scene` batch, like an IMAGE batch on the port, ends its Clip range without a duration.
+    With `camera`, the state's Camera shoots the frames (Cutout) and its Keyframes count for the length;
+    Stickers has no Camera (ADR 0028).
 
     `bg` is the bg_media IMAGE batch, an opened VIDEO, or None. The output frames follow the PTS of the VIDEO
     that sets the Timeline fps: the background VIDEO, or else the sticker VIDEO. Times stored in the state are
@@ -1258,7 +1264,9 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     if scene is not None and scene.count > 1 and scene_clip["duration"] is None:
         clip_ends.append(scene_origin + scene.count * stored_fps / fps)
     # The latest Keyframe over the Camera's Lanes.
-    last_key = max((state["camera"][name]["keyframes"][-1]["frame"] for name, _value in CAMERA_LANES if state["camera"][name]["keyframes"]), default=None)
+    last_key = None
+    if camera:
+        last_key = max((state["camera"][name]["keyframes"][-1]["frame"] for name, _value in CAMERA_LANES if state["camera"][name]["keyframes"]), default=None)
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
     elif video:
@@ -1499,7 +1507,7 @@ class PanoramaStickersSceneNode(io.ComfyNode):
         bg_rgb = _hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist()
         fps, frames = _decide_timeline(state, bg, port, content)
         image, mask, video = _render_outputs(
-            state, sources, frames, bg_media, "bg_media", bg, bg_rgb, port, scene, lambda evaluated: (evaluated["camera"], projection), (out_w, out_h)
+            state, sources, frames, bg_media, "bg_media", bg, bg_rgb, port, scene, lambda evaluated: (STICKERS_CAMERA, projection), (out_w, out_h)
         )
         # PANO_SCENE binds the state to the inputs and the decided Timeline.
         pano_scene = PanoSceneValue(state, sources, port, bg_media, scene, coverage_deg, tuple(bg_rgb), fps, tuple(frames))
@@ -1598,7 +1606,7 @@ class PanoramaCutoutSceneNode(io.ComfyNode):
                 _log.warning("Panorama Cutout: %s", warning)
             bg_media, bg_name = source, "source"
             bg = _open_media(bg_media, bg_name)
-            frames = _decide_timeline(state, bg, None)[1]
+            frames = _decide_timeline(state, bg, None, camera=True)[1]
 
             def camera_at(evaluated):
                 return evaluated["camera"]

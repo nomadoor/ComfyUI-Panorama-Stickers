@@ -98,7 +98,8 @@ def test_pano_scene_state_is_plain_json_without_a_nested_scene():
     for value in vars(pano_scene).values():
         assert not isinstance(value, PanoSceneValue)
     assert pano_scene.port is None
-    assert pano_scene.frames == tuple((float(frame), None, None, None) for frame in range(6))
+    # The Keyframes of the state's Camera do not set the length of Stickers (ADR 0028).
+    assert pano_scene.frames == ((0.0, None, None, None),)
 
 
 def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):

@@ -471,9 +471,10 @@ def test_length_comes_from_the_latest_clip_range_end():
     assert _length(state) == 7
 
 
-def test_length_comes_from_the_latest_camera_keyframe_over_its_lanes_without_clip_ends():
-    assert _length({"camera": _camera_keyframes(0, 9)}) == 10
-    assert _length({"camera": {**_camera_keyframes(0, 4), **_camera_keyframes(6, lane="fov"), **_camera_keyframes(2, 3, lane="position")}}) == 7
+def test_camera_keyframes_do_not_set_the_length():
+    # Stickers has no Camera (ADR 0028); Cutout counts the Keyframes of its own (test_cutout_scene_node.py).
+    assert _length({"camera": _camera_keyframes(0, 9)}) == 1
+    assert _length({"camera": {**_camera_keyframes(0, 4), **_camera_keyframes(6, lane="fov"), **_camera_keyframes(2, 3, lane="position")}}) == 1
 
 
 def test_background_batch_comes_before_clip_ends():
@@ -498,11 +499,10 @@ def test_hold_cut_is_not_late_on_a_video_frame_just_before_the_keyframe(tmp_path
     state = {
         "version": 2,
         "timeline": {"fps": 24.9999975},
-        "camera": {"rotation": {"keyframes": [
-            {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "hold"},
-            {"frame": 3, "value": {"yaw_deg": 180.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
-        ]}},
-        "stickers": [{"id": "p", "source": {"kind": "port"}}],
+        "stickers": [{"id": "p", "source": {"kind": "port"}, "direction": {"keyframes": [
+            {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0}, "easing": "hold"},
+            {"frame": 3, "value": {"yaw_deg": 180.0, "pitch_deg": 0.0}, "easing": "auto"},
+        ]}}],
     }
     frames = _record_evaluated_frames(monkeypatch)
     red = torch.tensor([1.0, 0.0, 0.0]).expand(1, 4, 4, 3).clone()
