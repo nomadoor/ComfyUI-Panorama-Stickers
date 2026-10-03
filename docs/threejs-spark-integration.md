@@ -15,9 +15,9 @@ ComfyUI の `get_extensions` は `glob.glob(os.path.join(dir, "**/*.js"), recurs
 - `vite.lib.config.js` の `chunkFileNames` で、動的 import したモジュールを `web/.lazy/<名前>-<ハッシュ>.js` に出力する。ハッシュを付けるのは、更新後にブラウザが古いチャンクを使わないようにするためである。エディタを開いたときに `pano_editor_view.js` がこれを読み込む。
 - `npm run build:web` は古いチャンクを消さない。ハッシュが変わったら古いファイルを消す（`check:web` が報告する）。
 - チャンクの読み込みか WebGL の初期化に失敗したときは、コンソールにエラーを出し、画面にもそのことを表示する（#69）。
-- `pano_three_view.js` は three.js 以外を import しない。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
+- `pano_three_view.js` は three.js（GLTFLoader を含む）、Spark（動的 import）、チャンクの中だけで使うモジュール（`pano_scene_items.js`・`pano_scene_loaders.js`）以外を import しない。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
 - `npm run check:web` は `panorama_suite.js` と `web/.lazy/` の全チャンクを再ビルドした結果と比べ、ビルドが出力しない古いチャンクも報告する。
-- Spark はまだ読み込まない。スプラットを描くチケットで同じチャンクの経路に加える。
+- three.js の GLTFLoader は #71 で同じチャンクに静的に入れた（チャンクは約 1.0MB、gzip で約 0.22MB）。Spark は別のチャンク（`web/.lazy/spark.module-<ハッシュ>.js`、約 5.2MB、gzip で約 1.8MB）で、SPLAT の `scene` を初めて読み込むときだけ `import()` する（`pano_scene_loaders.js` の `loadSpark`）。3D を使わないエディタとノード上の表示は Spark を読まない。Spark のチャンクは three.js を最初のチャンクから import する。
 
 ### リリース前に確かめること
 
@@ -59,3 +59,37 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 - three.js のチャンクか WebGL が使えないときは、黒い画面のままにせず、エディタとモーダルはステージに失敗の表示（`PanoModal.vue`）を出す。ノード上の Preview・Stickers・Cutout の表示は、それぞれの Vue のノード面（`PanoViewUnavailable.vue`、文言は `pano_preview_view.js` の `VIEW_UNAVAILABLE_MESSAGE`）に「3D view unavailable」を出す。
 - エディタの設定の Render Quality（`ui_settings.preview_quality`）は、以前の描画のメッシュ分割にだけ使われていたので、UI・保存とも削除した。以前の状態や localStorage に残っている値は、知らないキーとして読み捨てる。
 - ノード上の表示の Sticker は、状態 v2 への読み込みで id が付け替えられたもの（id がない・文字列でない・重複した 2 つめ以降）は描かない（`workingSkyLayers`）。エディタも同じ規則で描く。
+
+## 空間の表示（#71）
+
+`PanoramaStickersNode` のエディタの Panorama 表示は、World の内容（`scene` 入力の接続・実行結果の `scene` のエディタ用ファイル・`world` の Sticker のどれか）があるとき、Viewport camera で空間内を移動できる表示になる。内容がなければ、従来どおりの見回しだけの表示のままである。Unwrap 表示と旧ノードは変えていない。
+
+- Stickers は撮影用の Camera を持たない。Stickers の ERP は常に World の原点から回転 0 で撮る。そのため Viewport camera は、エディタを開くたびに World の原点（ERP を撮る位置）から始まり、保存しない。グリッドの原点に黄色の印と「ERP origin」の表示を置く。
+- 操作（Unity のシーンビューに近い組み合わせ。左ドラッグの見回しは従来どおり）：
+
+  | 操作 | 動き |
+  |---|---|
+  | 何もないところを左ドラッグ | その場で見回す（従来と同じ。慣性あり） |
+  | 右ドラッグ | その場で見回す（ペイントのツールを選んでいても効く） |
+  | 中ボタンのドラッグ | 平行移動（パン）。注視点の距離の面がポインタに付いて動く |
+  | Alt + 左ドラッグ | 注視点のまわりを回る（オービット。three.js の OrbitControls・コアの Load3D と同じ向きと速さ） |
+  | ホイール | 注視点へ近づく・離れる（ドリー）。注視点より手前の最小の距離に来ると、注視点ごと前へ進む |
+  | 右上の Frame Content ボタン | 向きを保ったまま、内容全体が収まる位置へ下がる |
+  | Reset View ボタン | 原点に戻り、従来と同じ向きと画角に戻す |
+
+  空間の表示では、ホイールは画角を変えない。注視点は視点の前方 `distance` の点で、内容の大きさが分かると（視点をまだ動かしていなければ）その半径になる。見回し・移動は再生を止めない。計算は `web_src/pano_space.js` にある。
+- `sky` の Sticker・ペイント・背景は無限遠にあるので、視点の位置によらず同じ向きに見え、選択・移動・ペイントは従来どおり方向で当たり判定をする（`viewProjection`）。空間の表示では球面の格子の代わりに、地面（World の XZ 平面）のグリッドと軸（X 赤・Y 緑・Z 青）と原点を three.js で描く。グリッドの間隔は内容の大きさに合わせた 10 のべき乗である。
+- 描き方：`pano_three_view.js` の `render` に `space` を渡すと、まず従来どおり Sky を回転だけのカメラで描き、深度をクリアしてから、World を視点の位置のカメラで深度を使って重ねる（キャンバスに深度バッファを持たせた）。
+  - `scene`：実行結果の `pano_scene_files`・`pano_scene_meta`（#60）を、`scene` 入力の接続が実行時と同じ間だけ使う（`pano_preview_video.js` の `scene` のチャンネル）。再生ヘッドの Timeline frame で評価した `scene` の Clip range の中だけ、ノードと同じ規則（`batch_index`）で選んだ要素を、`scene` の変形を掛けて描く。MoGe の VIDEO のように要素ごとにファイルがあるものは、次の要素を先に読み込む。
+  - 読み込みは `pano_scene_items.js` のキューで、同時に 2 本までにする（`fetch` を `AbortController` 付きで行い、GLB は `GLTFLoader.parse`、PLY は Spark の `SplatMesh` の `fileBytes` で読む）。最新の要求（表示する要素、次にその先読み）を優先し、待っている間に要らなくなった読み込みは始めない。走り始めた読み込みは最後まで読む（中断するのは `scene` 入力が差し替わった・外れたときと、エディタを閉じたときだけ）。同じ URL は二重に読み込まない。スクラブしても読み込みは際限なく増えない。
+  - 読み込み中・再生中の表示：そのフレームの要素がまだ読み込めていないときは、入力の要素のうち読み込み済みで、そのフレームの要素より前の最も近いものを出す（前になければ後ろの最も近いもの）。再生中は要素が読み込みに追いつかないので、読み込めた要素だけを間引いて出す（同時に 2 本ずつ新しい要素が届く）。止める・シークすると、そのフレームの要素を最優先で読み、届いたらそのフレームの要素を正確に出す。
+  - 読み込んだ要素は 8 つまで持ち、使っていない古いものから捨てる。`scene` 入力が差し替わって（再実行）今の要素の一覧にないものは、その場で捨てる。エディタを閉じると全部捨てる。
+  - 既知の挙動：サーバーを再起動して temp のファイルが消えた後（404）は、その要素の代わりに、上と同じく前の最も近い読み込み済みの要素を出し続ける（どれも読めなければ何も出さない）。エラーは URL ごとに 1 回だけコンソールに出し、同じ URL は読み直さない。実行し直すと新しいファイルになる。
+  - SPLAT の PLY は Spark の `SplatMesh` で読み、コアの Load3D と同じく X 軸まわりに 180° 回してから（`SPLAT_TO_SCENE`）`scene` の変形を掛ける。並べ替えが終わるたびに描き直す。
+  - MESH・MoGe の GLB は GLTFLoader で読み、材質を `MeshBasicMaterial`（光源なし、両面、base color・テクスチャ・頂点色を保つ）に置き換える（`makeUnlit`）。素のジオメトリの灰色は glTF の定義どおり（線形の値）に表示するので、ノードの出力（`BARE_COLOR` をそのまま出す）より明るく見える。
+  - `world` の Sticker は、評価した位置・回転・`scale` の両面の板として、切り抜いた素材を貼って描く（`worldStickerLayers`）。奥行きで前後する。選択と操作は #72 で加える。3D の `world` の Sticker（#63）はまだ描かない（#72）。
+  - 視点の three.js のカメラの near・far は、内容の外接球とグリッドから決める（`pano_space.js` の `spaceCamera`。far は内容と原点のまわりのグリッドの先まで、near は注視点の距離の 1/100 と内容の大きさの 1/10000 の大きいほう）。注視点の距離の 1/100 より近い内容は切れる。
+- ノードの出力との差（意図して残しているもの）：
+  - 要素の読み込み中と読めなかったときは、前の最も近い読み込み済みの要素を出す（ノードは必ずそのフレームの要素を描く）。再生中は要素を間引いて出す。要素のないフレーム（バッチの外、頂点や面のない要素）はノードと同じく何も描かない。
+  - 半透明の重なり：Spark はスプラットを深度を書かずに重ね、板は深度を書く。半透明のスプラットと `world` の Sticker が重なる画素の前後と混ざり方は、ノード（`over_by_depth`、スプラットの奥行きは積算アルファ 0.5 の位置）と一致しない。
+- #77（Cutout）向けの部品：Camera の視錐台（`cameraFrustumSegments`）、Timeline 上の軌道（`cameraTrajectory`、評価関数で標本化）、Camera から覗く視点（`cameraView`）と、`render` の `space.lines`（線分の描画）。Stickers のエディタでは使わない。

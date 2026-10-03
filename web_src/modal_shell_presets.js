@@ -26,6 +26,8 @@ export function buildModalShellPreset(type = "stickers") {
     ],
     floatingButtons: [
       { action: "reset-view", label: "Reset View", tip: "Reset view", pressed: null, icon: ICON.reset },
+      // Shown only while the panorama view is in space (#71).
+      ...(isCutout ? [] : [{ action: "frame-view", label: "Frame Content", tip: "Frame content", pressed: null, icon: ICON.focus, visible: false }]),
       { action: "toggle-grid", label: "Hide Grid", tip: "Hide grid", pressed: "true", icon: ICON.eye },
     ],
     paintPanes: [
