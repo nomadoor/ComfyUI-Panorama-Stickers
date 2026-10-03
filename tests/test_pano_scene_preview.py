@@ -184,15 +184,18 @@ def test_preview_rejects_a_source_of_another_type():
         _preview(torch.zeros((1, 4, 8)))
 
 
-def test_preview_shows_a_pano_scene_as_the_erp_from_the_origin():
+def test_preview_passes_a_pano_scene_through_without_rendering(monkeypatch):
     pano_scene = _stickers(bg_media=_solid([0.5, 0.5, 0.5], batch=3))[3]
 
+    def fail(*args, **kwargs):
+        raise AssertionError("Preview must not render a PANO_SCENE")
+
+    monkeypatch.setattr(nodes, "render_frame", fail)
+    monkeypatch.setattr(nodes, "evaluate_scene_state", fail)
     output = _preview(pano_scene)
 
     assert output.result[0] is pano_scene
-    assert output.ui["pano_input_images"]
-    assert output.ui["pano_video_meta"][0]["fps"] == 30.0
-    assert output.ui["pano_video_meta"][0]["frames"] == 3
+    assert not output.ui
 
 
 def test_preview_decides_its_timeline_with_the_stickers_rules(monkeypatch, tmp_path):

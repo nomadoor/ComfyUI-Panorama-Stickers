@@ -45,7 +45,7 @@ JS_SCRIPT = textwrap.dedent(
 def _drawn(state, bg, port, frames):
     """The port media's frame that the `video` output draws at each Timeline frame (`PortMedia.index_at` inside the
     Clip range), None where it draws none."""
-    fps, _times, _time_base, _frames = nodes._decide_timeline(state, bg, port)
+    fps = float(nodes._decide_timeline(state, bg, port)[0])
     timing = nodes._timing_video(bg, port)
     tolerance = 0 if timing is None else float(timing.time_base) / 2 * state["timeline"]["fps"]
     drawn = []
@@ -58,7 +58,8 @@ def _drawn(state, bg, port, frames):
 def _case(state_json, sticker, bg=None):
     state = load_scene_state(json.dumps(state_json))
     port = nodes._port_media(state, sticker, "", [])
-    fps, _times, time_base, _frames = nodes._decide_timeline(state, bg, port)
+    rate, _times, time_base, _frames = nodes._decide_timeline(state, bg, port)
+    fps = float(rate)
     meta = nodes._port_media_ui(port, fps, time_base)["pano_sticker_input_video_meta"][0]
     # The editor's playhead is on whole Timeline frames.
     frames = list(range(24))

@@ -285,15 +285,15 @@ def test_world_sticker_source_is_uploaded_again_only_when_its_frame_changes():
     textures = {}
 
     def layers(source):
-        return world_layer(evaluated, SceneSources({"s": source}, {}), evaluated["camera"], Projection.erp(32, 16),
-                           scene=None, scene_index=None, device=CPU, textures=textures)
+        return world_layer([RenderLayer(evaluated, SceneSources({"s": source}, {}))], evaluated["camera"], Projection.erp(32, 16),
+                           device=CPU, textures=textures)
 
     red = layers(StickerSource(_solid(RED), FULL, frame=0))
-    uploaded = textures["s"][1]
+    uploaded = textures[0, "s"][1]
     layers(StickerSource(_solid(RED), FULL, frame=0))
-    assert textures["s"][1] is uploaded
+    assert textures[0, "s"][1] is uploaded
     blue = layers(StickerSource(_solid(BLUE), FULL, frame=1))
-    assert textures["s"][1] is not uploaded
+    assert textures[0, "s"][1] is not uploaded
     assert torch.allclose(red[0][8, 16, :3], torch.tensor(RED)) and torch.allclose(blue[0][8, 16, :3], torch.tensor(BLUE))
 
 
@@ -304,9 +304,9 @@ def test_sources_of_world_stickers_no_longer_drawn_are_released():
     cache = {}
 
     _render(state, sources, Projection.erp(32, 16), cache=cache)
-    assert "s" in cache["layers"][0]["world_textures"] and cache["layers"][0]["world"] is not None
+    assert (0, "s") in cache["world_textures"] and cache["world"] is not None
     _render(state, sources, Projection.erp(32, 16), frame=1.0, cache=cache)
-    assert "world" not in cache["layers"][0] and "world_textures" not in cache["layers"][0]
+    assert "world" not in cache and "world_textures" not in cache
 
 
 # The `scene` common processing, with a test geometry in place of a SPLAT or MESH rasterizer.

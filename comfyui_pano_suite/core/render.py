@@ -542,13 +542,13 @@ def render_frame(
 
     `cache` is an optional dict owned by the caller for one execution, in which `bg_color`, `device`, the number of
     layers, and each layer's `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps
-    the background, the ripmap levels `_sample_filtered` made of it, and the result, and for each layer apart (so
-    Sticker ids of different layers never meet) the previous frame's Sky (for a perspective output its layers, with
-    the `sky` Sticker sources and the paint layers of its size on `device`), the Sky turned by the Camera, the
-    ripmap levels of the Sticker sources and the paint layers (released with them), the World content as one layer
-    (`world_layer`), and the drawn `world` Sticker sources on `device`. A frame whose Sky values and Sticker frames,
-    Camera rotation, Projection, `bg_key`, and World content with the Camera's position (`world_key`) all repeat in
-    every layer returns the previous frame's tensors themselves.
+    the background, the ripmap levels `_sample_filtered` made of it, the World content of all layers as one layer
+    (`world_layer`) with the drawn `world` Sticker sources on `device` by layer and id, and the result, and for each
+    layer apart (so Sticker ids of different layers never meet) the previous frame's Sky (for a perspective output
+    its layers, with the `sky` Sticker sources and the paint layers of its size on `device`), the Sky turned by the
+    Camera, and the ripmap levels of the Sticker sources and the paint layers (released with them). A frame whose
+    Sky values and Sticker frames in every layer, Camera rotation, Projection, `bg_key`, and World content with the
+    Camera's position (`world_key`) all repeat returns the previous frame's tensors themselves.
     """
     if cache is None:
         cache = {}
@@ -564,8 +564,8 @@ def render_frame(
     # A background without a key cannot be told apart from the previous frame's, so it is never reused.
     reusable = bg is None or bg_key is not None
     sky_keys = tuple(_sky_key(layer.evaluated, layer.sources, sky_size) for layer in layers)
-    worlds = tuple(world_key(layer.evaluated, layer.sources, camera, projection, layer.scene, layer.scene_index) for layer in layers)
-    frame_key = (sky_keys, view_key, bg_entry, worlds)
+    world = world_key(layers, camera, projection)
+    frame_key = (sky_keys, view_key, bg_entry, world)
     if reusable and cache.get("frame_key") == frame_key:
         return cache["frame"]
     caches = cache.setdefault("layers", [])
@@ -580,21 +580,17 @@ def render_frame(
         return looks["rays"], looks["view"]
 
     sky = mask = None
-    world_layers = []
-    for layer, layer_cache, sky_key, world in zip(layers, caches, sky_keys, worlds):
+    for layer, layer_cache, sky_key in zip(layers, caches, sky_keys):
         layer_sky = _layer_sky(layer, layer_cache, sky_key, sky_size, direct, view_key, look, device)
         sky, mask = layer_sky if sky is None else (_sky_over(sky, layer_sky[0]), torch.maximum(mask, layer_sky[1]))
-        if world is None:
-            for key in ("world_key", "world", "world_textures"):
-                layer_cache.pop(key, None)
-        elif layer_cache.get("world_key") != world:
-            # The previous frame's layer is released before the new one is drawn.
-            layer_cache.pop("world", None)
-            layer_cache["world"] = world_layer(layer.evaluated, layer.sources, camera, projection, scene=layer.scene, scene_index=layer.scene_index,
-                                               device=device, textures=layer_cache.setdefault("world_textures", {}))
-            layer_cache["world_key"] = world
-        if layer_cache.get("world") is not None:
-            world_layers.append(layer_cache["world"])
+    if world is None:
+        for key in ("world_key", "world", "world_textures"):
+            cache.pop(key, None)
+    elif cache.get("world_key") != world:
+        # The previous frame's layer is released before the new one is drawn.
+        cache.pop("world", None)
+        cache["world"] = world_layer(layers, camera, projection, device=device, textures=cache.setdefault("world_textures", {}))
+        cache["world_key"] = world
     background = bg_valid = None
     if bg is not None:
         levels = None
@@ -612,6 +608,7 @@ def render_frame(
             background = _resize(background, projection.height, projection.width)
         else:
             background, bg_valid = _project_background(background, projection, look()[1], levels)
+    world_layers = () if cache.get("world") is None else (cache["world"],)
     color, depth = composite_frame(bg_color, background, sky, world_layers, bg_valid=bg_valid)
     if reusable:
         cache["frame_key"], cache["frame"] = frame_key, (color, mask, depth)

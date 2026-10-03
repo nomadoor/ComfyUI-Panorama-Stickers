@@ -59,55 +59,66 @@ def _transform_key(value: dict) -> tuple:
     return tuple(round(number, 9) for number in (*value["position"], value["yaw_deg"], value["pitch_deg"], value["roll_deg"], value["scale"]))
 
 
-def world_key(evaluated: dict, sources, camera: dict, projection, scene: SceneContent | None, scene_index: int | None) -> tuple | None:
-    """What the World layers of a frame depend on, or None when the frame has no World content (the Camera's
-    position then does not matter). Values are rounded like the Sky's key."""
-    stickers = tuple(
-        (sticker["id"], *_transform_key(sticker), round(sticker["opacity"], 9), sources.stickers[sticker["id"]].frame)
-        for sticker in evaluated["stickers"]
-        if sticker["placement"] == "world" and sticker["active"] and sticker["id"] in sources.stickers
+def _drawn_content(layer) -> bool:
+    return layer.scene is not None and layer.evaluated["scene"]["active"] and layer.scene_index is not None
+
+
+def world_key(layers, camera: dict, projection) -> tuple | None:
+    """What the World layer of a frame depends on, or None when no layer (`RenderLayer`) has World content (the
+    Camera's position then does not matter). Values are rounded like the Sky's key."""
+    contents = tuple(
+        (
+            tuple(
+                (sticker["id"], *_transform_key(sticker), round(sticker["opacity"], 9), layer.sources.stickers[sticker["id"]].frame)
+                for sticker in layer.evaluated["stickers"]
+                if sticker["placement"] == "world" and sticker["active"] and sticker["id"] in layer.sources.stickers
+            ),
+            (layer.scene_index, _transform_key(layer.evaluated["scene"])) if _drawn_content(layer) else None,
+        )
+        for layer in layers
     )
-    content = None
-    if scene is not None and evaluated["scene"]["active"] and scene_index is not None:
-        content = (scene_index, _transform_key(evaluated["scene"]))
-    if not stickers and content is None:
+    if not any(stickers or content for stickers, content in contents):
         return None
     pose = tuple(round(number, 9) for number in (*camera["position"], camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]))
-    return projection, pose, stickers, content
+    return projection, pose, contents
 
 
-def world_layer(evaluated: dict, sources, camera: dict, projection, *, scene: SceneContent | None, scene_index: int | None, device, textures: dict):
-    """All World content of a frame as one layer (rgba, depth), or None without any: the `scene` content, then
-    the active `world` Stickers from the farthest center (`position`) to the nearest (state order on ties), each
-    folded in by depth (`over_by_depth`) as it is drawn. Planes that do not intersect then come out in exact depth
-    order. A 3D Sticker (`ContentSource`) is its content through its transform, with its opacity on the alpha.
-    `textures` keeps each drawn plane's source on `device` by id with its frame, so a source is uploaded again
-    only when its frame changes; the sources of Stickers not drawn are dropped."""
+def world_layer(layers, camera: dict, projection, *, device, textures: dict):
+    """All World content of a frame, over every layer (`RenderLayer`: `evaluated`, `sources`, `scene`,
+    `scene_index`), as one layer (rgba, depth), or None without any: the `scene` content of each layer, then the
+    active `world` Stickers of all layers together from the farthest center (`position`) to the nearest (layer
+    and state order on ties), each folded in by depth (`over_by_depth`) as it is drawn. Planes that do not
+    intersect then come out in exact depth order, whichever layer they belong to. A 3D Sticker (`ContentSource`)
+    is its content through its transform, with its opacity on the alpha. `textures` keeps each drawn plane's
+    source on `device` by (layer index, id) with its frame, so a source is uploaded again only when its frame
+    changes and the same id in two layers never shares one; the sources of Stickers not drawn are dropped."""
     view = CameraView(np.asarray(camera["position"], dtype=np.float64), world_rotation(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]), projection)
     composite = None
-    if scene is not None and evaluated["scene"]["active"] and scene_index is not None:
-        composite = over_by_depth(composite, _scene_layer(scene, scene_index, evaluated["scene"], view, device))
+    for layer in layers:
+        if _drawn_content(layer):
+            composite = over_by_depth(composite, _scene_layer(layer.scene, layer.scene_index, layer.evaluated["scene"], view, device))
     rays = None
     drawn = set()
     stickers = [
-        sticker for sticker in evaluated["stickers"]
-        if sticker["placement"] == "world" and sticker["active"] and sticker["id"] in sources.stickers and sticker["opacity"] > 0.0
+        (index, sticker) for index, layer in enumerate(layers) for sticker in layer.evaluated["stickers"]
+        if sticker["placement"] == "world" and sticker["active"] and sticker["id"] in layer.sources.stickers and sticker["opacity"] > 0.0
     ]
-    stickers.sort(key=lambda sticker: -float(np.linalg.norm(np.asarray(sticker["position"], dtype=np.float64) - view.position)))
-    for sticker in stickers:
-        source = sources.stickers[sticker["id"]]
+    stickers.sort(key=lambda item: -float(np.linalg.norm(np.asarray(item[1]["position"], dtype=np.float64) - view.position)))
+    for index, sticker in stickers:
+        source = layers[index].sources.stickers[sticker["id"]]
         if isinstance(source, ContentSource):
             rgba, depth = _scene_layer(source.content, source.frame, sticker, view, device)
             composite = over_by_depth(composite, (torch.cat([rgba[..., :3], rgba[..., 3:] * sticker["opacity"]], dim=-1), depth))
             continue
         if rays is None:
             rays = view.rays(device)
-        drawn.add(sticker["id"])
-        layer = _sticker_layer(rays, view.position, sticker, _texture(textures, sticker["id"], source, device), source.crop)
+        key = (index, sticker["id"])
+        drawn.add(key)
+        layer = _sticker_layer(rays, view.position, sticker, _texture(textures, key, source, device), source.crop)
         if layer is not None:
             composite = over_by_depth(composite, layer)
-    for sticker_id in textures.keys() - drawn:
-        del textures[sticker_id]
+    for key in textures.keys() - drawn:
+        del textures[key]
     if composite is None:
         return None
     total, depth = composite
@@ -142,14 +153,14 @@ def _scene_layer(scene: SceneContent, index: int, transform: dict, view: CameraV
     return rgba, depth * scale
 
 
-def _texture(textures: dict, sticker_id: str, source, device) -> torch.Tensor:
+def _texture(textures: dict, key, source, device) -> torch.Tensor:
     """The source as premultiplied (1, 4, h, w) on `device`, so that transparent texels do not bleed into edges."""
-    entry = textures.get(sticker_id)
+    entry = textures.get(key)
     if entry is None or entry[0] != source.frame:
         # A copy: a source can be a read-only array, which torch does not take without one.
         rgba = torch.tensor(source.rgba, dtype=torch.float32, device=device)
         alpha = rgba[..., 3:]
-        entry = textures[sticker_id] = (source.frame, torch.cat([rgba[..., :3] * alpha, alpha], dim=-1).permute(2, 0, 1)[None])
+        entry = textures[key] = (source.frame, torch.cat([rgba[..., :3] * alpha, alpha], dim=-1).permute(2, 0, 1)[None])
     return entry[1]
 
 
