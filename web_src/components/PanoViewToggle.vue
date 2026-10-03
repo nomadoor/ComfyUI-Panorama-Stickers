@@ -24,6 +24,7 @@ defineProps({
         :aria-pressed="button.pressed"
         :aria-label="button.label"
         :aria-disabled="button.disabled === true ? 'true' : null"
+        :tabindex="button.disabled === true ? -1 : null"
         :data-tip="button.tip || null"
         v-show="button.visible !== false"
       >

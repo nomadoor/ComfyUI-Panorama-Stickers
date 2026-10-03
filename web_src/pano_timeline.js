@@ -161,6 +161,13 @@ function ownerLanes(owner) {
   return laneNames(owner).map((name) => owner[name]);
 }
 
+// Whether the editor's Timeline opens by itself: something it shows changes over time. The Cutout shows
+// only its Camera (`cameraOnly`); Panorama Studio counts its Camera with the rest (`camera`, #89).
+export function timelineOpens(state, { cameraOnly = false, camera = false } = {}) {
+  if (cameraOnly) return ownerLanes(state.camera).some((lane) => lane.keyframes.length > 0);
+  return isTimed(state, { camera });
+}
+
 // Whether an owner changes over time: a Keyframe, or a Clip range other than the whole Timeline.
 export function ownerTimed(owner) {
   return ownerLanes(owner).some((lane) => lane.keyframes.length > 0) || (!!owner.clip && !defaultClip(owner.clip));

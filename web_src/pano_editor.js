@@ -53,13 +53,13 @@ import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from 
 import { loadSceneState } from "./pano_scene_state.js";
 import {
   deleteKeyframes,
-  isTimed,
   keyAllLanes,
   laneNames,
   moveClip,
   moveKeyframes,
   setLaneValue,
   setSegmentEasing,
+  timelineOpens,
   timelineSpan,
   trimClipEnd,
   trimClipStart,
@@ -142,6 +142,7 @@ import {
   buildEasingModel,
   buildEditorSidePanelModel,
   cameraAspectChoices,
+  cameraParamEnabled,
   buildPaintDockModel,
   buildPreviewSidePanelModel,
   buildSelectionMenuModel,
@@ -185,6 +186,7 @@ import { createFrameSequence, portMediaFrames, portMediaSource, portMediaTime } 
 import {
   drawStickerSelectionBoundary,
   drawStickerSelectionHandles,
+  hitFrameAffordance,
   hitStickerSelectionAffordance,
 } from "./pano_sticker_affordance.js";
 import {
@@ -4700,9 +4702,11 @@ async function showEditor(node, type, options = {}) {
       drawStickerSelectionHandles(ctx, geom, { accent });
       return;
     }
+    // Panorama Studio's 360-degree Camera has no size handles, only its rotate handle (#89).
+    const resizable = !(isShotItem(item) && isErpCamera());
     ctx.fillStyle = accent;
-    geom.corners.forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 6.5, 0, Math.PI * 2); ctx.fill(); });
-    if (isShotItem(item)) {
+    if (resizable) geom.corners.forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 6.5, 0, Math.PI * 2); ctx.fill(); });
+    if (resizable && isShotItem(item)) {
       ctx.strokeStyle = accent;
       ctx.lineCap = "round";
       ctx.lineWidth = 4;
@@ -6342,7 +6346,7 @@ async function showEditor(node, type, options = {}) {
       pushParam("hFOV_deg", "H FOV", 1, 179, 0.1);
       pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
       // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
-      if (shotInspected && isErpCamera()) params.slice(-2).forEach((param) => { param.enabled = false; });
+      if (shotInspected) params.forEach((param) => { param.enabled = param.enabled && cameraParamEnabled(param.key, { erp: isErpCamera() }); });
       if (selectedKind === "image" || (type === "stickers" && !shotInspected)) pushParam("rot_deg", "Rotation", -180, 180, 0.1);
       else pushParam("roll_deg", "Roll", -180, 180, 0.1);
       if (sceneV2 && !shotInspected) pushParam("opacity", "Opacity", 0, 100, 1);
@@ -6427,7 +6431,7 @@ async function showEditor(node, type, options = {}) {
   // Whether the Timeline opens by itself: something in the state changes over time (the Cutout's Camera,
   // also Panorama Studio's).
   function timelineTimed() {
-    return cutoutV2 ? laneNames(state.camera).some((name) => state.camera[name].keyframes.length > 0) : isTimed(state, { camera: studio });
+    return timelineOpens(state, { cameraOnly: cutoutV2, camera: studio });
   }
 
   // The Timeline length (5 s without one), widened to the background VIDEO and to the end of the
@@ -6670,7 +6674,8 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (action.type === "key-row") {
-      if (!timelineEditable(action.owner)) return;
+      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet (#89).
+      if (action.owner === "scene" || !timelineEditable(action.owner)) return;
       // Recording edits stop at the frame shown, so playback stops before a Keyframe is set.
       stopTimelinePlayback();
       keyAllLanes(timelineOwner(action.owner), editor.frame - timelineOffset(action.owner));
@@ -8772,24 +8777,11 @@ async function showEditor(node, type, options = {}) {
       if (pointInPoly(p, geom.corners)) return { kind: "move", cursor: "default" };
       return { kind: "none", cursor: editor.mode === "pano" ? "grab" : "default" };
     }
-    if ((type === "cutout" || isShotItem(item)) && Array.isArray(geom.edgeMidpoints)) {
-      const mid = geom.edgeMidpoints.find((m) => dist2(m, p) <= 13 * 13);
-      if (mid) {
-        const horiz = (mid.edge === "left" || mid.edge === "right");
-        return { kind: horiz ? "scale_x" : "scale_y", cursor: horiz ? "ew-resize" : "ns-resize", edge: mid.edge, mid };
-      }
-    }
-    const cornerIdx = geom.corners.findIndex((c) => dist2(c, p) <= 11 * 11);
-    if (cornerIdx >= 0) {
-      const c = geom.corners[cornerIdx];
-      const vx = c.x - geom.center.x;
-      const vy = c.y - geom.center.y;
-      const cursor = (vx * vy) >= 0 ? "nwse-resize" : "nesw-resize";
-      return { kind: "scale", cornerIdx, cursor };
-    }
-    if (dist2(geom.rotateHandle, p) <= 12 * 12) return { kind: "rotate", cursor: "grab" };
-    if (pointInPoly(p, geom.corners)) return { kind: "move", cursor: "default" };
-    return { kind: "none", cursor: editor.mode === "pano" ? "grab" : "default" };
+    return hitFrameAffordance(geom, p, {
+      edges: type === "cutout" || isShotItem(item),
+      resize: !(isShotItem(item) && isErpCamera()),
+      emptyCursor: editor.mode === "pano" ? "grab" : "default",
+    });
   }
 
   function rectFromPoints(a, b) {

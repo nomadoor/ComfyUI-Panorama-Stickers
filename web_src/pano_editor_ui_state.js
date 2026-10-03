@@ -147,6 +147,12 @@ export function frameViewButton({ hasShot, erp = false, studio = false }) {
   return { disabled, tip };
 }
 
+// Whether the inspector edits a Camera field: a 360-degree ERP Camera reads no FOV, so its H FOV and V FOV
+// stay, disabled (ADR 0029, #89).
+export function cameraParamEnabled(key, { erp = false } = {}) {
+  return !(erp && (key === "hFOV_deg" || key === "vFOV_deg"));
+}
+
 // The aspect preset that makes Panorama Studio's Camera shoot an ERP (`projection: "erp"`, ADR 0029).
 export const ERP_ASPECT = "erp";
 const ASPECT_PRESETS = ["1:1", "4:3", "3:2", "16:9"];
@@ -378,7 +384,8 @@ const LANE_LABELS = {
 // input sets the Timeline fps (ADR 0024); with sceneLocked a PANO_SCENE sets both the fps and the length
 // (a Cutout shoots the Scene's Timeline, #77), and the Cutout shows only its Camera row.
 export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false, stickers = true, scene = false, sceneLocked = false }) {
-  const row = (id, owner, rowLabel, icon, clip, offset) => {
+  // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
+  const row = (id, owner, rowLabel, icon, clip, offset, keyable = true) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
     return {
       id,
@@ -386,11 +393,12 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
       icon,
       clip,
       selected: id === selectedId,
-      open: openRows.has(id),
+      keyable,
+      open: keyable && openRows.has(id),
       keyed: rowKeyed(owner, frame - offset),
       keys: rowKeyframes(owner).map((key) => ({ frame: key.frame + offset, full: key.full })),
       selectedFrames: selectedFrames(null),
-      lanes: laneNames(owner).map((name) => ({
+      lanes: (keyable ? laneNames(owner) : []).map((name) => ({
         key: `${id}:${name}`,
         lane: name,
         label: LANE_LABELS[name],
@@ -425,7 +433,8 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
       }),
       ...(stickers && (scene || ownerTimed(state.scene)) ? [(() => {
         const { clip, offset } = clipRange(state.scene.clip);
-        return row("scene", state.scene, "Scene", ICON.box, clip, offset);
+        // The editor has no way to move the `scene` yet, so its row has only its Clip range (#89).
+        return row("scene", state.scene, "Scene", ICON.box, clip, offset, false);
       })()] : []),
     ],
   };

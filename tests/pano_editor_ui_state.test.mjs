@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { ERP_ASPECT, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { ERP_ASPECT, cameraParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { setSegmentEasing } from "../web_src/pano_timeline.js";
@@ -351,7 +351,14 @@ test("Panorama Studio's Timeline shows the Camera, the Stickers and the `scene` 
   // The `scene` row has its Clip range and Keyframes in the Timeline frames of its material.
   const scene = withScene.rows.at(-1);
   assert.deepEqual([scene.label, scene.clip], ["Scene", { start: state.scene.clip.start, end: state.scene.clip.duration === null ? null : state.scene.clip.start + state.scene.clip.duration }]);
-  assert.deepEqual(scene.lanes.map((lane) => lane.label), ["Position", "Rotation", "Scale"]);
+  // Nothing in the editor moves the `scene` yet: its row has only its Clip range, no key button and no Lanes.
+  assert.deepEqual([scene.keyable, scene.lanes, scene.open], [false, [], false]);
+  assert.equal(buildTimelineModel(state, { ...options, scene: true, openRows: new Set(["scene"]) }).rows.at(-1).open, false);
+  assert.equal(withScene.rows[0].keyable, true);
+  const timelineVue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(timelineVue, /v-if="row\.keyable"\s*class="pano-timeline-key"/);
+  const editorJs = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  assert.match(editorJs, /if \(action\.owner === "scene" \|\| !timelineEditable\(action\.owner\)\) return;/);
   // Without its input, the `scene` row shows only while the `scene` changes over time; the Cutout has none.
   const still = loadSceneState({ version: 2 });
   assert.equal(buildTimelineModel(still, options).rows.some((row) => row.id === "scene"), false);
@@ -399,4 +406,17 @@ test("Panorama Studio's Camera menu has the 360° preset and Delete, and a 360°
   const gizmo = buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate", camera: true, deletable: true });
   assert.deepEqual(gizmo.items.map((item) => [item.key, item.action]), [["gizmo-mode", undefined], ["delete", "delete"]]);
   assert.equal(buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate" }).items.length, 1);
+});
+
+test("a 360° Camera's FOV fields are disabled, and the others stay as they are (#89)", () => {
+  for (const key of ["hFOV_deg", "vFOV_deg"]) {
+    assert.equal(cameraParamEnabled(key, { erp: true }), false);
+    assert.equal(cameraParamEnabled(key), true);
+  }
+  for (const key of ["yaw_deg", "pitch_deg", "roll_deg", "position_x"]) assert.equal(cameraParamEnabled(key, { erp: true }), true);
+  // The disabled tab is left out of the Tab order, and keeps its colour under the pointer.
+  const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
+  assert.match(toggle, /:tabindex="button\.disabled === true \? -1 : null"/);
+  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /\.pano-view-btn\[data-view="frame"\]:hover/);
 });

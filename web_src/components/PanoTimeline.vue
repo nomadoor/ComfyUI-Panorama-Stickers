@@ -229,6 +229,7 @@ function onLineDown(event, row, lane) {
               <button
                 class="pano-timeline-open"
                 type="button"
+                :disabled="!row.keyable"
                 :aria-expanded="row.open ? 'true' : 'false'"
                 :aria-label="row.open ? `Hide ${row.label} parameters` : `Show ${row.label} parameters`"
                 @click.stop="emit('action', { type: 'toggle-row', id: row.id })"
@@ -246,6 +247,7 @@ function onLineDown(event, row, lane) {
                 <span>{{ row.label }}</span>
               </button>
               <button
+                v-if="row.keyable"
                 class="pano-timeline-key"
                 :class="{ keyed: row.keyed }"
                 type="button"
