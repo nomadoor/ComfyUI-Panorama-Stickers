@@ -255,7 +255,12 @@ FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コア�
   - `scene` のエディタ用ファイル（#60）：`scene_files.py` の `write_editor_files` が、コアの書き出し関数で要素ごとに 1 つずつ temp に書く。ラスタライザには依存しない。座標は要素自身の glTF 座標（`scene` の変形を掛ける前の World、ADR 0023）で、エディタが状態の `scene` の変形を掛ける。
     - SPLAT：PLY（コアの `SplatToFile3D` の `ply` と同じ書き出し。SH もすべて持つ）。座標は SPLAT のまま（3DGS の座標。下の「SPLAT の描き方」）で、glTF ではない。エディタ（#71）への要求：この PLY は、コアの Load3D と同じく X 軸まわりに 180° 回して（`quaternion.set(1, 0, 0, 0)`）から状態の `scene` の変形を掛けること。`counts` があれば要素ごとの長さで切る。
     - スプラット系の 3D ファイル：Stickers の `execute` の入口（`_read_scene_file`）で SPLAT に読んでから扱うので、上の SPLAT と同じ PLY になる。
-    - MESH：GLB（コアの `mesh_item_to_glb_bytes`）。座標はそのまま。
+    - MESH：GLB。座標はそのまま。エディタで見るためのものなので、大きな MESH は間引いて書く（`_mesh_glb`）。ノードの描画（出力）は間引かず、元の細かさのまま描く。
+      - MoGePointMapToMesh（decimation 1）が作ったグリッドの MESH（uv が各頂点の画素の (x/(W-1), y/(H-1)) で、テクスチャがあれば W x H、同じ画素の頂点が 2 つなく、面がグリッドの 1 マスに収まるもの。`_grid_cells`）は、uv から画素の位置を戻し、`MOGE_GEOMETRY` と同じ規則（長辺を `MOGE_EDITOR_GRID` 点以下、テクスチャも同じ間隔）で間引く。三角形の作り方はコアの `triangulate_grid_mesh` で、面の向きは元の MESH に合わせる。同じ点群の `MOGE_GEOMETRY` をつないだときと同じ GLB になる（`tests/test_scene_editor_files.py`）。長辺が `MOGE_EDITOR_GRID` 以下なら、そのまま書く。
+      - それ以外で三角形が `MESH_EDITOR_FACES`（100 万）を超える MESH は、頂点クラスタリングで上限以下にする：箱を格子に区切り、同じマス（と uv の粗いマス、最大 `MESH_EDITOR_UV_CELLS`（64）分割。テクスチャの継ぎ目の両側を混ぜないため）の頂点を平均の 1 頂点にし、3 頂点がそろわなくなった面と重なった面を捨てる。収まるまで格子を粗くする。面が 1 つも残らない格子なら細かくしてやり直し（粗くするときもその格子より細かく保つ）、4095 分割でも残らなければ空の要素（`null`）にする。uv・テクスチャ・頂点色は保つ。
+      - 間引いた GLB は、エディタがライトなしで描く分（ベースカラー、テクスチャ、頂点色、`unlit`・`material`）だけを書く。法線・法線マップ・metallic/roughness・emissive は書かない（エディタの `makeUnlit` が使わない）。
+      - 小さい MESH は、コアの `mesh_item_to_glb_bytes` でそのまま書く。
+      - 例：MoGe のパノラマ（4096 x 2048、約 840 万頂点・1,680 万三角形）の MESH は、間引かないと 394MB の GLB で、グリッドの間引きで 6MB（CPU で約 0.7 秒）になる。同じ大きさのグリッドでない MESH は、クラスタリングで約 100 万三角形・43MB（CPU で約 3 秒）になる。書いたファイルは今までどおり `scene_files` のキャッシュで使い回す。
     - `MOGE_GEOMETRY`：フレームごとのグリッドのメッシュの GLB（`moge_grid_mesh`）。読むのは `points`、あれば `mask`（外の画素を捨てる）、`intrinsics` の有無、テクスチャの `image` だけ。glTF への変換はコアの MoGePointMapToMesh と同じ（`intrinsics` がなければパノラマとして Z 上から、あれば OpenCV から）で、パノラマの各画素は回転 0 の Camera の ERP の同じ画素の向きに来る（`tests/test_scene_editor_files.py`）。エディタで見るためのものなので、長辺を `MOGE_EDITOR_GRID`（512）点以下に間引き、テクスチャも同じ間隔で間引く。
       - 面の向き（ワインディング）もコアと同じ。パノラマの面は外向き（原点の Camera からは裏面）なので、エディタ（#71）は両面（`DoubleSide`）で描く。
       - `mask` の外の画素を捨てるのはコアの MoGePointMapToMesh と異なる（コアは `mask` を読まない）。バックエンドの描画（#62）も同じく `mask` の外を描かず、エディタと揃える。

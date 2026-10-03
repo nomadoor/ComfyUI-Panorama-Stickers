@@ -1099,8 +1099,10 @@ async function showEditor(node, type, options = {}) {
   // The input keys the camera preview and the Unwrap view last drew, to skip unchanged redraws.
   let cameraPreviewKey = null;
   let unwrapKey = null;
-  // The pick of the last 6DoF wheel step (pano_space.js reuseWheelPick).
+  // The pick of the last 6DoF wheel step and of the last Frame view wheel step (pano_space.js
+  // reuseWheelPick).
   let spaceWheel = null;
+  let frameWheel = null;
   const frameGateCssRadius = Number.parseFloat(
     getComputedStyle(root).getPropertyValue("--pano-float-radius"),
   ) || 10;
@@ -7752,11 +7754,19 @@ async function showEditor(node, type, options = {}) {
     return { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg, distance: frameViewDistance() };
   }
 
+  // The World point of the content under canvas point p in the Frame view, or null.
+  function pickFrame(context, p) {
+    const { rect } = context;
+    return editorView.pick(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
+  }
+
   // The point a Frame view move at canvas point p works on: the content under it, else the pivot.
   function frameTarget(context, view, p) {
-    const { rect } = context;
-    const hit = editorView.pick(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
-    return navigationTarget(view, hit, null, spaceScale());
+    return navigationTarget(view, pickFrame(context, p), null, spaceScale());
+  }
+
+  function frameViewKey(context) {
+    return JSON.stringify([frameSpaceView(context), context.rect]);
   }
 
   function moveCutoutShot(view) {
@@ -7810,7 +7820,16 @@ async function showEditor(node, type, options = {}) {
     const context = frameContext();
     if (!context || readOnly) return;
     const view = frameSpaceView(context);
-    moveCutoutShot(zoomView(view, frameTarget(context, view, p), direction, spaceScale()));
+    // A step reuses the pick of an earlier one as reuseWheelPick() allows, like zoomSpaceAt().
+    const now = performance.now();
+    const next = { x: p.x, y: p.y, time: now, key: editorView.contentKey(), view: frameViewKey(context) };
+    if (!reuseWheelPick(frameWheel, next)) {
+      const hit = pickFrame(context, p);
+      frameWheel = { ...next, cost: performance.now() - now, hit };
+    }
+    moveCutoutShot(zoomView(view, navigationTarget(view, frameWheel.hit, null, spaceScale()), direction, spaceScale()));
+    frameWheel.view = frameViewKey(frameContext() ?? context);
+    frameWheel.wheelTime = now;
     scheduleFrameWheelCommit();
     updateSidePanel();
     requestDraw({ localOnly: true, cause: "frame_view" });

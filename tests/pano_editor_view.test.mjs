@@ -527,6 +527,10 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   assert.match(zoom, /if \(!reuseWheelPick\(spaceWheel, next\)\) \{\s*const hit = pickSpace\(p\);\s*spaceWheel = \{ \.\.\.next, cost: performance\.now\(\) - now, hit \};/);
   assert.match(zoom, /const next = \{ x: p\.x, y: p\.y, time: now, key: editorView\.contentKey\(\), view: spaceViewKey\(\) \};/);
   assert.match(zoom, /setSpaceView\(zoomView\(view, spaceTarget\(view, spaceWheel\.hit\), direction, spaceScale\(\)\)\);/);
+  // The Frame view's wheel reuses its pick by the same rule.
+  const frameZoom = editor.slice(editor.indexOf("  function zoomFrameAt(p, direction) {"));
+  assert.match(frameZoom, /const next = \{ x: p\.x, y: p\.y, time: now, key: editorView\.contentKey\(\), view: frameViewKey\(context\) \};\s*if \(!reuseWheelPick\(frameWheel, next\)\) \{\s*const hit = pickFrame\(context, p\);\s*frameWheel = \{ \.\.\.next, cost: performance\.now\(\) - now, hit \};/);
+  assert.match(frameZoom, /frameWheel\.view = frameViewKey\(frameContext\(\) \?\? context\);\s*frameWheel\.wheelTime = now;/);
   assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(\(isFreeSpaceView\(\) \|\| isFreeFrameView\(\)\) && presetUsesButton\(viewControls\(\), 2\)\) e\.preventDefault\(\);/);
   // The preset is ComfyUI's setting; 3DoF keeps the view at the origin.
   assert.match(editor, /viewControlsPreset\(app\.ui\?\.settings\?\.getSettingValue\?\.\(VIEW_CONTROLS_SETTING_ID\)\)/);
@@ -617,13 +621,26 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
 
 test("the three.js view picks the World content it last drew, not its guides", () => {
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(view, /if \(content\.splat && !spark\) continue;\s*world\.add\(content\.group\);\s*pickable\.push\(content\.group\);/);
-  assert.match(view, /function addWorldSticker\(owned, mesh, layer\) \{\s*mesh\.userData\.stickerId = layer\.id;\s*pickable\.push\(mesh\);/);
-  assert.match(view, /world\.updateMatrixWorld\(\);\s*return raycastPoint\(pickable, camera, x, y, width, height\);/);
-  // Its content key changes with the items drawn and their transforms, and with the Sticker planes.
-  assert.match(view, /pickParts\.push\(\[content\.object\.uuid, content\.transform\]\);/);
-  assert.match(view, /pickParts\.push\(\[layer\.id, layer\.position, layer\.quaternion, layer\.width, layer\.height\]\);/);
-  assert.match(view, /pickKey = JSON\.stringify\(pickParts\);/);
+  // What is seen is picked: meshes on the GPU, a SPLAT on its box (Spark's own raycast is off).
+  assert.match(view, /if \(content\.splat && !spark\) continue;\s*children\.push\(content\.group\);/);
+  assert.match(view, /if \(!\(opacity > 0\)\) continue;\s*if \(content\.splat\) pickBoxes\.push\(\{ object: content\.object, box: content\.box, stickerId: content\.stickerId \}\);\s*else pickable\.push\(\{ object: content\.group, stickerId: content\.stickerId, plane: false \}\);/);
+  assert.match(view, /if \(!\(layer\.opacity > 0\)\) continue;\s*pickable\.push\(\{ object: mesh, stickerId: layer\.id, plane: true \}\);/);
+  assert.match(view, /return pickAt\(camera, x, y, width, height\)\?\.point \?\? null;/);
+  assert.match(view, /return pickPass\(world, pickable, pickMaterial, /);
+  // A failed draw switches from the float target to RGBA8, then gives up, and is not kept as a pick.
+  assert.match(view, /if \(float\) pickFloat = false;\s*else pickFailed = true;\s*return false;/);
+  assert.match(view, /renderer\.setRenderTarget\(target\);\s*try \{\s*renderer\.render\(world, pickCamera\);\s*\} finally \{\s*renderer\.setRenderTarget\(null\);/);
+  assert.match(view, /if \(drawn !== false\) lastPick = \{ key, hit \};/);
+  const loaders = readFileSync(new URL("../web_src/pano_scene_loaders.js", import.meta.url), "utf8");
+  assert.match(loaders, /new SplatMesh\(\{ fileBytes: bytes, fileType: "ply", raycastable: false \}\)/);
+  // Its content key changes with the items drawn and their transforms, and with the Sticker planes; a
+  // pick is reused while it, the view and the pixel stay.
+  assert.match(view, /parts\.push\(\[content\.object\.uuid, content\.transform\]\);/);
+  assert.match(view, /parts\.push\(\[layer\.id, layer\.position, layer\.quaternion, layer\.width, layer\.height\]\);/);
+  assert.match(view, /contentKey = JSON\.stringify\(parts\);/);
+  assert.match(view, /const key = pickCacheKey\(camera, x, y, width, height, contentKey\);\s*if \(lastPick\.key === key\) return lastPick\.hit;/);
+  // Spark's LoD worker is not started.
+  assert.match(view, /new SparkRenderer\(\{ renderer, onDirty: onUpdate, enableLod: false \}\)/);
 });
 
 test("a 3D world port Sticker (#63) has no plane: the space view draws its item instead", async () => {
@@ -677,7 +694,7 @@ test("a Move | Rotate | Scale segmented control in the world Sticker's selection
   // The gizmo is three.js TransformControls in the lazily loaded view, drawn in the World pass.
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   assert.match(view, /import \{ TransformControls \} from "three\/examples\/jsm\/controls\/TransformControls\.js";/);
-  assert.match(view, /world\.add\(controls\.getHelper\(\)\);/);
+  assert.match(view, /return \[target, controls\.getHelper\(\)\];/);
   assert.doesNotMatch(editor, /TransformControls/);
 });
 
