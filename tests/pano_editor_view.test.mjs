@@ -539,19 +539,28 @@ test("Reset View, Frame Selected and 6DoF back to 3DoF move the view over a tran
   // (stopRenderLoop) stops it.
   const tick = editor.slice(editor.indexOf("  function tickFrame("), editor.indexOf("  function runGuardedFrame("));
   assert.match(tick, /const \{ view, done \} = viewTransitionFrame\(editor\.viewTransition, ts\);/);
-  assert.match(tick, /if \(end\) applySpaceMode\(switchSpaceMode\(\{ \.\.\.spaceModeState\(\), moved: end\.moved \}, end\.mode\)\);/);
+  assert.match(tick, /if \(end\) applyViewTransitionEnd\(end\);/);
+  assert.match(editor, /function applyViewTransitionEnd\(end\) \{\s*applySpaceMode\(switchSpaceMode\(\{ \.\.\.spaceModeState\(\), moved: end\.moved \}, end\.mode\)\);/);
+  // A view already there gets the end at once (Reset View's moved: false, the 3DoF).
+  assert.match(editor, /if \(!editor\.viewTransition && end\) applyViewTransitionEnd\(end\);/);
+  // Wherever a transition is dropped, the 3DoF | 6DoF buttons follow the mode the view is in.
+  assert.match(editor, /function cancelViewTransition\(\) \{\s*if \(!editor\.viewTransition\) return;\s*editor\.viewTransition = null;\s*syncFloatingViewButtonState\(\);\s*\}/);
+  assert.equal(editor.match(/editor\.viewTransition = null;/g).length, 2);
   assert.doesNotMatch(editor, /viewTween|requestAnimationFrame\([^)]*[Tt]ransition/);
   // A drag or a wheel step on the view stops it where it shows.
   const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"));
-  assert.match(down.slice(0, 600), /editor\.viewTransition = null;/);
+  assert.match(down.slice(0, 600), /cancelViewTransition\(\);/);
   const wheel = editor.slice(editor.indexOf("  canvas.onwheel = (e) => {"));
-  assert.match(wheel, /if \(editor\.mode !== "pano"\) return;\s*editor\.viewTransition = null;/);
+  assert.match(wheel, /if \(editor\.mode !== "pano"\) return;\s*cancelViewTransition\(\);/);
   // Each one starts from the view shown now.
   assert.match(editor, /function transitionView\(target, end = null\) \{\s*const from = spaceViewState\(\);\s*editor\.viewTransition = startViewTransition\(from, target, performance\.now\(\), \{ scale: spaceScale\(\), end \}\);/);
   assert.match(editor, /if \(action === "reset-view"\) \{\s*if \(editor\.mode === "frame"\) return;[\s\S]{0,200}transitionView\(/);
   assert.match(editor, /transitionView\(frameView\(view, sphere, canvas\.width, canvas\.height\)\);/);
   const setMode = editor.slice(editor.indexOf("  function setSpaceMode(mode) {"), editor.indexOf("\n  }\n", editor.indexOf("  function setSpaceMode(mode) {")));
-  assert.match(setMode, /transitionView\(\{ \.\.\.spaceViewState\(\), position: \[0, 0, 0\], distance: contentSphere\(\)\?\.radius \|\| DEFAULT_DISTANCE \}, end\)/);
+  assert.match(setMode, /const choice = spaceModeChoice\(editor\.spaceMode, editor\.viewTransition, mode\);/);
+  assert.match(setMode, /transitionView\(\{ \.\.\.spaceViewState\(\), position: \[0, 0, 0\], distance: contentSphere\(\)\?\.radius \|\| DEFAULT_DISTANCE \}, \{ mode, moved: false \}\)/);
+  // 6DoF chosen on the way back drops the transition where it shows and keeps that view.
+  assert.match(setMode, /cancelViewTransition\(\);\s*applySpaceMode\(switchSpaceMode\(spaceModeState\(\), mode\)\);/);
 });
 
 test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF icon buttons show and pick the mode", () => {
@@ -570,9 +579,9 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
   // While the view moves back to the origin it shows the 3DoF it is going to (pano_view_transition.js).
   assert.match(sync, /spaceView: isSpaceView\(\),\s*spaceMode: shownSpaceMode\(editor\.spaceMode, editor\.viewTransition\),/);
   assert.match(sync, /if \(uiState\.space\) Object\.assign\(uiState\.space, floating\.space\);/);
-  assert.match(editor, /if \(action === "frame-view"\) \{\s*if \(!isFreeSpaceView\(\)\) return;/);
+  assert.match(editor, /if \(action === "frame-view"\) \{\s*\/\/[^\n]*\n\s*if \(!isFreeSpaceView\(\) \|\| shownSpaceMode\(editor\.spaceMode, editor\.viewTransition\) !== "6dof"\) return;/);
   // Each frame's input checks the content, so 6DoF without it goes back to 3DoF at once.
-  assert.match(editor, /const spaceMode = spaceModeWithContent\(spaceModeState\(\), hasSpaceContent\(\)\);\s*if \(spaceMode\.mode !== editor\.spaceMode\) editor\.viewTransition = null;\s*applySpaceMode\(spaceMode\);\s*const space = isSpaceView\(\)/);
+  assert.match(editor, /const spaceMode = spaceModeWithContent\(spaceModeState\(\), hasSpaceContent\(\)\);\s*if \(spaceMode\.mode !== editor\.spaceMode\) cancelViewTransition\(\);\s*applySpaceMode\(spaceMode\);\s*const space = isSpaceView\(\)/);
   // The modes are icon buttons (3 and 6) with the view buttons at the bottom right (Vue), not in the view
   // toggle, with Frame Selected beside them. The tooltips are as short as the other buttons'.
   const preset = buildModalShellPreset("stickers");

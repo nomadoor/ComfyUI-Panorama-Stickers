@@ -97,7 +97,7 @@ import {
   switchSpaceMode,
   zoomView,
 } from "./pano_space.js";
-import { shownSpaceMode, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
+import { shownSpaceMode, spaceModeChoice, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
 import {
   contextHalfExtentsPx,
@@ -1362,16 +1362,29 @@ async function showEditor(node, type, options = {}) {
 
   // Moves the view to `target` over a short transition (pano_view_transition.js) from the view shown
   // now, where a running transition has got to, which this one replaces. `end` ({ mode, moved }) is
-  // applied when it arrives. Returns whether the view moves.
+  // applied when it arrives, or at once when the view is there already.
   function transitionView(target, end = null) {
     const from = spaceViewState();
     editor.viewTransition = startViewTransition(from, target, performance.now(), { scale: spaceScale(), end });
+    if (!editor.viewTransition && end) applyViewTransitionEnd(end);
     viewController.state.inertia.active = false;
     viewController.state.inertia.vx = 0;
     viewController.state.inertia.vy = 0;
     syncFloatingViewButtonState();
     requestDraw({ localOnly: true });
-    return !!editor.viewTransition;
+  }
+
+  function applyViewTransitionEnd(end) {
+    applySpaceMode(switchSpaceMode({ ...spaceModeState(), moved: end.moved }, end.mode));
+    runtime.backgroundDirty = true;
+  }
+
+  // Drops a running transition where it shows. The 3DoF | 6DoF buttons follow: a way back to 3DoF
+  // dropped on the way stays in 6DoF.
+  function cancelViewTransition() {
+    if (!editor.viewTransition) return;
+    editor.viewTransition = null;
+    syncFloatingViewButtonState();
   }
 
   // Turns the view to look at yaw / pitch.
@@ -2889,12 +2902,13 @@ async function showEditor(node, type, options = {}) {
   // back moves in 6DoF and enters 3DoF when it arrives, so its frames are 6DoF frames throughout; 6DoF
   // chosen on the way stops it where it shows.
   function setSpaceMode(mode) {
-    if (mode === shownSpaceMode(editor.spaceMode, editor.viewTransition)) return;
-    if (mode === "3dof" && editor.spaceMode === "6dof") {
-      const end = { mode, moved: false };
-      if (transitionView({ ...spaceViewState(), position: [0, 0, 0], distance: contentSphere()?.radius || DEFAULT_DISTANCE }, end)) return;
+    const choice = spaceModeChoice(editor.spaceMode, editor.viewTransition, mode);
+    if (choice === "keep") return;
+    if (choice === "return") {
+      transitionView({ ...spaceViewState(), position: [0, 0, 0], distance: contentSphere()?.radius || DEFAULT_DISTANCE }, { mode, moved: false });
+      return;
     }
-    editor.viewTransition = null;
+    cancelViewTransition();
     applySpaceMode(switchSpaceMode(spaceModeState(), mode));
     runtime.backgroundDirty = true;
     syncFloatingViewButtonState();
@@ -3854,7 +3868,7 @@ async function showEditor(node, type, options = {}) {
       : null;
     // When the World content goes away, 6DoF goes back to 3DoF at the origin at once, ending a transition.
     const spaceMode = spaceModeWithContent(spaceModeState(), hasSpaceContent());
-    if (spaceMode.mode !== editor.spaceMode) editor.viewTransition = null;
+    if (spaceMode.mode !== editor.spaceMode) cancelViewTransition();
     applySpaceMode(spaceMode);
     const space = isSpaceView() ? buildSpaceInput(editorViewScene.sceneState, media) : null;
     return { background, layers, space };
@@ -5776,7 +5790,7 @@ async function showEditor(node, type, options = {}) {
       if (done) {
         const { end } = editor.viewTransition;
         editor.viewTransition = null;
-        if (end) applySpaceMode(switchSpaceMode({ ...spaceModeState(), moved: end.moved }, end.mode));
+        if (end) applyViewTransitionEnd(end);
         syncFloatingViewButtonState();
       }
       runtime.backgroundDirty = true;
@@ -8688,7 +8702,7 @@ async function showEditor(node, type, options = {}) {
     editPointerDown = p;
     setPointerPos(p, true);
     // Grabbing the view stops a transition where it shows, and the drag starts from there.
-    editor.viewTransition = null;
+    cancelViewTransition();
     viewController.state.inertia.active = false;
     viewController.state.inertia.vx = 0;
     viewController.state.inertia.vy = 0;
@@ -9773,7 +9787,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (editor.mode !== "pano") return;
-    editor.viewTransition = null;
+    cancelViewTransition();
     if (isFreeSpaceView()) {
       const direction = readWheelDirection(e);
       // The wheel zooms the panorama view in (direction < 0); in space it moves toward the point under
@@ -10253,7 +10267,8 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (action === "frame-view") {
-      if (!isFreeSpaceView()) return;
+      // As the button shows it: not on the way back to 3DoF.
+      if (!isFreeSpaceView() || shownSpaceMode(editor.spaceMode, editor.viewTransition) !== "6dof") return;
       frameSpaceContent();
       return;
     }

@@ -7,6 +7,7 @@ import {
   blendView,
   easeInOutCubic,
   shownSpaceMode,
+  spaceModeChoice,
   startViewTransition,
   viewTransitionDuration,
   viewTransitionFrame,
@@ -100,4 +101,48 @@ test("a transition stopped by a drag or a wheel step leaves the view it showed, 
   assert.equal(shownSpaceMode("6dof", transition), "3dof");
   assert.equal(shownSpaceMode("6dof", null), "6dof");
   assert.equal(shownSpaceMode("3dof", startViewTransition(view(), view({ yaw_deg: 30 }), 0)), "3dof");
+});
+
+test("a transition shows its start before its start time", () => {
+  const from = view({ yaw_deg: 10, position: [1, 2, 3] });
+  const transition = startViewTransition(from, view({ yaw_deg: 80 }), 1000);
+  const frame = viewTransitionFrame(transition, 500);
+  assert.equal(frame.done, false);
+  assertViewClose(frame.view, from);
+});
+
+test("turning only the pitch or the FOV takes longer the more it turns", () => {
+  const from = view();
+  const pitch = viewTransitionDuration(from, view({ pitch_deg: 45 }));
+  const fov = viewTransitionDuration(from, view({ hFOV_deg: 70 }));
+  assert.equal(pitch, viewTransitionDuration(from, view({ yaw_deg: 45 })));
+  assert.ok(pitch > VIEW_TRANSITION_MIN_MS && pitch < VIEW_TRANSITION_MAX_MS);
+  assert.ok(fov > VIEW_TRANSITION_MIN_MS && fov < pitch);
+  assert.ok(viewTransitionDuration(from, view({ pitch_deg: 89 })) > pitch);
+});
+
+test("the 3DoF | 6DoF buttons choose from the mode the view is in and where a transition goes", () => {
+  const goingBack = startViewTransition(view({ position: [3, 0, 0] }), view(), 0, { end: { mode: "3dof", moved: false } });
+  const reset = startViewTransition(view({ yaw_deg: 40 }), view(), 0, { end: { mode: "6dof", moved: false } });
+  // 3DoF from 6DoF moves back to the origin; on the way back, or in 3DoF, it does nothing more.
+  assert.equal(spaceModeChoice("6dof", null, "3dof"), "return");
+  assert.equal(spaceModeChoice("6dof", reset, "3dof"), "return");
+  assert.equal(spaceModeChoice("6dof", goingBack, "3dof"), "keep");
+  assert.equal(spaceModeChoice("3dof", null, "3dof"), "keep");
+  // 6DoF on the way back stops it where it shows: the view is in 6DoF already, and stays there.
+  assert.equal(spaceModeChoice("6dof", goingBack, "6dof"), "switch");
+  assert.equal(spaceModeChoice("6dof", null, "6dof"), "keep");
+  assert.equal(spaceModeChoice("6dof", reset, "6dof"), "keep");
+  assert.equal(spaceModeChoice("3dof", null, "6dof"), "switch");
+});
+
+test("once a transition back to 3DoF is dropped, the buttons show the mode the view is in", () => {
+  const goingBack = startViewTransition(view({ position: [3, 0, 0] }), view(), 0, { end: { mode: "3dof", moved: false } });
+  // On the way the view is in 6DoF and the buttons show the 3DoF it goes to.
+  assert.equal(shownSpaceMode("6dof", goingBack), "3dof");
+  // A drag drops it (the editor's cancelViewTransition): the buttons show 6DoF, which is what the view
+  // is in, and each button works from there.
+  assert.equal(shownSpaceMode("6dof", null), "6dof");
+  assert.equal(spaceModeChoice("6dof", null, "6dof"), "keep");
+  assert.equal(spaceModeChoice("6dof", null, "3dof"), "return");
 });

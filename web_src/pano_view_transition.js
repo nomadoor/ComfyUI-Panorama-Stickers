@@ -75,3 +75,13 @@ export function viewTransitionFrame(transition, ts) {
 export function shownSpaceMode(spaceMode, transition) {
   return transition?.end?.mode ?? spaceMode;
 }
+
+// What choosing `mode` on the 3DoF | 6DoF buttons does, from the space mode the view is in and the
+// running transition (null without one): "keep" when the view is in that mode and stays in it (or is
+// already on its way back to 3DoF), "return" to move back to the origin and enter 3DoF there, "switch"
+// to drop any transition where it shows and switch at once.
+export function spaceModeChoice(spaceMode, transition, mode) {
+  const going = shownSpaceMode(spaceMode, transition);
+  if (mode === "3dof") return spaceMode === "3dof" || going === "3dof" ? "keep" : "return";
+  return spaceMode === mode && going === mode ? "keep" : "switch";
+}
