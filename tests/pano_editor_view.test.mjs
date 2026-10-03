@@ -527,12 +527,15 @@ test("the space view starts in 3DoF each time the editor opens, and its button s
   assert.match(editor, /if \(action === "space-mode"\) \{\s*setSpaceMode\(editor\.spaceMode === "6dof" \? "3dof" : "6dof"\);/);
   // Back in 3DoF the view returns to the origin, keeping its direction.
   const setMode = editor.slice(editor.indexOf("  function setSpaceMode(mode) {"), editor.indexOf("\n  }\n", editor.indexOf("  function setSpaceMode(mode) {")));
-  assert.match(setMode, /if \(mode === "3dof"\) \{\s*editor\.viewPosition = \[0, 0, 0\];\s*editor\.viewMoved = false;\s*\}/);
+  assert.match(setMode, /applySpaceMode\(switchSpaceMode\(spaceModeState\(\), mode\)\);/);
   assert.doesNotMatch(setMode, /viewYaw|viewPitch/);
   // The switch shows only with World content, Frame Content only in 6DoF.
   const sync = editor.slice(editor.indexOf("  function syncFloatingViewButtonState() {"), editor.indexOf("  function syncViewToggleState() {"));
   assert.match(sync, /"space-mode", \{\s*visible: spaceView,/);
   assert.match(sync, /"frame-view", \{\s*visible: free,/);
+  assert.match(editor, /if \(action === "frame-view"\) \{\s*if \(!isFreeSpaceView\(\)\) return;/);
+  // Each frame's input checks the content, so 6DoF without it goes back to 3DoF.
+  assert.match(editor, /applySpaceMode\(spaceModeWithContent\(spaceModeState\(\), hasSpaceContent\(\)\)\);\s*const space = isSpaceView\(\)/);
 });
 
 test("a 3D world port Sticker (#63) has no plane: the space view draws its item instead", async () => {
@@ -544,4 +547,8 @@ test("a 3D world port Sticker (#63) has no plane: the space view draws its item 
   // Its files are used while the `sticker` input comes from where the run's did.
   assert.match(editor, /isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;\s*return sceneFilesOf\(getNodeUiList\("pano_sticker_files"\), getNodeUiList\("pano_sticker_meta"\), mediaSource\);/);
   assert.match(editor, /const sticker = editor\.showObjects \? stickerContentRequest\(portFiles, sceneState, evaluated\) : null;/);
+  assert.match(editor, /stickerUrls: stickerContentUrls\(portFiles, sceneState\),/);
+  // A see-through GLB does not write depth, and writes it again at full opacity.
+  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
+  assert.match(view, /material\.transparent = opacity < 1;\s*material\.depthWrite = opacity >= 1;/);
 });

@@ -29,7 +29,10 @@ import {
   sceneTransform,
   spaceCamera,
   spaceModeView,
+  spaceModeWithContent,
   stickerContentRequest,
+  stickerContentUrls,
+  switchSpaceMode,
   transformPoint,
   viewAxes,
   worldStickerPlane,
@@ -405,4 +408,28 @@ test("a 3D port Sticker (#63) draws the item of its batch at its clip frame with
   assert.equal(stickerContentRequest(null, state, evaluateSceneState(state, 15)), null);
   const sky = loadSceneState({ version: 2, stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "port" } }] });
   assert.equal(stickerContentRequest(files, sky, evaluateSceneState(sky, 0)), null);
+});
+
+test("switching back to 3DoF returns to the origin, as does 6DoF losing its World content", () => {
+  const opened = { mode: "3dof", position: [0, 0, 0], moved: false };
+  const free = switchSpaceMode(opened, "6dof");
+  assert.deepEqual(free, { mode: "6dof", position: [0, 0, 0], moved: false });
+  const moved = { mode: "6dof", position: [3, 1, -2], moved: true };
+  assert.deepEqual(switchSpaceMode(moved, "3dof"), opened);
+  // With content the mode stays; without it 6DoF goes back to 3DoF at the origin.
+  assert.equal(spaceModeWithContent(moved, true), moved);
+  const lost = spaceModeWithContent(moved, false);
+  assert.deepEqual(lost, opened);
+  // Content that shows again starts in 3DoF, at the origin.
+  assert.equal(spaceModeWithContent(lost, true), lost);
+  assert.deepEqual(spaceModeView(lost.mode, view({ position: lost.position })).position, [0, 0, 0]);
+});
+
+test("the 3D Sticker's items stay loaded only while the state has a world port Sticker", () => {
+  const files = { kind: "mesh", urls: ["a", null, "c"] };
+  const state = (placement) => loadSceneState({ version: 2, stickers: [{ id: "p", placement, source: { kind: "port" } }] });
+  assert.deepEqual(stickerContentUrls(files, state("world")), ["a", "c"]);
+  assert.deepEqual(stickerContentUrls(files, state("sky")), []);
+  assert.deepEqual(stickerContentUrls(files, loadSceneState({ version: 2, stickers: [] })), []);
+  assert.deepEqual(stickerContentUrls(null, state("world")), []);
 });

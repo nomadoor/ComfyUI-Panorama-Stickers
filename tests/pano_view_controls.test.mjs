@@ -82,6 +82,8 @@ test("the preset is ComfyUI's setting, and an unknown value is the default", () 
   assert.equal(VIEW_CONTROLS_SETTING.type, "combo");
   assert.equal(VIEW_CONTROLS_SETTING.defaultValue, "default");
   assert.deepEqual(VIEW_CONTROLS_SETTING.options.map((option) => option.value), ["default", "blender", "unity"]);
+  // A label names what the preset adds to the app it is like; the saved values stay.
+  assert.deepEqual(VIEW_CONTROLS_SETTING.options.map((option) => option.text), ["Default", "Blender-like (+ right-drag look)", "Unity-like"]);
   assert.equal(viewControlsPreset("blender"), VIEW_CONTROL_PRESETS.blender);
   assert.equal(viewControlsPreset(undefined), VIEW_CONTROL_PRESETS.default);
   assert.equal(viewControlsPreset("toString"), VIEW_CONTROL_PRESETS.default);

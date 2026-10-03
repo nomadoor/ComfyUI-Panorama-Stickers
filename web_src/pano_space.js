@@ -52,6 +52,19 @@ export function spaceModeView(mode, view) {
   return mode === "6dof" ? view : { ...view, position: [0, 0, 0] };
 }
 
+// The space view's mode and place ({ mode, position, moved }) switched to mode. Back in 3DoF the view
+// stands at the origin again and its pivot goes back to the content's size (moved false); 6DoF starts
+// where 3DoF stands. The direction and the FOV are not here, so they stay.
+export function switchSpaceMode(space, mode) {
+  return mode === "3dof" ? { mode, position: [0, 0, 0], moved: false } : { ...space, mode };
+}
+
+// The same once it is known whether there is World content: without it a 6DoF view goes back to 3DoF,
+// so content that shows again starts in 3DoF.
+export function spaceModeWithContent(space, hasContent) {
+  return hasContent || space.mode === "3dof" ? space : switchSpaceMode(space, "3dof");
+}
+
 export function pivotOf(view) {
   return add(view.position, viewAxes(view.yaw_deg, view.pitch_deg).forward, view.distance);
 }
@@ -185,6 +198,13 @@ export function stickerContentRequest(files, sceneState, evaluated) {
   const value = evaluated.stickers[index];
   const request = sceneRequest(files, value);
   return request && { ...request, id: sticker.id, opacity: value.opacity, value };
+}
+
+// The item URLs of the `sticker` input's 3D media the space view keeps loaded: none while the state has no
+// world port Sticker, so its loaded items are freed.
+export function stickerContentUrls(files, sceneState) {
+  const port = sceneState.stickers.find((sticker) => sticker.source.kind === "port");
+  return files && port?.placement === "world" ? files.urls.filter(Boolean) : [];
 }
 
 // The item of the `scene` input's `count` items shown at its clip frame: the nearest one, as the

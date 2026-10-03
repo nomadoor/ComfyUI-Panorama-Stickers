@@ -19,7 +19,8 @@ export const VIEW_CONTROL_PRESETS = Object.freeze({
     ],
   },
   blender: {
-    label: "Blender-like",
+    // Blender has no right-drag look; the label names what is added.
+    label: "Blender-like (+ right-drag look)",
     bindings: [
       { button: 1, action: "orbit" },
       { button: 1, shift: true, action: "pan" },

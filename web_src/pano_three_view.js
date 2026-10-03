@@ -420,7 +420,8 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     return { group, splat: item.kind === "splat", object: item.object };
   }
 
-  // A 3D Sticker's opacity: a SPLAT's own, a GLB's on its unlit materials.
+  // A 3D Sticker's opacity: a SPLAT's own, a GLB's on its unlit materials. A see-through GLB does not
+  // write depth, so its faces behind show through it instead of hiding.
   function setContentOpacity(content, opacity) {
     if (content.splat) {
       content.object.opacity = opacity;
@@ -430,6 +431,7 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       for (const material of object.isMesh ? [object.material].flat() : []) {
         material.opacity = opacity;
         material.transparent = opacity < 1;
+        material.depthWrite = opacity >= 1;
       }
     });
   }

@@ -80,7 +80,10 @@ import {
   sceneRequest,
   spaceCamera,
   spaceModeView,
+  spaceModeWithContent,
   stickerContentRequest,
+  stickerContentUrls,
+  switchSpaceMode,
 } from "./pano_space.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
 import {
@@ -2814,8 +2817,11 @@ async function showEditor(node, type, options = {}) {
   // a world Sticker), from the origin in 3DoF and moving through it in 6DoF. Without it the view only
   // looks around.
   function isSpaceView() {
-    if (!sceneV2 || editor.mode !== "pano") return false;
-    return hasWorldContent({ sceneLinked: !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
+    return editor.mode === "pano" && hasSpaceContent();
+  }
+
+  function hasSpaceContent() {
+    return sceneV2 && hasWorldContent({ sceneLinked: !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
   }
 
   // The space view in 6DoF, where the Viewport camera moves through the World with the 3D view controls.
@@ -2828,13 +2834,19 @@ async function showEditor(node, type, options = {}) {
     return viewControlsPreset(app.ui?.settings?.getSettingValue?.(VIEW_CONTROLS_SETTING_ID));
   }
 
+  function spaceModeState() {
+    return { mode: editor.spaceMode, position: editor.viewPosition, moved: editor.viewMoved };
+  }
+
+  function applySpaceMode(space) {
+    editor.spaceMode = space.mode;
+    editor.viewPosition = space.position;
+    editor.viewMoved = space.moved;
+  }
+
   // Back in 3DoF the view returns to the origin keeping its direction; 6DoF starts from there.
   function setSpaceMode(mode) {
-    if (mode === "3dof") {
-      editor.viewPosition = [0, 0, 0];
-      editor.viewMoved = false;
-    }
-    editor.spaceMode = mode;
+    applySpaceMode(switchSpaceMode(spaceModeState(), mode));
     runtime.backgroundDirty = true;
     syncFloatingViewButtonState();
     requestDraw({ localOnly: true });
@@ -3736,6 +3748,8 @@ async function showEditor(node, type, options = {}) {
     const background = editor.showPanorama && isDecodedImageReady(bgImg)
       ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage), source: bgSource }
       : null;
+    // When the World content goes away, 6DoF goes back to 3DoF at the origin.
+    applySpaceMode(spaceModeWithContent(spaceModeState(), hasSpaceContent()));
     const space = isSpaceView() ? buildSpaceInput(editorViewScene.sceneState, media) : null;
     return { background, layers, space };
   }
@@ -3761,7 +3775,7 @@ async function showEditor(node, type, options = {}) {
       grid,
       sceneUrls: files ? files.urls.filter(Boolean) : [],
       scene,
-      stickerUrls: portFiles ? portFiles.urls.filter(Boolean) : [],
+      stickerUrls: stickerContentUrls(portFiles, sceneState),
       sticker,
       stickers,
       sphere,
@@ -9901,6 +9915,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (action === "frame-view") {
+      if (!isFreeSpaceView()) return;
       frameSpaceContent();
       return;
     }
