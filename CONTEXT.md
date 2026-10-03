@@ -76,4 +76,4 @@ Camera で Scene を画像にする方法。ERP、透視投影など。
 透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した向きへ戻すこと。Camera の位置は渡さない。
 
 **PANO_SCENE**:
-Stickers が出力する Scene の値。状態と入力素材を結び付けた派生値であり、正は Stickers の状態にある。
+Panorama Studio が出力する Scene の値。Camera を含まない。状態と入力素材を結び付けた派生値であり、正は各ノードの `state_json` にある。

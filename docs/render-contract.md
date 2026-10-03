@@ -342,7 +342,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 - 入力は `bg_media`（IMAGE・VIDEO）、`sticker`（Stickers と同じ型）、`sticker_state`、`scene`、`bg_color`、`coverage`、`output_size`（`1024`・`1536`・`2048`・`2560`・`3072`・`4096`・`auto`、既定 `2048`）、`state_json` の順。`scene` は今は 3D の素材（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`）だけを受け、Stickers の `scene` と同じに扱う。別の Panorama Studio の `scene` 出力（`PANO_SCENE`）を受けるのは #88。
 - 出力は `first_frame`（IMAGE）、`first_frame_mask`（MASK）、`video`（VIDEO）、`scene`（`PANO_SCENE`）、`sticker_state`（STRING）の順。`is_output_node` は `True`。
 - Scene の組み立ては Stickers と同じ `_build_scene`（状態の読み込み、`port` の Sticker、Source、(a) の `_decide_timeline`、エディタ用の `ui`）で、描画は (b)・(c)（`_render_frames`・`_render_outputs`）をそのまま使う。違うのは撮り方（`capture`）と出力の大きさだけ。
-- Camera の判定：状態 v2 の `camera`（`docs/scene-state-v2.md`）。`null`（欠け・空の `state_json` を含む）なら Camera が無い。Timeline の長さは Cutout と同じく `_decide_timeline(..., camera=True)` で決め、Camera があるときだけ Camera の Keyframe が長さに入る。
+- Camera の判定：状態 v2 の `camera`（`docs/scene-state-v2.md`）。`null`（欠け・空の `state_json` を含む）なら Camera が無い。Timeline の長さは Cutout と同じく `_decide_timeline(..., camera=True)` で決め、Camera があるときだけ Camera の Keyframe が長さに入る。`erp` の Camera でも、描画に使わない `fov` の Keyframe を含めてすべての Lane の Keyframe が長さに入る。
   - Camera が無い：World の原点から回転 0（`STICKERS_CAMERA`）で、`coverage` の範囲の ERP を撮る。新しい Stickers の出力と画素単位で同じ（`tests/test_studio_node.py` が Stickers の基準画像と、Stickers の全フレームとで確かめる）。
   - `projection` が `erp`：評価した Camera の位置と回転から ERP を撮る（`Projection.erp`。ERP は Camera の回転に従って回り、`world` の Sticker と `scene` は Camera の位置から見る）。`fov`・`aspect` は読まない。`coverage` が 180 なら Camera の前方の半球。原点・回転 0 なら Camera が無いときと同じ出力になる。
   - `projection` が `perspective`：新しい Cutout と同じく、評価した Camera と `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` で撮る。同じ大きさを与えた新しい Cutout（IMAGE / VIDEO の `source`、`bg_color` 黒）と画素単位で同じになる。
@@ -354,7 +354,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
   | Camera が無い・`erp`（`coverage` 180） | `W ÷ 2` | `W ÷ 2` |
   | `perspective` | `2·f·tan(hFOV_max ÷ 2)`、`f = W ÷ 2π` | 幅 ÷ `camera.aspect` |
 
-  - ERP の出力は画素の細かさが `W` の 360° の ERP と同じになる。`coverage` 180 の `auto` は `bg_media` と同じ大きさになり、新しい Stickers の `auto` と同じ（固定の値では、新しい Stickers は `coverage` 180 で選んだ値を出力の幅にしていたので、Studio はその半分の幅になる）。ERP には上限を設けない（`auto` は大きな `bg_media` ならそのまま大きくなる。新しい Stickers の `auto` と同じ）。
+  - ERP の出力は画素の細かさが `W` の 360° の ERP と同じになる。`auto` は新しい Stickers の `auto` と同じ大きさになる。ただし 360 では高さを `W ÷ 2` にそろえ、`bg_media` の高さは引き継がない（2:1 でない背景では Stickers と違う）。`coverage` 180 の `auto` は `bg_media` と同じ大きさになる（固定の値では、新しい Stickers は `coverage` 180 で選んだ値を出力の幅にしていたので、Studio はその半分の幅になる）。ERP には上限を設けない（`auto` は大きな `bg_media` ならそのまま大きくなる。新しい Stickers の `auto` と同じ）。
   - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV が動いても大きさは変わらない。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
 - `scene` 出力は新しい Stickers の `pano_scene` と同じ `PanoSceneValue` で、`state` の `camera` だけを `null` にする（撮影する世界で、Camera を含まない）。Timeline（`fps`・`frames`）は Camera の Keyframe を数えて決めたもの。
 - `sticker_state` は `projection` が `perspective` のときだけ、新しい Cutout と同じ `_cutout_sticker_state`（`source_aspect` は出力の幅 ÷ 高さ）。Camera が無いときと `erp` のときは空文字列。

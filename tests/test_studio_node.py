@@ -13,8 +13,9 @@ from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.nodes import PanoramaCutoutSceneNode, PanoramaStickersSceneNode, PanoramaStudioNode, PanoSceneValue
 from comfyui_pano_suite.scene_video import SceneVideo
-from scene_test_helpers import center as _center
+from scene_test_helpers import blob, blobs, center as _center
 from test_legacy_goldens import _golden_mismatch
+from test_stickers_scene_video import _cfr
 from tools import bake_legacy_goldens
 from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
 from tools.golden_png import read_png16
@@ -184,6 +185,57 @@ def test_an_erp_camera_turns_the_erp_with_its_rotation():
     assert torch.allclose(_center(image), torch.tensor([0.0, 0.0, 1.0]))
 
 
+def _drawn_column(image):
+    """The mean column (0..1) of the pixels that are not the green bg_color."""
+    drawn = ~torch.all(torch.isclose(image[0], torch.tensor([0.0, 1.0, 0.0])), dim=-1)
+    return float(torch.nonzero(drawn)[:, 1].float().mean()) / image.shape[2]
+
+
+def test_an_erp_camera_sees_the_world_from_its_position():
+    board = {"id": "w", "placement": "world", "source": _quadrants(), "position": {"value": [0.0, 0.0, -2.0]}}
+    camera = _camera("erp")
+
+    at_origin = _outputs({"version": 2, "camera": camera, "stickers": [board]}, output_size="1024")[0]
+    camera["position"] = {"value": [1.0, 0.0, 0.0]}
+    moved = _outputs({"version": 2, "camera": camera, "stickers": [board]}, output_size="1024")[0]
+
+    # The board ahead stays in the middle from the origin, and is to the left of a Camera moved to the right.
+    assert _drawn_column(at_origin) == pytest.approx(0.5, abs=0.01)
+    assert _drawn_column(moved) < 0.45
+
+
+def test_an_erp_camera_with_coverage_180_takes_its_front_hemisphere():
+    behind = {"id": "b", "source": _quadrants(), "direction": {"value": {"yaw_deg": 180.0}}, "size": {"value": {"hFOV_deg": 40.0}}}
+    state = {"version": 2, "camera": _camera("erp", yaw_deg=180.0), "stickers": [behind]}
+    bg = _solid([1.0, 0.0, 0.0], height=32, width=32)
+
+    image = _outputs(state, bg_media=bg, coverage="180")[0]
+
+    # The Camera faces away from the 180 bg_media: the Sticker behind is in the middle and the background is not drawn.
+    assert image.shape == (1, 32, 32, 3)
+    assert not torch.any(torch.all(torch.isclose(image[0], torch.tensor([1.0, 0.0, 0.0])), dim=-1))
+    assert not torch.allclose(_center(image), torch.tensor([0.0, 1.0, 0.0]))
+
+
+def test_auto_takes_the_width_of_a_video_bg_media(tmp_path):
+    video = _cfr(tmp_path, count=3)
+
+    image, _mask, output, _scene, _sticker_state = _outputs(bg_media=video)
+    shot = _outputs({"version": 2, "camera": _camera(fov=90.0)}, bg_media=video)[0]
+
+    assert image.shape == (1, 32, 64, 3) and output.get_frame_count() == 3
+    # f = 64 / 2pi: 2 f tan(45) = 20.4.
+    assert shot.shape == (1, 20, 20, 3)
+
+
+def test_warnings_of_a_3d_sticker_with_sticker_state_and_auto_come_in_order():
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 90.0}}]}})
+
+    ui = _studio(sticker=blobs(blob((0.0, 0.0, -2.0), (1.0, 0.0, 0.0), size=0.3)), sticker_state=sticker_state).ui
+
+    assert ui["pano_sticker_warnings"] == ["sticker_state places only sky Stickers; the 3D Sticker is placed 2 ahead of the origin.", AUTO_WARNING]
+
+
 # --- The output size (ADR 0029).
 
 def _size(state=None, output_size="auto", coverage="360", bg=None):
@@ -204,8 +256,10 @@ AUTO_WARNING = "output_size is auto, but bg_media is not connected; using 2048 i
     (None, "1536", "360", None, (1536, 768), []),
     (None, "4096", "360", None, (4096, 2048), []),
     (None, "2048", "180", None, (1024, 1024), []),
-    # auto: the bg_media width over 360 degrees, or 2048 without bg_media.
+    # auto: the bg_media width over 360 degrees, or 2048 without bg_media. A 360 ERP is W/2 high and does not take
+    # the bg_media height, so a background that is not 2:1 gives another height than the new Stickers.
     (None, "auto", "360", (300, 600), (600, 300), []),
+    (None, "auto", "360", (200, 600), (600, 300), []),
     (None, "auto", "180", (512, 512), (512, 512), []),
     (None, "auto", "360", None, (2048, 1024), [AUTO_WARNING]),
     (None, "auto", "180", None, (1024, 1024), [AUTO_WARNING]),
