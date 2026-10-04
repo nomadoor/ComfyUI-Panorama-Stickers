@@ -16,7 +16,6 @@ import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 import {
   CAMERA_SHOT_ID,
-  cameraFields,
   cameraShot,
   duplicateSceneSticker,
   editorActive,
@@ -31,35 +30,17 @@ import {
   parseSceneEditorState,
   retainActiveCutoutShot,
   sameEditorStateText,
-  sceneStickerLabel,
   setCameraField,
   setCameraShot,
   setEditorActive,
   deleteWorldSticker,
   setStickerOpacity,
-  setTimelineFps,
   setWorldStickerField,
   setWorldStickerTransform,
-  worldStickerFields,
 } from "./pano_editor_state.js";
-import { clipActive, evaluateSticker } from "./pano_scene_eval.js";
+import { evaluateSticker } from "./pano_scene_eval.js";
 import { timelineFps } from "./pano_scene_state.js";
-import {
-  deleteKeyframes,
-  enteredTimelineFps,
-  enteredTimelineLength,
-  keyAllLanes,
-  laneNames,
-  moveClip,
-  moveKeyframes,
-  ownerTimed,
-  setLaneValue,
-  setSegmentEasing,
-  timelineOpens,
-  timelineSpan,
-  trimClipEnd,
-  trimClipStart,
-} from "./pano_timeline.js";
+import { setLaneValue } from "./pano_timeline.js";
 import { createEditorView, frameViewContext } from "./pano_editor_view.js";
 import {
   DEFAULT_DISTANCE,
@@ -107,22 +88,10 @@ import {
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
   ERP_ASPECT,
-  PAINTING_ROW,
-  buildEasingModel,
-  buildEditorSidePanelModel,
-  cameraAspectChoices,
-  cameraParamEnabled,
-  buildPaintDockModel,
-  buildPreviewSidePanelModel,
   buildSelectionMenuModel,
-  buildTimelineModel,
   buildWorldSelectionMenuModel,
-  floatingRightState,
-  frameViewButton,
   selectionMenuPlacement,
-  buildUiSettingsModel,
   patchUiButton,
-  worldFieldRange,
 } from "./pano_editor_ui_state.js";
 import PanoModal from "./components/PanoModal.vue";
 import { buildModalShellPreset } from "./modal_shell_presets.js";
@@ -140,9 +109,8 @@ import {
   flushPanoStateProducers,
   queuePendingStickerOperation,
 } from "./pano_editor_extension.js";
-import { isNodeOutputMediaCurrent, nodeInputOrigins, videoLinked } from "./pano_preview_video.js";
+import { isNodeOutputMediaCurrent } from "./pano_preview_video.js";
 import { frameAtTime } from "./pano_video_playback.js";
-import { portMediaFrames } from "./pano_port_media.js";
 import { hitFrameAffordance, hitStickerSelectionAffordance } from "./pano_sticker_affordance.js";
 import {
   decodeStickerImageFile,
@@ -157,7 +125,6 @@ import {
 import {
   CUTOUT_V2_HIDDEN_TOOLS,
   ENABLE_STICKERS_NODE_PREVIEW,
-  EXTERNAL_STICKER_ID,
   EXTERNAL_STICKER_PREVIEW_KEY,
   FLOATING_RIGHT_RESERVED_PX,
   FRAME_GATE_EDGE_GAP_PX,
@@ -218,6 +185,9 @@ import { createViewInput } from "./editor/view_input.js";
 import { createCameraPreview, getCutoutPreviewViewportSize } from "./editor/camera_preview.js";
 import { createOverlay } from "./editor/overlay.js";
 import { createRenderLoop } from "./editor/render_loop.js";
+import { createPanels } from "./editor/panels.js";
+import { createTimeline } from "./editor/timeline.js";
+import { createTimelineActions } from "./editor/timeline_actions.js";
 
 const _paintLayerSyncRegistry = new Map();
 
@@ -563,7 +533,6 @@ async function showEditor(node, type, options = {}) {
   const paintHueStrip = root.querySelector("[data-paint-hue-strip]");
   const paintHueHandle = root.querySelector("[data-paint-hue-handle]");
   let paintSizePreviewTimer = 0;
-  let paintPaneFadeTimer = 0;
   stageWrap?.removeAttribute("data-stage-ready");
   stageWrap?.setAttribute("data-stage-loading-kind", "boot");
   canvas.style.opacity = "1";
@@ -841,70 +810,54 @@ async function showEditor(node, type, options = {}) {
   // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
   const {
     applyInitialCutoutFocus, applyRasterObjectOffset, applyRasterObjectTransform, applySpaceMode,
-    applyStrokeGroupOffset, applyStrokeGroupTransform, areAllSelectedItemsLocked, bringSelectedToFront,
-    buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, buildRasterObjectEditCanvas,
-    cameraFrustumLength, cameraPreviewShown, cameraShoots, cameraSphere, canRestoreSelectedToInitial,
+    applyStrokeGroupOffset, applyStrokeGroupTransform, applyVideoTimelineFps, areAllSelectedItemsLocked,
+    bringSelectedToFront, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState,
+    buildRasterObjectEditCanvas, cameraFrustumLength, cameraShoots, cameraSphere, canRestoreSelectedToInitial,
     cancelViewTransition, clearSelection, clearWorldSelection, collectExternalStickersForClearAll,
     computeStickerVFov, contentSphere, createRasterFrozenObjectsFromCanvas, createRasterSurface,
-    currentSpaceCamera, cutoutCamera, editorAnimating, editorViewInput, ensureGroupFrame,
+    currentSpaceCamera, cutoutCamera, deleteSelectedKeyframes, editorAnimating, editorViewInput, ensureGroupFrame,
     ensurePaintingGroupEntry, erpPointToWorldDir, forgetCameraPreviewFrame, frameLocalPointToWorldDir,
     frameSpaceContent, getActivePaintTargetDescriptor, getCutoutInspectorItems, getCutoutSelectableItems,
     getCutoutSelectableItemsForHit, getDisplayListObjects, getHistoryCapabilities, getList, getMultiSelectionGeom,
-    getNextStickerZIndex, getOrderedDisplayListObjects, getPaintingGroupList, getPortMedia,
-    getRasterObjectCenterUv, getRasterObjectItem, getRasterObjectList, getSelectableRasterObjectItems,
-    getSelectableStrokeGroupItems, getSelected, getSelectedItems, getSelectedKind, getSelectionItemIcon,
-    getSelectionItemLabelData, getStrokeGroupCenterUv, getStrokeGroupItem, getStrokeGroupStrokes, getUnwrapRect,
-    hasCamera, hasSpaceContent, hitRasterObjectAt, invalidateLivePaintPreviewCaches, isCameraSelected,
-    isErpCamera, isExternalSticker, isFreeSpaceView, isItemLocked, isRasterObjectItem, isSceneSticker, isShotItem,
-    isSpaceView, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker, lookingAt,
-    makeRasterObjectSelectionId, makeStrokeGroupSelectionId, markObjectVisualsDirty,
-    markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty, needsPaintingLayerSync, objectGeom,
-    paintingShown, parseRasterObjectSelectionId, playback, playbackFps, poseOf, processFreehandPoints,
-    pushHistory, queueVideoTransportLayout, rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded,
-    reconcileExternalStickerFromInputs, refreshModalVideoSource, refreshPaintEngineRevisionCache,
-    releaseHiddenSelection, requestDraw, restoreHistory, restoreSelectedToInitialPose, sampleEditorDiagnostics,
-    screenPos, screenPosCss, screenPosToErpPoint, screenPosToFrameAsErpPoint, screenToWorldDir,
-    selectWorldSticker, selectedWorldSticker, sendSelectedToBack, setSelectedItem, setSelectedItems, setSpaceMode,
-    setSpaceView, shortestWrappedDelta, shotViewCamera, spaceOrigin, spaceScale, spaceViewState,
-    stageResizeObserver, startAnimation, startSpaceDrag, stickerCornerOrderSanity, stickerImageKey,
-    stopRenderLoop, syncCanvasSize, syncPaintingLayerAsync, syncVideoTransportState, syncVideoTransportVisibility,
-    tick, toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView,
-    turnViewTo, videoCleanupFns, videoState, viewControls, watchPixelRatio, worldDirToFrameLocalPoint,
+    getNextStickerZIndex, getOrderedDisplayListObjects, getPaintingGroupList, getRasterObjectCenterUv,
+    getRasterObjectItem, getRasterObjectList, getSelectableRasterObjectItems, getSelectableStrokeGroupItems,
+    getSelected, getSelectedItems, getSelectedKind, getStrokeGroupCenterUv, getStrokeGroupItem,
+    getStrokeGroupStrokes, getUnwrapRect, hasCamera, hasSpaceContent, hitRasterObjectAt,
+    invalidateLivePaintPreviewCaches, isCameraSelected, isErpCamera, isExternalSticker, isFreeSpaceView,
+    isItemLocked, isRasterObjectItem, isSceneSticker, isShotItem, isSpaceView, isStickerHidden, isStickerItem,
+    isStrokeGroupItem, isUploadingSticker, lookingAt, makeRasterObjectSelectionId, makeStrokeGroupSelectionId,
+    markObjectVisualsDirty, markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty, needsPaintingLayerSync,
+    objectGeom, onTimelineAction, paintingShown, parseRasterObjectSelectionId, playback, playbackFps, poseOf,
+    processFreehandPoints, pushHistory, queueVideoTransportLayout, rasterizeStrokeToSurface,
+    rebuildPaintEngineIfNeeded, reconcileExternalStickerFromInputs, refreshModalVideoSource,
+    refreshPaintEngineRevisionCache, requestDraw, restoreHistory, restoreSelectedToInitialPose,
+    sampleEditorDiagnostics, screenPos, screenPosCss, screenPosToErpPoint, screenPosToFrameAsErpPoint,
+    screenToWorldDir, selectWorldSticker, selectedWorldSticker, sendSelectedToBack, setSelectedItem,
+    setSelectedItems, setSpaceMode, setSpaceView, shortestWrappedDelta, shotViewCamera, spaceOrigin, spaceScale,
+    spaceViewState, stageResizeObserver, startAnimation, startSpaceDrag, stickerCornerOrderSanity,
+    stickerImageKey, stopRenderLoop, stopTimelinePlayback, syncCanvasSize, syncFloatingViewButtonState,
+    syncFrameRollKnob, syncLookAtFrameButtonState, syncPaintUi, syncPaintingLayerAsync, syncSidePanelControls,
+    syncTimeline, syncUndoRedoButtons, syncVideoTransportState, syncViewToggleState, tick, togglePlayback,
+    toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView, turnViewTo,
+    updateSidePanel, videoCleanupFns, videoState, viewControls, watchPixelRatio, worldDirToFrameLocalPoint,
     worldStickerEditable, writePose, zoomSpaceAt,
   } = createEditorModules({
-    api, app, backgroundCanvas, cameraV2, canvas, comfyMedia, commitAndRefreshNode, commitState, ctx,
-    cutoutPreviewCanvas, cutoutPreviewHost, cutoutV2, editor, editorView, floatingRightEl, frameGateCssRadius,
-    frameViewDistance, getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewLayout, getFrameViewRect,
-    getPaintingLayerList, imageCache, isWorldMenuShown, loadPreferredExactLinkedImage, measureFrameSafeRect,
-    mediaAssetSource, mediaSource, mediaUiImage, node, portStillCanvas, portVideoEl, rasterErpCanvasCache,
-    rasterImageAlphaCache, rasterImageCache, readOnly, rectFromPoints, resolveEditorOutputPresetWidth, runtime,
-    sceneV2, scheduler, setTimelineFrame, shotEditor, stageWrap, state, stateV2, stillCanvas,
-    stopTimelinePlayback, studio, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
-    syncLookAtFrameButtonState, syncPaintUi, syncTimeline, syncUndoRedoButtons, syncViewToggleState, timeline,
-    timelinePlayhead, timelineSpanFrames, type, uiState, updateCursor, updateSelectionMenu, updateSidePanel,
-    videoEl, viewController,
+    api, app, backgroundCanvas, cameraV2, canvas, capture, comfyMedia, commitAndRefreshNode, commitState, ctx,
+    cutoutPreviewCanvas, cutoutPreviewHost, cutoutV2, dragFrames, editor, editorView, floatingRightEl,
+    frameGateCssRadius, frameViewDistance, getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewLayout,
+    getFrameViewRect, getPaintingLayerList, hideSidebar, imageCache, isActiveLassoTool, isPaintCursorEnabled,
+    isWorldMenuShown, leaveFrameView, loadPreferredExactLinkedImage, measureFrameSafeRect, mediaAssetSource,
+    mediaSource, mediaUiImage, node, paintColorPop, paintColorRow, paintColorSvCursor, paintHueHandle,
+    portStillCanvas, portVideoEl, previewMode, rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache,
+    readOnly, rectFromPoints, resolveEditorOutputPresetWidth, runtime, sceneV2, scheduler, setCanvasCursor,
+    shotEditor, stageWrap, state, stateV2, stillCanvas, studio, syncCutoutShot, timeline, timelinePlayhead, type,
+    uiState, updateCursor, updateSelectionMenu, videoEl, videoTimelineFps, viewController,
   }, [
     createMediaSession, createHistory, createItems, createSelection, createProjection, createObjectGeometry,
     createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput,
-    createCameraPreview, createOverlay, createRenderLoop,
+    createCameraPreview, createOverlay, createRenderLoop, createPanels, createTimeline, createTimelineActions,
   ]);
   // --- editor modules: end ---
-
-  function syncToolButtonModels() {
-    uiState.toolButtons.forEach((button) => {
-      const isPrimaryTool = button.attr === "data-tool-mode";
-      const isPaintTool = button.attr === "data-paint-tool";
-      const isMaskTool = button.attr === "data-mask-tool";
-      button.active = isPrimaryTool
-        ? button.value === editor.primaryTool
-        : isPaintTool
-          ? button.key === editor.paintTool
-          : isMaskTool
-            ? button.key === editor.maskTool
-            : false;
-      button.pressed = button.active ? "true" : (button.pressed == null ? null : "false");
-    });
-  }
 
   function dragHasImageFiles(e) {
     return dragHasStickerImageFile(e?.dataTransfer);
@@ -926,78 +879,6 @@ async function showEditor(node, type, options = {}) {
   }
   function isActiveLassoTool() {
     return String(getActivePaintToolKind() || "") === "lasso_fill";
-  }
-
-  function syncLookAtFrameButtonState() {
-    // Panorama Studio has Add Camera instead, disabled rather than hidden while it has its Camera (#89).
-    if (studio) patchUiButton(uiState.toolButtons, "value", "add-camera", { disabled: hasCamera() });
-    if (type !== "cutout") return;
-    const shot = getActiveCutoutShot();
-    patchUiButton(uiState.toolButtons, "value", "add-or-look", {
-      visible: true,
-      accent: true,
-      label: shot ? "Look At Frame" : "Add Frame",
-      tip: shot ? "Look at frame" : "Add frame",
-      icon: shot ? ICON.camera : ICON.plus_circle,
-    });
-  }
-
-  function syncFloatingViewButtonState() {
-    const floating = floatingRightState({
-      spaceView: isSpaceView(),
-      spaceMode: shownSpaceMode(editor.spaceMode, editor.viewTransition),
-      readOnly,
-      frameMode: shotEditor && editor.mode === "frame",
-      showGrid: editor.showGrid,
-    });
-    if (uiState.space) Object.assign(uiState.space, floating.space);
-    for (const [action, patch] of Object.entries(floating.buttons)) patchUiButton(uiState.floatingButtons, "action", action, patch);
-  }
-
-  function syncViewToggleState() {
-    const frameButton = frameViewButton({ hasShot: !!getActiveCutoutShot(), erp: isErpCamera(), hidden: hasCamera() && !cameraShoots(), studio });
-    if (editor.mode === "frame" && frameButton.disabled) {
-      if (studio) leaveFrameView(getActiveCutoutShot());
-      else editor.mode = "pano";
-    }
-    editor.outputPreviewRect = null;
-    uiState.viewButtons.forEach((button) => {
-      const active = button.key === editor.mode;
-      button.pressed = active ? "true" : "false";
-      button.visible = !(button.key === "frame" && !shotEditor);
-      if (button.key === "frame") Object.assign(button, frameButton);
-      else button.disabled = false;
-    });
-    const frameShot = shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : null;
-    uiState.frameRail.visible = !!frameShot;
-    uiState.frameRail.disabled = readOnly || frameShot?.locked === true;
-    uiState.frameRollKnob.visible = !!frameShot && !readOnly && frameShot.locked !== true;
-    uiState.frameRollKnob.disabled = readOnly || frameShot?.locked === true;
-    uiState.frameRollKnob.rollDeg = Number(frameShot?.roll_deg ?? frameShot?.rot_deg ?? 0);
-    uiState.frameRollKnob.displayValue = formatParamValue(uiState.frameRollKnob.rollDeg);
-    uiState.frameRollKnob.dragging = editor.interaction?.kind === "roll_frame";
-    uiState.frameRollKnob.armed = !!frameShot && editor.altModifier === true;
-    uiState.frameRail.rollKnob = uiState.frameRollKnob;
-    uiState.frameRail.aspectLabel = frameShot ? getCutoutAspectLabel(frameShot) : "";
-    uiState.frameRail.aspectChoices = cameraAspectChoices(frameShot ? String(getCutoutAspectLabel(frameShot)) : null, { erp: studio, coverage: state.coverage });
-    if (!frameShot) uiState.frameRail.aspectOpen = false;
-    uiState.outputPreviewToggle.visible = type === "cutout" && editor.mode !== "frame" && !!getActiveCutoutShot();
-    if (shotEditor && uiState.cameraPreview) {
-      // Frame view already shows the exact output inside the gate, so the
-      // floating preview is redundant there. Keeping it in sync with
-      // drawCutoutOutputPreview() also matters for correctness: its box height
-      // follows the shot aspect, and it is measured by measureFrameSafeRect().
-      // Letting it appear in Frame — even for one frame — feeds the shot back
-      // into the safe rect and therefore into the background scale.
-      uiState.cameraPreview.visible = editor.mode !== "frame" && cameraPreviewShown();
-      uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
-      uiState.cameraPreview.settled = uiState.cameraPreview.settled === true
-        && runtime.pendingStableLayoutFrames <= 0
-        && runtime.hasPresentedFrame;
-    }
-    syncFloatingViewButtonState();
-    if (isPaintCursorEnabled()) updateCursor(editor.pointerPos);
-    else setCanvasCursor(editor.mode === "pano" ? "grab" : "default");
   }
 
   function pruneUnusedAssets() {
@@ -1037,625 +918,8 @@ async function showEditor(node, type, options = {}) {
     return true;
   }
 
-  function syncFrameRollKnob() {
-    const shot = editor.mode === "frame" ? getActiveCutoutShot() : null;
-    uiState.frameRollKnob.visible = !!shot && !readOnly && shot.locked !== true;
-    uiState.frameRollKnob.rollDeg = Number(shot?.roll_deg ?? shot?.rot_deg ?? 0);
-    uiState.frameRollKnob.displayValue = formatParamValue(uiState.frameRollKnob.rollDeg);
-    uiState.frameRollKnob.dragging = editor.interaction?.kind === "roll_frame";
-    uiState.frameRollKnob.armed = !!shot && editor.altModifier === true;
-  }
-
   stageResizeObserver.observe(canvas);
   watchPixelRatio();
-
-  function syncPaintUi() {
-    // Keep derived paint UI state in the dedicated builder module so this file stays bridge-focused.
-    syncToolButtonModels();
-    const nextPaintDock = buildPaintDockModel({
-      editor,
-      swatches: PAINT_COLOR_SWATCHES,
-      paintColorPopOpen: paintColorPop ? !paintColorPop.hidden : false,
-      colorToCss,
-      colorsApproximatelyEqual,
-      rgb01ToHsv,
-      hsv01ToRgb,
-      getBrushPresetIdForTool,
-      isActiveLassoTool,
-    });
-    Object.assign(uiState.paintDock, nextPaintDock);
-    syncVideoTransportVisibility();
-    if (!nextPaintDock.visible) {
-      if (paintColorPop) paintColorPop.hidden = true;
-      return;
-    }
-    if (paintPaneFadeTimer) {
-      clearTimeout(paintPaneFadeTimer);
-      paintPaneFadeTimer = 0;
-    }
-    if (paintColorRow) {
-      if (!nextPaintDock.colorEnabled && paintColorPop && !paintColorPop.hidden) {
-        paintPaneFadeTimer = window.setTimeout(() => {
-          paintColorPop.hidden = true;
-          uiState.paintDock.colorPopOpen = false;
-          paintPaneFadeTimer = 0;
-        }, 170);
-      }
-      if (paintColorPop) {
-        paintColorPop.style.setProperty("--picker-hue-color", nextPaintDock.pickerHueColor);
-        paintColorPop.style.setProperty("--picker-sat", nextPaintDock.pickerSat);
-        paintColorPop.style.setProperty("--picker-val", nextPaintDock.pickerVal);
-        paintColorPop.style.setProperty("--picker-hue", nextPaintDock.pickerHue);
-      }
-      if (paintColorSvCursor) {
-        paintColorSvCursor.style.left = nextPaintDock.pickerSvLeft;
-        paintColorSvCursor.style.top = nextPaintDock.pickerSvTop;
-      }
-      if (paintHueHandle) {
-        paintHueHandle.style.left = nextPaintDock.pickerHueLeft;
-      }
-    }
-  }
-
-  function syncSidePanelControls() {
-    const selected = poseOf(shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : getSelected());
-    if (!selected) return;
-    editor.panelLastValues = {
-      yaw_deg: Number(selected.yaw_deg || 0),
-      pitch_deg: Number(selected.pitch_deg || 0),
-      hFOV_deg: Number(selected.hFOV_deg || (type === "stickers" ? 30 : 90)),
-      vFOV_deg: Number(selected.vFOV_deg || (type === "stickers" ? 30 : 60)),
-      rot_deg: Number(selected.rot_deg || 0),
-      roll_deg: Number(selected.roll_deg || 0),
-      aspect_id: getCutoutAspectLabel(selected),
-    };
-    updateSidePanel();
-  }
-
-  function updateSidePanel() {
-    syncCutoutShot();
-    syncTimeline();
-    syncSidePanelModel();
-  }
-
-  // Whether the inspector shows something that changes with the playhead: a selected Sticker or Camera with
-  // Keyframes or a Clip range.
-  function inspectorTimed() {
-    const frameShot = shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : null;
-    return [...getSelectedItems(), selectedWorldSticker(), frameShot].some((item) => {
-      if (isSceneSticker(item)) return ownerTimed(item);
-      return isShotItem(item) && hasCamera() && ownerTimed(state.camera);
-    });
-  }
-
-  // The inspector's model (uiState.sidePanel), from the state and the selection.
-  function syncSidePanelModel() {
-    if (hideSidebar) return;
-    state.ui_settings = state.ui_settings || {};
-    // Inspector content is derived data for Vue, not imperative DOM construction.
-    const uiSettingsModel = buildUiSettingsModel(state.ui_settings);
-    if (previewMode) {
-      uiState.sidePanel = buildPreviewSidePanelModel({
-        coverage: state.coverage,
-        uiSettings: uiSettingsModel,
-        normalizeCoverageValue,
-      });
-      return;
-    }
-
-    const canvasSelected = getSelected();
-    const frameInspectorShot = shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : null;
-    const selected = frameInspectorShot || canvasSelected;
-    const selectedItems = frameInspectorShot ? [frameInspectorShot] : getSelectedItems();
-    const selectedKind = frameInspectorShot ? "shot" : getSelectedKind();
-    if (selectedItems.length > 1) {
-      editor.panelLastValues = editor.panelLastValues || { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 };
-    }
-    if (selected && selectedKind !== "stroke") {
-      const pose = poseOf(selected);
-      editor.panelLastValues = {
-        yaw_deg: Number(pose.yaw_deg || 0),
-        pitch_deg: Number(pose.pitch_deg || 0),
-        hFOV_deg: Number(pose.hFOV_deg || (selectedKind === "image" ? 30 : 90)),
-        vFOV_deg: Number(pose.vFOV_deg || (selectedKind === "image" ? 30 : 60)),
-        rot_deg: Number(pose.rot_deg || 0),
-        roll_deg: Number(pose.roll_deg || 0),
-        aspect_id: getCutoutAspectLabel(pose),
-      };
-      if (isSceneSticker(selected)) editor.panelLastValues.opacity = evaluateSticker(selected, editor.frame).opacity * 100;
-    }
-    const fallback = editor.panelLastValues || ((type === "stickers" || selectedKind === "image")
-      ? { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 }
-      : { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60, roll_deg: 0, aspect_id: "1:1" });
-    const inspectorSelected = selectedKind === "stroke" ? null : selected;
-    const worldInspected = selectedWorldSticker();
-    // PanoramaCutoutNode's Camera has a position in space too (#77).
-    const cameraPositionShown = cameraV2 && (selectedKind === "shot" || selectedKind === "frame") && hasSpaceContent();
-    const effective = worldInspected ? worldStickerFields(worldInspected, editor.frame)
-      : cameraPositionShown ? { ...inspectorSelected, ...cameraFields(state.camera, editor.frame), vFOV_deg: inspectorSelected.vFOV_deg }
-        : isSceneSticker(inspectorSelected) ? editor.panelLastValues : (inspectorSelected || fallback);
-    const enabled = worldInspected ? worldStickerEditable(worldInspected) : (!!inspectorSelected && !isItemLocked(inspectorSelected));
-    editor.panelWasEnabled = enabled;
-    syncLookAtFrameButtonState();
-
-    let selectionPicker = null;
-    if (frameInspectorShot) {
-      const labelData = getSelectionItemLabelData({ item: frameInspectorShot, kind: "shot", label: "Frame" });
-      selectionPicker = {
-        label: "Selection",
-        open: false,
-        disabled: true,
-        currentLabel: labelData.label,
-        currentIcon: labelData.icon || null,
-        items: [{
-          id: String(frameInspectorShot.id || ""),
-          label: labelData.label,
-          icon: labelData.icon || null,
-          active: true,
-        }],
-      };
-    } else if (type === "stickers" || type === "cutout") {
-      const items = [{
-        id: "",
-        label: type === "stickers" ? "No image" : "Nothing selected",
-        icon: null,
-        item: null,
-      }];
-      if (type === "stickers") {
-        // Panorama Studio's Camera comes first, as on its Timeline (#89).
-        const shot = getActiveCutoutShot();
-        if (shot) items.push({ id: shot.id, label: "Camera", icon: getSelectionItemIcon("frame"), item: shot, kind: "frame" });
-        getList().forEach((item, i) => {
-          // A hidden Sticker of state v2 is not selected.
-          if (!item || (isSceneSticker(item) && !item.visible)) return;
-          const baseLabel = sceneV2
-            ? sceneStickerLabel(item)
-            : isExternalSticker(item)
-              ? String(item.id || EXTERNAL_STICKER_ID)
-              : String(state.assets?.[item.asset_id]?.name || item.asset_id || item.id);
-          const label = `${i + 1}. ${baseLabel}${isExternalSticker(item) && isStickerHidden(item) ? " (hidden)" : ""}`;
-          const labelData = getSelectionItemLabelData({ item, label, kind: "image" });
-          items.push({ id: item.id, label: labelData.label, icon: labelData.icon, item, kind: "image" });
-        });
-      } else {
-        getCutoutInspectorItems().forEach((entry) => {
-          if (!entry?.item) return;
-          const labelData = getSelectionItemLabelData(entry);
-          items.push({ id: entry.item.id, label: labelData.label, icon: labelData.icon, item: entry.item, kind: entry.kind });
-        });
-      }
-      const currentId = inspectorSelected?.id || "";
-      const currentItem = worldInspected ? { label: sceneStickerLabel(worldInspected), icon: ICON.globe }
-        : items.find((item) => item.id === currentId) || items[0];
-      selectionPicker = {
-        label: "Selection",
-        open: false,
-        disabled: items.length <= 1,
-        currentLabel: currentItem.label,
-        currentIcon: currentItem.icon || null,
-        items: items.map((item) => ({
-          id: item.id,
-          label: item.label,
-          icon: item.icon || null,
-          active: item.id === currentId,
-        })),
-      };
-    }
-
-    const params = [];
-    const pushParam = (key, label, min, max, step) => {
-      const value = clamp(Number(effective[key] || 0), min, max);
-      params.push({
-        key,
-        label,
-        min,
-        max,
-        step,
-        value,
-        displayValue: formatParamValue(value),
-        fillPct: clamp(((value - min) / Math.max(1e-6, max - min)) * 100, 0, 100),
-        enabled: enabled && !readOnly,
-      });
-    };
-    const notes = [];
-    if (worldInspected) {
-      // Positions and the scale have no limit; the scale's slider reaches past the value (worldFieldRange).
-      for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
-        const range = worldFieldRange(effective[key]);
-        pushParam(key, label, -range, range, 0.01);
-      }
-      pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
-      pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
-      pushParam("roll_deg", "Roll", -180, 180, 0.1);
-      pushParam("scale", "Scale", WORLD_MIN_SCALE, worldFieldRange(effective.scale), 0.01);
-      pushParam("opacity", "Opacity", 0, 100, 1);
-    } else if (selectedItems.length > 1) {
-      notes.push(`Selected objects: ${selectedItems.length}`);
-      notes.push("Multi-selection supports z-order and delete.");
-    } else {
-      // Panorama Studio's Camera is a shot in the Stickers editor (#89): it has a roll and no opacity.
-      const shotInspected = selectedKind === "shot" || selectedKind === "frame";
-      if (cameraPositionShown) {
-        for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
-          const range = worldFieldRange(effective[key]);
-          pushParam(key, label, -range, range, 0.01);
-        }
-      }
-      pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
-      pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
-      if (selectedKind === "image" || (type === "stickers" && !shotInspected)) pushParam("rot_deg", "Roll", -180, 180, 0.1);
-      else pushParam("roll_deg", "Roll", -180, 180, 0.1);
-      pushParam("hFOV_deg", "H FOV", 1, 179, 0.1);
-      pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
-      // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
-      if (shotInspected) params.forEach((param) => { param.enabled = param.enabled && cameraParamEnabled(param.key, { erp: isErpCamera() }); });
-      if (sceneV2 && !shotInspected) pushParam("opacity", "Opacity", 0, 100, 1);
-    }
-
-    uiState.sidePanel = buildEditorSidePanelModel({
-      coverage: state.coverage,
-      readOnly,
-      selectionPicker,
-      enabled,
-      selectedKind: worldInspected ? "world" : selectedKind,
-      selectedItems,
-      params,
-      notes,
-      uiSettings: uiSettingsModel,
-      normalizeCoverageValue,
-    });
-  }
-
-  function syncTimeline() {
-    if (!stateV2 || readOnly) return;
-    const span = timelineSpanFrames();
-    const selection = timeline.selection;
-    const owner = selection && timelineOwner(selection.owner);
-    if (selection) {
-      const names = owner ? selectedLanes(selection) : [];
-      selection.frames = selection.frames.filter((frame) => names.some((name) => owner[name].keyframes.some((key) => key.frame === frame)));
-      if (!selection.frames.length) timeline.selection = null;
-    }
-    uiState.timeline = buildTimelineModel(state, {
-      span,
-      selection: timeline.selection,
-      selectedId: editor.worldSelectedId || editor.selectedId,
-      expanded: timeline.expanded ?? timelineTimed(),
-      openRows: timeline.openRows,
-      audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
-      // A VIDEO on bg_media, sticker or the Cutout's source sets the Timeline fps (ADR 0024).
-      fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker", "source"]),
-      // The Cutout shows only its Camera; with a PANO_SCENE it shoots the Scene's Timeline (#77). Panorama
-      // Studio shows its Camera, its Stickers and its `scene` on one Timeline (#89).
-      camera: hasCamera(),
-      cameraHideable: studio,
-      stickers: !cutoutV2,
-      scene: sceneV2 && !!nodeInputOrigins(node).scene,
-      sceneLocked: !!capture,
-    });
-    uiState.easing = timeline.selection
-      ? buildEasingModel(owner, selectedLanes(timeline.selection), timeline.selection.frames, timelineOffset(timeline.selection.owner))
-      : null;
-  }
-
-  // Whether the Timeline opens by itself: something in the state changes over time (the Cutout's Camera,
-  // also Panorama Studio's).
-  function timelineTimed() {
-    return timelineOpens(state, { cameraOnly: cutoutV2, camera: studio });
-  }
-
-  // The Timeline length (5 s without one), widened to the background VIDEO and to the end of the
-  // port Sticker's media. The Cutout's Camera Keyframes widen it as they lengthen its output; a Cutout
-  // that shoots a PANO_SCENE has the Scene's length (#77).
-  function timelineSpanFrames(openClip = null) {
-    if (capture?.frames) return capture.frames;
-    const fps = state.timeline.fps;
-    const port = state.stickers.find(isExternalSticker);
-    const portMedia = port ? getPortMedia() : null;
-    const frames = Math.max(
-      uiState.videoTransport.ready ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0,
-      portMedia ? portMediaFrames(port.clip, fps, portMedia.meta) : 0,
-    );
-    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: (cutoutV2 && !capture) || studio });
-  }
-
-  function timelineOwner(owner) {
-    if (owner === "camera") return hasCamera() ? state.camera : null;
-    if (owner === "scene") return sceneV2 ? state.scene : null;
-    return state.stickers.find((item) => item.id === owner) || null;
-  }
-
-  // The Lanes a Keyframe selection acts on: its Lane, or every Lane of its row.
-  function selectedLanes(selection) {
-    return selection.lane ? [selection.lane] : laneNames(timelineOwner(selection.owner));
-  }
-
-  // A Sticker's Keyframes are on its material, which starts at start - in; the Camera's on the Timeline.
-  function timelineOffset(owner) {
-    if (owner === "camera") return 0;
-    const { clip } = timelineOwner(owner);
-    return clip.start - clip.in;
-  }
-
-  // What the view shows of a Clip range's content: whether it is on at the playhead, and the time of
-  // its content there (moving the range moves its content; trimming keeps it).
-  function clipView(clip) {
-    return `${clipActive(clip, editor.frame)}:${clip.start - clip.in}`;
-  }
-
-  function timelineEditable(owner) {
-    const target = timelineOwner(owner);
-    return !!target && target.locked !== true;
-  }
-
-  function setTimelineFrame(frame) {
-    const next = Math.max(0, Math.round(frame));
-    if (next === editor.frame) return;
-    // An edit of the Cutout's shot belongs to the frame it was made on.
-    syncCutoutShot();
-    editor.frame = next;
-    timelinePlayhead.frame.value = next;
-    syncCutoutShot();
-    const selection = [editor.selectedId, editor.worldSelectedId];
-    releaseHiddenSelection();
-    markObjectVisualsDirty();
-    // The Timeline's rows depend on the state and the selection, not on the playhead; the inspector shows
-    // values at the playhead only for something timed.
-    if (selection[0] !== editor.selectedId || selection[1] !== editor.worldSelectedId) updateSidePanel();
-    else if (inspectorTimed()) syncSidePanelModel();
-    updateSelectionMenu();
-    requestDraw({ reason: DRAW_REASON.PLAYHEAD });
-  }
-
-  function hasTimelineVideo() {
-    return videoEl instanceof HTMLVideoElement && !!videoEl.getAttribute("src");
-  }
-
-  // Moves the playhead and shows the background VIDEO's frame there (ADR 0019 still frame). A VIDEO
-  // that arrived since the last refresh is picked up first.
-  function jumpTimelineTo(frame) {
-    refreshModalVideoSource();
-    playback.seek(frame);
-  }
-
-  // Edits stop PanoramaStickersNode's playback on the frame shown; the legacy transport plays on.
-  function stopTimelinePlayback() {
-    if (stateV2) playback.stop();
-  }
-
-  // PanoramaStickersNode's Timeline play button and the legacy transport's. With a background VIDEO
-  // the video plays with its audio and its presented frames set the playhead; past its end a clock
-  // carries on to the Timeline's end. Without a VIDEO a clock moves the playhead.
-  function togglePlayback() {
-    // The background VIDEO of the node's current result, loaded here when the node ran after the editor opened.
-    refreshModalVideoSource();
-    playback.toggle();
-  }
-
-  function refreshTimelineEdit() {
-    syncCutoutShot();
-    markObjectVisualsDirty();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw();
-  }
-
-  function commitTimelineEdit() {
-    pushHistory();
-    commitAndRefreshNode();
-    refreshTimelineEdit();
-  }
-
-  function deleteSelectedKeyframes() {
-    const { selection } = timeline;
-    if (!timelineEditable(selection.owner)) return;
-    stopTimelinePlayback();
-    deleteKeyframes(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, editor.frame - timelineOffset(selection.owner));
-    timeline.selection = null;
-    commitTimelineEdit();
-  }
-
-  // Rebases the state to fps, keeping its times and the playhead's in seconds, as one history step.
-  function changeTimelineFps(value) {
-    // The fps the state keeps; the one it already has changes nothing (no Undo step).
-    const fps = timelineFps(value);
-    if (fps === null || fps === state.timeline.fps) return;
-    stopTimelinePlayback();
-    const frame = Math.round(editor.frame * fps / state.timeline.fps);
-    setTimelineFps(state, fps);
-    timeline.selection = null;
-    playback.seek(frame);
-    commitTimelineEdit();
-  }
-
-  // A run that brings another Timeline fps from a VIDEO rebases the open state to it, as opening does.
-  function applyVideoTimelineFps() {
-    const fps = videoTimelineFps(node);
-    if (fps !== null && fps !== state.timeline.fps) changeTimelineFps(fps);
-  }
-
-  function onTimelineAction(action) {
-    if (readOnly || !stateV2) return;
-    if (action.type === "seek") {
-      // A scrub seeks once per frame, to where the pointer is then; its end seeks at once.
-      if (action.phase === "move") {
-        timeline.scrubFrame = action.frame;
-        dragFrames.request("seek");
-        return;
-      }
-      dragFrames.cancel();
-      if (action.phase === "start") refreshModalVideoSource();
-      playback.seek(action.frame);
-      return;
-    }
-    if (action.type === "play") {
-      togglePlayback();
-      return;
-    }
-    if (action.type === "mute") {
-      toggleVideoMuted();
-      syncTimeline();
-      return;
-    }
-    if (action.type === "toggle-expanded") {
-      timeline.expanded = !(timeline.expanded ?? timelineTimed());
-      timeline.selection = null;
-      syncTimeline();
-      return;
-    }
-    if (action.type === "toggle-row") {
-      if (timeline.openRows.has(action.id)) timeline.openRows.delete(action.id);
-      else timeline.openRows.add(action.id);
-      syncTimeline();
-      return;
-    }
-    if (action.type === "toggle-visible") {
-      // Showing and hiding is an edit (Undo), but changes no value at a frame, so playback goes on.
-      if (action.id === PAINTING_ROW) state.painting_visible = !state.painting_visible;
-      else {
-        const owner = timelineOwner(action.id);
-        if (!owner || (action.id === "camera" && !studio)) return;
-        owner.visible = !owner.visible;
-      }
-      releaseHiddenSelection();
-      commitTimelineEdit();
-      return;
-    }
-    if (action.type === "select-row") {
-      // A Sticker is hidden outside its Clip range, so the playhead first moves to where it starts.
-      const sticker = state.stickers.find((item) => item.id === action.id);
-      // What is hidden is not selected; its row is still where its eye is.
-      if ((sticker && !sticker.visible) || (action.id === "camera" && !cameraShoots())) return;
-      if (sticker && !clipActive(sticker.clip, editor.frame)) jumpTimelineTo(sticker.clip.start);
-      // The canvas selection holds sky Stickers; a world row selects its world Sticker for the gizmo and
-      // the inspector.
-      if (sticker?.placement === "world") selectWorldSticker(sticker.id);
-      else if (action.id === "camera") setSelectedItem(getActiveCutoutShot());
-      else setSelectedItem(getList().find((item) => item.id === action.id) || null);
-      syncFloatingViewButtonState();
-      // Delete then acts on the row's Sticker, not on Keyframes selected before.
-      timeline.selection = null;
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-      return;
-    }
-    if (action.type === "select-keys") {
-      const offset = timelineOffset(action.owner);
-      const frames = action.frames.map((frame) => frame - offset);
-      const current = timeline.selection;
-      const sameLanes = current?.owner === action.owner && current.lane === action.lane;
-      if (action.additive && sameLanes) {
-        const toggled = new Set(current.frames);
-        for (const frame of frames) {
-          if (toggled.has(frame)) toggled.delete(frame);
-          else toggled.add(frame);
-        }
-        current.frames = [...toggled].sort((a, b) => a - b);
-      } else {
-        timeline.selection = frames.length ? { owner: action.owner, lane: action.lane, frames } : null;
-      }
-      syncTimeline();
-      return;
-    }
-    if (action.type === "move-keys") {
-      const selection = timeline.selection;
-      if (!selection || !timelineEditable(selection.owner)) return;
-      const owner = timelineOwner(selection.owner);
-      const names = selectedLanes(selection);
-      if (action.phase === "start") {
-        stopTimelinePlayback();
-        timeline.drag = { keyframes: names.map((name) => structuredClone(owner[name].keyframes)), frames: selection.frames };
-        return;
-      }
-      const { drag } = timeline;
-      if (!drag?.keyframes) return;
-      names.forEach((name, index) => {
-        owner[name].keyframes = structuredClone(drag.keyframes[index]);
-      });
-      const delta = moveKeyframes(owner, names, drag.frames, action.delta, -timelineOffset(selection.owner));
-      selection.frames = drag.frames.map((frame) => frame + delta);
-      if (action.phase !== "end") {
-        // Moved Keyframes can change the values at the playhead.
-        dragFrames.request("timeline");
-        dragFrames.request("view");
-        return;
-      }
-      dragFrames.cancel();
-      timeline.drag = null;
-      if (delta) commitTimelineEdit();
-      else refreshTimelineEdit();
-      return;
-    }
-    if (action.type === "clip") {
-      // A Sticker's Clip range, or the `scene`'s.
-      const sticker = action.id === "scene" ? timelineOwner("scene") : state.stickers.find((item) => item.id === action.id);
-      if (!sticker || sticker.locked) return;
-      if (action.phase === "start") {
-        stopTimelinePlayback();
-        // Only the span set by everything else reopens the end, not the span this Clip range widens.
-        timeline.drag = { clip: { ...sticker.clip }, span: timelineSpanFrames(sticker.clip) };
-        return;
-      }
-      const { drag } = timeline;
-      if (!drag?.clip) return;
-      const base = drag.clip;
-      const shown = clipView(sticker.clip);
-      sticker.clip = { ...base };
-      // A click (no movement) leaves the Clip range as it was, an open end included.
-      if (action.delta && action.mode === "move") moveClip(sticker.clip, action.delta);
-      else if (action.delta && action.mode === "start") trimClipStart(sticker.clip, base.start + action.delta);
-      else if (action.delta) trimClipEnd(sticker.clip, (base.duration === null ? drag.span : base.start + base.duration) + action.delta, drag.span);
-      if (action.phase !== "end") {
-        dragFrames.request("timeline");
-        if (clipView(sticker.clip) !== shown) dragFrames.request("view");
-        return;
-      }
-      dragFrames.cancel();
-      timeline.drag = null;
-      releaseHiddenSelection();
-      if (JSON.stringify(sticker.clip) !== JSON.stringify(base)) commitTimelineEdit();
-      else refreshTimelineEdit();
-      return;
-    }
-    if (action.type === "key-row") {
-      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet (#89).
-      if (action.owner === "scene" || !timelineEditable(action.owner)) return;
-      // Recording edits stop at the frame shown, so playback stops before a Keyframe is set.
-      stopTimelinePlayback();
-      keyAllLanes(timelineOwner(action.owner), editor.frame - timelineOffset(action.owner));
-      commitTimelineEdit();
-      return;
-    }
-    if (action.type === "fps") {
-      const fps = enteredTimelineFps(action.fps);
-      if (fps === null || fps === state.timeline.fps || uiState.timeline.fpsLocked) {
-        syncTimeline();
-        return;
-      }
-      changeTimelineFps(fps);
-      return;
-    }
-    if (action.type === "length") {
-      const length = enteredTimelineLength(action.length);
-      if (length === undefined || length === state.timeline.length) {
-        syncTimeline();
-        return;
-      }
-      stopTimelinePlayback();
-      state.timeline.length = length;
-      commitTimelineEdit();
-      return;
-    }
-    if (action.type === "easing") {
-      const selection = timeline.selection;
-      if (!selection || !timelineEditable(selection.owner)) return;
-      stopTimelinePlayback();
-      setSegmentEasing(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, action.easing);
-      if (action.commit) commitTimelineEdit();
-      else refreshTimelineEdit();
-    }
-  }
 
   async function addImageStickerFromFile(file) {
     if (readOnly || cutoutV2) return;
@@ -3881,7 +3145,7 @@ async function showEditor(node, type, options = {}) {
     uiState.tooltip.top = canvasBounds.top - hostBounds.top + (rect.y + rect.h * 0.5) * scaleY + 12;
     uiState.tooltip.variant = "roll";
     uiState.tooltip.visible = true;
-  };
+  }
   function onFrameRollKnobPointerDown(event) {
     if (event.button !== 0 || readOnly || editor.mode !== "frame") return;
     const shot = getActiveCutoutShot();
@@ -5130,11 +4394,6 @@ async function showEditor(node, type, options = {}) {
   window.addEventListener("dragleave", onWindowDragLeave, true);
   window.addEventListener("drop", onWindowDrop, true);
 
-  function syncUndoRedoButtons() {
-    const { canUndo, canRedo } = getHistoryCapabilities();
-    patchUiButton(uiState.toolButtons, "value", "undo", { disabled: !canUndo });
-    patchUiButton(uiState.toolButtons, "value", "redo", { disabled: !canRedo });
-  };
   function applySidePanelParam(key, rawValue, commit = false) {
     // Edits during playback would key every frame they pass.
     stopTimelinePlayback();
@@ -5297,7 +4556,9 @@ async function showEditor(node, type, options = {}) {
     applySidePanelParam(String(target.getAttribute("data-param-key") || ""), target.value, true);
   }
   side?.addEventListener("change", onSidePanelChange);
-  const syncGridToggleButton = () => syncFloatingViewButtonState();
+  function syncGridToggleButton() {
+    syncFloatingViewButtonState();
+  }
   syncGridToggleButton();
   function onRootClick(ev) {
     if (ev.target?.matches?.("[data-confirm-overlay]")) {
@@ -5778,7 +5039,9 @@ async function showEditor(node, type, options = {}) {
     queueVideoTransportLayout();
     requestDraw();
   }
-  const isOverlayFullscreen = () => document.fullscreenElement === overlay;
+  function isOverlayFullscreen() {
+    return document.fullscreenElement === overlay;
+  }
   async function toggleFullscreen() {
     try {
       if (!document.fullscreenEnabled) {
