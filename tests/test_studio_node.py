@@ -106,6 +106,36 @@ def test_without_a_camera_every_output_frame_matches_the_new_stickers(output_siz
     assert studio.result[4] == ""
 
 
+def test_a_hidden_camera_shoots_as_no_camera():
+    without = _world_and_keyframed_state()
+    hidden = {**without, "camera": {**_camera(fov=60.0, aspect=2.0, yaw_deg=90.0), "visible": False}}
+    inputs = {"bg_media": build_background_erp(), "sticker": _solid([1.0, 0.0, 0.0]), "output_size": "1024"}
+
+    plain = _outputs(without, **inputs)
+    shot = _outputs(hidden, **inputs)
+
+    assert shot[0].shape == (1, 512, 1024, 3)
+    assert torch.equal(shot[0], plain[0]) and torch.equal(shot[1], plain[1])
+    assert torch.equal(shot[2].get_components().images, plain[2].get_components().images)
+    assert shot[4] == ""
+    # The Camera stays in the state; only the `scene` output drops it, as for a shown one.
+    assert _size({"camera": {**_camera(fov=90.0), "visible": False}}, "1024") == ((1024, 512), [])
+
+
+def test_hidden_painting_and_stickers_are_not_drawn():
+    state = _world_and_keyframed_state()
+    hidden = {**state, "painting_visible": False, "stickers": [{**item, "visible": False} for item in state["stickers"]]}
+    inputs = {"bg_media": build_background_erp(), "sticker": _solid([1.0, 0.0, 0.0]), "output_size": "1024"}
+
+    shown = _outputs(state, **inputs)
+    # A hidden port Sticker stays in the state, so the node does not add the `sticker` input as a new one.
+    empty = _outputs({"version": 2, "timeline": {"fps": 24.0, "length": 3}, "stickers": [{"id": "s", "source": {"kind": "port"}, "visible": False}]}, **inputs)
+    drawn = _outputs(hidden, **inputs)
+
+    assert not torch.equal(shown[0], empty[0]) and shown[1].any()
+    assert torch.equal(drawn[0], empty[0]) and torch.equal(drawn[1], empty[1])
+
+
 def test_a_port_sticker_added_by_the_node_is_in_the_ui_as_for_stickers():
     ui = _studio(output_size="1024", sticker=_solid([1.0, 0.0, 0.0])).ui
 

@@ -1503,7 +1503,8 @@ function surfaceViewInput(node, state, bgImg) {
     }
     return isRenderableMediaReady(img) ? { media: img, revision: getRenderableMediaRevisionToken(img) } : null;
   };
-  const paintLayers = buildRuntimeCutoutLayerEntries(node, state)
+  // A hidden painting (state v2 `painting_visible`) is not drawn.
+  const paintLayers = (state.painting_visible === false ? [] : buildRuntimeCutoutLayerEntries(node, state))
     .filter((entry) => entry.visible !== false)
     .map((entry) => ({ id: entry.id, media: entry.source, revision: entry.revision, opacity: entry.opacity, zIndex: entry.zIndex }));
   return {

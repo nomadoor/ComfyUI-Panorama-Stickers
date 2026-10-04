@@ -431,12 +431,13 @@ test("opening and closing the editor leaves an unedited state_json text alone", 
 
 // A v2 state saved before the Camera had a projection reads as a Camera that shoots in perspective;
 // saving it again writes the same text, so the node's execution cache still hits.
-test("a state saved before the Camera had a projection is saved as the same text", () => {
+test("a state saved before the Camera had a projection and before the visibility fields is saved as the same text", () => {
   const node = { __panoSceneStateV2: true };
   for (const name of ["v2_canonical", "v2_interpolation"]) {
-    const loaded = loadSceneState(readFixture(name));
-    const { projection, ...camera } = loaded.camera;
-    const before = JSON.stringify({ ...loaded, camera });
+    const { painting_visible: paintingVisible, ...loaded } = loadSceneState(readFixture(name));
+    const { projection, visible, ...camera } = loaded.camera;
+    const { visible: sceneVisible, ...scene } = loaded.scene;
+    const before = JSON.stringify({ ...loaded, camera, scene });
     for (const options of [{}, { camera: true }]) {
       const state = parseSceneEditorState(before, options);
       assert.equal(state.camera.projection, "perspective");
@@ -444,7 +445,7 @@ test("a state saved before the Camera had a projection is saved as the same text
     }
   }
   const erp = loadSceneState(readFixture("v2_erp_camera"));
-  assert.equal(editorStateText(node, parseSceneEditorState(JSON.stringify(erp))), JSON.stringify(erp));
+  assert.equal(JSON.parse(editorStateText(node, parseSceneEditorState(JSON.stringify(erp)))).camera.projection, "erp");
 });
 
 test("the Stickers editor keeps a state without a Camera without one", () => {

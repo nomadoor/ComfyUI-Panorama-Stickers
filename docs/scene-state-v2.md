@@ -11,7 +11,7 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 | 既定の Camera（Camera の無い状態を Camera で撮るノード用） | `default_camera` | `defaultCamera` |
 | 保存するテキスト | — | `sceneStateText` |
 
-フィクスチャは `tests/fixtures/scene_state/` にあり、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
+フィクスチャは `tests/fixtures/scene_state/` にあり（非表示の Camera・`scene`・Sticker・ペイントは `v2_hidden`）、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
 
 ## 共通の規則
 
@@ -51,7 +51,8 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
   "scene": {"clip": {...}, "position": {...}, "rotation": {...}, "scale": {...}},
   "stickers": [],
   "painting": {...},
-  "painting_layer": null
+  "painting_layer": null,
+  "painting_visible": true
 }
 ```
 
@@ -65,20 +66,29 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 | `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
 | `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない |
 | `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方で、Keyframe を持たない。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` を読まない |
+| `camera.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` は Camera を置いたまま非表示にする。Panorama Studio は非表示の Camera を Camera が無いときと同じに撮る（下記） |
 | `camera.position`・`camera.rotation`・`camera.fov` | Lane | 下記 | Camera の値（Viewport camera は保存しない） |
 | `scene.clip` | Clip range | 下記 | `scene` 入力が有効な範囲 |
+| `scene.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` なら `scene` 入力を描かない |
 | `scene.position`・`scene.rotation`・`scene.scale` | Lane | 下記 | `scene` 入力に掛ける変形 |
 | `stickers` | 配列 | `[]` | `sky` の層は `z_index`（ペイントと共通の軸）で並べ、同じ値ならリストの順（先頭が奥）。`world` の Sticker は奥行きで重なる |
 | `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層 |
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
+| `painting_visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` ならペイント（ストローク・ラスタ・マスク）を描かず、MASK にも出さない |
 
 `scene` は、`scene` 入力が接続されていなくても常に存在する。
 
-`camera` は、Camera を 1 台まで持つ（ADR 0029）。`null` は Camera が無いことを表し、Camera が無いときは World の原点から回転 0 で撮った ERP を出す。オブジェクトのときは、正規化した結果は常に `aspect`・`projection`・`position`・`rotation`・`fov` をこの順に持つ。
+`camera` は、Camera を 1 台まで持つ（ADR 0029）。`null` は Camera が無いことを表し、Camera が無いときは World の原点から回転 0 で撮った ERP を出す。オブジェクトのときは、正規化した結果は常に `aspect`・`projection`・`visible`・`position`・`rotation`・`fov` をこの順に持つ。
+
+表示（`visible`）は、Camera・`scene`・Sticker・ペイントのそれぞれが持つ。エディタのタイムラインの各行の目のアイコンで切り替える（`docs/timeline-ui.md`）。ペイントの表示は、旧ノードと共有する `painting` の形（`normalize_painting_state`）を変えないように、`painting` の中ではなく最上位の `painting_visible` に置く。
+
+- 非表示の `scene` と Sticker は、評価関数の `active` が偽になる（下記「評価関数」）ので描かれない。Clip range・Keyframe・値はそのまま保ち、出力の長さにも今までどおり数える（表示の切り替えで長さは変わらない）。
+- 非表示のペイントは描かない（`nodes.py` の `_resolve_sources` が空のペイントを渡す）。
+- 非表示の Camera は状態に残る。評価関数は今までどおり値を返す（`camera` は `null` にならない）。Panorama Studio は非表示の Camera を Camera が無いときと同じに扱い、World の原点から回転 0 の ERP を撮り、出力の大きさも ERP の規則で決め、`sticker_state` も出さない（`docs/render-contract.md`）。Camera の Keyframe は表示によらず出力の長さに数える。Cutout は常に Camera で撮るので `visible` を読まない（エディタも Cutout の Camera には目を出さない）。
 
 - 今のノードでの扱い（新しい Stickers・Cutout を外す #92 まで）：新しい Stickers（`PanoramaStickersNode`）は `camera` を読まない（ADR 0028）。`null` でもオブジェクトでも、描画にも出力の長さにも使わない。新しい Cutout（`PanoramaCutoutNode`）とそのエディタは常に Camera で撮るので、`camera` が `null` の状態は既定の Camera（`default_camera` / `defaultCamera`、`{}` を読んだ Camera）で撮る。この読み替えは Python では `nodes.py` の `_cutout_state`、JS では `parseSceneEditorState` の `camera` の指定だけが行う。エディタは、既定の Camera を一度も編集せずに保存したときは `camera: null` のまま書き戻す。一度でも既定から外れたら（`noteCameraEdit`。保存の `commitState` で見る）、後で既定の値に戻しても Camera のオブジェクトを書く（Panorama Studio では `null` は Camera が無いことなので、編集した Camera を黙って消さない）。Undo で最初の状態まで戻ったときは、この判定も最初に戻る。`projection` が `erp` の描画は Panorama Studio（#87）だけが行い、今の Cutout は `perspective` として撮る。
 - 既存の状態：この版より前の v2 の状態は `camera` のオブジェクトを持つので、そのまま「Camera あり」で `projection` は `perspective` になる。読み込みでも保存でも Camera を消したり書き換えたりしない（ノードのキャッシュが外れないようにするため）。fps の再基準化だけは状態全体と同じく `camera` の時刻も直し、`null` は `null` のまま、`projection` はそのまま保つ。
-- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、`camera.projection` が既定値の `perspective` のときは書かない。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、`projection` を書くと、この版より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。`erp` のときだけ書く。Python は `state_json` を書かないので、この関数を持たない。
+- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.visible`・`scene.visible`・`painting_visible` の `true`。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。Python は `state_json` を書かないので、この関数を持たない。
 
 ### Lane
 
@@ -171,7 +181,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `placement` | `"sky"` または `"world"` | `"sky"` | 途中で変わらない。持つ Lane を決める |
 | `source` | Source | — | 不正なときは Sticker ごと捨てる |
 | `clip` | Clip range | 上記 | |
-| `visible` | 真偽値 | `true` | `false` なら描画しない（エディタの表示切り替え） |
+| `visible` | 真偽値 | `true` | `false` なら描画しない（タイムラインの行の目のアイコン） |
 | `locked` | 真偽値 | `false` | エディタでの操作を禁じる |
 | `crop` | `x0`・`y0`・`x1`・`y1`（0〜1） | 全体 | 2D の素材の切り抜き。素材の正規化座標（左上が原点）。0〜1 に寄せた後、`x0 ≤ x1`・`y0 ≤ y1` になるよう並べ替える（旧描画の min / max による正規化と同じ） |
 | `direction`・`roll`・`size` | Lane | 上記 | `sky` の Sticker だけが持つ（`world` では捨てる） |
@@ -258,7 +268,7 @@ evaluateSceneState(state, frame) // -> object
 |---|---|
 | `frame` | 受け取った Timeline frame |
 | `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`）、`aspect`。状態の `camera` が `null` なら `null`。`projection` は時間で変わらないので、状態の `camera.projection` を読む |
-| `scene` | `active`（`frame` が `scene.clip` の範囲内か）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
+| `scene` | `active`（`visible` かつ `frame` が `scene.clip` の範囲内）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
 | `clip_frame` | 素材の先頭からの経過（Timeline frame、端数あり）。`frame − (start − in)`。素材の時刻（秒）は `clip_frame ÷ timeline.fps` |
 | `stickers[]` | `state.stickers` と同じ順。`id`・`placement`、`active`（`visible` かつ Clip range の範囲内）、`clip_frame`、各 Lane の値のフィールド（`sky` は `yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`、`world` は `position`・`yaw_deg`・`pitch_deg`・`roll_deg`・`scale`）、`opacity` |
 
@@ -334,7 +344,7 @@ rebaseSceneState(state, fps) // -> object
 
 - Timeline 上のすべての出来事（Keyframe、Clip range の始まりと終わり、素材の先頭）は、新しい fps の半フレーム以内に丸まる。同じ時刻にあった Camera と Sticker の Keyframe は、同じ frame に落ちる。
 - 丸めた結果、同じ Lane で `frame` が重なった Keyframe は、正規化の規則どおり後ろのものを残す。`duration` は正規化で 1 以上になる。
-- ハンドルは空間のずれなので変えない。
+- ハンドルは空間のずれなので変えない。表示（`camera.visible`・`scene.visible`・Sticker の `visible`・`painting_visible`）も変えない。
 - `fps` が正の有限の数値でなければエラーにする（Python は `ValueError`、JS は `Error`）。文面は `Cannot rebase state_json to fps <値>; fps must be a positive number.` で、`<値>` の書き方は実装ごとに違う（Python は `repr`、JS は `JSON.stringify`）。
 
 ## 版の判定

@@ -11,6 +11,7 @@
       "in": 0,
       "duration": null
     },
+    "visible": true,
     "position": {
       "value": [
         0.0,
@@ -132,5 +133,6 @@
     },
     "raster_objects": []
   },
-  "painting_layer": null
+  "painting_layer": null,
+  "painting_visible": true
 }

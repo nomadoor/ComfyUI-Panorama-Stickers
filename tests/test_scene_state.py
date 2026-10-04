@@ -9,7 +9,7 @@ from comfyui_pano_suite.core.scene_state import default_camera, load_scene_state
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 
 
@@ -106,6 +106,24 @@ def test_rebase_keeps_no_camera_and_the_projection():
     assert [key["frame"] for key in rebased["camera"]["position"]["keyframes"]] == [0, 18]
 
 
+def test_hidden_camera_scene_and_painting_are_kept_by_rebase():
+    rebased = rebase_scene_state(load_scene_state(read_fixture("v2_hidden")), 60.0)
+    assert rebased["camera"]["visible"] is False
+    assert rebased["scene"]["visible"] is False
+    assert rebased["painting_visible"] is False
+    assert rebased["scene"]["clip"] == {"start": 5, "in": 0, "duration": 15}
+
+
+def test_a_hidden_scene_is_not_active_and_a_hidden_camera_still_evaluates():
+    state = load_scene_state(read_fixture("v2_hidden"))
+    evaluated = evaluate_scene_state(state, 3.0)
+    assert evaluated["scene"]["active"] is False
+    assert [item["active"] for item in evaluated["stickers"]] == [False, True]
+    assert evaluated["camera"]["yaw_deg"] == pytest.approx(30.0)
+    shown = evaluate_scene_state({**state, "scene": {**state["scene"], "visible": True}}, 3.0)
+    assert shown["scene"]["active"] is True
+
+
 def test_evaluating_a_state_without_camera_gives_no_camera():
     state = load_scene_state(read_fixture("v2_no_camera"))
     evaluated = evaluate_scene_state(state, 30.0)
@@ -133,10 +151,10 @@ def test_non_object_state_raises(text):
 
 def test_state_v2_has_no_unread_fields():
     state = load_scene_state(read_fixture("v2_canonical"))
-    assert list(state.keys()) == ["version", "timeline", "camera", "scene", "stickers", "painting", "painting_layer"]
+    assert list(state.keys()) == ["version", "timeline", "camera", "scene", "stickers", "painting", "painting_layer", "painting_visible"]
     assert list(state["timeline"].keys()) == ["fps", "length"]
-    assert list(state["camera"].keys()) == ["aspect", "projection", "position", "rotation", "fov"]
-    assert list(state["scene"].keys()) == ["clip", "position", "rotation", "scale"]
+    assert list(state["camera"].keys()) == ["aspect", "projection", "visible", "position", "rotation", "fov"]
+    assert list(state["scene"].keys()) == ["clip", "visible", "position", "rotation", "scale"]
     lanes = {"sky": ["direction", "roll", "size", "opacity", "z_index"], "world": ["position", "rotation", "scale", "opacity"]}
     for sticker in state["stickers"]:
         assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", *lanes[sticker["placement"]]]

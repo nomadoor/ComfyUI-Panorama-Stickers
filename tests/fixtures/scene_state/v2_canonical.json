@@ -4,6 +4,7 @@
   "camera": {
     "aspect": 1.7777777777777777,
     "projection": "perspective",
+    "visible": true,
     "position": {
       "value": [0.0, 1.6, 0.0],
       "keyframes": [
@@ -30,6 +31,7 @@
   },
   "scene": {
     "clip": {"start": 0, "in": 0, "duration": null},
+    "visible": true,
     "position": {"value": [0.0, 0.0, 0.0], "keyframes": []},
     "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []},
     "scale": {"value": 2.0, "keyframes": []}
@@ -97,5 +99,6 @@
     }
   ],
   "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
-  "painting_layer": null
+  "painting_layer": null,
+  "painting_visible": true
 }

@@ -224,8 +224,20 @@ function onLineDown(event, row, lane) {
           <span class="pano-timeline-playhead" :style="{ left: pct(model.frame + 0.5) }" />
         </div>
         <template v-for="row in model.rows || []" :key="row.id">
-          <div class="pano-timeline-head" :class="{ selected: row.selected }">
+          <div class="pano-timeline-head" :class="{ selected: row.selected, hidden: !row.visible }">
             <div class="pano-timeline-name">
+              <button
+                v-if="row.hideable"
+                class="pano-timeline-eye"
+                type="button"
+                :aria-pressed="row.visible ? 'true' : 'false'"
+                :aria-label="`${row.label} visible`"
+                :data-tip="row.visible ? 'Hide' : 'Show'"
+                @click.stop="emit('action', { type: 'toggle-visible', id: row.id })"
+              >
+                <SvgIcon :icon="row.visible ? ICON.eye : ICON.eye_dashed" />
+              </button>
+              <span v-else class="pano-timeline-eye" aria-hidden="true" />
               <button
                 class="pano-timeline-open"
                 type="button"

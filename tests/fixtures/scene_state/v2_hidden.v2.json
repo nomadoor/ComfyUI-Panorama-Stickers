@@ -1,0 +1,165 @@
+{
+  "version": 2,
+  "timeline": {
+    "fps": 24.0,
+    "length": null
+  },
+  "camera": {
+    "aspect": 2.0,
+    "projection": "perspective",
+    "visible": false,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 30.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "fov": {
+      "value": 90.0,
+      "keyframes": []
+    }
+  },
+  "scene": {
+    "clip": {
+      "start": 2,
+      "in": 0,
+      "duration": 6
+    },
+    "visible": false,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "scale": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
+  "stickers": [
+    {
+      "id": "hidden",
+      "placement": "sky",
+      "source": {
+        "kind": "port"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      },
+      "visible": false,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 20.0,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 0
+    },
+    {
+      "id": "shown",
+      "placement": "world",
+      "source": {
+        "kind": "file",
+        "filename": "a.png",
+        "subfolder": "",
+        "storage": "input"
+      },
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": 4
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "position": {
+        "value": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "keyframes": []
+      },
+      "rotation": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "scale": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      }
+    }
+  ],
+  "painting": {
+    "version": 1,
+    "groups": [],
+    "paint": {
+      "strokes": []
+    },
+    "mask": {
+      "strokes": []
+    },
+    "raster_objects": []
+  },
+  "painting_layer": null,
+  "painting_visible": false
+}

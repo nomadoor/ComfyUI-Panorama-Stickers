@@ -11,6 +11,7 @@
       "in": 0,
       "duration": null
     },
+    "visible": true,
     "position": {
       "value": [
         0.0,
@@ -185,5 +186,6 @@
       "type": "input"
     },
     "revision": "r1"
-  }
+  },
+  "painting_visible": true
 }

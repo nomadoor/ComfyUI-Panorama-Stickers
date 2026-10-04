@@ -139,6 +139,7 @@ import {
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
   ERP_ASPECT,
+  PAINTING_ROW,
   buildEasingModel,
   buildEditorSidePanelModel,
   cameraAspectChoices,
@@ -291,7 +292,6 @@ const mediaAssetSource = comfyMedia.assetSource;
 const mediaSource = comfyMedia.source;
 const mediaUiImage = comfyMedia.uiImage;
 const invalidateMediaUiImage = comfyMedia.invalidateUiImage;
-const resolvePreferredExactLinkedSource = comfyMedia.resolvePreferredExactLinkedSource;
 const loadPreferredExactLinkedImage = comfyMedia.loadPreferredExactLinkedImage;
 
 function easeInOutCubic(t) {
@@ -1006,9 +1006,6 @@ async function showEditor(node, type, options = {}) {
     menuMode: "",
     cutoutAspectOpen: false,
     showGrid: getNodeGridVisibility(node?.id, true),
-    showPanorama: true,
-    showObjects: true,
-    showMask: true,
     outputPreviewExpanded: false,
     outputPreviewAnim: 0,
     outputPreviewAnimFrom: 0,
@@ -2253,6 +2250,7 @@ async function showEditor(node, type, options = {}) {
     const selected = getSelected();
     if (!selected || !isExternalSticker(selected)) return;
     selected.visible = isStickerHidden(selected);
+    releaseHiddenSelection();
     markObjectVisualsDirty();
     pushHistory();
     commitAndRefreshNode();
@@ -2869,7 +2867,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function syncViewToggleState() {
-    const frameButton = frameViewButton({ hasShot: !!getActiveCutoutShot(), erp: isErpCamera(), studio });
+    const frameButton = frameViewButton({ hasShot: !!getActiveCutoutShot(), erp: isErpCamera(), hidden: hasCamera() && !cameraShoots(), studio });
     if (editor.mode === "frame" && frameButton.disabled) {
       if (studio) leaveFrameView(getActiveCutoutShot());
       else editor.mode = "pano";
@@ -2917,13 +2915,13 @@ async function showEditor(node, type, options = {}) {
   // The camera preview shows the Cutout's frame, or asks for one; Panorama Studio's shows only a Camera
   // with a frame, and nothing without one (#89).
   function cameraPreviewShown() {
-    return !studio || (hasCamera() && !isErpCamera());
+    return !studio || (cameraShoots() && !isErpCamera());
   }
 
   // Whether Panorama Studio's Camera shoots a 360-degree ERP (ADR 0029); the Cutout shoots every Camera
   // through its frame.
   function isErpCamera() {
-    return studio && hasCamera() && state.camera.projection === "erp";
+    return studio && cameraShoots() && state.camera.projection === "erp";
   }
 
   function stickerCornerOrderSanity() {
@@ -3018,12 +3016,30 @@ async function showEditor(node, type, options = {}) {
   // Panorama Studio with a Camera the Camera's position at the playhead, so the frame on the panorama is
   // what the Camera sees (#77, #89).
   function spaceOrigin() {
-    return hasCamera() ? cutoutCamera().position : [0, 0, 0];
+    return cameraShoots() ? cutoutCamera().position : [0, 0, 0];
   }
 
   // Whether the editor has a Camera: always in the Cutout's, while the user keeps one in Panorama Studio's.
   function hasCamera() {
     return cameraV2 && state.camera !== null;
+  }
+
+  // Whether the Camera is shown and shoots. Panorama Studio's hidden Camera stays in the state, on its
+  // Timeline row, and is otherwise as none: not drawn, not selected, and the output is the ERP from the
+  // World origin, as the node shoots it. The Cutout's Camera always shoots.
+  function cameraShoots() {
+    return hasCamera() && (!studio || state.camera.visible);
+  }
+
+  // Whether the painting is shown: a hidden one is neither drawn, selected nor painted on.
+  function paintingShown() {
+    return state.painting_visible !== false;
+  }
+
+  // Whether a Sticker of state v2 shows, and can be selected, at the playhead: it is not hidden and
+  // the playhead is in its Clip range.
+  function sceneStickerShown(item) {
+    return item.visible && clipActive(item.clip, editor.frame);
   }
 
   // PanoramaCutoutNode's Camera at the playhead, by the evaluator the node shoots with (#77).
@@ -3689,18 +3705,13 @@ async function showEditor(node, type, options = {}) {
   function getStageImageStatus() {
     if (editorView.failed) return { status: IMAGE_FAILED, detail: "renderer" };
     if (!editorView.ready) return { status: IMAGE_LOADING, detail: "boot" };
-    let backgroundState = IMAGE_READY;
+    const bgImg = getConnectedErpImage();
+    const backgroundState = videoState.videoFailed ? IMAGE_FAILED : getImageLoadState(bgImg, isDecodedImageReady);
     const stickerStates = [];
-    if (editor.showPanorama) {
-      const bgImg = getConnectedErpImage();
-      backgroundState = videoState.videoFailed ? IMAGE_FAILED : getImageLoadState(bgImg, isDecodedImageReady);
-    }
-    if (editor.showObjects) {
-      for (const item of skyStickers()) {
-        if (item?.visible === false) continue;
-        const img = getStickerImage(item);
-        stickerStates.push(getImageLoadState(img, isDecodedImageReady));
-      }
+    for (const item of skyStickers()) {
+      if (item?.visible === false) continue;
+      const img = getStickerImage(item);
+      stickerStates.push(getImageLoadState(img, isDecodedImageReady));
     }
     return stageImageStatus({
       presented: runtime.hasPresentedFrame,
@@ -3848,7 +3859,7 @@ async function showEditor(node, type, options = {}) {
       Number(pose?.rot_deg || 0).toFixed(4),
       Number(pose?.roll_deg || 0).toFixed(4),
       getCutoutAspectLabel(pose),
-      isSceneSticker(item) && clipActive(item.clip, editor.frame),
+      isSceneSticker(item) && sceneStickerShown(item),
     ].join(":");
     if (editor.mode === "frame") {
       const shot = getActiveCutoutShot();
@@ -3869,7 +3880,6 @@ async function showEditor(node, type, options = {}) {
   }
 
   function appendMaskDisplayLayerEntry(entries) {
-    if (!editor.showMask) return entries;
     const source = getModalLayerMaskDisplaySource();
     if (!source) return entries;
     const revision = getMaskDisplayRevisionKey();
@@ -3937,11 +3947,10 @@ async function showEditor(node, type, options = {}) {
     return appendMaskDisplayLayerEntry(entries);
   }
 
+  // The paint the views draw; none while the painting is hidden.
   function buildEditorViewPaintLayers() {
-    const entries = editor.showObjects
-      ? buildModalInterleavedLayerEntries()
-      : appendMaskDisplayLayerEntry([]);
-    return entries
+    if (!paintingShown()) return [];
+    return buildModalInterleavedLayerEntries()
       .filter((entry) => entry.visible !== false)
       .map((entry) => ({ id: entry.id, media: entry.source, revision: entry.revision, opacity: entry.opacity, zIndex: entry.zIndex }));
   }
@@ -3975,16 +3984,16 @@ async function showEditor(node, type, options = {}) {
     }
     const portPicture = portVideo ? followPortSticker() : null;
     const media = (item) => {
+      // A hidden Sticker of state v2 is not drawn; the legacy editor shows its hidden port Sticker faintly.
+      if (stateV2 && !item.visible) return null;
       if (portVideo && isExternalSticker(item)) return portPicture;
       const img = getStickerImage(item);
       return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
     };
-    const layers = editor.showObjects
-      ? workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers })
-      : paintLayers.map((layer) => ({ kind: "erp", ...layer }));
+    const layers = workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers });
     // The background VIDEO and its still are one source, so a seek keeps the frame before.
     const bgSource = bgImg && (bgImg === videoEl || bgImg === stillCanvas) ? videoEl.dataset.panoSrc : bgImg;
-    const background = editor.showPanorama && isDecodedImageReady(bgImg)
+    const background = isDecodedImageReady(bgImg)
       ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage), source: bgSource }
       : null;
     // When the World content goes away, 6DoF goes back to 3DoF at the origin at once, ending a transition.
@@ -4009,10 +4018,10 @@ async function showEditor(node, type, options = {}) {
     const box = scene?.url ? editorView.sceneBox(scene.url) : null;
     const sceneBox = box && sceneItemBox(scene.kind, box);
     const portFiles = stickerFiles();
-    const sticker = editor.showObjects ? stickerContentRequest(portFiles, sceneState, evaluated) : null;
+    const sticker = stickerContentRequest(portFiles, sceneState, evaluated);
     const stickerBox = sticker?.url ? editorView.sceneBox(sticker.url) : null;
     const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
-    const stickers = editor.showObjects ? worldStickerLayers(sceneState, editor.frame, state.stickers, { media }) : [];
+    const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media });
     const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers, items));
     return {
       evaluated,
@@ -4032,7 +4041,7 @@ async function showEditor(node, type, options = {}) {
     return {
       gizmo: isCameraSelected() ? cameraGizmo() : worldGizmo(content.evaluated),
       grid: editor.showGrid && !editor.fullscreen ? gridSpec(radius) : null,
-      lines: hasCamera() ? cameraLines(radius) : [],
+      lines: cameraShoots() ? cameraLines(radius) : [],
     };
   }
 
@@ -4041,7 +4050,7 @@ async function showEditor(node, type, options = {}) {
   function worldGizmo(evaluated) {
     const sticker = selectedWorldSticker();
     const value = evaluated.stickers.find((item) => item.id === sticker?.id);
-    if (!editor.showObjects || !worldStickerEditable(sticker) || !value?.active) return null;
+    if (!worldStickerEditable(sticker) || !value?.active) return null;
     return { mode: editor.gizmoMode, transform: sceneTransform(value) };
   }
 
@@ -4068,11 +4077,11 @@ async function showEditor(node, type, options = {}) {
 
   // The Camera's selection is the canvas selection of its shot, as the frame's selection always was.
   function isCameraSelected() {
-    return hasCamera() && editor.selectedId === CAMERA_SHOT_ID;
+    return cameraShoots() && editor.selectedId === CAMERA_SHOT_ID;
   }
 
   function cameraLines(radius) {
-    const segments = editor.showObjects ? polylineSegments(cameraTrajectory(state, timelineSpanFrames())) : [];
+    const segments = polylineSegments(cameraTrajectory(state, timelineSpanFrames()));
     const lines = segments.length ? [{ segments, color: CUTOUT_TRAJECTORY_COLOR }] : [];
     if (!isFreeSpaceView()) return lines;
     const color = isCameraSelected() ? CUTOUT_FRAME_ACCENT : CUTOUT_FRUSTUM_COLOR;
@@ -4433,7 +4442,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function buildSceneItemGeom(item) {
-    if (isSceneSticker(item) && !clipActive(item.clip, editor.frame)) return { visible: false };
+    if (isSceneSticker(item) && !sceneStickerShown(item)) return { visible: false };
     const pose = poseOf(item);
     const centerDir = yawPitchToDir(Number(pose.yaw_deg || 0), Number(pose.pitch_deg || 0));
     const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
@@ -4524,6 +4533,7 @@ async function showEditor(node, type, options = {}) {
   function objectGeom(item) {
     // In 6DoF the Cutout's Camera is its frustum in space, picked and moved with the gizmo (#77).
     if (cameraV2 && isShotItem(item) && isFreeSpaceView()) return { visible: false };
+    if (!paintingShown() && (isStrokeGroupItem(item) || isRasterObjectItem(item))) return { visible: false };
     if (isStrokeGroupItem(item)) {
       const actionGroupId = String(item.actionGroupId || item.id || "").trim();
       const cacheKey = getStrokeGeomCacheKey(actionGroupId, item.layerKind);
@@ -4754,14 +4764,13 @@ async function showEditor(node, type, options = {}) {
     for (const item of items) {
       const selected = editor.mode !== "frame" && !multiSelected && isItemSelected(item);
       if (editor.mode === "frame" && !selected) continue;
-      if (!editor.showObjects && !isShotItem(item)) continue;
       const itemIsSticker = isStickerItem(item);
       const itemIsShot = isShotItem(item);
       const itemLocked = isItemLocked(item);
       if (!itemIsSticker && !itemIsShot) {
         continue;
       }
-      if (isSceneSticker(item) && !clipActive(item.clip, editor.frame)) continue;
+      if (isSceneSticker(item) && !sceneStickerShown(item)) continue;
       const g = objectGeom(item);
       if (type !== "stickers" && !g.visible) {
         continue;
@@ -6113,6 +6122,7 @@ async function showEditor(node, type, options = {}) {
     if (studio && !editor.selectedId && state.active.selected_shot_id) editor.selectedId = getActiveCutoutShot()?.id ?? null;
     editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
     if (editor.selectedId) clearWorldSelection();
+    releaseHiddenSelection();
     runtime.backgroundDirty = true;
     if (restored.paintingChanged) markPaintStrokeVisualsDirty();
     else markObjectVisualsDirty();
@@ -6273,7 +6283,8 @@ async function showEditor(node, type, options = {}) {
         const shot = getActiveCutoutShot();
         if (shot) items.push({ id: shot.id, label: "Camera", icon: getSelectionItemIcon("frame"), item: shot, kind: "frame" });
         getList().forEach((item, i) => {
-          if (!item) return;
+          // A hidden Sticker of state v2 is not selected.
+          if (!item || (isSceneSticker(item) && !item.visible)) return;
           const baseLabel = sceneV2
             ? sceneStickerLabel(item)
             : isExternalSticker(item)
@@ -6325,7 +6336,7 @@ async function showEditor(node, type, options = {}) {
     };
     const notes = [];
     if (worldInspected) {
-      // Positions and the scale have no limit; their sliders reach past the value (worldFieldRange).
+      // Positions and the scale have no limit; the scale's slider reaches past the value (worldFieldRange).
       for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
         const range = worldFieldRange(effective[key]);
         pushParam(key, label, -range, range, 0.01);
@@ -6341,42 +6352,22 @@ async function showEditor(node, type, options = {}) {
     } else {
       // Panorama Studio's Camera is a shot in the Stickers editor (#89): it has a roll and no opacity.
       const shotInspected = selectedKind === "shot" || selectedKind === "frame";
-      pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
-      pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
-      pushParam("hFOV_deg", "H FOV", 1, 179, 0.1);
-      pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
-      // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
-      if (shotInspected) params.forEach((param) => { param.enabled = param.enabled && cameraParamEnabled(param.key, { erp: isErpCamera() }); });
-      if (selectedKind === "image" || (type === "stickers" && !shotInspected)) pushParam("rot_deg", "Rotation", -180, 180, 0.1);
-      else pushParam("roll_deg", "Roll", -180, 180, 0.1);
-      if (sceneV2 && !shotInspected) pushParam("opacity", "Opacity", 0, 100, 1);
       if (cameraPositionShown) {
         for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {
           const range = worldFieldRange(effective[key]);
           pushParam(key, label, -range, range, 0.01);
         }
       }
+      pushParam("yaw_deg", "Yaw", -180, 180, 0.1);
+      pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
+      if (selectedKind === "image" || (type === "stickers" && !shotInspected)) pushParam("rot_deg", "Roll", -180, 180, 0.1);
+      else pushParam("roll_deg", "Roll", -180, 180, 0.1);
+      pushParam("hFOV_deg", "H FOV", 1, 179, 0.1);
+      pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
+      // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
+      if (shotInspected) params.forEach((param) => { param.enabled = param.enabled && cameraParamEnabled(param.key, { erp: isErpCamera() }); });
+      if (sceneV2 && !shotInspected) pushParam("opacity", "Opacity", 0, 100, 1);
     }
-
-    const paintStrokeCount = Array.isArray(state?.painting?.paint?.strokes) ? state.painting.paint.strokes.length : 0;
-    const maskStrokeCount = Array.isArray(state?.painting?.mask?.strokes) ? state.painting.mask.strokes.length : 0;
-    const panoramaInputNames = Array.isArray(node?.inputs) ? node.inputs.map((entry) => String(entry?.name || "")) : [];
-    const linkedPanoramaSource = resolvePreferredExactLinkedSource(
-      node,
-      panoramaInputNames.includes("erp_image") ? ["erp_image", "bg_erp"] : ["bg_media", "bg_erp", "erp_image"],
-    );
-    const hasPanoramaLayer = !!String(linkedPanoramaSource?.src || "").trim() || getNodeUiList("pano_input_images").length > 0;
-    const hasObjectLayer = getList().length > 0 || paintStrokeCount > 0;
-    const hasMaskLayer = maskStrokeCount > 0;
-    const visibilityRows = [
-      { key: "mask", label: "Mask", icon: ICON.circle_dashed_tool, visible: !!editor.showMask, enabled: hasMaskLayer },
-      { key: "objects", label: "Paint / Images", icon: ICON.image, visible: !!editor.showObjects, enabled: hasObjectLayer },
-      { key: "panorama", label: "Panorama", icon: ICON.globe, visible: !!editor.showPanorama, enabled: hasPanoramaLayer },
-    ].map((row) => ({
-      ...row,
-      ariaLabel: `Toggle ${row.label.toLowerCase()}`,
-      tip: row.visible ? "Hide" : "Show",
-    }));
 
     uiState.sidePanel = buildEditorSidePanelModel({
       coverage: state.coverage,
@@ -6387,7 +6378,6 @@ async function showEditor(node, type, options = {}) {
       selectedItems,
       params,
       notes,
-      visibilityRows,
       uiSettings: uiSettingsModel,
       normalizeCoverageValue,
     });
@@ -6419,6 +6409,7 @@ async function showEditor(node, type, options = {}) {
       // The Cutout shows only its Camera; with a PANO_SCENE it shoots the Scene's Timeline (#77). Panorama
       // Studio shows its Camera, its Stickers and its `scene` on one Timeline (#89).
       camera: hasCamera(),
+      cameraHideable: studio,
       stickers: !cutoutV2,
       scene: sceneV2 && !!nodeInputOrigins(node).scene,
       sceneLocked: !!capture,
@@ -6472,10 +6463,14 @@ async function showEditor(node, type, options = {}) {
     return !!target && target.locked !== true;
   }
 
-  // A Sticker outside its Clip range is hidden, so it stops being edited.
+  // What does not show stops being edited: a hidden Sticker, Camera or painting, and a Sticker outside its
+  // Clip range.
   function releaseHiddenSelection() {
     const selected = getSelected();
-    if (isSceneSticker(selected) && !clipActive(selected.clip, editor.frame)) setSelectedItem(null);
+    if ((isSceneSticker(selected) && !sceneStickerShown(selected))
+      || (editor.selectedId === CAMERA_SHOT_ID && hasCamera() && !cameraShoots())
+      || (getSelectedKind() === "stroke" && !paintingShown())) setSelectedItem(null);
+    if (selectedWorldSticker()?.visible === false) clearWorldSelection();
   }
 
   function setTimelineFrame(frame) {
@@ -6584,9 +6579,23 @@ async function showEditor(node, type, options = {}) {
       syncTimeline();
       return;
     }
+    if (action.type === "toggle-visible") {
+      // Showing and hiding is an edit (Undo), but changes no value at a frame, so playback goes on.
+      if (action.id === PAINTING_ROW) state.painting_visible = !state.painting_visible;
+      else {
+        const owner = timelineOwner(action.id);
+        if (!owner || (action.id === "camera" && !studio)) return;
+        owner.visible = !owner.visible;
+      }
+      releaseHiddenSelection();
+      commitTimelineEdit();
+      return;
+    }
     if (action.type === "select-row") {
       // A Sticker is hidden outside its Clip range, so the playhead first moves to where it starts.
       const sticker = state.stickers.find((item) => item.id === action.id);
+      // What is hidden is not selected; its row is still where its eye is.
+      if ((sticker && !sticker.visible) || (action.id === "camera" && !cameraShoots())) return;
       if (sticker && !clipActive(sticker.clip, editor.frame)) jumpTimelineTo(sticker.clip.start);
       // The canvas selection holds sky Stickers; a world row selects its world Sticker for the gizmo and
       // the inspector.
@@ -7644,7 +7653,7 @@ async function showEditor(node, type, options = {}) {
   function syncCutoutShot(keep = true) {
     if (!cameraV2) return;
     const before = cutoutShotBase;
-    if (!state.camera) {
+    if (!cameraShoots()) {
       cutoutShotBase = null;
       if (state.shots?.length) state.shots = [];
       if (before) followCameraChange(before, null);
@@ -9284,6 +9293,8 @@ async function showEditor(node, type, options = {}) {
     }
 
     if ((editor.primaryTool === "paint" || editor.primaryTool === "mask") && (supportsErpPainting() || supportsFramePainting())) {
+      // A hidden painting takes no strokes, as a hidden layer takes no paint in image editors.
+      if (!paintingShown()) return;
       stopTimelinePlayback();
       const layerKind = editor.primaryTool === "mask" ? "mask" : "paint";
       const toolKind = editor.primaryTool === "mask" ? editor.maskTool : editor.paintTool;
@@ -9338,7 +9349,7 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ localOnly: true });
       return;
     }
-    if (editor.primaryTool === "cursor" && hasCamera() && isFreeSpaceView() && startCameraPress(e, p)) return;
+    if (editor.primaryTool === "cursor" && cameraShoots() && isFreeSpaceView() && startCameraPress(e, p)) return;
     if (editor.primaryTool === "cursor" && sceneV2 && isSpaceView() && startWorldStickerPress(e, p)) return;
 
     if (selectedItems.length > 1 && selGeom?.visible) {
@@ -10469,15 +10480,6 @@ async function showEditor(node, type, options = {}) {
       } catch {
         // ignore clipboard failures
       }
-      return;
-    }
-    if (action === "toggle-visibility") {
-      const key = String(target.getAttribute("data-visibility") || "");
-      if (key === "panorama") editor.showPanorama = !editor.showPanorama;
-      else if (key === "objects") editor.showObjects = !editor.showObjects;
-      else if (key === "mask") editor.showMask = !editor.showMask;
-      updateSidePanel();
-      requestDraw();
       return;
     }
     if (action === "set-invert-x") {

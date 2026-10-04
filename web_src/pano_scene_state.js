@@ -229,7 +229,7 @@ function stickers(raw) {
 function camera(raw) {
   if (!isObject(raw)) return null;
   const projection = PROJECTIONS.includes(raw.projection) ? raw.projection : PROJECTIONS[0];
-  return { aspect: positive(raw.aspect, 1), projection, ...lanes(raw, CAMERA_LANES) };
+  return { aspect: positive(raw.aspect, 1), projection, visible: bool(raw.visible, true), ...lanes(raw, CAMERA_LANES) };
 }
 
 // The Camera of a state that has none, for the editors that always shoot through one (PanoramaCutoutNode).
@@ -248,10 +248,11 @@ function normalizeV2(raw) {
       length: length !== null && length >= 1 ? length : null,
     },
     camera: camera(raw.camera),
-    scene: { clip: clip(scene.clip), ...lanes(scene, SCENE_LANES) },
+    scene: { clip: clip(scene.clip), visible: bool(scene.visible, true), ...lanes(scene, SCENE_LANES) },
     stickers: stickers(raw.stickers),
     painting: normalizePaintingState(raw.painting),
     painting_layer: isObject(raw.painting_layer) ? structuredClone(raw.painting_layer) : null,
+    painting_visible: bool(raw.painting_visible, true),
   };
 }
 
@@ -328,12 +329,25 @@ export function loadSceneState(raw) {
   return version === 1 ? migrateV1(parsed) : normalizeV2(parsed);
 }
 
-// The `state_json` text of a loaded state. The default `projection` is left out, so the text of a
-// state saved before the Camera had one stays the same and the node's execution cache still hits.
+// The fields the text of a state leaves out at their default values: added after states were saved
+// without them, they would change the text of those states and miss the node's execution cache.
+const TEXT_DEFAULTS = {
+  state: { painting_visible: true },
+  camera: { projection: PROJECTIONS[0], visible: true },
+  scene: { visible: true },
+};
+
+function withoutDefaults(object, defaults) {
+  return Object.fromEntries(Object.entries(object).filter(([key, value]) => !Object.hasOwn(defaults, key) || value !== defaults[key]));
+}
+
+// The `state_json` text of a loaded state, without the fields of TEXT_DEFAULTS at their defaults.
 export function sceneStateText(state) {
-  if (state.camera?.projection !== PROJECTIONS[0]) return JSON.stringify(state);
-  const { projection, ...camera } = state.camera;
-  return JSON.stringify({ ...state, camera });
+  return JSON.stringify({
+    ...withoutDefaults(state, TEXT_DEFAULTS.state),
+    camera: state.camera && withoutDefaults(state.camera, TEXT_DEFAULTS.camera),
+    scene: withoutDefaults(state.scene, TEXT_DEFAULTS.scene),
+  });
 }
 
 function rebaseLanes(owner, list, rebase, anchor, newAnchor) {
@@ -369,7 +383,7 @@ export function rebaseSceneState(state, fps) {
   return normalizeV2({
     timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
     camera: state.camera === null ? null : { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
-    scene: { clip: scene.clip, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
+    scene: { clip: scene.clip, visible: state.scene.visible, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
       const list = item.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES;
@@ -377,6 +391,7 @@ export function rebaseSceneState(state, fps) {
     }),
     painting: state.painting,
     painting_layer: state.painting_layer,
+    painting_visible: state.painting_visible,
   });
 }
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded（インスペクタの `Layers` の節と `showPanorama`・`showObjects`・`showMask` は削除した。表示の切り替えは、状態 v2 に保存するタイムラインの行の目のアイコンに置き換えた。`docs/timeline-ui.md` の「表示（目のアイコン）」）
 
 ## Date
 

@@ -46,7 +46,7 @@
   - エディタを開いている間に届いた実行結果が違う `pano_timeline_fps` を持つときも、同じく再基準化する。これは Undo の 1 段になる。Cutout（`PanoramaCutoutNode`、#77）は例外で、開いている間に届いた実行結果では再基準化しない（Scene の状態も開いたときのまま。下の Cutout の項）。
 - Clip range の外にある Sticker の行を選ぶと、再生ヘッドがその Clip range の始まりへ移ってから選ばれる。
 - Stickers のタイムラインには Camera の行を出さず、インスペクタにも Camera の欄を出さない（ADR 0028）。状態に `camera` の値や Keyframe が残っていても、表示・再生の可否（`isTimed`）・タイムラインの長さ（`timelineSpan`）には数えず、消したり書き換えたりもしない（保存しても `state_json` の `camera` は変わらない）。ノード上の UI の再生ボタンも同じ `isTimed` で決まる。Camera の行（`buildTimelineModel` の `camera`）と、その Keyframe を数える `isTimed`・`timelineSpan` の `camera` は Cutout と Panorama Studio のためのものである。
-- Panorama Studio（`PanoramaStudio`、#89）のタイムラインは、Camera・Sticker・`scene` の行を 1 本に並べる（上から Camera、Sticker（手前から奥、`world` の Sticker）、`scene`）。
+- Panorama Studio（`PanoramaStudio`、#89）のタイムラインは、Camera・Sticker・ペイント・`scene` の行を 1 本に並べる（上から Camera、Sticker（手前から奥、`world` の Sticker）、ペイント、`scene`）。
   - Camera の行は Camera があるときだけ出る（`buildTimelineModel` の `camera` に Camera の有無を渡す）。Camera の Keyframe は Cutout と同じ記録の規則で、Timeline frame そのもので比べる。再生の可否（`isTimed` の `camera: true`）とタイムラインの長さ（`timelineSpan` の `camera: true`）にも数える。Camera が無ければ（`camera: null`）どちらも数えない。
   - Camera の行が出入りしても、タイムラインのバー（再生ボタン・fps・長さ・開閉）は変わらない（`node --test` で確かめている）。行の一覧は Sticker を足したときと同じく 1 行増え、下の行が 1 行分下がる。タイムラインを開いているときは、行の分だけタイムラインが高くなり（34% まで）、ビューが低くなる。これも Sticker を足したときと同じである。
   - `scene` の行（アイコンは箱）は、`scene` 入力がつながっているとき、または `scene` が Keyframe か既定でない Clip range を持つとき（`pano_timeline.js` の `ownerTimed`）に出る。`scene` の位置・回転・大きさを変える操作とインスペクタはまだ無いので、`scene` の行は Clip range（移動と両端の切り詰め。Sticker の行と同じ）だけを持ち、行のポチと Lane の行は出さない（行のモデルの `keyable: false`。エディタも `scene` の `key-row` を無視する。行を開くボタンは無効）。状態に `scene` の Keyframe があれば、行にポチの印だけは出る。行を選んでもキャンバスの選択は外れるだけで、何も選ばれない。新しい Stickers（`PanoramaStickersNode`）のタイムラインも同じ行を同じ扱いで出す（Cutout は出さない）。
@@ -56,6 +56,17 @@
   - `PANO_SCENE` の `source`：Timeline は Scene のもの（`docs/render-contract.md` の「Cutout ノード」）なので、fps と長さはどちらも値だけを表示し（ツールチップ「Set by the scene」）、タイムラインの長さは実行結果の `pano_timeline_frames`（ノードの出力のフレーム数）にする。Camera の Keyframe をその長さより後に打っても出力は延びない。開いたとき、Cutout の状態は Scene の Timeline fps に再基準化して扱う（秒を保つので、ノードの `frame × Cutout の fps ÷ Scene の fps` と同じ時刻になる）。保存するのは Cutout の状態（その fps と Camera）だけである。編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`。今の `state_json` を再基準化したものと保存しようとする状態が同じなら書かない）ので、ノードは再実行されず、Keyframe も丸められない。Camera を編集したときは、Cutout の状態を Scene の fps のまま保存する（編集していない Lane の Keyframe も、このとき一度だけ再基準化の丸めで最大で半フレーム動く）。ERP の VIDEO の fps に合わせるときも同じ。
   - 行が開いた状態で始まるのは、Camera の Lane に Keyframe があるとき。
 - タイムラインはビューの下にある。開閉や行の開閉で高さが変わるときは 180 ms かけて伸び縮みし、ビューは同じフレームのうちに新しい大きさで描き直す（横の画角と中心は保ち、上下が切れるだけ）。高さは画面の高さの 34% までで、それを超える行は中でスクロールする。prefers-reduced-motion では動かさずに切り替える。
+
+## 表示（目のアイコン）
+
+Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端の目のアイコンで表示・非表示を切り替える（After Effects・Photoshop のレイヤーと同じ）。アイコンが今の状態を示す（表示は目、非表示は破線の目）。状態 v2 の `visible`（Camera・`scene`・Sticker）と `painting_visible`（ペイント）に入る（`docs/scene-state-v2.md`）。
+
+- 目の場所はすべての行にあり、目を持たない行（Cutout の Camera）も同じ幅を空ける。行の名前・▶・ポチの位置は行によって動かない。Cutout は常に Camera で撮るので、Camera の目は Panorama Studio だけにある（`buildTimelineModel` の `cameraHideable`）。
+- ペイントの行（「Paint」、筆のアイコン）は、Sticker の行の後、`scene` の行の前に 1 行だけ出す。ストロークのグループ・ラスタ・マスクを分けず、ペイント全体をまとめて隠す（マスクも出力の MASK から消える）。ペイントが何か（ストローク・マスク・ラスタ）を持つか、隠しているときだけ出る（`buildTimelineModel` の `stickers` のとき。Cutout には出ない）。Clip range も Keyframe も無いので、行は目と名前だけ。
+- 目の切り替えは編集で、Undo の 1 段になり、`state_json` に保存する（既定の表示は書かない）。値を変えないので、再生は止めない（Premiere・Resolve のトラックの表示の切り替えと同じ）。ロックした Sticker も切り替えられる（After Effects と同じ）。
+- 隠した物はエディタでも描かない（薄くも出さない。After Effects・Photoshop・Blender のビューポートと同じ）。選べず、動かせない：キャンバスとギズモの当たり判定、選択の一覧から外れ、行を押しても選ばれない。選んでいる物を隠すと選択が外れる（Undo・Redo で隠れたときも）。隠したペイントにはペイントもマスクも描けない（ツールを使っても何も起きない。Photoshop の隠したレイヤーと同じ）。Camera を隠したときのエディタは `docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」。
+- タイムラインの上の操作（Keyframe・Clip range の編集、行のポチ）は、隠した物にもできる。
+- 旧ノードのエディタは今までどおり、隠した `port` の Sticker を薄く出す。インスペクタにあった表示の切り替え（Layers の節。Panorama・Paint / Images・Mask の、エディタの見た目だけの切り替え、ADR 0011）はなくした。
 
 タイムラインはオブジェクトごとに一行である。閉じた行が基本で、▶ で開くと Lane ごとの行が出る。
 
