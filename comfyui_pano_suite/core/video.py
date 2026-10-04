@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import uuid
 import logging
 from fractions import Fraction
@@ -145,61 +144,15 @@ def _target_audio_sample_count(frame_count: int, frame_rate, sample_rate: int) -
     return max(0, int(round((float(frame_count) / float(frame_rate)) * sample_rate)))
 
 
-def _stretch_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[np.ndarray | None, int]:
+def _fit_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[np.ndarray | None, int]:
+    """The audio cut, or padded with silence, to the length of `frame_count` frames at `frame_rate`. It is not
+    stretched, so it keeps its speed and pitch and stays in sync with the frames from the start."""
     waveform, sample_rate = _extract_audio_tensor(audio)
     if waveform is None or sample_rate <= 0:
         return None, 0
     target_samples = _target_audio_sample_count(frame_count, frame_rate, sample_rate)
-    if target_samples <= 0:
-        return np.zeros((int(waveform.shape[0]), 0), dtype=np.float32), sample_rate
-
-    source_samples = int(waveform.shape[-1])
-    tolerance = max(1, int(round(sample_rate * 0.002)))
-    if abs(source_samples - target_samples) <= tolerance:
-        fitted = _trim_or_pad_audio(waveform, target_samples)
-        return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
-
-    try:
-        import torch
-        import torchaudio.functional as AF
-
-        # Keep preview pitch stable while fitting audio to the preview duration.
-        n_fft = 2048
-        win_length = 2048
-        hop_length = 512
-        rate = max(1e-6, float(source_samples) / float(target_samples))
-        window = torch.hann_window(win_length, dtype=waveform.dtype, device=waveform.device)
-        spec = torch.stft(
-            waveform,
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            window=window,
-            center=True,
-            return_complex=True,
-        )
-        phase_advance = torch.linspace(
-            0,
-            math.pi * hop_length,
-            spec.size(-2),
-            dtype=waveform.dtype,
-            device=waveform.device,
-        )[..., None]
-        stretched_spec = AF.phase_vocoder(spec, rate=rate, phase_advance=phase_advance)
-        stretched = torch.istft(
-            stretched_spec,
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            window=window,
-            center=True,
-            length=target_samples,
-        )
-        stretched = _trim_or_pad_audio(stretched, target_samples)
-        return np.ascontiguousarray(stretched.cpu().numpy(), dtype=np.float32), sample_rate
-    except Exception:
-        fitted = _trim_or_pad_audio(waveform, target_samples)
-        return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
+    fitted = _trim_or_pad_audio(waveform, target_samples)
+    return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
 
 
 def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np.ndarray | None, int, str]:
@@ -394,7 +347,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
     sample_rate = 0
     layout = "mono"
     if _audio_has_waveform(audio):
-        waveform_np, sample_rate = _stretch_audio_to_frame_count(audio, frame_count, frame_rate)
+        waveform_np, sample_rate = _fit_audio_to_frame_count(audio, frame_count, frame_rate)
         waveform_np, sample_rate, layout = _prepare_audio_layout(waveform_np, sample_rate)
 
     _log.debug(

@@ -417,6 +417,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 - Timeline は `source` から Stickers と同じ `_decide_timeline` で決める。IMAGE と VIDEO は既定の状態（`timeline.fps` 24）に対して決める。`PANO_SCENE` の Timeline はその `fps`・`times`・`frames`。
 - IMAGE と VIDEO の実行結果の `ui` は旧 Preview と同じキー（`pano_input_images`、2 フレーム以上なら `pano_videos`・`pano_video_meta`）。`pano_video_meta` の fps は Timeline fps、`frames` は Timeline の長さ。
   - IMAGE：旧 Preview と同じく、最初の画像を保存し、バッチを MP4 にエンコードする（`encode_frames_to_mp4`。キーフレームは `EDITOR_KEYINT` フレームごと、B フレームなし）。音声はない。
+- 旧ノード（`PanoramaStickers`・`PanoramaCutout`・`PanoramaPreview`）のプレビュー MP4 に入れる `audio` は、フレームの長さ（フレーム数 ÷ fps）に合わせて、長ければ切り、短ければ無音で延ばす（`_fit_audio_to_frame_count`）。伸縮はしないので、速さと音程は変わらず、先頭からフレームと揃う（以前は torchaudio の phase vocoder で長さを合わせていた）。
   - VIDEO：`open_video(video, "source")`（Stickers と同じ）で開き、最初に復号できたフレームをプレビュー画像にし、Timeline は `frame_rate` と `times` から決める。全フレームを一括では展開しない（クロップ付きや `VideoFromFile` 以外で `open_video` が `get_components()` に落ちる場合は、それに従う）。MP4 は Stickers と同じエディタの MP4（`_editor_mp4`）で、シークしやすいファイルはコアの `save_to(MP4, H264)` でストリームコピーし、それ以外はプロキシを作る。`has_audio` はコピーなら書いた MP4 に音声ストリームがあるか、プロキシなら音声を入れたかで決める。
   - プレビュー画像と MP4 のために VIDEO を 2 回開く（`open_video` と、コピーの `save_to` またはプロキシの `StreamedVideo`）。PTS の走査は `VideoIndex` を共有するので 1 回だけ。Stickers の `bg_media` の VIDEO も同じ方法で MP4 を書く（#75）。
 - `PANO_SCENE` のときは描画も `ui` も作らずに素通しする（層が複数ある Scene も同じ。#88 で確かめるのは、受けて落ちないことまで）。表示（ノード上の表示と、エディタの新しい ID への結び付け）は #76 で行う。
