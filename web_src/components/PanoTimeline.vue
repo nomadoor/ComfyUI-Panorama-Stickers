@@ -1,13 +1,17 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { ICON } from "../icons.js";
 import { TIMELINE_FPS_MAX, TIMELINE_FPS_MIN, TIMELINE_LENGTH_MAX } from "../pano_scene_state.js";
-import { clusterFrames, timelineTicks } from "../pano_timeline.js";
+import { clusterFrames, keyedAt, timelineTicks, timelineTimeLabel } from "../pano_timeline.js";
 import SvgIcon from "./SvgIcon.vue";
 
 // The Timeline of PanoramaStickersNode's editor. It draws buildTimelineModel() and reports what the
-// pointer does as Timeline frames; the editor owns every state change.
-const props = defineProps({ model: { type: Object, default: () => ({}) } });
+// pointer does as Timeline frames; the editor owns every state change. playhead is { frame, playing },
+// two refs the editor sets on each frame of playback; the model changes only with the state.
+const props = defineProps({
+  model: { type: Object, default: () => ({}) },
+  playhead: { type: Object, default: () => ({ frame: shallowRef(0), playing: shallowRef(false) }) },
+});
 const emit = defineEmits(["action"]);
 
 // Keyframes closer than this on screen show as one pin.
@@ -42,6 +46,9 @@ onBeforeUnmount(() => {
 });
 
 const span = computed(() => Math.max(1, Number(props.model.span || 1)));
+const frame = computed(() => props.playhead.frame.value);
+const playing = computed(() => props.playhead.playing.value);
+const timeLabel = computed(() => timelineTimeLabel(frame.value, Number(props.model.fps || 1)));
 const pxPerFrame = computed(() => trackWidth.value / span.value);
 const pct = (frame) => `${(frame / span.value) * 100}%`;
 const ticks = computed(() => timelineTicks(span.value, pxPerFrame.value));
@@ -65,13 +72,16 @@ function pins(lineKey, keys, selected) {
   }));
 }
 
-function rowPins(row) {
-  return pins(row.id, row.keys, row.selectedFrames);
-}
-
-function lanePins(lane) {
-  return pins(lane.key, lane.frames.map((frame) => ({ frame, full: true })), lane.selectedFrames);
-}
+// The pins of every row and Lane by line key, made again only when the model or the scale changes, not
+// as the playhead moves.
+const linePins = computed(() => {
+  const lines = new Map();
+  for (const row of props.model.rows || []) {
+    lines.set(row.id, pins(row.id, row.keys, row.selectedFrames));
+    for (const lane of row.lanes) lines.set(lane.key, pins(lane.key, lane.frames.map((at) => ({ frame: at, full: true })), lane.selectedFrames));
+  }
+  return lines;
+});
 
 function clipStyle(clip) {
   const end = clip.end === null ? span.value : clip.end;
@@ -166,11 +176,11 @@ function onLineDown(event, row, lane) {
       <button
         class="pano-btn pano-btn-icon pano-timeline-play"
         type="button"
-        :aria-label="model.playing ? 'Pause (Space)' : 'Play (Space)'"
-        :data-tip="model.playing ? 'Pause (Space)' : 'Play (Space)'"
+        :aria-label="playing ? 'Pause (Space)' : 'Play (Space)'"
+        :data-tip="playing ? 'Pause (Space)' : 'Play (Space)'"
         @click="emit('action', { type: 'play' })"
       >
-        <SvgIcon :icon="model.playing ? ICON.pause : ICON.play" />
+        <SvgIcon :icon="playing ? ICON.pause : ICON.play" />
       </button>
       <button
         v-if="model.hasAudio"
@@ -182,7 +192,7 @@ function onLineDown(event, row, lane) {
       >
         <SvgIcon :icon="model.muted ? ICON.volume_muted : ICON.volume2" />
       </button>
-      <span class="pano-timeline-time">{{ model.label }}</span>
+      <span class="pano-timeline-time">{{ timeLabel }}</span>
       <label class="pano-timeline-setting" :data-tip="model.fpsLocked ? model.lockTip : 'Timeline fps'">
         <span v-if="model.fpsLocked">{{ fpsText }}</span>
         <input v-else type="number" :min="TIMELINE_FPS_MIN" :max="TIMELINE_FPS_MAX" step="any" :value="fpsText" aria-label="Timeline fps" @change="onFpsChange">
@@ -216,7 +226,7 @@ function onLineDown(event, row, lane) {
         <div class="pano-timeline-corner" />
         <div ref="rulerRef" class="pano-timeline-ruler" @pointerdown="onRulerDown">
           <span v-for="frame in ticks" :key="frame" class="pano-timeline-tick" :style="{ left: pct(frame) }">{{ frame }}</span>
-          <span class="pano-timeline-playhead" :style="{ left: pct(model.frame + 0.5) }" />
+          <span class="pano-timeline-playhead" :style="{ left: pct(frame + 0.5) }" />
         </div>
         <template v-for="row in model.rows || []" :key="row.id">
           <div class="pano-timeline-head" :class="{ selected: row.selected, 'is-hidden': !row.visible }">
@@ -256,10 +266,10 @@ function onLineDown(event, row, lane) {
               <button
                 v-if="row.keyable"
                 class="pano-timeline-key"
-                :class="{ keyed: row.keyed }"
+                :class="{ keyed: keyedAt(row.keys, frame) }"
                 type="button"
-                :data-keyed="row.keyed ? 'true' : 'false'"
-                :aria-label="row.keyed ? `Every ${row.label} parameter has a keyframe here; update them` : `Add keyframes for every ${row.label} parameter here`"
+                :data-keyed="keyedAt(row.keys, frame) ? 'true' : 'false'"
+                :aria-label="keyedAt(row.keys, frame) ? `Every ${row.label} parameter has a keyframe here; update them` : `Add keyframes for every ${row.label} parameter here`"
                 data-tip="Keyframe every parameter here"
                 @click.stop="emit('action', { type: 'key-row', owner: row.id })"
               >
@@ -283,7 +293,7 @@ function onLineDown(event, row, lane) {
                 <span class="pano-timeline-trim end" @pointerdown.stop="onClipDown($event, row, 'end')" />
               </div>
               <button
-                v-for="pin in rowPins(row)"
+                v-for="pin in linePins.get(row.id)"
                 :key="pin.key"
                 type="button"
                 class="pano-timeline-pin"
@@ -304,7 +314,7 @@ function onLineDown(event, row, lane) {
                 @pointerdown="onLineDown($event, row, lane.lane)"
               >
                 <button
-                  v-for="pin in lanePins(lane)"
+                  v-for="pin in linePins.get(lane.key)"
                   :key="pin.key"
                   type="button"
                   class="pano-timeline-pin"
@@ -318,7 +328,7 @@ function onLineDown(event, row, lane) {
                 </button>
               </div>
             </template>
-            <span class="pano-timeline-playhead" :style="{ left: pct(model.frame + 0.5) }" />
+            <span class="pano-timeline-playhead" :style="{ left: pct(frame + 0.5) }" />
           </div>
         </template>
       </div>

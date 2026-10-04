@@ -15,7 +15,7 @@ import {
   keyAllLanes,
   moveClip,
   moveKeyframes,
-  rowKeyed,
+  keyedAt,
   rowKeyframes,
   selectedEasing,
   timelineOpens,
@@ -67,7 +67,8 @@ test("the row's key button keys every Lane at its current value, making the firs
   assert.deepEqual(rowKeyframes(sticker), [{ frame: 0, full: true }]);
   assert.deepEqual(sticker.direction.keyframes, [{ frame: 0, value: { yaw_deg: 10, pitch_deg: 0 }, easing: EASE_IN_OUT }]);
   assert.notEqual(sticker.direction.keyframes[0].value, sticker.direction.value);
-  assert.equal(rowKeyed(sticker, 0), true);
+  assert.equal(keyedAt(rowKeyframes(sticker), 0), true);
+  assert.equal(keyedAt(rowKeyframes(sticker), 1), false);
 
   setLaneValue(sticker, "opacity", 20, 0);
   assert.deepEqual(rowKeyframes(sticker), [{ frame: 0, full: true }, { frame: 20, full: false }]);
@@ -307,7 +308,12 @@ const editorFunction = (name) => editorSource.slice(editorSource.indexOf(`  func
 test("the Timeline's playhead and play button follow the playback", () => {
   assert.match(editorSource, /onFrame: \(frame\) => \{\s*if \(stateV2\) setTimelineFrame\(frame\);/);
   assert.match(editorSource, /span: \(\) => \{\s*if \(stateV2\) return timelineSpanFrames\(\);/);
-  assert.match(editorFunction("syncTimeline"), /playing: playback\.playing,/);
+  // The playhead and the play button follow refs apart from the Timeline's model, which playback does not
+  // build again on each frame.
+  assert.match(editorSource, /timelinePlayhead\.playing\.value = playback\.playing;/);
+  assert.match(editorFunction("setTimelineFrame"), /timelinePlayhead\.frame\.value = next;/);
+  assert.doesNotMatch(editorFunction("syncTimeline"), /playing|frame: editor\.frame|label/);
+  assert.doesNotMatch(editorFunction("setTimelineFrame"), /updateSidePanel\(\);\s*updateSelectionMenu/);
   // Only PanoramaStickersNode's edits stop playback; the legacy transport plays on.
   assert.match(editorFunction("stopTimelinePlayback"), /if \(stateV2\) playback\.stop\(\);/);
   assert.doesNotMatch(editorSource, /videoState\.(seeking|pendingPlaybackResume|requestedTime|seekLanding|mode)\b/);
@@ -337,7 +343,8 @@ test("Space toggles playback outside text fields, once per press, without clicki
     assert.match(editorSource, new RegExp(`window\\.removeEventListener\\("${type}", ${listener}, true\\);`));
   }
   const timelineVue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.match(timelineVue, /:aria-label="model\.playing \? 'Pause \(Space\)' : 'Play \(Space\)'"/);
+  assert.match(timelineVue, /:aria-label="playing \? 'Pause \(Space\)' : 'Play \(Space\)'"/);
+  assert.match(timelineVue, /const playing = computed\(\(\) => props\.playhead\.playing\.value\);/);
 });
 
 test("an edit on the canvas stops playback on its first move and starts from the stopped frame; a click does not stop it", () => {

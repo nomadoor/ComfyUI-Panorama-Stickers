@@ -12,6 +12,7 @@ import {
   BackSide,
   BufferGeometry,
   ClampToEdgeWrapping,
+  Color,
   CustomBlending,
   DoubleSide,
   Float32BufferAttribute,
@@ -52,8 +53,6 @@ import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWind
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
 
-// MAX_RENDER_SIDE in pano_editor_view.js; the chunk cannot import it back from the eager bundle.
-const MAX_RENDER_SIDE = 2048;
 const DOME_RADIUS = 100;
 const STICKER_DISTANCE = 50;
 const ORIGIN_COLOR = 0xffdd57;
@@ -282,13 +281,44 @@ function createLines({ segments, color }) {
   return new LineSegments(geometry, new LineBasicMaterial({ color }));
 }
 
-function setCamera(target, setup) {
+// The camera of setup, drawing the part `offset` of its view (visibleWindow() with the whole view's size as
+// fullWidth and fullHeight), or all of it.
+function setView(target, setup, offset = null) {
+  if (offset) target.setViewOffset(offset.fullWidth, offset.fullHeight, offset.offsetX, offset.offsetY, offset.width, offset.height);
+  else target.clearViewOffset();
   applyViewportCamera(target, setup);
+}
+
+function setCamera(target, setup, offset = null) {
+  setView(target, setup, offset);
   target.position.set(...setup.position);
   target.near = setup.near;
   target.far = setup.far;
   target.updateProjectionMatrix();
   target.updateMatrixWorld();
+}
+
+// width x height in device pixels, kept to what the GPU can draw to (maxSide, the smaller of
+// MAX_RENDERBUFFER_SIZE and MAX_TEXTURE_SIZE): a larger size is scaled down evenly. Nothing else limits it.
+export function fitRenderSize(width, height, maxSide) {
+  const scale = Math.min(1, maxSide / Math.max(width, height, 1));
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+// Where a view drawn into rect ({ x, y, w, h } in canvas pixels from the top left, which may reach past
+// the canvas) shows on a canvasWidth x canvasHeight canvas: { x, y, width, height } of the canvas in
+// whole pixels, and offsetX, offsetY of that part in the whole view (three.js setViewOffset), or null when
+// none of it shows. Only the part on the canvas is drawn, at the canvas's own pixels.
+export function visibleWindow(rect, canvasWidth, canvasHeight) {
+  const x0 = Math.max(0, Math.round(rect.x));
+  const y0 = Math.max(0, Math.round(rect.y));
+  const x1 = Math.min(canvasWidth, Math.round(rect.x + rect.w));
+  const y1 = Math.min(canvasHeight, Math.round(rect.y + rect.h));
+  if (x1 <= x0 || y1 <= y0) return null;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0, offsetX: x0 - rect.x, offsetY: y0 - rect.y };
 }
 
 // (x, y) of a width x height view as three.js normalized device coordinates.
@@ -334,13 +364,22 @@ export function setChildren(parent, children) {
   return true;
 }
 
-// The line objects of `sets` ([{ segments, color }], createLines) kept in cache ({ key, lines }): made
+// Whether a and b hold the same numbers, strings and booleans in the same arrays and objects.
+export function sameValue(a, b) {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => sameValue(a[key], b[key]));
+}
+
+// The line objects of `sets` ([{ segments, color }], createLines) kept in cache ({ sets, lines }): made
 // again only when the sets change, and the ones before are freed then.
 export function cachedLines(cache, sets) {
-  const key = JSON.stringify(sets);
-  if (cache.key === key) return cache.lines;
+  if (sameValue(cache.sets, sets)) return cache.lines;
   cache.lines.forEach((line) => disposeObject(line));
-  cache.key = key;
+  cache.sets = sets;
   cache.lines = sets.map(createLines);
   return cache.lines;
 }
@@ -427,6 +466,9 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     stencil: false,
   });
   renderer.setClearColor(0x000000, 0);
+  // The largest side the GPU draws to: the canvas and every texture stay within it.
+  const gl = renderer.getContext();
+  const maxSide = Math.min(renderer.capabilities.maxTextureSize, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
   const camera = new PerspectiveCamera(60, 1, 0.1, 100000);
   const scene = new Scene();
   // The World draws over the Sky in a second pass, from the view's position.
@@ -441,15 +483,17 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     return new Mesh(planeGeometry, material);
   };
   let guides = null;
-  const lines = { key: null, lines: [] };
+  const lines = { sets: null, lines: [] };
   // The `scene` and 3D Sticker items' groups (by item object), kept while the item is drawn.
   const contentGroups = new WeakMap();
   // The World content the last space render drew, which pick() hits, not the guides: pickable are
   // pickPass() entries of what is hit on its triangles, pickBoxes the SPLATs, hit on their boxes
-  // ({ object, box, stickerId }). contentKey names what they are and where.
+  // ({ object, box, stickerId }). contentParts are what they are and where, and contentRevision counts
+  // their changes.
   let pickable = [];
   let pickBoxes = [];
-  let contentKey = "";
+  let contentParts = [];
+  let contentRevision = 0;
   // The last pick ({ key, hit }, pickCacheKey()) and what it draws with: a 1 x 1 target (a float one
   // where the GPU can draw to it), its camera and the pick materials by entry.
   let lastPick = { key: null, hit: null };
@@ -641,9 +685,12 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
       parts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
     }
     children.push(...cachedLines(lines, space.lines ?? []));
-    // Picks are reused while this key stays (pickCacheKey): whatever changes what is hit (an item's object
-    // or geometry, a transform, a plane's place or size, what is pickable) must change it too.
-    contentKey = JSON.stringify(parts);
+    // Picks are reused while the revision stays (pickCacheKey): whatever changes what is hit (an item's
+    // object or geometry, a transform, a plane's place or size, what is pickable) must be in the parts.
+    if (!sameValue(parts, contentParts)) {
+      contentParts = parts;
+      contentRevision += 1;
+    }
     // A space without `gizmo` (the Cutout's camera preview, #77) leaves the gizmo of the view as it is, so
     // drawing the preview between two frames of the view does not end a drag.
     if (space.gizmo) children.push(...(gizmo ||= createGizmo(worldCamera)).show(space.gizmo));
@@ -651,23 +698,38 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     setChildren(world, children);
   }
 
-  function draw(projection, input, space = null) {
-    const scale = Math.min(1, MAX_RENDER_SIDE / Math.max(input.width, input.height));
-    const width = Math.max(1, Math.round(input.width * scale));
-    const height = Math.max(1, Math.round(input.height * scale));
-    let entry = owners.get(input.owner);
-    if (!entry) owners.set(input.owner, entry = { textures: new Map() });
+  // Where a render draws (visibleWindow(), with the whole view's size as fullWidth and fullHeight). With
+  // input.rect it draws there on the canvas as resize() sized it (the editor's stage, shown as it is).
+  // Without, the views shared by the nodes draw the owner's width x height from the bottom left of a
+  // canvas as large as the largest owner, and each node copies its rectangle out.
+  function place(input, entry) {
+    if (input.rect) {
+      const window = visibleWindow(input.rect, canvas.width, canvas.height);
+      return window && { ...window, fullWidth: input.rect.w, fullHeight: input.rect.h };
+    }
+    const { width, height } = fitRenderSize(input.width, input.height, maxSide);
     entry.width = width;
     entry.height = height;
     let canvasWidth = 1;
     let canvasHeight = 1;
     owners.forEach((other) => {
-      canvasWidth = Math.max(canvasWidth, other.width);
-      canvasHeight = Math.max(canvasHeight, other.height);
+      canvasWidth = Math.max(canvasWidth, other.width ?? 0);
+      canvasHeight = Math.max(canvasHeight, other.height ?? 0);
     });
     if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) renderer.setSize(canvasWidth, canvasHeight, false);
-    renderer.setViewport(0, 0, width, height);
-    renderer.setScissor(0, 0, width, height);
+    return { x: 0, y: canvas.height - height, width, height, offsetX: 0, offsetY: 0, fullWidth: width, fullHeight: height };
+  }
+
+  function draw(projection, input, space = null) {
+    let entry = owners.get(input.owner);
+    if (!entry) owners.set(input.owner, entry = { textures: new Map() });
+    const at = place(input, entry);
+    if (!at) return null;
+    // The viewport starts at the bottom left of the WebGL canvas.
+    const bottom = canvas.height - at.y - at.height;
+    renderer.setViewport(at.x, bottom, at.width, at.height);
+    renderer.setScissor(at.x, bottom, at.width, at.height);
+    if (input.camera) setView(camera, input.camera, at);
     scene.clear();
     const owned = entry.textures;
     owned.forEach((item) => { item.used = false; });
@@ -690,16 +752,18 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
       item.texture.dispose();
       owned.delete(id);
     });
+    // The part is cleared to input.clearColor (a hex RGB, opaque) before it is drawn, or to transparent.
+    if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
     renderer.render(scene, camera);
+    if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
     if (space) {
-      setCamera(worldCamera, input.camera);
+      setCamera(worldCamera, input.camera, at);
       renderer.autoClear = false;
       renderer.clearDepth();
       renderer.render(world, worldCamera);
       renderer.autoClear = true;
     }
-    // The viewport starts at the bottom left of the WebGL canvas.
-    return { canvas, x: 0, y: canvas.height - height, width, height };
+    return { canvas, x: at.x, y: at.y, width: at.width, height: at.height };
   }
 
   // input: { width, height, camera, background, layers, owner }. camera is a viewportCamera() or
@@ -716,10 +780,33 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
   // stickerUrls its item URLs. stickers are world Sticker planes { id, media, revision, source, opacity,
   // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }. gizmo is
   // null or the selected world Sticker's gizmo { mode, transform } (createGizmo's show).
-  // Returns the canvas and the rectangle of it that holds the frame, in drawImage coordinates.
+  // With rect ({ x, y, w, h } in canvas pixels from the top left), the view of that size is drawn there on
+  // the canvas as resize() sized it, only the part on the canvas, at the canvas's pixels; width and height
+  // are not used then. Returns the canvas and the rectangle of it that holds the frame (from the top
+  // left), or null when none of rect is on the canvas.
   function render(input) {
-    applyViewportCamera(camera, input.camera);
     return draw(panorama, input, input.space ?? null);
+  }
+
+  // Sizes the canvas to width x height device pixels, within what the GPU draws to (fitRenderSize), for
+  // the renders with a rect. Returns the size it has.
+  function resize(width, height) {
+    const size = fitRenderSize(width, height, maxSide);
+    if (canvas.width !== size.width || canvas.height !== size.height) renderer.setSize(size.width, size.height, false);
+    return size;
+  }
+
+  // Clears the canvas, or the part of it in rect (as render()'s), to color (a hex RGB, opaque) or, without
+  // one, to transparent.
+  function clear(color = null, rect = null) {
+    const at = rect ? visibleWindow(rect, canvas.width, canvas.height) : { x: 0, y: 0, width: canvas.width, height: canvas.height };
+    if (!at) return;
+    const bottom = canvas.height - at.y - at.height;
+    renderer.setViewport(at.x, bottom, at.width, at.height);
+    renderer.setScissor(at.x, bottom, at.width, at.height);
+    if (color !== null) renderer.setClearColor(new Color(color), 1);
+    renderer.clear(true, true, false);
+    if (color !== null) renderer.setClearColor(0x000000, 0);
   }
 
   // The box of the loaded `scene` or 3D Sticker item at url in its own frame ({ min, max }; a SPLAT's in
@@ -798,7 +885,7 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
   // hit on their triangles, from both sides; a SPLAT on its box. The same pixel of the same view over the
   // same content gives the pick before.
   function pickAt(camera, x, y, width, height) {
-    const key = pickCacheKey(camera, x, y, width, height, contentKey);
+    const key = pickCacheKey(camera, x, y, width, height, contentRevision);
     if (lastPick.key === key) return lastPick.hit;
     world.updateMatrixWorld();
     const ray = pickRay(camera, x, y, width, height);
@@ -856,13 +943,8 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     return gizmo.pointer(phase, px, py);
   }
 
-  // What pick() hits in the last space render, as a string that changes with it (a MoGe VIDEO's next
-  // item, a moved Sticker).
-  function pickContentKey() {
-    return contentKey;
-  }
-
-  // input: render()'s input without camera; the frame is the layers laid out as an ERP.
+  // input: render()'s input without camera; the frame is the layers laid out as an ERP. Its rect, if any,
+  // lies on the canvas.
   function renderUnwrap(input) {
     return draw(unwrap, input);
   }
@@ -895,7 +977,10 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     };
   }
 
-  function dispose() {
+  // Frees what the view holds. The WebGL context is let go now too, unless it is lost already (lost):
+  // then nothing reaches the GPU, and the canvas can make a new view once the context is restored.
+  function dispose({ lost = false } = {}) {
+    if (closed) return;
     closed = true;
     sceneItems.close();
     stickerItems.close();
@@ -917,8 +1002,8 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     renderer.dispose();
     // Release the WebGL context now instead of when the canvas is collected, so reopening the
     // editor does not pile up contexts.
-    renderer.forceContextLoss();
+    if (!lost) renderer.forceContextLoss();
   }
 
-  return { canvas, render, renderUnwrap, sceneBox, pick, pickSurface, pickSticker, gizmoPointer, contentKey: pickContentKey, release, stats, dispose };
+  return { canvas, render, renderUnwrap, resize, clear, sceneBox, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, stats, dispose };
 }

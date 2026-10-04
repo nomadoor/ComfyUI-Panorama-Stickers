@@ -820,7 +820,7 @@ function syncOwnOutputSourceFromExecuted(node, output) {
 }
 
 function disposeNodeOutputVideoCache(node) {
-  node?.__panoOwnOutputVideoCache?.destroy?.();
+  node?.__panoOwnOutputVideoCache?.player.destroy();
   if (node) node.__panoOwnOutputVideoCache = null;
 }
 
@@ -841,7 +841,7 @@ function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null)
   const srcKey = appendImageRevision(src, rev);
   const cacheKey = `${videoKeys.join("|")}:${srcKey}`;
   const cached = node.__panoOwnOutputVideoCache;
-  if (cached?.video && cached.key === cacheKey) return cached.failed() ? null : cached.video;
+  if (cached && cached.key === cacheKey) return cached.player.failed() ? null : cached.player.video;
   disposeNodeOutputVideoCache(node);
   const player = createLoopingPreviewVideo({
     documentRef: document,
@@ -849,7 +849,7 @@ function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null)
     onFrame: onLoad,
   });
   if (!player) return null;
-  node.__panoOwnOutputVideoCache = { key: cacheKey, ...player };
+  node.__panoOwnOutputVideoCache = { key: cacheKey, player };
   return player.video;
 }
 
@@ -2149,8 +2149,20 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     nodeSurfaceUiModel.playable = playable;
     nodeSurfaceUiModel.playing = playback.playing;
   };
+  // The legacy nodes' background VIDEO (createLoopingPreviewVideo) shows its first frame and plays from
+  // the play button (Stickers; the Cutout surface has none); out of sight it pauses, as the Timeline above.
+  const syncLegacyVideo = () => {
+    const player = node.__panoOwnOutputVideoCache?.player ?? null;
+    if (player && !surfaceShown(wrap, !!node.flags?.collapsed)) player.pause();
+    if (!stickersMode) return;
+    nodeSurfaceUiModel.playable = !!player && !player.failed();
+    nodeSurfaceUiModel.playing = !!player?.playing;
+  };
   // Edits pause playback first, on the frame on screen.
-  const pauseSurfacePlayback = () => surfacePlayback?.playback.pause();
+  const pauseSurfacePlayback = () => {
+    surfacePlayback?.playback.pause();
+    node.__panoOwnOutputVideoCache?.player.pause();
+  };
   let nodeSurfaceLiveState = null;
   const nodeSurfaceSession = (stickersMode
     ? createStickersNodeSurfaceSession
@@ -2325,7 +2337,9 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         onAction: (action) => {
           if (action?.type === "toggle-playback") {
             flushNodeSurfaceGesture();
-            surfacePlayback?.playback.toggle();
+            if (surfacePlayback) surfacePlayback.playback.toggle();
+            else node.__panoOwnOutputVideoCache?.player.toggle();
+            requestDraw();
             return;
           }
           pauseSurfacePlayback();
@@ -2400,6 +2414,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       if (state.needsDraw || moving) {
         state.needsDraw = false;
         if (surfacePlayback) syncSurfacePlayback();
+        else syncLegacyVideo();
         if (!node.flags?.collapsed) drawCanvas(node, canvas, surfaceView);
         nodeSurfaceUiModel.viewUnavailable = surfaceView.failed;
       }

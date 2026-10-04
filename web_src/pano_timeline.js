@@ -76,9 +76,15 @@ export function rowKeyframes(owner) {
   return [...counts].sort((a, b) => a[0] - b[0]).map(([frame, count]) => ({ frame, full: count === names.length }));
 }
 
-// Whether every Lane of owner has a Keyframe at frame.
-export function rowKeyed(owner, frame) {
-  return laneNames(owner).every((name) => !!keyAt(owner[name], frame));
+// Whether every Lane of a row has a Keyframe at frame, from the row's pins (rowKeyframes(), in the frames
+// they are shown at).
+export function keyedAt(keys, frame) {
+  return keys.some((key) => key.full && key.frame === frame);
+}
+
+// The Timeline's time at frame: the frame and the seconds at fps.
+export function timelineTimeLabel(frame, fps) {
+  return `${frame}f · ${(frame / fps).toFixed(2)}s`;
 }
 
 // Removes the Keyframes at frames from the Lanes `names` of owner. A Lane left without Keyframes keeps

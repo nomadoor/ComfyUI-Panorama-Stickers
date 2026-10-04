@@ -467,10 +467,13 @@ export function watchThreeView(view, label) {
     ...view,
     render: timed(view.render),
     renderUnwrap: timed(view.renderUnwrap),
-    dispose() {
+    // A view let go because its context was lost ({ lost: true }) stays counted as that context's until it
+    // is disposed again, so the context's restore is counted too.
+    dispose(options) {
+      view.dispose(options);
+      if (options?.lost) return;
       removeSource();
       disposeContext();
-      view.dispose();
     },
   };
 }

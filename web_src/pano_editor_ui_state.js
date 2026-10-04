@@ -1,6 +1,6 @@
 import { ICON } from "./icons.js";
 import { sceneStickerLabel } from "./pano_editor_state.js";
-import { laneNames, ownerTimed, rowKeyed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
+import { laneNames, ownerTimed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
 
 export function patchUiButton(list, matchKey, key, patch) {
   const entry = Array.isArray(list) ? list.find((item) => String(item?.[matchKey] || "") === String(key || "")) : null;
@@ -417,7 +417,8 @@ const LANE_LABELS = {
 // Keyframe on any of its Lanes (`full` when on all of them); an open row (openRows) also shows one
 // line per Lane. Frames in the model are Timeline frames; `offset` turns them back into the owner's own
 // frames. selection is { owner, lane, frames }: `lane` is a Lane's name, or null for the whole row, and
-// frames are in the owner's own frames.
+// frames are in the owner's own frames. The playhead, the time and whether it plays are not in the model
+// (the editor's timelinePlayhead): the model changes only with the state, the selection and the layout.
 // audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
 // input sets the Timeline fps (ADR 0024); with sceneLocked a PANO_SCENE sets both the fps and the length
 // (a Cutout shoots the Scene's Timeline, #77), and the Cutout shows only its Camera row.
@@ -425,7 +426,7 @@ const LANE_LABELS = {
 // hides it (`visible`). The Cutout's Camera always shoots, so only Panorama Studio's (`cameraHideable`)
 // has one. With the Stickers, the painting has a row (`painting`, after the Stickers) while it has
 // strokes or rasters, or is hidden.
-export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false, cameraHideable = false, stickers = true, scene = false, sceneLocked = false }) {
+export function buildTimelineModel(state, { span, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, stickers = true, scene = false, sceneLocked = false }) {
   // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
   const row = (id, owner, rowLabel, icon, clip, offset, { keyable = true, hideable = true } = {}) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
@@ -439,7 +440,6 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
       visible: owner.visible,
       keyable,
       open: keyable && openRows.has(id),
-      keyed: rowKeyed(owner, frame - offset),
       keys: rowKeyframes(owner).map((key) => ({ frame: key.frame + offset, full: key.full })),
       selectedFrames: selectedFrames(null),
       lanes: (keyable ? laneNames(owner) : []).map((name) => ({
@@ -458,12 +458,9 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
   return {
     visible: true,
     expanded,
-    playing,
     hasAudio: !!audio,
     muted: !!audio?.muted,
-    frame,
     span,
-    label,
     fps: state.timeline.fps,
     fpsLocked: fpsLocked || sceneLocked,
     lengthLocked: sceneLocked,
@@ -485,7 +482,6 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
         visible: state.painting_visible,
         keyable: false,
         open: false,
-        keyed: false,
         keys: [],
         selectedFrames: [],
         lanes: [],

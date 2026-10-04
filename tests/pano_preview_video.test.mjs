@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -97,7 +98,7 @@ test("Cutout selects its input ERP video instead of its rectilinear output video
   );
 });
 
-test("node preview video autoplays muted in a loop and publishes every presented frame", async () => {
+test("a legacy node's VIDEO shows its first frame, plays muted in a loop only when asked, and publishes every presented frame", async () => {
   const video = new FakeVideo();
   let presentedFrames = 0;
   const player = createLoopingPreviewVideo({
@@ -109,28 +110,59 @@ test("node preview video autoplays muted in a loop and publishes every presented
   assert.equal(player.video, video);
   assert.equal(video.muted, true);
   assert.equal(video.loop, true);
-  assert.equal(video.autoplay, true);
+  assert.equal(video.autoplay, false);
+  assert.equal(video.preload, "auto");
   assert.equal(video.playsInline, true);
   assert.equal(video.src, "/view/erp-input.mp4");
   assert.equal(video.loadCalls, 1);
 
-  video.dispatch("canplay");
+  // Loaded, it shows its first frame and stays paused.
+  video.dispatch("loadeddata");
+  await Promise.resolve();
+  assert.equal(video.playCalls, 0);
+  assert.equal(player.playing, false);
+  assert.equal(presentedFrames, 1);
+
+  player.toggle();
   await Promise.resolve();
   assert.equal(video.playCalls, 1);
+  assert.equal(player.playing, true);
   assert.equal(video.frameCallbacks.size, 1);
-
   const callback = [...video.frameCallbacks.values()][0];
   video.frameCallbacks.clear();
   callback();
-  assert.ok(presentedFrames >= 2);
+  assert.ok(presentedFrames >= 3);
   assert.equal(video.frameCallbacks.size, 1);
+
+  // Out of sight the surface pauses it; a pause of a paused VIDEO does nothing.
+  player.pause();
+  assert.equal(player.playing, false);
+  const pauses = video.pauseCalls;
+  player.pause();
+  assert.equal(video.pauseCalls, pauses);
 
   const framesBeforeDestroy = presentedFrames;
   player.destroy();
   assert.equal(video.paused, true);
   assert.equal(video.src, "");
-  assert.equal(video.frameCallbacks.size, 0);
   assert.equal(presentedFrames, framesBeforeDestroy);
+  player.play();
+  assert.equal(video.playCalls, 1);
+});
+
+test("the legacy node surfaces and the legacy Preview node pause their VIDEO out of sight and play it only from a control", () => {
+  const read = (name) => readFileSync(new URL(`../web_src/${name}`, import.meta.url), "utf8");
+  const runtime = read("pano_preview_runtime.js");
+  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);/);
+  assert.match(runtime, /if \(player && !surfaceShown\(wrap, !!node\.flags\?\.collapsed\)\) player\.pause\(\);/);
+  assert.match(runtime, /if \(surfacePlayback\) surfacePlayback\.playback\.toggle\(\);\s*else node\.__panoOwnOutputVideoCache\?\.player\.toggle\(\);/);
+  const preview = read("pano_preview_previewnode.js");
+  // No autoplay: the VIDEO shows its first frame until a double-click or Space plays it.
+  assert.doesNotMatch(preview, /videoPaused/);
+  const ready = preview.slice(preview.indexOf("const onReady = () => {"), preview.indexOf("const onTick = () => this.requestDraw();"));
+  assert.doesNotMatch(ready, /play\(/);
+  assert.match(preview, /if \(this\.img instanceof HTMLVideoElement && !this\.img\.paused && !this\.shown\(\)\) this\.img\.pause\(\);/);
+  assert.match(preview, /if \(this\.root\) return surfaceShown\(this\.root, !!this\.node\.flags\?\.collapsed\);/);
 });
 
 // A PanoramaStickersNode in a graph whose links are { link id: [origin node id, origin slot] }.

@@ -18,7 +18,6 @@ import {
   frameViewContext,
   shotCamera,
   skyLayers,
-  viewInputKey,
   viewportCamera,
   viewProjection,
   workingSkyLayers,
@@ -296,30 +295,6 @@ test("working Stickers with a numeric, missing or repeated id are left out inste
   assert.ok(seen.every((item) => item === editorState.stickers[1] || item === editorState.stickers[4]));
 });
 
-test("the view input key changes only with what the view draws", () => {
-  const image = {};
-  const paint = {};
-  const input = (overrides = {}) => ({
-    background: { media: image, revision: "bg:1", coverage: 360 },
-    layers: [
-      { kind: "erp", id: "paint", media: paint, revision: "p:1", opacity: 1, zIndex: 0 },
-      { kind: "sticker", id: "s", media: image, revision: "s:1", opacity: 1, zIndex: 1, quaternion: { x: 0, y: 0, z: 0, w: 1 }, rect: { x0: -1, x1: 1, y0: -1, y1: 1 } },
-    ],
-    ...overrides,
-  });
-  const key = viewInputKey(input());
-  assert.equal(viewInputKey(input()), key);
-  assert.notEqual(viewInputKey(input({ background: { media: {}, revision: "bg:1", coverage: 360 } })), key);
-  assert.notEqual(viewInputKey(input({ background: { media: image, revision: "bg:2", coverage: 360 } })), key);
-  assert.notEqual(viewInputKey(input({ background: null })), key);
-  const moved = input();
-  moved.layers[1].rect = { x0: -1, x1: 1, y0: -1, y1: 0.5 };
-  assert.notEqual(viewInputKey(moved), key);
-  const painted = input();
-  painted.layers[0].revision = "p:2";
-  assert.notEqual(viewInputKey(painted), key);
-});
-
 test("three.js stays out of the eagerly loaded bundle", () => {
   const bundle = readFileSync(new URL("../web/panorama_suite.js", import.meta.url), "utf8");
   const [chunkName] = readdirSync(new URL("../web/.lazy/", import.meta.url)).filter((name) => name.startsWith("pano_three_view-"));
@@ -451,9 +426,9 @@ test("the editor resizes and redraws the stage in the frame its layout changes",
   // and the tick's clock to the next tick.
   assert.match(editor, /const stageResizeObserver = new ResizeObserver\(redrawNow\);/);
   const redraw = editor.slice(editor.indexOf("  function redrawNow() {"), editor.indexOf("\n  }\n", editor.indexOf("  function redrawNow() {")));
-  assert.match(redraw, /if \(!runtime\.running \|\| !syncCanvasSize\(\)\) return;\s*runGuardedFrame\(\(\) => \{\s*runtime\.dirty = false;\s*drawScene\(\);/);
+  assert.match(redraw, /if \(!runtime\.running \|\| !syncCanvasSize\(\)\) return;\s*runGuardedFrame\(\(\) => \{\s*runtime\.dirty = false;\s*drawScene\(new Set\(\[DRAW_REASON\.RESIZE\]\)\);/);
   assert.doesNotMatch(redraw, /tickFrame/);
-  assert.match(editor, /function tick\(ts = performance\.now\(\)\) \{\s*if \(!runtime\.running\) return;\s*const frameStart = diagnosticsFrameStart\(\);\s*runGuardedFrame\(\(\) => tickFrame\(ts\)\);/);
+  assert.match(editor, /function tick\(ts = performance\.now\(\), reasons = new Set\(\)\) \{\s*if \(!runtime\.running\) return;\s*const frameStart = diagnosticsFrameStart\(\);\s*runGuardedFrame\(\(\) => tickFrame\(ts, reasons\)\);/);
   assert.match(editor, /stageResizeObserver\.observe\(canvas\);/);
   assert.doesNotMatch(editor, /lastSizeCheckTs/);
   const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
@@ -528,11 +503,11 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   const zoom = editor.slice(editor.indexOf("  function zoomSpaceAt(p, direction) {"));
   // It picks again only as reuseWheelPick allows, and keeps a miss as a miss so the target follows the view.
   assert.match(zoom, /if \(!reuseWheelPick\(spaceWheel, next\)\) \{\s*const hit = pickSpace\(p\);\s*spaceWheel = \{ \.\.\.next, cost: performance\.now\(\) - now, hit \};/);
-  assert.match(zoom, /const next = \{ x: p\.x, y: p\.y, time: now, key: editorView\.contentKey\(\), view: spaceViewKey\(\) \};/);
+  assert.match(zoom, /const next = \{ x: p\.x, y: p\.y, time: now, key: editorView\.contentRevision\(\), view: spaceViewKey\(\) \};/);
   assert.match(zoom, /setSpaceView\(zoomView\(view, spaceTarget\(view, spaceWheel\.hit\), direction, spaceScale\(\)\)\);/);
   // The Frame view's wheel reuses its pick by the same rule.
   const frameZoom = editor.slice(editor.indexOf("  function zoomFrameAt(p, direction) {"));
-  assert.match(frameZoom, /const next = \{ x: p\.x, y: p\.y, time: now, key: editorView\.contentKey\(\), view: frameViewKey\(context\) \};\s*if \(!reuseWheelPick\(frameWheel, next\)\) \{\s*const hit = pickFrame\(context, p\);\s*frameWheel = \{ \.\.\.next, cost: performance\.now\(\) - now, hit \};/);
+  assert.match(frameZoom, /const next = \{ x: p\.x, y: p\.y, time: now, key: editorView\.contentRevision\(\), view: frameViewKey\(context\) \};\s*if \(!reuseWheelPick\(frameWheel, next\)\) \{\s*const hit = pickFrame\(context, p\);\s*frameWheel = \{ \.\.\.next, cost: performance\.now\(\) - now, hit \};/);
   assert.match(frameZoom, /frameWheel\.view = frameViewKey\(frameContext\(\) \?\? context\);\s*frameWheel\.wheelTime = now;/);
   assert.match(editor, /canvas\.oncontextmenu = \(e\) => \{\s*if \(\(isFreeSpaceView\(\) \|\| isFreeFrameView\(\)\) && presetUsesButton\(viewControls\(\), 2\)\) e\.preventDefault\(\);/);
   // The preset is ComfyUI's setting; 3DoF keeps the view at the origin.
@@ -560,7 +535,7 @@ test("Reset View, Frame Selected and 6DoF back to 3DoF move the view over a tran
   const wheel = editor.slice(editor.indexOf("  canvas.onwheel = (e) => {"));
   assert.match(wheel, /if \(editor\.mode !== "pano"\) return;\s*cancelViewTransition\(\);/);
   // Each one starts from the view shown now.
-  assert.match(editor, /function transitionView\(target, end = null\) \{\s*const from = spaceViewState\(\);\s*editor\.viewTransition = startViewTransition\(from, target, performance\.now\(\), \{ scale: spaceScale\(\), end \}\);/);
+  assert.match(editor, /function transitionView\(target, end = null\) \{\s*const from = spaceViewState\(\);\s*startAnimation\(\(\) => \{\s*editor\.viewTransition = startViewTransition\(from, target, performance\.now\(\), \{ scale: spaceScale\(\), end \}\);\s*\}\);/);
   assert.match(editor, /if \(action === "reset-view"\) \{\s*if \(editor\.mode === "frame"\) return;[\s\S]{0,200}transitionView\(/);
   assert.match(editor, /transitionView\(frameView\(view, sphere, canvas\.width, canvas\.height\)\);/);
   const setMode = editor.slice(editor.indexOf("  function setSpaceMode(mode) {"), editor.indexOf("\n  }\n", editor.indexOf("  function setSpaceMode(mode) {")));
@@ -616,7 +591,7 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
   assert.doesNotMatch(segments, /aria-label="button\.label"/);
   // A frame whose content went away shows 3DoF on the segments with it.
   const render = editor.slice(editor.indexOf("  function renderEditorView() {"), editor.indexOf("\n  }\n", editor.indexOf("  function renderEditorView() {")));
-  assert.match(render, /syncFloatingViewButtonState\(\);\n[^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| worldMenuShown\) updateSelectionMenu\(\);$/);
+  assert.match(render, /syncFloatingViewButtonState\(\);\n[^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| worldMenuShown\) updateSelectionMenu\(\);\s*return drawn;$/);
   const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
   assert.match(modal, /<PanoFloatingRight\s+:buttons="uiState\.floatingButtons \|\| floatingButtons"\s+:space="uiState\.space \|\| null"/);
   assert.match(modal, /<PanoViewToggle :buttons="uiState\.viewButtons \|\| shellPreset\.viewButtons \|\| \[\]" \/>/);
@@ -640,12 +615,12 @@ test("the three.js view picks the World content it last drew, not its guides", (
   assert.match(view, /if \(drawn !== false\) lastPick = \{ key, hit \};/);
   const loaders = readFileSync(new URL("../web_src/pano_scene_loaders.js", import.meta.url), "utf8");
   assert.match(loaders, /new SplatMesh\(\{ fileBytes: bytes, fileType: "ply", raycastable: false \}\)/);
-  // Its content key changes with the items drawn and their transforms, and with the Sticker planes; a
-  // pick is reused while it, the view and the pixel stay.
+  // Its content revision changes with the items drawn and their transforms, and with the Sticker planes;
+  // a pick is reused while it, the view and the pixel stay.
   assert.match(view, /parts\.push\(\[content\.object\.uuid, content\.transform\]\);/);
   assert.match(view, /parts\.push\(\[layer\.id, layer\.position, layer\.quaternion, layer\.width, layer\.height\]\);/);
-  assert.match(view, /contentKey = JSON\.stringify\(parts\);/);
-  assert.match(view, /const key = pickCacheKey\(camera, x, y, width, height, contentKey\);\s*if \(lastPick\.key === key\) return lastPick\.hit;/);
+  assert.match(view, /if \(!sameValue\(parts, contentParts\)\) \{\s*contentParts = parts;\s*contentRevision \+= 1;\s*\}/);
+  assert.match(view, /const key = pickCacheKey\(camera, x, y, width, height, contentRevision\);\s*if \(lastPick\.key === key\) return lastPick\.hit;/);
   // Spark's LoD worker is not started.
   assert.match(view, /new SparkRenderer\(\{ renderer, onDirty: onUpdate, enableLod: false \}\)/);
 });
@@ -734,7 +709,7 @@ test("the world Sticker's selection menu shows exactly while its gizmo does, and
 test("PanoramaCutoutNode's editor edits its Camera: the shot follows it, the Frame view moves it in space, the gizmo moves it in 6DoF (#77)", () => {
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   // The shot is the Camera at the playhead; an edit goes back to its Lanes before the playhead moves.
-  assert.match(editor, /function setTimelineFrame\(frame\) \{[\s\S]*?syncCutoutShot\(\);\s*editor\.frame = next;\s*syncCutoutShot\(\);/);
+  assert.match(editor, /function setTimelineFrame\(frame\) \{[\s\S]*?syncCutoutShot\(\);\s*editor\.frame = next;\s*timelinePlayhead\.frame\.value = next;\s*syncCutoutShot\(\);/);
   assert.match(editor, /if \(keep && shot && cutoutShotBase\) setCameraShot\(state\.camera, editor\.frame, shot, cutoutShotBase\);/);
   // Only the Camera is edited: no image, paint or clear tools, and the Stickers shown are not selectable.
   assert.match(editor, /const CUTOUT_V2_HIDDEN_TOOLS = new Set\(\["paint", "mask", "add-image", "clear"\]\);/);

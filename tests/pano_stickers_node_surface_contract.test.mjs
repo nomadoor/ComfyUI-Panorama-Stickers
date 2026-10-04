@@ -469,7 +469,7 @@ test("state_json is written only when its meaning changes, in the editor and on 
 test("the node surface leaves a background VIDEO that failed to load for its image fallbacks", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
 
-  assert.match(runtime, /if \(cached\?\.video && cached\.key === cacheKey\) return cached\.failed\(\) \? null : cached\.video;/);
+  assert.match(runtime, /if \(cached && cached\.key === cacheKey\) return cached\.player\.failed\(\) \? null : cached\.player\.video;/);
   // The origin slot indexes the images as the node output them, so video files are left out after it.
   assert.match(runtime, /ordered\.push\(outImgs\[resolvedOriginSlot\]\);\s*ordered\.push\(\.\.\.outImgs\);\s*for \(const cand of ordered\.filter\(\(image\) => !isVideoFile\(image\)\)\)/);
 });
@@ -510,7 +510,7 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   // A node out of sight stops and lets its VIDEO go, on each draw and as soon as its surface resizes away.
   assert.match(runtime, /const shown = surfaceShown\(wrap, !!node\.flags\?\.collapsed\);/);
   assert.match(runtime, /const sticker = shown \? portStickerMedia\(node\) : null;\s*const playable = playback\.follow\(\{\s*shown,\s*sources: shown \? backgroundVideoSources\(node\) : \[\],\s*state: getCachedState\(node\),\s*sticker,/);
-  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*if \(!node\.flags\?\.collapsed\) drawCanvas/);
+  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);\s*if \(!node\.flags\?\.collapsed\) drawCanvas/);
   assert.match(runtime, /new ResizeObserver\(\(\) => \{\s*if \(surfacePlayback\) syncSurfacePlayback\(\);\s*requestDraw\(\);/);
   assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);\s*surfacePlayback\.stickerVideo\.remove\(\);/);
 });

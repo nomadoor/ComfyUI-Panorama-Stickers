@@ -317,6 +317,10 @@ export function resolvePreviewVideoSource(output, videoKeys = [], sourceFromCand
   return "";
 }
 
+// The background VIDEO of the legacy Stickers and Cutout node surfaces, muted. Like PanoramaStickersNode's
+// Timeline on its node (pano_node_playback.js), it shows its first frame and plays only when asked
+// (play(), toggle()); it loops while it plays, and the surface pauses it when it goes out of sight.
+// onFrame runs for each frame it presents and when it loads, plays, pauses or fails.
 export function createLoopingPreviewVideo({
   documentRef = typeof document !== "undefined" ? document : null,
   src = "",
@@ -338,14 +342,9 @@ export function createLoopingPreviewVideo({
       queueFramePump();
     });
   };
-  const onReady = () => {
+  const onLoaded = () => {
     if (destroyed) return;
     publishFrame();
-    try {
-      Promise.resolve(video.play()).then(queueFramePump).catch(() => {});
-    } catch {
-      // Autoplay can be blocked despite the video being muted.
-    }
   };
   const onTick = () => publishFrame();
   const onPlay = () => {
@@ -361,17 +360,27 @@ export function createLoopingPreviewVideo({
 
   video.muted = true;
   video.loop = true;
-  video.autoplay = true;
+  video.autoplay = false;
+  video.preload = "auto";
   video.playsInline = true;
   video.crossOrigin = "anonymous";
-  video.addEventListener("loadedmetadata", onReady, { once: true });
-  video.addEventListener("canplay", onReady, { once: true });
+  video.addEventListener("loadedmetadata", onLoaded, { once: true });
+  video.addEventListener("loadeddata", onLoaded, { once: true });
   if (!supportsVideoFrameCallback) video.addEventListener("timeupdate", onTick);
   video.addEventListener("play", onPlay);
   video.addEventListener("pause", onPause);
   video.addEventListener("error", onError);
   video.src = src;
   video.load();
+
+  const play = () => {
+    if (destroyed || failed || !video.paused) return;
+    // Autoplay rules can refuse it; the frame on screen stays.
+    Promise.resolve(video.play()).catch(() => {});
+  };
+  const pause = () => {
+    if (!destroyed && !video.paused) video.pause();
+  };
 
   const destroy = () => {
     if (destroyed) return;
@@ -380,8 +389,8 @@ export function createLoopingPreviewVideo({
       video.cancelVideoFrameCallback(frameCallbackId);
       frameCallbackId = 0;
     }
-    video.removeEventListener("loadedmetadata", onReady);
-    video.removeEventListener("canplay", onReady);
+    video.removeEventListener("loadedmetadata", onLoaded);
+    video.removeEventListener("loadeddata", onLoaded);
     video.removeEventListener("timeupdate", onTick);
     video.removeEventListener("play", onPlay);
     video.removeEventListener("pause", onPause);
@@ -392,5 +401,18 @@ export function createLoopingPreviewVideo({
   };
 
   // A file that does not load, such as a temp MP4 the server deleted, leaves the caller to its fallback.
-  return { video, destroy, failed: () => failed };
+  return {
+    video,
+    destroy,
+    failed: () => failed,
+    play,
+    pause,
+    toggle() {
+      if (video.paused) play();
+      else pause();
+    },
+    get playing() {
+      return !destroyed && !video.paused && !video.ended;
+    },
+  };
 }

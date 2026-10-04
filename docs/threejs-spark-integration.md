@@ -40,7 +40,7 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 
 - Panorama タブは Stickers と同じ描画を使う。
 - Frame タブは `shotCamera` で shot から覗く three.js のカメラを作り、`frameViewContext` が ADR 0021 のとおりゲートの外まで同じ焦点距離で描く範囲を決める。presentation scale・ゲート・FOV の関係は変えていない。表示する撮影範囲が Cutout ノードの出力と一致することは、`tests/test_legacy_goldens.py` が #48 の Cutout の基準画像で確かめている。
-- カメラプレビューは、エディタのビューを `owner` を分けて共有する（WebGL コンテキストはエディタで一つ）。描画先の 2D の canvas は Vue の `PanoFloatingRight.vue` が持つ。shot・背景・レイヤーが変わらない tick では描き直さない。
+- カメラプレビューは、エディタのビューを `owner` を分けて共有する（WebGL コンテキストはエディタで一つ）。表示する `<canvas>` は Vue の `PanoFloatingRight.vue` が持つ。描き方は下の「エディタの描画を直接表示する」を参照。
 - Unwrap 表示も three.js で描く（`renderUnwrap`）。Stickers のエディタと Preview のモーダルの Unwrap も同じ経路になる。180 の ERP を横幅いっぱいに引き伸ばす点は以前の描画と同じにしている。
 - three.js を読み込めないときは、Stickers と同じく失敗を表示する（#69）。
 
@@ -211,11 +211,31 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 - SPLAT：Spark の `SplatMesh` は自前のシェーダーで描くので `overrideMaterial` もマテリアルの差し替えも効かない。Spark 2.1 に深度や ID を書き出す手段があるかを調べたが、深度を色にする `setDepthColor`（ブレンドされた 8 ビットの色で、正確な深度ではない。変更子の差し替えでスプラットを作り直し、並べ替えも非同期）と、オフラインのターゲットへの描画（`renderTarget`・非同期の `readTarget`）しかなく、1 画素の深度と ID を同期で得る手段はない。LoD の当たり判定用スプラット（`lodRaycast`）は LoD を使う場合だけである。そこで SPLAT は `raycastable: false`（Spark の `SplatMesh.raycast` はメインスレッドの wasm で全スプラットを走査する）にして、要素の箱（読み込み時の `getBoundingBox`、要素の変形込み）と光線の交点で代用する（`rayBoxDepth`。箱の中からは光線が出る点）。精度は落ちるが、軽さと安全（Spark の raycast の重さ・落ちる疑い）を優先した。
 - 最も近い当たり：点は、GPU の当たりと SPLAT の箱の当たりのうち、カメラの near と far の間で最も浅いもの（`nearestHit`）。Sticker（`pickSticker`）は、`world` の Sticker の板の当たりがあれば、より手前の SPLAT の箱より先にする。箱は見えている SPLAT より大きいので、箱の前に見えている板が選べなくならないようにするためである。
 - 失敗したとき：描画が例外になったら（WebGL のコンテキストが失われた、RGBA32F への描画を拒まれたなど）、隠した物とマテリアルを必ず戻し（`pickPass` の `finally`）、レンダーターゲットも外す。その呼び出しは GPU の当たりなし（SPLAT の箱だけ）として扱い、結果は使い回さない。float のターゲットで失敗したら次から RGBA8 で描き、RGBA8 でも失敗したら GPU の当たり判定をやめる（SPLAT の箱だけで当てる）。この切り替えはエディタを開き直すまで戻らない。
-- 使い回し：同じ画素・同じ視点（カメラの設定）・同じ内容（`contentKey`：描いた要素と変形、`world` の Sticker の板の位置と大きさ。不透明度 0 の物は入らない）なら、前の結果を返す（`pickCacheKey`）。当たる物を変える変更（ジオメトリ・変形・表示）を足すときは、`contentKey` も変わるようにすること。1 回の押下で `pickSticker` と、何もない所なら続く `pickSpace` の 2 回呼ばれるが、2 回目はこの使い回しで描かない。ホイールの `reuseWheelPick` はこの上に残る（ホイールの一段ごとに視点が変わるため）。
+- 使い回し：同じ画素・同じ視点（カメラの設定）・同じ内容（`contentRevision`：描いた要素と変形、`world` の Sticker の板の位置と大きさが前の描画と値で違うときに 1 つ進む数。不透明度 0 の物は入らない）なら、前の結果を返す（`pickCacheKey`）。当たる物を変える変更（ジオメトリ・変形・表示）を足すときは、比べる `parts` に入れて `contentRevision` も進むようにすること。1 回の押下で `pickSticker` と、何もない所なら続く `pickSpace` の 2 回呼ばれるが、2 回目はこの使い回しで描かない。ホイールの `reuseWheelPick` はこの上に残る（ホイールの一段ごとに視点が変わるため）。
 - 境目：`pano_pick.js` は WebGL を使わない純粋な関数（詰め方と戻し方、画素の窓、深度から World、光線と箱、最も近い当たり、使い回しのキー）で、`node --test`（`tests/pano_pick.test.mjs`）で確かめる。`pickPass` の表示とマテリアルの入れ替えと戻しも、three.js のオブジェクトだけで確かめる。描画と読み戻し（`drawPick`）は WebGLRenderer が要るので Node では動かず、実機で確かめる。
 - 期待する速さ：GPU の 1 画素の描画は頂点の処理が主で、1,610 万三角形でも数 ms〜数十 ms の見込み（実機で未計測）。CPU の Raycaster の 0.5 秒と比べて 1 桁以上速い。
 - Spark の `SparkRenderer` は `enableLod: false` で作る。エディタは SPLAT を LoD・ページングで描かないので、LoD のワーカーを起こさない。
 
 ## World の組み立て（毎回の描画）
 
-`buildWorld` は毎回の描画で World の中身を並べるが、オブジェクトは使い回す：`scene` と 3D の Sticker の要素のグループ（要素ごと）、`world` の Sticker の板（プール）、グリッド（間隔ごと）、線（`space.lines` の中身が変わったときだけ作り直す。`cachedLines`）、ギズモ。並べたオブジェクトが前と同じ順で同じなら、`world` を空にして付け直すことはしない（`setChildren`）。
+`buildWorld` は毎回の描画で World の中身を並べるが、オブジェクトは使い回す：`scene` と 3D の Sticker の要素のグループ（要素ごと）、`world` の Sticker の板（プール）、グリッド（間隔ごと）、線（`space.lines` の中身が値で変わったときだけ作り直す。`cachedLines`・`sameValue`。JSON の文字列は作らない）、ギズモ。並べたオブジェクトが前と同じ順で同じなら、`world` を空にして付け直すことはしない（`setChildren`）。
+
+## エディタの描画を直接表示する
+
+Chrome のタブが落ちる件の監査で、エディタが描画のたびに WebGL の絵を 2D のキャンバスへ `drawImage` で写していること、何もしていないときも `requestAnimationFrame` を回し続けていること、毎フレーム `JSON.stringify` でキーを作っていることが見つかった。2D のキャンバスがソフトウェア描画に落ちると、写すたびに GPU から読み戻すことになり、メモリの確保の失敗の最も疑わしい原因になる。エディタ（Stickers・Cutout・Panorama Studio・Preview のモーダル）の描画を次のように改めた。ノード上の表示（`pano_preview_view.js` の共有のビュー）は、一つの WebGL を各ノードの 2D のキャンバスへ写す作りのまま変えていない。
+
+- 描画のスケジュール（`pano_frame_scheduler.js`）：エディタが `requestAnimationFrame` を呼ぶのはこの 1 か所だけである。`requestDraw(reason)` を受けたときに次のフレームを 1 回だけ描き、視点の遷移・慣性・ドラッグ・フェード（`editorAnimating`）のあいだだけ続けて回す。何もしていないときはフレームを要求しない。`editorAnimating` が読む物（視点の遷移・慣性・レイアウトの待ち・プレビューの大きさの切り替え）は必ず `startAnimation` を通して始め、そこでスケジューラを起こす。ドラッグはポインタを押したときに起こし、フェードはフレームの中で始まる。1 つのコールバックや描画が例外を投げても、そのフレームの残りと次の予約は止まらない。再生（`createVideoPlayback` の clock）、ドラッグのまとめ（`createFrameBatch`）、選択メニューとツールチップの位置合わせも、このスケジューラの `requestFrame` を使う。理由は列挙型 `DRAW_REASON`（`STATE`・`VIEW`・`PLAYHEAD`・`PAINT`・`OVERLAY`・`MEDIA`・`RESIZE`・`CONTEXT`）で持ち、描画の入口は `drawScene(reasons)` の 1 つである。
+- WebGL のキャンバスをそのまま置く：`PanoModal.vue` のステージの `<canvas data-stage-background>` を three.js のキャンバスそのものにした（`createEditorView({ canvas })`）。上に重なる 2D のキャンバス（ハンドル・枠・グリッドの線・文字）は透明で、CSS ピクセルのまま変えていない。`OVERLAY` だけのフレーム（ホバー・範囲選択など）は WebGL のキャンバスに触れず、ページは前の絵を表示し続ける。WebGL を描くフレームでは、描画バッファが保たれない（`preserveDrawingBuffer: false`）ので、キャンバス全体を描き直す。
+  - 何も描くものがないときの背景の色（`#070707`）、Unwrap の外側（`#070707`）、Frame 表示の下地（`#0a0a0a`、shot がまだ描けないときの文脈の範囲は `#111111`）は WebGL の `clear` で塗る。Frame の文脈の範囲も、何も描かれない所は透明でなく `#0a0a0a` にする（`render` の `clearColor`）。グリッド・ERP の格子・文字は以前からオーバーレイに描いていたので、そのままである。
+  - Frame 表示は、一つのキャンバスの中で `setViewport`・`setScissor` で描く範囲を分ける（`render` の `rect`）。文脈の範囲はキャンバスの外まで広がるので、キャンバスに入る部分だけを、カメラの `setViewOffset` でその窓として描く（`visibleWindow`）。キャンバスの外は描かない。
+  - Unwrap も同じキャンバスの、ERP の矩形に描く。
+  - 残した写し：Cutout のカメラプレビューは、ステージの上に浮かぶ別の要素（角の丸み・フェードイン、プレビューの大きさの切り替え、オーバーレイより上の重なり）なので、ステージのキャンバスの一部にはできない。描き方は、同じ WebGL のキャンバスの左下に先に描き、その範囲を `createImageBitmap` で取り（Chrome では GPU 上の複製）、プレビューの `<canvas>` の `bitmaprenderer` に渡す。直後にステージの絵がその範囲を覆う。2D のキャンバスは使わない。描き直すのは、プレビューの大きさが変わったときと、`VIEW`・`OVERLAY` 以外の理由（状態・再生位置・素材・大きさ・コンテキスト）があるときだけである。
+- 解像度：`MAX_RENDER_SIDE`（2048）を外した。エディタの WebGL のキャンバスは、CSS の大きさ × `devicePixelRatio` で描く。ただし画面に見える大きさ（ウィンドウの `innerWidth`・`innerHeight` × `devicePixelRatio`）を超えるときは、縦横を同じ比でそこまで縮める（`screenRenderSize`）。グラフを大きくズームしたノード上の Preview も同じで（`measurePreviewCanvasSize` の `screen`）、一度に見える画素は画面を超えないので、目に見える画素は減らない。そのほかの上限は GPU の `MAX_RENDERBUFFER_SIZE` と `MAX_TEXTURE_SIZE` の小さい方だけで（`fitRenderSize`）、それを超えるときだけ縮める。`devicePixelRatio` が変わったとき（別の画面へ移したとき）も `matchMedia` で大きさを合わせ直す。ノード上の共有のビューも同じ上限だけになり、Preview ノードのキャンバス（`measurePreviewCanvasSize`）も CSS の大きさ × `devicePixelRatio` になった。
+- 毎フレームのキー：`JSON.stringify` のキーをやめた。
+  - 状態の変更は、スケジューラの `stateRevision`（`STATE` の要求の数）で数える。理由の付け方の方針：状態が変わりうるときは `STATE`（`requestDraw` で理由を省いたときの既定なので、書き忘れても古い表示は残らない）。状態が変わらないことが確かな所だけが、ほかの理由を渡す：視点（`VIEW`）、ホバー・範囲選択（`OVERLAY`）、再生位置（`PLAYHEAD`）、描いている途中のストロークとストローク・ラスターの移動（`PAINT`。描画用の状態 v2 はペイントを含まないので作り直さない）、素材の読み込み（`MEDIA`）。ギズモのドラッグは Sticker の値を変えるので `STATE` のままである。描画用の状態 v2（`loadSceneState`）と Camera の軌跡は、この数が変わったときだけ作り直す。Timeline の Keyframe と Clip range のドラッグも、1 フレームにまとめたうえで `STATE` で描く（数を進める）。
+  - `evaluateSceneState` は 1 フレームに 1 回にした（Sky の Sticker と World で共有。`skyLayers`・`worldStickerLayers` の `evaluated`）。
+  - World の当たりの内容は `contentRevision`、線は値の比較（`sameValue`）にした。Unwrap とカメラプレビューのキー（`viewInputKey`）は、上の描き直しの規則に置き換えて削除した。
+- 再生中の Vue：再生位置（`frame`）と再生中か（`playing`）は、`uiState` の外の 2 つの `shallowRef`（`timelinePlayhead`）にして、`PanoModal.vue` から `PanoTimeline.vue` にだけ渡す。Timeline の行（`buildTimelineModel`）は状態・選択・レイアウトが変わったときだけ作り直し、再生位置・時刻の文字・キーのボタンの状態（`keyedAt`）は Timeline の部品が refs から求める。ピンの並び（`linePins`）は再生位置が動いても作り直さない。サイドパネルは、選んでいる物に Keyframe か Clip range があるとき（`inspectorTimed`）だけ再生位置ごとに作り直し、選択が変わったときは全体を作り直す。
+- WebGL コンテキストの喪失：`webglcontextlost` で `preventDefault` し、ビューの GPU の資源を放す（コンテキストは放さない。`dispose({ lost: true })`）。そのあいだ描画と当たり判定は何もせず、エラーも出さずに待つ。`webglcontextrestored` で、同じキャンバスにビューを作り直し、全体を描き直す（`CONTEXT`）。カメラプレビューも描き直す。診断（`pano_diagnostics.js`）は、失ったビューを復帰まで同じコンテキストとして数えるので、1 回の喪失と復帰は `created` 2・`lost` 1・`restored` 1・`disposed` 1・`alive` 1 になる。
+- 旧ノードの動画：旧 Preview ノード（`pano_preview_previewnode.js`）と、旧 Stickers・旧 Cutout のノード上の背景の VIDEO（`createLoopingPreviewVideo`）は、自動で再生しない。`PanoramaStickersNode` のノード上の Timeline と同じく、既定は止めて先頭のフレームを表示し、再生は操作で行い（Preview はダブルクリックか Space、旧 Stickers は再生のボタン）、再生中はループする。画面外（折りたたみ・別のグラフ・サブグラフの中）では止める。旧 Cutout のノード上の表示には再生の操作がないので、先頭のフレームのままである。エディタの Timeline のサムネイル用の `<video>` とキャンバスは、作り終えたら（失敗・中断も）放す。
+
