@@ -252,7 +252,8 @@ test("whatever editorAnimating() reads is started through startAnimation, which 
     assert.ok(index > editorSource.indexOf("  function tickFrame(") && index < editorSource.indexOf("  function runGuardedFrame("), fade);
   }
   // The camera preview hidden draws its frame anew when it shows again.
-  assert.match(editorFunction("drawCutoutOutputPreview"), /uiState\.cameraPreview\.settled = false;\s*\/\/[^\n]*\n\s*cameraPreviewDrawn = null;\s*return;/);
+  assert.match(editorFunction("drawCutoutOutputPreview"), /uiState\.cameraPreview\.settled = false;\s*dropCameraPreview\(\);\s*return;/);
+  assert.match(editorFunction("dropCameraPreview"), /cameraPreviewDrawn = null;/);
 });
 
 test("a Keyframe or Clip range drag draws the state it changed: the view's state is made again", async () => {

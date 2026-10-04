@@ -99,7 +99,7 @@ export function createHistory(deps) {
 | `editor/external_stickers.js` | 242 | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
 | `editor/space.js` | 292 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作 |
 | `editor/view_input.js` | 258 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
-| `editor/camera_preview.js` | 133 | Cutout / Studio のカメラのプレビュー |
+| `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
 | `editor/overlay.js` | 600 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
 | `editor/render_loop.js` | 410 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
 | `editor/panels.js` | 420 | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |

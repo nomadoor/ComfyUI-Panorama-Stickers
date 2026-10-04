@@ -601,7 +601,7 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
 test("the three.js view picks the World content it last drew, not its guides", () => {
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   // What is seen is picked: meshes on the GPU, a SPLAT on its box (Spark's own raycast is off).
-  assert.match(view, /if \(content\.splat && !spark\) continue;\s*children\.push\(content\.group\);/);
+  assert.match(view, /if \(content\.splat && !Spark\) continue;\s*if \(content\.splat\) sparkViews\.splat\(owner, content\.object\);\s*children\.push\(content\.group\);/);
   assert.match(view, /if \(!\(opacity > 0\)\) continue;\s*if \(content\.splat\) pickBoxes\.push\(\{ object: content\.object, box: content\.box, stickerId: content\.stickerId \}\);\s*else pickable\.push\(\{ object: content\.group, stickerId: content\.stickerId, plane: false \}\);/);
   assert.match(view, /if \(!\(layer\.opacity > 0\)\) continue;\s*pickable\.push\(\{ object: mesh, stickerId: layer\.id, plane: true \}\);/);
   assert.match(view, /return pickAt\(camera, x, y, width, height\)\?\.point \?\? null;/);
@@ -623,7 +623,7 @@ test("the three.js view picks the World content it last drew, not its guides", (
   assert.match(view, /if \(!sameValue\(parts, contentParts\)\) \{\s*contentParts = parts;\s*contentRevision \+= 1;\s*\}/);
   assert.match(view, /const key = pickCacheKey\(camera, x, y, width, height, contentRevision\);\s*if \(lastPick\.key === key\) return lastPick\.hit;/);
   // Spark's LoD worker is not started.
-  assert.match(view, /new SparkRenderer\(\{ renderer, onDirty: onUpdate, enableLod: false \}\)/);
+  assert.match(view, /new Spark\.SparkRenderer\(\{ renderer, onDirty, enableLod: false \}\)/);
 });
 
 test("a 3D world port Sticker (#63) has no plane: the space view draws its item instead", async () => {

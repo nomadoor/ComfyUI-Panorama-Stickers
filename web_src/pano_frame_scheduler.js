@@ -11,7 +11,7 @@
 //
 // Which reason to give: STATE whenever the working state may have changed (the default of the editor's
 // requestDraw, so a missing reason never leaves a stale frame). Another reason only where the state surely
-// stays: the view, the playhead, the painting being drawn, media, the overlay.
+// stays: the view, the playhead, the painting being drawn, media, a Spark renderer's sort, the overlay.
 export const DRAW_REASON = Object.freeze({
   // The state changed: Stickers, the Camera, the painting, the selection, the playhead.
   STATE: "state",
@@ -24,8 +24,14 @@ export const DRAW_REASON = Object.freeze({
   PAINT: "paint",
   // Only the 2D overlay changed: a hover, a cursor, a handle.
   OVERLAY: "overlay",
-  // Media arrived or changed: an image or a VIDEO frame loaded, a `scene` item loaded, Spark sorted.
+  // Media arrived or changed: an image or a VIDEO frame loaded, a `scene` item or Spark loaded.
   MEDIA: "media",
+  // The stage's Spark renderer has new splats or a new order (pano_spark_views.js): the stage draws again,
+  // the camera preview does not.
+  SPLAT_STAGE: "splat_stage",
+  // The camera preview's Spark renderer has new splats or a new order: the preview draws again. The stage
+  // draws with it (the frame draws all of the three.js canvas), its own Spark having nothing new to sort.
+  SPLAT_PREVIEW: "splat_preview",
   // The stage changed size.
   RESIZE: "resize",
   // The WebGL context came back.
