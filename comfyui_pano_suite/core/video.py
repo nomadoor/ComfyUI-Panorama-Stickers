@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import math
-import tempfile
 import uuid
 import logging
-from contextlib import contextmanager
 from fractions import Fraction
 from pathlib import Path
 
@@ -17,29 +15,10 @@ try:
 except Exception:  # pragma: no cover - optional at import time
     av = None
 
-try:
-    import folder_paths
-except Exception:  # pragma: no cover - optional in tests
-    folder_paths = None
-
+from .temp_files import TEMP_FILES, ensure_temp_root, entry_from_path, temp_file_path
 from .video_source import StreamedVideo
 
 _log = logging.getLogger(__name__)
-
-
-def _resolve_temp_root() -> Path:
-    if folder_paths is not None:
-        try:
-            return Path(folder_paths.get_temp_directory())
-        except Exception:
-            pass
-    return Path(tempfile.gettempdir()) / "comfyui_panorama_stickers"
-
-
-def _ensure_temp_root() -> Path:
-    root = _resolve_temp_root()
-    root.mkdir(parents=True, exist_ok=True)
-    return root
 
 
 def _normalize_frames(frames) -> np.ndarray:
@@ -252,40 +231,6 @@ def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np
     return np.ascontiguousarray(downmixed), sample_rate, "stereo"
 
 
-def entry_from_path(path: Path, *, media_type: str) -> dict:
-    root = _ensure_temp_root().resolve()
-    target = path.resolve()
-    try:
-        rel = target.relative_to(root)
-        subfolder = str(rel.parent).replace("\\", "/")
-    except Exception:
-        subfolder = ""
-    return {
-        "filename": target.name,
-        "subfolder": subfolder,
-        "type": "temp",
-        "storage": "temp",
-        "format": media_type,
-    }
-
-
-@contextmanager
-def removed_on_failure(paths):
-    """Remove the files of `paths` (a path, or a list that the block fills) when the block fails or is cancelled, so
-    that no partial file is left in temp."""
-    try:
-        yield
-    except BaseException:
-        for path in [paths] if isinstance(paths, (str, Path)) else paths:
-            Path(path).unlink(missing_ok=True)
-        raise
-
-
-def temp_file_path(name: str) -> Path:
-    """The path of a file `name` in ComfyUI's temp directory, which ComfyUI clears on start and exit."""
-    return _ensure_temp_root() / name
-
-
 def _temp_mp4_path() -> Path:
     return temp_file_path(f"pano_video_{uuid.uuid4().hex[:12]}.mp4")
 
@@ -294,7 +239,8 @@ def save_video_to_mp4(video, container_format, codec) -> tuple[Path, bool]:
     """Save a core VIDEO to a temp MP4 with its own `save_to`, which copies the streams when they already fit and
     otherwise transcodes them frame by frame. Returns the path and whether the MP4 has audio."""
     output_path = _temp_mp4_path()
-    video.save_to(str(output_path), format=container_format, codec=codec)
+    with TEMP_FILES.writing(output_path):
+        video.save_to(str(output_path), format=container_format, codec=codec)
     return output_path, mp4_has_audio(output_path)
 
 
@@ -361,7 +307,7 @@ def encode_editor_mp4(video, progress=None) -> tuple[Path, bool]:
     time_base = video.time_base or 1 / video.frame_rate
     audio = video.audio(float(video.times[-1] + 1 / video.frame_rate))
     output_path = _temp_mp4_path()
-    with removed_on_failure(output_path), av.open(str(output_path), mode="w", options={"movflags": "faststart"}) as output:
+    with TEMP_FILES.writing(output_path), av.open(str(output_path), mode="w", options={"movflags": "faststart"}) as output:
         stream = output.add_stream("h264", rate=video.frame_rate)
         stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
         # fastdecode halves the decode time for about 10% more size.
@@ -532,6 +478,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
 
             container.close()
             _log.debug("[video] Encoded preview mp4 with %s -> %s", codec_name, output_path)
+            TEMP_FILES.add(output_path)
             return output_path
         except Exception as ex:
             last_error = ex
@@ -558,9 +505,9 @@ def save_editor_frames(images, progress=None) -> list[Path]:
     to show the image of the playhead. One image at a time, its longer side at most EDITOR_MAX_SIZE.
     `progress(done, total)` is called after each image and may raise to stop; the PNGs saved so far are then removed."""
     stem = f"pano_frames_{uuid.uuid4().hex[:12]}"
-    root = _ensure_temp_root()
+    root = ensure_temp_root()
     paths = []
-    with removed_on_failure(paths):
+    with TEMP_FILES.writing(paths):
         for index, image in enumerate(images):
             picture = Image.fromarray((image.clamp(0.0, 1.0) * 255 + 0.5).byte().cpu().numpy(), "RGBA")
             scale = min(1, EDITOR_MAX_SIZE / max(picture.size))
@@ -590,8 +537,10 @@ def make_video_ui_payload(
     include_comfy_preview: bool = False,
     video_key: str = "pano_videos",
     meta_key: str = "pano_video_meta",
+    video_entry: dict | None = None,
 ) -> dict:
-    video_entry = entry_from_path(Path(mp4_path), media_type="video/mp4")
+    """The `ui` of an MP4: its entry (`video_entry`, else that of the temp file `mp4_path`) and its meta."""
+    video_entry = video_entry or entry_from_path(Path(mp4_path), media_type="video/mp4")
     payload = {
         video_key: [video_entry],
         meta_key: [{

@@ -10,7 +10,8 @@ import comfy.model_management
 import comfy.utils
 from comfy_api.latest import Input, InputImpl, Types
 
-from .core.video import _BT709, _set_srgb, _temp_mp4_path, removed_on_failure
+from .core.temp_files import TEMP_FILES, removed_on_failure
+from .core.video import _BT709, _set_srgb, _temp_mp4_path
 from .core_adapters import pin_memory
 
 # The size of a whole video (the color of every frame) from which `get_components` copies the frames from the
@@ -171,6 +172,7 @@ class SceneVideo(Input.Video):
         if self._stream_path is None or not os.path.exists(self._stream_path):
             path = str(_temp_mp4_path())
             self._encode(path, Types.VideoContainer.MP4, Types.VideoCodec.H264, None, None, None, None, None)
+            TEMP_FILES.add(path)
             self._stream_path = path
         return self._stream_path
 

@@ -1,7 +1,8 @@
 """ComfyUI runtime adaptation for panorama nodes.
 
 The rendering nodes depend on this module for host progress, preview UI, video
-payloads, and the process-local cache (`core/cache.py`, whose free RAM this module
+payloads, the process-local cache (`core/cache.py`, whose free RAM this module
+reads from ComfyUI), and the temp files (`core/temp_files.py`, whose current run it
 reads from ComfyUI).  Rendering and coordinate math stay out of this boundary.
 """
 
@@ -16,6 +17,7 @@ import numpy as np
 import torch
 
 from .core.cache import CACHE
+from .core.temp_files import TEMP_FILES
 from .core.video import encode_frames_to_mp4, make_video_ui_payload
 
 try:
@@ -32,6 +34,11 @@ try:
     from comfy.model_management import get_free_memory, throw_exception_if_processing_interrupted
 except Exception:
     get_free_memory = throw_exception_if_processing_interrupted = None
+
+try:
+    from comfy_execution.utils import get_executing_context
+except Exception:
+    get_executing_context = None
 
 
 PREVIEW_UI_KEYS = {
@@ -416,6 +423,9 @@ class NodeRuntime:
 def create_default_runtime(*, logger=None) -> NodeRuntime:
     if get_free_memory is not None:
         CACHE.free_memory = lambda: get_free_memory(torch.device("cpu"))
+    if get_executing_context is not None:
+        # The temp files a run wrote or showed are kept during that run.
+        TEMP_FILES.current_run = lambda: getattr(get_executing_context(), "prompt_id", None)
     try:
         import nodes as comfy_nodes
     except ImportError:

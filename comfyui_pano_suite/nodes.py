@@ -13,6 +13,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 import comfy.model_management
+import folder_paths
 from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
@@ -2223,7 +2224,8 @@ def _video_cache_identity(video, streamed: bool) -> tuple:
 
 def _editor_mp4(video, opened) -> tuple[Path, bool]:
     """The MP4 the editor plays for a VIDEO opened by `open_video` as `opened`, and whether it has audio. A file the
-    core copies into an MP4 that seeks fast already (`editor_ready`) is copied; a Stickers or Cutout `video` shows
+    core copies into an MP4 that seeks fast already (`editor_ready`) is copied, or played as it is when it is an MP4
+    in the input directory; a Stickers or Cutout `video` shows
     its stream source when that seeks fast. Otherwise a proxy is encoded (`encode_editor_mp4`), from the file
     again for a VIDEO read from its file, since `opened` has moved on, so the frames are never all in memory."""
     if isinstance(video, SceneVideo):
@@ -2236,19 +2238,33 @@ def _editor_mp4(video, opened) -> tuple[Path, bool]:
         source, trim = video.get_stream_source(), video.get_active_trim_window()
         # The core copies the streams only without a trim window, and reads a file in memory as it is.
         if isinstance(source, str) and not any(trim) and editor_ready(source):
+            # An MP4 in the input directory is played from there; the browser is served it by its extension.
+            if _input_entry(source) is not None and Path(source).suffix.lower() == ".mp4":
+                return Path(source), mp4_has_audio(source)
             return save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
         return encode_editor_mp4(StreamedVideo(source, *trim, "source", loop_progress()), loop_progress())
     return encode_editor_mp4(opened, loop_progress())
 
 
+def _input_entry(path) -> dict | None:
+    """The `ui` entry of a file in ComfyUI's input directory, or None for a file elsewhere."""
+    root = Path(folder_paths.get_input_directory()).resolve()
+    try:
+        rel = Path(path).resolve().relative_to(root)
+    except ValueError:
+        return None
+    return {"filename": rel.name, "subfolder": str(rel.parent).replace("\\", "/"), "type": "input", "storage": "input", "format": "video/mp4"}
+
+
 def _editor_mp4_ui(cache_key: tuple, make, fps: float, frame_count: int, contract: dict) -> dict:
-    """The `ui` of the editor MP4 that `make()` saves, made once per `cache_key` and reused while the file is there."""
+    """The `ui` of the editor MP4 that `make()` saves, made once per `cache_key` and reused while the file is there.
+    The MP4 is a temp file, or the input file itself (`_editor_mp4`)."""
     saved = NODE_RUNTIME.cache.get("video", cache_key)
     if saved is None or not saved[0].exists():
         saved = make()
         NODE_RUNTIME.cache.put("video", cache_key, saved)
     path, has_audio = saved
-    payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"])
+    payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"], video_entry=_input_entry(path))
     payload[contract["meta"]][0]["has_audio"] = has_audio
     return payload
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image
 from comfy_api.latest import Types
 
-from .core.video import removed_on_failure, temp_file_path
+from .core.temp_files import TEMP_FILES, temp_file_path
 from .core_adapters import SplatToFile3D, mesh_item_to_glb_bytes, save_glb, triangulate_grid_mesh
 
 
@@ -58,7 +58,7 @@ def write_editor_files(value, progress=None) -> tuple[str, list[Path | None]]:
     name = uuid.uuid4().hex[:12]
     paths = []
     written = []
-    with removed_on_failure(written):
+    with TEMP_FILES.writing(written):
         for index in range(count):
             data = item(value, index)
             path = None
