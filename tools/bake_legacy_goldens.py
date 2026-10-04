@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.node_runtime import NodeRuntime
-from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaCutoutSceneNode, PanoramaStickersNode
+from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaCutoutSceneNode, PanoramaStickersNode, PanoramaStickersSceneNode
 from tools.golden_png import write_png16
 
 
@@ -198,10 +198,51 @@ CASES = {
     "cutout_single_shot": lambda: _run_cutout(CUTOUT_SHOT),
 }
 
+def _run_stickers_node(coverage: str, stickers=(), painting=None):
+    """A legacy Stickers case's v1 state and background through the new Stickers node (`PanoramaStickersNode`)."""
+    state = {"assets": ASSETS, "stickers": list(stickers)}
+    if painting is not None:
+        state["painting"] = painting
+    with render_only_runtime():
+        result = PanoramaStickersSceneNode.execute(
+            bg_color="#00ff00", coverage=coverage, output_preset="auto", state_json=json.dumps(state), bg_media=build_background_erp(),
+        ).result
+    # The outputs need not be contiguous (a 180 one is not); the PNG writer needs contiguous rows.
+    return np.ascontiguousarray(result[0][0].numpy()), np.ascontiguousarray(result[1][0].numpy())
+
+
+def _on_stickers_node(name: str):
+    """The legacy case `name` run through the new Stickers node instead of the legacy one."""
+    def run():
+        global _run_stickers
+        legacy = _run_stickers
+        _run_stickers = _run_stickers_node
+        try:
+            return CASES[name]()
+        finally:
+            _run_stickers = legacy
+
+    return run
+
+
+# The legacy cases whose new Stickers output differs on purpose, with the name of the new node's golden: it draws a
+# sky Sticker's edge pixels covered in part (the legacy one cuts them), and a 180 output samples the Sticker at the
+# output's pixels instead of from a 360 ERP as wide as the output (`docs/legacy-baselines.md`).
+STICKERS_NODE_GOLDENS = {
+    name: name.replace("stickers_", "stickers_node_", 1)
+    for name in ("stickers_sky_rotation", "stickers_sky_crop", "stickers_sky_overlap", "stickers_paint_interleaved", "stickers_coverage_180")
+}
+
 # The new Cutout samples at pixel centers with square pixels, so it does not reproduce `cutout_single_shot`.
 NODE_CASES = {
     "cutout_node_single_shot": lambda: _run_cutout_node(CUTOUT_SHOT),
+    **{node: _on_stickers_node(name) for name, node in STICKERS_NODE_GOLDENS.items()},
 }
+
+
+def stickers_golden(name: str) -> str:
+    """The golden the new Stickers (and Studio without a Camera) output of the legacy case `name` is compared with."""
+    return STICKERS_NODE_GOLDENS.get(name, name)
 
 
 def main(names: list[str]) -> int:

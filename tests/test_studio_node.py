@@ -52,7 +52,7 @@ def _camera(projection="perspective", aspect=1.0, fov=90.0, fov_keyframes=(), **
     return camera
 
 
-# --- Without a Camera: the ERP the new Stickers made (its goldens are the legacy Stickers' ones).
+# --- Without a Camera: the ERP the new Stickers made (its goldens: the new Stickers' own where it differs from the legacy one).
 
 def _run_studio(coverage: str, stickers=(), painting=None):
     state = {"assets": ASSETS, "stickers": list(stickers)}
@@ -67,9 +67,10 @@ def test_without_a_camera_the_output_reproduces_the_stickers_golden(name, monkey
     # The golden cases run the Stickers node on v1 states (no Camera); run the same cases through Studio.
     monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_studio)
     image, mask = bake_legacy_goldens.CASES[name]()
+    golden = bake_legacy_goldens.stickers_golden(name)
 
-    assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{name}.image.png")) is None
-    assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{name}.mask.png")) is None
+    assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{golden}.image.png")) is None
+    assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{golden}.mask.png")) is None
 
 
 def _quadrants():

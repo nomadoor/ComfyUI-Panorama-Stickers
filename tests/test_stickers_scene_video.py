@@ -17,9 +17,9 @@ pytest.importorskip(
 import av
 from comfy_api.latest import InputImpl, Types
 
-from comfyui_pano_suite import nodes, scene_video
+from comfyui_pano_suite import nodes, scene_video, sticker_media
 from comfyui_pano_suite.core.video_source import MaterializedVideo, StreamedVideo
-from comfyui_pano_suite.sticker_media import open_video
+from comfyui_pano_suite.sticker_media import open_video, stream_video
 from comfyui_pano_suite.nodes import PanoramaStickersSceneNode
 
 
@@ -324,7 +324,7 @@ def _tensor_count() -> int:
 def _peak_while_streaming(video) -> int:
     # The frames are numpy arrays shared with torch without a copy, so their memory shows in tracemalloc.
     tracemalloc.start()
-    streamed = StreamedVideo(video.get_stream_source(), *video.get_active_trim_window(), "bg_media")
+    streamed = stream_video(video.get_stream_source(), *video.get_active_trim_window(), "bg_media")
     for index in range(len(streamed.times)):
         assert streamed[index] is not None
     del streamed
@@ -335,7 +335,7 @@ def _peak_while_streaming(video) -> int:
 
 def _most_tensors_while_streaming(video) -> int:
     baseline = _tensor_count()
-    streamed = StreamedVideo(video.get_stream_source(), *video.get_active_trim_window(), "bg_media")
+    streamed = stream_video(video.get_stream_source(), *video.get_active_trim_window(), "bg_media")
     most = 0
     for index in range(len(streamed.times)):
         assert streamed[index] is not None
@@ -514,3 +514,20 @@ def test_hold_cut_is_not_late_on_a_video_frame_just_before_the_keyframe(tmp_path
     center = image[:, image.shape[1] // 2, image.shape[2] // 2]
     is_red = [bool(torch.allclose(pixel, torch.tensor([1.0, 0.0, 0.0]), atol=1e-3)) for pixel in center]
     assert is_red == [True, True, True, False, False]
+
+
+def test_each_video_file_is_scanned_once_per_trim_window(tmp_path, monkeypatch):
+    scans = []
+    original = sticker_media.scan_video
+    monkeypatch.setattr(sticker_media, "scan_video", lambda *args, **kwargs: scans.append(args[:3]) or original(*args, **kwargs))
+    bg = _cfr(tmp_path, count=6)
+    sticker = _write_video(tmp_path / "sticker.mkv", [index * 40 for index in range(4)])
+
+    result = _execute(bg_media=bg, sticker=sticker)
+    result[2].get_components()
+    _execute(bg_media=bg, sticker=sticker)
+    _execute(bg_media=bg.as_trimmed(0.04, 0.12))
+
+    assert sorted(scans) == sorted([(bg.get_stream_source(), 0.0, 0.0), (sticker.get_stream_source(), 0.0, 0.0), (bg.get_stream_source(), 0.04, 0.12)])
+    first, second = open_video(bg, "bg_media"), open_video(bg, "sticker")
+    assert first.index is second.index and first is not second

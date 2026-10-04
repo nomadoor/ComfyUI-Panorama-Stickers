@@ -196,7 +196,7 @@ def test_same_mesh_file_is_read_once_and_keeps_its_editor_files(tmp_path, monkey
     reads, writes = [], []
     read, write = nodes.read_mesh_file, nodes.write_editor_files
     monkeypatch.setattr(nodes, "read_mesh_file", lambda file: reads.append(file) or read(file))
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value: writes.append(value) or write(value))
+    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
     first = nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="", scene=Types.File3D(str(path)))
     again = nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="", scene=Types.File3D(str(path)))

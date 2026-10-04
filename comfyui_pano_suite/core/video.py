@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-import tempfile
 import uuid
 import logging
 from fractions import Fraction
@@ -16,29 +14,10 @@ try:
 except Exception:  # pragma: no cover - optional at import time
     av = None
 
-try:
-    import folder_paths
-except Exception:  # pragma: no cover - optional in tests
-    folder_paths = None
-
+from .temp_files import TEMP_FILES, ensure_temp_root, entry_from_path, remove_temp_file, temp_file_path
 from .video_source import StreamedVideo
 
 _log = logging.getLogger(__name__)
-
-
-def _resolve_temp_root() -> Path:
-    if folder_paths is not None:
-        try:
-            return Path(folder_paths.get_temp_directory())
-        except Exception:
-            pass
-    return Path(tempfile.gettempdir()) / "comfyui_panorama_stickers"
-
-
-def _ensure_temp_root() -> Path:
-    root = _resolve_temp_root()
-    root.mkdir(parents=True, exist_ok=True)
-    return root
 
 
 def _normalize_frames(frames) -> np.ndarray:
@@ -165,61 +144,15 @@ def _target_audio_sample_count(frame_count: int, frame_rate, sample_rate: int) -
     return max(0, int(round((float(frame_count) / float(frame_rate)) * sample_rate)))
 
 
-def _stretch_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[np.ndarray | None, int]:
+def _fit_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[np.ndarray | None, int]:
+    """The audio cut, or padded with silence, to the length of `frame_count` frames at `frame_rate`. It is not
+    stretched, so it keeps its speed and pitch and stays in sync with the frames from the start."""
     waveform, sample_rate = _extract_audio_tensor(audio)
     if waveform is None or sample_rate <= 0:
         return None, 0
     target_samples = _target_audio_sample_count(frame_count, frame_rate, sample_rate)
-    if target_samples <= 0:
-        return np.zeros((int(waveform.shape[0]), 0), dtype=np.float32), sample_rate
-
-    source_samples = int(waveform.shape[-1])
-    tolerance = max(1, int(round(sample_rate * 0.002)))
-    if abs(source_samples - target_samples) <= tolerance:
-        fitted = _trim_or_pad_audio(waveform, target_samples)
-        return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
-
-    try:
-        import torch
-        import torchaudio.functional as AF
-
-        # Keep preview pitch stable while fitting audio to the preview duration.
-        n_fft = 2048
-        win_length = 2048
-        hop_length = 512
-        rate = max(1e-6, float(source_samples) / float(target_samples))
-        window = torch.hann_window(win_length, dtype=waveform.dtype, device=waveform.device)
-        spec = torch.stft(
-            waveform,
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            window=window,
-            center=True,
-            return_complex=True,
-        )
-        phase_advance = torch.linspace(
-            0,
-            math.pi * hop_length,
-            spec.size(-2),
-            dtype=waveform.dtype,
-            device=waveform.device,
-        )[..., None]
-        stretched_spec = AF.phase_vocoder(spec, rate=rate, phase_advance=phase_advance)
-        stretched = torch.istft(
-            stretched_spec,
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            window=window,
-            center=True,
-            length=target_samples,
-        )
-        stretched = _trim_or_pad_audio(stretched, target_samples)
-        return np.ascontiguousarray(stretched.cpu().numpy(), dtype=np.float32), sample_rate
-    except Exception:
-        fitted = _trim_or_pad_audio(waveform, target_samples)
-        return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
+    fitted = _trim_or_pad_audio(waveform, target_samples)
+    return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
 
 
 def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np.ndarray | None, int, str]:
@@ -251,28 +184,6 @@ def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np
     return np.ascontiguousarray(downmixed), sample_rate, "stereo"
 
 
-def entry_from_path(path: Path, *, media_type: str) -> dict:
-    root = _ensure_temp_root().resolve()
-    target = path.resolve()
-    try:
-        rel = target.relative_to(root)
-        subfolder = str(rel.parent).replace("\\", "/")
-    except Exception:
-        subfolder = ""
-    return {
-        "filename": target.name,
-        "subfolder": subfolder,
-        "type": "temp",
-        "storage": "temp",
-        "format": media_type,
-    }
-
-
-def temp_file_path(name: str) -> Path:
-    """The path of a file `name` in ComfyUI's temp directory, which ComfyUI clears on start and exit."""
-    return _ensure_temp_root() / name
-
-
 def _temp_mp4_path() -> Path:
     return temp_file_path(f"pano_video_{uuid.uuid4().hex[:12]}.mp4")
 
@@ -281,7 +192,8 @@ def save_video_to_mp4(video, container_format, codec) -> tuple[Path, bool]:
     """Save a core VIDEO to a temp MP4 with its own `save_to`, which copies the streams when they already fit and
     otherwise transcodes them frame by frame. Returns the path and whether the MP4 has audio."""
     output_path = _temp_mp4_path()
-    video.save_to(str(output_path), format=container_format, codec=codec)
+    with TEMP_FILES.writing(output_path):
+        video.save_to(str(output_path), format=container_format, codec=codec)
     return output_path, mp4_has_audio(output_path)
 
 
@@ -337,17 +249,18 @@ def _editor_frames(video):
         yield time, av.VideoFrame.from_ndarray((image * 255).clamp(0, 255).byte().cpu().numpy(), format="rgb24")
 
 
-def encode_editor_mp4(video) -> tuple[Path, bool]:
+def encode_editor_mp4(video, progress=None) -> tuple[Path, bool]:
     """Encode a VIDEO opened for reading (`StreamedVideo`, `MaterializedVideo`) one frame at a time into a temp MP4
     for the editor: H.264 with a keyframe every EDITOR_KEYINT frames and no B-frames, its longer side at most
-    EDITOR_MAX_SIZE, each frame at its time, and the audio as AAC. Returns the path and whether the MP4 has audio."""
+    EDITOR_MAX_SIZE, each frame at its time, and the audio as AAC. Returns the path and whether the MP4 has audio.
+    `progress(done, total)` is called after each frame and may raise to stop; the partial MP4 is then removed."""
     height, width = video.first_frame.shape[:2]
     scale = min(1, EDITOR_MAX_SIZE / max(width, height))
     width, height = max(2, round(width * scale / 2) * 2), max(2, round(height * scale / 2) * 2)
     time_base = video.time_base or 1 / video.frame_rate
     audio = video.audio(float(video.times[-1] + 1 / video.frame_rate))
     output_path = _temp_mp4_path()
-    with av.open(str(output_path), mode="w", options={"movflags": "faststart"}) as output:
+    with TEMP_FILES.writing(output_path), av.open(str(output_path), mode="w", options={"movflags": "faststart"}) as output:
         stream = output.add_stream("h264", rate=video.frame_rate)
         stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
         # fastdecode halves the decode time for about 10% more size.
@@ -364,6 +277,7 @@ def encode_editor_mp4(video) -> tuple[Path, bool]:
             layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(waveform.shape[0], "stereo")
             audio_stream = output.add_stream("aac", rate=sample_rate, layout=layout)
         codec = stream.codec_context
+        done = 0
         for time, frame in _editor_frames(video):
             # Any RGB or paletted frame (its alpha dropped) is converted with the BT.709 matrix.
             if frame.format.is_rgb or frame.format.has_palette:
@@ -384,6 +298,9 @@ def encode_editor_mp4(video) -> tuple[Path, bool]:
             frame.pts = round(time / time_base)
             frame.time_base = time_base
             output.mux(stream.encode(frame))
+            done += 1
+            if progress is not None:
+                progress(done, len(video.times))
         output.mux(stream.encode(None))
         if audio_stream is not None:
             frame = av.AudioFrame.from_ndarray(waveform, format="fltp", layout=layout)
@@ -430,7 +347,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
     sample_rate = 0
     layout = "mono"
     if _audio_has_waveform(audio):
-        waveform_np, sample_rate = _stretch_audio_to_frame_count(audio, frame_count, frame_rate)
+        waveform_np, sample_rate = _fit_audio_to_frame_count(audio, frame_count, frame_rate)
         waveform_np, sample_rate, layout = _prepare_audio_layout(waveform_np, sample_rate)
 
     _log.debug(
@@ -514,7 +431,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
 
             container.close()
             _log.debug("[video] Encoded preview mp4 with %s -> %s", codec_name, output_path)
-            return output_path
+            break
         except Exception as ex:
             last_error = ex
             _log.debug("[video] Encoder %s failed, trying fallback: %s", codec_name, ex)
@@ -527,23 +444,36 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
             except Exception:
                 pass
             continue
-    raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
+        except BaseException:
+            # Cancelled from `progress_callback`: no partial MP4 is left.
+            container.close()
+            remove_temp_file(output_path)
+            raise
+    else:
+        raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
+    # Registered after the encoder loop, so that nothing the registry does is taken for an encoder failure.
+    TEMP_FILES.add(output_path)
+    return output_path
 
 
-def save_editor_frames(images) -> list[Path]:
+def save_editor_frames(images, progress=None) -> list[Path]:
     """Each image of an RGBA IMAGE batch as a PNG in temp, with its alpha, which an MP4 cannot hold, for the editor
-    to show the image of the playhead. One image at a time, its longer side at most EDITOR_MAX_SIZE."""
+    to show the image of the playhead. One image at a time, its longer side at most EDITOR_MAX_SIZE.
+    `progress(done, total)` is called after each image and may raise to stop; the PNGs saved so far are then removed."""
     stem = f"pano_frames_{uuid.uuid4().hex[:12]}"
-    root = _ensure_temp_root()
+    root = ensure_temp_root()
     paths = []
-    for index, image in enumerate(images):
-        picture = Image.fromarray((image.clamp(0.0, 1.0) * 255 + 0.5).byte().cpu().numpy(), "RGBA")
-        scale = min(1, EDITOR_MAX_SIZE / max(picture.size))
-        if scale < 1:
-            picture = picture.resize((max(1, round(picture.width * scale)), max(1, round(picture.height * scale))), Image.BILINEAR)
-        path = root / f"{stem}_{index:05d}.png"
-        picture.save(path, compress_level=1)
-        paths.append(path)
+    with TEMP_FILES.writing(paths):
+        for index, image in enumerate(images):
+            picture = Image.fromarray((image.clamp(0.0, 1.0) * 255 + 0.5).byte().cpu().numpy(), "RGBA")
+            scale = min(1, EDITOR_MAX_SIZE / max(picture.size))
+            if scale < 1:
+                picture = picture.resize((max(1, round(picture.width * scale)), max(1, round(picture.height * scale))), Image.BILINEAR)
+            path = root / f"{stem}_{index:05d}.png"
+            paths.append(path)
+            picture.save(path, compress_level=1)
+            if progress is not None:
+                progress(index + 1, len(images))
     return paths
 
 
@@ -563,8 +493,10 @@ def make_video_ui_payload(
     include_comfy_preview: bool = False,
     video_key: str = "pano_videos",
     meta_key: str = "pano_video_meta",
+    video_entry: dict | None = None,
 ) -> dict:
-    video_entry = entry_from_path(Path(mp4_path), media_type="video/mp4")
+    """The `ui` of an MP4: its entry (`video_entry`, else that of the temp file `mp4_path`) and its meta."""
+    video_entry = video_entry or entry_from_path(Path(mp4_path), media_type="video/mp4")
     payload = {
         video_key: [video_entry],
         meta_key: [{

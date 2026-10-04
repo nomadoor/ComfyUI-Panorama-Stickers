@@ -10,7 +10,9 @@ import comfy.model_management
 import comfy.utils
 from comfy_api.latest import Input, InputImpl, Types
 
+from .core.temp_files import TEMP_FILES, removed_on_failure
 from .core.video import _BT709, _set_srgb, _temp_mp4_path
+from .core_adapters import pin_memory
 
 # The size of a whole video (the color of every frame) from which `get_components` copies the frames from the
 # device through a pinned buffer.
@@ -64,7 +66,7 @@ class SceneVideo(Input.Video):
             # pinning can release ComfyUI's RAM cache and other pins for little gain. Without a pin (no CUDA/ROCm or
             # no budget), the buffer would only add a copy.
             staging = torch.empty(images.shape[1:], dtype=torch.float32)
-            if not comfy.model_management.pin_memory(staging, evict_active=False):
+            if not pin_memory(staging):
                 staging = None
         progress = comfy.utils.ProgressBar(len(self._times))
         previous = None
@@ -94,7 +96,8 @@ class SceneVideo(Input.Video):
         self._encode(path, format, codec, metadata, bit_depth, crf, color_space, preset)
 
     def _encode(self, path, format, codec, metadata, bit_depth, crf, color_space, preset):
-        """Render and encode one frame at a time, with each frame at its time and the audio after the video."""
+        """Render and encode one frame at a time, with each frame at its time and the audio after the video. A file
+        written by path is removed when this fails or is cancelled."""
         if color_space not in (None, "sRGB"):
             raise ValueError(f"Cannot save sRGB video as {color_space} without color conversion; use auto or sRGB")
         format, codec = _container_and_codec(path, format, codec)
@@ -113,7 +116,8 @@ class SceneVideo(Input.Video):
         width, height = self._width - self._width % 2, self._height - self._height % 2
         device = comfy.model_management.get_torch_device()
         progress = comfy.utils.ProgressBar(len(self._times))
-        with av.open(path, mode="w", format=_CONTAINER_FORMATS[format], options=options) as output:
+        partial = [os.fspath(path)] if isinstance(path, (str, os.PathLike)) else []
+        with removed_on_failure(partial), av.open(path, mode="w", format=_CONTAINER_FORMATS[format], options=options) as output:
             for key, value in (metadata or {}).items():
                 output.metadata[key] = json.dumps(value)
             stream = output.add_stream(_ENCODERS[codec], rate=self._frame_rate)
@@ -168,6 +172,7 @@ class SceneVideo(Input.Video):
         if self._stream_path is None or not os.path.exists(self._stream_path):
             path = str(_temp_mp4_path())
             self._encode(path, Types.VideoContainer.MP4, Types.VideoCodec.H264, None, None, None, None, None)
+            TEMP_FILES.add(path)
             self._stream_path = path
         return self._stream_path
 

@@ -49,13 +49,15 @@ def _run_new_node(coverage: str, stickers=(), painting=None):
 
 
 @pytest.mark.parametrize("name", [name for name in bake_legacy_goldens.CASES if name.startswith("stickers_")])
-def test_v1_state_reproduces_legacy_golden(name, monkeypatch):
-    # The golden cases call _run_stickers with v1 states; run the same cases through the new node.
+def test_v1_state_reproduces_the_golden(name, monkeypatch):
+    # The golden cases call _run_stickers with v1 states; run the same cases through the new node. Where the new node
+    # differs on purpose, its own golden is compared (`stickers_golden`).
     monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_new_node)
     image, mask = bake_legacy_goldens.CASES[name]()
+    golden = bake_legacy_goldens.stickers_golden(name)
 
-    assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{name}.image.png")) is None
-    assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{name}.mask.png")) is None
+    assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{golden}.image.png")) is None
+    assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{golden}.mask.png")) is None
 
 
 EDITOR_SAVE_JS = """
@@ -93,13 +95,14 @@ def _run_new_node_saved_by_editor(coverage: str, stickers=(), painting=None):
 
 
 @pytest.mark.parametrize("name", [name for name in bake_legacy_goldens.CASES if name.startswith("stickers_")])
-def test_state_saved_by_the_editor_is_v2_and_reproduces_legacy_golden(name, monkeypatch):
+def test_state_saved_by_the_editor_is_v2_and_reproduces_the_golden(name, monkeypatch):
     # The editor opens the golden case's v1 state and saves it for the new node; the node renders what the editor shows.
     monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_new_node_saved_by_editor)
     image, mask = bake_legacy_goldens.CASES[name]()
+    golden = bake_legacy_goldens.stickers_golden(name)
 
-    assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{name}.image.png")) is None
-    assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{name}.mask.png")) is None
+    assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{golden}.image.png")) is None
+    assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{golden}.mask.png")) is None
 
 
 def _solid(rgb, height=4, width=4, batch=1):
@@ -169,8 +172,8 @@ def test_port_sticker_is_appended_with_the_sticker_state_pose():
 
     assert _column_of_red(posed) == pytest.approx(0.75, abs=0.01)
     assert _column_of_red(default) == pytest.approx(0.5, abs=0.01)
-    # hFOV 30 by default: a 30 degree wide Sticker is 1/12 of a 360 ERP.
-    assert float(torch.all(torch.isclose(default[0, 256], RED), dim=-1).float().mean()) == pytest.approx(1 / 12, abs=0.005)
+    # hFOV 30 by default: a 30 degree wide Sticker is 1/12 of a 360 ERP (its edge pixels are covered in part).
+    assert float(torch.all(torch.isclose(default[0, 256], RED, atol=1 / 255), dim=-1).float().mean()) == pytest.approx(1 / 12, abs=0.005)
 
 
 def test_port_sticker_in_the_state_keeps_its_pose_and_sticker_state_is_ignored():
@@ -228,7 +231,7 @@ def test_3d_files_neither_reader_takes_name_the_input(name):
 
 
 def _count_render_calls(monkeypatch):
-    counts = {"_render_sky": 0, "_background": 0, "composite_frame": 0}
+    counts = {"_sky_layers": 0, "_background": 0, "composite_frame": 0}
     for name in counts:
         original = getattr(render_module, name)
 
@@ -246,7 +249,7 @@ def test_execute_renders_only_the_first_frame(monkeypatch):
 
     _execute({"version": 2, "timeline": {"length": 4}}, bg_media=bg)
 
-    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}
+    assert counts == {"_sky_layers": 1, "_background": 1, "composite_frame": 1}
 
 
 def test_static_scene_renders_and_composites_once_for_all_frames(monkeypatch):
@@ -256,7 +259,7 @@ def test_static_scene_renders_and_composites_once_for_all_frames(monkeypatch):
 
     image = video.get_components().images
 
-    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}
+    assert counts == {"_sky_layers": 1, "_background": 1, "composite_frame": 1}
     assert torch.equal(image[0], image[1]) and torch.equal(image[0], image[2])
 
 
@@ -267,7 +270,7 @@ def test_background_batch_reuses_the_sky_and_composites_each_frame(monkeypatch):
 
     video.get_components()
 
-    assert counts == {"_render_sky": 1, "_background": 3, "composite_frame": 4}
+    assert counts == {"_sky_layers": 1, "_background": 3, "composite_frame": 4}
 
 
 def _painted_scene(*direction_keyframes):
@@ -354,7 +357,7 @@ def test_held_sticker_keyframes_draw_the_sky_once_per_value(monkeypatch):
 
     image = video.get_components().images
 
-    assert counts == {"_render_sky": 2, "_background": 1, "composite_frame": 2}
+    assert counts == {"_sky_layers": 2, "_background": 1, "composite_frame": 2}
     assert torch.equal(image[0], image[1]) and torch.equal(image[2], image[3])
 
 
@@ -365,7 +368,7 @@ def test_sticker_moving_outside_its_clip_range_does_not_redraw_the_sky(monkeypat
 
     image = video.get_components().images
 
-    assert counts["_render_sky"] == 2
+    assert counts["_sky_layers"] == 2
     assert torch.equal(image[1], image[3])
 
 
@@ -386,4 +389,4 @@ def test_equal_auto_keyframes_do_not_redraw_on_interpolation_noise(monkeypatch):
     image = video.get_components().images
 
     assert image.shape[0] == 7
-    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}
+    assert counts == {"_sky_layers": 1, "_background": 1, "composite_frame": 1}

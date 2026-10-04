@@ -1,13 +1,14 @@
 import base64
+import hashlib
 import io
 import math
-from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from .math import DEG2RAD, camera_basis
+from .cache import CACHE
+from .math import DEG2RAD, camera_basis, unit_float
 
 try:
     import folder_paths
@@ -25,18 +26,27 @@ def _hex_to_rgb01(hex_color: str) -> np.ndarray:
     return np.array([r, g, b], dtype=np.float32) / 255.0
 
 
-@lru_cache(maxsize=32)
-def _load_dataurl_cached(v: str) -> np.ndarray:
-    payload = v.split(",", 1)[1]
-    raw = base64.b64decode(payload)
-    img = Image.open(io.BytesIO(raw)).convert("RGBA")
-    arr = np.asarray(img, dtype=np.float32) / 255.0
-    arr.flags.writeable = False
-    return arr
+def _decode_rgba8(source) -> np.ndarray:
+    with Image.open(source) as image:
+        return np.asarray(image.convert("RGBA"))
 
 
-def _load_comfy_file_rgba(filename: str, subfolder: str, storage: str) -> np.ndarray | None:
-    """Read an image from ComfyUI's input, output, or temp directory; paths outside it are refused."""
+def read_image_file_rgba8(path: Path) -> np.ndarray:
+    """An image file as straight-alpha RGBA uint8 (h, w, 4), decoded once per version of the file (its path,
+    modification time, and size) and kept read-only in the shared cache (`cache.py`)."""
+    stat = path.stat()
+    return CACHE.get_or_put("image_file", (str(path), stat.st_mtime_ns, stat.st_size), lambda: _decode_rgba8(path))
+
+
+def _load_dataurl_rgba8(v: str) -> np.ndarray:
+    """A data URL image as `read_image_file_rgba8` reads a file, keyed by the hash of the URL."""
+    key = hashlib.sha1(v.encode("utf-8")).hexdigest()
+    return CACHE.get_or_put("image_data_url", key, lambda: _decode_rgba8(io.BytesIO(base64.b64decode(v.split(",", 1)[1]))))
+
+
+def comfy_file_path(filename: str, subfolder: str, storage: str) -> Path | None:
+    """The path of a file in ComfyUI's input, output, or temp directory, or None for a path outside it or a file
+    that is not there."""
     if folder_paths is None:
         return None
     filename = str(filename or "").strip()
@@ -57,16 +67,22 @@ def _load_comfy_file_rgba(filename: str, subfolder: str, storage: str) -> np.nda
         return None
     if not p.exists() or not p.is_file():
         return None
-    img = Image.open(p).convert("RGBA")
-    return np.asarray(img, dtype=np.float32) / 255.0
+    return p
+
+
+def _load_comfy_file_rgba8(filename: str, subfolder: str, storage: str) -> np.ndarray | None:
+    """Read an image from ComfyUI's input, output, or temp directory; paths outside it are refused."""
+    path = comfy_file_path(filename, subfolder, storage)
+    return None if path is None else read_image_file_rgba8(path)
 
 
 def load_source_rgba(source: dict) -> np.ndarray | None:
-    """Read a state v2 `file` Source as straight-alpha RGBA (h, w, 4) in 0..1, or None when it cannot be read."""
+    """Read a state v2 `file` Source as straight-alpha RGBA uint8 (h, w, 4), read-only, or None when it cannot be
+    read."""
     try:
         if "data_url" in source:
-            return _load_dataurl_cached(source["data_url"])
-        return _load_comfy_file_rgba(source["filename"], source["subfolder"], source["storage"])
+            return _load_dataurl_rgba8(source["data_url"])
+        return _load_comfy_file_rgba8(source["filename"], source["subfolder"], source["storage"])
     except (OSError, ValueError):
         return None
 
@@ -81,7 +97,7 @@ def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarr
             v = str(asset_info.get("value") or "")
             if not v.startswith("data:image"):
                 return None
-            return _load_dataurl_cached(v)
+            return unit_float(_load_dataurl_rgba8(v))
 
         if t == "path":
             v = str(asset_info.get("value") or asset_info.get("path") or "").strip()
@@ -109,7 +125,8 @@ def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarr
             return np.asarray(img, dtype=np.float32) / 255.0
 
         if t == "comfy_image":
-            return _load_comfy_file_rgba(asset_info.get("filename"), asset_info.get("subfolder"), asset_info.get("storage"))
+            rgba = _load_comfy_file_rgba8(asset_info.get("filename"), asset_info.get("subfolder"), asset_info.get("storage"))
+            return None if rgba is None else unit_float(rgba)
     except Exception:
         return None
     return None

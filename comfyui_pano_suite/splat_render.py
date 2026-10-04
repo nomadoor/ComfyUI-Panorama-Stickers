@@ -14,10 +14,10 @@ from io import BytesIO
 import numpy as np
 import torch
 from comfy_api.latest import Types
-from comfy_extras.nodes_gaussian_splat import _C0, File3DToSplat, _detect_splat_format, _gaussian_item, _linear_to_srgb, _quantile, _quat_to_mat, _srgb_to_linear
 
 from .core.math import ray_directions
 from .core.world_render import CameraView, SceneContent
+from .core_adapters import _C0, File3DToSplat, _detect_splat_format, _gaussian_item, _linear_to_srgb, _quantile, _quat_to_mat, _srgb_to_linear
 
 SPLAT_FILE_FORMATS = ("ply", "splat", "spz", "ksplat")
 # RenderSplat's default: biases each pixel's color toward its dominant gaussian.

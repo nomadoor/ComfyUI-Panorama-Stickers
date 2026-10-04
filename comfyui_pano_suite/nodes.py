@@ -1,4 +1,5 @@
 import bisect
+import hashlib
 import json
 import math
 import os
@@ -12,11 +13,14 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 import comfy.model_management
+import folder_paths
 from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
 from .node_runtime import PREVIEW_UI_KEYS, NodeProgress, create_default_runtime
+from .progress import loop_progress
+from .core.cache import nbytes
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
 from .core.display_list import (
     alpha_composite_over_rgba as _alpha_composite_over_rgba,
@@ -34,6 +38,7 @@ from .core.math import (
     calculate_dimensions_from_megapixels,
     calculate_output_dimensions,
     finite_float,
+    unit_float,
     vfov_from_hfov,
 )
 from .core.paint_state import empty_painting_state
@@ -64,7 +69,7 @@ from .scene_files import write_editor_files
 from .scene_mesh import is_mesh_file, mesh_scene_content, moge_scene_content, read_mesh_file
 from .scene_video import SceneVideo
 from .splat_render import read_splat_file, splat_content
-from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
+from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video, stream_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -210,6 +215,8 @@ def _external_sticker_id(slot_key: str) -> str:
 
 
 def _hash_text(value) -> str:
+    """The FNV-1a hash of `sticker_state` that the editor stores with the external Sticker and computes the same way
+    (`hashStringSimple`), so it must not change. Only for short texts; larger ones are keyed by `hashlib`."""
     text = str(value or "")
     h = 2166136261
     for ch in text:
@@ -416,7 +423,7 @@ def _resolve_cutout_source_batch(erp_image) -> np.ndarray:
     return _images_to_numpy_batch(erp_image, None, fallback_shape=(1, 512, 1024, 3))
 
 
-def _estimate_sticker_cuda_chunk_size(
+def _estimate_sticker_chunk_size(
     batch_size: int,
     out_h: int,
     out_w: int,
@@ -425,10 +432,9 @@ def _estimate_sticker_cuda_chunk_size(
     in_h: int = 0,
     in_w: int = 0,
 ) -> int:
-    if device is None or device.type != "cuda":
+    if device is None or comfy.model_management.is_device_cpu(device):
         return max(1, int(batch_size))
-    device_index = device.index if device.index is not None else torch.cuda.current_device()
-    free_bytes, _total_bytes = torch.cuda.mem_get_info(device_index)
+    free_bytes = comfy.model_management.get_free_memory(device)
     # Account for both input and output tensors: input (float32 BCHW) + output (float32 BCHW)
     # plus overlay broadcast and intermediate buffers. Use 4x multiplier for safety margin.
     eff_in_h = max(int(in_h or out_h), int(out_h))
@@ -447,7 +453,7 @@ def _render_sticker_output_batches(
     out_w: int,
     bg_hex: str,
     overlay_rgba: np.ndarray | None,
-    cuda_device: torch.device | None,
+    device: torch.device | None,
     progress_callback=None,
 ):
     if bg_erp is None:
@@ -464,27 +470,8 @@ def _render_sticker_output_batches(
     batch_size = int(bg_erp.shape[0]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else 1
     in_h = int(bg_erp.shape[1]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else out_h
     in_w = int(bg_erp.shape[2]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else out_w
-    bg_cache_identity = _tensor_cache_identity(bg_erp)
-    bg_cache_key = ("stickers_bg", bg_cache_identity, int(out_h), int(out_w))
-    if bg_cache_identity is not None:
-        cached_bg_batch = NODE_RUNTIME.cache.get("stickers_bg", bg_cache_key)
-        if cached_bg_batch is not None:
-            bg_batch = cached_bg_batch
-            bg_rgb_batch = bg_batch.astype(np.float32) / 255.0
-            if overlay_rgba is not None:
-                alpha = overlay_rgba[None, ..., 3:4].astype(np.float32, copy=False)
-                rgb = overlay_rgba[None, ..., :3].astype(np.float32, copy=False)
-                out_batch = np.clip(rgb * alpha + bg_rgb_batch * (1.0 - alpha), 0.0, 1.0)
-            else:
-                out_batch = bg_rgb_batch
-            if progress_callback is not None:
-                try:
-                    progress_callback(batch_size, batch_size)
-                except Exception:
-                    pass
-            return out_batch.astype(np.float32, copy=False), bg_batch
-    compute_device = cuda_device if cuda_device is not None else bg_erp.device
-    chunk_size = _estimate_sticker_cuda_chunk_size(batch_size, out_h, out_w, compute_device, in_h=in_h, in_w=in_w)
+    compute_device = device if device is not None else bg_erp.device
+    chunk_size = _estimate_sticker_chunk_size(batch_size, out_h, out_w, compute_device, in_h=in_h, in_w=in_w)
     overlay_cache = {}
     start = 0
 
@@ -525,8 +512,6 @@ def _render_sticker_output_batches(
 
             out_batch[start:end] = out_chunk.contiguous().cpu().numpy()
             del chunk, bg_chunk, out_chunk
-            if compute_device.type == "cuda":
-                torch.cuda.empty_cache()
             if progress_callback is not None:
                 try:
                     progress_callback(end, batch_size)
@@ -534,18 +519,19 @@ def _render_sticker_output_batches(
                     pass
             start = end
         except torch.OutOfMemoryError:
-            if compute_device.type == "cuda" and chunk_size > 1:
+            on_device = not comfy.model_management.is_device_cpu(compute_device)
+            if on_device:
+                comfy.model_management.soft_empty_cache()
+            if on_device and chunk_size > 1:
                 chunk_size = max(1, chunk_size // 2)
-                torch.cuda.empty_cache()
                 continue
-            if compute_device.type == "cuda":
+            if on_device:
                 logging.getLogger(__name__).warning(
-                    "PanoramaStickers background CUDA path ran out of memory; falling back to CPU chunks."
+                    "PanoramaStickers background device path ran out of memory; falling back to CPU chunks."
                 )
                 compute_device = torch.device("cpu")
                 chunk_size = 1
                 overlay_cache.clear()
-                torch.cuda.empty_cache()
                 continue
             raise MemoryError(
                 f"PanoramaStickers: not enough RAM to process a single frame "
@@ -553,8 +539,6 @@ def _render_sticker_output_batches(
                 "Reduce output resolution or batch size."
             ) from None
 
-    if bg_cache_identity is not None:
-        NODE_RUNTIME.cache.put("stickers_bg", bg_cache_key, bg_batch)
     return out_batch, bg_batch
 
 
@@ -692,7 +676,9 @@ def _build_overlay_erp_rgba_and_mask(
                 overlay_rgba = _alpha_composite_over_rgba(overlay_rgba, remaining_flat_rgba)
     else:
         paint_rgba = painting_payload.get("paint") if isinstance(painting_payload, dict) else None
-        if paint_rgba is None:
+        if paint_rgba is not None:
+            paint_rgba = unit_float(paint_rgba)
+        else:
             if warning_key and isinstance(ui_ret, dict) and painting_state_has_renderables(painting_state):
                 _push_ui_warning(
                     ui_ret,
@@ -707,7 +693,9 @@ def _build_overlay_erp_rgba_and_mask(
                 overlay_rgba = _alpha_composite_over_rgba(overlay_rgba, paint_rgba)
 
     mask_bw = painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-    if mask_bw is None:
+    if mask_bw is not None:
+        mask_bw = unit_float(mask_bw)
+    else:
         if warning_key and isinstance(ui_ret, dict) and painting_state_has_mask_renderables(painting_state):
             _push_ui_warning(
                 ui_ret,
@@ -849,7 +837,8 @@ class PanoramaStickersNode(io.ComfyNode):
         progress.set(0)
         progress.stage("Preparing sticker inputs")
 
-        _cuda_device = torch.device("cuda") if torch.cuda.is_available() else None
+        torch_device = comfy.model_management.get_torch_device()
+        render_device = None if comfy.model_management.is_device_cpu(torch_device) else torch_device
 
         state["output_preset"] = out_w
         state["bg_color"] = bg_hex
@@ -959,7 +948,7 @@ class PanoramaStickersNode(io.ComfyNode):
             out_w=out_w,
             bg_hex=bg_hex,
             overlay_rgba=overlay_rgba,
-            cuda_device=_cuda_device,
+            device=render_device,
             progress_callback=progress.frame_callback(render_start, render_span),
         )
         progress.set(render_start + render_span)
@@ -1389,7 +1378,39 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
     return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
 
 
-def _render_frames(built: PanoSceneValue, bg, capture, device):
+# Floats per output pixel that a frame keeps on the device at once beyond its sources: the rays and where they look,
+# the Sky's layers' samples with their footprints and filter weights, the background's samples, the World layer, and
+# the color, mask, and depth. Measured peaks reach about 25 (ERP 4096 x 2048, the Sky drawn at every pixel) with the
+# sources counted as below (`docs/render-contract.md`); 32 leaves a margin.
+RENDER_FLOATS_PER_PIXEL = 32
+# A source on the device is float32 with the ripmap levels `_sample_filtered` makes, up to three times its size.
+DEVICE_SOURCE_FACTOR = 4
+
+
+def _render_memory(built: PanoSceneValue, bg, size: tuple[int, int]) -> int:
+    """The bytes a render pass of `built` at `size` (width, height) needs on the device, by `docs/render-contract.md`:
+    the per-pixel working set of a frame, and every source it uploads as float32 with its ripmap levels (one
+    background frame, the Sticker sources, the uploaded paint layers) or as given (the 3D media)."""
+    sources = 0
+    if bg is not None:
+        frame = bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg[0]
+        sources += frame.shape[0] * frame.shape[1] * 3 * 4
+    media = 0
+    for layer in built.layers:
+        sources += sum(source.rgba.shape[0] * source.rgba.shape[1] * 4 * 4 for source in layer.sources.stickers.values())
+        sources += sum(array.size * 4 for array in _payload_arrays(layer.sources.painting_layer))
+        media += nbytes(layer.scene) + (nbytes(layer.port.media) if layer.port is not None and layer.port.is_3d else 0)
+    return size[0] * size[1] * RENDER_FLOATS_PER_PIXEL * 4 + sources * DEVICE_SOURCE_FACTOR + media
+
+
+def _payload_arrays(payload: dict | None) -> list:
+    """The rasters of a painting payload (`resolve_painting_layer_payload`)."""
+    if not payload:
+        return []
+    return [array for array in (payload.get("paint"), payload.get("mask"), *payload.get("groups", {}).values()) if array is not None]
+
+
+def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, int]):
     """(b) Render each output frame of the Scene `built` with the shared render function: each layer's state evaluated
     at its Timeline frame, its port Sticker's source at the frame of its `port` and its `scene` item that (a) chose,
     as one `RenderLayer` each. `capture` maps the evaluated state of the last layer (the node that shoots) to the
@@ -1397,7 +1418,12 @@ def _render_frames(built: PanoSceneValue, bg, capture, device):
     `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media (and its content when 3D) and the
     `scene` content are opened for this pass, so nothing they put on `device` outlives it.
     Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
-    the same tensors as the previous one."""
+    the same tensors as the previous one. Before the first frame, when `device` has less free memory than the pass
+    needs (`_render_memory` at the output `size`), ComfyUI frees that much, unloading models only as far as it takes."""
+    if not comfy.model_management.is_device_cpu(device):
+        required = _render_memory(built, bg, size)
+        if comfy.model_management.get_free_memory(device) < required:
+            comfy.model_management.free_memory(required, device)
     bg_width = None
     if bg is not None:
         bg_width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2]
@@ -1446,11 +1472,11 @@ def _render_outputs(built: PanoSceneValue, bg, capture, size: tuple[int, int], b
     """(c) The first output frame's IMAGE and MASK of the Scene `built`, rendered now from the opened `bg`, and the
     `video` of every frame, rendered when it is read with `bg_media` (opened as `bg_name`) and the `scene` content
     opened again for each pass."""
-    color, mask = next(_render_frames(built, bg, capture, comfy.model_management.get_torch_device()))
+    color, mask = next(_render_frames(built, bg, capture, comfy.model_management.get_torch_device(), size))
     audio = bg.audio(len(built.frames) / built.fps) if isinstance(bg, OPENED_VIDEOS) else None
 
     def render(device):
-        return _render_frames(built, _open_media(built.bg_media, bg_name), capture, device)
+        return _render_frames(built, _open_media(built.bg_media, bg_name), capture, device, size)
 
     video = SceneVideo(render, *size, built.rate, list(built.times), built.time_base, audio)
     return color[None].to("cpu", copy=True), mask[None].to("cpu", copy=True), video
@@ -1472,7 +1498,7 @@ def _batch_mp4_ui(images: torch.Tensor, name: str, fps: float, contract: dict) -
     """The `ui` of the editor MP4 of an IMAGE batch, evenly spaced at `fps`, made once per batch and fps."""
     batch = MaterializedVideo(Types.VideoComponents(images=images, frame_rate=Fraction(round(fps * 1000), 1000)), name)
     cache_key = ("editor_mp4", _tensor_cache_identity(images), float(fps))
-    return _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch), fps, len(batch.times), contract)
+    return _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch, loop_progress()), fps, len(batch.times), contract)
 
 
 def _editor_frames_ui(images: torch.Tensor, fps: float, contract: dict) -> dict:
@@ -1481,7 +1507,7 @@ def _editor_frames_ui(images: torch.Tensor, fps: float, contract: dict) -> dict:
     cache_key = ("editor_frames", _tensor_cache_identity(images))
     paths = NODE_RUNTIME.cache.get("video", cache_key)
     if paths is None or not all(path.exists() for path in paths):
-        paths = save_editor_frames(images)
+        paths = save_editor_frames(images, loop_progress())
         NODE_RUNTIME.cache.put("video", cache_key, paths)
     return make_frames_ui_payload(paths, fps, frames_key=contract["frames"], meta_key=contract["meta"])
 
@@ -1529,7 +1555,7 @@ def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_
         cache_key = (NODE_RUNTIME.object_identity(scene), _tensor_cache_identity(positions))
     saved = NODE_RUNTIME.cache.get("scene_files", cache_key)
     if saved is None or not all(path is None or path.exists() for path in saved[1]):
-        saved = write_editor_files(scene)
+        saved = write_editor_files(scene, loop_progress())
         NODE_RUNTIME.cache.put("scene_files", cache_key, saved)
     kind, paths = saved
     files = [None if path is None else entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]]) for path in paths]
@@ -2054,7 +2080,7 @@ class PanoramaCutoutNode(io.ComfyNode):
             source_identity = _tensor_cache_identity(erp_image)
             cutout_render_signature = (
                 source_identity,
-                _hash_text(state_json),
+                hashlib.sha1(str(state_json or "").encode("utf-8")).hexdigest(),
                 int(coverage_value),
                 int(ow),
                 int(oh),
@@ -2094,13 +2120,8 @@ class PanoramaCutoutNode(io.ComfyNode):
                 overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
                 for index in range(batch_frames):
                     out_batch[index] = alpha_composite_over_rgb(out_batch[index], overlay_cutout)
-            selected_mask = overlay_mask_bw if isinstance(overlay_mask_bw, np.ndarray) else (
-                painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-            )
-            if isinstance(selected_mask, np.ndarray):
-                mask_bw = sample_cutout_from_sampling_map(selected_mask, sampling_map)
-            else:
-                mask_bw = np.zeros((oh, ow), dtype=np.float32)
+            # The mask is the uploaded one as float (`_build_overlay_erp_rgba_and_mask`), else the state's strokes drawn.
+            mask_bw = sample_cutout_from_sampling_map(overlay_mask_bw, sampling_map)
             encode_start = progress.value
             out_t, mask_t, _out_batch_unused = _make_batched_image_and_mask_outputs(out_batch, mask_bw)
             if video_span > 0:
@@ -2201,7 +2222,8 @@ def _video_cache_identity(video, streamed: bool) -> tuple:
 
 def _editor_mp4(video, opened) -> tuple[Path, bool]:
     """The MP4 the editor plays for a VIDEO opened by `open_video` as `opened`, and whether it has audio. A file the
-    core copies into an MP4 that seeks fast already (`editor_ready`) is copied; a Stickers or Cutout `video` shows
+    core copies into an MP4 that seeks fast already (`editor_ready`) is copied, or played as it is when it is an MP4
+    in the input directory; a Stickers or Cutout `video` shows
     its stream source when that seeks fast. Otherwise a proxy is encoded (`encode_editor_mp4`), from the file
     again for a VIDEO read from its file, since `opened` has moved on, so the frames are never all in memory."""
     if isinstance(video, SceneVideo):
@@ -2209,24 +2231,39 @@ def _editor_mp4(video, opened) -> tuple[Path, bool]:
         source = video.get_stream_source()
         if editor_ready(source):
             return Path(source), mp4_has_audio(source)
-        return encode_editor_mp4(StreamedVideo(source, 0, 0, "source"))
+        return encode_editor_mp4(stream_video(source, 0, 0, "source"), loop_progress())
     if isinstance(opened, StreamedVideo):
         source, trim = video.get_stream_source(), video.get_active_trim_window()
         # The core copies the streams only without a trim window, and reads a file in memory as it is.
         if isinstance(source, str) and not any(trim) and editor_ready(source):
+            # An MP4 in the input directory is played from there; the browser is served it by its extension.
+            if _input_entry(source) is not None and Path(source).suffix.lower() == ".mp4":
+                return Path(source), mp4_has_audio(source)
             return save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
-        return encode_editor_mp4(StreamedVideo(source, *trim, "source"))
-    return encode_editor_mp4(opened)
+        return encode_editor_mp4(stream_video(source, *trim, "source"), loop_progress())
+    return encode_editor_mp4(opened, loop_progress())
+
+
+def _input_entry(path) -> dict | None:
+    """The `ui` entry of a file in ComfyUI's input directory, or None for a file elsewhere."""
+    root = Path(folder_paths.get_input_directory()).resolve()
+    try:
+        rel = Path(path).resolve().relative_to(root)
+    except ValueError:
+        return None
+    subfolder = rel.parent.as_posix()
+    return {"filename": rel.name, "subfolder": "" if subfolder == "." else subfolder, "type": "input", "storage": "input", "format": "video/mp4"}
 
 
 def _editor_mp4_ui(cache_key: tuple, make, fps: float, frame_count: int, contract: dict) -> dict:
-    """The `ui` of the editor MP4 that `make()` saves, made once per `cache_key` and reused while the file is there."""
+    """The `ui` of the editor MP4 that `make()` saves, made once per `cache_key` and reused while the file is there.
+    The MP4 is a temp file, or the input file itself (`_editor_mp4`)."""
     saved = NODE_RUNTIME.cache.get("video", cache_key)
     if saved is None or not saved[0].exists():
         saved = make()
         NODE_RUNTIME.cache.put("video", cache_key, saved)
     path, has_audio = saved
-    payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"])
+    payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"], video_entry=_input_entry(path))
     payload[contract["meta"]][0]["has_audio"] = has_audio
     return payload
 
