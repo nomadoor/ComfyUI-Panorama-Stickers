@@ -10,7 +10,7 @@ import {
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import { clamp, wrapYaw } from "./pano_math.js";
-import { cameraBasis, yawPitchToDir } from "./pano_camera_math.js";
+import { yawPitchToDir } from "./pano_camera_math.js";
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createFrameBatch } from "./pano_frame_batch.js";
 import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
@@ -29,7 +29,6 @@ import {
   newWorldSceneSticker,
   normalizeCoverageValue,
   noteCameraEdit,
-  paintingLayerNeedsSync,
   parsePanoEditorState,
   parseSceneEditorState,
   retainActiveCutoutShot,
@@ -40,12 +39,10 @@ import {
   setEditorActive,
   deleteWorldSticker,
   setStickerOpacity,
-  setStickerPose,
   setTimelineFps,
   setWorldStickerField,
   setWorldStickerTransform,
   sourceAsset,
-  stickerPose,
   worldStickerFields,
 } from "./pano_editor_state.js";
 import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from "./pano_scene_eval.js";
@@ -67,13 +64,10 @@ import {
   trimClipStart,
 } from "./pano_timeline.js";
 import {
-  HIDDEN_PREVIEW_OPACITY,
   createEditorView,
   frameViewContext,
   screenRenderSize,
   shotCamera,
-  viewportCamera,
-  viewProjection,
   workingSkyLayers,
   worldStickerLayers,
 } from "./pano_editor_view.js";
@@ -213,7 +207,6 @@ import {
   ENABLE_STICKERS_NODE_PREVIEW,
   EXTERNAL_STICKER_ID,
   EXTERNAL_STICKER_PREVIEW_KEY,
-  EXTERNAL_STICKER_SOURCE_KIND,
   FLOATING_RIGHT_RESERVED_PX,
   FRAME_GATE_EDGE_GAP_PX,
   FRAME_GATE_OCCUPANCY,
@@ -234,7 +227,6 @@ import {
   WORLD_UNLIMITED_FIELDS,
 } from "./editor/constants.js";
 import {
-  add,
   cloneColor,
   cloneJson,
   colorToCss,
@@ -242,7 +234,6 @@ import {
   dirToYawPitch,
   dist2,
   distToSegment2,
-  dot,
   easeInCubic,
   easeInOutCubic,
   easeOutCubic,
@@ -257,15 +248,10 @@ import {
   lerp,
   logPaintDebug,
   makePaintId,
-  mul,
-  norm,
-  paintingCompositeCount,
   parseOutputPresetValue,
   pointInPoly,
   rgb01ToHsv,
-  smoothstep,
   uid,
-  vec3,
 } from "./editor/helpers.js";
 import {
   getNodeGridVisibility,
@@ -276,9 +262,12 @@ import {
 import { getCachedVideoThumbnails, setCachedVideoThumbnails } from "./editor/video_thumbnail_cache.js";
 import { createEditorModules } from "./editor/modules.js";
 import { createEditorHistory, createHistory } from "./editor/history.js";
+import { createItems } from "./editor/items.js";
+import { createSelection } from "./editor/selection.js";
+import { createProjection } from "./editor/projection.js";
+import { createObjectGeometry } from "./editor/object_geometry.js";
+import { createPaintLayers } from "./editor/paint_layers.js";
 
-// Global registry: nodeId → Promise for in-flight paint layer uploads.
-const _paintLayerUploadRegistry = new Map();
 const _paintLayerSyncRegistry = new Map();
 
 const comfyMedia = createComfyMediaAdapter({
@@ -859,8 +848,6 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ reason: DRAW_REASON.CONTEXT });
     },
   });
-  // The panorama view's projection, rebuilt when its camera or the canvas size changes.
-  let viewProjectionCache = { key: [], projection: null };
   // The state v2 the views draw, made again when the state changes (scheduler.stateRevision).
   let editorViewScene = { revision: -1, sceneState: null };
   // The input built for the frame being drawn, shared by its views; drawScene clears it.
@@ -1166,13 +1153,40 @@ async function showEditor(node, type, options = {}) {
   // --- editor modules: begin (generated wiring, see docs/editor-architecture.md) ---
   // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
   const {
-    getHistoryCapabilities, pushHistory, restoreHistory,
+    applyInitialCutoutFocus, applyRasterObjectOffset, applyRasterObjectTransform, applyStrokeGroupOffset,
+    applyStrokeGroupTransform, areAllSelectedItemsLocked, bringSelectedToFront, buildEditorViewPaintLayers,
+    buildRasterObjectEditCanvas, canRestoreSelectedToInitial, clearSelection, clearWorldSelection,
+    currentViewCamera, deviceRect, ensureGroupFrame, ensurePaintingGroupEntry, erpPointToWorldDir,
+    frameLocalPointToWorldDir, getCutoutInspectorItems, getCutoutSelectableItems,
+    getCutoutSelectableItemsForDisplay, getCutoutSelectableItemsForHit, getDisplayListObjects,
+    getHistoryCapabilities, getList, getLivePaintRevisionSuffix, getMultiSelectionGeom, getNextStickerZIndex,
+    getOrderedDisplayListObjects, getPaintingGroupList, getRasterObjectCenterUv, getRasterObjectItem,
+    getRasterObjectList, getSelectableRasterObjectItems, getSelectableStrokeGroupItems, getSelected,
+    getSelectedItems, getSelectedKind, getSelectionItemIcon, getSelectionItemLabelData, getSharedLivePaintSurface,
+    getStickerDisplayAlpha, getStrokeGroupCenterUv, getStrokeGroupItem, getStrokeGroupStrokes, getUnwrapRect,
+    hitRasterObjectAt, invalidateLivePaintPreviewCaches, invalidatePaintingLayerState, isErpCamera,
+    isExternalSticker, isItemLocked, isItemSelected, isPaintCompositeInteraction, isRasterObjectItem,
+    isSceneSticker, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
+    makeRasterObjectSelectionId, makeStrokeGroupSelectionId, needsPaintingLayerSync, objectGeom,
+    parseRasterObjectSelectionId, poseOf, projectDir, projectDirUnwrap, projectErpLassoPointsToFrameRect,
+    projectLassoPointsToCurrentView, pushHistory, releaseHiddenSelection, restoreHistory,
+    restoreSelectedToInitialPose, sampleStickerEdge, screenPos, screenPosCss, screenPosToErpPoint,
+    screenPosToFrameAsErpPoint, screenToWorldDir, selectWorldSticker, selectedWorldSticker, sendSelectedToBack,
+    setSelectedItem, setSelectedItems, shortestWrappedDelta, skyStickers, stickerCornerOrderSanity,
+    syncPaintingLayerAsync, toggleSelectedExternalStickerVisibility, toggleSelectedLock,
+    worldDirToFrameLocalPoint, worldStickerEditable, writePose,
   } = createEditorModules({
-    clearWorldSelection, commitState, editor, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
-    markPaintStrokeVisualsDirty, playback, readOnly, releaseHiddenSelection, requestDraw, runtime, state, stateV2,
-    stopTimelinePlayback, studio, syncCutoutShot, syncPaintUi, syncUndoRedoButtons, type, updateSidePanel,
+    api, backgroundCanvas, cameraShoots, cameraV2, canvas, commitAndRefreshNode, commitState, computeStickerVFov,
+    createRasterSurface, cutoutV2, editor, getActiveCutoutShot, getActivePaintTargetDescriptor,
+    getBrushPresetIdForTool, getDesiredPaintTargetDescriptor, getDisplayPaintRevisionKey, getFrameViewRect,
+    getPaintingCompositeRevisionKey, getPaintingLayerList, getPaintingRevisionKey, getStickerUiImage, hasCamera,
+    isFreeSpaceView, markObjectVisualsDirty, markPaintStrokeVisualsDirty, node, paintingShown, playback,
+    processFreehandPoints, rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache,
+    rasterizeStrokeToSurface, readOnly, rebuildPaintEngineIfNeeded, requestDraw, runtime, sceneStickerShown,
+    sceneV2, shotEditor, state, stateV2, stopTimelinePlayback, studio, syncCutoutShot, syncPaintUi,
+    syncUndoRedoButtons, timeline, type, updateSelectionMenu, updateSidePanel,
   }, [
-    createHistory,
+    createHistory, createItems, createSelection, createProjection, createObjectGeometry, createPaintLayers,
   ]);
   // --- editor modules: end ---
 
@@ -1241,866 +1255,11 @@ async function showEditor(node, type, options = {}) {
   const __sanity = stickerCornerOrderSanity();
   void __sanity;
 
-  function getList() { return type === "stickers" ? skyStickers() : state.shots; }
-  // The Stickers the canvas shows and edits. World Stickers of state v2 only appear in the Timeline.
-  function skyStickers() {
-    return sceneV2 ? state.stickers.filter((item) => item.placement === "sky") : state.stickers;
-  }
-  function isSceneSticker(item) {
-    return sceneV2 && isStickerItem(item);
-  }
-  // A Sticker added from a file has no file Source until its upload finishes (addSceneStickerFromFile).
-  function isUploadingSticker(item) {
-    return item.source.kind === "file" && !item.source.filename && !item.source.data_url;
-  }
-  // The pose fields the canvas geometry and the inspector read: a Sticker of state v2 at the
-  // editor's Timeline frame, the item itself otherwise.
-  function poseOf(item) {
-    return isSceneSticker(item) ? stickerPose(item, editor.frame) : item;
-  }
-  function writePose(item, pose) {
-    if (isSceneSticker(item)) setStickerPose(item, editor.frame, pose);
-    else Object.assign(item, pose);
-  }
-  function getPaintingGroupList() {
-    const painting = state.painting || (state.painting = normalizePaintingState(null));
-    if (!Array.isArray(painting.groups)) painting.groups = [];
-    return painting.groups;
-  }
-  function getStrokeActionGroupIds(layerKind = "paint") {
-    const strokes = Array.isArray(state.painting?.[layerKind]?.strokes) ? state.painting[layerKind].strokes : [];
-    const ids = [];
-    const seen = new Set();
-    for (const stroke of strokes) {
-      const gid = String(stroke?.actionGroupId || "").trim();
-      if (!gid || seen.has(gid)) continue;
-      seen.add(gid);
-      ids.push(gid);
-    }
-    return ids;
-  }
-  function getPaintStrokeActionGroupIds() {
-    return getStrokeActionGroupIds("paint");
-  }
-  function makeStrokeGroupSelectionId(layerKind, actionGroupId) {
-    const gid = String(actionGroupId || "").trim();
-    return gid ? `${layerKind === "mask" ? "mask" : "paint"}:${gid}` : "";
-  }
-  function makeRasterObjectSelectionId(id) {
-    const rid = String(id || "").trim();
-    return rid ? `raster:${rid}` : "";
-  }
-  function parseRasterObjectSelectionId(idOrRasterId) {
-    const raw = String(idOrRasterId || "").trim();
-    if (!raw) return "";
-    const m = raw.match(/^raster:(.*)$/);
-    return String(m ? (m[1] || "") : raw).trim();
-  }
-  function parseStrokeGroupSelectionId(idOrActionGroupId, layerKind = null) {
-    const raw = String(idOrActionGroupId || "").trim();
-    if (!raw) return { layerKind: "paint", actionGroupId: "" };
-    const m = raw.match(/^(paint|mask):(.*)$/);
-    if (m) return { layerKind: m[1] === "mask" ? "mask" : "paint", actionGroupId: String(m[2] || "").trim() };
-    return { layerKind: layerKind === "mask" ? "mask" : "paint", actionGroupId: raw };
-  }
-  function getNextDisplayZIndex() {
-    let maxZ = -1;
-    for (const item of skyStickers()) {
-      maxZ = Math.max(maxZ, Number(item?.z_index || 0));
-    }
-    for (const group of getPaintingGroupList()) {
-      maxZ = Math.max(maxZ, Number(group?.z_index || 0));
-    }
-    for (const item of (Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [])) {
-      if (String(item?.layerKind || "paint") !== "paint") continue;
-      maxZ = Math.max(maxZ, Number(item?.z_index || 0));
-    }
-    return maxZ + 1;
-  }
-  function ensurePaintingGroupEntry(actionGroupId, zIndex = null) {
-    const gid = String(actionGroupId || "").trim();
-    if (!gid) return null;
-    const groups = getPaintingGroupList();
-    let entry = groups.find((group) => String(group?.actionGroupId || "") === gid);
-    if (!entry) {
-      entry = {
-        id: gid,
-        type: "strokeGroup",
-        actionGroupId: gid,
-        z_index: zIndex == null ? getNextDisplayZIndex() : Math.max(0, Number(zIndex || 0)),
-        locked: false,
-        frame: null,
-      };
-      groups.push(entry);
-    } else if (zIndex != null) {
-      entry.z_index = Math.max(0, Number(zIndex || 0));
-    }
-    return entry;
-  }
-  function getFrameCornersUv(frame) {
-    if (!frame?.centerUv) return [];
-    const centerU = Number(frame.centerUv.u || 0);
-    const centerV = Number(frame.centerUv.v || 0);
-    const halfW = Number(frame.halfW || 0);
-    const halfH = Number(frame.halfH || 0);
-    return [
-      {
-        u: ((centerU - halfW) % 1 + 1) % 1,
-        v: clamp(centerV - halfH, 0, 1),
-      },
-      {
-        u: ((centerU + halfW) % 1 + 1) % 1,
-        v: clamp(centerV - halfH, 0, 1),
-      },
-      {
-        u: ((centerU + halfW) % 1 + 1) % 1,
-        v: clamp(centerV + halfH, 0, 1),
-      },
-      {
-        u: ((centerU - halfW) % 1 + 1) % 1,
-        v: clamp(centerV + halfH, 0, 1),
-      },
-    ];
-  }
-  function syncPaintingGroupEntries() {
-    const ids = new Set(getPaintStrokeActionGroupIds());
-    const groups = getPaintingGroupList();
-    const next = groups.filter((group) => ids.has(String(group?.actionGroupId || "")));
-    ids.forEach((gid) => {
-      if (!next.some((group) => String(group?.actionGroupId || "") === gid)) {
-        next.push({
-          id: gid,
-          type: "strokeGroup",
-          actionGroupId: gid,
-          z_index: getNextDisplayZIndex(),
-          locked: false,
-          frame: null,
-        });
-      }
-    });
-    next.sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0));
-    state.painting.groups = next;
-    return next;
-  }
-  // Compute an axis-aligned bounding box for a stroke group (rot_deg = 0).
-  // Returns { centerUv, rot_deg, halfW, halfH, uvPad } or null when no points.
-  // Rotation is stored separately and accumulated via transforms — no PCA.
-  function computeGroupFrame(actionGroupId, layerKind, strokes) {
-    const normalizeU = (u) => ((Number(u || 0) % 1) + 1) % 1;
-    const sourcePoints = [];
-    for (const stroke of strokes) {
-      const geometry = stroke?.geometry;
-      const pts = geometry?.geometryKind === "lasso_fill"
-        ? geometry?.points
-        : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
-      if (Array.isArray(pts)) sourcePoints.push(...pts);
-    }
-    if (!sourcePoints.length) return null;
-    const baseU = normalizeU(sourcePoints[0]?.u || 0);
-    let sumU = 0;
-    let sumV = 0;
-    sourcePoints.forEach((pt) => {
-      const u = normalizeU(pt?.u || 0);
-      sumU += baseU + shortestWrappedDelta(u, baseU);
-      sumV += Number(pt?.v || 0);
-    });
-    const centU = ((sumU / sourcePoints.length) % 1 + 1) % 1;
-    const centV = sumV / sourcePoints.length;
-    let minDU = Infinity, maxDU = -Infinity, minV = Infinity, maxV = -Infinity;
-    sourcePoints.forEach((pt) => {
-      const u = normalizeU(pt?.u || 0);
-      const du = shortestWrappedDelta(u, centU);
-      minDU = Math.min(minDU, du); maxDU = Math.max(maxDU, du);
-      const v = Number(pt?.v || 0);
-      minV = Math.min(minV, v); maxV = Math.max(maxV, v);
-    });
-    const maxStrokeWidth = strokes.reduce((max, stroke) => {
-      const presetId = getBrushPresetIdForTool(String(stroke?.toolKind || "pen"));
-      const preset = BRUSH_PRESETS[presetId] || BRUSH_PRESETS[DEFAULT_BRUSH_PRESET_ID];
-      const size = Math.max(1, Number(stroke?.size || 10)) * Math.max(0.1, Number(preset?.sizeScale ?? 1));
-      return Math.max(max, size);
-    }, 0);
-    const uvPad = Math.max(0.0035, maxStrokeWidth / 2048);
-    return {
-      centerUv: { u: ((centU + (minDU + maxDU) * 0.5) % 1 + 1) % 1, v: clamp((minV + maxV) * 0.5, 0, 1) },
-      rot_deg: 0,
-      halfW: (maxDU - minDU) * 0.5 + uvPad,
-      halfH: (maxV - minV) * 0.5 + uvPad,
-      uvPad,
-    };
-  }
-
-  // Stroke groups must derive their frame from the current stroke data every time.
-  // A persistent/stale frame breaks seam-crossing selection and transforms.
-  function ensureGroupFrame(actionGroupId, layerKind, strokes) {
-    const gid = String(actionGroupId || "").trim();
-    if (!gid) return null;
-    const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
-    if (!entry) return null;
-    const s = strokes || getStrokeGroupStrokes(gid, layerKind);
-    entry.frame = computeGroupFrame(gid, layerKind, s);
-    return entry.frame;
-  }
-
-  function getDisplayListObjects() {
-    const stickers = skyStickers().map((item) => ({
-      type: "sticker",
-      id: String(item?.id || ""),
-      z_index: Number(item?.z_index || 0),
-      item,
-    }));
-    const groups = syncPaintingGroupEntries().map((group) => ({
-      type: "strokeGroup",
-      id: String(group?.id || group?.actionGroupId || ""),
-      actionGroupId: String(group?.actionGroupId || ""),
-      z_index: Number(group?.z_index || 0),
-      item: group,
-    }));
-    const rasterObjects = (Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [])
-      .filter((item) => String(item?.layerKind || "paint") === "paint")
-      .map((item) => ({
-        type: "rasterObject",
-        id: String(item?.id || ""),
-        z_index: Number(item?.z_index || 0),
-        item,
-      }));
-    return [...stickers, ...groups, ...rasterObjects].sort((a, b) => Number(a.z_index || 0) - Number(b.z_index || 0));
-  }
-  function getOrderedPaintGroupIds(includeActive = true) {
-    const ordered = getDisplayListObjects()
-      .filter((entry) => entry.type === "strokeGroup")
-      .map((entry) => String(entry.actionGroupId || ""))
-      .filter((gid) => !!gid);
-    if (includeActive) {
-      const activeGid = String(editor.interaction?.stroke?.actionGroupId || "").trim();
-      const activeLayerKind = String(editor.interaction?.stroke?.layerKind || "").trim();
-      const activeToolKind = String(editor.interaction?.stroke?.toolKind || "").trim();
-      if (activeGid && activeLayerKind === "paint" && activeToolKind !== "eraser" && !ordered.includes(activeGid)) {
-        ordered.push(activeGid);
-      }
-    }
-    return ordered;
-  }
-
-  function getOrderedDisplayListObjects(includeActivePaint = true) {
-    const ordered = getDisplayListObjects();
-    if (!includeActivePaint) return ordered;
-    const activeGid = String(editor.interaction?.stroke?.actionGroupId || "").trim();
-    const activeLayerKind = String(editor.interaction?.stroke?.layerKind || "").trim();
-    const activeToolKind = String(editor.interaction?.stroke?.toolKind || "").trim();
-    if (!activeGid || activeLayerKind !== "paint" || activeToolKind === "eraser") return ordered;
-    if (ordered.some((entry) => entry.type === "strokeGroup" && String(entry.actionGroupId || "") === activeGid)) {
-      return ordered;
-    }
-    const selected = getSelected();
-    let insertZ = ordered.reduce((max, entry) => Math.max(max, Number(entry?.z_index || 0)), -1) + 1;
-    if (selected && isStrokeGroupItem(selected) && String(selected.actionGroupId || "") === activeGid) {
-      insertZ = Number(selected.z_index || 0);
-    }
-    return [
-      ...ordered,
-      {
-        type: "strokeGroup",
-        id: activeGid,
-        actionGroupId: activeGid,
-        z_index: insertZ,
-        item: null,
-      },
-    ].sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0));
-  }
-  function getSelectableStrokeGroupItems() {
-    return getPaintingGroupList()
-      .slice()
-      .sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0))
-      .map((item) => getStrokeGroupItem(makeStrokeGroupSelectionId("paint", item?.actionGroupId || item?.id || "")))
-      .filter(Boolean);
-  }
-  function getSelectableRasterObjectItems() {
-    return (Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [])
-      .filter((item) => String(item?.layerKind || "paint") === "paint")
-      .slice()
-      .sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0))
-      .map((item) => getRasterObjectItem(makeRasterObjectSelectionId(item?.id || "")))
-      .filter(Boolean);
-  }
-
-  function isPaintCompositeInteraction(interaction = editor.interaction) {
-    const kind = String(interaction?.kind || "");
-    if (kind === "paint_stroke" || kind === "paint_lasso_fill") return true;
-    if (kind === "move_stroke_group" || kind === "scale_stroke_group" || kind === "rotate_stroke_group") return true;
-    if (kind === "move_raster_object" || kind === "scale_raster_object") return true;
-    if (kind === "move_multi") {
-      const hasStrokeSnapshots = Array.isArray(interaction?.strokeSnapshots) && interaction.strokeSnapshots.length > 0;
-      const hasRasterSnapshots = Array.isArray(interaction?.rasterSnapshots) && interaction.rasterSnapshots.length > 0;
-      return hasStrokeSnapshots || hasRasterSnapshots;
-    }
-    return false;
-  }
-
-  function getSharedLivePaintSurface() {
-    let livePaint = null;
-    try {
-      const orderedGroupIds = getOrderedPaintGroupIds();
-      const displayPaint = editor.paintEngine?.getErpTarget?.(orderedGroupIds)?.displayPaint?.canvas || null;
-      if (displayPaint) {
-        livePaint = {
-          source: displayPaint,
-          revision: `${getPaintingCompositeRevisionKey()}:${getLivePaintRevisionSuffix()}`,
-        };
-      }
-    } catch {
-      livePaint = null;
-    }
-    return livePaint;
-  }
-
-  function getLivePaintRevisionSuffix() {
-    const interaction = editor.interaction;
-    const interactionKind = String(interaction?.kind || "");
-    if (!isPaintCompositeInteraction(interaction)) return "";
-    if (interactionKind === "paint_stroke" || interactionKind === "paint_lasso_fill") {
-      const geometry = interaction?.stroke?.geometry || null;
-      const layerKind = String(interaction?.stroke?.layerKind || "");
-      const pointCount = geometry?.rawPoints?.length ?? geometry?.points?.length ?? 0;
-      const stamp = String(interaction?._livePreviewToken || "");
-      return `_${layerKind || "paint"}_${interactionKind}_live${stamp}_${pointCount}_${editor.livePaintInteractionRevision}`;
-    }
-    const groupId = String(interaction?.item?.actionGroupId || "");
-    const rasterId = String(interaction?.item?.rasterObjectId || interaction?.item?.id || "");
-    return `_${interactionKind}_${groupId || rasterId || "active"}_${editor.livePaintInteractionRevision}`;
-  }
-  // The Stickers the Cutout editor selects and moves: none in PanoramaCutoutNode's, which edits only its
-  // Camera and shows the Stickers of its state or of the Scene it shoots (#77); the sky ones in Panorama
-  // Studio's, as the Stickers editor (#89).
-  function cutoutStickers() {
-    return cutoutV2 || !Array.isArray(state.stickers) ? [] : skyStickers();
-  }
-  function getCutoutSelectableItems() {
-    const shots = Array.isArray(state.shots) ? state.shots : [];
-    return [...shots, ...cutoutStickers()];
-  }
-  function isShotItem(item) {
-    return !!item && Array.isArray(state.shots) && state.shots.includes(item);
-  }
-  function isStickerItem(item) {
-    return !!item && Array.isArray(state.stickers) && state.stickers.includes(item);
-  }
-  function getRasterObjectList() {
-    return Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [];
-  }
-  function getRasterObjectItem(idOrRasterId) {
-    const rid = parseRasterObjectSelectionId(idOrRasterId);
-    if (!rid) return null;
-    const item = getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid);
-    if (!item || String(item?.layerKind || "paint") !== "paint") return null;
-    return {
-      ...item,
-      id: makeRasterObjectSelectionId(rid),
-      type: "rasterObject",
-      rasterObjectId: rid,
-    };
-  }
-  function isRasterObjectItem(item) {
-    if (!item || typeof item !== "object") return false;
-    if (String(item.type || "") !== "rasterObject") return false;
-    const rid = parseRasterObjectSelectionId(item.rasterObjectId || item.id || "");
-    return !!rid && !!getRasterObjectItem(makeRasterObjectSelectionId(rid));
-  }
-  function getStrokeGroupItem(idOrActionGroupId) {
-    const resolved = parseStrokeGroupSelectionId(idOrActionGroupId);
-    const gid = String(resolved.actionGroupId || "").trim();
-    if (!gid) return null;
-    const group = getPaintingGroupList().find((entry) => String(entry?.id || entry?.actionGroupId || "") === gid
-      || String(entry?.actionGroupId || "") === gid);
-    if (!group) return null;
-    return {
-      ...group,
-      id: makeStrokeGroupSelectionId("paint", gid),
-      type: "strokeGroup",
-      layerKind: "paint",
-      actionGroupId: gid,
-    };
-  }
-  function isStrokeGroupItem(item) {
-    if (!item || typeof item !== "object") return false;
-    if (String(item.type || "") !== "strokeGroup") return false;
-    const actionGroupId = String(item.actionGroupId || "").trim();
-    const layerKind = String(item.layerKind || "paint").trim() || "paint";
-    return !!actionGroupId && !!getStrokeGroupItem(makeStrokeGroupSelectionId(layerKind, actionGroupId));
-  }
-  function getStrokeGroupStrokes(idOrActionGroupId, layerKind = null) {
-    const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);
-    const gid = String(resolved.actionGroupId || "").trim();
-    if (!gid) return [];
-    return getPaintingLayerList(resolved.layerKind)
-      .filter((stroke) => String(stroke?.actionGroupId || "").trim() === gid);
-  }
-  function getStrokeGeomCacheKey(actionGroupId, layerKind = "paint") {
-    const gid = String(actionGroupId || "").trim();
-    const kind = String(layerKind || "paint").trim() || "paint";
-    const base = `geomv5:${kind}:${gid}:${editor.mode}:${getPaintingRevisionKey()}`;
-    if (editor.mode === "frame") {
-      const shot = getActiveCutoutShot();
-      const shotId = String(shot?.id || "");
-      const rect = shot ? getFrameViewRect(shot) : null;
-      return `${base}:frame:${shotId}:${Math.round(Number(shot?.yaw_deg || 0) * 1000)}:${Math.round(Number(shot?.pitch_deg || 0) * 1000)}:${Math.round(Number(shot?.roll_deg ?? shot?.rot_deg ?? 0) * 1000)}:${Math.round(Number(shot?.hFOV_deg || 0) * 1000)}:${Math.round(Number(shot?.vFOV_deg || 0) * 1000)}:${Math.round(Number(rect?.x || 0))}:${Math.round(Number(rect?.y || 0))}:${Math.round(Number(rect?.w || 0))}:${Math.round(Number(rect?.h || 0))}`;
-    }
-    return `${base}:view:${Math.round(Number(editor.viewYaw || 0) * 100)}:${Math.round(Number(editor.viewPitch || 0) * 100)}:${Math.round(Number(editor.viewFov || 0) * 100)}:${Math.round(Number(canvas?.width || 0))}:${Math.round(Number(canvas?.height || 0))}`;
-  }
-  function translateErpPoint(point, du, dv) {
-    if (!point || typeof point !== "object") return point;
-    return {
-      ...point,
-      u: ((Number(point.u || 0) + Number(du || 0)) % 1 + 1) % 1,
-      v: clamp(Number(point.v || 0) + Number(dv || 0), 0, 1),
-    };
-  }
-  function shortestWrappedDelta(a, b) {
-    let d = Number(a || 0) - Number(b || 0);
-    while (d > 0.5) d -= 1;
-    while (d < -0.5) d += 1;
-    return d;
-  }
-  function getStrokeGroupCenterUv(idOrActionGroupId, layerKind = null, strokesOverride = null) {
-    const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);
-    const strokes = Array.isArray(strokesOverride) ? strokesOverride : getStrokeGroupStrokes(resolved.actionGroupId, resolved.layerKind);
-    const pts = [];
-    strokes.forEach((stroke) => {
-      const geometry = stroke?.geometry || null;
-      const src = geometry?.geometryKind === "lasso_fill"
-        ? geometry?.points
-        : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
-      if (Array.isArray(src)) pts.push(...src);
-    });
-    if (!pts.length) return { u: 0.5, v: 0.5 };
-    const anchorU = Number(pts[0]?.u || 0);
-    let sumU = 0;
-    let sumV = 0;
-    pts.forEach((pt) => {
-      sumU += anchorU + shortestWrappedDelta(Number(pt?.u || 0), anchorU);
-      sumV += Number(pt?.v || 0);
-    });
-    return {
-      u: ((sumU / pts.length) % 1 + 1) % 1,
-      v: clamp(sumV / pts.length, 0, 1),
-    };
-  }
-  function transformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
-    if (!point || typeof point !== "object") return point;
-    const cu = Number(center?.u || 0);
-    const cv = Number(center?.v || 0);
-    const dx = shortestWrappedDelta(Number(point.u || 0), cu);
-    const dy = Number(point.v || 0) - cv;
-    const rad = Number(rotationDeg || 0) * DEG2RAD;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const s = Math.max(0.02, Number(scale || 1));
-    const rx = (dx * cos - dy * sin) * s;
-    const ry = (dx * sin + dy * cos) * s;
-    return {
-      ...point,
-      u: ((cu + rx) % 1 + 1) % 1,
-      v: clamp(cv + ry, 0, 1),
-    };
-  }
-  function applyStrokeGroupOffset(idOrActionGroupId, du, dv, snapshots = null, layerKind = null, frameSnapshot = null) {
-    const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);
-    const gid = String(resolved.actionGroupId || "").trim();
-    if (!gid) return false;
-    const strokes = getPaintingLayerList(resolved.layerKind);
-    const snapshotMap = Array.isArray(snapshots)
-      ? new Map(snapshots.map((stroke) => [String(stroke?.id || ""), stroke]))
-      : null;
-    let changed = false;
-    strokes.forEach((stroke) => {
-      if (String(stroke?.actionGroupId || "").trim() !== gid) return;
-      const source = snapshotMap?.get(String(stroke?.id || "")) || stroke;
-      const geometry = stroke?.geometry;
-      const sourceGeometry = source?.geometry;
-      if (!geometry || !sourceGeometry) return;
-      if (Array.isArray(sourceGeometry.points)) {
-        geometry.points = sourceGeometry.points.map((pt) => translateErpPoint(pt, du, dv));
-        changed = true;
-      }
-      if (Array.isArray(sourceGeometry.rawPoints)) {
-        geometry.rawPoints = sourceGeometry.rawPoints.map((pt) => translateErpPoint(pt, du, dv));
-        changed = true;
-      }
-      if (Array.isArray(sourceGeometry.processedPoints)) {
-        geometry.processedPoints = sourceGeometry.processedPoints.map((pt) => translateErpPoint(pt, du, dv));
-        changed = true;
-      }
-    });
-    if (changed && frameSnapshot) {
-      const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
-      if (entry) entry.frame = null;
-    }
-    return changed;
-  }
-  function applyStrokeGroupTransform(idOrActionGroupId, scale = 1, rotationDeg = 0, snapshots = null, layerKind = null, frameSnapshot = null) {
-    const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);
-    const gid = String(resolved.actionGroupId || "").trim();
-    if (!gid) return false;
-    const strokes = getPaintingLayerList(resolved.layerKind);
-    const sourceStrokes = Array.isArray(snapshots) ? snapshots : getStrokeGroupStrokes(gid, resolved.layerKind);
-    const snapshotMap = Array.isArray(sourceStrokes)
-      ? new Map(sourceStrokes.map((stroke) => [String(stroke?.id || ""), stroke]))
-      : null;
-    // Use the frame's bbox center as pivot when available — it matches what objectGeom() draws.
-    const centerUv = frameSnapshot?.centerUv ?? getStrokeGroupCenterUv(gid, resolved.layerKind, sourceStrokes);
-    let changed = false;
-    strokes.forEach((stroke) => {
-      if (String(stroke?.actionGroupId || "").trim() !== gid) return;
-      const source = snapshotMap?.get(String(stroke?.id || "")) || stroke;
-      const geometry = stroke?.geometry;
-      const sourceGeometry = source?.geometry;
-      if (!geometry || !sourceGeometry) return;
-      if (Array.isArray(sourceGeometry.points)) {
-        geometry.points = sourceGeometry.points.map((pt) => transformErpPointAround(pt, centerUv, scale, rotationDeg));
-        changed = true;
-      }
-      if (Array.isArray(sourceGeometry.rawPoints)) {
-        geometry.rawPoints = sourceGeometry.rawPoints.map((pt) => transformErpPointAround(pt, centerUv, scale, rotationDeg));
-        changed = true;
-      }
-      if (Array.isArray(sourceGeometry.processedPoints)) {
-        geometry.processedPoints = sourceGeometry.processedPoints.map((pt) => transformErpPointAround(pt, centerUv, scale, rotationDeg));
-        changed = true;
-      }
-    });
-    if (changed && frameSnapshot) {
-      const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
-      if (entry) entry.frame = null;
-    }
-    return changed;
-  }
-  function applyRasterObjectOffset(idOrRasterId, du, dv, snapshot = null) {
-    const rid = parseRasterObjectSelectionId(idOrRasterId);
-    if (!rid) return false;
-    const item = getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid);
-    if (!item) return false;
-    const source = snapshot && typeof snapshot === "object" ? snapshot : item;
-    const sourceTf = source?.transform || {};
-    const nextDu = Number(sourceTf.du || 0) + Number(du || 0);
-    const nextDv = clamp(Number(sourceTf.dv || 0) + Number(dv || 0), -1, 1);
-    if (!item.transform) item.transform = { du: 0, dv: 0, rot_deg: 0, scale: 1 };
-    item.transform.du = nextDu;
-    item.transform.dv = nextDv;
-    return true;
-  }
-  function applyRasterObjectTransform(idOrRasterId, scale = 1, snapshot = null) {
-    const rid = parseRasterObjectSelectionId(idOrRasterId);
-    if (!rid) return false;
-    const item = getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid);
-    if (!item) return false;
-    const source = snapshot && typeof snapshot === "object" ? snapshot : item;
-    const sourceTf = source?.transform || {};
-    const sourceScale = Math.max(0.01, Number(sourceTf.scale || 1));
-    const nextScale = clamp(sourceScale * Math.max(0.01, Number(scale || 1)), 0.01, 100);
-    if (!item.transform) item.transform = { du: 0, dv: 0, rot_deg: 0, scale: 1 };
-    item.transform.scale = nextScale;
-    return true;
-  }
-  function getSelected() {
-    const id = String(editor.selectedId || "");
-    if (!id) return null;
-    const groupItem = getStrokeGroupItem(id);
-    if (groupItem) return groupItem;
-    const rasterItem = getRasterObjectItem(id);
-    if (rasterItem) return rasterItem;
-    if (shotEditor) {
-      return getCutoutSelectableItems().find((item) => String(item?.id || "") === id) || null;
-    }
-    return getList().find((s) => String(s?.id || "") === id) || null;
-  }
-  function getSelectedItems() {
-    const ids = Array.isArray(editor.selectedIds) && editor.selectedIds.length
-      ? editor.selectedIds
-      : (editor.selectedId ? [editor.selectedId] : []);
-    const out = [];
-    const seen = new Set();
-    ids.forEach((id) => {
-      const key = String(id || "").trim();
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      const item = key === String(editor.selectedId || "") ? getSelected() : (
-        getStrokeGroupItem(key)
-        || getRasterObjectItem(key)
-        || (shotEditor
-          ? getCutoutSelectableItems().find((entry) => String(entry?.id || "") === key)
-          : getList().find((entry) => String(entry?.id || "") === key))
-      );
-      if (item) out.push(item);
-    });
-    return out;
-  }
-  function getMultiSelectionGeom(items = null) {
-    const selectedItems = Array.isArray(items) ? items : getSelectedItems();
-    if (!selectedItems || selectedItems.length < 2) return null;
-    const geoms = selectedItems
-      .map((item) => objectGeom(item))
-      .filter((geom) => geom?.visible && Array.isArray(geom.corners) && geom.corners.length);
-    if (!geoms.length) return null;
-    const xs = geoms.flatMap((geom) => geom.corners.map((p) => Number(p?.x || 0)));
-    const ys = geoms.flatMap((geom) => geom.corners.map((p) => Number(p?.y || 0)));
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    return {
-      kind: "multiSelection",
-      visible: true,
-      center: { x: (minX + maxX) * 0.5, y: (minY + maxY) * 0.5 },
-      corners: [
-        { x: minX, y: minY },
-        { x: maxX, y: minY },
-        { x: maxX, y: maxY },
-        { x: minX, y: maxY },
-      ],
-      edgeMidpoints: [
-        { edge: "top", x: (minX + maxX) * 0.5, y: minY, a: { x: minX, y: minY }, b: { x: maxX, y: minY } },
-        { edge: "right", x: maxX, y: (minY + maxY) * 0.5, a: { x: maxX, y: minY }, b: { x: maxX, y: maxY } },
-        { edge: "bottom", x: (minX + maxX) * 0.5, y: maxY, a: { x: maxX, y: maxY }, b: { x: minX, y: maxY } },
-        { edge: "left", x: minX, y: (minY + maxY) * 0.5, a: { x: minX, y: maxY }, b: { x: minX, y: minY } },
-      ],
-      rotateStemBase: { x: (minX + maxX) * 0.5, y: minY },
-      rotateHandle: { x: (minX + maxX) * 0.5, y: minY - 30 },
-    };
-  }
-  function isItemSelected(item) {
-    const id = String(item?.id || "").trim();
-    return !!id && Array.isArray(editor.selectedIds) && editor.selectedIds.includes(id);
-  }
-  function getSelectedKind() {
-    const selected = getSelected();
-    if (!selected) return null;
-    if (isStrokeGroupItem(selected) || isRasterObjectItem(selected)) return "stroke";
-    return isShotItem(selected) ? "frame" : "image";
-  }
-  function isItemLocked(item) {
-    if (!item || typeof item !== "object") return false;
-    if (isStrokeGroupItem(item)) {
-      const gid = String(item.actionGroupId || item.id || "").trim();
-      const group = getPaintingGroupList().find((entry) => String(entry?.actionGroupId || entry?.id || "").trim() === gid);
-      return group?.locked === true;
-    }
-    if (isRasterObjectItem(item)) {
-      const rid = parseRasterObjectSelectionId(item.rasterObjectId || item.id || "");
-      const raster = getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid);
-      return raster?.locked === true;
-    }
-    return item.locked === true;
-  }
-  function areAllSelectedItemsLocked(items = null) {
-    const selectedItems = Array.isArray(items) ? items : getSelectedItems();
-    return selectedItems.length > 0 && selectedItems.every((item) => isItemLocked(item));
-  }
-  function setItemLocked(item, locked) {
-    const next = locked === true;
-    if (!item || typeof item !== "object") return false;
-    if (isStrokeGroupItem(item)) {
-      const gid = String(item.actionGroupId || item.id || "").trim();
-      const group = getPaintingGroupList().find((entry) => String(entry?.actionGroupId || entry?.id || "").trim() === gid);
-      if (!group || group.locked === next) return false;
-      group.locked = next;
-      return true;
-    }
-    if (isRasterObjectItem(item)) {
-      const rid = parseRasterObjectSelectionId(item.rasterObjectId || item.id || "");
-      const raster = getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid);
-      if (!raster || raster.locked === next) return false;
-      raster.locked = next;
-      return true;
-    }
-    if (item.locked === next) return false;
-    item.locked = next;
-    return true;
-  }
-  function toggleSelectedLock() {
-    if (readOnly) return;
-    const selectedItems = getSelectedItems();
-    if (!selectedItems.length) return;
-    const nextLocked = !areAllSelectedItemsLocked(selectedItems);
-    let changed = false;
-    selectedItems.forEach((item) => {
-      if (setItemLocked(item, nextLocked)) changed = true;
-    });
-    if (!changed) return;
-    pushHistory();
-    commitAndRefreshNode();
-    updateSelectionMenu();
-    updateSidePanel();
-    requestDraw();
-  }
-  function setSelectedItem(item) {
-    clearWorldSelection();
-    // Delete acts on the selection, so a Keyframe selection must not outlive a new selection.
-    timeline.selection = null;
-    editor.selectedId = item?.id || null;
-    editor.selectedIds = item?.id ? [item.id] : [];
-    if (item && isStickerItem(item)) state.active.selected_sticker_id = item.id || null;
-    else state.active.selected_sticker_id = null;
-    if (item && isShotItem(item)) state.active.selected_shot_id = item.id || null;
-    else if (!item) state.active.selected_shot_id = null;
-    else if (!isShotItem(item)) state.active.selected_shot_id = state.active.selected_shot_id;
-  }
-  function setSelectedItems(items, primaryId = null) {
-    const nextIds = [];
-    const seen = new Set();
-    (Array.isArray(items) ? items : []).forEach((item) => {
-      const id = String(item?.id || "").trim();
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      nextIds.push(id);
-    });
-    editor.selectedIds = nextIds;
-    clearWorldSelection();
-    timeline.selection = null;
-    const preferred = String(primaryId || "").trim();
-    editor.selectedId = preferred && nextIds.includes(preferred)
-      ? preferred
-      : (nextIds[nextIds.length - 1] || null);
-    const primary = getSelected();
-    state.active.selected_sticker_id = primary && isStickerItem(primary) ? primary.id || null : null;
-    if (primary && isShotItem(primary)) state.active.selected_shot_id = primary.id || null;
-    else if (!nextIds.length) state.active.selected_shot_id = null;
-  }
-  function getCutoutInspectorItems() {
-    const shots = (Array.isArray(state.shots) ? state.shots : []).map((item, index) => ({
-      kind: "frame",
-      item,
-      label: String(item?.label || `Frame ${index + 1}`),
-    }));
-    const images = cutoutStickers().map((item, index) => {
-      const baseLabel = isExternalSticker(item)
-        ? String(item.id || EXTERNAL_STICKER_ID)
-        : String(state.assets?.[item.asset_id]?.name || item.asset_id || item.id || `Image ${index + 1}`);
-      return {
-        kind: "image",
-        item,
-        label: baseLabel,
-      };
-    });
-    return [...shots, ...images];
-  }
-
-  function getSelectionItemIcon(kind) {
-    if (kind === "frame") return ICON.camera;
-    if (kind === "stroke") return ICON.paintbrush_vertical_tool;
-    return ICON.image;
-  }
-
-  function getSelectionItemLabelData(entry) {
-    if (!entry || !entry.item) {
-      return {
-        label: String(entry?.label || ""),
-        icon: null,
-      };
-    }
-    return {
-      label: String(entry.label || ""),
-      icon: getSelectionItemIcon(entry.kind),
-    };
-  }
-  function getNextStickerZIndex() {
-    return getNextDisplayZIndex();
-  }
-  function isExternalSticker(item) {
-    if (!item || typeof item !== "object") return false;
-    if (stateV2) return item.source?.kind === "port";
-    return String(item.id || "") === EXTERNAL_STICKER_ID
-      || String(item.source_kind || "") === EXTERNAL_STICKER_SOURCE_KIND;
-  }
-  function isStickerHidden(item) {
-    return !!(item && typeof item === "object" && item.visible === false);
-  }
-  function getStickerDisplayAlpha(item) {
-    if (isExternalSticker(item) && isStickerHidden(item)) return HIDDEN_PREVIEW_OPACITY;
-    return 1;
-  }
   function getActivePaintToolKind() {
     return editor.primaryTool === "mask" ? editor.maskTool : editor.paintTool;
   }
   function isActiveLassoTool() {
     return String(getActivePaintToolKind() || "") === "lasso_fill";
-  }
-  function toggleSelectedExternalStickerVisibility() {
-    if (readOnly) return;
-    const selected = getSelected();
-    if (!selected || !isExternalSticker(selected)) return;
-    selected.visible = isStickerHidden(selected);
-    releaseHiddenSelection();
-    markObjectVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw();
-  }
-  function restoreSelectedToInitialPose() {
-    if (readOnly || type !== "stickers") return;
-    const selected = getSelected();
-    if (!selected || !isExternalSticker(selected)) return;
-    const initial = selected.initial_pose;
-    if (!initial || typeof initial !== "object") return;
-    selected.yaw_deg = Number(initial.yaw_deg ?? selected.yaw_deg ?? 0);
-    selected.pitch_deg = Number(initial.pitch_deg ?? selected.pitch_deg ?? 0);
-    selected.hFOV_deg = Number(initial.hFOV_deg ?? selected.hFOV_deg ?? 30);
-    const previewImg = getStickerUiImage(EXTERNAL_STICKER_PREVIEW_KEY, () => {
-      requestDraw();
-    });
-    if (previewImg && (previewImg.complete || previewImg.naturalWidth || previewImg.width)) {
-      selected.vFOV_deg = computeStickerVFov(
-        Number(initial.hFOV_deg ?? selected.hFOV_deg ?? 30),
-        Number(previewImg.naturalWidth || previewImg.width || 1),
-        Number(previewImg.naturalHeight || previewImg.height || 1),
-      );
-    } else {
-      selected.vFOV_deg = Number(initial.vFOV_deg ?? selected.vFOV_deg ?? 30);
-    }
-    selected.rot_deg = Number(initial.rot_deg ?? selected.rot_deg ?? 0);
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw();
-  }
-  function getRestorePoseForSticker(item) {
-    if (!item || !isExternalSticker(item)) return null;
-    const initial = item.initial_pose;
-    if (!initial || typeof initial !== "object") return null;
-    const pose = {
-      yaw_deg: Number(initial.yaw_deg ?? item.yaw_deg ?? 0),
-      pitch_deg: Number(initial.pitch_deg ?? item.pitch_deg ?? 0),
-      hFOV_deg: Number(initial.hFOV_deg ?? item.hFOV_deg ?? 30),
-      vFOV_deg: Number(initial.vFOV_deg ?? item.vFOV_deg ?? 30),
-      rot_deg: Number(initial.rot_deg ?? item.rot_deg ?? 0),
-    };
-    const previewImg = getStickerUiImage(EXTERNAL_STICKER_PREVIEW_KEY, () => {
-      requestDraw();
-    });
-    if (previewImg && (previewImg.complete || previewImg.naturalWidth || previewImg.width)) {
-      pose.vFOV_deg = computeStickerVFov(
-        pose.hFOV_deg,
-        Number(previewImg.naturalWidth || previewImg.width || 1),
-        Number(previewImg.naturalHeight || previewImg.height || 1),
-      );
-    }
-    return pose;
-  }
-  function canRestoreSelectedToInitial() {
-    const selected = getSelected();
-    if (!selected || !isExternalSticker(selected)) return false;
-    const restorePose = getRestorePoseForSticker(selected);
-    if (!restorePose) return false;
-    const close = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) <= 1e-4;
-    return !(
-      close(selected.yaw_deg, restorePose.yaw_deg)
-      && close(selected.pitch_deg, restorePose.pitch_deg)
-      && close(selected.hFOV_deg, restorePose.hFOV_deg)
-      && close(selected.vFOV_deg, restorePose.vFOV_deg)
-      && close(selected.rot_deg, restorePose.rot_deg)
-    );
   }
   function getNodeUiList(key) {
     return comfyMedia.uiList(node, key);
@@ -2569,56 +1728,6 @@ async function showEditor(node, type, options = {}) {
     requestDraw();
     void reason;
   }
-  function clearSelection(options = {}) {
-    const preservePanelValues = options.preservePanelValues !== false;
-    const selectedBeforeClear = preservePanelValues ? poseOf(getSelected()) : null;
-    if (selectedBeforeClear) {
-      editor.panelLastValues = {
-        yaw_deg: Number(selectedBeforeClear.yaw_deg || 0),
-        pitch_deg: Number(selectedBeforeClear.pitch_deg || 0),
-        hFOV_deg: Number(selectedBeforeClear.hFOV_deg || (type === "stickers" ? 30 : 90)),
-        vFOV_deg: Number(selectedBeforeClear.vFOV_deg || (type === "stickers" ? 30 : 60)),
-        rot_deg: Number(selectedBeforeClear.rot_deg || 0),
-        roll_deg: Number(selectedBeforeClear.roll_deg || 0),
-        aspect_id: getCutoutAspectLabel(selectedBeforeClear),
-      };
-    }
-    editor.selectedId = null;
-    editor.selectedIds = [];
-    clearWorldSelection();
-    editor.cutoutAspectOpen = false;
-    state.active.selected_sticker_id = null;
-    state.active.selected_shot_id = null;
-  }
-  // The selected world Sticker of state v2 (#72), or null. It is selected in the space view or on its
-  // Timeline row, and the gizmo and the inspector edit it.
-  function selectedWorldSticker() {
-    if (!sceneV2 || !editor.worldSelectedId) return null;
-    return state.stickers.find((item) => item.id === editor.worldSelectedId && item.placement === "world") || null;
-  }
-  function selectWorldSticker(id) {
-    setSelectedItem(null);
-    editor.worldSelectedId = id;
-    // The gizmo draws in the three.js frame.
-    runtime.backgroundDirty = true;
-  }
-  function clearWorldSelection() {
-    if (!editor.worldSelectedId) return;
-    editor.worldSelectedId = null;
-    editor.gizmoAxis = null;
-    runtime.backgroundDirty = true;
-  }
-  // Whether the selected world Sticker can be edited: not locked, and in an editor that edits.
-  function worldStickerEditable(sticker) {
-    return !!sticker && !readOnly && !sticker.locked;
-  }
-  function applyInitialCutoutFocus() {
-    if (type !== "cutout") return;
-    const activeShot = getActiveCutoutShot();
-    if (!activeShot) return;
-    editor.selectedId = String(activeShot.id || "") || null;
-    editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
-  }
   function syncLookAtFrameButtonState() {
     // Panorama Studio has Add Camera instead, disabled rather than hidden while it has its Camera (#89).
     if (studio) patchUiButton(uiState.toolButtons, "value", "add-camera", { disabled: hasCamera() });
@@ -2695,28 +1804,6 @@ async function showEditor(node, type, options = {}) {
   // with a frame, and nothing without one (#89).
   function cameraPreviewShown() {
     return !studio || (cameraShoots() && !isErpCamera());
-  }
-
-  // Whether Panorama Studio's Camera shoots a 360-degree ERP (ADR 0029); the Cutout shoots every Camera
-  // through its frame.
-  function isErpCamera() {
-    return studio && cameraShoots() && state.camera.projection === "erp";
-  }
-
-  function stickerCornerOrderSanity() {
-    const test = {
-      yaw_deg: 0, pitch_deg: 0, hFOV_deg: 20, vFOV_deg: 20, rot_deg: 0,
-    };
-    const dirs = stickerCornersDir(test);
-    if (!dirs || dirs.length !== 4) return false;
-    // top-left y should be >= bottom-left y in world-up axis
-    return dirs[0].y >= dirs[3].y;
-  }
-
-  // The panorama view's three.js camera. The overlays and hit testing use its projection, so they
-  // match the drawn frame.
-  function currentViewCamera() {
-    return viewportCamera({ yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, roll_deg: 0, hFOV_deg: editor.viewFov }, canvas.width, canvas.height);
   }
 
   // The `scene` input's editor files in the node's current result (docs/render-contract.md): the kind
@@ -2910,40 +1997,6 @@ async function showEditor(node, type, options = {}) {
     canvas.setPointerCapture(pointerId);
   }
 
-  function currentViewProjection() {
-    const key = [editor.viewYaw, editor.viewPitch, editor.viewFov, canvas.width, canvas.height];
-    if (key.some((value, index) => value !== viewProjectionCache.key[index])) {
-      viewProjectionCache = { key, projection: viewProjection(currentViewCamera(), canvas.width, canvas.height) };
-    }
-    return viewProjectionCache.projection;
-  }
-
-  function projectDir(dir) {
-    const point = currentViewProjection().project(dir);
-    return point.z > 1e-4 ? point : null;
-  }
-
-  function screenToWorldDir(x, y) {
-    return currentViewProjection().ray(x, y);
-  }
-
-  function getUnwrapRect() {
-    const w = canvas.width;
-    const h = canvas.height;
-    const targetAR = 2.0; // ERP 2:1
-    const canvasAR = w / Math.max(h, 1);
-    if (canvasAR >= targetAR) {
-      const rh = h;
-      const rw = rh * targetAR;
-      const rx = (w - rw) * 0.5;
-      return { x: rx, y: 0, w: rw, h: rh };
-    }
-    const rw = w;
-    const rh = rw / targetAR;
-    const ry = (h - rh) * 0.5;
-    return { x: 0, y: ry, w: rw, h: rh };
-  }
-
   function getStickerImage(stickerOrAssetId) {
     if (stickerOrAssetId && typeof stickerOrAssetId === "object"
       && (isExternalSticker(stickerOrAssetId) || stickerOrAssetId.external === true)) {
@@ -2982,440 +2035,6 @@ async function showEditor(node, type, options = {}) {
   function stickerImageKey(item) {
     const { source } = item;
     return source.filename ? `file:${source.storage}:${source.subfolder}:${source.filename}` : `sticker:${item.id}`;
-  }
-
-  function getRasterObjectImage(item, onLoad = null) {
-    const dataUrl = String(item?.rasterDataUrl || "").trim();
-    if (!dataUrl) return null;
-    const cached = rasterImageCache.get(dataUrl);
-    if (cached) {
-      if (cached.complete || cached.width || cached.naturalWidth) return cached;
-      return cached;
-    }
-    const img = new Image();
-    img.onload = () => {
-      if (typeof onLoad === "function") onLoad();
-    };
-    img.src = dataUrl;
-    rasterImageCache.set(dataUrl, img);
-    return img;
-  }
-
-  function getRasterObjectAlphaSurface(item) {
-    const dataUrl = String(item?.rasterDataUrl || "").trim();
-    if (!dataUrl) return null;
-    const cached = rasterImageAlphaCache.get(dataUrl);
-    if (cached) return cached.ready ? cached : null;
-    const img = getRasterObjectImage(item, () => {
-      const entry = rasterImageAlphaCache.get(dataUrl);
-      if (entry) entry.ready = false;
-      requestDraw({ localOnly: true });
-    });
-    if (!img || !(img.complete || img.width || img.naturalWidth)) return null;
-    const width = Number(img.naturalWidth || img.width || 0);
-    const height = Number(img.naturalHeight || img.height || 0);
-    if (width < 1 || height < 1) return null;
-    const canvasEl = createPanoCanvas({ label: "editor.image-pixels" });
-    canvasEl.width = width;
-    canvasEl.height = height;
-    const ctx2d = canvasEl.getContext("2d", { willReadFrequently: true });
-    if (!ctx2d) return null;
-    ctx2d.clearRect(0, 0, width, height);
-    ctx2d.drawImage(img, 0, 0, width, height);
-    const alpha = ctx2d.getImageData(0, 0, width, height).data;
-    const entry = { canvas: canvasEl, width, height, alpha, ready: true };
-    rasterImageAlphaCache.set(dataUrl, entry);
-    return entry;
-  }
-
-  function inverseTransformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
-    if (!point || typeof point !== "object") return point;
-    const cu = Number(center?.u || 0);
-    const cv = Number(center?.v || 0);
-    const dx = shortestWrappedDelta(Number(point.u || 0), cu);
-    const dy = Number(point.v || 0) - cv;
-    const s = Math.max(0.02, Number(scale || 1));
-    const rad = Number(rotationDeg || 0) * DEG2RAD;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const sx = dx / s;
-    const sy = dy / s;
-    const rx = sx * cos + sy * sin;
-    const ry = -sx * sin + sy * cos;
-    return {
-      ...point,
-      u: ((cu + rx) % 1 + 1) % 1,
-      v: cv + ry,
-    };
-  }
-
-  function sampleRasterObjectAlphaAt(item, erpPoint) {
-    if (!item || !erpPoint) return null;
-    const bbox = item?.bbox || null;
-    if (!bbox) return null;
-    const tf = item?.transform || {};
-    const center = {
-      u: (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5,
-      v: (Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5,
-    };
-    const untranslated = {
-      u: ((Number(erpPoint.u || 0) - Number(tf.du || 0)) % 1 + 1) % 1,
-      v: Number(erpPoint.v || 0) - Number(tf.dv || 0),
-    };
-    const basePoint = inverseTransformErpPointAround(
-      untranslated,
-      center,
-      Number(tf.scale || 1),
-      Number(tf.rot_deg || 0),
-    );
-    const bw = Number(bbox.u1 || 0) - Number(bbox.u0 || 0);
-    const bh = Number(bbox.v1 || 0) - Number(bbox.v0 || 0);
-    if (!(bw > 1e-6) || !(bh > 1e-6)) return null;
-    const localU = shortestWrappedDelta(Number(basePoint.u || 0), Number(bbox.u0 || 0)) / bw;
-    const localV = (Number(basePoint.v || 0) - Number(bbox.v0 || 0)) / bh;
-    if (localU < 0 || localU > 1 || localV < 0 || localV > 1) return 0;
-    const surface = getRasterObjectAlphaSurface(item);
-    if (!surface) return null;
-    const sx = clamp(Math.floor(localU * surface.width), 0, surface.width - 1);
-    const sy = clamp(Math.floor(localV * surface.height), 0, surface.height - 1);
-    return Number(surface.alpha[(sy * surface.width + sx) * 4 + 3] || 0);
-  }
-
-  function hitRasterObjectAt(item, geom, p, erpPoint = null) {
-    if (!geom?.visible || !pointInPoly(p, geom.corners)) return false;
-    const samplePoint = erpPoint || screenPosToErpPoint(p, performance.now());
-    const alpha = sampleRasterObjectAlphaAt(item, samplePoint);
-    if (alpha === null) return true;
-    return alpha > 8;
-  }
-
-  function getRasterCompositeErpSize() {
-    const erpTarget = editor.paintEngine?.getErpTarget?.(getOrderedPaintGroupIds(false)) || null;
-    const width = Math.max(1, Number(erpTarget?.descriptor?.width || erpTarget?.displayPaint?.canvas?.width || 2048));
-    const height = Math.max(1, Number(erpTarget?.descriptor?.height || erpTarget?.displayPaint?.canvas?.height || 1024));
-    return { width, height };
-  }
-
-  function getActivePaintEraserPreviewInfo() {
-    const interaction = editor.interaction;
-    if (interaction?.kind !== "paint_stroke") return null;
-    const stroke = interaction?.stroke || null;
-    if (!stroke || String(stroke?.layerKind || "") !== "paint" || String(stroke?.toolKind || "") !== "eraser") return null;
-    const erpDesc = getActivePaintTargetDescriptor();
-    const liveKey = `${getLivePaintRevisionSuffix()}:${erpDesc.width}:${erpDesc.height}`;
-    if (editor._activePaintEraserPreviewInfo?.cacheKey === liveKey) {
-      return editor._activePaintEraserPreviewInfo.value || null;
-    }
-    const previewStroke = cloneJson(stroke);
-    const geometry = previewStroke?.geometry || null;
-    if (geometry && String(geometry.geometryKind || "") !== "lasso_fill") {
-      const raw = Array.isArray(geometry.rawPoints) && geometry.rawPoints.length
-        ? geometry.rawPoints
-        : (Array.isArray(geometry.points) ? geometry.points : []);
-      geometry.processedPoints = processFreehandPoints(raw, previewStroke.targetSpace, true);
-    }
-    const surface = createRasterSurface(erpDesc.width, erpDesc.height, { readback: true });
-    if (!rasterizeStrokeToSurface(surface, previewStroke, { w: erpDesc.width, h: erpDesc.height })) return null;
-    const data = surface.ctx?.getImageData(0, 0, erpDesc.width, erpDesc.height)?.data || null;
-    if (!data) return null;
-    let minX = erpDesc.width;
-    let minY = erpDesc.height;
-    let maxX = -1;
-    let maxY = -1;
-    for (let y = 0; y < erpDesc.height; y += 1) {
-      for (let x = 0; x < erpDesc.width; x += 1) {
-        if (data[(y * erpDesc.width + x) * 4 + 3] <= 8) continue;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-    if (maxX < minX || maxY < minY) {
-      editor._activePaintEraserPreviewInfo = { cacheKey: liveKey, value: null };
-      return null;
-    }
-    const info = {
-      surface,
-      bounds: { minX, minY, maxX, maxY },
-      key: `${liveKey}:${minX}:${minY}:${maxX}:${maxY}`,
-    };
-    editor._activePaintEraserPreviewInfo = { cacheKey: liveKey, value: info };
-    editor._liveEraserPreviewCanvasCache = new Map();
-    return info;
-  }
-
-  function invalidateLivePaintPreviewCaches() {
-    editor._activePaintEraserPreviewInfo = null;
-    editor._liveEraserPreviewCanvasCache = null;
-  }
-
-  function getPaintObjectApproxErpBounds(entry, width, height) {
-    if (!entry) return null;
-    if (entry.type === "rasterObject" && entry.item?.bbox) {
-      const bbox = entry.item.bbox;
-      const tf = entry.item?.transform || {};
-      const u0 = Number(bbox.u0 || 0) + Number(tf.du || 0);
-      const u1 = Number(bbox.u1 || 0) + Number(tf.du || 0);
-      const v0 = Number(bbox.v0 || 0) + Number(tf.dv || 0);
-      const v1 = Number(bbox.v1 || 0) + Number(tf.dv || 0);
-      return {
-        minX: Math.floor((((u0 % 1) + 1) % 1) * width),
-        maxX: Math.ceil((((u1 % 1) + 1) % 1) * width),
-        minY: Math.floor(clamp(v0, 0, 1) * height),
-        maxY: Math.ceil(clamp(v1, 0, 1) * height),
-        wraps: (u1 - u0) >= 1 || u0 < 0 || u1 > 1,
-      };
-    }
-    if (entry.type === "strokeGroup") {
-      const strokes = getStrokeGroupStrokes(entry.actionGroupId, "paint");
-      const frame = ensureGroupFrame(entry.actionGroupId, "paint", strokes);
-      if (!frame) return null;
-      const minU = frame.centerUv.u - frame.halfW;
-      const maxU = frame.centerUv.u + frame.halfW;
-      const minV = frame.centerUv.v - frame.halfH;
-      const maxV = frame.centerUv.v + frame.halfH;
-      return {
-        minX: Math.floor((((minU % 1) + 1) % 1) * width),
-        maxX: Math.ceil((((maxU % 1) + 1) % 1) * width),
-        minY: Math.floor(clamp(minV, 0, 1) * height),
-        maxY: Math.ceil(clamp(maxV, 0, 1) * height),
-        wraps: (maxU - minU) >= 1 || minU < 0 || maxU > 1,
-      };
-    }
-    return null;
-  }
-
-  function erpBoundsIntersect(a, b, width) {
-    if (!a || !b) return false;
-    const split = (box) => {
-      if (!box.wraps) return [box];
-      return [
-        { minX: 0, maxX: box.maxX, minY: box.minY, maxY: box.maxY, wraps: false },
-        { minX: box.minX, maxX: width - 1, minY: box.minY, maxY: box.maxY, wraps: false },
-      ];
-    };
-    const aa = split(a);
-    const bb = split(b);
-    return aa.some((x) => bb.some((y) => !(x.maxX < y.minX || y.maxX < x.minX || x.maxY < y.minY || y.maxY < x.minY)));
-  }
-
-  function getLiveEraserAppliedCanvas(sourceCanvas, entry, previewInfo) {
-    if (!sourceCanvas || !entry || !previewInfo?.surface?.canvas) return sourceCanvas;
-    if (entry.type !== "rasterObject") return sourceCanvas;
-    const width = Number(sourceCanvas.width || previewInfo.surface.canvas.width || 0);
-    const height = Number(sourceCanvas.height || previewInfo.surface.canvas.height || 0);
-    if (width < 1 || height < 1) return sourceCanvas;
-    const objectBounds = getPaintObjectApproxErpBounds(entry, width, height);
-    if (objectBounds && !erpBoundsIntersect(objectBounds, previewInfo.bounds, width)) return sourceCanvas;
-    const rid = String(entry.item?.id || entry.id || "");
-    const tf = entry.item?.transform || {};
-    const cacheKey = `${previewInfo.key}:${rid}:${width}:${height}:${Number(tf.du || 0).toFixed(6)}:${Number(tf.dv || 0).toFixed(6)}:${Number(tf.rot_deg || 0).toFixed(3)}:${Number(tf.scale || 1).toFixed(4)}`;
-    const cache = editor._liveEraserPreviewCanvasCache instanceof Map
-      ? editor._liveEraserPreviewCanvasCache
-      : (editor._liveEraserPreviewCanvasCache = new Map());
-    if (cache.has(cacheKey)) return cache.get(cacheKey);
-    const minX = clamp(Math.floor(Number(previewInfo.bounds?.minX || 0)), 0, Math.max(0, width - 1));
-    const minY = clamp(Math.floor(Number(previewInfo.bounds?.minY || 0)), 0, Math.max(0, height - 1));
-    const maxX = clamp(Math.ceil(Number(previewInfo.bounds?.maxX || 0)), minX, Math.max(0, width - 1));
-    const maxY = clamp(Math.ceil(Number(previewInfo.bounds?.maxY || 0)), minY, Math.max(0, height - 1));
-    const regionW = Math.max(1, maxX - minX + 1);
-    const regionH = Math.max(1, maxY - minY + 1);
-    const surface = createRasterSurface(width, height, { readback: true });
-    surface.ctx.clearRect(0, 0, width, height);
-    surface.ctx.drawImage(sourceCanvas, 0, 0);
-    const beforeData = surface.ctx.getImageData(minX, minY, regionW, regionH);
-    surface.ctx.save();
-    surface.ctx.globalCompositeOperation = "destination-out";
-    surface.ctx.drawImage(previewInfo.surface.canvas, 0, 0);
-    surface.ctx.restore();
-    const afterData = surface.ctx.getImageData(minX, minY, regionW, regionH);
-    let touched = false;
-    for (let i = 0; i < regionW * regionH; i += 1) {
-      const beforeAlpha = beforeData.data[i * 4 + 3];
-      const afterAlpha = afterData.data[i * 4 + 3];
-      if (beforeAlpha > afterAlpha) {
-        touched = true;
-        break;
-      }
-    }
-    if (!touched) {
-      cache.set(cacheKey, sourceCanvas);
-      return sourceCanvas;
-    }
-    if (cache.size > 64) cache.clear();
-    cache.set(cacheKey, surface.canvas);
-    return surface.canvas;
-  }
-
-  function buildRasterObjectEditCanvas(item, onLoad = null) {
-    const rid = parseRasterObjectSelectionId(item?.rasterObjectId || item?.id || "");
-    const bbox = item?.bbox || null;
-    if (!rid || !bbox) return null;
-    const img = getRasterObjectImage(item, onLoad);
-    if (!img || !(img.complete || img.width || img.naturalWidth)) return null;
-    const { width, height } = getRasterCompositeErpSize();
-    const tf = item?.transform || {};
-    const key = [
-      rid,
-      width,
-      height,
-      bbox.u0,
-      bbox.v0,
-      bbox.u1,
-      bbox.v1,
-      tf.du,
-      tf.dv,
-      tf.rot_deg,
-      tf.scale,
-      getPaintingRevisionKey(),
-    ].join(":");
-    const cached = rasterErpCanvasCache.get(key);
-    if (cached) return cached;
-    if (rasterErpCanvasCache.size > 64) rasterErpCanvasCache.clear();
-    const erpCanvas = createPanoCanvas({ label: "editor.raster-erp" });
-    erpCanvas.width = width;
-    erpCanvas.height = height;
-    const erpCtx = erpCanvas.getContext("2d");
-    if (!erpCtx) return null;
-    const px = Number(bbox.u0 || 0) * width;
-    const py = Number(bbox.v0 || 0) * height;
-    const pw = Math.max(1, (Number(bbox.u1 || 0) - Number(bbox.u0 || 0)) * width);
-    const ph = Math.max(1, (Number(bbox.v1 || 0) - Number(bbox.v0 || 0)) * height);
-    const cx = px + pw * 0.5 + (Number(tf.du || 0) * width);
-    const cy = py + ph * 0.5 + (Number(tf.dv || 0) * height);
-    const rot = Number(tf.rot_deg || 0) * DEG2RAD;
-    const scale = Math.max(0.01, Number(tf.scale || 1));
-    for (const wrapOffset of [-width, 0, width]) {
-      erpCtx.save();
-      erpCtx.translate(cx + wrapOffset, cy);
-      erpCtx.rotate(rot);
-      erpCtx.scale(scale, scale);
-      erpCtx.drawImage(img, -pw * 0.5, -ph * 0.5, pw, ph);
-      erpCtx.restore();
-    }
-    rasterErpCanvasCache.set(key, erpCanvas);
-    return erpCanvas;
-  }
-
-  async function uploadCanvasAsPaintLayer(canvas, filename) {
-    const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
-    const body = new FormData();
-    body.append("image", blob, filename);
-    // Cutout export resolves these layers on the backend during prompt execution,
-    // so store them like other editor assets instead of relying on temp lifetime.
-    body.append("type", "input");
-    body.append("subfolder", "panorama_stickers");
-    body.append("overwrite", "1");
-    const resp = await api.fetchApi("/upload/image", { method: "POST", body });
-    if (!resp || resp.status !== 200) throw new Error(`upload failed (${resp?.status})`);
-    const data = await resp.json();
-    const fn = String(data?.name || "").trim();
-    if (!fn) throw new Error("upload response missing filename");
-    return {
-      type: "comfy_image",
-      filename: fn,
-      subfolder: String(data?.subfolder || "panorama_stickers"),
-      storage: String(data?.type || "input"),
-    };
-  }
-
-  let _paintLayerSyncRevision = null;
-  let _paintLayerSyncPending = false;
-
-  // PanoramaCutoutNode's editor does not paint (#77): the painting it shows is its state's or the Scene's,
-  // and its layer stays as it was saved.
-  function needsPaintingLayerSync() {
-    if (cutoutV2) return false;
-    const counts = paintingCompositeCount(state.painting);
-    const { width, height } = getDesiredPaintTargetDescriptor();
-    return paintingLayerNeedsSync(state.painting_layer, { paintCount: counts.totalPaintCount, maskCount: counts.totalMaskCount, width, height, nodeId: String(node.id ?? "0") });
-  }
-
-  function syncPaintingLayerAsync() {
-    const nodeId = String(node.id ?? "0");
-    const currentPending = _paintLayerUploadRegistry.get(nodeId);
-    if (_paintLayerSyncPending && currentPending) return currentPending;
-    const promise = (async () => {
-      const rev = getPaintingCompositeRevisionKey();
-      const counts = paintingCompositeCount(state.painting);
-      if (counts.totalPaintCount <= 0 && counts.totalMaskCount <= 0) {
-        if (state.painting_layer !== null) {
-          state.painting_layer = null;
-          _paintLayerSyncRevision = rev;
-          commitState();
-        }
-        return;
-      }
-      if (_paintLayerSyncRevision === rev) return;
-      if (_paintLayerSyncPending) return;
-      _paintLayerSyncPending = true;
-      try {
-        rebuildPaintEngineIfNeeded();
-        const orderedGroupIds = getOrderedPaintGroupIds(false);
-        const erpTarget = editor.paintEngine?.getErpTarget?.(orderedGroupIds) || null;
-        const paintCanvas = erpTarget?.displayPaint?.canvas || null;
-        const maskCanvas = erpTarget?.committedMask?.canvas || null;
-        const width = Math.max(1, Number(erpTarget?.descriptor?.width || paintCanvas?.width || maskCanvas?.width || 2048));
-        const height = Math.max(1, Number(erpTarget?.descriptor?.height || paintCanvas?.height || maskCanvas?.height || 1024));
-        if ((!paintCanvas && counts.totalPaintCount > 0) || (!maskCanvas && counts.totalMaskCount > 0)) {
-          if (!editor._paintLayerSyncBlankSurface
-            || Number(editor._paintLayerSyncBlankSurface.canvas?.width || 0) !== width
-            || Number(editor._paintLayerSyncBlankSurface.canvas?.height || 0) !== height) {
-            editor._paintLayerSyncBlankSurface = createRasterSurface(width, height);
-          }
-          editor._paintLayerSyncBlankSurface.ctx.clearRect(0, 0, width, height);
-        }
-        const uploadPaintCanvas = paintCanvas || (counts.totalPaintCount > 0 ? editor._paintLayerSyncBlankSurface?.canvas || null : null);
-        const uploadMaskCanvas = maskCanvas || (counts.totalMaskCount > 0 ? editor._paintLayerSyncBlankSurface?.canvas || null : null);
-        if (!uploadPaintCanvas && !uploadMaskCanvas) return;
-        let paintRef = null;
-        let maskRef = null;
-        const groupRefs = [];
-        if (counts.totalPaintCount > 0) {
-          paintRef = await uploadCanvasAsPaintLayer(uploadPaintCanvas, `pano_paint_${nodeId}.png`);
-          for (const actionGroupId of orderedGroupIds) {
-            const gid = String(actionGroupId || "").trim();
-            if (!gid) continue;
-            const groupCanvas = editor.paintEngine?.getGroupDisplayCanvas?.(gid) || null;
-            if (!groupCanvas) continue;
-            const safeGid = gid.replace(/[^a-zA-Z0-9_-]+/g, "_");
-            const groupRef = await uploadCanvasAsPaintLayer(groupCanvas, `pano_group_${nodeId}_${safeGid}.png`);
-            if (groupRef) {
-              groupRefs.push({
-                id: gid,
-                actionGroupId: gid,
-                image: groupRef,
-              });
-            }
-          }
-        }
-        if (counts.totalMaskCount > 0) {
-          maskRef = await uploadCanvasAsPaintLayer(uploadMaskCanvas, `pano_mask_${nodeId}.png`);
-        }
-        if (rev === getPaintingCompositeRevisionKey()) {
-          state.painting_layer = {
-            paint: paintRef,
-            mask: maskRef,
-            groups: groupRefs,
-            revision: rev,
-          };
-          _paintLayerSyncRevision = rev;
-          commitState();
-        }
-      } catch (err) {
-        throw err;
-      } finally {
-        _paintLayerSyncPending = false;
-      }
-    })();
-    _paintLayerUploadRegistry.set(nodeId, promise);
-    promise.finally(() => {
-      if (_paintLayerUploadRegistry.get(nodeId) === promise) {
-        _paintLayerUploadRegistry.delete(nodeId);
-      }
-    });
-    return promise;
   }
 
   function getConnectedErpImage() {
@@ -3512,219 +2131,6 @@ async function showEditor(node, type, options = {}) {
         imageCache.delete(id);
       }
     });
-  }
-
-  function dirToLonLat(d) {
-    return {
-      lon: Math.atan2(d.x, d.z),
-      lat: Math.asin(clamp(d.y, -1, 1)),
-    };
-  }
-
-  function projectDirUnwrap(d, refX = null) {
-    const { lon, lat } = dirToLonLat(d);
-    const r = getUnwrapRect();
-    let x = r.x + ((lon / (2 * Math.PI)) + 0.5) * r.w;
-    const y = r.y + (0.5 - (lat / Math.PI)) * r.h;
-    if (refX !== null) {
-      while (x - refX > r.w / 2) x -= r.w;
-      while (x - refX < -r.w / 2) x += r.w;
-    }
-    return { x, y, z: 1 };
-  }
-
-  function getStickerFrame(item) {
-    const pose = poseOf(item);
-    const basis = cameraBasis(
-      Number(pose.yaw_deg || 0),
-      Number(pose.pitch_deg || 0),
-      Number(pose.rot_deg || pose.roll_deg || 0),
-    );
-
-    const tanX = Math.tan(clamp(Number(pose.hFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
-    const tanY = Math.tan(clamp(Number(pose.vFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
-    return {
-      centerDir: basis.fwd,
-      right: basis.right,
-      up: basis.up,
-      tanX,
-      tanY,
-    };
-  }
-
-  function stickerDirFromFrame(frame, x, y) {
-    return norm(add(add(frame.centerDir, mul(frame.right, x)), mul(frame.up, y)));
-  }
-
-  function stickerCornersDir(item) {
-    const frame = getStickerFrame(item);
-
-    // Corner order is fixed to: top-left, top-right, bottom-right, bottom-left
-    const cornersLocal = [
-      { u: -1, v: 1 },
-      { u: 1, v: 1 },
-      { u: 1, v: -1 },
-      { u: -1, v: -1 },
-    ];
-
-    return cornersLocal.map(({ u, v }) => {
-      return stickerDirFromFrame(frame, u * frame.tanX, v * frame.tanY);
-    });
-  }
-
-  function stickerSampleDir(item, u, v) {
-    const frame = getStickerFrame(item);
-
-    const x = (u * 2 - 1) * frame.tanX;
-    const y = (1 - v * 2) * frame.tanY;
-    return stickerDirFromFrame(frame, x, y);
-  }
-
-  function getRasterObjectCenterUv(item) {
-    const bbox = item?.bbox || null;
-    const tf = item?.transform || {};
-    if (!bbox) return { u: 0.5, v: 0.5 };
-    const centerU = (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5 + Number(tf.du || 0);
-    return {
-      u: ((centerU % 1) + 1) % 1,
-      v: clamp((Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5 + Number(tf.dv || 0), 0, 1),
-    };
-  }
-
-  function getRasterObjectTransformedErpPoints(item) {
-    const bbox = item?.bbox || null;
-    if (!bbox) return [];
-    const center = {
-      u: (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5,
-      v: (Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5,
-    };
-    const scale = Math.max(0.01, Number(item?.transform?.scale || 1));
-    const rotationDeg = Number(item?.transform?.rot_deg || 0);
-    const du = Number(item?.transform?.du || 0);
-    const dv = Number(item?.transform?.dv || 0);
-    const base = [
-      { u: Number(bbox.u0 || 0), v: Number(bbox.v0 || 0) },
-      { u: Number(bbox.u1 || 0), v: Number(bbox.v0 || 0) },
-      { u: Number(bbox.u1 || 0), v: Number(bbox.v1 || 0) },
-      { u: Number(bbox.u0 || 0), v: Number(bbox.v1 || 0) },
-    ];
-    return base.map((pt) => translateErpPoint(transformErpPointAround(pt, center, scale, rotationDeg), du, dv));
-  }
-
-  function getRasterObjectGeomCacheKey(item) {
-    const rid = parseRasterObjectSelectionId(item?.rasterObjectId || item?.id || "");
-    const tf = item?.transform || {};
-    const bbox = item?.bbox || {};
-    const base = `${rid}:${editor.mode}:${getPaintingRevisionKey()}:${bbox.u0}:${bbox.v0}:${bbox.u1}:${bbox.v1}:${tf.du}:${tf.dv}:${tf.rot_deg}:${tf.scale}`;
-    if (editor.mode === "frame") {
-      const shot = getActiveCutoutShot();
-      const rect = shot ? getFrameViewRect(shot) : null;
-      return `${base}:frame:${String(shot?.id || "")}:${Math.round(Number(rect?.x || 0))}:${Math.round(Number(rect?.y || 0))}:${Math.round(Number(rect?.w || 0))}:${Math.round(Number(rect?.h || 0))}`;
-    }
-    return `${base}:view:${Math.round(Number(editor.viewYaw || 0) * 100)}:${Math.round(Number(editor.viewPitch || 0) * 100)}:${Math.round(Number(editor.viewFov || 0) * 100)}:${Math.round(Number(canvas?.width || 0))}:${Math.round(Number(canvas?.height || 0))}`;
-  }
-
-  function getSceneItemGeomCacheKey(item) {
-    const itemId = String(item?.id || "");
-    const kind = isShotItem(item) ? "frame" : (isStickerItem(item) ? "sticker" : "item");
-    const pose = poseOf(item);
-    const base = [
-      kind,
-      itemId,
-      editor.mode,
-      Number(pose?.yaw_deg || 0).toFixed(4),
-      Number(pose?.pitch_deg || 0).toFixed(4),
-      Number(pose?.hFOV_deg || 0).toFixed(4),
-      Number(pose?.vFOV_deg || 0).toFixed(4),
-      Number(pose?.rot_deg || 0).toFixed(4),
-      Number(pose?.roll_deg || 0).toFixed(4),
-      getCutoutAspectLabel(pose),
-      isSceneSticker(item) && sceneStickerShown(item),
-    ].join(":");
-    if (editor.mode === "frame") {
-      const shot = getActiveCutoutShot();
-      const rect = shot ? getFrameViewRect(shot) : null;
-      return `${base}:frame:${String(shot?.id || "")}:${Math.round(Number(rect?.x || 0))}:${Math.round(Number(rect?.y || 0))}:${Math.round(Number(rect?.w || 0))}:${Math.round(Number(rect?.h || 0))}`;
-    }
-    return `${base}:view:${Math.round(Number(editor.viewYaw || 0) * 100)}:${Math.round(Number(editor.viewPitch || 0) * 100)}:${Math.round(Number(editor.viewFov || 0) * 100)}:${Math.round(Number(canvas?.width || 0))}:${Math.round(Number(canvas?.height || 0))}`;
-  }
-
-  // The mask's layer, on top of everything; none without a mask. The paint engine keeps its canvas
-  // and rebuilds it only when the mask changes.
-  function appendMaskDisplayLayerEntry(entries) {
-    const source = editor.paintEngine?.getMaskDisplayCanvas() || null;
-    if (!source) return entries;
-    const revision = `mask_display:${editor.paintEngine.getMaskDisplayRevision()}`;
-    const topLayerZ = entries.reduce((max, entry) => Math.max(max, Number(entry?.zIndex || 0)), -1);
-    const topStickerZ = (Array.isArray(state.stickers) ? state.stickers : [])
-      .reduce((max, item) => Math.max(max, Number(item?.z_index || 0)), -1);
-    const topZ = Math.max(topLayerZ, topStickerZ);
-    entries.push({
-      id: "mask_display",
-      source,
-      revision,
-      zIndex: topZ + 1,
-      opacity: 1,
-      visible: true,
-    });
-    return entries;
-  }
-
-  function buildModalInterleavedLayerEntries() {
-    const ordered = getOrderedDisplayListObjects(true);
-    const previewInfo = getActivePaintEraserPreviewInfo();
-    const entries = [];
-    for (const entry of ordered) {
-      if (entry?.type === "strokeGroup") {
-        const gid = String(entry.actionGroupId || entry.id || "");
-        if (!gid) continue;
-        const source = editor.paintEngine?.getGroupDisplayCanvas?.(gid) || null;
-        if (!source) continue;
-        entries.push({
-          id: `paint_group:${gid}`,
-          source,
-          revision: `${getDisplayPaintRevisionKey()}:${gid}`,
-          zIndex: Number(entry?.z_index || 0),
-          opacity: 1,
-          visible: true,
-        });
-        continue;
-      }
-      if (entry?.type === "rasterObject") {
-        const item = entry.item || null;
-        const rid = parseRasterObjectSelectionId(item?.id || entry.id || "");
-        if (!rid) continue;
-        const baseSource = buildRasterObjectEditCanvas(item, () => requestDraw());
-        if (!baseSource) continue;
-        const source = getLiveEraserAppliedCanvas(baseSource, entry, previewInfo);
-        const tf = item?.transform || {};
-        entries.push({
-          id: `raster:${rid}`,
-          source,
-          revision: [
-            getPaintingCompositeRevisionKey(),
-            previewInfo?.key || "",
-            rid,
-            Number(tf.du || 0).toFixed(6),
-            Number(tf.dv || 0).toFixed(6),
-            Number(tf.rot_deg || 0).toFixed(3),
-            Number(tf.scale || 1).toFixed(4),
-          ].join(":"),
-          zIndex: Number(entry?.z_index || 0),
-          opacity: 1,
-          visible: item?.visible !== false,
-        });
-      }
-    }
-    return appendMaskDisplayLayerEntry(entries);
-  }
-
-  // The paint the views draw; none while the painting is hidden.
-  function buildEditorViewPaintLayers() {
-    if (!paintingShown()) return [];
-    return buildModalInterleavedLayerEntries()
-      .filter((entry) => entry.visible !== false)
-      .map((entry) => ({ id: entry.id, media: entry.source, revision: entry.revision, opacity: entry.opacity, zIndex: entry.zIndex }));
   }
 
   // What the three.js views draw: the background ERP, and the Sky layers from back to front.
@@ -3908,13 +2314,6 @@ async function showEditor(node, type, options = {}) {
     return true;
   }
 
-  // rect ({ x, y, w, h }) of the 2D overlay in the three.js canvas's device pixels.
-  function deviceRect(rect) {
-    const sx = backgroundCanvas.width / Math.max(1, canvas.width);
-    const sy = backgroundCanvas.height / Math.max(1, canvas.height);
-    return { x: rect.x * sx, y: rect.y * sy, w: rect.w * sx, h: rect.h * sy };
-  }
-
   // The panorama view on the whole three.js canvas. Returns whether it could draw.
   function renderEditorView() {
     const { background, layers, space } = editorViewInput();
@@ -4068,300 +2467,6 @@ async function showEditor(node, type, options = {}) {
     ctx.fillText("ERP origin", origin.x, origin.y - 12);
   }
 
-  function projectEditorPoints(points, frameShot = null, frameRect = null, unwrapRefU = null) {
-    if (editor.mode === "frame") {
-      const shot = frameShot || getActiveCutoutShot();
-      if (!shot) return [];
-      const rect = frameRect || getFrameViewRect(shot);
-      return projectErpPointsToFrameRect(points, shot, rect);
-    }
-    return projectErpPointsToCurrentView(points, unwrapRefU);
-  }
-
-  function projectErpPointToEditor(point, refX = null, frameShot = null, frameRect = null, unwrapRefU = null) {
-    if (!point) return null;
-    if (editor.mode === "unwrap") {
-      const projected = projectErpPointsToCurrentView([point], unwrapRefU);
-      return projected[0] ? { x: projected[0].x, y: projected[0].y, z: 1 } : null;
-    }
-    const dir = erpPointToWorldDir(point);
-    return dir ? projectSceneItemDir(dir, refX, frameShot, frameRect) : null;
-  }
-
-  function buildStrokeGroupGeom(item, cacheKey) {
-    const actionGroupId = String(item.actionGroupId || item.id || "").trim();
-    const strokes = getStrokeGroupStrokes(actionGroupId, item.layerKind);
-    const frame = ensureGroupFrame(actionGroupId, item.layerKind, strokes);
-    const centerPoint = frame?.centerUv || getStrokeGroupCenterUv(actionGroupId, item.layerKind, strokes);
-    const unwrapRefU = editor.mode === "unwrap" ? Number(centerPoint?.u || 0) : null;
-    const strokePaths = [];
-    const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
-    const frameRect = frameShot ? getFrameViewRect(frameShot) : null;
-    for (const stroke of strokes) {
-      const geometry = stroke?.geometry || null;
-      const srcPoints = geometry?.geometryKind === "lasso_fill"
-        ? geometry?.points
-        : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
-      const pts = projectEditorPoints(srcPoints, frameShot, frameRect, unwrapRefU)
-        .filter((pt) => Number.isFinite(pt?.x) && Number.isFinite(pt?.y));
-      if (!pts.length) continue;
-      const presetId = getBrushPresetIdForTool(String(stroke?.toolKind || "pen"));
-      const preset = BRUSH_PRESETS[presetId] || BRUSH_PRESETS[DEFAULT_BRUSH_PRESET_ID];
-      strokePaths.push({
-        points: pts,
-        closed: String(geometry?.geometryKind || "") === "lasso_fill",
-        lineWidth: Math.max(10, Number(stroke?.size || 10) * Math.max(0.1, Number(preset?.sizeScale ?? 1)) + 10),
-        layerKind: String(stroke?.layerKind || item.layerKind || "paint"),
-      });
-    }
-    const center = projectErpPointToEditor(centerPoint, null, frameShot, frameRect, unwrapRefU);
-    if (!center) {
-      const hidden = { visible: false, kind: "strokeGroup" };
-      editor._strokeGeomCache.set(cacheKey, hidden);
-      return hidden;
-    }
-    const cornersUv = getFrameCornersUv(frame);
-    const corners = cornersUv
-      .map((pt) => projectErpPointToEditor(pt, center.x, frameShot, frameRect, unwrapRefU))
-      .filter((pt) => Number.isFinite(pt?.x) && Number.isFinite(pt?.y))
-      .map((pt) => ({ x: Number(pt.x || 0), y: Number(pt.y || 0) }));
-    if (corners.length < 4) {
-      const hidden = { visible: false, kind: "strokeGroup" };
-      editor._strokeGeomCache.set(cacheKey, hidden);
-      return hidden;
-    }
-    const edgeMidpoint = (a, b) => ({
-      x: (Number(a?.x || 0) + Number(b?.x || 0)) * 0.5,
-      y: (Number(a?.y || 0) + Number(b?.y || 0)) * 0.5,
-      a,
-      b,
-    });
-    const topMid = edgeMidpoint(corners[0], corners[1]);
-    const rightMid = edgeMidpoint(corners[1], corners[2]);
-    const bottomMid = edgeMidpoint(corners[2], corners[3]);
-    const leftMid = edgeMidpoint(corners[3], corners[0]);
-    const geom = {
-      kind: "strokeGroup",
-      center: { x: Number(center.x || 0), y: Number(center.y || 0) },
-      corners,
-      edgeMidpoints: [
-        { edge: "top", ...topMid },
-        { edge: "right", ...rightMid },
-        { edge: "bottom", ...bottomMid },
-        { edge: "left", ...leftMid },
-      ],
-      rotateStemBase: { x: topMid.x, y: topMid.y },
-      rotateHandle: { x: topMid.x, y: topMid.y - 30 },
-      strokePaths,
-      visible: true,
-    };
-    editor._strokeGeomCache.set(cacheKey, geom);
-    return geom;
-  }
-
-  function buildRasterObjectGeom(item, cacheKey) {
-    const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
-    const frameRect = frameShot ? getFrameViewRect(frameShot) : null;
-    const centerUv = getRasterObjectCenterUv(item);
-    const unwrapRefU = editor.mode === "unwrap" ? Number(centerUv?.u || 0) : null;
-    const centerPoint = projectErpPointToEditor(centerUv, null, frameShot, frameRect, unwrapRefU);
-    const erpPoints = getRasterObjectTransformedErpPoints(item);
-    const projected = erpPoints
-      .map((pt) => projectErpPointToEditor(pt, centerPoint?.x ?? null, frameShot, frameRect, unwrapRefU))
-      .filter((pt) => Number.isFinite(pt?.x) && Number.isFinite(pt?.y));
-    if (!Array.isArray(projected) || projected.length < 4) {
-      const hidden = { visible: false, kind: "rasterObject" };
-      editor._strokeGeomCache.set(cacheKey, hidden);
-      return hidden;
-    }
-    const corners = projected.slice(0, 4).map((pt) => ({ x: Number(pt?.x || 0), y: Number(pt?.y || 0) }));
-    const center = {
-      x: corners.reduce((sum, pt) => sum + Number(pt.x || 0), 0) / corners.length,
-      y: corners.reduce((sum, pt) => sum + Number(pt.y || 0), 0) / corners.length,
-    };
-    const geom = {
-      kind: "rasterObject",
-      center,
-      corners,
-      visible: true,
-    };
-    editor._strokeGeomCache.set(cacheKey, geom);
-    return geom;
-  }
-
-  function projectSceneItemDir(dir, refX = null, frameShot = null, frameRect = null, options = {}) {
-    if (editor.mode === "frame") {
-      const shot = frameShot || getActiveCutoutShot();
-      const rect = frameRect || getFrameViewRect(shot);
-      if (!shot || !rect) return null;
-      const local = shot ? worldDirToFrameLocalPoint(shot, dir) : null;
-      return local ? {
-        x: Number(rect.x || 0) + (Number(local.x || 0) * Number(rect.w || 0)),
-        y: Number(rect.y || 0) + (Number(local.y || 0) * Number(rect.h || 0)),
-        z: 1,
-      } : null;
-    }
-    if (editor.mode === "unwrap") return projectDirUnwrap(dir, refX);
-    const nearZ = 1e-4;
-    const point = currentViewProjection().project(dir, nearZ);
-    if (!Number.isFinite(point.z)) return null;
-    if (point.z <= nearZ && !options?.clipBehind) return null;
-    const w = canvas.width;
-    const h = canvas.height;
-    const guard = Math.max(w, h) * 2.0;
-    return {
-      x: clamp(point.x, -guard, w + guard),
-      y: clamp(point.y, -guard, h + guard),
-      z: Math.max(point.z, nearZ),
-      rawZ: point.z,
-      clipped: point.z <= nearZ,
-    };
-  }
-
-  function sceneItemVisibilityAlpha(item, points = []) {
-    if (editor.mode !== "pano" || isStickerItem(item)) return 1;
-    const depths = points
-      .map((point) => Number(point?.rawZ ?? point?.z))
-      .filter((z) => Number.isFinite(z));
-    if (!depths.length) return 1;
-    return smoothstep(0.035, 0.2, Math.min(...depths));
-  }
-
-  function buildSceneItemGeom(item) {
-    if (isSceneSticker(item) && !sceneStickerShown(item)) return { visible: false };
-    const pose = poseOf(item);
-    const centerDir = yawPitchToDir(Number(pose.yaw_deg || 0), Number(pose.pitch_deg || 0));
-    const frameShot = editor.mode === "frame" ? getActiveCutoutShot() : null;
-    const frameRect = frameShot ? getFrameViewRect(frameShot) : null;
-    const clipBehind = editor.mode === "pano" && (isStickerItem(item) || isShotItem(item));
-    const projectOptions = clipBehind ? { clipBehind: true } : null;
-    const center = (() => {
-      return projectSceneItemDir(centerDir, null, frameShot, frameRect, projectOptions);
-    })();
-    if (!center) return { visible: false };
-    const frame = getStickerFrame(item);
-    const cornersDir = stickerCornersDir(item);
-    const corners = cornersDir
-      .map((d) => projectSceneItemDir(d, center.x, frameShot, frameRect, projectOptions))
-      .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y));
-    if (corners.length < 4) return { visible: false };
-    const rotateStemBaseDir = stickerDirFromFrame(frame, 0, frame.tanY);
-    const rotateHandleDir = stickerDirFromFrame(frame, 0, frame.tanY + Math.max(frame.tanY * 0.43, 0.053));
-    const rotateStemBase = projectSceneItemDir(rotateStemBaseDir, center.x, frameShot, frameRect, projectOptions);
-    if (!rotateStemBase) return { visible: false };
-    const rotateHandleHint = projectSceneItemDir(rotateHandleDir, rotateStemBase?.x ?? center.x, frameShot, frameRect, projectOptions);
-    const handleDx = (rotateHandleHint?.x ?? rotateStemBase.x) - rotateStemBase.x;
-    const handleDy = (rotateHandleHint?.y ?? rotateStemBase.y) - rotateStemBase.y;
-    const handleLen = Math.hypot(handleDx, handleDy) || 1;
-    const rotateHandle = {
-      x: rotateStemBase.x + (handleDx / handleLen) * 30,
-      y: rotateStemBase.y + (handleDy / handleLen) * 30,
-    };
-    const topEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, 0, frame.tanY), center.x, frameShot, frameRect, projectOptions);
-    const rightEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, frame.tanX, 0), center.x, frameShot, frameRect, projectOptions);
-    const bottomEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, 0, -frame.tanY), center.x, frameShot, frameRect, projectOptions);
-    const leftEdgeCenter = projectSceneItemDir(stickerDirFromFrame(frame, -frame.tanX, 0), center.x, frameShot, frameRect, projectOptions);
-    if (!topEdgeCenter || !rightEdgeCenter || !bottomEdgeCenter || !leftEdgeCenter) return { visible: false };
-    const projectedPoints = [
-      center,
-      ...corners,
-      rotateStemBase,
-      rotateHandleHint,
-      topEdgeCenter,
-      rightEdgeCenter,
-      bottomEdgeCenter,
-      leftEdgeCenter,
-    ];
-    if (clipBehind && !projectedPoints.some((point) => Number(point?.rawZ ?? point?.z) > 1e-4)) return { visible: false };
-    const visibilityAlpha = sceneItemVisibilityAlpha(item, projectedPoints);
-    const edgeMidpoints = [
-      {
-        edge: "top",
-        x: topEdgeCenter.x,
-        y: topEdgeCenter.y,
-        a: { x: corners[0].x, y: corners[0].y },
-        b: { x: corners[1].x, y: corners[1].y },
-      },
-      {
-        edge: "right",
-        x: rightEdgeCenter.x,
-        y: rightEdgeCenter.y,
-        a: { x: corners[1].x, y: corners[1].y },
-        b: { x: corners[2].x, y: corners[2].y },
-      },
-      {
-        edge: "bottom",
-        x: bottomEdgeCenter.x,
-        y: bottomEdgeCenter.y,
-        a: { x: corners[2].x, y: corners[2].y },
-        b: { x: corners[3].x, y: corners[3].y },
-      },
-      {
-        edge: "left",
-        x: leftEdgeCenter.x,
-        y: leftEdgeCenter.y,
-        a: { x: corners[3].x, y: corners[3].y },
-        b: { x: corners[0].x, y: corners[0].y },
-      },
-    ];
-    return {
-      center: { x: center.x, y: center.y },
-      corners: corners.map((c) => ({ x: c.x, y: c.y })),
-      edgeMidpoints,
-      rotateStemBase: { x: rotateStemBase.x, y: rotateStemBase.y },
-      rotateHandle,
-      topEdge: { a: 0, b: 1 },
-      visibilityAlpha,
-      visible: true,
-    };
-  }
-
-  function objectGeom(item) {
-    // In 6DoF the Cutout's Camera is its frustum in space, picked and moved with the gizmo (#77).
-    if (cameraV2 && isShotItem(item) && isFreeSpaceView()) return { visible: false };
-    if (!paintingShown() && (isStrokeGroupItem(item) || isRasterObjectItem(item))) return { visible: false };
-    if (isStrokeGroupItem(item)) {
-      const actionGroupId = String(item.actionGroupId || item.id || "").trim();
-      const cacheKey = getStrokeGeomCacheKey(actionGroupId, item.layerKind);
-      const cached = editor._strokeGeomCache.get(cacheKey);
-      if (cached) return cached;
-      if (editor._strokeGeomCache.size > 256) editor._strokeGeomCache.clear();
-      return buildStrokeGroupGeom(item, cacheKey);
-    }
-    if (isRasterObjectItem(item)) {
-      const cacheKey = getRasterObjectGeomCacheKey(item);
-      const cached = editor._strokeGeomCache.get(cacheKey);
-      if (cached) return cached;
-      if (editor._strokeGeomCache.size > 256) editor._strokeGeomCache.clear();
-      return buildRasterObjectGeom(item, cacheKey);
-    }
-    const cacheKey = getSceneItemGeomCacheKey(item);
-    const cached = editor._strokeGeomCache.get(cacheKey);
-    if (cached) return cached;
-    if (editor._strokeGeomCache.size > 256) editor._strokeGeomCache.clear();
-    const geom = buildSceneItemGeom(item);
-    editor._strokeGeomCache.set(cacheKey, geom);
-    return geom;
-  }
-
-  function sampleStickerEdge(item, edge, steps, refX = null) {
-    const out = [];
-    for (let i = 0; i <= steps; i += 1) {
-      const t = i / steps;
-      let u = 0;
-      let v = 0;
-      if (edge === 0) { u = t; v = 0; }         // top
-      else if (edge === 1) { u = 1; v = t; }    // right
-      else if (edge === 2) { u = 1 - t; v = 1; } // bottom
-      else { u = 0; v = 1 - t; }                // left
-
-      const d = stickerSampleDir(item, u, v);
-      const p = editor.mode === "unwrap" ? projectDirUnwrap(d, refX) : projectDir(d);
-      if (p) out.push(p);
-    }
-    return out;
-  }
-
   function drawStickerBoundary(item, selected) {
     const pose = poseOf(item);
     const centerDir = yawPitchToDir(Number(pose.yaw_deg || 0), Number(pose.pitch_deg || 0));
@@ -4376,20 +2481,6 @@ async function showEditor(node, type, options = {}) {
     ];
 
     drawStickerSelectionBoundary(ctx, edges, { selected });
-  }
-
-  function getCutoutSelectableItemsForDisplay() {
-    const shots = [...(Array.isArray(state.shots) ? state.shots : [])];
-    const stickers = [...cutoutStickers()]
-      .sort((a, b) => Number(a.z_index || 0) - Number(b.z_index || 0));
-    return [...shots, ...stickers];
-  }
-
-  function getCutoutSelectableItemsForHit() {
-    const shots = [...(Array.isArray(state.shots) ? state.shots : [])];
-    const stickers = [...cutoutStickers()]
-      .sort((a, b) => Number(b.z_index || 0) - Number(a.z_index || 0));
-    return [...stickers, ...shots];
   }
 
   function traceQuad(ctx2d, corners = []) {
@@ -4753,21 +2844,6 @@ async function showEditor(node, type, options = {}) {
     });
   }
 
-  function frameLocalPointToWorldDir(shot, point) {
-    if (!shot || !point) return null;
-    const u = Number(point.x || 0);
-    const v = Number(point.y || 0);
-    return stickerSampleDir(shot, u, v);
-  }
-
-  function erpPointToWorldDir(point) {
-    if (!point) return null;
-    const lon = (Number(point.u || 0) - 0.5) * (2 * Math.PI);
-    const lat = (0.5 - Number(point.v || 0)) * Math.PI;
-    const cp = Math.cos(lat);
-    return vec3(cp * Math.sin(lon), Math.sin(lat), cp * Math.cos(lon));
-  }
-
   function getTargetSpaceCoord(point) {
     if (!point || typeof point !== "object") return { x: 0, y: 0 };
     return { x: Number(point?.u || 0), y: Number(point?.v || 0) };
@@ -4973,13 +3049,6 @@ async function showEditor(node, type, options = {}) {
     editor.paintEngineRevisionKey = null;
     editor.paintEngine?.rebuildCommitted?.(state);
     editor.paintEngineRevisionKey = getPaintingRevisionKey();
-  }
-
-  function invalidatePaintingLayerState() {
-    if (state.painting_layer !== null) {
-      state.painting_layer = null;
-    }
-    _paintLayerSyncRevision = "";
   }
 
   function markObjectVisualsDirty() {
@@ -5329,95 +3398,6 @@ async function showEditor(node, type, options = {}) {
         },
       };
     }).filter(Boolean);
-  }
-
-  function worldDirToFrameLocalPoint(shot, dir) {
-    if (!shot || !dir) return null;
-    const frame = getStickerFrame(shot);
-    const cz = dot(dir, frame.centerDir);
-    if (!Number.isFinite(cz) || cz <= 1e-6) return null;
-    const x = dot(dir, frame.right) / cz;
-    const y = dot(dir, frame.up) / cz;
-    return {
-      x: (x / Math.max(1e-6, frame.tanX) + 1) * 0.5,
-      y: (1 - (y / Math.max(1e-6, frame.tanY))) * 0.5,
-    };
-  }
-
-  function projectLassoPointsToCurrentView(points) {
-    if (!Array.isArray(points) || points.length < 3) return [];
-    if (editor.mode === "unwrap") {
-      const r = getUnwrapRect();
-      return points.map((pt) => ({
-        x: r.x + (Number(pt.u || 0) * r.w),
-        y: r.y + (Number(pt.v || 0) * r.h),
-      }));
-    }
-    const projected = points.map((pt) => projectDir(erpPointToWorldDir(pt))).filter(Boolean);
-    return projected.every((pt) => Number(pt.z || 0) > 0)
-      ? projected.map((pt) => ({ x: Number(pt.x || 0), y: Number(pt.y || 0) }))
-      : [];
-  }
-
-  function projectErpPointsToCurrentView(points, unwrapRefU = null) {
-    if (!Array.isArray(points) || points.length < 1) return [];
-    if (editor.mode === "unwrap") {
-      const r = getUnwrapRect();
-      return points.map((pt) => {
-        const u = ((Number(pt.u || 0) % 1) + 1) % 1;
-        const uu = unwrapRefU == null ? u : (Number(unwrapRefU || 0) + shortestWrappedDelta(u, unwrapRefU));
-        return {
-          x: r.x + (uu * r.w),
-          y: r.y + (Number(pt.v || 0) * r.h),
-        };
-      });
-    }
-    const projected = points.map((pt) => projectDir(erpPointToWorldDir(pt))).filter(Boolean);
-    return projected.every((pt) => Number(pt.z || 0) > 0)
-      ? projected.map((pt) => ({ x: Number(pt.x || 0), y: Number(pt.y || 0) }))
-      : [];
-  }
-
-  function isProjectedPolygonContinuous(projected, maxJump = 160) {
-    if (!Array.isArray(projected) || projected.length < 3) return false;
-    for (let i = 0; i < projected.length; i += 1) {
-      const a = projected[i];
-      const b = projected[(i + 1) % projected.length];
-      if (!a || !b) return false;
-      if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) return false;
-      if (Math.hypot(Number(b.x) - Number(a.x), Number(b.y) - Number(a.y)) > maxJump) return false;
-    }
-    return true;
-  }
-
-  function projectErpLassoPointsToFrameRect(points, shot, rect) {
-    if (!Array.isArray(points) || points.length < 3 || !shot || !rect) return [];
-    const projected = [];
-    for (const pt of points) {
-      const dir = erpPointToWorldDir(pt);
-      const local = worldDirToFrameLocalPoint(shot, dir);
-      if (!local) return [];
-      projected.push({
-        x: Number(rect.x || 0) + (Number(local.x || 0) * Number(rect.w || 0)),
-        y: Number(rect.y || 0) + (Number(local.y || 0) * Number(rect.h || 0)),
-      });
-    }
-    return isProjectedPolygonContinuous(projected, Math.max(80, Math.max(rect.w, rect.h) * 0.75)) ? projected : [];
-  }
-
-  function projectErpPointsToFrameRect(points, shot, rect) {
-    if (!Array.isArray(points) || points.length < 1 || !shot || !rect) return [];
-    const projected = [];
-    for (const pt of points) {
-      const dir = erpPointToWorldDir(pt);
-      const local = worldDirToFrameLocalPoint(shot, dir);
-      if (!local) continue;
-      projected.push({
-        x: Number(rect.x || 0) + (Number(local.x || 0) * Number(rect.w || 0)),
-        y: Number(rect.y || 0) + (Number(local.y || 0) * Number(rect.h || 0)),
-      });
-    }
-    return projected;
   }
 
   function drawFrameViewBackground(drawView) {
@@ -6307,16 +4287,6 @@ async function showEditor(node, type, options = {}) {
   function timelineEditable(owner) {
     const target = timelineOwner(owner);
     return !!target && target.locked !== true;
-  }
-
-  // What does not show stops being edited: a hidden Sticker, Camera or painting, and a Sticker outside its
-  // Clip range.
-  function releaseHiddenSelection() {
-    const selected = getSelected();
-    if ((isSceneSticker(selected) && !sceneStickerShown(selected))
-      || (editor.selectedId === CAMERA_SHOT_ID && hasCamera() && !cameraShoots())
-      || (getSelectedKind() === "stroke" && !paintingShown())) setSelectedItem(null);
-    if (selectedWorldSticker()?.visible === false) clearWorldSelection();
   }
 
   function setTimelineFrame(frame) {
@@ -7341,91 +5311,6 @@ async function showEditor(node, type, options = {}) {
     }
   }
 
-  function normalizeDisplayZIndices() {
-    const ordered = getDisplayListObjects();
-    ordered.forEach((entry, index) => {
-      if (entry.type === "sticker" && entry.item) entry.item.z_index = index;
-      if (entry.type === "strokeGroup" && entry.item) entry.item.z_index = index;
-      if (entry.type === "rasterObject" && entry.item) entry.item.z_index = index;
-    });
-  }
-
-  function bringSelectedToFront() {
-    if (readOnly) return;
-    const selectedItems = getSelectedItems();
-    const selected = getSelected();
-    if (!selected || selectedItems.length === 0) return;
-    if (selectedItems.some((item) => isItemLocked(item))) return;
-    normalizeDisplayZIndices();
-    const ordered = getDisplayListObjects();
-    const selectedKeys = new Set(selectedItems.map((item) => {
-      if (isStickerItem(item)) return `sticker:${String(item.id || "")}`;
-      if (isRasterObjectItem(item)) return `rasterObject:${parseRasterObjectSelectionId(item.rasterObjectId || item.id || "")}`;
-      return `strokeGroup:${String(item.actionGroupId || item.id || "")}`;
-    }));
-    const moving = [];
-    const staying = [];
-    ordered.forEach((entry) => {
-      const key = entry.type === "sticker"
-        ? `sticker:${String(entry.item?.id || "")}`
-        : (entry.type === "rasterObject"
-          ? `rasterObject:${String(entry.item?.id || entry.id || "")}`
-          : `strokeGroup:${String(entry.actionGroupId || "")}`);
-      if (selectedKeys.has(key)) moving.push(entry);
-      else staying.push(entry);
-    });
-    if (!moving.length || moving[moving.length - 1] === ordered[ordered.length - 1]) return;
-    const nextOrdered = [...staying, ...moving];
-    nextOrdered.forEach((item, index) => {
-      if (item.type === "sticker" && item.item) item.item.z_index = index;
-      if (item.type === "strokeGroup" && item.item) item.item.z_index = index;
-      if (item.type === "rasterObject" && item.item) item.item.z_index = index;
-    });
-    markObjectVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSelectionMenu();
-    requestDraw();
-  }
-
-  function sendSelectedToBack() {
-    if (readOnly) return;
-    const selectedItems = getSelectedItems();
-    const selected = getSelected();
-    if (!selected || selectedItems.length === 0) return;
-    if (selectedItems.some((item) => isItemLocked(item))) return;
-    normalizeDisplayZIndices();
-    const ordered = getDisplayListObjects();
-    const selectedKeys = new Set(selectedItems.map((item) => {
-      if (isStickerItem(item)) return `sticker:${String(item.id || "")}`;
-      if (isRasterObjectItem(item)) return `rasterObject:${parseRasterObjectSelectionId(item.rasterObjectId || item.id || "")}`;
-      return `strokeGroup:${String(item.actionGroupId || item.id || "")}`;
-    }));
-    const moving = [];
-    const staying = [];
-    ordered.forEach((entry) => {
-      const key = entry.type === "sticker"
-        ? `sticker:${String(entry.item?.id || "")}`
-        : (entry.type === "rasterObject"
-          ? `rasterObject:${String(entry.item?.id || entry.id || "")}`
-          : `strokeGroup:${String(entry.actionGroupId || "")}`);
-      if (selectedKeys.has(key)) moving.push(entry);
-      else staying.push(entry);
-    });
-    if (!moving.length || moving[0] === ordered[0]) return;
-    const nextOrdered = [...moving, ...staying];
-    nextOrdered.forEach((item, index) => {
-      if (item.type === "sticker" && item.item) item.item.z_index = index;
-      if (item.type === "strokeGroup" && item.item) item.item.z_index = index;
-      if (item.type === "rasterObject" && item.item) item.item.z_index = index;
-    });
-    markObjectVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSelectionMenu();
-    requestDraw();
-  }
-
   function apply() {
     if (readOnly) return;
     state.projection_model = "pinhole_rectilinear";
@@ -7491,22 +5376,6 @@ async function showEditor(node, type, options = {}) {
     editor.primaryTool = "cursor";
     syncPaintUi();
     updateSidePanel();
-  }
-
-  function screenPos(evt) {
-    const r = canvas.getBoundingClientRect();
-    return {
-      x: ((evt.clientX - r.left) / r.width) * canvas.width,
-      y: ((evt.clientY - r.top) / r.height) * canvas.height,
-    };
-  }
-
-  function screenPosCss(evt) {
-    const r = canvas.getBoundingClientRect();
-    return {
-      x: Number(evt.clientX) - Number(r.left || 0),
-      y: Number(evt.clientY) - Number(r.top || 0),
-    };
   }
 
   function supportsErpPainting() {
@@ -7665,51 +5534,6 @@ async function showEditor(node, type, options = {}) {
 
   function supportsFramePainting() {
     return shotEditor && !!getActiveCutoutShot();
-  }
-
-  function screenPosToErpPoint(pos, ts = performance.now()) {
-    if (editor.mode === "unwrap") {
-      const r = getUnwrapRect();
-      const u = (pos.x - r.x) / Math.max(1, r.w);
-      const v = (pos.y - r.y) / Math.max(1, r.h);
-      return {
-        targetKind: "ERP_GLOBAL",
-        u: ((u % 1) + 1) % 1,
-        v: clamp(v, 0, 1),
-        t: Number(ts || 0),
-      };
-    }
-    const d = screenToWorldDir(pos.x, pos.y);
-    const { lon, lat } = dirToLonLat(d);
-    return {
-      targetKind: "ERP_GLOBAL",
-      u: ((lon / (2 * Math.PI)) + 0.5 + 1) % 1,
-      v: clamp(0.5 - (lat / Math.PI), 0, 1),
-      t: Number(ts || 0),
-    };
-  }
-
-  // Convert a frame-view screen position to ERP UV coordinates via world direction.
-  // This ensures strokes drawn in frame view are world-fixed (painting on the panorama,
-  // not on the camera lens). Moving the frame after painting does not affect stroke position.
-  function screenPosToFrameAsErpPoint(pos, shot, ts = performance.now()) {
-    const rect = getFrameViewRect(shot);
-    if (!rect) return null;
-    const framePoint = {
-      x: (Number(pos.x) - rect.x) / Math.max(1, rect.w),
-      y: (Number(pos.y) - rect.y) / Math.max(1, rect.h),
-    };
-    // Out-of-frame: caller must handle null (do not project outside the frame's FOV)
-    if (framePoint.x < 0 || framePoint.x > 1 || framePoint.y < 0 || framePoint.y > 1) return null;
-    const dir = frameLocalPointToWorldDir(shot, framePoint);
-    if (!dir) return null;
-    const { lon, lat } = dirToLonLat(dir);
-    return {
-      targetKind: "ERP_GLOBAL",
-      u: ((lon / (2 * Math.PI)) + 0.5 + 1) % 1,
-      v: clamp(0.5 - (lat / Math.PI), 0, 1),
-      t: Number(ts || 0),
-    };
   }
 
   function zoomFrameViewAt(anchor, direction) {
