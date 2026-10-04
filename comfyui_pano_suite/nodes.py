@@ -36,6 +36,7 @@ from .core.math import (
     finite_float,
     vfov_from_hfov,
 )
+from .core.paint_state import empty_painting_state
 from .core.painting import (
     alpha_composite_over_rgb,
     painting_state_has_mask_renderables,
@@ -1218,7 +1219,8 @@ def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> Por
 
 def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -> SceneSources:
     """Read every Sticker source into memory; the port Sticker's source holds the first frame of `port`, and
-    3D media has none (`_render_frames` makes it for each pass). A source that cannot be read adds to `warnings`."""
+    3D media has none (`_render_frames` makes it for each pass). A hidden painting (`painting_visible`) is not drawn,
+    its mask included. A source that cannot be read adds to `warnings`."""
     stickers = {}
     port_image = None if port is None or port.is_3d else _port_rgba(port.first_frame)
     for item in state["stickers"]:
@@ -1232,6 +1234,8 @@ def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -
             warnings.append(f"Could not read the source of Sticker {item['id']}; it is not drawn.")
             continue
         stickers[item["id"]] = StickerSource(rgba, item["crop"], item.get("z_index", 0))
+    if not state["painting_visible"]:
+        return SceneSources(stickers, empty_painting_state())
     return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
 
 
@@ -1784,10 +1788,17 @@ def _even_side(value: float) -> int:
     return max(2, 2 * math.floor(value / 2 + 0.5))
 
 
+def _studio_camera(state: dict) -> dict | None:
+    """The Camera that shoots Panorama Studio's output: the state's, or None without one or when it is hidden. A hidden
+    Camera stays in the state and shoots as no Camera does."""
+    camera = state["camera"]
+    return camera if camera is not None and camera["visible"] else None
+
+
 def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg, warnings: list[str]) -> tuple[int, int]:
     """The Studio output's size (ADR 0029). `output_size` picks the width of the whole (360) ERP; auto is the
     bg_media width over 360 degrees (twice it for a 180 one), or 2048 with a warning without bg_media. Without a
-    Camera, or with an `erp` one, the output is that ERP over `coverage`. A `perspective` Camera is
+    Camera (`_studio_camera`), or with an `erp` one, the output is that ERP over `coverage`. A `perspective` Camera is
     2 f tan(hFOV_max / 2) wide with f = width / 2pi (the ERP's pixels per radian at the equator) and hFOV_max the
     widest hFOV over the Timeline's `frames` (of the last layer, `state`), and the width over its aspect high, both even; a longest side past
     STUDIO_MAX_OUTPUT_SIDE is reduced to it, keeping the aspect, with a warning."""
@@ -1798,7 +1809,7 @@ def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg
         width = STUDIO_DEFAULT_ERP_WIDTH
     else:
         width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2] * 360 // coverage
-    camera = state["camera"]
+    camera = _studio_camera(state)
     if camera is None or camera["projection"] == "erp":
         return width * coverage // 360, width // 2
     # Only the Camera is evaluated; the Stickers do not change its hFOV.
@@ -1817,8 +1828,8 @@ def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg
 
 
 class PanoramaStudioNode(io.ComfyNode):
-    """Builds the Scene and shoots it (ADR 0029): the ERP from the World origin at rotation 0 without a Camera,
-    else through the state's Camera, by its `projection`."""
+    """Builds the Scene and shoots it (ADR 0029): the ERP from the World origin at rotation 0 without a Camera (or with
+    a hidden one), else through the state's Camera, by its `projection`."""
 
     @classmethod
     def define_schema(cls):
@@ -1854,13 +1865,13 @@ class PanoramaStudioNode(io.ComfyNode):
         built, bg, stored_port = _build_scene(state_json, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings, camera=True)
         state = built.layers[-1].state
         width, height = _studio_output_size(state, built.frames, output_size, built.coverage, bg, warnings)
-        camera = state["camera"]
+        camera = _studio_camera(state)
         if camera is None or camera["projection"] == "erp":
             projection = Projection.erp(width, height, built.coverage)
 
             def capture(evaluated):
                 # Without a Camera, the ERP is taken from the World origin at rotation 0.
-                return evaluated["camera"] or STICKERS_CAMERA, projection
+                return STICKERS_CAMERA if camera is None else evaluated["camera"], projection
         else:
             def capture(evaluated):
                 return evaluated["camera"], Projection.perspective(width, height, evaluated["camera"]["hFOV_deg"], built.coverage)

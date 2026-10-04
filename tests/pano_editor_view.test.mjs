@@ -658,7 +658,7 @@ test("a 3D world port Sticker (#63) has no plane: the space view draws its item 
   const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
   // Its files are used while the `sticker` input comes from where the run's did.
   assert.match(editor, /isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;\s*return sceneFilesOf\(getNodeUiList\("pano_sticker_files"\), getNodeUiList\("pano_sticker_meta"\), mediaSource\);/);
-  assert.match(editor, /const sticker = editor\.showObjects \? stickerContentRequest\(portFiles, sceneState, evaluated\) : null;/);
+  assert.match(editor, /const sticker = stickerContentRequest\(portFiles, sceneState, evaluated\);/);
   assert.match(editor, /stickerUrls: stickerContentUrls\(portFiles, sceneState\),/);
   // A see-through GLB does not write depth, and writes it again at full opacity.
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
@@ -716,7 +716,7 @@ test("the world Sticker's selection menu shows exactly while its gizmo does, and
   // active at the playhead), in the space view, hidden during a press or a drag like the canvas menu.
   const world = update.slice(update.indexOf("  function worldSelectionMenuModel() {"));
   assert.match(world, /const space = isSpaceView\(\) && !editor\.interaction \? editorViewInput\(\)\.space : null;\s*if \(!space\?\.gizmo\) return \{ visible: false \};/);
-  assert.match(editor, /if \(!editor\.showObjects \|\| !worldStickerEditable\(sticker\) \|\| !value\?\.active\) return null;/);
+  assert.match(editor, /if \(!worldStickerEditable\(sticker\) \|\| !value\?\.active\) return null;/);
   assert.match(editor, /function worldStickerEditable\(sticker\) \{\s*return !!sticker && !readOnly && !sticker\.locked;/);
   // A world selection is a single Sticker: selecting one clears the canvas selection, and the reverse.
   assert.match(editor, /function selectWorldSticker\(id\) \{\s*setSelectedItem\(null\);/);
@@ -774,7 +774,7 @@ test("Panorama Studio's editor adds and deletes its one Camera without moving th
   // Delete saves no Camera, and the shot goes with it.
   assert.match(editor, /function deleteStudioCamera\(\) \{[\s\S]*?state\.camera = null;/);
   assert.match(editor, /if \(studio && isShotItem\(selected\)\) \{\s*deleteStudioCamera\(\);/);
-  assert.match(editor, /if \(!state\.camera\) \{\s*cutoutShotBase = null;\s*if \(state\.shots\?\.length\) state\.shots = \[\];\s*if \(before\) followCameraChange\(before, null\);/);
+  assert.match(editor, /if \(!cameraShoots\(\)\) \{\s*cutoutShotBase = null;\s*if \(state\.shots\?\.length\) state\.shots = \[\];\s*if \(before\) followCameraChange\(before, null\);/);
   // 3DoF moves to where it stands now over a transition, which enters 3DoF when it arrives.
   assert.match(editor, /applySpaceMode\(\{ mode: "6dof", position: from, moved: true \}\);[\s\S]*?transitionView\(\{ \.\.\.view, position: to \}, \{ mode: "3dof", moved: false \}\);/);
   // The Frame tab is always there; without a frame to show it is disabled, and Studio leaves it for the panorama.

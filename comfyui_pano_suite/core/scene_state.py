@@ -261,7 +261,12 @@ def _camera(raw):
     if not isinstance(raw, dict):
         return None
     projection = raw.get("projection") if raw.get("projection") in PROJECTIONS else PROJECTIONS[0]
-    return {"aspect": _positive(raw.get("aspect"), 1.0), "projection": projection, **_lanes(raw, CAMERA_LANES)}
+    return {
+        "aspect": _positive(raw.get("aspect"), 1.0),
+        "projection": projection,
+        "visible": _bool(raw.get("visible"), True),
+        **_lanes(raw, CAMERA_LANES),
+    }
 
 
 def default_camera() -> dict:
@@ -281,10 +286,11 @@ def _normalize_v2(raw):
             "length": length if length is not None and length >= 1 else None,
         },
         "camera": _camera(raw.get("camera")),
-        "scene": {"clip": _clip(scene.get("clip")), **_lanes(scene, SCENE_LANES)},
+        "scene": {"clip": _clip(scene.get("clip")), "visible": _bool(scene.get("visible"), True), **_lanes(scene, SCENE_LANES)},
         "stickers": _stickers(raw.get("stickers")),
         "painting": normalize_painting_state(raw.get("painting")),
         "painting_layer": deepcopy(painting_layer) if isinstance(painting_layer, dict) else None,
+        "painting_visible": _bool(raw.get("painting_visible"), True),
     }
 
 
@@ -408,10 +414,11 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
     return _normalize_v2({
         "timeline": {"fps": fps, "length": None if length is None else max(1, rebase(length))},
         "camera": None if camera is None else {**camera, **_rebase_lanes(camera, CAMERA_LANES, rebase, 0, 0)},
-        "scene": {"clip": scene["clip"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
+        "scene": {"clip": scene["clip"], "visible": state["scene"]["visible"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
         "stickers": stickers,
         "painting": state["painting"],
         "painting_layer": state["painting_layer"],
+        "painting_visible": state["painting_visible"],
     })
 
 

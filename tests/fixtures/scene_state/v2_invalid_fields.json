@@ -4,6 +4,7 @@
   "camera": {
     "aspect": "wide",
     "projection": "fisheye",
+    "visible": "no",
     "position": {
       "value": [1, "x", 3],
       "keyframes": [
@@ -51,5 +52,6 @@
   ],
   "painting": null,
   "painting_layer": "x",
+  "painting_visible": 0,
   "unknown_top_level": true
 }

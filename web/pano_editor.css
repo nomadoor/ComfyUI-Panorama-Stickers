@@ -1633,76 +1633,6 @@
   opacity: 0.42;
   filter: saturate(0.7);
 }
-.pano-visibility-section {
-  padding: 0 0 var(--pano-space-md);
-}
-.pano-visibility-stack {
-  display: flex;
-  flex-direction: column;
-}
-.pano-visibility-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 28px;
-  padding: 0;
-}
-.pano-visibility-row.is-hidden .pano-visibility-name {
-  color: var(--pano-muted);
-  opacity: 0.72;
-}
-.pano-visibility-row.is-disabled {
-  opacity: 0.42;
-}
-.pano-visibility-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--pano-muted);
-}
-.pano-visibility-name-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  color: inherit;
-}
-.pano-visibility-name-icon svg {
-  width: 14px;
-  height: 14px;
-}
-.pano-visibility-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--pano-muted);
-  cursor: pointer;
-}
-.pano-visibility-toggle:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.pano-visibility-toggle:hover,
-.pano-visibility-toggle.active {
-  color: var(--pano-muted-strong);
-}
-.pano-visibility-toggle:disabled:hover,
-.pano-visibility-toggle:disabled.active {
-  color: var(--pano-muted);
-}
-.pano-visibility-toggle svg {
-  width: 14px;
-  height: 14px;
-}
 .pano-field {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr) auto;
@@ -2157,6 +2087,49 @@
 .pano-field input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+/* A row of grouped fields (Position, Rotation, FOV): three equal columns, so a field keeps its width
+   whatever its digits, and the fields of rows of two line up with those of rows of three. */
+.pano-field.pano-field-group {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+.pano-field-group-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 0;
+}
+.pano-axis-field {
+  position: relative;
+  min-width: 0;
+}
+.pano-field.pano-field-group input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px 0 16px;
+}
+.pano-axis {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  font-size: 10px;
+  color: var(--pano-muted);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+.pano-axis:hover {
+  color: var(--pano-text);
+}
+.pano-axis.disabled {
+  opacity: 0.62;
+  cursor: default;
 }
 
 @media (max-width: 860px) {
@@ -2746,6 +2719,7 @@
 .pano-timeline-mute svg,
 .pano-timeline-toggle svg,
 .pano-timeline-name svg,
+.pano-timeline-eye svg,
 .pano-timeline-open svg,
 .pano-timeline-key svg {
   width: 14px;
@@ -2907,8 +2881,18 @@
 .pano-timeline-lane-head {
   display: flex;
   align-items: center;
-  padding-left: 40px;
+  padding-left: 60px;
 }
+.pano-timeline-head.hidden .pano-timeline-select {
+  opacity: 0.5;
+}
+.pano-timeline-eye {
+  flex: 0 0 auto;
+}
+.pano-timeline-eye[aria-pressed="true"] {
+  color: var(--pano-muted-strong);
+}
+.pano-timeline-eye,
 .pano-timeline-open,
 .pano-timeline-key {
   display: inline-flex;
@@ -2992,6 +2976,7 @@
   background: #f5b544;
 }
 .pano-timeline-pin:focus-visible,
+.pano-timeline-eye:focus-visible,
 .pano-timeline-select:focus-visible,
 .pano-timeline-open:focus-visible,
 .pano-timeline-key:focus-visible {

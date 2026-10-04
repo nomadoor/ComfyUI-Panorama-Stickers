@@ -359,7 +359,7 @@ export function evaluateSceneState(state, frame) {
     frame: time,
     camera: camera == null ? null : evaluateCamera(camera, time),
     scene: {
-      active: clipActive(scene.clip, time),
+      active: scene.visible && clipActive(scene.clip, time),
       clip_frame: sceneClipFrame,
       position: evaluateLane(scene, "position", sceneClipFrame),
       ...evaluateLane(scene, "rotation", sceneClipFrame),

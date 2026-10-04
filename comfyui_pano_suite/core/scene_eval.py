@@ -388,7 +388,7 @@ def evaluate_scene_state(state: dict, frame: float) -> dict:
             "aspect": camera["aspect"],
         },
         "scene": {
-            "active": _clip_active(scene["clip"], frame),
+            "active": scene["visible"] and _clip_active(scene["clip"], frame),
             "clip_frame": scene_clip_frame,
             "position": _evaluate_lane(scene, "position", scene_clip_frame),
             **_evaluate_lane(scene, "rotation", scene_clip_frame),

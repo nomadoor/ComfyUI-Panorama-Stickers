@@ -263,7 +263,7 @@ test("shared composite includes raster paint objects as independent z-ordered la
   assert.match(runtime, /createRasterObjectSurfaceCache/);
   assert.match(runtime, /painting\?\.raster_objects/);
   assert.match(runtime, /id:\s*`raster:/);
-  assert.match(runtime, /const paintLayers = buildRuntimeCutoutLayerEntries\(node, state\)/);
+  assert.match(runtime, /const paintLayers = \(state\.painting_visible === false \? \[\] : buildRuntimeCutoutLayerEntries\(node, state\)\)/);
 });
 
 test("external sticker textures resolve only from the node's current dedicated output", async () => {

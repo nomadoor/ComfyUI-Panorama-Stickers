@@ -146,7 +146,7 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
   - ギズモのハンドルの上ではカーソルが grab になり、ハンドルが強調される（ドラッグを終えたときとポインタがビューから出たときに外す）。ギズモのドラッグ中は視点を動かさない。
   - 回転で pitch の絶対値が 89.9° を超えると、yaw と roll は同じ軸のまわりの回転になり、読み出した yaw が跳ぶ。そこでは Sticker の yaw を保ち、回転の差を roll で表す（`gizmoDragLanes`）。インスペクタの数値が跳ばない。
 - 記録：ギズモのドラッグは、モードの Lane（`position`・`rotation`・`scale` のどれか一つ）だけを、`docs/timeline-ui.md` の記録の規則で書く（`setWorldStickerTransform`、内部は `setLaneValue`）。ドラッグの変化は、つかんだときのギズモからの差として、Sticker のその時点の値に掛ける（`gizmoDragLanes`）。再生中につかむと、最初の動きで再生が止まり、止まったフレームの値から変形を始める。変化のあったドラッグは Undo の 1 段になる。
-- インスペクタ（Vue の `PanoSidePanel.vue`、`sky` の Sticker と同じ部品）：`world` の Sticker を選ぶと、X・Y・Z（World の glTF 座標）・Yaw・Pitch・Roll・Scale・Opacity を数値で変えられる（`worldStickerFields`・`setWorldStickerField`）。位置には上限・下限がなく、scale は 0.01 以上で上限がない。スライダーの範囲は 100 で、値がそれを超えると 10 のべき乗で広がる（`worldFieldRange`）。記録の規則・再生の停止・Undo は `sky` の Sticker のインスペクタと同じ。Copy State は使えない。
+- インスペクタ（Vue の `PanoSidePanel.vue`、`sky` の Sticker と同じ部品）：`world` の Sticker を選ぶと、X・Y・Z（World の glTF 座標）・Yaw・Pitch・Roll・Scale・Opacity を数値で変えられる（`worldStickerFields`・`setWorldStickerField`）。位置には上限・下限がなく、scale は 0.01 以上で上限がない。Scale のスライダーの範囲は 100 で、値がそれを超えると 10 のべき乗で広がる（`worldFieldRange`）。欄の並びは下の「インスペクタの行」。記録の規則・再生の停止・Undo は `sky` の Sticker のインスペクタと同じ。Copy State は使えない。
 - 新しく置く `world` の Sticker：ツールバーの「Add World Image」（`PanoramaStickersNode` だけ。地球のアイコン）で画像を選ぶと、`world` の画像の Sticker として置く（`newWorldSceneSticker`）。それまでエディタには `world` の Sticker を新しく置く経路がなかった（`port` の 3D の Sticker はノードが置く）。置いた Sticker を選んだ状態にする。
   - 置く場所（`pano_space.js` の `newWorldStickerTransform`）：画面上の点の下に World の内容（`scene` の中身・Sticker）の表面があれば、その点。なければ、Viewport camera の前方の、内容のバウンディング球の半径 × 0.5 の距離の点。内容がなければ前方 2（`NEW_WORLD_STICKER_DISTANCE`。ノードが 3D の `port` の Sticker を置く `WORLD_STICKER_POSITION` と同じ距離）。3DoF では視点は原点なので、原点からの距離になる。
   - ボタンを押すときポインタはビューの上にないので、画面上の点にはビューの中心を使う（照準の代わり）。関数は任意の点を受け取るので、ドロップした位置やクリックした位置に置く経路を後で足せる。
@@ -167,7 +167,7 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
   - 3DoF の視点は World の原点ではなく、再生ヘッドでの Camera の位置に立つ（`spaceModeView` などの `origin`）。Panorama 上の枠（従来の shot の枠と、その移動・拡大縮小・回転）は方向で描くので、Camera の位置から見てはじめて Camera の写す範囲と一致するためである。6DoF に入ると、その位置から動き始める。Reset View もこの位置に戻る。
   - Timeline 上の Camera の軌道（`cameraTrajectory`）を線で描く（Paint / Images を隠すと消える）。
   - 6DoF では Camera の視錐台（`cameraFrustumSegments`、長さは内容の大きさの 1/5、選んでいる間は枠と同じ黄色）を描き、Panorama 上の枠とその周りの暗がりは描かない。視錐台の線の 6px 以内を押すと Camera を選び（`segmentsHit`）、何もないところを押すと外れる（`world` の Sticker の選択と同じ流儀。タイムラインの Camera の行でも選べる）。選んでいる Camera にはギズモ（`TransformControls`）を出し、選択メニューの Move | Rotate で切り替える（Scale はない）。ギズモのドラッグはモードの Lane（`position` か `rotation`）だけを記録の規則で書く（`gizmoDragLanes`）。Frame Selected と Look At Frame は Camera の視錐台が収まるように寄る（Look At Frame はまず Camera の方を向く）。
-- インスペクタ：Camera を選ぶと、従来の Yaw・Pitch・H FOV・V FOV・Roll に加え、World の内容があるときは X・Y・Z（World の glTF 座標、上限なし）を出す（`cameraFields`・`setCameraField`）。
+- インスペクタ：Camera を選ぶと、従来の Yaw・Pitch・H FOV・V FOV・Roll に加え、World の内容があるときは X・Y・Z（World の glTF 座標、上限なし）を出す（`cameraFields`・`setCameraField`）。欄の並びは下の「インスペクタの行」。
 - 出力との一致：エディタの Camera はノードと同じ評価関数の値で、Frame 表示はその位置・向き・画角の透視投影で描く。`PANO_SCENE` の Keyframe はエディタでは Scene の fps に再基準化して扱い、保存した Keyframe をノードは `frame × Cutout の fps ÷ Scene の fps` で読むので、同じ秒の値になる。既知の差：画角 1° 未満（エディタは 1° に寄せる）、出力の大きさの丸めによる縦の画角のわずかな差（上の「既知の食い違い」と同じ）、World の内容の読み込み中の表示（「空間の表示」と同じ）。
 
 ## Panorama Studio のエディタ（#89）
@@ -183,6 +183,22 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 - Camera があるときの操作は Cutout と同じ：Panorama 表示の枠（選ぶ・動かす・拡大縮小・回転）、6DoF の視錐台とギズモ、Frame 表示、インスペクタ、タイムラインの Camera の行。インスペクタの Camera には Roll があり、Opacity は無い。インスペクタの選択の一覧の先頭にも Camera が入る。Cutout と違い、Panorama 表示で枠の外を暗くするのは Camera を選んでいる間だけで（Sticker を編集する間は暗くしない）、Camera のプレビューの大きさの切り替えボタン（押すたびに切り替わる）は出さない。
 - `state_json`：開いて閉じただけでは書き換えない。Camera の有無によらず、開くときに VIDEO の fps へ再基準化しても、`sameEditorStateText` の `rebased`（Cutout と同じ）で同じ意味なら書かない。`default_camera` の印（Cutout 用）は使わない（`parseSceneEditorState` の `camera` を渡さない）。Camera を足す・消すのは編集で、Camera のオブジェクトか `null` を保存する。
 - ノード上の表示は今の Stickers のもの（`attachStickers`）をそのまま使う（#91 で作り直す）。
+- Camera を隠したとき（タイムラインの Camera の行の目、`camera.visible`。`docs/timeline-ui.md` の「表示（目のアイコン）」）：Camera が無いときと同じに動く（`cameraShoots`）。shot は無く、3DoF は原点に立ち（`followCameraChange` で移る）、Camera のプレビュー・Panorama 上の枠・視錐台・軌跡は出ず、選べない。Frame タブは無効で、ツールチップは「The camera is hidden」。Camera は状態に残るので、Add Camera は無効のまま、タイムラインの Camera の行と Keyframe もそのまま。
+
+## インスペクタの行
+
+インスペクタ（`PanoSidePanel.vue`）の欄は、組になった値を 1 行に横に並べる（Blender・Unity の Transform と同じ）。行は `pano_editor_ui_state.js` の `inspectorRows` が、欄の並び（`pano_editor.js` の `pushParam` の順）から作る。
+
+| 行 | 欄（短い名前） | 持ち主 |
+|---|---|---|
+| Position | X・Y・Z | `world` の Sticker、World の内容があるときの Camera |
+| Rotation | Y（Yaw）・P（Pitch）・R（Roll） | すべて（`sky` の Sticker の R は `rot_deg`） |
+| FOV | H（H FOV）・V（V FOV） | `sky` の Sticker、Camera |
+| Scale・Opacity | 1 行に 1 つ | `world` の Sticker（Scale）、Sticker（Opacity） |
+
+- 組の行にはスライダーを置かない。欄の左の短い名前をドラッグすると値が変わる（1 px あたり、位置 0.01、角度 0.5°、画角 0.25°。Shift で 1/10）。動かさずに放すと欄に入力できる。ドラッグは欄の `input`・`change` を出すので、エディタは入力と同じに扱う（`change` で Undo の 1 段、記録の規則・再生の停止も同じ）。
+- 組の行の欄は 3 等分の幅（2 つの行も同じ幅で、列がそろう）で、桁が増えても幅は変わらない。1 つだけの行は従来どおりスライダーと幅の決まった数値の欄。
+- `scene` の変形（位置・回転・大きさ）を変える欄はまだ無い（`scene` の行は Clip range だけ）。足すときは同じ Position・Rotation の行にする。
 
 ## 当たり判定（GPU）
 

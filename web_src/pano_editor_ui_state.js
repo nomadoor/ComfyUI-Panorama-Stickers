@@ -100,10 +100,37 @@ export function buildPreviewSidePanelModel({ coverage, uiSettings, normalizeCove
     notes: [],
     params: [],
     paramsDisabled: true,
-    visibilityRows: [],
     uiSettings,
     footerButtons: [{ action: "close-preview", label: "Close", primary: true }],
   };
+}
+
+// The fields that share a row of the inspector: [row label, short label, value per pixel of a drag].
+const FIELD_GROUPS = {
+  position_x: ["Position", "X", 0.01],
+  position_y: ["Position", "Y", 0.01],
+  position_z: ["Position", "Z", 0.01],
+  yaw_deg: ["Rotation", "Y", 0.5],
+  pitch_deg: ["Rotation", "P", 0.5],
+  roll_deg: ["Rotation", "R", 0.5],
+  rot_deg: ["Rotation", "R", 0.5],
+  hFOV_deg: ["FOV", "H", 0.25],
+  vFOV_deg: ["FOV", "V", 0.25],
+};
+
+// The rows of the inspector (PanoSidePanel.vue) for its fields, in order: the fields of a group
+// (Position, Rotation, FOV) side by side in one row under the group's name, each by its short label
+// without a slider (a drag on the label changes the value by `drag` per pixel), any other field alone
+// in its row with its slider.
+export function inspectorRows(params) {
+  const rows = [];
+  for (const param of params) {
+    const [group, short, drag] = FIELD_GROUPS[param.key] || [];
+    const last = rows[rows.length - 1];
+    if (group && last?.grouped && last.label === group) last.fields.push({ ...param, short, drag });
+    else rows.push({ key: param.key, label: group || param.label, grouped: !!group, fields: [{ ...param, short, drag }] });
+  }
+  return rows;
 }
 
 // The slider range (0 to it, or minus it to it) of a world Sticker's position or scale field: 100,
@@ -140,10 +167,15 @@ export function floatingRightState({ spaceView, spaceMode, readOnly, frameMode, 
 
 // The Frame tab (PanoViewToggle.vue). The editors with a shot always show it, so the tabs never move, and
 // disable it while there is no frame to look through. Panorama Studio says why in its tooltip (#89): it has
-// no Camera yet (Add Camera is on the left), or its Camera shoots a 360-degree ERP, which has no frame.
-export function frameViewButton({ hasShot, erp = false, studio = false }) {
+// no Camera yet (Add Camera is on the left), its Camera is hidden (its eye on the Timeline), or its Camera
+// shoots a 360-degree ERP, which has no frame.
+export function frameViewButton({ hasShot, erp = false, hidden = false, studio = false }) {
   const disabled = !hasShot || erp;
-  const tip = studio && disabled ? (hasShot ? "A 360° camera has no frame" : "Add a camera to use the Frame view") : null;
+  let tip = null;
+  if (studio && disabled) {
+    if (hidden) tip = "The camera is hidden";
+    else tip = hasShot ? "A 360° camera has no frame" : "Add a camera to use the Frame view";
+  }
   return { disabled, tip };
 }
 
@@ -175,7 +207,6 @@ export function buildEditorSidePanelModel({
   selectedItems,
   params,
   notes,
-  visibilityRows,
   uiSettings,
   normalizeCoverageValue,
 }) {
@@ -188,9 +219,9 @@ export function buildEditorSidePanelModel({
       label: "Copy State",
     },
     params,
+    rows: inspectorRows(params),
     notes,
     paramsDisabled: !enabled,
-    visibilityRows,
     uiSettings: readOnly ? null : uiSettings,
     footerButtons: [
       { action: "cancel-close", label: "Cancel", primary: false },
@@ -361,6 +392,13 @@ function selectionMenuAt(corners, items) {
   };
 }
 
+// The id of the painting's Timeline row.
+export const PAINTING_ROW = "painting";
+
+function hasPainting(painting) {
+  return painting.paint.strokes.length > 0 || painting.mask.strokes.length > 0 || painting.raster_objects.length > 0;
+}
+
 const LANE_LABELS = {
   position: "Position",
   rotation: "Rotation",
@@ -383,9 +421,13 @@ const LANE_LABELS = {
 // audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
 // input sets the Timeline fps (ADR 0024); with sceneLocked a PANO_SCENE sets both the fps and the length
 // (a Cutout shoots the Scene's Timeline, #77), and the Cutout shows only its Camera row.
-export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false, stickers = true, scene = false, sceneLocked = false }) {
+// Every row has the place of the eye at its left; a `hideable` row has the eye there, which shows and
+// hides it (`visible`). The Cutout's Camera always shoots, so only Panorama Studio's (`cameraHideable`)
+// has one. With the Stickers, the painting has a row (`painting`, after the Stickers) while it has
+// strokes or rasters, or is hidden.
+export function buildTimelineModel(state, { frame, span, selection, selectedId, expanded, openRows, playing, label, audio = null, fpsLocked = false, camera = false, cameraHideable = false, stickers = true, scene = false, sceneLocked = false }) {
   // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
-  const row = (id, owner, rowLabel, icon, clip, offset, keyable = true) => {
+  const row = (id, owner, rowLabel, icon, clip, offset, { keyable = true, hideable = true } = {}) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
     return {
       id,
@@ -393,6 +435,8 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
       icon,
       clip,
       selected: id === selectedId,
+      hideable,
+      visible: owner.visible,
       keyable,
       open: keyable && openRows.has(id),
       keyed: rowKeyed(owner, frame - offset),
@@ -426,15 +470,30 @@ export function buildTimelineModel(state, { frame, span, selection, selectedId, 
     lockTip: sceneLocked ? "Set by the scene" : "Set by the video input",
     length: sceneLocked ? span : state.timeline.length,
     rows: [
-      ...(camera ? [row("camera", state.camera, "Camera", ICON.camera, null, 0)] : []),
+      ...(camera ? [row("camera", state.camera, "Camera", ICON.camera, null, 0, { hideable: cameraHideable })] : []),
       ...[...sky, ...world].map((sticker) => {
         const { clip, offset } = clipRange(sticker.clip);
         return row(sticker.id, sticker, sceneStickerLabel(sticker), ICON.image, clip, offset);
       }),
+      ...(stickers && (hasPainting(state.painting) || !state.painting_visible) ? [{
+        id: PAINTING_ROW,
+        label: "Paint",
+        icon: ICON.paintbrush_vertical_tool,
+        clip: null,
+        selected: false,
+        hideable: true,
+        visible: state.painting_visible,
+        keyable: false,
+        open: false,
+        keyed: false,
+        keys: [],
+        selectedFrames: [],
+        lanes: [],
+      }] : []),
       ...(stickers && (scene || ownerTimed(state.scene)) ? [(() => {
         const { clip, offset } = clipRange(state.scene.clip);
         // The editor has no way to move the `scene` yet, so its row has only its Clip range (#89).
-        return row("scene", state.scene, "Scene", ICON.box, clip, offset, false);
+        return row("scene", state.scene, "Scene", ICON.box, clip, offset, { keyable: false });
       })()] : []),
     ],
   };

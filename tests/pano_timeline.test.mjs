@@ -339,7 +339,7 @@ test("an edit on the canvas stops playback on its first move and starts from the
   const begin = editorSource.slice(editorSource.indexOf("  canvas.onpointerdown = (e) => {"), editorSource.indexOf("  // Playback ran on from the pointer going down to its first move."));
   // Only a paint stroke, which draws at once, stops at pointerdown.
   assert.equal(begin.match(/stopTimelinePlayback\(\);/g).length, 1);
-  assert.match(begin, /supportsFramePainting\(\)\)\) \{\s*stopTimelinePlayback\(\);/);
+  assert.match(begin, /supportsFramePainting\(\)\)\) \{[^}]*if \(!paintingShown\(\)\) return;\s*stopTimelinePlayback\(\);/);
   assert.match(begin, /const p = screenPos\(e\);\s*editPointerDown = p;/);
   const move = editorSource.slice(editorSource.indexOf("  canvas.onpointermove = (e) => {"), editorSource.indexOf("if (it.kind === \"paint_stroke\")"));
   assert.match(move, /if \(editPointerDown && \(p\.x !== editPointerDown\.x \|\| p\.y !== editPointerDown\.y\)\) \{\s*const down = editPointerDown;\s*editPointerDown = null;\s*if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);

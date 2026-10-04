@@ -48,10 +48,26 @@ test("the state text leaves out the default projection and reads back the same",
   assert.deepEqual(Object.keys(JSON.parse(text).camera), ["aspect", "position", "rotation", "fov"]);
   assert.deepEqual(loadSceneState(text), perspective);
   const erp = loadSceneState(fixture("v2_erp_camera"));
-  assert.equal(sceneStateText(erp), JSON.stringify(erp));
+  assert.deepEqual(Object.keys(JSON.parse(sceneStateText(erp)).camera), ["aspect", "projection", "position", "rotation", "fov"]);
+  assert.deepEqual(loadSceneState(sceneStateText(erp)), erp);
   const none = loadSceneState(fixture("v2_no_camera"));
-  assert.equal(sceneStateText(none), JSON.stringify(none));
+  assert.deepEqual(loadSceneState(sceneStateText(none)), none);
   assert.equal(JSON.parse(sceneStateText(none)).camera, null);
+});
+
+test("the state text leaves out shown Camera, scene and painting and keeps hidden ones", () => {
+  const shown = JSON.parse(sceneStateText(loadSceneState(fixture("v2_canonical"))));
+  assert.equal("visible" in shown.camera, false);
+  assert.equal("visible" in shown.scene, false);
+  assert.equal("painting_visible" in shown, false);
+  assert.deepEqual(Object.keys(shown), ["version", "timeline", "camera", "scene", "stickers", "painting", "painting_layer"]);
+  const state = loadSceneState(fixture("v2_hidden"));
+  const text = sceneStateText(state);
+  const hidden = JSON.parse(text);
+  assert.equal(hidden.camera.visible, false);
+  assert.equal(hidden.scene.visible, false);
+  assert.equal(hidden.painting_visible, false);
+  assert.deepEqual(loadSceneState(text), state);
 });
 
 test("sticker_state v1 and v2 fixtures load as sticker_state v2", () => {

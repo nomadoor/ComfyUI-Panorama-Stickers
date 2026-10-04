@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { ERP_ASPECT, cameraParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { setSegmentEasing } from "../web_src/pano_timeline.js";
@@ -105,6 +105,74 @@ test("the Timeline has one row per object: the Camera with `camera`, then the St
   assert.deepEqual([selected.rows[1].open, selected.rows[1].selectedFrames, selected.rows[1].lanes[3].selectedFrames], [true, [10, 20], []]);
   const lane = buildTimelineModel(state, { ...options, selection: { owner: "st_sky", lane: "opacity", frames: [5] } });
   assert.deepEqual([lane.rows[1].selectedFrames, lane.rows[1].lanes[3].selectedFrames], [[], [10]]);
+});
+
+test("every Timeline row has the eye's place; the eye shows and hides what can be hidden", () => {
+  const state = canonical();
+  const options = { frame: 24, span: 120, selection: null, selectedId: null, expanded: true, openRows: new Set(), playing: false, label: "", camera: true, scene: true };
+  const eyes = (model) => model.rows.map((row) => [row.id, row.hideable, row.visible]);
+
+  // The Cutout's Camera always shoots, so only Panorama Studio's has an eye.
+  assert.deepEqual(eyes(buildTimelineModel(state, options)), [
+    ["camera", false, true],
+    ["st_sky", true, true],
+    ["st_hidden", true, false],
+    ["st_world", true, true],
+    ["scene", true, true],
+  ]);
+  state.camera.visible = false;
+  state.scene.visible = false;
+  assert.deepEqual(eyes(buildTimelineModel(state, { ...options, cameraHideable: true })).filter(([id]) => id === "camera" || id === "scene"), [
+    ["camera", true, false],
+    ["scene", true, false],
+  ]);
+
+  // The painting has a row after the Stickers while it has something to show, or is hidden.
+  const ids = (next) => buildTimelineModel(next, options).rows.map((row) => row.id);
+  assert.equal(ids(state).includes(PAINTING_ROW), false);
+  state.painting.mask.strokes.push({ id: "m" });
+  assert.deepEqual(ids(state).slice(-2), [PAINTING_ROW, "scene"]);
+  state.painting.mask.strokes = [];
+  state.painting_visible = false;
+  const paint = buildTimelineModel(state, options).rows.find((row) => row.id === PAINTING_ROW);
+  assert.deepEqual([paint.label, paint.hideable, paint.visible, paint.keyable, paint.clip, paint.keys], ["Paint", true, false, false, null, []]);
+  assert.equal(ids({ ...state, painting_visible: true }).includes(PAINTING_ROW), false);
+  // The Cutout's Timeline shows only its Camera.
+  assert.deepEqual(buildTimelineModel(state, { ...options, stickers: false }).rows.map((row) => row.id), ["camera"]);
+});
+
+test("the eye keeps its place in every row, and only the hideable rows have a button there", () => {
+  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(timeline, /<button\s+v-if="row\.hideable"\s+class="pano-timeline-eye"[\s\S]*?:aria-pressed="row\.visible \? 'true' : 'false'"[\s\S]*?<SvgIcon :icon="row\.visible \? ICON\.eye : ICON\.eye_dashed" \/>\s*<\/button>\s*<span v-else class="pano-timeline-eye" aria-hidden="true" \/>/);
+  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
+  assert.match(css, /\.pano-timeline-eye,\s*\.pano-timeline-open,\s*\.pano-timeline-key \{[^}]*width: 20px;/);
+  // Showing and hiding is one history step and does not stop playback.
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const toggle = editor.slice(editor.indexOf('if (action.type === "toggle-visible") {'), editor.indexOf('if (action.type === "select-row") {'));
+  assert.match(toggle, /releaseHiddenSelection\(\);\s*commitTimelineEdit\(\);/);
+  assert.equal(toggle.includes("stopTimelinePlayback"), false);
+});
+
+test("the inspector puts grouped fields side by side in one row and the others alone with a slider", () => {
+  const param = (key, label) => ({ key, label, value: 0, displayValue: "0" });
+  const rows = inspectorRows([
+    param("position_x", "X"), param("position_y", "Y"), param("position_z", "Z"),
+    param("yaw_deg", "Yaw"), param("pitch_deg", "Pitch"), param("rot_deg", "Roll"),
+    param("hFOV_deg", "H FOV"), param("vFOV_deg", "V FOV"),
+    param("scale", "Scale"), param("opacity", "Opacity"),
+  ]);
+  assert.deepEqual(rows.map((row) => [row.label, row.grouped, row.fields.map((field) => field.short ?? field.label)]), [
+    ["Position", true, ["X", "Y", "Z"]],
+    ["Rotation", true, ["Y", "P", "R"]],
+    ["FOV", true, ["H", "V"]],
+    ["Scale", false, ["Scale"]],
+    ["Opacity", false, ["Opacity"]],
+  ]);
+  assert.deepEqual(rows[1].fields.map((field) => [field.key, field.label, field.drag]), [["yaw_deg", "Yaw", 0.5], ["pitch_deg", "Pitch", 0.5], ["rot_deg", "Roll", 0.5]]);
+  // The grouped fields share three equal columns, whatever their digits.
+  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
+  assert.match(css, /\.pano-field-group-values \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  assert.match(css, /\.pano-field\.pano-field-group input\[type="number"\] \{[^}]*width: 100%;/);
 });
 
 test("the Easing panel shows the selected segments, and Mixed when they differ", () => {
@@ -318,6 +386,7 @@ test("the Frame tab stays in place, disabled with the reason while Panorama Stud
   assert.deepEqual(frameViewButton({ hasShot: false, studio: true }), { disabled: true, tip: "Add a camera to use the Frame view" });
   assert.deepEqual(frameViewButton({ hasShot: true, studio: true }), { disabled: false, tip: null });
   assert.deepEqual(frameViewButton({ hasShot: true, erp: true, studio: true }), { disabled: true, tip: "A 360° camera has no frame" });
+  assert.deepEqual(frameViewButton({ hasShot: false, hidden: true, studio: true }), { disabled: true, tip: "The camera is hidden" });
   // The Cutout keeps its tab as before.
   assert.deepEqual(frameViewButton({ hasShot: false }), { disabled: true, tip: null });
   assert.deepEqual(frameViewButton({ hasShot: true }), { disabled: false, tip: null });
