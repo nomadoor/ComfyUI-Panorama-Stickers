@@ -7,6 +7,7 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { cameraBasis, DEG2RAD } from "../web_src/pano_camera_math.js";
 import { createSharedView, previewNodeCamera } from "../web_src/pano_preview_view.js";
 import { applyViewportCamera } from "../web_src/pano_three_view.js";
+import { readEditorSource } from "./editor_source.mjs";
 
 const source = (name) => readFileSync(new URL(`../web_src/${name}`, import.meta.url), "utf8");
 
@@ -215,7 +216,7 @@ test("no module draws with the previous WebGL renderer", () => {
 });
 
 test("the Stickers and Cutout editors and the read-only Preview modal draw with three.js", () => {
-  const editor = source("pano_editor.js");
+  const editor = readEditorSource();
   assert.match(editor, /const editorView = createEditorView\(/);
   assert.match(editor, /if \(editorView\.failed\) return \{ status: IMAGE_FAILED, detail: "renderer" \}/);
   assert.match(source("components/PanoModal.vue"), /detail === "renderer"/);

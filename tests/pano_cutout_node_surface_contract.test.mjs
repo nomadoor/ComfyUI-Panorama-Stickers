@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { readEditorSource } from "./editor_source.mjs";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -46,7 +47,7 @@ test("node surface reuses the shared aspect picker and existing icon components"
 test("shared aspect picker exposes presets, custom ratio, and the existing modal action contract", async () => {
   const picker = await read("../web_src/components/PanoCutoutAspectPicker.vue");
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
 
   for (const value of ["1:1", "4:3", "3:2", "16:9"]) {
     assert.ok(picker.includes(value), `missing ${value}`);
@@ -181,7 +182,7 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
 
 test("node and modal wheel adapters use the shared direction and Cutout step", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   const controller = await read("../web_src/pano_interaction_controller.js");
 
   assert.match(runtime, /readWheelDirection\(ev\)/);
@@ -195,7 +196,7 @@ test("node and modal wheel adapters use the shared direction and Cutout step", a
 });
 
 test("modal frame view adds shared Shift-roll without removing legacy Alt-roll", async () => {
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
 
   assert.match(editor, /beginCutoutRollGesture\(/);
   assert.match(editor, /updateCutoutRollGesture\(/);
@@ -214,7 +215,7 @@ test("modal frame view adds shared Shift-roll without removing legacy Alt-roll",
 
 test("node surface owns teardown and keeps the Full Editor state barrier", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
 
   assert.match(runtime, /nodeSurfaceSession\?\.destroy\?\.\(\)/);
   assert.match(runtime, /nodeSurfaceVueApp\?\.unmount\?\.\(\)/);

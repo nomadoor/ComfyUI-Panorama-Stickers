@@ -1,0 +1,221 @@
+// Small pure helpers of the Panorama editor: easing, vectors, 2D geometry, colors and node values.
+import { LASSO_CURSOR_SIZE, PAINT_COLOR_SWATCHES, RAD2DEG } from "./constants.js";
+import { clamp, wrapYaw } from "../pano_math.js";
+
+export function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+export function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+export function smoothstep(edge0, edge1, x) {
+  const t = clamp((Number(x || 0) - edge0) / Math.max(edge1 - edge0, 1e-6), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+export function easeInCubic(t) {
+  return t * t * t;
+}
+export function vec3(x, y, z) { return { x, y, z }; }
+export function add(a, b) { return vec3(a.x + b.x, a.y + b.y, a.z + b.z); }
+export function mul(a, s) { return vec3(a.x * s, a.y * s, a.z * s); }
+export function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+export function norm(a) {
+  const l = Math.hypot(a.x, a.y, a.z) || 1e-8;
+  return vec3(a.x / l, a.y / l, a.z / l);
+}
+export function dirToYawPitch(d) {
+  return {
+    yaw: wrapYaw(Math.atan2(d.x, d.z) * RAD2DEG),
+    pitch: clamp(Math.asin(clamp(d.y, -1, 1)) * RAD2DEG, -90, 90),
+  };
+}
+export function pointInPoly(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x; const yi = poly[i].y;
+    const xj = poly[j].x; const yj = poly[j].y;
+    const intersect = ((yi > pt.y) !== (yj > pt.y))
+      && (pt.x < ((xj - xi) * (pt.y - yi)) / ((yj - yi) || 1e-6) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+export function dist2(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+export function distToSegment2(p, a, b) {
+  const abx = Number(b.x || 0) - Number(a.x || 0);
+  const aby = Number(b.y || 0) - Number(a.y || 0);
+  const apx = Number(p.x || 0) - Number(a.x || 0);
+  const apy = Number(p.y || 0) - Number(a.y || 0);
+  const denom = abx * abx + aby * aby;
+  if (denom <= 1e-6) return dist2(p, a);
+  const t = clamp((apx * abx + apy * aby) / denom, 0, 1);
+  const qx = Number(a.x || 0) + abx * t;
+  const qy = Number(a.y || 0) + aby * t;
+  const dx = Number(p.x || 0) - qx;
+  const dy = Number(p.y || 0) - qy;
+  return dx * dx + dy * dy;
+}
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+export function colorToCss(color, alphaOverride = null) {
+  const alpha = alphaOverride == null ? Number(color?.a ?? 1) : Number(alphaOverride);
+  return `rgba(${Math.round(clamp(Number(color?.r ?? 0), 0, 1) * 255)}, ${Math.round(clamp(Number(color?.g ?? 0), 0, 1) * 255)}, ${Math.round(clamp(Number(color?.b ?? 0), 0, 1) * 255)}, ${clamp(alpha, 0, 1)})`;
+}
+export function svgToDataUrl(svg) {
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+let lassoCursorSvgCache = { fillStyle: "", url: "" };
+export function getLassoCursorBackground(fillStyle, borderColorOuter, borderColorInner) {
+  if (lassoCursorSvgCache.url && lassoCursorSvgCache.fillStyle === String(fillStyle || "")) {
+    return lassoCursorSvgCache.url;
+  }
+  const url = svgToDataUrl(`
+<svg xmlns="http://www.w3.org/2000/svg" width="${LASSO_CURSOR_SIZE}" height="${LASSO_CURSOR_SIZE}" viewBox="0 0 24 24" fill="none">
+  <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="${fillStyle}" stroke="${borderColorOuter}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="${fillStyle}" stroke="${borderColorInner}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`);
+  lassoCursorSvgCache = { fillStyle: String(fillStyle || ""), url };
+  return url;
+}
+export function colorsApproximatelyEqual(a, b, eps = 0.015) {
+  if (!a || !b) return false;
+  return Math.abs(Number(a.r ?? 0) - Number(b.r ?? 0)) <= eps
+    && Math.abs(Number(a.g ?? 0) - Number(b.g ?? 0)) <= eps
+    && Math.abs(Number(a.b ?? 0) - Number(b.b ?? 0)) <= eps
+    && Math.abs(Number(a.a ?? 1) - Number(b.a ?? 1)) <= eps;
+}
+export function cloneColor(color) {
+  return {
+    r: clamp(Number(color?.r ?? 0), 0, 1),
+    g: clamp(Number(color?.g ?? 0), 0, 1),
+    b: clamp(Number(color?.b ?? 0), 0, 1),
+    a: clamp(Number(color?.a ?? 1), 0, 1),
+  };
+}
+export function cloneJson(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+export function isPresetPaintColor(color) {
+  return PAINT_COLOR_SWATCHES.some((swatch) => colorsApproximatelyEqual(color, swatch.color));
+}
+export function hsv01ToRgb(h, s, v) {
+  const hue = ((Number(h) % 1) + 1) % 1;
+  const sat = clamp(Number(s), 0, 1);
+  const val = clamp(Number(v), 0, 1);
+  if (sat <= 1e-6) return { r: val, g: val, b: val };
+  const i = Math.floor(hue * 6);
+  const f = hue * 6 - i;
+  const p = val * (1 - sat);
+  const q = val * (1 - f * sat);
+  const t = val * (1 - (1 - f) * sat);
+  switch (i % 6) {
+    case 0: return { r: val, g: t, b: p };
+    case 1: return { r: q, g: val, b: p };
+    case 2: return { r: p, g: val, b: t };
+    case 3: return { r: p, g: q, b: val };
+    case 4: return { r: t, g: p, b: val };
+    default: return { r: val, g: p, b: q };
+  }
+}
+export function rgb01ToHsv(color) {
+  const r = clamp(Number(color?.r ?? 0), 0, 1);
+  const g = clamp(Number(color?.g ?? 0), 0, 1);
+  const b = clamp(Number(color?.b ?? 0), 0, 1);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let h = 0;
+  if (delta > 1e-6) {
+    if (max === r) h = ((g - b) / delta + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / delta + 2) / 6;
+    else h = ((r - g) / delta + 4) / 6;
+  }
+  const s = max <= 1e-6 ? 0 : delta / max;
+  return { h, s, v: max };
+}
+export function formatParamValue(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "0";
+  return Number(n.toFixed(3)).toString();
+}
+
+export function paintingStrokeCount(painting) {
+  const paintCount = Array.isArray(painting?.paint?.strokes) ? painting.paint.strokes.length : 0;
+  const maskCount = Array.isArray(painting?.mask?.strokes) ? painting.mask.strokes.length : 0;
+  return { paintCount, maskCount };
+}
+
+export function paintingCompositeCount(painting) {
+  const { paintCount, maskCount } = paintingStrokeCount(painting);
+  const rasterObjects = Array.isArray(painting?.raster_objects) ? painting.raster_objects : [];
+  let paintRasterCount = 0;
+  let maskRasterCount = 0;
+  rasterObjects.forEach((item) => {
+    if (String(item?.layerKind || "paint") === "mask") maskRasterCount += 1;
+    else paintRasterCount += 1;
+  });
+  return {
+    paintCount,
+    maskCount,
+    paintRasterCount,
+    maskRasterCount,
+    totalPaintCount: paintCount + paintRasterCount,
+    totalMaskCount: maskCount + maskRasterCount,
+  };
+}
+
+export function makePaintId(prefix) {
+  return `${prefix}_${Math.random().toString(16).slice(2, 10)}`;
+}
+
+export function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
+export function getEditorNodeTitle(node, type) {
+  const rawType = String(node?.comfyClass || node?.type || node?.title || "").trim();
+  const titleMap = {
+    PanoramaStickers: "Panorama Stickers",
+    PanoramaStickersNode: "Panorama Stickers",
+    PanoramaStudio: "Panorama Studio",
+    "Panorama Stickers": "Panorama Stickers",
+    PanoramaCutout: "Panorama Cutout",
+    "Panorama Cutout": "Panorama Cutout",
+    PanoramaPreview: "Panorama Preview",
+    "Panorama Preview": "Panorama Preview",
+  };
+  if (titleMap[rawType]) return titleMap[rawType];
+  if (rawType) return rawType;
+  if (type === "cutout") return "Panorama Cutout";
+  return "Panorama Stickers";
+}
+export function uid(prefix) { return `${prefix}_${Math.random().toString(16).slice(2, 10)}`; }
+
+export function parseOutputPresetValue(v, fallback = 2048) {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.round(v);
+  const s = String(v ?? "").trim();
+  if (!s) return fallback;
+  const head = s.includes("x") ? s.split("x", 1)[0].trim() : s;
+  const n = Number(head);
+  return Number.isFinite(n) ? Math.round(n) : fallback;
+}
+
+export function isAutoOutputPresetValue(v) {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "auto" || s === "bg" || s === "background";
+}
+
+export function getMediaWidthForSizing(media) {
+  const width = Number(media?.naturalWidth || media?.videoWidth || media?.width || 0);
+  return Number.isFinite(width) && width > 0 ? Math.round(width) : null;
+}
+
+export function logPaintDebug(phase, payload) {
+  void phase;
+  void payload;
+  return;
+}

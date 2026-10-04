@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DRAW_REASON, createFrameScheduler } from "../web_src/pano_frame_scheduler.js";
+import { readEditorSource } from "./editor_source.mjs";
 
 // A fake browser frame clock: runFrame() runs the frames asked for so far, as one animation frame.
 function createFrames() {
@@ -193,7 +194,7 @@ test("only a STATE request counts a state change; the other reasons leave the re
 test("a Keyframe drag's batched view task counts a state change on each frame it runs", async () => {
   const { readFileSync } = await import("node:fs");
   const { createFrameBatch } = await import("../web_src/pano_frame_batch.js");
-  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const editor = readEditorSource();
   // The editor's view task asks with STATE (pano_editor.js dragFrames).
   const tasks = editor.slice(editor.indexOf("const dragFrames = createFrameBatch({"), editor.indexOf("\n  });\n", editor.indexOf("const dragFrames = createFrameBatch({")));
   assert.match(tasks, /view: \(\) => \{\s*syncCutoutShot\(\);\s*requestDraw\(\{ localOnly: true, reason: DRAW_REASON\.STATE \}\);\s*\}/);

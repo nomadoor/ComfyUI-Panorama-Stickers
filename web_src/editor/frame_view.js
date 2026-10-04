@@ -1,0 +1,342 @@
+// The Frame view: looking through the Camera's shot, its gate in the UI-safe rect, and moving the shot by
+// panning, dragging and the wheel.
+import {
+  contextHalfExtentsPx,
+  fitFocalPx,
+  gateRectFromFocal,
+  stepCutoutFovPairByWheel,
+} from "../pano_cutout_view_math.js";
+import { frameViewContext } from "../pano_editor_view.js";
+import { clamp, wrapYaw } from "../pano_math.js";
+import {
+  DEFAULT_DISTANCE,
+  navigationTarget,
+  orbitView,
+  panDepth,
+  panView,
+  reuseWheelPick,
+  zoomView,
+} from "../pano_space.js";
+import {
+  FLOATING_RIGHT_RESERVED_PX,
+  FRAME_GATE_EDGE_GAP_PX,
+  FRAME_GATE_OCCUPANCY,
+  FRAME_GATE_SIDE_GAP_PX,
+} from "./constants.js";
+
+export function createFrameView(deps) {
+  const {
+    cameraV2, canvas, editor, editorView, floatingRightEl, floatingTopEl, frameRailEl, paintDockEl, readOnly,
+    runtime, shotEditor, toolRailEl, uiState, videoTransportEl,
+  } = deps;
+  // Bound by connect() to the other modules and showEditor.
+  let applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
+    hasSpaceContent, hideTooltip, invalidateLivePaintPreviewCaches, pushHistory, requestDraw, shotViewCamera,
+    spaceScale, spaceViewState, syncViewToggleState, updateCursor, updateSidePanel;
+
+  let frameWheel = null;
+
+  // The Frame view ends while it shows Panorama Studio's shot (its Camera went, or shoots a 360-degree ERP,
+  // #89): the panorama view looks where the shot looked, and in 6DoF stands where it stood, so the view does
+  // not jump.
+  function leaveFrameView(shot) {
+    editor.mode = "pano";
+    if (!shot) return;
+    cancelViewTransition();
+    const distance = spaceViewState().distance;
+    editor.viewYaw = wrapYaw(shot.yaw_deg);
+    editor.viewPitch = clamp(shot.pitch_deg, -89.9, 89.9);
+    editor.viewFov = clamp(shot.hFOV_deg, 35, 140);
+    if (editor.spaceMode === "6dof") applySpaceMode({ mode: "6dof", position: [...shot.position], moved: true });
+    editor.viewDistance = distance;
+    runtime.backgroundDirty = true;
+  }
+
+  function measureFrameSafeRect() {
+    if (!canvas) return null;
+    const canvasBounds = canvas.getBoundingClientRect?.();
+    const scaleX = Number(canvasBounds?.width || 0) > 0 ? canvas.width / canvasBounds.width : 1;
+    const scaleY = Number(canvasBounds?.height || 0) > 0 ? canvas.height / canvasBounds.height : 1;
+    runtime.frameCanvasScale = Math.min(scaleX, scaleY);
+    let left = 24;
+    let top = 24;
+    const right = Math.max(left + 1, canvas.width - 24);
+    let bottom = Math.max(top + 1, canvas.height - 24);
+    const railBounds = toolRailEl?.getBoundingClientRect?.();
+    const frameRailBounds = frameRailEl?.getBoundingClientRect?.();
+    let reservedSide = 24;
+    if (railBounds && canvasBounds && railBounds.width > 0 && railBounds.height > 0) {
+      reservedSide = Math.max(reservedSide, (railBounds.right - canvasBounds.left) * scaleX + FRAME_GATE_SIDE_GAP_PX);
+    }
+    if (frameRailBounds && canvasBounds && frameRailBounds.width > 0 && frameRailBounds.height > 0
+      && uiState.frameRail?.visible === true) {
+      reservedSide = Math.max(reservedSide, (canvasBounds.right - frameRailBounds.left) * scaleX + FRAME_GATE_SIDE_GAP_PX);
+    }
+    left = Math.max(left, reservedSide);
+    const symmetricRight = Math.min(right, canvas.width - reservedSide);
+    let reservedVertical = 24;
+    const topBounds = floatingTopEl?.getBoundingClientRect?.();
+    if (topBounds && canvasBounds && topBounds.width > 0 && topBounds.height > 0) {
+      reservedVertical = Math.max(reservedVertical, (topBounds.bottom - canvasBounds.top) * scaleY + FRAME_GATE_EDGE_GAP_PX);
+    }
+    // Only measure chrome whose size is independent of the active shot. The
+    // gate scale is derived from this rect, so anything shot-dependent here
+    // closes a feedback loop (shot -> layout -> safe rect -> scale -> the ERP
+    // visibly zooming whenever the aspect changes). `.pano-floating-right`
+    // hosts the cutout camera preview, whose box follows the shot aspect, so it
+    // is reserved by its fixed collapsed height instead of its measured one.
+    [paintDockEl, videoTransportEl].forEach((element) => {
+      if (!element || !canvasBounds) return;
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) <= 0) return;
+      const bounds = element.getBoundingClientRect?.();
+      if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+      reservedVertical = Math.max(reservedVertical, (canvasBounds.bottom - bounds.top) * scaleY + FRAME_GATE_EDGE_GAP_PX);
+    });
+    if (floatingRightEl && canvasBounds) {
+      const style = getComputedStyle(floatingRightEl);
+      const visible = style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0;
+      if (visible) {
+        reservedVertical = Math.max(reservedVertical, (FLOATING_RIGHT_RESERVED_PX + FRAME_GATE_EDGE_GAP_PX) * scaleY);
+      }
+    }
+    top = Math.max(top, reservedVertical);
+    bottom = Math.max(top + 1, Math.min(bottom, canvas.height - reservedVertical));
+    return {
+      x: left,
+      y: top,
+      w: Math.max(1, symmetricRight - left),
+      h: Math.max(1, bottom - top),
+    };
+  }
+
+  // The presentation scale is a pure function of the UI-safe rect and the shot:
+  // the gate is always the largest rectangle of the shot's aspect that fits.
+  // There is no stored scale, so nothing can drift, ratchet, or go stale.
+  //
+  // Two useful properties fall out of this and need no special-case code:
+  //   - Aspect changes hold vFOV, and every supported aspect is height-bound in
+  //     a landscape viewport, so the fit is unchanged and the ERP does not move.
+  //   - Wheel scales both tangents by k, which scales the fit by 1/k, so the
+  //     gate keeps its screen size while the ERP behind it zooms.
+  function getFrameViewLayout(shot = getActiveCutoutShot()) {
+    if (!shot || !canvas) return null;
+    const safeRect = runtime.frameSafeRect || {
+      x: 24,
+      y: 24,
+      w: Math.max(1, canvas.width - 48),
+      h: Math.max(1, canvas.height - 48),
+    };
+    return gateRectFromFocal(safeRect, shot, FRAME_GATE_OCCUPANCY * fitFocalPx(safeRect, shot));
+  }
+
+  function getFrameViewRect(shot = getActiveCutoutShot()) {
+    const layout = getFrameViewLayout(shot);
+    return layout ? { x: layout.x, y: layout.y, w: layout.w, h: layout.h } : null;
+  }
+
+  function supportsFramePainting() {
+    return shotEditor && !!getActiveCutoutShot();
+  }
+
+  function zoomFrameViewAt(anchor, direction) {
+    const shot = getActiveCutoutShot();
+    if (!shot || shot.locked === true) return false;
+    const zoomingOut = Number(direction) > 0;
+    const next = stepCutoutFovPairByWheel(shot, direction);
+    if (!next) return false;
+    // The gate keeps its screen size on its own: scaling both tangents by k
+    // scales the aspect fit by 1/k, so no presentation compensation is needed.
+    // The ERP behind the gate zooms instead, which is the intent.
+    //
+    // The one hard stop is the projection itself: a rectilinear context can no
+    // longer cover the canvas once it nears 90 degrees off-axis, and pushing
+    // past that would reopen dark margins. Refuse the step there.
+    if (zoomingOut) {
+      const projectedFocal = FRAME_GATE_OCCUPANCY * fitFocalPx(
+        runtime.frameSafeRect || { w: canvas.width, h: canvas.height },
+        next,
+      );
+      const reach = contextHalfExtentsPx({ width: canvas.width, height: canvas.height }, projectedFocal);
+      if (reach.halfW < canvas.width * 0.5 - 1e-6 || reach.halfH < canvas.height * 0.5 - 1e-6) return false;
+    }
+    shot.hFOV_deg = next.hFOV_deg;
+    shot.vFOV_deg = next.vFOV_deg;
+    void anchor;
+    scheduleFrameWheelCommit();
+    updateSidePanel();
+    return true;
+  }
+
+  // A run of wheel steps in the Frame view is one Undo step, taken once the wheel rests.
+  function scheduleFrameWheelCommit() {
+    editor.frameWheelChanged = true;
+    if (editor.frameWheelCommitTimer) window.clearTimeout(editor.frameWheelCommitTimer);
+    editor.frameWheelCommitTimer = window.setTimeout(() => {
+      editor.frameWheelCommitTimer = 0;
+      if (!editor.frameWheelChanged) return;
+      editor.frameWheelChanged = false;
+      pushHistory();
+      commitAndRefreshNode();
+      updateSidePanel();
+    }, 180);
+  }
+
+  // --- The Frame view of PanoramaCutoutNode with World content (#77): moving the view moves the Camera
+  // itself, as Blender's camera locked to the view. The drags of the 3D view controls orbit and pan it
+  // (pano_view_controls.js, pano_space.js), the wheel moves it toward the point under the pointer, and a
+  // left drag still turns it where it stands, as in the Frame view of an ERP.
+  function isFreeFrameView() {
+    return cameraV2 && editor.mode === "frame" && hasSpaceContent();
+  }
+
+  // The Frame view's context (frameViewContext): the canvas rect drawn through the shot and the shot that
+  // spans it, or null without a shot.
+  function frameContext() {
+    const shot = getActiveCutoutShot();
+    const layout = getFrameViewLayout(shot);
+    return shot && layout ? frameViewContext(shot, layout, { width: canvas.width, height: canvas.height }) : null;
+  }
+
+  // The pivot distance of the Frame view's moves: the content's size, whatever moves came before, so a
+  // pan of the same length moves the Camera the same way after any zoom (like a Blender view locked to
+  // its camera). Keyframes and playback move the Camera too, so a pivot left by the last move would not
+  // stay where that move put it anyway.
+  function frameViewDistance() {
+    return contentSphere()?.radius || DEFAULT_DISTANCE;
+  }
+
+  // The Camera as a space view (pano_space.js) over the context rect.
+  function frameSpaceView(context) {
+    const { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg } = context.shot;
+    return { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg, distance: frameViewDistance() };
+  }
+
+  // The World point of the content under canvas point p in the Frame view that an orbit or a wheel step
+  // works on, or null (also over a SPLAT's box, pano_three_view.js pickSurface).
+  function pickFrame(context, p) {
+    const { rect } = context;
+    return editorView.pickSurface(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
+  }
+
+  // The point a Frame view orbit or wheel step at canvas point p works on: the content under it, else the
+  // pivot.
+  function frameTarget(context, view, p) {
+    return navigationTarget(view, pickFrame(context, p), null, spaceScale());
+  }
+
+  function frameViewKey(context) {
+    return JSON.stringify([frameSpaceView(context), context.rect]);
+  }
+
+  function moveCutoutShot(view) {
+    const shot = getActiveCutoutShot();
+    shot.position = [...view.position];
+    shot.yaw_deg = view.yaw_deg;
+    shot.pitch_deg = view.pitch_deg;
+  }
+
+  // A drag that turns the Camera where it stands (the Frame view's left drag).
+  function startPanFrame(p, pointerId) {
+    const shot = getActiveCutoutShot();
+    if (!shot || readOnly || shot.locked === true) return;
+    editor.interaction = {
+      kind: "pan_frame", shot, last: p,
+      start: { yaw_deg: Number(shot.yaw_deg || 0), pitch_deg: Number(shot.pitch_deg || 0) },
+      changed: false,
+    };
+    updateCursor(p);
+    canvas.setPointerCapture(pointerId);
+  }
+
+  function startFrameDrag(action, p, pointerId) {
+    const context = frameContext();
+    if (!context || readOnly) return;
+    const view = frameSpaceView(context);
+    editor.interaction = action === "orbit"
+      ? { kind: "frame_orbit", last: p, pivot: frameTarget(context, view, p), changed: false }
+      : { kind: "frame_pan", last: p, depth: panDepth(view, spaceScale()), changed: false };
+    updateCursor(p);
+    canvas.setPointerCapture(pointerId);
+  }
+
+  function dragFrame(it, p) {
+    const context = frameContext();
+    if (!context) return;
+    const view = frameSpaceView(context);
+    const dx = p.x - it.last.x;
+    const dy = p.y - it.last.y;
+    moveCutoutShot(it.kind === "frame_pan"
+      ? panView(view, dx, dy, context.rect.w, context.rect.h, it.depth)
+      : orbitView(view, dx, dy, canvas.height, it.pivot));
+    it.changed = it.changed || dx !== 0 || dy !== 0;
+    it.last = p;
+    requestDraw({ localOnly: true, cause: "frame_view" });
+  }
+
+  function zoomFrameAt(p, direction) {
+    const context = frameContext();
+    if (!context || readOnly) return;
+    const view = frameSpaceView(context);
+    // A step reuses the pick of an earlier one as reuseWheelPick() allows, like zoomSpaceAt().
+    const now = performance.now();
+    const next = { x: p.x, y: p.y, time: now, key: editorView.contentRevision(), view: frameViewKey(context) };
+    if (!reuseWheelPick(frameWheel, next)) {
+      const hit = pickFrame(context, p);
+      frameWheel = { ...next, cost: performance.now() - now, hit };
+    }
+    moveCutoutShot(zoomView(view, navigationTarget(view, frameWheel.hit, null, spaceScale()), direction, spaceScale()));
+    frameWheel.view = frameViewKey(frameContext() ?? context);
+    frameWheel.wheelTime = now;
+    scheduleFrameWheelCommit();
+    updateSidePanel();
+    requestDraw({ localOnly: true, cause: "frame_view" });
+  }
+
+  function flushFrameWheelCommit() {
+    if (editor.frameWheelCommitTimer) {
+      window.clearTimeout(editor.frameWheelCommitTimer);
+      editor.frameWheelCommitTimer = 0;
+    }
+    if (!editor.frameWheelChanged) return false;
+    editor.frameWheelChanged = false;
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    return true;
+  }
+
+  function cancelFrameCameraGesture() {
+    const interaction = editor.interaction;
+    if (!interaction?.shot || !interaction.start
+      || (interaction.kind !== "pan_frame" && interaction.kind !== "roll_frame")) return false;
+    const cancelledRoll = interaction.kind === "roll_frame";
+    if (interaction.kind === "pan_frame") {
+      interaction.shot.yaw_deg = interaction.start.yaw_deg;
+      interaction.shot.pitch_deg = interaction.start.pitch_deg;
+    } else {
+      interaction.shot.roll_deg = interaction.start.roll_deg;
+    }
+    if (cancelledRoll) hideTooltip();
+    editor.interaction = null;
+    invalidateLivePaintPreviewCaches();
+    syncViewToggleState();
+    updateSidePanel();
+    updateCursor(editor.pointerPos);
+    requestDraw({ localOnly: true });
+    return true;
+  }
+
+  return {
+    connect(api) {
+      ({
+        applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
+        hasSpaceContent, hideTooltip, invalidateLivePaintPreviewCaches, pushHistory, requestDraw, shotViewCamera,
+        spaceScale, spaceViewState, syncViewToggleState, updateCursor, updateSidePanel,
+      } = api);
+    },
+    leaveFrameView, measureFrameSafeRect, getFrameViewLayout, getFrameViewRect, supportsFramePainting,
+    zoomFrameViewAt, isFreeFrameView, frameContext, frameViewDistance, frameSpaceView, frameTarget,
+    startPanFrame, startFrameDrag, dragFrame, zoomFrameAt, flushFrameWheelCommit, cancelFrameCameraGesture,
+  };
+}

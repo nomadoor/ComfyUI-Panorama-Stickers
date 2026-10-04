@@ -5,9 +5,10 @@ import test from "node:test";
 import { diagnostics } from "../web_src/pano_diagnostics.js";
 import { createEditorView } from "../web_src/pano_editor_view.js";
 import { sameValue, visibleWindow } from "../web_src/pano_three_view.js";
+import { readEditorSource } from "./editor_source.mjs";
 
 const source = (name) => readFileSync(new URL(`../web_src/${name}`, import.meta.url), "utf8");
-const editorSource = source("pano_editor.js");
+const editorSource = readEditorSource();
 const editorFunction = (name) => editorSource.slice(editorSource.indexOf(`  function ${name}(`), editorSource.indexOf("\n  }\n", editorSource.indexOf(`  function ${name}(`)));
 
 // A three.js view module whose views record what they are asked to do.

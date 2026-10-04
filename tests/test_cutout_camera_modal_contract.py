@@ -1,13 +1,15 @@
 from pathlib import Path
 import unittest
 
+from editor_source import editor_source
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestCutoutCameraModalContract(unittest.TestCase):
     def test_cutout_editor_draws_frame_and_camera_preview_with_the_editor_view(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         self.assertNotIn("pano_cutout_camera", editor_js)
         self.assertIn('uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();', editor_js)
         # The Frame view and the camera preview draw on the stage's own three.js canvas.
@@ -15,7 +17,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn('drawEditorViewShot({ x: 0, y: backgroundCanvas.height - size.height, w: size.width, h: size.height }, shot, "camera_preview")', editor_js)
 
     def test_cutout_frame_entry_points_are_not_stubbed(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         self.assertNotIn("function isShotItem(item) {\n    return false;\n  }", editor_js)
         self.assertNotIn("function getActiveCutoutShot() {\n    if (type !== \"cutout\") return null;\n    return null;\n  }", editor_js)
         self.assertNotIn("function addCutoutFrame() {\n    return;\n  }", editor_js)
@@ -85,7 +87,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn('variant = "frame-rail"', editor_js)
 
     def test_panorama_view_is_never_moved_by_tab_switch(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         view_branch = editor_js.split('const viewTarget = ev.target.closest("[data-view]");', 1)[1]
         view_branch = view_branch.split("const actionTarget", 1)[0]
         # A tab switch is navigation, not an edit; a round trip must be a no-op.
@@ -93,7 +95,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
             self.assertNotIn(forbidden, view_branch)
 
     def test_offscreen_frame_indicator_is_not_reintroduced(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         modal_vue = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
         # Look At Frame already provides this action; do not duplicate it.
         self.assertNotIn("offscreenFrameIndicator", editor_js)
@@ -102,7 +104,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertFalse((REPO_ROOT / "web_src" / "components" / "PanoOffscreenFrameIndicator.vue").exists())
 
     def test_panorama_passepartout_does_not_reuse_stale_corners(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         body = editor_js.split("function drawCutoutPanoPassepartout", 1)[1]
         body = body.split("function ", 1)[0]
         # Stale corners would leave a bright hole when the live frame is offscreen.
@@ -110,7 +112,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("fadingOut", body)
 
     def test_frame_safe_rect_is_independent_of_the_active_shot(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         measure_body = editor_js.split("function measureFrameSafeRect", 1)[1].split("function getFrameViewLayout", 1)[0]
         # The gate scale is derived from the safe rect, so measuring any chrome
         # whose size follows the shot closes a feedback loop and makes the ERP
@@ -121,7 +123,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn('uiState.cameraPreview.visible = editor.mode !== "frame" && cameraPreviewShown();', editor_js)
 
     def test_vue_shell_hosts_camera_preview(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         modal_vue = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
         frame_rail_vue = (REPO_ROOT / "web_src" / "components" / "PanoFrameRail.vue").read_text(encoding="utf-8")
         roll_knob_vue = (REPO_ROOT / "web_src" / "components" / "PanoFrameRollKnob.vue").read_text(encoding="utf-8")

@@ -12,6 +12,7 @@ import {
   createDiagnostics,
 } from "../web_src/pano_diagnostics.js";
 import { createPanoEditorExtension } from "../web_src/pano_editor_extension.js";
+import { EDITOR_FILES } from "./editor_source.mjs";
 
 function fakeElement(tag) {
   const listeners = new Map();
@@ -364,7 +365,8 @@ test("the setting is off by default and the export command is in the Extensions 
 
 test("the suite makes its canvases and VIDEO elements through the diagnostics factories", () => {
   const files = readdirSync(new URL("../web_src/", import.meta.url))
-    .filter((name) => name.endsWith(".js") && name !== "pano_diagnostics.js");
+    .filter((name) => name.endsWith(".js") && name !== "pano_diagnostics.js")
+    .concat(EDITOR_FILES.filter((name) => name.startsWith("editor/")));
   assert.ok(files.includes("pano_editor.js"));
   for (const name of files) {
     const source = readFileSync(new URL(`../web_src/${name}`, import.meta.url), "utf8");
