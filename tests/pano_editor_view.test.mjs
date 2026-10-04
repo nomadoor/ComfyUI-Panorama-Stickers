@@ -508,10 +508,13 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   assert.ok(down.indexOf("const spaceAction") < down.indexOf("if (e.button === 1) {"));
   assert.match(down, /if \(spaceAction\) \{\s*e\.preventDefault\(\);\s*startSpaceDrag\(spaceAction, p, e\.pointerId\);\s*return;\s*\}\s*if \(\(freeSpace \|\| freeFrame\) && e\.button !== 0\) \{\s*e\.preventDefault\(\);\s*return;/);
   assert.doesNotMatch(down, /isSpaceView\(\)/);
-  // An orbit turns about the point under the pointer; a pan moves at its depth.
+  // An orbit turns about the point under the pointer (off a SPLAT's box); a pan moves at the pivot's
+  // depth, whatever is under the pointer.
   const start = editor.slice(editor.indexOf("  function startSpaceDrag(action, p, pointerId) {"));
-  assert.match(start, /const target = spaceTarget\(spaceViewState\(\), pickSpace\(p\)\);\s*editor\.interaction = action === "orbit"\s*\? \{ kind: "space_orbit", last: p, pivot: target \}\s*: \{ kind: "space_pan", last: p, depth: depthOf\(spaceViewState\(\), target\) \};/);
-  assert.match(editor, /return editorView\.pick\(currentSpaceCamera\(\), p\.x, p\.y, canvas\.width, canvas\.height\);/);
+  assert.match(start, /const view = spaceViewState\(\);\s*editor\.interaction = action === "orbit"\s*\? \{ kind: "space_orbit", last: p, pivot: spaceTarget\(view, pickSpace\(p\)\) \}\s*: \{ kind: "space_pan", last: p, depth: panDepth\(view, spaceScale\(\)\) \};/);
+  assert.match(editor, /function pickSpace\(p\) \{\s*return editorView\.pickSurface\(currentSpaceCamera\(\), p\.x, p\.y, canvas\.width, canvas\.height\);/);
+  // A new world Sticker still goes on what is at the center of the view, a SPLAT's box included.
+  assert.match(editor, /const hit = isSpaceView\(\) \? editorView\.pick\(currentSpaceCamera\(\), center\.x, center\.y, canvas\.width, canvas\.height\) : null;/);
   assert.match(editor, /return navigationTarget\(view, hit, editor\.viewMoved \? null : contentSphere\(\)\?\.center, spaceScale\(\)\);/);
   const move = editor.slice(editor.indexOf('    if (it.kind === "space_pan" || it.kind === "space_orbit") {'));
   assert.match(move, /\? panView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.width, canvas\.height, it\.depth\)\s*: orbitView\(view, p\.x - it\.last\.x, p\.y - it\.last\.y, canvas\.height, it\.pivot\)\);/);
@@ -626,6 +629,10 @@ test("the three.js view picks the World content it last drew, not its guides", (
   assert.match(view, /if \(!\(opacity > 0\)\) continue;\s*if \(content\.splat\) pickBoxes\.push\(\{ object: content\.object, box: content\.box, stickerId: content\.stickerId \}\);\s*else pickable\.push\(\{ object: content\.group, stickerId: content\.stickerId, plane: false \}\);/);
   assert.match(view, /if \(!\(layer\.opacity > 0\)\) continue;\s*pickable\.push\(\{ object: mesh, stickerId: layer\.id, plane: true \}\);/);
   assert.match(view, /return pickAt\(camera, x, y, width, height\)\?\.point \?\? null;/);
+  // A SPLAT's box is marked, and the navigation pick leaves it out (pickSurface).
+  assert.match(view, /if \(depth !== null\) hits\.push\(\{ depth, stickerId, box: true \}\);/);
+  assert.match(view, /box: nearest\.box === true,/);
+  assert.match(view, /return hit && !hit\.box \? hit\.point : null;/);
   assert.match(view, /return pickPass\(world, pickable, pickMaterial, /);
   // A failed draw switches from the float target to RGBA8, then gives up, and is not kept as a pick.
   assert.match(view, /if \(float\) pickFloat = false;\s*else pickFailed = true;\s*return false;/);
@@ -673,7 +680,7 @@ test("in the space view a press picks the gizmo first, then a world Sticker, the
   // Selecting does not stop playback; a gizmo drag stops it on its first move and starts over from that frame.
   assert.match(editor, /if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
   const restart = editor.slice(editor.indexOf("  function restartEditAtStoppedFrame(it, down) {"));
-  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "frame_orbit" \|\| it\.kind === "frame_pan"\) \{[\s\S]*?\n    \}\n\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = state\.stickers\.find\(\(item\) => item\.id === it\.id\);\s*if \(it\.camera\) it\.base = cutoutCamera\(\);\s*else if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
+  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "frame_pan"\) return;\s*if \(it\.kind === "frame_orbit"\) \{[\s\S]*?\n    \}\n\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = state\.stickers\.find\(\(item\) => item\.id === it\.id\);\s*if \(it\.camera\) it\.base = cutoutCamera\(\);\s*else if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
   // The drag writes the gizmo mode's Lane by the recording rule, and a changed drag is one Undo step.
   assert.match(editor, /setWorldStickerTransform\(sticker, editor\.frame, gizmoDragLanes\(it\.mode, it\.base, it\.start, moved\)\);/);
   assert.match(editor, /if \(ended\.changed\) \{\s*pushHistory\(\);\s*commitAndRefreshNode\(\);/);
@@ -741,8 +748,15 @@ test("PanoramaCutoutNode's editor edits its Camera: the shot follows it, the Fra
   // In 6DoF the gizmo writes the Camera's Lane of its mode by the recording rule.
   assert.match(editor, /setLaneValue\(state\.camera, name, editor\.frame, value\)/);
   assert.match(editor, /if \(cameraV2 && isShotItem\(item\) && isFreeSpaceView\(\)\) return \{ visible: false \};/);
-  // A Frame view drag that stops playback picks its point again on the stopped frame, as a gizmo drag takes its base.
-  assert.match(editor, /if \(it\.kind === "frame_orbit" \|\| it\.kind === "frame_pan"\) \{[\s\S]*?const target = frameTarget\(context, view, down\);\s*if \(it\.kind === "frame_orbit"\) it\.pivot = target;\s*else it\.depth = depthOf\(view, target\);/);
+  // A Frame view orbit that stops playback picks its point again on the stopped frame, as a gizmo drag
+  // takes its base; a pan keeps its depth, which does not depend on where the Camera is.
+  assert.match(editor, /if \(it\.kind === "frame_orbit"\) \{[\s\S]*?if \(context\) it\.pivot = frameTarget\(context, frameSpaceView\(context\), down\);/);
+  // A Frame view pan moves at the pivot's depth, the content's size whatever the zooms before, and an
+  // orbit or a wheel step works on the point under the pointer off a SPLAT's box.
+  assert.match(editor, /: \{ kind: "frame_pan", last: p, depth: panDepth\(view, spaceScale\(\)\), changed: false \};/);
+  assert.match(editor, /function frameViewDistance\(\) \{\s*return contentSphere\(\)\?\.radius \|\| DEFAULT_DISTANCE;\s*\}/);
+  assert.doesNotMatch(editor, /frameDistance/);
+  assert.match(editor, /return editorView\.pickSurface\(shotViewCamera\(context\.shot\), p\.x - rect\.x, p\.y - rect\.y, rect\.w, rect\.h\);/);
   // Closing the editor without an edit leaves state_json as it is, though the editor rebased it.
   assert.match(editor, /sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)/);
 });

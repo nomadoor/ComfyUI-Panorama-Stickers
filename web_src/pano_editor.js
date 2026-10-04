@@ -81,7 +81,6 @@ import {
   cameraFrustumSegments,
   cameraTrajectory,
   contentPoints,
-  depthOf,
   facingRotation,
   frameSphere,
   frameView,
@@ -92,6 +91,7 @@ import {
   navigationTarget,
   newWorldStickerTransform,
   orbitView,
+  panDepth,
   panView,
   placedCamera,
   planeCorners,
@@ -1052,8 +1052,6 @@ async function showEditor(node, type, options = {}) {
     gizmoMode: "translate",
     // The gizmo handle under the pointer, or null.
     gizmoAxis: null,
-    // PanoramaCutoutNode's Frame view with World content: the pivot distance its last move left (#77).
-    frameDistance: null,
     panelWasEnabled: false,
     // The view moving to another over a short time (pano_view_transition.js), or null.
     viewTransition: null,
@@ -3074,12 +3072,13 @@ async function showEditor(node, type, options = {}) {
     transitionView(frameView(view, sphere, canvas.width, canvas.height));
   }
 
-  // The World point of the content under canvas point p in the frame on screen, or null.
+  // The World point of the content under canvas point p in the frame on screen that an orbit or a wheel
+  // step works on, or null (also over a SPLAT's box, pano_three_view.js pickSurface).
   function pickSpace(p) {
-    return editorView.pick(currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
+    return editorView.pickSurface(currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
   }
 
-  // The point a 6DoF drag or wheel step works on (pano_space.js navigationTarget): the content hit under
+  // The point a 6DoF orbit or wheel step works on (pano_space.js navigationTarget): the content hit under
   // the pointer, else the content's center until the view moves, else the pivot.
   function spaceTarget(view, hit) {
     return navigationTarget(view, hit, editor.viewMoved ? null : contentSphere()?.center, spaceScale());
@@ -3104,12 +3103,12 @@ async function showEditor(node, type, options = {}) {
     spaceWheel.wheelTime = now;
   }
 
-  // Starts a 6DoF orbit or pan at canvas point p, about or with the point under it.
+  // Starts a 6DoF orbit at canvas point p about the point under it, or a pan at the pivot's depth.
   function startSpaceDrag(action, p, pointerId) {
-    const target = spaceTarget(spaceViewState(), pickSpace(p));
+    const view = spaceViewState();
     editor.interaction = action === "orbit"
-      ? { kind: "space_orbit", last: p, pivot: target }
-      : { kind: "space_pan", last: p, depth: depthOf(spaceViewState(), target) };
+      ? { kind: "space_orbit", last: p, pivot: spaceTarget(view, pickSpace(p)) }
+      : { kind: "space_pan", last: p, depth: panDepth(view, spaceScale()) };
     updateCursor(p);
     canvas.setPointerCapture(pointerId);
   }
@@ -6801,7 +6800,7 @@ async function showEditor(node, type, options = {}) {
   // the center of the view stands for the pointer.
   function newWorldStickerPlace() {
     const center = { x: canvas.width / 2, y: canvas.height / 2 };
-    const hit = isSpaceView() ? pickSpace(center) : null;
+    const hit = isSpaceView() ? editorView.pick(currentSpaceCamera(), center.x, center.y, canvas.width, canvas.height) : null;
     return newWorldStickerTransform(spaceViewState(), hit, contentSphere());
   }
 
@@ -7894,9 +7893,12 @@ async function showEditor(node, type, options = {}) {
     return shot && layout ? frameViewContext(shot, layout, { width: canvas.width, height: canvas.height }) : null;
   }
 
-  // The pivot distance of the Frame view's moves: where the last one left it, else the content's size.
+  // The pivot distance of the Frame view's moves: the content's size, whatever moves came before, so a
+  // pan of the same length moves the Camera the same way after any zoom (like a Blender view locked to
+  // its camera). Keyframes and playback move the Camera too, so a pivot left by the last move would not
+  // stay where that move put it anyway.
   function frameViewDistance() {
-    return editor.frameDistance || contentSphere()?.radius || DEFAULT_DISTANCE;
+    return contentSphere()?.radius || DEFAULT_DISTANCE;
   }
 
   // The Camera as a space view (pano_space.js) over the context rect.
@@ -7905,13 +7907,15 @@ async function showEditor(node, type, options = {}) {
     return { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg, distance: frameViewDistance() };
   }
 
-  // The World point of the content under canvas point p in the Frame view, or null.
+  // The World point of the content under canvas point p in the Frame view that an orbit or a wheel step
+  // works on, or null (also over a SPLAT's box, pano_three_view.js pickSurface).
   function pickFrame(context, p) {
     const { rect } = context;
-    return editorView.pick(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
+    return editorView.pickSurface(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
   }
 
-  // The point a Frame view move at canvas point p works on: the content under it, else the pivot.
+  // The point a Frame view orbit or wheel step at canvas point p works on: the content under it, else the
+  // pivot.
   function frameTarget(context, view, p) {
     return navigationTarget(view, pickFrame(context, p), null, spaceScale());
   }
@@ -7925,7 +7929,6 @@ async function showEditor(node, type, options = {}) {
     shot.position = [...view.position];
     shot.yaw_deg = view.yaw_deg;
     shot.pitch_deg = view.pitch_deg;
-    editor.frameDistance = view.distance;
   }
 
   // A drag that turns the Camera where it stands (the Frame view's left drag).
@@ -7945,10 +7948,9 @@ async function showEditor(node, type, options = {}) {
     const context = frameContext();
     if (!context || readOnly) return;
     const view = frameSpaceView(context);
-    const target = frameTarget(context, view, p);
     editor.interaction = action === "orbit"
-      ? { kind: "frame_orbit", last: p, pivot: target, changed: false }
-      : { kind: "frame_pan", last: p, depth: depthOf(view, target), changed: false };
+      ? { kind: "frame_orbit", last: p, pivot: frameTarget(context, view, p), changed: false }
+      : { kind: "frame_pan", last: p, depth: panDepth(view, spaceScale()), changed: false };
     updateCursor(p);
     canvas.setPointerCapture(pointerId);
   }
@@ -9689,14 +9691,11 @@ async function showEditor(node, type, options = {}) {
   function restartEditAtStoppedFrame(it, down) {
     if (!stateV2 || !playback.playing) return;
     playback.stop();
-    if (it.kind === "frame_orbit" || it.kind === "frame_pan") {
-      // The Camera moved with playback: the point the drag works on is picked again from where it stopped.
+    if (it.kind === "frame_pan") return;
+    if (it.kind === "frame_orbit") {
+      // The Camera moved with playback: the point the orbit turns about is picked again from where it stopped.
       const context = frameContext();
-      if (!context) return;
-      const view = frameSpaceView(context);
-      const target = frameTarget(context, view, down);
-      if (it.kind === "frame_orbit") it.pivot = target;
-      else it.depth = depthOf(view, target);
+      if (context) it.pivot = frameTarget(context, frameSpaceView(context), down);
       return;
     }
     if (it.kind === "world_gizmo") {

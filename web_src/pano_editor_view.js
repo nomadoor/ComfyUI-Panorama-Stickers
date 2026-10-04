@@ -241,6 +241,10 @@ export function createEditorView({ onReady, onFailed, onUpdate = () => {} }) {
     pick(camera, x, y, width, height) {
       return view ? view.pick(camera, x, y, width, height) : null;
     },
+    // The same off a SPLAT's box only (pano_three_view.js pickSurface), or null.
+    pickSurface(camera, x, y, width, height) {
+      return view ? view.pickSurface(camera, x, y, width, height) : null;
+    },
     // The id of the world Sticker under (x, y) in the last space frame (pano_three_view.js pickSticker),
     // or null.
     pickSticker(camera, x, y, width, height) {

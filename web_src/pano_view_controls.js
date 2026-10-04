@@ -4,7 +4,7 @@
 //
 // A preset maps a drag that starts with a button (0 left, 1 middle, 2 right) and modifiers to how the
 // Viewport camera moves: "orbit" turns it around the point under the pointer, "pan" moves it across the
-// view with that point, "look" turns it in place. These bindings act wherever the drag starts, over an
+// view at its pivot's depth, "look" turns it in place. These bindings act wherever the drag starts, over an
 // object too, so every preset moves the view without touching an object. A left drag without modifiers
 // edits the object under it; on empty space it does the preset's `emptyLeft` (null: nothing moves). The
 // wheel zooms toward the point under the pointer in every preset (pano_space.js zoomView).
