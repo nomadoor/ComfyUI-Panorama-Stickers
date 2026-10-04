@@ -1,0 +1,115 @@
+{
+  "version": 2,
+  "timeline": {
+    "fps": 240.0,
+    "length": 100000
+  },
+  "camera": null,
+  "scene": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": 480
+    },
+    "visible": true,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "scale": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
+  "stickers": [
+    {
+      "id": "st",
+      "placement": "sky",
+      "source": {
+        "kind": "port"
+      },
+      "clip": {
+        "start": 240,
+        "in": 0,
+        "duration": 240
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 20.0,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          },
+          {
+            "frame": 120,
+            "value": 0.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          }
+        ]
+      },
+      "z_index": 0
+    }
+  ],
+  "painting": {
+    "version": 1,
+    "groups": [],
+    "paint": {
+      "strokes": []
+    },
+    "mask": {
+      "strokes": []
+    },
+    "raster_objects": []
+  },
+  "painting_layer": null,
+  "painting_visible": true
+}

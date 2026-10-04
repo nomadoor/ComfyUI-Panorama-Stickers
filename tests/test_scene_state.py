@@ -9,7 +9,7 @@ from comfyui_pano_suite.core.scene_state import default_camera, load_scene_state
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 
 
@@ -112,6 +112,34 @@ def test_hidden_camera_scene_and_painting_are_kept_by_rebase():
     assert rebased["scene"]["visible"] is False
     assert rebased["painting_visible"] is False
     assert rebased["scene"]["clip"] == {"start": 5, "in": 0, "duration": 15}
+
+
+@pytest.mark.parametrize(("fps", "length", "expected"), [
+    (1e308, 1e308, {"fps": 240.0, "length": 100000}),
+    (0, 0, {"fps": 24.0, "length": None}),
+    (0.5, 100001, {"fps": 1.0, "length": 100000}),
+    (-1, -5, {"fps": 24.0, "length": None}),
+    (float("nan"), float("nan"), {"fps": 24.0, "length": None}),
+])
+def test_timeline_fps_and_length_are_kept_in_range(fps, length, expected):
+    assert load_scene_state({"version": 2, "timeline": {"fps": fps, "length": length}})["timeline"] == expected
+
+
+@pytest.mark.parametrize(("fps", "timeline", "start"), [
+    (1e308, {"fps": 240.0, "length": 100000}, 240),
+    (0.5, {"fps": 1.0, "length": 417}, 1),
+    (60.0, {"fps": 60.0, "length": 25000}, 60),
+])
+def test_rebase_brings_the_fps_into_range(fps, timeline, start):
+    rebased = rebase_scene_state(load_scene_state(read_fixture("v2_timeline_limits")), fps)
+    assert rebased["timeline"] == timeline
+    assert rebased["stickers"][0]["clip"]["start"] == start
+
+
+@pytest.mark.parametrize("fps", [0, -1.0, float("nan"), float("inf")])
+def test_rebase_rejects_an_fps_that_is_not_a_positive_number(fps):
+    with pytest.raises(ValueError, match="positive number"):
+        rebase_scene_state(load_scene_state(""), fps)
 
 
 def test_a_hidden_scene_is_not_active_and_a_hidden_camera_still_evaluates():

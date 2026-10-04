@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "timeline": {"fps": 1e308, "length": 1e308},
+  "scene": {"clip": {"start": 0, "in": 0, "duration": 480}},
+  "stickers": [
+    {"id": "st", "source": {"kind": "port"}, "clip": {"start": 240, "in": 0, "duration": 240}, "opacity": {"keyframes": [{"frame": 0, "value": 1.0}, {"frame": 120, "value": 0.0}]}}
+  ]
+}

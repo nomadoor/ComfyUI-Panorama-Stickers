@@ -433,7 +433,7 @@ test("links are read only once the node is in a graph", async () => {
 test("the editor follows the background VIDEO of a new result", async () => {
   const editor = await read("../web_src/pano_editor.js");
 
-  assert.match(editor, /if \(action\.type === "seek"\) \{\s*if \(action\.phase === "start"\) refreshModalVideoSource\(\);\s*playback\.seek\(action\.frame\);/);
+  assert.match(editor, /dragFrames\.cancel\(\);\s*if \(action\.phase === "start"\) refreshModalVideoSource\(\);\s*playback\.seek\(action\.frame\);/);
   assert.match(editor, /videoEl\.removeAttribute\("src"\);\s*delete videoEl\.dataset\.panoSrc;/);
   // load() drops a seek in flight without `seeked`; the playback starts over with each source.
   const refreshStart = editor.indexOf("function refreshModalVideoSource(");

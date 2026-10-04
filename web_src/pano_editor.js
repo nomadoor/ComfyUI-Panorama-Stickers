@@ -13,6 +13,7 @@ import { clamp, wrapYaw, shortestYawDelta } from "./pano_math.js";
 import { cameraBasis, yawPitchToDir } from "./pano_camera_math.js";
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createHistoryController } from "./pano_paint_history.js";
+import { createFrameBatch } from "./pano_frame_batch.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 import {
@@ -53,6 +54,8 @@ import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from 
 import { loadSceneState } from "./pano_scene_state.js";
 import {
   deleteKeyframes,
+  enteredTimelineFps,
+  enteredTimelineLength,
   keyAllLanes,
   laneNames,
   moveClip,
@@ -1061,8 +1064,9 @@ async function showEditor(node, type, options = {}) {
   // The Timeline of PanoramaStickersNode. expanded is null until the user toggles it, and the
   // Timeline then opens only when something is timed. openRows holds the rows showing their Lanes.
   // selection is { owner, lane, frames }: `lane` a Lane's name, or null for every Lane of the row,
-  // and the frames in the owner's own time base. drag holds what a Timeline drag started from.
-  const timeline = { expanded: null, openRows: new Set(), selection: null, drag: null };
+  // and the frames in the owner's own time base. drag holds what a Timeline drag started from, and
+  // scrubFrame where a scrub of the ruler seeks on the next frame.
+  const timeline = { expanded: null, openRows: new Set(), selection: null, drag: null, scrubFrame: 0 };
   // Where the pointer went down on the canvas, until its first move.
   let editPointerDown = null;
   if (type === "stickers") {
@@ -1091,7 +1095,24 @@ async function showEditor(node, type, options = {}) {
     frameSafeRect: null,
     frameCanvasScale: 1,
     tickErrorSignature: "",
+    // The node's preview has not seen the state since a drag changed it.
+    nodePreviewPending: false,
   };
+  // A drag's moves change the state at once; what follows from it (the Timeline, the view, the
+  // inspector, the playhead of a scrub) runs at most once per frame. The drag's end does the rest once.
+  const dragFrames = createFrameBatch({
+    requestFrame: (callback) => requestAnimationFrame(callback),
+    cancelFrame: (id) => cancelAnimationFrame(id),
+    tasks: {
+      seek: () => playback.seek(timeline.scrubFrame),
+      timeline: () => syncTimeline(),
+      view: () => {
+        syncCutoutShot();
+        markObjectVisualsDirty();
+      },
+      sidePanel: () => updateSidePanel(),
+    },
+  });
   // The Stickers and Cutout editors and the read-only Preview modal draw with three.js. The Cutout
   // camera preview draws through the same view as its own owner.
   // A `scene` item that loaded, or Spark's sorted splats, change only the stage.
@@ -3869,20 +3890,12 @@ async function showEditor(node, type, options = {}) {
     return `${base}:view:${Math.round(Number(editor.viewYaw || 0) * 100)}:${Math.round(Number(editor.viewPitch || 0) * 100)}:${Math.round(Number(editor.viewFov || 0) * 100)}:${Math.round(Number(canvas?.width || 0))}:${Math.round(Number(canvas?.height || 0))}`;
   }
 
-  function getModalLayerMaskDisplaySource() {
-    return editor.paintEngine?.getMaskDisplayCanvas?.() || null;
-  }
-
-  function getMaskDisplayRevisionKey() {
-    const source = getModalLayerMaskDisplaySource();
-    if (!source) return "";
-    return `${getDisplayPaintRevisionKey()}:mask_display`;
-  }
-
+  // The mask's layer, on top of everything; none without a mask. The paint engine keeps its canvas
+  // and rebuilds it only when the mask changes.
   function appendMaskDisplayLayerEntry(entries) {
-    const source = getModalLayerMaskDisplaySource();
+    const source = editor.paintEngine?.getMaskDisplayCanvas() || null;
     if (!source) return entries;
-    const revision = getMaskDisplayRevisionKey();
+    const revision = `mask_display:${editor.paintEngine.getMaskDisplayRevision()}`;
     const topLayerZ = entries.reduce((max, entry) => Math.max(max, Number(entry?.zIndex || 0)), -1);
     const topStickerZ = (Array.isArray(state.stickers) ? state.stickers : [])
       .reduce((max, item) => Math.max(max, Number(item?.z_index || 0)), -1);
@@ -3977,11 +3990,14 @@ async function showEditor(node, type, options = {}) {
         : item))
       : state.stickers;
     // The state v2 is rebuilt only when the Stickers or their assets change. Paint comes from the
-    // paint engine's ERP canvases, so the strokes are left out.
-    const sceneKey = JSON.stringify([stickers, Object.keys(assets), state.scene]);
+    // paint engine's ERP canvases, so the strokes are left out. A Timeline drag changes Clip ranges on
+    // every move, so they are left out too and copied in instead.
+    const withoutClip = ({ clip, ...rest }) => rest;
+    const sceneKey = JSON.stringify([stickers.map(withoutClip), Object.keys(assets), withoutClip(state.scene ?? {})]);
     if (editorViewScene.key !== sceneKey) {
       editorViewScene = { key: sceneKey, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
     }
+    if (stateV2) copyClipRanges(editorViewScene.sceneState);
     const portPicture = portVideo ? followPortSticker() : null;
     const media = (item) => {
       // A hidden Sticker of state v2 is not drawn; the legacy editor shows its hidden port Sticker faintly.
@@ -4006,6 +4022,17 @@ async function showEditor(node, type, options = {}) {
     const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, media) : null;
     const space = isSpaceView() ? { ...content, ...spaceGuides(content) } : null;
     return { background, layers, space, content };
+  }
+
+  // The working state's Clip ranges, into the state v2 the views draw. A Clip range of the working state
+  // is already normalized (integer frames), so it is copied as it is.
+  function copyClipRanges(sceneState) {
+    const clips = new Map(state.stickers.map((item) => [item.id, item.clip]));
+    sceneState.scene.clip = { ...state.scene.clip };
+    for (const item of sceneState.stickers) {
+      const clip = clips.get(item.id);
+      if (clip) item.clip = { ...clip };
+    }
   }
 
   // The World at the playhead: the `scene` item the node draws at this frame with the `scene` transform,
@@ -5851,7 +5878,12 @@ async function showEditor(node, type, options = {}) {
     return false;
   }
 
+  function isDragging() {
+    return !!editor.interaction || !!timeline.drag;
+  }
+
   function syncNodeLivePreviewSources() {
+    runtime.nodePreviewPending = false;
     node.__panoLiveStateOverride = state;
     node.__panoLiveStateVersion = Number(node.__panoLiveStateVersion || 0) + 1;
     node.__panoLivePaintSurface = getSharedLivePaintSurface();
@@ -5883,7 +5915,9 @@ async function showEditor(node, type, options = {}) {
       syncLookAtFrameButtonState();
       syncViewToggleState();
     }
-    syncNodeLivePreviewSources();
+    // The node's preview follows the state once a drag ends, not on each of its moves.
+    if (isDragging()) runtime.nodePreviewPending = true;
+    else syncNodeLivePreviewSources();
     if (externalSync) {
       node.__panoDomPreview?.requestDraw?.();
       node.setDirtyCanvas?.(true, false);
@@ -5918,6 +5952,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function tickFrame(ts = performance.now()) {
+    if (runtime.nodePreviewPending && !isDragging()) syncNodeLivePreviewSources();
     syncCutoutShot();
     const dt = runtime.lastTickTs > 0 ? Math.max(0.001, (ts - runtime.lastTickTs) / 1000) : (1 / 60);
     runtime.lastTickTs = ts;
@@ -6458,6 +6493,12 @@ async function showEditor(node, type, options = {}) {
     return clip.start - clip.in;
   }
 
+  // What the view shows of a Clip range's content: whether it is on at the playhead, and the time of
+  // its content there (moving the range moves its content; trimming keeps it).
+  function clipView(clip) {
+    return `${clipActive(clip, editor.frame)}:${clip.start - clip.in}`;
+  }
+
   function timelineEditable(owner) {
     const target = timelineOwner(owner);
     return !!target && target.locked !== true;
@@ -6554,6 +6595,13 @@ async function showEditor(node, type, options = {}) {
   function onTimelineAction(action) {
     if (readOnly || !stateV2) return;
     if (action.type === "seek") {
+      // A scrub seeks once per frame, to where the pointer is then; its end seeks at once.
+      if (action.phase === "move") {
+        timeline.scrubFrame = action.frame;
+        dragFrames.request("seek");
+        return;
+      }
+      dragFrames.cancel();
       if (action.phase === "start") refreshModalVideoSource();
       playback.seek(action.frame);
       return;
@@ -6646,9 +6694,12 @@ async function showEditor(node, type, options = {}) {
       const delta = moveKeyframes(owner, names, drag.frames, action.delta, -timelineOffset(selection.owner));
       selection.frames = drag.frames.map((frame) => frame + delta);
       if (action.phase !== "end") {
-        refreshTimelineEdit();
+        // Moved Keyframes can change the values at the playhead.
+        dragFrames.request("timeline");
+        dragFrames.request("view");
         return;
       }
+      dragFrames.cancel();
       timeline.drag = null;
       if (delta) commitTimelineEdit();
       else refreshTimelineEdit();
@@ -6667,15 +6718,18 @@ async function showEditor(node, type, options = {}) {
       const { drag } = timeline;
       if (!drag?.clip) return;
       const base = drag.clip;
+      const shown = clipView(sticker.clip);
       sticker.clip = { ...base };
       // A click (no movement) leaves the Clip range as it was, an open end included.
       if (action.delta && action.mode === "move") moveClip(sticker.clip, action.delta);
       else if (action.delta && action.mode === "start") trimClipStart(sticker.clip, base.start + action.delta);
       else if (action.delta) trimClipEnd(sticker.clip, (base.duration === null ? drag.span : base.start + base.duration) + action.delta, drag.span);
       if (action.phase !== "end") {
-        refreshTimelineEdit();
+        dragFrames.request("timeline");
+        if (clipView(sticker.clip) !== shown) dragFrames.request("view");
         return;
       }
+      dragFrames.cancel();
       timeline.drag = null;
       releaseHiddenSelection();
       if (JSON.stringify(sticker.clip) !== JSON.stringify(base)) commitTimelineEdit();
@@ -6692,16 +6746,17 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (action.type === "fps") {
-      if (!(action.fps > 0) || action.fps === state.timeline.fps || uiState.timeline.fpsLocked) {
+      const fps = enteredTimelineFps(action.fps);
+      if (fps === null || fps === state.timeline.fps || uiState.timeline.fpsLocked) {
         syncTimeline();
         return;
       }
-      changeTimelineFps(action.fps);
+      changeTimelineFps(fps);
       return;
     }
     if (action.type === "length") {
-      const length = action.length === null ? null : Math.max(1, Math.round(action.length));
-      if (Number.isNaN(length) || length === state.timeline.length) {
+      const length = enteredTimelineLength(action.length);
+      if (length === undefined || length === state.timeline.length) {
         syncTimeline();
         return;
       }
@@ -9652,7 +9707,7 @@ async function showEditor(node, type, options = {}) {
       for (const [name, value] of Object.entries(gizmoDragLanes(it.mode, it.base, it.start, moved))) setLaneValue(state.camera, name, editor.frame, value);
       syncCutoutShot();
       it.changed = true;
-      updateSidePanel();
+      dragFrames.request("sidePanel");
       requestDraw({ localOnly: true });
       return;
     }
@@ -9661,7 +9716,7 @@ async function showEditor(node, type, options = {}) {
     setWorldStickerTransform(sticker, editor.frame, gizmoDragLanes(it.mode, it.base, it.start, moved));
     it.changed = true;
     markObjectVisualsDirty();
-    updateSidePanel();
+    dragFrames.request("sidePanel");
     requestDraw({ localOnly: true });
   }
 

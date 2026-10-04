@@ -281,3 +281,15 @@ test("a sky Sticker's direction moves on the sphere and its roll is a plain numb
   const roll = sky({ roll: { keyframes: [{ frame: 0, value: 0, easing: "auto" }, { frame: 20, value: 350 }] } });
   assert.ok(Math.abs(at(roll, 10).roll_deg - 175) < 1e-9);
 });
+
+test("timeline fps and length are kept in range on load and rebase", () => {
+  const timeline = (fps, length) => loadSceneState({ version: 2, timeline: { fps, length } }).timeline;
+  assert.deepEqual(timeline(1e308, 1e308), { fps: 240, length: 100000 });
+  assert.deepEqual(timeline(0, 0), { fps: 24, length: null });
+  assert.deepEqual(timeline(0.5, 100001), { fps: 1, length: 100000 });
+  assert.deepEqual(timeline(NaN, NaN), { fps: 24, length: null });
+  const state = loadSceneState(fixture("v2_timeline_limits"));
+  assert.deepEqual(rebaseSceneState(state, 1e308).timeline, { fps: 240, length: 100000 });
+  assert.deepEqual(rebaseSceneState(state, 0.5).timeline, { fps: 1, length: 417 });
+  for (const fps of [0, NaN, Infinity]) assert.throws(() => rebaseSceneState(state, fps), /fps must be a positive number/);
+});
