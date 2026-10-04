@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import {
+  BROKEN_SPAN,
   clusterFrames,
   deleteKeyframes,
   enteredTimelineFps,
@@ -401,8 +402,8 @@ test("the fps and length fields bring what is typed into range and reject what i
   assert.equal(enteredTimelineFps(0.25), 1);
   assert.equal(enteredTimelineFps(29.97), 29.97);
   for (const fps of [0, -1, NaN]) assert.equal(enteredTimelineFps(fps), null);
-  assert.equal(enteredTimelineLength(1e308), 100000);
-  assert.equal(enteredTimelineLength(Infinity), 100000);
+  assert.equal(enteredTimelineLength(1e308), 10000000);
+  assert.equal(enteredTimelineLength(Infinity), 10000000);
   assert.equal(enteredTimelineLength(0), 1);
   assert.equal(enteredTimelineLength(12.4), 12);
   assert.equal(enteredTimelineLength(null), null, "an empty field follows the inputs");
@@ -411,9 +412,10 @@ test("the fps and length fields bring what is typed into range and reject what i
 
 test("a huge length neither spans past the limit nor labels past MAX_TICKS", () => {
   const state = loadSceneState({ version: 2, timeline: { length: 1e308 } });
-  assert.equal(timelineSpan(state, { minimum: 120 }), 100000);
+  assert.equal(timelineSpan(state, { minimum: 120 }), 10000000);
   state.timeline.length = NaN;
-  assert.equal(timelineSpan(state, { minimum: 120 }), 100000, "a broken span is not passed on");
+  assert.equal(timelineSpan(state, { minimum: 120 }), BROKEN_SPAN, "a broken span is not passed on");
+  assert.equal(BROKEN_SPAN, 100000);
   const started = performance.now();
   assert.equal(timelineTicks(1e308, 1e-300).length, MAX_TICKS);
   assert.ok(performance.now() - started < 1000);

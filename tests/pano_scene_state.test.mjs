@@ -284,15 +284,18 @@ test("a sky Sticker's direction moves on the sphere and its roll is a plain numb
 
 test("timeline fps and length are kept in range on load and rebase", () => {
   const timeline = (fps, length) => loadSceneState({ version: 2, timeline: { fps, length } }).timeline;
-  assert.deepEqual(timeline(1e308, 1e308), { fps: 1000, length: 100000 });
+  assert.deepEqual(timeline(1e308, 1e308), { fps: 1000, length: 10000000 });
   assert.deepEqual(timeline(300, 100000), { fps: 300, length: 100000 }, "a state within the limits is kept");
   assert.deepEqual(timeline(0, 0), { fps: 24, length: null });
-  assert.deepEqual(timeline(0.5, 100001), { fps: 1, length: 100000 });
+  assert.deepEqual(timeline(0.5, 10000001), { fps: 1, length: 10000000 });
   assert.deepEqual(timeline(NaN, NaN), { fps: 24, length: null });
   const state = loadSceneState(fixture("v2_timeline_limits"));
-  assert.deepEqual(rebaseSceneState(state, 1e308).timeline, { fps: 1000, length: 100000 });
-  assert.deepEqual(rebaseSceneState(state, 300).timeline, { fps: 300, length: 30000 });
-  assert.deepEqual(rebaseSceneState(state, 0.5).timeline, { fps: 1, length: 100 });
+  assert.deepEqual(rebaseSceneState(state, 1e308).timeline, { fps: 1000, length: 10000000 });
+  assert.deepEqual(rebaseSceneState(state, 300).timeline, { fps: 300, length: 3000000 });
+  assert.deepEqual(rebaseSceneState(state, 0.5).timeline, { fps: 1, length: 10000 });
+  // A length keeps its seconds at a higher fps (24 fps, 90,000 frames is 3,750,000 frames at 1000 fps).
+  const long = loadSceneState({ version: 2, timeline: { fps: 24, length: 90000 } });
+  assert.deepEqual(rebaseSceneState(long, 1000).timeline, { fps: 1000, length: 3750000 });
   const far = state.stickers[1];
   assert.deepEqual(far.clip, { start: 10000000, in: 10000000, duration: 10000000 });
   assert.deepEqual(far.opacity.keyframes.map((key) => key.frame), [-10000000, 10000000]);

@@ -21,10 +21,10 @@ DEFAULT_EASING = (0.42, 0.0, 0.58, 1.0)
 # The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
 TIMELINE_FPS_MIN = 1.0
 TIMELINE_FPS_MAX = 1000.0
-TIMELINE_LENGTH_MAX = 100000
-# The largest Clip range edge and Keyframe frame (either sign) a state keeps. It is wider than
-# TIMELINE_LENGTH_MAX, as the length of a VIDEO input is not capped (about 2.8 hours at 1000 fps).
+# The largest Clip range edge and Keyframe frame (either sign) a state keeps: about 2.8 hours at
+# 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
 TIMELINE_FRAME_MAX = 10000000
+TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX
 
 
 def _reject_constant(name):

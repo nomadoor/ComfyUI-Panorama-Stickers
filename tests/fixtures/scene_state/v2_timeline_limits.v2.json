@@ -2,7 +2,7 @@
   "version": 2,
   "timeline": {
     "fps": 1000.0,
-    "length": 100000
+    "length": 10000000
   },
   "camera": null,
   "scene": {

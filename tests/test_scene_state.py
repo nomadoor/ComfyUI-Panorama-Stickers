@@ -115,10 +115,10 @@ def test_hidden_camera_scene_and_painting_are_kept_by_rebase():
 
 
 @pytest.mark.parametrize(("fps", "length", "expected"), [
-    (1e308, 1e308, {"fps": 1000.0, "length": 100000}),
+    (1e308, 1e308, {"fps": 1000.0, "length": 10_000_000}),
     (300.0, 100000, {"fps": 300.0, "length": 100000}),
     (0, 0, {"fps": 24.0, "length": None}),
-    (0.5, 100001, {"fps": 1.0, "length": 100000}),
+    (0.5, 10_000_001, {"fps": 1.0, "length": 10_000_000}),
     (-1, -5, {"fps": 24.0, "length": None}),
     (float("nan"), float("nan"), {"fps": 24.0, "length": None}),
 ])
@@ -127,15 +127,20 @@ def test_timeline_fps_and_length_are_kept_in_range(fps, length, expected):
 
 
 @pytest.mark.parametrize(("fps", "timeline", "start"), [
-    (1e308, {"fps": 1000.0, "length": 100000}, 1000),
-    (300.0, {"fps": 300.0, "length": 30000}, 300),
-    (0.5, {"fps": 1.0, "length": 100}, 1),
-    (60.0, {"fps": 60.0, "length": 6000}, 60),
+    (1e308, {"fps": 1000.0, "length": 10_000_000}, 1000),
+    (300.0, {"fps": 300.0, "length": 3_000_000}, 300),
+    (0.5, {"fps": 1.0, "length": 10_000}, 1),
+    (60.0, {"fps": 60.0, "length": 600_000}, 60),
 ])
 def test_rebase_brings_the_fps_into_range(fps, timeline, start):
     rebased = rebase_scene_state(load_scene_state(read_fixture("v2_timeline_limits")), fps)
     assert rebased["timeline"] == timeline
     assert rebased["stickers"][0]["clip"]["start"] == start
+
+
+def test_a_length_keeps_its_seconds_when_rebased_to_a_higher_fps():
+    state = load_scene_state({"version": 2, "timeline": {"fps": 24.0, "length": 90_000}})
+    assert rebase_scene_state(state, 1000.0)["timeline"] == {"fps": 1000.0, "length": 3_750_000}
 
 
 def test_clip_ranges_and_keyframes_are_kept_within_the_frame_limit():

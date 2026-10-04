@@ -189,10 +189,13 @@ export function isTimed(state, { camera = false } = {}) {
   return [...(camera && state.camera ? [state.camera] : []), state.scene, ...state.stickers].some(ownerTimed);
 }
 
+// The span timelineSpan gives a broken input (a length or frame that is not a finite number).
+export const BROKEN_SPAN = 100000;
+
 // The number of Timeline frames the Timeline shows: the Timeline length, or without one `minimum`
 // widened to `frames` (the video's frame count), then widened to every Clip range edge and Keyframe
 // (the Camera's only with `camera`, as in isTimed). The end of `openClip` counts as open. A span that
-// is not a finite number (a broken input) is TIMELINE_LENGTH_MAX.
+// is not a finite number (a broken input) is BROKEN_SPAN.
 export function timelineSpan(state, { minimum, frames = 0, openClip = null, camera = false }) {
   let end = state.timeline.length ?? Math.max(minimum, frames);
   if (camera && state.camera) {
@@ -207,7 +210,7 @@ export function timelineSpan(state, { minimum, frames = 0, openClip = null, came
       for (const key of lane.keyframes) end = Math.max(end, clip.start - clip.in + key.frame + 1);
     }
   }
-  return Number.isFinite(end) ? end : TIMELINE_LENGTH_MAX;
+  return Number.isFinite(end) ? end : BROKEN_SPAN;
 }
 
 // The Timeline fps typed in the fps field sets: brought into the range a state keeps, or null (rejected)

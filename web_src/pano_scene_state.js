@@ -14,10 +14,10 @@ export const DEFAULT_EASING = [0.42, 0, 0.58, 1];
 // The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
 export const TIMELINE_FPS_MIN = 1;
 export const TIMELINE_FPS_MAX = 1000;
-export const TIMELINE_LENGTH_MAX = 100000;
-// The largest Clip range edge and Keyframe frame (either sign) a state keeps. It is wider than
-// TIMELINE_LENGTH_MAX, as the length of a VIDEO input is not capped (about 2.8 hours at 1000 fps).
+// The largest Clip range edge and Keyframe frame (either sign) a state keeps: about 2.8 hours at
+// 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
 export const TIMELINE_FRAME_MAX = 10000000;
+export const TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX;
 
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
