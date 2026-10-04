@@ -15,7 +15,7 @@ import av
 from comfy_api.latest import InputImpl, Types
 
 from comfyui_pano_suite.core import render as render_module
-from comfyui_pano_suite.core.video_source import StreamedVideo
+from comfyui_pano_suite.core.video_source import StreamedVideo, scan_video
 from test_stickers_scene_video import _cfr, _execute, _frames
 from scene_test_helpers import batch_index_at_center as _batch_index_at_center, red_at_center as _red_at_center
 
@@ -304,7 +304,7 @@ def test_streamed_video_rejects_reading_back():
                 container.mux(packet)
         for packet in stream.encode():
             container.mux(packet)
-    video = StreamedVideo(buffer, 0.0, 0.0, "sticker")
+    video = StreamedVideo(buffer, scan_video(buffer, 0.0, 0.0, "sticker"), "sticker")
     video[2]
 
     with pytest.raises(ValueError, match="must be read in order"):

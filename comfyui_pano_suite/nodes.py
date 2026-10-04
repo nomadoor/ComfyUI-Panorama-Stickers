@@ -69,7 +69,7 @@ from .scene_files import write_editor_files
 from .scene_mesh import is_mesh_file, mesh_scene_content, moge_scene_content, read_mesh_file
 from .scene_video import SceneVideo
 from .splat_render import read_splat_file, splat_content
-from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video
+from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video, stream_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -2233,7 +2233,7 @@ def _editor_mp4(video, opened) -> tuple[Path, bool]:
         source = video.get_stream_source()
         if editor_ready(source):
             return Path(source), mp4_has_audio(source)
-        return encode_editor_mp4(StreamedVideo(source, 0, 0, "source", loop_progress()), loop_progress())
+        return encode_editor_mp4(stream_video(source, 0, 0, "source"), loop_progress())
     if isinstance(opened, StreamedVideo):
         source, trim = video.get_stream_source(), video.get_active_trim_window()
         # The core copies the streams only without a trim window, and reads a file in memory as it is.
@@ -2242,7 +2242,7 @@ def _editor_mp4(video, opened) -> tuple[Path, bool]:
             if _input_entry(source) is not None and Path(source).suffix.lower() == ".mp4":
                 return Path(source), mp4_has_audio(source)
             return save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
-        return encode_editor_mp4(StreamedVideo(source, *trim, "source", loop_progress()), loop_progress())
+        return encode_editor_mp4(stream_video(source, *trim, "source"), loop_progress())
     return encode_editor_mp4(opened, loop_progress())
 
 

@@ -14,7 +14,7 @@ from comfy_api.latest import Types
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import video as core_video
-from comfyui_pano_suite.core.video_source import MaterializedVideo, StreamedVideo
+from comfyui_pano_suite.core.video_source import MaterializedVideo, scan_video
 from comfyui_pano_suite.node_runtime import NodeRuntime
 from comfyui_pano_suite.progress import loop_progress
 from comfyui_pano_suite.scene_files import write_editor_files
@@ -103,7 +103,7 @@ def test_cancelled_scan_of_the_presentation_times_stops(tmp_path):
     report, calls = _cancel_at(3)
 
     with pytest.raises(InterruptProcessingException):
-        StreamedVideo(video.get_stream_source(), 0, 0, "bg_media", report)
+        scan_video(video.get_stream_source(), 0, 0, "bg_media", report)
 
     assert len(calls) == 3
 
@@ -112,7 +112,7 @@ def test_scan_reports_the_packets_against_the_frame_count(tmp_path):
     video = _cfr(tmp_path, count=6)
     calls = []
 
-    StreamedVideo(video.get_stream_source(), 0, 0, "bg_media", lambda done, total: calls.append((done, total)))
+    scan_video(video.get_stream_source(), 0, 0, "bg_media", lambda done, total: calls.append((done, total)))
 
     assert calls[-1][0] == 6
 

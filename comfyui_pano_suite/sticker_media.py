@@ -2,13 +2,16 @@
 
 import bisect
 import math
+import os
 
 import torch
 from comfy_api.latest import InputImpl, Types
 
+from .core.cache import CACHE
 from .core.scene_eval import FRAME_EPSILON
-from .core.video_source import MaterializedVideo, StreamedVideo, coded_size
+from .core.video_source import MaterializedVideo, StreamedVideo, coded_size, scan_video
 from .core.world_render import SceneContent
+from .node_runtime import NodeRuntime
 from .progress import loop_progress
 from .scene_mesh import mesh_scene_content
 from .scene_video import RenderedVideo, SceneVideo
@@ -19,14 +22,34 @@ from .splat_render import splat_content
 OPENED_VIDEOS = (StreamedVideo, MaterializedVideo, RenderedVideo)
 
 
+def _source_key(source) -> tuple:
+    """A video source: a file by its path, modification time, and size, a file in memory by the object."""
+    if isinstance(source, str):
+        stat = os.stat(source)
+        return ("file", source, stat.st_mtime_ns, stat.st_size)
+    return NodeRuntime.object_identity(source)
+
+
+def stream_video(source, start_time: float, duration: float, name: str) -> StreamedVideo:
+    """A `StreamedVideo` of the trim window of `source`. Its `VideoIndex` (the scan of the times, the first frame) is
+    made once per file and trim window and kept in the shared cache, so the opens of an execution (the Timeline, the
+    port media, each render pass, the editor MP4) and the next executions do not scan it again."""
+    key = (_source_key(source), start_time, duration)
+    index = CACHE.get_or_put("video_index", key, lambda: scan_video(source, start_time, duration, name, loop_progress()))
+    return StreamedVideo(source, index, name)
+
+
 def open_video(video, name: str) -> StreamedVideo | MaterializedVideo | RenderedVideo:
     """Render the `video` output of Stickers and Cutout frame by frame, stream a file-backed VIDEO without a crop,
     and read any other VIDEO whole through the core."""
     if isinstance(video, SceneVideo):
         return RenderedVideo(video)
-    # The crop of a VideoFromFile is private; only an uncropped one reports the stream's own size.
-    if isinstance(video, InputImpl.VideoFromFile) and video.get_dimensions() == coded_size(video.get_stream_source()):
-        return StreamedVideo(video.get_stream_source(), *video.get_active_trim_window(), name, loop_progress())
+    if isinstance(video, InputImpl.VideoFromFile):
+        source = video.get_stream_source()
+        # The crop of a VideoFromFile is private; only an uncropped one reports the stream's own size.
+        size = CACHE.get_or_put("video_size", _source_key(source), lambda: coded_size(source))
+        if video.get_dimensions() == size:
+            return stream_video(source, *video.get_active_trim_window(), name)
     return MaterializedVideo(video.get_components(), name)
 
 

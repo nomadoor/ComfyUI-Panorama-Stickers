@@ -26,13 +26,6 @@ from comfyui_pano_suite.core.stickers import load_source_rgba
 from tools.bake_legacy_goldens import _painting, _stroke
 
 
-@pytest.fixture(autouse=True)
-def empty_cache():
-    CACHE.clear()
-    yield
-    CACHE.clear()
-
-
 def _array(megabytes: int) -> np.ndarray:
     return np.zeros(megabytes * 1024 ** 2, dtype=np.uint8)
 

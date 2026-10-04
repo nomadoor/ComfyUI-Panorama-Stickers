@@ -302,7 +302,8 @@ def test_stickers_ui_opens_the_background_video_file_once(tmp_path, monkeypatch)
     _stickers_ui(bg_media=video)
     _stickers_ui(bg_media=video)
 
-    assert opened == [video.get_stream_source()] * 2
+    # The coded size is read once per file, also across executions.
+    assert opened == [video.get_stream_source()]
 
 
 def test_stickers_ui_reports_warnings(tmp_path, monkeypatch):

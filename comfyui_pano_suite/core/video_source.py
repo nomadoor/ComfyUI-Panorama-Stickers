@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+from dataclasses import dataclass
 from fractions import Fraction
 
 import av
@@ -37,47 +38,118 @@ def coded_size(source) -> tuple[int, int]:
         return stream.width, stream.height
 
 
-class StreamedVideo:
-    """The frames of a video file inside its trim window, decoded in order and one at a time.
+@dataclass(frozen=True, eq=False)
+class VideoIndex:
+    """What one scan of a video file's trim window finds, shared by every `StreamedVideo` that reads it. It does not
+    hold the file.
 
-    `source` is `VideoInput.get_stream_source()` and `start_time`/`duration` its `get_active_trim_window()`;
-    `name` is the input it came from, for messages.
-    `times` holds each frame's presentation time in seconds from the first frame, `time_base` the step those
-    times are rounded to, `frame_rate` the stream's average rate, and `first_frame` the first frame that decodes, which sets the output size. Frames are
-    float32 RGB (h, w, 3) in 0..1 like `get_components()`, possibly not contiguous, and must be requested in non-decreasing order.
-    Unlike the core reader, a decode error is raised instead of skipped. `progress(done, total)` is called for each
-    packet of the scan of the presentation times and may raise to stop it.
+    `start_time`/`duration` is the `get_active_trim_window()` of the VIDEO. `pts`
+    holds the presentation time stamps of the frames in the window in order, `times` each one in seconds from the
+    first, `time_base` the step those times are rounded to, `frame_rate` the stream's average rate, and
+    `first_frame` the first frame that decodes, which sets the output size, as `StreamedVideo` reads frames. Read-only.
     """
 
-    def __init__(self, source, start_time: float, duration: float, name: str, progress=None):
+    start_time: float
+    duration: float
+    frame_rate: Fraction
+    time_base: Fraction
+    pts: tuple
+    times: tuple
+    first_frame: torch.Tensor
+
+
+def scan_video(source, start_time: float, duration: float, name: str, progress=None) -> VideoIndex:
+    """Scan the trim window of a video file, `source` as `VideoInput.get_stream_source()` gives it (`VideoIndex`): its packets for the times, without decoding them, and
+    its frames until the first that decodes. `name` is the input it came from, for messages. `progress(done, total)`
+    is called for each packet and may raise to stop the scan."""
+    with _open(source) as container:
+        stream = container.streams.video[0]
+        frame_rate = Fraction(stream.average_rate) if stream.average_rate else Fraction(1)
+        time_base = Fraction(stream.time_base)
+        start_pts, end_pts = _trim_pts(stream, start_time, duration)
+        if start_pts != 0:
+            container.seek(start_pts, stream=stream)
+        # Packets carry the presentation times, so the timing is known without decoding.
+        pts = []
+        for packet in container.demux(stream):
+            if packet.pts is not None and packet.pts >= start_pts and (end_pts is None or packet.pts < end_pts):
+                pts.append(packet.pts)
+            if progress is not None:
+                progress(len(pts), stream.frames or None)
+        pts.sort()
+    if not pts:
+        raise ValueError(f"Panorama Stickers: the {name} VIDEO has no frames in its trim window.")
+    frames = _decode(source, start_time, duration, time_base)
+    first = next(frames, None)
+    frames.close()
+    if first is None:
+        raise ValueError(f"Panorama Stickers: no frame of the {name} VIDEO could be decoded in its trim window.")
+    times = tuple((value - pts[0]) * time_base for value in pts)
+    return VideoIndex(start_time, duration, frame_rate, time_base, tuple(pts), times, first[1])
+
+
+def _decoded(source, start_time: float, duration: float):
+    """The PyAV frames of a trim window as they decode, in order and not rotated."""
+    with _open(source) as container:
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        start_pts, end_pts = _trim_pts(stream, start_time, duration)
+        if start_pts != 0:
+            container.seek(start_pts, stream=stream)
+        for packet in container.demux(stream):
+            for frame in packet.decode():
+                if frame.pts < start_pts:
+                    continue
+                if end_pts is not None and frame.pts >= end_pts:
+                    return
+                yield frame
+
+
+def _decode(source, start_time: float, duration: float, time_base: Fraction):
+    """The frames of a trim window as (pts, float32 RGB (h, w, 3) in 0..1) as they decode."""
+    align = None
+    for frame in _decoded(source, start_time, duration):
+        if frame.format.name in _BYTE_FORMATS:
+            image = torch.from_numpy(frame.to_ndarray(format="rgb24")).float() / 255.0
+        else:
+            # Same as the core reader: an unaligned width is padded to 32 with smeared borders so the
+            # float conversion is deterministic.
+            if frame.width % 32:
+                if align is None:
+                    align = _alignment_graph(frame, time_base)
+                align[1].push(frame)
+                planes = align[2].pull().reformat(format="gbrpf32le").planes
+            else:
+                planes = frame.reformat(format="gbrpf32le").planes
+            # The planes are copied as they are and viewed as (h, w, 3): interleaving them on the CPU, as
+            # `to_ndarray` does, costs about as much as the conversion.
+            array = np.stack([np.frombuffer(planes[index], np.float32).reshape(planes[index].height, -1) for index in (2, 0, 1)])
+            image = torch.from_numpy(array[:, :frame.height, :frame.width].transpose(1, 2, 0))
+        quadrant = int(round(frame.rotation // 90)) % 4 if frame.rotation else 0
+        yield frame.pts, torch.rot90(image, k=quadrant, dims=(0, 1)).contiguous() if quadrant else image
+
+
+class StreamedVideo:
+    """The frames of a video file inside its trim window, decoded in order and one at a time: a decoder of `source`
+    over the `VideoIndex` of the window (`scan_video`), which holds the times and the first frame.
+
+    `name` is the input it came from, for messages. `times`, `time_base`, `frame_rate`, and `first_frame` are those of
+    the index. Frames are float32 RGB (h, w, 3) in 0..1 like `get_components()`, possibly not contiguous, and must be
+    requested in non-decreasing order; the decoder starts at the first request. Unlike the core reader, a decode
+    error is raised instead of skipped.
+    """
+
+    def __init__(self, source, index: VideoIndex, name: str):
         self._source = source
+        self.index = index
         self._name = name
-        self._start_time = start_time
-        self._duration = duration
-        with _open(source) as container:
-            stream = container.streams.video[0]
-            self.frame_rate = Fraction(stream.average_rate) if stream.average_rate else Fraction(1)
-            self.time_base = Fraction(stream.time_base)
-            start_pts, end_pts = _trim_pts(stream, start_time, duration)
-            if start_pts != 0:
-                container.seek(start_pts, stream=stream)
-            # Packets carry the presentation times, so the timing is known without decoding.
-            pts = []
-            for packet in container.demux(stream):
-                if packet.pts is not None and packet.pts >= start_pts and (end_pts is None or packet.pts < end_pts):
-                    pts.append(packet.pts)
-                if progress is not None:
-                    progress(len(pts), stream.frames or None)
-            pts.sort()
-            if not pts:
-                raise ValueError(f"Panorama Stickers: the {name} VIDEO has no frames in its trim window.")
-            self.times = [(value - pts[0]) * stream.time_base for value in pts]
-        self._pts = pts
-        self._frames = self._decode()
-        self._next = next(self._frames, None)
-        if self._next is None:
-            raise ValueError(f"Panorama Stickers: no frame of the {name} VIDEO could be decoded in its trim window.")
-        self.first_frame = self._next[1]
+        self.frame_rate = index.frame_rate
+        self.time_base = index.time_base
+        self.times = index.times
+        self.first_frame = index.first_frame
+        self._pts = index.pts
+        self._frames = None
+        self._next = None
         self._index = -1
         self._current = None
 
@@ -85,6 +157,9 @@ class StreamedVideo:
         """The frame at `index` of `times`, or None when the decoder never yields a frame with its pts."""
         if index < self._index:
             raise ValueError(f"Panorama Stickers: frames of the {self._name} VIDEO must be read in order; frame {index} was requested after frame {self._index}.")
+        if self._frames is None:
+            self._frames = _decode(self._source, self.index.start_time, self.index.duration, self.time_base)
+            self._next = next(self._frames, None)
         while self._index < index:
             self._index += 1
             self._current = self._frame_at(self._pts[self._index])
@@ -105,45 +180,8 @@ class StreamedVideo:
     def decoded_frames(self):
         """The PyAV frames of the trim window as they decode, in order and not rotated, each with its time in
         seconds from the first frame as in `times`."""
-        for frame in self._decoded():
+        for frame in _decoded(self._source, self.index.start_time, self.index.duration):
             yield (frame.pts - self._pts[0]) * self.time_base, frame
-
-    def _decoded(self):
-        with _open(self._source) as container:
-            stream = container.streams.video[0]
-            stream.thread_type = "AUTO"
-            start_pts, end_pts = _trim_pts(stream, self._start_time, self._duration)
-            if start_pts != 0:
-                container.seek(start_pts, stream=stream)
-            for packet in container.demux(stream):
-                for frame in packet.decode():
-                    if frame.pts < start_pts:
-                        continue
-                    if end_pts is not None and frame.pts >= end_pts:
-                        return
-                    yield frame
-
-    def _decode(self):
-        align = None
-        for frame in self._decoded():
-            if frame.format.name in _BYTE_FORMATS:
-                image = torch.from_numpy(frame.to_ndarray(format="rgb24")).float() / 255.0
-            else:
-                # Same as the core reader: an unaligned width is padded to 32 with smeared borders so the
-                # float conversion is deterministic.
-                if frame.width % 32:
-                    if align is None:
-                        align = _alignment_graph(frame, self.time_base)
-                    align[1].push(frame)
-                    planes = align[2].pull().reformat(format="gbrpf32le").planes
-                else:
-                    planes = frame.reformat(format="gbrpf32le").planes
-                # The planes are copied as they are and viewed as (h, w, 3): interleaving them on the CPU, as
-                # `to_ndarray` does, costs about as much as the conversion.
-                array = np.stack([np.frombuffer(planes[index], np.float32).reshape(planes[index].height, -1) for index in (2, 0, 1)])
-                image = torch.from_numpy(array[:, :frame.height, :frame.width].transpose(1, 2, 0))
-            quadrant = int(round(frame.rotation // 90)) % 4 if frame.rotation else 0
-            yield frame.pts, torch.rot90(image, k=quadrant, dims=(0, 1)).contiguous() if quadrant else image
 
     def audio(self, seconds: float) -> dict | None:
         """The audio of the trim window, cut to `seconds` from its start, or None without an audio stream."""
@@ -152,20 +190,21 @@ class StreamedVideo:
             stream = next((s for s in reversed(container.streams.audio) if s.codec_context is not None), None)
             if stream is None:
                 return None
-            end = min(seconds, self._duration) if self._duration else seconds
+            start_time, duration = self.index.start_time, self.index.duration
+            end = min(seconds, duration) if duration else seconds
             # Seek on the video stream as the core reader does, so the audio decodes from the same packet.
             video = container.streams.video[0]
-            start_pts = _trim_pts(video, self._start_time, self._duration)[0]
+            start_pts = _trim_pts(video, start_time, duration)[0]
             if start_pts != 0:
                 container.seek(start_pts, stream=video)
             resampler = av.audio.resampler.AudioResampler(format="fltp")
             chunks = []
             frames = (resampled for packet in container.demux(stream) for decoded in packet.decode() for resampled in resampler.resample(decoded))
             for frame in frames:
-                if frame.time > self._start_time + end:
+                if frame.time > start_time + end:
                     break
                 if not chunks:
-                    skip = max(0, int((self._start_time - frame.pts * stream.time_base) * stream.sample_rate))
+                    skip = max(0, int((start_time - frame.pts * stream.time_base) * stream.sample_rate))
                     if skip >= frame.samples:
                         continue
                     chunks.append(frame.to_ndarray()[..., skip:])
