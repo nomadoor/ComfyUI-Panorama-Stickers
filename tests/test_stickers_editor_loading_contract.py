@@ -46,8 +46,9 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
         self.assertIn("catch (error)", guard)
         self.assertIn("editor frame failed", guard)
         tick = function_block(self.editor, "tick", "redrawNow")
-        self.assertIn("runGuardedFrame(() => tickFrame(ts));", tick)
-        self.assertIn("requestAnimationFrame(tick)", tick)
+        self.assertIn("runGuardedFrame(() => tickFrame(ts, reasons));", tick)
+        # The frame scheduler keeps asking for frames after a failed one (pano_frame_scheduler.js).
+        self.assertIn("draw: (ts, reasons) => tick(ts, reasons),", self.editor)
 
     def test_failed_state_is_rendered_by_the_vue_modal(self):
         modal = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")

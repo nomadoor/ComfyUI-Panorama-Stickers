@@ -1,0 +1,153 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { DRAW_REASON, createFrameScheduler } from "../web_src/pano_frame_scheduler.js";
+
+// A fake browser frame clock: runFrame() runs the frames asked for so far, as one animation frame.
+function createFrames() {
+  const queued = new Map();
+  let next = 1;
+  let now = 0;
+  return {
+    requestAnimationFrame(callback) {
+      const id = next++;
+      queued.set(id, callback);
+      return id;
+    },
+    cancelAnimationFrame(id) {
+      queued.delete(id);
+    },
+    get pending() {
+      return queued.size;
+    },
+    runFrame() {
+      now += 16;
+      const due = [...queued.values()];
+      queued.clear();
+      due.forEach((callback) => callback(now));
+    },
+  };
+}
+
+function setup({ animating = () => false } = {}) {
+  const frames = createFrames();
+  const draws = [];
+  const scheduler = createFrameScheduler({
+    requestAnimationFrame: frames.requestAnimationFrame,
+    cancelAnimationFrame: frames.cancelAnimationFrame,
+    draw: (ts, reasons) => draws.push([...reasons].sort()),
+    animating,
+  });
+  return { frames, draws, scheduler };
+}
+
+test("an idle editor asks for no animation frame", () => {
+  const { frames, draws } = setup();
+  assert.equal(frames.pending, 0);
+  frames.runFrame();
+  assert.deepEqual(draws, []);
+});
+
+test("requestDraw draws the next frame once, with every reason asked for, and then stops", () => {
+  const { frames, draws, scheduler } = setup();
+  scheduler.requestDraw(DRAW_REASON.STATE);
+  scheduler.requestDraw(DRAW_REASON.OVERLAY);
+  scheduler.requestDraw(DRAW_REASON.STATE);
+  assert.equal(frames.pending, 1);
+  frames.runFrame();
+  assert.deepEqual(draws, [[DRAW_REASON.OVERLAY, DRAW_REASON.STATE]]);
+  assert.equal(frames.pending, 0);
+  frames.runFrame();
+  assert.equal(draws.length, 1);
+});
+
+test("an unknown reason is refused", () => {
+  const { scheduler } = setup();
+  assert.throws(() => scheduler.requestDraw("everything"), /Unknown draw reason/);
+});
+
+test("frames keep coming only while something animates", () => {
+  let remaining = 3;
+  const { frames, draws, scheduler } = setup({ animating: () => remaining > 0 });
+  scheduler.requestDraw(DRAW_REASON.VIEW);
+  for (let i = 0; i < 10; i += 1) {
+    frames.runFrame();
+    remaining -= 1;
+  }
+  // The asked frame, then the frames while it animated; then nothing is asked for.
+  assert.deepEqual(draws, [[DRAW_REASON.VIEW], [], []]);
+  assert.equal(frames.pending, 0);
+});
+
+test("an animation that starts without a draw request starts the frames with wake()", () => {
+  let moving = false;
+  const { frames, draws, scheduler } = setup({ animating: () => moving });
+  moving = true;
+  scheduler.wake();
+  frames.runFrame();
+  frames.runFrame();
+  moving = false;
+  frames.runFrame();
+  frames.runFrame();
+  assert.equal(draws.length, 2);
+  assert.equal(frames.pending, 0);
+});
+
+test("requestFrame callbacks run first in the frame, so what they ask for draws in the same frame", () => {
+  const { frames, draws, scheduler } = setup();
+  const order = [];
+  scheduler.requestFrame((ts) => {
+    order.push(["callback", ts]);
+    scheduler.requestDraw(DRAW_REASON.STATE);
+  });
+  frames.runFrame();
+  assert.deepEqual(order, [["callback", 16]]);
+  assert.deepEqual(draws, [[DRAW_REASON.STATE]]);
+  assert.equal(frames.pending, 0);
+});
+
+test("a callback asked for inside a frame runs in the next one, and cancelFrame drops it", () => {
+  const { frames, scheduler } = setup();
+  const ran = [];
+  scheduler.requestFrame(() => {
+    ran.push("first");
+    scheduler.requestFrame(() => ran.push("second"));
+  });
+  const dropped = scheduler.requestFrame(() => ran.push("dropped"));
+  scheduler.cancelFrame(dropped);
+  frames.runFrame();
+  assert.deepEqual(ran, ["first"]);
+  frames.runFrame();
+  assert.deepEqual(ran, ["first", "second"]);
+  assert.equal(frames.pending, 0);
+});
+
+test("a draw that asks for another draw gets one more frame, not a loop", () => {
+  const frames = createFrames();
+  let draws = 0;
+  let scheduler = null;
+  scheduler = createFrameScheduler({
+    requestAnimationFrame: frames.requestAnimationFrame,
+    cancelAnimationFrame: frames.cancelAnimationFrame,
+    draw: () => {
+      draws += 1;
+      if (draws === 1) scheduler.requestDraw(DRAW_REASON.MEDIA);
+    },
+    animating: () => false,
+  });
+  scheduler.requestDraw(DRAW_REASON.STATE);
+  for (let i = 0; i < 5; i += 1) frames.runFrame();
+  assert.equal(draws, 2);
+  assert.equal(frames.pending, 0);
+});
+
+test("stop() cancels the pending frame and ignores later requests", () => {
+  const { frames, draws, scheduler } = setup({ animating: () => true });
+  scheduler.requestDraw(DRAW_REASON.STATE);
+  scheduler.stop();
+  assert.equal(frames.pending, 0);
+  scheduler.requestDraw(DRAW_REASON.STATE);
+  scheduler.requestFrame(() => draws.push("callback"));
+  frames.runFrame();
+  assert.deepEqual(draws, []);
+});

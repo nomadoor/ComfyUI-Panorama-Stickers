@@ -37,7 +37,7 @@
 | `canvas` | この拡張が作ったキャンバス：`created`（作った数）、`released`（`releasePanoCanvas` で幅と高さを 0 にした回数）、`collected`（GC された数、`FinalizationRegistry`）、`alive`（まだ GC されていない数）、`sized`（大きさが 0 でない数）、`pixels` と `mb`（合計の画素数と、RGBA で見積もったバイト数）、`largest`（最大のキャンバスの大きさ）、`byLabel`（作った場所ごとの `[数, 画素数]`） |
 | `webgl` | WebGL コンテキスト：`created` / `lost` / `restored` / `disposed` / `alive`（破棄も喪失もしていない数） |
 | `video` | この拡張が作った `<video>`：`alive`、`playing`、`list`（最大 20 件：`label`、再生中か、src があるか、`videoWidth` x `videoHeight`、`readyState`、DOM に付いているか） |
-| `frame` | エディタの描画ループ：直近 1 秒のフレーム数、1 フレームの最長時間（ms）、長いタスク（`longtask`）の数と最長時間 |
+| `frame` | エディタの描画：直近 1 秒のフレーム数、1 フレームの最長時間（ms）、長いタスク（`longtask`）の数と最長時間。エディタは描くことがあるときだけフレームを回すので（`pano_frame_scheduler.js`）、何もしていないときは 0 になる |
 | `renders` | three.js のビューの描画：`editor`（エディタのビュー）と `node`（ノード上の共有ビュー）ごとの、直近 1 秒の回数と最長時間 |
 | `sources["three.editor"]`, `sources["three.node"]` | 各ビューの `renderer.info`（`textures`、`geometries`、`programs`、最後の描画パスの `calls` と `triangles`）、キャンバスの大きさ、`sceneItems`（`scene` と 3D Sticker の項目の数、読み込み済み・読み込み中の数、読み込み済みの合計 MB） |
 | `sources.editor` | 開いているエディタ：`type`（`stickers` / `cutout` など）、`readOnly`、`mode`、`interaction`（`editor.interaction.kind`）、`timelineDrag`、`playing` |
@@ -45,6 +45,8 @@
 
 記録とは別に、`events` に WebGL コンテキストの作成・喪失（`webglcontextlost`）・復帰（`webglcontextrestored`）・破棄を、
 時刻付きで最後の 100 件まで残します。
+エディタのビューは、コンテキストを失うと GPU の資源を放して復帰を待ち、復帰したら同じキャンバスにビューを作り直します。
+失ったビューは復帰まで同じコンテキストとして数えるので、1 回の喪失と復帰は `created` 2・`lost` 1・`restored` 1・`disposed` 1・`alive` 1 になります。
 
 ## 記録の残し方
 

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { setSegmentEasing } from "../web_src/pano_timeline.js";
+import { keyedAt, setSegmentEasing } from "../web_src/pano_timeline.js";
 
 const canonical = () => loadSceneState(readFileSync(new URL("./fixtures/scene_state/v2_canonical.json", import.meta.url), "utf8"));
 
@@ -88,7 +88,8 @@ test("the Timeline has one row per object: the Camera with `camera`, then the St
   assert.equal(camera.clip, null);
   // One pin per frame: full where every Lane has a Keyframe, partial where only some do.
   assert.deepEqual(camera.keys, [{ frame: 0, full: true }, { frame: 24, full: true }, { frame: 48, full: false }]);
-  assert.equal(camera.keyed, true, "every Camera Lane has a Keyframe at the playhead");
+  assert.equal(keyedAt(camera.keys, 24), true, "every Camera Lane has a Keyframe at the playhead");
+  assert.equal("keyed" in camera || "frame" in model || "playing" in model || "label" in model, false, "the playhead is not in the model");
   assert.deepEqual(camera.lanes.map((lane) => [lane.lane, lane.label, lane.frames]), [
     ["position", "Position", [0, 24, 48]],
     ["rotation", "Rotation", [0, 24, 48]],

@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { createApp, reactive } from "vue";
+import { createApp, reactive, shallowRef } from "vue";
 import {
   attachCutoutPreview,
   attachPreviewNode,
@@ -14,6 +14,7 @@ import { cameraBasis, yawPitchToDir } from "./pano_camera_math.js";
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
 import { createHistoryController } from "./pano_paint_history.js";
 import { createFrameBatch } from "./pano_frame_batch.js";
+import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 import {
@@ -60,6 +61,7 @@ import {
   laneNames,
   moveClip,
   moveKeyframes,
+  ownerTimed,
   setLaneValue,
   setSegmentEasing,
   timelineOpens,
@@ -72,7 +74,6 @@ import {
   createEditorView,
   frameViewContext,
   shotCamera,
-  viewInputKey,
   viewportCamera,
   viewProjection,
   workingSkyLayers,
@@ -116,7 +117,7 @@ import {
 } from "./pano_space.js";
 import { shownSpaceMode, spaceModeChoice, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
-import { addDiagnosticsSource, createPanoCanvas, createPanoVideo, diagnosticsFrameEnd, diagnosticsFrameStart, trackPanoCanvas, trackPanoVideo } from "./pano_diagnostics.js";
+import { addDiagnosticsSource, createPanoCanvas, createPanoVideo, diagnosticsFrameEnd, diagnosticsFrameStart, releasePanoCanvas, trackPanoCanvas, trackPanoVideo } from "./pano_diagnostics.js";
 import {
   contextHalfExtentsPx,
   createDefaultCutoutShot,
@@ -819,6 +820,9 @@ async function showEditor(node, type, options = {}) {
       label: initialCutoutPreviewShot ? "Loading preview" : "Add Frame to preview",
     },
   });
+  // The playhead and whether it plays, apart from uiState: they change on every frame of playback, and
+  // only the Timeline's playhead, time and key buttons follow them (PanoTimeline.vue).
+  const timelinePlayhead = { frame: shallowRef(0), playing: shallowRef(false) };
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
   const onImageFileSelected = ({ intent, file } = {}) => {
@@ -849,6 +853,7 @@ async function showEditor(node, type, options = {}) {
       cssColor: colorToCss(swatch.color, 1),
     })),
     uiState,
+    playhead: timelinePlayhead,
     onClose: () => { void closeEditor(); },
     onTimeline: (action) => onTimelineAction(action),
     onImageFileSelected,
@@ -1094,33 +1099,48 @@ async function showEditor(node, type, options = {}) {
   // Removes the editor from the diagnostics samples (set when the render loop starts).
   let removeDiagnosticsSource = () => {};
   const runtime = {
+    // The next frame draws the stage (tickFrame); it waits while the layout settles, keeping the reasons
+    // asked for since the last draw.
     dirty: true,
-    rafId: 0,
+    reasons: new Set(),
     running: true,
     lastTickTs: 0,
     pendingStableLayoutFrames: type === "cutout" ? 2 : 0,
     hasPresentedFrame: false,
+    // The three.js canvas needs drawing again. A frame that only changes the 2D overlay leaves it as it
+    // is, and the page keeps showing its last frame.
     backgroundDirty: true,
-    backgroundWasVisible: false,
+    // Counts the changes to the working state (requestDraw with DRAW_REASON.STATE). What is derived from
+    // the state for drawing is kept while it stays the same.
+    stateRevision: 0,
     frameSafeRect: null,
     frameCanvasScale: 1,
     tickErrorSignature: "",
     // The node's preview has not seen the state since a drag changed it.
     nodePreviewPending: false,
   };
+  // Every frame of the editor goes through one scheduler (pano_frame_scheduler.js): the stage draws when
+  // something asks for it, and keeps drawing only while something animates (editorAnimating). The
+  // playback and a drag's batched work take their frames from it too.
+  const scheduler = createFrameScheduler({
+    requestAnimationFrame: (callback) => requestAnimationFrame(callback),
+    cancelAnimationFrame: (id) => cancelAnimationFrame(id),
+    draw: (ts, reasons) => tick(ts, reasons),
+    animating: () => editorAnimating(),
+  });
   // A drag's moves change the state at once; what follows from it (the Timeline, the view, the
   // inspector, the playhead of a scrub) runs at most once per frame. The drag's end does the rest once.
   const dragFrames = createFrameBatch({
-    requestFrame: (callback) => requestAnimationFrame(callback),
-    cancelFrame: (id) => cancelAnimationFrame(id),
+    requestFrame: (callback) => scheduler.requestFrame(callback),
+    cancelFrame: (id) => scheduler.cancelFrame(id),
     tasks: {
       seek: () => playback.seek(timeline.scrubFrame),
       timeline: () => syncTimeline(),
       // The Stickers are evaluated at the playhead as the stage draws; the stroke geometry stays cached.
+      // A Clip range is read from the state as it is drawn (copyClipRanges).
       view: () => {
         syncCutoutShot();
-        runtime.backgroundDirty = true;
-        runtime.dirty = true;
+        scheduler.requestDraw(DRAW_REASON.VIEW);
       },
       sidePanel: () => updateSidePanel(),
     },
@@ -1128,22 +1148,31 @@ async function showEditor(node, type, options = {}) {
   // The Stickers and Cutout editors and the read-only Preview modal draw with three.js. The Cutout
   // camera preview draws through the same view as its own owner.
   // A `scene` item that loaded, or Spark's sorted splats, change only the stage.
+  // The stage's three.js canvas is the page's own (backgroundCanvas): its frames are not copied.
   const editorView = createEditorView({
-    onReady: () => requestDraw(),
+    canvas: backgroundCanvas,
+    onReady: () => {
+      syncCanvasSize();
+      requestDraw({ reason: DRAW_REASON.CONTEXT });
+    },
     onFailed: () => requestDraw(),
-    onUpdate: () => {
-      runtime.backgroundDirty = true;
-      requestDraw({ localOnly: true });
+    onUpdate: () => requestDraw({ localOnly: true, reason: DRAW_REASON.MEDIA }),
+    // A new view has nothing on its canvas yet, nor the camera preview's frame.
+    onRestored: () => {
+      cameraPreviewDrawn = null;
+      syncCanvasSize();
+      requestDraw({ reason: DRAW_REASON.CONTEXT });
     },
   });
   // The panorama view's projection, rebuilt when its camera or the canvas size changes.
-  let viewProjectionCache = { key: "", projection: null };
-  let editorViewScene = { key: null, sceneState: null };
+  let viewProjectionCache = { key: [], projection: null };
+  // The state v2 the views draw, made again when the state changes (runtime.stateRevision).
+  let editorViewScene = { revision: -1, sceneState: null };
   // The input built for the frame being drawn, shared by its views; drawScene clears it.
   let editorViewFrameInput = null;
-  // The input keys the camera preview and the Unwrap view last drew, to skip unchanged redraws.
-  let cameraPreviewKey = null;
-  let unwrapKey = null;
+  // The camera preview's last frame ({ width, height }), or null; it draws again when what it shows can
+  // have changed (drawScene's reasons) or its size changes.
+  let cameraPreviewDrawn = null;
   // The pick of the last 6DoF wheel step and of the last Frame view wheel step (pano_space.js
   // reuseWheelPick).
   let spaceWheel = null;
@@ -1196,7 +1225,7 @@ async function showEditor(node, type, options = {}) {
   };
   const queueVideoTransportLayout = () => {
     if (videoTransportLayoutRaf) return;
-    videoTransportLayoutRaf = window.requestAnimationFrame(() => {
+    videoTransportLayoutRaf = scheduler.requestFrame(() => {
       videoTransportLayoutRaf = 0;
       syncVideoTransportLayout();
     });
@@ -1228,7 +1257,7 @@ async function showEditor(node, type, options = {}) {
   if (floatingRightEl) transportLayoutObserver?.observe(floatingRightEl);
   videoCleanupFns.push(() => {
     if (videoTransportLayoutRaf) {
-      window.cancelAnimationFrame(videoTransportLayoutRaf);
+      scheduler.cancelFrame(videoTransportLayoutRaf);
       videoTransportLayoutRaf = 0;
     }
     transportLayoutObserver?.disconnect?.();
@@ -1262,76 +1291,83 @@ async function showEditor(node, type, options = {}) {
     thumbVideo.muted = true;
     thumbVideo.playsInline = true;
     thumbVideo.crossOrigin = "anonymous";
-    const loaded = await new Promise((resolve) => {
-      let settled = false;
-      const finish = (ok) => {
-        if (settled) return;
-        settled = true;
-        resolve(ok);
-      };
-      thumbVideo.addEventListener("loadedmetadata", () => finish(true), { once: true });
-      thumbVideo.addEventListener("canplay", () => finish(true), { once: true });
-      thumbVideo.addEventListener("error", () => finish(false), { once: true });
-      thumbVideo.src = safeSrc;
-      thumbVideo.load();
-    });
-    if (videoState.thumbnailJobId !== jobId) return;
-    const videoWidth = Number(thumbVideo.videoWidth || 0);
-    const videoHeight = Number(thumbVideo.videoHeight || 0);
-    if (!loaded || videoWidth < 1 || videoHeight < 1) {
-      videoState.thumbnailFailedSrcs.add(safeSrc);
-      return;
-    }
-    const sampleDuration = Math.max(0, Number(thumbVideo.duration || duration || 0));
     const canvas = createPanoCanvas({ label: "editor.thumbnail" });
-    const thumbHeight = 46;
-    const thumbWidth = Math.max(72, Math.round((videoWidth / videoHeight) * thumbHeight));
-    canvas.width = thumbWidth;
-    canvas.height = thumbHeight;
-    const ctx2d = canvas.getContext("2d");
-    if (!ctx2d) return;
-    const thumbnails = [];
-    const seekTo = (time) => new Promise((resolve) => {
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      thumbVideo.addEventListener("seeked", finish, { once: true });
-      thumbVideo.addEventListener("error", finish, { once: true });
-      try {
-        thumbVideo.currentTime = time;
-      } catch {
-        finish();
-      }
-    });
-    for (let index = 0; index < VIDEO_THUMBNAIL_COUNT; index += 1) {
-      if (videoState.thumbnailJobId !== jobId) return;
-      const ratio = VIDEO_THUMBNAIL_COUNT <= 1 ? 0 : index / (VIDEO_THUMBNAIL_COUNT - 1);
-      const target = sampleDuration > 0
-        ? Math.max(0, Math.min(sampleDuration - Math.max(0.001, 0.5 / Math.max(1, Number(fps || 24))), sampleDuration * ratio))
-        : 0;
-      await seekTo(target);
-      if (videoState.thumbnailJobId !== jobId) return;
-      ctx2d.clearRect(0, 0, thumbWidth, thumbHeight);
-      ctx2d.drawImage(thumbVideo, 0, 0, thumbWidth, thumbHeight);
-      thumbnails.push({
-        id: `thumb-${index}`,
-        src: canvas.toDataURL("image/jpeg", 0.72),
-        time: target,
-        label: formatVideoTime(target),
+    // The element and the canvas are let go however the job ends: built, failed, or replaced by another.
+    try {
+      const loaded = await new Promise((resolve) => {
+        let settled = false;
+        const finish = (ok) => {
+          if (settled) return;
+          settled = true;
+          resolve(ok);
+        };
+        thumbVideo.addEventListener("loadedmetadata", () => finish(true), { once: true });
+        thumbVideo.addEventListener("canplay", () => finish(true), { once: true });
+        thumbVideo.addEventListener("error", () => finish(false), { once: true });
+        thumbVideo.src = safeSrc;
+        thumbVideo.load();
       });
+      if (videoState.thumbnailJobId !== jobId) return;
+      const videoWidth = Number(thumbVideo.videoWidth || 0);
+      const videoHeight = Number(thumbVideo.videoHeight || 0);
+      if (!loaded || videoWidth < 1 || videoHeight < 1) {
+        videoState.thumbnailFailedSrcs.add(safeSrc);
+        return;
+      }
+      const sampleDuration = Math.max(0, Number(thumbVideo.duration || duration || 0));
+      const thumbHeight = 46;
+      const thumbWidth = Math.max(72, Math.round((videoWidth / videoHeight) * thumbHeight));
+      canvas.width = thumbWidth;
+      canvas.height = thumbHeight;
+      const ctx2d = canvas.getContext("2d");
+      if (!ctx2d) return;
+      const thumbnails = [];
+      const seekTo = (time) => new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        thumbVideo.addEventListener("seeked", finish, { once: true });
+        thumbVideo.addEventListener("error", finish, { once: true });
+        try {
+          thumbVideo.currentTime = time;
+        } catch {
+          finish();
+        }
+      });
+      for (let index = 0; index < VIDEO_THUMBNAIL_COUNT; index += 1) {
+        if (videoState.thumbnailJobId !== jobId) return;
+        const ratio = VIDEO_THUMBNAIL_COUNT <= 1 ? 0 : index / (VIDEO_THUMBNAIL_COUNT - 1);
+        const target = sampleDuration > 0
+          ? Math.max(0, Math.min(sampleDuration - Math.max(0.001, 0.5 / Math.max(1, Number(fps || 24))), sampleDuration * ratio))
+          : 0;
+        await seekTo(target);
+        if (videoState.thumbnailJobId !== jobId) return;
+        ctx2d.clearRect(0, 0, thumbWidth, thumbHeight);
+        ctx2d.drawImage(thumbVideo, 0, 0, thumbWidth, thumbHeight);
+        thumbnails.push({
+          id: `thumb-${index}`,
+          src: canvas.toDataURL("image/jpeg", 0.72),
+          time: target,
+          label: formatVideoTime(target),
+        });
+      }
+      if (videoState.thumbnailJobId !== jobId) return;
+      uiState.videoTransport.thumbnails = thumbnails;
+      uiState.videoTransport.thumbnailCount = thumbnails.length || VIDEO_THUMBNAIL_COUNT;
+      setCachedVideoThumbnails(safeSrc, {
+        thumbnails,
+        thumbnailCount: thumbnails.length || VIDEO_THUMBNAIL_COUNT,
+        duration: sampleDuration,
+        fps,
+      });
+    } finally {
+      thumbVideo.removeAttribute("src");
+      thumbVideo.load();
+      releasePanoCanvas(canvas);
     }
-    if (videoState.thumbnailJobId !== jobId) return;
-    uiState.videoTransport.thumbnails = thumbnails;
-    uiState.videoTransport.thumbnailCount = thumbnails.length || VIDEO_THUMBNAIL_COUNT;
-    setCachedVideoThumbnails(safeSrc, {
-      thumbnails,
-      thumbnailCount: thumbnails.length || VIDEO_THUMBNAIL_COUNT,
-      duration: sampleDuration,
-      fps,
-    });
   };
   videoCleanupFns.push(() => {
     resetVideoThumbnails();
@@ -1343,8 +1379,8 @@ async function showEditor(node, type, options = {}) {
     video: videoEl instanceof HTMLVideoElement ? videoEl : null,
     clock: {
       now: () => performance.now(),
-      requestFrame: (callback) => requestAnimationFrame(callback),
-      cancelFrame: (id) => cancelAnimationFrame(id),
+      requestFrame: (callback) => scheduler.requestFrame(callback),
+      cancelFrame: (id) => scheduler.cancelFrame(id),
     },
     fps: playbackFps,
     span: () => {
@@ -1356,15 +1392,16 @@ async function showEditor(node, type, options = {}) {
     onFrame: (frame) => {
       if (stateV2) setTimelineFrame(frame);
       else syncVideoTransportState();
-      requestDraw({ cause: "frame_view", localOnly: true });
+      requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.PLAYHEAD });
     },
     onCapture: () => {
       if (captureStillFrameFromVideo()) runtime.backgroundDirty = true;
     },
     onChange: () => {
       syncVideoTransportState();
+      timelinePlayhead.playing.value = playback.playing;
       syncTimeline();
-      requestDraw({ cause: "frame_view", localOnly: true });
+      requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.PLAYHEAD });
     },
   });
   videoCleanupFns.push(() => playback.dispose());
@@ -1380,9 +1417,9 @@ async function showEditor(node, type, options = {}) {
         portStillCanvas.height = height;
         portStillCanvas.getContext("2d")?.drawImage(portVideoEl, 0, 0);
         portStillCanvas.__panoFrameIdx += 1;
-        requestDraw({ cause: "frame_view", localOnly: true });
+        requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA });
       },
-      onChange: () => requestDraw({ cause: "frame_view", localOnly: true }),
+      onChange: () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA }),
     })
     : null;
   if (portVideo) videoCleanupFns.push(() => portVideo.dispose());
@@ -1396,7 +1433,7 @@ async function showEditor(node, type, options = {}) {
         image.src = src;
         return image;
       },
-      onLoad: () => requestDraw({ cause: "frame_view", localOnly: true }),
+      onLoad: () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA }),
     })
     : null;
   if (videoEl instanceof HTMLVideoElement) {
@@ -1469,7 +1506,7 @@ async function showEditor(node, type, options = {}) {
     viewController.state.inertia.vx = 0;
     viewController.state.inertia.vy = 0;
     syncFloatingViewButtonState();
-    requestDraw({ localOnly: true });
+    requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
   }
 
   function applyViewTransitionEnd(end) {
@@ -3032,7 +3069,7 @@ async function showEditor(node, type, options = {}) {
     applySpaceMode(switchSpaceMode({ ...spaceModeState(), position: spaceViewState().position }, mode, spaceOrigin()));
     runtime.backgroundDirty = true;
     syncFloatingViewButtonState();
-    requestDraw({ localOnly: true });
+    requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
   }
 
   // The content sphere comes from the frame's input (editorViewInput), which the pointer and wheel
@@ -3092,7 +3129,7 @@ async function showEditor(node, type, options = {}) {
     editor.viewDistance = view.distance;
     editor.viewMoved = true;
     runtime.backgroundDirty = true;
-    requestDraw({ localOnly: true });
+    requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
   }
 
   // The size of the World content shown, which scales the navigation steps.
@@ -3142,7 +3179,7 @@ async function showEditor(node, type, options = {}) {
   // reuses the pick of an earlier one as reuseWheelPick() allows.
   function zoomSpaceAt(p, direction) {
     const now = performance.now();
-    const next = { x: p.x, y: p.y, time: now, key: editorView.contentKey(), view: spaceViewKey() };
+    const next = { x: p.x, y: p.y, time: now, key: editorView.contentRevision(), view: spaceViewKey() };
     if (!reuseWheelPick(spaceWheel, next)) {
       const hit = pickSpace(p);
       spaceWheel = { ...next, cost: performance.now() - now, hit };
@@ -3164,8 +3201,8 @@ async function showEditor(node, type, options = {}) {
   }
 
   function currentViewProjection() {
-    const key = `${editor.viewYaw}|${editor.viewPitch}|${editor.viewFov}|${canvas.width}|${canvas.height}`;
-    if (viewProjectionCache.key !== key) {
+    const key = [editor.viewYaw, editor.viewPitch, editor.viewFov, canvas.width, canvas.height];
+    if (key.some((value, index) => value !== viewProjectionCache.key[index])) {
       viewProjectionCache = { key, projection: viewProjection(currentViewCamera(), canvas.width, canvas.height) };
     }
     return viewProjectionCache.projection;
@@ -4001,15 +4038,15 @@ async function showEditor(node, type, options = {}) {
         ? { ...item, source: { kind: "file", filename: stickerImageKey(item) } }
         : item))
       : state.stickers;
-    // The state v2 is rebuilt only when the Stickers or their assets change. Paint comes from the
+    // The state v2 is rebuilt only when the state changes (runtime.stateRevision). Paint comes from the
     // paint engine's ERP canvases, so the strokes are left out. A Timeline drag changes Clip ranges on
-    // every move, so they are left out too and copied in instead.
-    const withoutClip = ({ clip, ...rest }) => rest;
-    const sceneKey = JSON.stringify([stickers.map(withoutClip), Object.keys(assets), withoutClip(state.scene ?? {})]);
-    if (editorViewScene.key !== sceneKey) {
-      editorViewScene = { key: sceneKey, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
+    // every move without a state draw request, so they are copied in on each build instead.
+    if (editorViewScene.revision !== runtime.stateRevision) {
+      editorViewScene = { revision: runtime.stateRevision, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
     }
     if (stateV2) copyClipRanges(editorViewScene.sceneState);
+    // The Stickers and the World are evaluated at the playhead once per frame.
+    const evaluated = evaluateSceneState(editorViewScene.sceneState, editor.frame);
     const portPicture = portVideo ? followPortSticker() : null;
     const media = (item) => {
       // A hidden Sticker of state v2 is not drawn; the legacy editor shows its hidden port Sticker faintly.
@@ -4018,7 +4055,7 @@ async function showEditor(node, type, options = {}) {
       const img = getStickerImage(item);
       return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
     };
-    const layers = workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers });
+    const layers = workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers, evaluated });
     // The background VIDEO and its still are one source, so a seek keeps the frame before.
     const bgSource = bgImg && (bgImg === videoEl || bgImg === stillCanvas) ? videoEl.dataset.panoSrc : bgImg;
     const background = isDecodedImageReady(bgImg)
@@ -4031,7 +4068,7 @@ async function showEditor(node, type, options = {}) {
     applySpaceMode(spaceMode);
     // `content` is the World alone, as the Cutout's Camera sees it in the Frame view and the camera
     // preview (#77); `space` adds the guides of the panorama view.
-    const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, media) : null;
+    const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, evaluated, media) : null;
     const space = isSpaceView() ? { ...content, ...spaceGuides(content) } : null;
     return { background, layers, space, content };
   }
@@ -4050,8 +4087,7 @@ async function showEditor(node, type, options = {}) {
   // The World at the playhead: the `scene` item the node draws at this frame with the `scene` transform,
   // the item of the 3D port Sticker with its transform and opacity, the world Sticker planes, and the
   // sphere around the content (null without content) that frames it and scales the navigation.
-  function buildSpaceContent(sceneState, media) {
-    const evaluated = evaluateSceneState(sceneState, editor.frame);
+  function buildSpaceContent(sceneState, evaluated, media) {
     const files = sceneFiles();
     const scene = sceneRequest(files, evaluated.scene);
     const box = scene?.url ? editorView.sceneBox(scene.url) : null;
@@ -4060,7 +4096,7 @@ async function showEditor(node, type, options = {}) {
     const sticker = stickerContentRequest(portFiles, sceneState, evaluated);
     const stickerBox = sticker?.url ? editorView.sceneBox(sticker.url) : null;
     const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
-    const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media });
+    const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media, evaluated });
     const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers, items));
     return {
       evaluated,
@@ -4119,8 +4155,14 @@ async function showEditor(node, type, options = {}) {
     return cameraShoots() && editor.selectedId === CAMERA_SHOT_ID;
   }
 
+  // The Camera's trajectory over the Timeline, made again when the state or the span changes.
+  let trajectory = { revision: -1, span: -1, segments: [] };
   function cameraLines(radius) {
-    const segments = polylineSegments(cameraTrajectory(state, timelineSpanFrames()));
+    const span = timelineSpanFrames();
+    if (trajectory.revision !== runtime.stateRevision || trajectory.span !== span) {
+      trajectory = { revision: runtime.stateRevision, span, segments: polylineSegments(cameraTrajectory(state, span)) };
+    }
+    const { segments } = trajectory;
     const lines = segments.length ? [{ segments, color: CUTOUT_TRAJECTORY_COLOR }] : [];
     if (!isFreeSpaceView()) return lines;
     const color = isCameraSelected() ? CUTOUT_FRAME_ACCENT : CUTOUT_FRUSTUM_COLOR;
@@ -4156,35 +4198,39 @@ async function showEditor(node, type, options = {}) {
     return true;
   }
 
+  // rect ({ x, y, w, h }) of the 2D overlay in the three.js canvas's device pixels.
+  function deviceRect(rect) {
+    const sx = backgroundCanvas.width / Math.max(1, canvas.width);
+    const sy = backgroundCanvas.height / Math.max(1, canvas.height);
+    return { x: rect.x * sx, y: rect.y * sy, w: rect.w * sx, h: rect.h * sy };
+  }
+
+  // The panorama view on the whole three.js canvas. Returns whether it could draw.
   function renderEditorView() {
-    if (!runtime.backgroundDirty && runtime.backgroundWasVisible) return;
     const { background, layers, space } = editorViewInput();
-    const width = backgroundCanvas.width;
-    const height = backgroundCanvas.height;
-    const surface = editorView.render({
-      width,
-      height,
-      camera: space ? spaceCamera(spaceViewState(), width, height, space.sphere) : currentViewCamera(),
-      background,
-      layers,
-      space,
-    });
-    const bg2d = backgroundCanvas.getContext("2d");
-    bg2d.clearRect(0, 0, width, height);
+    const width = canvas.width;
+    const height = canvas.height;
+    const rect = deviceRect({ x: 0, y: 0, w: width, h: height });
+    let drawn = false;
     if (!background && !layers.length && !space) {
-      bg2d.fillStyle = "#070707";
-      bg2d.fillRect(0, 0, width, height);
-    } else if (surface) {
-      bg2d.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, 0, 0, width, height);
+      editorView.clear(0x070707);
+      drawn = editorView.ready;
+    } else {
+      editorView.clear();
+      drawn = !!editorView.render({
+        rect,
+        camera: space ? spaceCamera(spaceViewState(), width, height, space.sphere) : currentViewCamera(),
+        background,
+        layers,
+        space,
+      });
     }
-    runtime.backgroundWasVisible = !!surface;
-    runtime.backgroundDirty = false;
-    unwrapKey = null;
     // The frame's input may have taken 6DoF back to 3DoF (its World content went away); the 3DoF / 6DoF
     // segments show it with this frame.
     syncFloatingViewButtonState();
     // The world Sticker's menu follows it with the view and the playhead, and goes with its gizmo.
     if (editor.worldSelectedId || isCameraSelected() || worldMenuShown) updateSelectionMenu();
+    return drawn;
   }
 
   // The three.js camera that looks through the shot. With World content (PanoramaCutoutNode, #77) it
@@ -4195,41 +4241,31 @@ async function showEditor(node, type, options = {}) {
     return placedCamera(shotCamera(shot), shot.position, frameViewDistance(), content.sphere);
   }
 
-  // Draws what the shot sees into rect, or returns false when there is nothing to draw yet.
-  function drawEditorViewShot(targetCtx, rect, shot, owner) {
+  // Draws what the shot sees into rect (device pixels of the three.js canvas; it may reach past the
+  // canvas). Returns the part of the canvas drawn ({ canvas, x, y, width, height }), or null when there is
+  // nothing to draw yet.
+  function drawEditorViewShot(rect, shot, owner) {
     const { background, layers, content } = editorViewInput();
-    if (!background && !layers.length && !content) return false;
+    if (!background && !layers.length && !content) return null;
     const space = content && shot.position ? content : null;
-    const surface = editorView.render({ width: rect.w, height: rect.h, camera: shotViewCamera(shot), background, layers, space, owner });
-    if (!surface) return false;
-    targetCtx.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, rect.x, rect.y, rect.w, rect.h);
-    return true;
+    return editorView.render({ rect, camera: shotViewCamera(shot), background, layers, space, owner });
   }
 
-  // Unwrap draws into the background layer like the panorama view, and only when its input changed.
+  // The Unwrap view in rect of the 2D overlay, on the three.js canvas. Returns whether it could draw.
   function renderEditorViewUnwrap(rect) {
-    const input = editorViewInput();
-    const key = JSON.stringify([rect, backgroundCanvas.width, backgroundCanvas.height, viewInputKey(input)]);
-    if (key === unwrapKey) return;
-    const surface = editorView.renderUnwrap({ width: rect.w, height: rect.h, ...input });
-    const bg2d = backgroundCanvas.getContext("2d");
-    bg2d.fillStyle = "#070707";
-    bg2d.fillRect(0, 0, backgroundCanvas.width, backgroundCanvas.height);
-    if (surface) bg2d.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, rect.x, rect.y, rect.w, rect.h);
-    unwrapKey = surface ? key : null;
-    // The panorama view draws its own frame into this layer again.
-    runtime.backgroundWasVisible = false;
+    editorView.clear(0x070707);
+    return !!editorView.renderUnwrap({ rect: deviceRect(rect), ...editorViewInput() });
   }
 
-  function drawGridUnwrap(skipBackground = false) {
+  function drawGridUnwrap(drawView) {
     const w = canvas.width;
     const h = canvas.height;
     const r = getUnwrapRect();
     ctx.globalAlpha = 1;
     ctx.lineWidth = 1;
-    if (!skipBackground) ctx.clearRect(0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
     rebuildPaintEngineIfNeeded();
-    renderEditorViewUnwrap(r);
+    if (drawView) runtime.backgroundDirty = !renderEditorViewUnwrap(r);
 
     if (editor.showGrid && !editor.fullscreen) {
       ctx.strokeStyle = "#3f3f46";
@@ -4272,12 +4308,12 @@ async function showEditor(node, type, options = {}) {
     ctx.stroke();
   }
 
-  function drawGridPano(skipBackground = false) {
+  function drawGridPano(drawView) {
     const w = canvas.width;
     const h = canvas.height;
-    if (!skipBackground) ctx.clearRect(0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
     rebuildPaintEngineIfNeeded();
-    renderEditorView();
+    if (drawView) runtime.backgroundDirty = !renderEditorView();
 
     if (editor.showGrid && !editor.fullscreen && editorViewInput().space) {
       drawErpOriginLabel();
@@ -4923,7 +4959,14 @@ async function showEditor(node, type, options = {}) {
       && Math.abs(hostHeight - Number(targetSize.height || 0)) <= 1;
   }
 
-  function drawCutoutOutputPreview() {
+  // The Cutout's camera preview. Its <canvas> (PanoFloatingRight.vue) floats over the stage with rounded
+  // corners and fades in and out, so it cannot be a part of the stage's own canvas. It is drawn on the
+  // stage's three.js canvas, in its bottom left corner, before the stage's frame covers it, and that part
+  // is taken as an ImageBitmap (a copy on the GPU where the browser draws with it) that the preview's
+  // "bitmaprenderer" canvas shows as it is. It draws only when what it shows can have changed: drawView
+  // (the three.js canvas draws in this frame) with a reason other than the view or the overlay, or its
+  // size changed.
+  function drawCutoutOutputPreview(drawView, reasons) {
     editor.outputPreviewRect = null;
     uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();
     // Panorama Studio's preview keeps one size: it has no size toggle (#89).
@@ -4937,38 +4980,33 @@ async function showEditor(node, type, options = {}) {
     const shot = getActiveCutoutShot();
     uiState.cameraPreview.visible = true;
     uiState.cameraPreview.expanded = !!editor.outputPreviewExpanded;
-    const previewCtx = cutoutPreviewCanvas?.getContext("2d");
-    if (!shot || !previewCtx) {
+    if (!shot || !cutoutPreviewCanvas) {
       uiState.cameraPreview.ready = false;
       uiState.cameraPreview.settled = false;
       uiState.cameraPreview.width = 220;
       uiState.cameraPreview.height = 132;
       uiState.cameraPreview.label = shot ? "Preview unavailable" : "Add Frame to preview";
-      previewCtx?.clearRect(0, 0, cutoutPreviewCanvas.width, cutoutPreviewCanvas.height);
-      cameraPreviewKey = null;
+      cameraPreviewDrawn = null;
       return;
     }
     const previewSize = getCutoutPreviewViewportSize(shot, !!editor.outputPreviewExpanded);
     uiState.cameraPreview.width = previewSize.width;
     uiState.cameraPreview.height = previewSize.height;
-    // The canvas is drawn at the preview's target size; CSS scales it while the box animates.
+    // The frame is drawn at the preview's target size in device pixels; CSS scales it while the box
+    // animates. A stage smaller than that (a tiny window) draws it as large as the stage holds.
     const dpr = window.devicePixelRatio || 1;
-    const rect = { x: 0, y: 0, w: Math.max(1, Math.round(previewSize.width * dpr)), h: Math.max(1, Math.round(previewSize.height * dpr)) };
-    if (cutoutPreviewCanvas.width !== rect.w || cutoutPreviewCanvas.height !== rect.h) {
-      cutoutPreviewCanvas.width = rect.w;
-      cutoutPreviewCanvas.height = rect.h;
+    const width = Math.max(1, previewSize.width * dpr);
+    const height = Math.max(1, previewSize.height * dpr);
+    const fit = Math.min(1, backgroundCanvas.width / width, backgroundCanvas.height / height);
+    const size = { width: Math.max(1, Math.floor(width * fit)), height: Math.max(1, Math.floor(height * fit)) };
+    const changed = [...reasons].some((reason) => reason !== DRAW_REASON.VIEW && reason !== DRAW_REASON.OVERLAY);
+    const stale = !cameraPreviewDrawn || cameraPreviewDrawn.width !== size.width || cameraPreviewDrawn.height !== size.height || changed;
+    if (drawView && stale) {
+      const surface = drawEditorViewShot({ x: 0, y: backgroundCanvas.height - size.height, w: size.width, h: size.height }, shot, "camera_preview");
+      cameraPreviewDrawn = surface ? size : null;
+      if (surface) showCameraPreviewFrame(surface);
     }
-    // With World content the preview also follows the Camera's position and the World it sees (#77).
-    const { content } = editorViewInput();
-    const world = content && [shot.position, editorView.contentKey(), content.stickers.map((layer) => [layer.id, layer.revision, layer.opacity, layer.position, layer.quaternion, layer.width])];
-    const key = JSON.stringify([rect, getCutoutCameraParams(shot), viewInputKey(editorViewInput()), world]);
-    let drew = key === cameraPreviewKey;
-    if (!drew) {
-      previewCtx.clearRect(0, 0, rect.w, rect.h);
-      drew = drawEditorViewShot(previewCtx, rect, shot, "camera_preview");
-      cameraPreviewKey = drew ? key : null;
-    }
-    if (!drew) {
+    if (!cameraPreviewDrawn) {
       uiState.cameraPreview.ready = false;
       uiState.cameraPreview.label = getConnectedErpImage() ? "Loading preview" : "Connect ERP image";
       uiState.cameraPreview.settled = false;
@@ -4980,6 +5018,20 @@ async function showEditor(node, type, options = {}) {
     uiState.cameraPreview.settled = layoutStable
       && runtime.pendingStableLayoutFrames <= 0
       && runtime.hasPresentedFrame;
+  }
+
+  // Shows the part `surface` of the three.js canvas in the camera preview. The bitmap is taken now, before
+  // the stage's frame covers that part; a newer frame that arrives first wins.
+  let cameraPreviewFrames = 0;
+  function showCameraPreviewFrame(surface) {
+    const request = ++cameraPreviewFrames;
+    createImageBitmap(surface.canvas, surface.x, surface.y, surface.width, surface.height).then((bitmap) => {
+      if (request !== cameraPreviewFrames || !runtime.running) {
+        bitmap.close();
+        return;
+      }
+      cutoutPreviewCanvas.getContext("bitmaprenderer")?.transferFromImageBitmap(bitmap);
+    }).catch((error) => console.error("[PanoramaStickers] camera preview frame failed", error));
   }
 
   function frameLocalPointToWorldDir(shot, point) {
@@ -5652,26 +5704,30 @@ async function showEditor(node, type, options = {}) {
     return projected;
   }
 
-  function drawFrameViewBackground() {
+  function drawFrameViewBackground(drawView) {
     const shot = getActiveCutoutShot();
     const layout = getFrameViewLayout(shot);
-    if (!shot || !layout) return false;
+    if (!shot || !layout) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (drawView) editorView.clear(0x0a0a0a);
+      return false;
+    }
     const rect = { x: layout.x, y: layout.y, w: layout.w, h: layout.h };
     // The context fills the whole canvas. Do NOT bound it relative to the gate — that makes the
     // rendered area shrink together with the gate and leaves unpainted margins.
     const { rect: contextRect, shot: contextShot } = frameViewContext(shot, layout, { width: canvas.width, height: canvas.height });
     const gateRadius = getFrameGateRadius(rect);
-    ctx.save();
-    // Opaque base every frame. Without this the region outside contextRect keeps
-    // last frame's pixels and the passepartout below multiplies it toward black,
-    // which reads as a growing black border around the view.
-    ctx.fillStyle = "#0a0a0a";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if (!drawEditorViewShot(ctx, contextRect, contextShot)) {
-      ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
-      ctx.fillRect(contextRect.x, contextRect.y, contextRect.w, contextRect.h);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (drawView) {
+      // An opaque base on the whole canvas, under the context. Only the part of the context on the canvas is
+      // drawn, at the canvas's own pixels. Until the shot can draw, its context is a little lighter
+      // (#111111, the base under white at 3%).
+      editorView.clear(0x0a0a0a);
+      const device = deviceRect(contextRect);
+      const drawn = !!drawEditorViewShot(device, contextShot);
+      if (!drawn) editorView.clear(0x111111, device);
+      runtime.backgroundDirty = !drawn;
     }
-    ctx.restore();
     ctx.save();
     ctx.fillStyle = "rgba(0, 0, 0, 0.58)";
     ctx.beginPath();
@@ -5841,16 +5897,25 @@ async function showEditor(node, type, options = {}) {
     ctx.restore();
   }
 
-  function drawScene() {
+  // Draws the stage: the three.js canvas when runtime.backgroundDirty says something it shows changed
+  // (reasons are the DRAW_REASON values of this frame), then the 2D overlay over it. A frame that draws on
+  // the three.js canvas draws all of it (its drawing buffer is not kept after the page shows it).
+  function drawScene(reasons = new Set()) {
     editorViewFrameInput = null;
+    const drawView = runtime.backgroundDirty;
+    // The camera preview draws first, in the corner the stage's frame then covers, with the paint as the
+    // stage draws it.
+    if (shotEditor) {
+      rebuildPaintEngineIfNeeded();
+      drawCutoutOutputPreview(drawView, reasons);
+    }
     if (editor.mode === "frame") {
       runtime.frameSafeRect = measureFrameSafeRect();
-      drawFrameViewBackground();
+      drawFrameViewBackground(drawView);
     }
-    else if (editor.mode === "unwrap") drawGridUnwrap(false);
-    else drawGridPano(false);
+    else if (editor.mode === "unwrap") drawGridUnwrap(drawView);
+    else drawGridPano(drawView);
     drawCutoutPanoPassepartout();
-    if (shotEditor) drawCutoutOutputPreview();
     drawObjects();
     syncFrameRollKnob();
     drawLassoOutlineOverlay();
@@ -5901,7 +5966,11 @@ async function showEditor(node, type, options = {}) {
     node.__panoLivePaintSurface = getSharedLivePaintSurface();
   }
 
+  // Asks for the next frame. options.reason (DRAW_REASON) says what changed; without one the working
+  // state may have, which makes what is derived from it again (runtime.stateRevision).
   function requestDraw(options = {}) {
+    const reason = options.reason ?? DRAW_REASON.STATE;
+    if (reason === DRAW_REASON.STATE) runtime.stateRevision += 1;
     const localOnly = !!options.localOnly;
     const externalSync = options.externalSync === true;
     const cause = String(options.cause || "");
@@ -5938,33 +6007,53 @@ async function showEditor(node, type, options = {}) {
       node.graph?.setDirtyCanvas?.(true, true);
       app?.canvas?.setDirty?.(true, true);
     }
-    runtime.dirty = true;
+    scheduler.requestDraw(reason);
   }
 
+  // The 2D overlay is laid out in CSS pixels, as the pointer and the hit tests are. The three.js canvas
+  // under it draws at the device's pixels (CSS size x devicePixelRatio), within what the GPU draws to.
   function syncCanvasSize() {
     const rect = canvas.getBoundingClientRect();
     const nextW = Math.max(2, Math.round(rect.width));
     const nextH = Math.max(2, Math.round(rect.height));
-    if (
-      canvas.width !== nextW || canvas.height !== nextH
-      || backgroundCanvas.width !== nextW || backgroundCanvas.height !== nextH
-    ) {
+    const dpr = window.devicePixelRatio || 1;
+    const before = [canvas.width, canvas.height, backgroundCanvas.width, backgroundCanvas.height].join("x");
+    if (canvas.width !== nextW || canvas.height !== nextH) {
       canvas.width = nextW;
       canvas.height = nextH;
-      backgroundCanvas.width = nextW;
-      backgroundCanvas.height = nextH;
-      runtime.backgroundDirty = true;
-      runtime.dirty = true;
-      if (shotEditor) {
-        runtime.pendingStableLayoutFrames = Math.max(Number(runtime.pendingStableLayoutFrames || 0), 1);
-      }
-      return true;
     }
-    return false;
+    editorView.resize(Math.round(rect.width * dpr) || nextW, Math.round(rect.height * dpr) || nextH);
+    if ([canvas.width, canvas.height, backgroundCanvas.width, backgroundCanvas.height].join("x") === before) return false;
+    runtime.backgroundDirty = true;
+    runtime.dirty = true;
+    if (shotEditor) {
+      runtime.pendingStableLayoutFrames = Math.max(Number(runtime.pendingStableLayoutFrames || 0), 1);
+    }
+    return true;
   }
 
-  function tickFrame(ts = performance.now()) {
+  // Whether the next frame must run although nothing asked for it: something moves by itself or a fade
+  // has not reached its end. A drag keeps the frames going until it ends.
+  function editorAnimating() {
+    return !!editor.viewTransition
+      || !!viewController.state.inertia.active
+      || runtime.pendingStableLayoutFrames > 0
+      || Math.abs(Number(editor.frameRollOverlayAlpha || 0) - Number(editor.frameRollOverlayTarget || 0)) > 1e-6
+      || Math.abs(Number(editor.cutoutPanoDimAlpha || 0) - Number(editor.cutoutPanoDimTarget || 0)) > 1e-6
+      || Math.abs(Number(editor.cutoutPanoFrameAlpha || 0) - Number(editor.cutoutPanoFrameTarget || 0)) > 1e-6
+      || editor.outputPreviewAnim !== editor.outputPreviewAnimTo
+      || isDragging();
+  }
+
+  // A frame: the animations step, and the stage draws when something asked for it (reasons, the
+  // DRAW_REASON values since the last frame) or an animation moved. Only an overlay change leaves the
+  // three.js canvas as it is.
+  function tickFrame(ts = performance.now(), reasons = new Set()) {
     if (runtime.nodePreviewPending && !isDragging()) syncNodeLivePreviewSources();
+    // The reasons wait with the draw while the layout settles.
+    reasons.forEach((reason) => runtime.reasons.add(reason));
+    if (reasons.size) runtime.dirty = true;
+    if ([...reasons].some((reason) => reason !== DRAW_REASON.OVERLAY)) runtime.backgroundDirty = true;
     syncCutoutShot();
     const dt = runtime.lastTickTs > 0 ? Math.max(0.001, (ts - runtime.lastTickTs) / 1000) : (1 / 60);
     runtime.lastTickTs = ts;
@@ -6090,7 +6179,9 @@ async function showEditor(node, type, options = {}) {
         return;
       }
       runtime.dirty = false;
-      drawScene();
+      const drawn = runtime.reasons;
+      runtime.reasons = new Set();
+      drawScene(drawn);
     }
   }
 
@@ -6111,12 +6202,11 @@ async function showEditor(node, type, options = {}) {
     }
   }
 
-  function tick(ts = performance.now()) {
+  function tick(ts = performance.now(), reasons = new Set()) {
     if (!runtime.running) return;
     const frameStart = diagnosticsFrameStart();
-    runGuardedFrame(() => tickFrame(ts));
+    runGuardedFrame(() => tickFrame(ts, reasons));
     diagnosticsFrameEnd(frameStart);
-    if (runtime.running) runtime.rafId = requestAnimationFrame(tick);
   }
 
   // Draws the stage at its new size now, leaving the animations and the tick's clock to the next tick.
@@ -6124,7 +6214,7 @@ async function showEditor(node, type, options = {}) {
     if (!runtime.running || !syncCanvasSize()) return;
     runGuardedFrame(() => {
       runtime.dirty = false;
-      drawScene();
+      drawScene(new Set([DRAW_REASON.RESIZE]));
     });
   }
 
@@ -6132,13 +6222,26 @@ async function showEditor(node, type, options = {}) {
   // its old size for a frame shows its frame stretched, which made the Timeline's slide judder.
   const stageResizeObserver = new ResizeObserver(redrawNow);
   stageResizeObserver.observe(canvas);
+  // Moved to a screen of another pixel ratio, the stage keeps its CSS size; the three.js canvas follows the
+  // new ratio.
+  let pixelRatioQuery = null;
+  function watchPixelRatio() {
+    pixelRatioQuery?.removeEventListener("change", onPixelRatioChange);
+    pixelRatioQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    pixelRatioQuery.addEventListener("change", onPixelRatioChange);
+  }
+  function onPixelRatioChange() {
+    watchPixelRatio();
+    redrawNow();
+  }
+  watchPixelRatio();
 
   function stopRenderLoop() {
     removeDiagnosticsSource();
     runtime.running = false;
-    if (runtime.rafId) cancelAnimationFrame(runtime.rafId);
-    runtime.rafId = 0;
+    scheduler.stop();
     stageResizeObserver.disconnect();
+    pixelRatioQuery.removeEventListener("change", onPixelRatioChange);
   }
 
   function pushHistory() {
@@ -6257,6 +6360,21 @@ async function showEditor(node, type, options = {}) {
   function updateSidePanel() {
     syncCutoutShot();
     syncTimeline();
+    syncSidePanelModel();
+  }
+
+  // Whether the inspector shows something that changes with the playhead: a selected Sticker or Camera with
+  // Keyframes or a Clip range.
+  function inspectorTimed() {
+    const frameShot = shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : null;
+    return [...getSelectedItems(), selectedWorldSticker(), frameShot].some((item) => {
+      if (isSceneSticker(item)) return ownerTimed(item);
+      return isShotItem(item) && hasCamera() && ownerTimed(state.camera);
+    });
+  }
+
+  // The inspector's model (uiState.sidePanel), from the state and the selection.
+  function syncSidePanelModel() {
     if (hideSidebar) return;
     state.ui_settings = state.ui_settings || {};
     // Inspector content is derived data for Vue, not imperative DOM construction.
@@ -6443,17 +6561,13 @@ async function showEditor(node, type, options = {}) {
       selection.frames = selection.frames.filter((frame) => names.some((name) => owner[name].keyframes.some((key) => key.frame === frame)));
       if (!selection.frames.length) timeline.selection = null;
     }
-    const fps = state.timeline.fps;
     uiState.timeline = buildTimelineModel(state, {
-      frame: editor.frame,
       span,
       selection: timeline.selection,
       selectedId: editor.worldSelectedId || editor.selectedId,
       expanded: timeline.expanded ?? timelineTimed(),
       openRows: timeline.openRows,
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
-      playing: playback.playing,
-      label: `${editor.frame}f · ${(editor.frame / fps).toFixed(2)}s`,
       // A VIDEO on bg_media, sticker or the Cutout's source sets the Timeline fps (ADR 0024).
       fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker", "source"]),
       // The Cutout shows only its Camera; with a PANO_SCENE it shoots the Scene's Timeline (#77). Panorama
@@ -6535,12 +6649,17 @@ async function showEditor(node, type, options = {}) {
     // An edit of the Cutout's shot belongs to the frame it was made on.
     syncCutoutShot();
     editor.frame = next;
+    timelinePlayhead.frame.value = next;
     syncCutoutShot();
+    const selection = [editor.selectedId, editor.worldSelectedId];
     releaseHiddenSelection();
     markObjectVisualsDirty();
-    updateSidePanel();
+    // The Timeline's rows depend on the state and the selection, not on the playhead; the inspector shows
+    // values at the playhead only for something timed.
+    if (selection[0] !== editor.selectedId || selection[1] !== editor.worldSelectedId) updateSidePanel();
+    else if (inspectorTimed()) syncSidePanelModel();
     updateSelectionMenu();
-    requestDraw();
+    requestDraw({ reason: DRAW_REASON.PLAYHEAD });
   }
 
   function hasTimelineVideo() {
@@ -8058,7 +8177,7 @@ async function showEditor(node, type, options = {}) {
     const view = frameSpaceView(context);
     // A step reuses the pick of an earlier one as reuseWheelPick() allows, like zoomSpaceAt().
     const now = performance.now();
-    const next = { x: p.x, y: p.y, time: now, key: editorView.contentKey(), view: frameViewKey(context) };
+    const next = { x: p.x, y: p.y, time: now, key: editorView.contentRevision(), view: frameViewKey(context) };
     if (!reuseWheelPick(frameWheel, next)) {
       const hit = pickFrame(context, p);
       frameWheel = { ...next, cost: performance.now() - now, hit };
@@ -9031,7 +9150,7 @@ async function showEditor(node, type, options = {}) {
       top: initialPlacement.top,
       items: model.items,
     };
-    requestAnimationFrame(() => {
+    scheduler.requestFrame(() => {
       if (!selectionMenu || uiState.selectionMenu.visible !== true) return;
       const rect = selectionMenu.getBoundingClientRect();
       const menuW = Math.round(Number(rect?.width || 0)) || 220;
@@ -9060,7 +9179,7 @@ async function showEditor(node, type, options = {}) {
     uiState.tooltip.text = text;
     uiState.tooltip.visible = true;
     const expectedTarget = el;
-    requestAnimationFrame(() => {
+    scheduler.requestFrame(() => {
       if (tooltip.target !== expectedTarget || !tooltipEl || !expectedTarget?.isConnected) return;
       const hostRect = stageWrap.getBoundingClientRect();
       const rect = expectedTarget.getBoundingClientRect();
@@ -9125,10 +9244,7 @@ async function showEditor(node, type, options = {}) {
       y: state.ui_settings?.invert_view_y ? -1 : 1,
     }),
     getUnwrapRect,
-    onInteraction: () => {
-      runtime.backgroundDirty = true;
-      runtime.dirty = true;
-    },
+    onInteraction: () => scheduler.requestDraw(DRAW_REASON.VIEW),
   });
 
   function applyRollInteractionAngle(interaction, angle, event = {}) {
@@ -9422,7 +9538,7 @@ async function showEditor(node, type, options = {}) {
       editor.interaction = { kind: "marquee_select", start: p, current: p };
       updateCursor(p);
       canvas.setPointerCapture(e.pointerId);
-      requestDraw({ localOnly: true });
+      requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
       return;
     }
     if (editor.primaryTool === "cursor" && cameraShoots() && isFreeSpaceView() && startCameraPress(e, p)) return;
@@ -9714,7 +9830,7 @@ async function showEditor(node, type, options = {}) {
     if (axis === editor.gizmoAxis) return;
     editor.gizmoAxis = axis;
     runtime.backgroundDirty = true;
-    requestDraw({ localOnly: true });
+    requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
   }
 
   // A gizmo drag of the selected world Sticker: the Lane of the gizmo's mode, by the recording rule.
@@ -9914,7 +10030,7 @@ async function showEditor(node, type, options = {}) {
       viewController.moveDrag(dragPos.x, dragPos.y, editor.mode === "unwrap" ? "unwrap" : "pano", now);
       it.lastTs = now;
       it.last = dragPos;
-      requestDraw({ localOnly: true });
+      requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
       return;
     }
 
@@ -10150,7 +10266,7 @@ async function showEditor(node, type, options = {}) {
 
     if (it.kind === "marquee_select") {
       it.current = p;
-      requestDraw({ localOnly: true });
+      requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
       return;
     }
 
@@ -10351,7 +10467,7 @@ async function showEditor(node, type, options = {}) {
     if (editor.interaction) return;
     updateCursor(p);
     if (pointerChanged && editor.mode === "frame" && editor.primaryTool === "cursor") {
-      requestDraw({ localOnly: true });
+      requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
     }
   };
 
@@ -10363,7 +10479,7 @@ async function showEditor(node, type, options = {}) {
   canvas.onmouseleave = () => {
     setPointerPos(editor.pointerPos, false);
     updateCursor(editor.pointerPos);
-    if (editor.mode === "frame" && editor.primaryTool === "cursor") requestDraw({ localOnly: true });
+    if (editor.mode === "frame" && editor.primaryTool === "cursor") requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
   };
 
   canvas.onwheel = (e) => {
@@ -10386,7 +10502,7 @@ async function showEditor(node, type, options = {}) {
       // the pointer the same way.
       if (direction) zoomSpaceAt(screenPos(e), -direction);
     } else if (viewController.applyWheelEvent(e)) {
-      requestDraw({ localOnly: true });
+      requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
     }
     e.preventDefault();
   };
@@ -10622,7 +10738,7 @@ async function showEditor(node, type, options = {}) {
       editor.gizmoMode = gizmoModeTarget.getAttribute("data-gizmo-mode");
       runtime.backgroundDirty = true;
       updateSelectionMenu();
-      requestDraw({ localOnly: true });
+      requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
       return;
     }
     const viewTarget = ev.target.closest("[data-view]");
@@ -11357,7 +11473,6 @@ async function showEditor(node, type, options = {}) {
     timelineDrag: !!timeline.drag,
     playing: !!playback.playing,
   }));
-  runtime.rafId = requestAnimationFrame(tick);
 }
 
 app.registerExtension(createPanoEditorExtension({

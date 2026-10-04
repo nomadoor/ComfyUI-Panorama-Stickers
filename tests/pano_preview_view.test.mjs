@@ -5,7 +5,6 @@ import test from "node:test";
 import { PerspectiveCamera, Vector3 } from "three";
 
 import { cameraBasis, DEG2RAD } from "../web_src/pano_camera_math.js";
-import { MAX_RENDER_SIDE } from "../web_src/pano_editor_view.js";
 import { createSharedView, previewNodeCamera } from "../web_src/pano_preview_view.js";
 import { applyViewportCamera } from "../web_src/pano_three_view.js";
 
@@ -51,7 +50,7 @@ test("Preview node samples the same ERP coordinates as the previous renderer per
   ];
   const camera = new PerspectiveCamera();
   for (const view of views) {
-    for (const [width, height] of [[640, 360], [300, 500], [MAX_RENDER_SIDE, 1152]]) {
+    for (const [width, height] of [[640, 360], [300, 500], [3840, 2160]]) {
       applyViewportCamera(camera, previewNodeCamera(view, width, height));
       for (const fx of [0, 0.25, 0.5, 0.8, 1]) {
         for (const fy of [0, 0.4, 0.5, 1]) {
@@ -69,8 +68,15 @@ test("Preview node samples the same ERP coordinates as the previous renderer per
   }
 });
 
-test("the chunk renders at the same size limit as the eager side", () => {
-  assert.ok(source("pano_three_view.js").includes(`const MAX_RENDER_SIDE = ${MAX_RENDER_SIDE};`));
+test("nothing but the GPU limits the size the views render at", async () => {
+  const { fitRenderSize } = await import("../web_src/pano_three_view.js");
+  assert.deepEqual(fitRenderSize(3840, 2160, 16384), { width: 3840, height: 2160 });
+  assert.deepEqual(fitRenderSize(5120, 2880, 4096), { width: 4096, height: 2304 });
+  assert.deepEqual(fitRenderSize(0.4, 0.2, 4096), { width: 1, height: 1 });
+  const view = source("pano_three_view.js");
+  assert.doesNotMatch(view, /MAX_RENDER_SIDE/);
+  assert.match(view, /const maxSide = Math\.min\(renderer\.capabilities\.maxTextureSize, gl\.getParameter\(gl\.MAX_RENDERBUFFER_SIZE\)\);/);
+  assert.doesNotMatch(source("pano_editor_view.js"), /MAX_RENDER_SIDE/);
 });
 
 function fakeLoader() {

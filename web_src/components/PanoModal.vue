@@ -25,6 +25,9 @@ const props = defineProps({
   paintSwatches: { type: Array, default: () => [] },
   shellPreset: { type: Object, default: null },
   uiState: { type: Object, default: () => ({}) },
+  // The Timeline's playhead refs ({ frame, playing }), apart from uiState so that a frame of playback
+  // updates only the Timeline.
+  playhead: { type: Object, default: undefined },
 });
 
 const emit = defineEmits(["close", "image-file-selected", "image-file-cancelled", "timeline"]);
@@ -230,7 +233,7 @@ watch(() => props.open, (nextOpen) => {
           <PanoTooltip :model="uiState.tooltip || {}" />
           <PanoConfirmDialog :model="uiState.confirmDialog || {}" />
         </div>
-        <PanoTimeline :model="uiState.timeline || {}" @action="emit('timeline', $event)" />
+        <PanoTimeline :model="uiState.timeline || {}" :playhead="playhead" @action="emit('timeline', $event)" />
       </div>
 
       <PanoSidePanel

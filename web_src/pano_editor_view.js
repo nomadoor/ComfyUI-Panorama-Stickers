@@ -2,14 +2,12 @@
 // The World (the `scene` input and the world Stickers) and the Viewport camera's movement in space
 // are in pano_space.js.
 import { evaluateSceneState } from "./pano_scene_eval.js";
-import { createPanoCanvas, watchThreeView } from "./pano_diagnostics.js";
+import { watchThreeView } from "./pano_diagnostics.js";
 import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
 import { contextHalfExtentsPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import { worldStickerPlane } from "./pano_space.js";
 import { panoToWorld, quaternionToRotation, rotationToQuaternion, worldRotation, worldToPano } from "./pano_world.js";
 
-// The three.js view renders at most this many pixels on a side.
-export const MAX_RENDER_SIDE = 2048;
 // A hidden port Sticker is drawn this faintly so it can be found and shown again.
 export const HIDDEN_PREVIEW_OPACITY = 0.28;
 
@@ -95,9 +93,8 @@ export function viewProjection(camera, width, height) {
 // paint layers (ERP canvases). Sky Stickers and paint share one z_index axis; #52 adds z_index to
 // the sky Stickers of state v2, and until then the editor's z_index is passed in.
 // media(sticker) returns { media, revision, source? } for a Sticker (source: see pano_three_view.js
-// layerTexture), or null.
-export function skyLayers(sceneState, frame, { media, zIndex, paintLayers }) {
-  const evaluated = evaluateSceneState(sceneState, frame);
+// layerTexture), or null. evaluated is evaluateSceneState(sceneState, frame), when the caller has it.
+export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evaluated = evaluateSceneState(sceneState, frame) }) {
   const layers = [];
   sceneState.stickers.forEach((sticker, index) => {
     const value = evaluated.stickers[index];
@@ -135,7 +132,7 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers }) {
 // PanoramaStickersNode): media(item) gets the working Sticker a sky Sticker came from, and its
 // z_index orders it. Loading renames a missing, non-string or repeated
 // id (the first Sticker keeps it), so a renamed Sticker has no working Sticker and is left out.
-export function workingSkyLayers(sceneState, frame, stickers, { media, paintLayers }) {
+export function workingSkyLayers(sceneState, frame, stickers, { media, paintLayers, evaluated }) {
   const byId = new Map();
   for (const item of stickers) {
     if (typeof item?.id === "string" && item.id && !byId.has(item.id)) byId.set(item.id, item);
@@ -147,6 +144,7 @@ export function workingSkyLayers(sceneState, frame, stickers, { media, paintLaye
     },
     zIndex: (sticker) => Number(byId.get(sticker.id)?.z_index || 0),
     paintLayers,
+    evaluated,
   });
 }
 
@@ -160,12 +158,12 @@ function mediaSize(media) {
 // The planes of the world Stickers shown at a Timeline frame, for the space view's `stickers`: each is
 // a worldStickerPlane() with its media (media(item) as in workingSkyLayers, by the working Sticker of
 // the same id) and opacity. A Sticker without media, or whose media has no size yet, is left out.
-export function worldStickerLayers(sceneState, frame, stickers, { media }) {
+// evaluated is evaluateSceneState(sceneState, frame), when the caller has it.
+export function worldStickerLayers(sceneState, frame, stickers, { media, evaluated = evaluateSceneState(sceneState, frame) }) {
   const byId = new Map();
   for (const item of stickers) {
     if (typeof item?.id === "string" && item.id && !byId.has(item.id)) byId.set(item.id, item);
   }
-  const evaluated = evaluateSceneState(sceneState, frame);
   const layers = [];
   sceneState.stickers.forEach((sticker, index) => {
     const value = evaluated.stickers[index];
@@ -193,45 +191,42 @@ export function worldStickerLayers(sceneState, frame, stickers, { media }) {
   return layers;
 }
 
-const mediaIds = new WeakMap();
-let nextMediaId = 1;
-
-function mediaId(media) {
-  if (!mediaIds.has(media)) mediaIds.set(media, nextMediaId++);
-  return mediaIds.get(media);
-}
-
-// A layer's source: a URL as it is, media by its id.
-function sourceId(source) {
-  return source && typeof source === "object" ? mediaId(source) : source;
-}
-
-// A key that changes whenever the frame drawn from { background, layers } can change: the media
-// objects, sources and revisions the view uploads textures by, and every placement it draws with.
-export function viewInputKey({ background, layers }) {
-  return JSON.stringify([
-    background && [mediaId(background.media), sourceId(background.source), background.revision, background.coverage],
-    layers.map((layer) => [layer.kind, layer.id, mediaId(layer.media), sourceId(layer.source), layer.revision, layer.opacity, layer.quaternion, layer.rect]),
-  ]);
-}
-
-// onReady runs once the view can render. onFailed runs when the chunk or WebGL is unavailable; the
-// editor then shows the failure instead of a frame. onUpdate runs when the space view changes by itself
+// The editor's three.js view, drawing on `canvas`, the stage's own canvas in the page (nothing copies its
+// frames). onReady runs once the view can render. onFailed runs when the chunk or WebGL is unavailable;
+// the editor then shows the failure instead of a frame. onUpdate runs when the space view changes by itself
 // (a `scene` item loaded, Spark sorted the splats), so the editor draws again.
-export function createEditorView({ onReady, onFailed, onUpdate = () => {} }) {
+//
+// When the WebGL context is lost, the view lets go of what it held and renders nothing (render() returns
+// null) until the context is restored; then a new view is made on the canvas and onRestored runs, so the
+// editor draws everything again. load imports pano_three_view.js.
+export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {}, onRestored = () => {}, load = () => import("./pano_three_view.js") }) {
+  let module = null;
   let view = null;
   let disposed = false;
+  const start = () => {
+    view = watchThreeView(module.createThreeView({ onUpdate, createCanvas: () => canvas }), "editor");
+  };
   const editorView = {
     ready: false,
     failed: false,
+    // The WebGL context is lost; the view waits for it to come back.
+    lost: false,
     // Returns { canvas, x, y, width, height }, the part of the canvas that holds the frame, or null
-    // until the view has loaded.
+    // until the view has loaded or while the context is lost.
     render(input) {
-      return view ? view.render(input) : null;
+      return view && !editorView.lost ? view.render(input) : null;
     },
     // The same layers laid out as an ERP (the Unwrap view); input has no camera.
     renderUnwrap(input) {
-      return view ? view.renderUnwrap(input) : null;
+      return view && !editorView.lost ? view.renderUnwrap(input) : null;
+    },
+    // Sizes the canvas in device pixels (pano_three_view.js resize); returns the size it has, or null.
+    resize(width, height) {
+      return view && !editorView.lost ? view.resize(width, height) : null;
+    },
+    // Clears the canvas or a part of it (pano_three_view.js clear).
+    clear(color, rect) {
+      if (view && !editorView.lost) view.clear(color, rect);
     },
     // The box of a loaded `scene` item (pano_three_view.js sceneBox), or null.
     sceneBox(url) {
@@ -240,34 +235,65 @@ export function createEditorView({ onReady, onFailed, onUpdate = () => {} }) {
     // The World point of the content under (x, y) in the last space frame (pano_three_view.js pick), or
     // null.
     pick(camera, x, y, width, height) {
-      return view ? view.pick(camera, x, y, width, height) : null;
+      return view && !editorView.lost ? view.pick(camera, x, y, width, height) : null;
     },
     // The same off a SPLAT's box only (pano_three_view.js pickSurface), or null.
     pickSurface(camera, x, y, width, height) {
-      return view ? view.pickSurface(camera, x, y, width, height) : null;
+      return view && !editorView.lost ? view.pickSurface(camera, x, y, width, height) : null;
     },
     // The id of the world Sticker under (x, y) in the last space frame (pano_three_view.js pickSticker),
     // or null.
     pickSticker(camera, x, y, width, height) {
-      return view ? view.pickSticker(camera, x, y, width, height) : null;
+      return view && !editorView.lost ? view.pickSticker(camera, x, y, width, height) : null;
     },
     // The pointer on the selected world Sticker's gizmo (pano_three_view.js gizmoPointer).
     gizmoPointer(phase, camera, x, y, width, height) {
-      return view ? view.gizmoPointer(phase, camera, x, y, width, height) : null;
+      return view && !editorView.lost ? view.gizmoPointer(phase, camera, x, y, width, height) : null;
     },
-    // What pick() hits, as a string that changes with it (pano_three_view.js contentKey).
-    contentKey() {
-      return view ? view.contentKey() : "";
+    // A count that changes with what pick() hits (pano_three_view.js contentRevision).
+    contentRevision() {
+      return view ? view.contentRevision() : 0;
     },
     dispose() {
       disposed = true;
+      canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestore);
       view?.dispose();
       view = null;
     },
   };
-  import("./pano_three_view.js").then((module) => {
+  // The browser restores a lost context only when its loss is prevented. The view lets go of its GPU
+  // resources now, while every WebGL call does nothing; the diagnostics still count the context as the
+  // view's until it is restored.
+  function onLost(event) {
+    event.preventDefault();
+    if (disposed || editorView.lost) return;
+    editorView.lost = true;
+    editorView.ready = false;
+    view?.dispose({ lost: true });
+  }
+  // After the diagnostics have counted the restore (their listener runs in the same dispatch), the old
+  // view is dropped and a new one made on the canvas.
+  function onRestore() {
+    if (disposed || !editorView.lost) return;
+    queueMicrotask(() => {
+      if (disposed || !editorView.lost) return;
+      view?.dispose();
+      view = null;
+      editorView.lost = false;
+      if (!module) return;
+      start();
+      editorView.ready = true;
+      onRestored();
+    });
+  }
+  canvas.addEventListener("webglcontextlost", onLost);
+  canvas.addEventListener("webglcontextrestored", onRestore);
+  load().then((loaded) => {
     if (disposed) return;
-    view = watchThreeView(module.createThreeView({ onUpdate, createCanvas: () => createPanoCanvas({ label: "three.editor" }) }), "editor");
+    module = loaded;
+    if (editorView.lost) return;
+    start();
     editorView.ready = true;
     onReady();
   }).catch((error) => {
