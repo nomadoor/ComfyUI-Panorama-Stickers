@@ -29,10 +29,12 @@
 //   ERP seam: stamps near the u=0 / u=1 wrap boundary are mirrored so the stroke
 //             renders correctly at the panorama seam.
 
+import { createPanoCanvas } from "./pano_diagnostics.js";
+
 // ─── Canvas Surface Utilities ─────────────────────────────────────────────────
 
 function createCanvasSurface(width, height) {
-  const canvas = document.createElement("canvas");
+  const canvas = createPanoCanvas({ label: "paint.surface" });
   canvas.width = Math.max(1, Math.round(width));
   canvas.height = Math.max(1, Math.round(height));
   const ctx = canvas.getContext("2d");
@@ -90,13 +92,12 @@ function measureAlphaBounds(canvas, threshold = 8) {
 }
 
 function createScratchCanvas(width, height) {
-  const w = Math.max(1, Math.ceil(width));
-  const h = Math.max(1, Math.ceil(height));
-  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  return canvas;
+  return createPanoCanvas({
+    label: "paint.scratch",
+    width: Math.max(1, Math.ceil(width)),
+    height: Math.max(1, Math.ceil(height)),
+    offscreen: true,
+  });
 }
 
 function resizeSurface(surface, width, height) {
@@ -144,7 +145,7 @@ function getMaskHatchTile() {
   // lineWidth=6, sz=17: perpendicular period = 17/√2 ≈ 12px → stripe≈6px, gap≈6px (equal).
   const lw = 6;
   const sz = 17;
-  const c = document.createElement("canvas");
+  const c = createPanoCanvas({ label: "paint.hatch" });
   c.width = sz;
   c.height = sz;
   const ctx = c.getContext("2d");

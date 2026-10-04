@@ -3,6 +3,7 @@
 // each node copies the rendered frame into its own canvas right away. The view loads with the first
 // frame a node draws and is released with the last node.
 import { viewportCamera } from "./pano_editor_view.js";
+import { createPanoCanvas, watchThreeView } from "./pano_diagnostics.js";
 
 // Shown on a node in place of its frame when the three.js view cannot load.
 export const VIEW_UNAVAILABLE_MESSAGE = "3D view unavailable. Check the browser console.";
@@ -76,5 +77,7 @@ export function createSharedView(load) {
 }
 
 export const acquirePreviewView = createSharedView(
-  () => import("./pano_three_view.js").then((module) => module.createThreeView()),
+  () => import("./pano_three_view.js").then((module) => (
+    watchThreeView(module.createThreeView({ createCanvas: () => createPanoCanvas({ label: "three.node" }) }), "node")
+  )),
 );

@@ -1,3 +1,5 @@
+import { createPanoVideo } from "./pano_diagnostics.js";
+
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
 // and PanoramaStickersNode's bg_media.
 export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media"];
@@ -320,7 +322,7 @@ export function createLoopingPreviewVideo({
   src = "",
   onFrame = null,
 } = {}) {
-  const video = documentRef?.createElement?.("video") || null;
+  const video = createPanoVideo(documentRef, "looping-preview");
   if (!video || !src) return null;
   const publishFrame = typeof onFrame === "function" ? onFrame : () => {};
   let destroyed = false;

@@ -2,6 +2,7 @@
 // The World (the `scene` input and the world Stickers) and the Viewport camera's movement in space
 // are in pano_space.js.
 import { evaluateSceneState } from "./pano_scene_eval.js";
+import { createPanoCanvas, watchThreeView } from "./pano_diagnostics.js";
 import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
 import { contextHalfExtentsPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import { worldStickerPlane } from "./pano_space.js";
@@ -266,7 +267,7 @@ export function createEditorView({ onReady, onFailed, onUpdate = () => {} }) {
   };
   import("./pano_three_view.js").then((module) => {
     if (disposed) return;
-    view = module.createThreeView({ onUpdate });
+    view = watchThreeView(module.createThreeView({ onUpdate, createCanvas: () => createPanoCanvas({ label: "three.editor" }) }), "editor");
     editorView.ready = true;
     onReady();
   }).catch((error) => {

@@ -410,12 +410,13 @@ export function createGizmo(camera) {
 }
 
 // onUpdate runs when something the view draws changes by itself: a `scene` item finished loading, or
-// Spark finished sorting the splats for the last view.
+// Spark finished sorting the splats for the last view. createCanvas makes the view's canvas
+// (pano_diagnostics.js createPanoCanvas; the chunk does not import from the eager bundle).
 // Loads of `scene` items running at once; scrubbing a MoGe VIDEO queues the rest.
 const SCENE_LOADS = 2;
 
-export function createThreeView({ onUpdate = () => {} } = {}) {
-  const canvas = document.createElement("canvas");
+export function createThreeView({ onUpdate = () => {}, createCanvas }) {
+  const canvas = createCanvas();
   // The World is depth tested, so the canvas has a depth buffer; the Sky draws without it.
   const renderer = new WebGLRenderer({
     canvas,
@@ -873,6 +874,27 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     owners.delete(owner);
   }
 
+  // What the diagnostics sample (pano_diagnostics.js watchThreeView): renderer.info (calls and
+  // triangles of the last pass drawn) and the `scene` and 3D Sticker items.
+  function stats() {
+    const { memory, render: drawn, programs } = renderer.info;
+    const items = [...sceneItems.items.values(), ...stickerItems.items.values()];
+    return {
+      textures: memory.textures,
+      geometries: memory.geometries,
+      programs: programs?.length ?? 0,
+      calls: drawn.calls,
+      triangles: drawn.triangles,
+      size: [canvas.width, canvas.height],
+      sceneItems: {
+        count: items.length,
+        loaded: items.filter((item) => item.state === "loaded").length,
+        loading: items.filter((item) => item.state === "loading").length,
+        mb: Math.round(items.reduce((total, item) => total + (item.state === "loaded" ? item.size : 0), 0) / 1024 ** 2),
+      },
+    };
+  }
+
   function dispose() {
     closed = true;
     sceneItems.close();
@@ -898,5 +920,5 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     renderer.forceContextLoss();
   }
 
-  return { render, renderUnwrap, sceneBox, pick, pickSurface, pickSticker, gizmoPointer, contentKey: pickContentKey, release, dispose };
+  return { canvas, render, renderUnwrap, sceneBox, pick, pickSurface, pickSticker, gizmoPointer, contentKey: pickContentKey, release, stats, dispose };
 }

@@ -453,7 +453,7 @@ test("the editor resizes and redraws the stage in the frame its layout changes",
   const redraw = editor.slice(editor.indexOf("  function redrawNow() {"), editor.indexOf("\n  }\n", editor.indexOf("  function redrawNow() {")));
   assert.match(redraw, /if \(!runtime\.running \|\| !syncCanvasSize\(\)\) return;\s*runGuardedFrame\(\(\) => \{\s*runtime\.dirty = false;\s*drawScene\(\);/);
   assert.doesNotMatch(redraw, /tickFrame/);
-  assert.match(editor, /function tick\(ts = performance\.now\(\)\) \{\s*if \(!runtime\.running\) return;\s*runGuardedFrame\(\(\) => tickFrame\(ts\)\);/);
+  assert.match(editor, /function tick\(ts = performance\.now\(\)\) \{\s*if \(!runtime\.running\) return;\s*const frameStart = diagnosticsFrameStart\(\);\s*runGuardedFrame\(\(\) => tickFrame\(ts\)\);/);
   assert.match(editor, /stageResizeObserver\.observe\(canvas\);/);
   assert.doesNotMatch(editor, /lastSizeCheckTs/);
   const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
