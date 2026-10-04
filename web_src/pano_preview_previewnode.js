@@ -4,6 +4,7 @@ import { createApp, reactive } from "vue";
 import { clamp, wrapYaw } from "./pano_camera_math.js";
 import { createPanoCanvas, createPanoVideo } from "./pano_diagnostics.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
+import { surfaceShown } from "./pano_node_playback.js";
 import {
   createPreviewFullscreenController,
   measurePreviewCanvasSize,
@@ -276,7 +277,6 @@ class PreviewNodeRuntime {
     this.img = null;
     this.imgSrc = "";
     this.mediaCleanup = null;
-    this.videoPaused = false;
     this.view = { yaw: 0, pitch: 0, fov: 100 };
     this.previewView = acquirePreviewView(() => this.requestDraw());
     this.controller = createPanoInteractionController({
@@ -542,14 +542,16 @@ class PreviewNodeRuntime {
 
   togglePlayback() {
     if (!(this.img instanceof HTMLVideoElement) || !isRenderableMediaReady(this.img)) return;
-    if (this.img.paused) {
-      this.videoPaused = false;
-      void this.img.play().catch(() => {});
-    } else {
-      this.videoPaused = true;
-      this.img.pause();
-    }
+    if (this.img.paused) void this.img.play().catch(() => {});
+    else this.img.pause();
     this.requestDraw();
+  }
+
+  // Whether the preview is on screen: its surface is laid out, or, drawn on the graph canvas, the node is
+  // not collapsed and is in the graph shown.
+  shown() {
+    if (this.root) return surfaceShown(this.root, !!this.node.flags?.collapsed);
+    return !this.node.flags?.collapsed && (!app.canvas?.graph || this.node.graph === app.canvas.graph);
   }
 
   attachLegacy() {
@@ -667,21 +669,22 @@ class PreviewNodeRuntime {
       if (nextVideoSrc === this.imgSrc && this.img instanceof HTMLVideoElement) return;
       this.mediaCleanup?.();
       this.imgSrc = nextVideoSrc;
-      this.videoPaused = false;
+      // Like PanoramaStickersNode's Timeline on its node, the VIDEO shows its first frame and plays only
+      // when asked (double-click or Space); it loops while it plays and pauses out of sight.
       const video = createPanoVideo(document, "preview-node.video");
       video.muted = true;
       video.loop = true;
+      video.preload = "auto";
       video.playsInline = true;
       video.crossOrigin = "anonymous";
       const onReady = () => {
         if (this.imgSrc !== nextVideoSrc) return;
         this.img = video;
-        if (!this.videoPaused) void video.play().catch(() => {});
         this.requestDraw();
       };
       const onTick = () => this.requestDraw();
       video.addEventListener("loadedmetadata", onReady);
-      video.addEventListener("canplay", onReady);
+      video.addEventListener("loadeddata", onReady);
       video.addEventListener("timeupdate", onTick);
       video.addEventListener("play", onTick);
       video.addEventListener("pause", onTick);
@@ -690,10 +693,12 @@ class PreviewNodeRuntime {
       this.mediaCleanup = () => {
         video.pause();
         video.removeEventListener("loadedmetadata", onReady);
-        video.removeEventListener("canplay", onReady);
+        video.removeEventListener("loadeddata", onReady);
         video.removeEventListener("timeupdate", onTick);
         video.removeEventListener("play", onTick);
         video.removeEventListener("pause", onTick);
+        video.removeAttribute("src");
+        video.load();
       };
       return;
     }
@@ -746,6 +751,8 @@ class PreviewNodeRuntime {
     this.inTick = true;
     this.queuedDuringTick = false;
     this.needsDraw = false;
+    // A playing VIDEO pauses out of sight, so it does not play on unseen.
+    if (this.img instanceof HTMLVideoElement && !this.img.paused && !this.shown()) this.img.pause();
     const moving = this.controller.stepInertia(ts);
     if (this.canvas && this.ctx) {
       // Resize and repaint in one frame so the cleared backing store is never
