@@ -477,7 +477,7 @@ test("the space view draws the world Stickers shown at the playhead as planes of
 
 test("in 6DoF the drags of the 3D view controls preset move the view about the point under the pointer, and 3DoF looks around like the panorama view", () => {
   const editor = readEditorSource();
-  const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"), editor.indexOf("    if (e.button !== 0) return;", editor.indexOf("  canvas.onpointerdown = (e) => {")));
+  const down = editor.slice(editor.indexOf("  function onCanvasPointerDown(e) {"), editor.indexOf("    if (e.button !== 0) return;", editor.indexOf("  function onCanvasPointerDown(e) {")));
   // The preset decides before any tool, and only in 6DoF; there the middle and the right button do
   // nothing else (no look around in place unless the preset binds it).
   assert.match(down, /const spaceAction = freeSpace \|\| freeFrame \? viewDragAction\(viewControls\(\), e\) : null;[\s\S]*?if \(spaceAction === "look"\) \{/);
@@ -499,7 +499,7 @@ test("in 6DoF the drags of the 3D view controls preset move the view about the p
   assert.match(empty, /if \(isFreeSpaceView\(\)\) \{\s*const action = viewControls\(\)\.emptyLeft;\s*if \(action\) startSpaceDrag\(action, p, e\.pointerId\);\s*return;\s*\}/);
   assert.equal(editor.match(/if \(editor\.mode === "pano"\) startEmptyDrag\(e, p\);/g).length, 2);
   // The wheel zooms toward the point under the pointer in 6DoF and zooms (FOV) in 3DoF.
-  const wheel = editor.slice(editor.indexOf("  canvas.onwheel = (e) => {"), editor.indexOf("\n  };\n", editor.indexOf("  canvas.onwheel = (e) => {")));
+  const wheel = editor.slice(editor.indexOf("  function onCanvasWheel(e) {"), editor.indexOf("\n  }\n", editor.indexOf("  function onCanvasWheel(e) {")));
   assert.match(wheel, /if \(isFreeSpaceView\(\)\) \{\s*const direction = readWheelDirection\(e\);[\s\S]*if \(direction\) zoomSpaceAt\(screenPos\(e\), -direction\);\s*\} else if \(viewController\.applyWheelEvent\(e\)\)/);
   const zoom = editor.slice(editor.indexOf("  function zoomSpaceAt(p, direction) {"));
   // It picks again only as reuseWheelPick allows, and keeps a miss as a miss so the target follows the view.
@@ -531,9 +531,9 @@ test("Reset View, Frame Selected and 6DoF back to 3DoF move the view over a tran
   assert.equal(editor.match(/editor\.viewTransition = null;/g).length, 2);
   assert.doesNotMatch(editor, /viewTween|requestAnimationFrame\([^)]*[Tt]ransition/);
   // A drag or a wheel step on the view stops it where it shows.
-  const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"));
+  const down = editor.slice(editor.indexOf("  function onCanvasPointerDown(e) {"));
   assert.match(down.slice(0, 600), /cancelViewTransition\(\);/);
-  const wheel = editor.slice(editor.indexOf("  canvas.onwheel = (e) => {"));
+  const wheel = editor.slice(editor.indexOf("  function onCanvasWheel(e) {"));
   assert.match(wheel, /if \(editor\.mode !== "pano"\) return;\s*cancelViewTransition\(\);/);
   // Each one starts from the view shown now.
   assert.match(editor, /function transitionView\(target, end = null\) \{\s*const from = spaceViewState\(\);\s*startAnimation\(\(\) => \{\s*editor\.viewTransition = startViewTransition\(from, target, performance\.now\(\), \{ scale: spaceScale\(\), end \}\);\s*\}\);/);
@@ -643,7 +643,7 @@ test("a 3D world port Sticker (#63) has no plane: the space view draws its item 
 
 test("in the space view a press picks the gizmo first, then a world Sticker, then the sky Stickers", () => {
   const editor = readEditorSource();
-  const down = editor.slice(editor.indexOf("  canvas.onpointerdown = (e) => {"), editor.indexOf("  // A left drag on empty space of the panorama view looks around;"));
+  const down = editor.slice(editor.indexOf("  function onCanvasPointerDown(e) {"), editor.indexOf("  // A left drag on empty space of the panorama view looks around;"));
   const press = down.indexOf('if (editor.primaryTool === "cursor" && sceneV2 && isSpaceView() && startWorldStickerPress(e, p)) return;');
   assert.ok(press > down.indexOf('kind: "marquee_select"'));
   assert.ok(press < down.indexOf("if (selectedItems.length > 1 && selGeom?.visible) {"));

@@ -327,7 +327,7 @@ test("PanoramaStickersNode builds no filmstrip and a filmstrip is not built agai
 });
 
 test("Space toggles playback outside text fields, once per press, without clicking a focused button", () => {
-  const filter = editorSource.slice(editorSource.indexOf("const spaceTogglesPlayback = (ev) => {"), editorSource.indexOf("\n  };\n", editorSource.indexOf("const spaceTogglesPlayback = (ev) => {")));
+  const filter = editorSource.slice(editorSource.indexOf("function spaceTogglesPlayback(ev) {"), editorSource.indexOf("\n  }\n", editorSource.indexOf("function spaceTogglesPlayback(ev) {")));
   assert.match(filter, /if \(ev\.code !== "Space" \|\| ev\.ctrlKey \|\| ev\.metaKey \|\| ev\.altKey\) return false;/);
   // Focus outside the editor's overlay (another dialog on top) keeps Space.
   assert.match(filter, /const t = ev\.composedPath\(\)\[0\];\s*if \(t !== document\.body && t !== document\.documentElement && !overlay\.contains\(t\)\) return false;/);
@@ -336,9 +336,9 @@ test("Space toggles playback outside text fields, once per press, without clicki
   const types = editorSource.match(/const TEXT_INPUT_TYPES = new Set\((\[[^\]]*\])\);/);
   assert.ok(JSON.parse(types[1]).includes("number"));
   assert.ok(!JSON.parse(types[1]).includes("range"));
-  assert.match(editorSource, /const onSpaceKey = \(ev\) => \{\s*if \(!spaceTogglesPlayback\(ev\)\) return;\s*ev\.preventDefault\(\);\s*ev\.stopPropagation\(\);\s*if \(!ev\.repeat\) togglePlayback\(\);/);
+  assert.match(editorSource, /function onSpaceKey\(ev\) \{\s*if \(!spaceTogglesPlayback\(ev\)\) return;\s*ev\.preventDefault\(\);\s*ev\.stopPropagation\(\);\s*if \(!ev\.repeat\) togglePlayback\(\);/);
   // Firefox clicks a focused button on keyup.
-  assert.match(editorSource, /const onSpaceKeyUp = \(ev\) => \{\s*if \(!spaceTogglesPlayback\(ev\)\) return;\s*ev\.preventDefault\(\);/);
+  assert.match(editorSource, /function onSpaceKeyUp\(ev\) \{\s*if \(!spaceTogglesPlayback\(ev\)\) return;\s*ev\.preventDefault\(\);/);
   for (const [type, listener] of [["keydown", "onSpaceKey"], ["keyup", "onSpaceKeyUp"]]) {
     assert.match(editorSource, new RegExp(`window\\.addEventListener\\("${type}", ${listener}, true\\);`));
     assert.match(editorSource, new RegExp(`window\\.removeEventListener\\("${type}", ${listener}, true\\);`));
@@ -349,12 +349,12 @@ test("Space toggles playback outside text fields, once per press, without clicki
 });
 
 test("an edit on the canvas stops playback on its first move and starts from the stopped frame; a click does not stop it", () => {
-  const begin = editorSource.slice(editorSource.indexOf("  canvas.onpointerdown = (e) => {"), editorSource.indexOf("  // Playback ran on from the pointer going down to its first move."));
+  const begin = editorSource.slice(editorSource.indexOf("  function onCanvasPointerDown(e) {"), editorSource.indexOf("  // Playback ran on from the pointer going down to its first move."));
   // Only a paint stroke, which draws at once, stops at pointerdown.
   assert.equal(begin.match(/stopTimelinePlayback\(\);/g).length, 1);
   assert.match(begin, /supportsFramePainting\(\)\)\) \{[^}]*if \(!paintingShown\(\)\) return;\s*stopTimelinePlayback\(\);/);
   assert.match(begin, /const p = screenPos\(e\);\s*editPointerDown = p;/);
-  const move = editorSource.slice(editorSource.indexOf("  canvas.onpointermove = (e) => {"), editorSource.indexOf("if (it.kind === \"paint_stroke\")"));
+  const move = editorSource.slice(editorSource.indexOf("  function onCanvasPointerMove(e) {"), editorSource.indexOf("if (it.kind === \"paint_stroke\")"));
   assert.match(move, /if \(editPointerDown && \(p\.x !== editPointerDown\.x \|\| p\.y !== editPointerDown\.y\)\) \{\s*const down = editPointerDown;\s*editPointerDown = null;\s*if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
   const restart = editorFunction("restartEditAtStoppedFrame");
   assert.match(restart, /if \(!stateV2 \|\| !playback\.playing\) return;\s*playback\.stop\(\);/);
@@ -362,7 +362,7 @@ test("an edit on the canvas stops playback on its first move and starts from the
     assert.ok(restart.indexOf(`${field} =`) > restart.indexOf("playback.stop();"), field);
   }
   // Looking around with the wheel keeps playing; in the Cutout's Frame view the wheel edits the Camera (#77).
-  const wheel = editorSource.slice(editorSource.indexOf("canvas.onwheel = (e) => {"), editorSource.indexOf("\n  };\n", editorSource.indexOf("canvas.onwheel = (e) => {")));
+  const wheel = editorSource.slice(editorSource.indexOf("function onCanvasWheel(e) {"), editorSource.indexOf("\n  }\n", editorSource.indexOf("function onCanvasWheel(e) {")));
   assert.doesNotMatch(wheel.slice(wheel.indexOf('if (editor.mode !== "pano") return;')), /stopTimelinePlayback/);
 });
 

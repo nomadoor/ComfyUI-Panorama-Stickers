@@ -8965,10 +8965,10 @@ async function showEditor(node, type, options = {}) {
     requestDraw({ localOnly: true });
   }
 
-  const frameRollAngleForEvent = (event, center) => {
+  function frameRollAngleForEvent(event, center) {
     const point = screenPos(event);
     return Math.atan2(point.y - center.y, point.x - center.x);
-  };
+  }
   function syncFrameRollTooltip(interaction) {
     if (interaction?.kind !== "roll_frame" || !interaction.shot) return;
     if (tooltip.timer) {
@@ -8988,7 +8988,7 @@ async function showEditor(node, type, options = {}) {
     uiState.tooltip.variant = "roll";
     uiState.tooltip.visible = true;
   };
-  frameRollKnobEl?.addEventListener("pointerdown", (event) => {
+  function onFrameRollKnobPointerDown(event) {
     if (event.button !== 0 || readOnly || editor.mode !== "frame") return;
     const shot = getActiveCutoutShot();
     if (!shot || shot.locked === true) return;
@@ -9006,16 +9006,18 @@ async function showEditor(node, type, options = {}) {
     syncFrameRollKnob();
     syncFrameRollTooltip(editor.interaction);
     requestDraw({ localOnly: true });
-  });
-  frameRollKnobEl?.addEventListener("pointermove", (event) => {
+  }
+  frameRollKnobEl?.addEventListener("pointerdown", onFrameRollKnobPointerDown);
+  function onFrameRollKnobPointerMove(event) {
     if (editor.interaction?.kind !== "roll_frame" || editor.interaction.source !== "knob") return;
     applyRollInteractionAngle(
       editor.interaction,
       frameRollAngleForEvent(event, editor.interaction.center),
       event,
     );
-  });
-  const finishKnobRoll = () => {
+  }
+  frameRollKnobEl?.addEventListener("pointermove", onFrameRollKnobPointerMove);
+  function finishKnobRoll() {
     const interaction = editor.interaction;
     if (interaction?.kind !== "roll_frame" || interaction.source !== "knob") return;
     if (interaction.changed) {
@@ -9028,13 +9030,13 @@ async function showEditor(node, type, options = {}) {
     syncViewToggleState();
     syncFrameRollKnob();
     requestDraw();
-  };
+  }
   frameRollKnobEl?.addEventListener("pointerup", finishKnobRoll);
   frameRollKnobEl?.addEventListener("pointercancel", () => cancelFrameCameraGesture());
   frameRollKnobEl?.addEventListener("lostpointercapture", () => {
     if (editor.interaction?.source === "knob") cancelFrameCameraGesture();
   });
-  frameRollKnobEl?.addEventListener("dblclick", (event) => {
+  function onFrameRollKnobDoubleClick(event) {
     const shot = editor.mode === "frame" && !readOnly ? getActiveCutoutShot() : null;
     if (!shot || shot.locked === true || Math.abs(Number(shot.roll_deg ?? shot.rot_deg ?? 0)) <= 1e-9) return;
     shot.roll_deg = 0;
@@ -9044,11 +9046,12 @@ async function showEditor(node, type, options = {}) {
     syncFrameRollKnob();
     requestDraw();
     event.preventDefault();
-  });
+  }
+  frameRollKnobEl?.addEventListener("dblclick", onFrameRollKnobDoubleClick);
 
   // Looking around and selecting keep the Timeline playing. A paint stroke stops it at once; any
   // other edit stops it on its first move (restartEditAtStoppedFrame), so a click only selects.
-  canvas.onpointerdown = (e) => {
+  function onCanvasPointerDown(e) {
     if (timeline.selection) {
       timeline.selection = null;
       syncTimeline();
@@ -9439,7 +9442,8 @@ async function showEditor(node, type, options = {}) {
     requestDraw();
 
     if (editor.mode === "pano") startEmptyDrag(e, p);
-  };
+  }
+  canvas.onpointerdown = onCanvasPointerDown;
 
   // The three.js camera of the space view as the last frame drew it, for picking at canvas points.
   function currentSpaceCamera() {
@@ -9615,7 +9619,7 @@ async function showEditor(node, type, options = {}) {
     it.startVFOV = Number(pose.vFOV_deg || 20);
   }
 
-  canvas.onpointermove = (e) => {
+  function onCanvasPointerMove(e) {
     const p = screenPos(e);
     setPointerPos(p, true);
     if (!editor.interaction) {
@@ -9985,9 +9989,10 @@ async function showEditor(node, type, options = {}) {
       if (isStickerItem(it.item)) markObjectVisualsDirty();
       requestDraw({ localOnly: true });
     }
-  };
+  }
+  canvas.onpointermove = onCanvasPointerMove;
 
-  canvas.onpointerup = () => {
+  function onCanvasPointerUp() {
     const ended = editor.interaction;
     if (ended?.kind === "roll_frame" && ended.source === "knob") return;
     if (ended?.kind === "space_pan" || ended?.kind === "space_orbit") {
@@ -10101,9 +10106,10 @@ async function showEditor(node, type, options = {}) {
     updateSelectionMenu();
     updateCursor(editor.pointerPos);
     requestDraw();
-  };
+  }
+  canvas.onpointerup = onCanvasPointerUp;
 
-  canvas.onpointercancel = () => {
+  function onCanvasPointerCancel() {
     if (cancelFrameCameraGesture()) return;
     if (editor.interaction?.kind === "world_select" || editor.interaction?.kind === "world_gizmo") {
       endWorldStickerPress(editor.interaction);
@@ -10122,7 +10128,8 @@ async function showEditor(node, type, options = {}) {
     syncViewToggleState();
     updateCursor(editor.pointerPos);
     requestDraw({ localOnly: true });
-  };
+  }
+  canvas.onpointercancel = onCanvasPointerCancel;
   canvas.onlostpointercapture = () => {
     cancelFrameCameraGesture();
   };
@@ -10136,7 +10143,7 @@ async function showEditor(node, type, options = {}) {
     if ((isFreeSpaceView() || isFreeFrameView()) && presetUsesButton(viewControls(), 2)) e.preventDefault();
   };
 
-  canvas.onmousemove = (e) => {
+  function onCanvasMouseMove(e) {
     const p = screenPos(e);
     const pointerChanged = setPointerPos(p, true);
     if (editor.interaction) return;
@@ -10144,7 +10151,8 @@ async function showEditor(node, type, options = {}) {
     if (pointerChanged && editor.mode === "frame" && editor.primaryTool === "cursor") {
       requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
     }
-  };
+  }
+  canvas.onmousemove = onCanvasMouseMove;
 
   // Off the view no gizmo handle is under the pointer.
   canvas.onpointerleave = () => {
@@ -10157,7 +10165,7 @@ async function showEditor(node, type, options = {}) {
     if (editor.mode === "frame" && editor.primaryTool === "cursor") requestDraw({ localOnly: true, reason: DRAW_REASON.OVERLAY });
   };
 
-  canvas.onwheel = (e) => {
+  function onCanvasWheel(e) {
     if (editor.mode === "frame") {
       const p = screenPos(e);
       const direction = readWheelDirection(e);
@@ -10180,15 +10188,17 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
     }
     e.preventDefault();
-  };
+  }
+  canvas.onwheel = onCanvasWheel;
 
-  canvas.ondragover = (e) => {
+  function onCanvasDragOver(e) {
     if ((type !== "stickers" && type !== "cutout") || readOnly) return;
     e.preventDefault();
     setDropCue(true);
-  };
+  }
+  canvas.ondragover = onCanvasDragOver;
 
-  canvas.ondrop = (e) => {
+  function onCanvasDrop(e) {
     if ((type !== "stickers" && type !== "cutout") || readOnly) return;
     e.preventDefault();
     e.stopPropagation();
@@ -10198,33 +10208,34 @@ async function showEditor(node, type, options = {}) {
     const file = files.find((f) => isStickerImageFile(f));
     if (!file) return;
     void addImageStickerFromFile(file);
-  };
+  }
+  canvas.ondrop = onCanvasDrop;
 
-  const onWindowDragEnter = (e) => {
+  function onWindowDragEnter(e) {
     if ((type !== "stickers" && type !== "cutout") || readOnly) return;
     if (!dragHasImageFiles(e)) return;
     dragCue.depth += 1;
     setDropCue(true);
     e.preventDefault();
-  };
-  const onWindowDragOver = (e) => {
+  }
+  function onWindowDragOver(e) {
     if ((type !== "stickers" && type !== "cutout") || readOnly) return;
     if (!dragCue.active && dragHasImageFiles(e)) setDropCue(true);
     if (dragCue.active) e.preventDefault();
-  };
-  const onWindowDragLeave = (e) => {
+  }
+  function onWindowDragLeave(e) {
     if ((type !== "stickers" && type !== "cutout") || readOnly) return;
     if (!dragCue.active) return;
     dragCue.depth = Math.max(0, dragCue.depth - 1);
     const leftWindow = (Number(e.clientX) <= 0 && Number(e.clientY) <= 0);
     if (dragCue.depth === 0 || leftWindow) setDropCue(false);
-  };
-  const onWindowDrop = (e) => {
+  }
+  function onWindowDrop(e) {
     if ((type !== "stickers" && type !== "cutout") || readOnly) return;
     dragCue.depth = 0;
     setDropCue(false);
     if (dragHasImageFiles(e)) e.preventDefault();
-  };
+  }
   window.addEventListener("dragenter", onWindowDragEnter, true);
   window.addEventListener("dragover", onWindowDragOver, true);
   window.addEventListener("dragleave", onWindowDragLeave, true);
@@ -10235,7 +10246,7 @@ async function showEditor(node, type, options = {}) {
     patchUiButton(uiState.toolButtons, "value", "undo", { disabled: !canUndo });
     patchUiButton(uiState.toolButtons, "value", "redo", { disabled: !canRedo });
   };
-  const applySidePanelParam = (key, rawValue, commit = false) => {
+  function applySidePanelParam(key, rawValue, commit = false) {
     // Edits during playback would key every frame they pass.
     stopTimelinePlayback();
     const frameInspectorShot = shotEditor && editor.mode === "frame" ? getActiveCutoutShot() : null;
@@ -10276,8 +10287,8 @@ async function showEditor(node, type, options = {}) {
     updateSidePanel();
     requestDraw();
     if (commit) pushHistory();
-  };
-  side?.addEventListener("click", async (ev) => {
+  }
+  async function onSidePanelClick(ev) {
     const target = ev.target.closest("[data-action]");
     if (!target) return;
     const action = String(target.getAttribute("data-action") || "");
@@ -10383,20 +10394,23 @@ async function showEditor(node, type, options = {}) {
       apply();
       void closeEditor();
     }
-  });
-  side?.addEventListener("input", (ev) => {
+  }
+  side?.addEventListener("click", onSidePanelClick);
+  function onSidePanelInput(ev) {
     const target = ev.target.closest("[data-action='param-input']");
     if (!target) return;
     applySidePanelParam(String(target.getAttribute("data-param-key") || ""), target.value, false);
-  });
-  side?.addEventListener("change", (ev) => {
+  }
+  side?.addEventListener("input", onSidePanelInput);
+  function onSidePanelChange(ev) {
     const target = ev.target.closest("[data-action='param-input']");
     if (!target) return;
     applySidePanelParam(String(target.getAttribute("data-param-key") || ""), target.value, true);
-  });
+  }
+  side?.addEventListener("change", onSidePanelChange);
   const syncGridToggleButton = () => syncFloatingViewButtonState();
   syncGridToggleButton();
-  root.addEventListener("click", (ev) => {
+  function onRootClick(ev) {
     if (ev.target?.matches?.("[data-confirm-overlay]")) {
       const resolver = uiState.confirmDialog?.resolve;
       uiState.confirmDialog = { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null };
@@ -10695,8 +10709,9 @@ async function showEditor(node, type, options = {}) {
     editor.customPaintColor = cloneColor(color);
     editor.paintColor = cloneColor(color);
     syncPaintUi();
-  });
-  root.addEventListener("input", (ev) => {
+  }
+  root.addEventListener("click", onRootClick);
+  function onRootInput(ev) {
     const videoSeek = ev.target.closest("[data-video-seek]");
     if (videoSeek) {
       if (!(videoEl instanceof HTMLVideoElement)) return;
@@ -10734,8 +10749,9 @@ async function showEditor(node, type, options = {}) {
       editor.paintColor = cloneColor(next);
       syncPaintUi();
     }
-  });
-  root.addEventListener("change", (ev) => {
+  }
+  root.addEventListener("input", onRootInput);
+  function onRootChange(ev) {
     if (ev.target.closest("[data-video-seek]")) {
       if (!(videoEl instanceof HTMLVideoElement)) return;
       if (videoState.resumeAfterScrub) playback.play();
@@ -10747,7 +10763,8 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
-  });
+  }
+  root.addEventListener("change", onRootChange);
   root.addEventListener("pointerup", (ev) => {
     if (ev.target.closest("[data-video-volume]")) {
       if (typeof ev.target?.blur === "function") ev.target.blur();
@@ -10765,7 +10782,7 @@ async function showEditor(node, type, options = {}) {
   root.addEventListener("focusout", (ev) => {
     if (ev.target.closest("[data-paint-size-slider]")) hidePaintSizePreview();
   });
-  root.addEventListener("pointerover", (ev) => {
+  function onRootPointerOver(ev) {
     const target = ev.target.closest("[data-tip]");
     if (!target || !root.contains(target)) return;
     if (tooltip.target === target) return;
@@ -10774,18 +10791,20 @@ async function showEditor(node, type, options = {}) {
     tooltip.timer = window.setTimeout(() => {
       if (tooltip.target === target) showTooltipFor(target);
     }, 220);
-  });
-  root.addEventListener("pointerout", (ev) => {
+  }
+  root.addEventListener("pointerover", onRootPointerOver);
+  function onRootPointerOut(ev) {
     const target = ev.target.closest("[data-tip]");
     if (!target || tooltip.target !== target) return;
     const nextTarget = ev.relatedTarget instanceof Element ? ev.relatedTarget.closest?.("[data-tip]") : null;
     if (nextTarget === target) return;
     hideTooltip();
-  });
+  }
+  root.addEventListener("pointerout", onRootPointerOut);
   root.addEventListener("pointerdown", (event) => {
     if (!event.target.closest("[data-frame-roll-knob]")) hideTooltip();
   });
-  const updatePaintColorFromSv = (clientX, clientY) => {
+  function updatePaintColorFromSv(clientX, clientY) {
     if (!paintColorSv) return;
     const rect = paintColorSv.getBoundingClientRect();
     const sat = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
@@ -10795,8 +10814,8 @@ async function showEditor(node, type, options = {}) {
     editor.customPaintColor = cloneColor(next);
     editor.paintColor = cloneColor(next);
     syncPaintUi();
-  };
-  const updatePaintColorFromHue = (clientX) => {
+  }
+  function updatePaintColorFromHue(clientX) {
     if (!paintHueStrip) return;
     const rect = paintHueStrip.getBoundingClientRect();
     const hue = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
@@ -10805,8 +10824,8 @@ async function showEditor(node, type, options = {}) {
     editor.customPaintColor = cloneColor(next);
     editor.paintColor = cloneColor(next);
     syncPaintUi();
-  };
-  const bindDrag = (startEvent, onMove) => {
+  }
+  function bindDrag(startEvent, onMove) {
     const pointerId = startEvent.pointerId;
     onMove(startEvent);
     const handleMove = (moveEvent) => {
@@ -10822,7 +10841,7 @@ async function showEditor(node, type, options = {}) {
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", finish);
-  };
+  }
   if (paintColorSv) {
     paintColorSv.onpointerdown = (ev) => {
       ev.preventDefault();
@@ -10845,15 +10864,15 @@ async function showEditor(node, type, options = {}) {
     uiState.confirmDialog = { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null };
     resolver?.(ok);
   });
-  const syncFullscreenButton = () => {
+  function syncFullscreenButton() {
     const active = !!editor.fullscreen;
     patchUiButton(uiState.floatingButtons, "action", "toggle-fullscreen", {
       icon: active ? ICON.fullscreen_close : ICON.fullscreen,
       label: active ? "Exit Fullscreen" : "Fullscreen",
       tip: active ? "Exit fullscreen" : "Fullscreen",
     });
-  };
-  const setFullscreenState = (active) => {
+  }
+  function setFullscreenState(active) {
     const on = !!active;
     if (editor.fullscreen === on) return;
     editor.fullscreen = on;
@@ -10869,9 +10888,9 @@ async function showEditor(node, type, options = {}) {
     syncFullscreenButton();
     queueVideoTransportLayout();
     requestDraw();
-  };
+  }
   const isOverlayFullscreen = () => document.fullscreenElement === overlay;
-  const toggleFullscreen = async () => {
+  async function toggleFullscreen() {
     try {
       if (!document.fullscreenEnabled) {
         setFullscreenState(!editor.fullscreen);
@@ -10885,15 +10904,15 @@ async function showEditor(node, type, options = {}) {
     } catch {
       setFullscreenState(!editor.fullscreen);
     }
-  };
-  const onFullscreenChange = () => {
+  }
+  function onFullscreenChange() {
     if (document.fullscreenEnabled) {
       setFullscreenState(isOverlayFullscreen());
     }
-  };
+  }
   document.addEventListener("fullscreenchange", onFullscreenChange);
   syncFullscreenButton();
-  const syncOutputPreviewToggleButton = () => {
+  function syncOutputPreviewToggleButton() {
     const expanded = !!editor.outputPreviewExpanded;
     uiState.outputPreviewToggle.icon = expanded ? ICON.fullscreen_close : ICON.fullscreen;
     uiState.outputPreviewToggle.label = expanded ? "Reduce Preview" : "Expand Preview";
@@ -10928,7 +10947,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   let closeEditorPromise = null;
-  const closeEditor = async () => {
+  async function closeEditor() {
     if (closeEditorPromise) return closeEditorPromise;
     closeEditorPromise = (async () => {
       _paintLayerSyncRegistry.delete(String(node.id ?? "0"));
@@ -10982,8 +11001,8 @@ async function showEditor(node, type, options = {}) {
       return false;
     });
     return closeEditorPromise;
-  };
-  const onEscClose = (ev) => {
+  }
+  function onEscClose(ev) {
     if (ev.key !== "Escape") return;
     if (cancelFrameCameraGesture()) {
       ev.preventDefault();
@@ -11009,8 +11028,8 @@ async function showEditor(node, type, options = {}) {
     ev.stopPropagation();
     ev.stopImmediatePropagation?.();
     void closeEditor();
-  };
-  const onDeleteKey = (ev) => {
+  }
+  function onDeleteKey(ev) {
     const key = String(ev.key || "");
     const code = String(ev.code || "");
     const keyCode = Number(ev.keyCode || 0);
@@ -11036,11 +11055,11 @@ async function showEditor(node, type, options = {}) {
     deleteSelected();
     ev.preventDefault();
     ev.stopPropagation();
-  };
+  }
   // Space plays and stops the Timeline like its play button, also over a focused button or slider.
   // Space with Ctrl, Meta or Alt is left to the browser and the OS, and typing keeps its spaces.
   // Focus outside the editor (another ComfyUI dialog on top) keeps Space for itself.
-  const spaceTogglesPlayback = (ev) => {
+  function spaceTogglesPlayback(ev) {
     if (ev.code !== "Space" || ev.ctrlKey || ev.metaKey || ev.altKey) return false;
     if (readOnly || !stateV2 || !uiState.timeline.visible || uiState.confirmDialog.visible) return false;
     const t = ev.composedPath()[0];
@@ -11048,20 +11067,20 @@ async function showEditor(node, type, options = {}) {
     const tag = (t?.tagName || "").toUpperCase();
     if (tag === "INPUT") return !TEXT_INPUT_TYPES.has(String(t.type || "text").toLowerCase());
     return tag !== "TEXTAREA" && tag !== "SELECT" && !t?.isContentEditable;
-  };
-  const onSpaceKey = (ev) => {
+  }
+  function onSpaceKey(ev) {
     if (!spaceTogglesPlayback(ev)) return;
     ev.preventDefault();
     ev.stopPropagation();
     if (!ev.repeat) togglePlayback();
-  };
+  }
   // Firefox clicks a focused button on keyup, so the keyup is held back too.
-  const onSpaceKeyUp = (ev) => {
+  function onSpaceKeyUp(ev) {
     if (!spaceTogglesPlayback(ev)) return;
     ev.preventDefault();
     ev.stopPropagation();
-  };
-  const onModifierKeyChange = (ev) => {
+  }
+  function onModifierKeyChange(ev) {
     const next = !!(ev.ctrlKey || ev.metaKey);
     const nextAlt = !!ev.altKey;
     if (editor.marqueeModifier === next && editor.altModifier === nextAlt) return;
@@ -11069,14 +11088,14 @@ async function showEditor(node, type, options = {}) {
     editor.altModifier = nextAlt;
     syncFrameRollKnob();
     updateCursor(editor.pointerPos);
-  };
-  const onWindowBlur = () => {
+  }
+  function onWindowBlur() {
     editor.marqueeModifier = false;
     editor.altModifier = false;
     syncFrameRollKnob();
     updateCursor(editor.pointerPos);
-  };
-  const onUndoRedoKey = (ev) => {
+  }
+  function onUndoRedoKey(ev) {
     if (readOnly) return;
     if (!ev.ctrlKey && !ev.metaKey) return;
     const key = String(ev.key || "").toLowerCase();
@@ -11090,7 +11109,7 @@ async function showEditor(node, type, options = {}) {
     restoreHistory(ev.shiftKey ? 1 : -1);
     ev.preventDefault();
     ev.stopPropagation();
-  };
+  }
   window.addEventListener("keydown", onEscClose, true);
   window.addEventListener("keydown", onDeleteKey, true);
   window.addEventListener("keydown", onSpaceKey, true);
