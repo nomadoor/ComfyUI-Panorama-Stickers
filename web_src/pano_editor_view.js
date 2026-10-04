@@ -208,19 +208,20 @@ export function worldStickerLayers(sceneState, frame, stickers, { media, evaluat
 // The editor's three.js view, drawing on `canvas`, the stage's own canvas in the page (nothing copies its
 // frames). onReady runs once the view can render. onFailed runs when the chunk or WebGL is unavailable;
 // the editor then shows the failure instead of a frame. onUpdate runs when the space view changes by itself
-// (a `scene` item loaded, Spark sorted the splats), so the editor draws again.
+// (a `scene` item or Spark loaded), so the editor draws again. onSplats(owner) runs when the Spark renderer
+// of owner's view sorted its splats (pano_three_view.js createThreeView), so that view draws again.
 //
 // When the WebGL context is lost, the view lets go of what it held and renders nothing (render() returns
 // null) until the context is restored; then a new view is made on the canvas and onRestored runs, so the
 // editor draws everything again. load imports pano_three_view.js.
-export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {}, onRestored = () => {}, load = () => import("./pano_three_view.js") }) {
+export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {}, onSplats = () => {}, onRestored = () => {}, load = () => import("./pano_three_view.js") }) {
   let module = null;
   let view = null;
   let disposed = false;
   // contentRevision() goes on from the views before, so a view made again never repeats a count.
   let revisionBase = 0;
   const start = () => {
-    view = watchThreeView(module.createThreeView({ onUpdate, createCanvas: () => canvas }), "editor");
+    view = watchThreeView(module.createThreeView({ onUpdate, onSplats, createCanvas: () => canvas }), "editor");
   };
   const editorView = {
     ready: false,
@@ -243,6 +244,11 @@ export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {
     // Clears the canvas or a part of it (pano_three_view.js clear).
     clear(color, rect) {
       if (view && !editorView.lost) view.clear(color, rect);
+    },
+    // Frees the Spark renderer of an owner that stops drawing SPLATs for now (pano_three_view.js
+    // releaseSplats).
+    releaseSplats(owner) {
+      if (view && !editorView.lost) view.releaseSplats(owner);
     },
     // The box of a loaded `scene` item (pano_three_view.js sceneBox), or null.
     sceneBox(url) {

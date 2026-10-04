@@ -452,8 +452,9 @@ export const addDiagnosticsSource = diagnostics.addSource;
 export const diagnosticsFrameStart = diagnostics.frameStart;
 export const diagnosticsFrameEnd = diagnostics.frameEnd;
 
-// Wraps a three.js view (pano_three_view.js createThreeView) so its WebGL context, renderer.info and
-// `scene` items are sampled under `label`, and its renders are timed.
+// Wraps a three.js view (pano_three_view.js createThreeView) so its WebGL context, renderer.info, `scene`
+// items and Spark renderers (their generates and sorts since the last sample, pano_spark_views.js) are
+// sampled under `label`, and its renders are timed.
 export function watchThreeView(view, label) {
   const disposeContext = diagnostics.watchContext(view.canvas, label);
   const removeSource = diagnostics.addSource(`three.${label}`, () => view.stats());

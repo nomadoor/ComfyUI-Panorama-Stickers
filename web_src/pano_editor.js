@@ -73,7 +73,7 @@ import { createPaintStrokes } from "./editor/paint_strokes.js";
 import { createExternalStickers } from "./editor/external_stickers.js";
 import { createSpace } from "./editor/space.js";
 import { createViewInput } from "./editor/view_input.js";
-import { createCameraPreview, getCutoutPreviewViewportSize } from "./editor/camera_preview.js";
+import { createCameraPreview, getCutoutPreviewViewportSize, splatDrawReason } from "./editor/camera_preview.js";
 import { createOverlay } from "./editor/overlay.js";
 import { createRenderLoop } from "./editor/render_loop.js";
 import { createPanels } from "./editor/panels.js";
@@ -617,7 +617,8 @@ async function showEditor(node, type, options = {}) {
   });
   // The Stickers and Cutout editors and the read-only Preview modal draw with three.js. The Cutout
   // camera preview draws through the same view as its own owner.
-  // A `scene` item that loaded, or Spark's sorted splats, change only the stage.
+  // A `scene` item or Spark that loaded, and a Spark renderer's sorted splats, change only the editor's views;
+  // the sorted splats only the view of that renderer (splatDrawReason).
   // The stage's three.js canvas is the page's own (backgroundCanvas): its frames are not copied.
   const editorView = createEditorView({
     canvas: backgroundCanvas,
@@ -627,6 +628,7 @@ async function showEditor(node, type, options = {}) {
     },
     onFailed: () => requestDraw(),
     onUpdate: () => requestDraw({ localOnly: true, reason: DRAW_REASON.MEDIA }),
+    onSplats: (owner) => requestDraw({ localOnly: true, reason: splatDrawReason(owner) }),
     // A new view has nothing on its canvas yet, nor the camera preview's frame.
     onRestored: () => {
       forgetCameraPreviewFrame();

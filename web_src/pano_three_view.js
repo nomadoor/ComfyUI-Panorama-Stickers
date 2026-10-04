@@ -52,6 +52,7 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
+import { createSparkViews } from "./pano_spark_views.js";
 
 const DOME_RADIUS = 100;
 const STICKER_DISTANCE = 50;
@@ -448,13 +449,14 @@ export function createGizmo(camera) {
   };
 }
 
-// onUpdate runs when something the view draws changes by itself: a `scene` item finished loading, or
-// Spark finished sorting the splats for the last view. createCanvas makes the view's canvas
+// onUpdate runs when something every view draws changes by itself: a `scene` item finished loading, or Spark
+// loaded. onSplats(owner) runs when the Spark renderer of owner's view (pano_spark_views.js) has new splats or
+// a new order to draw: only that view draws again. createCanvas makes the view's canvas
 // (pano_diagnostics.js createPanoCanvas; the chunk does not import from the eager bundle).
 // Loads of `scene` items running at once; scrubbing a MoGe VIDEO queues the rest.
 const SCENE_LOADS = 2;
 
-export function createThreeView({ onUpdate = () => {}, createCanvas }) {
+export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, createCanvas }) {
   const canvas = createCanvas();
   // The World is depth tested, so the canvas has a depth buffer; the Sky draws without it.
   const renderer = new WebGLRenderer({
@@ -503,13 +505,34 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
   let pickFailed = false;
   const pickCamera = new PerspectiveCamera();
   const pickMaterials = [];
-  let spark = null;
+  // Spark's module once it has loaded (when a SPLAT first shows), and per view that draws SPLATs a renderer
+  // and SplatMeshes that see only that view's camera.
+  let Spark = null;
+  const sparkViews = createSparkViews({
+    // The editor does not page or LoD its SPLATs, so Spark's LoD worker is not started.
+    create: (onDirty) => new Spark.SparkRenderer({ renderer, onDirty, enableLod: false }),
+    // A SplatMesh made on loaded PackedSplats sets their encoding (to the default without one given); the
+    // loaded encoding is put back.
+    cloneSplat: (loaded) => {
+      const { packedSplats } = loaded;
+      const encoding = packedSplats.splatEncoding;
+      const mesh = new Spark.SplatMesh({ packedSplats, raycastable: false });
+      packedSplats.splatEncoding = encoding;
+      return mesh;
+    },
+    onDirty: (owner) => onSplats(owner),
+  });
+  // A loaded SPLAT that goes takes the views' SplatMeshes of it along.
+  const disposeItem = (item) => {
+    if (item.kind === "splat" && item.object) sparkViews.forget(item.object);
+    disposeSceneItem(item);
+  };
   let closed = false;
   // The selected world Sticker's gizmo (createGizmo), made the first time one shows.
   let gizmo = null;
   const sceneItems = createSceneItems({
     load: loadSceneItem,
-    dispose: disposeSceneItem,
+    dispose: disposeItem,
     onUpdate,
     concurrency: SCENE_LOADS,
   });
@@ -517,7 +540,7 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
   // `scene` has the same file, since an object has one parent.
   const stickerItems = createSceneItems({
     load: loadSceneItem,
-    dispose: disposeSceneItem,
+    dispose: disposeItem,
     onUpdate,
     concurrency: SCENE_LOADS,
   });
@@ -641,9 +664,9 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
   }
 
   // The World of a space input: the guides, the `scene` item, the 3D Sticker's item, the world Sticker
-  // planes and lines. The objects are kept between renders, and `world` is filled again only when they
-  // change. What is not seen (opacity 0) is not picked.
-  function buildWorld(owned, space) {
+  // planes and lines, with the Spark renderer of owner's view. The objects are kept between renders, and
+  // `world` is filled again only when they change. What is not seen (opacity 0) is not picked.
+  function buildWorld(owned, space, owner) {
     const children = [];
     const parts = [];
     pickable = [];
@@ -654,19 +677,19 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     const sticker = space.sticker ? contentGroup(stickerItems, space.sticker) : null;
     if (sticker) setContentOpacity(sticker, space.sticker.opacity);
     const contents = [space.scene ? contentGroup(sceneItems, space.scene) : null, sticker].filter(Boolean);
-    // A SPLAT draws through Spark's renderer, made the first time one shows (its module is loaded by
-    // then); until it is there the SPLATs wait a render.
+    // A SPLAT draws through the Spark renderer and a SplatMesh of the view (pano_spark_views.js), made the
+    // first time it shows one; until Spark's module is there the SPLATs wait a render.
     const splat = contents.some((content) => content.splat);
-    if (splat && !spark) {
-      loadSpark().then(({ SparkRenderer }) => {
+    if (splat && !Spark) {
+      loadSpark().then((module) => {
         if (closed) return;
-        // The editor does not page or LoD its SPLATs, so Spark's LoD worker is not started.
-        spark ||= new SparkRenderer({ renderer, onDirty: onUpdate, enableLod: false });
+        Spark = module;
         onUpdate();
       }).catch((error) => console.error("[PanoramaStickers] Spark is unavailable", error));
     }
     for (const content of contents) {
-      if (content.splat && !spark) continue;
+      if (content.splat && !Spark) continue;
+      if (content.splat) sparkViews.splat(owner, content.object);
       children.push(content.group);
       const opacity = content === sticker ? space.sticker.opacity : 1;
       if (!(opacity > 0)) continue;
@@ -674,7 +697,7 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
       else pickable.push({ object: content.group, stickerId: content.stickerId, plane: false });
       parts.push([content.object.uuid, content.transform]);
     }
-    if (splat && spark) children.push(spark);
+    if (splat && Spark) children.push(sparkViews.renderer(owner));
     let index = 0;
     for (const layer of space.stickers) {
       if (!layerDrawable(owned, layer)) continue;
@@ -746,7 +769,7 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
         : addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
       mesh.renderOrder = index + 1;
     });
-    if (space) buildWorld(owned, space);
+    if (space) buildWorld(owned, space, input.owner);
     owned.forEach((item, id) => {
       if (item.used) return;
       item.texture.dispose();
@@ -758,6 +781,8 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
     if (space) {
       setCamera(worldCamera, input.camera, at);
+      // This draw's camera is the only one the view's Spark renderer sees in this frame.
+      sparkViews.aim(worldCamera, input.owner);
       renderer.autoClear = false;
       renderer.clearDepth();
       renderer.render(world, worldCamera);
@@ -943,21 +968,28 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     return gizmo.pointer(phase, px, py);
   }
 
+  // Frees the Spark renderer of an owner that stops drawing SPLATs for now (the camera preview hides) and
+  // keeps its textures; it gets a new renderer when it draws one again.
+  function releaseSplats(owner) {
+    sparkViews.release(owner);
+  }
+
   // input: render()'s input without camera; the frame is the layers laid out as an ERP. Its rect, if any,
   // lies on the canvas.
   function renderUnwrap(input) {
     return draw(unwrap, input);
   }
 
-  // Frees the textures of an owner that stops drawing; the canvas shrinks on the next render if
-  // this owner was the largest.
+  // Frees the textures and the Spark renderer of an owner that stops drawing; the canvas shrinks on the next
+  // render if this owner was the largest.
   function release(owner) {
     owners.get(owner)?.textures.forEach((entry) => entry.texture.dispose());
     owners.delete(owner);
+    sparkViews.release(owner);
   }
 
   // What the diagnostics sample (pano_diagnostics.js watchThreeView): renderer.info (calls and
-  // triangles of the last pass drawn) and the `scene` and 3D Sticker items.
+  // triangles of the last pass drawn), the `scene` and 3D Sticker items, and the Spark renderers.
   function stats() {
     const { memory, render: drawn, programs } = renderer.info;
     const items = [...sceneItems.items.values(), ...stickerItems.items.values()];
@@ -974,6 +1006,7 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
         loading: items.filter((item) => item.state === "loading").length,
         mb: Math.round(items.reduce((total, item) => total + (item.state === "loaded" ? item.size : 0), 0) / 1024 ** 2),
       },
+      sparks: sparkViews.stats(),
     };
   }
 
@@ -990,7 +1023,7 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     worldStickers.forEach((mesh) => mesh.material.dispose());
     pickMaterials.forEach((material) => material.dispose());
     pickTarget?.dispose();
-    spark?.dispose();
+    sparkViews.dispose();
     owners.forEach((entry) => entry.textures.forEach((item) => item.texture.dispose()));
     owners.clear();
     [panorama, unwrap].forEach((projection) => {
@@ -1005,5 +1038,5 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
     if (!lost) renderer.forceContextLoss();
   }
 
-  return { canvas, render, renderUnwrap, resize, clear, sceneBox, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, stats, dispose };
+  return { canvas, render, renderUnwrap, resize, clear, sceneBox, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
 }
