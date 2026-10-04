@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createFrameBatch } from "../web_src/pano_frame_batch.js";
+import { readEditorSource } from "./editor_source.mjs";
 
 // requestAnimationFrame, replaced: frames run only when the test says so.
 function fakeFrames() {
@@ -95,7 +95,7 @@ test("a frame runs only the tasks asked for, in the order of the tasks", () => {
   assert.deepEqual(ran, ["seek", "view"]);
 });
 
-const editorSource = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+const editorSource = readEditorSource();
 const editorFunction = (name) => editorSource.slice(editorSource.indexOf(`  function ${name}(`), editorSource.indexOf("\n  }\n", editorSource.indexOf(`  function ${name}(`)));
 const timelineAction = (type) => {
   const body = editorFunction("onTimelineAction");

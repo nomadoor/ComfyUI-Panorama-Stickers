@@ -8,6 +8,8 @@ from types import ModuleType, SimpleNamespace
 
 import torch
 
+from editor_source import editor_source
+
 
 _MISSING = object()
 
@@ -295,7 +297,7 @@ class TestNodesPreview(unittest.TestCase):
         assert "attachPreview(node, {" in instance_block
 
     def test_editor_lifecycle_is_delegated_to_the_extension_boundary(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         assert 'from "./pano_editor_extension.js";' in editor_js
         assert "createPanoEditorExtension" in editor_js
         assert "queuePendingStickerOperation" in editor_js
@@ -315,7 +317,7 @@ class TestNodesPreview(unittest.TestCase):
         assert candidate_block.index("selfOutput?.pano_input_images") < candidate_block.index("outputs?.pano_input_images")
 
     def test_editor_runtime_and_preview_draw_with_the_three_js_view(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
         preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
         assert 'from "./pano_editor_view.js"' in editor_js
@@ -336,7 +338,7 @@ class TestNodesPreview(unittest.TestCase):
         assert preview_js.count("drawGrid(ctx, width, height);") == 3
 
     def test_editor_debug_probe_is_removed_from_normal_path(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         assert "function panoEditorDebug(" not in editor_js
 
     def test_preview_runtime_wheel_and_scheduler_guards(self):
@@ -374,7 +376,7 @@ class TestNodesPreview(unittest.TestCase):
         from comfyui_pano_suite.node_runtime import NodeRuntime
 
         repo_root = Path(__file__).resolve().parent.parent
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         nodes_py = (repo_root / "comfyui_pano_suite" / "nodes.py").read_text(encoding="utf-8")
         assert 'pano_sticker_input_images' in editor_js
         assert 'getLinkedInputImage(node, ["sticker_image"])' not in editor_js
@@ -386,7 +388,7 @@ class TestNodesPreview(unittest.TestCase):
         assert 'sticker_state_json' in nodes_py
 
     def test_paint_rebuild_ui_scaffold_strings(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         css = self._web_runtime_path("pano_editor.css").read_text(encoding="utf-8")
         assert 'data-tool-rail' in editor_js
         assert 'data-tool-mode' in editor_js
@@ -398,7 +400,7 @@ class TestNodesPreview(unittest.TestCase):
         assert 'Clear All Paint Data' in editor_js
 
     def test_no_new_active_preview_dependency_on_editor_core(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
         preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
         assert 'from "./pano_editor_core.js"' not in editor_js

@@ -1,6 +1,8 @@
 from pathlib import Path
 import unittest
 
+from editor_source import editor_source
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -11,7 +13,7 @@ def function_block(source: str, name: str, next_name: str) -> str:
 
 class TestStickersEditorLoadingContract(unittest.TestCase):
     def setUp(self):
-        self.editor = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        self.editor = editor_source()
 
     def test_editor_routes_comfy_media_through_the_adapter(self):
         self.assertIn('from "./pano_comfy_media.js"', self.editor)

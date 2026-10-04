@@ -27,6 +27,7 @@ import {
   trimClipEnd,
   trimClipStart,
 } from "../web_src/pano_timeline.js";
+import { readEditorSource } from "./editor_source.mjs";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
 
@@ -302,7 +303,7 @@ test("dense Keyframes are grouped into one pin", () => {
 
 // The playback itself is tested with a fake VIDEO in tests/pano_video_playback.test.mjs; these check
 // how the editor wires it.
-const editorSource = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+const editorSource = readEditorSource();
 const editorFunction = (name) => editorSource.slice(editorSource.indexOf(`  function ${name}(`), editorSource.indexOf("\n  }\n", editorSource.indexOf(`  function ${name}(`)));
 
 test("the Timeline's playhead and play button follow the playback", () => {

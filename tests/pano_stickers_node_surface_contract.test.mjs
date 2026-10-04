@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { EDITOR_FILES, readEditorSource } from "./editor_source.mjs";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -49,7 +50,7 @@ test("Stickers DOM preview is itself an image drop target in Legacy and Node 2.0
 });
 
 test("modal image drag feedback reuses the shared generic-MIME detector", async () => {
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   const start = editor.indexOf("  function dragHasImageFiles(e) {");
   const end = editor.indexOf("\n  function ", start + 1);
   const detector = editor.slice(start, end);
@@ -60,7 +61,7 @@ test("modal image drag feedback reuses the shared generic-MIME detector", async 
 });
 
 test("modal lock changes refresh both selection actions and inspector controls", async () => {
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   const start = editor.indexOf("  function toggleSelectedLock() {");
   const end = editor.indexOf("\n  function ", start + 1);
   const toggleLock = editor.slice(start, end);
@@ -71,7 +72,7 @@ test("modal lock changes refresh both selection actions and inspector controls",
 });
 
 test("modal destructive and ordering commands reject selections containing locked items", async () => {
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   for (const functionName of ["deleteSelected", "bringSelectedToFront", "sendSelectedToBack"]) {
     const start = editor.indexOf(`  function ${functionName}() {`);
     const end = editor.indexOf("\n  function ", start + 1);
@@ -121,7 +122,7 @@ test("selected Stickers can be deleted from the node surface keyboard focus", as
 });
 
 test("shipping Stickers uses the shared DOM surface in both node renderers", async () => {
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   const runtime = await read("../web_src/pano_preview_runtime.js");
 
   assert.match(editor, /const ENABLE_STICKERS_NODE_PREVIEW = true;/);
@@ -281,7 +282,7 @@ test("external sticker textures resolve only from the node's current dedicated o
 // one media (a seek, a loop) and never shows a swapped-out VIDEO's frame for the next media.
 test("the port Sticker's picture carries its media as the source of its layer, on the node and in the editor", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   assert.match(runtime, /const source = portMediaSource\(surfacePlayback\.playback\.stickerMedia, img\);\s*return picture \? \{ media: picture, revision: getRenderableMediaRevisionToken\(picture\), source \} : null;/);
   assert.match(editor, /return picture \? \{ media: picture, revision: getMediaRevisionToken\(picture\), source: portMediaSource\(media, first\) \} : null;/);
   assert.match(editor, /if \(portVideo && isExternalSticker\(item\)\) return portPicture;/);
@@ -313,7 +314,7 @@ test("runtime advances and applies the public external media revision seam", asy
 
 test("Stickers canvas wires selection and direct transform gestures through the state session", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
 
   assert.match(runtime, /pickStickerAtPoint\(/);
   assert.match(runtime, /drawStickerSelectionHandles\(/);
@@ -377,7 +378,7 @@ test("the port Sticker draws as a frame on the node until the node's result has 
 
 test("PanoramaStickersNode syncs its port Sticker in the editor and on the node", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
 
   assert.doesNotMatch(runtime, /TODO\(#75\)/);
   assert.doesNotMatch(editor, /TODO\(#75\)/);
@@ -387,7 +388,7 @@ test("PanoramaStickersNode syncs its port Sticker in the editor and on the node"
 });
 
 test("connectivity is read through getInputLink and isInputConnected, not the deprecated input.link", async () => {
-  for (const file of ["pano_comfy_media.js", "pano_editor.js", "pano_preview_previewnode.js", "pano_preview_runtime.js"]) {
+  for (const file of ["pano_comfy_media.js", ...EDITOR_FILES, "pano_preview_previewnode.js", "pano_preview_runtime.js"]) {
     const source = await read(`../web_src/${file}`);
     assert.doesNotMatch(source, /\.link\b(?!s)/, file);
   }
@@ -402,7 +403,7 @@ test("the node surface syncs the port Sticker through the registry so the open e
     assert.match(runtime, new RegExp(`runExternalStickerSync\\(node, "${reason}"`));
   }
   assert.match(runtime, /runExternalStickerSync\(node, shown \? "executed" : "sync", output\)/);
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   // The editor's handler wins over a node surface that attaches again, and a result syncs once: the
   // node's onExecuted runs the handler, which drops the stale sticker image first.
   assert.match(editor, /registerExternalStickerSync\(node, \(reason = "sync"\) => \{\s*if \(reason === "executed"\) \{\s*invalidateMediaUiImage\(imageCache, EXTERNAL_STICKER_PREVIEW_KEY\);\s*refreshModalVideoSource\(\);\s*if \(sceneV2\) applyVideoTimelineFps\(\);\s*\}\s*reconcileExternalStickerFromInputs\(reason\);\s*\}, \{ editor: true \}\)/);
@@ -431,7 +432,7 @@ test("links are read only once the node is in a graph", async () => {
 // once it loads (tests/pano_video_playback.test.mjs); seeking on the ruler picks up a VIDEO that
 // arrived since; a dropped VIDEO loads again when the same MP4 returns.
 test("the editor follows the background VIDEO of a new result", async () => {
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
 
   assert.match(editor, /dragFrames\.cancel\(\);\s*if \(action\.phase === "start"\) refreshModalVideoSource\(\);\s*playback\.seek\(action\.frame\);/);
   assert.match(editor, /videoEl\.removeAttribute\("src"\);\s*delete videoEl\.dataset\.panoSrc;/);
@@ -443,7 +444,7 @@ test("the editor follows the background VIDEO of a new result", async () => {
 });
 
 test("the editor plays its own background VIDEO first, then a directly loaded file, and never a failed source", async () => {
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   const start = editor.indexOf("  function refreshModalVideoSource() {");
   const body = editor.slice(start, editor.indexOf("\n  function normalizeInputPoseValue", start));
 
@@ -459,7 +460,7 @@ test("the editor plays its own background VIDEO first, then a directly loaded fi
 });
 
 test("state_json is written only when its meaning changes, in the editor and on the node", async () => {
-  const editor = await read("../web_src/pano_editor.js");
+  const editor = readEditorSource();
   const runtime = await read("../web_src/pano_preview_runtime.js");
 
   assert.match(editor, /function commitState\(\) \{[\s\S]*?if \(stateWidget && !sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)\) \{\s*stateWidget\.value = text;/);

@@ -7,6 +7,7 @@ import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, buildEasingModel, buildSe
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { keyedAt, setSegmentEasing } from "../web_src/pano_timeline.js";
+import { readEditorSource } from "./editor_source.mjs";
 
 const canonical = () => loadSceneState(readFileSync(new URL("./fixtures/scene_state/v2_canonical.json", import.meta.url), "utf8"));
 
@@ -148,7 +149,7 @@ test("the eye keeps its place in every row, and only the hideable rows have a bu
   const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
   assert.match(css, /\.pano-timeline-eye,\s*\.pano-timeline-open,\s*\.pano-timeline-key \{[^}]*width: 20px;/);
   // Showing and hiding is one history step and does not stop playback.
-  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const editor = readEditorSource();
   const toggle = editor.slice(editor.indexOf('if (action.type === "toggle-visible") {'), editor.indexOf('if (action.type === "select-row") {'));
   assert.match(toggle, /releaseHiddenSelection\(\);\s*commitTimelineEdit\(\);/);
   assert.equal(toggle.includes("stopTimelinePlayback"), false);
@@ -217,7 +218,7 @@ test("a world Sticker's position and scale sliders reach past any value, which h
   assert.equal(worldFieldRange(150), 1000);
   assert.equal(worldFieldRange(-2500), 10000);
   assert.equal(worldFieldRange(1000), 1000);
-  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const editor = readEditorSource();
   // Typed values are not clamped to the slider; the scale only stays above 0.
   assert.match(editor, /if \(\(worldInspected \|\| cameraV2\) && WORLD_UNLIMITED_FIELDS\.has\(key\)\) out = key === "scale" \? Math\.max\(out, WORLD_MIN_SCALE\) : out;/);
 });
@@ -396,7 +397,7 @@ test("the Frame tab stays in place, disabled with the reason while Panorama Stud
   assert.match(toggle, /:aria-disabled="button\.disabled === true \? 'true' : null"/);
   assert.match(toggle, /:data-tip="button\.tip \|\| null"/);
   assert.doesNotMatch(toggle, /:disabled=/);
-  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const editor = readEditorSource();
   assert.match(editor, /if \(viewTarget\.getAttribute\("aria-disabled"\) === "true"\) return;/);
   const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
   assert.match(css, /\.pano-view-btn\[aria-disabled="true"\] \{/);
@@ -427,7 +428,7 @@ test("Panorama Studio's Timeline shows the Camera, the Stickers and the `scene` 
   assert.equal(withScene.rows[0].keyable, true);
   const timelineVue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
   assert.match(timelineVue, /v-if="row\.keyable"\s*class="pano-timeline-key"/);
-  const editorJs = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const editorJs = readEditorSource();
   assert.match(editorJs, /if \(action\.owner === "scene" \|\| !timelineEditable\(action\.owner\)\) return;/);
   // Without its input, the `scene` row shows only while the `scene` changes over time; the Cutout has none.
   const still = loadSceneState({ version: 2 });

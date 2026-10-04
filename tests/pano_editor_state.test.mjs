@@ -37,6 +37,7 @@ import {
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
 import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { defaultCamera, loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
+import { readEditorSource } from "./editor_source.mjs";
 
 const readFixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
 const sceneNode = () => ({ __panoSceneStateV2: true });
@@ -526,7 +527,7 @@ test("a painting layer saved in an earlier editor session stays current until it
   // A pasted node (new id) still references the source node's files, which that node keeps overwriting.
   assert.equal(paintingLayerNeedsSync(saved, { ...painted, nodeId: "7" }), true);
 
-  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const editor = readEditorSource();
   assert.match(editor, /function needsPaintingLayerSync\(\) \{\n\s*if \(cutoutV2\) return false;\n[^\n]*\n[^\n]*\n\s*return paintingLayerNeedsSync\(state\.painting_layer, /);
 });
 
@@ -550,7 +551,7 @@ test("an undo keeps the painting layer while the painting is the same, and drops
   assert.equal(repainted.paintingChanged, true);
   assert.equal(repainted.state.painting_layer, undefined);
 
-  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  const editor = readEditorSource();
   assert.match(editor, /const restored = restoredHistoryState\(state, snapshot\);[\s\S]*?if \(restored\.paintingChanged\) markPaintStrokeVisualsDirty\(\);\s*else markObjectVisualsDirty\(\);/);
 });
 
