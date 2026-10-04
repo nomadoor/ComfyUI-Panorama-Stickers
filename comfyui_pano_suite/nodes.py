@@ -16,6 +16,7 @@ import comfy.model_management
 from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
+from .caches import nbytes
 from .comfy_image_resolver import resolve_painting_layer_payload
 from .node_runtime import PREVIEW_UI_KEYS, NodeProgress, create_default_runtime
 from .progress import loop_progress
@@ -420,7 +421,7 @@ def _resolve_cutout_source_batch(erp_image) -> np.ndarray:
     return _images_to_numpy_batch(erp_image, None, fallback_shape=(1, 512, 1024, 3))
 
 
-def _estimate_sticker_cuda_chunk_size(
+def _estimate_sticker_chunk_size(
     batch_size: int,
     out_h: int,
     out_w: int,
@@ -429,10 +430,9 @@ def _estimate_sticker_cuda_chunk_size(
     in_h: int = 0,
     in_w: int = 0,
 ) -> int:
-    if device is None or device.type != "cuda":
+    if device is None or comfy.model_management.is_device_cpu(device):
         return max(1, int(batch_size))
-    device_index = device.index if device.index is not None else torch.cuda.current_device()
-    free_bytes, _total_bytes = torch.cuda.mem_get_info(device_index)
+    free_bytes = comfy.model_management.get_free_memory(device)
     # Account for both input and output tensors: input (float32 BCHW) + output (float32 BCHW)
     # plus overlay broadcast and intermediate buffers. Use 4x multiplier for safety margin.
     eff_in_h = max(int(in_h or out_h), int(out_h))
@@ -451,7 +451,7 @@ def _render_sticker_output_batches(
     out_w: int,
     bg_hex: str,
     overlay_rgba: np.ndarray | None,
-    cuda_device: torch.device | None,
+    device: torch.device | None,
     progress_callback=None,
 ):
     if bg_erp is None:
@@ -487,8 +487,8 @@ def _render_sticker_output_batches(
                 except Exception:
                     pass
             return out_batch.astype(np.float32, copy=False), bg_batch
-    compute_device = cuda_device if cuda_device is not None else bg_erp.device
-    chunk_size = _estimate_sticker_cuda_chunk_size(batch_size, out_h, out_w, compute_device, in_h=in_h, in_w=in_w)
+    compute_device = device if device is not None else bg_erp.device
+    chunk_size = _estimate_sticker_chunk_size(batch_size, out_h, out_w, compute_device, in_h=in_h, in_w=in_w)
     overlay_cache = {}
     start = 0
 
@@ -529,8 +529,6 @@ def _render_sticker_output_batches(
 
             out_batch[start:end] = out_chunk.contiguous().cpu().numpy()
             del chunk, bg_chunk, out_chunk
-            if compute_device.type == "cuda":
-                torch.cuda.empty_cache()
             if progress_callback is not None:
                 try:
                     progress_callback(end, batch_size)
@@ -538,18 +536,19 @@ def _render_sticker_output_batches(
                     pass
             start = end
         except torch.OutOfMemoryError:
-            if compute_device.type == "cuda" and chunk_size > 1:
+            on_device = not comfy.model_management.is_device_cpu(compute_device)
+            if on_device:
+                comfy.model_management.soft_empty_cache()
+            if on_device and chunk_size > 1:
                 chunk_size = max(1, chunk_size // 2)
-                torch.cuda.empty_cache()
                 continue
-            if compute_device.type == "cuda":
+            if on_device:
                 logging.getLogger(__name__).warning(
-                    "PanoramaStickers background CUDA path ran out of memory; falling back to CPU chunks."
+                    "PanoramaStickers background device path ran out of memory; falling back to CPU chunks."
                 )
                 compute_device = torch.device("cpu")
                 chunk_size = 1
                 overlay_cache.clear()
-                torch.cuda.empty_cache()
                 continue
             raise MemoryError(
                 f"PanoramaStickers: not enough RAM to process a single frame "
@@ -853,7 +852,8 @@ class PanoramaStickersNode(io.ComfyNode):
         progress.set(0)
         progress.stage("Preparing sticker inputs")
 
-        _cuda_device = torch.device("cuda") if torch.cuda.is_available() else None
+        torch_device = comfy.model_management.get_torch_device()
+        render_device = None if comfy.model_management.is_device_cpu(torch_device) else torch_device
 
         state["output_preset"] = out_w
         state["bg_color"] = bg_hex
@@ -963,7 +963,7 @@ class PanoramaStickersNode(io.ComfyNode):
             out_w=out_w,
             bg_hex=bg_hex,
             overlay_rgba=overlay_rgba,
-            cuda_device=_cuda_device,
+            device=render_device,
             progress_callback=progress.frame_callback(render_start, render_span),
         )
         progress.set(render_start + render_span)
@@ -1393,7 +1393,38 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
     return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
 
 
-def _render_frames(built: PanoSceneValue, bg, capture, device):
+# Floats per output pixel that a frame keeps on the device at once: the rays and where they look, the Sky and each
+# of its layers' samples with their footprints and filter weights, the background's samples, the World layer with its
+# depth and the folding by depth, and the color, mask, and depth. A rounded-up count of the tensors `render_frame` holds.
+RENDER_FLOATS_PER_PIXEL = 64
+# A source on the device is float32 with the ripmap levels `_sample_filtered` makes, up to three times its size.
+DEVICE_SOURCE_FACTOR = 4
+
+
+def _render_memory(built: PanoSceneValue, bg, size: tuple[int, int]) -> int:
+    """The bytes a render pass of `built` at `size` (width, height) needs on the device, by `docs/render-contract.md`:
+    the per-pixel working set of a frame, and every source it uploads as float32 with its ripmap levels (one
+    background frame, the Sticker sources, the uploaded paint layers) or as given (the 3D media)."""
+    sources = 0
+    if bg is not None:
+        frame = bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg[0]
+        sources += frame.shape[0] * frame.shape[1] * 3 * 4
+    media = 0
+    for layer in built.layers:
+        sources += sum(source.rgba.shape[0] * source.rgba.shape[1] * 4 * 4 for source in layer.sources.stickers.values())
+        sources += sum(array.size * 4 for array in _payload_arrays(layer.sources.painting_layer))
+        media += nbytes(layer.scene) + (nbytes(layer.port.media) if layer.port is not None and layer.port.is_3d else 0)
+    return size[0] * size[1] * RENDER_FLOATS_PER_PIXEL * 4 + sources * DEVICE_SOURCE_FACTOR + media
+
+
+def _payload_arrays(payload: dict | None) -> list:
+    """The rasters of a painting payload (`resolve_painting_layer_payload`)."""
+    if not payload:
+        return []
+    return [array for array in (payload.get("paint"), payload.get("mask"), *payload.get("groups", {}).values()) if array is not None]
+
+
+def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, int]):
     """(b) Render each output frame of the Scene `built` with the shared render function: each layer's state evaluated
     at its Timeline frame, its port Sticker's source at the frame of its `port` and its `scene` item that (a) chose,
     as one `RenderLayer` each. `capture` maps the evaluated state of the last layer (the node that shoots) to the
@@ -1401,7 +1432,10 @@ def _render_frames(built: PanoSceneValue, bg, capture, device):
     `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media (and its content when 3D) and the
     `scene` content are opened for this pass, so nothing they put on `device` outlives it.
     Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
-    the same tensors as the previous one."""
+    the same tensors as the previous one. Before the first frame, ComfyUI frees on `device` what the pass needs
+    (`_render_memory` at the output `size`), unloading models only as far as that takes."""
+    if not comfy.model_management.is_device_cpu(device):
+        comfy.model_management.free_memory(_render_memory(built, bg, size), device)
     bg_width = None
     if bg is not None:
         bg_width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2]
@@ -1450,11 +1484,11 @@ def _render_outputs(built: PanoSceneValue, bg, capture, size: tuple[int, int], b
     """(c) The first output frame's IMAGE and MASK of the Scene `built`, rendered now from the opened `bg`, and the
     `video` of every frame, rendered when it is read with `bg_media` (opened as `bg_name`) and the `scene` content
     opened again for each pass."""
-    color, mask = next(_render_frames(built, bg, capture, comfy.model_management.get_torch_device()))
+    color, mask = next(_render_frames(built, bg, capture, comfy.model_management.get_torch_device(), size))
     audio = bg.audio(len(built.frames) / built.fps) if isinstance(bg, OPENED_VIDEOS) else None
 
     def render(device):
-        return _render_frames(built, _open_media(built.bg_media, bg_name), capture, device)
+        return _render_frames(built, _open_media(built.bg_media, bg_name), capture, device, size)
 
     video = SceneVideo(render, *size, built.rate, list(built.times), built.time_base, audio)
     return color[None].to("cpu", copy=True), mask[None].to("cpu", copy=True), video

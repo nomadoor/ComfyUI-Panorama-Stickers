@@ -423,3 +423,20 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 - `coverage` 入力は `execute` では読まない（フロントエンドのウィジェットが読む）。`PANO_SCENE` のときは `PanoSceneValue.coverage` が正で、ウィジェットの値は使わない。
 - MatchType はバックエンドで型を検証しないので、`source` が IMAGE（4 次元のテンソル）・VIDEO・`PanoSceneValue` のどれでもなければ `TypeError` にする。
 - #76 への申し送り：旧 Preview 用の `ensurePanoramaPreviewImageOutput`（`web_src/pano_editor_extension.js`）は、足りない `image` 出力を足す。新しい ID に適用すると MatchType の `output` とは別に `image` 出力が増えるので、新しいノードには適用しない。
+
+## メモリ・中断・一時ファイル
+
+### デバイスとメモリ
+
+- デバイスは `comfy.model_management.get_torch_device()`、空きメモリは `get_free_memory(device)` で読み、キャッシュを空けるのは `soft_empty_cache()` だけにする（旧 `PanoramaStickers` も同じ。CUDA を直接は選ばず、チャンクごとに `empty_cache` を呼ばない。メモリが足りなくなったときだけ空けてチャンクを半分にする）。
+- 新しい描画のパス（`_render_frames`。最初のフレームの描画と、`video` 出力を読むたび）の最初に、見積もった量で `comfy.model_management.free_memory(required, device)` を 1 回呼ぶ。ComfyUI は空きがその量に足りない分だけモデルを降ろす。CPU では呼ばない。
+- 見積もり（`_render_memory`）は次の和。粗い上側の見積もりで、細かな一時テンソルは含めない。
+  - 出力の画素あたり `RENDER_FLOATS_PER_PIXEL`（64）個の float32。1 フレームの間にデバイスに同時にあるもの（光線とその向き、Sky とその層ごとのサンプルと footprint・重み、背景のサンプル、World の層と深度、深度での重ね合わせ、色・マスク・深度）を数えて切り上げた数。
+  - デバイスに上げる素材の float32 の大きさの `DEVICE_SOURCE_FACTOR`（4）倍：`bg_media` の 1 フレーム（RGB）、各層の Sticker の素材（RGBA）、アップロード済みのペイントのラスタ。4 倍は、本体と `_sample_filtered` の ripmap（本体の 3 倍まで）の分。
+  - 3D の中身（`scene` と 3D の Sticker）のテンソルの大きさ（`caches.nbytes`）。
+- 例：ERP 4096 x 2048 の出力に 4096 x 2048 の背景と 2048 四方の Sticker 一つなら、2 GiB（画素）＋ 384 MiB（背景）＋ 256 MiB（Sticker）で約 2.6 GiB。
+
+### 中断と進み具合
+
+- 長いループ（エディタ用の MP4 のエンコード `encode_editor_mp4`、RGBA の PNG の書き出し `save_editor_frames`、3D のエディタ用ファイルの書き出し `write_editor_files`、VIDEO の PTS の走査、旧ノードのプレビュー MP4 `encode_frames_to_mp4`、`video` 出力の保存）は、1 ステップごとに ComfyUI の中断を確かめ、進み具合をノードのバーに出す（`progress.loop_progress()`。旧ノードは `NodeProgress` が同じことをする）。
+- 中断や失敗で止まったときは、書きかけのファイル（`core/video.py` の `removed_on_failure`）を消してから例外をそのまま上げる。
