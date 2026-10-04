@@ -43,8 +43,8 @@ import {
   setWorldStickerTransform,
   worldStickerFields,
 } from "./pano_editor_state.js";
-import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from "./pano_scene_eval.js";
-import { loadSceneState, timelineFps } from "./pano_scene_state.js";
+import { clipActive, evaluateSticker } from "./pano_scene_eval.js";
+import { timelineFps } from "./pano_scene_state.js";
 import {
   deleteKeyframes,
   enteredTimelineFps,
@@ -61,51 +61,27 @@ import {
   trimClipEnd,
   trimClipStart,
 } from "./pano_timeline.js";
-import {
-  createEditorView,
-  frameViewContext,
-  screenRenderSize,
-  shotCamera,
-  workingSkyLayers,
-  worldStickerLayers,
-} from "./pano_editor_view.js";
+import { createEditorView, frameViewContext, screenRenderSize } from "./pano_editor_view.js";
 import {
   DEFAULT_DISTANCE,
-  boundingSphere,
   cameraFrustumSegments,
-  cameraTrajectory,
-  contentPoints,
-  facingRotation,
-  frameSphere,
   frameView,
   gizmoDragLanes,
   gizmoScreenBox,
-  gridSpec,
-  hasWorldContent,
   navigationTarget,
   newWorldStickerTransform,
   orbitView,
   panDepth,
   panView,
-  placedCamera,
   planeCorners,
-  polylineSegments,
   projectPoint,
   reuseWheelPick,
-  sceneItemBox,
-  sceneRequest,
-  sceneTransform,
   segmentsHit,
   spaceCamera,
-  spaceModeView,
-  spaceModeWithContent,
-  stickerContentRequest,
-  stickerContentUrls,
-  switchSpaceMode,
   zoomView,
 } from "./pano_space.js";
-import { shownSpaceMode, spaceModeChoice, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
-import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
+import { shownSpaceMode, viewTransitionFrame } from "./pano_view_transition.js";
+import { presetUsesButton, viewDragAction } from "./pano_view_controls.js";
 import {
   addDiagnosticsSource,
   createPanoCanvas,
@@ -174,11 +150,6 @@ import {
   flushPanoStateProducers,
   queuePendingStickerOperation,
 } from "./pano_editor_extension.js";
-import {
-  portStickerSyncValue,
-  reconcileExternalStickerState,
-  reconcilePortStickerState,
-} from "./pano_stickers_node_surface.js";
 import { isNodeOutputMediaCurrent, nodeInputOrigins, videoLinked } from "./pano_preview_video.js";
 import { frameAtTime } from "./pano_video_playback.js";
 import { portMediaFrames } from "./pano_port_media.js";
@@ -200,10 +171,8 @@ import {
 } from "./pano_external_sticker_sync.js";
 import {
   CUTOUT_FRAME_ACCENT,
-  CUTOUT_FRUSTUM_COLOR,
   CUTOUT_PANO_DIM_ALPHA,
   CUTOUT_PANO_DIM_TRANSITION_MS,
-  CUTOUT_TRAJECTORY_COLOR,
   CUTOUT_V2_HIDDEN_TOOLS,
   DEG2RAD,
   ENABLE_STICKERS_NODE_PREVIEW,
@@ -267,6 +236,9 @@ import { createProjection } from "./editor/projection.js";
 import { createObjectGeometry } from "./editor/object_geometry.js";
 import { createPaintLayers } from "./editor/paint_layers.js";
 import { createPaintStrokes } from "./editor/paint_strokes.js";
+import { createExternalStickers } from "./editor/external_stickers.js";
+import { createSpace } from "./editor/space.js";
+import { createViewInput } from "./editor/view_input.js";
 
 const _paintLayerSyncRegistry = new Map();
 
@@ -848,16 +820,9 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ reason: DRAW_REASON.CONTEXT });
     },
   });
-  // The state v2 the views draw, made again when the state changes (scheduler.stateRevision).
-  let editorViewScene = { revision: -1, sceneState: null };
-  // The input built for the frame being drawn, shared by its views; drawScene clears it.
-  let editorViewFrameInput = null;
   // The camera preview's last frame ({ width, height }), or null; it draws again when what it shows can
   // have changed (drawScene's reasons) or its size changes.
   let cameraPreviewDrawn = null;
-  // The pick of the last 6DoF wheel step and of the last Frame view wheel step (pano_space.js
-  // reuseWheelPick).
-  let spaceWheel = null;
   let frameWheel = null;
   const frameGateCssRadius = Number.parseFloat(
     getComputedStyle(root).getPropertyValue("--pano-float-radius"),
@@ -876,50 +841,78 @@ async function showEditor(node, type, options = {}) {
     depth: 0,
   };
 
+  const viewController = createPanoInteractionController({
+    getView: () => ({ yaw: editor.viewYaw, pitch: editor.viewPitch, fov: editor.viewFov }),
+    setView: (next) => {
+      editor.viewYaw = wrapYaw(Number(next.yaw || 0));
+      editor.viewPitch = clamp(Number(next.pitch || 0), -89.9, 89.9);
+      editor.viewFov = clamp(Number(next.fov || editor.viewFov || 100), 35, 140);
+    },
+    getViewportSize: () => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        w: Math.max(1, Number(rect.width || canvas.clientWidth || 0)),
+        h: Math.max(1, Number(rect.height || canvas.clientHeight || 0)),
+      };
+    },
+    getInvert: () => ({
+      x: state.ui_settings?.invert_view_x ? -1 : 1,
+      y: state.ui_settings?.invert_view_y ? -1 : 1,
+    }),
+    getUnwrapRect: () => getUnwrapRect(),
+    onInteraction: () => scheduler.requestDraw(DRAW_REASON.VIEW),
+  });
+
   // --- editor modules: begin (generated wiring, see docs/editor-architecture.md) ---
   // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
   const {
-    applyInitialCutoutFocus, applyRasterObjectOffset, applyRasterObjectTransform, applyStrokeGroupOffset,
-    applyStrokeGroupTransform, areAllSelectedItemsLocked, bringSelectedToFront, buildEditorViewPaintLayers,
-    buildRasterObjectEditCanvas, canRestoreSelectedToInitial, clearSelection, clearWorldSelection,
-    createRasterFrozenObjectsFromCanvas, createRasterSurface, currentViewCamera, deviceRect, ensureGroupFrame,
-    ensurePaintingGroupEntry, erpPointToWorldDir, followPortSticker, frameLocalPointToWorldDir,
-    getActivePaintTargetDescriptor, getConnectedErpImage, getCutoutInspectorItems, getCutoutSelectableItems,
-    getCutoutSelectableItemsForDisplay, getCutoutSelectableItemsForHit, getDisplayListObjects,
-    getExternalStickerPreviewImage, getHistoryCapabilities, getList, getMediaRevisionToken, getMultiSelectionGeom,
-    getNextStickerZIndex, getNodeUiValue, getOrderedDisplayListObjects, getPaintingGroupList, getPortMedia,
-    getRasterObjectCenterUv, getRasterObjectItem, getRasterObjectList, getSelectableRasterObjectItems,
-    getSelectableStrokeGroupItems, getSelected, getSelectedItems, getSelectedKind, getSelectionItemIcon,
-    getSelectionItemLabelData, getSharedLivePaintSurface, getStageImageStatus, getStickerDisplayAlpha,
-    getStickerImage, getStrokeGroupCenterUv, getStrokeGroupItem, getStrokeGroupStrokes, getUnwrapRect,
-    hitRasterObjectAt, invalidateLivePaintPreviewCaches, isDecodedImageReady, isErpCamera, isExternalSticker,
+    applyInitialCutoutFocus, applyRasterObjectOffset, applyRasterObjectTransform, applySpaceMode,
+    applyStrokeGroupOffset, applyStrokeGroupTransform, applyViewTransitionEnd, areAllSelectedItemsLocked,
+    bringSelectedToFront, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState,
+    buildRasterObjectEditCanvas, cameraFrustumLength, cameraPreviewShown, cameraShoots, cameraSphere,
+    canRestoreSelectedToInitial, cancelViewTransition, clearSelection, clearWorldSelection,
+    collectExternalStickersForClearAll, computeStickerVFov, contentSphere, createRasterFrozenObjectsFromCanvas,
+    createRasterSurface, currentSpaceCamera, cutoutCamera, deviceRect, drawEditorViewShot, editorViewInput,
+    endEditorViewFrame, ensureGroupFrame, ensurePaintingGroupEntry, erpPointToWorldDir, frameLocalPointToWorldDir,
+    frameSpaceContent, getActivePaintTargetDescriptor, getConnectedErpImage, getCutoutInspectorItems,
+    getCutoutSelectableItems, getCutoutSelectableItemsForDisplay, getCutoutSelectableItemsForHit,
+    getDisplayListObjects, getHistoryCapabilities, getList, getMultiSelectionGeom, getNextStickerZIndex,
+    getOrderedDisplayListObjects, getPaintingGroupList, getPortMedia, getRasterObjectCenterUv,
+    getRasterObjectItem, getRasterObjectList, getSelectableRasterObjectItems, getSelectableStrokeGroupItems,
+    getSelected, getSelectedItems, getSelectedKind, getSelectionItemIcon, getSelectionItemLabelData,
+    getSharedLivePaintSurface, getStageImageStatus, getStickerDisplayAlpha, getStrokeGroupCenterUv,
+    getStrokeGroupItem, getStrokeGroupStrokes, getUnwrapRect, hasCamera, hasSpaceContent, hitRasterObjectAt,
+    invalidateLivePaintPreviewCaches, isCameraSelected, isErpCamera, isExternalSticker, isFreeSpaceView,
     isItemLocked, isItemSelected, isPaintCompositeInteraction, isRasterObjectItem, isSceneSticker, isShotItem,
-    isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker, makeRasterObjectSelectionId,
-    makeStrokeGroupSelectionId, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
-    markPaintStrokeVisualsDirty, needsPaintingLayerSync, objectGeom, parseRasterObjectSelectionId, playback,
-    playbackFps, portVideo, poseOf, processFreehandPoints, projectDir, projectDirUnwrap,
-    projectErpLassoPointsToFrameRect, projectLassoPointsToCurrentView, pushHistory, queueVideoTransportLayout,
-    rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, refreshModalVideoSource,
-    refreshPaintEngineRevisionCache, releaseHiddenSelection, restoreHistory, restoreSelectedToInitialPose,
-    sampleStickerEdge, sceneFiles, screenPos, screenPosCss, screenPosToErpPoint, screenPosToFrameAsErpPoint,
-    screenToWorldDir, selectWorldSticker, selectedWorldSticker, sendSelectedToBack, setSelectedItem,
-    setSelectedItems, shortestWrappedDelta, stickerCornerOrderSanity, stickerFiles, stickerImageKey,
-    syncPaintingLayerAsync, syncVideoTransportState, syncVideoTransportVisibility,
-    toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, videoCleanupFns, videoState,
-    worldDirToFrameLocalPoint, worldStickerEditable, writePose,
+    isSpaceView, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker, lookingAt,
+    makeRasterObjectSelectionId, makeStrokeGroupSelectionId, markObjectVisualsDirty,
+    markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty, needsPaintingLayerSync, objectGeom,
+    paintingShown, parseRasterObjectSelectionId, playback, playbackFps, poseOf, processFreehandPoints, projectDir,
+    projectDirUnwrap, projectErpLassoPointsToFrameRect, projectLassoPointsToCurrentView, pushHistory,
+    queueVideoTransportLayout, rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded,
+    reconcileExternalStickerFromInputs, refreshModalVideoSource, refreshPaintEngineRevisionCache,
+    releaseHiddenSelection, renderEditorView, renderEditorViewUnwrap, restoreHistory,
+    restoreSelectedToInitialPose, sampleStickerEdge, sceneStickerShown, screenPos, screenPosCss,
+    screenPosToErpPoint, screenPosToFrameAsErpPoint, screenToWorldDir, selectWorldSticker, selectedWorldSticker,
+    sendSelectedToBack, setSelectedItem, setSelectedItems, setSpaceMode, setSpaceView, shortestWrappedDelta,
+    shotViewCamera, spaceOrigin, spaceScale, spaceViewState, startSpaceDrag, stickerCornerOrderSanity,
+    stickerImageKey, syncPaintingLayerAsync, syncVideoTransportState, syncVideoTransportVisibility,
+    toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView, turnViewTo,
+    videoCleanupFns, videoState, viewControls, worldDirToFrameLocalPoint, worldStickerEditable, writePose,
+    zoomSpaceAt,
   } = createEditorModules({
-    api, backgroundCanvas, cameraShoots, cameraV2, canvas, comfyMedia, commitAndRefreshNode, commitState,
-    computeStickerVFov, cutoutV2, editor, editorView, floatingRightEl, getActiveCutoutShot,
-    getBrushPresetIdForTool, getFrameViewRect, getPaintingLayerList, hasCamera, imageCache, isFreeSpaceView,
-    loadPreferredExactLinkedImage, mediaAssetSource, mediaSource, mediaUiImage, node, paintingShown,
-    portStillCanvas, portVideoEl, rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache, readOnly,
-    requestDraw, resolveEditorOutputPresetWidth, runtime, sceneStickerShown, sceneV2, scheduler, setTimelineFrame,
-    shotEditor, stageWrap, state, stateV2, stillCanvas, stopTimelinePlayback, studio, syncCutoutShot, syncPaintUi,
-    syncTimeline, syncUndoRedoButtons, timeline, timelinePlayhead, timelineSpanFrames, type, uiState,
-    updateSelectionMenu, updateSidePanel, videoEl,
+    api, app, backgroundCanvas, cameraV2, canvas, comfyMedia, commitAndRefreshNode, commitState, cutoutV2, editor,
+    editorView, floatingRightEl, frameViewDistance, getActiveCutoutShot, getBrushPresetIdForTool,
+    getFrameViewRect, getPaintingLayerList, imageCache, isWorldMenuShown, loadPreferredExactLinkedImage,
+    mediaAssetSource, mediaSource, mediaUiImage, node, portStillCanvas, portVideoEl, rasterErpCanvasCache,
+    rasterImageAlphaCache, rasterImageCache, readOnly, requestDraw, resolveEditorOutputPresetWidth, runtime,
+    sceneV2, scheduler, setTimelineFrame, shotEditor, stageWrap, startAnimation, state, stateV2, stillCanvas,
+    stopTimelinePlayback, studio, syncCutoutShot, syncFloatingViewButtonState, syncPaintUi, syncTimeline,
+    syncUndoRedoButtons, timeline, timelinePlayhead, timelineSpanFrames, type, uiState, updateCursor,
+    updateSelectionMenu, updateSidePanel, videoEl, viewController,
   }, [
     createMediaSession, createHistory, createItems, createSelection, createProjection, createObjectGeometry,
-    createPaintLayers, createPaintStrokes,
+    createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput,
   ]);
   // --- editor modules: end ---
 
@@ -950,40 +943,6 @@ async function showEditor(node, type, options = {}) {
     stageWrap.classList.toggle("drop-active", next);
   }
 
-  // Moves the view to `target` over a short transition (pano_view_transition.js) from the view shown
-  // now, where a running transition has got to, which this one replaces. `end` ({ mode, moved }) is
-  // applied when it arrives, or at once when the view is there already.
-  function transitionView(target, end = null) {
-    const from = spaceViewState();
-    startAnimation(() => {
-      editor.viewTransition = startViewTransition(from, target, performance.now(), { scale: spaceScale(), end });
-    });
-    if (!editor.viewTransition && end) applyViewTransitionEnd(end);
-    viewController.state.inertia.active = false;
-    viewController.state.inertia.vx = 0;
-    viewController.state.inertia.vy = 0;
-    syncFloatingViewButtonState();
-    requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
-  }
-
-  function applyViewTransitionEnd(end) {
-    applySpaceMode(switchSpaceMode({ ...spaceModeState(), moved: end.moved }, end.mode, spaceOrigin()));
-    runtime.backgroundDirty = true;
-  }
-
-  // Drops a running transition where it shows. The 3DoF | 6DoF buttons follow: a way back to 3DoF
-  // dropped on the way stays in 6DoF.
-  function cancelViewTransition() {
-    if (!editor.viewTransition) return;
-    editor.viewTransition = null;
-    syncFloatingViewButtonState();
-  }
-
-  // Turns the view to look at yaw / pitch.
-  function turnViewTo(yawDeg, pitchDeg) {
-    transitionView({ ...spaceViewState(), yaw_deg: yawDeg, pitch_deg: pitchDeg });
-  }
-
   // Coordinate sanity: front-facing sticker should have top edge above bottom edge.
   const __sanity = stickerCornerOrderSanity();
   void __sanity;
@@ -994,204 +953,7 @@ async function showEditor(node, type, options = {}) {
   function isActiveLassoTool() {
     return String(getActivePaintToolKind() || "") === "lasso_fill";
   }
-  function normalizeInputPoseValue(value, debugValue = null) {
-    if (value && typeof value === "object" && !Array.isArray(value)) return value;
-    if (Array.isArray(value) && value.length > 0) {
-      const first = value[0];
-      if (first && typeof first === "object" && !Array.isArray(first)) return first;
-    }
-    if (Array.isArray(debugValue) && debugValue.length > 0) {
-      const parsed = debugValue[0]?.parsed_state;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return {
-          yaw_deg: Number(parsed.yaw_deg || 0),
-          pitch_deg: Number(parsed.pitch_deg || 0),
-          hFOV_deg: Number(parsed.hFOV_deg || 30),
-          rot_deg: Number(parsed.roll_deg || 0),
-        };
-      }
-    }
-    return null;
-  }
 
-  function computeStickerVFov(hFovDeg, width, height) {
-    const w = Math.max(1, Number(width || 1));
-    const h = Math.max(1, Number(height || 1));
-    const hf = clamp(Number(hFovDeg || 30), 0.1, 179) * DEG2RAD;
-    const vf = 2 * Math.atan(Math.tan(hf * 0.5) * (h / w));
-    return clamp(vf * RAD2DEG, 0.1, 179);
-  }
-  function parseLinkedStickerState(raw) {
-    const text = String(raw || "").trim();
-    if (!text) return null;
-    try {
-      const parsed = JSON.parse(text);
-      if (!parsed || typeof parsed !== "object") return null;
-      if (String(parsed.kind || "") !== "pano_sticker_state") return null;
-      const versionValue = parsed.version;
-      let version = null;
-      if (typeof versionValue === "number" && Number.isInteger(versionValue)) {
-        version = versionValue;
-      } else if (typeof versionValue === "string" && /^\d+$/.test(versionValue)) {
-        version = Number.parseInt(versionValue, 10);
-      }
-      if (version !== 1) return null;
-      const pose = parsed.pose;
-      if (!pose || typeof pose !== "object") return null;
-      const yawRaw = Number(pose.yaw_deg);
-      const pitchRaw = Number(pose.pitch_deg);
-      const rollRaw = Number(pose.roll_deg);
-      const hRaw = Number(pose.hFOV_deg);
-      if (![yawRaw, pitchRaw, rollRaw, hRaw].every((v) => Number.isFinite(v))) return null;
-      let yaw = ((yawRaw + 180) % 360 + 360) % 360 - 180;
-      if (Object.is(yaw, -0)) yaw = 0;
-      const out = {
-        yaw_deg: yaw,
-        pitch_deg: clamp(pitchRaw, -89.9, 89.9),
-        roll_deg: rollRaw,
-        hFOV_deg: clamp(hRaw, 0.1, 179),
-      };
-      const sourceAspect = Number(parsed.source_aspect);
-      if (Number.isFinite(sourceAspect) && sourceAspect > 0) out.source_aspect = sourceAspect;
-      return out;
-    } catch {
-      return null;
-    }
-  }
-  function buildCanonicalCutoutStickerState(item) {
-    const yawRaw = Number(item?.yaw_deg);
-    const pitchRaw = Number(item?.pitch_deg);
-    const rollRaw = Number(item?.roll_deg ?? item?.rot_deg);
-    const hFovRaw = Number(item?.hFOV_deg);
-    const sourceAspect = deriveCutoutAspectFromFov(item);
-    return {
-      kind: "pano_sticker_state",
-      version: 1,
-      pose: {
-        yaw_deg: wrapYaw(Number.isFinite(yawRaw) ? yawRaw : 0),
-        pitch_deg: clamp(Number.isFinite(pitchRaw) ? pitchRaw : 0, -89.9, 89.9),
-        roll_deg: Number.isFinite(rollRaw) ? rollRaw : 0,
-        hFOV_deg: clamp(Number.isFinite(hFovRaw) ? hFovRaw : 90, 0.1, 179),
-      },
-      source_aspect: sourceAspect,
-    };
-  }
-  function buildCanonicalSelectedStickerState(item) {
-    if (!item || typeof item !== "object") return buildCanonicalCutoutStickerState(null);
-    const yawRaw = Number(item?.yaw_deg);
-    const pitchRaw = Number(item?.pitch_deg);
-    const rollRaw = Number(item?.roll_deg ?? item?.rot_deg);
-    const hFovRaw = Number(item?.hFOV_deg);
-    const vFovRaw = Number(item?.vFOV_deg);
-    let sourceAspect = 1;
-    if (Number.isFinite(hFovRaw) && Number.isFinite(vFovRaw)) {
-      const hf = clamp(hFovRaw, 0.1, 179) * DEG2RAD;
-      const vf = clamp(vFovRaw, 0.1, 179) * DEG2RAD;
-      const tanV = Math.tan(vf * 0.5);
-      if (Math.abs(tanV) > 1e-6) {
-        const ratio = Math.tan(hf * 0.5) / tanV;
-        if (Number.isFinite(ratio) && ratio > 0) sourceAspect = ratio;
-      }
-    }
-    if (item?.asset_id && state?.assets?.[item.asset_id]) {
-      const asset = state.assets[item.asset_id];
-      const width = Number(asset?.w || 0);
-      const height = Number(asset?.h || 0);
-      if (width > 0 && height > 0) sourceAspect = width / height;
-    }
-    return {
-      kind: "pano_sticker_state",
-      version: 1,
-      pose: {
-        yaw_deg: wrapYaw(Number.isFinite(yawRaw) ? yawRaw : 0),
-        pitch_deg: clamp(Number.isFinite(pitchRaw) ? pitchRaw : 0, -89.9, 89.9),
-        roll_deg: Number.isFinite(rollRaw) ? rollRaw : 0,
-        hFOV_deg: clamp(Number.isFinite(hFovRaw) ? hFovRaw : 30, 0.1, 179),
-      },
-      source_aspect: sourceAspect,
-    };
-  }
-  function getLinkedStringInputValue(inputName) {
-    return comfyMedia.linkedValue(node, inputName);
-  }
-  function buildExternalInitialPose(inputPose, stateRaw, previewImg) {
-    const parsed = (inputPose && typeof inputPose === "object")
-      ? {
-        yaw_deg: Number(inputPose.yaw_deg || 0),
-        pitch_deg: Number(inputPose.pitch_deg || 0),
-        roll_deg: Number(inputPose.rot_deg ?? inputPose.roll_deg ?? 0),
-        hFOV_deg: Number(inputPose.hFOV_deg || 30),
-      }
-      : parseLinkedStickerState(stateRaw);
-    if (parsed) {
-      const width = Number(previewImg?.naturalWidth || previewImg?.width || parsed.source_aspect || 1);
-      const height = Number(previewImg?.naturalHeight || previewImg?.height || 1);
-      return {
-        yaw_deg: Number(parsed.yaw_deg || 0),
-        pitch_deg: Number(parsed.pitch_deg || 0),
-        hFOV_deg: Number(parsed.hFOV_deg || 30),
-        vFOV_deg: computeStickerVFov(parsed.hFOV_deg, width, height),
-        rot_deg: Number(parsed.roll_deg || 0),
-      };
-    }
-    const width = Number(previewImg?.naturalWidth || previewImg?.width || 1);
-    const height = Number(previewImg?.naturalHeight || previewImg?.height || 1);
-    return {
-      yaw_deg: Number(editor.viewYaw || 0),
-      pitch_deg: Number(editor.viewPitch || 0),
-      hFOV_deg: 30,
-      vFOV_deg: computeStickerVFov(30, width, height),
-      rot_deg: 0,
-    };
-  }
-  function reconcilePortStickerFromInputs() {
-    const previewImg = getExternalStickerPreviewImage(() => {
-      runExternalStickerSync(node, "image-loaded");
-    });
-    const pose = isNodeOutputMediaCurrent(node, "external-sticker")
-      ? normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null)
-      : null;
-    return reconcilePortStickerState(state, portStickerSyncValue(node, { pose, image: previewImg }));
-  }
-  function reconcileLegacyExternalStickerFromInputs() {
-    const slot = Array.isArray(node?.inputs)
-      ? node.inputs.findIndex((entry) => String(entry?.name || "") === "sticker_image")
-      : -1;
-    const linkId = slot >= 0 ? node.getInputLink(slot)?.id ?? null : null;
-    const previewImg = getExternalStickerPreviewImage(() => {
-      runExternalStickerSync(node, "image-loaded");
-    });
-    const inputPose = normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null);
-    const stateRaw = getLinkedStringInputValue("sticker_state");
-    const stateHash = comfyMedia.externalStateHash(node, stateRaw);
-    const pose = linkId == null ? null : buildExternalInitialPose(inputPose, stateRaw, previewImg);
-    return reconcileExternalStickerState(state, {
-      connected: linkId != null,
-      linkId,
-      stateHash,
-      pose,
-      imageWidth: Number(previewImg?.naturalWidth || previewImg?.width || 0),
-      imageHeight: Number(previewImg?.naturalHeight || previewImg?.height || 0),
-    });
-  }
-  function reconcileExternalStickerFromInputs(reason = "sync") {
-    if (type !== "stickers" || readOnly) return;
-    const result = node.__panoSceneStateV2 ? reconcilePortStickerFromInputs() : reconcileLegacyExternalStickerFromInputs();
-    if (result.changed) {
-      const removed = state.stickers.find(isExternalSticker);
-      state.stickers = result.state.stickers;
-      state.active = result.state.active;
-      if (removed && editor.selectedId === removed.id && !state.stickers.some((item) => item.id === removed.id)) {
-        editor.selectedId = null;
-        editor.selectedIds = [];
-      }
-      commitAndRefreshNode();
-      updateSidePanel();
-      updateSelectionMenu();
-    }
-    requestDraw();
-    void reason;
-  }
   function syncLookAtFrameButtonState() {
     // Panorama Studio has Add Camera instead, disabled rather than hidden while it has its Camera (#89).
     if (studio) patchUiButton(uiState.toolButtons, "value", "add-camera", { disabled: hasCamera() });
@@ -1264,190 +1026,6 @@ async function showEditor(node, type, options = {}) {
     else setCanvasCursor(editor.mode === "pano" ? "grab" : "default");
   }
 
-  // The camera preview shows the Cutout's frame, or asks for one; Panorama Studio's shows only a Camera
-  // with a frame, and nothing without one (#89).
-  function cameraPreviewShown() {
-    return !studio || (cameraShoots() && !isErpCamera());
-  }
-
-  // PanoramaStickersNode's panorama view shows the World when there is World content (a `scene` input or
-  // a world Sticker), from the origin in 3DoF and moving through it in 6DoF. Without it the view only
-  // looks around.
-  function isSpaceView() {
-    return editor.mode === "pano" && hasSpaceContent();
-  }
-
-  function hasSpaceContent() {
-    // The Cutout sees the World of the PANO_SCENE it shot, or the world Stickers of its own state.
-    return stateV2 && hasWorldContent({ sceneLinked: sceneV2 && !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
-  }
-
-  // The space view in 6DoF, where the Viewport camera moves through the World with the 3D view controls.
-  function isFreeSpaceView() {
-    return editor.spaceMode === "6dof" && isSpaceView();
-  }
-
-  // The preset of the 3D view controls chosen in ComfyUI's settings (pano_view_controls.js).
-  function viewControls() {
-    return viewControlsPreset(app.ui?.settings?.getSettingValue?.(VIEW_CONTROLS_SETTING_ID));
-  }
-
-  function spaceModeState() {
-    return { mode: editor.spaceMode, position: editor.viewPosition, moved: editor.viewMoved };
-  }
-
-  function applySpaceMode(space) {
-    editor.spaceMode = space.mode;
-    editor.viewPosition = space.position;
-    editor.viewMoved = space.moved;
-  }
-
-  // Back in 3DoF the view returns to the origin keeping its direction; 6DoF starts from there. The way
-  // back moves in 6DoF and enters 3DoF when it arrives, so its frames are 6DoF frames throughout; 6DoF
-  // chosen on the way stops it where it shows.
-  function setSpaceMode(mode) {
-    const choice = spaceModeChoice(editor.spaceMode, editor.viewTransition, mode);
-    if (choice === "keep") return;
-    if (choice === "return") {
-      transitionView({ ...spaceViewState(), position: spaceOrigin(), distance: contentSphere()?.radius || DEFAULT_DISTANCE }, { mode, moved: false });
-      return;
-    }
-    cancelViewTransition();
-    // 6DoF starts where 3DoF stands now (the Cutout's Camera may have moved since 3DoF began).
-    applySpaceMode(switchSpaceMode({ ...spaceModeState(), position: spaceViewState().position }, mode, spaceOrigin()));
-    runtime.backgroundDirty = true;
-    syncFloatingViewButtonState();
-    requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
-  }
-
-  // The content sphere comes from the frame's input (editorViewInput), which the pointer and wheel
-  // handlers between frames read as the last frame built it: that is the content on screen, and
-  // rebuilding it per event would evaluate the whole state again for nothing.
-  function spaceViewState() {
-    const distance = editor.viewMoved ? editor.viewDistance : contentSphere()?.radius || DEFAULT_DISTANCE;
-    const view = { position: editor.viewPosition, yaw_deg: editor.viewYaw, pitch_deg: editor.viewPitch, hFOV_deg: editor.viewFov, distance };
-    return spaceModeView(editor.spaceMode, view, spaceOrigin());
-  }
-
-  // Where 3DoF stands: the World origin, where the Stickers ERP is taken from, or in the Cutout editor and
-  // Panorama Studio with a Camera the Camera's position at the playhead, so the frame on the panorama is
-  // what the Camera sees (#77, #89).
-  function spaceOrigin() {
-    return cameraShoots() ? cutoutCamera().position : [0, 0, 0];
-  }
-
-  // Whether the editor has a Camera: always in the Cutout's, while the user keeps one in Panorama Studio's.
-  function hasCamera() {
-    return cameraV2 && state.camera !== null;
-  }
-
-  // Whether the Camera is shown and shoots. Panorama Studio's hidden Camera stays in the state, on its
-  // Timeline row, and is otherwise as none: not drawn, not selected, and the output is the ERP from the
-  // World origin, as the node shoots it. The Cutout's Camera always shoots.
-  function cameraShoots() {
-    return hasCamera() && (!studio || state.camera.visible);
-  }
-
-  // Whether the painting is shown: a hidden one is neither drawn, selected nor painted on.
-  function paintingShown() {
-    return state.painting_visible !== false;
-  }
-
-  // Whether a Sticker of state v2 shows, and can be selected, at the playhead: it is not hidden and
-  // the playhead is in its Clip range.
-  function sceneStickerShown(item) {
-    return item.visible && clipActive(item.clip, editor.frame);
-  }
-
-  // PanoramaCutoutNode's Camera at the playhead, by the evaluator the node shoots with (#77).
-  function cutoutCamera() {
-    return evaluateCamera(state.camera, editor.frame);
-  }
-
-  // The sphere around the World content shown in this frame (pano_space.js boundingSphere), or null.
-  function contentSphere() {
-    const input = editorViewInput();
-    return (input.space ?? input.content)?.sphere ?? null;
-  }
-
-  function setSpaceView(view) {
-    editor.viewPosition = view.position;
-    editor.viewYaw = view.yaw_deg;
-    editor.viewPitch = view.pitch_deg;
-    editor.viewDistance = view.distance;
-    editor.viewMoved = true;
-    runtime.backgroundDirty = true;
-    requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW });
-  }
-
-  // The size of the World content shown, which scales the navigation steps.
-  function spaceScale() {
-    return contentSphere()?.radius || DEFAULT_DISTANCE;
-  }
-
-  // Frame Selected: the view keeps its direction and moves until the selected world Sticker fits,
-  // or all the content without one (pano_space.js frameSphere).
-  function frameSpaceContent() {
-    const space = editorViewInput().space;
-    const sceneState = editorViewScene.sceneState;
-    const id = editor.worldSelectedId || editor.selectedId;
-    const index = sceneState.stickers.findIndex((sticker) => sticker.id === id);
-    const selected = index < 0 ? null : {
-      sticker: sceneState.stickers[index],
-      value: evaluateSceneState(sceneState, editor.frame).stickers[index],
-      plane: space.stickers.find((layer) => layer.id === id) ?? null,
-      item: space.sticker?.id === id && space.sticker.url ? { kind: space.sticker.kind, box: editorView.sceneBox(space.sticker.url) } : null,
-    };
-    const sphere = isCameraSelected() ? cameraSphere() : frameSphere(contentSphere(), selected);
-    if (!sphere) return;
-    const view = spaceViewState();
-    // The pivot moves with the view from the one in use now.
-    editor.viewDistance = view.distance;
-    editor.viewMoved = true;
-    transitionView(frameView(view, sphere, canvas.width, canvas.height));
-  }
-
-  // The World point of the content under canvas point p in the frame on screen that an orbit or a wheel
-  // step works on, or null (also over a SPLAT's box, pano_three_view.js pickSurface).
-  function pickSpace(p) {
-    return editorView.pickSurface(currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
-  }
-
-  // The point a 6DoF orbit or wheel step works on (pano_space.js navigationTarget): the content hit under
-  // the pointer, else the content's center until the view moves, else the pivot.
-  function spaceTarget(view, hit) {
-    return navigationTarget(view, hit, editor.viewMoved ? null : contentSphere()?.center, spaceScale());
-  }
-
-  function spaceViewKey() {
-    return JSON.stringify([editor.viewPosition, editor.viewYaw, editor.viewPitch]);
-  }
-
-  // One 6DoF wheel step at canvas point p toward the point under it (direction > 0) or away. A step
-  // reuses the pick of an earlier one as reuseWheelPick() allows.
-  function zoomSpaceAt(p, direction) {
-    const now = performance.now();
-    const next = { x: p.x, y: p.y, time: now, key: editorView.contentRevision(), view: spaceViewKey() };
-    if (!reuseWheelPick(spaceWheel, next)) {
-      const hit = pickSpace(p);
-      spaceWheel = { ...next, cost: performance.now() - now, hit };
-    }
-    const view = spaceViewState();
-    setSpaceView(zoomView(view, spaceTarget(view, spaceWheel.hit), direction, spaceScale()));
-    spaceWheel.view = spaceViewKey();
-    spaceWheel.wheelTime = now;
-  }
-
-  // Starts a 6DoF orbit at canvas point p about the point under it, or a pan at the pivot's depth.
-  function startSpaceDrag(action, p, pointerId) {
-    const view = spaceViewState();
-    editor.interaction = action === "orbit"
-      ? { kind: "space_orbit", last: p, pivot: spaceTarget(view, pickSpace(p)) }
-      : { kind: "space_pan", last: p, depth: panDepth(view, spaceScale()) };
-    updateCursor(p);
-    canvas.setPointerCapture(pointerId);
-  }
-
   function pruneUnusedAssets() {
     const used = new Set(
       (state.stickers || [])
@@ -1460,164 +1038,6 @@ async function showEditor(node, type, options = {}) {
         imageCache.delete(id);
       }
     });
-  }
-
-  // What the three.js views draw: the background ERP, and the Sky layers from back to front.
-  function editorViewInput() {
-    editorViewFrameInput ||= buildEditorViewInput();
-    return editorViewFrameInput;
-  }
-
-  function buildEditorViewInput() {
-    const bgImg = getConnectedErpImage();
-    const paintLayers = buildEditorViewPaintLayers();
-    // A dropped or replaced image shows while it uploads, before its asset (v1) or file Source
-    // (state v2) exists in the state.
-    const assets = { ...state.assets };
-    for (const item of stateV2 ? [] : state.stickers) {
-      const assetId = String(item?.asset_id || "");
-      if (assetId && !assets[assetId] && imageCache.has(assetId)) assets[assetId] = { type: "comfy_image", filename: assetId };
-    }
-    const stickers = stateV2
-      ? state.stickers.map((item) => (isUploadingSticker(item)
-        ? { ...item, source: { kind: "file", filename: stickerImageKey(item) } }
-        : item))
-      : state.stickers;
-    // The state v2 is rebuilt only when the state changes (scheduler.stateRevision). Paint comes from the
-    // paint engine's ERP canvases, so the strokes are left out. A Timeline drag changes Clip ranges on
-    // every move without a state draw request, so they are copied in on each build instead.
-    if (editorViewScene.revision !== scheduler.stateRevision) {
-      editorViewScene = { revision: scheduler.stateRevision, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
-    }
-    if (stateV2) copyClipRanges(editorViewScene.sceneState);
-    // The Stickers and the World are evaluated at the playhead once per frame.
-    const evaluated = evaluateSceneState(editorViewScene.sceneState, editor.frame);
-    const portPicture = portVideo ? followPortSticker() : null;
-    const media = (item) => {
-      // A hidden Sticker of state v2 is not drawn; the legacy editor shows its hidden port Sticker faintly.
-      if (stateV2 && !item.visible) return null;
-      if (portVideo && isExternalSticker(item)) return portPicture;
-      const img = getStickerImage(item);
-      return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
-    };
-    const layers = workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers, evaluated });
-    // The background VIDEO and its still are one source, so a seek keeps the frame before.
-    const bgSource = bgImg && (bgImg === videoEl || bgImg === stillCanvas) ? videoEl.dataset.panoSrc : bgImg;
-    const background = isDecodedImageReady(bgImg)
-      ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage), source: bgSource }
-      : null;
-    // When the World content goes away, 6DoF goes back to 3DoF at the origin at once, ending a transition.
-    const hasContent = hasSpaceContent();
-    const spaceMode = spaceModeWithContent(spaceModeState(), hasContent, spaceOrigin());
-    if (spaceMode.mode !== editor.spaceMode) cancelViewTransition();
-    applySpaceMode(spaceMode);
-    // `content` is the World alone, as the Cutout's Camera sees it in the Frame view and the camera
-    // preview (#77); `space` adds the guides of the panorama view.
-    const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, evaluated, media) : null;
-    const space = isSpaceView() ? { ...content, ...spaceGuides(content) } : null;
-    return { background, layers, space, content };
-  }
-
-  // The working state's Clip ranges, into the state v2 the views draw. A Clip range of the working state
-  // is already normalized (integer frames), so it is copied as it is.
-  function copyClipRanges(sceneState) {
-    const clips = new Map(state.stickers.map((item) => [item.id, item.clip]));
-    sceneState.scene.clip = { ...state.scene.clip };
-    for (const item of sceneState.stickers) {
-      const clip = clips.get(item.id);
-      if (clip) item.clip = { ...clip };
-    }
-  }
-
-  // The World at the playhead: the `scene` item the node draws at this frame with the `scene` transform,
-  // the item of the 3D port Sticker with its transform and opacity, the world Sticker planes, and the
-  // sphere around the content (null without content) that frames it and scales the navigation.
-  function buildSpaceContent(sceneState, evaluated, media) {
-    const files = sceneFiles();
-    const scene = sceneRequest(files, evaluated.scene);
-    const box = scene?.url ? editorView.sceneBox(scene.url) : null;
-    const sceneBox = box && sceneItemBox(scene.kind, box);
-    const portFiles = stickerFiles();
-    const sticker = stickerContentRequest(portFiles, sceneState, evaluated);
-    const stickerBox = sticker?.url ? editorView.sceneBox(sticker.url) : null;
-    const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
-    const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media, evaluated });
-    const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers, items));
-    return {
-      evaluated,
-      sceneUrls: files ? files.urls.filter(Boolean) : [],
-      scene,
-      stickerUrls: stickerContentUrls(portFiles, sceneState),
-      sticker,
-      stickers,
-      sphere,
-    };
-  }
-
-  // The guides of the panorama view over the World `content`: the grid, the gizmo, and in the Cutout
-  // editor its Camera's frustum and trajectory.
-  function spaceGuides(content) {
-    const radius = content.sphere?.radius || DEFAULT_DISTANCE;
-    return {
-      gizmo: isCameraSelected() ? cameraGizmo() : worldGizmo(content.evaluated),
-      grid: editor.showGrid && !editor.fullscreen ? gridSpec(radius) : null,
-      lines: cameraShoots() ? cameraLines(radius) : [],
-    };
-  }
-
-  // The gizmo of the selected world Sticker where it shows at the playhead (its evaluated value in
-  // `evaluated`), or null while it is hidden, outside its Clip range or not editable.
-  function worldGizmo(evaluated) {
-    const sticker = selectedWorldSticker();
-    const value = evaluated.stickers.find((item) => item.id === sticker?.id);
-    if (!worldStickerEditable(sticker) || !value?.active) return null;
-    return { mode: editor.gizmoMode, transform: sceneTransform(value) };
-  }
-
-  // --- PanoramaCutoutNode's Camera in space (#77). In 6DoF the panorama view draws its frustum at the
-  // playhead and its trajectory over the Timeline, and the Camera is selected by its frustum and moved and
-  // turned with the gizmo, as a world Sticker is. In 3DoF the view stands at the Camera and shows its frame
-  // on the panorama as before.
-
-  // How far ahead the frustum reaches: a fifth of the content's size.
-  function cameraFrustumLength(radius) {
-    return radius * 0.2;
-  }
-
-  // The sphere Frame Selected and Look At Frame fit for the Camera: around its frustum.
-  function cameraSphere() {
-    return { center: cutoutCamera().position, radius: cameraFrustumLength(spaceScale()) };
-  }
-
-  // The view turned to look at the World point `at` from where it stands.
-  function lookingAt(view, at) {
-    const { yaw_deg, pitch_deg } = facingRotation(view.position, at);
-    return { ...view, yaw_deg, pitch_deg };
-  }
-
-  // The Camera's selection is the canvas selection of its shot, as the frame's selection always was.
-  function isCameraSelected() {
-    return cameraShoots() && editor.selectedId === CAMERA_SHOT_ID;
-  }
-
-  // The Camera's trajectory over the Timeline, made again when the state or the span changes.
-  let trajectory = { revision: -1, span: -1, segments: [] };
-  function cameraLines(radius) {
-    const span = timelineSpanFrames();
-    if (trajectory.revision !== scheduler.stateRevision || trajectory.span !== span) {
-      trajectory = { revision: scheduler.stateRevision, span, segments: polylineSegments(cameraTrajectory(state, span)) };
-    }
-    const { segments } = trajectory;
-    const lines = segments.length ? [{ segments, color: CUTOUT_TRAJECTORY_COLOR }] : [];
-    if (!isFreeSpaceView()) return lines;
-    const color = isCameraSelected() ? CUTOUT_FRAME_ACCENT : CUTOUT_FRUSTUM_COLOR;
-    return [...lines, { segments: cameraFrustumSegments(cutoutCamera(), cameraFrustumLength(radius)), color }];
-  }
-
-  // The selected Camera's gizmo in 6DoF: Move or Rotate (it has no scale).
-  function cameraGizmo() {
-    if (!isFreeSpaceView() || !isCameraSelected() || readOnly) return null;
-    return { mode: editor.gizmoMode === "rotate" ? "rotate" : "translate", transform: sceneTransform({ ...cutoutCamera(), scale: 1 }) };
   }
 
   // A left press with the cursor tool in 6DoF on the selected Camera's gizmo grabs it; on the Camera's
@@ -1641,59 +1061,6 @@ async function showEditor(node, type, options = {}) {
     editor.interaction = { kind: "world_select" };
     canvas.setPointerCapture(e.pointerId);
     return true;
-  }
-
-  // The panorama view on the whole three.js canvas. Returns whether it could draw.
-  function renderEditorView() {
-    const { background, layers, space } = editorViewInput();
-    const width = canvas.width;
-    const height = canvas.height;
-    const rect = deviceRect({ x: 0, y: 0, w: width, h: height });
-    let drawn = false;
-    if (!background && !layers.length && !space) {
-      editorView.clear(0x070707);
-      drawn = editorView.ready;
-    } else {
-      editorView.clear();
-      drawn = !!editorView.render({
-        rect,
-        camera: space ? spaceCamera(spaceViewState(), width, height, space.sphere) : currentViewCamera(),
-        background,
-        layers,
-        space,
-      });
-    }
-    // The frame's input may have taken 6DoF back to 3DoF (its World content went away); the 3DoF / 6DoF
-    // segments show it with this frame.
-    syncFloatingViewButtonState();
-    // The world Sticker's menu follows it with the view and the playhead, and goes with its gizmo.
-    if (editor.worldSelectedId || isCameraSelected() || worldMenuShown) updateSelectionMenu();
-    return drawn;
-  }
-
-  // The three.js camera that looks through the shot. With World content (PanoramaCutoutNode, #77) it
-  // stands at the shot's position and draws the World too, as the node shoots it.
-  function shotViewCamera(shot) {
-    const { content } = editorViewInput();
-    if (!content || !shot.position) return shotCamera(shot);
-    return placedCamera(shotCamera(shot), shot.position, frameViewDistance(), content.sphere);
-  }
-
-  // Draws what the shot sees into rect (device pixels of the three.js canvas; it may reach past the
-  // canvas). Returns the part of the canvas drawn ({ canvas, x, y, width, height }), or null when there is
-  // nothing to draw yet.
-  // clearColor is what shows where nothing is drawn (as editorView.clear's), transparent without one.
-  function drawEditorViewShot(rect, shot, owner, clearColor = null) {
-    const { background, layers, content } = editorViewInput();
-    if (!background && !layers.length && !content) return null;
-    const space = content && shot.position ? content : null;
-    return editorView.render({ rect, camera: shotViewCamera(shot), background, layers, space, owner, clearColor });
-  }
-
-  // The Unwrap view in rect of the 2D overlay, on the three.js canvas. Returns whether it could draw.
-  function renderEditorViewUnwrap(rect) {
-    editorView.clear(0x070707);
-    return !!editorView.renderUnwrap({ rect: deviceRect(rect), ...editorViewInput() });
   }
 
   function drawGridUnwrap(drawView) {
@@ -2370,7 +1737,7 @@ async function showEditor(node, type, options = {}) {
   // (reasons are the DRAW_REASON values of this frame), then the 2D overlay over it. A frame that draws on
   // the three.js canvas draws all of it (its drawing buffer is not kept after the page shows it).
   function drawScene(reasons = new Set()) {
-    editorViewFrameInput = null;
+    endEditorViewFrame();
     const drawView = runtime.backgroundDirty;
     // The camera preview draws first, in the corner the stage's frame then covers, with the paint as the
     // stage draws it.
@@ -3736,17 +3103,6 @@ async function showEditor(node, type, options = {}) {
     updateSidePanel();
     updateSelectionMenu();
     requestDraw();
-  }
-
-  function collectExternalStickersForClearAll() {
-    const stickers = Array.isArray(state.stickers) ? state.stickers : [];
-    const kept = [];
-    for (const item of stickers) {
-      if (!isExternalSticker(item)) continue;
-      item.visible = false;
-      kept.push(item);
-    }
-    return kept;
   }
 
   function showCanvasConfirm(title, text, confirmLabel = "Clear") {
@@ -5345,6 +4701,10 @@ async function showEditor(node, type, options = {}) {
     setCanvasCursor(editor.mode === "pano" ? "grab" : "default");
   }
 
+  function isWorldMenuShown() {
+    return worldMenuShown;
+  }
+
   function updateSelectionMenu() {
     if (!selectionMenu) return;
     worldMenuShown = false;
@@ -5497,28 +4857,6 @@ async function showEditor(node, type, options = {}) {
       uiState.tooltip.visible = true;
     });
   }
-
-  const viewController = createPanoInteractionController({
-    getView: () => ({ yaw: editor.viewYaw, pitch: editor.viewPitch, fov: editor.viewFov }),
-    setView: (next) => {
-      editor.viewYaw = wrapYaw(Number(next.yaw || 0));
-      editor.viewPitch = clamp(Number(next.pitch || 0), -89.9, 89.9);
-      editor.viewFov = clamp(Number(next.fov || editor.viewFov || 100), 35, 140);
-    },
-    getViewportSize: () => {
-      const rect = canvas.getBoundingClientRect();
-      return {
-        w: Math.max(1, Number(rect.width || canvas.clientWidth || 0)),
-        h: Math.max(1, Number(rect.height || canvas.clientHeight || 0)),
-      };
-    },
-    getInvert: () => ({
-      x: state.ui_settings?.invert_view_x ? -1 : 1,
-      y: state.ui_settings?.invert_view_y ? -1 : 1,
-    }),
-    getUnwrapRect,
-    onInteraction: () => scheduler.requestDraw(DRAW_REASON.VIEW),
-  });
 
   function applyRollInteractionAngle(interaction, angle, event = {}) {
     if (interaction?.kind !== "roll_frame" || !interaction.shot) return;
@@ -6041,11 +5379,6 @@ async function showEditor(node, type, options = {}) {
     if (editor.mode === "pano") startEmptyDrag(e, p);
   }
   canvas.onpointerdown = onCanvasPointerDown;
-
-  // The three.js camera of the space view as the last frame drew it, for picking at canvas points.
-  function currentSpaceCamera() {
-    return spaceCamera(spaceViewState(), canvas.width, canvas.height, contentSphere());
-  }
 
   // The selected world Sticker's gizmo at canvas point p (pano_three_view.js gizmoPointer): "hover",
   // "down", "move" or "up".

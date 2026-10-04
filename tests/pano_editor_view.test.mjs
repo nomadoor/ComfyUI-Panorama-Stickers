@@ -592,7 +592,7 @@ test("the space view starts in 3DoF each time the editor opens, and 3DoF | 6DoF 
   assert.doesNotMatch(segments, /aria-label="button\.label"/);
   // A frame whose content went away shows 3DoF on the segments with it.
   const render = editor.slice(editor.indexOf("  function renderEditorView() {"), editor.indexOf("\n  }\n", editor.indexOf("  function renderEditorView() {")));
-  assert.match(render, /syncFloatingViewButtonState\(\);\n[^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| worldMenuShown\) updateSelectionMenu\(\);\s*return drawn;$/);
+  assert.match(render, /syncFloatingViewButtonState\(\);\n[^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| isWorldMenuShown\(\)\) updateSelectionMenu\(\);\s*return drawn;$/);
   const modal = readFileSync(new URL("../web_src/components/PanoModal.vue", import.meta.url), "utf8");
   assert.match(modal, /<PanoFloatingRight\s+:buttons="uiState\.floatingButtons \|\| floatingButtons"\s+:space="uiState\.space \|\| null"/);
   assert.match(modal, /<PanoViewToggle :buttons="uiState\.viewButtons \|\| shellPreset\.viewButtons \|\| \[\]" \/>/);
@@ -698,7 +698,7 @@ test("the world Sticker's selection menu shows exactly while its gizmo does, and
   assert.match(editor, /function selectWorldSticker\(id\) \{\s*setSelectedItem\(null\);/);
   assert.match(editor, /function setSelectedItems\(items, primaryId = null\) \{[\s\S]*?clearWorldSelection\(\);/);
   // Each frame of the view keeps it under the Sticker (view, playhead) and takes it away with the gizmo.
-  assert.match(editor, /syncFloatingViewButtonState\(\);\s*\/\/ [^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| worldMenuShown\) updateSelectionMenu\(\);/);
+  assert.match(editor, /syncFloatingViewButtonState\(\);\s*\/\/ [^\n]*\n\s*if \(editor\.worldSelectedId \|\| isCameraSelected\(\) \|\| isWorldMenuShown\(\)\) updateSelectionMenu\(\);/);
   // Both menus are placed by selectionMenuPlacement, which never hides them (also after measuring).
   const show = editor.slice(editor.indexOf("  function showSelectionMenu(model) {"), editor.indexOf("  function hideTooltip() {"));
   assert.match(show, /selectionMenuPlacement\(model\.anchor, menuW, menuH, canvas\.width, canvas\.height\)/);
