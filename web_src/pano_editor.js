@@ -673,8 +673,9 @@ async function showEditor(node, type, options = {}) {
     onInteraction: () => scheduler.requestDraw(DRAW_REASON.VIEW),
   });
 
-  // --- editor modules: begin (generated wiring, see docs/editor-architecture.md) ---
-  // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
+  // --- editor modules: begin (docs/editor-architecture.md) ---
+  // Each module takes what it uses from here and calls the others through connect() (editor/modules.js);
+  // showEditor takes back what it registers and calls below. A name missing on either side throws.
   const {
     addImageStickerFromFile, addWorldStickerFromFile, applyInitialCutoutFocus, applyVideoTimelineFps, bindDrag,
     cancelFrameCameraGesture, closePaintColorPop, commitState, disposeMediaSession, editorAnimating,
