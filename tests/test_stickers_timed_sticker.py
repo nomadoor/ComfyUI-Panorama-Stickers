@@ -180,13 +180,13 @@ def test_background_video_fps_comes_before_the_sticker_video_fps(tmp_path):
 
 def _count_sky_renders(monkeypatch):
     calls = []
-    original = render_module._render_sky
+    original = render_module._sky_layers
 
     def counted(*args, **kwargs):
         calls.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(render_module, "_render_sky", counted)
+    monkeypatch.setattr(render_module, "_sky_layers", counted)
     return calls
 
 

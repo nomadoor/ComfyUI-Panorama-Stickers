@@ -12,14 +12,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .display_layers import (
-    compose_display_list_to_overlay_rgba,
-    render_group_layer_from_state,
-    render_raster_layer_from_state,
-    render_remaining_flat_paint_layer_from_state,
-)
-from .display_list import alpha_composite_over_rgba, build_display_entries
-from .math import camera_basis, ray_directions, unit_float, unit_float_tensor, vfov_from_hfov
+from .display_layers import render_group_layer_from_state, render_raster_layer_from_state, render_remaining_flat_paint_layer_from_state
+from .display_list import build_display_entries
+from .math import camera_basis, ray_directions, unit_float_tensor, vfov_from_hfov
 from .painting import load_painting_layer_payload, render_painting_to_erp
 from .world_render import SceneContent, over_by_depth, world_key, world_layer
 
@@ -115,29 +110,6 @@ def composite_frame(bg_color, bg: torch.Tensor | None, sky: torch.Tensor, world=
     return color.clamp(0.0, 1.0), depth
 
 
-def _sky_erp(evaluated: dict, sources: SceneSources, width: int, height: int) -> tuple[np.ndarray, np.ndarray]:
-    """The Sky as a 360 ERP: `sky` Stickers, paint groups, and rasters by `z_index` (Stickers first on ties,
-    as the legacy display list ordered them), then the paint strokes outside any group on top."""
-    painting = sources.painting
-    payload = load_painting_layer_payload(sources.painting_layer, erp_width=width, erp_height=height)
-    overlay, used_layers, _stats = compose_display_list_to_overlay_rgba(
-        {"stickers": _sky_stickers(evaluated, sources), "painting": painting},
-        width,
-        height,
-        painting_payload=payload,
-    )
-    if used_layers:
-        flat = render_remaining_flat_paint_layer_from_state(painting, width, height)
-    else:
-        flat = payload.get("paint") if payload else None
-        flat = render_painting_to_erp(painting, width, height)[0] if flat is None else unit_float(flat)
-    if flat is not None:
-        overlay = alpha_composite_over_rgba(overlay, flat)
-    mask = payload.get("mask") if payload else None
-    mask = render_painting_to_erp(painting, width, height)[1] if mask is None else unit_float(mask)
-    return overlay, mask
-
-
 def _drawn_sky_stickers(evaluated: dict, sources: SceneSources):
     """The active `sky` Stickers with a source, in list order, as (evaluated Sticker, `StickerSource`, vFOV)."""
     for sticker in evaluated["stickers"]:
@@ -150,28 +122,10 @@ def _drawn_sky_stickers(evaluated: dict, sources: SceneSources):
         yield sticker, source, vfov
 
 
-def _sky_stickers(evaluated: dict, sources: SceneSources) -> list[dict]:
-    stickers = []
-    for sticker, source, vfov in _drawn_sky_stickers(evaluated, sources):
-        rgba = unit_float(source.rgba)
-        if sticker["opacity"] < 1.0:
-            rgba = rgba * np.array([1.0, 1.0, 1.0, sticker["opacity"]], dtype=np.float32)
-        stickers.append({
-            "yaw_deg": sticker["yaw_deg"],
-            "pitch_deg": sticker["pitch_deg"],
-            "rot_deg": sticker["roll_deg"],
-            "hFOV_deg": sticker["hFOV_deg"],
-            "vFOV_deg": vfov,
-            "crop": source.crop,
-            "z_index": source.z_index,
-            "image_rgba": rgba,
-        })
-    return stickers
-
-
 def _sky_layers(evaluated: dict, sources: SceneSources, size: tuple[int, int], device, textures: dict, paint: dict) -> tuple[list, tuple | None]:
-    """The Sky of a perspective output as its layers in the order `_sky_erp` draws them, for `_shoot_sky` to sample
-    each from its own pixels, and the paint mask.
+    """The Sky as its layers, for `_shoot_sky` to sample each from its own pixels along the output's rays, and the
+    paint mask. The layers are in display-list order: `sky` Stickers, paint groups, and rasters by `z_index` (Stickers
+    first on ties, as the legacy display list ordered them), then the paint strokes outside any group on top.
 
     A `sky` Sticker is ("sticker", its source as premultiplied RGBA on `device`, its ripmap levels, its values). A
     paint layer is ("erp", premultiplied RGBA 360 ERP on `device`, its ripmap levels): the rasters the editor
@@ -407,12 +361,11 @@ def _resize(image: torch.Tensor, height: int, width: int) -> torch.Tensor:
 
 
 def _sky_size(projection: Projection, bg_width: int | None) -> tuple[int, int]:
-    """The size of the Sky's 360 ERP.
+    """The size of the 360 ERP into which the backend draws the paint that only the state holds (`_sky_layers`); the
+    Stickers and the uploaded paint are sampled from their own pixels.
 
-    For an ERP output it is drawn at the output width over 360 degrees, as the legacy node drew its overlay, so
-    that a 360 output without Camera rotation uses it as it is. A perspective output samples its Sky from the
-    Stickers' and the uploaded paint's own pixels (`_sky_layers`); this size is only for the paint that the state
-    alone holds and the backend draws. It is at least as fine as the output's pixels at the center, rounded up to
+    For an ERP output it is the output width over 360 degrees, as the legacy node drew its overlay, so that a 360
+    output without Camera rotation samples it pixel for pixel. For a perspective output it is at least as fine as the output's pixels at the center, rounded up to
     a power of two (from 64) so that an animated FOV draws it again only when that step changes, and at least as
     fine as `bg_media` (`bg_width` pixels over its coverage), up to 4096 wide, as drawing strokes into a larger
     ERP costs seconds and gigabytes each time.
@@ -425,12 +378,6 @@ def _sky_size(projection: Projection, bg_width: int | None) -> tuple[int, int]:
         width = max(width, bg_width * 360 // projection.coverage)
     width = min(width, 4096)
     return width, width // 2
-
-
-def _render_sky(evaluated: dict, sources: SceneSources, size: tuple[int, int], device) -> tuple[torch.Tensor, torch.Tensor]:
-    """The Sky as a 360 ERP of `size` (`_sky_size`) on `device`: straight-alpha color (h, w, 4) and the paint mask (h, w)."""
-    rgba, mask = _sky_erp(evaluated, sources, *size)
-    return torch.tensor(rgba, dtype=torch.float32, device=device), torch.tensor(mask, dtype=torch.float32, device=device)
 
 
 def _shoot_sticker(texture: torch.Tensor, levels: dict, item: dict, rays: torch.Tensor) -> torch.Tensor:
@@ -465,7 +412,7 @@ def _shoot_sticker(texture: torch.Tensor, levels: dict, item: dict, rays: torch.
 
 def _shoot_sky(layers: list, mask: tuple | None, rays: torch.Tensor, view: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """The Sky layers of `_sky_layers` seen along `rays` (`view` in the 360 ERP), composited over each other in
-    order as `_sky_erp` composites them, as straight-alpha color (H, W, 4) and the mask (H, W)."""
+    order, as straight-alpha color (H, W, 4) and the mask (H, W)."""
     total = rays.new_zeros((*rays.shape[:2], 4))
     for kind, layer, levels, *item in layers:
         color = _shoot_sticker(layer, levels, item[0], rays) if kind == "sticker" else _sample_filtered(layer, view, wrap=True, levels=levels)
@@ -474,16 +421,6 @@ def _shoot_sky(layers: list, mask: tuple | None, rays: torch.Tensor, view: torch
     rgb = torch.where(alpha > 1e-6, total[..., :3] / alpha.clamp_min(1e-6), 0.0)
     shot_mask = rays.new_zeros(rays.shape[:2]) if mask is None else _sample_filtered(mask[0], view, wrap=True, levels=mask[1])[..., 0]
     return torch.cat([rgb.clamp(0.0, 1.0), alpha], dim=-1), shot_mask
-
-
-def _project_sky(rgba: torch.Tensor, mask: torch.Tensor, view: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    # Color is sampled premultiplied so that transparent pixels do not bleed into Sticker edges.
-    alpha = rgba[..., 3:]
-    sampled = _sample_erp(torch.cat([rgba[..., :3] * alpha, alpha, mask[..., None]], dim=-1), view)
-    alpha = sampled[..., 3:4]
-    rgb = torch.where(alpha > 1e-6, sampled[..., :3] / alpha.clamp_min(1e-6), 0.0)
-    # A copy of the mask so that the sampled layer is not kept alive through it.
-    return torch.cat([rgb, alpha], dim=-1), sampled[..., 4].clone()
 
 
 def _sky_key(evaluated: dict, sources: SceneSources, size: tuple[int, int]) -> tuple:
@@ -546,18 +483,15 @@ def render_frame(
     layers, and each layer's `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps
     the background, the ripmap levels `_sample_filtered` made of it, the World content of all layers as one layer
     (`world_layer`) with the drawn `world` Sticker sources on `device` by layer and id, and the result, and for each
-    layer apart (so Sticker ids of different layers never meet) the previous frame's Sky (for a perspective output
-    its layers, with the `sky` Sticker sources and the paint layers of its size on `device`), the Sky turned by the
-    Camera, and the ripmap levels of the Sticker sources and the paint layers (released with them). A frame whose
+    layer apart (so Sticker ids of different layers never meet) the previous frame's Sky (its layers, with the `sky`
+    Sticker sources and the paint layers of its size on `device`), the Sky shot along the output's rays, and the ripmap levels of the Sticker sources and the paint layers (released with them). A frame whose
     Sky values and Sticker frames in every layer, Camera rotation, Projection, `bg_key`, and World content with the
     Camera's position (`world_key`) all repeat returns the previous frame's tensors themselves.
     """
     if cache is None:
         cache = {}
     sky_size = _sky_size(projection, bg_width)
-    # A perspective output samples the Sky's layers from their own pixels instead of an ERP drawn at `sky_size`.
-    direct = projection.kind == "perspective"
-    # A 360 ERP output without Camera rotation is the Sky and the background as they are.
+    # A 360 ERP output without Camera rotation is the background as it is.
     turned = projection.kind != "erp" or projection.coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
     view_key = None
     if turned:
@@ -583,7 +517,7 @@ def render_frame(
 
     sky = mask = None
     for layer, layer_cache, sky_key in zip(layers, caches, sky_keys):
-        layer_sky = _layer_sky(layer, layer_cache, sky_key, sky_size, direct, view_key, look, device)
+        layer_sky = _layer_sky(layer, layer_cache, sky_key, sky_size, view_key, look, device)
         sky, mask = layer_sky if sky is None else (_sky_over(sky, layer_sky[0]), torch.maximum(mask, layer_sky[1]))
     if world is None:
         for key in ("world_key", "world", "world_textures"):
@@ -617,28 +551,26 @@ def render_frame(
     return color, mask, depth
 
 
-def _layer_sky(layer: RenderLayer, cache: dict, sky_key: tuple, sky_size: tuple[int, int], direct: bool, view_key, look, device) -> tuple[torch.Tensor, torch.Tensor]:
-    """A layer's Sky in the output (straight-alpha color (H, W, 4)) and its paint mask (H, W), kept in the layer's
-    `cache` while its `sky_key` stays, and turned by the Camera while `view_key` (None: not turned) stays too."""
+def _layer_sky(layer: RenderLayer, cache: dict, sky_key: tuple, sky_size: tuple[int, int], view_key, look, device) -> tuple[torch.Tensor, torch.Tensor]:
+    """A layer's Sky in the output (straight-alpha color (H, W, 4)) and its paint mask (H, W): its layers
+    (`_sky_layers`) kept in the layer's `cache` while its `sky_key` stays, and shot along the output's rays
+    (`_shoot_sky`) while `view_key` (None: a 360 ERP not turned) stays too."""
     if cache.get("sky_key") != sky_key:
         # The previous Sky is released before the new one is drawn.
         cache.pop("sky", None)
-        if direct:
-            if cache.get("sky_paint", {}).get("size") != sky_size:
-                # The paint of the previous size is released before the new one is drawn.
-                cache.pop("sky_paint", None)
-                cache["sky_paint"] = {"size": sky_size}
-            cache["sky"] = _sky_layers(layer.evaluated, layer.sources, sky_size, device, cache.setdefault("sky_textures", {}), cache["sky_paint"])
-        else:
-            cache["sky"] = _render_sky(layer.evaluated, layer.sources, sky_size, device)
+        if cache.get("sky_paint", {}).get("size") != sky_size:
+            # The paint of the previous size is released before the new one is drawn.
+            cache.pop("sky_paint", None)
+            cache["sky_paint"] = {"size": sky_size}
+        cache["sky"] = _sky_layers(layer.evaluated, layer.sources, sky_size, device, cache.setdefault("sky_textures", {}), cache["sky_paint"])
         cache["sky_key"] = sky_key
-    if view_key is None:
-        return cache["sky"]
-    if cache.get("turned_sky_key") != (sky_key, view_key):
+    if cache.get("shot_sky_key") != (sky_key, view_key):
+        # The previous shot is released before the new one is taken.
+        cache.pop("shot_sky", None)
         rays, view = look()
-        shot = _shoot_sky(*cache["sky"], rays, view) if direct else _project_sky(*cache["sky"], view)
-        cache["turned_sky_key"], cache["turned_sky"] = (sky_key, view_key), shot
-    return cache["turned_sky"]
+        cache["shot_sky"] = _shoot_sky(*cache["sky"], rays, view)
+        cache["shot_sky_key"] = (sky_key, view_key)
+    return cache["shot_sky"]
 
 
 def _sky_over(below: torch.Tensor, above: torch.Tensor) -> torch.Tensor:

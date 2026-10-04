@@ -9,7 +9,7 @@
   - 平均の絶対誤差が 0.5/255 以内。
   - チャンネル方向の最大誤差が 8/255 を超える画素が、全画素の 0.1% 以下。
 - 生成とテストでは、ノードのランタイムを描画だけのもの（`render_only_runtime`）に差し替える。プレビュー画像と MP4 を作らず、ComfyUI の temp に書き込まない。
-- 保存先：`tests/fixtures/legacy_goldens/`。`<case>.image.png`（16-bit RGB）と `<case>.mask.png`（16-bit グレー）の組で、合計約 530KB。
+- 保存先：`tests/fixtures/legacy_goldens/`。`<case>.image.png`（16-bit RGB）と `<case>.mask.png`（16-bit グレー）の組で、旧ノードの分は合計約 530KB（新しいノードの分を含めて約 1MB）。
 - 入力はすべてスクリプト内で合成する。背景は 512x256 の 8-bit ERP（経緯線の格子と、継ぎ目・赤道・極の目印）で、`output_preset` は `auto`。
 
 | case | 内容 | 出力サイズ |
@@ -42,6 +42,29 @@
 - ペイントは `painting_layer`（フロントエンドがアップロードするラスター）を使わず、バックエンドのストローク描画で出している。
 - 基準画像は RTX 4070 Ti（CUDA）で生成した。CPU 経路でも、各 case の差は 0.001/255 未満だった。
 - 平均の絶対誤差だけでは、小さな Sticker のずれを見逃す。`stickers_sky_rotation` で yaw を 1° ずらしても平均は 0.37/255 で収まる。そこで、目に見える差のある画素の割合も判定する。yaw を 0.25° ずらすと 0.33%、1° ずらすと 0.55% の画素が 8/255 を超え、どちらも不合格になる。この検出はテストで確かめている。
+
+### 新しい Stickers の基準画像（Sky を GPU で描く）
+
+新しい Stickers は、ERP の出力の Sky も透視投影と同じく、出力の画素の向きから層ごとに直接標本化する（`docs/render-contract.md` の「Sky の描き方」）。旧ノードは Sky を CPU で ERP に描いていた。そのため、次の 5 つの case は、旧ノードの基準画像ではなく、新しい Stickers 自身の出力から焼いた基準画像と比べる。旧ノード自身は今までどおり旧ノードの基準画像と比べる（`tests/test_legacy_goldens.py`）。
+
+- 生成：`PYTHONPATH=<ComfyUI> python tools/bake_legacy_goldens.py stickers_node_sky_rotation stickers_node_sky_crop stickers_node_sky_overlap stickers_node_paint_interleaved stickers_node_coverage_180`。旧ノードの case と同じ v1 の状態と背景を、新しい Stickers（`PanoramaStickersNode`）に通す（`STICKERS_NODE_GOLDENS`、`_on_stickers_node`）。大きさは旧ノードの基準画像と同じ（512x256、180 は 512x512）。
+- 比べるテスト：新しい Stickers の v1 の状態とエディタが保存した v2 の状態（`tests/test_stickers_scene_node.py`）、Camera のない Studio（`tests/test_studio_node.py`）。どれも `stickers_golden(name)` で比べる基準画像を選ぶ。残りの case（`stickers_background_only`・`stickers_paint`・`stickers_paint_mask`）は、旧ノードの基準画像のまま一致する。
+- 比べ方は旧ノードと同じ（平均 0.5/255 以内、8/255 を超える画素 0.1% 以下）。
+- RTX 4070 Ti（CUDA）で焼いた。CPU の経路との差は、平均 0.0003/255 未満、最大 0.01/255。
+- 旧ノードとの差（縁の扱い）：
+  - 旧ノードは Sticker を ERP に硬い縁で描く（`_compose_sticker_patch`。範囲の内か外か）。新しい Stickers は、縁が横切る出力の画素に、画素のうち縁の内側にある割合を掛ける。差のある画素はほぼすべて Sticker の外の縁（±1 画素）にある。`sky_overlap` と `paint_interleaved` で縁の外に数えた画素も、手前の Sticker の縁がほかの層に重なるところである。
+  - 180 の出力では、旧ノードは Sky を幅が出力と同じ 360 の ERP（出力の半分の細かさ）に描いて写していたので、縁も中の色の境目もギザギザだった。新しい Stickers は出力の画素ごとに素材から標本化するので、中の境目も細かい。
+  - 新しい Stickers と旧ノードの基準画像との差（RTX 4070 Ti、CUDA）：
+
+| case | 平均の絶対誤差 | 8/255 を超える画素 | 最大 |
+|---|---|---|---|
+| `stickers_sky_rotation` | 0.054/255 | 0.164% | 124/255 |
+| `stickers_sky_crop` | 0.046/255 | 0.184% | 101/255 |
+| `stickers_sky_overlap` | 0.043/255 | 0.200% | 98/255 |
+| `stickers_paint_interleaved` | 0.051/255 | 0.191% | 78/255 |
+| `stickers_coverage_180` | 0.185/255 | 0.843% | 136/255 |
+
+  - どれも、平均では収まり、8/255 を超える画素の割合で不合格になる差である。MASK はどの case も変わらない。
 
 ### ペイントの焼き直し（#80）
 

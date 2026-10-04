@@ -242,7 +242,7 @@ def _render_bg(cache, bg, bg_key, state=None):
 
 
 def test_render_frame_returns_the_previous_frame_when_sky_and_background_repeat(monkeypatch):
-    counts = _count_calls(monkeypatch, "_render_sky", "_background", "composite_frame")
+    counts = _count_calls(monkeypatch, "_sky_layers", "_background", "composite_frame")
     cache = {}
     bg = torch.rand(8, 16, 3)
 
@@ -250,18 +250,18 @@ def test_render_frame_returns_the_previous_frame_when_sky_and_background_repeat(
     second = _render_bg(cache, bg, 0)
 
     assert all(a is b for a, b in zip(first, second))
-    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 1}
+    assert counts == {"_sky_layers": 1, "_background": 1, "composite_frame": 1}
 
 
 def test_render_frame_reuses_the_sky_but_composites_a_new_background(monkeypatch):
-    counts = _count_calls(monkeypatch, "_render_sky", "_background", "composite_frame")
+    counts = _count_calls(monkeypatch, "_sky_layers", "_background", "composite_frame")
     cache = {}
 
     first = _render_bg(cache, torch.zeros(8, 16, 3), 0)
     second = _render_bg(cache, torch.ones(8, 16, 3), 1)
 
     assert not torch.equal(first[0], second[0])
-    assert counts == {"_render_sky": 1, "_background": 2, "composite_frame": 2}
+    assert counts == {"_sky_layers": 1, "_background": 2, "composite_frame": 2}
 
 
 def test_render_frame_never_reuses_a_background_without_a_key(monkeypatch):
@@ -324,7 +324,7 @@ def test_180_output_draws_the_sky_in_every_direction():
 
 
 def test_rotating_camera_reuses_the_sky_and_composites_each_view(monkeypatch):
-    counts = _count_calls(monkeypatch, "_render_sky", "_background", "composite_frame")
+    counts = _count_calls(monkeypatch, "_sky_layers", "_background", "composite_frame")
     cache = {}
 
     first = _render_bg(cache, torch.rand(8, 16, 3), 0)
@@ -333,7 +333,7 @@ def test_rotating_camera_reuses_the_sky_and_composites_each_view(monkeypatch):
 
     assert not torch.equal(first[0], turned[0])
     assert all(a is b for a, b in zip(turned, again))
-    assert counts == {"_render_sky": 1, "_background": 1, "composite_frame": 2}
+    assert counts == {"_sky_layers": 1, "_background": 1, "composite_frame": 2}
 
 
 def _painted_sky(position=None, **rotation):
@@ -419,15 +419,14 @@ def test_perspective_output_draws_bg_color_outside_the_hemisphere_of_the_bg_medi
 
 
 def test_perspective_output_reuses_the_sky_while_an_animated_fov_keeps_its_resolution(monkeypatch):
-    counts = _count_calls(monkeypatch, "_render_sky", "_sky_layers", "_shoot_sky")
+    counts = _count_calls(monkeypatch, "_sky_layers", "_shoot_sky")
     cache = {}
 
     for hfov in (60.0, 61.0, 20.0):
         _render(Projection.perspective(32, 32, hfov), _sticker_state(), _red_source(), cache=cache)
 
-    # The Sky is not drawn into an ERP. 60 and 61 degrees draw the state's paint at the same size; 20 degrees
-    # needs a finer one.
-    assert counts == {"_render_sky": 0, "_sky_layers": 2, "_shoot_sky": 3}
+    # 60 and 61 degrees draw the state's paint at the same size; 20 degrees needs a finer one.
+    assert counts == {"_sky_layers": 2, "_shoot_sky": 3}
 
 
 @pytest.mark.parametrize("projection, bg_width, size", [
@@ -443,9 +442,17 @@ def test_perspective_sky_is_as_fine_as_the_output_center_and_the_bg_media(projec
 
 
 def _through_the_capped_sky_erp(evaluated, sources, projection):
-    """The Sky as perspective outputs drew it before, through a 360 ERP at most 4096 wide."""
-    sky_erp = render_module._render_sky(evaluated, sources, (4096, 2048), torch.device("cpu"))
-    return render_module._project_sky(*sky_erp, render_module._view(render_module._rays(evaluated["camera"], projection, torch.device("cpu"))))
+    """The Sky as perspective outputs drew it before: into a 360 ERP 4096 wide (here as an ERP output draws it), then
+    sampled bilinearly at the perspective's pixels."""
+    device = torch.device("cpu")
+    erp_rays = render_module._rays({"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, Projection.erp(4096, 2048), device)
+    layers = render_module._sky_layers(evaluated, sources, (4096, 2048), device, {}, {"size": (4096, 2048)})
+    rgba, mask = render_module._shoot_sky(*layers, erp_rays, render_module._view(erp_rays))
+    alpha = rgba[..., 3:]
+    view = render_module._view(render_module._rays(evaluated["camera"], projection, device))
+    sampled = render_module._sample_erp(torch.cat([rgba[..., :3] * alpha, alpha, mask[..., None]], dim=-1), view)
+    alpha = sampled[..., 3:4]
+    return torch.cat([torch.where(alpha > 1e-6, sampled[..., :3] / alpha.clamp_min(1e-6), 0.0), alpha], dim=-1), sampled[..., 4]
 
 
 def test_narrow_perspective_sky_sticker_keeps_the_lines_of_its_source():
