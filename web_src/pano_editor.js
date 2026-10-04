@@ -677,9 +677,9 @@ async function showEditor(node, type, options = {}) {
   // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
   const {
     addImageStickerFromFile, addWorldStickerFromFile, applyInitialCutoutFocus, applyVideoTimelineFps, bindDrag,
-    cancelFrameCameraGesture, closePaintColorPop, commitState, editorAnimating, finishKnobRoll,
-    flushFrameWheelCommit, forgetCameraPreviewFrame, getUnwrapRect, hidePaintSizePreview, hideTooltip,
-    hoverWorldGizmo, isFreeFrameView, isFreeSpaceView, migrateLegacyEmbeddedAssets, onCanvasDragOver,
+    cancelFrameCameraGesture, closePaintColorPop, commitState, disposeMediaSession, editorAnimating,
+    finishKnobRoll, flushFrameWheelCommit, forgetCameraPreviewFrame, getUnwrapRect, hidePaintSizePreview,
+    hideTooltip, hoverWorldGizmo, isFreeFrameView, isFreeSpaceView, migrateLegacyEmbeddedAssets, onCanvasDragOver,
     onCanvasDrop, onCanvasMouseMove, onCanvasPointerCancel, onCanvasPointerDown, onCanvasPointerMove,
     onCanvasPointerUp, onCanvasWheel, onDeleteKey, onEscClose, onFrameRollKnobDoubleClick,
     onFrameRollKnobPointerDown, onFrameRollKnobPointerMove, onFullscreenChange, onModifierKeyChange, onRootChange,
@@ -691,7 +691,7 @@ async function showEditor(node, type, options = {}) {
     syncFullscreenButton, syncGridToggleButton, syncLookAtFrameButtonState, syncOutputPreviewToggleButton,
     syncPaintUi, syncPaintingLayerAsync, syncTimeline, syncUndoRedoButtons, tick,
     triggerBackgroundPersistenceOnClose, updateCursor, updatePaintColorFromHue, updatePaintColorFromSv,
-    updateSelectionMenu, updateSidePanel, videoCleanupFns, viewControls, watchPixelRatio,
+    updateSelectionMenu, updateSidePanel, viewControls, watchPixelRatio,
   } = createEditorModules({
     api, app, backgroundCanvas, bgWidget, cameraV2, canvas, capture, closeEditor, comfyMedia, coverageWidget, ctx,
     cutoutPreviewCanvas, cutoutPreviewHost, cutoutV2, dragCue, dragFrames, editor, editorView, floatingRightEl,
@@ -879,10 +879,7 @@ async function showEditor(node, type, options = {}) {
       hideTooltip();
       dragFrames.cancel();
       stopRenderLoop();
-      if (videoEl instanceof HTMLVideoElement) videoEl.pause();
-      videoCleanupFns.forEach((fn) => {
-        try { fn(); } catch { }
-      });
+      disposeMediaSession();
       editorView.dispose();
       setDropCue(false);
       window.removeEventListener("keydown", onEscClose, true);

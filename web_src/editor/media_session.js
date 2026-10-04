@@ -1,6 +1,6 @@
 // The media the editor shows: the background (ERP image, VIDEO and its still), the port Sticker's VIDEO and
 // frames, the Sticker images, the node's ui values for them, and the legacy VIDEO transport with its
-// filmstrip. It makes the VIDEO playback and the port's follower, and lets them go (videoCleanupFns).
+// filmstrip. It makes the VIDEO playback and the port's follower, and lets them go (disposeMediaSession).
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { sourceAsset } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
@@ -716,16 +716,25 @@ export function createMediaSession(deps) {
     });
   }
 
+  // Lets go of what the session made when the editor closes: the background VIDEO stops, and the playback,
+  // the port's follower, the listeners and the filmstrip job are released.
+  function disposeMediaSession() {
+    if (videoEl instanceof HTMLVideoElement) videoEl.pause();
+    videoCleanupFns.forEach((fn) => {
+      try { fn(); } catch { }
+    });
+  }
+
   return {
     connect(api) {
       ({
         isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames,
       } = api);
     },
-    videoState, videoCleanupFns, queueVideoTransportLayout, playback, portVideo, getNodeUiValue,
+    videoState, queueVideoTransportLayout, playback, portVideo, getNodeUiValue,
     getMediaRevisionToken, playbackFps, syncVideoTransportState, toggleVideoMuted, syncVideoTransportVisibility,
     refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage, getPortMedia, followPortSticker,
     getStickerImage, stickerImageKey, getConnectedErpImage, isDecodedImageReady, getStageImageStatus, sceneFiles,
-    stickerFiles,
+    stickerFiles, disposeMediaSession,
   };
 }
