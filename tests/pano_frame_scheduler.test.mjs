@@ -151,3 +151,31 @@ test("stop() cancels the pending frame and ignores later requests", () => {
   frames.runFrame();
   assert.deepEqual(draws, []);
 });
+
+test("a callback or a draw that throws is reported, and the frame and the next ones go on", () => {
+  const frames = createFrames();
+  const errors = [];
+  const ran = [];
+  let moving = true;
+  const scheduler = createFrameScheduler({
+    requestAnimationFrame: frames.requestAnimationFrame,
+    cancelAnimationFrame: frames.cancelAnimationFrame,
+    draw: (ts, reasons) => {
+      ran.push(["draw", [...reasons]]);
+      if (reasons.has(DRAW_REASON.MEDIA)) throw new Error("draw");
+    },
+    animating: () => moving,
+    onError: (error) => errors.push(error.message),
+  });
+  scheduler.requestFrame(() => { throw new Error("first"); });
+  scheduler.requestFrame(() => ran.push(["second"]));
+  scheduler.requestDraw(DRAW_REASON.MEDIA);
+  frames.runFrame();
+  assert.deepEqual(errors, ["first", "draw"]);
+  assert.deepEqual(ran, [["second"], ["draw", [DRAW_REASON.MEDIA]]]);
+  // The animation still takes the next frame.
+  assert.equal(frames.pending, 1);
+  moving = false;
+  frames.runFrame();
+  assert.equal(frames.pending, 0);
+});

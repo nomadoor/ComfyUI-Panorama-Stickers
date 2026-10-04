@@ -26,13 +26,22 @@ export const DRAW_REASON = Object.freeze({
 
 const REASONS = new Set(Object.values(DRAW_REASON));
 
-export function createFrameScheduler({ requestAnimationFrame, cancelAnimationFrame, draw, animating }) {
+// A callback or the draw that throws is reported to onError; the rest of the frame and the next frames go on.
+export function createFrameScheduler({ requestAnimationFrame, cancelAnimationFrame, draw, animating, onError = (error) => console.error("[PanoramaStickers] editor frame callback failed", error) }) {
   let frameId = 0;
   let inFrame = false;
   let stopped = false;
   let reasons = new Set();
   let callbacks = new Map();
   let nextCallback = 1;
+
+  function guarded(run) {
+    try {
+      run();
+    } catch (error) {
+      onError(error);
+    }
+  }
 
   // Requests made while a frame runs are decided at its end.
   function schedule() {
@@ -45,11 +54,11 @@ export function createFrameScheduler({ requestAnimationFrame, cancelAnimationFra
     try {
       const due = callbacks;
       callbacks = new Map();
-      for (const callback of due.values()) callback(ts);
+      for (const callback of due.values()) guarded(() => callback(ts));
       if (stopped) return;
       const asked = reasons;
       reasons = new Set();
-      if (asked.size || animating()) draw(ts, asked);
+      if (asked.size || animating()) guarded(() => draw(ts, asked));
     } finally {
       inFrame = false;
     }

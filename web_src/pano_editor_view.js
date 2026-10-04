@@ -203,6 +203,8 @@ export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {
   let module = null;
   let view = null;
   let disposed = false;
+  // contentRevision() goes on from the views before, so a view made again never repeats a count.
+  let revisionBase = 0;
   const start = () => {
     view = watchThreeView(module.createThreeView({ onUpdate, createCanvas: () => canvas }), "editor");
   };
@@ -252,7 +254,7 @@ export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {
     },
     // A count that changes with what pick() hits (pano_three_view.js contentRevision).
     contentRevision() {
-      return view ? view.contentRevision() : 0;
+      return revisionBase + (view ? view.contentRevision() : 0);
     },
     dispose() {
       disposed = true;
@@ -278,6 +280,7 @@ export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {
     if (disposed || !editorView.lost) return;
     queueMicrotask(() => {
       if (disposed || !editorView.lost) return;
+      if (view) revisionBase += view.contentRevision() + 1;
       view?.dispose();
       view = null;
       editorView.lost = false;

@@ -966,6 +966,9 @@ async function showEditor(node, type, options = {}) {
     paintColorPop.hidden = false;
     uiState.paintDock.colorPopOpen = true;
   };
+  // A pointer going down can start a drag (editor.interaction, timeline.drag), which editorAnimating()
+  // reads: the frames run while it lasts.
+  root.addEventListener("pointerdown", () => scheduler.wake(), true);
   root.addEventListener("pointerdown", (ev) => {
     if (!ev.target.closest("[data-frame-roll-knob]")) hideTooltip();
     if (ev.target.closest(".pano-picker")) return;
@@ -1137,10 +1140,10 @@ async function showEditor(node, type, options = {}) {
       seek: () => playback.seek(timeline.scrubFrame),
       timeline: () => syncTimeline(),
       // The Stickers are evaluated at the playhead as the stage draws; the stroke geometry stays cached.
-      // A Clip range is read from the state as it is drawn (copyClipRanges).
+      // A drag changes the state (Keyframes, Clip ranges), so what is drawn from it is made again.
       view: () => {
         syncCutoutShot();
-        scheduler.requestDraw(DRAW_REASON.VIEW);
+        requestDraw({ localOnly: true, reason: DRAW_REASON.STATE });
       },
       sidePanel: () => updateSidePanel(),
     },
@@ -1500,7 +1503,9 @@ async function showEditor(node, type, options = {}) {
   // applied when it arrives, or at once when the view is there already.
   function transitionView(target, end = null) {
     const from = spaceViewState();
-    editor.viewTransition = startViewTransition(from, target, performance.now(), { scale: spaceScale(), end });
+    startAnimation(() => {
+      editor.viewTransition = startViewTransition(from, target, performance.now(), { scale: spaceScale(), end });
+    });
     if (!editor.viewTransition && end) applyViewTransitionEnd(end);
     viewController.state.inertia.active = false;
     viewController.state.inertia.vx = 0;
@@ -4975,6 +4980,8 @@ async function showEditor(node, type, options = {}) {
     if (editor.mode === "frame" || !cameraPreviewShown()) {
       uiState.cameraPreview.visible = false;
       uiState.cameraPreview.settled = false;
+      // Shown again, it draws its frame anew.
+      cameraPreviewDrawn = null;
       return;
     }
     const shot = getActiveCutoutShot();
@@ -6027,9 +6034,19 @@ async function showEditor(node, type, options = {}) {
     runtime.backgroundDirty = true;
     runtime.dirty = true;
     if (shotEditor) {
-      runtime.pendingStableLayoutFrames = Math.max(Number(runtime.pendingStableLayoutFrames || 0), 1);
+      startAnimation(() => {
+        runtime.pendingStableLayoutFrames = Math.max(Number(runtime.pendingStableLayoutFrames || 0), 1);
+      });
     }
     return true;
+  }
+
+  // Starts something editorAnimating() reads: the frames run until it ends. Every start of one goes
+  // through here (a fade starts inside a frame, a drag on a pointerdown, which wakes the frames too), so
+  // none waits for an unrelated draw request.
+  function startAnimation(start) {
+    start();
+    scheduler.wake();
   }
 
   // Whether the next frame must run although nothing asked for it: something moves by itself or a fade
@@ -10420,7 +10437,7 @@ async function showEditor(node, type, options = {}) {
     if (ended?.kind === "roll_frame") hideTooltip();
     invalidateLivePaintPreviewCaches();
     if (ended && ended.kind === "view") {
-      viewController.endDrag(performance.now());
+      startAnimation(() => viewController.endDrag(performance.now()));
     }
     syncViewToggleState();
     updateSelectionMenu();
@@ -10435,7 +10452,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     if (editor.interaction?.kind === "view") {
-      viewController.endDrag(performance.now());
+      startAnimation(() => viewController.endDrag(performance.now()));
     }
     if (editor.interaction?.kind === "paint_stroke" || editor.interaction?.kind === "paint_lasso_fill") {
       invalidateLivePaintPreviewCaches();
@@ -11003,9 +11020,11 @@ async function showEditor(node, type, options = {}) {
       ev.stopPropagation();
       const nextExpanded = !editor.outputPreviewExpanded;
       editor.outputPreviewExpanded = nextExpanded;
-      editor.outputPreviewAnimFrom = editor.outputPreviewAnim;
-      editor.outputPreviewAnimTo = nextExpanded ? 1 : 0;
-      editor.outputPreviewAnimStartTs = performance.now();
+      startAnimation(() => {
+        editor.outputPreviewAnimFrom = editor.outputPreviewAnim;
+        editor.outputPreviewAnimTo = nextExpanded ? 1 : 0;
+        editor.outputPreviewAnimStartTs = performance.now();
+      });
       syncOutputPreviewToggleButton();
       requestDraw();
       return;

@@ -124,7 +124,9 @@ test("drags defer the node preview to their end and Clip ranges do not reload th
   assert.doesNotMatch(editorFunction("dragWorldGizmo"), /updateSidePanel\(\)/);
   // The view of a drag redraws the stage without dropping the cached stroke geometry.
   const tasks = editorSource.slice(editorSource.indexOf("const dragFrames = createFrameBatch({"), editorSource.indexOf("\n  });\n", editorSource.indexOf("const dragFrames = createFrameBatch({")));
-  assert.match(tasks, /view: \(\) => \{\s*syncCutoutShot\(\);\s*scheduler\.requestDraw\(DRAW_REASON\.VIEW\);\s*\}/);
+  // The drag changed the state, so the view's state, the Camera's trajectory and the camera preview are
+  // made again (a state draw request counts runtime.stateRevision).
+  assert.match(tasks, /view: \(\) => \{\s*syncCutoutShot\(\);\s*requestDraw\(\{ localOnly: true, reason: DRAW_REASON\.STATE \}\);\s*\}/);
   // The batch takes its frames from the editor's scheduler.
   assert.match(tasks, /requestFrame: \(callback\) => scheduler\.requestFrame\(callback\),/);
   assert.doesNotMatch(tasks, /markObjectVisualsDirty|invalidateObjectVisualCaches/);

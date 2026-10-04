@@ -91,6 +91,8 @@ test("a lost WebGL context is waited out without errors; its restore makes the v
     assert.equal(editorView.ready, true);
     assert.equal(calls.restored, 1);
     assert.equal(calls.ready, 1);
+    // The new view's content count goes on from the old one's, so a pick kept from before is not reused.
+    assert.equal(editorView.contentRevision(), 1);
     assert.ok(editorView.render({}));
     assert.equal(module.views[1].renders, 1);
 
@@ -211,4 +213,63 @@ test("a draw request without a reason counts a state change; only view and overl
   const input = editorFunction("buildEditorViewInput");
   assert.equal(input.match(/evaluateSceneState\(/g).length, 1);
   assert.doesNotMatch(editorFunction("buildSpaceContent"), /evaluateSceneState\(/);
+});
+
+test("whatever editorAnimating() reads is started through startAnimation, which wakes the frames", () => {
+  assert.match(editorFunction("startAnimation"), /start\(\);\s*scheduler\.wake\(\);/);
+  // Each condition of editorAnimating() and where it starts: none is set outside startAnimation.
+  const starts = [
+    /editor\.viewTransition = startViewTransition\(/g,
+    /runtime\.pendingStableLayoutFrames = Math\.max\(/g,
+    /editor\.outputPreviewAnimTo = nextExpanded/g,
+    /viewController\.endDrag\(/g,
+  ];
+  for (const pattern of starts) {
+    const found = [...editorSource.matchAll(pattern)];
+    assert.ok(found.length > 0, String(pattern));
+    for (const match of found) {
+      // Inside the callback of the nearest startAnimation before it.
+      const start = editorSource.lastIndexOf("startAnimation(() =>", match.index);
+      assert.ok(start >= 0 && match.index - start < 300, `${pattern} at ${match.index}`);
+      assert.doesNotMatch(editorSource.slice(start, match.index), /\n\s*\}\);|\)\);/, `${pattern} at ${match.index}`);
+    }
+  }
+  // The stage resizing holds the draw for the layout and wakes the frames that count it down.
+  assert.match(editorFunction("syncCanvasSize"), /startAnimation\(\(\) => \{\s*runtime\.pendingStableLayoutFrames = Math\.max/);
+  // A drag (editor.interaction, timeline.drag) starts on a pointerdown, which wakes the frames first.
+  assert.match(editorSource, /root\.addEventListener\("pointerdown", \(\) => scheduler\.wake\(\), true\);/);
+  // The fades start inside tickFrame, a frame that then sees editorAnimating() and goes on.
+  for (const fade of ["frameRollOverlayTarget = ", "cutoutPanoDimTarget = ", "cutoutPanoFrameTarget = "]) {
+    const index = editorSource.indexOf(`editor.${fade}`);
+    assert.ok(index > editorSource.indexOf("  function tickFrame(") && index < editorSource.indexOf("  function runGuardedFrame("), fade);
+  }
+  // The camera preview hidden draws its frame anew when it shows again.
+  assert.match(editorFunction("drawCutoutOutputPreview"), /uiState\.cameraPreview\.settled = false;\s*\/\/[^\n]*\n\s*cameraPreviewDrawn = null;\s*return;/);
+});
+
+test("a Keyframe or Clip range drag draws the state it changed: the view's state is made again", async () => {
+  const { loadSceneState } = await import("../web_src/pano_scene_state.js");
+  const { evaluateSceneState } = await import("../web_src/pano_scene_eval.js");
+  const { moveKeyframes } = await import("../web_src/pano_timeline.js");
+  const state = loadSceneState({
+    version: 2,
+    stickers: [{
+      id: "s1",
+      placement: "sky",
+      source: { kind: "file", filename: "a.png" },
+      opacity: { value: 1, keyframes: [{ frame: 0, value: 0 }, { frame: 10, value: 1 }] },
+    }],
+  });
+  const before = loadSceneState(state);
+  moveKeyframes(state.stickers[0], ["opacity"], [10], 10, 0);
+  // The state drawn before the drag still shows the old value at the playhead; a state rebuilt from the
+  // dragged one shows the new.
+  assert.notEqual(evaluateSceneState(before, 10).stickers[0].opacity, evaluateSceneState(loadSceneState(state), 10).stickers[0].opacity);
+  // The drag's batched view task asks with the state's reason, which counts runtime.stateRevision, and the
+  // view's state is rebuilt on that count.
+  const tasks = editorSource.slice(editorSource.indexOf("const dragFrames = createFrameBatch({"), editorSource.indexOf("\n  });\n", editorSource.indexOf("const dragFrames = createFrameBatch({")));
+  assert.match(tasks, /requestDraw\(\{ localOnly: true, reason: DRAW_REASON\.STATE \}\);/);
+  assert.match(editorFunction("requestDraw"), /if \(reason === DRAW_REASON\.STATE\) runtime\.stateRevision \+= 1;/);
+  assert.match(editorFunction("buildEditorViewInput"), /if \(editorViewScene\.revision !== runtime\.stateRevision\) \{/);
+  assert.doesNotMatch(editorSource, /scheduler\.requestDraw\(DRAW_REASON\.VIEW\);\s*\},\s*sidePanel/);
 });

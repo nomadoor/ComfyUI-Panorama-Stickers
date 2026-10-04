@@ -535,7 +535,7 @@ test("Reset View, Frame Selected and 6DoF back to 3DoF move the view over a tran
   const wheel = editor.slice(editor.indexOf("  canvas.onwheel = (e) => {"));
   assert.match(wheel, /if \(editor\.mode !== "pano"\) return;\s*cancelViewTransition\(\);/);
   // Each one starts from the view shown now.
-  assert.match(editor, /function transitionView\(target, end = null\) \{\s*const from = spaceViewState\(\);\s*editor\.viewTransition = startViewTransition\(from, target, performance\.now\(\), \{ scale: spaceScale\(\), end \}\);/);
+  assert.match(editor, /function transitionView\(target, end = null\) \{\s*const from = spaceViewState\(\);\s*startAnimation\(\(\) => \{\s*editor\.viewTransition = startViewTransition\(from, target, performance\.now\(\), \{ scale: spaceScale\(\), end \}\);\s*\}\);/);
   assert.match(editor, /if \(action === "reset-view"\) \{\s*if \(editor\.mode === "frame"\) return;[\s\S]{0,200}transitionView\(/);
   assert.match(editor, /transitionView\(frameView\(view, sphere, canvas\.width, canvas\.height\)\);/);
   const setMode = editor.slice(editor.indexOf("  function setSpaceMode(mode) {"), editor.indexOf("\n  }\n", editor.indexOf("  function setSpaceMode(mode) {")));
