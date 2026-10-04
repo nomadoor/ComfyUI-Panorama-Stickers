@@ -1,10 +1,9 @@
 """The MESH, mesh 3D files, and MOGE_GEOMETRY on the `scene` input as World content drawn by
 `core/mesh_render.py`, in the same glTF frame as their editor files (`scene_files.py`)."""
 from comfy_api.latest import Types
-from comfy_extras.nodes_mesh_io import Get3DComponents
-from comfy_extras.nodes_save_3d import get_mesh_batch_item
 
 from .core.mesh_render import MeshItem, mesh_content
+from .core_adapters import Get3DComponents, get_mesh_batch_item
 from .scene_files import moge_grid_mesh
 
 # The formats of the mesh file types the `scene` input takes; the core reads all but FBX and USDZ, which fail there.

@@ -18,7 +18,7 @@ import numpy as np
 from .core.video import encode_frames_to_mp4, make_video_ui_payload
 
 try:
-    from comfy_api.v0_0_2 import ComfyAPISync
+    from comfy_api.latest import ComfyAPISync
 except Exception:
     ComfyAPISync = None
 

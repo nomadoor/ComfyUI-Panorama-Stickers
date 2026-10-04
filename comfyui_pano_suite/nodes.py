@@ -1,4 +1,5 @@
 import bisect
+import hashlib
 import json
 import math
 import os
@@ -211,6 +212,8 @@ def _external_sticker_id(slot_key: str) -> str:
 
 
 def _hash_text(value) -> str:
+    """The FNV-1a hash of `sticker_state` that the editor stores with the external Sticker and computes the same way
+    (`hashStringSimple`), so it must not change. Only for short texts; larger ones are keyed by `hashlib`."""
     text = str(value or "")
     h = 2166136261
     for ch in text:
@@ -2055,7 +2058,7 @@ class PanoramaCutoutNode(io.ComfyNode):
             source_identity = _tensor_cache_identity(erp_image)
             cutout_render_signature = (
                 source_identity,
-                _hash_text(state_json),
+                hashlib.sha1(str(state_json or "").encode("utf-8")).hexdigest(),
                 int(coverage_value),
                 int(ow),
                 int(oh),

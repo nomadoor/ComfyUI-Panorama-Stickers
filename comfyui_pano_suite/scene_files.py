@@ -5,12 +5,10 @@ import uuid
 from pathlib import Path
 
 from PIL import Image
-from comfy.ldm.moge.geometry import triangulate_grid_mesh
 from comfy_api.latest import Types
-from comfy_extras.nodes_gaussian_splat import SplatToFile3D
-from comfy_extras.nodes_save_3d import mesh_item_to_glb_bytes, save_glb
 
 from .core.video import removed_on_failure, temp_file_path
+from .core_adapters import SplatToFile3D, mesh_item_to_glb_bytes, save_glb, triangulate_grid_mesh
 
 
 def moge_grid_mesh(geometry: dict, index: int):

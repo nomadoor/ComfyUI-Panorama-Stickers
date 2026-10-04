@@ -11,6 +11,7 @@ import comfy.utils
 from comfy_api.latest import Input, InputImpl, Types
 
 from .core.video import _BT709, _set_srgb, _temp_mp4_path, removed_on_failure
+from .core_adapters import pin_memory
 
 # The size of a whole video (the color of every frame) from which `get_components` copies the frames from the
 # device through a pinned buffer.
@@ -64,7 +65,7 @@ class SceneVideo(Input.Video):
             # pinning can release ComfyUI's RAM cache and other pins for little gain. Without a pin (no CUDA/ROCm or
             # no budget), the buffer would only add a copy.
             staging = torch.empty(images.shape[1:], dtype=torch.float32)
-            if not comfy.model_management.pin_memory(staging, evict_active=False):
+            if not pin_memory(staging):
                 staging = None
         progress = comfy.utils.ProgressBar(len(self._times))
         previous = None
