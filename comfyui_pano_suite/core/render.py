@@ -449,7 +449,10 @@ def _shoot_sticker(texture: torch.Tensor, levels: dict, item: dict, rays: torch.
     across = (rays @ right) / distance / math.tan(math.radians(max(0.1, sticker["hFOV_deg"])) * 0.5)
     down = (rays @ up) / distance / math.tan(math.radians(max(0.1, item["vfov"])) * 0.5)
     plane = torch.stack([across, down], dim=-1)
-    coverage = ((1.0 - plane.abs()) / _pixel_steps(plane).clamp_min(1e-12) + 0.5).clamp(0.0, 1.0).prod(dim=-1)
+    # A pixel covers at most the Sticker's whole width (2) of the plane: across the plane's horizon (depth 0), where
+    # the plane runs off to infinity between neighbors, the step would otherwise give the pixels there half coverage.
+    steps = _pixel_steps(plane).clamp(1e-12, 2.0)
+    coverage = ((1.0 - plane.abs()) / steps + 0.5).clamp(0.0, 1.0).prod(dim=-1)
     coverage = torch.where(depth > 1e-6, coverage, 0.0)
     inside = coverage > 0.0
     # The legacy drawing puts u = 0 and 1 on the centers of the first and last source pixels.

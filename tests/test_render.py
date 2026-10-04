@@ -581,3 +581,18 @@ def test_perspective_sky_keeps_its_paint_and_ripmaps_while_only_stickers_and_the
     assert counts["_sky_layers"] == 3
     assert counts["_premultiplied"] == 2
     assert shrunk[0] > 0 and shrunk[0] == shrunk[-1]
+
+
+def test_a_sky_sticker_beside_the_camera_draws_nothing_along_its_planes_horizon():
+    # The Sticker faces yaw 90; its plane's horizon (depth 0) is the meridian at yaw 0, through the middle of the view.
+    sources = SceneSources({"s": StickerSource(np.ones((8, 8, 4), dtype=np.float32), {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0})}, {})
+    state = _sticker_state(yaw_deg=90.0, hFOV_deg=40.0, vFOV_deg=40.0)
+    loaded, evaluated = _scene(**state)
+    projection = Projection.perspective(64, 48, 120.0)
+    rays = render_module._rays(evaluated["camera"], projection, torch.device("cpu"))
+    layers = render_module._sky_layers(evaluated, sources, (64, 32), torch.device("cpu"), {}, {"size": (64, 32)})
+
+    sky = render_module._shoot_sky(*layers, rays, render_module._view(rays))[0]
+
+    # Yaw 90 is past the right edge of a 120 degree view, so nothing of the Sticker is in it.
+    assert float(sky[..., 3].max()) == 0.0
