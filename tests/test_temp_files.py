@@ -1,5 +1,6 @@
 """The editor's temp files are registered and bounded by bytes; an input MP4 the editor can play is not copied."""
 from fractions import Fraction
+from pathlib import Path
 
 import pytest
 import torch
@@ -101,3 +102,54 @@ def test_an_input_file_of_another_container_is_still_copied(tmp_path, monkeypatc
     entry = PanoramaPreviewSceneNode.execute(source=video, coverage="360").ui["pano_videos"][0]
 
     assert entry["type"] == "temp" and entry["filename"].endswith(".mp4")
+
+
+def _lock(monkeypatch, *locked):
+    """Make `unlink` of the `locked` paths fail as Windows fails it for a file a browser still has open."""
+    unlink = Path.unlink
+
+    def guarded(self, missing_ok=False):
+        if self in locked:
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process", str(self))
+        return unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", guarded)
+
+
+def test_a_file_that_cannot_be_deleted_stays_registered_and_is_tried_again(fresh_registry, monkeypatch):
+    fresh_registry.max_bytes = 150
+    playing, older = _write("playing.mp4", 100), _write("older.mp4", 100)
+    fresh_registry.add(playing)
+    _lock(monkeypatch, playing)
+    fresh_registry.add(older)
+
+    # The locked file is skipped without failing the write, and the next one is deleted in its place.
+    assert playing.exists() and not older.exists()
+    assert fresh_registry.is_registered(playing) and fresh_registry.bytes == 100
+    monkeypatch.undo()
+    fresh_registry.add(_write("next.mp4", 100))
+    assert not playing.exists()
+
+
+def test_a_locked_old_file_does_not_fail_the_preview_encoder(fresh_registry, monkeypatch):
+    run = ["prompt-1"]
+    fresh_registry.current_run = lambda: run[0]
+    fresh_registry.max_bytes = 1
+    locked = _write("shown.mp4", 100)
+    fresh_registry.add(locked)
+    run[0] = "prompt-2"
+    _lock(monkeypatch, locked)
+
+    path = core_video.encode_frames_to_mp4(torch.rand(2, 16, 32, 3), 24.0)
+
+    assert path.exists() and fresh_registry.is_registered(path)
+    assert locked.exists() and fresh_registry.is_registered(locked)
+
+
+def test_cleanup_that_cannot_delete_raises_the_original_error(monkeypatch):
+    partial = _write("partial.mp4", 10)
+    _lock(monkeypatch, partial)
+
+    with pytest.raises(RuntimeError, match="encoder"):
+        with temp_files.removed_on_failure(partial):
+            raise RuntimeError("encoder")

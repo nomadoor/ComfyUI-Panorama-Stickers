@@ -1378,10 +1378,11 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
     return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
 
 
-# Floats per output pixel that a frame keeps on the device at once: the rays and where they look, the Sky and each
-# of its layers' samples with their footprints and filter weights, the background's samples, the World layer with its
-# depth and the folding by depth, and the color, mask, and depth. A rounded-up count of the tensors `render_frame` holds.
-RENDER_FLOATS_PER_PIXEL = 64
+# Floats per output pixel that a frame keeps on the device at once beyond its sources: the rays and where they look,
+# the Sky's layers' samples with their footprints and filter weights, the background's samples, the World layer, and
+# the color, mask, and depth. Measured peaks reach about 25 (ERP 4096 x 2048, the Sky drawn at every pixel) with the
+# sources counted as below (`docs/render-contract.md`); 32 leaves a margin.
+RENDER_FLOATS_PER_PIXEL = 32
 # A source on the device is float32 with the ripmap levels `_sample_filtered` makes, up to three times its size.
 DEVICE_SOURCE_FACTOR = 4
 
@@ -1417,10 +1418,12 @@ def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, 
     `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media (and its content when 3D) and the
     `scene` content are opened for this pass, so nothing they put on `device` outlives it.
     Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
-    the same tensors as the previous one. Before the first frame, ComfyUI frees on `device` what the pass needs
-    (`_render_memory` at the output `size`), unloading models only as far as that takes."""
+    the same tensors as the previous one. Before the first frame, when `device` has less free memory than the pass
+    needs (`_render_memory` at the output `size`), ComfyUI frees that much, unloading models only as far as it takes."""
     if not comfy.model_management.is_device_cpu(device):
-        comfy.model_management.free_memory(_render_memory(built, bg, size), device)
+        required = _render_memory(built, bg, size)
+        if comfy.model_management.get_free_memory(device) < required:
+            comfy.model_management.free_memory(required, device)
     bg_width = None
     if bg is not None:
         bg_width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2]
@@ -2117,13 +2120,8 @@ class PanoramaCutoutNode(io.ComfyNode):
                 overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
                 for index in range(batch_frames):
                     out_batch[index] = alpha_composite_over_rgb(out_batch[index], overlay_cutout)
-            selected_mask = overlay_mask_bw if isinstance(overlay_mask_bw, np.ndarray) else (
-                painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-            )
-            if isinstance(selected_mask, np.ndarray):
-                mask_bw = sample_cutout_from_sampling_map(selected_mask, sampling_map)
-            else:
-                mask_bw = np.zeros((oh, ow), dtype=np.float32)
+            # The mask is the uploaded one as float (`_build_overlay_erp_rgba_and_mask`), else the state's strokes drawn.
+            mask_bw = sample_cutout_from_sampling_map(overlay_mask_bw, sampling_map)
             encode_start = progress.value
             out_t, mask_t, _out_batch_unused = _make_batched_image_and_mask_outputs(out_batch, mask_bw)
             if video_span > 0:
@@ -2253,7 +2251,8 @@ def _input_entry(path) -> dict | None:
         rel = Path(path).resolve().relative_to(root)
     except ValueError:
         return None
-    return {"filename": rel.name, "subfolder": str(rel.parent).replace("\\", "/"), "type": "input", "storage": "input", "format": "video/mp4"}
+    subfolder = rel.parent.as_posix()
+    return {"filename": rel.name, "subfolder": "" if subfolder == "." else subfolder, "type": "input", "storage": "input", "format": "video/mp4"}
 
 
 def _editor_mp4_ui(cache_key: tuple, make, fps: float, frame_count: int, contract: dict) -> dict:

@@ -162,7 +162,7 @@ SPLAT（#61、下の「SPLAT の描き方」）と MESH・MoGe（#62）のレン
 - 両面を描く（MoGe のパノラマの面は外向きで、原点の Camera からは裏面になる）。縁はアンチエイリアスしない。
 - エディタ（#71）は、この描画と揃えるため、`scene` の GLB を光源の影響を受けない材質（`MeshBasicMaterial` 相当）で両面（`DoubleSide`）に描く必要がある。コアの `save_glb` は `unlit` をテクスチャのない場合にしか書かない（`KHR_materials_unlit`）ので、テクスチャ付きの MoGe の GLB には unlit を書けず、エディタ側で扱う。
 - 要素は描画のパスの間だけ、直前に描いた 1 つを device に置いておき、同じ要素の次のフレームでは置き直さない（`mesh_content`）。
-- 描く前に `comfy.model_management.free_memory` で VRAM を空けることはしない（Sky・SPLAT の描画と同じく、モデルの読み込み側の管理に任せる）。
+- VRAM は、描画のパスの始めにまとめて見積もって空ける（下の「デバイスとメモリ」。中身のテンソルの大きさを見積もりに入れる）。
 - MoGe のグリッドは ERP の経度の継ぎ目（最後の列と最初の列の間）と極の周り（最初と最後の行の外）をつながないので、出力が MoGe より細かいとそこに 1〜2 画素の隙間が出る。コアの MoGePointMapToMesh とエディタの GLB も同じである。
 - 計測（1 回、CUDA の割り当てのピークは要素を置いたぶんを含む）：
   - 2048 × 1024 の MoGe パノラマ相当（約 400 万面、device 上の要素 約 170 MB）：4096 × 2048 の ERP は CUDA で約 0.2 秒・ピーク約 1.2 GB、CPU で約 2.9〜3.4 秒。1920 × 1080 の透視投影は CUDA で約 0.06 秒・ピーク約 0.86 GB、CPU で約 1.2〜1.3 秒。要素の最初のフレームは CPU での三角形分割と転送を含め、CUDA で約 3 秒。
@@ -220,7 +220,7 @@ FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コア�
 - `first_frame`（IMAGE、(1, H, W, 3)）と `first_frame_mask`（MASK、(1, H, W)）は、Timeline の最初の出力フレームの色とマスクである。全フレームのマスクは出力しない（ADR 0027）。
 - 背景の IMAGE バッチは出力フレームと 1 対 1 に対応し、バッチより長い出力では、背景が終わった後は `bg_color` になる。1 枚の IMAGE はすべてのフレームに描く。
 - `bg_media` と `sticker` の VIDEO の読み方（`core/video_source.py`）
-  - `VideoFromFile` で、`get_dimensions()` がストリームの大きさと一致するもの（クロップがない）は、`get_stream_source()` を PyAV で開き、`get_active_trim_window()` の範囲を 1 フレームずつ読む（`StreamedVideo`）。先にパケットだけを読んで PTS を集め、フレーム数と時刻を決める（`scan_video`。最初に復号できたフレームも求める）。その結果（`VideoIndex`：PTS の表・時刻・最初のフレーム）は、ファイル（パス・更新時刻・大きさ、メモリ上のファイルはオブジェクト）とトリム範囲をキーに共有のキャッシュ（`video_index`）に入れ、1 回の実行の中の何度もの `open_video`（Timeline、`PortMedia`、描画のパスごと、エディタの MP4）でも、次の実行でも走査し直さない。ストリームの大きさ（クロップの判定に使う）も同じく `video_size` に入れる。`StreamedVideo` は `VideoIndex` を参照し、復号器だけを持つ（最初にフレームを求められたときに復号を始める）。入力側のメモリは長さに比例しない（`tests/test_stickers_scene_video.py` で計測する）。
+  - `VideoFromFile` で、`get_dimensions()` がストリームの大きさと一致するもの（クロップがない）は、`get_stream_source()` を PyAV で開き、`get_active_trim_window()` の範囲を 1 フレームずつ読む（`StreamedVideo`）。先にパケットだけを読んで PTS を集め、フレーム数と時刻を決める（`scan_video`。最初に復号できたフレームも求める）。その結果（`VideoIndex`：PTS の表（int64 の配列で、キャッシュのバイト数に数える。秒の時刻は `times()` で作る）・最初のフレーム）は、ファイル（パス・更新時刻・大きさ、メモリ上のファイルはオブジェクト）とトリム範囲をキーに共有のキャッシュ（`video_index`）に入れ、1 回の実行の中の何度もの `open_video`（Timeline、`PortMedia`、描画のパスごと、エディタの MP4）でも、次の実行でも走査し直さない。ストリームの大きさ（クロップの判定に使う）も同じく `video_size` に入れる。`StreamedVideo` は `VideoIndex` を参照し、復号器だけを持つ（最初にフレームを求められたときに復号を始める）。入力側のメモリは長さに比例しない（`tests/test_stickers_scene_video.py` で計測する）。
   - 復号したフレームは、パケットで集めた PTS と突き合わせる。シークの後に参照を失った B フレームなど、復号されなかった PTS のフレームは、ログに警告を出して `bg_color` にする。ほかのフレームの時刻はずらさない。パケットにない PTS のフレームは捨てる。1 枚も復号できないときは `ValueError` にする。出力の大きさ（`auto`）は、最初に復号できたフレームで決める。
   - 復号のエラー（`InvalidDataError`）は、コアのように読み飛ばさず、そのままエラーにする。
   - 画素の変換（8 ビットの形式は `rgb24`、それ以外は `gbrpf32le`、幅が 32 の倍数でないときの端の引き伸ばし）と回転のメタデータの扱いは、コアの `get_components()` と同じにし、同じ値になることをテストで確かめる。
@@ -430,12 +430,12 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 ### デバイスとメモリ
 
 - デバイスは `comfy.model_management.get_torch_device()`、空きメモリは `get_free_memory(device)` で読み、キャッシュを空けるのは `soft_empty_cache()` だけにする（旧 `PanoramaStickers` も同じ。CUDA を直接は選ばず、チャンクごとに `empty_cache` を呼ばない。メモリが足りなくなったときだけ空けてチャンクを半分にする）。
-- 新しい描画のパス（`_render_frames`。最初のフレームの描画と、`video` 出力を読むたび）の最初に、見積もった量で `comfy.model_management.free_memory(required, device)` を 1 回呼ぶ。ComfyUI は空きがその量に足りない分だけモデルを降ろす。CPU では呼ばない。
+- 新しい描画のパス（`_render_frames`。最初のフレームの描画と、`video` 出力を読むたび）の最初に、見積もった量を `get_free_memory(device)` と比べ、足りないときだけ `comfy.model_management.free_memory(required, device)` を 1 回呼ぶ（`free_memory` は呼ぶたびに `gc.collect` などをするので、足りているパスでは呼ばない）。ComfyUI は空きがその量に足りない分だけモデルを降ろす。CPU では呼ばない。
 - 見積もり（`_render_memory`）は次の和。粗い上側の見積もりで、細かな一時テンソルは含めない。
-  - 出力の画素あたり `RENDER_FLOATS_PER_PIXEL`（64）個の float32。1 フレームの間にデバイスに同時にあるもの（光線とその向き、Sky とその層ごとのサンプルと footprint・重み、背景のサンプル、World の層と深度、深度での重ね合わせ、色・マスク・深度）を数えて切り上げた数。
+  - 出力の画素あたり `RENDER_FLOATS_PER_PIXEL`（32）個の float32。1 フレームの間にデバイスに同時にあるもの（光線とその向き、Sky の層ごとのサンプルと footprint・重み、背景のサンプル、World の層、色・マスク・深度）の分。実測（RTX 4070 Ti、`render_frame` 1 回の VRAM の最大から、下の素材の分（4 倍）を引いたもの）は、ERP 4096 x 2048 の回転なしで約 1、回転ありで約 8、透視投影 1920 x 1080（hFOV 20°〜150°）で 0 未満〜8、Sky を画素ごとに標本化する C3 の経路の ERP 4096 x 2048 で約 17 で、32 は余裕を持たせた値。
   - デバイスに上げる素材の float32 の大きさの `DEVICE_SOURCE_FACTOR`（4）倍：`bg_media` の 1 フレーム（RGB）、各層の Sticker の素材（RGBA）、アップロード済みのペイントのラスタ。4 倍は、本体と `_sample_filtered` の ripmap（本体の 3 倍まで）の分。
   - 3D の中身（`scene` と 3D の Sticker）のテンソルの大きさ（`core/cache.py` の `nbytes`）。
-- 例：ERP 4096 x 2048 の出力に 4096 x 2048 の背景と 2048 四方の Sticker 一つなら、2 GiB（画素）＋ 384 MiB（背景）＋ 256 MiB（Sticker）で約 2.6 GiB。
+- 例：ERP 4096 x 2048 の出力に 4096 x 2048 の背景と 2048 四方の Sticker 一つなら、1 GiB（画素）＋ 384 MiB（背景）＋ 256 MiB（Sticker）で約 1.6 GiB（実測の最大は約 0.9 GiB、C3 の経路で約 1.1 GiB）。
 
 ### 中断と進み具合
 
@@ -464,7 +464,10 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 - エディタのために temp に書くファイル（エディタ用の MP4・RGBA の PNG・PLY/GLB、旧ノードのプレビュー MP4、`video` 出力のストリームソース）は、`core/temp_files.py` の `TEMP_FILES` に登録する（書き終えたら `TEMP_FILES.writing` / `add`）。ComfyUI は temp を起動時と終了時にしか消さないので、合計が `TEMP_MAX_BYTES`（既定 5 GiB。モジュールの定数）を超えたら、最近使っていないものから消す。
   - 今の実行（ComfyUI のプロンプト。`comfy_execution.utils.get_executing_context()` の `prompt_id`、`node_runtime.py` が設定する）が書いたファイルと、今の実行の出力の `ui` が指したファイル（`entry_from_path` を通ったもの）は、その実行の間は消さない。上限を超えていても残す。
   - 消したファイルをキャッシュが指していても、次に要るときに作り直す（キャッシュはファイルがあるかを確かめる。`SceneVideo` のストリームソースも同じ）。
+  - 消せないファイル（Windows でブラウザが再生中の MP4 など。`unlink` の `OSError`）は登録と合計に残し、次に書いたときにもう一度消す。消せないことで実行は失敗しない。書きかけのファイルを消すとき（`removed_on_failure`）も同じで、元の例外をそのまま上げる。旧ノードのプレビュー MP4 は、エンコーダの試行のループを抜けてから登録する（登録の処理をエンコーダの失敗と取り違えないため）。
 - 登録したファイルの `ui` の項目には `"pano_evictable": true` を足す。ほかの項目（`filename`・`subfolder`・`type`・`storage`・`format`）は変えない。前の実行の `ui` を表示しているエディタがこの印の付いたファイルを開けなかった（404）ときは、「ファイルが消えたので、もう一度実行してください」と出せる。フロントエンドの表示はまだない。
   - 対象のキー：`pano_videos`・`pano_input_videos`・`pano_sticker_input_videos`・`pano_sticker_input_frames`・`pano_scene_files`・`pano_sticker_files` と、上流の層の同じキー（`pano_upstream_*`・`pano_upstream_layers[].ui`）。
 - 入力ディレクトリの VIDEO で、エディタがそのまま扱えるもの（上の「そのまま使う」の条件を満たす `.mp4`）は temp に複製せず、`{"filename", "subfolder", "type": "input", "storage": "input", "format": "video/mp4"}` で直接指す。登録しないので `pano_evictable` は付かない。
+  - `type` を外して `storage` だけにはできない：フロントエンドの `pano_comfy_media.js` の `comfyImageEntryToUrl` は `type` だけを読む（`storage` を先に読むのは `pano_preview_previewnode.js` だけ）。そのため、ComfyUI を `--enable-assets` で起動したときは、コアの `comfy_execution/asset_enrichment.py` が `type` の付いた `ui` の項目をすべてジョブの出力として登録し、この入力の MP4 も実行のたびに、その実行の出力として登録し直される（同じパスの前の記録は missing になる）。既定（assets なし）では影響はない。フロントエンドが `storage` を先に読むようになったら、`type` を外す。
+- `ui` の項目の `subfolder` は、ディレクトリの直下のファイルでは `""`（以前は `"."`）。
 - RGBA の IMAGE バッチの `pano_sticker_input_frames`（1 枚ずつの PNG）は今回は変えない。長いバッチでは PNG の数と大きさが増えるが、登録の上限で抑える。

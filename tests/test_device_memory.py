@@ -11,11 +11,12 @@ from comfyui_pano_suite.core.cache import nbytes
 from comfyui_pano_suite.nodes import RENDER_FLOATS_PER_PIXEL, PanoramaStickersNode, PanoramaStickersSceneNode
 
 
-def _record_free_memory(monkeypatch, device=torch.device("cpu")):
-    """Run the render on `device` (the CPU, so no GPU is used) while ComfyUI reports it as a GPU."""
+def _record_free_memory(monkeypatch, device=torch.device("cpu"), free=0):
+    """Run the render on `device` (the CPU, so no GPU is used) while ComfyUI reports it as a GPU with `free` bytes free."""
     calls = []
     monkeypatch.setattr(nodes.comfy.model_management, "get_torch_device", lambda: device)
     monkeypatch.setattr(nodes.comfy.model_management, "is_device_cpu", lambda value: False)
+    monkeypatch.setattr(nodes.comfy.model_management, "get_free_memory", lambda value: free)
     monkeypatch.setattr(nodes.comfy.model_management, "free_memory", lambda required, value, *args, **kwargs: calls.append((required, value)))
     return calls
 
@@ -89,3 +90,11 @@ def test_legacy_stickers_does_not_empty_the_cache_per_chunk(monkeypatch):
     PanoramaStickersNode.execute("256", "360", "#00ff00", json.dumps({"version": 1, "stickers": []}), bg_erp=torch.rand(3, 32, 64, 3))
 
     assert emptied == []
+
+
+def test_a_pass_with_enough_free_memory_does_not_free_any(monkeypatch):
+    calls = _record_free_memory(monkeypatch, free=1024 ** 4)
+
+    PanoramaStickersSceneNode.execute("#00ff00", "360", "256", "", bg_media=torch.rand(1, 64, 128, 3))
+
+    assert calls == []

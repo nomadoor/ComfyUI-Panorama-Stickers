@@ -173,3 +173,26 @@ def test_legacy_stickers_keeps_no_background_batch():
 
 def test_the_default_limit_is_documented_constants():
     assert cache_module.CACHE_MAX_BYTES == 4 * 1024 ** 3 and cache_module.CACHE_FREE_SHARE == 0.25
+
+
+def test_a_video_index_counts_its_presentation_times(tmp_path):
+    from comfyui_pano_suite.core.video_source import scan_video
+    from test_stickers_scene_video import _cfr
+
+    index = scan_video(_cfr(tmp_path, count=6).get_stream_source(), 0, 0, "bg_media")
+
+    assert index.pts.dtype == np.int64
+    assert nbytes(index) == index.pts.nbytes + index.first_frame.numel() * 4
+    assert len(index.times()) == 6
+
+
+def test_sampling_a_read_only_erp_warns_nothing():
+    import warnings
+
+    from comfyui_pano_suite.core.cutout import sample_cutout_from_sampling_map
+
+    erp = CACHE.put("test", 1, np.zeros((32, 64, 3), np.float32))
+    sampling_map = build_cutout_sampling_map((32, 64), 0.0, 0.0, 90.0, 60.0, 0.0, 16, 12)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sample_cutout_from_sampling_map(erp, sampling_map)

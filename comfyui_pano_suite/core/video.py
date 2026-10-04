@@ -14,7 +14,7 @@ try:
 except Exception:  # pragma: no cover - optional at import time
     av = None
 
-from .temp_files import TEMP_FILES, ensure_temp_root, entry_from_path, temp_file_path
+from .temp_files import TEMP_FILES, ensure_temp_root, entry_from_path, remove_temp_file, temp_file_path
 from .video_source import StreamedVideo
 
 _log = logging.getLogger(__name__)
@@ -431,8 +431,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
 
             container.close()
             _log.debug("[video] Encoded preview mp4 with %s -> %s", codec_name, output_path)
-            TEMP_FILES.add(output_path)
-            return output_path
+            break
         except Exception as ex:
             last_error = ex
             _log.debug("[video] Encoder %s failed, trying fallback: %s", codec_name, ex)
@@ -448,9 +447,13 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
         except BaseException:
             # Cancelled from `progress_callback`: no partial MP4 is left.
             container.close()
-            output_path.unlink(missing_ok=True)
+            remove_temp_file(output_path)
             raise
-    raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
+    else:
+        raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
+    # Registered after the encoder loop, so that nothing the registry does is taken for an encoder failure.
+    TEMP_FILES.add(output_path)
+    return output_path
 
 
 def save_editor_frames(images, progress=None) -> list[Path]:

@@ -47,13 +47,25 @@ def temp_file_path(name: str) -> Path:
 @contextmanager
 def removed_on_failure(paths):
     """Remove the files of `paths` (a path, or a list that the block fills) when the block fails or is cancelled, so
-    that no partial file is left."""
+    that no partial file is left. A file that cannot be removed (open elsewhere, as Windows refuses) is left for
+    ComfyUI to clear; the block's own error is raised."""
     try:
         yield
     except BaseException:
         for path in [paths] if isinstance(paths, (str, Path)) else paths:
-            Path(path).unlink(missing_ok=True)
+            remove_temp_file(Path(path))
         raise
+
+
+def remove_temp_file(path: Path) -> bool:
+    """Delete a file; whether it is gone. A file that cannot be deleted now, such as one a browser still plays on
+    Windows, is left and logged."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as error:
+        _log.debug("Panorama Stickers: could not delete the temp file %s now (%s).", path, error)
+        return False
+    return True
 
 
 class TempFiles:
@@ -111,9 +123,11 @@ class TempFiles:
             size, used = self._files[path]
             if run is not None and used == run:
                 continue
+            # A file that cannot be deleted now stays registered and counted, and is tried again at the next write.
+            if not remove_temp_file(path):
+                continue
             del self._files[path]
             total -= size
-            path.unlink(missing_ok=True)
             _log.debug("Panorama Stickers: deleted the temp file %s to keep temp under %d bytes.", path, self.max_bytes)
 
 
@@ -126,13 +140,12 @@ def entry_from_path(path: Path, *, media_type: str) -> dict:
     root = ensure_temp_root().resolve()
     target = Path(path).resolve()
     try:
-        rel = target.relative_to(root)
-        subfolder = str(rel.parent).replace("\\", "/")
-    except Exception:
+        subfolder = target.relative_to(root).parent.as_posix()
+    except ValueError:
         subfolder = ""
     entry = {
         "filename": target.name,
-        "subfolder": subfolder,
+        "subfolder": "" if subfolder == "." else subfolder,
         "type": "temp",
         "storage": "temp",
         "format": media_type,

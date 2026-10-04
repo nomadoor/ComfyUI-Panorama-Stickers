@@ -130,18 +130,18 @@ def sample_erp_bilinear(erp: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.nda
     if HAS_TORCH:
         # Ensure contiguous and correct dtype for torch
         # erp is (H, W, C) -> torch needs (B, C, H, W)
-        t_erp = torch.from_numpy(np.ascontiguousarray(erp)).to(torch.float32).permute(2, 0, 1)[None, ...]
+        t_erp = torch.from_numpy(np.require(erp, requirements=["C", "W"])).to(torch.float32).permute(2, 0, 1)[None, ...]
         # Pad horizontally for wrapping
         t_erp_padded = torch.cat([t_erp, t_erp[:, :, :, :1]], dim=3)
 
         # Grid sample coordinates in [-1, 1]
         # x corresponds to u (width), y corresponds to v (height)
         # padded width is w+1. index 0 maps to -1, index w maps to 1.
-        grid_u = (torch.from_numpy(np.ascontiguousarray(u)).to(torch.float32) / w) * 2.0 - 1.0
+        grid_u = (torch.from_numpy(np.require(u, requirements=["C", "W"])).to(torch.float32) / w) * 2.0 - 1.0
 
         # Avoid division by zero if h=1
         v_denom = float(h - 1) if h > 1 else 1.0
-        grid_v = (torch.from_numpy(np.ascontiguousarray(v)).to(torch.float32) / v_denom) * 2.0 - 1.0
+        grid_v = (torch.from_numpy(np.require(v, requirements=["C", "W"])).to(torch.float32) / v_denom) * 2.0 - 1.0
 
         grid = torch.stack([grid_u, grid_v], dim=-1)[None, ...]
 

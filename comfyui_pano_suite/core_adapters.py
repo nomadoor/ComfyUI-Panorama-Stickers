@@ -27,8 +27,8 @@ try:
     from comfy_extras.nodes_save_3d import get_mesh_batch_item, mesh_item_to_glb_bytes, save_glb
 except ImportError as error:
     FEATURE_3D_UNAVAILABLE = (
-        f"Panorama Stickers: the 3D features are disabled because this ComfyUI does not have {error.name or 'a symbol they use'} ({error}). "
-        "Update ComfyUI to use SPLAT, MESH, 3D files, and MOGE_GEOMETRY."
+        f"Panorama Stickers: the 3D features are disabled because an internal of ComfyUI they use could not be imported ({error}). "
+        "Update ComfyUI, or this extension, to use SPLAT, MESH, 3D files, and MOGE_GEOMETRY."
     )
     logging.getLogger(__name__).warning(FEATURE_3D_UNAVAILABLE)
 

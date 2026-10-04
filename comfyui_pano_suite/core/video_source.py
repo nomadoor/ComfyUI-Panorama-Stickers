@@ -44,8 +44,8 @@ class VideoIndex:
     hold the file.
 
     `start_time`/`duration` is the `get_active_trim_window()` of the VIDEO. `pts`
-    holds the presentation time stamps of the frames in the window in order, `times` each one in seconds from the
-    first, `time_base` the step those times are rounded to, `frame_rate` the stream's average rate, and
+    holds the presentation time stamps of the frames in the window in order (int64, so the shared cache counts its
+    bytes), `times()` each one in seconds from the first, `time_base` the step those times are rounded to, `frame_rate` the stream's average rate, and
     `first_frame` the first frame that decodes, which sets the output size, as `StreamedVideo` reads frames. Read-only.
     """
 
@@ -53,9 +53,13 @@ class VideoIndex:
     duration: float
     frame_rate: Fraction
     time_base: Fraction
-    pts: tuple
-    times: tuple
+    pts: np.ndarray
     first_frame: torch.Tensor
+
+    def times(self) -> tuple:
+        """Each frame's time in seconds from the first frame (Fraction), made anew for each call."""
+        first = int(self.pts[0])
+        return tuple((int(value) - first) * self.time_base for value in self.pts)
 
 
 def scan_video(source, start_time: float, duration: float, name: str, progress=None) -> VideoIndex:
@@ -84,8 +88,7 @@ def scan_video(source, start_time: float, duration: float, name: str, progress=N
     frames.close()
     if first is None:
         raise ValueError(f"Panorama Stickers: no frame of the {name} VIDEO could be decoded in its trim window.")
-    times = tuple((value - pts[0]) * time_base for value in pts)
-    return VideoIndex(start_time, duration, frame_rate, time_base, tuple(pts), times, first[1])
+    return VideoIndex(start_time, duration, frame_rate, time_base, np.array(pts, dtype=np.int64), first[1])
 
 
 def _decoded(source, start_time: float, duration: float):
@@ -145,9 +148,9 @@ class StreamedVideo:
         self._name = name
         self.frame_rate = index.frame_rate
         self.time_base = index.time_base
-        self.times = index.times
+        self.times = index.times()
         self.first_frame = index.first_frame
-        self._pts = index.pts
+        self._pts = index.pts.tolist()
         self._frames = None
         self._next = None
         self._index = -1
