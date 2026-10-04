@@ -9,10 +9,9 @@ import {
 } from "./pano_node_preview.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
-import { clamp, wrapYaw, shortestYawDelta } from "./pano_math.js";
+import { clamp, wrapYaw } from "./pano_math.js";
 import { cameraBasis, yawPitchToDir } from "./pano_camera_math.js";
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "./pano_brush_presets.js";
-import { createHistoryController } from "./pano_paint_history.js";
 import { createFrameBatch } from "./pano_frame_batch.js";
 import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
@@ -25,7 +24,6 @@ import {
   editorActive,
   editorStateText,
   fileSource,
-  makePanoEditorHistorySnapshot,
   newSceneSticker,
   newStudioCamera,
   newWorldSceneSticker,
@@ -34,7 +32,6 @@ import {
   paintingLayerNeedsSync,
   parsePanoEditorState,
   parseSceneEditorState,
-  restoredHistoryState,
   retainActiveCutoutShot,
   sameEditorStateText,
   sceneStickerLabel,
@@ -168,7 +165,6 @@ import { ICON } from "./icons.js";
 import {
   IMAGE_FAILED,
   IMAGE_LOADING,
-  IMAGE_READY,
   getImageLoadState,
   isImageLoadFailed,
   markImageFailed,
@@ -278,6 +274,8 @@ import {
   setNodeGridVisibility,
 } from "./editor/ui_settings.js";
 import { getCachedVideoThumbnails, setCachedVideoThumbnails } from "./editor/video_thumbnail_cache.js";
+import { createEditorModules } from "./editor/modules.js";
+import { createEditorHistory, createHistory } from "./editor/history.js";
 
 // Global registry: nodeId → Promise for in-flight paint layer uploads.
 const _paintLayerUploadRegistry = new Map();
@@ -690,7 +688,6 @@ async function showEditor(node, type, options = {}) {
   const initialSelectedId = type === "stickers"
     ? state.active.selected_sticker_id
     : (type === "cutout" ? state.active.selected_shot_id : state.active.selected_shot_id);
-  const initialHistorySnapshot = JSON.stringify(makePanoEditorHistorySnapshot(state));
   const editor = {
     mode: "pano",
     selectedId: initialSelectedId,
@@ -707,7 +704,7 @@ async function showEditor(node, type, options = {}) {
     // Each opening starts in 3DoF; it is not saved.
     spaceMode: "3dof",
     coverage: normalizeCoverageValue(state.coverage),
-    historyController: createHistoryController(80, { version: 1, entries: [initialHistorySnapshot], index: 0 }),
+    historyController: createEditorHistory(state),
     primaryTool: "cursor",
     paintTool: "pen",
     maskTool: "pen",
@@ -1165,6 +1162,19 @@ async function showEditor(node, type, options = {}) {
       videoCleanupFns.push(() => videoEl.removeEventListener(type, listener));
     }
   }
+
+  // --- editor modules: begin (generated wiring, see docs/editor-architecture.md) ---
+  // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
+  const {
+    getHistoryCapabilities, pushHistory, restoreHistory,
+  } = createEditorModules({
+    clearWorldSelection, commitState, editor, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
+    markPaintStrokeVisualsDirty, playback, readOnly, releaseHiddenSelection, requestDraw, runtime, state, stateV2,
+    stopTimelinePlayback, studio, syncCutoutShot, syncPaintUi, syncUndoRedoButtons, type, updateSidePanel,
+  }, [
+    createHistory,
+  ]);
+  // --- editor modules: end ---
 
   function syncToolButtonModels() {
     uiState.toolButtons.forEach((button) => {
@@ -5958,56 +5968,6 @@ async function showEditor(node, type, options = {}) {
     scheduler.stop();
     stageResizeObserver.disconnect();
     pixelRatioQuery.removeEventListener("change", onPixelRatioChange);
-  }
-
-  function pushHistory() {
-    if (readOnly) return;
-    syncCutoutShot();
-    // The snapshot keeps whether the Camera was edited, so only undoing to the first one brings the mark back.
-    noteCameraEdit(state);
-    // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
-    if (stateV2 && state.stickers.some(isUploadingSticker)) return;
-    editor.historyController.commitActionGroup(JSON.stringify(makePanoEditorHistorySnapshot(state)));
-    syncUndoRedoButtons();
-  }
-
-  function restoreHistory(step) {
-    if (readOnly) return;
-    stopTimelinePlayback();
-    const snapshot = step < 0 ? editor.historyController.undo() : editor.historyController.redo();
-    syncUndoRedoButtons();
-    if (!snapshot) return;
-    const restored = restoredHistoryState(state, snapshot);
-    const fps = state.timeline?.fps;
-    Object.keys(state).forEach((k) => delete state[k]);
-    Object.assign(state, restored.state);
-    syncCutoutShot(false);
-    // Undoing an fps change keeps the playhead's time in seconds.
-    if (stateV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
-    editor.selectedId = type === "stickers"
-      ? state.active.selected_sticker_id
-      : (type === "cutout" ? state.active.selected_sticker_id : state.active.selected_shot_id);
-    // Panorama Studio's Camera stays selected while the restored state has it (#89).
-    if (studio && !editor.selectedId && state.active.selected_shot_id) editor.selectedId = getActiveCutoutShot()?.id ?? null;
-    editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
-    if (editor.selectedId) clearWorldSelection();
-    releaseHiddenSelection();
-    runtime.backgroundDirty = true;
-    if (restored.paintingChanged) markPaintStrokeVisualsDirty();
-    else markObjectVisualsDirty();
-    syncPaintUi();
-    updateSidePanel();
-    commitState();
-    requestDraw({ cause: "cutout_frame" });
-  }
-
-  function getHistoryCapabilities() {
-    const historyEntries = Array.isArray(editor.historyController?.entries) ? editor.historyController.entries : [];
-    const historyIndex = Number(editor.historyController?.index);
-    return {
-      canUndo: !readOnly && historyEntries.length > 1 && historyIndex > 0,
-      canRedo: !readOnly && historyEntries.length > 1 && historyIndex >= 0 && historyIndex < historyEntries.length - 1,
-    };
   }
 
   function syncPaintUi() {
