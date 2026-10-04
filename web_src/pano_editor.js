@@ -7,7 +7,6 @@ import {
   attachStickersNodePreview,
   restoreNodeOutput,
 } from "./pano_node_preview.js";
-import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import { clamp, wrapYaw } from "./pano_math.js";
 import { yawPitchToDir } from "./pano_camera_math.js";
@@ -42,7 +41,6 @@ import {
   setTimelineFps,
   setWorldStickerField,
   setWorldStickerTransform,
-  sourceAsset,
   worldStickerFields,
 } from "./pano_editor_state.js";
 import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from "./pano_scene_eval.js";
@@ -94,7 +92,6 @@ import {
   polylineSegments,
   projectPoint,
   reuseWheelPick,
-  sceneFilesOf,
   sceneItemBox,
   sceneRequest,
   sceneTransform,
@@ -109,7 +106,14 @@ import {
 } from "./pano_space.js";
 import { shownSpaceMode, spaceModeChoice, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
-import { addDiagnosticsSource, createPanoCanvas, createPanoVideo, diagnosticsFrameEnd, diagnosticsFrameStart, releasePanoCanvas, trackPanoCanvas, trackPanoVideo } from "./pano_diagnostics.js";
+import {
+  addDiagnosticsSource,
+  createPanoCanvas,
+  diagnosticsFrameEnd,
+  diagnosticsFrameStart,
+  trackPanoCanvas,
+  trackPanoVideo,
+} from "./pano_diagnostics.js";
 import {
   contextHalfExtentsPx,
   createDefaultCutoutShot,
@@ -159,12 +163,10 @@ import { ICON } from "./icons.js";
 import {
   IMAGE_FAILED,
   IMAGE_LOADING,
-  getImageLoadState,
   isImageLoadFailed,
   markImageFailed,
   markImageLoading,
   markImageReady,
-  stageImageStatus,
 } from "./pano_image_state.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
 import {
@@ -178,8 +180,8 @@ import {
   reconcilePortStickerState,
 } from "./pano_stickers_node_surface.js";
 import { isNodeOutputMediaCurrent, nodeInputOrigins, videoLinked } from "./pano_preview_video.js";
-import { createVideoFollower, createVideoPlayback, frameAtTime } from "./pano_video_playback.js";
-import { createFrameSequence, portMediaFrames, portMediaSource, portMediaTime } from "./pano_port_media.js";
+import { frameAtTime } from "./pano_video_playback.js";
+import { portMediaFrames } from "./pano_port_media.js";
 import {
   drawStickerSelectionBoundary,
   drawStickerSelectionHandles,
@@ -217,9 +219,6 @@ import {
   LASSO_CURSOR_HOTSPOT_Y,
   LASSO_CURSOR_SIZE,
   PAINT_COLOR_SWATCHES,
-  PORT_FRAMES_KEY,
-  PORT_VIDEO_KEY,
-  PORT_VIDEO_META_KEY,
   RAD2DEG,
   STATE_WIDGET,
   TEXT_INPUT_TYPES,
@@ -259,14 +258,15 @@ import {
   saveSharedUiSettings,
   setNodeGridVisibility,
 } from "./editor/ui_settings.js";
-import { getCachedVideoThumbnails, setCachedVideoThumbnails } from "./editor/video_thumbnail_cache.js";
 import { createEditorModules } from "./editor/modules.js";
+import { createMediaSession } from "./editor/media_session.js";
 import { createEditorHistory, createHistory } from "./editor/history.js";
 import { createItems } from "./editor/items.js";
 import { createSelection } from "./editor/selection.js";
 import { createProjection } from "./editor/projection.js";
 import { createObjectGeometry } from "./editor/object_geometry.js";
 import { createPaintLayers } from "./editor/paint_layers.js";
+import { createPaintStrokes } from "./editor/paint_strokes.js";
 
 const _paintLayerSyncRegistry = new Map();
 
@@ -875,280 +875,6 @@ async function showEditor(node, type, options = {}) {
     active: false,
     depth: 0,
   };
-  const videoState = {
-    thumbnailJobId: 0,
-    thumbnailSrc: "",
-    // Sources whose filmstrip could not be built; a refresh does not build it again.
-    thumbnailFailedSrcs: new Set(),
-    // Sources that failed to load (a temp MP4 the server deleted) are not tried again in this editor.
-    failedSrcs: new Set(),
-    videoFailed: false,
-    // The legacy transport's slider paused playback and plays again when it is let go.
-    resumeAfterScrub: false,
-    // The fps of the editor's own background VIDEO result, 0 for a file without one.
-    metaFps: 0,
-  };
-  const VIDEO_THUMBNAIL_COUNT = 9;
-  const videoCleanupFns = [];
-  let videoTransportLayoutRaf = 0;
-  const syncVideoTransportLayout = () => {
-    const stageRect = stageWrap?.getBoundingClientRect?.();
-    const rightRect = floatingRightEl?.getBoundingClientRect?.();
-    const stageWidth = Math.max(0, Number(stageRect?.width || 0));
-    const rightWidth = rightRect ? Math.max(0, Number(rightRect.width || 0)) : 0;
-    const modalSideInset = 14;
-    const transportGap = 12;
-    const rightReserve = rightWidth > 0 ? (rightWidth + modalSideInset + transportGap) : 72;
-    const availableWidth = Math.max(280, Math.floor(stageWidth - (rightReserve * 2)));
-    const shellMaxWidthPx = editor.fullscreen
-      ? Math.min(1200, availableWidth)
-      : availableWidth;
-    uiState.videoTransport.shellMaxWidthPx = shellMaxWidthPx;
-  };
-  const queueVideoTransportLayout = () => {
-    if (videoTransportLayoutRaf) return;
-    videoTransportLayoutRaf = scheduler.requestFrame(() => {
-      videoTransportLayoutRaf = 0;
-      syncVideoTransportLayout();
-    });
-  };
-  const detectVideoHasAudio = (video) => {
-    if (!(video instanceof HTMLVideoElement)) return false;
-    try {
-      if (Array.isArray(video.audioTracks) && video.audioTracks.length > 0) return true;
-      if (video.audioTracks && typeof video.audioTracks.length === "number" && video.audioTracks.length > 0) return true;
-    } catch {
-      // Ignore browser-specific audioTracks access issues.
-    }
-    try {
-      if (typeof video.mozHasAudio === "boolean") return video.mozHasAudio;
-    } catch {
-      // Ignore Firefox-only property access issues.
-    }
-    try {
-      if (Number(video.webkitAudioDecodedByteCount || 0) > 0) return true;
-    } catch {
-      // Ignore WebKit-only property access issues.
-    }
-    return !!uiState.videoTransport.hasAudio;
-  };
-  const transportLayoutObserver = typeof ResizeObserver !== "undefined"
-    ? new ResizeObserver(() => queueVideoTransportLayout())
-    : null;
-  transportLayoutObserver?.observe(stageWrap);
-  if (floatingRightEl) transportLayoutObserver?.observe(floatingRightEl);
-  videoCleanupFns.push(() => {
-    if (videoTransportLayoutRaf) {
-      scheduler.cancelFrame(videoTransportLayoutRaf);
-      videoTransportLayoutRaf = 0;
-    }
-    transportLayoutObserver?.disconnect?.();
-  });
-  queueVideoTransportLayout();
-  const resetVideoThumbnails = () => {
-    videoState.thumbnailJobId += 1;
-    videoState.thumbnailSrc = "";
-    uiState.videoTransport.thumbnails = [];
-    uiState.videoTransport.thumbnailCount = VIDEO_THUMBNAIL_COUNT;
-  };
-  const buildVideoThumbnails = async (src, duration, fps) => {
-    const safeSrc = String(src || "").trim();
-    if (!safeSrc) {
-      resetVideoThumbnails();
-      return;
-    }
-    const cached = getCachedVideoThumbnails(safeSrc);
-    if (cached) {
-      videoState.thumbnailSrc = safeSrc;
-      uiState.videoTransport.thumbnails = cached.thumbnails;
-      uiState.videoTransport.thumbnailCount = cached.thumbnailCount;
-      return;
-    }
-    const jobId = ++videoState.thumbnailJobId;
-    videoState.thumbnailSrc = safeSrc;
-    uiState.videoTransport.thumbnails = [];
-    uiState.videoTransport.thumbnailCount = VIDEO_THUMBNAIL_COUNT;
-    const thumbVideo = createPanoVideo(document, "editor.thumbnails");
-    thumbVideo.preload = "auto";
-    thumbVideo.muted = true;
-    thumbVideo.playsInline = true;
-    thumbVideo.crossOrigin = "anonymous";
-    const canvas = createPanoCanvas({ label: "editor.thumbnail" });
-    // The element and the canvas are let go however the job ends: built, failed, or replaced by another.
-    try {
-      const loaded = await new Promise((resolve) => {
-        let settled = false;
-        const finish = (ok) => {
-          if (settled) return;
-          settled = true;
-          resolve(ok);
-        };
-        thumbVideo.addEventListener("loadedmetadata", () => finish(true), { once: true });
-        thumbVideo.addEventListener("canplay", () => finish(true), { once: true });
-        thumbVideo.addEventListener("error", () => finish(false), { once: true });
-        thumbVideo.src = safeSrc;
-        thumbVideo.load();
-      });
-      if (videoState.thumbnailJobId !== jobId) return;
-      const videoWidth = Number(thumbVideo.videoWidth || 0);
-      const videoHeight = Number(thumbVideo.videoHeight || 0);
-      if (!loaded || videoWidth < 1 || videoHeight < 1) {
-        videoState.thumbnailFailedSrcs.add(safeSrc);
-        return;
-      }
-      const sampleDuration = Math.max(0, Number(thumbVideo.duration || duration || 0));
-      const thumbHeight = 46;
-      const thumbWidth = Math.max(72, Math.round((videoWidth / videoHeight) * thumbHeight));
-      canvas.width = thumbWidth;
-      canvas.height = thumbHeight;
-      const ctx2d = canvas.getContext("2d");
-      if (!ctx2d) return;
-      const thumbnails = [];
-      const seekTo = (time) => new Promise((resolve) => {
-        let settled = false;
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          resolve();
-        };
-        thumbVideo.addEventListener("seeked", finish, { once: true });
-        thumbVideo.addEventListener("error", finish, { once: true });
-        try {
-          thumbVideo.currentTime = time;
-        } catch {
-          finish();
-        }
-      });
-      for (let index = 0; index < VIDEO_THUMBNAIL_COUNT; index += 1) {
-        if (videoState.thumbnailJobId !== jobId) return;
-        const ratio = VIDEO_THUMBNAIL_COUNT <= 1 ? 0 : index / (VIDEO_THUMBNAIL_COUNT - 1);
-        const target = sampleDuration > 0
-          ? Math.max(0, Math.min(sampleDuration - Math.max(0.001, 0.5 / Math.max(1, Number(fps || 24))), sampleDuration * ratio))
-          : 0;
-        await seekTo(target);
-        if (videoState.thumbnailJobId !== jobId) return;
-        ctx2d.clearRect(0, 0, thumbWidth, thumbHeight);
-        ctx2d.drawImage(thumbVideo, 0, 0, thumbWidth, thumbHeight);
-        thumbnails.push({
-          id: `thumb-${index}`,
-          src: canvas.toDataURL("image/jpeg", 0.72),
-          time: target,
-          label: formatVideoTime(target),
-        });
-      }
-      if (videoState.thumbnailJobId !== jobId) return;
-      uiState.videoTransport.thumbnails = thumbnails;
-      uiState.videoTransport.thumbnailCount = thumbnails.length || VIDEO_THUMBNAIL_COUNT;
-      setCachedVideoThumbnails(safeSrc, {
-        thumbnails,
-        thumbnailCount: thumbnails.length || VIDEO_THUMBNAIL_COUNT,
-        duration: sampleDuration,
-        fps,
-      });
-    } finally {
-      thumbVideo.removeAttribute("src");
-      thumbVideo.load();
-      releasePanoCanvas(canvas);
-    }
-  };
-  videoCleanupFns.push(() => {
-    resetVideoThumbnails();
-  });
-  // The background VIDEO's playback: PanoramaStickersNode's Timeline, else the legacy transport, on
-  // a Timeline of the VIDEO's own length. The legacy transport loops seamlessly through the VIDEO's
-  // own loop, so its playback then has no end.
-  const playback = createVideoPlayback({
-    video: videoEl instanceof HTMLVideoElement ? videoEl : null,
-    clock: {
-      now: () => performance.now(),
-      requestFrame: (callback) => scheduler.requestFrame(callback),
-      cancelFrame: (id) => scheduler.cancelFrame(id),
-    },
-    fps: playbackFps,
-    span: () => {
-      if (stateV2) return timelineSpanFrames();
-      const frames = Math.round(Number(uiState.videoTransport.duration || 0) * playbackFps());
-      return videoEl.loop || !(frames > 0) ? Infinity : frames;
-    },
-    loop: () => stateV2,
-    onFrame: (frame) => {
-      if (stateV2) setTimelineFrame(frame);
-      else syncVideoTransportState();
-      requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.PLAYHEAD });
-    },
-    onCapture: () => {
-      if (captureStillFrameFromVideo()) runtime.backgroundDirty = true;
-    },
-    onChange: () => {
-      syncVideoTransportState();
-      timelinePlayhead.playing.value = playback.playing;
-      syncTimeline();
-      requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.PLAYHEAD });
-    },
-  });
-  videoCleanupFns.push(() => playback.dispose());
-  // PanoramaStickersNode's port Sticker plays its MP4 along the playhead, muted (#83).
-  const portVideo = stateV2 && portVideoEl instanceof HTMLVideoElement
-    ? createVideoFollower({
-      video: portVideoEl,
-      onCapture: () => {
-        const width = Number(portVideoEl.videoWidth || 0);
-        const height = Number(portVideoEl.videoHeight || 0);
-        if (width < 1 || height < 1) return;
-        portStillCanvas.width = width;
-        portStillCanvas.height = height;
-        portStillCanvas.getContext("2d")?.drawImage(portVideoEl, 0, 0);
-        portStillCanvas.__panoFrameIdx += 1;
-        requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA });
-      },
-      onChange: () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA }),
-    })
-    : null;
-  if (portVideo) videoCleanupFns.push(() => portVideo.dispose());
-  // An RGBA IMAGE batch on the port shows its PNGs instead, which keep its alpha.
-  const portFrames = stateV2
-    ? createFrameSequence({
-      createImage: (src, onLoad) => {
-        const image = new Image();
-        image.onload = onLoad;
-        image.onerror = onLoad;
-        image.src = src;
-        return image;
-      },
-      onLoad: () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA }),
-    })
-    : null;
-  if (videoEl instanceof HTMLVideoElement) {
-    // The VIDEO's length and audio are known from its metadata on.
-    const onVideoReady = () => {
-      refreshModalVideoSource();
-      requestDraw({ cause: "frame_view", localOnly: true });
-    };
-    const onVolumeChange = () => {
-      syncVideoTransportState({
-        hasAudio: uiState.videoTransport.hasAudio,
-        muted: videoEl.muted,
-        volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
-      });
-    };
-    const onVideoError = () => {
-      const src = videoEl.dataset.panoSrc;
-      if (!src) return;
-      videoState.failedSrcs.add(src);
-      refreshModalVideoSource();
-      requestDraw();
-    };
-    for (const [type, listener] of [
-      ["loadedmetadata", onVideoReady],
-      ["loadeddata", onVideoReady],
-      ["canplay", onVideoReady],
-      ["volumechange", onVolumeChange],
-      ["error", onVideoError],
-    ]) {
-      videoEl.addEventListener(type, listener);
-      videoCleanupFns.push(() => videoEl.removeEventListener(type, listener));
-    }
-  }
 
   // --- editor modules: begin (generated wiring, see docs/editor-architecture.md) ---
   // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
@@ -1156,37 +882,44 @@ async function showEditor(node, type, options = {}) {
     applyInitialCutoutFocus, applyRasterObjectOffset, applyRasterObjectTransform, applyStrokeGroupOffset,
     applyStrokeGroupTransform, areAllSelectedItemsLocked, bringSelectedToFront, buildEditorViewPaintLayers,
     buildRasterObjectEditCanvas, canRestoreSelectedToInitial, clearSelection, clearWorldSelection,
-    currentViewCamera, deviceRect, ensureGroupFrame, ensurePaintingGroupEntry, erpPointToWorldDir,
-    frameLocalPointToWorldDir, getCutoutInspectorItems, getCutoutSelectableItems,
+    createRasterFrozenObjectsFromCanvas, createRasterSurface, currentViewCamera, deviceRect, ensureGroupFrame,
+    ensurePaintingGroupEntry, erpPointToWorldDir, followPortSticker, frameLocalPointToWorldDir,
+    getActivePaintTargetDescriptor, getConnectedErpImage, getCutoutInspectorItems, getCutoutSelectableItems,
     getCutoutSelectableItemsForDisplay, getCutoutSelectableItemsForHit, getDisplayListObjects,
-    getHistoryCapabilities, getList, getLivePaintRevisionSuffix, getMultiSelectionGeom, getNextStickerZIndex,
-    getOrderedDisplayListObjects, getPaintingGroupList, getRasterObjectCenterUv, getRasterObjectItem,
-    getRasterObjectList, getSelectableRasterObjectItems, getSelectableStrokeGroupItems, getSelected,
-    getSelectedItems, getSelectedKind, getSelectionItemIcon, getSelectionItemLabelData, getSharedLivePaintSurface,
-    getStickerDisplayAlpha, getStrokeGroupCenterUv, getStrokeGroupItem, getStrokeGroupStrokes, getUnwrapRect,
-    hitRasterObjectAt, invalidateLivePaintPreviewCaches, invalidatePaintingLayerState, isErpCamera,
-    isExternalSticker, isItemLocked, isItemSelected, isPaintCompositeInteraction, isRasterObjectItem,
-    isSceneSticker, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
-    makeRasterObjectSelectionId, makeStrokeGroupSelectionId, needsPaintingLayerSync, objectGeom,
-    parseRasterObjectSelectionId, poseOf, projectDir, projectDirUnwrap, projectErpLassoPointsToFrameRect,
-    projectLassoPointsToCurrentView, pushHistory, releaseHiddenSelection, restoreHistory,
-    restoreSelectedToInitialPose, sampleStickerEdge, screenPos, screenPosCss, screenPosToErpPoint,
-    screenPosToFrameAsErpPoint, screenToWorldDir, selectWorldSticker, selectedWorldSticker, sendSelectedToBack,
-    setSelectedItem, setSelectedItems, shortestWrappedDelta, skyStickers, stickerCornerOrderSanity,
-    syncPaintingLayerAsync, toggleSelectedExternalStickerVisibility, toggleSelectedLock,
+    getExternalStickerPreviewImage, getHistoryCapabilities, getList, getMediaRevisionToken, getMultiSelectionGeom,
+    getNextStickerZIndex, getNodeUiValue, getOrderedDisplayListObjects, getPaintingGroupList, getPortMedia,
+    getRasterObjectCenterUv, getRasterObjectItem, getRasterObjectList, getSelectableRasterObjectItems,
+    getSelectableStrokeGroupItems, getSelected, getSelectedItems, getSelectedKind, getSelectionItemIcon,
+    getSelectionItemLabelData, getSharedLivePaintSurface, getStageImageStatus, getStickerDisplayAlpha,
+    getStickerImage, getStrokeGroupCenterUv, getStrokeGroupItem, getStrokeGroupStrokes, getUnwrapRect,
+    hitRasterObjectAt, invalidateLivePaintPreviewCaches, isDecodedImageReady, isErpCamera, isExternalSticker,
+    isItemLocked, isItemSelected, isPaintCompositeInteraction, isRasterObjectItem, isSceneSticker, isShotItem,
+    isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker, makeRasterObjectSelectionId,
+    makeStrokeGroupSelectionId, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
+    markPaintStrokeVisualsDirty, needsPaintingLayerSync, objectGeom, parseRasterObjectSelectionId, playback,
+    playbackFps, portVideo, poseOf, processFreehandPoints, projectDir, projectDirUnwrap,
+    projectErpLassoPointsToFrameRect, projectLassoPointsToCurrentView, pushHistory, queueVideoTransportLayout,
+    rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, refreshModalVideoSource,
+    refreshPaintEngineRevisionCache, releaseHiddenSelection, restoreHistory, restoreSelectedToInitialPose,
+    sampleStickerEdge, sceneFiles, screenPos, screenPosCss, screenPosToErpPoint, screenPosToFrameAsErpPoint,
+    screenToWorldDir, selectWorldSticker, selectedWorldSticker, sendSelectedToBack, setSelectedItem,
+    setSelectedItems, shortestWrappedDelta, stickerCornerOrderSanity, stickerFiles, stickerImageKey,
+    syncPaintingLayerAsync, syncVideoTransportState, syncVideoTransportVisibility,
+    toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, videoCleanupFns, videoState,
     worldDirToFrameLocalPoint, worldStickerEditable, writePose,
   } = createEditorModules({
-    api, backgroundCanvas, cameraShoots, cameraV2, canvas, commitAndRefreshNode, commitState, computeStickerVFov,
-    createRasterSurface, cutoutV2, editor, getActiveCutoutShot, getActivePaintTargetDescriptor,
-    getBrushPresetIdForTool, getDesiredPaintTargetDescriptor, getDisplayPaintRevisionKey, getFrameViewRect,
-    getPaintingCompositeRevisionKey, getPaintingLayerList, getPaintingRevisionKey, getStickerUiImage, hasCamera,
-    isFreeSpaceView, markObjectVisualsDirty, markPaintStrokeVisualsDirty, node, paintingShown, playback,
-    processFreehandPoints, rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache,
-    rasterizeStrokeToSurface, readOnly, rebuildPaintEngineIfNeeded, requestDraw, runtime, sceneStickerShown,
-    sceneV2, shotEditor, state, stateV2, stopTimelinePlayback, studio, syncCutoutShot, syncPaintUi,
-    syncUndoRedoButtons, timeline, type, updateSelectionMenu, updateSidePanel,
+    api, backgroundCanvas, cameraShoots, cameraV2, canvas, comfyMedia, commitAndRefreshNode, commitState,
+    computeStickerVFov, cutoutV2, editor, editorView, floatingRightEl, getActiveCutoutShot,
+    getBrushPresetIdForTool, getFrameViewRect, getPaintingLayerList, hasCamera, imageCache, isFreeSpaceView,
+    loadPreferredExactLinkedImage, mediaAssetSource, mediaSource, mediaUiImage, node, paintingShown,
+    portStillCanvas, portVideoEl, rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache, readOnly,
+    requestDraw, resolveEditorOutputPresetWidth, runtime, sceneStickerShown, sceneV2, scheduler, setTimelineFrame,
+    shotEditor, stageWrap, state, stateV2, stillCanvas, stopTimelinePlayback, studio, syncCutoutShot, syncPaintUi,
+    syncTimeline, syncUndoRedoButtons, timeline, timelinePlayhead, timelineSpanFrames, type, uiState,
+    updateSelectionMenu, updateSidePanel, videoEl,
   }, [
-    createHistory, createItems, createSelection, createProjection, createObjectGeometry, createPaintLayers,
+    createMediaSession, createHistory, createItems, createSelection, createProjection, createObjectGeometry,
+    createPaintLayers, createPaintStrokes,
   ]);
   // --- editor modules: end ---
 
@@ -1261,238 +994,6 @@ async function showEditor(node, type, options = {}) {
   function isActiveLassoTool() {
     return String(getActivePaintToolKind() || "") === "lasso_fill";
   }
-  function getNodeUiList(key) {
-    return comfyMedia.uiList(node, key);
-  }
-  function getNodeUiValue(key) {
-    return comfyMedia.uiValue(node, key);
-  }
-  function getModalVideoUiKeys() {
-    const nodeName = String(node?.comfyClass || node?.type || node?.title || "");
-    if (isPanoramaPreviewNodeName(nodeName)) {
-      return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
-    }
-    if (type === "stickers" || type === "cutout") {
-      return { videoKey: "pano_input_videos", metaKey: "pano_input_video_meta" };
-    }
-    return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
-  }
-  function getVideoMetaEntry() {
-    const { metaKey } = getModalVideoUiKeys();
-    const meta = getNodeUiValue(metaKey);
-    if (Array.isArray(meta) && meta.length > 0 && meta[0] && typeof meta[0] === "object") return meta[0];
-    if (meta && typeof meta === "object") return meta;
-    return null;
-  }
-  function getMediaRevisionToken(media) {
-    if (!media) return "none";
-    // A VIDEO's VideoTexture uploads each new frame by itself (pano_three_view.js).
-    if (media instanceof HTMLVideoElement) {
-      return [
-        String(media.currentSrc || media.src || ""),
-        Number(media.videoWidth || 0),
-        Number(media.videoHeight || 0),
-      ].join("|");
-    }
-    if (media instanceof HTMLCanvasElement) {
-      return [
-        "canvas",
-        Number(media.width || 0),
-        Number(media.height || 0),
-        String(media.__panoFrameIdx || 0),
-      ].join("|");
-    }
-    return [
-      String(media.currentSrc || media.src || ""),
-      Number(media.naturalWidth || media.width || 0),
-      Number(media.naturalHeight || media.height || 0),
-    ].join("|");
-  }
-  function formatVideoTime(seconds) {
-    const total = Math.max(0, Math.floor(Number(seconds || 0)));
-    const mins = Math.floor(total / 60);
-    const secs = total % 60;
-    return `${mins}:${String(secs).padStart(2, "0")}`;
-  }
-  // Without a known fps the legacy transport counts milliseconds, so its slider seeks to the time itself.
-  function playbackFps() {
-    return stateV2 ? state.timeline.fps : videoState.metaFps || 1000;
-  }
-  // The transport shows the playback's frame and state; `extra` brings what the source refresh learned.
-  function syncVideoTransportState(extra = {}) {
-    const duration = Number(extra.duration ?? uiState.videoTransport.duration ?? 0);
-    const fps = Math.max(1, Number(extra.fps ?? uiState.videoTransport.fps ?? 24));
-    const current = playback.frame / playbackFps();
-    const ready = Object.prototype.hasOwnProperty.call(extra, "ready")
-      ? !!extra.ready
-      : !!uiState.videoTransport.ready;
-    const playing = playback.playing;
-    const visible = Object.prototype.hasOwnProperty.call(extra, "visible")
-      ? !!extra.visible
-      : !!uiState.videoTransport.visible;
-    const muted = Object.prototype.hasOwnProperty.call(extra, "muted")
-      ? !!extra.muted
-      : !!(videoEl instanceof HTMLVideoElement ? videoEl.muted : uiState.videoTransport.muted);
-    const volume = Number(
-      Object.prototype.hasOwnProperty.call(extra, "volume")
-        ? extra.volume
-        : (videoEl instanceof HTMLVideoElement ? videoEl.volume : uiState.videoTransport.volume)
-    );
-    const hasAudio = Object.prototype.hasOwnProperty.call(extra, "hasAudio")
-      ? !!extra.hasAudio
-      : detectVideoHasAudio(videoEl);
-    const loop = Object.prototype.hasOwnProperty.call(extra, "loop")
-      ? !!extra.loop
-      : !!uiState.videoTransport.loop;
-    Object.assign(uiState.videoTransport, {
-      ready,
-      playing,
-      visible,
-      loop,
-      currentTime: Number.isFinite(current) ? current : 0,
-      duration: Number.isFinite(duration) ? duration : 0,
-      progressPct: duration > 1e-6 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0,
-      currentTimeLabel: formatVideoTime(current),
-      durationLabel: formatVideoTime(duration),
-      frameCount: Math.max(0, Number(extra.frameCount ?? uiState.videoTransport.frameCount ?? 0)),
-      fps,
-      hasAudio,
-      muted,
-      volume: Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1)),
-      volumePct: Math.round(Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1)) * 100),
-      thumbnails: Array.isArray(extra.thumbnails) ? extra.thumbnails : uiState.videoTransport.thumbnails,
-      thumbnailCount: Math.max(1, Number(extra.thumbnailCount ?? uiState.videoTransport.thumbnailCount ?? VIDEO_THUMBNAIL_COUNT)),
-    });
-  }
-  // PanoramaStickersNode plays the background VIDEO from the Timeline, so the video's own transport is hidden.
-  function getVideoTransportVisible() {
-    return !!(videoEl instanceof HTMLVideoElement
-      && !stateV2
-      && videoEl.getAttribute("src")
-      && editor.primaryTool !== "paint"
-      && editor.primaryTool !== "mask");
-  }
-  // Mutes or unmutes the background VIDEO: the video transport's button, or the Timeline's for PanoramaStickersNode.
-  function toggleVideoMuted() {
-    if (!(videoEl instanceof HTMLVideoElement)) return;
-    if (!uiState.videoTransport.hasAudio) return;
-    const nextMuted = !videoEl.muted;
-    videoEl.muted = nextMuted;
-    if (!nextMuted && Number(videoEl.volume || 0) <= 0) {
-      videoEl.volume = Math.max(0.01, Number(uiState.videoTransport.volume || 1));
-    }
-    syncVideoTransportState({
-      hasAudio: uiState.videoTransport.hasAudio,
-      muted: videoEl.muted,
-      volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
-    });
-  }
-  function syncVideoTransportVisibility() {
-    syncVideoTransportState({
-      visible: getVideoTransportVisible(),
-    });
-  }
-  function captureStillFrameFromVideo() {
-    if (!(videoEl instanceof HTMLVideoElement)) return false;
-    if (Number(videoEl.videoWidth || 0) < 1 || Number(videoEl.videoHeight || 0) < 1) return false;
-    const width = Number(videoEl.videoWidth || 0);
-    const height = Number(videoEl.videoHeight || 0);
-    if (stillCanvas.width !== width || stillCanvas.height !== height) {
-      stillCanvas.width = width;
-      stillCanvas.height = height;
-    }
-    const ctx2d = stillCanvas.getContext("2d");
-    if (!ctx2d) return false;
-    ctx2d.clearRect(0, 0, width, height);
-    ctx2d.drawImage(videoEl, 0, 0, width, height);
-    stillCanvas.__panoFrameIdx = Number(stillCanvas.__panoFrameIdx || 0) + 1;
-    return true;
-  }
-  // ADR 0019: the VIDEO is on screen while it plays; otherwise its last confirmed frame, the still.
-  function getDisplayBackgroundSource() {
-    if (
-      !playback.showsVideo
-      && Number(stillCanvas.width || 0) > 0
-      && Number(stillCanvas.height || 0) > 0
-      && Number(stillCanvas.__panoFrameIdx || 0) > 0
-    ) {
-      return stillCanvas;
-    }
-    if (
-      videoEl instanceof HTMLVideoElement
-      && Number(videoEl.videoWidth || 0) > 0
-      && Number(videoEl.videoHeight || 0) > 0
-      && Number(videoEl.readyState || 0) >= 2
-    ) {
-      return videoEl;
-    }
-    return null;
-  }
-  // The still of one source must not show for the next.
-  function dropVideoStill() {
-    stillCanvas.__panoFrameIdx = 0;
-    runtime.backgroundDirty = true;
-  }
-  function refreshModalVideoSource() {
-    if (!(videoEl instanceof HTMLVideoElement)) return null;
-    const { videoKey } = getModalVideoUiKeys();
-    const ownEntry = isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
-    const ownSrc = mediaSource(ownEntry);
-    // The node's own result wins. Without one, a video file the background input loads directly plays,
-    // with its length from the file and the Timeline's fps.
-    const candidates = [ownSrc, comfyMedia.linkedVideoFile(node, backgroundInputNames())].filter(Boolean);
-    const nextSrc = candidates.find((src) => !videoState.failedSrcs.has(src)) || "";
-    videoState.videoFailed = !nextSrc && candidates.length > 0;
-    const meta = nextSrc && nextSrc === ownSrc ? getVideoMetaEntry() : null;
-    videoState.metaFps = Number(meta?.fps) > 0 ? Number(meta.fps) : 0;
-    const fps = Math.max(1, Number(meta?.fps || (stateV2 ? state.timeline.fps : 24)));
-    const fileDuration = videoEl.dataset.panoSrc === nextSrc && Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
-    const duration = Number(meta?.duration || (meta?.frames > 0 ? meta.frames / fps : fileDuration));
-    const frameCount = Math.max(0, Number(meta?.frames || Math.round(duration * fps)));
-    const hasAudio = !!meta?.has_audio || detectVideoHasAudio(videoEl);
-    // PanoramaStickersNode shows the playhead's frame of a new source; the legacy transport starts it at 0.
-    if (nextSrc && videoEl.dataset.panoSrc !== nextSrc) {
-      videoEl.pause();
-      dropVideoStill();
-      videoEl.dataset.panoSrc = nextSrc;
-      videoEl.loop = !stateV2 && !!uiState.videoTransport.loop;
-      videoEl.muted = !!uiState.videoTransport.muted;
-      videoEl.volume = Math.max(0, Math.min(1, Number(uiState.videoTransport.volume ?? 1)));
-      videoEl.src = nextSrc;
-      videoEl.load();
-      playback.setSource(true);
-      if (!stateV2) playback.seek(0);
-    } else if (!nextSrc && videoEl.getAttribute("src")) {
-      videoEl.pause();
-      videoEl.removeAttribute("src");
-      delete videoEl.dataset.panoSrc;
-      videoEl.load();
-      dropVideoStill();
-      resetVideoThumbnails();
-      playback.setSource(false);
-    }
-    // The legacy transport loops through the VIDEO's own loop; PanoramaStickersNode's playback sets it.
-    if (!stateV2) videoEl.loop = !!uiState.videoTransport.loop;
-    if (nextSrc && !stateV2 && videoState.thumbnailSrc !== nextSrc && !videoState.thumbnailFailedSrcs.has(nextSrc)) {
-      void buildVideoThumbnails(nextSrc, duration, fps);
-    }
-    if (!nextSrc) {
-      resetVideoThumbnails();
-    }
-    syncVideoTransportState({
-      ready: !!nextSrc,
-      visible: !!nextSrc && getVideoTransportVisible(),
-      duration,
-      frameCount,
-      fps,
-      hasAudio,
-      loop: !!videoEl.loop,
-      muted: !!videoEl.muted,
-      volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
-      thumbnailCount: uiState.videoTransport.thumbnailCount,
-    });
-    return nextSrc || null;
-  }
   function normalizeInputPoseValue(value, debugValue = null) {
     if (value && typeof value === "object" && !Array.isArray(value)) return value;
     if (Array.isArray(value) && value.length > 0) {
@@ -1511,43 +1012,6 @@ async function showEditor(node, type, options = {}) {
       }
     }
     return null;
-  }
-  function getStickerUiImage(key, onLoad = null) {
-    return mediaUiImage(node, key, imageCache, onLoad || (() => requestDraw()));
-  }
-
-  // The media of the sticker input shows from the node's result only while that result is current;
-  // after the input changes, the Sticker shows as a frame until the node runs again.
-  function getExternalStickerPreviewImage(onLoad = null) {
-    if (!isNodeOutputMediaCurrent(node, "external-sticker")) return null;
-    return getStickerUiImage(EXTERNAL_STICKER_PREVIEW_KEY, onLoad);
-  }
-
-  // The port Sticker's MP4 ({ src, meta }) or the PNGs of an RGBA IMAGE batch ({ frames, meta }) in
-  // the node's current result, or null.
-  function getPortMedia() {
-    if (!isNodeOutputMediaCurrent(node, "external-sticker")) return null;
-    const meta = getNodeUiList(PORT_VIDEO_META_KEY)[0];
-    if (!meta || typeof meta !== "object") return null;
-    const frames = getNodeUiList(PORT_FRAMES_KEY).map(mediaSource).filter(Boolean);
-    if (frames.length) return { frames, meta };
-    const src = mediaSource(getNodeUiList(PORT_VIDEO_KEY)[0] || null);
-    return src ? { src, meta } : null;
-  }
-
-  // Has the port Sticker's MP4 follow the playhead, and returns the port Sticker's picture there
-  // ({ media, revision, source }): the playing VIDEO, the still of its frame, or the PNG of its image,
-  // else the first frame until there is one; null where the media shows nothing (ADR 0024).
-  function followPortSticker() {
-    const port = state.stickers.find(isExternalSticker);
-    const media = port ? getPortMedia() : null;
-    const time = media ? portMediaTime(port.clip, editor.frame, state.timeline.fps, media.meta) : null;
-    portVideo.follow({ src: media?.src || "", time, playing: playback.advancing, fps: state.timeline.fps });
-    const first = port ? getStickerImage(port) : null;
-    const picture = media?.frames
-      ? portFrames.picture(media.frames, time, media.meta, first)
-      : portVideo.picture(portStillCanvas, first);
-    return picture ? { media: picture, revision: getMediaRevisionToken(picture), source: portMediaSource(media, first) } : null;
   }
 
   function computeStickerVFov(hFovDeg, width, height) {
@@ -1806,19 +1270,6 @@ async function showEditor(node, type, options = {}) {
     return !studio || (cameraShoots() && !isErpCamera());
   }
 
-  // The `scene` input's editor files in the node's current result (docs/render-contract.md): the kind
-  // the editor loads and a URL per item, null for an empty item. null without a current result.
-  function sceneFiles() {
-    if (!stateV2 || !isNodeOutputMediaCurrent(node, "scene")) return null;
-    return sceneFilesOf(getNodeUiList("pano_scene_files"), getNodeUiList("pano_scene_meta"), mediaSource);
-  }
-
-  // The `sticker` input's 3D media (#63) in the node's current result, in the shape of sceneFiles().
-  function stickerFiles() {
-    if (!stateV2 || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
-    return sceneFilesOf(getNodeUiList("pano_sticker_files"), getNodeUiList("pano_sticker_meta"), mediaSource);
-  }
-
   // PanoramaStickersNode's panorama view shows the World when there is World content (a `scene` input or
   // a world Sticker), from the origin in 3DoF and moving through it in 6DoF. Without it the view only
   // looks around.
@@ -1995,128 +1446,6 @@ async function showEditor(node, type, options = {}) {
       : { kind: "space_pan", last: p, depth: panDepth(view, spaceScale()) };
     updateCursor(p);
     canvas.setPointerCapture(pointerId);
-  }
-
-  function getStickerImage(stickerOrAssetId) {
-    if (stickerOrAssetId && typeof stickerOrAssetId === "object"
-      && (isExternalSticker(stickerOrAssetId) || stickerOrAssetId.external === true)) {
-      return getExternalStickerPreviewImage(() => {
-        runExternalStickerSync(node, "image-loaded");
-      });
-    }
-    const assetId = stateV2
-      ? stickerImageKey(stickerOrAssetId)
-      : (stickerOrAssetId && typeof stickerOrAssetId === "object")
-        ? String(stickerOrAssetId.asset_id || stickerOrAssetId.assetId || "")
-        : String(stickerOrAssetId || "");
-    if (!assetId) return null;
-    const cached = imageCache.get(assetId);
-    if (cached) return cached;
-    const asset = stateV2 ? sourceAsset(stickerOrAssetId.source) : state.assets?.[assetId];
-    const src = mediaAssetSource(asset);
-    if (!src) return null;
-    const img = new Image();
-    markImageLoading(img, src);
-    img.onload = () => {
-      markImageReady(img, src);
-      requestDraw();
-    };
-    img.onerror = () => {
-      markImageFailed(img, src);
-      requestDraw();
-    };
-    img.src = src;
-    imageCache.set(assetId, img);
-    return img;
-  }
-
-  // The image cache key of a Sticker of state v2. An image being uploaded or embedded as a data URL
-  // is cached under the Sticker's id.
-  function stickerImageKey(item) {
-    const { source } = item;
-    return source.filename ? `file:${source.storage}:${source.subfolder}:${source.filename}` : `sticker:${item.id}`;
-  }
-
-  function getConnectedErpImage() {
-    // PanoramaCutoutNode reads its background from its result as Stickers does: the ERP on `source`, or the
-    // background of the PANO_SCENE it shot.
-    if (type === "cutout" && !cutoutV2) {
-      const displaySource = getDisplayBackgroundSource();
-      if (displaySource) return displaySource;
-      const linked = loadPreferredExactLinkedImage(
-        node,
-        ["erp_image", "bg_erp"],
-        () => requestDraw(),
-        "background:cutout:erp_image|bg_erp",
-      );
-      if (linked && !isImageLoadFailed(linked)) return linked;
-      const uiImg = mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw());
-      return uiImg || linked || null;
-    }
-    const displaySource = getDisplayBackgroundSource();
-    if (displaySource) return displaySource;
-    const uiImg = isNodeOutputMediaCurrent(node, "background")
-      ? mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw())
-      : null;
-    if (uiImg && !isImageLoadFailed(uiImg)) return uiImg;
-    // A background video still loading.
-    if (videoEl instanceof HTMLVideoElement && videoEl.dataset.panoSrc) return videoEl;
-    const preferred = backgroundInputNames();
-    const img = loadPreferredExactLinkedImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
-    return img || uiImg || null;
-  }
-
-  // The type of the link into PanoramaCutoutNode's source, or "" without one.
-  function sourceLinkType() {
-    const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === "source");
-    return slot >= 0 && node.graph ? String(node.getInputLink(slot)?.type || "") : "";
-  }
-
-  function backgroundInputNames() {
-    // An ERP on PanoramaCutoutNode's source shows before the node runs; a PANO_SCENE's background comes
-    // only with the Cutout's result.
-    if (type === "cutout") return cutoutV2 ? (sourceLinkType() === "PANO_SCENE" ? [] : ["source"]) : ["erp_image", "bg_erp"];
-    const inputNames = Array.isArray(node?.inputs)
-      ? node.inputs.map((i) => String(i?.name || ""))
-      : [];
-    const hasEpr = inputNames.includes("erp_image");
-    const hasBg = inputNames.includes("bg_erp");
-    if (readOnly && (hasEpr || hasBg)) return hasEpr ? ["erp_image", "bg_erp"] : ["bg_erp", "erp_image"];
-    return type === "stickers" ? ["bg_media", "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
-  }
-
-  function isDecodedImageReady(img) {
-    if (!img) return false;
-    if (img instanceof HTMLImageElement) {
-      return !!img.complete
-        && Number(img.naturalWidth || img.width || 0) > 0
-        && Number(img.naturalHeight || img.height || 0) > 0;
-    }
-    if (img instanceof HTMLVideoElement) {
-      return Number(img.videoWidth || 0) > 0
-        && Number(img.videoHeight || 0) > 0
-        && Number(img.readyState || 0) >= 2;
-    }
-    return Number(img.width || img.naturalWidth || 0) > 0
-      && Number(img.height || img.naturalHeight || 0) > 0;
-  }
-
-  function getStageImageStatus() {
-    if (editorView.failed) return { status: IMAGE_FAILED, detail: "renderer" };
-    if (!editorView.ready) return { status: IMAGE_LOADING, detail: "boot" };
-    const bgImg = getConnectedErpImage();
-    const backgroundState = videoState.videoFailed ? IMAGE_FAILED : getImageLoadState(bgImg, isDecodedImageReady);
-    const stickerStates = [];
-    for (const item of skyStickers()) {
-      if (item?.visible === false) continue;
-      const img = getStickerImage(item);
-      stickerStates.push(getImageLoadState(img, isDecodedImageReady));
-    }
-    return stageImageStatus({
-      presented: runtime.hasPresentedFrame,
-      background: backgroundState,
-      stickers: stickerStates,
-    });
   }
 
   function pruneUnusedAssets() {
@@ -2842,562 +2171,6 @@ async function showEditor(node, type, options = {}) {
       cameraPreviewFailureReported = true;
       console.error("[PanoramaStickers] camera preview frame failed", error);
     });
-  }
-
-  function getTargetSpaceCoord(point) {
-    if (!point || typeof point !== "object") return { x: 0, y: 0 };
-    return { x: Number(point?.u || 0), y: Number(point?.v || 0) };
-  }
-
-  function cloneTargetPointWithCoords(template, x, y, extra = {}) {
-    const base = {
-      ...template,
-      t: Number(template?.t || 0),
-      widthScale: getStrokePointScalar(template, "widthScale", 1),
-      pressureLike: getStrokePointScalar(template, "pressureLike", 1),
-    };
-    return { ...base, ...extra, u: x, v: y };
-  }
-
-  function getFreehandResampleSpacing(targetSpace, finalPass = false) {
-    return finalPass ? 0.0012 : 0.0018;
-  }
-
-  function processFreehandPoints(rawPoints, targetSpace, finalPass = false) {
-    if (!Array.isArray(rawPoints) || !rawPoints.length) return [];
-    const isErpGlobal = String(targetSpace?.kind || "") === "ERP_GLOBAL";
-    const pointCoords = new WeakMap();
-    if (isErpGlobal) {
-      let prevContinuousU = null;
-      rawPoints.forEach((point) => {
-        const rawU = Number(point?.u || 0);
-        const rawV = Number(point?.v || 0);
-        const wrappedU = ((rawU % 1) + 1) % 1;
-        const continuousU = prevContinuousU == null
-          ? wrappedU
-          : (prevContinuousU + shortestWrappedDelta(wrappedU, ((prevContinuousU % 1) + 1) % 1));
-        pointCoords.set(point, { x: continuousU, y: rawV });
-        prevContinuousU = continuousU;
-      });
-    }
-    const getCoord = (point) => {
-      if (!point || typeof point !== "object") return { x: 0, y: 0 };
-      return pointCoords.get(point) || getTargetSpaceCoord(point);
-    };
-    const cloneWithCoords = (template, x, y, extra = {}) => {
-      const outX = isErpGlobal ? ((((Number(x) % 1) + 1) % 1)) : Number(x);
-      const next = cloneTargetPointWithCoords(template, outX, y, extra);
-      pointCoords.set(next, { x: Number(x), y: Number(y) });
-      return next;
-    };
-    const interpolatePoint = (a, b, t) => {
-      const ac = getCoord(a);
-      const bc = getCoord(b);
-      return cloneWithCoords(a, lerp(ac.x, bc.x, t), lerp(ac.y, bc.y, t), {
-        t: lerp(Number(a?.t || 0), Number(b?.t || 0), t),
-        widthScale: lerp(getStrokePointScalar(a, "widthScale", 1), getStrokePointScalar(b, "widthScale", 1), t),
-        pressureLike: lerp(getStrokePointScalar(a, "pressureLike", 1), getStrokePointScalar(b, "pressureLike", 1), t),
-      });
-    };
-    if (rawPoints.length === 1) {
-      const onlyCoord = getCoord(rawPoints[0]);
-      return [cloneWithCoords(rawPoints[0], onlyCoord.x, onlyCoord.y)];
-    }
-    const spacing = getFreehandResampleSpacing(targetSpace, finalPass);
-    const buildUniformSamples = (srcPoints, sampleSpacing) => {
-      const cumulative = [0];
-      for (let i = 1; i < srcPoints.length; i += 1) {
-        const a = getCoord(srcPoints[i - 1]);
-        const b = getCoord(srcPoints[i]);
-        cumulative.push(cumulative[i - 1] + Math.hypot(b.x - a.x, b.y - a.y));
-      }
-      const totalLen = cumulative[cumulative.length - 1] || 0;
-      if (totalLen <= 1e-8) {
-        const only = srcPoints[0];
-        const onlyCoord = getCoord(only);
-        return [cloneWithCoords(only, onlyCoord.x, onlyCoord.y)];
-      }
-      const out = [];
-      let segIndex = 0;
-      for (let d = 0; d <= totalLen + 1e-9; d += sampleSpacing) {
-        while (segIndex < cumulative.length - 2 && cumulative[segIndex + 1] < d) segIndex += 1;
-        const s0 = cumulative[segIndex];
-        const s1 = cumulative[segIndex + 1];
-        const range = Math.max(1e-8, s1 - s0);
-        out.push(interpolatePoint(srcPoints[segIndex], srcPoints[segIndex + 1], clamp((d - s0) / range, 0, 1)));
-      }
-      const tail = srcPoints[srcPoints.length - 1];
-      const tailCoord = getCoord(tail);
-      const prev = out[out.length - 1];
-      const prevCoord = prev ? getCoord(prev) : null;
-      if (!prevCoord || Math.hypot(prevCoord.x - tailCoord.x, prevCoord.y - tailCoord.y) > sampleSpacing * 0.35) {
-        out.push(cloneWithCoords(tail, tailCoord.x, tailCoord.y));
-      }
-      return out;
-    };
-    const chaikinPass = (srcPoints) => {
-      if (!Array.isArray(srcPoints) || srcPoints.length < 3) return srcPoints ? srcPoints.slice() : [];
-      const firstCoord = getCoord(srcPoints[0]);
-      const out = [cloneWithCoords(srcPoints[0], firstCoord.x, firstCoord.y)];
-      for (let i = 0; i < srcPoints.length - 1; i += 1) {
-        const a = srcPoints[i];
-        const b = srcPoints[i + 1];
-        const ac = getCoord(a);
-        const bc = getCoord(b);
-        const q = cloneWithCoords(a,
-          (ac.x * 0.75) + (bc.x * 0.25),
-          (ac.y * 0.75) + (bc.y * 0.25),
-          {
-            t: (Number(a.t || 0) * 0.75) + (Number(b.t || 0) * 0.25),
-            widthScale: (getStrokePointScalar(a, "widthScale", 1) * 0.75) + (getStrokePointScalar(b, "widthScale", 1) * 0.25),
-            pressureLike: (getStrokePointScalar(a, "pressureLike", 1) * 0.75) + (getStrokePointScalar(b, "pressureLike", 1) * 0.25),
-          });
-        const r = cloneWithCoords(a,
-          (ac.x * 0.25) + (bc.x * 0.75),
-          (ac.y * 0.25) + (bc.y * 0.75),
-          {
-            t: (Number(a.t || 0) * 0.25) + (Number(b.t || 0) * 0.75),
-            widthScale: (getStrokePointScalar(a, "widthScale", 1) * 0.25) + (getStrokePointScalar(b, "widthScale", 1) * 0.75),
-            pressureLike: (getStrokePointScalar(a, "pressureLike", 1) * 0.25) + (getStrokePointScalar(b, "pressureLike", 1) * 0.75),
-        });
-        out.push(q, r);
-      }
-      const tail = srcPoints[srcPoints.length - 1];
-      const tailCoord = getCoord(tail);
-      out.push(cloneWithCoords(tail, tailCoord.x, tailCoord.y));
-      return out;
-    };
-    const resampled = buildUniformSamples(rawPoints, spacing);
-    if (resampled.length < 3) return resampled;
-    const passes = finalPass ? 2 : 1;
-    let curved = resampled.slice();
-    for (let i = 0; i < passes; i += 1) curved = chaikinPass(curved);
-    const finalPoints = buildUniformSamples(curved, Math.max(spacing * 0.75, 0.00055));
-    return finalPoints;
-  }
-
-  function getStrokePointScalar(point, name, fallback = 1) {
-    const value = Number(point?.[name]);
-    return Number.isFinite(value) ? Math.max(0, value) : fallback;
-  }
-
-  function getStrokeRadiusSpec(stroke) {
-    const radiusValue = Number(stroke?.radiusValue);
-    if (Number.isFinite(radiusValue) && radiusValue > 0) {
-      const model = String(stroke?.radiusModel || "").trim() || "erp_uv_norm";
-      if (model === "world_angle") {
-        return {
-          model: "erp_uv_norm",
-          value: Math.max(1e-6, Number(stroke?.size || 10) * 0.5 / 2048),
-        };
-      }
-      return {
-        model,
-        value: radiusValue,
-      };
-    }
-    return {
-      model: "erp_uv_norm",
-      value: Math.max(1e-6, Number(stroke?.size || 10) * 0.5 / 2048),
-    };
-  }
-
-  function createRasterSurface(width, height, options = {}) {
-    const surface = createPanoCanvas({ label: "editor.raster-surface" });
-    surface.width = Math.max(1, Math.round(width));
-    surface.height = Math.max(1, Math.round(height));
-    const surfaceCtx = surface.getContext("2d", options.readback ? { willReadFrequently: true } : void 0);
-    if (surfaceCtx) {
-      surfaceCtx.clearRect(0, 0, surface.width, surface.height);
-      surfaceCtx.imageSmoothingEnabled = true;
-    }
-    return { canvas: surface, ctx: surfaceCtx };
-  }
-
-  function getPaintingRevisionKey() {
-    // Tracks stroke changes (commit, undo/redo, clear all).
-    const descriptor = getDesiredPaintTargetDescriptor();
-    return `${String(editor.paintStrokeRevision)}:${descriptor.width}x${descriptor.height}`;
-  }
-
-  function getPaintingCompositeRevisionKey() {
-    const descriptor = getDesiredPaintTargetDescriptor();
-    return `${String(editor.paintStrokeRevision)}:${String(editor.paintCompositeRevision)}:${descriptor.width}x${descriptor.height}`;
-  }
-
-  function getDisplayPaintRevisionKey() {
-    const liveSuffix = getLivePaintRevisionSuffix();
-    const base = getPaintingCompositeRevisionKey();
-    return liveSuffix ? `${base}:${liveSuffix}` : base;
-  }
-
-  function bumpPaintingStrokeRevision() {
-    editor.paintStrokeRevision += 1;
-    editor.paintCompositeRevision += 1;
-  }
-
-  function bumpPaintingCompositeRevision() {
-    editor.paintCompositeRevision += 1;
-  }
-
-  function invalidateObjectVisualCaches() {
-    editor._sortedItemsCache = null;
-    editor._strokeGeomCache.clear();
-  }
-
-  function refreshPaintEngineRevisionCache() {
-    editor.paintEngineRevisionKey = null;
-    editor.paintEngine?.rebuildCommitted?.(state);
-    editor.paintEngineRevisionKey = getPaintingRevisionKey();
-  }
-
-  function markObjectVisualsDirty() {
-    invalidateObjectVisualCaches();
-    runtime.backgroundDirty = true;
-    runtime.dirty = true;
-  }
-
-  function markPaintStrokeVisualsDirty({ rebuildPaintEngine = false } = {}) {
-    invalidatePaintingLayerState();
-    bumpPaintingStrokeRevision();
-    markObjectVisualsDirty();
-    if (rebuildPaintEngine) {
-      refreshPaintEngineRevisionCache();
-    }
-  }
-
-  function markPaintCompositeVisualsDirty() {
-    invalidatePaintingLayerState();
-    bumpPaintingCompositeRevision();
-    markObjectVisualsDirty();
-  }
-
-  function rebuildPaintEngineIfNeeded() {
-    const descriptor = getDesiredPaintTargetDescriptor();
-    const descriptorKey = `${descriptor.width}x${descriptor.height}`;
-    if (editor.paintEngineDescriptorKey !== descriptorKey) {
-      editor.paintEngine = createPaintEngineManager(descriptor);
-      editor.paintEngineDescriptorKey = descriptorKey;
-      editor.paintEngineRevisionKey = "";
-    }
-    const key = getPaintingRevisionKey();
-    if (editor.paintEngineRevisionKey === key) return;
-    editor.paintEngineRevisionKey = key;
-    editor.paintEngine?.rebuildCommitted(state);
-  }
-
-  function getDesiredPaintTargetDescriptor() {
-    // Root treatment: the ERP paint/mask workspace is its own coordinate space.
-    // It must not inherit arbitrary connected-image dimensions, otherwise non-ERP
-    // inputs can distort all panorama paint rendering.
-    const presetWidth = Math.max(1, resolveEditorOutputPresetWidth(Number(state?.output_preset || 2048)));
-    return {
-      kind: "ERP_GLOBAL",
-      width: presetWidth,
-      height: Math.max(1, Math.round(presetWidth * 0.5)),
-    };
-  }
-
-  function getActivePaintTargetDescriptor() {
-    return getDesiredPaintTargetDescriptor();
-  }
-
-  function getNativeRadiusPxForStrokePoint(stroke, point, targetWidth, targetHeight, shot = null) {
-    const spec = getStrokeRadiusSpec(stroke);
-    const scale = getStrokePointScalar(point, "widthScale", 1) * getStrokePointScalar(point, "pressureLike", 1);
-    if (spec.model === "erp_uv_norm") return Math.max(0.5, spec.value * targetWidth * scale);
-    if (spec.model === "world_angle") {
-      if (shot) {
-        return Math.max(0.5, ((spec.value / Math.max(1e-6, Number(shot.hFOV_deg || 90) * DEG2RAD)) * targetWidth) * scale);
-      }
-      return Math.max(0.5, ((spec.value / (2 * Math.PI)) * targetWidth) * scale);
-    }
-    return Math.max(0.5, Number(stroke?.size || 10) * 0.5 * scale);
-  }
-
-  function configureStrokeFill(targetCtx, stroke, options = {}) {
-    const layerKind = String(stroke?.layerKind || "paint");
-    const toolKind = String(stroke?.toolKind || "pen");
-    const preview = options.preview === true;
-    const markerAlphaScale = preview ? 0.78 : 1;
-    targetCtx.globalAlpha = toolKind === "marker" ? 0.7 * markerAlphaScale : 1;
-    if (layerKind === "mask") {
-      targetCtx.fillStyle = preview ? "rgba(34, 197, 94, 0.75)" : "rgba(255,255,255,1)";
-      return;
-    }
-    if (toolKind === "eraser") {
-      targetCtx.globalCompositeOperation = "destination-out";
-      targetCtx.fillStyle = "rgba(0,0,0,1)";
-      return;
-    }
-    const c = String(stroke?.layerKind || "") === "mask"
-      ? { r: 0, g: 0, b: 0, a: 1 }
-      : (stroke?.color || { r: 1, g: 0.25, b: 0.25, a: 1 });
-    const alpha = preview ? Math.max(0.28, Number(c.a ?? 1) * 0.88) : Math.max(0.12, Number(c.a ?? 1));
-    targetCtx.fillStyle = `rgba(${Math.round(Number(c.r || 0) * 255)}, ${Math.round(Number(c.g || 0) * 255)}, ${Math.round(Number(c.b || 0) * 255)}, ${alpha})`;
-  }
-
-  function drawDiscStamp(targetCtx, sample, maxRadiusPx) {
-    const r = Math.max(0.5, Math.min(maxRadiusPx, Number(sample?.radiusPx || 0.5)));
-    if (!Number.isFinite(sample?.x) || !Number.isFinite(sample?.y) || !Number.isFinite(r)) return;
-    targetCtx.beginPath();
-    targetCtx.arc(Number(sample.x || 0), Number(sample.y || 0), r, 0, Math.PI * 2);
-    targetCtx.fill();
-  }
-
-  function drawStampedStroke(targetCtx, samples, stroke, bounds, options = {}) {
-    if (!targetCtx || !Array.isArray(samples) || !samples.length) return;
-    const maxRadiusPx = Math.max(bounds.w, bounds.h) * 0.25;
-    targetCtx.save();
-    configureStrokeFill(targetCtx, stroke, options);
-    const drawSample = (sample) => drawDiscStamp(targetCtx, sample, maxRadiusPx);
-    if (samples.length === 1) {
-      drawSample(samples[0]);
-      targetCtx.restore();
-      return;
-    }
-    for (let i = 0; i < samples.length - 1; i += 1) {
-      const a = samples[i];
-      const b = samples[i + 1];
-      if (!a || !b) continue;
-      const ax = Number(a.x || 0);
-      const ay = Number(a.y || 0);
-      const bx = Number(b.x || 0);
-      const by = Number(b.y || 0);
-      const ar = Math.max(0.5, Math.min(maxRadiusPx, Number(a.radiusPx || 0.5)));
-      const br = Math.max(0.5, Math.min(maxRadiusPx, Number(b.radiusPx || 0.5)));
-      if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) continue;
-      if (!Number.isFinite(ar) || !Number.isFinite(br)) continue;
-      const dx = bx - ax;
-      const dy = by - ay;
-      const len = Math.hypot(dx, dy);
-      if (!Number.isFinite(len) || len < 1e-6) {
-        drawSample(a);
-        continue;
-      }
-      if (len > Math.max(bounds.w, bounds.h) * 0.5) continue;
-      const minRadius = Math.max(0.5, Math.min(ar, br));
-      const step = Math.max(0.35, Math.min(minRadius * 0.4, 2.25));
-      const count = Math.max(1, Math.ceil(len / step));
-      for (let j = 0; j <= count; j += 1) {
-        const t = j / count;
-        drawSample({
-          x: lerp(ax, bx, t),
-          y: lerp(ay, by, t),
-          radiusPx: lerp(ar, br, t),
-        });
-      }
-    }
-    drawSample(samples[samples.length - 1]);
-    targetCtx.restore();
-  }
-
-  function drawNativeStrokePath(targetCtx, samples, stroke, bounds) {
-    drawStampedStroke(targetCtx, samples, stroke, bounds, { preview: false });
-  }
-
-  function drawNativeLassoFill(targetCtx, points, stroke, bounds, axisKeys) {
-    if (!targetCtx || !Array.isArray(points) || points.length < 3) return;
-    const xKey = axisKeys?.x || "u";
-    const yKey = axisKeys?.y || "v";
-    targetCtx.save();
-    if (String(stroke?.layerKind || "") === "mask") {
-      targetCtx.fillStyle = "rgba(255,255,255,1)";
-    } else if (String(stroke?.toolKind || "") === "eraser") {
-      targetCtx.globalCompositeOperation = "destination-out";
-      targetCtx.fillStyle = "rgba(0,0,0,1)";
-    } else {
-      const c = stroke?.color || { r: 1, g: 0.25, b: 0.25, a: 1 };
-      targetCtx.fillStyle = `rgba(${Math.round(Number(c.r || 0) * 255)}, ${Math.round(Number(c.g || 0) * 255)}, ${Math.round(Number(c.b || 0) * 255)}, ${Number(c.a ?? 1)})`;
-    }
-    targetCtx.beginPath();
-    targetCtx.moveTo(Number(points[0]?.[xKey] || 0) * bounds.w, Number(points[0]?.[yKey] || 0) * bounds.h);
-    for (let i = 1; i < points.length; i += 1) {
-      targetCtx.lineTo(Number(points[i]?.[xKey] || 0) * bounds.w, Number(points[i]?.[yKey] || 0) * bounds.h);
-    }
-    targetCtx.closePath();
-    targetCtx.fill();
-    targetCtx.restore();
-  }
-
-  function getStrokeRasterPoints(stroke) {
-    const geometry = stroke?.geometry || null;
-    if (!geometry) return [];
-    if (String(geometry.geometryKind || "") === "lasso_fill") {
-      return Array.isArray(geometry.points) ? geometry.points : [];
-    }
-    return Array.isArray(geometry.processedPoints) && geometry.processedPoints.length
-      ? geometry.processedPoints
-      : (Array.isArray(geometry.rawPoints) && geometry.rawPoints.length
-        ? geometry.rawPoints
-        : (Array.isArray(geometry.points) ? geometry.points : []));
-  }
-
-  function buildNativeStrokeSamples(stroke, bounds) {
-    const points = getStrokeRasterPoints(stroke);
-    if (!Array.isArray(points) || !points.length) return [];
-    return points.map((point) => ({
-      x: Number(point?.u || 0) * Number(bounds?.w || 1),
-      y: Number(point?.v || 0) * Number(bounds?.h || 1),
-      radiusPx: getNativeRadiusPxForStrokePoint(stroke, point, Number(bounds?.w || 1), Number(bounds?.h || 1)),
-    }));
-  }
-
-  function rasterizeStrokeToSurface(surface, stroke, bounds = null) {
-    if (!surface?.ctx || !stroke) return false;
-    const targetBounds = bounds || { w: Number(surface.canvas?.width || 0), h: Number(surface.canvas?.height || 0) };
-    const rasterStroke = String(stroke?.toolKind || "") === "eraser"
-      ? {
-        ...stroke,
-        layerKind: "mask",
-        toolKind: String(stroke?.geometry?.geometryKind || "") === "lasso_fill" ? "lasso_fill" : "pen",
-      }
-      : stroke;
-    const geometryKind = String(stroke?.geometry?.geometryKind || "");
-    if (geometryKind === "lasso_fill") {
-      drawNativeLassoFill(surface.ctx, getStrokeRasterPoints(rasterStroke), rasterStroke, targetBounds);
-      return true;
-    }
-    const samples = buildNativeStrokeSamples(rasterStroke, targetBounds);
-    if (!samples.length) return false;
-    drawNativeStrokePath(surface.ctx, samples, rasterStroke, targetBounds);
-    return true;
-  }
-
-  function findAlphaConnectedComponents(alpha, width, height, threshold = 8) {
-    const visited = new Uint8Array(width * height);
-    const components = [];
-    const queueX = new Int32Array(width * height);
-    const queueY = new Int32Array(width * height);
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const idx = y * width + x;
-        if (visited[idx] || alpha[idx] <= threshold) continue;
-        let qh = 0;
-        let qt = 0;
-        queueX[qt] = x;
-        queueY[qt] = y;
-        qt += 1;
-        visited[idx] = 1;
-        const pixels = [];
-        let minX = x;
-        let minY = y;
-        let maxX = x;
-        let maxY = y;
-        while (qh < qt) {
-          const cx = queueX[qh];
-          const cy = queueY[qh];
-          qh += 1;
-          pixels.push({ x: cx, y: cy });
-          if (cx < minX) minX = cx;
-          if (cy < minY) minY = cy;
-          if (cx > maxX) maxX = cx;
-          if (cy > maxY) maxY = cy;
-          const neighbors = [
-            [(cx - 1 + width) % width, cy],
-            [(cx + 1) % width, cy],
-            [cx, cy - 1],
-            [cx, cy + 1],
-          ];
-          for (const [nx, ny] of neighbors) {
-            if (ny < 0 || ny >= height) continue;
-            const nidx = ny * width + nx;
-            if (visited[nidx] || alpha[nidx] <= threshold) continue;
-            visited[nidx] = 1;
-            queueX[qt] = nx;
-            queueY[qt] = ny;
-            qt += 1;
-          }
-        }
-        components.push({ pixels, minX, minY, maxX, maxY });
-      }
-    }
-    return components;
-  }
-
-  function getWrappedComponentWindow(component, width) {
-    const xs = [...new Set((Array.isArray(component?.pixels) ? component.pixels : []).map((pt) => Number(pt?.x || 0)).filter((x) => Number.isFinite(x)))].sort((a, b) => a - b);
-    if (!xs.length) return null;
-    if (xs.length === 1) {
-      return { startX: xs[0], widthPx: 1 };
-    }
-    let bestGap = -1;
-    let bestIndex = 0;
-    for (let i = 0; i < xs.length; i += 1) {
-      const current = xs[i];
-      const next = i === xs.length - 1 ? xs[0] + width : xs[i + 1];
-      const gap = next - current - 1;
-      if (gap > bestGap) {
-        bestGap = gap;
-        bestIndex = i;
-      }
-    }
-    const startX = (xs[(bestIndex + 1) % xs.length] + width) % width;
-    let minWrappedX = Infinity;
-    let maxWrappedX = -Infinity;
-    for (const x of xs) {
-      const wrappedX = (x - startX + width) % width;
-      minWrappedX = Math.min(minWrappedX, wrappedX);
-      maxWrappedX = Math.max(maxWrappedX, wrappedX);
-    }
-    return {
-      startX,
-      widthPx: Math.max(1, maxWrappedX - minWrappedX + 1),
-    };
-  }
-
-  function createRasterFrozenObjectsFromCanvas(canvas, layerKind, baseMeta = {}) {
-    const w = Number(canvas?.width || 0);
-    const h = Number(canvas?.height || 0);
-    const ctx2d = canvas?.getContext?.("2d");
-    if (!ctx2d || w < 1 || h < 1) return [];
-    const imageData = ctx2d.getImageData(0, 0, w, h);
-    const alpha = new Uint8Array(w * h);
-    for (let i = 0; i < alpha.length; i += 1) alpha[i] = imageData.data[i * 4 + 3];
-    const components = findAlphaConnectedComponents(alpha, w, h, 8);
-    return components.map((component, index) => {
-      const window = getWrappedComponentWindow(component, w);
-      if (!window) return null;
-      const cw = Number(window.widthPx || 0);
-      const ch = component.maxY - component.minY + 1;
-      const startX = Number(window.startX || 0);
-      const out = createPanoCanvas({ label: "editor.lasso-fill" });
-      out.width = cw;
-      out.height = ch;
-      const outCtx = out.getContext("2d");
-      if (!outCtx) return null;
-      const outData = outCtx.createImageData(cw, ch);
-      component.pixels.forEach(({ x, y }) => {
-        const srcIdx = (y * w + x) * 4;
-        const wrappedX = (Number(x || 0) - startX + w) % w;
-        const dstIdx = ((y - component.minY) * cw + wrappedX) * 4;
-        outData.data[dstIdx + 0] = imageData.data[srcIdx + 0];
-        outData.data[dstIdx + 1] = imageData.data[srcIdx + 1];
-        outData.data[dstIdx + 2] = imageData.data[srcIdx + 2];
-        outData.data[dstIdx + 3] = imageData.data[srcIdx + 3];
-      });
-      outCtx.putImageData(outData, 0, 0);
-      return {
-        id: makePaintId("raster"),
-        type: "raster_frozen",
-        layerKind: layerKind === "mask" ? "mask" : "paint",
-        z_index: Number(baseMeta?.z_index || 0) + (index * 0.001),
-        locked: baseMeta?.locked === true,
-        bbox: {
-          u0: 0,
-          v0: component.minY / h,
-          u1: cw / w,
-          v1: (component.maxY + 1) / h,
-        },
-        rasterDataUrl: out.toDataURL("image/png"),
-        transform: {
-          du: startX / w,
-          dv: 0,
-          rot_deg: 0,
-          scale: 1,
-        },
-      };
-    }).filter(Boolean);
   }
 
   function drawFrameViewBackground(drawView) {

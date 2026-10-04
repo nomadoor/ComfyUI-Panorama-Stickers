@@ -17,12 +17,12 @@ export function createEditorHistory(state) {
 
 export function createHistory(deps) {
   const {
-    editor, playback, readOnly, runtime, state, stateV2, studio, type,
+    editor, readOnly, runtime, state, stateV2, studio, type,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
-    markPaintStrokeVisualsDirty, releaseHiddenSelection, requestDraw, stopTimelinePlayback, syncCutoutShot,
-    syncPaintUi, syncUndoRedoButtons, updateSidePanel;
+    markPaintStrokeVisualsDirty, playback, releaseHiddenSelection, requestDraw, stopTimelinePlayback,
+    syncCutoutShot, syncPaintUi, syncUndoRedoButtons, updateSidePanel;
 
   function pushHistory() {
     if (readOnly) return;
@@ -78,8 +78,8 @@ export function createHistory(deps) {
     connect(api) {
       ({
         clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
-        markPaintStrokeVisualsDirty, releaseHiddenSelection, requestDraw, stopTimelinePlayback, syncCutoutShot,
-        syncPaintUi, syncUndoRedoButtons, updateSidePanel,
+        markPaintStrokeVisualsDirty, playback, releaseHiddenSelection, requestDraw, stopTimelinePlayback,
+        syncCutoutShot, syncPaintUi, syncUndoRedoButtons, updateSidePanel,
       } = api);
     },
     pushHistory, restoreHistory, getHistoryCapabilities,
