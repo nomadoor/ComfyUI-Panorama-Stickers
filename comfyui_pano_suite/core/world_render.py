@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .math import ray_directions
+from .math import ray_directions, unit_float_tensor
 from .world import world_rotation
 
 
@@ -157,8 +157,7 @@ def _texture(textures: dict, key, source, device) -> torch.Tensor:
     """The source as premultiplied (1, 4, h, w) on `device`, so that transparent texels do not bleed into edges."""
     entry = textures.get(key)
     if entry is None or entry[0] != source.frame:
-        # A copy: a source can be a read-only array, which torch does not take without one.
-        rgba = torch.tensor(source.rgba, dtype=torch.float32, device=device)
+        rgba = unit_float_tensor(source.rgba, device)
         alpha = rgba[..., 3:]
         entry = textures[key] = (source.frame, torch.cat([rgba[..., :3] * alpha, alpha], dim=-1).permute(2, 0, 1)[None])
     return entry[1]

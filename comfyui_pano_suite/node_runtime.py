@@ -1,20 +1,21 @@
 """ComfyUI runtime adaptation for panorama nodes.
 
 The rendering nodes depend on this module for host progress, preview UI, video
-payloads, and process-local caches.  Rendering and coordinate math stay out of
-this boundary.
+payloads, and the process-local cache (`core/cache.py`, whose free RAM this module
+reads from ComfyUI).  Rendering and coordinate math stay out of this boundary.
 """
 
 from __future__ import annotations
 
 import logging
-from collections import OrderedDict
 from pathlib import Path
 import threading
 import weakref
 
 import numpy as np
+import torch
 
+from .core.cache import CACHE
 from .core.video import encode_frames_to_mp4, make_video_ui_payload
 
 try:
@@ -28,9 +29,9 @@ except Exception:
     ComfyProgressBar = None
 
 try:
-    from comfy.model_management import throw_exception_if_processing_interrupted
+    from comfy.model_management import get_free_memory, throw_exception_if_processing_interrupted
 except Exception:
-    throw_exception_if_processing_interrupted = None
+    get_free_memory = throw_exception_if_processing_interrupted = None
 
 
 PREVIEW_UI_KEYS = {
@@ -99,73 +100,6 @@ class _ObjectIdentityRegistry:
 
 _OBJECT_IDENTITIES = _ObjectIdentityRegistry()
 
-
-class ManualCacheStore:
-    """Thread-safe LRU storage with the existing node-specific limits."""
-
-    def __init__(
-        self,
-        *,
-        stickers_bg_limit: int = 1,
-        video_limit: int = 8,
-        scene_files_limit: int = 4,
-        mesh_files_limit: int = 2,
-        splat_files_limit: int = 1,
-    ):
-        self._stickers_bg = OrderedDict()
-        self._video = OrderedDict()
-        # The editor files of `scene` inputs; kept apart so that MP4 entries do not evict large PLY / GLB sets.
-        self._scene_files = OrderedDict()
-        # The MESH read from a 3D file on the `scene` input, so that the same file keeps its editor files.
-        self._mesh_files = OrderedDict()
-        # The SPLAT read from a splat 3D file on the `scene` input, so that the same file is not parsed again and
-        # keeps its editor files. One entry: a large splat is hundreds of MB.
-        self._splat_files = OrderedDict()
-        self._lock = threading.Lock()
-        self._stickers_bg_limit = max(1, int(stickers_bg_limit))
-        self._video_limit = int(video_limit)
-        self._scene_files_limit = int(scene_files_limit)
-        self._mesh_files_limit = int(mesh_files_limit)
-        self._splat_files_limit = int(splat_files_limit)
-
-    def _cache_for(self, namespace: str):
-        if namespace == "stickers_bg":
-            return self._stickers_bg
-        if namespace == "video":
-            return self._video
-        if namespace == "scene_files":
-            return self._scene_files
-        if namespace == "mesh_files":
-            return self._mesh_files
-        if namespace == "splat_files":
-            return self._splat_files
-        raise ValueError(f"Unknown cache namespace: {namespace}")
-
-    def get(self, namespace: str, key: tuple):
-        with self._lock:
-            cache = self._cache_for(namespace)
-            value = cache.get(key)
-            if value is None:
-                return None
-            cache.move_to_end(key)
-            return value
-
-    def put(self, namespace: str, key: tuple, value):
-        with self._lock:
-            cache = self._cache_for(namespace)
-            cache[key] = value
-            cache.move_to_end(key)
-            limit = {
-                "stickers_bg": self._stickers_bg_limit,
-                "video": self._video_limit,
-                "scene_files": self._scene_files_limit,
-                "mesh_files": self._mesh_files_limit,
-                "splat_files": self._splat_files_limit,
-            }[namespace]
-            # An evicted MP4 is only encoded again when needed; the file stays in ComfyUI's temp directory,
-            # which ComfyUI clears itself, because job history and cached `ui` results may still name it.
-            while len(cache) > limit:
-                cache.popitem(last=False)
 
 class NodeProgress:
     def __init__(
@@ -250,7 +184,7 @@ class NodeRuntime:
         self._preview_saver = preview_saver
         self._encode_video = encode_video
         self._make_video_payload = make_video_payload
-        self.cache = cache_store or ManualCacheStore()
+        self.cache = cache_store or CACHE
         self._logger = logger or logging.getLogger(__name__)
 
     def progress(self, node_id: str | None, total: float, label: str = "Node") -> NodeProgress:
@@ -480,6 +414,8 @@ class NodeRuntime:
 
 
 def create_default_runtime(*, logger=None) -> NodeRuntime:
+    if get_free_memory is not None:
+        CACHE.free_memory = lambda: get_free_memory(torch.device("cpu"))
     try:
         import nodes as comfy_nodes
     except ImportError:

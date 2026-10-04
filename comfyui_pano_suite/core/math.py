@@ -19,6 +19,19 @@ DEG2RAD = math.pi / 180.0
 RAD2DEG = 180.0 / math.pi
 
 
+def unit_float(array: np.ndarray) -> np.ndarray:
+    """An image as float32 in 0..1: an 8-bit one (uint8) divided by 255, any other as float32 (itself when it is)."""
+    if array.dtype == np.uint8:
+        return array.astype(np.float32) / np.float32(255.0)
+    return array.astype(np.float32, copy=False)
+
+
+def unit_float_tensor(array: np.ndarray, device) -> "torch.Tensor":
+    """`unit_float` of `array` as a tensor on `device`; an 8-bit image is uploaded as it is and converted there."""
+    tensor = torch.tensor(array, device=device)
+    return tensor.float().div_(255.0) if tensor.dtype == torch.uint8 else tensor.float()
+
+
 def clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 

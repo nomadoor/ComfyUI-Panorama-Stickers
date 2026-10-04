@@ -19,7 +19,7 @@ from .display_layers import (
     render_remaining_flat_paint_layer_from_state,
 )
 from .display_list import alpha_composite_over_rgba, build_display_entries
-from .math import camera_basis, ray_directions, vfov_from_hfov
+from .math import camera_basis, ray_directions, unit_float, unit_float_tensor, vfov_from_hfov
 from .painting import load_painting_layer_payload, render_painting_to_erp
 from .world_render import SceneContent, over_by_depth, world_key, world_layer
 
@@ -50,8 +50,9 @@ class Projection:
 
 @dataclass(frozen=True)
 class StickerSource:
-    """A 2D Sticker source read into memory, straight-alpha RGBA (h, w, 4) in 0..1, with the Sticker's static
-    drawing values: its `crop` and its `z_index` among the Sky layers.
+    """A 2D Sticker source read into memory, straight-alpha RGBA (h, w, 4), read-only: uint8 when read from an 8-bit
+    image, float in 0..1 from an IMAGE input. With it, the Sticker's static drawing values: its `crop` and its
+    `z_index` among the Sky layers.
 
     `derive_vfov` is set for `port` sources, whose vFOV follows hFOV and the source aspect because the port
     image can change outside the state. `frame` names which frame of a source with frames `rgba` holds; it is
@@ -129,13 +130,11 @@ def _sky_erp(evaluated: dict, sources: SceneSources, width: int, height: int) ->
         flat = render_remaining_flat_paint_layer_from_state(painting, width, height)
     else:
         flat = payload.get("paint") if payload else None
-        if flat is None:
-            flat, _mask = render_painting_to_erp(painting, width, height)
+        flat = render_painting_to_erp(painting, width, height)[0] if flat is None else unit_float(flat)
     if flat is not None:
         overlay = alpha_composite_over_rgba(overlay, flat)
     mask = payload.get("mask") if payload else None
-    if mask is None:
-        _paint, mask = render_painting_to_erp(painting, width, height)
+    mask = render_painting_to_erp(painting, width, height)[1] if mask is None else unit_float(mask)
     return overlay, mask
 
 
@@ -154,10 +153,9 @@ def _drawn_sky_stickers(evaluated: dict, sources: SceneSources):
 def _sky_stickers(evaluated: dict, sources: SceneSources) -> list[dict]:
     stickers = []
     for sticker, source, vfov in _drawn_sky_stickers(evaluated, sources):
-        rgba = source.rgba
+        rgba = unit_float(source.rgba)
         if sticker["opacity"] < 1.0:
-            rgba = rgba.copy()
-            rgba[..., 3] *= sticker["opacity"]
+            rgba = rgba * np.array([1.0, 1.0, 1.0, sticker["opacity"]], dtype=np.float32)
         stickers.append({
             "yaw_deg": sticker["yaw_deg"],
             "pitch_deg": sticker["pitch_deg"],
@@ -236,12 +234,13 @@ def _sky_layers(evaluated: dict, sources: SceneSources, size: tuple[int, int], d
         mask = payload().get("mask")
         if mask is None:
             _paint, mask = render_painting_to_erp(painting, width, height)
-        paint["mask"] = (torch.tensor(mask, dtype=torch.float32, device=device)[..., None], {}) if np.any(mask > 0.0) else None
+        paint["mask"] = (unit_float_tensor(mask, device)[..., None], {}) if np.any(mask > 0) else None
     return layers, paint["mask"]
 
 
 def _premultiplied(rgba: np.ndarray, device) -> torch.Tensor:
-    rgba = torch.tensor(rgba, dtype=torch.float32, device=device).clamp_(0.0, 1.0)
+    """Straight-alpha RGBA (uint8, or float in 0..1) as premultiplied float32 on `device`."""
+    rgba = unit_float_tensor(rgba, device).clamp_(0.0, 1.0)
     return torch.cat([rgba[..., :3] * rgba[..., 3:], rgba[..., 3:]], dim=-1)
 
 

@@ -16,10 +16,10 @@ import comfy.model_management
 from comfy_api.latest import ComfyExtension, Input, Types, io
 from typing_extensions import override
 
-from .caches import nbytes
 from .comfy_image_resolver import resolve_painting_layer_payload
 from .node_runtime import PREVIEW_UI_KEYS, NodeProgress, create_default_runtime
 from .progress import loop_progress
+from .core.cache import nbytes
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
 from .core.display_list import (
     alpha_composite_over_rgba as _alpha_composite_over_rgba,
@@ -37,6 +37,7 @@ from .core.math import (
     calculate_dimensions_from_megapixels,
     calculate_output_dimensions,
     finite_float,
+    unit_float,
     vfov_from_hfov,
 )
 from .core.paint_state import empty_painting_state
@@ -468,25 +469,6 @@ def _render_sticker_output_batches(
     batch_size = int(bg_erp.shape[0]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else 1
     in_h = int(bg_erp.shape[1]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else out_h
     in_w = int(bg_erp.shape[2]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else out_w
-    bg_cache_identity = _tensor_cache_identity(bg_erp)
-    bg_cache_key = ("stickers_bg", bg_cache_identity, int(out_h), int(out_w))
-    if bg_cache_identity is not None:
-        cached_bg_batch = NODE_RUNTIME.cache.get("stickers_bg", bg_cache_key)
-        if cached_bg_batch is not None:
-            bg_batch = cached_bg_batch
-            bg_rgb_batch = bg_batch.astype(np.float32) / 255.0
-            if overlay_rgba is not None:
-                alpha = overlay_rgba[None, ..., 3:4].astype(np.float32, copy=False)
-                rgb = overlay_rgba[None, ..., :3].astype(np.float32, copy=False)
-                out_batch = np.clip(rgb * alpha + bg_rgb_batch * (1.0 - alpha), 0.0, 1.0)
-            else:
-                out_batch = bg_rgb_batch
-            if progress_callback is not None:
-                try:
-                    progress_callback(batch_size, batch_size)
-                except Exception:
-                    pass
-            return out_batch.astype(np.float32, copy=False), bg_batch
     compute_device = device if device is not None else bg_erp.device
     chunk_size = _estimate_sticker_chunk_size(batch_size, out_h, out_w, compute_device, in_h=in_h, in_w=in_w)
     overlay_cache = {}
@@ -556,8 +538,6 @@ def _render_sticker_output_batches(
                 "Reduce output resolution or batch size."
             ) from None
 
-    if bg_cache_identity is not None:
-        NODE_RUNTIME.cache.put("stickers_bg", bg_cache_key, bg_batch)
     return out_batch, bg_batch
 
 
@@ -695,7 +675,9 @@ def _build_overlay_erp_rgba_and_mask(
                 overlay_rgba = _alpha_composite_over_rgba(overlay_rgba, remaining_flat_rgba)
     else:
         paint_rgba = painting_payload.get("paint") if isinstance(painting_payload, dict) else None
-        if paint_rgba is None:
+        if paint_rgba is not None:
+            paint_rgba = unit_float(paint_rgba)
+        else:
             if warning_key and isinstance(ui_ret, dict) and painting_state_has_renderables(painting_state):
                 _push_ui_warning(
                     ui_ret,
@@ -710,7 +692,9 @@ def _build_overlay_erp_rgba_and_mask(
                 overlay_rgba = _alpha_composite_over_rgba(overlay_rgba, paint_rgba)
 
     mask_bw = painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-    if mask_bw is None:
+    if mask_bw is not None:
+        mask_bw = unit_float(mask_bw)
+    else:
         if warning_key and isinstance(ui_ret, dict) and painting_state_has_mask_renderables(painting_state):
             _push_ui_warning(
                 ui_ret,

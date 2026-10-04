@@ -7,7 +7,7 @@ import torch
 pytest.importorskip("comfy_api.latest", reason="ComfyUI's real V3 API is required")
 
 from comfyui_pano_suite import nodes
-from comfyui_pano_suite.caches import nbytes
+from comfyui_pano_suite.core.cache import nbytes
 from comfyui_pano_suite.nodes import RENDER_FLOATS_PER_PIXEL, PanoramaStickersNode, PanoramaStickersSceneNode
 
 
