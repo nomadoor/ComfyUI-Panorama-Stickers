@@ -116,6 +116,7 @@ import {
 } from "./pano_space.js";
 import { shownSpaceMode, spaceModeChoice, startViewTransition, viewTransitionFrame } from "./pano_view_transition.js";
 import { VIEW_CONTROLS_SETTING_ID, presetUsesButton, viewControlsPreset, viewDragAction } from "./pano_view_controls.js";
+import { addDiagnosticsSource, createPanoCanvas, createPanoVideo, diagnosticsFrameEnd, diagnosticsFrameStart, trackPanoCanvas, trackPanoVideo } from "./pano_diagnostics.js";
 import {
   contextHalfExtentsPx,
   createDefaultCutoutShot,
@@ -895,6 +896,11 @@ async function showEditor(node, type, options = {}) {
   const side = root.querySelector("[data-side]");
   const videoEl = root.querySelector("[data-video-element]");
   const portVideoEl = root.querySelector("[data-port-video-element]");
+  // The stage and VIDEO elements of PanoModal.vue, counted by the diagnostics.
+  trackPanoCanvas(canvas, "editor.stage-overlay");
+  trackPanoCanvas(backgroundCanvas, "editor.stage-background");
+  trackPanoVideo(videoEl, "editor.video");
+  trackPanoVideo(portVideoEl, "editor.port-video");
   const floatingRightEl = root.querySelector(".pano-floating-right");
   const floatingTopEl = root.querySelector(".pano-floating-top");
   const toolRailEl = root.querySelector("[data-tool-rail]");
@@ -908,6 +914,7 @@ async function showEditor(node, type, options = {}) {
   const tooltipEl = root.querySelector("[data-tooltip]");
   const cutoutPreviewHost = root.querySelector("[data-camera-preview-host]");
   const cutoutPreviewCanvas = root.querySelector("[data-camera-preview-canvas]");
+  trackPanoCanvas(cutoutPreviewCanvas, "editor.camera-preview");
   const paintColorRow = root.querySelector("[data-paint-color-row]");
   const paintColorPop = root.querySelector("[data-paint-color-pop]");
   const paintColorSv = root.querySelector("[data-paint-color-sv]");
@@ -1079,11 +1086,13 @@ async function showEditor(node, type, options = {}) {
   const rasterImageCache = new Map();
   const rasterImageAlphaCache = new Map();
   const rasterErpCanvasCache = new Map();
-  const stillCanvas = document.createElement("canvas");
+  const stillCanvas = createPanoCanvas({ label: "editor.still" });
   stillCanvas.__panoFrameIdx = 0;
   // The still of the port Sticker's MP4 (#83).
-  const portStillCanvas = document.createElement("canvas");
+  const portStillCanvas = createPanoCanvas({ label: "editor.port-still" });
   portStillCanvas.__panoFrameIdx = 0;
+  // Removes the editor from the diagnostics samples (set when the render loop starts).
+  let removeDiagnosticsSource = () => {};
   const runtime = {
     dirty: true,
     rafId: 0,
@@ -1248,7 +1257,7 @@ async function showEditor(node, type, options = {}) {
     videoState.thumbnailSrc = safeSrc;
     uiState.videoTransport.thumbnails = [];
     uiState.videoTransport.thumbnailCount = VIDEO_THUMBNAIL_COUNT;
-    const thumbVideo = document.createElement("video");
+    const thumbVideo = createPanoVideo(document, "editor.thumbnails");
     thumbVideo.preload = "auto";
     thumbVideo.muted = true;
     thumbVideo.playsInline = true;
@@ -1274,7 +1283,7 @@ async function showEditor(node, type, options = {}) {
       return;
     }
     const sampleDuration = Math.max(0, Number(thumbVideo.duration || duration || 0));
-    const canvas = document.createElement("canvas");
+    const canvas = createPanoCanvas({ label: "editor.thumbnail" });
     const thumbHeight = 46;
     const thumbWidth = Math.max(72, Math.round((videoWidth / videoHeight) * thumbHeight));
     canvas.width = thumbWidth;
@@ -3259,7 +3268,7 @@ async function showEditor(node, type, options = {}) {
     const width = Number(img.naturalWidth || img.width || 0);
     const height = Number(img.naturalHeight || img.height || 0);
     if (width < 1 || height < 1) return null;
-    const canvasEl = document.createElement("canvas");
+    const canvasEl = createPanoCanvas({ label: "editor.image-pixels" });
     canvasEl.width = width;
     canvasEl.height = height;
     const ctx2d = canvasEl.getContext("2d", { willReadFrequently: true });
@@ -3517,7 +3526,7 @@ async function showEditor(node, type, options = {}) {
     const cached = rasterErpCanvasCache.get(key);
     if (cached) return cached;
     if (rasterErpCanvasCache.size > 64) rasterErpCanvasCache.clear();
-    const erpCanvas = document.createElement("canvas");
+    const erpCanvas = createPanoCanvas({ label: "editor.raster-erp" });
     erpCanvas.width = width;
     erpCanvas.height = height;
     const erpCtx = erpCanvas.getContext("2d");
@@ -5147,7 +5156,7 @@ async function showEditor(node, type, options = {}) {
   }
 
   function createRasterSurface(width, height, options = {}) {
-    const surface = document.createElement("canvas");
+    const surface = createPanoCanvas({ label: "editor.raster-surface" });
     surface.width = Math.max(1, Math.round(width));
     surface.height = Math.max(1, Math.round(height));
     const surfaceCtx = surface.getContext("2d", options.readback ? { willReadFrequently: true } : void 0);
@@ -5513,7 +5522,7 @@ async function showEditor(node, type, options = {}) {
       const cw = Number(window.widthPx || 0);
       const ch = component.maxY - component.minY + 1;
       const startX = Number(window.startX || 0);
-      const out = document.createElement("canvas");
+      const out = createPanoCanvas({ label: "editor.lasso-fill" });
       out.width = cw;
       out.height = ch;
       const outCtx = out.getContext("2d");
@@ -6104,7 +6113,9 @@ async function showEditor(node, type, options = {}) {
 
   function tick(ts = performance.now()) {
     if (!runtime.running) return;
+    const frameStart = diagnosticsFrameStart();
     runGuardedFrame(() => tickFrame(ts));
+    diagnosticsFrameEnd(frameStart);
     if (runtime.running) runtime.rafId = requestAnimationFrame(tick);
   }
 
@@ -6123,6 +6134,7 @@ async function showEditor(node, type, options = {}) {
   stageResizeObserver.observe(canvas);
 
   function stopRenderLoop() {
+    removeDiagnosticsSource();
     runtime.running = false;
     if (runtime.rafId) cancelAnimationFrame(runtime.rafId);
     runtime.rafId = 0;
@@ -11336,6 +11348,15 @@ async function showEditor(node, type, options = {}) {
   runBootStep("canvas-size", syncCanvasSize);
   runBootStep("cursor", () => updateCursor(editor.pointerPos));
   requestDraw();
+  // What the editor is doing, for the diagnostics samples.
+  removeDiagnosticsSource = addDiagnosticsSource("editor", () => ({
+    type,
+    readOnly,
+    mode: editor.mode,
+    interaction: editor.interaction?.kind ?? null,
+    timelineDrag: !!timeline.drag,
+    playing: !!playback.playing,
+  }));
   runtime.rafId = requestAnimationFrame(tick);
 }
 

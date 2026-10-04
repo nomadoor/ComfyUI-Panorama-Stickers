@@ -495,7 +495,7 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   // Only PanoramaStickersNode plays; its hidden VIDEOs (the background and the port Sticker's MP4)
   // stay rendered for requestVideoFrameCallback.
   assert.match(runtime, /if \(stickersMode && node\.__panoSceneStateV2\) \{/);
-  assert.match(runtime, /const \[video, stickerVideo\] = \[0, 1\]\.map\(\(\) => \{\s*const element = document\.createElement\("video"\);/);
+  assert.match(runtime, /const \[video, stickerVideo\] = \[0, 1\]\.map\(\(\) => \{\s*const element = createPanoVideo\(document, "node\.playback"\);/);
   assert.match(runtime, /element\.style\.cssText = "[^"]*opacity:0[^"]*"/);
   assert.doesNotMatch(runtime, /element\.style\.cssText = "[^"]*visibility/);
   // Every toolbar action but the play button stops playback first, the Full Editor included.

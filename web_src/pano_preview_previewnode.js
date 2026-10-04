@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { createApp, reactive } from "vue";
 import { clamp, wrapYaw } from "./pano_camera_math.js";
+import { createPanoCanvas, createPanoVideo } from "./pano_diagnostics.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import {
   createPreviewFullscreenController,
@@ -398,7 +399,7 @@ class PreviewNodeRuntime {
         "border:1px solid rgba(63,63,70,1)",
       ].join(";");
 
-      this.canvas = document.createElement("canvas");
+      this.canvas = createPanoCanvas({ label: "preview-node.surface" });
       this.canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;";
       this.root.appendChild(this.canvas);
 
@@ -667,7 +668,7 @@ class PreviewNodeRuntime {
       this.mediaCleanup?.();
       this.imgSrc = nextVideoSrc;
       this.videoPaused = false;
-      const video = document.createElement("video");
+      const video = createPanoVideo(document, "preview-node.video");
       video.muted = true;
       video.loop = true;
       video.playsInline = true;

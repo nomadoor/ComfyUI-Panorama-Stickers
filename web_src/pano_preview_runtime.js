@@ -4,6 +4,7 @@ import { createApp, reactive } from "vue";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import { clamp } from "./pano_math.js";
+import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "./pano_diagnostics.js";
 import { yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { editorActive, editorStateText, parsePanoEditorState, parseSceneEditorState, sameEditorStateText, setEditorActive, sourceAsset } from "./pano_editor_state.js";
@@ -1964,7 +1965,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     "background:#070707",
   ].join(";");
 
-  const canvas = document.createElement("canvas");
+  const canvas = createPanoCanvas({ label: "node.surface" });
   canvas.style.cssText = [
     "position:absolute",
     "inset:0",
@@ -2065,7 +2066,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   let surfacePlayback = null;
   if (stickersMode && node.__panoSceneStateV2) {
     const [video, stickerVideo] = [0, 1].map(() => {
-      const element = document.createElement("video");
+      const element = createPanoVideo(document, "node.playback");
       element.playsInline = true;
       element.preload = "auto";
       element.crossOrigin = "anonymous";
@@ -2073,9 +2074,9 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       wrap.appendChild(element);
       return element;
     });
-    const still = document.createElement("canvas");
+    const still = createPanoCanvas({ label: "node.still" });
     still.__panoFrameIdx = 0;
-    const stickerStill = document.createElement("canvas");
+    const stickerStill = createPanoCanvas({ label: "node.port-still" });
     stickerStill.__panoFrameIdx = 0;
     const playback = createNodePlayback({
       video,
@@ -2138,11 +2139,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     // The still of the port Sticker's MP4 is released with its source.
     if ((sticker?.src || "") !== surfacePlayback.stickerSource) {
       surfacePlayback.stickerSource = sticker?.src || "";
-      stickerStill.width = 0;
+      releasePanoCanvas(stickerStill);
     }
     // The still of one source must not show for the next, nor hold memory without one.
     if (playback.source !== source) {
-      still.width = 0;
+      releasePanoCanvas(still);
       still.__panoFrameIdx = 0;
     }
     nodeSurfaceUiModel.playable = playable;

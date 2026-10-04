@@ -3,6 +3,7 @@ import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { runExternalStickerSync } from "./pano_external_sticker_sync.js";
 import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
+import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -378,7 +379,10 @@ export function createPanoEditorExtension({
   return {
     name: "ComfyUI.PanoramaSuite.Editor",
     // ComfyUI shows these in its settings dialog and saves them.
-    settings: [VIEW_CONTROLS_SETTING],
+    settings: [VIEW_CONTROLS_SETTING, DIAGNOSTICS_SETTING],
+    // Extensions › Panorama Suite › Export Panorama Suite diagnostics (pano_diagnostics.js).
+    commands: [DIAGNOSTICS_EXPORT_COMMAND],
+    menuCommands: [{ path: ["Extensions", "Panorama Suite"], commands: [DIAGNOSTICS_EXPORT_COMMAND.id] }],
     beforeRegisterNodeDef(nodeType, nodeData) {
       const name = String(nodeData?.name || "");
       if (name === "PanoramaStickers" || name === "Panorama Stickers") {
