@@ -18,12 +18,10 @@ import {
   CAMERA_SHOT_ID,
   cameraShot,
   editorActive,
-  newStudioCamera,
   normalizeCoverageValue,
   parsePanoEditorState,
   parseSceneEditorState,
   setCameraField,
-  setCameraShot,
   setStickerOpacity,
   setWorldStickerField,
   setWorldStickerTransform,
@@ -31,49 +29,22 @@ import {
 import { evaluateSticker } from "./pano_scene_eval.js";
 import { timelineFps } from "./pano_scene_state.js";
 import { setLaneValue } from "./pano_timeline.js";
-import { createEditorView, frameViewContext } from "./pano_editor_view.js";
+import { createEditorView } from "./pano_editor_view.js";
 import {
   DEFAULT_DISTANCE,
-  cameraFrustumSegments,
-  frameView,
   gizmoDragLanes,
   gizmoScreenBox,
-  navigationTarget,
   orbitView,
-  panDepth,
   panView,
   planeCorners,
   projectPoint,
-  reuseWheelPick,
-  segmentsHit,
-  zoomView,
 } from "./pano_space.js";
 import { shownSpaceMode } from "./pano_view_transition.js";
 import { presetUsesButton, viewDragAction } from "./pano_view_controls.js";
 import { createPanoCanvas, trackPanoCanvas, trackPanoVideo } from "./pano_diagnostics.js";
-import {
-  contextHalfExtentsPx,
-  createDefaultCutoutShot,
-  deriveCutoutAspectFromFov,
-  deriveCutoutAspectLabelFromFov,
-  deriveHorizontalFovDeg,
-  aspectFitGateSize,
-  fitFocalPx,
-  fovPairForGate,
-  gateRectFromFocal,
-  getCutoutAspectLabel,
-  getCutoutCameraParams,
-  resolveFrameRollDeg,
-  shortestAngleDeltaRad,
-  stepCutoutFovPairByWheel,
-} from "./pano_cutout_view_math.js";
+import { deriveCutoutAspectLabelFromFov, getCutoutAspectLabel } from "./pano_cutout_view_math.js";
 import { readWheelDirection } from "./pano_wheel.js";
-import {
-  beginCutoutRollGesture,
-  panCutoutShotByScreenDelta,
-  parseCutoutAspectPair,
-  updateCutoutRollGesture,
-} from "./pano_cutout_node_surface.js";
+import { beginCutoutRollGesture, panCutoutShotByScreenDelta } from "./pano_cutout_node_surface.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
   ERP_ASPECT,
@@ -106,10 +77,6 @@ import {
   CUTOUT_V2_HIDDEN_TOOLS,
   ENABLE_STICKERS_NODE_PREVIEW,
   EXTERNAL_STICKER_PREVIEW_KEY,
-  FLOATING_RIGHT_RESERVED_PX,
-  FRAME_GATE_EDGE_GAP_PX,
-  FRAME_GATE_OCCUPANCY,
-  FRAME_GATE_SIDE_GAP_PX,
   FRAME_ROLL_CURSOR,
   LASSO_CURSOR_HOTSPOT_X,
   LASSO_CURSOR_HOTSPOT_Y,
@@ -129,7 +96,6 @@ import {
   dirToYawPitch,
   dist2,
   distToSegment2,
-  formatParamValue,
   getEditorNodeTitle,
   getLassoCursorBackground,
   getMediaWidthForSizing,
@@ -165,6 +131,8 @@ import { createTimelineActions } from "./editor/timeline_actions.js";
 import { createCommit } from "./editor/commit.js";
 import { createCommands } from "./editor/commands.js";
 import { createStickerImport } from "./editor/sticker_import.js";
+import { createCamera } from "./editor/camera.js";
+import { createFrameView } from "./editor/frame_view.js";
 
 const _paintLayerSyncRegistry = new Map();
 
@@ -268,15 +236,15 @@ async function showEditor(node, type, options = {}) {
   node.__panoLiveStateVersion = 0;
 
   // PanoramaCutoutNode's Camera is the one shot of the Cutout editor, at the playhead (cameraShot), and so
-  // is Panorama Studio's while it has one. cutoutShotBase is the shot as it was last derived (null without a
-  // Camera); an edit since then is written back to the Camera's Lanes (syncCutoutShot).
-  let cutoutShotBase = null;
+  // is Panorama Studio's while it has one. initialShotBase is the shot the editor opens with (null without a
+  // Camera); cutoutShotBase then follows it.
+  let initialShotBase = null;
   if (cameraV2) {
     // A hidden camera does not shoot in Panorama Studio, so it opens without a shot.
-    cutoutShotBase = state.camera && (!studio || state.camera.visible !== false) ? cameraShot(state.camera, 0) : null;
-    state.shots = cutoutShotBase ? [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }] : [];
+    initialShotBase = state.camera && (!studio || state.camera.visible !== false) ? cameraShot(state.camera, 0) : null;
+    state.shots = initialShotBase ? [{ ...initialShotBase, position: [...initialShotBase.position] }] : [];
     // Panorama Studio opens with nothing selected, as the Stickers editor.
-    state.active.selected_shot_id = cutoutShotBase && cutoutV2 ? CAMERA_SHOT_ID : null;
+    state.active.selected_shot_id = initialShotBase && cutoutV2 ? CAMERA_SHOT_ID : null;
   } else if (type === "cutout") {
     state.shots = Array.isArray(state.shots) ? state.shots.slice(0, 1) : [];
     if (!state.shots.length) {
@@ -743,7 +711,6 @@ async function showEditor(node, type, options = {}) {
       requestDraw({ reason: DRAW_REASON.CONTEXT });
     },
   });
-  let frameWheel = null;
   const frameGateCssRadius = Number.parseFloat(
     getComputedStyle(root).getPropertyValue("--pano-float-radius"),
   ) || 10;
@@ -786,58 +753,63 @@ async function showEditor(node, type, options = {}) {
   // --- editor modules: begin (generated wiring, see docs/editor-architecture.md) ---
   // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
   const {
-    addImageSticker, addImageStickerFromFile, addWorldImageSticker, addWorldStickerFromFile, apply,
-    applyInitialCutoutFocus, applyRasterObjectOffset, applyRasterObjectTransform, applySpaceMode,
-    applyStrokeGroupOffset, applyStrokeGroupTransform, applyVideoTimelineFps, areAllSelectedItemsLocked,
-    bringSelectedToFront, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState,
-    buildRasterObjectEditCanvas, cameraFrustumLength, cameraShoots, cameraSphere, canRestoreSelectedToInitial,
-    cancelViewTransition, clearAll, clearPaintingLayer, clearSelection, commitAndRefreshNode, commitState,
-    contentSphere, createRasterFrozenObjectsFromCanvas, createRasterSurface, currentSpaceCamera, cutoutCamera,
-    deleteSelected, deleteSelectedKeyframes, deleteSelectedWorldSticker, duplicateSelected, editorAnimating,
-    editorViewInput, ensureGroupFrame, ensurePaintingGroupEntry, erpPointToWorldDir, forceCursorTool,
-    forgetCameraPreviewFrame, frameLocalPointToWorldDir, frameSpaceContent, getActivePaintTargetDescriptor,
+    addCutoutFrame, addImageSticker, addImageStickerFromFile, addStudioCamera, addWorldImageSticker,
+    addWorldStickerFromFile, apply, applyCutoutAspectCustom, applyInitialCutoutFocus, applyRasterObjectOffset,
+    applyRasterObjectTransform, applySharedRollInteractionPoint, applyStrokeGroupOffset,
+    applyStrokeGroupTransform, applyVideoTimelineFps, areAllSelectedItemsLocked, bringSelectedToFront,
+    buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, buildRasterObjectEditCanvas,
+    cameraShoots, canRestoreSelectedToInitial, cancelFrameCameraGesture, cancelViewTransition, clearAll,
+    clearPaintingLayer, clearSelection, commitAndRefreshNode, commitState, contentSphere,
+    createRasterFrozenObjectsFromCanvas, createRasterSurface, currentSpaceCamera, cutoutCamera, deleteSelected,
+    deleteSelectedKeyframes, deleteSelectedWorldSticker, dragFrame, duplicateSelected, editorAnimating,
+    editorViewInput, ensureGroupFrame, ensurePaintingGroupEntry, erpPointToWorldDir, finishKnobRoll,
+    flushFrameWheelCommit, forceCursorTool, forgetCameraPreviewFrame, frameContext, frameLocalPointToWorldDir,
+    frameSpaceContent, frameSpaceView, frameTarget, getActiveCutoutShot, getActivePaintTargetDescriptor,
     getCutoutInspectorItems, getCutoutSelectableItems, getCutoutSelectableItemsForHit, getDisplayListObjects,
-    getHistoryCapabilities, getList, getMultiSelectionGeom, getOrderedDisplayListObjects, getPaintingGroupList,
-    getRasterObjectCenterUv, getRasterObjectItem, getRasterObjectList, getSelectableRasterObjectItems,
-    getSelectableStrokeGroupItems, getSelected, getSelectedItems, getSelectedKind, getStrokeGroupCenterUv,
-    getStrokeGroupItem, getStrokeGroupStrokes, getUnwrapRect, hasCamera, hasSpaceContent, hitRasterObjectAt,
-    invalidateLivePaintPreviewCaches, isCameraSelected, isErpCamera, isExternalSticker, isFreeSpaceView,
-    isItemLocked, isRasterObjectItem, isSceneSticker, isShotItem, isSpaceView, isStickerHidden, isStickerItem,
-    isStrokeGroupItem, lookingAt, makeRasterObjectSelectionId, makeStrokeGroupSelectionId, markObjectVisualsDirty,
-    markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty, migrateLegacyEmbeddedAssets, objectGeom,
-    onCanvasDragOver, onCanvasDrop, onTimelineAction, onWindowDragEnter, onWindowDragLeave, onWindowDragOver,
-    onWindowDrop, paintingShown, parseRasterObjectSelectionId, persistUiSettings, playback, playbackFps, poseOf,
-    processFreehandPoints, pushHistory, queueVideoTransportLayout, rasterizeStrokeToSurface,
-    rebuildPaintEngineIfNeeded, reconcileExternalStickerFromInputs, refreshModalVideoSource,
-    refreshPaintEngineRevisionCache, replaceSelectedImage, replaceSelectedImageFromFile, requestDraw,
-    restoreHistory, restoreSelectedToInitialPose, sampleEditorDiagnostics, screenPos, screenPosCss,
-    screenPosToErpPoint, screenPosToFrameAsErpPoint, screenToWorldDir, selectWorldSticker, selectedWorldSticker,
-    sendSelectedToBack, setDropCue, setSelectedItem, setSelectedItems, setSpaceMode, setSpaceView,
-    shortestWrappedDelta, shotViewCamera, spaceOrigin, spaceScale, spaceViewState, stageResizeObserver,
-    startAnimation, startSpaceDrag, stickerCornerOrderSanity, stopRenderLoop, stopTimelinePlayback,
-    syncCanvasSize, syncCoverageChangeToNodePreviews, syncFloatingViewButtonState, syncFrameRollKnob,
-    syncLookAtFrameButtonState, syncPaintUi, syncPaintingLayerAsync, syncSidePanelControls, syncTimeline,
-    syncUndoRedoButtons, syncVideoTransportState, syncViewToggleState, tick, togglePlayback,
-    toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView,
-    triggerBackgroundPersistenceOnClose, turnViewTo, updateSidePanel, videoCleanupFns, videoState, viewControls,
-    watchPixelRatio, worldDirToFrameLocalPoint, worldStickerEditable, writePose, zoomSpaceAt,
+    getFrameViewLayout, getFrameViewRect, getHistoryCapabilities, getList, getMultiSelectionGeom,
+    getOrderedDisplayListObjects, getPaintingGroupList, getRasterObjectCenterUv, getRasterObjectItem,
+    getRasterObjectList, getSelectableRasterObjectItems, getSelectableStrokeGroupItems, getSelected,
+    getSelectedItems, getSelectedKind, getStrokeGroupCenterUv, getStrokeGroupItem, getStrokeGroupStrokes,
+    getUnwrapRect, hitRasterObjectAt, invalidateLivePaintPreviewCaches, isCameraSelected, isErpCamera,
+    isExternalSticker, isFreeFrameView, isFreeSpaceView, isItemLocked, isRasterObjectItem, isSceneSticker,
+    isShotItem, isSpaceView, isStickerHidden, isStickerItem, isStrokeGroupItem, makeRasterObjectSelectionId,
+    makeStrokeGroupSelectionId, markObjectVisualsDirty, markPaintCompositeVisualsDirty,
+    markPaintStrokeVisualsDirty, migrateLegacyEmbeddedAssets, objectGeom, onCanvasDragOver, onCanvasDrop,
+    onFrameRollKnobDoubleClick, onFrameRollKnobPointerDown, onFrameRollKnobPointerMove, onTimelineAction,
+    onWindowDragEnter, onWindowDragLeave, onWindowDragOver, onWindowDrop, paintingShown,
+    parseRasterObjectSelectionId, persistUiSettings, playback, playbackFps, poseOf, processFreehandPoints,
+    pushHistory, queueVideoTransportLayout, rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded,
+    reconcileExternalStickerFromInputs, refreshModalVideoSource, refreshPaintEngineRevisionCache,
+    replaceSelectedImage, replaceSelectedImageFromFile, requestDraw, restoreHistory, restoreSelectedToInitialPose,
+    rotateCutoutAspect90, sampleEditorDiagnostics, screenPos, screenPosCss, screenPosToErpPoint,
+    screenPosToFrameAsErpPoint, screenToWorldDir, selectWorldSticker, selectedWorldSticker, sendSelectedToBack,
+    setDropCue, setSelectedItem, setSelectedItems, setShotAspect, setSpaceMode, setSpaceView,
+    shortestWrappedDelta, spaceOrigin, spaceViewState, stageResizeObserver, startAnimation, startCameraPress,
+    startFrameDrag, startPanFrame, startSpaceDrag, stickerCornerOrderSanity, stopRenderLoop, stopTimelinePlayback,
+    supportsFramePainting, syncCanvasSize, syncCoverageChangeToNodePreviews, syncCutoutShot,
+    syncFloatingViewButtonState, syncFrameRollKnob, syncLookAtFrameButtonState, syncPaintUi,
+    syncPaintingLayerAsync, syncSidePanelControls, syncTimeline, syncUndoRedoButtons, syncVideoTransportState,
+    syncViewToggleState, tick, togglePlayback, toggleSelectedExternalStickerVisibility, toggleSelectedLock,
+    toggleVideoMuted, transitionView, triggerBackgroundPersistenceOnClose, turnViewTo, updateSidePanel,
+    videoCleanupFns, videoState, viewControls, watchPixelRatio, worldDirToFrameLocalPoint, worldStickerEditable,
+    writePose, zoomFrameAt, zoomFrameViewAt, zoomSpaceAt,
   } = createEditorModules({
-    api, app, backgroundCanvas, bgWidget, cameraV2, canvas, capture, clearCutoutFrame, comfyMedia, coverageWidget,
-    ctx, cutoutPreviewCanvas, cutoutPreviewHost, cutoutV2, deleteStudioCamera, dragCue, dragFrames, editor,
-    editorView, floatingRightEl, frameGateCssRadius, frameViewDistance, getActiveCutoutShot,
-    getBrushPresetIdForTool, getFrameViewLayout, getFrameViewRect, getPaintingLayerList, hideSidebar, imageCache,
-    isActiveLassoTool, isPaintCursorEnabled, isWorldMenuShown, leaveFrameView, loadPreferredExactLinkedImage,
-    measureFrameSafeRect, mediaAssetSource, mediaSource, mediaUiImage, node, paintColorPop, paintColorRow,
-    paintColorSvCursor, paintHueHandle, portStillCanvas, portVideoEl, presetWidget, previewMode,
-    rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache, readOnly, rectFromPoints,
-    resolveEditorOutputPresetWidth, runtime, sceneV2, scheduler, setCanvasCursor, shotEditor, stageWrap, state,
-    stateV2, stateWidget, stillCanvas, studio, syncCutoutShot, timeline, timelinePlayhead, type, uiState,
-    updateCursor, updateSelectionMenu, videoEl, videoTimelineFps, viewController, vueModal,
+    api, app, backgroundCanvas, bgWidget, cameraV2, canvas, capture, comfyMedia, coverageWidget, ctx,
+    cutoutPreviewCanvas, cutoutPreviewHost, cutoutV2, dragCue, dragFrames, editor, editorView, floatingRightEl,
+    floatingTopEl, frameGateCssRadius, frameRailEl, frameRollKnobEl, getBrushPresetIdForTool,
+    getPaintingLayerList, hideSidebar, hideTooltip, imageCache, initialShotBase, isActiveLassoTool,
+    isPaintCursorEnabled, isWorldMenuShown, loadPreferredExactLinkedImage, mediaAssetSource, mediaSource,
+    mediaUiImage, node, paintColorPop, paintColorRow, paintColorSvCursor, paintDockEl, paintHueHandle,
+    portStillCanvas, portVideoEl, presetWidget, previewMode, rasterErpCanvasCache, rasterImageAlphaCache,
+    rasterImageCache, readOnly, rectFromPoints, resolveEditorOutputPresetWidth, runtime, sceneV2, scheduler,
+    setCanvasCursor, shotEditor, stageWrap, state, stateV2, stateWidget, stillCanvas, studio, timeline,
+    timelinePlayhead, toolRailEl, tooltip, type, uiState, updateCursor, updateSelectionMenu, videoEl,
+    videoTimelineFps, videoTransportEl, viewController, vueModal, worldGizmoPointer,
   }, [
     createMediaSession, createHistory, createItems, createSelection, createProjection, createObjectGeometry,
     createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput,
     createCameraPreview, createOverlay, createRenderLoop, createPanels, createTimeline, createTimelineActions,
-    createCommit, createCommands, createStickerImport,
+    createCommit, createCommands, createStickerImport, createCamera, createFrameView,
   ]);
   // --- editor modules: end ---
 
@@ -852,560 +824,14 @@ async function showEditor(node, type, options = {}) {
     return String(getActivePaintToolKind() || "") === "lasso_fill";
   }
 
-  // A left press with the cursor tool in 6DoF on the selected Camera's gizmo grabs it; on the Camera's
-  // frustum it selects the Camera. Returns whether the press was taken.
-  function startCameraPress(e, p) {
-    const gizmo = editorViewInput().space?.gizmo;
-    if (isCameraSelected() && gizmo && worldGizmoPointer("hover", p) !== null && worldGizmoPointer("down", p)) {
-      editor.interaction = { kind: "world_gizmo", camera: true, mode: gizmo.mode, start: gizmo.transform, base: cutoutCamera(), changed: false };
-      canvas.setPointerCapture(e.pointerId);
-      updateCursor(p);
-      return true;
-    }
-    const frustum = cameraFrustumSegments(cutoutCamera(), cameraFrustumLength(spaceScale()));
-    if (!segmentsHit(currentSpaceCamera(), frustum, p, canvas.width, canvas.height)) return false;
-    if (!isCameraSelected()) {
-      setSelectedItem(getActiveCutoutShot());
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-    }
-    editor.interaction = { kind: "world_select" };
-    canvas.setPointerCapture(e.pointerId);
-    return true;
-  }
-
   stageResizeObserver.observe(canvas);
   watchPixelRatio();
-
-  function addCutoutFrame() {
-    if (readOnly || type !== "cutout") return;
-    const existing = getActiveCutoutShot();
-    if (existing) {
-      setSelectedItem(existing);
-      editor.mode = "pano";
-      // In 6DoF the view turns to the Camera and comes close enough to show its frustum (#77).
-      if (cutoutV2 && isFreeSpaceView()) transitionView(frameView(lookingAt(spaceViewState(), existing.position), cameraSphere(), canvas.width, canvas.height));
-      else turnViewTo(wrapYaw(Number(existing.yaw_deg || 0)), clamp(Number(existing.pitch_deg || 0), -89.9, 89.9));
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw({ cause: "cutout_frame" });
-      return;
-    }
-    const shot = createDefaultCutoutShot({
-      id: `frame_${Date.now().toString(36)}`,
-      yawDeg: wrapYaw(Number(editor.viewYaw || 0)),
-      pitchDeg: Number(editor.viewPitch || 0),
-      viewFovDeg: Number(editor.viewFov || 90),
-    });
-    state.shots = [shot];
-    setSelectedItem(shot);
-    forceCursorTool();
-    editor.mode = "pano";
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw({ cause: "cutout_frame" });
-  }
-
-  // Add Camera (Panorama Studio, #89): one Camera where the Viewport camera stands and looks
-  // (newStudioCamera), selected. The view stays where it is.
-  function addStudioCamera() {
-    if (readOnly || !studio || hasCamera()) return;
-    stopTimelinePlayback();
-    state.camera = newStudioCamera(spaceViewState());
-    syncCutoutShot();
-    setSelectedItem(getActiveCutoutShot());
-    forceCursorTool();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw({ cause: "cutout_frame" });
-  }
-
-  // Delete on Panorama Studio's selected Camera: the state has no Camera (`camera: null`), and the Frame view
-  // and 3DoF follow (followCameraChange). Undo brings it back.
-  function deleteStudioCamera() {
-    stopTimelinePlayback();
-    state.camera = null;
-    setSelectedItem(null);
-    syncCutoutShot();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw({ cause: "cutout_frame" });
-  }
-
-  // An aspect preset of the selected shot. Panorama Studio's 360° preset makes its Camera shoot an ERP, and a
-  // ratio makes it shoot through its frame again (ADR 0029).
-  function setShotAspect(shot, aspect) {
-    if (studio && isShotItem(shot)) {
-      state.camera.projection = aspect === ERP_ASPECT ? "erp" : "perspective";
-      if (aspect === ERP_ASPECT) return;
-    }
-    applyCutoutAspect(shot, aspect);
-  }
-
-  function clearCutoutFrame() {
-    if (readOnly || type !== "cutout") return;
-    state.shots = [];
-    editor.selectedId = null;
-    editor.selectedIds = [];
-    if (editor.mode === "frame") editor.mode = "pano";
-    editor.cutoutAspectOpen = false;
-    state.active.selected_shot_id = null;
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw();
-  }
-
-  // Resize the crop to the largest box of `ratio` the viewport allows, without
-  // moving the ERP behind it.
-  //
-  // The presentation scale is `gate size / FOV`, so those three cannot all be
-  // chosen freely. Holding the FOV makes the scale follow the aspect, which is
-  // the background zooming on every aspect switch. Holding the scale and
-  // re-deriving the FOV keeps the background nailed down and still gives each
-  // aspect its maximal frame: landscape fills the width, portrait fills the
-  // height. The captured solid angle changes, which is the right trade for
-  // Frame view — it exists to compose a crop, not to conserve an area.
-  //
-  // Returns false when there is no measured viewport (aspect edits made from
-  // the Panorama tab), so the caller can fall back to a plain FOV derivation.
-  function applyGateAspectAtCurrentScale(selected, ratio) {
-    const safeRect = runtime.frameSafeRect;
-    if (!selected || !safeRect || editor.mode !== "frame") return false;
-    const focal = FRAME_GATE_OCCUPANCY * fitFocalPx(safeRect, selected);
-    const next = fovPairForGate(aspectFitGateSize(safeRect, ratio), focal);
-    selected.hFOV_deg = next.hFOV_deg;
-    selected.vFOV_deg = next.vFOV_deg;
-    return true;
-  }
-
-  function applyCutoutAspect(selected, aspect) {
-    if (!selected || selected.locked === true) return;
-    const pairs = {
-      "1:1": [1, 1],
-      "3:2": [3, 2],
-      "4:3": [4, 3],
-      "16:9": [16, 9],
-    };
-    const currentLandscape = (() => {
-      const stored = String(selected.aspect_id || "").trim();
-      if (/^\d+:\d+$/.test(stored)) {
-        const [sw, sh] = stored.split(":").map((value) => Number(value));
-        if (Number.isFinite(sw) && Number.isFinite(sh)) return sw >= sh;
-      }
-      const hf = Number(selected.hFOV_deg || 64);
-      const vf = Number(selected.vFOV_deg || 40);
-      if (Math.abs(hf - vf) > 1e-6) return hf >= vf;
-      return deriveCutoutAspectFromFov(selected) >= 1;
-    })();
-    let [aw, ah] = pairs[String(aspect)] || pairs["1:1"];
-    if ((aw >= ah) !== currentLandscape) [aw, ah] = [ah, aw];
-    const ratio = aw / ah;
-    if (!applyGateAspectAtCurrentScale(selected, ratio)) {
-      const vf = clamp(Number(selected.vFOV_deg || 40), 1, 179);
-      selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio);
-    }
-    selected.aspect_id = `${aw}:${ah}`;
-  }
-
-  function applyCutoutAspectCustom(selected, w, h) {
-    if (!selected || selected.locked === true) return false;
-    const pair = parseCutoutAspectPair(w, h);
-    if (!pair) return false;
-    const ratio = pair.ratio;
-    if (!applyGateAspectAtCurrentScale(selected, ratio)) {
-      const vf = clamp(Number(selected.vFOV_deg || 40), 1, 179);
-      selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio);
-    }
-    selected.aspect_id = pair.label;
-    return true;
-  }
-
-  // Portrait/landscape toggle inverts the aspect while holding vFOV, exactly
-  // like the aspect presets do.
-  //
-  // Swapping hFOV and vFOV instead would preserve the captured solid angle, but
-  // a transposed landscape frame is taller than the viewport, so the whole view
-  // has to zoom out to show it. Frame view is about the crop you are composing,
-  // not about conserving the captured area, so hold the vertical extent and
-  // narrow the horizontal one. The gate keeps filling the height, and the ERP
-  // behind it does not move.
-  function rotateCutoutAspect90(selected) {
-    if (!selected || selected.locked === true) return;
-    const storedAspect = String(selected.aspect_id || "").trim();
-    const camera = getCutoutCameraParams(selected);
-    const aspect = camera.tanHalfX / Math.max(1e-12, camera.tanHalfY);
-    const inverted = 1 / Math.max(1e-12, aspect);
-    if (!applyGateAspectAtCurrentScale(selected, inverted)) {
-      const vf = clamp(Number(selected.vFOV_deg || 60), 1, 179);
-      selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, inverted);
-    }
-    if (/^\d+:\d+$/.test(storedAspect)) {
-      const [w, h] = storedAspect.split(":");
-      selected.aspect_id = `${h}:${w}`;
-    } else {
-      selected.aspect_id = deriveCutoutAspectLabelFromFov(selected);
-    }
-  }
 
   const flushStateBeforeQueue = () => commitState();
   if (!readOnly) node.__panoFlushStateBeforeQueue = flushStateBeforeQueue;
 
   function supportsErpPainting() {
     return editor.mode === "pano" || editor.mode === "unwrap";
-  }
-
-  // PanoramaCutoutNode (#77): writes an edit of the shot since it was last derived to the Camera at the
-  // playhead (setCameraShot, by the recording rule), then derives the shot from the Camera again, so it
-  // follows the playhead, Keyframe edits and Undo. The shot stays the same object, which interactions
-  // hold. `keep` false drops an edit instead (the state was replaced).
-  // Panorama Studio's shot comes and goes with its Camera (#89).
-  function syncCutoutShot(keep = true) {
-    if (!cameraV2) return;
-    const before = cutoutShotBase;
-    if (!cameraShoots()) {
-      cutoutShotBase = null;
-      if (state.shots?.length) state.shots = [];
-      if (before) followCameraChange(before, null);
-      return;
-    }
-    const shot = state.shots?.[0];
-    if (keep && shot && cutoutShotBase) setCameraShot(state.camera, editor.frame, shot, cutoutShotBase);
-    cutoutShotBase = cameraShot(state.camera, editor.frame);
-    if (shot) Object.assign(shot, cutoutShotBase, { position: [...cutoutShotBase.position] });
-    else state.shots = [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }];
-    if (!before) followCameraChange(null, cutoutShotBase);
-  }
-
-  // Panorama Studio's Camera came or went (#89), by an edit or by Undo. The Frame view ends without one,
-  // and 3DoF, which stands at the Camera (spaceOrigin), moves to where it stands now. The view goes there
-  // over a transition instead of jumping.
-  function followCameraChange(before, after) {
-    if (!after && editor.mode === "frame") leaveFrameView(before);
-    const to = after?.position ?? [0, 0, 0];
-    // A way back to 3DoF on the way goes to where 3DoF stands now.
-    if (editor.viewTransition?.end?.mode === "3dof") {
-      transitionView({ ...spaceViewState(), position: to }, editor.viewTransition.end);
-      return;
-    }
-    if (editor.mode !== "pano" || editor.spaceMode !== "3dof" || !hasSpaceContent()) return;
-    const from = before?.position ?? [0, 0, 0];
-    if (from.every((value, axis) => value === to[axis])) return;
-    // The way there moves in 6DoF and enters 3DoF when it arrives, as the way back from 6DoF does.
-    const view = { ...spaceViewState(), position: from };
-    applySpaceMode({ mode: "6dof", position: from, moved: true });
-    editor.viewDistance = view.distance;
-    transitionView({ ...view, position: to }, { mode: "3dof", moved: false });
-  }
-
-  // The Frame view ends while it shows Panorama Studio's shot (its Camera went, or shoots a 360-degree ERP,
-  // #89): the panorama view looks where the shot looked, and in 6DoF stands where it stood, so the view does
-  // not jump.
-  function leaveFrameView(shot) {
-    editor.mode = "pano";
-    if (!shot) return;
-    cancelViewTransition();
-    const distance = spaceViewState().distance;
-    editor.viewYaw = wrapYaw(shot.yaw_deg);
-    editor.viewPitch = clamp(shot.pitch_deg, -89.9, 89.9);
-    editor.viewFov = clamp(shot.hFOV_deg, 35, 140);
-    if (editor.spaceMode === "6dof") applySpaceMode({ mode: "6dof", position: [...shot.position], moved: true });
-    editor.viewDistance = distance;
-    runtime.backgroundDirty = true;
-  }
-
-  function getActiveCutoutShot() {
-    if (!shotEditor) return null;
-    const shots = Array.isArray(state.shots) ? state.shots : [];
-    if (!shots.length) return null;
-    const selectedId = String(state.active.selected_shot_id || "");
-    return shots.find((item) => String(item?.id || "") === selectedId) || shots[0] || null;
-  }
-
-  function measureFrameSafeRect() {
-    if (!canvas) return null;
-    const canvasBounds = canvas.getBoundingClientRect?.();
-    const scaleX = Number(canvasBounds?.width || 0) > 0 ? canvas.width / canvasBounds.width : 1;
-    const scaleY = Number(canvasBounds?.height || 0) > 0 ? canvas.height / canvasBounds.height : 1;
-    runtime.frameCanvasScale = Math.min(scaleX, scaleY);
-    let left = 24;
-    let top = 24;
-    const right = Math.max(left + 1, canvas.width - 24);
-    let bottom = Math.max(top + 1, canvas.height - 24);
-    const railBounds = toolRailEl?.getBoundingClientRect?.();
-    const frameRailBounds = frameRailEl?.getBoundingClientRect?.();
-    let reservedSide = 24;
-    if (railBounds && canvasBounds && railBounds.width > 0 && railBounds.height > 0) {
-      reservedSide = Math.max(reservedSide, (railBounds.right - canvasBounds.left) * scaleX + FRAME_GATE_SIDE_GAP_PX);
-    }
-    if (frameRailBounds && canvasBounds && frameRailBounds.width > 0 && frameRailBounds.height > 0
-      && uiState.frameRail?.visible === true) {
-      reservedSide = Math.max(reservedSide, (canvasBounds.right - frameRailBounds.left) * scaleX + FRAME_GATE_SIDE_GAP_PX);
-    }
-    left = Math.max(left, reservedSide);
-    const symmetricRight = Math.min(right, canvas.width - reservedSide);
-    let reservedVertical = 24;
-    const topBounds = floatingTopEl?.getBoundingClientRect?.();
-    if (topBounds && canvasBounds && topBounds.width > 0 && topBounds.height > 0) {
-      reservedVertical = Math.max(reservedVertical, (topBounds.bottom - canvasBounds.top) * scaleY + FRAME_GATE_EDGE_GAP_PX);
-    }
-    // Only measure chrome whose size is independent of the active shot. The
-    // gate scale is derived from this rect, so anything shot-dependent here
-    // closes a feedback loop (shot -> layout -> safe rect -> scale -> the ERP
-    // visibly zooming whenever the aspect changes). `.pano-floating-right`
-    // hosts the cutout camera preview, whose box follows the shot aspect, so it
-    // is reserved by its fixed collapsed height instead of its measured one.
-    [paintDockEl, videoTransportEl].forEach((element) => {
-      if (!element || !canvasBounds) return;
-      const style = getComputedStyle(element);
-      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) <= 0) return;
-      const bounds = element.getBoundingClientRect?.();
-      if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
-      reservedVertical = Math.max(reservedVertical, (canvasBounds.bottom - bounds.top) * scaleY + FRAME_GATE_EDGE_GAP_PX);
-    });
-    if (floatingRightEl && canvasBounds) {
-      const style = getComputedStyle(floatingRightEl);
-      const visible = style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0;
-      if (visible) {
-        reservedVertical = Math.max(reservedVertical, (FLOATING_RIGHT_RESERVED_PX + FRAME_GATE_EDGE_GAP_PX) * scaleY);
-      }
-    }
-    top = Math.max(top, reservedVertical);
-    bottom = Math.max(top + 1, Math.min(bottom, canvas.height - reservedVertical));
-    return {
-      x: left,
-      y: top,
-      w: Math.max(1, symmetricRight - left),
-      h: Math.max(1, bottom - top),
-    };
-  }
-
-  // The presentation scale is a pure function of the UI-safe rect and the shot:
-  // the gate is always the largest rectangle of the shot's aspect that fits.
-  // There is no stored scale, so nothing can drift, ratchet, or go stale.
-  //
-  // Two useful properties fall out of this and need no special-case code:
-  //   - Aspect changes hold vFOV, and every supported aspect is height-bound in
-  //     a landscape viewport, so the fit is unchanged and the ERP does not move.
-  //   - Wheel scales both tangents by k, which scales the fit by 1/k, so the
-  //     gate keeps its screen size while the ERP behind it zooms.
-  function getFrameViewLayout(shot = getActiveCutoutShot()) {
-    if (!shot || !canvas) return null;
-    const safeRect = runtime.frameSafeRect || {
-      x: 24,
-      y: 24,
-      w: Math.max(1, canvas.width - 48),
-      h: Math.max(1, canvas.height - 48),
-    };
-    return gateRectFromFocal(safeRect, shot, FRAME_GATE_OCCUPANCY * fitFocalPx(safeRect, shot));
-  }
-
-  function getFrameViewRect(shot = getActiveCutoutShot()) {
-    const layout = getFrameViewLayout(shot);
-    return layout ? { x: layout.x, y: layout.y, w: layout.w, h: layout.h } : null;
-  }
-
-  function supportsFramePainting() {
-    return shotEditor && !!getActiveCutoutShot();
-  }
-
-  function zoomFrameViewAt(anchor, direction) {
-    const shot = getActiveCutoutShot();
-    if (!shot || shot.locked === true) return false;
-    const zoomingOut = Number(direction) > 0;
-    const next = stepCutoutFovPairByWheel(shot, direction);
-    if (!next) return false;
-    // The gate keeps its screen size on its own: scaling both tangents by k
-    // scales the aspect fit by 1/k, so no presentation compensation is needed.
-    // The ERP behind the gate zooms instead, which is the intent.
-    //
-    // The one hard stop is the projection itself: a rectilinear context can no
-    // longer cover the canvas once it nears 90 degrees off-axis, and pushing
-    // past that would reopen dark margins. Refuse the step there.
-    if (zoomingOut) {
-      const projectedFocal = FRAME_GATE_OCCUPANCY * fitFocalPx(
-        runtime.frameSafeRect || { w: canvas.width, h: canvas.height },
-        next,
-      );
-      const reach = contextHalfExtentsPx({ width: canvas.width, height: canvas.height }, projectedFocal);
-      if (reach.halfW < canvas.width * 0.5 - 1e-6 || reach.halfH < canvas.height * 0.5 - 1e-6) return false;
-    }
-    shot.hFOV_deg = next.hFOV_deg;
-    shot.vFOV_deg = next.vFOV_deg;
-    void anchor;
-    scheduleFrameWheelCommit();
-    updateSidePanel();
-    return true;
-  }
-
-  // A run of wheel steps in the Frame view is one Undo step, taken once the wheel rests.
-  function scheduleFrameWheelCommit() {
-    editor.frameWheelChanged = true;
-    if (editor.frameWheelCommitTimer) window.clearTimeout(editor.frameWheelCommitTimer);
-    editor.frameWheelCommitTimer = window.setTimeout(() => {
-      editor.frameWheelCommitTimer = 0;
-      if (!editor.frameWheelChanged) return;
-      editor.frameWheelChanged = false;
-      pushHistory();
-      commitAndRefreshNode();
-      updateSidePanel();
-    }, 180);
-  }
-
-  // --- The Frame view of PanoramaCutoutNode with World content (#77): moving the view moves the Camera
-  // itself, as Blender's camera locked to the view. The drags of the 3D view controls orbit and pan it
-  // (pano_view_controls.js, pano_space.js), the wheel moves it toward the point under the pointer, and a
-  // left drag still turns it where it stands, as in the Frame view of an ERP.
-  function isFreeFrameView() {
-    return cameraV2 && editor.mode === "frame" && hasSpaceContent();
-  }
-
-  // The Frame view's context (frameViewContext): the canvas rect drawn through the shot and the shot that
-  // spans it, or null without a shot.
-  function frameContext() {
-    const shot = getActiveCutoutShot();
-    const layout = getFrameViewLayout(shot);
-    return shot && layout ? frameViewContext(shot, layout, { width: canvas.width, height: canvas.height }) : null;
-  }
-
-  // The pivot distance of the Frame view's moves: the content's size, whatever moves came before, so a
-  // pan of the same length moves the Camera the same way after any zoom (like a Blender view locked to
-  // its camera). Keyframes and playback move the Camera too, so a pivot left by the last move would not
-  // stay where that move put it anyway.
-  function frameViewDistance() {
-    return contentSphere()?.radius || DEFAULT_DISTANCE;
-  }
-
-  // The Camera as a space view (pano_space.js) over the context rect.
-  function frameSpaceView(context) {
-    const { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg } = context.shot;
-    return { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg, distance: frameViewDistance() };
-  }
-
-  // The World point of the content under canvas point p in the Frame view that an orbit or a wheel step
-  // works on, or null (also over a SPLAT's box, pano_three_view.js pickSurface).
-  function pickFrame(context, p) {
-    const { rect } = context;
-    return editorView.pickSurface(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
-  }
-
-  // The point a Frame view orbit or wheel step at canvas point p works on: the content under it, else the
-  // pivot.
-  function frameTarget(context, view, p) {
-    return navigationTarget(view, pickFrame(context, p), null, spaceScale());
-  }
-
-  function frameViewKey(context) {
-    return JSON.stringify([frameSpaceView(context), context.rect]);
-  }
-
-  function moveCutoutShot(view) {
-    const shot = getActiveCutoutShot();
-    shot.position = [...view.position];
-    shot.yaw_deg = view.yaw_deg;
-    shot.pitch_deg = view.pitch_deg;
-  }
-
-  // A drag that turns the Camera where it stands (the Frame view's left drag).
-  function startPanFrame(p, pointerId) {
-    const shot = getActiveCutoutShot();
-    if (!shot || readOnly || shot.locked === true) return;
-    editor.interaction = {
-      kind: "pan_frame", shot, last: p,
-      start: { yaw_deg: Number(shot.yaw_deg || 0), pitch_deg: Number(shot.pitch_deg || 0) },
-      changed: false,
-    };
-    updateCursor(p);
-    canvas.setPointerCapture(pointerId);
-  }
-
-  function startFrameDrag(action, p, pointerId) {
-    const context = frameContext();
-    if (!context || readOnly) return;
-    const view = frameSpaceView(context);
-    editor.interaction = action === "orbit"
-      ? { kind: "frame_orbit", last: p, pivot: frameTarget(context, view, p), changed: false }
-      : { kind: "frame_pan", last: p, depth: panDepth(view, spaceScale()), changed: false };
-    updateCursor(p);
-    canvas.setPointerCapture(pointerId);
-  }
-
-  function dragFrame(it, p) {
-    const context = frameContext();
-    if (!context) return;
-    const view = frameSpaceView(context);
-    const dx = p.x - it.last.x;
-    const dy = p.y - it.last.y;
-    moveCutoutShot(it.kind === "frame_pan"
-      ? panView(view, dx, dy, context.rect.w, context.rect.h, it.depth)
-      : orbitView(view, dx, dy, canvas.height, it.pivot));
-    it.changed = it.changed || dx !== 0 || dy !== 0;
-    it.last = p;
-    requestDraw({ localOnly: true, cause: "frame_view" });
-  }
-
-  function zoomFrameAt(p, direction) {
-    const context = frameContext();
-    if (!context || readOnly) return;
-    const view = frameSpaceView(context);
-    // A step reuses the pick of an earlier one as reuseWheelPick() allows, like zoomSpaceAt().
-    const now = performance.now();
-    const next = { x: p.x, y: p.y, time: now, key: editorView.contentRevision(), view: frameViewKey(context) };
-    if (!reuseWheelPick(frameWheel, next)) {
-      const hit = pickFrame(context, p);
-      frameWheel = { ...next, cost: performance.now() - now, hit };
-    }
-    moveCutoutShot(zoomView(view, navigationTarget(view, frameWheel.hit, null, spaceScale()), direction, spaceScale()));
-    frameWheel.view = frameViewKey(frameContext() ?? context);
-    frameWheel.wheelTime = now;
-    scheduleFrameWheelCommit();
-    updateSidePanel();
-    requestDraw({ localOnly: true, cause: "frame_view" });
-  }
-
-  function flushFrameWheelCommit() {
-    if (editor.frameWheelCommitTimer) {
-      window.clearTimeout(editor.frameWheelCommitTimer);
-      editor.frameWheelCommitTimer = 0;
-    }
-    if (!editor.frameWheelChanged) return false;
-    editor.frameWheelChanged = false;
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    return true;
-  }
-
-  function cancelFrameCameraGesture() {
-    const interaction = editor.interaction;
-    if (!interaction?.shot || !interaction.start
-      || (interaction.kind !== "pan_frame" && interaction.kind !== "roll_frame")) return false;
-    const cancelledRoll = interaction.kind === "roll_frame";
-    if (interaction.kind === "pan_frame") {
-      interaction.shot.yaw_deg = interaction.start.yaw_deg;
-      interaction.shot.pitch_deg = interaction.start.pitch_deg;
-    } else {
-      interaction.shot.roll_deg = interaction.start.roll_deg;
-    }
-    if (cancelledRoll) hideTooltip();
-    editor.interaction = null;
-    invalidateLivePaintPreviewCaches();
-    syncViewToggleState();
-    updateSidePanel();
-    updateCursor(editor.pointerPos);
-    requestDraw({ localOnly: true });
-    return true;
   }
 
   function captureStrokeRadiusSpec(targetSpace, sizePx) {
@@ -2413,130 +1839,13 @@ async function showEditor(node, type, options = {}) {
     });
   }
 
-  function applyRollInteractionAngle(interaction, angle, event = {}) {
-    if (interaction?.kind !== "roll_frame" || !interaction.shot) return;
-    interaction.accumulatedRad += shortestAngleDeltaRad(angle, interaction.lastAngle);
-    interaction.lastAngle = angle;
-    const roll = resolveFrameRollDeg(interaction.start.roll_deg, interaction.accumulatedRad, {
-      shiftKey: event.shiftKey,
-      altKey: interaction.altStarted ? false : event.altKey,
-    });
-    interaction.shot.roll_deg = roll;
-    interaction.changed = interaction.changed || Math.abs(interaction.accumulatedRad) > 1e-9;
-    const rollParam = (uiState.sidePanel?.params || []).find((param) => param.key === "roll_deg");
-    if (rollParam) {
-      rollParam.value = roll;
-      rollParam.displayValue = formatParamValue(roll);
-      rollParam.fillPct = ((roll + 180) / 360) * 100;
-    }
-    syncFrameRollKnob();
-    syncFrameRollTooltip(interaction);
-    requestDraw({ localOnly: true });
-  }
-
-  function applySharedRollInteractionPoint(interaction, point, event = {}) {
-    if (interaction?.kind !== "roll_frame" || !interaction.shot || !interaction.rollGesture) return;
-    const result = updateCutoutRollGesture(interaction.rollGesture, point, event);
-    if (!result) return;
-    interaction.rollGesture = result.gesture;
-    interaction.center = result.gesture.center;
-    interaction.lastAngle = result.gesture.lastAngle;
-    interaction.accumulatedRad = result.gesture.accumulatedRad;
-    interaction.shot.roll_deg = result.rollDeg;
-    interaction.changed = interaction.changed || Math.abs(result.gesture.accumulatedRad) > 1e-9;
-    const rollParam = (uiState.sidePanel?.params || []).find((param) => param.key === "roll_deg");
-    if (rollParam) {
-      rollParam.value = result.rollDeg;
-      rollParam.displayValue = formatParamValue(result.rollDeg);
-      rollParam.fillPct = ((result.rollDeg + 180) / 360) * 100;
-    }
-    syncFrameRollKnob();
-    syncFrameRollTooltip(interaction);
-    requestDraw({ localOnly: true });
-  }
-
-  function frameRollAngleForEvent(event, center) {
-    const point = screenPos(event);
-    return Math.atan2(point.y - center.y, point.x - center.x);
-  }
-  function syncFrameRollTooltip(interaction) {
-    if (interaction?.kind !== "roll_frame" || !interaction.shot) return;
-    if (tooltip.timer) {
-      clearTimeout(tooltip.timer);
-      tooltip.timer = 0;
-    }
-    tooltip.target = null;
-    const rect = getFrameViewRect(interaction.shot);
-    const canvasBounds = canvas.getBoundingClientRect?.();
-    const hostBounds = stageWrap.getBoundingClientRect?.();
-    if (!rect || !canvasBounds || !hostBounds || canvas.width <= 0 || canvas.height <= 0) return;
-    const scaleX = canvasBounds.width / canvas.width;
-    const scaleY = canvasBounds.height / canvas.height;
-    uiState.tooltip.text = `${formatParamValue(interaction.shot.roll_deg)}°`;
-    uiState.tooltip.left = canvasBounds.left - hostBounds.left + (rect.x + rect.w * 0.5) * scaleX;
-    uiState.tooltip.top = canvasBounds.top - hostBounds.top + (rect.y + rect.h * 0.5) * scaleY + 12;
-    uiState.tooltip.variant = "roll";
-    uiState.tooltip.visible = true;
-  }
-  function onFrameRollKnobPointerDown(event) {
-    if (event.button !== 0 || readOnly || editor.mode !== "frame") return;
-    const shot = getActiveCutoutShot();
-    if (!shot || shot.locked === true) return;
-    const rect = getFrameViewRect(shot);
-    if (!rect) return;
-    const center = { x: rect.x + rect.w * 0.5, y: rect.y + rect.h * 0.5 };
-    const angle = frameRollAngleForEvent(event, center);
-    editor.interaction = {
-      kind: "roll_frame", shot, center, lastAngle: angle, accumulatedRad: 0,
-      start: { roll_deg: Number(shot.roll_deg ?? shot.rot_deg ?? 0) },
-      changed: false, altStarted: false, source: "knob",
-    };
-    frameRollKnobEl.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-    syncFrameRollKnob();
-    syncFrameRollTooltip(editor.interaction);
-    requestDraw({ localOnly: true });
-  }
   frameRollKnobEl?.addEventListener("pointerdown", onFrameRollKnobPointerDown);
-  function onFrameRollKnobPointerMove(event) {
-    if (editor.interaction?.kind !== "roll_frame" || editor.interaction.source !== "knob") return;
-    applyRollInteractionAngle(
-      editor.interaction,
-      frameRollAngleForEvent(event, editor.interaction.center),
-      event,
-    );
-  }
   frameRollKnobEl?.addEventListener("pointermove", onFrameRollKnobPointerMove);
-  function finishKnobRoll() {
-    const interaction = editor.interaction;
-    if (interaction?.kind !== "roll_frame" || interaction.source !== "knob") return;
-    if (interaction.changed) {
-      pushHistory();
-      commitAndRefreshNode();
-      updateSidePanel();
-    }
-    editor.interaction = null;
-    hideTooltip();
-    syncViewToggleState();
-    syncFrameRollKnob();
-    requestDraw();
-  }
   frameRollKnobEl?.addEventListener("pointerup", finishKnobRoll);
   frameRollKnobEl?.addEventListener("pointercancel", () => cancelFrameCameraGesture());
   frameRollKnobEl?.addEventListener("lostpointercapture", () => {
     if (editor.interaction?.source === "knob") cancelFrameCameraGesture();
   });
-  function onFrameRollKnobDoubleClick(event) {
-    const shot = editor.mode === "frame" && !readOnly ? getActiveCutoutShot() : null;
-    if (!shot || shot.locked === true || Math.abs(Number(shot.roll_deg ?? shot.rot_deg ?? 0)) <= 1e-9) return;
-    shot.roll_deg = 0;
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    syncFrameRollKnob();
-    requestDraw();
-    event.preventDefault();
-  }
   frameRollKnobEl?.addEventListener("dblclick", onFrameRollKnobDoubleClick);
 
   // Looking around and selecting keep the Timeline playing. A paint stroke stops it at once; any
