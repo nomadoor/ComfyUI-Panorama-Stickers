@@ -2883,7 +2883,7 @@
   align-items: center;
   padding-left: 60px;
 }
-.pano-timeline-head.hidden .pano-timeline-select {
+.pano-timeline-head.is-hidden .pano-timeline-select {
   opacity: 0.5;
 }
 .pano-timeline-eye {

@@ -13386,9 +13386,9 @@ const fC = { class: "pano-floating-right" }, dC = {
         const V = k + (W.clientX - N) * y.drag * (W.shiftKey ? 0.1 : 1);
         v.value = String(Number(V.toFixed(3))), v.dispatchEvent(new Event("input", { bubbles: !0 }));
       }, F = () => {
-        x.removeEventListener("pointermove", I), x.removeEventListener("pointerup", F), x.removeEventListener("pointercancel", F), P ? v.dispatchEvent(new Event("change", { bubbles: !0 })) : v.focus();
+        x.removeEventListener("pointermove", I), x.removeEventListener("pointerup", F), x.removeEventListener("pointercancel", F), x.removeEventListener("lostpointercapture", F), P ? v.dispatchEvent(new Event("change", { bubbles: !0 })) : v.focus();
       };
-      x.addEventListener("pointermove", I), x.addEventListener("pointerup", F), x.addEventListener("pointercancel", F);
+      x.addEventListener("pointermove", I), x.addEventListener("pointerup", F), x.addEventListener("pointercancel", F), x.addEventListener("lostpointercapture", F);
     }
     return (b, y) => {
       var v, x, N, k, P;
@@ -13851,7 +13851,7 @@ const fC = { class: "pano-floating-right" }, dC = {
             key: T.id
           }, [
             X("div", {
-              class: lt(["pano-timeline-head", { selected: T.selected, hidden: !T.visible }])
+              class: lt(["pano-timeline-head", { selected: T.selected, "is-hidden": !T.visible }])
             }, [
               X("div", SO, [
                 T.hideable ? (ie(), ce("button", {
@@ -14885,7 +14885,7 @@ async function ZE(e, t, n = {}) {
   });
   e.__panoLiveStateOverride = _, e.__panoLiveStateVersion = 0;
   let R = null;
-  W ? (R = _.camera ? xg(_.camera, 0) : null, _.shots = R ? [{ ...R, position: [...R.position] }] : [], _.active.selected_shot_id = R && I ? Wl : null) : t === "cutout" && (_.shots = Array.isArray(_.shots) ? _.shots.slice(0, 1) : [], _.shots.length || (_.active.selected_shot_id = null));
+  W ? (R = _.camera && (!F || _.camera.visible !== !1) ? xg(_.camera, 0) : null, _.shots = R ? [{ ...R, position: [...R.position] }] : [], _.active.selected_shot_id = R && I ? Wl : null) : t === "cutout" && (_.shots = Array.isArray(_.shots) ? _.shots.slice(0, 1) : [], _.shots.length || (_.active.selected_shot_id = null));
   const B = t === "cutout" ? (() => {
     var l;
     const i = Array.isArray(_.shots) ? _.shots : [], s = String(((l = _ == null ? void 0 : _.active) == null ? void 0 : l.selected_shot_id) || "");

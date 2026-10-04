@@ -51,12 +51,14 @@ function onScrubDown(event, field) {
     handle.removeEventListener("pointermove", move);
     handle.removeEventListener("pointerup", end);
     handle.removeEventListener("pointercancel", end);
+    handle.removeEventListener("lostpointercapture", end);
     if (moved) input.dispatchEvent(new Event("change", { bubbles: true }));
     else input.focus();
   };
   handle.addEventListener("pointermove", move);
   handle.addEventListener("pointerup", end);
   handle.addEventListener("pointercancel", end);
+  handle.addEventListener("lostpointercapture", end);
 }
 </script>
 

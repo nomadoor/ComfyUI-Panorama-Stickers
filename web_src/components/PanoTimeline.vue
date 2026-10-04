@@ -224,7 +224,7 @@ function onLineDown(event, row, lane) {
           <span class="pano-timeline-playhead" :style="{ left: pct(model.frame + 0.5) }" />
         </div>
         <template v-for="row in model.rows || []" :key="row.id">
-          <div class="pano-timeline-head" :class="{ selected: row.selected, hidden: !row.visible }">
+          <div class="pano-timeline-head" :class="{ selected: row.selected, 'is-hidden': !row.visible }">
             <div class="pano-timeline-name">
               <button
                 v-if="row.hideable"

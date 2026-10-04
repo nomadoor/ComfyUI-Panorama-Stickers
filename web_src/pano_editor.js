@@ -683,7 +683,8 @@ async function showEditor(node, type, options = {}) {
   // Camera); an edit since then is written back to the Camera's Lanes (syncCutoutShot).
   let cutoutShotBase = null;
   if (cameraV2) {
-    cutoutShotBase = state.camera ? cameraShot(state.camera, 0) : null;
+    // A hidden camera does not shoot in Panorama Studio, so it opens without a shot.
+    cutoutShotBase = state.camera && (!studio || state.camera.visible !== false) ? cameraShot(state.camera, 0) : null;
     state.shots = cutoutShotBase ? [{ ...cutoutShotBase, position: [...cutoutShotBase.position] }] : [];
     // Panorama Studio opens with nothing selected, as the Stickers editor.
     state.active.selected_shot_id = cutoutShotBase && cutoutV2 ? CAMERA_SHOT_ID : null;
