@@ -793,8 +793,9 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
 
   // The nearest content of the last space render at (x, y) of a width x height view from camera (a
   // spaceCamera()): { point (World [x, y, z]), stickerId (the Sticker it is, or null for the `scene`
-  // content) } or null over empty space. Meshes and planes hit on their triangles, from both sides; a
-  // SPLAT on its box. The same pixel of the same view over the same content gives the pick before.
+  // content), box (whether the point is on a SPLAT's box) } or null over empty space. Meshes and planes
+  // hit on their triangles, from both sides; a SPLAT on its box. The same pixel of the same view over the
+  // same content gives the pick before.
   function pickAt(camera, x, y, width, height) {
     const key = pickCacheKey(camera, x, y, width, height, contentKey);
     if (lastPick.key === key) return lastPick.hit;
@@ -811,12 +812,16 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
       const origin = new Vector3(...ray.origin).applyMatrix4(inverse).toArray();
       const direction = new Vector3(...ray.direction).applyMatrix3(new Matrix3().setFromMatrix4(inverse)).toArray();
       const depth = rayBoxDepth(origin, direction, box);
-      if (depth !== null) hits.push({ depth, stickerId });
+      if (depth !== null) hits.push({ depth, stickerId, box: true });
     }
     // The point is the nearest hit. A SPLAT's box is larger than what shows of it, so a world Sticker plane
     // hit takes the Sticker before a nearer box.
     const nearest = nearestHit(hits, camera);
-    const hit = nearest && { point: pointAt(ray, nearest.depth), stickerId: nearestHit(hits, camera, (each) => each.plane).stickerId };
+    const hit = nearest && {
+      point: pointAt(ray, nearest.depth),
+      stickerId: nearestHit(hits, camera, (each) => each.plane).stickerId,
+      box: nearest.box === true,
+    };
     // A failed draw is not kept, so the next pick draws again.
     if (drawn !== false) lastPick = { key, hit };
     return hit;
@@ -825,6 +830,14 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
   // The World point of the content under (x, y) in the last space render (pickAt), or null.
   function pick(camera, x, y, width, height) {
     return pickAt(camera, x, y, width, height)?.point ?? null;
+  }
+
+  // The same on a surface only: null where the nearest content is a SPLAT's box, whose point (inside the
+  // box, where the ray leaves it) is not where the splats show, so an orbit or a wheel step there works
+  // on the view's pivot instead.
+  function pickSurface(camera, x, y, width, height) {
+    const hit = pickAt(camera, x, y, width, height);
+    return hit && !hit.box ? hit.point : null;
   }
 
   // The id of the world or 3D Sticker under (x, y) in the last space render (pickAt), or null over the
@@ -885,5 +898,5 @@ export function createThreeView({ onUpdate = () => {} } = {}) {
     renderer.forceContextLoss();
   }
 
-  return { render, renderUnwrap, sceneBox, pick, pickSticker, gizmoPointer, contentKey: pickContentKey, release, dispose };
+  return { render, renderUnwrap, sceneBox, pick, pickSurface, pickSticker, gizmoPointer, contentKey: pickContentKey, release, dispose };
 }

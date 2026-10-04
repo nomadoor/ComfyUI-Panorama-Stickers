@@ -28,6 +28,7 @@ import {
   newWorldStickerTransform,
   NEW_WORLD_STICKER_DISTANCE,
   orbitView,
+  panDepth,
   panView,
   pivotOf,
   placedCamera,
@@ -157,7 +158,7 @@ test("over empty space a view stuck to its pivot or to the content's center stil
     const target = navigationTarget(stuck, null, center, scale);
     close(Math.hypot(...target.map((value, axis) => value - stuck.position[axis])), scale * 0.05, 1e-9);
     // A 100 px pan moves the view by a part of the content's size.
-    assert.ok(moved(panView(stuck, 100, 0, width, height, depthOf(stuck, target)), stuck) > scale * 0.01);
+    assert.ok(moved(panView(stuck, 100, 0, width, height, panDepth(stuck, scale)), stuck) > scale * 0.01);
     // Each wheel step in moves at least the shortest step, step after step.
     let view = stuck;
     for (let step = 0; step < 10; step += 1) {
@@ -192,28 +193,82 @@ test("a wheel step reuses the last pick near it in place and time, for longer af
   assert.equal(reuseWheelPick(slow, at({ time: 2100, key: "b" })), false);
 });
 
-test("panning moves the grabbed point with the pointer exactly, at its depth", () => {
-  const start = view();
+test("panning moves the pivot's plane with the pointer exactly, along the view's rolled screen axes", () => {
   const width = 800;
   const height = 400;
-  const { right, up, forward } = viewAxes(start.yaw_deg, start.pitch_deg);
-  for (const depth of [0.02, 3, 250]) {
-    const grabbed = [0, 1, 2].map((axis) => start.position[axis] + forward[axis] * depth + right[axis] * depth * 0.3 + up[axis] * depth * 0.1);
-    let moved = { ...start, distance: depth };
-    const before = onScreen(moved, grabbed, width, height);
-    for (const [dx, dy] of [[30, -12], [-5, 40], [100, 0]]) moved = panView(moved, dx, dy, width, height, depthOf(start, grabbed));
-    const after = onScreen(moved, grabbed, width, height);
-    close(after.x - before.x, 125, 1e-6 * Math.max(1, depth));
-    close(after.y - before.y, 28, 1e-6 * Math.max(1, depth));
-    close(moved.distance, depth, 1e-9 * depth);
+  for (const roll_deg of [0, 30, 90, -90, 180]) {
+    for (const depth of [0.02, 3, 250]) {
+      const start = view({ roll_deg, distance: depth });
+      const { right, up, forward } = viewAxes(start.yaw_deg, start.pitch_deg, roll_deg);
+      const grabbed = [0, 1, 2].map((axis) => start.position[axis] + forward[axis] * depth + right[axis] * depth * 0.3 + up[axis] * depth * 0.1);
+      let moved = start;
+      const before = onScreen(moved, grabbed, width, height);
+      for (const [dx, dy] of [[30, -12], [-5, 40], [100, 0]]) moved = panView(moved, dx, dy, width, height);
+      const after = onScreen(moved, grabbed, width, height);
+      close(after.x - before.x, 125, 1e-6 * Math.max(1, depth));
+      close(after.y - before.y, 28, 1e-6 * Math.max(1, depth));
+      close(moved.distance, depth, 1e-9 * depth);
+      assert.equal(moved.roll_deg, roll_deg);
+    }
   }
-  // Without a grabbed point, the pivot's plane follows the pointer.
-  const moved = panView(start, 30, -12, width, height);
-  close(moved.distance, start.distance);
-  const before = onScreen(start, pivotOf(start), width, height);
-  const after = onScreen(moved, pivotOf(start), width, height);
-  close(after.x - before.x, 30, 1e-6);
-  close(after.y - before.y, -12, 1e-6);
+});
+
+test("a pan moves at the pivot's depth, never closer than a part of the content's size, whatever the pointer is over", () => {
+  const scale = 10;
+  assert.equal(panDepth(view({ distance: 4 }), scale), 4);
+  assert.equal(panDepth(view({ distance: 1e-5 }), scale), scale * 0.05);
+  assert.equal(panDepth(view({ distance: 1e-5 })), DEFAULT_DISTANCE * 0.05);
+});
+
+test("a 100 px pan moves the same whatever is under the pointer and whatever wheel steps came before", () => {
+  const scale = 10;
+  const width = 1600;
+  const height = 900;
+  const moved = (a, b) => Math.hypot(...a.position.map((value, axis) => value - b.position[axis]));
+  const panned = (v) => moved(panView(v, 100, 0, width, height, panDepth(v, scale)), v);
+  // The Frame view's Camera stands in the content; its pivot is the content's size ahead (pano_editor.js
+  // frameViewDistance), so a pan after wheel steps up to a wall moves as much as the first one.
+  const shot = { position: [0, 1.6, 0], yaw_deg: 0, pitch_deg: -10, roll_deg: 0, hFOV_deg: 60 };
+  const frameView = (camera) => ({ ...camera, distance: scale });
+  const first = panned(frameView(shot));
+  const { forward } = viewAxes(shot.yaw_deg, shot.pitch_deg);
+  const wall = shot.position.map((value, axis) => value + forward[axis] * 6);
+  let camera = frameView(shot);
+  for (let step = 0; step < 30; step += 1) {
+    const { distance, ...placed } = zoomView(frameView(camera), wall, 1, scale);
+    camera = placed;
+  }
+  assert.ok(moved(camera, shot) > 5);
+  close(panned(frameView(camera)), first, 1e-12);
+  // The Viewport camera keeps the pivot its wheel steps leave, but never closer than a part of the
+  // content's size: the pan slows by at most that much, and does not stop.
+  let space = { ...shot, distance: scale };
+  for (let step = 0; step < 30; step += 1) space = zoomView(space, wall, 1, scale);
+  assert.ok(space.distance >= scale * 0.05 - 1e-12, String(space.distance));
+  assert.ok(panned(space) >= first * 0.05 - 1e-12);
+});
+
+test("orbiting a rolled view keeps its roll and its pivot on the screen, and the content follows the drag as without roll", () => {
+  const width = 800;
+  const height = 400;
+  const direction = (roll_deg) => {
+    const start = view({ roll_deg, distance: 5 });
+    const { forward } = viewAxes(start.yaw_deg, start.pitch_deg, roll_deg);
+    const near = start.position.map((value, axis) => value + forward[axis] * 2);
+    const turned = orbitView(start, 3, -1, height);
+    assert.equal(turned.roll_deg, roll_deg);
+    const pivotBefore = onScreen(start, pivotOf(start), width, height);
+    const pivotAfter = onScreen(turned, pivotOf(start), width, height);
+    close(pivotAfter.x, pivotBefore.x, 1e-6);
+    close(pivotAfter.y, pivotBefore.y, 1e-6);
+    const before = onScreen(start, near, width, height);
+    const after = onScreen(turned, near, width, height);
+    const dx = after.x - before.x;
+    const dy = after.y - before.y;
+    return [dx / Math.hypot(dx, dy), dy / Math.hypot(dx, dy)];
+  };
+  const level = direction(0);
+  for (const roll of [30, 90, -90, 180]) closeVec(direction(roll), level, 0.05);
 });
 
 test("a wheel step moves toward the point under the pointer, which stays under it", () => {
