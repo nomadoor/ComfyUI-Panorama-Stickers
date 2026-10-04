@@ -6,21 +6,26 @@ import { createPaintEngineManager } from "../web_src/pano_paint_engine.js";
 // A 2D canvas that counts the drawing calls made on any canvas, so a test sees whether a display
 // canvas was rebuilt.
 let draws = 0;
-function fakeContext() {
+// Each canvas also keeps the canvases drawn into it since it was last cleared (`drawn`).
+function fakeContext(canvas) {
   const target = { globalAlpha: 1, globalCompositeOperation: "source-over" };
   return new Proxy(target, {
     get(object, key) {
       if (key in object) return object[key];
-      return () => {
+      return (...args) => {
         draws += 1;
+        if (key === "clearRect") canvas.drawn = [];
+        if (key === "drawImage") canvas.drawn.push(args[0]);
         return { addColorStop() {} };
       };
     },
   });
 }
 function fakeCanvas() {
-  const ctx = fakeContext();
-  return { width: 0, height: 0, getContext: () => ctx };
+  const canvas = { width: 0, height: 0, drawn: [] };
+  const ctx = fakeContext(canvas);
+  canvas.getContext = () => ctx;
+  return canvas;
 }
 
 function withFakeCanvas(run) {
@@ -109,5 +114,32 @@ test("a paint group with its live stroke is drawn once per change", () => {
     assert.equal(drawsOf(() => engine.getGroupDisplayCanvas("g1")).draws, 0);
     engine.appendStrokePoint(engine.ensureTarget(), 0.3, 0.5, paint);
     assert.ok(drawsOf(() => engine.getGroupDisplayCanvas("g1")).draws > 0);
+  });
+});
+
+test("a paint eraser shows on each group with that group's own paint", () => {
+  withFakeCanvas(() => {
+    const engine = createPaintEngineManager({ width: 64, height: 32 });
+    const paint = (actionGroupId, u) => ({ ...maskStroke(), layerKind: "paint", actionGroupId, geometry: { geometryKind: "freehand", rawPoints: [{ u, v: 0.5 }] } });
+    engine.rebuildCommitted({ painting: { paint: { strokes: [paint("g1", 0.2), paint("g2", 0.7)] } } });
+    const committed = (gid) => engine.getGroupTarget(gid).committedPaint.canvas;
+    const eraser = { ...maskStroke("eraser"), layerKind: "paint" };
+    engine.beginStroke(eraser);
+    engine.appendStrokePoint(engine.ensureTarget(), 0.5, 0.5, eraser);
+
+    const first = engine.getGroupDisplayCanvas("g1");
+    const second = engine.getGroupDisplayCanvas("g2");
+    assert.notEqual(first, second);
+    assert.notEqual(first, committed("g1"));
+    // Each preview starts from its own group's paint, and drawing the second leaves the first as it was.
+    assert.equal(first.drawn[0], committed("g1"));
+    assert.equal(second.drawn[0], committed("g2"));
+    assert.equal(engine.getGroupDisplayCanvas("g1"), first);
+    assert.equal(drawsOf(() => engine.getGroupDisplayCanvas("g1")).draws, 0);
+
+    // The eraser's end drops the previews; the groups show their committed paint again.
+    engine.commitActiveStroke(eraser);
+    assert.equal(engine.getGroupDisplayCanvas("g1"), committed("g1"));
+    assert.equal(engine.getGroupDisplayCanvas("g2"), committed("g2"));
   });
 });

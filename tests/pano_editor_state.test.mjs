@@ -883,3 +883,16 @@ test("Panorama Studio adds its Camera at the view and saves none once it is dele
   assert.equal(JSON.parse(deleted).camera, null);
   assert.equal(sameEditorStateText(node, deleted, readFixture("v2_canonical"), { rebased: true }), false);
 });
+
+// A VIDEO faster than the fastest fps a state keeps (TIMELINE_FPS_MAX) rebases the state once: the fps
+// compared on each result is brought into range first, so a later result changes nothing.
+test("a VIDEO above the fps limit rebases the state once and never again", () => {
+  const text = readFixture("v2_canonical");
+  const state = parseSceneEditorState(text, { fps: 2400 });
+  assert.equal(state.timeline.fps, 1000);
+  assert.deepEqual(loadSceneState(editorStateText({ __panoSceneStateV2: true }, state)), rebaseSceneState(loadSceneState(text), 1000));
+  const before = structuredClone(state);
+  setTimelineFps(state, 2400);
+  assert.deepEqual(state, before, "rebasing to the same fps after bringing it into range changes nothing");
+  assert.deepEqual(parseSceneEditorState(text, { fps: 300 }).timeline.fps, 300, "a VIDEO within the limits keeps its fps");
+});

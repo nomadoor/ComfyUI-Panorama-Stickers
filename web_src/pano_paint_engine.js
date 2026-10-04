@@ -971,9 +971,10 @@ export function createPaintEngineManager(options = {}) {
   let activeGroupId = null;   // null when mask is active or idle
   let activeLayerKind = "";   // "paint" | "mask" | ""
   let previousOrderedGroupIds = null;
-  // The display canvases of a paint group with its live stroke and of the mask, each with the key of
-  // the pixels it was built from ({ key, surface }).
-  let groupPreview = null;
+  // The display canvases of the paint groups with the live stroke (group id -> { key, surface }) and
+  // of the mask ({ key, surface }), each with the key of the pixels it was built from. A paint eraser
+  // shows on every group at once, so each group has its own while a stroke is drawn; they go when it ends.
+  const groupPreviews = new Map();
   let maskDisplay = null;
 
   // ─── Group Target Helpers ──────────────────────────────────────────────────
@@ -1089,6 +1090,7 @@ export function createPaintEngineManager(options = {}) {
     clearSurface(maskTarget.currentStroke);
     maskTarget.activeStroke = null;
     maskTarget.painted = false;
+    groupPreviews.clear();
     markDirty(maskTarget);
     markDirty(paintScratchTarget);
     previousOrderedGroupIds = null;
@@ -1231,6 +1233,7 @@ export function createPaintEngineManager(options = {}) {
     clearSurface(target.currentStroke);
     target.activeStroke = null;
     markDirty(target);
+    groupPreviews.clear();
     activeGroupId = null;
     activeLayerKind = "";
 
@@ -1257,6 +1260,7 @@ export function createPaintEngineManager(options = {}) {
         markDirty(group);
       }
     }
+    groupPreviews.clear();
     activeGroupId = null;
     activeLayerKind = "";
     composeAllLayers([...groupTargets.keys()]);
@@ -1322,9 +1326,10 @@ export function createPaintEngineManager(options = {}) {
     const eraser = !!activePaintStroke?.isEraser;
     const as = isActive ? group.activeStroke : null;
     if (!eraser && !as) return group.committedPaint.canvas;
-    const key = `${group.actionGroupId}:${group.revision}:${paintScratchTarget.revision}:${eraser}`;
-    if (groupPreview?.key === key) return groupPreview.surface.canvas;
-    const surface = resizeSurface(groupPreview?.surface ?? null, ERP_W, ERP_H);
+    const key = `${group.revision}:${paintScratchTarget.revision}:${eraser}`;
+    const cached = groupPreviews.get(group.actionGroupId);
+    if (cached?.key === key) return cached.surface.canvas;
+    const surface = resizeSurface(cached?.surface ?? null, ERP_W, ERP_H);
     clearSurface(surface);
     surface.ctx.drawImage(group.committedPaint.canvas, 0, 0);
     if (eraser) {
@@ -1335,7 +1340,7 @@ export function createPaintEngineManager(options = {}) {
       surface.ctx.drawImage(sharedCurrentStroke.canvas, 0, 0);
       surface.ctx.restore();
     }
-    groupPreview = { key, surface };
+    groupPreviews.set(group.actionGroupId, { key, surface });
     return surface.canvas;
   }
 

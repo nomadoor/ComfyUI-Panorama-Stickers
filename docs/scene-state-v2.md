@@ -16,7 +16,7 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 ## 共通の規則
 
 - 数値は JSON の数値だけを受け付ける。文字列・真偽値・`null`・非有限値は不正とする。
-- 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化（#54）で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。
+- 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化（#54）で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。Keyframe の `frame` と Clip range の `start`・`in`・`duration` は、丸めたあと ±10,000,000（`TIMELINE_FRAME_MAX`）の内に寄せる。
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
 - 正規化は冪等である。`load_scene_state` の結果をもう一度読むと同じ結果になる。
@@ -61,7 +61,7 @@ Stickers・Cutout の `state_json`（状態 v2）、Cutout が出力する `stic
 | フィールド | 型 | 既定値 | 正規化 |
 |---|---|---|---|
 | `version` | `2` | — | 下記「版の判定」 |
-| `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜240 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
+| `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
 | `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。100,000 を超える値は 100,000 に寄せる（`TIMELINE_LENGTH_MAX`）。`null` なら入力から決める（#53） |
 | `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
 | `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない |
@@ -345,7 +345,7 @@ rebaseSceneState(state, fps) // -> object
 - Timeline 上のすべての出来事（Keyframe、Clip range の始まりと終わり、素材の先頭）は、新しい fps の半フレーム以内に丸まる。同じ時刻にあった Camera と Sticker の Keyframe は、同じ frame に落ちる。
 - 丸めた結果、同じ Lane で `frame` が重なった Keyframe は、正規化の規則どおり後ろのものを残す。`duration` は正規化で 1 以上になる。
 - ハンドルは空間のずれなので変えない。表示（`camera.visible`・`scene.visible`・Sticker の `visible`・`painting_visible`）も変えない。
-- `fps` は 1〜240 に寄せてから使う（例：`1e308` は 240 にする）。長さも正規化で 100,000 以下に寄せる。
+- `fps` は 1〜1000 に寄せてから使う（例：`1e308` は 1000 にする）。長さも正規化で 100,000 以下に寄せる。
 - `fps` が正の有限の数値でなければエラーにする（Python は `ValueError`、JS は `Error`）。文面は `Cannot rebase state_json to fps <値>; fps must be a positive number.` で、`<値>` の書き方は実装ごとに違う（Python は `repr`、JS は `JSON.stringify`）。
 
 ## 版の判定
@@ -450,4 +450,4 @@ Cutout が出力し、Stickers の `sticker_state` 入力が受け取る。
 - #86 の結果（ADR 0029）：`camera` を `null`（Camera が無い）か Camera のオブジェクトにし、Camera に静的な `projection`（`perspective`・`erp`）を加えた。読み込み・評価関数・再基準化・フィクスチャ（`v2_no_camera`・`v2_erp_camera` を追加。`v1_stickers.v2` は `camera: null`）を Python と JS で合わせた。`version` は 2 のまま（前の v2 はそのまま読める）。`_decide_timeline` と `isTimed`・`timelineSpan` は、`camera` の指定があっても Camera が無ければ Camera の Keyframe を数えない。新しい Stickers・Cutout の扱いと、保存するテキストで `projection` の既定値を省く理由は「`state_json` v2」の節に書いた。Panorama Studio のノードと `erp` の描画は #87。`CONTEXT.md` と `docs/render-contract.md` の Camera の記述（Stickers は Camera を持たない、など）も #87 で直す。
 - #87 の結果（ADR 0029）：Panorama Studio（`PanoramaStudio`）を加えた。`camera` が `null` なら原点・回転 0 の ERP、`projection` が `erp` なら Camera の位置と回転からの ERP、`perspective` なら Camera の透視投影で撮る（`docs/render-contract.md` の「Panorama Studio」）。Studio は `camera` を読み替えない（`_cutout_state` の既定の Camera は使わない）。新しい Stickers・Cutout の扱いは上の「今のノードでの扱い」のまま（#92 で外す）。
 - #88 の結果（ADR 0029）：Panorama Studio の `scene` 入力で、別の Studio の `scene` 出力を受ける。状態の形は変えていない。上流の状態は下流の状態に入れず、`PANO_SCENE` の層（`layers`）として別々に持ち、描画のときに重ねる（`docs/render-contract.md` の「層」と「上流の Scene（#88）」）。Sticker の `id` は層の中でだけ一意であればよく、上流と同じ `id` でも書き換えない。`port` の Sticker は層ごとに一つまで。エディタ（#89・#90）は上流の層の状態を実行結果の `pano_upstream_layers` から読み、自分の状態とは別に、その層の `timeline.fps` で評価して表示する。上流の状態を自分の状態に書き込まない。
-- タイムラインの上限：`timeline.fps` を 1〜240、`timeline.length` を 100,000 以下に寄せるようにした（読み込みと `rebase_scene_state`・`rebaseSceneState`）。極端な値（例：`1e308`）でエディタのタイムラインの目盛りのループや再基準化が止まらなくなるのを防ぐためである。定数は `scene_state.py` と `pano_scene_state.js` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX` で、Python と JS で同じ値にする（フィクスチャ `v2_timeline_limits`）。範囲内の状態は変わらない。
+- タイムラインの上限：`timeline.fps` を 1〜1000、`timeline.length` を 100,000 以下に、Clip range の `start`・`in`・`duration` と Keyframe の `frame` を ±10,000,000 以内（`TIMELINE_FRAME_MAX`）に寄せるようにした（読み込みと `rebase_scene_state`・`rebaseSceneState`）。fps の上限は高速度撮影の VIDEO（240 fps を超えるもの）を寄せずに扱える値にした。frame の上限は、VIDEO の入力の長さに上限が無いので、長さの上限より広くしてある（1000 fps で約 2.8 時間）。極端な値（例：`1e308`）でエディタのタイムラインの目盛りのループや再基準化が止まらなくなるのを防ぐためである。定数は `scene_state.py` と `pano_scene_state.js` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` で、Python と JS で同じ値にする（フィクスチャ `v2_timeline_limits`）。範囲内の状態は変わらない。

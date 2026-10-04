@@ -115,7 +115,8 @@ def test_hidden_camera_scene_and_painting_are_kept_by_rebase():
 
 
 @pytest.mark.parametrize(("fps", "length", "expected"), [
-    (1e308, 1e308, {"fps": 240.0, "length": 100000}),
+    (1e308, 1e308, {"fps": 1000.0, "length": 100000}),
+    (300.0, 100000, {"fps": 300.0, "length": 100000}),
     (0, 0, {"fps": 24.0, "length": None}),
     (0.5, 100001, {"fps": 1.0, "length": 100000}),
     (-1, -5, {"fps": 24.0, "length": None}),
@@ -126,14 +127,37 @@ def test_timeline_fps_and_length_are_kept_in_range(fps, length, expected):
 
 
 @pytest.mark.parametrize(("fps", "timeline", "start"), [
-    (1e308, {"fps": 240.0, "length": 100000}, 240),
-    (0.5, {"fps": 1.0, "length": 417}, 1),
-    (60.0, {"fps": 60.0, "length": 25000}, 60),
+    (1e308, {"fps": 1000.0, "length": 100000}, 1000),
+    (300.0, {"fps": 300.0, "length": 30000}, 300),
+    (0.5, {"fps": 1.0, "length": 100}, 1),
+    (60.0, {"fps": 60.0, "length": 6000}, 60),
 ])
 def test_rebase_brings_the_fps_into_range(fps, timeline, start):
     rebased = rebase_scene_state(load_scene_state(read_fixture("v2_timeline_limits")), fps)
     assert rebased["timeline"] == timeline
     assert rebased["stickers"][0]["clip"]["start"] == start
+
+
+def test_clip_ranges_and_keyframes_are_kept_within_the_frame_limit():
+    far = load_scene_state(read_fixture("v2_timeline_limits"))["stickers"][1]
+    assert far["clip"] == {"start": 10_000_000, "in": 10_000_000, "duration": 10_000_000}
+    assert [key["frame"] for key in far["opacity"]["keyframes"]] == [-10_000_000, 10_000_000]
+
+
+def test_a_state_within_the_limits_loads_unchanged():
+    raw = {
+        "version": 2,
+        "timeline": {"fps": 300.0, "length": 100000},
+        "scene": {"clip": {"start": 0, "in": 0, "duration": 9_999_999}},
+        "stickers": [{"id": "st", "source": {"kind": "port"}, "clip": {"start": 9_000_000, "in": 5, "duration": 1_000_000},
+                      "opacity": {"keyframes": [{"frame": -10_000_000, "value": 1.0}, {"frame": 10_000_000, "value": 0.0}]}}],
+    }
+    state = load_scene_state(raw)
+    assert state["timeline"] == raw["timeline"]
+    assert state["scene"]["clip"] == raw["scene"]["clip"]
+    assert state["stickers"][0]["clip"] == raw["stickers"][0]["clip"]
+    assert [key["frame"] for key in state["stickers"][0]["opacity"]["keyframes"]] == [-10_000_000, 10_000_000]
+    assert load_scene_state(json.dumps(state)) == state
 
 
 @pytest.mark.parametrize("fps", [0, -1.0, float("nan"), float("inf")])

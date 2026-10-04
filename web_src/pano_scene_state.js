@@ -13,8 +13,11 @@ const FILE_STORAGES = ["input", "output", "temp"];
 export const DEFAULT_EASING = [0.42, 0, 0.58, 1];
 // The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
 export const TIMELINE_FPS_MIN = 1;
-export const TIMELINE_FPS_MAX = 240;
+export const TIMELINE_FPS_MAX = 1000;
 export const TIMELINE_LENGTH_MAX = 100000;
+// The largest Clip range edge and Keyframe frame (either sign) a state keeps. It is wider than
+// TIMELINE_LENGTH_MAX, as the length of a VIDEO input is not capped (about 2.8 hours at 1000 fps).
+export const TIMELINE_FRAME_MAX = 10000000;
 
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -36,6 +39,12 @@ function clamp(value, lo, hi) {
 function frameNumber(value) {
   const out = number(value, null);
   return out === null ? null : Math.floor(out + 0.5);
+}
+
+// A stored Clip range edge or Keyframe frame, within ±TIMELINE_FRAME_MAX.
+function eventFrame(value) {
+  const out = frameNumber(value);
+  return out === null ? null : clamp(out, -TIMELINE_FRAME_MAX, TIMELINE_FRAME_MAX);
 }
 
 // A Timeline fps brought into range, or null when it is not a positive number.
@@ -134,7 +143,7 @@ function keyframes(raw, valueFn, hasHandles) {
   const byFrame = new Map();
   for (const item of Array.isArray(raw) ? raw : []) {
     if (!isObject(item)) continue;
-    const frame = frameNumber(item.frame);
+    const frame = eventFrame(item.frame);
     if (frame === null) continue;
     const key = { frame, value: valueFn(item.value), easing: easing(item.easing) };
     const keyHandles = hasHandles ? handles(item.handles) : null;
@@ -156,9 +165,9 @@ function lanes(raw, list) {
 
 function clip(raw) {
   const src = isObject(raw) ? raw : {};
-  const start = frameNumber(src.start);
-  const clipIn = frameNumber(src.in);
-  const duration = frameNumber(src.duration);
+  const start = eventFrame(src.start);
+  const clipIn = eventFrame(src.in);
+  const duration = eventFrame(src.duration);
   return {
     start: start === null ? 0 : Math.max(0, start),
     in: clipIn === null ? 0 : Math.max(0, clipIn),

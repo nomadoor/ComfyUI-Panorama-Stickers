@@ -29,9 +29,9 @@ EVAL_FRAMES = {
     "v2_no_camera": [0.0, 5.0, 6.0, 10.0, 20.0, 36.0, 44.9, 45.0],
     "v2_erp_camera": [0.0, 12.0, 18.0, 23.999, 24.0, 30.0, 36.0, 40.0],
     "v2_hidden": [0.0, 2.0, 3.0, 8.0],
-    "v2_timeline_limits": [0.0, 240.0, 300.0, 360.0, 480.0],
+    "v2_timeline_limits": [0.0, 1000.0, 1250.0, 1500.0, 2000.0, 1e7],
 }
-REBASE_CASES = [[name, fps] for name in STATE_CASES for fps in (30000 / 1001, 12.0, 60.0)] + [["v2_timeline_limits", fps] for fps in (1e308, 0.5)]
+REBASE_CASES = [[name, fps] for name in STATE_CASES for fps in (30000 / 1001, 12.0, 60.0)] + [["v2_timeline_limits", fps] for fps in (1e308, 300.0, 0.5)]
 BAD_STATES = ['{"version":3}', '{"version":"2"}', "{not json", "[1]"]
 
 JS_SCRIPT = textwrap.dedent(

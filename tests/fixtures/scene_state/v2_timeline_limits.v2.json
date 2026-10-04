@@ -1,7 +1,7 @@
 {
   "version": 2,
   "timeline": {
-    "fps": 240.0,
+    "fps": 1000.0,
     "length": 100000
   },
   "camera": null,
@@ -9,7 +9,7 @@
     "clip": {
       "start": 0,
       "in": 0,
-      "duration": 480
+      "duration": 2000
     },
     "visible": true,
     "position": {
@@ -41,9 +41,9 @@
         "kind": "port"
       },
       "clip": {
-        "start": 240,
+        "start": 1000,
         "in": 0,
-        "duration": 240
+        "duration": 1000
       },
       "visible": true,
       "locked": false,
@@ -85,7 +85,74 @@
             ]
           },
           {
-            "frame": 120,
+            "frame": 500,
+            "value": 0.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          }
+        ]
+      },
+      "z_index": 0
+    },
+    {
+      "id": "far",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "far.png",
+        "subfolder": "",
+        "storage": "input"
+      },
+      "clip": {
+        "start": 10000000,
+        "in": 10000000,
+        "duration": 10000000
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 20.0,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": [
+          {
+            "frame": -10000000,
+            "value": 1.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          },
+          {
+            "frame": 10000000,
             "value": 0.0,
             "easing": [
               0.42,

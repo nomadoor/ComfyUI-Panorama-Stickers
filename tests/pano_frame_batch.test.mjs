@@ -122,6 +122,12 @@ test("drags defer the node preview to their end and Clip ranges do not reload th
   assert.match(editorFunction("tickFrame"), /if \(runtime\.nodePreviewPending && !isDragging\(\)\) syncNodeLivePreviewSources\(\);/);
   assert.match(editorFunction("isDragging"), /return !!editor\.interaction \|\| !!timeline\.drag;/);
   assert.doesNotMatch(editorFunction("dragWorldGizmo"), /updateSidePanel\(\)/);
+  // The view of a drag redraws the stage without dropping the cached stroke geometry.
+  const tasks = editorSource.slice(editorSource.indexOf("const dragFrames = createFrameBatch({"), editorSource.indexOf("\n  });\n", editorSource.indexOf("const dragFrames = createFrameBatch({")));
+  assert.match(tasks, /view: \(\) => \{\s*syncCutoutShot\(\);\s*runtime\.backgroundDirty = true;\s*runtime\.dirty = true;\s*\}/);
+  assert.doesNotMatch(tasks, /markObjectVisualsDirty|invalidateObjectVisualCaches/);
+  // Closing the editor drops what a drag left pending.
+  assert.match(editorSource, /hideTooltip\(\);\s*dragFrames\.cancel\(\);\s*stopRenderLoop\(\);/);
   const input = editorFunction("buildEditorViewInput");
   assert.match(input, /const sceneKey = JSON\.stringify\(\[stickers\.map\(withoutClip\), Object\.keys\(assets\), withoutClip\(state\.scene \?\? \{\}\)\]\);/);
   assert.match(input, /if \(stateV2\) copyClipRanges\(editorViewScene\.sceneState\);/);

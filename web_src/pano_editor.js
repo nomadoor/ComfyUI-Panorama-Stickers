@@ -51,7 +51,7 @@ import {
   worldStickerFields,
 } from "./pano_editor_state.js";
 import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from "./pano_scene_eval.js";
-import { loadSceneState } from "./pano_scene_state.js";
+import { loadSceneState, timelineFps } from "./pano_scene_state.js";
 import {
   deleteKeyframes,
   enteredTimelineFps,
@@ -270,11 +270,12 @@ const comfyMedia = createComfyMediaAdapter({
   },
 });
 
-// The Timeline fps a VIDEO input set in the node's current result (ADR 0024), or null.
+// The Timeline fps a VIDEO input set in the node's current result (ADR 0024), or null. It is brought
+// into the range a state keeps, so a faster VIDEO compares equal to the state rebased to it.
 function videoTimelineFps(node) {
   if (!isNodeOutputMediaCurrent(node, "background") || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
   const fps = comfyMedia.uiValue(node, "pano_timeline_fps");
-  return Array.isArray(fps) && fps[0] > 0 ? fps[0] : null;
+  return Array.isArray(fps) ? timelineFps(fps[0]) : null;
 }
 
 // The tools of the Cutout editor that PanoramaCutoutNode's editor does not have (#77).
@@ -1106,9 +1107,11 @@ async function showEditor(node, type, options = {}) {
     tasks: {
       seek: () => playback.seek(timeline.scrubFrame),
       timeline: () => syncTimeline(),
+      // The Stickers are evaluated at the playhead as the stage draws; the stroke geometry stays cached.
       view: () => {
         syncCutoutShot();
-        markObjectVisualsDirty();
+        runtime.backgroundDirty = true;
+        runtime.dirty = true;
       },
       sidePanel: () => updateSidePanel(),
     },
@@ -6577,7 +6580,10 @@ async function showEditor(node, type, options = {}) {
   }
 
   // Rebases the state to fps, keeping its times and the playhead's in seconds, as one history step.
-  function changeTimelineFps(fps) {
+  function changeTimelineFps(value) {
+    // The fps the state keeps; the one it already has changes nothing (no Undo step).
+    const fps = timelineFps(value);
+    if (fps === null || fps === state.timeline.fps) return;
     stopTimelinePlayback();
     const frame = Math.round(editor.frame * fps / state.timeline.fps);
     setTimelineFps(state, fps);
@@ -11136,6 +11142,7 @@ async function showEditor(node, type, options = {}) {
       node.graph?.setDirtyCanvas?.(true, true);
       app?.canvas?.setDirty?.(true, true);
       hideTooltip();
+      dragFrames.cancel();
       stopRenderLoop();
       if (videoEl instanceof HTMLVideoElement) videoEl.pause();
       videoCleanupFns.forEach((fn) => {

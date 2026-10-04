@@ -20,8 +20,11 @@ FILE_STORAGES = ("input", "output", "temp")
 DEFAULT_EASING = (0.42, 0.0, 0.58, 1.0)
 # The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
 TIMELINE_FPS_MIN = 1.0
-TIMELINE_FPS_MAX = 240.0
+TIMELINE_FPS_MAX = 1000.0
 TIMELINE_LENGTH_MAX = 100000
+# The largest Clip range edge and Keyframe frame (either sign) a state keeps. It is wider than
+# TIMELINE_LENGTH_MAX, as the length of a VIDEO input is not capped (about 2.8 hours at 1000 fps).
+TIMELINE_FRAME_MAX = 10000000
 
 
 def _reject_constant(name):
@@ -50,6 +53,12 @@ def _clamp(value, lo, hi):
 def _frame(value):
     out = _number(value, None)
     return None if out is None else int(math.floor(out + 0.5))
+
+
+def _event_frame(value):
+    """A stored Clip range edge or Keyframe frame, within ±TIMELINE_FRAME_MAX."""
+    out = _frame(value)
+    return None if out is None else _clamp(out, -TIMELINE_FRAME_MAX, TIMELINE_FRAME_MAX)
 
 
 def _timeline_fps(value):
@@ -153,7 +162,7 @@ def _keyframes(raw, value_fn, has_handles):
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict):
             continue
-        frame = _frame(item.get("frame"))
+        frame = _event_frame(item.get("frame"))
         if frame is None:
             continue
         key = {"frame": frame, "value": value_fn(item.get("value")), "easing": _easing(item.get("easing"))}
@@ -175,9 +184,9 @@ def _lanes(raw, lanes):
 
 def _clip(raw):
     raw = raw if isinstance(raw, dict) else {}
-    start = _frame(raw.get("start"))
-    clip_in = _frame(raw.get("in"))
-    duration = _frame(raw.get("duration"))
+    start = _event_frame(raw.get("start"))
+    clip_in = _event_frame(raw.get("in"))
+    duration = _event_frame(raw.get("duration"))
     return {
         "start": 0 if start is None else max(0, start),
         "in": 0 if clip_in is None else max(0, clip_in),
