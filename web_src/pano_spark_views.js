@@ -23,8 +23,10 @@
 // - onDirty(owner) asks for that view only. With its camera where it was, the renderer has nothing more to
 //   generate or sort, and the frames stop.
 
-// Polls, in ms, of a released renderer that is still sorting.
+// Polls, in ms, of a released renderer that is still sorting, and the most of them (about 5 s): a sort that
+// failed (a lost context, a terminated worker) never ends, so the renderer is disposed then all the same.
 const RETIRE_POLL_MS = 100;
+const RETIRE_POLLS = 50;
 const LAYERS = 32;
 
 // create(onDirty) makes a SparkRenderer that calls onDirty; onDirty(owner) runs when the renderer of
@@ -47,11 +49,12 @@ export function createSparkViews({ create, cloneSplat, onDirty, setTimeout = glo
 
   // Counts for the diagnostics, from Spark 2.1's own steps: updateInternal generates the splats when it makes
   // another accumulator current, and driveSort starts a sort when it stamps lastSortTime. Both do that before
-  // their first await.
+  // their first await. A Spark without one of them leaves its count null (not measured).
   function count(entry) {
     const { spark } = entry;
     const update = spark.updateInternal;
-    spark.updateInternal = (options) => {
+    if (typeof update !== "function") entry.generates = null;
+    else spark.updateInternal = (options) => {
       const current = spark.current;
       const done = update.call(spark, options);
       if (spark.current !== current) entry.generates += 1;
@@ -59,7 +62,8 @@ export function createSparkViews({ create, cloneSplat, onDirty, setTimeout = glo
       return done;
     };
     const sort = spark.driveSort;
-    spark.driveSort = () => {
+    if (typeof sort !== "function") entry.sorts = null;
+    else spark.driveSort = () => {
       const last = spark.lastSortTime;
       const done = sort.call(spark);
       if (spark.lastSortTime !== last) entry.sorts += 1;
@@ -114,16 +118,15 @@ export function createSparkViews({ create, cloneSplat, onDirty, setTimeout = glo
     entry.meshes.clear();
   }
 
-  // A renderer disposed while it sorts makes a new sort worker when its read-back resolves, and that worker
-  // is never terminated: it is disposed once its sort has ended.
-  function retire(entry) {
+  // A released renderer is disposed once its sort has ended (or after RETIRE_POLLS polls).
+  function retire(entry, polls = 0) {
     entry.retired = true;
     retiring.delete(entry);
-    if (entry.spark.sorting) {
-      retiring.set(entry, setTimeout(() => retire(entry), RETIRE_POLL_MS));
+    if (entry.spark.sorting && polls < RETIRE_POLLS) {
+      retiring.set(entry, setTimeout(() => retire(entry, polls + 1), RETIRE_POLL_MS));
       return;
     }
-    entry.spark.dispose();
+    disposeSpark(entry.spark);
   }
 
   // owner's view stops drawing SPLATs (the camera preview hides): its renderer and what it holds go.
@@ -147,13 +150,13 @@ export function createSparkViews({ create, cloneSplat, onDirty, setTimeout = glo
   function dispose() {
     retiring.forEach((timer, entry) => {
       clearTimeout(timer);
-      entry.spark.dispose();
+      disposeSpark(entry.spark);
     });
     retiring.clear();
     views.forEach((entry) => {
       entry.retired = true;
       dropMeshes(entry);
-      entry.spark.dispose();
+      disposeSpark(entry.spark);
     });
     views.clear();
   }
@@ -170,13 +173,23 @@ export function createSparkViews({ create, cloneSplat, onDirty, setTimeout = glo
         sorts: entry.sorts,
         camera: entry.camera,
       };
-      entry.generates = 0;
-      entry.sorts = 0;
+      if (entry.generates !== null) entry.generates = 0;
+      if (entry.sorts !== null) entry.sorts = 0;
       return row;
     });
   }
 
   return { renderer, splat, aim, release, forget, dispose, stats };
+}
+
+// A SparkRenderer disposed while it sorts would make a new sort worker when its read-back resolves (Spark 2.1
+// driveSort makes one when it has none), and nobody would terminate it. A stand-in worker whose sorts never
+// end takes its place, so the sort stops there and nothing is made.
+const DISPOSED_WORKER = Object.freeze({ call: () => new Promise(() => {}), dispose() {} });
+
+export function disposeSpark(spark) {
+  spark.dispose();
+  spark.sortWorker = DISPOSED_WORKER;
 }
 
 // To 3 decimals, without a -0.

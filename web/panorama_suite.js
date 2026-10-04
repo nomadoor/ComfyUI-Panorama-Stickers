@@ -6853,7 +6853,7 @@ function Vv(e, t, r, { media: n, evaluated: i = sl(e, t) }) {
 function Rv({ canvas: e, onReady: t, onFailed: r, onUpdate: n = () => {
 }, onSplats: i = () => {
 }, onRestored: o = () => {
-}, load: a = () => import("./.lazy/pano_three_view-BAg70Qf5.js").then((s) => s.$) }) {
+}, load: a = () => import("./.lazy/pano_three_view-Bs852nXV.js").then((s) => s.$) }) {
   let s = null, l = null, c = !1, u = 0;
   const d = () => {
     l = lh(s.createThreeView({ onUpdate: n, onSplats: i, createCanvas: () => e }), "editor");
@@ -6969,7 +6969,7 @@ function $v(e) {
   };
 }
 const pm = $v(
-  () => import("./.lazy/pano_three_view-BAg70Qf5.js").then((e) => e.$).then((e) => lh(e.createThreeView({ createCanvas: () => dn({ label: "three.node" }) }), "node"))
+  () => import("./.lazy/pano_three_view-Bs852nXV.js").then((e) => e.$).then((e) => lh(e.createThreeView({ createCanvas: () => dn({ label: "three.node" }) }), "node"))
 ), Kr = ["erp_image", "bg_erp", "bg_media"], is = ["source"], Bu = ["sticker_image", "sticker"], hm = ["scene"], zv = {
   background: [...Kr, ...is],
   "external-sticker": [...Bu, ...is],

@@ -6,7 +6,7 @@ import { Group, Mesh, Object3D, PerspectiveCamera, Scene } from "three";
 
 import { CAMERA_PREVIEW_OWNER, cameraPreviewChanged, splatDrawReason } from "../web_src/editor/camera_preview.js";
 import { DRAW_REASON } from "../web_src/pano_frame_scheduler.js";
-import { createSparkViews } from "../web_src/pano_spark_views.js";
+import { createSparkViews, disposeSpark } from "../web_src/pano_spark_views.js";
 import { readEditorSource } from "./editor_source.mjs";
 
 const STAGE = undefined;
@@ -98,6 +98,8 @@ class FakeSpark extends Mesh {
 
   dispose() {
     this.disposed = true;
+    // As Spark 2.1's dispose: it terminates its sort worker and lets go of it.
+    this.sortWorker = null;
   }
 }
 
@@ -419,4 +421,82 @@ test("the diagnostics read each renderer's generates and sorts since the last re
   assert.equal(after.sorts, 0);
   views.renderer(CAMERA_PREVIEW_OWNER);
   assert.deepEqual(views.stats().map((each) => each.view), ["stage", CAMERA_PREVIEW_OWNER]);
+});
+
+test("a renderer disposed while it sorts makes no new sort worker when its read-back resolves", async () => {
+  const spark = new FakeSpark(() => {});
+  spark.sorting = true;
+  disposeSpark(spark);
+  assert.equal(spark.disposed, true);
+  // What Spark 2.1 driveSort does after the read-back: make a worker when it has none, and sort on it.
+  let made = 0;
+  if (!spark.sortWorker) made += 1;
+  assert.equal(made, 0);
+  let settled = false;
+  spark.sortWorker.call("sortSplats32", {}).then(() => { settled = true; }, () => { settled = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  spark.sortWorker.dispose();
+});
+
+test("disposing the view and releasing a view leave no renderer that could make a sort worker", () => {
+  const made = [];
+  const views = createSparkViews({
+    create: (onDirty) => {
+      const spark = new FakeSpark(onDirty);
+      made.push(spark);
+      return spark;
+    },
+    cloneSplat: (loaded) => new FakeSplatMesh(loaded),
+    onDirty: () => {},
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  });
+  views.renderer(STAGE).sorting = true;
+  views.renderer(CAMERA_PREVIEW_OWNER);
+  views.release(CAMERA_PREVIEW_OWNER);
+  views.dispose();
+  assert.equal(made.length, 2);
+  assert.ok(made.every((spark) => spark.disposed && typeof spark.sortWorker?.call === "function"));
+});
+
+test("a released renderer whose sort never ends is disposed after about 5 seconds of polls", () => {
+  const timers = [];
+  const views = createSparkViews({
+    create: (onDirty) => new FakeSpark(onDirty),
+    cloneSplat: (loaded) => new FakeSplatMesh(loaded),
+    onDirty: () => {},
+    setTimeout: (callback, ms) => timers.push([callback, ms]),
+    clearTimeout: () => {},
+  });
+  const preview = views.renderer(CAMERA_PREVIEW_OWNER);
+  preview.sorting = true;
+  views.release(CAMERA_PREVIEW_OWNER);
+  let waited = 0;
+  while (timers.length) {
+    const [callback, ms] = timers.shift();
+    waited += ms;
+    assert.equal(preview.disposed, false);
+    callback();
+  }
+  assert.equal(preview.disposed, true);
+  assert.ok(waited >= 4000 && waited <= 6000, `waited ${waited} ms`);
+  assert.equal(typeof preview.sortWorker.call, "function");
+});
+
+test("a Spark without the steps the diagnostics count reports its counts as not measured", () => {
+  const views = createSparkViews({
+    create: () => Object.assign(new Mesh(), { dispose() {} }),
+    cloneSplat: (loaded) => new FakeSplatMesh(loaded),
+    onDirty: () => {},
+  });
+  const spark = views.renderer(STAGE);
+  assert.equal(spark.updateInternal, undefined);
+  assert.equal(spark.driveSort, undefined);
+  for (let read = 0; read < 2; read += 1) {
+    const [row] = views.stats();
+    assert.equal(row.generates, null);
+    assert.equal(row.sorts, null);
+  }
+  views.dispose();
 });

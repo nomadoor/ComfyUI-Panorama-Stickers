@@ -39,7 +39,7 @@
 | `video` | この拡張が作った `<video>`：`alive`、`playing`、`list`（最大 20 件：`label`、再生中か、src があるか、`videoWidth` x `videoHeight`、`readyState`、DOM に付いているか） |
 | `frame` | エディタの描画：直近 1 秒のフレーム数、1 フレームの最長時間（ms）、長いタスク（`longtask`）の数と最長時間。エディタは描くことがあるときだけフレームを回すので（`pano_frame_scheduler.js`）、何もしていないときは 0 になる |
 | `renders` | three.js のビューの描画：`editor`（エディタのビュー）と `node`（ノード上の共有ビュー）ごとの、直近 1 秒の回数と最長時間 |
-| `sources["three.editor"]`, `sources["three.node"]` | 各ビューの `renderer.info`（`textures`、`geometries`、`programs`、最後の描画パスの `calls` と `triangles`）、キャンバスの大きさ、`sceneItems`（`scene` と 3D Sticker の項目の数、読み込み済み・読み込み中の数、読み込み済みの合計 MB）、`sparks`（Spark の `SparkRenderer` ごとに 1 行：`view`（`stage` / `camera_preview`）、`layer`（three.js の layer）、直近 1 秒の `generates`（全スプラットの生成）と `sorts`（読み戻しと並べ替え）の回数、`camera`（最後に更新に使ったカメラの `position` と `direction`）。何もしていないときは `generates` と `sorts` が 0 になる） |
+| `sources["three.editor"]`, `sources["three.node"]` | 各ビューの `renderer.info`（`textures`、`geometries`、`programs`、最後の描画パスの `calls` と `triangles`）、キャンバスの大きさ、`sceneItems`（`scene` と 3D Sticker の項目の数、読み込み済み・読み込み中の数、読み込み済みの合計 MB）、`sparks`（Spark の `SparkRenderer` ごとに 1 行：`view`（`stage` / `camera_preview`）、`layer`（three.js の layer）、直近 1 秒の `generates`（全スプラットの生成）と `sorts`（読み戻しと並べ替え）の回数（Spark に数える手がかりのメソッドが無いときは `null`＝計測していない）、`camera`（最後に更新に使ったカメラの `position` と `direction`）。何もしていないときは `generates` と `sorts` が 0 になる） |
 | `sources.editor` | 開いているエディタ：`type`（`stickers` / `cutout` など）、`readOnly`、`mode`、`interaction`（`editor.interaction.kind`）、`timelineDrag`、`playing` |
 | `costMs` | 前回の記録を作るのにかかった時間（localStorage への書き出しを含む） |
 
