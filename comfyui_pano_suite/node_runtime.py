@@ -27,6 +27,11 @@ try:
 except Exception:
     ComfyProgressBar = None
 
+try:
+    from comfy.model_management import throw_exception_if_processing_interrupted
+except Exception:
+    throw_exception_if_processing_interrupted = None
+
 
 PREVIEW_UI_KEYS = {
     "default": {
@@ -171,6 +176,7 @@ class NodeProgress:
         *,
         progress_bar_factory=None,
         api_sync=None,
+        interrupt_check=None,
         logger=None,
     ):
         self.node_id = str(node_id) if node_id is not None else None
@@ -179,10 +185,14 @@ class NodeProgress:
         self.label = str(label or "Node")
         self._progress_bar = progress_bar_factory(self.total) if progress_bar_factory is not None else None
         self._api_sync = api_sync
+        self._interrupt_check = interrupt_check
         self._logger = logger or logging.getLogger(__name__)
         self._last_stage = None
 
     def set(self, value: float):
+        # Each step of a long loop reports here, so Cancel stops it at the next step.
+        if self._interrupt_check is not None:
+            self._interrupt_check()
         self.value = max(0.0, min(self.total, float(value)))
         if self._progress_bar is not None:
             try:
@@ -227,6 +237,7 @@ class NodeRuntime:
         *,
         progress_bar_factory=None,
         api_sync=None,
+        interrupt_check=None,
         preview_saver=None,
         encode_video=None,
         make_video_payload=None,
@@ -235,6 +246,7 @@ class NodeRuntime:
     ):
         self._progress_bar_factory = progress_bar_factory
         self._api_sync = api_sync
+        self._interrupt_check = interrupt_check
         self._preview_saver = preview_saver
         self._encode_video = encode_video
         self._make_video_payload = make_video_payload
@@ -248,6 +260,7 @@ class NodeRuntime:
             label,
             progress_bar_factory=self._progress_bar_factory,
             api_sync=self._api_sync,
+            interrupt_check=self._interrupt_check,
             logger=self._logger,
         )
 
@@ -480,6 +493,7 @@ def create_default_runtime(*, logger=None) -> NodeRuntime:
     return NodeRuntime(
         progress_bar_factory=ComfyProgressBar,
         api_sync=ComfyAPISync() if ComfyAPISync is not None else None,
+        interrupt_check=throw_exception_if_processing_interrupted,
         preview_saver=save_preview if comfy_nodes is not None else None,
         encode_video=encode_frames_to_mp4,
         make_video_payload=make_video_ui_payload,

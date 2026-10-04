@@ -9,6 +9,7 @@ from comfy_api.latest import InputImpl, Types
 from .core.scene_eval import FRAME_EPSILON
 from .core.video_source import MaterializedVideo, StreamedVideo, coded_size
 from .core.world_render import SceneContent
+from .progress import loop_progress
 from .scene_mesh import mesh_scene_content
 from .scene_video import RenderedVideo, SceneVideo
 from .splat_render import splat_content
@@ -25,7 +26,7 @@ def open_video(video, name: str) -> StreamedVideo | MaterializedVideo | Rendered
         return RenderedVideo(video)
     # The crop of a VideoFromFile is private; only an uncropped one reports the stream's own size.
     if isinstance(video, InputImpl.VideoFromFile) and video.get_dimensions() == coded_size(video.get_stream_source()):
-        return StreamedVideo(video.get_stream_source(), *video.get_active_trim_window(), name)
+        return StreamedVideo(video.get_stream_source(), *video.get_active_trim_window(), name, loop_progress())
     return MaterializedVideo(video.get_components(), name)
 
 

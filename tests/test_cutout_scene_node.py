@@ -515,7 +515,7 @@ def test_pano_scene_ui_passes_on_the_scene_state_and_the_stickers_editor_files(m
     )
     pano_scene = stickers.result[3]
     written = []
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value: written.append(value))
+    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: written.append(value))
     monkeypatch.setattr(nodes, "_init_ui_preview", lambda *args, **kwargs: written.append(args))
 
     ui = _cutout_ui(pano_scene, _camera())

@@ -10,7 +10,7 @@ from comfy_api.latest import Types
 from comfy_extras.nodes_gaussian_splat import SplatToFile3D
 from comfy_extras.nodes_save_3d import mesh_item_to_glb_bytes, save_glb
 
-from .core.video import temp_file_path
+from .core.video import removed_on_failure, temp_file_path
 
 
 def moge_grid_mesh(geometry: dict, index: int):
@@ -47,9 +47,10 @@ def _splat_ply(splat: Types.SPLAT, index: int) -> bytes | None:
     )
 
 
-def write_editor_files(value) -> tuple[str, list[Path | None]]:
+def write_editor_files(value, progress=None) -> tuple[str, list[Path | None]]:
     """Write each item of a SPLAT, MESH, or MOGE_GEOMETRY to temp. Returns the kind the editor loads ("splat" or
-    "mesh") and the paths in item order, None for an empty item."""
+    "mesh") and the paths in item order, None for an empty item. `progress(done, total)` is called after each item
+    and may raise to stop; the files written so far are then removed."""
     if isinstance(value, Types.SPLAT):
         kind, extension, count, item = "splat", "ply", value.positions.shape[0], _splat_ply
     elif isinstance(value, Types.MESH):
@@ -58,11 +59,16 @@ def write_editor_files(value) -> tuple[str, list[Path | None]]:
         kind, extension, count, item = "mesh", "glb", value["points"].shape[0], _moge_glb
     name = uuid.uuid4().hex[:12]
     paths = []
-    for index in range(count):
-        data = item(value, index)
-        path = None
-        if data is not None:
-            path = temp_file_path(f"pano_scene_{name}_{index}.{extension}")
-            path.write_bytes(data)
-        paths.append(path)
+    written = []
+    with removed_on_failure(written):
+        for index in range(count):
+            data = item(value, index)
+            path = None
+            if data is not None:
+                path = temp_file_path(f"pano_scene_{name}_{index}.{extension}")
+                written.append(path)
+                path.write_bytes(data)
+            paths.append(path)
+            if progress is not None:
+                progress(index + 1, count)
     return kind, paths

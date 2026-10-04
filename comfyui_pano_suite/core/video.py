@@ -4,6 +4,7 @@ import math
 import tempfile
 import uuid
 import logging
+from contextlib import contextmanager
 from fractions import Fraction
 from pathlib import Path
 
@@ -268,6 +269,18 @@ def entry_from_path(path: Path, *, media_type: str) -> dict:
     }
 
 
+@contextmanager
+def removed_on_failure(paths):
+    """Remove the files of `paths` (a path, or a list that the block fills) when the block fails or is cancelled, so
+    that no partial file is left in temp."""
+    try:
+        yield
+    except BaseException:
+        for path in [paths] if isinstance(paths, (str, Path)) else paths:
+            Path(path).unlink(missing_ok=True)
+        raise
+
+
 def temp_file_path(name: str) -> Path:
     """The path of a file `name` in ComfyUI's temp directory, which ComfyUI clears on start and exit."""
     return _ensure_temp_root() / name
@@ -337,17 +350,18 @@ def _editor_frames(video):
         yield time, av.VideoFrame.from_ndarray((image * 255).clamp(0, 255).byte().cpu().numpy(), format="rgb24")
 
 
-def encode_editor_mp4(video) -> tuple[Path, bool]:
+def encode_editor_mp4(video, progress=None) -> tuple[Path, bool]:
     """Encode a VIDEO opened for reading (`StreamedVideo`, `MaterializedVideo`) one frame at a time into a temp MP4
     for the editor: H.264 with a keyframe every EDITOR_KEYINT frames and no B-frames, its longer side at most
-    EDITOR_MAX_SIZE, each frame at its time, and the audio as AAC. Returns the path and whether the MP4 has audio."""
+    EDITOR_MAX_SIZE, each frame at its time, and the audio as AAC. Returns the path and whether the MP4 has audio.
+    `progress(done, total)` is called after each frame and may raise to stop; the partial MP4 is then removed."""
     height, width = video.first_frame.shape[:2]
     scale = min(1, EDITOR_MAX_SIZE / max(width, height))
     width, height = max(2, round(width * scale / 2) * 2), max(2, round(height * scale / 2) * 2)
     time_base = video.time_base or 1 / video.frame_rate
     audio = video.audio(float(video.times[-1] + 1 / video.frame_rate))
     output_path = _temp_mp4_path()
-    with av.open(str(output_path), mode="w", options={"movflags": "faststart"}) as output:
+    with removed_on_failure(output_path), av.open(str(output_path), mode="w", options={"movflags": "faststart"}) as output:
         stream = output.add_stream("h264", rate=video.frame_rate)
         stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
         # fastdecode halves the decode time for about 10% more size.
@@ -364,6 +378,7 @@ def encode_editor_mp4(video) -> tuple[Path, bool]:
             layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(waveform.shape[0], "stereo")
             audio_stream = output.add_stream("aac", rate=sample_rate, layout=layout)
         codec = stream.codec_context
+        done = 0
         for time, frame in _editor_frames(video):
             # Any RGB or paletted frame (its alpha dropped) is converted with the BT.709 matrix.
             if frame.format.is_rgb or frame.format.has_palette:
@@ -384,6 +399,9 @@ def encode_editor_mp4(video) -> tuple[Path, bool]:
             frame.pts = round(time / time_base)
             frame.time_base = time_base
             output.mux(stream.encode(frame))
+            done += 1
+            if progress is not None:
+                progress(done, len(video.times))
         output.mux(stream.encode(None))
         if audio_stream is not None:
             frame = av.AudioFrame.from_ndarray(waveform, format="fltp", layout=layout)
@@ -527,23 +545,32 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
             except Exception:
                 pass
             continue
+        except BaseException:
+            # Cancelled from `progress_callback`: no partial MP4 is left.
+            container.close()
+            output_path.unlink(missing_ok=True)
+            raise
     raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
 
 
-def save_editor_frames(images) -> list[Path]:
+def save_editor_frames(images, progress=None) -> list[Path]:
     """Each image of an RGBA IMAGE batch as a PNG in temp, with its alpha, which an MP4 cannot hold, for the editor
-    to show the image of the playhead. One image at a time, its longer side at most EDITOR_MAX_SIZE."""
+    to show the image of the playhead. One image at a time, its longer side at most EDITOR_MAX_SIZE.
+    `progress(done, total)` is called after each image and may raise to stop; the PNGs saved so far are then removed."""
     stem = f"pano_frames_{uuid.uuid4().hex[:12]}"
     root = _ensure_temp_root()
     paths = []
-    for index, image in enumerate(images):
-        picture = Image.fromarray((image.clamp(0.0, 1.0) * 255 + 0.5).byte().cpu().numpy(), "RGBA")
-        scale = min(1, EDITOR_MAX_SIZE / max(picture.size))
-        if scale < 1:
-            picture = picture.resize((max(1, round(picture.width * scale)), max(1, round(picture.height * scale))), Image.BILINEAR)
-        path = root / f"{stem}_{index:05d}.png"
-        picture.save(path, compress_level=1)
-        paths.append(path)
+    with removed_on_failure(paths):
+        for index, image in enumerate(images):
+            picture = Image.fromarray((image.clamp(0.0, 1.0) * 255 + 0.5).byte().cpu().numpy(), "RGBA")
+            scale = min(1, EDITOR_MAX_SIZE / max(picture.size))
+            if scale < 1:
+                picture = picture.resize((max(1, round(picture.width * scale)), max(1, round(picture.height * scale))), Image.BILINEAR)
+            path = root / f"{stem}_{index:05d}.png"
+            paths.append(path)
+            picture.save(path, compress_level=1)
+            if progress is not None:
+                progress(index + 1, len(images))
     return paths
 
 

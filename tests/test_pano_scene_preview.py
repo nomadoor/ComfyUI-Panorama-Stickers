@@ -278,7 +278,7 @@ def test_stickers_ui_saves_video_media_without_reading_it_whole(tmp_path, monkey
 def test_stickers_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch):
     encoded = []
     encode_editor_mp4 = nodes.encode_editor_mp4
-    monkeypatch.setattr(nodes, "encode_editor_mp4", lambda opened: encoded.append(opened) or encode_editor_mp4(opened))
+    monkeypatch.setattr(nodes, "encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode_editor_mp4(opened, progress))
     video = _video(tmp_path, count=6)
     images = _solid([0.5, 0.5, 0.5], batch=3)
 

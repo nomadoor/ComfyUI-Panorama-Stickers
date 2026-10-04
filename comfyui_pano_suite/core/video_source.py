@@ -45,10 +45,11 @@ class StreamedVideo:
     `times` holds each frame's presentation time in seconds from the first frame, `time_base` the step those
     times are rounded to, `frame_rate` the stream's average rate, and `first_frame` the first frame that decodes, which sets the output size. Frames are
     float32 RGB (h, w, 3) in 0..1 like `get_components()`, possibly not contiguous, and must be requested in non-decreasing order.
-    Unlike the core reader, a decode error is raised instead of skipped.
+    Unlike the core reader, a decode error is raised instead of skipped. `progress(done, total)` is called for each
+    packet of the scan of the presentation times and may raise to stop it.
     """
 
-    def __init__(self, source, start_time: float, duration: float, name: str):
+    def __init__(self, source, start_time: float, duration: float, name: str, progress=None):
         self._source = source
         self._name = name
         self._start_time = start_time
@@ -61,10 +62,13 @@ class StreamedVideo:
             if start_pts != 0:
                 container.seek(start_pts, stream=stream)
             # Packets carry the presentation times, so the timing is known without decoding.
-            pts = sorted(
-                packet.pts for packet in container.demux(stream)
-                if packet.pts is not None and packet.pts >= start_pts and (end_pts is None or packet.pts < end_pts)
-            )
+            pts = []
+            for packet in container.demux(stream):
+                if packet.pts is not None and packet.pts >= start_pts and (end_pts is None or packet.pts < end_pts):
+                    pts.append(packet.pts)
+                if progress is not None:
+                    progress(len(pts), stream.frames or None)
+            pts.sort()
             if not pts:
                 raise ValueError(f"Panorama Stickers: the {name} VIDEO has no frames in its trim window.")
             self.times = [(value - pts[0]) * stream.time_base for value in pts]

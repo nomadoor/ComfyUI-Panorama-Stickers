@@ -10,7 +10,7 @@ import comfy.model_management
 import comfy.utils
 from comfy_api.latest import Input, InputImpl, Types
 
-from .core.video import _BT709, _set_srgb, _temp_mp4_path
+from .core.video import _BT709, _set_srgb, _temp_mp4_path, removed_on_failure
 
 # The size of a whole video (the color of every frame) from which `get_components` copies the frames from the
 # device through a pinned buffer.
@@ -94,7 +94,8 @@ class SceneVideo(Input.Video):
         self._encode(path, format, codec, metadata, bit_depth, crf, color_space, preset)
 
     def _encode(self, path, format, codec, metadata, bit_depth, crf, color_space, preset):
-        """Render and encode one frame at a time, with each frame at its time and the audio after the video."""
+        """Render and encode one frame at a time, with each frame at its time and the audio after the video. A file
+        written by path is removed when this fails or is cancelled."""
         if color_space not in (None, "sRGB"):
             raise ValueError(f"Cannot save sRGB video as {color_space} without color conversion; use auto or sRGB")
         format, codec = _container_and_codec(path, format, codec)
@@ -113,7 +114,8 @@ class SceneVideo(Input.Video):
         width, height = self._width - self._width % 2, self._height - self._height % 2
         device = comfy.model_management.get_torch_device()
         progress = comfy.utils.ProgressBar(len(self._times))
-        with av.open(path, mode="w", format=_CONTAINER_FORMATS[format], options=options) as output:
+        partial = [os.fspath(path)] if isinstance(path, (str, os.PathLike)) else []
+        with removed_on_failure(partial), av.open(path, mode="w", format=_CONTAINER_FORMATS[format], options=options) as output:
             for key, value in (metadata or {}).items():
                 output.metadata[key] = json.dumps(value)
             stream = output.add_stream(_ENCODERS[codec], rate=self._frame_rate)

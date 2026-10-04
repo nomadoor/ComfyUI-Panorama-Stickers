@@ -17,6 +17,7 @@ from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
 from .node_runtime import PREVIEW_UI_KEYS, NodeProgress, create_default_runtime
+from .progress import loop_progress
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
 from .core.display_list import (
     alpha_composite_over_rgba as _alpha_composite_over_rgba,
@@ -1472,7 +1473,7 @@ def _batch_mp4_ui(images: torch.Tensor, name: str, fps: float, contract: dict) -
     """The `ui` of the editor MP4 of an IMAGE batch, evenly spaced at `fps`, made once per batch and fps."""
     batch = MaterializedVideo(Types.VideoComponents(images=images, frame_rate=Fraction(round(fps * 1000), 1000)), name)
     cache_key = ("editor_mp4", _tensor_cache_identity(images), float(fps))
-    return _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch), fps, len(batch.times), contract)
+    return _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch, loop_progress()), fps, len(batch.times), contract)
 
 
 def _editor_frames_ui(images: torch.Tensor, fps: float, contract: dict) -> dict:
@@ -1481,7 +1482,7 @@ def _editor_frames_ui(images: torch.Tensor, fps: float, contract: dict) -> dict:
     cache_key = ("editor_frames", _tensor_cache_identity(images))
     paths = NODE_RUNTIME.cache.get("video", cache_key)
     if paths is None or not all(path.exists() for path in paths):
-        paths = save_editor_frames(images)
+        paths = save_editor_frames(images, loop_progress())
         NODE_RUNTIME.cache.put("video", cache_key, paths)
     return make_frames_ui_payload(paths, fps, frames_key=contract["frames"], meta_key=contract["meta"])
 
@@ -1529,7 +1530,7 @@ def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_
         cache_key = (NODE_RUNTIME.object_identity(scene), _tensor_cache_identity(positions))
     saved = NODE_RUNTIME.cache.get("scene_files", cache_key)
     if saved is None or not all(path is None or path.exists() for path in saved[1]):
-        saved = write_editor_files(scene)
+        saved = write_editor_files(scene, loop_progress())
         NODE_RUNTIME.cache.put("scene_files", cache_key, saved)
     kind, paths = saved
     files = [None if path is None else entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]]) for path in paths]
@@ -2209,14 +2210,14 @@ def _editor_mp4(video, opened) -> tuple[Path, bool]:
         source = video.get_stream_source()
         if editor_ready(source):
             return Path(source), mp4_has_audio(source)
-        return encode_editor_mp4(StreamedVideo(source, 0, 0, "source"))
+        return encode_editor_mp4(StreamedVideo(source, 0, 0, "source", loop_progress()), loop_progress())
     if isinstance(opened, StreamedVideo):
         source, trim = video.get_stream_source(), video.get_active_trim_window()
         # The core copies the streams only without a trim window, and reads a file in memory as it is.
         if isinstance(source, str) and not any(trim) and editor_ready(source):
             return save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
-        return encode_editor_mp4(StreamedVideo(source, *trim, "source"))
-    return encode_editor_mp4(opened)
+        return encode_editor_mp4(StreamedVideo(source, *trim, "source", loop_progress()), loop_progress())
+    return encode_editor_mp4(opened, loop_progress())
 
 
 def _editor_mp4_ui(cache_key: tuple, make, fps: float, frame_count: int, contract: dict) -> dict:
