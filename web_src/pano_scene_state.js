@@ -11,6 +11,13 @@ const PROJECTIONS = ["perspective", "erp"];
 const FILE_STORAGES = ["input", "output", "temp"];
 // ease-in-out, the Easing of a Keyframe without a valid one.
 export const DEFAULT_EASING = [0.42, 0, 0.58, 1];
+// The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
+export const TIMELINE_FPS_MIN = 1;
+export const TIMELINE_FPS_MAX = 1000;
+// The largest Clip range edge and Keyframe frame (either sign) a state keeps: about 2.8 hours at
+// 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
+export const TIMELINE_FRAME_MAX = 10000000;
+export const TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX;
 
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -32,6 +39,24 @@ function clamp(value, lo, hi) {
 function frameNumber(value) {
   const out = number(value, null);
   return out === null ? null : Math.floor(out + 0.5);
+}
+
+// A stored Clip range edge or Keyframe frame, within ±TIMELINE_FRAME_MAX.
+function eventFrame(value) {
+  const out = frameNumber(value);
+  return out === null ? null : clamp(out, -TIMELINE_FRAME_MAX, TIMELINE_FRAME_MAX);
+}
+
+// A Timeline fps brought into range, or null when it is not a positive number.
+export function timelineFps(value) {
+  const out = positive(value, null);
+  return out === null ? null : clamp(out, TIMELINE_FPS_MIN, TIMELINE_FPS_MAX);
+}
+
+// A `timeline.length` rounded to a frame and brought under TIMELINE_LENGTH_MAX, or null below 1.
+export function timelineLength(value) {
+  const out = frameNumber(value);
+  return out !== null && out >= 1 ? Math.min(out, TIMELINE_LENGTH_MAX) : null;
 }
 
 function bool(value, fallback) {
@@ -118,7 +143,7 @@ function keyframes(raw, valueFn, hasHandles) {
   const byFrame = new Map();
   for (const item of Array.isArray(raw) ? raw : []) {
     if (!isObject(item)) continue;
-    const frame = frameNumber(item.frame);
+    const frame = eventFrame(item.frame);
     if (frame === null) continue;
     const key = { frame, value: valueFn(item.value), easing: easing(item.easing) };
     const keyHandles = hasHandles ? handles(item.handles) : null;
@@ -140,9 +165,9 @@ function lanes(raw, list) {
 
 function clip(raw) {
   const src = isObject(raw) ? raw : {};
-  const start = frameNumber(src.start);
-  const clipIn = frameNumber(src.in);
-  const duration = frameNumber(src.duration);
+  const start = eventFrame(src.start);
+  const clipIn = eventFrame(src.in);
+  const duration = eventFrame(src.duration);
   return {
     start: start === null ? 0 : Math.max(0, start),
     in: clipIn === null ? 0 : Math.max(0, clipIn),
@@ -240,12 +265,11 @@ export function defaultCamera() {
 function normalizeV2(raw) {
   const timeline = isObject(raw.timeline) ? raw.timeline : {};
   const scene = isObject(raw.scene) ? raw.scene : {};
-  const length = frameNumber(timeline.length);
   return {
     version: STATE_VERSION,
     timeline: {
-      fps: positive(timeline.fps, 24),
-      length: length !== null && length >= 1 ? length : null,
+      fps: timelineFps(timeline.fps) ?? 24,
+      length: timelineLength(timeline.length),
     },
     camera: camera(raw.camera),
     scene: { clip: clip(scene.clip), visible: bool(scene.visible, true), ...lanes(scene, SCENE_LANES) },
@@ -372,9 +396,10 @@ function rebaseClip(src, rebase) {
 // Rescales every stored frame of a loaded state from its timeline.fps to fps. Every Timeline event
 // (Keyframe, Clip range start and end, content anchor) rounds to the nearest frame of the new fps,
 // so it moves by at most half a new frame and events at one time stay together.
-export function rebaseSceneState(state, fps) {
-  if (positive(fps, null) === null) {
-    throw new Error(`Cannot rebase state_json to fps ${JSON.stringify(fps)}; fps must be a positive number.`);
+export function rebaseSceneState(state, value) {
+  const fps = timelineFps(value);
+  if (fps === null) {
+    throw new Error(`Cannot rebase state_json to fps ${JSON.stringify(value)}; fps must be a positive number.`);
   }
   const ratio = fps / state.timeline.fps;
   const rebase = (frame) => frameNumber(frame * ratio);

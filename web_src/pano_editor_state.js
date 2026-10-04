@@ -3,7 +3,7 @@ import { wrapYaw } from "./pano_math.js";
 import { DEG2RAD } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { defaultCamera, loadSceneState, rebaseSceneState, sceneStateText } from "./pano_scene_state.js";
+import { defaultCamera, loadSceneState, rebaseSceneState, sceneStateText, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
@@ -191,7 +191,9 @@ export function paintingLayerNeedsSync(layer, { paintCount, maskCount, width, he
 // is first edited (noteCameraEdit), so that
 // editorStateText() saves the state without a Camera again while that Camera is left as it is.
 export function parseSceneEditorState(text, options = {}) {
-  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, fps = null, scene: shot = null, camera = false } = options;
+  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, scene: shot = null, camera = false } = options;
+  // The fps a VIDEO sets, brought into the range a state keeps.
+  const fps = timelineFps(options.fps);
   let scene;
   try {
     scene = loadSceneState(text);

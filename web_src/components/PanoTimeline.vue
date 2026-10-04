@@ -1,7 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { ICON } from "../icons.js";
-import { clusterFrames } from "../pano_timeline.js";
+import { TIMELINE_FPS_MAX, TIMELINE_FPS_MIN, TIMELINE_LENGTH_MAX } from "../pano_scene_state.js";
+import { clusterFrames, timelineTicks } from "../pano_timeline.js";
 import SvgIcon from "./SvgIcon.vue";
 
 // The Timeline of PanoramaStickersNode's editor. It draws buildTimelineModel() and reports what the
@@ -11,7 +12,6 @@ const emit = defineEmits(["action"]);
 
 // Keyframes closer than this on screen show as one pin.
 const PIN_GAP_PX = 10;
-const TICK_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 
 const rulerRef = ref(null);
 const gridRef = ref(null);
@@ -44,12 +44,7 @@ onBeforeUnmount(() => {
 const span = computed(() => Math.max(1, Number(props.model.span || 1)));
 const pxPerFrame = computed(() => trackWidth.value / span.value);
 const pct = (frame) => `${(frame / span.value) * 100}%`;
-const ticks = computed(() => {
-  const step = TICK_STEPS.find((item) => item * pxPerFrame.value >= 56) || TICK_STEPS[TICK_STEPS.length - 1];
-  const out = [];
-  for (let frame = 0; frame < span.value; frame += step) out.push(frame);
-  return out;
-});
+const ticks = computed(() => timelineTicks(span.value, pxPerFrame.value));
 
 function frameAt(clientX) {
   const rect = rulerRef.value.getBoundingClientRect();
@@ -190,13 +185,13 @@ function onLineDown(event, row, lane) {
       <span class="pano-timeline-time">{{ model.label }}</span>
       <label class="pano-timeline-setting" :data-tip="model.fpsLocked ? model.lockTip : 'Timeline fps'">
         <span v-if="model.fpsLocked">{{ fpsText }}</span>
-        <input v-else type="number" min="1" step="any" :value="fpsText" aria-label="Timeline fps" @change="onFpsChange">
+        <input v-else type="number" :min="TIMELINE_FPS_MIN" :max="TIMELINE_FPS_MAX" step="any" :value="fpsText" aria-label="Timeline fps" @change="onFpsChange">
         <span>fps</span>
       </label>
       <label class="pano-timeline-setting" :data-tip="model.lengthLocked ? model.lockTip : 'Output length in frames; empty follows the inputs'">
         <span>Length</span>
         <span v-if="model.lengthLocked">{{ model.length }}</span>
-        <input v-else type="number" min="1" step="1" placeholder="Auto" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
+        <input v-else type="number" min="1" :max="TIMELINE_LENGTH_MAX" step="1" placeholder="Auto" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
       </label>
       <button
         class="pano-timeline-toggle"

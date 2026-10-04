@@ -4,7 +4,17 @@
 // Sticker) are in its own time base: Timeline frames for the Camera, Clip frames (from start - in) for
 // scene and the Stickers.
 import { evaluateLane, FRAME_EPSILON } from "./pano_scene_eval.js";
-import { CAMERA_LANES, DEFAULT_EASING, SCENE_LANES, SKY_STICKER_LANES, WORLD_STICKER_LANES } from "./pano_scene_state.js";
+import {
+  CAMERA_LANES,
+  DEFAULT_EASING,
+  SCENE_LANES,
+  SKY_STICKER_LANES,
+  TIMELINE_FPS_MAX,
+  TIMELINE_LENGTH_MAX,
+  timelineFps,
+  timelineLength,
+  WORLD_STICKER_LANES,
+} from "./pano_scene_state.js";
 
 function merged(value, patch) {
   return value && typeof value === "object" && !Array.isArray(value) ? { ...value, ...patch } : patch;
@@ -179,9 +189,13 @@ export function isTimed(state, { camera = false } = {}) {
   return [...(camera && state.camera ? [state.camera] : []), state.scene, ...state.stickers].some(ownerTimed);
 }
 
+// The span timelineSpan gives a broken input (a length or frame that is not a finite number).
+export const BROKEN_SPAN = 100000;
+
 // The number of Timeline frames the Timeline shows: the Timeline length, or without one `minimum`
 // widened to `frames` (the video's frame count), then widened to every Clip range edge and Keyframe
-// (the Camera's only with `camera`, as in isTimed). The end of `openClip` counts as open.
+// (the Camera's only with `camera`, as in isTimed). The end of `openClip` counts as open. A span that
+// is not a finite number (a broken input) is BROKEN_SPAN.
 export function timelineSpan(state, { minimum, frames = 0, openClip = null, camera = false }) {
   let end = state.timeline.length ?? Math.max(minimum, frames);
   if (camera && state.camera) {
@@ -196,7 +210,33 @@ export function timelineSpan(state, { minimum, frames = 0, openClip = null, came
       for (const key of lane.keyframes) end = Math.max(end, clip.start - clip.in + key.frame + 1);
     }
   }
-  return end;
+  return Number.isFinite(end) ? end : BROKEN_SPAN;
+}
+
+// The Timeline fps typed in the fps field sets: brought into the range a state keeps, or null (rejected)
+// when it is not a positive number.
+export function enteredTimelineFps(value) {
+  return value > 0 ? timelineFps(Math.min(value, TIMELINE_FPS_MAX)) : null;
+}
+
+// The `timeline.length` typed in the length field sets: null (Auto) for an empty field, brought into
+// 1..TIMELINE_LENGTH_MAX, or undefined (rejected) when it is not a number.
+export function enteredTimelineLength(value) {
+  if (value === null) return null;
+  return Number.isNaN(value) ? undefined : timelineLength(Math.max(1, Math.min(value, TIMELINE_LENGTH_MAX)));
+}
+
+const TICK_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
+// The ruler never has more labels than this, however long the Timeline is.
+export const MAX_TICKS = 2000;
+
+// The frames the ruler labels: the smallest step that leaves minGapPx between labels at pxPerFrame,
+// at most MAX_TICKS of them.
+export function timelineTicks(span, pxPerFrame, minGapPx = 56) {
+  const step = TICK_STEPS.find((item) => item * pxPerFrame >= minGapPx) || TICK_STEPS[TICK_STEPS.length - 1];
+  const out = [];
+  for (let frame = 0; frame < span && out.length < MAX_TICKS; frame += step) out.push(frame);
+  return out;
 }
 
 // Groups sorted frames whose gaps are below minGap into one pin, so dense Keyframes show as one

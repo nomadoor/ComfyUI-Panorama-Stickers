@@ -116,6 +116,13 @@ function clearSurface(surface) {
   surface.ctx.clearRect(0, 0, surface.canvas.width, surface.canvas.height);
 }
 
+// A target's pixels (its committed surface or its live stroke) changed. `revision` keys the display
+// canvases built from them, which are rebuilt only when it moves.
+function markDirty(target) {
+  target.displayDirty = true;
+  target.revision += 1;
+}
+
 // ─── Mask Hatch Overlay ───────────────────────────────────────────────────────
 
 // Shared temp canvas for drawMaskTint.
@@ -129,8 +136,6 @@ let _maskHatchPatternCtx = null;
 let _eraserTmp = null;
 // Shared temp canvas reused for low-opacity stroke compositing (drawStrokeToSurface).
 let _strokeOpacityTmp = null;
-let _groupPreviewTmp = null;
-let _maskPreviewTmp = null;
 
 // Returns a small canvas with a 45° diagonal stripe pattern.
 // Cached after first creation; reused for every drawMaskTint call.
@@ -873,7 +878,7 @@ function appendStrokePoint(target, x, y, stroke) {
       isEraser, layerKind,
       pointCount: 1,
     };
-    target.displayDirty = true;
+    markDirty(target);
     return;
   }
 
@@ -908,7 +913,7 @@ function appendStrokePoint(target, x, y, stroke) {
   as.lastMidX = midX;
   as.lastMidY = midY;
   as.pointCount++;
-  target.displayDirty = true;
+  markDirty(target);
 }
 
 // ─── Engine Factory ────────────────────────────────────────────────────────────
@@ -943,6 +948,9 @@ export function createPaintEngineManager(options = {}) {
     currentStroke: sharedCurrentStroke,
     activeStroke: null,
     displayDirty: true,
+    revision: 0,
+    // Whether a mask stroke was drawn since the last rebuild; until then the committed mask is empty.
+    painted: false,
     lassoPreviewActive: false,
   };
   const paintScratchTarget = {
@@ -952,6 +960,7 @@ export function createPaintEngineManager(options = {}) {
     currentStroke: sharedCurrentStroke,
     activeStroke: null,
     displayDirty: true,
+    revision: 0,
     lassoPreviewActive: false,
   };
 
@@ -962,6 +971,11 @@ export function createPaintEngineManager(options = {}) {
   let activeGroupId = null;   // null when mask is active or idle
   let activeLayerKind = "";   // "paint" | "mask" | ""
   let previousOrderedGroupIds = null;
+  // The display canvases of the paint groups with the live stroke (group id -> { key, surface }) and
+  // of the mask ({ key, surface }), each with the key of the pixels it was built from. A paint eraser
+  // shows on every group at once, so each group has its own while a stroke is drawn; they go when it ends.
+  const groupPreviews = new Map();
+  let maskDisplay = null;
 
   // ─── Group Target Helpers ──────────────────────────────────────────────────
 
@@ -973,6 +987,7 @@ export function createPaintEngineManager(options = {}) {
       currentStroke: sharedCurrentStroke,
       activeStroke: null,
       displayDirty: true,
+      revision: 0,
       lassoPreviewActive: false,
     };
   }
@@ -1069,13 +1084,15 @@ export function createPaintEngineManager(options = {}) {
       clearSurface(group.committedPaint);
       clearSurface(group.currentStroke);
       group.activeStroke = null;
-      group.displayDirty = true;
+      markDirty(group);
     }
     clearSurface(maskTarget.committedMask);
     clearSurface(maskTarget.currentStroke);
     maskTarget.activeStroke = null;
-    maskTarget.displayDirty = true;
-    paintScratchTarget.displayDirty = true;
+    maskTarget.painted = false;
+    groupPreviews.clear();
+    markDirty(maskTarget);
+    markDirty(paintScratchTarget);
     previousOrderedGroupIds = null;
 
     const allStrokes = [
@@ -1100,6 +1117,7 @@ export function createPaintEngineManager(options = {}) {
           applyEraserToSurface(maskTarget.committedMask.ctx, _eraserTmp.canvas);
         } else {
           drawStrokeToSurface(maskTarget.committedMask.ctx, stroke, desc);
+          maskTarget.painted = true;
         }
         continue;
       }
@@ -1110,7 +1128,7 @@ export function createPaintEngineManager(options = {}) {
         drawStrokeToSurface(_eraserTmp.ctx, stroke, ERP_DESC);
         for (const group of groupTargets.values()) {
           applyEraserToSurface(group.committedPaint.ctx, _eraserTmp.canvas);
-          group.displayDirty = true;
+          markDirty(group);
         }
       } else {
         // Paint strokes → per-group target, keyed by actionGroupId.
@@ -1118,7 +1136,7 @@ export function createPaintEngineManager(options = {}) {
         const group = ensureGroupTarget(actionGroupId);
         const desc = group.descriptor;
         drawStrokeToSurface(group.committedPaint.ctx, stroke, desc);
-        group.displayDirty = true;
+        markDirty(group);
       }
     }
 
@@ -1135,7 +1153,7 @@ export function createPaintEngineManager(options = {}) {
       activeGroupId = null;
       clearSurface(maskTarget.currentStroke);
       maskTarget.activeStroke = null;
-      maskTarget.displayDirty = true;
+      markDirty(maskTarget);
     } else {
       const group = isEraser
         ? paintScratchTarget
@@ -1143,7 +1161,7 @@ export function createPaintEngineManager(options = {}) {
       activeGroupId = isEraser ? "" : String(stroke?.actionGroupId || "__default__");
       clearSurface(group.currentStroke);
       group.activeStroke = null;
-      group.displayDirty = true;
+      markDirty(group);
     }
   }
 
@@ -1185,11 +1203,12 @@ export function createPaintEngineManager(options = {}) {
     if (isEraser && layerKind === "paint") {
       for (const group of groupTargets.values()) {
         applyEraserToSurface(group.committedPaint.ctx, target.currentStroke.canvas);
-        group.displayDirty = true;
+        markDirty(group);
       }
     } else if (isEraser) {
       applyEraserToSurface(surface.ctx, target.currentStroke.canvas);
     } else {
+      if (layerKind === "mask") maskTarget.painted = true;
       const opacity = Math.max(0, Math.min(1, as?.strokeOpacity ?? 1));
       surface.ctx.save();
       surface.ctx.globalAlpha = opacity;
@@ -1213,7 +1232,8 @@ export function createPaintEngineManager(options = {}) {
 
     clearSurface(target.currentStroke);
     target.activeStroke = null;
-    target.displayDirty = true;
+    markDirty(target);
+    groupPreviews.clear();
     activeGroupId = null;
     activeLayerKind = "";
 
@@ -1225,21 +1245,22 @@ export function createPaintEngineManager(options = {}) {
       clearSurface(maskTarget.currentStroke);
       maskTarget.activeStroke = null;
       maskTarget.lassoPreviewActive = false;
-      maskTarget.displayDirty = true;
+      markDirty(maskTarget);
     } else if (activeLayerKind === "paint" && !activeGroupId) {
       clearSurface(paintScratchTarget.currentStroke);
       paintScratchTarget.activeStroke = null;
       paintScratchTarget.lassoPreviewActive = false;
-      paintScratchTarget.displayDirty = true;
+      markDirty(paintScratchTarget);
     } else if (activeGroupId) {
       const group = groupTargets.get(activeGroupId);
       if (group) {
         clearSurface(group.currentStroke);
         group.activeStroke = null;
         group.lassoPreviewActive = false;
-        group.displayDirty = true;
+        markDirty(group);
       }
     }
+    groupPreviews.clear();
     activeGroupId = null;
     activeLayerKind = "";
     composeAllLayers([...groupTargets.keys()]);
@@ -1255,7 +1276,7 @@ export function createPaintEngineManager(options = {}) {
       clearSurface(maskTarget.currentStroke);
       drawLassoFillNative(maskTarget.currentStroke.ctx, stroke, maskTarget.descriptor);
       maskTarget.lassoPreviewActive = true;
-      maskTarget.displayDirty = true;
+      markDirty(maskTarget);
     } else {
       const isEraser = String(stroke?.toolKind || "") === "eraser";
       const group = isEraser
@@ -1265,7 +1286,7 @@ export function createPaintEngineManager(options = {}) {
       clearSurface(group.currentStroke);
       drawLassoFillNative(group.currentStroke.ctx, stroke, group.descriptor);
       group.lassoPreviewActive = true;
-      group.displayDirty = true;
+      markDirty(group);
     }
     composeAllLayers([...groupTargets.keys()]);
   }
@@ -1293,6 +1314,8 @@ export function createPaintEngineManager(options = {}) {
     return [...groupTargets.keys()];
   }
 
+  // A paint group as the views draw it: its committed paint, with the live stroke while it is drawn.
+  // The canvas with the live stroke is rebuilt only when the group's or the stroke's pixels change.
   function getGroupDisplayCanvas(actionGroupId) {
     const group = groupTargets.get(String(actionGroupId));
     if (!group) return null;
@@ -1300,45 +1323,59 @@ export function createPaintEngineManager(options = {}) {
     const activePaintStroke = activeLayerKind === "paint"
       ? ((activeGroupId ? groupTargets.get(activeGroupId) : paintScratchTarget)?.activeStroke || null)
       : null;
-    if (activePaintStroke?.isEraser) {
-      _groupPreviewTmp = resizeSurface(_groupPreviewTmp, ERP_W, ERP_H);
-      clearSurface(_groupPreviewTmp);
-      _groupPreviewTmp.ctx.drawImage(group.committedPaint.canvas, 0, 0);
-      applyEraserToSurface(_groupPreviewTmp.ctx, sharedCurrentStroke.canvas);
-      return _groupPreviewTmp.canvas;
-    }
+    const eraser = !!activePaintStroke?.isEraser;
     const as = isActive ? group.activeStroke : null;
-    if (!as) return group.committedPaint.canvas;
-    _groupPreviewTmp = resizeSurface(_groupPreviewTmp, ERP_W, ERP_H);
-    clearSurface(_groupPreviewTmp);
-    _groupPreviewTmp.ctx.drawImage(group.committedPaint.canvas, 0, 0);
-    const opacity = group.lassoPreviewActive
-      ? 0.5
-      : Math.max(0, Math.min(1, as.strokeOpacity ?? 1));
-    _groupPreviewTmp.ctx.save();
-    _groupPreviewTmp.ctx.globalAlpha = opacity;
-    _groupPreviewTmp.ctx.drawImage(sharedCurrentStroke.canvas, 0, 0);
-    _groupPreviewTmp.ctx.restore();
-    return _groupPreviewTmp.canvas;
+    if (!eraser && !as) return group.committedPaint.canvas;
+    const key = `${group.revision}:${paintScratchTarget.revision}:${eraser}`;
+    const cached = groupPreviews.get(group.actionGroupId);
+    if (cached?.key === key) return cached.surface.canvas;
+    const surface = resizeSurface(cached?.surface ?? null, ERP_W, ERP_H);
+    clearSurface(surface);
+    surface.ctx.drawImage(group.committedPaint.canvas, 0, 0);
+    if (eraser) {
+      applyEraserToSurface(surface.ctx, sharedCurrentStroke.canvas);
+    } else {
+      surface.ctx.save();
+      surface.ctx.globalAlpha = group.lassoPreviewActive ? 0.5 : Math.max(0, Math.min(1, as.strokeOpacity ?? 1));
+      surface.ctx.drawImage(sharedCurrentStroke.canvas, 0, 0);
+      surface.ctx.restore();
+    }
+    groupPreviews.set(group.actionGroupId, { key, surface });
+    return surface.canvas;
   }
 
+  // What the mask display shows changes with this key: the mask's pixels, and whether its live stroke
+  // shows. null while there is no mask to show.
+  function getMaskDisplayRevision() {
+    const stroke = activeLayerKind === "mask" ? maskTarget.activeStroke : null;
+    if (!maskTarget.painted && (!stroke || stroke.isEraser)) return null;
+    return `${maskTarget.revision}:${!!stroke}`;
+  }
+
+  // The mask as the views draw it (hatched), with its live stroke, or null without a mask. The canvas
+  // is rebuilt only when getMaskDisplayRevision() changes.
   function getMaskDisplayCanvas() {
-    _maskPreviewTmp = resizeSurface(_maskPreviewTmp, ERP_W, ERP_H);
-    clearSurface(_maskPreviewTmp);
-    drawMaskTint(_maskPreviewTmp.ctx, maskTarget.committedMask.canvas);
-    if (activeLayerKind === "mask" && maskTarget.activeStroke) {
-      if (maskTarget.activeStroke.isEraser) {
-        _eraserTmp = resizeSurface(_eraserTmp, ERP_W, ERP_H);
-        clearSurface(_eraserTmp);
-        _eraserTmp.ctx.drawImage(maskTarget.committedMask.canvas, 0, 0);
-        applyEraserToSurface(_eraserTmp.ctx, sharedCurrentStroke.canvas);
-        clearSurface(_maskPreviewTmp);
-        drawMaskTint(_maskPreviewTmp.ctx, _eraserTmp.canvas);
-      } else {
-        drawMaskTint(_maskPreviewTmp.ctx, sharedCurrentStroke.canvas);
-      }
+    const key = getMaskDisplayRevision();
+    if (key === null) {
+      maskDisplay = null;
+      return null;
     }
-    return _maskPreviewTmp.canvas;
+    if (maskDisplay?.key === key) return maskDisplay.surface.canvas;
+    const surface = resizeSurface(maskDisplay?.surface ?? null, ERP_W, ERP_H);
+    clearSurface(surface);
+    const stroke = activeLayerKind === "mask" ? maskTarget.activeStroke : null;
+    if (stroke?.isEraser) {
+      _eraserTmp = resizeSurface(_eraserTmp, ERP_W, ERP_H);
+      clearSurface(_eraserTmp);
+      _eraserTmp.ctx.drawImage(maskTarget.committedMask.canvas, 0, 0);
+      applyEraserToSurface(_eraserTmp.ctx, sharedCurrentStroke.canvas);
+      drawMaskTint(surface.ctx, _eraserTmp.canvas);
+    } else {
+      drawMaskTint(surface.ctx, maskTarget.committedMask.canvas);
+      if (stroke) drawMaskTint(surface.ctx, sharedCurrentStroke.canvas);
+    }
+    maskDisplay = { key, surface };
+    return surface.canvas;
   }
 
   return {
@@ -1353,6 +1390,7 @@ export function createPaintEngineManager(options = {}) {
     getGroupTarget,
     getGroupDisplayCanvas,
     getMaskDisplayCanvas,
+    getMaskDisplayRevision,
     getAllGroupIds,
   };
 }

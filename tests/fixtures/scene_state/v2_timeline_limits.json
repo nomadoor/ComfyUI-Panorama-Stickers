@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "timeline": {"fps": 1e308, "length": 1e308},
+  "scene": {"clip": {"start": 0, "in": 0, "duration": 2000}},
+  "stickers": [
+    {"id": "st", "source": {"kind": "port"}, "clip": {"start": 1000, "in": 0, "duration": 1000}, "opacity": {"keyframes": [{"frame": 0, "value": 1.0}, {"frame": 500, "value": 0.0}]}},
+    {"id": "far", "source": {"kind": "file", "filename": "far.png"}, "clip": {"start": 1e300, "in": 1e300, "duration": 1e300}, "opacity": {"keyframes": [{"frame": -1e300, "value": 1.0}, {"frame": 1e300, "value": 0.0}]}}
+  ]
+}

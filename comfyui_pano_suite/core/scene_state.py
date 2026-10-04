@@ -18,6 +18,13 @@ PROJECTIONS = ("perspective", "erp")
 FILE_STORAGES = ("input", "output", "temp")
 # ease-in-out, the Easing of a Keyframe without a valid one.
 DEFAULT_EASING = (0.42, 0.0, 0.58, 1.0)
+# The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
+TIMELINE_FPS_MIN = 1.0
+TIMELINE_FPS_MAX = 1000.0
+# The largest Clip range edge and Keyframe frame (either sign) a state keeps: about 2.8 hours at
+# 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
+TIMELINE_FRAME_MAX = 10000000
+TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX
 
 
 def _reject_constant(name):
@@ -46,6 +53,24 @@ def _clamp(value, lo, hi):
 def _frame(value):
     out = _number(value, None)
     return None if out is None else int(math.floor(out + 0.5))
+
+
+def _event_frame(value):
+    """A stored Clip range edge or Keyframe frame, within ±TIMELINE_FRAME_MAX."""
+    out = _frame(value)
+    return None if out is None else _clamp(out, -TIMELINE_FRAME_MAX, TIMELINE_FRAME_MAX)
+
+
+def _timeline_fps(value):
+    """A Timeline fps brought into range, or None when it is not a positive number."""
+    out = _positive(value, None)
+    return None if out is None else _clamp(out, TIMELINE_FPS_MIN, TIMELINE_FPS_MAX)
+
+
+def _timeline_length(value):
+    """A `timeline.length` rounded to a frame and brought under TIMELINE_LENGTH_MAX, or None below 1."""
+    out = _frame(value)
+    return min(out, TIMELINE_LENGTH_MAX) if out is not None and out >= 1 else None
 
 
 def _bool(value, default):
@@ -137,7 +162,7 @@ def _keyframes(raw, value_fn, has_handles):
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict):
             continue
-        frame = _frame(item.get("frame"))
+        frame = _event_frame(item.get("frame"))
         if frame is None:
             continue
         key = {"frame": frame, "value": value_fn(item.get("value")), "easing": _easing(item.get("easing"))}
@@ -159,9 +184,9 @@ def _lanes(raw, lanes):
 
 def _clip(raw):
     raw = raw if isinstance(raw, dict) else {}
-    start = _frame(raw.get("start"))
-    clip_in = _frame(raw.get("in"))
-    duration = _frame(raw.get("duration"))
+    start = _event_frame(raw.get("start"))
+    clip_in = _event_frame(raw.get("in"))
+    duration = _event_frame(raw.get("duration"))
     return {
         "start": 0 if start is None else max(0, start),
         "in": 0 if clip_in is None else max(0, clip_in),
@@ -277,13 +302,12 @@ def default_camera() -> dict:
 def _normalize_v2(raw):
     timeline = raw.get("timeline") if isinstance(raw.get("timeline"), dict) else {}
     scene = raw.get("scene") if isinstance(raw.get("scene"), dict) else {}
-    length = _frame(timeline.get("length"))
     painting_layer = raw.get("painting_layer")
     return {
         "version": STATE_VERSION,
         "timeline": {
-            "fps": _positive(timeline.get("fps"), 24.0),
-            "length": length if length is not None and length >= 1 else None,
+            "fps": _timeline_fps(timeline.get("fps")) or 24.0,
+            "length": _timeline_length(timeline.get("length")),
         },
         "camera": _camera(raw.get("camera")),
         "scene": {"clip": _clip(scene.get("clip")), "visible": _bool(scene.get("visible"), True), **_lanes(scene, SCENE_LANES)},
@@ -396,9 +420,10 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
     Every Timeline event (Keyframe, Clip range start and end, content anchor) rounds to the nearest
     frame of the new fps, so it moves by at most half a new frame and events at one time stay together.
     """
-    if _positive(fps, None) is None:
+    rate = _timeline_fps(fps)
+    if rate is None:
         raise ValueError(f"Cannot rebase state_json to fps {fps!r}; fps must be a positive number.")
-    ratio = fps / state["timeline"]["fps"]
+    ratio = rate / state["timeline"]["fps"]
 
     def rebase(frame):
         return _frame(frame * ratio)
@@ -412,7 +437,7 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
         lanes = WORLD_STICKER_LANES if sticker["placement"] == "world" else SKY_STICKER_LANES
         stickers.append({**sticker, "clip": clip["clip"], **_rebase_lanes(sticker, lanes, rebase, clip["anchor"], clip["new_anchor"])})
     return _normalize_v2({
-        "timeline": {"fps": fps, "length": None if length is None else max(1, rebase(length))},
+        "timeline": {"fps": rate, "length": None if length is None else max(1, rebase(length))},
         "camera": None if camera is None else {**camera, **_rebase_lanes(camera, CAMERA_LANES, rebase, 0, 0)},
         "scene": {"clip": scene["clip"], "visible": state["scene"]["visible"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
         "stickers": stickers,
