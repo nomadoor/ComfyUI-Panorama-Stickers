@@ -81,7 +81,8 @@ class TestVueModalBoundary(unittest.TestCase):
     def test_editor_uses_dedicated_ui_state_builder_module(self):
         editor_js = editor_source()
         builder_js = (REPO_ROOT / "web_src" / "pano_editor_ui_state.js").read_text(encoding="utf-8")
-        self.assertIn('from "./pano_editor_ui_state.js"', editor_js)
+        # pano_editor.js or a module of web_src/editor/ imports it.
+        self.assertRegex(editor_js, r'from "\.\.?/pano_editor_ui_state\.js"')
         self.assertIn("export function buildPaintDockModel(", builder_js)
         self.assertIn("export function buildEditorSidePanelModel(", builder_js)
         self.assertIn("export function buildSelectionMenuModel(", builder_js)
