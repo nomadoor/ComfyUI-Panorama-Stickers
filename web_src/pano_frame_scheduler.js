@@ -6,7 +6,12 @@
 // nothing runs until the next request.
 //
 // draw(ts, reasons) draws a frame; reasons is the Set of DRAW_REASON values asked for since the last one,
-// empty for a frame drawn only because something animates.
+// empty for a frame drawn only because something animates. stateRevision counts the STATE requests: what is
+// derived from the working state is made again when it changes, and only then.
+//
+// Which reason to give: STATE whenever the working state may have changed (the default of the editor's
+// requestDraw, so a missing reason never leaves a stale frame). Another reason only where the state surely
+// stays: the view, the playhead, the painting being drawn, media, the overlay.
 export const DRAW_REASON = Object.freeze({
   // The state changed: Stickers, the Camera, the painting, the selection, the playhead.
   STATE: "state",
@@ -14,6 +19,9 @@ export const DRAW_REASON = Object.freeze({
   VIEW: "view",
   // The playhead moved (playback, a scrub): the state is drawn at another frame.
   PLAYHEAD: "playhead",
+  // The painting changed (a stroke being drawn, strokes or rasters moved): its layers are drawn again from
+  // the paint engine's canvases, while the Stickers and the Camera stay.
+  PAINT: "paint",
   // Only the 2D overlay changed: a hover, a cursor, a handle.
   OVERLAY: "overlay",
   // Media arrived or changed: an image or a VIDEO frame loaded, a `scene` item loaded, Spark sorted.
@@ -34,6 +42,7 @@ export function createFrameScheduler({ requestAnimationFrame, cancelAnimationFra
   let reasons = new Set();
   let callbacks = new Map();
   let nextCallback = 1;
+  let stateRevision = 0;
 
   function guarded(run) {
     try {
@@ -69,6 +78,7 @@ export function createFrameScheduler({ requestAnimationFrame, cancelAnimationFra
   return {
     requestDraw(reason) {
       if (!REASONS.has(reason)) throw new Error(`Unknown draw reason: ${reason}`);
+      if (reason === DRAW_REASON.STATE) stateRevision += 1;
       reasons.add(reason);
       schedule();
     },
@@ -84,6 +94,9 @@ export function createFrameScheduler({ requestAnimationFrame, cancelAnimationFra
     // Starts the frames again after something animating() reads began, which asks for no draw by itself.
     wake() {
       schedule();
+    },
+    get stateRevision() {
+      return stateRevision;
     },
     // Whether a frame is pending.
     get pending() {

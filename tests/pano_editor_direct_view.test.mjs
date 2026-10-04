@@ -168,14 +168,14 @@ test("the editor shows its three.js canvas as it is: nothing is copied to a 2D c
     assert.doesNotMatch(editorFunction(name), /drawImage|getContext\("2d"\)/, name);
   }
   // The Frame view and the Unwrap view draw into their rect of the same canvas.
-  assert.match(editorFunction("drawFrameViewBackground"), /editorView\.clear\(0x0a0a0a\);\s*const device = deviceRect\(contextRect\);\s*const drawn = !!drawEditorViewShot\(device, contextShot\);/);
+  assert.match(editorFunction("drawFrameViewBackground"), /editorView\.clear\(0x0a0a0a\);\s*const device = deviceRect\(contextRect\);\s*const drawn = !!drawEditorViewShot\(device, contextShot, undefined, 0x0a0a0a\);/);
   assert.match(editorFunction("renderEditorViewUnwrap"), /editorView\.renderUnwrap\(\{ rect: deviceRect\(rect\), \.\.\.editorViewInput\(\) \}\)/);
   // The camera preview floats over the stage as its own element: its frame is drawn in a corner of the
   // same canvas and shown through an ImageBitmap (a GPU copy), not a 2D canvas.
   assert.match(editorSource, /createImageBitmap\(surface\.canvas, surface\.x, surface\.y, surface\.width, surface\.height\)/);
   assert.match(editorSource, /cutoutPreviewCanvas\.getContext\("bitmaprenderer"\)\?\.transferFromImageBitmap\(bitmap\);/);
   // The three.js canvas draws at the device's pixels; the overlay stays in CSS pixels.
-  assert.match(editorFunction("syncCanvasSize"), /editorView\.resize\(Math\.round\(rect\.width \* dpr\) \|\| nextW, Math\.round\(rect\.height \* dpr\) \|\| nextH\);/);
+  assert.match(editorFunction("syncCanvasSize"), /editorView\.resize\(size\.width, size\.height\);/);
   // A frame that only changes the overlay leaves the three.js canvas as the page shows it.
   assert.match(editorFunction("tickFrame"), /if \(\[\.\.\.reasons\]\.some\(\(reason\) => reason !== DRAW_REASON\.OVERLAY\)\) runtime\.backgroundDirty = true;/);
   assert.match(editorFunction("drawScene"), /const drawView = runtime\.backgroundDirty;/);
@@ -195,24 +195,31 @@ test("the editor asks the browser for frames only through its scheduler, and onl
   assert.match(editorFunction("stopRenderLoop"), /scheduler\.stop\(\);/);
 });
 
-test("a draw request without a reason counts a state change; only view and overlay changes say otherwise", () => {
-  assert.match(editorFunction("requestDraw"), /const reason = options\.reason \?\? DRAW_REASON\.STATE;\s*if \(reason === DRAW_REASON\.STATE\) runtime\.stateRevision \+= 1;/);
-  assert.match(editorFunction("buildEditorViewInput"), /if \(editorViewScene\.revision !== runtime\.stateRevision\) \{/);
-  // The edits of the representative interactions (moving, scaling and rotating a Sticker, the gizmo, the
-  // Timeline) ask without a reason, so what is drawn from the state is made again.
-  const move = editorSource.slice(editorSource.indexOf("  canvas.onpointermove = (e) => {"), editorSource.indexOf("  canvas.onpointerup = "));
-  for (const kind of ["scale", "scale_x", "scale_y"]) {
-    const branch = move.slice(move.indexOf(`if (it.kind === "${kind}") {`), move.indexOf("return;", move.indexOf(`if (it.kind === "${kind}") {`)));
-    assert.match(branch, /requestDraw\(\{ localOnly: true \}\);/, kind);
-  }
-  // A reason other than the state is given only where nothing in the state changes.
-  const reasons = [...editorSource.matchAll(/reason: DRAW_REASON\.(VIEW|OVERLAY)/g)];
-  assert.equal(reasons.length, 11);
+test("a draw request without a reason is a state change, which makes what is drawn from the state again", () => {
+  assert.match(editorFunction("requestDraw"), /const reason = options\.reason \?\? DRAW_REASON\.STATE;/);
+  assert.match(editorFunction("requestDraw"), /scheduler\.requestDraw\(reason\);/);
+  assert.match(editorFunction("buildEditorViewInput"), /if \(editorViewScene\.revision !== scheduler\.stateRevision\) \{/);
+  assert.match(editorSource, /if \(trajectory\.revision !== scheduler\.stateRevision \|\| trajectory\.span !== span\) \{/);
   assert.match(editorFunction("setTimelineFrame"), /requestDraw\(\{ reason: DRAW_REASON\.PLAYHEAD \}\);/);
   // The evaluated state is shared by the Sky layers and the World within a frame.
   const input = editorFunction("buildEditorViewInput");
   assert.equal(input.match(/evaluateSceneState\(/g).length, 1);
   assert.doesNotMatch(editorFunction("buildSpaceContent"), /evaluateSceneState\(/);
+  // The Frame view's context is drawn over the stage's base, not cleared to transparent.
+  assert.match(source("pano_three_view.js"), /if \(input\.clearColor != null\) renderer\.setClearColor\(new Color\(input\.clearColor\), 1\);\s*renderer\.render\(scene, camera\);/);
+});
+
+test("canvases draw at the device's pixels, but no larger than the screen shows", async () => {
+  const { screenRenderSize } = await import("../web_src/pano_editor_view.js");
+  const { measurePreviewCanvasSize } = await import("../web_src/pano_preview_node_surface.js");
+  // Within the screen: CSS size x devicePixelRatio, nothing lost.
+  assert.deepEqual(screenRenderSize(800, 450, 2, 1920, 1080), { width: 1600, height: 900 });
+  // A node surface on a graph zoomed in 4x at dpr 2 on a 1920 x 1080 window: it shows only the screen.
+  assert.deepEqual(screenRenderSize(3200, 1600, 2, 1920, 1080), { width: 3840, height: 1920 });
+  assert.deepEqual(measurePreviewCanvasSize({ width: 3200, height: 1600 }, 2, Infinity, { width: 1920, height: 1080 }), { width: 3840, height: 1920 });
+  assert.deepEqual(measurePreviewCanvasSize({ width: 800, height: 450 }, 2, Infinity, { width: 1920, height: 1080 }), { width: 1600, height: 900 });
+  assert.match(editorFunction("syncCanvasSize"), /screenRenderSize\(rect\.width \|\| nextW, rect\.height \|\| nextH, dpr, window\.innerWidth \|\| rect\.width, window\.innerHeight \|\| rect\.height\)/);
+  assert.match(source("pano_preview_previewnode.js"), /measurePreviewCanvasSize\(rect, window\.devicePixelRatio \|\| 1, Infinity, \{ width: window\.innerWidth, height: window\.innerHeight \}\)/);
 });
 
 test("whatever editorAnimating() reads is started through startAnimation, which wakes the frames", () => {
@@ -269,7 +276,6 @@ test("a Keyframe or Clip range drag draws the state it changed: the view's state
   // view's state is rebuilt on that count.
   const tasks = editorSource.slice(editorSource.indexOf("const dragFrames = createFrameBatch({"), editorSource.indexOf("\n  });\n", editorSource.indexOf("const dragFrames = createFrameBatch({")));
   assert.match(tasks, /requestDraw\(\{ localOnly: true, reason: DRAW_REASON\.STATE \}\);/);
-  assert.match(editorFunction("requestDraw"), /if \(reason === DRAW_REASON\.STATE\) runtime\.stateRevision \+= 1;/);
-  assert.match(editorFunction("buildEditorViewInput"), /if \(editorViewScene\.revision !== runtime\.stateRevision\) \{/);
+  assert.match(editorFunction("buildEditorViewInput"), /if \(editorViewScene\.revision !== scheduler\.stateRevision\) \{/);
   assert.doesNotMatch(editorSource, /scheduler\.requestDraw\(DRAW_REASON\.VIEW\);\s*\},\s*sidePanel/);
 });

@@ -654,7 +654,7 @@ class PreviewNodeRuntime {
   syncCanvasSize() {
     if (!this.root || !this.canvas) return false;
     const rect = this.root.getBoundingClientRect();
-    const { width, height } = measurePreviewCanvasSize(rect, window.devicePixelRatio || 1);
+    const { width, height } = measurePreviewCanvasSize(rect, window.devicePixelRatio || 1, Infinity, { width: window.innerWidth, height: window.innerHeight });
     if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width;
       this.canvas.height = height;

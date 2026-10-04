@@ -8,6 +8,20 @@ import { contextHalfExtentsPx, getCutoutCameraParams } from "./pano_cutout_view_
 import { worldStickerPlane } from "./pano_space.js";
 import { panoToWorld, quaternionToRotation, rotationToQuaternion, worldRotation, worldToPano } from "./pano_world.js";
 
+// The device pixels a canvas of cssWidth x cssHeight draws at: its CSS size x devicePixelRatio, but no
+// larger than the screen can show (the window's size x devicePixelRatio): a node surface on a graph zoomed
+// in far, or a stage larger than the window, shows only that much at a time. A larger size is scaled down
+// evenly, which loses no pixel that is seen.
+export function screenRenderSize(cssWidth, cssHeight, devicePixelRatio, screenWidth, screenHeight) {
+  const width = Math.max(0, cssWidth) * devicePixelRatio;
+  const height = Math.max(0, cssHeight) * devicePixelRatio;
+  const scale = Math.min(1, (screenWidth * devicePixelRatio) / Math.max(width, 1), (screenHeight * devicePixelRatio) / Math.max(height, 1));
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
 // A hidden port Sticker is drawn this faintly so it can be found and shown again.
 export const HIDDEN_PREVIEW_OPACITY = 0.28;
 

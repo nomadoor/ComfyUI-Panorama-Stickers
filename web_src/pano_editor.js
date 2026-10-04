@@ -73,6 +73,7 @@ import {
   HIDDEN_PREVIEW_OPACITY,
   createEditorView,
   frameViewContext,
+  screenRenderSize,
   shotCamera,
   viewportCamera,
   viewProjection,
@@ -1113,9 +1114,6 @@ async function showEditor(node, type, options = {}) {
     // The three.js canvas needs drawing again. A frame that only changes the 2D overlay leaves it as it
     // is, and the page keeps showing its last frame.
     backgroundDirty: true,
-    // Counts the changes to the working state (requestDraw with DRAW_REASON.STATE). What is derived from
-    // the state for drawing is kept while it stays the same.
-    stateRevision: 0,
     frameSafeRect: null,
     frameCanvasScale: 1,
     tickErrorSignature: "",
@@ -1169,7 +1167,7 @@ async function showEditor(node, type, options = {}) {
   });
   // The panorama view's projection, rebuilt when its camera or the canvas size changes.
   let viewProjectionCache = { key: [], projection: null };
-  // The state v2 the views draw, made again when the state changes (runtime.stateRevision).
+  // The state v2 the views draw, made again when the state changes (scheduler.stateRevision).
   let editorViewScene = { revision: -1, sceneState: null };
   // The input built for the frame being drawn, shared by its views; drawScene clears it.
   let editorViewFrameInput = null;
@@ -4043,11 +4041,11 @@ async function showEditor(node, type, options = {}) {
         ? { ...item, source: { kind: "file", filename: stickerImageKey(item) } }
         : item))
       : state.stickers;
-    // The state v2 is rebuilt only when the state changes (runtime.stateRevision). Paint comes from the
+    // The state v2 is rebuilt only when the state changes (scheduler.stateRevision). Paint comes from the
     // paint engine's ERP canvases, so the strokes are left out. A Timeline drag changes Clip ranges on
     // every move without a state draw request, so they are copied in on each build instead.
-    if (editorViewScene.revision !== runtime.stateRevision) {
-      editorViewScene = { revision: runtime.stateRevision, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
+    if (editorViewScene.revision !== scheduler.stateRevision) {
+      editorViewScene = { revision: scheduler.stateRevision, sceneState: loadSceneState({ ...state, stickers, assets, painting: null }) };
     }
     if (stateV2) copyClipRanges(editorViewScene.sceneState);
     // The Stickers and the World are evaluated at the playhead once per frame.
@@ -4164,8 +4162,8 @@ async function showEditor(node, type, options = {}) {
   let trajectory = { revision: -1, span: -1, segments: [] };
   function cameraLines(radius) {
     const span = timelineSpanFrames();
-    if (trajectory.revision !== runtime.stateRevision || trajectory.span !== span) {
-      trajectory = { revision: runtime.stateRevision, span, segments: polylineSegments(cameraTrajectory(state, span)) };
+    if (trajectory.revision !== scheduler.stateRevision || trajectory.span !== span) {
+      trajectory = { revision: scheduler.stateRevision, span, segments: polylineSegments(cameraTrajectory(state, span)) };
     }
     const { segments } = trajectory;
     const lines = segments.length ? [{ segments, color: CUTOUT_TRAJECTORY_COLOR }] : [];
@@ -4249,11 +4247,12 @@ async function showEditor(node, type, options = {}) {
   // Draws what the shot sees into rect (device pixels of the three.js canvas; it may reach past the
   // canvas). Returns the part of the canvas drawn ({ canvas, x, y, width, height }), or null when there is
   // nothing to draw yet.
-  function drawEditorViewShot(rect, shot, owner) {
+  // clearColor is what shows where nothing is drawn (as editorView.clear's), transparent without one.
+  function drawEditorViewShot(rect, shot, owner, clearColor = null) {
     const { background, layers, content } = editorViewInput();
     if (!background && !layers.length && !content) return null;
     const space = content && shot.position ? content : null;
-    return editorView.render({ rect, camera: shotViewCamera(shot), background, layers, space, owner });
+    return editorView.render({ rect, camera: shotViewCamera(shot), background, layers, space, owner, clearColor });
   }
 
   // The Unwrap view in rect of the 2D overlay, on the three.js canvas. Returns whether it could draw.
@@ -5030,6 +5029,7 @@ async function showEditor(node, type, options = {}) {
   // Shows the part `surface` of the three.js canvas in the camera preview. The bitmap is taken now, before
   // the stage's frame covers that part; a newer frame that arrives first wins.
   let cameraPreviewFrames = 0;
+  let cameraPreviewFailureReported = false;
   function showCameraPreviewFrame(surface) {
     const request = ++cameraPreviewFrames;
     createImageBitmap(surface.canvas, surface.x, surface.y, surface.width, surface.height).then((bitmap) => {
@@ -5038,7 +5038,12 @@ async function showEditor(node, type, options = {}) {
         return;
       }
       cutoutPreviewCanvas.getContext("bitmaprenderer")?.transferFromImageBitmap(bitmap);
-    }).catch((error) => console.error("[PanoramaStickers] camera preview frame failed", error));
+    }).catch((error) => {
+      // A failure that repeats on every frame is reported once.
+      if (cameraPreviewFailureReported) return;
+      cameraPreviewFailureReported = true;
+      console.error("[PanoramaStickers] camera preview frame failed", error);
+    });
   }
 
   function frameLocalPointToWorldDir(shot, point) {
@@ -5731,7 +5736,7 @@ async function showEditor(node, type, options = {}) {
       // (#111111, the base under white at 3%).
       editorView.clear(0x0a0a0a);
       const device = deviceRect(contextRect);
-      const drawn = !!drawEditorViewShot(device, contextShot);
+      const drawn = !!drawEditorViewShot(device, contextShot, undefined, 0x0a0a0a);
       if (!drawn) editorView.clear(0x111111, device);
       runtime.backgroundDirty = !drawn;
     }
@@ -5974,10 +5979,9 @@ async function showEditor(node, type, options = {}) {
   }
 
   // Asks for the next frame. options.reason (DRAW_REASON) says what changed; without one the working
-  // state may have, which makes what is derived from it again (runtime.stateRevision).
+  // state may have, which makes what is derived from it again (scheduler.stateRevision).
   function requestDraw(options = {}) {
     const reason = options.reason ?? DRAW_REASON.STATE;
-    if (reason === DRAW_REASON.STATE) runtime.stateRevision += 1;
     const localOnly = !!options.localOnly;
     const externalSync = options.externalSync === true;
     const cause = String(options.cause || "");
@@ -6029,7 +6033,8 @@ async function showEditor(node, type, options = {}) {
       canvas.width = nextW;
       canvas.height = nextH;
     }
-    editorView.resize(Math.round(rect.width * dpr) || nextW, Math.round(rect.height * dpr) || nextH);
+    const size = screenRenderSize(rect.width || nextW, rect.height || nextH, dpr, window.innerWidth || rect.width, window.innerHeight || rect.height);
+    editorView.resize(size.width, size.height);
     if ([canvas.width, canvas.height, backgroundCanvas.width, backgroundCanvas.height].join("x") === before) return false;
     runtime.backgroundDirty = true;
     runtime.dirty = true;
@@ -10005,7 +10010,7 @@ async function showEditor(node, type, options = {}) {
         // appendPaintPoint now calls appendStrokePoint internally (O(1) incremental rendering)
         if (appendPaintPoint(it, sp, performance.now())) changed = true;
       });
-      if (changed) requestDraw({ localOnly: true });
+      if (changed) requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
       return;
     }
 
@@ -10036,7 +10041,7 @@ async function showEditor(node, type, options = {}) {
       if (changed) {
         const targetDescriptor = getActivePaintTargetDescriptor(it);
         if (targetDescriptor) editor.paintEngine.updateActiveStroke(it.stroke, targetDescriptor);
-        requestDraw({ localOnly: true });
+        requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
       }
       return;
     }
@@ -10135,7 +10140,7 @@ async function showEditor(node, type, options = {}) {
       const dv = Number(currentUv.v || 0) - Number(it.startUv.v || 0);
       if (applyStrokeGroupOffset(it.item?.actionGroupId, du, dv, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
         markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
-        requestDraw({ localOnly: true });
+        requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
       }
       return;
     }
@@ -10152,7 +10157,7 @@ async function showEditor(node, type, options = {}) {
       const dv = Number(currentUv.v || 0) - Number(it.startUv.v || 0);
       if (applyRasterObjectOffset(it.item?.rasterObjectId || it.item?.id || "", du, dv, it.snapshot)) {
         markPaintCompositeVisualsDirty();
-        requestDraw({ localOnly: true });
+        requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
       }
       return;
     }
@@ -10162,7 +10167,7 @@ async function showEditor(node, type, options = {}) {
       const ratio = d / Math.max(1, Number(it.startDist || 1));
       if (applyRasterObjectTransform(it.item?.rasterObjectId || it.item?.id || "", ratio, it.snapshot)) {
         markPaintCompositeVisualsDirty();
-        requestDraw({ localOnly: true });
+        requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
       }
       return;
     }
@@ -10266,7 +10271,7 @@ async function showEditor(node, type, options = {}) {
       const ratio = d / Math.max(1, Number(it.startDist || 1));
       if (applyStrokeGroupTransform(it.item?.actionGroupId, ratio, 0, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
         markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
-        requestDraw({ localOnly: true });
+        requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
       }
       return;
     }
@@ -10276,7 +10281,7 @@ async function showEditor(node, type, options = {}) {
       if (e.shiftKey) delta = Math.round(delta / 45) * 45;
       if (applyStrokeGroupTransform(it.item?.actionGroupId, 1, delta, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
         markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
-        requestDraw({ localOnly: true });
+        requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
       }
       return;
     }

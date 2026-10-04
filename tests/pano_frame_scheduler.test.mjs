@@ -179,3 +179,38 @@ test("a callback or a draw that throws is reported, and the frame and the next o
   frames.runFrame();
   assert.equal(frames.pending, 0);
 });
+
+test("only a STATE request counts a state change; the other reasons leave the revision", () => {
+  const { scheduler } = setup();
+  assert.equal(scheduler.stateRevision, 0);
+  for (const reason of Object.values(DRAW_REASON).filter((value) => value !== DRAW_REASON.STATE)) scheduler.requestDraw(reason);
+  assert.equal(scheduler.stateRevision, 0);
+  scheduler.requestDraw(DRAW_REASON.STATE);
+  scheduler.requestDraw(DRAW_REASON.STATE);
+  assert.equal(scheduler.stateRevision, 2);
+});
+
+test("a Keyframe drag's batched view task counts a state change on each frame it runs", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { createFrameBatch } = await import("../web_src/pano_frame_batch.js");
+  const editor = readFileSync(new URL("../web_src/pano_editor.js", import.meta.url), "utf8");
+  // The editor's view task asks with STATE (pano_editor.js dragFrames).
+  const tasks = editor.slice(editor.indexOf("const dragFrames = createFrameBatch({"), editor.indexOf("\n  });\n", editor.indexOf("const dragFrames = createFrameBatch({")));
+  assert.match(tasks, /view: \(\) => \{\s*syncCutoutShot\(\);\s*requestDraw\(\{ localOnly: true, reason: DRAW_REASON\.STATE \}\);\s*\}/);
+  // The same wiring: moves batched into the scheduler's frames, each frame one state change and one draw.
+  const { frames, draws, scheduler } = setup();
+  const batch = createFrameBatch({
+    requestFrame: (callback) => scheduler.requestFrame(callback),
+    cancelFrame: (id) => scheduler.cancelFrame(id),
+    tasks: { view: () => scheduler.requestDraw(DRAW_REASON.STATE) },
+  });
+  batch.request("view");
+  batch.request("view");
+  frames.runFrame();
+  assert.equal(scheduler.stateRevision, 1);
+  assert.deepEqual(draws, [[DRAW_REASON.STATE]]);
+  batch.request("view");
+  frames.runFrame();
+  assert.equal(scheduler.stateRevision, 2);
+  assert.equal(draws.length, 2);
+});

@@ -752,7 +752,10 @@ export function createThreeView({ onUpdate = () => {}, createCanvas }) {
       item.texture.dispose();
       owned.delete(id);
     });
+    // The part is cleared to input.clearColor (a hex RGB, opaque) before it is drawn, or to transparent.
+    if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
     renderer.render(scene, camera);
+    if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
     if (space) {
       setCamera(worldCamera, input.camera, at);
       renderer.autoClear = false;

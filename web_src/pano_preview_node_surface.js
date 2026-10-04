@@ -3,9 +3,11 @@ export function shouldTogglePreviewPlaybackFromKey(event, root) {
   return event.key === " " || event.key === "Spacebar";
 }
 
-// The Preview node's canvas in device pixels: its CSS size x devicePixelRatio. maxSide limits a side only
-// when given (the shared three.js view keeps its own canvas within what the GPU draws to).
-export function measurePreviewCanvasSize(rect, devicePixelRatio = 1, maxSide = Infinity) {
+// The Preview node's canvas in device pixels: its CSS size x devicePixelRatio, no larger than `screen`
+// ({ width, height } in CSS pixels, the window) shows at that ratio, scaled down evenly. A graph zoomed in
+// far shows only a part of the node, so no pixel that is seen is lost. maxSide limits a side only when
+// given (the shared three.js view keeps its own canvas within what the GPU draws to).
+export function measurePreviewCanvasSize(rect, devicePixelRatio = 1, maxSide = Infinity, screen = null) {
   const candidateScale = Number(devicePixelRatio);
   const scale = Number.isFinite(candidateScale) && candidateScale > 0 ? candidateScale : 1;
   const cssWidth = Number(rect?.width);
@@ -15,7 +17,10 @@ export function measurePreviewCanvasSize(rect, devicePixelRatio = 1, maxSide = I
   const candidateMaxSide = Number(maxSide);
   const limit = candidateMaxSide > 0 ? candidateMaxSide : Infinity;
   const largestSide = Math.max(physicalWidth, physicalHeight);
-  const fitScale = largestSide > 0 ? Math.min(1, limit / largestSide) : 1;
+  let fitScale = largestSide > 0 ? Math.min(1, limit / largestSide) : 1;
+  if (screen && physicalWidth > 0 && physicalHeight > 0) {
+    fitScale = Math.min(fitScale, (screen.width * scale) / physicalWidth, (screen.height * scale) / physicalHeight);
+  }
   return {
     width: Math.max(1, Math.round(physicalWidth * fitScale)),
     height: Math.max(1, Math.round(physicalHeight * fitScale)),
