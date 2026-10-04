@@ -33,3 +33,23 @@ test("a name given by two modules, or by a module and showEditor, is refused", (
   assert.throws(() => createEditorModules({}, [create, create]), /same is provided twice/);
   assert.throws(() => createEditorModules({ same: 0 }, [create]), /same is provided twice/);
 });
+
+test("a module that takes a name nobody provides fails when the editor is made", () => {
+  const createNeedy = (deps) => {
+    const { missing } = deps;
+    return { connect() {}, value: missing };
+  };
+  assert.throws(() => createEditorModules({}, [createNeedy]), /createNeedy takes missing, which nothing provides/);
+  const createLate = () => {
+    let missing;
+    return {
+      connect(api) {
+        ({ missing } = api);
+      },
+      call: () => missing(),
+    };
+  };
+  assert.throws(() => createEditorModules({}, [createLate]), /createLate takes missing, which nothing provides/);
+  // A name given with no value is still given.
+  assert.equal(createEditorModules({ vueModal: null }, [(deps) => ({ connect() {}, modal: deps.vueModal })]).modal, null);
+});
