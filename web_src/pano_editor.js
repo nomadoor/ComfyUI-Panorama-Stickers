@@ -17,23 +17,13 @@ import { normalizePaintingState } from "./pano_paint_types.js";
 import {
   CAMERA_SHOT_ID,
   cameraShot,
-  duplicateSceneSticker,
   editorActive,
-  editorStateText,
-  fileSource,
-  newSceneSticker,
   newStudioCamera,
-  newWorldSceneSticker,
   normalizeCoverageValue,
-  noteCameraEdit,
   parsePanoEditorState,
   parseSceneEditorState,
-  retainActiveCutoutShot,
-  sameEditorStateText,
   setCameraField,
   setCameraShot,
-  setEditorActive,
-  deleteWorldSticker,
   setStickerOpacity,
   setWorldStickerField,
   setWorldStickerTransform,
@@ -49,7 +39,6 @@ import {
   gizmoDragLanes,
   gizmoScreenBox,
   navigationTarget,
-  newWorldStickerTransform,
   orbitView,
   panDepth,
   panView,
@@ -104,20 +93,11 @@ import {
   markImageReady,
 } from "./pano_image_state.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
-import {
-  createPanoEditorExtension,
-  flushPanoStateProducers,
-  queuePendingStickerOperation,
-} from "./pano_editor_extension.js";
+import { createPanoEditorExtension, flushPanoStateProducers } from "./pano_editor_extension.js";
 import { isNodeOutputMediaCurrent } from "./pano_preview_video.js";
 import { frameAtTime } from "./pano_video_playback.js";
 import { hitFrameAffordance, hitStickerSelectionAffordance } from "./pano_sticker_affordance.js";
-import {
-  decodeStickerImageFile,
-  dragHasStickerImageFile,
-  isStickerImageFile,
-  uploadStickerAssetFile,
-} from "./pano_sticker_file_import.js";
+import { isStickerImageFile } from "./pano_sticker_file_import.js";
 import {
   registerExternalStickerSync,
   runExternalStickerSync,
@@ -162,14 +142,8 @@ import {
   parseOutputPresetValue,
   pointInPoly,
   rgb01ToHsv,
-  uid,
 } from "./editor/helpers.js";
-import {
-  getNodeGridVisibility,
-  loadSharedUiSettings,
-  saveSharedUiSettings,
-  setNodeGridVisibility,
-} from "./editor/ui_settings.js";
+import { getNodeGridVisibility, loadSharedUiSettings, setNodeGridVisibility } from "./editor/ui_settings.js";
 import { createEditorModules } from "./editor/modules.js";
 import { createMediaSession } from "./editor/media_session.js";
 import { createEditorHistory, createHistory } from "./editor/history.js";
@@ -188,6 +162,9 @@ import { createRenderLoop } from "./editor/render_loop.js";
 import { createPanels } from "./editor/panels.js";
 import { createTimeline } from "./editor/timeline.js";
 import { createTimelineActions } from "./editor/timeline_actions.js";
+import { createCommit } from "./editor/commit.js";
+import { createCommands } from "./editor/commands.js";
+import { createStickerImport } from "./editor/sticker_import.js";
 
 const _paintLayerSyncRegistry = new Map();
 
@@ -809,66 +786,60 @@ async function showEditor(node, type, options = {}) {
   // --- editor modules: begin (generated wiring, see docs/editor-architecture.md) ---
   // Each module gets what it uses from here and calls the others through connect() (editor/modules.js).
   const {
+    addImageSticker, addImageStickerFromFile, addWorldImageSticker, addWorldStickerFromFile, apply,
     applyInitialCutoutFocus, applyRasterObjectOffset, applyRasterObjectTransform, applySpaceMode,
     applyStrokeGroupOffset, applyStrokeGroupTransform, applyVideoTimelineFps, areAllSelectedItemsLocked,
     bringSelectedToFront, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState,
     buildRasterObjectEditCanvas, cameraFrustumLength, cameraShoots, cameraSphere, canRestoreSelectedToInitial,
-    cancelViewTransition, clearSelection, clearWorldSelection, collectExternalStickersForClearAll,
-    computeStickerVFov, contentSphere, createRasterFrozenObjectsFromCanvas, createRasterSurface,
-    currentSpaceCamera, cutoutCamera, deleteSelectedKeyframes, editorAnimating, editorViewInput, ensureGroupFrame,
-    ensurePaintingGroupEntry, erpPointToWorldDir, forgetCameraPreviewFrame, frameLocalPointToWorldDir,
-    frameSpaceContent, getActivePaintTargetDescriptor, getCutoutInspectorItems, getCutoutSelectableItems,
-    getCutoutSelectableItemsForHit, getDisplayListObjects, getHistoryCapabilities, getList, getMultiSelectionGeom,
-    getNextStickerZIndex, getOrderedDisplayListObjects, getPaintingGroupList, getRasterObjectCenterUv,
-    getRasterObjectItem, getRasterObjectList, getSelectableRasterObjectItems, getSelectableStrokeGroupItems,
-    getSelected, getSelectedItems, getSelectedKind, getStrokeGroupCenterUv, getStrokeGroupItem,
-    getStrokeGroupStrokes, getUnwrapRect, hasCamera, hasSpaceContent, hitRasterObjectAt,
+    cancelViewTransition, clearAll, clearPaintingLayer, clearSelection, commitAndRefreshNode, commitState,
+    contentSphere, createRasterFrozenObjectsFromCanvas, createRasterSurface, currentSpaceCamera, cutoutCamera,
+    deleteSelected, deleteSelectedKeyframes, deleteSelectedWorldSticker, duplicateSelected, editorAnimating,
+    editorViewInput, ensureGroupFrame, ensurePaintingGroupEntry, erpPointToWorldDir, forceCursorTool,
+    forgetCameraPreviewFrame, frameLocalPointToWorldDir, frameSpaceContent, getActivePaintTargetDescriptor,
+    getCutoutInspectorItems, getCutoutSelectableItems, getCutoutSelectableItemsForHit, getDisplayListObjects,
+    getHistoryCapabilities, getList, getMultiSelectionGeom, getOrderedDisplayListObjects, getPaintingGroupList,
+    getRasterObjectCenterUv, getRasterObjectItem, getRasterObjectList, getSelectableRasterObjectItems,
+    getSelectableStrokeGroupItems, getSelected, getSelectedItems, getSelectedKind, getStrokeGroupCenterUv,
+    getStrokeGroupItem, getStrokeGroupStrokes, getUnwrapRect, hasCamera, hasSpaceContent, hitRasterObjectAt,
     invalidateLivePaintPreviewCaches, isCameraSelected, isErpCamera, isExternalSticker, isFreeSpaceView,
     isItemLocked, isRasterObjectItem, isSceneSticker, isShotItem, isSpaceView, isStickerHidden, isStickerItem,
-    isStrokeGroupItem, isUploadingSticker, lookingAt, makeRasterObjectSelectionId, makeStrokeGroupSelectionId,
-    markObjectVisualsDirty, markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty, needsPaintingLayerSync,
-    objectGeom, onTimelineAction, paintingShown, parseRasterObjectSelectionId, playback, playbackFps, poseOf,
+    isStrokeGroupItem, lookingAt, makeRasterObjectSelectionId, makeStrokeGroupSelectionId, markObjectVisualsDirty,
+    markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty, migrateLegacyEmbeddedAssets, objectGeom,
+    onCanvasDragOver, onCanvasDrop, onTimelineAction, onWindowDragEnter, onWindowDragLeave, onWindowDragOver,
+    onWindowDrop, paintingShown, parseRasterObjectSelectionId, persistUiSettings, playback, playbackFps, poseOf,
     processFreehandPoints, pushHistory, queueVideoTransportLayout, rasterizeStrokeToSurface,
     rebuildPaintEngineIfNeeded, reconcileExternalStickerFromInputs, refreshModalVideoSource,
-    refreshPaintEngineRevisionCache, requestDraw, restoreHistory, restoreSelectedToInitialPose,
-    sampleEditorDiagnostics, screenPos, screenPosCss, screenPosToErpPoint, screenPosToFrameAsErpPoint,
-    screenToWorldDir, selectWorldSticker, selectedWorldSticker, sendSelectedToBack, setSelectedItem,
-    setSelectedItems, setSpaceMode, setSpaceView, shortestWrappedDelta, shotViewCamera, spaceOrigin, spaceScale,
-    spaceViewState, stageResizeObserver, startAnimation, startSpaceDrag, stickerCornerOrderSanity,
-    stickerImageKey, stopRenderLoop, stopTimelinePlayback, syncCanvasSize, syncFloatingViewButtonState,
-    syncFrameRollKnob, syncLookAtFrameButtonState, syncPaintUi, syncPaintingLayerAsync, syncSidePanelControls,
-    syncTimeline, syncUndoRedoButtons, syncVideoTransportState, syncViewToggleState, tick, togglePlayback,
-    toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView, turnViewTo,
-    updateSidePanel, videoCleanupFns, videoState, viewControls, watchPixelRatio, worldDirToFrameLocalPoint,
-    worldStickerEditable, writePose, zoomSpaceAt,
+    refreshPaintEngineRevisionCache, replaceSelectedImage, replaceSelectedImageFromFile, requestDraw,
+    restoreHistory, restoreSelectedToInitialPose, sampleEditorDiagnostics, screenPos, screenPosCss,
+    screenPosToErpPoint, screenPosToFrameAsErpPoint, screenToWorldDir, selectWorldSticker, selectedWorldSticker,
+    sendSelectedToBack, setDropCue, setSelectedItem, setSelectedItems, setSpaceMode, setSpaceView,
+    shortestWrappedDelta, shotViewCamera, spaceOrigin, spaceScale, spaceViewState, stageResizeObserver,
+    startAnimation, startSpaceDrag, stickerCornerOrderSanity, stopRenderLoop, stopTimelinePlayback,
+    syncCanvasSize, syncCoverageChangeToNodePreviews, syncFloatingViewButtonState, syncFrameRollKnob,
+    syncLookAtFrameButtonState, syncPaintUi, syncPaintingLayerAsync, syncSidePanelControls, syncTimeline,
+    syncUndoRedoButtons, syncVideoTransportState, syncViewToggleState, tick, togglePlayback,
+    toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView,
+    triggerBackgroundPersistenceOnClose, turnViewTo, updateSidePanel, videoCleanupFns, videoState, viewControls,
+    watchPixelRatio, worldDirToFrameLocalPoint, worldStickerEditable, writePose, zoomSpaceAt,
   } = createEditorModules({
-    api, app, backgroundCanvas, cameraV2, canvas, capture, comfyMedia, commitAndRefreshNode, commitState, ctx,
-    cutoutPreviewCanvas, cutoutPreviewHost, cutoutV2, dragFrames, editor, editorView, floatingRightEl,
-    frameGateCssRadius, frameViewDistance, getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewLayout,
-    getFrameViewRect, getPaintingLayerList, hideSidebar, imageCache, isActiveLassoTool, isPaintCursorEnabled,
-    isWorldMenuShown, leaveFrameView, loadPreferredExactLinkedImage, measureFrameSafeRect, mediaAssetSource,
-    mediaSource, mediaUiImage, node, paintColorPop, paintColorRow, paintColorSvCursor, paintHueHandle,
-    portStillCanvas, portVideoEl, previewMode, rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache,
-    readOnly, rectFromPoints, resolveEditorOutputPresetWidth, runtime, sceneV2, scheduler, setCanvasCursor,
-    shotEditor, stageWrap, state, stateV2, stillCanvas, studio, syncCutoutShot, timeline, timelinePlayhead, type,
-    uiState, updateCursor, updateSelectionMenu, videoEl, videoTimelineFps, viewController,
+    api, app, backgroundCanvas, bgWidget, cameraV2, canvas, capture, clearCutoutFrame, comfyMedia, coverageWidget,
+    ctx, cutoutPreviewCanvas, cutoutPreviewHost, cutoutV2, deleteStudioCamera, dragCue, dragFrames, editor,
+    editorView, floatingRightEl, frameGateCssRadius, frameViewDistance, getActiveCutoutShot,
+    getBrushPresetIdForTool, getFrameViewLayout, getFrameViewRect, getPaintingLayerList, hideSidebar, imageCache,
+    isActiveLassoTool, isPaintCursorEnabled, isWorldMenuShown, leaveFrameView, loadPreferredExactLinkedImage,
+    measureFrameSafeRect, mediaAssetSource, mediaSource, mediaUiImage, node, paintColorPop, paintColorRow,
+    paintColorSvCursor, paintHueHandle, portStillCanvas, portVideoEl, presetWidget, previewMode,
+    rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache, readOnly, rectFromPoints,
+    resolveEditorOutputPresetWidth, runtime, sceneV2, scheduler, setCanvasCursor, shotEditor, stageWrap, state,
+    stateV2, stateWidget, stillCanvas, studio, syncCutoutShot, timeline, timelinePlayhead, type, uiState,
+    updateCursor, updateSelectionMenu, videoEl, videoTimelineFps, viewController, vueModal,
   }, [
     createMediaSession, createHistory, createItems, createSelection, createProjection, createObjectGeometry,
     createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput,
     createCameraPreview, createOverlay, createRenderLoop, createPanels, createTimeline, createTimelineActions,
+    createCommit, createCommands, createStickerImport,
   ]);
   // --- editor modules: end ---
-
-  function dragHasImageFiles(e) {
-    return dragHasStickerImageFile(e?.dataTransfer);
-  }
-
-  function setDropCue(on) {
-    const next = !!on;
-    if (dragCue.active === next) return;
-    dragCue.active = next;
-    stageWrap.classList.toggle("drop-active", next);
-  }
 
   // Coordinate sanity: front-facing sticker should have top edge above bottom edge.
   const __sanity = stickerCornerOrderSanity();
@@ -879,20 +850,6 @@ async function showEditor(node, type, options = {}) {
   }
   function isActiveLassoTool() {
     return String(getActivePaintToolKind() || "") === "lasso_fill";
-  }
-
-  function pruneUnusedAssets() {
-    const used = new Set(
-      (state.stickers || [])
-        .map((s) => String(s?.asset_id || ""))
-        .filter((id) => !!id),
-    );
-    Object.keys(state.assets || {}).forEach((id) => {
-      if (!used.has(id)) {
-        delete state.assets[id];
-        imageCache.delete(id);
-      }
-    });
   }
 
   // A left press with the cursor tool in 6DoF on the selected Camera's gizmo grabs it; on the Camera's
@@ -920,327 +877,6 @@ async function showEditor(node, type, options = {}) {
 
   stageResizeObserver.observe(canvas);
   watchPixelRatio();
-
-  async function addImageStickerFromFile(file) {
-    if (readOnly || cutoutV2) return;
-    if (type !== "stickers" && type !== "cutout") return;
-    if (!isStickerImageFile(file)) return;
-    if (sceneV2) {
-      // A dropped or picked image is added at the frame shown.
-      stopTimelinePlayback();
-      await addSceneStickerFromFile(file);
-      return;
-    }
-    const aid = uid("asset");
-    const operation = queuePendingStickerOperation(node, `add:${aid}`, async () => {
-      try {
-        const { image: img } = await decodeStickerImageFile(file);
-        imageCache.set(aid, img);
-        const id = uid("st");
-        state.stickers.push({
-          id,
-          asset_id: aid,
-          yaw_deg: editor.viewYaw,
-          pitch_deg: editor.viewPitch,
-          hFOV_deg: 30,
-          vFOV_deg: computeStickerVFov(30, Number(img.naturalWidth || img.width || 1), Number(img.naturalHeight || img.height || 1)),
-          rot_deg: 0,
-          z_index: getNextStickerZIndex(),
-        });
-        setSelectedItem(state.stickers[state.stickers.length - 1]);
-        forceCursorTool();
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
-        const uploaded = await uploadStickerAssetFile(file, {
-          fetchApi: (path, options) => api.fetchApi(path, options),
-        });
-        const liveStickers = Array.isArray(state.stickers) ? state.stickers : [];
-        const matching = liveStickers.filter((item) => String(item?.asset_id || "") === aid);
-        if (!matching.length) return;
-        state.assets[aid] = uploaded;
-        pruneUnusedAssets();
-        pushHistory();
-        commitAndRefreshNode();
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
-      } catch (error) {
-        delete state.assets[aid];
-        imageCache.delete(aid);
-        const liveStickers = Array.isArray(state.stickers) ? state.stickers : [];
-        const removed = liveStickers.filter((item) => String(item?.asset_id || "") === aid);
-        if (removed.length) {
-          state.stickers = liveStickers.filter((item) => String(item?.asset_id || "") !== aid);
-          if (removed.some((item) => String(item?.id || "") === String(editor.selectedId || ""))) {
-            setSelectedItem(null);
-          }
-          updateSidePanel();
-          updateSelectionMenu();
-          requestDraw();
-          commitAndRefreshNode();
-        }
-        throw error;
-      }
-    });
-    try {
-      await operation;
-    } catch { }
-  }
-
-  function addImageSticker() {
-    if (readOnly) return;
-    if (type !== "stickers" && type !== "cutout") return;
-    vueModal?.openImagePicker?.("add");
-  }
-
-  // PanoramaStickersNode (#72): Add World Image picks an image to place in space.
-  function addWorldImageSticker() {
-    if (readOnly || !sceneV2) return;
-    vueModal?.openImagePicker?.("add-world");
-  }
-
-  async function addWorldStickerFromFile(file) {
-    if (readOnly || !sceneV2 || !isStickerImageFile(file)) return;
-    stopTimelinePlayback();
-    await addSceneStickerFromFile(file, "world");
-  }
-
-  // Where a world Sticker added now goes (pano_space.js newWorldStickerTransform): on the World content
-  // at the center of the view, else ahead of the view. The button that adds it is not over the view, so
-  // the center of the view stands for the pointer.
-  function newWorldStickerPlace() {
-    const center = { x: canvas.width / 2, y: canvas.height / 2 };
-    const hit = isSpaceView() ? editorView.pick(currentSpaceCamera(), center.x, center.y, canvas.width, canvas.height) : null;
-    return newWorldStickerTransform(spaceViewState(), hit, contentSphere());
-  }
-
-  // PanoramaStickersNode: the new Sticker shows from the decoded image while it uploads. Its Source
-  // has no file until then, so saving in between leaves it out. A sky Sticker goes where the view looks;
-  // a world one where newWorldStickerPlace() puts it.
-  async function addSceneStickerFromFile(file, placement = "sky") {
-    const id = uid("st");
-    const operation = queuePendingStickerOperation(node, `add:${id}`, async () => {
-      const { image: img } = await decodeStickerImageFile(file);
-      const pose = {
-        yaw_deg: editor.viewYaw,
-        pitch_deg: editor.viewPitch,
-        hFOV_deg: 30,
-        vFOV_deg: computeStickerVFov(30, Number(img.naturalWidth || img.width || 1), Number(img.naturalHeight || img.height || 1)),
-        rot_deg: 0,
-      };
-      const source = { kind: "file", filename: "" };
-      const sticker = placement === "world"
-        ? newWorldSceneSticker(id, source, newWorldStickerPlace())
-        : newSceneSticker(id, source, pose, getNextStickerZIndex());
-      imageCache.set(stickerImageKey(sticker), img);
-      state.stickers.push(sticker);
-      if (placement === "world") selectWorldSticker(id);
-      else setSelectedItem(sticker);
-      forceCursorTool();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-      try {
-        const uploaded = await uploadStickerAssetFile(file, {
-          fetchApi: (path, options) => api.fetchApi(path, options),
-        });
-        const live = state.stickers.find((item) => item.id === id);
-        if (!live) return;
-        live.source = fileSource(uploaded);
-        imageCache.set(stickerImageKey(live), img);
-        pushHistory();
-        commitAndRefreshNode();
-      } catch (error) {
-        state.stickers = state.stickers.filter((item) => item.id !== id);
-        if (editor.selectedId === id) setSelectedItem(null);
-        if (editor.worldSelectedId === id) clearWorldSelection();
-        // Edits made while it uploaded were not recorded yet.
-        pushHistory();
-        commitAndRefreshNode();
-        throw error;
-      } finally {
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
-      }
-    });
-    try {
-      await operation;
-    } catch { }
-  }
-
-  // PanoramaStickersNode: the Source changes once the image is uploaded. The vFOV of the value and of
-  // every Keyframe follows the new image's aspect.
-  async function replaceSceneStickerImage(file, id) {
-    const operation = queuePendingStickerOperation(node, `replace:${id}:${uid("asset")}`, async () => {
-      const { image: img } = await decodeStickerImageFile(file);
-      const uploaded = await uploadStickerAssetFile(file, {
-        fetchApi: (path, options) => api.fetchApi(path, options),
-      });
-      const live = state.stickers.find((item) => item.id === id);
-      if (!live) return;
-      live.source = fileSource(uploaded);
-      live.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
-      for (const value of [live.size.value, ...live.size.keyframes.map((key) => key.value)]) {
-        value.vFOV_deg = computeStickerVFov(value.hFOV_deg, Number(img.naturalWidth || img.width || 1), Number(img.naturalHeight || img.height || 1));
-      }
-      imageCache.set(stickerImageKey(live), img);
-      markObjectVisualsDirty();
-      pushHistory();
-      commitAndRefreshNode();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-    });
-    try {
-      await operation;
-    } catch { }
-  }
-
-  async function replaceSelectedImageFromFile(file) {
-    if (readOnly) return;
-    if (type !== "stickers" && type !== "cutout") return;
-    const selected = getSelected();
-    if (!selected || !isStickerItem(selected) || isExternalSticker(selected)) return;
-    if (!isStickerImageFile(file)) return;
-    if (sceneV2) {
-      await replaceSceneStickerImage(file, selected.id);
-      return;
-    }
-    const selectedId = String(selected.id || "");
-    const nextAssetId = uid("asset");
-    const operation = queuePendingStickerOperation(node, `replace:${selectedId}:${nextAssetId}`, async () => {
-      const liveSelected = (Array.isArray(state.stickers) ? state.stickers : [])
-        .find((item) => String(item?.id || "") === selectedId) || null;
-      if (!liveSelected || !isStickerItem(liveSelected) || isExternalSticker(liveSelected)) return;
-      const previousAssetId = String(liveSelected.asset_id || "");
-      const previousAsset = previousAssetId ? cloneJson(state.assets?.[previousAssetId] || null) : null;
-      const previousVfov = Number(liveSelected.vFOV_deg || 0);
-      const previousCrop = liveSelected.crop && typeof liveSelected.crop === "object"
-        ? { ...liveSelected.crop }
-        : null;
-      try {
-        const { image: img } = await decodeStickerImageFile(file);
-        imageCache.set(nextAssetId, img);
-        liveSelected.asset_id = nextAssetId;
-        liveSelected.vFOV_deg = computeStickerVFov(
-          Number(liveSelected.hFOV_deg || 30),
-          Number(img.naturalWidth || img.width || 1),
-          Number(img.naturalHeight || img.height || 1),
-        );
-        liveSelected.crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
-        markObjectVisualsDirty();
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
-        const uploaded = await uploadStickerAssetFile(file, {
-          fetchApi: (path, options) => api.fetchApi(path, options),
-        });
-        const currentSticker = (Array.isArray(state.stickers) ? state.stickers : [])
-          .find((item) => String(item?.id || "") === selectedId) || null;
-        if (!currentSticker || String(currentSticker.asset_id || "") !== nextAssetId) return;
-        state.assets[nextAssetId] = uploaded;
-        pruneUnusedAssets();
-        pushHistory();
-        commitAndRefreshNode();
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
-      } catch (error) {
-        delete state.assets[nextAssetId];
-        imageCache.delete(nextAssetId);
-        const currentSticker = (Array.isArray(state.stickers) ? state.stickers : [])
-          .find((item) => String(item?.id || "") === selectedId) || null;
-        if (currentSticker && String(currentSticker.asset_id || "") === nextAssetId) {
-          if (previousAssetId && previousAsset) state.assets[previousAssetId] = previousAsset;
-          currentSticker.asset_id = previousAssetId;
-          currentSticker.vFOV_deg = previousVfov;
-          currentSticker.crop = previousCrop ? { ...previousCrop } : null;
-        }
-        markObjectVisualsDirty();
-        commitAndRefreshNode();
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
-        throw error;
-      }
-    });
-    try {
-      await operation;
-    } catch { }
-  }
-
-  function replaceSelectedImage() {
-    if (readOnly) return;
-    const selected = getSelected();
-    if (!selected || !isStickerItem(selected) || isExternalSticker(selected)) return;
-    vueModal?.openImagePicker?.("replace");
-  }
-
-  async function migrateLegacyEmbeddedAssets() {
-    if (readOnly || type !== "stickers") return;
-    if (sceneV2) {
-      await uploadEmbeddedSceneSources();
-      return;
-    }
-    const assets = state.assets && typeof state.assets === "object" ? state.assets : {};
-    const entries = Object.entries(assets).filter(([, asset]) => {
-      const t = String(asset?.type || "").toLowerCase();
-      const v = String(asset?.value || "");
-      return t === "dataurl" && v.startsWith("data:image");
-    });
-    if (!entries.length) return;
-    let changed = false;
-    for (const [assetId, asset] of entries) {
-      try {
-        const dataUrl = String(asset?.value || "");
-        if (!dataUrl) continue;
-        const blob = await fetch(dataUrl).then((r) => r.blob());
-        const ext = String(blob.type || "image/png").split("/")[1] || "png";
-        const name = String(asset?.name || `${assetId}.${ext}`);
-        const file = new File([blob], name, { type: blob.type || "image/png" });
-        const uploaded = await uploadStickerAssetFile(file, {
-          fetchApi: (path, options) => api.fetchApi(path, options),
-        });
-        state.assets[assetId] = {
-          ...uploaded,
-          w: Number(asset?.w || 0),
-          h: Number(asset?.h || 0),
-        };
-        changed = true;
-      } catch {
-      }
-    }
-    if (changed) {
-      commitAndRefreshNode();
-      requestDraw();
-    }
-  }
-
-  // A Source of state v2 that embeds a data URL (read from a v1 state) becomes an uploaded file.
-  async function uploadEmbeddedSceneSources() {
-    let changed = false;
-    for (const sticker of state.stickers) {
-      const dataUrl = sticker.source.data_url;
-      if (!dataUrl) continue;
-      try {
-        const blob = await fetch(dataUrl).then((r) => r.blob());
-        const ext = String(blob.type || "image/png").split("/")[1] || "png";
-        const file = new File([blob], `${sticker.id}.${ext}`, { type: blob.type || "image/png" });
-        const uploaded = await uploadStickerAssetFile(file, {
-          fetchApi: (path, options) => api.fetchApi(path, options),
-        });
-        sticker.source = fileSource(uploaded);
-        changed = true;
-      } catch {
-      }
-    }
-    if (changed) {
-      commitAndRefreshNode();
-      requestDraw();
-    }
-  }
 
   function addCutoutFrame() {
     if (readOnly || type !== "cutout") return;
@@ -1326,246 +962,6 @@ async function showEditor(node, type, options = {}) {
     updateSidePanel();
     updateSelectionMenu();
     requestDraw();
-  }
-
-  function showCanvasConfirm(title, text, confirmLabel = "Clear") {
-    return new Promise((resolve) => {
-      uiState.confirmDialog = {
-        visible: true,
-        title: String(title || ""),
-        text: String(text || ""),
-        confirmLabel: String(confirmLabel || "Confirm"),
-        resolve,
-      };
-    });
-  }
-
-  async function clearAll() {
-    if (readOnly) return;
-    const ok = await showCanvasConfirm(
-      "Clear All Paint Data",
-      type === "stickers"
-        ? "This will remove all paint, mask, and sticker images in the current node."
-        : "This will remove all paint, mask, and images in the current node. The cutout frame will be preserved.",
-      "Clear All",
-    );
-    if (!ok) return;
-    state.painting = normalizePaintingState(null);
-    markPaintStrokeVisualsDirty();
-    const keptExternalStickers = collectExternalStickersForClearAll();
-    if (type === "stickers") {
-      // World Stickers are not shown on the canvas, so Clear All keeps them.
-      state.stickers = sceneV2 ? state.stickers.filter((item) => item.placement === "world" || keptExternalStickers.includes(item)) : keptExternalStickers;
-      if (!sceneV2) state.assets = {};
-      editor.selectedId = keptExternalStickers[0]?.id || null;
-      editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
-      state.active.selected_sticker_id = keptExternalStickers[0]?.id || null;
-      pruneUnusedAssets();
-    } else {
-      const retained = retainActiveCutoutShot(state.shots, state.active.selected_shot_id);
-      state.stickers = keptExternalStickers;
-      state.assets = {};
-      state.shots = retained.shots;
-      editor.selectedId = retained.selectedShotId;
-      editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
-      state.active.selected_sticker_id = null;
-      state.active.selected_shot_id = retained.selectedShotId;
-      if (!retained.selectedShotId && editor.mode === "frame") editor.mode = "pano";
-      editor.cutoutAspectOpen = false;
-      pruneUnusedAssets();
-    }
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw();
-  }
-
-  async function clearPaintingLayer(layerKind) {
-    if (readOnly) return;
-    const kind = layerKind === "mask" ? "mask" : "paint";
-    const label = kind === "mask" ? "Mask" : "Paint";
-    const strokes = getPaintingLayerList(kind);
-    if (!strokes.length && !(editor.interaction?.kind === "draw" && editor.interaction?.layerKind === kind)) return;
-    const ok = await showCanvasConfirm(
-      `Clear ${label}`,
-      `This will remove all ${kind} strokes in the current node.`,
-      `Clear ${label}`,
-    );
-    if (!ok) return;
-    if (editor.interaction?.kind === "draw" && editor.interaction?.layerKind === kind) {
-      const targetDescriptor = getActivePaintTargetDescriptor(editor.interaction);
-      if (targetDescriptor) editor.paintEngine.cancelActiveStroke(targetDescriptor);
-      editor.interaction = null;
-    }
-    strokes.length = 0;
-    state.painting.raster_objects = getRasterObjectList().filter((item) => String(item?.layerKind || "paint") !== kind);
-    if (kind === "paint") {
-      getPaintingGroupList().length = 0;
-    }
-    markPaintStrokeVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    syncPaintUi();
-    requestDraw();
-  }
-
-  function duplicateSelected() {
-    if (readOnly) return;
-    const selected = getSelected();
-    if (!selected) return;
-    if (!isStickerItem(selected) || isExternalSticker(selected)) return;
-    // A Sticker whose image is still uploading has no file to copy yet.
-    if (sceneV2 && isUploadingSticker(selected)) return;
-    let copy;
-    if (sceneV2) {
-      copy = duplicateSceneSticker(selected, uid("st"), getNextStickerZIndex());
-    } else {
-      copy = JSON.parse(JSON.stringify(selected));
-      copy.id = uid("st");
-      copy.yaw_deg = wrapYaw((copy.yaw_deg || 0) + 8);
-      copy.z_index = getNextStickerZIndex();
-    }
-    state.stickers.push(copy);
-    state.active.selected_sticker_id = copy.id;
-    editor.selectedId = copy.id;
-    editor.selectedIds = [copy.id];
-    markObjectVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSelectionMenu();
-    updateSidePanel();
-    requestDraw();
-  }
-
-  // Delete on the selected world Sticker (deleteWorldSticker). Returns whether a world Sticker was selected.
-  function deleteSelectedWorldSticker() {
-    const sticker = selectedWorldSticker();
-    if (!sticker) return false;
-    if (!worldStickerEditable(sticker)) return true;
-    stopTimelinePlayback();
-    deleteWorldSticker(state, sticker.id);
-    clearWorldSelection();
-    markObjectVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    syncFloatingViewButtonState();
-    requestDraw();
-    return true;
-  }
-
-  function deleteSelected() {
-    // The Cutout's Camera stays; the editor of PanoramaCutoutNode edits nothing else (#77).
-    if (readOnly || cutoutV2) return;
-    const selectedItems = getSelectedItems();
-    const selected = getSelected();
-    if (!selected && selectedItems.length === 0) return;
-    if (selectedItems.some((item) => isItemLocked(item))) return;
-    stopTimelinePlayback();
-    if (selectedItems.length > 1) {
-      const paintStrokeIds = new Set(selectedItems
-        .filter((item) => isStrokeGroupItem(item))
-        .map((item) => String(item.actionGroupId || item.id || "")));
-      const rasterIds = new Set(selectedItems
-        .filter((item) => isRasterObjectItem(item))
-        .map((item) => parseRasterObjectSelectionId(item.rasterObjectId || item.id || "")));
-      const stickerIds = new Set(selectedItems.filter(isStickerItem).map((item) => String(item.id || "")));
-      if (paintStrokeIds.size > 0) {
-        state.painting.paint.strokes = (Array.isArray(state.painting?.paint?.strokes) ? state.painting.paint.strokes : [])
-          .filter((stroke) => !paintStrokeIds.has(String(stroke?.actionGroupId || "")));
-        state.painting.groups = getPaintingGroupList()
-          .filter((group) => !paintStrokeIds.has(String(group?.actionGroupId || group?.id || "")));
-        markPaintStrokeVisualsDirty();
-      }
-      if (rasterIds.size > 0) {
-        state.painting.raster_objects = getRasterObjectList()
-          .filter((item) => !rasterIds.has(String(item?.id || "")));
-        markPaintCompositeVisualsDirty();
-      }
-      if (stickerIds.size > 0) {
-        state.stickers = (Array.isArray(state.stickers) ? state.stickers : [])
-          .filter((item) => {
-            if (!stickerIds.has(String(item?.id || ""))) return true;
-            if (!isExternalSticker(item)) return false;
-            if (!isStickerHidden(item)) item.visible = false;
-            return true;
-          });
-        pruneUnusedAssets();
-        markObjectVisualsDirty();
-      }
-      editor.selectedId = null;
-      editor.selectedIds = [];
-      pushHistory();
-      commitAndRefreshNode();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-      return;
-    }
-    if (isStrokeGroupItem(selected)) {
-      const gid = String(selected.actionGroupId || selected.id || "").trim();
-      state.painting.paint.strokes = (Array.isArray(state.painting?.paint?.strokes) ? state.painting.paint.strokes : [])
-        .filter((stroke) => String(stroke?.actionGroupId || "").trim() !== gid);
-      state.painting.groups = getPaintingGroupList()
-        .filter((group) => String(group?.actionGroupId || group?.id || "").trim() !== gid);
-      markPaintStrokeVisualsDirty();
-      editor.selectedId = null;
-      editor.selectedIds = [];
-      pushHistory();
-      commitAndRefreshNode();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-      return;
-    }
-    if (isRasterObjectItem(selected)) {
-      const rid = parseRasterObjectSelectionId(selected.rasterObjectId || selected.id || "");
-      state.painting.raster_objects = getRasterObjectList()
-        .filter((item) => String(item?.id || "").trim() !== rid);
-      markPaintCompositeVisualsDirty();
-      editor.selectedId = null;
-      editor.selectedIds = [];
-      pushHistory();
-      commitAndRefreshNode();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-      return;
-    }
-    if (studio && isShotItem(selected)) {
-      deleteStudioCamera();
-      return;
-    }
-    if (type === "stickers" || isStickerItem(selected)) {
-      if (isExternalSticker(selected)) {
-        if (isStickerHidden(selected)) return;
-        selected.visible = false;
-        markObjectVisualsDirty();
-        pushHistory();
-        commitAndRefreshNode();
-        updateSidePanel();
-        updateSelectionMenu();
-        requestDraw();
-        return;
-      }
-      state.stickers = state.stickers.filter((s) => s.id !== selected.id);
-      pruneUnusedAssets();
-      markObjectVisualsDirty();
-      editor.selectedId = getList()[0]?.id || null;
-      editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
-      state.active.selected_sticker_id = editor.selectedId;
-      pushHistory();
-      commitAndRefreshNode();
-      updateSidePanel();
-      updateSelectionMenu();
-      requestDraw();
-      return;
-    }
-    clearCutoutFrame();
   }
 
   // Resize the crop to the largest box of `ratio` the viewport allows, without
@@ -1663,72 +1059,8 @@ async function showEditor(node, type, options = {}) {
     }
   }
 
-  function apply() {
-    if (readOnly) return;
-    state.projection_model = "pinhole_rectilinear";
-    state.alpha_mode = "straight";
-    if (presetWidget) state.output_preset = resolveEditorOutputPresetWidth(Number(state.output_preset || 2048));
-    if (coverageWidget) state.coverage = normalizeCoverageValue(coverageWidget.value);
-    if (bgWidget) state.bg_color = String(bgWidget.value || state.bg_color || "#00ff00");
-    commitState();
-    node.setDirtyCanvas(true, true);
-  }
-
-  function commitState() {
-    if (readOnly) return;
-    syncCutoutShot();
-    noteCameraEdit(state);
-    state.coverage = normalizeCoverageValue(state.coverage);
-    setEditorActive(node, state.active);
-    const text = editorStateText(node, state);
-    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""), { rebased: cameraV2 })) {
-      stateWidget.value = text;
-      stateWidget.callback?.(text);
-    }
-  }
   const flushStateBeforeQueue = () => commitState();
   if (!readOnly) node.__panoFlushStateBeforeQueue = flushStateBeforeQueue;
-  function persistUiSettings() {
-    state.ui_settings = saveSharedUiSettings(state.ui_settings);
-    if (!readOnly) {
-      commitState();
-    }
-  }
-  function commitAndRefreshNode() {
-    if (readOnly) return;
-    commitState();
-    node.setDirtyCanvas?.(true, true);
-  }
-
-  function triggerBackgroundPersistenceOnClose() {
-    if (readOnly) return;
-    if (needsPaintingLayerSync()) {
-      void syncPaintingLayerAsync().catch((error) => {
-        console.error("[PanoramaPaintingLayerSync] background close sync failed", error);
-      });
-    }
-  }
-
-  function syncCoverageChangeToNodePreviews(options = {}) {
-    const syncPreview = options.syncPreview !== false;
-    const syncGraph = options.syncGraph !== false;
-    if (syncPreview) {
-      node.__panoPreviewNodeRuntime?.requestDraw?.();
-      node.__panoDomPreview?.requestDraw?.();
-      node.setDirtyCanvas?.(true, false);
-    }
-    if (syncGraph) {
-      node.graph?.setDirtyCanvas?.(true, true);
-      app?.canvas?.setDirty?.(true, true);
-    }
-  }
-
-  function forceCursorTool() {
-    if (editor.primaryTool === "cursor") return;
-    editor.primaryTool = "cursor";
-    syncPaintUi();
-    updateSidePanel();
-  }
 
   function supportsErpPainting() {
     return editor.mode === "pano" || editor.mode === "unwrap";
@@ -4344,51 +3676,10 @@ async function showEditor(node, type, options = {}) {
   }
   canvas.onwheel = onCanvasWheel;
 
-  function onCanvasDragOver(e) {
-    if ((type !== "stickers" && type !== "cutout") || readOnly) return;
-    e.preventDefault();
-    setDropCue(true);
-  }
   canvas.ondragover = onCanvasDragOver;
 
-  function onCanvasDrop(e) {
-    if ((type !== "stickers" && type !== "cutout") || readOnly) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragCue.depth = 0;
-    setDropCue(false);
-    const files = Array.from(e.dataTransfer?.files || []);
-    const file = files.find((f) => isStickerImageFile(f));
-    if (!file) return;
-    void addImageStickerFromFile(file);
-  }
   canvas.ondrop = onCanvasDrop;
 
-  function onWindowDragEnter(e) {
-    if ((type !== "stickers" && type !== "cutout") || readOnly) return;
-    if (!dragHasImageFiles(e)) return;
-    dragCue.depth += 1;
-    setDropCue(true);
-    e.preventDefault();
-  }
-  function onWindowDragOver(e) {
-    if ((type !== "stickers" && type !== "cutout") || readOnly) return;
-    if (!dragCue.active && dragHasImageFiles(e)) setDropCue(true);
-    if (dragCue.active) e.preventDefault();
-  }
-  function onWindowDragLeave(e) {
-    if ((type !== "stickers" && type !== "cutout") || readOnly) return;
-    if (!dragCue.active) return;
-    dragCue.depth = Math.max(0, dragCue.depth - 1);
-    const leftWindow = (Number(e.clientX) <= 0 && Number(e.clientY) <= 0);
-    if (dragCue.depth === 0 || leftWindow) setDropCue(false);
-  }
-  function onWindowDrop(e) {
-    if ((type !== "stickers" && type !== "cutout") || readOnly) return;
-    dragCue.depth = 0;
-    setDropCue(false);
-    if (dragHasImageFiles(e)) e.preventDefault();
-  }
   window.addEventListener("dragenter", onWindowDragEnter, true);
   window.addEventListener("dragover", onWindowDragOver, true);
   window.addEventListener("dragleave", onWindowDragLeave, true);
