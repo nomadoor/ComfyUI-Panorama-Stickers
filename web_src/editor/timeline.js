@@ -17,7 +17,7 @@ export function createTimeline(deps) {
   // Bound by connect() to the other modules and showEditor.
   let commitAndRefreshNode, getPortMedia, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
     playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, syncCutoutShot,
-    syncSidePanelModel, updateSelectionMenu, updateSidePanel;
+    syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamSpanFrames;
 
   function syncTimeline() {
     if (!stateV2 || readOnly) return;
@@ -43,7 +43,8 @@ export function createTimeline(deps) {
       camera: hasCamera(),
       cameraHideable: studio,
       stickers: !cutoutV2,
-      scene: sceneV2 && !!nodeInputOrigins(node).scene,
+      // Another Studio's Scene on `scene` is upstream: its elements stay off this Timeline (#90).
+      scene: sceneV2 && !!nodeInputOrigins(node).scene && !upstreamLinked(),
       sceneLocked: !!capture,
     });
     uiState.easing = timeline.selection
@@ -57,8 +58,9 @@ export function createTimeline(deps) {
     return timelineOpens(state, { cameraOnly: cutoutV2, camera: studio });
   }
 
-  // The Timeline length (5 s without one), widened to the background VIDEO and to the end of the
-  // port Sticker's media. The Cutout's Camera Keyframes widen it as they lengthen its output; a Cutout
+  // The Timeline length (5 s without one), widened to the background VIDEO, to the end of the
+  // port Sticker's media and to the upstream Scene's length (#90). An upstream background VIDEO is in the
+  // upstream Scene's length already (docs/render-contract.md), so it does not widen it again. The Cutout's Camera Keyframes widen it as they lengthen its output; a Cutout
   // that shoots a PANO_SCENE has the Scene's length (#77).
   function timelineSpanFrames(openClip = null) {
     if (capture?.frames) return capture.frames;
@@ -66,8 +68,9 @@ export function createTimeline(deps) {
     const port = state.stickers.find(isExternalSticker);
     const portMedia = port ? getPortMedia() : null;
     const frames = Math.max(
-      uiState.videoTransport.ready ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0,
+      uiState.videoTransport.ready && !upstreamBackground() ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0,
       portMedia ? portMediaFrames(port.clip, fps, portMedia.meta) : 0,
+      upstreamSpanFrames(),
     );
     return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: (cutoutV2 && !capture) || studio });
   }
@@ -192,7 +195,7 @@ export function createTimeline(deps) {
       ({
         commitAndRefreshNode, getPortMedia, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
         playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, syncCutoutShot,
-        syncSidePanelModel, updateSelectionMenu, updateSidePanel,
+        syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamSpanFrames,
       } = api);
     },
     syncTimeline, timelineTimed, timelineSpanFrames, timelineOwner, selectedLanes, timelineOffset, clipView,

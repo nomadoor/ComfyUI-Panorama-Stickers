@@ -75,6 +75,10 @@ const stageFailureMessage = computed(() => {
   if (detail.startsWith("boot:")) return "Part of the editor failed to initialize. Check the browser console for details.";
   return "Some image previews are unavailable. Re-run the node to refresh them.";
 });
+// What the stage's status line says: a failure or a warning, else a note that is not a failure.
+const stageMessage = computed(() => (
+  props.uiState?.stageStatus === "failed" || props.uiState?.stageWarningDetail ? stageFailureMessage.value : props.uiState?.stageNotice
+));
 const floatingButtons = computed(() => {
   const base = Array.isArray(shellPreset.value?.floatingButtons) ? shellPreset.value.floatingButtons.slice() : [];
   if (previewMode.value) {
@@ -191,11 +195,11 @@ watch(() => props.open, (nextOpen) => {
           <canvas class="pano-stage pano-stage-overlay" data-stage-overlay width="1600" height="800" />
           <div class="pano-stage-loading" aria-hidden="true" />
           <div
-            v-if="uiState.stageStatus === 'failed' || (uiState.stageStatus === 'ready' && uiState.stageWarningDetail)"
+            v-if="uiState.stageStatus === 'failed' || (uiState.stageStatus === 'ready' && (uiState.stageWarningDetail || uiState.stageNotice))"
             class="pano-stage-failed"
             role="status"
           >
-            {{ stageFailureMessage }}
+            {{ stageMessage }}
           </div>
           <div class="pano-stage-drop-hint" aria-hidden="true">
             <div class="pano-stage-drop-hint-text">Drag and drop image here</div>

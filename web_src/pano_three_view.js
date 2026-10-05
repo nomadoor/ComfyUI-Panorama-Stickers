@@ -544,6 +544,17 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     onUpdate,
     concurrency: SCENE_LOADS,
   });
+  // The 3D items of the upstream Scene's layers (#90), by slot (a layer and its `scene` or 3D Sticker), loaded
+  // the same way; a slot no render asks for any more is closed.
+  const upstreamItems = new Map();
+  const upstreamItemsOf = (slot) => {
+    let items = upstreamItems.get(slot);
+    if (!items) {
+      items = createSceneItems({ load: loadSceneItem, dispose: disposeItem, onUpdate, concurrency: SCENE_LOADS });
+      upstreamItems.set(slot, items);
+    }
+    return items;
+  };
   const domeGeometry = new SphereGeometry(DOME_RADIUS, 64, 32);
   const planeGeometry = new PlaneGeometry(1, 1);
   const quadGeometry = new PlaneGeometry(2, 2);
@@ -665,7 +676,9 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
 
   // The World of a space input: the guides, the `scene` item, the 3D Sticker's item, the world Sticker
   // planes and lines, with the Spark renderer of owner's view. The objects are kept between renders, and
-  // `world` is filled again only when they change. What is not seen (opacity 0) is not picked.
+  // `world` is filled again only when they change. What is not seen (opacity 0) is not picked. The upstream
+  // Scene's items and planes are drawn the same way but are never picked: they are not pickable entries, so
+  // the pick pass does not draw them.
   function buildWorld(owned, space, owner) {
     const children = [];
     const parts = [];
@@ -677,9 +690,25 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     const sticker = space.sticker ? contentGroup(stickerItems, space.sticker) : null;
     if (sticker) setContentOpacity(sticker, space.sticker.opacity);
     const contents = [space.scene ? contentGroup(sceneItems, space.scene) : null, sticker].filter(Boolean);
+    const upstream = [];
+    const slots = new Set();
+    for (const entry of space.upstreamItems ?? []) {
+      slots.add(entry.slot);
+      const items = upstreamItemsOf(entry.slot);
+      items.retain(entry.urls);
+      const content = entry.request ? contentGroup(items, entry.request) : null;
+      if (!content) continue;
+      setContentOpacity(content, entry.opacity);
+      upstream.push(content);
+    }
+    for (const [slot, items] of upstreamItems) {
+      if (slots.has(slot)) continue;
+      items.close();
+      upstreamItems.delete(slot);
+    }
     // A SPLAT draws through the Spark renderer and a SplatMesh of the view (pano_spark_views.js), made the
     // first time it shows one; until Spark's module is there the SPLATs wait a render.
-    const splat = contents.some((content) => content.splat);
+    const splat = [...contents, ...upstream].some((content) => content.splat);
     if (splat && !Spark) {
       loadSpark().then((module) => {
         if (closed) return;
@@ -697,6 +726,11 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       else pickable.push({ object: content.group, stickerId: content.stickerId, plane: false });
       parts.push([content.object.uuid, content.transform]);
     }
+    for (const content of upstream) {
+      if (content.splat && !Spark) continue;
+      if (content.splat) sparkViews.splat(owner, content.object);
+      children.push(content.group);
+    }
     if (splat && Spark) children.push(sparkViews.renderer(owner));
     let index = 0;
     for (const layer of space.stickers) {
@@ -706,6 +740,10 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       if (!(layer.opacity > 0)) continue;
       pickable.push({ object: mesh, stickerId: layer.id, plane: true });
       parts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
+    }
+    for (const layer of space.upstreamStickers ?? []) {
+      if (!layerDrawable(owned, layer)) continue;
+      children.push(addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer));
     }
     children.push(...cachedLines(lines, space.lines ?? []));
     // Picks are reused while the revision stays (pickCacheKey): whatever changes what is hit (an item's
@@ -803,7 +841,9 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // (urls to load ahead), transform ({ position, quaternion, scale }), itemQuaternion (the item's turn into
   // the `scene` frame) }. sticker is the same for the `sticker` input's 3D media with its opacity, and
   // stickerUrls its item URLs. stickers are world Sticker planes { id, media, revision, source, opacity,
-  // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }. gizmo is
+  // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }.
+  // upstreamItems ([{ slot, urls, request, opacity }], pano_upstream.js upstreamLayerView) and upstreamStickers
+  // (planes as `stickers`) are the upstream Scene's, drawn but never picked. gizmo is
   // null or the selected world Sticker's gizmo { mode, transform } (createGizmo's show).
   // With rect ({ x, y, w, h } in canvas pixels from the top left), the view of that size is drawn there on
   // the canvas as resize() sized it, only the part on the canvas, at the canvas's pixels; width and height
@@ -837,7 +877,11 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // The box of the loaded `scene` or 3D Sticker item at url in its own frame ({ min, max }; a SPLAT's in
   // 3DGS coordinates), or null while it loads.
   function sceneBox(url) {
-    return sceneItems.box(url) ?? stickerItems.box(url);
+    for (const items of [sceneItems, stickerItems, ...upstreamItems.values()]) {
+      const box = items.box(url);
+      if (box) return box;
+    }
+    return null;
   }
 
   function pickMaterial(index) {
@@ -992,7 +1036,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // triangles of the last pass drawn), the `scene` and 3D Sticker items, and the Spark renderers.
   function stats() {
     const { memory, render: drawn, programs } = renderer.info;
-    const items = [...sceneItems.items.values(), ...stickerItems.items.values()];
+    const items = [sceneItems, stickerItems, ...upstreamItems.values()].flatMap((each) => [...each.items.values()]);
     return {
       textures: memory.textures,
       geometries: memory.geometries,
@@ -1017,6 +1061,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     closed = true;
     sceneItems.close();
     stickerItems.close();
+    upstreamItems.forEach((items) => items.close());
+    upstreamItems.clear();
     if (guides) disposeObject(guides.group);
     lines.lines.forEach((line) => disposeObject(line));
     gizmo?.dispose();

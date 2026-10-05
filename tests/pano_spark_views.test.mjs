@@ -262,7 +262,9 @@ test("the three.js view aims the World's camera at the view's own Spark renderer
   assert.match(view, /setCamera\(worldCamera, input\.camera, at\);\s*\/\/[^\n]*\n\s*sparkViews\.aim\(worldCamera, input\.owner\);[\s\S]*?renderer\.render\(world, worldCamera\);/);
   assert.match(view, /new Spark\.SplatMesh\(\{ packedSplats, raycastable: false \}\);\s*packedSplats\.splatEncoding = encoding;/);
   assert.match(view, /if \(item\.kind === "splat" && item\.object\) sparkViews\.forget\(item\.object\);\s*disposeSceneItem\(item\);/);
-  assert.equal(view.match(/dispose: disposeItem,/g).length, 2);
+  // Every set of loaded items (the `scene` input's, the 3D Sticker's, the upstream Scene's) frees through it.
+  assert.equal(view.match(/dispose: disposeItem,/g).length, view.match(/createSceneItems\(\{/g).length);
+  assert.equal(view.match(/createSceneItems\(\{/g).length, 3);
   // The editor passes its camera preview as its own owner, and frees its renderer when it hides.
   const editor = readEditorSource();
   assert.match(editor, /drawEditorViewShot\(\{ x: 0, y: backgroundCanvas\.height - size\.height, w: size\.width, h: size\.height \}, shot, CAMERA_PREVIEW_OWNER\)/);

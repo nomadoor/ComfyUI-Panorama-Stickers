@@ -4,8 +4,7 @@
 import { createPanoCanvas } from "../pano_diagnostics.js";
 import { paintingLayerNeedsSync } from "../pano_editor_state.js";
 import { clamp } from "../pano_math.js";
-import { DEG2RAD } from "./constants.js";
-import { cloneJson, paintingCompositeCount, pointInPoly } from "./helpers.js";
+import { cloneJson, drawRasterObjectErp, paintingCompositeCount, pointInPoly } from "./helpers.js";
 
 // Global registry: nodeId → Promise for in-flight paint layer uploads.
 const _paintLayerUploadRegistry = new Map();
@@ -341,22 +340,7 @@ export function createPaintLayers(deps) {
     erpCanvas.height = height;
     const erpCtx = erpCanvas.getContext("2d");
     if (!erpCtx) return null;
-    const px = Number(bbox.u0 || 0) * width;
-    const py = Number(bbox.v0 || 0) * height;
-    const pw = Math.max(1, (Number(bbox.u1 || 0) - Number(bbox.u0 || 0)) * width);
-    const ph = Math.max(1, (Number(bbox.v1 || 0) - Number(bbox.v0 || 0)) * height);
-    const cx = px + pw * 0.5 + (Number(tf.du || 0) * width);
-    const cy = py + ph * 0.5 + (Number(tf.dv || 0) * height);
-    const rot = Number(tf.rot_deg || 0) * DEG2RAD;
-    const scale = Math.max(0.01, Number(tf.scale || 1));
-    for (const wrapOffset of [-width, 0, width]) {
-      erpCtx.save();
-      erpCtx.translate(cx + wrapOffset, cy);
-      erpCtx.rotate(rot);
-      erpCtx.scale(scale, scale);
-      erpCtx.drawImage(img, -pw * 0.5, -ph * 0.5, pw, ph);
-      erpCtx.restore();
-    }
+    drawRasterObjectErp(erpCtx, img, item, width, height);
     rasterErpCanvasCache.set(key, erpCanvas);
     return erpCanvas;
   }

@@ -39,6 +39,25 @@ export function videoLinked(node, names) {
   ));
 }
 
+// The type of what is linked to the input `name` of a node, or "" without a link. A link of type "*" or ""
+// (through a legacy Reroute) takes the type of its origin's output, and a Reroute's from its own input.
+export function linkedInputType(node, name) {
+  const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
+  let link = slot >= 0 && node.graph ? node.getInputLink(slot) : null;
+  const seen = new Set();
+  while (link) {
+    if (link.type && link.type !== "*") return String(link.type);
+    const origin = node.graph.getNodeById(link.origin_id);
+    if (!origin || seen.has(origin)) return "";
+    seen.add(origin);
+    const type = origin.outputs?.[link.origin_slot ?? 0]?.type;
+    if (type && type !== "*") return String(type);
+    if (origin.type !== "Reroute") return "";
+    link = origin.getInputLink(0);
+  }
+  return "";
+}
+
 // The node of a serialized workflow that a run reports by its execution id ("12" at the root, "12:5" for
 // node 5 inside the subgraph that node 12 instances), with the links of the graph it is in.
 function workflowNode(workflow, executionId) {

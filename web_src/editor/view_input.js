@@ -1,7 +1,7 @@
 // What the three.js views draw: the input of a frame (background, Sky layers, World content and the space
 // guides), built once per frame from the state at the playhead, and the calls that draw the panorama view,
 // a shot and the Unwrap view with it.
-import { CAMERA_SHOT_ID, normalizeCoverageValue } from "../pano_editor_state.js";
+import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { shotCamera, workingSkyLayers, worldStickerLayers } from "../pano_editor_view.js";
 import { evaluateSceneState } from "../pano_scene_eval.js";
 import { loadSceneState } from "../pano_scene_state.js";
@@ -29,12 +29,12 @@ export function createViewInput(deps) {
     canvas, editor, editorView, imageCache, readOnly, scheduler, state, stateV2, stillCanvas, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let applySpaceMode, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
+  let applySpaceMode, backgroundCoverage, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
     currentViewCamera, cutoutCamera, deviceRect, followPortSticker, frameViewDistance, getConnectedErpImage,
     getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
     isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, sceneFiles,
     selectedWorldSticker, spaceModeState, spaceOrigin, spaceViewState, stickerFiles, stickerImageKey,
-    syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, worldStickerEditable;
+    syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput, worldStickerEditable;
 
   // The state v2 the views draw, made again when the state changes (scheduler.stateRevision).
   let editorViewScene = { revision: -1, sceneState: null };
@@ -89,11 +89,13 @@ export function createViewInput(deps) {
       const img = getStickerImage(item);
       return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
     };
-    const layers = workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers, evaluated });
+    // The upstream Scene's Sky (Panorama Studio, #90) lies under the node's own.
+    const upstream = upstreamViewInput();
+    const layers = [...upstream.sky, ...workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers, evaluated })];
     // The background VIDEO and its still are one source, so a seek keeps the frame before.
     const bgSource = bgImg && (bgImg === videoEl || bgImg === stillCanvas) ? videoEl.dataset.panoSrc : bgImg;
     const background = isDecodedImageReady(bgImg)
-      ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: normalizeCoverageValue(state.coverage), source: bgSource }
+      ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: backgroundCoverage(), source: bgSource }
       : null;
     // When the World content goes away, 6DoF goes back to 3DoF at the origin at once, ending a transition.
     const hasContent = hasSpaceContent();
@@ -102,7 +104,7 @@ export function createViewInput(deps) {
     applySpaceMode(spaceMode);
     // `content` is the World alone, as the Cutout's Camera sees it in the Frame view and the camera
     // preview (#77); `space` adds the guides of the panorama view.
-    const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, evaluated, media) : null;
+    const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, evaluated, media, upstream) : null;
     const space = isSpaceView() ? { ...content, ...spaceGuides(content) } : null;
     return { background, layers, space, content };
   }
@@ -119,9 +121,10 @@ export function createViewInput(deps) {
   }
 
   // The World at the playhead: the `scene` item the node draws at this frame with the `scene` transform,
-  // the item of the 3D port Sticker with its transform and opacity, the world Sticker planes, and the
-  // sphere around the content (null without content) that frames it and scales the navigation.
-  function buildSpaceContent(sceneState, evaluated, media) {
+  // the item of the 3D port Sticker with its transform and opacity, the world Sticker planes, the upstream
+  // Scene's planes and items (`upstream`, upstreamViewInput()), and the sphere around all of it (null without
+  // content) that frames it and scales the navigation.
+  function buildSpaceContent(sceneState, evaluated, media, upstream) {
     const files = sceneFiles();
     const scene = sceneRequest(files, evaluated.scene);
     const box = scene?.url ? editorView.sceneBox(scene.url) : null;
@@ -131,7 +134,11 @@ export function createViewInput(deps) {
     const stickerBox = sticker?.url ? editorView.sceneBox(sticker.url) : null;
     const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
     const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media, evaluated });
-    const sphere = boundingSphere(contentPoints(evaluated, sceneBox, stickers, items));
+    for (const { request, value } of upstream.items) {
+      const upstreamBox = request?.url ? editorView.sceneBox(request.url) : null;
+      if (upstreamBox) items.push({ box: sceneItemBox(request.kind, upstreamBox), value });
+    }
+    const sphere = boundingSphere(contentPoints(evaluated, sceneBox, [...stickers, ...upstream.stickers], items));
     return {
       evaluated,
       sceneUrls: files ? files.urls.filter(Boolean) : [],
@@ -139,6 +146,8 @@ export function createViewInput(deps) {
       stickerUrls: stickerContentUrls(portFiles, sceneState),
       sticker,
       stickers,
+      upstreamStickers: upstream.stickers,
+      upstreamItems: upstream.items,
       sphere,
     };
   }
@@ -244,12 +253,12 @@ export function createViewInput(deps) {
   return {
     connect(api) {
       ({
-        applySpaceMode, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
+        applySpaceMode, backgroundCoverage, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
         currentViewCamera, cutoutCamera, deviceRect, followPortSticker, frameViewDistance, getConnectedErpImage,
         getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
         isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, sceneFiles,
         selectedWorldSticker, spaceModeState, spaceOrigin, spaceViewState, stickerFiles, stickerImageKey,
-        syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, worldStickerEditable,
+        syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput, worldStickerEditable,
       } = api);
     },
     editorViewInput, endEditorViewFrame, editorViewSceneState, isCameraSelected, renderEditorView,
