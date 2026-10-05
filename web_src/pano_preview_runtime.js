@@ -29,6 +29,8 @@ import {
 import { fitFocalPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
 import PanoStickersNodeSurface from "./components/PanoStickersNodeSurface.vue";
+import PanoStudioNodeSurface from "./components/PanoStudioNodeSurface.vue";
+import { createStudioStatus } from "./pano_studio_status.js";
 import {
   NODE_SURFACE_FRAME,
   createStickersNodeSurfaceSession,
@@ -66,12 +68,14 @@ import {
   isRepeatedOutput,
   isTrackedMediaInputConnectionChange,
   isVideoFile,
+  nodeInputOrigins,
   outputSourceToken,
   restoreLoadedNodeOutput,
   resolvePreviewVideoSource,
   setNodeOutputLookup,
   sourceNodeIds,
   trackRunOutputs,
+  videoLinked,
 } from "./pano_preview_video.js";
 import { bindWheelCaptureRoot, readWheelDirection } from "./pano_wheel.js";
 import { queuePendingStickerOperation } from "./pano_editor_extension.js";
@@ -1478,12 +1482,55 @@ function playbackBackground({ playback, video, still }) {
   return !playback.showsVideo && still.__panoFrameIdx > 0 ? still : video;
 }
 
-// What the on-node surfaces draw with three.js: the background, and the Sky layers of the node's
-// state (its sky Stickers and paint) from back to front, at surfaceFrame.
-function surfaceViewInput(node, state, bgImg) {
+// The node's working state as a loaded state v2 (pano_scene_state.js), kept while the state stays the same.
+function surfaceSceneState(node, state) {
   if (node.__panoSurfaceScene?.state !== state) {
     node.__panoSurfaceScene = { state, sceneState: loadSceneState({ ...state, painting: null }) };
   }
+  return node.__panoSurfaceScene.sceneState;
+}
+
+// The bg_media width output_size auto reads (studioNodeStatus): null without bg_media, undefined while it is
+// not known. The node's last result reports it; before a run, it is the width of the linked image, or of the
+// VIDEO file the surface plays (not the editor's MP4 of a result, which may be smaller).
+function studioBgWidth(node, surfacePlayback) {
+  const origins = nodeInputOrigins(node);
+  const bgLinked = !!origins.bg_media;
+  if (!bgLinked && !origins.scene) return null;
+  if (isNodeOutputMediaCurrent(node, "background")) {
+    const reported = ownOutputUiValue(node, "pano_bg_width");
+    if (reported !== undefined) return reported;
+  }
+  // An upstream Scene's bg_media is known only from a result.
+  if (!bgLinked) return undefined;
+  if (videoLinked(node, BACKGROUND_INPUT_NAMES)) {
+    const { playback, video } = surfacePlayback;
+    return playback.source && playback.source === linkedVideoFile(node, BACKGROUND_INPUT_NAMES) && video.videoWidth > 0
+      ? video.videoWidth
+      : undefined;
+  }
+  const image = getLinkedInputImageForPreview(node, BACKGROUND_INPUT_NAMES, null, { preserveReadyWhilePending: false });
+  return isRenderableMediaReady(image) && image.naturalWidth > 0 ? image.naturalWidth : undefined;
+}
+
+// What Panorama Studio's status is made from (studioNodeStatus): its state_json text and widgets, the
+// bg_media width, and the size its last run reported while that run's media are still the inputs'.
+function studioStatusOptions(node, surfacePlayback) {
+  const outputSize = String(getWidget(node, "output_size")?.value ?? "");
+  const current = ["background", "external-sticker", "scene"].every((channel) => isNodeOutputMediaCurrent(node, channel));
+  return {
+    stateText: String(getWidget(node, "state_json")?.value ?? ""),
+    outputSize,
+    coverage: getCachedState(node).coverage,
+    bgWidth: outputSize === "auto" ? studioBgWidth(node, surfacePlayback) : null,
+    run: (current && ownOutputUiValue(node, "pano_output_size")) || null,
+  };
+}
+
+// What the on-node surfaces draw with three.js: the background, and the Sky layers of the node's
+// state (its sky Stickers and paint) from back to front, at surfaceFrame.
+function surfaceViewInput(node, state, bgImg) {
+  const sceneState = surfaceSceneState(node, state);
   const media = (item) => {
     if (item.visible === false) return null;
     let img;
@@ -1512,7 +1559,7 @@ function surfaceViewInput(node, state, bgImg) {
     background: isRenderableMediaReady(bgImg)
       ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 }
       : null,
-    layers: workingSkyLayers(node.__panoSurfaceScene.sceneState, surfaceFrame(node), state.stickers, { media, paintLayers }),
+    layers: workingSkyLayers(sceneState, surfaceFrame(node), state.stickers, { media, paintLayers }),
   };
 }
 
@@ -1653,7 +1700,8 @@ function drawCanvas(node, canvas, surfaceView) {
   if (!bgImg && panoramaDrawn) drawPanoGrid(ctx, projection, getNodeUiScale(canvas, rect));
   const selectedId = String(state?.active?.selected_sticker_id || "");
   const poseStickers = surfacePoseStickers(state, surfaceFrame(node));
-  const selected = panoramaDrawn
+  // Panorama Studio's surface only shows the Scene (#91): no selection.
+  const selected = panoramaDrawn && node.__panoStudio !== true
     ? poseStickers.find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
     : null;
   if (panoramaDrawn) {
@@ -1880,6 +1928,9 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   }
   node.__panoPreviewMode = String(options.mode || "stickers") === "cutout" ? "cutout" : "stickers";
   const stickersMode = node.__panoPreviewMode === "stickers";
+  // Panorama Studio's surface shows the Scene to look around in, without editing or playback (#91).
+  const studioSurface = stickersMode && node.__panoStudio === true;
+  const stickerDrop = stickersMode && !studioSurface;
   const panoramaInteractiveView = node.__panoPreviewMode !== "cutout";
   node.__panoAttachOptions = { ...options, mode: node.__panoPreviewMode };
   node.__panoPreviewNoPreview = options.noPreview === true;
@@ -2045,6 +2096,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     lastTs: 0,
   };
 
+  // Panorama Studio's status, worked out again only when what it is made from changes.
+  const studioStatus = createStudioStatus();
   const requestDraw = () => {
     if (state.destroyed) return;
     state.needsDraw = true;
@@ -2053,7 +2106,15 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   // The on-node surface draws through the three.js view it shares with the Preview nodes.
   const surfaceView = acquirePreviewView(requestDraw);
   const nodeSurfaceUiModel = reactive(stickersMode
-    ? { ...stickersNodeSurfaceModel(getCachedState(node)), importing: false, dropActive: false, viewUnavailable: false, playable: false, playing: false }
+    ? {
+      ...stickersNodeSurfaceModel(getCachedState(node)),
+      importing: false,
+      dropActive: false,
+      viewUnavailable: false,
+      playable: false,
+      playing: false,
+      ...(studioSurface ? { status: { shot: "", size: "", note: "" } } : {}),
+    }
     : {
       ...cutoutNodeSurfaceModel(getCachedState(node)),
       viewUnavailable: false,
@@ -2332,7 +2393,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   if (nodeSurfaceHost && nodeSurfaceSession) {
     try {
       void installPanoSuiteStylesheet();
-      nodeSurfaceVueApp = createApp(stickersMode ? PanoStickersNodeSurface : PanoCutoutNodeSurface, {
+      nodeSurfaceVueApp = createApp(studioSurface ? PanoStudioNodeSurface : (stickersMode ? PanoStickersNodeSurface : PanoCutoutNodeSurface), {
         model: nodeSurfaceUiModel,
         onAction: (action) => {
           if (action?.type === "toggle-playback") {
@@ -2417,6 +2478,10 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         else syncLegacyVideo();
         if (!node.flags?.collapsed) drawCanvas(node, canvas, surfaceView);
         nodeSurfaceUiModel.viewUnavailable = surfaceView.failed;
+        if (studioSurface) {
+          const status = studioStatus(studioStatusOptions(node, surfacePlayback), () => surfaceSceneState(node, getCachedState(node)));
+          if (status) nodeSurfaceUiModel.status = status;
+        }
       }
     } finally {
       state.inTick = false;
@@ -2474,7 +2539,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     };
   };
   const updateStickerHoverCursor = (ev) => {
-    if (!stickersMode || !panoramaInteractiveView) return;
+    if (!stickersMode || studioSurface || !panoramaInteractiveView) return;
     const currentState = getCachedState(node);
     const picked = pickStickerAtPoint(
       surfacePoseStickers(currentState, surfaceFrame(node)),
@@ -2545,7 +2610,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const projection = stickersSurfaceProjection(node, canvas.width, canvas.height);
     root.focus?.({ preventScroll: true });
     const pick = () => pickStickerAtPoint(surfacePoseStickers(currentState, surfaceFrame(node)), selectedId, point, projection);
-    let picked = pick();
+    let picked = studioSurface ? null : pick();
     // A Sticker grabbed while the node plays pauses it on the frame on screen, where the grab goes on;
     // an empty drag only looks around.
     if (picked && surfacePlayback?.playback.playing) {
@@ -2725,7 +2790,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       stopCanvasEvent(ev);
       return;
     }
-    if (!stickersMode || (ev.key !== "Delete" && ev.key !== "Backspace") || !nodeSurfaceSession) return;
+    if (!stickersMode || studioSurface || (ev.key !== "Delete" && ev.key !== "Backspace") || !nodeSurfaceSession) return;
     const target = ev.target;
     const tag = String(target?.tagName || "").toUpperCase();
     if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
@@ -2824,6 +2889,17 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     bgw.callback = bgwCallbackWrapper;
     bgw.__panoPreviewPatchedCb = bgwCallbackWrapper;
   }
+  // Panorama Studio's status follows output_size.
+  const sizeWidget = studioSurface ? getWidget(node, "output_size") : null;
+  const sizeCallbackPrev = sizeWidget?.callback;
+  const sizeCallbackWrapper = sizeWidget
+    ? (v) => {
+      const out = sizeCallbackPrev ? sizeCallbackPrev(v) : undefined;
+      requestDraw();
+      return out;
+    }
+    : null;
+  if (sizeWidget) sizeWidget.callback = sizeCallbackWrapper;
 
   const onRemovedPrev = node.onRemoved;
   const onResizePrev = node.onResize;
@@ -2840,14 +2916,14 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       nodeSurfaceUiModel.dropActive = false;
     }, 140);
   };
-  const stickerDragOverHook = stickersMode ? function (event) {
+  const stickerDragOverHook = stickerDrop ? function (event) {
     const previous = onDragOverPrev ? onDragOverPrev.apply(this, arguments) : false;
     if (previous === true) return true;
     if (!dragHasStickerImageFile(event?.dataTransfer)) return false;
     showDropCue();
     return true;
   } : null;
-  const stickerDragDropHook = stickersMode ? function (event) {
+  const stickerDragDropHook = stickerDrop ? function (event) {
     const previous = onDragDropPrev ? onDragDropPrev.apply(this, arguments) : false;
     if (previous === true) return true;
     const file = Array.from(event?.dataTransfer?.files || []).find((entry) => isStickerImageFile(entry));
@@ -2858,11 +2934,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     void addNodeStickerFile(file);
     return true;
   } : null;
-  if (stickersMode) {
+  if (stickerDrop) {
     node.onDragOver = stickerDragOverHook;
     node.onDragDrop = stickerDragDropHook;
   }
-  const stickerDropTargetCleanup = stickersMode ? bindStickerDropTarget(root, {
+  const stickerDropTargetCleanup = stickerDrop ? bindStickerDropTarget(root, {
     onActive: (active) => {
       if (active) {
         showDropCue();
@@ -2971,6 +3047,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (swCallbackWrapper && sw?.__panoPreviewPatchedCb === swCallbackWrapper) delete sw.__panoPreviewPatchedCb;
     if (bgwCallbackWrapper && bgw?.callback === bgwCallbackWrapper) bgw.callback = bgwCallbackPrev;
     if (bgwCallbackWrapper && bgw?.__panoPreviewPatchedCb === bgwCallbackWrapper) delete bgw.__panoPreviewPatchedCb;
+    if (sizeCallbackWrapper && sizeWidget.callback === sizeCallbackWrapper) sizeWidget.callback = sizeCallbackPrev;
     if (node.onDragOver === stickerDragOverHook) node.onDragOver = onDragOverPrev;
     if (node.onDragDrop === stickerDragDropHook) node.onDragDrop = onDragDropPrev;
     if (node.onRemoved === onRemovedHook) node.onRemoved = onRemovedPrev;

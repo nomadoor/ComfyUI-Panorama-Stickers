@@ -1821,13 +1821,14 @@ def _studio_camera(state: dict) -> dict | None:
     return camera if camera is not None and camera["visible"] else None
 
 
-def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg, warnings: list[str]) -> tuple[int, int]:
+def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg, warnings: list[str]) -> tuple[int, int, tuple | None]:
     """The Studio output's size (ADR 0029). `output_size` picks the width of the whole (360) ERP; auto is the
     bg_media width over 360 degrees (twice it for a 180 one), or 2048 with a warning without bg_media. Without a
     Camera (`_studio_camera`), or with an `erp` one, the output is that ERP over `coverage`. A `perspective` Camera is
     2 f tan(hFOV_max / 2) wide with f = width / 2pi (the ERP's pixels per radian at the equator) and hFOV_max the
     widest hFOV over the Timeline's `frames` (of the last layer, `state`), and the width over its aspect high, both even; a longest side past
-    STUDIO_MAX_OUTPUT_SIDE is reduced to it, keeping the aspect, with a warning."""
+    STUDIO_MAX_OUTPUT_SIDE is reduced to it, keeping the aspect, with a warning. Returns the width, the height, and the
+    size before that reduction (None when it was not reduced)."""
     if output_size != "auto":
         width = int(output_size)
     elif bg is None:
@@ -1837,20 +1838,30 @@ def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg
         width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2] * 360 // coverage
     camera = _studio_camera(state)
     if camera is None or camera["projection"] == "erp":
-        return width * coverage // 360, width // 2
+        return width * coverage // 360, width // 2, None
     # Only the Camera is evaluated; the Stickers do not change its hFOV.
     shot = {**state, "stickers": []}
     hfov = max(evaluate_scene_state(shot, layers[-1][0])["camera"]["hFOV_deg"] for _bg_index, layers in frames)
     shot_width = width / math.pi * math.tan(math.radians(hfov) / 2)
     shot_height = shot_width / camera["aspect"]
     size = (_even_side(shot_width), _even_side(shot_height))
-    if max(size) > STUDIO_MAX_OUTPUT_SIDE:
-        scale = STUDIO_MAX_OUTPUT_SIDE / max(shot_width, shot_height)
-        reduced = (_even_side(shot_width * scale), _even_side(shot_height * scale))
-        warnings.append(f"The Camera output would be {size[0]}x{size[1]}; it is reduced to {reduced[0]}x{reduced[1]} "
-                        f"(the longest side is at most {STUDIO_MAX_OUTPUT_SIDE}).")
-        size = reduced
-    return size
+    if max(size) <= STUDIO_MAX_OUTPUT_SIDE:
+        return *size, None
+    scale = STUDIO_MAX_OUTPUT_SIDE / max(shot_width, shot_height)
+    reduced = (_even_side(shot_width * scale), _even_side(shot_height * scale))
+    warnings.append(f"The Camera output would be {size[0]}x{size[1]}; it is reduced to {reduced[0]}x{reduced[1]} "
+                    f"(the longest side is at most {STUDIO_MAX_OUTPUT_SIDE}).")
+    return *reduced, size
+
+
+def _studio_run_key(state_json: str, output_size: str, coverage: str) -> str:
+    """The key of the inputs a Studio run's size came from: FNV-1a (32 bit) over the code points of the three values
+    joined by NUL, as `studioRunKey` (web_src/pano_studio_status.js) makes it, so that the node surface shows the
+    run's size only while they are unchanged."""
+    value = 0x811C9DC5
+    for char in f"{state_json}\0{output_size}\0{coverage}":
+        value = ((value ^ ord(char)) * 0x01000193) & 0xFFFFFFFF
+    return f"{value:08x}"
 
 
 class PanoramaStudioNode(io.ComfyNode):
@@ -1890,7 +1901,7 @@ class PanoramaStudioNode(io.ComfyNode):
         warnings = []
         built, bg, stored_port = _build_scene(state_json, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings, camera=True)
         state = built.layers[-1].state
-        width, height = _studio_output_size(state, built.frames, output_size, built.coverage, bg, warnings)
+        width, height, reduced_from = _studio_output_size(state, built.frames, output_size, built.coverage, bg, warnings)
         camera = _studio_camera(state)
         if camera is None or camera["projection"] == "erp":
             projection = Projection.erp(width, height, built.coverage)
@@ -1906,6 +1917,13 @@ class PanoramaStudioNode(io.ComfyNode):
         # Only a perspective Camera hands its pose to a Sticker (Pose handoff); the Cutout made the same.
         handoff = _cutout_sticker_state(state, width, height) if camera is not None and camera["projection"] == "perspective" else ""
         ui_ret = {**built.media_ui, **_port_pose_ui(state, built.layers[-1].port, stored_port)}
+        # The node surface shows the size output_size auto gives from it (None: no bg_media); the editor's MP4 may be
+        # smaller than the VIDEO, and an upstream Scene's bg_media is not on this node.
+        ui_ret["pano_bg_width"] = [None if bg is None else int((bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2])]
+        # The size the run gave, which media and an upstream Scene can make differ from what the surface works out.
+        ui_ret["pano_output_size"] = [{"width": width, "height": height, "capped": reduced_from is not None,
+                                       "reduced_from": None if reduced_from is None else list(reduced_from),
+                                       "key": _studio_run_key(state_json, output_size, coverage)}]
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         # The `scene` output is the World that is shot, without the Camera (ADR 0029).
         return io.NodeOutput(image, mask, video, _scene_output(built), handoff, ui=ui_ret)

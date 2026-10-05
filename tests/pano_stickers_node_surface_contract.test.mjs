@@ -32,9 +32,10 @@ test("Stickers image drop uses the shared host hook and restores prior hooks on 
 
   assert.match(runtime, /const onDragOverPrev = node\.onDragOver/);
   assert.match(runtime, /const onDragDropPrev = node\.onDragDrop/);
-  assert.match(runtime, /const stickerDragOverHook = stickersMode \? function/);
-  assert.match(runtime, /const stickerDragDropHook = stickersMode \? function/);
-  assert.match(runtime, /if \(stickersMode\) \{[\s\S]*?node\.onDragOver = stickerDragOverHook;[\s\S]*?node\.onDragDrop = stickerDragDropHook;/);
+  // Panorama Studio's surface takes no image drop (#91): stickerDrop is stickersMode without it.
+  assert.match(runtime, /const stickerDragOverHook = stickerDrop \? function/);
+  assert.match(runtime, /const stickerDragDropHook = stickerDrop \? function/);
+  assert.match(runtime, /if \(stickerDrop\) \{[\s\S]*?node\.onDragOver = stickerDragOverHook;[\s\S]*?node\.onDragDrop = stickerDragDropHook;/);
   assert.match(runtime, /isStickerImageFile\(/);
   assert.match(runtime, /queuePendingStickerOperation\(/);
   assert.match(runtime, /if \(node\.onDragOver === stickerDragOverHook\) node\.onDragOver = onDragOverPrev/);
@@ -505,7 +506,7 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   assert.match(keyDown, /pauseSurfacePlayback\(\);\s*flushNodeSurfaceGesture\(\);/);
   // The node shows its playback's frame, which lives only on the node object; a grab pauses there.
   assert.match(runtime, /return node\.__panoSurfacePlayback\?\.playback\.frame \?\? NODE_SURFACE_FRAME;/);
-  assert.match(runtime, /let picked = pick\(\);\s*\/\/[^\n]*\n[^\n]*\n\s*if \(picked && surfacePlayback\?\.playback\.playing\) \{\s*pauseSurfacePlayback\(\);\s*picked = pick\(\);/);
+  assert.match(runtime, /let picked = studioSurface \? null : pick\(\);\s*\/\/[^\n]*\n[^\n]*\n\s*if \(picked && surfacePlayback\?\.playback\.playing\) \{\s*pauseSurfacePlayback\(\);\s*picked = pick\(\);/);
   // Space stays ComfyUI's canvas pan.
   assert.doesNotMatch(keyDown, /" "|Space/);
   // A node out of sight stops and lets its VIDEO go, on each draw and as soon as its surface resizes away.

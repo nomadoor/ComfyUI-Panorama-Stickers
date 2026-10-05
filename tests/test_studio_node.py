@@ -103,7 +103,8 @@ def test_without_a_camera_every_output_frame_matches_the_new_stickers(output_siz
     for index in range(3):
         assert torch.equal(studio.result[index] if index < 2 else studio.result[2].get_components().images,
                            stickers.result[index] if index < 2 else stickers.result[2].get_components().images)
-    assert set(studio.ui) == set(stickers.ui)
+    # Studio adds only what its node surface reads: the bg_media width and the size of the run.
+    assert set(studio.ui) == set(stickers.ui) | {"pano_bg_width", "pano_output_size"}
     assert studio.result[4] == ""
 
 
@@ -273,8 +274,8 @@ def _size(state=None, output_size="auto", coverage="360", bg=None):
     warnings = []
     loaded = load_scene_state(json.dumps({"version": 2, **(state or {})}))
     frames = [(None, ((float(frame), None, None),)) for frame in range(3)]
-    size = nodes._studio_output_size(loaded, frames, output_size, int(coverage), bg, warnings)
-    return size, warnings
+    width, height, _reduced_from = nodes._studio_output_size(loaded, frames, output_size, int(coverage), bg, warnings)
+    return (width, height), warnings
 
 
 LINEAR = [0.0, 0.0, 1.0, 1.0]
@@ -323,6 +324,32 @@ def test_auto_without_bg_media_warns_in_the_result():
 
     assert result.result[0].shape == (1, 1024, 2048, 3)
     assert result.ui["pano_sticker_warnings"] == [AUTO_WARNING]
+
+
+def test_the_ui_reports_the_bg_media_width_that_auto_reads():
+    # The node surface shows the size before a run; the editor's MP4 of a VIDEO may be smaller than the VIDEO.
+    assert _studio(output_size="1024", bg_media=_solid([0.5, 0.5, 0.5], height=16, width=48)).ui["pano_bg_width"] == [48]
+    assert _studio(output_size="1024").ui["pano_bg_width"] == [None]
+
+
+def test_the_ui_reports_the_output_size_with_the_inputs_it_was_made_from():
+    # An IMAGE batch of 3 sets the Timeline: the run reads hFOV_max at frame 2 (82.5), not at the Keyframe at 8 that
+    # the node surface sees in the state alone.
+    keys = [{"frame": 0, "value": 60.0, "easing": LINEAR}, {"frame": 8, "value": 150.0, "easing": LINEAR}]
+    state_json = json.dumps({"version": 2, "camera": _camera(fov_keyframes=keys)})
+    result = _studio(state_json, output_size="1024", bg_media=_solid([0.5, 0.5, 0.5], height=16, width=32, batch=3))
+
+    assert result.result[0].shape == (1, 286, 286, 3)
+    assert result.ui["pano_output_size"] == [{"width": 286, "height": 286, "capped": False, "reduced_from": None,
+                                              "key": nodes._studio_run_key(state_json, "1024", "360")}]
+
+
+def test_the_run_key_changes_with_the_state_and_the_widgets():
+    key = nodes._studio_run_key("{}", "1024", "360")
+
+    assert key == nodes._studio_run_key("{}", "1024", "360")
+    assert len({key, nodes._studio_run_key("{ }", "1024", "360"), nodes._studio_run_key("{}", "2048", "360"),
+                nodes._studio_run_key("{}", "1024", "180")}) == 4
 
 
 def test_auto_with_a_180_bg_media_doubles_its_width_for_the_whole_erp():

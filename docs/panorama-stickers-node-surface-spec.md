@@ -84,6 +84,30 @@
   rAF / video frame callbackを破棄する。
 - 読めなかったVIDEOのURLは、候補から一度消えたら（再実行や接続変更）もう一度試す。
 
+## Panorama Studio Surface (#91)
+
+`PanoramaStudio` は同じDOM canvas、shared three.js view、teardownを使い、Vue overlayだけを
+`PanoStudioNodeSurface.vue` に替える（ADR 0029）。
+
+- 上端の固定高さのbarに、状態と `Open Editor` を置く。状態は撮るもの（`ERP`、`Camera · Perspective`、
+  `Camera · 360°` / `180°`）、出力の画素数、上限（4096）に収めたときの元の大きさ、auto で `bg_media` が
+  無いときの注記を示す。注記の欄は空でも場所を保ち、controlを動かさない。
+- 状態は実行前から `state_json` と `output_size`・`coverage` で決める（`web_src/pano_studio_status.js`、
+  Python の `_studio_output_size` と `tests/test_studio_status_parity.py` で一致させる）。`hFOV_max` は
+  media を読まない Timeline の frame で求める（見積もり）。
+- 実行後は、実行が返した大きさ（`ui` の `pano_output_size`）を見積もりより優先する。VIDEO・IMAGE batch・
+  port の media・上流の Scene は Timeline の長さや coverage を変えるため。使うのは、実行時の media の接続
+  （background・sticker・scene）が今と同じで、かつ `pano_output_size.key`（`state_json`・`output_size`・
+  `coverage` の hash、`_studio_run_key` / `studioRunKey`）が今の値と一致するときだけで、実行後に編集したら
+  見積もりに戻る。状態はこれらの入力が変わったときだけ計算し直す。
+- auto の `bg_media` の幅は、直近の実行結果の `pano_bg_width`、無ければ接続した画像、または node が
+  再生用に読む VIDEO file の幅とする。実行前は frontend が preview に読む画像の幅に従うため、それが
+  `bg_media` の実際の幅と違えば、実行までは表示が実行結果と違うことがある。わからない間は大きさを
+  `auto` と示す。上流の Scene の `bg_media` は実行結果からだけわかる。
+- パノラマは背景と sky Sticker・paint を Timeline の最初の frame で描き、drag / wheel で見回すだけとする。
+  world Sticker と 3D の素材（`scene`）は描かない。描くかどうかは後続で決める。
+  Sticker の選択・drag・削除、画像の追加と drop、再生ボタンは持たない。surface の大きさは出力の比で変わらない。
+
 ## Scope Boundary
 
 surfaceに含めない操作:
