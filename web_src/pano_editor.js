@@ -73,6 +73,7 @@ import { createPaintStrokes } from "./editor/paint_strokes.js";
 import { createExternalStickers } from "./editor/external_stickers.js";
 import { createSpace } from "./editor/space.js";
 import { createViewInput } from "./editor/view_input.js";
+import { createUpstream } from "./editor/upstream.js";
 import { createCameraPreview, getCutoutPreviewViewportSize, splatDrawReason } from "./editor/camera_preview.js";
 import { createOverlay } from "./editor/overlay.js";
 import { createRenderLoop } from "./editor/render_loop.js";
@@ -224,6 +225,8 @@ async function showEditor(node, type, options = {}) {
     stageStatus: IMAGE_LOADING,
     stageStatusDetail: "boot",
     stageWarningDetail: "",
+    // A note on the stage that is not a failure (its text), as Panorama Studio's upstream Scene gives it (#90).
+    stageNotice: "",
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
     // The space group of the bottom-right buttons (floatingRightState); none in the Cutout editor.
     space: shellPreset.spaceButtons?.length
@@ -678,7 +681,7 @@ async function showEditor(node, type, options = {}) {
   // showEditor takes back what it registers and calls below. A name missing on either side throws.
   const {
     addImageStickerFromFile, addWorldStickerFromFile, applyInitialCutoutFocus, applyVideoTimelineFps, bindDrag,
-    cancelFrameCameraGesture, closePaintColorPop, commitState, disposeMediaSession, editorAnimating,
+    cancelFrameCameraGesture, closePaintColorPop, commitState, disposeMediaSession, disposeUpstream, editorAnimating,
     finishKnobRoll, flushFrameWheelCommit, forgetCameraPreviewFrame, getUnwrapRect, hidePaintSizePreview,
     hideTooltip, hoverWorldGizmo, isFreeFrameView, isFreeSpaceView, migrateLegacyEmbeddedAssets, onCanvasDragOver,
     onCanvasDrop, onCanvasMouseMove, onCanvasPointerCancel, onCanvasPointerDown, onCanvasPointerMove,
@@ -706,7 +709,7 @@ async function showEditor(node, type, options = {}) {
     videoEl, videoTimelineFps, videoTransportEl, viewController, vueModal,
   }, [
     createMediaSession, createHistory, createItems, createSelection, createProjection, createObjectGeometry,
-    createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput,
+    createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput, createUpstream,
     createCameraPreview, createOverlay, createRenderLoop, createPanels, createTimeline, createTimelineActions,
     createCommit, createCommands, createStickerImport, createCamera, createFrameView, createPaintInput,
     createHitTest, createSelectionMenu, createPointerInput, createSidePanelEvents, createModalEvents,
@@ -881,6 +884,7 @@ async function showEditor(node, type, options = {}) {
       dragFrames.cancel();
       stopRenderLoop();
       disposeMediaSession();
+      disposeUpstream();
       editorView.dispose();
       setDropCue(false);
       window.removeEventListener("keydown", onEscClose, true);

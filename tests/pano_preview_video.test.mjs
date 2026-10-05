@@ -10,6 +10,7 @@ import {
   isRepeatedOutput,
   isTrackedMediaInputConnectionChange,
   isVideoFile,
+  linkedInputType,
   outputSourceToken,
   sourceNodeIds,
   resolvePreviewVideoSource,
@@ -632,4 +633,38 @@ test("the 3D sticker files of an output are stale once the sticker input is reli
   assert.equal(isNodeOutputMediaCurrent(node, "background"), true);
   rewire(node, "sticker", 6);
   assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), true);
+});
+
+test("the type linked to an input is the link's, else its origin output's, followed back through legacy Reroutes", () => {
+  const nodes = new Map();
+  const make = (id, type, outputs, inputLinks = []) => {
+    const made = {
+      id,
+      type,
+      outputs,
+      inputs: inputLinks.map((_, index) => ({ name: index ? `in${index}` : "scene" })),
+      graph: { getNodeById: (key) => nodes.get(key) ?? null },
+      getInputLink: (slot) => inputLinks[slot] ?? null,
+    };
+    nodes.set(id, made);
+    return made;
+  };
+  make(1, "PanoramaStudio", [{ type: "IMAGE" }, { type: "PANO_SCENE" }]);
+  make(2, "Reroute", [{ type: "*" }], [{ origin_id: 1, origin_slot: 1, type: "*" }]);
+  make(3, "Reroute", [{ type: "" }], [{ origin_id: 2, origin_slot: 0, type: "" }]);
+  const direct = make(10, "PanoramaStudio", [], [{ origin_id: 1, origin_slot: 1, type: "PANO_SCENE" }]);
+  const throughOutput = make(11, "PanoramaStudio", [], [{ origin_id: 1, origin_slot: 1, type: "*" }]);
+  const throughReroutes = make(12, "PanoramaStudio", [], [{ origin_id: 3, origin_slot: 0, type: "*" }]);
+  assert.equal(linkedInputType(direct, "scene"), "PANO_SCENE");
+  assert.equal(linkedInputType(throughOutput, "scene"), "PANO_SCENE");
+  assert.equal(linkedInputType(throughReroutes, "scene"), "PANO_SCENE");
+  // A Reroute that leads nowhere, an unknown origin, and an input without a link are of no type.
+  make(4, "Reroute", [{ type: "*" }], []);
+  assert.equal(linkedInputType(make(13, "PanoramaStudio", [], [{ origin_id: 4, origin_slot: 0, type: "*" }]), "scene"), "");
+  assert.equal(linkedInputType(make(14, "PanoramaStudio", [], [{ origin_id: 99, origin_slot: 0, type: "*" }]), "scene"), "");
+  assert.equal(linkedInputType(make(15, "PanoramaStudio", [], []), "scene"), "");
+  // A loop of Reroutes ends.
+  make(5, "Reroute", [{ type: "*" }], [{ origin_id: 6, origin_slot: 0, type: "*" }]);
+  make(6, "Reroute", [{ type: "*" }], [{ origin_id: 5, origin_slot: 0, type: "*" }]);
+  assert.equal(linkedInputType(make(16, "PanoramaStudio", [], [{ origin_id: 5, origin_slot: 0, type: "*" }]), "scene"), "");
 });

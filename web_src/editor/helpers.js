@@ -1,5 +1,5 @@
 // Small pure helpers of the Panorama editor: easing, vectors, 2D geometry, colors and node values.
-import { LASSO_CURSOR_SIZE, PAINT_COLOR_SWATCHES, RAD2DEG } from "./constants.js";
+import { DEG2RAD, LASSO_CURSOR_SIZE, PAINT_COLOR_SWATCHES, RAD2DEG } from "./constants.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 
 export function easeInOutCubic(t) {
@@ -169,6 +169,29 @@ export function paintingCompositeCount(painting) {
     totalPaintCount: paintCount + paintRasterCount,
     totalMaskCount: maskCount + maskRasterCount,
   };
+}
+
+// Draws a raster object's image `img` where it lies on a width x height ERP (its bbox moved by its transform),
+// wrapped around the seam, on the 2D context ctx.
+export function drawRasterObjectErp(ctx, img, item, width, height) {
+  const bbox = item.bbox;
+  const tf = item.transform || {};
+  const px = Number(bbox.u0 || 0) * width;
+  const py = Number(bbox.v0 || 0) * height;
+  const pw = Math.max(1, (Number(bbox.u1 || 0) - Number(bbox.u0 || 0)) * width);
+  const ph = Math.max(1, (Number(bbox.v1 || 0) - Number(bbox.v0 || 0)) * height);
+  const cx = px + pw * 0.5 + (Number(tf.du || 0) * width);
+  const cy = py + ph * 0.5 + (Number(tf.dv || 0) * height);
+  const rot = Number(tf.rot_deg || 0) * DEG2RAD;
+  const scale = Math.max(0.01, Number(tf.scale || 1));
+  for (const wrapOffset of [-width, 0, width]) {
+    ctx.save();
+    ctx.translate(cx + wrapOffset, cy);
+    ctx.rotate(rot);
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, -pw * 0.5, -ph * 0.5, pw, ph);
+    ctx.restore();
+  }
 }
 
 export function makePaintId(prefix) {

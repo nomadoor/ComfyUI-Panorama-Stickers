@@ -2,7 +2,7 @@
 // frames, the Sticker images, the node's ui values for them, and the legacy VIDEO transport with its
 // filmstrip. It makes the VIDEO playback and the port's follower, and lets them go (disposeMediaSession).
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
-import { sourceAsset } from "../pano_editor_state.js";
+import { normalizeCoverageValue, sourceAsset } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import {
@@ -19,6 +19,7 @@ import { createFrameSequence, portMediaSource, portMediaTime } from "../pano_por
 import { isPanoramaPreviewNodeName } from "../pano_preview_identity.js";
 import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 import { sceneFilesOf } from "../pano_space.js";
+import { upstreamBackgroundOf } from "../pano_upstream.js";
 import { createVideoFollower, createVideoPlayback } from "../pano_video_playback.js";
 import {
   EXTERNAL_STICKER_PREVIEW_KEY,
@@ -32,7 +33,7 @@ export function createMediaSession(deps) {
   const {
     comfyMedia, cutoutV2, editor, editorView, floatingRightEl, imageCache, loadPreferredExactLinkedImage,
     mediaAssetSource, mediaSource, mediaUiImage, node, portStillCanvas, portVideoEl, readOnly, runtime,
-    scheduler, stageWrap, state, stateV2, stillCanvas, timelinePlayhead, type, uiState, videoEl,
+    scheduler, stageWrap, state, stateV2, stillCanvas, studio, timelinePlayhead, type, uiState, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames;
@@ -322,6 +323,8 @@ export function createMediaSession(deps) {
     if (isPanoramaPreviewNodeName(nodeName)) {
       return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
     }
+    const upstream = upstreamBackground();
+    if (upstream) return { videoKey: upstream.videoKey, metaKey: upstream.metaKey };
     if (type === "stickers" || type === "cutout") {
       return { videoKey: "pano_input_videos", metaKey: "pano_input_video_meta" };
     }
@@ -486,7 +489,7 @@ export function createMediaSession(deps) {
   function refreshModalVideoSource() {
     if (!(videoEl instanceof HTMLVideoElement)) return null;
     const { videoKey } = getModalVideoUiKeys();
-    const ownEntry = isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
+    const ownEntry = upstreamBackground() || isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
     const ownSrc = mediaSource(ownEntry);
     // The node's own result wins. Without one, a video file the background input loads directly plays,
     // with its length from the file and the Timeline's fps.
@@ -652,12 +655,16 @@ export function createMediaSession(deps) {
     }
     const displaySource = getDisplayBackgroundSource();
     if (displaySource) return displaySource;
-    const uiImg = isNodeOutputMediaCurrent(node, "background")
-      ? mediaUiImage(node, "pano_input_images", imageCache, () => requestDraw())
+    // The upstream Scene's background takes the place of the node's own (Panorama Studio, #90).
+    const upstream = upstreamBackground();
+    const uiImg = upstream || isNodeOutputMediaCurrent(node, "background")
+      ? mediaUiImage(node, upstream?.imageKey ?? "pano_input_images", imageCache, () => requestDraw())
       : null;
     if (uiImg && !isImageLoadFailed(uiImg)) return uiImg;
     // A background video still loading.
     if (videoEl instanceof HTMLVideoElement && videoEl.dataset.panoSrc) return videoEl;
+    // The node's own bg_media is not used, so it does not stand in.
+    if (upstream) return uiImg;
     const preferred = backgroundInputNames();
     const img = loadPreferredExactLinkedImage(node, preferred, () => requestDraw(), `background:${preferred.join("|")}`);
     return img || uiImg || null;
@@ -669,7 +676,22 @@ export function createMediaSession(deps) {
     return slot >= 0 && node.graph ? String(node.getInputLink(slot)?.type || "") : "";
   }
 
+  // The background of the Scene on Panorama Studio's `scene` input in the node's current result (#90), used in
+  // place of its own bg_media: { imageKey, videoKey, metaKey, coverage } (pano_upstream.js), or null. It comes
+  // through `scene` alone, so a relinked bg_media (which the node does not use) leaves it current.
+  function upstreamBackground() {
+    if (!studio || !isNodeOutputMediaCurrent(node, "scene")) return null;
+    return upstreamBackgroundOf(getNodeUiList);
+  }
+
+  // The span of the background ERP: the upstream Scene's when its background shows, else the node's own.
+  function backgroundCoverage() {
+    return upstreamBackground()?.coverage ?? normalizeCoverageValue(state.coverage);
+  }
+
   function backgroundInputNames() {
+    // With the upstream Scene's background, the node's own bg_media is not shown.
+    if (upstreamBackground()) return [];
     // An ERP on PanoramaCutoutNode's source shows before the node runs; a PANO_SCENE's background comes
     // only with the Cutout's result.
     if (type === "cutout") return cutoutV2 ? (sourceLinkType() === "PANO_SCENE" ? [] : ["source"]) : ["erp_image", "bg_erp"];
@@ -734,7 +756,7 @@ export function createMediaSession(deps) {
     videoState, queueVideoTransportLayout, playback, portVideo, getNodeUiValue,
     getMediaRevisionToken, playbackFps, syncVideoTransportState, toggleVideoMuted, syncVideoTransportVisibility,
     refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage, getPortMedia, followPortSticker,
-    getStickerImage, stickerImageKey, getConnectedErpImage, isDecodedImageReady, getStageImageStatus, sceneFiles,
+    getStickerImage, stickerImageKey, getConnectedErpImage, backgroundCoverage, upstreamBackground, isDecodedImageReady, getStageImageStatus, sceneFiles,
     stickerFiles, disposeMediaSession,
   };
 }

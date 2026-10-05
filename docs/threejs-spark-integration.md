@@ -185,6 +185,23 @@ Cutout のエディタも、Stickers と同じ `pano_editor_view.js` / `pano_thr
 - ノード上の表示は今の Stickers のもの（`attachStickers`）をそのまま使う（#91 で作り直す）。
 - Camera を隠したとき（タイムラインの Camera の行の目、`camera.visible`。`docs/timeline-ui.md` の「表示（目のアイコン）」）：Camera が無いときと同じに動く（`cameraShoots`）。shot は無く、3DoF は原点に立ち（`followCameraChange` で移る）、Camera のプレビュー・Panorama 上の枠・視錐台・軌跡は出ず、選べない。Frame タブは無効で、ツールチップは「The camera is hidden」。Camera は状態に残るので、Add Camera は無効のまま、タイムラインの Camera の行と Keyframe もそのまま。
 
+### 上流の Scene の表示（#90）
+
+`scene` に別の Panorama Studio の `scene` 出力をつないだとき、エディタは上流の要素を見せるが、選べず、動かせず、消せず、タイムラインにも出さない（ADR 0029）。上流の要素は自分の状態に入れず、実行結果の `pano_upstream_layers`（`docs/render-contract.md` の「上流の Scene（#88）」）から毎フレーム描く。
+
+- 読む：`editor/upstream.js`。`scene` の入力が実行結果を作ったときのままのとき（`isNodeOutputMediaCurrent(node, "scene")`）だけ読む。各層の状態は `pano_upstream.js` の `upstreamLayersOf` で読み込み、自分の状態とは別に持つ。
+- 時刻：各層は、再生位置の時刻（秒）をその層の `timeline.fps` の Timeline frame にして評価する（`upstreamFrame`。再基準化しない）。
+- 描くもの（`upstreamLayerView`）：`sky` の Sticker とペイント（ストロークのグループ、ラスタ、マスク）を自分の Sky の下に、その層の `z_index` の順で（`upstreamPaintEntries`）。`world` の Sticker の板と、`scene`・3D の `port` の Sticker の 3D の項目は World に。隠した要素は描かない（ノードも描かない）。
+  - 素材：ファイルの Source は自分の Sticker と同じ URL の画像。`port` の Sticker は、その層の `ui` の最初のフレーム・MP4・RGBA の PNG を、自分の `port` と同じ仕組み（`createVideoFollower`・`createFrameSequence`）で再生位置に合わせる。ペイントは層ごとのペイントエンジンで、自分のペイントと同じ大きさ（`getDesiredPaintTargetDescriptor`）に描く。どれも縮小しない。
+  - 3D の項目は、層と種類ごとの読み込みの組（`pano_three_view.js` の `upstreamItems`）で読み、SPLAT は自分のものと同じくビューごとの Spark（`pano_spark_views.js`）で描く。
+- 画像は、結果が変わったときに新しい層が使わないものを手放す。
+- 見分け：上流の要素は `UPSTREAM_OPACITY`（0.5）を掛けた不透明度で描く。
+- 選べない：上流の要素は自分の状態・タイムライン・選択の一覧に無いので、2D の当たり判定（`hit_test.js`）にも Delete にも掛からない。World の板と 3D の項目は、GPU の当たり判定の対象（`pickable`・`pickBoxes`）に入れないので、当たり判定の描画（`pickPass`）で描かれない。そのため、6DoF の視点の回転の中心や、World の画像を置く位置にも使われない。
+- タイムライン：上流の Scene がつながっているとき、`scene` の行を出さない（自分の状態の `scene` は描画に使われない）。上流の要素の行も出さない。長さ（`timeline.length`）が無いときは、表示する範囲を実行結果の `pano_timeline_frames`（上流と自分の長いほう）まで広げ、上流の要素の動きの終わりまで再生位置を動かせるようにする（`upstreamSpanFrames`）。
+- 上流がつながっているか：リンクの型（`pano_preview_video.js` の `linkedInputType`。型が `*` か空のリンクは出どころの出力の型を見て、旧 Reroute ノードはさかのぼる）が `PANO_SCENE` か、今の実行結果に `pano_upstream_layers` があるとき（`upstreamLinked`）。
+- 実行前：リンクの型が `PANO_SCENE` と分かっているのに実行結果に上流の層が無いとき（実行前、またはつなぎ替えた後）、ステージの下の案内の欄（`PanoModal.vue` の `stageNotice`、文は `upstreamNotice`）に「Run the workflow to show the upstream scene.」と出す。失敗や警告があるときはそちらを出す。
+- 上流の背景：`scene` の実行結果が今の入力のまま（`bg_media` をつなぎ替えても変わらない。ノードは自分の `bg_media` を使わない）で `pano_upstream_input_images` か `pano_upstream_input_videos` があれば、それを背景にする（`media_session.js` の `upstreamBackground`。`pano_upstream.js` の `upstreamBackgroundOf`）。VIDEO は自分の背景の VIDEO と同じ要素と再生で、タイムラインに合わせて動く。範囲は `pano_upstream_coverage`（`backgroundCoverage`）。長さが Auto のとき、表示範囲は背景の VIDEO の長さでは広げず、`upstreamSpanFrames` に任せる（上流の長さがすでに背景を含む）。このとき自分の `bg_media` のリンクの画像・VIDEO には戻らない（ノードも使わない）。実行結果の `pano_sticker_warnings` に `bg_media is not used` の警告があれば、ステージ下の案内の欄に出す。
+
 ## インスペクタの行
 
 インスペクタ（`PanoSidePanel.vue`）の欄は、組になった値を 1 行に横に並べる（Blender・Unity の Transform と同じ）。行は `pano_editor_ui_state.js` の `inspectorRows` が、欄の並び（`pano_editor.js` の `pushParam` の順）から作る。
