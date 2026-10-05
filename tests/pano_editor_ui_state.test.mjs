@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, stickerParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { keyedAt, setSegmentEasing } from "../web_src/pano_timeline.js";
@@ -472,3 +472,12 @@ test("a 360° Camera's FOV fields are disabled, and the others stay as they are 
   const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
   assert.doesNotMatch(css, /\.pano-view-btn\[data-view="frame"\]:hover/);
 });
+
+test("a port Sticker's V FOV shows the value its media gives, disabled; its other fields stay as they are", () => {
+  assert.equal(stickerParamEnabled("vFOV_deg", { port: true }), false);
+  assert.equal(stickerParamEnabled("vFOV_deg"), true);
+  for (const key of ["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", "opacity"]) assert.equal(stickerParamEnabled(key, { port: true }), true);
+  const panels = readFileSync(new URL("../web_src/editor/panels.js", import.meta.url), "utf8");
+  assert.match(panels, /if \(isSceneSticker\(inspectorSelected\) && !shotInspected\) params\.forEach\(\(param\) => \{ param\.enabled = param\.enabled && stickerParamEnabled\(param\.key, \{ port: isExternalSticker\(inspectorSelected\) \}\); \}\);/);
+});
+

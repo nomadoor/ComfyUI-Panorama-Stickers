@@ -170,13 +170,10 @@ export function createExternalStickers(deps) {
     };
   }
   function reconcilePortStickerFromInputs() {
-    const previewImg = getExternalStickerPreviewImage(() => {
-      runExternalStickerSync(node, "image-loaded");
-    });
     const pose = isNodeOutputMediaCurrent(node, "external-sticker")
       ? normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null)
       : null;
-    return reconcilePortStickerState(state, portStickerSyncValue(node, { pose, image: previewImg }));
+    return reconcilePortStickerState(state, portStickerSyncValue(node, { pose }));
   }
   function reconcileLegacyExternalStickerFromInputs() {
     const slot = Array.isArray(node?.inputs)
@@ -213,9 +210,11 @@ export function createExternalStickers(deps) {
       commitAndRefreshNode();
       updateSidePanel();
       updateSelectionMenu();
+    } else if (reason === "image-loaded") {
+      // The port Sticker's vFOV follows the image that just loaded (skyStickerVfov), which the inspector shows.
+      updateSidePanel();
     }
     requestDraw();
-    void reason;
   }
 
   function collectExternalStickersForClearAll() {

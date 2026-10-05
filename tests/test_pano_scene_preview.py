@@ -66,7 +66,7 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
     bg = _solid([0.5, 0.5, 0.5], batch=3)
     sticker = _solid([0.0, 0.0, 1.0])
 
-    video, pano_scene = _studio(bg_media=bg, sticker=sticker)[2:4]
+    video, _sticker_state, pano_scene = _studio(bg_media=bg, sticker=sticker)[2:5]
 
     assert isinstance(pano_scene, PanoSceneValue)
     expected_state = load_scene_state(json.dumps(STATE))
@@ -85,7 +85,7 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
 
 
 def test_pano_scene_state_is_plain_json_without_a_nested_scene():
-    pano_scene = _studio()[3]
+    pano_scene = _studio()[4]
 
     assert json.loads(json.dumps(pano_scene.layers[-1].state)) == pano_scene.layers[-1].state
     for value in vars(pano_scene).values():
@@ -97,7 +97,7 @@ def test_pano_scene_state_is_plain_json_without_a_nested_scene():
 def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):
     video = _video(tmp_path)
 
-    output, pano_scene = _studio({"version": 2}, bg_media=video)[2:4]
+    output, _sticker_state, pano_scene = _studio({"version": 2}, bg_media=video)[2:5]
 
     assert pano_scene.bg_media is video
     assert pano_scene.fps == float(output.get_frame_rate()) == 25.0
@@ -109,8 +109,8 @@ def test_pano_scene_is_the_same_for_identical_inputs():
     bg = _solid([0.5, 0.5, 0.5], batch=2)
     sticker = _solid([0.0, 0.0, 1.0])
 
-    first = _studio(bg_media=bg, sticker=sticker)[3]
-    second = _studio(bg_media=bg, sticker=sticker)[3]
+    first = _studio(bg_media=bg, sticker=sticker)[4]
+    second = _studio(bg_media=bg, sticker=sticker)[4]
 
     assert first.layers[-1].state == second.layers[-1].state
     assert (first.fps, first.frames, first.coverage, first.bg_color) == (second.fps, second.frames, second.coverage, second.bg_color)
@@ -177,7 +177,7 @@ def test_preview_rejects_a_source_of_another_type():
 
 
 def test_preview_passes_a_pano_scene_through_without_rendering(monkeypatch):
-    pano_scene = _studio(bg_media=_solid([0.5, 0.5, 0.5], batch=3))[3]
+    pano_scene = _studio(bg_media=_solid([0.5, 0.5, 0.5], batch=3))[4]
 
     def fail(*args, **kwargs):
         raise AssertionError("Preview must not render a PANO_SCENE")

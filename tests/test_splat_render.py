@@ -286,7 +286,7 @@ def test_splat_files_on_the_scene_input_are_drawn_and_written_for_the_editor(fil
     assert output.ui["pano_scene_meta"] == [{"kind": "splat"}]
     assert [entry["filename"].endswith(".ply") for entry in output.ui["pano_scene_files"]] == [True]
     # PANO_SCENE holds the SPLAT read from the file, so its consumers do not read the file again.
-    assert isinstance(output.result[3].layers[-1].scene, Types.SPLAT)
+    assert isinstance(output.result[4].layers[-1].scene, Types.SPLAT)
 
 
 def test_a_splat_file_is_read_once_while_it_does_not_change(monkeypatch, tmp_path):
@@ -299,7 +299,7 @@ def test_a_splat_file_is_read_once_while_it_does_not_change(monkeypatch, tmp_pat
     first = _execute(Types.File3D(str(path)))
     second = _execute(Types.File3D(str(path)))
 
-    assert len(reads) == 1 and second.result[3].layers[-1].scene is first.result[3].layers[-1].scene
+    assert len(reads) == 1 and second.result[4].layers[-1].scene is first.result[4].layers[-1].scene
 
 
 def test_splat_files_are_told_by_their_contents():
@@ -319,7 +319,7 @@ def test_splat_files_are_told_by_their_contents():
 def test_a_camera_shoots_the_splat_of_an_upstream_scene():
     # A red ball 4 ahead of the World origin; a Camera downstream at the same place sees it in its center.
     splat = _blobs(_blob((0.0, 0.0, 4.0), (1.0, 0.0, 0.0), size=0.5))
-    pano_scene = _execute(splat).result[3]
+    pano_scene = _execute(splat).result[4]
 
     image = shoot(pano_scene, camera_state(), bg_color="#00ff00")[0][0]
 

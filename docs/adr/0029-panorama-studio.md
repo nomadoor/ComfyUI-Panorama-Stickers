@@ -51,3 +51,8 @@ ADR 0028 が避けたかったのは、Camera が見えないまま原点にあ�
 - Camera はエディタの左のツールバーから足す。Camera があるときそのボタンは無効になり、Camera は選んで削除する。Frame タブは Camera が無くても出し、無効にする。
 - #85 は Camera の `projection` の `erp` として実装する。#81（Drone）は Panorama Studio の Camera の機能になる。
 - CONTEXT.md の Camera・Pose handoff の項目と `scene` 入力の説明、render-contract・scene-state-v2・timeline-ui・threejs-spark-integration の Stickers と Cutout の節を直す。
+
+## 追記（2026-10-05）
+
+- 出力の並びを `first_frame`・`first_frame_mask`・`video`・`sticker_state`・`scene` に変えた。入力の `… sticker_state`・`scene` と同じ並びにして、Panorama Studio をつないだときに線が交差しないようにするためである。「入力と出力」の節の決定（出力の中身と意味）は変えない。`PanoramaStudio` は main に出ていないので置き換えは作らない。統合ブランチで保存したワークフローを読み込むと、`scene` と `sticker_state` の出力から出ていた線は、入れ替わった位置の出力につながるか、型が合わずに外れる。どちらの場合も、この二本をつなぎ直す。
+- ノード上の表示は、一度実行すると常に直近の実行の出力を示す。ERP の出力は見回せるパノラマとして、`perspective` の Camera の出力は最初の frame を平らな画像として示す。実行の後に状態・widget・接続が実行と合わなくなっても出力を示し続け、注記で `Edited — run to update` と示す。実行前は今の状態を描き、`Not run yet` と示す。詳細は `docs/panorama-stickers-node-surface-spec.md` の「Panorama Studio Surface」。

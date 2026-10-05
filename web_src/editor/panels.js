@@ -16,6 +16,7 @@ import {
   buildUiSettingsModel,
   cameraAspectChoices,
   cameraParamEnabled,
+  stickerParamEnabled,
   floatingRightState,
   frameViewButton,
   patchUiButton,
@@ -380,6 +381,7 @@ export function createPanels(deps) {
       pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
       // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
       if (shotInspected) params.forEach((param) => { param.enabled = param.enabled && cameraParamEnabled(param.key, { erp: isErpCamera() }); });
+      if (isSceneSticker(inspectorSelected) && !shotInspected) params.forEach((param) => { param.enabled = param.enabled && stickerParamEnabled(param.key, { port: isExternalSticker(inspectorSelected) }); });
       if (sceneV2 && !shotInspected) pushParam("opacity", "Opacity", 0, 100, 1);
     }
 

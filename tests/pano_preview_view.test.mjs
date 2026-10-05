@@ -186,7 +186,7 @@ test("the on-node Preview draws through the shared three.js view and its Vue sur
 test("the on-node Stickers and Cutout surfaces draw through the same shared view and show a failed view in Vue", () => {
   const runtime = source("pano_preview_runtime.js");
   assert.match(runtime, /const surfaceView = acquirePreviewView\(requestDraw\)/);
-  assert.match(runtime, /drawCanvas\(node, canvas, surfaceView, runBackground\);\s*nodeSurfaceUiModel\.viewUnavailable = surfaceView\.failed;/);
+  assert.match(runtime, /drawCanvas\(node, canvas, surfaceView, run\);\s*nodeSurfaceUiModel\.viewUnavailable = surfaceView\.failed;/);
   assert.match(runtime, /surfaceView\.dispose\(\)/);
   for (const name of ["PanoStickersNodeSurface.vue", "PanoCutoutNodeSurface.vue"]) {
     assert.match(source(`components/${name}`), /<PanoViewUnavailable v-if="model\.viewUnavailable" \/>/, name);

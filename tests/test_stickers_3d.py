@@ -64,7 +64,7 @@ def _close(pixel, rgb, atol=1e-3):
 def test_mesh_on_the_sticker_input_becomes_a_world_sticker_ahead_of_the_camera():
     output = _execute(sticker=_square())
 
-    [port] = output.result[3].layers[-1].state["stickers"]
+    [port] = output.result[4].layers[-1].state["stickers"]
     assert port["placement"] == "world" and port["source"] == {"kind": "port"} and "z_index" not in port
     assert np.allclose(port["position"]["value"], [0.0, 0.0, -2.0])
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0} and port["scale"]["value"] == 1.0
@@ -83,7 +83,7 @@ def test_mesh_on_the_sticker_input_becomes_a_world_sticker_ahead_of_the_camera()
 def test_a_new_3d_sticker_is_placed_from_the_origin_whatever_the_camera_lanes():
     camera = {"position": {"value": [1.0, 0.0, 0.0]}, "rotation": {"value": {"yaw_deg": 90.0, "pitch_deg": 30.0, "roll_deg": 10.0}}}
 
-    port = _execute({"version": 2, "camera": camera}, sticker=_square()).result[3].layers[-1].state["stickers"][0]
+    port = _execute({"version": 2, "camera": camera}, sticker=_square()).result[4].layers[-1].state["stickers"][0]
 
     assert port["position"]["value"] == [0.0, 0.0, -2.0]
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
@@ -203,11 +203,11 @@ def test_3d_sticker_items_follow_the_output_frames():
 
     # Like an IMAGE batch: one item per output frame, and the Sticker ends with its last item.
     assert batch_index_at_center(_frames(output)) == [0, 1]
-    assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[3].frames] == [0, 1]
+    assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[4].frames] == [0, 1]
 
 
 def test_a_camera_shoots_the_3d_sticker_of_an_upstream_scene():
-    pano_scene = _execute(sticker=_square()).result[3]
+    pano_scene = _execute(sticker=_square()).result[4]
 
     ahead = video_frames(shoot(pano_scene, camera_state(hFOV_deg=10.0)))
     behind = video_frames(shoot(pano_scene, camera_state(yaw_deg=180.0, hFOV_deg=10.0), bg_color="#00ff00"))
@@ -226,7 +226,7 @@ def test_nothing_the_3d_sticker_uploads_outlives_its_render_pass(tmp_path, monke
 
     monkeypatch.setattr(mesh_render, "_upload", recording)
     output = _execute({"version": 2, "timeline": {"length": 2}}, sticker=_square())
-    video, pano_scene = output.result[2], output.result[3]
+    video, pano_scene = output.result[2], output.result[4]
 
     video.get_components()
     video.save_to(str(tmp_path / "out.mp4"))
@@ -249,7 +249,7 @@ def test_same_3d_file_on_the_sticker_input_is_read_once_and_keeps_its_editor_fil
 
     assert len(reads) == 1 and len(writes) == 1
     assert again.ui["pano_sticker_files"] == first.ui["pano_sticker_files"]
-    assert again.result[3].layers[-1].port.media is first.result[3].layers[-1].port.media
+    assert again.result[4].layers[-1].port.media is first.result[4].layers[-1].port.media
 
 
 def test_3d_media_replaces_a_stored_sky_port_sticker_by_a_world_one_and_then_stays():
@@ -258,7 +258,7 @@ def test_3d_media_replaces_a_stored_sky_port_sticker_by_a_world_one_and_then_sta
 
     output = _execute({"version": 2, "stickers": [sky]}, sticker=_square())
 
-    [port] = output.result[3].layers[-1].state["stickers"]
+    [port] = output.result[4].layers[-1].state["stickers"]
     assert [port["id"], port["placement"], port["position"]["value"], port["clip"]["duration"], port["locked"]] == ["p", "world", [0.0, 0.0, -2.0], 5, True]
     assert "direction" not in port
     assert _close(output.result[0][0, 256, 512], RED)
@@ -267,7 +267,7 @@ def test_3d_media_replaces_a_stored_sky_port_sticker_by_a_world_one_and_then_sta
     assert pose["placement"] == "world" and pose["replace"] is True
     again = _execute({"version": 2, "stickers": [port]}, sticker=_square())
     assert "pano_sticker_input_pose" not in again.ui
-    assert again.result[3].layers[-1].state["stickers"] == [port]
+    assert again.result[4].layers[-1].state["stickers"] == [port]
 
 
 def test_sticker_state_does_not_place_a_3d_sticker():
@@ -275,7 +275,7 @@ def test_sticker_state_does_not_place_a_3d_sticker():
 
     output = _execute(sticker=_square(), sticker_state=sticker_state)
 
-    [port] = output.result[3].layers[-1].state["stickers"]
+    [port] = output.result[4].layers[-1].state["stickers"]
     assert port["placement"] == "world" and np.allclose(port["position"]["value"], [0.0, 0.0, -2.0])
     assert any("sticker_state places only sky Stickers" in message for message in output.ui["pano_sticker_warnings"])
 
@@ -294,14 +294,14 @@ def _two_splat_items():
 def test_splat_sticker_items_follow_the_output_frames_through_the_video():
     output = _execute(sticker=_two_splat_items())
 
-    assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[3].frames] == [0, 1]
+    assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[4].frames] == [0, 1]
     # The gaussian's center is opaque enough to read the item from its red.
     reds = [round(float(frame[256, 512, 0]) * 10) for frame in _frames(output)]
     assert reds == [1, 2]
 
 
 def test_a_camera_shoots_the_splat_sticker_of_an_upstream_scene():
-    pano_scene = _execute(sticker=blobs(blob((0.0, 0.0, 0.0), RED, size=0.3))).result[3]
+    pano_scene = _execute(sticker=blobs(blob((0.0, 0.0, 0.0), RED, size=0.3))).result[4]
 
     frames = video_frames(shoot(pano_scene, camera_state(hFOV_deg=10.0)))
 

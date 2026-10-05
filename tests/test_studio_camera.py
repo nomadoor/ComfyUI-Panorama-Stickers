@@ -90,7 +90,7 @@ def test_legacy_cutout_still_reproduces_its_golden():
 
 
 def test_outputs_of_a_perspective_camera():
-    image, mask, video, _scene, sticker_state = _shoot(_solid([0.5, 0.5, 0.5]), _camera(hFOV_deg=60.0))
+    image, mask, video, sticker_state, _scene = _shoot(_solid([0.5, 0.5, 0.5]), _camera(hFOV_deg=60.0))
 
     side = _shot_width(60.0)
     assert image.shape == (1, side, side, 3) and mask.shape == (1, side, side)
@@ -145,7 +145,7 @@ def test_length_of_an_erp_source_comes_from_the_latest_camera_keyframe_over_its_
 
 
 def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_aspect():
-    image, _mask, _video, _scene, sticker_state = _shoot(_solid([0.5, 0.5, 0.5]), _camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0, hFOV_deg=60.0))
+    image, _mask, _video, sticker_state, _scene = _shoot(_solid([0.5, 0.5, 0.5]), _camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0, hFOV_deg=60.0))
 
     payload = json.loads(sticker_state)
     assert payload == {
@@ -169,7 +169,7 @@ def test_timeline_of_a_state_without_a_camera_has_no_camera_keyframes_to_count()
 
 
 def test_legacy_shot_becomes_the_sticker_state_camera():
-    image, *_rest, sticker_state = _shoot(build_background_erp(), V1_STATE)
+    image, _mask, _video, sticker_state, _scene = _shoot(build_background_erp(), V1_STATE)
     payload = json.loads(sticker_state)
 
     assert {name: [key["value"] for key in keys] for name, keys in payload["camera"].items()} == {
@@ -218,7 +218,7 @@ def test_video_source_keeps_the_camera_keyframes_at_the_recorded_fps(tmp_path):
     # Rebasing to the 25 fps of the VIDEO would round them; the Pose handoff reads any fps.
     keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 13, "value": {"yaw_deg": 90.0}}]
 
-    payload = json.loads(_shoot(_video(tmp_path), _camera({"rotation": keyframes}))[4])
+    payload = json.loads(_shoot(_video(tmp_path), _camera({"rotation": keyframes}))[3])
 
     assert payload["fps"] == 24.0
     assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 13], "fov": [0]}
@@ -246,7 +246,7 @@ def _record_projections(monkeypatch):
 
 def test_scene_input_is_shot_from_this_camera_with_a_perspective_projection(monkeypatch):
     # The upstream Camera looks elsewhere and is not in its `scene` output; only this node's Camera decides the shot.
-    scene = _upstream({"version": 2, "camera": {"rotation": {"value": {"yaw_deg": 0.0}}}}, bg_media=_halves_erp())[3]
+    scene = _upstream({"version": 2, "camera": {"rotation": {"value": {"yaw_deg": 0.0}}}}, bg_media=_halves_erp())[4]
     state = _camera(yaw_deg=180.0, hFOV_deg=50.0)
     state["camera"]["aspect"] = 1.5
     projections = _record_projections(monkeypatch)
@@ -263,7 +263,7 @@ def test_scene_input_is_shot_from_this_camera_with_a_perspective_projection(monk
 
 def test_scene_input_draws_its_sky_stickers_over_bg_color():
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 90.0}}], "fov": [{"frame": 0, "value": 40.0}]}})
-    scene = _upstream(sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)[3]
+    scene = _upstream(sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)[4]
 
     at_sticker = _shoot(scene, _camera(yaw_deg=90.0, hFOV_deg=10.0), bg_color="#00ff00")[0]
     away = _shoot(scene, _camera(yaw_deg=-90.0, hFOV_deg=20.0), bg_color="#00ff00")[0]
@@ -279,7 +279,7 @@ def test_scene_input_paint_mask_is_the_mask_output():
         "size": 40, "color": None, "opacity": 1.0, "createdAt": 0,
         "geometry": {"geometryKind": "freehand_open", "points": [{"u": 0.5, "v": 0.5, "t": 0}, {"u": 0.5001, "v": 0.5, "t": 1}]},
     }]}}
-    scene = _upstream({"version": 2, "painting": painting})[3]
+    scene = _upstream({"version": 2, "painting": painting})[4]
 
     front = _shoot(scene, _camera(hFOV_deg=20.0))[1]
     behind = _shoot(scene, _camera(yaw_deg=180.0, hFOV_deg=20.0))[1]
@@ -290,7 +290,7 @@ def test_scene_input_paint_mask_is_the_mask_output():
 
 def test_scene_input_sets_the_timeline_and_its_background_frames():
     bg = torch.cat([_solid([value, value, value], height=32, width=64) for value in (0.2, 0.4, 0.6)])
-    scene = _upstream({"version": 2, "timeline": {"fps": 12.0}}, bg_media=bg)[3]
+    scene = _upstream({"version": 2, "timeline": {"fps": 12.0}}, bg_media=bg)[4]
 
     components = _shoot(scene, _camera())[2].get_components()
     cut = components.images
@@ -301,12 +301,12 @@ def test_scene_input_sets_the_timeline_and_its_background_frames():
 
 
 def test_scene_input_reads_this_camera_at_its_own_recorded_fps():
-    scene = _upstream({"version": 2, "timeline": {"fps": 12.0}}, bg_media=torch.cat([_halves_erp()] * 3))[3]
+    scene = _upstream({"version": 2, "timeline": {"fps": 12.0}}, bg_media=torch.cat([_halves_erp()] * 3))[4]
     # Frame 2 of this state at 24 fps is 1/12 s: the second frame of the 12 fps Timeline.
     keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "hold"}, {"frame": 2, "value": {"yaw_deg": 180.0}}]
 
     result = _shoot(scene, _camera({"rotation": keyframes}, fps=24.0))
-    cut, sticker_state = _frames(result), result[4]
+    cut, sticker_state = _frames(result), result[3]
 
     assert [tuple(_center(cut, index).tolist()) for index in range(3)] == [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0)]
     payload = json.loads(sticker_state)
@@ -314,7 +314,7 @@ def test_scene_input_reads_this_camera_at_its_own_recorded_fps():
 
 
 def test_scene_input_with_a_video_background_outputs_its_audio(tmp_path):
-    scene = _upstream({"version": 2}, bg_media=_video(tmp_path, count=4, audio_rate=8000))[3]
+    scene = _upstream({"version": 2}, bg_media=_video(tmp_path, count=4, audio_rate=8000))[4]
 
     components = _shoot(scene, _camera())[2].get_components()
     cut, audio = components.images, components.audio
@@ -353,7 +353,7 @@ def test_perspective_sky_content_lines_up_with_the_background():
         "direction": {"value": {key: pose[key] for key in ("yaw_deg", "pitch_deg")}},
         "size": {"value": {key: pose[key] for key in ("hFOV_deg", "vFOV_deg")}},
     }
-    scene = _upstream({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[3]
+    scene = _upstream({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[4]
     camera["camera"]["aspect"] = 1.5
 
     background = _shoot(erp, camera)[0][0]
@@ -396,7 +396,7 @@ def test_sticker_state_round_trips_camera_keyframes_with_easing_and_handles():
         "fov": [{"frame": 3, "value": 70.0, "easing": "hold"}, {"frame": 6, "value": 60.0}],
     }
     state = _camera(keyframes, fps=12.0)
-    image, *_rest, sticker_state = _shoot(_halves_erp(), state)
+    image, _mask, _video, sticker_state, _scene = _shoot(_halves_erp(), state)
 
     loaded = load_sticker_state(sticker_state)
     assert loaded["fps"] == 12.0
@@ -411,7 +411,7 @@ def test_scene_input_with_coverage_180_reads_its_bg_media_as_the_front_hemispher
     erp = torch.zeros((1, 32, 32, 3))
     erp[..., :16, 0] = 1.0
     erp[..., 16:, 2] = 1.0
-    scene = _upstream({"version": 2}, bg_media=erp, coverage="180")[3]
+    scene = _upstream({"version": 2}, bg_media=erp, coverage="180")[4]
 
     # This node's coverage does not apply to an upstream background.
     left, right, behind = (_shoot(scene, _camera(yaw_deg=yaw, hFOV_deg=20.0), coverage="360")[0][0] for yaw in (-45.0, 45.0, 180.0))
@@ -424,7 +424,7 @@ def test_scene_input_with_coverage_180_reads_its_bg_media_as_the_front_hemispher
 def test_world_sticker_is_shot_from_the_camera_position():
     # A square plane 2 wide at distance 1, facing the Camera at rotation 0.
     sticker = {"id": "p", "placement": "world", "source": {"kind": "port"}, "position": {"value": [0.0, 0.0, -1.0]}, "scale": {"value": 2.0}}
-    scene = _upstream({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[3]
+    scene = _upstream({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[4]
 
     near = _shoot(scene, _camera(hFOV_deg=60.0), bg_color="#00ff00")[0][0]
     far = _shoot(scene, _camera(position=[0.0, 0.0, 3.0], hFOV_deg=90.0), bg_color="#00ff00")[0][0]
@@ -442,7 +442,7 @@ def test_scene_input_content_is_shot_at_the_scene_item_of_each_frame(monkeypatch
     monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(3, content.render))
     # The stand-in input has no editor files.
     monkeypatch.setattr(nodes, "_scene_ui", lambda scene: {})
-    scene = _upstream({"version": 2}, scene=object())[3]
+    scene = _upstream({"version": 2}, scene=object())[4]
 
     cut = _frames(_shoot(scene, _camera(hFOV_deg=30.0)))
 

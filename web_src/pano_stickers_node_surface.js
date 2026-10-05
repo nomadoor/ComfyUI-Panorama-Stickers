@@ -187,8 +187,10 @@ function inputMediaKind(node, name) {
 // Panorama Studio keeps the Sticker of its `sticker` input as the Sticker with the Source
 // {kind: "port"}. Like the node (docs/scene-state-v2.md), the editor and the node surface add it when
 // the input is connected and the state has none, and remove it when the input is disconnected. Its
-// vFOV follows hFOV and the aspect of the media once the node's result has the media; until then it
-// shows as a frame. `pose` is the pose the node's current result placed the Sticker at
+// vFOV is not the state's: where it is drawn, it follows hFOV and the aspect of the media
+// (skyStickerVfov, as the run derives it), so the media loading never changes state_json; the state
+// keeps vFOV = hFOV. Until the node's result has the media it shows as a frame. `pose` is the pose the
+// node's current result placed the Sticker at
 // (`pano_sticker_input_pose`), with the Keyframes of a Camera that moved. With `sticker_state`
 // connected, the Sticker is added only with that pose, so that it keeps the pose of `sticker_state`
 // as the node places it.
@@ -196,13 +198,11 @@ function inputMediaKind(node, name) {
 // what an input of an unknown type carries: unless the input is an IMAGE or a VIDEO, the Sticker is
 // added only with the node's pose, as a world one when the pose says `placement: "world"`. A pose
 // with `replace` replaces a sky port Sticker by the world one under the same id.
-export function portStickerSyncValue(node, { pose = null, image = null } = {}) {
+export function portStickerSyncValue(node, { pose = null } = {}) {
   return {
     connected: isInputConnected(node, "sticker"),
     awaitingPose: !pose && (isInputConnected(node, "sticker_state") || inputMediaKind(node, "sticker") !== "2d"),
     pose,
-    imageWidth: Number(image?.naturalWidth || image?.width || 0),
-    imageHeight: Number(image?.naturalHeight || image?.height || 0),
   };
 }
 
@@ -218,7 +218,7 @@ function worldPortSticker(id, pose) {
   return loadSceneState({ version: 2, stickers: [raw] }).stickers[0];
 }
 
-export function reconcilePortStickerState(state, { connected = false, awaitingPose = false, pose = null, imageWidth = 0, imageHeight = 0 } = {}) {
+export function reconcilePortStickerState(state, { connected = false, awaitingPose = false, pose = null } = {}) {
   const index = state.stickers.findIndex((item) => isExternalSticker(state, item));
   const current = index >= 0 ? state.stickers[index] : null;
   if (!connected) {
@@ -233,27 +233,12 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
       changed: true,
     };
   }
-  const hasImageSize = imageWidth > 0 && imageHeight > 0;
   if (current && pose?.placement === "world" && pose.replace && current.placement === "sky") {
     // 3D media on a stored sky port Sticker: the node replaced it by a world one under the same id.
     const port = { ...worldPortSticker(current.id, pose), clip: current.clip, visible: current.visible, locked: current.locked };
     return { state: { ...state, stickers: state.stickers.map((item, i) => i === index ? port : item) }, changed: true };
   }
-  if (current) {
-    if (!hasImageSize || current.placement !== "sky") return { state, changed: false };
-    const values = [current.size.value, ...current.size.keyframes.map((key) => key.value)];
-    const vFOVs = values.map((value) => computeVerticalFov(value.hFOV_deg, imageWidth, imageHeight));
-    if (values.every((value, i) => Math.abs(value.vFOV_deg - vFOVs[i]) <= 1e-6)) return { state, changed: false };
-    const size = {
-      value: { ...current.size.value, vFOV_deg: vFOVs[0] },
-      keyframes: current.size.keyframes.map((key, i) => ({ ...key, value: { ...key.value, vFOV_deg: vFOVs[i + 1] } })),
-    };
-    return {
-      state: { ...state, stickers: state.stickers.map((item, i) => i === index ? { ...item, size } : item) },
-      changed: true,
-    };
-  }
-  if (awaitingPose) return { state, changed: false };
+  if (current || awaitingPose) return { state, changed: false };
   const used = new Set(state.stickers.map((item) => item.id));
   let number = 1;
   while (used.has(`sticker_${number}`)) number += 1;
@@ -261,19 +246,18 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
     return { state: { ...state, stickers: [...state.stickers, worldPortSticker(`sticker_${number}`, pose)] }, changed: true };
   }
   const hFOV = Math.min(179, Math.max(0.1, Number(pose?.hFOV_deg ?? 30)));
-  const vFOV = (value) => hasImageSize ? computeVerticalFov(value, imageWidth, imageHeight) : value;
   const port = newSceneSticker(`sticker_${number}`, { kind: "port" }, {
     yaw_deg: Number(pose?.yaw_deg ?? 0),
     pitch_deg: Number(pose?.pitch_deg ?? 0),
     rot_deg: Number(pose?.roll_deg ?? 0),
     hFOV_deg: hFOV,
-    vFOV_deg: vFOV(hFOV),
+    vFOV_deg: hFOV,
   }, surfaceStickers(state).reduce((value, item) => Math.max(value, item.z_index), -1) + 1);
   // A Camera that moved comes with the Keyframes the node baked from its trajectory (Pose handoff).
   const keyframes = pose?.keyframes ?? {};
   port.direction.keyframes = keyframes.direction ?? [];
   port.roll.keyframes = keyframes.roll ?? [];
-  port.size.keyframes = (keyframes.size ?? []).map((key) => ({ ...key, value: { ...key.value, vFOV_deg: vFOV(key.value.hFOV_deg) } }));
+  port.size.keyframes = (keyframes.size ?? []).map((key) => ({ ...key, value: { ...key.value, vFOV_deg: key.value.hFOV_deg } }));
   return { state: { ...state, stickers: [...state.stickers, port] }, changed: true };
 }
 

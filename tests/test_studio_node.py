@@ -105,7 +105,7 @@ def test_a_hidden_camera_shoots_as_no_camera():
     assert shot[0].shape == (1, 512, 1024, 3)
     assert torch.equal(shot[0], plain[0]) and torch.equal(shot[1], plain[1])
     assert torch.equal(shot[2].get_components().images, plain[2].get_components().images)
-    assert shot[4] == ""
+    assert shot[3] == ""
     # The Camera stays in the state; only the `scene` output drops it, as for a shown one.
     assert _size({"camera": {**_camera(fov=90.0), "visible": False}}, "1024") == ((1024, 512), [])
 
@@ -132,7 +132,7 @@ def test_a_port_sticker_added_by_the_node_is_in_the_ui():
 
 
 def test_an_empty_state_has_no_camera():
-    image, mask, video, scene, sticker_state = _outputs(output_size="1024", bg_color="#ff0000")
+    image, mask, video, sticker_state, scene = _outputs(output_size="1024", bg_color="#ff0000")
 
     assert image.shape == (1, 512, 1024, 3) and torch.equal(image, torch.tensor([1.0, 0.0, 0.0]).expand(1, 512, 1024, 3))
     assert mask.shape == (1, 512, 1024) and isinstance(video, SceneVideo)
@@ -163,7 +163,7 @@ def test_an_erp_camera_at_the_origin_without_rotation_is_the_output_without_a_ca
 
     assert torch.equal(erp[0], plain[0]) and torch.equal(erp[1], plain[1])
     assert torch.equal(erp[2].get_components().images, plain[2].get_components().images)
-    assert erp[4] == ""
+    assert erp[3] == ""
 
 
 def test_an_erp_camera_turns_the_erp_with_its_rotation():
@@ -309,11 +309,11 @@ def test_the_run_key_changes_with_the_state_and_the_widgets():
                 nodes._studio_run_key("{}", "1024", "180", "#00ff00"), nodes._studio_run_key("{}", "1024", "360", "#ff0000")}) == 5
 
 
-def _output_erp(result):
-    """The ui entry of the run's output ERP and its PNG, read from temp."""
+def _output_erp(result, key="pano_output_erp"):
+    """The ui entry of the run's output ERP (or, with `key`, its perspective first frame) and its PNG, read from temp."""
     from comfyui_pano_suite.core.temp_files import TEMP_FILES, ensure_temp_root
 
-    (entry,) = result.ui["pano_output_erp"]
+    (entry,) = result.ui[key]
     path = ensure_temp_root() / entry["subfolder"] / entry["filename"]
     assert TEMP_FILES.is_registered(path)
     with Image.open(path) as png:
@@ -332,12 +332,20 @@ def test_an_erp_run_returns_its_output_at_full_size_for_the_node_surface(coverag
     assert np.array_equal(png, (image.clamp(0, 1) * 255 + 0.5).byte().numpy())
 
 
-def test_an_erp_camera_returns_its_output_and_a_perspective_one_does_not():
+def test_an_erp_camera_returns_its_output_and_a_perspective_one_its_first_frame():
     erp = _studio({"version": 2, "camera": _camera("erp", yaw_deg=30.0)}, output_size="1024")
     entry, png = _output_erp(erp)
     assert entry["coverage"] == 360 and png.shape == (512, 1024, 3)
+    assert "pano_output_frame" not in erp.ui
 
-    assert "pano_output_erp" not in _studio({"version": 2, "camera": _camera(fov=90.0)}, output_size="1024").ui
+    # A perspective Camera's output is no ERP: the node surface shows its first frame as a flat image, at full size.
+    shot = _studio({"version": 2, "camera": _camera(fov=90.0, aspect=2.0)}, output_size="1024", bg_media=build_background_erp())
+    assert "pano_output_erp" not in shot.ui
+    entry, png = _output_erp(shot, "pano_output_frame")
+    image = shot.result[0][0]
+    assert entry["type"] == "temp" and entry["format"] == "image/png" and "coverage" not in entry
+    assert png.shape == tuple(image.shape) == (162, 326, 3)
+    assert np.array_equal(png, (image.clamp(0, 1) * 255 + 0.5).byte().numpy())
 
 
 @pytest.mark.parametrize("coverage", ["360", "180"])
@@ -370,19 +378,19 @@ def test_auto_with_a_180_bg_media_doubles_its_width_for_the_whole_erp():
 def test_sticker_state_holds_the_camera_only_for_a_perspective_camera():
     state = {"version": 2, "timeline": {"fps": 30.0}, "camera": _camera(fov=80.0, aspect=2.0, yaw_deg=40.0)}
 
-    sticker_state = json.loads(_outputs(state, output_size="1024")[4])
+    sticker_state = json.loads(_outputs(state, output_size="1024")[3])
 
     assert sticker_state["fps"] == 30.0 and sticker_state["source_aspect"] == 274 / 136
     assert sticker_state["camera"]["rotation"][0]["value"]["yaw_deg"] == 40.0
     assert sticker_state["camera"]["fov"][0]["value"] == 80.0
-    assert _outputs({"version": 2, "camera": _camera("erp")}, output_size="1024")[4] == ""
+    assert _outputs({"version": 2, "camera": _camera("erp")}, output_size="1024")[3] == ""
 
 
 def test_scene_output_is_the_built_scene_without_the_camera():
     state = {**_world_and_keyframed_state(), "camera": _camera(yaw_deg=90.0)}
     bg = build_background_erp()
 
-    scene = _outputs(state, bg_media=bg, sticker=_solid([1.0, 0.0, 0.0]), output_size="1024")[3]
+    scene = _outputs(state, bg_media=bg, sticker=_solid([1.0, 0.0, 0.0]), output_size="1024")[4]
 
     assert isinstance(scene, PanoSceneValue)
     assert scene.layers[-1].state["camera"] is None

@@ -242,6 +242,27 @@ test("the Unwrap sticker uniforms sample the previous unwrap sticker shader's te
   }
 });
 
+// core/math.py vfov_from_hfov, which the run uses for a port Sticker (core/render.py `derive_vfov`).
+const derivedVfov = (hfov, width, height) => 2 * Math.atan(Math.tan(hfov * DEG2RAD / 2) * height / width) / DEG2RAD;
+
+test("a port Sticker is drawn at the vFOV its media's aspect gives, as the run derives it", () => {
+  const lanes = poseLanes({ yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, vFOV_deg: 60 });
+  const state = skyState([
+    { id: "port", source: { kind: "port" }, ...lanes },
+    { id: "file", source: { kind: "file", filename: "a.png" }, ...lanes },
+  ]);
+  const halfHeight = (media) => Object.fromEntries(skyLayers(state, 0, { media: () => ({ media, revision: "" }), zIndex: () => 0, paintLayers: [] })
+    .map((layer) => [layer.id, layer.rect.y1]));
+
+  const image = halfHeight({ naturalWidth: 200, naturalHeight: 100 });
+  assert.ok(Math.abs(image.port - Math.tan(derivedVfov(60, 200, 100) * DEG2RAD / 2)) < 1e-12);
+  assert.ok(Math.abs(image.file - Math.tan(30 * DEG2RAD)) < 1e-12);
+  const video = halfHeight({ videoWidth: 100, videoHeight: 300 });
+  assert.ok(Math.abs(video.port - Math.tan(derivedVfov(60, 100, 300) * DEG2RAD / 2)) < 1e-12);
+  // Media without a size yet: the stored vFOV stands in.
+  assert.ok(Math.abs(halfHeight({ videoWidth: 0, videoHeight: 0 }).port - Math.tan(30 * DEG2RAD)) < 1e-12);
+});
+
 test("sky layers keep the editor's z order with paint and show hidden port Stickers faintly", () => {
   const media = { tag: "image" };
   const state = skyState([

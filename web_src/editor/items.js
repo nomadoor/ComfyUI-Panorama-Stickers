@@ -14,7 +14,7 @@ export function createItems(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewRect, getPaintingLayerList, getPaintingRevisionKey,
-    getSelected, sceneStickerShown;
+    getSelected, getStickerImage, sceneStickerShown;
 
   function getList() { return type === "stickers" ? skyStickers() : state.shots; }
   // The Stickers the canvas shows and edits. World Stickers of state v2 only appear in the Timeline.
@@ -29,9 +29,12 @@ export function createItems(deps) {
     return item.source.kind === "file" && !item.source.filename && !item.source.data_url;
   }
   // The pose fields the canvas geometry and the inspector read: a Sticker of state v2 at the
-  // editor's Timeline frame, the item itself otherwise.
+  // editor's Timeline frame (the port Sticker at the vFOV of its media's first frame, as the view
+  // draws it), the item itself otherwise.
   function poseOf(item) {
-    return isSceneSticker(item) ? stickerPose(item, editor.frame) : item;
+    if (!isSceneSticker(item)) return item;
+    const media = isExternalSticker(item) ? getStickerImage(item) : null;
+    return stickerPose(item, editor.frame, media && { width: media.naturalWidth || media.width, height: media.naturalHeight || media.height });
   }
   function writePose(item, pose) {
     if (isSceneSticker(item)) setStickerPose(item, editor.frame, pose);
@@ -649,7 +652,7 @@ export function createItems(deps) {
     connect(api) {
       ({
         getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewRect, getPaintingLayerList, getPaintingRevisionKey,
-        getSelected, sceneStickerShown,
+        getSelected, getStickerImage, sceneStickerShown,
       } = api);
     },
     getList, skyStickers, isSceneSticker, isUploadingSticker, poseOf, writePose, getPaintingGroupList,

@@ -1140,7 +1140,8 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> dict:
         yaw = value["yaw_deg"] if not direction else _nearest_turn(value["yaw_deg"], direction[-1]["yaw_deg"])
         direction.append({"yaw_deg": yaw, "pitch_deg": value["pitch_deg"]})
         roll.append(value["roll_deg"] if not roll else _nearest_turn(value["roll_deg"], roll[-1]))
-        size.append({"hFOV_deg": value["hFOV_deg"]})
+        # A port Sticker's vFOV follows its media (`derive_vfov`); stored, it is hFOV (docs/scene-state-v2.md).
+        size.append({"hFOV_deg": value["hFOV_deg"], "vFOV_deg": value["hFOV_deg"]})
     lanes = {}
     for name, values, source in (("direction", direction, "rotation"), ("roll", roll, "rotation"), ("size", size, "fov")):
         moves = any(abs(a - b) > 1e-9 for value in values for a, b in zip(_lane_numbers(value), _lane_numbers(values[0])))
@@ -1169,7 +1170,7 @@ def _world_port_sticker(state: dict, sticker_id: str | None = None) -> dict:
 
 def _port_sticker(state: dict, sticker_state) -> dict:
     """The port Sticker appended when the state has none, placed by `sticker_state` when given."""
-    lanes = {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0}}}
+    lanes = {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0, "vFOV_deg": 30.0}}}
     parsed = load_sticker_state(sticker_state)
     if parsed is not None:
         lanes = _handoff_lanes(parsed, state["timeline"]["fps"])
@@ -1753,8 +1754,8 @@ class PanoramaStudioNode(io.ComfyNode):
                 io.Image.Output("first_frame"),
                 io.Mask.Output("first_frame_mask"),
                 io.Video.Output("video"),
-                PanoScene.Output("scene"),
                 io.String.Output("sticker_state"),
+                PanoScene.Output("scene"),
             ],
             # An output node runs on every queue, so the editor receives the media in the `ui` even
             # when nothing downstream consumes the outputs.
@@ -1789,13 +1790,20 @@ class PanoramaStudioNode(io.ComfyNode):
         ui_ret["pano_output_size"] = [{"width": width, "height": height, "capped": reduced_from is not None,
                                        "reduced_from": None if reduced_from is None else list(reduced_from),
                                        "key": _studio_run_key(state_json, output_size, coverage, bg_color)}]
+        # The node surface shows the run's output at full size: an ERP to look around in, else the first frame flat.
+        output_entry = entry_from_path(save_output_png(image[0]), media_type="image/png")
         if camera is None or camera["projection"] == "erp":
-            # An ERP output holds all the run drew, so the node surface shows it while the run is current.
-            ui_ret["pano_output_erp"] = [{**entry_from_path(save_output_png(image[0]), media_type="image/png"),
-                                          "coverage": built.coverage}]
+            # The rotation the ERP was shot with (frame 0), which the surface undoes to lay the ERP back in World.
+            rotation = None
+            if camera is not None:
+                shot = evaluate_scene_state(state, 0)["camera"]
+                rotation = {name: shot[name] for name in ("yaw_deg", "pitch_deg", "roll_deg")}
+            ui_ret["pano_output_erp"] = [{**output_entry, "coverage": built.coverage, "rotation": rotation}]
+        else:
+            ui_ret["pano_output_frame"] = [output_entry]
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         # The `scene` output is the World that is shot, without the Camera (ADR 0029).
-        return io.NodeOutput(image, mask, video, _scene_output(built), handoff, ui=ui_ret)
+        return io.NodeOutput(image, mask, video, handoff, _scene_output(built), ui=ui_ret)
 
 
 CUTOUT_MAX_OUTPUT_SIDE = 4096

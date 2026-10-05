@@ -30,7 +30,7 @@ import { fitFocalPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
 import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
 import PanoStickersNodeSurface from "./components/PanoStickersNodeSurface.vue";
 import PanoStudioNodeSurface from "./components/PanoStudioNodeSurface.vue";
-import { createStudioStatus, studioRunErp, studioRunQuaternion } from "./pano_studio_status.js";
+import { createStudioStatus, studioRunOutput, studioRunQuaternion } from "./pano_studio_status.js";
 import {
   NODE_SURFACE_FRAME,
   createStickersNodeSurfaceSession,
@@ -520,6 +520,11 @@ const executedRefreshMonitor = {
         // The output of a node that the media is not read from changes nothing on this node.
         if (!selfHit && ![...getMediaSourceIds(node)].some((id) => executionIdMatches(executedId, id))) return;
         const reason = selfHit ? "self" : "upstream";
+        if (selfHit) {
+          // Every run, a cached one resent as it was too, loads Panorama Studio's run output again once.
+          disposeStudioRunImage(node);
+          nodeSurface(node).dom?.requestDraw?.();
+        }
         if (isRepeatedOutput(mediaCache(node).executedOutputs, executedId, detail.output)) return;
         panoPreviewLog(node, "exec-refresh", { executedId, reason });
         invalidatePreviewImageCaches(node);
@@ -1483,8 +1488,9 @@ function studioBgWidth(node, surfacePlayback) {
   return isRenderableMediaReady(image) && image.naturalWidth > 0 ? image.naturalWidth : undefined;
 }
 
-// What Panorama Studio's status is made from (studioNodeStatus): its state_json text and widgets, the
-// bg_media width, and the size and output ERP its last run reported while that run's media are still the inputs'.
+// What Panorama Studio's status and run output are made from (studioNodeStatus, studioRunOutput): its state_json
+// text and widgets, the bg_media width, the size its last run reported while that run's media are still the
+// inputs', and the output the run returned (an ERP, or a perspective Camera's first frame).
 function studioStatusOptions(node, surfacePlayback) {
   const outputSize = String(getWidget(node, "output_size")?.value ?? "");
   const current = ["background", "external-sticker", "scene"].every((channel) => isNodeOutputMediaCurrent(node, channel));
@@ -1495,9 +1501,14 @@ function studioStatusOptions(node, surfacePlayback) {
     bgColor: String(getWidget(node, "bg_color")?.value ?? ""),
     bgWidth: outputSize === "auto" ? studioBgWidth(node, surfacePlayback) : null,
     run: (current && ownOutputUiValue(node, "pano_output_size")) || null,
-    erp: (current && ownOutputUiValue(node, "pano_output_erp")) || null,
+    erp: ownOutputUiValue(node, "pano_output_erp") || null,
+    frame: ownOutputUiValue(node, "pano_output_frame") || null,
   };
 }
+
+// Where Panorama Studio's status bar ends (its top 6px plus its height 26px, pano_editor.css, and a gap): a run's
+// flat first frame is fitted below it.
+const STUDIO_BAR_BOTTOM = 38;
 
 function disposeStudioRunImage(node) {
   const media = mediaCache(node);
@@ -1506,40 +1517,57 @@ function disposeStudioRunImage(node) {
   media.studioRunImage = null;
 }
 
-// The view background of the output ERP that Panorama Studio's surface shows (`shown`, studioRunErp), turned
-// back into World by the Camera of the state sceneState() gives (studioRunQuaternion), or null while it loads and decodes, when it cannot be loaded, or when
-// nothing is shown. The image is the file at full size, loaded once and kept while the node's result names it,
-// so going back to the run does not load it again.
-function studioRunBackground(node, shown, sceneState) {
+// The cached image of the run output `output` (studioRunOutput), or null when it is not the cached one.
+function cachedStudioRunImage(node, output) {
+  const cached = mediaCache(node).studioRunImage;
+  return output && cached?.src === imageSourceFromCandidate(output.entry) ? cached : null;
+}
+
+// What Panorama Studio's surface shows of its last run's output (`output`, studioRunOutput), as drawCanvas takes
+// it: { background } for an ERP, turned back into World by the rotation the run shot it with (studioRunQuaternion
+// of the entry's `rotation`), or { frame } for a perspective Camera's first frame, shown flat. Null while it loads and decodes, when it cannot be
+// loaded, or before any run. The image is the file at full size, loaded once and kept while the node's result
+// names it.
+function studioRunPicture(node, output) {
   const media = mediaCache(node);
   const surface = nodeSurface(node);
-  const src = imageSourceFromCandidate(ownOutputUiValue(node, "pano_output_erp"));
+  const src = output ? imageSourceFromCandidate(output.entry) : "";
+  if (media.studioRunImage && media.studioRunImage.src !== src) disposeStudioRunImage(node);
+  if (!src) return null;
   let cached = media.studioRunImage;
-  if (cached && cached.src !== src) {
-    disposeStudioRunImage(node);
-    cached = null;
-  }
-  if (!shown || !src) return null;
   if (!cached) {
     const image = new Image();
-    const record = { src, image, ready: false };
+    const record = { src, image, ready: false, failed: false };
     image.src = src;
-    // A file temp no longer holds stays not ready: it is not asked for again until another run.
+    // A file temp no longer holds is not asked for again until another run.
     image.decode().then(() => {
       if (media.studioRunImage !== record) return;
       record.ready = true;
       surface.dom?.requestDraw?.();
-    }, () => {});
+    }, () => {
+      if (media.studioRunImage !== record) return;
+      record.failed = true;
+      surface.dom?.requestDraw?.();
+    });
     media.studioRunImage = cached = record;
   }
-  return cached.ready
-    ? {
+  if (!cached.ready) return null;
+  if (output.kind === "frame") return { frame: cached.image };
+  return {
+    background: {
       media: cached.image,
       revision: getRenderableMediaRevisionToken(cached.image),
-      coverage: Number(shown.coverage) === 180 ? 180 : 360,
-      quaternion: studioRunQuaternion(sceneState()),
-    }
-    : null;
+      coverage: Number(output.entry.coverage) === 180 ? 180 : 360,
+      quaternion: studioRunQuaternion(output.entry.rotation),
+    },
+  };
+}
+
+// What the note of Panorama Studio's surface says it shows (studioNodeStatus `display`).
+function studioRunDisplay(node, output) {
+  if (!output) return "not-run";
+  if (cachedStudioRunImage(node, output)?.failed) return "unavailable";
+  return output.current ? "run" : "edited";
 }
 
 // What the on-node surfaces draw with three.js: the background, and the Sky layers of the node's
@@ -1578,9 +1606,9 @@ function surfaceViewInput(node, state, bgImg) {
   };
 }
 
-// `runBackground` (Panorama Studio, studioRunBackground) is its last run's output ERP, drawn alone in place of
-// the background and the Sky layers it already holds.
-function drawCanvas(node, canvas, surfaceView, runBackground = null) {
+// `run` (Panorama Studio, studioRunPicture) is its last run's output: an ERP (`background`) drawn alone in place
+// of the background and the Sky layers it already holds, or a first frame (`frame`) fitted flat in the surface.
+function drawCanvas(node, canvas, surfaceView, run = null) {
   const surface = nodeSurface(node);
   const mode = String(surface.mode || "stickers");
   ensureRenderCache(node, mode);
@@ -1606,6 +1634,16 @@ function drawCanvas(node, canvas, surfaceView, runBackground = null) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#070707";
   ctx.fillRect(0, 0, surfW, surfH);
+  if (run?.frame) {
+    surfaceView.release();
+    setRenderLoading(node, false, "");
+    const { width, height } = getSourcePixelSize(run.frame);
+    const top = STUDIO_BAR_BOTTOM;
+    const scale = Math.min(surfW / width, (surfH - top) / height);
+    ctx.drawImage(run.frame, (surfW - width * scale) / 2, top + (surfH - top - height * scale) / 2, width * scale, height * scale);
+    return;
+  }
+  const runBackground = run?.background || null;
   // Panorama Studio plays its background VIDEO with its Timeline; the legacy node loops it.
   const bgImg = runBackground?.media || (surface.playback
     ? playbackBackground(surface.playback)
@@ -2277,12 +2315,10 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     if (!stickersMode || !node.graph || !nodeSurfaceSession || nodeSurfaceSession.hasGestureChanges()) return false;
     if (node.__panoSceneStateV2) {
       const current = isNodeOutputMediaCurrent(node, "external-sticker");
-      const port = getCachedState(node).stickers.find((item) => item.source.kind === "port");
       return nodeSurfaceSession.apply({
         type: "sync-port",
         value: portStickerSyncValue(node, {
           pose: current ? ownOutputUiValue(node, "pano_sticker_input_pose", outputOverride) : null,
-          image: port ? getNodePreviewImage(node, port.id, null, { external: true }) : null,
         }),
       });
     }
@@ -2492,17 +2528,18 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         state.needsDraw = false;
         if (surfacePlayback) syncSurfacePlayback();
         else syncLegacyVideo();
-        // Panorama Studio shows its last run's output while the run is current and shoots an ERP.
+        // Panorama Studio shows its last run's output once it has one, edited since or not.
         const studioOptions = studioSurface ? studioStatusOptions(node, surfacePlayback) : null;
+        const runOutput = studioOptions ? studioRunOutput(studioOptions) : null;
         const sceneState = () => surfaceSceneState(node, getCachedState(node));
         // A collapsed or hidden surface does not load it.
-        const runBackground = studioOptions && surfaceShown(wrap, !!node.flags?.collapsed)
-          ? studioRunBackground(node, studioRunErp(sceneState(), studioOptions), sceneState)
+        const run = studioOptions && surfaceShown(wrap, !!node.flags?.collapsed)
+          ? studioRunPicture(node, runOutput)
           : null;
-        if (!node.flags?.collapsed) drawCanvas(node, canvas, surfaceView, runBackground);
+        if (!node.flags?.collapsed) drawCanvas(node, canvas, surfaceView, run);
         nodeSurfaceUiModel.viewUnavailable = surfaceView.failed;
         if (studioSurface) {
-          const status = studioStatus({ ...studioOptions, showingRun: !!runBackground }, sceneState);
+          const status = studioStatus({ ...studioOptions, display: studioRunDisplay(node, runOutput) }, sceneState);
           if (status) nodeSurfaceUiModel.status = status;
         }
       }

@@ -1,6 +1,7 @@
 """Panorama Studio's node surface lays the run's output ERP back in World (web_src/pano_studio_status.js
-`studioRunQuaternion`, applied to the ERP dome in pano_three_view.js): it must undo the Camera rotation the run shot
-the ERP with (core/render.py `_rays`), so that a direction of the background shows where the background has it."""
+`studioRunQuaternion` of the `rotation` the run returns with `pano_output_erp`, applied to the ERP dome in
+pano_three_view.js): it must undo the Camera rotation the run shot the ERP with (core/render.py `_rays`), so that a
+direction of the background shows where the background has it."""
 import json
 import math
 import subprocess
@@ -26,18 +27,17 @@ S = np.diag([1.0, 1.0, -1.0])
 JS_SCRIPT = textwrap.dedent(
     """
     import { readFileSync } from "node:fs";
-    import { loadSceneState } from "./web_src/pano_scene_state.js";
     import { studioRunQuaternion } from "./web_src/pano_studio_status.js";
     import { quaternionToRotation } from "./web_src/pano_world.js";
 
-    const states = JSON.parse(readFileSync(0, "utf8"));
-    console.log(JSON.stringify(states.map((state) => quaternionToRotation(studioRunQuaternion(loadSceneState(state))))));
+    const rotations = JSON.parse(readFileSync(0, "utf8"));
+    console.log(JSON.stringify(rotations.map((rotation) => quaternionToRotation(studioRunQuaternion(rotation)))));
     """
 )
 
 
-def _js_rotations(states):
-    proc = subprocess.run(["node", "--input-type=module", "-e", JS_SCRIPT], cwd=REPO_ROOT, input=json.dumps(states),
+def _js_rotations(rotations):
+    proc = subprocess.run(["node", "--input-type=module", "-e", JS_SCRIPT], cwd=REPO_ROOT, input=json.dumps(rotations),
                           text=True, capture_output=True, check=True)
     return [np.array(rotation) for rotation in json.loads(proc.stdout)]
 
@@ -76,14 +76,28 @@ def _camera(**rotation):
     {"version": 2, "camera": {**_camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0), "visible": False}},
 ], ids=["no-camera", "yaw30-pitch10-roll5", "yaw50-pitch-15-roll60", "hidden-camera"])
 def test_the_surface_lays_the_output_erp_back_where_the_background_has_it(state, coverage):
-    output = PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color="#000000", coverage=coverage,
-                                        output_size="1024", bg_media=_marker_erp(int(coverage))).result[0][0].numpy()
+    result = PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color="#000000", coverage=coverage,
+                                        output_size="1024", bg_media=_marker_erp(int(coverage)))
+    output = result.result[0][0].numpy()
     # Where the marker landed in the output, as a direction in the output ERP's own frame.
     weight = output.mean(axis=-1)
     assert weight.sum() > 0
     local = (_erp_directions(*weight.shape, int(coverage)) * weight[..., None]).sum(axis=(0, 1))
     local /= np.linalg.norm(local)
-    (rotation,) = _js_rotations([state])
+    (entry,) = result.ui["pano_output_erp"]
+    (rotation,) = _js_rotations([entry["rotation"]])
 
     shown = S @ rotation @ S @ local
     assert math.degrees(math.acos(float(np.clip(shown @ MARKER, -1.0, 1.0)))) < 0.5
+
+
+def test_the_output_erp_carries_the_camera_rotation_at_frame_0_or_none():
+    keyed = {**_camera(), "rotation": {"value": {"yaw_deg": 0.0}, "keyframes": [
+        {"frame": 0, "value": {"yaw_deg": 20.0, "pitch_deg": 5.0, "roll_deg": -3.0}, "easing": [0, 0, 1, 1]},
+        {"frame": 4, "value": {"yaw_deg": 80.0, "pitch_deg": 0.0, "roll_deg": 0.0}}]}}
+    rotations = [
+        PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color="#000000", coverage="360", output_size="1024").ui["pano_output_erp"][0]["rotation"]
+        for state in ({"version": 2}, {"version": 2, "camera": {**_camera(yaw_deg=30.0), "visible": False}}, {"version": 2, "camera": keyed})
+    ]
+
+    assert rotations == [None, None, {"yaw_deg": 20.0, "pitch_deg": 5.0, "roll_deg": -3.0}]

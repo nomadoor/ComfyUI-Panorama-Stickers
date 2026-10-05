@@ -217,11 +217,23 @@ export function setTimelineFps(state, fps) {
   }
 }
 
+// The vFOV a sky Sticker with the evaluated `value` is drawn and hit tested at. A port Sticker's follows
+// its hFOV and the aspect of the media on the port (`size`, { width, height }), as the run derives it
+// (core/render.py `derive_vfov`, core/math.py `vfov_from_hfov`): the media changes outside the state, so
+// the state never holds it, and the stored vFOV_deg stands in only while the media has no size.
+export function skyStickerVfov(sticker, value, size) {
+  if (sticker.source.kind !== "port" || !(size?.width > 0 && size?.height > 0)) return value.vFOV_deg;
+  const hfov = Math.min(179, Math.max(0.1, value.hFOV_deg)) * DEG2RAD;
+  const vfov = 2 * Math.atan(Math.tan(hfov * 0.5) * (size.height / size.width)) / DEG2RAD;
+  return Math.min(179, Math.max(0.1, vfov));
+}
+
 // The editor moves, scales and turns Stickers in the v1 pose fields. These map them to the Lanes
-// of a sky Sticker of state v2 at a Timeline frame, the values the evaluator gives there.
-export function stickerPose(sticker, frame) {
+// of a sky Sticker of state v2 at a Timeline frame, the values the evaluator gives there. `size` is the
+// size of a port Sticker's media (skyStickerVfov).
+export function stickerPose(sticker, frame, size = null) {
   const value = evaluateSticker(sticker, frame);
-  return { yaw_deg: value.yaw_deg, pitch_deg: value.pitch_deg, hFOV_deg: value.hFOV_deg, vFOV_deg: value.vFOV_deg, rot_deg: value.roll_deg };
+  return { yaw_deg: value.yaw_deg, pitch_deg: value.pitch_deg, hFOV_deg: value.hFOV_deg, vFOV_deg: skyStickerVfov(sticker, value, size), rot_deg: value.roll_deg };
 }
 
 // The Lane of each pose field of a sky Sticker.
@@ -236,11 +248,12 @@ export function unkeyedPose(sticker, pose) {
   return Object.fromEntries(Object.entries(pose).filter(([field]) => !sticker[POSE_FIELD_LANES[field]].keyframes.length));
 }
 
-// An edit changes only the Lanes of the fields it has, each by the recording rule (setLaneValue).
+// An edit changes only the Lanes of the fields it has, each by the recording rule (setLaneValue). A port
+// Sticker's vFOV is not stored: it follows its media (skyStickerVfov).
 export function setStickerPose(sticker, frame, pose) {
   const clipFrame = frame - (sticker.clip.start - sticker.clip.in);
   const direction = pick(pose, ["yaw_deg", "pitch_deg"]);
-  const size = pick(pose, ["hFOV_deg", "vFOV_deg"]);
+  const size = pick(pose, sticker.source.kind === "port" ? ["hFOV_deg"] : ["hFOV_deg", "vFOV_deg"]);
   if (Object.keys(direction).length) setLaneValue(sticker, "direction", clipFrame, direction);
   if (pose.rot_deg !== undefined) setLaneValue(sticker, "roll", clipFrame, pose.rot_deg);
   if (Object.keys(size).length) setLaneValue(sticker, "size", clipFrame, size);
