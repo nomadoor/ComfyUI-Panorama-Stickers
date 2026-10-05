@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
-from comfyui_pano_suite.core.scene_state import default_camera, load_scene_state, load_sticker_state, rebase_scene_state
+from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state, rebase_scene_state
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
@@ -81,10 +81,14 @@ def test_state_without_a_camera_object_has_no_camera(camera):
 
 
 def test_camera_object_has_the_default_camera_fields():
-    state = load_scene_state('{"version":2,"camera":{}}')
-    assert state["camera"] == default_camera()
-    assert default_camera()["projection"] == "perspective"
-    assert default_camera()["aspect"] == 1.0
+    assert load_scene_state('{"version":2,"camera":{}}')["camera"] == {
+        "aspect": 1.0,
+        "projection": "perspective",
+        "visible": True,
+        "position": {"value": [0.0, 0.0, 0.0], "keyframes": []},
+        "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []},
+        "fov": {"value": 90.0, "keyframes": []},
+    }
 
 
 @pytest.mark.parametrize("projection, expected", [("erp", "erp"), ("perspective", "perspective"), ("ERP", "perspective"), (None, "perspective"), (1, "perspective")])

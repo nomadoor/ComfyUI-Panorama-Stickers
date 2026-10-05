@@ -182,7 +182,7 @@ export function createFrameView(deps) {
     }, 180);
   }
 
-  // --- The Frame view of PanoramaCutoutNode with World content (#77): moving the view moves the Camera
+  // --- The Frame view of Panorama Studio's Camera with World content: moving the view moves the Camera
   // itself, as Blender's camera locked to the view. The drags of the 3D view controls orbit and pan it
   // (pano_view_controls.js, pano_space.js), the wheel moves it toward the point under the pointer, and a
   // left drag still turns it where it stands, as in the Frame view of an ERP.

@@ -50,7 +50,7 @@ from .core.painting import (
 )
 from .core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
 from .core.scene_eval import FRAME_EPSILON, evaluate_scene_state
-from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, default_camera, load_scene_state, load_sticker_state
+from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
 from .core.video import (
@@ -1153,12 +1153,11 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> dict:
 
 
 # A 3D Sticker that the node adds has its origin here: 2 World units ahead of the World origin along -Z, the
-# center of the Stickers ERP output, which is always taken from the origin at rotation 0.
+# center of the ERP output without a Camera, which is taken from the origin at rotation 0.
 WORLD_STICKER_POSITION = [0.0, 0.0, -2.0]
 
-# Stickers has no Camera (ADR 0028): its ERP output is taken from the World origin at rotation 0, whatever the
-# `camera` of its state holds. Studio takes the same ERP when its state has no Camera (ADR 0029).
-STICKERS_CAMERA = {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
+# Without a Camera (or with a hidden one), Studio takes its ERP output from the World origin at rotation 0 (ADR 0029).
+ORIGIN_CAMERA = {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
 
 
 def _world_port_sticker(state: dict, sticker_id: str | None = None) -> dict:
@@ -1295,14 +1294,13 @@ def _bg_frames(bg, times, time_base, timing: bool) -> list[int | None]:
     return [index if 0 <= index < len(bg.times) else None for index in indices]
 
 
-def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None, *, camera: bool = False,
+def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None, *,
                      upstream: PanoSceneValue | None = None) -> tuple[Fraction, list[Fraction], Fraction, tuple]:
     """(a) Timeline: the Timeline fps as a fraction, each output frame's time in seconds, the time base those times
     are rounded to (0: exact), and per output frame the bg_media frame to draw and, for each layer (those of
     `upstream`, then `state` with its `port` and `scene`), the Timeline frame to evaluate, its port media frame, and
     its `scene` item (`_layer_frames`). A `scene` batch, like an IMAGE batch on the port, ends its Clip range without a duration.
-    With `camera`, the state's Camera (if it has one) shoots the frames (Cutout, Studio) and its Keyframes count for
-    the length; Stickers has no Camera (ADR 0028).
+    The state's Camera, when it has one, shoots the frames and its Keyframes count for the length.
 
     `bg` is the bg_media IMAGE batch, an opened VIDEO, or None. Without `upstream`, the output frames follow the PTS
     of the VIDEO that sets the Timeline fps: the background VIDEO, or else the sticker VIDEO. With `upstream` (a
@@ -1339,7 +1337,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         clip_ends.append(scene_clip["start"] - scene_clip["in"] + scene.count * stored_fps / fps)
     # The latest Keyframe over the Camera's Lanes.
     last_key = None
-    if camera and state["camera"] is not None:
+    if state["camera"] is not None:
         last_key = max((state["camera"][name]["keyframes"][-1]["frame"] for name, _value in CAMERA_LANES if state["camera"][name]["keyframes"]), default=None)
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
@@ -1469,15 +1467,15 @@ def _open_media(media, name: str):
     return open_video(media, name) if isinstance(media, Input.Video) else media
 
 
-def _render_outputs(built: PanoSceneValue, bg, capture, size: tuple[int, int], bg_name: str = "bg_media"):
+def _render_outputs(built: PanoSceneValue, bg, capture, size: tuple[int, int]):
     """(c) The first output frame's IMAGE and MASK of the Scene `built`, rendered now from the opened `bg`, and the
-    `video` of every frame, rendered when it is read with `bg_media` (opened as `bg_name`) and the `scene` content
-    opened again for each pass."""
+    `video` of every frame, rendered when it is read with `bg_media` and the `scene` content opened again for
+    each pass."""
     color, mask = next(_render_frames(built, bg, capture, comfy.model_management.get_torch_device(), size))
     audio = bg.audio(len(built.frames) / built.fps) if isinstance(bg, OPENED_VIDEOS) else None
 
     def render(device):
-        return _render_frames(built, _open_media(built.bg_media, bg_name), capture, device, size)
+        return _render_frames(built, _open_media(built.bg_media, "bg_media"), capture, device, size)
 
     video = SceneVideo(render, *size, built.rate, list(built.times), built.time_base, audio)
     return color[None].to("cpu", copy=True), mask[None].to("cpu", copy=True), video
@@ -1563,13 +1561,13 @@ def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_
     return {files_key: files, meta_key: [{"kind": kind}]}
 
 
-def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings: list[str], *, camera: bool = False):
-    """The Scene that Stickers and Studio build from their inputs, as the PANO_SCENE value: the state with the port
-    Sticker appended when missing, its sources, the Timeline (counting the state's Camera when `camera`), and the
-    media `ui` for the editors. Also returns the opened bg_media and the port Sticker the state stored before (None
-    without one). A source that cannot be read adds to `warnings`.
+def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings: list[str]):
+    """The Scene that Studio builds from its inputs, as the PANO_SCENE value: the state with the port Sticker
+    appended when missing, its sources, the Timeline (counting the state's Camera), and the media `ui` for the
+    editors. Also returns the opened bg_media and the port Sticker the state stored before (None without one).
+    A source that cannot be read adds to `warnings`.
 
-    A Scene on the `scene` input (Studio, ADR 0029) puts its layers under this state's, and sets the Timeline fps.
+    A Scene on the `scene` input (ADR 0029) puts its layers under this state's, and sets the Timeline fps.
     Its background, when it has one, is used in place of `bg_media`, `coverage`, and `bg_color`, with a warning
     when `bg_media` is connected too."""
     upstream = scene if isinstance(scene, PanoSceneValue) else None
@@ -1588,7 +1586,7 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
         coverage = normalize_coverage(coverage)
         bg_rgb = tuple(_hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist())
     bg = _open_media(bg_media, "bg_media")
-    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(scene), camera=camera, upstream=upstream)
+    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(scene), upstream=upstream)
     fps = float(rate)
     # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
     layer_ui = {}
@@ -1660,150 +1658,16 @@ def _port_pose_ui(state: dict, port: PortMedia | None, stored_port: dict | None)
     return {"pano_sticker_input_pose": [pose]}
 
 
-# TODO(#78): rename to PanoramaStickersNode, matching the node_id, once the legacy class is removed.
-class PanoramaStickersSceneNode(io.ComfyNode):
-    @classmethod
-    def define_schema(cls):
-        return io.Schema(
-            node_id="PanoramaStickersNode",
-            display_name="Panorama Stickers (new)",  # TODO(#78): drop the suffix when the legacy node is replaced.
-            category="Panorama Suite",
-            inputs=[
-                io.MultiType.Input(io.Image.Input("bg_media"), types=[io.Video], optional=True),
-                io.MultiType.Input("scene", types=[io.Splat, io.Mesh, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry], optional=True),
-                io.MultiType.Input(io.Image.Input("sticker"), types=[io.Video, io.Mesh, io.Splat, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES], optional=True),
-                io.String.Input("sticker_state", default="", multiline=False, dynamic_prompts=False, optional=True, force_input=True),
-                io.Color.Input("bg_color", default="#00ff00"),
-                io.Combo.Input("coverage", options=["360", "180"], default="360"),
-                io.Combo.Input("output_preset", options=["1024", "2048", "4096", "auto"], default="2048"),
-                io.String.Input("state_json", default="", multiline=True, dynamic_prompts=False, advanced=True),
-            ],
-            outputs=[
-                io.Image.Output("first_frame"),
-                io.Mask.Output("first_frame_mask"),
-                io.Video.Output("video"),
-                PanoScene.Output("pano_scene"),
-            ],
-            # An output node runs on every queue, so the editor receives the media in the `ui` even when
-            # nothing downstream consumes the outputs.
-            is_output_node=True,
-        )
-
-    @classmethod
-    def execute(cls, bg_color, coverage, output_preset, state_json, bg_media=None, scene=None, sticker=None, sticker_state=""):
-        warnings = []
-        built, bg, stored_port = _build_scene(state_json, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings)
-        out_w, out_h, uses_bg_size = PanoramaStickersNode._resolve_output_size(output_preset, coverage, bg_erp=bg.first_frame if isinstance(bg_media, Input.Video) else bg_media)
-        if PanoramaStickersNode._is_auto_output_preset(output_preset) and not uses_bg_size:
-            warnings.append("Output preset is auto, but bg_media is not connected; using 2048 instead.")
-        projection = Projection.erp(out_w, out_h, built.coverage)
-        image, mask, video = _render_outputs(built, bg, lambda evaluated: (STICKERS_CAMERA, projection), (out_w, out_h))
-        layer = built.layers[-1]
-        ui_ret = {**built.media_ui, **_port_pose_ui(layer.state, layer.port, stored_port)}
-        _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
-        return io.NodeOutput(image, mask, video, built, ui=ui_ret)
-
-
-CUTOUT_MAX_OUTPUT_SIDE = 4096
-
-
-def _cutout_state(state_json: str) -> dict:
-    """The Cutout state. The Cutout always shoots through a Camera: a state without one has the default Camera,
-    as before the Camera could be absent (ADR 0029), and the Cutout editor edits it the same way."""
-    cutout = load_scene_state(state_json)
-    return cutout if cutout["camera"] is not None else {**cutout, "camera": default_camera()}
-
-
-def _cutout_sticker_state(cutout: dict, width: int, height: int) -> str:
-    """`sticker_state` v2: each Lane of the Cutout Camera as its Keyframes at the fps the Cutout state records them at
+def _camera_sticker_state(state: dict, width: int, height: int) -> str:
+    """`sticker_state` v2: each Lane of the state's Camera as its Keyframes at the fps the state records them at
     (not rebased to the Timeline fps, which would move them by up to half a frame), or its value as one Keyframe."""
-    camera = cutout["camera"]
+    camera = state["camera"]
     lanes = {
         name: camera[name]["keyframes"] or [{"frame": 0, "value": camera[name]["value"], "easing": list(DEFAULT_EASING)}]
         for name, _value in CAMERA_LANES
     }
-    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": cutout["timeline"]["fps"], "camera": lanes, "source_aspect": width / height}
+    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": state["timeline"]["fps"], "camera": lanes, "source_aspect": width / height}
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
-
-
-# TODO(#78): rename to PanoramaCutoutNode, matching the node_id, once the legacy class is removed.
-class PanoramaCutoutSceneNode(io.ComfyNode):
-    @classmethod
-    def define_schema(cls):
-        return io.Schema(
-            node_id="PanoramaCutoutNode",
-            display_name="Panorama Cutout (new)",  # TODO(#78): drop the suffix when the legacy node is replaced.
-            category="Panorama Suite",
-            inputs=[
-                io.MultiType.Input(io.Image.Input("source"), types=[io.Video, PanoScene]),
-                io.Combo.Input("coverage", options=["360", "180"], default="360"),
-                io.Float.Input("output_megapixels", default=1.0, min=0.01, step=0.05),
-                io.String.Input("state_json", default="", multiline=True, dynamic_prompts=False, advanced=True),
-            ],
-            outputs=[
-                io.Image.Output("first_frame"),
-                io.String.Output("sticker_state"),
-                io.Mask.Output("first_frame_mask"),
-                io.Video.Output("video"),
-            ],
-            # As Stickers: an output node runs on every queue, so the editor receives the `ui` even when nothing
-            # downstream consumes the outputs.
-            is_output_node=True,
-        )
-
-    @classmethod
-    def execute(cls, source, coverage, output_megapixels, state_json):
-        cutout = _cutout_state(state_json)
-        if isinstance(source, PanoSceneValue):
-            # The Scene is the Stickers state; the Cutout state gives only the Camera, at its own recorded fps.
-            built, bg_name = source, "bg_media"
-            bg = _open_media(built.bg_media, bg_name)
-            # The frame of the last layer's state, which `capture` is given.
-            ratio = cutout["timeline"]["fps"] / built.layers[-1].state["timeline"]["fps"]
-
-            def camera_at(evaluated):
-                return evaluate_scene_state(cutout, evaluated["frame"] * ratio)["camera"]
-
-            # The editor shows the Scene from its state and the Stickers' media files with the span of its
-            # background, on the Scene's Timeline: its fps (always set by the Scene here) and its number of frames.
-            ui_ret = {
-                **source.media_ui,
-                "pano_timeline_fps": [source.fps],
-                "pano_timeline_frames": [len(built.frames)],
-                "pano_scene_state": [built.layers[-1].state],
-                "pano_scene_coverage": [built.coverage],
-            }
-        else:
-            # An ERP IMAGE or VIDEO is the background in the Scene's orientation, under the Cutout state's Sky.
-            # Outside a 180 ERP the image is black, as in the legacy Cutout.
-            warnings = []
-            sources = _resolve_sources(cutout, None, warnings)
-            bg_name = "source"
-            bg = _open_media(source, bg_name)
-            rate, times, time_base, frames = _decide_timeline(cutout, bg, None, camera=True)
-            fps = float(rate)
-            built = PanoSceneValue((SceneLayer(cutout, sources, None, None, {}),), source, normalize_coverage(coverage), (0.0, 0.0, 0.0),
-                                   rate, tuple(times), time_base, frames, {}, {})
-
-            def camera_at(evaluated):
-                return evaluated["camera"]
-
-            # The editor shows the ERP under the legacy keys, as Stickers shows its bg_media.
-            ui_ret = _bg_media_ui(source, bg, fps)
-            if _timing_video(bg, None) is not None:
-                ui_ret["pano_timeline_fps"] = [fps]
-            _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
-        # The output size follows the Camera's aspect, as the legacy Cutout's followed its shot's FOV.
-        width, height = calculate_dimensions_from_megapixels(
-            output_megapixels, 90.0, math.degrees(2.0 * math.atan(1.0 / cutout["camera"]["aspect"])), max_side=CUTOUT_MAX_OUTPUT_SIDE
-        )
-
-        def capture(evaluated):
-            camera = camera_at(evaluated)
-            return camera, Projection.perspective(width, height, camera["hFOV_deg"], built.coverage)
-
-        image, mask, video = _render_outputs(built, bg, capture, (width, height), bg_name)
-        return io.NodeOutput(image, _cutout_sticker_state(cutout, width, height), mask, video, ui=ui_ret)
 
 
 STUDIO_OUTPUT_SIZES = ["1024", "1536", "2048", "2560", "3072", "4096", "auto"]
@@ -1892,7 +1756,7 @@ class PanoramaStudioNode(io.ComfyNode):
                 PanoScene.Output("scene"),
                 io.String.Output("sticker_state"),
             ],
-            # As Stickers: an output node runs on every queue, so the editor receives the media in the `ui` even
+            # An output node runs on every queue, so the editor receives the media in the `ui` even
             # when nothing downstream consumes the outputs.
             is_output_node=True,
         )
@@ -1900,7 +1764,7 @@ class PanoramaStudioNode(io.ComfyNode):
     @classmethod
     def execute(cls, bg_color, coverage, output_size, state_json, bg_media=None, sticker=None, sticker_state="", scene=None):
         warnings = []
-        built, bg, stored_port = _build_scene(state_json, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings, camera=True)
+        built, bg, stored_port = _build_scene(state_json, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings)
         state = built.layers[-1].state
         width, height, reduced_from = _studio_output_size(state, built.frames, output_size, built.coverage, bg, warnings)
         camera = _studio_camera(state)
@@ -1909,14 +1773,14 @@ class PanoramaStudioNode(io.ComfyNode):
 
             def capture(evaluated):
                 # Without a Camera, the ERP is taken from the World origin at rotation 0.
-                return STICKERS_CAMERA if camera is None else evaluated["camera"], projection
+                return ORIGIN_CAMERA if camera is None else evaluated["camera"], projection
         else:
             def capture(evaluated):
                 return evaluated["camera"], Projection.perspective(width, height, evaluated["camera"]["hFOV_deg"], built.coverage)
 
         image, mask, video = _render_outputs(built, bg, capture, (width, height))
-        # Only a perspective Camera hands its pose to a Sticker (Pose handoff); the Cutout made the same.
-        handoff = _cutout_sticker_state(state, width, height) if camera is not None and camera["projection"] == "perspective" else ""
+        # Only a perspective Camera hands its pose to a Sticker (Pose handoff).
+        handoff = _camera_sticker_state(state, width, height) if camera is not None and camera["projection"] == "perspective" else ""
         ui_ret = {**built.media_ui, **_port_pose_ui(state, built.layers[-1].port, stored_port)}
         # The node surface shows the size output_size auto gives from it (None: no bg_media); the editor's MP4 may be
         # smaller than the VIDEO, and an upstream Scene's bg_media is not on this node.
@@ -1932,6 +1796,9 @@ class PanoramaStudioNode(io.ComfyNode):
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         # The `scene` output is the World that is shot, without the Camera (ADR 0029).
         return io.NodeOutput(image, mask, video, _scene_output(built), handoff, ui=ui_ret)
+
+
+CUTOUT_MAX_OUTPUT_SIDE = 4096
 
 
 class PanoramaCutoutNode(io.ComfyNode):
@@ -2246,7 +2113,7 @@ def _video_cache_identity(video, streamed: bool) -> tuple:
 def _editor_mp4(video, opened) -> tuple[Path, bool]:
     """The MP4 the editor plays for a VIDEO opened by `open_video` as `opened`, and whether it has audio. A file the
     core copies into an MP4 that seeks fast already (`editor_ready`) is copied, or played as it is when it is an MP4
-    in the input directory; a Stickers or Cutout `video` shows
+    in the input directory; a Studio `video` shows
     its stream source when that seeks fast. Otherwise a proxy is encoded (`encode_editor_mp4`), from the file
     again for a VIDEO read from its file, since `opened` has moved on, so the frames are never all in memory."""
     if isinstance(video, SceneVideo):
@@ -2303,20 +2170,21 @@ def _video_ui(video, opened, fps: float, frame_count: int, contract: dict) -> di
 
 
 def _video_preview_ui(video) -> dict:
-    """The Preview `ui` of a VIDEO, with the Timeline fps decided as in Stickers."""
+    """The Preview `ui` of a VIDEO, with the Timeline fps decided as in Studio."""
     bg = open_video(video, "source")
     rate, _times, _time_base, frames = _decide_timeline(load_scene_state(None), bg, None)
     return _video_ui(video, bg, float(rate), len(frames), _get_preview_ui_contract("default"))
 
 
-# TODO(#78): rename to PanoramaPreviewNode, matching the node_id, once the legacy class is removed.
+# TODO(#76): when Preview gets its new display, choose a class and display name that can sit beside the legacy
+# Preview, which stays registered (ADR 0029: the legacy nodes stay).
 class PanoramaPreviewSceneNode(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         template = io.MatchType.Template("source", [io.Image, io.Video, PanoScene])
         return io.Schema(
             node_id="PanoramaPreviewNode",
-            display_name="Panorama Preview (new)",  # TODO(#78): drop the suffix when the legacy node is replaced.
+            display_name="Panorama Preview (new)",  # TODO(#76): a name that can sit beside the legacy Preview (ADR 0029).
             category="Panorama Suite",
             inputs=[
                 io.MatchType.Input("source", template=template),
@@ -2462,9 +2330,7 @@ class PanoramaSuiteExtension(ComfyExtension):
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return [
             PanoramaStickersNode,
-            PanoramaStickersSceneNode,
             PanoramaCutoutNode,
-            PanoramaCutoutSceneNode,
             PanoramaPreviewNode,
             PanoramaPreviewSceneNode,
             PanoramaStudioNode,

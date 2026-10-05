@@ -166,12 +166,12 @@ test("the legacy node surfaces and the legacy Preview node pause their VIDEO out
   assert.match(preview, /if \(this\.root\) return surfaceShown\(this\.root, !!this\.node\.flags\?\.collapsed\);/);
 });
 
-// A PanoramaStickersNode in a graph whose links are { link id: [origin node id, origin slot] }.
+// A Panorama Studio in a graph whose links are { link id: [origin node id, origin slot] }.
 function graphNode(links, inputLinks, { id = 9, graphId = "wf-1" } = {}) {
   const graph = { id: graphId, links: new Map(Object.entries(links).map(([linkId, [origin, slot]]) => [Number(linkId), { origin_id: origin, origin_slot: slot }])) };
   return {
     id,
-    comfyClass: "PanoramaStickersNode",
+    comfyClass: "PanoramaStudio",
     graph,
     inputs: ["bg_media", "scene", "sticker"].map((name) => ({ name, link: inputLinks[name] ?? null })),
     getInputLink(slot) {
@@ -195,7 +195,7 @@ function serialize(...nodes) {
 }
 
 function job(outputs, workflow) {
-  const prompt = Object.fromEntries(Object.keys(outputs).map((id) => [id, { class_type: "PanoramaStickersNode", inputs: {} }]));
+  const prompt = Object.fromEntries(Object.keys(outputs).map((id) => [id, { class_type: "PanoramaStudio", inputs: {} }]));
   return { outputs, workflow: { prompt, extra_data: { extra_pnginfo: { workflow } } } };
 }
 

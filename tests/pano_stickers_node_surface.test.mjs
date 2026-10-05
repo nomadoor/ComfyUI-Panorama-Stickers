@@ -403,7 +403,7 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
   assert.equal("assets" in deleted.state, false);
 });
 
-// PanoramaStickersNode as the ComfyUI frontend exposes it: MultiType sockets, and connectivity
+// Panorama Studio as the ComfyUI frontend exposes it: MultiType sockets, and connectivity
 // through isInputConnected(slot). Reading the deprecated input.link fails the test.
 // `types` maps connected inputs to their link type; the sticker input carries an IMAGE by default.
 function stickersNode(connected = [], types = {}) {

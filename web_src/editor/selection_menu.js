@@ -12,7 +12,7 @@ import { gizmoScreenBox, planeCorners, projectPoint } from "../pano_space.js";
 
 export function createSelectionMenu(deps) {
   const {
-    cameraV2, canvas, editor, scheduler, selectionMenu, stageWrap, state, studio, tooltip, tooltipEl, type,
+    cameraV2, canvas, editor, scheduler, selectionMenu, stageWrap, state, tooltip, tooltipEl, type,
     uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
@@ -63,8 +63,6 @@ export function createSelectionMenu(deps) {
       canRestoreSelectedToInitial,
       iconSet: ICON,
       cameraShot: cameraV2,
-      cameraDeletable: studio,
-      erpChoice: studio,
       coverage: state.coverage,
     });
     showSelectionMenu(model);
@@ -81,7 +79,7 @@ export function createSelectionMenu(deps) {
     const points = plane ? planeCorners(plane) : [space.gizmo.transform.position];
     const corners = points.map((point) => projectPoint(camera, point, canvas.width, canvas.height)).filter(Boolean);
     const gizmoBox = gizmoScreenBox(camera, space.gizmo.transform.position, space.gizmo.mode, canvas.width, canvas.height);
-    return buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: space.gizmo.mode, camera: isCameraSelected(), deletable: studio && isCameraSelected() });
+    return buildWorldSelectionMenuModel({ corners, gizmoBox, gizmoMode: space.gizmo.mode, camera: isCameraSelected() });
   }
 
   function showSelectionMenu(model) {

@@ -1132,7 +1132,7 @@ export function createPointerInput(deps) {
     if (editor.mode === "frame") {
       const p = screenPos(e);
       const direction = readWheelDirection(e);
-      // Edits stop PanoramaCutoutNode's playback, so the wheel keys the frame shown.
+      // Edits stop Panorama Studio's playback, so the wheel keys the frame shown.
       if (direction) stopTimelinePlayback();
       // With World content the wheel moves the Camera toward the point under the pointer, as in 6DoF.
       if (direction && isFreeFrameView()) zoomFrameAt(p, -direction);

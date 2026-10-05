@@ -40,7 +40,7 @@ def stream_video(source, start_time: float, duration: float, name: str) -> Strea
 
 
 def open_video(video, name: str) -> StreamedVideo | MaterializedVideo | RenderedVideo:
-    """Render the `video` output of Stickers and Cutout frame by frame, stream a file-backed VIDEO without a crop,
+    """Render the `video` output of Panorama Studio frame by frame, stream a file-backed VIDEO without a crop,
     and read any other VIDEO whole through the core."""
     if isinstance(video, SceneVideo):
         return RenderedVideo(video)

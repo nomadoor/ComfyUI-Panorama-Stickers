@@ -8,8 +8,8 @@
 - 比較：`tests/test_legacy_goldens.py`。画像と MASK のそれぞれで、次の両方を満たせば合格。
   - 平均の絶対誤差が 0.5/255 以内。
   - チャンネル方向の最大誤差が 8/255 を超える画素が、全画素の 0.1% 以下。
-- 生成とテストでは、ノードのランタイムを描画だけのもの（`render_only_runtime`）に差し替える。プレビュー画像と MP4 を作らず、ComfyUI の temp に書き込まない。
-- 保存先：`tests/fixtures/legacy_goldens/`。`<case>.image.png`（16-bit RGB）と `<case>.mask.png`（16-bit グレー）の組で、旧ノードの分は合計約 530KB（新しいノードの分を含めて約 1MB）。
+- 生成とテストでは、ノードのランタイムを描画だけのもの（`render_only_runtime`）に差し替える。プレビュー画像と MP4 を作らない。旧ノードの case は ComfyUI の temp に書き込まない。Panorama Studio の case が temp に書くのは、出力の ERP の PNG だけである（下記）。
+- 保存先：`tests/fixtures/legacy_goldens/`。`<case>.image.png`（16-bit RGB）と `<case>.mask.png`（16-bit グレー）の組で、旧ノードの分は合計約 530KB（Panorama Studio の分を含めて約 1MB）。
 - 入力はすべてスクリプト内で合成する。背景は 512x256 の 8-bit ERP（経緯線の格子と、継ぎ目・赤道・極の目印）で、`output_preset` は `auto`。
 
 | case | 内容 | 出力サイズ |
@@ -25,36 +25,39 @@
 | `cutout_single_shot` | Cutout の単一ショット（yaw 30°、pitch 10°、roll 15°、90°x60°） | 224x128 |
 
 
-### 新しいノードの基準画像
+### Panorama Studio の基準画像
 
-旧ノードと意図して変えた出力は、新しいノード自身の出力から別の基準画像として生成する（`tools/bake_legacy_goldens.py` の `NODE_CASES`。`PYTHONPATH=<ComfyUI> python tools/bake_legacy_goldens.py <case>` で一つだけ生成できる）。保存先と比べ方は旧ノードと同じ。
+旧ノードと意図して変えた出力は、Panorama Studio の出力から別の基準画像として生成する（`tools/bake_legacy_goldens.py` の `STUDIO_CASES`。`PYTHONPATH=<ComfyUI> python tools/bake_legacy_goldens.py <case>` で一つだけ生成できる）。保存先と比べ方は旧ノードと同じ。
+
+これらは、状態 v2 の Stickers・Cutout（`PanoramaStickersNode`・`PanoramaCutoutNode`）の出力から焼いた `stickers_node_*`・`cutout_node_single_shot` を、#92 でそのノードを外したときに名前だけ変えたものである（中身は焼き直していない）。Panorama Studio は同じ描画の経路を通るので、そのまま一致する。
 
 | case | 内容 | 出力サイズ |
 |---|---|---|
-| `cutout_node_single_shot` | 新しい Cutout（`PanoramaCutoutNode`）で `cutout_single_shot` と同じショットと背景 | 224x128 |
+| `studio_camera_single_shot` | Camera を持つ Studio で `cutout_single_shot` と同じショット（v1 の状態の `shots[0]` が Camera になる）と背景、`bg_color` は黒 | 224x128 |
 
-- 新しい Cutout は、v1 の状態と v2 に読み替えた状態の両方で `cutout_node_single_shot` と一致する（`tests/test_cutout_scene_node.py`）。
-- `cutout_single_shot` とは意図して違う。新しい描画は ERP を画素の中心で標本化し、透視投影の画素を正方にした。エディタ・Cutout・Stickers の画素の位置を揃えるためである（`docs/render-contract.md`）。
+- 大きさは `output_size` からは決まらないので、焼き直しとテストでは `_studio_output_size` を差し替えて 224x128（`STUDIO_SHOT_SIZE`）で撮る（`studio_shot_size`）。
+- Studio は、v1 の状態と v2 に読み替えた状態の両方で `studio_camera_single_shot` と一致する（`tests/test_studio_camera.py`）。
+- `cutout_single_shot` とは意図して違う。新しい描画は ERP を画素の中心で標本化し、透視投影の画素を正方にした。エディタと Studio の出力の画素の位置を揃えるためである（`docs/render-contract.md`）。
   - 旧 Cutout は ERP の画素 i を `u = i`（画素の中心ではなく端）とみなし、背景を ERP の半画素ずらして標本化していた。
-  - 旧 Cutout は垂直の FOV を shot の `vFOV_deg`（60°）にしていたが、新しい Cutout は丸めた出力の大きさから決める（224x128 で 59.5°）。
+  - 旧 Cutout は垂直の FOV を shot の `vFOV_deg`（60°）にしていたが、Studio は丸めた出力の大きさから決める（224x128 で 59.5°）。
   - `cutout_single_shot` との差は平均の絶対誤差で 9.7/255、8/255 を超える画素は 22%（RTX 4070 Ti、CUDA）。半画素のずれを戻すと 2.3/255 になり、残りは垂直の FOV の差である。鋭い格子線の背景なので差が大きく出る。テストはこの差の上限（10.5/255 と、ずれを戻したときの 2.5/255）を確かめる。
-- `cutout_node_single_shot` は RTX 4070 Ti（CUDA）で生成した。
+- `studio_camera_single_shot` は RTX 4070 Ti（CUDA）で生成した。
 - ペイントは `painting_layer`（フロントエンドがアップロードするラスター）を使わず、バックエンドのストローク描画で出している。
 - 基準画像は RTX 4070 Ti（CUDA）で生成した。CPU 経路でも、各 case の差は 0.001/255 未満だった。
 - 平均の絶対誤差だけでは、小さな Sticker のずれを見逃す。`stickers_sky_rotation` で yaw を 1° ずらしても平均は 0.37/255 で収まる。そこで、目に見える差のある画素の割合も判定する。yaw を 0.25° ずらすと 0.33%、1° ずらすと 0.55% の画素が 8/255 を超え、どちらも不合格になる。この検出はテストで確かめている。
 
-### 新しい Stickers の基準画像（Sky を GPU で描く）
+### Camera のない Panorama Studio の基準画像（Sky を GPU で描く）
 
-新しい Stickers は、ERP の出力の Sky も透視投影と同じく、出力の画素の向きから層ごとに直接標本化する（`docs/render-contract.md` の「Sky の描き方」）。旧ノードは Sky を CPU で ERP に描いていた。そのため、次の 5 つの case は、旧ノードの基準画像ではなく、新しい Stickers 自身の出力から焼いた基準画像と比べる。旧ノード自身は今までどおり旧ノードの基準画像と比べる（`tests/test_legacy_goldens.py`）。
+Panorama Studio は、ERP の出力の Sky も透視投影と同じく、出力の画素の向きから層ごとに直接標本化する（`docs/render-contract.md` の「Sky の描き方」）。旧ノードは Sky を CPU で ERP に描いていた。そのため、次の 5 つの case は、旧ノードの基準画像ではなく、Studio 自身の出力の基準画像と比べる。旧ノード自身は今までどおり旧ノードの基準画像と比べる（`tests/test_legacy_goldens.py`）。
 
-- 生成：`PYTHONPATH=<ComfyUI> python tools/bake_legacy_goldens.py stickers_node_sky_rotation stickers_node_sky_crop stickers_node_sky_overlap stickers_node_paint_interleaved stickers_node_coverage_180`。旧ノードの case と同じ v1 の状態と背景を、新しい Stickers（`PanoramaStickersNode`）に通す（`STICKERS_NODE_GOLDENS`、`_on_stickers_node`）。大きさは旧ノードの基準画像と同じ（512x256、180 は 512x512）。
-- 比べるテスト：新しい Stickers の v1 の状態とエディタが保存した v2 の状態（`tests/test_stickers_scene_node.py`）、Camera のない Studio（`tests/test_studio_node.py`）。どれも `stickers_golden(name)` で比べる基準画像を選ぶ。残りの case（`stickers_background_only`・`stickers_paint`・`stickers_paint_mask`）は、旧ノードの基準画像のまま一致する。
+- 生成：`PYTHONPATH=<ComfyUI> python tools/bake_legacy_goldens.py studio_sky_rotation studio_sky_crop studio_sky_overlap studio_paint_interleaved studio_coverage_180`。旧ノードの case と同じ v1 の状態（Camera は無い）と背景を、`output_size` `auto` の Studio に通す（`STUDIO_GOLDENS`、`_on_studio`）。大きさは旧ノードの基準画像と同じ（512x256、180 は 512x512）。Studio は実行のたびに出力の ERP を PNG で ComfyUI の temp に書く（ノード上の表示のため）ので、この case の焼き直しは temp に書き込む。
+- 比べるテスト：Camera のない Studio の v1 の状態（`tests/test_studio_node.py`）と、エディタが保存した v2 の状態（`tests/test_studio_scene.py`）。どちらも `studio_golden(name)` で比べる基準画像を選ぶ。残りの case（`stickers_background_only`・`stickers_paint`・`stickers_paint_mask`）は、旧ノードの基準画像のまま一致する。
 - 比べ方は旧ノードと同じ（平均 0.5/255 以内、8/255 を超える画素 0.1% 以下）。
 - RTX 4070 Ti（CUDA）で焼いた。CPU の経路との差は、平均 0.0003/255 未満、最大 0.01/255。
 - 旧ノードとの差（縁の扱い）：
-  - 旧ノードは Sticker を ERP に硬い縁で描く（`_compose_sticker_patch`。範囲の内か外か）。新しい Stickers は、縁が横切る出力の画素に、画素のうち縁の内側にある割合を掛ける。差のある画素はほぼすべて Sticker の外の縁（±1 画素）にある。`sky_overlap` と `paint_interleaved` で縁の外に数えた画素も、手前の Sticker の縁がほかの層に重なるところである。
-  - 180 の出力では、旧ノードは Sky を幅が出力と同じ 360 の ERP（出力の半分の細かさ）に描いて写していたので、縁も中の色の境目もギザギザだった。新しい Stickers は出力の画素ごとに素材から標本化するので、中の境目も細かい。
-  - 新しい Stickers と旧ノードの基準画像との差（RTX 4070 Ti、CUDA）：
+  - 旧ノードは Sticker を ERP に硬い縁で描く（`_compose_sticker_patch`。範囲の内か外か）。Studio は、縁が横切る出力の画素に、画素のうち縁の内側にある割合を掛ける。差のある画素はほぼすべて Sticker の外の縁（±1 画素）にある。`sky_overlap` と `paint_interleaved` で縁の外に数えた画素も、手前の Sticker の縁がほかの層に重なるところである。
+  - 180 の出力では、旧ノードは Sky を幅が出力と同じ 360 の ERP（出力の半分の細かさ）に描いて写していたので、縁も中の色の境目もギザギザだった。Studio は出力の画素ごとに素材から標本化するので、中の境目も細かい。
+  - Studio と旧ノードの基準画像との差（RTX 4070 Ti、CUDA）：
 
 | case | 平均の絶対誤差 | 8/255 を超える画素 | 最大 |
 |---|---|---|---|
@@ -93,8 +96,8 @@
   - 各ノードを 1 回ずつ捨てて暖めた後、10 回計測し、最小値を採る。
   - CUDA では、計測の前後に `torch.cuda.synchronize()` を入れる。
   - 背景のキャッシュが効かないよう、実行ごとに新しいテンソルを渡す。
-  - 新旧のノードは、同じプロセスで交互に（ABAB）計る。スクリプトの `CANDIDATES` には、旧ノード（`legacy`）と新しい Stickers（`new`、`PanoramaStickersNode`）を同じ場面で入れている。
-- 仕様の目標は、新しいノードの最小値を、旧ノードの最小値の 1.2 倍以内に収めること。
+  - 新旧のノードは、同じプロセスで交互に（ABAB）計る。スクリプトの `CANDIDATES` には、旧ノード（`legacy`）と Camera のない Panorama Studio（`studio`）を同じ場面で入れている。Studio は出力の ERP の PNG を temp に書く分も計る。
+- 仕様の目標は、Studio の最小値を、旧ノードの最小値の 1.2 倍以内に収めること。
 
 ### 基準値の再計測（ユーザーに依頼）
 

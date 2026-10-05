@@ -1,21 +1,18 @@
 import { createPanoVideo } from "./pano_diagnostics.js";
 
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
-// and PanoramaStickersNode's bg_media.
+// and Panorama Studio's bg_media.
 export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media"];
-// PanoramaCutoutNode's source (#77): an ERP IMAGE or VIDEO, or a PANO_SCENE that brings the Scene's
-// background, `scene` and `sticker` media.
-const SOURCE_INPUT_NAMES = ["source"];
 // The inputs that carry the media of the port Sticker: the legacy Stickers sticker_image and
-// PanoramaStickersNode's sticker.
+// Panorama Studio's sticker.
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
-// PanoramaStickersNode's `scene` input, whose items the editor loads from the node's result.
+// Panorama Studio's `scene` input, whose items the editor loads from the node's result.
 export const SCENE_INPUT_NAMES = ["scene"];
 
 const CHANNEL_INPUT_NAMES = {
-  background: [...BACKGROUND_INPUT_NAMES, ...SOURCE_INPUT_NAMES],
-  "external-sticker": [...STICKER_INPUT_NAMES, ...SOURCE_INPUT_NAMES],
-  scene: [...SCENE_INPUT_NAMES, ...SOURCE_INPUT_NAMES],
+  background: BACKGROUND_INPUT_NAMES,
+  "external-sticker": STICKER_INPUT_NAMES,
+  scene: SCENE_INPUT_NAMES,
 };
 
 function originKey(link) {
@@ -84,7 +81,7 @@ export function workflowInputOrigins(workflow, executionId) {
   return origins;
 }
 
-const TRACKED_INPUT_NAMES = [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES, ...SCENE_INPUT_NAMES, ...SOURCE_INPUT_NAMES];
+const TRACKED_INPUT_NAMES = [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES, ...SCENE_INPUT_NAMES];
 const OUTPUT_INPUTS_LIMIT = 256;
 
 // Where the inputs of each output came from, by the output's content. ComfyUI copies an output each time it
@@ -336,7 +333,7 @@ export function resolvePreviewVideoSource(output, videoKeys = [], sourceFromCand
   return "";
 }
 
-// The background VIDEO of the legacy Stickers and Cutout node surfaces, muted. Like PanoramaStickersNode's
+// The background VIDEO of the legacy Stickers and Cutout node surfaces, muted. Like Panorama Studio's
 // Timeline on its node (pano_node_playback.js), it shows its first frame and plays only when asked
 // (play(), toggle()); it loops while it plays, and the surface pauses it when it goes out of sight.
 // onFrame runs for each frame it presents and when it loads, plays, pauses or fails.

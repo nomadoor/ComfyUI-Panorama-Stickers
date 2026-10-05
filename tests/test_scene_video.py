@@ -1,5 +1,4 @@
 import io
-import json
 import os
 from fractions import Fraction
 from pathlib import Path
@@ -10,7 +9,7 @@ import torch
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Stickers node",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
 import av
@@ -18,9 +17,10 @@ from comfy_api.latest import InputImpl, Types
 from comfy_extras.nodes_video import GetVideoComponents
 
 from comfyui_pano_suite import nodes
-from comfyui_pano_suite.nodes import PanoramaCutoutSceneNode, PanoramaPreviewSceneNode
+from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode
 from comfyui_pano_suite.scene_video import RenderedVideo, SceneVideo, _container_and_codec
 from comfyui_pano_suite.sticker_media import open_video
+from scene_test_helpers import shoot, video_frames
 from test_stickers_scene_video import _cfr, _execute, _write_video
 
 
@@ -93,7 +93,7 @@ def test_save_keeps_the_pts_of_a_variable_frame_rate_background_and_its_audio(tm
 
 
 def test_save_without_a_video_spaces_the_frames_at_the_timeline_fps(tmp_path):
-    video = _execute({"version": 2, "timeline": {"fps": 12.0, "length": 3}}, output_preset="1024")[2]
+    video = _execute({"version": 2, "timeline": {"fps": 12.0, "length": 3}}, output_size="1024")[2]
     path = tmp_path / "out.mp4"
 
     video.save_to(str(path), crf=10)
@@ -117,7 +117,7 @@ def test_saved_frames_are_the_rendered_frames_within_the_encoding(tmp_path):
 
 
 def test_default_saves_and_the_stream_source_share_one_render(tmp_path, monkeypatch):
-    video = _execute({"version": 2, "timeline": {"length": 3}}, output_preset="1024")[2]
+    video = _execute({"version": 2, "timeline": {"length": 3}}, output_size="1024")[2]
     passes = _count_renders(monkeypatch)
     _forbid_components(monkeypatch)
 
@@ -135,7 +135,7 @@ def test_default_saves_and_the_stream_source_share_one_render(tmp_path, monkeypa
 
 
 def test_stream_source_is_rendered_again_when_its_file_is_gone(monkeypatch):
-    video = _execute({"version": 2, "timeline": {"length": 2}}, output_preset="1024")[2]
+    video = _execute({"version": 2, "timeline": {"length": 2}}, output_size="1024")[2]
     passes = _count_renders(monkeypatch)
     first = video.get_stream_source()
 
@@ -146,7 +146,7 @@ def test_stream_source_is_rendered_again_when_its_file_is_gone(monkeypatch):
 
 
 def test_trim_and_crop_read_the_stream_source(monkeypatch):
-    video = _execute({"version": 2, "timeline": {"length": 6}}, output_preset="1024")[2]
+    video = _execute({"version": 2, "timeline": {"length": 6}}, output_size="1024")[2]
     _forbid_components(monkeypatch)
 
     trimmed = video.as_trimmed(2 / 24, 3 / 24)
@@ -164,22 +164,22 @@ def _forbid_encoding(monkeypatch):
     monkeypatch.setattr(SceneVideo, "_encode", fail)
 
 
-def _cutout_frames(source):
-    state = json.dumps({"version": 2, "camera": {"aspect": 1.0, "rotation": {"keyframes": [
+def _shot_frames(bg_media):
+    state = {"version": 2, "camera": {"aspect": 1.0, "rotation": {"keyframes": [
         {"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 3, "value": {"yaw_deg": 120.0, "pitch_deg": 20.0}},
-    ]}}})
-    return PanoramaCutoutSceneNode.execute(source=source, coverage="360", output_megapixels=0.01, state_json=state).result[3].get_components().images
+    ]}}}
+    return video_frames(shoot(bg_media, state))
 
 
-def test_cutout_of_the_stickers_video_renders_its_frames_exactly(monkeypatch):
-    stickers_video = _execute({"version": 2, "timeline": {"length": 4}}, bg_media=torch.rand((4, 32, 64, 3)), output_preset="1024")[2]
-    expected = _cutout_frames(stickers_video.get_components().images)
+def test_a_camera_shot_of_the_studio_video_renders_its_frames_exactly(monkeypatch):
+    studio_video = _execute({"version": 2, "timeline": {"length": 4}}, bg_media=torch.rand((4, 32, 64, 3)), output_size="1024")[2]
+    expected = _shot_frames(studio_video.get_components().images)
     _forbid_encoding(monkeypatch)
-    # The Cutout's editor still receives the MP4 of the video, as Stickers' does (#77); the frames are rendered.
+    # The editor still receives the MP4 of the video; the frames are rendered.
     monkeypatch.setattr(nodes, "_bg_media_ui", lambda *args: {})
 
-    assert isinstance(open_video(stickers_video, "source"), RenderedVideo)
-    assert torch.equal(_cutout_frames(stickers_video), expected)
+    assert isinstance(open_video(studio_video, "bg_media"), RenderedVideo)
+    assert torch.equal(_shot_frames(studio_video), expected)
 
 
 def test_stickers_video_as_the_background_of_stickers_keeps_its_frames():
@@ -194,7 +194,7 @@ def test_stickers_video_as_the_background_of_stickers_keeps_its_frames():
 
 
 def test_preview_shows_the_stream_source_of_the_stickers_video(tmp_path):
-    video = _execute({"version": 2, "timeline": {"length": 3}}, output_preset="1024")[2]
+    video = _execute({"version": 2, "timeline": {"length": 3}}, output_size="1024")[2]
 
     output = PanoramaPreviewSceneNode.execute(source=video, coverage="360")
 
@@ -207,7 +207,7 @@ def test_preview_shows_the_stream_source_of_the_stickers_video(tmp_path):
 
 
 def test_preview_shows_a_proxy_of_a_long_stickers_video_and_keeps_its_stream_source(tmp_path):
-    video = _execute({"version": 2, "timeline": {"length": 30}}, output_preset="1024")[2]
+    video = _execute({"version": 2, "timeline": {"length": 30}}, output_size="1024")[2]
     source = Path(video.get_stream_source())
     stream_source = source.read_bytes()
 
@@ -225,7 +225,7 @@ def test_preview_shows_a_proxy_of_a_long_stickers_video_and_keeps_its_stream_sou
 
 
 def test_reading_the_video_stops_when_the_queue_is_interrupted(monkeypatch):
-    video = _execute({"version": 2, "timeline": {"length": 3}}, output_preset="1024")[2]
+    video = _execute({"version": 2, "timeline": {"length": 3}}, output_size="1024")[2]
     calls = []
 
     def interrupted():
@@ -240,13 +240,14 @@ def test_reading_the_video_stops_when_the_queue_is_interrupted(monkeypatch):
 
 
 def test_odd_sizes_are_saved_without_their_last_row_and_column(tmp_path):
-    video = _execute({"version": 2, "timeline": {"length": 2}}, bg_media=torch.rand((1, 17, 33, 3)))[2]
+    # output_size auto: the bg_media width, and half of it high.
+    video = _execute({"version": 2, "timeline": {"length": 2}}, bg_media=torch.rand((1, 17, 35, 3)))[2]
     path = tmp_path / "odd.mkv"
 
     video.save_to(str(path))
 
-    assert video.get_dimensions() == (33, 17)
-    assert InputImpl.VideoFromFile(str(path)).get_dimensions() == (32, 16)
+    assert video.get_dimensions() == (35, 17)
+    assert InputImpl.VideoFromFile(str(path)).get_dimensions() == (34, 16)
 
 
 @pytest.mark.parametrize("path", ["out.mp4", "out.mkv", "out.webm", "out.mov", io.BytesIO()], ids=["mp4", "mkv", "webm", "mov", "buffer"])

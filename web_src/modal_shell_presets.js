@@ -13,7 +13,7 @@ export function buildModalShellPreset(type = "stickers") {
     ],
     // How the panorama view moves in space (#71): at the left end of the bottom-right buttons, the
     // 3DoF | 6DoF icon buttons and Frame Selected show together while the panorama view shows World content
-    // (PanoFloatingRight.vue). The Cutout editor shows them for a PANO_SCENE with World content (#77).
+    // (PanoFloatingRight.vue).
     spaceButtons: [
       { key: "3dof", label: "3DoF", tip: "3DoF", icon: ICON.dof_3 },
       { key: "6dof", label: "6DoF", tip: "6DoF", icon: ICON.dof_6 },
@@ -30,7 +30,7 @@ export function buildModalShellPreset(type = "stickers") {
           ]
         : [
             { key: "add", attr: "data-tool-ui-action", value: "add", label: "Add Image", tip: "Add image", active: false, accent: true, icon: ICON.image, pressed: null },
-            // PanoramaStickersNode only (#72): an image placed in space as a world Sticker.
+            // Panorama Studio only (#72): an image placed in space as a world Sticker.
             { key: "add-world", attr: "data-tool-ui-action", value: "add-world", label: "Add World Image", tip: "Add image in space", active: false, accent: false, icon: ICON.globe, pressed: null, visible: false },
             // Panorama Studio's one Camera; disabled, not hidden, while it has one.
             ...(isStudio ? [{ key: "add-camera", attr: "data-tool-ui-action", value: "add-camera", label: "Add Camera", tip: "Add camera", active: false, accent: false, icon: ICON.camera_plus, pressed: null }] : []),

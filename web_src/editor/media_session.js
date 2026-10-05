@@ -31,7 +31,7 @@ import { getCachedVideoThumbnails, setCachedVideoThumbnails } from "./video_thum
 
 export function createMediaSession(deps) {
   const {
-    comfyMedia, cutoutV2, editor, editorView, floatingRightEl, imageCache, loadPreferredExactLinkedImage,
+    comfyMedia, editor, editorView, floatingRightEl, imageCache, loadPreferredExactLinkedImage,
     mediaAssetSource, mediaSource, mediaUiImage, node, portStillCanvas, portVideoEl, readOnly, runtime,
     scheduler, stageWrap, state, stateV2, stillCanvas, studio, timelinePlayhead, type, uiState, videoEl,
   } = deps;
@@ -217,7 +217,7 @@ export function createMediaSession(deps) {
   videoCleanupFns.push(() => {
     resetVideoThumbnails();
   });
-  // The background VIDEO's playback: PanoramaStickersNode's Timeline, else the legacy transport, on
+  // The background VIDEO's playback: Panorama Studio's Timeline, else the legacy transport, on
   // a Timeline of the VIDEO's own length. The legacy transport loops seamlessly through the VIDEO's
   // own loop, so its playback then has no end.
   const playback = createVideoPlayback({
@@ -250,7 +250,7 @@ export function createMediaSession(deps) {
     },
   });
   videoCleanupFns.push(() => playback.dispose());
-  // PanoramaStickersNode's port Sticker plays its MP4 along the playhead, muted (#83).
+  // Panorama Studio's port Sticker plays its MP4 along the playhead, muted (#83).
   const portVideo = stateV2 && portVideoEl instanceof HTMLVideoElement
     ? createVideoFollower({
       video: portVideoEl,
@@ -417,7 +417,7 @@ export function createMediaSession(deps) {
       thumbnailCount: Math.max(1, Number(extra.thumbnailCount ?? uiState.videoTransport.thumbnailCount ?? VIDEO_THUMBNAIL_COUNT)),
     });
   }
-  // PanoramaStickersNode plays the background VIDEO from the Timeline, so the video's own transport is hidden.
+  // Panorama Studio plays the background VIDEO from the Timeline, so the video's own transport is hidden.
   function getVideoTransportVisible() {
     return !!(videoEl instanceof HTMLVideoElement
       && !stateV2
@@ -425,7 +425,7 @@ export function createMediaSession(deps) {
       && editor.primaryTool !== "paint"
       && editor.primaryTool !== "mask");
   }
-  // Mutes or unmutes the background VIDEO: the video transport's button, or the Timeline's for PanoramaStickersNode.
+  // Mutes or unmutes the background VIDEO: the video transport's button, or the Timeline's for Panorama Studio.
   function toggleVideoMuted() {
     if (!(videoEl instanceof HTMLVideoElement)) return;
     if (!uiState.videoTransport.hasAudio) return;
@@ -503,7 +503,7 @@ export function createMediaSession(deps) {
     const duration = Number(meta?.duration || (meta?.frames > 0 ? meta.frames / fps : fileDuration));
     const frameCount = Math.max(0, Number(meta?.frames || Math.round(duration * fps)));
     const hasAudio = !!meta?.has_audio || detectVideoHasAudio(videoEl);
-    // PanoramaStickersNode shows the playhead's frame of a new source; the legacy transport starts it at 0.
+    // Panorama Studio shows the playhead's frame of a new source; the legacy transport starts it at 0.
     if (nextSrc && videoEl.dataset.panoSrc !== nextSrc) {
       videoEl.pause();
       dropVideoStill();
@@ -524,7 +524,7 @@ export function createMediaSession(deps) {
       resetVideoThumbnails();
       playback.setSource(false);
     }
-    // The legacy transport loops through the VIDEO's own loop; PanoramaStickersNode's playback sets it.
+    // The legacy transport loops through the VIDEO's own loop; Panorama Studio's playback sets it.
     if (!stateV2) videoEl.loop = !!uiState.videoTransport.loop;
     if (nextSrc && !stateV2 && videoState.thumbnailSrc !== nextSrc && !videoState.thumbnailFailedSrcs.has(nextSrc)) {
       void buildVideoThumbnails(nextSrc, duration, fps);
@@ -638,9 +638,7 @@ export function createMediaSession(deps) {
   }
 
   function getConnectedErpImage() {
-    // PanoramaCutoutNode reads its background from its result as Stickers does: the ERP on `source`, or the
-    // background of the PANO_SCENE it shot.
-    if (type === "cutout" && !cutoutV2) {
+    if (type === "cutout") {
       const displaySource = getDisplayBackgroundSource();
       if (displaySource) return displaySource;
       const linked = loadPreferredExactLinkedImage(
@@ -670,12 +668,6 @@ export function createMediaSession(deps) {
     return img || uiImg || null;
   }
 
-  // The type of the link into PanoramaCutoutNode's source, or "" without one.
-  function sourceLinkType() {
-    const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === "source");
-    return slot >= 0 && node.graph ? String(node.getInputLink(slot)?.type || "") : "";
-  }
-
   // The background of the Scene on Panorama Studio's `scene` input in the node's current result (#90), used in
   // place of its own bg_media: { imageKey, videoKey, metaKey, coverage } (pano_upstream.js), or null. It comes
   // through `scene` alone, so a relinked bg_media (which the node does not use) leaves it current.
@@ -692,9 +684,7 @@ export function createMediaSession(deps) {
   function backgroundInputNames() {
     // With the upstream Scene's background, the node's own bg_media is not shown.
     if (upstreamBackground()) return [];
-    // An ERP on PanoramaCutoutNode's source shows before the node runs; a PANO_SCENE's background comes
-    // only with the Cutout's result.
-    if (type === "cutout") return cutoutV2 ? (sourceLinkType() === "PANO_SCENE" ? [] : ["source"]) : ["erp_image", "bg_erp"];
+    if (type === "cutout") return ["erp_image", "bg_erp"];
     const inputNames = Array.isArray(node?.inputs)
       ? node.inputs.map((i) => String(i?.name || ""))
       : [];

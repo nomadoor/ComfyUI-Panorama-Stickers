@@ -60,7 +60,7 @@ class TestNodesPreview(unittest.TestCase):
             pass
 
         class _IoModule(SimpleNamespace):
-            # Port types these tests do not look at, such as the new Stickers node's media ports.
+            # Port types these tests do not look at, such as Panorama Studio's media ports.
             def __getattr__(self, name):
                 return _PortFactory(name)
 

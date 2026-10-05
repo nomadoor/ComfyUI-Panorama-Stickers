@@ -8,7 +8,7 @@ pytest.importorskip("comfy_api.latest", reason="ComfyUI's real V3 API is require
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.cache import nbytes
-from comfyui_pano_suite.nodes import RENDER_FLOATS_PER_PIXEL, PanoramaStickersNode, PanoramaStickersSceneNode
+from comfyui_pano_suite.nodes import RENDER_FLOATS_PER_PIXEL, PanoramaStickersNode, PanoramaStudioNode
 
 
 def _record_free_memory(monkeypatch, device=torch.device("cpu"), free=0):
@@ -26,7 +26,7 @@ def test_each_render_pass_frees_its_estimate_once(monkeypatch):
     sticker = torch.rand(1, 40, 30, 4)
     bg = torch.rand(3, 64, 128, 3)
 
-    result = PanoramaStickersSceneNode.execute("#00ff00", "360", "256", "", bg_media=bg, sticker=sticker).result
+    result = PanoramaStudioNode.execute("#00ff00", "360", "256", "", bg_media=bg, sticker=sticker).result
 
     assert len(calls) == 1
     required, device = calls[0]
@@ -43,7 +43,7 @@ def test_the_estimate_counts_the_3d_media(monkeypatch, tmp_path):
     splat = nodes.Types.SPLAT(torch.zeros(1, 50, 3), torch.full((1, 50, 3), 0.01), torch.tensor([[[1.0, 0, 0, 0]]]).expand(1, 50, 4),
                               torch.zeros(1, 50, 1), torch.zeros(1, 50, 1, 3))
 
-    PanoramaStickersSceneNode.execute("#00ff00", "360", "256", "", scene=splat)
+    PanoramaStudioNode.execute("#00ff00", "360", "256", "", scene=splat)
 
     assert calls[0][0] == 256 * 128 * RENDER_FLOATS_PER_PIXEL * 4 + nbytes(splat)
 
@@ -53,7 +53,7 @@ def test_cpu_renders_do_not_free_device_memory(monkeypatch):
     monkeypatch.setattr(nodes.comfy.model_management, "get_torch_device", lambda: torch.device("cpu"))
     monkeypatch.setattr(nodes.comfy.model_management, "free_memory", lambda *args, **kwargs: calls.append(args))
 
-    PanoramaStickersSceneNode.execute("#00ff00", "360", "256", json.dumps({"version": 2}))
+    PanoramaStudioNode.execute("#00ff00", "360", "256", json.dumps({"version": 2}))
 
     assert calls == []
 
@@ -95,6 +95,6 @@ def test_legacy_stickers_does_not_empty_the_cache_per_chunk(monkeypatch):
 def test_a_pass_with_enough_free_memory_does_not_free_any(monkeypatch):
     calls = _record_free_memory(monkeypatch, free=1024 ** 4)
 
-    PanoramaStickersSceneNode.execute("#00ff00", "360", "256", "", bg_media=torch.rand(1, 64, 128, 3))
+    PanoramaStudioNode.execute("#00ff00", "360", "256", "", bg_media=torch.rand(1, 64, 128, 3))
 
     assert calls == []

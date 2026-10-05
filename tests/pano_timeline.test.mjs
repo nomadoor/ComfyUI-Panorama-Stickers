@@ -18,7 +18,6 @@ import {
   keyedAt,
   rowKeyframes,
   selectedEasing,
-  timelineOpens,
   setLaneValue,
   setSegmentEasing,
   MAX_TICKS,
@@ -253,8 +252,8 @@ test("a state is timed when it has a Keyframe or a Clip range other than the who
   assert.equal(isTimed(state), false);
   assert.equal(isTimed({ ...state, camera: null }, { camera: true }), false, "a state without a Camera");
   keyAllLanes(state.camera, 0);
-  assert.equal(isTimed(state), false, "Stickers has no Camera (ADR 0028)");
-  assert.equal(isTimed(state, { camera: true }), true, "Cutout shoots with the Camera");
+  assert.equal(isTimed(state), false, "the Camera counts only with `camera`");
+  assert.equal(isTimed(state, { camera: true }), true, "Panorama Studio shoots with the Camera");
 });
 
 test("the Timeline shows its length, or the video's without one, widened to Clip ranges and Keyframes", () => {
@@ -270,8 +269,8 @@ test("the Timeline shows its length, or the video's without one, widened to Clip
   assert.equal(timelineSpan(loadSceneState(null), { minimum: 120, camera: true }), 120, "a state without a Camera");
   const camera = loadSceneState({ version: 2, camera: {} });
   keyAllLanes(camera.camera, 200);
-  assert.equal(timelineSpan(camera, { minimum: 120 }), 120, "Stickers has no Camera (ADR 0028)");
-  assert.equal(timelineSpan(camera, { minimum: 120, camera: true }), 201, "Cutout shoots with the Camera");
+  assert.equal(timelineSpan(camera, { minimum: 120 }), 120, "the Camera counts only with `camera`");
+  assert.equal(timelineSpan(camera, { minimum: 120, camera: true }), 201, "Panorama Studio shoots with the Camera");
 });
 
 test("a Clip range end reopens at the span set by everything else", () => {
@@ -315,12 +314,12 @@ test("the Timeline's playhead and play button follow the playback", () => {
   assert.match(editorFunction("setTimelineFrame"), /timelinePlayhead\.frame\.value = next;/);
   assert.doesNotMatch(editorFunction("syncTimeline"), /playing|frame: editor\.frame|label/);
   assert.doesNotMatch(editorFunction("setTimelineFrame"), /updateSidePanel\(\);\s*updateSelectionMenu/);
-  // Only PanoramaStickersNode's edits stop playback; the legacy transport plays on.
+  // Only Panorama Studio's edits stop playback; the legacy transport plays on.
   assert.match(editorFunction("stopTimelinePlayback"), /if \(stateV2\) playback\.stop\(\);/);
   assert.doesNotMatch(editorSource, /videoState\.(seeking|pendingPlaybackResume|requestedTime|seekLanding|mode)\b/);
 });
 
-test("PanoramaStickersNode builds no filmstrip and a filmstrip is not built again for the same VIDEO", () => {
+test("Panorama Studio builds no filmstrip and a filmstrip is not built again for the same VIDEO", () => {
   assert.match(editorFunction("refreshModalVideoSource"), /if \(nextSrc && !stateV2 && videoState\.thumbnailSrc !== nextSrc && !videoState\.thumbnailFailedSrcs\.has\(nextSrc\)\) \{\s*void buildVideoThumbnails\(nextSrc, duration, fps\);/);
   assert.equal(editorSource.match(/void buildVideoThumbnails\(/g).length, 1);
   assert.match(editorSource, /if \(!loaded \|\| videoWidth < 1 \|\| videoHeight < 1\) \{\s*videoState\.thumbnailFailedSrcs\.add\(safeSrc\);\s*return;/);
@@ -387,20 +386,16 @@ test("an fps from a run, an fps edit and undoing one keep the playhead's time", 
   assert.match(editorFunction("restoreHistory"), /if \(stateV2 && state\.timeline\.fps !== fps\) playback\.seek\(Math\.round\(editor\.frame \* state\.timeline\.fps \/ fps\)\);/);
 });
 
-test("the Timeline opens by itself on the Camera's Keyframes in the Cutout and Panorama Studio, not in Stickers (#89)", () => {
+test("Panorama Studio's Timeline opens by itself on its Camera's Keyframes and on the rest (#89)", () => {
   const state = loadSceneState({ version: 2, camera: {} });
-  assert.equal(timelineOpens(state), false);
+  assert.equal(isTimed(state, { camera: true }), false);
   keyAllLanes(state.camera, 0);
-  assert.equal(timelineOpens(state), false, "Stickers has no Camera (ADR 0028)");
-  assert.equal(timelineOpens(state, { camera: true }), true, "Panorama Studio");
-  assert.equal(timelineOpens(state, { cameraOnly: true }), true, "the Cutout");
-  // Panorama Studio counts the rest too; the Cutout shows only its Camera.
+  assert.equal(isTimed(state, { camera: true }), true);
   const sticker = loadSceneState({ version: 2, camera: {} });
   keyAllLanes(sticker.scene, 0);
-  assert.equal(timelineOpens(sticker, { camera: true }), true);
-  assert.equal(timelineOpens(sticker, { cameraOnly: true }), false);
+  assert.equal(isTimed(sticker, { camera: true }), true);
   // Without a Camera there is nothing of it to count.
-  assert.equal(timelineOpens(loadSceneState({ version: 2 }), { camera: true }), false);
+  assert.equal(isTimed(loadSceneState({ version: 2 }), { camera: true }), false);
 });
 
 test("the fps and length fields bring what is typed into range and reject what is not a number", () => {

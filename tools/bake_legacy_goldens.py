@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Bake golden images from the legacy PanoramaStickers and PanoramaCutout nodes, and from the new nodes where
-their output differs from the legacy one on purpose (`NODE_CASES`).
+"""Bake golden images from the legacy PanoramaStickers and PanoramaCutout nodes, and from Panorama Studio where
+its output differs from the legacy one on purpose (`STUDIO_CASES`).
 
 Run from the repository root with ComfyUI on PYTHONPATH, optionally naming the cases to bake:
     PYTHONPATH=/path/to/ComfyUI python tools/bake_legacy_goldens.py [case ...]
@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.node_runtime import NodeRuntime
-from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaCutoutSceneNode, PanoramaStickersNode, PanoramaStickersSceneNode
+from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersNode, PanoramaStudioNode
 from tools.golden_png import write_png16
 
 
@@ -154,14 +154,29 @@ def _run_cutout(shot: dict):
     return result[0][0].numpy(), result[2][0].numpy()
 
 
-def _run_cutout_node(shot: dict):
-    result = PanoramaCutoutSceneNode.execute(
-        source=build_background_erp(),
-        coverage="360",
-        state_json=json.dumps({"shots": [shot]}),
-        output_megapixels=0.03,
-    ).result
-    return result[0][0].numpy(), result[2][0].numpy()
+# The size of the Camera output of `studio_camera_single_shot`, the legacy Cutout's `cutout_single_shot` at
+# output_megapixels 0.03. output_size does not give it, so the golden is shot at this size.
+STUDIO_SHOT_SIZE = (224, 128)
+
+
+@contextmanager
+def studio_shot_size(size: tuple[int, int]):
+    """Panorama Studio with its Camera output at `size`, whatever output_size gives."""
+    output_size = nodes._studio_output_size
+    nodes._studio_output_size = lambda *_args, **_kwargs: (*size, None)
+    try:
+        yield
+    finally:
+        nodes._studio_output_size = output_size
+
+
+def _run_studio_shot(shot: dict):
+    """The legacy Cutout case's shot (a v1 state, read as its Camera) and background through Panorama Studio."""
+    with render_only_runtime(), studio_shot_size(STUDIO_SHOT_SIZE):
+        result = PanoramaStudioNode.execute(
+            bg_color="#000000", coverage="360", output_size="1024", state_json=json.dumps({"shots": [shot]}), bg_media=build_background_erp(),
+        ).result
+    return result[0][0].numpy(), result[1][0].numpy()
 
 
 # sky Stickers are the legacy direction-only stickers (yaw/pitch/FOV on the sphere).
@@ -198,25 +213,25 @@ CASES = {
     "cutout_single_shot": lambda: _run_cutout(CUTOUT_SHOT),
 }
 
-def _run_stickers_node(coverage: str, stickers=(), painting=None):
-    """A legacy Stickers case's v1 state and background through the new Stickers node (`PanoramaStickersNode`)."""
+def _run_studio(coverage: str, stickers=(), painting=None):
+    """A legacy Stickers case's v1 state (without a Camera) and background through Panorama Studio."""
     state = {"assets": ASSETS, "stickers": list(stickers)}
     if painting is not None:
         state["painting"] = painting
     with render_only_runtime():
-        result = PanoramaStickersSceneNode.execute(
-            bg_color="#00ff00", coverage=coverage, output_preset="auto", state_json=json.dumps(state), bg_media=build_background_erp(),
+        result = PanoramaStudioNode.execute(
+            bg_color="#00ff00", coverage=coverage, output_size="auto", state_json=json.dumps(state), bg_media=build_background_erp(),
         ).result
     # The outputs need not be contiguous (a 180 one is not); the PNG writer needs contiguous rows.
     return np.ascontiguousarray(result[0][0].numpy()), np.ascontiguousarray(result[1][0].numpy())
 
 
-def _on_stickers_node(name: str):
-    """The legacy case `name` run through the new Stickers node instead of the legacy one."""
+def _on_studio(name: str):
+    """The legacy Stickers case `name` run through Panorama Studio instead of the legacy node."""
     def run():
         global _run_stickers
         legacy = _run_stickers
-        _run_stickers = _run_stickers_node
+        _run_stickers = _run_studio
         try:
             return CASES[name]()
         finally:
@@ -225,29 +240,29 @@ def _on_stickers_node(name: str):
     return run
 
 
-# The legacy cases whose new Stickers output differs on purpose, with the name of the new node's golden: it draws a
-# sky Sticker's edge pixels covered in part (the legacy one cuts them), and a 180 output samples the Sticker at the
-# output's pixels instead of from a 360 ERP as wide as the output (`docs/legacy-baselines.md`).
-STICKERS_NODE_GOLDENS = {
-    name: name.replace("stickers_", "stickers_node_", 1)
+# The legacy Stickers cases whose Panorama Studio output differs on purpose, with the name of Studio's golden: it
+# draws a sky Sticker's edge pixels covered in part (the legacy one cuts them), and a 180 output samples the Sticker
+# at the output's pixels instead of from a 360 ERP as wide as the output (`docs/legacy-baselines.md`).
+STUDIO_GOLDENS = {
+    name: name.replace("stickers_", "studio_", 1)
     for name in ("stickers_sky_rotation", "stickers_sky_crop", "stickers_sky_overlap", "stickers_paint_interleaved", "stickers_coverage_180")
 }
 
-# The new Cutout samples at pixel centers with square pixels, so it does not reproduce `cutout_single_shot`.
-NODE_CASES = {
-    "cutout_node_single_shot": lambda: _run_cutout_node(CUTOUT_SHOT),
-    **{node: _on_stickers_node(name) for name, node in STICKERS_NODE_GOLDENS.items()},
+# Studio's Camera samples at pixel centers with square pixels, so it does not reproduce `cutout_single_shot`.
+STUDIO_CASES = {
+    "studio_camera_single_shot": lambda: _run_studio_shot(CUTOUT_SHOT),
+    **{studio: _on_studio(name) for name, studio in STUDIO_GOLDENS.items()},
 }
 
 
-def stickers_golden(name: str) -> str:
-    """The golden the new Stickers (and Studio without a Camera) output of the legacy case `name` is compared with."""
-    return STICKERS_NODE_GOLDENS.get(name, name)
+def studio_golden(name: str) -> str:
+    """The golden Panorama Studio's output (without a Camera) of the legacy Stickers case `name` is compared with."""
+    return STUDIO_GOLDENS.get(name, name)
 
 
 def main(names: list[str]) -> int:
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
-    cases = {**CASES, **NODE_CASES}
+    cases = {**CASES, **STUDIO_CASES}
     for name in names or cases:
         image, mask = cases[name]()
         write_png16(FIXTURE_DIR / f"{name}.image.png", image)

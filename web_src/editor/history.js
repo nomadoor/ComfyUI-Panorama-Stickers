@@ -1,5 +1,5 @@
 // The editor's Undo history: what a snapshot keeps, how many are kept, and undo / redo.
-import { makePanoEditorHistorySnapshot, noteCameraEdit, restoredHistoryState } from "../pano_editor_state.js";
+import { makePanoEditorHistorySnapshot, restoredHistoryState } from "../pano_editor_state.js";
 import { createHistoryController } from "../pano_paint_history.js";
 
 // The steps an editor keeps. Each is the whole state as JSON, without its history and painting layer
@@ -33,8 +33,6 @@ export function createHistory(deps) {
   function pushHistory() {
     if (readOnly) return;
     syncCutoutShot();
-    // The snapshot keeps whether the Camera was edited, so only undoing to the first one brings the mark back.
-    noteCameraEdit(state);
     // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
     if (stateV2 && state.stickers.some(isUploadingSticker)) return;
     editor.historyController.commitActionGroup(historySnapshot(state));

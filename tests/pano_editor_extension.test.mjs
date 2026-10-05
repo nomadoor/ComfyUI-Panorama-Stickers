@@ -93,44 +93,7 @@ test("stickers lifecycle hides the fallback button only after the shared DOM sur
   assert.equal(node.widgets.find((widget) => widget.name === "Open Stickers Editor").hidden, true);
 });
 
-test("the new Stickers node opens the same editor and node surface and keeps state v2", () => {
-  const opened = [];
-  const attached = [];
-  const extension = createPanoEditorExtension({
-    app: { canvas: { setDirty() {} } },
-    openEditor(node, type) { opened.push([node, type]); },
-    attachStickers(node, options) {
-      attached.push(node);
-      node.__panoStickersNodeSurface = { mounted: true };
-      options.onOpen();
-    },
-    attachCutout() {},
-    attachPreview() {},
-    requestFrame(callback) { callback(); },
-    enableStickersPreview: true,
-  });
-  function SceneNodeType() {}
-  function LegacyNodeType() {}
-  extension.beforeRegisterNodeDef(SceneNodeType, { name: "PanoramaStickersNode" });
-  extension.beforeRegisterNodeDef(LegacyNodeType, { name: "PanoramaStickers" });
-  const node = makeNode([360, 260]);
-  node.widgets.find((widget) => widget.name === "bg_color").value = "#000000";
-  const legacy = makeNode([360, 260]);
-
-  SceneNodeType.prototype.onNodeCreated.call(node);
-  SceneNodeType.prototype.onConfigure.call(node);
-  LegacyNodeType.prototype.onNodeCreated.call(legacy);
-
-  assert.deepEqual(opened, [[node, "stickers"], [legacy, "stickers"]]);
-  assert.deepEqual(attached, [node, legacy]);
-  assert.equal(node.__panoSceneStateV2, true);
-  assert.equal(legacy.__panoSceneStateV2, false);
-  assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
-  // A black bg_color is the user's choice on the new node; only the legacy node replaces it.
-  assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
-});
-
-test("Panorama Studio opens the Stickers editor on state v2 with its Camera, and keeps the Stickers node surface (#89)", () => {
+test("Panorama Studio opens the Stickers editor and node surface on state v2 with its Camera, beside the legacy Stickers (#89)", () => {
   const opened = [];
   const attached = [];
   const extension = createPanoEditorExtension({
@@ -147,24 +110,45 @@ test("Panorama Studio opens the Stickers editor on state v2 with its Camera, and
     enableStickersPreview: true,
   });
   function StudioNodeType() {}
-  function StickersNodeType() {}
+  function LegacyNodeType() {}
   extension.beforeRegisterNodeDef(StudioNodeType, { name: "PanoramaStudio" });
-  extension.beforeRegisterNodeDef(StickersNodeType, { name: "PanoramaStickersNode" });
+  extension.beforeRegisterNodeDef(LegacyNodeType, { name: "PanoramaStickers" });
   const node = makeNode([360, 260]);
-  const stickers = makeNode([360, 260]);
+  node.widgets.find((widget) => widget.name === "bg_color").value = "#000000";
+  const legacy = makeNode([360, 260]);
 
   StudioNodeType.prototype.onNodeCreated.call(node);
-  StickersNodeType.prototype.onNodeCreated.call(stickers);
+  StudioNodeType.prototype.onConfigure.call(node);
+  LegacyNodeType.prototype.onNodeCreated.call(legacy);
 
-  assert.deepEqual(opened, [[node, "stickers"], [stickers, "stickers"]]);
-  assert.deepEqual(attached, [node, stickers]);
+  assert.deepEqual(opened, [[node, "stickers"], [legacy, "stickers"]]);
+  assert.deepEqual(attached, [node, legacy]);
   assert.deepEqual([node.__panoSceneStateV2, node.__panoStudio], [true, true]);
-  assert.deepEqual([stickers.__panoSceneStateV2, stickers.__panoStudio], [true, false]);
+  assert.deepEqual([legacy.__panoSceneStateV2, legacy.__panoStudio], [false, false]);
   assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
+  // A black bg_color is the user's choice on Panorama Studio; only the legacy node replaces it.
+  assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
+});
+
+test("the removed state v2 Stickers and Cutout node ids get no editor (#92)", () => {
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() { throw new Error("no editor"); },
+    attachStickers() { throw new Error("no surface"); },
+    attachCutout() { throw new Error("no surface"); },
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  for (const name of ["PanoramaStickersNode", "PanoramaCutoutNode"]) {
+    function NodeType() {}
+    extension.beforeRegisterNodeDef(NodeType, { name });
+    assert.equal(NodeType.prototype.onNodeCreated, undefined, name);
+  }
 });
 
 // LiteGraph.createNode runs onNodeCreated before graph.add, and getInputLink throws without a graph.
-test("the sticker input syncs once the Stickers node is in the graph, for the legacy and the new node", () => {
+test("the sticker input syncs once the node is in the graph, for the legacy Stickers and Panorama Studio", () => {
   const synced = [];
   const extension = createPanoEditorExtension({
     app: { canvas: { setDirty() {} } },
@@ -178,7 +162,7 @@ test("the sticker input syncs once the Stickers node is in the graph, for the le
     requestFrame(callback) { callback(); },
     enableStickersPreview: true,
   });
-  for (const name of ["PanoramaStickers", "PanoramaStickersNode"]) {
+  for (const name of ["PanoramaStickers", "PanoramaStudio"]) {
     function NodeType() {}
     extension.beforeRegisterNodeDef(NodeType, { name });
     const node = { ...makeNode([360, 260]), title: name, graph: null, inputs: [{ name: "sticker" }] };
@@ -193,7 +177,7 @@ test("the sticker input syncs once the Stickers node is in the graph, for the le
     NodeType.prototype.onConfigure.call(node);
   }
 
-  assert.deepEqual(synced, [["PanoramaStickers", "attach", null], ["PanoramaStickersNode", "attach", null]]);
+  assert.deepEqual(synced, [["PanoramaStickers", "attach", null], ["PanoramaStudio", "attach", null]]);
 });
 
 test("a loaded graph restores the last output of each editor node and leaves other nodes alone", () => {
@@ -209,7 +193,7 @@ test("a loaded graph restores the last output of each editor node and leaves oth
     enableStickersPreview: true,
   });
   function NodeType() {}
-  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStickersNode" });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStudio" });
   const node = makeNode([360, 260]);
   NodeType.prototype.onNodeCreated.call(node);
   NodeType.prototype.onConfigure.call(node);
@@ -247,6 +231,24 @@ test("cutout lifecycle attaches once and initializes only an invalid node size",
   assert.equal(initialState.shots.length, 1);
   assert.equal(initialState.shots[0].aspect_id, "1:1");
   assert.equal(initialState.active.selected_shot_id, initialState.shots[0].id);
+});
+
+test("the legacy Cutout is marked as editing v1, not state v2", () => {
+  function NodeType() {}
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaCutout" });
+  const node = makeNode([360, 260]);
+
+  NodeType.prototype.onNodeCreated.call(node);
+
+  assert.equal(node.__panoSceneStateV2, false);
 });
 
 test("restoring legacy empty Cutout states overrides the new-node default", () => {
@@ -693,35 +695,4 @@ test("sticker operations serialize consecutive replacements", async () => {
   await first;
   await second;
   assert.deepEqual(events, ["first:start", "first:end", "second:start", "second:end"]);
-});
-
-test("PanoramaCutoutNode opens the Cutout editor on state v2 from its button, without the legacy on-node surface (#77)", () => {
-  const opened = [];
-  const attached = [];
-  const extension = createPanoEditorExtension({
-    app: { canvas: { setDirty() {} } },
-    openEditor(node, type) { opened.push([node, type]); },
-    attachStickers() {},
-    attachCutout(node) { attached.push(node); },
-    attachPreview() {},
-    requestFrame(callback) { callback(); },
-  });
-  function SceneNodeType() {}
-  function LegacyNodeType() {}
-  extension.beforeRegisterNodeDef(SceneNodeType, { name: "PanoramaCutoutNode" });
-  extension.beforeRegisterNodeDef(LegacyNodeType, { name: "PanoramaCutout" });
-  const node = makeNode([360, 260]);
-  const legacy = makeNode([360, 260]);
-
-  SceneNodeType.prototype.onNodeCreated.call(node);
-  LegacyNodeType.prototype.onNodeCreated.call(legacy);
-  node.widgets.find((widget) => widget.name === "Open Cutout Editor").callback();
-
-  assert.equal(node.__panoSceneStateV2, true);
-  assert.equal(legacy.__panoSceneStateV2, false);
-  assert.deepEqual(attached, [legacy]);
-  assert.deepEqual(opened, [[node, "cutout"]]);
-  // The legacy node starts with a frame in v1; the new node's Camera is always in its state v2.
-  assert.equal(node.widgets.find((widget) => widget.name === "state_json").value, "{}");
-  assert.match(legacy.widgets.find((widget) => widget.name === "state_json").value, /"shots"/);
 });

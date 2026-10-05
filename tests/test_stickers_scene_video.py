@@ -11,7 +11,7 @@ import torch
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Stickers node",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
 import av
@@ -20,14 +20,14 @@ from comfy_api.latest import InputImpl, Types
 from comfyui_pano_suite import nodes, scene_video, sticker_media
 from comfyui_pano_suite.core.video_source import MaterializedVideo, StreamedVideo
 from comfyui_pano_suite.sticker_media import open_video, stream_video
-from comfyui_pano_suite.nodes import PanoramaStickersSceneNode
+from comfyui_pano_suite.nodes import PanoramaStudioNode
 
 
 def _execute(state=None, **inputs):
     inputs.setdefault("bg_color", "#00ff00")
     inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_preset", "auto")
-    return PanoramaStickersSceneNode.execute(
+    inputs.setdefault("output_size", "auto")
+    return PanoramaStudioNode.execute(
         state_json="" if state is None else json.dumps(state),
         **inputs,
     ).result
@@ -85,7 +85,7 @@ def _record_evaluated_frames(monkeypatch):
 def test_file_video_background_streams_the_same_frames_as_the_core_reader(tmp_path):
     video = _cfr(tmp_path)
 
-    first, mask, output, _scene = _execute(bg_media=video)
+    first, mask, output, *_rest = _execute(bg_media=video)
     components = output.get_components()
 
     assert components.images.shape == (10, 32, 64, 3)
@@ -458,7 +458,7 @@ def _camera_keyframes(*frames, lane="rotation"):
 
 
 def _length(state, **inputs):
-    return _execute({"version": 2, **state}, output_preset="1024", **inputs)[2].get_frame_count()
+    return _execute({"version": 2, **state}, output_size="1024", **inputs)[2].get_frame_count()
 
 
 def test_length_comes_from_the_latest_clip_range_end():
@@ -469,12 +469,6 @@ def test_length_comes_from_the_latest_clip_range_end():
     }
 
     assert _length(state) == 7
-
-
-def test_camera_keyframes_do_not_set_the_length():
-    # Stickers has no Camera (ADR 0028); Cutout counts the Keyframes of its own (test_cutout_scene_node.py).
-    assert _length({"camera": _camera_keyframes(0, 9)}) == 1
-    assert _length({"camera": {**_camera_keyframes(0, 4), **_camera_keyframes(6, lane="fov"), **_camera_keyframes(2, 3, lane="position")}}) == 1
 
 
 def test_background_batch_comes_before_clip_ends():

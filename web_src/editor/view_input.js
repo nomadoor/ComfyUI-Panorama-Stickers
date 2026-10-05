@@ -102,7 +102,7 @@ export function createViewInput(deps) {
     const spaceMode = spaceModeWithContent(spaceModeState(), hasContent, spaceOrigin());
     if (spaceMode.mode !== editor.spaceMode) cancelViewTransition();
     applySpaceMode(spaceMode);
-    // `content` is the World alone, as the Cutout's Camera sees it in the Frame view and the camera
+    // `content` is the World alone, as the Camera sees it in the Frame view and the camera
     // preview (#77); `space` adds the guides of the panorama view.
     const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, evaluated, media, upstream) : null;
     const space = isSpaceView() ? { ...content, ...spaceGuides(content) } : null;
@@ -225,7 +225,7 @@ export function createViewInput(deps) {
     return drawn;
   }
 
-  // The three.js camera that looks through the shot. With World content (PanoramaCutoutNode, #77) it
+  // The three.js camera that looks through the shot. With World content (Panorama Studio's Camera) it
   // stands at the shot's position and draws the World too, as the node shoots it.
   function shotViewCamera(shot) {
     const { content } = editorViewInput();

@@ -15,7 +15,7 @@ import {
 
 export function createTimelineActions(deps) {
   const {
-    dragFrames, editor, readOnly, state, stateV2, studio, timeline, uiState,
+    dragFrames, editor, readOnly, state, stateV2, timeline, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
@@ -64,7 +64,7 @@ export function createTimelineActions(deps) {
       if (action.id === PAINTING_ROW) state.painting_visible = !state.painting_visible;
       else {
         const owner = timelineOwner(action.id);
-        if (!owner || (action.id === "camera" && !studio)) return;
+        if (!owner) return;
         owner.visible = !owner.visible;
       }
       releaseHiddenSelection();

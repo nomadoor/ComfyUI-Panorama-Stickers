@@ -212,7 +212,7 @@ def test_moge_reuse_follows_its_tensors(monkeypatch):
     assert nodes._scene_ui(geometry) != first
 
 
-def test_stickers_node_shows_the_scene_files_after_running(monkeypatch):
+def test_studio_shows_the_scene_files_after_running(monkeypatch):
     def render(view, index, device):
         height, width = view.projection.height, view.projection.width
         return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
@@ -220,8 +220,8 @@ def test_stickers_node_shows_the_scene_files_after_running(monkeypatch):
     monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(2, render))
     mesh = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]] * 2)
 
-    output = nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="", scene=mesh)
-    without = nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="")
+    output = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=mesh)
+    without = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="")
 
     assert output.ui["pano_scene_meta"] == [{"kind": "mesh"}] and len(output.ui["pano_scene_files"]) == 2
     assert all(_path(entry).exists() for entry in output.ui["pano_scene_files"])

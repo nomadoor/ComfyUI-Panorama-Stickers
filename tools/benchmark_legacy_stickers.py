@@ -5,8 +5,9 @@ Run from the repository root with ComfyUI on PYTHONPATH:
     PYTHONPATH=/path/to/ComfyUI python tools/benchmark_legacy_stickers.py
 
 Preview images, preview MP4 encoding, and host progress are swapped out, so only
-rendering is timed and nothing is written to ComfyUI's temp directory. Every
-entry in CANDIDATES is timed in turn within each round (ABAB) in this process.
+rendering is timed. Panorama Studio still saves its output ERP as a PNG in ComfyUI's
+temp directory for its node surface, which is timed with it. Every entry in
+CANDIDATES is timed in turn within each round (ABAB) in this process.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from comfyui_pano_suite.nodes import PanoramaStickersNode, PanoramaStickersSceneNode
+from comfyui_pano_suite.nodes import PanoramaStickersNode, PanoramaStudioNode
 from tools.bake_legacy_goldens import ASSETS, ROTATED_POSE, _painting, _sticker, _stroke, build_background_erp, render_only_runtime
 
 
@@ -51,17 +52,17 @@ def run_legacy(bg_erp: torch.Tensor) -> None:
     )
 
 
-def run_new(bg_erp: torch.Tensor) -> None:
-    PanoramaStickersSceneNode.execute(
+def run_studio(bg_erp: torch.Tensor) -> None:
+    PanoramaStudioNode.execute(
         bg_color="#00ff00",
         coverage="360",
-        output_preset="auto",
+        output_size="auto",
         state_json=STATE_JSON,
         bg_media=bg_erp,
     )
 
 
-CANDIDATES = {"legacy": run_legacy, "new": run_new}
+CANDIDATES = {"legacy": run_legacy, "studio": run_studio}
 
 
 def _static_batch(frames: int, width: int) -> torch.Tensor:

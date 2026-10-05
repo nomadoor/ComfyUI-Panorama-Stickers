@@ -224,8 +224,8 @@ export function spaceCamera(view, width, height, sphere = null) {
 }
 
 // A three.js camera setup ({ quaternion, fovY_deg, aspect }, as pano_editor_view.js shotCamera() makes it)
-// placed at a World position, with the near and far of spaceCamera() for a pivot `distance` ahead. The
-// Cutout's Frame view and its camera preview look through the Camera this way (#77).
+// placed at a World position, with the near and far of spaceCamera() for a pivot `distance` ahead. Panorama
+// Studio's Frame view and its camera preview look through the Camera this way.
 export function placedCamera(camera, position, distance, sphere = null) {
   const { center, radius } = sphere ?? { center: [0, 0, 0], radius: DEFAULT_DISTANCE };
   const toCenter = Math.hypot(center[0] - position[0], center[1] - position[1], center[2] - position[2]);
@@ -533,9 +533,8 @@ export function gridSpec(radius) {
   return { step, size: step * 40, divisions: 40 };
 }
 
-// --- Camera guides (#77): a Camera's frustum and its trajectory over the Timeline. The Stickers editor
-// does not draw them (Stickers has no capture Camera); the Cutout editor draws them with renderSpace's
-// `lines` and enters a Camera's view with cameraView().
+// --- Camera guides: a Camera's frustum and its trajectory over the Timeline. Panorama Studio's editor
+// draws them with renderSpace's `lines` and enters a Camera's view with cameraView().
 
 // A Camera value's view: its position and angles, its hFOV across the view width.
 export function cameraView(camera) {

@@ -1,4 +1,4 @@
-// Plays PanoramaStickersNode's Timeline on its node surface (docs/panorama-stickers-node-surface-spec.md).
+// Plays Panorama Studio's Timeline on its node surface (docs/panorama-stickers-node-surface-spec.md).
 // The surface shows NODE_SURFACE_FRAME until it plays. Play loops the Timeline at its fps; pause keeps
 // the frame on screen, where the surface then edits, and play goes on from it. The frame lives only
 // here, so a reload shows NODE_SURFACE_FRAME again. The background VIDEO plays muted through the

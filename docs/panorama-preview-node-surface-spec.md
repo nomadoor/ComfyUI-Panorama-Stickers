@@ -13,7 +13,7 @@ Previewへ編集機能やcamera stateの永続化は追加しない。
 - `image: IMAGE` outputは、core `PreviewImage` と同様に入力 `erp_image` tensorを加工・copyせずそのまま返す。
 - dedicated runtime `web_src/pano_preview_previewnode.js` を維持し、Cutout shared runtimeへ統合しない。
 - image解決、video muted / loop、double-click / Space再生切替、coverage、drag、wheel、inertiaを維持する。
-- videoは自動再生しない。既定は停止で先頭のframeを表示し、double-click / Spaceで再生する。画面外（collapse、別のgraph、subgraphの中）では停止する（`PanoramaStickersNode` のnode surfaceと同じ規則）。
+- videoは自動再生しない。既定は停止で先頭のframeを表示し、double-click / Spaceで再生する。画面外（collapse、別のgraph、subgraphの中）では停止する（状態 v2 のnode surfaceの再生と同じ規則）。
 - cameraは一時状態のままとし、workflowへ新しいparameterやstateを保存しない。
 - Legacy canvas pathは既存挙動と標準 `Open Preview` buttonを維持する。
 

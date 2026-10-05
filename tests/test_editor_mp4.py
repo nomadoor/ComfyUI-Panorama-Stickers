@@ -8,7 +8,7 @@ import torch
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Stickers and Preview nodes",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio and Preview nodes",
 )
 
 import av
@@ -137,8 +137,8 @@ def test_the_proxy_is_encoded_once_per_video(tmp_path, monkeypatch):
 
 
 def test_an_image_batch_gets_short_gops(tmp_path):
-    ui = nodes.PanoramaStickersSceneNode.execute(
-        bg_color="#000000", coverage="360", output_preset="1024", state_json="", bg_media=torch.rand((30, 16, 32, 3))
+    ui = nodes.PanoramaStudioNode.execute(
+        bg_color="#000000", coverage="360", output_size="1024", state_json="", bg_media=torch.rand((30, 16, 32, 3))
     ).ui
 
     entry = ui["pano_input_videos"][0]
@@ -199,8 +199,8 @@ def test_a_proxy_of_an_rgb_file_is_tagged_as_srgb(tmp_path, codec, pix_fmt, deco
 
 def test_an_image_batch_with_alpha_or_gray_gets_an_editor_mp4(tmp_path):
     for channels in (4, 1):
-        ui = nodes.PanoramaStickersSceneNode.execute(
-            bg_color="#000000", coverage="360", output_preset="1024", state_json="", bg_media=torch.rand((3, 16, 32, channels))
+        ui = nodes.PanoramaStudioNode.execute(
+            bg_color="#000000", coverage="360", output_size="1024", state_json="", bg_media=torch.rand((3, 16, 32, channels))
         ).ui
 
         entry = ui["pano_input_videos"][0]
@@ -208,8 +208,8 @@ def test_an_image_batch_with_alpha_or_gray_gets_an_editor_mp4(tmp_path):
 
 
 def _sticker_ui(sticker, state_json=""):
-    return nodes.PanoramaStickersSceneNode.execute(
-        bg_color="#000000", coverage="360", output_preset="1024", state_json=state_json, sticker=sticker
+    return nodes.PanoramaStudioNode.execute(
+        bg_color="#000000", coverage="360", output_size="1024", state_json=state_json, sticker=sticker
     ).ui
 
 

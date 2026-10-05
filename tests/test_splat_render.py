@@ -22,7 +22,7 @@ from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.core.world import world_rotation
 from comfyui_pano_suite.core.world_render import CameraView
 from comfyui_pano_suite.splat_render import splat_content
-from scene_test_helpers import blob as _blob, blobs as _blobs, splat_of as _splat
+from scene_test_helpers import blob as _blob, blobs as _blobs, camera_state, shoot, splat_of as _splat
 
 
 CPU = torch.device("cpu")
@@ -266,7 +266,7 @@ def _splat_file_bytes(splat):
 
 
 def _execute(scene):
-    return nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="", scene=scene)
+    return nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=scene)
 
 
 @pytest.mark.parametrize("file_format", ["ply", "spz", "ksplat", "splat"])
@@ -316,12 +316,12 @@ def test_splat_files_are_told_by_their_contents():
         _execute(Types.File3D(BytesIO(mesh_ply), file_format="ply"))
 
 
-def test_cutout_shoots_the_splat_of_a_pano_scene():
-    # A red ball 4 ahead of the Stickers Camera; the Cutout Camera at the same place sees it in its center.
+def test_a_camera_shoots_the_splat_of_an_upstream_scene():
+    # A red ball 4 ahead of the World origin; a Camera downstream at the same place sees it in its center.
     splat = _blobs(_blob((0.0, 0.0, 4.0), (1.0, 0.0, 0.0), size=0.5))
     pano_scene = _execute(splat).result[3]
 
-    image = nodes.PanoramaCutoutSceneNode.execute(source=pano_scene, coverage="360", output_megapixels=0.05, state_json="").result[0][0]
+    image = shoot(pano_scene, camera_state(), bg_color="#00ff00")[0][0]
 
     height, width = image.shape[:2]
     assert torch.allclose(image[height // 2, width // 2], torch.tensor((1.0, 0.0, 0.0)), atol=0.02)

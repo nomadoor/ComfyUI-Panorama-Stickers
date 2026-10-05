@@ -143,7 +143,7 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evalu
 }
 
 // skyLayers() over the editor's working Stickers (v1 for the legacy node, state v2 for
-// PanoramaStickersNode): media(item) gets the working Sticker a sky Sticker came from, and its
+// Panorama Studio): media(item) gets the working Sticker a sky Sticker came from, and its
 // z_index orders it. Loading renames a missing, non-string or repeated
 // id (the first Sticker keeps it), so a renamed Sticker has no working Sticker and is left out.
 export function workingSkyLayers(sceneState, frame, stickers, { media, paintLayers, evaluated }) {

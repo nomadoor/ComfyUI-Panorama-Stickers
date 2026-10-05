@@ -260,7 +260,7 @@ export function createPanels(deps) {
       : { yaw_deg: 0, pitch_deg: 0, hFOV_deg: 90, vFOV_deg: 60, roll_deg: 0, aspect_id: "1:1" });
     const inspectorSelected = selectedKind === "stroke" ? null : selected;
     const worldInspected = selectedWorldSticker();
-    // PanoramaCutoutNode's Camera has a position in space too (#77).
+    // Panorama Studio's Camera has a position in space too.
     const cameraPositionShown = cameraV2 && (selectedKind === "shot" || selectedKind === "frame") && hasSpaceContent();
     const effective = worldInspected ? worldStickerFields(worldInspected, editor.frame)
       : cameraPositionShown ? { ...inspectorSelected, ...cameraFields(state.camera, editor.frame), vFOV_deg: inspectorSelected.vFOV_deg }

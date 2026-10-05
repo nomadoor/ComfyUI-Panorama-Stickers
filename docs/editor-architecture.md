@@ -82,38 +82,38 @@ export function createHistory(deps) {
 
 | Module | 行 | Responsibility |
 | --- | ---: | --- |
-| `pano_editor.js` | 976 | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
+| `pano_editor.js` | 959 | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
 | `editor/modules.js` | 27 | `createEditorModules`：factory を作ってつなぐ。名前の過不足を投げる |
-| `editor/constants.js` | 51 | 定数 |
-| `editor/helpers.js` | 221 | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
+| `editor/constants.js` | 48 | 定数 |
+| `editor/helpers.js` | 243 | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
 | `editor/ui_settings.js` | 77 | localStorage の設定（視点の反転、ノードごとのグリッド） |
 | `editor/video_thumbnail_cache.js` | 32 | VIDEO のサムネイルのキャッシュ（直近 12 本） |
-| `editor/media_session.js` | 740 | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
-| `editor/history.js` | 87 | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`） |
-| `editor/items.js` | 668 | Sticker、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
+| `editor/media_session.js` | 752 | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
+| `editor/history.js` | 89 | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`） |
+| `editor/items.js` | 667 | Sticker、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
 | `editor/selection.js` | 454 | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
 | `editor/projection.js` | 346 | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |
 | `editor/object_geometry.js` | 324 | 品目の画面上の形（オーバーレイと当たり判定が読む） |
-| `editor/paint_layers.js` | 583 | ペイントの表示の層、ラスターの画像とアルファ、消しゴムのプレビュー、ノードへ送る塗りの層 |
+| `editor/paint_layers.js` | 564 | ペイントの表示の層、ラスターの画像とアルファ、消しゴムのプレビュー、ノードへ送る塗りの層 |
 | `editor/paint_strokes.js` | 587 | 筆跡の点・半径・ラスター化、ペイントエンジンと表示のキャッシュの revision |
 | `editor/external_stickers.js` | 242 | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
-| `editor/space.js` | 292 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作 |
-| `editor/view_input.js` | 258 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
+| `editor/space.js` | 291 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作 |
+| `editor/view_input.js` | 267 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
 | `editor/upstream.js` | 254 | Panorama Studio の上流の Scene（#90）：実行結果の上流の層、その素材とペイント、実行待ちの表示 |
 | `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
 | `editor/overlay.js` | 600 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
 | `editor/render_loop.js` | 410 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
 | `editor/panels.js` | 420 | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
-| `editor/timeline.js` | 202 | Timeline のモデル、再生位置と再生、owner と Lane、fps |
+| `editor/timeline.js` | 201 | Timeline のモデル、再生位置と再生、owner と Lane、fps |
 | `editor/timeline_actions.js` | 222 | `onTimelineAction` |
-| `editor/commit.js` | 86 | 状態の widget への書き戻し、ノードのプレビューの更新 |
-| `editor/commands.js` | 284 | 全消去、複製、削除と確認 |
+| `editor/commit.js` | 84 | 状態の widget への書き戻し、ノードのプレビューの更新 |
+| `editor/commands.js` | 283 | 全消去、複製、削除と確認 |
 | `editor/sticker_import.js` | 429 | 画像の追加・置き換え・アップロード、drop |
-| `editor/camera.js` | 429 | Cutout / Studio の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
+| `editor/camera.js` | 426 | Cutout / Studio の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
 | `editor/frame_view.js` | 342 | Frame のビュー（ゲート、パン・ドラッグ・ホイール） |
 | `editor/paint_input.js` | 661 | ペイントの入力、カーソル、筆跡と投げ縄の記録、消しゴム |
 | `editor/hit_test.js` | 265 | ポインターの下の品目、選択の矩形、カーソル |
-| `editor/selection_menu.js` | 193 | 選択メニューとツールチップ |
+| `editor/selection_menu.js` | 191 | 選択メニューとツールチップ |
 | `editor/pointer_input.js` | 1,185 | キャンバスのポインターとホイール |
 | `editor/side_panel_events.js` | 198 | サイドパネルのクリック・入力・変更 |
 | `editor/modal_events.js` | 553 | モーダルのボタン、色の選択、VIDEO のトランスポート、全画面 |

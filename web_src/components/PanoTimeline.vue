@@ -5,7 +5,7 @@ import { TIMELINE_FPS_MAX, TIMELINE_FPS_MIN, TIMELINE_LENGTH_MAX } from "../pano
 import { clusterFrames, keyedAt, timelineTicks, timelineTimeLabel } from "../pano_timeline.js";
 import SvgIcon from "./SvgIcon.vue";
 
-// The Timeline of PanoramaStickersNode's editor. It draws buildTimelineModel() and reports what the
+// The Timeline of Panorama Studio's editor. It draws buildTimelineModel() and reports what the
 // pointer does as Timeline frames; the editor owns every state change. playhead is { frame, playing },
 // two refs the editor sets on each frame of playback; the model changes only with the state.
 const props = defineProps({
@@ -193,15 +193,14 @@ function onLineDown(event, row, lane) {
         <SvgIcon :icon="model.muted ? ICON.volume_muted : ICON.volume2" />
       </button>
       <span class="pano-timeline-time">{{ timeLabel }}</span>
-      <label class="pano-timeline-setting" :data-tip="model.fpsLocked ? model.lockTip : 'Timeline fps'">
+      <label class="pano-timeline-setting" :data-tip="model.fpsLocked ? 'Set by the video input' : 'Timeline fps'">
         <span v-if="model.fpsLocked">{{ fpsText }}</span>
         <input v-else type="number" :min="TIMELINE_FPS_MIN" :max="TIMELINE_FPS_MAX" step="any" :value="fpsText" aria-label="Timeline fps" @change="onFpsChange">
         <span>fps</span>
       </label>
-      <label class="pano-timeline-setting" :data-tip="model.lengthLocked ? model.lockTip : 'Output length in frames; empty follows the inputs'">
+      <label class="pano-timeline-setting" data-tip="Output length in frames; empty follows the inputs">
         <span>Length</span>
-        <span v-if="model.lengthLocked">{{ model.length }}</span>
-        <input v-else type="number" min="1" :max="TIMELINE_LENGTH_MAX" step="1" placeholder="Auto" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
+        <input type="number" min="1" :max="TIMELINE_LENGTH_MAX" step="1" placeholder="Auto" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
       </label>
       <button
         class="pano-timeline-toggle"

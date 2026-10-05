@@ -257,11 +257,6 @@ function camera(raw) {
   return { aspect: positive(raw.aspect, 1), projection, visible: bool(raw.visible, true), ...lanes(raw, CAMERA_LANES) };
 }
 
-// The Camera of a state that has none, for the editors that always shoot through one (PanoramaCutoutNode).
-export function defaultCamera() {
-  return camera({});
-}
-
 function normalizeV2(raw) {
   const timeline = isObject(raw.timeline) ? raw.timeline : {};
   const scene = isObject(raw.scene) ? raw.scene : {};

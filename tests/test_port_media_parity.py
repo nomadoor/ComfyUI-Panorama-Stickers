@@ -16,7 +16,7 @@ import torch
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Stickers node",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
 from comfyui_pano_suite import nodes

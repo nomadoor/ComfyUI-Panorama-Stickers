@@ -64,7 +64,7 @@ except RuntimeError as error:
     result = _run_without("comfy_extras.nodes_gaussian_splat", code)
 
     assert result.returncode == 0, result.stderr
-    assert "'PanoramaStickersNode'" in result.stdout and "'PanoramaPreview'" in result.stdout
+    assert "'PanoramaStudio'" in result.stdout and "'PanoramaPreview'" in result.stdout
     assert "RAISED Panorama Stickers: the 3D features are disabled" in result.stdout
     assert "the 3D features are disabled" in result.stderr
 

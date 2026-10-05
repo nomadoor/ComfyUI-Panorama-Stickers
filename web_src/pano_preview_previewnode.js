@@ -669,7 +669,7 @@ class PreviewNodeRuntime {
       if (nextVideoSrc === this.imgSrc && this.img instanceof HTMLVideoElement) return;
       this.mediaCleanup?.();
       this.imgSrc = nextVideoSrc;
-      // Like PanoramaStickersNode's Timeline on its node, the VIDEO shows its first frame and plays only
+      // Like Panorama Studio's Timeline on its node, the VIDEO shows its first frame and plays only
       // when asked (double-click or Space); it loops while it plays and pauses out of sight.
       const video = createPanoVideo(document, "preview-node.video");
       video.muted = true;

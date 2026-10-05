@@ -92,58 +92,6 @@ EXPECTED_SCHEMAS = {
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
     },
-    "PanoramaStickersNode": {
-        "display_name": "Panorama Stickers (new)",
-        "inputs": [
-            ("bg_media", "COMFY_MULTITYPED_V3", True),
-            ("scene", "COMFY_MULTITYPED_V3", True),
-            ("sticker", "COMFY_MULTITYPED_V3", True),
-            ("sticker_state", "STRING", True),
-            ("bg_color", "COLOR", False),
-            ("coverage", "COMBO", False),
-            ("output_preset", "COMBO", False),
-            ("state_json", "STRING", False),
-        ],
-        "input_metadata": {
-            "bg_media": {},
-            "scene": {},
-            "sticker": {},
-            "sticker_state": {
-                "default": "",
-                "multiline": False,
-                "dynamic_prompts": False,
-                "force_input": True,
-            },
-            "bg_color": {
-                "default": "#00ff00",
-                "force_input": None,
-            },
-            "coverage": {
-                "default": "360",
-                "options": ["360", "180"],
-                "force_input": None,
-            },
-            "output_preset": {
-                "default": "2048",
-                "options": ["1024", "2048", "4096", "auto"],
-                "force_input": None,
-            },
-            "state_json": {
-                "default": "",
-                "multiline": True,
-                "dynamic_prompts": False,
-                "force_input": None,
-            },
-        },
-        "outputs": [
-            ("first_frame", "first_frame", "IMAGE"),
-            ("first_frame_mask", "first_frame_mask", "MASK"),
-            ("video", "video", "VIDEO"),
-            ("pano_scene", "pano_scene", "PANO_SCENE"),
-        ],
-        "hidden": [],
-        "is_output_node": True,
-    },
     "PanoramaStudio": {
         "display_name": "Panorama Studio",
         "inputs": [
@@ -242,44 +190,6 @@ EXPECTED_SCHEMAS = {
             ("mask", "mask", "MASK"),
         ],
         "hidden": ["UNIQUE_ID"],
-        "is_output_node": True,
-    },
-    "PanoramaCutoutNode": {
-        "display_name": "Panorama Cutout (new)",
-        "inputs": [
-            ("source", "COMFY_MULTITYPED_V3", False),
-            ("coverage", "COMBO", False),
-            ("output_megapixels", "FLOAT", False),
-            ("state_json", "STRING", False),
-        ],
-        "input_metadata": {
-            "source": {},
-            "coverage": {
-                "default": "360",
-                "options": ["360", "180"],
-                "force_input": None,
-            },
-            "output_megapixels": {
-                "default": 1.0,
-                "min": 0.01,
-                "max": None,
-                "step": 0.05,
-                "force_input": None,
-            },
-            "state_json": {
-                "default": "",
-                "multiline": True,
-                "dynamic_prompts": False,
-                "force_input": None,
-            },
-        },
-        "outputs": [
-            ("first_frame", "first_frame", "IMAGE"),
-            ("sticker_state", "sticker_state", "STRING"),
-            ("first_frame_mask", "first_frame_mask", "MASK"),
-            ("video", "video", "VIDEO"),
-        ],
-        "hidden": [],
         "is_output_node": True,
     },
     "PanoramaPreview": {
@@ -395,6 +305,11 @@ def _public_input_metadata(input_):
 
 
 def test_public_node_registration_remains_stable():
+    # The state v2 Stickers and Cutout (PanoramaStickersNode, PanoramaCutoutNode) never reached main; Panorama
+    # Studio replaces them without a NodeReplace (ADR 0029).
+    assert set(REGISTERED_NODES) == {
+        "PanoramaStickers", "PanoramaStudio", "PanoramaCutout", "PanoramaPreview", "PanoramaPreviewNode", "PanoramaSeamPrep",
+    }
     assert set(REGISTERED_NODES) == set(EXPECTED_SCHEMAS)
     assert {
         node_id: node_class.GET_SCHEMA().display_name
@@ -446,20 +361,13 @@ MESH_FILE_TYPES = "FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,
 SPLAT_FILE_TYPES = "FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY"
 
 
-@pytest.mark.parametrize("node_id, upstream", [("PanoramaStickersNode", ""), ("PanoramaStudio", ",PANO_SCENE")])
-def test_stickers_node_media_ports_accept_the_spec_types(node_id, upstream):
-    inputs = {input_.id: input_ for input_ in REGISTERED_NODES[node_id].define_schema().inputs}
+def test_studio_media_ports_accept_the_spec_types():
+    inputs = {input_.id: input_ for input_ in REGISTERED_NODES["PanoramaStudio"].define_schema().inputs}
 
     assert inputs["bg_media"].get_io_type() == "IMAGE,VIDEO"
     # Studio's `scene` also takes the `scene` output of another Studio (ADR 0029).
-    assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY{upstream}"
+    assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,PANO_SCENE"
     assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES}"
-
-
-def test_cutout_node_source_accepts_erp_media_and_a_pano_scene():
-    source = REGISTERED_NODES["PanoramaCutoutNode"].define_schema().inputs[0]
-
-    assert source.get_io_type() == "IMAGE,VIDEO,PANO_SCENE"
 
 
 def test_preview_node_passes_its_source_type_through():
@@ -471,7 +379,7 @@ def test_preview_node_passes_its_source_type_through():
     assert source.template.as_dict() == {"template_id": "source", "allowed_types": "IMAGE,VIDEO,PANO_SCENE"}
 
 
-@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaStickersNode", "PanoramaCutout", "PanoramaCutoutNode", "PanoramaStudio"])
+@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaCutout", "PanoramaStudio"])
 def test_internal_state_widget_is_advanced_in_v3_schema(node_id):
     schema = REGISTERED_NODES[node_id].define_schema()
     state_input = next(input_ for input_ in schema.inputs if input_.id == "state_json")

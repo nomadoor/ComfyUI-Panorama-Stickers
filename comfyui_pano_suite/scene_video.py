@@ -1,4 +1,4 @@
-"""The `video` output of Stickers and Cutout: a VIDEO whose frames are rendered when it is read (ADR 0027)."""
+"""The `video` output of Panorama Studio: a VIDEO whose frames are rendered when it is read (ADR 0027)."""
 
 import json
 import os

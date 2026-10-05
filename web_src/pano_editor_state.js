@@ -3,7 +3,7 @@ import { wrapYaw } from "./pano_math.js";
 import { DEG2RAD } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { defaultCamera, loadSceneState, rebaseSceneState, sceneStateText, timelineFps } from "./pano_scene_state.js";
+import { loadSceneState, rebaseSceneState, sceneStateText, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
@@ -176,22 +176,12 @@ export function paintingLayerNeedsSync(layer, { paintCount, maskCount, width, he
   return false;
 }
 
-// PanoramaStickersNode works on state v2 itself: the editor's working state is the loadSceneState()
+// Panorama Studio works on state v2 itself: the editor's working state is the loadSceneState()
 // result with the editor's session fields (coverage, bg_color, output_preset, ui_settings, active),
-// which saving drops. The legacy node keeps working on its v1 state (parsePanoEditorState).
+// which saving drops. The legacy nodes keep working on their v1 state (parsePanoEditorState).
 // `fps` is the Timeline fps a video input sets, from the node's last run; the state is rebased to it.
-// PanoramaCutoutNode works on its own state the same way (#77). Given `scene`, the state of the
-// PANO_SCENE its last run shot, the working state is that Scene with the Cutout's Camera: the editor
-// shows the Scene as Stickers made it and edits only the Camera. The Cutout's own state rides along in
-// `cutout_state`, which editorStateText() saves with the Camera; the Scene is not saved (ADR 0025).
-// Both are rebased to `fps`, the Scene's Timeline fps, so the Camera's Keyframes keep their seconds as
-// the node reads them.
-// With `camera` (the Cutout editor, which always shoots through a Camera) a state without a Camera
-// is edited with the default one, as the node shoots it; `default_camera` marks it until the Camera
-// is first edited (noteCameraEdit), so that
-// editorStateText() saves the state without a Camera again while that Camera is left as it is.
 export function parseSceneEditorState(text, options = {}) {
-  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active, scene: shot = null, camera = false } = options;
+  const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active } = options;
   // The fps a VIDEO sets, brought into the range a state keeps.
   const fps = timelineFps(options.fps);
   let scene;
@@ -201,16 +191,8 @@ export function parseSceneEditorState(text, options = {}) {
     scene = loadSceneState(null);
   }
   if (fps && fps !== scene.timeline.fps) scene = rebaseSceneState(scene, fps);
-  const defaulted = camera && scene.camera === null;
-  if (defaulted) scene = { ...scene, camera: defaultCamera() };
-  if (shot) {
-    let shown = loadSceneState(shot);
-    if (fps && fps !== shown.timeline.fps) shown = rebaseSceneState(shown, fps);
-    scene = { ...shown, camera: scene.camera, cutout_state: scene };
-  }
   return {
     ...scene,
-    ...(defaulted ? { default_camera: true } : {}),
     coverage: normalizeCoverageValue(coverage),
     bg_color: backgroundColor,
     output_preset: parseOutputPresetValue(outputPreset),
@@ -222,8 +204,6 @@ export function parseSceneEditorState(text, options = {}) {
 // Sets the Timeline fps of a working state v2, rebasing its times (rebaseSceneState) so they keep their
 // seconds. The objects stay the ones the editor holds; a Sticker still uploading is left as it is.
 export function setTimelineFps(state, fps) {
-  // A Cutout showing a PANO_SCENE saves its own state, which keeps the same fps (#77).
-  if (state.cutout_state) state.cutout_state = rebaseSceneState(state.cutout_state, fps);
   const rebased = rebaseSceneState(state, fps);
   const stickers = new Map(rebased.stickers.map((item) => [item.id, item]));
   state.timeline = rebased.timeline;
@@ -268,10 +248,10 @@ export function setStickerPose(sticker, frame, pose) {
 
 const POSITION_FIELDS = ["position_x", "position_y", "position_z"];
 
-// --- The Cutout Camera (#77). The Cutout editor moves its Camera through the shot fields it has always
-// edited (yaw_deg, pitch_deg, roll_deg, hFOV_deg, vFOV_deg), and with a PANO_SCENE also its position.
-// PanoramaCutoutNode keeps them in the Camera of state v2: cameraShot() is the Camera at a Timeline
-// frame as a shot, by the evaluator the node uses, and setCameraShot() writes an edited shot back.
+// --- The Camera of state v2. The editor moves Panorama Studio's Camera through the shot fields the Cutout
+// editor has always edited (yaw_deg, pitch_deg, roll_deg, hFOV_deg, vFOV_deg) and its position.
+// cameraShot() is the Camera at a Timeline frame as a shot, by the evaluator the node uses, and
+// setCameraShot() writes an edited shot back.
 
 export const CAMERA_SHOT_ID = "camera";
 
@@ -469,7 +449,7 @@ export function sceneStickerLabel(sticker) {
   return sticker.source.filename || sticker.id;
 }
 
-// The editor's selection is not part of state v2. PanoramaStickersNode keeps it in a node property,
+// The editor's selection is not part of state v2. Panorama Studio keeps it in a node property,
 // which the prompt does not include, so selecting does not re-run the node.
 export function editorActive(node) {
   return node?.__panoSceneStateV2 ? node.properties?.pano_editor_active : undefined;
@@ -481,27 +461,16 @@ export function setEditorActive(node, active) {
   node.properties.pano_editor_active = { ...active };
 }
 
-// The `state_json` text for the editor's working state: state v2 for PanoramaStickersNode and
-// PanoramaCutoutNode (a Cutout showing a PANO_SCENE saves its own state with the Camera), the working
+// The `state_json` text for the editor's working state: state v2 for Panorama Studio, the working
 // state itself (v1) for the legacy nodes.
-// Drops the `default_camera` mark once the Camera has left the default one, so that a Camera edited
-// and then set back to the default values is still saved: it was added by an edit, not left as it was.
-export function noteCameraEdit(state) {
-  if (state.default_camera && JSON.stringify(loadSceneState({ version: 2, camera: state.camera }).camera) !== JSON.stringify(defaultCamera())) {
-    delete state.default_camera;
-  }
-}
-
 export function editorStateText(node, state) {
   if (!node?.__panoSceneStateV2) return JSON.stringify(state);
-  const saved = loadSceneState(state.cutout_state ? { ...state.cutout_state, camera: state.camera } : state);
-  if (state.default_camera && JSON.stringify(saved.camera) === JSON.stringify(defaultCamera())) saved.camera = null;
-  return sceneStateText(saved);
+  return sceneStateText(loadSceneState(state));
 }
 
 // Whether the widget's `current` text already means `text`. ComfyUI's execution cache compares the
 // text, so rewriting an equivalent one (the empty default, other formatting) would run the node again.
-// With `rebased` (PanoramaCutoutNode, #77) `current` rebased to the fps of `text` counts too: the editor
+// With `rebased` (Panorama Studio) `current` rebased to the fps of `text` counts too: the editor
 // works at the Timeline fps of its input, and opening and closing it without an edit must leave the text
 // as it is (the node reads the recorded fps and keeps the seconds), so its Keyframes are not rounded.
 export function sameEditorStateText(node, text, current, { rebased = false } = {}) {

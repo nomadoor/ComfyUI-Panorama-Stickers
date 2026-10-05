@@ -21,7 +21,7 @@
 - Keyframe を消せるのは、タイムラインで選んで Delete したときだけ。消した後は残った Keyframe で補間し直す。全 Keyframe を一度に消すスイッチは作らない。
 - インスペクタには Keyframe を打つボタンを置かない。
 - `world` の Sticker（#72）も同じ規則で記録する。ギズモのドラッグはモードの Lane（Move は `position`、Rotate は `rotation`、Scale は `scale`）だけを、インスペクタは変えた欄の Lane だけを変える。Clip range があるので、`sky` の Sticker と同じく素材基準のフレームで比べる。ギズモとインスペクタは `docs/threejs-spark-integration.md` の「`world` の Sticker の操作（#72）」。
-- 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Cutout と Panorama Studio の frame タブと、Camera の行を選んだときの操作とインスペクタ）だけである。Stickers は Camera を持たない（ADR 0028）。Stickers のエディタの空間の表示では、3DoF の見回しは原点（ERP を撮る位置）に立ったまま向きを変え、6DoF は Viewport camera を空間の中で動かす（`docs/threejs-spark-integration.md` の「空間の表示」）。
+- 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Panorama Studio の Frame タブと、Camera の行を選んだときの操作とインスペクタ）だけである。Camera が無いときの空間の表示では、3DoF の見回しは原点（ERP を撮る位置）に立ったまま向きを変え、6DoF は Viewport camera を空間の中で動かす（`docs/threejs-spark-integration.md` の「空間の表示」）。
 - ノード上の UI には Keyframe の操作がないので、Keyframe のある Lane はノード上では変えない。表示しているフレーム（最初は frame 0、一時停止したフレーム）によらず、Sticker のドラッグは Keyframe のない Lane（どのフレームでも同じ値）の静的な値だけを変え、Keyframe のある Lane にしか効かない操作は無視する（#70 のロックと同じ感触）。Keyframe のある Lane はエディタのタイムラインで直す。この扱いはオーナーの判断待ちの既定値で、`pano_stickers_node_surface.js` の `set-transform`（`unkeyedPose`）だけで決まる。
 - ノード上の UI には再生ボタンが一つだけあり、時間のあるときだけ出る（エディタと同じ `isTimed` か、背景の VIDEO か `port` の Sticker の素材の MP4 があるとき）。ボタンは再生と一時停止を切り替える。Timeline の fps でループ再生し、背景の VIDEO は音を出さずに同じ状態機械で再生する。一時停止は画面に出ているフレームで止まり（エディタの停止と同じ）、もう一度押すとそこから続く。そのフレームはノードごとの一時状態で保存せず、reload すると frame 0 に戻る。背景の VIDEO が替わったときと Timeline がそのフレームより短くなったときも frame 0 に戻る。編集（Sticker をつかむ、ツールバーの操作、画像の追加、Delete）とエディタを開く操作で一時停止する。見回しでは止まらない。Space キーは使わない（ComfyUI のキャンバスの pan）。細かい規則は `docs/panorama-stickers-node-surface-spec.md` にある。
 - Sticker がアップロード中（Source にファイルがまだない）の間は、Undo の履歴を記録しない。アップロードが終わったときに、その間の編集を含めて一度記録する（失敗して Sticker が消えたときも同じ）。
@@ -44,28 +44,24 @@
   - 長さの欄が空なら長さは入力から決まる（`null`）。値を入れるとノードの出力の長さになり、タイムラインもその長さで終わる（VIDEO が長くても延ばさない。それより後の Keyframe と Clip range の端の分だけは延ばす）。
   - 欄の値には上限がある。fps は 1〜1000、長さは 1〜10,000,000（Timeline frame。Clip range の端と同じ上限）で、範囲の外の値はいちばん近い端に寄せる（例：`1e308` は fps なら 1000、長さなら 10,000,000）。数でない値と 0 以下の fps は受け付けず、元の値に戻す。読み込みでも同じ範囲に寄せる（`docs/scene-state-v2.md`）。`timelineSpan` は有限でない値を返さず（壊れた入力なら `BROKEN_SPAN` の 100,000）、目盛りは 2,000 個まで（`timelineTicks` の `MAX_TICKS`）にする。
   - エディタを開いたとき、現在の実行結果の `pano_timeline_fps` が状態の `timeline.fps` と違えば、状態をその fps に再基準化する。`pano_timeline_fps` は先に 1〜1000 に寄せてから比べる（`videoTimelineFps`）。1000 fps を超える VIDEO では状態は 1000 fps になり、次の実行結果からは同じ値と比べるので、再基準化・再生ヘッドの跳び・空の Undo を繰り返さない。ウィジェットの `state_json` は次の編集かキューまで変わらない（ノードは記録された fps で秒を保って読むので、書き込む前でも出力は同じ）。
-  - エディタを開いている間に届いた実行結果が違う `pano_timeline_fps` を持つときも、同じく再基準化する。これは Undo の 1 段になる。Cutout（`PanoramaCutoutNode`、#77）は例外で、開いている間に届いた実行結果では再基準化しない（Scene の状態も開いたときのまま。下の Cutout の項）。
+  - エディタを開いている間に届いた実行結果が違う `pano_timeline_fps` を持つときも、同じく再基準化する。これは Undo の 1 段になる。
 - タイムラインのドラッグ（Clip range の移動・トリム、Keyframe の移動、ルーラーのスクラブ）は、ポインタが動くたびに状態だけを変え、タイムラインの表示の更新は 1 フレームに 1 回にまとめる（`pano_frame_batch.js` の `createFrameBatch`）。ビューは、見た目が変わるときだけ 1 フレームに 1 回更新する。Clip range では、再生ヘッドが範囲を出入りしたときと、移動で再生ヘッドの位置の素材の時刻が変わったときである（トリムでは素材の時刻は変わらない）。Keyframe の移動では毎フレーム更新する。スクラブのシークも 1 フレームに 1 回にする。インスペクタ・選択メニュー・ノード上のプレビューへの反映と Undo の記録は、ドラッグの終わりに 1 回だけ行う。Clip range が変わっても、ビューの状態 v2 は読み直さず、Clip range だけを写す。
 - キャンバスのドラッグ（見回し、Sticker の移動、ペイント、ギズモなど）も、ノード上のプレビューへの反映はドラッグの終わりに 1 回だけ行う（エディタの描画ループで、ドラッグが終わった次のフレームに反映する）。ギズモのドラッグのインスペクタの更新は 1 フレームに 1 回にまとめる。マスクの表示用のキャンバス（ERP と同じ大きさ）は、マスクと描いている途中のストロークが変わったときだけ作り直し、マスクが空なら作らない（`getMaskDisplayCanvas`・`getMaskDisplayRevision`）。ペイントのグループの、描いている途中のストロークを重ねたキャンバスも、変わったときだけ作り直す。
 - Clip range の外にある Sticker の行を選ぶと、再生ヘッドがその Clip range の始まりへ移ってから選ばれる。
-- Stickers のタイムラインには Camera の行を出さず、インスペクタにも Camera の欄を出さない（ADR 0028）。状態に `camera` の値や Keyframe が残っていても、表示・再生の可否（`isTimed`）・タイムラインの長さ（`timelineSpan`）には数えず、消したり書き換えたりもしない（保存しても `state_json` の `camera` は変わらない）。ノード上の UI の再生ボタンも同じ `isTimed` で決まる。Camera の行（`buildTimelineModel` の `camera`）と、その Keyframe を数える `isTimed`・`timelineSpan` の `camera` は Cutout と Panorama Studio のためのものである。
 - Panorama Studio（`PanoramaStudio`、#89）のタイムラインは、Camera・Sticker・ペイント・`scene` の行を 1 本に並べる（上から Camera、Sticker（手前から奥、`world` の Sticker）、ペイント、`scene`）。
-  - Camera の行は Camera があるときだけ出る（`buildTimelineModel` の `camera` に Camera の有無を渡す）。Camera の Keyframe は Cutout と同じ記録の規則で、Timeline frame そのもので比べる。再生の可否（`isTimed` の `camera: true`）とタイムラインの長さ（`timelineSpan` の `camera: true`）にも数える。Camera が無ければ（`camera: null`）どちらも数えない。
+  - Camera の行は Camera があるときだけ出る（`buildTimelineModel` の `camera` に Camera の有無を渡す）。Frame 表示・Panorama 表示（3DoF の枠の操作と 6DoF のギズモ）・インスペクタで Camera を変えると、変えた Lane にだけ Keyframe が入る（上の記録の規則）。行のポチで全 Lane（位置・回転・画角）に入る。Camera の Lane は Clip range を持たず、Timeline frame そのもので比べる。再生の可否（`isTimed` の `camera: true`）とタイムラインの長さ（`timelineSpan` の `camera: true`）にも数える。Camera が無ければ（`camera: null`）どちらも数えない。
   - Camera の行が出入りしても、タイムラインのバー（再生ボタン・fps・長さ・開閉）は変わらない（`node --test` で確かめている）。行の一覧は Sticker を足したときと同じく 1 行増え、下の行が 1 行分下がる。タイムラインを開いているときは、行の分だけタイムラインが高くなり（34% まで）、ビューが低くなる。これも Sticker を足したときと同じである。
-  - `scene` の行（アイコンは箱）は、`scene` 入力がつながっているとき、または `scene` が Keyframe か既定でない Clip range を持つとき（`pano_timeline.js` の `ownerTimed`）に出る。`scene` の位置・回転・大きさを変える操作とインスペクタはまだ無いので、`scene` の行は Clip range（移動と両端の切り詰め。Sticker の行と同じ）だけを持ち、行のポチと Lane の行は出さない（行のモデルの `keyable: false`。エディタも `scene` の `key-row` を無視する。行を開くボタンは無効）。状態に `scene` の Keyframe があれば、行にポチの印だけは出る。行を選んでもキャンバスの選択は外れるだけで、何も選ばれない。新しい Stickers（`PanoramaStickersNode`）のタイムラインも同じ行を同じ扱いで出す（Cutout は出さない）。
-  - ノード上の UI の再生ボタンも、Panorama Studio では Camera の Keyframe を数える（`pano_node_playback.js` の `camera`。エディタの `timelineOpens` と同じ判断）。
-- Cutout（`PanoramaCutoutNode`、#77）のタイムラインは Camera の行だけを出す（`buildTimelineModel` の `camera: true`・`stickers: false`）。Sticker の行は、Cutout の状態の Sticker も、撮影する `PANO_SCENE` の Sticker も出さない。Camera の Keyframe は上の記録の規則のとおりで、Frame 表示・Panorama 表示（3DoF の枠の操作と 6DoF のギズモ）・インスペクタで Camera を変えると、変えた Lane にだけ入る。行のポチで全 Lane（位置・回転・画角）に入る。Camera の Lane は Timeline frame そのもので比べる（Clip range を持たない）。
-  - ERP（IMAGE / VIDEO）の `source`：fps は VIDEO があるときだけ固定で、長さは Cutout の状態の `timeline.length`（空なら入力と Camera の Keyframe から。`timelineSpan` の `camera: true`）。
-  - `PANO_SCENE` の `source`：Timeline は Scene のもの（`docs/render-contract.md` の「Cutout ノード」）なので、fps と長さはどちらも値だけを表示し（ツールチップ「Set by the scene」）、タイムラインの長さは実行結果の `pano_timeline_frames`（ノードの出力のフレーム数）にする。Camera の Keyframe をその長さより後に打っても出力は延びない。開いたとき、Cutout の状態は Scene の Timeline fps に再基準化して扱う（秒を保つので、ノードの `frame × Cutout の fps ÷ Scene の fps` と同じ時刻になる）。保存するのは Cutout の状態（その fps と Camera）だけである。編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`。今の `state_json` を再基準化したものと保存しようとする状態が同じなら書かない）ので、ノードは再実行されず、Keyframe も丸められない。Camera を編集したときは、Cutout の状態を Scene の fps のまま保存する（編集していない Lane の Keyframe も、このとき一度だけ再基準化の丸めで最大で半フレーム動く）。ERP の VIDEO の fps に合わせるときも同じ。
-  - 行が開いた状態で始まるのは、Camera の Lane に Keyframe があるとき。
+  - `scene` の行（アイコンは箱）は、`scene` 入力がつながっているとき、または `scene` が Keyframe か既定でない Clip range を持つとき（`pano_timeline.js` の `ownerTimed`）に出る。`scene` の位置・回転・大きさを変える操作とインスペクタはまだ無いので、`scene` の行は Clip range（移動と両端の切り詰め。Sticker の行と同じ）だけを持ち、行のポチと Lane の行は出さない（行のモデルの `keyable: false`。エディタも `scene` の `key-row` を無視する。行を開くボタンは無効）。状態に `scene` の Keyframe があれば、行にポチの印だけは出る。行を選んでもキャンバスの選択は外れるだけで、何も選ばれない。
+  - ノード上の UI の再生ボタンも、Panorama Studio では Camera の Keyframe を数える（`pano_node_playback.js` の `camera`。エディタの `isTimed` と同じ判断）。
+  - VIDEO や上流の Scene の fps に再基準化して開いても、編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`。今の `state_json` を再基準化したものと保存しようとする状態が同じなら書かない）ので、ノードは再実行されず、Keyframe も丸められない。
 - タイムラインはビューの下にある。開閉や行の開閉で高さが変わるときは 180 ms かけて伸び縮みし、ビューは同じフレームのうちに新しい大きさで描き直す（横の画角と中心は保ち、上下が切れるだけ）。高さは画面の高さの 34% までで、それを超える行は中でスクロールする。prefers-reduced-motion では動かさずに切り替える。
 
 ## 表示（目のアイコン）
 
 Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端の目のアイコンで表示・非表示を切り替える（After Effects・Photoshop のレイヤーと同じ）。アイコンが今の状態を示す（表示は目、非表示は破線の目）。状態 v2 の `visible`（Camera・`scene`・Sticker）と `painting_visible`（ペイント）に入る（`docs/scene-state-v2.md`）。
 
-- 目の場所はすべての行にあり、目を持たない行（Cutout の Camera）も同じ幅を空ける。行の名前・▶・ポチの位置は行によって動かない。Cutout は常に Camera で撮るので、Camera の目は Panorama Studio だけにある（`buildTimelineModel` の `cameraHideable`）。
-- ペイントの行（「Paint」、筆のアイコン）は、Sticker の行の後、`scene` の行の前に 1 行だけ出す。ストロークのグループ・ラスタ・マスクを分けず、ペイント全体をまとめて隠す（マスクも出力の MASK から消える）。ペイントが何か（ストローク・マスク・ラスタ）を持つか、隠しているときだけ出る（`buildTimelineModel` の `stickers` のとき。Cutout には出ない）。Clip range も Keyframe も無いので、行は目と名前だけ。
+- 目の場所はすべての行にあり、目を持たない行（`hideable` が偽）も同じ幅を空ける。行の名前・▶・ポチの位置は行によって動かない。Camera の行の目は `buildTimelineModel` の `cameraHideable` で出す（Panorama Studio）。
+- ペイントの行（「Paint」、筆のアイコン）は、Sticker の行の後、`scene` の行の前に 1 行だけ出す。ストロークのグループ・ラスタ・マスクを分けず、ペイント全体をまとめて隠す（マスクも出力の MASK から消える）。ペイントが何か（ストローク・マスク・ラスタ）を持つか、隠しているときだけ出る。Clip range も Keyframe も無いので、行は目と名前だけ。
 - 目の切り替えは編集で、Undo の 1 段になり、`state_json` に保存する（既定の表示は書かない）。値を変えないので、再生は止めない（Premiere・Resolve のトラックの表示の切り替えと同じ）。ロックした Sticker も切り替えられる（After Effects と同じ）。
 - 隠した物はエディタでも描かない（薄くも出さない。After Effects・Photoshop・Blender のビューポートと同じ）。選べず、動かせない：キャンバスとギズモの当たり判定、選択の一覧から外れ、行を押しても選ばれない。選んでいる物を隠すと選択が外れる（Undo・Redo で隠れたときも）。隠したペイントにはペイントもマスクも描けない（ツールを使っても何も起きない。Photoshop の隠したレイヤーと同じ）。Camera を隠したときのエディタは `docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」。
 - タイムラインの上の操作（Keyframe・Clip range の編集、行のポチ）は、隠した物にもできる。
@@ -85,11 +81,11 @@ Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端
 
 ## Camera のモード
 
-Camera は Keyframe と Drone の二つのモードを持ち、出力にはいま選ばれている方だけを使う。両方のデータは独立に保持し、切り替えても他方は消えない。一本のタイムラインの中で混ぜることはしない。Camera のタイムラインは Cutout と Panorama Studio が持つ（ADR 0029）。画角はどちらのモードでもインスペクタで変える値で、Drone では Keyframe を持たない一定の値である。Drone モードのとき、Camera の行にポチは出さない（位置と回転は通過点から決まる）。Drone の通過点・道筋・状態の項目は Drone の ticket で定める。
+Camera は Keyframe と Drone の二つのモードを持ち、出力にはいま選ばれている方だけを使う。両方のデータは独立に保持し、切り替えても他方は消えない。一本のタイムラインの中で混ぜることはしない。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。画角はどちらのモードでもインスペクタで変える値で、Drone では Keyframe を持たない一定の値である。Drone モードのとき、Camera の行にポチは出さない（位置と回転は通過点から決まる）。Drone の通過点・道筋・状態の項目は Drone の ticket で定める。
 
 ## 再生の状態
 
-再生・シーク・停止は `web_src/pano_video_playback.js` の状態機械だけが決める。エディタは VIDEO 要素と時計を渡し、知らされた再生ヘッドのフレームと静止画を表示する。旧ノードの VIDEO 自身の操作（再生ボタンとシークバー）と、新しいノードのノード上の再生（`web_src/pano_node_playback.js`）も同じ状態機械を使う。
+再生・シーク・停止は `web_src/pano_video_playback.js` の状態機械だけが決める。エディタは VIDEO 要素と時計を渡し、知らされた再生ヘッドのフレームと静止画を表示する。旧ノードの VIDEO 自身の操作（再生ボタンとシークバー）と、Panorama Studio のノード上の再生（`web_src/pano_node_playback.js`）も同じ状態機械を使う。
 
 | 状態 | 意味 |
 |---|---|

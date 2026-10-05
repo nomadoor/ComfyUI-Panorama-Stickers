@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { defaultCamera, loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
+import { loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -29,8 +29,14 @@ test("a state has no Camera unless `camera` is an object, and a Camera has a pro
   for (const camera of ["", ',"camera":null', ',"camera":"front"', ',"camera":[1]']) {
     assert.equal(loadSceneState(`{"version":2${camera}}`).camera, null);
   }
-  assert.deepEqual(loadSceneState('{"version":2,"camera":{}}').camera, defaultCamera());
-  assert.equal(defaultCamera().projection, "perspective");
+  assert.deepEqual(loadSceneState('{"version":2,"camera":{}}').camera, {
+    aspect: 1,
+    projection: "perspective",
+    visible: true,
+    position: { value: [0, 0, 0], keyframes: [] },
+    rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
+    fov: { value: 90, keyframes: [] },
+  });
   for (const [projection, expected] of [["erp", "erp"], ["perspective", "perspective"], ["ERP", "perspective"], [null, "perspective"], [1, "perspective"]]) {
     assert.equal(loadSceneState({ version: 2, camera: { projection } }).camera.projection, expected);
   }
