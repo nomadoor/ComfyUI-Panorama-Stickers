@@ -63,7 +63,7 @@ import {
 import { getNodeGridVisibility, loadSharedUiSettings } from "./editor/ui_settings.js";
 import { createEditorModules } from "./editor/modules.js";
 import { createMediaSession } from "./editor/media_session.js";
-import { createEditorHistory, createHistory } from "./editor/history.js";
+import { createEditorHistory, createHistory, savedSelectionId } from "./editor/history.js";
 import { createItems } from "./editor/items.js";
 import { createSelection } from "./editor/selection.js";
 import { createProjection } from "./editor/projection.js";
@@ -464,9 +464,7 @@ async function showEditor(node, type, options = {}) {
     }
   });
 
-  const initialSelectedId = type === "stickers"
-    ? state.active.selected_sticker_id
-    : (type === "cutout" ? state.active.selected_shot_id : state.active.selected_shot_id);
+  const initialSelectedId = savedSelectionId(type, state);
   const editor = {
     mode: "pano",
     selectedId: initialSelectedId,

@@ -15,6 +15,12 @@ export function createEditorHistory(state) {
   return createHistoryController(HISTORY_LIMIT, { version: 1, entries: [historySnapshot(state)], index: 0 });
 }
 
+// The id the editor of `type` selects from a state: the Stickers editor (and Panorama Studio) keeps the
+// selected Sticker, the Cutout editor the selected shot.
+export function savedSelectionId(type, state) {
+  return (type === "stickers" ? state.active?.selected_sticker_id : state.active?.selected_shot_id) ?? null;
+}
+
 export function createHistory(deps) {
   const {
     editor, readOnly, runtime, state, stateV2, studio, type,
@@ -48,9 +54,7 @@ export function createHistory(deps) {
     syncCutoutShot(false);
     // Undoing an fps change keeps the playhead's time in seconds.
     if (stateV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
-    editor.selectedId = type === "stickers"
-      ? state.active.selected_sticker_id
-      : (type === "cutout" ? state.active.selected_sticker_id : state.active.selected_shot_id);
+    editor.selectedId = savedSelectionId(type, state);
     // Panorama Studio's Camera stays selected while the restored state has it (#89).
     if (studio && !editor.selectedId && state.active.selected_shot_id) editor.selectedId = getActiveCutoutShot()?.id ?? null;
     editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
