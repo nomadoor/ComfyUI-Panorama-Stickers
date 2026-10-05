@@ -128,26 +128,25 @@ def sample_erp_bilinear(erp: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.nda
     v = np.clip(v, 0.0, h - 1.0)
 
     if HAS_TORCH:
-        # Ensure contiguous and correct dtype for torch
-        # erp is (H, W, C) -> torch needs (B, C, H, W)
-        t_erp = torch.from_numpy(np.require(erp, requirements=["C", "W"])).to(torch.float32).permute(2, 0, 1)[None, ...]
-        # Pad horizontally for wrapping
-        t_erp_padded = torch.cat([t_erp, t_erp[:, :, :, :1]], dim=3)
+        # Padded horizontally for wrapping, as float32 (H, W + 1, C) -> torch (B, C, H, W). The padding makes a new
+        # array, so a read-only (cached) erp is read without another copy.
+        t_erp_padded = torch.from_numpy(np.concatenate([erp, erp[:, :1]], axis=1, dtype=np.float32)).permute(2, 0, 1)[None, ...]
 
         # Grid sample coordinates in [-1, 1]
         # x corresponds to u (width), y corresponds to v (height)
         # padded width is w+1. index 0 maps to -1, index w maps to 1.
-        grid_u = (torch.from_numpy(np.require(u, requirements=["C", "W"])).to(torch.float32) / w) * 2.0 - 1.0
+        # u and v are the new arrays of np.mod and np.clip above, so torch can share them.
+        grid_u = (torch.from_numpy(u).to(torch.float32) / w) * 2.0 - 1.0
 
         # Avoid division by zero if h=1
         v_denom = float(h - 1) if h > 1 else 1.0
-        grid_v = (torch.from_numpy(np.require(v, requirements=["C", "W"])).to(torch.float32) / v_denom) * 2.0 - 1.0
+        grid_v = (torch.from_numpy(v).to(torch.float32) / v_denom) * 2.0 - 1.0
 
         grid = torch.stack([grid_u, grid_v], dim=-1)[None, ...]
 
         # Note: we use align_corners=True to exactly match pixel center sampling
         out = F.grid_sample(t_erp_padded, grid, mode='bilinear', padding_mode='border', align_corners=True)
-        return out[0].permute(1, 2, 0).cpu().numpy().astype(erp.dtype)
+        return out[0].permute(1, 2, 0).cpu().numpy().astype(erp.dtype, copy=False)
 
     if HAS_CV2:
         # Optimize by using cv2.remap. To handle horizontal wrapping (longitude),

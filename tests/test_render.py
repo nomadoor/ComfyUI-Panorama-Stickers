@@ -264,6 +264,58 @@ def test_render_frame_reuses_the_sky_but_composites_a_new_background(monkeypatch
     assert counts == {"_sky_layers": 1, "_background": 2, "composite_frame": 2}
 
 
+def test_render_frame_makes_the_rays_once_while_the_camera_does_not_turn(monkeypatch):
+    counts = _count_calls(monkeypatch, "_rays")
+    state = _camera(yaw_deg=30.0, pitch_deg=10.0)
+    projection = Projection.perspective(24, 16, 90.0)
+    loaded, evaluated = _scene(**state)
+    cache = {}
+
+    def render(bg_key, camera, cache):
+        bg = torch.rand((16, 32, 3), generator=torch.Generator().manual_seed(bg_key))
+        return render_frame([RenderLayer(evaluated, SceneSources({}, loaded["painting"]))], camera, projection,
+                            bg=bg, bg_key=bg_key, bg_color=GREEN, device=torch.device("cpu"), cache=cache)
+
+    frames = [render(bg_key, evaluated["camera"], cache) for bg_key in range(3)]
+    assert counts["_rays"] == 1
+    # The kept rays draw what new ones draw.
+    assert all(torch.equal(frame[0], render(bg_key, evaluated["camera"], {})[0]) for bg_key, frame in enumerate(frames))
+    counts["_rays"] = 0
+    render(3, {**evaluated["camera"], "yaw_deg": 40.0}, cache)
+    assert counts["_rays"] == 1
+
+
+def test_render_frame_makes_the_rays_again_when_only_the_field_of_view_changes(monkeypatch):
+    counts = _count_calls(monkeypatch, "_rays")
+    loaded, evaluated = _scene(**_camera(yaw_deg=30.0))
+    cache = {}
+
+    for hfov in (90.0, 90.0, 60.0):
+        projection = Projection.perspective(24, 16, hfov)
+        color = render_frame([RenderLayer(evaluated, SceneSources({}, loaded["painting"]))], evaluated["camera"], projection,
+                             bg=torch.rand((16, 32, 3)), bg_key=None, bg_color=GREEN, device=torch.device("cpu"), cache=cache)[0]
+
+    assert counts["_rays"] == 2
+    assert torch.equal(cache["look"][0], render_module._rays(evaluated["camera"], projection, torch.device("cpu")))
+
+
+def test_render_frame_drops_the_rays_on_a_frame_that_does_not_look_along_them():
+    loaded, turned = _scene(**_camera(yaw_deg=30.0))
+    _loaded, still = _scene(**_camera(yaw_deg=0.0))
+    cache = {}
+
+    def render(evaluated):
+        render_frame([RenderLayer(evaluated, SceneSources({}, loaded["painting"]))], evaluated["camera"], Projection.erp(16, 8),
+                     bg=torch.rand((8, 16, 3)), bg_key=None, bg_color=GREEN, device=torch.device("cpu"), cache=cache)
+
+    render(turned)
+    render(still)
+    assert "look" in cache
+    # A 360 ERP output without rotation draws a new background as it is and keeps the Sky it shot.
+    render(still)
+    assert "look" not in cache and "look_key" not in cache
+
+
 def test_render_frame_never_reuses_a_background_without_a_key(monkeypatch):
     counts = _count_calls(monkeypatch, "_background", "composite_frame")
     cache = {}

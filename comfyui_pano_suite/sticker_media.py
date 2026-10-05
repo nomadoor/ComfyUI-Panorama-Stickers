@@ -9,7 +9,7 @@ from comfy_api.latest import InputImpl, Types
 
 from .core.cache import CACHE
 from .core.scene_eval import FRAME_EPSILON
-from .core.video_source import MaterializedVideo, StreamedVideo, coded_size, scan_video
+from .core.video_source import MaterializedVideo, PtsTimes, StreamedVideo, coded_size, scan_video
 from .core.world_render import SceneContent
 from .node_runtime import NodeRuntime
 from .progress import loop_progress
@@ -108,7 +108,8 @@ class PortMedia:
         # Half the step its PTS are rounded to, in Timeline frames.
         self._tolerance = float(video.time_base) / 2 * stored_fps
         # Where each frame starts and where the last one ends, in Timeline frames from the first frame.
-        self._starts = [float(time) * stored_fps for time in [*video.times, video.times[-1] + 1 / video.frame_rate]]
+        seconds = video.times.seconds() if isinstance(video.times, PtsTimes) else [float(time) for time in video.times]
+        self._starts = [second * stored_fps for second in [*seconds, float(video.times[-1] + 1 / video.frame_rate)]]
 
     def end(self, fps: float) -> float | None:
         """The Timeline frame where the media ends at the Timeline `fps`, or None for a single IMAGE or 3D item."""

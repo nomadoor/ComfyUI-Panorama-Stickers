@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -45,7 +46,7 @@ class VideoIndex:
 
     `start_time`/`duration` is the `get_active_trim_window()` of the VIDEO. `pts`
     holds the presentation time stamps of the frames in the window in order (int64, so the shared cache counts its
-    bytes), `times()` each one in seconds from the first, `time_base` the step those times are rounded to, `frame_rate` the stream's average rate, and
+    bytes), `times()` each one in seconds from the first (`PtsTimes`), `time_base` the step those times are rounded to, `frame_rate` the stream's average rate, and
     `first_frame` the first frame that decodes, which sets the output size, as `StreamedVideo` reads frames. Read-only.
     """
 
@@ -56,10 +57,36 @@ class VideoIndex:
     pts: np.ndarray
     first_frame: torch.Tensor
 
-    def times(self) -> tuple:
-        """Each frame's time in seconds from the first frame (Fraction), made anew for each call."""
-        first = int(self.pts[0])
-        return tuple((int(value) - first) * self.time_base for value in self.pts)
+    def times(self) -> "PtsTimes":
+        return PtsTimes(self.pts, self.time_base)
+
+
+class PtsTimes(Sequence):
+    """Each frame's time in seconds from the first frame (Fraction) of the presentation time stamps `pts` (int64) in
+    `time_base`, each made as it is read: an hour at 60 fps has 216000 frames, whose Fractions would take hundreds of
+    milliseconds to make and about 28 MB to hold beside the pts the cache counts. Like any `Sequence`, it does not
+    compare equal to a list or tuple of the same times; compare `list(times)`."""
+
+    def __init__(self, pts: np.ndarray, time_base: Fraction):
+        self._pts = pts
+        self._first = int(pts[0])
+        self._time_base = time_base
+
+    def __len__(self) -> int:
+        return len(self._pts)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [(value - self._first) * self._time_base for value in self._pts[index].tolist()]
+        return (int(self._pts[index]) - self._first) * self._time_base
+
+    def __iter__(self):
+        return ((value - self._first) * self._time_base for value in self._pts.tolist())
+
+    def seconds(self) -> list[float]:
+        """Each time as a float, equal to `float()` of its Fraction, without making the Fractions."""
+        numerator, denominator = self._time_base.numerator, self._time_base.denominator
+        return [(value - self._first) * numerator / denominator for value in self._pts.tolist()]
 
 
 def scan_video(source, start_time: float, duration: float, name: str, progress=None) -> VideoIndex:
@@ -150,7 +177,7 @@ class StreamedVideo:
         self.time_base = index.time_base
         self.times = index.times()
         self.first_frame = index.first_frame
-        self._pts = index.pts.tolist()
+        self._pts = index.pts
         self._frames = None
         self._next = None
         self._index = -1
@@ -165,7 +192,7 @@ class StreamedVideo:
             self._next = next(self._frames, None)
         while self._index < index:
             self._index += 1
-            self._current = self._frame_at(self._pts[self._index])
+            self._current = self._frame_at(int(self._pts[self._index]))
         return self._current
 
     def _frame_at(self, pts: int) -> torch.Tensor | None:
@@ -184,7 +211,7 @@ class StreamedVideo:
         """The PyAV frames of the trim window as they decode, in order and not rotated, each with its time in
         seconds from the first frame as in `times`."""
         for frame in _decoded(self._source, self.index.start_time, self.index.duration):
-            yield (frame.pts - self._pts[0]) * self.time_base, frame
+            yield (frame.pts - int(self._pts[0])) * self.time_base, frame
 
     def audio(self, seconds: float) -> dict | None:
         """The audio of the trim window, cut to `seconds` from its start, or None without an audio stream."""

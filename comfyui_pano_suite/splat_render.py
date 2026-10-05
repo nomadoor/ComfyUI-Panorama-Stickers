@@ -57,9 +57,15 @@ def _is_gaussian_ply(data: bytes) -> bool:
 def splat_content(splat: Types.SPLAT) -> SceneContent:
     # The harmonics of the item last drawn, on its device, while the same item is drawn again.
     harmonics = {}
+    # The output pixels' rays in the Camera's own axes, while the Projection stays.
+    rays = {}
 
     def render(view: CameraView, index: int, device):
         xyz, rgb, opacity, scale, rot = _gaussian_item(splat, index, device)
+        if rays.get("key") != (view.projection, str(device)):
+            rays.clear()
+            rays["rays"] = ray_directions([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], view.projection, device)
+            rays["key"] = (view.projection, str(device))
         if splat.sh.shape[2] > 1:
             if harmonics.get("key") != (index, device):
                 harmonics.clear()
@@ -67,7 +73,7 @@ def splat_content(splat: Types.SPLAT) -> SceneContent:
                 harmonics["key"] = (index, device)
             eye = torch.tensor(_GLTF_TO_SPLAT @ view.position, dtype=torch.float32, device=device)
             rgb = _view_colors(harmonics["sh"], xyz - eye)
-        return render_gaussians(xyz, rgb, opacity, scale, rot, view)
+        return render_gaussians(xyz, rgb, opacity, scale, rot, view, rays["rays"])
 
     return SceneContent(splat.positions.shape[0], render)
 
@@ -102,15 +108,16 @@ def _levels(half: torch.Tensor) -> list[int]:
     return levels[:-1] + [top]
 
 
-def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView):
+def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torch.Tensor):
     """Straight-alpha color (H, W, 4) and ray length (H, W) of the gaussians seen by `view`; the depth of a pixel
     is where the alpha accumulated front to back first exceeds 0.5, or the alpha-weighted mean where it never
-    does, and +inf where empty."""
+    does, and +inf where empty. `rays` are the output pixels' directions (H, W, 3) in the Camera's own axes
+    (right, up, forward), on the device of `xyz`."""
     projection = view.projection
     width, height = projection.width, projection.height
     device = xyz.device
     flat = width * height
-    rays = ray_directions([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], projection, device).reshape(flat, 3)
+    rays = rays.reshape(flat, 3)
     # Rows: the Camera's right, up, and forward axes in the SPLAT frame.
     axes = torch.tensor((_GLTF_TO_SPLAT @ view.rotation * [1.0, 1.0, -1.0]).T, dtype=torch.float32, device=device)
     eye = torch.tensor(_GLTF_TO_SPLAT @ view.position, dtype=torch.float32, device=device)

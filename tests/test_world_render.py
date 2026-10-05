@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from comfyui_pano_suite.core import render as render_module
+from comfyui_pano_suite.core import world_render as world_render_module
 from comfyui_pano_suite.core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
@@ -286,7 +287,7 @@ def test_world_sticker_source_is_uploaded_again_only_when_its_frame_changes():
 
     def layers(source):
         return world_layer([RenderLayer(evaluated, SceneSources({"s": source}, {}))], evaluated["camera"], Projection.erp(32, 16),
-                           device=CPU, textures=textures)
+                           device=CPU, textures=textures, kept_rays={})
 
     red = layers(StickerSource(_solid(RED), FULL, frame=0))
     uploaded = textures[0, "s"][1]
@@ -295,6 +296,37 @@ def test_world_sticker_source_is_uploaded_again_only_when_its_frame_changes():
     blue = layers(StickerSource(_solid(BLUE), FULL, frame=1))
     assert textures[0, "s"][1] is not uploaded
     assert torch.allclose(red[0][8, 16, :3], torch.tensor(RED)) and torch.allclose(blue[0][8, 16, :3], torch.tensor(BLUE))
+
+
+def test_world_stickers_moving_before_a_camera_that_does_not_turn_reuse_its_rays(monkeypatch):
+    made = []
+    original = world_render_module.ray_directions
+    monkeypatch.setattr(world_render_module, "ray_directions", lambda *args: made.append(args) or original(*args))
+    sources = {"s": StickerSource(_solid(RED), FULL)}
+    cache = {}
+
+    frames = [_render(_state([_world("s", position=[x, 0.0, -1.0])], camera={"yaw_deg": 20.0}), sources, Projection.erp(64, 32), cache=cache)
+              for x in (0.0, 0.1, 0.2)]
+
+    assert len(made) == 1
+    _render(_state([_world("s", position=[0.0, 0.0, -1.0])], camera={"yaw_deg": 30.0}), sources, Projection.erp(64, 32), cache=cache)
+    assert len(made) == 2
+    assert all(torch.equal(frame[0], _render(_state([_world("s", position=[x, 0.0, -1.0])], camera={"yaw_deg": 20.0}), sources, Projection.erp(64, 32))[0])
+               for x, frame in zip((0.0, 0.1, 0.2), frames))
+
+
+def test_world_rays_are_made_again_when_only_the_field_of_view_changes(monkeypatch):
+    made = []
+    original = world_render_module.ray_directions
+    monkeypatch.setattr(world_render_module, "ray_directions", lambda *args: made.append(args) or original(*args))
+    sources = {"s": StickerSource(_solid(RED), FULL)}
+    cache = {}
+
+    for x, hfov in ((0.0, 90.0), (0.1, 90.0), (0.2, 60.0)):
+        color = _render(_state([_world("s", position=[x, 0.0, -1.0])]), sources, Projection.perspective(32, 16, hfov), cache=cache)[0]
+
+    assert [args[3].hfov_deg for args in made] == [90.0, 60.0]
+    assert torch.equal(color, _render(_state([_world("s", position=[0.2, 0.0, -1.0])]), sources, Projection.perspective(32, 16, 60.0))[0])
 
 
 def test_sources_of_world_stickers_no_longer_drawn_are_released():
