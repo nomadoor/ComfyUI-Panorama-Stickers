@@ -326,3 +326,19 @@ def test_cutout_shoots_the_splat_of_a_pano_scene():
     height, width = image.shape[:2]
     assert torch.allclose(image[height // 2, width // 2], torch.tensor((1.0, 0.0, 0.0)), atol=0.02)
     assert torch.allclose(image[0, 0], torch.tensor(GREEN))
+
+
+def test_splat_content_makes_the_camera_rays_once_per_projection(monkeypatch):
+    made = []
+    original = splat_render.ray_directions
+    monkeypatch.setattr(splat_render, "ray_directions", lambda *args: made.append(args) or original(*args))
+    splat = _shell(200, (0.0, 0.0, -3.0), 1.0)
+    content = splat_content(splat)
+    views = [CameraView(np.zeros(3), world_rotation(yaw, 0.0, 0.0), Projection.erp(48, 24)) for yaw in (0.0, 15.0)]
+
+    drawn = [content.render(view, 0, CPU) for view in views]
+    assert len(made) == 1
+    content.render(CameraView(np.zeros(3), world_rotation(0.0, 0.0, 0.0), Projection.perspective(16, 16, 60.0)), 0, CPU)
+    assert len(made) == 2
+    # The kept rays draw what new ones draw.
+    assert all(torch.equal(a, b) for view, frame in zip(views, drawn) for a, b in zip(frame, splat_content(splat).render(view, 0, CPU)))

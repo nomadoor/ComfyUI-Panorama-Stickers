@@ -30,6 +30,17 @@ class CameraView:
         right, up, back = self.rotation.T.tolist()
         return ray_directions(right, up, [-value for value in back], self.projection, device)
 
+    def cached_rays(self, device, kept: dict) -> torch.Tensor:
+        """`rays(device)`, kept in `kept` (a dict owned by one render pass) while the rotation and the Projection stay,
+        so that a Camera that does not turn does not make them again for each frame."""
+        key = (self.projection, self.rotation.tobytes(), str(device))
+        if kept.get("key") != key:
+            # The previous rays are released before the new ones are made.
+            kept.clear()
+            kept["rays"] = self.rays(device)
+            kept["key"] = key
+        return kept["rays"]
+
 
 @dataclass(frozen=True)
 class SceneContent:
@@ -83,7 +94,7 @@ def world_key(layers, camera: dict, projection) -> tuple | None:
     return projection, pose, contents
 
 
-def world_layer(layers, camera: dict, projection, *, device, textures: dict):
+def world_layer(layers, camera: dict, projection, *, device, textures: dict, kept_rays: dict):
     """All World content of a frame, over every layer (`RenderLayer`: `evaluated`, `sources`, `scene`,
     `scene_index`), as one layer (rgba, depth), or None without any: the `scene` content of each layer, then the
     active `world` Stickers of all layers together from the farthest center (`position`) to the nearest (layer
@@ -91,7 +102,8 @@ def world_layer(layers, camera: dict, projection, *, device, textures: dict):
     intersect then come out in exact depth order, whichever layer they belong to. A 3D Sticker (`ContentSource`)
     is its content through its transform, with its opacity on the alpha. `textures` keeps each drawn plane's
     source on `device` by (layer index, id) with its frame, so a source is uploaded again only when its frame
-    changes and the same id in two layers never shares one; the sources of Stickers not drawn are dropped."""
+    changes and the same id in two layers never shares one; the sources of Stickers not drawn are dropped.
+    `kept_rays` keeps the Camera's rays for the planes (`CameraView.cached_rays`)."""
     view = CameraView(np.asarray(camera["position"], dtype=np.float64), world_rotation(camera["yaw_deg"], camera["pitch_deg"], camera["roll_deg"]), projection)
     composite = None
     for layer in layers:
@@ -111,7 +123,7 @@ def world_layer(layers, camera: dict, projection, *, device, textures: dict):
             composite = over_by_depth(composite, (torch.cat([rgba[..., :3], rgba[..., 3:] * sticker["opacity"]], dim=-1), depth))
             continue
         if rays is None:
-            rays = view.rays(device)
+            rays = view.cached_rays(device, kept_rays)
         key = (index, sticker["id"])
         drawn.add(key)
         layer = _sticker_layer(rays, view.position, sticker, _texture(textures, key, source, device), source.crop)

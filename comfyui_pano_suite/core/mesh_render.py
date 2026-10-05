@@ -43,15 +43,16 @@ class MeshItem:
 
 def mesh_content(count: int, item_at) -> SceneContent:
     """The `scene` content of `count` items, item `index` given by `item_at(index)` as a MeshItem. The last item
-    drawn stays on the device for the next frame of the same execution."""
+    drawn stays on the device for the next frame of the same execution, and so do the rays of the last view."""
     uploaded = {}
+    kept_rays = {}
 
     def render(view, index, device):
         if uploaded.get("key") != (index, device):
             uploaded.clear()
             uploaded["item"] = _upload(item_at(index), device)
             uploaded["key"] = (index, device)
-        return render_mesh(view, uploaded["item"])
+        return render_mesh(view, uploaded["item"], view.cached_rays(device, kept_rays))
 
     return SceneContent(count, render)
 
@@ -63,13 +64,14 @@ def _upload(item: MeshItem, device) -> MeshItem:
     return MeshItem(move(item.vertices), item.faces.to(device=device, dtype=torch.long), move(item.uvs), move(item.colors), move(item.texture))
 
 
-def render_mesh(view: CameraView, item: MeshItem):
+def render_mesh(view: CameraView, item: MeshItem, rays: torch.Tensor | None = None):
     """The item seen by `view`: straight-alpha color (H, W, 4), opaque where a triangle is hit, and the distance
-    along the pixel's ray to the nearest hit (H, W), +inf elsewhere."""
+    along the pixel's ray to the nearest hit (H, W), +inf elsewhere. `rays` are `view.rays()` on the item's device
+    when the caller keeps them (None: made here)."""
     projection = view.projection
     width, height = projection.width, projection.height
     device = item.vertices.device
-    rays = view.rays(device).reshape(-1, 3)
+    rays = (view.rays(device) if rays is None else rays).reshape(-1, 3)
     origin = torch.tensor(view.position, dtype=torch.float32, device=device)
     rotation = torch.tensor(view.rotation, dtype=torch.float32, device=device)
     bounds_of = _erp_bounds if projection.kind == "erp" else _perspective_bounds

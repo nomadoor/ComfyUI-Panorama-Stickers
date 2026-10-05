@@ -482,7 +482,8 @@ def render_frame(
     `cache` is an optional dict owned by the caller for one execution, in which `bg_color`, `device`, the number of
     layers, and each layer's `sources` stay the same apart from the Sticker frames (`StickerSource.frame`). It keeps
     the background, the ripmap levels `_sample_filtered` made of it, the World content of all layers as one layer
-    (`world_layer`) with the drawn `world` Sticker sources on `device` by layer and id, and the result, and for each
+    (`world_layer`) with the drawn `world` Sticker sources on `device` by layer and id and the rays it was drawn
+    along, the output's rays and where they look while the Camera rotation and the Projection stay, and the result, and for each
     layer apart (so Sticker ids of different layers never meet) the previous frame's Sky (its layers, with the `sky`
     Sticker sources and the paint layers of its size on `device`), the Sky shot along the output's rays, and the ripmap levels of the Sticker sources and the paint layers (released with them). A frame whose
     Sky values and Sticker frames in every layer, Camera rotation, Projection, `bg_key`, and World content with the
@@ -506,26 +507,34 @@ def render_frame(
         return cache["frame"]
     caches = cache.setdefault("layers", [])
     caches.extend({} for _ in range(len(layers) - len(caches)))
-    looks = {}
+    look_key = (projection, *(camera[key] for key in ("yaw_deg", "pitch_deg", "roll_deg")))
+    looked = False
 
     def look():
-        # The direction of each output pixel and where it looks in the 360 ERP, made once for the frame when needed.
-        if not looks:
-            looks["rays"] = _rays(camera, projection, device)
-            looks["view"] = _view(looks["rays"])
-        return looks["rays"], looks["view"]
+        # The direction of each output pixel and where it looks in the 360 ERP, made when needed and kept while the
+        # Camera rotation and the Projection stay (exactly: unlike `view_key`, the values are not rounded).
+        nonlocal looked
+        looked = True
+        if cache.get("look_key") != look_key:
+            # The previous rays are released before the new ones are made.
+            cache.pop("look", None)
+            rays = _rays(camera, projection, device)
+            cache["look"] = rays, _view(rays)
+            cache["look_key"] = look_key
+        return cache["look"]
 
     sky = mask = None
     for layer, layer_cache, sky_key in zip(layers, caches, sky_keys):
         layer_sky = _layer_sky(layer, layer_cache, sky_key, sky_size, view_key, look, device)
         sky, mask = layer_sky if sky is None else (_sky_over(sky, layer_sky[0]), torch.maximum(mask, layer_sky[1]))
     if world is None:
-        for key in ("world_key", "world", "world_textures"):
+        for key in ("world_key", "world", "world_textures", "world_rays"):
             cache.pop(key, None)
     elif cache.get("world_key") != world:
         # The previous frame's layer is released before the new one is drawn.
         cache.pop("world", None)
-        cache["world"] = world_layer(layers, camera, projection, device=device, textures=cache.setdefault("world_textures", {}))
+        cache["world"] = world_layer(layers, camera, projection, device=device, textures=cache.setdefault("world_textures", {}),
+                                     kept_rays=cache.setdefault("world_rays", {}))
         cache["world_key"] = world
     background = bg_valid = None
     if bg is not None:
@@ -544,6 +553,10 @@ def render_frame(
             background = _resize(background, projection.height, projection.width)
         else:
             background, bg_valid = _project_background(background, projection, look()[1], levels)
+    if not looked:
+        # A frame that does not look along the rays does not keep them.
+        for key in ("look_key", "look"):
+            cache.pop(key, None)
     world_layers = () if cache.get("world") is None else (cache["world"],)
     color, depth = composite_frame(bg_color, background, sky, world_layers, bg_valid=bg_valid)
     if reusable:

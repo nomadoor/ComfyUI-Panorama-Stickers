@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import torch
 
+from comfyui_pano_suite.core import world_render as world_render_module
 from comfyui_pano_suite.core.math import ray_directions
 from comfyui_pano_suite.core.mesh_render import BARE_COLOR, EDGE, MeshItem, mesh_content, render_mesh
 from comfyui_pano_suite.core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
@@ -161,3 +162,21 @@ def test_mesh_is_ordered_by_depth_with_world_stickers():
     assert torch.allclose(color[89, 210], torch.tensor([1.0, 0.0, 0.0]))
     assert torch.allclose(color[89, 235], torch.ones(3))
     assert abs(float(depth[89, 210]) - 3.0 / math.cos(math.radians(30.5))) < 1e-3
+
+
+def test_mesh_content_keeps_the_rays_while_its_view_does_not_turn(monkeypatch):
+    made = []
+    original = world_render_module.ray_directions
+    monkeypatch.setattr(world_render_module, "ray_directions", lambda *args: made.append(args) or original(*args))
+    vertices, faces = _random_triangles(0)
+    item = MeshItem(vertices.float(), faces)
+    content = mesh_content(1, lambda index: item)
+    view = _view(Projection.erp(48, 24), yaw=30.0)
+
+    first = content.render(view, 0, torch.device("cpu"))
+    second = content.render(_view(Projection.erp(48, 24), position=(0.1, 0.0, 0.0), yaw=30.0), 0, torch.device("cpu"))
+    assert len(made) == 1
+    content.render(_view(Projection.erp(48, 24), yaw=40.0), 0, torch.device("cpu"))
+    assert len(made) == 2
+    assert all(torch.equal(a, b) for a, b in zip(first, render_mesh(view, item)))
+    assert all(torch.equal(a, b) for a, b in zip(second, render_mesh(_view(Projection.erp(48, 24), position=(0.1, 0.0, 0.0), yaw=30.0), item)))
