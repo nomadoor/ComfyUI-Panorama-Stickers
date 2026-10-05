@@ -98,8 +98,10 @@
 - 実行後は、実行が返した大きさ（`ui` の `pano_output_size`）を見積もりより優先する。VIDEO・IMAGE batch・
   port の media・上流の Scene は Timeline の長さや coverage を変えるため。使うのは、実行時の media の接続
   （background・sticker・scene）が今と同じで、かつ `pano_output_size.key`（`state_json`・`output_size`・
-  `coverage` の hash、`_studio_run_key` / `studioRunKey`）が今の値と一致するときだけで、実行後に編集したら
-  見積もりに戻る。状態はこれらの入力が変わったときだけ計算し直す。
+  `coverage`・`bg_color` の hash、`_studio_run_key` / `studioRunKey`）が今の値と一致するときだけで、実行後に
+  編集したら見積もりに戻る。状態はこれらの入力が変わったときだけ計算し直す。接続（link）を変えずに上流の
+  中身を変えたとき（LoadImage で別の画像を選ぶ、上流のノードの widget を変えるなど）は検出しないので、
+  実行し直すまで前の実行の結果を示す。
 - auto の `bg_media` の幅は、直近の実行結果の `pano_bg_width`、無ければ接続した画像、または node が
   再生用に読む VIDEO file の幅とする。実行前は frontend が preview に読む画像の幅に従うため、それが
   `bg_media` の実際の幅と違えば、実行までは表示が実行結果と違うことがある。わからない間は大きさを
@@ -107,6 +109,16 @@
 - パノラマは背景と sky Sticker・paint を Timeline の最初の frame で描き、drag / wheel で見回すだけとする。
   world Sticker と 3D の素材（`scene`）は描かない。描くかどうかは後続で決める。
   Sticker の選択・drag・削除、画像の追加と drop、再生ボタンは持たない。surface の大きさは出力の比で変わらない。
+- ただし出力が ERP のとき（Camera が無いか、`projection` が `erp`）は、実行が `ui` の `pano_output_erp` に
+  出力（`first_frame`、動画なら最初の frame）を元の大きさの PNG で temp に書き（`TEMP_FILES` に登録）、その
+  `coverage` を添える。直近の実行が今の入力のもの（上の `pano_output_size` と同じ条件）である間、パノラマは
+  その画像だけを背景に描き、sky Sticker と paint を重ねない（3D・world・上流の Scene もすでに入っている）。
+  `coverage` 180 なら前半球として描く。画像を読み込めるまでと、読み込めなかったときは、今までどおり描く。
+  注記の欄の先頭に `Showing the last run` と示す。画像は結果の file ごとに一度だけ読んで decode し、node を
+  外すと手放す。collapse や非表示の間は読まない。
+  Camera の ERP は Camera の向きで撮った ERP なので、パノラマは Camera の frame 0 の回転（yaw・pitch・roll、
+  `studioRunQuaternion`）で ERP の球を回して World の向きに戻して描く。run が `core/render.py` の `_rays` で
+  回したものの逆で（`tests/test_studio_run_erp_orientation.py`）、二つの描き方を切り替えても向きは跳ばない。
 
 ## Scope Boundary
 

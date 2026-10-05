@@ -2747,6 +2747,7 @@
   overflow: hidden;
   color: var(--pano-text-secondary);
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pano-studio-node-open {
   width: 100%;

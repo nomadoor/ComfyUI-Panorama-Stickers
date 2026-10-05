@@ -77,7 +77,7 @@ CASES = [
     ({"camera": _camera(fov=70.0, position={"value": [0, 0, 0], "keyframes": _keys((3, [0.0, 0.0, -1.0]), (11, [1.0, 0.0, 0.0]))})},
      "2048", 360, None),
 ]
-KEYS = [("", "2048", "360"), ('{"version": 2}', "1024", "180"), ('{"name": "パノラマ 🎥 é\u2028"}', "auto", "360")]
+KEYS = [("", "2048", "360", "#00ff00"), ('{"version": 2}', "1024", "180", "#1A2B3C"), ('{"name": "パノラマ 🎥 é\u2028"}', "auto", "360", "")]
 
 
 def _python(state, output_size, coverage, bg_width):

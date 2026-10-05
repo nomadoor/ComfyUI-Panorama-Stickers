@@ -61,6 +61,7 @@ from .core.video import (
     make_video_ui_payload,
     mp4_has_audio,
     save_editor_frames,
+    save_output_png,
     save_video_to_mp4,
 )
 from .core.video_source import MaterializedVideo, StreamedVideo
@@ -1854,12 +1855,12 @@ def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg
     return *reduced, size
 
 
-def _studio_run_key(state_json: str, output_size: str, coverage: str) -> str:
-    """The key of the inputs a Studio run's size came from: FNV-1a (32 bit) over the code points of the three values
-    joined by NUL, as `studioRunKey` (web_src/pano_studio_status.js) makes it, so that the node surface shows the
-    run's size only while they are unchanged."""
+def _studio_run_key(state_json: str, output_size: str, coverage: str, bg_color: str) -> str:
+    """The key of the inputs a Studio run's size and output came from: FNV-1a (32 bit) over the code points of the
+    four values joined by NUL, as `studioRunKey` (web_src/pano_studio_status.js) makes it, so that the node surface
+    shows the run's size and output only while they are unchanged."""
     value = 0x811C9DC5
-    for char in f"{state_json}\0{output_size}\0{coverage}":
+    for char in f"{state_json}\0{output_size}\0{coverage}\0{bg_color}":
         value = ((value ^ ord(char)) * 0x01000193) & 0xFFFFFFFF
     return f"{value:08x}"
 
@@ -1923,7 +1924,11 @@ class PanoramaStudioNode(io.ComfyNode):
         # The size the run gave, which media and an upstream Scene can make differ from what the surface works out.
         ui_ret["pano_output_size"] = [{"width": width, "height": height, "capped": reduced_from is not None,
                                        "reduced_from": None if reduced_from is None else list(reduced_from),
-                                       "key": _studio_run_key(state_json, output_size, coverage)}]
+                                       "key": _studio_run_key(state_json, output_size, coverage, bg_color)}]
+        if camera is None or camera["projection"] == "erp":
+            # An ERP output holds all the run drew, so the node surface shows it while the run is current.
+            ui_ret["pano_output_erp"] = [{**entry_from_path(save_output_png(image[0]), media_type="image/png"),
+                                          "coverage": built.coverage}]
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         # The `scene` output is the World that is shot, without the Camera (ADR 0029).
         return io.NodeOutput(image, mask, video, _scene_output(built), handoff, ui=ui_ret)

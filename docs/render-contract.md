@@ -459,12 +459,12 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 
 ### 一時ファイル
 
-- エディタのために temp に書くファイル（エディタ用の MP4・RGBA の PNG・PLY/GLB、旧ノードのプレビュー MP4、`video` 出力のストリームソース）は、`core/temp_files.py` の `TEMP_FILES` に登録する（書き終えたら `TEMP_FILES.writing` / `add`）。ComfyUI は temp を起動時と終了時にしか消さないので、合計が `TEMP_MAX_BYTES`（既定 5 GiB。モジュールの定数）を超えたら、最近使っていないものから消す。
+- エディタのために temp に書くファイル（エディタ用の MP4・RGBA の PNG・PLY/GLB、旧ノードのプレビュー MP4、`video` 出力のストリームソース、Panorama Studio の出力 ERP の PNG（`core/video.py` の `save_output_png`。ノード上の表示用、元の大きさ））は、`core/temp_files.py` の `TEMP_FILES` に登録する（書き終えたら `TEMP_FILES.writing` / `add`）。ComfyUI は temp を起動時と終了時にしか消さないので、合計が `TEMP_MAX_BYTES`（既定 5 GiB。モジュールの定数）を超えたら、最近使っていないものから消す。
   - 今の実行（ComfyUI のプロンプト。`comfy_execution.utils.get_executing_context()` の `prompt_id`、`node_runtime.py` が設定する）が書いたファイルと、今の実行の出力の `ui` が指したファイル（`entry_from_path` を通ったもの）は、その実行の間は消さない。上限を超えていても残す。
   - 消したファイルをキャッシュが指していても、次に要るときに作り直す（キャッシュはファイルがあるかを確かめる。`SceneVideo` のストリームソースも同じ）。
   - 消せないファイル（Windows でブラウザが再生中の MP4 など。`unlink` の `OSError`）は登録と合計に残し、次に書いたときにもう一度消す。消せないことで実行は失敗しない。書きかけのファイルを消すとき（`removed_on_failure`）も同じで、元の例外をそのまま上げる。旧ノードのプレビュー MP4 は、エンコーダの試行のループを抜けてから登録する（登録の処理をエンコーダの失敗と取り違えないため）。
-- 登録したファイルの `ui` の項目には `"pano_evictable": true` を足す。ほかの項目（`filename`・`subfolder`・`type`・`storage`・`format`）は変えない。前の実行の `ui` を表示しているエディタがこの印の付いたファイルを開けなかった（404）ときは、「ファイルが消えたので、もう一度実行してください」と出せる。フロントエンドの表示はまだない。
-  - 対象のキー：`pano_videos`・`pano_input_videos`・`pano_sticker_input_videos`・`pano_sticker_input_frames`・`pano_scene_files`・`pano_sticker_files` と、上流の層の同じキー（`pano_upstream_*`・`pano_upstream_layers[].ui`）。
+- 登録したファイルの `ui` の項目には `"pano_evictable": true` を足す。ほかの項目（`filename`・`subfolder`・`type`・`storage`・`format`）は変えない。前の実行の `ui` を表示しているエディタがこの印の付いたファイルを開けなかった（404）ときは、「ファイルが消えたので、もう一度実行してください」と出せる。フロントエンドの表示はまだない。また、入力を変えずに実行し直すと ComfyUI はノードの出力をキャッシュから返し、`execute` が走らないので、消えたファイルを指す前の `ui` がそのまま返る（ファイルは書き直されない）。入力のどれかを変えて実行するまで、そのファイルは開けない。
+  - 対象のキー：`pano_videos`・`pano_input_videos`・`pano_sticker_input_videos`・`pano_sticker_input_frames`・`pano_scene_files`・`pano_sticker_files`・`pano_output_erp` と、上流の層の同じキー（`pano_upstream_*`・`pano_upstream_layers[].ui`）。
 - 入力ディレクトリの VIDEO で、エディタがそのまま扱えるもの（上の「そのまま使う」の条件を満たす `.mp4`）は temp に複製せず、`{"filename", "subfolder", "type": "input", "storage": "input", "format": "video/mp4"}` で直接指す。登録しないので `pano_evictable` は付かない。
   - `type` を外して `storage` だけにはできない：フロントエンドの `pano_comfy_media.js` の `comfyImageEntryToUrl` は `type` だけを読む（`storage` を先に読むのは `pano_preview_previewnode.js` だけ）。そのため、ComfyUI を `--enable-assets` で起動したときは、コアの `comfy_execution/asset_enrichment.py` が `type` の付いた `ui` の項目をすべてジョブの出力として登録し、この入力の MP4 も実行のたびに、その実行の出力として登録し直される（同じパスの前の記録は missing になる）。既定（assets なし）では影響はない。フロントエンドが `storage` を先に読むようになったら、`type` を外す。
 - `ui` の項目の `subfolder` は、ディレクトリの直下のファイルでは `""`（以前は `"."`）。
