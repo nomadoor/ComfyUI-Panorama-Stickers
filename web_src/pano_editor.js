@@ -90,6 +90,7 @@ import { createPointerInput } from "./editor/pointer_input.js";
 import { createSidePanelEvents } from "./editor/side_panel_events.js";
 import { createModalEvents } from "./editor/modal_events.js";
 import { createKeyboard } from "./editor/keyboard.js";
+import { editorSession, peekEditorSession, peekNodeSurface, stateSync } from "./pano_node_bridge.js";
 
 const _paintLayerSyncRegistry = new Map();
 
@@ -173,8 +174,8 @@ async function showEditor(node, type, options = {}) {
     active: editorActive(node),
     fps: stateV2 ? videoTimelineFps(node) : null,
   });
-  node.__panoLiveStateOverride = state;
-  node.__panoLiveStateVersion = 0;
+  stateSync(node).liveState = state;
+  stateSync(node).liveStateVersion = 0;
 
   // Panorama Studio's Camera is the one shot of the editor, at the playhead (cameraShot), while it has one.
   // initialShotBase is the shot the editor opens with (null without a Camera); cutoutShotBase then follows it.
@@ -704,7 +705,7 @@ async function showEditor(node, type, options = {}) {
   watchPixelRatio();
 
   const flushStateBeforeQueue = () => commitState();
-  if (!readOnly) node.__panoFlushStateBeforeQueue = flushStateBeforeQueue;
+  if (!readOnly) editorSession(node).flushBeforeQueue = flushStateBeforeQueue;
 
   frameRollKnobEl?.addEventListener("pointerdown", onFrameRollKnobPointerDown);
   frameRollKnobEl?.addEventListener("pointermove", onFrameRollKnobPointerMove);
@@ -851,12 +852,10 @@ async function showEditor(node, type, options = {}) {
         document.exitFullscreen?.().catch(() => { });
       }
       document.removeEventListener("fullscreenchange", onFullscreenChange);
-      node.__panoLiveStateOverride = null;
-      node.__panoLivePaintSurface = null;
-      if (node.__panoFlushStateBeforeQueue === flushStateBeforeQueue) {
-        node.__panoFlushStateBeforeQueue = null;
-      }
-      node.__panoDomPreview?.requestDraw?.();
+      stateSync(node).liveState = null;
+      const session = peekEditorSession(node);
+      if (session?.flushBeforeQueue === flushStateBeforeQueue) session.flushBeforeQueue = null;
+      peekNodeSurface(node)?.dom?.requestDraw?.();
       node.graph?.setDirtyCanvas?.(true, true);
       app?.canvas?.setDirty?.(true, true);
       hideTooltip();

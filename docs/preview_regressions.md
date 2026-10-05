@@ -97,7 +97,7 @@ Incident ID: `PREVIEW-20260225-11`
 - Public preview nodeは `PanoramaPreview` 1系統のみ。Legacy公開名を戻さない。
 - `computeSize` は最小必要サイズのみ返す。`node.size[1]` を算出に使わない。
 - node lifecycle patchは必ずidempotent化し、double-wrapを禁止する。
-- teardownで `__panoDomRestore` / `__panoLegacyRestore` を必ず実行し、hookを元に戻す。
+- teardownで `nodeSurface(node).restore`（`web_src/pano_node_bridge.js`）を必ず実行し、hookを元に戻す。
 - Stickers内previewは既定OFFだが、ON時はPreviewと同一runtime/render経路を使う。
 
 ### Quick Verification Commands
@@ -106,7 +106,7 @@ node --check web/pano_node_preview.js
 node --check web/pano_preview_runtime.js
 node --check web/pano_preview_hooks.js
 node --check web/pano_editor.js
-rg -n "computeSize|node.size\\?\\[1\\]|__panoLegacyPreviewHooked|__panoDomRestore|__panoLegacyRestore" web/pano_preview_runtime.js web/pano_node_preview.js
+rg -n "computeSize|node.size\\?\\[1\\]|\\.restore|\\.dom\\b" web_src/pano_preview_runtime.js web_src/pano_node_preview.js
 ```
 
 ## 2026-02-27: PanoramaPreview invisible/height-zero unresolved after hypothesis patches

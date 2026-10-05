@@ -7,6 +7,7 @@ import {
   queuePendingStickerOperation,
 } from "../web_src/pano_editor_extension.js";
 import { registerExternalStickerSync } from "../web_src/pano_external_sticker_sync.js";
+import { disposeNodeRuntime, editorSession, nodeSurface, previewNode, stateSync } from "../web_src/pano_node_bridge.js";
 
 function makeWidget(name, value = "") {
   return { name, value, callback() {} };
@@ -79,7 +80,7 @@ test("stickers lifecycle hides the fallback button only after the shared DOM sur
   const extension = createPanoEditorExtension({
     app: { canvas: { setDirty() {} } },
     openEditor() {},
-    attachStickers(node) { node.__panoStickersNodeSurface = { mounted: true }; },
+    attachStickers(node) { nodeSurface(node).stickers = { mounted: true }; },
     attachCutout() {},
     attachPreview() {},
     requestFrame(callback) { callback(); },
@@ -101,7 +102,7 @@ test("Panorama Studio opens the Stickers editor and node surface on state v2 wit
     openEditor(node, type) { opened.push([node, type]); },
     attachStickers(node, options) {
       attached.push(node);
-      node.__panoStickersNodeSurface = { mounted: true };
+      nodeSurface(node).stickers = { mounted: true };
       options.onOpen();
     },
     attachCutout() { throw new Error("Panorama Studio has no Cutout surface"); },
@@ -154,7 +155,7 @@ test("the sticker input syncs once the node is in the graph, for the legacy Stic
     app: { canvas: { setDirty() {} } },
     openEditor() {},
     attachStickers(node) {
-      node.__panoStickersNodeSurface = { mounted: true };
+      nodeSurface(node).stickers = { mounted: true };
       registerExternalStickerSync(node, (reason) => synced.push([node.title, reason, node.getInputLink(0)]));
     },
     attachCutout() {},
@@ -285,7 +286,7 @@ test("cutout lifecycle hides the fallback editor button only after the node surf
     app: { canvas: { setDirty() {} } },
     openEditor() {},
     attachStickers() {},
-    attachCutout(node) { node.__panoCutoutNodeSurface = { mounted: true }; },
+    attachCutout(node) { nodeSurface(node).cutout = { mounted: true }; },
     attachPreview() {},
     requestFrame(callback) { callback(); },
   });
@@ -305,7 +306,7 @@ test("cutout lifecycle restores a visible fallback button when a later node surf
     openEditor() {},
     attachStickers() {},
     attachCutout(node) {
-      node.__panoCutoutNodeSurface = mountSucceeds ? { mounted: true } : null;
+      nodeSurface(node).cutout = mountSucceeds ? { mounted: true } : null;
     },
     attachPreview() {},
     requestFrame(callback) { callback(); },
@@ -318,7 +319,7 @@ test("cutout lifecycle restores a visible fallback button when a later node surf
   assert.deepEqual(button.computeSize(), [0, 0]);
 
   mountSucceeds = false;
-  node.__panoPreviewAttached = false;
+  nodeSurface(node).attached = false;
   NodeType.prototype.onConfigure.call(node);
 
   assert.equal(button.hidden, false);
@@ -335,7 +336,7 @@ test("Preview hides its modal fallback button only after the fullscreen surface 
       attachStickers() {},
       attachCutout() {},
       attachPreview(node) {
-        node.__panoPreviewNodeSurface = surfaceMounted ? { mounted: true } : null;
+        previewNode(node).surface = surfaceMounted ? { mounted: true } : null;
       },
       requestFrame(callback) { callback(); },
     });
@@ -387,12 +388,10 @@ test("coverage changes preserve the widget callback and invalidate every preview
   const node = makeNode();
   const coverage = node.widgets.find((widget) => widget.name === "coverage");
   coverage.callback = (value) => `previous:${value}`;
-  node.__panoStateCache = {};
-  node.__panoLiveStateOverride = {};
-  node.__panoWrappedErpCache = {};
-  node.__panoPanoBackgroundCache = {};
-  node.__panoPreviewNodeRuntime = { requestDraw() { dirtied.push("runtime"); } };
-  node.__panoDomPreview = { requestDraw() { dirtied.push("dom"); } };
+  stateSync(node).parsedState = {};
+  stateSync(node).liveState = {};
+  previewNode(node).runtime = { requestDraw() { dirtied.push("runtime"); } };
+  nodeSurface(node).dom = { requestDraw() { dirtied.push("dom"); } };
   node.setDirtyCanvas = () => dirtied.push("node");
   node.graph.setDirtyCanvas = () => dirtied.push("graph");
   const extension = createPanoEditorExtension({
@@ -406,10 +405,8 @@ test("coverage changes preserve the widget callback and invalidate every preview
 
   extension.nodeCreated(node);
   assert.equal(coverage.callback("180"), "previous:180");
-  assert.equal(node.__panoStateCache, null);
-  assert.equal(node.__panoLiveStateOverride, null);
-  assert.equal(node.__panoWrappedErpCache, null);
-  assert.equal(node.__panoPanoBackgroundCache, null);
+  assert.equal(stateSync(node).parsedState, null);
+  assert.equal(stateSync(node).liveState, null);
   assert.deepEqual(dirtied, ["runtime", "dom", "node", "graph", "app"]);
 });
 
@@ -475,8 +472,65 @@ test("standalone preview waits for graph identity and attaches only once", () =>
   queue.shift()();
 
   assert.equal(attached.length, 1);
-  assert.equal(node.__panoStandaloneInstallDone, true);
+  assert.equal(previewNode(node).installDone, true);
   assert.equal(node.widgets.filter((widget) => widget.name === "Open Preview").length, 1);
+});
+
+test("removing a node disposes its runtime after the hooks before it", () => {
+  const calls = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  for (const name of ["PanoramaStudio", "PanoramaCutout", "PanoramaPreview"]) {
+    function NodeType() {}
+    NodeType.prototype.onRemoved = function () {
+      calls.push([name, "previous", nodeSurface(this).restore !== null]);
+      return "removed";
+    };
+    extension.beforeRegisterNodeDef(NodeType, { name });
+    const node = makeNode();
+    nodeSurface(node).restore = () => calls.push([name, "restore"]);
+    nodeSurface(node).attached = true;
+
+    assert.equal(NodeType.prototype.onRemoved.call(node), "removed");
+    assert.equal(nodeSurface(node).attached, false);
+  }
+  assert.deepEqual(calls, [
+    ["PanoramaStudio", "previous", true], ["PanoramaStudio", "restore"],
+    ["PanoramaCutout", "previous", true], ["PanoramaCutout", "restore"],
+    ["PanoramaPreview", "previous", true], ["PanoramaPreview", "restore"],
+  ]);
+});
+
+test("a Preview node removed while it waits for its graph is not installed", () => {
+  const queue = [];
+  const attached = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview(node) { attached.push(node); },
+    requestFrame(callback) { queue.push(callback); },
+  });
+  const node = makeNode();
+  node.comfyClass = "PanoramaPreview";
+  node.id = -1;
+  node.graph = null;
+
+  extension.nodeCreated(node);
+  queue.shift()();
+  disposeNodeRuntime(node);
+  for (let frame = 0; frame < 40 && queue.length; frame += 1) queue.shift()();
+
+  assert.deepEqual(queue, []);
+  assert.deepEqual(attached, []);
+  assert.equal(node.widgets.some((widget) => widget.name === "Open Preview"), false);
 });
 
 test("state serialization waits for pending sticker uploads before flushing the latest editor state", async () => {
@@ -497,8 +551,8 @@ test("state serialization waits for pending sticker uploads before flushing the 
 
   let resolveUpload;
   const pendingUpload = new Promise((resolve) => { resolveUpload = resolve; });
-  node.__panoPendingStickerUploads = new Map([["replacement", pendingUpload]]);
-  node.__panoFlushStateBeforeQueue = () => { stateWidget.value = "replacement-state"; };
+  stateSync(node).pendingStickerUploads.set("replacement", pendingUpload);
+  editorSession(node).flushBeforeQueue = () => { stateWidget.value = "replacement-state"; };
 
   let settled = false;
   const serialized = stateWidget.serializeValue(node, 0).then((value) => {
@@ -527,14 +581,12 @@ test("state serialization flushes every registered state producer before reading
   NodeType.prototype.onNodeCreated.call(node);
   const stateWidget = node.widgets.find((widget) => widget.name === "state_json");
   const calls = [];
-  node.__panoStateFlushers = new Set([
-    async () => {
-      await Promise.resolve();
-      calls.push("node-surface");
-      stateWidget.value = "node-surface-state";
-    },
-    () => calls.push("secondary"),
-  ]);
+  stateSync(node).flushers.add(async () => {
+    await Promise.resolve();
+    calls.push("node-surface");
+    stateWidget.value = "node-surface-state";
+  });
+  stateSync(node).flushers.add(() => calls.push("secondary"));
 
   assert.equal(await stateWidget.serializeValue(node, 0), "node-surface-state");
   assert.deepEqual(calls, ["node-surface", "secondary"]);
@@ -542,15 +594,12 @@ test("state serialization flushes every registered state producer before reading
 
 test("state producers can be flushed through the same public seam before opening an editor", async () => {
   const calls = [];
-  const node = {
-    __panoStateFlushers: new Set([
-      async () => {
-        await Promise.resolve();
-        calls.push("node-surface");
-      },
-    ]),
-    __panoFlushStateBeforeQueue: () => calls.push("modal"),
-  };
+  const node = {};
+  stateSync(node).flushers.add(async () => {
+    await Promise.resolve();
+    calls.push("node-surface");
+  });
+  editorSession(node).flushBeforeQueue = () => calls.push("modal");
 
   await flushPanoStateProducers(node);
   assert.deepEqual(calls, ["node-surface", "modal"]);
@@ -558,10 +607,9 @@ test("state producers can be flushed through the same public seam before opening
 
 test("the public state barrier waits for image operations before opening an editor", async () => {
   const calls = [];
-  const node = {
-    __panoStateFlushers: new Set([() => calls.push("node-surface")]),
-    __panoFlushStateBeforeQueue: () => calls.push("modal"),
-  };
+  const node = {};
+  stateSync(node).flushers.add(() => calls.push("node-surface"));
+  editorSession(node).flushBeforeQueue = () => calls.push("modal");
   let releaseUpload;
   const uploadGate = new Promise((resolve) => { releaseUpload = resolve; });
   queuePendingStickerOperation(node, "add-image", async () => {
@@ -583,10 +631,9 @@ test("the public state barrier waits for image operations before opening an edit
 
 test("an editor barrier can continue after a failed image operation has settled", async () => {
   const calls = [];
-  const node = {
-    __panoStateFlushers: new Set([() => calls.push("node-surface")]),
-    __panoFlushStateBeforeQueue: () => calls.push("modal"),
-  };
+  const node = {};
+  stateSync(node).flushers.add(() => calls.push("node-surface"));
+  editorSession(node).flushBeforeQueue = () => calls.push("modal");
   queuePendingStickerOperation(node, "failed-add", async () => {
     throw new Error("upload failed");
   });
@@ -609,11 +656,8 @@ test("state serialization rejects instead of queueing stale state when a sticker
   const node = makeNode();
   NodeType.prototype.onNodeCreated.call(node);
   const stateWidget = node.widgets.find((widget) => widget.name === "state_json");
-  node.__panoPendingStickerUploads = new Map([[
-    "replacement",
-    Promise.reject(new Error("replacement upload failed")),
-  ]]);
-  node.__panoFlushStateBeforeQueue = () => { stateWidget.value = "must-not-queue"; };
+  stateSync(node).pendingStickerUploads.set("replacement", Promise.reject(new Error("replacement upload failed")));
+  editorSession(node).flushBeforeQueue = () => { stateWidget.value = "must-not-queue"; };
 
   await assert.rejects(
     () => stateWidget.serializeValue(node, 0),
@@ -641,15 +685,15 @@ test("state serialization also waits for a replacement started while another upl
   let resolveSecond;
   const firstUpload = new Promise((resolve) => { resolveFirst = resolve; });
   const secondUpload = new Promise((resolve) => { resolveSecond = resolve; });
-  node.__panoPendingStickerUploads = new Map([["first", firstUpload]]);
-  node.__panoFlushStateBeforeQueue = () => { stateWidget.value = "latest-state"; };
+  stateSync(node).pendingStickerUploads.set("first", firstUpload);
+  editorSession(node).flushBeforeQueue = () => { stateWidget.value = "latest-state"; };
 
   let settled = false;
   const serialized = stateWidget.serializeValue(node, 0).then((value) => {
     settled = true;
     return value;
   });
-  node.__panoPendingStickerUploads.set("second", secondUpload);
+  stateSync(node).pendingStickerUploads.set("second", secondUpload);
   resolveFirst();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(settled, false);
@@ -667,11 +711,11 @@ test("sticker operations register before decode or upload can yield", async () =
     return "uploaded";
   });
 
-  assert.equal(node.__panoPendingStickerUploads.get("replace-a"), operation);
+  assert.equal(stateSync(node).pendingStickerUploads.get("replace-a"), operation);
   resolveDecode();
   assert.equal(await operation, "uploaded");
   await Promise.resolve();
-  assert.equal(node.__panoPendingStickerUploads.size, 0);
+  assert.equal(stateSync(node).pendingStickerUploads.size, 0);
 });
 
 test("sticker operations serialize consecutive replacements", async () => {

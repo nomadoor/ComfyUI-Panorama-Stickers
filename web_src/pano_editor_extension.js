@@ -4,6 +4,7 @@ import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { runExternalStickerSync } from "./pano_external_sticker_sync.js";
 import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
 import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
+import { disposeNodeRuntime, editorSession, nodeSurface, previewNode, stateSync } from "./pano_node_bridge.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -28,7 +29,7 @@ function initializeNewCutoutFrame(node) {
 }
 
 function syncCoverageWidgetRedraw(node, app) {
-  if (!node || node.__panoCoverageWidgetSyncInstalled) return;
+  if (!node || stateSync(node).coverageSyncInstalled) return;
   const coverageWidget = getWidget(node, "coverage");
   if (!coverageWidget) return;
   const previous = typeof coverageWidget.callback === "function"
@@ -36,18 +37,17 @@ function syncCoverageWidgetRedraw(node, app) {
     : null;
   coverageWidget.callback = function (...args) {
     const result = previous ? previous(...args) : undefined;
-    node.__panoStateCache = null;
-    node.__panoLiveStateOverride = null;
-    node.__panoWrappedErpCache = null;
-    node.__panoPanoBackgroundCache = null;
-    node.__panoPreviewNodeRuntime?.requestDraw?.();
-    node.__panoDomPreview?.requestDraw?.();
+    const sync = stateSync(node);
+    sync.parsedState = null;
+    sync.liveState = null;
+    previewNode(node).runtime?.requestDraw?.();
+    nodeSurface(node).dom?.requestDraw?.();
     node.setDirtyCanvas?.(true, true);
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
     return result;
   };
-  node.__panoCoverageWidgetSyncInstalled = true;
+  stateSync(node).coverageSyncInstalled = true;
 }
 
 function isHexColorString(value) {
@@ -142,8 +142,8 @@ function ensureActionButtonWidget(node, buttonText, callback) {
 }
 
 async function waitForPendingStickerUploads(node, { tolerateOperationFailure = false } = {}) {
-  const pending = node?.__panoPendingStickerUploads;
-  if (!(pending instanceof Map)) return;
+  const pending = stateSync(node)?.pendingStickerUploads;
+  if (!pending) return;
   while (pending.size > 0) {
     const entries = Array.from(pending.entries());
     if (tolerateOperationFailure) {
@@ -161,36 +161,32 @@ export function queuePendingStickerOperation(node, operationId, operation) {
   if (!node || typeof operation !== "function") {
     return Promise.reject(new TypeError("A node and sticker operation are required."));
   }
-  if (!(node.__panoPendingStickerUploads instanceof Map)) {
-    node.__panoPendingStickerUploads = new Map();
-  }
-  const previous = node.__panoStickerOperationTail;
+  const sync = stateSync(node);
+  const previous = sync.stickerOperationTail;
   const ready = previous && typeof previous.then === "function"
     ? previous.catch(() => undefined)
     : Promise.resolve();
   const pending = ready.then(() => operation());
   const tail = pending.catch(() => undefined);
-  node.__panoStickerOperationTail = tail;
-  node.__panoPendingStickerUploads.set(operationId, pending);
+  sync.stickerOperationTail = tail;
+  sync.pendingStickerUploads.set(operationId, pending);
   const cleanup = () => {
-    if (node.__panoPendingStickerUploads?.get?.(operationId) === pending) {
-      node.__panoPendingStickerUploads.delete(operationId);
+    if (sync.pendingStickerUploads.get(operationId) === pending) {
+      sync.pendingStickerUploads.delete(operationId);
     }
   };
   pending.then(cleanup, cleanup);
   tail.then(() => {
-    if (node.__panoStickerOperationTail === tail) node.__panoStickerOperationTail = null;
+    if (sync.stickerOperationTail === tail) sync.stickerOperationTail = null;
   });
   return pending;
 }
 
 export async function flushPanoStateProducers(node, options = {}) {
   await waitForPendingStickerUploads(node, options);
-  const flushers = node?.__panoStateFlushers instanceof Set
-    ? Array.from(node.__panoStateFlushers)
-    : [];
+  const flushers = Array.from(stateSync(node)?.flushers ?? []);
   for (const flush of flushers) await flush();
-  await node?.__panoFlushStateBeforeQueue?.();
+  await editorSession(node)?.flushBeforeQueue?.();
 }
 
 function installStateQueueBarrier(node, stateWidget) {
@@ -208,13 +204,21 @@ function installStateQueueBarrier(node, stateWidget) {
 }
 
 function cleanupPreviewBindings(node) {
-  try { node.__panoDomRestore?.(); } catch { }
-  try { node.__panoLegacyRestore?.(); } catch { }
-  node.__panoDomPreview = null;
-  node.__panoLegacyPreviewHooked = false;
-  node.__panoPreviewHooked = false;
-  node.__panoPreviewAttached = false;
-  node.__panoPreviewMountKey = null;
+  const surface = nodeSurface(node);
+  try { surface.restore?.(); } catch { }
+  surface.dom = null;
+  surface.attached = false;
+  surface.mountKey = null;
+}
+
+// LiteGraph calls onRemoved for a deleted node and for each node of a cleared or reloaded graph.
+function disposeRuntimeOnRemoved(nodeType) {
+  const previous = nodeType.prototype.onRemoved;
+  nodeType.prototype.onRemoved = function () {
+    const result = previous ? previous.apply(this, arguments) : undefined;
+    disposeNodeRuntime(this);
+    return result;
+  };
 }
 
 function ensurePanoramaPreviewImageOutput(node) {
@@ -240,7 +244,8 @@ function installEditorButton(nodeType, {
 
   function installOrUpdate(node) {
     const mountKey = `editor_btn|${matchType}`;
-    if (node.__panoPreviewAttached === true && node.__panoPreviewMountKey === mountKey) return;
+    const surface = nodeSurface(node);
+    if (surface.attached === true && surface.mountKey === mountKey) return;
     cleanupPreviewBindings(node);
     syncCoverageWidgetRedraw(node, app);
     hideWidget(node, STATE_WIDGET);
@@ -275,11 +280,11 @@ function installEditorButton(nodeType, {
           buttonText,
           onOpen: () => openEditor(node, "stickers"),
         });
-        if (node.__panoStickersNodeSurface) hideWidget(node, buttonText);
+        if (surface.stickers) hideWidget(node, buttonText);
         if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) node.size = [360, 260];
       }
-      node.__panoPreviewAttached = true;
-      node.__panoPreviewMountKey = mountKey;
+      surface.attached = true;
+      surface.mountKey = mountKey;
       return;
     }
 
@@ -290,10 +295,10 @@ function installEditorButton(nodeType, {
       buttonText,
       onOpen: () => openEditor(node, "cutout"),
     });
-    if (node.__panoCutoutNodeSurface) hideWidget(node, buttonText);
+    if (surface.cutout) hideWidget(node, buttonText);
     if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) node.size = [360, 260];
-    node.__panoPreviewAttached = true;
-    node.__panoPreviewMountKey = mountKey;
+    surface.attached = true;
+    surface.mountKey = mountKey;
   }
 
   for (const hook of ["onNodeCreated", "onConfigure", "onAdded"]) {
@@ -306,7 +311,7 @@ function installEditorButton(nodeType, {
       if (hook === "onConfigure" && matchType === "PanoramaStickers" && !sceneStateV2 && this.widgets) {
         migratePanoramaStickersWidgetOrder(this);
       }
-      const attached = !!this.__panoPreviewAttached;
+      const attached = nodeSurface(this).attached;
       if (hook === "onNodeCreated" || this.widgets) installOrUpdate(this);
       // LiteGraph.createNode runs onNodeCreated before graph.add, so a node attached then syncs its
       // sticker input once it is in the graph.
@@ -314,6 +319,7 @@ function installEditorButton(nodeType, {
       return result;
     };
   }
+  disposeRuntimeOnRemoved(nodeType);
 }
 
 function installStandalonePreviewNode(nodeType) {
@@ -330,6 +336,7 @@ function installStandalonePreviewNode(nodeType) {
     ensurePanoramaPreviewImageOutput(this);
     return result;
   };
+  disposeRuntimeOnRemoved(nodeType);
 }
 
 function installStandalonePreviewInstance(node, {
@@ -338,12 +345,15 @@ function installStandalonePreviewInstance(node, {
   attachPreview,
   requestFrame,
 }) {
-  if (!node || node.__panoStandaloneInstallDone || node.__panoStandaloneInstallProbeActive) return;
-  node.__panoStandaloneInstallProbeActive = true;
+  const install = previewNode(node);
+  if (!install || install.installDone || install.installProbeActive) return;
+  install.installProbeActive = true;
   const tryInstall = () => {
+    // A node removed while it waits for its graph is not installed (disposeNodeRuntime forgets its record).
+    if (previewNode(node) !== install) return;
     const ready = Number(node?.id ?? -1) >= 0 && !!node?.graph;
-    const tries = Number(node.__panoStandaloneInstallProbeTries || 0) + 1;
-    node.__panoStandaloneInstallProbeTries = tries;
+    const tries = install.installProbeTries + 1;
+    install.installProbeTries = tries;
     if (!ready && tries < 40) {
       requestFrame(tryInstall);
       return;
@@ -357,9 +367,9 @@ function installStandalonePreviewInstance(node, {
       imageInputName: "erp_image",
       onOpen: openPreview,
     });
-    if (node.__panoPreviewNodeSurface) hideWidget(node, "Open Preview");
-    node.__panoStandaloneInstallDone = true;
-    node.__panoStandaloneInstallProbeActive = false;
+    if (install.surface) hideWidget(node, "Open Preview");
+    install.installDone = true;
+    install.installProbeActive = false;
   };
   requestFrame(tryInstall);
 }
@@ -422,7 +432,7 @@ export function createPanoEditorExtension({
     },
     // ComfyUI calls this for each node once a loaded graph is configured, links included.
     loadedGraphNode(node) {
-      if (node.__panoPreviewAttached) void restoreOutput(node);
+      if (nodeSurface(node).attached) void restoreOutput(node);
     },
     nodeCreated(node) {
       const name = String(node?.comfyClass || node?.type || node?.title || "");

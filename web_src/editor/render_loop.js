@@ -6,6 +6,7 @@ import { screenRenderSize } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { IMAGE_FAILED, IMAGE_LOADING } from "../pano_image_state.js";
 import { clamp } from "../pano_math.js";
+import { nodeSurface, stateSync } from "../pano_node_bridge.js";
 import { viewTransitionFrame } from "../pano_view_transition.js";
 import { CUTOUT_PANO_DIM_TRANSITION_MS, FRAME_ROLL_OVERLAY_TRANSITION_MS } from "./constants.js";
 import { easeInCubic, easeInOutCubic, easeOutCubic, lerp } from "./helpers.js";
@@ -93,9 +94,11 @@ export function createRenderLoop(deps) {
 
   function syncNodeLivePreviewSources() {
     runtime.nodePreviewPending = false;
-    node.__panoLiveStateOverride = state;
-    node.__panoLiveStateVersion = Number(node.__panoLiveStateVersion || 0) + 1;
-    node.__panoLivePaintSurface = getSharedLivePaintSurface();
+    const sync = stateSync(node);
+    sync.liveState = state;
+    sync.liveStateVersion += 1;
+    // Composites the modal's paint layers (getErpTarget); its result is not kept.
+    getSharedLivePaintSurface();
   }
 
   // Asks for the next frame. options.reason (DRAW_REASON) says what changed; without one the working
@@ -131,7 +134,7 @@ export function createRenderLoop(deps) {
     if (isDragging()) runtime.nodePreviewPending = true;
     else syncNodeLivePreviewSources();
     if (externalSync) {
-      node.__panoDomPreview?.requestDraw?.();
+      nodeSurface(node).dom?.requestDraw?.();
       node.setDirtyCanvas?.(true, false);
     }
     if (externalSync && !localOnly) {

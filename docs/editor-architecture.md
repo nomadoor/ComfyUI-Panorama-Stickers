@@ -82,7 +82,7 @@ export function createHistory(deps) {
 
 | Module | 行 | Responsibility |
 | --- | ---: | --- |
-| `pano_editor.js` | 959 | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
+| `pano_editor.js` | 960 | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
 | `editor/modules.js` | 27 | `createEditorModules`：factory を作ってつなぐ。名前の過不足を投げる |
 | `editor/constants.js` | 48 | 定数 |
 | `editor/helpers.js` | 243 | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
@@ -102,11 +102,11 @@ export function createHistory(deps) {
 | `editor/upstream.js` | 254 | Panorama Studio の上流の Scene（#90）：実行結果の上流の層、その素材とペイント、実行待ちの表示 |
 | `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
 | `editor/overlay.js` | 600 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
-| `editor/render_loop.js` | 410 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
+| `editor/render_loop.js` | 415 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
 | `editor/panels.js` | 420 | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
 | `editor/timeline.js` | 201 | Timeline のモデル、再生位置と再生、owner と Lane、fps |
 | `editor/timeline_actions.js` | 222 | `onTimelineAction` |
-| `editor/commit.js` | 84 | 状態の widget への書き戻し、ノードのプレビューの更新 |
+| `editor/commit.js` | 85 | 状態の widget への書き戻し、ノードのプレビューの更新 |
 | `editor/commands.js` | 283 | 全消去、複製、削除と確認 |
 | `editor/sticker_import.js` | 429 | 画像の追加・置き換え・アップロード、drop |
 | `editor/camera.js` | 426 | Cutout / Studio の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
@@ -134,6 +134,35 @@ export function createHistory(deps) {
 `requestDraw` を呼ぶのは、`connect()` で `requestDraw` を受け取るモジュールと、`pano_editor.js` の
 登録のコード（`editorView` の通知、`canvas.onmouseleave`、起動の最後）だけ。
 `grep -ln "requestDraw" web_src/editor` で一覧になる。
+
+## Node bridge
+
+ノードごとの実行時の状態（キャッシュ、タイマー、ノード上の面、Preview の runtime、読み込んだ画像と VIDEO、
+作業中の状態）は、LiteGraph のノードには書かず、`web_src/pano_node_bridge.js` が持つ。
+ノードを鍵にした WeakMap に 1 ノード 1 レコードを置き、持ち主ごとのグループに分ける。
+
+| Group | 持ち主 | 中身の例 |
+| --- | --- | --- |
+| `editorSession(node)` | `pano_editor.js`（モーダル） | 実行の前に state_json へ書く関数 |
+| `nodeSurface(node)` | `pano_preview_runtime.js`、`pano_editor_extension.js` | DOM の面と `restore`、視点、再生、ペイントとラスターのキャッシュ、タイマー |
+| `previewNode(node)` | `pano_preview_previewnode.js`、`pano_editor_extension.js` | Preview ノードの runtime、面、取り付けの待ち |
+| `mediaCache(node)` | `pano_preview_runtime.js`、`pano_comfy_media.js` | 入力の画像、出力の VIDEO と ERP、出力の revision |
+| `stateSync(node)` | `pano_editor_extension.js`、`pano_preview_runtime.js`、`editor/render_loop.js` | ライブの状態とその解析結果、flusher、Sticker のアップロード待ち |
+
+- グループの関数は、初めて呼ばれたときに既定値でグループを作り、以後は同じオブジェクトを返す。
+  `clearX(node)` はそのグループだけを片付けて捨てる。
+- `disposeNodeRuntime(node)` は全部のグループを片付ける（`restore` で面を外し Vue を unmount、タイマーを止め、
+  画像と VIDEO を放す）。`pano_editor_extension.js` が対象のノード型の `onRemoved` に付ける。
+  LiteGraph はノードの削除のほか、`graph.clear()`（ワークフローの読み込み）とサブグラフへの変換でも
+  各ノードの `onRemoved` を呼ぶ。`restore` はノード上の面を unmount し、途中のジェスチャーを widget に
+  確定する（Stickers。Cutout は取り消す）ので、これらのたびに起きる。面の `onRemoved` のフックも
+  以前から同じ `restore` を呼ぶ。bridge が足したのは、そのフックが外れていても `restore` が残っていれば呼ぶことと、
+  `restore` が止めないタイマーと画像を放すこと。
+- レコードはノードの外にあるので、`serialize()` にも `clone()` にも入らない（どちらも LiteGraph の項目だけを書く）。
+- 新しい状態はノードに `node.__panoX` と書かず、持ち主のグループに項目を足す。ノードに残すのは
+  `__panoSceneStateV2` と `__panoStudio` のフラグだけ（ノード型から一度決まり、`pano_editor_state.js` と
+  そのテストが素のオブジェクトで読む）。widget・画像・キャンバスに付ける `__pano*` も含めた許可の一覧は
+  `tests/pano_node_bridge.test.mjs` にあり、一覧にない名前が増えるとテストが落ちる。
 
 ## Adding code
 

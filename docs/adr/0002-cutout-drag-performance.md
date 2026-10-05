@@ -12,7 +12,7 @@
 
 - モーダル内の canvas 再描画
 - ComfyUI 側プレビュー/グラフへの dirty 伝播
-  - `node.__panoDomPreview?.requestDraw?.()`
+  - `node.__panoDomPreview?.requestDraw?.()`（注：現在は `nodeSurface(node).dom`。`docs/editor-architecture.md` の Node bridge を参照）
   - `node.setDirtyCanvas(...)`
   - `node.graph?.setDirtyCanvas(...)`
   - `app?.canvas?.setDirty(...)`

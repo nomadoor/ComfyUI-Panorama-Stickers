@@ -156,7 +156,7 @@ test("the legacy node surfaces and the legacy Preview node pause their VIDEO out
   const runtime = read("pano_preview_runtime.js");
   assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);/);
   assert.match(runtime, /if \(player && !surfaceShown\(wrap, !!node\.flags\?\.collapsed\)\) player\.pause\(\);/);
-  assert.match(runtime, /if \(surfacePlayback\) surfacePlayback\.playback\.toggle\(\);\s*else node\.__panoOwnOutputVideoCache\?\.player\.toggle\(\);/);
+  assert.match(runtime, /if \(surfacePlayback\) surfacePlayback\.playback\.toggle\(\);\s*else media\.ownOutputVideo\?\.player\.toggle\(\);/);
   const preview = read("pano_preview_previewnode.js");
   // No autoplay: the VIDEO shows its first frame until a double-click or Space plays it.
   assert.doesNotMatch(preview, /videoPaused/);

@@ -25,7 +25,7 @@ test("dedicated Preview runtime mounts and tears down the Vue fullscreen surface
   assert.ok(runtime.includes("createPreviewFullscreenController"));
   assert.ok(runtime.includes('this.surfaceHost.className = "pano-preview-node-surface-host"'));
   assert.match(runtime, /createApp\(PanoPreviewNodeSurface/);
-  assert.match(runtime, /this\.node\.__panoPreviewNodeSurface\s*=/);
+  assert.match(runtime, /previewNode\(this\.node\)\.surface\s*=/);
   assert.match(runtime, /this\.surfaceApp\?\.unmount\?\.\(\)/);
   assert.match(runtime, /this\.fullscreenController\?\.destroy\?\.\(\)/);
   assert.match(runtime, /this\.wheelCaptureCleanup\?\.\(\)/);
