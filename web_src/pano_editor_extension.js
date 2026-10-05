@@ -259,7 +259,8 @@ function installEditorButton(nodeType, {
 
     if (matchType === "PanoramaStickers") {
       // PanoramaStickersNode keeps state v2 in state_json (see pano_editor_state.js). Panorama Studio is
-      // the same editor with a Camera the user adds (#89), and the same node surface for now (#91).
+      // the same editor with a Camera the user adds (#89); its node surface only shows (#91,
+      // PanoStudioNodeSurface.vue in pano_preview_runtime.js).
       node.__panoSceneStateV2 = sceneStateV2;
       node.__panoStudio = studio;
       const background = getWidget(node, "bg_color");

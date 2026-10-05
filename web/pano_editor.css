@@ -2694,6 +2694,88 @@
   background: #070707;
 }
 
+/* Panorama Studio node surface (PanoStudioNodeSurface.vue): a bar of fixed height over the panorama, so
+   the surface keeps its size whatever the output's aspect, and nothing moves when the note appears. */
+.pano-studio-node-surface {
+  --pano-text: #f5f5f5;
+  --pano-text-secondary: #a1a1aa;
+  --pano-emphasis-bg: #185fb8;
+
+  box-sizing: border-box;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--pano-text);
+  font: 500 11px/1 "Plus Jakarta Sans", Geist, system-ui, sans-serif;
+  user-select: none;
+  pointer-events: none;
+}
+.pano-studio-node-bar {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  left: 8px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  pointer-events: none;
+}
+.pano-studio-node-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(10, 10, 10, 0.72);
+  white-space: nowrap;
+}
+.pano-studio-node-shot {
+  font-weight: 600;
+}
+.pano-studio-node-size {
+  font-variant-numeric: tabular-nums;
+}
+.pano-studio-node-note {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pano-text-secondary);
+  text-overflow: ellipsis;
+}
+.pano-studio-node-open {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--pano-emphasis-bg);
+  box-shadow: none;
+  pointer-events: auto;
+}
+.pano-studio-node-open:active {
+  transform: none;
+}
+.pano-studio-node-open svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+.pano-studio-node-open .label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Timeline (PanoTimeline.vue) under the stage of the PanoramaStickersNode editor. */
 .pano-timeline {
   flex: 0 0 auto;

@@ -113,7 +113,7 @@ test("cutout node renders panorama context across the canvas behind the fixed fr
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const surface = await read("../web_src/pano_cutout_node_surface.js");
 
-  assert.match(runtime, /createApp\(stickersMode \? PanoStickersNodeSurface : PanoCutoutNodeSurface/);
+  assert.match(runtime, /createApp\(studioSurface \? PanoStudioNodeSurface : \(stickersMode \? PanoStickersNodeSurface : PanoCutoutNodeSurface\)/);
   assert.match(runtime, /fitCutoutNodeFrame\(/);
   assert.match(runtime, /surfaceMinHeight = noPreview \? 0 : CUTOUT_NODE_SURFACE_MIN_HEIGHT/);
   assert.match(runtime, /createCoreManagedDomWidgetOptions\([\s\S]*?surfaceMinHeight/);
@@ -163,7 +163,7 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   );
   assert.match(
     runtime,
-    /function surfaceViewInput[\s\S]*?loadSceneState\([\s\S]*?buildRuntimeCutoutLayerEntries\(node, state\)[\s\S]*?workingSkyLayers\(/,
+    /function surfaceViewInput[\s\S]*?surfaceSceneState\([\s\S]*?buildRuntimeCutoutLayerEntries\(node, state\)[\s\S]*?workingSkyLayers\(/,
   );
   assert.match(
     runtime,
