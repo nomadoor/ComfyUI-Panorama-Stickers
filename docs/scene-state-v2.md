@@ -119,7 +119,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 - `yaw_deg`・`roll_deg` は範囲に丸めない。360° の差は同じ向きを表す。
 - `sky` の Sticker の `direction` は yaw と pitch を一つの Lane にまとめる。別々に補間すると、球面上をまっすぐ進まないためである。
 - `sky` の Sticker の値は、中心の方向（`direction`）、画面内の回転（`roll`）、角度サイズ（`size`）である。
-- Source が `port` の Sticker の `size` の `vFOV_deg` は、ノードとエディタの両方が、`hFOV_deg` と素材のアスペクト比から求め直す（旧ノードと同じ）。ポートの素材は状態の外で差し替わるためである。保存された `vFOV_deg` は、素材が届く前の表示に使う。
+- Source が `port` の Sticker の vFOV は、`hFOV_deg` と素材（最初のフレーム）のアスペクト比から求める派生値で、状態には書かない。ポートの素材は状態の外で差し替わるためである。ノードは描くときに求め（`core/render.py` の `derive_vfov`）、エディタとノード上の表示も描くときと当たり判定のときに同じ式で求める（`web_src/pano_editor_state.js` の `skyStickerVfov`）。`port` の Sticker を加えるときは `vFOV_deg` を `hFOV_deg` と同じ値で保存し（Keyframe も同じ）、素材が読み込まれても書き直さない。これで素材の読み込みが `state_json` を変えず、実行の key（`docs/panorama-stickers-node-surface-spec.md`）がずれない。保存された `vFOV_deg` は、素材の大きさがわかるまでの表示にだけ使い、エディタで `port` の Sticker の大きさを変えても `hFOV_deg` だけを書く（inspector の V FOV は無効）。ノードが加える `port` の Sticker（Pose handoff の Keyframe を含む）も `vFOV_deg` を `hFOV_deg` と同じ値にする。
 
 ### Keyframe
 

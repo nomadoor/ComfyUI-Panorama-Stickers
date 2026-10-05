@@ -13,6 +13,9 @@ import {
 } from "../web_src/pano_stickers_node_surface.js";
 import { readFileSync } from "node:fs";
 import { editorActive, editorStateText, parseSceneEditorState, setEditorActive } from "../web_src/pano_editor_state.js";
+import { studioRunKey, studioRunOutput } from "../web_src/pano_studio_status.js";
+import { workingSkyLayers } from "../web_src/pano_editor_view.js";
+import { loadSceneState } from "../web_src/pano_scene_state.js";
 
 function sampleState() {
   return {
@@ -446,10 +449,10 @@ test("connecting the sticker input adds a port Sticker as the node does, shown a
     ],
   });
 
-  const sync = portStickerSyncValue(stickersNode(["sticker"]), { pose: null, image: null });
+  const sync = portStickerSyncValue(stickersNode(["sticker"]), { pose: null });
   const result = reconcilePortStickerState(state, sync);
 
-  assert.deepEqual(sync, { connected: true, awaitingPose: false, pose: null, imageWidth: 0, imageHeight: 0 });
+  assert.deepEqual(sync, { connected: true, awaitingPose: false, pose: null });
   assert.equal(result.changed, true);
   const [port] = portStickers(result.state);
   assert.deepEqual([port.id, port.placement, port.z_index, port.visible, port.locked], ["sticker_3", "sky", 4, true, false]);
@@ -464,12 +467,12 @@ test("with sticker_state connected the port Sticker waits for the pose of the no
 
   const before = reconcilePortStickerState(state, portStickerSyncValue(node));
   const pose = { yaw_deg: 40, pitch_deg: -10, roll_deg: 5, hFOV_deg: 50 };
-  const after = reconcilePortStickerState(state, portStickerSyncValue(node, { pose, image: { naturalWidth: 200, naturalHeight: 100 } }));
+  const after = reconcilePortStickerState(state, portStickerSyncValue(node, { pose }));
 
   assert.equal(before.changed, false);
   const [port] = portStickers(after.state);
-  assert.deepEqual(poseOf(port).slice(0, 4), [40, -10, 5, 50]);
-  assert.ok(Math.abs(port.size.value.vFOV_deg - 26.248536245583416) < 1e-9);
+  // vFOV follows the media where the Sticker is drawn; the state keeps hFOV as its default.
+  assert.deepEqual(poseOf(port), [40, -10, 5, 50, 50]);
 });
 
 test("a port Sticker added from a moving Camera keeps the Keyframes of the node's pose", () => {
@@ -484,35 +487,68 @@ test("a port Sticker added from a moving Camera keeps the Keyframes of the node'
   ];
   const pose = { yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 60, keyframes: { direction, roll: [], size } };
 
-  const [port] = portStickers(reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node, { pose, image: { width: 200, height: 100 } })).state);
+  const [port] = portStickers(reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node, { pose })).state);
 
   assert.deepEqual(port.direction.keyframes, direction);
   assert.deepEqual(port.roll.keyframes, []);
-  assert.deepEqual(port.size.keyframes.map((key) => key.value.hFOV_deg), [60, 40]);
-  assert.ok(Math.abs(port.size.keyframes[1].value.vFOV_deg - 20.62820963123639) < 1e-9);
+  assert.deepEqual(port.size.keyframes.map((key) => [key.value.hFOV_deg, key.value.vFOV_deg]), [[60, 60], [40, 40]]);
   const saved = JSON.parse(editorStateText(node, { ...v2EditorState({}), stickers: [port] })).stickers[0];
   assert.deepEqual(saved.direction.keyframes, direction);
 });
 
-test("the port Sticker follows the media aspect, in its value and its Keyframes, and is removed with the input", () => {
+test("the port Sticker's stored vFOV is not rewritten from the media, and the Sticker is removed with the input", () => {
   const added = reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(stickersNode(["sticker"]))).state;
   added.active = { selected_sticker_id: "sticker_1" };
   const [port] = added.stickers;
   port.size.value.hFOV_deg = 80;
   port.size.keyframes = [{ frame: 0, value: { hFOV_deg: 40, vFOV_deg: 40 }, easing: [0.42, 0, 0.58, 1] }];
 
-  const sized = reconcilePortStickerState(added, portStickerSyncValue(stickersNode(["sticker"]), { image: { width: 200, height: 100 } }));
-  const unchanged = reconcilePortStickerState(sized.state, portStickerSyncValue(stickersNode(["sticker"]), { image: { width: 200, height: 100 } }));
-  const removed = reconcilePortStickerState(sized.state, portStickerSyncValue(stickersNode([])));
+  // The image loading syncs the port again; its vFOV is derived where the Sticker is drawn (skyStickerVfov), from
+  // the hFOV at frame 0 (its Keyframe, 40).
+  const loaded = reconcilePortStickerState(added, portStickerSyncValue(stickersNode(["sticker"])));
+  const removed = reconcilePortStickerState(added, portStickerSyncValue(stickersNode([])));
 
-  const size = sized.state.stickers[0].size;
-  assert.equal(size.value.hFOV_deg, 80);
-  assert.ok(Math.abs(size.value.vFOV_deg - 45.520952549233265) < 1e-9);
-  assert.ok(Math.abs(size.keyframes[0].value.vFOV_deg - 20.62820963123639) < 1e-9);
   assert.equal(port.size.value.vFOV_deg, 30);
-  assert.equal(unchanged.changed, false);
+  assert.equal(loaded.changed, false);
+  assert.equal(loaded.state, added);
+  assert.ok(Math.abs(drawnHalfHeight(added, { naturalWidth: 200, naturalHeight: 100 }) - Math.tan(20 * Math.PI / 180) / 2) < 1e-12);
   assert.deepEqual(removed.state.stickers, []);
   assert.equal(removed.state.active.selected_sticker_id, null);
+});
+
+// tan(vFOV / 2) of the port Sticker as the surface and the editor draw it at frame 0 with `media` loaded.
+function drawnHalfHeight(state, media) {
+  const [layer] = workingSkyLayers(loadSceneState({ ...state, painting: null }), 0, state.stickers, { media: () => ({ media, revision: "" }), paintLayers: [] });
+  return layer.rect.y1;
+}
+
+// A run's output shows on Panorama Studio's surface as current only while state_json is the text it ran with
+// (studioRunKey). The port Sticker's media loading after the run must not change that text.
+test("a non-square port image loading after a run leaves state_json unchanged, so the run stays current", () => {
+  const node = stickersNode(["sticker"]);
+  const stateWidget = { value: "" };
+  const session = createStickersNodeSurfaceSession({
+    readState: () => parseSceneEditorState(stateWidget.value || JSON.stringify({ version: 2 }), { active: editorActive(node) }),
+    commitState: (next) => {
+      stateWidget.value = editorStateText(node, next);
+    },
+  });
+  session.apply({ type: "sync-port", value: portStickerSyncValue(node) });
+  const ran = stateWidget.value;
+  const run = { width: 1024, height: 512, capped: false, reduced_from: null, key: studioRunKey(ran, "1024", "360", "#00ff00") };
+  const erp = { filename: "pano_output_0.png", subfolder: "", type: "temp", coverage: 360 };
+
+  // executed: the result names the media; image-loaded: the 200 x 100 image of the port is ready, the port is
+  // synced again (runExternalStickerSync "image-loaded") and the surface draws it.
+  session.apply({ type: "sync-port", value: portStickerSyncValue(node, { pose: null }) });
+  session.apply({ type: "sync-port", value: portStickerSyncValue(node, { pose: null }) });
+  const drawn = drawnHalfHeight(parseSceneEditorState(stateWidget.value), { naturalWidth: 200, naturalHeight: 100 });
+
+  assert.equal(stateWidget.value, ran);
+  assert.equal(JSON.parse(ran).stickers[0].size.value.vFOV_deg, 30);
+  assert.ok(Math.abs(drawn - Math.tan(15 * Math.PI / 180) / 2) < 1e-12);
+  const options = { stateText: stateWidget.value, outputSize: "1024", coverage: 360, bgColor: "#00ff00", run, erp };
+  assert.deepEqual(studioRunOutput(options), { kind: "erp", entry: erp, current: true });
 });
 
 test("a stored port Sticker survives a reload unchanged and is not added twice", () => {
@@ -521,7 +557,7 @@ test("a stored port Sticker survives a reload unchanged and is not added twice",
   const text = editorStateText(node, added);
 
   const reloaded = parseSceneEditorState(text);
-  const synced = reconcilePortStickerState(reloaded, portStickerSyncValue(node, { image: { width: 300, height: 300 } }));
+  const synced = reconcilePortStickerState(reloaded, portStickerSyncValue(node));
 
   assert.deepEqual(JSON.parse(text).stickers.map((item) => item.source), [{ kind: "port" }]);
   assert.deepEqual(portStickers(reloaded).map((item) => item.id), ["sticker_1"]);
@@ -640,8 +676,8 @@ test("3D media on the sticker input waits for the node and adds the world Sticke
   const pose = { placement: "world", position: [0, 0, -2], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 };
   const after = reconcilePortStickerState(state, portStickerSyncValue(node, { pose }));
   const [port] = portStickers(after.state);
-  // The media has no image, and a world Sticker has no vFOV to follow.
-  const unchanged = reconcilePortStickerState(after.state, portStickerSyncValue(node, { pose, image: { width: 200, height: 100 } }));
+  // Synced again (the media loading, say), the world Sticker stays as it is.
+  const unchanged = reconcilePortStickerState(after.state, portStickerSyncValue(node, { pose }));
 
   assert.equal(before.changed, false);
   assert.deepEqual([port.id, port.placement, port.z_index], ["sticker_2", "world", undefined]);

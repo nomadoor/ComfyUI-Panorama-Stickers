@@ -185,6 +185,12 @@ export function cameraParamEnabled(key, { erp = false } = {}) {
   return !(erp && (key === "hFOV_deg" || key === "vFOV_deg"));
 }
 
+// Whether the inspector edits a Sticker field: a port Sticker's vFOV follows its media, so its V FOV shows the
+// value the media gives, disabled (docs/scene-state-v2.md).
+export function stickerParamEnabled(key, { port = false } = {}) {
+  return !(port && key === "vFOV_deg");
+}
+
 // The aspect preset that makes Panorama Studio's Camera shoot an ERP (`projection: "erp"`, ADR 0029).
 export const ERP_ASPECT = "erp";
 const ASPECT_PRESETS = ["1:1", "4:3", "3:2", "16:9"];

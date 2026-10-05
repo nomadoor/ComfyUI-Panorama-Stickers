@@ -243,7 +243,7 @@ test("DOM preview camera frames do not repaint the host graph canvas", async () 
   assert.ok(tickStart >= 0 && tickEnd > tickStart);
   const tick = runtime.slice(tickStart, tickEnd);
 
-  assert.match(tick, /drawCanvas\(node, canvas, surfaceView, runBackground\)/);
+  assert.match(tick, /drawCanvas\(node, canvas, surfaceView, run\)/);
   assert.doesNotMatch(tick, /node\.setDirtyCanvas/);
   assert.match(runtime, /if \(mode === "cutout" && surface\.cutoutState !== state\)/);
 });

@@ -63,32 +63,42 @@ export function studioRunKey(stateText, outputSize, coverage, bgColor) {
   return value.toString(16).padStart(8, "0");
 }
 
-// The output ERP of the node's last run (`pano_output_erp`, a temp image entry with its `coverage`) that the
-// surface shows in place of drawing the Scene, or null: only while `run`'s key says the run had this state
-// and these widgets (as for its size), and the node shoots an ERP (no Camera, or an `erp` one), which already
-// holds everything the run drew.
-export function studioRunErp(state, { stateText = "", outputSize, coverage, bgColor = "", run = null, erp = null }) {
-  const camera = studioCamera(state);
-  if (!erp || !run || (camera && camera.projection !== "erp")) return null;
-  return run.key === studioRunKey(stateText, outputSize, String(coverage), bgColor) ? erp : null;
+// The output of the node's last run that the surface shows once there is one (ADR 0029), or null before any
+// run: { kind, entry, current }. `kind` is "erp" for an ERP output (`pano_output_erp`, a temp image entry with
+// its `coverage`), to look around in, and "frame" for a perspective Camera's first frame (`pano_output_frame`),
+// shown flat. `current` says the run still matches: its media were the inputs' (else `run` is null) and its
+// key is that of this state_json text and these widgets, as for its size.
+export function studioRunOutput({ stateText = "", outputSize, coverage, bgColor = "", run = null, erp = null, frame = null }) {
+  const entry = erp || frame;
+  if (!entry) return null;
+  return { kind: erp ? "erp" : "frame", entry, current: !!run && run.key === studioRunKey(stateText, outputSize, String(coverage), bgColor) };
 }
 
 // The rotation of the view's ERP dome (a quaternion in World, ADR 0023) that lays the run's output ERP back
-// where the run shot it from: the Camera's rotation at frame 0 (camera_basis, core/render.py `_rays`), or none
-// without a Camera. tests/test_studio_run_erp_orientation.py holds it to the run.
-export function studioRunQuaternion(state) {
-  const camera = studioCamera(state);
-  if (!camera) return { x: 0, y: 0, z: 0, w: 1 };
-  const { yaw_deg: yaw, pitch_deg: pitch, roll_deg: roll } = evaluateCamera(camera, 0);
-  return rotationToQuaternion(worldRotation(yaw, pitch, roll));
+// where the run shot it from: the `rotation` the run returns with `pano_output_erp` (its Camera's yaw_deg,
+// pitch_deg and roll_deg at frame 0, camera_basis in core/render.py `_rays`), or none (null) without a Camera.
+// tests/test_studio_run_erp_orientation.py holds it to the run.
+export function studioRunQuaternion(rotation) {
+  if (!rotation) return { x: 0, y: 0, z: 0, w: 1 };
+  return rotationToQuaternion(worldRotation(rotation.yaw_deg, rotation.pitch_deg, rotation.roll_deg));
 }
 
+// What the note says first about what the surface shows (`display`): the current run's output ("run", nothing
+// to say), the output of a run the inputs no longer match ("edited"), the Scene drawn live before any run
+// ("not-run"), or drawn live because the run's output cannot be loaded ("unavailable").
+const DISPLAY_NOTES = {
+  run: "",
+  edited: "Edited — run to update",
+  "not-run": "Not run yet",
+  unavailable: "Run output unavailable — run again",
+};
+
 // The node surface's status: `shot` (ERP, or the Camera and its projection), `size` ("W × H", or "auto"
-// while the bg_media width is not known yet: `bgWidth` undefined) and `note` (whether the surface shows the
-// last run's output, `showingRun`, then the cap, or auto without bg_media; empty otherwise). `run` is the size the node's last run reported (`pano_output_size`); it wins
+// while the bg_media width is not known yet: `bgWidth` undefined) and `note` (DISPLAY_NOTES of `display`,
+// then the cap, or auto without bg_media). `run` is the size the node's last run reported (`pano_output_size`); it wins
 // while its key says the run had this `stateText` (the state_json text), output_size and coverage, since
 // media and an upstream Scene can give the run another Timeline and coverage than the state alone.
-export function studioNodeStatus(state, { stateText = "", outputSize, coverage, bgColor = "", bgWidth, run = null, showingRun = false }) {
+export function studioNodeStatus(state, { stateText = "", outputSize, coverage, bgColor = "", bgWidth, run = null, display = "run" }) {
   const camera = studioCamera(state);
   let shot = "ERP";
   if (camera) shot = camera.projection === "erp" ? `Camera · ${coverage}°` : "Camera · Perspective";
@@ -96,11 +106,11 @@ export function studioNodeStatus(state, { stateText = "", outputSize, coverage, 
   if (run && run.key === studioRunKey(stateText, outputSize, String(coverage), bgColor)) {
     size = { width: run.width, height: run.height, reducedFrom: run.reduced_from, defaulted: outputSize === "auto" && bgWidth === null };
   } else if (outputSize === "auto" && bgWidth === undefined) {
-    return { shot, size: "auto", note: showingRun ? "Showing the last run" : "" };
+    return { shot, size: "auto", note: DISPLAY_NOTES[display] };
   } else {
     size = studioOutputSize(state, studioTimelineFrames(state), outputSize, coverage, bgWidth);
   }
-  const notes = showingRun ? ["Showing the last run"] : [];
+  const notes = DISPLAY_NOTES[display] ? [DISPLAY_NOTES[display]] : [];
   if (size.reducedFrom) notes.push(`Capped at ${STUDIO_MAX_OUTPUT_SIDE} (${size.reducedFrom[0]} × ${size.reducedFrom[1]})`);
   else if (size.defaulted) notes.push("auto: no bg_media");
   return { shot, size: `${size.width} × ${size.height}`, note: notes.join(" · ") };
@@ -113,7 +123,7 @@ export function createStudioStatus() {
   let previous = null;
   return (options, loadState) => {
     const bgWidth = options.outputSize === "auto" ? options.bgWidth : null;
-    const key = JSON.stringify([options.stateText, options.outputSize, options.coverage, options.bgColor ?? "", bgWidth === undefined ? "pending" : bgWidth, options.run ?? null, !!options.showingRun]);
+    const key = JSON.stringify([options.stateText, options.outputSize, options.coverage, options.bgColor ?? "", bgWidth === undefined ? "pending" : bgWidth, options.run ?? null, options.display ?? "run"]);
     if (key === previous) return null;
     previous = key;
     return studioNodeStatus(loadState(), { ...options, bgWidth });

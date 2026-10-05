@@ -50,7 +50,7 @@ def _with_aspect(camera, aspect):
 def _round_trip_error(camera, sticker_state=None):
     shot = _shoot(_textured_erp(), camera)
     frames = _frames(shot)
-    scene = _upstream(sticker=frames, sticker_state=shot[4] if sticker_state is None else sticker_state(shot[4]), output_size="2048")[3]
+    scene = _upstream(sticker=frames, sticker_state=shot[3] if sticker_state is None else sticker_state(shot[3]), output_size="2048")[4]
     again = _frames(_shoot(scene, camera))
     assert again.shape == frames.shape
     return _interior_error(again, frames)
@@ -84,7 +84,7 @@ def test_trajectory_returns_through_the_sticker_video_at_another_fps():
     shot = _shoot(_textured_erp(), camera)
 
     # The shot's `video` sets the Timeline fps (12) of the receiving state recorded at 24 fps.
-    scene = _upstream(sticker=shot[2], sticker_state=shot[4], output_size="2048")[3]
+    scene = _upstream(sticker=shot[2], sticker_state=shot[3], output_size="2048")[4]
     again = _frames(_shoot(scene, camera))
 
     assert again.shape == _frames(shot).shape == (13, *again.shape[1:])
@@ -100,7 +100,7 @@ def test_moving_camera_is_baked_into_auto_keyframes_at_every_timeline_frame():
         "fov": [{"frame": 0, "value": 40.0}],
     }})
 
-    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].layers[-1].state["stickers"][0]
+    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[4].layers[-1].state["stickers"][0]
 
     # Two frames at 12 fps are four at the 24 fps of the state; the Camera is read between its Keyframes too.
     assert [key["frame"] for key in port["direction"]["keyframes"]] == [0, 1, 2, 3, 4]
@@ -111,8 +111,8 @@ def test_moving_camera_is_baked_into_auto_keyframes_at_every_timeline_frame():
     assert yaws[0] == pytest.approx(170.0) and yaws[-1] == pytest.approx(190.0)
     assert rolls[0] == pytest.approx(175.0) and rolls[-1] == pytest.approx(185.0)
     assert all(b > a for a, b in zip(yaws, yaws[1:])) and all(b > a for a, b in zip(rolls, rolls[1:]))
-    # A Lane the Camera does not move stays a static value.
-    assert port["size"] == {"value": {"hFOV_deg": 40.0, "vFOV_deg": 20.0}, "keyframes": []}
+    # A Lane the Camera does not move stays a static value. vFOV follows the media; stored, it is hFOV.
+    assert port["size"] == {"value": {"hFOV_deg": 40.0, "vFOV_deg": 40.0}, "keyframes": []}
 
 
 def test_camera_cut_stays_a_cut_at_another_fps():
@@ -120,7 +120,7 @@ def test_camera_cut_stays_a_cut_at_another_fps():
     shot = _shoot(_textured_erp(), camera)
 
     # The 30 fps shot's `video` sets the Timeline of the receiving state recorded at 24 fps.
-    scene = _upstream(sticker=shot[2], sticker_state=shot[4], output_size="1024")[3]
+    scene = _upstream(sticker=shot[2], sticker_state=shot[3], output_size="1024")[4]
 
     yaws = [evaluate_scene_state(scene.layers[-1].state, frame)["stickers"][0]["yaw_deg"] for _bg_index, ((frame, *_rest),) in scene.frames]
     assert yaws == pytest.approx([0.0] * 10 + [90.0])
@@ -133,8 +133,15 @@ def test_camera_keyframes_of_one_rotation_keep_the_direction_static():
         "fov": [{"frame": 0, "value": 60.0}, {"frame": 10, "value": 40.0}],
     }})
 
-    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].layers[-1].state["stickers"][0]
+    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[4].layers[-1].state["stickers"][0]
 
     assert (port["direction"]["keyframes"], port["roll"]["keyframes"]) == ([], [])
     assert port["direction"]["value"] == pytest.approx({"yaw_deg": 33.0, "pitch_deg": 21.0})
     assert len(port["size"]["keyframes"]) == 11
+    assert all(key["value"]["vFOV_deg"] == key["value"]["hFOV_deg"] for key in port["size"]["keyframes"])
+
+
+def test_a_port_sticker_added_without_sticker_state_stores_vfov_as_hfov():
+    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]))[4].layers[-1].state["stickers"][0]
+
+    assert port["size"]["value"] == {"hFOV_deg": 30.0, "vFOV_deg": 30.0}

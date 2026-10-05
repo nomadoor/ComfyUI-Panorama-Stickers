@@ -276,6 +276,29 @@ test("editing a sky Sticker changes its static value, or keys it once it has Key
   assert.deepEqual(stickerPose(plain, 0), { yaw_deg: 50, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 12 });
 });
 
+test("a port Sticker's vFOV follows its media and is never written to the state", () => {
+  const state = parseSceneEditorState(JSON.stringify({
+    version: 2,
+    stickers: [
+      { id: "port", source: { kind: "port" }, size: { value: { hFOV_deg: 60, vFOV_deg: 60 } } },
+      { id: "file", source: { kind: "file", filename: "a.png" }, size: { value: { hFOV_deg: 60, vFOV_deg: 60 } } },
+    ],
+  }));
+  const [port, file] = state.stickers;
+  const vfov = 2 * Math.atan(Math.tan(Math.PI / 6) * 100 / 200) * 180 / Math.PI;
+
+  // The editor hit tests and draws the overlay of the pose at the media's size.
+  assert.ok(Math.abs(stickerPose(port, 0, { width: 200, height: 100 }).vFOV_deg - vfov) < 1e-12);
+  assert.equal(stickerPose(port, 0).vFOV_deg, 60);
+  assert.equal(stickerPose(port, 0, { width: 0, height: 0 }).vFOV_deg, 60);
+  assert.equal(stickerPose(file, 0, { width: 200, height: 100 }).vFOV_deg, 60);
+
+  setStickerPose(port, 0, { hFOV_deg: 40, vFOV_deg: 20 });
+  setStickerPose(file, 0, { hFOV_deg: 40, vFOV_deg: 20 });
+  assert.deepEqual(port.size.value, { hFOV_deg: 40, vFOV_deg: 60 });
+  assert.deepEqual(file.size.value, { hFOV_deg: 40, vFOV_deg: 20 });
+});
+
 test("the pose the editor shows is the evaluator's value at the Timeline frame", () => {
   const state = parseSceneEditorState(readFixture("v2_interpolation"));
   const loaded = loadSceneState(readFixture("v2_interpolation"));

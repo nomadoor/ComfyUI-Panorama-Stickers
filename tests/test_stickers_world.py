@@ -54,7 +54,7 @@ def test_scene_batch_follows_its_clip_range(monkeypatch):
     _with_ball(monkeypatch, count=5)
 
     result = _run({"version": 2, "scene": {"clip": {"start": 2, "in": 1, "duration": 3}}, "timeline": {"length": 6}}, scene=object())
-    pano_scene = result[3]
+    pano_scene = result[4]
 
     assert _batch_index_at_center(_frames(result)) == [None, None, 1, 2, 3, None]
     # The item is decided in (a) from the content's start (start - in = 1), outside the Clip range too.
@@ -64,8 +64,8 @@ def test_scene_batch_follows_its_clip_range(monkeypatch):
 def test_frames_carry_the_scene_item_only_with_scene_content(monkeypatch):
     _with_ball(monkeypatch, count=1)
 
-    with_scene = _run({"version": 2, "timeline": {"length": 2}}, scene=object())[3]
-    without = _run({"version": 2, "timeline": {"length": 2}})[3]
+    with_scene = _run({"version": 2, "timeline": {"length": 2}}, scene=object())[4]
+    without = _run({"version": 2, "timeline": {"length": 2}})[4]
 
     assert with_scene.frames == ((None, ((0.0, None, 0),)), (None, ((1.0, None, 0),)))
     assert without.frames == ((None, ((0.0, None, None),)), (None, ((1.0, None, None),)))

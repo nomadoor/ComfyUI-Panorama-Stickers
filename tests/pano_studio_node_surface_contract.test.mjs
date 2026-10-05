@@ -27,7 +27,7 @@ test("the Studio surface is view-only: the runtime mounts it for Panorama Studio
   assert.match(runtime, /const stickerDrop = stickersMode && !studioSurface;/);
   assert.match(runtime, /if \(!stickersMode \|\| studioSurface \|\| \(ev\.key !== "Delete"/);
   assert.match(runtime, /const studioOptions = studioSurface \? studioStatusOptions\(node, surfacePlayback\) : null;/);
-  assert.match(runtime, /const status = studioStatus\(\{ \.\.\.studioOptions, showingRun: !!runBackground \}, sceneState\);\s*if \(status\) nodeSurfaceUiModel\.status = status;/);
+  assert.match(runtime, /const status = studioStatus\(\{ \.\.\.studioOptions, display: studioRunDisplay\(node, runOutput\) \}, sceneState\);\s*if \(status\) nodeSurfaceUiModel\.status = status;/);
   assert.match(runtime, /\.\.\.\(studioSurface \? \{ status: \{ shot: "", size: "", note: "" \} \} : \{\}\)/);
   // The run's size counts only while its media are the inputs' (and its key, the state and widgets).
   assert.match(runtime, /\["background", "external-sticker", "scene"\]\.every\(\(channel\) => isNodeOutputMediaCurrent\(node, channel\)\)/);
@@ -39,19 +39,24 @@ test("the Studio surface is view-only: the runtime mounts it for Panorama Studio
   assert.match(runtime, /if \(sizeCallbackWrapper && sizeWidget\.callback === sizeCallbackWrapper\) sizeWidget\.callback = sizeCallbackPrev;/);
 });
 
-test("the Studio surface shows its last run's output ERP alone while the run is current (follow-up of #91)", async () => {
+test("once it has run, the Studio surface shows the last run's output, edited since or not (ADR 0029)", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
 
-  // The output ERP counts under the same check as the run's size: its media are the inputs'.
-  assert.match(runtime, /erp: \(current && ownOutputUiValue\(node, "pano_output_erp"\)\) \|\| null,/);
-  assert.match(runtime, /\? studioRunBackground\(node, studioRunErp\(sceneState\(\), studioOptions\), sceneState\)/);
-  assert.match(runtime, /drawCanvas\(node, canvas, surfaceView, runBackground\);/);
-  // It is drawn alone: the sky Stickers and the paint are already in it, and no Sticker frame is drawn over it.
+  // The output counts whatever the inputs are now; only the run's size waits for its media to be the inputs'.
+  assert.match(runtime, /erp: ownOutputUiValue\(node, "pano_output_erp"\) \|\| null,\s*frame: ownOutputUiValue\(node, "pano_output_frame"\) \|\| null,/);
+  assert.match(runtime, /const runOutput = studioOptions \? studioRunOutput\(studioOptions\) : null;/);
+  assert.match(runtime, /\? studioRunPicture\(node, runOutput\)/);
+  assert.match(runtime, /drawCanvas\(node, canvas, surfaceView, run\);/);
+  // An ERP is drawn alone: the sky Stickers and the paint are already in it, and no Sticker frame is drawn over it.
   assert.match(runtime, /runBackground \? \{ background: runBackground, layers: \[\] \} : surfaceViewInput\(node, state, bgImg\)/);
   assert.match(runtime, /if \(panoramaDrawn && !runBackground\) \{/);
-  // The image is kept per result file, not asked for again after it fails (it just stays not ready), and let go
-  // with the surface.
-  assert.match(runtime, /if \(cached && cached\.src !== src\) \{\s*disposeStudioRunImage\(node\);/);
+  // A perspective Camera's first frame is fitted flat in the surface, without the three.js view.
+  assert.match(runtime, /if \(run\?\.frame\) \{\s*surfaceView\.release\(\);[\s\S]*?const scale = Math\.min\(surfW \/ width, \(surfH - top\) \/ height\);\s*ctx\.drawImage\(run\.frame,/);
+  // The note: not run yet, edited since the run, or the output cannot be loaded (the live drawing shows then).
+  assert.match(runtime, /if \(!output\) return "not-run";\s*if \(cachedStudioRunImage\(node, output\)\?\.failed\) return "unavailable";\s*return output\.current \? "run" : "edited";/);
+  // The image is kept per result file, not asked for again after it fails, and let go with the surface.
+  assert.match(runtime, /if \(media\.studioRunImage && media\.studioRunImage\.src !== src\) disposeStudioRunImage\(node\);/);
+  assert.match(runtime, /record\.failed = true;/);
   assert.match(runtime, /disposeNodeOutputVideoCache\(node\);\s*disposeStudioRunImage\(node\);/);
 });
 
@@ -62,10 +67,26 @@ test("the run's output ERP is turned back into World by its Camera rotation, onl
   // The panorama ERP dome takes the background's quaternion, and no other ERP keeps a previous one.
   assert.match(view, /placeErp\(mesh, halfCoverage, quaternion\) \{\s*mesh\.material\.uniforms\.halfCoverage\.value = halfCoverage;\s*mesh\.quaternion\.set\(quaternion\?\.x \?\? 0, quaternion\?\.y \?\? 0, quaternion\?\.z \?\? 0, quaternion\?\.w \?\? 1\);/);
   assert.match(view, /projection\.placeErp\(mesh, halfCoverage, layer\.quaternion\);/);
-  assert.match(runtime, /quaternion: studioRunQuaternion\(sceneState\(\)\)/);
+  // The rotation the run shot the ERP with, which an edit since the run does not change.
+  assert.match(runtime, /quaternion: studioRunQuaternion\(output\.entry\.rotation\),/);
+  assert.doesNotMatch(runtime, /cached\.quaternion/);
   // A collapsed or hidden surface does not load the run's image.
-  assert.match(runtime, /const runBackground = studioOptions && surfaceShown\(wrap, !!node\.flags\?\.collapsed\)/);
+  assert.match(runtime, /const run = studioOptions && surfaceShown\(wrap, !!node\.flags\?\.collapsed\)/);
   // The image counts as ready once it is decoded, so the first draw with it does not stall.
   assert.match(runtime, /image\.decode\(\)\.then\(/);
-  assert.match(runtime, /return cached\.ready/);
+  assert.match(runtime, /if \(!cached\.ready\) return null;/);
 });
+
+test("each run of the node, a resent cached one too, loads its output again once, and a flat frame sits below the bar", async () => {
+  const runtime = await read("../web_src/pano_preview_runtime.js");
+
+  assert.match(runtime, /const reason = selfHit \? "self" : "upstream";\s*if \(selfHit\) \{\s*(?:\/\/.*\s*)?disposeStudioRunImage\(node\);\s*nodeSurface\(node\)\.dom\?\.requestDraw\?\.\(\);\s*\}\s*if \(isRepeatedOutput\(/);
+  assert.match(runtime, /const top = STUDIO_BAR_BOTTOM;\s*const scale = Math\.min\(surfW \/ width, \(surfH - top\) \/ height\);/);
+});
+
+test("the editor's inspector shows a port Sticker's new vFOV once its image loads", async () => {
+  const stickers = await read("../web_src/editor/external_stickers.js");
+
+  assert.match(stickers, /\} else if \(reason === "image-loaded"\) \{\s*(?:\/\/.*\s*)?updateSidePanel\(\);\s*\}/);
+});
+

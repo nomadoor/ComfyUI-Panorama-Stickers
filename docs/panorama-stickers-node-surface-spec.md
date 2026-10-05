@@ -106,19 +106,33 @@
   再生用に読む VIDEO file の幅とする。実行前は frontend が preview に読む画像の幅に従うため、それが
   `bg_media` の実際の幅と違えば、実行までは表示が実行結果と違うことがある。わからない間は大きさを
   `auto` と示す。上流の Scene の `bg_media` は実行結果からだけわかる。
-- パノラマは背景と sky Sticker・paint を Timeline の最初の frame で描き、drag / wheel で見回すだけとする。
-  world Sticker と 3D の素材（`scene`）は描かない。描くかどうかは後続で決める。
+- 実行前は、背景と sky Sticker・paint を Timeline の最初の frame で描き（live の描画）、drag / wheel で
+  見回すだけとする。world Sticker と 3D の素材（`scene`）は描かない。注記の欄の先頭に `Not run yet` と示す。
   Sticker の選択・drag・削除、画像の追加と drop、再生ボタンは持たない。surface の大きさは出力の比で変わらない。
-- ただし出力が ERP のとき（Camera が無いか、`projection` が `erp`）は、実行が `ui` の `pano_output_erp` に
-  出力（`first_frame`、動画なら最初の frame）を元の大きさの PNG で temp に書き（`TEMP_FILES` に登録）、その
-  `coverage` を添える。直近の実行が今の入力のもの（上の `pano_output_size` と同じ条件）である間、パノラマは
-  その画像だけを背景に描き、sky Sticker と paint を重ねない（3D・world・上流の Scene もすでに入っている）。
-  `coverage` 180 なら前半球として描く。画像を読み込めるまでと、読み込めなかったときは、今までどおり描く。
-  注記の欄の先頭に `Showing the last run` と示す。画像は結果の file ごとに一度だけ読んで decode し、node を
-  外すと手放す。collapse や非表示の間は読まない。
-  Camera の ERP は Camera の向きで撮った ERP なので、パノラマは Camera の frame 0 の回転（yaw・pitch・roll、
-  `studioRunQuaternion`）で ERP の球を回して World の向きに戻して描く。run が `core/render.py` の `_rays` で
-  回したものの逆で（`tests/test_studio_run_erp_orientation.py`）、二つの描き方を切り替えても向きは跳ばない。
+- 一度実行すると、surface は常に直近の実行の出力を示す（ADR 0029）。実行は出力（`first_frame`、動画なら最初の
+  frame）を元の大きさの PNG で temp に書き（`TEMP_FILES` に登録、縮小しない）、`ui` で返す。出力が ERP のとき
+  （Camera が無いか、隠したか、`projection` が `erp`）は `pano_output_erp` に `coverage` を添えて返し、
+  パノラマはその画像だけを背景に描いて見回す。sky Sticker と paint は重ねない（3D・world・上流の Scene も
+  すでに入っている）。`coverage` 180 なら前半球として描く。`perspective` の Camera のときは `pano_output_frame`
+  で返し、surface はそれを平らな画像として、比を保ったまま上端の bar の下（surface の上から 38px より下）に
+  収めて描く（余白は黒、切り取らない、surface の大きさは変えない）。見回しはしない。
+- 実行の後に入力が実行と合わなくなっても（上の `pano_output_size` と同じ条件：media の接続と
+  `pano_output_size.key`）、出力を示し続け、注記の欄の先頭に `Edited — run to update` と示す。合っている間は
+  この注記を出さない。どちらの注記も同じ欄に入り、長ければ省略記号で切る（layout shift なし）。
+- 画像を読み込めるまでは live の描画を示す。読み込めなかったとき（再起動で temp が消えたなど）は live の描画に
+  戻し、注記を `Run output unavailable — run again` にする。読み込みに失敗した file は、次にこの node が実行
+  される（`executed` が届く。cache から同じ `ui` が送り直されたときも含む）まで読み直さない。実行のたびに一度だけ
+  読み直す。画像は結果の file ごとに一度だけ読んで decode し、node を外すと手放す。collapse や非表示の間は
+  読まない。
+- Camera の ERP は Camera の向きで撮った ERP なので、実行は `pano_output_erp` に撮った回転（Camera の frame 0 の
+  `yaw_deg`・`pitch_deg`・`roll_deg`、Camera が無いか隠したときは `null`）を `rotation` として添える。パノラマは
+  その回転（`studioRunQuaternion`）で ERP の球を回して World の向きに戻して描く。run が `core/render.py` の
+  `_rays` で回したものの逆で（`tests/test_studio_run_erp_orientation.py`）、二つの描き方を切り替えても向きは
+  跳ばない。実行の後に Camera を回しても、示す出力の向きは変わらない。
+- `port` の Sticker の vFOV は状態に書かない派生値なので（`docs/scene-state-v2.md`）、実行の後に port の
+  素材が読み込まれても `state_json` は変わらず、実行と合ったままになる。エディタの inspector は、`port` の
+  Sticker の V FOV を素材から求めた値で示し、無効にする（`stickerParamEnabled`）。Sticker には上下の辺の
+  handle がないので、vFOV だけを変える操作もない。
 
 ## Scope Boundary
 

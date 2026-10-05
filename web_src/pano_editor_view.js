@@ -1,6 +1,7 @@
 // Editor view: derives what the three.js view draws from state v2 and loads the view on demand.
 // The World (the `scene` input and the world Stickers) and the Viewport camera's movement in space
 // are in pano_space.js.
+import { skyStickerVfov } from "./pano_editor_state.js";
 import { evaluateSceneState } from "./pano_scene_eval.js";
 import { watchThreeView } from "./pano_diagnostics.js";
 import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
@@ -103,9 +104,10 @@ export function viewProjection(camera, width, height) {
   };
 }
 
-// Sky layers from back to front: the state's sky Stickers evaluated at the Timeline frame, and the
-// paint layers (ERP canvases). Sky Stickers and paint share one z_index axis; #52 adds z_index to
-// the sky Stickers of state v2, and until then the editor's z_index is passed in.
+// Sky layers from back to front: the state's sky Stickers evaluated at the Timeline frame (a port
+// Sticker at the vFOV of its media, skyStickerVfov), and the paint layers (ERP canvases). Sky Stickers
+// and paint share one z_index axis; #52 adds z_index to the sky Stickers of state v2, and until then the
+// editor's z_index is passed in.
 // media(sticker) returns { media, revision, source? } for a Sticker (source: see pano_three_view.js
 // layerTexture), or null. evaluated is evaluateSceneState(sceneState, frame), when the caller has it.
 export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evaluated = evaluateSceneState(sceneState, frame) }) {
@@ -118,7 +120,7 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evalu
     const shown = media(sticker);
     if (!shown) return;
     const tanX = Math.tan(value.hFOV_deg * 0.5 * DEG2RAD);
-    const tanY = Math.tan(value.vFOV_deg * 0.5 * DEG2RAD);
+    const tanY = Math.tan(skyStickerVfov(sticker, value, mediaSize(shown.media)) * 0.5 * DEG2RAD);
     const { crop } = sticker;
     layers.push({
       kind: "sticker",

@@ -96,8 +96,8 @@ GREEN = torch.tensor([0.0, 1.0, 0.0])
 RED = torch.tensor([1.0, 0.0, 0.0])
 
 
-def test_outputs_are_first_frame_first_frame_mask_video_scene_and_sticker_state_in_order():
-    image, mask, video, pano_scene, sticker_state = _execute({"version": 2, "timeline": {"fps": 30.0}}, bg_media=build_background_erp())
+def test_outputs_are_first_frame_first_frame_mask_video_sticker_state_and_scene_in_order():
+    image, mask, video, sticker_state, pano_scene = _execute({"version": 2, "timeline": {"fps": 30.0}}, bg_media=build_background_erp())
 
     assert image.shape == (1, 256, 512, 3) and image.dtype == torch.float32 and image.device.type == "cpu"
     assert mask.shape == (1, 256, 512) and float(mask.max()) == 0.0

@@ -50,8 +50,8 @@ def _shows(image, rgb):
 
 
 def test_a_chain_draws_the_elements_of_every_upstream_studio():
-    a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[3]
-    b = _studio({"stickers": [_sky_port(90.0)]}, sticker=_solid(GREEN), scene=a).result[3]
+    a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[4]
+    b = _studio({"stickers": [_sky_port(90.0)]}, sticker=_solid(GREEN), scene=a).result[4]
     image = _studio(scene=b).result[0]
 
     assert torch.allclose(_center(image)[0], torch.tensor(RED))
@@ -61,7 +61,7 @@ def test_a_chain_draws_the_elements_of_every_upstream_studio():
 
 
 def test_the_own_sky_is_drawn_over_the_upstream_sky_with_the_same_id_and_port():
-    a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[3]
+    a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[4]
 
     over = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(BLUE), scene=a).result[0]
 
@@ -73,7 +73,7 @@ def test_the_own_sky_is_drawn_over_the_upstream_sky_with_the_same_id_and_port():
 
 @pytest.mark.parametrize("upstream_z, own_z, expected", [(-1.0, -2.0, RED), (-2.0, -1.0, BLUE)])
 def test_world_content_of_the_layers_meets_by_depth(upstream_z, own_z, expected):
-    a = _studio({"stickers": [_world_port(upstream_z)]}, sticker=_solid(RED)).result[3]
+    a = _studio({"stickers": [_world_port(upstream_z)]}, sticker=_solid(RED)).result[4]
 
     image = _studio({"stickers": [_world_port(own_z)]}, sticker=_solid(BLUE), scene=a).result[0]
 
@@ -81,8 +81,8 @@ def test_world_content_of_the_layers_meets_by_depth(upstream_z, own_z, expected)
 
 
 def test_world_planes_of_three_layers_meet_by_depth_together():
-    a = _studio({"stickers": [_world_port(-3.0)]}, sticker=_solid(GREEN)).result[3]
-    b = _studio({"stickers": [_world_port(-1.0, opacity=0.5)]}, sticker=_solid(RED), scene=a).result[3]
+    a = _studio({"stickers": [_world_port(-3.0)]}, sticker=_solid(GREEN)).result[4]
+    b = _studio({"stickers": [_world_port(-1.0, opacity=0.5)]}, sticker=_solid(RED), scene=a).result[4]
 
     image = _studio({"stickers": [_world_port(-2.0)]}, sticker=_solid(BLUE), scene=b).result[0]
 
@@ -91,7 +91,7 @@ def test_world_planes_of_three_layers_meet_by_depth_together():
 
 
 def test_world_planes_with_the_same_id_in_two_layers_keep_their_own_sources():
-    a = _studio({"stickers": [_world_port(-2.0, x=-1.0)]}, sticker=_solid(RED)).result[3]
+    a = _studio({"stickers": [_world_port(-2.0, x=-1.0)]}, sticker=_solid(RED)).result[4]
 
     image = _studio({"stickers": [_world_port(-2.0, x=1.0)]}, sticker=_solid(BLUE), scene=a).result[0]
 
@@ -99,12 +99,12 @@ def test_world_planes_with_the_same_id_in_two_layers_keep_their_own_sources():
 
 
 def test_one_upstream_scene_is_shared_by_two_downstream_studios():
-    a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[3]
+    a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[4]
 
     b = _studio({"stickers": [_sky_port(90.0)]}, sticker=_solid(GREEN), scene=a).result
     c = _studio({"stickers": [_sky_port(-90.0)]}, sticker=_solid(BLUE), scene=a).result
 
-    assert len(a.layers) == 1 and b[3].layers[0] is c[3].layers[0] is a.layers[0]
+    assert len(a.layers) == 1 and b[4].layers[0] is c[4].layers[0] is a.layers[0]
     assert _shows(b[0], RED) and _shows(b[0], GREEN) and not _shows(b[0], BLUE)
     assert _shows(c[0], RED) and _shows(c[0], BLUE) and not _shows(c[0], GREEN)
 
@@ -114,7 +114,7 @@ def _frames(output):
 
 
 def test_the_length_is_the_longer_one_and_timeline_length_sets_it():
-    a = _studio({"timeline": {"length": 3}}).result[3]
+    a = _studio({"timeline": {"length": 3}}).result[4]
 
     assert _frames(_studio(scene=a)) == 3
     # A Clip range that ends later extends it.
@@ -124,19 +124,19 @@ def test_the_length_is_the_longer_one_and_timeline_length_sets_it():
 
 
 def test_an_upstream_background_does_not_undo_the_upstream_timeline_length(tmp_path):
-    a = _studio({"timeline": {"length": 2}}, bg_media=_cfr(tmp_path, count=4)).result[3]
+    a = _studio({"timeline": {"length": 2}}, bg_media=_cfr(tmp_path, count=4)).result[4]
 
     assert _frames(_studio(scene=a)) == 2
     # Extended downstream, the upstream background VIDEO goes on by its times.
-    scene = _studio({"timeline": {"length": 6}}, scene=a).result[3]
+    scene = _studio({"timeline": {"length": 6}}, scene=a).result[4]
     assert [bg_index for bg_index, _layers in scene.frames] == [0, 1, 2, 3, None, None]
 
 
 def test_the_port_video_of_an_upstream_layer_keeps_its_frames(tmp_path):
     # Recorded at 24 fps, the 25 fps sticker VIDEO sets the Timeline of the upstream Studio.
-    a = _studio({"timeline": {"fps": 24.0}, "stickers": [_sky_port()]}, sticker=_cfr(tmp_path, count=4)).result[3]
+    a = _studio({"timeline": {"fps": 24.0}, "stickers": [_sky_port()]}, sticker=_cfr(tmp_path, count=4)).result[4]
 
-    b = _studio({"timeline": {"fps": 30.0, "length": 9}}, scene=a).result[3]
+    b = _studio({"timeline": {"fps": 30.0, "length": 9}}, scene=a).result[4]
 
     # 9 frames at 30 fps are 0.3 seconds, 7.5 frames at 25 fps.
     assert b.rate == 25 and len(b.frames) == 8
@@ -146,11 +146,11 @@ def test_the_port_video_of_an_upstream_layer_keeps_its_frames(tmp_path):
 
 
 def test_the_upstream_fps_is_used_and_own_keyframes_keep_their_seconds():
-    a = _studio({"timeline": {"fps": 30.0, "length": 30}}).result[3]
+    a = _studio({"timeline": {"fps": 30.0, "length": 30}}).result[4]
 
     # Recorded at 24 fps: frame 12 is 0.5 seconds, frame 15 at 30 fps.
     output = _studio({"timeline": {"fps": 24.0}, "stickers": [_sky_port(clip={"start": 12})]}, sticker=_solid(RED), scene=a)
-    scene, video = output.result[3], output.result[2]
+    scene, video = output.result[4], output.result[2]
 
     assert scene.fps == 30.0 and video.get_frame_rate() == 30
     assert [layers[-1][0] for _bg, layers in scene.frames[14:16]] == [11.2, 12.0]
@@ -161,7 +161,7 @@ def test_the_upstream_fps_is_used_and_own_keyframes_keep_their_seconds():
 
 def test_the_upstream_background_is_used_with_a_warning_and_its_paint_mask_is_kept():
     mask = _painting(mask=[_stroke("mask", "mask", [(0.4, 0.5), (0.6, 0.5)], 40)])
-    a = _studio({"painting": mask}, bg_media=_solid(WHITE, 16, 32), bg_color="#ff0000").result[3]
+    a = _studio({"painting": mask}, bg_media=_solid(WHITE, 16, 32), bg_color="#ff0000").result[4]
 
     output = _studio(scene=a, bg_media=_solid(BLUE, 16, 32), bg_color="#0000ff", output_size="auto")
     image, first_mask = output.result[0], output.result[1]
@@ -169,20 +169,20 @@ def test_the_upstream_background_is_used_with_a_warning_and_its_paint_mask_is_ke
     assert image.shape == (1, 16, 32, 3) and torch.allclose(image, torch.tensor(WHITE))
     assert float(first_mask.max()) > 0.5
     assert output.ui["pano_sticker_warnings"] == ["bg_media is not used: the scene input has a background of its own."]
-    assert output.result[3].bg_media is a.bg_media and output.result[3].bg_color == (1.0, 0.0, 0.0)
+    assert output.result[4].bg_media is a.bg_media and output.result[4].bg_color == (1.0, 0.0, 0.0)
 
 
 def test_without_an_upstream_background_the_own_one_is_drawn_and_a_video_follows_the_upstream_times(tmp_path):
-    a = _studio({"timeline": {"fps": 50.0, "length": 6}}).result[3]
+    a = _studio({"timeline": {"fps": 50.0, "length": 6}}).result[4]
 
     # A 25 fps background under a 50 fps Timeline shows each of its frames for two output frames.
-    scene = _studio(scene=a, bg_media=_cfr(tmp_path, count=4)).result[3]
+    scene = _studio(scene=a, bg_media=_cfr(tmp_path, count=4)).result[4]
 
     assert [bg_index for bg_index, _layers in scene.frames] == [0, 0, 1, 1, 2, 2, 3, 3]
 
 
 def test_the_ui_keeps_the_upstream_media_apart_from_the_own():
-    a = _studio({"stickers": [_sky_port()]}, sticker=_solid(RED), bg_media=_solid(WHITE, 16, 32), coverage="180").result[3]
+    a = _studio({"stickers": [_sky_port()]}, sticker=_solid(RED), bg_media=_solid(WHITE, 16, 32), coverage="180").result[4]
 
     ui = _studio({"stickers": [_sky_port()]}, sticker=_solid(BLUE), scene=a).ui
 
@@ -195,8 +195,8 @@ def test_the_ui_keeps_the_upstream_media_apart_from_the_own():
 
 
 def test_preview_passes_a_scene_of_several_layers_through():
-    a = _studio({"stickers": [_sky_port()]}, sticker=_solid(RED)).result[3]
-    b = _studio(scene=a).result[3]
+    a = _studio({"stickers": [_sky_port()]}, sticker=_solid(RED)).result[4]
+    b = _studio(scene=a).result[4]
 
     output = PanoramaPreviewSceneNode.execute(source=b, coverage="360")
 
@@ -205,8 +205,8 @@ def test_preview_passes_a_scene_of_several_layers_through():
 
 
 def test_a_camera_downstream_shoots_a_scene_of_several_layers():
-    a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[3]
-    b = _studio({"stickers": [_sky_port(0.0, size={"value": {"hFOV_deg": 10.0}})]}, sticker=_solid(BLUE), scene=a).result[3]
+    a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[4]
+    b = _studio({"stickers": [_sky_port(0.0, size={"value": {"hFOV_deg": 10.0}})]}, sticker=_solid(BLUE), scene=a).result[4]
 
     image = _studio({"camera": {"aspect": 1.0, "fov": {"value": 60.0}}}, scene=b).result[0]
 
@@ -214,7 +214,7 @@ def test_a_camera_downstream_shoots_a_scene_of_several_layers():
 
 
 def test_a_scene_is_timed_at_its_fps_as_a_fraction():
-    a = _studio({"timeline": {"fps": 30000 / 1001, "length": 2}}).result[3]
+    a = _studio({"timeline": {"fps": 30000 / 1001, "length": 2}}).result[4]
 
     video = _studio(scene=a).result[2]
 
