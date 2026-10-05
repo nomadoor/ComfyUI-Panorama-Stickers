@@ -512,7 +512,7 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   // A node out of sight stops and lets its VIDEO go, on each draw and as soon as its surface resizes away.
   assert.match(runtime, /const shown = surfaceShown\(wrap, !!node\.flags\?\.collapsed\);/);
   assert.match(runtime, /const sticker = shown \? portStickerMedia\(node\) : null;\s*const playable = playback\.follow\(\{\s*shown,\s*sources: shown \? backgroundVideoSources\(node\) : \[\],\s*state: getCachedState\(node\),\s*sticker,/);
-  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);\s*if \(!node\.flags\?\.collapsed\) drawCanvas/);
+  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);[\s\S]*?if \(!node\.flags\?\.collapsed\) drawCanvas/);
   assert.match(runtime, /new ResizeObserver\(\(\) => \{\s*if \(surfacePlayback\) syncSurfacePlayback\(\);\s*requestDraw\(\);/);
   assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);\s*surfacePlayback\.stickerVideo\.remove\(\);/);
 });

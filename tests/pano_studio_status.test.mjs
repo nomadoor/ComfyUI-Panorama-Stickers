@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { createStudioStatus, studioNodeStatus, studioOutputSize, studioRunKey, studioTimelineFrames } from "../web_src/pano_studio_status.js";
+import { createStudioStatus, studioNodeStatus, studioOutputSize, studioRunErp, studioRunKey, studioTimelineFrames } from "../web_src/pano_studio_status.js";
 
 function camera({ projection = "perspective", aspect = 1, fov = 90, fovKeyframes = [], visible = true } = {}) {
   return { projection, aspect, visible, fov: { value: fov, keyframes: fovKeyframes } };
@@ -68,8 +68,8 @@ test("the node status names what the node shoots, its size, and whether it was c
 test("the size of a run whose inputs are unchanged wins over the estimate", () => {
   const keyed = state({ camera: camera({ fovKeyframes: [{ frame: 0, value: 60, easing: LINEAR }, { frame: 8, value: 150, easing: LINEAR }] }) });
   const stateText = "{}";
-  const run = { width: 286, height: 286, capped: false, reduced_from: null, key: studioRunKey(stateText, "1024", "360") };
-  const options = { stateText, outputSize: "1024", coverage: 360, bgWidth: 32 };
+  const run = { width: 286, height: 286, capped: false, reduced_from: null, key: studioRunKey(stateText, "1024", "360", "#00ff00") };
+  const options = { stateText, outputSize: "1024", coverage: 360, bgColor: "#00ff00", bgWidth: 32 };
 
   assert.deepEqual(studioNodeStatus(keyed, { ...options, run }), { shot: "Camera · Perspective", size: "286 × 286", note: "" });
   assert.deepEqual(studioNodeStatus(keyed, { ...options, run: { ...run, width: 4096, height: 1024, capped: true, reduced_from: [4866, 1216] } }),
@@ -79,8 +79,9 @@ test("the size of a run whose inputs are unchanged wins over the estimate", () =
   assert.notEqual(estimate.size, "286 × 286");
   assert.deepEqual(studioNodeStatus(keyed, { ...options, outputSize: "2048", run }), studioNodeStatus(keyed, { ...options, outputSize: "2048" }));
   assert.deepEqual(studioNodeStatus(keyed, { ...options, stateText: "{ }", run }), estimate);
+  assert.deepEqual(studioNodeStatus(keyed, { ...options, bgColor: "#ff0000", run }), estimate);
   // A run without bg_media under auto keeps its note.
-  const autoRun = { width: 2048, height: 1024, capped: false, reduced_from: null, key: studioRunKey(stateText, "auto", "360") };
+  const autoRun = { width: 2048, height: 1024, capped: false, reduced_from: null, key: studioRunKey(stateText, "auto", "360", "#00ff00") };
   assert.deepEqual(studioNodeStatus(state(), { ...options, outputSize: "auto", bgWidth: null, run: autoRun }),
     { shot: "ERP", size: "2048 × 1024", note: "auto: no bg_media" });
 });
@@ -102,4 +103,43 @@ test("the status is worked out again only when its inputs change", () => {
   assert.notEqual(status({ ...options, outputSize: "auto", bgWidth: undefined }, load), null);
   assert.notEqual(status({ ...options, outputSize: "auto", bgWidth: null }, load), null);
   assert.equal(loads, 4);
+});
+
+test("the surface shows the last run's output ERP only while the run is current and the node shoots an ERP", () => {
+  const stateText = "{}";
+  const run = { width: 1024, height: 512, capped: false, reduced_from: null, key: studioRunKey(stateText, "1024", "360", "#00ff00") };
+  const erp = { filename: "pano_output_0.png", subfolder: "", type: "temp", coverage: 360 };
+  const options = { stateText, outputSize: "1024", coverage: 360, bgColor: "#00ff00", run, erp };
+
+  assert.equal(studioRunErp(state(), options), erp);
+  assert.equal(studioRunErp(state({ camera: camera({ projection: "erp" }) }), options), erp);
+  // A hidden Camera shoots as no Camera does.
+  assert.equal(studioRunErp(state({ camera: camera({ visible: false }) }), options), erp);
+  // A perspective Camera's output is not an ERP.
+  assert.equal(studioRunErp(state({ camera: camera() }), options), null);
+  // Edited since the run, or a run whose media are not the inputs' (run and erp are then null).
+  assert.equal(studioRunErp(state(), { ...options, stateText: "{ }" }), null);
+  assert.equal(studioRunErp(state(), { ...options, outputSize: "2048" }), null);
+  assert.equal(studioRunErp(state(), { ...options, coverage: 180 }), null);
+  // bg_color is in the output.
+  assert.equal(studioRunErp(state(), { ...options, bgColor: "#ff0000" }), null);
+  assert.equal(studioRunErp(state(), { ...options, run: null }), null);
+  assert.equal(studioRunErp(state(), { ...options, erp: null }), null);
+});
+
+test("the note says when the surface shows the last run, before any other note", () => {
+  const options = { outputSize: "2048", coverage: 360, bgWidth: null, showingRun: true };
+
+  assert.deepEqual(studioNodeStatus(state(), options), { shot: "ERP", size: "2048 × 1024", note: "Showing the last run" });
+  assert.deepEqual(studioNodeStatus(state(), { ...options, outputSize: "auto" }),
+    { shot: "ERP", size: "2048 × 1024", note: "Showing the last run · auto: no bg_media" });
+  assert.deepEqual(studioNodeStatus(state(), { ...options, showingRun: false }), { shot: "ERP", size: "2048 × 1024", note: "" });
+
+  const status = createStudioStatus();
+  const shown = { stateText: "{}", outputSize: "2048", coverage: 360, bgWidth: null, run: null, showingRun: true };
+  assert.equal(status(shown, state).note, "Showing the last run");
+  assert.equal(status({ ...shown }, state), null);
+  assert.equal(status({ ...shown, showingRun: false }, state).note, "");
+  // A run key that no longer matches after bg_color changes gives another status.
+  assert.equal(status({ ...shown, showingRun: false, bgColor: "#ff0000" }, state)?.note, "");
 });

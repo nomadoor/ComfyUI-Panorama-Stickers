@@ -555,8 +555,10 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     sticker: [],
     createErp: () => createErpMesh(domeGeometry, CustomBlending),
     createSticker: () => new Mesh(planeGeometry, createMaterial(STICKER_VERTEX, STICKER_FRAGMENT, {})),
-    placeErp(mesh, halfCoverage) {
+    // An ERP may come turned (Panorama Studio's run output, shot by a Camera): its dome takes the rotation.
+    placeErp(mesh, halfCoverage, quaternion) {
       mesh.material.uniforms.halfCoverage.value = halfCoverage;
+      mesh.quaternion.set(quaternion?.x ?? 0, quaternion?.y ?? 0, quaternion?.z ?? 0, quaternion?.w ?? 1);
     },
     placeSticker,
   };
@@ -589,7 +591,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   function addErp(owned, projection, mesh, layer, halfCoverage) {
     mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false, layer.source ?? layer.media);
     mesh.material.uniforms.opacity.value = layer.opacity;
-    projection.placeErp(mesh, halfCoverage);
+    projection.placeErp(mesh, halfCoverage, layer.quaternion);
     scene.add(mesh);
     return mesh;
   }

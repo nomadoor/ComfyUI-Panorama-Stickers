@@ -1,7 +1,9 @@
 import json
 
+import numpy as np
 import pytest
 import torch
+from PIL import Image
 
 
 pytest.importorskip(
@@ -103,8 +105,8 @@ def test_without_a_camera_every_output_frame_matches_the_new_stickers(output_siz
     for index in range(3):
         assert torch.equal(studio.result[index] if index < 2 else studio.result[2].get_components().images,
                            stickers.result[index] if index < 2 else stickers.result[2].get_components().images)
-    # Studio adds only what its node surface reads: the bg_media width and the size of the run.
-    assert set(studio.ui) == set(stickers.ui) | {"pano_bg_width", "pano_output_size"}
+    # Studio adds only what its node surface reads: the bg_media width, the size of the run and its output ERP.
+    assert set(studio.ui) == set(stickers.ui) | {"pano_bg_width", "pano_output_size", "pano_output_erp"}
     assert studio.result[4] == ""
 
 
@@ -341,15 +343,64 @@ def test_the_ui_reports_the_output_size_with_the_inputs_it_was_made_from():
 
     assert result.result[0].shape == (1, 286, 286, 3)
     assert result.ui["pano_output_size"] == [{"width": 286, "height": 286, "capped": False, "reduced_from": None,
-                                              "key": nodes._studio_run_key(state_json, "1024", "360")}]
+                                              "key": nodes._studio_run_key(state_json, "1024", "360", "#00ff00")}]
 
 
 def test_the_run_key_changes_with_the_state_and_the_widgets():
-    key = nodes._studio_run_key("{}", "1024", "360")
+    key = nodes._studio_run_key("{}", "1024", "360", "#00ff00")
 
-    assert key == nodes._studio_run_key("{}", "1024", "360")
-    assert len({key, nodes._studio_run_key("{ }", "1024", "360"), nodes._studio_run_key("{}", "2048", "360"),
-                nodes._studio_run_key("{}", "1024", "180")}) == 4
+    assert key == nodes._studio_run_key("{}", "1024", "360", "#00ff00")
+    # bg_color is in the output ERP the node surface shows.
+    assert len({key, nodes._studio_run_key("{ }", "1024", "360", "#00ff00"), nodes._studio_run_key("{}", "2048", "360", "#00ff00"),
+                nodes._studio_run_key("{}", "1024", "180", "#00ff00"), nodes._studio_run_key("{}", "1024", "360", "#ff0000")}) == 5
+
+
+def _output_erp(result):
+    """The ui entry of the run's output ERP and its PNG, read from temp."""
+    from comfyui_pano_suite.core.temp_files import TEMP_FILES, ensure_temp_root
+
+    (entry,) = result.ui["pano_output_erp"]
+    path = ensure_temp_root() / entry["subfolder"] / entry["filename"]
+    assert TEMP_FILES.is_registered(path)
+    with Image.open(path) as png:
+        return entry, np.asarray(png.convert("RGB"))
+
+
+@pytest.mark.parametrize("coverage", ["360", "180"])
+def test_an_erp_run_returns_its_output_at_full_size_for_the_node_surface(coverage):
+    # The node surface shows the run's output in place of drawing the Scene again; a 180 output is the front half.
+    result = _studio(coverage=coverage, output_size="1024", bg_media=build_background_erp())
+    entry, png = _output_erp(result)
+
+    assert entry["type"] == "temp" and entry["format"] == "image/png" and entry["coverage"] == int(coverage)
+    image = result.result[0][0]
+    assert png.shape == tuple(image.shape) == (512, 1024 * int(coverage) // 360, 3)
+    assert np.array_equal(png, (image.clamp(0, 1) * 255 + 0.5).byte().numpy())
+
+
+def test_an_erp_camera_returns_its_output_and_a_perspective_one_does_not():
+    erp = _studio({"version": 2, "camera": _camera("erp", yaw_deg=30.0)}, output_size="1024")
+    entry, png = _output_erp(erp)
+    assert entry["coverage"] == 360 and png.shape == (512, 1024, 3)
+
+    assert "pano_output_erp" not in _studio({"version": 2, "camera": _camera(fov=90.0)}, output_size="1024").ui
+
+
+@pytest.mark.parametrize("coverage", ["360", "180"])
+def test_a_hidden_camera_returns_the_output_erp_as_no_camera_does(coverage):
+    camera = {**_camera(fov=90.0, yaw_deg=30.0), "visible": False}
+    entry, png = _output_erp(_studio({"version": 2, "camera": camera}, coverage=coverage, output_size="1024"))
+
+    assert entry["coverage"] == int(coverage) and png.shape == (512, 1024 * int(coverage) // 360, 3)
+
+
+def test_the_output_erp_takes_the_coverage_of_an_upstream_scene():
+    upstream = PanoramaStickersSceneNode.execute(state_json="", bg_color="#00ff00", coverage="180", output_preset="1024",
+                                                 bg_media=_solid([0.5, 0.5, 0.5], height=16, width=16)).result
+    scene = next(value for value in upstream if isinstance(value, PanoSceneValue))
+    entry, png = _output_erp(_studio(coverage="360", output_size="1024", scene=scene))
+
+    assert entry["coverage"] == 180 and png.shape == (512, 512, 3)
 
 
 def test_auto_with_a_180_bg_media_doubles_its_width_for_the_whole_erp():

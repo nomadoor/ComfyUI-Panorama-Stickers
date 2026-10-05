@@ -465,7 +465,7 @@ def save_editor_frames(images, progress=None) -> list[Path]:
     paths = []
     with TEMP_FILES.writing(paths):
         for index, image in enumerate(images):
-            picture = Image.fromarray((image.clamp(0.0, 1.0) * 255 + 0.5).byte().cpu().numpy(), "RGBA")
+            picture = Image.fromarray(image.clamp(0.0, 1.0).mul_(255).add_(0.5).byte().cpu().numpy(), "RGBA")
             scale = min(1, EDITOR_MAX_SIZE / max(picture.size))
             if scale < 1:
                 picture = picture.resize((max(1, round(picture.width * scale)), max(1, round(picture.height * scale))), Image.BILINEAR)
@@ -475,6 +475,14 @@ def save_editor_frames(images, progress=None) -> list[Path]:
             if progress is not None:
                 progress(index + 1, len(images))
     return paths
+
+
+def save_output_png(image) -> Path:
+    """An RGB IMAGE (h, w, 3) as a PNG in temp at its own size, for the node surface to show a run's output."""
+    path = temp_file_path(f"pano_output_{uuid.uuid4().hex[:12]}.png")
+    with TEMP_FILES.writing(path):
+        Image.fromarray(image.clamp(0.0, 1.0).mul_(255).add_(0.5).byte().cpu().numpy(), "RGB").save(path, compress_level=1)
+    return path
 
 
 def make_frames_ui_payload(paths: list[Path], fps: float, *, frames_key: str, meta_key: str) -> dict:
