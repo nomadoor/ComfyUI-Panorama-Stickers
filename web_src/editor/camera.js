@@ -1,4 +1,4 @@
-// The Cutout's Camera and Panorama Studio's (#77, #89): its shot at the playhead and the edits written back
+// The Cutout's shot and Panorama Studio's Camera (#89): its shot at the playhead and the edits written back
 // to its Lanes (syncCutoutShot), adding and removing it, its aspect, and its roll knob.
 import { parseCutoutAspectPair, updateCutoutRollGesture } from "../pano_cutout_node_surface.js";
 import {
@@ -16,19 +16,19 @@ import {
 import { cameraShot, newStudioCamera, setCameraShot } from "../pano_editor_state.js";
 import { ERP_ASPECT } from "../pano_editor_ui_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
-import { cameraFrustumSegments, frameView, segmentsHit } from "../pano_space.js";
+import { cameraFrustumSegments, segmentsHit } from "../pano_space.js";
 import { FRAME_GATE_OCCUPANCY } from "./constants.js";
 import { formatParamValue } from "./helpers.js";
 
 export function createCamera(deps) {
   const {
-    cameraV2, canvas, cutoutV2, editor, frameRollKnobEl, initialShotBase, readOnly, runtime, shotEditor,
+    cameraV2, canvas, editor, frameRollKnobEl, initialShotBase, readOnly, runtime, shotEditor,
     stageWrap, state, studio, tooltip, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let applySpaceMode, cameraFrustumLength, cameraShoots, cameraSphere, commitAndRefreshNode, currentSpaceCamera,
+  let applySpaceMode, cameraFrustumLength, cameraShoots, commitAndRefreshNode, currentSpaceCamera,
     cutoutCamera, editorViewInput, forceCursorTool, getFrameViewRect, hasCamera, hasSpaceContent, hideTooltip,
-    isCameraSelected, isFreeSpaceView, isShotItem, leaveFrameView, lookingAt, pushHistory, requestDraw,
+    isCameraSelected, isShotItem, leaveFrameView, pushHistory, requestDraw,
     screenPos, setSelectedItem, spaceScale, spaceViewState, stopTimelinePlayback, syncFrameRollKnob,
     syncViewToggleState, transitionView, turnViewTo, updateCursor, updateSelectionMenu, updateSidePanel,
     worldGizmoPointer;
@@ -66,9 +66,7 @@ export function createCamera(deps) {
     if (existing) {
       setSelectedItem(existing);
       editor.mode = "pano";
-      // In 6DoF the view turns to the Camera and comes close enough to show its frustum (#77).
-      if (cutoutV2 && isFreeSpaceView()) transitionView(frameView(lookingAt(spaceViewState(), existing.position), cameraSphere(), canvas.width, canvas.height));
-      else turnViewTo(wrapYaw(Number(existing.yaw_deg || 0)), clamp(Number(existing.pitch_deg || 0), -89.9, 89.9));
+      turnViewTo(wrapYaw(Number(existing.yaw_deg || 0)), clamp(Number(existing.pitch_deg || 0), -89.9, 89.9));
       updateSidePanel();
       updateSelectionMenu();
       requestDraw({ cause: "cutout_frame" });
@@ -241,11 +239,10 @@ export function createCamera(deps) {
     }
   }
 
-  // PanoramaCutoutNode (#77): writes an edit of the shot since it was last derived to the Camera at the
-  // playhead (setCameraShot, by the recording rule), then derives the shot from the Camera again, so it
-  // follows the playhead, Keyframe edits and Undo. The shot stays the same object, which interactions
-  // hold. `keep` false drops an edit instead (the state was replaced).
-  // Panorama Studio's shot comes and goes with its Camera (#89).
+  // Panorama Studio: writes an edit of the shot since it was last derived to the Camera at the playhead
+  // (setCameraShot, by the recording rule), then derives the shot from the Camera again, so it follows the
+  // playhead, Keyframe edits and Undo. The shot stays the same object, which interactions hold. `keep`
+  // false drops an edit instead (the state was replaced). The shot comes and goes with the Camera (#89).
   function syncCutoutShot(keep = true) {
     if (!cameraV2) return;
     const before = cutoutShotBase;
@@ -413,9 +410,9 @@ export function createCamera(deps) {
   return {
     connect(api) {
       ({
-        applySpaceMode, cameraFrustumLength, cameraShoots, cameraSphere, commitAndRefreshNode, currentSpaceCamera,
+        applySpaceMode, cameraFrustumLength, cameraShoots, commitAndRefreshNode, currentSpaceCamera,
         cutoutCamera, editorViewInput, forceCursorTool, getFrameViewRect, hasCamera, hasSpaceContent, hideTooltip,
-        isCameraSelected, isFreeSpaceView, isShotItem, leaveFrameView, lookingAt, pushHistory, requestDraw,
+        isCameraSelected, isShotItem, leaveFrameView, pushHistory, requestDraw,
         screenPos, setSelectedItem, spaceScale, spaceViewState, stopTimelinePlayback, syncFrameRollKnob,
         syncViewToggleState, transitionView, turnViewTo, updateCursor, updateSelectionMenu, updateSidePanel,
         worldGizmoPointer,

@@ -45,9 +45,9 @@
 - prompt queue、Full Editor開始、teardown前に未確定gestureをflushする。
 - Full Editor開始時は進行中の画像operationもsettleまで待ち、成功した追加を含む最新stateを読む。
 
-## Playback Contract (PanoramaStickersNode)
+## Playback Contract (state v2)
 
-新しいノード `PanoramaStickersNode` だけが持つ。旧 `PanoramaStickers` は変えない。
+状態 v2 のノード上の表示の再生（`web_src/pano_node_playback.js`）。`PanoramaStickersNode` のために作り、そのノードは #92 で外した。今は Panorama Studio の表示（`PanoStudioNodeSurface.vue`、#91）が、表示フレームの背景の VIDEO と `port` の素材のフレームを出すのに使う。Studio の表示には再生ボタンが無いので、下の再生ボタンの項は今は使われていない。旧 `PanoramaStickers` は変えない。
 
 - node surfaceが表示するフレーム（表示フレーム）はノードごとの一時状態で、`state_json` にも
   `node.properties` にも保存しない。最初は frame 0 で、reloadやworkflowを開き直すと frame 0 に戻る。
@@ -160,4 +160,3 @@ surfaceに含めない操作:
 12. 選択枠、handle、accent color、hover cursorがmodalと一致する。
 13. stickerがない状態では追加案内が表示され、選択後はDelete / Backspaceで削除できる。
 14. 外部入力stickerを移動・拡縮・回転した後、`Back to Initial`で接続時のposeへ戻せる。
-15. `PanoramaStickersNode` で時間のあるsceneか背景VIDEOか `port` のStickerの素材のMP4のときだけ再生ボタンが出て、ループ再生し、一時停止・編集・Full Editor・collapse・非表示で表示中のフレームに止まり、再生でそこから続く。背景VIDEOの変更とreloadで frame 0 に戻る。

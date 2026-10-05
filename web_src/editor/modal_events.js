@@ -319,7 +319,7 @@ export function createModalEvents(deps) {
     if (action === "reset-view") {
       if (editor.mode === "frame") return;
       // In space the view also goes back to where 3DoF stands (the World origin, where the ERP is taken from,
-      // or the Cutout's Camera), as it opened.
+      // or the Camera), as it opened.
       transitionView(
         { position: spaceOrigin(), yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100, distance: contentSphere()?.radius || DEFAULT_DISTANCE },
         { mode: shownSpaceMode(editor.spaceMode, editor.viewTransition), moved: false },

@@ -24,8 +24,8 @@ from comfyui_pano_suite.core import mesh_render
 from comfyui_pano_suite.core.render import Projection
 from comfyui_pano_suite.core.world import world_rotation
 from comfyui_pano_suite.core.world_render import CameraView
-from test_cutout_scene_node import _camera, _center, _cutout, _stickers
-from test_cutout_scene_node import _frames as _cutout_frames
+from scene_test_helpers import camera_state as _camera, center as _center, shoot as _shoot, video_frames as _shot_frames
+from test_studio_camera import _upstream as _studio
 from test_scene_editor_files import _glb_positions, _path
 from test_stickers_scene_video import _frames
 from test_stickers_timed_sticker import _batch_index_at_center
@@ -142,7 +142,7 @@ def test_moge_mask_drops_its_pixels():
 def test_moge_video_draws_each_frame_at_its_time():
     reds = torch.stack([torch.zeros((12, 16, 3)).index_fill_(-1, torch.tensor([0]), (index + 1) / 10) for index in range(3)])
 
-    image = _frames(_stickers(scene=_moge(reds)))
+    image = _frames(_studio(scene=_moge(reds)))
 
     assert _batch_index_at_center(image) == [0, 1, 2]
 
@@ -151,7 +151,7 @@ def test_mesh_is_drawn_and_written_for_the_editor():
     texture = torch.tensor([[[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], [[0.0, 0.0, 1.0], [1.0, 1.0, 1.0]]]])
     mesh = Types.MESH(torch.tensor([QUAD]), torch.tensor([QUAD_FACES]), uvs=torch.tensor([QUAD_UVS]), texture=texture)
 
-    output = nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="", scene=mesh)
+    output = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=mesh)
 
     image = output.result[0][0]
     # The quad spans 53 degrees around the ERP center: its top left quadrant is the red texel.
@@ -170,7 +170,7 @@ def test_mesh_batch_items_follow_the_output_frames():
     colors[0, :, 0], colors[1, :, 0] = 0.1, 0.2
     mesh = Types.MESH(vertices, faces, vertex_colors=colors, vertex_counts=torch.tensor([4, 3]), face_counts=torch.tensor([2, 1]))
 
-    assert _batch_index_at_center(_frames(_stickers(scene=mesh))) == [0, 1]
+    assert _batch_index_at_center(_frames(_studio(scene=mesh))) == [0, 1]
 
 
 def _write_obj(path):
@@ -184,7 +184,7 @@ def test_mesh_files_are_drawn_and_written_for_the_editor(tmp_path):
     (tmp_path / "quad.glb").write_bytes(save_glb(torch.tensor(QUAD), torch.tensor(QUAD_FACES), uvs=torch.tensor(QUAD_UVS), texture_image=texture))
 
     for name, color in (("quad.glb", [1.0, 0.0, 0.0]), (_write_obj(tmp_path / "quad.obj").name, [0.22] * 3)):
-        result = _stickers(scene=Types.File3D(str(tmp_path / name)))
+        result = _studio(scene=Types.File3D(str(tmp_path / name)))
         ui = nodes._scene_ui(result[3].layers[-1].scene)
 
         assert torch.allclose(result[0][0, 256, 512], torch.tensor(color), atol=1e-3)
@@ -198,14 +198,14 @@ def test_same_mesh_file_is_read_once_and_keeps_its_editor_files(tmp_path, monkey
     monkeypatch.setattr(nodes, "read_mesh_file", lambda file: reads.append(file) or read(file))
     monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
-    first = nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="", scene=Types.File3D(str(path)))
-    again = nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="", scene=Types.File3D(str(path)))
+    first = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=Types.File3D(str(path)))
+    again = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=Types.File3D(str(path)))
 
     assert len(reads) == 1 and len(writes) == 1
     assert again.ui["pano_scene_files"] == first.ui["pano_scene_files"]
     # A changed file is read again.
     path.write_text(path.read_text() + "v 0 0 0\n")
-    nodes.PanoramaStickersSceneNode.execute(bg_color="#00ff00", coverage="360", output_preset="1024", state_json="", scene=Types.File3D(str(path)))
+    nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=Types.File3D(str(path)))
     assert len(reads) == 2
 
 
@@ -220,7 +220,7 @@ def test_nothing_uploaded_outlives_its_render_pass(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mesh_render, "_upload", recording)
     mesh = Types.MESH(torch.tensor([QUAD] * 2), torch.tensor([QUAD_FACES] * 2), vertex_colors=torch.rand((2, 4, 3)))
-    result = _stickers(scene=mesh)
+    result = _studio(scene=mesh)
     video = result[2]
 
     video.get_components()
@@ -235,15 +235,15 @@ def test_mesh_files_the_core_cannot_read_fail_clearly(tmp_path):
     (tmp_path / "model.fbx").write_bytes(b"")
 
     with pytest.raises(ValueError, match="fbx"):
-        _stickers(scene=Types.File3D(str(tmp_path / "model.fbx")))
+        _studio(scene=Types.File3D(str(tmp_path / "model.fbx")))
 
 
-def test_cutout_shoots_the_mesh_of_the_pano_scene():
+def test_a_camera_shoots_the_mesh_of_an_upstream_scene():
     mesh = Types.MESH(torch.tensor([QUAD]), torch.tensor([QUAD_FACES]), vertex_colors=torch.tensor([[[1.0, 0.0, 0.0]] * 4]))
-    pano_scene = _stickers(scene=mesh)[3]
+    pano_scene = _studio(scene=mesh)[3]
 
-    ahead = _cutout_frames(_cutout(pano_scene, _camera(hFOV_deg=30.0)))
-    behind = _cutout_frames(_cutout(pano_scene, _camera(yaw_deg=180.0, hFOV_deg=30.0)))
+    ahead = _shot_frames(_shoot(pano_scene, _camera(hFOV_deg=30.0), bg_color="#00ff00"))
+    behind = _shot_frames(_shoot(pano_scene, _camera(yaw_deg=180.0, hFOV_deg=30.0), bg_color="#00ff00"))
 
     assert torch.allclose(_center(ahead), torch.tensor([1.0, 0.0, 0.0]))
     assert torch.allclose(_center(behind), torch.tensor([0.0, 1.0, 0.0]))

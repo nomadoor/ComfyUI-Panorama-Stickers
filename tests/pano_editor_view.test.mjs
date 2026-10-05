@@ -707,14 +707,11 @@ test("the world Sticker's selection menu shows exactly while its gizmo does, and
   assert.match(editor, /editor\.gizmoMode = gizmoModeTarget\.getAttribute\("data-gizmo-mode"\);\s*runtime\.backgroundDirty = true;\s*updateSelectionMenu\(\);/);
 });
 
-test("PanoramaCutoutNode's editor edits its Camera: the shot follows it, the Frame view moves it in space, the gizmo moves it in 6DoF (#77)", () => {
+test("Panorama Studio's editor edits its Camera: the shot follows it, the Frame view moves it in space, the gizmo moves it in 6DoF", () => {
   const editor = readEditorSource();
   // The shot is the Camera at the playhead; an edit goes back to its Lanes before the playhead moves.
   assert.match(editor, /function setTimelineFrame\(frame\) \{[\s\S]*?syncCutoutShot\(\);\s*editor\.frame = next;\s*timelinePlayhead\.frame\.value = next;\s*syncCutoutShot\(\);/);
   assert.match(editor, /if \(keep && shot && cutoutShotBase\) setCameraShot\(state\.camera, editor\.frame, shot, cutoutShotBase\);/);
-  // Only the Camera is edited: no image, paint or clear tools, and the Stickers shown are not selectable.
-  assert.match(editor, /const CUTOUT_V2_HIDDEN_TOOLS = new Set\(\["paint", "mask", "add-image", "clear"\]\);/);
-  assert.match(editor, /return cutoutV2 \|\| !Array\.isArray\(state\.stickers\) \? \[\] : skyStickers\(\);/);
   // With World content the Frame view's drags of the 3D view controls orbit and pan the Camera, and the wheel
   // moves it toward the point under the pointer.
   assert.match(editor, /if \(direction && isFreeFrameView\(\)\) zoomFrameAt\(p, -direction\);/);
@@ -742,8 +739,6 @@ test("Panorama Studio's editor adds and deletes its one Camera without moving th
   // The Stickers editor of state v2 with the Cutout's Camera, which the node marks.
   assert.match(editor, /const studio = sceneV2 && node\.__panoStudio === true;/);
   assert.match(editor, /const shellPreset = buildModalShellPreset\(studio \? "studio" : type\);/);
-  // Studio opens its state as it is: the default Camera of the Cutout is not used.
-  assert.match(editor, /scene: capture\?\.state \?\? null,\s*camera: cutoutV2,/);
   // Add Camera: where the view stands and looks, disabled while there is one.
   assert.match(editor, /state\.camera = newStudioCamera\(spaceViewState\(\)\);/);
   assert.match(editor, /patchUiButton\(uiState\.toolButtons, "value", "add-camera", \{ disabled: hasCamera\(\) \}\);/);

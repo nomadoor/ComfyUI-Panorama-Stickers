@@ -8,7 +8,7 @@ import torch
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Stickers node",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
 import av
@@ -67,7 +67,7 @@ def _port_state(clip=None, **timeline):
 
 
 def _run(state=None, **inputs):
-    return _execute(state, output_preset="1024", **inputs)
+    return _execute(state, output_size="1024", **inputs)
 
 
 def test_image_batch_sticker_maps_one_to_one_to_output_frames():

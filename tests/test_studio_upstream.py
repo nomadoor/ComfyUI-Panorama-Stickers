@@ -11,7 +11,7 @@ pytest.importorskip(
 )
 
 from comfyui_pano_suite import nodes
-from comfyui_pano_suite.nodes import PanoramaCutoutSceneNode, PanoramaPreviewSceneNode, PanoramaStudioNode
+from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStudioNode
 from test_stickers_scene_video import _cfr
 from tools.bake_legacy_goldens import _painting, _stroke
 
@@ -204,12 +204,11 @@ def test_preview_passes_a_scene_of_several_layers_through():
     assert output.result[0] is b and not output.ui
 
 
-def test_the_new_cutout_shoots_a_scene_of_several_layers():
+def test_a_camera_downstream_shoots_a_scene_of_several_layers():
     a = _studio({"stickers": [_sky_port(0.0)]}, sticker=_solid(RED)).result[3]
     b = _studio({"stickers": [_sky_port(0.0, size={"value": {"hFOV_deg": 10.0}})]}, sticker=_solid(BLUE), scene=a).result[3]
-    cutout = {"version": 2, "camera": {"aspect": 1.0, "fov": {"value": 60.0}}}
 
-    image = PanoramaCutoutSceneNode.execute(source=b, coverage="360", output_megapixels=0.01, state_json=json.dumps(cutout)).result[0]
+    image = _studio({"camera": {"aspect": 1.0, "fov": {"value": 60.0}}}, scene=b).result[0]
 
     assert torch.allclose(_center(image)[0], torch.tensor(BLUE)) and _shows(image, RED)
 

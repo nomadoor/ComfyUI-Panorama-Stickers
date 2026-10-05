@@ -1454,7 +1454,7 @@ function surfaceFrame(node) {
   return node.__panoSurfacePlayback?.playback.frame ?? NODE_SURFACE_FRAME;
 }
 
-// PanoramaStickersNode's background VIDEO, best first, as the editor picks it: the node's current
+// Panorama Studio's background VIDEO, best first, as the editor picks it: the node's current
 // result, else the file LoadVideo loads into the background input.
 function backgroundVideoSources(node) {
   const own = isNodeOutputMediaCurrent(node, "background")
@@ -1633,7 +1633,7 @@ function drawCanvas(node, canvas, surfaceView, runBackground = null) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#070707";
   ctx.fillRect(0, 0, surfW, surfH);
-  // PanoramaStickersNode plays its background VIDEO with its Timeline; the legacy node loops it.
+  // Panorama Studio plays its background VIDEO with its Timeline; the legacy node loops it.
   const bgImg = runBackground?.media || (node.__panoSurfacePlayback
     ? playbackBackground(node.__panoSurfacePlayback)
     : getNodeOwnOutputVideo(node, ["pano_input_videos"], () => node.__panoDomPreview?.requestDraw?.())
@@ -2167,7 +2167,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
       aspectOpen: false,
       aspectChoices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value })),
     });
-  // PanoramaStickersNode plays its Timeline on the node. requestVideoFrameCallback runs only for a
+  // Panorama Studio plays its Timeline on the node. requestVideoFrameCallback runs only for a
   // rendered VIDEO, so the muted elements stay in the surface, out of sight by their opacity: the
   // background VIDEO, and the port Sticker's MP4 that follows the playhead.
   let surfacePlayback = null;

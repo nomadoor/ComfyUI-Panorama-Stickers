@@ -3,7 +3,6 @@
 import {
   editorStateText,
   normalizeCoverageValue,
-  noteCameraEdit,
   sameEditorStateText,
   setEditorActive,
 } from "../pano_editor_state.js";
@@ -30,7 +29,6 @@ export function createCommit(deps) {
   function commitState() {
     if (readOnly) return;
     syncCutoutShot();
-    noteCameraEdit(state);
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
     const text = editorStateText(node, state);

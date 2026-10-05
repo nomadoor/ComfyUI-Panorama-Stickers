@@ -9,7 +9,7 @@ import torch
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Cutout node",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
 import av
@@ -19,16 +19,16 @@ from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state
 from comfyui_pano_suite.core.world_render import SceneContent
-from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersSceneNode
+from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStudioNode
 from comfyui_pano_suite.scene_video import SceneVideo
-from scene_test_helpers import center as _center, cutout as _cutout, cutout_camera as _camera, cutout_frames as _frames
+from scene_test_helpers import camera_state as _camera, center as _center, shoot as _shoot, state_text, video_frames as _frames
 from test_legacy_goldens import _golden_mismatch
-from test_scene_editor_files import _mesh
 from test_world_render import _ball
-from tools.bake_legacy_goldens import CUTOUT_SHOT, FIXTURE_DIR, build_background_erp
+from tools.bake_legacy_goldens import CUTOUT_SHOT, FIXTURE_DIR, STUDIO_SHOT_SIZE, build_background_erp, studio_shot_size
 from tools.golden_png import read_png16
 
 
+# Panorama Studio shooting through a Camera: an ERP on bg_media, or the Scene on its `scene` input.
 
 
 def _solid(rgb, height=8, width=16, batch=1):
@@ -44,16 +44,22 @@ def _halves_erp(height=32, width=64):
     return erp
 
 
+def _shot_width(hfov_deg, output_size=1024):
+    """The width of a perspective Camera output: 2 f tan(hFOV / 2) with f = output_size / 2pi, even (ADR 0029)."""
+    width = output_size / math.pi * math.tan(math.radians(hfov_deg) / 2)
+    return 2 * math.floor(width / 2 + 0.5)
+
 
 V1_STATE = json.dumps({"shots": [CUTOUT_SHOT]})
 
 
 @pytest.mark.parametrize("state_json", [V1_STATE, json.dumps(load_scene_state(V1_STATE))], ids=["v1", "v2"])
-def test_static_erp_image_matches_the_new_cutout_golden(state_json):
-    image, _sticker_state, mask, _video = _cutout(build_background_erp(), state_json, output_megapixels=0.03)
+def test_static_erp_image_matches_the_camera_golden(state_json):
+    with studio_shot_size(STUDIO_SHOT_SIZE):
+        image, mask, *_rest = _shoot(build_background_erp(), state_json)
 
-    assert _golden_mismatch(image[0].numpy(), read_png16(FIXTURE_DIR / "cutout_node_single_shot.image.png")) is None
-    assert _golden_mismatch(mask[0].numpy(), read_png16(FIXTURE_DIR / "cutout_node_single_shot.mask.png")) is None
+    assert _golden_mismatch(image[0].numpy(), read_png16(FIXTURE_DIR / "studio_camera_single_shot.image.png")) is None
+    assert _golden_mismatch(mask[0].numpy(), read_png16(FIXTURE_DIR / "studio_camera_single_shot.mask.png")) is None
 
 
 def _legacy_error(image):
@@ -62,17 +68,18 @@ def _legacy_error(image):
     return float(np.abs(image - legacy).mean()) * 255.0
 
 
-def test_new_cutout_differs_from_the_legacy_golden_by_sampling_pixel_centers(monkeypatch):
+def test_camera_differs_from_the_legacy_cutout_golden_by_sampling_pixel_centers(monkeypatch):
     # The legacy Cutout sampled ERP pixel i at u = i, half a pixel off its center. On this grid of sharp lines
     # that is most of the 9.7/255 mean error; the rest is the vertical FOV following square pixels
     # (59.5 rather than 60 degrees at 224x128). docs/legacy-baselines.md
-    image = _cutout(build_background_erp(), V1_STATE, output_megapixels=0.03)[0][0].numpy()
-    assert _legacy_error(image) < 10.5
+    with studio_shot_size(STUDIO_SHOT_SIZE):
+        image = _shoot(build_background_erp(), V1_STATE)[0][0].numpy()
+        assert _legacy_error(image) < 10.5
 
-    sample_erp = render_module._sample_erp
-    monkeypatch.setattr(render_module, "_sample_erp", lambda erp, view: sample_erp(erp, view + view.new_tensor([1.0 / erp.shape[1], 1.0 / erp.shape[0]])))
-    shifted = _cutout(build_background_erp(), V1_STATE, output_megapixels=0.03)[0][0].numpy()
-    assert _legacy_error(shifted) < 2.5
+        sample_erp = render_module._sample_erp
+        monkeypatch.setattr(render_module, "_sample_erp", lambda erp, view: sample_erp(erp, view + view.new_tensor([1.0 / erp.shape[1], 1.0 / erp.shape[0]])))
+        shifted = _shoot(build_background_erp(), V1_STATE)[0][0].numpy()
+        assert _legacy_error(shifted) < 2.5
 
 
 def test_legacy_cutout_still_reproduces_its_golden():
@@ -82,29 +89,21 @@ def test_legacy_cutout_still_reproduces_its_golden():
     assert json.loads(result[1])["version"] == 1
 
 
-def test_outputs_are_first_frame_sticker_state_first_frame_mask_and_video():
-    image, sticker_state, mask, video = _cutout(_solid([0.5, 0.5, 0.5]), _camera(hFOV_deg=60.0), output_megapixels=0.01)
+def test_outputs_of_a_perspective_camera():
+    image, mask, video, _scene, sticker_state = _shoot(_solid([0.5, 0.5, 0.5]), _camera(hFOV_deg=60.0))
 
-    assert image.shape == (1, 96, 96, 3) and mask.shape == (1, 96, 96)
-    assert isinstance(sticker_state, str)
-    assert isinstance(video, SceneVideo) and video.get_dimensions() == (96, 96)
+    side = _shot_width(60.0)
+    assert image.shape == (1, side, side, 3) and mask.shape == (1, side, side)
+    assert isinstance(sticker_state, str) and sticker_state
+    assert isinstance(video, SceneVideo) and video.get_dimensions() == (side, side)
     assert video.get_frame_rate() == 24 and video.get_components().audio is None
-
-
-def test_output_size_follows_the_camera_aspect_and_megapixels():
-    state = _camera()
-    state["camera"]["aspect"] = 2.0
-
-    image = _cutout(_solid([0.5, 0.5, 0.5]), state, output_megapixels=0.02)[0]
-
-    assert image.shape[1:3] == (96, 200)
 
 
 def test_erp_image_is_world_aligned_and_the_camera_turns_into_it():
     erp = _halves_erp()
 
-    front = _cutout(erp, _camera())[0]
-    behind = _cutout(erp, _camera(yaw_deg=180.0))[0]
+    front = _shoot(erp, _camera())[0]
+    behind = _shoot(erp, _camera(yaw_deg=180.0))[0]
 
     assert torch.allclose(_center(front), torch.tensor([1.0, 0.0, 0.0]))
     assert torch.allclose(_center(behind), torch.tensor([0.0, 0.0, 1.0]))
@@ -113,18 +112,25 @@ def test_erp_image_is_world_aligned_and_the_camera_turns_into_it():
 def test_180_erp_is_black_outside_its_hemisphere():
     erp = _solid([0.5, 0.5, 0.5], height=32, width=32)
 
-    behind = _cutout(erp, _camera(yaw_deg=180.0), coverage="180")[0]
+    behind = _shoot(erp, _camera(yaw_deg=180.0), coverage="180")[0]
 
     assert torch.equal(behind, torch.zeros_like(behind))
 
 
-def test_camera_keyframes_animate_the_cutout():
+def test_camera_keyframes_animate_the_output():
     keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "hold"}, {"frame": 2, "value": {"yaw_deg": 180.0}}]
 
-    image = _frames(_cutout(_halves_erp(), _camera({"rotation": keyframes})))
+    image = _frames(_shoot(_halves_erp(), _camera({"rotation": keyframes})))
 
-    assert image.shape[0] == 3
+    assert image.shape == (3, 326, 326, 3)
     assert [tuple(_center(image, index).tolist()) for index in range(3)] == [(1.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)]
+    # A 90 degree view stays inside the half it faces: every pixel of a frame is that half's color.
+    expected = [(1.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)]
+    for index, rgb in enumerate(expected):
+        for y, x in [(0, 0), (0, 325), (163, 0), (325, 325)]:
+            assert tuple(image[index, y, x].tolist()) == rgb, (index, y, x)
+    # The hold Keyframe keeps frame 1 exactly as frame 0.
+    assert torch.equal(image[1], image[0])
 
 
 def test_length_of_an_erp_source_comes_from_the_latest_camera_keyframe_over_its_lanes():
@@ -132,14 +138,14 @@ def test_length_of_an_erp_source_comes_from_the_latest_camera_keyframe_over_its_
         return [{"frame": frame, "value": None} for frame in frames]
 
     def length(keyframes):
-        return _frames(_cutout(_halves_erp(), _camera(keyframes))).shape[0]
+        return _frames(_shoot(_halves_erp(), _camera(keyframes))).shape[0]
 
     assert length({"rotation": keys(0, 9)}) == 10
     assert length({"rotation": keys(0, 4), "fov": keys(6), "position": keys(2, 3)}) == 7
 
 
 def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_aspect():
-    image, sticker_state, *_rest = _cutout(_solid([0.5, 0.5, 0.5]), _camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0, hFOV_deg=60.0))
+    image, _mask, _video, _scene, sticker_state = _shoot(_solid([0.5, 0.5, 0.5]), _camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0, hFOV_deg=60.0))
 
     payload = json.loads(sticker_state)
     assert payload == {
@@ -156,43 +162,22 @@ def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_asp
     assert load_sticker_state(sticker_state)["camera"] == payload["camera"]
 
 
-@pytest.mark.parametrize("state", [None, {"version": 2, "camera": None}, {"version": 2, "timeline": {"fps": 24.0}}], ids=["empty", "null", "missing"])
-def test_a_state_without_a_camera_is_shot_with_the_default_camera(state):
-    # The Cutout always shoots through a Camera; without one in its state, the default one (ADR 0029).
-    erp = _halves_erp()
-    expected = _cutout(erp, {"version": 2, "camera": {}})
-
-    image, sticker_state, mask, _video = _cutout(erp, state)
-
-    assert torch.equal(image, expected[0]) and torch.equal(mask, expected[2])
-    assert sticker_state == expected[1]
-
-
 def test_timeline_of_a_state_without_a_camera_has_no_camera_keyframes_to_count():
     state = load_scene_state({"version": 2, "timeline": {"fps": 24.0}})
 
-    assert nodes._decide_timeline(state, None, None, camera=True)[3] == nodes._decide_timeline(state, None, None)[3]
-    assert len(nodes._decide_timeline(state, None, None, camera=True)[3]) == 1
-
-
-def test_pano_scene_from_stickers_without_a_camera_is_shot_from_the_cutout_camera():
-    scene = _stickers({"version": 2, "camera": None}, bg_media=_halves_erp())[3]
-    assert scene.layers[-1].state["camera"] is None
-
-    image = _cutout(scene, _camera(yaw_deg=180.0))[0]
-
-    assert torch.allclose(_center(image), torch.tensor([0.0, 0.0, 1.0]))
+    assert len(nodes._decide_timeline(state, None, None)[3]) == 1
 
 
 def test_legacy_shot_becomes_the_sticker_state_camera():
-    payload = json.loads(_cutout(build_background_erp(), V1_STATE, output_megapixels=0.03)[1])
+    image, *_rest, sticker_state = _shoot(build_background_erp(), V1_STATE)
+    payload = json.loads(sticker_state)
 
     assert {name: [key["value"] for key in keys] for name, keys in payload["camera"].items()} == {
         "position": [[0.0, 0.0, 0.0]],
         "rotation": [{"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 15.0}],
         "fov": [90.0],
     }
-    assert payload["source_aspect"] == 224 / 128
+    assert payload["source_aspect"] == image.shape[2] / image.shape[1]
 
 
 def _video(tmp_path, count=4, audio_rate=None):
@@ -220,7 +205,7 @@ def _video(tmp_path, count=4, audio_rate=None):
 
 
 def test_video_source_sets_the_timeline_fps_and_cuts_its_audio_to_the_length(tmp_path):
-    components = _cutout(_video(tmp_path, count=4, audio_rate=8000))[3].get_components()
+    components = _shoot(_video(tmp_path, count=4, audio_rate=8000), _camera())[2].get_components()
     image, audio = components.images, components.audio
 
     assert components.frame_rate == 25
@@ -233,17 +218,18 @@ def test_video_source_keeps_the_camera_keyframes_at_the_recorded_fps(tmp_path):
     # Rebasing to the 25 fps of the VIDEO would round them; the Pose handoff reads any fps.
     keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 13, "value": {"yaw_deg": 90.0}}]
 
-    payload = json.loads(_cutout(_video(tmp_path), _camera({"rotation": keyframes}))[1])
+    payload = json.loads(_shoot(_video(tmp_path), _camera({"rotation": keyframes}))[4])
 
     assert payload["fps"] == 24.0
     assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 13], "fov": [0]}
 
 
-def _stickers(state=None, **inputs):
+def _upstream(state=None, **inputs):
+    """The outputs of a Panorama Studio whose `scene` output is shot downstream."""
     inputs.setdefault("bg_color", "#00ff00")
     inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_preset", "1024")
-    return PanoramaStickersSceneNode.execute(state_json="" if state is None else json.dumps(state), **inputs).result
+    inputs.setdefault("output_size", "1024")
+    return PanoramaStudioNode.execute(state_json=state_text(state), **inputs).result
 
 
 def _record_projections(monkeypatch):
@@ -258,54 +244,55 @@ def _record_projections(monkeypatch):
     return projections
 
 
-def test_pano_scene_is_shot_from_the_cutout_camera_with_a_perspective_projection(monkeypatch):
-    # The Stickers Camera looks elsewhere; only the Cutout Camera decides the shot.
-    scene = _stickers({"version": 2, "camera": {"rotation": {"value": {"yaw_deg": 180.0}}}}, bg_media=_halves_erp())[3]
-    cutout_state = _camera(yaw_deg=180.0, hFOV_deg=50.0)
-    cutout_state["camera"]["aspect"] = 1.5
+def test_scene_input_is_shot_from_this_camera_with_a_perspective_projection(monkeypatch):
+    # The upstream Camera looks elsewhere and is not in its `scene` output; only this node's Camera decides the shot.
+    scene = _upstream({"version": 2, "camera": {"rotation": {"value": {"yaw_deg": 0.0}}}}, bg_media=_halves_erp())[3]
+    state = _camera(yaw_deg=180.0, hFOV_deg=50.0)
+    state["camera"]["aspect"] = 1.5
     projections = _record_projections(monkeypatch)
 
-    image = _cutout(scene, cutout_state)[0]
+    image = _shoot(scene, state)[0]
 
     ((camera, projection),) = projections
     assert (camera["yaw_deg"], camera["hFOV_deg"]) == (180.0, 50.0)
     assert (projection.kind, projection.hfov_deg, projection.coverage) == ("perspective", 50.0, 360)
-    assert (projection.width, projection.height) == (image.shape[2], image.shape[1]) == (120, 80)
+    width = _shot_width(50.0)
+    assert (projection.width, projection.height) == (image.shape[2], image.shape[1]) == (width, 2 * math.floor(width / 1.5 / 2 + 0.5))
     assert torch.allclose(_center(image), torch.tensor([0.0, 0.0, 1.0]))
 
 
-def test_pano_scene_draws_its_sky_stickers_and_bg_color():
+def test_scene_input_draws_its_sky_stickers_over_bg_color():
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 90.0}}], "fov": [{"frame": 0, "value": 40.0}]}})
-    scene = _stickers(sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)[3]
+    scene = _upstream(sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)[3]
 
-    at_sticker = _cutout(scene, _camera(yaw_deg=90.0, hFOV_deg=10.0))[0]
-    away = _cutout(scene, _camera(yaw_deg=-90.0, hFOV_deg=20.0))[0]
+    at_sticker = _shoot(scene, _camera(yaw_deg=90.0, hFOV_deg=10.0), bg_color="#00ff00")[0]
+    away = _shoot(scene, _camera(yaw_deg=-90.0, hFOV_deg=20.0), bg_color="#00ff00")[0]
 
     # Bilinear weights may sum to just under 1 in float32.
     assert torch.allclose(at_sticker[0], torch.tensor([0.0, 0.0, 1.0]).expand_as(at_sticker[0]), atol=1e-6)
     assert torch.allclose(away[0], torch.tensor([0.0, 1.0, 0.0]).expand_as(away[0]))
 
 
-def test_pano_scene_paint_mask_is_the_mask_output():
+def test_scene_input_paint_mask_is_the_mask_output():
     painting = {"version": 1, "paint": {"strokes": []}, "groups": [], "mask": {"strokes": [{
         "id": "m", "actionGroupId": "ag_m", "targetSpace": {"kind": "ERP_GLOBAL"}, "layerKind": "mask", "toolKind": "pen",
         "size": 40, "color": None, "opacity": 1.0, "createdAt": 0,
         "geometry": {"geometryKind": "freehand_open", "points": [{"u": 0.5, "v": 0.5, "t": 0}, {"u": 0.5001, "v": 0.5, "t": 1}]},
     }]}}
-    scene = _stickers({"version": 2, "painting": painting})[3]
+    scene = _upstream({"version": 2, "painting": painting})[3]
 
-    front = _cutout(scene, _camera(hFOV_deg=20.0))[2]
-    behind = _cutout(scene, _camera(yaw_deg=180.0, hFOV_deg=20.0))[2]
+    front = _shoot(scene, _camera(hFOV_deg=20.0))[1]
+    behind = _shoot(scene, _camera(yaw_deg=180.0, hFOV_deg=20.0))[1]
 
     assert float(_center(front)) > 0.5
     assert float(behind.max()) == 0.0
 
 
-def test_pano_scene_uses_its_timeline_and_its_background_frames():
+def test_scene_input_sets_the_timeline_and_its_background_frames():
     bg = torch.cat([_solid([value, value, value], height=32, width=64) for value in (0.2, 0.4, 0.6)])
-    scene = _stickers({"version": 2, "timeline": {"fps": 12.0}}, bg_media=bg)[3]
+    scene = _upstream({"version": 2, "timeline": {"fps": 12.0}}, bg_media=bg)[3]
 
-    components = _cutout(scene, _camera())[3].get_components()
+    components = _shoot(scene, _camera())[2].get_components()
     cut = components.images
 
     assert components.frame_rate == 12 and components.audio is None
@@ -313,23 +300,23 @@ def test_pano_scene_uses_its_timeline_and_its_background_frames():
     assert [round(float(_center(cut, index)[0]), 3) for index in range(3)] == [0.2, 0.4, 0.6]
 
 
-def test_pano_scene_reads_the_cutout_camera_at_its_own_recorded_fps():
-    scene = _stickers({"version": 2, "timeline": {"fps": 12.0}}, bg_media=torch.cat([_halves_erp()] * 3))[3]
-    # Cutout frame 2 at 24 fps is 1/12 s: the second frame of the 12 fps Timeline.
+def test_scene_input_reads_this_camera_at_its_own_recorded_fps():
+    scene = _upstream({"version": 2, "timeline": {"fps": 12.0}}, bg_media=torch.cat([_halves_erp()] * 3))[3]
+    # Frame 2 of this state at 24 fps is 1/12 s: the second frame of the 12 fps Timeline.
     keyframes = [{"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "hold"}, {"frame": 2, "value": {"yaw_deg": 180.0}}]
 
-    result = _cutout(scene, _camera({"rotation": keyframes}, fps=24.0))
-    cut, sticker_state = _frames(result), result[1]
+    result = _shoot(scene, _camera({"rotation": keyframes}, fps=24.0))
+    cut, sticker_state = _frames(result), result[4]
 
     assert [tuple(_center(cut, index).tolist()) for index in range(3)] == [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0)]
     payload = json.loads(sticker_state)
     assert payload["fps"] == 24.0 and [key["frame"] for key in payload["camera"]["rotation"]] == [0, 2]
 
 
-def test_pano_scene_with_a_video_background_outputs_its_audio(tmp_path):
-    scene = _stickers({"version": 2}, bg_media=_video(tmp_path, count=4, audio_rate=8000))[3]
+def test_scene_input_with_a_video_background_outputs_its_audio(tmp_path):
+    scene = _upstream({"version": 2}, bg_media=_video(tmp_path, count=4, audio_rate=8000))[3]
 
-    components = _cutout(scene, _camera())[3].get_components()
+    components = _shoot(scene, _camera())[2].get_components()
     cut, audio = components.images, components.audio
 
     assert components.frame_rate == 25 and cut.shape[0] == 4
@@ -366,11 +353,11 @@ def test_perspective_sky_content_lines_up_with_the_background():
         "direction": {"value": {key: pose[key] for key in ("yaw_deg", "pitch_deg")}},
         "size": {"value": {key: pose[key] for key in ("hFOV_deg", "vFOV_deg")}},
     }
-    scene = _stickers({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[3]
+    scene = _upstream({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[3]
     camera["camera"]["aspect"] = 1.5
 
-    background = _cutout(erp, camera, output_megapixels=0.04)[0][0]
-    on_sky = _cutout(scene, camera, output_megapixels=0.04)[0][0]
+    background = _shoot(erp, camera)[0][0]
+    on_sky = _shoot(scene, camera)[0][0]
 
     # The rectangle and the Sticker over the same directions land on the same pixels, at the output center.
     center = (background.shape[1] / 2, background.shape[0] / 2)
@@ -391,8 +378,9 @@ def test_perspective_paint_lines_up_with_the_background():
         "geometry": {"geometryKind": "freehand_open", "points": [{"u": u, "v": v, "t": 0}, {"u": u + 1e-6, "v": v, "t": 1}]},
     }]}}
 
-    background = _cutout(erp, camera, output_megapixels=0.04)[0][0]
-    mask = _cutout(erp, {**camera, "painting": painting}, output_megapixels=0.04)[2][0]
+    with studio_shot_size((200, 200)):
+        background = _shoot(erp, camera)[0][0]
+        mask = _shoot(erp, {**camera, "painting": painting})[1][0]
 
     found, expected = _weighted_center(mask), _weighted_center(background[..., 0])
     assert all(abs(a - b) < 0.05 for a, b in zip(found, expected))
@@ -408,55 +396,55 @@ def test_sticker_state_round_trips_camera_keyframes_with_easing_and_handles():
         "fov": [{"frame": 3, "value": 70.0, "easing": "hold"}, {"frame": 6, "value": 60.0}],
     }
     state = _camera(keyframes, fps=12.0)
-    image, sticker_state, *_rest = _cutout(_halves_erp(), state)
+    image, *_rest, sticker_state = _shoot(_halves_erp(), state)
 
     loaded = load_sticker_state(sticker_state)
     assert loaded["fps"] == 12.0
     camera = load_scene_state(state)["camera"]
     assert loaded["camera"] == {name: camera[name]["keyframes"] for name in ("position", "rotation", "fov")}
-    # A Cutout state made from the sticker_state shoots the same frames.
-    again = _cutout(_halves_erp(), _camera(loaded["camera"], fps=loaded["fps"]))[0]
+    # A Camera made from the sticker_state shoots the same frames.
+    again = _shoot(_halves_erp(), _camera(loaded["camera"], fps=loaded["fps"]))[0]
     assert torch.equal(again, image)
 
 
-def test_pano_scene_with_coverage_180_reads_its_bg_media_as_the_front_hemisphere():
+def test_scene_input_with_coverage_180_reads_its_bg_media_as_the_front_hemisphere():
     erp = torch.zeros((1, 32, 32, 3))
     erp[..., :16, 0] = 1.0
     erp[..., 16:, 2] = 1.0
-    scene = _stickers({"version": 2}, bg_media=erp, coverage="180")[3]
+    scene = _upstream({"version": 2}, bg_media=erp, coverage="180")[3]
 
-    # The Cutout coverage input does not apply to a PANO_SCENE.
-    left, right, behind = (_cutout(scene, _camera(yaw_deg=yaw, hFOV_deg=20.0), coverage="360")[0][0] for yaw in (-45.0, 45.0, 180.0))
+    # This node's coverage does not apply to an upstream background.
+    left, right, behind = (_shoot(scene, _camera(yaw_deg=yaw, hFOV_deg=20.0), coverage="360")[0][0] for yaw in (-45.0, 45.0, 180.0))
 
     assert torch.allclose(_center(left[None]), torch.tensor([1.0, 0.0, 0.0]))
     assert torch.allclose(_center(right[None]), torch.tensor([0.0, 0.0, 1.0]))
     assert torch.equal(behind, torch.tensor([0.0, 1.0, 0.0]).expand_as(behind))
 
 
-def test_world_sticker_is_shot_from_the_cutout_camera_position():
+def test_world_sticker_is_shot_from_the_camera_position():
     # A square plane 2 wide at distance 1, facing the Camera at rotation 0.
     sticker = {"id": "p", "placement": "world", "source": {"kind": "port"}, "position": {"value": [0.0, 0.0, -1.0]}, "scale": {"value": 2.0}}
-    scene = _stickers({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[3]
+    scene = _upstream({"version": 2, "stickers": [sticker]}, sticker=_solid([1.0, 0.0, 0.0], height=16, width=16))[3]
 
-    near = _cutout(scene, _camera(hFOV_deg=60.0))[0][0]
-    far = _cutout(scene, _camera(position=[0.0, 0.0, 3.0], hFOV_deg=90.0))[0][0]
-    behind = _cutout(scene, _camera(yaw_deg=180.0, hFOV_deg=60.0))[0][0]
+    near = _shoot(scene, _camera(hFOV_deg=60.0), bg_color="#00ff00")[0][0]
+    far = _shoot(scene, _camera(position=[0.0, 0.0, 3.0], hFOV_deg=90.0), bg_color="#00ff00")[0][0]
+    behind = _shoot(scene, _camera(yaw_deg=180.0, hFOV_deg=60.0), bg_color="#00ff00")[0][0]
 
     assert torch.allclose(near, torch.tensor([1.0, 0.0, 0.0]).expand_as(near), atol=1e-6)
-    # From 4 away the plane spans 2 * atan(1 / 4); a 90 degree view of 96 pixels shows it 96 / 4 pixels wide.
+    # From 4 away the plane spans 2 * atan(1 / 4); a 90 degree view W pixels wide shows it W / 4 pixels wide.
     red = (far - torch.tensor([1.0, 0.0, 0.0])).abs().amax(dim=-1) < 0.05
-    assert abs(int(red[48].sum()) - 24) <= 1
+    assert abs(int(red[far.shape[0] // 2].sum()) - far.shape[1] / 4) <= 1
     assert torch.equal(behind, torch.tensor([0.0, 1.0, 0.0]).expand_as(behind))
 
 
-def test_pano_scene_content_is_shot_at_the_scene_item_of_each_frame(monkeypatch):
+def test_scene_input_content_is_shot_at_the_scene_item_of_each_frame(monkeypatch):
     content, _views = _ball()
     monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(3, content.render))
     # The stand-in input has no editor files.
     monkeypatch.setattr(nodes, "_scene_ui", lambda scene: {})
-    scene = _stickers({"version": 2}, scene=object())[3]
+    scene = _upstream({"version": 2}, scene=object())[3]
 
-    cut = _frames(_cutout(scene, _camera(hFOV_deg=30.0)))
+    cut = _frames(_shoot(scene, _camera(hFOV_deg=30.0)))
 
     # The ball in front of the Camera is red (item + 1) / 10.
     assert [round(float(_center(cut, index)[0]) * 10) - 1 for index in range(3)] == [0, 1, 2]
@@ -474,8 +462,9 @@ def test_sky_resolution_follows_the_bg_media_of_the_execution_not_of_each_frame(
     state = _camera()
     state["timeline"]["length"] = 4
 
-    # The two-image batch ends before the Timeline does.
-    video = _cutout(_solid([0.5, 0.5, 0.5], height=512, width=1024, batch=2), state)[3]
+    # The two-image batch ends before the Timeline does. A small output needs a Sky coarser than the bg_media.
+    with studio_shot_size((96, 96)):
+        video = _shoot(_solid([0.5, 0.5, 0.5], height=512, width=1024, batch=2), state)[2]
     sizes.clear()
 
     image = video.get_components().images
@@ -484,47 +473,18 @@ def test_sky_resolution_follows_the_bg_media_of_the_execution_not_of_each_frame(
     assert sizes == [(1024, 512)]
 
 
-def _cutout_ui(source, state=None):
-    state_json = "" if state is None else json.dumps(state)
-    return nodes.PanoramaCutoutSceneNode.execute(source=source, state_json=state_json, coverage="360", output_megapixels=0.01).ui
+def _ui(bg_media, state=None):
+    return PanoramaStudioNode.execute(bg_color="#000000", coverage="360", output_size="1024", state_json=state_text(state), bg_media=bg_media).ui
 
 
-def test_erp_source_shows_its_first_frame_in_the_ui():
-    ui = _cutout_ui(_halves_erp())
+def test_erp_bg_media_shows_its_first_frame_in_the_ui():
+    ui = _ui(_halves_erp(), _camera())
 
     assert len(ui["pano_input_images"]) == 1
-    assert "pano_scene_state" not in ui and "pano_timeline_fps" not in ui
+    assert "pano_timeline_fps" not in ui
 
 
-def test_video_source_tells_the_editor_its_timeline_fps(tmp_path):
-    ui = _cutout_ui(_video(tmp_path, count=4))
+def test_video_bg_media_tells_the_editor_its_timeline_fps(tmp_path):
+    ui = _ui(_video(tmp_path, count=4), _camera())
 
     assert ui["pano_timeline_fps"] == [25.0] and len(ui["pano_input_images"]) == 1
-
-
-def test_pano_scene_ui_passes_on_the_scene_state_and_the_stickers_editor_files(monkeypatch):
-    def render(view, index, device):
-        height, width = view.projection.height, view.projection.width
-        return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
-
-    monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(1, render))
-    mesh = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]])
-    stickers = PanoramaStickersSceneNode.execute(
-        bg_color="#00ff00", coverage="360", output_preset="1024", state_json=json.dumps({"version": 2, "timeline": {"fps": 12.0, "length": 3}}),
-        bg_media=_halves_erp(), scene=mesh,
-    )
-    pano_scene = stickers.result[3]
-    written = []
-    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: written.append(value))
-    monkeypatch.setattr(nodes, "_init_ui_preview", lambda *args, **kwargs: written.append(args))
-
-    ui = _cutout_ui(pano_scene, _camera())
-
-    # The Cutout passes on the Stickers' files instead of writing its own.
-    assert written == []
-    for key in ("pano_scene_files", "pano_scene_meta", "pano_input_images"):
-        assert ui[key] == stickers.ui[key]
-    assert ui["pano_scene_state"] == [pano_scene.layers[-1].state]
-    assert ui["pano_timeline_fps"] == [12.0] and ui["pano_timeline_frames"] == [3] and ui["pano_scene_coverage"] == [360]
-    assert "pano_sticker_input_pose" not in ui and "pano_sticker_input_pose" not in pano_scene.media_ui
-    json.dumps(ui)

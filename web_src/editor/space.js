@@ -1,4 +1,4 @@
-// The panorama view in space (PanoramaStickersNode with World content, the Cutout's and Studio's Camera):
+// The panorama view in space (Panorama Studio with World content, and its Camera):
 // 3DoF and 6DoF, the Viewport camera's view and its transitions, and navigating it (orbit, pan, zoom, framing).
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { nodeInputOrigins } from "../pano_preview_video.js";
@@ -72,7 +72,7 @@ export function createSpace(deps) {
     return !studio || (cameraShoots() && !isErpCamera());
   }
 
-  // PanoramaStickersNode's panorama view shows the World when there is World content (a `scene` input or
+  // Panorama Studio's panorama view shows the World when there is World content (a `scene` input or
   // a world Sticker), from the origin in 3DoF and moving through it in 6DoF. Without it the view only
   // looks around.
   function isSpaceView() {
@@ -80,7 +80,6 @@ export function createSpace(deps) {
   }
 
   function hasSpaceContent() {
-    // The Cutout sees the World of the PANO_SCENE it shot, or the world Stickers of its own state.
     return stateV2 && hasWorldContent({ sceneLinked: sceneV2 && !!nodeInputOrigins(node).scene, files: sceneFiles(), stickers: state.stickers });
   }
 
@@ -115,7 +114,7 @@ export function createSpace(deps) {
       return;
     }
     cancelViewTransition();
-    // 6DoF starts where 3DoF stands now (the Cutout's Camera may have moved since 3DoF began).
+    // 6DoF starts where 3DoF stands now (the Camera may have moved since 3DoF began).
     applySpaceMode(switchSpaceMode({ ...spaceModeState(), position: spaceViewState().position }, mode, spaceOrigin()));
     runtime.backgroundDirty = true;
     syncFloatingViewButtonState();
@@ -131,23 +130,23 @@ export function createSpace(deps) {
     return spaceModeView(editor.spaceMode, view, spaceOrigin());
   }
 
-  // Where 3DoF stands: the World origin, where the Stickers ERP is taken from, or in the Cutout editor and
-  // Panorama Studio with a Camera the Camera's position at the playhead, so the frame on the panorama is
-  // what the Camera sees (#77, #89).
+  // Where 3DoF stands: the World origin, where the ERP without a Camera is taken from, or in Panorama
+  // Studio with a Camera the Camera's position at the playhead, so the frame on the panorama is what the
+  // Camera sees (#89).
   function spaceOrigin() {
     return cameraShoots() ? cutoutCamera().position : [0, 0, 0];
   }
 
-  // Whether the editor has a Camera: always in the Cutout's, while the user keeps one in Panorama Studio's.
+  // Whether the editor has a Camera: Panorama Studio's, while the user keeps one.
   function hasCamera() {
     return cameraV2 && state.camera !== null;
   }
 
   // Whether the Camera is shown and shoots. Panorama Studio's hidden Camera stays in the state, on its
   // Timeline row, and is otherwise as none: not drawn, not selected, and the output is the ERP from the
-  // World origin, as the node shoots it. The Cutout's Camera always shoots.
+  // World origin, as the node shoots it.
   function cameraShoots() {
-    return hasCamera() && (!studio || state.camera.visible);
+    return hasCamera() && state.camera.visible;
   }
 
   // Whether the painting is shown: a hidden one is neither drawn, selected nor painted on.
@@ -161,7 +160,7 @@ export function createSpace(deps) {
     return item.visible && clipActive(item.clip, editor.frame);
   }
 
-  // PanoramaCutoutNode's Camera at the playhead, by the evaluator the node shoots with (#77).
+  // Panorama Studio's Camera at the playhead, by the evaluator the node shoots with.
   function cutoutCamera() {
     return evaluateCamera(state.camera, editor.frame);
   }
@@ -250,7 +249,7 @@ export function createSpace(deps) {
     canvas.setPointerCapture(pointerId);
   }
 
-  // --- PanoramaCutoutNode's Camera in space (#77). In 6DoF the panorama view draws its frustum at the
+  // --- Panorama Studio's Camera in space. In 6DoF the panorama view draws its frustum at the
   // playhead and its trajectory over the Timeline, and the Camera is selected by its frustum and moved and
   // turned with the gizmo, as a world Sticker is. In 3DoF the view stands at the Camera and shows its frame
   // on the panorama as before.

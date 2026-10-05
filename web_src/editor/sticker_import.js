@@ -13,7 +13,7 @@ import { cloneJson, uid } from "./helpers.js";
 
 export function createStickerImport(deps) {
   const {
-    api, canvas, cutoutV2, dragCue, editor, editorView, imageCache, node, readOnly, sceneV2, stageWrap, state,
+    api, canvas, dragCue, editor, editorView, imageCache, node, readOnly, sceneV2, stageWrap, state,
     type, vueModal,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
@@ -48,7 +48,7 @@ export function createStickerImport(deps) {
   }
 
   async function addImageStickerFromFile(file) {
-    if (readOnly || cutoutV2) return;
+    if (readOnly) return;
     if (type !== "stickers" && type !== "cutout") return;
     if (!isStickerImageFile(file)) return;
     if (sceneV2) {
@@ -120,7 +120,7 @@ export function createStickerImport(deps) {
     vueModal?.openImagePicker?.("add");
   }
 
-  // PanoramaStickersNode (#72): Add World Image picks an image to place in space.
+  // Panorama Studio (#72): Add World Image picks an image to place in space.
   function addWorldImageSticker() {
     if (readOnly || !sceneV2) return;
     vueModal?.openImagePicker?.("add-world");
@@ -141,7 +141,7 @@ export function createStickerImport(deps) {
     return newWorldStickerTransform(spaceViewState(), hit, contentSphere());
   }
 
-  // PanoramaStickersNode: the new Sticker shows from the decoded image while it uploads. Its Source
+  // Panorama Studio: the new Sticker shows from the decoded image while it uploads. Its Source
   // has no file until then, so saving in between leaves it out. A sky Sticker goes where the view looks;
   // a world one where newWorldStickerPlace() puts it.
   async function addSceneStickerFromFile(file, placement = "sky") {
@@ -196,7 +196,7 @@ export function createStickerImport(deps) {
     } catch { }
   }
 
-  // PanoramaStickersNode: the Source changes once the image is uploaded. The vFOV of the value and of
+  // Panorama Studio: the Source changes once the image is uploaded. The vFOV of the value and of
   // every Keyframe follows the new image's aspect.
   async function replaceSceneStickerImage(file, id) {
     const operation = queuePendingStickerOperation(node, `replace:${id}:${uid("asset")}`, async () => {

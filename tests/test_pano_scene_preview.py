@@ -8,7 +8,7 @@ import torch
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Stickers and Preview nodes",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio and Preview nodes",
 )
 
 import av
@@ -17,24 +17,17 @@ from comfy_api.latest import InputImpl
 
 from comfyui_pano_suite import nodes, sticker_media
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStickersSceneNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStudioNode, PanoSceneValue
 
 
-STATE = {
-    "version": 2,
-    "timeline": {"fps": 30.0},
-    "camera": {"rotation": {"keyframes": [
-        {"frame": 0, "value": {"yaw_deg": 0.0}},
-        {"frame": 5, "value": {"yaw_deg": 90.0}},
-    ]}},
-}
+STATE = {"version": 2, "timeline": {"fps": 30.0}}
 
 
-def _stickers(state=STATE, **inputs):
+def _studio(state=STATE, **inputs):
     inputs.setdefault("bg_color", "#ff0000")
     inputs.setdefault("coverage", "180")
-    inputs.setdefault("output_preset", "1024")
-    return PanoramaStickersSceneNode.execute(state_json=json.dumps(state), **inputs).result
+    inputs.setdefault("output_size", "1024")
+    return PanoramaStudioNode.execute(state_json=json.dumps(state), **inputs).result
 
 
 def _solid(rgb, height=4, width=8, batch=1):
@@ -73,11 +66,11 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
     bg = _solid([0.5, 0.5, 0.5], batch=3)
     sticker = _solid([0.0, 0.0, 1.0])
 
-    video, pano_scene = _stickers(bg_media=bg, sticker=sticker)[2:]
+    video, pano_scene = _studio(bg_media=bg, sticker=sticker)[2:4]
 
     assert isinstance(pano_scene, PanoSceneValue)
     expected_state = load_scene_state(json.dumps(STATE))
-    assert pano_scene.layers[-1].state["camera"] == expected_state["camera"]
+    assert pano_scene.layers[-1].state["camera"] is None
     assert pano_scene.layers[-1].state["timeline"] == expected_state["timeline"]
     assert [item["source"]["kind"] for item in pano_scene.layers[-1].state["stickers"]] == ["port"]
     assert pano_scene.bg_media is bg
@@ -92,20 +85,19 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
 
 
 def test_pano_scene_state_is_plain_json_without_a_nested_scene():
-    pano_scene = _stickers()[3]
+    pano_scene = _studio()[3]
 
     assert json.loads(json.dumps(pano_scene.layers[-1].state)) == pano_scene.layers[-1].state
     for value in vars(pano_scene).values():
         assert not isinstance(value, PanoSceneValue)
     assert pano_scene.layers[-1].port is None
-    # The Keyframes of the state's Camera do not set the length of Stickers (ADR 0028).
     assert pano_scene.frames == ((None, ((0.0, None, None),)),)
 
 
 def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):
     video = _video(tmp_path)
 
-    output, pano_scene = _stickers({"version": 2}, bg_media=video)[2:]
+    output, pano_scene = _studio({"version": 2}, bg_media=video)[2:4]
 
     assert pano_scene.bg_media is video
     assert pano_scene.fps == float(output.get_frame_rate()) == 25.0
@@ -117,8 +109,8 @@ def test_pano_scene_is_the_same_for_identical_inputs():
     bg = _solid([0.5, 0.5, 0.5], batch=2)
     sticker = _solid([0.0, 0.0, 1.0])
 
-    first = _stickers(bg_media=bg, sticker=sticker)[3]
-    second = _stickers(bg_media=bg, sticker=sticker)[3]
+    first = _studio(bg_media=bg, sticker=sticker)[3]
+    second = _studio(bg_media=bg, sticker=sticker)[3]
 
     assert first.layers[-1].state == second.layers[-1].state
     assert (first.fps, first.frames, first.coverage, first.bg_color) == (second.fps, second.frames, second.coverage, second.bg_color)
@@ -185,7 +177,7 @@ def test_preview_rejects_a_source_of_another_type():
 
 
 def test_preview_passes_a_pano_scene_through_without_rendering(monkeypatch):
-    pano_scene = _stickers(bg_media=_solid([0.5, 0.5, 0.5], batch=3))[3]
+    pano_scene = _studio(bg_media=_solid([0.5, 0.5, 0.5], batch=3))[3]
 
     def fail(*args, **kwargs):
         raise AssertionError("Preview must not render a PANO_SCENE")
@@ -214,11 +206,11 @@ def test_preview_decides_its_timeline_with_the_stickers_rules(monkeypatch, tmp_p
     assert decided == [24.0, 25.0]
 
 
-def _stickers_ui(state=STATE, **inputs):
+def _studio_ui(state=STATE, **inputs):
     inputs.setdefault("bg_color", "#ff0000")
     inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_preset", "1024")
-    return PanoramaStickersSceneNode.execute(state_json=json.dumps(state), **inputs).ui
+    inputs.setdefault("output_size", "1024")
+    return PanoramaStudioNode.execute(state_json=json.dumps(state), **inputs).ui
 
 
 def _ui_mp4(ui, key, tmp_path):
@@ -226,8 +218,8 @@ def _ui_mp4(ui, key, tmp_path):
     return tmp_path / entry["subfolder"] / entry["filename"]
 
 
-def test_stickers_ui_shows_an_image_background_and_an_image_sticker():
-    ui = _stickers_ui(bg_media=_solid([0.5, 0.5, 0.5]), sticker=_solid([0.0, 0.0, 1.0]))
+def test_studio_ui_shows_an_image_background_and_an_image_sticker():
+    ui = _studio_ui(bg_media=_solid([0.5, 0.5, 0.5]), sticker=_solid([0.0, 0.0, 1.0]))
 
     assert ui["pano_input_images"]
     assert ui["pano_sticker_input_images"]
@@ -235,14 +227,14 @@ def test_stickers_ui_shows_an_image_background_and_an_image_sticker():
     assert "pano_sticker_input_videos" not in ui
 
 
-def test_stickers_ui_has_no_media_without_inputs():
-    ui = _stickers_ui()
+def test_studio_ui_has_no_media_without_inputs():
+    ui = _studio_ui()
 
     assert not any(key.startswith(("pano_input", "pano_sticker_input")) for key in ui)
 
 
-def test_stickers_ui_encodes_image_batches_at_the_timeline_fps(tmp_path):
-    ui = _stickers_ui(bg_media=_solid([0.5, 0.5, 0.5], batch=3), sticker=_solid([0.0, 0.0, 1.0], batch=2))
+def test_studio_ui_encodes_image_batches_at_the_timeline_fps(tmp_path):
+    ui = _studio_ui(bg_media=_solid([0.5, 0.5, 0.5], batch=3), sticker=_solid([0.0, 0.0, 1.0], batch=2))
 
     assert ui["pano_input_video_meta"][0]["fps"] == 30.0
     assert ui["pano_input_video_meta"][0]["frames"] == 3
@@ -254,15 +246,15 @@ def test_stickers_ui_encodes_image_batches_at_the_timeline_fps(tmp_path):
         assert container.streams.video[0].frames == 2
 
 
-def test_stickers_ui_saves_video_media_without_reading_it_whole(tmp_path, monkeypatch):
+def test_studio_ui_saves_video_media_without_reading_it_whole(tmp_path, monkeypatch):
     bg = _video(tmp_path, count=30, audio_rate=8000)
     sticker = _video(tmp_path, count=12)
 
     def fail(self):
-        raise AssertionError("Stickers must not read a whole VIDEO for its ui")
+        raise AssertionError("Studio must not read a whole VIDEO for its ui")
 
     monkeypatch.setattr(InputImpl.VideoFromFile, "get_components", fail)
-    ui = _stickers_ui({"version": 2}, bg_media=bg, sticker=sticker)
+    ui = _studio_ui({"version": 2}, bg_media=bg, sticker=sticker)
 
     assert ui["pano_input_images"]
     assert ui["pano_input_video_meta"][0] == {"fps": 25.0, "frames": 30, "duration": 1.2, "has_audio": True}
@@ -275,54 +267,54 @@ def test_stickers_ui_saves_video_media_without_reading_it_whole(tmp_path, monkey
         assert container.streams.video[0].frames == 12
 
 
-def test_stickers_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch):
+def test_studio_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch):
     encoded = []
     encode_editor_mp4 = nodes.encode_editor_mp4
     monkeypatch.setattr(nodes, "encode_editor_mp4", lambda opened, progress=None: encoded.append(opened) or encode_editor_mp4(opened, progress))
     video = _video(tmp_path, count=6)
     images = _solid([0.5, 0.5, 0.5], batch=3)
 
-    first = [_stickers_ui(bg_media=media) for media in (video, images)]
+    first = [_studio_ui(bg_media=media) for media in (video, images)]
     moved = {**STATE, "camera": {"rotation": {"value": {"yaw_deg": 30.0}}}}
-    second = [_stickers_ui(moved, bg_media=media) for media in (video, images)]
-    reloaded = _stickers_ui(bg_media=InputImpl.VideoFromFile(video.get_stream_source()))
+    second = [_studio_ui(moved, bg_media=media) for media in (video, images)]
+    reloaded = _studio_ui(bg_media=InputImpl.VideoFromFile(video.get_stream_source()))
 
     assert len(encoded) == 2
     assert [ui["pano_input_videos"] for ui in first] == [ui["pano_input_videos"] for ui in second]
     assert reloaded["pano_input_videos"] == first[0]["pano_input_videos"]
 
 
-def test_stickers_ui_opens_the_background_video_file_once(tmp_path, monkeypatch):
+def test_studio_ui_opens_the_background_video_file_once(tmp_path, monkeypatch):
     opened = []
     coded_size = sticker_media.coded_size
     for module in (sticker_media, nodes):
         monkeypatch.setattr(module, "coded_size", lambda source: opened.append(source) or coded_size(source), raising=False)
     video = _video(tmp_path, count=6)
 
-    _stickers_ui(bg_media=video)
-    _stickers_ui(bg_media=video)
+    _studio_ui(bg_media=video)
+    _studio_ui(bg_media=video)
 
     # The coded size is read once per file, also across executions.
     assert opened == [video.get_stream_source()]
 
 
-def test_stickers_ui_reports_warnings(tmp_path, monkeypatch):
+def test_studio_ui_reports_warnings(tmp_path, monkeypatch):
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
     state = {"version": 2, "stickers": [{"id": "missing", "source": {"kind": "file", "filename": "missing.png"}}]}
 
-    ui = _stickers_ui(state, output_preset="auto")
+    ui = _studio_ui(state, output_size="auto")
 
     assert ui["pano_sticker_warnings"] == [
         "Could not read the source of Sticker missing; it is not drawn.",
-        "Output preset is auto, but bg_media is not connected; using 2048 instead.",
+        "output_size is auto, but bg_media is not connected; using 2048 instead.",
     ]
 
 
-def test_stickers_ui_reports_the_pose_of_an_added_port_sticker():
+def test_studio_ui_reports_the_pose_of_an_added_port_sticker():
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 40, "pitch_deg": -10, "roll_deg": 5, "hFOV_deg": 50}})
 
-    added = _stickers_ui({"version": 2}, sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)
-    stored = _stickers_ui(
+    added = _studio_ui({"version": 2}, sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)
+    stored = _studio_ui(
         {"version": 2, "stickers": [{"id": "sticker_1", "source": {"kind": "port"}}]},
         sticker=_solid([0.0, 0.0, 1.0]),
         sticker_state=sticker_state,
@@ -335,20 +327,20 @@ def test_stickers_ui_reports_the_pose_of_an_added_port_sticker():
     assert "pano_sticker_input_pose" not in stored
 
 
-def test_stickers_ui_reports_the_timeline_fps_a_video_sets(tmp_path):
+def test_studio_ui_reports_the_timeline_fps_a_video_sets(tmp_path):
     video = _video(tmp_path, count=3)
 
-    assert _stickers_ui(bg_media=video)["pano_timeline_fps"] == [25.0]
-    assert _stickers_ui(sticker=video)["pano_timeline_fps"] == [25.0]
-    assert "pano_timeline_fps" not in _stickers_ui(bg_media=_solid([0.0, 0.0, 1.0], batch=3), sticker=_solid([1.0, 0.0, 0.0]))
+    assert _studio_ui(bg_media=video)["pano_timeline_fps"] == [25.0]
+    assert _studio_ui(sticker=video)["pano_timeline_fps"] == [25.0]
+    assert "pano_timeline_fps" not in _studio_ui(bg_media=_solid([0.0, 0.0, 1.0], batch=3), sticker=_solid([1.0, 0.0, 0.0]))
 
 
-def test_stickers_ui_reports_the_keyframes_of_a_port_sticker_added_from_a_moving_camera():
+def test_studio_ui_reports_the_keyframes_of_a_port_sticker_added_from_a_moving_camera():
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24.0, "camera": {
         "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0}}, {"frame": 2, "value": {"yaw_deg": 20.0}}],
     }})
 
-    ui = _stickers_ui({"version": 2}, sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)
+    ui = _studio_ui({"version": 2}, sticker=_solid([0.0, 0.0, 1.0]), sticker_state=sticker_state)
 
     (pose,) = ui["pano_sticker_input_pose"]
     port = load_scene_state({"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "direction": {"keyframes": pose["keyframes"]["direction"]}}]})["stickers"][0]

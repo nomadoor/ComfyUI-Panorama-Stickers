@@ -7,11 +7,12 @@ import torch
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Stickers and Cutout nodes",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
-from test_cutout_scene_node import _camera, _cutout, _frames, _solid, _stickers
+from scene_test_helpers import camera_state as _camera, shoot as _shoot, video_frames as _frames
+from test_studio_camera import _solid, _upstream
 
 
 def _textured_erp(height=256, width=512):
@@ -47,10 +48,10 @@ def _with_aspect(camera, aspect):
 
 
 def _round_trip_error(camera, sticker_state=None):
-    shot = _cutout(_textured_erp(), camera, output_megapixels=0.02)
+    shot = _shoot(_textured_erp(), camera)
     frames = _frames(shot)
-    scene = _stickers(sticker=frames, sticker_state=shot[1] if sticker_state is None else sticker_state(shot[1]), output_preset="2048")[3]
-    again = _frames(_cutout(scene, camera, output_megapixels=0.02))
+    scene = _upstream(sticker=frames, sticker_state=shot[4] if sticker_state is None else sticker_state(shot[4]), output_size="2048")[3]
+    again = _frames(_shoot(scene, camera))
     assert again.shape == frames.shape
     return _interior_error(again, frames)
 
@@ -80,11 +81,11 @@ def test_round_trip_tolerance_catches_a_slightly_wrong_pose(shift):
 def test_trajectory_returns_through_the_sticker_video_at_another_fps():
     # The same trajectory at 12 fps: its Keyframes at frames 0 and 12.
     camera = _camera({name: [{**key, "frame": key["frame"] * 2} for key in TRAJECTORY["camera"][name]["keyframes"]] for name in ("rotation", "fov")}, fps=12.0)
-    shot = _cutout(_textured_erp(), camera, output_megapixels=0.02)
+    shot = _shoot(_textured_erp(), camera)
 
-    # The Cutout `video` sets the Timeline fps (12) of a Stickers state recorded at 24 fps.
-    scene = _stickers(sticker=shot[3], sticker_state=shot[1], output_preset="2048")[3]
-    again = _frames(_cutout(scene, camera, output_megapixels=0.02))
+    # The shot's `video` sets the Timeline fps (12) of the receiving state recorded at 24 fps.
+    scene = _upstream(sticker=shot[2], sticker_state=shot[4], output_size="2048")[3]
+    again = _frames(_shoot(scene, camera))
 
     assert again.shape == _frames(shot).shape == (13, *again.shape[1:])
     assert _interior_error(again, _frames(shot)) < ROUND_TRIP_ERROR
@@ -99,7 +100,7 @@ def test_moving_camera_is_baked_into_auto_keyframes_at_every_timeline_frame():
         "fov": [{"frame": 0, "value": 40.0}],
     }})
 
-    port = _stickers({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].layers[-1].state["stickers"][0]
+    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].layers[-1].state["stickers"][0]
 
     # Two frames at 12 fps are four at the 24 fps of the state; the Camera is read between its Keyframes too.
     assert [key["frame"] for key in port["direction"]["keyframes"]] == [0, 1, 2, 3, 4]
@@ -116,10 +117,10 @@ def test_moving_camera_is_baked_into_auto_keyframes_at_every_timeline_frame():
 
 def test_camera_cut_stays_a_cut_at_another_fps():
     camera = _camera({"rotation": [{"frame": 0, "value": {"yaw_deg": 0.0}, "easing": "hold"}, {"frame": 10, "value": {"yaw_deg": 90.0}}]}, fps=30.0)
-    shot = _cutout(_textured_erp(), camera, output_megapixels=0.02)
+    shot = _shoot(_textured_erp(), camera)
 
-    # The 30 fps Cutout `video` sets the Timeline of a Stickers state recorded at 24 fps.
-    scene = _stickers(sticker=shot[3], sticker_state=shot[1], output_preset="1024")[3]
+    # The 30 fps shot's `video` sets the Timeline of the receiving state recorded at 24 fps.
+    scene = _upstream(sticker=shot[2], sticker_state=shot[4], output_size="1024")[3]
 
     yaws = [evaluate_scene_state(scene.layers[-1].state, frame)["stickers"][0]["yaw_deg"] for _bg_index, ((frame, *_rest),) in scene.frames]
     assert yaws == pytest.approx([0.0] * 10 + [90.0])
@@ -132,7 +133,7 @@ def test_camera_keyframes_of_one_rotation_keep_the_direction_static():
         "fov": [{"frame": 0, "value": 60.0}, {"frame": 10, "value": 40.0}],
     }})
 
-    port = _stickers({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].layers[-1].state["stickers"][0]
+    port = _upstream({"version": 2}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[3].layers[-1].state["stickers"][0]
 
     assert (port["direction"]["keyframes"], port["roll"]["keyframes"]) == ([], [])
     assert port["direction"]["value"] == pytest.approx({"yaw_deg": 33.0, "pitch_deg": 21.0})

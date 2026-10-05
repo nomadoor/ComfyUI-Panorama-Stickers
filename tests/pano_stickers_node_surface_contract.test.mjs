@@ -377,7 +377,7 @@ test("the port Sticker draws as a frame on the node until the node's result has 
   assert.ok(draw.indexOf("drawStickerFrame(") < draw.indexOf("drawStickerSelectionOverlay(ctx, selected, projection)"));
 });
 
-test("PanoramaStickersNode syncs its port Sticker in the editor and on the node", async () => {
+test("Panorama Studio syncs its port Sticker in the editor and on the node", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const editor = readEditorSource();
 
@@ -476,7 +476,7 @@ test("the node surface leaves a background VIDEO that failed to load for its ima
   assert.match(runtime, /ordered\.push\(outImgs\[resolvedOriginSlot\]\);\s*ordered\.push\(\.\.\.outImgs\);\s*for \(const cand of ordered\.filter\(\(image\) => !isVideoFile\(image\)\)\)/);
 });
 
-test("PanoramaStickersNode shows one play button on the node only when its Timeline can play", async () => {
+test("the Stickers node surface shows one play button only when it can play", async () => {
   const source = await read("../web_src/components/PanoStickersNodeSurface.vue");
   const button = source.slice(source.indexOf("<button\n      v-if=\"model.playable === true\""), source.indexOf("</button>", source.indexOf("pano-stickers-node-play")));
 
@@ -494,7 +494,7 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   const keyStart = runtime.indexOf("  const onNodeSurfaceKeyDown = (ev) => {");
   const keyDown = runtime.slice(keyStart, runtime.indexOf("\n  };", keyStart));
 
-  // Only PanoramaStickersNode plays; its hidden VIDEOs (the background and the port Sticker's MP4)
+  // Only Panorama Studio plays; its hidden VIDEOs (the background and the port Sticker's MP4)
   // stay rendered for requestVideoFrameCallback.
   assert.match(runtime, /if \(stickersMode && node\.__panoSceneStateV2\) \{/);
   assert.match(runtime, /const \[video, stickerVideo\] = \[0, 1\]\.map\(\(\) => \{\s*const element = createPanoVideo\(document, "node\.playback"\);/);

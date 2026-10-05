@@ -48,9 +48,9 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 `Panorama Stickers`、`Panorama Cutout` 和 `Panorama Preview` 现已提供轻量级节点内 UI，无需打开 Full Editor 即可完成常用操作。Legacy canvas 和 Node 2.0 均受支持。
 
-### 新节点的视频输出
+### Panorama Studio 的视频输出
 
-`Panorama Stickers (new)` 和 `Panorama Cutout (new)` 的 IMAGE／MASK 输出（`first_frame`、`first_frame_mask`）只有第一帧。全部帧以及 fps 和音频都在 `video`（VIDEO）中，保存时逐帧渲染。需要以 IMAGE 使用全部帧时，请将 `video` 连接到 Get Video Components。需要为 IMAGE 批次附加 fps 或音频后再连接时，请先经过 Create Video。将裁切结果连同 `sticker_state` 送回 `Panorama Stickers (new)` 时，按秒的时间对齐位置。VIDEO 请保持实际时间；IMAGE 批次仅在与 Cutout 相同 fps 时使用（否则请先通过 Create Video 赋予 Cutout 的 fps 再连接）。
+`Panorama Studio` 的 IMAGE／MASK 输出（`first_frame`、`first_frame_mask`）只有第一帧。全部帧以及 fps 和音频都在 `video`（VIDEO）中，保存时逐帧渲染。需要以 IMAGE 使用全部帧时，请将 `video` 连接到 Get Video Components。需要为 IMAGE 批次附加 fps 或音频后再连接时，请先经过 Create Video。将 Camera 拍摄的结果连同 `sticker_state` 连接到另一个 `Panorama Studio` 的 `sticker` 时，按秒的时间对齐位置。VIDEO 请保持实际时间；IMAGE 批次仅在与拍摄它的 Studio 相同 fps 时使用（否则请先通过 Create Video 赋予该 fps 再连接）。
 
 ## Workflow
 

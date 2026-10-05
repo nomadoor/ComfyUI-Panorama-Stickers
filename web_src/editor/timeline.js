@@ -7,11 +7,11 @@ import { portMediaFrames } from "../pano_port_media.js";
 import { nodeInputOrigins, videoLinked } from "../pano_preview_video.js";
 import { clipActive } from "../pano_scene_eval.js";
 import { timelineFps } from "../pano_scene_state.js";
-import { deleteKeyframes, laneNames, timelineOpens, timelineSpan } from "../pano_timeline.js";
+import { deleteKeyframes, isTimed, laneNames, timelineSpan } from "../pano_timeline.js";
 
 export function createTimeline(deps) {
   const {
-    capture, cutoutV2, editor, node, readOnly, sceneV2, state, stateV2, studio, timeline, timelinePlayhead,
+    editor, node, readOnly, sceneV2, state, stateV2, studio, timeline, timelinePlayhead,
     uiState, videoEl, videoTimelineFps,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
@@ -36,34 +36,30 @@ export function createTimeline(deps) {
       expanded: timeline.expanded ?? timelineTimed(),
       openRows: timeline.openRows,
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
-      // A VIDEO on bg_media, sticker or the Cutout's source sets the Timeline fps (ADR 0024).
-      fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker", "source"]),
-      // The Cutout shows only its Camera; with a PANO_SCENE it shoots the Scene's Timeline (#77). Panorama
-      // Studio shows its Camera, its Stickers and its `scene` on one Timeline (#89).
+      // A VIDEO on bg_media or sticker sets the Timeline fps (ADR 0024).
+      fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker"]),
+      // Panorama Studio shows its Camera, its Stickers and its `scene` on one Timeline (#89).
       camera: hasCamera(),
       cameraHideable: studio,
-      stickers: !cutoutV2,
       // Another Studio's Scene on `scene` is upstream: its elements stay off this Timeline (#90).
       scene: sceneV2 && !!nodeInputOrigins(node).scene && !upstreamLinked(),
-      sceneLocked: !!capture,
     });
     uiState.easing = timeline.selection
       ? buildEasingModel(owner, selectedLanes(timeline.selection), timeline.selection.frames, timelineOffset(timeline.selection.owner))
       : null;
   }
 
-  // Whether the Timeline opens by itself: something in the state changes over time (the Cutout's Camera,
-  // also Panorama Studio's).
+  // Whether the Timeline opens by itself: something in the state changes over time (Panorama Studio's
+  // Camera too).
   function timelineTimed() {
-    return timelineOpens(state, { cameraOnly: cutoutV2, camera: studio });
+    return isTimed(state, { camera: studio });
   }
 
   // The Timeline length (5 s without one), widened to the background VIDEO, to the end of the
   // port Sticker's media and to the upstream Scene's length (#90). An upstream background VIDEO is in the
-  // upstream Scene's length already (docs/render-contract.md), so it does not widen it again. The Cutout's Camera Keyframes widen it as they lengthen its output; a Cutout
-  // that shoots a PANO_SCENE has the Scene's length (#77).
+  // upstream Scene's length already (docs/render-contract.md), so it does not widen it again. Panorama
+  // Studio's Camera Keyframes widen it as they lengthen its output.
   function timelineSpanFrames(openClip = null) {
-    if (capture?.frames) return capture.frames;
     const fps = state.timeline.fps;
     const port = state.stickers.find(isExternalSticker);
     const portMedia = port ? getPortMedia() : null;
@@ -72,7 +68,7 @@ export function createTimeline(deps) {
       portMedia ? portMediaFrames(port.clip, fps, portMedia.meta) : 0,
       upstreamSpanFrames(),
     );
-    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: (cutoutV2 && !capture) || studio });
+    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: studio });
   }
 
   function timelineOwner(owner) {
@@ -134,12 +130,12 @@ export function createTimeline(deps) {
     playback.seek(frame);
   }
 
-  // Edits stop PanoramaStickersNode's playback on the frame shown; the legacy transport plays on.
+  // Edits stop Panorama Studio's playback on the frame shown; the legacy transport plays on.
   function stopTimelinePlayback() {
     if (stateV2) playback.stop();
   }
 
-  // PanoramaStickersNode's Timeline play button and the legacy transport's. With a background VIDEO
+  // Panorama Studio's Timeline play button and the legacy transport's. With a background VIDEO
   // the video plays with its audio and its presented frames set the playhead; past its end a clock
   // carries on to the Timeline's end. Without a VIDEO a clock moves the playhead.
   function togglePlayback() {

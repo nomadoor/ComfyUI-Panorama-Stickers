@@ -258,8 +258,8 @@ function installEditorButton(nodeType, {
     }
 
     if (matchType === "PanoramaStickers") {
-      // PanoramaStickersNode keeps state v2 in state_json (see pano_editor_state.js). Panorama Studio is
-      // the same editor with a Camera the user adds (#89); its node surface only shows (#91,
+      // Panorama Studio keeps state v2 in state_json (see pano_editor_state.js). Its editor is the Stickers
+      // editor with a Camera the user adds (#89); its node surface only shows (#91,
       // PanoStudioNodeSurface.vue in pano_preview_runtime.js).
       node.__panoSceneStateV2 = sceneStateV2;
       node.__panoStudio = studio;
@@ -283,16 +283,13 @@ function installEditorButton(nodeType, {
       return;
     }
 
-    // PanoramaCutoutNode keeps state v2 in state_json. Its on-node surface still edits the legacy shot, so
-    // it opens the editor from the button only.
-    node.__panoSceneStateV2 = sceneStateV2;
+    // The legacy Cutout edits v1.
+    node.__panoSceneStateV2 = false;
     ensureActionButtonWidget(node, buttonText, () => openEditor(node, "cutout"));
-    if (!sceneStateV2) {
-      attachCutout(node, {
-        buttonText,
-        onOpen: () => openEditor(node, "cutout"),
-      });
-    }
+    attachCutout(node, {
+      buttonText,
+      onOpen: () => openEditor(node, "cutout"),
+    });
     if (node.__panoCutoutNodeSurface) hideWidget(node, buttonText);
     if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) node.size = [360, 260];
     node.__panoPreviewAttached = true;
@@ -303,7 +300,7 @@ function installEditorButton(nodeType, {
     const previous = nodeType.prototype[hook];
     nodeType.prototype[hook] = function () {
       const result = previous ? previous.apply(this, arguments) : undefined;
-      if (hook === "onNodeCreated" && matchType === "PanoramaCutout" && !sceneStateV2) {
+      if (hook === "onNodeCreated" && matchType === "PanoramaCutout") {
         initializeNewCutoutFrame(this);
       }
       if (hook === "onConfigure" && matchType === "PanoramaStickers" && !sceneStateV2 && this.widgets) {
@@ -397,18 +394,6 @@ export function createPanoEditorExtension({
           enableStickersPreview,
         });
       }
-      if (name === "PanoramaStickersNode") {
-        installEditorButton(nodeType, {
-          app,
-          matchType: "PanoramaStickers",
-          buttonText: "Open Stickers Editor",
-          openEditor,
-          attachStickers,
-          attachCutout,
-          enableStickersPreview,
-          sceneStateV2: true,
-        });
-      }
       if (name === "PanoramaStudio") {
         installEditorButton(nodeType, {
           app,
@@ -431,18 +416,6 @@ export function createPanoEditorExtension({
           attachStickers,
           attachCutout,
           enableStickersPreview,
-        });
-      }
-      if (name === "PanoramaCutoutNode") {
-        installEditorButton(nodeType, {
-          app,
-          matchType: "PanoramaCutout",
-          buttonText: "Open Cutout Editor",
-          openEditor,
-          attachStickers,
-          attachCutout,
-          enableStickersPreview,
-          sceneStateV2: true,
         });
       }
       if (isPanoramaPreviewNodeName(name)) installStandalonePreviewNode(nodeType);

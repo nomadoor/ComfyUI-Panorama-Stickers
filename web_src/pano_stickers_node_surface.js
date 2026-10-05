@@ -5,7 +5,7 @@ import { loadSceneState } from "./pano_scene_state.js";
 
 const EXTERNAL_STICKER_ID = "sticker_image_1";
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
-// The Timeline frame the node shows state v2 (PanoramaStickersNode) at until it plays, and after a reload.
+// The Timeline frame the node shows state v2 (Panorama Studio) at until it plays, and after a reload.
 export const NODE_SURFACE_FRAME = 0;
 
 function computeVerticalFov(hFovDeg, width, height) {
@@ -184,7 +184,7 @@ function inputMediaKind(node, name) {
   return mediaKind(link.type) ?? mediaKind(node.graph.getNodeById?.(link.origin_id)?.outputs?.[link.origin_slot]?.type);
 }
 
-// PanoramaStickersNode keeps the Sticker of its `sticker` input as the Sticker with the Source
+// Panorama Studio keeps the Sticker of its `sticker` input as the Sticker with the Source
 // {kind: "port"}. Like the node (docs/scene-state-v2.md), the editor and the node surface add it when
 // the input is connected and the state has none, and remove it when the input is disconnected. Its
 // vFOV follows hFOV and the aspect of the media once the node's result has the media; until then it

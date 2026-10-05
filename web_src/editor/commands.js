@@ -7,7 +7,7 @@ import { uid } from "./helpers.js";
 
 export function createCommands(deps) {
   const {
-    cutoutV2, editor, readOnly, sceneV2, state, studio, type, uiState,
+    editor, readOnly, sceneV2, state, studio, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
@@ -150,8 +150,7 @@ export function createCommands(deps) {
   }
 
   function deleteSelected() {
-    // The Cutout's Camera stays; the editor of PanoramaCutoutNode edits nothing else (#77).
-    if (readOnly || cutoutV2) return;
+    if (readOnly) return;
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected && selectedItems.length === 0) return;

@@ -247,7 +247,7 @@ export function createObjectGeometry(deps) {
   }
 
   function objectGeom(item) {
-    // In 6DoF the Cutout's Camera is its frustum in space, picked and moved with the gizmo (#77).
+    // In 6DoF Panorama Studio's Camera is its frustum in space, picked and moved with the gizmo.
     if (cameraV2 && isShotItem(item) && isFreeSpaceView()) return { visible: false };
     if (!paintingShown() && (isStrokeGroupItem(item) || isRasterObjectItem(item))) return { visible: false };
     if (isStrokeGroupItem(item)) {

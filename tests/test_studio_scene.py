@@ -12,7 +12,7 @@ from PIL import Image
 
 pytest.importorskip(
     "comfy_api.latest",
-    reason="ComfyUI's real V3 API is required to run the Stickers node",
+    reason="ComfyUI's real V3 API is required to run the Panorama Studio node",
 )
 
 import folder_paths
@@ -21,43 +21,26 @@ from comfy_api.latest import Types
 from comfyui_pano_suite.core import render as render_module
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaStickersSceneNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
 from comfyui_pano_suite.scene_video import SceneVideo
 from test_legacy_goldens import _golden_mismatch
 from test_stickers_scene_video import _frames
 from tools import bake_legacy_goldens
 from tools.bake_legacy_goldens import ASSETS, FIXTURE_DIR, _painting, _stroke, build_background_erp
+
+
+# Panorama Studio without a Camera: the Scene it builds, shot as the ERP from the World origin.
 from tools.golden_png import read_png16
 
 
 def _execute(state=None, **inputs):
     inputs.setdefault("bg_color", "#00ff00")
     inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_preset", "auto")
-    return PanoramaStickersSceneNode.execute(
+    inputs.setdefault("output_size", "auto")
+    return PanoramaStudioNode.execute(
         state_json="" if state is None else json.dumps(state),
         **inputs,
     ).result
-
-
-def _run_new_node(coverage: str, stickers=(), painting=None):
-    state = {"assets": ASSETS, "stickers": list(stickers)}
-    if painting is not None:
-        state["painting"] = painting
-    result = _execute(state, coverage=coverage, bg_media=build_background_erp())
-    return result[0][0].numpy(), result[1][0].numpy()
-
-
-@pytest.mark.parametrize("name", [name for name in bake_legacy_goldens.CASES if name.startswith("stickers_")])
-def test_v1_state_reproduces_the_golden(name, monkeypatch):
-    # The golden cases call _run_stickers with v1 states; run the same cases through the new node. Where the new node
-    # differs on purpose, its own golden is compared (`stickers_golden`).
-    monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_new_node)
-    image, mask = bake_legacy_goldens.CASES[name]()
-    golden = bake_legacy_goldens.stickers_golden(name)
-
-    assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{golden}.image.png")) is None
-    assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{golden}.mask.png")) is None
 
 
 EDITOR_SAVE_JS = """
@@ -69,7 +52,7 @@ process.stdout.write(editorStateText({ __panoSceneStateV2: true }, parsePanoEdit
 
 
 def _save_from_editor(state_json: str) -> str:
-    """The state_json the editor writes to PanoramaStickersNode after opening `state_json`."""
+    """The state_json the editor writes to Panorama Studio after opening `state_json`."""
     if shutil.which("node") is None:
         pytest.skip("node is required to run the editor's state helpers")
     return subprocess.run(
@@ -82,30 +65,30 @@ def _save_from_editor(state_json: str) -> str:
     ).stdout
 
 
-def _run_new_node_saved_by_editor(coverage: str, stickers=(), painting=None):
+def _run_saved_by_editor(coverage: str, stickers=(), painting=None):
     state = {"assets": ASSETS, "stickers": list(stickers)}
     if painting is not None:
         state["painting"] = painting
     saved = _save_from_editor(json.dumps(state))
     assert json.loads(saved)["version"] == 2
-    result = PanoramaStickersSceneNode.execute(
-        bg_color="#00ff00", coverage=coverage, output_preset="auto", state_json=saved, bg_media=build_background_erp(),
+    result = PanoramaStudioNode.execute(
+        bg_color="#00ff00", coverage=coverage, output_size="auto", state_json=saved, bg_media=build_background_erp(),
     ).result
     return result[0][0].numpy(), result[1][0].numpy()
 
 
 @pytest.mark.parametrize("name", [name for name in bake_legacy_goldens.CASES if name.startswith("stickers_")])
 def test_state_saved_by_the_editor_is_v2_and_reproduces_the_golden(name, monkeypatch):
-    # The editor opens the golden case's v1 state and saves it for the new node; the node renders what the editor shows.
-    monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_new_node_saved_by_editor)
+    # The editor opens the golden case's v1 state and saves it as v2; the node renders what the editor shows.
+    monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_saved_by_editor)
     image, mask = bake_legacy_goldens.CASES[name]()
-    golden = bake_legacy_goldens.stickers_golden(name)
+    golden = bake_legacy_goldens.studio_golden(name)
 
     assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{golden}.image.png")) is None
     assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{golden}.mask.png")) is None
 
 
-def _solid(rgb, height=4, width=4, batch=1):
+def _solid(rgb, height=2, width=4, batch=1):
     return torch.tensor(rgb, dtype=torch.float32).expand(batch, height, width, 3).clone()
 
 
@@ -113,18 +96,18 @@ GREEN = torch.tensor([0.0, 1.0, 0.0])
 RED = torch.tensor([1.0, 0.0, 0.0])
 
 
-def test_outputs_are_first_frame_first_frame_mask_video_and_pano_scene_in_order():
-    image, mask, video, pano_scene = _execute({"version": 2, "timeline": {"fps": 30.0}}, bg_media=build_background_erp())
+def test_outputs_are_first_frame_first_frame_mask_video_scene_and_sticker_state_in_order():
+    image, mask, video, pano_scene, sticker_state = _execute({"version": 2, "timeline": {"fps": 30.0}}, bg_media=build_background_erp())
 
     assert image.shape == (1, 256, 512, 3) and image.dtype == torch.float32 and image.device.type == "cpu"
     assert mask.shape == (1, 256, 512) and float(mask.max()) == 0.0
     assert isinstance(video, SceneVideo)
     assert video.get_frame_rate() == 30 and video.get_frame_count() == 1 and video.get_dimensions() == (512, 256)
-    assert isinstance(pano_scene, PanoSceneValue)
+    assert isinstance(pano_scene, PanoSceneValue) and sticker_state == ""
 
 
-def test_without_bg_media_the_output_is_bg_color_at_the_preset_size():
-    image, _mask, video, _scene = _execute(output_preset="1024", bg_color="#ff0000")
+def test_without_bg_media_the_output_is_bg_color_at_the_output_size():
+    image, _mask, video, *_rest = _execute(output_size="1024", bg_color="#ff0000")
 
     assert image.shape == (1, 512, 1024, 3)
     assert torch.equal(image, RED.expand(1, 512, 1024, 3))
@@ -134,10 +117,10 @@ def test_without_bg_media_the_output_is_bg_color_at_the_preset_size():
 def test_image_batch_background_maps_one_to_one_to_output_frames():
     bg = torch.stack([_solid([value, value, value])[0] for value in (0.1, 0.5, 0.9)])
 
-    first, _mask, video, _scene = _execute(bg_media=bg)
+    first, _mask, video, *_rest = _execute(bg_media=bg)
     image = video.get_components().images
 
-    assert image.shape == (3, 4, 4, 3)
+    assert image.shape == (3, 2, 4, 3)
     assert torch.equal(first, image[:1])
     assert torch.allclose(image[:, 0, 0, 0], torch.tensor([0.1, 0.5, 0.9]))
 
@@ -149,14 +132,14 @@ def test_length_override_past_the_background_draws_bg_color():
 
     assert image.shape[0] == 3
     assert torch.allclose(image[1], bg[1])
-    assert torch.equal(image[2], GREEN.expand(4, 4, 3))
+    assert torch.equal(image[2], GREEN.expand(2, 4, 3))
 
 
 def test_single_background_image_stays_for_the_whole_timeline():
     image = _frames(_execute({"version": 2, "timeline": {"length": 2}}, bg_media=_solid([0.5, 0.5, 0.5])))
 
     assert image.shape[0] == 2
-    assert torch.allclose(image, torch.full((2, 4, 4, 3), 0.5))
+    assert torch.allclose(image, torch.full((2, 2, 4, 3), 0.5))
 
 
 def _column_of_red(image: torch.Tensor) -> float:
@@ -167,8 +150,8 @@ def _column_of_red(image: torch.Tensor) -> float:
 def test_port_sticker_is_appended_with_the_sticker_state_pose():
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 20.0}})
 
-    posed = _execute(output_preset="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
-    default = _execute(output_preset="1024", sticker=_solid([1.0, 0.0, 0.0]))[0]
+    posed = _execute(output_size="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
+    default = _execute(output_size="1024", sticker=_solid([1.0, 0.0, 0.0]))[0]
 
     assert _column_of_red(posed) == pytest.approx(0.75, abs=0.01)
     assert _column_of_red(default) == pytest.approx(0.5, abs=0.01)
@@ -180,13 +163,13 @@ def test_port_sticker_in_the_state_keeps_its_pose_and_sticker_state_is_ignored()
     state = {"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "direction": {"value": {"yaw_deg": -90.0}}, "size": {"value": {"hFOV_deg": 20.0}}}]}
     sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0, "hFOV_deg": 20.0}})
 
-    image = _execute(state, output_preset="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
+    image = _execute(state, output_size="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
 
     assert _column_of_red(image) == pytest.approx(0.25, abs=0.01)
 
 
 def test_sticker_state_without_a_sticker_is_ignored():
-    image = _execute(output_preset="1024", sticker_state=json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0}}))[0]
+    image = _execute(output_size="1024", sticker_state=json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0}}))[0]
 
     assert torch.equal(image, GREEN.expand(1, 512, 1024, 3))
 
@@ -206,7 +189,7 @@ def test_file_source_is_read_from_the_input_directory(tmp_path, monkeypatch):
     _write_png(input_dir / "panorama_stickers" / "red.png", (255, 0, 0))
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(input_dir))
 
-    image = _execute(_file_sticker_state("red.png"), output_preset="1024")[0]
+    image = _execute(_file_sticker_state("red.png"), output_size="1024")[0]
 
     assert _column_of_red(image) == pytest.approx(0.5, abs=0.01)
 
@@ -219,7 +202,7 @@ def test_file_source_outside_the_input_directory_is_not_read(tmp_path, monkeypat
     _write_png(tmp_path / "outside.png", (255, 0, 0))
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(input_dir))
 
-    image = _execute(_file_sticker_state(filename, subfolder), output_preset="1024")[0]
+    image = _execute(_file_sticker_state(filename, subfolder), output_size="1024")[0]
 
     assert torch.equal(image, GREEN.expand(1, 512, 1024, 3))
 
@@ -227,7 +210,7 @@ def test_file_source_outside_the_input_directory_is_not_read(tmp_path, monkeypat
 @pytest.mark.parametrize("name", ["scene", "sticker"])
 def test_3d_files_neither_reader_takes_name_the_input(name):
     with pytest.raises(ValueError, match=f"3D file on the {name} input is neither a splat file .* nor a mesh file"):
-        _execute(output_preset="1024", **{name: Types.File3D(BytesIO(b"not a model"))})
+        _execute(output_size="1024", **{name: Types.File3D(BytesIO(b"not a model"))})
 
 
 def _count_render_calls(monkeypatch):

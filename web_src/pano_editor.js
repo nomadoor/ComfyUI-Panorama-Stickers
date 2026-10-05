@@ -14,7 +14,6 @@ import { createFrameBatch } from "./pano_frame_batch.js";
 import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import {
-  CAMERA_SHOT_ID,
   cameraShot,
   editorActive,
   normalizeCoverageValue,
@@ -46,7 +45,6 @@ import {
   runExternalStickerSync,
 } from "./pano_external_sticker_sync.js";
 import {
-  CUTOUT_V2_HIDDEN_TOOLS,
   ENABLE_STICKERS_NODE_PREVIEW,
   EXTERNAL_STICKER_PREVIEW_KEY,
   PAINT_COLOR_SWATCHES,
@@ -115,17 +113,6 @@ function videoTimelineFps(node) {
   return Array.isArray(fps) ? timelineFps(fps[0]) : null;
 }
 
-// The PANO_SCENE that PanoramaCutoutNode's current result shot (#77): the Scene's state, its Timeline
-// length in frames and the span of its background ERP; null for an ERP source or without a current result.
-function shotScene(node) {
-  if (!isNodeOutputMediaCurrent(node, "background")) return null;
-  const [state] = comfyMedia.uiValue(node, "pano_scene_state") || [];
-  if (!state || typeof state !== "object") return null;
-  const [frames] = comfyMedia.uiValue(node, "pano_timeline_frames") || [];
-  const [coverage] = comfyMedia.uiValue(node, "pano_scene_coverage") || [];
-  return { state, frames: Number(frames) > 0 ? Number(frames) : null, coverage: normalizeCoverageValue(coverage) };
-}
-
 const mediaAssetSource = comfyMedia.assetSource;
 const mediaSource = comfyMedia.source;
 const mediaUiImage = comfyMedia.uiImage;
@@ -168,42 +155,36 @@ async function showEditor(node, type, options = {}) {
     return parseOutputPresetValue(raw, fallback);
   };
 
-  // PanoramaStickersNode and PanoramaCutoutNode edit state v2 itself (pano_editor_state.js); the legacy
-  // nodes edit v1. sceneV2 is the Stickers editor of state v2, cutoutV2 the Cutout one (#77).
+  // Panorama Studio edits state v2 itself (pano_editor_state.js); the legacy nodes edit v1. sceneV2 is
+  // the Stickers editor of state v2.
   const stateV2 = node.__panoSceneStateV2 === true;
   const sceneV2 = type === "stickers" && stateV2;
-  const cutoutV2 = type === "cutout" && stateV2;
   // Panorama Studio (#89) is the Stickers editor of state v2 with the Cutout's Camera, which the user adds
   // and deletes. cameraV2 edits state v2's Camera through the Cutout's shot (cameraShot / setCameraShot);
   // shotEditor has the shot and the Frame view, which have nothing to show while Studio has no Camera.
   const studio = sceneV2 && node.__panoStudio === true;
-  const cameraV2 = cutoutV2 || studio;
+  const cameraV2 = studio;
   const shotEditor = type === "cutout" || studio;
-  // A Cutout that shot a PANO_SCENE shows that Scene and edits only its Camera; the Scene sets its Timeline.
-  const capture = cutoutV2 ? shotScene(node) : null;
   const state = (stateV2 ? parseSceneEditorState : parsePanoEditorState)(String(stateWidget?.value || ""), {
     outputPreset: resolveEditorOutputPresetWidth(2048),
     backgroundColor: String(bgWidget?.value || "#00ff00"),
-    coverage: capture ? capture.coverage : normalizeCoverageValue(coverageWidget?.value),
+    coverage: normalizeCoverageValue(coverageWidget?.value),
     sharedUiSettings: loadSharedUiSettings(),
     active: editorActive(node),
     fps: stateV2 ? videoTimelineFps(node) : null,
-    scene: capture?.state ?? null,
-    camera: cutoutV2,
   });
   node.__panoLiveStateOverride = state;
   node.__panoLiveStateVersion = 0;
 
-  // PanoramaCutoutNode's Camera is the one shot of the Cutout editor, at the playhead (cameraShot), and so
-  // is Panorama Studio's while it has one. initialShotBase is the shot the editor opens with (null without a
-  // Camera); cutoutShotBase then follows it.
+  // Panorama Studio's Camera is the one shot of the editor, at the playhead (cameraShot), while it has one.
+  // initialShotBase is the shot the editor opens with (null without a Camera); cutoutShotBase then follows it.
   let initialShotBase = null;
   if (cameraV2) {
-    // A hidden camera does not shoot in Panorama Studio, so it opens without a shot.
-    initialShotBase = state.camera && (!studio || state.camera.visible !== false) ? cameraShot(state.camera, 0) : null;
+    // A hidden camera does not shoot, so the editor opens without a shot.
+    initialShotBase = state.camera && state.camera.visible !== false ? cameraShot(state.camera, 0) : null;
     state.shots = initialShotBase ? [{ ...initialShotBase, position: [...initialShotBase.position] }] : [];
     // Panorama Studio opens with nothing selected, as the Stickers editor.
-    state.active.selected_shot_id = initialShotBase && cutoutV2 ? CAMERA_SHOT_ID : null;
+    state.active.selected_shot_id = null;
   } else if (type === "cutout") {
     state.shots = Array.isArray(state.shots) ? state.shots.slice(0, 1) : [];
     if (!state.shots.length) {
@@ -232,13 +213,11 @@ async function showEditor(node, type, options = {}) {
     space: shellPreset.spaceButtons?.length
       ? { visible: false, mode: "3dof", frameDisabled: true, modes: shellPreset.spaceButtons, frame: shellPreset.spaceFrameButton }
       : null,
-    // Only PanoramaStickersNode places images in space.
-    // PanoramaCutoutNode's editor edits only its Camera (#77), so it has no image, paint or clear tools.
+    // Only the Stickers editor of state v2 places images in space.
     toolButtons: (shellPreset.toolButtons || []).map((button) => ({
       ...button,
       disabled: false,
       ...(button.key === "add-world" ? { visible: sceneV2 } : {}),
-      ...(cutoutV2 && CUTOUT_V2_HIDDEN_TOOLS.has(button.key) ? { visible: false } : {}),
     })),
     floatingButtons: [
       ...(shellPreset.floatingButtons || []).map((button) => ({ ...button, disabled: false })),
@@ -474,7 +453,7 @@ async function showEditor(node, type, options = {}) {
     viewYaw: 0,
     viewPitch: 0,
     viewFov: 100,
-    // PanoramaStickersNode with World content: where the Viewport camera stands (World glTF) and how far
+    // Panorama Studio with World content: where the Viewport camera stands (World glTF) and how far
     // ahead its pivot is (pano_space.js). It starts at the World origin, where the ERP is taken from,
     // and is not saved. Until it moves (viewMoved), its pivot is as far ahead as the content is large.
     viewPosition: [0, 0, 0],
@@ -537,7 +516,7 @@ async function showEditor(node, type, options = {}) {
     marqueeModifier: false,
     altModifier: false,
     panelLastValues: null,
-    // PanoramaStickersNode: the id of the world Sticker selected in the space view or on its Timeline row
+    // Panorama Studio: the id of the world Sticker selected in the space view or on its Timeline row
     // (#72). The canvas selection (selectedId) holds sky Stickers only; selecting one clears the other.
     worldSelectedId: null,
     // The mode of the selected world Sticker's gizmo: "translate", "rotate" or "scale".
@@ -549,10 +528,10 @@ async function showEditor(node, type, options = {}) {
     viewTransition: null,
     fullscreen: false,
     fullscreenPrevShowGrid: null,
-    // The editor's current time, a Timeline frame. PanoramaStickersNode shows and edits its state v2 here.
+    // The editor's current time, a Timeline frame. Panorama Studio shows and edits its state v2 here.
     frame: 0,
   };
-  // The Timeline of PanoramaStickersNode. expanded is null until the user toggles it, and the
+  // The Timeline of Panorama Studio. expanded is null until the user toggles it, and the
   // Timeline then opens only when something is timed. openRows holds the rows showing their Lanes.
   // selection is { owner, lane, frames }: `lane` a Lane's name, or null for every Lane of the row,
   // and the frames in the owner's own time base. drag holds what a Timeline drag started from, and
@@ -697,8 +676,8 @@ async function showEditor(node, type, options = {}) {
     triggerBackgroundPersistenceOnClose, updateCursor, updatePaintColorFromHue, updatePaintColorFromSv,
     updateSelectionMenu, updateSidePanel, viewControls, watchPixelRatio,
   } = createEditorModules({
-    api, app, backgroundCanvas, bgWidget, cameraV2, canvas, capture, closeEditor, comfyMedia, coverageWidget, ctx,
-    cutoutPreviewCanvas, cutoutPreviewHost, cutoutV2, dragCue, dragFrames, editor, editorView, floatingRightEl,
+    api, app, backgroundCanvas, bgWidget, cameraV2, canvas, closeEditor, comfyMedia, coverageWidget, ctx,
+    cutoutPreviewCanvas, cutoutPreviewHost, dragCue, dragFrames, editor, editorView, floatingRightEl,
     floatingTopEl, frameGateCssRadius, frameRailEl, frameRollKnobEl, hideSidebar, imageCache, initialShotBase,
     loadPreferredExactLinkedImage, mediaAssetSource, mediaSource, mediaUiImage, node, overlay, paintColorPop,
     paintColorRow, paintColorSv, paintColorSvCursor, paintCursorEl, paintDockEl, paintHueHandle, paintHueStrip,
@@ -857,7 +836,7 @@ async function showEditor(node, type, options = {}) {
     };
     node.onConnectionsChange = modalOnConnectionsChange;
   }
-  if (!readOnly && !cutoutV2) {
+  if (!readOnly) {
     _paintLayerSyncRegistry.set(String(node.id ?? "0"), () => syncPaintingLayerAsync());
   }
 

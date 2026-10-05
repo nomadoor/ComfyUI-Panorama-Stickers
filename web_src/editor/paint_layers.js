@@ -11,7 +11,7 @@ const _paintLayerUploadRegistry = new Map();
 
 export function createPaintLayers(deps) {
   const {
-    api, cutoutV2, editor, node, rasterErpCanvasCache, rasterImageAlphaCache,
+    api, editor, node, rasterErpCanvasCache, rasterImageAlphaCache,
     rasterImageCache, state,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
@@ -370,10 +370,7 @@ export function createPaintLayers(deps) {
   let _paintLayerSyncRevision = null;
   let _paintLayerSyncPending = false;
 
-  // PanoramaCutoutNode's editor does not paint (#77): the painting it shows is its state's or the Scene's,
-  // and its layer stays as it was saved.
   function needsPaintingLayerSync() {
-    if (cutoutV2) return false;
     const counts = paintingCompositeCount(state.painting);
     const { width, height } = getDesiredPaintTargetDescriptor();
     return paintingLayerNeedsSync(state.painting_layer, { paintCount: counts.totalPaintCount, maskCount: counts.totalMaskCount, width, height, nodeId: String(node.id ?? "0") });

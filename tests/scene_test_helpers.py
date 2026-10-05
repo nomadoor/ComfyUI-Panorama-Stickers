@@ -1,4 +1,4 @@
-"""Helpers shared by several test modules (Stickers, Cutout, SPLAT, MESH, and the 3D Sticker tests). Import this
+"""Helpers shared by several test modules (Panorama Studio, SPLAT, MESH, and the 3D Sticker tests). Import this
 after the module's `pytest.importorskip` of the ComfyUI core."""
 import json
 import struct
@@ -11,7 +11,7 @@ import folder_paths
 from comfy_api.latest import Types
 from comfy_extras.nodes_gaussian_splat import _C0
 
-from comfyui_pano_suite.nodes import PanoramaCutoutSceneNode
+from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
 
 
 def temp_entry_path(entry) -> Path:
@@ -69,21 +69,28 @@ def batch_index_at_center(image):
     return red_at_center(image, 10)
 
 
-def cutout(source, state=None, **inputs):
-    """The outputs of the new Cutout node."""
+def state_text(state) -> str:
+    """`state_json` for a state given as a dict, a JSON text, or None (empty)."""
+    return state if isinstance(state, str) else ("" if state is None else json.dumps(state))
+
+
+def shoot(source, state=None, **inputs):
+    """The outputs of Panorama Studio shooting `source` through the Camera of `state`: an ERP IMAGE or VIDEO on
+    `bg_media` (black where it has no pixels), or a Scene on `scene`."""
+    inputs.setdefault("bg_color", "#000000")
     inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_megapixels", 0.01)
-    state_json = state if isinstance(state, str) else ("" if state is None else json.dumps(state))
-    return PanoramaCutoutSceneNode.execute(source=source, state_json=state_json, **inputs).result
+    inputs.setdefault("output_size", "1024")
+    media = {"scene" if isinstance(source, PanoSceneValue) else "bg_media": source}
+    return PanoramaStudioNode.execute(state_json=state_text(state), **media, **inputs).result
 
 
-def cutout_frames(result):
-    """Every Cutout output frame, as GetVideoComponents reads them from the `video` output."""
-    return result[3].get_components().images
+def video_frames(result):
+    """Every output frame of Panorama Studio, as GetVideoComponents reads them from the `video` output."""
+    return result[2].get_components().images
 
 
-def cutout_camera(keyframes=None, fps=24.0, position=None, hFOV_deg=None, **rotation):
-    """A Cutout state; `keyframes` maps Camera Lanes to their Keyframes."""
+def camera_state(keyframes=None, fps=24.0, position=None, hFOV_deg=None, **rotation):
+    """A state with only a Camera; `keyframes` maps Camera Lanes to their Keyframes."""
     keyframes = keyframes or {}
     values = {"position": position, "rotation": rotation, "fov": hFOV_deg}
     camera = {name: {"value": value, "keyframes": keyframes.get(name, [])} for name, value in values.items()}

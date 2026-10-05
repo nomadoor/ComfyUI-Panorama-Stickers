@@ -422,7 +422,7 @@ test("uses the backend source-state hash and falls back to hashing the exact lin
   assert.equal(media.externalStateHash({ id: 11 }, '{"note":"🧭"}'), "199228564");
 });
 
-test("PanoramaStickersNode shows linked bg_media before a run and its own result after, also after a reload", () => {
+test("Panorama Studio shows linked bg_media before a run and its own result after, also after a reload", () => {
   const loadImage = { id: 3, comfyClass: "LoadImage", widgets: [{ name: "image", value: "pano.png" }] };
   const loadSticker = { id: 4, comfyClass: "LoadImage", widgets: [{ name: "image", value: "sticker.png" }] };
   const node = comfyNode({

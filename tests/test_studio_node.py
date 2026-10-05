@@ -13,7 +13,7 @@ pytest.importorskip(
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaCutoutSceneNode, PanoramaStickersSceneNode, PanoramaStudioNode, PanoSceneValue
+from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
 from comfyui_pano_suite.scene_video import SceneVideo
 from scene_test_helpers import blob, blobs, center as _center
 from test_legacy_goldens import _golden_mismatch
@@ -54,7 +54,7 @@ def _camera(projection="perspective", aspect=1.0, fov=90.0, fov_keyframes=(), **
     return camera
 
 
-# --- Without a Camera: the ERP the new Stickers made (its goldens: the new Stickers' own where it differs from the legacy one).
+# --- Without a Camera: the ERP from the World origin (Studio's own goldens where it differs from the legacy Stickers).
 
 def _run_studio(coverage: str, stickers=(), painting=None):
     state = {"assets": ASSETS, "stickers": list(stickers)}
@@ -65,11 +65,11 @@ def _run_studio(coverage: str, stickers=(), painting=None):
 
 
 @pytest.mark.parametrize("name", [name for name in bake_legacy_goldens.CASES if name.startswith("stickers_")])
-def test_without_a_camera_the_output_reproduces_the_stickers_golden(name, monkeypatch):
-    # The golden cases run the Stickers node on v1 states (no Camera); run the same cases through Studio.
+def test_without_a_camera_the_output_reproduces_the_golden(name, monkeypatch):
+    # The golden cases run the legacy Stickers node on v1 states (no Camera); run the same cases through Studio.
     monkeypatch.setattr(bake_legacy_goldens, "_run_stickers", _run_studio)
     image, mask = bake_legacy_goldens.CASES[name]()
-    golden = bake_legacy_goldens.stickers_golden(name)
+    golden = bake_legacy_goldens.studio_golden(name)
 
     assert _golden_mismatch(image, read_png16(FIXTURE_DIR / f"{golden}.image.png")) is None
     assert _golden_mismatch(mask, read_png16(FIXTURE_DIR / f"{golden}.mask.png")) is None
@@ -92,22 +92,6 @@ def _world_and_keyframed_state():
         ],
         "painting": painting,
     }
-
-
-@pytest.mark.parametrize("output_size", ["1024", "auto"])
-def test_without_a_camera_every_output_frame_matches_the_new_stickers(output_size):
-    # The new Stickers is removed by #92; until then Studio without a Camera is the same node.
-    inputs = {"bg_color": "#00ff00", "coverage": "360", "bg_media": build_background_erp(), "sticker": _solid([1.0, 0.0, 0.0])}
-    state_json = json.dumps(_world_and_keyframed_state())
-    stickers = PanoramaStickersSceneNode.execute(state_json=state_json, output_preset=output_size, **inputs)
-    studio = PanoramaStudioNode.execute(state_json=state_json, output_size=output_size, **inputs)
-
-    for index in range(3):
-        assert torch.equal(studio.result[index] if index < 2 else studio.result[2].get_components().images,
-                           stickers.result[index] if index < 2 else stickers.result[2].get_components().images)
-    # Studio adds only what its node surface reads: the bg_media width, the size of the run and its output ERP.
-    assert set(studio.ui) == set(stickers.ui) | {"pano_bg_width", "pano_output_size", "pano_output_erp"}
-    assert studio.result[4] == ""
 
 
 def test_a_hidden_camera_shoots_as_no_camera():
@@ -140,7 +124,7 @@ def test_hidden_painting_and_stickers_are_not_drawn():
     assert torch.equal(drawn[0], empty[0]) and torch.equal(drawn[1], empty[1])
 
 
-def test_a_port_sticker_added_by_the_node_is_in_the_ui_as_for_stickers():
+def test_a_port_sticker_added_by_the_node_is_in_the_ui():
     ui = _studio(output_size="1024", sticker=_solid([1.0, 0.0, 0.0])).ui
 
     assert ui["pano_sticker_input_pose"] == [{"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 30.0,
@@ -153,36 +137,6 @@ def test_an_empty_state_has_no_camera():
     assert image.shape == (1, 512, 1024, 3) and torch.equal(image, torch.tensor([1.0, 0.0, 0.0]).expand(1, 512, 1024, 3))
     assert mask.shape == (1, 512, 1024) and isinstance(video, SceneVideo)
     assert isinstance(scene, PanoSceneValue) and sticker_state == ""
-
-
-# --- With a perspective Camera: the new Cutout given the same size.
-
-def _cutout_like_state(camera):
-    return {**_world_and_keyframed_state(), "stickers": [
-        {"id": "q", "source": _quadrants(), "direction": {"value": {"yaw_deg": 30.0, "pitch_deg": 10.0}},
-         "size": {"value": {"hFOV_deg": 50.0}}},
-    ], "camera": camera}
-
-
-@pytest.mark.parametrize("coverage", ["360", "180"])
-def test_with_a_perspective_camera_the_output_matches_the_new_cutout_of_the_same_size(coverage, monkeypatch):
-    camera = _camera(aspect=1.5, fov=60.0, yaw_deg=30.0, pitch_deg=10.0, roll_deg=15.0)
-    camera["rotation"]["keyframes"] = [
-        {"frame": 0, "value": {"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 15.0}, "easing": "auto"},
-        {"frame": 2, "value": {"yaw_deg": 60.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
-    ]
-    state_json = json.dumps(_cutout_like_state(camera))
-    bg = build_background_erp()
-    studio = _outputs(state_json, bg_media=bg, bg_color="#000000", coverage=coverage, output_size="1024")
-    size = tuple(studio[0].shape[2:0:-1])
-    # f = 1024 / 2pi; width 2 f tan(30), height width / 1.5, both even.
-    assert size == (188, 126)
-    monkeypatch.setattr(nodes, "calculate_dimensions_from_megapixels", lambda *_args, **_kwargs: size)
-    cutout = PanoramaCutoutSceneNode.execute(source=bg, coverage=coverage, output_megapixels=1.0, state_json=state_json).result
-
-    assert torch.equal(studio[0], cutout[0]) and torch.equal(studio[1], cutout[2])
-    assert torch.equal(studio[2].get_components().images, cutout[3].get_components().images)
-    assert studio[4] == cutout[1] and json.loads(studio[4])["source_aspect"] == pytest.approx(188 / 126)
 
 
 def test_the_camera_shoots_the_scene_and_keyframes_set_the_length():
@@ -291,7 +245,7 @@ AUTO_WARNING = "output_size is auto, but bg_media is not connected; using 2048 i
     (None, "4096", "360", None, (4096, 2048), []),
     (None, "2048", "180", None, (1024, 1024), []),
     # auto: the bg_media width over 360 degrees, or 2048 without bg_media. A 360 ERP is W/2 high and does not take
-    # the bg_media height, so a background that is not 2:1 gives another height than the new Stickers.
+    # the bg_media height, so a background that is not 2:1 gives another height than the legacy Stickers.
     (None, "auto", "360", (300, 600), (600, 300), []),
     (None, "auto", "360", (200, 600), (600, 300), []),
     (None, "auto", "180", (512, 512), (512, 512), []),
@@ -395,8 +349,7 @@ def test_a_hidden_camera_returns_the_output_erp_as_no_camera_does(coverage):
 
 
 def test_the_output_erp_takes_the_coverage_of_an_upstream_scene():
-    upstream = PanoramaStickersSceneNode.execute(state_json="", bg_color="#00ff00", coverage="180", output_preset="1024",
-                                                 bg_media=_solid([0.5, 0.5, 0.5], height=16, width=16)).result
+    upstream = _outputs(coverage="180", output_size="1024", bg_media=_solid([0.5, 0.5, 0.5], height=16, width=16))
     scene = next(value for value in upstream if isinstance(value, PanoSceneValue))
     entry, png = _output_erp(_studio(coverage="360", output_size="1024", scene=scene))
 
@@ -414,7 +367,7 @@ def test_auto_with_a_180_bg_media_doubles_its_width_for_the_whole_erp():
 
 # --- Outputs.
 
-def test_sticker_state_is_the_cutout_one_only_for_a_perspective_camera():
+def test_sticker_state_holds_the_camera_only_for_a_perspective_camera():
     state = {"version": 2, "timeline": {"fps": 30.0}, "camera": _camera(fov=80.0, aspect=2.0, yaw_deg=40.0)}
 
     sticker_state = json.loads(_outputs(state, output_size="1024")[4])
@@ -425,7 +378,7 @@ def test_sticker_state_is_the_cutout_one_only_for_a_perspective_camera():
     assert _outputs({"version": 2, "camera": _camera("erp")}, output_size="1024")[4] == ""
 
 
-def test_scene_output_is_the_stickers_pano_scene_without_the_camera():
+def test_scene_output_is_the_built_scene_without_the_camera():
     state = {**_world_and_keyframed_state(), "camera": _camera(yaw_deg=90.0)}
     bg = build_background_erp()
 

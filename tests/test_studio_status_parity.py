@@ -82,7 +82,7 @@ KEYS = [("", "2048", "360", "#00ff00"), ('{"version": 2}', "1024", "180", "#1A2B
 
 def _python(state, output_size, coverage, bg_width):
     loaded = load_scene_state(json.dumps({"version": 2, **state}))
-    _rate, _times, _time_base, frames = nodes._decide_timeline(loaded, None, None, camera=True)
+    _rate, _times, _time_base, frames = nodes._decide_timeline(loaded, None, None)
     bg = None if bg_width is None else torch.zeros((1, max(1, bg_width // 2), bg_width, 3))
     warnings = []
     width, height, reduced_from = nodes._studio_output_size(loaded, frames, output_size, coverage, bg, warnings)

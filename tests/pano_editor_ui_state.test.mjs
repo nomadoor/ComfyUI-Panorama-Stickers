@@ -139,8 +139,6 @@ test("every Timeline row has the eye's place; the eye shows and hides what can b
   const paint = buildTimelineModel(state, options).rows.find((row) => row.id === PAINTING_ROW);
   assert.deepEqual([paint.label, paint.hideable, paint.visible, paint.keyable, paint.clip, paint.keys], ["Paint", true, false, false, null, []]);
   assert.equal(ids({ ...state, painting_visible: true }).includes(PAINTING_ROW), false);
-  // The Cutout's Timeline shows only its Camera.
-  assert.deepEqual(buildTimelineModel(state, { ...options, stickers: false }).rows.map((row) => row.id), ["camera"]);
 });
 
 test("the eye keeps its place in every row, and only the hideable rows have a button there", () => {
@@ -327,21 +325,7 @@ test("no bottom-right button moves when another one shows, hides or changes", ()
   assert.match(css, /\.pano-floating-right \{\s*position: absolute;\s*right: var\(--pano-space-xl\);/);
 });
 
-test("the Cutout's Timeline shows only its Camera row; with a PANO_SCENE the Scene sets its fps and length (#77)", () => {
-  const state = canonical();
-  const options = { frame: 24, span: 90, selection: null, selectedId: "camera", expanded: true, openRows: new Set(), playing: false, label: "", camera: true, stickers: false };
-
-  const erp = buildTimelineModel(state, options);
-  const scene = buildTimelineModel(state, { ...options, sceneLocked: true });
-
-  assert.deepEqual(erp.rows.map((row) => [row.id, row.selected]), [["camera", true]]);
-  assert.deepEqual([erp.fpsLocked, erp.lengthLocked, erp.length], [false, false, state.timeline.length]);
-  assert.deepEqual([scene.fpsLocked, scene.lengthLocked, scene.length, scene.lockTip], [true, true, 90, "Set by the scene"]);
-  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.match(timeline, /<span v-if="model\.lengthLocked">\{\{ model\.length \}\}<\/span>\s*<input v-else type="number"/);
-});
-
-test("the Cutout's Camera has Move | Rotate in its gizmo menu, and its frame menu has no lock or delete (#77)", () => {
+test("the Camera has Move | Rotate in its gizmo menu, and its frame menu has no lock", () => {
   const menu = buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "rotate", camera: true });
   assert.deepEqual(menu.items[0].buttons.map((button) => [button.key, button.tip, button.pressed]), [
     ["translate", "Move the camera", "false"],
@@ -364,7 +348,7 @@ test("the Cutout's Camera has Move | Rotate in its gizmo menu, and its frame men
     iconSet: new Proxy({}, { get: (_, key) => String(key) }),
     cameraShot: true,
   });
-  assert.deepEqual(model.items.map((item) => item.key), ["aspect", "rotate-90"]);
+  assert.deepEqual(model.items.map((item) => item.key), ["aspect", "rotate-90", "delete"]);
 });
 
 // --- Panorama Studio (#89): the Stickers editor of state v2 with the Cutout's Camera.
@@ -430,12 +414,11 @@ test("Panorama Studio's Timeline shows the Camera, the Stickers and the `scene` 
   assert.match(timelineVue, /v-if="row\.keyable"\s*class="pano-timeline-key"/);
   const editorJs = readEditorSource();
   assert.match(editorJs, /if \(action\.owner === "scene" \|\| !timelineEditable\(action\.owner\)\) return;/);
-  // Without its input, the `scene` row shows only while the `scene` changes over time; the Cutout has none.
+  // Without its input, the `scene` row shows only while the `scene` changes over time.
   const still = loadSceneState({ version: 2 });
   assert.equal(buildTimelineModel(still, options).rows.some((row) => row.id === "scene"), false);
   still.scene.clip.start = 5;
   assert.equal(buildTimelineModel(still, options).rows.some((row) => row.id === "scene"), true);
-  assert.equal(buildTimelineModel(still, { ...options, stickers: false, scene: true }).rows.some((row) => row.id === "scene"), false);
   const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
   assert.match(timeline, /<SvgIcon :icon="row\.icon" \/>/);
 });
@@ -456,8 +439,6 @@ test("Panorama Studio's Camera menu has the 360° preset and Delete, and a 360°
     canRestoreSelectedToInitial: () => false,
     iconSet: new Proxy({}, { get: (_, key) => String(key) }),
     cameraShot: true,
-    cameraDeletable: true,
-    erpChoice: true,
     ...options,
   });
 
@@ -470,11 +451,11 @@ test("Panorama Studio's Camera menu has the 360° preset and Delete, and a 360°
   const erp = menu({ activeAspect: ERP_ASPECT, coverage: 180 });
   assert.deepEqual(erp.items[0].choices.at(-1), { value: ERP_ASPECT, label: "180°", active: true });
   assert.equal(erp.items[1].disabled, true);
-  // The Cutout's Camera has neither.
+  // The legacy Cutout's frame has neither.
   assert.deepEqual(cameraAspectChoices("1:1").map((choice) => choice.value), ["1:1", "4:3", "3:2", "16:9"]);
 
   // In 6DoF its gizmo menu has Delete after Move | Rotate.
-  const gizmo = buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate", camera: true, deletable: true });
+  const gizmo = buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate", camera: true });
   assert.deepEqual(gizmo.items.map((item) => [item.key, item.action]), [["gizmo-mode", undefined], ["delete", "delete"]]);
   assert.equal(buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate" }).items.length, 1);
 });

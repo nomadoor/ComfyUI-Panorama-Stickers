@@ -21,7 +21,7 @@ from comfy_extras.nodes_gaussian_splat import SplatToFile3D
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import mesh_render
 from comfyui_pano_suite.core.world_render import ContentSource
-from scene_test_helpers import batch_index_at_center, blob, blobs, center, cutout, cutout_camera, cutout_frames, glb_positions, temp_entry_path
+from scene_test_helpers import batch_index_at_center, blob, blobs, camera_state, center, glb_positions, shoot, state_text, temp_entry_path, video_frames
 from tools.bake_legacy_goldens import _painting, _stroke
 
 
@@ -42,8 +42,8 @@ def _square(rgb=RED, size=1.0):
 def _execute(state=None, **inputs):
     inputs.setdefault("bg_color", "#00ff00")
     inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_preset", "1024")
-    return nodes.PanoramaStickersSceneNode.execute(state_json="" if state is None else json.dumps(state), **inputs)
+    inputs.setdefault("output_size", "1024")
+    return nodes.PanoramaStudioNode.execute(state_json=state_text(state), **inputs)
 
 
 def _port(position=None, scale=None, keyframes=None, opacity=None, **rotation):
@@ -99,8 +99,8 @@ def _state_camera():
     }
 
 
-def test_stickers_output_is_taken_from_the_origin_at_rotation_0_whatever_the_state_camera(tmp_path, monkeypatch):
-    # ADR 0028: Stickers has no Camera; the `camera` of its state is neither drawn with nor counted for the length.
+def test_without_a_camera_the_output_is_taken_from_the_origin_at_rotation_0(tmp_path, monkeypatch):
+    # ADR 0029: without a Camera, the ERP is taken from the World origin at rotation 0.
     input_dir = tmp_path / "input"
     (input_dir / "panorama_stickers").mkdir(parents=True)
     Image.fromarray(np.full((8, 8, 3), 255, dtype=np.uint8)).save(input_dir / "panorama_stickers" / "white.png")
@@ -118,20 +118,12 @@ def test_stickers_output_is_taken_from_the_origin_at_rotation_0_whatever_the_sta
     scene = Types.MESH(torch.tensor([SQUARE]) + torch.tensor([3.0, 0.0, -3.0]), torch.tensor([SQUARE_FACES]), vertex_colors=torch.tensor([[BLUE] * 4]))
     bg = torch.zeros((1, 64, 128, 3))
     bg[:, 32:] = 0.5
-    state = {"version": 2, "timeline": {"length": 2}, "stickers": [sky], "painting": painting}
+    state = {"version": 2, "stickers": [sky], "painting": painting}
 
-    def run(state):
-        return _execute(state, bg_media=bg, scene=scene, sticker=_square()).result
+    output = _execute(state, bg_media=bg, scene=scene, sticker=_square()).result
 
-    plain = run(state)
-    shot = run({**state, "camera": _state_camera()})
-    del state["timeline"]
-    lengths = [run(item)[2].get_frame_count() for item in (state, {**state, "camera": _state_camera()})]
-
-    assert torch.equal(shot[0], plain[0]) and torch.equal(shot[1], plain[1])
-    assert torch.equal(shot[2].get_components().images, plain[2].get_components().images)
-    assert lengths == [1, 1]
-    image, mask = plain[0][0], plain[1][0]
+    assert output[2].get_frame_count() == 1
+    image, mask = output[0][0], output[1][0]
     # From the origin at rotation 0: the world Sticker 2 ahead at the center, the `scene` square ahead and right (yaw 45).
     assert _close(image[256, 512], RED) and _close(image[256, 640], BLUE)
     # The sky Sticker, the paint, the mask, and the background stay where they are stored.
@@ -214,11 +206,11 @@ def test_3d_sticker_items_follow_the_output_frames():
     assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[3].frames] == [0, 1]
 
 
-def test_cutout_shoots_the_3d_sticker_of_a_pano_scene():
+def test_a_camera_shoots_the_3d_sticker_of_an_upstream_scene():
     pano_scene = _execute(sticker=_square()).result[3]
 
-    ahead = cutout_frames(cutout(pano_scene, cutout_camera(hFOV_deg=10.0)))
-    behind = cutout_frames(cutout(pano_scene, cutout_camera(yaw_deg=180.0, hFOV_deg=10.0)))
+    ahead = video_frames(shoot(pano_scene, camera_state(hFOV_deg=10.0)))
+    behind = video_frames(shoot(pano_scene, camera_state(yaw_deg=180.0, hFOV_deg=10.0), bg_color="#00ff00"))
 
     assert _close(center(ahead), RED) and _close(center(behind), GREEN)
 
@@ -308,10 +300,10 @@ def test_splat_sticker_items_follow_the_output_frames_through_the_video():
     assert reds == [1, 2]
 
 
-def test_cutout_shoots_the_splat_sticker_of_a_pano_scene():
+def test_a_camera_shoots_the_splat_sticker_of_an_upstream_scene():
     pano_scene = _execute(sticker=blobs(blob((0.0, 0.0, 0.0), RED, size=0.3))).result[3]
 
-    frames = cutout_frames(cutout(pano_scene, cutout_camera(hFOV_deg=10.0)))
+    frames = video_frames(shoot(pano_scene, camera_state(hFOV_deg=10.0)))
 
     red, green, blue = center(frames).tolist()
     assert red > 0.8 and green < 0.2 and blue < 0.2

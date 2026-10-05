@@ -1,4 +1,4 @@
-"""Backend render function shared by Stickers, Cutout, and Preview.
+"""Backend render function of Panorama Studio, with or without a Camera.
 
 One call draws one frame from the layers of a Scene (`RenderLayer`: a state evaluated at a Timeline frame by
 `evaluate_scene_state` and its resolved sources), a Camera, and a Projection. They are composited back to front:

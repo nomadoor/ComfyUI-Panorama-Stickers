@@ -10,7 +10,7 @@ import { DEG2RAD, EXTERNAL_STICKER_ID, EXTERNAL_STICKER_SOURCE_KIND } from "./co
 
 export function createItems(deps) {
   const {
-    canvas, cutoutV2, editor, sceneV2, state, stateV2, type,
+    canvas, editor, sceneV2, state, stateV2, type,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewRect, getPaintingLayerList, getPaintingRevisionKey,
@@ -298,11 +298,10 @@ export function createItems(deps) {
       .map((item) => getRasterObjectItem(makeRasterObjectSelectionId(item?.id || "")))
       .filter(Boolean);
   }
-  // The Stickers the Cutout editor selects and moves: none in PanoramaCutoutNode's, which edits only its
-  // Camera and shows the Stickers of its state or of the Scene it shoots (#77); the sky ones in Panorama
-  // Studio's, as the Stickers editor (#89).
+  // The Stickers the Cutout editor selects and moves; the sky ones in Panorama Studio's, as the Stickers
+  // editor (#89).
   function cutoutStickers() {
-    return cutoutV2 || !Array.isArray(state.stickers) ? [] : skyStickers();
+    return !Array.isArray(state.stickers) ? [] : skyStickers();
   }
   function getCutoutSelectableItems() {
     const shots = Array.isArray(state.shots) ? state.shots : [];

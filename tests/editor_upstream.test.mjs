@@ -218,7 +218,7 @@ test("with the upstream background the auto length is the upstream Scene's, not 
   const { createTimeline } = await import("../web_src/editor/timeline.js");
   const { loadSceneState } = await import("../web_src/pano_scene_state.js");
   const uiState = { videoTransport: { ready: true, duration: 20 } };
-  const timeline = createTimeline({ capture: null, cutoutV2: false, editor: {}, node: {}, readOnly: false, sceneV2: true, state: loadSceneState({ version: 2, timeline: { fps: 24 } }), stateV2: true, studio: true, timeline: {}, timelinePlayhead: {}, uiState, videoEl: null, videoTimelineFps: () => null });
+  const timeline = createTimeline({ editor: {}, node: {}, readOnly: false, sceneV2: true, state: loadSceneState({ version: 2, timeline: { fps: 24 } }), stateV2: true, studio: true, timeline: {}, timelinePlayhead: {}, uiState, videoEl: null, videoTimelineFps: () => null });
   let upstream = { imageKey: "pano_upstream_input_images" };
   timeline.connect({ getPortMedia: () => null, isExternalSticker: () => false, upstreamBackground: () => upstream, upstreamSpanFrames: () => 240 });
   assert.equal(timeline.timelineSpanFrames(), 240);

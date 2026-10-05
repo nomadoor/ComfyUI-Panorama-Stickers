@@ -294,11 +294,6 @@ def _camera(raw):
     }
 
 
-def default_camera() -> dict:
-    """The Camera of a state that has none, for the nodes that always shoot through one (PanoramaCutoutNode)."""
-    return _camera({})
-
-
 def _normalize_v2(raw):
     timeline = raw.get("timeline") if isinstance(raw.get("timeline"), dict) else {}
     scene = raw.get("scene") if isinstance(raw.get("scene"), dict) else {}
