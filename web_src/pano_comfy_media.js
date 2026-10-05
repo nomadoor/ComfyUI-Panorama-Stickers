@@ -1,4 +1,5 @@
 import { isVideoFile, outputSourceToken } from "./pano_preview_video.js";
+import { mediaCache } from "./pano_node_bridge.js";
 
 function comfyImageEntryToUrl(api, entry) {
   if (!entry || typeof entry !== "object") return "";
@@ -276,10 +277,10 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     const candidates = uniqueSources(normalizedSources.flatMap((entry) => sourceCandidates(entry)));
     if (!candidates.length) return null;
 
-    if (!node.__panoLinkedInputImageCache) node.__panoLinkedInputImageCache = new Map();
+    const linkedImages = mediaCache(node).linkedImages;
     const key = String(cacheKey || orderedNames.join("|") || "image_exact");
     const sourceKey = normalizedSources.join("\n");
-    const cached = node.__panoLinkedInputImageCache.get(key);
+    const cached = linkedImages.get(key);
     if (cached && cached.srcRaw === sourceKey && cached.img) return cached.img;
 
     const Ctor = ImageCtor || globalThis.Image;
@@ -287,7 +288,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     const image = new Ctor();
     imageState?.markImageLoading?.(image, sourceKey);
     const cacheEntry = { srcRaw: sourceKey, resolvedSrc: "", img: image };
-    node.__panoLinkedInputImageCache.set(key, cacheEntry);
+    linkedImages.set(key, cacheEntry);
     let attempt = -1;
     const settle = (state) => {
       if (state === "ready") imageState?.markImageReady?.(image, sourceKey);
@@ -318,7 +319,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
 
   const clearFailedLinkedImages = (node) => {
     try {
-      node?.__panoLinkedInputImageCache?.forEach?.((entry, key, cache) => {
+      mediaCache(node)?.linkedImages.forEach((entry, key, cache) => {
         if (entry?.img && imageState?.isImageLoadFailed?.(entry.img)) cache.delete(key);
       });
     } catch {

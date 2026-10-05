@@ -20,6 +20,7 @@ import {
 } from "./pano_dom_widget_lifecycle.js";
 import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
 import { localPosFromEvent } from "./pano_preview_runtime.js";
+import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
 
 const PREVIEW_MIN_HEIGHT = 140;
 const PREVIEW_MIN_WIDTH = 180;
@@ -469,7 +470,7 @@ class PreviewNodeRuntime {
         },
       });
       this.surfaceApp.mount(this.surfaceHost);
-      this.node.__panoPreviewNodeSurface = {
+      previewNode(this.node).surface = {
         mounted: true,
         toggleFullscreen: () => this.fullscreenController?.toggle?.(),
       };
@@ -482,7 +483,7 @@ class PreviewNodeRuntime {
       this.surfaceHost?.remove?.();
       this.surfaceHost = null;
       this.surfaceModel = null;
-      this.node.__panoPreviewNodeSurface = null;
+      previewNode(this.node).surface = null;
       return false;
     }
   }
@@ -781,7 +782,7 @@ class PreviewNodeRuntime {
   }
 
   teardown() {
-    if (this.node?.__panoPreviewNodeRuntime !== this) return;
+    if (peekPreviewNode(this.node)?.runtime !== this) return;
     this.tearingDown = true;
     if (this.rafId) {
       cancelAnimationFrame(this.rafId);
@@ -798,7 +799,7 @@ class PreviewNodeRuntime {
     this.surfaceHost?.remove?.();
     this.surfaceHost = null;
     this.surfaceModel = null;
-    this.node.__panoPreviewNodeSurface = null;
+    previewNode(this.node).surface = null;
     this.mediaCleanup?.();
     this.mediaCleanup = null;
     this.img = null;
@@ -823,13 +824,13 @@ class PreviewNodeRuntime {
       coverageWidget.callback = this.orig.coverageWidgetCallback;
     }
     this.previewView.dispose();
-    this.node.__panoPreviewNodeRuntime = null;
+    previewNode(this.node).runtime = null;
   }
 }
 
 export function attachPreviewNodeRuntime(node, options = {}) {
-  if (!node || node.__panoPreviewNodeRuntime) return;
+  if (!node || previewNode(node).runtime) return;
   const runtime = new PreviewNodeRuntime(node, options);
-  node.__panoPreviewNodeRuntime = runtime;
+  previewNode(node).runtime = runtime;
   runtime.attach();
 }

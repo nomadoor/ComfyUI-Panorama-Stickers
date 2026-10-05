@@ -6,6 +6,7 @@ import {
   sameEditorStateText,
   setEditorActive,
 } from "../pano_editor_state.js";
+import { peekNodeSurface, peekPreviewNode } from "../pano_node_bridge.js";
 import { saveSharedUiSettings } from "./ui_settings.js";
 
 export function createCommit(deps) {
@@ -62,8 +63,8 @@ export function createCommit(deps) {
     const syncPreview = options.syncPreview !== false;
     const syncGraph = options.syncGraph !== false;
     if (syncPreview) {
-      node.__panoPreviewNodeRuntime?.requestDraw?.();
-      node.__panoDomPreview?.requestDraw?.();
+      peekPreviewNode(node)?.runtime?.requestDraw?.();
+      peekNodeSurface(node)?.dom?.requestDraw?.();
       node.setDirtyCanvas?.(true, false);
     }
     if (syncGraph) {

@@ -136,7 +136,7 @@ test("shipping Stickers uses the shared DOM surface in both node renderers", asy
 test("Stickers surface draws the ordered Sky layers over the current image or video input", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const drawStart = runtime.indexOf("function drawCanvas(");
-  const branchStart = runtime.indexOf("  if (!node.__panoPreviewView) node.__panoPreviewView", drawStart);
+  const branchStart = runtime.indexOf("  if (!surface.view) surface.view", drawStart);
   const branchEnd = runtime.indexOf("\n}\n", branchStart);
   assert.notEqual(drawStart, -1);
   assert.notEqual(branchStart, -1);
@@ -146,7 +146,7 @@ test("Stickers surface draws the ordered Sky layers over the current image or vi
   assert.match(draw, /\["pano_input_videos"\]/);
   assert.match(draw, /ctx\.fillStyle = "#070707"/);
   assert.match(branch, /if \(!bgImg \|\| bgReady\) \{/);
-  assert.match(branch, /drawView\(rect, previewNodeCamera\(node\.__panoPreviewView, surfW, surfH\)\)/);
+  assert.match(branch, /drawView\(rect, previewNodeCamera\(surface\.view, surfW, surfH\)\)/);
   assert.match(branch, /if \(!bgImg && panoramaDrawn\) drawPanoGrid\(ctx, projection/);
   assert.match(branch, /drawStickerSelectionOverlay\(ctx, selected, projection\)/);
   assert.doesNotMatch(branch, /bg_color/);
@@ -214,9 +214,9 @@ test("a restored output is only shown, and only a run syncs the port Sticker int
   const show = runtime.slice(showStart, runtime.indexOf("\n}\n", showStart));
 
   assert.match(restore, /showOwnNodeOutput\(node, output\)/);
-  assert.doesNotMatch(restore + show, /runExternalStickerSync|commitState|state_json|__panoOutputFromRun/);
-  assert.match(runtime, /const onExecutedHook = function \(output\) \{\s*node\.__panoOutputFromRun = true;[\s\S]*?const shown = showOwnNodeOutput\(node, output\);[\s\S]*?runExternalStickerSync\(node, shown \? "executed" : "sync", output\);/);
-  assert.match(runtime, /if \(sceneItem\?\.external && node\.__panoOutputFromRun\) runExternalStickerSync\(node, "image-loaded"\);/);
+  assert.doesNotMatch(restore + show, /runExternalStickerSync|commitState|state_json|outputFromRun/);
+  assert.match(runtime, /const onExecutedHook = function \(output\) \{\s*media\.outputFromRun = true;[\s\S]*?const shown = showOwnNodeOutput\(node, output\);[\s\S]*?runExternalStickerSync\(node, shown \? "executed" : "sync", output\);/);
+  assert.match(runtime, /if \(sceneItem\?\.external && mediaCache\(node\)\.outputFromRun\) runExternalStickerSync\(node, "image-loaded"\);/);
 });
 
 // A run that takes the node (or its upstream LoadVideo) from ComfyUI's execution cache sends `executed`
@@ -231,7 +231,7 @@ test("an output that a cached run sends again leaves the node's media as it is",
 
   assert.match(show, /^function showOwnNodeOutput\(node, output\) \{\s*if \(isRepeatedOutput\(shownOwnOutputs, node, output\)\) return false;\s*syncOwnOutputSourceFromExecuted\(node, output\);\s*invalidatePreviewImageCaches\(node\);/);
   assert.match(show, /return true;$/);
-  assert.match(monitor, /if \(isRepeatedOutput\(node\.__panoExecutedOutputs \?\?= new Map\(\), executedId, detail\.output\)\) return;\s*panoPreviewLog\(node, "exec-refresh"/);
+  assert.match(monitor, /if \(isRepeatedOutput\(mediaCache\(node\)\.executedOutputs, executedId, detail\.output\)\) return;\s*panoPreviewLog\(node, "exec-refresh"/);
 
   // A run of a node the media is not read from (not the node, not up its image inputs) leaves the media.
   assert.doesNotMatch(runtime, /global_executed/);
@@ -250,7 +250,7 @@ test("the node's own output is read from app.nodeOutputs only, so a restored out
 test("surface teardown restores lifecycle hooks only while it still owns each wrapper", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const start = runtime.indexOf("  const restoreDom = () => {");
-  const end = runtime.indexOf("\n  node.__panoDomRestore = restoreDom;", start);
+  const end = runtime.indexOf("\n  surface.restore = restoreDom;", start);
   const body = runtime.slice(start, end);
 
   assert.match(body, /if \(node\.onResize === onResizeHook\) node\.onResize = onResizePrev/);
@@ -306,8 +306,8 @@ test("runtime advances and applies the public external media revision seam", asy
   const end = runtime.indexOf("\nfunction disposeNodeOutputVideoCache", start);
   const body = runtime.slice(start, end);
 
-  assert.match(body, /__panoOwnOutputRev\s*=\s*nextMediaRevision\(/);
-  assert.ok(body.indexOf("__panoOwnOutputRev") < body.indexOf("if (src)"));
+  assert.match(body, /media\.ownOutputRev\s*=\s*nextMediaRevision\(/);
+  assert.ok(body.indexOf("ownOutputRev") < body.indexOf("if (src)"));
   assert.match(runtime, /createSharedImageCache\(\)/);
   assert.match(runtime, /buildSharedImageCacheKey\(src, stateHash, revision\)/);
   assert.match(runtime, /sharedPreviewImageCache\.disposeOwner\(node\)/);
@@ -343,10 +343,10 @@ test("DOM teardown retains the mount record, unregisters widgets, and restores o
   const teardownEnd = runtime.indexOf("\nfunction ", teardownStart + 1);
   const teardown = runtime.slice(teardownStart, teardownEnd);
   const restoreStart = runtime.indexOf("  const restoreDom = () => {");
-  const restoreEnd = runtime.indexOf("\n  node.__panoDomRestore = restoreDom;", restoreStart);
+  const restoreEnd = runtime.indexOf("\n  surface.restore = restoreDom;", restoreStart);
   const restore = runtime.slice(restoreStart, restoreEnd);
 
-  assert.ok(teardown.indexOf("const dom = node.__panoDomPreview;") < teardown.indexOf("node.__panoDomRestore?.();"));
+  assert.ok(teardown.indexOf("const dom = surface.dom;") < teardown.indexOf("surface.restore?.();"));
   assert.match(teardown, /dom\.root\?\.remove\?\.\(\)/);
   assert.match(teardown, /if \(w === dom\?\.widget\) return true/);
   assert.match(teardown, /removable\.forEach\(\(widget\) => removeNodeWidget\(node, widget\)\)/);
@@ -359,7 +359,7 @@ test("DOM teardown retains the mount record, unregisters widgets, and restores o
 test("Stickers teardown commits an active gesture before destroying the surface session", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const restoreStart = runtime.indexOf("  const restoreDom = () => {");
-  const restoreEnd = runtime.indexOf("\n  node.__panoDomRestore = restoreDom;", restoreStart);
+  const restoreEnd = runtime.indexOf("\n  surface.restore = restoreDom;", restoreStart);
   const restore = runtime.slice(restoreStart, restoreEnd);
 
   assert.notEqual(restoreStart, -1);
@@ -490,7 +490,7 @@ test("the Stickers node surface shows one play button only when it can play", as
 test("node playback pauses for edits and the editor, follows the node, and is released with the surface", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const restoreStart = runtime.indexOf("  const restoreDom = () => {");
-  const restore = runtime.slice(restoreStart, runtime.indexOf("\n  node.__panoDomRestore = restoreDom;", restoreStart));
+  const restore = runtime.slice(restoreStart, runtime.indexOf("\n  surface.restore = restoreDom;", restoreStart));
   const keyStart = runtime.indexOf("  const onNodeSurfaceKeyDown = (ev) => {");
   const keyDown = runtime.slice(keyStart, runtime.indexOf("\n  };", keyStart));
 
@@ -504,8 +504,8 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   assert.match(runtime, /if \(action\?\.type === "toggle-playback"\) \{[\s\S]*?return;\s*\}\s*pauseSurfacePlayback\(\);\s*if \(action\?\.type === "open-editor"\)/);
   assert.match(runtime, /isStickerImageFile\(file\)\) return false;\s*pauseSurfacePlayback\(\);/);
   assert.match(keyDown, /pauseSurfacePlayback\(\);\s*flushNodeSurfaceGesture\(\);/);
-  // The node shows its playback's frame, which lives only on the node object; a grab pauses there.
-  assert.match(runtime, /return node\.__panoSurfacePlayback\?\.playback\.frame \?\? NODE_SURFACE_FRAME;/);
+  // The node shows its playback's frame, which lives only in the node's runtime record (pano_node_bridge.js); a grab pauses there.
+  assert.match(runtime, /return nodeSurface\(node\)\.playback\?\.playback\.frame \?\? NODE_SURFACE_FRAME;/);
   assert.match(runtime, /let picked = studioSurface \? null : pick\(\);\s*\/\/[^\n]*\n[^\n]*\n\s*if \(picked && surfacePlayback\?\.playback\.playing\) \{\s*pauseSurfacePlayback\(\);\s*picked = pick\(\);/);
   // Space stays ComfyUI's canvas pan.
   assert.doesNotMatch(keyDown, /" "|Space/);

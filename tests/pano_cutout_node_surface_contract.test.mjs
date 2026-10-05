@@ -159,7 +159,7 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   );
   assert.match(
     runtime,
-    /if \(lastShot\) \{[\s\S]*?buildCutoutPanoramaViewFromShot\(lastShot, \{[\s\S]*?width: surfW,[\s\S]*?height: surfH[\s\S]*?node\.__panoLastCutoutShot = null;[\s\S]*?else if \(!node\.__panoPreviewView\)/,
+    /if \(lastShot\) \{[\s\S]*?buildCutoutPanoramaViewFromShot\(lastShot, \{[\s\S]*?width: surfW,[\s\S]*?height: surfH[\s\S]*?surface\.lastCutoutShot = null;[\s\S]*?else if \(!surface\.view\)/,
   );
   assert.match(
     runtime,
@@ -167,7 +167,7 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   );
   assert.match(
     runtime,
-    /if \(!shot\)[\s\S]*?drawView\(rect, previewNodeCamera\(node\.__panoPreviewView, surfW, surfH\)\)/,
+    /if \(!shot\)[\s\S]*?drawView\(rect, previewNodeCamera\(surface\.view, surfW, surfH\)\)/,
   );
   assert.doesNotMatch(runtime, /Open editor and add frame/);
   assert.match(runtime, /const wheelTargets = stickersMode \? \[wrap, canvas\] : \[wrap\]/);
@@ -227,7 +227,7 @@ test("node surface owns teardown and keeps the Full Editor state barrier", async
 test("Cutout teardown cancels pointer drafts while retaining the wheel flush contract", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const restoreStart = runtime.indexOf("  const restoreDom = () => {");
-  const restoreEnd = runtime.indexOf("\n  node.__panoDomRestore = restoreDom;", restoreStart);
+  const restoreEnd = runtime.indexOf("\n  surface.restore = restoreDom;", restoreStart);
   const restore = runtime.slice(restoreStart, restoreEnd);
 
   assert.match(restore, /stickersMode\s*\?\s*flushNodeSurfaceGesture\(\)\s*:\s*cancelCutoutNodeSurfaceGesture\(\)/);
@@ -245,7 +245,7 @@ test("DOM preview camera frames do not repaint the host graph canvas", async () 
 
   assert.match(tick, /drawCanvas\(node, canvas, surfaceView, runBackground\)/);
   assert.doesNotMatch(tick, /node\.setDirtyCanvas/);
-  assert.match(runtime, /if \(mode === "cutout" && node\.__panoCutoutNodeSurfaceState !== state\)/);
+  assert.match(runtime, /if \(mode === "cutout" && surface\.cutoutState !== state\)/);
 });
 
 test("Cutout node surface loops the input ERP video and revisions each presented frame", async () => {
