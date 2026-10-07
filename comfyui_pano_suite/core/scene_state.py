@@ -536,6 +536,40 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
     })
 
 
+def rebase_upstream_record(record: dict, layer_state: dict) -> dict:
+    """Rescale the frames of a normalized `upstream` record from its `fps` to the layer's `timeline.fps`.
+
+    Clip ranges follow rebase_scene_state. A Sticker override's Keyframes are relative to its Clip range
+    origin (start - in): the overridden one when the override has a Clip range, else the layer Sticker's,
+    which the record's editor saw rebased to the record fps as rebase_scene_state rebases it. Keyframes an
+    editor at the layer fps or higher wrote back unchanged land on their layer frames exactly; from a lower
+    fps they keep the rounding to that fps.
+    """
+    rate = layer_state["timeline"]["fps"]
+    ratio = rate / record["fps"]
+
+    def rebase(frame):
+        return _frame(frame * ratio)
+
+    origins = {sticker["id"]: sticker["clip"]["start"] - sticker["clip"]["in"] for sticker in layer_state["stickers"]}
+    stickers = []
+    for override in record["stickers"]:
+        lanes = [lane for lane in (WORLD_STICKER_LANES if override["placement"] == "world" else SKY_STICKER_LANES) if lane[0] in override]
+        if "clip" in override:
+            clip = _rebase_clip(override["clip"], rebase)
+            stickers.append({**override, "clip": clip["clip"], **_rebase_lanes(override, lanes, rebase, clip["anchor"], clip["new_anchor"])})
+        else:
+            # An override of a Sticker the layer does not have is not applied; any origin will do.
+            origin = origins.get(override["id"], 0)
+            # The origin as rebase_scene_state put it at the record fps.
+            editor_origin = _frame(origin * (record["fps"] / rate))
+            stickers.append({**override, **_rebase_lanes(override, lanes, rebase, editor_origin, origin)})
+    scene = record["scene"]
+    if "clip" in scene:
+        scene = {**scene, "clip": _rebase_clip(scene["clip"], rebase)["clip"]}
+    return _upstream_record({**record, "fps": rate, "stickers": stickers, "scene": scene})
+
+
 def _v1_pose_number(value):
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return math.nan

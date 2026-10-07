@@ -1,0 +1,25 @@
+{
+  "layer": {
+    "version": 2,
+    "id": "scene_a",
+    "timeline": {"fps": 24},
+    "stickers": [
+      {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "a.png"}, "clip": {"start": 8, "in": 1}, "roll": {"value": 0}}
+    ]
+  },
+  "records": [
+    {
+      "layer": "scene_a",
+      "fps": 30,
+      "stickers": [{"id": "sticker_1", "placement": "sky", "roll": {"value": 0, "keyframes": [{"frame": 3, "value": 45}]}}]
+    }
+  ],
+  "expected": {
+    "version": 2,
+    "id": "scene_a",
+    "timeline": {"fps": 24},
+    "stickers": [
+      {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "a.png"}, "clip": {"start": 8, "in": 1}, "roll": {"value": 0, "keyframes": [{"frame": 3, "value": 45}]}}
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "layer": {
+    "version": 2,
+    "id": "scene_a",
+    "timeline": {"fps": 24},
+    "stickers": [
+      {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "a.png"}, "clip": {"start": 3}},
+      {"id": "sticker_2", "placement": "world", "source": {"kind": "file", "filename": "b.png"}, "clip": {"start": 8, "in": 1}}
+    ]
+  },
+  "records": [
+    {
+      "layer": "scene_a",
+      "fps": 30,
+      "stickers": [
+        {
+          "id": "sticker_1", "placement": "sky",
+          "clip": {"start": 10, "in": 4, "duration": 20},
+          "direction": {"value": {"yaw_deg": 5}, "keyframes": [{"frame": 0, "value": {"yaw_deg": 5}}, {"frame": 7, "value": {"yaw_deg": 50}, "easing": "hold"}]}
+        },
+        {
+          "id": "sticker_2", "placement": "world",
+          "rotation": {"value": {"yaw_deg": 0}, "keyframes": [{"frame": 1, "value": {"yaw_deg": 10}}, {"frame": 2, "value": {"yaw_deg": 20}}, {"frame": 15, "value": {"yaw_deg": 90}}]},
+          "position": {"value": [0, 0, -3], "keyframes": [{"frame": 30, "value": [0, 0, -3], "handles": {"in": [0.5, 0, 0]}}]}
+        }
+      ],
+      "scene": {"clip": {"start": 1, "duration": 1}}
+    }
+  ],
+  "expected": {
+    "version": 2,
+    "id": "scene_a",
+    "timeline": {"fps": 24},
+    "scene": {"clip": {"start": 1, "duration": 1}},
+    "stickers": [
+      {
+        "id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "a.png"},
+        "clip": {"start": 8, "in": 3, "duration": 16},
+        "direction": {"value": {"yaw_deg": 5}, "keyframes": [{"frame": 0, "value": {"yaw_deg": 5}}, {"frame": 5, "value": {"yaw_deg": 50}, "easing": "hold"}]}
+      },
+      {
+        "id": "sticker_2", "placement": "world", "source": {"kind": "file", "filename": "b.png"}, "clip": {"start": 8, "in": 1},
+        "rotation": {"value": {"yaw_deg": 0}, "keyframes": [{"frame": 1, "value": {"yaw_deg": 10}}, {"frame": 2, "value": {"yaw_deg": 20}}, {"frame": 12, "value": {"yaw_deg": 90}}]},
+        "position": {"value": [0, 0, -3], "keyframes": [{"frame": 24, "value": [0, 0, -3], "handles": {"in": [0.5, 0, 0]}}]}
+      }
+    ]
+  }
+}
