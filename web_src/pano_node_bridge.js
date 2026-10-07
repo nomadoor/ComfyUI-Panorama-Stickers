@@ -7,7 +7,7 @@
 // only LiteGraph's own fields.
 //
 // Groups and owners:
-// - editorSession: the open modal editor (pano_editor.js).
+// - editorSession: the open modal editor (pano_editor.js), and the view it was last closed with.
 // - nodeSurface:   the on-node surface of Stickers, Cutout and Panorama Studio (pano_preview_runtime.js),
 //                  and whether pano_editor_extension.js attached it.
 // - previewNode:   the Preview nodes' runtime (pano_preview_previewnode.js) and its install probe.
@@ -20,6 +20,8 @@ const GROUPS = {
   editorSession: () => ({
     // Writes the modal's state to state_json before the prompt is queued.
     flushBeforeQueue: null,
+    // The view the editor was closed with (pano_view_memory.js viewMemory), which the next opening restores.
+    view: null,
   }),
   nodeSurface: () => ({
     attached: false,

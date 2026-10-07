@@ -17,6 +17,7 @@ import {
   reuseWheelPick,
   zoomView,
 } from "../pano_space.js";
+import { keyMoveView } from "../pano_view_keys.js";
 import {
   FLOATING_RIGHT_RESERVED_PX,
   FRAME_GATE_EDGE_GAP_PX,
@@ -32,9 +33,12 @@ export function createFrameView(deps) {
   // Bound by connect() to the other modules and showEditor.
   let applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
     hasSpaceContent, hideTooltip, invalidateLivePaintPreviewCaches, pushHistory, requestDraw, shotViewCamera,
-    spaceScale, spaceViewState, syncViewToggleState, updateCursor, updateSidePanel;
+    spaceScale, spaceViewState, stopTimelinePlayback, syncViewToggleState, updateCursor, updateSidePanel;
 
   let frameWheel = null;
+  // The movement keys moved the Camera since they went down (moveFrameByKeys); endFrameKeyMove() makes it
+  // one Undo step.
+  let frameKeyMoved = false;
 
   // The Frame view ends while it shows Panorama Studio's shot (its Camera went, or shoots a 360-degree ERP,
   // #89): the panorama view looks where the shot looked, and in 6DoF stands where it stood, so the view does
@@ -293,6 +297,31 @@ export function createFrameView(deps) {
     requestDraw({ localOnly: true, cause: "frame_view" });
   }
 
+  // The movement keys (space.js stepKeyMove) move the Camera itself, as the drags here do: its shot moves
+  // `distance` toward `direction`, level whatever its pitch and roll, as in 6DoF. Only the position
+  // changes, so syncCutoutShot() writes the position Lane alone, by the recording rule. The first move
+  // stops playback, as a drag does. Returns whether it moved.
+  function moveFrameByKeys(direction, distance) {
+    const shot = getActiveCutoutShot();
+    if (!shot || readOnly || shot.locked === true) return false;
+    const moved = keyMoveView(shot, direction, distance);
+    if (moved === shot) return false;
+    stopTimelinePlayback();
+    shot.position = moved.position;
+    frameKeyMoved = true;
+    return true;
+  }
+
+  // The movement keys were all let go (keyboard.js): what they moved the Camera by is one Undo step.
+  function endFrameKeyMove() {
+    if (!frameKeyMoved) return false;
+    frameKeyMoved = false;
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    return true;
+  }
+
   function flushFrameWheelCommit() {
     if (editor.frameWheelCommitTimer) {
       window.clearTimeout(editor.frameWheelCommitTimer);
@@ -332,11 +361,12 @@ export function createFrameView(deps) {
       ({
         applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
         hasSpaceContent, hideTooltip, invalidateLivePaintPreviewCaches, pushHistory, requestDraw, shotViewCamera,
-        spaceScale, spaceViewState, syncViewToggleState, updateCursor, updateSidePanel,
+        spaceScale, spaceViewState, stopTimelinePlayback, syncViewToggleState, updateCursor, updateSidePanel,
       } = api);
     },
     leaveFrameView, measureFrameSafeRect, getFrameViewLayout, getFrameViewRect, supportsFramePainting,
     zoomFrameViewAt, isFreeFrameView, frameContext, frameViewDistance, frameSpaceView, frameTarget,
     startPanFrame, startFrameDrag, dragFrame, zoomFrameAt, flushFrameWheelCommit, cancelFrameCameraGesture,
+    moveFrameByKeys, endFrameKeyMove,
   };
 }

@@ -20,9 +20,9 @@ export function createRenderLoop(deps) {
   let applyViewTransitionEnd, drawCutoutOutputPreview, drawCutoutPanoPassepartout, drawFrameRollOverlay,
     drawFrameViewBackground, drawGridPano, drawGridUnwrap, drawLassoOutlineOverlay, drawObjects,
     endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
-    getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, playback, rebuildPaintEngineIfNeeded,
-    syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob, syncLookAtFrameButtonState,
-    syncViewToggleState, updateSelectionMenu, upstreamNotice;
+    getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
+    rebuildPaintEngineIfNeeded, stepKeyMove, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
+    syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice;
 
   // Removes the editor from the diagnostics samples (set when the render loop starts).
   let removeDiagnosticsSource = () => {};
@@ -178,9 +178,10 @@ export function createRenderLoop(deps) {
   }
 
   // Whether the next frame must run although nothing asked for it: something moves by itself or a fade
-  // has not reached its end. A drag keeps the frames going until it ends.
+  // has not reached its end. A drag, and a movement key held, keep the frames going until they end.
   function editorAnimating() {
     return !!editor.viewTransition
+      || moveKeys.held
       || !!viewController.state.inertia.active
       || runtime.pendingStableLayoutFrames > 0
       || Math.abs(Number(editor.frameRollOverlayAlpha || 0) - Number(editor.frameRollOverlayTarget || 0)) > 1e-6
@@ -304,6 +305,11 @@ export function createRenderLoop(deps) {
       runtime.dirty = true;
     }
 
+    if (stepKeyMove(ts)) {
+      runtime.backgroundDirty = true;
+      runtime.dirty = true;
+    }
+
     editor.viewInertia.vx = Number(viewController.state.inertia.vx || 0);
     editor.viewInertia.vy = Number(viewController.state.inertia.vy || 0);
     editor.viewInertia.active = !!viewController.state.inertia.active;
@@ -405,9 +411,9 @@ export function createRenderLoop(deps) {
         applyViewTransitionEnd, drawCutoutOutputPreview, drawCutoutPanoPassepartout, drawFrameRollOverlay,
         drawFrameViewBackground, drawGridPano, drawGridUnwrap, drawLassoOutlineOverlay, drawObjects,
         endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
-        getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, playback, rebuildPaintEngineIfNeeded,
-        syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob, syncLookAtFrameButtonState,
-        syncViewToggleState, updateSelectionMenu, upstreamNotice,
+        getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
+        rebuildPaintEngineIfNeeded, stepKeyMove, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
+        syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice,
       } = api);
     },
     requestDraw, syncCanvasSize, startAnimation, editorAnimating, tick, stageResizeObserver, watchPixelRatio,
