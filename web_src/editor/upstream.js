@@ -1,8 +1,9 @@
 // The upstream Scene on Panorama Studio's `scene` input (#90, ADR 0029, ADR 0030): its layers from the node's
 // current result, their working copies with the node's overrides applied (pano_upstream.js
-// upstreamWorkingLayers), what the views draw of them at the playhead (their Stickers' images, port media and
-// paint, at the same resolution as the node's own), and whether the editor waits for a run to show them. The
-// working copies never enter the state's Stickers, and nothing selects or picks them yet.
+// upstreamWorkingLayers), which the editor selects and edits like its own Stickers, the edits written back as
+// the node's overrides (syncUpstreamEdits), what the views draw of them at the playhead (their Stickers' images,
+// port media and paint, at the same resolution as the node's own), and whether the editor waits for a run to
+// show them. The working copies never enter the state's Stickers.
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { sourceAsset } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
@@ -13,6 +14,8 @@ import {
   PANO_SCENE_TYPE,
   UPSTREAM_BACKGROUND_WARNING,
   layerUiList,
+  upstreamBaseline,
+  upstreamEditedRecords,
   upstreamLayersOf,
   upstreamLayerView,
   upstreamPaintEntries,
@@ -34,6 +37,9 @@ export function createUpstream(deps) {
   // (`layer`), its working copy (`working`, upstreamWorkingLayers at the Timeline `fps`), and what shows its
   // media, made when first needed.
   let read = { list: null, entries: [], fps: null };
+  // The working copies' fields as the last write-back or rebuild left them (upstreamBaseline): an edit is what
+  // differs from them.
+  let baseline = new Map();
   // Sticker images by URL.
   const images = new Map();
 
@@ -92,6 +98,33 @@ export function createUpstream(deps) {
       entry.working = working[index];
     });
     read.fps = state.timeline.fps;
+    baseline = upstreamBaseline(working);
+  }
+
+  // Writes the edits of the working copies since the last write-back or rebuild into the state's `upstream`
+  // records (pano_upstream.js upstreamEditedRecords), in the frames of the working copies. Called where the
+  // editor writes its state: before each Undo step and each commit. Opening and closing without an edit writes
+  // nothing.
+  function syncUpstreamEdits() {
+    if (!read.list) return;
+    const working = read.entries.map((entry) => entry.working);
+    const records = upstreamEditedRecords(state.upstream, read.entries.map((entry) => entry.layer), working, baseline, read.fps);
+    if (records === state.upstream) return;
+    state.upstream = records;
+    baseline = upstreamBaseline(working);
+  }
+
+  // The working Stickers of the upstream layers, from the farthest upstream layer's to the nearest's, each
+  // layer's in its order; none without upstream layers.
+  function upstreamStickers() {
+    return (upstreamEntries() ?? []).flatMap((entry) => entry.working.sceneState.stickers);
+  }
+
+  // The first frame of the port media of a working Sticker's layer, which sizes its port Sticker as the
+  // editor's own port media sizes its own; null while there is none.
+  function upstreamStickerImage(sticker) {
+    const entry = read.entries.find((item) => item.working?.key === sticker.origin.layer);
+    return entry ? image(mediaSource(layerUiList(entry.layer.ui, EXTERNAL_STICKER_PREVIEW_KEY)[0] || null)) : null;
   }
 
   // The output's frame count while the upstream Scene shows (`pano_timeline_frames`: the longer of the upstream
@@ -258,6 +291,7 @@ export function createUpstream(deps) {
   function disposeUpstream() {
     read.entries.forEach(disposeEntry);
     read = { list: null, entries: [], fps: null };
+    baseline = new Map();
     images.clear();
   }
 
@@ -266,6 +300,6 @@ export function createUpstream(deps) {
       ({ getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw } = api);
     },
     upstreamEntries, upstreamLinked, upstreamNotice, upstreamSpanFrames, upstreamViewInput, rebuildUpstreamWorking,
-    disposeUpstream,
+    syncUpstreamEdits, upstreamStickers, upstreamStickerImage, disposeUpstream,
   };
 }

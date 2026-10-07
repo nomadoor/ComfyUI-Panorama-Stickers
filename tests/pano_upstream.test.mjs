@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { setStickerPose, setWorldStickerTransform } from "../web_src/pano_editor_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import {
   PANO_SCENE_TYPE,
+  isUpstreamSticker,
   upstreamBackgroundOf,
+  upstreamBaseline,
+  upstreamEditedRecords,
+  upstreamStickerEditable,
   upstreamLayerKeys,
   upstreamLayersOf,
   upstreamLayerView,
@@ -27,6 +32,11 @@ const source = (entry) => `/view?filename=${entry.filename}`;
 
 function layerOf(state, ui = {}) {
   return upstreamLayersOf([{ state: { version: 2, ...state }, ui }])[0];
+}
+
+// The working copy of a single upstream layer for an editor at 24 fps, without overrides.
+function workingOf(state, ui = {}) {
+  return upstreamWorkingLayers([layerOf(state, ui)], [], 24)[0];
 }
 
 test("the upstream layers are read from the result as loaded states with their media ui", () => {
@@ -80,8 +90,9 @@ test("the working copies apply the node's own record for each layer's Scene id, 
   const before = structuredClone({ layers, records });
   const working = upstreamWorkingLayers(layers, records, 24);
   assert.deepEqual(working.map((item) => item.key), ["scene_a", "#1", "scene_b"]);
-  assert.deepEqual(working[0].sceneState.stickers.map((item) => item.id), ["sticker_1"]);
-  assert.deepEqual(working[1].sceneState.stickers.map((item) => item.id), ["sticker_1"]);
+  // Each working Sticker has an id apart from the node's own and other layers', and its origin.
+  assert.deepEqual(working[0].sceneState.stickers.map((item) => item.id), ["upstream:scene_a:sticker_1"]);
+  assert.deepEqual(working[1].sceneState.stickers.map((item) => item.id), ["upstream:#1:sticker_1"]);
   const hidden = working[2].sceneState.stickers[1];
   assert.equal(hidden.visible, false);
   assert.equal(hidden.z_index, 7);
@@ -108,7 +119,7 @@ test("a record applies only to the nearest downstream of the layers with its Sce
 });
 
 test("upstream Sky layers keep their own order with their paint, are drawn opaque as the node draws them, and have ids apart from the node's", () => {
-  const layer = layerOf({
+  const layer = workingOf({
     stickers: [
       sky("front", { z_index: 5, opacity: { value: 0.8, keyframes: [] } }),
       sky("hidden", { z_index: 0, visible: false }),
@@ -118,17 +129,17 @@ test("upstream Sky layers keep their own order with their paint, are drawn opaqu
       world("plane"),
     ],
   });
-  const view = upstreamLayerView(layer, 2, 0, {
+  const view = upstreamLayerView(layer, layer.key, 0, {
     media: () => ({ media: image, revision: 1 }),
     paintLayers: [{ id: "paint_group:g", media: image, revision: "r", opacity: 1, zIndex: 3 }],
     source,
   });
   assert.deepEqual(view.sky.map((item) => [item.kind, item.id, item.opacity]), [
-    ["sticker", "upstream:2:back", 1],
-    ["erp", "upstream:2:paint_group:g", 1],
-    ["sticker", "upstream:2:front", 0.8],
+    ["sticker", "upstream:#0:back", 1],
+    ["erp", "upstream:#0:paint_group:g", 1],
+    ["sticker", "upstream:#0:front", 0.8],
   ]);
-  assert.deepEqual(view.stickers.map((item) => [item.id, item.opacity]), [["upstream:2:plane", 1]]);
+  assert.deepEqual(view.stickers.map((item) => [item.id, item.opacity]), [["upstream:#0:plane", 1]]);
 });
 
 test("upstream 3D content is asked for per layer and kind at its own opacity, and the Stickers it shows by", () => {
@@ -179,9 +190,8 @@ test("upstream layers are keyed by their Scene id, else their index, and a repea
   assert.deepEqual(upstreamLayerKeys([]), []);
 
   const ui = { pano_scene_files: [{ filename: "a.ply" }], pano_scene_meta: [{ kind: "splat" }] };
-  const layer = layerOf({ id: "Scene_id-1", stickers: [sky("s1"), world("w1")] }, ui);
-  const [key] = upstreamLayerKeys([layer]);
-  const view = upstreamLayerView(layer, key, 0, { media: () => ({ media: image, revision: 1 }), paintLayers: [], source });
+  const layer = workingOf({ id: "Scene_id-1", stickers: [sky("s1"), world("w1")] }, ui);
+  const view = upstreamLayerView(layer, layer.key, 0, { media: () => ({ media: image, revision: 1 }), paintLayers: [], source });
   assert.deepEqual(view.sky.map((item) => item.id), ["upstream:Scene_id-1:s1"]);
   assert.deepEqual(view.stickers.map((item) => item.id), ["upstream:Scene_id-1:w1"]);
   assert.deepEqual(view.items.map((item) => item.slot), ["Scene_id-1:scene"]);
@@ -228,4 +238,104 @@ test("the upstream background is the result's pano_upstream_ media with its cove
   });
   // A VIDEO alone is a background too; a coverage that is not 180 is 360.
   assert.equal(upstreamBackgroundOf(ui({ pano_upstream_input_videos: [{ filename: "bg.mp4" }] })).coverage, 360);
+});
+
+// ADR 0030 T8: the edits of the working copies are written back as the node's own overrides.
+const keyed = (frames) => ({ value: { yaw_deg: 0, pitch_deg: 0 }, keyframes: frames.map(([frame, yaw]) => ({ frame, value: { yaw_deg: yaw, pitch_deg: 0 } })) });
+
+function editing(layerStates, records = [], fps = 24) {
+  const layers = upstreamLayersOf(layerStates.map((state) => ({ state: { version: 2, ...state } })));
+  const { upstream } = loadSceneState({ version: 2, upstream: records });
+  const working = upstreamWorkingLayers(layers, upstream, fps);
+  let baseline = upstreamBaseline(working);
+  let current = upstream;
+  return {
+    layers,
+    working,
+    sticker: (layer, id) => working[layer].sceneState.stickers.find((item) => item.origin.id === id),
+    // Writes back as the editor does at an Undo step, and returns the records.
+    write() {
+      const next = upstreamEditedRecords(current, layers, working, baseline, fps);
+      if (next !== current) baseline = upstreamBaseline(working);
+      current = next;
+      return next;
+    },
+  };
+}
+
+test("an edit of one Lane writes that whole Lane into the layer's record at the editor's fps; the other Lanes stay inherited", () => {
+  const edit = editing([{ id: "scene_a", stickers: [sky("sticker_1", { direction: keyed([[0, 10], [12, 40]]), roll: { value: 15 } }), sky("sticker_2")] }]);
+  const sticker = edit.sticker(0, "sticker_1");
+  assert.equal(sticker.id, "upstream:scene_a:sticker_1");
+  assert.ok(isUpstreamSticker(sticker) && upstreamStickerEditable(sticker));
+  setStickerPose(sticker, 6, { yaw_deg: 30 });
+  const records = edit.write();
+  assert.deepEqual(records, [{
+    layer: "scene_a",
+    fps: 24,
+    deleted: [],
+    stickers: [{ id: "sticker_1", placement: "sky", direction: sticker.direction }],
+    scene: {},
+  }]);
+  // The whole Lane, with the Keyframes that came from upstream and the new one.
+  assert.deepEqual(records[0].stickers[0].direction.keyframes.map((key) => [key.frame, key.value.yaw_deg]), [[0, 10], [6, 30], [12, 40]]);
+  assert.notEqual(records[0].stickers[0].direction, sticker.direction);
+  // Nothing of the editor's own (origin, the working ids) is written.
+  assert.doesNotMatch(JSON.stringify(records), /origin|upstream:/);
+  // Applied again, the record gives the working copy as it is.
+  const again = upstreamWorkingLayers(edit.layers, records, 24);
+  assert.deepEqual(again[0].sceneState.stickers, edit.working[0].sceneState.stickers);
+});
+
+test("a second edit updates the same record, and nothing is written without an edit", () => {
+  const edit = editing([{ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2")] }]);
+  setStickerPose(edit.sticker(0, "sticker_1"), 0, { yaw_deg: 20 });
+  const first = edit.write();
+  assert.equal(edit.write(), first);
+  setStickerPose(edit.sticker(0, "sticker_1"), 0, { rot_deg: 5 });
+  setStickerPose(edit.sticker(0, "sticker_2"), 0, { hFOV_deg: 40 });
+  const second = edit.write();
+  assert.equal(second.length, 1);
+  assert.deepEqual(second[0].stickers.map((item) => [item.id, Object.keys(item)]), [
+    ["sticker_1", ["id", "placement", "direction", "roll"]],
+    ["sticker_2", ["id", "placement", "size"]],
+  ]);
+  assert.equal(second[0].stickers[0].direction.value.yaw_deg, 20);
+});
+
+test("Visible and Lock are written as overrides of an upstream element, a world one's Lanes too", () => {
+  const edit = editing([{ id: "scene_a", stickers: [sky("sticker_1"), world("sticker_2")] }]);
+  const skySticker = edit.sticker(0, "sticker_1");
+  skySticker.visible = false;
+  skySticker.locked = true;
+  setWorldStickerTransform(edit.sticker(0, "sticker_2"), 0, { position: [1, 2, -3] });
+  const [record] = edit.write();
+  assert.deepEqual(record.stickers, [
+    { id: "sticker_1", placement: "sky", visible: false, locked: true },
+    { id: "sticker_2", placement: "world", position: { value: [1, 2, -3], keyframes: [] } },
+  ]);
+});
+
+test("an element of a layer that is only inherited is not editable, and its edits are never written", () => {
+  const edit = editing([{ stickers: [sky("sticker_1")] }, { id: "dup", stickers: [sky("sticker_1")] }, { id: "dup", stickers: [sky("sticker_1")] }]);
+  assert.deepEqual(edit.working.map((layer) => [layer.key, upstreamStickerEditable(layer.sceneState.stickers[0])]), [["#0", false], ["#1", false], ["dup", true]]);
+  const records = edit.write();
+  edit.sticker(0, "sticker_1").visible = false;
+  edit.sticker(1, "sticker_1").visible = false;
+  assert.equal(edit.write(), records);
+});
+
+test("a record at another fps than the editor's is rebased to it when an edit is written in", () => {
+  // The layer at 30 fps, its record written at 30 fps; the editor now works at 24 fps.
+  const layer = { id: "scene_a", timeline: { fps: 30 }, stickers: [sky("sticker_1", { clip: { start: 15, in: 0 } })] };
+  const record = { layer: "scene_a", fps: 30, stickers: [{ id: "sticker_1", placement: "sky", direction: keyed([[0, 0], [30, 60]]) }] };
+  const edit = editing([layer], [record], 24);
+  setStickerPose(edit.sticker(0, "sticker_1"), 12, { rot_deg: 9 });
+  const [written] = edit.write();
+  assert.equal(written.fps, 24);
+  // 1 s after the Clip range's start is frame 24 at 24 fps.
+  assert.deepEqual(written.stickers[0].direction.keyframes.map((key) => key.frame), [0, 24]);
+  assert.deepEqual(written.stickers[0].roll, { value: 9, keyframes: [] });
+  const again = upstreamWorkingLayers(edit.layers, [written], 24);
+  assert.deepEqual(again[0].sceneState.stickers, edit.working[0].sceneState.stickers);
 });

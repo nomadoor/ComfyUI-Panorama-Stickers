@@ -21,11 +21,14 @@ import {
   frameViewButton,
   handoffRevertModel,
   patchUiButton,
+  upstreamInspectorModel,
+  upstreamOriginLabel,
   worldFieldRange,
 } from "../pano_editor_ui_state.js";
 import { clamp } from "../pano_math.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
 import { ownerTimed } from "../pano_timeline.js";
+import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
 import { shownSpaceMode } from "../pano_view_transition.js";
 import { EXTERNAL_STICKER_ID, PAINT_COLOR_SWATCHES, WORLD_MIN_SCALE } from "./constants.js";
 import { colorToCss, colorsApproximatelyEqual, formatParamValue, hsv01ToRgb, rgb01ToHsv } from "./helpers.js";
@@ -302,7 +305,7 @@ export function createPanels(deps) {
           // A hidden Sticker of state v2 is not selected.
           if (!item || (isSceneSticker(item) && !item.visible)) return;
           const baseLabel = sceneV2
-            ? sceneStickerLabel(item)
+            ? stickerLabel(item)
             : isExternalSticker(item)
               ? String(item.id || EXTERNAL_STICKER_ID)
               : String(state.assets?.[item.asset_id]?.name || item.asset_id || item.id);
@@ -318,7 +321,7 @@ export function createPanels(deps) {
         });
       }
       const currentId = inspectorSelected?.id || "";
-      const currentItem = worldInspected ? { label: sceneStickerLabel(worldInspected), icon: ICON.globe }
+      const currentItem = worldInspected ? { label: stickerLabel(worldInspected), icon: ICON.globe }
         : items.find((item) => item.id === currentId) || items[0];
       selectionPicker = {
         label: "Selection",
@@ -386,6 +389,7 @@ export function createPanels(deps) {
       if (sceneV2 && !shotInspected) pushParam("opacity", "Opacity", 0, 100, 1);
     }
 
+    const target = selectedItems.length > 1 ? null : worldInspected || inspectorSelected;
     uiState.sidePanel = buildEditorSidePanelModel({
       coverage: state.coverage,
       readOnly,
@@ -397,8 +401,23 @@ export function createPanels(deps) {
       notes,
       uiSettings: uiSettingsModel,
       normalizeCoverageValue,
-      handoff: selectedItems.length > 1 ? null : handoffRevertModel(portHandoffLanes(worldInspected || inspectorSelected), { enabled: enabled && !readOnly }),
+      // An upstream element's port Sticker is not the node's own, whose Pose handoff this is.
+      handoff: !target || isUpstreamSticker(target) ? null : handoffRevertModel(portHandoffLanes(target), { enabled: enabled && !readOnly }),
+      // Every Sticker of Panorama Studio has the rows, so selecting an upstream one does not move the panel.
+      upstream: studio && target && (target === worldInspected || isSceneSticker(target)) ? upstreamInspectorModel({
+        layer: isUpstreamSticker(target) ? target.origin.layer : null,
+        editable: isUpstreamSticker(target) && upstreamStickerEditable(target),
+        visible: target.visible,
+        locked: target.locked === true,
+        readOnly,
+      }) : null,
     });
+  }
+
+  // A Sticker's name in the inspector; an upstream element's tells where it comes from (ADR 0030).
+  function stickerLabel(sticker) {
+    const label = sceneStickerLabel(sticker);
+    return isUpstreamSticker(sticker) ? `${upstreamOriginLabel(sticker.origin.layer)} · ${label}` : label;
   }
 
   function syncUndoRedoButtons() {

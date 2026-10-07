@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, stickerParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, stickerParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, upstreamInspectorModel, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { keyedAt, setSegmentEasing } from "../web_src/pano_timeline.js";
@@ -481,3 +481,53 @@ test("a port Sticker's V FOV shows the value its media gives, disabled; its othe
   assert.match(panels, /if \(isSceneSticker\(inspectorSelected\) && !shotInspected\) params\.forEach\(\(param\) => \{ param\.enabled = param\.enabled && stickerParamEnabled\(param\.key, \{ port: isExternalSticker\(inspectorSelected\) \}\); \}\);/);
 });
 
+
+// ADR 0030 T8: a selected upstream element.
+test("an upstream element's menu keeps every button in place and leaves only Lock on, while its layer keeps overrides", () => {
+  const selected = { id: "upstream:scene_a:sticker_1", locked: false };
+  const menu = (upstream) => buildSelectionMenuModel({
+    type: "stickers",
+    selected,
+    selectedItems: [selected],
+    selectedKind: "image",
+    geom: { visible: true, corners: [{ x: 20, y: 20 }, { x: 80, y: 20 }, { x: 80, y: 60 }, { x: 20, y: 60 }] },
+    allLocked: false,
+    selectedLocked: false,
+    activeAspect: "1:1",
+    cutoutAspectOpen: false,
+    isExternalSticker: () => false,
+    isStickerHidden: () => false,
+    canRestoreSelectedToInitial: () => false,
+    iconSet: new Proxy({}, { get: (_, key) => String(key) }),
+    upstream,
+  });
+  const own = menu(null);
+  const editable = menu({ lockable: true });
+  assert.deepEqual(editable.items.map((item) => item.key), own.items.map((item) => item.key));
+  assert.deepEqual(editable.items.filter((item) => !item.disabled).map((item) => item.key), ["toggle-lock"]);
+  assert.deepEqual(menu({ lockable: false }).items.filter((item) => !item.disabled), []);
+});
+
+test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: an upstream one's switches, the own one's disabled", () => {
+  const rows = (model) => Object.keys(model).sort();
+  const upstream = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: false });
+  const own = upstreamInspectorModel({ layer: null, editable: false, visible: false, locked: true, readOnly: false });
+  const inherited = upstreamInspectorModel({ layer: "#1", editable: false, visible: true, locked: true, readOnly: false });
+  // The same rows for each, so selecting one after another does not move the panel.
+  assert.deepEqual(rows(own), rows(upstream));
+  assert.deepEqual(rows(inherited), rows(upstream));
+  assert.deepEqual(upstream, { origin: "Upstream · scene_a", note: "", visible: true, locked: false, disabled: false });
+  assert.deepEqual(own, { origin: "", note: "", visible: false, locked: true, disabled: true });
+  assert.equal(inherited.origin, "Upstream · #1 · inherited only");
+  assert.match(inherited.note, /^Inherited only/);
+  assert.equal(inherited.disabled, true);
+  assert.equal(upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: true }).disabled, true);
+  // The inspector gives the rows for any Sticker of Panorama Studio, own or upstream, sky or world; the panel
+  // always renders them and the origin's slot in the Transform title.
+  const editor = readEditorSource();
+  assert.match(editor, /upstream: studio && target && \(target === worldInspected \|\| isSceneSticker\(target\)\) \? upstreamInspectorModel\(\{\s*layer: isUpstreamSticker\(target\) \? target\.origin\.layer : null,/);
+  const panel = readFileSync(new URL("../web_src/components/PanoSidePanel.vue", import.meta.url), "utf8");
+  assert.match(panel, /<span class="meta">\{\{ model\.upstream\?\.origin \|\| "" \}\}<\/span>/);
+  const origin = readFileSync(new URL("../web_src/components/PanoUpstreamOrigin.vue", import.meta.url), "utf8");
+  assert.doesNotMatch(origin, /v-if="model\.note"/);
+});

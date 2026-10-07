@@ -29,14 +29,16 @@ export function createHistory(deps) {
   let clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
     markPaintStrokeVisualsDirty, playback, rebuildUpstreamWorking, releaseHiddenSelection, requestDraw,
     stopTimelinePlayback, storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff, syncUndoRedoButtons,
-    updateSidePanel;
+    syncUpstreamEdits, updateSidePanel;
 
   // A step keeps the state as the node keeps it: the port Sticker shown with the Pose handoff is its stored
-  // one (ADR 0030), shown again with the handoff of the moment when the step is restored.
+  // one (ADR 0030), shown again with the handoff of the moment when the step is restored, and the edits of the
+  // upstream elements are in its `upstream` records.
   function pushHistory() {
     if (readOnly) return;
     syncCutoutShot();
     syncPortHandoff();
+    syncUpstreamEdits();
     // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
     if (stateV2 && state.stickers.some(isUploadingSticker)) return;
     editor.historyController.commitActionGroup(historySnapshot(storedEditorState()));
@@ -55,7 +57,7 @@ export function createHistory(deps) {
     Object.assign(state, restored.state);
     syncCutoutShot(false);
     syncPortHandoff({ restored: true });
-    // The upstream working copies follow the restored overrides (ADR 0030).
+    // The upstream working copies follow the restored overrides (ADR 0030), and edits are found from them.
     if (stateV2) rebuildUpstreamWorking();
     // Undoing an fps change keeps the playhead's time in seconds.
     if (stateV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
@@ -89,7 +91,7 @@ export function createHistory(deps) {
         clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
         markPaintStrokeVisualsDirty, playback, rebuildUpstreamWorking, releaseHiddenSelection, requestDraw,
         stopTimelinePlayback, storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff, syncUndoRedoButtons,
-        updateSidePanel,
+        syncUpstreamEdits, updateSidePanel,
       } = api);
     },
     pushHistory, restoreHistory, getHistoryCapabilities,

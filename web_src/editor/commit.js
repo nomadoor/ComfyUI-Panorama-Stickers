@@ -14,7 +14,7 @@ export function createCommit(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let needsPaintingLayerSync, resolveEditorOutputPresetWidth, storedEditorState, syncCutoutShot, syncPaintingLayerAsync,
-    syncPortHandoff;
+    syncPortHandoff, syncUpstreamEdits;
 
   function apply() {
     if (readOnly) return;
@@ -31,6 +31,7 @@ export function createCommit(deps) {
     if (readOnly) return;
     syncCutoutShot();
     syncPortHandoff();
+    syncUpstreamEdits();
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
     if (!stateWidget) return;
@@ -82,7 +83,7 @@ export function createCommit(deps) {
     connect(api) {
       ({
         needsPaintingLayerSync, resolveEditorOutputPresetWidth, storedEditorState, syncCutoutShot, syncPaintingLayerAsync,
-        syncPortHandoff,
+        syncPortHandoff, syncUpstreamEdits,
       } = api);
     },
     apply, commitState, persistUiSettings, commitAndRefreshNode, triggerBackgroundPersistenceOnClose,

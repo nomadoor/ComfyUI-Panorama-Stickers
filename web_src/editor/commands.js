@@ -3,6 +3,7 @@
 import { deleteWorldSticker, duplicateSceneSticker, retainActiveCutoutShot, takeStickerId } from "../pano_editor_state.js";
 import { wrapYaw } from "../pano_math.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
+import { isUpstreamSticker } from "../pano_upstream.js";
 import { uid } from "./helpers.js";
 
 export function createCommands(deps) {
@@ -107,7 +108,7 @@ export function createCommands(deps) {
     if (readOnly) return;
     const selected = getSelected();
     if (!selected) return;
-    if (!isStickerItem(selected) || isExternalSticker(selected)) return;
+    if (!isStickerItem(selected) || isExternalSticker(selected) || isUpstreamSticker(selected)) return;
     // A Sticker whose image is still uploading has no file to copy yet.
     if (sceneV2 && isUploadingSticker(selected)) return;
     let copy;
@@ -135,7 +136,8 @@ export function createCommands(deps) {
   function deleteSelectedWorldSticker() {
     const sticker = selectedWorldSticker();
     if (!sticker) return false;
-    if (!worldStickerEditable(sticker)) return true;
+    // Deleting an upstream element is not done here yet (ADR 0030); Delete leaves it.
+    if (!worldStickerEditable(sticker) || isUpstreamSticker(sticker)) return true;
     stopTimelinePlayback();
     deleteWorldSticker(state, sticker.id);
     clearWorldSelection();
@@ -154,6 +156,8 @@ export function createCommands(deps) {
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected && selectedItems.length === 0) return;
+    // Deleting upstream elements is not done here yet (ADR 0030); Delete leaves them.
+    if (selectedItems.some(isUpstreamSticker)) return;
     if (selectedItems.some((item) => isItemLocked(item))) return;
     stopTimelinePlayback();
     if (selectedItems.length > 1) {

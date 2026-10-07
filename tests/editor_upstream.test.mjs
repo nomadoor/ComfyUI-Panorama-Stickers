@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createCommands } from "../web_src/editor/commands.js";
+import { createCommit } from "../web_src/editor/commit.js";
 import { createHistory, createEditorHistory } from "../web_src/editor/history.js";
+import { createHitTest } from "../web_src/editor/hit_test.js";
+import { createItems } from "../web_src/editor/items.js";
+import { createSelection } from "../web_src/editor/selection.js";
 import { createUpstream } from "../web_src/editor/upstream.js";
-import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { setStickerPose } from "../web_src/pano_editor_state.js";
+import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 
 // The browser parts the module makes: images (counted by URL), and the port VIDEO and its still.
 function browserStubs() {
@@ -376,4 +382,223 @@ test("a Timeline fps change makes the working copies again, and the same result 
   } finally {
     restore();
   }
+});
+
+// --- ADR 0030 T8: selecting and editing the upstream elements, written back as the node's overrides.
+
+const noop = () => {};
+
+// The editor's history over `state`, writing the upstream edits back at each step as the editor does.
+function editorHistory(state, upstream) {
+  const editor = { historyController: createEditorHistory(state), frame: 0 };
+  const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
+  history.connect({
+    clearWorldSelection: noop, commitState: upstream.syncUpstreamEdits, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
+    markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
+    rebuildUpstreamWorking: upstream.rebuildUpstreamWorking, releaseHiddenSelection: noop, requestDraw: noop,
+    stopTimelinePlayback: noop, storedEditorState: () => state, syncCutoutShot: noop, syncPaintUi: noop, syncPortHandoff: noop,
+    syncUndoRedoButtons: noop, syncUpstreamEdits: upstream.syncUpstreamEdits, updateSidePanel: noop,
+  });
+  return history;
+}
+
+test("an upstream edit is written back at its Undo step, and Undo and Redo bring back the records and the working copies", () => {
+  browserStubs();
+  try {
+    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 } }), active: {} };
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2")] })] };
+    upstream.upstreamViewInput();
+    const history = editorHistory(state, upstream);
+    const [edited] = upstream.upstreamStickers();
+    setStickerPose(edited, 0, { yaw_deg: 30 });
+    history.pushHistory();
+    assert.deepEqual(state.upstream, [{
+      layer: "scene_a", fps: 24, deleted: [], scene: {},
+      stickers: [{ id: "sticker_1", placement: "sky", direction: { value: { yaw_deg: 30, pitch_deg: 0 }, keyframes: [] } }],
+    }]);
+    // The upstream layer's own state and the node's own Stickers are not touched.
+    assert.equal(output.ui.pano_upstream_layers[0].state.stickers[0].direction, undefined);
+    assert.deepEqual(state.stickers, []);
+
+    history.restoreHistory(-1);
+    assert.deepEqual(state.upstream, []);
+    const [undone] = upstream.upstreamStickers();
+    assert.notEqual(undone, edited);
+    assert.equal(undone.direction.value.yaw_deg, 0);
+    // The baseline follows the restored working copies: nothing is written again.
+    upstream.syncUpstreamEdits();
+    assert.deepEqual(state.upstream, []);
+
+    history.restoreHistory(1);
+    assert.equal(state.upstream[0].stickers[0].direction.value.yaw_deg, 30);
+    assert.equal(upstream.upstreamStickers()[0].direction.value.yaw_deg, 30);
+    upstream.syncUpstreamEdits();
+    assert.equal(state.upstream.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("opening and closing over upstream layers writes nothing, also at another fps; an edit is written without the editor's fields", () => {
+  browserStubs();
+  try {
+    const saved = {
+      version: 2,
+      id: "scene_c",
+      timeline: { fps: 24 },
+      upstream: [{ layer: "scene_b", fps: 30, stickers: [{ id: "sticker_1", placement: "sky", roll: { value: 3, keyframes: [{ frame: 7, value: 9 }] } }] }],
+    };
+    const text = sceneStateText(loadSceneState(saved));
+    const state = { ...loadSceneState(text), active: {} };
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_b", timeline: { fps: 30 }, stickers: [sky("sticker_1", { clip: { start: 15, in: 0 } }), sky("sticker_2")] })] };
+    upstream.upstreamViewInput();
+    const widget = { value: text };
+    const commit = createCommit({ app: null, bgWidget: null, cameraV2: true, coverageWidget: null, node: { __panoSceneStateV2: true, properties: {} }, presetWidget: null, readOnly: false, state, stateWidget: widget });
+    commit.connect({
+      needsPaintingLayerSync: () => false, resolveEditorOutputPresetWidth: (value) => value, storedEditorState: () => state,
+      syncCutoutShot: noop, syncPaintingLayerAsync: noop, syncPortHandoff: noop, syncUpstreamEdits: upstream.syncUpstreamEdits,
+    });
+    commit.commitState();
+    assert.equal(widget.value, text);
+    // An edit: the record of the edited layer is rewritten at the editor's fps, without the editor's own fields.
+    upstream.upstreamStickers()[1].visible = false;
+    commit.commitState();
+    assert.notEqual(widget.value, text);
+    assert.doesNotMatch(widget.value, /origin|upstream:/);
+    const written = loadSceneState(widget.value).upstream;
+    assert.deepEqual(written.map((record) => [record.layer, record.fps]), [["scene_b", 24]]);
+    assert.deepEqual(written[0].stickers.map((item) => [item.id, Object.keys(item)]), [
+      ["sticker_1", ["id", "placement", "roll"]],
+      ["sticker_2", ["id", "placement", "visible"]],
+    ]);
+    // The record's Keyframe, 7 frames at 30 fps after the Clip range's origin, is at the editor's 24 fps now.
+    assert.deepEqual(written[0].stickers[0].roll.keyframes.map((key) => key.frame), [6]);
+  } finally {
+    restore();
+  }
+});
+
+// The editor's items and selection over the upstream module of setup(): the modules that find items by id.
+function editorItems(state, upstream, editor = { frame: 0 }) {
+  const items = createItems({ canvas: {}, editor, sceneV2: true, state, stateV2: true, type: "stickers" });
+  const selection = createSelection({ editor, readOnly: false, runtime: {}, sceneV2: true, shotEditor: true, state, timeline: {}, type: "stickers" });
+  items.connect({ upstreamStickers: upstream.upstreamStickers, upstreamStickerImage: upstream.upstreamStickerImage });
+  selection.connect({
+    ...items,
+    getStrokeGroupItem: () => null,
+    getRasterObjectItem: () => null,
+    isStrokeGroupItem: () => false,
+    isRasterObjectItem: () => false,
+    pushHistory: noop,
+    commitAndRefreshNode: noop,
+    updateSelectionMenu: noop,
+    updateSidePanel: noop,
+    requestDraw: noop,
+  });
+  return { ...items, ...selection };
+}
+
+test("the upstream elements are found by their ids where the editor's own are: selection, world selection, inspector and lock", () => {
+  browserStubs();
+  try {
+    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 }, stickers: [sky("sticker_1")] }), active: {} };
+    const { output, upstream } = setup(state);
+    const plane = { id: "sticker_3", placement: "world", source: { kind: "file", filename: "w.png" } };
+    output.ui = {
+      pano_upstream_layers: [
+        layer({ id: "scene_a", stickers: [sky("sticker_1", { z_index: 2 }), sky("sticker_2", { z_index: 1 }), plane] }),
+        // Locked upstream: only inherited, it is not unlocked here.
+        layer({ stickers: [sky("sticker_1", { locked: true })] }),
+      ],
+    };
+    const editor = { frame: 0, selectedId: "upstream:scene_a:sticker_1", worldSelectedId: "upstream:scene_a:sticker_3" };
+    const found = editorItems(state, upstream, editor);
+    // The canvas's lists: the node's own first, then the upstream sky Stickers from back to front.
+    assert.deepEqual(found.getCutoutSelectableItems().map((item) => item.id), [
+      "sticker_1", "upstream:scene_a:sticker_2", "upstream:scene_a:sticker_1", "upstream:#1:sticker_1",
+    ]);
+    assert.deepEqual(found.getList().map((item) => item.id), found.getCutoutSelectableItems().map((item) => item.id));
+    const selected = found.getSelected();
+    assert.equal(selected, upstream.upstreamStickers()[0]);
+    assert.equal(found.isStickerItem(selected) && found.isSceneSticker(selected), true);
+    assert.equal(found.selectedWorldSticker(), upstream.upstreamStickers()[2]);
+    assert.equal(found.stickerById("sticker_1"), state.stickers[0]);
+    // The pose the inspector and the canvas read, and write, is the working Sticker's.
+    found.writePose(selected, { yaw_deg: 25 });
+    assert.equal(found.poseOf(selected).yaw_deg, 25);
+    assert.equal(state.stickers[0].direction.value.yaw_deg, 0);
+    // Editable, and lockable, while its layer keeps overrides; a layer without a Scene id is only inherited.
+    assert.equal(found.isItemLocked(selected), false);
+    assert.equal(found.worldStickerEditable(found.selectedWorldSticker()), true);
+    const inherited = upstream.upstreamStickers()[3];
+    assert.equal(found.isItemLocked(inherited), true);
+    editor.selectedIds = [inherited.id];
+    found.toggleSelectedLock();
+    assert.equal(inherited.locked, true);
+    editor.selectedIds = [selected.id];
+    found.toggleSelectedLock();
+    assert.equal(selected.locked, true);
+    assert.equal(found.isItemLocked(selected), true);
+    // Selecting an upstream element keeps its working id out of the node's properties.
+    found.setSelectedItem(state.stickers[0]);
+    assert.equal(state.active.selected_sticker_id, "sticker_1");
+    found.setSelectedItem(selected);
+    assert.equal(editor.selectedId, selected.id);
+    assert.equal(state.active.selected_sticker_id, null);
+    found.setSelectedItems([state.stickers[0], selected], selected.id);
+    assert.equal(state.active.selected_sticker_id, null);
+    found.setSelectedItems([selected, state.stickers[0]], "sticker_1");
+    assert.equal(state.active.selected_sticker_id, "sticker_1");
+  } finally {
+    restore();
+  }
+});
+
+test("Delete leaves an upstream element, sky or world, and changes nothing", () => {
+  browserStubs();
+  try {
+    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 }, stickers: [sky("sticker_1")] }), active: {} };
+    const before = structuredClone(state);
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), { id: "sticker_2", placement: "world", source: { kind: "file", filename: "w.png" } }] })] };
+    const editor = { frame: 0, selectedId: "upstream:scene_a:sticker_1", selectedIds: ["upstream:scene_a:sticker_1"], worldSelectedId: "upstream:scene_a:sticker_2" };
+    const found = editorItems(state, upstream, editor);
+    let steps = 0;
+    const commands = createCommands({ editor, readOnly: false, sceneV2: true, state, studio: true, type: "stickers", uiState: {} });
+    commands.connect({ ...found, pushHistory: () => { steps += 1; }, stopTimelinePlayback: () => { steps += 1; } });
+    assert.equal(commands.deleteSelectedWorldSticker(), true);
+    commands.deleteSelected();
+    commands.duplicateSelected();
+    assert.equal(steps, 0);
+    assert.deepEqual(state, before);
+    assert.equal(upstream.upstreamStickers().length, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("the upstream sky Stickers are hit under the node's own items and over its Camera, the front one first", () => {
+  const square = (x0, y0, x1, y1) => ({ visible: true, corners: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }] });
+  const own = { id: "sticker_1" };
+  const back = { id: "upstream:a:sticker_1", origin: { layer: "a", id: "sticker_1" } };
+  const front = { id: "upstream:b:sticker_1", origin: { layer: "b", id: "sticker_1" } };
+  const camera = { id: "camera" };
+  const geoms = new Map([[own, square(0, 0, 10, 10)], [back, square(5, 5, 30, 30)], [front, square(20, 20, 40, 40)], [camera, square(0, 0, 100, 100)]]);
+  const hit = createHitTest({ editor: { mode: "pano" }, readOnly: false, shotEditor: true, type: "stickers" });
+  hit.connect({
+    getOrderedDisplayListObjects: () => [{ type: "sticker", z_index: 0, item: own }],
+    getCutoutSelectableItemsForHit: () => [own, camera],
+    upstreamSkyStickers: () => [back, front],
+    isShotItem: (item) => item === camera,
+    isStrokeGroupItem: () => false,
+    isRasterObjectItem: () => false,
+    objectGeom: (item) => geoms.get(item),
+  });
+  const at = (x, y) => hit.hitObjectAt({ x, y })?.item ?? null;
+  assert.equal(at(7, 7), own);
+  assert.equal(at(12, 12), back);
+  assert.equal(at(25, 25), front);
+  assert.equal(at(60, 60), camera);
 });

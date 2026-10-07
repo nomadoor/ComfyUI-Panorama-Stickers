@@ -9,6 +9,7 @@ import {
 } from "../pano_editor_ui_state.js";
 import { clamp } from "../pano_math.js";
 import { gizmoScreenBox, planeCorners, projectPoint } from "../pano_space.js";
+import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
 
 export function createSelectionMenu(deps) {
   const {
@@ -64,8 +65,16 @@ export function createSelectionMenu(deps) {
       iconSet: ICON,
       cameraShot: cameraV2,
       coverage: state.coverage,
+      upstream: upstreamSelection(selectedItems),
     });
     showSelectionMenu(model);
+  }
+
+  // What the menu may do with upstream elements in the selection (ADR 0030): null without any, else whether
+  // they can be locked and unlocked (their layers keep overrides).
+  function upstreamSelection(selectedItems) {
+    const upstream = selectedItems.filter(isUpstreamSticker);
+    return upstream.length ? { lockable: upstream.every(upstreamStickerEditable) } : null;
   }
 
   // The selected world Sticker's menu shows while its gizmo does (worldGizmo: in the space view, not
@@ -75,7 +84,7 @@ export function createSelectionMenu(deps) {
     const space = isSpaceView() && !editor.interaction ? editorViewInput().space : null;
     if (!space?.gizmo) return { visible: false };
     const camera = currentSpaceCamera();
-    const plane = space.stickers.find((layer) => layer.id === editor.worldSelectedId);
+    const plane = [...space.stickers, ...space.upstreamStickers].find((layer) => layer.id === editor.worldSelectedId);
     const points = plane ? planeCorners(plane) : [space.gizmo.transform.position];
     const corners = points.map((point) => projectPoint(camera, point, canvas.width, canvas.height)).filter(Boolean);
     const gizmoBox = gizmoScreenBox(camera, space.gizmo.transform.position, space.gizmo.mode, canvas.width, canvas.height);

@@ -214,6 +214,28 @@ export function handoffRevertModel(lanes, { enabled = true } = {}) {
   return { lanes: lanes.map(({ name, overridden }) => ({ name, label: HANDOFF_LANE_LABELS[name], disabled: !enabled || !overridden })) };
 }
 
+// Where a selected upstream element comes from (ADR 0030): the key of its layer, the Scene id of the upstream
+// Panorama Studio or `#<n>` for a layer without one (pano_upstream.js upstreamLayerKeys).
+export function upstreamOriginLabel(layer) {
+  return `Upstream · ${layer}`;
+}
+
+// The inspector's Visible and Lock rows of a selected Panorama Studio Sticker (PanoUpstreamOrigin.vue), shown for
+// every Sticker so the panel keeps its layout. For an upstream element (`layer`, its layer's key) they are its
+// switches, with where it comes from; an element of a layer that is only inherited (not `editable`) has them
+// disabled and says so. For the node's own Sticker (`layer` null) they show its values, disabled: its eye and
+// lock are on its Timeline row.
+export function upstreamInspectorModel({ layer, editable, visible, locked, readOnly }) {
+  const inherited = layer !== null && !editable;
+  return {
+    origin: layer === null ? "" : `${upstreamOriginLabel(layer)}${inherited ? " · inherited only" : ""}`,
+    note: inherited ? "Inherited only: edits of this upstream scene cannot be kept here. Edit it in its own Panorama Studio." : "",
+    visible,
+    locked,
+    disabled: layer === null || readOnly || !editable,
+  };
+}
+
 export function buildEditorSidePanelModel({
   coverage,
   readOnly,
@@ -226,6 +248,7 @@ export function buildEditorSidePanelModel({
   uiSettings,
   normalizeCoverageValue,
   handoff = null,
+  upstream = null,
 }) {
   return {
     coverage: { value: normalizeCoverageValue(coverage), disabled: !!readOnly },
@@ -239,6 +262,7 @@ export function buildEditorSidePanelModel({
     rows: inspectorRows(params),
     notes,
     handoff,
+    upstream,
     paramsDisabled: !enabled,
     uiSettings: readOnly ? null : uiSettings,
     footerButtons: [
@@ -267,6 +291,9 @@ export function buildSelectionMenuModel({
   // the 360° preset.
   cameraShot = false,
   coverage = 360,
+  // Upstream elements in the selection (ADR 0030): null, or { lockable }. Only Lock acts on them, while their
+  // layer keeps overrides; the other buttons stay in place, disabled.
+  upstream = null,
 }) {
   if (!geom?.visible) return { visible: false, left: 0, top: 0, items: [] };
 
@@ -337,6 +364,9 @@ export function buildSelectionMenuModel({
     } else {
       items.push({ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete });
     }
+  }
+  if (upstream) {
+    items = items.map((item) => ({ ...item, disabled: item.key === "toggle-lock" ? !upstream.lockable : true }));
   }
 
   return selectionMenuAt(geom.corners, items);
