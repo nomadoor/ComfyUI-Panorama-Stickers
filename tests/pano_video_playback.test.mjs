@@ -156,7 +156,7 @@ function setup({ video = new FakeVideo(), span = 72, loop = true, source = true 
     video,
     clock,
     fps: () => FPS,
-    span: () => span,
+    span: () => (typeof span === "function" ? span() : span),
     loop: () => loop,
     onFrame: (frame) => {
       log.frames.push(frame);
@@ -566,5 +566,30 @@ test("dispose removes every listener and callback", () => {
   playback.dispose();
   assert.equal(video.listeners, 0);
   assert.equal(video.frameCallbacks.size, 0);
+  assert.equal(clock.callbacks.size, 0);
+});
+
+test("the playhead stays on the Timeline, and a Timeline of one frame does not play", () => {
+  const { playback } = setup({ span: 10, source: false });
+  playback.seek(25);
+  assert.equal(playback.frame, 9, "a seek past the end stops on the last frame");
+  const still = setup({ span: 1, source: false });
+  still.playback.play();
+  assert.equal(still.playback.playing, false);
+  assert.equal(still.clock.callbacks.size, 0);
+  still.playback.seek(5);
+  assert.equal(still.playback.frame, 0);
+});
+
+test("a Timeline cut to one frame while it plays stops on frame 0 instead of starting over", () => {
+  let span = 10;
+  const { playback, clock } = setup({ span: () => span, source: false });
+  playback.play();
+  clock.framesAhead(3);
+  assert.equal(playback.playing, true);
+  span = 1;
+  clock.framesAhead(1);
+  assert.equal(playback.playing, false);
+  assert.equal(playback.frame, 0);
   assert.equal(clock.callbacks.size, 0);
 });

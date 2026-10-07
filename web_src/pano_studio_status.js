@@ -1,7 +1,7 @@
 // What Panorama Studio's node surface shows before a run: what the node shoots and the output size, by the
 // rule `_studio_output_size` (nodes.py) runs (ADR 0029). tests/test_studio_status_parity.py holds the two together.
 import { evaluateCamera } from "./pano_scene_eval.js";
-import { CAMERA_LANES } from "./pano_scene_state.js";
+import { BROKEN_SPAN, timelineSpan } from "./pano_timeline.js";
 import { rotationToQuaternion, worldRotation } from "./pano_world.js";
 
 export const STUDIO_DEFAULT_ERP_WIDTH = 2048;
@@ -16,20 +16,12 @@ function studioCamera(state) {
 }
 
 // The Timeline frames the run evaluates for a state without media (`_decide_timeline` without a VIDEO, an
-// IMAGE batch, port media or an upstream Scene): `timeline.length`, else the latest Clip end, else the
-// Camera's latest Keyframe, else one frame. Media that the run reads can make the Timeline longer or shorter.
+// IMAGE batch, port media or an upstream Scene: pano_timeline.js timelineSpan). Media that the run reads can
+// make the Timeline longer or shorter. A broken length (not a finite number) gives no frames, rather than
+// BROKEN_SPAN of them to evaluate.
 export function studioTimelineFrames(state) {
-  const clipEnds = [state.scene.clip, ...state.stickers.map((sticker) => sticker.clip)]
-    .filter((clip) => clip.duration !== null)
-    .map((clip) => clip.start + clip.duration);
-  const keys = state.camera
-    ? CAMERA_LANES.flatMap(([name]) => state.camera[name].keyframes.map((key) => key.frame))
-    : [];
-  let length = 1;
-  if (state.timeline.length) length = Math.max(1, round(state.timeline.length));
-  else if (clipEnds.length) length = Math.max(1, round(Math.max(...clipEnds)));
-  else if (keys.length) length = Math.max(1, round(Math.max(...keys)) + 1);
-  return Array.from({ length }, (_, frame) => frame);
+  const span = timelineSpan(state, { camera: true });
+  return span === BROKEN_SPAN ? [] : Array.from({ length: span }, (_, frame) => frame);
 }
 
 // The output { width, height }, with `reducedFrom` (the size before the longest side was capped, or null)

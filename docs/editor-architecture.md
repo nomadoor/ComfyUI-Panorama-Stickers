@@ -88,7 +88,7 @@ export function createHistory(deps) {
 | `editor/helpers.js` | 243 | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
 | `editor/ui_settings.js` | 77 | localStorage の設定（視点の反転、ノードごとのグリッド） |
 | `editor/video_thumbnail_cache.js` | 32 | VIDEO のサムネイルのキャッシュ（直近 12 本） |
-| `editor/media_session.js` | 752 | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
+| `editor/media_session.js` | 758 | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
 | `editor/history.js` | 101 | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。段を積む前に上流の編集を書き戻させ（`syncUpstreamEdits`）、上流で消えた要素の上書きを捨てさせ（`pruneUpstreamRecords`。開いたときの最初の段 `pushHistory({ initial: true })` では捨てない）、戻した状態に合わせて上流の作業コピーを作り直させる（`rebuildUpstreamWorking`） |
 | `editor/items.js` | 688 | Sticker（上流の作業コピーの Sticker を含む。`stickerById`・`upstreamSkyStickers`）、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
 | `editor/selection.js` | 464 | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
@@ -99,13 +99,13 @@ export function createHistory(deps) {
 | `editor/external_stickers.js` | 242 | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
 | `editor/space.js` | 340 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作（キーの移動 `stepKeyMove`）、閉じたときの視点の記憶と復元（`saveView`・`restoreView`） |
 | `editor/view_input.js` | 269 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
-| `editor/upstream.js` | 410 | Panorama Studio の上流の Scene（#90、ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`、`upstreamStickers`）、その編集の上書きへの書き戻し（`syncUpstreamEdits`）、タイムラインの行（`upstreamTimelineLayers`・`upstreamTimelineOwners`・`upstreamRow`）と範囲（`upstreamSpanFrames`）、消す・上流に戻す・消したものを戻す・上書きの掃除（`deleteUpstreamStickers`・`revertUpstreamSticker`・`revertUpstreamLayer`・`restoreUpstreamDeleted`・`pruneUpstreamRecords`）、その素材とペイント、実行待ちの表示 |
+| `editor/upstream.js` | 406 | Panorama Studio の上流の Scene（#90、ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`、`upstreamStickers`）、その編集の上書きへの書き戻し（`syncUpstreamEdits`）、タイムラインの行（`upstreamTimelineLayers`・`upstreamRow`）と Auto の長さに入る上流の長さ（`upstreamOutput`・`upstreamPortMeta`）、消す・上流に戻す・消したものを戻す・上書きの掃除（`deleteUpstreamStickers`・`revertUpstreamSticker`・`revertUpstreamLayer`・`restoreUpstreamDeleted`・`pruneUpstreamRecords`）、その素材とペイント、実行待ちの表示 |
 | `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
 | `editor/overlay.js` | 602 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
 | `editor/render_loop.js` | 422 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
-| `editor/panels.js` | 444 | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
-| `editor/timeline.js` | 221 | Timeline のモデル（上流の層の行を含む）、再生位置と再生、owner と Lane（`timelineOwner`・`timelineEditable`・`rowEditable`）、fps |
-| `editor/timeline_actions.js` | 242 | `onTimelineAction`（上流の層の行も同じ操作で作業コピーを変える。層の見出しの Revert・Restore deleted） |
+| `editor/panels.js` | 443 | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
+| `editor/timeline.js` | 235 | Timeline のモデル（上流の層の行を含む）、範囲（出力の長さ、`timelineSpanFrames`）、再生位置と再生、owner と Lane（`timelineOwner`・`timelineEditable`・`rowEditable`）、fps |
+| `editor/timeline_actions.js` | 252 | `onTimelineAction`（上流の層の行も同じ操作で作業コピーを変える。層の見出しの Revert・Restore deleted） |
 | `editor/commit.js` | 92 | 状態の widget への書き戻し、ノードのプレビューの更新 |
 | `editor/commands.js` | 320 | 全消去、複製、削除（上流の要素は上書きの消した記録に）と確認、上流の層の Restore deleted と Revert（`restoreUpstreamDeletedCommand`・`revertUpstreamLayerCommand`） |
 | `editor/sticker_import.js` | 430 | 画像の追加・置き換え・アップロード、drop |
@@ -115,7 +115,7 @@ export function createHistory(deps) {
 | `editor/hit_test.js` | 278 | ポインターの下の品目（上流の `sky` の Sticker は自分のものの後）、選択の矩形、カーソル |
 | `editor/selection_menu.js` | 200 | 選択メニューとツールチップ |
 | `editor/pointer_input.js` | 1,185 | キャンバスのポインターとホイール |
-| `editor/side_panel_events.js` | 253 | サイドパネルのクリック・入力・変更 |
+| `editor/side_panel_events.js` | 234 | サイドパネルのクリック・入力・変更 |
 | `editor/modal_events.js` | 553 | モーダルのボタン、色の選択、VIDEO のトランスポート、全画面 |
 | `editor/keyboard.js` | 193 | Escape、Delete、Space、6DoF と Frame 表示の移動のキー（WASD / QE、`moveKeys`）、修飾キー、Undo / Redo |
 

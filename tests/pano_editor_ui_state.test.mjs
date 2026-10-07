@@ -211,6 +211,31 @@ test("the Timeline bar shows the Timeline fps, locked when a video sets it, and 
   assert.deepEqual([locked.fpsLocked, locked.length], [true, null]);
 });
 
+test("a port Sticker's bar without a duration ends with its media, and a one-frame Timeline does not play", () => {
+  const state = loadSceneState({ version: 2, stickers: [
+    { id: "p", source: { kind: "port" }, clip: { start: 6, in: 2 } },
+    { id: "f", source: { kind: "file", filename: "a.png" }, clip: { start: 3, in: 0 } },
+    { id: "d", source: { kind: "file", filename: "b.png" }, clip: { start: 1, in: 0, duration: 4 } },
+  ] });
+  const options = { span: 120, selection: null, selectedId: null, expanded: true, openRows: new Set() };
+  const ends = (model) => Object.fromEntries(model.rows.map((row) => [row.id, row.clip.end]));
+  // portBarEnd gives where a port Sticker's media ends (editor/timeline.js), null while it is not known.
+  const portBarEnd = (sticker) => (sticker.source.kind === "port" && sticker.clip.duration === null ? 40 : null);
+  assert.deepEqual(ends(buildTimelineModel(state, { ...options, portBarEnd })), { p: 40, f: null, d: 5 });
+  assert.deepEqual(ends(buildTimelineModel(state, options)), { p: null, f: null, d: 5 }, "a media end not known yet: the Timeline's end");
+  assert.equal(buildTimelineModel(state, options).playable, true);
+  assert.equal(buildTimelineModel(state, { ...options, span: 1 }).playable, false);
+  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(timeline, /class="pano-btn pano-btn-icon pano-timeline-play"\s*type="button"\s*:disabled="!model\.playable"/);
+  // The length field shows the Auto length in its placeholder: the same field, so nothing moves.
+  assert.match(timeline, /const autoText = computed\(\(\) => `Auto \(\$\{span\.value\}\)`\);/);
+  assert.match(timeline, /:placeholder="autoText" :value="model\.length \?\? ''"/);
+  // What lies past the output's end is not on the Timeline: no pins, Clip ranges cut at the end.
+  assert.match(timeline, /const shown = keys\.filter\(\(key\) => key\.frame < span\.value\);/);
+  assert.match(timeline, /v-if="row\.clip && row\.clip\.start < span"/);
+  assert.match(timeline, /Math\.min\(clip\.end, span\.value\)/);
+});
+
 test("a world Sticker's position and scale sliders reach past any value, which has no limit", () => {
   assert.equal(worldFieldRange(0), 100);
   assert.equal(worldFieldRange(-100), 100);
@@ -532,12 +557,12 @@ test("an upstream port Sticker's menu has Delete (ADR 0030), the node's own port
   assert.equal(menu({ editable: true }, true).items.find((item) => item.key === "delete").disabled, true);
 });
 
-test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: an upstream one's switches, the own one's disabled", () => {
+test("every Panorama Studio Sticker has the same inspector rows, Revert to upstream without Visible and Lock: an upstream one's buttons, the own one's disabled", () => {
   const rows = (model) => Object.keys(model).sort();
   const override = { id: "sticker_1", placement: "sky", visible: true, roll: { value: 3, keyframes: [] } };
-  const upstream = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: false, placement: "sky", override });
-  const own = upstreamInspectorModel({ layer: null, editable: false, visible: false, locked: true, readOnly: false, placement: "world" });
-  const inherited = upstreamInspectorModel({ layer: "#1", editable: false, visible: true, locked: true, readOnly: false, placement: "sky" });
+  const upstream = upstreamInspectorModel({ layer: "scene_a", editable: true, locked: false, readOnly: false, placement: "sky", override });
+  const own = upstreamInspectorModel({ layer: null, editable: false, locked: true, readOnly: false, placement: "world" });
+  const inherited = upstreamInspectorModel({ layer: "#1", editable: false, locked: true, readOnly: false, placement: "sky" });
   // The same rows for each, so selecting one after another does not move the panel.
   assert.deepEqual(rows(own), rows(upstream));
   assert.deepEqual(rows(inherited), rows(upstream));
@@ -545,9 +570,6 @@ test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: a
   assert.deepEqual(upstream, {
     origin: "Upstream · scene_a",
     note: "",
-    visible: true,
-    locked: false,
-    disabled: false,
     revertAll: { disabled: false },
     lanes: [
       { name: "direction", label: "Direction", action: "revert-upstream", disabled: true },
@@ -557,26 +579,25 @@ test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: a
     ],
   });
   // The own Sticker's rows are there with its placement's Lanes, all disabled.
-  assert.equal(own.disabled, true);
   assert.deepEqual(own.lanes.map((lane) => [lane.label, lane.disabled]), [["Position", true], ["Rotation", true], ["Scale", true], ["Opacity", true]]);
   assert.equal(own.revertAll.disabled, true);
   assert.equal(inherited.origin, "Upstream · #1 · inherited only");
   assert.match(inherited.note, /^Inherited only/);
-  assert.equal(inherited.disabled, true);
-  const readOnly = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: true, placement: "sky", override });
-  assert.deepEqual([readOnly.disabled, readOnly.revertAll.disabled, enabled(readOnly)], [true, true, []]);
+  assert.deepEqual([inherited.revertAll.disabled, enabled(inherited)], [true, []]);
+  const readOnly = upstreamInspectorModel({ layer: "scene_a", editable: true, locked: false, readOnly: true, placement: "sky", override });
+  assert.deepEqual([readOnly.revertAll.disabled, enabled(readOnly)], [true, []]);
   // Nothing to revert or restore; a locked element is not reverted, but its layer's deleted are restored; an
   // override made for the other placement is reverted whole only.
-  const bare = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: false, placement: "sky", override: null });
+  const bare = upstreamInspectorModel({ layer: "scene_a", editable: true, locked: false, readOnly: false, placement: "sky", override: null });
   assert.deepEqual([bare.revertAll.disabled, enabled(bare)], [true, []]);
-  const locked = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: true, readOnly: false, placement: "sky", override });
+  const locked = upstreamInspectorModel({ layer: "scene_a", editable: true, locked: true, readOnly: false, placement: "sky", override });
   assert.deepEqual([locked.revertAll.disabled, enabled(locked)], [true, []]);
-  const other = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: false, placement: "world", override });
+  const other = upstreamInspectorModel({ layer: "scene_a", editable: true, locked: false, readOnly: false, placement: "world", override });
   assert.deepEqual([other.revertAll.disabled, enabled(other)], [false, []]);
   // The node's own port Sticker shown with the Pose handoff reverts its handoff Lanes in the same row: Opacity,
   // which the handoff does not give, and All stay disabled.
   const handoff = [{ name: "direction", overridden: true }, { name: "roll", overridden: false }, { name: "size", overridden: true }];
-  const port = upstreamInspectorModel({ layer: null, editable: false, visible: true, locked: false, readOnly: false, placement: "sky", handoff });
+  const port = upstreamInspectorModel({ layer: null, editable: false, locked: false, readOnly: false, placement: "sky", handoff });
   assert.deepEqual(rows(port), rows(upstream));
   assert.deepEqual(port.lanes.map((lane) => [lane.name, lane.action, lane.disabled]), [
     ["direction", "revert-handoff-lane", false],
@@ -585,9 +606,9 @@ test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: a
     ["opacity", "revert-handoff-lane", true],
   ]);
   assert.equal(port.revertAll.disabled, true);
-  const lockedPort = upstreamInspectorModel({ layer: null, editable: false, visible: true, locked: true, readOnly: false, placement: "sky", handoff });
+  const lockedPort = upstreamInspectorModel({ layer: null, editable: false, locked: true, readOnly: false, placement: "sky", handoff });
   assert.deepEqual(enabled(lockedPort), []);
-  const worldPort = upstreamInspectorModel({ layer: null, editable: false, visible: true, locked: false, readOnly: false, placement: "world", handoff: [{ name: "position", overridden: true }, { name: "rotation", overridden: false }, { name: "scale", overridden: false }] });
+  const worldPort = upstreamInspectorModel({ layer: null, editable: false, locked: false, readOnly: false, placement: "world", handoff: [{ name: "position", overridden: true }, { name: "rotation", overridden: false }, { name: "scale", overridden: false }] });
   assert.deepEqual(enabled(worldPort), ["position"]);
   // Every kind of Sticker has the same number of Lane buttons.
   for (const model of [upstream, own, inherited, port, worldPort]) assert.equal(model.lanes.length, 4);
@@ -606,6 +627,9 @@ test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: a
   assert.doesNotMatch(origin, /v-if="model\.(lanes|revertAll)/);
   // Restore deleted is the layer's, on its Timeline header only.
   assert.doesNotMatch(origin, /restore-upstream-deleted/);
+  // The eye is on the Timeline row and the lock in the selection menu: the inspector has no Visible or Lock row.
+  assert.doesNotMatch(origin, /Visible|Lock|upstream-visible|upstream-locked/);
+  assert.equal(Object.hasOwn(upstream, "visible") || Object.hasOwn(upstream, "locked"), false);
   assert.match(editor, /handoff: isUpstreamSticker\(target\) \? null : portHandoffLanes\(target\)/);
 });
 

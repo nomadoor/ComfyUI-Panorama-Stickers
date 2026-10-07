@@ -3,6 +3,7 @@
 // the Keyframes on the content, and Easing edits. Frames passed for an owner (the Camera, scene or a
 // Sticker) are in its own time base: Timeline frames for the Camera, Clip frames (from start - in) for
 // scene and the Stickers.
+import { portMediaFrames } from "./pano_port_media.js";
 import { evaluateLane, FRAME_EPSILON } from "./pano_scene_eval.js";
 import {
   CAMERA_LANES,
@@ -102,9 +103,11 @@ export function deleteKeyframes(owner, names, frames, playhead) {
 }
 
 // Shifts the Keyframes at frames of the Lanes `names` by delta, but not past floor (Timeline frame 0
-// in owner's time base), and returns the delta applied. A moved Keyframe replaces one of its own Lane
-// that it lands on.
-export function moveKeyframes(owner, names, frames, delta, floor) {
+// in owner's time base) nor past ceiling (the Timeline's last frame in it), and returns the delta applied.
+// Keyframes already past either are not pushed further, nor pulled back. A moved Keyframe replaces one of
+// its own Lane that it lands on.
+export function moveKeyframes(owner, names, frames, delta, floor, ceiling = Infinity) {
+  delta = Math.min(delta, Math.max(0, ceiling - Math.max(...frames)));
   delta = Math.max(delta, Math.min(0, floor - Math.min(...frames)));
   const moving = new Set(frames);
   for (const name of names) {
@@ -191,34 +194,50 @@ export function isTimed(state, { camera = false } = {}) {
 // The span timelineSpan gives a broken input (a length or frame that is not a finite number).
 export const BROKEN_SPAN = 100000;
 
-// The number of Timeline frames the Timeline shows: the Timeline length, or without one `minimum`
-// widened to `frames` (the video's frame count), then widened to every Clip range edge and Keyframe
-// (the Camera's only with `camera`, as in isTimed). The end of `openClip` counts as open. A span that
-// is not a finite number (a broken input) is BROKEN_SPAN.
-export function timelineSpan(state, { minimum, frames = 0, openClip = null, camera = false }) {
-  let end = state.timeline.length ?? Math.max(minimum, frames);
-  if (camera && state.camera) {
-    for (const lane of ownerLanes(state.camera)) {
-      for (const key of lane.keyframes) end = Math.max(end, key.frame + 1);
-    }
-  }
-  end = Math.max(end, ownersSpan([state.scene, ...state.stickers], openClip));
-  return Number.isFinite(end) ? end : BROKEN_SPAN;
+// The number of Timeline frames the Timeline shows: exactly the output's length, as `_decide_timeline`
+// (nodes.py) decides it (docs/render-contract.md): `timeline.length`, else the Auto length
+// (autoTimelineLength of `media`). Nothing past it is in the output, so the Timeline does not reach it. A span
+// that is not a finite number (a broken input) is BROKEN_SPAN.
+export function timelineSpan(state, media = {}) {
+  const { length } = state.timeline;
+  const span = length ? Math.max(1, Math.round(length)) : autoTimelineLength(state, media);
+  return Number.isFinite(span) ? span : BROKEN_SPAN;
 }
 
-// The number of Timeline frames that shows every Clip range edge and Keyframe of `owners` (Stickers and
-// `scene`s, whose Keyframes are on their material at start - in), 0 without any. A Clip range without a
-// duration, and `openClip`, count as open: up to their start.
-export function ownersSpan(owners, openClip = null) {
-  let end = 0;
-  for (const owner of owners) {
-    const { clip } = owner;
-    end = Math.max(end, clip.duration === null || clip === openClip ? clip.start + 1 : clip.start + clip.duration);
-    for (const lane of ownerLanes(owner)) {
-      for (const key of lane.keyframes) end = Math.max(end, clip.start - clip.in + key.frame + 1);
-    }
-  }
-  return end;
+// The Auto length: the output length `_decide_timeline` decides without `timeline.length`, by the same rule,
+// from the state and what is known of the inputs. Each input is null (or 0) while it is not known, as before a
+// run: then the rule goes on to the next step, as if the input had a single frame.
+//   bg          the node's own bg_media with two or more frames: { video, frames, duration } (`video` for a
+//               VIDEO, `frames` its frame count, `duration` the seconds where its last frame ends)
+//   port        the port Sticker's media with two or more frames or items, as its meta
+//               (`pano_sticker_input_video_meta`: { kind, frames, duration }; 3D items are kind "IMAGE")
+//   sceneItems  the number of items of the `scene` input's content
+//   upstream    the upstream Scene: { frames, ends }, its output frame count and the ends of the Clip ranges
+//               this node overrides in it (pano_upstream.js upstreamOverriddenEnds)
+//   openClip    a Clip range counted as one without a duration (the one being dragged)
+//   camera      whether the Camera's Keyframes count (Panorama Studio shoots with it)
+// The state is at the Timeline fps (the editor rebases it to a VIDEO's or the upstream Scene's), so its frames
+// are output frames.
+export function autoTimelineLength(state, { bg = null, port = null, sceneItems = 0, upstream = null, openClip = null, camera = false } = {}) {
+  const fps = state.timeline.fps;
+  const open = (clip) => clip.duration === null || clip === openClip;
+  const ends = [state.scene.clip, ...state.stickers.map((sticker) => sticker.clip)]
+    .filter((clip) => !open(clip))
+    .map((clip) => clip.start + clip.duration);
+  // Without a duration, the port Sticker ends with its media, and the `scene` with its items.
+  const portSticker = state.stickers.find((sticker) => sticker.source.kind === "port");
+  if (port && portSticker && open(portSticker.clip)) ends.push(portMediaFrames({ ...portSticker.clip, duration: null }, fps, port));
+  const sceneClip = state.scene.clip;
+  if (sceneItems > 1 && open(sceneClip)) ends.push(sceneClip.start - sceneClip.in + sceneItems);
+  const keys = camera && state.camera ? ownerLanes(state.camera).flatMap((lane) => lane.keyframes.map((key) => key.frame)) : [];
+  let length = 1;
+  // A background VIDEO that does not set the Timeline (an upstream Scene does) lasts until its last frame ends.
+  if (bg?.video) length = upstream ? Math.max(1, Math.round(bg.duration * fps)) : bg.frames;
+  else if (bg?.frames > 1) length = bg.frames;
+  else if (ends.length) length = Math.max(1, Math.round(Math.max(...ends)));
+  else if (keys.length) length = Math.max(1, Math.round(Math.max(...keys)) + 1);
+  if (upstream) length = Math.max(length, upstream.frames, ...upstream.ends.map(Math.round));
+  return length;
 }
 
 // The Timeline fps typed in the fps field sets: brought into the range a state keeps, or null (rejected)

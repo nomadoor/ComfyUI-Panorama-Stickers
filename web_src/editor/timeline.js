@@ -7,7 +7,7 @@ import { portMediaFrames } from "../pano_port_media.js";
 import { nodeInputOrigins, videoLinked } from "../pano_preview_video.js";
 import { clipActive } from "../pano_scene_eval.js";
 import { timelineFps } from "../pano_scene_state.js";
-import { deleteKeyframes, isTimed, laneNames, ownersSpan, timelineSpan } from "../pano_timeline.js";
+import { deleteKeyframes, isTimed, laneNames, timelineSpan } from "../pano_timeline.js";
 
 export function createTimeline(deps) {
   const {
@@ -15,23 +15,31 @@ export function createTimeline(deps) {
     uiState, videoEl, videoTimelineFps,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let commitAndRefreshNode, getPortMedia, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
-    playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, syncCutoutShot,
-    stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamRow,
-    upstreamSpanFrames, upstreamTimelineLayers, upstreamTimelineOwners;
+  let commitAndRefreshNode, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
+    playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles,
+    syncCutoutShot, stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground,
+    upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers;
 
   function syncTimeline() {
     if (!stateV2 || readOnly) return;
-    const span = timelineSpanFrames();
+    // A drag keeps the span it started on, so the rows do not rescale under the pointer.
+    const span = timeline.drag?.limit ?? timelineSpanFrames();
+    // The playhead never stands past the output's last frame, so nothing is keyed there.
+    if (!timeline.drag && playback.frame > span - 1) playback.seek(span - 1);
     const selection = timeline.selection;
     const owner = selection && timelineOwner(selection.owner);
     if (selection) {
+      // Keyframes past the output's end are not on the Timeline (PanoTimeline.vue), so they leave the selection:
+      // nothing deletes, eases or drags them.
       const names = owner ? selectedLanes(selection) : [];
-      selection.frames = selection.frames.filter((frame) => names.some((name) => owner[name].keyframes.some((key) => key.frame === frame)));
+      const offset = timelineOffset(selection.owner);
+      selection.frames = selection.frames.filter((frame) => frame + offset < span
+        && names.some((name) => owner[name].keyframes.some((key) => key.frame === frame)));
       if (!selection.frames.length) timeline.selection = null;
     }
     uiState.timeline = buildTimelineModel(state, {
       span,
+      portBarEnd,
       selection: timeline.selection,
       selectedId: editor.worldSelectedId || editor.selectedId,
       expanded: timeline.expanded ?? timelineTimed(),
@@ -59,23 +67,33 @@ export function createTimeline(deps) {
     return isTimed(state, { camera: studio });
   }
 
-  // The Timeline length (5 s without one), widened to the background VIDEO, to the end of the
-  // port Sticker's media and to the upstream Scene's length with the Clip ranges this node overrides in it
-  // (#90, ADR 0030). An upstream background VIDEO is in the upstream Scene's length already
-  // (docs/render-contract.md), so it does not widen it again. Panorama Studio's Camera Keyframes widen it as
-  // they lengthen its output. The upstream rows' Clip range edges and Keyframes widen it as the node's own do,
-  // though only the overridden Clip ranges lengthen the output (ADR 0030).
+  // The Timeline's span: exactly the output's length (pano_timeline.js timelineSpan), followed live from the
+  // state and what the editor knows of the inputs. The background VIDEO or IMAGE batch counts from the node's
+  // result (or, before a run, the length of the VIDEO file the background input loads), but not an upstream
+  // background, which is in the upstream Scene's length already (docs/render-contract.md). The port Sticker's
+  // media and the `scene` items count from the node's current result. `openClip` counts as a Clip range without
+  // a duration (the one being dragged).
   function timelineSpanFrames(openClip = null) {
-    const fps = state.timeline.fps;
-    const port = state.stickers.find(isExternalSticker);
-    const portMedia = port ? getPortMedia() : null;
-    const frames = Math.max(
-      uiState.videoTransport.ready && !upstreamBackground() ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0,
-      portMedia ? portMediaFrames(port.clip, fps, portMedia.meta) : 0,
-      upstreamSpanFrames(openClip),
-    );
-    const span = timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: studio });
-    return Math.max(span, ownersSpan(upstreamTimelineOwners(), openClip));
+    const transport = uiState.videoTransport;
+    const bg = transport.ready && !upstreamBackground() && transport.frameCount > 0
+      ? { video: videoLinked(node, ["bg_media"]), frames: transport.frameCount, duration: Number(transport.duration || 0) }
+      : null;
+    return timelineSpan(state, {
+      bg,
+      port: getPortMediaMeta(),
+      sceneItems: upstreamLinked() ? 0 : sceneFiles()?.urls.length ?? 0,
+      upstream: upstreamOutput(openClip),
+      openClip,
+      camera: studio,
+    });
+  }
+
+  // Where the media of a port Sticker without a duration ends (portMediaFrames): its bar ends there, not at the
+  // Timeline's end. null for another owner of a Clip range (a Sticker, a `scene`), or while its media is not known.
+  function portBarEnd(sticker) {
+    if (sticker.source?.kind !== "port" || sticker.clip.duration !== null) return null;
+    const meta = sticker.origin ? upstreamPortMeta(sticker) : isExternalSticker(sticker) ? getPortMediaMeta() : null;
+    return meta ? portMediaFrames(sticker.clip, state.timeline.fps, meta) : null;
   }
 
   function timelineOwner(owner) {
@@ -208,13 +226,13 @@ export function createTimeline(deps) {
   return {
     connect(api) {
       ({
-        commitAndRefreshNode, getPortMedia, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
-        playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, syncCutoutShot,
-        stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamRow,
-        upstreamSpanFrames, upstreamTimelineLayers, upstreamTimelineOwners,
+        commitAndRefreshNode, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
+        playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles,
+        syncCutoutShot, stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground,
+        upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers,
       } = api);
     },
-    syncTimeline, timelineTimed, timelineSpanFrames, timelineOwner, selectedLanes, timelineOffset, clipView,
+    syncTimeline, timelineTimed, timelineSpanFrames, portBarEnd, timelineOwner, selectedLanes, timelineOffset, clipView,
     timelineEditable, rowEditable, setTimelineFrame, jumpTimelineTo, stopTimelinePlayback, togglePlayback,
     refreshTimelineEdit, commitTimelineEdit, deleteSelectedKeyframes, changeTimelineFps, applyVideoTimelineFps,
   };

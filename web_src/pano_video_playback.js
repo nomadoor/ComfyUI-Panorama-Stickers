@@ -187,7 +187,8 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
       setFrame(next);
       return;
     }
-    if (!loop()) {
+    // A Timeline of one frame has nothing to loop.
+    if (!loop() || span() <= 1) {
       stopAt(span() - 1);
       return;
     }
@@ -233,8 +234,9 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
     }
   }
 
+  // A Timeline of one frame has nothing to play.
   function play() {
-    if (playing()) return;
+    if (playing() || span() <= 1) return;
     if (frame >= span() - 1) setFrame(0);
     if (state.name === "loading" || state.name === "seeking") {
       state.then = "play";
@@ -244,9 +246,10 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
     show("play");
   }
 
-  // A seek stops playback; while one is in flight, the next seek goes to the latest frame.
+  // A seek stops playback; while one is in flight, the next seek goes to the latest frame. The playhead
+  // stays on the Timeline.
   function seek(next) {
-    const target = Math.max(0, Math.round(next));
+    const target = Math.max(0, Math.min(Math.round(next), span() - 1));
     if (state.name === "loading" || state.name === "seeking") {
       state.then = "still";
       setFrame(target);

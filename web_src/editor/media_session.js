@@ -15,7 +15,7 @@ import {
   markImageReady,
   stageImageStatus,
 } from "../pano_image_state.js";
-import { createFrameSequence, portMediaSource, portMediaTime } from "../pano_port_media.js";
+import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } from "../pano_port_media.js";
 import { isPanoramaPreviewNodeName } from "../pano_preview_identity.js";
 import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 import { sceneFilesOf } from "../pano_space.js";
@@ -569,6 +569,12 @@ export function createMediaSession(deps) {
     return src ? { src, meta } : null;
   }
 
+  // The port Sticker's media as the Timeline's length counts it (portMediaMeta) in the node's current result,
+  // or null.
+  function getPortMediaMeta() {
+    return isNodeOutputMediaCurrent(node, "external-sticker") ? portMediaMeta(getNodeUiList) : null;
+  }
+
   // Has the port Sticker's MP4 follow the playhead, and returns the port Sticker's picture there
   // ({ media, revision, source }): the playing VIDEO, the still of its frame, or the PNG of its image,
   // else the first frame until there is one; null where the media shows nothing (ADR 0024).
@@ -745,7 +751,7 @@ export function createMediaSession(deps) {
     },
     videoState, queueVideoTransportLayout, playback, portVideo, getNodeUiValue,
     getMediaRevisionToken, playbackFps, syncVideoTransportState, toggleVideoMuted, syncVideoTransportVisibility,
-    refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage, getPortMedia, followPortSticker,
+    refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage, getPortMediaMeta, followPortSticker,
     getStickerImage, stickerImageKey, getConnectedErpImage, backgroundCoverage, upstreamBackground, isDecodedImageReady, getStageImageStatus, sceneFiles,
     stickerFiles, disposeMediaSession,
   };

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
@@ -21,7 +21,7 @@ import {
   setLaneValue,
   setSegmentEasing,
   MAX_TICKS,
-  ownersSpan,
+  autoTimelineLength,
   timelineSpan,
   timelineTicks,
   trimClipEnd,
@@ -178,6 +178,17 @@ test("moved Keyframes stop at Timeline frame 0", () => {
   assert.deepEqual(sticker.opacity.keyframes.map((key) => key.frame), [1, 4]);
 });
 
+test("moved Keyframes stop at the Timeline's last frame; one past it is not pushed further", () => {
+  const sticker = skySticker();
+  sticker.opacity = keyed(sticker.opacity, [4, 1], [6, 1], [9, 1]);
+  // A Timeline of 20 frames whose material starts at Timeline frame 2: its last frame is Clip frame 17.
+  assert.equal(moveKeyframes(sticker, ["opacity"], [6, 9], 30, -2, 17), 8);
+  assert.deepEqual(sticker.opacity.keyframes.map((key) => key.frame), [4, 14, 17]);
+  sticker.opacity = keyed(sticker.opacity, [4, 1], [30, 1]);
+  assert.equal(moveKeyframes(sticker, ["opacity"], [30], 5, 0, 17), 0, "a Keyframe already past the end is not pushed further");
+  assert.equal(moveKeyframes(sticker, ["opacity"], [30], -3, 0, 17), -3, "nor pulled back");
+});
+
 test("Easing edits set the selected segments, ignoring each Lane's last Keyframe", () => {
   const sticker = skySticker();
   sticker.opacity = keyed(sticker.opacity, [0, 0], [10, 1], [20, 0], [30, 1, "auto"]);
@@ -257,29 +268,58 @@ test("a state is timed when it has a Keyframe or a Clip range other than the who
   assert.equal(isTimed(state, { camera: true }), true, "Panorama Studio shoots with the Camera");
 });
 
-test("the Timeline shows its length, or the video's without one, widened to Clip ranges and Keyframes", () => {
+test("the Timeline spans exactly the output's length: timeline.length, else the Auto length", () => {
   const canonical = loadSceneState(readFixture("v2_canonical"));
-  assert.equal(timelineSpan(canonical, { minimum: 10 }), 120);
-  assert.equal(timelineSpan(canonical, { minimum: 10, frames: 300 }), 120, "a set length ends the Timeline before the video does");
+  const video = { video: true, frames: 300, duration: 10 };
+  assert.equal(timelineSpan(canonical), 120);
+  assert.equal(timelineSpan(canonical, { bg: video }), 120, "a set length ends the Timeline before the video does");
+  canonical.stickers[1].scale.keyframes[1].frame = 400;
+  canonical.stickers[0].clip.duration = 500;
+  assert.equal(timelineSpan(canonical), 120, "nothing past the length widens it");
+  canonical.timeline.length = 7;
+  assert.equal(timelineSpan(canonical), 7, "a length shorter than the Clip ranges");
+  canonical.timeline.length = 10000;
+  assert.equal(timelineSpan(canonical), 10000, "a length longer than everything");
   canonical.timeline.length = null;
-  assert.equal(timelineSpan(canonical, { minimum: 10, frames: 300 }), 300);
-  assert.equal(timelineSpan(canonical, { minimum: 10 }), 50);
-  canonical.stickers[1].scale.keyframes[1].frame = 80;
-  assert.equal(timelineSpan(canonical, { minimum: 10 }), 81);
-  assert.equal(timelineSpan(loadSceneState(null), { minimum: 120 }), 120);
-  assert.equal(timelineSpan(loadSceneState(null), { minimum: 120, camera: true }), 120, "a state without a Camera");
+  assert.equal(timelineSpan(canonical, { bg: video }), 300, "Auto: the background VIDEO's frames");
+  assert.equal(timelineSpan(canonical, { bg: { video: false, frames: 12 } }), 12, "Auto: the IMAGE batch's");
+  assert.equal(timelineSpan(canonical, { bg: { video: false, frames: 1 } }), 510, "a single image sets nothing");
+  assert.equal(timelineSpan(canonical), 510, "Auto: the latest Clip end");
+  canonical.stickers[0].clip.duration = 40;
+  assert.equal(timelineSpan(canonical), 50, "Keyframes of Stickers do not lengthen the output");
+  assert.equal(timelineSpan(loadSceneState(null)), 1, "a still: one frame");
+  assert.equal(timelineSpan(loadSceneState(null), { camera: true }), 1, "a state without a Camera");
   const camera = loadSceneState({ version: 2, camera: {} });
   keyAllLanes(camera.camera, 200);
-  assert.equal(timelineSpan(camera, { minimum: 120 }), 120, "the Camera counts only with `camera`");
-  assert.equal(timelineSpan(camera, { minimum: 120, camera: true }), 201, "Panorama Studio shoots with the Camera");
+  assert.equal(timelineSpan(camera), 1, "the Camera counts only with `camera`");
+  assert.equal(timelineSpan(camera, { camera: true }), 201, "Panorama Studio shoots with the Camera: its last Keyframe + 1");
+  camera.scene.clip.duration = 30;
+  assert.equal(timelineSpan(camera, { camera: true }), 30, "a Clip end comes before the Camera");
+});
+
+test("the Auto length counts the port media, the scene items and the upstream Scene as _decide_timeline does", () => {
+  const state = loadSceneState({ version: 2, timeline: { fps: 24 }, stickers: [{ id: "p", source: { kind: "port" }, clip: { start: 6, in: 2 } }] });
+  const video = { kind: "VIDEO", fps: 30, frames: 90, duration: 3 };
+  assert.equal(autoTimelineLength(state), 1, "a port Sticker whose media is not known yet");
+  assert.equal(autoTimelineLength(state, { port: video }), 76, "its media ends at start - in + 3 s");
+  assert.equal(autoTimelineLength(state, { port: { kind: "IMAGE", frames: 10 } }), 14);
+  state.stickers[0].clip.duration = 20;
+  assert.equal(autoTimelineLength(state, { port: video }), 26, "a duration ends it before its media");
+  assert.equal(autoTimelineLength(state, { port: video, openClip: state.stickers[0].clip }), 76, "the Clip range being dragged counts as open");
+  state.scene.clip = { start: 3, in: 1, duration: null };
+  assert.equal(autoTimelineLength(state, { sceneItems: 40 }), 42, "the scene's items end its Clip range");
+  assert.equal(autoTimelineLength(state, { upstream: { frames: 100, ends: [] } }), 100, "the upstream Scene's length");
+  assert.equal(autoTimelineLength(state, { upstream: { frames: 10, ends: [130.4] } }), 130, "an overridden upstream Clip end");
+  assert.equal(autoTimelineLength(state, { bg: { video: true, frames: 50, duration: 2 }, upstream: { frames: 10, ends: [] } }), 48,
+    "under an upstream Scene, a background VIDEO lasts its seconds at the Timeline fps");
 });
 
 test("a Clip range end reopens at the span set by everything else", () => {
   const state = loadSceneState(readFixture("v2_canonical"));
   state.timeline.length = null;
   const { clip } = state.stickers[0];
-  assert.equal(timelineSpan(state, { minimum: 10 }), 50, "this Clip range ends at 50");
-  const span = timelineSpan(state, { minimum: 10, openClip: clip, camera: true });
+  assert.equal(timelineSpan(state), 50, "this Clip range ends at 50");
+  const span = timelineSpan(state, { openClip: clip, camera: true });
   assert.equal(span, 49, "the last Camera Keyframe is at 48");
 
   trimClipEnd(clip, 51, span);
@@ -420,9 +460,12 @@ test("the fps and length fields bring what is typed into range and reject what i
 
 test("a huge length neither spans past the limit nor labels past MAX_TICKS", () => {
   const state = loadSceneState({ version: 2, timeline: { length: 1e308 } });
-  assert.equal(timelineSpan(state, { minimum: 120 }), 10000000);
-  state.timeline.length = NaN;
-  assert.equal(timelineSpan(state, { minimum: 120 }), BROKEN_SPAN, "a broken span is not passed on");
+  assert.equal(timelineSpan(state), 10000000);
+  state.timeline.length = Infinity;
+  assert.equal(timelineSpan(state), BROKEN_SPAN, "a broken span is not passed on");
+  state.timeline.length = null;
+  state.scene.clip.duration = NaN;
+  assert.equal(timelineSpan(state), BROKEN_SPAN);
   assert.equal(BROKEN_SPAN, 100000);
   const started = performance.now();
   assert.equal(timelineTicks(1e308, 1e-300).length, MAX_TICKS);
@@ -437,14 +480,15 @@ test("each result of a VIDEO above the fps limit leaves the playhead and the his
   assert.match(editorFunction("changeTimelineFps"), /const fps = timelineFps\(value\);\s*if \(fps === null \|\| fps === state\.timeline\.fps\) return;\s*stopTimelinePlayback\(\);/);
 });
 
-test("the span of owners reaches their Clip range ends and Keyframes; an open or dragged Clip range counts as start + 1", () => {
-  const { stickers: [sky, plane] } = loadSceneState({ version: 2, stickers: [
-    { id: "a", placement: "sky", source: { kind: "file", filename: "a.png" }, clip: { start: 10, in: 0, duration: 20 } },
-    { id: "b", placement: "world", source: { kind: "file", filename: "b.png" }, clip: { start: 40, in: 5 } },
-  ] });
-  assert.equal(ownersSpan([]), 0);
-  assert.equal(ownersSpan([sky, plane]), 41);
-  assert.equal(ownersSpan([sky], sky.clip), 11);
-  keyAllLanes(plane, 100);
-  assert.equal(ownersSpan([sky, plane]), 136, "a Keyframe at material frame 100 of a Clip range starting at 40 - 5");
+test("no Timeline has a minimum length", () => {
+  // The editor's Timeline and the node surface's playback span the output's length, with no 5 s floor and nothing
+  // reached past it (Rive, After Effects).
+  const sources = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = new URL(entry.name + (entry.isDirectory() ? "/" : ""), dir);
+    if (entry.isDirectory()) return sources(path);
+    return /\.(js|vue)$/.test(entry.name) ? [[entry.name, readFileSync(path, "utf8")]] : [];
+  });
+  for (const [name, source] of sources(new URL("../web_src/", import.meta.url))) {
+    assert.doesNotMatch(source, /fps\(?\)?\s*\*\s*5\b|timelineSpan\([^)]*minimum|ownersSpan/, name);
+  }
 });

@@ -254,11 +254,16 @@ def test_a_sticker_image_batch_gets_an_mp4_at_the_timeline_fps(tmp_path):
 
 
 def test_a_single_image_or_frame_sticker_has_no_mp4(tmp_path):
-    for sticker in (torch.rand((1, 16, 32, 3)), _file(tmp_path, "one.mp4", gop=10, pts_ms=[0])):
-        ui = _sticker_ui(sticker)
+    image = _sticker_ui(torch.rand((1, 16, 32, 3)))
+    assert image["pano_sticker_input_images"]
+    assert "pano_sticker_input_videos" not in image and "pano_sticker_input_video_meta" not in image
 
-        assert ui["pano_sticker_input_images"]
-        assert "pano_sticker_input_videos" not in ui and "pano_sticker_input_video_meta" not in ui
+    # A one-frame VIDEO has no MP4 either, but its meta tells the editor where the media ends (PortMedia.end).
+    video = _sticker_ui(_file(tmp_path, "one.mp4", gop=10, pts_ms=[0]))
+    assert video["pano_sticker_input_images"]
+    assert "pano_sticker_input_videos" not in video
+    [meta] = video["pano_sticker_input_video_meta"]
+    assert meta["kind"] == "VIDEO" and meta["frames"] == 1 and meta["duration"] > 0
 
 
 def test_the_sticker_proxy_is_encoded_once_while_its_input_stays_the_same(tmp_path, monkeypatch):

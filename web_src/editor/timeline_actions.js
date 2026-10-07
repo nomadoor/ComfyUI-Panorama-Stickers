@@ -21,7 +21,7 @@ export function createTimelineActions(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
-    playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
+    playback, portBarEnd, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
     restoreUpstreamDeletedCommand, revertUpstreamLayerCommand, rowEditable,
     selectWorldSticker, selectedLanes, setSelectedItem, stickerById, stopTimelinePlayback, syncFloatingViewButtonState,
     syncTimeline, timelineEditable, timelineOffset, timelineOwner, timelineSpanFrames, timelineTimed,
@@ -133,7 +133,7 @@ export function createTimelineActions(deps) {
       const names = selectedLanes(selection);
       if (action.phase === "start") {
         stopTimelinePlayback();
-        timeline.drag = { keyframes: names.map((name) => structuredClone(owner[name].keyframes)), frames: selection.frames };
+        timeline.drag = { keyframes: names.map((name) => structuredClone(owner[name].keyframes)), frames: selection.frames, limit: timelineSpanFrames() };
         return;
       }
       const { drag } = timeline;
@@ -141,7 +141,9 @@ export function createTimelineActions(deps) {
       names.forEach((name, index) => {
         owner[name].keyframes = structuredClone(drag.keyframes[index]);
       });
-      const delta = moveKeyframes(owner, names, drag.frames, action.delta, -timelineOffset(selection.owner));
+      // Keyframes stay on the Timeline: from frame 0 to its last frame, in the owner's own frames.
+      const offset = timelineOffset(selection.owner);
+      const delta = moveKeyframes(owner, names, drag.frames, action.delta, -offset, drag.limit - 1 - offset);
       selection.frames = drag.frames.map((frame) => frame + delta);
       if (action.phase !== "end") {
         // Moved Keyframes can change the values at the playhead.
@@ -161,8 +163,14 @@ export function createTimelineActions(deps) {
       if (!sticker?.clip || sticker.locked || !rowEditable(action.id)) return;
       if (action.phase === "start") {
         stopTimelinePlayback();
-        // Only the span set by everything else reopens the end, not the span this Clip range widens.
-        timeline.drag = { clip: { ...sticker.clip }, span: timelineSpanFrames(sticker.clip) };
+        // Only the span set by everything else reopens the end, not the span this Clip range sets (`span`).
+        // `end` is where its bar ends (the end of a port Sticker's media, or the Timeline's, without a duration),
+        // `last` where it stops when moved (an open Clip range's start + 1).
+        const { clip } = sticker;
+        const limit = timelineSpanFrames();
+        const media = portBarEnd(sticker);
+        const end = clip.duration === null ? media ?? limit : clip.start + clip.duration;
+        timeline.drag = { clip: { ...clip }, span: timelineSpanFrames(clip), limit, end, last: clip.duration === null ? media ?? clip.start + 1 : end };
         return;
       }
       const { drag } = timeline;
@@ -170,10 +178,12 @@ export function createTimelineActions(deps) {
       const base = drag.clip;
       const shown = clipView(sticker.clip);
       sticker.clip = { ...base };
-      // A click (no movement) leaves the Clip range as it was, an open end included.
-      if (action.delta && action.mode === "move") moveClip(sticker.clip, action.delta);
-      else if (action.delta && action.mode === "start") trimClipStart(sticker.clip, base.start + action.delta);
-      else if (action.delta) trimClipEnd(sticker.clip, (base.duration === null ? drag.span : base.start + base.duration) + action.delta, drag.span);
+      // A click (no movement) leaves the Clip range as it was, an open end included. Nothing is dragged past
+      // the Timeline's end (what is past it already is not pushed further): a moved bar's end (an open one's
+      // start), a trimmed start and a trimmed end.
+      if (action.delta && action.mode === "move") moveClip(sticker.clip, Math.min(action.delta, Math.max(0, drag.limit - drag.last)));
+      else if (action.delta && action.mode === "start") trimClipStart(sticker.clip, Math.min(base.start + action.delta, Math.max(drag.limit - 1, base.start)));
+      else if (action.delta) trimClipEnd(sticker.clip, Math.min(drag.end + action.delta, Math.max(drag.limit, drag.end)), drag.span);
       if (action.phase !== "end") {
         dragFrames.request("timeline");
         if (clipView(sticker.clip) !== shown) dragFrames.request("view");
@@ -230,7 +240,7 @@ export function createTimelineActions(deps) {
     connect(api) {
       ({
         cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
-        playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
+        playback, portBarEnd, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
         restoreUpstreamDeletedCommand, revertUpstreamLayerCommand, rowEditable,
         selectWorldSticker, selectedLanes, setSelectedItem, stickerById, stopTimelinePlayback, syncFloatingViewButtonState,
         syncTimeline, timelineEditable, timelineOffset, timelineOwner, timelineSpanFrames, timelineTimed,

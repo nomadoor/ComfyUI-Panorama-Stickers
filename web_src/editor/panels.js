@@ -404,7 +404,6 @@ export function createPanels(deps) {
       upstream: studio && target && (target === worldInspected || isSceneSticker(target)) ? upstreamInspectorModel({
         layer: isUpstreamSticker(target) ? target.origin.layer : null,
         editable: isUpstreamSticker(target) && upstreamStickerEditable(target),
-        visible: target.visible,
         locked: target.locked === true,
         readOnly,
         placement: target.placement,

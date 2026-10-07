@@ -5,6 +5,7 @@
 // enter the node's Stickers.
 import { normalizeCoverageValue } from "./pano_editor_state.js";
 import { skyLayers, worldStickerLayers } from "./pano_editor_view.js";
+import { portMediaFrames } from "./pano_port_media.js";
 import { evaluateSceneState } from "./pano_scene_eval.js";
 import { applyUpstreamOverrides } from "./pano_scene_inherit.js";
 import {
@@ -250,6 +251,18 @@ export function upstreamOverriddenClips(working, records, baseline) {
     }
   });
   return clips;
+}
+
+// The ends of the Clip ranges of upstreamOverriddenClips, in the working copies' frames (the editor's, at `fps`),
+// which lengthen the output past the upstream Scene's (`_override_layers`): `start + duration`, or without a
+// duration the end of a port Sticker's media (its layer's port media meta `portMeta(index)`, null while not known),
+// and none for another. `openClip`, the one being dragged, counts as one without a duration.
+export function upstreamOverriddenEnds(working, records, baseline, portMeta, fps, openClip = null) {
+  return upstreamOverriddenClips(working, records, baseline).flatMap(({ index, clip, sticker }) => {
+    if (clip.duration !== null && clip !== openClip) return [clip.start + clip.duration];
+    const meta = sticker?.source.kind === "port" ? portMeta(index) : null;
+    return meta ? [portMediaFrames({ ...clip, duration: null }, fps, meta)] : [];
+  });
 }
 
 // The node's `upstream` records with `change(record)` made to the record of the layer with `key`, one made at

@@ -2835,6 +2835,10 @@
   -moz-appearance: textfield;
   appearance: textfield;
 }
+/* Wide enough for "Auto (99999)", so the bar does not move between Auto and a typed length. */
+.pano-timeline-length input {
+  width: calc(12ch + 12px);
+}
 .pano-timeline-setting input::-webkit-outer-spin-button,
 .pano-timeline-setting input::-webkit-inner-spin-button {
   -webkit-appearance: none;
