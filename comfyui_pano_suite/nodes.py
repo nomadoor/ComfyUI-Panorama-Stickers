@@ -1648,7 +1648,7 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     media_ui = {**layer_ui}
     if handoff is not None:
         # What sticker_state hands to the port Sticker on this run, for the editor to show apart from the overrides.
-        media_ui["pano_sticker_handoff"] = [{"placement": handoff[0], "lanes": handoff[1]}]
+        media_ui["pano_sticker_handoff"] = [{"placement": handoff[0], "lanes": handoff[1], "fps": state["timeline"]["fps"]}]
     if upstream is None:
         _merge_ui_payload(media_ui, bg_ui)
         if _timing_video(bg, port) is not None:

@@ -204,6 +204,16 @@ export function cameraAspectChoices(active, { erp = false, coverage = 360 } = {}
   ];
 }
 
+const HANDOFF_LANE_LABELS = { direction: "Direction", roll: "Roll", size: "Size", position: "Position", rotation: "Rotation", scale: "Scale" };
+
+// The inspector's "Revert to upstream" (PanoHandoffRevert.vue) of the port Sticker's Lanes while it shows the
+// Pose handoff (ADR 0030), from [{ name, overridden }] per Lane the handoff gives, or null: each button is
+// disabled unless its Lane is an override and the Sticker can be edited (`enabled`).
+export function handoffRevertModel(lanes, { enabled = true } = {}) {
+  if (!lanes) return null;
+  return { lanes: lanes.map(({ name, overridden }) => ({ name, label: HANDOFF_LANE_LABELS[name], disabled: !enabled || !overridden })) };
+}
+
 export function buildEditorSidePanelModel({
   coverage,
   readOnly,
@@ -215,6 +225,7 @@ export function buildEditorSidePanelModel({
   notes,
   uiSettings,
   normalizeCoverageValue,
+  handoff = null,
 }) {
   return {
     coverage: { value: normalizeCoverageValue(coverage), disabled: !!readOnly },
@@ -227,6 +238,7 @@ export function buildEditorSidePanelModel({
     params,
     rows: inspectorRows(params),
     notes,
+    handoff,
     paramsDisabled: !enabled,
     uiSettings: readOnly ? null : uiSettings,
     footerButtons: [

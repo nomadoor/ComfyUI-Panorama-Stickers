@@ -18,7 +18,7 @@ export function createSidePanelEvents(deps) {
   let apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitState,
     getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
     isItemLocked, isSceneSticker, isStrokeGroupItem, markObjectVisualsDirty, persistUiSettings, poseOf,
-    pushHistory, requestDraw, selectedWorldSticker, setSelectedItem, stopTimelinePlayback,
+    pushHistory, requestDraw, revertPortHandoffLane, selectedWorldSticker, setSelectedItem, stopTimelinePlayback,
     syncCoverageChangeToNodePreviews, syncCutoutShot, turnViewTo, updateSelectionMenu, updateSidePanel,
     worldStickerEditable, writePose;
 
@@ -88,6 +88,11 @@ export function createSidePanelEvents(deps) {
       updateSidePanel();
       updateSelectionMenu();
       requestDraw();
+      return;
+    }
+    if (action === "revert-handoff-lane") {
+      stopTimelinePlayback();
+      revertPortHandoffLane(String(target.getAttribute("data-lane") || ""));
       return;
     }
     if (action === "toggle-selection-picker") {
@@ -188,7 +193,7 @@ export function createSidePanelEvents(deps) {
         apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitState,
         getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
         isItemLocked, isSceneSticker, isStrokeGroupItem, markObjectVisualsDirty, persistUiSettings, poseOf,
-        pushHistory, requestDraw, selectedWorldSticker, setSelectedItem, stopTimelinePlayback,
+        pushHistory, requestDraw, revertPortHandoffLane, selectedWorldSticker, setSelectedItem, stopTimelinePlayback,
         syncCoverageChangeToNodePreviews, syncCutoutShot, turnViewTo, updateSelectionMenu, updateSidePanel,
         worldStickerEditable, writePose,
       } = api);

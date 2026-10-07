@@ -3145,3 +3145,9 @@
   color: var(--pano-muted);
   font-size: 11px;
 }
+.pano-handoff-lanes {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--pano-space-sm);
+  min-width: 0;
+}

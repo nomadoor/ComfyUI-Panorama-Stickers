@@ -173,7 +173,7 @@ function graphNode(links, inputLinks, { id = 9, graphId = "wf-1" } = {}) {
     id,
     comfyClass: "PanoramaStudio",
     graph,
-    inputs: ["bg_media", "scene", "sticker"].map((name) => ({ name, link: inputLinks[name] ?? null })),
+    inputs: ["bg_media", "scene", "sticker", "sticker_state"].map((name) => ({ name, link: inputLinks[name] ?? null })),
     getInputLink(slot) {
       return this.graph.links.get(this.inputs[slot].link) || null;
     },
@@ -667,4 +667,19 @@ test("the type linked to an input is the link's, else its origin output's, follo
   make(5, "Reroute", [{ type: "*" }], [{ origin_id: 6, origin_slot: 0, type: "*" }]);
   make(6, "Reroute", [{ type: "*" }], [{ origin_id: 5, origin_slot: 0, type: "*" }]);
   assert.equal(linkedInputType(make(16, "PanoramaStudio", [], [{ origin_id: 5, origin_slot: 0, type: "*" }]), "scene"), "");
+});
+
+// The Pose handoff of a result (ADR 0030) came from the Studio on `sticker_state`: relinked to another, it is stale,
+// though the port's media stays current.
+test("the Pose handoff of an output is stale once sticker_state is relinked, and the port media is not", () => {
+  const node = graphNode({ 1: [4, 0], 2: [5, 0] }, { sticker: 1, sticker_state: 2 }, { id: 35 });
+  app.nodeOutputs["35"] = { pano_sticker_handoff: [{ placement: "sky", lanes: {}, fps: 24 }] };
+  assert.equal(isNodeOutputMediaCurrent(node, "sticker-handoff"), true);
+  rewire(node, "sticker_state", 6);
+  assert.equal(isNodeOutputMediaCurrent(node, "sticker-handoff"), false);
+  assert.equal(isNodeOutputMediaCurrent(node, "external-sticker"), true);
+  rewire(node, "sticker_state", 5);
+  assert.equal(isNodeOutputMediaCurrent(node, "sticker-handoff"), true);
+  rewire(node, "sticker", 7);
+  assert.equal(isNodeOutputMediaCurrent(node, "sticker-handoff"), false);
 });

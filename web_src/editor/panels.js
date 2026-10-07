@@ -19,6 +19,7 @@ import {
   stickerParamEnabled,
   floatingRightState,
   frameViewButton,
+  handoffRevertModel,
   patchUiButton,
   worldFieldRange,
 } from "../pano_editor_ui_state.js";
@@ -39,8 +40,8 @@ export function createPanels(deps) {
     getHistoryCapabilities, getList, getSelected, getSelectedItems, getSelectedKind, getSelectionItemIcon,
     getSelectionItemLabelData, hasCamera, hasSpaceContent, isActiveLassoTool, isErpCamera, isExternalSticker,
     isItemLocked, isPaintCursorEnabled, isSceneSticker, isShotItem, isSpaceView, isStickerHidden, leaveFrameView,
-    poseOf, selectedWorldSticker, setCanvasCursor, syncCutoutShot, syncTimeline, syncVideoTransportVisibility,
-    updateCursor, worldStickerEditable;
+    portHandoffLanes, poseOf, selectedWorldSticker, setCanvasCursor, syncCutoutShot, syncTimeline,
+    syncVideoTransportVisibility, updateCursor, worldStickerEditable;
 
   let paintPaneFadeTimer = 0;
 
@@ -396,6 +397,7 @@ export function createPanels(deps) {
       notes,
       uiSettings: uiSettingsModel,
       normalizeCoverageValue,
+      handoff: selectedItems.length > 1 ? null : handoffRevertModel(portHandoffLanes(worldInspected || inspectorSelected), { enabled: enabled && !readOnly }),
     });
   }
 
@@ -412,8 +414,8 @@ export function createPanels(deps) {
         getHistoryCapabilities, getList, getSelected, getSelectedItems, getSelectedKind, getSelectionItemIcon,
         getSelectionItemLabelData, hasCamera, hasSpaceContent, isActiveLassoTool, isErpCamera, isExternalSticker,
         isItemLocked, isPaintCursorEnabled, isSceneSticker, isShotItem, isSpaceView, isStickerHidden, leaveFrameView,
-        poseOf, selectedWorldSticker, setCanvasCursor, syncCutoutShot, syncTimeline, syncVideoTransportVisibility,
-        updateCursor, worldStickerEditable,
+        portHandoffLanes, poseOf, selectedWorldSticker, setCanvasCursor, syncCutoutShot, syncTimeline,
+        syncVideoTransportVisibility, updateCursor, worldStickerEditable,
       } = api);
     },
     syncLookAtFrameButtonState, syncFloatingViewButtonState, syncViewToggleState, syncFrameRollKnob, syncPaintUi,

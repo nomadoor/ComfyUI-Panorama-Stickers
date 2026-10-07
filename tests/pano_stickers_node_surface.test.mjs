@@ -5,6 +5,7 @@ import {
   applyStickersNodeSurfaceAction,
   buildStickersDisplayEntries,
   createStickersNodeSurfaceSession,
+  nodePortHandoff,
   portStickerSyncValue,
   reconcileExternalStickerState,
   reconcilePortStickerState,
@@ -468,7 +469,7 @@ test("connecting the sticker input adds a port Sticker as the node does, shown a
   const sync = portStickerSyncValue(stickersNode(["sticker"]), { pose: null });
   const result = reconcilePortStickerState(state, sync);
 
-  assert.deepEqual(sync, { connected: true, awaitingPose: false, pose: null });
+  assert.deepEqual(sync, { connected: true, awaitingPose: false, pose: null, handoff: false });
   assert.equal(result.changed, true);
   const [port] = portStickers(result.state);
   assert.deepEqual([port.id, port.placement, port.z_index, port.visible, port.locked], ["sticker_3", "sky", 4, true, false]);
@@ -751,4 +752,27 @@ test("the node's replace pose turns a sky port Sticker into a world one under th
   const [port] = portStickers(replaced.state);
   assert.deepEqual([port.id, port.placement, port.clip.start, port.clip.duration, port.locked, port.direction], ["sticker_4", "world", 2, 5, true, undefined]);
   assert.equal(again.changed, false);
+});
+
+test("with a Pose handoff, the node's replace pose is not written: the handoff is shown over the stored Sticker", () => {
+  const node = stickersNode(["sticker", "sticker_state"], { sticker: "IMAGE" });
+  const state = v2EditorState({ stickers: [{ id: "sticker_4", source: { kind: "port" }, z_index: 2 }] });
+  const pose = { placement: "world", position: [0, 0, -1], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 2, replace: true };
+  const handoff = [{ placement: "world", lanes: {}, fps: 24 }];
+
+  const result = reconcilePortStickerState(state, portStickerSyncValue(node, { pose, handoff }));
+
+  assert.equal(result.changed, false);
+  assert.equal(nodePortHandoff(node, handoff).placement, "world");
+  assert.equal(nodePortHandoff(stickersNode(["sticker"]), handoff), null, "sticker_state is no longer connected");
+});
+
+test("a world port Sticker the node adds comes with the Keyframes of the Camera that moved", () => {
+  const node = stickersNode(["sticker", "sticker_state"], { sticker: "IMAGE" });
+  const keyframes = { position: [{ frame: 0, value: [0, 0, -2] }, { frame: 6, value: [1, 0, -2] }], rotation: [], scale: [] };
+  const pose = { placement: "world", position: [0, 0, -2], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 4, keyframes };
+
+  const [port] = portStickers(reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node, { pose })).state);
+
+  assert.deepEqual(port.position.keyframes.map((key) => [key.frame, key.value]), [[0, [0, 0, -2]], [6, [1, 0, -2]]]);
 });
