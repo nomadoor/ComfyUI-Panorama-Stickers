@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createHistory, createEditorHistory } from "../web_src/editor/history.js";
 import { createUpstream } from "../web_src/editor/upstream.js";
+import { loadSceneState } from "../web_src/pano_scene_state.js";
 
 // The browser parts the module makes: images (counted by URL), and the port VIDEO and its still.
 function browserStubs() {
@@ -42,8 +44,8 @@ function restore() {
 
 const sky = (id, extra = {}) => ({ id, placement: "sky", source: { kind: "file", filename: `${id}.png` }, ...extra });
 
-// An upstream module on a node whose result holds `output.ui`; set output.ui to rerun.
-function setup() {
+// An upstream module on a node whose result holds `output.ui`; set output.ui to rerun. `state` is the editor's.
+function setup(state = loadSceneState({ version: 2, timeline: { fps: 24 } }), editor = { frame: 0 }) {
   const output = { ui: {} };
   const comfyMedia = {
     uiValue: (node, key) => (Object.hasOwn(output.ui, key) ? output.ui[key] : null),
@@ -51,11 +53,11 @@ function setup() {
   };
   const upstream = createUpstream({
     comfyMedia,
-    editor: { frame: 0 },
+    editor,
     mediaAssetSource: (asset) => `/view?filename=${asset.filename}`,
     mediaSource: (entry) => (entry ? `/view?filename=${entry.filename}` : ""),
     node: { id: 1, inputs: [{ name: "scene" }], graph: null },
-    state: { timeline: { fps: 24 } },
+    state,
     studio: true,
   });
   upstream.connect({
@@ -160,7 +162,7 @@ test("the stage notes a linked Scene that waits for a run, and the warning that 
       mediaAssetSource: () => "",
       mediaSource: () => "",
       node,
-      state: { timeline: { fps: 24 } },
+      state: loadSceneState({ version: 2 }),
       studio: true,
     });
     linked.connect({ getDesiredPaintTargetDescriptor: () => ({}), getMediaRevisionToken: () => "", playback: {}, requestDraw() {} });
@@ -237,7 +239,7 @@ test("the bg_media warning shows while the scene result is current, also right a
   try {
     const upstream = createUpstream({
       comfyMedia: { uiValue: (n, key) => output.ui[key] ?? null, uiList: (n, key) => output.ui[key] ?? [] },
-      editor: { frame: 0 }, mediaAssetSource: () => "", mediaSource: () => "", node, state: { timeline: { fps: 24 } }, studio: true,
+      editor: { frame: 0 }, mediaAssetSource: () => "", mediaSource: () => "", node, state: loadSceneState({ version: 2 }), studio: true,
     });
     upstream.connect({ getDesiredPaintTargetDescriptor: () => ({}), getMediaRevisionToken: () => "", playback: {}, requestDraw() {} });
     assert.match(upstream.upstreamNotice(), /^bg_media is not used/);
@@ -245,5 +247,131 @@ test("the bg_media warning shows while the scene result is current, also right a
     assert.match(upstream.upstreamNotice(), /^bg_media is not used/);
   } finally {
     setNodeOutputLookup(() => null);
+  }
+});
+
+const drawnIds = (input) => [...input.sky, ...input.stickers].map((item) => item.id);
+
+// ADR 0030: the editor draws the upstream layers with the node's own overrides applied, as the node does.
+test("the upstream layers are drawn with the state's overrides, and a deleted element is not drawn", () => {
+  browserStubs();
+  try {
+    const state = loadSceneState({
+      version: 2,
+      timeline: { fps: 24 },
+      upstream: [{ layer: "scene_a", fps: 24, deleted: ["sticker_2"], stickers: [{ id: "sticker_3", placement: "sky", visible: false }] }],
+    });
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2"), sky("sticker_3")] })] };
+    assert.deepEqual(drawnIds(upstream.upstreamViewInput()), ["upstream:scene_a:sticker_1"]);
+  } finally {
+    restore();
+  }
+});
+
+test("the working copies are made again for a new result and after Undo restores the state, and never write the state", () => {
+  browserStubs();
+  try {
+    // The editor's working state keeps its session fields (`active`) beside the loaded state.
+    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 }, stickers: [sky("sticker_1")] }), active: {} };
+    const before = structuredClone(state);
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2")] })] };
+    assert.deepEqual(drawnIds(upstream.upstreamViewInput()), ["upstream:scene_a:sticker_1", "upstream:scene_a:sticker_2"]);
+    // A new result.
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_2")] })] };
+    assert.deepEqual(drawnIds(upstream.upstreamViewInput()), ["upstream:scene_a:sticker_2"]);
+    assert.deepEqual(state, before);
+
+    // Undo restores a state that deleted sticker_2, as restoreHistory does.
+    const restored = { ...loadSceneState({ ...before, upstream: [{ layer: "scene_a", fps: 24, deleted: ["sticker_2"] }] }), active: {} };
+    const editor = { historyController: createEditorHistory(restored), frame: 0 };
+    editor.historyController.commitActionGroup(JSON.stringify(state));
+    const noop = () => {};
+    const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
+    history.connect({
+      clearWorldSelection: noop, commitState: noop, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
+      markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
+      rebuildUpstreamWorking: upstream.rebuildUpstreamWorking, releaseHiddenSelection: noop, requestDraw: noop,
+      stopTimelinePlayback: noop, syncCutoutShot: noop, syncPaintUi: noop, syncUndoRedoButtons: noop, updateSidePanel: noop,
+    });
+    history.restoreHistory(-1);
+    assert.deepEqual(state.upstream, restored.upstream);
+    assert.deepEqual(upstream.upstreamViewInput().sky, []);
+    // The working copies never enter the state's Stickers.
+    assert.deepEqual(state.stickers, before.stickers);
+  } finally {
+    restore();
+  }
+});
+
+test("a layer at another fps is drawn at the editor's frame, and its port media keeps the layer's time", () => {
+  const made = browserStubs();
+  try {
+    const editor = { frame: 36 };
+    const { output, upstream } = setup(loadSceneState({ version: 2, timeline: { fps: 24 } }), editor);
+    const frames = Array.from({ length: 30 }, (_, index) => ({ filename: `f${index}.png` }));
+    // At 30 fps the port Sticker starts at 1 s; 1.5 s into the node's 24 fps Timeline is its frame 15, as the
+    // node picks it (batch_index of 45 - 30 layer frames at 24 / 30).
+    output.ui = {
+      pano_upstream_layers: [layer(
+        { id: "scene_a", timeline: { fps: 30 }, stickers: [sky("p", { source: { kind: "port" }, clip: { start: 30, in: 0 } })] },
+        { pano_sticker_input_images: [{ filename: "first.png" }], pano_sticker_input_frames: frames, pano_sticker_input_video_meta: [{ kind: "IMAGE", fps: 24, frames: 30 }] },
+      )],
+    };
+    const input = upstream.upstreamViewInput();
+    assert.deepEqual(input.sky.map((item) => item.id), ["upstream:scene_a:p"]);
+    assert.equal(made.images.find((src) => /f\d+\.png/.test(src)), "/view?filename=f12.png");
+  } finally {
+    restore();
+  }
+});
+
+test("Undo on a v1 state (no Timeline, not Panorama Studio) restores, selects and commits without upstream layers", () => {
+  browserStubs();
+  try {
+    const state = { version: 1, stickers: [{ id: "a" }], active: { selected_sticker_id: "a" } };
+    const { upstream } = setup(state);
+    const editor = { historyController: createEditorHistory({ ...state, stickers: [] }), frame: 0 };
+    editor.historyController.commitActionGroup(JSON.stringify(state));
+    let commits = 0;
+    const noop = () => {};
+    const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: false, studio: false, type: "stickers" });
+    history.connect({
+      clearWorldSelection: noop, commitState: () => { commits += 1; }, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
+      markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
+      rebuildUpstreamWorking: upstream.rebuildUpstreamWorking, releaseHiddenSelection: noop, requestDraw: noop,
+      stopTimelinePlayback: noop, syncCutoutShot: noop, syncPaintUi: noop, syncUndoRedoButtons: noop, updateSidePanel: noop,
+    });
+    history.restoreHistory(-1);
+    assert.deepEqual(state.stickers, []);
+    assert.equal(editor.selectedId, "a");
+    assert.equal(commits, 1);
+    // Without upstream layers the rebuild touches nothing, also called directly.
+    upstream.rebuildUpstreamWorking();
+  } finally {
+    restore();
+  }
+});
+
+test("a Timeline fps change makes the working copies again, and the same result and fps keep them", () => {
+  browserStubs();
+  try {
+    const state = loadSceneState({ version: 2, timeline: { fps: 24 } });
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", timeline: { fps: 30 }, stickers: [sky("s", { clip: { start: 30, in: 0 } })] })] };
+    const working = () => upstream.upstreamEntries()[0].working;
+    upstream.upstreamViewInput();
+    const first = working();
+    upstream.upstreamViewInput();
+    assert.equal(working(), first);
+    assert.equal(first.sceneState.stickers[0].clip.start, 24);
+    state.timeline.fps = 60;
+    upstream.upstreamViewInput();
+    assert.notEqual(working(), first);
+    assert.equal(working().sceneState.timeline.fps, 60);
+    assert.equal(working().sceneState.stickers[0].clip.start, 60);
+  } finally {
+    restore();
   }
 });

@@ -27,8 +27,8 @@ export function createHistory(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
-    markPaintStrokeVisualsDirty, playback, releaseHiddenSelection, requestDraw, stopTimelinePlayback,
-    syncCutoutShot, syncPaintUi, syncUndoRedoButtons, updateSidePanel;
+    markPaintStrokeVisualsDirty, playback, rebuildUpstreamWorking, releaseHiddenSelection, requestDraw,
+    stopTimelinePlayback, syncCutoutShot, syncPaintUi, syncUndoRedoButtons, updateSidePanel;
 
   function pushHistory() {
     if (readOnly) return;
@@ -50,6 +50,8 @@ export function createHistory(deps) {
     Object.keys(state).forEach((k) => delete state[k]);
     Object.assign(state, restored.state);
     syncCutoutShot(false);
+    // The upstream working copies follow the restored overrides (ADR 0030).
+    if (stateV2) rebuildUpstreamWorking();
     // Undoing an fps change keeps the playhead's time in seconds.
     if (stateV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
     editor.selectedId = savedSelectionId(type, state);
@@ -80,8 +82,8 @@ export function createHistory(deps) {
     connect(api) {
       ({
         clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
-        markPaintStrokeVisualsDirty, playback, releaseHiddenSelection, requestDraw, stopTimelinePlayback,
-        syncCutoutShot, syncPaintUi, syncUndoRedoButtons, updateSidePanel,
+        markPaintStrokeVisualsDirty, playback, rebuildUpstreamWorking, releaseHiddenSelection, requestDraw,
+        stopTimelinePlayback, syncCutoutShot, syncPaintUi, syncUndoRedoButtons, updateSidePanel,
       } = api);
     },
     pushHistory, restoreHistory, getHistoryCapabilities,
