@@ -28,14 +28,17 @@ export function createHistory(deps) {
   // Bound by connect() to the other modules and showEditor.
   let clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
     markPaintStrokeVisualsDirty, playback, releaseHiddenSelection, requestDraw, stopTimelinePlayback,
-    syncCutoutShot, syncPaintUi, syncUndoRedoButtons, updateSidePanel;
+    storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff, syncUndoRedoButtons, updateSidePanel;
 
+  // A step keeps the state as the node keeps it: the port Sticker shown with the Pose handoff is its stored
+  // one (ADR 0030), shown again with the handoff of the moment when the step is restored.
   function pushHistory() {
     if (readOnly) return;
     syncCutoutShot();
+    syncPortHandoff();
     // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
     if (stateV2 && state.stickers.some(isUploadingSticker)) return;
-    editor.historyController.commitActionGroup(historySnapshot(state));
+    editor.historyController.commitActionGroup(historySnapshot(storedEditorState()));
     syncUndoRedoButtons();
   }
 
@@ -50,6 +53,7 @@ export function createHistory(deps) {
     Object.keys(state).forEach((k) => delete state[k]);
     Object.assign(state, restored.state);
     syncCutoutShot(false);
+    syncPortHandoff({ restored: true });
     // Undoing an fps change keeps the playhead's time in seconds.
     if (stateV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
     editor.selectedId = savedSelectionId(type, state);
@@ -81,7 +85,7 @@ export function createHistory(deps) {
       ({
         clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
         markPaintStrokeVisualsDirty, playback, releaseHiddenSelection, requestDraw, stopTimelinePlayback,
-        syncCutoutShot, syncPaintUi, syncUndoRedoButtons, updateSidePanel,
+        storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff, syncUndoRedoButtons, updateSidePanel,
       } = api);
     },
     pushHistory, restoreHistory, getHistoryCapabilities,

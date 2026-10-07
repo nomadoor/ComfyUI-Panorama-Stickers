@@ -7,7 +7,7 @@ import { clamp } from "./pano_math.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "./pano_diagnostics.js";
 import { yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
-import { editorActive, editorStateWrite, parsePanoEditorState, parseSceneEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
+import { editorActive, editorStateWrite, parsePanoEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
 import { loadSceneState } from "./pano_scene_state.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
@@ -34,9 +34,11 @@ import { createStudioStatus, studioRunOutput, studioRunQuaternion } from "./pano
 import {
   NODE_SURFACE_FRAME,
   createStickersNodeSurfaceSession,
+  portHandoffLinked,
   portStickerSyncValue,
   stickersNodeSurfaceModel,
   surfacePoseStickers,
+  surfaceSceneEditorState,
 } from "./pano_stickers_node_surface.js";
 import {
   buildStickerGeometry,
@@ -62,6 +64,7 @@ import {
 } from "./pano_shared_image_cache.js";
 import {
   BACKGROUND_INPUT_NAMES,
+  HANDOFF_INPUT_NAMES,
   STICKER_INPUT_NAMES,
   createLoopingPreviewVideo,
   isNodeOutputMediaCurrent,
@@ -402,21 +405,28 @@ function getEffectiveStateSource(node) {
   return String(getWidget(node, "state_json")?.value || "");
 }
 
+// The state the node surface shows and edits. Panorama Studio's port Sticker shows the Pose handoff of the
+// node's current result as the run draws it (ADR 0030); the editor's working state already does.
 function getCachedState(node) {
   const sync = stateSync(node);
   const source = getEffectiveStateSource(node);
   const liveVersion = sync.liveStateVersion;
   const bg = String(getWidget(node, "bg_color")?.value || "#1a1a1e");
   const coverage = Number(getWidget(node, "coverage")?.value || 360) === 180 ? 180 : 360;
+  const sceneText = node.__panoSceneStateV2 && typeof source === "string";
+  // The handoff applies while the inputs it came from are linked as they were (the cache follows that too).
+  const handoff = sceneText && portHandoffLinked(node) && isNodeOutputMediaCurrent(node, "sticker-handoff")
+    ? ownOutputUiValue(node, "pano_sticker_handoff") ?? null
+    : null;
   const cache = sync.parsedState;
-  if (cache && cache.source === source && cache.liveVersion === liveVersion && cache.bg === bg && cache.coverage === coverage) {
+  if (cache && cache.source === source && cache.liveVersion === liveVersion && cache.bg === bg && cache.coverage === coverage && cache.handoff === handoff) {
     return cache.parsed;
   }
-  const parsed = node.__panoSceneStateV2 && typeof source === "string"
-    ? parseSceneEditorState(source, { backgroundColor: bg, coverage, active: editorActive(node) })
+  const parsed = sceneText
+    ? surfaceSceneEditorState(source, { backgroundColor: bg, coverage, active: editorActive(node) }, handoff)
     : parseState(source, bg);
   parsed.coverage = coverage;
-  sync.parsedState = { source, liveVersion, bg, coverage, parsed };
+  sync.parsedState = { source, liveVersion, bg, coverage, handoff, parsed };
   return parsed;
 }
 
@@ -2319,6 +2329,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         type: "sync-port",
         value: portStickerSyncValue(node, {
           pose: current ? ownOutputUiValue(node, "pano_sticker_input_pose", outputOverride) : null,
+          handoff: isNodeOutputMediaCurrent(node, "sticker-handoff") ? ownOutputUiValue(node, "pano_sticker_handoff", outputOverride) : null,
         }),
       });
     }
@@ -3026,7 +3037,8 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   node.onExecuted = onExecutedHook;
   const onConnectionsChangePrev = node.onConnectionsChange;
   const onConnectionsChangeHook = function (type, slotIndex) {
-    const stickerInputChanged = isTrackedMediaInputConnectionChange(node, type, slotIndex, STICKER_INPUT_NAMES);
+    // `sticker_state` decides whether the result's Pose handoff applies (ADR 0030).
+    const stickerInputChanged = isTrackedMediaInputConnectionChange(node, type, slotIndex, [...STICKER_INPUT_NAMES, ...HANDOFF_INPUT_NAMES]);
     const backgroundInputChanged = isTrackedMediaInputConnectionChange(node, type, slotIndex, BACKGROUND_INPUT_NAMES);
     const args = arguments;
     const out = onConnectionsChangePrev ? onConnectionsChangePrev.apply(this, args) : undefined;

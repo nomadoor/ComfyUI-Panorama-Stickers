@@ -3,8 +3,17 @@
 import { deriveCutoutAspectFromFov } from "../pano_cutout_view_math.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { clamp, wrapYaw } from "../pano_math.js";
-import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 import {
+  HANDOFF_LANES,
+  inheritPortHandoff,
+  recordHandoffEdits,
+  revertHandoffLane,
+  storedPortSticker,
+} from "../pano_port_handoff.js";
+import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
+import { loadSceneState, rebaseSceneState } from "../pano_scene_state.js";
+import {
+  nodePortHandoff,
   portStickerSyncValue,
   reconcileExternalStickerState,
   reconcilePortStickerState,
@@ -16,8 +25,13 @@ export function createExternalStickers(deps) {
     comfyMedia, editor, node, readOnly, state, type,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let commitAndRefreshNode, getExternalStickerPreviewImage, getNodeUiValue, isExternalSticker, requestDraw,
-    updateSelectionMenu, updateSidePanel;
+  let commitAndRefreshNode, getExternalStickerPreviewImage, getNodeUiValue, isExternalSticker, markObjectVisualsDirty,
+    pushHistory, requestDraw, updateSelectionMenu, updateSidePanel;
+  // Panorama Studio's port Sticker shown with the Pose handoff of the node's result (ADR 0030): `stored` is
+  // the port Sticker the state keeps (written to state_json and to the Undo history), `shown` the one shown
+  // when it was last written back, which tells the Lanes an edit changed, and `handoff` the handoff shown,
+  // all at the Timeline fps `fps`. The working state holds the shown Sticker.
+  let portSession = { stored: null, shown: null, handoff: null, fps: null };
 
   function normalizeInputPoseValue(value, debugValue = null) {
     if (value && typeof value === "object" && !Array.isArray(value)) return value;
@@ -173,7 +187,86 @@ export function createExternalStickers(deps) {
     const pose = isNodeOutputMediaCurrent(node, "external-sticker")
       ? normalizeInputPoseValue(getNodeUiValue("pano_sticker_input_pose"), null)
       : null;
-    return reconcilePortStickerState(state, portStickerSyncValue(node, { pose }));
+    return reconcilePortStickerState(state, portStickerSyncValue(node, { pose, handoff: currentPortHandoff() }));
+  }
+
+  // The Pose handoff of the node's current result, or null.
+  function currentPortHandoff() {
+    return isNodeOutputMediaCurrent(node, "sticker-handoff") ? nodePortHandoff(node, getNodeUiValue("pano_sticker_handoff")) : null;
+  }
+
+  function portHandoffShown() {
+    return type === "stickers" && !readOnly && node.__panoSceneStateV2 === true;
+  }
+
+  // A port Sticker at `fps`, from one at `from`, as rebaseSceneState rebases it with the state.
+  function rebasedPortSticker(sticker, from, fps) {
+    return structuredClone(rebaseSceneState(loadSceneState({ version: 2, timeline: { fps: from }, stickers: [sticker] }), fps).stickers[0]);
+  }
+
+  // Keeps the port Sticker of the working state shown with the current Pose handoff. With `record`, the
+  // Lanes an edit changed since the last write-back become overrides first (recordHandoffEdits). `restored`
+  // says the working state's port Sticker is a stored one (opening, Undo), not a shown one. The commit and
+  // the Undo history run it before they read the state (storedEditorState).
+  function syncPortHandoff({ record = true, restored = false } = {}) {
+    if (!portHandoffShown()) return false;
+    const port = state.stickers.find((item) => item.source?.kind === "port");
+    if (!port) {
+      portSession = { stored: null, shown: null, handoff: null, fps: null };
+      return false;
+    }
+    const { fps } = state.timeline;
+    let stored;
+    if (restored || !portSession.handoff || portSession.stored?.id !== port.id) {
+      stored = structuredClone(port);
+    } else {
+      // After a change of the Timeline fps, the working state was rebased (setTimelineFps): what was stored and
+      // shown is rebased the same way, so the rebase is no edit and an edit made before it still is.
+      const rebase = (sticker) => (portSession.fps === fps ? sticker : rebasedPortSticker(sticker, portSession.fps, fps));
+      if (record) recordHandoffEdits(port, rebase(portSession.shown));
+      stored = storedPortSticker(port, rebase(portSession.stored));
+    }
+    const handoff = currentPortHandoff();
+    const shown = handoff ? inheritPortHandoff(state, stored, handoff) : structuredClone(stored);
+    const changed = JSON.stringify(shown) !== JSON.stringify(port);
+    if (changed) {
+      // The object stays the one the editor holds (a selection, a drag).
+      for (const key of Object.keys(port)) delete port[key];
+      Object.assign(port, shown);
+    }
+    portSession = { stored, shown: structuredClone(shown), handoff, fps };
+    return changed;
+  }
+
+  // The working state as the node keeps it: the port Sticker shown with the Pose handoff is its stored one.
+  function storedEditorState() {
+    if (!portSession.handoff) return state;
+    return { ...state, stickers: state.stickers.map((item) => (item.source?.kind === "port" ? portSession.stored : item)) };
+  }
+
+  // The inspector's "Revert to upstream" of Panorama Studio's port Sticker, or null for another item: a button
+  // per Lane a handoff of its placement gives, which reverts only an override of the Pose handoff shown. The
+  // row is there with or without a handoff, so the inspector does not shift when one arrives.
+  function portHandoffLanes(sticker) {
+    if (!portHandoffShown() || sticker?.source?.kind !== "port") return null;
+    const { handoff } = portSession;
+    const shown = !!handoff && handoff.placement === sticker.placement;
+    return HANDOFF_LANES[sticker.placement].map((name) => ({ name, overridden: shown && sticker.handoff_overrides.includes(name) }));
+  }
+
+  // "Revert to upstream": the port Sticker's Lane `name` follows the Pose handoff again (ADR 0030).
+  function revertPortHandoffLane(name) {
+    syncPortHandoff();
+    const port = state.stickers.find((item) => item.source?.kind === "port");
+    if (!port || port.locked || !portSession.handoff || !revertHandoffLane(state, port, portSession.handoff, name)) return;
+    // Not an edit of the Lane: it is not made an override again, and the state keeps the upstream value.
+    portSession.shown = structuredClone(port);
+    portSession.stored[name] = structuredClone(port[name]);
+    pushHistory();
+    commitAndRefreshNode();
+    markObjectVisualsDirty();
+    updateSidePanel();
+    requestDraw();
   }
   function reconcileLegacyExternalStickerFromInputs() {
     const slot = Array.isArray(node?.inputs)
@@ -210,6 +303,11 @@ export function createExternalStickers(deps) {
       commitAndRefreshNode();
       updateSidePanel();
       updateSelectionMenu();
+    } else if (syncPortHandoff({ restored: reason === "open" })) {
+      // Opening, the working state has the stored port Sticker; a result may bring another handoff. Showing it
+      // writes nothing.
+      markObjectVisualsDirty();
+      updateSidePanel();
     } else if (reason === "image-loaded") {
       // The port Sticker's vFOV follows the image that just loaded (skyStickerVfov), which the inspector shows.
       updateSidePanel();
@@ -231,11 +329,12 @@ export function createExternalStickers(deps) {
   return {
     connect(api) {
       ({
-        commitAndRefreshNode, getExternalStickerPreviewImage, getNodeUiValue, isExternalSticker, requestDraw,
-        updateSelectionMenu, updateSidePanel,
+        commitAndRefreshNode, getExternalStickerPreviewImage, getNodeUiValue, isExternalSticker, markObjectVisualsDirty,
+        pushHistory, requestDraw, updateSelectionMenu, updateSidePanel,
       } = api);
     },
     computeStickerVFov, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState,
-    reconcileExternalStickerFromInputs, collectExternalStickersForClearAll,
+    reconcileExternalStickerFromInputs, collectExternalStickersForClearAll, syncPortHandoff, storedEditorState,
+    portHandoffLanes, revertPortHandoffLane,
   };
 }

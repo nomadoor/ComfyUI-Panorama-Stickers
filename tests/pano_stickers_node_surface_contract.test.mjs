@@ -465,8 +465,17 @@ test("state_json is written only when its meaning changes, in the editor and on 
   const runtime = await read("../web_src/pano_preview_runtime.js");
 
   // editorStateWrite (pano_editor_state.js) is null for an unchanged text and gives Studio's state its Scene id.
-  assert.match(editor, /function commitState\(\) \{[\s\S]*?const text = editorStateWrite\(node, state, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\);\s*if \(text === null\) return;\s*stateWidget\.value = text;/);
+  // The port Sticker shown with the Pose handoff is written as the state keeps it (storedEditorState, ADR 0030).
+  assert.match(editor, /function commitState\(\) \{[\s\S]*?const stored = storedEditorState\(\);\s*const text = editorStateWrite\(node, stored, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\);\s*if \(text === null\) return;[\s\S]*?stateWidget\.value = text;/);
   assert.match(runtime, /commitState: \(nextState\) => \{[\s\S]*?const text = editorStateWrite\(node, nextState, String\(stateWidget\.value \?\? ""\)\);\s*if \(text === null\) return;\s*stateWidget\.value = text;/);
+  // The node surface shows the port Sticker with the Pose handoff of the current result, which it never writes:
+  // sync-port leaves the handoff's replace to the display (ADR 0030 T11).
+  assert.match(runtime, /const handoff = sceneText && portHandoffLinked\(node\) && isNodeOutputMediaCurrent\(node, "sticker-handoff"\)/);
+  assert.match(runtime, /surfaceSceneEditorState\(source, \{[^}]*\}, handoff\)/);
+  assert.match(runtime, /cache\.handoff === handoff/);
+  assert.match(runtime, /handoff: isNodeOutputMediaCurrent\(node, "sticker-handoff"\) \? ownOutputUiValue\(node, "pano_sticker_handoff", outputOverride\) : null,/);
+  // Connecting or disconnecting sticker_state syncs the port Sticker again.
+  assert.match(runtime, /isTrackedMediaInputConnectionChange\(node, type, slotIndex, \[\.\.\.STICKER_INPUT_NAMES, \.\.\.HANDOFF_INPUT_NAMES\]\)/);
 });
 
 test("the node surface leaves a background VIDEO that failed to load for its image fallbacks", async () => {

@@ -755,7 +755,7 @@ test("Panorama Studio's editor edits its Camera: the shot follows it, the Frame 
   assert.doesNotMatch(editor, /frameDistance/);
   assert.match(editor, /return editorView\.pickSurface\(shotViewCamera\(context\.shot\), p\.x - rect\.x, p\.y - rect\.y, rect\.w, rect\.h\);/);
   // Closing the editor without an edit leaves state_json as it is, though the editor rebased it.
-  assert.match(editor, /editorStateWrite\(node, state, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)/);
+  assert.match(editor, /editorStateWrite\(node, stored, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)/);
 });
 
 test("Panorama Studio's editor adds and deletes its one Camera without moving the view at once (#89)", () => {

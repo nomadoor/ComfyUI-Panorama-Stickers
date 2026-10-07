@@ -13,7 +13,8 @@ export function createCommit(deps) {
     app, bgWidget, cameraV2, coverageWidget, node, presetWidget, readOnly, state, stateWidget,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let needsPaintingLayerSync, resolveEditorOutputPresetWidth, syncCutoutShot, syncPaintingLayerAsync;
+  let needsPaintingLayerSync, resolveEditorOutputPresetWidth, storedEditorState, syncCutoutShot, syncPaintingLayerAsync,
+    syncPortHandoff;
 
   function apply() {
     if (readOnly) return;
@@ -29,11 +30,16 @@ export function createCommit(deps) {
   function commitState() {
     if (readOnly) return;
     syncCutoutShot();
+    syncPortHandoff();
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
     if (!stateWidget) return;
-    const text = editorStateWrite(node, state, String(stateWidget.value ?? ""), { rebased: cameraV2 });
+    // The port Sticker shown with the Pose handoff is written as the state keeps it (ADR 0030).
+    const stored = storedEditorState();
+    const text = editorStateWrite(node, stored, String(stateWidget.value ?? ""), { rebased: cameraV2 });
     if (text === null) return;
+    // A Scene id given on writing (editorStateWrite) stays with the working state.
+    if (stored !== state) state.id = stored.id;
     stateWidget.value = text;
     stateWidget.callback?.(text);
   }
@@ -75,7 +81,8 @@ export function createCommit(deps) {
   return {
     connect(api) {
       ({
-        needsPaintingLayerSync, resolveEditorOutputPresetWidth, syncCutoutShot, syncPaintingLayerAsync,
+        needsPaintingLayerSync, resolveEditorOutputPresetWidth, storedEditorState, syncCutoutShot, syncPaintingLayerAsync,
+        syncPortHandoff,
       } = api);
     },
     apply, commitState, persistUiSettings, commitAndRefreshNode, triggerBackgroundPersistenceOnClose,

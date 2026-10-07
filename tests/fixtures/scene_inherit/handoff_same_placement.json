@@ -1,0 +1,147 @@
+{
+  "state": {
+    "version": 2,
+    "stickers": [
+      {
+        "id": "sticker_1",
+        "source": {
+          "kind": "file",
+          "filename": "a.png"
+        },
+        "z_index": 4
+      },
+      {
+        "id": "sticker_2",
+        "source": {
+          "kind": "port"
+        },
+        "z_index": 1,
+        "clip": {
+          "start": 2,
+          "in": 0,
+          "duration": 30
+        },
+        "size": {
+          "value": {
+            "hFOV_deg": 20,
+            "vFOV_deg": 20
+          }
+        },
+        "roll": {
+          "value": 7
+        },
+        "handoff_overrides": [
+          "size",
+          "opacity"
+        ],
+        "opacity": {
+          "value": 0.5
+        }
+      }
+    ]
+  },
+  "handoff": {
+    "placement": "sky",
+    "lanes": {
+      "direction": {
+        "value": {
+          "yaw_deg": 10,
+          "pitch_deg": 5
+        },
+        "keyframes": [
+          {
+            "frame": 0,
+            "value": {
+              "yaw_deg": 10,
+              "pitch_deg": 5
+            },
+            "easing": "auto"
+          },
+          {
+            "frame": 4,
+            "value": {
+              "yaw_deg": 50,
+              "pitch_deg": 0
+            },
+            "easing": "hold"
+          }
+        ]
+      },
+      "roll": {
+        "value": 3,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 60,
+          "vFOV_deg": 60
+        },
+        "keyframes": []
+      }
+    }
+  },
+  "expected": {
+    "id": "sticker_2",
+    "placement": "sky",
+    "source": {
+      "kind": "port"
+    },
+    "clip": {
+      "start": 2,
+      "in": 0,
+      "duration": 30
+    },
+    "visible": true,
+    "locked": false,
+    "crop": {
+      "x0": 0.0,
+      "y0": 0.0,
+      "x1": 1.0,
+      "y1": 1.0
+    },
+    "direction": {
+      "value": {
+        "yaw_deg": 10.0,
+        "pitch_deg": 5.0
+      },
+      "keyframes": [
+        {
+          "frame": 0,
+          "value": {
+            "yaw_deg": 10.0,
+            "pitch_deg": 5.0
+          },
+          "easing": "auto"
+        },
+        {
+          "frame": 4,
+          "value": {
+            "yaw_deg": 50.0,
+            "pitch_deg": 0.0
+          },
+          "easing": "hold"
+        }
+      ]
+    },
+    "roll": {
+      "value": 3.0,
+      "keyframes": []
+    },
+    "size": {
+      "value": {
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 20.0
+      },
+      "keyframes": []
+    },
+    "opacity": {
+      "value": 0.5,
+      "keyframes": []
+    },
+    "z_index": 1,
+    "handoff_overrides": [
+      "size",
+      "opacity"
+    ]
+  }
+}

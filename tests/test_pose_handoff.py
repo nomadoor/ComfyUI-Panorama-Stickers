@@ -1,5 +1,6 @@
 import json
 import math
+from pathlib import Path
 
 import pytest
 import torch
@@ -12,7 +13,7 @@ pytest.importorskip(
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
 from comfyui_pano_suite.core.scene_state import load_scene_state
-from comfyui_pano_suite.nodes import PanoramaStudioNode
+from comfyui_pano_suite.nodes import PanoramaStudioNode, _inherit_handoff
 from scene_test_helpers import camera_state as _camera, shoot as _shoot, state_text, video_frames as _frames
 from test_studio_camera import _solid, _upstream
 from tools.bake_legacy_goldens import render_only_runtime
@@ -189,7 +190,8 @@ def test_a_stored_port_sticker_still_receives_the_camera_work():
     # The rest of the stored Sticker is kept, and the editor is not asked to add it again.
     assert (port["id"], port["clip"], port["z_index"], port["locked"]) == ("sticker_1", {"start": 2, "in": 1, "duration": 30}, 3, True)
     assert "pano_sticker_input_pose" not in output.ui
-    assert output.ui["pano_sticker_handoff"] == [{"placement": "sky", "lanes": {name: added[name] for name in SKY_LANES}}]
+    # At the state's recorded Timeline fps, which the editor rebases it from.
+    assert output.ui["pano_sticker_handoff"] == [{"placement": "sky", "lanes": {name: added[name] for name in SKY_LANES}, "fps": 24.0}]
 
 
 def test_a_stored_port_sticker_returns_where_it_was_shot():
@@ -333,3 +335,17 @@ def test_the_placement_follows_the_handoff_and_drops_the_other_placements_overri
     back = _port(_run({"version": 2, "stickers": [other, world]}, sticker=_solid([1.0, 0.0, 0.0]), sticker_state=MOVING))
     assert back["placement"] == "sky" and "position" not in back
     assert back["z_index"] == 6 and back["handoff_overrides"] == ["opacity"] and back["opacity"]["value"] == 0.5
+
+
+# The editor shows the handoff by the same rule (web_src/pano_port_handoff.js `inheritPortHandoff`), held to these
+# fixtures by tests/pano_port_handoff.test.mjs too (ADR 0030 T11).
+HANDOFF_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_inherit"
+
+
+@pytest.mark.parametrize("name", ["handoff_same_placement", "handoff_sky_to_world", "handoff_world_to_sky"])
+def test_inheriting_the_handoff_matches_the_fixture_the_editor_shares(name):
+    case = json.loads((HANDOFF_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+    state = load_scene_state(case["state"])
+    port = next(item for item in state["stickers"] if item["source"]["kind"] == "port")
+
+    assert _inherit_handoff(state, port, case["handoff"]["placement"], case["handoff"]["lanes"]) == case["expected"]

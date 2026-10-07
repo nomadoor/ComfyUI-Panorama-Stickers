@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { ICON } from "../icons.js";
 import PanoEasingGraph from "./PanoEasingGraph.vue";
+import PanoHandoffRevert from "./PanoHandoffRevert.vue";
 import SvgIcon from "./SvgIcon.vue";
 
 const props = defineProps({
@@ -226,6 +227,8 @@ function onScrubDown(event, field) {
             </template>
           </template>
         </div>
+
+        <PanoHandoffRevert :model="model.handoff" />
 
         <PanoEasingGraph :model="easing" @timeline="emit('timeline', $event)" />
 

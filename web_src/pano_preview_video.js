@@ -8,11 +8,15 @@ export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media"];
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];
 // Panorama Studio's `scene` input, whose items the editor loads from the node's result.
 export const SCENE_INPUT_NAMES = ["scene"];
+// The inputs the Pose handoff of Panorama Studio's result (`pano_sticker_handoff`, ADR 0030) comes from: the port's
+// media and the `sticker_state` of the Studio that shot it.
+export const HANDOFF_INPUT_NAMES = ["sticker", "sticker_state"];
 
 const CHANNEL_INPUT_NAMES = {
   background: BACKGROUND_INPUT_NAMES,
   "external-sticker": STICKER_INPUT_NAMES,
   scene: SCENE_INPUT_NAMES,
+  "sticker-handoff": HANDOFF_INPUT_NAMES,
 };
 
 function originKey(link) {
@@ -81,7 +85,7 @@ export function workflowInputOrigins(workflow, executionId) {
   return origins;
 }
 
-const TRACKED_INPUT_NAMES = [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES, ...SCENE_INPUT_NAMES];
+const TRACKED_INPUT_NAMES = [...BACKGROUND_INPUT_NAMES, ...STICKER_INPUT_NAMES, ...SCENE_INPUT_NAMES, ...HANDOFF_INPUT_NAMES];
 const OUTPUT_INPUTS_LIMIT = 256;
 
 // Where the inputs of each output came from, by the output's content. ComfyUI copies an output each time it
