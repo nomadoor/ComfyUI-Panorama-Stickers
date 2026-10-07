@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "id": null,
   "timeline": {
     "fps": 30.0,
     "length": null
@@ -122,6 +123,7 @@
       "z_index": 0
     }
   ],
+  "next_sticker_id": 1,
   "painting": {
     "version": 1,
     "groups": [],
@@ -134,5 +136,6 @@
     "raster_objects": []
   },
   "painting_layer": null,
-  "painting_visible": true
+  "painting_visible": true,
+  "upstream": []
 }

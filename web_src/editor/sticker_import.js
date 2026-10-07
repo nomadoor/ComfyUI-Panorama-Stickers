@@ -1,7 +1,7 @@
 // Images that become Stickers: picked or dropped files added as sky or world Stickers, replacing a Sticker's
 // image, uploading them, the legacy embedded assets moved to files, and the drop cue on the stage.
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
-import { fileSource, newSceneSticker, newWorldSceneSticker } from "../pano_editor_state.js";
+import { fileSource, newSceneSticker, newWorldSceneSticker, takeStickerId } from "../pano_editor_state.js";
 import { newWorldStickerTransform } from "../pano_space.js";
 import {
   decodeStickerImageFile,
@@ -145,7 +145,7 @@ export function createStickerImport(deps) {
   // has no file until then, so saving in between leaves it out. A sky Sticker goes where the view looks;
   // a world one where newWorldStickerPlace() puts it.
   async function addSceneStickerFromFile(file, placement = "sky") {
-    const id = uid("st");
+    const id = takeStickerId(state);
     const operation = queuePendingStickerOperation(node, `add:${id}`, async () => {
       const { image: img } = await decodeStickerImageFile(file);
       const pose = {

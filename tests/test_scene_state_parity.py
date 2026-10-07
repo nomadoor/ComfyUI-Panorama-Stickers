@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "scene_state"
 TOLERANCE = 1e-4
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_interpolation", "v2_half_turns", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_interpolation", "v2_half_turns", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 EVAL_FRAMES = {
     "v2_canonical": [10.0 - 1e-7, 50.0 - 1e-7] + [case["frame"] for case in json.loads((FIXTURES / "v2_canonical.eval.json").read_text(encoding="utf-8"))] + [0.0, 1.0, 23.999, 24.0 - 5e-7, 24.0 + 5e-7, 48.0, 119.0],
@@ -30,24 +30,35 @@ EVAL_FRAMES = {
     "v2_erp_camera": [0.0, 12.0, 18.0, 23.999, 24.0, 30.0, 36.0, 40.0],
     "v2_hidden": [0.0, 2.0, 3.0, 8.0],
     "v2_timeline_limits": [0.0, 1000.0, 1250.0, 1500.0, 2000.0, 1e7],
+    "v2_upstream": [0.0, 5.0],
 }
 REBASE_CASES = [[name, fps] for name in STATE_CASES for fps in (30000 / 1001, 12.0, 60.0)] + [["v2_timeline_limits", fps] for fps in (1e308, 300.0, 0.5)]
+# States that probe the edges of the Sticker id counter and the upstream records.
+PROBE_STATES = [
+    {"version": 2, "stickers": [{"id": f"sticker_{digits}", "source": {"kind": "port"}}, {"id": "sticker_3", "source": {"kind": "file", "filename": "a.png"}}]}
+    for digits in ("9" * 5000, "9" * 17, "0" * 16 + "5", "9" * 16, "9007199254740990", "9007199254740991")
+] + [
+    {"version": 2, "next_sticker_id": 1e300, "stickers": [{"id": "sticker_9007199254740991", "source": {"kind": "port"}}, {"id": "", "source": {"kind": "file", "filename": "a.png"}}]},
+    {"version": 2, "upstream": [{"layer": "a", "fps": fps, "deleted": ["x"]} for fps in (0, "30", None, 1e300, 0.5)]},
+]
 BAD_STATES = ['{"version":3}', '{"version":"2"}', "{not json", "[1]"]
 
 JS_SCRIPT = textwrap.dedent(
     """
     import { readFileSync } from "node:fs";
-    import { loadSceneState, loadStickerState, rebaseSceneState } from "./web_src/pano_scene_state.js";
+    import { loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "./web_src/pano_scene_state.js";
     import { evaluateSceneState } from "./web_src/pano_scene_eval.js";
 
     const input = JSON.parse(readFileSync(0, "utf8"));
     const read = (name) => readFileSync(`tests/fixtures/scene_state/${name}.json`, "utf8");
-    const out = { states: {}, eval: {}, rebased: [], sticker_states: {}, errors: [] };
+    const out = { states: {}, texts: {}, eval: {}, rebased: [], sticker_states: {}, errors: [] };
     for (const name of input.states) out.states[name] = loadSceneState(read(name));
+    for (const name of input.states) out.texts[name] = sceneStateText(out.states[name]);
     for (const [name, frames] of Object.entries(input.eval_frames)) {
       out.eval[name] = frames.map((frame) => evaluateSceneState(out.states[name], frame));
     }
     for (const [name, fps] of input.rebase) out.rebased.push(rebaseSceneState(out.states[name], fps));
+    out.probes = input.probes.map((raw) => loadSceneState(raw));
     for (const name of input.sticker_states) out.sticker_states[name] = loadStickerState(read(name));
     for (const text of input.bad_states) {
       try {
@@ -63,7 +74,7 @@ JS_SCRIPT = textwrap.dedent(
 
 
 def run_js():
-    payload = {"states": STATE_CASES, "eval_frames": EVAL_FRAMES, "rebase": REBASE_CASES, "sticker_states": STICKER_STATE_CASES, "bad_states": BAD_STATES}
+    payload = {"states": STATE_CASES, "eval_frames": EVAL_FRAMES, "rebase": REBASE_CASES, "sticker_states": STICKER_STATE_CASES, "bad_states": BAD_STATES, "probes": PROBE_STATES}
     proc = subprocess.run(
         ["node", "--input-type=module", "-e", JS_SCRIPT],
         cwd=REPO_ROOT,
@@ -108,9 +119,19 @@ def test_js_load_matches_python(js_out, name):
 
 
 @pytest.mark.parametrize("name", STATE_CASES)
+def test_the_js_state_text_reads_back_as_the_same_state_in_python(js_out, name):
+    assert load_scene_state(js_out["texts"][name]) == load_scene_state(read(name))
+
+
+@pytest.mark.parametrize("name", STATE_CASES)
 def test_js_evaluation_matches_python(js_out, name):
     state = load_scene_state(read(name))
     assert_parity([evaluate_scene_state(state, frame) for frame in EVAL_FRAMES[name]], js_out["eval"][name])
+
+
+def test_js_probes_match_python(js_out):
+    for raw, js in zip(PROBE_STATES, js_out["probes"], strict=True):
+        assert_parity(load_scene_state(raw), js)
 
 
 def test_js_rebase_matches_python(js_out):

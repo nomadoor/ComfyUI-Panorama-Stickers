@@ -158,6 +158,8 @@ export function restoredHistoryState(current, snapshot) {
   const state = JSON.parse(snapshot);
   const paintingChanged = JSON.stringify(state.painting) !== JSON.stringify(current.painting);
   if (!paintingChanged) state.painting_layer = current.painting_layer;
+  // The Sticker id counter only goes up, so an undone Sticker's id is not given out again.
+  if (current.next_sticker_id > state.next_sticker_id) state.next_sticker_id = current.next_sticker_id;
   return { state, paintingChanged };
 }
 
@@ -425,6 +427,14 @@ export function fileSource(asset) {
 export function sourceAsset(source) {
   if (source.data_url) return { type: "dataurl", value: source.data_url };
   return { type: "comfy_image", filename: source.filename, subfolder: source.subfolder, storage: source.storage };
+}
+
+// A new Sticker id from the state's `next_sticker_id` counter, which it advances, so no id is given
+// out twice (docs/scene-state-v2.md).
+export function takeStickerId(state) {
+  const id = `sticker_${state.next_sticker_id}`;
+  state.next_sticker_id += 1;
+  return id;
 }
 
 // A sky Sticker over the whole Timeline with the pose in the editor's fields.

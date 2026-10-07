@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
+import { ensureSceneId, loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -20,7 +20,7 @@ function assertClose(actual, expected, path = "$") {
 
 test("state_json v1 and v2 fixtures load as the documented v2 state", () => {
   assertClose(loadSceneState(fixture("v2_canonical")), JSON.parse(fixture("v2_canonical")));
-  for (const name of ["v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera"]) {
+  for (const name of ["v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_upstream"]) {
     assertClose(loadSceneState(fixture(name)), JSON.parse(fixture(`${name}.v2`)));
   }
 });
@@ -309,4 +309,77 @@ test("timeline fps and length are kept in range on load and rebase", () => {
   const text = sceneStateText(loadSceneState(fixture("v2_canonical")));
   assert.equal(sceneStateText(loadSceneState(text)), text);
   for (const fps of [0, NaN, Infinity]) assert.throws(() => rebaseSceneState(state, fps), /fps must be a positive number/);
+});
+
+test("the state text of a state saved before ADR 0030 stays the same", () => {
+  for (const name of ["v2_canonical", "v2_interpolation", "v2_hidden", "v1_stickers", "v2_invalid_fields"]) {
+    const text = sceneStateText(loadSceneState(fixture(name)));
+    const saved = JSON.parse(text);
+    assert.equal("id" in saved, false, name);
+    assert.equal("next_sticker_id" in saved, false, name);
+    assert.equal("upstream" in saved, false, name);
+    assert.equal(saved.stickers.some((item) => "handoff_overrides" in item), false, name);
+    assert.equal(sceneStateText(loadSceneState(text)), text, name);
+  }
+});
+
+test("the state text keeps an id, a counter past the Stickers, overrides and upstream records", () => {
+  const state = loadSceneState(fixture("v2_upstream"));
+  const text = sceneStateText(state);
+  const saved = JSON.parse(text);
+  // The Sticker without an id took sticker_8 from the counter, so the counter (9) is what the Stickers give.
+  assert.deepEqual(Object.keys(saved), ["version", "id", "timeline", "camera", "scene", "stickers", "painting", "painting_layer", "upstream"]);
+  assert.equal(saved.id, "scene_a");
+  assert.equal(state.next_sticker_id, 9);
+  assert.deepEqual(saved.stickers.map((item) => item.handoff_overrides), [undefined, ["direction", "size", "opacity"], undefined]);
+  assert.deepEqual(loadSceneState(text), state);
+  // A counter past the Stickers (sticker_2 to sticker_3 were deleted) is kept.
+  const deleted = loadSceneState({ version: 2, stickers: [{ id: "sticker_1", source: { kind: "port" } }], next_sticker_id: 4 });
+  assert.equal(JSON.parse(sceneStateText(deleted)).next_sticker_id, 4);
+  assert.deepEqual(loadSceneState(sceneStateText(deleted)), deleted);
+  // A port Sticker whose Lanes all come from sticker_state leaves out the empty list.
+  const port = loadSceneState({ version: 2, stickers: [{ id: "p", source: { kind: "port" }, handoff_overrides: ["roll", "scale"] }] });
+  assert.deepEqual(port.stickers[0].handoff_overrides, ["roll"]);
+  assert.equal("handoff_overrides" in JSON.parse(sceneStateText({ ...port, stickers: [{ ...port.stickers[0], handoff_overrides: [] }] })).stickers[0], false);
+});
+
+test("the Sticker id counter is at least one past the largest sticker_<n> and gives ids to Stickers without one", () => {
+  const counter = (stickers, next) => loadSceneState({ version: 2, stickers, next_sticker_id: next });
+  const file = (id) => ({ id, source: { kind: "file", filename: "a.png" } });
+  assert.equal(counter([], undefined).next_sticker_id, 1);
+  assert.equal(counter([file("sticker_2"), file("st_9"), file("sticker_x")], undefined).next_sticker_id, 3);
+  // A counter left past deleted Stickers stays; one below the Stickers comes up to them.
+  assert.equal(counter([file("sticker_2")], 7).next_sticker_id, 7);
+  assert.equal(counter([file("sticker_2")], 1).next_sticker_id, 3);
+  assert.equal(counter([file("sticker_2")], 6.6).next_sticker_id, 7);
+  for (const bad of ["7", null, true, NaN, -4]) assert.equal(counter([file("sticker_2")], bad).next_sticker_id, 3, String(bad));
+  // A missing or repeated id takes the counter's next number, not a smaller unused one.
+  const repaired = counter([file("sticker_3"), file(""), file("sticker_3")], 5);
+  assert.deepEqual(repaired.stickers.map((item) => item.id), ["sticker_3", "sticker_5", "sticker_6"]);
+  assert.equal(repaired.next_sticker_id, 7);
+  assert.deepEqual(loadSceneState(repaired), repaired);
+  // Numbers past the exact JS integers are not counted.
+  assert.equal(counter([file("sticker_9007199254740991"), file("sticker_12")], 1e300).next_sticker_id, Number.MAX_SAFE_INTEGER);
+  assert.equal(counter([file("sticker_9007199254740991"), file("sticker_12")], undefined).next_sticker_id, 13);
+});
+
+test("rebasing keeps the id, the Sticker id counter, the upstream records and the handoff overrides", () => {
+  const state = loadSceneState(fixture("v2_upstream"));
+  const rebased = rebaseSceneState(state, 60);
+  assert.equal(rebased.id, "scene_a");
+  assert.equal(rebased.next_sticker_id, 9);
+  assert.deepEqual(rebased.upstream, state.upstream);
+  assert.deepEqual(rebased.stickers[1].handoff_overrides, ["direction", "size", "opacity"]);
+});
+
+test("ensureSceneId gives a state without an id one and keeps an existing one", () => {
+  const ids = ["made_1", "made_2"];
+  const make = () => ids.shift();
+  const fresh = loadSceneState(null);
+  const named = ensureSceneId(fresh, make);
+  assert.equal(named.id, "made_1");
+  assert.equal(fresh.id, null);
+  assert.equal(ensureSceneId(named, make), named);
+  assert.equal(JSON.parse(sceneStateText(named)).id, "made_1");
+  for (const bad of ["", 3, null, ["a"]]) assert.equal(loadSceneState({ version: 2, id: bad }).id, null);
 });

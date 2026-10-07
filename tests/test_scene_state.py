@@ -9,7 +9,7 @@ from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_s
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 
 
@@ -212,13 +212,14 @@ def test_non_object_state_raises(text):
 
 def test_state_v2_has_no_unread_fields():
     state = load_scene_state(read_fixture("v2_canonical"))
-    assert list(state.keys()) == ["version", "timeline", "camera", "scene", "stickers", "painting", "painting_layer", "painting_visible"]
+    assert list(state.keys()) == ["version", "id", "timeline", "camera", "scene", "stickers", "next_sticker_id", "painting", "painting_layer", "painting_visible", "upstream"]
     assert list(state["timeline"].keys()) == ["fps", "length"]
     assert list(state["camera"].keys()) == ["aspect", "projection", "visible", "position", "rotation", "fov"]
     assert list(state["scene"].keys()) == ["clip", "visible", "position", "rotation", "scale"]
     lanes = {"sky": ["direction", "roll", "size", "opacity", "z_index"], "world": ["position", "rotation", "scale", "opacity"]}
     for sticker in state["stickers"]:
-        assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", *lanes[sticker["placement"]]]
+        port = ["handoff_overrides"] if sticker["source"]["kind"] == "port" else []
+        assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", *lanes[sticker["placement"]], *port]
 
 
 @pytest.mark.parametrize("name", STICKER_STATE_CASES)
@@ -339,3 +340,93 @@ def test_clip_range_edges_use_frame_epsilon():
     assert not active(10.0 - 1e-5)
     assert active(50.0 - 1e-5)
     assert not active(50.0 - 1e-7)
+
+
+def _counter(stickers, next_sticker_id=None):
+    raw = {"version": 2, "stickers": stickers}
+    if next_sticker_id is not None:
+        raw["next_sticker_id"] = next_sticker_id
+    return load_scene_state(raw)
+
+
+def _file(sticker_id):
+    return {"id": sticker_id, "source": {"kind": "file", "filename": "a.png"}}
+
+
+@pytest.mark.parametrize("stickers, stored, expected", [
+    ([], None, 1),
+    ([_file("sticker_2"), _file("st_9"), _file("sticker_x"), _file("sticker_٣")], None, 3),
+    ([_file("sticker_2")], 7, 7),
+    ([_file("sticker_2")], 1, 3),
+    ([_file("sticker_2")], 6.6, 7),
+    ([_file("sticker_2")], "7", 3),
+    ([_file("sticker_2")], True, 3),
+    ([_file("sticker_2")], -4, 3),
+    ([_file("sticker_9007199254740991"), _file("sticker_12")], 1e300, 2**53 - 1),
+    ([_file("sticker_9007199254740991"), _file("sticker_12")], None, 13),
+    # More than 16 digits is not a number (int() raises past 4,300 digits).
+    ([_file("sticker_" + "9" * 5000), _file("sticker_" + "0" * 16 + "5"), _file("sticker_" + "0" * 15 + "5")], None, 6),
+])
+def test_next_sticker_id_is_at_least_one_past_the_largest_sticker_number(stickers, stored, expected):
+    assert _counter(stickers, stored)["next_sticker_id"] == expected
+
+
+def test_a_sticker_without_a_valid_id_takes_the_counter_not_a_smaller_unused_number():
+    state = _counter([_file("sticker_3"), _file(""), _file("sticker_3")], 5)
+
+    assert [sticker["id"] for sticker in state["stickers"]] == ["sticker_3", "sticker_5", "sticker_6"]
+    assert state["next_sticker_id"] == 7
+    assert load_scene_state(state) == state
+
+
+def test_only_port_stickers_keep_handoff_overrides_of_their_lanes_in_lane_order():
+    state = load_scene_state({"version": 2, "stickers": [
+        {"id": "p", "placement": "world", "source": {"kind": "port"}, "handoff_overrides": ["opacity", "direction", "position", "position", None]},
+        {"id": "f", "source": {"kind": "file", "filename": "a.png"}, "handoff_overrides": ["direction"]},
+    ]})
+
+    assert state["stickers"][0]["handoff_overrides"] == ["position", "opacity"]
+    assert "handoff_overrides" not in state["stickers"][1]
+    assert load_scene_state({"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "handoff_overrides": "size"}]})["stickers"][0]["handoff_overrides"] == []
+
+
+@pytest.mark.parametrize("value", ["", 3, None, ["a"]])
+def test_a_scene_id_is_a_non_empty_string_or_none(value):
+    assert load_scene_state({"version": 2, "id": value})["id"] is None
+    assert load_scene_state({"version": 2, "id": "scene_a"})["id"] == "scene_a"
+
+
+def test_upstream_overrides_leave_out_invalid_fields_instead_of_defaulting_them():
+    upstream = load_scene_state(read_fixture("v2_upstream"))["upstream"]
+
+    assert [record["layer"] for record in upstream] == ["up_a", "up_c", "up_b"]
+    overrides = upstream[0]["stickers"]
+    # `locked: "yes"`, `roll: 5` and the world `position` of a sky Sticker are inherited, not set to defaults.
+    assert list(overrides[0].keys()) == ["id", "placement", "clip", "visible", "crop", "direction", "z_index"]
+    assert overrides[1] == {"id": "sticker_4", "placement": "world", "scale": {"value": 2.0, "keyframes": []}}
+    assert upstream[0]["scene"] == {"visible": False, "clip": {"start": 0, "in": 0, "duration": 5}}
+    assert "painting_visible" not in upstream[0]
+
+
+def test_rebase_keeps_the_id_the_counter_and_the_upstream_records():
+    state = load_scene_state(read_fixture("v2_upstream"))
+    rebased = rebase_scene_state(state, 60.0)
+
+    assert (rebased["id"], rebased["next_sticker_id"], rebased["upstream"]) == (state["id"], state["next_sticker_id"], state["upstream"])
+    assert rebased["stickers"][1]["handoff_overrides"] == ["direction", "size", "opacity"]
+
+
+def test_renumbering_skips_an_uncounted_id_the_counter_reaches():
+    state = _counter([_file("sticker_9007199254740991"), _file("")], 1e300)
+
+    assert [sticker["id"] for sticker in state["stickers"]] == ["sticker_9007199254740991", "sticker_9007199254740992"]
+    assert state["next_sticker_id"] == 2**53 - 1
+    assert load_scene_state(state) == state
+
+
+@pytest.mark.parametrize("fps", [0, "30", None, -24.0])
+def test_an_upstream_record_without_a_valid_fps_is_dropped(fps):
+    record = {"layer": "up", "deleted": ["sticker_1"]}
+    if fps is not None:
+        record["fps"] = fps
+    assert load_scene_state({"version": 2, "upstream": [record]})["upstream"] == []

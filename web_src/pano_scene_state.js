@@ -18,6 +18,10 @@ export const TIMELINE_FPS_MAX = 1000;
 // 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
 export const TIMELINE_FRAME_MAX = 10000000;
 export const TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX;
+// The largest Sticker number (`sticker_<n>`) the `next_sticker_id` counter keeps: JS integers are exact up to here.
+const STICKER_NUMBER_MAX = Number.MAX_SAFE_INTEGER;
+// At most 16 digits (past STICKER_NUMBER_MAX): a longer number is not counted, as in scene_state.py.
+const STICKER_NUMBER = /^sticker_([0-9]{1,16})$/;
 
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -220,10 +224,18 @@ function sticker(raw) {
     ...lanes(raw, world ? WORLD_STICKER_LANES : SKY_STICKER_LANES),
   };
   if (!world) out.z_index = frameNumber(raw.z_index) ?? 0;
+  if (src.kind === "port") out.handoff_overrides = laneNames(raw.handoff_overrides, placement);
   return out;
 }
 
-function stickers(raw) {
+// The names in `raw` of the Lanes a Sticker of `placement` has, once each and in Lane order.
+function laneNames(raw, placement) {
+  const names = Array.isArray(raw) ? raw : [];
+  return (placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES).map(([name]) => name).filter((name) => names.includes(name));
+}
+
+// The Stickers and the `next_sticker_id` counter after them.
+function stickers(raw, rawNext) {
   const out = [];
   let hasPort = false;
   for (const item of Array.isArray(raw) ? raw : []) {
@@ -240,14 +252,34 @@ function stickers(raw) {
     if (typeof item.id === "string" && item.id && !used.has(item.id)) used.add(item.id);
     else item.id = null;
   }
-  let n = 1;
+  // A Sticker without a valid id takes the next number of the counter, so no id is used twice.
+  let n = nextStickerNumber(rawNext, out);
   for (const item of out) {
     if (item.id !== null) continue;
+    // Ids past STICKER_NUMBER_MAX are not counted, so the counter may reach one of them.
     while (used.has(`sticker_${n}`)) n += 1;
     item.id = `sticker_${n}`;
-    used.add(item.id);
+    n += 1;
   }
-  return out;
+  return { stickers: out, next: Math.min(n, STICKER_NUMBER_MAX) };
+}
+
+function stickerNumber(id) {
+  const match = typeof id === "string" ? STICKER_NUMBER.exec(id) : null;
+  const number = match ? Number(match[1]) : 0;
+  return number < STICKER_NUMBER_MAX ? number : 0;
+}
+
+// The counter a state needs at least: one past the largest `sticker_<n>` among its Stickers.
+function leastStickerNumber(list) {
+  return list.reduce((value, item) => Math.max(value, stickerNumber(item.id)), 0) + 1;
+}
+
+// The stored counter, at least leastStickerNumber().
+function nextStickerNumber(raw, list) {
+  const stored = frameNumber(raw);
+  const least = leastStickerNumber(list);
+  return clamp(stored === null ? least : Math.max(stored, least), 1, STICKER_NUMBER_MAX);
 }
 
 // The Camera, or null when the state has none (`camera` missing, null or not an object).
@@ -257,21 +289,75 @@ function camera(raw) {
   return { aspect: positive(raw.aspect, 1), projection, visible: bool(raw.visible, true), ...lanes(raw, CAMERA_LANES) };
 }
 
+// A non-empty string, or null.
+function text(value) {
+  return typeof value === "string" && value ? value : null;
+}
+
+// The items without those whose key comes again later in the list.
+function lastBy(items, key) {
+  const last = new Map(items.map((item, index) => [key(item), index]));
+  return items.filter((item, index) => last.get(key(item)) === index);
+}
+
+// An upstream Sticker's overridden fields, or null without any. An invalid field is left out (inherited).
+function stickerOverride(raw) {
+  if (!isObject(raw) || text(raw.id) === null || !PLACEMENTS.includes(raw.placement)) return null;
+  const world = raw.placement === "world";
+  const fields = {};
+  if (isObject(raw.clip)) fields.clip = clip(raw.clip);
+  for (const name of ["visible", "locked"]) {
+    if (typeof raw[name] === "boolean") fields[name] = raw[name];
+  }
+  if (isObject(raw.crop)) fields.crop = crop(raw.crop);
+  Object.assign(fields, lanes(raw, (world ? WORLD_STICKER_LANES : SKY_STICKER_LANES).filter(([name]) => isObject(raw[name]))));
+  const zIndex = world ? null : frameNumber(raw.z_index);
+  if (zIndex !== null) fields.z_index = zIndex;
+  return Object.keys(fields).length ? { id: raw.id, placement: raw.placement, ...fields } : null;
+}
+
+// The overrides of one upstream layer, or null when the record overrides nothing.
+function upstreamRecord(raw) {
+  const fps = isObject(raw) ? timelineFps(raw.fps) : null;
+  // Without a valid fps the record's frames mean nothing, so it is dropped (inherit everything).
+  if (fps === null || text(raw.layer) === null) return null;
+  const deleted = Array.isArray(raw.deleted) ? [...new Set(raw.deleted.filter((item) => text(item) !== null))] : [];
+  const overrides = (Array.isArray(raw.stickers) ? raw.stickers : []).map(stickerOverride).filter((item) => item !== null);
+  const stickerOverrides = lastBy(overrides, (item) => item.id).filter((item) => !deleted.includes(item.id));
+  const sceneRaw = isObject(raw.scene) ? raw.scene : {};
+  const scene = {};
+  if (typeof sceneRaw.visible === "boolean") scene.visible = sceneRaw.visible;
+  if (isObject(sceneRaw.clip)) scene.clip = clip(sceneRaw.clip);
+  const record = { layer: raw.layer, fps, deleted, stickers: stickerOverrides, scene };
+  if (typeof raw.painting_visible === "boolean") record.painting_visible = raw.painting_visible;
+  const empty = !deleted.length && !stickerOverrides.length && !Object.keys(scene).length && !("painting_visible" in record);
+  return empty ? null : record;
+}
+
+function upstream(raw) {
+  const records = (Array.isArray(raw) ? raw : []).map(upstreamRecord).filter((item) => item !== null);
+  return lastBy(records, (item) => item.layer);
+}
+
 function normalizeV2(raw) {
   const timeline = isObject(raw.timeline) ? raw.timeline : {};
   const scene = isObject(raw.scene) ? raw.scene : {};
+  const { stickers: stickerList, next } = stickers(raw.stickers, raw.next_sticker_id);
   return {
     version: STATE_VERSION,
+    id: text(raw.id),
     timeline: {
       fps: timelineFps(timeline.fps) ?? 24,
       length: timelineLength(timeline.length),
     },
     camera: camera(raw.camera),
     scene: { clip: clip(scene.clip), visible: bool(scene.visible, true), ...lanes(scene, SCENE_LANES) },
-    stickers: stickers(raw.stickers),
+    stickers: stickerList,
+    next_sticker_id: next,
     painting: normalizePaintingState(raw.painting),
     painting_layer: isObject(raw.painting_layer) ? structuredClone(raw.painting_layer) : null,
     painting_visible: bool(raw.painting_visible, true),
+    upstream: upstream(raw.upstream),
   };
 }
 
@@ -360,13 +446,25 @@ function withoutDefaults(object, defaults) {
   return Object.fromEntries(Object.entries(object).filter(([key, value]) => !Object.hasOwn(defaults, key) || value !== defaults[key]));
 }
 
-// The `state_json` text of a loaded state, without the fields of TEXT_DEFAULTS at their defaults.
+// The `state_json` text of a loaded state, without the fields of TEXT_DEFAULTS at their defaults, and
+// without an unset `id`, a `next_sticker_id` its Stickers give anyway, an empty `upstream` and empty
+// `handoff_overrides`: the texts of states saved before these fields stay the same.
 export function sceneStateText(state) {
+  const out = withoutDefaults(state, TEXT_DEFAULTS.state);
+  if (out.id === null) delete out.id;
+  if (out.next_sticker_id === leastStickerNumber(state.stickers)) delete out.next_sticker_id;
+  if (!out.upstream.length) delete out.upstream;
   return JSON.stringify({
-    ...withoutDefaults(state, TEXT_DEFAULTS.state),
+    ...out,
     camera: state.camera && withoutDefaults(state.camera, TEXT_DEFAULTS.camera),
     scene: withoutDefaults(state.scene, TEXT_DEFAULTS.scene),
+    stickers: state.stickers.map((item) => Object.fromEntries(Object.entries(item).filter(([key, value]) => key !== "handoff_overrides" || value.length))),
   });
+}
+
+// The state with an `id` from makeId() when it has none, so a downstream Studio can key its overrides to it.
+export function ensureSceneId(state, makeId) {
+  return state.id ? state : { ...state, id: makeId() };
 }
 
 function rebaseLanes(owner, list, rebase, anchor, newAnchor) {
@@ -401,6 +499,7 @@ export function rebaseSceneState(state, value) {
   const { length } = state.timeline;
   const scene = rebaseClip(state.scene.clip, rebase);
   return normalizeV2({
+    id: state.id,
     timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
     camera: state.camera === null ? null : { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
     scene: { clip: scene.clip, visible: state.scene.visible, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
@@ -409,9 +508,12 @@ export function rebaseSceneState(state, value) {
       const list = item.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES;
       return { ...item, clip, ...rebaseLanes(item, list, rebase, anchor, newAnchor) };
     }),
+    next_sticker_id: state.next_sticker_id,
     painting: state.painting,
     painting_layer: state.painting_layer,
     painting_visible: state.painting_visible,
+    // The override records keep their own fps (docs/scene-state-v2.md "上流の上書き").
+    upstream: state.upstream,
   });
 }
 

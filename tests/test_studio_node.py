@@ -131,6 +131,16 @@ def test_a_port_sticker_added_by_the_node_is_in_the_ui():
                                               "keyframes": {"direction": [], "roll": [], "size": []}}]
 
 
+def test_a_port_sticker_added_by_the_node_takes_its_id_from_the_counter():
+    # sticker_2 was deleted: the counter is past it, so the port Sticker does not take its id again.
+    state = {"version": 2, "stickers": [{"id": "sticker_1", "source": {"kind": "file", "filename": "missing.png"}}], "next_sticker_id": 3}
+
+    scene = _outputs(state, output_size="1024", sticker=_solid([1.0, 0.0, 0.0]))[4]
+
+    assert [item["id"] for item in scene.layers[-1].state["stickers"]] == ["sticker_1", "sticker_3"]
+    assert scene.layers[-1].state["next_sticker_id"] == 4
+
+
 def test_an_empty_state_has_no_camera():
     image, mask, video, sticker_state, scene = _outputs(output_size="1024", bg_color="#ff0000")
 
