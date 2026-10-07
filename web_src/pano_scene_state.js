@@ -462,11 +462,6 @@ export function sceneStateText(state) {
   });
 }
 
-// The state with an `id` from makeId() when it has none, so a downstream Studio can key its overrides to it.
-export function ensureSceneId(state, makeId) {
-  return state.id ? state : { ...state, id: makeId() };
-}
-
 function rebaseLanes(owner, list, rebase, anchor, newAnchor) {
   const out = {};
   for (const [name] of list) {

@@ -72,11 +72,21 @@ export function layerUiList(ui, key) {
   return Array.isArray(ui[key]) ? ui[key] : [];
 }
 
-function dimmed(layer, index) {
-  return { ...layer, id: `upstream:${index}:${layer.id}`, opacity: layer.opacity * UPSTREAM_OPACITY };
+// The key of each upstream layer (from upstreamLayersOf) in the ids and slots of what the views draw of it: its
+// state's Scene id (ADR 0030), or its index when it has none (a state never written). When the chain holds
+// the same id twice (a pasted Studio), the nearest downstream layer keeps it, as the node applies overrides
+// to that one, and the others fall back to `#<index>` (a character a generated id never holds).
+export function upstreamLayerKeys(layers) {
+  return layers.map(({ sceneState: { id } }, index) => (
+    id && !layers.slice(index + 1).some((later) => later.sceneState.id === id) ? id : `#${index}`
+  ));
 }
 
-// What the views draw of upstream layer `index` at its Timeline `frame` (upstreamFrame): `sky`, its Sky
+function dimmed(layer, key) {
+  return { ...layer, id: `upstream:${key}:${layer.id}`, opacity: layer.opacity * UPSTREAM_OPACITY };
+}
+
+// What the views draw of the upstream layer with `key` (upstreamLayerKeys) at its Timeline `frame` (upstreamFrame): `sky`, its Sky
 // layers from back to front (skyLayers, with its paint layers `paintLayers`), `stickers`, its world Sticker
 // planes (worldStickerLayers), and `items`, its 3D content to load and draw ({ slot, urls, request, value,
 // opacity }: the `scene` item or the 3D port Sticker's, request as sceneRequest() makes it, null where none
@@ -84,23 +94,23 @@ function dimmed(layer, index) {
 // Ids are made apart from the node's own and from other layers', and everything is dimmed by
 // UPSTREAM_OPACITY. A hidden Sticker is not drawn, as the node does not draw it. media(sticker) is as
 // skyLayers'; source(entry) is the URL of a `ui` file entry.
-export function upstreamLayerView(layer, index, frame, { media, paintLayers, source }) {
+export function upstreamLayerView(layer, key, frame, { media, paintLayers, source }) {
   const { sceneState, ui } = layer;
   const evaluated = evaluateSceneState(sceneState, frame);
   const shown = (sticker) => (sticker.visible ? media(sticker) : null);
   const sky = skyLayers(sceneState, frame, { media: shown, zIndex: (sticker) => sticker.z_index, paintLayers, evaluated })
-    .map((item) => dimmed(item, index));
+    .map((item) => dimmed(item, key));
   const stickers = worldStickerLayers(sceneState, frame, sceneState.stickers, { media: shown, evaluated })
-    .map((item) => dimmed(item, index));
+    .map((item) => dimmed(item, key));
   const items = [];
   const sceneFiles = sceneFilesOf(layerUiList(ui, "pano_scene_files"), layerUiList(ui, "pano_scene_meta"), source);
   if (sceneFiles) {
-    items.push({ slot: `${index}:scene`, urls: sceneFiles.urls.filter(Boolean), request: sceneRequest(sceneFiles, evaluated.scene), value: evaluated.scene, opacity: UPSTREAM_OPACITY });
+    items.push({ slot: `${key}:scene`, urls: sceneFiles.urls.filter(Boolean), request: sceneRequest(sceneFiles, evaluated.scene), value: evaluated.scene, opacity: UPSTREAM_OPACITY });
   }
   const stickerFiles = sceneFilesOf(layerUiList(ui, "pano_sticker_files"), layerUiList(ui, "pano_sticker_meta"), source);
   if (stickerFiles) {
     const request = stickerContentRequest(stickerFiles, sceneState, evaluated);
-    items.push({ slot: `${index}:sticker`, urls: stickerContentUrls(stickerFiles, sceneState), request, value: request?.value ?? null, opacity: (request?.opacity ?? 1) * UPSTREAM_OPACITY });
+    items.push({ slot: `${key}:sticker`, urls: stickerContentUrls(stickerFiles, sceneState), request, value: request?.value ?? null, opacity: (request?.opacity ?? 1) * UPSTREAM_OPACITY });
   }
   return { evaluated, sky, stickers, items };
 }

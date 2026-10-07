@@ -125,11 +125,11 @@ test("the 3D items follow the layers when a rerun drops one: a slot takes the ne
     const scene = (name) => ({ pano_scene_files: [{ filename: `${name}.ply` }], pano_scene_meta: [{ kind: "splat" }] });
     output.ui = { pano_upstream_layers: [layer({}, scene("a")), layer({}, scene("b"))] };
     assert.deepEqual(upstream.upstreamViewInput().items.map((item) => [item.slot, item.urls]), [
-      ["0:scene", ["/view?filename=a.ply"]],
-      ["1:scene", ["/view?filename=b.ply"]],
+      ["#0:scene", ["/view?filename=a.ply"]],
+      ["#1:scene", ["/view?filename=b.ply"]],
     ]);
     output.ui = { pano_upstream_layers: [layer({}, scene("b"))] };
-    assert.deepEqual(upstream.upstreamViewInput().items.map((item) => [item.slot, item.urls]), [["0:scene", ["/view?filename=b.ply"]]]);
+    assert.deepEqual(upstream.upstreamViewInput().items.map((item) => [item.slot, item.urls]), [["#0:scene", ["/view?filename=b.ply"]]]);
   } finally {
     restore();
   }

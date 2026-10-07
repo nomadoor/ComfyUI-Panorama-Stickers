@@ -464,8 +464,9 @@ test("state_json is written only when its meaning changes, in the editor and on 
   const editor = readEditorSource();
   const runtime = await read("../web_src/pano_preview_runtime.js");
 
-  assert.match(editor, /function commitState\(\) \{[\s\S]*?if \(stateWidget && !sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)\) \{\s*stateWidget\.value = text;/);
-  assert.match(runtime, /commitState: \(nextState\) => \{[\s\S]*?if \(sameEditorStateText\(node, text, String\(stateWidget\.value \?\? ""\)\)\) return;\s*stateWidget\.value = text;/);
+  // editorStateWrite (pano_editor_state.js) is null for an unchanged text and gives Studio's state its Scene id.
+  assert.match(editor, /function commitState\(\) \{[\s\S]*?const text = editorStateWrite\(node, state, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\);\s*if \(text === null\) return;\s*stateWidget\.value = text;/);
+  assert.match(runtime, /commitState: \(nextState\) => \{[\s\S]*?const text = editorStateWrite\(node, nextState, String\(stateWidget\.value \?\? ""\)\);\s*if \(text === null\) return;\s*stateWidget\.value = text;/);
 });
 
 test("the node surface leaves a background VIDEO that failed to load for its image fallbacks", async () => {

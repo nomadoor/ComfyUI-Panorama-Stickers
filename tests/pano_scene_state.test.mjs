@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { ensureSceneId, loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
+import { loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -372,14 +372,9 @@ test("rebasing keeps the id, the Sticker id counter, the upstream records and th
   assert.deepEqual(rebased.stickers[1].handoff_overrides, ["direction", "size", "opacity"]);
 });
 
-test("ensureSceneId gives a state without an id one and keeps an existing one", () => {
-  const ids = ["made_1", "made_2"];
-  const make = () => ids.shift();
-  const fresh = loadSceneState(null);
-  const named = ensureSceneId(fresh, make);
+test("a Scene id is a non-empty string or null and is written as it is", () => {
+  const named = loadSceneState({ version: 2, id: "made_1" });
   assert.equal(named.id, "made_1");
-  assert.equal(fresh.id, null);
-  assert.equal(ensureSceneId(named, make), named);
   assert.equal(JSON.parse(sceneStateText(named)).id, "made_1");
   for (const bad of ["", 3, null, ["a"]]) assert.equal(loadSceneState({ version: 2, id: bad }).id, null);
 });

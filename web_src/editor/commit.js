@@ -1,9 +1,8 @@
 // Writing the editor's state back to the node: the state widget, the shared settings, the painting layer
 // left to upload on close, and the node's previews.
 import {
-  editorStateText,
+  editorStateWrite,
   normalizeCoverageValue,
-  sameEditorStateText,
   setEditorActive,
 } from "../pano_editor_state.js";
 import { peekNodeSurface, peekPreviewNode } from "../pano_node_bridge.js";
@@ -32,11 +31,11 @@ export function createCommit(deps) {
     syncCutoutShot();
     state.coverage = normalizeCoverageValue(state.coverage);
     setEditorActive(node, state.active);
-    const text = editorStateText(node, state);
-    if (stateWidget && !sameEditorStateText(node, text, String(stateWidget.value ?? ""), { rebased: cameraV2 })) {
-      stateWidget.value = text;
-      stateWidget.callback?.(text);
-    }
+    if (!stateWidget) return;
+    const text = editorStateWrite(node, state, String(stateWidget.value ?? ""), { rebased: cameraV2 });
+    if (text === null) return;
+    stateWidget.value = text;
+    stateWidget.callback?.(text);
   }
   function persistUiSettings() {
     state.ui_settings = saveSharedUiSettings(state.ui_settings);
