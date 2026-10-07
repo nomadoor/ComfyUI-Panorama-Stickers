@@ -24,6 +24,15 @@ test("the Timeline frames without media follow timeline.length, else the Clip en
   assert.deepEqual(studioTimelineFrames(state({ camera: keyed, scene: { clip: { start: 0, duration: 2 } } })), [0, 1]);
 });
 
+test("a broken length gives no Timeline frames rather than BROKEN_SPAN of them", () => {
+  const broken = state();
+  broken.timeline.length = Infinity;
+  assert.deepEqual(studioTimelineFrames(broken), []);
+  broken.timeline.length = null;
+  broken.scene.clip.duration = NaN;
+  assert.deepEqual(studioTimelineFrames(broken), []);
+});
+
 test("the output size follows ADR 0029", () => {
   const sizes = (fields, outputSize, coverage, bgWidth) => {
     const loaded = state(fields);

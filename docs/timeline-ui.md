@@ -37,11 +37,11 @@
 
 - 再生ボタンはタイムラインの一つだけで、背景の VIDEO があれば VIDEO を（音声も）再生し、そのフレームの時刻で再生ヘッドを動かす。VIDEO より Timeline が長いときは、VIDEO の終わりから先は時計で進める。VIDEO がなければ時計で進める。どちらも Timeline の終わりで先頭に戻る。シークや編集（Sticker・Camera の変形、ペイント、インスペクターや Keyframe・Clip range の操作、Sticker の追加・削除、Undo・Redo）で再生は止まる。見回し（視点の回転・ズーム）や選択では止まらない。キャンバスで Sticker をつかむ操作は、ポインタが最初に動いたときに止まり、止まったフレームの値から変形を始める（クリックで選ぶだけなら止まらない）。`world` の Sticker のギズモのドラッグも同じで、`world` の Sticker の本体を押すのは選ぶだけなので止まらない。ペイントは描き始めた時点で止まる。止めたときは一時停止した VIDEO が表示しているフレームで止まり、再生ヘッドと静止画をそのフレームに合わせ、シークし直さない。新しいノードでは VIDEO 自身の再生・シークの操作は出さない。
 - Space キーは再生ボタンと同じく再生・停止を切り替える（ボタンのツールチップは「Play (Space)」）。テキスト・数値の入力欄、select、contenteditable にフォーカスがあるときと確認ダイアログが出ているときは効かない（スライダーでは効く）。Ctrl・Meta・Alt を押しながらの Space はブラウザと OS に任せる。エディタの外にフォーカスがあるとき（上に別の ComfyUI のダイアログが出ているときなど）も効かない。タイムラインのボタンにフォーカスがあってもボタンは押されず、再生の切り替えだけが起きる（Firefox はボタンを keyup で押すので keyup も止める）。キーリピートは無視する。旧ノードのエディタでは Space は何もしない。
-- タイムラインのバーには Timeline fps と出力の長さ（`timeline.length`、Timeline frame）の欄がある。
+- タイムラインのバーには Timeline fps と出力の長さ（`timeline.length`、Timeline frame）の欄がある。タイムラインの範囲は下の「タイムラインの長さ」。
   - Timeline fps は、`bg_media` と `sticker` に VIDEO がないときだけ変えられる（ADR 0024）。VIDEO があるときは値だけを表示する。VIDEO があるかは、リンクの型（`VIDEO`）か、ノードの現在の実行結果の `ui` の `pano_timeline_fps`（VIDEO が決めた Timeline fps。VIDEO がないときは出さない）で判断する。
   - fps を変えると `rebaseSceneState` で状態を再基準化し、Keyframe・Clip range・長さ・再生ヘッドの時刻を秒で保つ。Undo できる（Undo・Redo で fps が変わるときも再生ヘッドの時刻を秒で保つ）。寄せた結果が今の fps と同じなら何もしない（Undo の段も積まない）。
   - IMAGE バッチの背景のエディタ用 MP4 は、前回の実行の Timeline fps でエンコードされている。エディタで fps を変えると、次に実行するまで背景の映像のフレームと長さがずれて見える。一時的なずれで、`state_json` が変わるので次のキューでノードが実行され、新しい fps の MP4 になる。
-  - 長さの欄が空なら長さは入力から決まる（`null`）。値を入れるとノードの出力の長さになり、タイムラインもその長さで終わる（VIDEO が長くても延ばさない。それより後の Keyframe と Clip range の端の分だけは延ばす）。
+  - 長さの欄が空なら長さは入力から決まる（`null`、Auto）。そのときは欄のプレースホルダーに、入力から決まる今の長さを「Auto (101)」のように出す（`PanoTimeline.vue` の `autoText`。タイムラインの範囲そのもの）。欄は Auto と値のどちらでも同じ幅で、バーの配置は動かない。値を入れるとノードの出力の長さになり、タイムラインもちょうどその長さになる（VIDEO や Clip range が長くても延ばさない）。欄を空にすると Auto に戻る。
   - 欄の値には上限がある。fps は 1〜1000、長さは 1〜10,000,000（Timeline frame。Clip range の端と同じ上限）で、範囲の外の値はいちばん近い端に寄せる（例：`1e308` は fps なら 1000、長さなら 10,000,000）。数でない値と 0 以下の fps は受け付けず、元の値に戻す。読み込みでも同じ範囲に寄せる（`docs/scene-state-v2.md`）。`timelineSpan` は有限でない値を返さず（壊れた入力なら `BROKEN_SPAN` の 100,000）、目盛りは 2,000 個まで（`timelineTicks` の `MAX_TICKS`）にする。
   - エディタを開いたとき、現在の実行結果の `pano_timeline_fps` が状態の `timeline.fps` と違えば、状態をその fps に再基準化する。`pano_timeline_fps` は先に 1〜1000 に寄せてから比べる（`videoTimelineFps`）。1000 fps を超える VIDEO では状態は 1000 fps になり、次の実行結果からは同じ値と比べるので、再基準化・再生ヘッドの跳び・空の Undo を繰り返さない。ウィジェットの `state_json` は次の編集かキューまで変わらない（ノードは記録された fps で秒を保って読むので、書き込む前でも出力は同じ）。
   - エディタを開いている間に届いた実行結果が違う `pano_timeline_fps` を持つときも、同じく再基準化する。これは Undo の 1 段になる。
@@ -56,6 +56,23 @@
   - VIDEO や上流の Scene の fps に再基準化して開いても、編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`。今の `state_json` を再基準化したものと保存しようとする状態が同じなら書かない）ので、ノードは再実行されず、Keyframe も丸められない。
 - タイムラインはビューの下にある。開閉や行の開閉で高さが変わるときは 180 ms かけて伸び縮みし、ビューは同じフレームのうちに新しい大きさで描き直す（横の画角と中心は保ち、上下が切れるだけ）。高さは画面の高さの 34% までで、それを超える行は中でスクロールする。prefers-reduced-motion では動かさずに切り替える。
 
+## タイムラインの長さ
+
+タイムラインは出力の長さ（Timeline duration）をちょうど表す（Rive・After Effects のコンポジションの長さと同じ）。編集のための余白は持たず、出力より先の範囲は出さない。両端の見た目の余白だけは UI の都合で付けてよい。
+
+- タイムラインの範囲（`pano_timeline.js` の `timelineSpan`）は、`timeline.length` があればその値、なければ Auto の長さ。最小の長さはない（以前の「長さが無いときは 5 秒」はなくした）。
+- Auto の長さ（`autoTimelineLength`）は、ノードの `_decide_timeline`（`docs/render-contract.md` の「長さ」）と同じ規則で、状態と、エディタが知っている入力の長さから編集のたびに求め直す（前回の実行結果の長さをそのまま使うのではない）。順に、背景の VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数 → Sticker と `scene` の Clip range の終わりのうち最も遅いもの（隠した Sticker も数える。`duration` の無い `port` の Sticker は素材の終わり、`duration` の無い `scene` は要素の数の終わり）→ Camera の各 Lane の最後の Keyframe の次のフレーム（Panorama Studio だけ）→ 1。上流の Scene があるときは、これと上流の長さと上書きした Clip range の終わりのうち最も長いもの（上流があるときの背景の VIDEO は、最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）。Sticker の Keyframe は長さに入らない。`tests/test_timeline_length_parity.py` が、状態と入力の表でノードの長さと一致することを確かめる。
+- エディタが知っている入力の長さ：
+  - 背景：ノードの現在の実行結果のエディタ用 MP4 のメタ情報（`pano_input_video_meta` の `frames`・`duration`）。VIDEO か IMAGE バッチかはリンクの型で見る。上流の Scene の背景を使うときは数えない（上流の長さにすでに入っている）。
+  - `port` の Sticker の素材：現在の実行結果の `pano_sticker_input_video_meta`、3D の素材は `pano_sticker_files` の要素の数（`pano_port_media.js` の `portMediaMeta`）。
+  - `scene` 入力の要素：現在の実行結果の `pano_scene_files` の数。
+  - 上流の Scene：実行結果の `pano_upstream_frames`（上流の出力のフレーム数）。
+- 実行前で入力の長さが分からないときの扱い：分からない入力は無いものとして、規則の次の段へ進む（1 フレームの入力と同じ）。例外として、背景の入力が LoadVideo のファイルを直接読むときは、そのファイルの長さ × Timeline fps を背景の VIDEO のフレーム数とする（ノードは VIDEO 自身のフレーム数を使うので、fps が違えば実行までずれる）。ほかに一致しないのは、背景の 1 フレームの VIDEO（エディタ用 MP4 を作らないのでエディタは長さを知らず、ノードはその VIDEO の 1 フレームを長さにする。`port` の 1 フレームの VIDEO はメタ情報だけを出すので一致する）と、`pano_upstream_frames` を持たない以前の実行結果（代わりに自分の出力の長さ `pano_timeline_frames` を上流の長さとする）。どれも次の実行で正しくなる。上流の Scene の下の VFR の背景 VIDEO は、実行の後もずれうる（エディタはメタ情報の `duration`（フレーム数 ÷ 平均 fps）を使い、ノードは最後のフレームの時刻 + 平均 fps の 1 フレームを使う。CFR では一致する）。
+- 再生はこの長さの中でループする（エディタもノード上の UI も）。再生ヘッドは最後のフレーム（長さ − 1）より先に行かない（`pano_video_playback.js` の `seek`。長さが縮んだときはエディタの `syncTimeline` が最後のフレームへ戻す）。そのため出力より先に Keyframe は打てない。
+- Keyframe の移動と Clip range の移動・トリムは、出力の終わりより先へはドラッグできない（`moveKeyframes` の `ceiling`、`timeline_actions.js`）。Auto の長さでも同じで、ドラッグで出力を延ばすことはできない。延ばすときは長さの欄に値を入れる。すでに終わりより先にある Keyframe と Clip range は、それ以上先へは押さず、引き戻しもしない。ドラッグの間はタイムラインの範囲をドラッグを始めたときのまま保ち（`timeline.drag.limit`）、離してから新しい長さにする。
+- 終わりより先にある Keyframe と Clip range（`timeline.length` を短くしたとき）は、状態に残すが、出力に入らず、タイムラインにも出ない（After Effects と同じ）。消しも動かしもしない（この扱いはオーナーの確認待ちの既定値）。
+- 時間で変わるものが何もない新しい Panorama Studio は 1 フレームのタイムラインになる。再生ボタンは無効になり（配置はそのまま）、Space キーも何もしない。再生ヘッドは frame 0 に留まる。長さの欄に値を入れるとその長さになり、アニメーションを付けられる。ノード上の UI の再生ボタンは今までどおり時間のあるときに出るが、1 フレームでは押しても何もしない。
+
 ## 表示（目のアイコン）
 
 Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端の目のアイコンで表示・非表示を切り替える（After Effects・Photoshop のレイヤーと同じ）。アイコンが今の状態を示す（表示は目、非表示は破線の目）。状態 v2 の `visible`（Camera・`scene`・Sticker）と `painting_visible`（ペイント）に入る（`docs/scene-state-v2.md`）。
@@ -65,7 +82,7 @@ Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端
 - 目の切り替えは編集で、Undo の 1 段になり、`state_json` に保存する（既定の表示は書かない）。値を変えないので、再生は止めない（Premiere・Resolve のトラックの表示の切り替えと同じ）。ロックした Sticker も切り替えられる（After Effects と同じ）。
 - 隠した物はエディタでも描かない（薄くも出さない。After Effects・Photoshop・Blender のビューポートと同じ）。選べず、動かせない：キャンバスとギズモの当たり判定、選択の一覧から外れ、行を押しても選ばれない。選んでいる物を隠すと選択が外れる（Undo・Redo で隠れたときも）。隠したペイントにはペイントもマスクも描けない（ツールを使っても何も起きない。Photoshop の隠したレイヤーと同じ）。Camera を隠したときのエディタは `docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」。
 - タイムラインの上の操作（Keyframe・Clip range の編集、行のポチ）は、隠した物にもできる。
-- 上流の層の要素・ペイント・`scene` も、その行の目のアイコンで隠し、もう一度出す（下の「上流の層の行（ADR 0030）」）。隠した上流の要素を出す手段はこの目のアイコンである（インスペクタの Visible の切り替えは選んだ要素にしか出ず、隠した要素は選べない）。
+- 上流の層の要素・ペイント・`scene` も、その行の目のアイコンで隠し、もう一度出す（下の「上流の層の行（ADR 0030）」）。隠した上流の要素を出す手段はこの目のアイコンである（インスペクタに表示の切り替えは無く、隠した要素は選べない）。
 - 旧ノードのエディタは今までどおり、隠した `port` の Sticker を薄く出す。インスペクタにあった表示の切り替え（Layers の節。Panorama・Paint / Images・Mask の、エディタの見た目だけの切り替え、ADR 0011）はなくした。
 
 タイムラインはオブジェクトごとに一行である。閉じた行が基本で、▶ で開くと Lane ごとの行が出る。
@@ -118,7 +135,7 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
 - 行は自分のものと同じ順：その層の Sticker（`sky` は手前から奥、次に `world`）、ペイント（「Paint」。ストロークなどを持つか、隠しているときだけ。目と名前だけ）、`scene`（「Scene」。その層が 3D の内容（`ui` の `pano_scene_files`）を持つか、Keyframe か既定でない Clip range を持つか、隠しているときだけ。目と Clip range だけで、行のポチと Lane の行は無い）。
 - 行の id は `upstream:<層のキー>:<要素の id>`、ペイントは `upstream:<層のキー>:painting`、`scene` は `upstream:<層のキー>:scene`（`pano_upstream.js` の `upstreamRowId`）。フレームは自分の Timeline frame（作業コピーの値）。Sticker の id に `scene`・`painting` は使わない（エディタが振る id は常に `sticker_<番号>`。`docs/scene-state-v2.md` の `next_sticker_id`）ので、ペイントと `scene` の行の id は Sticker の行の id と重ならない。自分の行の `scene`・`painting` も同じ前提である。
 - 操作は自分の行と同じ：Keyframe を打つ・動かす・消す・Easing を変える、行のポチ（全 Lane に Keyframe）、Clip range の移動と両端の切り詰め、目のアイコン、行の選択と開閉。どれも作業コピーを変え、Undo の段を積むとき（`pushHistory`）に `syncUpstreamEdits` が、変えたフィールドだけを自分の状態の `upstream` の記録に上書きとして書く（Lane は Keyframe ごと丸ごと、`clip`・`visible`、層の `scene` の `visible`・`clip`、`painting_visible`。`docs/render-contract.md` の「エディタでの編集（T8）」）。上流の層の状態そのものと自分の Sticker は変えない。操作ごとに Undo の 1 段になり、Undo・Redo で記録と作業コピーが戻る。開いて閉じただけ、行を開いた・選んだだけ、Clip range をクリックしただけでは何も書かない。
-- ロックは自分の行と同じに効く：ロックした上流の要素（ロックの上書き、または上流でロックされたもの）の行は、Keyframe と Clip range を変えず、目のアイコンは効く。ロックの切り替えは、行ではなく選択メニューとインスペクタ（`PanoUpstreamOrigin.vue`）にある。
+- ロックは自分の行と同じに効く：ロックした上流の要素（ロックの上書き、または上流でロックされたもの）の行は、Keyframe と Clip range を変えず、目のアイコンは効く。ロックの切り替えは、行ではなく選択メニューにある（インスペクタには無い）。
 - 上書きを持てない層の行は、出るがロックと同じく何も変えない（目のアイコンと行のポチのボタンは無効にし、ツールチップに理由を出す）。選択と行の開閉はできる。
 - `scene` の行は Clip range だけを変える。上流の `scene` の Lane は上書きできない（`docs/scene-state-v2.md`）ので、その Keyframe の印は動かせず、Easing も変えない。
 - 上書きのある行（その層の記録が、その要素の上書き・`scene` の上書き・`painting_visible` を持つ行）は、名前の右に小さな点を出す（ツールチップは「Overridden in this node」）。点の場所は上流の行では常に空けておき、点が付いても行のボタンは動かない。
@@ -127,9 +144,7 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
   - 「Restore deleted (n)」：その層の記録の `deleted` を空にし、下流で消した要素をもう一度出す。n は消した記録のうち、上書きを当てる前の層にまだある要素の数（`upstreamDeletedCount`。上流で消えた id は数えない）。消した要素は選べないので、層の操作として見出しに置く（インスペクタには置かない）。
 - Delete キーは、Keyframe を選んでいればその Keyframe を消し（上の規則）、そうでなければ選んだ上流の要素を消す（`docs/threejs-spark-integration.md` の「上流の Scene の表示と編集」の「消す（T10）」）。
 - 自分の `scene` の行は、上流の Scene があるときは出さない（自分の `scene` は描画に使われない）。
-- タイムラインの範囲：二つの規則を分けて持つ。
-  - 出力の長さ（`upstreamSpanFrames`）：自分の `timeline.length` が無いとき、上流の Scene の長さ（実行結果の `pano_timeline_frames`）と、上書きした Clip range の終わりまで。上書きしたものは、記録が `clip` を持つもの、またはまだ書き戻していない編集で変えたもの（ドラッグ中を含む）で、`duration` の無いものは `port` の Sticker の素材の終わり（`portMediaFrames`）だけを数える。ドラッグ中の Clip range は終わりの開いたものとして数える。ノードの長さの規則（`docs/render-contract.md` の「長さ」）と同じで、上書きしていない上流の Clip range は上流の長さにすでに入っているので数えない。
-  - 見える範囲：自分の行と同じく、上流の行の Clip range の端と Keyframe まで常に広げる（`pano_timeline.js` の `ownersSpan`。上流の層の作業コピーの Sticker と `scene` に、自分の Sticker と `scene` と同じ規則を当てる。`timeline.length` があっても広げる）。終わりの開いた Clip range とドラッグ中の Clip range は `start + 1`、ほかは `start + duration`、Keyframe は `start − in + frame + 1` まで。動かした上流の要素は、出力を延ばさなくても、タイムラインの上で届く所にある。
+- タイムラインの範囲は、自分の行と同じく出力の長さちょうど（下の「タイムラインの長さ」）。Auto の長さには、上流の Scene の長さ（実行結果の `pano_upstream_frames`）と、上書きした Clip range の終わりが入る（`editor/upstream.js` の `upstreamOutput`、`pano_upstream.js` の `upstreamOverriddenEnds`）。上書きしたものは、記録が `clip` を持つもの、またはまだ書き戻していない編集で変えたもの（ドラッグ中を含む）で、`duration` の無いものは `port` の Sticker の素材の終わり（`portMediaFrames`）だけを数える。ドラッグ中の Clip range は `duration` の無いものとして数える。ノードの長さの規則（`docs/render-contract.md` の「長さ」）と同じで、上書きしていない上流の Clip range は上流の長さにすでに入っているので数えない。上流の行の Clip range と Keyframe も、自分の行と同じく出力の終わりより先へはドラッグできない。
 
 ### `port` の Sticker の素材（#83）
 
@@ -142,4 +157,4 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
 - RGBA の IMAGE バッチは MP4 の代わりに PNG の列（`pano_sticker_input_frames`）で、同じ時刻から求めた 1 枚（`portImageIndex`）を出す。その 1 枚と先の 4 枚だけを読み込み、読めるまでは前の 1 枚を出す（`pano_port_media.js` の `createFrameSequence`）。
 - 素材の静止画がまだないときは、最初のフレーム（`pano_sticker_input_images`）を出す。描画側は差し替え先に絵が来るまで前のテクスチャを使い続ける。MP4 が読めないときも最初のフレームを出す。
 - MP4 は実行結果が新しい間だけ使い（`isNodeOutputMediaCurrent` の `external-sticker`）、reload 後はジョブ履歴から戻った実行結果で同じく使う。
-- Timeline の長さ（`timelineSpan` の `frames`）は、Clip range に長さのない `port` の Sticker では素材の終わりまで延ばす（`portMediaFrames`）。
+- Clip range に長さのない `port` の Sticker の行のバーは、タイムラインの終わりではなく素材の終わり（`portMediaFrames`）で終わる（`buildTimelineModel` の `portBarEnd`。上流の層の `port` の Sticker も、その層の素材で同じ）。素材がまだ分からない（実行前）ときは、ほかの長さのない Clip range と同じくタイムラインの終わりまで描く。Auto の長さもこの素材の終わりを数える（下の「タイムラインの長さ」）。

@@ -8,7 +8,7 @@ import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_di
 import { sourceAsset } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { createPaintEngineManager } from "../pano_paint_engine.js";
-import { createFrameSequence, portMediaFrames, portMediaSource, portMediaTime } from "../pano_port_media.js";
+import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } from "../pano_port_media.js";
 import { isNodeOutputMediaCurrent, linkedInputType } from "../pano_preview_video.js";
 import {
   PANO_SCENE_TYPE,
@@ -22,7 +22,7 @@ import {
   upstreamLayerRevertedRecords,
   upstreamLayersOf,
   upstreamLayerView,
-  upstreamOverriddenClips,
+  upstreamOverriddenEnds,
   upstreamPaintEntries,
   upstreamPending,
   upstreamPrunedRecords,
@@ -177,31 +177,27 @@ export function createUpstream(deps) {
     return entry ? image(mediaSource(layerUiList(entry.layer.ui, EXTERNAL_STICKER_PREVIEW_KEY)[0] || null)) : null;
   }
 
-  // The output's frame count while the upstream Scene shows (`pano_timeline_frames`: the longer of the upstream
-  // Scene and this node's own, ADR 0029), so the Timeline reaches every upstream element, widened to the ends of
-  // the Clip ranges this node overrides (upstreamOverriddenClips), as the node widens its output (ADR 0030): one
-  // without a duration ends with its layer's port media, and `openClip`, the one being dragged, counts as open.
-  // Else 0.
-  function upstreamSpanFrames(openClip = null) {
+  // The upstream Scene as the Auto length counts it (pano_timeline.js autoTimelineLength `upstream`), or null
+  // without one: its output frame count (`pano_upstream_frames`; a result from before it was reported gives the
+  // node's own output length, `pano_timeline_frames`, instead) and the ends of the Clip ranges this node overrides
+  // in its layers (upstreamOverriddenEnds), as the node lengthens its output with them (ADR 0030). `openClip`,
+  // the one being dragged, counts as one without a duration.
+  function upstreamOutput(openClip = null) {
     const entries = upstreamEntries();
-    if (!entries) return 0;
-    const [frames] = comfyMedia.uiValue(node, "pano_timeline_frames") || [];
-    let span = Number(frames) > 0 ? Number(frames) : 0;
+    if (!entries) return null;
+    const [frames] = comfyMedia.uiValue(node, "pano_upstream_frames") || comfyMedia.uiValue(node, "pano_timeline_frames") || [];
     const working = entries.map((entry) => entry.working);
-    for (const { index, clip, sticker } of upstreamOverriddenClips(working, state.upstream, baseline)) {
-      const meta = layerUiList(entries[index].layer.ui, PORT_VIDEO_META_KEY)[0];
-      const end = clip === openClip ? clip.start + 1
-        : clip.duration !== null ? clip.start + clip.duration
-          : sticker?.source.kind === "port" && meta && typeof meta === "object" ? portMediaFrames(clip, state.timeline.fps, meta) : 0;
-      span = Math.max(span, end);
-    }
-    return span;
+    const portMeta = (index) => portMediaMeta((key) => layerUiList(entries[index].layer.ui, key));
+    return {
+      frames: Number(frames) > 0 ? Number(frames) : 0,
+      ends: upstreamOverriddenEnds(working, state.upstream, baseline, portMeta, state.timeline.fps, openClip),
+    };
   }
 
-  // What has a Clip range and Keyframes on the upstream rows of the Timeline: the working Stickers and `scene`s
-  // of the upstream layers; none without them.
-  function upstreamTimelineOwners() {
-    return (upstreamEntries() ?? []).flatMap(({ working }) => [working.sceneState.scene, ...working.sceneState.stickers]);
+  // The port media of the layer of an upstream working Sticker (portMediaMeta), or null.
+  function upstreamPortMeta(sticker) {
+    const entry = read.entries.find((item) => item.working?.key === sticker.origin.layer);
+    return entry ? portMediaMeta((key) => layerUiList(entry.layer.ui, key)) : null;
   }
 
   // The upstream layers as the Timeline shows them (pano_editor_ui_state.js buildTimelineModel `upstream`): per
@@ -402,9 +398,9 @@ export function createUpstream(deps) {
     connect(api) {
       ({ getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw } = api);
     },
-    upstreamEntries, upstreamLinked, upstreamNotice, upstreamSpanFrames, upstreamViewInput, rebuildUpstreamWorking,
+    upstreamEntries, upstreamLinked, upstreamNotice, upstreamOutput, upstreamPortMeta, upstreamViewInput, rebuildUpstreamWorking,
     syncUpstreamEdits, pruneUpstreamRecords, deleteUpstreamStickers, revertUpstreamSticker, revertUpstreamLayer,
-    restoreUpstreamDeleted, upstreamStickers, upstreamStickerImage, upstreamTimelineLayers, upstreamTimelineOwners,
+    restoreUpstreamDeleted, upstreamStickers, upstreamStickerImage, upstreamTimelineLayers,
     upstreamRow, disposeUpstream,
   };
 }

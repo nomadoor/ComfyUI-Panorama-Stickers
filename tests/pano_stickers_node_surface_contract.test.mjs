@@ -521,7 +521,8 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   assert.doesNotMatch(keyDown, /" "|Space/);
   // A node out of sight stops and lets its VIDEO go, on each draw and as soon as its surface resizes away.
   assert.match(runtime, /const shown = surfaceShown\(wrap, !!node\.flags\?\.collapsed\);/);
-  assert.match(runtime, /const sticker = shown \? portStickerMedia\(node\) : null;\s*const playable = playback\.follow\(\{\s*shown,\s*sources: shown \? backgroundVideoSources\(node\) : \[\],\s*state: getCachedState\(node\),\s*sticker,/);
+  // The surface's Timeline is the output's length: what the result gives of the inputs counts as in the editor.
+  assert.match(runtime, /const sticker = shown \? portStickerMedia\(node\) : null;\s*const state = getCachedState\(node\);\s*const playable = playback\.follow\(\{\s*shown,\s*sources: shown \? backgroundVideoSources\(node\) : \[\],\s*state,\s*sticker,\s*media: shown \? surfaceTimelineMedia\(node, state\) : \{\},/);
   assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);[\s\S]*?if \(!node\.flags\?\.collapsed\) drawCanvas/);
   assert.match(runtime, /new ResizeObserver\(\(\) => \{\s*if \(surfacePlayback\) syncSurfacePlayback\(\);\s*requestDraw\(\);/);
   assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);\s*surfacePlayback\.stickerVideo\.remove\(\);/);

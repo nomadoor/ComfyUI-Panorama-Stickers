@@ -1630,7 +1630,7 @@ def _editor_frames_ui(images: torch.Tensor, fps: float, contract: dict) -> dict:
 
 def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
     """The `ui` of the sticker media: its first frame, and an MP4 for the editor to follow the Timeline with when it
-    has two or more frames, made like the bg_media one. An RGBA IMAGE batch is PNGs instead (`_editor_frames_ui`),
+    has two or more frames (a one-frame VIDEO has the meta only), made like the bg_media one. An RGBA IMAGE batch is PNGs instead (`_editor_frames_ui`),
     since an MP4 drops the alpha that the `video` output keeps. The meta tells how a Timeline frame maps to the MP4 as
     `PortMedia.index_at` maps it: `kind`, `duration` (where the media ends), and for a VIDEO `pts_tolerance`, the
     seconds before a PTS that count as its frame (half the time base of the media or `time_base`, that of the
@@ -1647,7 +1647,10 @@ def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
         payload[contract["meta"]][0]["kind"] = "IMAGE"
     else:
         if len(port.times) < 2:
-            return ui_ret
+            # No MP4 for one frame, but the meta tells the editor where the media ends (`PortMedia.end`).
+            end = float(port.times[-1] + 1 / port.frame_rate)
+            meta = {"kind": "VIDEO", "fps": float(port.frame_rate), "frames": 1, "duration": end, "has_audio": False}
+            return {**ui_ret, contract["meta"]: [meta]}
         # The VIDEO is opened again only to make the MP4; PortMedia does not keep it open.
         cache_key = ("editor_mp4", _video_cache_identity(video, port.streamed))
         payload = _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, open_video(video, "sticker")), float(port.frame_rate), len(port.times), contract)
@@ -1747,9 +1750,13 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
 def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
     """The `ui` that shows the layers of the Scene on the `scene` input in the editor, apart from the node's own
     media: `pano_upstream_layers` with each layer's state (with its Scene `id`, ADR 0030) and media `ui` from the
-    farthest upstream, and the upstream background (`bg_ui`, None when it has none) under `pano_upstream_` keys
-    with its coverage and color."""
-    ui = {"pano_upstream_layers": [{"state": layer.state, "ui": layer.media_ui} for layer in upstream.layers]}
+    farthest upstream, its output frame count (`pano_upstream_frames`, which the editor's Auto length counts),
+    and the upstream background (`bg_ui`, None when it has none) under `pano_upstream_` keys with its coverage and
+    color."""
+    ui = {
+        "pano_upstream_layers": [{"state": layer.state, "ui": layer.media_ui} for layer in upstream.layers],
+        "pano_upstream_frames": [len(upstream.frames)],
+    }
     if bg_ui is not None:
         ui.update({key.replace("pano_", "pano_upstream_", 1): value for key, value in bg_ui.items()})
         ui["pano_upstream_coverage"] = [upstream.coverage]

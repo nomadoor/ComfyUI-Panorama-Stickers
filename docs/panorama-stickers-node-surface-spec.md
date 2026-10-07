@@ -59,8 +59,11 @@
 - 再生は表示フレームから Timeline fps で進み、Timeline の終わりで frame 0 に戻って繰り返す。各フレームのStickerは共有evaluator（エディタの
   `workingSkyLayers` / `surfacePoseStickers` と同じ）で評価する。背景のVIDEOはエディタと同じ状態機械
   `pano_video_playback.js` で同期して再生し、音は出さない（muted）。`port` のStickerの素材のMP4は、
-  エディタと同じく再生ヘッドに従う（`createVideoFollower`、#83）。Timelineの長さは、Clip rangeに長さのない
-  `port` のStickerでは素材の終わりまで延ばす。
+  エディタと同じく再生ヘッドに従う（`createVideoFollower`、#83）。Timelineの長さはエディタと同じく出力の長さ
+  ちょうどで（最小の長さは無い）、Auto の長さは実行結果が示す入力の長さ（背景の `pano_input_video_meta`、`port` の素材、
+  `scene` の要素、上流の `pano_upstream_frames` と上書きした Clip range の終わり。`pano_preview_runtime.js` の
+  `surfaceTimelineMedia`）から求める。実行結果に背景が無い間は、再生している VIDEO の長さを背景のフレーム数とする
+  （docs/timeline-ui.md の「タイムラインの長さ」）。1 フレームの Timeline では再生ボタンを押しても何もしない。
 - 一時停止は画面に出ているフレームで止まる（エディタの停止と同じ規則：一時停止したVIDEOが表示する
   PTS ≤ currentTime のフレームに再生ヘッドと静止画を合わせ、シークしない。ADR 0024）。もう一度押すとそのフレームから再生を続ける。一時停止中の背景は、そのフレームの
   VIDEOの静止画（最大幅2048）を描く。

@@ -25,10 +25,22 @@ export function portMediaTime(clip, frame, fps, meta) {
 }
 
 // The Timeline frames up to where the media ends (PortMedia.end) when that ends the Clip range (one
-// without a duration), for timelineSpan's `frames`; else 0.
+// without a duration): where the Timeline draws its bar to and what the Auto length counts
+// (autoTimelineLength); else 0.
 export function portMediaFrames(clip, fps, meta) {
   if (clip.duration !== null) return 0;
   return Math.round(clip.start - clip.in + (meta.kind === "IMAGE" ? meta.frames : meta.duration * fps));
+}
+
+// The port Sticker's media as portMediaFrames reads it, from a result's `ui` (`list(key)`: its list under a
+// key): the meta of its MP4 or PNGs (`pano_sticker_input_video_meta`), or for 3D media with two or more items
+// their count as kind "IMAGE" (`pano_sticker_files`, a sequence at the Timeline fps like an IMAGE batch). null
+// for a single frame or item, which ends nothing (PortMedia.end).
+export function portMediaMeta(list) {
+  const meta = list("pano_sticker_input_video_meta")[0];
+  if (meta && typeof meta === "object") return meta;
+  const items = list("pano_sticker_files").length;
+  return items > 1 ? { kind: "IMAGE", frames: items } : null;
 }
 
 // The image of an IMAGE batch at a time from portMediaTime.

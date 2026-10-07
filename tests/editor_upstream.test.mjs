@@ -228,12 +228,15 @@ test("the upstream background shows while the scene result is current, also righ
 test("with the upstream background the auto length is the upstream Scene's, not the background VIDEO's", async () => {
   const { createTimeline } = await import("../web_src/editor/timeline.js");
   const { loadSceneState } = await import("../web_src/pano_scene_state.js");
-  const uiState = { videoTransport: { ready: true, duration: 20 } };
+  const uiState = { videoTransport: { ready: true, duration: 20, frameCount: 480 } };
   const timeline = createTimeline({ editor: {}, node: {}, readOnly: false, sceneV2: true, state: loadSceneState({ version: 2, timeline: { fps: 24 } }), stateV2: true, studio: true, timeline: {}, timelinePlayhead: {}, uiState, videoEl: null, videoTimelineFps: () => null });
   let upstream = { imageKey: "pano_upstream_input_images" };
-  timeline.connect({ getPortMedia: () => null, isExternalSticker: () => false, upstreamBackground: () => upstream, upstreamSpanFrames: () => 240, upstreamTimelineOwners: () => [] });
+  timeline.connect({
+    getPortMediaMeta: () => null, isExternalSticker: () => false, sceneFiles: () => null, upstreamBackground: () => upstream,
+    upstreamLinked: () => true, upstreamOutput: () => ({ frames: 240, ends: [] }),
+  });
   assert.equal(timeline.timelineSpanFrames(), 240);
-  // The node's own background VIDEO widens it as before.
+  // The node's own background widens it as the node does.
   upstream = null;
   assert.equal(timeline.timelineSpanFrames(), 480);
 });
@@ -931,7 +934,8 @@ test("the upstream sky Stickers are hit under the node's own items and over its 
 
 // The editor's Timeline over the upstream module of setup(): the real Timeline, its actions, items and history,
 // each Undo step writing the upstream edits back. Returns them with the Undo steps counted.
-async function editorTimeline(state, upstream) {
+// `overrides` replace what the editor gives the Timeline.
+async function editorTimeline(state, upstream, overrides = {}) {
   const { createTimeline } = await import("../web_src/editor/timeline.js");
   const { createTimelineActions } = await import("../web_src/editor/timeline_actions.js");
   // The Timeline asks whether its VIDEO element plays a source.
@@ -959,8 +963,9 @@ async function editorTimeline(state, upstream) {
   });
   const api = {
     ...items, ...upstream, ...timeline,
-    commitAndRefreshNode: upstream.syncUpstreamEdits, getPortMedia: () => null, hasCamera: () => false, inspectorTimed: () => false,
-    isExternalSticker: (item) => item?.source?.kind === "port", markObjectVisualsDirty: noop, playback: { seek: noop, stop: noop },
+    commitAndRefreshNode: upstream.syncUpstreamEdits, getPortMediaMeta: () => null, hasCamera: () => false, inspectorTimed: () => false,
+    isExternalSticker: (item) => item?.source?.kind === "port", markObjectVisualsDirty: noop, playback: { frame: 0, seek: noop, stop: noop },
+    sceneFiles: () => null,
     pushHistory: () => {
       steps.count += 1;
       history.pushHistory();
@@ -970,6 +975,7 @@ async function editorTimeline(state, upstream) {
     cameraShoots: () => false, changeTimelineFps: noop, getActiveCutoutShot: () => null, jumpTimelineTo: noop,
     selectWorldSticker: (id) => steps.selected.push(["world", id]), setSelectedItem: (item) => steps.selected.push(["sky", item?.id ?? null]),
     syncFloatingViewButtonState: noop, toggleVideoMuted: noop, togglePlayback: noop,
+    ...overrides,
   };
   const commands = createCommands({ editor, readOnly: false, sceneV2: true, state, studio: true, type: "stickers", uiState });
   Object.assign(api, commands);
@@ -991,11 +997,12 @@ const timedLayer = (extra = {}) => layer({
   ...extra,
 }, { pano_scene_files: [{ filename: "a.ply" }], pano_scene_meta: [{ kind: "ply" }] });
 
-async function timelineOver(ui, saved = { version: 2, timeline: { fps: 24 } }) {
+async function timelineOver(ui, saved = { version: 2, timeline: { fps: 24 } }, overrides = {}) {
   const state = { ...loadSceneState(saved), active: {} };
   const { output, upstream } = setup(state);
-  output.ui = ui;
-  const editing = await editorTimeline(state, upstream);
+  // The upstream Scene of timedLayer() is 48 frames long.
+  output.ui = { pano_upstream_frames: [48], ...ui };
+  const editing = await editorTimeline(state, upstream, overrides);
   return { state, output, upstream, ...editing };
 }
 
@@ -1179,23 +1186,38 @@ test("Undo and Redo of a Timeline edit of an upstream row bring back its records
   }
 });
 
-test("the Timeline reaches the end of an upstream Clip range this node overrides, as the node's output does", async () => {
+test("the Auto length reaches the end of an upstream Clip range this node overrides, as the node's output does", async () => {
   browserStubs();
   try {
-    const ui = { pano_upstream_layers: [timedLayer()], pano_timeline_frames: [48] };
-    const { act, state, timeline, upstream } = await timelineOver(ui);
-    assert.equal(upstream.upstreamSpanFrames(), 48);
-    // Without a duration a Clip range ends nowhere; the `scene`'s, trimmed longer, ends at 70.
+    const { act, state, timeline, upstream } = await timelineOver({ pano_upstream_layers: [timedLayer()] });
+    assert.deepEqual(upstream.upstreamOutput(), { frames: 48, ends: [] });
+    assert.equal(timeline.timelineSpanFrames(), 48);
+    // Without a duration a Clip range ends nowhere.
     drag(act, { type: "clip", id: "upstream:scene_a:sticker_1", mode: "move" }, 30);
-    assert.equal(upstream.upstreamSpanFrames(), 48);
+    assert.deepEqual(upstream.upstreamOutput().ends, []);
+    // Nothing is dragged past the end: the `scene`'s end stays at 48 until the length makes room.
+    drag(act, { type: "clip", id: "upstream:scene_a:scene", mode: "end" }, 22);
+    assert.equal(Object.hasOwn(state.upstream[0].scene, "clip"), false);
+    act({ type: "length", length: 200 });
     drag(act, { type: "clip", id: "upstream:scene_a:scene", mode: "end" }, 22);
     assert.deepEqual(state.upstream[0].scene, { clip: { start: 0, in: 0, duration: 70 } });
-    assert.equal(upstream.upstreamSpanFrames(), 70);
-    assert.equal(timeline.timelineSpanFrames(), 120);
-    state.timeline.length = 200;
+    assert.deepEqual(upstream.upstreamOutput().ends, [70]);
     assert.equal(timeline.timelineSpanFrames(), 200);
-    // The Clip range being dragged counts as open.
-    assert.equal(upstream.upstreamSpanFrames(upstream.upstreamEntries()[0].working.sceneState.scene.clip), 48);
+    // Back to Auto, the overridden end lengthens the output past the upstream Scene's.
+    act({ type: "length", length: null });
+    assert.equal(timeline.timelineSpanFrames(), 70);
+    // The Clip range being dragged counts as one without a duration.
+    assert.deepEqual(upstream.upstreamOutput(upstream.upstreamEntries()[0].working.sceneState.scene.clip).ends, []);
+  } finally {
+    restore();
+  }
+});
+
+test("a result from before pano_upstream_frames gives the node's output length as the upstream Scene's", async () => {
+  browserStubs();
+  try {
+    const { upstream } = await timelineOver({ pano_upstream_layers: [timedLayer()], pano_upstream_frames: undefined, pano_timeline_frames: [60] });
+    assert.equal(upstream.upstreamOutput().frames, 60);
   } finally {
     restore();
   }
@@ -1219,20 +1241,90 @@ test("opening, showing the Timeline and closing over upstream rows writes nothin
   }
 });
 
-test("the Timeline shows the upstream rows' moved Clip ranges and Keyframes, as it shows its own", async () => {
+test("a port Sticker's bar without a duration ends with its media, the node's own and an upstream one's", async () => {
   browserStubs();
   try {
-    const ui = { pano_upstream_layers: [timedLayer()], pano_timeline_frames: [48] };
+    const port = { id: "sticker_1", placement: "sky", source: { kind: "port" }, clip: { start: 4, in: 0 } };
+    const ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [port] }, portUi("a"))] };
+    const saved = { version: 2, timeline: { fps: 24 }, stickers: [{ id: "own", source: { kind: "port" }, clip: { start: 6, in: 2 } }] };
+    const meta = { kind: "VIDEO", fps: 30, frames: 90, duration: 3 };
+    const { act, state, timeline, uiState } = await timelineOver(ui, saved, { getPortMediaMeta: () => meta });
+    timeline.syncTimeline();
+    const ends = () => [...uiState.timeline.rows, ...uiState.timeline.groups[0].rows].map((row) => [row.id, row.clip?.end ?? null]);
+    // The own media ends at 6 - 2 + 3 s; the upstream one at 4 + 2 s. Neither runs to the Timeline's end.
+    assert.deepEqual(ends(), [["own", 76], ["upstream:scene_a:sticker_1", 52]]);
+    assert.equal(uiState.timeline.span, 76, "the own port media ends the output");
+    // A trim of its end starts where its bar ends, and stops at the Timeline's end.
+    drag(act, { type: "clip", id: "own", mode: "end" }, -10);
+    assert.deepEqual(state.stickers[0].clip, { start: 6, in: 2, duration: 60 });
+  } finally {
+    restore();
+  }
+});
+
+test("the playhead goes back onto the Timeline when the output gets shorter, so nothing is keyed past it", async () => {
+  browserStubs();
+  try {
+    const seeks = [];
+    const playback = { frame: 60, seek: (frame) => seeks.push(frame), stop: noop };
+    const { act, timeline } = await timelineOver({ pano_upstream_layers: [timedLayer()] }, undefined, { playback });
+    timeline.syncTimeline();
+    assert.deepEqual(seeks, [47]);
+    playback.frame = 20;
+    act({ type: "length", length: 12 });
+    // The editor's updateSidePanel syncs the Timeline after the edit.
+    timeline.syncTimeline();
+    assert.deepEqual(seeks, [47, 11]);
+  } finally {
+    restore();
+  }
+});
+
+test("Keyframes past the output's end leave the selection: they are neither deleted nor dragged with the shown ones", async () => {
+  browserStubs();
+  try {
+    const keys = [0, 80].map((frame) => ({ frame, value: 1 - frame / 100, easing: "linear" }));
+    const saved = { version: 2, timeline: { fps: 24, length: 100 }, stickers: [sky("own", { opacity: { value: 1, keyframes: keys } })] };
+    const frames = (state) => state.stickers[0].opacity.keyframes.map((key) => key.frame);
+    const shorter = async () => {
+      const editing = await timelineOver({ pano_upstream_layers: [timedLayer()] }, saved);
+      editing.act({ type: "select-keys", owner: "own", lane: "opacity", frames: [0, 80], additive: false });
+      editing.act({ type: "length", length: 10 });
+      editing.timeline.syncTimeline();
+      return editing;
+    };
+    // Only frame 80 selected: it leaves the selection, so Delete has nothing to delete.
+    const alone = await timelineOver({ pano_upstream_layers: [timedLayer()] }, saved);
+    alone.act({ type: "select-keys", owner: "own", lane: "opacity", frames: [80], additive: false });
+    alone.act({ type: "length", length: 10 });
+    alone.timeline.syncTimeline();
+    assert.equal(alone.timelineState.selection, null);
+    assert.deepEqual(frames(alone.state), [0, 80]);
+    // Both selected: the drag moves only the shown one.
+    const mixed = await shorter();
+    assert.deepEqual(mixed.timelineState.selection.frames, [0]);
+    drag(mixed.act, { type: "move-keys" }, 3);
+    assert.deepEqual(frames(mixed.state), [3, 80]);
+  } finally {
+    restore();
+  }
+});
+
+test("upstream Clip ranges and Keyframes are not dragged past the end of the output, as the node's own", async () => {
+  browserStubs();
+  try {
+    const ui = { pano_upstream_layers: [timedLayer()] };
     const { act, timeline, upstream } = await timelineOver(ui);
-    // An open Clip range moved to 150 is reachable, though it does not lengthen the output.
+    // An open Clip range moved by 150 stops on the last frame; it does not lengthen the output.
     drag(act, { type: "clip", id: "upstream:scene_a:sticker_1", mode: "move" }, 150);
-    assert.equal(upstream.upstreamSpanFrames(), 48);
-    assert.ok(timeline.timelineSpanFrames() >= 151);
-    // A Keyframe moved to 130 (sticker_2 starts at 0).
-    const { act: act2, timeline: timeline2 } = await timelineOver(ui);
+    assert.equal(upstream.upstreamStickers()[0].clip.start, 47);
+    assert.equal(timeline.timelineSpanFrames(), 48);
+    // A Keyframe moved by 118 stops on the last frame (sticker_1 starts at 0).
+    const { act: act2, timeline: timeline2, upstream: upstream2 } = await timelineOver(ui);
     act2({ type: "select-keys", owner: "upstream:scene_a:sticker_1", lane: "direction", frames: [12], additive: false });
     drag(act2, { type: "move-keys" }, 118);
-    assert.ok(timeline2.timelineSpanFrames() >= 131);
+    assert.deepEqual(upstream2.upstreamStickers()[0].direction.keyframes.map((key) => key.frame), [0, 47]);
+    assert.equal(timeline2.timelineSpanFrames(), 48);
   } finally {
     restore();
   }

@@ -62,10 +62,12 @@ function frameAt(clientX) {
 
 // Pins of a line's Keyframes; frames closer than PIN_GAP_PX on screen merge into one pin. `keys` are
 // { frame, full } (a row: full when every Lane has a Keyframe there) and `selected` the selected frames.
+// Keyframes past the output's end are not on the Timeline.
 function pins(lineKey, keys, selected) {
   const minGap = Math.ceil(PIN_GAP_PX / Math.max(1e-6, pxPerFrame.value));
-  const full = new Map(keys.map((key) => [key.frame, key.full]));
-  return clusterFrames(keys.map((key) => key.frame), minGap).map((pin, index) => ({
+  const shown = keys.filter((key) => key.frame < span.value);
+  const full = new Map(shown.map((key) => [key.frame, key.full]));
+  return clusterFrames(shown.map((key) => key.frame), minGap).map((pin, index) => ({
     ...pin,
     key: `${lineKey}:${index}`,
     partial: pin.frames.some((frame) => !full.get(frame)),
@@ -94,13 +96,14 @@ const linePins = computed(() => {
   return lines;
 });
 
+// A Clip range is drawn up to the output's end; one that starts past it is not drawn.
 function clipStyle(clip) {
-  const end = clip.end === null ? span.value : clip.end;
+  const end = clip.end === null ? span.value : Math.min(clip.end, span.value);
   return { left: pct(clip.start), width: pct(Math.max(0, end - clip.start)) };
 }
 
 // Reports a drag as whole-frame offsets from where it started. The scale is fixed at the start, as
-// a drag past the end widens the Timeline. The listeners are on window because the dragged pin's
+// the Timeline's length can change when the drag ends. The listeners are on window because the dragged pin's
 // element can be re-rendered away when Keyframes merge.
 function drag(event, onStep) {
   const startX = event.clientX;
@@ -169,6 +172,9 @@ function onFpsChange(event) {
   emitSetting(event, { type: "fps", fps: Number(event.target.value) }, () => fpsText.value);
 }
 
+// While the length is empty (Auto), the field shows the length the inputs give, which the Timeline spans.
+const autoText = computed(() => `Auto (${span.value})`);
+
 // An empty length follows the inputs again.
 function onLengthChange(event) {
   const text = event.target.value.trim();
@@ -187,6 +193,7 @@ function onLineDown(event, row, lane) {
       <button
         class="pano-btn pano-btn-icon pano-timeline-play"
         type="button"
+        :disabled="!model.playable"
         :aria-label="playing ? 'Pause (Space)' : 'Play (Space)'"
         :data-tip="playing ? 'Pause (Space)' : 'Play (Space)'"
         @click="emit('action', { type: 'play' })"
@@ -209,9 +216,9 @@ function onLineDown(event, row, lane) {
         <input v-else type="number" :min="TIMELINE_FPS_MIN" :max="TIMELINE_FPS_MAX" step="any" :value="fpsText" aria-label="Timeline fps" @change="onFpsChange">
         <span>fps</span>
       </label>
-      <label class="pano-timeline-setting" data-tip="Output length in frames; empty follows the inputs">
+      <label class="pano-timeline-setting pano-timeline-length" data-tip="Output length in frames; empty follows the inputs (Auto)">
         <span>Length</span>
-        <input type="number" min="1" :max="TIMELINE_LENGTH_MAX" step="1" placeholder="Auto" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
+        <input type="number" min="1" :max="TIMELINE_LENGTH_MAX" step="1" :placeholder="autoText" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
       </label>
       <button
         class="pano-timeline-toggle"
@@ -304,7 +311,7 @@ function onLineDown(event, row, lane) {
           <div v-if="row" class="pano-timeline-track" :class="{ selected: row.selected }">
             <div class="pano-timeline-row-line" @pointerdown="onLineDown($event, row, null)">
               <div
-                v-if="row.clip"
+                v-if="row.clip && row.clip.start < span"
                 class="pano-timeline-clip"
                 :class="{ open: row.clip.end === null }"
                 :style="clipStyle(row.clip)"

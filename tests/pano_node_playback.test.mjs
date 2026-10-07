@@ -279,6 +279,38 @@ test("without a VIDEO, play loops the Timeline from frame 0 at its fps; pause ke
   assert.equal(playback.frame, frame + 3);
 });
 
+test("play loops within the output's length, with no minimum, and a one-frame Timeline does not play", () => {
+  // An Auto length set by a Clip range ending at 30 (no 5 s floor).
+  const clipped = loadSceneState({ version: 2, timeline: { fps: FPS }, stickers: [{ id: "s", source: { kind: "file", filename: "a.png" }, clip: { start: 0, in: 0, duration: 30 } }] });
+  keyAllLanes(clipped.stickers[0], 0);
+  const auto = setup(clipped);
+  auto.follow([]);
+  auto.playback.toggle();
+  auto.clock.framesAhead(29);
+  assert.equal(auto.playback.frame, 29);
+  auto.clock.framesAhead(1);
+  assert.equal(auto.playback.frame, 0, "past the last frame it starts over");
+  // A length set shorter than the Clip range ends the loop there.
+  clipped.timeline.length = 10;
+  auto.clock.framesAhead(10);
+  assert.equal(auto.playback.frame, 0);
+  // The node's result gives the background's frames: they set the Auto length, not the VIDEO element.
+  const video = setup(loadSceneState(null));
+  video.playback.follow({ shown: true, sources: ["/bg.mp4"], state: video.state, media: { bg: { video: true, frames: 12, duration: 0.5 } } });
+  video.video.loaded(60);
+  video.playback.toggle();
+  video.video.present(11 / FPS);
+  assert.equal(video.playback.frame, 11);
+  video.video.present(12 / FPS);
+  assert.notEqual(video.playback.frame, 12, "frame 12 is past the output");
+  // A still: one frame, nothing to play.
+  const still = setup(timedState(1));
+  assert.equal(still.follow([]), true, "the button stays, harmless");
+  still.playback.toggle();
+  assert.equal(still.playback.playing, false);
+  assert.equal(still.clock.callbacks.size, 0);
+});
+
 test("the background VIDEO plays muted in sync and pauses on the frame it presented", () => {
   const { playback, follow, video, log } = setup();
   assert.equal(video.muted, true);
@@ -308,7 +340,7 @@ test("the background VIDEO plays muted in sync and pauses on the frame it presen
 test("a VIDEO that sets the Timeline's span loops by itself", () => {
   const { playback, follow, video } = setup();
   follow(["/bg.mp4"]);
-  // Longer than the 5 s a Timeline without a length has.
+  // Without a result, the VIDEO the surface plays sets the Auto length.
   video.loaded(6);
   playback.toggle();
   assert.equal(video.loop, true);

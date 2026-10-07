@@ -13,7 +13,8 @@ import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
 import { createNodePlayback, surfaceShown } from "./pano_node_playback.js";
-import { portMediaSource } from "./pano_port_media.js";
+import { portMediaMeta, portMediaSource } from "./pano_port_media.js";
+import { layerUiList, upstreamBackgroundOf, upstreamLayersOf, upstreamOverriddenEnds, upstreamWorkingLayers } from "./pano_upstream.js";
 import {
   beginCutoutRollGesture,
   buildCutoutAddFrameAction,
@@ -1460,6 +1461,46 @@ function portStickerMedia(node) {
   return src ? { src, meta } : null;
 }
 
+// A list in the node's own result `ui` (empty without one).
+function ownOutputUiList(node, key) {
+  const output = lookupNodeOutputEntry(node.id);
+  const value = output?.ui && Object.prototype.hasOwnProperty.call(output.ui, key) ? output.ui[key] : output?.[key];
+  return Array.isArray(value) ? value : [];
+}
+
+// What the node's result gives the Auto length of Panorama Studio's inputs (pano_timeline.js
+// autoTimelineLength), as its editor counts them: the background's frames (left out while no result gives
+// them: the surface's playback then counts the VIDEO it plays; null when the upstream Scene's background stands
+// in, which its length holds already), the port Sticker's media, the `scene` items, and the upstream Scene's
+// length with the ends of the Clip ranges the node overrides in it. `state` is the node's working state v2. The
+// upstream layers' working copies are kept while the result and the state stay the same.
+function surfaceTimelineMedia(node, state) {
+  const media = {};
+  const list = (key) => ownOutputUiList(node, key);
+  const scene = isNodeOutputMediaCurrent(node, "scene");
+  const layers = scene ? list("pano_upstream_layers") : [];
+  if (scene && upstreamBackgroundOf(list)) media.bg = null;
+  else if (isNodeOutputMediaCurrent(node, "background")) {
+    const meta = list("pano_input_video_meta")[0];
+    if (meta && typeof meta === "object") media.bg = { video: videoLinked(node, BACKGROUND_INPUT_NAMES), frames: Number(meta.frames), duration: Number(meta.duration) };
+  }
+  if (isNodeOutputMediaCurrent(node, "external-sticker")) media.port = portMediaMeta(list);
+  if (layers.length) {
+    const surface = nodeSurface(node);
+    if (surface.upstreamLength?.layers !== layers || surface.upstreamLength.state !== state) {
+      const upstream = upstreamLayersOf(layers);
+      const working = upstreamWorkingLayers(upstream, state.upstream, state.timeline.fps);
+      const portMeta = (index) => portMediaMeta((key) => layerUiList(upstream[index].ui, key));
+      surface.upstreamLength = { layers, state, ends: upstreamOverriddenEnds(working, state.upstream, new Map(), portMeta, state.timeline.fps) };
+    }
+    const [frames] = list("pano_upstream_frames").length ? list("pano_upstream_frames") : list("pano_timeline_frames");
+    media.upstream = { frames: Number(frames) > 0 ? Number(frames) : 0, ends: surface.upstreamLength.ends };
+  } else if (scene) {
+    media.sceneItems = list("pano_scene_files").length;
+  }
+  return media;
+}
+
 // ADR 0019: the played VIDEO once it shows a frame, else its still; null without a VIDEO.
 function playbackBackground({ playback, video, still }) {
   if (!playback.source) return null;
@@ -2256,11 +2297,13 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     const shown = surfaceShown(wrap, !!node.flags?.collapsed);
     const source = playback.source;
     const sticker = shown ? portStickerMedia(node) : null;
+    const state = getCachedState(node);
     const playable = playback.follow({
       shown,
       sources: shown ? backgroundVideoSources(node) : [],
-      state: getCachedState(node),
+      state,
       sticker,
+      media: shown ? surfaceTimelineMedia(node, state) : {},
     });
     // The still of the port Sticker's MP4 is released with its source.
     if ((sticker?.src || "") !== surfacePlayback.stickerSource) {

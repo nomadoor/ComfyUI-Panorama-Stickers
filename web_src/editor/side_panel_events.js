@@ -65,21 +65,6 @@ export function createSidePanelEvents(deps) {
     requestDraw();
     if (commit) pushHistory();
   }
-  // The Visible and Lock switches of the selected upstream element (ADR 0030, PanoUpstreamOrigin.vue): its
-  // working Sticker's field, written back as an override with the Undo step. Hidden, it is no longer selected.
-  function setUpstreamField(name, value) {
-    const sticker = selectedWorldSticker() || getSelected();
-    if (!isUpstreamSticker(sticker) || uiState.sidePanel?.upstream?.disabled !== false || sticker[name] === value) return;
-    stopTimelinePlayback();
-    sticker[name] = value;
-    releaseHiddenSelection();
-    markObjectVisualsDirty();
-    pushHistory();
-    commitAndRefreshNode();
-    updateSidePanel();
-    updateSelectionMenu();
-    requestDraw();
-  }
   // Whether the button of the inspector's upstream rows (PanoUpstreamOrigin.vue) that `action` and `lane` name
   // is enabled: a click on a disabled one does nothing.
   function upstreamButtonEnabled(action, lane) {
@@ -139,10 +124,6 @@ export function createSidePanelEvents(deps) {
       } else {
         revertUpstream(lane);
       }
-      return;
-    }
-    if (action === "upstream-visible" || action === "upstream-locked") {
-      setUpstreamField(action === "upstream-visible" ? "visible" : "locked", target.getAttribute("data-value") === "1");
       return;
     }
     if (action === "toggle-selection-picker") {

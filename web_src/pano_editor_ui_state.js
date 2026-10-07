@@ -216,26 +216,22 @@ export function upstreamOriginLabel(layer) {
 }
 
 // The inspector's upstream rows of a selected Panorama Studio Sticker (PanoUpstreamOrigin.vue), the same rows for
-// every Sticker so the panel keeps its layout: Visible and Lock, "Revert to upstream" of all its overrides and a
-// button per Lane of its `placement` (Restore deleted is its layer's, on the Timeline: buildTimelineModel). For an
-// upstream element (`layer`, its layer's key) they are its switches and buttons, with where it comes from: a
-// revert button is on while `override` (its override in the node's records, or null) holds what it reverts and
-// the element is not locked. An element of a layer that is only inherited (not `editable`) has them disabled
-// and says so. For the node's own Sticker (`layer` null) the
-// rows show its values, disabled: its eye and lock are on its Timeline row; the Lane buttons of its port Sticker
-// shown with the Pose handoff (`handoff`, [{ name, overridden }] per Lane the handoff gives) revert a Lane to the
-// handoff (ADR 0030) while it is an override and the Sticker is not locked.
-export function upstreamInspectorModel({ layer, editable, visible, locked, readOnly, placement, override = null, handoff = null }) {
+// every Sticker so the panel keeps its layout: "Revert to upstream" of all its overrides and a button per Lane of
+// its `placement` (its eye is on its Timeline row, its lock in the selection menu, and Restore deleted is its
+// layer's, on the Timeline: buildTimelineModel). For an upstream element (`layer`, its layer's key) they are its
+// buttons, with where it comes from: a revert button is on while `override` (its override in the node's records,
+// or null) holds what it reverts and the element is not `locked`. An element of a layer that is only inherited
+// (not `editable`) has them disabled and says so. For the node's own Sticker (`layer` null) the rows are
+// disabled, but the Lane buttons of its port Sticker shown with the Pose handoff (`handoff`, [{ name, overridden }]
+// per Lane the handoff gives) revert a Lane to the handoff (ADR 0030) while it is an override and the Sticker is
+// not locked.
+export function upstreamInspectorModel({ layer, editable, locked, readOnly, placement, override = null, handoff = null }) {
   const inherited = layer !== null && !editable;
-  const disabled = layer === null || readOnly || !editable;
-  const revertable = !disabled && !locked && !!override;
+  const revertable = layer !== null && !readOnly && editable && !locked && !!override;
   const handoffOverridden = (name) => !readOnly && !locked && !!handoff?.some((lane) => lane.name === name && lane.overridden);
   return {
     origin: layer === null ? "" : `${upstreamOriginLabel(layer)}${inherited ? " · inherited only" : ""}`,
     note: inherited ? "Inherited only: edits of this upstream scene cannot be kept here. Edit it in its own Panorama Studio." : "",
-    visible,
-    locked,
-    disabled,
     revertAll: { disabled: !revertable },
     lanes: UPSTREAM_LANES[placement].map((name) => ({
       name,
@@ -480,7 +476,9 @@ const LANE_LABELS = {
 // frames are in the owner's own frames. The playhead, the time and whether it plays are not in the model
 // (the editor's timelinePlayhead): the model changes only with the state, the selection and the layout.
 // audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
-// input sets the Timeline fps (ADR 0024).
+// input sets the Timeline fps (ADR 0024). `span` is the output's length (timelineSpan), which the length
+// field shows as its Auto value while `timeline.length` is empty; a span of one frame is not `playable`.
+// portBarEnd(sticker) is where the bar of a port Sticker without a duration ends (its media's end), or null.
 // Every row has the place of the eye at its left; a `hideable` row has the eye there, which shows and
 // hides it (`visible`); the Camera row has one with `cameraHideable`. The painting has a row (`painting`,
 // after the Stickers) while it has strokes or rasters, or is hidden.
@@ -493,7 +491,7 @@ const LANE_LABELS = {
 // layer has 3D content, Keyframes or a Clip range, or is hidden. An upstream row is `upstream`, `overridden` while
 // the layer's record holds an override of it, and `editable` only when the node can keep overrides of its layer;
 // the node's own rows are always `editable`.
-export function buildTimelineModel(state, { span, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false, upstream = [] }) {
+export function buildTimelineModel(state, { span, portBarEnd = () => null, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false, upstream = [] }) {
   // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
   const row = (id, owner, rowLabel, icon, clip, offset, { keyable = true, hideable = true, origin = null } = {}) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
@@ -519,7 +517,9 @@ export function buildTimelineModel(state, { span, selection, selectedId, expande
       })),
     };
   };
-  const clipRange = ({ start, in: clipIn, duration }) => ({ clip: { start, end: duration === null ? null : start + duration }, offset: start - clipIn });
+  // A Clip range without a duration ends with the Timeline (`end` null), or a port Sticker's with its media
+  // (`portBarEnd`, null while it is not known).
+  const clipRange = ({ start, in: clipIn, duration }, mediaEnd = null) => ({ clip: { start, end: duration === null ? mediaEnd : start + duration }, offset: start - clipIn });
   // The rows of a state's Stickers from front to back, its painting and its `scene` (with `sceneRow`). `origin`
   // gives an upstream layer's ids and flags.
   const stateRows = (sceneState, { idOf = (id) => id, sceneRow, origin = null }) => {
@@ -527,7 +527,7 @@ export function buildTimelineModel(state, { span, selection, selectedId, expande
     const world = sceneState.stickers.filter((sticker) => sticker.placement === "world");
     return [
       ...[...sky, ...world].map((sticker) => {
-        const { clip, offset } = clipRange(sticker.clip);
+        const { clip, offset } = clipRange(sticker.clip, portBarEnd(sticker));
         const label = sceneStickerLabel(origin ? { ...sticker, id: sticker.origin.id } : sticker);
         return row(sticker.id, sticker, label, ICON.image, clip, offset, { origin: origin && { ...origin, overridden: origin.stickerOverridden(sticker) } });
       }),
@@ -562,6 +562,8 @@ export function buildTimelineModel(state, { span, selection, selectedId, expande
     hasAudio: !!audio,
     muted: !!audio?.muted,
     span,
+    // A Timeline of one frame has nothing to play.
+    playable: span > 1,
     fps: state.timeline.fps,
     fpsLocked,
     length: state.timeline.length,

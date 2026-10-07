@@ -157,6 +157,10 @@ def test_the_upstream_fps_is_used_and_own_keyframes_keep_their_seconds():
     centers = _center(video.get_components().images)
     assert not torch.allclose(centers[14], torch.tensor(RED)) and torch.allclose(centers[15], torch.tensor(RED))
     assert output.ui["pano_timeline_fps"] == [30.0] and output.ui["pano_timeline_frames"] == [30]
+    # The editor's Auto length counts the upstream Scene's own length, apart from this node's output length.
+    assert output.ui["pano_upstream_frames"] == [30]
+    longer = _studio({"timeline": {"fps": 30.0, "length": 45}}, scene=a)
+    assert longer.ui["pano_timeline_frames"] == [45] and longer.ui["pano_upstream_frames"] == [30]
 
 
 def test_the_upstream_background_is_used_with_a_warning_and_its_paint_mask_is_kept():

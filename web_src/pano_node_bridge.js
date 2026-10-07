@@ -43,6 +43,9 @@ const GROUPS = {
     lastCutoutShot: null,
     view: null,
     playback: null,
+    // The ends of the Clip ranges Panorama Studio overrides upstream, for its Timeline's length, with the result
+    // list and state they were made from (pano_preview_runtime.js surfaceTimelineMedia).
+    upstreamLength: null,
     scene: null,
     renderCache: null,
     paintEngine: null,

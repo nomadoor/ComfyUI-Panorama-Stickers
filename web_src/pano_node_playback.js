@@ -10,7 +10,8 @@
 // readState() is the node's working state v2. onFrame, onCapture and onChange are those of
 // createVideoPlayback; onChange also runs when the VIDEO of a source fails. onStickerCapture is the
 // follower's onCapture. With `camera` (Panorama Studio, #89) the Camera's Keyframes count, as in its editor.
-import { createFrameSequence, portMediaFrames, portMediaTime } from "./pano_port_media.js";
+// The Timeline is exactly the output's length (pano_timeline.js timelineSpan), as in the editor.
+import { createFrameSequence, portMediaTime } from "./pano_port_media.js";
 import { NODE_SURFACE_FRAME } from "./pano_stickers_node_surface.js";
 import { isTimed, timelineSpan } from "./pano_timeline.js";
 import { createVideoFollower, createVideoPlayback } from "./pano_video_playback.js";
@@ -32,22 +33,18 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
   // the time of it at the playhead.
   let sticker = null;
   let stickerTime = null;
+  // What the node's result says of its other inputs for the Auto length (follow's `media`).
+  let media = {};
   const fps = () => readState().timeline.fps;
   const port = (state) => state.stickers.find((item) => item.source.kind === "port");
-  // The editor's Timeline span: the Timeline length (5 s without one), widened to the VIDEO and to
-  // the end of the port Sticker's media.
-  const span = () => {
-    const state = readState();
-    const portSticker = port(state);
-    return timelineSpan(state, {
-      minimum: Math.round(fps() * 5),
-      frames: Math.max(
-        chosen ? Math.round(duration * fps()) : 0,
-        sticker && portSticker ? portMediaFrames(portSticker.clip, fps(), sticker.meta) : 0,
-      ),
-      camera,
-    });
-  };
+  // The editor's Timeline span: the output's length. Without a background from the node's result
+  // (`media.bg` undefined), the VIDEO the surface plays counts, by its length.
+  const span = () => timelineSpan(readState(), {
+    ...media,
+    bg: media.bg !== undefined ? media.bg : chosen && duration > 0 ? { video: true, frames: Math.round(duration * fps()), duration } : null,
+    port: sticker?.meta ?? media.port ?? null,
+    camera,
+  });
   const playback = createVideoPlayback({
     video,
     clock,
@@ -129,11 +126,14 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
     },
     // Follows the node on each draw and returns whether the play button shows. `sources` are its
     // background VIDEO URLs, best first; one that failed is skipped until it leaves them. `sticker`
-    // is the port Sticker's MP4 ({ src, meta }) or PNGs ({ frames, meta }), or null; it plays too. Out of sight, the node pauses
+    // is the port Sticker's MP4 ({ src, meta }) or PNGs ({ frames, meta }), or null; it plays too. `media` is
+    // what the node's result gives autoTimelineLength of its inputs ({ bg, port, sceneItems, upstream }; `bg`
+    // left out while no result gives it, null when an upstream background stands in). Out of sight, the node pauses
     // and lets its VIDEOs go, keeping the frame. Another background VIDEO, a Timeline that no longer
     // reaches the frame, or nothing to play brings the node back to NODE_SURFACE_FRAME.
-    follow({ shown, sources, state, sticker: portMedia = null }) {
+    follow({ shown, sources, state, sticker: portMedia = null, media: inputs = {} }) {
       sticker = shown ? portMedia : null;
+      media = inputs;
       if (!shown) {
         pause();
         load("");
