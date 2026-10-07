@@ -246,3 +246,92 @@ def test_the_timeline_edits_of_upstream_rows_draw_in_the_node_as_the_editor_show
     upstream = PanoSceneValue(tuple(layers), None, 360, (0.0, 0.0, 0.0), Fraction(24), (), Fraction(0), (), {}, {})
     _, ends = _override_layers(upstream, own["upstream"], [])
     assert sorted(math.floor(end * 24 / fps + 0.5) for end, fps in ends) == sorted(edited["ends"])
+
+
+
+RECORDS_SCRIPT = textwrap.dedent(
+    """
+    import { readFileSync } from "node:fs";
+    import { createUpstream } from "./web_src/editor/upstream.js";
+    import { loadSceneState } from "./web_src/pano_scene_state.js";
+
+    globalThis.Image = class {};
+    const fixture = JSON.parse(readFileSync("tests/fixtures/scene_inherit/editor_working.json", "utf8"));
+    const state = loadSceneState(fixture.own);
+    const ui = { pano_upstream_layers: fixture.layers.map((layer) => ({ state: layer, ui: {} })) };
+    const upstream = createUpstream({
+      comfyMedia: { uiValue: (node, key) => ui[key] ?? null, uiList: (node, key) => ui[key] ?? [] },
+      editor: { frame: 0 },
+      mediaAssetSource: () => "",
+      mediaSource: () => "",
+      node: { id: 1, inputs: [{ name: "scene" }], graph: null },
+      state,
+      studio: true,
+    });
+    upstream.connect({ getDesiredPaintTargetDescriptor: () => ({}), getMediaRevisionToken: () => "", playback: {}, requestDraw() {} });
+    const sticker = (id) => upstream.upstreamStickers().find((item) => item.id === id);
+    // An element with overrides, the port Sticker of a layer at another fps whose record is at the editor's, and an
+    // element edited but not yet written back, deleted as Delete does, then written back as an Undo step is.
+    sticker("upstream:scene_b:sticker_1").visible = false;
+    if (process.argv[1] === "revert-layer") {
+      // scene_a's `scene` and painting follow upstream again, as its Timeline header's Revert does.
+      upstream.revertUpstreamLayer("scene_a");
+    } else {
+      upstream.deleteUpstreamStickers(["upstream:scene_a:sticker_1", "upstream:scene_b:sticker_2", "upstream:scene_b:sticker_1"].map(sticker));
+    }
+    upstream.syncUpstreamEdits();
+    upstream.pruneUpstreamRecords();
+    const states = upstream.upstreamEntries().map(({ working }) => {
+      working.sceneState.stickers.forEach((item) => {
+        item.id = item.origin.id;
+        delete item.origin;
+      });
+      return working.sceneState;
+    });
+    console.log(JSON.stringify({ records: state.upstream, states }));
+    """
+)
+
+
+def test_deleted_upstream_elements_are_drawn_by_neither_the_editor_nor_the_node():
+    if shutil.which("node") is None:
+        pytest.skip("node.js is required")
+    case = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    deleted = json.loads(subprocess.run(
+        ["node", "--input-type=module", "-e", RECORDS_SCRIPT], cwd=REPO_ROOT, text=True, capture_output=True, check=True,
+    ).stdout)
+    records = {record["layer"]: record for record in deleted["records"]}
+    # Tombstones are ids only; the deleted elements' overrides are gone, the others' stay.
+    assert records["scene_a"]["deleted"] == ["sticker_2", "sticker_1"]
+    assert [item["id"] for item in records["scene_a"]["stickers"]] == ["sticker_3"]
+    assert records["scene_b"]["deleted"] == ["sticker_3", "sticker_2", "sticker_1"]
+    assert records["scene_b"]["stickers"] == []
+    _, applied = node_layers({**case, "own": {**case["own"], "upstream": deleted["records"]}})
+    for layer, state in zip(applied, deleted["states"], strict=True):
+        expected = layer.state if layer.state["timeline"]["fps"] == 24 else rebase_scene_state(layer.state, 24)
+        assert_parity(expected, state)
+    # The node draws none of them: they have no source.
+    assert sorted(applied[1].sources.stickers) == ["sticker_3"]
+    assert sorted(applied[3].sources.stickers) == []
+    # The other layer with the id scene_b (not the nearest downstream) keeps its element.
+    assert sorted(applied[0].sources.stickers) == ["sticker_1"]
+
+
+def test_a_reverted_layer_draws_its_upstream_scene_and_paint_in_the_editor_and_the_node():
+    if shutil.which("node") is None:
+        pytest.skip("node.js is required")
+    case = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    reverted = json.loads(subprocess.run(
+        ["node", "--input-type=module", "-e", RECORDS_SCRIPT, "revert-layer"], cwd=REPO_ROOT, text=True, capture_output=True, check=True,
+    ).stdout)
+    records = {record["layer"]: record for record in reverted["records"]}
+    # Only the layer's own overrides go; its elements' overrides and deleted ones stay.
+    assert records["scene_a"]["scene"] == {} and "painting_visible" not in records["scene_a"]
+    assert records["scene_a"]["deleted"] == ["sticker_2"]
+    assert [item["id"] for item in records["scene_a"]["stickers"]] == ["sticker_1", "sticker_3"]
+    _, applied = node_layers({**case, "own": {**case["own"], "upstream": reverted["records"]}})
+    for layer, state in zip(applied, reverted["states"], strict=True):
+        expected = layer.state if layer.state["timeline"]["fps"] == 24 else rebase_scene_state(layer.state, 24)
+        assert_parity(expected, state)
+    assert applied[1].state["scene"]["visible"] is True
+    assert applied[1].state["painting_visible"] is True

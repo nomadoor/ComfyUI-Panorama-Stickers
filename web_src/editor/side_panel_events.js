@@ -19,9 +19,9 @@ export function createSidePanelEvents(deps) {
   let apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
     commitState, getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
     isItemLocked, isSceneSticker, isStrokeGroupItem, markObjectVisualsDirty, persistUiSettings, poseOf,
-    pushHistory, releaseHiddenSelection, requestDraw, revertPortHandoffLane, selectedWorldSticker, setSelectedItem,
-    stopTimelinePlayback, syncCoverageChangeToNodePreviews, syncCutoutShot, turnViewTo, updateSelectionMenu,
-    updateSidePanel, worldStickerEditable, writePose;
+    pushHistory, releaseHiddenSelection, requestDraw, revertPortHandoffLane,
+    revertUpstreamSticker, selectedWorldSticker, setSelectedItem, stopTimelinePlayback, syncCoverageChangeToNodePreviews,
+    syncCutoutShot, turnViewTo, updateSelectionMenu, updateSidePanel, worldStickerEditable, writePose;
 
   function applySidePanelParam(key, rawValue, commit = false) {
     // Edits during playback would key every frame they pass.
@@ -80,6 +80,30 @@ export function createSidePanelEvents(deps) {
     updateSelectionMenu();
     requestDraw();
   }
+  // Whether the button of the inspector's upstream rows (PanoUpstreamOrigin.vue) that `action` and `lane` name
+  // is enabled: a click on a disabled one does nothing.
+  function upstreamButtonEnabled(action, lane) {
+    const model = uiState.sidePanel?.upstream;
+    if (!model) return false;
+    const button = lane ? model.lanes.find((item) => item.name === lane && item.action === action)
+      : action === "revert-upstream" ? model.revertAll : null;
+    return !!button && !button.disabled;
+  }
+  // "Revert to upstream" of the selected upstream element (ADR 0030): all its overrides, or the Lane `lane`, as
+  // an Undo step. A reverted element that is hidden upstream is no longer selected.
+  function revertUpstream(lane) {
+    const sticker = selectedWorldSticker() || getSelected();
+    if (!isUpstreamSticker(sticker)) return;
+    stopTimelinePlayback();
+    if (!revertUpstreamSticker(sticker, lane)) return;
+    releaseHiddenSelection();
+    markObjectVisualsDirty();
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    updateSelectionMenu();
+    requestDraw();
+  }
   async function onSidePanelClick(ev) {
     const target = ev.target.closest("[data-action]");
     if (!target) return;
@@ -106,9 +130,15 @@ export function createSidePanelEvents(deps) {
       requestDraw();
       return;
     }
-    if (action === "revert-handoff-lane") {
-      stopTimelinePlayback();
-      revertPortHandoffLane(String(target.getAttribute("data-lane") || ""));
+    if (action === "revert-handoff-lane" || action === "revert-upstream") {
+      const lane = target.getAttribute("data-lane") || null;
+      if (!upstreamButtonEnabled(action, lane)) return;
+      if (action === "revert-handoff-lane") {
+        stopTimelinePlayback();
+        revertPortHandoffLane(lane);
+      } else {
+        revertUpstream(lane);
+      }
       return;
     }
     if (action === "upstream-visible" || action === "upstream-locked") {
@@ -213,9 +243,9 @@ export function createSidePanelEvents(deps) {
         apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
         commitState, getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
         isItemLocked, isSceneSticker, isStrokeGroupItem, markObjectVisualsDirty, persistUiSettings, poseOf,
-        pushHistory, releaseHiddenSelection, requestDraw, revertPortHandoffLane, selectedWorldSticker, setSelectedItem,
-        stopTimelinePlayback, syncCoverageChangeToNodePreviews, syncCutoutShot, turnViewTo, updateSelectionMenu,
-        updateSidePanel, worldStickerEditable, writePose,
+        pushHistory, releaseHiddenSelection, requestDraw, revertPortHandoffLane,
+        revertUpstreamSticker, selectedWorldSticker, setSelectedItem, stopTimelinePlayback, syncCoverageChangeToNodePreviews,
+        syncCutoutShot, turnViewTo, updateSelectionMenu, updateSidePanel, worldStickerEditable, writePose,
       } = api);
     },
     onSidePanelClick, onSidePanelInput, onSidePanelChange,

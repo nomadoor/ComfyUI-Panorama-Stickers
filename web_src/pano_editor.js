@@ -947,7 +947,7 @@ async function showEditor(node, type, options = {}) {
     uiState.stageWarningDetail = "boot:asset-migration";
     console.error('[PanoramaStickers] editor boot step "asset-migration" failed', error);
   });
-  runBootStep("history", pushHistory);
+  runBootStep("history", () => pushHistory({ initial: true }));
   runBootStep("undo-redo", syncUndoRedoButtons);
   runBootStep("paint-ui", syncPaintUi);
   runBootStep("side-panel", updateSidePanel);

@@ -12,11 +12,12 @@ export function createCommands(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
-    deleteStudioCamera, getActivePaintTargetDescriptor, getList, getNextStickerZIndex, getPaintingGroupList,
-    getPaintingLayerList, getRasterObjectList, getSelected, getSelectedItems, isExternalSticker, isItemLocked,
-    isRasterObjectItem, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
+    deleteStudioCamera, deleteUpstreamStickers, getActivePaintTargetDescriptor, getList, getNextStickerZIndex,
+    getPaintingGroupList, getPaintingLayerList, getRasterObjectList, getSelected, getSelectedItems, isExternalSticker,
+    isItemLocked, isRasterObjectItem, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
     markObjectVisualsDirty, markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty,
-    parseRasterObjectSelectionId, pruneUnusedAssets, pushHistory, requestDraw, selectedWorldSticker,
+    parseRasterObjectSelectionId, pruneUnusedAssets, pushHistory, releaseHiddenSelection, requestDraw,
+    restoreUpstreamDeleted, revertUpstreamLayer, selectedWorldSticker,
     stopTimelinePlayback, syncFloatingViewButtonState, syncPaintUi, updateSelectionMenu, updateSidePanel,
     worldStickerEditable;
 
@@ -136,10 +137,11 @@ export function createCommands(deps) {
   function deleteSelectedWorldSticker() {
     const sticker = selectedWorldSticker();
     if (!sticker) return false;
-    // Deleting an upstream element is not done here yet (ADR 0030); Delete leaves it.
-    if (!worldStickerEditable(sticker) || isUpstreamSticker(sticker)) return true;
+    if (!worldStickerEditable(sticker)) return true;
     stopTimelinePlayback();
-    deleteWorldSticker(state, sticker.id);
+    // An upstream element is deleted in the node's overrides (ADR 0030).
+    if (isUpstreamSticker(sticker)) deleteUpstreamStickers([sticker]);
+    else deleteWorldSticker(state, sticker.id);
     clearWorldSelection();
     markObjectVisualsDirty();
     pushHistory();
@@ -156,11 +158,15 @@ export function createCommands(deps) {
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected && selectedItems.length === 0) return;
-    // Deleting upstream elements is not done here yet (ADR 0030); Delete leaves them.
-    if (selectedItems.some(isUpstreamSticker)) return;
     if (selectedItems.some((item) => isItemLocked(item))) return;
     stopTimelinePlayback();
-    if (selectedItems.length > 1) {
+    // Upstream elements are deleted in the node's overrides (ADR 0030), in the same Undo step as the rest.
+    const upstream = selectedItems.filter(isUpstreamSticker);
+    if (upstream.length) {
+      deleteUpstreamStickers(upstream);
+      markObjectVisualsDirty();
+    }
+    if (selectedItems.length > 1 || upstream.length) {
       const paintStrokeIds = new Set(selectedItems
         .filter((item) => isStrokeGroupItem(item))
         .map((item) => String(item.actionGroupId || item.id || "")));
@@ -262,6 +268,31 @@ export function createCommands(deps) {
     clearCutoutFrame();
   }
 
+  // An action on the upstream layer with `key` (ADR 0030) run from its Timeline header: `change(key)` changes the
+  // node's records (editor/upstream.js), and when it did, the change is an Undo step written back.
+  function changeUpstreamLayer(change, key) {
+    if (readOnly) return;
+    stopTimelinePlayback();
+    if (!change(key)) return;
+    releaseHiddenSelection();
+    markObjectVisualsDirty();
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    updateSelectionMenu();
+    requestDraw();
+  }
+
+  // "Restore deleted": the layer's elements deleted here show again.
+  function restoreUpstreamDeletedCommand(key) {
+    changeUpstreamLayer(restoreUpstreamDeleted, key);
+  }
+
+  // "Revert": the layer's `scene` and painting follow upstream again.
+  function revertUpstreamLayerCommand(key) {
+    changeUpstreamLayer(revertUpstreamLayer, key);
+  }
+
   function forceCursorTool() {
     if (editor.primaryTool === "cursor") return;
     editor.primaryTool = "cursor";
@@ -273,15 +304,17 @@ export function createCommands(deps) {
     connect(api) {
       ({
         clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
-        deleteStudioCamera, getActivePaintTargetDescriptor, getList, getNextStickerZIndex, getPaintingGroupList,
-        getPaintingLayerList, getRasterObjectList, getSelected, getSelectedItems, isExternalSticker, isItemLocked,
-        isRasterObjectItem, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
+        deleteStudioCamera, deleteUpstreamStickers, getActivePaintTargetDescriptor, getList, getNextStickerZIndex,
+        getPaintingGroupList, getPaintingLayerList, getRasterObjectList, getSelected, getSelectedItems, isExternalSticker,
+        isItemLocked, isRasterObjectItem, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
         markObjectVisualsDirty, markPaintCompositeVisualsDirty, markPaintStrokeVisualsDirty,
-        parseRasterObjectSelectionId, pruneUnusedAssets, pushHistory, requestDraw, selectedWorldSticker,
+        parseRasterObjectSelectionId, pruneUnusedAssets, pushHistory, releaseHiddenSelection, requestDraw,
+        restoreUpstreamDeleted, revertUpstreamLayer, selectedWorldSticker,
         stopTimelinePlayback, syncFloatingViewButtonState, syncPaintUi, updateSelectionMenu, updateSidePanel,
         worldStickerEditable,
       } = api);
     },
-    clearAll, clearPaintingLayer, duplicateSelected, deleteSelectedWorldSticker, deleteSelected, forceCursorTool,
+    clearAll, clearPaintingLayer, duplicateSelected, deleteSelectedWorldSticker, deleteSelected, restoreUpstreamDeletedCommand,
+    revertUpstreamLayerCommand, forceCursorTool,
   };
 }

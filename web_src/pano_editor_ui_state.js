@@ -1,7 +1,7 @@
 import { ICON } from "./icons.js";
 import { sceneStickerLabel } from "./pano_editor_state.js";
 import { laneNames, ownerTimed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
-import { upstreamRowId } from "./pano_upstream.js";
+import { upstreamLayerOverridden, upstreamRowId } from "./pano_upstream.js";
 
 export function patchUiButton(list, matchKey, key, patch) {
   const entry = Array.isArray(list) ? list.find((item) => String(item?.[matchKey] || "") === String(key || "")) : null;
@@ -206,14 +206,8 @@ export function cameraAspectChoices(active, { erp = false, coverage = 360 } = {}
 }
 
 const HANDOFF_LANE_LABELS = { direction: "Direction", roll: "Roll", size: "Size", position: "Position", rotation: "Rotation", scale: "Scale" };
-
-// The inspector's "Revert to upstream" (PanoHandoffRevert.vue) of the port Sticker's Lanes while it shows the
-// Pose handoff (ADR 0030), from [{ name, overridden }] per Lane the handoff gives, or null: each button is
-// disabled unless its Lane is an override and the Sticker can be edited (`enabled`).
-export function handoffRevertModel(lanes, { enabled = true } = {}) {
-  if (!lanes) return null;
-  return { lanes: lanes.map(({ name, overridden }) => ({ name, label: HANDOFF_LANE_LABELS[name], disabled: !enabled || !overridden })) };
-}
+const UPSTREAM_LANES = { sky: ["direction", "roll", "size", "opacity"], world: ["position", "rotation", "scale", "opacity"] };
+const UPSTREAM_LANE_LABELS = { ...HANDOFF_LANE_LABELS, opacity: "Opacity" };
 
 // Where a selected upstream element comes from (ADR 0030): the key of its layer, the Scene id of the upstream
 // Panorama Studio or `#<n>` for a layer without one (pano_upstream.js upstreamLayerKeys).
@@ -221,19 +215,37 @@ export function upstreamOriginLabel(layer) {
   return `Upstream · ${layer}`;
 }
 
-// The inspector's Visible and Lock rows of a selected Panorama Studio Sticker (PanoUpstreamOrigin.vue), shown for
-// every Sticker so the panel keeps its layout. For an upstream element (`layer`, its layer's key) they are its
-// switches, with where it comes from; an element of a layer that is only inherited (not `editable`) has them
-// disabled and says so. For the node's own Sticker (`layer` null) they show its values, disabled: its eye and
-// lock are on its Timeline row.
-export function upstreamInspectorModel({ layer, editable, visible, locked, readOnly }) {
+// The inspector's upstream rows of a selected Panorama Studio Sticker (PanoUpstreamOrigin.vue), the same rows for
+// every Sticker so the panel keeps its layout: Visible and Lock, "Revert to upstream" of all its overrides and a
+// button per Lane of its `placement` (Restore deleted is its layer's, on the Timeline: buildTimelineModel). For an
+// upstream element (`layer`, its layer's key) they are its switches and buttons, with where it comes from: a
+// revert button is on while `override` (its override in the node's records, or null) holds what it reverts and
+// the element is not locked. An element of a layer that is only inherited (not `editable`) has them disabled
+// and says so. For the node's own Sticker (`layer` null) the
+// rows show its values, disabled: its eye and lock are on its Timeline row; the Lane buttons of its port Sticker
+// shown with the Pose handoff (`handoff`, [{ name, overridden }] per Lane the handoff gives) revert a Lane to the
+// handoff (ADR 0030) while it is an override and the Sticker is not locked.
+export function upstreamInspectorModel({ layer, editable, visible, locked, readOnly, placement, override = null, handoff = null }) {
   const inherited = layer !== null && !editable;
+  const disabled = layer === null || readOnly || !editable;
+  const revertable = !disabled && !locked && !!override;
+  const handoffOverridden = (name) => !readOnly && !locked && !!handoff?.some((lane) => lane.name === name && lane.overridden);
   return {
     origin: layer === null ? "" : `${upstreamOriginLabel(layer)}${inherited ? " · inherited only" : ""}`,
     note: inherited ? "Inherited only: edits of this upstream scene cannot be kept here. Edit it in its own Panorama Studio." : "",
     visible,
     locked,
-    disabled: layer === null || readOnly || !editable,
+    disabled,
+    revertAll: { disabled: !revertable },
+    lanes: UPSTREAM_LANES[placement].map((name) => ({
+      name,
+      label: UPSTREAM_LANE_LABELS[name],
+      action: layer === null && handoff ? "revert-handoff-lane" : "revert-upstream",
+      // An override made for the other placement has none of this one's Lanes.
+      disabled: layer === null
+        ? !handoffOverridden(name)
+        : !revertable || override.placement !== placement || !Object.hasOwn(override, name),
+    })),
   };
 }
 
@@ -248,7 +260,6 @@ export function buildEditorSidePanelModel({
   notes,
   uiSettings,
   normalizeCoverageValue,
-  handoff = null,
   upstream = null,
 }) {
   return {
@@ -262,7 +273,6 @@ export function buildEditorSidePanelModel({
     params,
     rows: inspectorRows(params),
     notes,
-    handoff,
     upstream,
     paramsDisabled: !enabled,
     uiSettings: readOnly ? null : uiSettings,
@@ -292,8 +302,8 @@ export function buildSelectionMenuModel({
   // the 360° preset.
   cameraShot = false,
   coverage = 360,
-  // Upstream elements in the selection (ADR 0030): null, or { lockable }. Only Lock acts on them, while their
-  // layer keeps overrides; the other buttons stay in place, disabled.
+  // Upstream elements in the selection (ADR 0030): null, or { editable }. Only Lock and Delete act on them,
+  // while their layers keep overrides; the other buttons stay in place, disabled.
   upstream = null,
 }) {
   if (!geom?.visible) return { visible: false, left: 0, top: 0, items: [] };
@@ -344,7 +354,8 @@ export function buildSelectionMenuModel({
       });
     }
     items.push({ key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed });
-    if (!isExternalSticker(selected)) items.push({ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked });
+    // An upstream port Sticker is deleted as the other upstream elements are (ADR 0030).
+    if (!isExternalSticker(selected) || upstream) items.push({ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked });
   } else {
     items = [
       {
@@ -367,7 +378,10 @@ export function buildSelectionMenuModel({
     }
   }
   if (upstream) {
-    items = items.map((item) => ({ ...item, disabled: item.key === "toggle-lock" ? !upstream.lockable : true }));
+    items = items.map((item) => ({
+      ...item,
+      disabled: item.key === "toggle-lock" ? !upstream.editable : item.key === "delete" ? !upstream.editable || !!item.disabled : true,
+    }));
   }
 
   return selectionMenuAt(geom.corners, items);
@@ -472,7 +486,9 @@ const LANE_LABELS = {
 // after the Stickers) while it has strokes or rasters, or is hidden.
 // `upstream` are the upstream layers of Panorama Studio (editor/upstream.js upstreamTimelineLayers, ADR 0030),
 // shown below the node's own rows in `groups`, one per layer from the farthest upstream: its header
-// (`Upstream · <key>`) and its rows as the node's own are made from its working state, with the ids
+// (`Upstream · <key>`) with the layer's actions, "Revert" of its `scene` and painting overrides (`revert`) and
+// "Restore deleted (n)" of its `deleted` elements still in it (`restore`), each disabled while it would do
+// nothing, and its rows as the node's own are made from its working state, with the ids
 // `upstream:<key>:<id>`, `upstream:<key>:painting` and `upstream:<key>:scene`. Its `scene` row shows while the
 // layer has 3D content, Keyframes or a Clip range, or is hidden. An upstream row is `upstream`, `overridden` while
 // the layer's record holds an override of it, and `editable` only when the node can keep overrides of its layer;
@@ -553,9 +569,11 @@ export function buildTimelineModel(state, { span, selection, selectedId, expande
       ...(camera ? [row("camera", state.camera, "Camera", ICON.camera, null, 0, { hideable: cameraHideable })] : []),
       ...stateRows(state, { sceneRow: scene }),
     ],
-    groups: upstream.map(({ key, sceneState, editable, record, scene: content }) => ({
+    groups: upstream.map(({ key, sceneState, editable, record, scene: content, deleted }) => ({
       key,
       label: `${upstreamOriginLabel(key)}${editable ? "" : " · inherited only"}`,
+      revert: { disabled: !editable || !upstreamLayerOverridden(record) },
+      restore: { label: `Restore deleted (${deleted})`, disabled: !editable || deleted === 0 },
       rows: stateRows(sceneState, {
         idOf: (part) => upstreamRowId(key, part),
         sceneRow: content || !sceneState.scene.visible,

@@ -503,26 +503,94 @@ test("an upstream element's menu keeps every button in place and leaves only Loc
     upstream,
   });
   const own = menu(null);
-  const editable = menu({ lockable: true });
+  const editable = menu({ editable: true });
   assert.deepEqual(editable.items.map((item) => item.key), own.items.map((item) => item.key));
-  assert.deepEqual(editable.items.filter((item) => !item.disabled).map((item) => item.key), ["toggle-lock"]);
-  assert.deepEqual(menu({ lockable: false }).items.filter((item) => !item.disabled), []);
+  assert.deepEqual(editable.items.filter((item) => !item.disabled).map((item) => item.key), ["toggle-lock", "delete"]);
+  assert.deepEqual(menu({ editable: false }).items.filter((item) => !item.disabled), []);
+});
+
+test("an upstream port Sticker's menu has Delete (ADR 0030), the node's own port Sticker's has not", () => {
+  const selected = { id: "upstream:scene_a:sticker_1", locked: false };
+  const menu = (upstream, selectedLocked = false) => buildSelectionMenuModel({
+    type: "stickers",
+    selected,
+    selectedItems: [selected],
+    selectedKind: "image",
+    geom: { visible: true, corners: [{ x: 20, y: 20 }, { x: 80, y: 20 }, { x: 80, y: 60 }, { x: 20, y: 60 }] },
+    allLocked: selectedLocked,
+    selectedLocked,
+    activeAspect: "1:1",
+    cutoutAspectOpen: false,
+    isExternalSticker: () => true,
+    isStickerHidden: () => false,
+    canRestoreSelectedToInitial: () => false,
+    iconSet: new Proxy({}, { get: (_, key) => String(key) }),
+    upstream,
+  });
+  assert.equal(menu(null).items.some((item) => item.key === "delete"), false);
+  assert.equal(menu({ editable: true }).items.find((item) => item.key === "delete").disabled, false);
+  assert.equal(menu({ editable: true }, true).items.find((item) => item.key === "delete").disabled, true);
 });
 
 test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: an upstream one's switches, the own one's disabled", () => {
   const rows = (model) => Object.keys(model).sort();
-  const upstream = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: false });
-  const own = upstreamInspectorModel({ layer: null, editable: false, visible: false, locked: true, readOnly: false });
-  const inherited = upstreamInspectorModel({ layer: "#1", editable: false, visible: true, locked: true, readOnly: false });
+  const override = { id: "sticker_1", placement: "sky", visible: true, roll: { value: 3, keyframes: [] } };
+  const upstream = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: false, placement: "sky", override });
+  const own = upstreamInspectorModel({ layer: null, editable: false, visible: false, locked: true, readOnly: false, placement: "world" });
+  const inherited = upstreamInspectorModel({ layer: "#1", editable: false, visible: true, locked: true, readOnly: false, placement: "sky" });
   // The same rows for each, so selecting one after another does not move the panel.
   assert.deepEqual(rows(own), rows(upstream));
   assert.deepEqual(rows(inherited), rows(upstream));
-  assert.deepEqual(upstream, { origin: "Upstream · scene_a", note: "", visible: true, locked: false, disabled: false });
-  assert.deepEqual(own, { origin: "", note: "", visible: false, locked: true, disabled: true });
+  const enabled = (model) => model.lanes.filter((lane) => !lane.disabled).map((lane) => lane.name);
+  assert.deepEqual(upstream, {
+    origin: "Upstream · scene_a",
+    note: "",
+    visible: true,
+    locked: false,
+    disabled: false,
+    revertAll: { disabled: false },
+    lanes: [
+      { name: "direction", label: "Direction", action: "revert-upstream", disabled: true },
+      { name: "roll", label: "Roll", action: "revert-upstream", disabled: false },
+      { name: "size", label: "Size", action: "revert-upstream", disabled: true },
+      { name: "opacity", label: "Opacity", action: "revert-upstream", disabled: true },
+    ],
+  });
+  // The own Sticker's rows are there with its placement's Lanes, all disabled.
+  assert.equal(own.disabled, true);
+  assert.deepEqual(own.lanes.map((lane) => [lane.label, lane.disabled]), [["Position", true], ["Rotation", true], ["Scale", true], ["Opacity", true]]);
+  assert.equal(own.revertAll.disabled, true);
   assert.equal(inherited.origin, "Upstream · #1 · inherited only");
   assert.match(inherited.note, /^Inherited only/);
   assert.equal(inherited.disabled, true);
-  assert.equal(upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: true }).disabled, true);
+  const readOnly = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: true, placement: "sky", override });
+  assert.deepEqual([readOnly.disabled, readOnly.revertAll.disabled, enabled(readOnly)], [true, true, []]);
+  // Nothing to revert or restore; a locked element is not reverted, but its layer's deleted are restored; an
+  // override made for the other placement is reverted whole only.
+  const bare = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: false, placement: "sky", override: null });
+  assert.deepEqual([bare.revertAll.disabled, enabled(bare)], [true, []]);
+  const locked = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: true, readOnly: false, placement: "sky", override });
+  assert.deepEqual([locked.revertAll.disabled, enabled(locked)], [true, []]);
+  const other = upstreamInspectorModel({ layer: "scene_a", editable: true, visible: true, locked: false, readOnly: false, placement: "world", override });
+  assert.deepEqual([other.revertAll.disabled, enabled(other)], [false, []]);
+  // The node's own port Sticker shown with the Pose handoff reverts its handoff Lanes in the same row: Opacity,
+  // which the handoff does not give, and All stay disabled.
+  const handoff = [{ name: "direction", overridden: true }, { name: "roll", overridden: false }, { name: "size", overridden: true }];
+  const port = upstreamInspectorModel({ layer: null, editable: false, visible: true, locked: false, readOnly: false, placement: "sky", handoff });
+  assert.deepEqual(rows(port), rows(upstream));
+  assert.deepEqual(port.lanes.map((lane) => [lane.name, lane.action, lane.disabled]), [
+    ["direction", "revert-handoff-lane", false],
+    ["roll", "revert-handoff-lane", true],
+    ["size", "revert-handoff-lane", false],
+    ["opacity", "revert-handoff-lane", true],
+  ]);
+  assert.equal(port.revertAll.disabled, true);
+  const lockedPort = upstreamInspectorModel({ layer: null, editable: false, visible: true, locked: true, readOnly: false, placement: "sky", handoff });
+  assert.deepEqual(enabled(lockedPort), []);
+  const worldPort = upstreamInspectorModel({ layer: null, editable: false, visible: true, locked: false, readOnly: false, placement: "world", handoff: [{ name: "position", overridden: true }, { name: "rotation", overridden: false }, { name: "scale", overridden: false }] });
+  assert.deepEqual(enabled(worldPort), ["position"]);
+  // Every kind of Sticker has the same number of Lane buttons.
+  for (const model of [upstream, own, inherited, port, worldPort]) assert.equal(model.lanes.length, 4);
   // The inspector gives the rows for any Sticker of Panorama Studio, own or upstream, sky or world; the panel
   // always renders them and the origin's slot in the Transform title.
   const editor = readEditorSource();
@@ -531,6 +599,14 @@ test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: a
   assert.match(panel, /<span class="meta">\{\{ model\.upstream\?\.origin \|\| "" \}\}<\/span>/);
   const origin = readFileSync(new URL("../web_src/components/PanoUpstreamOrigin.vue", import.meta.url), "utf8");
   assert.doesNotMatch(origin, /v-if="model\.note"/);
+  // One "Revert to upstream" row for upstream elements and the Pose handoff alike, with no rows of its own
+  // that come and go with the selection.
+  assert.doesNotMatch(panel, /PanoHandoffRevert/);
+  assert.match(origin, /:data-action="lane\.action"/);
+  assert.doesNotMatch(origin, /v-if="model\.(lanes|revertAll)/);
+  // Restore deleted is the layer's, on its Timeline header only.
+  assert.doesNotMatch(origin, /restore-upstream-deleted/);
+  assert.match(editor, /handoff: isUpstreamSticker\(target\) \? null : portHandoffLanes\(target\)/);
 });
 
 // ADR 0030 T9: the upstream layers' rows, below the node's own.
@@ -555,7 +631,7 @@ test("each upstream layer has a group below the node's own rows: its header, its
   const records = loadSceneState({ version: 2, upstream: [{ layer: "scene_a", fps: 24, stickers: [{ id: "sticker_2", placement: "sky", visible: false }], scene: { visible: true } }] }).upstream;
   const working = upstreamWorkingLayers(upstreamLayersOf(raw.map((layer) => ({ state: { version: 2, ...layer } }))), records, 24);
   const upstream = working.map(({ key, sceneState }, index) => ({
-    key, sceneState, editable: index === 0, record: index === 0 ? records[0] : null, scene: index === 0,
+    key, sceneState, editable: index === 0, record: index === 0 ? records[0] : null, scene: index === 0, deleted: 0,
   }));
   const model = buildTimelineModel(state, { ...options, upstream });
 
@@ -582,4 +658,29 @@ test("each upstream layer has a group below the node's own rows: its header, its
   assert.deepEqual(b.rows.map((row) => [row.id, row.editable, row.overridden]), [["upstream:#1:sticker_1", false, false]]);
   // The node's own rows are editable and not upstream.
   assert.ok(model.rows.every((row) => row.editable && !row.upstream && !row.overridden));
+});
+
+// ADR 0030 T10: the layer actions of an upstream group's header, always there, disabled while they do nothing.
+test("an upstream group's header has Revert of the layer's scene and paint overrides and Restore deleted, disabled while they do nothing", () => {
+  const state = canonical();
+  const options = { span: 120, selection: null, selectedId: null, expanded: true, openRows: new Set() };
+  const sceneState = loadSceneState({ version: 2, id: "scene_a" });
+  const group = (layer) => buildTimelineModel(state, { ...options, upstream: [{ key: "scene_a", sceneState, editable: true, record: null, scene: false, deleted: 0, ...layer }] }).groups[0];
+  const record = (extra) => loadSceneState({ version: 2, upstream: [{ layer: "scene_a", fps: 24, ...extra }] }).upstream[0];
+  assert.deepEqual([group({}).revert, group({}).restore], [{ disabled: true }, { label: "Restore deleted (0)", disabled: true }]);
+  assert.deepEqual(group({ deleted: 2, record: record({ deleted: ["s1", "s2"] }) }).restore, { label: "Restore deleted (2)", disabled: false });
+  // Revert is of the layer's own overrides (its `scene` and painting), not of its elements'.
+  assert.equal(group({ record: record({ stickers: [{ id: "s1", placement: "sky", visible: false }] }) }).revert.disabled, true);
+  assert.equal(group({ record: record({ scene: { visible: false } }) }).revert.disabled, false);
+  assert.equal(group({ record: record({ painting_visible: true }) }).revert.disabled, false);
+  // A layer that is only inherited has both, disabled.
+  const inherited = buildTimelineModel(state, { ...options, upstream: [{ key: "#0", sceneState, editable: false, record: null, scene: false, deleted: 0 }] }).groups[0];
+  assert.deepEqual([inherited.revert.disabled, inherited.restore.disabled], [true, true]);
+  // The header renders both buttons always, and hands their actions to the Timeline.
+  const header = readFileSync(new URL("../web_src/components/PanoTimelineGroup.vue", import.meta.url), "utf8");
+  assert.doesNotMatch(header, /v-if/);
+  assert.match(header, /type: 'revert-upstream-layer', key: group\.key/);
+  assert.match(header, /type: 'restore-upstream-deleted', key: group\.key/);
+  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(timeline, /<PanoTimelineGroup v-if="group" :group="group" @action="emit\('action', \$event\)" \/>/);
 });

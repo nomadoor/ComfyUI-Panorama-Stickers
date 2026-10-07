@@ -7,9 +7,11 @@ import { createHistory, createEditorHistory } from "../web_src/editor/history.js
 import { createHitTest } from "../web_src/editor/hit_test.js";
 import { createItems } from "../web_src/editor/items.js";
 import { createSelection } from "../web_src/editor/selection.js";
+import { createSidePanelEvents } from "../web_src/editor/side_panel_events.js";
 import { createUpstream } from "../web_src/editor/upstream.js";
 import { setStickerPose } from "../web_src/pano_editor_state.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
+import { readEditorSource } from "./editor_source.mjs";
 
 // The browser parts the module makes: images (counted by URL), and the port VIDEO and its still.
 function browserStubs() {
@@ -390,15 +392,15 @@ test("a Timeline fps change makes the working copies again, and the same result 
 const noop = () => {};
 
 // The editor's history over `state`, writing the upstream edits back at each step as the editor does.
-function editorHistory(state, upstream) {
-  const editor = { historyController: createEditorHistory(state), frame: 0 };
+function editorHistory(state, upstream, editor = { historyController: createEditorHistory(state), frame: 0 }) {
   const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
   history.connect({
     clearWorldSelection: noop, commitState: upstream.syncUpstreamEdits, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
     markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
-    rebuildUpstreamWorking: upstream.rebuildUpstreamWorking, releaseHiddenSelection: noop, requestDraw: noop,
-    stopTimelinePlayback: noop, storedEditorState: () => state, syncCutoutShot: noop, syncPaintUi: noop, syncPortHandoff: noop,
-    syncUndoRedoButtons: noop, syncUpstreamEdits: upstream.syncUpstreamEdits, updateSidePanel: noop,
+    pruneUpstreamRecords: upstream.pruneUpstreamRecords, rebuildUpstreamWorking: upstream.rebuildUpstreamWorking,
+    releaseHiddenSelection: noop, requestDraw: noop, stopTimelinePlayback: noop, storedEditorState: () => state,
+    syncCutoutShot: noop, syncPaintUi: noop, syncPortHandoff: noop, syncUndoRedoButtons: noop,
+    syncUpstreamEdits: upstream.syncUpstreamEdits, updateSidePanel: noop,
   });
   return history;
 }
@@ -557,27 +559,348 @@ test("the upstream elements are found by their ids where the editor's own are: s
   }
 });
 
-test("Delete leaves an upstream element, sky or world, and changes nothing", () => {
+// --- ADR 0030 T10: delete, revert, restore and prune.
+
+// The editor over `state` with the upstream module of setup(): its items and selection, history, commit (to
+// `widget`) and commands, wired as the editor wires them.
+function editorSession(state, upstream, editor, widget = { value: sceneStateText(state) }) {
+  Object.assign(editor, { historyController: createEditorHistory(state) });
+  const found = editorItems(state, upstream, editor);
+  const history = editorHistory(state, upstream, editor);
+  const commit = createCommit({ app: null, bgWidget: null, cameraV2: true, coverageWidget: null, node: { __panoSceneStateV2: true, properties: {}, setDirtyCanvas: noop }, presetWidget: null, readOnly: false, state, stateWidget: widget });
+  commit.connect({
+    needsPaintingLayerSync: () => false, resolveEditorOutputPresetWidth: (value) => value, storedEditorState: () => state,
+    syncCutoutShot: noop, syncPaintingLayerAsync: noop, syncPortHandoff: noop, syncUpstreamEdits: upstream.syncUpstreamEdits,
+  });
+  const commands = createCommands({ editor, readOnly: false, sceneV2: true, state, studio: true, type: "stickers", uiState: {} });
+  commands.connect({
+    ...found,
+    ...upstream,
+    clearWorldSelection: () => { editor.worldSelectedId = null; },
+    commitAndRefreshNode: commit.commitAndRefreshNode,
+    isRasterObjectItem: () => false,
+    isStrokeGroupItem: () => false,
+    markObjectVisualsDirty: noop,
+    pruneUnusedAssets: noop,
+    pushHistory: history.pushHistory,
+    releaseHiddenSelection: noop,
+    requestDraw: noop,
+    stopTimelinePlayback: noop,
+    syncFloatingViewButtonState: noop,
+    updateSelectionMenu: noop,
+    updateSidePanel: noop,
+  });
+  return { ...found, history, commit, commands, widget };
+}
+
+const stickerIds = (upstream) => upstream.upstreamStickers().map((item) => item.id);
+
+test("Delete of an upstream element writes its tombstone and drops its override; it is drawn no more, and Undo brings it back", () => {
   browserStubs();
   try {
-    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 }, stickers: [sky("sticker_1")] }), active: {} };
-    const before = structuredClone(state);
+    const state = { ...loadSceneState({
+      version: 2,
+      timeline: { fps: 24 },
+      upstream: [{ layer: "scene_a", fps: 30, stickers: [{ id: "sticker_1", placement: "sky", visible: true, roll: { value: 5, keyframes: [] } }, { id: "sticker_2", placement: "sky", z_index: 4 }] }],
+    }), active: {} };
     const { output, upstream } = setup(state);
-    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), { id: "sticker_2", placement: "world", source: { kind: "file", filename: "w.png" } }] })] };
-    const editor = { frame: 0, selectedId: "upstream:scene_a:sticker_1", selectedIds: ["upstream:scene_a:sticker_1"], worldSelectedId: "upstream:scene_a:sticker_2" };
-    const found = editorItems(state, upstream, editor);
-    let steps = 0;
-    const commands = createCommands({ editor, readOnly: false, sceneV2: true, state, studio: true, type: "stickers", uiState: {} });
-    commands.connect({ ...found, pushHistory: () => { steps += 1; }, stopTimelinePlayback: () => { steps += 1; } });
-    assert.equal(commands.deleteSelectedWorldSticker(), true);
-    commands.deleteSelected();
-    commands.duplicateSelected();
-    assert.equal(steps, 0);
-    assert.deepEqual(state, before);
-    assert.equal(upstream.upstreamStickers().length, 2);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2"), sky("sticker_3")] })] };
+    upstream.upstreamViewInput();
+    const editor = { frame: 0, selectedId: "upstream:scene_a:sticker_1", selectedIds: ["upstream:scene_a:sticker_1"] };
+    const session = editorSession(state, upstream, editor);
+    const text = session.widget.value;
+    session.commands.deleteSelected();
+    // One record, ids only in `deleted`; the record keeps its fps, the other override stays.
+    assert.deepEqual(state.upstream, [{ layer: "scene_a", fps: 30, deleted: ["sticker_1"], stickers: [{ id: "sticker_2", placement: "sky", z_index: 4 }], scene: {} }]);
+    assert.deepEqual(loadSceneState(session.widget.value).upstream, state.upstream);
+    assert.equal(editor.selectedId, null);
+    assert.deepEqual(stickerIds(upstream), ["upstream:scene_a:sticker_2", "upstream:scene_a:sticker_3"]);
+    // sticker_2 keeps its z_index override and is drawn in front.
+    assert.deepEqual(drawnIds(upstream.upstreamViewInput()), ["upstream:scene_a:sticker_3", "upstream:scene_a:sticker_2"]);
+    // A layer without a record gets one at the editor's fps.
+    output.ui = { pano_upstream_layers: [...output.ui.pano_upstream_layers, layer({ id: "scene_b", stickers: [sky("sticker_1")] })] };
+    upstream.upstreamViewInput();
+    editor.selectedId = "upstream:scene_b:sticker_1";
+    editor.selectedIds = [editor.selectedId];
+    session.commands.deleteSelected();
+    assert.deepEqual(state.upstream[1], { layer: "scene_b", fps: 24, deleted: ["sticker_1"], stickers: [], scene: {} });
+    // Undo steps back one delete each.
+    session.history.restoreHistory(-1);
+    assert.equal(state.upstream.length, 1);
+    session.history.restoreHistory(-1);
+    assert.deepEqual(state.upstream, loadSceneState(text).upstream);
+    assert.equal(stickerIds(upstream).length, 4);
   } finally {
     restore();
   }
+});
+
+test("a selection of own and upstream elements is deleted in one Undo step", () => {
+  browserStubs();
+  try {
+    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 }, stickers: [sky("sticker_1"), sky("sticker_2")] }), active: {} };
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2")] })] };
+    upstream.upstreamViewInput();
+    const editor = { frame: 0, selectedId: "sticker_1", selectedIds: ["sticker_1", "upstream:scene_a:sticker_2"] };
+    const session = editorSession(state, upstream, editor);
+    const steps = editor.historyController.entries.length;
+    session.commands.deleteSelected();
+    assert.equal(editor.historyController.entries.length, steps + 1);
+    assert.deepEqual(state.stickers.map((item) => item.id), ["sticker_2"]);
+    assert.deepEqual(state.upstream[0].deleted, ["sticker_2"]);
+    assert.deepEqual(stickerIds(upstream), ["upstream:scene_a:sticker_1"]);
+    session.history.restoreHistory(-1);
+    assert.deepEqual(state.stickers.map((item) => item.id), ["sticker_1", "sticker_2"]);
+    assert.deepEqual(state.upstream, []);
+    assert.deepEqual(stickerIds(upstream), ["upstream:scene_a:sticker_1", "upstream:scene_a:sticker_2"]);
+  } finally {
+    restore();
+  }
+});
+
+test("Delete leaves an element of a layer that is only inherited, and a locked one, sky or world", () => {
+  browserStubs();
+  try {
+    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 } }), active: {} };
+    const plane = { id: "sticker_2", placement: "world", source: { kind: "file", filename: "w.png" } };
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [
+      layer({ stickers: [sky("sticker_1"), plane] }),
+      layer({ id: "scene_a", stickers: [sky("sticker_1", { locked: true })] }),
+    ] };
+    upstream.upstreamViewInput();
+    const editor = { frame: 0, selectedId: "upstream:#0:sticker_1", selectedIds: ["upstream:#0:sticker_1"], worldSelectedId: "upstream:#0:sticker_2" };
+    const session = editorSession(state, upstream, editor);
+    const text = session.widget.value;
+    assert.equal(session.commands.deleteSelectedWorldSticker(), true);
+    session.commands.deleteSelected();
+    editor.selectedId = "upstream:scene_a:sticker_1";
+    editor.selectedIds = [editor.selectedId];
+    session.commands.deleteSelected();
+    assert.deepEqual(state.upstream, []);
+    assert.equal(session.widget.value, text);
+    assert.equal(editor.historyController.entries.length, 1);
+    assert.equal(stickerIds(upstream).length, 3);
+  } finally {
+    restore();
+  }
+});
+
+test("Delete of an upstream world Sticker, and of its 3D port, keeps the 3D items loaded so Undo does not load them again", () => {
+  browserStubs();
+  try {
+    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 } }), active: {} };
+    const { output, upstream } = setup(state);
+    const port = { id: "sticker_1", placement: "world", source: { kind: "port" } };
+    output.ui = { pano_upstream_layers: [layer(
+      { id: "scene_a", stickers: [port] },
+      { pano_sticker_files: [{ filename: "c.glb" }], pano_sticker_meta: [{ kind: "mesh" }] },
+    )] };
+    const item = () => upstream.upstreamViewInput().items.find((entry) => entry.slot === "scene_a:sticker");
+    const before = item();
+    assert.ok(before.request);
+    const editor = { frame: 0, worldSelectedId: "upstream:scene_a:sticker_1" };
+    const session = editorSession(state, upstream, editor);
+    assert.equal(session.commands.deleteSelectedWorldSticker(), true);
+    assert.equal(editor.worldSelectedId, null);
+    assert.deepEqual(state.upstream[0].deleted, ["sticker_1"]);
+    // Asked for no more, as a hidden one is, but its URLs stay, so the view keeps the items.
+    assert.equal(item().request, null);
+    assert.deepEqual(item().urls, before.urls);
+    session.history.restoreHistory(-1);
+    assert.deepEqual(item().urls, before.urls);
+    assert.equal(item().request.url, before.request.url);
+  } finally {
+    restore();
+  }
+});
+
+test("Revert to upstream drops an element's override, or one Lane of it, and Restore deleted brings its layer's deleted elements back", () => {
+  browserStubs();
+  try {
+    const state = { ...loadSceneState({
+      version: 2,
+      timeline: { fps: 24 },
+      upstream: [{
+        layer: "scene_a",
+        fps: 24,
+        deleted: ["sticker_3", "sticker_4"],
+        stickers: [{ id: "sticker_1", placement: "sky", visible: true, roll: { value: 5, keyframes: [] }, opacity: { value: 0.5, keyframes: [] } }],
+      }],
+    }), active: {} };
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1", { roll: { value: 1 } }), sky("sticker_2"), sky("sticker_3"), sky("sticker_4")] })] };
+    upstream.upstreamViewInput();
+    const working = () => upstream.upstreamStickers()[0];
+    // An edit not yet written back is written with the revert, so the revert does not lose it.
+    setStickerPose(working(), 0, { yaw_deg: 20 });
+    assert.equal(upstream.revertUpstreamSticker(working(), "roll"), true);
+    assert.deepEqual(Object.keys(state.upstream[0].stickers[0]), ["id", "placement", "visible", "direction", "opacity"]);
+    assert.equal(working().roll.value, 1);
+    assert.equal(working().direction.value.yaw_deg, 20);
+    // Nothing to revert: a Lane it does not override, or not a Lane.
+    assert.equal(upstream.revertUpstreamSticker(working(), "roll"), false);
+    assert.equal(upstream.revertUpstreamSticker(working(), "id"), false);
+    assert.equal(upstream.revertUpstreamSticker(upstream.upstreamStickers()[1]), false);
+    assert.equal(upstream.revertUpstreamSticker(working()), true);
+    assert.deepEqual(state.upstream[0].stickers, []);
+    assert.equal(working().opacity.value, 1);
+    assert.equal(working().direction.value.yaw_deg, 0);
+    // Only the deleted elements the layer still has are counted.
+    state.upstream[0].deleted.push("sticker_9");
+    assert.equal(upstream.upstreamTimelineLayers()[0].deleted, 2);
+    assert.equal(upstream.restoreUpstreamDeleted("scene_a"), true);
+    // The record, left with nothing, is dropped.
+    assert.deepEqual(state.upstream, []);
+    assert.equal(upstream.upstreamStickers().length, 4);
+    assert.equal(upstream.restoreUpstreamDeleted("scene_a"), false);
+  } finally {
+    restore();
+  }
+});
+
+test("an Undo step prunes the overrides of elements gone upstream while the result is current, never a missing layer's, and opening and closing writes nothing", () => {
+  browserStubs();
+  try {
+    const saved = loadSceneState({
+      version: 2,
+      timeline: { fps: 24 },
+      stickers: [sky("sticker_1")],
+      upstream: [
+        { layer: "scene_a", fps: 24, deleted: ["sticker_2", "sticker_9"], stickers: [{ id: "sticker_1", placement: "sky", visible: false }, { id: "sticker_8", placement: "sky", visible: false }] },
+        // A layer not in the result (relinked, or not run yet).
+        { layer: "scene_x", fps: 24, deleted: ["sticker_1"] },
+      ],
+    });
+    const text = sceneStateText(saved);
+    const state = { ...loadSceneState(text), active: {} };
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2")] })] };
+    upstream.upstreamViewInput();
+    const editor = { frame: 0 };
+    const session = editorSession(state, upstream, editor, { value: text });
+    // Opening and closing: the state is written as it was.
+    session.commit.commitState();
+    assert.equal(session.widget.value, text);
+    // An edit of the node's own Sticker prunes with its Undo step.
+    setStickerPose(state.stickers[0], 0, { yaw_deg: 10 });
+    session.history.pushHistory();
+    session.commit.commitState();
+    assert.deepEqual(state.upstream, [
+      { layer: "scene_a", fps: 24, deleted: ["sticker_2"], stickers: [{ id: "sticker_1", placement: "sky", visible: false }], scene: {} },
+      { layer: "scene_x", fps: 24, deleted: ["sticker_1"], stickers: [], scene: {} },
+    ]);
+    assert.deepEqual(loadSceneState(session.widget.value).upstream, state.upstream);
+    // Without a current result nothing is pruned.
+    state.upstream = loadSceneState(text).upstream;
+    output.ui = {};
+    session.history.pushHistory();
+    assert.deepEqual(state.upstream, loadSceneState(text).upstream);
+  } finally {
+    restore();
+  }
+});
+
+test("the editor's first Undo step at boot prunes nothing, so opening and closing writes nothing over stale overrides", () => {
+  // The boot (pano_editor.js) adds its first step as the initial one.
+  assert.match(readEditorSource(), /runBootStep\("history", \(\) => pushHistory\(\{ initial: true \}\)\)/);
+  browserStubs();
+  try {
+    const text = sceneStateText(loadSceneState({
+      version: 2,
+      timeline: { fps: 24 },
+      upstream: [{ layer: "scene_a", fps: 24, deleted: ["gone_1"], stickers: [{ id: "gone_2", placement: "sky", visible: false }] }],
+    }));
+    const state = { ...loadSceneState(text), active: {} };
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1")] })] };
+    upstream.upstreamViewInput();
+    const editor = { frame: 0 };
+    const session = editorSession(state, upstream, editor, { value: text });
+    session.history.pushHistory({ initial: true });
+    session.commit.commitState();
+    assert.equal(session.widget.value, text);
+    // The first edit prunes.
+    session.history.pushHistory();
+    assert.deepEqual(state.upstream, []);
+  } finally {
+    restore();
+  }
+});
+
+test("Restore deleted is one command, for the Timeline's layer header: an Undo step and a commit, and nothing without deleted elements", () => {
+  browserStubs();
+  try {
+    const state = { ...loadSceneState({ version: 2, timeline: { fps: 24 }, upstream: [{ layer: "scene_a", fps: 24, deleted: ["sticker_2"] }] }), active: {} };
+    const { output, upstream } = setup(state);
+    output.ui = { pano_upstream_layers: [layer({ id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2")] })] };
+    upstream.upstreamViewInput();
+    const editor = { frame: 0 };
+    const session = editorSession(state, upstream, editor);
+    const text = session.widget.value;
+    session.commands.restoreUpstreamDeletedCommand("scene_a");
+    assert.deepEqual(state.upstream, []);
+    assert.equal(editor.historyController.entries.length, 2);
+    assert.notEqual(session.widget.value, text);
+    assert.equal(stickerIds(upstream).length, 2);
+    session.commands.restoreUpstreamDeletedCommand("scene_a");
+    assert.equal(editor.historyController.entries.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("the inspector's revert buttons reach the upstream module only while the panel has them enabled", () => {
+  const calls = [];
+  const sticker = { id: "upstream:scene_a:sticker_1", origin: { layer: "scene_a", id: "sticker_1" }, placement: "sky" };
+  const own = { id: "sticker_1", placement: "sky", source: { kind: "port" } };
+  let selected = sticker;
+  const lane = (name, disabled, action = "revert-upstream") => ({ name, disabled, action });
+  const uiState = { sidePanel: { upstream: {
+    revertAll: { disabled: false },
+    lanes: [lane("direction", true), lane("roll", false), lane("size", true), lane("opacity", true)],
+  } } };
+  const events = createSidePanelEvents({ cameraV2: true, coverageWidget: null, editor: {}, node: {}, previewMode: false, runtime: {}, shotEditor: true, state: {}, studio: true, type: "stickers", uiState });
+  const record = (name) => (...args) => { calls.push([name, ...args]); return true; };
+  events.connect({
+    commitAndRefreshNode: record("commit"),
+    getSelected: () => selected,
+    markObjectVisualsDirty: noop,
+    pushHistory: record("push"),
+    releaseHiddenSelection: noop,
+    requestDraw: noop,
+    revertPortHandoffLane: record("handoff"),
+    revertUpstreamSticker: record("revert"),
+    selectedWorldSticker: () => null,
+    stopTimelinePlayback: noop,
+    updateSelectionMenu: noop,
+    updateSidePanel: noop,
+  });
+  const click = (action, laneName = null) => {
+    const target = { getAttribute: (name) => (name === "data-action" ? action : name === "data-lane" ? laneName : null) };
+    return events.onSidePanelClick({ target: { closest: () => target } });
+  };
+  click("revert-upstream");
+  click("revert-upstream", "roll");
+  click("revert-upstream", "direction");
+  // Restore deleted is not the inspector's (it is on the layer's Timeline header).
+  click("restore-upstream-deleted");
+  assert.deepEqual(calls, [
+    ["revert", sticker, null], ["push"], ["commit"],
+    ["revert", sticker, "roll"], ["push"], ["commit"],
+  ]);
+  calls.length = 0;
+  uiState.sidePanel.upstream.revertAll.disabled = true;
+  click("revert-upstream");
+  assert.deepEqual(calls, []);
+  // The node's own port Sticker: its Lane buttons revert the Pose handoff, while enabled.
+  selected = own;
+  uiState.sidePanel.upstream.lanes = [lane("direction", false, "revert-handoff-lane"), lane("roll", true, "revert-handoff-lane")];
+  click("revert-handoff-lane", "direction");
+  click("revert-handoff-lane", "roll");
+  click("revert-upstream", "direction");
+  assert.deepEqual(calls, [["handoff", "direction"]]);
 });
 
 test("the upstream sky Stickers are hit under the node's own items and over its Camera, the front one first", () => {
@@ -629,9 +952,10 @@ async function editorTimeline(state, upstream) {
   history.connect({
     clearWorldSelection: noop, commitState: upstream.syncUpstreamEdits, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
     markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
-    rebuildUpstreamWorking: upstream.rebuildUpstreamWorking, releaseHiddenSelection: noop, requestDraw: noop,
-    stopTimelinePlayback: noop, storedEditorState: () => state, syncCutoutShot: noop, syncPaintUi: noop, syncPortHandoff: noop,
-    syncUndoRedoButtons: noop, syncUpstreamEdits: upstream.syncUpstreamEdits, updateSidePanel: noop,
+    pruneUpstreamRecords: upstream.pruneUpstreamRecords, rebuildUpstreamWorking: upstream.rebuildUpstreamWorking,
+    releaseHiddenSelection: noop, requestDraw: noop, stopTimelinePlayback: noop, storedEditorState: () => state,
+    syncCutoutShot: noop, syncPaintUi: noop, syncPortHandoff: noop, syncUndoRedoButtons: noop,
+    syncUpstreamEdits: upstream.syncUpstreamEdits, updateSidePanel: noop,
   });
   const api = {
     ...items, ...upstream, ...timeline,
@@ -647,7 +971,10 @@ async function editorTimeline(state, upstream) {
     selectWorldSticker: (id) => steps.selected.push(["world", id]), setSelectedItem: (item) => steps.selected.push(["sky", item?.id ?? null]),
     syncFloatingViewButtonState: noop, toggleVideoMuted: noop, togglePlayback: noop,
   };
+  const commands = createCommands({ editor, readOnly: false, sceneV2: true, state, studio: true, type: "stickers", uiState });
+  Object.assign(api, commands);
   timeline.connect(api);
+  commands.connect({ ...api, stopTimelinePlayback: timeline.stopTimelinePlayback });
   actions.connect({ ...api, syncTimeline: timeline.syncTimeline });
   return { act: actions.onTimelineAction, editor, history, steps, timeline, timelineState, uiState };
 }
@@ -906,6 +1233,42 @@ test("the Timeline shows the upstream rows' moved Clip ranges and Keyframes, as 
     act2({ type: "select-keys", owner: "upstream:scene_a:sticker_1", lane: "direction", frames: [12], additive: false });
     drag(act2, { type: "move-keys" }, 118);
     assert.ok(timeline2.timelineSpanFrames() >= 131);
+  } finally {
+    restore();
+  }
+});
+
+test("the header of an upstream group restores the layer's deleted elements and reverts its scene and paint, each as one Undo step", async () => {
+  browserStubs();
+  try {
+    const saved = {
+      version: 2,
+      timeline: { fps: 24 },
+      upstream: [{ layer: "scene_a", fps: 24, deleted: ["sticker_2", "gone"], stickers: [{ id: "sticker_1", placement: "sky", visible: false }], scene: { visible: false }, painting_visible: true }],
+    };
+    const { act, state, steps, timeline, uiState, upstream } = await timelineOver({ pano_upstream_layers: [timedLayer(), layer({ stickers: [sky("sticker_1")] })] }, saved);
+    timeline.syncTimeline();
+    const [group, inherited] = uiState.timeline.groups;
+    // Only a deleted element the layer still has is counted.
+    assert.deepEqual([group.restore, group.revert], [{ label: "Restore deleted (1)", disabled: false }, { disabled: false }]);
+    assert.deepEqual([inherited.restore.disabled, inherited.revert.disabled], [true, true]);
+    act({ type: "revert-upstream-layer", key: "scene_a" });
+    assert.equal(steps.count, 1);
+    assert.deepEqual(state.upstream[0].scene, {});
+    assert.equal(Object.hasOwn(state.upstream[0], "painting_visible"), false);
+    assert.equal(upstream.upstreamEntries()[0].working.sceneState.scene.visible, true);
+    assert.equal(upstream.upstreamEntries()[0].working.sceneState.painting_visible, false);
+    assert.equal(uiState.timeline.groups[0].revert.disabled, true);
+    act({ type: "restore-upstream-deleted", key: "scene_a" });
+    assert.equal(steps.count, 2);
+    assert.deepEqual(state.upstream[0].deleted, []);
+    assert.equal(upstream.upstreamEntries()[0].working.sceneState.stickers.length, 2);
+    assert.equal(uiState.timeline.groups[0].restore.disabled, true);
+    // Nothing more to do, and an inherited layer: no step.
+    act({ type: "revert-upstream-layer", key: "scene_a" });
+    act({ type: "restore-upstream-deleted", key: "scene_a" });
+    act({ type: "restore-upstream-deleted", key: "#1" });
+    assert.equal(steps.count, 2);
   } finally {
     restore();
   }

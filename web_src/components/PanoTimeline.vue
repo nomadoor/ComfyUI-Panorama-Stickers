@@ -239,7 +239,7 @@ function onLineDown(event, row, lane) {
           <span class="pano-timeline-playhead" :style="{ left: pct(frame + 0.5) }" />
         </div>
         <template v-for="{ key, row, group } in entries" :key="key">
-          <PanoTimelineGroup v-if="group" :group="group" />
+          <PanoTimelineGroup v-if="group" :group="group" @action="emit('action', $event)" />
           <div v-if="row" class="pano-timeline-head" :class="{ selected: row.selected, 'is-hidden': !row.visible }">
             <div class="pano-timeline-name">
               <button
