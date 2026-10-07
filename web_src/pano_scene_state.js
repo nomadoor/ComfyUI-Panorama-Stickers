@@ -512,6 +512,32 @@ export function rebaseSceneState(state, value) {
   });
 }
 
+// Rescales the frames of a normalized `upstream` record from its fps to the layer's timeline.fps. Clip ranges
+// follow rebaseSceneState. A Sticker override's Keyframes are relative to its Clip range origin (start - in): the
+// overridden one when the override has a Clip range, else the layer Sticker's, which the record's editor saw
+// rebased to the record fps as rebaseSceneState rebases it. Keyframes an editor at the layer fps or higher wrote
+// back unchanged land on their layer frames exactly; from a lower fps they keep the rounding to that fps.
+export function rebaseUpstreamRecord(record, layerState) {
+  const { fps } = layerState.timeline;
+  const ratio = fps / record.fps;
+  const rebase = (frame) => frameNumber(frame * ratio);
+  const origins = new Map(layerState.stickers.map((item) => [item.id, item.clip.start - item.clip.in]));
+  const stickerOverrides = record.stickers.map((override) => {
+    const list = (override.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES).filter(([name]) => Object.hasOwn(override, name));
+    if (!Object.hasOwn(override, "clip")) {
+      // An override of a Sticker the layer does not have is not applied; any origin will do.
+      const origin = origins.get(override.id) ?? 0;
+      // The origin as rebaseSceneState put it at the record fps.
+      const editorOrigin = frameNumber(origin * (record.fps / fps));
+      return { ...override, ...rebaseLanes(override, list, rebase, editorOrigin, origin) };
+    }
+    const { clip, anchor, newAnchor } = rebaseClip(override.clip, rebase);
+    return { ...override, clip, ...rebaseLanes(override, list, rebase, anchor, newAnchor) };
+  });
+  const scene = Object.hasOwn(record.scene, "clip") ? { ...record.scene, clip: rebaseClip(record.scene.clip, rebase).clip } : record.scene;
+  return upstreamRecord({ ...record, fps, stickers: stickerOverrides, scene });
+}
+
 function wrapYawDeg(value) {
   return ((((value + 180) % 360) + 360) % 360) - 180;
 }
