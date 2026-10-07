@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { ICON } from "../icons.js";
 import PanoEasingGraph from "./PanoEasingGraph.vue";
 import PanoHandoffRevert from "./PanoHandoffRevert.vue";
+import PanoUpstreamOrigin from "./PanoUpstreamOrigin.vue";
 import SvgIcon from "./SvgIcon.vue";
 
 const props = defineProps({
@@ -108,6 +109,7 @@ function onScrubDown(event, field) {
 
         <div v-if="model.transformTitle !== false" class="pano-section-title">
           <span>Transform</span>
+          <span class="meta">{{ model.upstream?.origin || "" }}</span>
         </div>
 
         <div v-if="model.selectionPicker" class="pano-field-wide pano-target-row">
@@ -229,6 +231,8 @@ function onScrubDown(event, field) {
         </div>
 
         <PanoHandoffRevert :model="model.handoff" />
+
+        <PanoUpstreamOrigin :model="model.upstream" />
 
         <PanoEasingGraph :model="easing" @timeline="emit('timeline', $event)" />
 

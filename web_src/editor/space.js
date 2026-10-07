@@ -4,7 +4,7 @@ import { frameViewButton } from "../pano_editor_ui_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { editorSession } from "../pano_node_bridge.js";
 import { nodeInputOrigins } from "../pano_preview_video.js";
-import { clipActive, evaluateCamera, evaluateSceneState } from "../pano_scene_eval.js";
+import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
 import {
   DEFAULT_DISTANCE,
   facingRotation,
@@ -19,6 +19,7 @@ import {
   switchSpaceMode,
   zoomView,
 } from "../pano_space.js";
+import { isUpstreamSticker } from "../pano_upstream.js";
 import { VIEW_CONTROLS_SETTING_ID, viewControlsPreset } from "../pano_view_controls.js";
 import { keyMoveView } from "../pano_view_keys.js";
 import { restoredView, viewMemory } from "../pano_view_memory.js";
@@ -31,7 +32,8 @@ export function createSpace(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let editorViewInput, editorViewSceneState, getActiveCutoutShot, isCameraSelected, isErpCamera, isFreeFrameView,
-    moveFrameByKeys, moveKeys, requestDraw, sceneFiles, startAnimation, syncFloatingViewButtonState, updateCursor;
+    moveFrameByKeys, moveKeys, requestDraw, sceneFiles, startAnimation, stickerById, syncFloatingViewButtonState,
+    updateCursor;
 
   // The pick of the last 6DoF wheel step and of the last Frame view wheel step (pano_space.js
   // reuseWheelPick).
@@ -191,18 +193,20 @@ export function createSpace(deps) {
     return contentSphere()?.radius || DEFAULT_DISTANCE;
   }
 
-  // Frame Selected: the view keeps its direction and moves until the selected world Sticker fits,
-  // or all the content without one (pano_space.js frameSphere).
+  // Frame Selected: the view keeps its direction and moves until the selected world Sticker fits (the
+  // node's own or an upstream element's), or all the content without one (pano_space.js frameSphere).
   function frameSpaceContent() {
     const space = editorViewInput().space;
     const sceneState = editorViewSceneState();
     const id = editor.worldSelectedId || editor.selectedId;
     const index = sceneState.stickers.findIndex((sticker) => sticker.id === id);
-    const selected = index < 0 ? null : {
-      sticker: sceneState.stickers[index],
-      value: evaluateSceneState(sceneState, editor.frame).stickers[index],
-      plane: space.stickers.find((layer) => layer.id === id) ?? null,
-      item: space.sticker?.id === id && space.sticker.url ? { kind: space.sticker.kind, box: editorView.sceneBox(space.sticker.url) } : null,
+    const upstream = index < 0 ? stickerById(id) : null;
+    const request = index < 0 ? space.upstreamItems.find((entry) => entry.request?.id === id)?.request : space.sticker;
+    const selected = index < 0 && !isUpstreamSticker(upstream) ? null : {
+      sticker: upstream ?? sceneState.stickers[index],
+      value: upstream ? evaluateSticker(upstream, editor.frame) : evaluateSceneState(sceneState, editor.frame).stickers[index],
+      plane: [...space.stickers, ...space.upstreamStickers].find((layer) => layer.id === id) ?? null,
+      item: request?.id === id && request.url ? { kind: request.kind, box: editorView.sceneBox(request.url) } : null,
     };
     const sphere = isCameraSelected() ? cameraSphere() : frameSphere(contentSphere(), selected);
     if (!sphere) return;
@@ -323,7 +327,7 @@ export function createSpace(deps) {
     connect(api) {
       ({
         editorViewInput, editorViewSceneState, getActiveCutoutShot, isCameraSelected, isErpCamera, isFreeFrameView,
-        moveFrameByKeys, moveKeys, requestDraw, sceneFiles, startAnimation, syncFloatingViewButtonState,
+        moveFrameByKeys, moveKeys, requestDraw, sceneFiles, startAnimation, stickerById, syncFloatingViewButtonState,
         updateCursor,
       } = api);
     },

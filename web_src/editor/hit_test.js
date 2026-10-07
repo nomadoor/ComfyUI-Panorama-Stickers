@@ -1,5 +1,5 @@
 // What is under the pointer: the canvas items and their handles, the selection rects, and the cursor that
-// shows it.
+// shows it. The upstream Scene's sky Stickers (ADR 0030) lie under the node's own Sky, so they are hit after it.
 import { hitFrameAffordance, hitStickerSelectionAffordance } from "../pano_sticker_affordance.js";
 import { FRAME_ROLL_CURSOR } from "./constants.js";
 import { dist2, distToSegment2, pointInPoly } from "./helpers.js";
@@ -13,7 +13,12 @@ export function createHitTest(deps) {
     getOrderedDisplayListObjects, getRasterObjectItem, getSelected, getStrokeGroupItem, hitRasterObjectAt,
     isActivePaintCursorVisible, isErpCamera, isItemLocked, isRasterObjectItem, isShotItem, isStickerItem,
     isStrokeGroupItem, makeRasterObjectSelectionId, makeStrokeGroupSelectionId, objectGeom,
-    screenPosToFrameAsErpPoint, setCanvasCursor, syncPaintCursorElement, worldDirToFrameLocalPoint;
+    screenPosToFrameAsErpPoint, setCanvasCursor, syncPaintCursorElement, upstreamSkyStickers, worldDirToFrameLocalPoint;
+
+  // The upstream sky Stickers from front to back.
+  function upstreamHitOrder() {
+    return upstreamSkyStickers().reverse();
+  }
 
   function hitObjectAt(p) {
     if (shotEditor && editor.mode === "frame") {
@@ -75,6 +80,13 @@ export function createHitTest(deps) {
           if (geom?.visible) return { item, geom };
         }
       }
+      if (!dir) return null;
+      for (const item of upstreamHitOrder()) {
+        const local = worldDirToFrameLocalPoint(item, dir);
+        if (!local || !(Number(local.x) >= 0 && Number(local.x) <= 1 && Number(local.y) >= 0 && Number(local.y) <= 1)) continue;
+        const geom = objectGeom(item);
+        if (geom?.visible) return { item, geom };
+      }
       return null;
     }
     const items = [
@@ -91,6 +103,7 @@ export function createHitTest(deps) {
         return entry.item;
       })
       .filter(Boolean),
+      ...upstreamHitOrder(),
       ...(shotEditor ? getCutoutSelectableItemsForHit().filter((item) => isShotItem(item)) : []),
     ];
     for (const item of items) {
@@ -257,7 +270,7 @@ export function createHitTest(deps) {
         getOrderedDisplayListObjects, getRasterObjectItem, getSelected, getStrokeGroupItem, hitRasterObjectAt,
         isActivePaintCursorVisible, isErpCamera, isItemLocked, isRasterObjectItem, isShotItem, isStickerItem,
         isStrokeGroupItem, makeRasterObjectSelectionId, makeStrokeGroupSelectionId, objectGeom,
-        screenPosToFrameAsErpPoint, setCanvasCursor, syncPaintCursorElement, worldDirToFrameLocalPoint,
+        screenPosToFrameAsErpPoint, setCanvasCursor, syncPaintCursorElement, upstreamSkyStickers, worldDirToFrameLocalPoint,
       } = api);
     },
     hitObjectAt, handleHit, rectFromPoints, rectIntersectsGeom, updateCursor,

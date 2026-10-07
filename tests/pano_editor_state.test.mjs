@@ -701,9 +701,9 @@ test("the editor has no way to switch a Sticker's Placement between sky and worl
   }
   // A Placement is written only where a Sticker is made: loading state v2, the evaluated copy, the
   // editor's new Stickers, the port Sticker the node replaces by a world one (#63), and the port Sticker
-  // the Pose handoff places (ADR 0030).
+  // the Pose handoff places (ADR 0030), and an upstream element's override, which takes its Placement (ADR 0030).
   const writers = sources.filter(([, text]) => /placement\s*:/.test(text.replace(/^\s*\/\/.*$/gm, ""))).map(([name]) => name).sort();
-  assert.deepEqual(writers, ["pano_editor_state.js", "pano_port_handoff.js", "pano_scene_eval.js", "pano_scene_state.js", "pano_stickers_node_surface.js"]);
+  assert.deepEqual(writers, ["pano_editor_state.js", "pano_port_handoff.js", "pano_scene_eval.js", "pano_scene_state.js", "pano_stickers_node_surface.js", "pano_upstream.js"]);
 
   // The edits the editor makes keep each Sticker's Placement, as the saved state reads it back: the
   // inspector and the gizmo on world Stickers, Delete, and Undo and Redo.

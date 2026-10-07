@@ -3,6 +3,7 @@
 import { ICON } from "../icons.js";
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
+import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
 import { EXTERNAL_STICKER_ID, EXTERNAL_STICKER_PREVIEW_KEY } from "./constants.js";
 
 export function createSelection(deps) {
@@ -15,7 +16,7 @@ export function createSelection(deps) {
     getRasterObjectList, getStickerUiImage, getStrokeGroupItem, hasCamera, isExternalSticker, isRasterObjectItem,
     isSceneSticker, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, markObjectVisualsDirty,
     normalizeDisplayZIndices, objectGeom, paintingShown, parseRasterObjectSelectionId, poseOf, pushHistory,
-    requestDraw, sceneStickerShown, updateSelectionMenu, updateSidePanel;
+    requestDraw, sceneStickerShown, stickerById, updateSelectionMenu, updateSidePanel;
 
   function getSelected() {
     const id = String(editor.selectedId || "");
@@ -105,6 +106,8 @@ export function createSelection(deps) {
       const raster = getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid);
       return raster?.locked === true;
     }
+    // An upstream element of a layer that is only inherited is not edited (ADR 0030).
+    if (isUpstreamSticker(item) && !upstreamStickerEditable(item)) return true;
     return item.locked === true;
   }
   function areAllSelectedItemsLocked(items = null) {
@@ -128,7 +131,7 @@ export function createSelection(deps) {
       raster.locked = next;
       return true;
     }
-    if (item.locked === next) return false;
+    if (item.locked === next || (isUpstreamSticker(item) && !upstreamStickerEditable(item))) return false;
     item.locked = next;
     return true;
   }
@@ -154,7 +157,8 @@ export function createSelection(deps) {
     timeline.selection = null;
     editor.selectedId = item?.id || null;
     editor.selectedIds = item?.id ? [item.id] : [];
-    if (item && isStickerItem(item)) state.active.selected_sticker_id = item.id || null;
+    // An upstream element's working id is the editor's own, so the node's properties never keep it.
+    if (item && isStickerItem(item) && !isUpstreamSticker(item)) state.active.selected_sticker_id = item.id || null;
     else state.active.selected_sticker_id = null;
     if (item && isShotItem(item)) state.active.selected_shot_id = item.id || null;
     else if (!item) state.active.selected_shot_id = null;
@@ -177,7 +181,7 @@ export function createSelection(deps) {
       ? preferred
       : (nextIds[nextIds.length - 1] || null);
     const primary = getSelected();
-    state.active.selected_sticker_id = primary && isStickerItem(primary) ? primary.id || null : null;
+    state.active.selected_sticker_id = primary && isStickerItem(primary) && !isUpstreamSticker(primary) ? primary.id || null : null;
     if (primary && isShotItem(primary)) state.active.selected_shot_id = primary.id || null;
     else if (!nextIds.length) state.active.selected_shot_id = null;
   }
@@ -317,11 +321,13 @@ export function createSelection(deps) {
     state.active.selected_sticker_id = null;
     state.active.selected_shot_id = null;
   }
-  // The selected world Sticker of state v2 (#72), or null. It is selected in the space view or on its
-  // Timeline row, and the gizmo and the inspector edit it.
+  // The selected world Sticker of state v2 (#72), or null: the node's own or an upstream element's working
+  // Sticker (ADR 0030). It is selected in the space view or on its Timeline row, and the gizmo and the inspector
+  // edit it.
   function selectedWorldSticker() {
     if (!sceneV2 || !editor.worldSelectedId) return null;
-    return state.stickers.find((item) => item.id === editor.worldSelectedId && item.placement === "world") || null;
+    const sticker = stickerById(editor.worldSelectedId);
+    return sticker?.placement === "world" ? sticker : null;
   }
   function selectWorldSticker(id) {
     setSelectedItem(null);
@@ -335,9 +341,10 @@ export function createSelection(deps) {
     editor.gizmoAxis = null;
     runtime.backgroundDirty = true;
   }
-  // Whether the selected world Sticker can be edited: not locked, and in an editor that edits.
+  // Whether the selected world Sticker can be edited: not locked, in an editor that edits, and not the
+  // element of an upstream layer that is only inherited.
   function worldStickerEditable(sticker) {
-    return !!sticker && !readOnly && !sticker.locked;
+    return !!sticker && !readOnly && !isItemLocked(sticker);
   }
   function applyInitialCutoutFocus() {
     if (type !== "cutout") return;
@@ -362,6 +369,8 @@ export function createSelection(deps) {
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected || selectedItems.length === 0) return;
+    // The upstream elements are ordered upstream (ADR 0030).
+    if (selectedItems.some(isUpstreamSticker)) return;
     if (selectedItems.some((item) => isItemLocked(item))) return;
     normalizeDisplayZIndices();
     const ordered = getDisplayListObjects();
@@ -400,6 +409,8 @@ export function createSelection(deps) {
     const selectedItems = getSelectedItems();
     const selected = getSelected();
     if (!selected || selectedItems.length === 0) return;
+    // The upstream elements are ordered upstream (ADR 0030).
+    if (selectedItems.some(isUpstreamSticker)) return;
     if (selectedItems.some((item) => isItemLocked(item))) return;
     normalizeDisplayZIndices();
     const ordered = getDisplayListObjects();
@@ -441,7 +452,7 @@ export function createSelection(deps) {
         getRasterObjectList, getStickerUiImage, getStrokeGroupItem, hasCamera, isExternalSticker, isRasterObjectItem,
         isSceneSticker, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, markObjectVisualsDirty,
         normalizeDisplayZIndices, objectGeom, paintingShown, parseRasterObjectSelectionId, poseOf, pushHistory,
-        requestDraw, sceneStickerShown, updateSelectionMenu, updateSidePanel,
+        requestDraw, sceneStickerShown, stickerById, updateSelectionMenu, updateSidePanel,
       } = api);
     },
     getSelected, getSelectedItems, getMultiSelectionGeom, isItemSelected, getSelectedKind, isItemLocked,

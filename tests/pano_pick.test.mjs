@@ -153,22 +153,24 @@ test("the pick pass draws only the pickable meshes, each in its pick material, a
   assert.equal(plane.material, planeMaterial);
 });
 
-test("the upstream Scene's planes and items are drawn in the World but never in the pick pass (#90)", () => {
-  // A plane of the node's own behind an upstream plane and an upstream 3D item: the pick draws the own one alone.
+test("the upstream Scene's planes and items are picked as the node's own (ADR 0030)", () => {
+  // An upstream plane in front of the node's own plane, and an upstream 3D item: the pick draws them all.
   const world = new Scene();
   const own = new Mesh(new PlaneGeometry(), new MeshBasicMaterial());
   const upstreamPlane = new Mesh(new PlaneGeometry(), new MeshBasicMaterial());
   const upstreamItem = new Group().add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
   world.add(own, upstreamPlane, upstreamItem);
-  const seen = pickPass(world, [{ object: own }], () => new ShaderMaterial(), () => [own, upstreamPlane, upstreamItem].map((object) => object.visible));
-  assert.deepEqual(seen, [true, false, false]);
-  assert.deepEqual([own, upstreamPlane, upstreamItem].map((object) => object.visible), [true, true, true]);
-  // buildWorld adds them to the World only: never to the pickable entries or the SPLAT boxes.
+  const entries = [{ object: own }, { object: upstreamPlane }, { object: upstreamItem }];
+  const seen = pickPass(world, entries, () => new ShaderMaterial(), () => [own, upstreamPlane, upstreamItem].map((object) => object.visible));
+  assert.deepEqual(seen, [true, true, true]);
+  // buildWorld makes the pickable entries, the SPLAT boxes and the pick's parts of the upstream items and planes
+  // in the loops of the node's own, by the ids their requests and planes have (upstream:<key>:<id>).
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   const build = view.slice(view.indexOf("  function buildWorld("), view.indexOf("  // Where a render draws"));
-  const upstreamLoops = [...build.matchAll(/for \(const \w+ of (?:upstream|space\.upstream\w+ \?\? \[\])\) \{[\s\S]*?\n    \}/g)].map((match) => match[0]);
-  assert.equal(upstreamLoops.length, 3);
-  for (const loop of upstreamLoops) assert.doesNotMatch(loop, /pickable|pickBoxes|parts\.push/);
+  assert.match(build, /if \(entry\.request\) contents\.push\(\{ content: contentGroup\(items, entry\.request\), opacity: entry\.opacity \}\);/);
+  assert.match(build, /for \(const \{ content, opacity, keepMaterials \} of contents\) \{[\s\S]*?pickBoxes\.push[\s\S]*?pickable\.push[\s\S]*?parts\.push/);
+  assert.match(build, /for \(const layer of \[\.\.\.space\.stickers, \.\.\.\(space\.upstreamStickers \?\? \[\]\)\]\) \{[\s\S]*?pickable\.push\(\{ object: mesh, stickerId: layer\.id, plane: true \}\);/);
+  assert.equal([...build.matchAll(/for \(const \w+ of (?:upstream|space\.upstream\w+ \?\? \[\])\) \{/g)].length, 1);
 });
 
 test("the pick pass puts all back when drawing throws", () => {

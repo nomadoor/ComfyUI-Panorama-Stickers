@@ -674,13 +674,15 @@ test("in the space view a press picks the gizmo first, then a world Sticker, the
   assert.ok(press < down.indexOf("const hit = hitObjectAt(p);"));
   const start = editor.slice(editor.indexOf("  function startWorldStickerPress(e, p) {"), editor.indexOf("  // The gizmo highlights the handle under the pointer"));
   assert.ok(start.indexOf('worldGizmoPointer("down", p)') < start.indexOf("editorView.pickSticker("));
-  // Only a world Sticker of the state is selected by its id; the `scene` content leaves the press to the Sky.
-  assert.match(start, /if \(!state\.stickers\.some\(\(item\) => item\.id === id && item\.placement === "world"\)\) return false;/);
+  // Only a world Sticker is selected by its id, the node's own or an upstream element's (ADR 0030); the `scene`
+  // content leaves the press to the Sky.
+  assert.match(start, /if \(stickerById\(id\)\?\.placement !== "world"\) return false;/);
+  assert.match(editor, /function stickerById\(id\) \{\s*return state\.stickers\.find\(\(item\) => item\.id === id\) \|\| upstreamStickers\(\)\.find\(\(item\) => item\.id === id\) \|\| null;/);
   assert.match(start, /selectWorldSticker\(id\);/);
   // Selecting does not stop playback; a gizmo drag stops it on its first move and starts over from that frame.
   assert.match(editor, /if \(!\["view", "marquee_select", "space_pan", "space_orbit", "world_select"\]\.includes\(it\.kind\)\) restartEditAtStoppedFrame\(it, down\);/);
   const restart = editor.slice(editor.indexOf("  function restartEditAtStoppedFrame(it, down) {"));
-  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "frame_pan"\) return;\s*if \(it\.kind === "frame_orbit"\) \{[\s\S]*?\n    \}\n\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = state\.stickers\.find\(\(item\) => item\.id === it\.id\);\s*if \(it\.camera\) it\.base = cutoutCamera\(\);\s*else if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
+  assert.match(restart, /playback\.stop\(\);\s*if \(it\.kind === "frame_pan"\) return;\s*if \(it\.kind === "frame_orbit"\) \{[\s\S]*?\n    \}\n\s*if \(it\.kind === "world_gizmo"\) \{\s*const sticker = stickerById\(it\.id\);\s*if \(it\.camera\) it\.base = cutoutCamera\(\);\s*else if \(sticker\) it\.base = evaluateSticker\(sticker, editor\.frame\);/);
   // The drag writes the gizmo mode's Lane by the recording rule, and a changed drag is one Undo step.
   assert.match(editor, /setWorldStickerTransform\(sticker, editor\.frame, gizmoDragLanes\(it\.mode, it\.base, it\.start, moved\)\);/);
   assert.match(editor, /if \(ended\.changed\) \{\s*pushHistory\(\);\s*commitAndRefreshNode\(\);/);
@@ -717,7 +719,9 @@ test("the world Sticker's selection menu shows exactly while its gizmo does, and
   const world = update.slice(update.indexOf("  function worldSelectionMenuModel() {"));
   assert.match(world, /const space = isSpaceView\(\) && !editor\.interaction \? editorViewInput\(\)\.space : null;\s*if \(!space\?\.gizmo\) return \{ visible: false \};/);
   assert.match(editor, /if \(!worldStickerEditable\(sticker\) \|\| !value\?\.active\) return null;/);
-  assert.match(editor, /function worldStickerEditable\(sticker\) \{\s*return !!sticker && !readOnly && !sticker\.locked;/);
+  // An upstream element of a layer that is only inherited is locked (ADR 0030).
+  assert.match(editor, /function worldStickerEditable\(sticker\) \{\s*return !!sticker && !readOnly && !isItemLocked\(sticker\);/);
+  assert.match(editor, /if \(isUpstreamSticker\(item\) && !upstreamStickerEditable\(item\)\) return true;\s*return item\.locked === true;/);
   // A world selection is a single Sticker: selecting one clears the canvas selection, and the reverse.
   assert.match(editor, /function selectWorldSticker\(id\) \{\s*setSelectedItem\(null\);/);
   assert.match(editor, /function setSelectedItems\(items, primaryId = null\) \{[\s\S]*?clearWorldSelection\(\);/);

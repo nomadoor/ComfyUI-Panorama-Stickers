@@ -8,6 +8,7 @@ import {
   setWorldStickerField,
 } from "../pano_editor_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
+import { isUpstreamSticker } from "../pano_upstream.js";
 import { WORLD_MIN_SCALE, WORLD_UNLIMITED_FIELDS } from "./constants.js";
 
 export function createSidePanelEvents(deps) {
@@ -15,12 +16,12 @@ export function createSidePanelEvents(deps) {
     cameraV2, coverageWidget, editor, node, previewMode, runtime, shotEditor, state, studio, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitState,
-    getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
+  let apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
+    commitState, getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
     isItemLocked, isSceneSticker, isStrokeGroupItem, markObjectVisualsDirty, persistUiSettings, poseOf,
-    pushHistory, requestDraw, revertPortHandoffLane, selectedWorldSticker, setSelectedItem, stopTimelinePlayback,
-    syncCoverageChangeToNodePreviews, syncCutoutShot, turnViewTo, updateSelectionMenu, updateSidePanel,
-    worldStickerEditable, writePose;
+    pushHistory, releaseHiddenSelection, requestDraw, revertPortHandoffLane, selectedWorldSticker, setSelectedItem,
+    stopTimelinePlayback, syncCoverageChangeToNodePreviews, syncCutoutShot, turnViewTo, updateSelectionMenu,
+    updateSidePanel, worldStickerEditable, writePose;
 
   function applySidePanelParam(key, rawValue, commit = false) {
     // Edits during playback would key every frame they pass.
@@ -64,6 +65,21 @@ export function createSidePanelEvents(deps) {
     requestDraw();
     if (commit) pushHistory();
   }
+  // The Visible and Lock switches of the selected upstream element (ADR 0030, PanoUpstreamOrigin.vue): its
+  // working Sticker's field, written back as an override with the Undo step. Hidden, it is no longer selected.
+  function setUpstreamField(name, value) {
+    const sticker = selectedWorldSticker() || getSelected();
+    if (!isUpstreamSticker(sticker) || uiState.sidePanel?.upstream?.disabled !== false || sticker[name] === value) return;
+    stopTimelinePlayback();
+    sticker[name] = value;
+    releaseHiddenSelection();
+    markObjectVisualsDirty();
+    pushHistory();
+    commitAndRefreshNode();
+    updateSidePanel();
+    updateSelectionMenu();
+    requestDraw();
+  }
   async function onSidePanelClick(ev) {
     const target = ev.target.closest("[data-action]");
     if (!target) return;
@@ -93,6 +109,10 @@ export function createSidePanelEvents(deps) {
     if (action === "revert-handoff-lane") {
       stopTimelinePlayback();
       revertPortHandoffLane(String(target.getAttribute("data-lane") || ""));
+      return;
+    }
+    if (action === "upstream-visible" || action === "upstream-locked") {
+      setUpstreamField(action === "upstream-visible" ? "visible" : "locked", target.getAttribute("data-value") === "1");
       return;
     }
     if (action === "toggle-selection-picker") {
@@ -190,12 +210,12 @@ export function createSidePanelEvents(deps) {
   return {
     connect(api) {
       ({
-        apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitState,
-        getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
+        apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
+        commitState, getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
         isItemLocked, isSceneSticker, isStrokeGroupItem, markObjectVisualsDirty, persistUiSettings, poseOf,
-        pushHistory, requestDraw, revertPortHandoffLane, selectedWorldSticker, setSelectedItem, stopTimelinePlayback,
-        syncCoverageChangeToNodePreviews, syncCutoutShot, turnViewTo, updateSelectionMenu, updateSidePanel,
-        worldStickerEditable, writePose,
+        pushHistory, releaseHiddenSelection, requestDraw, revertPortHandoffLane, selectedWorldSticker, setSelectedItem,
+        stopTimelinePlayback, syncCoverageChangeToNodePreviews, syncCutoutShot, turnViewTo, updateSelectionMenu,
+        updateSidePanel, worldStickerEditable, writePose,
       } = api);
     },
     onSidePanelClick, onSidePanelInput, onSidePanelChange,

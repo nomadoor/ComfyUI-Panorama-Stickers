@@ -5,6 +5,7 @@ import { frameViewContext } from "../pano_editor_view.js";
 import { clamp } from "../pano_math.js";
 import { projectPoint, spaceCamera } from "../pano_space.js";
 import { drawStickerSelectionBoundary, drawStickerSelectionHandles } from "../pano_sticker_affordance.js";
+import { isUpstreamSticker } from "../pano_upstream.js";
 import { CUTOUT_FRAME_ACCENT, CUTOUT_PANO_DIM_ALPHA, DEG2RAD } from "./constants.js";
 
 export function createOverlay(deps) {
@@ -291,7 +292,8 @@ export function createOverlay(deps) {
         sorted: [...rawList],
       };
     }
-    const items = editor._sortedItemsCache.sorted;
+    // A selected upstream element (ADR 0030) shows its outline and handles under the node's own.
+    const items = [...selectedItems.filter(isUpstreamSticker), ...editor._sortedItemsCache.sorted];
     for (const item of items) {
       const selected = editor.mode !== "frame" && !multiSelected && isItemSelected(item);
       if (editor.mode === "frame" && !selected) continue;

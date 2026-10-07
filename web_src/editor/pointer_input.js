@@ -37,7 +37,7 @@ export function createPointerInput(deps) {
     rectIntersectsGeom, refreshPaintEngineRevisionCache, requestDraw, screenPos, screenPosCss,
     screenPosToErpPoint, screenPosToFrameAsErpPoint, screenToWorldDir, selectWorldSticker, selectedWorldSticker,
     setPointerPos, setSelectedItem, setSelectedItems, setSpaceView, shortestWrappedDelta, spaceViewState,
-    startAnimation, startCameraPress, startFrameDrag, startPanFrame, startSpaceDrag, stopTimelinePlayback,
+    startAnimation, startCameraPress, startFrameDrag, startPanFrame, startSpaceDrag, stickerById, stopTimelinePlayback,
     supportsErpPainting, supportsFramePainting, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
     syncSidePanelControls, syncTimeline, syncViewToggleState, updateCursor, updateSelectionMenu, updateSidePanel,
     viewControls, writePose, zoomFrameAt, zoomFrameViewAt, zoomSpaceAt;
@@ -476,7 +476,7 @@ export function createPointerInput(deps) {
       : (selected && !isItemLocked(selected) ? handleHit(objectGeom(selected), p, selected).kind : "none");
     if (handle !== "none" && handle !== "move") return false;
     const id = editorView.pickSticker(currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
-    if (!state.stickers.some((item) => item.id === id && item.placement === "world")) return false;
+    if (stickerById(id)?.placement !== "world") return false;
     if (editor.worldSelectedId !== id) {
       if (editor.selectedId) {
         pushHistory();
@@ -515,7 +515,7 @@ export function createPointerInput(deps) {
       requestDraw({ localOnly: true });
       return;
     }
-    const sticker = state.stickers.find((item) => item.id === it.id);
+    const sticker = stickerById(it.id);
     if (!moved || !sticker) return;
     setWorldStickerTransform(sticker, editor.frame, gizmoDragLanes(it.mode, it.base, it.start, moved));
     it.changed = true;
@@ -570,7 +570,7 @@ export function createPointerInput(deps) {
       return;
     }
     if (it.kind === "world_gizmo") {
-      const sticker = state.stickers.find((item) => item.id === it.id);
+      const sticker = stickerById(it.id);
       if (it.camera) it.base = cutoutCamera();
       else if (sticker) it.base = evaluateSticker(sticker, editor.frame);
       return;
@@ -1173,7 +1173,7 @@ export function createPointerInput(deps) {
         rectIntersectsGeom, refreshPaintEngineRevisionCache, requestDraw, screenPos, screenPosCss,
         screenPosToErpPoint, screenPosToFrameAsErpPoint, screenToWorldDir, selectWorldSticker, selectedWorldSticker,
         setPointerPos, setSelectedItem, setSelectedItems, setSpaceView, shortestWrappedDelta, spaceViewState,
-        startAnimation, startCameraPress, startFrameDrag, startPanFrame, startSpaceDrag, stopTimelinePlayback,
+        startAnimation, startCameraPress, startFrameDrag, startPanFrame, startSpaceDrag, stickerById, stopTimelinePlayback,
         supportsErpPainting, supportsFramePainting, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
         syncSidePanelControls, syncTimeline, syncViewToggleState, updateCursor, updateSelectionMenu, updateSidePanel,
         viewControls, writePose, zoomFrameAt, zoomFrameViewAt, zoomSpaceAt,

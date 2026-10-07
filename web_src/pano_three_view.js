@@ -677,10 +677,9 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   }
 
   // The World of a space input: the guides, the `scene` item, the 3D Sticker's item, the world Sticker
-  // planes and lines, with the Spark renderer of owner's view. The objects are kept between renders, and
-  // `world` is filled again only when they change. What is not seen (opacity 0) is not picked. The upstream
-  // Scene's items and planes are drawn the same way but are never picked: they are not pickable entries, so
-  // the pick pass does not draw them.
+  // planes and lines, with the Spark renderer of owner's view, and the upstream Scene's items and planes
+  // (ADR 0030), which are drawn and picked as the node's own. The objects are kept between renders, and
+  // `world` is filled again only when they change. What is not seen (opacity 0) is not picked.
   function buildWorld(owned, space, owner) {
     const children = [];
     const parts = [];
@@ -689,19 +688,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (space.grid) children.push(guideGroup(space.grid));
     sceneItems.retain(space.sceneUrls ?? []);
     stickerItems.retain(space.stickerUrls ?? []);
-    const sticker = space.sticker ? contentGroup(stickerItems, space.sticker) : null;
-    if (sticker) setContentOpacity(sticker, space.sticker.opacity);
-    const contents = [space.scene ? contentGroup(sceneItems, space.scene) : null, sticker].filter(Boolean);
-    const upstream = [];
+    // Each content with its opacity, which the `scene` item's materials keep as they are (opaque).
+    const contents = [];
+    if (space.scene) contents.push({ content: contentGroup(sceneItems, space.scene), opacity: 1, keepMaterials: true });
+    if (space.sticker) contents.push({ content: contentGroup(stickerItems, space.sticker), opacity: space.sticker.opacity });
     const slots = new Set();
     for (const entry of space.upstreamItems ?? []) {
       slots.add(entry.slot);
       const items = upstreamItemsOf(entry.slot);
       items.retain(entry.urls);
-      const content = entry.request ? contentGroup(items, entry.request) : null;
-      if (!content) continue;
-      setContentOpacity(content, entry.opacity);
-      upstream.push(content);
+      if (entry.request) contents.push({ content: contentGroup(items, entry.request), opacity: entry.opacity });
     }
     for (const [slot, items] of upstreamItems) {
       if (slots.has(slot)) continue;
@@ -710,7 +706,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     }
     // A SPLAT draws through the Spark renderer and a SplatMesh of the view (pano_spark_views.js), made the
     // first time it shows one; until Spark's module is there the SPLATs wait a render.
-    const splat = [...contents, ...upstream].some((content) => content.splat);
+    const splat = contents.some(({ content }) => content?.splat);
     if (splat && !Spark) {
       loadSpark().then((module) => {
         if (closed) return;
@@ -718,34 +714,26 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
         onUpdate();
       }).catch((error) => console.error("[PanoramaStickers] Spark is unavailable", error));
     }
-    for (const content of contents) {
+    for (const { content, opacity, keepMaterials } of contents) {
+      if (!content) continue;
+      if (!keepMaterials) setContentOpacity(content, opacity);
       if (content.splat && !Spark) continue;
       if (content.splat) sparkViews.splat(owner, content.object);
       children.push(content.group);
-      const opacity = content === sticker ? space.sticker.opacity : 1;
       if (!(opacity > 0)) continue;
       if (content.splat) pickBoxes.push({ object: content.object, box: content.box, stickerId: content.stickerId });
       else pickable.push({ object: content.group, stickerId: content.stickerId, plane: false });
       parts.push([content.object.uuid, content.transform]);
     }
-    for (const content of upstream) {
-      if (content.splat && !Spark) continue;
-      if (content.splat) sparkViews.splat(owner, content.object);
-      children.push(content.group);
-    }
     if (splat && Spark) children.push(sparkViews.renderer(owner));
     let index = 0;
-    for (const layer of space.stickers) {
+    for (const layer of [...space.stickers, ...(space.upstreamStickers ?? [])]) {
       if (!layerDrawable(owned, layer)) continue;
       const mesh = addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
       children.push(mesh);
       if (!(layer.opacity > 0)) continue;
       pickable.push({ object: mesh, stickerId: layer.id, plane: true });
       parts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
-    }
-    for (const layer of space.upstreamStickers ?? []) {
-      if (!layerDrawable(owned, layer)) continue;
-      children.push(addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer));
     }
     children.push(...cachedLines(lines, space.lines ?? []));
     // Picks are reused while the revision stays (pickCacheKey): whatever changes what is hit (an item's
@@ -845,7 +833,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // stickerUrls its item URLs. stickers are world Sticker planes { id, media, revision, source, opacity,
   // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }.
   // upstreamItems ([{ slot, urls, request, opacity }], pano_upstream.js upstreamLayerView) and upstreamStickers
-  // (planes as `stickers`) are the upstream Scene's, drawn but never picked. gizmo is
+  // (planes as `stickers`) are the upstream Scene's, drawn and picked as the own ones (ADR 0030). gizmo is
   // null or the selected world Sticker's gizmo { mode, transform } (createGizmo's show).
   // With rect ({ x, y, w, h } in canvas pixels from the top left), the view of that size is drawn there on
   // the canvas as resize() sized it, only the part on the canvas, at the canvas's pixels; width and height

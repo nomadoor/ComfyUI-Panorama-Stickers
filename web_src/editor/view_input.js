@@ -3,7 +3,7 @@
 // a shot and the Unwrap view with it.
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { shotCamera, workingSkyLayers, worldStickerLayers } from "../pano_editor_view.js";
-import { evaluateSceneState } from "../pano_scene_eval.js";
+import { evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import {
   DEFAULT_DISTANCE,
@@ -22,6 +22,7 @@ import {
   stickerContentRequest,
   stickerContentUrls,
 } from "../pano_space.js";
+import { isUpstreamSticker } from "../pano_upstream.js";
 import { CUTOUT_FRAME_ACCENT, CUTOUT_FRUSTUM_COLOR, CUTOUT_TRAJECTORY_COLOR } from "./constants.js";
 
 export function createViewInput(deps) {
@@ -164,10 +165,11 @@ export function createViewInput(deps) {
   }
 
   // The gizmo of the selected world Sticker where it shows at the playhead (its evaluated value in
-  // `evaluated`), or null while it is hidden, outside its Clip range or not editable.
+  // `evaluated`, or an upstream element's from its working Sticker), or null while it is hidden, outside its
+  // Clip range or not editable.
   function worldGizmo(evaluated) {
     const sticker = selectedWorldSticker();
-    const value = evaluated.stickers.find((item) => item.id === sticker?.id);
+    const value = isUpstreamSticker(sticker) ? evaluateSticker(sticker, editor.frame) : evaluated.stickers.find((item) => item.id === sticker?.id);
     if (!worldStickerEditable(sticker) || !value?.active) return null;
     return { mode: editor.gizmoMode, transform: sceneTransform(value) };
   }

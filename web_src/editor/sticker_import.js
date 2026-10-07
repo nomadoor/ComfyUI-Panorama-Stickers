@@ -9,6 +9,7 @@ import {
   isStickerImageFile,
   uploadStickerAssetFile,
 } from "../pano_sticker_file_import.js";
+import { isUpstreamSticker } from "../pano_upstream.js";
 import { cloneJson, uid } from "./helpers.js";
 
 export function createStickerImport(deps) {
@@ -228,7 +229,7 @@ export function createStickerImport(deps) {
     if (readOnly) return;
     if (type !== "stickers" && type !== "cutout") return;
     const selected = getSelected();
-    if (!selected || !isStickerItem(selected) || isExternalSticker(selected)) return;
+    if (!selected || !isStickerItem(selected) || isExternalSticker(selected) || isUpstreamSticker(selected)) return;
     if (!isStickerImageFile(file)) return;
     if (sceneV2) {
       await replaceSceneStickerImage(file, selected.id);
@@ -300,7 +301,7 @@ export function createStickerImport(deps) {
   function replaceSelectedImage() {
     if (readOnly) return;
     const selected = getSelected();
-    if (!selected || !isStickerItem(selected) || isExternalSticker(selected)) return;
+    if (!selected || !isStickerItem(selected) || isExternalSticker(selected) || isUpstreamSticker(selected)) return;
     vueModal?.openImagePicker?.("replace");
   }
 

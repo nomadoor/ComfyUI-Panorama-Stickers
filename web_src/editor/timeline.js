@@ -17,7 +17,8 @@ export function createTimeline(deps) {
   // Bound by connect() to the other modules and showEditor.
   let commitAndRefreshNode, getPortMedia, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
     playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, syncCutoutShot,
-    syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamSpanFrames;
+    stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked,
+    upstreamSpanFrames;
 
   function syncTimeline() {
     if (!stateV2 || readOnly) return;
@@ -74,7 +75,8 @@ export function createTimeline(deps) {
   function timelineOwner(owner) {
     if (owner === "camera") return hasCamera() ? state.camera : null;
     if (owner === "scene") return sceneV2 ? state.scene : null;
-    return state.stickers.find((item) => item.id === owner) || null;
+    // An upstream element's working Sticker owns its Lanes too (ADR 0030).
+    return stickerById(owner);
   }
 
   // The Lanes a Keyframe selection acts on: its Lane, or every Lane of its row.
@@ -191,7 +193,7 @@ export function createTimeline(deps) {
       ({
         commitAndRefreshNode, getPortMedia, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
         playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, syncCutoutShot,
-        syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamSpanFrames,
+        stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamSpanFrames,
       } = api);
     },
     syncTimeline, timelineTimed, timelineSpanFrames, timelineOwner, selectedLanes, timelineOffset, clipView,
