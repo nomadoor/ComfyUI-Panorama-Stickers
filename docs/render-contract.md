@@ -336,7 +336,7 @@ Panorama Studio の `scene` 出力は、`nodes.py` の `PanoSceneValue`（frozen
 
 - 出力の解像度は入れない。撮影する側がそれぞれの規則（`output_size` など）で決める。
 - 同じ入力からは同じ内容の値になる（乱数や時刻を含まない）。ComfyUI のキャッシュが効くとき、下流には前回の同じ値が渡る。
-- 下流のノードは同じオブジェクトを共有するので、`layers` の `state` や `sources` を書き換えない。上流の層は、下流の値でも同じ `SceneLayer` のオブジェクトである。
+- 下流のノードは同じオブジェクトを共有するので、`layers` の `state` や `sources` を書き換えない。上流の層は、下流が上書き（ADR 0030）を当てなければ、下流の値でも同じ `SceneLayer` のオブジェクトである。当てた層は新しい `SceneLayer` で、変えていない部分は元の層と共有する（下記「上流の Scene（#88）」の「上書き」）。
 - 3D の Sticker（#63）の素材は層の `port`（`is_3d`、`media` は SPLAT か MESH）が持ち、`sources` には入らない。使う側は (b) と同じく `_render_frames` を通す。
 - 撮影するノードの Camera は、最後の層（撮影するノード自身）の状態の `camera` から取る。`PANO_SCENE` は Camera を持たない。
 
@@ -362,18 +362,24 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 
   - ERP の出力は画素の細かさが `W` の 360° の ERP と同じになる。`auto` は旧 Stickers の `auto` と同じ大きさになる。ただし 360 では高さを `W ÷ 2` にそろえ、`bg_media` の高さは引き継がない（2:1 でない背景では旧 Stickers と違う）。`coverage` 180 の `auto` は `bg_media` と同じ大きさになる（固定の値では、旧 Stickers は `coverage` 180 で選んだ値を出力の幅にするので、Studio はその半分の幅になる）。ERP には上限を設けない（`auto` は大きな `bg_media` ならそのまま大きくなる）。
   - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV が動いても大きさは変わらない。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
-- `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` を `null` にする（撮影する世界で、Camera を含まない。`_scene_output`）。自分の層の `state` の `upstream`（上流の層への上書き）も空にする。下流は上書きを当てた後の姿を受け取るためである（ADR 0030。上書きを上流の層に当てるのは T4）。`id` は保ち、下流はこの `id` ごとに上書きを記録する。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
+- `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` を `null` にする（撮影する世界で、Camera を含まない。`_scene_output`）。自分の層の `state` の `upstream`（上流の層への上書き）も空にする。下流は上書きを当てた後の姿を受け取るためである（ADR 0030。当て方は下記「上流の Scene（#88）」の「上書き」）。`id` は保ち、下流はこの `id` ごとに上書きを記録する。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
 - `sticker_state` は `projection` が `perspective` のときだけ、`_camera_sticker_state` が作る v2（`docs/scene-state-v2.md`）。`fps` は状態の `timeline.fps`、`camera` は Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる。#65）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。Camera が無いとき（隠したときを含む）と `erp` のときは空文字列。
 - 隠した `scene`（`scene.visible`）と Sticker は評価関数の `active` が偽になるので描かない。隠したペイント（`painting_visible`）は `_resolve_sources` が空のペイントを渡すので、色にも MASK にも出ない。上流の Scene の層でも同じ。
 - 実行結果の `ui` は上記「Scene の組み立てと撮影の入口」の表のキー（`pano_input_images` などの素材、`pano_sticker_input_pose`、`pano_sticker_warnings`）。上流の Scene を受けたときのキーは下記。エディタは #89 で結んだ（`docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」）。ノード上の表示は #91 で作り直した。上流の Scene を受けたときのエディタの表示は #90（`docs/threejs-spark-integration.md` の「上流の Scene の表示（#90）」）。
 
 ### 上流の Scene（#88）
 
-`scene` に別の Panorama Studio の `scene` 出力（`PANO_SCENE`）をつなぐと、その Scene の上に自分の Scene を重ねて撮る（ADR 0029）。`_build_scene` が上流の層の後ろに自分の層を足す。
+`scene` に別の Panorama Studio の `scene` 出力（`PANO_SCENE`）をつなぐと、その Scene の上に自分の Scene を重ねて撮る（ADR 0029）。`_build_scene` が、自分の状態の上書き（`upstream`）を当てた上流の層の後ろに自分の層を足す。
 
 - 重ね方：上流の各層と自分の層を `RenderLayer` にして `render_frame` に渡す（上記「層」）。`sky` は上流の上に自分を重ね、`world` は奥行きで混ざる。Sticker の `id` と `port` は層ごとに分かれるので、上流と同じ `id` や、上流にも `port` の Sticker があっても、それぞれ描く。撮るのは自分の Camera（自分の状態の `camera`、上の「Camera の判定」）で、上流の Camera は無い（`scene` 出力は Camera を含まない）。
+- 上書き（ADR 0030、`_override_layers`）：状態を読み込んだ後、Timeline を決める前に、自分の状態の `upstream` の各記録を、その `layer` と同じ `id` を状態に持つ上流の層に `apply_upstream_overrides`（`docs/scene-state-v2.md` の「上書きを当てる」）で当てる。描くのも、`scene` 出力で下流へ渡すのも、当てた後の層である。
+  - 同じ `id` の層が鎖に二つ以上あるとき（Studio を複製したとき）は、最も下流の層にだけ当て、`Scene id <id> is on <n> upstream Panorama Studio nodes; its overrides apply to the nearest one only.` と警告する（ログと `pano_sticker_warnings`）。警告は当てる記録があるときだけ出す。
+  - `id` が `null` の層と、どの層の `id` とも合わない記録は当てない。記録が何も変えない層は、受け取った `SceneLayer` のオブジェクトのまま（キャッシュがそのまま効く）。上流の層の `state`・`sources`・`port` は書き換えず、当てた層は新しい `SceneLayer` にする。
+  - `sources`：`crop` と `z_index` は Sticker の Source（`StickerSource`）から描くので、上書きで変わった Sticker の Source をその値に差し替える。消した Sticker の Source は除く。`painting_visible` を上書きしたときは、`_resolve_sources` と同じく、`false` ならペイントを空にし、`true`（上流で隠したペイントを下流で見せる）なら状態のペイントを読む。
+  - `port`：層の `port` の Sticker を消したときは、その層の `port` を `None` にする（素材を描かない）。`port` の Sticker の Clip range を上書きしたときは、素材の先頭も上書きした Clip range の `start − in` に移す（`PortMedia.with_clip`。読んだ素材を共有し、VIDEO を開き直さない）。
+  - Sky の重なりは層ごとのまま。`z_index` の上書きは、その層の中の順だけを変える。
 - Timeline fps は上流の `rate`。出力フレームの時刻は上流の `times` で、上流より長いときはその後を Timeline fps の間隔で続ける（`_output_times`）。丸めの幅も上流の `time_base`。自分の `bg_media`・`sticker` の VIDEO は Timeline fps を決めない。
-- 長さ：自分の `timeline.length` があればそれ（秒を保って Timeline fps のフレーム数に直す。上流より短くも長くもできる）。なければ、上流の出力フレーム数と、自分の状態から通常の規則（上記「Scene の組み立てと撮影の入口」の長さの規則。背景 VIDEO の段は、自分の `bg_media` を使うときだけで、その VIDEO の最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）で決まる長さの、長いほう。
+- 長さ：自分の `timeline.length` があればそれ（秒を保って Timeline fps のフレーム数に直す。上流より短くも長くもできる）。なければ、上流の出力フレーム数と、自分の状態から通常の規則（上記「Scene の組み立てと撮影の入口」の長さの規則。背景 VIDEO の段は、自分の `bg_media` を使うときだけで、その VIDEO の最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）で決まる長さと、上書きした Clip range の終わり（記録が `clip` を持つ Sticker と `scene` の Clip range の `start + duration`。`duration` の無い Clip range は数えないが、`port` の Sticker は例外で、自分の層と同じく素材が終わるフレーム（`PortMedia.end`。フレームを持つ素材だけ）を終わりとする）の、いちばん長いもの。上書きした Clip range の終わりはその層の Timeline frame なので、`floor(終わり × Timeline fps ÷ 層の timeline.fps + 0.5)` で出力フレーム数に直す。上書きしていない上流の Clip range は上流の出力フレーム数にすでに入っているので数えず、上流の Sticker を消しても短くならない。
 - 時刻の評価：各層は、出力フレームの時刻 `t` 秒について `t × その層の timeline.fps` の Timeline frame で評価する（`_layer_frames`。上流の Timeline frame から見れば `frame × 層の timeline.fps ÷ 上流の timeline.fps`）。上流と自分の fps が違っても、自分の Keyframe と Clip range は秒を保つ。状態は再基準化しない（整数の Timeline frame に丸めない）。各層の `port` と `scene` の番号も、その層の Timeline frame から通常の規則（`PortMedia.index_at`・`batch_index`）で選ぶ。上流の層の番号は、上流で決めたものと同じ規則で、延ばした分も含めて選び直す。
 - 背景：上流が `bg_media` を持てば、その `bg_media`・`coverage`・`bg_color` を使い、自分の `bg_media` は使わない。自分の `bg_media` も接続されていれば `bg_media is not used: the scene input has a background of its own.` と警告する（ログと `pano_sticker_warnings`）。自分の `coverage`・`bg_color` も使わない。上流が `bg_media` を持たなければ、自分の `bg_media`・`coverage`・`bg_color` を使う。
   - 背景のフレーム（`_bg_frames`）：IMAGE バッチは出力フレームと 1 対 1、1 枚の IMAGE は全フレーム。VIDEO は、Timeline を決めた VIDEO（上流がないとき）なら 1 対 1。上流がある（Timeline fps を上流が決めた）ときは、各出力フレームの時刻以前に始まる最後のフレーム（PTS ≤ `t`、比較の許容差は出力の時刻と VIDEO の time base の大きいほうの半分）で、最後のフレームが平均フレームレートの 1 フレームの間続いた後は描かない（`bg_color`）。上流の背景の VIDEO が終わった先も同じく `bg_color`。
@@ -387,14 +393,14 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
   |---|---|
   | `pano_scene_files` / `pano_scene_meta`、`pano_sticker_input_*`、`pano_sticker_files` / `pano_sticker_meta`、`pano_sticker_input_pose` | 自分の層の素材と姿勢。上流がないときと同じキー |
   | `pano_input_images` / `pano_input_videos` / `pano_input_video_meta` | 自分の `bg_media` を使うとき（上流が背景を持たないとき）だけ出す |
-  | `pano_upstream_layers` | 上流の層のリスト（最も上流から）。各要素は `{"state": その層の状態 v2（camera は null、upstream は空）, "ui": その層の素材の ui}`。`state.id` はその層の Scene の id（ADR 0030）で、状態が一度も書かれていない層では `null`。`ui` のキーは自分の層と同じ（`pano_sticker_input_images`・`pano_sticker_input_videos`・`pano_sticker_input_video_meta`・`pano_sticker_input_frames`・`pano_sticker_files`・`pano_sticker_meta`・`pano_scene_files`・`pano_scene_meta` のうち、その層が持つもの）で、背景は入らない。ファイルは上流のノードが書いたもので、書き直さない |
+  | `pano_upstream_layers` | 上流の層のリスト（最も上流から）。各要素は `{"state": その層の状態 v2（camera は null、upstream は空）, "ui": その層の素材の ui}`。`state` は `scene` 入力で受け取ったままの状態で、自分の上書きは当てていない（エディタが上流の値との差と「上流の値に戻す」を示すため。上流の Studio の上書きは当たっている）。`state.id` はその層の Scene の id（ADR 0030）で、状態が一度も書かれていない層では `null`。`ui` のキーは自分の層と同じ（`pano_sticker_input_images`・`pano_sticker_input_videos`・`pano_sticker_input_video_meta`・`pano_sticker_input_frames`・`pano_sticker_files`・`pano_sticker_meta`・`pano_scene_files`・`pano_scene_meta` のうち、その層が持つもの）で、背景は入らない。ファイルは上流のノードが書いたもので、書き直さない |
   | `pano_upstream_input_images` / `pano_upstream_input_videos` / `pano_upstream_input_video_meta` | 上流が背景を持つときの、その背景（`pano_input_*` と同じ形）。このとき自分の `pano_input_*` は出さない |
   | `pano_upstream_coverage` | 上流が背景を持つときの、その `coverage`（`[360]` か `[180]`） |
   | `pano_upstream_bg_color` | 上流が背景を持つときの、その `bg_color`（`[[r, g, b]]`、0〜1） |
   | `pano_timeline_fps` | 上流があるときは常に出す（Timeline fps は上流が決める）。エディタは fps の欄をロックし、自分の状態をこの fps に再基準化して表示する（VIDEO が fps を決めたときと同じ） |
   | `pano_timeline_frames` | 上流があるときは常に出す。出力のフレーム数（上流と自分の長いほう、または自分の `timeline.length`） |
 
-  - エディタは上流の要素を見せるが、選べず動かせない。上流の要素は自分のタイムラインに出さない（ADR 0029）。上流の層の Keyframe はその層の `timeline.fps` で記録されているので、表示する時刻 `t` 秒ではその層の `t × timeline.fps` で評価する（再基準化しない）。
+  - ADR 0030 により、上流の要素は下流で選んで編集でき（変更は自分の状態の `upstream` に上書きとして記録する）、ADR 0029 の「上流の要素は選べず動かせず、自分のタイムラインに出さない」を置き換える。ノードは上記「上書き」のとおり当てる。エディタでの選択・編集・タイムラインの行は ADR 0030 の T7〜T10 で作る。上流の層の Keyframe はその層の `timeline.fps` で記録されているので、表示する時刻 `t` 秒ではその層の `t × timeline.fps` で評価する（再基準化しない）。
   - エディタが描く上流の要素の id は `upstream:<層のキー>:<要素の id>`、3D の内容のスロットは `<層のキー>:scene`・`<層のキー>:sticker` とする。層のキーは、その層の `state.id`、`id` が無ければ `#` を付けた層の番号（`#0` など。振る id は `#` を含まない。`pano_upstream.js` の `upstreamLayerKeys`）。上流で層が増減しても、キーは層についていく。同じ `id` の層が二つ以上あるとき（Studio を複製したとき）は、最も下流の層がその `id` をキーにし（下流の上書きを当てる層と同じ。ADR 0030 の T4）、ほかは `#` 付きの番号に戻る。
 
 ## Preview ノード（`PanoramaPreviewNode`）

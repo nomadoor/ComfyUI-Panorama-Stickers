@@ -1,6 +1,7 @@
 """The media on the `sticker` input, placed on the Timeline by the port Sticker's Clip range (ADR 0024)."""
 
 import bisect
+import copy
 import math
 import os
 
@@ -110,6 +111,13 @@ class PortMedia:
         # Where each frame starts and where the last one ends, in Timeline frames from the first frame.
         seconds = video.times.seconds() if isinstance(video.times, PtsTimes) else [float(time) for time in video.times]
         self._starts = [second * stored_fps for second in [*seconds, float(video.times[-1] + 1 / video.frame_rate)]]
+
+    def with_clip(self, clip: dict) -> "PortMedia":
+        """This media placed by the Clip range `clip`, sharing what was read from it (the VIDEO is not opened again)."""
+        moved = copy.copy(self)
+        moved.clip = clip
+        moved._origin = clip["start"] - clip["in"]
+        return moved
 
     def end(self, fps: float) -> float | None:
         """The Timeline frame where the media ends at the Timeline `fps`, or None for a single IMAGE or 3D item."""

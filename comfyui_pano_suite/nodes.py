@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import os
+from collections import Counter
 from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
@@ -50,6 +51,7 @@ from .core.painting import (
 )
 from .core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
 from .core.scene_eval import FRAME_EPSILON, evaluate_scene_state
+from .core.scene_inherit import apply_upstream_overrides
 from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
@@ -1270,9 +1272,75 @@ def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -
             warnings.append(f"Could not read the source of Sticker {item['id']}; it is not drawn.")
             continue
         stickers[item["id"]] = StickerSource(rgba, item["crop"], item.get("z_index", 0))
+    return _painting_sources(state, stickers)
+
+
+def _painting_sources(state: dict, stickers: dict) -> SceneSources:
+    """`SceneSources` of the Sticker sources `stickers` and the painting of `state`, empty when it is hidden."""
     if not state["painting_visible"]:
         return SceneSources(stickers, empty_painting_state())
     return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
+
+
+def _override_layers(upstream: PanoSceneValue, records: list[dict], warnings: list[str]) -> tuple[tuple, list[tuple]]:
+    """The layers of the Scene `upstream` with this state's overrides (`upstream` records, ADR 0030) applied, and
+    the ends of the Clip ranges the overrides set, as (Timeline frame of the layer, its `timeline.fps`); a port
+    Sticker's Clip range without a duration ends with its media at the Timeline fps (`upstream.rate`).
+
+    A record applies to the layer whose state has its `id`; with several such layers (a duplicated Studio), only to
+    the nearest downstream one, with a warning. A layer that no record changes is the same `SceneLayer`."""
+    ids = [layer.state["id"] for layer in upstream.layers]
+    counts = Counter(ids)
+    layers = list(upstream.layers)
+    ends = []
+    for record in records:
+        if record["layer"] not in counts:
+            continue
+        if counts[record["layer"]] > 1:
+            warnings.append(f"Scene id {record['layer']} is on {counts[record['layer']]} upstream Panorama Studio nodes; its overrides apply to the nearest one only.")
+        index = len(ids) - 1 - ids[::-1].index(record["layer"])
+        layers[index], layer_ends = _override_layer(layers[index], record, float(upstream.rate))
+        ends += layer_ends
+    return tuple(layers), ends
+
+
+def _override_layer(layer: SceneLayer, record: dict, rate: float) -> tuple[SceneLayer, list[tuple]]:
+    """`layer` with the override `record` applied (`apply_upstream_overrides`), its sources and port following the
+    applied state, and the ends of the Clip ranges the record set (`_override_layers`). Neither input is changed."""
+    state = apply_upstream_overrides(layer.state, record)
+    if state is layer.state:
+        return layer, []
+    fps = state["timeline"]["fps"]
+    stickers = {item["id"]: item for item in state["stickers"]}
+    # `crop` and `z_index` are drawn from the source; a deleted Sticker has none.
+    sources = {}
+    for sticker_id, source in layer.sources.stickers.items():
+        item = stickers.get(sticker_id)
+        if item is not None:
+            crop, z_index = item["crop"], item.get("z_index", 0)
+            sources[sticker_id] = source if (crop, z_index) == (source.crop, source.z_index) else replace(source, crop=crop, z_index=z_index)
+    if state["painting_visible"] == layer.state["painting_visible"]:
+        sources = replace(layer.sources, stickers=sources)
+    else:
+        sources = _painting_sources(state, sources)
+    port = layer.port
+    if port is not None and port.sticker_id not in stickers:
+        port = None
+    elif port is not None and stickers[port.sticker_id]["clip"] != port.clip:
+        # The media starts where the overridden Clip range puts it.
+        port = port.with_clip(stickers[port.sticker_id]["clip"])
+    overridden = {override["id"] for override in record["stickers"]
+                  if "clip" in override and override["id"] in stickers and stickers[override["id"]]["placement"] == override["placement"]}
+    clips = [stickers[sticker_id]["clip"] for sticker_id in overridden]
+    if "clip" in record["scene"]:
+        clips.append(state["scene"]["clip"])
+    ends = [(clip["start"] + clip["duration"], fps) for clip in clips if clip["duration"] is not None]
+    if port is not None and port.sticker_id in overridden and port.clip["duration"] is None:
+        # Without a duration, the port Sticker ends with media that has frames, as in `_decide_timeline`.
+        port_end = port.end(rate)
+        if port_end is not None:
+            ends.append((port_end, fps))
+    return replace(layer, state=state, sources=sources, port=port), ends
 
 
 def _timing_video(bg, port: PortMedia | None):
@@ -1342,7 +1410,7 @@ def _bg_frames(bg, times, time_base, timing: bool) -> list[int | None]:
 
 
 def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None, *,
-                     upstream: PanoSceneValue | None = None) -> tuple[Fraction, list[Fraction], Fraction, tuple]:
+                     upstream: PanoSceneValue | None = None, overridden_ends=()) -> tuple[Fraction, list[Fraction], Fraction, tuple]:
     """(a) Timeline: the Timeline fps as a fraction, each output frame's time in seconds, the time base those times
     are rounded to (0: exact), and per output frame the bg_media frame to draw and, for each layer (those of
     `upstream`, then `state` with its `port` and `scene`), the Timeline frame to evaluate, its port media frame, and
@@ -1354,7 +1422,9 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     Scene on the `scene` input, ADR 0029), they follow the upstream Scene's: its fps and times, continued at its fps
     when this state is longer. The length is then the longer of the upstream's and this state's own, or the state's
     `timeline.length` when it has one. Only this node's own `bg_media` counts for its own length; an upstream
-    background is already in the upstream's.
+    background is already in the upstream's. Without the `timeline.length`, the Clip ranges this state overrides in
+    the upstream layers (`overridden_ends`, from `_override_layers`) count too; the others are already in the
+    upstream's length. `upstream` holds the layers with the overrides applied.
     """
     stored_fps = state["timeline"]["fps"]
     if upstream is None:
@@ -1401,7 +1471,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         else:
             length = 1
         if upstream is not None:
-            length = max(length, len(upstream.frames))
+            length = max([length, len(upstream.frames), *(math.floor(end * fps / layer_fps + 0.5) for end, layer_fps in overridden_ends)])
 
     times = _output_times(given, rate, length)
     layers = [] if upstream is None else [(layer.state, layer.port, _scene_content(layer.scene)) for layer in upstream.layers]
@@ -1614,7 +1684,9 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     editors. Also returns the opened bg_media and the port Sticker the state stored before (None without one).
     A source that cannot be read adds to `warnings`.
 
-    A Scene on the `scene` input (ADR 0029) puts its layers under this state's, and sets the Timeline fps.
+    A Scene on the `scene` input (ADR 0029) puts its layers under this state's, with the state's overrides of
+    them (`upstream`, ADR 0030) applied (`_override_layers`), and sets the Timeline fps. The editor `ui` shows the
+    upstream layers as they came, without these overrides.
     Its background, when it has one, is used in place of `bg_media`, `coverage`, and `bg_color`, with a warning
     when `bg_media` is connected too."""
     upstream = scene if isinstance(scene, PanoSceneValue) else None
@@ -1633,7 +1705,12 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
         coverage = normalize_coverage(coverage)
         bg_rgb = tuple(_hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(bg_color)).tolist())
     bg = _open_media(bg_media, "bg_media")
-    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(scene), upstream=upstream)
+    # The upstream with this state's overrides applied (ADR 0030), which is drawn and passed on.
+    applied, overridden_ends = upstream, []
+    if upstream is not None:
+        layers, overridden_ends = _override_layers(upstream, state["upstream"], warnings)
+        applied = replace(upstream, layers=layers)
+    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(scene), upstream=applied, overridden_ends=overridden_ends)
     fps = float(rate)
     # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
     layer_ui = {}
@@ -1662,7 +1739,7 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
         media_ui["pano_timeline_fps"] = [fps]
         media_ui["pano_timeline_frames"] = [len(frames)]
     layer = SceneLayer(state, sources, port, scene, layer_ui)
-    layers = (layer,) if upstream is None else (*upstream.layers, layer)
+    layers = (layer,) if upstream is None else (*applied.layers, layer)
     built = PanoSceneValue(layers, bg_media, coverage, bg_rgb, rate, tuple(times), time_base, frames, bg_ui, media_ui)
     return built, bg, stored_port
 
