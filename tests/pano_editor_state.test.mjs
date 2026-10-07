@@ -9,8 +9,10 @@ import {
   duplicateSceneSticker,
   editorActive,
   editorStateText,
+  editorStateWrite,
   makePanoEditorHistorySnapshot,
   newStudioCamera,
+  newSceneId,
   newWorldSceneSticker,
   normalizeCoverageValue,
   parsePanoEditorState,
@@ -451,6 +453,55 @@ test("opening and closing the editor leaves an unedited state_json text alone", 
     const text = editorStateText(node, parseSceneEditorState(current, options));
     assert.equal(sameEditorStateText(node, text, current), true, JSON.stringify(current.slice(0, 20)));
   }
+});
+
+// ADR 0030: Panorama Studio's state gets its Scene id when it is written, and keeps it after.
+test("a written Studio state gets a Scene id once and keeps it; an unedited one is not written for it", () => {
+  const node = { __panoSceneStateV2: true };
+  const options = { coverage: 360, backgroundColor: "#00ff00", active: {} };
+  for (const current of ["", JSON.stringify(loadSceneState(null))]) {
+    const state = parseSceneEditorState(current, options);
+    assert.equal(editorStateWrite(node, state, current), null);
+    assert.equal(editorStateWrite(node, state, current, { rebased: true }), null);
+    assert.equal(state.id, null);
+  }
+  const state = parseSceneEditorState("", options);
+  setTimelineFps(state, 30);
+  const text = editorStateWrite(node, state, "");
+  const { id } = JSON.parse(text);
+  assert.match(id, /^[A-Za-z0-9_-]{16}$/);
+  assert.equal(state.id, id);
+  assert.equal(loadSceneState(text).timeline.fps, 30);
+  // Written again, the same state is the same text; an edit keeps the id.
+  assert.equal(editorStateWrite(node, parseSceneEditorState(text, options), text), null);
+  setTimelineFps(state, 60);
+  assert.equal(JSON.parse(editorStateWrite(node, state, text)).id, id);
+  // A saved id is kept as it is.
+  const saved = JSON.stringify({ ...loadSceneState(null), id: "kept" });
+  const edited = parseSceneEditorState(saved, options);
+  setTimelineFps(edited, 12);
+  assert.equal(JSON.parse(editorStateWrite(node, edited, saved)).id, "kept");
+});
+
+test("an undo to a step from before the Scene id was given keeps the id", () => {
+  const before = JSON.stringify(loadSceneState(null));
+  const current = { ...loadSceneState(null), id: "given" };
+  assert.equal(restoredHistoryState(current, before).state.id, "given");
+  assert.equal(restoredHistoryState({ ...current, id: null }, before).state.id, null);
+});
+
+test("the legacy nodes' state never gets a Scene id", () => {
+  const state = { version: 1, stickers: [] };
+  const text = editorStateWrite({}, state, "");
+  assert.equal(text, JSON.stringify({ version: 1, stickers: [] }));
+  assert.equal("id" in state, false);
+  assert.equal(editorStateWrite({}, state, text), null);
+});
+
+test("Scene ids are random, URL-safe and 16 characters", () => {
+  const ids = new Set(Array.from({ length: 200 }, newSceneId));
+  assert.equal(ids.size, 200);
+  for (const id of ids) assert.match(id, /^[A-Za-z0-9_-]{16}$/);
 });
 
 // A v2 state saved before the Camera had a projection reads as a Camera that shoots in perspective;

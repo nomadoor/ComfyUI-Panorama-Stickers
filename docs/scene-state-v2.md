@@ -63,7 +63,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | フィールド | 型 | 既定値 | 正規化 |
 |---|---|---|---|
 | `version` | `2` | — | 下記「版の判定」 |
-| `id` | 文字列 または `null` | `null` | この状態の Scene を表す id。下流の Studio は上書き（`upstream`）をこの id ごとに記録する（ADR 0030）。空でない文字列のほかは `null`。エディタとノード上の UI が、書くときに無ければ振る（ADR 0030 の T3。振る関数は `pano_scene_state.js` の `ensureSceneId`）。Python は振らない |
+| `id` | 文字列 または `null` | `null` | この状態の Scene を表す id。下流の Studio は上書き（`upstream`）をこの id ごとに記録する（ADR 0030）。空でない文字列のほかは `null`。下記「Scene の id」。Python は振らない |
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
 | `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（#53） |
 | `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
@@ -364,6 +364,16 @@ rebaseSceneState(state, fps) // -> object
 - `fps` は 1〜1000 に寄せてから使う（例：`1e308` は 1000 にする）。長さも正規化で 10,000,000 以下に寄せる。
 - `fps` が正の有限の数値でなければエラーにする（Python は `ValueError`、JS は `Error`）。文面は `Cannot rebase state_json to fps <値>; fps must be a positive number.` で、`<値>` の書き方は実装ごとに違う（Python は `repr`、JS は `JSON.stringify`）。
 
+## Scene の id
+
+`id` は Panorama Studio の Scene を表す。下流の Studio は上流の層への上書き（下記 `upstream`）を、層の状態の `id` ごとに記録する（ADR 0030）。
+
+- 振るのはエディタとノード上の UI が `state_json` を書くとき（`pano_editor_state.js` の `editorStateWrite`。エディタの `commitState` と、ノード上の UI の書き込み（`port` の Sticker の同期を含む））だけで、`id` が無ければ `newSceneId` で振る。`crypto.getRandomValues` による 16 文字の URL で使える文字（`A-Z`・`a-z`・`0-9`・`-`・`_`）。振った `id` は作業状態に残し、後の書き込みでも同じ `id` を書く。Undo で `id` を振る前の段に戻っても `id` は保つ（`restoredHistoryState`）。
+- 書くテキストが変わるときだけ振る。開いて閉じただけ（テキストが変わらないとき）は、`id` のためだけに書かない（「保存するテキスト」と同じく、ノードのキャッシュを外さないため）。そのため、状態を一度も書いていないノードには `id` が無い。下流は `id` の無い層を、上書きできない層（引き継ぐだけ）として扱う（ADR 0030 の T7・T8）。
+- 旧ノード（状態 v1）には振らない。
+- ComfyUI はコピー・貼り付けや複製でウィジェットの値を写すので、貼り付けた Studio は元と同じ `id` を持つ。別々のチェーンにあれば問題ない。一つのチェーンに同じ `id` が二度あるときは、ノードが最も下流の層に当てて警告する（ADR 0030 の T4）。エディタも、最も下流の層にその `id` を使い、ほかの層は番号で区別する（`docs/render-contract.md` の「上流の Scene（#88）」）。貼り付けは検出しない。
+- Python（ノード）は振らない。`scene` 出力の層の状態と、実行結果の `pano_upstream_layers` の各層の `state` は `id` をそのまま持つ（`docs/render-contract.md`）。
+
 ## 上流の上書き（`upstream`）
 
 ADR 0030 により、Panorama Studio は `scene` 入力で受けた上流の Scene の要素を編集できる。下流の状態には、上流の要素への変更だけを `upstream` に保存する。上流の各層（`docs/render-contract.md` の「層」）の状態の `id` ごとに記録を一つ持つ。
@@ -518,3 +528,4 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 - #92 の結果（ADR 0029）：状態 v2 の Stickers・Cutout（`PanoramaStickersNode`・`PanoramaCutoutNode`）は main に出ないまま #92 で登録から外し、置き換え（NodeReplace）は作らない。状態の形は変えていない。Cutout だけが使っていた既定の Camera（`default_camera` / `defaultCamera`、`nodes.py` の `_cutout_state`、`parseSceneEditorState` の `camera` と `scene` の指定、`cutout_state`、`noteCameraEdit`）も消した。上の #70〜#88 の記録に出てくる二つのノードの扱いは、その時点のものである。
 - タイムラインの上限：`timeline.fps` を 1〜1000、`timeline.length` を 10,000,000 以下に、Clip range の `start`・`in`・`duration` と Keyframe の `frame` を ±10,000,000 以内（`TIMELINE_FRAME_MAX`）に寄せるようにした（読み込みと `rebase_scene_state`・`rebaseSceneState`）。fps の上限は高速度撮影の VIDEO（240 fps を超えるもの）を寄せずに扱える値にした。frame と長さの上限は同じ値（1000 fps で約 2.8 時間）にして、高い fps に再基準化しても長さの上書きが黙って縮まないようにしてある。極端な値（例：`1e308`）でエディタのタイムラインの目盛りのループや再基準化が止まらなくなるのを防ぐためである。定数は `scene_state.py` と `pano_scene_state.js` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` で、Python と JS で同じ値にする（フィクスチャ `v2_timeline_limits`）。範囲内の状態は変わらない。
 - ADR 0030 の T1 の結果：状態 v2 に `id`・`next_sticker_id`・`upstream`、`port` の Sticker に `handoff_overrides` を加えた（Python と JS で同じ結果、フィクスチャ `v2_upstream`）。`version` は 2 のまま。これらの項目のうち `next_sticker_id` は Sticker を加えるときに読むが、`id`・`upstream`・`handoff_overrides` を読むのは後続の ticket（`id` を振るのは T3、上書きを当てるのは T2・T4、`handoff_overrides` は T5）で、それまでは読み書きで保つだけである。上の #75 の記録の「id は未使用の最小の `sticker_N`」は、`next_sticker_id` による採番に変わった。エディタとノード上の UI で新しく加える Sticker の `id` も、`st_<乱数>` から `sticker_<n>` に変わった。既存の状態の保存するテキストは変わらない（「`state_json` v2」の「保存するテキスト」）。
+- ADR 0030 の T3 の結果：エディタとノード上の UI は、`state_json` を書くときに Panorama Studio の状態に `id` が無ければ振る（上記「Scene の id」）。T1 の `ensureSceneId` は使わず、`pano_editor_state.js` の `editorStateWrite` に置き換えた（作業状態に `id` を残すため）。ノードの `scene` 出力は自分の層の `upstream` を空にし、`id` を保つ。エディタが描く上流の要素の id と 3D のスロットは、層の番号の代わりに層の `id`（無ければ番号）で区別する。

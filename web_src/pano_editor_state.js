@@ -160,6 +160,8 @@ export function restoredHistoryState(current, snapshot) {
   if (!paintingChanged) state.painting_layer = current.painting_layer;
   // The Sticker id counter only goes up, so an undone Sticker's id is not given out again.
   if (current.next_sticker_id > state.next_sticker_id) state.next_sticker_id = current.next_sticker_id;
+  // The Scene id stays once given, though a step from before it was given has none.
+  if (current.id && !state.id) state.id = current.id;
   return { state, paintingChanged };
 }
 
@@ -489,6 +491,25 @@ export function setEditorActive(node, active) {
 export function editorStateText(node, state) {
   if (!node?.__panoSceneStateV2) return JSON.stringify(state);
   return sceneStateText(loadSceneState(state));
+}
+
+const SCENE_ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+// A new Scene id (ADR 0030): 16 random URL-safe characters.
+export function newSceneId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => SCENE_ID_CHARS[byte & 63]).join("");
+}
+
+// The `state_json` text to write for the editor's working state over the widget's `current` text, or null
+// when `current` already means it (sameEditorStateText). Panorama Studio's state without an id gets one
+// (newSceneId) on `state` here, only when the text changes anyway: opening and closing without an edit
+// still writes nothing, and a node whose state was never written has no id. Later writes keep the id.
+export function editorStateWrite(node, state, current, options) {
+  const text = editorStateText(node, state);
+  if (sameEditorStateText(node, text, current, options)) return null;
+  if (!node?.__panoSceneStateV2 || state.id) return text;
+  state.id = newSceneId();
+  return editorStateText(node, state);
 }
 
 // Whether the widget's `current` text already means `text`. ComfyUI's execution cache compares the

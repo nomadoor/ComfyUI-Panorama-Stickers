@@ -1619,8 +1619,9 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
 
 def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
     """The `ui` that shows the layers of the Scene on the `scene` input in the editor, apart from the node's own
-    media: `pano_upstream_layers` with each layer's state and media `ui` from the farthest upstream, and the
-    upstream background (`bg_ui`, None when it has none) under `pano_upstream_` keys with its coverage and color."""
+    media: `pano_upstream_layers` with each layer's state (with its Scene `id`, ADR 0030) and media `ui` from the
+    farthest upstream, and the upstream background (`bg_ui`, None when it has none) under `pano_upstream_` keys
+    with its coverage and color."""
     ui = {"pano_upstream_layers": [{"state": layer.state, "ui": layer.media_ui} for layer in upstream.layers]}
     if bg_ui is not None:
         ui.update({key.replace("pano_", "pano_upstream_", 1): value for key, value in bg_ui.items()})
@@ -1630,9 +1631,11 @@ def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
 
 
 def _scene_output(built: PanoSceneValue) -> PanoSceneValue:
-    """The `scene` output of Studio: `built` with its own layer's state without the Camera (ADR 0029)."""
+    """The `scene` output of Studio: `built` with its own layer's state without the Camera (ADR 0029) and without
+    its overrides of the upstream layers (`upstream`), which the layers before it already have applied: downstream
+    receives the applied form (ADR 0030). The state keeps its `id`, which downstream keys its own overrides to."""
     layer = built.layers[-1]
-    return replace(built, layers=(*built.layers[:-1], replace(layer, state={**layer.state, "camera": None})))
+    return replace(built, layers=(*built.layers[:-1], replace(layer, state={**layer.state, "camera": None, "upstream": []})))
 
 
 def _port_pose_ui(state: dict, port: PortMedia | None, stored_port: dict | None) -> dict:

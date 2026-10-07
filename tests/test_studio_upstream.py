@@ -194,6 +194,22 @@ def test_the_ui_keeps_the_upstream_media_apart_from_the_own():
     json.dumps(ui)
 
 
+def test_the_upstream_layers_carry_their_scene_id_and_not_their_overrides():
+    a = _studio({"id": "scene_a"}).result[4]
+    override = {"layer": "scene_a", "fps": 24.0, "deleted": ["sticker_9"]}
+    b = _studio({"id": "scene_b", "upstream": [override]}, scene=a).result[4]
+
+    output = _studio({"id": "scene_c"}, scene=b)
+
+    # ADR 0030: the editor keys the upstream layers by their Scene id; a state never written has none.
+    assert [layer["state"]["id"] for layer in output.ui["pano_upstream_layers"]] == ["scene_a", "scene_b"]
+    assert [layer.state["id"] for layer in output.result[4].layers] == ["scene_a", "scene_b", "scene_c"]
+    assert _studio(scene=b).result[4].layers[-1].state["id"] is None
+    # Downstream receives the applied form: the `scene` output leaves out the own overrides.
+    assert b.layers[-1].state["upstream"] == []
+    json.dumps(output.ui)
+
+
 def test_preview_passes_a_scene_of_several_layers_through():
     a = _studio({"stickers": [_sky_port()]}, sticker=_solid(RED)).result[4]
     b = _studio(scene=a).result[4]

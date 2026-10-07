@@ -323,7 +323,7 @@ Panorama Studio の `scene` 出力は、`nodes.py` の `PanoSceneValue`（frozen
 
 | フィールド | 内容 |
 |---|---|
-| `state` | `load_scene_state(state_json)` の戻り値。`sticker` の入力があり、状態に `port` の Sticker がないときは、描いたときと同じく `port` の Sticker を加えたもの。Studio の `scene` 出力では `camera` を `null` にする（ADR 0029） |
+| `state` | `load_scene_state(state_json)` の戻り値。`sticker` の入力があり、状態に `port` の Sticker がないときは、描いたときと同じく `port` の Sticker を加えたもの。Studio の `scene` 出力では `camera` を `null`、`upstream` を空にする（ADR 0029、ADR 0030）。`id`（Scene の id）は保つ |
 | `sources` | `SceneSources`。`file` の Source は読み込み済み。`port` の Sticker の Source は `port` の最初のフレームを持つテンプレートで、`port` があるときは (b) と同じく、フレームごとに `port.frames()` と `frames` の `port` の番号（`port.index_at` の結果）で取り出した素材に差し替えてから `render_frame` に渡す |
 | `port` | `sticker` の素材の `PortMedia`（`sticker_media.py`）、または `None`。開いた stream ではなく VIDEO の入力そのものを持ち、`frames()` を呼ぶたびに開き直すので、Preview と下流の Studio など複数のノードが同じ `PANO_SCENE` を使っても読み取り位置を取り合わない |
 | `scene` | `scene` の入力の 3D の素材（SPLAT・MESH・`MOGE_GEOMETRY`、または `None`。`scene` に上流の Scene をつないだ層では `None`）。3D ファイルは `_read_scene_file` で読んだ SPLAT・MESH にして持つ（どちらも読まないファイルはエラーになり、`PANO_SCENE` は出ない）。描く側は `_scene_content` で `SceneContent` にし、フレームごとに `frames` の `scene` の番号を `scene_index` として `render_frame` に渡す（(b) と同じ） |
@@ -357,7 +357,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 
   - ERP の出力は画素の細かさが `W` の 360° の ERP と同じになる。`auto` は旧 Stickers の `auto` と同じ大きさになる。ただし 360 では高さを `W ÷ 2` にそろえ、`bg_media` の高さは引き継がない（2:1 でない背景では旧 Stickers と違う）。`coverage` 180 の `auto` は `bg_media` と同じ大きさになる（固定の値では、旧 Stickers は `coverage` 180 で選んだ値を出力の幅にするので、Studio はその半分の幅になる）。ERP には上限を設けない（`auto` は大きな `bg_media` ならそのまま大きくなる）。
   - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV が動いても大きさは変わらない。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
-- `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` だけを `null` にする（撮影する世界で、Camera を含まない。`_scene_output`）。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
+- `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` を `null` にする（撮影する世界で、Camera を含まない。`_scene_output`）。自分の層の `state` の `upstream`（上流の層への上書き）も空にする。下流は上書きを当てた後の姿を受け取るためである（ADR 0030。上書きを上流の層に当てるのは T4）。`id` は保ち、下流はこの `id` ごとに上書きを記録する。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
 - `sticker_state` は `projection` が `perspective` のときだけ、`_camera_sticker_state` が作る v2（`docs/scene-state-v2.md`）。`fps` は状態の `timeline.fps`、`camera` は Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる。#65）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。Camera が無いとき（隠したときを含む）と `erp` のときは空文字列。
 - 隠した `scene`（`scene.visible`）と Sticker は評価関数の `active` が偽になるので描かない。隠したペイント（`painting_visible`）は `_resolve_sources` が空のペイントを渡すので、色にも MASK にも出ない。上流の Scene の層でも同じ。
 - 実行結果の `ui` は上記「Scene の組み立てと撮影の入口」の表のキー（`pano_input_images` などの素材、`pano_sticker_input_pose`、`pano_sticker_warnings`）。上流の Scene を受けたときのキーは下記。エディタは #89 で結んだ（`docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」）。ノード上の表示は #91 で作り直した。上流の Scene を受けたときのエディタの表示は #90（`docs/threejs-spark-integration.md` の「上流の Scene の表示（#90）」）。
@@ -382,7 +382,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
   |---|---|
   | `pano_scene_files` / `pano_scene_meta`、`pano_sticker_input_*`、`pano_sticker_files` / `pano_sticker_meta`、`pano_sticker_input_pose` | 自分の層の素材と姿勢。上流がないときと同じキー |
   | `pano_input_images` / `pano_input_videos` / `pano_input_video_meta` | 自分の `bg_media` を使うとき（上流が背景を持たないとき）だけ出す |
-  | `pano_upstream_layers` | 上流の層のリスト（最も上流から）。各要素は `{"state": その層の状態 v2（camera は null）, "ui": その層の素材の ui}`。`ui` のキーは自分の層と同じ（`pano_sticker_input_images`・`pano_sticker_input_videos`・`pano_sticker_input_video_meta`・`pano_sticker_input_frames`・`pano_sticker_files`・`pano_sticker_meta`・`pano_scene_files`・`pano_scene_meta` のうち、その層が持つもの）で、背景は入らない。ファイルは上流のノードが書いたもので、書き直さない |
+  | `pano_upstream_layers` | 上流の層のリスト（最も上流から）。各要素は `{"state": その層の状態 v2（camera は null、upstream は空）, "ui": その層の素材の ui}`。`state.id` はその層の Scene の id（ADR 0030）で、状態が一度も書かれていない層では `null`。`ui` のキーは自分の層と同じ（`pano_sticker_input_images`・`pano_sticker_input_videos`・`pano_sticker_input_video_meta`・`pano_sticker_input_frames`・`pano_sticker_files`・`pano_sticker_meta`・`pano_scene_files`・`pano_scene_meta` のうち、その層が持つもの）で、背景は入らない。ファイルは上流のノードが書いたもので、書き直さない |
   | `pano_upstream_input_images` / `pano_upstream_input_videos` / `pano_upstream_input_video_meta` | 上流が背景を持つときの、その背景（`pano_input_*` と同じ形）。このとき自分の `pano_input_*` は出さない |
   | `pano_upstream_coverage` | 上流が背景を持つときの、その `coverage`（`[360]` か `[180]`） |
   | `pano_upstream_bg_color` | 上流が背景を持つときの、その `bg_color`（`[[r, g, b]]`、0〜1） |
@@ -390,6 +390,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
   | `pano_timeline_frames` | 上流があるときは常に出す。出力のフレーム数（上流と自分の長いほう、または自分の `timeline.length`） |
 
   - エディタは上流の要素を見せるが、選べず動かせない。上流の要素は自分のタイムラインに出さない（ADR 0029）。上流の層の Keyframe はその層の `timeline.fps` で記録されているので、表示する時刻 `t` 秒ではその層の `t × timeline.fps` で評価する（再基準化しない）。
+  - エディタが描く上流の要素の id は `upstream:<層のキー>:<要素の id>`、3D の内容のスロットは `<層のキー>:scene`・`<層のキー>:sticker` とする。層のキーは、その層の `state.id`、`id` が無ければ `#` を付けた層の番号（`#0` など。振る id は `#` を含まない。`pano_upstream.js` の `upstreamLayerKeys`）。上流で層が増減しても、キーは層についていく。同じ `id` の層が二つ以上あるとき（Studio を複製したとき）は、最も下流の層がその `id` をキーにし（下流の上書きを当てる層と同じ。ADR 0030 の T4）、ほかは `#` 付きの番号に戻る。
 
 ## Preview ノード（`PanoramaPreviewNode`）
 

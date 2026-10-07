@@ -13,6 +13,7 @@ import {
   UPSTREAM_BACKGROUND_WARNING,
   layerUiList,
   upstreamFrame,
+  upstreamLayerKeys,
   upstreamLayersOf,
   upstreamLayerView,
   upstreamPaintEntries,
@@ -218,9 +219,10 @@ export function createUpstream(deps) {
   function upstreamViewInput() {
     const entries = upstreamEntries() ?? [];
     const input = { sky: [], stickers: [], items: [] };
+    const keys = upstreamLayerKeys(entries.map((entry) => entry.layer));
     entries.forEach((entry, index) => {
       const frame = upstreamFrame(editor.frame, state.timeline.fps, entry.layer.sceneState.timeline.fps);
-      const view = upstreamLayerView(entry.layer, index, frame, {
+      const view = upstreamLayerView(entry.layer, keys[index], frame, {
         media: (sticker) => stickerMedia(entry, sticker, frame),
         paintLayers: paintLayers(entry),
         source: mediaSource,

@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HIDDEN_PREVIEW_OPACITY } from "../web_src/pano_editor_view.js";
+import { readEditorSource } from "./editor_source.mjs";
 import {
   PANO_SCENE_TYPE,
   UPSTREAM_OPACITY,
   upstreamBackgroundOf,
   upstreamFrame,
+  upstreamLayerKeys,
   upstreamLayersOf,
   upstreamLayerView,
   upstreamPaintEntries,
@@ -104,6 +106,31 @@ test("upstream 3D content is asked for per layer and kind, dimmed, and the Stick
   assert.deepEqual(hidden.items[0].urls, ["/view?filename=a.ply", "/view?filename=b.ply"]);
   // Without its files a layer asks for nothing, so what it loaded before is let go.
   assert.deepEqual(upstreamLayerView(layerOf({}), 0, 0, { media: () => null, paintLayers: [], source }).items, []);
+});
+
+// ADR 0030: what is drawn of an upstream layer is keyed by its Scene id, so a key stays with the layer when
+// layers are added or removed upstream; a layer whose state was never written has no id and keeps its index.
+test("upstream layers are keyed by their Scene id, else their index, and a repeated id by the nearest downstream", () => {
+  const layers = upstreamLayersOf([
+    { state: { version: 2, id: "aaaa" } },
+    { state: { version: 2 } },
+    { state: { version: 2, id: "bbbb" } },
+    { state: { version: 2, id: "aaaa" } },
+  ]);
+  assert.deepEqual(upstreamLayerKeys(layers), ["#0", "#1", "bbbb", "aaaa"]);
+  assert.deepEqual(upstreamLayerKeys([]), []);
+
+  const ui = { pano_scene_files: [{ filename: "a.ply" }], pano_scene_meta: [{ kind: "splat" }] };
+  const layer = layerOf({ id: "Scene_id-1", stickers: [sky("s1"), world("w1")] }, ui);
+  const [key] = upstreamLayerKeys([layer]);
+  const view = upstreamLayerView(layer, key, 0, { media: () => ({ media: image, revision: 1 }), paintLayers: [], source });
+  assert.deepEqual(view.sky.map((item) => item.id), ["upstream:Scene_id-1:s1"]);
+  assert.deepEqual(view.stickers.map((item) => item.id), ["upstream:Scene_id-1:w1"]);
+  assert.deepEqual(view.items.map((item) => item.slot), ["Scene_id-1:scene"]);
+  // The editor draws each layer under its key.
+  const editor = readEditorSource();
+  assert.match(editor, /const keys = upstreamLayerKeys\(entries\.map\(\(entry\) => entry\.layer\)\);/);
+  assert.match(editor, /upstreamLayerView\(entry\.layer, keys\[index\], frame,/);
 });
 
 test("the editor waits for a run only while a Scene is linked and no upstream layers came with the result", () => {
