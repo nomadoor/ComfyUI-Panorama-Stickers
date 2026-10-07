@@ -231,7 +231,7 @@ def test_warnings_of_a_3d_sticker_with_sticker_state_and_auto_come_in_order():
 
     ui = _studio(sticker=blobs(blob((0.0, 0.0, -2.0), (1.0, 0.0, 0.0), size=0.3)), sticker_state=sticker_state).ui
 
-    assert ui["pano_sticker_warnings"] == ["sticker_state places only sky Stickers; the 3D Sticker is placed 2 ahead of the origin.", AUTO_WARNING]
+    assert ui["pano_sticker_warnings"] == ["sticker_state places only 2D Stickers; the 3D Sticker is placed 2 ahead of the origin.", AUTO_WARNING]
 
 
 # --- The output size (ADR 0029).
