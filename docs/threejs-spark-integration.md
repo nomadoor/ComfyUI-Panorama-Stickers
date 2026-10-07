@@ -197,16 +197,18 @@ Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエデ
 
 ### 上流の Scene の表示（#90）
 
-`scene` に別の Panorama Studio の `scene` 出力をつないだとき、エディタは上流の要素を見せるが、選べず、動かせず、消せず、タイムラインにも出さない（ADR 0029）。上流の要素は自分の状態に入れず、実行結果の `pano_upstream_layers`（`docs/render-contract.md` の「上流の Scene（#88）」）から毎フレーム描く。
+`scene` に別の Panorama Studio の `scene` 出力をつないだとき、エディタは上流の要素を、自分の状態の上書き（`upstream`、ADR 0030）を当てた姿で、出力と同じに描く。選択・編集・タイムラインの行は ADR 0030 の T8〜T10 で足すもので、今は選べず、動かせず、消せず、タイムラインにも出さない。上流の要素は自分の状態の `stickers` に入れず、実行結果の `pano_upstream_layers`（`docs/render-contract.md` の「上流の Scene（#88）」）から作った作業コピーを毎フレーム描く。
 
-- 読む：`editor/upstream.js`。`scene` の入力が実行結果を作ったときのままのとき（`isNodeOutputMediaCurrent(node, "scene")`）だけ読む。各層の状態は `pano_upstream.js` の `upstreamLayersOf` で読み込み、自分の状態とは別に持つ。
-- 時刻：各層は、再生位置の時刻（秒）をその層の `timeline.fps` の Timeline frame にして評価する（`upstreamFrame`。再基準化しない）。
-- 描くもの（`upstreamLayerView`）：`sky` の Sticker とペイント（ストロークのグループ、ラスタ、マスク）を自分の Sky の下に、その層の `z_index` の順で（`upstreamPaintEntries`）。`world` の Sticker の板と、`scene`・3D の `port` の Sticker の 3D の項目は World に。隠した要素は描かない（ノードも描かない）。
+- 読む：`editor/upstream.js`。`scene` の入力が実行結果を作ったときのままのとき（`isNodeOutputMediaCurrent(node, "scene")`）だけ読む。各層の状態は `pano_upstream.js` の `upstreamLayersOf` で読み込み、上書きを当てる前の姿として、自分の状態とは別に持つ。
+- 作業コピー（`upstreamWorkingLayers`）：層ごとに、その層の `state.id` と同じ `layer` を持つ自分の `upstream` の記録を `applyUpstreamOverrides` で当て（同じ `id` の層が二つ以上あれば、最も下流の層にだけ。ノードの `_override_layers` と同じ）、複製し（`structuredClone`。上流の層とも記録とも共有しない。ただし上書きで変わらない `painting` は複製せず、上流の層と共有する）、層の `timeline.fps` が自分のものと違えば `rebaseSceneState` で自分の fps に再基準化する。各 Sticker は `origin`（`{ layer: 層のキー, id: 上流の要素の id }`）を持つ。`origin` はエディタだけのもので、`state_json` に書き戻すもの（T8 の上書きの記録）には入れない。`id` の無い層（状態が一度も書かれていない）は上書きを受けない。作業コピーは、新しい実行結果を読んだとき、自分の Timeline fps が変わったとき、Undo・Redo で状態を戻したとき（状態 v2 のとき、`history.js` の `restoreHistory` から `rebuildUpstreamWorking`。上流の層が無ければ何もしない）に作り直す。作業コピーを作っても `state_json` は書かない（開いて閉じただけなら差分は出ない）。
+- 時刻：作業コピーは自分の fps なので、各層は自分の再生位置のフレーム（`editor.frame`）でそのまま評価する。`port` の素材も、作業コピーの Clip range と自分の fps で時刻を出す（`portMediaTime`）ので、層の fps が違っても素材の時刻（秒）は層のものと同じになる。再基準化で Keyframe と Clip range は自分の fps の整数フレームに丸まるので、fps が違う層は、層の fps のまま評価するノードの出力と最大で自分の半フレームずれうる。
+- 描くもの（`upstreamLayerView`）：`sky` の Sticker とペイント（ストロークのグループ、ラスタ、マスク）を自分の Sky の下に、その層の `z_index` の順で（`upstreamPaintEntries`）。`world` の Sticker の板と、`scene`・3D の `port` の Sticker の 3D の項目は World に。隠した要素・消した要素は描かない（ノードも描かない）。上書きで隠した `scene`（`scene.visible`）や Clip range の外では `scene` の項目を描かず、消した 3D の `port` の Sticker は項目を求めない（読み込んだ項目も手放す）。3D の項目のスロットは層のキーごと（`<層のキー>:scene`・`<層のキー>:sticker`）のまま。
+  - 既知の課題（T10 で扱う）：3D の `port` の Sticker を消すと、そのスロットの URL が無くなるので読み込んだ項目を手放す。消すのを Undo すると、項目を読み込み直す。
   - 素材：ファイルの Source は自分の Sticker と同じ URL の画像。`port` の Sticker は、その層の `ui` の最初のフレーム・MP4・RGBA の PNG を、自分の `port` と同じ仕組み（`createVideoFollower`・`createFrameSequence`）で再生位置に合わせる。ペイントは層ごとのペイントエンジンで、自分のペイントと同じ大きさ（`getDesiredPaintTargetDescriptor`）に描く。どれも縮小しない。
   - 3D の項目は、層と種類ごとの読み込みの組（`pano_three_view.js` の `upstreamItems`）で読み、SPLAT は自分のものと同じくビューごとの Spark（`pano_spark_views.js`）で描く。
 - 画像は、結果が変わったときに新しい層が使わないものを手放す。
-- 見分け：上流の要素は `UPSTREAM_OPACITY`（0.5）を掛けた不透明度で描く。
-- 選べない：上流の要素は自分の状態・タイムライン・選択の一覧に無いので、2D の当たり判定（`hit_test.js`）にも Delete にも掛からない。World の板と 3D の項目は、GPU の当たり判定の対象（`pickable`・`pickBoxes`）に入れないので、当たり判定の描画（`pickPass`）で描かれない。そのため、6DoF の視点の回転の中心や、World の画像を置く位置にも使われない。
+- 不透明度：上流の要素は、出力と同じく自分の不透明度のまま描く（以前の `UPSTREAM_OPACITY` の 0.5 は除いた）。上流から来たことを選択時やタイムラインで示すのは T8・T9 で足す。
+- 選べない（T8 まで）：上流の要素は自分の状態・タイムライン・選択の一覧に無いので、2D の当たり判定（`hit_test.js`）にも Delete にも掛からない。World の板と 3D の項目は、GPU の当たり判定の対象（`pickable`・`pickBoxes`）に入れないので、当たり判定の描画（`pickPass`）で描かれない。そのため、6DoF の視点の回転の中心や、World の画像を置く位置にも使われない。
 - タイムライン：上流の Scene がつながっているとき、`scene` の行を出さない（自分の状態の `scene` は描画に使われない）。上流の要素の行も出さない。長さ（`timeline.length`）が無いときは、表示する範囲を実行結果の `pano_timeline_frames`（上流と自分の長いほう）まで広げ、上流の要素の動きの終わりまで再生位置を動かせるようにする（`upstreamSpanFrames`）。
 - 上流がつながっているか：リンクの型（`pano_preview_video.js` の `linkedInputType`。型が `*` か空のリンクは出どころの出力の型を見て、旧 Reroute ノードはさかのぼる）が `PANO_SCENE` か、今の実行結果に `pano_upstream_layers` があるとき（`upstreamLinked`）。
 - 実行前：リンクの型が `PANO_SCENE` と分かっているのに実行結果に上流の層が無いとき（実行前、またはつなぎ替えた後）、ステージの下の案内の欄（`PanoModal.vue` の `stageNotice`、文は `upstreamNotice`）に「Run the workflow to show the upstream scene.」と出す。失敗や警告があるときはそちらを出す。

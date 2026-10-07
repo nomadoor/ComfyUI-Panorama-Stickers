@@ -1,15 +1,13 @@
-// The upstream Scene (ADR 0029) as Panorama Studio's editor shows it: the layers of the Scene on the `scene`
-// input, from the node's result (`pano_upstream_layers`, docs/render-contract.md), drawn at the playhead apart
-// from the node's own state. They are shown, not edited: they never enter the state, the Timeline, the
-// selection or the picks.
+// The upstream Scene (ADR 0029, ADR 0030) as Panorama Studio's editor shows it: the layers of the Scene on the
+// `scene` input, from the node's result (`pano_upstream_layers`, docs/render-contract.md), with the node's own
+// overrides of them applied in working copies apart from the node's own state, and drawn at the playhead as the
+// node draws them. They never enter the node's Stickers, and nothing selects or picks them yet.
 import { normalizeCoverageValue } from "./pano_editor_state.js";
 import { skyLayers, worldStickerLayers } from "./pano_editor_view.js";
 import { evaluateSceneState } from "./pano_scene_eval.js";
-import { loadSceneState } from "./pano_scene_state.js";
+import { applyUpstreamOverrides } from "./pano_scene_inherit.js";
+import { loadSceneState, rebaseSceneState } from "./pano_scene_state.js";
 import { sceneFilesOf, sceneRequest, stickerContentRequest, stickerContentUrls } from "./pano_space.js";
-
-// Upstream elements draw this faintly over their own opacity, so they are told from the node's own.
-export const UPSTREAM_OPACITY = 0.5;
 
 // The type of the link that brings another Studio's `scene` output.
 export const PANO_SCENE_TYPE = "PANO_SCENE";
@@ -19,12 +17,6 @@ export function upstreamLayersOf(list) {
   return list
     .filter((entry) => entry && typeof entry === "object" && entry.state && typeof entry.state === "object")
     .map((entry) => ({ sceneState: loadSceneState(entry.state), ui: entry.ui && typeof entry.ui === "object" ? entry.ui : {} }));
-}
-
-// The Timeline frame of a layer at `layerFps` that shows at `frame` of the node's Timeline at `fps`: the same
-// time in seconds. The layer's state is not rebased; its frame may be fractional.
-export function upstreamFrame(frame, fps, layerFps) {
-  return frame * layerFps / fps;
 }
 
 // The background of the upstream Scene in a result, used in place of the node's own bg_media (ADR 0029): the
@@ -82,35 +74,57 @@ export function upstreamLayerKeys(layers) {
   ));
 }
 
-function dimmed(layer, key) {
-  return { ...layer, id: `upstream:${key}:${layer.id}`, opacity: layer.opacity * UPSTREAM_OPACITY };
+// The working copies of the upstream layers (from upstreamLayersOf) for an editor whose Timeline is at `fps`:
+// per layer its key (upstreamLayerKeys), its `ui`, and in `sceneState` its state with the record of `records`
+// (the node's own `upstream`) for its Scene id applied (applyUpstreamOverrides), rebased to `fps` when its own
+// differs, so it is drawn at the editor's frame. As the node does, a record applies to the nearest downstream of
+// the layers with its id, and a layer without an id has none. Each working Sticker has its `origin`: the layer's
+// key and the upstream element's id, which is the editor's own and must be left out of anything written back to
+// `state_json`. The copies share nothing with the layers or the records but the painting, which no override
+// changes.
+export function upstreamWorkingLayers(layers, records, fps) {
+  const keys = upstreamLayerKeys(layers);
+  return layers.map(({ sceneState, ui }, index) => {
+    const nearest = sceneState.id !== null && keys[index] === sceneState.id;
+    const record = nearest ? records.find((item) => item.layer === sceneState.id) ?? null : null;
+    const applied = applyUpstreamOverrides(sceneState, record);
+    const { painting } = applied;
+    const copy = { ...structuredClone({ ...applied, painting: null }), painting };
+    const working = copy.timeline.fps === fps ? copy : { ...rebaseSceneState(copy, fps), painting };
+    for (const sticker of working.stickers) sticker.origin = { layer: keys[index], id: sticker.id };
+    return { key: keys[index], sceneState: working, ui };
+  });
 }
 
-// What the views draw of the upstream layer with `key` (upstreamLayerKeys) at its Timeline `frame` (upstreamFrame): `sky`, its Sky
+function upstreamLayer(layer, key) {
+  return { ...layer, id: `upstream:${key}:${layer.id}` };
+}
+
+// What the views draw of the upstream layer with `key` (upstreamLayerKeys) at its Timeline `frame`: `sky`, its Sky
 // layers from back to front (skyLayers, with its paint layers `paintLayers`), `stickers`, its world Sticker
 // planes (worldStickerLayers), and `items`, its 3D content to load and draw ({ slot, urls, request, value,
 // opacity }: the `scene` item or the 3D port Sticker's, request as sceneRequest() makes it, null where none
 // shows, and value the evaluated transform its box moves by).
-// Ids are made apart from the node's own and from other layers', and everything is dimmed by
-// UPSTREAM_OPACITY. A hidden Sticker is not drawn, as the node does not draw it. media(sticker) is as
-// skyLayers'; source(entry) is the URL of a `ui` file entry.
+// Ids are made apart from the node's own and from other layers'. Everything is drawn as the node draws it, at
+// its own opacity: a hidden Sticker or `scene` is not drawn. media(sticker) is as skyLayers'; source(entry) is
+// the URL of a `ui` file entry.
 export function upstreamLayerView(layer, key, frame, { media, paintLayers, source }) {
   const { sceneState, ui } = layer;
   const evaluated = evaluateSceneState(sceneState, frame);
   const shown = (sticker) => (sticker.visible ? media(sticker) : null);
   const sky = skyLayers(sceneState, frame, { media: shown, zIndex: (sticker) => sticker.z_index, paintLayers, evaluated })
-    .map((item) => dimmed(item, key));
+    .map((item) => upstreamLayer(item, key));
   const stickers = worldStickerLayers(sceneState, frame, sceneState.stickers, { media: shown, evaluated })
-    .map((item) => dimmed(item, key));
+    .map((item) => upstreamLayer(item, key));
   const items = [];
   const sceneFiles = sceneFilesOf(layerUiList(ui, "pano_scene_files"), layerUiList(ui, "pano_scene_meta"), source);
   if (sceneFiles) {
-    items.push({ slot: `${key}:scene`, urls: sceneFiles.urls.filter(Boolean), request: sceneRequest(sceneFiles, evaluated.scene), value: evaluated.scene, opacity: UPSTREAM_OPACITY });
+    items.push({ slot: `${key}:scene`, urls: sceneFiles.urls.filter(Boolean), request: sceneRequest(sceneFiles, evaluated.scene), value: evaluated.scene, opacity: 1 });
   }
   const stickerFiles = sceneFilesOf(layerUiList(ui, "pano_sticker_files"), layerUiList(ui, "pano_sticker_meta"), source);
   if (stickerFiles) {
     const request = stickerContentRequest(stickerFiles, sceneState, evaluated);
-    items.push({ slot: `${key}:sticker`, urls: stickerContentUrls(stickerFiles, sceneState), request, value: request?.value ?? null, opacity: (request?.opacity ?? 1) * UPSTREAM_OPACITY });
+    items.push({ slot: `${key}:sticker`, urls: stickerContentUrls(stickerFiles, sceneState), request, value: request?.value ?? null, opacity: request?.opacity ?? 1 });
   }
   return { evaluated, sky, stickers, items };
 }

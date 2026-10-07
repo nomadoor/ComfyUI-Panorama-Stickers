@@ -89,7 +89,7 @@ export function createHistory(deps) {
 | `editor/ui_settings.js` | 77 | localStorage の設定（視点の反転、ノードごとのグリッド） |
 | `editor/video_thumbnail_cache.js` | 32 | VIDEO のサムネイルのキャッシュ（直近 12 本） |
 | `editor/media_session.js` | 752 | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
-| `editor/history.js` | 89 | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`） |
+| `editor/history.js` | 91 | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。戻した状態に合わせて上流の作業コピーを作り直させる（`rebuildUpstreamWorking`） |
 | `editor/items.js` | 667 | Sticker、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
 | `editor/selection.js` | 454 | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
 | `editor/projection.js` | 346 | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |
@@ -99,7 +99,7 @@ export function createHistory(deps) {
 | `editor/external_stickers.js` | 242 | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
 | `editor/space.js` | 336 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作（キーの移動 `stepKeyMove`）、閉じたときの視点の記憶と復元（`saveView`・`restoreView`） |
 | `editor/view_input.js` | 267 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
-| `editor/upstream.js` | 254 | Panorama Studio の上流の Scene（#90）：実行結果の上流の層、その素材とペイント、実行待ちの表示 |
+| `editor/upstream.js` | 271 | Panorama Studio の上流の Scene（#90、ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`）、その素材とペイント、実行待ちの表示 |
 | `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
 | `editor/overlay.js` | 600 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
 | `editor/render_loop.js` | 422 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
