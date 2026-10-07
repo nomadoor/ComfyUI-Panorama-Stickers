@@ -196,8 +196,11 @@ function inputMediaKind(node, name) {
 // as the node places it.
 // 3D media (MESH, SPLAT, a 3D file) is a world Sticker that the node places, and only the node knows
 // what an input of an unknown type carries: unless the input is an IMAGE or a VIDEO, the Sticker is
-// added only with the node's pose, as a world one when the pose says `placement: "world"`. A pose
-// with `replace` replaces a sky port Sticker by the world one under the same id.
+// added only with the node's pose, as a world one when the pose says `placement: "world"`. Pose
+// handoff places a sky or a world Sticker (ADR 0030), and the node replaces a stored port Sticker of
+// the other placement under the same id (`replace`), either way. A `replace` pose to world is applied
+// here, keeping what the node keeps (`_inherit_handoff`); one to sky is left to the editor's handoff
+// display (ADR 0030 T11).
 export function portStickerSyncValue(node, { pose = null } = {}) {
   return {
     connected: isInputConnected(node, "sticker"),
@@ -206,8 +209,9 @@ export function portStickerSyncValue(node, { pose = null } = {}) {
   };
 }
 
-function worldPortSticker(id, pose) {
+function worldPortSticker(id, pose, kept = {}) {
   const raw = {
+    ...kept,
     id,
     placement: "world",
     source: { kind: "port" },
@@ -234,8 +238,10 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
     };
   }
   if (current && pose?.placement === "world" && pose.replace && current.placement === "sky") {
-    // 3D media on a stored sky port Sticker: the node replaced it by a world one under the same id.
-    const port = { ...worldPortSticker(current.id, pose), clip: current.clip, visible: current.visible, locked: current.locked };
+    // The node replaced the stored sky port Sticker by a world one under the same id, keeping these fields;
+    // loading keeps only the handoff_overrides of world Lanes.
+    const kept = Object.fromEntries(["clip", "visible", "locked", "crop", "opacity", "handoff_overrides"].map((key) => [key, current[key]]));
+    const port = worldPortSticker(current.id, pose, kept);
     return { state: { ...state, stickers: state.stickers.map((item, i) => i === index ? port : item) }, changed: true };
   }
   if (current || awaitingPose) return { state, changed: false };

@@ -65,6 +65,7 @@ from .core.video import (
     save_video_to_mp4,
 )
 from .core.video_source import MaterializedVideo, StreamedVideo
+from .core.world import world_rotation
 from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
 from .scene_mesh import is_mesh_file, mesh_scene_content, moge_scene_content, read_mesh_file
@@ -1114,12 +1115,18 @@ def _in_hold(keyframes: list[dict], frame: float) -> bool:
 
 
 def _lane_numbers(value) -> tuple:
-    return tuple(value.values()) if isinstance(value, dict) else (value,)
+    if isinstance(value, dict):
+        return tuple(value.values())
+    return tuple(value) if isinstance(value, list) else (value,)
 
 
-def _handoff_lanes(sticker_state: dict, fps: float) -> dict:
-    """The port Sticker's direction, roll and size Lanes that put it back where the Camera of `sticker_state`
-    shot it (Pose handoff), at the Timeline `fps` of the state. The Sticker's clip frame is the time of its media.
+def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
+    """The placement and Lanes of the port Sticker that put it back where the Camera of `sticker_state` shot it
+    (Pose handoff), at the Timeline `fps` of the state. The Sticker's clip frame is the time of its media.
+
+    A Camera that stays at the World origin hands a `sky` Sticker (direction, roll and size). A Camera whose
+    position leaves the origin in any evaluated frame hands a `world` one (ADR 0030): 2 ahead of the Camera, with
+    its rotation, as wide as its hFOV at that distance, so that seen from the Camera it covers the shot.
 
     A Camera that moves is read at every Timeline frame over its Keyframes and baked into `auto` Keyframes,
     like a Drone's, because a Camera rotation and a Sticker direction interpolate differently between Keyframes.
@@ -1132,24 +1139,38 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> dict:
     first = min(keys[0]["frame"] for keys in camera.values())
     last = max(keys[-1]["frame"] for keys in camera.values())
     frames = range(math.floor(first / ratio), math.ceil(last / ratio) + 1)
-    direction, roll, size = [], [], []
+    shots = []
     for frame in frames:
         value = evaluate_scene_state(shot, frame * ratio)["camera"]
-        # Yaw and roll keep turning past 180 instead of jumping back a whole turn between Keyframes.
-        yaw = value["yaw_deg"] if not direction else _nearest_turn(value["yaw_deg"], direction[-1]["yaw_deg"])
-        direction.append({"yaw_deg": yaw, "pitch_deg": value["pitch_deg"]})
-        roll.append(value["roll_deg"] if not roll else _nearest_turn(value["roll_deg"], roll[-1]))
+        if shots:
+            # Yaw and roll keep turning past 180 instead of jumping back a whole turn between Keyframes.
+            value = {**value, "yaw_deg": _nearest_turn(value["yaw_deg"], shots[-1]["yaw_deg"]), "roll_deg": _nearest_turn(value["roll_deg"], shots[-1]["roll_deg"])}
+        shots.append(value)
+    if any(math.hypot(*value["position"]) > 1e-9 for value in shots):
+        placement = "world"
+        position, rotation, scale = [], [], []
+        for value in shots:
+            forward = -world_rotation(value["yaw_deg"], value["pitch_deg"], value["roll_deg"])[:, 2]
+            position.append((np.asarray(value["position"], dtype=np.float64) + 2.0 * forward).tolist())
+            rotation.append({name: value[name] for name in ("yaw_deg", "pitch_deg", "roll_deg")})
+            scale.append(4.0 * math.tan(math.radians(value["hFOV_deg"]) / 2.0))
+        series = (("position", position, "position"), ("rotation", rotation, "rotation"), ("scale", scale, "fov"))
+    else:
+        placement = "sky"
+        direction = [{"yaw_deg": value["yaw_deg"], "pitch_deg": value["pitch_deg"]} for value in shots]
+        roll = [value["roll_deg"] for value in shots]
         # A port Sticker's vFOV follows its media (`derive_vfov`); stored, it is hFOV (docs/scene-state-v2.md).
-        size.append({"hFOV_deg": value["hFOV_deg"], "vFOV_deg": value["hFOV_deg"]})
+        size = [{"hFOV_deg": value["hFOV_deg"], "vFOV_deg": value["hFOV_deg"]} for value in shots]
+        series = (("direction", direction, "rotation"), ("roll", roll, "rotation"), ("size", size, "fov"))
     lanes = {}
-    for name, values, source in (("direction", direction, "rotation"), ("roll", roll, "rotation"), ("size", size, "fov")):
+    for name, values, source in series:
         moves = any(abs(a - b) > 1e-9 for value in values for a, b in zip(_lane_numbers(value), _lane_numbers(values[0])))
         keyframes = [
             {"frame": frame, "value": value, "easing": "hold" if _in_hold(camera[source], frame * ratio) else "auto"}
             for frame, value in zip(frames, values)
         ] if moves else []
         lanes[name] = {"value": values[0], "keyframes": keyframes}
-    return lanes
+    return placement, lanes
 
 
 # A 3D Sticker that the node adds has its origin here: 2 World units ahead of the World origin along -Z, the
@@ -1167,15 +1188,32 @@ def _world_port_sticker(state: dict, sticker_id: str | None = None) -> dict:
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
-def _port_sticker(state: dict, sticker_state) -> dict:
-    """The port Sticker appended when the state has none, placed by `sticker_state` when given."""
-    lanes = {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0, "vFOV_deg": 30.0}}}
-    parsed = load_sticker_state(sticker_state)
-    if parsed is not None:
-        lanes = _handoff_lanes(parsed, state["timeline"]["fps"])
-    # Above every other sky Sticker, as the legacy node placed it (paint layers are not counted).
-    z_index = max((sticker["z_index"] for sticker in state["stickers"] if sticker["placement"] == "sky"), default=-1) + 1
-    raw = {"id": _take_sticker_id(state), "source": {"kind": "port"}, **lanes, "z_index": z_index}
+def _top_sky_z_index(state: dict) -> int:
+    """Above every other sky Sticker, as the legacy node placed the port Sticker (paint layers are not counted)."""
+    return max((sticker["z_index"] for sticker in state["stickers"] if sticker["placement"] == "sky"), default=-1) + 1
+
+
+def _port_sticker(state: dict, handoff: tuple[str, dict] | None) -> dict:
+    """The port Sticker appended when the state has none, placed by the `handoff` (`_handoff_lanes`) when given."""
+    placement, lanes = handoff or ("sky", {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0, "vFOV_deg": 30.0}}})
+    raw = {"id": _take_sticker_id(state), "placement": placement, "source": {"kind": "port"}, **lanes}
+    if placement == "sky":
+        raw["z_index"] = _top_sky_z_index(state)
+    return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
+
+
+def _inherit_handoff(state: dict, stored: dict, placement: str, lanes: dict) -> dict:
+    """The stored port Sticker with the Lanes of the handoff (`_handoff_lanes`), except those in its
+    `handoff_overrides`, which keep their stored value (ADR 0030). The placement follows the handoff: a stored
+    Sticker of the other placement is replaced under the same id, keeping its Clip range, visibility, lock, crop,
+    opacity, and the `handoff_overrides` of Lanes the new placement has; its other Lanes and overrides are dropped."""
+    if stored["placement"] == placement:
+        raw = {**stored, **{name: lane for name, lane in lanes.items() if name not in stored["handoff_overrides"]}}
+    else:
+        kept = {key: stored[key] for key in ("id", "source", "clip", "visible", "locked", "crop", "opacity", "handoff_overrides")}
+        raw = {**kept, "placement": placement, **lanes}
+        if placement == "sky":
+            raw["z_index"] = _top_sky_z_index(state)
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
@@ -1185,25 +1223,34 @@ def _port_rgba(image: torch.Tensor) -> np.ndarray:
     return np.concatenate([image[..., :3], alpha], axis=-1)
 
 
-def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> PortMedia | None:
-    """The media on the sticker input, on the port Sticker. Appends the port Sticker to `state` when it is missing:
-    a `world` one for 3D media (SPLAT or MESH), which Pose handoff does not place. A stored `sky` port Sticker with
-    3D media is replaced in `state` by the `world` one under the same id, keeping its Clip range, visibility and
-    lock (its sky Lanes do not apply to a world Sticker)."""
+def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tuple[PortMedia | None, tuple[str, dict] | None]:
+    """The media on the sticker input, on the port Sticker, and the handoff (`_handoff_lanes`) it got from
+    `sticker_state` (None without one, or for 3D media).
+
+    With 2D media and a `sticker_state`, the handoff is computed on every run and placed on the port Sticker,
+    appended to `state` when it is missing, else inherited by the stored one (`_inherit_handoff`).
+    Without a `sticker_state`, a missing port Sticker is appended at the default pose, and a stored one is kept.
+    3D media (SPLAT or MESH), which Pose handoff does not place, appends a `world` port Sticker when it is missing;
+    a stored `sky` port Sticker with 3D media is replaced in `state` by the `world` one under the same id, keeping
+    its Clip range, visibility and lock (its sky Lanes do not apply to a world Sticker)."""
     if sticker is None:
-        return None
+        return None, None
     is_3d = isinstance(sticker, (Types.SPLAT, Types.MESH))
+    parsed = load_sticker_state(sticker_state)
+    handoff = None if is_3d or parsed is None else _handoff_lanes(parsed, state["timeline"]["fps"])
     index = next((i for i, item in enumerate(state["stickers"]) if item["source"]["kind"] == "port"), None)
     if index is None:
-        if is_3d and load_sticker_state(sticker_state) is not None:
-            warnings.append("sticker_state places only sky Stickers; the 3D Sticker is placed 2 ahead of the origin.")
-        state["stickers"].append(_world_port_sticker(state) if is_3d else _port_sticker(state, sticker_state))
+        if is_3d and parsed is not None:
+            warnings.append("sticker_state places only 2D Stickers; the 3D Sticker is placed 2 ahead of the origin.")
+        state["stickers"].append(_world_port_sticker(state) if is_3d else _port_sticker(state, handoff))
         index = len(state["stickers"]) - 1
+    elif handoff is not None:
+        state["stickers"][index] = _inherit_handoff(state, state["stickers"][index], *handoff)
     elif is_3d and state["stickers"][index]["placement"] == "sky":
         stored = state["stickers"][index]
         state["stickers"][index] = {**_world_port_sticker(state, stored["id"]), **{key: stored[key] for key in ("clip", "visible", "locked")}}
     port = state["stickers"][index]
-    return PortMedia(port["id"], port["clip"], sticker, state["timeline"]["fps"])
+    return PortMedia(port["id"], port["clip"], sticker, state["timeline"]["fps"]), handoff
 
 
 def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -> SceneSources:
@@ -1575,7 +1622,7 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     sticker = _read_scene_file(sticker, "sticker")
     state = load_scene_state(state_json)
     stored_port = next((item for item in state["stickers"] if item["source"]["kind"] == "port"), None)
-    port = _port_media(state, sticker, sticker_state, warnings)
+    port, handoff = _port_media(state, sticker, sticker_state, warnings)
     sources = _resolve_sources(state, port, warnings)
     upstream_bg = upstream is not None and upstream.bg_media is not None
     if upstream_bg:
@@ -1599,6 +1646,9 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     else:
         bg_ui = {} if bg_media is None else _bg_media_ui(bg_media, bg, fps)
     media_ui = {**layer_ui}
+    if handoff is not None:
+        # What sticker_state hands to the port Sticker on this run, for the editor to show apart from the overrides.
+        media_ui["pano_sticker_handoff"] = [{"placement": handoff[0], "lanes": handoff[1]}]
     if upstream is None:
         _merge_ui_payload(media_ui, bg_ui)
         if _timing_video(bg, port) is not None:
@@ -1638,16 +1688,17 @@ def _scene_output(built: PanoSceneValue) -> PanoSceneValue:
 def _port_pose_ui(state: dict, port: PortMedia | None, stored_port: dict | None) -> dict:
     """The `ui` with the pose the port Sticker was added at, for the editor to add it to the state the same way:
     with the Keyframes of a Camera that moved (Pose handoff), or the transform of a 3D one, `replace` when it
-    replaced the stored sky port Sticker. Empty when the state already had the port Sticker as it is drawn."""
+    replaced a stored port Sticker of the other placement. Empty when the state already had the port Sticker in
+    the placement it is drawn in (an inherited handoff is in `pano_sticker_handoff`)."""
     if port is None:
         return {}
     added = next(item for item in state["stickers"] if item["id"] == port.sticker_id)
-    if added is stored_port:
+    if stored_port is not None and stored_port["placement"] == added["placement"]:
         return {}
-    if port.is_3d:
+    if added["placement"] == "world":
         pose = {"placement": "world", **{name: added[name]["value"] for name in ("position", "rotation", "scale")}}
-        if stored_port is not None:
-            pose["replace"] = True
+        if not port.is_3d:
+            pose["keyframes"] = {name: added[name]["keyframes"] for name in ("position", "rotation", "scale")}
     else:
         pose = {
             **added["direction"]["value"],
@@ -1655,6 +1706,8 @@ def _port_pose_ui(state: dict, port: PortMedia | None, stored_port: dict | None)
             "hFOV_deg": added["size"]["value"]["hFOV_deg"],
             "keyframes": {name: added[name]["keyframes"] for name in ("direction", "roll", "size")},
         }
+    if stored_port is not None:
+        pose["replace"] = True
     return {"pano_sticker_input_pose": [pose]}
 
 

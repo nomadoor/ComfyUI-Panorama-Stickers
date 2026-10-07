@@ -7873,8 +7873,9 @@ function Sg(e, { pose: t = null } = {}) {
     pose: t
   };
 }
-function Xf(e, t) {
-  const r = {
+function Xf(e, t, r = {}) {
+  const n = {
+    ...r,
     id: e,
     placement: "world",
     source: { kind: "port" },
@@ -7882,7 +7883,7 @@ function Xf(e, t) {
     rotation: { value: t.rotation },
     scale: { value: t.scale }
   };
-  return Gr({ version: 2, stickers: [r] }).stickers[0];
+  return Gr({ version: 2, stickers: [n] }).stickers[0];
 }
 function _g(e, { connected: t = !1, awaitingPose: r = !1, pose: n = null } = {}) {
   var u;
@@ -7900,8 +7901,8 @@ function _g(e, { connected: t = !1, awaitingPose: r = !1, pose: n = null } = {})
     };
   }
   if (o && (n == null ? void 0 : n.placement) === "world" && n.replace && o.placement === "sky") {
-    const f = { ...Xf(o.id, n), clip: o.clip, visible: o.visible, locked: o.locked };
-    return { state: { ...e, stickers: e.stickers.map((m, w) => w === i ? f : m) }, changed: !0 };
+    const f = Object.fromEntries(["clip", "visible", "locked", "crop", "opacity", "handoff_overrides"].map((w) => [w, o[w]])), m = Xf(o.id, n, f);
+    return { state: { ...e, stickers: e.stickers.map((w, g) => g === i ? m : w) }, changed: !0 };
   }
   if (o || r) return { state: e, changed: !1 };
   const s = { ...e }, a = Ll(s);

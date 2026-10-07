@@ -703,6 +703,23 @@ test("3D media on the sticker input waits for the node and adds the world Sticke
   assert.deepEqual([saved.placement, saved.source, saved.position.value], ["world", { kind: "port" }, [0, 0, -2]]);
 });
 
+test("a replace pose keeps the crop, the opacity and the overrides of Lanes the new placement has, as the node does", () => {
+  const node = stickersNode(["sticker"], { sticker: "IMAGE" });
+  const state = v2EditorState({ stickers: [{
+    id: "sticker_4", source: { kind: "port" }, clip: { start: 2, duration: 5 }, visible: false, locked: true, z_index: 2,
+    crop: { x0: 0.1, y0: 0.2, x1: 0.9, y1: 0.8 }, opacity: { value: 0.5, keyframes: [{ frame: 3, value: 0.25 }] },
+    handoff_overrides: ["direction", "opacity"],
+  }] });
+  const pose = { placement: "world", position: [0, 0, -1], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 2, replace: true };
+
+  const [port] = portStickers(reconcilePortStickerState(state, portStickerSyncValue(node, { pose })).state);
+
+  assert.deepEqual([port.id, port.placement, port.visible, port.locked, port.clip.start], ["sticker_4", "world", false, true, 2]);
+  assert.deepEqual(port.crop, { x0: 0.1, y0: 0.2, x1: 0.9, y1: 0.8 });
+  assert.deepEqual([port.opacity.value, port.opacity.keyframes.map((key) => [key.frame, key.value])], [0.5, [[3, 0.25]]]);
+  assert.deepEqual(port.handoff_overrides, ["opacity"]);
+});
+
 test("a link that does not tell its type is read from the output it comes from, else waits for the node", () => {
   const state = v2EditorState({});
   const throughReroute = (outputType) => {

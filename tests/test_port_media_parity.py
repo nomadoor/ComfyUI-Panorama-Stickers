@@ -57,7 +57,7 @@ def _drawn(state, bg, port, frames):
 
 def _case(state_json, sticker, bg=None):
     state = load_scene_state(json.dumps(state_json))
-    port = nodes._port_media(state, sticker, "", [])
+    port, _handoff = nodes._port_media(state, sticker, "", [])
     rate, _times, time_base, _frames = nodes._decide_timeline(state, bg, port)
     fps = float(rate)
     meta = nodes._port_media_ui(port, fps, time_base)["pano_sticker_input_video_meta"][0]

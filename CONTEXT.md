@@ -73,7 +73,7 @@ _Avoid_: Shot
 Camera で Scene を画像にする方法。ERP、透視投影など。
 
 **Pose handoff**:
-透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した向きへ戻すこと。Camera の位置は渡さない。
+透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した位置と向きへ戻すこと。Camera が原点から動かなければ `sky` の Sticker、どこかのフレームで原点から離れれば Camera の前方 2 に置く `world` の Sticker になる。実行のたびに引き継ぎ、下流で触った Lane（`handoff_overrides`）だけが下流の値になる（ADR 0030）。
 
 **PANO_SCENE**:
 Panorama Studio が出力する Scene の値。Camera を含まない。状態と入力素材を結び付けた派生値であり、正は各ノードの `state_json` にある。

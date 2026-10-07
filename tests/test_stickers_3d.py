@@ -271,13 +271,19 @@ def test_3d_media_replaces_a_stored_sky_port_sticker_by_a_world_one_and_then_sta
 
 
 def test_sticker_state_does_not_place_a_3d_sticker():
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24, "camera": {"rotation": [{"frame": 0, "value": {"yaw_deg": 90.0}}]}})
+    # A Camera that leaves the origin would hand a 2D Sticker a world pose; a 3D one still ignores it.
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 2, "fps": 24, "camera": {
+        "rotation": [{"frame": 0, "value": {"yaw_deg": 90.0}}],
+        "position": [{"frame": 0, "value": [1.0, 0.0, 0.0]}],
+    }})
 
     output = _execute(sticker=_square(), sticker_state=sticker_state)
 
     [port] = output.result[4].layers[-1].state["stickers"]
     assert port["placement"] == "world" and np.allclose(port["position"]["value"], [0.0, 0.0, -2.0])
-    assert any("sticker_state places only sky Stickers" in message for message in output.ui["pano_sticker_warnings"])
+    assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0} and port["scale"]["value"] == 1.0
+    assert any("sticker_state places only 2D Stickers" in message for message in output.ui["pano_sticker_warnings"])
+    assert "pano_sticker_handoff" not in output.ui
 
 
 def test_3d_files_neither_reader_takes_fail_on_the_sticker_input():

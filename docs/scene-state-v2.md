@@ -222,20 +222,33 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 
 #### `port` の Sticker が状態にないとき
 
-`sticker` 入力が接続されているのに、状態に `source.kind == "port"` の Sticker がない場合、ノードとエディタは、その素材を次の Sticker としてリストの末尾（最も手前）に加えて扱う。旧ノードの挙動（`nodes.py` の `_build_runtime_external_sticker` を呼ぶ、既存の外部 Sticker が見つからないときの経路）と同じである。
+`sticker` 入力が接続されているのに、状態に `source.kind == "port"` の Sticker がない場合、ノードとエディタは、その素材を次の Sticker としてリストの末尾（最も手前）に加えて扱う。2D の素材で `sticker_state` があるときは、状態に `port` の Sticker があっても実行のたびに Pose handoff を当てる（下記「`sticker_state` で届く `port` の Sticker」）。旧ノードの挙動（`nodes.py` の `_build_runtime_external_sticker` を呼ぶ、既存の外部 Sticker が見つからないときの経路）と同じである。
 
 - `placement: "sky"`、Clip range・`opacity` などは既定値。
-- `sticker` の素材が 3D（MESH・SPLAT・3D ファイル）のときは `placement: "world"` とし、`position` は `[0, 0, -2]`（World の原点から、Camera が無いときの ERP の中央の向きに 2）、`rotation` は 0、`scale` は `1` とする。状態の Camera の Lane には依らない。Pose handoff（下記）は `sky` の Sticker だけに当てはまり、3D の Sticker には `sticker_state` を使わない（使わなかったことを警告に出す）。状態の `port` の Sticker が `sky` のまま 3D の素材がつながったときは、同じ `id` の `world` の Sticker（上の変形。`clip`・`visible`・`locked` は保ち、`sky` の Lane と Keyframe は捨てる）に置き換えて扱い、エディタも実行結果で同じように置き換える（`docs/render-contract.md`）。逆向き（`world` の `port` の Sticker に 2D の素材）は、2D の `world` の Sticker として正しいので置き換えない。以下の `z_index`・`direction`・`roll`・`size` の規則は `sky` のときだけ。
+- `sticker` の素材が 3D（MESH・SPLAT・3D ファイル）のときは `placement: "world"` とし、`position` は `[0, 0, -2]`（World の原点から、Camera が無いときの ERP の中央の向きに 2）、`rotation` は 0、`scale` は `1` とする。状態の Camera の Lane には依らない。Pose handoff（下記）は 2D の素材の Sticker だけに当てはまり、3D の Sticker には `sticker_state` を使わない（使わなかったことを警告に出す）。状態の `port` の Sticker が `sky` のまま 3D の素材がつながったときは、同じ `id` の `world` の Sticker（上の変形。`clip`・`visible`・`locked` は保ち、`sky` の Lane と Keyframe は捨てる）に置き換えて扱い、エディタも実行結果で同じように置き換える（`docs/render-contract.md`）。逆向き（`world` の `port` の Sticker に 2D の素材）は、2D の `world` の Sticker として正しいので置き換えない（`sticker_state` がないとき。あるときは配置も Pose handoff に従う）。以下の `z_index`・`direction`・`roll`・`size` の規則は `sky` のときだけ。
 - `z_index` は、状態の `sky` の Sticker の最大値 + 1（Sticker がなければ `0`）。ペイントの `z_index` は数えない（旧ノードと同じ）。
 - `direction`・`roll` は既定値で、`size` の `hFOV_deg` は `30`、`vFOV_deg` は素材のアスペクト比から求める。
-- `sticker_state` があれば、その Camera の軌道に沿って置く（Pose handoff、#65）。Sticker の clip frame（素材の時刻）`c` の姿勢は、`sticker_state` の Camera を `c × sticker_state.fps ÷ timeline.fps` で評価した `rotation` の yaw / pitch（`direction`）・roll（`roll`）と `fov`（`size` の `hFOV_deg`）とする。Camera の位置は使わない（`sky` の Sticker は無限遠にある）。
+- `sticker_state` があれば、その Camera の軌道に沿って置く（Pose handoff、#65・ADR 0030）。Sticker の clip frame（素材の時刻）`c` の姿勢は、`sticker_state` の Camera を `c × sticker_state.fps ÷ timeline.fps` で評価した値から求める。Camera の位置が評価したすべてのフレームで原点（`|position| ≤ 1e-9`）なら `sky` の Sticker とし、`rotation` の yaw / pitch（`direction`）・roll（`roll`）と `fov`（`size` の `hFOV_deg`）にする（`sky` の Sticker は無限遠にあるので Camera の位置は要らない。ADR 0030 より前と同じ結果）。どこかのフレームで原点から離れれば `world` の Sticker とする（下記）。
   - Camera の Keyframe の範囲（全 Lane の最初の Keyframe から最後の Keyframe まで）の、状態の Timeline frame の整数ごとに評価し、`easing: "auto"` の Keyframe にする（Drone と同じく補間に頼らず軌道を渡す。Camera の回転は四元数で、Sticker の `direction` は球面上の方向と `roll` に分けて補間するので、Keyframe をそのまま写すと間のフレームがずれる）。範囲は `floor(最初 ÷ r)` から `ceil(最後 ÷ r)` まで（`r = sticker_state.fps ÷ timeline.fps`）。
-  - Camera の `rotation`（`direction`・`roll` に対応）または `fov`（`size` に対応）の Lane で、評価した時刻が `easing: "hold"` の区間にあるフレームの Keyframe は `hold` にする。Camera のカット（切り替え）が、間の姿勢を通らずに切り替わる。切り替わるのは、カットの時刻以降で最初の Timeline frame の整数である。
+  - `world` の Sticker の各フレームの値：`R = world_rotation(yaw, pitch, roll)`（`core/world.py`）として、`position` は `Camera の位置 + 2 · (−R[:, 2])`（Camera の前方、距離 2）、`rotation` は Camera の yaw / pitch / roll、`scale` は `2 · 2 · tan(hFOV ÷ 2)`（距離 2 で画角いっぱいの幅）。Camera の位置から見れば、撮った絵と一致する（`tests/test_pose_handoff.py` の往復のテスト）。`z_index` は持たない。
+  - Camera の `rotation`（`direction`・`roll`、`world` では `rotation` に対応）、`fov`（`size`、`world` では `scale` に対応）、`position`（`world` の `position` に対応）の Lane で、評価した時刻が `easing: "hold"` の区間にあるフレームの Keyframe は `hold` にする。Camera のカット（切り替え）が、間の姿勢を通らずに切り替わる。切り替わるのは、カットの時刻以降で最初の Timeline frame の整数である。
   - yaw と roll は、一つ前の Keyframe の値に最も近い周回の値にし、±180 をまたいでも一周戻らない。
   - 値が `1e-9` 以内で同じものは同じとみなす（同じ姿勢の Keyframe の間で、補間の誤差から密な Keyframe を作らない）。
   - 時刻は秒で合わせる。素材の時刻（`port` の Sticker の clip frame ÷ `timeline.fps`）が、Camera で撮った時刻と同じでなければならない。VIDEO（撮った Studio の `video` や、それを加工して実時間を保った VIDEO）はそのまま合う。IMAGE バッチは Timeline fps のフレームの列とみなす（ADR 0027）ので、撮った Studio と同じ Timeline fps で使う（受ける Studio の Timeline fps が違うときは、Create Video で撮った Studio の fps を付けてからつなぐ）。
   - すべての値が同じ Lane（Camera がその Lane を動かさない場合）は Keyframe を置かず、静的な値にする。Camera の各 Lane の Keyframe が一つずつ（v1 の `sticker_state` を含む）なら、すべての Lane が静的な値になり、従来の単一の姿勢と同じになる。
   - `size` の `vFOV_deg` は、`port` の Sticker では描画時に `hFOV_deg` と素材のアスペクト比から求める（`StickerSource.derive_vfov`）。
+
+#### `sticker_state` で届く `port` の Sticker
+
+ADR 0030 により、`sticker_state` で届く `port` の Sticker は引き継ぎと上書きで扱う。旧い規則「状態に入った `port` の Sticker には、あとから `sticker_state` を当てない」（#65）はこれで置き換えた。
+
+- 2D の素材が接続され、`sticker_state` が読めるときは、実行のたびに上の規則で Pose handoff（配置と Lane）を求める（`nodes.py` の `_handoff_lanes`）。状態に `port` の Sticker があってもなくても同じで、`sticker` と `sticker_state` をつなぐ順番に結果が左右されない。上流の Camera ワークを直せば、次の実行で下流に届く。
+- 状態に `port` の Sticker がなければ、上の規則で加える。あれば、その Sticker の `handoff_overrides` にある Lane は保存した値を使い、ほかの Lane は Pose handoff の Lane（値と Keyframe）で置き換える（`_inherit_handoff`）。`handoff_overrides` がない・空なら、すべての Lane を引き継ぐ。このブランチで保存した状態の読み替えは置かない。
+- 配置は常に Pose handoff に従う。保存した Sticker の `placement` が違えば、同じ `id` の Sticker に置き換え、`clip`・`visible`・`locked`・`crop`・`opacity` と、新しい配置の Lane の名前の `handoff_overrides` だけを保つ。もう一方の配置の Lane と、その名前の `handoff_overrides` は捨てる。`sky` になるときの `z_index` は、加えるときと同じ（ほかの `sky` の Sticker の最大値 + 1）。
+- `sticker_state` がない・読めないとき、3D の素材のときは、今までどおり（上の「`port` の Sticker が状態にないとき」）。
+- 既知のコスト：Pose handoff は保存した `port` の Sticker があっても実行のたびに求め直すので、毎回 Camera の Keyframe の範囲の Timeline frame の数だけ Camera を評価する（長い Camera ワークほど実行の前処理が長くなる）。結果はキャッシュしない。
+- エディタとノード上の UI は、`replace` の姿勢のうち `world` への置き換えだけを状態に当て、`clip`・`visible`・`locked`・`crop`・`opacity` と `world` の Lane の名前の `handoff_overrides` を保つ（ノードと同じ。`reconcilePortStickerState`）。`sky` への置き換えと、`world` の姿勢の `keyframes` を状態に当てるのは T11。
+- 実行結果の `ui` の `pano_sticker_handoff` に、求めた Pose handoff（`{placement, lanes}`）を出す（`docs/render-contract.md`）。エディタはこれで上書きと引き継ぎを分けて表示する（T11）。ノードは状態を保存しないので、引き継いだ Lane は `state_json` に書き戻らない。
 
 読み込み（`load_scene_state`）の側では、この Sticker を自動で生成しない。状態はあくまで保存された内容だけを表す。この扱いの実装は、描画関数と新しい Stickers ノードの ticket（#52）と、Pose handoff の ticket（#65）の責務とする。
 
@@ -518,3 +531,4 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 - #92 の結果（ADR 0029）：状態 v2 の Stickers・Cutout（`PanoramaStickersNode`・`PanoramaCutoutNode`）は main に出ないまま #92 で登録から外し、置き換え（NodeReplace）は作らない。状態の形は変えていない。Cutout だけが使っていた既定の Camera（`default_camera` / `defaultCamera`、`nodes.py` の `_cutout_state`、`parseSceneEditorState` の `camera` と `scene` の指定、`cutout_state`、`noteCameraEdit`）も消した。上の #70〜#88 の記録に出てくる二つのノードの扱いは、その時点のものである。
 - タイムラインの上限：`timeline.fps` を 1〜1000、`timeline.length` を 10,000,000 以下に、Clip range の `start`・`in`・`duration` と Keyframe の `frame` を ±10,000,000 以内（`TIMELINE_FRAME_MAX`）に寄せるようにした（読み込みと `rebase_scene_state`・`rebaseSceneState`）。fps の上限は高速度撮影の VIDEO（240 fps を超えるもの）を寄せずに扱える値にした。frame と長さの上限は同じ値（1000 fps で約 2.8 時間）にして、高い fps に再基準化しても長さの上書きが黙って縮まないようにしてある。極端な値（例：`1e308`）でエディタのタイムラインの目盛りのループや再基準化が止まらなくなるのを防ぐためである。定数は `scene_state.py` と `pano_scene_state.js` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` で、Python と JS で同じ値にする（フィクスチャ `v2_timeline_limits`）。範囲内の状態は変わらない。
 - ADR 0030 の T1 の結果：状態 v2 に `id`・`next_sticker_id`・`upstream`、`port` の Sticker に `handoff_overrides` を加えた（Python と JS で同じ結果、フィクスチャ `v2_upstream`）。`version` は 2 のまま。これらの項目のうち `next_sticker_id` は Sticker を加えるときに読むが、`id`・`upstream`・`handoff_overrides` を読むのは後続の ticket（`id` を振るのは T3、上書きを当てるのは T2・T4、`handoff_overrides` は T5）で、それまでは読み書きで保つだけである。上の #75 の記録の「id は未使用の最小の `sticker_N`」は、`next_sticker_id` による採番に変わった。エディタとノード上の UI で新しく加える Sticker の `id` も、`st_<乱数>` から `sticker_<n>` に変わった。既存の状態の保存するテキストは変わらない（「`state_json` v2」の「保存するテキスト」）。
+- ADR 0030 の T5・T6 の結果：上の「`sticker_state` で届く `port` の Sticker」のとおり、`port` の Sticker の Pose handoff を実行のたびの引き継ぎと `handoff_overrides` による上書きにし（#65 の結果の「状態に入った後で `sticker_state` が変わっても、姿勢は変えない」を置き換える）、Camera が原点から離れるときは `world` の Sticker にした。`pano_sticker_input_pose` は加えたときと配置を置き換えたとき（`replace: true`）だけ出す。`world` の Pose handoff の `pano_sticker_input_pose` には `position`・`rotation`・`scale` の `keyframes` も入る。エディタの表示と記録は T11。

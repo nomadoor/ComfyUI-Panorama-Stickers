@@ -159,13 +159,16 @@ def test_port_sticker_is_appended_with_the_sticker_state_pose():
     assert float(torch.all(torch.isclose(default[0, 256], RED, atol=1 / 255), dim=-1).float().mean()) == pytest.approx(1 / 12, abs=0.005)
 
 
-def test_port_sticker_in_the_state_keeps_its_pose_and_sticker_state_is_ignored():
+def test_port_sticker_in_the_state_takes_the_sticker_state_pose():
     state = {"version": 2, "stickers": [{"id": "p", "source": {"kind": "port"}, "direction": {"value": {"yaw_deg": -90.0}}, "size": {"value": {"hFOV_deg": 20.0}}}]}
-    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0, "hFOV_deg": 20.0}})
+    sticker_state = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": {"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 20.0}})
 
     image = _execute(state, output_size="1024", sticker=_solid([1.0, 0.0, 0.0]), sticker_state=sticker_state)[0]
+    kept = _execute(state, output_size="1024", sticker=_solid([1.0, 0.0, 0.0]))[0]
 
-    assert _column_of_red(image) == pytest.approx(0.25, abs=0.01)
+    # The stored pose gives way to sticker_state on every run (ADR 0030); without sticker_state it stays.
+    assert _column_of_red(image) == pytest.approx(0.75, abs=0.01)
+    assert _column_of_red(kept) == pytest.approx(0.25, abs=0.01)
 
 
 def test_sticker_state_without_a_sticker_is_ignored():
