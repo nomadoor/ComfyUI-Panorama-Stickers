@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-gaussian_splat = pytest.importorskip(
-    "comfy_extras.nodes_gaussian_splat",
+core_camera = pytest.importorskip(
+    "comfy_extras.nodes_camera",
     reason="ComfyUI core is required for CreateCameraInfo parity",
 )
 
@@ -10,7 +10,7 @@ from comfyui_pano_suite.core.world import camera_from_camera_info, camera_info_f
 
 
 def _create_camera_info(mode, target=(0.0, 0.0, 0.0), roll=0.0, fov=35.0, zoom=1.0):
-    output = gaussian_splat.CreateCameraInfo.execute(
+    output = core_camera.CreateCameraInfo.execute(
         mode,
         *target,
         roll,
