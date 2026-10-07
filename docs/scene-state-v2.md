@@ -434,7 +434,7 @@ Sticker の上書きは `id`・`placement` と、上書きしたフィールド�
 - `deleted` にある `id` の Sticker の上書きは捨てる。
 - キーの順序は上の表の順とする。`deleted`・`stickers`・`scene` は空でも常に持ち、`painting_visible` は上書きするときだけ持つ。
 - 上流の要素の `source`、`scene` の Lane は上書きしない（ADR 0030 の実装の判断）。
-- 記録を上流の層に当てる規則は次の「上書きを当てる」で定める。出力への当て方は Panorama Studio（ADR 0030 の T4）で決める。
+- 記録を上流の層に当てる規則は次の「上書きを当てる」で定める。出力への当て方（どの層に当てるか、Source・`port`・長さの扱い）は `docs/render-contract.md` の「上流の Scene（#88）」の「上書き」（ADR 0030 の T4）。
 
 ### 上書きを当てる
 
@@ -572,3 +572,4 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 - ADR 0030 の T3 の結果：エディタとノード上の UI は、`state_json` を書くときに Panorama Studio の状態に `id` が無ければ振る（上記「Scene の id」）。T1 の `ensureSceneId` は使わず、`pano_editor_state.js` の `editorStateWrite` に置き換えた（作業状態に `id` を残すため）。ノードの `scene` 出力は自分の層の `upstream` を空にし、`id` を保つ。エディタが描く上流の要素の id と 3D のスロットは、層の番号の代わりに層の `id`（無ければ `#<番号>`）で区別する。
 - ADR 0030 の T2 の結果：上書きの記録を上流の層に当てる純粋な関数 `apply_upstream_overrides` / `applyUpstreamOverrides` と、記録の fps を直す `rebase_upstream_record` / `rebaseUpstreamRecord` を加えた（「上流の上書き」の「上書きを当てる」、フィクスチャ `tests/fixtures/scene_inherit/`）。まだどこからも呼ばない（ノードは T4、エディタは T7）。状態の形は変えていない。
 - ADR 0030 の T5・T6 の結果：上の「`sticker_state` で届く `port` の Sticker」のとおり、`port` の Sticker の Pose handoff を実行のたびの引き継ぎと `handoff_overrides` による上書きにし（#65 の結果の「状態に入った後で `sticker_state` が変わっても、姿勢は変えない」を置き換える）、Camera が原点から離れるときは `world` の Sticker にした。`pano_sticker_input_pose` は加えたときと配置を置き換えたとき（`replace: true`）だけ出す。`world` の Pose handoff の `pano_sticker_input_pose` には `position`・`rotation`・`scale` の `keyframes` も入る。エディタの表示と記録は T11。
+- ADR 0030 の T4 の結果：Panorama Studio は、状態を読み込んだ後、Timeline を決める前に、自分の状態の `upstream` の記録を `apply_upstream_overrides` で上流の層に当てる（`nodes.py` の `_override_layers`）。記録は同じ `id` を持つ層のうち最も下流の層にだけ当て、同じ `id` が鎖に二つ以上あれば警告する。`id` の無い層には当てない。記録が何も変えない層は受け取った `SceneLayer` のまま。`crop`・`z_index` を上書きした Sticker の Source を差し替え、消した Sticker の Source を除き、`painting_visible` の上書きに合わせてペイントを空にするか読み、層の `port` の Sticker を消したときは層の `port` を `None` に、その Clip range を上書きしたときは素材の先頭を移す。自分の `timeline.length` が無いとき、上書きした Clip range の終わり（層の fps から Timeline fps のフレーム数に直したもの。`duration` の無い `port` の Sticker は素材の終わり）も長さに数える。描くのと `scene` 出力で渡すのは当てた後の層で、実行結果の `pano_upstream_layers` は当てる前の層のまま（`docs/render-contract.md` の「上流の Scene（#88）」の「上書き」）。状態の形は変えていない。
