@@ -46,6 +46,7 @@ function browserStubs() {
 function restore() {
   delete globalThis.Image;
   delete globalThis.document;
+  delete globalThis.HTMLVideoElement;
 }
 
 const sky = (id, extra = {}) => ({ id, placement: "sky", source: { kind: "file", filename: `${id}.png` }, ...extra });
@@ -228,7 +229,7 @@ test("with the upstream background the auto length is the upstream Scene's, not 
   const uiState = { videoTransport: { ready: true, duration: 20 } };
   const timeline = createTimeline({ editor: {}, node: {}, readOnly: false, sceneV2: true, state: loadSceneState({ version: 2, timeline: { fps: 24 } }), stateV2: true, studio: true, timeline: {}, timelinePlayhead: {}, uiState, videoEl: null, videoTimelineFps: () => null });
   let upstream = { imageKey: "pano_upstream_input_images" };
-  timeline.connect({ getPortMedia: () => null, isExternalSticker: () => false, upstreamBackground: () => upstream, upstreamSpanFrames: () => 240 });
+  timeline.connect({ getPortMedia: () => null, isExternalSticker: () => false, upstreamBackground: () => upstream, upstreamSpanFrames: () => 240, upstreamTimelineOwners: () => [] });
   assert.equal(timeline.timelineSpanFrames(), 240);
   // The node's own background VIDEO widens it as before.
   upstream = null;
@@ -601,4 +602,335 @@ test("the upstream sky Stickers are hit under the node's own items and over its 
   assert.equal(at(12, 12), back);
   assert.equal(at(25, 25), front);
   assert.equal(at(60, 60), camera);
+});
+
+// --- ADR 0030 T9: the upstream layers' Timeline rows, edited through the editor's Timeline actions.
+
+// The editor's Timeline over the upstream module of setup(): the real Timeline, its actions, items and history,
+// each Undo step writing the upstream edits back. Returns them with the Undo steps counted.
+async function editorTimeline(state, upstream) {
+  const { createTimeline } = await import("../web_src/editor/timeline.js");
+  const { createTimelineActions } = await import("../web_src/editor/timeline_actions.js");
+  // The Timeline asks whether its VIDEO element plays a source.
+  globalThis.HTMLVideoElement ??= class {};
+  const editor = { frame: 0, historyController: createEditorHistory(state) };
+  const timelineState = { selection: null, openRows: new Set(), drag: null };
+  const uiState = { videoTransport: {}, timeline: null };
+  const node = { id: 1, inputs: [{ name: "scene" }], graph: null };
+  const items = createItems({ canvas: {}, editor, sceneV2: true, state, stateV2: true, type: "stickers" });
+  items.connect({ upstreamStickers: upstream.upstreamStickers, upstreamStickerImage: upstream.upstreamStickerImage });
+  const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
+  const timeline = createTimeline({
+    editor, node, readOnly: false, sceneV2: true, state, stateV2: true, studio: true, timeline: timelineState,
+    timelinePlayhead: { frame: { value: 0 } }, uiState, videoEl: null, videoTimelineFps: () => null,
+  });
+  const actions = createTimelineActions({ dragFrames: { request: noop, cancel: noop }, editor, readOnly: false, state, stateV2: true, timeline: timelineState, uiState });
+  const steps = { count: 0, selected: [] };
+  history.connect({
+    clearWorldSelection: noop, commitState: upstream.syncUpstreamEdits, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
+    markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
+    rebuildUpstreamWorking: upstream.rebuildUpstreamWorking, releaseHiddenSelection: noop, requestDraw: noop,
+    stopTimelinePlayback: noop, storedEditorState: () => state, syncCutoutShot: noop, syncPaintUi: noop, syncPortHandoff: noop,
+    syncUndoRedoButtons: noop, syncUpstreamEdits: upstream.syncUpstreamEdits, updateSidePanel: noop,
+  });
+  const api = {
+    ...items, ...upstream, ...timeline,
+    commitAndRefreshNode: upstream.syncUpstreamEdits, getPortMedia: () => null, hasCamera: () => false, inspectorTimed: () => false,
+    isExternalSticker: (item) => item?.source?.kind === "port", markObjectVisualsDirty: noop, playback: { seek: noop, stop: noop },
+    pushHistory: () => {
+      steps.count += 1;
+      history.pushHistory();
+    },
+    refreshModalVideoSource: noop, releaseHiddenSelection: noop, requestDraw: noop, syncCutoutShot: noop, syncSidePanelModel: noop,
+    updateSelectionMenu: noop, updateSidePanel: noop, upstreamBackground: () => null, upstreamLinked: () => true,
+    cameraShoots: () => false, changeTimelineFps: noop, getActiveCutoutShot: () => null, jumpTimelineTo: noop,
+    selectWorldSticker: (id) => steps.selected.push(["world", id]), setSelectedItem: (item) => steps.selected.push(["sky", item?.id ?? null]),
+    syncFloatingViewButtonState: noop, toggleVideoMuted: noop, togglePlayback: noop,
+  };
+  timeline.connect(api);
+  actions.connect({ ...api, syncTimeline: timeline.syncTimeline });
+  return { act: actions.onTimelineAction, editor, history, steps, timeline, timelineState, uiState };
+}
+
+// One upstream layer with a keyed sky Sticker, a world Sticker, 3D content, a hidden painting and a `scene` Clip range.
+const timedLayer = (extra = {}) => layer({
+  id: "scene_a",
+  scene: { clip: { start: 0, in: 0, duration: 48 } },
+  stickers: [
+    sky("sticker_1", { direction: { value: { yaw_deg: 0, pitch_deg: 0 }, keyframes: [{ frame: 0, value: { yaw_deg: 0, pitch_deg: 0 } }, { frame: 12, value: { yaw_deg: 40, pitch_deg: 0 } }] } }),
+    { id: "sticker_2", placement: "world", source: { kind: "file", filename: "w.png" }, position: { value: [0, 0, -2] } },
+  ],
+  painting_visible: false,
+  ...extra,
+}, { pano_scene_files: [{ filename: "a.ply" }], pano_scene_meta: [{ kind: "ply" }] });
+
+async function timelineOver(ui, saved = { version: 2, timeline: { fps: 24 } }) {
+  const state = { ...loadSceneState(saved), active: {} };
+  const { output, upstream } = setup(state);
+  output.ui = ui;
+  const editing = await editorTimeline(state, upstream);
+  return { state, output, upstream, ...editing };
+}
+
+const drag = (act, action, delta) => {
+  act({ ...action, phase: "start", delta: 0 });
+  act({ ...action, phase: "move", delta });
+  act({ ...action, phase: "end", delta });
+};
+
+test("the Timeline model has a group per upstream layer, its rows at the editor's frames, and the node's own rows first", async () => {
+  browserStubs();
+  try {
+    const { state, timeline, uiState } = await timelineOver({ pano_upstream_layers: [timedLayer(), layer({ stickers: [sky("sticker_1")] })] }, {
+      version: 2, timeline: { fps: 24 }, stickers: [sky("own")],
+    });
+    const before = structuredClone(state);
+    timeline.syncTimeline();
+    assert.deepEqual(uiState.timeline.rows.map((row) => row.id), ["own"]);
+    assert.deepEqual(uiState.timeline.groups.map((group) => group.label), ["Upstream · scene_a", "Upstream · #1 · inherited only"]);
+    assert.deepEqual(uiState.timeline.groups[0].rows.map((row) => [row.id, row.clip]), [
+      ["upstream:scene_a:sticker_1", { start: 0, end: null }],
+      ["upstream:scene_a:sticker_2", { start: 0, end: null }],
+      ["upstream:scene_a:painting", null],
+      ["upstream:scene_a:scene", { start: 0, end: 48 }],
+    ]);
+    assert.deepEqual(uiState.timeline.groups[0].rows[0].keys.map((key) => key.frame), [0, 12]);
+    // Building the model writes nothing.
+    assert.deepEqual(state, before);
+  } finally {
+    restore();
+  }
+});
+
+test("each Timeline action on an upstream row writes only its own override, as one Undo step", async () => {
+  browserStubs();
+  try {
+    const row = "upstream:scene_a:sticker_1";
+    const cases = [
+      ["key-row", ({ act, editor }) => {
+        editor.frame = 6;
+        act({ type: "key-row", owner: row });
+      }, (record) => assert.deepEqual(record.stickers.map((item) => Object.keys(item)), [["id", "placement", "direction", "roll", "size", "opacity"]])],
+      ["move a Keyframe", ({ act }) => {
+        act({ type: "select-keys", owner: row, lane: "direction", frames: [12], additive: false });
+        drag(act, { type: "move-keys" }, 3);
+      }, (record) => {
+        assert.deepEqual(record.stickers.map((item) => Object.keys(item)), [["id", "placement", "direction"]]);
+        assert.deepEqual(record.stickers[0].direction.keyframes.map((key) => key.frame), [0, 15]);
+      }],
+      ["delete a Keyframe", ({ act, timeline }) => {
+        act({ type: "select-keys", owner: row, lane: null, frames: [12], additive: false });
+        timeline.deleteSelectedKeyframes();
+      }, (record) => assert.deepEqual(record.stickers[0].direction.keyframes.map((key) => key.frame), [0])],
+      ["easing", ({ act }) => {
+        act({ type: "select-keys", owner: row, lane: "direction", frames: [0], additive: false });
+        act({ type: "easing", easing: "hold", commit: true });
+      }, (record) => {
+        assert.deepEqual(record.stickers.map((item) => Object.keys(item)), [["id", "placement", "direction"]]);
+        assert.equal(record.stickers[0].direction.keyframes[0].easing, "hold");
+      }],
+      ["move the Clip range", ({ act }) => drag(act, { type: "clip", id: row, mode: "move" }, 5),
+        (record) => assert.deepEqual(record.stickers, [{ id: "sticker_1", placement: "sky", clip: { start: 5, in: 0, duration: null } }])],
+      ["trim the scene's end", ({ act }) => drag(act, { type: "clip", id: "upstream:scene_a:scene", mode: "end" }, -8),
+        (record) => assert.deepEqual([record.stickers, record.scene], [[], { clip: { start: 0, in: 0, duration: 40 } }])],
+      ["the world Sticker's eye", ({ act }) => act({ type: "toggle-visible", id: "upstream:scene_a:sticker_2" }),
+        (record) => assert.deepEqual(record.stickers, [{ id: "sticker_2", placement: "world", visible: false }])],
+      ["the painting's eye", ({ act }) => act({ type: "toggle-visible", id: "upstream:scene_a:painting" }),
+        (record) => assert.deepEqual([record.stickers, record.scene, record.painting_visible], [[], {}, true])],
+      ["the scene's eye", ({ act }) => act({ type: "toggle-visible", id: "upstream:scene_a:scene" }),
+        (record) => assert.deepEqual([record.stickers, record.scene, Object.hasOwn(record, "painting_visible")], [[], { visible: false }, false])],
+    ];
+    for (const [name, run, check] of cases) {
+      const editing = await timelineOver({ pano_upstream_layers: [timedLayer()] }, { version: 2, timeline: { fps: 24 }, stickers: [sky("own")] });
+      const { state, output, steps } = editing;
+      const own = structuredClone(state.stickers);
+      run(editing);
+      assert.equal(steps.count, 1, name);
+      assert.equal(state.upstream.length, 1, name);
+      assert.deepEqual([state.upstream[0].layer, state.upstream[0].fps, state.upstream[0].deleted], ["scene_a", 24, []], name);
+      check(state.upstream[0]);
+      // The node's own Stickers and the upstream layer as it came are not touched.
+      assert.deepEqual(state.stickers, own, name);
+      assert.deepEqual(output.ui.pano_upstream_layers[0], timedLayer(), name);
+    }
+  } finally {
+    restore();
+  }
+});
+
+test("the eye of an upstream row shows a hidden upstream element again, and the editor draws it", async () => {
+  browserStubs();
+  try {
+    const { act, state, upstream, steps } = await timelineOver({ pano_upstream_layers: [timedLayer()] }, {
+      version: 2, timeline: { fps: 24 }, upstream: [{ layer: "scene_a", fps: 24, stickers: [{ id: "sticker_1", placement: "sky", visible: false, locked: true }] }],
+    });
+    const drawnSky = () => upstream.upstreamViewInput().sky.map((item) => item.id);
+    assert.deepEqual(drawnSky(), []);
+    // Its row is not selected while hidden; a locked element's eye still works, as the node's own.
+    act({ type: "select-row", id: "upstream:scene_a:sticker_1" });
+    assert.deepEqual(steps.selected, []);
+    act({ type: "toggle-visible", id: "upstream:scene_a:sticker_1" });
+    assert.deepEqual(state.upstream[0].stickers, [{ id: "sticker_1", placement: "sky", visible: true, locked: true }]);
+    assert.deepEqual(drawnSky(), ["upstream:scene_a:sticker_1"]);
+    act({ type: "select-row", id: "upstream:scene_a:sticker_1" });
+    act({ type: "select-row", id: "upstream:scene_a:sticker_2" });
+    assert.deepEqual(steps.selected, [["sky", "upstream:scene_a:sticker_1"], ["world", "upstream:scene_a:sticker_2"]]);
+    // Locked: its Keyframes and Clip range do not change.
+    drag(act, { type: "clip", id: "upstream:scene_a:sticker_1", mode: "move" }, 5);
+    act({ type: "key-row", owner: "upstream:scene_a:sticker_1" });
+    assert.equal(steps.count, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("the rows of a layer that is only inherited are shown but change nothing, as locked rows", async () => {
+  browserStubs();
+  try {
+    const inherited = layer({ ...timedLayer().state, id: undefined });
+    const { act, state, upstream, steps, timeline, timelineState } = await timelineOver({ pano_upstream_layers: [inherited] });
+    const before = structuredClone(upstream.upstreamEntries()[0].working.sceneState);
+    const row = "upstream:#0:sticker_1";
+    act({ type: "toggle-visible", id: row });
+    act({ type: "toggle-visible", id: "upstream:#0:painting" });
+    act({ type: "toggle-visible", id: "upstream:#0:scene" });
+    act({ type: "key-row", owner: row });
+    drag(act, { type: "clip", id: row, mode: "move" }, 5);
+    drag(act, { type: "clip", id: "upstream:#0:scene", mode: "end" }, -5);
+    act({ type: "select-keys", owner: row, lane: null, frames: [12], additive: false });
+    assert.deepEqual(timelineState.selection, { owner: row, lane: null, frames: [12] });
+    drag(act, { type: "move-keys" }, 3);
+    act({ type: "easing", easing: "hold", commit: true });
+    timeline.deleteSelectedKeyframes();
+    assert.equal(steps.count, 0);
+    assert.deepEqual(state.upstream, []);
+    assert.deepEqual(upstream.upstreamEntries()[0].working.sceneState, before);
+    assert.equal(timeline.timelineEditable(row), false);
+  } finally {
+    restore();
+  }
+});
+
+test("an upstream scene row moves its Clip range but none of its Keyframes", async () => {
+  browserStubs();
+  try {
+    const keyed = layer({ ...timedLayer().state, scene: { clip: { start: 0, in: 0, duration: 48 }, scale: { value: 1, keyframes: [{ frame: 0, value: 1 }, { frame: 10, value: 2 }] } } });
+    const { act, state, steps } = await timelineOver({ pano_upstream_layers: [keyed] });
+    act({ type: "select-keys", owner: "upstream:scene_a:scene", lane: null, frames: [10], additive: false });
+    drag(act, { type: "move-keys" }, 3);
+    act({ type: "key-row", owner: "upstream:scene_a:scene" });
+    assert.equal(steps.count, 0);
+    assert.deepEqual(state.upstream, []);
+  } finally {
+    restore();
+  }
+});
+
+test("Undo and Redo of a Timeline edit of an upstream row bring back its records and its working copy", async () => {
+  browserStubs();
+  try {
+    const { act, history, state, upstream } = await timelineOver({ pano_upstream_layers: [timedLayer()] });
+    const working = () => upstream.upstreamStickers()[0];
+    drag(act, { type: "clip", id: "upstream:scene_a:sticker_1", mode: "move" }, 5);
+    act({ type: "toggle-visible", id: "upstream:scene_a:painting" });
+    assert.equal(state.upstream[0].painting_visible, true);
+    history.restoreHistory(-1);
+    assert.equal(Object.hasOwn(state.upstream[0], "painting_visible"), false);
+    assert.equal(upstream.upstreamEntries()[0].working.sceneState.painting_visible, false);
+    assert.equal(working().clip.start, 5);
+    history.restoreHistory(-1);
+    assert.deepEqual(state.upstream, []);
+    assert.equal(working().clip.start, 0);
+    // Nothing is written again from the restored working copies.
+    upstream.syncUpstreamEdits();
+    assert.deepEqual(state.upstream, []);
+    history.restoreHistory(1);
+    assert.equal(working().clip.start, 5);
+    assert.deepEqual(state.upstream[0].stickers, [{ id: "sticker_1", placement: "sky", clip: { start: 5, in: 0, duration: null } }]);
+  } finally {
+    restore();
+  }
+});
+
+test("the Timeline reaches the end of an upstream Clip range this node overrides, as the node's output does", async () => {
+  browserStubs();
+  try {
+    const ui = { pano_upstream_layers: [timedLayer()], pano_timeline_frames: [48] };
+    const { act, state, timeline, upstream } = await timelineOver(ui);
+    assert.equal(upstream.upstreamSpanFrames(), 48);
+    // Without a duration a Clip range ends nowhere; the `scene`'s, trimmed longer, ends at 70.
+    drag(act, { type: "clip", id: "upstream:scene_a:sticker_1", mode: "move" }, 30);
+    assert.equal(upstream.upstreamSpanFrames(), 48);
+    drag(act, { type: "clip", id: "upstream:scene_a:scene", mode: "end" }, 22);
+    assert.deepEqual(state.upstream[0].scene, { clip: { start: 0, in: 0, duration: 70 } });
+    assert.equal(upstream.upstreamSpanFrames(), 70);
+    assert.equal(timeline.timelineSpanFrames(), 120);
+    state.timeline.length = 200;
+    assert.equal(timeline.timelineSpanFrames(), 200);
+    // The Clip range being dragged counts as open.
+    assert.equal(upstream.upstreamSpanFrames(upstream.upstreamEntries()[0].working.sceneState.scene.clip), 48);
+  } finally {
+    restore();
+  }
+});
+
+test("opening, showing the Timeline and closing over upstream rows writes nothing", async () => {
+  browserStubs();
+  try {
+    const saved = { version: 2, id: "scene_c", timeline: { fps: 24 }, upstream: [{ layer: "scene_a", fps: 30, scene: { clip: { start: 3, in: 0, duration: 30 } } }] };
+    const { state, timeline, upstream, act } = await timelineOver({ pano_upstream_layers: [timedLayer()] }, saved);
+    const records = state.upstream;
+    timeline.syncTimeline();
+    act({ type: "toggle-row", id: "upstream:scene_a:sticker_1" });
+    act({ type: "select-keys", owner: "upstream:scene_a:sticker_1", lane: null, frames: [0], additive: false });
+    // A click on a Clip range (no movement) is no edit.
+    drag(act, { type: "clip", id: "upstream:scene_a:sticker_1", mode: "move" }, 0);
+    upstream.syncUpstreamEdits();
+    assert.equal(state.upstream, records);
+  } finally {
+    restore();
+  }
+});
+
+test("the Timeline shows the upstream rows' moved Clip ranges and Keyframes, as it shows its own", async () => {
+  browserStubs();
+  try {
+    const ui = { pano_upstream_layers: [timedLayer()], pano_timeline_frames: [48] };
+    const { act, timeline, upstream } = await timelineOver(ui);
+    // An open Clip range moved to 150 is reachable, though it does not lengthen the output.
+    drag(act, { type: "clip", id: "upstream:scene_a:sticker_1", mode: "move" }, 150);
+    assert.equal(upstream.upstreamSpanFrames(), 48);
+    assert.ok(timeline.timelineSpanFrames() >= 151);
+    // A Keyframe moved to 130 (sticker_2 starts at 0).
+    const { act: act2, timeline: timeline2 } = await timelineOver(ui);
+    act2({ type: "select-keys", owner: "upstream:scene_a:sticker_1", lane: "direction", frames: [12], additive: false });
+    drag(act2, { type: "move-keys" }, 118);
+    assert.ok(timeline2.timelineSpanFrames() >= 131);
+  } finally {
+    restore();
+  }
+});
+
+test("the Keyframe offset of a row without an owner (the painting's) is 0", async () => {
+  browserStubs();
+  try {
+    const { timeline } = await timelineOver({ pano_upstream_layers: [timedLayer()] });
+    assert.equal(timeline.timelineOffset("painting"), 0);
+    assert.equal(timeline.timelineOffset("upstream:scene_a:painting"), 0);
+  } finally {
+    restore();
+  }
+});
+
+test("the Easing panel shows only for Keyframes the Timeline can change", async () => {
+  browserStubs();
+  try {
+    const { act, uiState } = await timelineOver({ pano_upstream_layers: [timedLayer(), layer({ ...timedLayer().state, id: undefined })] });
+    act({ type: "select-keys", owner: "upstream:scene_a:sticker_1", lane: "direction", frames: [0], additive: false });
+    assert.notEqual(uiState.easing, null);
+    act({ type: "select-keys", owner: "upstream:#1:sticker_1", lane: "direction", frames: [0], additive: false });
+    assert.equal(uiState.easing, null);
+  } finally {
+    restore();
+  }
 });

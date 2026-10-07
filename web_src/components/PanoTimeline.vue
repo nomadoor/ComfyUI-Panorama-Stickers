@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 
 import { ICON } from "../icons.js";
 import { TIMELINE_FPS_MAX, TIMELINE_FPS_MIN, TIMELINE_LENGTH_MAX } from "../pano_scene_state.js";
 import { clusterFrames, keyedAt, timelineTicks, timelineTimeLabel } from "../pano_timeline.js";
+import PanoTimelineGroup from "./PanoTimelineGroup.vue";
 import SvgIcon from "./SvgIcon.vue";
 
 // The Timeline of Panorama Studio's editor. It draws buildTimelineModel() and reports what the
@@ -72,11 +73,21 @@ function pins(lineKey, keys, selected) {
   }));
 }
 
+// The node's own rows, then per upstream layer (ADR 0030) its header and its rows, in the order they show.
+const entries = computed(() => [
+  ...(props.model.rows || []).map((row) => ({ key: row.id, row })),
+  ...(props.model.groups || []).flatMap((group) => [
+    { key: `group:${group.key}`, group },
+    ...group.rows.map((row) => ({ key: row.id, row })),
+  ]),
+]);
+
 // The pins of every row and Lane by line key, made again only when the model or the scale changes, not
 // as the playhead moves.
 const linePins = computed(() => {
   const lines = new Map();
-  for (const row of props.model.rows || []) {
+  for (const { row } of entries.value) {
+    if (!row) continue;
     lines.set(row.id, pins(row.id, row.keys, row.selectedFrames));
     for (const lane of row.lanes) lines.set(lane.key, pins(lane.key, lane.frames.map((at) => ({ frame: at, full: true })), lane.selectedFrames));
   }
@@ -227,16 +238,18 @@ function onLineDown(event, row, lane) {
           <span v-for="frame in ticks" :key="frame" class="pano-timeline-tick" :style="{ left: pct(frame) }">{{ frame }}</span>
           <span class="pano-timeline-playhead" :style="{ left: pct(frame + 0.5) }" />
         </div>
-        <template v-for="row in model.rows || []" :key="row.id">
-          <div class="pano-timeline-head" :class="{ selected: row.selected, 'is-hidden': !row.visible }">
+        <template v-for="{ key, row, group } in entries" :key="key">
+          <PanoTimelineGroup v-if="group" :group="group" />
+          <div v-if="row" class="pano-timeline-head" :class="{ selected: row.selected, 'is-hidden': !row.visible }">
             <div class="pano-timeline-name">
               <button
                 v-if="row.hideable"
                 class="pano-timeline-eye"
                 type="button"
                 :aria-pressed="row.visible ? 'true' : 'false'"
+                :disabled="!row.editable"
                 :aria-label="`${row.label} visible`"
-                :data-tip="row.visible ? 'Hide' : 'Show'"
+                :data-tip="!row.editable ? 'Inherited only: this node keeps no overrides of it' : row.visible ? 'Hide' : 'Show'"
                 @click.stop="emit('action', { type: 'toggle-visible', id: row.id })"
               >
                 <SvgIcon :icon="row.visible ? ICON.eye : ICON.eye_dashed" />
@@ -262,11 +275,20 @@ function onLineDown(event, row, lane) {
                 <SvgIcon :icon="row.icon" />
                 <span>{{ row.label }}</span>
               </button>
+              <span
+                v-if="row.upstream"
+                class="pano-timeline-override"
+                :class="{ on: row.overridden }"
+                :role="row.overridden ? 'img' : undefined"
+                :aria-label="row.overridden ? 'Overridden in this node' : undefined"
+                :data-tip="row.overridden ? 'Overridden in this node' : null"
+              />
               <button
                 v-if="row.keyable"
                 class="pano-timeline-key"
                 :class="{ keyed: keyedAt(row.keys, frame) }"
                 type="button"
+                :disabled="!row.editable"
                 :data-keyed="keyedAt(row.keys, frame) ? 'true' : 'false'"
                 :aria-label="keyedAt(row.keys, frame) ? `Every ${row.label} parameter has a keyframe here; update them` : `Add keyframes for every ${row.label} parameter here`"
                 data-tip="Keyframe every parameter here"
@@ -279,7 +301,7 @@ function onLineDown(event, row, lane) {
               <div v-for="lane in row.lanes" :key="lane.key" class="pano-timeline-lane-head">{{ lane.label }}</div>
             </template>
           </div>
-          <div class="pano-timeline-track" :class="{ selected: row.selected }">
+          <div v-if="row" class="pano-timeline-track" :class="{ selected: row.selected }">
             <div class="pano-timeline-row-line" @pointerdown="onLineDown($event, row, null)">
               <div
                 v-if="row.clip"

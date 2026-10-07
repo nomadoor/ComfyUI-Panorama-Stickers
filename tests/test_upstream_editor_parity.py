@@ -2,6 +2,7 @@
 (web_src/pano_upstream.js upstreamWorkingLayers) are the layers `_override_layers` gives, rebased to the editor's fps."""
 
 import json
+import math
 import shutil
 import subprocess
 import textwrap
@@ -161,3 +162,87 @@ def test_the_edits_the_editor_writes_back_draw_in_the_node_as_the_editor_shows_t
     for layer, state in zip(applied, edited["states"], strict=True):
         expected = layer.state if layer.state["timeline"]["fps"] == 24 else rebase_scene_state(layer.state, 24)
         assert_parity(expected, state)
+
+
+TIMELINE_SCRIPT = textwrap.dedent(
+    """
+    import { readFileSync } from "node:fs";
+    import { loadSceneState } from "./web_src/pano_scene_state.js";
+    import { keyAllLanes, moveClip, moveKeyframes, trimClipEnd } from "./web_src/pano_timeline.js";
+    import { upstreamBaseline, upstreamEditedRecords, upstreamLayersOf, upstreamOverriddenClips, upstreamWorkingLayers } from "./web_src/pano_upstream.js";
+
+    const fixture = JSON.parse(readFileSync("tests/fixtures/scene_inherit/editor_working.json", "utf8"));
+    const own = loadSceneState(fixture.own);
+    const layers = upstreamLayersOf(fixture.layers.map((state) => ({ state, ui: {} })));
+    const fps = own.timeline.fps;
+    const working = upstreamWorkingLayers(layers, own.upstream, fps);
+    const baseline = upstreamBaseline(working);
+    const sticker = (index, id) => working[index].sceneState.stickers.find((item) => item.origin.id === id);
+    // The Timeline's operations on the rows, as timeline_actions.js does them.
+    if (process.argv[1] === "keyframes") {
+      // scene_a's sticker_1: its last direction Keyframe moved 3 frames later (a Lane its record holds).
+      const first = sticker(1, "sticker_1");
+      moveKeyframes(first, ["direction"], [first.direction.keyframes.at(-1).frame], 3, -(first.clip.start - first.clip.in));
+      // scene_b (30 fps) world sticker_1: every Lane keyed at frame 20 of the editor's Timeline (the row's dot).
+      const plane = sticker(3, "sticker_1");
+      keyAllLanes(plane, 20 - (plane.clip.start - plane.clip.in));
+    } else {
+      // scene_a: sticker_1's Clip range moved, the `scene`'s end trimmed to 60 and its painting shown again.
+      moveClip(sticker(1, "sticker_1").clip, 4);
+      trimClipEnd(working[1].sceneState.scene.clip, 60, 1000);
+      working[1].sceneState.painting_visible = true;
+      // scene_b (30 fps): the port Sticker's Clip range moved and given an end.
+      const port = sticker(3, "sticker_2");
+      moveClip(port.clip, 6);
+      trimClipEnd(port.clip, 50, 1000);
+    }
+    const records = upstreamEditedRecords(own.upstream, layers, working, baseline, fps);
+    // The ends that widen the Timeline, once written back.
+    const ends = upstreamOverriddenClips(working, records, upstreamBaseline(working))
+      .filter(({ clip }) => clip.duration !== null).map(({ clip }) => clip.start + clip.duration);
+    const states = working.map(({ sceneState }) => {
+      sceneState.stickers.forEach((item) => {
+        item.id = item.origin.id;
+        delete item.origin;
+      });
+      return sceneState;
+    });
+    console.log(JSON.stringify({ records, states, ends }));
+    """
+)
+
+
+@pytest.mark.parametrize("edit", ["keyframes", "clips"])
+def test_the_timeline_edits_of_upstream_rows_draw_in_the_node_as_the_editor_shows_them(edit):
+    """A Keyframe edit and a Clip range edit made on the upstream rows of the Timeline (ADR 0030 T9) are written as
+    records that `_override_layers` applies to the same layers the editor shows, and the ends it widens the output
+    to are those the editor's Timeline reaches."""
+    if shutil.which("node") is None:
+        pytest.skip("node.js is required")
+    case = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    edited = json.loads(subprocess.run(
+        ["node", "--input-type=module", "-e", TIMELINE_SCRIPT, edit], cwd=REPO_ROOT, text=True, capture_output=True, check=True,
+    ).stdout)
+    records = edited["records"]
+    assert [record["layer"] for record in records] == ["scene_a", "scene_b"]
+    scene_a = {item["id"]: item for item in records[0]["stickers"]}
+    scene_b = {item["id"]: item for item in records[1]["stickers"]}
+    if edit == "keyframes":
+        assert [key["frame"] for key in scene_a["sticker_1"]["direction"]["keyframes"]] == [7]
+        assert sorted(scene_b["sticker_1"]) == ["clip", "id", "opacity", "placement", "position", "rotation", "scale"]
+        assert records[0]["scene"] == {"visible": False}
+    else:
+        assert scene_a["sticker_1"]["clip"] == {"start": 10, "in": 2, "duration": 30}
+        assert records[0]["scene"] == {"visible": False, "clip": {"start": 0, "in": 0, "duration": 60}}
+        assert records[0]["painting_visible"] is True
+        assert sorted(scene_b["sticker_2"]) == ["clip", "id", "placement", "z_index"]
+    own = load_scene_state({**case["own"], "upstream": records})
+    _, applied = node_layers({**case, "own": own})
+    for layer, state in zip(applied, edited["states"], strict=True):
+        expected = layer.state if layer.state["timeline"]["fps"] == 24 else rebase_scene_state(layer.state, 24)
+        assert_parity(expected, state)
+    # The node widens its output to the ends of the Clip ranges the records set, as the editor's Timeline does.
+    layers = [SceneLayer(load_scene_state(raw), SceneSources({}, empty_painting_state()), None, None, {}) for raw in case["layers"]]
+    upstream = PanoSceneValue(tuple(layers), None, 360, (0.0, 0.0, 0.0), Fraction(24), (), Fraction(0), (), {}, {})
+    _, ends = _override_layers(upstream, own["upstream"], [])
+    assert sorted(math.floor(end * 24 / fps + 0.5) for end, fps in ends) == sorted(edited["ends"])

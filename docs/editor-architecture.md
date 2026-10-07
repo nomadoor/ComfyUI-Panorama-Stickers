@@ -99,13 +99,13 @@ export function createHistory(deps) {
 | `editor/external_stickers.js` | 242 | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
 | `editor/space.js` | 340 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作（キーの移動 `stepKeyMove`）、閉じたときの視点の記憶と復元（`saveView`・`restoreView`） |
 | `editor/view_input.js` | 269 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
-| `editor/upstream.js` | 305 | Panorama Studio の上流の Scene（#90、ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`、`upstreamStickers`）、その編集の上書きへの書き戻し（`syncUpstreamEdits`）、その素材とペイント、実行待ちの表示 |
+| `editor/upstream.js` | 359 | Panorama Studio の上流の Scene（#90、ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`、`upstreamStickers`）、その編集の上書きへの書き戻し（`syncUpstreamEdits`）、タイムラインの行（`upstreamTimelineLayers`・`upstreamTimelineOwners`・`upstreamRow`）と範囲（`upstreamSpanFrames`）、その素材とペイント、実行待ちの表示 |
 | `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
 | `editor/overlay.js` | 602 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
 | `editor/render_loop.js` | 422 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
 | `editor/panels.js` | 442 | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
-| `editor/timeline.js` | 203 | Timeline のモデル、再生位置と再生、owner と Lane、fps |
-| `editor/timeline_actions.js` | 222 | `onTimelineAction` |
+| `editor/timeline.js` | 221 | Timeline のモデル（上流の層の行を含む）、再生位置と再生、owner と Lane（`timelineOwner`・`timelineEditable`・`rowEditable`）、fps |
+| `editor/timeline_actions.js` | 230 | `onTimelineAction`（上流の層の行も同じ操作で作業コピーを変える） |
 | `editor/commit.js` | 92 | 状態の widget への書き戻し、ノードのプレビューの更新 |
 | `editor/commands.js` | 287 | 全消去、複製、削除と確認 |
 | `editor/sticker_import.js` | 430 | 画像の追加・置き換え・アップロード、drop |

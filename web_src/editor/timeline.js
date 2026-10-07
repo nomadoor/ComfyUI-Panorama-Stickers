@@ -7,7 +7,7 @@ import { portMediaFrames } from "../pano_port_media.js";
 import { nodeInputOrigins, videoLinked } from "../pano_preview_video.js";
 import { clipActive } from "../pano_scene_eval.js";
 import { timelineFps } from "../pano_scene_state.js";
-import { deleteKeyframes, isTimed, laneNames, timelineSpan } from "../pano_timeline.js";
+import { deleteKeyframes, isTimed, laneNames, ownersSpan, timelineSpan } from "../pano_timeline.js";
 
 export function createTimeline(deps) {
   const {
@@ -17,8 +17,8 @@ export function createTimeline(deps) {
   // Bound by connect() to the other modules and showEditor.
   let commitAndRefreshNode, getPortMedia, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
     playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, syncCutoutShot,
-    stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked,
-    upstreamSpanFrames;
+    stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamRow,
+    upstreamSpanFrames, upstreamTimelineLayers, upstreamTimelineOwners;
 
   function syncTimeline() {
     if (!stateV2 || readOnly) return;
@@ -42,10 +42,13 @@ export function createTimeline(deps) {
       // Panorama Studio shows its Camera, its Stickers and its `scene` on one Timeline (#89).
       camera: hasCamera(),
       cameraHideable: studio,
-      // Another Studio's Scene on `scene` is upstream: its elements stay off this Timeline (#90).
+      // Another Studio's Scene on `scene` is upstream: its own `scene` is not drawn (#90), and its elements have
+      // rows of their own below (ADR 0030).
       scene: sceneV2 && !!nodeInputOrigins(node).scene && !upstreamLinked(),
+      upstream: upstreamTimelineLayers(),
     });
-    uiState.easing = timeline.selection
+    // Keyframes the Timeline cannot change (locked, only inherited, an upstream `scene`'s) have no Easing panel.
+    uiState.easing = timeline.selection && timelineEditable(timeline.selection.owner)
       ? buildEasingModel(owner, selectedLanes(timeline.selection), timeline.selection.frames, timelineOffset(timeline.selection.owner))
       : null;
   }
@@ -57,9 +60,11 @@ export function createTimeline(deps) {
   }
 
   // The Timeline length (5 s without one), widened to the background VIDEO, to the end of the
-  // port Sticker's media and to the upstream Scene's length (#90). An upstream background VIDEO is in the
-  // upstream Scene's length already (docs/render-contract.md), so it does not widen it again. Panorama
-  // Studio's Camera Keyframes widen it as they lengthen its output.
+  // port Sticker's media and to the upstream Scene's length with the Clip ranges this node overrides in it
+  // (#90, ADR 0030). An upstream background VIDEO is in the upstream Scene's length already
+  // (docs/render-contract.md), so it does not widen it again. Panorama Studio's Camera Keyframes widen it as
+  // they lengthen its output. The upstream rows' Clip range edges and Keyframes widen it as the node's own do,
+  // though only the overridden Clip ranges lengthen the output (ADR 0030).
   function timelineSpanFrames(openClip = null) {
     const fps = state.timeline.fps;
     const port = state.stickers.find(isExternalSticker);
@@ -67,16 +72,25 @@ export function createTimeline(deps) {
     const frames = Math.max(
       uiState.videoTransport.ready && !upstreamBackground() ? Math.round(Number(uiState.videoTransport.duration || 0) * fps) : 0,
       portMedia ? portMediaFrames(port.clip, fps, portMedia.meta) : 0,
-      upstreamSpanFrames(),
+      upstreamSpanFrames(openClip),
     );
-    return timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: studio });
+    const span = timelineSpan(state, { minimum: Math.round(fps * 5), frames, openClip, camera: studio });
+    return Math.max(span, ownersSpan(upstreamTimelineOwners(), openClip));
   }
 
   function timelineOwner(owner) {
     if (owner === "camera") return hasCamera() ? state.camera : null;
     if (owner === "scene") return sceneV2 ? state.scene : null;
-    // An upstream element's working Sticker owns its Lanes too (ADR 0030).
-    return stickerById(owner);
+    // An upstream element's working Sticker owns its Lanes too, and an upstream layer's working `scene` its
+    // (ADR 0030); an upstream painting row has no owner.
+    const upstream = upstreamRow(owner);
+    return upstream ? upstream.owner : stickerById(owner);
+  }
+
+  // Whether a row's values can change by its own state: an upstream layer's rows only while the node keeps
+  // overrides of the layer (ADR 0030); the node's own always.
+  function rowEditable(id) {
+    return upstreamRow(id)?.editable ?? true;
   }
 
   // The Lanes a Keyframe selection acts on: its Lane, or every Lane of its row.
@@ -87,8 +101,9 @@ export function createTimeline(deps) {
   // A Sticker's Keyframes are on its material, which starts at start - in; the Camera's on the Timeline.
   function timelineOffset(owner) {
     if (owner === "camera") return 0;
-    const { clip } = timelineOwner(owner);
-    return clip.start - clip.in;
+    // A row without an owner (a painting's) has no Keyframes.
+    const clip = timelineOwner(owner)?.clip;
+    return clip ? clip.start - clip.in : 0;
   }
 
   // What the view shows of a Clip range's content: whether it is on at the playhead, and the time of
@@ -97,9 +112,11 @@ export function createTimeline(deps) {
     return `${clipActive(clip, editor.frame)}:${clip.start - clip.in}`;
   }
 
+  // Whether the Keyframes of a row can change: not locked, and not an upstream layer's `scene`, whose Lanes no
+  // override holds (ADR 0030), or a row of a layer that is only inherited.
   function timelineEditable(owner) {
     const target = timelineOwner(owner);
-    return !!target && target.locked !== true;
+    return !!target && target.locked !== true && rowEditable(owner) && upstreamRow(owner)?.part !== "scene";
   }
 
   function setTimelineFrame(frame) {
@@ -193,11 +210,12 @@ export function createTimeline(deps) {
       ({
         commitAndRefreshNode, getPortMedia, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
         playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, syncCutoutShot,
-        stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamSpanFrames,
+        stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground, upstreamLinked, upstreamRow,
+        upstreamSpanFrames, upstreamTimelineLayers, upstreamTimelineOwners,
       } = api);
     },
     syncTimeline, timelineTimed, timelineSpanFrames, timelineOwner, selectedLanes, timelineOffset, clipView,
-    timelineEditable, setTimelineFrame, jumpTimelineTo, stopTimelinePlayback, togglePlayback,
+    timelineEditable, rowEditable, setTimelineFrame, jumpTimelineTo, stopTimelinePlayback, togglePlayback,
     refreshTimelineEdit, commitTimelineEdit, deleteSelectedKeyframes, changeTimelineFps, applyVideoTimelineFps,
   };
 }

@@ -111,6 +111,12 @@ function upstreamId(key, id) {
   return `upstream:${key}:${id}`;
 }
 
+// The id of the Timeline row of the `scene` (part "scene") or the painting (part "painting") of the upstream
+// layer with `key`, as the node's own rows are "scene" and "painting".
+export function upstreamRowId(key, part) {
+  return upstreamId(key, part);
+}
+
 // Whether a Sticker is a working copy's (upstreamWorkingLayers): the node's own never have an `origin`.
 export function isUpstreamSticker(item) {
   return !!item && typeof item === "object" && !!item.origin;
@@ -120,7 +126,12 @@ export function isUpstreamSticker(item) {
 // (upstreamLayerKeys). A layer without one, or not the nearest downstream with its id, is only inherited, and
 // its elements are not edited, as a locked one is not.
 export function upstreamStickerEditable(sticker) {
-  return !sticker.origin.layer.startsWith("#");
+  return upstreamLayerEditable(sticker.origin.layer);
+}
+
+// Whether the node can keep overrides of the upstream layer with `key` (upstreamLayerKeys): its key is its Scene id.
+export function upstreamLayerEditable(key) {
+  return !key.startsWith("#");
 }
 
 // The fields of a Sticker an override holds (docs/scene-state-v2.md "上流の上書き"), in the record's order.
@@ -134,35 +145,76 @@ function fieldTexts(sticker) {
   return Object.fromEntries(overrideFields(sticker).map((name) => [name, JSON.stringify(sticker[name])]));
 }
 
-// What the working copies (upstreamWorkingLayers) hold of the fields an override holds, by working Sticker id: what
-// upstreamEditedRecords compares them with to find the fields edited since.
+// What a working layer holds of the fields of its own a record overrides: its `scene`'s `visible` and `clip`, and
+// `painting_visible`.
+function layerTexts(sceneState) {
+  return {
+    visible: JSON.stringify(sceneState.scene.visible),
+    clip: JSON.stringify(sceneState.scene.clip),
+    painting_visible: JSON.stringify(sceneState.painting_visible),
+  };
+}
+
+// The baseline entry of a working layer's own fields, apart from its Stickers' (whose ids start with `upstream:`).
+function layerBaselineKey(key) {
+  return `layer:${key}`;
+}
+
+// What the working copies (upstreamWorkingLayers) hold of the fields an override holds, by working Sticker id, and
+// of each layer's own (its `scene` and painting): what upstreamEditedRecords compares them with to find the fields
+// edited since.
 export function upstreamBaseline(working) {
-  return new Map(working.flatMap(({ sceneState }) => sceneState.stickers.map((sticker) => [sticker.id, fieldTexts(sticker)])));
+  return new Map(working.flatMap(({ key, sceneState }) => [
+    [layerBaselineKey(key), layerTexts(sceneState)],
+    ...sceneState.stickers.map((sticker) => [sticker.id, fieldTexts(sticker)]),
+  ]));
 }
 
 // The node's `upstream` records (`records`) with the edits of the working copies `working` written in (ADR 0030),
-// or `records` itself without any. An edit is a field of a working Sticker that differs from `baseline`
-// (upstreamBaseline): a Lane is written whole, with its Keyframes, in the override of the Sticker's upstream id,
-// and the fields not edited since are left as the records have them (an untouched field stays inherited). The
-// frames written are those of the working copies, at `fps`, which the record of an edited layer takes; a record
-// at another fps is rebased to it first (rebaseUpstreamRecord, with the layer as it came, `layers`, rebased to
-// `fps`). The layers whose elements are only inherited (upstreamStickerEditable) get no record.
+// or `records` itself without any. An edit is a field of a working Sticker, or of a layer's `scene` (`visible`,
+// `clip`) or painting (`painting_visible`), that differs from `baseline` (upstreamBaseline): a Lane is written whole,
+// with its Keyframes, in the override of the Sticker's upstream id, and the fields not edited since are left as the
+// records have them (an untouched field stays inherited). The frames written are those of the working copies, at
+// `fps`, which the record of an edited layer takes; a record at another fps is rebased to it first
+// (rebaseUpstreamRecord, with the layer as it came, `layers`, rebased to `fps`). The layers whose elements are only
+// inherited (upstreamLayerEditable) get no record.
 export function upstreamEditedRecords(records, layers, working, baseline, fps) {
   const next = [...records];
   let edited = false;
+  // The index in `next` of the record of the layer at `index`, made or rebased to `fps` as needed.
+  const recordOf = (key, index) => {
+    edited = true;
+    let at = next.findIndex((item) => item.layer === key);
+    if (at < 0) at = next.push({ layer: key, fps, deleted: [], stickers: [], scene: {} }) - 1;
+    if (next[at].fps !== fps) {
+      const layer = layers[index].sceneState;
+      next[at] = rebaseUpstreamRecord(next[at], layer.timeline.fps === fps ? layer : rebaseSceneState(layer, fps));
+    }
+    return at;
+  };
   working.forEach(({ key, sceneState }, index) => {
-    for (const sticker of sceneState.stickers) {
-      const before = baseline.get(sticker.id);
-      if (!before || !upstreamStickerEditable(sticker)) continue;
-      const fields = overrideFields(sticker).filter((name) => JSON.stringify(sticker[name]) !== before[name]);
-      if (!fields.length) continue;
-      edited = true;
-      let at = next.findIndex((item) => item.layer === key);
-      if (at < 0) at = next.push({ layer: key, fps, deleted: [], stickers: [], scene: {} }) - 1;
-      if (next[at].fps !== fps) {
-        const layer = layers[index].sceneState;
-        next[at] = rebaseUpstreamRecord(next[at], layer.timeline.fps === fps ? layer : rebaseSceneState(layer, fps));
+    if (!upstreamLayerEditable(key)) return;
+    const before = baseline.get(layerBaselineKey(key));
+    if (before) {
+      const texts = layerTexts(sceneState);
+      const sceneFields = ["visible", "clip"].filter((name) => texts[name] !== before[name]);
+      if (sceneFields.length) {
+        const at = recordOf(key, index);
+        const scene = { ...next[at].scene };
+        for (const name of sceneFields) scene[name] = structuredClone(sceneState.scene[name]);
+        next[at] = { ...next[at], scene };
       }
+      if (texts.painting_visible !== before.painting_visible) {
+        const at = recordOf(key, index);
+        next[at] = { ...next[at], painting_visible: sceneState.painting_visible };
+      }
+    }
+    for (const sticker of sceneState.stickers) {
+      const stickerBefore = baseline.get(sticker.id);
+      if (!stickerBefore) continue;
+      const fields = overrideFields(sticker).filter((name) => JSON.stringify(sticker[name]) !== stickerBefore[name]);
+      if (!fields.length) continue;
+      const at = recordOf(key, index);
       const { id } = sticker.origin;
       // An override made for the other placement holds Lanes this Sticker does not have; this one replaces it.
       const overrides = [...next[at].stickers];
@@ -175,6 +227,29 @@ export function upstreamEditedRecords(records, layers, working, baseline, fps) {
     }
   });
   return edited ? loadSceneState({ version: 2, upstream: next }).upstream : records;
+}
+
+// The Clip ranges of the working copies `working` (upstreamWorkingLayers) that the node's overrides set or an edit
+// since `baseline` (upstreamBaseline) changed, as { index, clip, sticker } (`sticker` null for a layer's `scene`):
+// those whose ends widen the node's output beyond the upstream Scene's length (docs/render-contract.md "上書き",
+// `_override_layers`). The others are in the upstream Scene's length already.
+export function upstreamOverriddenClips(working, records, baseline) {
+  const clips = [];
+  working.forEach(({ key, sceneState }, index) => {
+    if (!upstreamLayerEditable(key)) return;
+    const record = records.find((item) => item.layer === key);
+    const before = baseline.get(layerBaselineKey(key));
+    const sceneClip = sceneState.scene.clip;
+    if ((record && Object.hasOwn(record.scene, "clip")) || (before && before.clip !== JSON.stringify(sceneClip))) {
+      clips.push({ index, clip: sceneClip, sticker: null });
+    }
+    for (const sticker of sceneState.stickers) {
+      const overridden = record?.stickers.some((item) => item.id === sticker.origin.id && item.placement === sticker.placement && Object.hasOwn(item, "clip"));
+      const changed = baseline.has(sticker.id) && baseline.get(sticker.id).clip !== JSON.stringify(sticker.clip);
+      if (overridden || changed) clips.push({ index, clip: sticker.clip, sticker });
+    }
+  });
+  return clips;
 }
 
 // What the views draw of the upstream layer with `key` (upstreamLayerKeys) at its Timeline `frame`: `sky`, its Sky
