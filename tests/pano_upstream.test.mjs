@@ -13,8 +13,10 @@ import {
   upstreamLayerKeys,
   upstreamLayersOf,
   upstreamLayerView,
+  upstreamOverriddenClips,
   upstreamPaintEntries,
   upstreamPending,
+  upstreamRowId,
   upstreamWorkingLayers,
 } from "../web_src/pano_upstream.js";
 
@@ -338,4 +340,49 @@ test("a record at another fps than the editor's is rebased to it when an edit is
   assert.deepEqual(written.stickers[0].roll, { value: 9, keyframes: [] });
   const again = upstreamWorkingLayers(edit.layers, [written], 24);
   assert.deepEqual(again[0].sceneState.stickers, edit.working[0].sceneState.stickers);
+});
+
+// ADR 0030 T9: an upstream layer's own rows (its `scene` and painting) are written back as overrides too.
+test("a layer's scene visible and Clip range and its painting_visible are written as the layer's overrides, each alone", () => {
+  const scene = { clip: { start: 0, in: 0, duration: 48 } };
+  const edit = editing([{ id: "scene_a", scene, stickers: [sky("sticker_1")] }]);
+  const [{ sceneState }] = edit.working;
+  sceneState.scene.clip = { start: 4, in: 0, duration: 48 };
+  assert.deepEqual(edit.write(), [{ layer: "scene_a", fps: 24, deleted: [], stickers: [], scene: { clip: { start: 4, in: 0, duration: 48 } } }]);
+  sceneState.scene.visible = false;
+  assert.deepEqual(edit.write()[0].scene, { visible: false, clip: { start: 4, in: 0, duration: 48 } });
+  sceneState.painting_visible = false;
+  const records = edit.write();
+  assert.equal(records[0].painting_visible, false);
+  assert.deepEqual(records[0].stickers, []);
+  // Showing again is an override too (the field was touched), and the records apply back to the working copy.
+  sceneState.painting_visible = true;
+  assert.equal(edit.write()[0].painting_visible, true);
+  const again = upstreamWorkingLayers(edit.layers, edit.write(), 24)[0].sceneState;
+  assert.deepEqual([again.scene.visible, again.scene.clip, again.painting_visible], [false, sceneState.scene.clip, true]);
+  // A layer that is only inherited gets no record for them.
+  const inherited = editing([{ scene }]);
+  inherited.working[0].sceneState.painting_visible = false;
+  assert.deepEqual(inherited.write(), []);
+  assert.equal(upstreamRowId("scene_a", "scene"), "upstream:scene_a:scene");
+});
+
+test("the overridden Clip ranges are those a record sets or an edit since the write-back changed, never an inherited layer's", () => {
+  const records = [{ layer: "scene_a", fps: 24, stickers: [{ id: "sticker_1", placement: "sky", clip: { start: 10, in: 0, duration: 100 } }] }];
+  const edit = editing([
+    { id: "scene_a", stickers: [sky("sticker_1"), sky("sticker_2", { clip: { start: 0, in: 0, duration: 500 } })] },
+    { stickers: [sky("sticker_1")] },
+  ], records);
+  const { upstream } = loadSceneState({ version: 2, upstream: records });
+  let baseline = upstreamBaseline(edit.working);
+  const clips = () => upstreamOverriddenClips(edit.working, upstream, baseline).map(({ index, clip, sticker }) => [index, sticker?.origin.id ?? "scene", clip.start + (clip.duration ?? 0)]);
+  // sticker_2 is not overridden: its end is in the upstream Scene's length already.
+  assert.deepEqual(clips(), [[0, "sticker_1", 110]]);
+  // A drag not yet written back counts; so does the layer's `scene`; an inherited layer never does.
+  edit.sticker(0, "sticker_2").clip.start = 5;
+  edit.working[0].sceneState.scene.clip = { start: 0, in: 0, duration: 30 };
+  edit.working[1].sceneState.stickers[0].clip = { start: 0, in: 0, duration: 999 };
+  assert.deepEqual(clips(), [[0, "scene", 30], [0, "sticker_1", 110], [0, "sticker_2", 505]]);
+  baseline = upstreamBaseline(edit.working);
+  assert.deepEqual(clips(), [[0, "sticker_1", 110]]);
 });

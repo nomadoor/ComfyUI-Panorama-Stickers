@@ -48,7 +48,7 @@
 - タイムラインのドラッグ（Clip range の移動・トリム、Keyframe の移動、ルーラーのスクラブ）は、ポインタが動くたびに状態だけを変え、タイムラインの表示の更新は 1 フレームに 1 回にまとめる（`pano_frame_batch.js` の `createFrameBatch`）。ビューは、見た目が変わるときだけ 1 フレームに 1 回更新する。Clip range では、再生ヘッドが範囲を出入りしたときと、移動で再生ヘッドの位置の素材の時刻が変わったときである（トリムでは素材の時刻は変わらない）。Keyframe の移動では毎フレーム更新する。スクラブのシークも 1 フレームに 1 回にする。インスペクタ・選択メニュー・ノード上のプレビューへの反映と Undo の記録は、ドラッグの終わりに 1 回だけ行う。Clip range が変わっても、ビューの状態 v2 は読み直さず、Clip range だけを写す。
 - キャンバスのドラッグ（見回し、Sticker の移動、ペイント、ギズモなど）も、ノード上のプレビューへの反映はドラッグの終わりに 1 回だけ行う（エディタの描画ループで、ドラッグが終わった次のフレームに反映する）。ギズモのドラッグのインスペクタの更新は 1 フレームに 1 回にまとめる。マスクの表示用のキャンバス（ERP と同じ大きさ）は、マスクと描いている途中のストロークが変わったときだけ作り直し、マスクが空なら作らない（`getMaskDisplayCanvas`・`getMaskDisplayRevision`）。ペイントのグループの、描いている途中のストロークを重ねたキャンバスも、変わったときだけ作り直す。
 - Clip range の外にある Sticker の行を選ぶと、再生ヘッドがその Clip range の始まりへ移ってから選ばれる。
-- Panorama Studio（`PanoramaStudio`、#89）のタイムラインは、Camera・Sticker・ペイント・`scene` の行を 1 本に並べる（上から Camera、Sticker（手前から奥、`world` の Sticker）、ペイント、`scene`）。
+- Panorama Studio（`PanoramaStudio`、#89）のタイムラインは、Camera・Sticker・ペイント・`scene` の行を 1 本に並べる（上から Camera、Sticker（手前から奥、`world` の Sticker）、ペイント、`scene`）。`scene` 入力に上流の Scene があるときは、その下に上流の層ごとの行が続く（下の「上流の層の行（ADR 0030）」）。
   - Camera の行は Camera があるときだけ出る（`buildTimelineModel` の `camera` に Camera の有無を渡す）。Frame 表示・Panorama 表示（3DoF の枠の操作と 6DoF のギズモ）・インスペクタで Camera を変えると、変えた Lane にだけ Keyframe が入る（上の記録の規則）。行のポチで全 Lane（位置・回転・画角）に入る。Camera の Lane は Clip range を持たず、Timeline frame そのもので比べる。再生の可否（`isTimed` の `camera: true`）とタイムラインの長さ（`timelineSpan` の `camera: true`）にも数える。Camera が無ければ（`camera: null`）どちらも数えない。
   - Camera の行が出入りしても、タイムラインのバー（再生ボタン・fps・長さ・開閉）は変わらない（`node --test` で確かめている）。行の一覧は Sticker を足したときと同じく 1 行増え、下の行が 1 行分下がる。タイムラインを開いているときは、行の分だけタイムラインが高くなり（34% まで）、ビューが低くなる。これも Sticker を足したときと同じである。
   - `scene` の行（アイコンは箱）は、`scene` 入力がつながっているとき、または `scene` が Keyframe か既定でない Clip range を持つとき（`pano_timeline.js` の `ownerTimed`）に出る。`scene` の位置・回転・大きさを変える操作とインスペクタはまだ無いので、`scene` の行は Clip range（移動と両端の切り詰め。Sticker の行と同じ）だけを持ち、行のポチと Lane の行は出さない（行のモデルの `keyable: false`。エディタも `scene` の `key-row` を無視する。行を開くボタンは無効）。状態に `scene` の Keyframe があれば、行にポチの印だけは出る。行を選んでもキャンバスの選択は外れるだけで、何も選ばれない。
@@ -65,6 +65,7 @@ Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端
 - 目の切り替えは編集で、Undo の 1 段になり、`state_json` に保存する（既定の表示は書かない）。値を変えないので、再生は止めない（Premiere・Resolve のトラックの表示の切り替えと同じ）。ロックした Sticker も切り替えられる（After Effects と同じ）。
 - 隠した物はエディタでも描かない（薄くも出さない。After Effects・Photoshop・Blender のビューポートと同じ）。選べず、動かせない：キャンバスとギズモの当たり判定、選択の一覧から外れ、行を押しても選ばれない。選んでいる物を隠すと選択が外れる（Undo・Redo で隠れたときも）。隠したペイントにはペイントもマスクも描けない（ツールを使っても何も起きない。Photoshop の隠したレイヤーと同じ）。Camera を隠したときのエディタは `docs/threejs-spark-integration.md` の「Panorama Studio のエディタ（#89）」。
 - タイムラインの上の操作（Keyframe・Clip range の編集、行のポチ）は、隠した物にもできる。
+- 上流の層の要素・ペイント・`scene` も、その行の目のアイコンで隠し、もう一度出す（下の「上流の層の行（ADR 0030）」）。隠した上流の要素を出す手段はこの目のアイコンである（インスペクタの Visible の切り替えは選んだ要素にしか出ず、隠した要素は選べない）。
 - 旧ノードのエディタは今までどおり、隠した `port` の Sticker を薄く出す。インスペクタにあった表示の切り替え（Layers の節。Panorama・Paint / Images・Mask の、エディタの見た目だけの切り替え、ADR 0011）はなくした。
 
 タイムラインはオブジェクトごとに一行である。閉じた行が基本で、▶ で開くと Lane ごとの行が出る。
@@ -108,6 +109,24 @@ Camera は Keyframe と Drone の二つのモードを持ち、出力にはい�
 ### Pose handoff の `port` の Sticker（ADR 0030）
 
 `sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Upstream」の行のボタン（Revert to upstream）。規則は `docs/scene-state-v2.md` の「`sticker_state` で届く `port` の Sticker」。
+
+### 上流の層の行（ADR 0030）
+
+Panorama Studio の `scene` 入力に上流の Scene があるとき、タイムラインは自分の行の下に、上流の層ごとのまとまりを出す（最も上流の層から）。上流の要素の作業コピー（`editor/upstream.js`、自分の Timeline fps に再基準化したもの）を、自分の行と同じ規則で並べる。
+
+- まとまりの先頭に見出しの行（`PanoTimelineGroup.vue`）があり、`Upstream · <層のキー>`（その層の Scene の id、`id` の無い層は `#<番号>`）と出す。上書きを持てない層（キーが `#` で始まる層）には ` · inherited only` を添える。
+- 行は自分のものと同じ順：その層の Sticker（`sky` は手前から奥、次に `world`）、ペイント（「Paint」。ストロークなどを持つか、隠しているときだけ。目と名前だけ）、`scene`（「Scene」。その層が 3D の内容（`ui` の `pano_scene_files`）を持つか、Keyframe か既定でない Clip range を持つか、隠しているときだけ。目と Clip range だけで、行のポチと Lane の行は無い）。
+- 行の id は `upstream:<層のキー>:<要素の id>`、ペイントは `upstream:<層のキー>:painting`、`scene` は `upstream:<層のキー>:scene`（`pano_upstream.js` の `upstreamRowId`）。フレームは自分の Timeline frame（作業コピーの値）。Sticker の id に `scene`・`painting` は使わない（エディタが振る id は常に `sticker_<番号>`。`docs/scene-state-v2.md` の `next_sticker_id`）ので、ペイントと `scene` の行の id は Sticker の行の id と重ならない。自分の行の `scene`・`painting` も同じ前提である。
+- 操作は自分の行と同じ：Keyframe を打つ・動かす・消す・Easing を変える、行のポチ（全 Lane に Keyframe）、Clip range の移動と両端の切り詰め、目のアイコン、行の選択と開閉。どれも作業コピーを変え、Undo の段を積むとき（`pushHistory`）に `syncUpstreamEdits` が、変えたフィールドだけを自分の状態の `upstream` の記録に上書きとして書く（Lane は Keyframe ごと丸ごと、`clip`・`visible`、層の `scene` の `visible`・`clip`、`painting_visible`。`docs/render-contract.md` の「エディタでの編集（T8）」）。上流の層の状態そのものと自分の Sticker は変えない。操作ごとに Undo の 1 段になり、Undo・Redo で記録と作業コピーが戻る。開いて閉じただけ、行を開いた・選んだだけ、Clip range をクリックしただけでは何も書かない。
+- ロックは自分の行と同じに効く：ロックした上流の要素（ロックの上書き、または上流でロックされたもの）の行は、Keyframe と Clip range を変えず、目のアイコンは効く。ロックの切り替えは、行ではなく選択メニューとインスペクタ（`PanoUpstreamOrigin.vue`）にある。
+- 上書きを持てない層の行は、出るがロックと同じく何も変えない（目のアイコンと行のポチのボタンは無効にし、ツールチップに理由を出す）。選択と行の開閉はできる。
+- `scene` の行は Clip range だけを変える。上流の `scene` の Lane は上書きできない（`docs/scene-state-v2.md`）ので、その Keyframe の印は動かせず、Easing も変えない。
+- 上書きのある行（その層の記録が、その要素の上書き・`scene` の上書き・`painting_visible` を持つ行）は、名前の右に小さな点を出す（ツールチップは「Overridden in this node」）。点の場所は上流の行では常に空けておき、点が付いても行のボタンは動かない。
+- 上流の要素を消す・上流の値に戻す・消したものを戻す操作は、ここにはまだ無い（T10）。Delete キーは、Keyframe を選んでいればその Keyframe を消し（上の規則）、上流の要素そのものは消さない。
+- 自分の `scene` の行は、上流の Scene があるときは出さない（自分の `scene` は描画に使われない）。
+- タイムラインの範囲：二つの規則を分けて持つ。
+  - 出力の長さ（`upstreamSpanFrames`）：自分の `timeline.length` が無いとき、上流の Scene の長さ（実行結果の `pano_timeline_frames`）と、上書きした Clip range の終わりまで。上書きしたものは、記録が `clip` を持つもの、またはまだ書き戻していない編集で変えたもの（ドラッグ中を含む）で、`duration` の無いものは `port` の Sticker の素材の終わり（`portMediaFrames`）だけを数える。ドラッグ中の Clip range は終わりの開いたものとして数える。ノードの長さの規則（`docs/render-contract.md` の「長さ」）と同じで、上書きしていない上流の Clip range は上流の長さにすでに入っているので数えない。
+  - 見える範囲：自分の行と同じく、上流の行の Clip range の端と Keyframe まで常に広げる（`pano_timeline.js` の `ownersSpan`。上流の層の作業コピーの Sticker と `scene` に、自分の Sticker と `scene` と同じ規則を当てる。`timeline.length` があっても広げる）。終わりの開いた Clip range とドラッグ中の Clip range は `start + 1`、ほかは `start + duration`、Keyframe は `start − in + frame + 1` まで。動かした上流の要素は、出力を延ばさなくても、タイムラインの上で届く所にある。
 
 ### `port` の Sticker の素材（#83）
 

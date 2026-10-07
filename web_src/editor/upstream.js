@@ -8,7 +8,7 @@ import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_di
 import { sourceAsset } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { createPaintEngineManager } from "../pano_paint_engine.js";
-import { createFrameSequence, portMediaSource, portMediaTime } from "../pano_port_media.js";
+import { createFrameSequence, portMediaFrames, portMediaSource, portMediaTime } from "../pano_port_media.js";
 import { isNodeOutputMediaCurrent, linkedInputType } from "../pano_preview_video.js";
 import {
   PANO_SCENE_TYPE,
@@ -16,10 +16,13 @@ import {
   layerUiList,
   upstreamBaseline,
   upstreamEditedRecords,
+  upstreamLayerEditable,
   upstreamLayersOf,
   upstreamLayerView,
+  upstreamOverriddenClips,
   upstreamPaintEntries,
   upstreamPending,
+  upstreamRowId,
   upstreamWorkingLayers,
 } from "../pano_upstream.js";
 import { createVideoFollower } from "../pano_video_playback.js";
@@ -128,11 +131,62 @@ export function createUpstream(deps) {
   }
 
   // The output's frame count while the upstream Scene shows (`pano_timeline_frames`: the longer of the upstream
-  // Scene and this node's own, ADR 0029), so the Timeline reaches every upstream element; else 0.
-  function upstreamSpanFrames() {
-    if (!upstreamEntries()) return 0;
+  // Scene and this node's own, ADR 0029), so the Timeline reaches every upstream element, widened to the ends of
+  // the Clip ranges this node overrides (upstreamOverriddenClips), as the node widens its output (ADR 0030): one
+  // without a duration ends with its layer's port media, and `openClip`, the one being dragged, counts as open.
+  // Else 0.
+  function upstreamSpanFrames(openClip = null) {
+    const entries = upstreamEntries();
+    if (!entries) return 0;
     const [frames] = comfyMedia.uiValue(node, "pano_timeline_frames") || [];
-    return Number(frames) > 0 ? Number(frames) : 0;
+    let span = Number(frames) > 0 ? Number(frames) : 0;
+    const working = entries.map((entry) => entry.working);
+    for (const { index, clip, sticker } of upstreamOverriddenClips(working, state.upstream, baseline)) {
+      const meta = layerUiList(entries[index].layer.ui, PORT_VIDEO_META_KEY)[0];
+      const end = clip === openClip ? clip.start + 1
+        : clip.duration !== null ? clip.start + clip.duration
+          : sticker?.source.kind === "port" && meta && typeof meta === "object" ? portMediaFrames(clip, state.timeline.fps, meta) : 0;
+      span = Math.max(span, end);
+    }
+    return span;
+  }
+
+  // What has a Clip range and Keyframes on the upstream rows of the Timeline: the working Stickers and `scene`s
+  // of the upstream layers; none without them.
+  function upstreamTimelineOwners() {
+    return (upstreamEntries() ?? []).flatMap(({ working }) => [working.sceneState.scene, ...working.sceneState.stickers]);
+  }
+
+  // The upstream layers as the Timeline shows them (pano_editor_ui_state.js buildTimelineModel `upstream`): per
+  // layer its key, its working state, whether the node can keep overrides of it, its record in the state's
+  // `upstream` (null without one), and whether it has 3D `scene` content. None without upstream layers.
+  function upstreamTimelineLayers() {
+    return (upstreamEntries() ?? []).map(({ layer, working }) => {
+      const editable = upstreamLayerEditable(working.key);
+      return {
+        key: working.key,
+        sceneState: working.sceneState,
+        editable,
+        record: editable ? state.upstream.find((item) => item.layer === working.key) ?? null : null,
+        scene: layerUiList(layer.ui, "pano_scene_files").length > 0,
+      };
+    });
+  }
+
+  // What the Timeline row with `id` is of the upstream layers: { editable, part, owner, sceneState } with part
+  // "sticker" (owner the working Sticker), "scene" (owner the working `scene`) or "painting" (owner null; it is the
+  // working state's `painting_visible`), editable when the node can keep overrides of its layer. null for a row of
+  // the node's own.
+  function upstreamRow(id) {
+    for (const { working } of upstreamEntries() ?? []) {
+      const { key, sceneState } = working;
+      const editable = upstreamLayerEditable(key);
+      if (id === upstreamRowId(key, "scene")) return { editable, part: "scene", owner: sceneState.scene, sceneState };
+      if (id === upstreamRowId(key, "painting")) return { editable, part: "painting", owner: null, sceneState };
+      const sticker = sceneState.stickers.find((item) => item.id === id);
+      if (sticker) return { editable, part: "sticker", owner: sticker, sceneState };
+    }
+    return null;
   }
 
   // The note the stage shows about the upstream Scene, or "": that the editor waits for a run to show it, or
@@ -300,6 +354,6 @@ export function createUpstream(deps) {
       ({ getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw } = api);
     },
     upstreamEntries, upstreamLinked, upstreamNotice, upstreamSpanFrames, upstreamViewInput, rebuildUpstreamWorking,
-    syncUpstreamEdits, upstreamStickers, upstreamStickerImage, disposeUpstream,
+    syncUpstreamEdits, upstreamStickers, upstreamStickerImage, upstreamTimelineLayers, upstreamTimelineOwners, upstreamRow, disposeUpstream,
   };
 }

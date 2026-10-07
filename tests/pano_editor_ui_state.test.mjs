@@ -7,6 +7,7 @@ import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, stickerParamEnabled, buil
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { keyedAt, setSegmentEasing } from "../web_src/pano_timeline.js";
+import { upstreamLayersOf, upstreamWorkingLayers } from "../web_src/pano_upstream.js";
 import { readEditorSource } from "./editor_source.mjs";
 
 const canonical = () => loadSceneState(readFileSync(new URL("./fixtures/scene_state/v2_canonical.json", import.meta.url), "utf8"));
@@ -530,4 +531,55 @@ test("every Panorama Studio Sticker has the inspector's Visible and Lock rows: a
   assert.match(panel, /<span class="meta">\{\{ model\.upstream\?\.origin \|\| "" \}\}<\/span>/);
   const origin = readFileSync(new URL("../web_src/components/PanoUpstreamOrigin.vue", import.meta.url), "utf8");
   assert.doesNotMatch(origin, /v-if="model\.note"/);
+});
+
+// ADR 0030 T9: the upstream layers' rows, below the node's own.
+test("each upstream layer has a group below the node's own rows: its header, its Stickers, its painting and its scene", () => {
+  const state = canonical();
+  const options = { span: 120, selection: null, selectedId: "upstream:scene_a:sticker_2", expanded: true, openRows: new Set(["upstream:scene_a:sticker_1"]), camera: true, scene: true };
+  const raw = [
+    {
+      id: "scene_a",
+      timeline: { fps: 30 },
+      scene: { clip: { start: 30, in: 0, duration: 60 } },
+      stickers: [
+        { id: "sticker_1", placement: "sky", source: { kind: "file", filename: "a.png" }, z_index: 1, clip: { start: 15, in: 3 },
+          roll: { value: 0, keyframes: [{ frame: 0, value: 0 }, { frame: 30, value: 10 }] } },
+        { id: "sticker_2", placement: "sky", source: { kind: "file", filename: "b.png" }, z_index: 2, visible: false },
+        { id: "sticker_3", placement: "world", source: { kind: "port" } },
+      ],
+      painting_visible: false,
+    },
+    { stickers: [{ id: "sticker_1", placement: "sky", source: { kind: "file", filename: "c.png" } }] },
+  ];
+  const records = loadSceneState({ version: 2, upstream: [{ layer: "scene_a", fps: 24, stickers: [{ id: "sticker_2", placement: "sky", visible: false }], scene: { visible: true } }] }).upstream;
+  const working = upstreamWorkingLayers(upstreamLayersOf(raw.map((layer) => ({ state: { version: 2, ...layer } }))), records, 24);
+  const upstream = working.map(({ key, sceneState }, index) => ({
+    key, sceneState, editable: index === 0, record: index === 0 ? records[0] : null, scene: index === 0,
+  }));
+  const model = buildTimelineModel(state, { ...options, upstream });
+
+  // The node's own rows are the same as without upstream layers.
+  assert.deepEqual(model.rows, buildTimelineModel(state, options).rows);
+  assert.equal(buildTimelineModel(state, options).groups.length, 0);
+  assert.deepEqual(model.groups.map((group) => [group.key, group.label]), [["scene_a", "Upstream · scene_a"], ["#1", "Upstream · #1 · inherited only"]]);
+  const [a, b] = model.groups;
+  assert.deepEqual(a.rows.map((row) => [row.id, row.label, row.hideable, row.visible, row.keyable, row.upstream, row.overridden, row.editable, row.selected]), [
+    ["upstream:scene_a:sticker_2", "b.png", true, false, true, true, true, true, true],
+    ["upstream:scene_a:sticker_1", "a.png", true, true, true, true, false, true, false],
+    ["upstream:scene_a:sticker_3", "Sticker input", true, true, true, true, false, true, false],
+    ["upstream:scene_a:painting", "Paint", true, false, false, true, false, true, false],
+    ["upstream:scene_a:scene", "Scene", true, true, false, true, true, true, false],
+  ]);
+  // Frames are the editor's (24 fps): the 30 fps layer's Clip range and Keyframes rebased.
+  const sticker1 = a.rows[1];
+  assert.deepEqual(sticker1.clip, { start: 12, end: null });
+  assert.deepEqual(sticker1.keys.map((key) => key.frame), [10, 34]);
+  assert.equal(sticker1.open, true);
+  assert.deepEqual(sticker1.lanes.find((lane) => lane.lane === "roll").frames, [10, 34]);
+  assert.deepEqual(a.rows[4].clip, { start: 24, end: 72 });
+  // A layer that is only inherited shows its rows, none of them editable or overridden; no painting or scene to show.
+  assert.deepEqual(b.rows.map((row) => [row.id, row.editable, row.overridden]), [["upstream:#1:sticker_1", false, false]]);
+  // The node's own rows are editable and not upstream.
+  assert.ok(model.rows.every((row) => row.editable && !row.upstream && !row.overridden));
 });

@@ -2999,9 +2999,34 @@
 .pano-timeline-open[aria-expanded="true"] svg {
   transform: none;
 }
-.pano-timeline-open:disabled {
+.pano-timeline-open:disabled,
+.pano-timeline-eye:disabled,
+.pano-timeline-key:disabled {
   opacity: 0.35;
   cursor: default;
+}
+/* An upstream layer's rows (ADR 0030): a header across the names and the tracks, and a slot on each row that
+   marks an override, kept while there is none so the key button never moves. */
+.pano-timeline-group {
+  grid-column: 1 / -1;
+  height: 20px;
+  padding: 0 var(--pano-space-md);
+  border-top: 1px solid var(--pano-border);
+  overflow: hidden;
+  color: var(--pano-muted);
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pano-timeline-name .pano-timeline-override {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.pano-timeline-name .pano-timeline-override.on {
+  background: var(--pano-accent);
 }
 .pano-timeline-track {
   position: relative;

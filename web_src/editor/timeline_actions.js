@@ -1,5 +1,7 @@
 // What the Timeline's actions do (PanoTimeline.vue emits them): selecting rows and Keyframes, seeking,
-// playback, keying Lanes, easing, and dragging Keyframes and Clip ranges.
+// playback, keying Lanes, easing, and dragging Keyframes and Clip ranges. On an upstream layer's rows (ADR 0030)
+// they change its working copy, which pushHistory writes back as the node's overrides (editor/upstream.js
+// syncUpstreamEdits); a layer that is only inherited is not changed, as a locked row is not.
 import { PAINTING_ROW } from "../pano_editor_ui_state.js";
 import { clipActive } from "../pano_scene_eval.js";
 import {
@@ -19,10 +21,10 @@ export function createTimelineActions(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
-    playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
-    selectWorldSticker, selectedLanes, setSelectedItem, stopTimelinePlayback, syncFloatingViewButtonState,
+    playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw, rowEditable,
+    selectWorldSticker, selectedLanes, setSelectedItem, stickerById, stopTimelinePlayback, syncFloatingViewButtonState,
     syncTimeline, timelineEditable, timelineOffset, timelineOwner, timelineSpanFrames, timelineTimed,
-    togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel;
+    togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel, upstreamRow;
 
   function onTimelineAction(action) {
     if (readOnly || !stateV2) return;
@@ -60,8 +62,12 @@ export function createTimelineActions(deps) {
       return;
     }
     if (action.type === "toggle-visible") {
-      // Showing and hiding is an edit (Undo), but changes no value at a frame, so playback goes on.
+      // Showing and hiding is an edit (Undo), but changes no value at a frame, so playback goes on. The eye of
+      // an upstream row is how a hidden upstream element shows again.
+      if (!rowEditable(action.id)) return;
+      const upstream = upstreamRow(action.id);
       if (action.id === PAINTING_ROW) state.painting_visible = !state.painting_visible;
+      else if (upstream?.part === "painting") upstream.sceneState.painting_visible = !upstream.sceneState.painting_visible;
       else {
         const owner = timelineOwner(action.id);
         if (!owner) return;
@@ -72,8 +78,9 @@ export function createTimelineActions(deps) {
       return;
     }
     if (action.type === "select-row") {
-      // A Sticker is hidden outside its Clip range, so the playhead first moves to where it starts.
-      const sticker = state.stickers.find((item) => item.id === action.id);
+      // A Sticker is hidden outside its Clip range, so the playhead first moves to where it starts. An
+      // upstream element's row selects its working Sticker.
+      const sticker = stickerById(action.id);
       // What is hidden is not selected; its row is still where its eye is.
       if ((sticker && !sticker.visible) || (action.id === "camera" && !cameraShoots())) return;
       if (sticker && !clipActive(sticker.clip, editor.frame)) jumpTimelineTo(sticker.clip.start);
@@ -138,9 +145,9 @@ export function createTimelineActions(deps) {
       return;
     }
     if (action.type === "clip") {
-      // A Sticker's Clip range, or the `scene`'s.
-      const sticker = action.id === "scene" ? timelineOwner("scene") : state.stickers.find((item) => item.id === action.id);
-      if (!sticker || sticker.locked) return;
+      // A Sticker's Clip range, or a `scene`'s (the node's own or an upstream layer's).
+      const sticker = timelineOwner(action.id);
+      if (!sticker?.clip || sticker.locked || !rowEditable(action.id)) return;
       if (action.phase === "start") {
         stopTimelinePlayback();
         // Only the span set by everything else reopens the end, not the span this Clip range widens.
@@ -169,7 +176,8 @@ export function createTimelineActions(deps) {
       return;
     }
     if (action.type === "key-row") {
-      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet (#89).
+      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet (#89); an upstream
+      // `scene` row is not editable here (timelineEditable).
       if (action.owner === "scene" || !timelineEditable(action.owner)) return;
       // Recording edits stop at the frame shown, so playback stops before a Keyframe is set.
       stopTimelinePlayback();
@@ -211,10 +219,10 @@ export function createTimelineActions(deps) {
     connect(api) {
       ({
         cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
-        playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
-        selectWorldSticker, selectedLanes, setSelectedItem, stopTimelinePlayback, syncFloatingViewButtonState,
+        playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw, rowEditable,
+        selectWorldSticker, selectedLanes, setSelectedItem, stickerById, stopTimelinePlayback, syncFloatingViewButtonState,
         syncTimeline, timelineEditable, timelineOffset, timelineOwner, timelineSpanFrames, timelineTimed,
-        togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel,
+        togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel, upstreamRow,
       } = api);
     },
     onTimelineAction,

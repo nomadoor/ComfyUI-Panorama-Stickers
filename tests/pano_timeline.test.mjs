@@ -21,6 +21,7 @@ import {
   setLaneValue,
   setSegmentEasing,
   MAX_TICKS,
+  ownersSpan,
   timelineSpan,
   timelineTicks,
   trimClipEnd,
@@ -434,4 +435,16 @@ test("each result of a VIDEO above the fps limit leaves the playhead and the his
   assert.match(editorSource, /function videoTimelineFps\(node\) \{[\s\S]*?return Array\.isArray\(fps\) \? timelineFps\(fps\[0\]\) : null;/);
   // The same fps after that is no change: no rebase, no playhead jump, no Undo step.
   assert.match(editorFunction("changeTimelineFps"), /const fps = timelineFps\(value\);\s*if \(fps === null \|\| fps === state\.timeline\.fps\) return;\s*stopTimelinePlayback\(\);/);
+});
+
+test("the span of owners reaches their Clip range ends and Keyframes; an open or dragged Clip range counts as start + 1", () => {
+  const { stickers: [sky, plane] } = loadSceneState({ version: 2, stickers: [
+    { id: "a", placement: "sky", source: { kind: "file", filename: "a.png" }, clip: { start: 10, in: 0, duration: 20 } },
+    { id: "b", placement: "world", source: { kind: "file", filename: "b.png" }, clip: { start: 40, in: 5 } },
+  ] });
+  assert.equal(ownersSpan([]), 0);
+  assert.equal(ownersSpan([sky, plane]), 41);
+  assert.equal(ownersSpan([sky], sky.clip), 11);
+  keyAllLanes(plane, 100);
+  assert.equal(ownersSpan([sky, plane]), 136, "a Keyframe at material frame 100 of a Clip range starting at 40 - 5");
 });

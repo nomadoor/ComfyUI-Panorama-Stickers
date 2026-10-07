@@ -202,14 +202,23 @@ export function timelineSpan(state, { minimum, frames = 0, openClip = null, came
       for (const key of lane.keyframes) end = Math.max(end, key.frame + 1);
     }
   }
-  for (const owner of [state.scene, ...state.stickers]) {
+  end = Math.max(end, ownersSpan([state.scene, ...state.stickers], openClip));
+  return Number.isFinite(end) ? end : BROKEN_SPAN;
+}
+
+// The number of Timeline frames that shows every Clip range edge and Keyframe of `owners` (Stickers and
+// `scene`s, whose Keyframes are on their material at start - in), 0 without any. A Clip range without a
+// duration, and `openClip`, count as open: up to their start.
+export function ownersSpan(owners, openClip = null) {
+  let end = 0;
+  for (const owner of owners) {
     const { clip } = owner;
     end = Math.max(end, clip.duration === null || clip === openClip ? clip.start + 1 : clip.start + clip.duration);
     for (const lane of ownerLanes(owner)) {
       for (const key of lane.keyframes) end = Math.max(end, clip.start - clip.in + key.frame + 1);
     }
   }
-  return Number.isFinite(end) ? end : BROKEN_SPAN;
+  return end;
 }
 
 // The Timeline fps typed in the fps field sets: brought into the range a state keeps, or null (rejected)

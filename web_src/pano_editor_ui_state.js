@@ -1,6 +1,7 @@
 import { ICON } from "./icons.js";
 import { sceneStickerLabel } from "./pano_editor_state.js";
 import { laneNames, ownerTimed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
+import { upstreamRowId } from "./pano_upstream.js";
 
 export function patchUiButton(list, matchKey, key, patch) {
   const entry = Array.isArray(list) ? list.find((item) => String(item?.[matchKey] || "") === String(key || "")) : null;
@@ -469,9 +470,16 @@ const LANE_LABELS = {
 // Every row has the place of the eye at its left; a `hideable` row has the eye there, which shows and
 // hides it (`visible`); the Camera row has one with `cameraHideable`. The painting has a row (`painting`,
 // after the Stickers) while it has strokes or rasters, or is hidden.
-export function buildTimelineModel(state, { span, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false }) {
+// `upstream` are the upstream layers of Panorama Studio (editor/upstream.js upstreamTimelineLayers, ADR 0030),
+// shown below the node's own rows in `groups`, one per layer from the farthest upstream: its header
+// (`Upstream · <key>`) and its rows as the node's own are made from its working state, with the ids
+// `upstream:<key>:<id>`, `upstream:<key>:painting` and `upstream:<key>:scene`. Its `scene` row shows while the
+// layer has 3D content, Keyframes or a Clip range, or is hidden. An upstream row is `upstream`, `overridden` while
+// the layer's record holds an override of it, and `editable` only when the node can keep overrides of its layer;
+// the node's own rows are always `editable`.
+export function buildTimelineModel(state, { span, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false, upstream = [] }) {
   // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
-  const row = (id, owner, rowLabel, icon, clip, offset, { keyable = true, hideable = true } = {}) => {
+  const row = (id, owner, rowLabel, icon, clip, offset, { keyable = true, hideable = true, origin = null } = {}) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
     return {
       id,
@@ -481,6 +489,7 @@ export function buildTimelineModel(state, { span, selection, selectedId, expande
       selected: id === selectedId,
       hideable,
       visible: owner.visible,
+      ...upstreamRowFlags(origin),
       keyable,
       open: keyable && openRows.has(id),
       keys: rowKeyframes(owner).map((key) => ({ frame: key.frame + offset, full: key.full })),
@@ -494,9 +503,43 @@ export function buildTimelineModel(state, { span, selection, selectedId, expande
       })),
     };
   };
-  const sky = state.stickers.filter((sticker) => sticker.placement === "sky").sort((a, b) => b.z_index - a.z_index);
-  const world = state.stickers.filter((sticker) => sticker.placement === "world");
   const clipRange = ({ start, in: clipIn, duration }) => ({ clip: { start, end: duration === null ? null : start + duration }, offset: start - clipIn });
+  // The rows of a state's Stickers from front to back, its painting and its `scene` (with `sceneRow`). `origin`
+  // gives an upstream layer's ids and flags.
+  const stateRows = (sceneState, { idOf = (id) => id, sceneRow, origin = null }) => {
+    const sky = sceneState.stickers.filter((sticker) => sticker.placement === "sky").sort((a, b) => b.z_index - a.z_index);
+    const world = sceneState.stickers.filter((sticker) => sticker.placement === "world");
+    return [
+      ...[...sky, ...world].map((sticker) => {
+        const { clip, offset } = clipRange(sticker.clip);
+        const label = sceneStickerLabel(origin ? { ...sticker, id: sticker.origin.id } : sticker);
+        return row(sticker.id, sticker, label, ICON.image, clip, offset, { origin: origin && { ...origin, overridden: origin.stickerOverridden(sticker) } });
+      }),
+      ...(hasPainting(sceneState.painting) || !sceneState.painting_visible ? [{
+        id: idOf(PAINTING_ROW),
+        label: "Paint",
+        icon: ICON.paintbrush_vertical_tool,
+        clip: null,
+        selected: false,
+        hideable: true,
+        visible: sceneState.painting_visible,
+        ...upstreamRowFlags(origin && { ...origin, overridden: origin.paintingOverridden }),
+        keyable: false,
+        open: false,
+        keys: [],
+        selectedFrames: [],
+        lanes: [],
+      }] : []),
+      ...(sceneRow || ownerTimed(sceneState.scene) ? [(() => {
+        const { clip, offset } = clipRange(sceneState.scene.clip);
+        // The editor has no way to move the `scene` yet, so its row has only its Clip range (#89).
+        return row(idOf("scene"), sceneState.scene, "Scene", ICON.box, clip, offset, {
+          keyable: false,
+          origin: origin && { ...origin, overridden: origin.sceneOverridden },
+        });
+      })()] : []),
+    ];
+  };
   return {
     visible: true,
     expanded,
@@ -508,31 +551,29 @@ export function buildTimelineModel(state, { span, selection, selectedId, expande
     length: state.timeline.length,
     rows: [
       ...(camera ? [row("camera", state.camera, "Camera", ICON.camera, null, 0, { hideable: cameraHideable })] : []),
-      ...[...sky, ...world].map((sticker) => {
-        const { clip, offset } = clipRange(sticker.clip);
-        return row(sticker.id, sticker, sceneStickerLabel(sticker), ICON.image, clip, offset);
-      }),
-      ...(hasPainting(state.painting) || !state.painting_visible ? [{
-        id: PAINTING_ROW,
-        label: "Paint",
-        icon: ICON.paintbrush_vertical_tool,
-        clip: null,
-        selected: false,
-        hideable: true,
-        visible: state.painting_visible,
-        keyable: false,
-        open: false,
-        keys: [],
-        selectedFrames: [],
-        lanes: [],
-      }] : []),
-      ...(scene || ownerTimed(state.scene) ? [(() => {
-        const { clip, offset } = clipRange(state.scene.clip);
-        // The editor has no way to move the `scene` yet, so its row has only its Clip range (#89).
-        return row("scene", state.scene, "Scene", ICON.box, clip, offset, { keyable: false });
-      })()] : []),
+      ...stateRows(state, { sceneRow: scene }),
     ],
+    groups: upstream.map(({ key, sceneState, editable, record, scene: content }) => ({
+      key,
+      label: `${upstreamOriginLabel(key)}${editable ? "" : " · inherited only"}`,
+      rows: stateRows(sceneState, {
+        idOf: (part) => upstreamRowId(key, part),
+        sceneRow: content || !sceneState.scene.visible,
+        origin: {
+          editable,
+          stickerOverridden: (sticker) => !!record?.stickers.some((item) => item.id === sticker.origin.id && item.placement === sticker.placement),
+          paintingOverridden: !!record && Object.hasOwn(record, "painting_visible"),
+          sceneOverridden: !!record && Object.keys(record.scene).length > 0,
+        },
+      }),
+    })),
   };
+}
+
+// The flags of a Timeline row (buildTimelineModel): an upstream layer's row (`origin`, { editable, overridden })
+// is `upstream`, `overridden` while the node overrides it, and `editable` when the node can keep overrides of it.
+function upstreamRowFlags(origin) {
+  return origin ? { upstream: true, overridden: origin.overridden, editable: origin.editable } : { upstream: false, overridden: false, editable: true };
 }
 
 // The Easing panel for the selected Keyframes (frames in the owner's own frames, `offset` to the
