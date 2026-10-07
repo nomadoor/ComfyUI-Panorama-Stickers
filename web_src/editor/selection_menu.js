@@ -71,10 +71,10 @@ export function createSelectionMenu(deps) {
   }
 
   // What the menu may do with upstream elements in the selection (ADR 0030): null without any, else whether
-  // they can be locked and unlocked (their layers keep overrides).
+  // they can be locked, unlocked and deleted (their layers keep overrides).
   function upstreamSelection(selectedItems) {
     const upstream = selectedItems.filter(isUpstreamSticker);
-    return upstream.length ? { lockable: upstream.every(upstreamStickerEditable) } : null;
+    return upstream.length ? { editable: upstream.every(upstreamStickerEditable) } : null;
   }
 
   // The selected world Sticker's menu shows while its gizmo does (worldGizmo: in the space view, not

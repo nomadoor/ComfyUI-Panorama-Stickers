@@ -21,7 +21,8 @@ export function createTimelineActions(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
-    playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw, rowEditable,
+    playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
+    restoreUpstreamDeletedCommand, revertUpstreamLayerCommand, rowEditable,
     selectWorldSticker, selectedLanes, setSelectedItem, stickerById, stopTimelinePlayback, syncFloatingViewButtonState,
     syncTimeline, timelineEditable, timelineOffset, timelineOwner, timelineSpanFrames, timelineTimed,
     togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel, upstreamRow;
@@ -52,6 +53,16 @@ export function createTimelineActions(deps) {
     if (action.type === "toggle-expanded") {
       timeline.expanded = !(timeline.expanded ?? timelineTimed());
       timeline.selection = null;
+      syncTimeline();
+      return;
+    }
+    // The actions of an upstream layer's header (ADR 0030): each disabled in the model while it would do nothing.
+    if (action.type === "restore-upstream-deleted" || action.type === "revert-upstream-layer") {
+      const group = uiState.timeline?.groups?.find((item) => item.key === action.key);
+      const button = action.type === "restore-upstream-deleted" ? group?.restore : group?.revert;
+      if (!button || button.disabled) return;
+      if (action.type === "restore-upstream-deleted") restoreUpstreamDeletedCommand(action.key);
+      else revertUpstreamLayerCommand(action.key);
       syncTimeline();
       return;
     }
@@ -219,7 +230,8 @@ export function createTimelineActions(deps) {
     connect(api) {
       ({
         cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
-        playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw, rowEditable,
+        playback, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
+        restoreUpstreamDeletedCommand, revertUpstreamLayerCommand, rowEditable,
         selectWorldSticker, selectedLanes, setSelectedItem, stickerById, stopTimelinePlayback, syncFloatingViewButtonState,
         syncTimeline, timelineEditable, timelineOffset, timelineOwner, timelineSpanFrames, timelineTimed,
         togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel, upstreamRow,

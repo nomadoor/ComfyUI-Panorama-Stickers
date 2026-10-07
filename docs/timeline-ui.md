@@ -108,7 +108,7 @@ Camera は Keyframe と Drone の二つのモードを持ち、出力にはい�
 
 ### Pose handoff の `port` の Sticker（ADR 0030）
 
-`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Upstream」の行のボタン（Revert to upstream）。規則は `docs/scene-state-v2.md` の「`sticker_state` で届く `port` の Sticker」。
+`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Revert to upstream」の Lane のボタン。規則は `docs/scene-state-v2.md` の「`sticker_state` で届く `port` の Sticker」。
 
 ### 上流の層の行（ADR 0030）
 
@@ -122,7 +122,10 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
 - 上書きを持てない層の行は、出るがロックと同じく何も変えない（目のアイコンと行のポチのボタンは無効にし、ツールチップに理由を出す）。選択と行の開閉はできる。
 - `scene` の行は Clip range だけを変える。上流の `scene` の Lane は上書きできない（`docs/scene-state-v2.md`）ので、その Keyframe の印は動かせず、Easing も変えない。
 - 上書きのある行（その層の記録が、その要素の上書き・`scene` の上書き・`painting_visible` を持つ行）は、名前の右に小さな点を出す（ツールチップは「Overridden in this node」）。点の場所は上流の行では常に空けておき、点が付いても行のボタンは動かない。
-- 上流の要素を消す・上流の値に戻す・消したものを戻す操作は、ここにはまだ無い（T10）。Delete キーは、Keyframe を選んでいればその Keyframe を消し（上の規則）、上流の要素そのものは消さない。
+- 見出しの右に層の操作が二つある（T10）。どちらも常に出し、することが無いときと上書きを持てない層では無効にする（見出しの配置は動かない）。どちらも Undo の 1 段（`commands.js` の `revertUpstreamLayerCommand`・`restoreUpstreamDeletedCommand`、`timeline_actions.js` の `revert-upstream-layer`・`restore-upstream-deleted`。モデルで無効のボタンの操作は何もしない）。
+  - 「Revert」：その層の記録から、層の `scene` の上書き（`visible`・`clip`）と `painting_visible` を外し、`scene` とペイントを上流の値に戻す（`pano_upstream.js` の `upstreamLayerRevertedRecords`）。要素の上書きと消した記録は残す。要素の上書きを外すのはインスペクタの「Revert to upstream」。
+  - 「Restore deleted (n)」：その層の記録の `deleted` を空にし、下流で消した要素をもう一度出す。n は消した記録のうち、上書きを当てる前の層にまだある要素の数（`upstreamDeletedCount`。上流で消えた id は数えない）。消した要素は選べないので、層の操作として見出しに置く（インスペクタには置かない）。
+- Delete キーは、Keyframe を選んでいればその Keyframe を消し（上の規則）、そうでなければ選んだ上流の要素を消す（`docs/threejs-spark-integration.md` の「上流の Scene の表示と編集」の「消す（T10）」）。
 - 自分の `scene` の行は、上流の Scene があるときは出さない（自分の `scene` は描画に使われない）。
 - タイムラインの範囲：二つの規則を分けて持つ。
   - 出力の長さ（`upstreamSpanFrames`）：自分の `timeline.length` が無いとき、上流の Scene の長さ（実行結果の `pano_timeline_frames`）と、上書きした Clip range の終わりまで。上書きしたものは、記録が `clip` を持つもの、またはまだ書き戻していない編集で変えたもの（ドラッグ中を含む）で、`duration` の無いものは `port` の Sticker の素材の終わり（`portMediaFrames`）だけを数える。ドラッグ中の Clip range は終わりの開いたものとして数える。ノードの長さの規則（`docs/render-contract.md` の「長さ」）と同じで、上書きしていない上流の Clip range は上流の長さにすでに入っているので数えない。

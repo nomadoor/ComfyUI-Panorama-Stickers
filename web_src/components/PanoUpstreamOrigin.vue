@@ -1,8 +1,11 @@
 <script setup>
-// The Visible and Lock rows of a selected Sticker of Panorama Studio, always shown so the panel keeps its layout:
-// the switches of an upstream element (ADR 0030), which write overrides of it, and disabled for the node's own
-// Sticker and for an element of a layer that is only inherited (its note is the rows' tooltip). Where an upstream
-// element comes from shows in the Transform title (PanoSidePanel.vue).
+// The upstream rows of a selected Sticker of Panorama Studio, the same rows for every Sticker so the panel keeps
+// its layout: the Visible and Lock switches of an upstream element (ADR 0030), which write overrides of it,
+// "Revert to upstream" of all its overrides and of each Lane ("Restore deleted" of its layer is on the layer's
+// Timeline header, PanoTimelineGroup.vue). For the node's own port Sticker the Lane buttons revert a Lane to the
+// Pose handoff of `sticker_state`. They are disabled for the node's other Stickers and for an element of a layer
+// that is only inherited (its note is the rows' tooltip), and a button stays in place, disabled, while there is
+// nothing for it to do. Where an upstream element comes from shows in the Transform title (PanoSidePanel.vue).
 defineProps({
   model: { type: Object, default: null },
 });
@@ -51,6 +54,28 @@ defineProps({
           :disabled="model.disabled"
         >Locked</button>
       </div>
+    </div>
+    <div class="pano-ui-row">
+      <label>Revert to upstream</label>
+      <button
+        class="pano-btn subtle"
+        type="button"
+        data-action="revert-upstream"
+        :disabled="model.revertAll.disabled"
+        title="Revert all overrides of this element to upstream"
+      >All</button>
+    </div>
+    <div class="pano-upstream-lanes">
+      <button
+        v-for="lane in model.lanes"
+        :key="lane.name"
+        class="pano-btn subtle"
+        type="button"
+        :data-action="lane.action"
+        :data-lane="lane.name"
+        :disabled="lane.disabled"
+        :title="`Revert ${lane.label} to upstream`"
+      >{{ lane.label }}</button>
     </div>
   </div>
 </template>

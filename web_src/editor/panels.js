@@ -19,7 +19,6 @@ import {
   stickerParamEnabled,
   floatingRightState,
   frameViewButton,
-  handoffRevertModel,
   patchUiButton,
   upstreamInspectorModel,
   upstreamOriginLabel,
@@ -28,7 +27,7 @@ import {
 import { clamp } from "../pano_math.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
 import { ownerTimed } from "../pano_timeline.js";
-import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js";
+import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { shownSpaceMode } from "../pano_view_transition.js";
 import { EXTERNAL_STICKER_ID, PAINT_COLOR_SWATCHES, WORLD_MIN_SCALE } from "./constants.js";
 import { colorToCss, colorsApproximatelyEqual, formatParamValue, hsv01ToRgb, rgb01ToHsv } from "./helpers.js";
@@ -40,10 +39,10 @@ export function createPanels(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let cameraPreviewShown, cameraShoots, getActiveCutoutShot, getBrushPresetIdForTool, getCutoutInspectorItems,
-    getHistoryCapabilities, getList, getSelected, getSelectedItems, getSelectedKind, getSelectionItemIcon,
-    getSelectionItemLabelData, hasCamera, hasSpaceContent, isActiveLassoTool, isErpCamera, isExternalSticker,
-    isItemLocked, isPaintCursorEnabled, isSceneSticker, isShotItem, isSpaceView, isStickerHidden, leaveFrameView,
-    portHandoffLanes, poseOf, selectedWorldSticker, setCanvasCursor, syncCutoutShot, syncTimeline,
+    getHistoryCapabilities, getList, getSelected, getSelectedItems, getSelectedKind,
+    getSelectionItemIcon, getSelectionItemLabelData, hasCamera, hasSpaceContent, isActiveLassoTool, isErpCamera,
+    isExternalSticker, isItemLocked, isPaintCursorEnabled, isSceneSticker, isShotItem, isSpaceView, isStickerHidden,
+    leaveFrameView, portHandoffLanes, poseOf, selectedWorldSticker, setCanvasCursor, syncCutoutShot, syncTimeline,
     syncVideoTransportVisibility, updateCursor, worldStickerEditable;
 
   let paintPaneFadeTimer = 0;
@@ -401,8 +400,6 @@ export function createPanels(deps) {
       notes,
       uiSettings: uiSettingsModel,
       normalizeCoverageValue,
-      // An upstream element's port Sticker is not the node's own, whose Pose handoff this is.
-      handoff: !target || isUpstreamSticker(target) ? null : handoffRevertModel(portHandoffLanes(target), { enabled: enabled && !readOnly }),
       // Every Sticker of Panorama Studio has the rows, so selecting an upstream one does not move the panel.
       upstream: studio && target && (target === worldInspected || isSceneSticker(target)) ? upstreamInspectorModel({
         layer: isUpstreamSticker(target) ? target.origin.layer : null,
@@ -410,6 +407,10 @@ export function createPanels(deps) {
         visible: target.visible,
         locked: target.locked === true,
         readOnly,
+        placement: target.placement,
+        override: isUpstreamSticker(target) ? upstreamOverrideOf(state.upstream, target.origin) : null,
+        // An upstream element's port Sticker is not the node's own, whose Pose handoff this is.
+        handoff: isUpstreamSticker(target) ? null : portHandoffLanes(target),
       }) : null,
     });
   }
@@ -430,11 +431,11 @@ export function createPanels(deps) {
     connect(api) {
       ({
         cameraPreviewShown, cameraShoots, getActiveCutoutShot, getBrushPresetIdForTool, getCutoutInspectorItems,
-        getHistoryCapabilities, getList, getSelected, getSelectedItems, getSelectedKind, getSelectionItemIcon,
-        getSelectionItemLabelData, hasCamera, hasSpaceContent, isActiveLassoTool, isErpCamera, isExternalSticker,
-        isItemLocked, isPaintCursorEnabled, isSceneSticker, isShotItem, isSpaceView, isStickerHidden, leaveFrameView,
-        portHandoffLanes, poseOf, selectedWorldSticker, setCanvasCursor, syncCutoutShot, syncTimeline,
-        syncVideoTransportVisibility, updateCursor, worldStickerEditable,
+        getHistoryCapabilities, getList, getSelected, getSelectedItems, getSelectedKind,
+        getSelectionItemIcon, getSelectionItemLabelData, hasCamera, hasSpaceContent, isActiveLassoTool, isErpCamera,
+        isExternalSticker, isItemLocked, isPaintCursorEnabled, isSceneSticker, isShotItem, isSpaceView,
+        isStickerHidden, leaveFrameView, portHandoffLanes, poseOf, selectedWorldSticker, setCanvasCursor,
+        syncCutoutShot, syncTimeline, syncVideoTransportVisibility, updateCursor, worldStickerEditable,
       } = api);
     },
     syncLookAtFrameButtonState, syncFloatingViewButtonState, syncViewToggleState, syncFrameRollKnob, syncPaintUi,

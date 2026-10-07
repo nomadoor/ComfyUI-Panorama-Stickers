@@ -27,18 +27,20 @@ export function createHistory(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
-    markPaintStrokeVisualsDirty, playback, rebuildUpstreamWorking, releaseHiddenSelection, requestDraw,
-    stopTimelinePlayback, storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff, syncUndoRedoButtons,
-    syncUpstreamEdits, updateSidePanel;
+    markPaintStrokeVisualsDirty, playback, pruneUpstreamRecords, rebuildUpstreamWorking, releaseHiddenSelection,
+    requestDraw, stopTimelinePlayback, storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff,
+    syncUndoRedoButtons, syncUpstreamEdits, updateSidePanel;
 
   // A step keeps the state as the node keeps it: the port Sticker shown with the Pose handoff is its stored
   // one (ADR 0030), shown again with the handoff of the moment when the step is restored, and the edits of the
-  // upstream elements are in its `upstream` records.
-  function pushHistory() {
+  // upstream elements are in its `upstream` records, without the overrides of elements gone upstream. The
+  // `initial` step the editor adds as it opens prunes nothing, so opening and closing writes nothing.
+  function pushHistory({ initial = false } = {}) {
     if (readOnly) return;
     syncCutoutShot();
     syncPortHandoff();
     syncUpstreamEdits();
+    if (!initial) pruneUpstreamRecords();
     // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
     if (stateV2 && state.stickers.some(isUploadingSticker)) return;
     editor.historyController.commitActionGroup(historySnapshot(storedEditorState()));
@@ -89,9 +91,9 @@ export function createHistory(deps) {
     connect(api) {
       ({
         clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
-        markPaintStrokeVisualsDirty, playback, rebuildUpstreamWorking, releaseHiddenSelection, requestDraw,
-        stopTimelinePlayback, storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff, syncUndoRedoButtons,
-        syncUpstreamEdits, updateSidePanel,
+        markPaintStrokeVisualsDirty, playback, pruneUpstreamRecords, rebuildUpstreamWorking, releaseHiddenSelection,
+        requestDraw, stopTimelinePlayback, storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff,
+        syncUndoRedoButtons, syncUpstreamEdits, updateSidePanel,
       } = api);
     },
     pushHistory, restoreHistory, getHistoryCapabilities,

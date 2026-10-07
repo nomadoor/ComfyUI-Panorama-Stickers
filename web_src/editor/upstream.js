@@ -15,13 +15,19 @@ import {
   UPSTREAM_BACKGROUND_WARNING,
   layerUiList,
   upstreamBaseline,
+  upstreamDeletedCount,
+  upstreamDeletedRecords,
   upstreamEditedRecords,
   upstreamLayerEditable,
+  upstreamLayerRevertedRecords,
   upstreamLayersOf,
   upstreamLayerView,
   upstreamOverriddenClips,
   upstreamPaintEntries,
   upstreamPending,
+  upstreamPrunedRecords,
+  upstreamRestoredRecords,
+  upstreamRevertedRecords,
   upstreamRowId,
   upstreamWorkingLayers,
 } from "../pano_upstream.js";
@@ -117,6 +123,47 @@ export function createUpstream(deps) {
     baseline = upstreamBaseline(working);
   }
 
+  // Drops the overrides and deleted ids of elements no longer in their layers (upstreamPrunedRecords), while
+  // the node's result is current. Called with each Undo step, after syncUpstreamEdits: only an edit prunes,
+  // and opening and closing never do.
+  function pruneUpstreamRecords() {
+    const entries = upstreamEntries();
+    if (entries) state.upstream = upstreamPrunedRecords(state.upstream, entries.map((entry) => entry.layer));
+  }
+
+  // The `upstream` records changed by `change(records)` with the edits written back first, and the working
+  // copies made again from them. Returns whether they changed.
+  function changeUpstreamRecords(change) {
+    syncUpstreamEdits();
+    const records = change(state.upstream);
+    if (records === state.upstream) return false;
+    state.upstream = records;
+    rebuildUpstreamWorking();
+    return true;
+  }
+
+  // Delete of the working Stickers `stickers` (ADR 0030): their layers' records delete them, so they are drawn
+  // and written downstream no more. The caller adds the Undo step.
+  function deleteUpstreamStickers(stickers) {
+    const origins = stickers.map((sticker) => sticker.origin);
+    return changeUpstreamRecords((records) => upstreamDeletedRecords(records, origins, state.timeline.fps));
+  }
+
+  // "Revert to upstream" of the working Sticker `sticker`: all its overrides, or only its Lane `lane`.
+  function revertUpstreamSticker(sticker, lane = null) {
+    return changeUpstreamRecords((records) => upstreamRevertedRecords(records, sticker, lane));
+  }
+
+  // "Revert" of the upstream layer with `key`: its `scene` and painting follow upstream again.
+  function revertUpstreamLayer(key) {
+    return changeUpstreamRecords((records) => upstreamLayerRevertedRecords(records, key));
+  }
+
+  // "Restore deleted" of the layer with `key`: its deleted elements show again.
+  function restoreUpstreamDeleted(key) {
+    return changeUpstreamRecords((records) => upstreamRestoredRecords(records, key));
+  }
+
   // The working Stickers of the upstream layers, from the farthest upstream layer's to the nearest's, each
   // layer's in its order; none without upstream layers.
   function upstreamStickers() {
@@ -159,7 +206,8 @@ export function createUpstream(deps) {
 
   // The upstream layers as the Timeline shows them (pano_editor_ui_state.js buildTimelineModel `upstream`): per
   // layer its key, its working state, whether the node can keep overrides of it, its record in the state's
-  // `upstream` (null without one), and whether it has 3D `scene` content. None without upstream layers.
+  // `upstream` (null without one), whether it has 3D `scene` content, and how many of its elements are deleted
+  // here and can be restored (upstreamDeletedCount). None without upstream layers.
   function upstreamTimelineLayers() {
     return (upstreamEntries() ?? []).map(({ layer, working }) => {
       const editable = upstreamLayerEditable(working.key);
@@ -169,6 +217,7 @@ export function createUpstream(deps) {
         editable,
         record: editable ? state.upstream.find((item) => item.layer === working.key) ?? null : null,
         scene: layerUiList(layer.ui, "pano_scene_files").length > 0,
+        deleted: editable ? upstreamDeletedCount(state.upstream, working) : 0,
       };
     });
   }
@@ -354,6 +403,8 @@ export function createUpstream(deps) {
       ({ getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw } = api);
     },
     upstreamEntries, upstreamLinked, upstreamNotice, upstreamSpanFrames, upstreamViewInput, rebuildUpstreamWorking,
-    syncUpstreamEdits, upstreamStickers, upstreamStickerImage, upstreamTimelineLayers, upstreamTimelineOwners, upstreamRow, disposeUpstream,
+    syncUpstreamEdits, pruneUpstreamRecords, deleteUpstreamStickers, revertUpstreamSticker, revertUpstreamLayer,
+    restoreUpstreamDeleted, upstreamStickers, upstreamStickerImage, upstreamTimelineLayers, upstreamTimelineOwners,
+    upstreamRow, disposeUpstream,
   };
 }

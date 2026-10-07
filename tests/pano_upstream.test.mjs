@@ -8,7 +8,14 @@ import {
   isUpstreamSticker,
   upstreamBackgroundOf,
   upstreamBaseline,
+  upstreamDeletedCount,
+  upstreamDeletedRecords,
   upstreamEditedRecords,
+  upstreamLayerRevertedRecords,
+  upstreamOverrideOf,
+  upstreamPrunedRecords,
+  upstreamRestoredRecords,
+  upstreamRevertedRecords,
   upstreamStickerEditable,
   upstreamLayerKeys,
   upstreamLayersOf,
@@ -154,17 +161,17 @@ test("upstream 3D content is asked for per layer and kind at its own opacity, an
   const layer = layerOf({
     stickers: [world("port3d", { source: { kind: "port" }, opacity: { value: 0.5, keyframes: [] } })],
   }, ui);
-  const view = upstreamLayerView(layer, 1, 1, { media: () => null, paintLayers: [], source });
+  const view = upstreamLayerView({ ...layer, received: layer.sceneState }, 1, 1, { media: () => null, paintLayers: [], source });
   assert.deepEqual(view.items.map((item) => [item.slot, item.urls, item.request?.url, item.opacity]), [
     ["1:scene", ["/view?filename=a.ply", "/view?filename=b.ply"], "/view?filename=b.ply", 1],
     ["1:sticker", ["/view?filename=c.glb"], "/view?filename=c.glb", 0.5],
   ]);
   // A hidden `scene` keeps its items loaded but shows none of them.
-  const hidden = upstreamLayerView(layerOf({ scene: { visible: false } }, ui), 1, 0, { media: () => null, paintLayers: [], source });
+  const hidden = upstreamLayerView(workingOf({ scene: { visible: false } }, ui), 1, 0, { media: () => null, paintLayers: [], source });
   assert.equal(hidden.items[0].request, null);
   assert.deepEqual(hidden.items[0].urls, ["/view?filename=a.ply", "/view?filename=b.ply"]);
-  // The node's overrides hide the `scene` and delete the 3D port Sticker: neither shows, and the Sticker's
-  // items are let go, as the node draws neither.
+  // The node's overrides hide the `scene` and delete the 3D port Sticker: neither shows, as the node draws
+  // neither, and both keep their items loaded, so undoing either does not load them again.
   const { upstream: records } = loadSceneState({
     version: 2,
     upstream: [{ layer: "scene_a", fps: 24, deleted: ["port3d"], scene: { visible: false } }],
@@ -173,7 +180,7 @@ test("upstream 3D content is asked for per layer and kind at its own opacity, an
   const overridden = upstreamLayerView(working, working.key, 1, { media: () => null, paintLayers: [], source });
   assert.deepEqual(overridden.items.map((item) => [item.slot, item.urls.length, item.request]), [
     ["scene_a:scene", 2, null],
-    ["scene_a:sticker", 0, null],
+    ["scene_a:sticker", 1, null],
   ]);
   // Without its files a layer asks for nothing, so what it loaded before is let go.
   assert.deepEqual(upstreamLayerView(layerOf({}), 0, 0, { media: () => null, paintLayers: [], source }).items, []);
@@ -385,4 +392,96 @@ test("the overridden Clip ranges are those a record sets or an edit since the wr
   assert.deepEqual(clips(), [[0, "scene", 30], [0, "sticker_1", 110], [0, "sticker_2", 505]]);
   baseline = upstreamBaseline(edit.working);
   assert.deepEqual(clips(), [[0, "sticker_1", 110]]);
+});
+
+// ADR 0030 T10: delete, revert, restore and prune of the node's `upstream` records.
+test("deleting, reverting and restoring upstream elements changes only their layer's record, and drops a record left empty", () => {
+  const { upstream: records } = loadSceneState({
+    version: 2,
+    upstream: [
+      { layer: "scene_a", fps: 30, stickers: [{ id: "s1", placement: "sky", visible: false, roll: { value: 2, keyframes: [] } }, { id: "s2", placement: "world", opacity: { value: 0.5, keyframes: [] } }] },
+      { layer: "scene_b", fps: 24, deleted: ["s9"] },
+    ],
+  });
+  const deleted = upstreamDeletedRecords(records, [{ layer: "scene_a", id: "s1" }, { layer: "scene_c", id: "s1" }, { layer: "scene_a", id: "s1" }], 24);
+  assert.deepEqual(deleted, [
+    { layer: "scene_a", fps: 30, deleted: ["s1"], stickers: [{ id: "s2", placement: "world", opacity: { value: 0.5, keyframes: [] } }], scene: {} },
+    { layer: "scene_b", fps: 24, deleted: ["s9"], stickers: [], scene: {} },
+    { layer: "scene_c", fps: 24, deleted: ["s1"], stickers: [], scene: {} },
+  ]);
+  // The count is of the deleted elements the layer still has: an id gone upstream does not come back.
+  const working = (key, ids) => ({ key, received: loadSceneState({ version: 2, stickers: ids.map((id) => sky(id)) }) });
+  assert.equal(upstreamDeletedCount(deleted, working("scene_a", ["s1", "s2"])), 1);
+  assert.equal(upstreamDeletedCount(deleted, working("scene_b", ["s1"])), 0);
+  assert.equal(upstreamDeletedCount(deleted, working("scene_x", ["s1"])), 0);
+  assert.deepEqual(upstreamOverrideOf(records, { layer: "scene_a", id: "s2" }), records[0].stickers[1]);
+  assert.equal(upstreamOverrideOf(records, { layer: "scene_b", id: "s2" }), null);
+
+  // A Lane: the override keeps the rest; the last field gone, the override goes, and the empty record too.
+  const s1 = { origin: { layer: "scene_a", id: "s1" }, placement: "sky" };
+  const s2 = { origin: { layer: "scene_a", id: "s2" }, placement: "world" };
+  const lane = upstreamRevertedRecords(records, s1, "roll");
+  assert.deepEqual(lane[0].stickers[0], { id: "s1", placement: "sky", visible: false });
+  const opacity = upstreamRevertedRecords(records, s2, "opacity");
+  assert.deepEqual(opacity[0].stickers.map((item) => item.id), ["s1"]);
+  const all = upstreamRevertedRecords(upstreamRevertedRecords(records, s1), s2);
+  assert.deepEqual(all.map((record) => record.layer), ["scene_b"]);
+  // Nothing to revert leaves the records as they are.
+  assert.equal(upstreamRevertedRecords(records, s1, "size"), records);
+  assert.equal(upstreamRevertedRecords(records, s1, "visible"), records);
+  assert.equal(upstreamRevertedRecords(records, { origin: { layer: "scene_a", id: "s3" }, placement: "sky" }), records);
+  // A Lane of an override made for the other placement is not this Sticker's, and stays; All drops it.
+  assert.equal(upstreamRevertedRecords(records, { ...s2, placement: "sky" }, "opacity"), records);
+  assert.deepEqual(upstreamRevertedRecords(records, { ...s2, placement: "sky" })[0].stickers.map((item) => item.id), ["s1"]);
+
+  assert.deepEqual(upstreamRestoredRecords(deleted, "scene_a")[0].deleted, []);
+  assert.deepEqual(upstreamRestoredRecords(deleted, "scene_b").map((record) => record.layer), ["scene_a", "scene_c"]);
+  assert.equal(upstreamRestoredRecords(records, "scene_a"), records);
+});
+
+test("pruning drops the overrides and deleted ids of elements gone from a present layer, and keeps the records of absent ones", () => {
+  const { upstream: records } = loadSceneState({
+    version: 2,
+    upstream: [
+      { layer: "scene_a", fps: 24, deleted: ["s2", "gone_1"], stickers: [{ id: "s1", placement: "sky", visible: false }, { id: "gone_2", placement: "sky", visible: false }] },
+      { layer: "scene_b", fps: 24, deleted: ["gone_3"], scene: { visible: false } },
+      { layer: "scene_x", fps: 24, deleted: ["gone_4"] },
+      { layer: "scene_d", fps: 24, deleted: ["gone_5"] },
+    ],
+  });
+  const layers = upstreamLayersOf([
+    { state: { version: 2, id: "scene_a", stickers: [sky("s1"), sky("s2")] } },
+    { state: { version: 2, id: "scene_b", stickers: [sky("s1")] } },
+    // Two layers with one id: the nearest downstream one takes its record.
+    { state: { version: 2, id: "scene_d", stickers: [sky("gone_5")] } },
+    { state: { version: 2, id: "scene_d", stickers: [] } },
+  ]);
+  assert.deepEqual(upstreamPrunedRecords(records, layers), [
+    { layer: "scene_a", fps: 24, deleted: ["s2"], stickers: [{ id: "s1", placement: "sky", visible: false }], scene: {} },
+    { layer: "scene_b", fps: 24, deleted: [], stickers: [], scene: { visible: false } },
+    { layer: "scene_x", fps: 24, deleted: ["gone_4"], stickers: [], scene: {} },
+  ]);
+  // Without the layers (no current result) or with nothing gone, the records are kept as they are.
+  assert.equal(upstreamPrunedRecords(records, []), records);
+  const kept = upstreamPrunedRecords(records, layers);
+  assert.equal(upstreamPrunedRecords(kept, layers), kept);
+});
+
+test("reverting a layer drops its scene and painting overrides and keeps its elements' overrides and deleted ones", () => {
+  const { upstream: records } = loadSceneState({
+    version: 2,
+    upstream: [
+      { layer: "scene_a", fps: 24, deleted: ["s9"], stickers: [{ id: "s1", placement: "sky", visible: false }], scene: { visible: false, clip: { start: 0, in: 0, duration: 10 } }, painting_visible: true },
+      { layer: "scene_b", fps: 24, scene: { visible: false } },
+    ],
+  });
+  assert.deepEqual(upstreamLayerRevertedRecords(records, "scene_a"), [
+    { layer: "scene_a", fps: 24, deleted: ["s9"], stickers: [{ id: "s1", placement: "sky", visible: false }], scene: {} },
+    records[1],
+  ]);
+  // A record left empty is dropped; nothing to revert keeps the records.
+  assert.deepEqual(upstreamLayerRevertedRecords(records, "scene_b").map((record) => record.layer), ["scene_a"]);
+  const reverted = upstreamLayerRevertedRecords(records, "scene_a");
+  assert.equal(upstreamLayerRevertedRecords(reverted, "scene_a"), reverted);
+  assert.equal(upstreamLayerRevertedRecords(records, "scene_x"), records);
 });

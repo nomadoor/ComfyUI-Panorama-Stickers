@@ -89,7 +89,7 @@ export function upstreamLayerKeys(layers) {
 // key and the upstream element's id, and the id `upstream:<key>:<id>`, apart from the node's own and other
 // layers' ids, by which the editor selects it; both are the editor's own and are left out of what is written
 // back to `state_json` (upstreamEditedRecords). The copies share nothing with the layers or the records but the
-// painting, which no override changes.
+// painting, which no override changes. `received` is the layer's state as it came, without the overrides.
 export function upstreamWorkingLayers(layers, records, fps) {
   const keys = upstreamLayerKeys(layers);
   return layers.map(({ sceneState, ui }, index) => {
@@ -103,7 +103,7 @@ export function upstreamWorkingLayers(layers, records, fps) {
       sticker.origin = { layer: keys[index], id: sticker.id };
       sticker.id = upstreamId(keys[index], sticker.id);
     }
-    return { key: keys[index], sceneState: working, ui };
+    return { key: keys[index], sceneState: working, ui, received: sceneState };
   });
 }
 
@@ -252,6 +252,104 @@ export function upstreamOverriddenClips(working, records, baseline) {
   return clips;
 }
 
+// The node's `upstream` records with `change(record)` made to the record of the layer with `key`, one made at
+// `fps` for a layer without a record, normalized: a record left without overrides is dropped.
+function changedRecords(records, key, fps, change) {
+  const at = records.findIndex((item) => item.layer === key);
+  const next = [...records];
+  if (at < 0) next.push(change({ layer: key, fps, deleted: [], stickers: [], scene: {} }));
+  else next[at] = change(next[at]);
+  return loadSceneState({ version: 2, upstream: next }).upstream;
+}
+
+// Delete of upstream elements (ADR 0030): the node's `upstream` records with each element of `origins` (the
+// `origin` of a working Sticker) deleted in the record of its layer: its id in `deleted` and its override
+// dropped. A layer without a record gets one at the editor's `fps`. The layers keep overrides
+// (upstreamStickerEditable).
+export function upstreamDeletedRecords(records, origins, fps) {
+  return origins.reduce((next, { layer, id }) => changedRecords(next, layer, fps, (record) => ({
+    ...record,
+    deleted: [...record.deleted, id],
+    stickers: record.stickers.filter((item) => item.id !== id),
+  })), records);
+}
+
+const OVERRIDE_LANES = new Set([...SKY_STICKER_LANES, ...WORLD_STICKER_LANES].map(([name]) => name));
+
+// The override the node's `upstream` records hold of the upstream element `origin`, or null.
+export function upstreamOverrideOf(records, { layer, id }) {
+  return records.find((item) => item.layer === layer)?.stickers.find((item) => item.id === id) ?? null;
+}
+
+// "Revert to upstream" (ADR 0030): the records without the override of the working Sticker `sticker`, or
+// without only its Lane `lane`, so it inherits them again; `records` itself when there is nothing to revert. A
+// Lane is reverted only from an override made for the Sticker's placement, the one that applies to it.
+export function upstreamRevertedRecords(records, sticker, lane = null) {
+  const { origin } = sticker;
+  const override = upstreamOverrideOf(records, origin);
+  if (!override) return records;
+  if (lane !== null && !(OVERRIDE_LANES.has(lane) && override.placement === sticker.placement && Object.hasOwn(override, lane))) return records;
+  return changedRecords(records, origin.layer, null, (record) => ({
+    ...record,
+    stickers: record.stickers.flatMap((item) => {
+      if (item.id !== origin.id) return [item];
+      if (lane === null) return [];
+      const kept = { ...item };
+      delete kept[lane];
+      return [kept];
+    }),
+  }));
+}
+
+// How many elements of the working layer `working` (upstreamWorkingLayers) its record deletes: those its layer
+// as it came still has, the ones "Restore deleted" brings back.
+export function upstreamDeletedCount(records, working) {
+  const deleted = new Set(records.find((item) => item.layer === working.key)?.deleted);
+  return working.received.stickers.filter((sticker) => deleted.has(sticker.id)).length;
+}
+
+// "Restore deleted" (ADR 0030): the records with the deleted elements of the layer with `key` back, or
+// `records` itself when it deletes none.
+export function upstreamRestoredRecords(records, key) {
+  if (!records.find((item) => item.layer === key)?.deleted.length) return records;
+  return changedRecords(records, key, null, (record) => ({ ...record, deleted: [] }));
+}
+
+// Whether the record `record` (or null) overrides its layer's own fields: its `scene` or its painting_visible.
+export function upstreamLayerOverridden(record) {
+  return !!record && (Object.keys(record.scene).length > 0 || Object.hasOwn(record, "painting_visible"));
+}
+
+// "Revert" of the upstream layer with `key` (ADR 0030): the records without the overrides of its `scene`
+// (`visible`, `clip`) and its `painting_visible`, its elements' overrides and deleted ones kept; `records` itself
+// when there are none.
+export function upstreamLayerRevertedRecords(records, key) {
+  if (!upstreamLayerOverridden(records.find((item) => item.layer === key))) return records;
+  return changedRecords(records, key, null, ({ painting_visible: _, ...record }) => ({ ...record, scene: {} }));
+}
+
+// The records without the overrides and deleted ids of elements no longer in their layer (ADR 0030): an
+// element deleted upstream takes its overrides with it. Only the records of the layers in `layers`
+// (upstreamLayersOf, the current result) that take them are pruned; a record of a layer that is not there (a
+// relinked or not yet run Scene) is kept as it is. `records` itself when nothing is pruned.
+export function upstreamPrunedRecords(records, layers) {
+  const keys = upstreamLayerKeys(layers);
+  const present = new Map(layers.flatMap(({ sceneState }, index) => (
+    keys[index] === sceneState.id ? [[sceneState.id, new Set(sceneState.stickers.map((sticker) => sticker.id))]] : []
+  )));
+  let pruned = false;
+  const next = records.map((record) => {
+    const ids = present.get(record.layer);
+    if (!ids) return record;
+    const deleted = record.deleted.filter((id) => ids.has(id));
+    const stickers = record.stickers.filter((item) => ids.has(item.id));
+    if (deleted.length === record.deleted.length && stickers.length === record.stickers.length) return record;
+    pruned = true;
+    return { ...record, deleted, stickers };
+  });
+  return pruned ? loadSceneState({ version: 2, upstream: next }).upstream : records;
+}
+
 // What the views draw of the upstream layer with `key` (upstreamLayerKeys) at its Timeline `frame`: `sky`, its Sky
 // layers from back to front (skyLayers, with its paint layers `paintLayers`), `stickers`, its world Sticker
 // planes (worldStickerLayers), and `items`, its 3D content to load and draw ({ slot, urls, request, value,
@@ -259,10 +357,11 @@ export function upstreamOverriddenClips(working, records, baseline) {
 // shows, and value the evaluated transform its box moves by).
 // `layer` is a working copy (upstreamWorkingLayers), whose Sticker ids are apart from the node's own and from other
 // layers'; its paint layers' ids are made apart too. Everything is drawn as the node draws it, at its own
-// opacity: a hidden Sticker or `scene` is not drawn. media(sticker) is as skyLayers'; source(entry) is the URL of
-// a `ui` file entry.
+// opacity: a hidden Sticker or `scene` is not drawn. A deleted 3D port Sticker asks for nothing but keeps its
+// items loaded, as a hidden one does, so undoing the delete does not load them again. media(sticker) is as
+// skyLayers'; source(entry) is the URL of a `ui` file entry.
 export function upstreamLayerView(layer, key, frame, { media, paintLayers, source }) {
-  const { sceneState, ui } = layer;
+  const { sceneState, ui, received } = layer;
   const evaluated = evaluateSceneState(sceneState, frame);
   const shown = (sticker) => (sticker.visible ? media(sticker) : null);
   const sky = skyLayers(sceneState, frame, { media: shown, zIndex: (sticker) => sticker.z_index, paintLayers, evaluated })
@@ -276,7 +375,7 @@ export function upstreamLayerView(layer, key, frame, { media, paintLayers, sourc
   const stickerFiles = sceneFilesOf(layerUiList(ui, "pano_sticker_files"), layerUiList(ui, "pano_sticker_meta"), source);
   if (stickerFiles) {
     const request = stickerContentRequest(stickerFiles, sceneState, evaluated);
-    items.push({ slot: `${key}:sticker`, urls: stickerContentUrls(stickerFiles, sceneState), request, value: request?.value ?? null, opacity: request?.opacity ?? 1 });
+    items.push({ slot: `${key}:sticker`, urls: stickerContentUrls(stickerFiles, received), request, value: request?.value ?? null, opacity: request?.opacity ?? 1 });
   }
   return { evaluated, sky, stickers, items };
 }

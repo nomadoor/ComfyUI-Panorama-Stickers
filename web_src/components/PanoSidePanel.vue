@@ -2,7 +2,6 @@
 import { computed } from "vue";
 import { ICON } from "../icons.js";
 import PanoEasingGraph from "./PanoEasingGraph.vue";
-import PanoHandoffRevert from "./PanoHandoffRevert.vue";
 import PanoUpstreamOrigin from "./PanoUpstreamOrigin.vue";
 import SvgIcon from "./SvgIcon.vue";
 
@@ -229,8 +228,6 @@ function onScrubDown(event, field) {
             </template>
           </template>
         </div>
-
-        <PanoHandoffRevert :model="model.handoff" />
 
         <PanoUpstreamOrigin :model="model.upstream" />
 
