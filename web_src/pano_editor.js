@@ -456,12 +456,13 @@ async function showEditor(node, type, options = {}) {
     viewFov: 100,
     // Panorama Studio with World content: where the Viewport camera stands (World glTF) and how far
     // ahead its pivot is (pano_space.js). It starts at the World origin, where the ERP is taken from,
-    // and is not saved. Until it moves (viewMoved), its pivot is as far ahead as the content is large.
+    // or where the editor was last closed on this page (restoreView), and is not saved. Until it moves
+    // (viewMoved), its pivot is as far ahead as the content is large.
     viewPosition: [0, 0, 0],
     viewDistance: DEFAULT_DISTANCE,
     viewMoved: false,
     // "3dof" stands at the World origin and shows what the ERP shows; "6dof" moves through the World.
-    // Each opening starts in 3DoF; it is not saved.
+    // The editor opens in 3DoF, or as it was last closed on this page (restoreView); it is not saved.
     spaceMode: "3dof",
     coverage: normalizeCoverageValue(state.coverage),
     historyController: createEditorHistory(state),
@@ -662,15 +663,16 @@ async function showEditor(node, type, options = {}) {
   const {
     addImageStickerFromFile, addWorldStickerFromFile, applyInitialCutoutFocus, applyVideoTimelineFps, bindDrag,
     cancelFrameCameraGesture, closePaintColorPop, commitState, disposeMediaSession, disposeUpstream, editorAnimating,
-    finishKnobRoll, flushFrameWheelCommit, forgetCameraPreviewFrame, getUnwrapRect, hidePaintSizePreview,
-    hideTooltip, hoverWorldGizmo, isFreeFrameView, isFreeSpaceView, migrateLegacyEmbeddedAssets, onCanvasDragOver,
+    endFrameKeyMove, finishKnobRoll, flushFrameWheelCommit, forgetCameraPreviewFrame, getUnwrapRect,
+    hidePaintSizePreview, hideTooltip, hoverWorldGizmo, isFreeFrameView, isFreeSpaceView, migrateLegacyEmbeddedAssets, onCanvasDragOver,
     onCanvasDrop, onCanvasMouseMove, onCanvasPointerCancel, onCanvasPointerDown, onCanvasPointerMove,
-    onCanvasPointerUp, onCanvasWheel, onDeleteKey, onEscClose, onFrameRollKnobDoubleClick,
-    onFrameRollKnobPointerDown, onFrameRollKnobPointerMove, onFullscreenChange, onModifierKeyChange, onRootChange,
-    onRootClick, onRootInput, onRootPointerOut, onRootPointerOver, onSidePanelChange, onSidePanelClick,
-    onSidePanelInput, onSpaceKey, onSpaceKeyUp, onTimelineAction, onUndoRedoKey, onWindowBlur, onWindowDragEnter,
-    onWindowDragLeave, onWindowDragOver, onWindowDrop, playback, pushHistory, reconcileExternalStickerFromInputs,
-    refreshModalVideoSource, replaceSelectedImageFromFile, requestDraw, sampleEditorDiagnostics, setDropCue,
+    onCanvasPointerUp, onCanvasWheel, onContextMenu, onDeleteKey, onEscClose, onFrameRollKnobDoubleClick,
+    onFrameRollKnobPointerDown, onFrameRollKnobPointerMove, onFullscreenChange, onModifierKeyChange, onMoveKeyDown,
+    onMoveKeyUp, onRootChange, onRootClick, onRootInput, onRootPointerOut, onRootPointerOver, onSidePanelChange,
+    onSidePanelClick, onSidePanelInput, onSpaceKey, onSpaceKeyUp, onTimelineAction, onUndoRedoKey,
+    onVisibilityChange, onWindowBlur, onWindowDragEnter, onWindowDragLeave, onWindowDragOver, onWindowDrop,
+    playback, pushHistory, reconcileExternalStickerFromInputs, refreshModalVideoSource,
+    replaceSelectedImageFromFile, requestDraw, restoreView, sampleEditorDiagnostics, saveView, setDropCue,
     setPointerPos, stageResizeObserver, stickerCornerOrderSanity, stopRenderLoop, syncCanvasSize, syncCutoutShot,
     syncFullscreenButton, syncGridToggleButton, syncLookAtFrameButtonState, syncOutputPreviewToggleButton,
     syncPaintUi, syncPaintingLayerAsync, syncTimeline, syncUndoRedoButtons, tick,
@@ -847,7 +849,9 @@ async function showEditor(node, type, options = {}) {
     closeEditorPromise = (async () => {
       _paintLayerSyncRegistry.delete(String(node.id ?? "0"));
       flushFrameWheelCommit();
+      endFrameKeyMove();
       if (!readOnly) commitState();
+      saveView();
       if (document.fullscreenElement === overlay) {
         document.exitFullscreen?.().catch(() => { });
       }
@@ -869,6 +873,10 @@ async function showEditor(node, type, options = {}) {
       window.removeEventListener("keydown", onDeleteKey, true);
       window.removeEventListener("keydown", onSpaceKey, true);
       window.removeEventListener("keyup", onSpaceKeyUp, true);
+      window.removeEventListener("keydown", onMoveKeyDown, true);
+      window.removeEventListener("keyup", onMoveKeyUp, true);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("contextmenu", onContextMenu, true);
       window.removeEventListener("keydown", onModifierKeyChange, true);
       window.removeEventListener("keyup", onModifierKeyChange, true);
       window.removeEventListener("blur", onWindowBlur);
@@ -897,6 +905,10 @@ async function showEditor(node, type, options = {}) {
   window.addEventListener("keydown", onDeleteKey, true);
   window.addEventListener("keydown", onSpaceKey, true);
   window.addEventListener("keyup", onSpaceKeyUp, true);
+  window.addEventListener("keydown", onMoveKeyDown, true);
+  window.addEventListener("keyup", onMoveKeyUp, true);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("contextmenu", onContextMenu, true);
   window.addEventListener("keydown", onModifierKeyChange, true);
   window.addEventListener("keyup", onModifierKeyChange, true);
   window.addEventListener("blur", onWindowBlur);
@@ -926,6 +938,7 @@ async function showEditor(node, type, options = {}) {
     }
   }
 
+  runBootStep("view", restoreView);
   runBootStep("cutout-focus", applyInitialCutoutFocus);
   if (!readOnly && type === "stickers") {
     runBootStep("external-sticker-sync", () => reconcileExternalStickerFromInputs("open"), { rollbackState: true });

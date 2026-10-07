@@ -82,7 +82,7 @@ export function createHistory(deps) {
 
 | Module | 行 | Responsibility |
 | --- | ---: | --- |
-| `pano_editor.js` | 960 | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
+| `pano_editor.js` | 971 | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
 | `editor/modules.js` | 27 | `createEditorModules`：factory を作ってつなぐ。名前の過不足を投げる |
 | `editor/constants.js` | 48 | 定数 |
 | `editor/helpers.js` | 243 | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
@@ -97,12 +97,12 @@ export function createHistory(deps) {
 | `editor/paint_layers.js` | 564 | ペイントの表示の層、ラスターの画像とアルファ、消しゴムのプレビュー、ノードへ送る塗りの層 |
 | `editor/paint_strokes.js` | 587 | 筆跡の点・半径・ラスター化、ペイントエンジンと表示のキャッシュの revision |
 | `editor/external_stickers.js` | 242 | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
-| `editor/space.js` | 291 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作 |
+| `editor/space.js` | 336 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作（キーの移動 `stepKeyMove`）、閉じたときの視点の記憶と復元（`saveView`・`restoreView`） |
 | `editor/view_input.js` | 267 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
 | `editor/upstream.js` | 254 | Panorama Studio の上流の Scene（#90）：実行結果の上流の層、その素材とペイント、実行待ちの表示 |
 | `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
 | `editor/overlay.js` | 600 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
-| `editor/render_loop.js` | 415 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
+| `editor/render_loop.js` | 422 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
 | `editor/panels.js` | 420 | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
 | `editor/timeline.js` | 201 | Timeline のモデル、再生位置と再生、owner と Lane、fps |
 | `editor/timeline_actions.js` | 222 | `onTimelineAction` |
@@ -110,14 +110,14 @@ export function createHistory(deps) {
 | `editor/commands.js` | 283 | 全消去、複製、削除と確認 |
 | `editor/sticker_import.js` | 429 | 画像の追加・置き換え・アップロード、drop |
 | `editor/camera.js` | 426 | Cutout / Studio の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
-| `editor/frame_view.js` | 342 | Frame のビュー（ゲート、パン・ドラッグ・ホイール） |
+| `editor/frame_view.js` | 372 | Frame のビュー（ゲート、パン・ドラッグ・ホイール、キーの移動 `moveFrameByKeys`・`endFrameKeyMove`） |
 | `editor/paint_input.js` | 661 | ペイントの入力、カーソル、筆跡と投げ縄の記録、消しゴム |
 | `editor/hit_test.js` | 265 | ポインターの下の品目、選択の矩形、カーソル |
 | `editor/selection_menu.js` | 191 | 選択メニューとツールチップ |
 | `editor/pointer_input.js` | 1,185 | キャンバスのポインターとホイール |
 | `editor/side_panel_events.js` | 198 | サイドパネルのクリック・入力・変更 |
 | `editor/modal_events.js` | 553 | モーダルのボタン、色の選択、VIDEO のトランスポート、全画面 |
-| `editor/keyboard.js` | 133 | Escape、Delete、Space、修飾キー、Undo / Redo |
+| `editor/keyboard.js` | 193 | Escape、Delete、Space、6DoF と Frame 表示の移動のキー（WASD / QE、`moveKeys`）、修飾キー、Undo / Redo |
 
 ## Drawing
 
@@ -143,7 +143,7 @@ export function createHistory(deps) {
 
 | Group | 持ち主 | 中身の例 |
 | --- | --- | --- |
-| `editorSession(node)` | `pano_editor.js`（モーダル） | 実行の前に state_json へ書く関数 |
+| `editorSession(node)` | `pano_editor.js`（モーダル）、`editor/space.js` | 実行の前に state_json へ書く関数、閉じたときの視点（`view`、ページの間だけ） |
 | `nodeSurface(node)` | `pano_preview_runtime.js`、`pano_editor_extension.js` | DOM の面と `restore`、視点、再生、ペイントとラスターのキャッシュ、タイマー |
 | `previewNode(node)` | `pano_preview_previewnode.js`、`pano_editor_extension.js` | Preview ノードの runtime、面、取り付けの待ち |
 | `mediaCache(node)` | `pano_preview_runtime.js`、`pano_comfy_media.js` | 入力の画像、出力の VIDEO と ERP、出力の revision |

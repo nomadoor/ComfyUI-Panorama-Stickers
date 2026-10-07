@@ -1,6 +1,8 @@
 // The panorama view in space (Panorama Studio with World content, and its Camera):
 // 3DoF and 6DoF, the Viewport camera's view and its transitions, and navigating it (orbit, pan, zoom, framing).
+import { frameViewButton } from "../pano_editor_ui_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
+import { editorSession } from "../pano_node_bridge.js";
 import { nodeInputOrigins } from "../pano_preview_video.js";
 import { clipActive, evaluateCamera, evaluateSceneState } from "../pano_scene_eval.js";
 import {
@@ -18,15 +20,18 @@ import {
   zoomView,
 } from "../pano_space.js";
 import { VIEW_CONTROLS_SETTING_ID, viewControlsPreset } from "../pano_view_controls.js";
+import { keyMoveView } from "../pano_view_keys.js";
+import { restoredView, viewMemory } from "../pano_view_memory.js";
 import { spaceModeChoice, startViewTransition } from "../pano_view_transition.js";
 
 export function createSpace(deps) {
   const {
-    app, cameraV2, canvas, editor, editorView, node, runtime, sceneV2, state, stateV2, studio, viewController,
+    app, cameraV2, canvas, editor, editorView, node, runtime, sceneV2, shotEditor, state, stateV2, studio,
+    viewController,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let editorViewInput, editorViewSceneState, isCameraSelected, isErpCamera, requestDraw, sceneFiles,
-    startAnimation, syncFloatingViewButtonState, updateCursor;
+  let editorViewInput, editorViewSceneState, getActiveCutoutShot, isCameraSelected, isErpCamera, isFreeFrameView,
+    moveFrameByKeys, moveKeys, requestDraw, sceneFiles, startAnimation, syncFloatingViewButtonState, updateCursor;
 
   // The pick of the last 6DoF wheel step and of the last Frame view wheel step (pano_space.js
   // reuseWheelPick).
@@ -249,6 +254,45 @@ export function createSpace(deps) {
     canvas.setPointerCapture(pointerId);
   }
 
+  // Whether the movement keys move anything here: the 6DoF view, or the Frame view's Camera.
+  function canKeyMove() {
+    return isFreeSpaceView() || isFreeFrameView();
+  }
+
+  // Moves by the movement keys held (pano_view_keys.js, keyboard.js) for the time since the last frame, at
+  // the content's size per second: the 6DoF view, which records nothing, or in the Frame view the Camera
+  // itself (frame_view.js moveFrameByKeys), as the drags there do. They move nothing in 3DoF, Unwrap or a
+  // transition; the clock runs on there, so nothing jumps once it can move again. Returns whether it moved.
+  function stepKeyMove(ts) {
+    const seconds = moveKeys.elapsed(ts);
+    if (!seconds || editor.viewTransition) return false;
+    const distance = moveKeys.speed(spaceScale()) * seconds;
+    if (isFreeFrameView()) return moveFrameByKeys(moveKeys.direction(), distance);
+    if (!isFreeSpaceView()) return false;
+    const view = spaceViewState();
+    const moved = keyMoveView(view, moveKeys.direction(), distance);
+    if (moved === view) return false;
+    editor.viewPosition = moved.position;
+    editor.viewDistance = view.distance;
+    editor.viewMoved = true;
+    return true;
+  }
+
+  // The view is kept for the node until the page or the workflow loads again (pano_view_memory.js), and
+  // the next opening starts from it.
+  function saveView() {
+    editorSession(node).view = viewMemory(editor);
+  }
+
+  // A remembered view that is no longer valid (a value that is no number, the Frame view without a Camera
+  // that has a frame) opens at the default view. 6DoF without World content goes back to 3DoF at the
+  // origin on the first frame, as it does whenever the content goes away (view_input.js).
+  function restoreView() {
+    const frame = shotEditor && !frameViewButton({ hasShot: !!getActiveCutoutShot(), erp: isErpCamera() }).disabled;
+    const view = restoredView(editorSession(node).view, { frame });
+    if (view) Object.assign(editor, view);
+  }
+
   // --- Panorama Studio's Camera in space. In 6DoF the panorama view draws its frustum at the
   // playhead and its trajectory over the Timeline, and the Camera is selected by its frustum and moved and
   // turned with the gizmo, as a world Sticker is. In 3DoF the view stands at the Camera and shows its frame
@@ -278,14 +322,15 @@ export function createSpace(deps) {
   return {
     connect(api) {
       ({
-        editorViewInput, editorViewSceneState, isCameraSelected, isErpCamera, requestDraw, sceneFiles,
-        startAnimation, syncFloatingViewButtonState, updateCursor,
+        editorViewInput, editorViewSceneState, getActiveCutoutShot, isCameraSelected, isErpCamera, isFreeFrameView,
+        moveFrameByKeys, moveKeys, requestDraw, sceneFiles, startAnimation, syncFloatingViewButtonState,
+        updateCursor,
       } = api);
     },
     transitionView, applyViewTransitionEnd, cancelViewTransition, turnViewTo, cameraPreviewShown, isSpaceView,
     hasSpaceContent, isFreeSpaceView, viewControls, spaceModeState, applySpaceMode, setSpaceMode, spaceViewState,
     spaceOrigin, hasCamera, cameraShoots, paintingShown, sceneStickerShown, cutoutCamera, contentSphere,
-    setSpaceView, spaceScale, frameSpaceContent, zoomSpaceAt, startSpaceDrag, currentSpaceCamera,
-    cameraFrustumLength, cameraSphere, lookingAt,
+    setSpaceView, spaceScale, frameSpaceContent, zoomSpaceAt, startSpaceDrag, canKeyMove, stepKeyMove, saveView,
+    restoreView, currentSpaceCamera, cameraFrustumLength, cameraSphere, lookingAt,
   };
 }
