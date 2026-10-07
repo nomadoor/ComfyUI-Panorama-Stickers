@@ -293,7 +293,10 @@ test("the state v2 derived from the editor's v1 working state has the shape of t
   const saved = loadSceneState(editorState);
   const canonical = JSON.parse(fixture("v2_canonical"));
   assert.deepEqual(Object.keys(saved), Object.keys(canonical));
-  for (const sticker of saved.stickers) assert.deepEqual(Object.keys(sticker), Object.keys(canonical.stickers[0]));
+  for (const sticker of saved.stickers) {
+    const keys = Object.keys(canonical.stickers[0]);
+    assert.deepEqual(Object.keys(sticker), sticker.source.kind === "port" ? [...keys, "handoff_overrides"] : keys);
+  }
   assert.deepEqual(loadSceneState(JSON.parse(JSON.stringify(saved))), saved);
 });
 

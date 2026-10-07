@@ -6,6 +6,7 @@ must produce the same result for the same input.
 
 import json
 import math
+import re
 from copy import deepcopy
 
 from .paint_state import normalize_painting_state
@@ -25,6 +26,10 @@ TIMELINE_FPS_MAX = 1000.0
 # 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
 TIMELINE_FRAME_MAX = 10000000
 TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX
+# The largest Sticker number (`sticker_<n>`) the `next_sticker_id` counter keeps: JS integers are exact up to here.
+STICKER_NUMBER_MAX = 2**53 - 1
+# At most 16 digits (past STICKER_NUMBER_MAX): a longer number is not counted, and int() of a very long one raises.
+STICKER_NUMBER = re.compile(r"sticker_([0-9]{1,16})")
 
 
 def _reject_constant(name):
@@ -248,10 +253,19 @@ def _sticker(raw):
     if not world:
         z_index = _frame(raw.get("z_index"))
         sticker["z_index"] = 0 if z_index is None else z_index
+    if source["kind"] == "port":
+        sticker["handoff_overrides"] = _lane_names(raw.get("handoff_overrides"), placement)
     return sticker
 
 
-def _stickers(raw):
+def _lane_names(raw, placement):
+    """The names in `raw` of the Lanes a Sticker of `placement` has, once each and in Lane order."""
+    raw = raw if isinstance(raw, list) else []
+    return [name for name, _value_fn in (WORLD_STICKER_LANES if placement == "world" else SKY_STICKER_LANES) if name in raw]
+
+
+def _stickers(raw, raw_next):
+    """The Stickers and the `next_sticker_id` counter after them."""
     stickers = []
     has_port = False
     for item in raw if isinstance(raw, list) else []:
@@ -271,14 +285,29 @@ def _stickers(raw):
             used.add(sticker_id)
         else:
             sticker["id"] = None
-    n = 1
+    # A Sticker without a valid id takes the next number of the counter, so no id is used twice.
+    n = _next_sticker_id(raw_next, stickers)
     for sticker in stickers:
         if sticker["id"] is None:
+            # Ids past STICKER_NUMBER_MAX are not counted, so the counter may reach one of them.
             while f"sticker_{n}" in used:
                 n += 1
             sticker["id"] = f"sticker_{n}"
-            used.add(sticker["id"])
-    return stickers
+            n += 1
+    return stickers, min(n, STICKER_NUMBER_MAX)
+
+
+def _sticker_number(sticker_id):
+    match = STICKER_NUMBER.fullmatch(sticker_id) if isinstance(sticker_id, str) else None
+    number = int(match.group(1)) if match else 0
+    return number if number < STICKER_NUMBER_MAX else 0
+
+
+def _next_sticker_id(raw, stickers):
+    """The stored counter, at least one past the largest `sticker_<n>` among the Stickers."""
+    stored = _frame(raw)
+    least = max((_sticker_number(sticker["id"]) for sticker in stickers), default=0) + 1
+    return _clamp(least if stored is None else max(stored, least), 1, STICKER_NUMBER_MAX)
 
 
 def _camera(raw):
@@ -294,22 +323,83 @@ def _camera(raw):
     }
 
 
+def _text(value):
+    """A non-empty string, or None."""
+    return value if isinstance(value, str) and value else None
+
+
+def _last_by(items, key):
+    """The items without those whose key comes again later in the list."""
+    last = {key(item): index for index, item in enumerate(items)}
+    return [item for index, item in enumerate(items) if last[key(item)] == index]
+
+
+def _sticker_override(raw):
+    """An upstream Sticker's overridden fields, or None without any. An invalid field is left out (inherited)."""
+    if not isinstance(raw, dict) or _text(raw.get("id")) is None or raw.get("placement") not in PLACEMENTS:
+        return None
+    world = raw["placement"] == "world"
+    fields = {}
+    if isinstance(raw.get("clip"), dict):
+        fields["clip"] = _clip(raw["clip"])
+    for name in ("visible", "locked"):
+        if isinstance(raw.get(name), bool):
+            fields[name] = raw[name]
+    if isinstance(raw.get("crop"), dict):
+        fields["crop"] = _crop(raw["crop"])
+    fields.update(_lanes(raw, [lane for lane in (WORLD_STICKER_LANES if world else SKY_STICKER_LANES) if isinstance(raw.get(lane[0]), dict)]))
+    z_index = None if world else _frame(raw.get("z_index"))
+    if z_index is not None:
+        fields["z_index"] = z_index
+    return {"id": raw["id"], "placement": raw["placement"], **fields} if fields else None
+
+
+def _upstream_record(raw):
+    """The overrides of one upstream layer, or None when the record overrides nothing."""
+    fps = _timeline_fps(raw.get("fps")) if isinstance(raw, dict) else None
+    # Without a valid fps the record's frames mean nothing, so it is dropped (inherit everything).
+    if fps is None or _text(raw.get("layer")) is None:
+        return None
+    deleted = list(dict.fromkeys(item for item in raw.get("deleted") if _text(item) is not None)) if isinstance(raw.get("deleted"), list) else []
+    stickers = [item for item in map(_sticker_override, raw.get("stickers") if isinstance(raw.get("stickers"), list) else []) if item is not None]
+    stickers = [item for item in _last_by(stickers, lambda item: item["id"]) if item["id"] not in deleted]
+    scene_raw = raw.get("scene") if isinstance(raw.get("scene"), dict) else {}
+    scene = {}
+    if isinstance(scene_raw.get("visible"), bool):
+        scene["visible"] = scene_raw["visible"]
+    if isinstance(scene_raw.get("clip"), dict):
+        scene["clip"] = _clip(scene_raw["clip"])
+    record = {"layer": raw["layer"], "fps": fps, "deleted": deleted, "stickers": stickers, "scene": scene}
+    if isinstance(raw.get("painting_visible"), bool):
+        record["painting_visible"] = raw["painting_visible"]
+    return record if deleted or stickers or scene or "painting_visible" in record else None
+
+
+def _upstream(raw):
+    records = [item for item in map(_upstream_record, raw if isinstance(raw, list) else []) if item is not None]
+    return _last_by(records, lambda item: item["layer"])
+
+
 def _normalize_v2(raw):
     timeline = raw.get("timeline") if isinstance(raw.get("timeline"), dict) else {}
     scene = raw.get("scene") if isinstance(raw.get("scene"), dict) else {}
     painting_layer = raw.get("painting_layer")
+    stickers, next_sticker_id = _stickers(raw.get("stickers"), raw.get("next_sticker_id"))
     return {
         "version": STATE_VERSION,
+        "id": _text(raw.get("id")),
         "timeline": {
             "fps": _timeline_fps(timeline.get("fps")) or 24.0,
             "length": _timeline_length(timeline.get("length")),
         },
         "camera": _camera(raw.get("camera")),
         "scene": {"clip": _clip(scene.get("clip")), "visible": _bool(scene.get("visible"), True), **_lanes(scene, SCENE_LANES)},
-        "stickers": _stickers(raw.get("stickers")),
+        "stickers": stickers,
+        "next_sticker_id": next_sticker_id,
         "painting": normalize_painting_state(raw.get("painting")),
         "painting_layer": deepcopy(painting_layer) if isinstance(painting_layer, dict) else None,
         "painting_visible": _bool(raw.get("painting_visible"), True),
+        "upstream": _upstream(raw.get("upstream")),
     }
 
 
@@ -432,13 +522,17 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
         lanes = WORLD_STICKER_LANES if sticker["placement"] == "world" else SKY_STICKER_LANES
         stickers.append({**sticker, "clip": clip["clip"], **_rebase_lanes(sticker, lanes, rebase, clip["anchor"], clip["new_anchor"])})
     return _normalize_v2({
+        "id": state["id"],
         "timeline": {"fps": rate, "length": None if length is None else max(1, rebase(length))},
         "camera": None if camera is None else {**camera, **_rebase_lanes(camera, CAMERA_LANES, rebase, 0, 0)},
         "scene": {"clip": scene["clip"], "visible": state["scene"]["visible"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
         "stickers": stickers,
+        "next_sticker_id": state["next_sticker_id"],
         "painting": state["painting"],
         "painting_layer": state["painting_layer"],
         "painting_visible": state["painting_visible"],
+        # The override records keep their own fps (docs/scene-state-v2.md "上流の上書き").
+        "upstream": state["upstream"],
     })
 
 

@@ -31,6 +31,7 @@ import {
   setWorldStickerField,
   setWorldStickerTransform,
   stickerPose,
+  takeStickerId,
   worldStickerFields,
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
@@ -454,13 +455,15 @@ test("opening and closing the editor leaves an unedited state_json text alone", 
 
 // A v2 state saved before the Camera had a projection reads as a Camera that shoots in perspective;
 // saving it again writes the same text, so the node's execution cache still hits.
+// The same holds for the fields of ADR 0030 (`id`, `next_sticker_id`, `upstream`, `handoff_overrides`).
 test("a state saved before the Camera had a projection and before the visibility fields is saved as the same text", () => {
   const node = { __panoSceneStateV2: true };
   for (const name of ["v2_canonical", "v2_interpolation"]) {
-    const { painting_visible: paintingVisible, ...loaded } = loadSceneState(readFixture(name));
+    const { painting_visible: paintingVisible, id, next_sticker_id: nextStickerId, upstream, ...loaded } = loadSceneState(readFixture(name));
     const { projection, visible, ...camera } = loaded.camera;
     const { visible: sceneVisible, ...scene } = loaded.scene;
-    const before = JSON.stringify({ ...loaded, camera, scene });
+    const stickers = loaded.stickers.map(({ handoff_overrides: handoffOverrides, ...item }) => item);
+    const before = JSON.stringify({ ...loaded, camera, scene, stickers });
     const state = parseSceneEditorState(before);
     assert.equal(state.camera.projection, "perspective");
     assert.equal(editorStateText(node, state), before, name);
@@ -829,4 +832,15 @@ test("a VIDEO above the fps limit rebases the state once and never again", () =>
   setTimelineFps(state, 2400);
   assert.deepEqual(state, before, "rebasing to the same fps after bringing it into range changes nothing");
   assert.deepEqual(parseSceneEditorState(text, { fps: 300 }).timeline.fps, 300, "a VIDEO within the limits keeps its fps");
+});
+
+test("a new Sticker id comes from the counter, which only goes up, also through undo", () => {
+  const state = parseSceneEditorState(JSON.stringify({ version: 2, stickers: [{ id: "sticker_4", source: { kind: "port" } }] }));
+  const before = JSON.stringify(state);
+  assert.equal(takeStickerId(state), "sticker_5");
+  assert.equal(takeStickerId(state), "sticker_6");
+  assert.equal(state.next_sticker_id, 7);
+  // Undoing to a step before the new Stickers keeps the counter, so their ids are not given out again.
+  assert.equal(restoredHistoryState(state, before).state.next_sticker_id, 7);
+  assert.equal(restoredHistoryState(JSON.parse(before), JSON.stringify(state)).state.next_sticker_id, 7);
 });

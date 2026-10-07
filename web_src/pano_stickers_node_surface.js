@@ -1,4 +1,4 @@
-import { fileSource, newSceneSticker, setStickerPose, stickerPose, unkeyedPose } from "./pano_editor_state.js";
+import { fileSource, newSceneSticker, setStickerPose, stickerPose, takeStickerId, unkeyedPose } from "./pano_editor_state.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
 import { evaluateSticker } from "./pano_scene_eval.js";
 import { loadSceneState } from "./pano_scene_state.js";
@@ -239,14 +239,13 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
     return { state: { ...state, stickers: state.stickers.map((item, i) => i === index ? port : item) }, changed: true };
   }
   if (current || awaitingPose) return { state, changed: false };
-  const used = new Set(state.stickers.map((item) => item.id));
-  let number = 1;
-  while (used.has(`sticker_${number}`)) number += 1;
+  const next = { ...state };
+  const id = takeStickerId(next);
   if (pose?.placement === "world") {
-    return { state: { ...state, stickers: [...state.stickers, worldPortSticker(`sticker_${number}`, pose)] }, changed: true };
+    return { state: { ...next, stickers: [...state.stickers, worldPortSticker(id, pose)] }, changed: true };
   }
   const hFOV = Math.min(179, Math.max(0.1, Number(pose?.hFOV_deg ?? 30)));
-  const port = newSceneSticker(`sticker_${number}`, { kind: "port" }, {
+  const port = newSceneSticker(id, { kind: "port" }, {
     yaw_deg: Number(pose?.yaw_deg ?? 0),
     pitch_deg: Number(pose?.pitch_deg ?? 0),
     rot_deg: Number(pose?.roll_deg ?? 0),
@@ -258,7 +257,8 @@ export function reconcilePortStickerState(state, { connected = false, awaitingPo
   port.direction.keyframes = keyframes.direction ?? [];
   port.roll.keyframes = keyframes.roll ?? [];
   port.size.keyframes = (keyframes.size ?? []).map((key) => ({ ...key, value: { ...key.value, vFOV_deg: key.value.hFOV_deg } }));
-  return { state: { ...state, stickers: [...state.stickers, port] }, changed: true };
+  port.handoff_overrides = [];
+  return { state: { ...next, stickers: [...state.stickers, port] }, changed: true };
 }
 
 export function buildStickersDisplayEntries(state) {
@@ -379,11 +379,13 @@ export function applyStickersNodeSurfaceAction(state, action = {}) {
       rot_deg: 0,
     };
     if (state.version === 2) {
+      const next = { ...state };
+      const id = takeStickerId(next);
       return {
         state: {
-          ...state,
-          stickers: [...state.stickers, newSceneSticker(stickerId, fileSource(value.asset), pose, maxZ + 1)],
-          active: { ...(state.active || {}), selected_sticker_id: stickerId },
+          ...next,
+          stickers: [...state.stickers, newSceneSticker(id, fileSource(value.asset), pose, maxZ + 1)],
+          active: { ...(state.active || {}), selected_sticker_id: id },
         },
         changed: true,
       };

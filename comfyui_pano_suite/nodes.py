@@ -1095,12 +1095,11 @@ def _read_scene_file(scene, name: str):
     return mesh
 
 
-def _unused_sticker_id(stickers: list[dict]) -> str:
-    used = {sticker["id"] for sticker in stickers}
-    index = 1
-    while f"sticker_{index}" in used:
-        index += 1
-    return f"sticker_{index}"
+def _take_sticker_id(state: dict) -> str:
+    """A new Sticker id from the state's `next_sticker_id` counter, which it advances, as the editor does."""
+    sticker_id = f"sticker_{state['next_sticker_id']}"
+    state["next_sticker_id"] += 1
+    return sticker_id
 
 
 def _nearest_turn(angle: float, previous: float) -> float:
@@ -1164,7 +1163,7 @@ ORIGIN_CAMERA = {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, 
 def _world_port_sticker(state: dict, sticker_id: str | None = None) -> dict:
     """The port Sticker for 3D media: `world`, at WORLD_STICKER_POSITION with rotation 0 and scale 1, so the
     content keeps its own orientation and its front (+Z) faces the origin."""
-    raw = {"id": sticker_id or _unused_sticker_id(state["stickers"]), "placement": "world", "source": {"kind": "port"}, "position": {"value": WORLD_STICKER_POSITION}}
+    raw = {"id": sticker_id or _take_sticker_id(state), "placement": "world", "source": {"kind": "port"}, "position": {"value": WORLD_STICKER_POSITION}}
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
@@ -1176,7 +1175,7 @@ def _port_sticker(state: dict, sticker_state) -> dict:
         lanes = _handoff_lanes(parsed, state["timeline"]["fps"])
     # Above every other sky Sticker, as the legacy node placed it (paint layers are not counted).
     z_index = max((sticker["z_index"] for sticker in state["stickers"] if sticker["placement"] == "sky"), default=-1) + 1
-    raw = {"id": _unused_sticker_id(state["stickers"]), "source": {"kind": "port"}, **lanes, "z_index": z_index}
+    raw = {"id": _take_sticker_id(state), "source": {"kind": "port"}, **lanes, "z_index": z_index}
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 

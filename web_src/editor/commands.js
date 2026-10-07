@@ -1,6 +1,6 @@
 // The editor's edit commands on the selection and the state: clear, duplicate, delete, and the confirmation
 // they may ask for.
-import { deleteWorldSticker, duplicateSceneSticker, retainActiveCutoutShot } from "../pano_editor_state.js";
+import { deleteWorldSticker, duplicateSceneSticker, retainActiveCutoutShot, takeStickerId } from "../pano_editor_state.js";
 import { wrapYaw } from "../pano_math.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { uid } from "./helpers.js";
@@ -112,7 +112,7 @@ export function createCommands(deps) {
     if (sceneV2 && isUploadingSticker(selected)) return;
     let copy;
     if (sceneV2) {
-      copy = duplicateSceneSticker(selected, uid("st"), getNextStickerZIndex());
+      copy = duplicateSceneSticker(selected, takeStickerId(state), getNextStickerZIndex());
     } else {
       copy = JSON.parse(JSON.stringify(selected));
       copy.id = uid("st");

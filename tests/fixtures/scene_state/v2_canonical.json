@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "id": null,
   "timeline": {"fps": 30.0, "length": 120},
   "camera": {
     "aspect": 1.7777777777777777,
@@ -81,7 +82,8 @@
         ]
       },
       "scale": {"value": 1.0, "keyframes": [{"frame": 0, "value": 1.0, "easing": "hold"}, {"frame": 30, "value": 1.5, "easing": "auto"}]},
-      "opacity": {"value": 0.8, "keyframes": []}
+      "opacity": {"value": 0.8, "keyframes": []},
+      "handoff_overrides": []
     },
     {
       "id": "st_hidden",
@@ -98,7 +100,9 @@
       "z_index": 0
     }
   ],
+  "next_sticker_id": 1,
   "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
   "painting_layer": null,
-  "painting_visible": true
+  "painting_visible": true,
+  "upstream": []
 }

@@ -10,7 +10,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | fps の再基準化 | `scene_state.py` の `rebase_scene_state` | `rebaseSceneState` |
 | 保存するテキスト | — | `sceneStateText` |
 
-フィクスチャは `tests/fixtures/scene_state/` にあり（非表示の Camera・`scene`・Sticker・ペイントは `v2_hidden`）、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
+フィクスチャは `tests/fixtures/scene_state/` にあり（非表示の Camera・`scene`・Sticker・ペイントは `v2_hidden`、`id`・`next_sticker_id`・`upstream`・`handoff_overrides` は `v2_upstream`）、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
 
 ## 共通の規則
 
@@ -19,7 +19,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
 - 正規化は冪等である。`load_scene_state` の結果をもう一度読むと同じ結果になる。
-- 未知のフィールドは読み込み時に捨てる。状態 v2 には、どのコードも読まない予約項目を置かない。Clip range 外の保持やループなどは、実装するときに項目を追加する。
+- 未知のフィールドは読み込み時に捨てる。状態 v2 には、どのコードも読まない予約項目を置かない。Clip range 外の保持やループなどは、実装するときに項目を追加する。ただし、一つの ADR を複数の ticket で実装するときは、後の ticket が読む項目を先に加えて形を固めてよい（ADR 0030 の T1。下記「後続の ticket への申し送り」）。
 - 出力のキーの順序は、この文書の表の順とする（Python と JS で同じ）。
 
 ### 座標と角度
@@ -45,13 +45,16 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 ```json
 {
   "version": 2,
+  "id": null,
   "timeline": {"fps": 24.0, "length": null},
   "camera": {"aspect": 1.0, "projection": "perspective", "position": {...}, "rotation": {...}, "fov": {...}},
   "scene": {"clip": {...}, "position": {...}, "rotation": {...}, "scale": {...}},
   "stickers": [],
+  "next_sticker_id": 1,
   "painting": {...},
   "painting_layer": null,
-  "painting_visible": true
+  "painting_visible": true,
+  "upstream": []
 }
 ```
 
@@ -60,6 +63,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | フィールド | 型 | 既定値 | 正規化 |
 |---|---|---|---|
 | `version` | `2` | — | 下記「版の判定」 |
+| `id` | 文字列 または `null` | `null` | この状態の Scene を表す id。下流の Studio は上書き（`upstream`）をこの id ごとに記録する（ADR 0030）。空でない文字列のほかは `null`。エディタとノード上の UI が、書くときに無ければ振る（ADR 0030 の T3。振る関数は `pano_scene_state.js` の `ensureSceneId`）。Python は振らない |
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
 | `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（#53） |
 | `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
@@ -71,9 +75,11 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | `scene.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` なら `scene` 入力を描かない |
 | `scene.position`・`scene.rotation`・`scene.scale` | Lane | 下記 | `scene` 入力に掛ける変形 |
 | `stickers` | 配列 | `[]` | `sky` の層は `z_index`（ペイントと共通の軸）で並べ、同じ値ならリストの順（先頭が奥）。`world` の Sticker は奥行きで重なる |
+| `next_sticker_id` | 整数 | 下記 | 次に加える Sticker の番号 `n`（`sticker_<n>`）。下記「Sticker の id の採番」 |
 | `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層 |
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
 | `painting_visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` ならペイント（ストローク・ラスタ・マスク）を描かず、MASK にも出さない |
+| `upstream` | 配列 | `[]` | 上流の Scene の要素への上書き。下記「上流の上書き（`upstream`）」 |
 
 `scene` は、`scene` 入力が接続されていなくても常に存在する。
 
@@ -87,7 +93,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 
 - ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、`camera` を読み替えない。`null` なら Camera が無く、原点・回転 0 の ERP を撮る（`docs/render-contract.md` の「Panorama Studio」）。エディタも `camera` を読み替えず、Camera を足す・消すのは編集である。
 - 既存の状態：この版より前の v2 の状態は `camera` のオブジェクトを持つので、そのまま「Camera あり」で `projection` は `perspective` になる。読み込みでも保存でも Camera を消したり書き換えたりしない（ノードのキャッシュが外れないようにするため）。fps の再基準化だけは状態全体と同じく `camera` の時刻も直し、`null` は `null` のまま、`projection` はそのまま保つ。
-- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.visible`・`scene.visible`・`painting_visible` の `true`。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。Python は `state_json` を書かないので、この関数を持たない。
+- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.visible`・`scene.visible`・`painting_visible` の `true`。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。同じ理由で、ADR 0030 の項目も次のときは書かない：`id` の `null`、空の `upstream`、`port` の Sticker の空の `handoff_overrides`、Sticker から求まる値（下記「Sticker の id の採番」の最小値）と同じ `next_sticker_id`。Python は `state_json` を書かないので、この関数を持たない。
 
 ### Lane
 
@@ -176,7 +182,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 
 | フィールド | 型 | 既定値 | 意味と正規化 |
 |---|---|---|---|
-| `id` | 文字列 | `sticker_<n>` | 空・重複・文字列でないときは、使われていない最小の `n` で `sticker_<n>` を振る（後に出てきたほうを振り直す） |
+| `id` | 文字列 | `sticker_<n>` | 空・重複・文字列でないときは、`next_sticker_id` から順に `sticker_<n>` を振る（後に出てきたほうを振り直す）。下記「Sticker の id の採番」 |
 | `placement` | `"sky"` または `"world"` | `"sky"` | 途中で変わらない。持つ Lane を決める |
 | `source` | Source | — | 不正なときは Sticker ごと捨てる |
 | `clip` | Clip range | 上記 | |
@@ -187,6 +193,16 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `position`・`rotation`・`scale` | Lane | 上記 | `world` の Sticker だけが持つ（`sky` では捨てる） |
 | `opacity` | Lane | `1` | 不透明度 |
 | `z_index` | 整数 | `0` | `sky` の Sticker だけが持つ（`world` では捨てる）。読み込みで `floor(x + 0.5)` に丸める。数値でない・非有限の値は既定値。下記「Sky の重なり順」 |
+| `handoff_overrides` | Lane の名前の配列 | `[]` | `port` の Sticker だけが持つ（ほかでは捨てる）。`sticker_state` から引き継がずに、保存した Lane を使う Lane（ADR 0030 の「`sticker_state` で届く Sticker」）。`placement` の Lane の名前だけを、重複を除いて上の Lane の順に並べる。`[]` はすべての Lane を引き継ぐ |
+
+#### Sticker の id の採番
+
+Sticker の `id` は、一度使った値を別の Sticker に使い直さない。下流の Studio の上書き（`upstream`）と消した記録は上流の Sticker の `id` を指すので、消した Sticker の `id` を新しい Sticker が使うと、上書きが別の Sticker に当たるためである（ADR 0030）。
+
+- `next_sticker_id` は、次に加える Sticker の番号 `n` である。新しい Sticker（エディタとノード上の UI で投入した画像、複製、`port` の Sticker）は `sticker_<next_sticker_id>` を受け取り、`next_sticker_id` を 1 進める（`takeStickerId`、`pano_editor_state.js`）。Undo で戻しても `next_sticker_id` は戻さない（`restoredHistoryState`）。ノードが状態にない `port` の Sticker を加えるとき（`nodes.py` の `_take_sticker_id`）も同じ番号を使う。ノードは状態を保存しないので、進めた値は実行の中だけのものである。
+- 正規化：`sticker_<数字>` の形の `id`（数字は ASCII の `0`〜`9`）の最大の番号 + 1（なければ `1`）を最小値とする。保存された値が数値なら `floor(x + 0.5)` に丸め、最小値より小さければ最小値にする。数値でなければ最小値とする。番号と `next_sticker_id` は JS で正確に表せる `2^53 − 1` までとし、それ以上の番号の `id` と、数字が 17 桁以上の `id` は数えず、`next_sticker_id` はそこに寄せる。
+- 空・重複・文字列でない `id` は、`next_sticker_id` の番号から順に振り直し、そのぶん `next_sticker_id` を進める。数えない番号の `id` がすでにあれば、その番号は飛ばす。読み直すと、振り直した `id` が最大の番号になり、同じ結果になる。
+- 保存するテキストには、最小値と同じときは書かない。一番大きい番号を振った Sticker がテキストにないとき（消したとき）だけ、最小値より大きくなって書かれる。毎回 Sticker から求めるだけにすると、一番大きい番号の Sticker を消して次に加えた Sticker が同じ `id` を使い直すので、保存する。最小値と同じときに書かないので、この項目より前に保存した状態は、開いて閉じてもテキストが変わらず、ノードのキャッシュも外れない。
 
 #### Sky の重なり順
 
@@ -344,8 +360,58 @@ rebaseSceneState(state, fps) // -> object
 - Timeline 上のすべての出来事（Keyframe、Clip range の始まりと終わり、素材の先頭）は、新しい fps の半フレーム以内に丸まる。同じ時刻にあった Camera と Sticker の Keyframe は、同じ frame に落ちる。
 - 丸めた結果、同じ Lane で `frame` が重なった Keyframe は、正規化の規則どおり後ろのものを残す。`duration` は正規化で 1 以上になる。
 - ハンドルは空間のずれなので変えない。表示（`camera.visible`・`scene.visible`・Sticker の `visible`・`painting_visible`）も変えない。
+- `id`・`next_sticker_id`・`upstream`・`handoff_overrides` も変えない。`upstream` の記録は自分の `fps` を持ち、その fps で読む（下記「上流の上書き（`upstream`）」）。
 - `fps` は 1〜1000 に寄せてから使う（例：`1e308` は 1000 にする）。長さも正規化で 10,000,000 以下に寄せる。
 - `fps` が正の有限の数値でなければエラーにする（Python は `ValueError`、JS は `Error`）。文面は `Cannot rebase state_json to fps <値>; fps must be a positive number.` で、`<値>` の書き方は実装ごとに違う（Python は `repr`、JS は `JSON.stringify`）。
+
+## 上流の上書き（`upstream`）
+
+ADR 0030 により、Panorama Studio は `scene` 入力で受けた上流の Scene の要素を編集できる。下流の状態には、上流の要素への変更だけを `upstream` に保存する。上流の各層（`docs/render-contract.md` の「層」）の状態の `id` ごとに記録を一つ持つ。
+
+```json
+"upstream": [
+  {
+    "layer": "scene_a",
+    "fps": 30.0,
+    "deleted": ["sticker_3"],
+    "stickers": [
+      {"id": "sticker_1", "placement": "sky", "visible": false, "direction": {"value": {...}, "keyframes": [...]}, "z_index": 5}
+    ],
+    "scene": {"visible": false},
+    "painting_visible": false
+  }
+]
+```
+
+| フィールド | 型 | 意味と正規化 |
+|---|---|---|
+| `layer` | 文字列 | 上書きする上流の層の状態の `id`。空でない文字列でなければ記録ごと捨てる |
+| `fps` | 数値 | 記録の Keyframe・Clip range の frame の基準の fps。1〜1000 に寄せる。正の数値でなければ、記録の frame の意味が決まらないので記録ごと捨てる（すべて引き継ぐ） |
+| `deleted` | 文字列の配列 | 下流で消した上流の Sticker の `id`。空でない文字列だけを、重複を除いて元の順に残す |
+| `stickers` | 配列 | 上流の Sticker ごとの上書き（下記） |
+| `scene` | オブジェクト | 上流の層の `scene` の上書き。`visible`（真偽値）と `clip`（Clip range）だけを持てる |
+| `painting_visible` | 真偽値（任意） | 上流の層のペイントの表示の上書き |
+
+Sticker の上書きは `id`・`placement` と、上書きしたフィールドだけを持つ。
+
+| フィールド | 規則 |
+|---|---|
+| `id` | 上流の Sticker の `id`。空でない文字列でなければ上書きごと捨てる |
+| `placement` | `sky` または `world`。それ以外は上書きごと捨てる。持てる Lane を決める |
+| `clip` | オブジェクトなら Clip range として正規化する |
+| `visible`・`locked` | 真偽値 |
+| `crop` | オブジェクトなら `crop` として正規化する |
+| Lane | `placement` の Lane（`sky`：`direction`・`roll`・`size`・`opacity`、`world`：`position`・`rotation`・`scale`・`opacity`）。オブジェクトなら Lane として正規化する（`value` と、Easing・ハンドルを含む `keyframes` のすべて）。上書きは Lane ごとに丸ごと置き換える |
+| `z_index` | `sky` の上書きだけ。数値なら `floor(x + 0.5)` に丸める |
+
+ここだけの規則：**不正な値は既定値にせず、捨てる。捨てたフィールドは上流から引き継ぐ。** 状態のほかの部分では不正な値は既定値に戻すが、上書きで既定値にすると、上流の値を黙って既定値で置き換えることになるためである。型が合っているフィールド（Clip range・`crop`・Lane のオブジェクト）の中身は、状態のほかの部分と同じ規則で正規化する。
+
+- 上書きするものが無い記録（`deleted`・`stickers` が空、`scene` が空、`painting_visible` が無い）は捨てる。上書きするフィールドが無い Sticker の上書き（`id` と `placement` だけ）も捨てる。
+- 同じ `layer` の記録が複数あるときは、後のものを残す（残した記録の位置に置く）。一つの記録の中で同じ `id` の Sticker の上書きが複数あるときも同じ。
+- `deleted` にある `id` の Sticker の上書きは捨てる。
+- キーの順序は上の表の順とする。`deleted`・`stickers`・`scene` は空でも常に持ち、`painting_visible` は上書きするときだけ持つ。
+- 上流の要素の `source`、`scene` の Lane は上書きしない（ADR 0030 の実装の判断）。
+- 上流の要素に、記録にある `id` が無いときの扱い、記録の `fps` から層の `timeline.fps` への再基準化、出力への当て方は、上書きを当てる関数（ADR 0030 の T2）と Panorama Studio（T4）で決める。この節は形だけを定める。
 
 ## 版の判定
 
@@ -451,3 +517,4 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 - #88 の結果（ADR 0029）：Panorama Studio の `scene` 入力で、別の Studio の `scene` 出力を受ける。状態の形は変えていない。上流の状態は下流の状態に入れず、`PANO_SCENE` の層（`layers`）として別々に持ち、描画のときに重ねる（`docs/render-contract.md` の「層」と「上流の Scene（#88）」）。Sticker の `id` は層の中でだけ一意であればよく、上流と同じ `id` でも書き換えない。`port` の Sticker は層ごとに一つまで。エディタ（#89・#90）は上流の層の状態を実行結果の `pano_upstream_layers` から読み、自分の状態とは別に、その層の `timeline.fps` で評価して表示する。上流の状態を自分の状態に書き込まない。
 - #92 の結果（ADR 0029）：状態 v2 の Stickers・Cutout（`PanoramaStickersNode`・`PanoramaCutoutNode`）は main に出ないまま #92 で登録から外し、置き換え（NodeReplace）は作らない。状態の形は変えていない。Cutout だけが使っていた既定の Camera（`default_camera` / `defaultCamera`、`nodes.py` の `_cutout_state`、`parseSceneEditorState` の `camera` と `scene` の指定、`cutout_state`、`noteCameraEdit`）も消した。上の #70〜#88 の記録に出てくる二つのノードの扱いは、その時点のものである。
 - タイムラインの上限：`timeline.fps` を 1〜1000、`timeline.length` を 10,000,000 以下に、Clip range の `start`・`in`・`duration` と Keyframe の `frame` を ±10,000,000 以内（`TIMELINE_FRAME_MAX`）に寄せるようにした（読み込みと `rebase_scene_state`・`rebaseSceneState`）。fps の上限は高速度撮影の VIDEO（240 fps を超えるもの）を寄せずに扱える値にした。frame と長さの上限は同じ値（1000 fps で約 2.8 時間）にして、高い fps に再基準化しても長さの上書きが黙って縮まないようにしてある。極端な値（例：`1e308`）でエディタのタイムラインの目盛りのループや再基準化が止まらなくなるのを防ぐためである。定数は `scene_state.py` と `pano_scene_state.js` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` で、Python と JS で同じ値にする（フィクスチャ `v2_timeline_limits`）。範囲内の状態は変わらない。
+- ADR 0030 の T1 の結果：状態 v2 に `id`・`next_sticker_id`・`upstream`、`port` の Sticker に `handoff_overrides` を加えた（Python と JS で同じ結果、フィクスチャ `v2_upstream`）。`version` は 2 のまま。これらの項目のうち `next_sticker_id` は Sticker を加えるときに読むが、`id`・`upstream`・`handoff_overrides` を読むのは後続の ticket（`id` を振るのは T3、上書きを当てるのは T2・T4、`handoff_overrides` は T5）で、それまでは読み書きで保つだけである。上の #75 の記録の「id は未使用の最小の `sticker_N`」は、`next_sticker_id` による採番に変わった。エディタとノード上の UI で新しく加える Sticker の `id` も、`st_<乱数>` から `sticker_<n>` に変わった。既存の状態の保存するテキストは変わらない（「`state_json` v2」の「保存するテキスト」）。

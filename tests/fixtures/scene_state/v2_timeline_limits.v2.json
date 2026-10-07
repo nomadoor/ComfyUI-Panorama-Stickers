@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "id": null,
   "timeline": {
     "fps": 1000.0,
     "length": 10000000
@@ -96,7 +97,8 @@
           }
         ]
       },
-      "z_index": 0
+      "z_index": 0,
+      "handoff_overrides": []
     },
     {
       "id": "far",
@@ -166,6 +168,7 @@
       "z_index": 0
     }
   ],
+  "next_sticker_id": 1,
   "painting": {
     "version": 1,
     "groups": [],
@@ -178,5 +181,6 @@
     "raster_objects": []
   },
   "painting_layer": null,
-  "painting_visible": true
+  "painting_visible": true,
+  "upstream": []
 }

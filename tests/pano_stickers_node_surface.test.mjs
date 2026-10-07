@@ -399,7 +399,11 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
   assert.deepEqual(sticker.source, { kind: "file", filename: "new.png", subfolder: "panorama_stickers", storage: "input" });
   assert.deepEqual([sticker.z_index, sticker.direction.value.yaw_deg, sticker.roll.value], [3, 12, 0]);
   assert.equal("assets" in added.state, false);
-  assert.equal(added.state.active.selected_sticker_id, "st_new");
+  // The id comes from the state's counter, not the one the caller made up.
+  assert.equal(sticker.id, "sticker_1");
+  assert.equal(added.state.next_sticker_id, 2);
+  assert.equal(state.next_sticker_id, 1);
+  assert.equal(added.state.active.selected_sticker_id, "sticker_1");
 
   const deleted = applyStickersNodeSurfaceAction(added.state, { type: "delete-selected" });
   assert.deepEqual(deleted.state.stickers.map((item) => item.id), ["st_sky", "st_world", "st_hidden"]);
@@ -436,6 +440,18 @@ function v2EditorState(raw) {
 function portStickers(state) {
   return state.stickers.filter((item) => item.source.kind === "port");
 }
+
+test("a port Sticker added after a deletion takes a new id from the counter, not the deleted one", () => {
+  // sticker_2 was deleted: the saved counter is 3, though the largest id left is sticker_1.
+  const state = v2EditorState({ stickers: [{ id: "sticker_1", source: { kind: "file", filename: "a.png" } }], next_sticker_id: 3 });
+
+  const result = reconcilePortStickerState(state, portStickerSyncValue(stickersNode(["sticker"]), { pose: null }));
+
+  const [port] = portStickers(result.state);
+  assert.deepEqual([port.id, port.handoff_overrides, result.state.next_sticker_id, state.next_sticker_id], ["sticker_3", [], 4, 3]);
+  // The counter is one past the largest id again, so the text leaves it out.
+  assert.equal("next_sticker_id" in JSON.parse(editorStateText(stickersNode(["sticker"]), result.state)), false);
+});
 
 function poseOf(sticker) {
   return [sticker.direction.value.yaw_deg, sticker.direction.value.pitch_deg, sticker.roll.value, sticker.size.value.hFOV_deg, sticker.size.value.vFOV_deg];
@@ -582,7 +598,7 @@ test("an image added in the editor and the port media are the same Sticker shape
   const scene = JSON.parse(editorStateText(node, result.state));
   assert.deepEqual(scene.stickers.map((item) => [item.id, item.placement, item.source]), [
     ["sticker_1", "sky", { kind: "port" }],
-    ["st_dropped", "sky", { kind: "file", filename: "drop.png", subfolder: "panorama_stickers", storage: "input" }],
+    ["sticker_2", "sky", { kind: "file", filename: "drop.png", subfolder: "panorama_stickers", storage: "input" }],
   ]);
 });
 

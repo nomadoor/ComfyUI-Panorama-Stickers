@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "id": null,
   "timeline": {
     "fps": 24.0,
     "length": null
@@ -165,9 +166,11 @@
         "value": 1.0,
         "keyframes": []
       },
-      "z_index": 3
+      "z_index": 3,
+      "handoff_overrides": []
     }
   ],
+  "next_sticker_id": 1,
   "painting": {
     "version": 1,
     "groups": [],
@@ -187,5 +190,6 @@
     },
     "revision": "r1"
   },
-  "painting_visible": true
+  "painting_visible": true,
+  "upstream": []
 }
