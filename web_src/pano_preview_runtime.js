@@ -13,7 +13,7 @@ import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
 import { createNodePlayback, surfaceShown } from "./pano_node_playback.js";
-import { portMediaMeta, portMediaSource } from "./pano_port_media.js";
+import { backgroundClipAt, bgColorBackground, portMediaMeta, portMediaSource } from "./pano_port_media.js";
 import { layerUiList, upstreamBackgroundOf, upstreamLayersOf, upstreamOverriddenEnds, upstreamWorkingLayers } from "./pano_upstream.js";
 import {
   beginCutoutRollGesture,
@@ -1471,7 +1471,8 @@ function ownOutputUiList(node, key) {
 // What the node's result gives the Auto length of Panorama Studio's inputs (pano_timeline.js
 // autoTimelineLength), as its editor counts them: the background's frames (left out while no result gives
 // them: the surface's playback then counts the VIDEO it plays; null when the upstream Scene's background stands
-// in, which its length holds already), the port Sticker's media, the `scene` items, and the upstream Scene's
+// in, which its length holds already, with its Clip range as `upstreamClip` and its MP4's meta as
+// `upstreamMedia`), the port Sticker's media, the `scene` items, and the upstream Scene's
 // length with the ends of the Clip ranges the node overrides in it. `state` is the node's working state v2. The
 // upstream layers' working copies are kept while the result and the state stay the same.
 function surfaceTimelineMedia(node, state) {
@@ -1479,8 +1480,16 @@ function surfaceTimelineMedia(node, state) {
   const list = (key) => ownOutputUiList(node, key);
   const scene = isNodeOutputMediaCurrent(node, "scene");
   const layers = scene ? list("pano_upstream_layers") : [];
-  if (scene && upstreamBackgroundOf(list)) media.bg = null;
-  else if (isNodeOutputMediaCurrent(node, "background")) {
+  const upstreamBackground = scene ? upstreamBackgroundOf(list) : null;
+  if (upstreamBackground) {
+    media.bg = null;
+    // The upstream background is placed by the Clip range of the Studio it came from (pano_node_playback.js).
+    const { clip } = upstreamBackground;
+    media.upstreamClip = clip && backgroundClipAt(clip.clip, clip.fps, state.timeline.fps);
+    // Its media ends it as in the editor (an upstream background counts as a VIDEO ending at its `duration`).
+    const meta = list(upstreamBackground.metaKey)[0];
+    if (meta && typeof meta === "object") media.upstreamMedia = { video: true, frames: Number(meta.frames), duration: Number(meta.duration) };
+  } else if (isNodeOutputMediaCurrent(node, "background")) {
     const meta = list("pano_input_video_meta")[0];
     if (meta && typeof meta === "object") media.bg = { video: videoLinked(node, BACKGROUND_INPUT_NAMES), frames: Number(meta.frames), duration: Number(meta.duration) };
   }
@@ -1649,10 +1658,15 @@ function surfaceViewInput(node, state, bgImg) {
   const paintLayers = (state.painting_visible === false ? [] : buildRuntimeCutoutLayerEntries(node, state))
     .filter((entry) => entry.visible !== false)
     .map((entry) => ({ id: entry.id, media: entry.source, revision: entry.revision, opacity: entry.opacity, zIndex: entry.zIndex }));
-  return {
-    background: isRenderableMediaReady(bgImg)
+  // Outside the background's Clip range and media (Panorama Studio), bg_color shows in its place, as in the output.
+  const upstreamColor = isNodeOutputMediaCurrent(node, "scene") ? upstreamBackgroundOf((key) => ownOutputUiList(node, key))?.color : null;
+  const background = nodeSurface(node).playback?.playback.backgroundShows === false
+    ? bgColorBackground(upstreamColor || String(getWidget(node, "bg_color")?.value || "#000000"))
+    : isRenderableMediaReady(bgImg)
       ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 }
-      : null,
+      : null;
+  return {
+    background,
     layers: workingSkyLayers(sceneState, surfaceFrame(node), state.stickers, { media, paintLayers }),
   };
 }

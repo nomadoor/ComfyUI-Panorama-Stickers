@@ -501,3 +501,47 @@ test("a swap on the port changes the source of the port Sticker's picture", () =
   assert.equal(playback.stickerPicture("still", "image"), "image");
   assert.equal(portMediaSource(playback.stickerMedia, "image"), "image");
 });
+
+test("the background VIDEO follows its Clip range on the node, with bg_color before it", () => {
+  const state = loadSceneState({ version: 2, timeline: { fps: FPS }, background: { clip: { start: 12, in: 0 } } });
+  const { playback, follow, video, clock } = setup(state);
+  follow(["/bg.mp4"]);
+  video.loaded(2);
+  // Before its Clip range nothing of the VIDEO shows, and nothing is sought for it.
+  assert.equal(playback.frame, 0);
+  assert.equal(playback.backgroundShows, false);
+  assert.deepEqual(video.seeks, []);
+  playback.toggle();
+  // The clock runs to frame 12, where the VIDEO starts from its first frame and sets the playhead.
+  clock.framesAhead(12);
+  assert.equal(playback.frame, 12);
+  assert.equal(video.paused, false);
+  assert.equal(playback.backgroundShows, true);
+  video.present(10 / FPS);
+  assert.equal(playback.frame, 22);
+  // The Auto length ends with the VIDEO: 12 + 48 frames.
+  video.present(47 / FPS);
+  assert.equal(playback.frame, 59);
+  // An upstream background (`media.bg` null) is not placed by the node's own Clip range, but by its Studio's.
+  playback.follow({ shown: true, sources: ["/bg.mp4"], state, media: { bg: null } });
+  assert.equal(playback.backgroundShows, true);
+  playback.follow({ shown: true, sources: ["/bg.mp4"], state, media: { bg: null, upstreamClip: { start: 70, in: 0, duration: null } } });
+  assert.equal(playback.backgroundShows, false);
+});
+
+test("an upstream background on the node ends with its media, as in the editor and the output", () => {
+  const state = loadSceneState({ version: 2, timeline: { fps: FPS, length: 100 } });
+  const { playback, video, clock } = setup(state);
+  const media = { bg: null, upstreamClip: { start: 10, in: 0, duration: null }, upstreamMedia: { video: true, frames: 48, duration: 2 } };
+  playback.follow({ shown: true, sources: ["/bg.mp4"], state, media });
+  video.loaded(2);
+  playback.toggle();
+  clock.framesAhead(10);
+  video.present(47 / FPS);
+  assert.equal(playback.frame, 57);
+  assert.equal(playback.backgroundShows, true);
+  // Past the end of its media (frame 58), bg_color shows.
+  video.present(48 / FPS);
+  assert.equal(playback.frame, 58);
+  assert.equal(playback.backgroundShows, false);
+});

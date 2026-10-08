@@ -506,11 +506,12 @@ test("Scene ids are random, URL-safe and 16 characters", () => {
 
 // A v2 state saved before the Camera had a projection reads as a Camera that shoots in perspective;
 // saving it again writes the same text, so the node's execution cache still hits.
-// The same holds for the fields of ADR 0030 (`id`, `next_sticker_id`, `upstream`, `handoff_overrides`).
+// The same holds for the fields of ADR 0030 (`id`, `next_sticker_id`, `upstream`, `handoff_overrides`) and for the
+// background's Clip range (`background`).
 test("a state saved before the Camera had a projection and before the visibility fields is saved as the same text", () => {
   const node = { __panoSceneStateV2: true };
   for (const name of ["v2_canonical", "v2_interpolation"]) {
-    const { painting_visible: paintingVisible, id, next_sticker_id: nextStickerId, upstream, ...loaded } = loadSceneState(readFixture(name));
+    const { painting_visible: paintingVisible, id, next_sticker_id: nextStickerId, upstream, background, ...loaded } = loadSceneState(readFixture(name));
     const { projection, visible, ...camera } = loaded.camera;
     const { visible: sceneVisible, ...scene } = loaded.scene;
     const stickers = loaded.stickers.map(({ handoff_overrides: handoffOverrides, ...item }) => item);

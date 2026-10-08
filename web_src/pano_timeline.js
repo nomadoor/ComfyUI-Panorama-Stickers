@@ -3,11 +3,12 @@
 // the Keyframes on the content, and Easing edits. Frames passed for an owner (the Camera, scene or a
 // Sticker) are in its own time base: Timeline frames for the Camera, Clip frames (from start - in) for
 // scene and the Stickers.
-import { portMediaFrames } from "./pano_port_media.js";
+import { bgMediaEnd, portMediaFrames } from "./pano_port_media.js";
 import { evaluateLane, FRAME_EPSILON } from "./pano_scene_eval.js";
 import {
   CAMERA_LANES,
   DEFAULT_EASING,
+  defaultClip,
   SCENE_LANES,
   SKY_STICKER_LANES,
   TIMELINE_FPS_MAX,
@@ -56,6 +57,8 @@ export function setLaneValue(owner, name, frame, patch) {
 export function laneNames(owner) {
   if (owner.placement === "world") return WORLD_STICKER_LANES.map(([name]) => name);
   if (owner.placement === "sky") return SKY_STICKER_LANES.map(([name]) => name);
+  // The background (state.background) has a Clip range and no Lanes.
+  if (owner.clip && !owner.position) return [];
   return (owner.clip ? SCENE_LANES : CAMERA_LANES).map(([name]) => name);
 }
 
@@ -172,10 +175,6 @@ export function trimClipEnd(clip, end, span) {
   clip.duration = reopen ? null : Math.max(1, end - clip.start);
 }
 
-function defaultClip(clip) {
-  return clip.start === 0 && clip.in === 0 && clip.duration === null;
-}
-
 function ownerLanes(owner) {
   return laneNames(owner).map((name) => owner[name]);
 }
@@ -186,9 +185,9 @@ export function ownerTimed(owner) {
 }
 
 // Whether anything in the state changes over time; the editor's Timeline opens by itself when it does.
-// The Camera's Keyframes count only with `camera` (Panorama Studio, #89).
+// The Camera's Keyframes count only with `camera` (Panorama Studio, #89); the background's Clip range always.
 export function isTimed(state, { camera = false } = {}) {
-  return [...(camera && state.camera ? [state.camera] : []), state.scene, ...state.stickers].some(ownerTimed);
+  return [...(camera && state.camera ? [state.camera] : []), state.background, state.scene, ...state.stickers].some(ownerTimed);
 }
 
 // The span timelineSpan gives a broken input (a length or frame that is not a finite number).
@@ -207,8 +206,9 @@ export function timelineSpan(state, media = {}) {
 // The Auto length: the output length `_decide_timeline` decides without `timeline.length`, by the same rule,
 // from the state and what is known of the inputs. Each input is null (or 0) while it is not known, as before a
 // run: then the rule goes on to the next step, as if the input had a single frame.
-//   bg          the node's own bg_media with two or more frames: { video, frames, duration } (`video` for a
-//               VIDEO, `frames` its frame count, `duration` the seconds where its last frame ends)
+//   bg          the node's own bg_media: { video, frames, duration } (`video` for a VIDEO, `frames` its frame
+//               count, `duration` the seconds where its last frame ends), { frames: 1 } for a single image; it is
+//               placed by the state's `background.clip` (bgMediaEnd)
 //   port        the port Sticker's media with two or more frames or items, as its meta
 //               (`pano_sticker_input_video_meta`: { kind, frames, duration }; 3D items are kind "IMAGE")
 //   sceneItems  the number of items of the `scene` input's content
@@ -229,10 +229,16 @@ export function autoTimelineLength(state, { bg = null, port = null, sceneItems =
   if (port && portSticker && open(portSticker.clip)) ends.push(portMediaFrames({ ...portSticker.clip, duration: null }, fps, port));
   const sceneClip = state.scene.clip;
   if (sceneItems > 1 && open(sceneClip)) ends.push(sceneClip.start - sceneClip.in + sceneItems);
+  // A single background image ends with its Clip range, as a Sticker's image does.
+  const bgClip = state.background.clip;
+  if (bg?.frames === 1 && !bg.video && !open(bgClip)) ends.push(bgClip.start + bgClip.duration);
   const keys = camera && state.camera ? ownerLanes(state.camera).flatMap((lane) => lane.keyframes.map((key) => key.frame)) : [];
   let length = 1;
-  // A background VIDEO that does not set the Timeline (an upstream Scene does) lasts until its last frame ends.
-  if (bg?.video) length = upstream ? Math.max(1, Math.round(bg.duration * fps)) : bg.frames;
+  // A background with frames ends with its Clip range, or without a duration with its media. With the default Clip
+  // range, a background VIDEO that does not set the Timeline (an upstream Scene does) lasts until its last frame ends.
+  const bgEnd = open(bgClip) ? bg && bgMediaEnd(bgClip, fps, bg, !!upstream) : bgClip.start + bgClip.duration;
+  if ((bg?.video || bg?.frames > 1) && !defaultClip(bgClip)) length = Math.max(1, Math.round(bgEnd));
+  else if (bg?.video) length = upstream ? Math.max(1, Math.round(bg.duration * fps)) : bg.frames;
   else if (bg?.frames > 1) length = bg.frames;
   else if (ends.length) length = Math.max(1, Math.round(Math.max(...ends)));
   else if (keys.length) length = Math.max(1, Math.round(Math.max(...keys)) + 1);

@@ -9,7 +9,7 @@ from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_s
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 
 
@@ -118,6 +118,17 @@ def test_hidden_camera_scene_and_painting_are_kept_by_rebase():
     assert rebased["scene"]["clip"] == {"start": 5, "in": 0, "duration": 15}
 
 
+def test_the_background_clip_is_normalized_like_a_sticker_clip_and_rebased_with_it():
+    state = load_scene_state(read_fixture("v2_background"))
+    assert state["background"] == {"clip": {"start": 12, "in": 7, "duration": 47}}
+    assert load_scene_state({"version": 2})["background"] == {"clip": {"start": 0, "in": 0, "duration": None}}
+    assert load_scene_state({"version": 2, "background": {"clip": {"start": -3, "in": "x", "duration": 0}}})["background"]["clip"] == {"start": 0, "in": 0, "duration": 1}
+    assert load_scene_state(read_fixture("v1_stickers"))["background"]["clip"] == {"start": 0, "in": 0, "duration": None}
+    rebased = rebase_scene_state(state, 60.0)
+    # The background keeps its events in seconds as the Sticker with the same Clip range does.
+    assert rebased["background"]["clip"] == rebased["stickers"][0]["clip"] == {"start": 30, "in": 17, "duration": 118}
+
+
 @pytest.mark.parametrize(("fps", "length", "expected"), [
     (1e308, 1e308, {"fps": 1000.0, "length": 10_000_000}),
     (300.0, 100000, {"fps": 300.0, "length": 100000}),
@@ -212,7 +223,7 @@ def test_non_object_state_raises(text):
 
 def test_state_v2_has_no_unread_fields():
     state = load_scene_state(read_fixture("v2_canonical"))
-    assert list(state.keys()) == ["version", "id", "timeline", "camera", "scene", "stickers", "next_sticker_id", "painting", "painting_layer", "painting_visible", "upstream"]
+    assert list(state.keys()) == ["version", "id", "timeline", "camera", "scene", "stickers", "next_sticker_id", "painting", "painting_layer", "painting_visible", "upstream", "background"]
     assert list(state["timeline"].keys()) == ["fps", "length"]
     assert list(state["camera"].keys()) == ["aspect", "projection", "visible", "position", "rotation", "fov"]
     assert list(state["scene"].keys()) == ["clip", "visible", "position", "rotation", "scale"]

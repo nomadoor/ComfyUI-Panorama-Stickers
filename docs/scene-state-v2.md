@@ -10,7 +10,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | fps の再基準化 | `scene_state.py` の `rebase_scene_state` | `rebaseSceneState` |
 | 保存するテキスト | — | `sceneStateText` |
 
-フィクスチャは `tests/fixtures/scene_state/` にあり（非表示の Camera・`scene`・Sticker・ペイントは `v2_hidden`、`id`・`next_sticker_id`・`upstream`・`handoff_overrides` は `v2_upstream`）、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
+フィクスチャは `tests/fixtures/scene_state/` にあり（非表示の Camera・`scene`・Sticker・ペイントは `v2_hidden`、`id`・`next_sticker_id`・`upstream`・`handoff_overrides` は `v2_upstream`、`background` は `v2_background`）、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
 
 ## 共通の規則
 
@@ -54,7 +54,8 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
   "painting": {...},
   "painting_layer": null,
   "painting_visible": true,
-  "upstream": []
+  "upstream": [],
+  "background": {"clip": {"start": 0, "in": 0, "duration": null}}
 }
 ```
 
@@ -80,6 +81,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | `painting_layer` | オブジェクト または `null` | `null` | ペイントのラスタ画像の参照。中身はそのまま保つ |
 | `painting_visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` ならペイント（ストローク・ラスタ・マスク）を描かず、MASK にも出さない |
 | `upstream` | 配列 | `[]` | 上流の Scene の要素への上書き。下記「上流の上書き（`upstream`）」 |
+| `background.clip` | Clip range | 下記 | 自分の `bg_media` が Timeline 上で有効な範囲（下記「背景の Clip range」）。`background` が欠け・オブジェクトでないときも既定の Clip range |
 
 `scene` は、`scene` 入力が接続されていなくても常に存在する。
 
@@ -93,7 +95,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 
 - ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、`camera` を読み替えない。`null` なら Camera が無く、原点・回転 0 の ERP を撮る（`docs/render-contract.md` の「Panorama Studio」）。エディタも `camera` を読み替えず、Camera を足す・消すのは編集である。
 - 既存の状態：この版より前の v2 の状態は `camera` のオブジェクトを持つので、そのまま「Camera あり」で `projection` は `perspective` になる。読み込みでも保存でも Camera を消したり書き換えたりしない（ノードのキャッシュが外れないようにするため）。fps の再基準化だけは状態全体と同じく `camera` の時刻も直し、`null` は `null` のまま、`projection` はそのまま保つ。
-- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.visible`・`scene.visible`・`painting_visible` の `true`。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。同じ理由で、ADR 0030 の項目も次のときは書かない：`id` の `null`、空の `upstream`、`port` の Sticker の空の `handoff_overrides`、Sticker から求まる値（下記「Sticker の id の採番」の最小値）と同じ `next_sticker_id`。Python は `state_json` を書かないので、この関数を持たない。
+- 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.visible`・`scene.visible`・`painting_visible` の `true`。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。同じ理由で、ADR 0030 の項目も次のときは書かない：`id` の `null`、空の `upstream`、`port` の Sticker の空の `handoff_overrides`、Sticker から求まる値（下記「Sticker の id の採番」の最小値）と同じ `next_sticker_id`。既定の Clip range（`start` 0・`in` 0・`duration` `null`）の `background` も書かない（`pano_scene_state.js` の `defaultClip`）。Python は `state_json` を書かないので、この関数を持たない。
 
 ### Lane
 
@@ -160,6 +162,17 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `duration` | 整数 ≥ 1 または `null` | `null` | 有効な長さ。`null` は Timeline の終わりまで。出力の長さを決めるときは、フレームを持つ `port` の素材（IMAGE バッチ・VIDEO）の終わりを Clip の終わりとみなす（`docs/render-contract.md`） |
 
 有効な範囲は `start ≤ frame < start + duration` とする。端点との比較には評価関数と同じ許容差 `FRAME_EPSILON`（`1e-6`）を使う。`start − 1e-7` は範囲内、`start + duration − 1e-7` は範囲外（終端は含まない）とする。負の値は 0、1 未満の `duration` は 1 に寄せる。
+
+#### 背景の Clip range
+
+`background.clip` は、Panorama Studio 自身の `bg_media` を Sticker の素材と同じ規則で Timeline に置く。形・正規化・fps の再基準化は Sticker の Clip range と同じである。
+
+- 素材の先頭は Timeline 上の `start − in` に来る。`start` を後ろへずらすと背景の映像が遅れて始まり、`in` で頭を、`duration` で終わりを切る。`duration` が `null` なら素材の終わりまで。
+- Clip range の外と素材の外では背景を描かず、`bg_color` になる。描き方と出力の長さは `docs/render-contract.md` の「背景の Clip range」。
+- Keyframe と表示（`visible`）は持たない。評価関数は `background` を読まない。
+- 上流の上書き（`upstream`）は `background` に当たらない（自分の入力の設定である）。
+- `background` は Sticker ではない。エディタのタイムラインの行の id `background` は、Sticker の id（エディタが振るのは常に `sticker_<番号>`）と重ならない。
+- 既定の Clip range では、背景は今までどおり出力フレームと 1 対 1 に対応する。既定値はテキストに書かないので、この項目より前に保存した状態のテキストは変わらない。
 
 ### Sticker
 
@@ -372,6 +385,7 @@ rebaseSceneState(state, fps) // -> object
 | Clip range の `duration`（`null` 以外） | `r(start + duration) − start'` |
 | `scene`・Sticker の Keyframe の `frame` | `r(start − in + frame) − anchor'` |
 | `timeline.length`（`null` 以外） | `max(1, r(length))` |
+| `background.clip` | Sticker の Clip range と同じ |
 
 - Timeline 上のすべての出来事（Keyframe、Clip range の始まりと終わり、素材の先頭）は、新しい fps の半フレーム以内に丸まる。同じ時刻にあった Camera と Sticker の Keyframe は、同じ frame に落ちる。
 - 丸めた結果、同じ Lane で `frame` が重なった Keyframe は、正規化の規則どおり後ろのものを残す。`duration` は正規化で 1 以上になる。

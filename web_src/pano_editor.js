@@ -587,6 +587,8 @@ async function showEditor(node, type, options = {}) {
     cancelFrame: (id) => scheduler.cancelFrame(id),
     tasks: {
       seek: () => playback.seek(timeline.scrubFrame),
+      // A drag of the background's Clip range seeks its VIDEO to the time it puts at the playhead.
+      background: () => playback.seek(editor.frame),
       timeline: () => syncTimeline(),
       // The Stickers are evaluated at the playhead as the stage draws; the stroke geometry stays cached.
       // A drag changes the state (Keyframes, Clip ranges), so what is drawn from it is made again.

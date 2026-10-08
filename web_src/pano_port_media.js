@@ -4,7 +4,9 @@
 // `fps`, `frames`, `duration` (the time where the media ends) and for a VIDEO `pts_tolerance`, the
 // seconds before a PTS that count as its frame. Timeline frames are those of the state, at its
 // Timeline fps `fps`.
+import { createPanoCanvas } from "./pano_diagnostics.js";
 import { clipActive } from "./pano_scene_eval.js";
+import { defaultClip } from "./pano_scene_state.js";
 
 // A time a hair before a PTS (1/1000 frame) counts as that frame, as in frameShownAt.
 const PTS_HAIR = 1e-3;
@@ -30,6 +32,62 @@ export function portMediaTime(clip, frame, fps, meta) {
 export function portMediaFrames(clip, fps, meta) {
   if (clip.duration !== null) return 0;
   return Math.round(clip.start - clip.in + (meta.kind === "IMAGE" ? meta.frames : meta.duration * fps));
+}
+
+// The Timeline frame where Panorama Studio's own background media ends, placed by its Clip range `clip`
+// (`background.clip`) as a port Sticker's media is (PortMedia.end): from start - in, its frames, or the time its
+// last frame ends for a VIDEO that does not set the Timeline (`under`: an upstream Scene sets it). `bg` is the
+// background as autoTimelineLength reads it ({ video, frames, duration }). Where its bar ends without a duration,
+// and what the Auto length counts.
+export function bgMediaEnd(clip, fps, bg, under = false) {
+  return clip.start - clip.in + (bg.video && under ? bg.duration * fps : bg.frames);
+}
+
+// A background Clip range `clip` of a state at `fromFps` in the Timeline frames of `toFps`, keeping its seconds
+// (an upstream background's, pano_upstream.js upstreamBackgroundOf). The frames are not rounded: they only place
+// the media.
+export function backgroundClipAt(clip, fromFps, toFps) {
+  const ratio = toFps / fromFps;
+  return { start: clip.start * ratio, in: clip.in * ratio, duration: clip.duration === null ? null : clip.duration * ratio };
+}
+
+// Where the background's Clip range `clip` puts its VIDEO on the Timeline (createVideoPlayback's `place`), or null
+// for the default Clip range, with which the VIDEO starts at frame 0 as before the Clip range: its first frame at
+// start - in, shown from start until start + duration (Infinity without a duration: until the VIDEO ends).
+export function backgroundPlace(clip) {
+  if (defaultClip(clip)) return null;
+  return { origin: clip.start - clip.in, start: clip.start, end: clip.duration === null ? Infinity : clip.start + clip.duration };
+}
+
+// Whether the background shows at Timeline `frame` (the node shows bg_color where it does not): inside its Clip
+// range, and before the end of media with frames (`bg` as bgMediaEnd reads it; null for a single image or while it
+// is not known). With the default Clip range it always shows, as before the Clip range (the editor keeps the
+// VIDEO's last frame past its end).
+export function backgroundShownAt(clip, frame, fps, bg = null, under = false) {
+  if (defaultClip(clip)) return true;
+  if (!clipActive(clip, frame)) return false;
+  return !(bg?.video || bg?.frames > 1) || frame < bgMediaEnd(clip, fps, bg, under);
+}
+
+// The bg_color backgrounds made last, by color; the editor and the node surfaces can show different colors at once.
+const colorBackgrounds = new Map();
+const COLOR_BACKGROUNDS_KEPT = 8;
+
+// What the views draw as the background where it does not show (backgroundShownAt): bg_color over the whole
+// ERP, as the node draws it, in the views' background shape ({ media, revision, coverage, source }), a small
+// canvas of the color.
+export function bgColorBackground(color) {
+  let background = colorBackgrounds.get(color);
+  if (!background) {
+    const canvas = createPanoCanvas({ label: "background.color", width: 2, height: 1 });
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    background = { media: canvas, revision: color, coverage: 360, source: `bg_color:${color}` };
+    if (colorBackgrounds.size >= COLOR_BACKGROUNDS_KEPT) colorBackgrounds.delete(colorBackgrounds.keys().next().value);
+    colorBackgrounds.set(color, background);
+  }
+  return background;
 }
 
 // The port Sticker's media as portMediaFrames reads it, from a result's `ui` (`list(key)`: its list under a

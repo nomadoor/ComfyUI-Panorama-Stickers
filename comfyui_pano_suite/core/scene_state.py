@@ -19,6 +19,8 @@ PROJECTIONS = ("perspective", "erp")
 FILE_STORAGES = ("input", "output", "temp")
 # ease-in-out, the Easing of a Keyframe without a valid one.
 DEFAULT_EASING = (0.42, 0.0, 0.58, 1.0)
+# The Clip range a missing or invalid one reads as: the whole Timeline from the content's first frame.
+DEFAULT_CLIP = {"start": 0, "in": 0, "duration": None}
 # The range of `timeline.fps` and the largest `timeline.length` (Timeline frames) a state keeps.
 TIMELINE_FPS_MIN = 1.0
 TIMELINE_FPS_MAX = 1000.0
@@ -400,7 +402,14 @@ def _normalize_v2(raw):
         "painting_layer": deepcopy(painting_layer) if isinstance(painting_layer, dict) else None,
         "painting_visible": _bool(raw.get("painting_visible"), True),
         "upstream": _upstream(raw.get("upstream")),
+        "background": _background(raw.get("background")),
     }
+
+
+def _background(raw):
+    """The node's own `bg_media` on the Timeline: its Clip range."""
+    raw = raw if isinstance(raw, dict) else {}
+    return {"clip": _clip(raw.get("clip"))}
 
 
 def _v1_source(sticker, assets):
@@ -533,6 +542,7 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
         "painting_visible": state["painting_visible"],
         # The override records keep their own fps (docs/scene-state-v2.md "上流の上書き").
         "upstream": state["upstream"],
+        "background": {"clip": _rebase_clip(state["background"]["clip"], rebase)["clip"]},
     })
 
 

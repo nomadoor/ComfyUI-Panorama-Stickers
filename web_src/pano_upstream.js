@@ -11,6 +11,7 @@ import { applyUpstreamOverrides } from "./pano_scene_inherit.js";
 import {
   SKY_STICKER_LANES,
   WORLD_STICKER_LANES,
+  defaultClip,
   loadSceneState,
   rebaseSceneState,
   rebaseUpstreamRecord,
@@ -29,14 +30,21 @@ export function upstreamLayersOf(list) {
 
 // The background of the upstream Scene in a result, used in place of the node's own bg_media (ADR 0029): the
 // `ui` keys of its image and VIDEO and its coverage, or null when the upstream Scene has none. uiList(key) reads
-// a list of the result.
+// a list of the result. `color` is its bg_color (a hex RGB, null when the result has none) and `clip` the Clip
+// range of the Studio it came from with that state's fps ({ clip, fps }, pano_upstream_bg_clip), null with the
+// default one or none: it places the background as in that Studio's output (backgroundClipAt).
 export function upstreamBackgroundOf(uiList) {
   if (!uiList("pano_upstream_input_images").length && !uiList("pano_upstream_input_videos").length) return null;
+  const color = uiList("pano_upstream_bg_color")[0];
+  const placed = uiList("pano_upstream_bg_clip")[0];
+  const clip = loadSceneState({ version: 2, background: { clip: placed?.clip } }).background.clip;
   return {
     imageKey: "pano_upstream_input_images",
     videoKey: "pano_upstream_input_videos",
     metaKey: "pano_upstream_input_video_meta",
     coverage: normalizeCoverageValue(uiList("pano_upstream_coverage")[0]),
+    color: Array.isArray(color) && color.length === 3 ? `#${color.map((value) => Math.round(Math.min(1, Math.max(0, Number(value) || 0)) * 255).toString(16).padStart(2, "0")).join("")}` : null,
+    clip: defaultClip(clip) || !(Number(placed?.fps) > 0) ? null : { clip, fps: Number(placed.fps) },
   };
 }
 

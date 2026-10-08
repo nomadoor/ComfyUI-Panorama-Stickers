@@ -340,7 +340,8 @@ def _clip_frame(clip, frame):
     return frame - (clip["start"] - clip["in"])
 
 
-def _clip_active(clip, frame):
+def clip_active(clip, frame):
+    """Whether the Timeline `frame` is inside the Clip range `clip` (docs/scene-state-v2.md "Clip range")."""
     end = None if clip["duration"] is None else clip["start"] + clip["duration"]
     return frame >= clip["start"] - FRAME_EPSILON and (end is None or frame < end - FRAME_EPSILON)
 
@@ -373,7 +374,7 @@ def evaluate_scene_state(state: dict, frame: float) -> dict:
         stickers.append({
             "id": sticker["id"],
             "placement": sticker["placement"],
-            "active": sticker["visible"] and _clip_active(clip, frame),
+            "active": sticker["visible"] and clip_active(clip, frame),
             "clip_frame": clip_frame,
             **_sticker_values(sticker, clip_frame),
             "opacity": _opacity(_evaluate_lane(sticker, "opacity", clip_frame)),
@@ -388,7 +389,7 @@ def evaluate_scene_state(state: dict, frame: float) -> dict:
             "aspect": camera["aspect"],
         },
         "scene": {
-            "active": scene["visible"] and _clip_active(scene["clip"], frame),
+            "active": scene["visible"] and clip_active(scene["clip"], frame),
             "clip_frame": scene_clip_frame,
             "position": _evaluate_lane(scene, "position", scene_clip_frame),
             **_evaluate_lane(scene, "rotation", scene_clip_frame),

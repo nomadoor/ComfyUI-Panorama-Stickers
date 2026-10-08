@@ -95,6 +95,25 @@ def _cases(tmp_path):
     cases.append(("a background VIDEO", _state(fps=25, camera=_camera_keys(0, 90)), {"bg": bg}, {"bg": media}))
     cases.append(("a background VIDEO under an upstream Scene", _state(), {"bg": bg, "upstream": _upstream(20)},
                   {"bg": media, "upstream": {"frames": 20, "ends": []}}))
+    # The background's Clip range (background.clip) ends the background where the Sticker's would end.
+    for name, clip in [
+        ("a shifted background VIDEO", {"start": 3, "in": 1}),
+        ("a background VIDEO trimmed at the tail", {"start": 2, "in": 0, "duration": 7}),
+        ("a background VIDEO with its head trimmed", {"start": 0, "in": 6}),
+    ]:
+        cases.append((name, _state(fps=25, background={"clip": clip}, camera=_camera_keys(0, 90)), {"bg": bg}, {"bg": media}))
+    cases.append(("a length over a shifted background VIDEO", _state(fps=25, length=80, background={"clip": {"start": 3, "in": 0}}), {"bg": bg}, {"bg": media}))
+    cases.append(("a shifted background VIDEO under an upstream Scene", _state(background={"clip": {"start": 30, "in": 0}}), {"bg": bg, "upstream": _upstream(20)},
+                  {"bg": media, "upstream": {"frames": 20, "ends": []}}))
+    batch_bg, batch_media = _bg_media(batch, 24.0)
+    cases.append(("a shifted IMAGE batch", _state(background={"clip": {"start": 4, "in": 2}}), {"bg": batch_bg}, {"bg": batch_media}))
+    cases.append(("an IMAGE batch trimmed at the tail", _state(background={"clip": {"start": 0, "in": 0, "duration": 5}}), {"bg": batch_bg}, {"bg": batch_media}))
+    # A single image ends no length without a duration; with one, its end counts as a Sticker's Clip range end.
+    image = torch.rand((1, 4, 8, 3))
+    sticker = _sticker("a", {"start": 0, "in": 0, "duration": 9})
+    cases.append(("a shifted single image", _state(background={"clip": {"start": 4, "in": 0}}, stickers=[sticker]), {"bg": image}, {"bg": {"frames": 1}}))
+    cases.append(("a single image with a duration", _state(background={"clip": {"start": 4, "in": 0, "duration": 20}}, stickers=[sticker]), {"bg": image}, {"bg": {"frames": 1}}))
+    cases.append(("a single image ending before a Sticker", _state(background={"clip": {"start": 0, "in": 0, "duration": 3}}, stickers=[sticker]), {"bg": image}, {"bg": {"frames": 1}}))
     for name, sticker, clip in [
         ("an IMAGE batch on the port", torch.rand((10, 4, 8, 3)), {"start": 3, "in": 1}),
         ("a VIDEO on the port", port_video, {"start": 5, "in": 2}),
@@ -151,3 +170,10 @@ def test_the_timeline_spans_the_length_the_node_outputs(tmp_path):
     assert expected["an IMAGE batch"] == 12
     assert expected["a background VIDEO"] == 40
     assert expected["a Clip range overridden upstream"] == 70
+    assert expected["a shifted background VIDEO"] == 42
+    assert expected["a background VIDEO trimmed at the tail"] == 9
+    assert expected["a background VIDEO with its head trimmed"] == 34
+    assert expected["a shifted background VIDEO under an upstream Scene"] == 68
+    assert expected["a shifted IMAGE batch"] == 14
+    assert expected["a single image with a duration"] == 24
+    assert expected["a single image ending before a Sticker"] == 9

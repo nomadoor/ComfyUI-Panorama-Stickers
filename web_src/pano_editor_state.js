@@ -211,7 +211,7 @@ export function setTimelineFps(state, fps) {
   const rebased = rebaseSceneState(state, fps);
   const stickers = new Map(rebased.stickers.map((item) => [item.id, item]));
   state.timeline = rebased.timeline;
-  const owners = [[state.camera, rebased.camera], [state.scene, rebased.scene], ...state.stickers.map((item) => [item, stickers.get(item.id)])];
+  const owners = [[state.camera, rebased.camera], [state.background, rebased.background], [state.scene, rebased.scene], ...state.stickers.map((item) => [item, stickers.get(item.id)])];
   for (const [owner, next] of owners) {
     // A state without a Camera has none to rebase. Only a Sticker still uploading has no match; it was
     // just added with a default Clip range and no Keyframes.

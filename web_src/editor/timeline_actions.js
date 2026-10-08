@@ -2,7 +2,7 @@
 // playback, keying Lanes, easing, and dragging Keyframes and Clip ranges. On an upstream layer's rows (ADR 0030)
 // they change its working copy, which pushHistory writes back as the node's overrides (editor/upstream.js
 // syncUpstreamEdits); a layer that is only inherited is not changed, as a locked row is not.
-import { PAINTING_ROW } from "../pano_editor_ui_state.js";
+import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_editor_ui_state.js";
 import { clipActive } from "../pano_scene_eval.js";
 import {
   enteredTimelineFps,
@@ -186,20 +186,27 @@ export function createTimelineActions(deps) {
       else if (action.delta) trimClipEnd(sticker.clip, Math.min(drag.end + action.delta, Math.max(drag.limit, drag.end)), drag.span);
       if (action.phase !== "end") {
         dragFrames.request("timeline");
-        if (clipView(sticker.clip) !== shown) dragFrames.request("view");
+        if (clipView(sticker.clip) !== shown) {
+          dragFrames.request("view");
+          // The background VIDEO is sought, once per frame, to the time its moved Clip range puts at the playhead.
+          if (action.id === BACKGROUND_ROW) dragFrames.request("background");
+        }
         return;
       }
       dragFrames.cancel();
       timeline.drag = null;
       releaseHiddenSelection();
-      if (JSON.stringify(sticker.clip) !== JSON.stringify(base)) commitTimelineEdit();
+      const changed = JSON.stringify(sticker.clip) !== JSON.stringify(base);
+      // The drag's end seeks the background VIDEO once more, so it shows the time of the final Clip range.
+      if (changed && action.id === BACKGROUND_ROW) playback.seek(editor.frame);
+      if (changed) commitTimelineEdit();
       else refreshTimelineEdit();
       return;
     }
     if (action.type === "key-row") {
-      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet (#89); an upstream
-      // `scene` row is not editable here (timelineEditable).
-      if (action.owner === "scene" || !timelineEditable(action.owner)) return;
+      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet (#89); the background has
+      // no Lanes; an upstream `scene` row is not editable here (timelineEditable).
+      if (action.owner === "scene" || action.owner === BACKGROUND_ROW || !timelineEditable(action.owner)) return;
       // Recording edits stop at the frame shown, so playback stops before a Keyframe is set.
       stopTimelinePlayback();
       keyAllLanes(timelineOwner(action.owner), editor.frame - timelineOffset(action.owner));

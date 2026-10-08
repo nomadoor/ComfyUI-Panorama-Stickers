@@ -210,21 +210,29 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。後続�
 - Camera が無いとき（隠したときを含む）の ERP の出力は、World の原点から回転 0 で撮った `coverage` の範囲（`nodes.py` の `ORIGIN_CAMERA`）。背景 ERP と `sky` の Sticker・ペイントは保存した向きのまま出し、`world` の Sticker と `scene` は原点から見た位置に描く。
 
 - Timeline fps は、背景 VIDEO の平均フレームレート（コアの `get_frame_rate()` と同じ `average_rate`、丸めない）、なければ `sticker` の VIDEO の平均フレームレート、どちらもなければ状態の `timeline.fps` とする。Timeline fps を決める VIDEO は `_timing_video` が選び、`_timeline_rate` がその fps を分数にする（分母 100 万以下。30000/1001 などは元の分数のまま）。`video` の `get_frame_rate()` はこの分数である。
-- 出力の長さは「状態の `timeline.length` → 背景 VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数 → Sticker と `scene` の Clip range の終わりのうち最も遅いもの（非表示の Sticker と、未接続の `scene` の Clip range も含む。`duration` が `null` で、`sticker` が IMAGE バッチか VIDEO の `port` の Sticker は、素材の終わり `start − in + 素材の長さ` を終わりとする）→ Camera の各 Lane の最後の Keyframe のうち最も遅いものの次のフレーム → 1」の順で決める。Camera の段は、状態に Camera があるときだけ使う（隠した Camera も数える）。状態から決める長さは `timeline.fps` の Timeline frame なので、秒を保って Timeline fps のフレーム数に直す（`floor(x × Timeline fps ÷ timeline.fps + 0.5)`、1 以上）。
+- 出力の長さは「状態の `timeline.length` → 背景 VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数 → Sticker と `scene` の Clip range の終わりのうち最も遅いもの（非表示の Sticker と、未接続の `scene` の Clip range も含む。背景の 1 枚の IMAGE の Clip range が `duration` を持てば、その終わりもここに入る。`duration` が `null` で、`sticker` が IMAGE バッチか VIDEO の `port` の Sticker は、素材の終わり `start − in + 素材の長さ` を終わりとする）→ Camera の各 Lane の最後の Keyframe のうち最も遅いものの次のフレーム → 1」の順で決める。Camera の段は、状態に Camera があるときだけ使う（隠した Camera も数える）。状態から決める長さは `timeline.fps` の Timeline frame なので、秒を保って Timeline fps のフレーム数に直す（`floor(x × Timeline fps ÷ timeline.fps + 0.5)`、1 以上）。
+  - 背景の Clip range（`background.clip`）が既定値でないときは、背景 VIDEO と IMAGE バッチの段は、その Clip range の終わり（`start + duration`。`duration` が `null` なら素材の終わり `start − in + 素材の長さ`。`sticker_media.py` の `PortMedia.end`）になる（下記「背景の Clip range」）。
   - エディタのタイムラインとノード上の UI の再生は、この長さをちょうど表す。`timeline.length` が無いときは、同じ規則を `web_src/pano_timeline.js` の `autoTimelineLength` が編集のたびに状態と実行結果の入力の長さから求める（`docs/timeline-ui.md` の「タイムラインの長さ」。規則を変えるときは両方を変え、`tests/test_timeline_length_parity.py` の表を足す）。
 - 各出力フレームは、次の時刻 `t` 秒について `t × timeline.fps` の Timeline frame で評価する（`docs/scene-state-v2.md`）。時刻は `_output_times` が分数で決め、(a) の評価と `video` の保存の PTS が同じ値を使う。
   - Timeline fps を決めた VIDEO（背景 VIDEO、なければ `sticker` の VIDEO）のフレーム：そのフレームの PTS。切り出し範囲の最初のフレームを 0 秒とする。可変フレームレートや、1ms の timebase で丸められた PTS（mkv・webm の 29.97 fps など）でもフレームごとの PTS を使う。`video` を保存すると各フレームはこの時刻に置かれる（下記「`video` 出力」）。評価する Timeline frame が、最も近い整数との差がその VIDEO の PTS の量子化の幅の半分（`time_base ÷ 2 × timeline.fps`）以内なら、その整数に寄せる。Clip range の端や `hold` の Cut が、丸められた PTS で 1 フレーム遅れないようにするためである。`MaterializedVideo` の時刻は厳密なので、幅は 0 とする。
   - その VIDEO が終わった後：最後のフレームの時刻から Timeline fps の間隔で進める。背景 VIDEO なら、背景は描かず `bg_color` になる。
   - それ以外：出力フレームの番号 ÷ Timeline fps。
 - `first_frame`（IMAGE、(1, H, W, 3)）と `first_frame_mask`（MASK、(1, H, W)）は、Timeline の最初の出力フレームの色とマスクである。全フレームのマスクは出力しない（ADR 0027）。
-- 背景の IMAGE バッチは出力フレームと 1 対 1 に対応し、バッチより長い出力では、背景が終わった後は `bg_color` になる。1 枚の IMAGE はすべてのフレームに描く。
+- 背景の IMAGE バッチは出力フレームと 1 対 1 に対応し、バッチより長い出力では、背景が終わった後は `bg_color` になる。1 枚の IMAGE はすべてのフレームに描く。どちらも既定の Clip range のときで、Clip range があるときは下記「背景の Clip range」。
+- 背景の Clip range（`background.clip`、`docs/scene-state-v2.md`）：自分の `bg_media` を、`port` の Sticker の素材と同じ規則で Timeline に置く。
+  - 既定の Clip range（`start` 0・`in` 0・`duration` `null`）では、今までどおり（上と下の `_bg_frames` の 1 対 1 などの規則、音声も同じ）。この項目より前の状態とワークフローは同じ出力になる。
+  - それ以外では、`_bg_place` が背景を `PortMedia` で置き、`_bg_frames` が出力フレームごとに、背景を持つ状態の Timeline frame（`t × その状態の timeline.fps`、`_timeline_frame`）で素材のフレームを選ぶ。素材の先頭は `start − in` にある。VIDEO は PTS ≤ その時刻の最後のフレーム、IMAGE バッチは最も近い 1 枚（`batch_index`）、1 枚の IMAGE は Clip range の間ずっと同じ画像。Clip range の外（`clip_active` が偽）と素材の外では描かず `bg_color` になる（VIDEO が終わった後と同じ）。
+  - 出力フレームの時刻は今までどおり背景 VIDEO の PTS に従う（Timeline fps と時刻を決める VIDEO は変わらない。`sticker` の VIDEO が時刻を決めるときに Clip range がずれていても PTS に従うのと同じ）。可変フレームレートの VIDEO をずらすと、出力フレームと素材のフレームは 1 対 1 にならない。
+  - 音声（`_bg_audio`）：映像と同じく置く。Clip range の間だけ、その時刻の素材の音声を鳴らし、Clip range の前後と素材の外は無音（0）にする。全体の長さは「出力のフレーム数 ÷ Timeline fps」秒。Clip range が出力の中に無いときは音声なし（`None`）。
+  - 上流の Scene の背景：その背景を持つ Studio の Clip range で置く（`PanoSceneValue.bg_clip`。下流の Studio の `background.clip` は当てない）。下流でも上流の出力と同じフレームになる。
+
 - `bg_media` と `sticker` の VIDEO の読み方（`core/video_source.py`）
   - `VideoFromFile` で、`get_dimensions()` がストリームの大きさと一致するもの（クロップがない）は、`get_stream_source()` を PyAV で開き、`get_active_trim_window()` の範囲を 1 フレームずつ読む（`StreamedVideo`）。先にパケットだけを読んで PTS を集め、フレーム数と時刻を決める（`scan_video`。最初に復号できたフレームも求める）。その結果（`VideoIndex`：PTS の表（int64 の配列で、キャッシュのバイト数に数える。秒の時刻は `times()` で作る）・最初のフレーム）は、ファイル（パス・更新時刻・大きさ、メモリ上のファイルはオブジェクト）とトリム範囲をキーに共有のキャッシュ（`video_index`）に入れ、1 回の実行の中の何度もの `open_video`（Timeline、`PortMedia`、描画のパスごと、エディタの MP4）でも、次の実行でも走査し直さない。ストリームの大きさ（クロップの判定に使う）も同じく `video_size` に入れる。`StreamedVideo` は `VideoIndex` を参照し、復号器だけを持つ（最初にフレームを求められたときに復号を始める）。入力側のメモリは長さに比例しない（`tests/test_stickers_scene_video.py` で計測する）。
   - 復号したフレームは、パケットで集めた PTS と突き合わせる。シークの後に参照を失った B フレームなど、復号されなかった PTS のフレームは、ログに警告を出して `bg_color` にする。ほかのフレームの時刻はずらさない。パケットにない PTS のフレームは捨てる。1 枚も復号できないときは `ValueError` にする。出力の大きさ（`auto`）は、最初に復号できたフレームで決める。
   - 復号のエラー（`InvalidDataError`）は、コアのように読み飛ばさず、そのままエラーにする。
   - 画素の変換（8 ビットの形式は `rgb24`、それ以外は `gbrpf32le`、幅が 32 の倍数でないときの端の引き伸ばし）と回転のメタデータの扱いは、コアの `get_components()` と同じにし、同じ値になることをテストで確かめる。
   - それ以外の VIDEO（クロップ付き、`VideoFromComponents`、`VideoFromList` など）は `get_components()` で一括で読む（`MaterializedVideo`）。
-- `video` の音声は背景 VIDEO の音声を、切り出し範囲の始まりから「出力のフレーム数 ÷ Timeline fps」秒で切ったもの（サンプル数は `int` で切り捨て）。音声はコアと同じく切り出し範囲の始まりから始まり、最初のフレームの PTS からではない。形はコアの AUDIO と同じ `{"waveform": (1, C, T), "sample_rate"}`。背景に VIDEO や音声がないときは `None`（音声なし）とする。音声は `execute` で一度だけ読み、`video` が持つ。
+- `video` の音声は（既定の Clip range では）背景 VIDEO の音声を、切り出し範囲の始まりから「出力のフレーム数 ÷ Timeline fps」秒で切ったもの（サンプル数は `int` で切り捨て）。音声はコアと同じく切り出し範囲の始まりから始まり、最初のフレームの PTS からではない。形はコアの AUDIO と同じ `{"waveform": (1, C, T), "sample_rate"}`。背景に VIDEO や音声がないときは `None`（音声なし）とする。音声は `execute` で一度だけ読み、`video` が持つ。
 - `sticker` の素材の時間（`port` の Sticker）は `sticker_media.py` の `PortMedia` が持ち、(a) と (b) が共有する。
   - Sticker の素材の時刻は、評価関数の `clip_frame`（`frame − (start − in)`）÷ `timeline.fps` 秒とする。素材の先頭は Timeline 上の `start − in` に来る。
   - 1 枚の IMAGE は、Clip range の間ずっと同じ画像を描く。
@@ -324,6 +332,7 @@ Panorama Studio の `scene` 出力は、`nodes.py` の `PanoSceneValue`（frozen
 | `frames` | 出力フレームごとの `(描く bg_media のフレーム番号または None, 層ごとの (評価する Timeline frame, port のフレーム番号または None, scene の要素の番号または None) のタプル)`。層の並びは `layers` と同じ。`scene` の番号は、その層に `scene` の入力がないとき `None` で、Clip range の外のフレームでも番号を持つ（描くかは `evaluated["scene"]["active"]` で決める） |
 | `bg_ui` | `bg_media` をエディタに見せる `ui`（`pano_input_images`・`pano_input_videos`・`pano_input_video_meta`）。`bg_media` がなければ空 |
 | `media_ui` | この値を作ったノードの実行結果の `ui` のうち、素材をエディタに見せる部分（下記「Panorama Studio」の `ui`。上流がなければ、背景、`pano_scene_files`・`pano_sticker_files` などの #60・#63 のエディタ用ファイル、`port` の素材、`pano_timeline_fps`）。`pano_sticker_input_pose` と警告は入らない。参照するファイルは作ったノードが書いたもので、使う側は自分の `ui` にそのまま入れ、書き直さない（#77） |
+| `bg_clip` | `bg_media` の Clip range（`background.clip`）と、それを持つノードの状態の `timeline.fps` のタプル、または `bg_media` がなければ `None`。`bg_media` と同じノードのもの。下流は上流の背景をこれで置く（上記「背景の Clip range」） |
 
 `SceneLayer`（層）のフィールド：
 
@@ -383,7 +392,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
 - 長さ：自分の `timeline.length` があればそれ（秒を保って Timeline fps のフレーム数に直す。上流より短くも長くもできる）。なければ、上流の出力フレーム数と、自分の状態から通常の規則（上記「Scene の組み立てと撮影の入口」の長さの規則。背景 VIDEO の段は、自分の `bg_media` を使うときだけで、その VIDEO の最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）で決まる長さと、上書きした Clip range の終わり（記録が `clip` を持つ Sticker と `scene` の Clip range の `start + duration`。`duration` の無い Clip range は数えないが、`port` の Sticker は例外で、自分の層と同じく素材が終わるフレーム（`PortMedia.end`。フレームを持つ素材だけ）を終わりとする）の、いちばん長いもの。上書きした Clip range の終わりはその層の Timeline frame なので、`floor(終わり × Timeline fps ÷ 層の timeline.fps + 0.5)` で出力フレーム数に直す。上書きしていない上流の Clip range は上流の出力フレーム数にすでに入っているので数えず、上流の Sticker を消しても短くならない。
 - 時刻の評価：各層は、出力フレームの時刻 `t` 秒について `t × その層の timeline.fps` の Timeline frame で評価する（`_layer_frames`。上流の Timeline frame から見れば `frame × 層の timeline.fps ÷ 上流の timeline.fps`）。上流と自分の fps が違っても、自分の Keyframe と Clip range は秒を保つ。状態は再基準化しない（整数の Timeline frame に丸めない）。各層の `port` と `scene` の番号も、その層の Timeline frame から通常の規則（`PortMedia.index_at`・`batch_index`）で選ぶ。上流の層の番号は、上流で決めたものと同じ規則で、延ばした分も含めて選び直す。
 - 背景：上流が `bg_media` を持てば、その `bg_media`・`coverage`・`bg_color` を使い、自分の `bg_media` は使わない。自分の `bg_media` も接続されていれば `bg_media is not used: the scene input has a background of its own.` と警告する（ログと `pano_sticker_warnings`）。自分の `coverage`・`bg_color` も使わない。上流が `bg_media` を持たなければ、自分の `bg_media`・`coverage`・`bg_color` を使う。
-  - 背景のフレーム（`_bg_frames`）：IMAGE バッチは出力フレームと 1 対 1、1 枚の IMAGE は全フレーム。VIDEO は、Timeline を決めた VIDEO（上流がないとき）なら 1 対 1。上流がある（Timeline fps を上流が決めた）ときは、各出力フレームの時刻以前に始まる最後のフレーム（PTS ≤ `t`、比較の許容差は出力の時刻と VIDEO の time base の大きいほうの半分）で、最後のフレームが平均フレームレートの 1 フレームの間続いた後は描かない（`bg_color`）。上流の背景の VIDEO が終わった先も同じく `bg_color`。
+  - 背景のフレーム（`_bg_frames`）：既定の Clip range では、IMAGE バッチは出力フレームと 1 対 1、1 枚の IMAGE は全フレーム。VIDEO は、Timeline を決めた VIDEO（上流がないとき）なら 1 対 1。上流がある（Timeline fps を上流が決めた）ときは、各出力フレームの時刻以前に始まる最後のフレーム（PTS ≤ `t`、比較の許容差は出力の時刻と VIDEO の time base の大きいほうの半分）で、最後のフレームが平均フレームレートの 1 フレームの間続いた後は描かない（`bg_color`）。上流の背景の VIDEO が終わった先も同じく `bg_color`。
   - 下流が延ばした区間でも、上流の背景の VIDEO は時刻で続き、最後のフレームが終わった後は `bg_color` になる。上流の背景は下流の長さの規則には入らない（上流の出力フレーム数がすでにそれを含み、上流の `timeline.length` で短くした分もそのまま保つ）。
   - `output_size` の `auto` は、使う背景（上流のものを含む）の幅で決める。
 - マスク：`first_frame_mask` は、上流の各層のペイントのマスクも含む（層ごとのマスクの画素ごとの最大値）。
@@ -398,6 +407,7 @@ Scene を組み立てて撮るノード（ADR 0029、#87）。Python のクラ�
   | `pano_upstream_input_images` / `pano_upstream_input_videos` / `pano_upstream_input_video_meta` | 上流が背景を持つときの、その背景（`pano_input_*` と同じ形）。このとき自分の `pano_input_*` は出さない |
   | `pano_upstream_coverage` | 上流が背景を持つときの、その `coverage`（`[360]` か `[180]`） |
   | `pano_upstream_bg_color` | 上流が背景を持つときの、その `bg_color`（`[[r, g, b]]`、0〜1） |
+  | `pano_upstream_bg_clip` | 上流が背景を持つときの、その背景を持つ Studio の Clip range と、その状態の `timeline.fps`（`[{"clip": Clip range, "fps": 数値}]`）。エディタとノード上の UI は、上流の背景をこれで置いて表示する（`docs/timeline-ui.md` の「背景の行」） |
   | `pano_timeline_fps` | 上流があるときは常に出す（Timeline fps は上流が決める）。エディタは fps の欄をロックし、自分の状態をこの fps に再基準化して表示する（VIDEO が fps を決めたときと同じ） |
   | `pano_timeline_frames` | 上流があるときは常に出す。出力のフレーム数（上流と自分の長いほう、または自分の `timeline.length`） |
   | `pano_upstream_frames` | 上流があるときは常に出す。上流の Scene の出力のフレーム数。エディタとノード上の UI の Auto の長さ（`docs/timeline-ui.md` の「タイムラインの長さ」）が、自分の長さとは別に上流の長さとして数える（`pano_timeline_frames` は前回の自分の `timeline.length` や Clip range を含むので、編集に合わせて求め直せない） |

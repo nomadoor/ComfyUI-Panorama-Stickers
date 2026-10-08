@@ -48,7 +48,7 @@
 - タイムラインのドラッグ（Clip range の移動・トリム、Keyframe の移動、ルーラーのスクラブ）は、ポインタが動くたびに状態だけを変え、タイムラインの表示の更新は 1 フレームに 1 回にまとめる（`pano_frame_batch.js` の `createFrameBatch`）。ビューは、見た目が変わるときだけ 1 フレームに 1 回更新する。Clip range では、再生ヘッドが範囲を出入りしたときと、移動で再生ヘッドの位置の素材の時刻が変わったときである（トリムでは素材の時刻は変わらない）。Keyframe の移動では毎フレーム更新する。スクラブのシークも 1 フレームに 1 回にする。インスペクタ・選択メニュー・ノード上のプレビューへの反映と Undo の記録は、ドラッグの終わりに 1 回だけ行う。Clip range が変わっても、ビューの状態 v2 は読み直さず、Clip range だけを写す。
 - キャンバスのドラッグ（見回し、Sticker の移動、ペイント、ギズモなど）も、ノード上のプレビューへの反映はドラッグの終わりに 1 回だけ行う（エディタの描画ループで、ドラッグが終わった次のフレームに反映する）。ギズモのドラッグのインスペクタの更新は 1 フレームに 1 回にまとめる。マスクの表示用のキャンバス（ERP と同じ大きさ）は、マスクと描いている途中のストロークが変わったときだけ作り直し、マスクが空なら作らない（`getMaskDisplayCanvas`・`getMaskDisplayRevision`）。ペイントのグループの、描いている途中のストロークを重ねたキャンバスも、変わったときだけ作り直す。
 - Clip range の外にある Sticker の行を選ぶと、再生ヘッドがその Clip range の始まりへ移ってから選ばれる。
-- Panorama Studio（`PanoramaStudio`、#89）のタイムラインは、Camera・Sticker・ペイント・`scene` の行を 1 本に並べる（上から Camera、Sticker（手前から奥、`world` の Sticker）、ペイント、`scene`）。`scene` 入力に上流の Scene があるときは、その下に上流の層ごとの行が続く（下の「上流の層の行（ADR 0030）」）。
+- Panorama Studio（`PanoramaStudio`、#89）のタイムラインは、背景・Camera・Sticker・ペイント・`scene` の行を 1 本に並べる（上から背景（下の「背景の行」）、Camera、Sticker（手前から奥、`world` の Sticker）、ペイント、`scene`）。`scene` 入力に上流の Scene があるときは、その下に上流の層ごとの行が続く（下の「上流の層の行（ADR 0030）」）。
   - Camera の行は Camera があるときだけ出る（`buildTimelineModel` の `camera` に Camera の有無を渡す）。Frame 表示・Panorama 表示（3DoF の枠の操作と 6DoF のギズモ）・インスペクタで Camera を変えると、変えた Lane にだけ Keyframe が入る（上の記録の規則）。行のポチで全 Lane（位置・回転・画角）に入る。Camera の Lane は Clip range を持たず、Timeline frame そのもので比べる。再生の可否（`isTimed` の `camera: true`）とタイムラインの長さ（`timelineSpan` の `camera: true`）にも数える。Camera が無ければ（`camera: null`）どちらも数えない。
   - Camera の行が出入りしても、タイムラインのバー（再生ボタン・fps・長さ・開閉）は変わらない（`node --test` で確かめている）。行の一覧は Sticker を足したときと同じく 1 行増え、下の行が 1 行分下がる。タイムラインを開いているときは、行の分だけタイムラインが高くなり（34% まで）、ビューが低くなる。これも Sticker を足したときと同じである。
   - `scene` の行（アイコンは箱）は、`scene` 入力がつながっているとき、または `scene` が Keyframe か既定でない Clip range を持つとき（`pano_timeline.js` の `ownerTimed`）に出る。`scene` の位置・回転・大きさを変える操作とインスペクタはまだ無いので、`scene` の行は Clip range（移動と両端の切り詰め。Sticker の行と同じ）だけを持ち、行のポチと Lane の行は出さない（行のモデルの `keyable: false`。エディタも `scene` の `key-row` を無視する。行を開くボタンは無効）。状態に `scene` の Keyframe があれば、行にポチの印だけは出る。行を選んでもキャンバスの選択は外れるだけで、何も選ばれない。
@@ -61,9 +61,9 @@
 タイムラインは出力の長さ（Timeline duration）をちょうど表す（Rive・After Effects のコンポジションの長さと同じ）。編集のための余白は持たず、出力より先の範囲は出さない。両端の見た目の余白だけは UI の都合で付けてよい。
 
 - タイムラインの範囲（`pano_timeline.js` の `timelineSpan`）は、`timeline.length` があればその値、なければ Auto の長さ。最小の長さはない（以前の「長さが無いときは 5 秒」はなくした）。
-- Auto の長さ（`autoTimelineLength`）は、ノードの `_decide_timeline`（`docs/render-contract.md` の「長さ」）と同じ規則で、状態と、エディタが知っている入力の長さから編集のたびに求め直す（前回の実行結果の長さをそのまま使うのではない）。順に、背景の VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数 → Sticker と `scene` の Clip range の終わりのうち最も遅いもの（隠した Sticker も数える。`duration` の無い `port` の Sticker は素材の終わり、`duration` の無い `scene` は要素の数の終わり）→ Camera の各 Lane の最後の Keyframe の次のフレーム（Panorama Studio だけ）→ 1。上流の Scene があるときは、これと上流の長さと上書きした Clip range の終わりのうち最も長いもの（上流があるときの背景の VIDEO は、最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）。Sticker の Keyframe は長さに入らない。`tests/test_timeline_length_parity.py` が、状態と入力の表でノードの長さと一致することを確かめる。
+- Auto の長さ（`autoTimelineLength`）は、ノードの `_decide_timeline`（`docs/render-contract.md` の「長さ」）と同じ規則で、状態と、エディタが知っている入力の長さから編集のたびに求め直す（前回の実行結果の長さをそのまま使うのではない）。順に、背景の VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数（背景の Clip range が既定値でなければ、どちらもその Clip range の終わり。`duration` が無ければ素材の終わり `start − in + 素材の長さ`、`pano_port_media.js` の `bgMediaEnd`）→ Sticker と `scene` の Clip range の終わりのうち最も遅いもの（隠した Sticker も数える。背景の 1 枚の IMAGE の Clip range が `duration` を持てばその終わりも数える。`duration` の無い `port` の Sticker は素材の終わり、`duration` の無い `scene` は要素の数の終わり）→ Camera の各 Lane の最後の Keyframe の次のフレーム（Panorama Studio だけ）→ 1。上流の Scene があるときは、これと上流の長さと上書きした Clip range の終わりのうち最も長いもの（上流があるときの背景の VIDEO は、最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）。Sticker の Keyframe は長さに入らない。`tests/test_timeline_length_parity.py` が、状態と入力の表でノードの長さと一致することを確かめる。
 - エディタが知っている入力の長さ：
-  - 背景：ノードの現在の実行結果のエディタ用 MP4 のメタ情報（`pano_input_video_meta` の `frames`・`duration`）。VIDEO か IMAGE バッチかはリンクの型で見る。上流の Scene の背景を使うときは数えない（上流の長さにすでに入っている）。
+  - 背景：ノードの現在の実行結果のエディタ用 MP4 のメタ情報（`pano_input_video_meta` の `frames`・`duration`）。VIDEO か IMAGE バッチかはリンクの型で見る。MP4 の無い IMAGE（`bg_media` に IMAGE がつながっている）は 1 枚の IMAGE とみなす（実行前の IMAGE バッチも、実行までは 1 枚として数える）。上流の Scene の背景を使うときは数えない（上流の長さにすでに入っている）。
   - `port` の Sticker の素材：現在の実行結果の `pano_sticker_input_video_meta`、3D の素材は `pano_sticker_files` の要素の数（`pano_port_media.js` の `portMediaMeta`）。
   - `scene` 入力の要素：現在の実行結果の `pano_scene_files` の数。
   - 上流の Scene：実行結果の `pano_upstream_frames`（上流の出力のフレーム数）。
@@ -111,7 +111,7 @@ Camera は Keyframe と Drone の二つのモードを持ち、出力にはい�
 | `loading` | VIDEO にまだフレームがない。読めたら静止画を出すか再生する |
 | `seeking` | 一つのシークが進行中。着いたら静止画を出すか再生する |
 | `playingVideo` | VIDEO が再生中で、表示されたフレームが再生ヘッドを動かす |
-| `playingClock` | 時計が再生ヘッドを動かす（VIDEO がない、または VIDEO の終わりより先） |
+| `playingClock` | 時計が再生ヘッドを動かす（VIDEO がない、VIDEO の終わりより先、または背景の Clip range の外。下の「背景の行」） |
 | `error` | VIDEO が読めなかった。ソースが変わるまで VIDEO なしで動く |
 
 - 再生ヘッドのフレームはこの状態機械が持つ一つだけで、時刻からフレームへの丸めは ADR 0024 の最近傍。旧ノードはメタデータの fps があればそのフレーム、なければミリ秒を単位にする（シークバーの時刻へそのままシークする）。旧ノードの VIDEO 自身のループが有効な間は、状態機械は終わりを持たず、VIDEO が途切れずにループする。
@@ -145,6 +145,22 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
 - Delete キーは、Keyframe を選んでいればその Keyframe を消し（上の規則）、そうでなければ選んだ上流の要素を消す（`docs/threejs-spark-integration.md` の「上流の Scene の表示と編集」の「消す（T10）」）。
 - 自分の `scene` の行は、上流の Scene があるときは出さない（自分の `scene` は描画に使われない）。
 - タイムラインの範囲は、自分の行と同じく出力の長さちょうど（下の「タイムラインの長さ」）。Auto の長さには、上流の Scene の長さ（実行結果の `pano_upstream_frames`）と、上書きした Clip range の終わりが入る（`editor/upstream.js` の `upstreamOutput`、`pano_upstream.js` の `upstreamOverriddenEnds`）。上書きしたものは、記録が `clip` を持つもの、またはまだ書き戻していない編集で変えたもの（ドラッグ中を含む）で、`duration` の無いものは `port` の Sticker の素材の終わり（`portMediaFrames`）だけを数える。ドラッグ中の Clip range は `duration` の無いものとして数える。ノードの長さの規則（`docs/render-contract.md` の「長さ」）と同じで、上書きしていない上流の Clip range は上流の長さにすでに入っているので数えない。上流の行の Clip range と Keyframe も、自分の行と同じく出力の終わりより先へはドラッグできない。
+
+### 背景の行
+
+Panorama Studio の自分の `bg_media` は、タイムラインの自分の行の先頭に「Background」の行（パノラマのアイコン）を持つ。行は状態の `background.clip`（`docs/scene-state-v2.md` の「背景の Clip range」）を Sticker の行と同じ Clip range のバーで表し、移動（`start` を動かし、`in` は保つ）と両端の切り詰め（頭は `start` と `in` を一緒に動かし、素材の位置は動かない。終わりは `duration`）ができる。操作は `timeline_actions.js` の `clip` で、Sticker と同じく操作ごとに Undo の 1 段になる。
+
+- 行が出るのは、`bg_media` がつながっていて、上流の Scene の背景が代わりに使われていないとき（`timeline.js` の `backgroundShown`。`scene` の行が `scene` のリンクで出るのと同じく、リンクで決める）。つないでいないときは出さない。リンクはエディタの外で変わるので、編集の途中で行が出入りしてほかの行が動くことはない。
+- 目のアイコンは無く（場所だけ空ける）、Keyframe も Lane も無い（行のポチは出さず、行を開くボタンは無効。`key-row` は何もしない）。背景を隠す手段は今は無い。
+- `duration` の無い Clip range のバーは、VIDEO と IMAGE バッチでは素材の終わり（`bgMediaEnd`）で終わり、1 枚の IMAGE と素材がまだ分からないときはタイムラインの終わりまで描く。
+- 出力の長さが Auto のときは、背景の Clip range の終わりが長さになる（上の「タイムラインの長さ」）。ドラッグで出力の終わりより先へは動かせないのは Sticker と同じで、背景より長くするときは長さの欄に値を入れる（長さは VIDEO より長くできる）。
+- 再生ヘッドのフレームから背景の時刻を求める規則は `port` の Sticker と同じ（素材の先頭は `start − in`）。背景の VIDEO の状態機械（`pano_video_playback.js`）は `place`（`pano_port_media.js` の `backgroundPlace`）でこの位置を知り、Clip range の前と後（`duration` の終わり・素材の終わり）は時計で進め、Clip range の始まりで VIDEO に渡す（時計の間に VIDEO を始まりの時刻へシークしておくので、渡すときにシークしない）。VIDEO 自身のループは、既定の Clip range のときだけ使う。停止したときの再生ヘッドは、止めた VIDEO の時刻のフレームに `start − in` を足したもの。Clip range の外では VIDEO をシークしない。
+- Clip range の外と素材の外では、エディタもノード上の UI も、背景の代わりに `bg_color` を出す（`backgroundShownAt`、`bgColorBackground`。ノードの出力と同じ）。1 枚の IMAGE の背景も同じ。既定の Clip range では今までどおり（VIDEO の終わりより先は最後のフレームの静止画）。
+- Clip range を動かす・切り詰める・Undo・Redo で、再生ヘッドの位置の背景の時刻が変わると、VIDEO をその時刻へシークし直す。ドラッグ中のシークは 1 フレームに 1 回にまとめ（`createFrameBatch` の `background`）、ドラッグの終わりに Clip range が変わっていればもう 1 回シークする。状態機械のシークの目標は VIDEO の時刻で比べるので、シークの途中で Clip range が動いても古い時刻には止まらない。時計の間に始まりの時刻へ送ったシークがまだ終わっていないとき（`seeking`）は、もう一度送らずにその `seeked` を待つ。
+- 行の id は `background`（`pano_editor_ui_state.js` の `BACKGROUND_ROW`）。エディタが振る Sticker の id は常に `sticker_<番号>`（`docs/scene-state-v2.md` の `next_sticker_id`）なので、Sticker の行の id と重ならない（`scene`・`painting` と同じ前提）。
+- 可変フレームレートの背景 VIDEO の Clip range が既定値でないとき、`duration` の無い Clip range の終わり（Auto の長さとバーの終わり）は、エディタがメタ情報の `duration`（フレーム数 ÷ 平均 fps）から、ノードが最後のフレームの時刻 + 平均 fps の 1 フレームから求めるので、±1 フレームずれうる（CFR では一致する。既定の Clip range では、どちらもフレーム数を使うので一致する）。
+- 上流の Scene の背景には自分の Clip range は当たらない。上流の背景は、その背景を持つ Studio の Clip range（実行結果の `pano_upstream_bg_clip`、自分の Timeline fps に秒で直す。`backgroundClipAt`）で置き、`bg_color` もその Studio のもの（`pano_upstream_bg_color`）を出す。上流の背景の行は無い。
+- ノード上の UI の再生（`pano_node_playback.js`）も同じ `place` と `backgroundShows` を使う。上流の背景は、実行結果の `pano_upstream_input_video_meta`（`upstreamMedia`）で素材の終わりを知り、その後は `bg_color` を出す（エディタ・出力と同じ）。
 
 ### `port` の Sticker の素材（#83）
 

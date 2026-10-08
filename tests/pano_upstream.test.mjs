@@ -244,7 +244,20 @@ test("the upstream background is the result's pano_upstream_ media with its cove
     videoKey: "pano_upstream_input_videos",
     metaKey: "pano_upstream_input_video_meta",
     coverage: 180,
+    color: null,
+    clip: null,
   });
+  // Its color, and the Clip range of the Studio it came from, other than the default.
+  const placed = upstreamBackgroundOf(ui({
+    pano_upstream_input_videos: [{ filename: "bg.mp4" }],
+    pano_upstream_bg_color: [[1, 0.5, 0]],
+    pano_upstream_bg_clip: [{ clip: { start: 3, in: 1, duration: null }, fps: 25 }],
+  }));
+  assert.deepEqual([placed.color, placed.clip], ["#ff8000", { clip: { start: 3, in: 1, duration: null }, fps: 25 }]);
+  assert.equal(upstreamBackgroundOf(ui({
+    pano_upstream_input_videos: [{ filename: "bg.mp4" }],
+    pano_upstream_bg_clip: [{ clip: { start: 0, in: 0, duration: null }, fps: 25 }],
+  })).clip, null);
   // A VIDEO alone is a background too; a coverage that is not 180 is 360.
   assert.equal(upstreamBackgroundOf(ui({ pano_upstream_input_videos: [{ filename: "bg.mp4" }] })).coverage, 360);
 });

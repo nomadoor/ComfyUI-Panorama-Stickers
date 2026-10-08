@@ -1,9 +1,9 @@
 // The editor's Timeline (state v2): its model for PanoTimeline.vue, the playhead and playback, the owner
 // and Lanes it edits, and the Timeline fps.
 import { setTimelineFps } from "../pano_editor_state.js";
-import { buildEasingModel, buildTimelineModel } from "../pano_editor_ui_state.js";
+import { BACKGROUND_ROW, buildEasingModel, buildTimelineModel } from "../pano_editor_ui_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
-import { portMediaFrames } from "../pano_port_media.js";
+import { backgroundClipAt, backgroundPlace, backgroundShownAt, bgMediaEnd, portMediaFrames } from "../pano_port_media.js";
 import { nodeInputOrigins, videoLinked } from "../pano_preview_video.js";
 import { clipActive } from "../pano_scene_eval.js";
 import { timelineFps } from "../pano_scene_state.js";
@@ -54,6 +54,7 @@ export function createTimeline(deps) {
       // rows of their own below (ADR 0030).
       scene: sceneV2 && !!nodeInputOrigins(node).scene && !upstreamLinked(),
       upstream: upstreamTimelineLayers(),
+      background: backgroundShown() ? { end: portBarEnd(state.background) } : null,
     });
     // Keyframes the Timeline cannot change (locked, only inherited, an upstream `scene`'s) have no Easing panel.
     uiState.easing = timeline.selection && timelineEditable(timeline.selection.owner)
@@ -74,12 +75,8 @@ export function createTimeline(deps) {
   // media and the `scene` items count from the node's current result. `openClip` counts as a Clip range without
   // a duration (the one being dragged).
   function timelineSpanFrames(openClip = null) {
-    const transport = uiState.videoTransport;
-    const bg = transport.ready && !upstreamBackground() && transport.frameCount > 0
-      ? { video: videoLinked(node, ["bg_media"]), frames: transport.frameCount, duration: Number(transport.duration || 0) }
-      : null;
     return timelineSpan(state, {
-      bg,
+      bg: backgroundMedia(),
       port: getPortMediaMeta(),
       sceneItems: upstreamLinked() ? 0 : sceneFiles()?.urls.length ?? 0,
       upstream: upstreamOutput(openClip),
@@ -88,9 +85,65 @@ export function createTimeline(deps) {
     });
   }
 
-  // Where the media of a port Sticker without a duration ends (portMediaFrames): its bar ends there, not at the
-  // Timeline's end. null for another owner of a Clip range (a Sticker, a `scene`), or while its media is not known.
+  // The node's own background as autoTimelineLength reads it: its VIDEO or IMAGE batch from the node's result (or,
+  // before a run, the VIDEO file the background input loads), else a linked IMAGE as a single image (an IMAGE batch
+  // before a run too); null without one, or while an upstream background stands in for it.
+  function backgroundMedia() {
+    if (upstreamBackground()) return null;
+    return transportMedia() ?? (nodeInputOrigins(node).bg_media && !videoLinked(node, ["bg_media"]) ? { frames: 1 } : null);
+  }
+
+  // The background VIDEO or IMAGE batch the editor shows, from the node's result: { video, frames, duration }, or
+  // null. An upstream background counts as a VIDEO, ending at its `duration` at any Timeline fps.
+  function transportMedia() {
+    const transport = uiState.videoTransport;
+    if (!(transport.ready && transport.frameCount > 0)) return null;
+    return { video: !!upstreamBackground() || videoLinked(node, ["bg_media"]), frames: transport.frameCount, duration: Number(transport.duration || 0) };
+  }
+
+  // Panorama Studio's own background has a Timeline row (its Clip range, state.background) while bg_media is
+  // linked and no upstream background stands in for it.
+  function backgroundShown() {
+    return sceneV2 && !!nodeInputOrigins(node).bg_media && !upstreamBackground();
+  }
+
+  // The Clip range of the background the editor shows, in the Timeline's frames: the node's own while it has a row,
+  // or an upstream background's, that of the Studio it came from (the node's own does not apply to it); null for
+  // neither (the legacy editor too).
+  function backgroundClip() {
+    const upstream = upstreamBackground();
+    if (upstream) return upstream.clip && backgroundClipAt(upstream.clip.clip, upstream.clip.fps, state.timeline.fps);
+    return backgroundShown() ? state.background.clip : null;
+  }
+
+  // Where the Clip range puts the background VIDEO for the playback (createVideoPlayback's `place`), or null.
+  function backgroundVideoPlace() {
+    const clip = backgroundClip();
+    return clip ? backgroundPlace(clip) : null;
+  }
+
+  // Whether the background shows at Timeline `frame`; where it does not, the views draw its bg_color
+  // (backgroundColor) as the node does.
+  function backgroundShowsAt(frame) {
+    const clip = backgroundClip();
+    if (!clip) return true;
+    const upstream = !!upstreamBackground();
+    return backgroundShownAt(clip, frame, state.timeline.fps, upstream ? transportMedia() : backgroundMedia(), upstream || upstreamLinked());
+  }
+
+  // The bg_color of the background the editor shows: an upstream background's own, else the node's.
+  function backgroundColor() {
+    return upstreamBackground()?.color ?? state.bg_color;
+  }
+
+  // Where the media of a port Sticker or of the background without a duration ends (portMediaFrames,
+  // bgMediaEnd): its bar ends there, not at the Timeline's end. null for another owner of a Clip range (a Sticker, a
+  // `scene`), a single background image, or while its media is not known.
   function portBarEnd(sticker) {
+    if (sticker === state.background) {
+      const media = sticker.clip.duration === null ? backgroundMedia() : null;
+      return media?.video || media?.frames > 1 ? bgMediaEnd(sticker.clip, state.timeline.fps, media, upstreamLinked()) : null;
+    }
     if (sticker.source?.kind !== "port" || sticker.clip.duration !== null) return null;
     const meta = sticker.origin ? upstreamPortMeta(sticker) : isExternalSticker(sticker) ? getPortMediaMeta() : null;
     return meta ? portMediaFrames(sticker.clip, state.timeline.fps, meta) : null;
@@ -99,6 +152,7 @@ export function createTimeline(deps) {
   function timelineOwner(owner) {
     if (owner === "camera") return hasCamera() ? state.camera : null;
     if (owner === "scene") return sceneV2 ? state.scene : null;
+    if (owner === BACKGROUND_ROW) return backgroundShown() ? state.background : null;
     // An upstream element's working Sticker owns its Lanes too, and an upstream layer's working `scene` its
     // (ADR 0030); an upstream painting row has no owner.
     const upstream = upstreamRow(owner);
@@ -232,8 +286,8 @@ export function createTimeline(deps) {
         upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers,
       } = api);
     },
-    syncTimeline, timelineTimed, timelineSpanFrames, portBarEnd, timelineOwner, selectedLanes, timelineOffset, clipView,
-    timelineEditable, rowEditable, setTimelineFrame, jumpTimelineTo, stopTimelinePlayback, togglePlayback,
+    syncTimeline, timelineTimed, timelineSpanFrames, backgroundShown, backgroundShowsAt, backgroundVideoPlace, backgroundColor,
+    portBarEnd, timelineOwner, selectedLanes, timelineOffset, clipView, timelineEditable, rowEditable, setTimelineFrame, jumpTimelineTo, stopTimelinePlayback, togglePlayback,
     refreshTimelineEdit, commitTimelineEdit, deleteSelectedKeyframes, changeTimelineFps, applyVideoTimelineFps,
   };
 }

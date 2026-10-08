@@ -55,6 +55,7 @@ export function createHistory(deps) {
     if (!snapshot) return;
     const restored = restoredHistoryState(state, snapshot);
     const fps = state.timeline?.fps;
+    const backgroundClip = JSON.stringify(state.background?.clip);
     Object.keys(state).forEach((k) => delete state[k]);
     Object.assign(state, restored.state);
     syncCutoutShot(false);
@@ -63,6 +64,8 @@ export function createHistory(deps) {
     if (stateV2) rebuildUpstreamWorking();
     // Undoing an fps change keeps the playhead's time in seconds.
     if (stateV2 && state.timeline.fps !== fps) playback.seek(Math.round(editor.frame * state.timeline.fps / fps));
+    // The background VIDEO shows the time its restored Clip range puts at the playhead.
+    else if (stateV2 && JSON.stringify(state.background.clip) !== backgroundClip) playback.seek(editor.frame);
     editor.selectedId = savedSelectionId(type, state);
     // Panorama Studio's Camera stays selected while the restored state has it (#89).
     if (studio && !editor.selectedId && state.active.selected_shot_id) editor.selectedId = getActiveCutoutShot()?.id ?? null;
