@@ -87,6 +87,13 @@ import { createPaintInput } from "./editor/paint_input.js";
 import { createHitTest } from "./editor/hit_test.js";
 import { createSelectionMenu } from "./editor/selection_menu.js";
 import { createPointerInput } from "./editor/pointer_input.js";
+import { createPointerView } from "./editor/pointer_view.js";
+import { createPointerFrame } from "./editor/pointer_frame.js";
+import { createPointerPaint } from "./editor/pointer_paint.js";
+import { createPointerWorld } from "./editor/pointer_world.js";
+import { createPointerMarquee } from "./editor/pointer_marquee.js";
+import { createPointerTransform } from "./editor/pointer_transform.js";
+import { createPointerMultiMove } from "./editor/pointer_multi_move.js";
 import { createSidePanelEvents } from "./editor/side_panel_events.js";
 import { createModalEvents } from "./editor/modal_events.js";
 import { createKeyboard } from "./editor/keyboard.js";
@@ -696,8 +703,9 @@ async function showEditor(node, type, options = {}) {
     createPaintLayers, createPaintStrokes, createExternalStickers, createSpace, createViewInput, createUpstream,
     createCameraPreview, createOverlay, createRenderLoop, createPanels, createTimeline, createTimelineActions,
     createCommit, createCommands, createStickerImport, createCamera, createFrameView, createPaintInput,
-    createHitTest, createSelectionMenu, createPointerInput, createSidePanelEvents, createModalEvents,
-    createKeyboard,
+    createHitTest, createSelectionMenu, createPointerInput, createPointerView, createPointerFrame,
+    createPointerPaint, createPointerWorld, createPointerMarquee, createPointerTransform, createPointerMultiMove,
+    createSidePanelEvents, createModalEvents, createKeyboard,
   ]);
   // --- editor modules: end ---
 
