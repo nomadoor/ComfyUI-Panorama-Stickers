@@ -144,6 +144,10 @@ behavior change ごとに、agent は次のどちらかを理由を一言添え�
   で入れる。これはネットワークからの download なので、ユーザーの承認を得て行う。
 - 触れた振る舞いを確かめる場面が無ければ、`tests/browser/` に足す。足した場面は、守る対象を外すと落ちることを一度確かめる。
 - `npm run test:browser` と ComfyUI-dev を相手にする検証は main session が回す（どちらも server を起動する）。
+- 見た目を変えないはずの変更（CSS の整理など）は、`node tools/ui_snapshot.mjs <dir>` で動いている ComfyUI-dev の
+  Panorama Studio と旧ノードのノード上の表示、エディタのいくつかの状態の computed style と画面を記録し、
+  `--web <worktree>/web` を付けた記録と `node tools/ui_snapshot_diff.mjs` で比べて、差が無いことを確かめる。
+  Node 2.0 の on と off の両方で比べる（`--vue-nodes`）。この道具は ComfyUI の設定や作業データに書き込まない。
 - milestone（Review 節で定義）ごとに、GPU に依存する振る舞いをユーザーの実機の GPU で確かめる。
 
 ## Review
