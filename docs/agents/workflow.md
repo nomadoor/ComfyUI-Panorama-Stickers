@@ -56,17 +56,12 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 | Vue と JS の境界 | `docs/vue-ui-boundary.md` | `web_src/components/PanoModal.vue` とその部品（`PanoPaintOverlays.vue`・`PanoImageFilePicker.vue`・`PanoSidePanel.vue`・`PanoSelectionMenu.vue`・`PanoConfirmDialog.vue`・`PanoTooltip.vue`・`PanoTimeline.vue` など）、`pano_editor.js` の Vue の mount と ref の受け取り、`pano_editor_ui_state.js` の data builder |
 | 見た目（色・文字・余白・角丸・高さ・影・動き・重なり順、共有の部品の class、アイコン） | `docs/design.md` | `web/pano_editor.css`、`web_src/pano_styles.js` の `installPanoSuiteStylesheet`、`web_src/icons.js`・`components/SvgIcon.vue`・`PanoIconButton.vue` |
 
-### 整理（UI の作業より先に行う）
+### 整理
 
-今の spec は経緯の記録を多く含み、上の形になっていない。整理では次を行う。
+登録した spec は、2026-10-09 に上の形に揃えた。spec の間で重複している規則が見つかったら、owner を一つに決め、
+ほかの spec からは参照する。
 
-- 各 spec から経緯を外す。決定の理由は ADR へ移し、理由を持たない経緯は消す（git の履歴に残る）。
-- 規則の表と code 列を埋める。spec の間で重複している規則は owner を一つに決める。
-- まだ登録していない文書を、登録するか、まとめるか、消す：
-  `ops.md`。
-
-整理が終わった後、`docs/` 直下に置くのは、登録された living spec と、手順・計測の文書（`diagnostics.md`、
-`legacy-baselines.md` など）だけとする。
+`docs/` 直下に置くのは、登録された living spec と、手順・計測の文書（`diagnostics.md`、`legacy-baselines.md`）だけとする。
 
 ## 作業の始め方
 

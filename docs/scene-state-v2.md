@@ -13,6 +13,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | 状態の読み込み（版の判定、v1 の読み替え、正規化） | `core/scene_state.py` `load_scene_state` | `web_src/pano_scene_state.js` `loadSceneState` | `tests/test_scene_state.py`、`tests/pano_scene_state.test.mjs`、`tests/test_scene_state_parity.py` |
+| パノラマの角度規約（yaw・pitch・roll と ERP の対応） | `core/math.py` `camera_basis`・`ray_directions`・`lon_lat_to_erp` | `web_src/pano_camera_math.js` | `tests/test_camera_orientation.py`、`tests/pano_camera_math.test.mjs` |
 | Timeline の上限の定数 | `scene_state.py` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` | `pano_scene_state.js` の同名の定数 | フィクスチャ `v2_timeline_limits` |
 | `sticker_state` の読み込み | `scene_state.py` `load_sticker_state` | `pano_scene_state.js` `loadStickerState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | 評価関数と補間 | `core/scene_eval.py` `evaluate_scene_state` | `web_src/pano_scene_eval.js` `evaluateSceneState` | `tests/test_scene_eval.py`、`test_scene_state_parity.py` |
@@ -48,6 +49,14 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `scale` | 素材の単位に対する倍率（一様） | `scene`・`world` の Sticker の `scale` |
 
 角度規約と World の間の変換（Z の反転）は `core/world.py` と `web_src/pano_world.js` だけが行う。この契約のコードは変換をしない。回転 0 の `world` の板は、回転 0 の Camera の正面に置くと Camera の方を向く。
+
+パノラマの角度規約（`core/math.py` の `camera_basis`・`ray_directions`・`dir_to_lon_lat`・`lon_lat_to_erp`、JS は `web_src/pano_camera_math.js`）：
+
+- 角度の座標は +X が右、+Y が上、+Z が正面（左手系）。World の glTF 座標とは Z が逆で、変換は上の一か所だけで行う。
+- yaw（経度）は `atan2(x, z)`。0 が正面、+90 が右、−90 が左、±180 が背面（ERP の左右の端の継ぎ目）。範囲に丸めて表すときは −180 以上 180 未満（`wrap_yaw_deg`）。状態の yaw は丸めない（下の Lane の規則）。
+- pitch（緯度）は −90〜90 で、0 が水平線、+90 が天頂。
+- ERP の画像は、左から右へ経度 −180〜180（`coverage` 180 では −90〜90）、上から下へ緯度 90〜−90。画素の中心で標本化する。
+- Camera の向きは `Ry(yaw) @ Rx(−pitch) @ Rz(roll)`。正の yaw は右を、正の pitch は上を向き、正の roll は画像を時計回りに回す。
 
 ### 時間
 
