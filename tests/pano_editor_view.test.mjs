@@ -780,3 +780,11 @@ test("Panorama Studio's editor adds and deletes its one Camera without moving th
   assert.match(editor, /if \(editor\.mode === "frame" && frameButton\.disabled\) \{\s*if \(studio\) leaveFrameView\(getActiveCutoutShot\(\)\);/);
   assert.match(editor, /button\.visible = !\(button\.key === "frame" && !shotEditor\);/);
 });
+
+test("every three view draw leaves the unpack flags off, so Spark's raw integer upload never runs premultiplied", () => {
+  // Chrome crashes the tab on texSubImage2D(RGBA_INTEGER, UNSIGNED_INT) with UNPACK_PREMULTIPLY_ALPHA set,
+  // which Spark issues for its sort order after three uploaded a premultiplied Sky layer.
+  const source = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
+  assert.match(source, /function settleUnpack\(\) \{[\s\S]*?UNPACK_PREMULTIPLY_ALPHA_WEBGL, false\)[\s\S]*?UNPACK_FLIP_Y_WEBGL, false\)/);
+  assert.match(source, /settleUnpack\(\);\s*return \{ canvas, x: at\.x/);
+});
