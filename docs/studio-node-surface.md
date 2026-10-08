@@ -157,6 +157,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 
 ## 描画と後始末
 
+- 表示のレイアウトを、実行時に `node.size` を書き換えて直さない。`node.size` を書くのは、大きさが不正なとき（10 未満）の初期化だけ（`pano_preview_runtime.js` の `initNodeSizeIfInvalid`・`ensureStandalonePreviewBootstrapSize`）。
 - shared render coreとdescriptorを使い、第二rendererを作らない。
 - image / video、state、paint、external inputを独立したrevisionとして扱い、draw loop内でstateを再生成しない。
 - image / video replacement、connection change、executeで古いmedia cacheを無効化する。replace、disconnect、
