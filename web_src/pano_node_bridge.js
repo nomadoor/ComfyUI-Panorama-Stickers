@@ -54,6 +54,7 @@ const GROUPS = {
     paintDescriptorKey: "",
     paintRevision: null,
     paintRevisionKey: "",
+    paintState: null,
     rasterCache: null,
     rasterReady: null,
     bootMinHeightActive: false,

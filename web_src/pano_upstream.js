@@ -57,24 +57,6 @@ export function upstreamPending(linkType, layers) {
   return linkType === PANO_SCENE_TYPE && layers === null;
 }
 
-// The paint of an upstream layer's state as its Sky layers, in the order the node draws them (docs/scene-state-v2.md
-// "Sky の重なり順"): `group` entries for the stroke groups and `raster` entries for the raster objects at their
-// z_index, then the strokes of the paint engine's groups `groupIds` that no group of the painting holds, and the
-// mask when `mask`, over everything. None while the painting is hidden.
-export function upstreamPaintEntries(sceneState, groupIds, mask) {
-  if (!sceneState.painting_visible) return [];
-  const { groups, raster_objects: rasters } = sceneState.painting;
-  const entries = [
-    ...groups.map((group) => ({ kind: "group", id: group.actionGroupId, zIndex: group.z_index })),
-    ...rasters.filter((item) => item.layerKind === "paint").map((item) => ({ kind: "raster", id: item.id, zIndex: item.z_index, item })),
-  ];
-  const top = Math.max(-1, ...entries.map((entry) => entry.zIndex), ...sceneState.stickers.map((sticker) => sticker.z_index ?? 0)) + 1;
-  const grouped = new Set(groups.map((group) => group.actionGroupId));
-  for (const id of groupIds) if (!grouped.has(id)) entries.push({ kind: "group", id, zIndex: top });
-  if (mask) entries.push({ kind: "mask", id: "mask", zIndex: top });
-  return entries;
-}
-
 // The list under `key` of a layer's media `ui`, empty without one.
 export function layerUiList(ui, key) {
   return Array.isArray(ui[key]) ? ui[key] : [];

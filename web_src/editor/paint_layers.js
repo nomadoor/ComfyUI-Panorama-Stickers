@@ -3,6 +3,7 @@
 // uploaded for the node.
 import { createPanoCanvas } from "../pano_diagnostics.js";
 import { paintingLayerNeedsSync } from "../pano_editor_state.js";
+import { engineMask, skyPaintLayers } from "../pano_paint_layers.js";
 import { clamp } from "../pano_math.js";
 import { cloneJson, drawRasterObjectErp, paintingCompositeCount, pointInPoly } from "./helpers.js";
 
@@ -18,7 +19,7 @@ export function createPaintLayers(deps) {
   let commitState, createRasterSurface, ensureGroupFrame, getActivePaintTargetDescriptor,
     getDesiredPaintTargetDescriptor, getDisplayPaintRevisionKey, getOrderedDisplayListObjects,
     getOrderedPaintGroupIds, getPaintingCompositeRevisionKey, getPaintingRevisionKey, getStrokeGroupStrokes,
-    inverseTransformErpPointAround, paintingShown, parseRasterObjectSelectionId, processFreehandPoints,
+    inverseTransformErpPointAround, parseRasterObjectSelectionId, processFreehandPoints,
     rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint, shortestWrappedDelta;
 
   function isPaintCompositeInteraction(interaction = editor.interaction) {
@@ -462,82 +463,40 @@ export function createPaintLayers(deps) {
     return promise;
   }
 
-  // The mask's layer, on top of everything; none without a mask. The paint engine keeps its canvas
-  // and rebuilds it only when the mask changes.
-  function appendMaskDisplayLayerEntry(entries) {
-    const source = editor.paintEngine?.getMaskDisplayCanvas() || null;
-    if (!source) return entries;
-    const revision = `mask_display:${editor.paintEngine.getMaskDisplayRevision()}`;
-    const topLayerZ = entries.reduce((max, entry) => Math.max(max, Number(entry?.zIndex || 0)), -1);
-    const topStickerZ = (Array.isArray(state.stickers) ? state.stickers : [])
-      .reduce((max, item) => Math.max(max, Number(item?.z_index || 0)), -1);
-    const topZ = Math.max(topLayerZ, topStickerZ);
-    entries.push({
-      id: "mask_display",
-      source,
-      revision,
-      zIndex: topZ + 1,
-      opacity: 1,
-      visible: true,
-    });
-    return entries;
-  }
-
-  function buildModalInterleavedLayerEntries() {
-    const ordered = getOrderedDisplayListObjects(true);
+  // The paint the views draw (skyPaintLayers): the engine's stroke groups with the live stroke, the group being
+  // drawn at the z_index it takes (getOrderedDisplayListObjects), the raster objects with the live eraser, and
+  // the mask.
+  function buildEditorViewPaintLayers() {
+    const groups = getOrderedDisplayListObjects(true)
+      .filter((entry) => entry.type === "strokeGroup")
+      .map((entry) => ({ actionGroupId: entry.actionGroupId, z_index: entry.z_index }));
+    const engine = editor.paintEngine;
+    const revision = getDisplayPaintRevisionKey();
     const previewInfo = getActivePaintEraserPreviewInfo();
-    const entries = [];
-    for (const entry of ordered) {
-      if (entry?.type === "strokeGroup") {
-        const gid = String(entry.actionGroupId || entry.id || "");
-        if (!gid) continue;
-        const source = editor.paintEngine?.getGroupDisplayCanvas?.(gid) || null;
-        if (!source) continue;
-        entries.push({
-          id: `paint_group:${gid}`,
-          source,
-          revision: `${getDisplayPaintRevisionKey()}:${gid}`,
-          zIndex: Number(entry?.z_index || 0),
-          opacity: 1,
-          visible: true,
-        });
-        continue;
-      }
-      if (entry?.type === "rasterObject") {
-        const item = entry.item || null;
-        const rid = parseRasterObjectSelectionId(item?.id || entry.id || "");
-        if (!rid) continue;
+    return skyPaintLayers({ ...state, painting: { ...state.painting, groups } }, {
+      group: (id) => {
+        const media = engine?.getGroupDisplayCanvas(id);
+        return media && { media, revision: `${revision}:${id}` };
+      },
+      raster: (item) => {
         const baseSource = buildRasterObjectEditCanvas(item, () => requestDraw());
-        if (!baseSource) continue;
-        const source = getLiveEraserAppliedCanvas(baseSource, entry, previewInfo);
-        const tf = item?.transform || {};
-        entries.push({
-          id: `raster:${rid}`,
-          source,
+        if (!baseSource) return null;
+        const tf = item.transform || {};
+        return {
+          media: getLiveEraserAppliedCanvas(baseSource, { type: "rasterObject", item }, previewInfo),
           revision: [
             getPaintingCompositeRevisionKey(),
             previewInfo?.key || "",
-            rid,
+            item.id,
             Number(tf.du || 0).toFixed(6),
             Number(tf.dv || 0).toFixed(6),
             Number(tf.rot_deg || 0).toFixed(3),
             Number(tf.scale || 1).toFixed(4),
           ].join(":"),
-          zIndex: Number(entry?.z_index || 0),
-          opacity: 1,
-          visible: item?.visible !== false,
-        });
-      }
-    }
-    return appendMaskDisplayLayerEntry(entries);
-  }
-
-  // The paint the views draw; none while the painting is hidden.
-  function buildEditorViewPaintLayers() {
-    if (!paintingShown()) return [];
-    return buildModalInterleavedLayerEntries()
-      .filter((entry) => entry.visible !== false)
-      .map((entry) => ({ id: entry.id, media: entry.source, revision: entry.revision, opacity: entry.opacity, zIndex: entry.zIndex }));
+        };
+      },
+      mask: () => engineMask(engine),
+    });
   }
 
   function invalidatePaintingLayerState() {
@@ -553,7 +512,7 @@ export function createPaintLayers(deps) {
         commitState, createRasterSurface, ensureGroupFrame, getActivePaintTargetDescriptor,
         getDesiredPaintTargetDescriptor, getDisplayPaintRevisionKey, getOrderedDisplayListObjects,
         getOrderedPaintGroupIds, getPaintingCompositeRevisionKey, getPaintingRevisionKey, getStrokeGroupStrokes,
-        inverseTransformErpPointAround, paintingShown, parseRasterObjectSelectionId, processFreehandPoints,
+        inverseTransformErpPointAround, parseRasterObjectSelectionId, processFreehandPoints,
         rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint, shortestWrappedDelta,
       } = api);
     },

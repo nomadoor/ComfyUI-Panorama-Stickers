@@ -163,7 +163,7 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
   );
   assert.match(
     runtime,
-    /function surfaceViewInput[\s\S]*?surfaceSceneState\([\s\S]*?buildRuntimeCutoutLayerEntries\(node, state\)[\s\S]*?workingSkyLayers\(/,
+    /function surfaceViewInput[\s\S]*?surfaceSceneState\([\s\S]*?surfacePaintLayers\(nodeSurface\(node\), state\)[\s\S]*?workingSkyLayers\(/,
   );
   assert.match(
     runtime,
