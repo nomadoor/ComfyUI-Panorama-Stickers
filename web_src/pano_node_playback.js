@@ -42,7 +42,7 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
   const background = () => (media.bg !== undefined ? media.bg : chosen && duration > 0 ? { video: true, frames: Math.round(duration * fps()), duration } : null);
   // The Clip range of the background the surface shows: the node's own, or an upstream background's
   // (`media.bg` null) in the Timeline's frames (`media.upstreamClip`, null with the default one).
-  const backgroundClip = () => (media.bg === null ? media.upstreamClip ?? null : readState().background.clip);
+  const backgroundClip = () => (media.bg === null ? media.upstreamClip ?? { start: 0, in: 0, duration: null } : readState().background.clip);
   // The editor's Timeline span: the output's length.
   const span = () => timelineSpan(readState(), {
     ...media,

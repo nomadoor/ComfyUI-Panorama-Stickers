@@ -95,7 +95,8 @@ def _cases(tmp_path):
     cases.append(("a background VIDEO", _state(fps=25, camera=_camera_keys(0, 90)), {"bg": bg}, {"bg": media}))
     cases.append(("a background VIDEO under an upstream Scene", _state(), {"bg": bg, "upstream": _upstream(20)},
                   {"bg": media, "upstream": {"frames": 20, "ends": []}}))
-    # The background's Clip range (background.clip) ends the background where the Sticker's would end.
+    # The background's Clip range (background.clip) moves or trims the media inside the output; the length is still
+    # the media's own frames.
     for name, clip in [
         ("a shifted background VIDEO", {"start": 3, "in": 1}),
         ("a background VIDEO trimmed at the tail", {"start": 2, "in": 0, "duration": 7}),
@@ -170,10 +171,12 @@ def test_the_timeline_spans_the_length_the_node_outputs(tmp_path):
     assert expected["an IMAGE batch"] == 12
     assert expected["a background VIDEO"] == 40
     assert expected["a Clip range overridden upstream"] == 70
-    assert expected["a shifted background VIDEO"] == 42
-    assert expected["a background VIDEO trimmed at the tail"] == 9
-    assert expected["a background VIDEO with its head trimmed"] == 34
-    assert expected["a shifted background VIDEO under an upstream Scene"] == 68
-    assert expected["a shifted IMAGE batch"] == 14
+    assert expected["a shifted background VIDEO"] == 40
+    assert expected["a background VIDEO trimmed at the tail"] == 40
+    assert expected["a background VIDEO with its head trimmed"] == 40
+    assert expected["a length over a shifted background VIDEO"] == 80
+    assert expected["a shifted background VIDEO under an upstream Scene"] == 38
+    assert expected["a shifted IMAGE batch"] == 12
+    assert expected["an IMAGE batch trimmed at the tail"] == 12
     assert expected["a single image with a duration"] == 24
     assert expected["a single image ending before a Sticker"] == 9

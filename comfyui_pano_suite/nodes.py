@@ -1451,7 +1451,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
 
     The own `bg_media` is placed by the state's `background.clip`, an upstream background by the Clip range of the
     Studio it came from (`PanoSceneValue.bg_clip`); a Clip range other than the default ends the background where it
-    ends (`_bg_place`, `_bg_frames`).
+    ends (`_bg_place`, `_bg_frames`), but the length still counts the media's own frames.
     """
     stored_fps = state["timeline"]["fps"]
     if upstream is None:
@@ -1494,10 +1494,9 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
     else:
-        if own_bg is not None and place is not None and (video or batch > 1):
-            # The background's Clip range ends with it, or without a duration with its media.
-            length = max(1, output_frames(place.end(fps) if bg_clip["duration"] is None else bg_clip["start"] + bg_clip["duration"]))
-        elif video:
+        # The background media's own frames set the length whatever its Clip range: moving or trimming it keeps
+        # the length, and the frames it leaves show bg_color.
+        if video:
             # A background VIDEO that does not set the Timeline lasts until its last frame ends.
             length = len(own_bg.times) if upstream is None else max(1, math.floor(float(own_bg.times[-1] + 1 / own_bg.frame_rate) * fps + 0.5))
         elif batch > 1:

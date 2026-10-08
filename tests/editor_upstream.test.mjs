@@ -1310,14 +1310,19 @@ test("Keyframes past the output's end leave the selection: they are neither dele
   }
 });
 
-test("upstream Clip ranges and Keyframes are not dragged past the end of the output, as the node's own", async () => {
+test("upstream Clip ranges keep their start and Keyframes stay inside the output when dragged, as the node's own", async () => {
   browserStubs();
   try {
     const ui = { pano_upstream_layers: [timedLayer()] };
     const { act, timeline, upstream } = await timelineOver(ui);
-    // An open Clip range moved by 150 stops on the last frame; it does not lengthen the output.
+    // An open Clip range moved by 150 stops with its start on the last frame; it does not lengthen the output.
     drag(act, { type: "clip", id: "upstream:scene_a:sticker_1", mode: "move" }, 150);
     assert.equal(upstream.upstreamStickers()[0].clip.start, 47);
+    assert.equal(timeline.timelineSpanFrames(), 48);
+    // A Clip range whose overridden end would set a longer derived length stops at the current end: a drag
+    // never lengthens the output.
+    drag(act, { type: "clip", id: "upstream:scene_a:scene", mode: "move" }, 100);
+    assert.deepEqual(upstream.upstreamEntries()[0].working.sceneState.scene.clip, { start: 0, in: 0, duration: 48 });
     assert.equal(timeline.timelineSpanFrames(), 48);
     // A Keyframe moved by 118 stops on the last frame (sticker_1 starts at 0).
     const { act: act2, timeline: timeline2, upstream: upstream2 } = await timelineOver(ui);

@@ -227,9 +227,12 @@ test("a port Sticker's bar without a duration ends with its media, and a one-fra
   assert.equal(buildTimelineModel(state, { ...options, span: 1 }).playable, false);
   const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
   assert.match(timeline, /class="pano-btn pano-btn-icon pano-timeline-play"\s*type="button"\s*:disabled="!model\.playable"/);
-  // The length field shows the Auto length in its placeholder: the same field, so nothing moves.
-  assert.match(timeline, /const autoText = computed\(\(\) => `Auto \(\$\{span\.value\}\)`\);/);
-  assert.match(timeline, /:placeholder="autoText" :value="model\.length \?\? ''"/);
+  // The length field always shows a number: the set length, or the derived one the Timeline spans. No "Auto".
+  assert.match(timeline, /const lengthText = computed\(\(\) => String\(props\.model\.length \?\? span\.value\)\);/);
+  assert.match(timeline, /:value="lengthText" aria-label="Output length in frames"/);
+  assert.doesNotMatch(timeline, /Auto/);
+  // The reset button right of it keeps its slot: disabled without a set length.
+  assert.match(timeline, /class="pano-btn pano-btn-icon pano-timeline-length-reset"\s*type="button"\s*:disabled="model\.length == null"/);
   // What lies past the output's end is not on the Timeline: no pins, Clip ranges cut at the end.
   assert.match(timeline, /const shown = keys\.filter\(\(key\) => key\.frame < span\.value\);/);
   assert.match(timeline, /v-if="row\.clip && row\.clip\.start < span"/);

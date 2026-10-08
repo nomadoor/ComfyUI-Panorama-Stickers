@@ -479,7 +479,7 @@ const LANE_LABELS = {
 // (the editor's timelinePlayhead): the model changes only with the state, the selection and the layout.
 // audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
 // input sets the Timeline fps (ADR 0024). `span` is the output's length (timelineSpan), which the length
-// field shows as its Auto value while `timeline.length` is empty; a span of one frame is not `playable`.
+// field shows while `timeline.length` is null (the length the inputs give); a span of one frame is not `playable`.
 // portBarEnd(sticker) is where the bar of a port Sticker without a duration ends (its media's end), or null.
 // Every row has the place of the eye at its left; a `hideable` row has the eye there, which shows and
 // hides it (`visible`); the Camera row has one with `cameraHideable`. The painting has a row (`painting`,
