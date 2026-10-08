@@ -303,3 +303,15 @@ Chrome のタブが落ちる件の監査で、エディタが描画のたびに 
 - WebGL コンテキストの喪失：`webglcontextlost` で `preventDefault` し、ビューの GPU の資源を放す（コンテキストは放さない。`dispose({ lost: true })`）。そのあいだ描画と当たり判定は何もせず、エラーも出さずに待つ。`webglcontextrestored` で、同じキャンバスにビューを作り直し、全体を描き直す（`CONTEXT`）。カメラプレビューも描き直す。診断（`pano_diagnostics.js`）は、失ったビューを復帰まで同じコンテキストとして数えるので、1 回の喪失と復帰は `created` 2・`lost` 1・`restored` 1・`disposed` 1・`alive` 1 になる。
 - 旧ノードの動画：旧 Preview ノード（`pano_preview_previewnode.js`）と、旧 Stickers・旧 Cutout のノード上の背景の VIDEO（`createLoopingPreviewVideo`）は、自動で再生しない。`PanoramaStickersNode` のノード上の Timeline と同じく、既定は止めて先頭のフレームを表示し、再生は操作で行い（Preview はダブルクリックか Space、旧 Stickers は再生のボタン）、再生中はループする。画面外（折りたたみ・別のグラフ・サブグラフの中）では止める。旧 Cutout のノード上の表示には再生の操作がないので、先頭のフレームのままである。エディタの Timeline のサムネイル用の `<video>` とキャンバスは、作り終えたら（失敗・中断も）放す。
 
+
+## WebGL の unpack 状態（Spark の並び順のアップロード）
+
+three はテクスチャをアップロードするたびに `UNPACK_PREMULTIPLY_ALPHA_WEBGL` と `UNPACK_FLIP_Y_WEBGL` を
+そのテクスチャの値にして、戻さない。Spark 2.1 は 2 回目以降の並べ直しの結果（RGBA32UI の並び順のテクスチャ）を、
+render の外で生の `texSubImage2D(RGBA_INTEGER, UNSIGNED_INT, Uint32Array)` でアップロードし、`UNPACK_FLIP_Y_WEBGL`
+だけを false にする。直前に three が premultiply の Sky の層（背景・Sticker・ペイント）をアップロードしていると
+`UNPACK_PREMULTIPLY_ALPHA_WEBGL` が true のまま残り、Chrome はこの整数のアップロードでタブを落とす
+（STATUS_BREAKPOINT。背景が VIDEO で 3DGS がある Scene で、視点を動かした瞬間に起きていた）。
+`pano_three_view.js` の `draw` は、描き終わるたびに `settleUnpack` で両方を three の状態を通して false に戻す。
+three のアップロードは render の中でしか起きないので、Spark のアップロードは常に両方 false で走り、three の
+キャッシュも実際の値と揃う。

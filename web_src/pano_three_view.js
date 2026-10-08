@@ -459,6 +459,17 @@ const SCENE_LOADS = 2;
 export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, createCanvas }) {
   const canvas = createCanvas();
   // The World is depth tested, so the canvas has a depth buffer; the Sky draws without it.
+  // three leaves the context's unpack state at its last texture upload (premultiplied Sky layers), and Spark
+  // later uploads its sort order (an RGBA32UI texture from a Uint32Array) with raw texSubImage2D outside any
+  // render, resetting only UNPACK_FLIP_Y. Chrome crashes the tab (STATUS_BREAKPOINT) on an integer upload
+  // with UNPACK_PREMULTIPLY_ALPHA set, so each draw leaves both unpack flags off, through three's state so
+  // its cache stays true.
+  function settleUnpack() {
+    const gl = renderer.getContext();
+    renderer.state.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    renderer.state.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  }
+
   const renderer = new WebGLRenderer({
     canvas,
     alpha: true,
@@ -816,6 +827,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       renderer.render(world, worldCamera);
       renderer.autoClear = true;
     }
+    settleUnpack();
     return { canvas, x: at.x, y: at.y, width: at.width, height: at.height };
   }
 
