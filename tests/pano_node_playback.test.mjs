@@ -519,9 +519,9 @@ test("the background VIDEO follows its Clip range on the node, with bg_color bef
   assert.equal(playback.backgroundShows, true);
   video.present(10 / FPS);
   assert.equal(playback.frame, 22);
-  // The Auto length ends with the VIDEO: 12 + 48 frames.
-  video.present(47 / FPS);
-  assert.equal(playback.frame, 59);
+  // The derived length is the VIDEO's own 48 frames: its last 12 frames fall past the output's end.
+  video.present(35 / FPS);
+  assert.equal(playback.frame, 47);
   // An upstream background (`media.bg` null) is not placed by the node's own Clip range, but by its Studio's.
   playback.follow({ shown: true, sources: ["/bg.mp4"], state, media: { bg: null } });
   assert.equal(playback.backgroundShows, true);
@@ -543,5 +543,25 @@ test("an upstream background on the node ends with its media, as in the editor a
   // Past the end of its media (frame 58), bg_color shows.
   video.present(48 / FPS);
   assert.equal(playback.frame, 58);
+  assert.equal(playback.backgroundShows, false);
+});
+
+test("past the end of a background VIDEO with the default Clip range, the node shows bg_color, as the output", () => {
+  const state = loadSceneState({ version: 2, timeline: { fps: FPS, length: 100 } });
+  const { playback, follow, video, clock } = setup(state);
+  follow(["/bg.mp4"]);
+  video.loaded(2);
+  playback.toggle();
+  video.present(47 / FPS);
+  assert.equal(playback.frame, 47);
+  assert.equal(playback.backgroundShows, true);
+  // The VIDEO ends; the clock runs on past it, where bg_color shows.
+  video.ended = true;
+  video.dispatchEvent(new Event("ended"));
+  clock.framesAhead(2);
+  assert.ok(playback.frame >= 48);
+  assert.equal(playback.backgroundShows, false);
+  // An upstream background with its Studio's default Clip range ends with its media too.
+  playback.follow({ shown: true, sources: ["/bg.mp4"], state, media: { bg: null, upstreamMedia: { video: true, frames: 48, duration: 2 } } });
   assert.equal(playback.backgroundShows, false);
 });

@@ -64,6 +64,8 @@
   `scene` の要素、上流の `pano_upstream_frames` と上書きした Clip range の終わり。`pano_preview_runtime.js` の
   `surfaceTimelineMedia`）から求める。実行結果に背景が無い間は、再生している VIDEO の長さを背景のフレーム数とする
   （docs/timeline-ui.md の「タイムラインの長さ」）。1 フレームの Timeline では再生ボタンを押しても何もしない。
+  背景の Clip range の外と、背景の素材が終わった先（既定の Clip range でも）は `bg_color` を出す（エディタ・出力と同じ。
+  docs/timeline-ui.md の「背景の行」）。
 - 一時停止は画面に出ているフレームで止まる（エディタの停止と同じ規則：一時停止したVIDEOが表示する
   PTS ≤ currentTime のフレームに再生ヘッドと静止画を合わせ、シークしない。ADR 0024）。もう一度押すとそのフレームから再生を続ける。一時停止中の背景は、そのフレームの
   VIDEOの静止画（最大幅2048）を描く。

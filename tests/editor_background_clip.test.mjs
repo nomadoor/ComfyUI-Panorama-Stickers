@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createHistory, createEditorHistory } from "../web_src/editor/history.js";
@@ -145,14 +146,65 @@ test("moving and trimming the background's Clip range are Undo steps through the
   assert.deepEqual(state.background.clip, { start: 10, in: 0, duration: null });
 });
 
-test("the background's Clip range is dragged no further than the Timeline's end in Auto", () => {
-  // The Auto length is the background's end: 48 frames.
-  const { act, state } = editorTimeline({ version: 2, timeline: { fps: 24 } });
+test("the background's Clip range moves past the Timeline's end with its start inside, and keeps the derived length", () => {
+  // The derived length is the background VIDEO's own 48 frames, whatever its Clip range.
+  const { act, state, timeline } = editorTimeline({ version: 2, timeline: { fps: 24 } });
+  drag(act, { type: "clip", id: "background", mode: "move" }, 24);
+  assert.deepEqual(state.background.clip, { start: 24, in: 0, duration: null });
+  // Its last 24 frames are past the end, outside the output; the length stays.
+  assert.equal(timeline.timelineSpanFrames(), 48);
+  // The start stops on the last frame of the span when the drag began.
   drag(act, { type: "clip", id: "background", mode: "move" }, 100);
-  // A Clip range without a duration stops when its start reaches the last frame... of the span when the drag began.
-  assert.equal(state.background.clip.start, 0);
+  assert.equal(state.background.clip.start, 47);
+  assert.equal(timeline.timelineSpanFrames(), 48);
+  // A start past the end already is not pushed further, nor pulled back.
+  state.background.clip.start = 60;
+  drag(act, { type: "clip", id: "background", mode: "move" }, 5);
+  assert.equal(state.background.clip.start, 60);
+});
+
+test("trimming the background keeps the derived length, and its tail is not dragged past the end", () => {
+  const { act, state, timeline } = editorTimeline({ version: 2, timeline: { fps: 24 } });
+  drag(act, { type: "clip", id: "background", mode: "start" }, 10);
+  assert.deepEqual(state.background.clip, { start: 10, in: 10, duration: null });
+  assert.equal(timeline.timelineSpanFrames(), 48);
+  drag(act, { type: "clip", id: "background", mode: "end" }, -20);
+  assert.deepEqual(state.background.clip, { start: 10, in: 10, duration: 18 });
+  assert.equal(timeline.timelineSpanFrames(), 48);
+  // The tail stops at the Timeline's end, where the Clip range opens again.
   drag(act, { type: "clip", id: "background", mode: "end" }, 100);
-  assert.equal(state.background.clip.duration, null);
+  assert.deepEqual(state.background.clip, { start: 10, in: 10, duration: null });
+});
+
+test("a Clip range that sets the derived length stops at the end: repeated drags never lengthen the output", () => {
+  // No background media: the derived length is the latest Clip range end, 20.
+  const { act, state, timeline } = editorTimeline({ version: 2, timeline: { fps: 24 }, stickers: [
+    sky("a", { clip: { start: 0, in: 0, duration: 20 } }),
+    sky("b", { clip: { start: 0, in: 0, duration: 10 } }),
+  ] }, { node: studioNode({ linked: false }), transport: {} });
+  assert.equal(timeline.timelineSpanFrames(), 20);
+  for (let round = 0; round < 3; round += 1) {
+    drag(act, { type: "clip", id: "a", mode: "move" }, 5);
+    assert.equal(timeline.timelineSpanFrames(), 20);
+  }
+  assert.equal(state.stickers[0].clip.start, 0);
+  // A shorter Clip range moves until its end meets the current end.
+  for (let round = 0; round < 3; round += 1) drag(act, { type: "clip", id: "b", mode: "move" }, 15);
+  assert.deepEqual(state.stickers[1].clip, { start: 10, in: 0, duration: 10 });
+  assert.equal(timeline.timelineSpanFrames(), 20);
+});
+
+test("a Sticker's Clip range moves past the end with its start inside; its tail trim stops at the end", () => {
+  const { act, state, timeline } = editorTimeline({ version: 2, timeline: { fps: 24, length: 30 }, stickers: [sky("own", { clip: { start: 0, in: 0, duration: 20 } })] });
+  timeline.syncTimeline();
+  drag(act, { type: "clip", id: "own", mode: "move" }, 100);
+  assert.deepEqual(state.stickers[0].clip, { start: 29, in: 0, duration: 20 });
+  state.stickers[0].clip = { start: 0, in: 0, duration: 20 };
+  drag(act, { type: "clip", id: "own", mode: "end" }, 5);
+  assert.deepEqual(state.stickers[0].clip, { start: 0, in: 0, duration: 25 });
+  // Dragged past the end, the tail stops there, where the Clip range opens again.
+  drag(act, { type: "clip", id: "own", mode: "end" }, 100);
+  assert.deepEqual(state.stickers[0].clip, { start: 0, in: 0, duration: null });
 });
 
 test("the background's key-row and eye do nothing", () => {
@@ -196,8 +248,12 @@ test("the playhead's frame maps to the background's time by its Clip range, and 
   // With a duration the Clip range ends it; a single image shows throughout its Clip range.
   assert.deepEqual([19, 20].map((frame) => backgroundShownAt({ start: 0, in: 0, duration: 20 }, frame, 24, video)), [true, false]);
   assert.deepEqual([2, 3, 500].map((frame) => backgroundShownAt({ start: 3, in: 0, duration: null }, frame, 24, { frames: 1 })), [false, true, true]);
-  // The default Clip range shows the background as before it.
-  assert.equal(backgroundShownAt({ start: 0, in: 0, duration: null }, 500, 24, video), true);
+  // The default Clip range ends with the media too, as in the output; a single image shows throughout.
+  assert.deepEqual([47, 48, 500].map((frame) => backgroundShownAt({ start: 0, in: 0, duration: null }, frame, 24, video)), [true, false, false]);
+  assert.equal(backgroundShownAt({ start: 0, in: 0, duration: null }, 500, 24, { frames: 1 }), true);
+  // Under an upstream Scene, a VIDEO ends where its last frame ends at the Timeline fps.
+  assert.deepEqual([47, 48].map((frame) => backgroundShownAt({ start: 0, in: 0, duration: null }, frame, 30, video, true)), [true, true]);
+  assert.equal(backgroundShownAt({ start: 0, in: 0, duration: null }, 60, 30, video, true), false);
 });
 
 test("the Timeline model has no background row unless asked", () => {
@@ -217,10 +273,17 @@ test("the editor places the background by its Clip range: the node's own, or an 
   assert.deepEqual(upstream.timeline.backgroundVideoPlace(), { origin: 24, start: 24, end: 72 });
   assert.deepEqual([23, 24, 71, 72].map(upstream.timeline.backgroundShowsAt), [false, true, true, false]);
   assert.equal(upstream.timeline.backgroundColor(), "#00ff00");
-  // Without a Clip range of its own, the background shows as before.
-  const plain = editorTimeline({ version: 2, timeline: { fps: 24 } });
+  // With the default Clip range, the VIDEO is not placed, but bg_color shows after its media ends, as in the output.
+  const plain = editorTimeline({ version: 2, timeline: { fps: 24, length: 100 } });
   assert.equal(plain.timeline.backgroundVideoPlace(), null);
-  assert.equal(plain.timeline.backgroundShowsAt(500), true);
+  assert.deepEqual([47, 48, 99].map(plain.timeline.backgroundShowsAt), [true, false, false]);
+  // An upstream background with the default Clip range of its Studio ends with its media too.
+  const upstreamPlain = editorTimeline({ version: 2, timeline: { fps: 24, length: 100 } }, { upstreamBackground: { clip: null, color: "#00ff00" } });
+  assert.equal(upstreamPlain.timeline.backgroundVideoPlace(), null);
+  assert.deepEqual([47, 48].map(upstreamPlain.timeline.backgroundShowsAt), [true, false]);
+  // A single image (no MP4) shows throughout.
+  const image = editorTimeline({ version: 2, timeline: { fps: 24, length: 100 } }, { node: studioNode({ video: false }), transport: {} });
+  assert.equal(image.timeline.backgroundShowsAt(99), true);
 });
 
 test("a background drag seeks the VIDEO at most once per frame, and once more at its end", () => {
@@ -238,4 +301,25 @@ test("a background drag seeks the VIDEO at most once per frame, and once more at
   act({ type: "clip", id: "background", mode: "move", phase: "start", delta: 0 });
   act({ type: "clip", id: "background", mode: "move", phase: "end", delta: 0 });
   assert.deepEqual(seeks, [20]);
+});
+
+test("the length's reset returns to the derived length as one Undo step, and does nothing without a set length", () => {
+  const { act, history, state, steps, timeline, uiState } = editorTimeline({ version: 2, timeline: { fps: 24 }, background: { clip: { start: 24, in: 0 } } });
+  timeline.syncTimeline();
+  // Without a set length, the model has none (the field shows the span: the VIDEO's own 48 frames).
+  assert.deepEqual([uiState.timeline.length, uiState.timeline.span], [null, 48]);
+  act({ type: "length", length: null });
+  assert.equal(steps.count, 0);
+  act({ type: "length", length: 80 });
+  assert.deepEqual([state.timeline.length, steps.count], [80, 1]);
+  // The reset button's action.
+  act({ type: "length", length: null });
+  assert.deepEqual([state.timeline.length, steps.count], [null, 2]);
+  assert.equal(timeline.timelineSpanFrames(), 48);
+  history.restoreHistory(-1);
+  assert.equal(state.timeline.length, 80);
+  // The field takes only a number; an empty one leaves the length as it is.
+  const vue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
+  assert.match(vue, /@click="emit\('action', \{ type: 'length', length: null \}\)"/);
+  assert.match(vue, /if \(!text\) \{\n\s*event\.target\.value = lengthText\.value;\n\s*return;/);
 });

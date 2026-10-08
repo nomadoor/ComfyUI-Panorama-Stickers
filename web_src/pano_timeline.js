@@ -3,7 +3,7 @@
 // the Keyframes on the content, and Easing edits. Frames passed for an owner (the Camera, scene or a
 // Sticker) are in its own time base: Timeline frames for the Camera, Clip frames (from start - in) for
 // scene and the Stickers.
-import { bgMediaEnd, portMediaFrames } from "./pano_port_media.js";
+import { portMediaFrames } from "./pano_port_media.js";
 import { evaluateLane, FRAME_EPSILON } from "./pano_scene_eval.js";
 import {
   CAMERA_LANES,
@@ -207,8 +207,7 @@ export function timelineSpan(state, media = {}) {
 // from the state and what is known of the inputs. Each input is null (or 0) while it is not known, as before a
 // run: then the rule goes on to the next step, as if the input had a single frame.
 //   bg          the node's own bg_media: { video, frames, duration } (`video` for a VIDEO, `frames` its frame
-//               count, `duration` the seconds where its last frame ends), { frames: 1 } for a single image; it is
-//               placed by the state's `background.clip` (bgMediaEnd)
+//               count, `duration` the seconds where its last frame ends), { frames: 1 } for a single image
 //   port        the port Sticker's media with two or more frames or items, as its meta
 //               (`pano_sticker_input_video_meta`: { kind, frames, duration }; 3D items are kind "IMAGE")
 //   sceneItems  the number of items of the `scene` input's content
@@ -234,11 +233,9 @@ export function autoTimelineLength(state, { bg = null, port = null, sceneItems =
   if (bg?.frames === 1 && !bg.video && !open(bgClip)) ends.push(bgClip.start + bgClip.duration);
   const keys = camera && state.camera ? ownerLanes(state.camera).flatMap((lane) => lane.keyframes.map((key) => key.frame)) : [];
   let length = 1;
-  // A background with frames ends with its Clip range, or without a duration with its media. With the default Clip
-  // range, a background VIDEO that does not set the Timeline (an upstream Scene does) lasts until its last frame ends.
-  const bgEnd = open(bgClip) ? bg && bgMediaEnd(bgClip, fps, bg, !!upstream) : bgClip.start + bgClip.duration;
-  if ((bg?.video || bg?.frames > 1) && !defaultClip(bgClip)) length = Math.max(1, Math.round(bgEnd));
-  else if (bg?.video) length = upstream ? Math.max(1, Math.round(bg.duration * fps)) : bg.frames;
+  // A background with frames sets the length by its media's own frames, whatever its Clip range. A background
+  // VIDEO that does not set the Timeline (an upstream Scene does) lasts until its last frame ends.
+  if (bg?.video) length = upstream ? Math.max(1, Math.round(bg.duration * fps)) : bg.frames;
   else if (bg?.frames > 1) length = bg.frames;
   else if (ends.length) length = Math.max(1, Math.round(Math.max(...ends)));
   else if (keys.length) length = Math.max(1, Math.round(Math.max(...keys)) + 1);
@@ -252,8 +249,8 @@ export function enteredTimelineFps(value) {
   return value > 0 ? timelineFps(Math.min(value, TIMELINE_FPS_MAX)) : null;
 }
 
-// The `timeline.length` typed in the length field sets: null (Auto) for an empty field, brought into
-// 1..TIMELINE_LENGTH_MAX, or undefined (rejected) when it is not a number.
+// The `timeline.length` a length action sets: null (the reset button: the length the inputs give), a number
+// brought into 1..TIMELINE_LENGTH_MAX, or undefined (rejected) when it is not a number.
 export function enteredTimelineLength(value) {
   if (value === null) return null;
   return Number.isNaN(value) ? undefined : timelineLength(Math.max(1, Math.min(value, TIMELINE_LENGTH_MAX)));

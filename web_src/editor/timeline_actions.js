@@ -164,13 +164,11 @@ export function createTimelineActions(deps) {
       if (action.phase === "start") {
         stopTimelinePlayback();
         // Only the span set by everything else reopens the end, not the span this Clip range sets (`span`).
-        // `end` is where its bar ends (the end of a port Sticker's media, or the Timeline's, without a duration),
-        // `last` where it stops when moved (an open Clip range's start + 1).
+        // `end` is where its bar ends (the end of a port Sticker's media, or the Timeline's, without a duration).
         const { clip } = sticker;
         const limit = timelineSpanFrames();
-        const media = portBarEnd(sticker);
-        const end = clip.duration === null ? media ?? limit : clip.start + clip.duration;
-        timeline.drag = { clip: { ...clip }, span: timelineSpanFrames(clip), limit, end, last: clip.duration === null ? media ?? clip.start + 1 : end };
+        const end = clip.duration === null ? portBarEnd(sticker) ?? limit : clip.start + clip.duration;
+        timeline.drag = { clip: { ...clip }, span: timelineSpanFrames(clip), limit, end };
         return;
       }
       const { drag } = timeline;
@@ -178,11 +176,15 @@ export function createTimelineActions(deps) {
       const base = drag.clip;
       const shown = clipView(sticker.clip);
       sticker.clip = { ...base };
-      // A click (no movement) leaves the Clip range as it was, an open end included. Nothing is dragged past
-      // the Timeline's end (what is past it already is not pushed further): a moved bar's end (an open one's
-      // start), a trimmed start and a trimmed end.
-      if (action.delta && action.mode === "move") moveClip(sticker.clip, Math.min(action.delta, Math.max(0, drag.limit - drag.last)));
-      else if (action.delta && action.mode === "start") trimClipStart(sticker.clip, Math.min(base.start + action.delta, Math.max(drag.limit - 1, base.start)));
+      // A click (no movement) leaves the Clip range as it was, an open end included. A moved bar keeps its start
+      // on the Timeline, its last frame at most, and may run past the end, where it is outside the output. A drag
+      // never lengthens the output: a bar whose end sets the derived length stops at the current end. A trimmed
+      // start and a trimmed end are not dragged past the end. What is past it already is not pushed further.
+      if (action.delta && action.mode === "move") {
+        moveClip(sticker.clip, Math.min(action.delta, Math.max(0, drag.limit - 1 - base.start)));
+        const excess = timelineSpanFrames() - drag.limit;
+        if (excess > 0) moveClip(sticker.clip, -excess);
+      } else if (action.delta && action.mode === "start") trimClipStart(sticker.clip, Math.min(base.start + action.delta, Math.max(drag.limit - 1, base.start)));
       else if (action.delta) trimClipEnd(sticker.clip, Math.min(drag.end + action.delta, Math.max(drag.limit, drag.end)), drag.span);
       if (action.phase !== "end") {
         dragFrames.request("timeline");

@@ -1,5 +1,6 @@
 """The node's own `bg_media` placed on the Timeline by `background.clip` (docs/render-contract.md "背景の Clip range"):
-shifted, trimmed at either end, and under a Timeline longer than the VIDEO, with `bg_color` around it."""
+shifted, trimmed at either end, and under a Timeline longer than the VIDEO, with `bg_color` around it. The output
+keeps the media's own length whatever the Clip range."""
 
 import json
 
@@ -37,22 +38,23 @@ def _shown(images):
     return [None if torch.equal(image, RED.expand(image.shape)) else _gray(image[None])[0] for image in images]
 
 
-def test_a_shifted_start_shows_bg_color_before_the_video(tmp_path):
+def test_a_shifted_start_shows_bg_color_before_the_video_and_keeps_the_length(tmp_path):
     images = _frames(_execute({"start": 3, "in": 0}, bg_media=_cfr(tmp_path)))
 
-    # The Auto length ends with the media: start - in + its 10 frames.
-    assert _shown(images) == [None] * 3 + list(range(10))
+    # The length is the VIDEO's own 10 frames: its last 3 frames fall past the output's end.
+    assert _shown(images) == [None] * 3 + list(range(7))
 
 
-def test_a_trimmed_head_starts_inside_the_video(tmp_path):
-    # Trimming the head in the editor moves `start` and `in` together: the media stays where it was.
+def test_a_trimmed_head_starts_inside_the_video_and_keeps_the_length(tmp_path):
+    # Trimming the head in the editor moves `start` and `in` together: the media stays where it was, and the
+    # trimmed head shows bg_color.
     assert _shown(_frames(_execute({"start": 4, "in": 4}, bg_media=_cfr(tmp_path)))) == [None] * 4 + list(range(4, 10))
-    # With `in` alone, the media starts before the Timeline.
-    assert _shown(_frames(_execute({"start": 0, "in": 4}, bg_media=_cfr(tmp_path)))) == list(range(4, 10))
+    # With `in` alone, the media starts before the Timeline and ends before the output does.
+    assert _shown(_frames(_execute({"start": 0, "in": 4}, bg_media=_cfr(tmp_path)))) == list(range(4, 10)) + [None] * 4
 
 
-def test_a_trimmed_tail_ends_the_video_and_the_auto_length(tmp_path):
-    assert _shown(_frames(_execute({"start": 0, "in": 0, "duration": 6}, bg_media=_cfr(tmp_path)))) == list(range(6))
+def test_a_trimmed_tail_ends_the_video_but_not_the_length(tmp_path):
+    assert _shown(_frames(_execute({"start": 0, "in": 0, "duration": 6}, bg_media=_cfr(tmp_path)))) == list(range(6)) + [None] * 4
     # A length past the Clip range shows bg_color after it.
     images = _frames(_execute({"start": 2, "in": 1, "duration": 4}, length=9, bg_media=_cfr(tmp_path)))
     assert _shown(images) == [None, None, 1, 2, 3, 4, None, None, None]
@@ -74,7 +76,9 @@ def test_the_default_clip_keeps_the_frames_one_to_one(tmp_path):
 def test_an_image_batch_follows_the_clip_range():
     batch = torch.arange(6, dtype=torch.float32).mul(20 / 255).view(6, 1, 1, 1).expand(6, 32, 64, 3).clone()
 
-    assert _shown(_frames(_execute({"start": 2, "in": 1}, bg_media=batch))) == [None, None, 1, 2, 3, 4, 5]
+    # The length is the batch's own 6 images, whatever the Clip range.
+    assert _shown(_frames(_execute({"start": 2, "in": 1}, bg_media=batch))) == [None, None, 1, 2, 3, 4]
+    assert _shown(_frames(_execute({"start": 0, "in": 0, "duration": 3}, bg_media=batch))) == [0, 1, 2, None, None, None]
     assert _shown(_frames(_execute({"start": 0, "in": 0, "duration": 3}, length=5, bg_media=batch))) == [0, 1, 2, None, None]
 
 

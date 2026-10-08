@@ -168,7 +168,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 `background.clip` は、Panorama Studio 自身の `bg_media` を Sticker の素材と同じ規則で Timeline に置く。形・正規化・fps の再基準化は Sticker の Clip range と同じである。
 
 - 素材の先頭は Timeline 上の `start − in` に来る。`start` を後ろへずらすと背景の映像が遅れて始まり、`in` で頭を、`duration` で終わりを切る。`duration` が `null` なら素材の終わりまで。
-- Clip range の外と素材の外では背景を描かず、`bg_color` になる。描き方と出力の長さは `docs/render-contract.md` の「背景の Clip range」。
+- Clip range の外と素材の外では背景を描かず、`bg_color` になる。出力の長さは Clip range によらず素材のフレーム数で決まる（`docs/render-contract.md` の「長さ」）。描き方は `docs/render-contract.md` の「背景の Clip range」。
 - Keyframe と表示（`visible`）は持たない。評価関数は `background` を読まない。
 - 上流の上書き（`upstream`）は `background` に当たらない（自分の入力の設定である）。
 - `background` は Sticker ではない。エディタのタイムラインの行の id `background` は、Sticker の id（エディタが振るのは常に `sticker_<番号>`）と重ならない。

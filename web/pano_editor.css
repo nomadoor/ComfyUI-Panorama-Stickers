@@ -2798,8 +2798,15 @@
   min-width: 28px;
   height: 28px;
 }
+.pano-timeline-length-reset.pano-btn-icon {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  margin-left: calc(-1 * var(--pano-space-xs));
+}
 .pano-timeline-play svg,
 .pano-timeline-mute svg,
+.pano-timeline-length-reset svg,
 .pano-timeline-toggle svg,
 .pano-timeline-name svg,
 .pano-timeline-eye svg,
@@ -2835,9 +2842,9 @@
   -moz-appearance: textfield;
   appearance: textfield;
 }
-/* Wide enough for "Auto (99999)", so the bar does not move between Auto and a typed length. */
+/* Wide enough for an 8-digit length (TIMELINE_LENGTH_MAX), so the bar does not move with the number. */
 .pano-timeline-length input {
-  width: calc(12ch + 12px);
+  width: calc(9ch + 12px);
 }
 .pano-timeline-setting input::-webkit-outer-spin-button,
 .pano-timeline-setting input::-webkit-inner-spin-button {

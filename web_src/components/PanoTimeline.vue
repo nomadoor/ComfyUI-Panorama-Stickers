@@ -172,13 +172,17 @@ function onFpsChange(event) {
   emitSetting(event, { type: "fps", fps: Number(event.target.value) }, () => fpsText.value);
 }
 
-// While the length is empty (Auto), the field shows the length the inputs give, which the Timeline spans.
-const autoText = computed(() => `Auto (${span.value})`);
+// The field always shows a number: the set length, or without one the length the inputs give, which the
+// Timeline spans. Only a number sets it; the reset button follows the inputs again.
+const lengthText = computed(() => String(props.model.length ?? span.value));
 
-// An empty length follows the inputs again.
 function onLengthChange(event) {
   const text = event.target.value.trim();
-  emitSetting(event, { type: "length", length: text ? Number(text) : null }, () => props.model.length ?? "");
+  if (!text) {
+    event.target.value = lengthText.value;
+    return;
+  }
+  emitSetting(event, { type: "length", length: Number(text) }, () => lengthText.value);
 }
 
 function onLineDown(event, row, lane) {
@@ -216,10 +220,20 @@ function onLineDown(event, row, lane) {
         <input v-else type="number" :min="TIMELINE_FPS_MIN" :max="TIMELINE_FPS_MAX" step="any" :value="fpsText" aria-label="Timeline fps" @change="onFpsChange">
         <span>fps</span>
       </label>
-      <label class="pano-timeline-setting pano-timeline-length" data-tip="Output length in frames; empty follows the inputs (Auto)">
+      <label class="pano-timeline-setting pano-timeline-length" data-tip="Output length in frames">
         <span>Length</span>
-        <input type="number" min="1" :max="TIMELINE_LENGTH_MAX" step="1" :placeholder="autoText" :value="model.length ?? ''" aria-label="Output length in frames" @change="onLengthChange">
+        <input type="number" min="1" :max="TIMELINE_LENGTH_MAX" step="1" :value="lengthText" aria-label="Output length in frames" @change="onLengthChange">
       </label>
+      <button
+        class="pano-btn pano-btn-icon pano-timeline-length-reset"
+        type="button"
+        :disabled="model.length == null"
+        aria-label="Reset length to the inputs"
+        data-tip="Reset length to the inputs"
+        @click="emit('action', { type: 'length', length: null })"
+      >
+        <SvgIcon :icon="ICON.reset" />
+      </button>
       <button
         class="pano-timeline-toggle"
         type="button"

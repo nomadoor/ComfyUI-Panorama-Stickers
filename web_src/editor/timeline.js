@@ -108,11 +108,11 @@ export function createTimeline(deps) {
   }
 
   // The Clip range of the background the editor shows, in the Timeline's frames: the node's own while it has a row,
-  // or an upstream background's, that of the Studio it came from (the node's own does not apply to it); null for
-  // neither (the legacy editor too).
+  // or an upstream background's, that of the Studio it came from (the node's own does not apply to it; the default
+  // one when the result gives none); null for neither (the legacy editor too).
   function backgroundClip() {
     const upstream = upstreamBackground();
-    if (upstream) return upstream.clip && backgroundClipAt(upstream.clip.clip, upstream.clip.fps, state.timeline.fps);
+    if (upstream) return upstream.clip ? backgroundClipAt(upstream.clip.clip, upstream.clip.fps, state.timeline.fps) : { start: 0, in: 0, duration: null };
     return backgroundShown() ? state.background.clip : null;
   }
 

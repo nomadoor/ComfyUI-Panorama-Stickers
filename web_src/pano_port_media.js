@@ -38,7 +38,7 @@ export function portMediaFrames(clip, fps, meta) {
 // (`background.clip`) as a port Sticker's media is (PortMedia.end): from start - in, its frames, or the time its
 // last frame ends for a VIDEO that does not set the Timeline (`under`: an upstream Scene sets it). `bg` is the
 // background as autoTimelineLength reads it ({ video, frames, duration }). Where its bar ends without a duration,
-// and what the Auto length counts.
+// and where the editor and the node surfaces show bg_color after it (backgroundShownAt).
 export function bgMediaEnd(clip, fps, bg, under = false) {
   return clip.start - clip.in + (bg.video && under ? bg.duration * fps : bg.frames);
 }
@@ -61,10 +61,8 @@ export function backgroundPlace(clip) {
 
 // Whether the background shows at Timeline `frame` (the node shows bg_color where it does not): inside its Clip
 // range, and before the end of media with frames (`bg` as bgMediaEnd reads it; null for a single image or while it
-// is not known). With the default Clip range it always shows, as before the Clip range (the editor keeps the
-// VIDEO's last frame past its end).
+// is not known). The default Clip range too ends with its media, as in the output.
 export function backgroundShownAt(clip, frame, fps, bg = null, under = false) {
-  if (defaultClip(clip)) return true;
   if (!clipActive(clip, frame)) return false;
   return !(bg?.video || bg?.frames > 1) || frame < bgMediaEnd(clip, fps, bg, under);
 }
