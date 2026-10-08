@@ -49,7 +49,8 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 | メモリ・中断・キャッシュ・一時ファイル | `docs/runtime-resources.md` | `nodes.py` の `_render_memory`、`progress.py`、`core/cache.py`・`temp_files.py` |
 | timeline、keyframe、背景の行、再生 | `docs/timeline-ui.md` | `web_src/pano_timeline.js`・`pano_video_playback.js`・`pano_node_playback.js`・`pano_port_media.js`・`pano_frame_batch.js`、`pano_editor_ui_state.js` の `buildTimelineModel`、`editor/timeline.js`・`timeline_actions.js`・`keyboard.js`、`components/PanoTimeline.vue`・`PanoTimelineGroup.vue`・`PanoEasingGraph.vue`、上流の層の行は `pano_upstream.js`・`editor/upstream.js`、Keyframe のない Lane の扱いは `pano_editor_state.js` の `unkeyedPose` |
 | editor のコード構造と依存 | `docs/editor-architecture.md` | 整理で決める |
-| three.js / Spark | `docs/threejs-spark-integration.md` | 整理で決める |
+| three.js / Spark（3D の表示、エディタでの描画） | `docs/threejs-spark-integration.md` | `web_src/pano_three_view.js`・`pano_editor_view.js`・`pano_spark_views.js`・`pano_pick.js`・`pano_scene_items.js`・`pano_scene_loaders.js`・`pano_frame_scheduler.js`・`pano_preview_view.js`、`pano_space.js` の描画の部品（`spaceCamera`・`stickerContentRequest`・`cameraFrustumSegments` など）、`vite.lib.config.js` |
+| editor の操作と視点（視点の操作、`world` の Sticker と Camera の編集、Panorama Studio のエディタ、上流の Scene の編集、`port` の Sticker の同期と Pose handoff の表示、インスペクタの行） | `docs/editor-interaction.md` | `web_src/pano_space.js`・`pano_view_controls.js`・`pano_view_keys.js`・`pano_view_transition.js`・`pano_view_memory.js`・`pano_upstream.js`・`pano_port_handoff.js`・`pano_external_sticker_sync.js`、`pano_editor_state.js`（`setWorldStickerTransform`・`setCameraShot`・`newStudioCamera` など）、`pano_editor_ui_state.js`（`floatingRightState`・`inspectorRows` など）、`editor/space.js`・`camera.js`・`frame_view.js`・`upstream.js`・`external_stickers.js`・`selection.js`、`components/PanoFloatingRight.vue`・`PanoSidePanel.vue`・`PanoUpstreamOrigin.vue` |
 | Vue と JS の境界 | `docs/vue-ui-boundary.md` | 整理で決める |
 
 ### 整理（UI の作業より先に行う）
@@ -61,7 +62,6 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 - まだ登録していない文書を、登録するか、まとめるか、消す：
   `panorama-stickers-node-surface-spec.md`、`panorama-preview-node-surface-spec.md`、`cutout-node-frame-surface-spec.md`
   （node surface）、`design.md` と `design_system.md`（見た目）、`preview_regressions.md`、`ops.md`。
-- spec が無い subsystem（editor の操作と視点）の spec を作る。
 
 整理が終わった後、`docs/` 直下に置くのは、登録された living spec と、手順・計測の文書（`diagnostics.md`、
 `legacy-baselines.md` など）だけとする。

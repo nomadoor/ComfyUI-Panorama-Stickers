@@ -7,7 +7,7 @@
 
 この文書が持たない規則：状態 v2 の形・評価関数と補間・fps の再基準化・上書きの記録と当て方（`docs/scene-state-v2.md`）、
 ノードの Timeline fps・出力の長さ・出力と実行結果の `ui`・上流の Scene の重ね方（`docs/studio-node.md`）、
-3D の表示・ギズモ・インスペクタ・エディタでの描画（`docs/threejs-spark-integration.md`）、
+3D の表示・エディタでの描画（`docs/threejs-spark-integration.md`）、視点の操作・ギズモ・インスペクタ（`docs/editor-interaction.md`）、
 ノード上の UI の細かい規則（`docs/panorama-stickers-node-surface-spec.md`）。
 
 ## この文書が owner である規則
@@ -55,8 +55,8 @@ After Effects のストップウォッチのような UI は作らない（ADR 0
 - Keyframe と Keyframe の間に入れた Keyframe の Easing は、入れた区間の Easing を引き継ぐ。前後の区間がどちらも元の区間と同じ Easing になる。手で曲げた cubic-bezier も同じ値をそのまま写す（元の動きと厳密には一致しない）。最初の Keyframe より前に入れたときは、新しい Keyframe の Easing を既定値の ease-in-out とする。最後の Keyframe より後に入れたときは、それまで最後だった Keyframe の Easing（使われていなかった値）が新しい区間に掛かり、新しい Keyframe の Easing は既定値とする。
 - Keyframe を消せるのは、タイムラインで選んで Delete したときだけ。消した後は残った Keyframe で補間し直す。全 Keyframe を一度に消すスイッチは作らない。
 - インスペクタには Keyframe を打つボタンを置かない。
-- `world` の Sticker も同じ規則で記録する。ギズモのドラッグはモードの Lane（Move は `position`、Rotate は `rotation`、Scale は `scale`）だけを、インスペクタは変えた欄の Lane だけを変える。Clip range があるので、`sky` の Sticker と同じく素材基準のフレームで比べる。ギズモとインスペクタは `docs/threejs-spark-integration.md` の「`world` の Sticker の操作」。
-- 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Panorama Studio の Frame タブと、Camera の行を選んだときの操作とインスペクタ）だけである。Camera が無いときの空間の表示では、3DoF の見回しは原点（ERP を撮る位置）に立ったまま向きを変え、6DoF は Viewport camera を空間の中で動かす（`docs/threejs-spark-integration.md` の「空間の表示」）。
+- `world` の Sticker も同じ規則で記録する。ギズモのドラッグはモードの Lane（Move は `position`、Rotate は `rotation`、Scale は `scale`）だけを、インスペクタは変えた欄の Lane だけを変える。Clip range があるので、`sky` の Sticker と同じく素材基準のフレームで比べる。ギズモとインスペクタは `docs/editor-interaction.md` の「`world` の Sticker の操作」。
+- 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Panorama Studio の Frame タブと、Camera の行を選んだときの操作とインスペクタ）だけである。Camera が無いときの空間の表示では、3DoF の見回しは原点（ERP を撮る位置）に立ったまま向きを変え、6DoF は Viewport camera を空間の中で動かす（`docs/editor-interaction.md` の「視点の操作」）。
 - ノード上の UI には Keyframe の操作がないので、Keyframe のある Lane はノード上では変えない。表示しているフレーム（最初は frame 0、一時停止したフレーム）によらず、Sticker のドラッグは Keyframe のない Lane（どのフレームでも同じ値）の静的な値だけを変え、Keyframe のある Lane にしか効かない操作は無視する（ロックと同じ感触）。Keyframe のある Lane はエディタのタイムラインで直す。この扱いは `pano_stickers_node_surface.js` の `set-transform`（`unkeyedPose`）だけで決まる（既定値。オーナーは未承認）。
 - ノード上の UI には再生ボタンが一つだけあり、時間のあるときだけ出る（エディタと同じ `isTimed` か、背景の VIDEO か `port` の Sticker の素材の MP4 があるとき）。ボタンは再生と一時停止を切り替える。Timeline の fps でループ再生し、背景の VIDEO は音を出さずに同じ状態機械で再生する。一時停止は画面に出ているフレームで止まり（エディタの停止と同じ）、もう一度押すとそこから続く。そのフレームはノードごとの一時状態で保存せず、reload すると frame 0 に戻る。背景の VIDEO が替わったときと Timeline がそのフレームより短くなったときも frame 0 に戻る。編集（Sticker をつかむ、ツールバーの操作、画像の追加、Delete）とエディタを開く操作で一時停止する。見回しでは止まらない。Space キーは使わない（ComfyUI のキャンバスの pan）。細かい規則は `docs/panorama-stickers-node-surface-spec.md` にある。
 - Sticker がアップロード中（Source にファイルがまだない）の間は、Undo の履歴を記録しない。アップロードが終わったときに、その間の編集を含めて一度記録する（失敗して Sticker が消えたときも同じ）。
@@ -117,7 +117,7 @@ Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端
 - 目の場所はすべての行にあり、目を持たない行（`hideable` が偽）も同じ幅を空ける。行の名前・▶・ポチの位置は行によって動かない。Camera の行の目は `buildTimelineModel` の `cameraHideable` で出す（Panorama Studio）。
 - ペイントの行（「Paint」、筆のアイコン）は、Sticker の行の後、`scene` の行の前に 1 行だけ出す。ストロークのグループ・ラスタ・マスクを分けず、ペイント全体をまとめて隠す（マスクも出力の MASK から消える）。ペイントが何か（ストローク・マスク・ラスタ）を持つか、隠しているときだけ出る。Clip range も Keyframe も無いので、行は目と名前だけ。
 - 目の切り替えは編集で、Undo の 1 段になり、`state_json` に保存する（既定の表示は書かない）。値を変えないので、再生は止めない（Premiere・Resolve のトラックの表示の切り替えと同じ）。ロックした Sticker も切り替えられる（After Effects と同じ）。
-- 隠した物はエディタでも描かない（薄くも出さない。After Effects・Photoshop・Blender のビューポートと同じ）。選べず、動かせない：キャンバスとギズモの当たり判定、選択の一覧から外れ、行を押しても選ばれない。選んでいる物を隠すと選択が外れる（Undo・Redo で隠れたときも）。隠したペイントにはペイントもマスクも描けない（ツールを使っても何も起きない。Photoshop の隠したレイヤーと同じ）。Camera を隠したときのエディタは `docs/threejs-spark-integration.md` の「Panorama Studio のエディタ」。
+- 隠した物はエディタでも描かない（薄くも出さない。After Effects・Photoshop・Blender のビューポートと同じ）。選べず、動かせない：キャンバスとギズモの当たり判定、選択の一覧から外れ、行を押しても選ばれない。選んでいる物を隠すと選択が外れる（Undo・Redo で隠れたときも）。隠したペイントにはペイントもマスクも描けない（ツールを使っても何も起きない。Photoshop の隠したレイヤーと同じ）。Camera を隠したときのエディタは `docs/editor-interaction.md` の「Panorama Studio のエディタ」。
 - タイムラインの上の操作（Keyframe・Clip range の編集、行のポチ）は、隠した物にもできる。
 - 上流の層の要素・ペイント・`scene` も、その行の目のアイコンで隠し、もう一度出す（「上流の層の行」）。隠した上流の要素を出す手段はこの目のアイコンである（インスペクタに表示の切り替えは無く、隠した要素は選べない）。
 - 旧ノードのエディタは、隠した `port` の Sticker を薄く出す。どちらのエディタも、インスペクタに表示の切り替え（エディタの見た目だけの切り替え）は無い。
@@ -206,10 +206,10 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
 - 見出しの右に層の操作が二つある。どちらも常に出し、することが無いときと上書きを持てない層では無効にする（見出しの配置は動かない）。どちらも Undo の 1 段（`commands.js` の `revertUpstreamLayerCommand`・`restoreUpstreamDeletedCommand`、`timeline_actions.js` の `revert-upstream-layer`・`restore-upstream-deleted`。モデルで無効のボタンの操作は何もしない）。
   - 「Revert」：その層の記録から、層の `scene` の上書き（`visible`・`clip`）と `painting_visible` を外し、`scene` とペイントを上流の値に戻す（`pano_upstream.js` の `upstreamLayerRevertedRecords`）。要素の上書きと消した記録は残す。要素の上書きを外すのはインスペクタの「Revert to upstream」。
   - 「Restore deleted (n)」：その層の記録の `deleted` を空にし、下流で消した要素をもう一度出す。n は消した記録のうち、上書きを当てる前の層にまだある要素の数（`upstreamDeletedCount`。上流で消えた id は数えない）。消した要素は選べないので、層の操作として見出しに置く（インスペクタには置かない）。
-- Delete キーは、Keyframe を選んでいればその Keyframe を消し（「記録の規則」）、そうでなければ選んだ上流の要素を消す（`docs/threejs-spark-integration.md` の「上流の Scene の表示と編集」の「消す」）。
+- Delete キーは、Keyframe を選んでいればその Keyframe を消し（「記録の規則」）、そうでなければ選んだ上流の要素を消す（`docs/editor-interaction.md` の「上流の Scene の表示と編集」の「消す」）。
 - 自分の `scene` の行は、上流の Scene があるときは出さない（自分の `scene` は描画に使われない）。
 - タイムラインの範囲は、自分の行と同じく出力の長さちょうど（「タイムラインの長さ」）。Auto の長さには、上流の Scene の長さ（実行結果の `pano_upstream_frames`）と、上書きした Clip range の終わりが入る（`editor/upstream.js` の `upstreamOutput`、`pano_upstream.js` の `upstreamOverriddenEnds`）。上書きしたものは、記録が `clip` を持つもの、またはまだ書き戻していない編集で変えたもの（ドラッグ中を含む）で、`duration` の無いものは `port` の Sticker の素材の終わり（`portMediaFrames`）だけを数える。ドラッグ中の Clip range は `duration` の無いものとして数える。ノードの長さの規則（`docs/studio-node.md` の「Scene の組み立てと撮影の入口」の出力の長さ）と同じで、上書きしていない上流の Clip range は上流の長さにすでに入っているので数えない。上流の行の Clip range と Keyframe のドラッグも、自分の行と同じ規則（「タイムラインの長さ」。Clip range の移動は始まりが出力の中にある限り終わりより先へ出てよく、トリムと Keyframe は終わりで止まり、どのドラッグでも出力は延びない）。
 
 ## Pose handoff の `port` の Sticker
 
-`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Revert to upstream」の Lane のボタン。ノードの規則は `docs/studio-node.md` の「`sticker_state` で届く `port` の Sticker」、エディタの表示と記録は `docs/threejs-spark-integration.md` の「`port` の Sticker の Pose handoff の表示と記録」。
+`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Revert to upstream」の Lane のボタン。ノードの規則は `docs/studio-node.md` の「`sticker_state` で届く `port` の Sticker」、エディタの表示と記録は `docs/editor-interaction.md` の「`port` の Sticker の Pose handoff の表示と記録」。
