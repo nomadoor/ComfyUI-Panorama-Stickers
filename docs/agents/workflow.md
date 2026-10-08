@@ -43,7 +43,10 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 | subsystem | spec | code |
 |---|---|---|
 | state v2、評価関数、上流の上書き、Python/JS の一致 | `docs/scene-state-v2.md` | `core/scene_state.py`・`core/scene_eval.py`・`core/scene_inherit.py`、`web_src/pano_scene_state.js`・`pano_scene_eval.js`・`pano_scene_inherit.js` |
-| backend の描画と出力、Panorama Studio・Preview のノード | `docs/render-contract.md` | `comfyui_pano_suite/nodes.py`・`scene_video.py`・`scene_mesh.py`・`splat_render.py`・`progress.py`、`core/render.py`・`world_render.py`・`mesh_render.py`・`video*.py`・`cache.py`・`temp_files.py` |
+| 描画関数、3D ファイルの読み分け | `docs/render-contract.md` | `core/render.py`・`world_render.py`・`mesh_render.py`、`splat_render.py`・`scene_mesh.py`・`core_adapters.py` |
+| Panorama Studio のノード（Timeline、素材の時間、出力、`ui`、`PANO_SCENE`、上流の Scene、Pose handoff） | `docs/studio-node.md` | `comfyui_pano_suite/nodes.py`・`scene_video.py`・`sticker_media.py`、`core/video_source.py` |
+| Preview ノード | `docs/preview-node.md` | `nodes.py` の `PanoramaPreviewSceneNode`、`core/video.py` の `_fit_audio_to_frame_count` |
+| メモリ・中断・キャッシュ・一時ファイル | `docs/runtime-resources.md` | `nodes.py` の `_render_memory`、`progress.py`、`core/cache.py`・`temp_files.py` |
 | timeline、keyframe、背景の行、再生 | `docs/timeline-ui.md` | 整理で決める |
 | editor のコード構造と依存 | `docs/editor-architecture.md` | 整理で決める |
 | three.js / Spark | `docs/threejs-spark-integration.md` | 整理で決める |

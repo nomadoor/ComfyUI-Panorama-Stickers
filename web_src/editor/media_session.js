@@ -592,7 +592,7 @@ export function createMediaSession(deps) {
     return picture ? { media: picture, revision: getMediaRevisionToken(picture), source: portMediaSource(media, first) } : null;
   }
 
-  // The `scene` input's editor files in the node's current result (docs/render-contract.md): the kind
+  // The `scene` input's editor files in the node's current result (docs/studio-node.md): the kind
   // the editor loads and a URL per item, null for an empty item. null without a current result.
   function sceneFiles() {
     if (!stateV2 || !isNodeOutputMediaCurrent(node, "scene")) return null;

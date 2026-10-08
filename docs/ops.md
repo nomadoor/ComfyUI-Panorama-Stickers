@@ -102,7 +102,7 @@ Flux.2向けに「パノラマ画像（主にERP: equirectangular projection）�
 
 ### ComfyUI の中での資源の上限
 
-ComfyUI のプロセスは長く動き続けるので、実行をまたいで持つものに上限を設ける。詳細は `docs/render-contract.md` の「メモリ・中断・一時ファイル」。
+ComfyUI のプロセスは長く動き続けるので、実行をまたいで持つものに上限を設ける。詳細は `docs/runtime-resources.md`。
 
 * RAM：実行をまたぐキャッシュは一つ（`core/cache.py`）で、`min(4 GiB, CPU の空きの 25%)` まで。8 ビットの画像の素材は uint8 のまま持つ。
 * temp：エディタ用に書くファイルは登録し、合計 5 GiB（`core/temp_files.py` の `TEMP_MAX_BYTES`）を超えたら古いものから消す。今の実行のファイルは消さない。入力ディレクトリのそのまま再生できる MP4 は複製しない。

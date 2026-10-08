@@ -4,7 +4,7 @@ ComfyUI clears its temp directory only when it starts and exits, so each written
 (`TempFiles.writing`), and once they total more than `TEMP_MAX_BYTES`, the least recently used are deleted. A file
 that the current run (prompt) wrote or put in an output's `ui` (`entry_from_path`) is not deleted during that run. The
 `ui` entry of such a file has `pano_evictable` set, so that an editor that cannot open it later (404) can ask for the
-workflow to be run again (`docs/render-contract.md`).
+workflow to be run again (`docs/runtime-resources.md`).
 """
 import logging
 import tempfile

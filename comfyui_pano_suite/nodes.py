@@ -1039,7 +1039,7 @@ class PanoSceneValue:
     those times are rounded to (0: exact). `frames` holds per output frame the `bg_media` frame to draw and, for
     each layer, the Timeline frame of its state to evaluate, the `port` frame, and the `scene` item, as
     `_decide_timeline` returns them. `media_ui` is the part of the producing node's execution `ui` that shows its
-    media in an editor (with the upstream layers, `docs/render-contract.md`); a consumer passes it on in its own
+    media in an editor (with the upstream layers, `docs/studio-node.md`); a consumer passes it on in its own
     `ui`. Consumers must not modify it; the same value reaches every node linked to the output.
     """
 
@@ -1534,14 +1534,14 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
 # Floats per output pixel that a frame keeps on the device at once beyond its sources: the rays and where they look,
 # the Sky's layers' samples with their footprints and filter weights, the background's samples, the World layer, and
 # the color, mask, and depth. Measured peaks reach about 25 (ERP 4096 x 2048, the Sky drawn at every pixel) with the
-# sources counted as below (`docs/render-contract.md`); 32 leaves a margin.
+# sources counted as below (`docs/runtime-resources.md`); 32 leaves a margin.
 RENDER_FLOATS_PER_PIXEL = 32
 # A source on the device is float32 with the ripmap levels `_sample_filtered` makes, up to three times its size.
 DEVICE_SOURCE_FACTOR = 4
 
 
 def _render_memory(built: PanoSceneValue, bg, size: tuple[int, int]) -> int:
-    """The bytes a render pass of `built` at `size` (width, height) needs on the device, by `docs/render-contract.md`:
+    """The bytes a render pass of `built` at `size` (width, height) needs on the device, by `docs/runtime-resources.md`:
     the per-pixel working set of a frame, and every source it uploads as float32 with its ripmap levels (one
     background frame, the Sticker sources, the uploaded paint layers) or as given (the 3D media)."""
     sources = 0

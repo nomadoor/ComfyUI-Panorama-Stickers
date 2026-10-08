@@ -10,7 +10,7 @@ Accepted
 
 ---
 
-`sticker_state` から `port` の Sticker の Lane を求めるとき（Pose handoff、ADR 0030）、上流の Camera の Keyframe をそのまま Sticker の Keyframe に写さない。Camera の Keyframe の範囲の Timeline frame の整数ごとに Camera を評価し、その値を `easing: "auto"` の Keyframe として焼き込む（Camera の `hold` の区間は `hold`）。すべての値が同じ Lane は Keyframe を置かず、静的な値にする（`docs/render-contract.md` の「`port` の Sticker と Pose handoff」）。
+`sticker_state` から `port` の Sticker の Lane を求めるとき（Pose handoff、ADR 0030）、上流の Camera の Keyframe をそのまま Sticker の Keyframe に写さない。Camera の Keyframe の範囲の Timeline frame の整数ごとに Camera を評価し、その値を `easing: "auto"` の Keyframe として焼き込む（Camera の `hold` の区間は `hold`）。すべての値が同じ Lane は Keyframe を置かず、静的な値にする（`docs/studio-node.md` の「`port` の Sticker と Pose handoff」）。
 
 考えた別案は、Camera の Keyframe と Easing を、そのまま Sticker の Keyframe に写す方法である。採らなかった理由は、Camera の回転は四元数で補間し、Sticker の `direction` は球面上の方向と `roll` に分けて補間するので（`docs/scene-state-v2.md` の「補間」）、Keyframe をそのまま写すと間のフレームで撮った絵とずれるためである。
 

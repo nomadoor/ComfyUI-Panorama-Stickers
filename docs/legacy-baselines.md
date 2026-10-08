@@ -117,7 +117,7 @@ Panorama Studio は、ERP の出力の Sky も透視投影と同じく、出力�
 
 ## Panorama Studio の描画の計測
 
-`docs/render-contract.md` の描画の計測。振る舞いの規則は `docs/render-contract.md` が持つ。「以前」は、Sky を CPU で ERP に描いていた描画を指す。
+`docs/render-contract.md` の描画の計測。振る舞いの規則は `docs/render-contract.md` と `docs/runtime-resources.md` が持つ。「以前」は、Sky を CPU で ERP に描いていた描画を指す。
 
 ### Sky
 

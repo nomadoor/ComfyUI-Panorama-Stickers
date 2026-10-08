@@ -1,4 +1,4 @@
-"""The node's own `bg_media` placed on the Timeline by `background.clip` (docs/render-contract.md "背景の Clip range"):
+"""The node's own `bg_media` placed on the Timeline by `background.clip` (docs/studio-node.md "背景の Clip range"):
 shifted, trimmed at either end, and under a Timeline longer than the VIDEO, with `bg_color` around it. The output
 keeps the media's own length whatever the Clip range."""
 

@@ -1,5 +1,5 @@
 // The upstream Scene (ADR 0029, ADR 0030) as Panorama Studio's editor shows it: the layers of the Scene on the
-// `scene` input, from the node's result (`pano_upstream_layers`, docs/render-contract.md), with the node's own
+// `scene` input, from the node's result (`pano_upstream_layers`, docs/studio-node.md), with the node's own
 // overrides of them applied in working copies apart from the node's own state, drawn at the playhead as the
 // node draws them, and the edits of the working copies written back as the node's overrides. They never
 // enter the node's Stickers.
@@ -222,7 +222,7 @@ export function upstreamEditedRecords(records, layers, working, baseline, fps) {
 
 // The Clip ranges of the working copies `working` (upstreamWorkingLayers) that the node's overrides set or an edit
 // since `baseline` (upstreamBaseline) changed, as { index, clip, sticker } (`sticker` null for a layer's `scene`):
-// those whose ends widen the node's output beyond the upstream Scene's length (docs/render-contract.md "上書き",
+// those whose ends widen the node's output beyond the upstream Scene's length (docs/studio-node.md "上書き",
 // `_override_layers`). The others are in the upstream Scene's length already.
 export function upstreamOverriddenClips(working, records, baseline) {
   const clips = [];
