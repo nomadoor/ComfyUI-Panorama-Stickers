@@ -1,25 +1,41 @@
-# 状態 v2 と評価関数の契約
+# 状態 v2 と評価関数
 
-Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Studio が出力する `sticker_state` v2、および「状態と時刻 → その時刻の値」を返す評価関数の契約を定める。後続の ticket はこの文書とフィクスチャだけを前提にする。用語は `CONTEXT.md`、座標は ADR 0023、時間は ADR 0024、Scene の正は ADR 0025 に従う。
+Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Studio が出力する `sticker_state` v2、
+「状態と時刻 → その時刻の値」を返す評価関数、fps の再基準化、上流の上書きの記録と当て方を定める。
+用語は `CONTEXT.md` に従う。決めた理由は ADR 0023（座標）、0024（時間）、0025（Scene の正）、0026（Keyframe の Lane）、
+0029（Panorama Studio）、0030（上流の上書き）、0032（v1 の読み替えで保たないもの）、0033（Timeline の上限）にある。
 
-| 役割 | Python | JS |
-|---|---|---|
-| 状態の読み込み（v1 の読み替えと正規化） | `comfyui_pano_suite/core/scene_state.py` の `load_scene_state` | `web_src/pano_scene_state.js` の `loadSceneState` |
-| `sticker_state` の読み込み | `load_sticker_state` | `loadStickerState` |
-| 評価関数 | `comfyui_pano_suite/core/scene_eval.py` の `evaluate_scene_state` | `web_src/pano_scene_eval.js` の `evaluateSceneState` |
-| fps の再基準化 | `scene_state.py` の `rebase_scene_state` | `rebaseSceneState` |
-| 保存するテキスト | — | `sceneStateText` |
+この文書が持たない規則：`port` の Sticker の扱いと Pose handoff（`docs/render-contract.md` の「`port` の Sticker と Pose handoff」）、
+エディタでの表示と記録（`docs/timeline-ui.md`、`docs/threejs-spark-integration.md`）。
 
-フィクスチャは `tests/fixtures/scene_state/` にあり（非表示の Camera・`scene`・Sticker・ペイントは `v2_hidden`、`id`・`next_sticker_id`・`upstream`・`handoff_overrides` は `v2_upstream`、`background` は `v2_background`）、`tests/test_scene_state.py`・`tests/test_scene_eval.py`（Python）、`tests/pano_scene_state.test.mjs`（JS）、`tests/test_scene_state_parity.py`（Python と JS の一致、許容差 1e-4）で固定する。
+## この文書が owner である規則
+
+| 規則 | Python | JS | test |
+|---|---|---|---|
+| 状態の読み込み（版の判定、v1 の読み替え、正規化） | `core/scene_state.py` `load_scene_state` | `web_src/pano_scene_state.js` `loadSceneState` | `tests/test_scene_state.py`、`tests/pano_scene_state.test.mjs`、`tests/test_scene_state_parity.py` |
+| Timeline の上限の定数 | `scene_state.py` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` | `pano_scene_state.js` の同名の定数 | フィクスチャ `v2_timeline_limits` |
+| `sticker_state` の読み込み | `scene_state.py` `load_sticker_state` | `pano_scene_state.js` `loadStickerState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
+| 評価関数と補間 | `core/scene_eval.py` `evaluate_scene_state` | `web_src/pano_scene_eval.js` `evaluateSceneState` | `tests/test_scene_eval.py`、`test_scene_state_parity.py` |
+| fps の再基準化 | `scene_state.py` `rebase_scene_state` | `pano_scene_state.js` `rebaseSceneState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
+| 上書きの記録の再基準化 | `scene_state.py` `rebase_upstream_record` | `pano_scene_state.js` `rebaseUpstreamRecord` | `tests/test_scene_inherit.py`、`tests/pano_scene_inherit.test.mjs`、`tests/test_upstream_editor_parity.py` |
+| 上書きを当てる | `core/scene_inherit.py` `apply_upstream_overrides` | `web_src/pano_scene_inherit.js` `applyUpstreamOverrides` | `test_scene_inherit.py`、`pano_scene_inherit.test.mjs` |
+| 保存するテキスト（既定値を書かない） | — | `pano_scene_state.js` `sceneStateText` | `pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
+| Scene の id を振る | — | `web_src/pano_editor_state.js` `editorStateWrite`・`newSceneId` | `tests/pano_editor_state.test.mjs` |
+| Sticker の id の採番 | 正規化は `load_scene_state`、加えるときは `nodes.py` `_take_sticker_id` | 正規化は `loadSceneState`、加えるときは `pano_editor_state.js` `takeStickerId` | `pano_editor_state.test.mjs`、`tests/test_studio_node.py`、フィクスチャ `v2_upstream` |
+| `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`） | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
+| Sky の重なり順 | `core/display_list.py` `build_display_entries` | ペイントの並びは `web_src/pano_paint_layers.js` `skyPaintLayers` | `tests/test_display_list_core.py`、`tests/test_paint_layers_parity.py` |
+
+フィクスチャは `tests/fixtures/scene_state/`（状態と `sticker_state`）と `tests/fixtures/scene_inherit/`（上書き）にあり、
+Python と JS の両方の test が同じファイルを読む。Python と JS の数値の一致の許容差は 1e-4 とする。
 
 ## 共通の規則
 
 - 数値は JSON の数値だけを受け付ける。文字列・真偽値・`null`・非有限値は不正とする。
-- 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化（#54）で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。Keyframe の `frame` と Clip range の `start`・`in`・`duration` は、丸めたあと ±10,000,000（`TIMELINE_FRAME_MAX`）の内に寄せる。
+- 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。Keyframe の `frame` と Clip range の `start`・`in`・`duration` は、丸めたあと ±10,000,000（`TIMELINE_FRAME_MAX`）の内に寄せる。
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
 - 正規化は冪等である。`load_scene_state` の結果をもう一度読むと同じ結果になる。
-- 未知のフィールドは読み込み時に捨てる。状態 v2 には、どのコードも読まない予約項目を置かない。Clip range 外の保持やループなどは、実装するときに項目を追加する。ただし、一つの ADR を複数の ticket で実装するときは、後の ticket が読む項目を先に加えて形を固めてよい（ADR 0030 の T1。下記「後続の ticket への申し送り」）。
+- 未知のフィールドは読み込み時に捨てる。状態 v2 には、どのコードも読まない予約項目を置かない。Clip range 外の保持やループなどは、実装するときに項目を追加する。
 - 出力のキーの順序は、この文書の表の順とする（Python と JS で同じ）。
 
 ### 座標と角度
@@ -31,13 +47,13 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | FOV・角度サイズ（`hFOV_deg`・`vFOV_deg`） | 度。`hFOV_deg` は水平方向の全画角 | `camera` の `fov`、`sky` の Sticker の `size` |
 | `scale` | 素材の単位に対する倍率（一様） | `scene`・`world` の Sticker の `scale` |
 
-角度規約と World の間の変換（Z の反転）は #50 のモジュールだけが行う。この契約のコードは変換をしない。回転 0 の `world` の板は、回転 0 の Camera の正面に置くと Camera の方を向く。
+角度規約と World の間の変換（Z の反転）は `core/world.py` と `web_src/pano_world.js` だけが行う。この契約のコードは変換をしない。回転 0 の `world` の板は、回転 0 の Camera の正面に置くと Camera の方を向く。
 
 ### 時間
 
 - 状態に保存する時刻はすべて整数の Timeline frame とする。秒は Timeline frame ÷ `timeline.fps` で求める（ADR 0024）。
 - 評価関数は端数を含む Timeline frame を受け取る。背景 VIDEO のフレームの元の時刻 `t` 秒で評価するときは、`t × timeline.fps` を渡す。実行時の fps が `timeline.fps` と違っても、ノードは記録された `timeline.fps` で解釈して秒を保つ。
-- Panorama Studio が上流の Scene を受けたとき（ADR 0029、#88）は、上流の各ノードの状態と自分の状態を、それぞれの `timeline.fps` で同じ時刻 `t` 秒に評価する（`t × その状態の timeline.fps`）。どの状態も再基準化しない（`docs/render-contract.md` の「上流の Scene（#88）」）。
+- Panorama Studio が上流の Scene を受けたときは、上流の各ノードの状態と自分の状態を、それぞれの `timeline.fps` で同じ時刻 `t` 秒に評価する（`t × その状態の timeline.fps`）。どの状態も再基準化しない（`docs/render-contract.md` の「上流の Scene（#88）」）。
 - Camera の Keyframe は Timeline 基準とする。`scene` と Sticker の Keyframe は、素材の先頭が Timeline 上に来る位置（`start − in`）を基準とする。
 
 ## `state_json` v2
@@ -66,7 +82,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | `version` | `2` | — | 下記「版の判定」 |
 | `id` | 文字列 または `null` | `null` | この状態の Scene を表す id。下流の Studio は上書き（`upstream`）をこの id ごとに記録する（ADR 0030）。空でない文字列のほかは `null`。下記「Scene の id」。Python は振らない |
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
-| `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（#53） |
+| `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（`docs/render-contract.md` の「Scene の組み立てと撮影の入口」） |
 | `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
 | `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない |
 | `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方で、Keyframe を持たない。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` を読まない |
@@ -178,7 +194,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 
 ```json
 {
-  "id": "st_1",
+  "id": "sticker_1",
   "placement": "sky",
   "source": {"kind": "file", "filename": "a.png", "subfolder": "panorama_stickers", "storage": "input"},
   "clip": {"start": 0, "in": 0, "duration": null},
@@ -196,7 +212,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | フィールド | 型 | 既定値 | 意味と正規化 |
 |---|---|---|---|
 | `id` | 文字列 | `sticker_<n>` | 空・重複・文字列でないときは、`next_sticker_id` から順に `sticker_<n>` を振る（後に出てきたほうを振り直す）。下記「Sticker の id の採番」 |
-| `placement` | `"sky"` または `"world"` | `"sky"` | 途中で変わらない。持つ Lane を決める |
+| `placement` | `"sky"` または `"world"` | `"sky"` | 持つ Lane を決める。エディタで切り替える経路はない。`port` の Sticker だけは、ノードが素材と Pose handoff に合わせて同じ `id` のまま置き換える（`docs/render-contract.md` の「`port` の Sticker と Pose handoff」） |
 | `source` | Source | — | 不正なときは Sticker ごと捨てる |
 | `clip` | Clip range | 上記 | |
 | `visible` | 真偽値 | `true` | `false` なら描画しない（タイムラインの行の目のアイコン） |
@@ -226,47 +242,15 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 
 `world` の Sticker は奥行きで重なるので `z_index` を持たない。
 
-`world` の 2D の素材（IMAGE / VIDEO）は、幅 `scale`（World の単位）、高さは切り抜いた素材のアスペクト比で決まる両面の板として描く（#59、`docs/render-contract.md` の「World の描き方」）。3D の素材（MESH・SPLAT・3D ファイル）は常に `world` の Sticker で、`position`・`rotation`・`scale` は `scene` の変形と同じく中身自身の glTF 座標を World に置く変形とする（#63、`docs/render-contract.md` の「3D の `world` の Sticker」）。`crop` は使わない。
+`world` の 2D の素材（IMAGE / VIDEO）は、幅 `scale`（World の単位）、高さは切り抜いた素材のアスペクト比で決まる両面の板として描く（`docs/render-contract.md` の「World の描き方」）。3D の素材（MESH・SPLAT・3D ファイル）は常に `world` の Sticker で、`position`・`rotation`・`scale` は `scene` の変形と同じく中身自身の glTF 座標を World に置く変形とする（`docs/render-contract.md` の「3D の `world` の Sticker」）。`crop` は使わない。
 
 `locked` と `crop` を残す根拠：
 
-- `crop` は、旧 `state_json` の描画と旧ノードの基準画像を再現するのに必要で、描画関数（#52）が読む。3D の素材では使わない。
-- `locked` は、ADR 0025 の「上流の要素をロックする場合も、同じ Sticker のリストの中に印を付けるだけにする」に対応する印で、エディタ（#66）が読む。
+- `crop` は、旧 `state_json` の描画と旧ノードの基準画像を再現するのに必要で、描画関数が読む。3D の素材では使わない。
+- `locked` は、ADR 0025 の「上流の要素をロックする場合も、同じ Sticker のリストの中に印を付けるだけにする」に対応する印で、エディタが読む。
 
-#### `port` の Sticker が状態にないとき
+`sticker` 入力の素材の Sticker（`source.kind == "port"`）を状態にないときに加える規則と、`sticker_state` からの Pose handoff は、ノードの振る舞いとして `docs/render-contract.md` の「`port` の Sticker と Pose handoff」に書く。読み込み（`load_scene_state`）はこの Sticker を生成しない。状態は保存された内容だけを表す。
 
-`sticker` 入力が接続されているのに、状態に `source.kind == "port"` の Sticker がない場合、ノードとエディタは、その素材を次の Sticker としてリストの末尾（最も手前）に加えて扱う。2D の素材で `sticker_state` があるときは、状態に `port` の Sticker があっても実行のたびに Pose handoff を当てる（下記「`sticker_state` で届く `port` の Sticker」）。旧ノードの挙動（`nodes.py` の `_build_runtime_external_sticker` を呼ぶ、既存の外部 Sticker が見つからないときの経路）と同じである。
-
-- `placement: "sky"`、Clip range・`opacity` などは既定値。
-- `sticker` の素材が 3D（MESH・SPLAT・3D ファイル）のときは `placement: "world"` とし、`position` は `[0, 0, -2]`（World の原点から、Camera が無いときの ERP の中央の向きに 2）、`rotation` は 0、`scale` は `1` とする。状態の Camera の Lane には依らない。Pose handoff（下記）は 2D の素材の Sticker だけに当てはまり、3D の Sticker には `sticker_state` を使わない（使わなかったことを警告に出す）。状態の `port` の Sticker が `sky` のまま 3D の素材がつながったときは、同じ `id` の `world` の Sticker（上の変形。`clip`・`visible`・`locked` は保ち、`sky` の Lane と Keyframe は捨てる）に置き換えて扱い、エディタも実行結果で同じように置き換える（`docs/render-contract.md`）。逆向き（`world` の `port` の Sticker に 2D の素材）は、2D の `world` の Sticker として正しいので置き換えない（`sticker_state` がないとき。あるときは配置も Pose handoff に従う）。以下の `z_index`・`direction`・`roll`・`size` の規則は `sky` のときだけ。
-- `z_index` は、状態の `sky` の Sticker の最大値 + 1（Sticker がなければ `0`）。ペイントの `z_index` は数えない（旧ノードと同じ）。
-- `direction`・`roll` は既定値で、`size` の `hFOV_deg` は `30`、`vFOV_deg` は素材のアスペクト比から求める。
-- `sticker_state` があれば、その Camera の軌道に沿って置く（Pose handoff、#65・ADR 0030）。Sticker の clip frame（素材の時刻）`c` の姿勢は、`sticker_state` の Camera を `c × sticker_state.fps ÷ timeline.fps` で評価した値から求める。Camera の位置が評価したすべてのフレームで原点（`|position| ≤ 1e-9`）なら `sky` の Sticker とし、`rotation` の yaw / pitch（`direction`）・roll（`roll`）と `fov`（`size` の `hFOV_deg`）にする（`sky` の Sticker は無限遠にあるので Camera の位置は要らない。ADR 0030 より前と同じ結果）。どこかのフレームで原点から離れれば `world` の Sticker とする（下記）。
-  - Camera の Keyframe の範囲（全 Lane の最初の Keyframe から最後の Keyframe まで）の、状態の Timeline frame の整数ごとに評価し、`easing: "auto"` の Keyframe にする（Drone と同じく補間に頼らず軌道を渡す。Camera の回転は四元数で、Sticker の `direction` は球面上の方向と `roll` に分けて補間するので、Keyframe をそのまま写すと間のフレームがずれる）。範囲は `floor(最初 ÷ r)` から `ceil(最後 ÷ r)` まで（`r = sticker_state.fps ÷ timeline.fps`）。
-  - `world` の Sticker の各フレームの値：`R = world_rotation(yaw, pitch, roll)`（`core/world.py`）として、`position` は `Camera の位置 + 2 · (−R[:, 2])`（Camera の前方、距離 2）、`rotation` は Camera の yaw / pitch / roll、`scale` は `2 · 2 · tan(hFOV ÷ 2)`（距離 2 で画角いっぱいの幅）。Camera の位置から見れば、撮った絵と一致する（`tests/test_pose_handoff.py` の往復のテスト）。`z_index` は持たない。
-  - Camera の `rotation`（`direction`・`roll`、`world` では `rotation` に対応）、`fov`（`size`、`world` では `scale` に対応）、`position`（`world` の `position` に対応）の Lane で、評価した時刻が `easing: "hold"` の区間にあるフレームの Keyframe は `hold` にする。Camera のカット（切り替え）が、間の姿勢を通らずに切り替わる。切り替わるのは、カットの時刻以降で最初の Timeline frame の整数である。
-  - yaw と roll は、一つ前の Keyframe の値に最も近い周回の値にし、±180 をまたいでも一周戻らない。
-  - 値が `1e-9` 以内で同じものは同じとみなす（同じ姿勢の Keyframe の間で、補間の誤差から密な Keyframe を作らない）。
-  - 時刻は秒で合わせる。素材の時刻（`port` の Sticker の clip frame ÷ `timeline.fps`）が、Camera で撮った時刻と同じでなければならない。VIDEO（撮った Studio の `video` や、それを加工して実時間を保った VIDEO）はそのまま合う。IMAGE バッチは Timeline fps のフレームの列とみなす（ADR 0027）ので、撮った Studio と同じ Timeline fps で使う（受ける Studio の Timeline fps が違うときは、Create Video で撮った Studio の fps を付けてからつなぐ）。
-  - すべての値が同じ Lane（Camera がその Lane を動かさない場合）は Keyframe を置かず、静的な値にする。Camera の各 Lane の Keyframe が一つずつ（v1 の `sticker_state` を含む）なら、すべての Lane が静的な値になり、従来の単一の姿勢と同じになる。
-  - `size` の `vFOV_deg` は、`port` の Sticker では描画時に `hFOV_deg` と素材のアスペクト比から求める（`StickerSource.derive_vfov`）。
-
-#### `sticker_state` で届く `port` の Sticker
-
-ADR 0030 により、`sticker_state` で届く `port` の Sticker は引き継ぎと上書きで扱う。旧い規則「状態に入った `port` の Sticker には、あとから `sticker_state` を当てない」（#65）はこれで置き換えた。
-
-- 2D の素材が接続され、`sticker_state` が読めるときは、実行のたびに上の規則で Pose handoff（配置と Lane）を求める（`nodes.py` の `_handoff_lanes`）。状態に `port` の Sticker があってもなくても同じで、`sticker` と `sticker_state` をつなぐ順番に結果が左右されない。上流の Camera ワークを直せば、次の実行で下流に届く。
-- 状態に `port` の Sticker がなければ、上の規則で加える。あれば、その Sticker の `handoff_overrides` にある Lane は保存した値を使い、ほかの Lane は Pose handoff の Lane（値と Keyframe）で置き換える（`_inherit_handoff`）。`handoff_overrides` がない・空なら、すべての Lane を引き継ぐ。このブランチで保存した状態の読み替えは置かない。
-- 配置は常に Pose handoff に従う。保存した Sticker の `placement` が違えば、同じ `id` の Sticker に置き換え、`clip`・`visible`・`locked`・`crop`・`opacity` と、新しい配置の Lane の名前の `handoff_overrides` だけを保つ。もう一方の配置の Lane と、その名前の `handoff_overrides` は捨てる。`sky` になるときの `z_index` は、加えるときと同じ（ほかの `sky` の Sticker の最大値 + 1）。
-- `sticker_state` がない・読めないとき、3D の素材のときは、今までどおり（上の「`port` の Sticker が状態にないとき」）。
-- 既知のコスト：Pose handoff は保存した `port` の Sticker があっても実行のたびに求め直すので、毎回 Camera の Keyframe の範囲の Timeline frame の数だけ Camera を評価する（長い Camera ワークほど実行の前処理が長くなる）。結果はキャッシュしない。
-- 実行結果の `ui` の `pano_sticker_handoff` に、求めた Pose handoff（`{placement, lanes, fps}`。`fps` は Keyframe の基準の、実行した `state_json` の `timeline.fps`）を出す（`docs/render-contract.md`）。ノードは状態を保存しないので、引き継いだ Lane は `state_json` に書き戻らない。
-- エディタとノード上の UI（ADR 0030 の T11、`web_src/pano_port_handoff.js`）は、実行結果が新しく（`isNodeOutputMediaCurrent` の `sticker-handoff`。`sticker` と `sticker_state` のどちらかをつなぎ替えると古くなる）、`sticker` と `sticker_state` がつながっている間、`pano_sticker_handoff` を保存した `port` の Sticker に当てて表示する（`inheritPortHandoff`。ノードの `_inherit_handoff` と同じ規則で、配置の置き換えは `sky` → `world`・`world` → `sky` の両方。`world` の Keyframe も表示する）。表示の fps が `pano_sticker_handoff` の `fps` と違うときは、`rebaseUpstreamRecord` と同じ規則（Sticker の素材の先頭を基準に丸める）で表示の fps に直す。このときは、表示の Keyframe が実行の Keyframe と最大で 1 フレーム（丸め）ずれることがある（表示だけで、保存する値と出力は変わらない）。
-  - 表示しても `state_json` は変えない。エディタは保存した `port` の Sticker を作業中の値として持ち（`external_stickers.js` の `portSession.stored`）、書き戻し（`commitState`）と Undo の履歴には、表示中の Sticker ではなく保存する Sticker（`storedEditorState`）を使う。引き継いだ Lane は保存した値に戻す（`storedPortSticker`）。配置が置き換わって表示されているときは、新しい配置の Lane を上書きするまで、保存した配置の Sticker（表示中の `clip`・`visible`・`locked`・`crop`・`opacity` を持つ）を保存する。上書きした後は、新しい配置の Sticker を保存し、もう一方の配置の Lane と上書きは捨てる（ノードと同じ）。開いて閉じただけ、実行結果が届いただけでは書かない。ノード上の UI は表示だけを当て（`getCachedState`）、`sync-port` は Pose handoff の `replace` を状態に当てない（`replace` を当てるのは 3D の素材だけ）。
-  - 表示中の `port` の Sticker の Lane をエディタで変えると（ギズモ、インスペクタ、Keyframe の操作、タイムライン）、その Lane を `handoff_overrides` に加え、変えた Lane を保存する（`recordHandoffEdits`）。「変えた」は、前回の書き戻しのときの表示と比べて、この編集で値が変わった Lane である（ADR 0030 の計画の Q11）。比べるのは `pano_sticker_handoff` が渡す Lane だけで、`opacity` は上書きにしない（引き継がないので、ふつうの編集として保存する）。Timeline fps を変えたときの再基準化は編集とみなさない（比べる前の表示も同じ規則で再基準化するので、その前の未記録の編集は記録される）。
-  - インスペクタの「Revert to upstream」の Lane のボタン（`PanoUpstreamOrigin.vue`。上流の要素の上書きを外すボタンと同じ行、ADR 0030 の T10）を押すと、その Lane を `handoff_overrides` から外し、表示と保存する値を Pose handoff の値に戻す。ボタンは配置の Lane（`sky`：Direction・Roll・Size、`world`：Position・Rotation・Scale）と Opacity の 4 つで、Opacity（Pose handoff が渡さない）、上書きしていない Lane、Pose handoff を表示していないとき、ロック中は消さずに無効にする。All は無効。行は Panorama Studio の Sticker を選んでいる間いつも出す（選択を変えても行の数は変わらない）。Undo で戻せる。
-
-読み込み（`load_scene_state`）の側では、この Sticker を自動で生成しない。状態はあくまで保存された内容だけを表す。この扱いの実装は、描画関数と新しい Stickers ノードの ticket（#52）と、Pose handoff の ticket（#65）の責務とする。
 
 ### Source
 
@@ -279,6 +263,8 @@ ADR 0030 により、`sticker_state` で届く `port` の Sticker は引き継�
 | `{"kind": "file", "data_url": "data:image/..."}` | 旧 v1 の埋め込み画像。v1 の読み替えでだけ生じる。`data:image` で始まらなければ不正。エディタは開いたときに従来どおりアップロードして上の形に置き換える |
 
 `filename`・`subfolder`・`storage` は信頼しない入力である。ファイルを読む側は、既存の `folder_paths` による範囲の確認を必ず通す。この契約のコードはファイルを読まない。
+
+ノードは `file` の Source を画像として読む（`core/stickers.py` の `load_source_rgba`）。3D ファイルの `file` の Source は読めないので、警告を出して描かない。
 
 ## 評価関数
 
@@ -342,7 +328,6 @@ Lane の評価の規則：
      - 実装は、スカラーを 1 次元のベクトルとして同じ式（`< 0` と 2 の上限）で扱う。符号が同じで片方が 0 のときも上限が 0 になるので、結果はスカラーの規則と一致する。
   2. それ以外は、前後の Keyframe を通る放物線の傾き `m = (s0 × dt1 + s1 × dt0) ÷ (dt0 + dt1)` とし、`|m|` が `3 × min(|s0|, |s1|)` を超えるときは、向きを保ってその長さに縮める。
   - 素早く動いて止まる（間隔の比が大きい）場合も、値が前後の Keyframe を越えて行き過ぎない。
-  - 開発メモ（#73）：上限の係数 3 は、`web_src/pano_scene_eval.js` の `tangent` と `comfyui_pano_suite/core/scene_eval.py` の `_tangent` の `limit` にある。間隔が大きく違う Keyframe の間で軌道が膨らんで見える場合は、両方を同じ値に変えて `tests/test_scene_state_parity.py` と評価関数のテストを通す。係数を変えると保存済みの状態の補間結果も変わるので、この文書の式も合わせて直す。
 - スカラーの Lane（`fov`・`roll`・`scale`・`opacity`）、`size`（`hFOV_deg` と `vFOV_deg` をそれぞれ独立したスカラーとして補間する）と位置：3 次ベジェ `B(v[k], v[k] + m0 × dt ÷ 3, v[k+1] − m1 × dt ÷ 3, v[k+1]; p)`。`m0`・`m1` は区間の始まりと終わりの速度。位置は 3 成分を一つのベクトルとして扱い、上の内積と長さもベクトルで計算する（World の軸の向きに依存しない）。`roll` は数値のまま補間し、最短の向きは取らない（`0` → `350` は 350° 回る。`rotation` の Lane の 180° の規則は当てはまらない）。
 - `sky` の Sticker の `direction`：yaw / pitch を単位ベクトル（中心の方向）にして球面上で補間し、yaw / pitch に戻す。
   - 方向ベクトル：`d(yaw, pitch) = (cos pitch · sin yaw, sin pitch, cos pitch · cos yaw)`。x が右、y が上、z が yaw 0 の正面で、この計算の中だけで使う（World の座標への変換はしない）。`d[k]` は Keyframe `k` の方向。
@@ -355,7 +340,7 @@ Lane の評価の規則：
   - 1 区間の `direction` は、通過しない区間では 180° 以下の最短の大円を進む。それを超えて回すときは途中に Keyframe を打つ。
   - 極の近く：`direction` が持つのは中心の方向だけで、Sticker の画面内の向きは yaw と `roll` で決まる（Sticker の上は天頂の側）。極の近くを通ると yaw は速く変わり、極をちょうど越えると yaw は 180° 変わって、Sticker の上下も入れ替わる。極にある Keyframe を離れるときも、yaw は保存された値から進む向きの値へ飛ぶ。方向と roll に分けた表し方の性質で、補間では補正しない。向きを保つには `roll` に Keyframe を打つ。
 - 位置のハンドル：Keyframe `k` の `handles.out` があれば 2 番目の制御点を `position[k] + handles.out` に、Keyframe `k+1` の `handles.in` があれば 3 番目の制御点を `position[k+1] + handles.in` に置き換える。ないほうは自動の接線のままとする。ハンドルは自動の接線より優先し、速度の連続は保証しない。
-- 回転（`rotation` の Lane）：yaw / pitch / roll を #50 の `world_rotation` / `worldRotation`（float64）と `rotation_to_quaternion` / `rotationToQuaternion` で四元数にする。区間の計算に使うのは Keyframe `k−1`〜`k+2` だけで、`q[k+1]` は `q[k]` に、`q[k−1]` は `q[k]` に、`q[k+2]` は `q[k+1]` に対して、次の規則で符号を揃える（前の Keyframe → 後の Keyframe の向きで判断する）。
+- 回転（`rotation` の Lane）：yaw / pitch / roll を `world_rotation` / `worldRotation`（`core/world.py`、`web_src/pano_world.js`）（float64）と `rotation_to_quaternion` / `rotationToQuaternion` で四元数にする。区間の計算に使うのは Keyframe `k−1`〜`k+2` だけで、`q[k+1]` は `q[k]` に、`q[k−1]` は `q[k]` に、`q[k+2]` は `q[k+1]` に対して、次の規則で符号を揃える（前の Keyframe → 後の Keyframe の向きで判断する）。
   - 内積が `1e-6` より大きければそのまま、`−1e-6` より小さければ符号を反転する（最短の向き）。
   - 内積の絶対値が `1e-6` 以下（ちょうど 180°）なら、前の Keyframe の glTF のローカル座標での回転ベクトル `log(q_前⁻¹ q_後)` を見て、`−y`・`x`・`z` の順に最初に絶対値が `1e-6` を超える成分が正になる符号を選ぶ。右へ、次に上へ、次に時計回り（画像が時計回りに回る roll の向き）に回ることになる。
 - 回転の補間：`log(a⁻¹b)` を「a から b への回転ベクトル（半角）」、`L = log(q[k]⁻¹ q[k+1])` とする。始まりと終わりの速度（`p` あたり）`V0`・`V1` は、通過する Keyframe では上の速度の規則を回転ベクトルに当てはめたもの（`s0 = −log(q[i]⁻¹ q[i−1]) ÷ dt0`、`s1 = log(q[i]⁻¹ q[i+1]) ÷ dt1`。内積が負なら 0、長さは `3 × min(|s0|, |s1|)` まで）に `dt` を掛けたもの、通過しない端では `L` とする。SQUAD `slerp(slerp(q[k], q[k+1], p), slerp(a, b, p), 2p(1 − p))` を評価する。制御点は `a = q[k] · exp((V0 − L) ÷ 2)`、`b = q[k+1] · exp((L − V1) ÷ 2)`。通過しない端では `a = q[k]`・`b = q[k+1]` となり、cubic-bezier の区間は `slerp(q[k], q[k+1], p)` になる。`slerp(x, y, t) = x · exp(t · log(x⁻¹ y))` で、`a`・`b` と外側の slerp の符号は揃え直さない（揃え直すと区間の途中で向きが飛び、端の速度も変わる）。結果は `quaternion_to_rotation` と `panorama_angles` で yaw / pitch / roll に戻す（`pitch_deg` は −90〜90）。
@@ -399,9 +384,9 @@ rebaseSceneState(state, fps) // -> object
 `id` は Panorama Studio の Scene を表す。下流の Studio は上流の層への上書き（下記 `upstream`）を、層の状態の `id` ごとに記録する（ADR 0030）。
 
 - 振るのはエディタとノード上の UI が `state_json` を書くとき（`pano_editor_state.js` の `editorStateWrite`。エディタの `commitState` と、ノード上の UI の書き込み（`port` の Sticker の同期を含む））だけで、`id` が無ければ `newSceneId` で振る。`crypto.getRandomValues` による 16 文字の URL で使える文字（`A-Z`・`a-z`・`0-9`・`-`・`_`）。振った `id` は作業状態に残し、後の書き込みでも同じ `id` を書く。Undo で `id` を振る前の段に戻っても `id` は保つ（`restoredHistoryState`）。
-- 書くテキストが変わるときだけ振る。開いて閉じただけ（テキストが変わらないとき）は、`id` のためだけに書かない（「保存するテキスト」と同じく、ノードのキャッシュを外さないため）。そのため、状態を一度も書いていないノードには `id` が無い。下流は `id` の無い層を、上書きできない層（引き継ぐだけ）として扱う（ADR 0030 の T7・T8）。
+- 書くテキストが変わるときだけ振る。開いて閉じただけ（テキストが変わらないとき）は、`id` のためだけに書かない（「保存するテキスト」と同じく、ノードのキャッシュを外さないため）。そのため、状態を一度も書いていないノードには `id` が無い。下流は `id` の無い層を、上書きできない層（引き継ぐだけ）として扱う（ADR 0030）。
 - 旧ノード（状態 v1）には振らない。
-- ComfyUI はコピー・貼り付けや複製でウィジェットの値を写すので、貼り付けた Studio は元と同じ `id` を持つ。別々のチェーンにあれば問題ない。一つのチェーンに同じ `id` が二度あるときは、ノードが最も下流の層に当てて警告する（ADR 0030 の T4）。エディタも、最も下流の層にその `id` を使い、ほかの層は番号で区別する（`docs/render-contract.md` の「上流の Scene（#88）」）。貼り付けは検出しない。
+- ComfyUI はコピー・貼り付けや複製でウィジェットの値を写すので、貼り付けた Studio は元と同じ `id` を持つ。別々のチェーンにあれば問題ない。一つのチェーンに同じ `id` が二度あるときは、ノードが最も下流の層に当てて警告する。エディタも、最も下流の層にその `id` を使い、ほかの層は番号で区別する（`docs/render-contract.md` の「上流の Scene（#88）」）。貼り付けは検出しない。
 - Python（ノード）は振らない。`scene` 出力の層の状態と、実行結果の `pano_upstream_layers` の各層の `state` は `id` をそのまま持つ（`docs/render-contract.md`）。
 
 ## 上流の上書き（`upstream`）
@@ -426,7 +411,7 @@ ADR 0030 により、Panorama Studio は `scene` 入力で受けた上流の Sce
 | フィールド | 型 | 意味と正規化 |
 |---|---|---|
 | `layer` | 文字列 | 上書きする上流の層の状態の `id`。空でない文字列でなければ記録ごと捨てる |
-| `fps` | 数値 | 記録の Keyframe・Clip range の frame の基準の fps。1〜1000 に寄せる。正の数値でなければ、記録の frame の意味が決まらないので記録ごと捨てる（すべて引き継ぐ）。エディタは自分の Timeline fps で書き、別の fps の記録に書き足すときは先に自分の fps に再基準化する（`docs/render-contract.md` の「エディタでの編集（T8）」） |
+| `fps` | 数値 | 記録の Keyframe・Clip range の frame の基準の fps。1〜1000 に寄せる。正の数値でなければ、記録の frame の意味が決まらないので記録ごと捨てる（すべて引き継ぐ）。エディタは自分の Timeline fps で書き、別の fps の記録に書き足すときは先に自分の fps に再基準化する（`docs/render-contract.md` の「上流の Scene（#88）」） |
 | `deleted` | 文字列の配列 | 下流で消した上流の Sticker の `id`。空でない文字列だけを、重複を除いて元の順に残す |
 | `stickers` | 配列 | 上流の Sticker ごとの上書き（下記） |
 | `scene` | オブジェクト | 上流の層の `scene` の上書き。`visible`（真偽値）と `clip`（Clip range）だけを持てる |
@@ -450,8 +435,8 @@ Sticker の上書きは `id`・`placement` と、上書きしたフィールド�
 - 同じ `layer` の記録が複数あるときは、後のものを残す（残した記録の位置に置く）。一つの記録の中で同じ `id` の Sticker の上書きが複数あるときも同じ。
 - `deleted` にある `id` の Sticker の上書きは捨てる。
 - キーの順序は上の表の順とする。`deleted`・`stickers`・`scene` は空でも常に持ち、`painting_visible` は上書きするときだけ持つ。
-- 上流の要素の `source`、`scene` の Lane は上書きしない（ADR 0030 の実装の判断）。
-- 記録を上流の層に当てる規則は次の「上書きを当てる」で定める。出力への当て方（どの層に当てるか、Source・`port`・長さの扱い）は `docs/render-contract.md` の「上流の Scene（#88）」の「上書き」（ADR 0030 の T4）。
+- 上流の要素の `source`、`scene` の Lane は上書きしない（ADR 0030）。
+- 記録を上流の層に当てる規則は次の「上書きを当てる」で定める。出力への当て方（どの層に当てるか、Source・`port`・長さの扱い）は `docs/render-contract.md` の「上流の Scene（#88）」の「上書き」。
 
 ### 上書きを当てる
 
@@ -465,7 +450,7 @@ applyUpstreamOverrides(layerState, record) // -> object, web_src/pano_scene_inhe
 
 上流の層の正規化済みの状態に、正規化済みの記録（`upstream` の要素）を一つ当てた状態を返す。
 
-- 入力は変えない。結果は新しいオブジェクトだが、変えていない部分（上書きの無い Sticker、上書きの無い Lane など）は入力と同じオブジェクトを共有する。結果は変更不可として扱う。ノード（T4）は結果も入力も書き換えない。エディタ（T7）が作業用の写しを編集するときは、`structuredClone` で写してから編集する。
+- 入力は変えない。結果は新しいオブジェクトだが、変えていない部分（上書きの無い Sticker、上書きの無い Lane など）は入力と同じオブジェクトを共有する。結果は変更不可として扱う。ノードは結果も入力も書き換えない。エディタが作業用の写しを編集するときは、`structuredClone` で写してから編集する。
 - `record` が `None` / `null`、記録の `layer` が層の `id` と違う（`id` が `null` の層は常にこれ）、または記録のどれも当たらないときは、`layer_state` そのもの（同じオブジェクト）を返す。キャッシュがそのまま効く。
 - 記録の `fps` が層の `timeline.fps` と違うときは、先に記録の frame を層の fps に直す（`rebase_upstream_record(record, layer_state)` / `rebaseUpstreamRecord(record, layerState)`、`scene_state.py` と `pano_scene_state.js`）。`r(x) = floor(x × 層の fps ÷ 記録の fps + 0.5)` とする。
   - Clip range は `rebase_scene_state` と同じ規則で直す。
@@ -475,7 +460,7 @@ applyUpstreamOverrides(layerState, record) // -> object, web_src/pano_scene_inhe
 - `deleted` にある `id` の Sticker を除く。
 - `id` と `placement` が同じ Sticker に、Sticker の上書きの各フィールド（`visible`・`locked`・`clip`・`crop`・`z_index`・Lane）を置き換える。Lane は丸ごと置き換え、上書きの無い Lane は層のまま。`placement` が違う上書きは当てない。
 - `scene` の上書き（`visible`・`clip`）と `painting_visible` は、そのフィールドを置き換える。
-- 層に無い `id` の上書きと消した記録は何もしない。Sticker の並び順は変えない。そうした記録は、エディタが編集を書き戻すとき（Undo の段を積むとき）に、今の実行結果にその層があれば捨てる（上流で消した要素の上書きと消した記録。結果に無い層の記録は捨てない。開いて閉じただけでは捨てない。ADR 0030 の T10、`docs/threejs-spark-integration.md` の「上流の Scene の表示と編集」）。
+- 層に無い `id` の上書きと消した記録は何もしない。Sticker の並び順は変えない。そうした記録は、エディタが編集を書き戻すとき（Undo の段を積むとき）に、今の実行結果にその層があれば捨てる（上流で消した要素の上書きと消した記録。結果に無い層の記録は捨てない。開いて閉じただけでは捨てない。`docs/threejs-spark-integration.md` の「上流の Scene の表示と編集」）。
 - 当てたときの結果の `upstream` は `[]`、`id`・`timeline`・`next_sticker_id` は層のまま。結果は正規化済みの状態で、`load_scene_state` に通しても同じになる。
 - 鎖（A → B → C）では、B の記録を A に当てた結果に、C の記録を当てる。後に当てた記録が勝つ。
 - `PANO_SCENE` の層の状態は、自分の `upstream` を持たない（`[]`）。Panorama Studio が `scene` 出力で自分の層の `upstream` を空にするためである（`nodes.py` の `_scene_output`。上流の層はすでに上流の Studio が空にしている）。下流が層に当てる記録は、下流の状態の `upstream` だけである。
@@ -512,7 +497,7 @@ Python は `ValueError`、JS は `Error` を投げる。
 | `assets[asset_id]` が `type: "dataurl"` | `source: {"kind": "file", "data_url": ...}` |
 | `assets[asset_id]` が `type: "path"`、または資産が見つからない | Sticker を捨てる |
 | `shots[0]`（Cutout） | `camera`（Camera あり、`projection` は `perspective`）。`yaw_deg`・`pitch_deg`・`roll_deg` は `rotation.value`、`hFOV_deg`（1〜179 に寄せる）は `fov.value`、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
-| `shots` がない、空、または先頭がオブジェクトでない | `camera: null`（Camera が無い）。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは `null` になる。v1 の Cutout はこのとき ERP をそのまま出力していた。Panorama Studio は Camera の無い状態を原点・回転 0 の ERP で撮る（#87） |
+| `shots` がない、空、または先頭がオブジェクトでない | `camera: null`（Camera が無い）。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは `null` になる。v1 の Cutout はこのとき ERP をそのまま出力していた。Panorama Studio は Camera の無い状態を原点・回転 0 の ERP で撮る |
 | `painting`・`painting_layer` | 同名のフィールド |
 | `version`・`projection_model`・`alpha_mode` | 捨てる |
 | `coverage`・`bg_color`・`output_preset` | 捨てる。ノードの入力（ウィジェット）が持つ |
@@ -544,7 +529,7 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 |---|---|---|---|
 | `kind` | `"pano_sticker_state"` | — | |
 | `version` | `2` | — | |
-| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（#65 から。Timeline fps に再基準化しない） |
+| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない） |
 | `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる。Camera が Drone で動いたときは、`position`・`rotation` は出力の全フレームに `easing: "auto"` の Keyframe を置き（補間に頼らず軌道を渡す。fps が違っても隣のフレームの間を滑らかにつなぐ）、`fov` は Keyframe 一つにする |
 | `source_aspect` | 数値 または `null` | `null` | 撮影した画面の幅 ÷ 高さ |
 
@@ -553,42 +538,3 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 - v1（`pose` を一つ持つ形）は、従来の `parse_sticker_state` と同じ規則（yaw を −180〜180 に回す、pitch を ±89.9、`hFOV_deg` を 0.1〜179 に寄せる、`"30"` のような数値の文字列を許す）で読み、各 Lane に `frame: 0` の Keyframe を一つずつ置く（`position` は `[0, 0, 0]`、`easing` は既定値）。`fps` は `24`。
 - 空、JSON でない、`kind` が違う、v1 の `pose` が読めない場合は `None` / `null` を返す（従来どおり無視される）。
 - `kind` が一致して `version` が `1`・`2` 以外なら、エラー `Unsupported sticker_state version <値>; supported versions are 1 and 2.` にする。
-
-## 後続の ticket への申し送り
-
-- #54：評価関数の規則 5 を補間に置き換えた。Timeline fps の再基準化も加えた（「補間」「fps の再基準化」の節）。
-- #78（置き換え）：v1 の Cutout の「`shots` が空なら ERP をそのまま出力する」挙動は保たない（ユーザー判断で確定）。README の移行の注意に書く。
-- #65（Pose handoff）：v1 は `source_state_hash` で「`sticker_state` が変わったときだけ姿勢を上書きする」を判定していた。v2 では捨てているので、同じ挙動が要るなら #65 で項目を追加する。
-- #66（エディタ）：ノード上の UI は今、旧 `active` の選択状態を読んでいる。v2 では状態に置かないので、置き場所（エディタのセッションやブラウザ側など）を #66 で決める。
-- #66 の結果：エディタの作業状態は v1 の形のままで、状態 v2 は `editorSceneState`（`pano_editor_state.js`）で導き、描画に使うだけとした。ウィジェットへの v2 の書き込みと、v2 の `state_json` の読み込みは #70 で行う。旧ノード・ノード上の UI・外部 Sticker の同期が `state_json` を v1 として読み、v1 → v2 → v1 の往復では `path` 資産・`source_state_hash`・`active` が落ちるためである。`active` の置き場所も #70 で決める。
-- #70 の結果：`PanoramaStickersNode` では、エディタとノード上の UI は `state_json` を v2 で読み書きする（旧ノードは v1 のまま）。作業状態は v1 の形のままで、読み込み時に `sky` の Sticker を v1 の Sticker に写し、v1 で持てない項目（`timeline`・`camera`・`scene`、`world` の Sticker、Clip range・Keyframe・`opacity`）は作業状態の `scene_state` に載せて、保存時に `editorSceneState`（`pano_editor_state.js`）で戻す。v2 → 作業状態 → v2 の往復は失われない。エディタの選択状態（旧 `active`）はノードのプロパティ `pano_editor_active` に置く（プロンプトに入らないので、選択しても再実行されない）。新しいノードの `state_json` が v1 のとき（旧ノードの状態を貼った場合など）は、保存時に「v1 から v2 への読み替え」の規則で v2 になり、`path` 資産・`source_state_hash`・`initial_pose` などが落ちる。
-- #73 へ（#70 の暫定の扱い）：#70 の作業状態（v1 の形と `scene_state` の組み合わせ）は、#73 までの暫定の境界の変換である。#73 では `scene_state` を育てずに、エディタの作業状態を v2 そのもの（`loadSceneState` の結果）に切り替え、v1 の形は旧ノードとの境界だけに残す。それまでの間、Keyframe を持つ `sky` の Sticker は、エディタとノード上の UI でロック中として扱い（選べるが変形できず、ロックも外せない）、このロックは状態に保存しない（`stickerHasKeyframes`）。複製した Sticker は v2 だけの項目（Clip range・Keyframe・`opacity`）を引き継がない。これも #73 で扱う。
-- #73 へ（ADR 0026）：Camera の Drone の項目（モードと通過点）は、Drone の ticket で `camera` に追加する。Keyframe を持つ単位を、変形一式の Keyframe group から、パラメータごとの Lane に分けた。Easing の既定値を `auto` から ease-in-out に、cubic-bezier の `y1`・`y2` を 0〜1 に変えた。状態 v2 も `sticker_state` v2 もまだ main に出ていないので、`version` は 2 のまま形を変える（旧い v2 の読み替えは置かない）。読み込み・評価関数・再基準化・フィクスチャ・Cutout の `sticker_state` の出力を #73 でこの文書に合わせる。エディタの記録のルールと表示は `docs/timeline-ui.md` に書く。
-- #73 の結果（データ層）：読み込み・評価関数・再基準化・`sticker_state`・フィクスチャを Lane の形にした。評価関数の戻り値の形は変えていないので、描画は変わらない。`sticker_state` の Camera のいずれかの Lane に Keyframe が 2 つ以上あるときは、#65 まで `NotImplementedError` のまま（`docs/render-contract.md`）。
-  - `PanoramaStickersNode` のエディタとノード上の UI の作業状態は、状態 v2（`parseSceneEditorState` が返す `loadSceneState` の結果に、保存時に捨てるエディタのセッションの項目を足したもの）である。エディタの描画と当たり判定は v1 の姿勢のフィールドで読み書きし、`stickerPose` / `setStickerPose`（`pano_editor_state.js`）が現在の Timeline frame の `direction`・`roll`・`size` に写す。`setStickerPose` は変えたフィールドの Lane にだけ書き、各 Lane は `setLaneValue`（`pano_timeline.js`）で `docs/timeline-ui.md` の記録の表のとおりに変わる。
-  - #73 の UI：タイムライン（`PanoTimeline.vue`）・記録・Easing は `docs/timeline-ui.md` のとおり。Keyframe の操作は `pano_timeline.js`（`setLaneValue`・`keyAllLanes`・`moveKeyframes`・`deleteKeyframes`・`setSegmentEasing`）、表示のモデルは `pano_editor_ui_state.js` の `buildTimelineModel`・`buildEasingModel` にある。Camera の行を選ぶとインスペクタで Camera を変えられる（`cameraFields` / `setCameraField`）。#84 で Stickers からは外した（下記）。Camera のビュー上の操作と、Cutout の frame タブとの結び付きは #77。
-- #75 へ（#70 で見送ったもの）：新しいノードは `is_output_node` も実行結果の `ui` も持たない。ComfyUI は `ui` を出力ノードでなくても `executed` で送るので、エディタが実行結果を受け取るのに `is_output_node` は要らない（要るのは、出力を繋がずに単独で実行させたい場合だけ）。エディタとノード上の UI が読む `ui` のキーは旧ノードと同じ `pano_input_images`（背景）、`pano_input_videos` / `pano_input_video_meta`（背景の VIDEO）、`pano_videos` / `pano_video_meta`（出力）、`pano_sticker_input_images`（`port` の素材）、`pano_sticker_warnings`（警告）。フロントエンドは入力名を `bg_erp`・`erp_image`・`sticker_image` で探すので、`bg_media`・`sticker` はまだ認識しない。そのため今は、新しいノードのエディタに背景と `port` の素材は出ない。外部 Sticker の同期（`port` の Sticker を id `sticker_image_1` で状態に足す・消す処理）は新しいノードでは止めてある（`TODO(#75)` の 2 か所）。
-- #75 の結果：新しいノードは出力ノードになり、実行結果の `ui` に上の旧ノードのキーで入力の素材を出す（`docs/render-contract.md`）。フロントエンドは `bg_media`・`sticker` を名前で認識する（MultiType の型は `IMAGE,VIDEO` のような連結の文字列なので、型では探さない）。`port` の Sticker の同期は、作業状態（状態 v2）の `source.kind == "port"` の Sticker に対して行う（`pano_stickers_node_surface.js` の `reconcilePortStickerState`）。`sticker` が接続され、状態に `port` の Sticker がなければ、ノードと同じ規則（id は未使用の最小の `sticker_N`、`z_index` は `sky` の Sticker の最大値 + 1、既定の姿勢）で `newSceneSticker` の形で加え、切断で取り除く。素材が届くと、`size` の `value` と各 Keyframe の `vFOV_deg` を、それぞれの `hFOV_deg` と素材のアスペクト比から求め直す。素材は実行結果が新しい間だけ表示し、それまでは枠だけを描く。`sticker_state` が接続されているときは、ノードが加えた姿勢（`pano_sticker_input_pose`）が実行結果に届くまで加えない。エディタを開いている間は、エディタだけがこの同期で状態を書く（ノード上の UI の同期も `runExternalStickerSync` を通し、エディタが `{ editor: true }` で登録した処理が、後からノード上の UI が登録し直しても優先される）。実行結果 1 回につき、同期は 1 度だけ走る。
-- #65 へ（#75 の残り）：`port` の Sticker が状態に入った後で `sticker_state` が変わっても、姿勢は変わらない（旧ノードの `source_state_hash` による上書きはない）。Pose handoff で上書きが要るなら、#65 で決める。
-- #65 の結果：Camera の軌道ごとの Pose handoff を上の「`port` の Sticker が状態にないとき」の規則で実装し、`NotImplementedError` を外した。実行結果の `pano_sticker_input_pose` に `direction`・`roll`・`size` の Keyframe（`keyframes`）を加え、エディタとノード上の UI はその Keyframe ごと `port` の Sticker を状態に加える（`reconcilePortStickerState`）。`port` の Sticker が状態に入った後で `sticker_state` が変わっても、姿勢は変えない（状態 v2 に `source_state_hash` に当たる項目を足さない）。Scene の正は Stickers の状態だけ（ADR 0025）で、実行のたびに `sticker_state` で上書きするとエディタで直した位置が消えるためである。Cutout の Camera を変えて撮り直したときは、`sticker` の接続を外してつなぎ直すと、次の実行で新しい軌道の `port` の Sticker が加わる。
-- 旧 `path` 型の資産（初期の版だけが書いた、作業ディレクトリからの相対パス）は読み替えで捨てる（ユーザー判断で確定）。#78 で README の移行の注意に書く。
-- #74 の結果：エディタのタイムラインで Timeline fps（`bg_media` と `sticker` に VIDEO がないときだけ）と `timeline.length` を変えられる。fps の変更と、開いたとき・実行結果が届いたときの VIDEO の fps への合わせ込みは `rebaseSceneState` を使う（`setTimelineFps`・`parseSceneEditorState` の `fps`、`pano_editor_state.js`）。新しいノードの `ui` に、VIDEO が Timeline fps を決めたときだけ `pano_timeline_fps` を足した。規則は `docs/timeline-ui.md`。
-- #63 の結果：`sticker` の 3D の素材は `world` の `port` の Sticker になる（上記「`port` の Sticker が状態にないとき」）。エディタとノード上の UI は、`sticker` の接続の型（接続が `*` のとき（Reroute など）は、つながった先の出力の型）が IMAGE・VIDEO のときだけ、従来どおりすぐに `sky` の `port` の Sticker を加える。MESH・SPLAT・`FILE_3D*` のときと型が分からないときは、ノードの姿勢（`pano_sticker_input_pose`）が実行結果に届くまで加えず、届いたら姿勢の `placement`（なければ `sky`）で加える（`reconcilePortStickerState`）。何を描くかを知っているのはノードなので、型が分からないときにフロントエンドは決め打ちしない。`replace: true` の姿勢は、`sky` の `port` の Sticker を同じ `id` の `world` の Sticker に置き換える（`clip`・`visible`・`locked` を保つ）。置き換えた後は `world` なので、同じ実行結果でもう一度置き換えることはない。`world` の `port` の Sticker には素材のアスペクト比での `vFOV_deg` の求め直しをしない。
-- #71・#72 へ（#63 の残り）：エディタは `world` の `port` の Sticker をまだ描かない。中身は `pano_sticker_files` / `pano_sticker_meta`（`pano_scene_files` と同じ形。SPLAT の PLY は X 軸まわりに 180° 回してから）に Sticker の変形を掛けて、Keyframe と不透明度に従って描く。メッシュは `scene` と同じく unlit・両面。ギズモでの操作と、新しく置く `world` の Sticker の配置の規則は #72。
-- #71 の結果（上の残りのうち描く部分）：エディタの空間の表示が `world` の `port` の 3D の Sticker を、`pano_sticker_files` / `pano_sticker_meta` から、評価した変形・不透明度・Clip range と `batch_index` と同じ要素の選び方で描く（`docs/threejs-spark-integration.md` の「空間の表示」）。ノード上の UI は空間の表示を持たないので描かない。ギズモでの操作と配置の規則は #72 に残る。
-- #72 の結果：エディタで `world` の Sticker（板と 3D の `port` の Sticker）を選び、空間の表示のギズモ（three.js の `TransformControls`）とインスペクタで `position`・`rotation`・`scale`・`opacity` を変えられる。記録は `docs/timeline-ui.md` の規則（`setWorldStickerTransform`・`setWorldStickerField`、`pano_editor_state.js`）。新しく置く `world` の画像の Sticker は、ツールバーの「Add World Image」で加える（`newWorldSceneSticker`、`clip` は Timeline 全体、`crop` は全体、`opacity` は 1、`z_index` は持たない）。置く場所・向き・大きさの規則は `pano_space.js` の `newWorldStickerTransform` で、`docs/threejs-spark-integration.md` の「`world` の Sticker の操作（#72）」に書いた。状態の形は変えていない。`placement` は Sticker を作るときに決まり、エディタに `sky` と `world` を切り替える経路はない（上の表の「途中で変わらない」のとおり。ノードによる #63 の置き換えは別）。
-- #79 へ：エディタに投入した 3D ファイル（`file` の Source）は、ノードではまだ読まない（`load_source_rgba` が画像として読めず、警告になる）。`port` と同じく `_read_scene_file` で SPLAT・MESH に読み、`_render_frames` でパスごとに `content_of` から `ContentSource` を作れば、描画は `port` と同じ経路で行える。
-- #84 の結果（ADR 0028）：Stickers から Camera を外した。Stickers の ERP 出力は World の原点から回転 0 で撮ったものに固定し（`nodes.py` の `STICKERS_CAMERA`）、状態の `camera` の値と Keyframe は描画にも出力の長さ（`_decide_timeline` の Camera の段は Cutout だけ）にも使わない。エディタは Stickers でタイムラインの Camera の行とインスペクタの Camera の欄を出さず、`isTimed`・`timelineSpan` も Camera の Keyframe を数えない（ノード上の UI の再生ボタンも同じ）。状態 v2 の形は変えていない。Stickers の状態に残った `camera` は読み込みでも保存でもそのまま保つので、既存のワークフローの `state_json` は変わらず、ノードのキャッシュも外れない。ただし、Camera を回していた Stickers の状態は、出力の向きが回転 0 に変わり、Camera の Keyframe だけで決まっていた長さは 1 フレーム（ほかに長さを決めるものがなければ）になる。Pose handoff（Cutout の Camera の `sticker_state`）は変わらない。Cutout の `camera` と、その行・欄を出す部品（`buildTimelineModel` の `camera`、`cameraFields` / `setCameraField`）は #77 で Cutout のエディタに結ぶ。
-- #77 の結果：`PanoramaCutoutNode` のエディタは状態 v2 を読み書きする（`parseSceneEditorState`・`editorStateText`。旧 Cutout は v1 のまま）。Cutout の状態の形は変えていない。エディタは `camera` だけを編集し、shot の形（yaw・pitch・roll・H FOV・V FOV）と Camera の Lane を `cameraShot`・`setCameraShot`（`pano_editor_state.js`）で写す。評価は `evaluateSceneState` と同じ `evaluateCamera`（`pano_scene_eval.js`）。記録の規則は `docs/timeline-ui.md`。`PANO_SCENE` を撮るときは、エディタは Scene の状態（実行結果の `pano_scene_state`）を Scene の Timeline fps に再基準化して表示し、Cutout の状態も同じ fps に再基準化して Camera を編集する。保存するのは Cutout の状態だけで、その `timeline.fps` は Scene の Timeline fps になる（秒を保って再基準化するので Camera の動きは変わらないが、Keyframe は整数の Timeline frame への丸めで最大で半フレーム動く）。編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`）。書き換えるのは Camera を編集したときだけで、そのとき状態全体が Scene の fps になる。Cutout の状態の Sticker・ペイントはエディタでは表示だけで編集しない（Add Image・Paint などは後続）。
-- #86 の結果（ADR 0029）：`camera` を `null`（Camera が無い）か Camera のオブジェクトにし、Camera に静的な `projection`（`perspective`・`erp`）を加えた。読み込み・評価関数・再基準化・フィクスチャ（`v2_no_camera`・`v2_erp_camera` を追加。`v1_stickers.v2` は `camera: null`）を Python と JS で合わせた。`version` は 2 のまま（前の v2 はそのまま読める）。`_decide_timeline` と `isTimed`・`timelineSpan` は、`camera` の指定があっても Camera が無ければ Camera の Keyframe を数えない。新しい Stickers・Cutout の扱いと、保存するテキストで `projection` の既定値を省く理由は「`state_json` v2」の節に書いた。Panorama Studio のノードと `erp` の描画は #87。`CONTEXT.md` と `docs/render-contract.md` の Camera の記述（Stickers は Camera を持たない、など）も #87 で直す。
-- #87 の結果（ADR 0029）：Panorama Studio（`PanoramaStudio`）を加えた。`camera` が `null` なら原点・回転 0 の ERP、`projection` が `erp` なら Camera の位置と回転からの ERP、`perspective` なら Camera の透視投影で撮る（`docs/render-contract.md` の「Panorama Studio」）。Studio は `camera` を読み替えない（`_cutout_state` の既定の Camera は使わない）。新しい Stickers・Cutout の扱いは上の「今のノードでの扱い」のまま（#92 で外す）。
-- #88 の結果（ADR 0029）：Panorama Studio の `scene` 入力で、別の Studio の `scene` 出力を受ける。状態の形は変えていない。上流の状態は下流の状態に入れず、`PANO_SCENE` の層（`layers`）として別々に持ち、描画のときに重ねる（`docs/render-contract.md` の「層」と「上流の Scene（#88）」）。Sticker の `id` は層の中でだけ一意であればよく、上流と同じ `id` でも書き換えない。`port` の Sticker は層ごとに一つまで。エディタ（#89・#90）は上流の層の状態を実行結果の `pano_upstream_layers` から読み、自分の状態とは別に、その層の `timeline.fps` で評価して表示する。上流の状態を自分の状態に書き込まない。
-- #92 の結果（ADR 0029）：状態 v2 の Stickers・Cutout（`PanoramaStickersNode`・`PanoramaCutoutNode`）は main に出ないまま #92 で登録から外し、置き換え（NodeReplace）は作らない。状態の形は変えていない。Cutout だけが使っていた既定の Camera（`default_camera` / `defaultCamera`、`nodes.py` の `_cutout_state`、`parseSceneEditorState` の `camera` と `scene` の指定、`cutout_state`、`noteCameraEdit`）も消した。上の #70〜#88 の記録に出てくる二つのノードの扱いは、その時点のものである。
-- タイムラインの上限：`timeline.fps` を 1〜1000、`timeline.length` を 10,000,000 以下に、Clip range の `start`・`in`・`duration` と Keyframe の `frame` を ±10,000,000 以内（`TIMELINE_FRAME_MAX`）に寄せるようにした（読み込みと `rebase_scene_state`・`rebaseSceneState`）。fps の上限は高速度撮影の VIDEO（240 fps を超えるもの）を寄せずに扱える値にした。frame と長さの上限は同じ値（1000 fps で約 2.8 時間）にして、高い fps に再基準化しても長さの上書きが黙って縮まないようにしてある。極端な値（例：`1e308`）でエディタのタイムラインの目盛りのループや再基準化が止まらなくなるのを防ぐためである。定数は `scene_state.py` と `pano_scene_state.js` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` で、Python と JS で同じ値にする（フィクスチャ `v2_timeline_limits`）。範囲内の状態は変わらない。
-- ADR 0030 の T1 の結果：状態 v2 に `id`・`next_sticker_id`・`upstream`、`port` の Sticker に `handoff_overrides` を加えた（Python と JS で同じ結果、フィクスチャ `v2_upstream`）。`version` は 2 のまま。これらの項目のうち `next_sticker_id` は Sticker を加えるときに読むが、`id`・`upstream`・`handoff_overrides` を読むのは後続の ticket（`id` を振るのは T3、上書きを当てるのは T2・T4、`handoff_overrides` は T5）で、それまでは読み書きで保つだけである。上の #75 の記録の「id は未使用の最小の `sticker_N`」は、`next_sticker_id` による採番に変わった。エディタとノード上の UI で新しく加える Sticker の `id` も、`st_<乱数>` から `sticker_<n>` に変わった。既存の状態の保存するテキストは変わらない（「`state_json` v2」の「保存するテキスト」）。
-- ADR 0030 の T3 の結果：エディタとノード上の UI は、`state_json` を書くときに Panorama Studio の状態に `id` が無ければ振る（上記「Scene の id」）。T1 の `ensureSceneId` は使わず、`pano_editor_state.js` の `editorStateWrite` に置き換えた（作業状態に `id` を残すため）。ノードの `scene` 出力は自分の層の `upstream` を空にし、`id` を保つ。エディタが描く上流の要素の id と 3D のスロットは、層の番号の代わりに層の `id`（無ければ `#<番号>`）で区別する。
-- ADR 0030 の T2 の結果：上書きの記録を上流の層に当てる純粋な関数 `apply_upstream_overrides` / `applyUpstreamOverrides` と、記録の fps を直す `rebase_upstream_record` / `rebaseUpstreamRecord` を加えた（「上流の上書き」の「上書きを当てる」、フィクスチャ `tests/fixtures/scene_inherit/`）。まだどこからも呼ばない（ノードは T4、エディタは T7）。状態の形は変えていない。
-- ADR 0030 の T5・T6 の結果：上の「`sticker_state` で届く `port` の Sticker」のとおり、`port` の Sticker の Pose handoff を実行のたびの引き継ぎと `handoff_overrides` による上書きにし（#65 の結果の「状態に入った後で `sticker_state` が変わっても、姿勢は変えない」を置き換える）、Camera が原点から離れるときは `world` の Sticker にした。`pano_sticker_input_pose` は加えたときと配置を置き換えたとき（`replace: true`）だけ出す。`world` の Pose handoff の `pano_sticker_input_pose` には `position`・`rotation`・`scale` の `keyframes` も入る。エディタの表示と記録は T11。
-- ADR 0030 の T4 の結果：Panorama Studio は、状態を読み込んだ後、Timeline を決める前に、自分の状態の `upstream` の記録を `apply_upstream_overrides` で上流の層に当てる（`nodes.py` の `_override_layers`）。記録は同じ `id` を持つ層のうち最も下流の層にだけ当て、同じ `id` が鎖に二つ以上あれば警告する。`id` の無い層には当てない。記録が何も変えない層は受け取った `SceneLayer` のまま。`crop`・`z_index` を上書きした Sticker の Source を差し替え、消した Sticker の Source を除き、`painting_visible` の上書きに合わせてペイントを空にするか読み、層の `port` の Sticker を消したときは層の `port` を `None` に、その Clip range を上書きしたときは素材の先頭を移す。自分の `timeline.length` が無いとき、上書きした Clip range の終わり（層の fps から Timeline fps のフレーム数に直したもの。`duration` の無い `port` の Sticker は素材の終わり）も長さに数える。描くのと `scene` 出力で渡すのは当てた後の層で、実行結果の `pano_upstream_layers` は当てる前の層のまま（`docs/render-contract.md` の「上流の Scene（#88）」の「上書き」）。状態の形は変えていない。
-- ADR 0030 の T11 の結果：上の「`sticker_state` で届く `port` の Sticker」のとおり、エディタとノード上の UI が `port` の Sticker を実行と同じ Pose handoff の姿で表示し（`sky` ⇄ `world` の置き換えと `world` の Keyframe を含む）、表示中の Lane の編集を `handoff_overrides` に記録し、インスペクタで Lane ごとに上流の値に戻せるようにした。表示だけでは `state_json` を変えない。`pano_sticker_handoff` に `fps` を足した。`reconcilePortStickerState` は 2D の素材の `replace` を状態に当てなくなった（T5・T6 の暫定の扱いを置き換えた）。ノードが加える `world` の `port` の Sticker は、`pano_sticker_input_pose` の `keyframes` も持つ。
-- ADR 0030 の T10 の結果：エディタで上流の要素を消すと、その層の記録の `deleted` に `id` だけを加え（消した記録は `id` だけで、`match` は持たない）、その要素の上書きを捨てる。インスペクタの「Revert to upstream」で要素の上書き全体か Lane 一つを、タイムラインの層の見出しの「Revert」で層の `scene` と `painting_visible` の上書きを、「Restore deleted (n)」で層の `deleted` を外す。エディタは編集を書き戻すときに、今の実行結果にある層の記録から、層に無い `id` の上書きと消した記録を捨てる（上の「上書きを当てる」）。状態の形は変えていない。

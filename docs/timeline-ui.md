@@ -127,7 +127,7 @@ Camera は Keyframe と Drone の二つのモードを持ち、出力にはい�
 
 ### Pose handoff の `port` の Sticker（ADR 0030）
 
-`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Revert to upstream」の Lane のボタン。規則は `docs/scene-state-v2.md` の「`sticker_state` で届く `port` の Sticker」。
+`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Revert to upstream」の Lane のボタン。ノードの規則は `docs/render-contract.md` の「`sticker_state` で届く `port` の Sticker」、エディタの表示と記録は `docs/threejs-spark-integration.md` の「`port` の Sticker の Pose handoff の表示と記録」。
 
 ### 上流の層の行（ADR 0030）
 
