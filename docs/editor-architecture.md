@@ -60,6 +60,8 @@ export function createHistory(deps) {
 
 ## Dependency rules
 
+- `web_src` の静的な import に循環を作らない。`tests/web_src_import_cycles.test.mjs` が import のグラフを読み、循環があれば経路を出して落ちる（動的な `import()` と、エディタの `connect()` による結び付けは数えない）。
+
 - `pano_editor.js` → `editor/*.js` → `pano_*.js`（ライブラリ）の向きだけ。
 - `editor/*.js` は `pano_editor.js` を import しない。ComfyUI の `app` / `api` も import せず、
   `deps` で受け取る（ビルドは `../../scripts/` だけを外部として扱う）。
