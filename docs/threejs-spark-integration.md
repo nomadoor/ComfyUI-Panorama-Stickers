@@ -226,6 +226,35 @@ Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエデ
 - 実行前：リンクの型が `PANO_SCENE` と分かっているのに実行結果に上流の層が無いとき（実行前、またはつなぎ替えた後）、ステージの下の案内の欄（`PanoModal.vue` の `stageNotice`、文は `upstreamNotice`）に「Run the workflow to show the upstream scene.」と出す。失敗や警告があるときはそちらを出す。
 - 上流の背景：`scene` の実行結果が今の入力のまま（`bg_media` をつなぎ替えても変わらない。ノードは自分の `bg_media` を使わない）で `pano_upstream_input_images` か `pano_upstream_input_videos` があれば、それを背景にする（`media_session.js` の `upstreamBackground`。`pano_upstream.js` の `upstreamBackgroundOf`）。VIDEO は自分の背景の VIDEO と同じ要素と再生で、タイムラインに合わせて動く。範囲は `pano_upstream_coverage`（`backgroundCoverage`）。長さが Auto のとき、背景の VIDEO の長さは Auto の長さに入れず、上流の長さ（`upstreamOutput`）に任せる（上流の長さがすでに背景を含む）。このとき自分の `bg_media` のリンクの画像・VIDEO には戻らない（ノードも使わない）。実行結果の `pano_sticker_warnings` に `bg_media is not used` の警告があれば、ステージ下の案内の欄に出す。
 
+#### `port` の Sticker の同期
+
+Panorama Studio のエディタとノード上の UI は、`sticker` 入力の素材を `source.kind == "port"` の Sticker として状態に持つ
+（`pano_stickers_node_surface.js` の `portStickerSyncValue`・`reconcilePortStickerState`）。ノードの規則は `docs/render-contract.md` の
+「`port` の Sticker と Pose handoff」。
+
+- 入力がつながっていて状態に `port` の Sticker がなければ加え、入力を外すと取り除く。
+- 入力の型（接続が `*` のとき（Reroute など）は、つながった先の出力の型）が IMAGE・VIDEO のときは、すぐに `sky` の Sticker を加える。
+  それ以外（MESH・SPLAT・3D ファイル、型が分からないとき）は、ノードの姿勢（実行結果の `pano_sticker_input_pose`）が届くまで加えず、
+  届いたら姿勢の `placement` で加える。何を描くかを知っているのはノードなので、型が分からないときにフロントエンドは決め打ちしない。
+- `sticker_state` がつながっているときも、ノードの姿勢が届くまで加えない。
+- ノードが 3D の素材のために `sky` の `port` の Sticker を `world` に置き換えたとき（姿勢の `replace`）は、同じ置き換えを状態に当てる。
+  2D の素材の Pose handoff の置き換えは状態に当てず、表示だけに当てる（下記）。
+- 状態の vFOV は hFOV のまま保ち、描くときに素材のアスペクト比から求める（`skyStickerVfov`）。素材の読み込みで `state_json` は変わらない。
+  素材は実行結果が新しい間だけ表示し、それまでは枠だけを描く。
+- エディタを開いている間は、エディタだけがこの同期で状態を書く（`pano_external_sticker_sync.js` の `runExternalStickerSync`。
+  エディタが `{ editor: true }` で登録した処理が、後からノード上の UI が登録し直しても優先される）。
+- 同期は、入力のつなぎ替え・素材の読み込み・取り付けのときと、実行結果が届いたときに走る。実行結果が届くと、ノードの `onExecuted`
+  （`pano_preview_runtime.js`）が実行結果 1 回につき一度だけ呼ぶ。エディタは自分では呼ばない。
+
+#### `port` の Sticker の Pose handoff の表示と記録
+
+ノードの規則は `docs/render-contract.md` の「`port` の Sticker と Pose handoff」。
+
+- エディタとノード上の UI（ADR 0030 の T11、`web_src/pano_port_handoff.js`）は、実行結果が新しく（`isNodeOutputMediaCurrent` の `sticker-handoff`。`sticker` と `sticker_state` のどちらかをつなぎ替えると古くなる）、`sticker` と `sticker_state` がつながっている間、`pano_sticker_handoff` を保存した `port` の Sticker に当てて表示する（`inheritPortHandoff`。ノードの `_inherit_handoff` と同じ規則で、配置の置き換えは `sky` → `world`・`world` → `sky` の両方。`world` の Keyframe も表示する）。表示の fps が `pano_sticker_handoff` の `fps` と違うときは、`rebaseUpstreamRecord` と同じ規則（Sticker の素材の先頭を基準に丸める）で表示の fps に直す。このときは、表示の Keyframe が実行の Keyframe と最大で 1 フレーム（丸め）ずれることがある（表示だけで、保存する値と出力は変わらない）。
+  - 表示しても `state_json` は変えない。エディタは保存した `port` の Sticker を作業中の値として持ち（`external_stickers.js` の `portSession.stored`）、書き戻し（`commitState`）と Undo の履歴には、表示中の Sticker ではなく保存する Sticker（`storedEditorState`）を使う。引き継いだ Lane は保存した値に戻す（`storedPortSticker`）。配置が置き換わって表示されているときは、新しい配置の Lane を上書きするまで、保存した配置の Sticker（表示中の `clip`・`visible`・`locked`・`crop`・`opacity` を持つ）を保存する。上書きした後は、新しい配置の Sticker を保存し、もう一方の配置の Lane と上書きは捨てる（ノードと同じ）。開いて閉じただけ、実行結果が届いただけでは書かない。ノード上の UI は表示だけを当て（`getCachedState`）、`sync-port` は Pose handoff の `replace` を状態に当てない（`replace` を当てるのは 3D の素材だけ）。
+  - 表示中の `port` の Sticker の Lane をエディタで変えると（ギズモ、インスペクタ、Keyframe の操作、タイムライン）、その Lane を `handoff_overrides` に加え、変えた Lane を保存する（`recordHandoffEdits`）。「変えた」は、前回の書き戻しのときの表示と比べて、この編集で値が変わった Lane である（ADR 0030 の計画の Q11）。比べるのは `pano_sticker_handoff` が渡す Lane だけで、`opacity` は上書きにしない（引き継がないので、ふつうの編集として保存する）。Timeline fps を変えたときの再基準化は編集とみなさない（比べる前の表示も同じ規則で再基準化するので、その前の未記録の編集は記録される）。
+  - インスペクタの「Revert to upstream」の Lane のボタン（`PanoUpstreamOrigin.vue`。上流の要素の上書きを外すボタンと同じ行、ADR 0030 の T10）を押すと、その Lane を `handoff_overrides` から外し、表示と保存する値を Pose handoff の値に戻す。ボタンは配置の Lane（`sky`：Direction・Roll・Size、`world`：Position・Rotation・Scale）と Opacity の 4 つで、Opacity（Pose handoff が渡さない）、上書きしていない Lane、Pose handoff を表示していないとき、ロック中は消さずに無効にする。All は無効。行は Panorama Studio の Sticker を選んでいる間いつも出す（選択を変えても行の数は変わらない）。Undo で戻せる。
+
 ## インスペクタの行
 
 インスペクタ（`PanoSidePanel.vue`）の欄は、組になった値を 1 行に横に並べる（Blender・Unity の Transform と同じ）。行は `pano_editor_ui_state.js` の `inspectorRows` が、欄の並び（`pano_editor.js` の `pushParam` の順）から作る。

@@ -2,7 +2,7 @@
 // show it. Every run hands it Lanes (`pano_sticker_handoff`); the Lanes in its `handoff_overrides` keep their
 // stored value, the others follow the handoff, and its placement follows the handoff (nodes.py
 // `_inherit_handoff`). The state keeps the stored Lanes: showing the handoff never changes state_json, and an
-// edit of an inherited Lane makes it an override (docs/scene-state-v2.md).
+// edit of an inherited Lane makes it an override (docs/threejs-spark-integration.md).
 import { loadSceneState, timelineFps } from "./pano_scene_state.js";
 
 // The Lanes a handoff of each placement hands.

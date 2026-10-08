@@ -42,7 +42,7 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 
 | subsystem | spec | code |
 |---|---|---|
-| state v2、評価関数、Python/JS の一致 | `docs/scene-state-v2.md` | 整理で決める |
+| state v2、評価関数、上流の上書き、Python/JS の一致 | `docs/scene-state-v2.md` | `core/scene_state.py`・`core/scene_eval.py`・`core/scene_inherit.py`、`web_src/pano_scene_state.js`・`pano_scene_eval.js`・`pano_scene_inherit.js` |
 | backend の描画と出力 | `docs/render-contract.md` | 整理で決める |
 | timeline、keyframe、背景の行、再生 | `docs/timeline-ui.md` | 整理で決める |
 | editor のコード構造と依存 | `docs/editor-architecture.md` | 整理で決める |
