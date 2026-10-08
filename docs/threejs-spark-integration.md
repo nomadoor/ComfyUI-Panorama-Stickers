@@ -2,7 +2,7 @@
 
 エディタとノード上の表示が three.js と Spark で描く規則を定める：three.js と Spark の版と遅延読み込み、Preview の表示、Cutout エディタの描画、投影と当たり判定のカメラ、空間の表示の描き方（Sky と World の 2 パス、`scene` と 3D の Sticker の読み込み、Camera から見た表示）、GPU の当たり判定、Spark の描画をビューごとに分けること、レイヤのテクスチャの共有、World の組み立て、エディタの描画を直接表示すること、WebGL の unpack 状態、リリース前に確かめること、意図した差と既知の食い違い。用語は `CONTEXT.md` に従う。決めた理由は ADR 0021（Frame 表示）、0031（three.js と Spark の版）にある。
 
-この文書が持たない規則：視点の操作・`world` の Sticker と Camera の編集・ギズモ・Panorama Studio のエディタ・上流の Scene の表示と編集・`port` の Sticker の同期と Pose handoff の表示・インスペクタ（`docs/editor-interaction.md`）、タイムラインと Keyframe の記録の規則（`docs/timeline-ui.md`）、状態 v2 と評価関数（`docs/scene-state-v2.md`）、ノードの出力と実行結果の `ui`（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の UI の細かい規則（`docs/panorama-stickers-node-surface-spec.md`）。
+この文書が持たない規則：視点の操作・`world` の Sticker と Camera の編集・ギズモ・Panorama Studio のエディタ・上流の Scene の表示と編集・`port` の Sticker の同期と Pose handoff の表示・インスペクタ（`docs/editor-interaction.md`）、タイムラインと Keyframe の記録の規則（`docs/timeline-ui.md`）、状態 v2 と評価関数（`docs/scene-state-v2.md`）、ノードの出力と実行結果の `ui`（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の表示の規則（`docs/studio-node-surface.md`）。
 
 ## この文書が owner である規則
 
@@ -166,7 +166,7 @@ Panorama Studio のエディタの Camera の編集は `docs/editor-interaction.
   - 保つこと：`source` が同じで新しいメディアにまだ絵が無いあいだ（読み込み中・シーク中）は、その `owner` の前の描画のテクスチャを使う。別の `source` の絵は出さない。`revision` が変わったら送り直し、大きさか `source` が変わったら、書き換えずに新しいテクスチャを作る。前の物は、それで描いた owner が次の描画で離れるまで残し、誰も使わなくなったら `dispose` する（`VideoTexture` の `dispose` が `requestVideoFrameCallback` を取り消す）。そのため、まだ新しい `source` の絵を描いていない owner が、それを前の絵として使うことはない。描画の途中で例外が出ても、`end()` は `finally` で必ず呼ぶので、印の無いテクスチャは残らない。
   - カメラのプレビューが隠れたとき（`releaseSplats`）は、Spark に加えてプレビューの印も外すので、プレビューだけが使っていたテクスチャは解放される。
   - 診断：`sources["three.editor"].layerTextures` と `sources["three.node"].layerTextures` に、ビューが持つレイヤのテクスチャの数が出る。
-- ノード上の表示との重複：そのノードのエディタを開いているあいだ、ノード上の Panorama Studio の表示は VIDEO を外し、静止画を放し、描かずにテクスチャを放す（エディタのモーダルがノードを覆っているので、同じ VIDEO の 2 つ目のデコーダ、その静止画、ノード上の共有ビューのテクスチャを持たない。docs/panorama-stickers-node-surface-spec.md）。
+- ノード上の表示との重複：そのノードのエディタを開いているあいだ、ノード上の Panorama Studio の表示は VIDEO を外し、静止画を放し、描かずにテクスチャを放す（エディタのモーダルがノードを覆っているので、同じ VIDEO の 2 つ目のデコーダ、その静止画、ノード上の共有ビューのテクスチャを持たない。`docs/studio-node-surface.md` の「見えないときとエディタを開いている間」）。
 
 ## World の組み立て（毎回の描画）
 
