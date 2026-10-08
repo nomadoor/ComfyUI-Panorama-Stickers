@@ -211,40 +211,109 @@ export function hasContent(media) {
   return !(media instanceof HTMLVideoElement) || media.readyState >= HTMLVideoElement.HAVE_CURRENT_DATA;
 }
 
-// The texture of a layer, from `owned` (layer id -> entry). `source` names what the media shows (a
-// VIDEO's URL for the VIDEO, its stills and its first frame; the media itself by default). A layer whose
-// media changes within its source keeps its texture until the new media has a picture, so a VIDEO that
-// is loading or seeking never shows an empty upload in place of the frame before. Another source never
-// shows the picture of the one before. A 360 ERP wraps around horizontally; a 180 ERP and a Sticker
-// clamp at their edges.
-export function layerTexture(owned, id, media, revision, wrapS, flipY, source = media) {
-  const size = mediaSize(media);
-  let entry = owned.get(id);
-  if (entry && (entry.source !== source || entry.media !== media || entry.width !== size.width || entry.height !== size.height)) {
-    if (entry.source === source && !hasContent(media)) {
-      entry.used = true;
-      return entry.texture;
-    }
-    entry.texture.dispose();
-    owned.delete(id);
-    entry = null;
-  }
-  if (!entry) {
-    entry = { texture: createTexture(media, flipY), media, source, revision, ...size };
-    owned.set(id, entry);
-  } else if (entry.revision !== revision || entry.texture.wrapS !== wrapS) {
-    entry.revision = revision;
-    entry.texture.needsUpdate = true;
-  }
-  entry.texture.wrapS = wrapS;
-  entry.used = true;
-  return entry.texture;
-}
+// The layer textures of one view, which its owners share: one texture per media, flipY and wrapS however
+// many owners draw it, so the editor's stage and its camera preview upload one 1080p background, and a
+// playing VIDEO has one VideoTexture. They are one WebGL context's, so any owner can draw with them.
+// `source` names what the media shows (a VIDEO's URL for the VIDEO, its stills and its first frame; the
+// media itself by default). A layer whose media changes within its source keeps the texture of its owner's
+// draw before until the new media has a picture, so a VIDEO that is loading or seeking never shows an empty
+// upload in place of the frame before. Another source never shows the picture of the one before: a media
+// that shows another source, or changes size, gets a new texture, and the one before stays for the owners
+// that drew it until they move on. Each draw marks the textures its owner uses; a texture no owner uses any
+// more is disposed.
+//
+// draw(owner) starts a draw of owner: { drawable(layer), texture(layer, wrapS, flipY), end() }. A 360 ERP
+// wraps around horizontally; a 180 ERP and a Sticker clamp at their edges. release(owner) drops the marks
+// of an owner that stops drawing.
+export function createLayerTextures() {
+  // media -> "flipY:wrapS" -> the current { texture, media, key, source, revision, width, height, users }
+  const entries = new Map();
+  // Every entry whose texture is held: the current ones and those replaced while an owner still draws them.
+  const held = new Set();
+  // owner -> layer id -> the entry its last draw used
+  const shown = new Map();
 
-// Whether a layer draws: once its media has a picture, or with the texture its source had (in
-// `owned`) while the new media has none.
-export function layerDrawable(owned, { id, media, source }) {
-  return hasContent(media) || owned.get(id)?.source === (source ?? media);
+  function forget(entry) {
+    entry.texture.dispose();
+    held.delete(entry);
+    const byKey = entries.get(entry.media);
+    if (byKey?.get(entry.key) !== entry) return;
+    byKey.delete(entry.key);
+    if (!byKey.size) entries.delete(entry.media);
+  }
+
+  function unuse(entry, owner) {
+    entry.users.delete(owner);
+    if (!entry.users.size) forget(entry);
+  }
+
+  function texture(previous, used, { id, media, revision, source: named }, wrapS, flipY) {
+    const source = named ?? media;
+    const size = mediaSize(media);
+    const before = previous.get(id);
+    if (before?.source === source && before.media !== media && !hasContent(media)) {
+      used.set(id, before);
+      return before.texture;
+    }
+    let byKey = entries.get(media);
+    if (!byKey) entries.set(media, byKey = new Map());
+    const key = `${flipY}:${wrapS}`;
+    let entry = byKey.get(key);
+    if (entry && (entry.source !== source || entry.width !== size.width || entry.height !== size.height)) {
+      byKey.delete(key);
+      if (!entry.users.size) forget(entry);
+      entry = null;
+    }
+    if (!entry) {
+      const created = createTexture(media, flipY);
+      created.wrapS = wrapS;
+      entry = { texture: created, media, key, source, revision, ...size, users: new Set() };
+      byKey.set(key, entry);
+      held.add(entry);
+    } else if (entry.revision !== revision) {
+      entry.revision = revision;
+      entry.texture.needsUpdate = true;
+    }
+    used.set(id, entry);
+    return entry.texture;
+  }
+
+  return {
+    draw(owner) {
+      const previous = shown.get(owner) ?? new Map();
+      const used = new Map();
+      return {
+        // Whether a layer draws: once its media has a picture, or with the texture its source had in the
+        // owner's draw before while the new media has none.
+        drawable: ({ id, media, source }) => hasContent(media) || previous.get(id)?.source === (source ?? media),
+        texture: (layer, wrapS, flipY) => texture(previous, used, layer, wrapS, flipY),
+        end() {
+          const kept = new Set(used.values());
+          kept.forEach((entry) => entry.users.add(owner));
+          previous.forEach((entry) => {
+            if (!kept.has(entry) && entry.users.has(owner)) unuse(entry, owner);
+          });
+          shown.set(owner, used);
+        },
+      };
+    },
+    release(owner) {
+      shown.get(owner)?.forEach((entry) => {
+        if (entry.users.has(owner)) unuse(entry, owner);
+      });
+      shown.delete(owner);
+    },
+    // How many textures it holds (the diagnostics' layerTextures).
+    get size() {
+      return held.size;
+    },
+    dispose() {
+      held.forEach((entry) => entry.texture.dispose());
+      held.clear();
+      entries.clear();
+      shown.clear();
+    },
+  };
 }
 
 function createMaterial(vertexShader, fragmentShader, uniforms, blending = CustomBlending) {
@@ -587,11 +656,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       mesh.material.uniforms.rect.value = rect;
     },
   };
-  // Per owner: its textures by layer id and the size it last rendered at. Surfaces that share this
-  // view (the on-node Previews, the Cutout camera preview) pass their own owner, so rendering one
-  // does not drop the textures of the others, and the canvas keeps the largest size in use instead
-  // of resizing per owner.
+  // Per owner: the size it last rendered at. Surfaces that share this view (the on-node Previews, the
+  // Cutout camera preview) pass their own owner, so the canvas keeps the largest size in use instead of
+  // resizing per owner. The layer textures are the view's (createLayerTextures): rendering one owner does
+  // not drop the textures of the others, and owners that show the same media share its texture.
   const owners = new Map();
+  const layerTextures = createLayerTextures();
   renderer.setScissorTest(true);
 
   function pooled(meshes, index, create) {
@@ -600,7 +670,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   }
 
   function addErp(owned, projection, mesh, layer, halfCoverage) {
-    mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false, layer.source ?? layer.media);
+    mesh.material.uniforms.map.value = owned.texture(layer, halfCoverage ? ClampToEdgeWrapping : RepeatWrapping, false);
     mesh.material.uniforms.opacity.value = layer.opacity;
     projection.placeErp(mesh, halfCoverage, layer.quaternion);
     scene.add(mesh);
@@ -608,7 +678,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   }
 
   function addSticker(owned, projection, mesh, layer) {
-    mesh.material.uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true, layer.source ?? layer.media);
+    mesh.material.uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
     mesh.material.uniforms.opacity.value = layer.opacity;
     projection.placeSticker(mesh, layer);
     scene.add(mesh);
@@ -667,7 +737,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
 
   function addWorldSticker(owned, mesh, layer) {
     const { uniforms } = mesh.material;
-    uniforms.map.value = layerTexture(owned, layer.id, layer.media, layer.revision, ClampToEdgeWrapping, true, layer.source ?? layer.media);
+    uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
     uniforms.opacity.value = layer.opacity;
     uniforms.crop.value.set(layer.crop.x0, 1 - layer.crop.y1, layer.crop.x1, 1 - layer.crop.y0);
     mesh.position.set(...layer.position);
@@ -728,7 +798,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (splat && Spark) children.push(sparkViews.renderer(owner));
     let index = 0;
     for (const layer of [...space.stickers, ...(space.upstreamStickers ?? [])]) {
-      if (!layerDrawable(owned, layer)) continue;
+      if (!owned.drawable(layer)) continue;
       const mesh = addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
       children.push(mesh);
       if (!(layer.opacity > 0)) continue;
@@ -773,7 +843,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
 
   function draw(projection, input, space = null) {
     let entry = owners.get(input.owner);
-    if (!entry) owners.set(input.owner, entry = { textures: new Map() });
+    if (!entry) owners.set(input.owner, entry = {});
     const at = place(input, entry);
     if (!at) return null;
     // The viewport starts at the bottom left of the WebGL canvas.
@@ -782,27 +852,26 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     renderer.setScissor(at.x, bottom, at.width, at.height);
     if (input.camera) setView(camera, input.camera, at);
     scene.clear();
-    const owned = entry.textures;
-    owned.forEach((item) => { item.used = false; });
-    const background = input.background;
-    if (background && layerDrawable(owned, { id: "background", ...background })) {
-      addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
+    // A draw that throws still marks what it used, so no texture is left without an owner.
+    const owned = layerTextures.draw(input.owner);
+    try {
+      const background = input.background;
+      if (background && owned.drawable({ id: "background", ...background })) {
+        addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
+      }
+      let erpIndex = 0;
+      let stickerIndex = 0;
+      input.layers.forEach((layer, index) => {
+        if (!owned.drawable(layer)) return;
+        const mesh = layer.kind === "erp"
+          ? addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false)
+          : addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
+        mesh.renderOrder = index + 1;
+      });
+      if (space) buildWorld(owned, space, input.owner);
+    } finally {
+      owned.end();
     }
-    let erpIndex = 0;
-    let stickerIndex = 0;
-    input.layers.forEach((layer, index) => {
-      if (!layerDrawable(owned, layer)) return;
-      const mesh = layer.kind === "erp"
-        ? addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false)
-        : addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
-      mesh.renderOrder = index + 1;
-    });
-    if (space) buildWorld(owned, space, input.owner);
-    owned.forEach((item, id) => {
-      if (item.used) return;
-      item.texture.dispose();
-      owned.delete(id);
-    });
     // The part is cleared to input.clearColor (a hex RGB, opaque) before it is drawn, or to transparent.
     if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
     renderer.render(scene, camera);
@@ -823,7 +892,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // shotCamera() setup, background is { media, revision, coverage } or null, and layers are the Sky
   // layers from back to front: { kind: "erp", id, media, revision, opacity } or
   // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. Each may name its `source`
-  // (see layerTexture). owner is optional.
+  // (see createLayerTextures). owner is optional.
   // With `space`, the view stands at camera.position (a spaceCamera(), pano_space.js) and draws the World
   // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickerUrls, sticker,
   // stickers, lines }. sceneUrls are the item URLs of the `scene` input; loaded items of other URLs are
@@ -1002,10 +1071,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return gizmo.pointer(phase, px, py);
   }
 
-  // Frees the Spark renderer of an owner that stops drawing SPLATs for now (the camera preview hides) and
-  // keeps its textures; it gets a new renderer when it draws one again.
+  // Frees the Spark renderer of an owner that stops drawing for now (the camera preview hides) and drops
+  // its marks on the layer textures, so those no other owner uses are disposed; it gets a new renderer and
+  // its textures again when it draws again.
   function releaseSplats(owner) {
     sparkViews.release(owner);
+    layerTextures.release(owner);
   }
 
   // input: render()'s input without camera; the frame is the layers laid out as an ERP. Its rect, if any,
@@ -1017,18 +1088,20 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // Frees the textures and the Spark renderer of an owner that stops drawing; the canvas shrinks on the next
   // render if this owner was the largest.
   function release(owner) {
-    owners.get(owner)?.textures.forEach((entry) => entry.texture.dispose());
+    layerTextures.release(owner);
     owners.delete(owner);
     sparkViews.release(owner);
   }
 
   // What the diagnostics sample (pano_diagnostics.js watchThreeView): renderer.info (calls and
-  // triangles of the last pass drawn), the `scene` and 3D Sticker items, and the Spark renderers.
+  // triangles of the last pass drawn), the layer textures the owners share, the `scene` and 3D Sticker items,
+  // and the Spark renderers.
   function stats() {
     const { memory, render: drawn, programs } = renderer.info;
     const items = [sceneItems, stickerItems, ...upstreamItems.values()].flatMap((each) => [...each.items.values()]);
     return {
       textures: memory.textures,
+      layerTextures: layerTextures.size,
       geometries: memory.geometries,
       programs: programs?.length ?? 0,
       calls: drawn.calls,
@@ -1060,7 +1133,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     pickMaterials.forEach((material) => material.dispose());
     pickTarget?.dispose();
     sparkViews.dispose();
-    owners.forEach((entry) => entry.textures.forEach((item) => item.texture.dispose()));
+    layerTextures.dispose();
     owners.clear();
     [panorama, unwrap].forEach((projection) => {
       [projection.background, ...projection.erp, ...projection.sticker].forEach((mesh) => mesh.material.dispose());

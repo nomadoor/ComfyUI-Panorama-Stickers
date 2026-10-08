@@ -6,6 +6,7 @@ import {
   clearMediaCache,
   clearNodeSurface,
   disposeNodeRuntime,
+  editorOpen,
   editorSession,
   mediaCache,
   nodeSurface,
@@ -92,6 +93,21 @@ test("disposeNodeRuntime clears the timers and calls the teardown of every group
   assert.equal(nodeSurface(node).restore, null);
   assert.equal(editorSession(node).flushBeforeQueue, null);
   assert.equal(stateSync(node).liveState, null);
+});
+
+test("a node's editor is open only while it says so, and reading it makes no group", () => {
+  const node = {};
+  assert.equal(editorOpen(node), false);
+  assert.equal(editorOpen(null), false);
+  editorSession(node).open = true;
+  assert.equal(editorOpen(node), true);
+  editorSession(node).open = false;
+  assert.equal(editorOpen(node), false);
+  const other = {};
+  editorOpen(other);
+  editorSession(other).open = true;
+  disposeNodeRuntime(other);
+  assert.equal(editorOpen(other), false);
 });
 
 test("a teardown that throws does not keep the other groups alive", (t) => {

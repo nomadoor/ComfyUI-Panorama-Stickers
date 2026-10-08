@@ -86,7 +86,16 @@
   surfaceの要素がpageにないか幅0）は、一時停止してVIDEOのsrcを外す（表示フレームは保つ）。
   一時停止中でも外す。見えるようになると同じVIDEOを読み直し、表示フレームを出す。ResizeObserverで
   すぐに、また描画のたびに確かめる。node remove / graph clear では状態機械、VIDEO要素、
-  rAF / video frame callbackを破棄する。
+  rAF / video frame callbackを破棄する。VIDEO要素は src を外して `load()` し、デコーダをすぐ放す
+  （要素そのものはGCまで残り、診断の `video.alive` に数えられるが、`video.loaded` には入らない）。
+  静止画のキャンバス2つも大きさを0にする。
+- そのノードのエディタを開いている間（`pano_node_bridge.js` の `editorSession(node).open`、`editorOpen(node)`）も、
+  モーダルがsurfaceを覆うので見えないものとして扱う。エディタが同じ1080pのVIDEOを自分で再生するので、
+  surfaceは一時停止してVIDEOのsrcを外し、静止画を放し、描かずに共有ビューのテクスチャを放す（`surfaceView.release()`）。
+  collapse したsurfaceも描かないので、同じくテクスチャを放す。エディタを閉じると同じ表示フレームから読み直す。
+  解像度や品質は落とさない（重複を持たないだけ）。
+- 旧ノード（`PanoramaStickers` の Stickers / Cutout の表示）のループ再生の VIDEO（`createLoopingPreviewVideo`）は変えていない。
+  エディタのモーダルの下でもデコードを続ける。
 - 読めなかったVIDEOのURLは、候補から一度消えたら（再実行や接続変更）もう一度試す。
 
 ## Panorama Studio Surface (#91)

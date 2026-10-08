@@ -239,25 +239,29 @@ export function createDiagnostics(overrides = {}) {
   function videoStats() {
     const list = [];
     let alive = 0;
+    let loaded = 0;
     let playing = 0;
     for (const entry of videos) {
       const video = entry.ref.deref();
       if (!video) continue;
       alive += 1;
+      // An element with a src holds a decoder; one released (src removed and load()ed) waits only to be collected.
+      const src = !!(video.currentSrc || video.src);
+      if (src) loaded += 1;
       const isPlaying = !video.paused && !video.ended;
       if (isPlaying) playing += 1;
       if (list.length < VIDEOS_LISTED) {
         list.push({
           label: entry.label,
           playing: isPlaying,
-          src: !!(video.currentSrc || video.src),
+          src,
           size: [video.videoWidth || 0, video.videoHeight || 0],
           ready: video.readyState ?? 0,
           connected: !!video.isConnected,
         });
       }
     }
-    return { ...videoCounts, alive, playing, list };
+    return { ...videoCounts, alive, loaded, playing, list };
   }
 
   function sample() {

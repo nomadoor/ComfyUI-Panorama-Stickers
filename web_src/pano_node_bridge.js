@@ -18,6 +18,8 @@ const records = new WeakMap();
 
 const GROUPS = {
   editorSession: () => ({
+    // The modal editor of the node is open; it covers the node surface, which lets its VIDEO go meanwhile.
+    open: false,
     // Writes the modal's state to state_json before the prompt is queued.
     flushBeforeQueue: null,
     // The view the editor was closed with (pano_view_memory.js viewMemory), which the next opening restores.
@@ -114,6 +116,9 @@ export const stateSync = (node) => group(node, "stateSync");
 export const peekEditorSession = (node) => existing(node, "editorSession");
 export const peekNodeSurface = (node) => existing(node, "nodeSurface");
 export const peekPreviewNode = (node) => existing(node, "previewNode");
+
+// Whether the node's modal editor is open.
+export const editorOpen = (node) => existing(node, "editorSession")?.open === true;
 
 function releaseImage(image) {
   if (!image) return;

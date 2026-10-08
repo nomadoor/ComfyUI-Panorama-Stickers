@@ -100,7 +100,7 @@ import {
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
 import { createViewportRestoreScheduler } from "./pano_viewport_restore.js";
-import { mediaCache, nodeSurface, stateSync } from "./pano_node_bridge.js";
+import { editorOpen, mediaCache, nodeSurface, stateSync } from "./pano_node_bridge.js";
 const { app } = appModule;
 setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 trackRunOutputs(api);
@@ -2304,11 +2304,11 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     surfacePlayback = { playback, video, still, stickerVideo, stickerStill, stickerSource: "" };
     surface.playback = surfacePlayback;
   }
-  // The Timeline plays on the node only while it is shown: collapsed, in a subgraph or another graph,
-  // the node pauses and lets its VIDEO go.
+  // The Timeline plays on the node only while it is shown: collapsed, in a subgraph or another graph, or
+  // under the node's open editor (which plays the same VIDEO itself), the node pauses and lets its VIDEO go.
   const syncSurfacePlayback = () => {
     const { playback, still, stickerStill } = surfacePlayback;
-    const shown = surfaceShown(wrap, !!node.flags?.collapsed);
+    const shown = surfaceShown(wrap, !!node.flags?.collapsed, editorOpen(node));
     const source = playback.source;
     const sticker = shown ? portStickerMedia(node) : null;
     const state = getCachedState(node);
@@ -2601,10 +2601,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         const runOutput = studioOptions ? studioRunOutput(studioOptions) : null;
         const sceneState = () => surfaceSceneState(node, getCachedState(node));
         // A collapsed or hidden surface does not load it.
-        const run = studioOptions && surfaceShown(wrap, !!node.flags?.collapsed)
+        const run = studioOptions && surfaceShown(wrap, !!node.flags?.collapsed, editorOpen(node))
           ? studioRunPicture(node, runOutput)
           : null;
-        if (!node.flags?.collapsed) drawCanvas(node, canvas, surfaceView, run);
+        // Collapsed or under the node's open editor, the surface does not draw and frees its textures.
+        if (!node.flags?.collapsed && !editorOpen(node)) drawCanvas(node, canvas, surfaceView, run);
+        else surfaceView.release();
         nodeSurfaceUiModel.viewUnavailable = surfaceView.failed;
         if (studioSurface) {
           const status = studioStatus({ ...studioOptions, display: studioRunDisplay(node, runOutput) }, sceneState);
@@ -3137,9 +3139,13 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     nodeSurfaceSession?.destroy?.();
     nodeSurfaceVueApp?.unmount?.();
     if (surfacePlayback) {
+      // dispose() removes the VIDEOs' src and load()s them, which frees their decoders now instead of
+      // when the detached elements are collected.
       surfacePlayback.playback.dispose();
       surfacePlayback.video.remove();
       surfacePlayback.stickerVideo.remove();
+      releasePanoCanvas(surfacePlayback.still);
+      releasePanoCanvas(surfacePlayback.stickerStill);
       if (surface.playback === surfacePlayback) surface.playback = null;
     }
     surfaceView.dispose();

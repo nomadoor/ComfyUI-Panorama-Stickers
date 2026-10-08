@@ -30,7 +30,7 @@ three.js は `colorSpace` が `NoColorSpace` のテクスチャを `UNPACK_COLOR
 ## Preview の表示（#68）
 
 - Preview の読み取り専用のモーダル（「Open Preview」と全画面の代わりに開くもの）は、Stickers のエディタと同じ `createEditorView` で描く。モーダルを開いている間だけ WebGL コンテキストを一つ使い、閉じると `forceContextLoss` で解放する。
-- ノード上の Preview は、グラフ上のすべての Preview ノードで three.js のビューを一つ共有する（`pano_preview_view.js`）。各ノードは描いた直後の画面を自分の 2D の canvas に `drawImage` で写す。以前は Preview ノードごとに WebGL コンテキストを一つ持っていたが、ノードの数によらず一つになる。テクスチャはノードごとに持ち（`render` の `owner`）、素材が外れたときとノードを消したときに解放し、最後のノードが消えるとコンテキストも解放する。共有の canvas は使っているノードの中で最大の大きさに保ち、各ノードは左下から自分の大きさの範囲だけに描いて、その矩形を写す。
+- ノード上の Preview は、グラフ上のすべての Preview ノードで three.js のビューを一つ共有する（`pano_preview_view.js`）。各ノードは描いた直後の画面を自分の 2D の canvas に `drawImage` で写す。以前は Preview ノードごとに WebGL コンテキストを一つ持っていたが、ノードの数によらず一つになる。テクスチャはビューで共有し（下の「レイヤのテクスチャの共有」）、素材が外れたときとノードを消したときに解放し、最後のノードが消えるとコンテキストも解放する。共有の canvas は使っているノードの中で最大の大きさに保ち、各ノードは左下から自分の大きさの範囲だけに描いて、その矩形を写す。
 - チャンクは、ノード上に描くものが初めてできたときに読み込む。Preview では表示する IMAGE / VIDEO、ノード上の Stickers と Cutout の表示では背景・Sticker・ペイントのどれかである（#69）。`LoadImage` などにつながった Preview があるワークフローでは、グラフを開いた直後に読み込まれる。描くものがない Stickers の表示は、view を呼ばずに格子だけを描く。Preview は読み込みが終わるまで、画像のない状態と同じ格子を表示する。
 - チャンクか WebGL が使えないときは、ノード上の Preview もモーダルもそのことを表示する（#69）。ノード上の Preview は、すべての Preview ノードが消えたあと、次に描くときに読み込みをやり直す。
 
@@ -270,7 +270,7 @@ Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエデ
   - ビューの `SplatMesh` は読み込んだスプラットを共有しているので、`dispose` しない（親から外すだけ）。ビューを放したとき（`release`）と、読み込んだ要素を捨てたとき（`forget`。`scene` の要素の `dispose`）に外す。
   - 最初の案は「ステージの Spark を layer 0、プレビューの Spark を layer 1、SplatMesh を `enable(1)`、ステージのカメラを `set(0)`、プレビューのカメラを `set(1)`」だった。しかし three.js の layers は子に継がれないので、この形ではプレビューのカメラにグリッド・板・GLB の各メッシュも見えなくなる（すべての物に `enable(1)` が要る）。また、1 つの SplatMesh を両方のカメラから見せると、上の SH の版の問題が残る。そこで共有の物を layer 0 に残し、Spark の描画と SplatMesh をビューごとに 0 以外の layer に分けた。
 - 再描画の範囲：`SparkRenderer` の `onDirty` は、そのビューだけを描き直す理由で返す（`createThreeView` の `onSplats(owner)` → エディタの `splatDrawReason`：`DRAW_REASON.SPLAT_STAGE` か `SPLAT_PREVIEW`）。`SPLAT_STAGE` ではカメラのプレビューを描き直さない（`cameraPreviewChanged`）。`SPLAT_PREVIEW` ではステージも描くが（描画バッファが保たれないので、WebGL を描くフレームはキャンバス全体を描く）、ステージの `SparkRenderer` はカメラが動いていないので作り直しも並べ替えもしない。どちらも、並べ替えが終わって 1 回描けば止まる。`scene` の要素と Spark のモジュールの読み込みは、両方に関わるので `MEDIA` のままである。
-- 片付け：カメラのプレビューが隠れたとき（Frame 表示、Camera が無い、プレビューを閉じた）と、フレームの取り込みに失敗したときは、プレビューの `SparkRenderer` を放す（`releaseSplats`。テクスチャは残す）。放すときに並べ替えの途中なら、終わるまで待ってから `dispose` する。待つのは 100 ms ごとに最大 50 回（約 5 秒）で、失敗した並べ替え（コンテキストの喪失・ワーカーの終了）は終わらないので、その上限で `dispose` する。待つあいだの `onDirty` は無視する。ビューの `dispose`（エディタを閉じた・コンテキストの喪失）では、すべてをすぐに `dispose` する。
+- 片付け：カメラのプレビューが隠れたとき（Frame 表示、Camera が無い、プレビューを閉じた）と、フレームの取り込みに失敗したときは、プレビューの `SparkRenderer` を放す（`releaseSplats`。プレビューだけが使っていたテクスチャも放す）。放すときに並べ替えの途中なら、終わるまで待ってから `dispose` する。待つのは 100 ms ごとに最大 50 回（約 5 秒）で、失敗した並べ替え（コンテキストの喪失・ワーカーの終了）は終わらないので、その上限で `dispose` する。待つあいだの `onDirty` は無視する。ビューの `dispose`（エディタを閉じた・コンテキストの喪失）では、すべてをすぐに `dispose` する。
   - 並べ替えの途中の `dispose`：Spark 2.1 の `dispose` はソートのワーカーを終了して `sortWorker` を `null` にするが、進行中の `driveSort` は読み戻しが終わると、`sortWorker` が無ければ新しいワーカー（`SplatWorker`。Web Worker と WebAssembly のメモリ）を作り、それは誰にも終了されずに残る。そこで `dispose` の直後に、`sortWorker` に「並べ替えが終わらない」代わりの物（`call` が解決しない Promise を返し、`dispose` は何もしない）を入れる（`disposeSpark`）。途中の並べ替えはそこで止まり、新しいワーカーは作られない。コンテキストの復帰では新しいビューを作るので、`SparkRenderer` も最初から作り直す。
 - 費用：プレビューが出ているあいだは、`SparkRenderer` 1 つ分を余計に持つ。読み込んだスプラットそのもの（`PackedSplats` の配列とテクスチャ）は共有し、ビューの `SplatMesh` は生成の設定だけを持つ。`SparkRenderer` 1 つが持つ物（Spark 2.1、`enableLod: false`）：
   - アキュムレータ 3 つ（表示中・生成中・予備。生成のたびに入れ替わるので、やがて 3 つとも確保される）。それぞれ全スプラット分の生成先のレンダーターゲット（`ensureGenerate`。packed では 1 スプラットあたり RGBA32UI の 16 バイトと、読み戻し用の RGBA8 の 4 バイト）を持つ。N スプラットでおよそ 3 × 20 × N バイト（100 万スプラットで約 60 MB、250 万で約 150 MB。テクスチャの大きさへの切り上げで少し増える）。
@@ -279,6 +279,17 @@ Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエデ
   - 品質は落とさない：スプラットを間引く・解像度を下げるといった、データを減らす最適化はしていない。
 - 診断：`sources["three.editor"].sparks` に、`SparkRenderer` ごとの直近 1 秒の `generates` と `sorts`、最後に使ったカメラが出る（docs/diagnostics.md）。何もしていないときに 0 であれば、ループは止まっている。
 - テスト：`tests/pano_spark_views.test.mjs`。Spark の `SparkRenderer` と SH 付きの `SplatMesh` のスタブと、three.js の描画の layers の扱いを真似た描画で、1 つの `SparkRenderer` と `SplatMesh` が 1 フレームに 2 つのカメラで更新されないこと、`onDirty` の理由がそのビューだけを描き直すこと、並べ替えの後に止まること（`SparkRenderer` を共有しても、`SplatMesh` を共有しても止まらないこと）を確かめる。
+
+## レイヤのテクスチャの共有
+
+Chrome の GPU プロセスが落ちる件（1080p の背景 VIDEO と 3DGS の Sticker、ComfyUI が 12 GB 中 9〜11 GB の VRAM を使っている状態）の調査で、同じ 1080p の VIDEO が GPU に何重にも載っていることが分かった。解像度や品質は落とさず、重複と使っていない複製だけを無くした。
+
+- ビューの中での共有（`pano_three_view.js` の `createLayerTextures`）：以前はレイヤのテクスチャを `owner` ごとに持っていた（`owners.get(owner).textures`）。そのため Panorama Studio・Cutout のエディタでは、ステージとカメラのプレビュー（`"camera_preview"`）が同じ背景をそれぞれ送り、再生中はそれぞれの `VideoTexture` が毎フレーム 1080p を送っていた。今はテクスチャをビュー全体で、メディア・`flipY`・`wrapS` の組ごとに 1 つ持ち（`revision` と `source` はレイヤごとの値で、キーには入れない）、各 `owner` は描画ごとに使った物に印を付ける。どの `owner` も使わなくなったテクスチャは `dispose` する。同じ WebGL コンテキストなので、どの `owner` からも描ける。
+  - 費用：1080p の RGBA は 1 枚約 8 MB。再生中の VIDEO は送る回数も 1 フレームに 1 回になる。
+  - 保つこと：`source` が同じで新しいメディアにまだ絵が無いあいだ（読み込み中・シーク中）は、その `owner` の前の描画のテクスチャを使う。別の `source` の絵は出さない。`revision` が変わったら送り直し、大きさか `source` が変わったら、書き換えずに新しいテクスチャを作る。前の物は、それで描いた owner が次の描画で離れるまで残し、誰も使わなくなったら `dispose` する（`VideoTexture` の `dispose` が `requestVideoFrameCallback` を取り消す）。そのため、まだ新しい `source` の絵を描いていない owner が、それを前の絵として使うことはない。描画の途中で例外が出ても、`end()` は `finally` で必ず呼ぶので、印の無いテクスチャは残らない。
+  - カメラのプレビューが隠れたとき（`releaseSplats`）は、Spark に加えてプレビューの印も外すので、プレビューだけが使っていたテクスチャは解放される。
+  - 診断：`sources["three.editor"].layerTextures` と `sources["three.node"].layerTextures` に、ビューが持つレイヤのテクスチャの数が出る。
+- ノード上の表示との重複：エディタのモーダルがノードを覆っていても、ノード上の Panorama Studio の表示は見えているものとして、同じ VIDEO の 2 つ目のデコーダ、その静止画、ノード上の共有ビューのテクスチャを持ち続けていた。今はそのノードのエディタを開いているあいだ、ノードの表示は VIDEO を外し、静止画を放し、描かずにテクスチャを放す（docs/panorama-stickers-node-surface-spec.md）。
 
 ## World の組み立て（毎回の描画）
 

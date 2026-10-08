@@ -199,6 +199,8 @@ test("VIDEO elements are listed with their state", () => {
   assert.equal(record.video.playing, 1);
   assert.deepEqual(record.video.list[0], { label: "node.playback", playing: true, src: true, size: [64, 32], ready: 4, connected: true });
   assert.equal(record.video.list[1].src, false);
+  // Only an element with a src holds a decoder: a released one counts as alive until it is collected.
+  assert.equal(record.video.loaded, 1);
   collector.collect(idle);
   record = diagnostics.sample();
   assert.deepEqual([record.video.alive, record.video.collected], [1, 1]);
