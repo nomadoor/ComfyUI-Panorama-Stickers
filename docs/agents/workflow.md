@@ -47,7 +47,7 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 | Panorama Studio のノード（Timeline、素材の時間、出力、`ui`、`PANO_SCENE`、上流の Scene、Pose handoff） | `docs/studio-node.md` | `comfyui_pano_suite/nodes.py`・`scene_video.py`・`sticker_media.py`、`core/video_source.py` |
 | Preview ノード | `docs/preview-node.md` | `nodes.py` の `PanoramaPreviewSceneNode`、`core/video.py` の `_fit_audio_to_frame_count` |
 | メモリ・中断・キャッシュ・一時ファイル | `docs/runtime-resources.md` | `nodes.py` の `_render_memory`、`progress.py`、`core/cache.py`・`temp_files.py` |
-| timeline、keyframe、背景の行、再生 | `docs/timeline-ui.md` | 整理で決める |
+| timeline、keyframe、背景の行、再生 | `docs/timeline-ui.md` | `web_src/pano_timeline.js`・`pano_video_playback.js`・`pano_node_playback.js`・`pano_port_media.js`・`pano_frame_batch.js`、`pano_editor_ui_state.js` の `buildTimelineModel`、`editor/timeline.js`・`timeline_actions.js`・`keyboard.js`、`components/PanoTimeline.vue`・`PanoTimelineGroup.vue`・`PanoEasingGraph.vue`、上流の層の行は `pano_upstream.js`・`editor/upstream.js`、Keyframe のない Lane の扱いは `pano_editor_state.js` の `unkeyedPose` |
 | editor のコード構造と依存 | `docs/editor-architecture.md` | 整理で決める |
 | three.js / Spark | `docs/threejs-spark-integration.md` | 整理で決める |
 | Vue と JS の境界 | `docs/vue-ui-boundary.md` | 整理で決める |
