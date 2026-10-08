@@ -5,7 +5,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 用語は `CONTEXT.md` に従う。決めた理由は ADR 0023（座標）、0024（時間）、0025（Scene の正）、0026（Keyframe の Lane）、
 0029（Panorama Studio）、0030（上流の上書き）、0032（v1 の読み替えで保たないもの）、0033（Timeline の上限）にある。
 
-この文書が持たない規則：`port` の Sticker の扱いと Pose handoff（`docs/render-contract.md` の「`port` の Sticker と Pose handoff」）、
+この文書が持たない規則：`port` の Sticker の扱いと Pose handoff（`docs/studio-node.md` の「`port` の Sticker と Pose handoff」）、
 エディタでの表示と記録（`docs/timeline-ui.md`、`docs/threejs-spark-integration.md`）。
 
 ## この文書が owner である規則
@@ -53,7 +53,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 
 - 状態に保存する時刻はすべて整数の Timeline frame とする。秒は Timeline frame ÷ `timeline.fps` で求める（ADR 0024）。
 - 評価関数は端数を含む Timeline frame を受け取る。背景 VIDEO のフレームの元の時刻 `t` 秒で評価するときは、`t × timeline.fps` を渡す。実行時の fps が `timeline.fps` と違っても、ノードは記録された `timeline.fps` で解釈して秒を保つ。
-- Panorama Studio が上流の Scene を受けたときは、上流の各ノードの状態と自分の状態を、それぞれの `timeline.fps` で同じ時刻 `t` 秒に評価する（`t × その状態の timeline.fps`）。どの状態も再基準化しない（`docs/render-contract.md` の「上流の Scene」）。
+- Panorama Studio が上流の Scene を受けたときは、上流の各ノードの状態と自分の状態を、それぞれの `timeline.fps` で同じ時刻 `t` 秒に評価する（`t × その状態の timeline.fps`）。どの状態も再基準化しない（`docs/studio-node.md` の「上流の Scene」）。
 - Camera の Keyframe は Timeline 基準とする。`scene` と Sticker の Keyframe は、素材の先頭が Timeline 上に来る位置（`start − in`）を基準とする。
 
 ## `state_json` v2
@@ -82,7 +82,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `version` | `2` | — | 下記「版の判定」 |
 | `id` | 文字列 または `null` | `null` | この状態の Scene を表す id。下流の Studio は上書き（`upstream`）をこの id ごとに記録する（ADR 0030）。空でない文字列のほかは `null`。下記「Scene の id」。Python は振らない |
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
-| `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（`docs/render-contract.md` の「Scene の組み立てと撮影の入口」） |
+| `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（`docs/studio-node.md` の「Scene の組み立てと撮影の入口」） |
 | `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
 | `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない |
 | `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方で、Keyframe を持たない。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` を読まない |
@@ -107,9 +107,9 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 
 - 非表示の `scene` と Sticker は、評価関数の `active` が偽になる（下記「評価関数」）ので描かれない。Clip range・Keyframe・値はそのまま保ち、出力の長さにも今までどおり数える（表示の切り替えで長さは変わらない）。
 - 非表示のペイントは描かない（`nodes.py` の `_resolve_sources` が空のペイントを渡す）。
-- 非表示の Camera は状態に残る。評価関数は今までどおり値を返す（`camera` は `null` にならない）。Panorama Studio は非表示の Camera を Camera が無いときと同じに扱い、World の原点から回転 0 の ERP を撮り、出力の大きさも ERP の規則で決め、`sticker_state` も出さない（`docs/render-contract.md`）。Camera の Keyframe は表示によらず出力の長さに数える。
+- 非表示の Camera は状態に残る。評価関数は今までどおり値を返す（`camera` は `null` にならない）。Panorama Studio は非表示の Camera を Camera が無いときと同じに扱い、World の原点から回転 0 の ERP を撮り、出力の大きさも ERP の規則で決め、`sticker_state` も出さない（`docs/studio-node.md`）。Camera の Keyframe は表示によらず出力の長さに数える。
 
-- ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、`camera` を読み替えない。`null` なら Camera が無く、原点・回転 0 の ERP を撮る（`docs/render-contract.md` の「Panorama Studio」）。エディタも `camera` を読み替えず、Camera を足す・消すのは編集である。
+- ノードでの扱い：状態 v2 を読み書きするのは Panorama Studio だけで、`camera` を読み替えない。`null` なら Camera が無く、原点・回転 0 の ERP を撮る（`docs/studio-node.md` の「Panorama Studio」）。エディタも `camera` を読み替えず、Camera を足す・消すのは編集である。
 - 既存の状態：この版より前の v2 の状態は `camera` のオブジェクトを持つので、そのまま「Camera あり」で `projection` は `perspective` になる。読み込みでも保存でも Camera を消したり書き換えたりしない（ノードのキャッシュが外れないようにするため）。fps の再基準化だけは状態全体と同じく `camera` の時刻も直し、`null` は `null` のまま、`projection` はそのまま保つ。
 - 保存するテキスト：エディタとノード上の UI は `sceneStateText`（`pano_scene_state.js`）で `state_json` を書く。正規化した状態をそのまま JSON にするが、後から足した項目は既定値のときは書かない：`camera.projection` の `perspective`、`camera.visible`・`scene.visible`・`painting_visible` の `true`。ComfyUI の実行のキャッシュは `state_json` のテキストを比べるので、これらを書くと、その項目より前に保存した状態をエディタで開いて閉じただけで再実行になる。書かなくても、読み込みで既定値に戻るので意味は変わらない（`load_scene_state` の結果を書き出して読むと同じ結果になる）。既定値でないとき（`erp`、非表示）だけ書く。同じ理由で、ADR 0030 の項目も次のときは書かない：`id` の `null`、空の `upstream`、`port` の Sticker の空の `handoff_overrides`、Sticker から求まる値（下記「Sticker の id の採番」の最小値）と同じ `next_sticker_id`。既定の Clip range（`start` 0・`in` 0・`duration` `null`）の `background` も書かない（`pano_scene_state.js` の `defaultClip`）。Python は `state_json` を書かないので、この関数を持たない。
 
@@ -175,7 +175,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 |---|---|---|---|
 | `start` | 整数 ≥ 0 | `0` | Timeline 上で有効になる最初の Timeline frame |
 | `in` | 整数 ≥ 0 | `0` | 素材の中の開始点（素材の先頭からの Timeline frame） |
-| `duration` | 整数 ≥ 1 または `null` | `null` | 有効な長さ。`null` は Timeline の終わりまで。出力の長さを決めるときは、フレームを持つ `port` の素材（IMAGE バッチ・VIDEO）の終わりを Clip の終わりとみなす（`docs/render-contract.md`） |
+| `duration` | 整数 ≥ 1 または `null` | `null` | 有効な長さ。`null` は Timeline の終わりまで。出力の長さを決めるときは、フレームを持つ `port` の素材（IMAGE バッチ・VIDEO）の終わりを Clip の終わりとみなす（`docs/studio-node.md`） |
 
 有効な範囲は `start ≤ frame < start + duration` とする。端点との比較には評価関数と同じ許容差 `FRAME_EPSILON`（`1e-6`）を使う。`start − 1e-7` は範囲内、`start + duration − 1e-7` は範囲外（終端は含まない）とする。負の値は 0、1 未満の `duration` は 1 に寄せる。
 
@@ -184,7 +184,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 `background.clip` は、Panorama Studio 自身の `bg_media` を Sticker の素材と同じ規則で Timeline に置く。形・正規化・fps の再基準化は Sticker の Clip range と同じである。
 
 - 素材の先頭は Timeline 上の `start − in` に来る。`start` を後ろへずらすと背景の映像が遅れて始まり、`in` で頭を、`duration` で終わりを切る。`duration` が `null` なら素材の終わりまで。
-- Clip range の外と素材の外では背景を描かず、`bg_color` になる。出力の長さは Clip range によらず素材のフレーム数で決まる（`docs/render-contract.md` の「長さ」）。描き方は `docs/render-contract.md` の「背景の Clip range」。
+- Clip range の外と素材の外では背景を描かず、`bg_color` になる。出力の長さは Clip range によらず素材のフレーム数で決まる（`docs/studio-node.md` の「長さ」）。描き方は `docs/studio-node.md` の「背景の Clip range」。
 - Keyframe と表示（`visible`）は持たない。評価関数は `background` を読まない。
 - 上流の上書き（`upstream`）は `background` に当たらない（自分の入力の設定である）。
 - `background` は Sticker ではない。エディタのタイムラインの行の id `background` は、Sticker の id（エディタが振るのは常に `sticker_<番号>`）と重ならない。
@@ -212,7 +212,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | フィールド | 型 | 既定値 | 意味と正規化 |
 |---|---|---|---|
 | `id` | 文字列 | `sticker_<n>` | 空・重複・文字列でないときは、`next_sticker_id` から順に `sticker_<n>` を振る（後に出てきたほうを振り直す）。下記「Sticker の id の採番」 |
-| `placement` | `"sky"` または `"world"` | `"sky"` | 持つ Lane を決める。エディタで切り替える経路はない。`port` の Sticker だけは、ノードが素材と Pose handoff に合わせて同じ `id` のまま置き換える（`docs/render-contract.md` の「`port` の Sticker と Pose handoff」） |
+| `placement` | `"sky"` または `"world"` | `"sky"` | 持つ Lane を決める。エディタで切り替える経路はない。`port` の Sticker だけは、ノードが素材と Pose handoff に合わせて同じ `id` のまま置き換える（`docs/studio-node.md` の「`port` の Sticker と Pose handoff」） |
 | `source` | Source | — | 不正なときは Sticker ごと捨てる |
 | `clip` | Clip range | 上記 | |
 | `visible` | 真偽値 | `true` | `false` なら描画しない（タイムラインの行の目のアイコン） |
@@ -249,7 +249,7 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 - `crop` は、旧 `state_json` の描画と旧ノードの基準画像を再現するのに必要で、描画関数が読む。3D の素材では使わない。
 - `locked` は、ADR 0025 の「上流の要素をロックする場合も、同じ Sticker のリストの中に印を付けるだけにする」に対応する印で、エディタが読む。
 
-`sticker` 入力の素材の Sticker（`source.kind == "port"`）を状態にないときに加える規則と、`sticker_state` からの Pose handoff は、ノードの振る舞いとして `docs/render-contract.md` の「`port` の Sticker と Pose handoff」に書く。読み込み（`load_scene_state`）はこの Sticker を生成しない。状態は保存された内容だけを表す。
+`sticker` 入力の素材の Sticker（`source.kind == "port"`）を状態にないときに加える規則と、`sticker_state` からの Pose handoff は、ノードの振る舞いとして `docs/studio-node.md` の「`port` の Sticker と Pose handoff」に書く。読み込み（`load_scene_state`）はこの Sticker を生成しない。状態は保存された内容だけを表す。
 
 
 ### Source
@@ -311,7 +311,7 @@ Lane の評価の規則：
 3. `frame` がちょうど Keyframe の `frame` なら、その Keyframe の値。
 4. 区間の途中で、区間の始まりの Keyframe の `easing` が `hold` なら、始まりの値。
 
-1〜3 で Keyframe の `frame` と比べるときは、差が `1e-6` 以内なら同じ frame とみなす（`FRAME_EPSILON`）。秒 × fps の浮動小数点の誤差で、Keyframe の直前の値（例：`23.9999999`）になった出力フレームでも、Cut が 1 フレーム遅れないようにするためである。この許容差は浮動小数点の誤差だけを吸収する。ただし、VIDEO の PTS の量子化の幅の半分は、許容差に含める（1ms の timebase なら 0.5ms 分の Timeline frame）。PTS は timebase に丸めて記録されるので、29.97 fps の mkv・webm では、整数の Timeline frame のはずの時刻が最大でその分ずれるためである（`docs/render-contract.md`）。`timeline.fps` は丸めずに記録する（例：29.97 fps の素材は `30000 / 1001`）。コアの VIDEO の fps は分数なので、それを float にした値をそのまま記録する。`29.97` と丸めて記録すると、24 番目のフレームは `23.999976` になり、許容差では吸収できない。
+1〜3 で Keyframe の `frame` と比べるときは、差が `1e-6` 以内なら同じ frame とみなす（`FRAME_EPSILON`）。秒 × fps の浮動小数点の誤差で、Keyframe の直前の値（例：`23.9999999`）になった出力フレームでも、Cut が 1 フレーム遅れないようにするためである。この許容差は浮動小数点の誤差だけを吸収する。ただし、VIDEO の PTS の量子化の幅の半分は、許容差に含める（1ms の timebase なら 0.5ms 分の Timeline frame）。PTS は timebase に丸めて記録されるので、29.97 fps の mkv・webm では、整数の Timeline frame のはずの時刻が最大でその分ずれるためである（`docs/studio-node.md`）。`timeline.fps` は丸めずに記録する（例：29.97 fps の素材は `30000 / 1001`）。コアの VIDEO の fps は分数なので、それを float にした値をそのまま記録する。`29.97` と丸めて記録すると、24 番目のフレームは `23.999976` になり、許容差では吸収できない。
 5. それ以外（`auto`・cubic-bezier の区間の途中）は、次の「補間」の節のとおりに補間する。
 
 ### 補間
@@ -386,8 +386,8 @@ rebaseSceneState(state, fps) // -> object
 - 振るのはエディタとノード上の UI が `state_json` を書くとき（`pano_editor_state.js` の `editorStateWrite`。エディタの `commitState` と、ノード上の UI の書き込み（`port` の Sticker の同期を含む））だけで、`id` が無ければ `newSceneId` で振る。`crypto.getRandomValues` による 16 文字の URL で使える文字（`A-Z`・`a-z`・`0-9`・`-`・`_`）。振った `id` は作業状態に残し、後の書き込みでも同じ `id` を書く。Undo で `id` を振る前の段に戻っても `id` は保つ（`restoredHistoryState`）。
 - 書くテキストが変わるときだけ振る。開いて閉じただけ（テキストが変わらないとき）は、`id` のためだけに書かない（「保存するテキスト」と同じく、ノードのキャッシュを外さないため）。そのため、状態を一度も書いていないノードには `id` が無い。下流は `id` の無い層を、上書きできない層（引き継ぐだけ）として扱う（ADR 0030）。
 - 旧ノード（状態 v1）には振らない。
-- ComfyUI はコピー・貼り付けや複製でウィジェットの値を写すので、貼り付けた Studio は元と同じ `id` を持つ。別々のチェーンにあれば問題ない。一つのチェーンに同じ `id` が二度あるときは、ノードが最も下流の層に当てて警告する。エディタも、最も下流の層にその `id` を使い、ほかの層は番号で区別する（`docs/render-contract.md` の「上流の Scene」）。貼り付けは検出しない。
-- Python（ノード）は振らない。`scene` 出力の層の状態と、実行結果の `pano_upstream_layers` の各層の `state` は `id` をそのまま持つ（`docs/render-contract.md`）。
+- ComfyUI はコピー・貼り付けや複製でウィジェットの値を写すので、貼り付けた Studio は元と同じ `id` を持つ。別々のチェーンにあれば問題ない。一つのチェーンに同じ `id` が二度あるときは、ノードが最も下流の層に当てて警告する。エディタも、最も下流の層にその `id` を使い、ほかの層は番号で区別する（`docs/studio-node.md` の「上流の Scene」）。貼り付けは検出しない。
+- Python（ノード）は振らない。`scene` 出力の層の状態と、実行結果の `pano_upstream_layers` の各層の `state` は `id` をそのまま持つ（`docs/studio-node.md`）。
 
 ## 上流の上書き（`upstream`）
 
@@ -411,7 +411,7 @@ ADR 0030 により、Panorama Studio は `scene` 入力で受けた上流の Sce
 | フィールド | 型 | 意味と正規化 |
 |---|---|---|
 | `layer` | 文字列 | 上書きする上流の層の状態の `id`。空でない文字列でなければ記録ごと捨てる |
-| `fps` | 数値 | 記録の Keyframe・Clip range の frame の基準の fps。1〜1000 に寄せる。正の数値でなければ、記録の frame の意味が決まらないので記録ごと捨てる（すべて引き継ぐ）。エディタは自分の Timeline fps で書き、別の fps の記録に書き足すときは先に自分の fps に再基準化する（`docs/render-contract.md` の「上流の Scene」） |
+| `fps` | 数値 | 記録の Keyframe・Clip range の frame の基準の fps。1〜1000 に寄せる。正の数値でなければ、記録の frame の意味が決まらないので記録ごと捨てる（すべて引き継ぐ）。エディタは自分の Timeline fps で書き、別の fps の記録に書き足すときは先に自分の fps に再基準化する（`docs/studio-node.md` の「上流の Scene」） |
 | `deleted` | 文字列の配列 | 下流で消した上流の Sticker の `id`。空でない文字列だけを、重複を除いて元の順に残す |
 | `stickers` | 配列 | 上流の Sticker ごとの上書き（下記） |
 | `scene` | オブジェクト | 上流の層の `scene` の上書き。`visible`（真偽値）と `clip`（Clip range）だけを持てる |
@@ -436,7 +436,7 @@ Sticker の上書きは `id`・`placement` と、上書きしたフィールド�
 - `deleted` にある `id` の Sticker の上書きは捨てる。
 - キーの順序は上の表の順とする。`deleted`・`stickers`・`scene` は空でも常に持ち、`painting_visible` は上書きするときだけ持つ。
 - 上流の要素の `source`、`scene` の Lane は上書きしない（ADR 0030）。
-- 記録を上流の層に当てる規則は次の「上書きを当てる」で定める。出力への当て方（どの層に当てるか、Source・`port`・長さの扱い）は `docs/render-contract.md` の「上流の Scene」の「上書き」。
+- 記録を上流の層に当てる規則は次の「上書きを当てる」で定める。出力への当て方（どの層に当てるか、Source・`port`・長さの扱い）は `docs/studio-node.md` の「上流の Scene」の「上書き」。
 
 ### 上書きを当てる
 

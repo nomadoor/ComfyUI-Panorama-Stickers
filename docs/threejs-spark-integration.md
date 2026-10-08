@@ -121,7 +121,7 @@ Panorama Studio のエディタの Panorama 表示は、World の内容（`scene
   - `scene`：実行結果の `pano_scene_files`・`pano_scene_meta`（#60）を、`scene` 入力の接続が実行時と同じ間だけ使う（`pano_preview_video.js` の `scene` のチャンネル）。再生ヘッドの Timeline frame で評価した `scene` の Clip range の中だけ、ノードと同じ規則（`batch_index`）で選んだ要素を、`scene` の変形を掛けて描く。MoGe の VIDEO のように要素ごとにファイルがあるものは、次の要素を先に読み込む。
   - 読み込みは `pano_scene_items.js` のキューで、同時に 2 本までにする（`fetch` を `AbortController` 付きで行い、GLB は `GLTFLoader.parse`、PLY は Spark の `SplatMesh` の `fileBytes` で読む）。最新の要求（表示する要素、次にその先読み）を優先し、待っている間に要らなくなった読み込みは始めない。走り始めた読み込みは最後まで読む（中断するのは `scene` 入力が差し替わった・外れたときと、エディタを閉じたときだけ）。同じ URL は二重に読み込まない。スクラブしても読み込みは際限なく増えない。
   - 読み込み中・再生中の表示：そのフレームの要素がまだ読み込めていないときは、入力の要素のうち読み込み済みで、そのフレームの要素より前の最も近いものを出す（前になければ後ろの最も近いもの）。再生中は要素が読み込みに追いつかないので、読み込めた要素だけを間引いて出す（同時に 2 本ずつ新しい要素が届く）。止める・シークすると、そのフレームの要素を最優先で読み、届いたらそのフレームの要素を正確に出す。
-  - 読み込んだ要素は、数ではなく大きさの上限で持つ（`pano_scene_items.js` の `SCENE_ITEM_BUDGET`、1.5 GiB）。大きさは要素ごとに読み込んだバイト数（GLB・PLY のファイルの大きさ）で数え、合計が上限を超えたら、使っていない古いものから捨てる（`overBudget`）。表示している要素と、表示や先読みに求められている要素、読み込み中の要素は捨てない。上限は `scene` と 3D の Sticker のキューで別々に持つ。要素は間引かずに全解像度で届く（MoGe のパノラマ 4096 x 2048 の 1 フレームで約 390 MB。`docs/render-contract.md`）ので、MoGe の VIDEO で巨大な要素がいくつも並んでメモリを使い切らないようにするためである。
+  - 読み込んだ要素は、数ではなく大きさの上限で持つ（`pano_scene_items.js` の `SCENE_ITEM_BUDGET`、1.5 GiB）。大きさは要素ごとに読み込んだバイト数（GLB・PLY のファイルの大きさ）で数え、合計が上限を超えたら、使っていない古いものから捨てる（`overBudget`）。表示している要素と、表示や先読みに求められている要素、読み込み中の要素は捨てない。上限は `scene` と 3D の Sticker のキューで別々に持つ。要素は間引かずに全解像度で届く（MoGe のパノラマ 4096 x 2048 の 1 フレームで約 390 MB。`docs/studio-node.md`）ので、MoGe の VIDEO で巨大な要素がいくつも並んでメモリを使い切らないようにするためである。
     - 先読みは、持ち続ける要素（表示している要素と求められている要素）と読み込み中の要素に、もう 1 つ足しても上限に収まるときだけ始める（`aheadFits`）。まだ読み込んでいない要素の大きさは分からないので、読み込み中と次の要素は、読み込み済みの最も大きい要素と同じ大きさとみなす。何も読み込んでいない間は先読みしない。1 つで上限を超える要素は表示するが、その先は読み込まない。
     - 表示する要素は上限によらず必ず読み込む。新しい要素を読み込む間は、前の要素を表示し続けるので、1 つで上限を超える要素なら、その間は一時的に 2 つ分を持つ。
     - 取得した `ArrayBuffer` は、パーサー（GLTFLoader・Spark）に渡したら参照を外す（`pano_scene_loaders.js` の `loadSceneItem`）。残るのはパースした要素だけである。
@@ -197,7 +197,7 @@ Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエデ
 
 ### 上流の Scene の表示と編集（#90、ADR 0030）
 
-`scene` に別の Panorama Studio の `scene` 出力をつないだとき、エディタは上流の要素を、自分の状態の上書き（`upstream`、ADR 0030）を当てた姿で、出力と同じに描き、自分の要素と同じに選んで編集でき（T8）、タイムラインにも層ごとの行が出る（T9、`docs/timeline-ui.md` の「上流の層の行（ADR 0030）」）。編集は上書きとして自分の状態の `upstream` に書き戻す。消す・上流に戻す・消したものを戻す（T10）も上書きの記録を変える。上流の要素は自分の状態の `stickers` に入れず、実行結果の `pano_upstream_layers`（`docs/render-contract.md` の「上流の Scene」）から作った作業コピーを毎フレーム描く。
+`scene` に別の Panorama Studio の `scene` 出力をつないだとき、エディタは上流の要素を、自分の状態の上書き（`upstream`、ADR 0030）を当てた姿で、出力と同じに描き、自分の要素と同じに選んで編集でき（T8）、タイムラインにも層ごとの行が出る（T9、`docs/timeline-ui.md` の「上流の層の行（ADR 0030）」）。編集は上書きとして自分の状態の `upstream` に書き戻す。消す・上流に戻す・消したものを戻す（T10）も上書きの記録を変える。上流の要素は自分の状態の `stickers` に入れず、実行結果の `pano_upstream_layers`（`docs/studio-node.md` の「上流の Scene」）から作った作業コピーを毎フレーム描く。
 
 - 読む：`editor/upstream.js`。`scene` の入力が実行結果を作ったときのままのとき（`isNodeOutputMediaCurrent(node, "scene")`）だけ読む。各層の状態は `pano_upstream.js` の `upstreamLayersOf` で読み込み、上書きを当てる前の姿として、自分の状態とは別に持つ。
 - 作業コピー（`upstreamWorkingLayers`）：層ごとに、その層の `state.id` と同じ `layer` を持つ自分の `upstream` の記録を `applyUpstreamOverrides` で当て（同じ `id` の層が二つ以上あれば、最も下流の層にだけ。ノードの `_override_layers` と同じ）、複製し（`structuredClone`。上流の層とも記録とも共有しない。ただし上書きで変わらない `painting` は複製せず、上流の層と共有する）、層の `timeline.fps` が自分のものと違えば `rebaseSceneState` で自分の fps に再基準化する。各 Sticker は `origin`（`{ layer: 層のキー, id: 上流の要素の id }`）と、自分の要素とも他の層の要素とも重ならない id `upstream:<層のキー>:<上流の要素の id>` を持つ。どちらもエディタだけのもので、`state_json` に書き戻す上書きの記録には入れない。`id` の無い層（状態が一度も書かれていない）は上書きを受けない。作業コピーは、新しい実行結果を読んだとき、自分の Timeline fps が変わったとき、Undo・Redo で状態を戻したとき（状態 v2 のとき、`history.js` の `restoreHistory` から `rebuildUpstreamWorking`。上流の層が無ければ何もしない）に作り直す。作業コピーを作っても `state_json` は書かない（開いて閉じただけなら差分は出ない）。作り直すたびに、書き戻しで比べる基準（`upstreamBaseline`）も作り直す。
@@ -211,7 +211,7 @@ Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエデ
   - 2D の当たり判定（`hit_test.js`）：上流の `sky` の Sticker は自分の Sky の下にあるので、自分の Sticker とペイントの後、自分の Camera の枠の前に当たる。層は下流のものから、層の中では `z_index` の大きいものから（`items.js` の `upstreamSkyStickers` の逆順）。Frame 表示でも、自分のものの後に当たる。
   - GPU の当たり判定：上流の World の板と 3D の項目は、自分のものと同じ繰り返しで `pickable`・`pickBoxes` と当たり判定の部品（`parts`）に入る（`pano_three_view.js` の `buildWorld`）。見えないもの（不透明度 0）は入れない。板と 3D の `port` の Sticker は id（`upstream:<層のキー>:<id>`）で選ばれ、`scene` の項目は自分のものと同じく選ばれない。6DoF の視点の回転の中心や、World の画像を置く位置にも使われる。
   - 選んだ上流の `sky` の Sticker は、自分の Sticker と同じ輪郭と取っ手を描く（`overlay.js`。選んでいないものの輪郭は描かない）。
-- 編集（T8）：ドラッグ・拡大縮小と回転の取っ手・インスペクタの欄・不透明度・Gizmo・ロックは、作業コピーの Sticker を書き換える。`editor/upstream.js` の `syncUpstreamEdits` が、Undo の段を積むとき（`history.js` の `pushHistory`）と状態を書くとき（`commit.js` の `commitState`）の最初に、`syncCutoutShot`・`syncPortHandoff` と同じ所で書き戻す。前の書き戻しか作り直しのときからその要素で変わったフィールドだけを、Lane なら Keyframe ごと丸ごと、その層の `id` の記録に書く（`pano_upstream.js` の `upstreamEditedRecords`。規則は `docs/render-contract.md` の「エディタでの編集」）。記録の frame は作業コピーの fps（自分の Timeline fps）で、記録の `fps` もその値にする。
+- 編集（T8）：ドラッグ・拡大縮小と回転の取っ手・インスペクタの欄・不透明度・Gizmo・ロックは、作業コピーの Sticker を書き換える。`editor/upstream.js` の `syncUpstreamEdits` が、Undo の段を積むとき（`history.js` の `pushHistory`）と状態を書くとき（`commit.js` の `commitState`）の最初に、`syncCutoutShot`・`syncPortHandoff` と同じ所で書き戻す。前の書き戻しか作り直しのときからその要素で変わったフィールドだけを、Lane なら Keyframe ごと丸ごと、その層の `id` の記録に書く（`pano_upstream.js` の `upstreamEditedRecords`。規則は `docs/studio-node.md` の「エディタでの編集」）。記録の frame は作業コピーの fps（自分の Timeline fps）で、記録の `fps` もその値にする。
   - 上書きを持てない層（キーが `#` で始まる層：`id` が無い、または同じ `id` のより下流の層がある）の要素は、選べるがロックしたものと同じく動かせず（`isItemLocked`・`worldStickerEditable`）、ロックも外せない。
   - 複製・画像の差し替え・前面へ・背面へ（`selection.js`・`sticker_import.js`）は、上流の要素を含む選択では何もしない。選択メニューのボタンは場所を保ったまま無効にし、上書きを持てる層ではロックと削除だけを有効にする（`buildSelectionMenuModel` の `upstream`。上流の `port` の Sticker にも削除のボタンを出す）。上流の `port` の Sticker の Lane のボタンは自分の Pose handoff ではなく、その要素の上書きを外す（下の T10）。
 - 消す（T10）：Delete キー・選択メニューの削除（`commands.js` の `deleteSelected`・`deleteSelectedWorldSticker`）は、上流の要素を、その層の記録の `deleted` に `id` を加え、その要素の上書きを捨てて消す（`editor/upstream.js` の `deleteUpstreamStickers`、`pano_upstream.js` の `upstreamDeletedRecords`。記録が無ければ自分の Timeline fps で作る）。先に書き戻していない編集を書き戻し、記録から作業コピーを作り直すので、消した要素は作業コピーから外れ、描かれず、選択から外れる。確認は自分の要素の削除と同じく出さず、Undo の 1 段になる。自分の要素と上流の要素をまとめて選んで消すと、自分の要素はこれまでどおり消し（`port` の Sticker は隠す）、上流の要素は消した記録にして、Undo の 1 段にまとめる。上書きを持てない層（キーが `#` で始まる層）の要素と、ロックした要素は消せない（`isItemLocked`）。
@@ -229,7 +229,7 @@ Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエデ
 #### `port` の Sticker の同期
 
 Panorama Studio のエディタとノード上の UI は、`sticker` 入力の素材を `source.kind == "port"` の Sticker として状態に持つ
-（`pano_stickers_node_surface.js` の `portStickerSyncValue`・`reconcilePortStickerState`）。ノードの規則は `docs/render-contract.md` の
+（`pano_stickers_node_surface.js` の `portStickerSyncValue`・`reconcilePortStickerState`）。ノードの規則は `docs/studio-node.md` の
 「`port` の Sticker と Pose handoff」。
 
 - 入力がつながっていて状態に `port` の Sticker がなければ加え、入力を外すと取り除く。
@@ -248,7 +248,7 @@ Panorama Studio のエディタとノード上の UI は、`sticker` 入力の�
 
 #### `port` の Sticker の Pose handoff の表示と記録
 
-ノードの規則は `docs/render-contract.md` の「`port` の Sticker と Pose handoff」。
+ノードの規則は `docs/studio-node.md` の「`port` の Sticker と Pose handoff」。
 
 - エディタとノード上の UI（ADR 0030 の T11、`web_src/pano_port_handoff.js`）は、実行結果が新しく（`isNodeOutputMediaCurrent` の `sticker-handoff`。`sticker` と `sticker_state` のどちらかをつなぎ替えると古くなる）、`sticker` と `sticker_state` がつながっている間、`pano_sticker_handoff` を保存した `port` の Sticker に当てて表示する（`inheritPortHandoff`。ノードの `_inherit_handoff` と同じ規則で、配置の置き換えは `sky` → `world`・`world` → `sky` の両方。`world` の Keyframe も表示する）。表示の fps が `pano_sticker_handoff` の `fps` と違うときは、`rebaseUpstreamRecord` と同じ規則（Sticker の素材の先頭を基準に丸める）で表示の fps に直す。このときは、表示の Keyframe が実行の Keyframe と最大で 1 フレーム（丸め）ずれることがある（表示だけで、保存する値と出力は変わらない）。
   - 表示しても `state_json` は変えない。エディタは保存した `port` の Sticker を作業中の値として持ち（`external_stickers.js` の `portSession.stored`）、書き戻し（`commitState`）と Undo の履歴には、表示中の Sticker ではなく保存する Sticker（`storedEditorState`）を使う。引き継いだ Lane は保存した値に戻す（`storedPortSticker`）。配置が置き換わって表示されているときは、新しい配置の Lane を上書きするまで、保存した配置の Sticker（表示中の `clip`・`visible`・`locked`・`crop`・`opacity` を持つ）を保存する。上書きした後は、新しい配置の Sticker を保存し、もう一方の配置の Lane と上書きは捨てる（ノードと同じ）。開いて閉じただけ、実行結果が届いただけでは書かない。ノード上の UI は表示だけを当て（`getCachedState`）、`sync-port` は Pose handoff の `replace` を状態に当てない（`replace` を当てるのは 3D の素材だけ）。

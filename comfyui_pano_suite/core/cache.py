@@ -1,4 +1,4 @@
-"""The one cache this package keeps across executions, bounded by bytes (`docs/render-contract.md`).
+"""The one cache this package keeps across executions, bounded by bytes (`docs/runtime-resources.md`).
 
 Each entry is a value under a namespace and a key. The cache holds at most `limit()` bytes: the smaller of
 `CACHE_MAX_BYTES` and `CACHE_FREE_SHARE` of the free RAM (counting what the cache already holds as free), and at most

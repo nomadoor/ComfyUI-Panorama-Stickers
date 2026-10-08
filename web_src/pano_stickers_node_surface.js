@@ -186,7 +186,7 @@ function inputMediaKind(node, name) {
 }
 
 // Panorama Studio keeps the Sticker of its `sticker` input as the Sticker with the Source
-// {kind: "port"}. Like the node (docs/render-contract.md), the editor and the node surface add it when
+// {kind: "port"}. Like the node (docs/studio-node.md), the editor and the node surface add it when
 // the input is connected and the state has none, and remove it when the input is disconnected. Its
 // vFOV is not the state's: where it is drawn, it follows hFOV and the aspect of the media
 // (skyStickerVfov, as the run derives it), so the media loading never changes state_json; the state

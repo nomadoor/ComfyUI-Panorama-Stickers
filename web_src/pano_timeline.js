@@ -194,7 +194,7 @@ export function isTimed(state, { camera = false } = {}) {
 export const BROKEN_SPAN = 100000;
 
 // The number of Timeline frames the Timeline shows: exactly the output's length, as `_decide_timeline`
-// (nodes.py) decides it (docs/render-contract.md): `timeline.length`, else the Auto length
+// (nodes.py) decides it (docs/studio-node.md): `timeline.length`, else the Auto length
 // (autoTimelineLength of `media`). Nothing past it is in the output, so the Timeline does not reach it. A span
 // that is not a finite number (a broken input) is BROKEN_SPAN.
 export function timelineSpan(state, media = {}) {

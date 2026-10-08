@@ -71,7 +71,7 @@ export function createTimeline(deps) {
   // The Timeline's span: exactly the output's length (pano_timeline.js timelineSpan), followed live from the
   // state and what the editor knows of the inputs. The background VIDEO or IMAGE batch counts from the node's
   // result (or, before a run, the length of the VIDEO file the background input loads), but not an upstream
-  // background, which is in the upstream Scene's length already (docs/render-contract.md). The port Sticker's
+  // background, which is in the upstream Scene's length already (docs/studio-node.md). The port Sticker's
   // media and the `scene` items count from the node's current result. `openClip` counts as a Clip range without
   // a duration (the one being dragged).
   function timelineSpanFrames(openClip = null) {

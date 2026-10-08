@@ -62,7 +62,7 @@
 タイムラインは出力の長さ（Timeline duration）をちょうど表す（Rive・After Effects のコンポジションの長さと同じ）。編集のための余白は持たず、出力より先の範囲は出さない。両端の見た目の余白だけは UI の都合で付けてよい。
 
 - タイムラインの範囲（`pano_timeline.js` の `timelineSpan`）は、`timeline.length` があればその値、なければ Auto の長さ（入力から決まる長さ。この文書の中の呼び名で、UI には出さない）。最小の長さはない（以前の「長さが無いときは 5 秒」はなくした）。
-- Auto の長さ（`autoTimelineLength`）は、ノードの `_decide_timeline`（`docs/render-contract.md` の「長さ」）と同じ規則で、状態と、エディタが知っている入力の長さから編集のたびに求め直す（前回の実行結果の長さをそのまま使うのではない）。順に、背景の VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数（どちらも素材そのもののフレーム数で、背景の Clip range によらない。背景を動かしても切り詰めても長さは変わらず、空いたところは `bg_color` になる。下の「背景の行」）→ Sticker と `scene` の Clip range の終わりのうち最も遅いもの（隠した Sticker も数える。背景の 1 枚の IMAGE の Clip range が `duration` を持てばその終わりも数える。`duration` の無い `port` の Sticker は素材の終わり、`duration` の無い `scene` は要素の数の終わり）→ Camera の各 Lane の最後の Keyframe の次のフレーム（Panorama Studio だけ）→ 1。上流の Scene があるときは、これと上流の長さと上書きした Clip range の終わりのうち最も長いもの（上流があるときの背景の VIDEO は、最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）。Sticker の Keyframe は長さに入らない。`tests/test_timeline_length_parity.py` が、状態と入力の表でノードの長さと一致することを確かめる。
+- Auto の長さ（`autoTimelineLength`）は、ノードの `_decide_timeline`（`docs/studio-node.md` の「長さ」）と同じ規則で、状態と、エディタが知っている入力の長さから編集のたびに求め直す（前回の実行結果の長さをそのまま使うのではない）。順に、背景の VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数（どちらも素材そのもののフレーム数で、背景の Clip range によらない。背景を動かしても切り詰めても長さは変わらず、空いたところは `bg_color` になる。下の「背景の行」）→ Sticker と `scene` の Clip range の終わりのうち最も遅いもの（隠した Sticker も数える。背景の 1 枚の IMAGE の Clip range が `duration` を持てばその終わりも数える。`duration` の無い `port` の Sticker は素材の終わり、`duration` の無い `scene` は要素の数の終わり）→ Camera の各 Lane の最後の Keyframe の次のフレーム（Panorama Studio だけ）→ 1。上流の Scene があるときは、これと上流の長さと上書きした Clip range の終わりのうち最も長いもの（上流があるときの背景の VIDEO は、最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）。Sticker の Keyframe は長さに入らない。`tests/test_timeline_length_parity.py` が、状態と入力の表でノードの長さと一致することを確かめる。
 - エディタが知っている入力の長さ：
   - 背景：ノードの現在の実行結果のエディタ用 MP4 のメタ情報（`pano_input_video_meta` の `frames`・`duration`）。VIDEO か IMAGE バッチかはリンクの型で見る。MP4 の無い IMAGE（`bg_media` に IMAGE がつながっている）は 1 枚の IMAGE とみなす（実行前の IMAGE バッチも、実行までは 1 枚として数える）。上流の Scene の背景を使うときは数えない（上流の長さにすでに入っている）。
   - `port` の Sticker の素材：現在の実行結果の `pano_sticker_input_video_meta`、3D の素材は `pano_sticker_files` の要素の数（`pano_port_media.js` の `portMediaMeta`）。
@@ -127,7 +127,7 @@ Camera は Keyframe と Drone の二つのモードを持ち、出力にはい�
 
 ### Pose handoff の `port` の Sticker（ADR 0030）
 
-`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Revert to upstream」の Lane のボタン。ノードの規則は `docs/render-contract.md` の「`sticker_state` で届く `port` の Sticker」、エディタの表示と記録は `docs/threejs-spark-integration.md` の「`port` の Sticker の Pose handoff の表示と記録」。
+`sticker_state` で届く `port` の Sticker は、実行結果の Pose handoff（`pano_sticker_handoff`）を当てた姿で、タイムラインの行と Lane にも出る（引き継いだ Lane には上流の Camera の軌道の Keyframe が並ぶ）。引き継いだ Lane の Keyframe を打つ・動かす・消す・Easing を変えると、その Lane は下流の上書き（`handoff_overrides`）になり、Lane 全体（上流から来ていた Keyframe を含む）を保存する。Clip range・目のアイコン・ロックの操作は上書きにならず、ふつうに保存する。上書きを外すのはインスペクタの「Revert to upstream」の Lane のボタン。ノードの規則は `docs/studio-node.md` の「`sticker_state` で届く `port` の Sticker」、エディタの表示と記録は `docs/threejs-spark-integration.md` の「`port` の Sticker の Pose handoff の表示と記録」。
 
 ### 上流の層の行（ADR 0030）
 
@@ -136,7 +136,7 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
 - まとまりの先頭に見出しの行（`PanoTimelineGroup.vue`）があり、`Upstream · <層のキー>`（その層の Scene の id、`id` の無い層は `#<番号>`）と出す。上書きを持てない層（キーが `#` で始まる層）には ` · inherited only` を添える。
 - 行は自分のものと同じ順：その層の Sticker（`sky` は手前から奥、次に `world`）、ペイント（「Paint」。ストロークなどを持つか、隠しているときだけ。目と名前だけ）、`scene`（「Scene」。その層が 3D の内容（`ui` の `pano_scene_files`）を持つか、Keyframe か既定でない Clip range を持つか、隠しているときだけ。目と Clip range だけで、行のポチと Lane の行は無い）。
 - 行の id は `upstream:<層のキー>:<要素の id>`、ペイントは `upstream:<層のキー>:painting`、`scene` は `upstream:<層のキー>:scene`（`pano_upstream.js` の `upstreamRowId`）。フレームは自分の Timeline frame（作業コピーの値）。Sticker の id に `scene`・`painting` は使わない（エディタが振る id は常に `sticker_<番号>`。`docs/scene-state-v2.md` の `next_sticker_id`）ので、ペイントと `scene` の行の id は Sticker の行の id と重ならない。自分の行の `scene`・`painting` も同じ前提である。
-- 操作は自分の行と同じ：Keyframe を打つ・動かす・消す・Easing を変える、行のポチ（全 Lane に Keyframe）、Clip range の移動と両端の切り詰め、目のアイコン、行の選択と開閉。どれも作業コピーを変え、Undo の段を積むとき（`pushHistory`）に `syncUpstreamEdits` が、変えたフィールドだけを自分の状態の `upstream` の記録に上書きとして書く（Lane は Keyframe ごと丸ごと、`clip`・`visible`、層の `scene` の `visible`・`clip`、`painting_visible`。`docs/render-contract.md` の「エディタでの編集」）。上流の層の状態そのものと自分の Sticker は変えない。操作ごとに Undo の 1 段になり、Undo・Redo で記録と作業コピーが戻る。開いて閉じただけ、行を開いた・選んだだけ、Clip range をクリックしただけでは何も書かない。
+- 操作は自分の行と同じ：Keyframe を打つ・動かす・消す・Easing を変える、行のポチ（全 Lane に Keyframe）、Clip range の移動と両端の切り詰め、目のアイコン、行の選択と開閉。どれも作業コピーを変え、Undo の段を積むとき（`pushHistory`）に `syncUpstreamEdits` が、変えたフィールドだけを自分の状態の `upstream` の記録に上書きとして書く（Lane は Keyframe ごと丸ごと、`clip`・`visible`、層の `scene` の `visible`・`clip`、`painting_visible`。`docs/studio-node.md` の「エディタでの編集」）。上流の層の状態そのものと自分の Sticker は変えない。操作ごとに Undo の 1 段になり、Undo・Redo で記録と作業コピーが戻る。開いて閉じただけ、行を開いた・選んだだけ、Clip range をクリックしただけでは何も書かない。
 - ロックは自分の行と同じに効く：ロックした上流の要素（ロックの上書き、または上流でロックされたもの）の行は、Keyframe と Clip range を変えず、目のアイコンは効く。ロックの切り替えは、行ではなく選択メニューにある（インスペクタには無い）。
 - 上書きを持てない層の行は、出るがロックと同じく何も変えない（目のアイコンと行のポチのボタンは無効にし、ツールチップに理由を出す）。選択と行の開閉はできる。
 - `scene` の行は Clip range だけを変える。上流の `scene` の Lane は上書きできない（`docs/scene-state-v2.md`）ので、その Keyframe の印は動かせず、Easing も変えない。
@@ -146,7 +146,7 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
   - 「Restore deleted (n)」：その層の記録の `deleted` を空にし、下流で消した要素をもう一度出す。n は消した記録のうち、上書きを当てる前の層にまだある要素の数（`upstreamDeletedCount`。上流で消えた id は数えない）。消した要素は選べないので、層の操作として見出しに置く（インスペクタには置かない）。
 - Delete キーは、Keyframe を選んでいればその Keyframe を消し（上の規則）、そうでなければ選んだ上流の要素を消す（`docs/threejs-spark-integration.md` の「上流の Scene の表示と編集」の「消す（T10）」）。
 - 自分の `scene` の行は、上流の Scene があるときは出さない（自分の `scene` は描画に使われない）。
-- タイムラインの範囲は、自分の行と同じく出力の長さちょうど（上の「タイムラインの長さ」）。Auto の長さには、上流の Scene の長さ（実行結果の `pano_upstream_frames`）と、上書きした Clip range の終わりが入る（`editor/upstream.js` の `upstreamOutput`、`pano_upstream.js` の `upstreamOverriddenEnds`）。上書きしたものは、記録が `clip` を持つもの、またはまだ書き戻していない編集で変えたもの（ドラッグ中を含む）で、`duration` の無いものは `port` の Sticker の素材の終わり（`portMediaFrames`）だけを数える。ドラッグ中の Clip range は `duration` の無いものとして数える。ノードの長さの規則（`docs/render-contract.md` の「長さ」）と同じで、上書きしていない上流の Clip range は上流の長さにすでに入っているので数えない。上流の行の Clip range と Keyframe のドラッグも、自分の行と同じ規則（上の「タイムラインの長さ」。Clip range の移動は始まりが出力の中にある限り終わりより先へ出てよく、トリムと Keyframe は終わりで止まり、どのドラッグでも出力は延びない）。
+- タイムラインの範囲は、自分の行と同じく出力の長さちょうど（上の「タイムラインの長さ」）。Auto の長さには、上流の Scene の長さ（実行結果の `pano_upstream_frames`）と、上書きした Clip range の終わりが入る（`editor/upstream.js` の `upstreamOutput`、`pano_upstream.js` の `upstreamOverriddenEnds`）。上書きしたものは、記録が `clip` を持つもの、またはまだ書き戻していない編集で変えたもの（ドラッグ中を含む）で、`duration` の無いものは `port` の Sticker の素材の終わり（`portMediaFrames`）だけを数える。ドラッグ中の Clip range は `duration` の無いものとして数える。ノードの長さの規則（`docs/studio-node.md` の「長さ」）と同じで、上書きしていない上流の Clip range は上流の長さにすでに入っているので数えない。上流の行の Clip range と Keyframe のドラッグも、自分の行と同じ規則（上の「タイムラインの長さ」。Clip range の移動は始まりが出力の中にある限り終わりより先へ出てよく、トリムと Keyframe は終わりで止まり、どのドラッグでも出力は延びない）。
 
 ### 背景の行
 
@@ -166,7 +166,7 @@ Panorama Studio の自分の `bg_media` は、タイムラインの自分の行�
 
 ### `port` の Sticker の素材（#83）
 
-`sticker` の VIDEO と 2 枚以上の IMAGE バッチは、実行結果の MP4（`pano_sticker_input_videos`、`docs/render-contract.md`）を、エディタとノード上の UI で再生ヘッドに合わせて表示する。状態機械は増やさず、背景の VIDEO の状態機械の再生ヘッドに、2 つ目の VIDEO（`pano_video_playback.js` の `createVideoFollower`）が描画のたびに従う。音は出さない（背景の音声だけ。ADR 0024）。
+`sticker` の VIDEO と 2 枚以上の IMAGE バッチは、実行結果の MP4（`pano_sticker_input_videos`、`docs/studio-node.md`）を、エディタとノード上の UI で再生ヘッドに合わせて表示する。状態機械は増やさず、背景の VIDEO の状態機械の再生ヘッドに、2 つ目の VIDEO（`pano_video_playback.js` の `createVideoFollower`）が描画のたびに従う。音は出さない（背景の音声だけ。ADR 0024）。
 
 - 再生ヘッドのフレームから素材の時刻を求める規則は `pano_port_media.js` の `portMediaTime` で、`video` 出力（`sticker_media.py` の `PortMedia.index_at`）と同じ。素材の最初のフレームは Clip range の `start − in` にある。VIDEO は実時間で進み、その時刻の PTS ≤ t の最後のフレームを出す（PTS の丸めの許容差はメタ情報の `pts_tolerance`）。IMAGE バッチは Timeline fps の列で、最も近い 1 枚を出す（MP4 の中ではそのフレームの真ん中へシークする）。Clip range の外と、素材の外（素材の前・終わりの後）では描かない。
 - 再生ヘッドが止まっている間（`idle`・`loading`・`seeking`）は、VIDEO を止めてそのフレームの時刻へシークし、着いたら静止画にする。シーク中の新しい時刻は、着いた時点で最新の時刻へ一度だけシークし直す。着くまでは前の静止画を出す。

@@ -259,7 +259,7 @@ function cameraAxes(camera) {
 }
 
 // The `scene` input's editor files in a node result (`pano_scene_files` and `pano_scene_meta`,
-// docs/render-contract.md): the kind the editor loads and a URL per item (null for an empty item, by
+// docs/studio-node.md): the kind the editor loads and a URL per item (null for an empty item, by
 // source(entry)), or null when the result has none.
 export function sceneFilesOf(files, meta, source) {
   const kind = meta[0]?.kind;
