@@ -53,7 +53,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 
 - 状態に保存する時刻はすべて整数の Timeline frame とする。秒は Timeline frame ÷ `timeline.fps` で求める（ADR 0024）。
 - 評価関数は端数を含む Timeline frame を受け取る。背景 VIDEO のフレームの元の時刻 `t` 秒で評価するときは、`t × timeline.fps` を渡す。実行時の fps が `timeline.fps` と違っても、ノードは記録された `timeline.fps` で解釈して秒を保つ。
-- Panorama Studio が上流の Scene を受けたときは、上流の各ノードの状態と自分の状態を、それぞれの `timeline.fps` で同じ時刻 `t` 秒に評価する（`t × その状態の timeline.fps`）。どの状態も再基準化しない（`docs/render-contract.md` の「上流の Scene（#88）」）。
+- Panorama Studio が上流の Scene を受けたときは、上流の各ノードの状態と自分の状態を、それぞれの `timeline.fps` で同じ時刻 `t` 秒に評価する（`t × その状態の timeline.fps`）。どの状態も再基準化しない（`docs/render-contract.md` の「上流の Scene」）。
 - Camera の Keyframe は Timeline 基準とする。`scene` と Sticker の Keyframe は、素材の先頭が Timeline 上に来る位置（`start − in`）を基準とする。
 
 ## `state_json` v2
@@ -386,7 +386,7 @@ rebaseSceneState(state, fps) // -> object
 - 振るのはエディタとノード上の UI が `state_json` を書くとき（`pano_editor_state.js` の `editorStateWrite`。エディタの `commitState` と、ノード上の UI の書き込み（`port` の Sticker の同期を含む））だけで、`id` が無ければ `newSceneId` で振る。`crypto.getRandomValues` による 16 文字の URL で使える文字（`A-Z`・`a-z`・`0-9`・`-`・`_`）。振った `id` は作業状態に残し、後の書き込みでも同じ `id` を書く。Undo で `id` を振る前の段に戻っても `id` は保つ（`restoredHistoryState`）。
 - 書くテキストが変わるときだけ振る。開いて閉じただけ（テキストが変わらないとき）は、`id` のためだけに書かない（「保存するテキスト」と同じく、ノードのキャッシュを外さないため）。そのため、状態を一度も書いていないノードには `id` が無い。下流は `id` の無い層を、上書きできない層（引き継ぐだけ）として扱う（ADR 0030）。
 - 旧ノード（状態 v1）には振らない。
-- ComfyUI はコピー・貼り付けや複製でウィジェットの値を写すので、貼り付けた Studio は元と同じ `id` を持つ。別々のチェーンにあれば問題ない。一つのチェーンに同じ `id` が二度あるときは、ノードが最も下流の層に当てて警告する。エディタも、最も下流の層にその `id` を使い、ほかの層は番号で区別する（`docs/render-contract.md` の「上流の Scene（#88）」）。貼り付けは検出しない。
+- ComfyUI はコピー・貼り付けや複製でウィジェットの値を写すので、貼り付けた Studio は元と同じ `id` を持つ。別々のチェーンにあれば問題ない。一つのチェーンに同じ `id` が二度あるときは、ノードが最も下流の層に当てて警告する。エディタも、最も下流の層にその `id` を使い、ほかの層は番号で区別する（`docs/render-contract.md` の「上流の Scene」）。貼り付けは検出しない。
 - Python（ノード）は振らない。`scene` 出力の層の状態と、実行結果の `pano_upstream_layers` の各層の `state` は `id` をそのまま持つ（`docs/render-contract.md`）。
 
 ## 上流の上書き（`upstream`）
@@ -411,7 +411,7 @@ ADR 0030 により、Panorama Studio は `scene` 入力で受けた上流の Sce
 | フィールド | 型 | 意味と正規化 |
 |---|---|---|
 | `layer` | 文字列 | 上書きする上流の層の状態の `id`。空でない文字列でなければ記録ごと捨てる |
-| `fps` | 数値 | 記録の Keyframe・Clip range の frame の基準の fps。1〜1000 に寄せる。正の数値でなければ、記録の frame の意味が決まらないので記録ごと捨てる（すべて引き継ぐ）。エディタは自分の Timeline fps で書き、別の fps の記録に書き足すときは先に自分の fps に再基準化する（`docs/render-contract.md` の「上流の Scene（#88）」） |
+| `fps` | 数値 | 記録の Keyframe・Clip range の frame の基準の fps。1〜1000 に寄せる。正の数値でなければ、記録の frame の意味が決まらないので記録ごと捨てる（すべて引き継ぐ）。エディタは自分の Timeline fps で書き、別の fps の記録に書き足すときは先に自分の fps に再基準化する（`docs/render-contract.md` の「上流の Scene」） |
 | `deleted` | 文字列の配列 | 下流で消した上流の Sticker の `id`。空でない文字列だけを、重複を除いて元の順に残す |
 | `stickers` | 配列 | 上流の Sticker ごとの上書き（下記） |
 | `scene` | オブジェクト | 上流の層の `scene` の上書き。`visible`（真偽値）と `clip`（Clip range）だけを持てる |
@@ -436,7 +436,7 @@ Sticker の上書きは `id`・`placement` と、上書きしたフィールド�
 - `deleted` にある `id` の Sticker の上書きは捨てる。
 - キーの順序は上の表の順とする。`deleted`・`stickers`・`scene` は空でも常に持ち、`painting_visible` は上書きするときだけ持つ。
 - 上流の要素の `source`、`scene` の Lane は上書きしない（ADR 0030）。
-- 記録を上流の層に当てる規則は次の「上書きを当てる」で定める。出力への当て方（どの層に当てるか、Source・`port`・長さの扱い）は `docs/render-contract.md` の「上流の Scene（#88）」の「上書き」。
+- 記録を上流の層に当てる規則は次の「上書きを当てる」で定める。出力への当て方（どの層に当てるか、Source・`port`・長さの扱い）は `docs/render-contract.md` の「上流の Scene」の「上書き」。
 
 ### 上書きを当てる
 
