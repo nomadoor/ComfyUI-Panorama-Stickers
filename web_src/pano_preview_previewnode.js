@@ -386,6 +386,8 @@ class PreviewNodeRuntime {
     try {
       this.root = document.createElement("div");
       this.root.className = "pano-node-preview-dom pano-node-preview--preview";
+      // The frame's radius, border and background come from .pano-node-frame (web/pano_editor.css).
+      this.root.classList.add("pano-node-frame");
       this.root.setAttribute("data-capture-wheel", "true");
       this.root.setAttribute("tabindex", "0");
       this.root.style.cssText = [
@@ -395,9 +397,6 @@ class PreviewNodeRuntime {
         "position:relative",
         "display:block",
         "overflow:hidden",
-        "background:#070707",
-        "border-radius:8px",
-        "border:1px solid rgba(63,63,70,1)",
       ].join(";");
 
       this.canvas = createPanoCanvas({ label: "preview-node.surface" });

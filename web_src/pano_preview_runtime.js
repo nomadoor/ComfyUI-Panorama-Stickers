@@ -1989,13 +1989,12 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   }
 
   const wrap = document.createElement("div");
+  // The frame's radius, border and background come from .pano-node-frame (web/pano_editor.css).
+  wrap.className = "pano-node-frame";
   wrap.style.cssText = [
     "position:absolute",
     "inset:0",
-    "border-radius:8px",
     "overflow:hidden",
-    "border:1px solid rgba(63,63,70,1)",
-    "background:#070707",
   ].join(";");
 
   const canvas = createPanoCanvas({ label: "node.surface" });
@@ -2021,7 +2020,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     "justify-content:center",
     "pointer-events:none",
     "color:rgba(161,161,170,0.95)",
-    "font:600 15px 'Plus Jakarta Sans', Geist, sans-serif",
+    "font:600 15px var(--pano-font-family-compact)",
     "text-align:center",
     "padding:0 10px",
     "z-index:2",
