@@ -38,3 +38,7 @@ web/*.bak
 demo/config_local.py
 models/
 .git.backup-*/
+
+# Playwright
+test-results/
+playwright-report/

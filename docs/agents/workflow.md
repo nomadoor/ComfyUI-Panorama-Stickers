@@ -125,12 +125,15 @@ behavior change ごとに、agent は次のどちらかを理由を一言添え�
 
 ## Verification
 
-- 描画、WebGL、動画再生、pointer 入力に触れる変更は、review の前に Playwright の headless Chromium で確かめる：
-  コンソールのエラーが無い、WebGL context が失われない、決まった場面が空でなく描ける。
-  どの描画方式（GPU か SwiftShader か）で走ったかを、review に渡す検証結果に書く。
-- ComfyUI-dev を相手にする検証は main session が行う。subagent が回せるのは、server の要らない静的なページだけとする。
-- Playwright は devDependency として足すことを承認済み（2026-10-08）。まだ入っていない。導入は次の作業項目とし、
-  導入までは scratchpad の使い捨ての CDP スクリプトで同じ項目を確かめる。実行するコマンドと「決まった場面」は整備のときにここへ書く。
+- 描画、WebGL、動画再生、pointer 入力に触れる変更は、review の前に `npm run test:browser` を通す。Playwright が
+  Vite の開発サーバーを 127.0.0.1 で起動し、`tests/browser/pages/` のページを headless Chromium で開いて、
+  コンソールのエラーが無い、タブが落ちない、WebGL context が失われない、決まった場面が空でなく描ける、を確かめる。
+  場面に使う動画や 3DGS はページの中で作り、リポジトリに素材のファイルを置かない。
+- 走った描画方式（GPU か SwiftShader か）は test の出力の `renderer:` 行に出る。review に渡す検証結果に書く。
+- Chromium は Playwright が `~/.cache/ms-playwright` に置くものを使う。無ければ、初回だけ `npx playwright install chromium`
+  で入れる。これはネットワークからの download なので、ユーザーの承認を得て行う。
+- 触れた振る舞いを確かめる場面が無ければ、`tests/browser/` に足す。足した場面は、守る対象を外すと落ちることを一度確かめる。
+- `npm run test:browser` と ComfyUI-dev を相手にする検証は main session が回す（どちらも server を起動する）。
 - milestone（Review 節で定義）ごとに、GPU に依存する振る舞いをユーザーの実機の GPU で確かめる。
 
 ## Review
