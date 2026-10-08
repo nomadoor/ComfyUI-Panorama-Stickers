@@ -18,8 +18,8 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 
 | 規則 | Python | JS / CSS | test |
 |---|---|---|---|
-| デザインの値の custom property（`--pano-*`）とその値 | — | `web/pano_editor.css` の `.pano-modal` | — |
-| ノード上の表示での custom property の定義し直し | — | `web/pano_editor.css` の `.pano-cutout-node-surface`・`.pano-stickers-node-surface`・`.pano-studio-node-surface`・`.pano-preview-node-surface` | — |
+| デザインの値の custom property（`--pano-*`。ノード上の表示だけの値の `--pano-node-*` を含む）とその値。一つの名前は一つの値を持ち、どこでも定義し直さない | — | `web/pano_editor.css` の `:root` | — |
+| ノード上の表示の枠（`.pano-node-frame`） | — | `web/pano_editor.css` の `.pano-node-frame`、`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl` と `web_src/pano_preview_previewnode.js` の `attachDom`（class を付ける） | — |
 | stylesheet の読み込み | — | `web_src/pano_styles.js` `installPanoSuiteStylesheet` | — |
 | 共有のボタン（`.pano-btn` 系）の大きさと状態の見た目 | — | `web/pano_editor.css` の `.pano-btn`・`.pano-btn-icon`・`.pano-btn-texticon`・`.pano-btn-primary`・`.pano-btn.subtle`、`web_src/components/PanoIconButton.vue` | — |
 | 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-segments` の `--pano-segment-pad: 3px`、`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
@@ -29,7 +29,9 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 
 ## 色
 
-### custom property（`.pano-modal` で定義）
+### custom property（`:root` で定義）
+
+デザインの値の `--pano-*` は `web/pano_editor.css` の `:root` で一度だけ定義し、モーダルとノード上の表示の両方に届く。部品の中だけで使う custom property（`.pano-modal` の `--pano-side-w`、`.pano-segments` の `--pano-segment-pad`、コンポーネントが inline で渡す `--pano-segment-count` など）は、その部品が定義する。
 
 | property | 値 | 使われ方 |
 |---|---|---|
@@ -47,36 +49,42 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | `--pano-muted-strong` | `#a0a0a0` | 選ばれていない切り替えの hover、設定の行のラベル、開いた caret |
 | `--pano-text-tertiary` | `#5e5e5e` | 無効の切り替え、caret、section title の meta、タイムラインの目・開閉・鍵のボタン |
 | `--pano-border` | `rgba(255,255,255,0.09)` | タイムラインの行の境界 |
+| `--pano-divider` | `rgba(255,255,255,0.08)` | `.pano-divider`、`.pano-side-footer` の上の線、色のポップオーバー・SV の面・hue の帯の内側の線、ノードの注記の枠 |
 | `--pano-accent` | `var(--pano-theme-accent, #0070f3)` | フォーカスの輪、スライダーの塗り、チェックボックス、タイムラインの再生位置・clip・上書きの印、Easing の曲線 |
-| `--pano-accent-dimmed` | `color-mix(in srgb, var(--pano-accent) 34%, transparent)` | `.is-selected` の地（`.is-selected` を付ける code は無い） |
-| `--pano-accent-dark` | `var(--pano-theme-accent-dark, #0366d6)` | 参照なし |
-| `--pano-accent-extra-dark` | `var(--pano-theme-accent-extra-dark, #0059bc)` | 参照なし |
-| `--pano-text-reversed` | `#ffffff` | 参照なし |
 | `--pano-emphasis-bg` | `#185fb8` | 強調のボタン（`.pano-btn-primary`、左のツール群の accent のボタン、ノードの Full Editor と Open） |
 | `--pano-emphasis-bg-hover` | `#2672d2` | 強調のボタンの hover（`.pano-btn-primary` は `:focus-visible` も） |
 | `--pano-emphasis-bg-active` | `#114f9d` | 強調のボタンの `:active` |
 | `--pano-emphasis-text` | `#ffffff` | 強調のボタンの文字 |
 | `--pano-float-bg` | `rgba(10,10,10,0.74)` | ステージの上に浮く群（HUD）の地 |
+| `--pano-popover-bg` | `rgba(10,10,10,0.92)` | HUD の上のポップオーバー（音量、aspect）の地 |
+| `--pano-keyframe` | `#f5b544` | Keyframe のある鍵のボタン、選んだ Keyframe の印、Easing の腕と handle |
+| `--pano-frame-yellow` | `rgb(255,221,87)` | Frame のツール群（`.pano-frame-rail`）の地の混色、roll の knob の armed |
+| `--pano-frame-yellow-edge` | `rgba(255,221,87,0.62)` | Frame のツール群の内側の 2px の線 |
 
-`--pano-theme-accent`・`--pano-theme-accent-dark`・`--pano-theme-accent-extra-dark` はこのリポジトリのどこでも設定しておらず、
-既定の値が使われる。
+`--pano-theme-accent` はこのリポジトリのどこでも設定しておらず、既定の値が使われる。
 
-### ノード上の表示での定義し直し
+### ノード上の表示の値（`--pano-node-*`）
 
-ノード上の表示は `.pano-modal` の外にあるので、各 surface の root が使う property を定義し直す。
+ノード上の表示がモーダルと違う値を使うところは、別の名前の token を使う。surface の root は token を定義し直さない。
 
-| surface | 定義し直す値 |
-|---|---|
-| `.pano-cutout-node-surface` | `--pano-surface-0`〜`3`・`--pano-bg-control`・`--pano-text`・`--pano-emphasis-*` はモーダルと同じ値（`--pano-emphasis-text` は `#fff`）。`--pano-text-secondary: #a1a1aa`、`--pano-text-tertiary: #71717a`、`--pano-space-md` / `lg` / `xl`（8 / 12 / 14px）、`--pano-float-bg: rgba(10,10,10,0.82)`、`--pano-float-radius: 8px` |
-| `.pano-stickers-node-surface` | `--pano-text: #f5f5f5`、`--pano-text-secondary: #787878`、`--pano-emphasis-bg`・`-hover`・`-active`、`--pano-float-bg: rgba(10,10,10,0.82)`、`--pano-float-radius: 8px` |
-| `.pano-studio-node-surface` | `--pano-text: #f5f5f5`、`--pano-text-secondary: #a1a1aa`、`--pano-emphasis-bg: #185fb8` |
-| `.pano-preview-node-surface` | `--pano-text: #f5f5f5` |
+| property | 値 | 使われ方 |
+|---|---|---|
+| `--pano-node-text-secondary` | `#a1a1aa` | `PanoramaCutout` の help のポップオーバーの文字、Studio の bar の注記（`.pano-studio-node-note`） |
+| `--pano-node-text-tertiary` | `#71717a` | `PanoramaCutout` の aspect の trigger の caret |
+| `--pano-node-float-bg` | `rgba(10,10,10,0.82)` | `PanoramaCutout` の toolbar の aspect のポップオーバーの地 |
+| `--pano-node-float-radius` | `8px` | `PanoramaCutout` の aspect のポップオーバー、`PanoramaStickers`・`PanoramaCutout` の help のポップオーバーの角丸 |
+| `--pano-node-frame-bg` | `#070707` | ノード上の表示の枠の地、`PanoramaPreview` の fullscreen の地 |
+| `--pano-node-frame-border` | `rgba(63,63,70,1)` | ノード上の表示の枠の線 |
 
-ノード上の表示の枠（`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl` と `web_src/pano_preview_previewnode.js` の
-inline の style）は角丸 8px、`1px solid rgba(63,63,70,1)`、地 `#070707`。`PanoramaPreview` の fullscreen の地も `#070707`。
+`PanoramaStickers` の help のポップオーバーの文字はモーダルと同じ `--pano-text-secondary`（`#787878`）。
+
+ノード上の表示の枠（`.pano-node-frame`。`attachPanoramaPreviewImpl` の wrap と `PanoramaPreview` の root に JS が付ける）は
+角丸 `--pano-radius-md`（8px）、`1px solid var(--pano-node-frame-border)`、地 `--pano-node-frame-bg`。位置と `overflow` は inline の style。
 ノードの小さいボタン（`.pano-preview-node-fullscreen`・`.pano-stickers-node-play`）は 26×26、角丸 6px、地 `rgba(27,30,37,0.9)`、
 文字 `rgba(255,255,255,0.72)`、hover と `:focus-visible` で `rgba(37,41,50,0.96)` と `rgba(255,255,255,0.96)`。
-ノードの注記（`.pano-*-node-empty-note`）は角丸 999px、`1px solid rgba(255,255,255,0.08)`、地 `rgba(10,10,10,0.7)`、10px / 550、`blur(8px)`。
+ノードの注記（`.pano-*-node-empty-note`）は角丸 999px、`1px solid var(--pano-divider)`、地 `rgba(10,10,10,0.7)`、10px / 550、`blur(8px)`。
+旧ノードの toolbar（`.pano-stickers-node-toolbar`・`.pano-cutout-node-toolbar`）、help（`.pano-*-node-help*`）、注記、
+小さいボタンは、同じ宣言を一つの rule に selector を並べて共有し、違う宣言（toolbar の列、help の幅と文字の色、ボタンの位置）だけを別の rule に持つ。
 
 ### custom property を使わない色
 
@@ -85,12 +93,9 @@ inline の style）は角丸 8px、`1px solid rgba(63,63,70,1)`、地 `#070707`�
 | 値 | 使われ方 |
 |---|---|
 | `#d0d0d0` | `.pano-section-title` |
-| `#f5f5f5`（`--pano-text` と同じ値） | `.pano-canvas-confirm-title`、`.pano-picker-item.active`、設定の summary、`.pano-segment-btn[aria-pressed="true"]`、`.pano-easing-mode[aria-pressed="true"]` |
 | `#b0b0b0` | 確認のダイアログの本文 |
 | `#111` | 確認のダイアログの地、Keyframe の集まりの文字、Easing の handle の線 |
-| `rgba(255,255,255,0.08)` | `.pano-divider`、`.pano-side-footer` の上の線、色のポップオーバーの内側の線 |
-| `rgb(255,221,87)` | Frame のツール群（`.pano-frame-rail`）の地の混色と内側の 2px の線、roll の knob の armed |
-| `#f5b544` | Keyframe のある鍵のボタン、選んだ Keyframe の印、Easing の腕と handle |
+| `rgba(255,255,255,0.08)`（`--pano-divider` と同じ値） | 色のポップオーバーの虹色の点の輪（`radial-gradient` の色の区切り） |
 | `#d4d4d8` | Keyframe の印 |
 | `rgba(251,191,36,0.5)`・`rgba(24,18,8,0.9)`・`#fde68a` | ステージの読み込みの失敗（枠・地・文字） |
 | `rgba(10,10,10,0.58)` | ドロップの案内（`.pano-stage-drop-hint-text`）の地 |
@@ -101,9 +106,15 @@ inline の style）は角丸 8px、`1px solid rgba(63,63,70,1)`、地 `#070707`�
 
 ## 文字
 
-- 書体：`"Plus Jakarta Sans", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif`（`.pano-modal`）。
-  ノード上の表示は `font: 500 11px/1 "Plus Jakarta Sans", Geist, system-ui, sans-serif`（各 surface の root）。
-  `.pano-view-unavailable` は `600 13px "Plus Jakarta Sans", Geist, sans-serif`。
+- 書体：三つの token があり、書体の並びが違う（computed の値を変えないため一つにまとめていない）。
+
+  | property | 値 | 使われ方 |
+  |---|---|---|
+  | `--pano-font-family` | `"Plus Jakarta Sans", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif` | `.pano-modal` |
+  | `--pano-node-font-family` | `"Plus Jakarta Sans", Geist, system-ui, sans-serif` | ノード上の表示の root（`font: 500 11px/1 var(--pano-node-font-family)`） |
+  | `--pano-font-family-compact` | `"Plus Jakarta Sans", Geist, sans-serif` | `.pano-view-unavailable`（`600 13px`）、`attachPanoramaPreviewImpl` の「Connect ERP image」の inline の style（`600 15px`） |
+
+  canvas に描く文字（`ctx.font`）は CSS の custom property を使えないので、各 JS が書体を直に持つ。
 - 大きさと太さ（大きさの custom property は無く、各 class が値を持つ）。`.pano-modal` は太さを指定しないので、
   太さを書かない class は親から継承する（表の「継承」）。ノード上の表示は root の `font` が 500 を与える。
 
@@ -144,16 +155,16 @@ inline の style）は角丸 8px、`1px solid rgba(63,63,70,1)`、地 `#070707`�
 
 ## 角丸
 
-角丸の custom property は `--pano-float-radius`（10px）だけで、他は各 class が値を持つ。`--pano-space-xs`（4px）・
-`--pano-space-md`（8px）・`--pano-space-lg`（12px）を角丸に使う class がある。
+角丸の custom property は `--pano-radius-xs`（4px）・`--pano-radius-md`（8px）・`--pano-radius-lg`（12px）・`--pano-float-radius`（10px）・
+`--pano-node-float-radius`（8px）で、他は各 class が値を持つ。余白の token を角丸に使わない。
 
 | 値 | 使われ方 |
 |---|---|
-| 4px | `.pano-aspect-choice`（`--pano-space-xs`）、タイムラインの小さいボタンと clip |
-| 6px | HUD の中のアイコンのボタン・roll の knob・`.pano-segments`（`calc(var(--pano-float-radius) - var(--pano-float-pad))`）、Studio の bar、ノードの小さいボタン、`.pano-segment` の印と Easing の項目（`calc(var(--pano-space-md) - 2px)`） |
-| 8px | `.pano-btn`・入力・選択肢の trigger と項目・ツールチップ・設定・`.pano-segment`・タイムラインの本体（`--pano-space-md`）、表示の切り替えの印、ステージの読み込みの失敗、ノード上の表示の枠と `--pano-float-radius` |
+| 4px | `.pano-aspect-choice`（`--pano-radius-xs`）、タイムラインの小さいボタンと clip |
+| 6px | HUD の中のアイコンのボタン・roll の knob・`.pano-segments`（`calc(var(--pano-float-radius) - var(--pano-float-pad))`）、Studio の bar、ノードの小さいボタン、`.pano-segment` の印と Easing の項目（`calc(var(--pano-radius-md) - 2px)`） |
+| 8px | `.pano-btn`・入力・選択肢の trigger と項目・ツールチップ・設定・`.pano-segment`・タイムラインの本体（`--pano-radius-md`）、表示の切り替えの印、ステージの読み込みの失敗、ノード上の表示の枠（`--pano-radius-md`）、`PanoramaCutout` の aspect のポップオーバーとノードの help（`--pano-node-float-radius`） |
 | 10px | HUD（`--pano-float-radius`）、ステージ、サイドパネル、確認のダイアログ、ドロップの案内、aspect のポップオーバー、色の SV の面 |
-| 12px | モーダル本体、選択肢のポップオーバー（`--pano-space-lg`）、音量のポップオーバー |
+| 12px | モーダル本体、選択肢のポップオーバー（`--pano-radius-lg`）、音量のポップオーバー |
 | 14px | 色のポップオーバー |
 | 16px | Camera の出力のプレビュー |
 | 999px | 色の点、スライダーの track と thumb、色の float、ノードの注記、Camera の出力のプレビューの大きさの切り替え |
@@ -191,9 +202,9 @@ inline の style）は角丸 8px、`1px solid rgba(63,63,70,1)`、地 `#070707`�
 
 | class | 位置 | gap | 影 | z-index |
 |---|---|---|---|---|
-| `.pano-floating-top`（中の `.pano-view-toggle`） | 左上 | `--pano-float-gap` | `0 8px 30px rgba(0,0,0,0.35)`（切り替え） | 2 |
-| `.pano-floating-left` | 左の縦の中央 | 4px | `0 8px 30px rgba(0,0,0,0.35)` | 4 |
-| `.pano-frame-rail` | 右の縦の中央 | 4px | 内側の 2px の黄色の線と `0 8px 30px rgba(0,0,0,0.35)` | 4 |
+| `.pano-floating-top`（中の `.pano-view-toggle`） | 左上 | `--pano-float-gap` | `--pano-float-shadow`（切り替え） | 2 |
+| `.pano-floating-left` | 左の縦の中央 | 4px | `--pano-float-shadow` | 4 |
+| `.pano-frame-rail` | 右の縦の中央 | 4px | 内側の 2px の `--pano-frame-yellow-edge` の線と `--pano-float-shadow` | 4 |
 | `.pano-floating-right` | 右下 | `--pano-float-gap` | なし | 2 |
 | `.pano-paint-footer`（`.pano-paint-dock` の中） | 下の中央 | 4px | なし | 4（dock） |
 | `.pano-video-transport-shell` | 下の中央（幅は最大 `--pano-video-shell-max`） | `--pano-float-gap` | `0 14px 40px rgba(0,0,0,0.34)` | 4 |
@@ -213,7 +224,7 @@ inline の style）は角丸 8px、`1px solid rgba(63,63,70,1)`、地 `#070707`�
 | `.pano-segment` | サイドパネルの設定（2 択） | 32px / 28px（`.pano-segment-btn`） | `--pano-surface-1`、padding 2px | `--pano-surface-3` | `transform` 170ms |
 | `.pano-easing-modes` | Easing の 3 択 | 30px / 26px（`.pano-easing-mode`） | `--pano-surface-1`、padding 2px | 押された項目の地が `--pano-surface-3` | なし |
 
-文字は選ばれていない側が `--pano-muted`、選ばれている側が `--pano-text`（`.pano-segment` と Easing は `#f5f5f5`）。
+文字は選ばれていない側が `--pano-muted`、選ばれている側が `--pano-text`。
 `.pano-view-toggle` と `.pano-segments` の選ばれていない側の hover は `--pano-muted-strong`、表示の切り替えの無効の項目は
 `--pano-text-tertiary` と opacity 0.5。
 
@@ -239,10 +250,10 @@ inline の style）は角丸 8px、`1px solid rgba(63,63,70,1)`、地 `#070707`�
 - 地 `--pano-surface-0`、枠なし、角丸 10px、左右の padding `--pano-space-lg`、`overflow: hidden`。
   中身は `.pano-side-scroll`（`overflow-y: auto`、scrollbar を出さない）がスクロールし、footer は下に残る。
 - `.pano-side-head`：高さ 42px。`.pano-side-title` は 12px / 600 / `--pano-text`、アイコンは 14px。
-- `.pano-divider`：高さ 1px、`rgba(255,255,255,0.08)`、左右に `--pano-space-lg` はみ出してパネルの幅いっぱい。
+- `.pano-divider`：高さ 1px、`--pano-divider`、左右に `--pano-space-lg` はみ出してパネルの幅いっぱい。
 - `.pano-inspector`：gap `--pano-space-sm`、上下の padding `--pano-space-lg`。
 - `.pano-section-title`：11px / 600 / `#d0d0d0`、字間 0.01em、margin `2px 0 8px`。meta は 11px / 500 / `--pano-text-tertiary`。
-- `.pano-side-footer`：右寄せ、gap `--pano-space-md`、padding `--pano-space-lg 0 --pano-space-xl`、上に `1px solid rgba(255,255,255,0.08)`。
+- `.pano-side-footer`：右寄せ、gap `--pano-space-md`、padding `--pano-space-lg 0 --pano-space-xl`、上に `1px solid var(--pano-divider)`。
 - `.pano-params.disabled`：opacity 0.42、`saturate(0.7)`、160ms。
 - 設定（`.pano-ui-settings`）：地 `--pano-surface-1`、角丸 8px。summary は 32px、11px / 600。caret は開くと 180° 回る（140ms）。
   行のラベルは 11px / `--pano-muted-strong`、チェックボックスは 16px で `accent-color: var(--pano-accent)`。
@@ -257,13 +268,13 @@ inline の style）は角丸 8px、`1px solid rgba(63,63,70,1)`、地 `#070707`�
 - `.pano-field-wide`：格子 `66px 1fr`、高さ 30px。
 - スライダー（`input[type="range"]`）：track 3px、塗りは `--pano-accent`、残りは `rgba(255,255,255,0.16)`（Firefox の track は値の行とペイントの太さが `rgba(255,255,255,0.1)`、動画の音量が 0.16）。
   thumb は 11px の白い円と `0 0 0 1px rgba(0,0,0,0.45)`、hover と押下で 1.2 倍。ペイントの太さと動画の音量のスライダーも同じ track を持つ
-  （ペイントの太さの thumb は 19px の中に半径 5.5px の accent の点）。
+  （ペイントの太さの thumb は 19px の中に半径 5.5px の accent の点）。三つのスライダーは同じ宣言を selector を並べた rule で共有する。
 
 ### 選択肢（`.pano-picker`）
 
 - trigger：地 `--pano-bg-control`、文字 `--pano-text`、角丸 8px、高さ 30px、11px / 500。hover の見た目は無い。無効は opacity 0.62。
 - ポップオーバー（`.pano-picker-pop`）：地 `--pano-surface-1`、枠なし、角丸 12px、影 `0 18px 54px rgba(0,0,0,0.5)`、padding 6px、最大の高さ 240px、`z-index: 6`。
-- 項目：高さ 32px、文字 `--pano-muted`、11px / 500、アイコン 14px。hover は地 `--pano-surface-2` と文字 `--pano-text`、`.active` は地 `--pano-surface-3` と文字 `#f5f5f5`。
+- 項目：高さ 32px、文字 `--pano-muted`、11px / 500、アイコン 14px。hover は地 `--pano-surface-2` と文字 `--pano-text`、`.active` は地 `--pano-surface-3` と文字 `--pano-text`。
 
 ### ツールチップ（`.pano-tooltip`）
 
@@ -278,15 +289,15 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 
 ### ペイント
 
-- 色の float（`.pano-paint-color-float`）：角丸 999px、地 `rgba(18,20,26,0.4)`、`blur(12px)`、影 `0 8px 30px rgba(0,0,0,0.35)`。
+- 色の float（`.pano-paint-color-float`）：角丸 999px、地 `rgba(18,20,26,0.4)`、`blur(12px)`、影 `--pano-float-shadow`。
   色の点は 20px、選ばれた点は内側に 2.5px の輪。無効は opacity 0.42 と `saturate(0.55)`。
 - 色のポップオーバー（`.pano-paint-color-pop`）：最小の幅 220px、padding 12px、角丸 14px、地 `rgba(20,20,23,0.98)`、
-  影 `0 16px 40px rgba(0,0,0,0.42), inset 0 0 0 1px rgba(255,255,255,0.08)`、`z-index: 6`。
+  影 `0 16px 40px rgba(0,0,0,0.42), inset 0 0 0 1px var(--pano-divider)`、`z-index: 6`。
 - 太さの行は左右に `1px solid rgba(255,255,255,0.12)`、無効は opacity 0.45。
 
 ### HUD の上のポップオーバー
 
-音量（`.pano-video-volume-pop`、角丸 12px）と aspect（`.pano-aspect-popover`、角丸 10px）は地 `rgba(10,10,10,0.92)`、`blur(12px)`、
+音量（`.pano-video-volume-pop`、角丸 12px）と aspect（`.pano-aspect-popover`、角丸 10px）は地 `--pano-popover-bg`、`blur(12px)`、
 影 `0 14px 38px rgba(0,0,0,0.42)`。Frame の aspect（`.pano-frame-aspect-popover`）は HUD の地と影。
 
 ## 影
@@ -296,12 +307,12 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 | `0 28px 80px rgba(0,0,0,0.66)` | モーダル本体 |
 | `0 18px 54px rgba(0,0,0,0.5)` | 選択肢のポップオーバー |
 | `0 16px 44px rgba(0,0,0,0.45)` | 確認のダイアログ |
-| `0 16px 40px rgba(0,0,0,0.42), inset 0 0 0 1px rgba(255,255,255,0.08)` | 色のポップオーバー |
+| `0 16px 40px rgba(0,0,0,0.42), inset 0 0 0 1px var(--pano-divider)` | 色のポップオーバー |
 | `0 14px 40px rgba(0,0,0,0.34)` | 動画の操作 |
 | `0 14px 38px rgba(0,0,0,0.42)` | 音量と aspect のポップオーバー |
 | `0 12px 30px rgba(0,0,0,0.32)` | ドロップの案内 |
 | `0 12px 28px rgba(0,0,0,0.34)` | ツール群のツールチップ |
-| `0 8px 30px rgba(0,0,0,0.35)` | 表示の切り替え、左のツール群、Frame のツール群、Frame の aspect、色の float |
+| `--pano-float-shadow`（`0 8px 30px rgba(0,0,0,0.35)`） | 表示の切り替え、左のツール群、Frame のツール群、Frame の aspect、色の float |
 | `0 8px 24px rgba(0,0,0,0.34)` | ツールチップ |
 | `0 8px 24px rgba(0,0,0,0.46)` | ノードの help と aspect のポップオーバー |
 | `0 4px 14px rgba(0,0,0,0.28)` | ノードの小さいボタン |
@@ -329,6 +340,7 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 - フォーカスの輪：ボタンと `.pano-segments` の項目は `box-shadow: 0 0 0 1px var(--pano-accent)`、入力と選択肢の trigger は
   `inset 0 0 0 1px var(--pano-accent)`、タイムラインのボタンと印は `outline: 2px solid var(--pano-accent)`（offset 1px）。
   表示の切り替えのボタンとスライダーには輪を出さない（値の行のスライダーは thumb の影が `0 0 0 1.5px rgba(0,0,0,0.5)` になる）。
+  ノード上の表示のボタンにも輪を出さない（toolbar のボタンは `box-shadow: none`、小さいボタンと Studio の Open Editor は `:focus-visible` で `box-shadow: none`）。
 - 無効の opacity は class ごとに違う：`.pano-btn` 0.46、`.pano-btn-primary` と表示の切り替え 0.5、入力・選択肢の trigger・軸 0.62、
   `.pano-btn.subtle` とタイムラインの層の操作 0.38、`.pano-params` と色の float 0.42、ペイントの太さ 0.45、
   タイムラインの小さいボタン 0.35、音声の無い音量 0.48。
@@ -369,11 +381,3 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
   ノードの小さいボタン 16px、aspect の trigger 15px。
 - どのボタンにどのアイコンを使うかは `web_src/modal_shell_presets.js` と各コンポーネントが持ち、ボタンの並びと意味は `docs/editor-interaction.md`。
 
-## 参照されていない定義
-
-次の定義は `web/pano_editor.css` にあるが、`web_src/` の Vue と JS のどこからも使われていない（grep で確かめた）。
-
-- class：`.pano-floating-bottom`、`.pano-output-preview-toggle`、`.pano-aspect-row`、`.pano-inline-tools`、`.pano-cutout-aspect-inline`、
-  `.pano-cutout-aspect-label`、`.pano-cutout-aspect-rotate`、`.pano-frame-aspect-trigger`、`.pano-paint-footer-note`、`.is-selected`。
-- custom property：`--pano-accent-dark`、`--pano-accent-extra-dark`、`--pano-text-reversed`（定義だけで参照なし）。
-  `--pano-text-primary` は逆に参照（`.pano-paint-size-value`）だけで定義が無く、fallback の `#fff` になる。
