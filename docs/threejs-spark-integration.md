@@ -325,4 +325,4 @@ render の外で生の `texSubImage2D(RGBA_INTEGER, UNSIGNED_INT, Uint32Array)` 
 （STATUS_BREAKPOINT。背景が VIDEO で 3DGS がある Scene で、視点を動かした瞬間に起きていた）。
 `pano_three_view.js` の `draw` は、描き終わるたびに `settleUnpack` で両方を three の状態を通して false に戻す。
 three のアップロードは render の中でしか起きないので、Spark のアップロードは常に両方 false で走り、three の
-キャッシュも実際の値と揃う。
+キャッシュも実際の値と揃う。Spark 2.2.0 以降は自分で両方を戻すので、コアのフロントエンドに合わせて Spark を上げたら、この回避を消す（ADR 0031、`tests/test_three_spark_core_pin.py` が知らせる）。
