@@ -1,51 +1,156 @@
 # Engineering workflow
 
+`AGENTS.md` の Working principles を実行する手順を定める。原則は `AGENTS.md` に書き、ここでは言い直さない。
+
 ## Language
 
 - Project prose language: Japanese
 
-AI-only instruction は English で記述する。schema、identifier、template heading、tool keyword、
-canonical term は English を維持する。Issue、commit message、PR、ADR、repository documentation など、
+`AGENTS.md` と skill の本文は English で記述する。schema、identifier、template heading、tool keyword、
+canonical term は English を維持する。Issue、commit message、PR、ADR、この文書を含む repository documentation など、
 人間が review する文章には Japanese を使用する。
 
-## Branch policy
+## Branch
 
-- 最初の承認済み repository 変更の直前に、default branch から work branch を作成する。
-- Phase 1 が repository を変更しない場合は、`GO` 後かつ実装開始前に作成する。
-- default branch 上では repository file を変更しない。
+- default branch 上では repository file を変更しない。最初の repository 変更の前に、default branch から work branch を作る。
+- 一つの作業は work branch から切った branch（worktree）で行い、終わったら work branch に merge する。
+  main への PR は work branch から出す。
 
-## Specification and tickets
+## 三種類の文書
 
-- new feature と behavior change には specification を必要とする。
-- 明確で小さい fix、behavior-preserving refactor、documentation、mechanical configuration change では省略できる。
+| 文書 | 役割 | 変わり方 |
+|---|---|---|
+| Issue の specification | 変更の提案と承認の記録 | 承認後は履歴。現在の振る舞いの正ではない |
+| living spec（`docs/`） | 今どう振る舞うか | 承認された差分でだけ変わる |
+| ADR（`docs/adr/`） | なぜそう決めたか | 覆すときは新しい ADR を書き、古い方に superseded と記す。過去の ADR の本文は直さない |
+
+- new feature と behavior change には、Issue の specification か、承認された living spec の差分を必要とする。
+  一つの節に収まる変更は living spec の差分だけでよい。
+- Issue の specification が承認されたら、その差分を living spec に反映する。実装は `GO` の後に行う。
+- 経緯、review 依頼、作業指示は living spec に書かない（commit、PR、Issue、ADR に書く）。
 - 複数 session、複数 agent、または単一 context window に安全に収まらない作業には ticket を使用する。
 - specification と ticket の GitHub 公開には、それぞれ明示的な承認を必要とする。
 - domain-doc approval は、承認された glossary または ADR の変更だけを許可する。
 
+## Living specs
+
+各 living spec は次の形を取る。
+
+- 冒頭に「この spec が owner である規則」の表：規則 / 持っている code / 守っている test。
+- その後に、今の振る舞いの短い説明。他の spec の規則は書き写さず、owner の節を参照する。
+- Python と JS の両方が使う規則の parity fixture は `tests/fixtures/` に置く。
+
+| subsystem | spec | code |
+|---|---|---|
+| state v2、評価関数、Python/JS の一致 | `docs/scene-state-v2.md` | 整理で決める |
+| backend の描画と出力 | `docs/render-contract.md` | 整理で決める |
+| timeline、keyframe、背景の行、再生 | `docs/timeline-ui.md` | 整理で決める |
+| editor のコード構造と依存 | `docs/editor-architecture.md` | 整理で決める |
+| three.js / Spark | `docs/threejs-spark-integration.md` | 整理で決める |
+| Vue と JS の境界 | `docs/vue-ui-boundary.md` | 整理で決める |
+
+### 整理（UI の作業より先に行う）
+
+今の spec は経緯の記録を多く含み、上の形になっていない。整理では次を行う。
+
+- 各 spec から経緯を外す。決定の理由は ADR へ移し、理由を持たない経緯は消す（git の履歴に残る）。
+- 規則の表と code 列を埋める。spec の間で重複している規則は owner を一つに決める。
+- まだ登録していない文書を、登録するか、まとめるか、消す：
+  `panorama-stickers-node-surface-spec.md`、`panorama-preview-node-surface-spec.md`、`cutout-node-frame-surface-spec.md`
+  （node surface）、`design.md` と `design_system.md`（見た目）、`preview_regressions.md`、`ops.md`。
+- spec が無い subsystem（editor の操作と視点）の spec を作る。
+
+整理が終わった後、`docs/` 直下に置くのは、登録された living spec と、手順・計測の文書（`diagnostics.md`、
+`legacy-baselines.md` など）だけとする。
+
+## 作業の始め方
+
+一つの作業を始める前に、Issue か `AGENT_STATE.md` に次の 2 行を書く。
+
+- 作らないもの
+- 最初に端から端まで動かす 1 本
+
+作業中に浮かんだ新しい案はすぐ作らず、「次の候補」として積む。積む先は Issue とし、公開の承認を得るまでは
+`AGENT_STATE.md` に置く。今の作業が終わってからまとめて検討する。
+
+## 方向を変えるとき
+
+ユーザーは完成形を見てから発想することが多い。方向の変更は前提とし、部分を継ぎ足さない。
+behavior change ごとに、agent は次のどちらかを理由を一言添えて提案する。ユーザーは切り替えられる。
+
+- **Spec-first（既定）**：要望を living spec の差分にして見せる。差分は追記の行だけでなく、変更後の節全体で見せる。
+  spec の他の箇所との矛盾は一問ずつ質問する。差分の承認は spec の編集だけを許可する。
+- **Prototype**：見て触らないと決められないもの（配置、操作感、見た目）は、試作であることを明示して別 branch で作る。
+  tests と review は要らない。決まったら、分かったことを living spec の差分と test にしてから作る。
+
+歯止め：
+
+- 一問には一つの決定だけを入れる。選択肢の中に別の決定を混ぜない。
+- 見つかった bug は、まず spec と照らす。code が違うのか、spec が違うのか、spec が書いていないのか。
+- 一つの Issue の中で同じ節を 3 回目に変えるときは、継ぎ足しではなく節の作り直しを提案する。
+- 一つの Issue の中で同じ症状を 2 回目に直すときは、手を止めて原因の設計を見直す。
+- 回数は agent が `AGENT_STATE.md` に記録して数える。
+
+## 境界をまたぐ変更の設計
+
+`AGENTS.md` の原則 4 に当たる変更は、code の前に次を Issue か spec の節に書いて合意する。
+
+- 作らないもの
+- どの規則をどこが持つか（owner）
+- data の流れ
+- 一致を守る test（parity fixture の有無）
+- 考えた別案と、選ばなかった理由
+
 ## Authorization
 
 - `GO` は implementation、tests、internal review、および review で見つかった安全な修正を許可する。
-- `GO` は commit、push、Issue/PR 投稿を許可しない。
+- `GO` は commit、push、Issue/PR 投稿（監査結果の投稿を含む）を許可しない。
 - authorization boundary を広げる必要が生じた場合は、変更前に停止して承認を求める。
 
 ## Implementation
 
 - new behavior と bug fix は、事前に合意した public seam に対する TDD で実装する。
 - documentation、comment、behavior-preserving mechanical change、generated file、external configuration では例外を認める。
-- emergency change は理由を記録し、その後に regression test を追加する。
+- emergency change は理由を記録して先に入れてよいが、regression test が入るまで Issue は閉じない。
 - node ID、port semantics、parameter format、ERP coordinate convention は `AGENTS.md` の stop condition に従う。
+- refactor の commit では test を変えないことを目安にする。
+- bug fix の commit message には `原因:` と `同じ原因の他の箇所:` の行を入れる。
+
+## 並列作業
+
+- 並列で agent に作業を出すときは、各 agent が担当する範囲を `AGENT_STATE.md` に書く。
+  Living specs の表の code 列が埋まるまでは、ファイルの一覧で書く。
+- work branch に merge する前に、`git diff --name-only` が担当の範囲に収まっていることを確かめる。
+- ComfyUI-dev の起動と停止は main session だけが行う。subagent は server を起動しない。
+
+## Verification
+
+- 描画、WebGL、動画再生、pointer 入力に触れる変更は、review の前に Playwright の headless Chromium で確かめる：
+  コンソールのエラーが無い、WebGL context が失われない、決まった場面が空でなく描ける。
+  どの描画方式（GPU か SwiftShader か）で走ったかを、review に渡す検証結果に書く。
+- ComfyUI-dev を相手にする検証は main session が行う。subagent が回せるのは、server の要らない静的なページだけとする。
+- Playwright は devDependency として足すことを承認済み（2026-10-08）。まだ入っていない。導入は次の作業項目とし、
+  導入までは scratchpad の使い捨ての CDP スクリプトで同じ項目を確かめる。実行するコマンドと「決まった場面」は整備のときにここへ書く。
+- milestone（Review 節で定義）ごとに、GPU に依存する振る舞いをユーザーの実機の GPU で確かめる。
 
 ## Review
 
+- milestone は、一つの Issue を閉じる前と、main への PR の前とする。
 - complete uncommitted working tree を Standards と approved Spec の両方に対して review する。
 - severity は P0 / P1 / P2 / P3 を使用し、P0 と P1 は commit blocker とする。
 - behavior-changing commit の前に、approved requirements、存在する spec と tickets、関連 domain docs、diff、verification results を使った独立した read-only AI review を行う。
 - finding は implementation session へ返し、P0 または P1 の修正後は再 review する。
+- review は diff だけでなく、変更したファイル全体と、関係する living spec を読む。
+- milestone ごとに、会話の文脈を持たない reviewer が、影響した subsystem の code 全体を living spec と突き合わせて監査する。
+  範囲は正しさと spec とのずれ（同じ規則の重複、使われていない code を含む）に限り、好みの改善は挙げない。
+  監査は work branch に merge した後に行い、living spec と work branch の code が一致していることを確かめる。結果は承認を得て Issue に残す。
 
 ## Commit, push, and PR
 
 - commit packet を提示した後、commit には明示的な承認を必要とする。
+- work branch への merge は、何を merge するか（作業の要約、変わるファイル、検証の結果）を示し、merge ごとに明示的な承認を得る。
+- 試作 branch への commit は承認を要らない。
 - push と PR creation には、commit とは別の承認を必要とする。
 - PR は Draft を既定とする。
 - Draft PR を ready にするのは、CI 成功後かつユーザー承認後だけとする。
-- merge は初期 workflow の範囲外とする。
+- main への merge は初期 workflow の範囲外とする。
