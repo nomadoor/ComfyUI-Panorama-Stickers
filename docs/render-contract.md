@@ -4,7 +4,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 用語は `CONTEXT.md` に従う。決めた理由は ADR 0023（座標）、0025（Scene の正）、0034（Sky の直接の標本化）、0035（World をまとめて畳む）にある。
 
 この文書が持たない規則：状態 v2・評価関数・Sky の重なり順（`docs/scene-state-v2.md`）、Panorama Studio のノードが Scene を組み立てて撮る規則と出力
-（`docs/studio-node.md`）、メモリ・中断・キャッシュ・一時ファイル（`docs/runtime-resources.md`）、エディタでの表示（`docs/threejs-spark-integration.md`）、
+（`docs/studio-node.md`）、メモリ・中断・キャッシュ・一時ファイル（`docs/runtime-resources.md`）、エディタでの表示（`docs/threejs-spark-integration.md`）と操作（`docs/editor-interaction.md`）、
 基準画像と処理時間の計測（`docs/legacy-baselines.md`）。
 
 ## この文書が owner である規則

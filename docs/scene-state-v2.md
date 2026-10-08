@@ -6,7 +6,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 0029（Panorama Studio）、0030（上流の上書き）、0032（v1 の読み替えで保たないもの）、0033（Timeline の上限）にある。
 
 この文書が持たない規則：`port` の Sticker の扱いと Pose handoff（`docs/studio-node.md` の「`port` の Sticker と Pose handoff」）、
-エディタでの表示と記録（`docs/timeline-ui.md`、`docs/threejs-spark-integration.md`）。
+エディタでの表示と記録（`docs/timeline-ui.md`、`docs/threejs-spark-integration.md`、`docs/editor-interaction.md`）。
 
 ## この文書が owner である規則
 
@@ -460,7 +460,7 @@ applyUpstreamOverrides(layerState, record) // -> object, web_src/pano_scene_inhe
 - `deleted` にある `id` の Sticker を除く。
 - `id` と `placement` が同じ Sticker に、Sticker の上書きの各フィールド（`visible`・`locked`・`clip`・`crop`・`z_index`・Lane）を置き換える。Lane は丸ごと置き換え、上書きの無い Lane は層のまま。`placement` が違う上書きは当てない。
 - `scene` の上書き（`visible`・`clip`）と `painting_visible` は、そのフィールドを置き換える。
-- 層に無い `id` の上書きと消した記録は何もしない。Sticker の並び順は変えない。そうした記録は、エディタが編集を書き戻すとき（Undo の段を積むとき）に、今の実行結果にその層があれば捨てる（上流で消した要素の上書きと消した記録。結果に無い層の記録は捨てない。開いて閉じただけでは捨てない。`docs/threejs-spark-integration.md` の「上流の Scene の表示と編集」）。
+- 層に無い `id` の上書きと消した記録は何もしない。Sticker の並び順は変えない。そうした記録は、エディタが編集を書き戻すとき（Undo の段を積むとき）に、今の実行結果にその層があれば捨てる（上流で消した要素の上書きと消した記録。結果に無い層の記録は捨てない。開いて閉じただけでは捨てない。`docs/editor-interaction.md` の「上流の Scene の表示と編集」）。
 - 当てたときの結果の `upstream` は `[]`、`id`・`timeline`・`next_sticker_id` は層のまま。結果は正規化済みの状態で、`load_scene_state` に通しても同じになる。
 - 鎖（A → B → C）では、B の記録を A に当てた結果に、C の記録を当てる。後に当てた記録が勝つ。
 - `PANO_SCENE` の層の状態は、自分の `upstream` を持たない（`[]`）。Panorama Studio が `scene` 出力で自分の層の `upstream` を空にするためである（`nodes.py` の `_scene_output`。上流の層はすでに上流の Studio が空にしている）。下流が層に当てる記録は、下流の状態の `upstream` だけである。

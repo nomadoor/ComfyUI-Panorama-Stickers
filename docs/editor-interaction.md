@@ -1,0 +1,213 @@
+# エディタの操作
+
+ユーザーがエディタをどう操作するかの規則を定める：視点の操作（3DoF・6DoF、3D view controls のプリセット、オービット・パン・見回し、WASD / QE、ホイール、Reset View、Frame Selected、視点の遷移、視点の記憶）、`world` の Sticker の選択・ギズモ・インスペクタと Add World Image、Camera の編集、Panorama Studio のエディタ（Add Camera、Frame タブ、画角のプリセット、Camera を隠したとき）、上流の Scene の表示と編集、`port` の Sticker の同期、Pose handoff の表示と記録、インスペクタの行。用語は `CONTEXT.md` に従う。決めた理由は ADR 0029（Panorama Studio）、0030（上流の上書き）にある。
+
+この文書が持たない規則：three.js と Spark で描く仕組み・GPU の当たり判定・空間の表示の描き方・エディタでの描画（`docs/threejs-spark-integration.md`）、Keyframe を打つ・直す・消すときの記録の規則・タイムライン・目のアイコン・再生・上流の層の行（`docs/timeline-ui.md`）、状態 v2・評価関数・上書きの記録を一つの層に当てる規則（`docs/scene-state-v2.md`）、ノードの出力・実行結果の `ui`・上流の Scene の重ね方・`port` の Sticker と Pose handoff のノードの規則（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の UI の細かい規則（`docs/panorama-stickers-node-surface-spec.md`）。
+
+## この文書が owner である規則
+
+| 規則 | Python | JS | test |
+|---|---|---|---|
+| 視点のモード（3DoF・6DoF）と右下のボタン群の位置 | — | `web_src/pano_space.js` `switchSpaceMode`・`spaceModeWithContent`・`spaceModeView`、`web_src/pano_editor_ui_state.js` `floatingRightState`、`web_src/components/PanoFloatingRight.vue` | `tests/pano_space.test.mjs`、`tests/pano_editor_ui_state.test.mjs`、`tests/pano_editor_view.test.mjs` |
+| 3D view controls のプリセット（ボタンの割り当て） | — | `web_src/pano_view_controls.js` `viewDragAction`・`VIEW_CONTROLS_SETTING` | `tests/pano_view_controls.test.mjs`、`tests/pano_editor_view.test.mjs` |
+| ピボット・パン・ホイールの規則 | — | `pano_space.js` `navigationTarget`・`panDepth`・`panView`・`reuseWheelPick` | `tests/pano_space.test.mjs`、`tests/pano_editor_view.test.mjs` |
+| キーボードの移動（WASD / QE） | — | `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/editor/keyboard.js` `stageOwnsKey` | `tests/pano_view_keys.test.mjs`、`tests/pano_timeline.test.mjs` |
+| Frame Selected の外接球 | — | `pano_space.js` `frameSphere` | `tests/pano_space.test.mjs` |
+| 視点の遷移 | — | `web_src/pano_view_transition.js` `blendView`・`viewTransitionFrame`・`viewTransitionDuration`・`shownSpaceMode`・`spaceModeChoice` | `tests/pano_view_transition.test.mjs`、`tests/pano_editor_view.test.mjs` |
+| 視点の記憶 | — | `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/editor/space.js` `saveView`・`restoreView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/pano_view_memory.test.mjs` |
+| `world` の Sticker の選択・ギズモ・選択メニュー | — | `web_src/pano_three_view.js` `pickSticker`・`createGizmo`・`gizmoPointer`、`pano_space.js` `gizmoScreenBox`・`uniformScale`・`gizmoDragLanes`、`pano_editor_ui_state.js` `buildWorldSelectionMenuModel`・`selectionMenuPlacement` | `tests/pano_space.test.mjs`、`tests/pano_editor_ui_state.test.mjs`、`tests/pano_editor_view.test.mjs`、`tests/pano_editor_direct_view.test.mjs` |
+| `world` の Sticker の記録とインスペクタ、Placement を変えない | — | `web_src/pano_editor_state.js` `setWorldStickerTransform`・`worldStickerFields`・`setWorldStickerField`、`pano_editor_ui_state.js` `worldFieldRange` | `tests/pano_editor_state.test.mjs`、`tests/pano_editor_ui_state.test.mjs` |
+| Add World Image の置き方 | — | `pano_editor_state.js` `newWorldSceneSticker`、`pano_space.js` `newWorldStickerTransform`・`facingRotation`・`NEW_WORLD_STICKER_DISTANCE` | `tests/pano_editor_state.test.mjs`、`tests/pano_space.test.mjs` |
+| Camera の編集（shot、Frame 表示の操作、6DoF の視錐台とギズモ、インスペクタ） | — | `pano_editor_state.js` `cameraShot`・`setCameraShot`・`cameraFields`・`setCameraField`、`web_src/editor/camera.js` `syncCutoutShot`、`web_src/editor/frame_view.js` `frameViewDistance`・`moveFrameByKeys`・`endFrameKeyMove`、`pano_space.js` `orbitView`・`zoomView`・`segmentsHit` | `tests/pano_editor_state.test.mjs`、`tests/pano_editor_view.test.mjs`、`tests/editor_frame_key_move.test.mjs`、`tests/pano_space.test.mjs` |
+| Panorama Studio のエディタ（Add Camera、削除、Camera の出入りと視点、Frame タブ、画角のプリセット、`state_json`） | — | `pano_editor_state.js` `newStudioCamera`・`sameEditorStateText`、`editor/camera.js` `followCameraChange`、`editor/frame_view.js` `leaveFrameView`、`pano_editor_ui_state.js` `frameViewButton`・`cameraAspectChoices`、`web_src/pano_sticker_affordance.js` `hitFrameAffordance` | `tests/pano_editor_state.test.mjs`、`tests/pano_editor_view.test.mjs`、`tests/pano_editor_ui_state.test.mjs`、`tests/pano_sticker_affordance.test.mjs` |
+| 上流の Scene の表示と編集（作業コピー、選ぶ、編集の書き戻し、消す、上流に戻す、掃除、上流の背景） | — | `web_src/pano_upstream.js` `upstreamWorkingLayers`・`upstreamLayerView`・`isUpstreamSticker`・`upstreamEditedRecords`・`upstreamDeletedRecords`・`upstreamRevertedRecords`・`upstreamPrunedRecords`・`upstreamBackgroundOf`、`web_src/editor/upstream.js` `syncUpstreamEdits`・`deleteUpstreamStickers`・`revertUpstreamSticker`・`pruneUpstreamRecords`・`upstreamLinked`・`upstreamNotice` | `tests/pano_upstream.test.mjs`、`tests/editor_upstream.test.mjs`、`tests/test_upstream_editor_parity.py` |
+| `port` の Sticker の同期 | — | `web_src/pano_stickers_node_surface.js` `portStickerSyncValue`・`reconcilePortStickerState`、`web_src/pano_external_sticker_sync.js` `runExternalStickerSync` | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_external_sticker_sync.test.mjs` |
+| Pose handoff の表示と記録 | — | `web_src/pano_port_handoff.js` `inheritPortHandoff`・`storedPortSticker`・`recordHandoffEdits`、`web_src/editor/external_stickers.js` `storedEditorState`・`revertPortHandoffLane` | `tests/pano_port_handoff.test.mjs`、`tests/editor_upstream.test.mjs` |
+| インスペクタの行 | — | `pano_editor_ui_state.js` `inspectorRows`、`web_src/components/PanoSidePanel.vue` | `tests/pano_editor_ui_state.test.mjs` |
+
+## 視点の操作
+
+Panorama Studio のエディタの Panorama 表示に World の内容があるとき（空間の表示。描き方は `docs/threejs-spark-integration.md` の「空間の表示」）、視点を 3DoF・6DoF で動かす。
+
+- Viewport camera は、ページを読み込んでから初めてエディタを開くとき World の原点（ERP を撮る位置）から始まり、状態にも設定にも保存しない（同じページの中で開き直したときは、下の「視点の記憶」）。
+- 表示のモード：右下の視点の操作のボタン群（`PanoFloatingRight.vue`）の左端に、2 つのアイコンのボタン（3DoF | 6DoF。Reset View などと同じ大きさ・見た目。アイコンは `icons.js` の `dof_3` が Tabler の `rotate-360`（その場で向きを変える）、`dof_6` が `arrows-move`（空間を動く））と Frame Selected（何も選んでいないときは全体を収める）を並べた空間の群がある。選ばれている側は、他のトグル系のボタン（左のツールのボタンなど）と同じ `.active` の見た目（明るい背景）になるので、今のモードが一目で分かる（押すたびに切り替わるボタンは使わない）。ツールチップは、他のボタン（「Reset view」など）と同じく 1〜2 語にそろえ、「3DoF」「6DoF」「Frame selected」とする。左上の Panorama | Unwrap（Panorama Studio と旧 Cutout では Frame | Panorama | Unwrap）は「何を見るか」の切り替えで、3DoF | 6DoF は Panorama の中で視点をどう動かすかの設定なので、同じ高さには並べない。空間の群は World の内容があり Panorama 表示のときだけ、群ごと出る。部品は右下のボタン群に属し、Camera のある Panorama 表示でも同じものを使う（下の「Camera の編集」）。ページを読み込んでから初めて開くときは 3DoF から始まり、モードは状態にも設定にも保存しない（同じページの中で開き直したときは、下の「視点の記憶」）。
+  - ボタンの位置を動かさない規則：どれかのボタンが出たり消えたりしたせいで、他のボタンの位置が変わってはいけない。右下のボタン群は右端に固定した行で、出たり消えたりするのは左端の空間の群だけ（群ごと）なので、それより右のボタン（Reset View・Hide Grid、プレビューの Fullscreen）は動かない。群の中の 3DoF | 6DoF と Frame Selected は、空間の表示のときは常に同じ位置にあり、Frame Selected は 3DoF では消さずに無効（disabled）にする。表示の条件は `pano_editor_ui_state.js` の `floatingRightState` にまとめ、どの状態でもこの規則が保たれることを `node --test` で確かめている。
+  - `PanoSegments.vue` の項目の class は `pano-segments-item` で（サイドパネルの設定のセグメント（Normal | Inverted）の外枠の class `pano-segment` とは別）、Move | Rotate | Scale でだけ使う。
+  - 3DoF（既定）：視点は World の原点に固定する（Camera があるときは下の「Camera の編集」）。Camera が無いときの ERP 出力と同じ見え方になる。操作は World の内容がないときの Panorama 表示と同じ（何もないところの左ドラッグと中ボタンのドラッグで見回し、ホイールで画角）。右ドラッグは使わず、右クリックのメニューも抑止しない。World の内容は原点から奥行き付きで描く（`docs/threejs-spark-integration.md` の「空間の表示」の 2 パスの描画）。
+  - 6DoF：Viewport camera で空間を自由に動く。操作は下の「6DoF の操作」の割り当てに従う。Frame Selected ボタン（右下）は 6DoF のときだけ押せる（3DoF では無効で、位置は変わらない）。
+  - 6DoF から 3DoF に戻すと、視点は原点に戻る（向きと画角は保つ）。注視点の距離も、内容の大きさに戻る。原点へは下の「視点の遷移」で動き、着いてから 3DoF の固定に入る。6DoF のまま World の内容がなくなったときも同じく 3DoF に戻り、内容が再び現れると 3DoF から始まる（`switchSpaceMode`・`spaceModeWithContent`）。
+- 6DoF の操作（`web_src/pano_view_controls.js`）：ボタンと修飾キーから動きを決める表をプリセットごとにデータで持ち、`viewDragAction`（ボタンの割り当て）と `emptyLeft`（何もないところの左ドラッグ）が決める。プリセットは ComfyUI の設定の「Panorama Suite › Editor › 3D view controls」（id `PanoramaSuite.Editor.ViewControls`、拡張の `settings` で登録し、保存は ComfyUI のコアが行う）で選ぶ。動きは三つ：オービット（ポインタの下の点のまわりを回る。three.js の OrbitControls・コアの Load3D と同じ向きと速さ）、パン（ポインタの下の点がポインタに付いて動く）、見回し（その場で向きを変える。Unity-like の右ドラッグだけ。慣性あり）。
+
+  | 操作 | Default（既定） | Blender-like | Unity-like |
+  |---|---|---|---|
+  | 何もないところを左ドラッグ | オービット | —（選択の解除だけ） | —（選択の解除だけ） |
+  | オブジェクトの上で左ドラッグ | オブジェクトの操作 | オブジェクトの操作 | オブジェクトの操作 |
+  | 中ボタンのドラッグ | パン | オービット | パン |
+  | Shift + 中ボタンのドラッグ | — | パン | — |
+  | 右ドラッグ | オービット | — | 見回し（フライ） |
+  | Shift + 右ドラッグ | パン | — | — |
+  | Alt + 左ドラッグ | — | — | オービット |
+  | ホイール | ポインタの下の点へのズーム | 同左 | 同左 |
+
+  - Default は、ComfyUI の利用者が知っているコアの Load3D（OrbitControls）と Sketchfab に合わせ、何もないところの左ドラッグと右ドラッグでオービットする。中ボタンと Shift + 右ドラッグでパンする。6DoF のその場の見回しは Default に入れていない。
+  - Blender-like は Blender の 3D ビューポートの標準（中ボタンでオービット、Shift + 中ボタンでパン、ホイールでズーム）だけを持つ。右ドラッグの見回しは Blender にない操作なので持たない。Blender の何もないところの左ドラッグは範囲選択で、エディタでは Ctrl + ドラッグがそれに当たるので、6DoF の何もないところの左ドラッグは視点を動かさない。
+  - Unity-like は Unity のシーンビューにある操作（右ドラッグのフライの見回し、Alt + 左ドラッグのオービット、中ボタンのパン、ホイールのズーム）だけなので、名前に足すものはない（Unity の Alt + 右ドラッグのズームなどは入れていない）。何もないところの左ドラッグは Unity でも範囲選択なので、Blender-like と同じく視点を動かさない。
+  - プリセットの表示名は、元のアプリにない操作を足したときはそれを名前に書く。設定に保存される値は `default`・`blender`・`unity` で、表示名を変えても変わらない。
+  - 表のボタンの割り当ては、オブジェクトの上でもどのツールでも視点だけを動かす。どのプリセットにも、オブジェクトに触れずに回す・パンする手段（Default は右・中ボタン、Blender-like は中ボタン、Unity-like は右・中ボタンと Alt + 左）がある。修飾キーなしの左ドラッグはどのプリセットでもまずエディタのツールが受け持ち、オブジェクトの上ならオブジェクトの操作になる。Ctrl・Meta との組み合わせ（範囲選択）は表に入れない。6DoF では、表にない中ボタン・右ボタンの組み合わせ（Default の Alt + 中ボタンなど）は何もしない（3DoF の中ボタンの見回しにはならない）。
+  - 回る中心（ピボット）・パンの量・ズームの先は、どのプリセットでも同じ規則で決める（`pano_space.js` の `navigationTarget`・`panDepth`）。オービットを始めたとき・ホイールを回したときに、ポインタの下にある World の内容の点を求める（`pano_three_view.js` の `pickSurface`。`docs/threejs-spark-integration.md` の「当たり判定（GPU）」）。SPLAT の箱の当たりは使わない（当たらなかったものとして扱う）。箱の中からは光線が箱を出る点になり、見えているスプラットとは関係のない奥行きになるためである。ポインタの下に何もなければ、視点をまだ動かしていない間は内容の中心（視点の前にあるとき）、それ以外は今のピボット（視点の前方 `distance` の点）を使う。このとき点は、視点から内容の大きさの 5% より近くには置かない（それより近ければ、同じ向きの 5% の距離の点にする）。壁やピボットに寄り切った後でも、何もないところでのパン・ズーム・オービットが止まらないようにするためである。当たったときは、その点そのものを使う。
+    - オービット：その点のまわりを回る。点は画面上の同じ位置に留まるので、軸から外れた点のまわりでも視点が跳ばない。ピボットはその点の奥行きに移り、画面の中心の前方に残るので、見回し（Unity-like）でも見えないところへずれない。
+    - パン：ポインタの下の点は使わず、ピボットの奥行き（視点の前方 `distance`。内容の大きさの 5% を下限とする）での 1 画素の量で動かす（`panDepth`）。ピボットの面がポインタにぴったりついてくる。Blender の既定（Auto Depth がオフ）と同じ。つかんだ点の奥行きは数 cm 先の Sticker から SPLAT の箱の向こう側まで変わり、同じドラッグで動く量がぶれるので使わない。動く向きは視点の画面の軸（roll を含む）に沿う（`panView` は `viewAxes(yaw, pitch, roll)` を使う）。
+    - ホイール：その点へ向かって、視点から点への線の上を進む（zoom to cursor。点はポインタの下に留まる）。一段の量はその点までの距離の 15%（`ZOOM_STEP`）で、近づいても進まなくならないように、内容の大きさの 1% を最小の量にする。ただし点は通り越さず、内容の大きさの 0.1% 手前で止まる。戻すときは一段で 15% 進んだぶんを戻す。ピボットはその点の奥行きに移るが、内容の大きさの 5% より近くにはしない。壁に寄り切った後のパンが止まったように遅くならないためである。ホイールでは前回の判定の結果を使い回す（`reuseWheelPick`。Cutout の Frame 表示のホイール `zoomFrameAt` も同じ規則）。使い回すのは、内容（`contentKey`：描いた要素と変形。MoGe VIDEO の次の要素などで変わる）と視点が前回の一段の後のままで、ポインタが判定した位置から 4px 以内のときで、判定から 250ms の間か、判定に 16ms を超えたときはホイールを続けて回している間（一段の間が 250ms 未満）である。当たらなかったときは「当たらなかった」ことを使い回し、点はその都度上の規則で決める。6DoF では、ホイールは画角を変えない。
+  - キーボードの移動（WASD / QE）：6DoF の Panorama 表示では、キーを押している間、Viewport camera が動く（Frame 表示では Camera が動く。下の「Camera の編集」）。どのプリセットでも、ドラッグの途中でも使え、モードの切り替えはない（SuperSplat はキーで Fly に切り替わるが、ここではオービットの中心をドラッグを始めるたびにポインタの下で選ぶので、移動で古くなる値が残らない）。キーはドラッグの動きを変えない。
+    - 向き：W / S は視点の向きを水平面に倒した向き（SuperSplat と同じく y = 0）に前後、A / D は水平の右の軸に沿って左右、Q / E は World の下・上（glTF の +Y）。真下を向いていても前に進む。2 つのキーを同時に押しても、1 つのときと同じ速さで斜めに進む。キーは物理的な位置（`KeyboardEvent.code`）で受けるので、他の配列のキーボードと macOS の Option でも同じ位置のキーになる。
+    - 速さ：内容の大きさ（ホイールの一段と同じ、World の内容の外接球の半径 `spaceScale`）を 1 秒に進む。Shift で 4 倍、Alt で 1/4（`KEY_MOVE_FAST`・`KEY_MOVE_SLOW`）。エディタのキーに Shift・Alt とキーの組み合わせはなく、Shift・Alt とボタンの組み合わせ（上の表、Frame 表示の roll）はドラッグの修飾で、キーの移動とは別に働く。Ctrl・Meta との組み合わせ（Ctrl + W など）はブラウザと OS に残す。
+    - 描画：描画のループ（`tick`）が前のフレームからの時間だけ動かすので、フレームレートによらず同じだけ進む。キーを押している間だけフレームを頼み（`editorAnimating`）、全部のキーを離すと止まる。計算は `pano_view_keys.js`（`keyMoveView`・`createMoveKeys`）にあり、`node --test` で確かめている。
+    - 受けないとき：文字や数を入力している欄（`TEXT_INPUT_TYPES` の `input`、`textarea`、`select`、編集できる要素）にフォーカスがあるとき、確認のダイアログが出ているとき、エディタの外（上に重なった ComfyUI のダイアログ）にフォーカスがあるときは、キーを受けない（Space の再生と同じ規則、`stageOwnsKey`）。ステージがキーを受けるときは、動くものがないとき（3DoF・Unwrap 表示）も WASD / QE を ComfyUI とブラウザに渡さない（`preventDefault`・`stopPropagation`。ComfyUI の W はワークフロー、A はアセットのサイドバーをエディタの裏で開くため）。Ctrl・Meta との組み合わせは渡す。
+    - 3DoF は原点（Camera があればその位置）に立って向きだけを変えるので、キーでは動かない（6DoF にも切り替えない）。Unwrap 表示も動かない。遷移の間は遷移が視点を動かし、キーを押すと遷移はその場で止まる（つかんだときと同じ）。
+    - 止める：ウィンドウがフォーカスを失ったとき、ページが隠れたとき（`visibilitychange`）、Meta を離したとき（macOS は Meta を押している間に離したキーの keyup を送らない）、右クリックのメニューが開いたとき（Chromium はメニューが開いている間 keyup を送らない）は、全部のキーを離したものとし、移動はそこで終わる。押したままのキーのリピートが、フォーカスの移った入力欄などステージのものでない所に来たときは、そのキーを離したものとする（入力欄で打つ文字で視点が動かない）。
+    - 記録しない：Panorama 表示でキーが動かすのは Viewport camera（ステージの視点）だけで、状態にも Undo にも入らず、再生も止めない。
+  - 慣性：オービットとパンには付けない（Load3D の OrbitControls の既定 `enableDamping: false` と同じ）。見回し（3DoF と Unity-like の右ドラッグ）は、World の内容がないときの Panorama 表示と同じ慣性を持つ。
+  - 右ドラッグを使うプリセット（Default と Unity-like）では、6DoF の間はキャンバスの右クリックのメニューを抑止する。キャンバスには右クリックだけの操作はもともとない。
+  - Reset View ボタンは、原点に戻り、既定の向きと画角に戻す（モードは変えない）。Frame Selected ボタンは、一般的な 3D ツール（Blender の View Selected、Unity の F）と同じく、向きを保ったまま、選んでいる `world` の Sticker の外接球が画面に収まる位置へ動く。板は `worldStickerPlane` の四隅から、3D の Sticker は読み込んだ要素の箱に `sceneItemBox` の規則と Sticker の変形を掛けて外接球を求める。要素やメディアがまだ読み込まれていない間は、Sticker の位置を中心に、`scale` を半径とする球を使う。何も選んでいないとき、`sky` の Sticker を選んでいるとき（`sky` は無限遠にあり、寄る対象ではない）、選んだ Sticker が Clip range の外のときは、World の内容全体が収まる位置へ動く。球を決める規則は `pano_space.js` の `frameSphere` にまとめ、`node --test` で確かめている。キーボードのショートカットはない。
+  - 視点の遷移：Reset View・Frame Selected・6DoF から 3DoF に戻すとき（と、Cutout の Add Frame や選択の一覧で選んだ要素へ向くとき）は、視点を瞬時に切り替えず、一般的な 3D ツール（Blender の Smooth View、Unity の F）と同じく、始点から終点まで短い時間で動かす。どこにいるのかを見失わないためである。空間の内容がない Panorama の見回しの Reset View も同じ仕組みを使う（位置は原点のまま）。
+    - 補間：Viewport camera（position・yaw・pitch・hFOV・distance）を、位置と注視点の距離は直線で、yaw は最短の向き（±180° をまたぐときはそちら回り）で、pitch と画角は線形で補間する。時間の関数は ease-in-out（cubic）。純粋な関数として `pano_view_transition.js` の `blendView`・`viewTransitionFrame` にまとめ、`node --test` で確かめている。
+    - 長さ：250〜600ms。回る角度（yaw の最短の差・pitch の差・画角の差の大きい方。180° で最大）と、内容の大きさ（`spaceScale`）を単位にした移動の距離（2 つ分で最大）の割合を足して、その間で決める（`viewTransitionDuration`）。見た目が変わらないときは遷移を作らず、着いたときに当てること（Reset View の注視点の距離を内容の大きさに戻すこと、3DoF に入ること）をすぐに当てる。
+    - 描画：遷移は状態（`editor.viewTransition`）だけを持ち、独自の `requestAnimationFrame` やタイマーは使わない。エディタの描画のループ（`tick`）が毎フレームその時点の視点を書き込んで描くので、予約するアニメーションフレームは 1 つで、エディタを閉じると（`stopRenderLoop`）遷移も止まる。再生は止めない（見回しと同じ扱い）。
+    - 中断：遷移中に視点をつかむ（キャンバスでのポインタの押し下げ・Panorama 表示でのホイール）と、遷移は今描いている視点で止まり、操作はそこから始まる。遷移中に別の遷移が来たら、今描いている視点から新しい遷移を始める（前の遷移は終点も含めて捨てる）。
+    - 3DoF に戻る遷移：終点は原点。遷移の間はモードを 6DoF のままにして位置の補間として描き、着いたときに 3DoF に入る（`end` に入れたモードを、着いたときにだけ当てる）。描画・当たり判定・操作は遷移中も 6DoF のものなので、途中でつかめば 6DoF のままその位置から動かせる。3DoF | 6DoF のボタンは遷移中から行き先の 3DoF を示し（`shownSpaceMode`）、Frame Selected もその間は押せない。途中で 6DoF を押すとその位置で止まる。どこで遷移を捨てても（つかむ・ホイール・6DoF・内容がなくなる）、ボタンはすぐに実際のモードを示す。ボタンを押したときの動き（何もしない・原点へ戻る・すぐ切り替える）は、実際のモードと遷移の行き先の両方から `spaceModeChoice` で決める。World の内容がなくなって 3DoF に戻るときは、遷移を捨ててすぐ戻る。
+
+  - 視点の記憶：エディタを閉じたときの視点（Panorama・Unwrap・Frame の表示、3DoF・6DoF、Viewport camera の位置・向き・画角・注視点の距離）をノードごとに覚え、同じページの中で同じノードのエディタを開き直すとそこから始まる（`pano_view_memory.js` の `viewMemory`・`restoredView`、`space.js` の `saveView`・`restoreView`）。遷移の途中で閉じたときは、行き先とそのモードを覚える。
+    - 置き場所は `pano_node_bridge.js` の `editorSession(node).view` で、`state_json` にも `node.properties` にも書かない。ノードの削除・ワークフローの読み込み（`disposeNodeRuntime`）とページの読み込みで消え、そのあとは原点の 3DoF から始まる。
+    - 覚えた値が使えないとき（数でない値・範囲の外の値、Camera を消した・360° にしたなどで Frame 表示が使えないとき）は、全部を既定の視点で開く。6DoF を覚えていても World の内容がなくなっていれば、内容がなくなったときと同じく、最初のフレームで原点の 3DoF に戻る（向きと画角は保つ）。
+
+  注視点（ピボット）は視点の前方 `distance` の点で、内容の大きさが分かると（視点をまだ動かしていなければ）その半径になる。見回し・移動は再生を止めない。計算は `web_src/pano_space.js`（3DoF の原点への固定は `spaceModeView`）にある。
+
+## `world` の Sticker の操作
+
+Panorama Studio のエディタで、`world` の Sticker（画像・動画の板と、3D の `port` の Sticker の両方）を、空間の表示のギズモとインスペクタで動かす。3DoF・6DoF のどちらでも使える。
+
+- 選択：カーソルのツールで左ボタンを押すと、次の順に決める。
+  1. 選んでいる `world` の Sticker のギズモのハンドル（下記）。
+  2. 選んでいる `sky` の Sticker（複数選択ならその全体の枠）の拡大縮小・回転のハンドル。
+  3. ポインタの下の `world` の Sticker。`pick` と同じ当たり判定（`docs/threejs-spark-integration.md` の「当たり判定（GPU）」）で最も近い当たりを求め、それが Sticker の板か 3D の Sticker の要素なら、その Sticker を選ぶ（`pano_three_view.js` の `pickSticker`）。World は Sky より手前に描くので、`sky` の Sticker と重なっていれば `world` の Sticker が先になる。
+  4. `sky` の Sticker（選んでいる Sticker の本体を含む）と、何もないところ。最も近い当たりが `scene` の中身なら Sticker ではないので、その奥の `sky` の Sticker が選ばれる（`scene` の中身は選べない）。
+  - `world` の Sticker の本体を押してドラッグしても選ぶだけで、動かさない（動かすのはギズモ）。視点も動かさない。選ぶだけでは再生は止まらない。
+  - タイムラインの `world` の Sticker の行を選んでも選べる。キャンバスの選択（`sky` の Sticker）と `world` の Sticker の選択は排他で、どちらかを選ぶともう一方は外れる。何もないところを押すと外れる。選択は状態にもノードのプロパティにも保存しない。
+  - Delete キーで、選んでいる `world` の Sticker を消す。`port` の Sticker は `sticker` 入力に従うので、`sky` の `port` の Sticker と同じく非表示にする。
+- ギズモ：three.js の `TransformControls`（three に含まれる examples、依存は増やしていない）を、遅延読み込みのチャンク（`pano_three_view.js`）の World のパスに描く。DOM のイベントにはつながず、エディタがポインタを渡す（`gizmoPointer` の `hover`・`down`・`move`・`up`）。ギズモの位置・向き・大きさは、毎回の描画で Sticker の評価した値から作る（`createGizmo`）。ギズモが動かすのは代わりのオブジェクトで、その変化を Sticker の Lane に書き、次の描画がそれを描く。ドラッグの間は代わりのオブジェクトを評価した値で置き直さないので、再生が止まってフレームが変わってもポインタと 1 対 1 で動く。ドラッグの途中でギズモが出なくなった（Clip range の外に出た、Sticker が消えた）ときはドラッグを終え、次に出たときにまたつかめる。ポインタを離したことは、ギズモが出ていなくても必ず伝える。
+  - ギズモは、選んでいる `world` の Sticker が再生ヘッドで表示されていて（`visible` かつ Clip range の中）、ロックされておらず、Paint / Images の表示が出ているときだけ出る。
+  - モードの切り替えは、選んでいる `world` の Sticker の選択メニュー（`PanoSelectionMenu.vue`、`sky` の Sticker の選択メニューと同じく対象の下に出る）の「Move | Rotate | Scale」のセグメントコントロール（`PanoSegments.vue`）で行う。見方ではなく選んだ物を動かす道具なので、上の切り替えには置かない。メニューは、板（`world` の Sticker）の四隅（板のない 3D の `port` の Sticker では原点）を画面に写した範囲と、ギズモのハンドルが画面上で占める範囲の両方の外に、選択メニューの余白（18px）を取って出し、視点・再生ヘッドの変化に付いていく（`worldSelectionMenuModel`・`buildWorldSelectionMenuModel`）。ギズモの範囲は `pano_space.js` の `gizmoScreenBox` が求める：TransformControls はハンドルの 1 単位を、カメラからの距離 × min(1.9 tan(縦の画角 / 2), 7) / 4（size 1）の大きさにして画面上の大きさを保つので、ハンドルとそのピッカーはモードごとの半径（Move・Scale は 0.64、Rotate は 0.85 単位）の球に収まる。その球に接する、カメラを通る面から画面上の外接の箱を出す。すべてのハンドルの頂点がこの箱に入ることは `node --test` で three.js の TransformControls そのものを使って確かめている。下に入りきらないときは対象の上に、上にも入らないときは画面の中に収まる位置に出し、位置のせいで隠れることはない（`selectionMenuPlacement`。`sky` の Sticker のメニューも同じ）。表示の条件はギズモと同じ（`space.gizmo` があるとき。ロック・読み取り専用・Clip range の外・非表示ではギズモと一緒に出ない）。`world` の Sticker の選択は常に 1 つなので複数選択のメニューにはならない。押している間・ドラッグの間（ギズモのドラッグ・視点の移動）は、キャンバスの選択メニューと同じく隠し、離すと戻る。押すたびに切り替わるボタンは使わない。キー（W / E / R）は割り当てない。W と R は ComfyUI のコアのショートカット（Workflows のサイドバー、ノード定義の再読み込み）と同じキーだからである。モードはエディタを開くたびに Move から始まり、保存しない。
+  - 移動と回転の軸は World の軸（`TransformControls` の既定の `space: "world"`）。拡大縮小は一様で、どのハンドルでも、ドラッグで最も変わった軸の倍率を `scale` にする（`uniformScale`。0 以下にはしない）。
+  - ギズモのハンドルの上ではカーソルが grab になり、ハンドルが強調される（ドラッグを終えたときとポインタがビューから出たときに外す）。ギズモのドラッグ中は視点を動かさない。
+  - 回転で pitch の絶対値が 89.9° を超えると、yaw と roll は同じ軸のまわりの回転になり、読み出した yaw が跳ぶ。そこでは Sticker の yaw を保ち、回転の差を roll で表す（`gizmoDragLanes`）。インスペクタの数値が跳ばない。
+- 記録：ギズモのドラッグは、モードの Lane（`position`・`rotation`・`scale` のどれか一つ）だけを、`docs/timeline-ui.md` の記録の規則で書く（`setWorldStickerTransform`、内部は `setLaneValue`）。ドラッグの変化は、つかんだときのギズモからの差として、Sticker のその時点の値に掛ける（`gizmoDragLanes`）。再生中につかむと、最初の動きで再生が止まり、止まったフレームの値から変形を始める。変化のあったドラッグは Undo の 1 段になる。
+- インスペクタ（Vue の `PanoSidePanel.vue`、`sky` の Sticker と同じ部品）：`world` の Sticker を選ぶと、X・Y・Z（World の glTF 座標）・Yaw・Pitch・Roll・Scale・Opacity を数値で変えられる（`worldStickerFields`・`setWorldStickerField`）。位置には上限・下限がなく、scale は 0.01 以上で上限がない。Scale のスライダーの範囲は 100 で、値がそれを超えると 10 のべき乗で広がる（`worldFieldRange`）。欄の並びは下の「インスペクタの行」。記録の規則・再生の停止・Undo は `sky` の Sticker のインスペクタと同じ。Copy State は使えない。
+- 新しく置く `world` の Sticker：ツールバーの「Add World Image」（Panorama Studio だけ。地球のアイコン）で画像を選ぶと、`world` の画像の Sticker として置く（`newWorldSceneSticker`）。`port` の 3D の Sticker はノードが置く。置いた Sticker を選んだ状態にする。
+  - 置く場所（`pano_space.js` の `newWorldStickerTransform`）：画面上の点の下に World の内容（`scene` の中身・Sticker）の表面があれば、その点。なければ、Viewport camera の前方の、内容のバウンディング球の半径 × 0.5 の距離の点。内容がなければ前方 2（`NEW_WORLD_STICKER_DISTANCE`。ノードが 3D の `port` の Sticker を置く `WORLD_STICKER_POSITION` と同じ距離）。3DoF では視点は原点なので、原点からの距離になる。
+  - ボタンを押すときポインタはビューの上にないので、画面上の点にはビューの中心を使う（照準の代わり）。関数は任意の点を受け取るので、ドロップした位置やクリックした位置に置く経路を後で足せる。
+  - 向き：板の前方（ローカルの `-Z`）が視点から置く点への向きになる回転（`facingRotation`、roll 0）。板は視点の方を向き、正立して見える（`docs/render-contract.md` の「回転 0 の板は回転 0 の Camera の正面で Camera を向く」と同じ規則）。
+  - 大きさ：視点から見て、新しい `sky` の Sticker（hFOV 30°）と同じ幅に見える `scale`（`2 × 距離 × tan 15°`）。
+- Placement：エディタには、既存の Sticker の `placement` を `sky` と `world` の間で切り替える UI も経路もない（テストで、エディタのコードが `placement` を書き換えないこと、Vue の部品が `placement` を扱わないことを確かめている）。`placement` を決めるのは Sticker を作るときだけである。ノードによる `port` の Sticker の置き換え（下の「`port` の Sticker の同期」）は別である。
+
+## Camera の編集
+
+Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエディタの shot と Frame 表示の部品で編集する。空間の表示は `docs/threejs-spark-integration.md` の「空間の表示」の部品（`pano_space.js`・`pano_three_view.js` の `space`）をそのまま使い、別の描画は持たない。
+
+- 作業状態：`parseSceneEditorState`（`pano_editor_state.js`）の状態 v2。エディタが編集する shot（yaw・pitch・roll・H FOV・V FOV）は、再生ヘッドでの Camera を評価関数（`evaluateCamera`、ノードと同じ評価）で求めた値（`cameraShot`）で、id は `camera`。shot を変えると、変えたフィールドだけを Camera の Lane に記録の規則で書く（`setCameraShot`。角度は `rotation`、H FOV は `fov`、位置は `position`。どちらかの FOV を変えると `camera.aspect` を FOV の組から決め直し、これは Keyframe を持たない）。yaw などの角度は、元の値から最短の向きの値で書くので、±180° をまたいでも Camera が逆回りしない。書き戻しは描画のたび・再生ヘッドを動かす前・Undo の記録と保存の前に行い（`syncCutoutShot`）、その後で shot を Camera から求め直すので、再生・Keyframe の編集・Undo に shot が付いていく。
+- Frame 表示（World の内容があるとき）：視点を動かす操作が Camera そのものを動かす（Blender の「カメラをビューに固定」）。3D view controls のプリセットのボタンの割り当て（中ボタン・右ボタン・Alt + 左など）でオービット・パンする。オービットの中心は Camera から見た `pickSurface` の点（`navigationTarget`）。ピボットの距離（`frameViewDistance`）は、前の操作によらず常に内容の大きさ（外接球の半径）にする（Blender の、カメラに固定したビュー）。そのためパンの量は、ポインタの下の物にも、それまでのホイールにもよらない。Camera は Keyframe や再生でも動くので、前の操作が残した距離はそもそも当てにならない。オービットは Camera の roll を保ち、ドラッグは roll した画面の軸で受ける（`orbitView`）。左ドラッグはその場で向きを変え（ERP の Frame と同じ）、Shift / Alt + 左ドラッグとノブで roll を変える。ホイールはポインタの下の点へ Camera を進める（`zoomView`。6DoF の Panorama 表示のホイールと同じ）。画角はインスペクタの H FOV・V FOV と枠の比率で変える。World の内容がないときはホイールで画角を変える。どの操作も再生を止め（ホイールはすぐに、ドラッグは最初の動きで）、記録の規則で Camera の Lane に入る。WASD / QE（上の「キーボードの移動」）も Camera そのものを動かす。向きと速さは 6DoF と同じ（水平に倒した向き、内容の大きさ／秒、Shift・Alt）で、Camera の roll と pitch で動く向きは傾かない。書くのは Camera の `position` の Lane だけで、ドラッグと同じく shot の位置を変え、`syncCutoutShot`（`setCameraShot`）が記録の規則で書く（Keyframe がなければ静的な値、再生ヘッドが Keyframe の上ならその Keyframe、Keyframe の間なら再生ヘッドに Keyframe を足す）。最初に動いたときに再生を止める。押してから全部のキーを離すまで（ウィンドウがフォーカスを失った・右クリックのメニューなどで離したものとしたときも、エディタを閉じたときも）が Undo の 1 段になる（`frame_view.js` の `moveFrameByKeys`・`endFrameKeyMove`）。読み取り専用のエディタとロックした Camera は動かない。
+- Panorama 表示（World の内容があるとき）：3DoF | 6DoF と Frame Selected のボタン群を上の「視点の操作」と同じ位置に出す。
+  - 3DoF の視点は World の原点ではなく、再生ヘッドでの Camera の位置に立つ（`spaceModeView` などの `origin`）。Panorama 上の枠（shot の枠と、その移動・拡大縮小・回転）は方向で描くので、Camera の位置から見てはじめて Camera の写す範囲と一致するためである。6DoF に入ると、その位置から動き始める。Reset View もこの位置に戻る。
+  - Timeline 上の Camera の軌道（`cameraTrajectory`）を線で描く（Paint / Images を隠すと消える）。
+  - 6DoF では Camera の視錐台（`cameraFrustumSegments`、長さは内容の大きさの 1/5、選んでいる間は枠と同じ黄色）を描き、Panorama 上の枠とその周りの暗がりは描かない。視錐台の線の 6px 以内を押すと Camera を選び（`segmentsHit`）、何もないところを押すと外れる（`world` の Sticker の選択と同じ流儀。タイムラインの Camera の行でも選べる）。選んでいる Camera にはギズモ（`TransformControls`）を出し、選択メニューの Move | Rotate で切り替える（Scale はない）。ギズモのドラッグはモードの Lane（`position` か `rotation`）だけを記録の規則で書く（`gizmoDragLanes`）。Frame Selected と Look At Frame は Camera の視錐台が収まるように寄る（Look At Frame はまず Camera の方を向く）。
+- インスペクタ：Camera を選ぶと、Yaw・Pitch・H FOV・V FOV・Roll に加え、World の内容があるときは X・Y・Z（World の glTF 座標、上限なし）を出す（`cameraFields`・`setCameraField`）。欄の並びは下の「インスペクタの行」。
+- Frame 表示とカメラプレビューの描き方と、出力との一致は `docs/threejs-spark-integration.md` の「Camera から見た空間の表示」。
+
+## Panorama Studio のエディタ
+
+`PanoramaStudio` のエディタは、状態 v2 の Stickers のエディタ（`type` は `stickers`）に、上の「Camera の編集」の部品を足したものである。分岐は `pano_editor.js` の `studio`（ノードの `__panoStudio`、`pano_editor_extension.js` が付ける）・`cameraV2`（状態 v2 の Camera を shot で編集する。今は Studio だけ）・`shotEditor`（shot と Frame 表示を持つ：旧 Cutout と Studio）と、Camera の有無の `hasCamera()` にまとめる。
+
+- Camera が無いとき（`camera: null`）：shot は無く（`state.shots` は空）、3DoF は World の原点に立ち、Camera のプレビュー・Panorama 上の枠・タイムラインの Camera の行は出ない。違いは、左のツールバーの「Add Camera」と、無効の Frame タブだけである。
+- Add Camera：左のツールバー（`modal_shell_presets.js` の `studio`、`PanoToolRail.vue`）の Add World Image の下にある。Camera があるときは無効にし、消さない（下のボタンが動かない）。押すと Camera を 1 台足して選ぶ（`addStudioCamera`、`newStudioCamera`）。初期値は、今の Viewport camera の位置（3DoF では原点、6DoF ではその位置）、yaw と pitch（roll は 0）、hFOV 90°、`aspect` 16:9（vFOV は約 58.7°）、`projection` は `perspective`、Keyframe なし。視点はそのままで、足した Camera の位置は今の視点の位置なので、3DoF の立ち位置も変わらない。
+- 削除：Camera を選んで Delete キーか、選択メニュー（Panorama 表示の枠のメニュー、6DoF のギズモのメニュー）の Delete。状態は `camera: null` になり、保存される。Undo で戻る。
+- Camera の出入りと視点（`followCameraChange`）：3DoF は Camera があればその位置に立つので、Camera を消すと原点へ、Undo などで Camera が戻るとその位置へ立ち位置が移る。World の内容があり 3DoF の Panorama 表示のときは、瞬時に飛ばず、6DoF で今の位置から行き先まで遷移し（`pano_view_transition.js`）、着いてから 3DoF に入る（6DoF から 3DoF に戻るときと同じ仕組み）。Frame 表示にいるときに Camera を消すと Panorama 表示に移り、視点は Camera が見ていた向きと画角（6DoF ならその位置も）から始まる（`leaveFrameView`）。
+- Frame タブ（`PanoViewToggle.vue`、`frameViewButton`）：常に出す。Camera が無いときと、Camera が 360°（`erp`）のときは無効にし、ツールチップで理由を示す（「Add a camera to use the Frame view」「A 360° camera has no frame」）。無効のタブでもツールチップが出るように、`disabled` ではなく `aria-disabled` にし、エディタがクリックを無視する。無効のタブは Tab キーで止まらず（`tabindex` -1）、ポインタを載せても色が変わらない。旧 Cutout の Frame タブも同じ部品で、ツールチップは出さない。
+- 画角のプリセット：Camera の枠の比率のプリセット（選択メニューと Frame 表示のレール、`cameraAspectChoices`）の最後に「360°」（`coverage` が 180 なら「180°」）がある。選ぶと `projection` を `erp` にし、比率のプリセットを選ぶと `perspective` に戻して、その比率にする（`setShotAspect`）。どちらも Undo の 1 段。`erp` のとき、インスペクタの H FOV と V FOV は無効にし（消さない）、選択メニューの縦横の切り替えも無効にする。Frame 表示は使えない（上）ので、Frame 表示のレールで 360° を選ぶと Panorama 表示に移る。Camera のプレビューも出さない。Panorama 上の枠と 6DoF の視錐台は、`fov` と `aspect` の値のまま描く（Camera を選ぶための印。撮る範囲ではない）。枠には辺と角の大きさのハンドルを出さず（`pano_sticker_affordance.js` の `hitFrameAffordance` の `resize`）、`fov` の Lane を書き換えない。回転（roll）のハンドルと移動は残す。
+- Camera があるときの操作は上の「Camera の編集」のとおり：Panorama 表示の枠（選ぶ・動かす・拡大縮小・回転）、6DoF の視錐台とギズモ、Frame 表示、インスペクタ、タイムラインの Camera の行。インスペクタの Camera には Roll があり、Opacity は無い。インスペクタの選択の一覧の先頭にも Camera が入る。旧 Cutout と違い、Panorama 表示で枠の外を暗くするのは Camera を選んでいる間だけで（Sticker を編集する間は暗くしない）、Camera のプレビューの大きさの切り替えボタン（押すたびに切り替わる）は出さない。
+- `state_json`：開いて閉じただけでは書き換えない。Camera の有無によらず、開くときに VIDEO の fps へ再基準化しても、`sameEditorStateText` の `rebased` で同じ意味なら書かない。Camera を足す・消すのは編集で、Camera のオブジェクトか `null` を保存する。
+- ノード上の表示は、`attachStickers` が Panorama Studio のときに付ける見回すだけの表示（`PanoStudioNodeSurface.vue`）。
+- Camera を隠したとき（タイムラインの Camera の行の目、`camera.visible`。`docs/timeline-ui.md` の「表示（目のアイコン）」）：Camera が無いときと同じに動く（`cameraShoots`）。shot は無く、3DoF は原点に立ち（`followCameraChange` で移る）、Camera のプレビュー・Panorama 上の枠・視錐台・軌跡は出ず、選べない。Frame タブは無効で、ツールチップは「The camera is hidden」。Camera は状態に残るので、Add Camera は無効のまま、タイムラインの Camera の行と Keyframe もそのまま。
+
+### 上流の Scene の表示と編集
+
+`scene` に別の Panorama Studio の `scene` 出力をつないだとき、エディタは上流の要素を、自分の状態の上書き（`upstream`、ADR 0030）を当てた姿で、出力と同じに描き、自分の要素と同じに選んで編集でき、タイムラインにも層ごとの行が出る（`docs/timeline-ui.md` の「上流の層の行」）。編集は上書きとして自分の状態の `upstream` に書き戻す。消す・上流に戻す・消したものを戻すも上書きの記録を変える。上流の要素は自分の状態の `stickers` に入れず、実行結果の `pano_upstream_layers`（`docs/studio-node.md` の「上流の Scene」）から作った作業コピーを毎フレーム描く。
+
+- 読む：`editor/upstream.js`。`scene` の入力が実行結果を作ったときのままのとき（`isNodeOutputMediaCurrent(node, "scene")`）だけ読む。各層の状態は `pano_upstream.js` の `upstreamLayersOf` で読み込み、上書きを当てる前の姿として、自分の状態とは別に持つ。
+- 作業コピー（`upstreamWorkingLayers`）：層ごとに、その層の `state.id` と同じ `layer` を持つ自分の `upstream` の記録を `applyUpstreamOverrides` で当て（同じ `id` の層が二つ以上あれば、最も下流の層にだけ。ノードの `_override_layers` と同じ）、複製し（`structuredClone`。上流の層とも記録とも共有しない。ただし上書きで変わらない `painting` は複製せず、上流の層と共有する）、層の `timeline.fps` が自分のものと違えば `rebaseSceneState` で自分の fps に再基準化する。各 Sticker は `origin`（`{ layer: 層のキー, id: 上流の要素の id }`）と、自分の要素とも他の層の要素とも重ならない id `upstream:<層のキー>:<上流の要素の id>` を持つ。どちらもエディタだけのもので、`state_json` に書き戻す上書きの記録には入れない。`id` の無い層（状態が一度も書かれていない）は上書きを受けない。作業コピーは、新しい実行結果を読んだとき、自分の Timeline fps が変わったとき、Undo・Redo で状態を戻したとき（状態 v2 のとき、`history.js` の `restoreHistory` から `rebuildUpstreamWorking`。上流の層が無ければ何もしない）に作り直す。作業コピーを作っても `state_json` は書かない（開いて閉じただけなら差分は出ない）。作り直すたびに、書き戻しで比べる基準（`upstreamBaseline`）も作り直す。
+- 時刻：作業コピーは自分の fps なので、各層は自分の再生位置のフレーム（`editor.frame`）でそのまま評価する。`port` の素材も、作業コピーの Clip range と自分の fps で時刻を出す（`portMediaTime`）ので、層の fps が違っても素材の時刻（秒）は層のものと同じになる。再基準化で Keyframe と Clip range は自分の fps の整数フレームに丸まるので、fps が違う層は、層の fps のまま評価するノードの出力と最大で自分の半フレームずれうる。
+- 描くもの（`upstreamLayerView`）：`sky` の Sticker とペイント（ストロークのグループ、ラスタ、マスク）を自分の Sky の下に、その層の `z_index` の順で（`skyPaintLayers`、`docs/editor-architecture.md` の「Paint layers」）。`world` の Sticker の板と、`scene`・3D の `port` の Sticker の 3D の項目は World に。隠した要素・消した要素は描かない（ノードも描かない）。上書きで隠した `scene`（`scene.visible`）や Clip range の外では `scene` の項目を描かず、消した 3D の `port` の Sticker は項目を求めない。どちらも、隠した 3D の `port` の Sticker と同じく、スロットの URL は残して `request` だけを `null` にする（読み込んだ項目を手放さないので、消すのを Undo しても読み込み直さない）。URL は上書きを当てる前の層（作業コピーの `received`）から求める。3D の項目のスロットは層のキーごと（`<層のキー>:scene`・`<層のキー>:sticker`）のまま。
+  - 素材：ファイルの Source は自分の Sticker と同じ URL の画像。`port` の Sticker は、その層の `ui` の最初のフレーム・MP4・RGBA の PNG を、自分の `port` と同じ仕組み（`createVideoFollower`・`createFrameSequence`）で再生位置に合わせる。ペイントは層ごとのペイントエンジンで、自分のペイントと同じ大きさ（`getDesiredPaintTargetDescriptor`）に描く。どれも縮小しない。
+  - 3D の項目は、層と種類ごとの読み込みの組（`pano_three_view.js` の `upstreamItems`）で読み、SPLAT は自分のものと同じくビューごとの Spark（`pano_spark_views.js`）で描く。
+- 画像は、結果が変わったときに新しい層が使わないものを手放す。
+- 不透明度：上流の要素は、出力と同じく自分の不透明度のまま描く。上流から来たことは、選んだときにインスペクタで示し（下の「示す」）、タイムラインでは層ごとの見出し `Upstream · <層のキー>` の下に行を出し、上書きのある行に印を付ける。
+- 選ぶ：作業コピーの Sticker は、自分の Sticker を id から引くところで同じく見つかる（`items.js` の `getList`・`getCutoutSelectableItems`・`stickerById`・`poseOf`・`writePose`、`selection.js` の `getSelected`・`selectedWorldSticker`、インスペクタ、Gizmo（`view_input.js` の `worldGizmo`）、タイムラインの持ち主（`timelineOwner`）、Frame Selected）。`isStickerItem` は作業コピーの Sticker も Sticker とみなし、自分の状態の Sticker かどうかは `pano_upstream.js` の `isUpstreamSticker`（`origin` を持つか）で分ける。
+  - 2D の当たり判定（`hit_test.js`）：上流の `sky` の Sticker は自分の Sky の下にあるので、自分の Sticker とペイントの後、自分の Camera の枠の前に当たる。層は下流のものから、層の中では `z_index` の大きいものから（`items.js` の `upstreamSkyStickers` の逆順）。Frame 表示でも、自分のものの後に当たる。
+  - GPU の当たり判定：上流の World の板と 3D の項目は、自分のものと同じ繰り返しで `pickable`・`pickBoxes` と当たり判定の部品（`parts`）に入る（`pano_three_view.js` の `buildWorld`）。見えないもの（不透明度 0）は入れない。板と 3D の `port` の Sticker は id（`upstream:<層のキー>:<id>`）で選ばれ、`scene` の項目は自分のものと同じく選ばれない。6DoF の視点の回転の中心や、World の画像を置く位置にも使われる。
+  - 選んだ上流の `sky` の Sticker は、自分の Sticker と同じ輪郭と取っ手を描く（`overlay.js`。選んでいないものの輪郭は描かない）。
+- 編集：ドラッグ・拡大縮小と回転の取っ手・インスペクタの欄・不透明度・Gizmo・ロックは、作業コピーの Sticker を書き換える。`editor/upstream.js` の `syncUpstreamEdits` が、Undo の段を積むとき（`history.js` の `pushHistory`）と状態を書くとき（`commit.js` の `commitState`）の最初に、`syncCutoutShot`・`syncPortHandoff` と同じ所で書き戻す。前の書き戻しか作り直しのときからその要素で変わったフィールドだけを、Lane なら Keyframe ごと丸ごと、その層の `id` の記録に書く（`pano_upstream.js` の `upstreamEditedRecords`。規則は `docs/studio-node.md` の「エディタでの編集」）。記録の frame は作業コピーの fps（自分の Timeline fps）で、記録の `fps` もその値にする。
+  - 上書きを持てない層（キーが `#` で始まる層：`id` が無い、または同じ `id` のより下流の層がある）の要素は、選べるがロックしたものと同じく動かせず（`isItemLocked`・`worldStickerEditable`）、ロックも外せない。
+  - 複製・画像の差し替え・前面へ・背面へ（`selection.js`・`sticker_import.js`）は、上流の要素を含む選択では何もしない。選択メニューのボタンは場所を保ったまま無効にし、上書きを持てる層ではロックと削除だけを有効にする（`buildSelectionMenuModel` の `upstream`。上流の `port` の Sticker にも削除のボタンを出す）。上流の `port` の Sticker の Lane のボタンは自分の Pose handoff ではなく、その要素の上書きを外す（下の「上流に戻す・消したものを戻す」）。
+- 消す：Delete キー・選択メニューの削除（`commands.js` の `deleteSelected`・`deleteSelectedWorldSticker`）は、上流の要素を、その層の記録の `deleted` に `id` を加え、その要素の上書きを捨てて消す（`editor/upstream.js` の `deleteUpstreamStickers`、`pano_upstream.js` の `upstreamDeletedRecords`。記録が無ければ自分の Timeline fps で作る）。先に書き戻していない編集を書き戻し、記録から作業コピーを作り直すので、消した要素は作業コピーから外れ、描かれず、選択から外れる。確認は自分の要素の削除と同じく出さず、Undo の 1 段になる。自分の要素と上流の要素をまとめて選んで消すと、自分の要素は単独で消すときと同じく消し（`port` の Sticker は隠す）、上流の要素は消した記録にして、Undo の 1 段にまとめる。上書きを持てない層（キーが `#` で始まる層）の要素と、ロックした要素は消せない（`isItemLocked`）。
+- 上流に戻す・消したものを戻す：インスペクタの `PanoUpstreamOrigin.vue` の「Revert to upstream」の行の All は、選んだ上流の要素の上書き（記録の Sticker の項目）をすべて外し、その下の Lane ごとのボタン（`sky`：Direction・Roll・Size・Opacity、`world`：Position・Rotation・Scale・Opacity）はその Lane だけを外す（`revertUpstreamSticker`、`upstreamRevertedRecords`）。外す上書きが無いとき（Lane のボタンは、その Lane が要素の配置の上書きに無いとき）、要素をロックしているとき、上書きを持てない層のときはボタンを消さずに無効にする。クリックは、パネルのモデルでそのボタンが有効なときだけ効く（`side_panel_events.js`）。どれも Undo の 1 段。何も残らない記録は正規化で捨てる。
+  - 行は Panorama Studio の Sticker を選んでいる間、自分の Sticker・自分の `port` の Sticker・上流の要素のどれでも同じ数だけ出す（パネルの配置が選択で動かない）。自分の `port` の Sticker で Pose handoff を表示しているときは、同じ Lane のボタンが Pose handoff に戻すボタンになる（`revert-handoff-lane`、`revertPortHandoffLane`）。Pose handoff が渡さない Opacity と All は無効。自分のほかの Sticker では、どのボタンも無効。
+  - 層の操作（「Revert」で層の `scene` と `painting_visible` の上書きを外す、「Restore deleted (n)」で層の消した記録を空にする）は、タイムラインの層の見出し（`PanoTimelineGroup.vue`）にある（`docs/timeline-ui.md` の「上流の層の行」）。消した要素は選べないので、インスペクタには置かない。
+- 上書きの掃除：Undo の段を積むとき（`history.js` の `pushHistory`。`syncUpstreamEdits` の直後）に、今の実行結果が入力のままなら（`upstreamEntries` が層を返すとき）、エディタを開いたときに積む最初の段（`pushHistory({ initial: true })`）を除いて、その結果にある層の記録から、層に無い `id` の上書きと消した記録を捨てる（`pruneUpstreamRecords`、`upstreamPrunedRecords`）。上流で消して実行すれば、下流の上書きと消した記録も次の編集で消える。結果に無い層（つなぎ替えた、まだ実行していない）の記録は捨てない。掃除は編集のときだけで、開いて閉じただけ（`commitState` だけ）では捨てない（`state_json` は変わらない）。
+  - Undo・Redo：状態の `upstream` は Undo の段に入っているので、戻すと記録が戻り、`restoreHistory` から作業コピーと基準を作り直す。
+- 示す：上流の要素を選ぶと、インスペクタの「Transform」の見出しの右と選択の一覧の名前に `Upstream · <層のキー>`（その層の Scene の id、`id` の無い層は `#<番号>`）を出す。インスペクタの `PanoUpstreamOrigin.vue` は「Revert to upstream」の行（上の「上流に戻す・消したものを戻す」）だけを持ち、Visible と Lock の行は持たない。上流の要素の `visible` の上書きはタイムラインの行の目のアイコンで、`locked` の上書きは選択メニューのロックで書く（自分の Sticker と同じ場所）。上書きを持てない層ではボタンを無効にし、見出しに「inherited only」を添えて、行のツールチップに理由を出す。パネルの配置が選択で動かないように、Panorama Studio の Sticker を選んでいる間は、自分の Sticker・`port` の Sticker・上流の要素のどれでもこの行と見出しの欄を同じ数だけ出す（自分の Sticker では無効。`port` の Sticker の Lane のボタンは Pose handoff に戻す）。上流の要素の作業コピーの id はノードのプロパティの選択（`selected_sticker_id`）に残さない。隠した要素は自分の Sticker と同じく選択から外れ、タイムラインのその行の目のアイコンでもう一度出せる。
+- タイムライン：上流の Scene がつながっているとき、自分の `scene` の行を出さない（自分の状態の `scene` は描画に使われない）。上流の要素は、自分の行の下に層ごとの行として出る（`docs/timeline-ui.md` の「上流の層の行」）。タイムラインの範囲は出力の長さちょうどで、長さ（`timeline.length`）が無いときの Auto の長さには、実行結果の `pano_upstream_frames`（上流の Scene の長さ）と、上書きした上流の Clip range の終わりが入る（`upstreamOutput`。`docs/timeline-ui.md` の「タイムラインの長さ」）。出力の終わりより先の上流の要素の動きは、タイムラインにも出ない。
+- 上流がつながっているか：リンクの型（`pano_preview_video.js` の `linkedInputType`。型が `*` か空のリンクは出どころの出力の型を見て、旧 Reroute ノードはさかのぼる）が `PANO_SCENE` か、今の実行結果に `pano_upstream_layers` があるとき（`upstreamLinked`）。
+- 実行前：リンクの型が `PANO_SCENE` と分かっているのに実行結果に上流の層が無いとき（実行前、またはつなぎ替えた後）、ステージの下の案内の欄（`PanoModal.vue` の `stageNotice`、文は `upstreamNotice`）に「Run the workflow to show the upstream scene.」と出す。失敗や警告があるときはそちらを出す。
+- 上流の背景：`scene` の実行結果が今の入力のまま（`bg_media` をつなぎ替えても変わらない。ノードは自分の `bg_media` を使わない）で `pano_upstream_input_images` か `pano_upstream_input_videos` があれば、それを背景にする（`media_session.js` の `upstreamBackground`。`pano_upstream.js` の `upstreamBackgroundOf`）。VIDEO は自分の背景の VIDEO と同じ要素と再生で、タイムラインに合わせて動く。範囲は `pano_upstream_coverage`（`backgroundCoverage`）。長さが Auto のとき、背景の VIDEO の長さは Auto の長さに入れず、上流の長さ（`upstreamOutput`）に任せる（上流の長さがすでに背景を含む）。このとき自分の `bg_media` のリンクの画像・VIDEO には戻らない（ノードも使わない）。実行結果の `pano_sticker_warnings` に `bg_media is not used` の警告があれば、ステージ下の案内の欄に出す。
+
+#### `port` の Sticker の同期
+
+Panorama Studio のエディタとノード上の UI は、`sticker` 入力の素材を `source.kind == "port"` の Sticker として状態に持つ
+（`pano_stickers_node_surface.js` の `portStickerSyncValue`・`reconcilePortStickerState`）。ノードの規則は `docs/studio-node.md` の
+「`port` の Sticker と Pose handoff」。
+
+- 入力がつながっていて状態に `port` の Sticker がなければ加え、入力を外すと取り除く。
+- 入力の型（接続が `*` のとき（Reroute など）は、つながった先の出力の型）が IMAGE・VIDEO のときは、すぐに `sky` の Sticker を加える。
+  それ以外（MESH・SPLAT・3D ファイル、型が分からないとき）は、ノードの姿勢（実行結果の `pano_sticker_input_pose`）が届くまで加えず、
+  届いたら姿勢の `placement` で加える。何を描くかを知っているのはノードなので、型が分からないときにフロントエンドは決め打ちしない。
+- `sticker_state` がつながっているときも、ノードの姿勢が届くまで加えない。
+- ノードが 3D の素材のために `sky` の `port` の Sticker を `world` に置き換えたとき（姿勢の `replace`）は、同じ置き換えを状態に当てる。
+  2D の素材の Pose handoff の置き換えは状態に当てず、表示だけに当てる（下記）。
+- 状態の vFOV は hFOV のまま保ち、描くときに素材のアスペクト比から求める（`skyStickerVfov`）。素材の読み込みで `state_json` は変わらない。
+  素材は実行結果が新しい間だけ表示し、それまでは枠だけを描く。
+- エディタを開いている間は、エディタだけがこの同期で状態を書く（`pano_external_sticker_sync.js` の `runExternalStickerSync`。
+  エディタが `{ editor: true }` で登録した処理が、後からノード上の UI が登録し直しても優先される）。
+- 同期は、入力のつなぎ替え・素材の読み込み・取り付けのときと、実行結果が届いたときに走る。実行結果が届くと、ノードの `onExecuted`
+  （`pano_preview_runtime.js`）が実行結果 1 回につき一度だけ呼ぶ。エディタは自分では呼ばない。
+
+#### `port` の Sticker の Pose handoff の表示と記録
+
+ノードの規則は `docs/studio-node.md` の「`port` の Sticker と Pose handoff」。
+
+- エディタとノード上の UI（ADR 0030、`web_src/pano_port_handoff.js`）は、実行結果が新しく（`isNodeOutputMediaCurrent` の `sticker-handoff`。`sticker` と `sticker_state` のどちらかをつなぎ替えると古くなる）、`sticker` と `sticker_state` がつながっている間、`pano_sticker_handoff` を保存した `port` の Sticker に当てて表示する（`inheritPortHandoff`。ノードの `_inherit_handoff` と同じ規則で、配置の置き換えは `sky` → `world`・`world` → `sky` の両方。`world` の Keyframe も表示する）。表示の fps が `pano_sticker_handoff` の `fps` と違うときは、`rebaseUpstreamRecord` と同じ規則（Sticker の素材の先頭を基準に丸める）で表示の fps に直す。このときは、表示の Keyframe が実行の Keyframe と最大で 1 フレーム（丸め）ずれることがある（表示だけで、保存する値と出力は変わらない）。
+  - 表示しても `state_json` は変えない。エディタは保存した `port` の Sticker を作業中の値として持ち（`external_stickers.js` の `portSession.stored`）、書き戻し（`commitState`）と Undo の履歴には、表示中の Sticker ではなく保存する Sticker（`storedEditorState`）を使う。引き継いだ Lane は保存した値に戻す（`storedPortSticker`）。配置が置き換わって表示されているときは、新しい配置の Lane を上書きするまで、保存した配置の Sticker（表示中の `clip`・`visible`・`locked`・`crop`・`opacity` を持つ）を保存する。上書きした後は、新しい配置の Sticker を保存し、もう一方の配置の Lane と上書きは捨てる（ノードと同じ）。開いて閉じただけ、実行結果が届いただけでは書かない。ノード上の UI は表示だけを当て（`getCachedState`）、`sync-port` は Pose handoff の `replace` を状態に当てない（`replace` を当てるのは 3D の素材だけ）。
+  - 表示中の `port` の Sticker の Lane をエディタで変えると（ギズモ、インスペクタ、Keyframe の操作、タイムライン）、その Lane を `handoff_overrides` に加え、変えた Lane を保存する（`recordHandoffEdits`）。「変えた」は、前回の書き戻しのときの表示と比べて、この編集で値が変わった Lane である。比べるのは `pano_sticker_handoff` が渡す Lane だけで、`opacity` は上書きにしない（引き継がないので、ふつうの編集として保存する）。Timeline fps を変えたときの再基準化は編集とみなさない（比べる前の表示も同じ規則で再基準化するので、その前の未記録の編集は記録される）。
+  - インスペクタの「Revert to upstream」の Lane のボタン（`PanoUpstreamOrigin.vue`。上流の要素の上書きを外すボタンと同じ行）を押すと、その Lane を `handoff_overrides` から外し、表示と保存する値を Pose handoff の値に戻す。ボタンは配置の Lane（`sky`：Direction・Roll・Size、`world`：Position・Rotation・Scale）と Opacity の 4 つで、Opacity（Pose handoff が渡さない）、上書きしていない Lane、Pose handoff を表示していないとき、ロック中は消さずに無効にする。All は無効。行は Panorama Studio の Sticker を選んでいる間いつも出す（選択を変えても行の数は変わらない）。Undo で戻せる。
+
+## インスペクタの行
+
+インスペクタ（`PanoSidePanel.vue`）の欄は、組になった値を 1 行に横に並べる（Blender・Unity の Transform と同じ）。行は `pano_editor_ui_state.js` の `inspectorRows` が、欄の並び（`pano_editor.js` の `pushParam` の順）から作る。
+
+| 行 | 欄（短い名前） | 持ち主 |
+|---|---|---|
+| Position | X・Y・Z | `world` の Sticker、World の内容があるときの Camera |
+| Rotation | Y（Yaw）・P（Pitch）・R（Roll） | すべて（`sky` の Sticker の R は `rot_deg`） |
+| FOV | H（H FOV）・V（V FOV） | `sky` の Sticker、Camera |
+| Scale・Opacity | 1 行に 1 つ | `world` の Sticker（Scale）、Sticker（Opacity） |
+
+- 組の行にはスライダーを置かない。欄の左の短い名前をドラッグすると値が変わる（1 px あたり、位置 0.01、角度 0.5°、画角 0.25°。Shift で 1/10）。動かさずに放すと欄に入力できる。ドラッグは欄の `input`・`change` を出すので、エディタは入力と同じに扱う（`change` で Undo の 1 段、記録の規則・再生の停止も同じ）。
+- 組の行の欄は 3 等分の幅（2 つの行も同じ幅で、列がそろう）で、桁が増えても幅は変わらない。1 つだけの行はスライダーと幅の決まった数値の欄。
+- `scene` の変形（位置・回転・大きさ）を変える欄はまだ無い（`scene` の行は Clip range だけ）。足すときは同じ Position・Rotation の行にする。
