@@ -16,10 +16,10 @@ import { NODE_SURFACE_FRAME } from "./pano_stickers_node_surface.js";
 import { isTimed, timelineSpan } from "./pano_timeline.js";
 import { createVideoFollower, createVideoPlayback } from "./pano_video_playback.js";
 
-// Whether the node surface is on screen: not collapsed, and its element is in the page and laid out
-// (not inside a subgraph or a graph not shown).
-export function surfaceShown(element, collapsed) {
-  return !collapsed && element.isConnected && element.clientWidth > 0;
+// Whether the node surface is on screen: not collapsed, not covered (by the node's open editor), and its
+// element is in the page and laid out (not inside a subgraph or a graph not shown).
+export function surfaceShown(element, collapsed, covered = false) {
+  return !collapsed && !covered && element.isConnected && element.clientWidth > 0;
 }
 
 export function createNodePlayback({ video, stickerVideo, createImage, clock, readState, onFrame, onCapture, onStickerCapture, onChange, camera = false }) {

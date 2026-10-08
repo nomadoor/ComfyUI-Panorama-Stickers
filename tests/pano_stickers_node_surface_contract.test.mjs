@@ -519,11 +519,17 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   assert.match(runtime, /let picked = studioSurface \? null : pick\(\);\s*\/\/[^\n]*\n[^\n]*\n\s*if \(picked && surfacePlayback\?\.playback\.playing\) \{\s*pauseSurfacePlayback\(\);\s*picked = pick\(\);/);
   // Space stays ComfyUI's canvas pan.
   assert.doesNotMatch(keyDown, /" "|Space/);
-  // A node out of sight stops and lets its VIDEO go, on each draw and as soon as its surface resizes away.
-  assert.match(runtime, /const shown = surfaceShown\(wrap, !!node\.flags\?\.collapsed\);/);
+  // A node out of sight, or under its open editor (which plays the same VIDEO), stops and lets its VIDEO go,
+  // on each draw and as soon as its surface resizes away.
+  assert.match(runtime, /const shown = surfaceShown\(wrap, !!node\.flags\?\.collapsed, editorOpen\(node\)\);/);
   // The surface's Timeline is the output's length: what the result gives of the inputs counts as in the editor.
   assert.match(runtime, /const sticker = shown \? portStickerMedia\(node\) : null;\s*const state = getCachedState\(node\);\s*const playable = playback\.follow\(\{\s*shown,\s*sources: shown \? backgroundVideoSources\(node\) : \[\],\s*state,\s*sticker,\s*media: shown \? surfaceTimelineMedia\(node, state\) : \{\},/);
-  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);[\s\S]*?if \(!node\.flags\?\.collapsed\) drawCanvas/);
+  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);[\s\S]*?if \(!node\.flags\?\.collapsed && !editorOpen\(node\)\) drawCanvas\(node, canvas, surfaceView, run\);\s*else surfaceView\.release\(\);/);
   assert.match(runtime, /new ResizeObserver\(\(\) => \{\s*if \(surfacePlayback\) syncSurfacePlayback\(\);\s*requestDraw\(\);/);
-  assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);\s*surfacePlayback\.stickerVideo\.remove\(\);/);
+  assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);\s*surfacePlayback\.stickerVideo\.remove\(\);\s*releasePanoCanvas\(surfacePlayback\.still\);\s*releasePanoCanvas\(surfacePlayback\.stickerStill\);/);
+  // The editor marks itself open on the node while it covers the surface, and the surface draws again on close.
+  const editor = await read("../web_src/pano_editor.js");
+  // It is marked open only once the setup that may throw is done, right before its first draw.
+  assert.match(editor, /runBootStep\("cursor", \(\) => updateCursor\(editor\.pointerPos\)\);\s*\/\/[^\n]*\n\s*editorSession\(node\)\.open = true;\s*peekNodeSurface\(node\)\?\.dom\?\.requestDraw\?\.\(\);\s*requestDraw\(\);/);
+  assert.match(editor, /closeEditorPromise = \(async \(\) => \{\s*const session = peekEditorSession\(node\);\s*if \(session\) session\.open = false;/);
 });

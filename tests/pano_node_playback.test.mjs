@@ -256,6 +256,36 @@ test("the surface is shown when not collapsed, in the page and laid out", () => 
   assert.equal(surfaceShown(element, true), false);
   assert.equal(surfaceShown({ ...element, isConnected: false }, false), false);
   assert.equal(surfaceShown({ ...element, clientWidth: 0 }, false), false);
+  // The node's open editor covers it.
+  assert.equal(surfaceShown(element, false, true), false);
+});
+
+// The editor plays the same 1080p VIDEO itself: the surface under it must not hold a second decoder.
+test("while the node's editor is open, the surface lets its VIDEOs go and shows the same frame after", () => {
+  const element = { isConnected: true, clientWidth: 320 };
+  const { playback, video, stickerVideo, clock, state } = setup(portState());
+  const draw = (editorOpen) => playback.follow({ shown: surfaceShown(element, false, editorOpen), sources: ["/bg.mp4"], state, sticker: STICKER });
+  draw(false);
+  video.loaded(1);
+  playback.toggle();
+  video.present(14 / FPS);
+  assert.equal(stickerVideo.src, "/sticker.mp4");
+  const loads = [video.loads, stickerVideo.loads];
+  assert.equal(draw(true), false);
+  assert.equal(playback.playing, false);
+  assert.equal(video.src, "");
+  assert.equal(stickerVideo.src, "");
+  assert.deepEqual([video.loads, stickerVideo.loads], [loads[0] + 1, loads[1] + 1]);
+  assert.equal(playback.source, "");
+  assert.equal(clock.callbacks.size, 0);
+  // The editor closes: the surface loads the VIDEO again at the frame it left.
+  assert.equal(draw(false), true);
+  assert.equal(video.src, "/bg.mp4");
+  video.loaded(1);
+  assert.deepEqual(video.seeks.at(-1), 14 / FPS);
+  video.land();
+  assert.equal(playback.frame, 14);
+  assert.equal(stickerVideo.src, "/sticker.mp4");
 });
 
 test("without a VIDEO, play loops the Timeline from frame 0 at its fps; pause keeps the frame and play goes on from it", () => {
@@ -414,8 +444,12 @@ test("dispose releases the VIDEO, its listeners and the frame callbacks", () => 
   video.loaded(1);
   playback.toggle();
   video.present(1 / FPS);
+  const loads = [video.loads, stickerVideo.loads];
   playback.dispose();
+  // Without a src and load()ed, neither element holds a decoder, though it lives until it is collected.
   assert.equal(video.src, "");
+  assert.equal(stickerVideo.src, "");
+  assert.deepEqual([video.loads, stickerVideo.loads], [loads[0] + 1, loads[1] + 1]);
   assert.equal(video.paused, true);
   assert.equal(video.listeners, idle - 2);
   assert.equal(stickerVideo.listeners, 0);

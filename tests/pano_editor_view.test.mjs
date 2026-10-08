@@ -26,7 +26,7 @@ import { parsePanoEditorState } from "../web_src/pano_editor_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { portMediaSource } from "../web_src/pano_port_media.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
-import { applyViewportCamera, layerDrawable, layerTexture, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
+import { applyViewportCamera, createLayerTextures, placeSticker, unwrapStickerUniforms } from "../web_src/pano_three_view.js";
 import { worldToPano } from "../web_src/pano_world.js";
 import { readEditorSource } from "./editor_source.mjs";
 
@@ -345,36 +345,54 @@ function withVideoElement(run) {
   }
 }
 
+// One draw of `owner`: run(draw) with draw.drawable and draw.texture, then the draw ends.
+function drawWith(textures, owner, run) {
+  const draw = textures.draw(owner);
+  const result = run(draw);
+  draw.end();
+  return result;
+}
+
+function countDisposes(texture) {
+  const counter = { count: 0 };
+  texture.addEventListener("dispose", () => { counter.count += 1; });
+  return counter;
+}
+
 // The editor's background switches between its still canvas and the playing <video> of one source. A
 // <video> that is loading or seeking has nothing to upload, so the texture of the frame before stays
 // until it has.
 test("a layer keeps its texture until new media of the same source has a picture", () => withVideoElement(() => {
   const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 1 });
   const still = { width: 64, height: 32 };
-  const owned = new Map();
-  const stillTexture = layerTexture(owned, "background", still, "1", 0, false, "bg.mp4");
-  let disposed = 0;
-  stillTexture.addEventListener("dispose", () => { disposed += 1; });
-  assert.equal(layerDrawable(owned, { id: "background", media: video, source: "bg.mp4" }), true);
-  assert.equal(layerTexture(owned, "background", video, "v", 0, false, "bg.mp4"), stillTexture);
-  assert.equal(disposed, 0);
+  const textures = createLayerTextures();
+  const stillTexture = drawWith(textures, "stage", (draw) => draw.texture({ id: "background", media: still, revision: "1", source: "bg.mp4" }, 0, false));
+  const disposed = countDisposes(stillTexture);
+  drawWith(textures, "stage", (draw) => {
+    assert.equal(draw.drawable({ id: "background", media: video, source: "bg.mp4" }), true);
+    assert.equal(draw.texture({ id: "background", media: video, revision: "v", source: "bg.mp4" }, 0, false), stillTexture);
+  });
+  assert.equal(disposed.count, 0);
   video.readyState = 2;
-  const videoTexture = layerTexture(owned, "background", video, "v", 0, false, "bg.mp4");
+  const videoTexture = drawWith(textures, "stage", (draw) => draw.texture({ id: "background", media: video, revision: "v", source: "bg.mp4" }, 0, false));
   assert.notEqual(videoTexture, stillTexture);
   assert.equal(videoTexture.isVideoTexture, true);
-  assert.equal(disposed, 1);
+  assert.equal(disposed.count, 1);
+  assert.equal(textures.size, 1);
 }));
 
 test("a port Sticker's VIDEO keeps its frame while it seeks or loops", () => withVideoElement(() => {
   const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 2 });
   const still = { width: 64, height: 32 };
-  const owned = new Map();
-  const playing = layerTexture(owned, "sticker_1", video, "a", 0, true, "port.mp4");
+  const textures = createLayerTextures();
+  const playing = drawWith(textures, "stage", (draw) => draw.texture({ id: "sticker_1", media: video, revision: "a", source: "port.mp4" }, 0, true));
   // The playhead seeks: the follower shows its still, then the VIDEO again, which is still seeking.
-  const seeking = layerTexture(owned, "sticker_1", still, "b", 0, true, "port.mp4");
+  const seeking = drawWith(textures, "stage", (draw) => draw.texture({ id: "sticker_1", media: still, revision: "b", source: "port.mp4" }, 0, true));
   video.readyState = 1;
-  assert.equal(layerDrawable(owned, { id: "sticker_1", media: video, source: "port.mp4" }), true);
-  assert.equal(layerTexture(owned, "sticker_1", video, "c", 0, true, "port.mp4"), seeking);
+  drawWith(textures, "stage", (draw) => {
+    assert.equal(draw.drawable({ id: "sticker_1", media: video, source: "port.mp4" }), true);
+    assert.equal(draw.texture({ id: "sticker_1", media: video, revision: "c", source: "port.mp4" }, 0, true), seeking);
+  });
   assert.notEqual(seeking, playing);
 }));
 
@@ -383,24 +401,165 @@ test("a port Sticker's VIDEO keeps its frame while it seeks or loops", () => wit
 // the VIDEO must not stand in for it.
 test("other media on a layer never shows the frame of the media before", () => withVideoElement(() => {
   const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 2 });
-  const owned = new Map();
-  const videoTexture = layerTexture(owned, "sticker_1", video, "a", 0, true, "port.mp4");
-  let disposed = 0;
-  videoTexture.addEventListener("dispose", () => { disposed += 1; });
+  const textures = createLayerTextures();
+  const videoTexture = drawWith(textures, "stage", (draw) => draw.texture({ id: "sticker_1", media: video, revision: "a", source: "port.mp4" }, 0, true));
+  const disposed = countDisposes(videoTexture);
   const loading = { naturalWidth: 0, naturalHeight: 0 };
-  assert.equal(layerDrawable(owned, { id: "sticker_1", media: loading, source: loading }), false);
-  assert.equal(layerDrawable(owned, { id: "sticker_1", media: loading }), false);
   const image = { naturalWidth: 32, naturalHeight: 32 };
-  const imageTexture = layerTexture(owned, "sticker_1", image, "i", 0, true, image);
+  const imageTexture = drawWith(textures, "stage", (draw) => {
+    assert.equal(draw.drawable({ id: "sticker_1", media: loading, source: loading }), false);
+    assert.equal(draw.drawable({ id: "sticker_1", media: loading }), false);
+    return draw.texture({ id: "sticker_1", media: image, revision: "i" }, 0, true);
+  });
   assert.notEqual(imageTexture, videoTexture);
   assert.equal(imageTexture.image, image);
-  assert.equal(disposed, 1);
+  assert.equal(disposed.count, 1);
   // The same <video> element given another source drops the frame of the one before too.
-  const again = layerTexture(owned, "sticker_1", video, "a", 0, true, "other.mp4");
+  const again = drawWith(textures, "stage", (draw) => draw.texture({ id: "sticker_1", media: video, revision: "a", source: "other.mp4" }, 0, true));
   assert.notEqual(again, videoTexture);
   video.readyState = 1;
-  assert.equal(layerDrawable(owned, { id: "sticker_1", media: video, source: "next.mp4" }), false);
+  drawWith(textures, "stage", (draw) => {
+    assert.equal(draw.drawable({ id: "sticker_1", media: video, source: "next.mp4" }), false);
+  });
 }));
+
+// The editor's stage and its camera preview draw the same 1080p background on one view: it uploads once,
+// and a playing VIDEO has one VideoTexture, which goes when neither draws it any more.
+test("owners of a view that show the same media share one texture until none uses it", () => withVideoElement(() => {
+  const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 1920, videoHeight: 960, readyState: 2 });
+  const background = { id: "background", media: video, revision: "1", source: "bg.mp4" };
+  const textures = createLayerTextures();
+  const stage = drawWith(textures, undefined, (draw) => draw.texture(background, 0, false));
+  const preview = drawWith(textures, "camera_preview", (draw) => draw.texture(background, 0, false));
+  assert.equal(preview, stage);
+  assert.equal(textures.size, 1);
+  const disposed = countDisposes(stage);
+  // A new frame of a still: one upload for both owners.
+  const still = { width: 64, height: 32 };
+  const both = (owner, revision) => drawWith(textures, owner, (draw) => {
+    draw.texture(background, 0, false);
+    return draw.texture({ id: "s", media: still, revision }, 0, true);
+  });
+  const first = both(undefined, "1");
+  first.version = 0;
+  both("camera_preview", "2");
+  both(undefined, "2");
+  assert.equal(first.version, 1);
+  // The stage draws something else; the preview still draws the VIDEO.
+  drawWith(textures, undefined, () => {});
+  assert.equal(disposed.count, 0);
+  textures.release("camera_preview");
+  assert.equal(disposed.count, 1);
+  assert.equal(textures.size, 0);
+}));
+
+test("a texture another owner still draws stays when one owner releases", () => withVideoElement(() => {
+  const image = { naturalWidth: 32, naturalHeight: 32 };
+  const textures = createLayerTextures();
+  const shared = drawWith(textures, "a", (draw) => draw.texture({ id: "x", media: image, revision: "1" }, 0, true));
+  drawWith(textures, "b", (draw) => draw.texture({ id: "y", media: image, revision: "1" }, 0, true));
+  const disposed = countDisposes(shared);
+  textures.release("a");
+  assert.equal(disposed.count, 0);
+  textures.release("b");
+  assert.equal(disposed.count, 1);
+  // A flipped upload of the same media is a texture of its own.
+  const flipped = drawWith(textures, "a", (draw) => [draw.texture({ id: "x", media: image, revision: "1" }, 0, true), draw.texture({ id: "z", media: image, revision: "1" }, 0, false)]);
+  assert.notEqual(flipped[0], flipped[1]);
+  assert.equal(textures.size, 2);
+}));
+
+// The camera preview hides (releaseSplats drops its marks): what only it drew is disposed, what the stage
+// draws too stays.
+test("the camera preview's hide disposes the textures only it drew", () => withVideoElement(() => {
+  const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 1920, videoHeight: 960, readyState: 2 });
+  const background = { id: "background", media: video, revision: "1", source: "bg.mp4" };
+  const sticker = { id: "s", media: { naturalWidth: 32, naturalHeight: 32 }, revision: "1" };
+  const textures = createLayerTextures();
+  const shared = drawWith(textures, undefined, (draw) => draw.texture(background, 0, false));
+  const own = drawWith(textures, "camera_preview", (draw) => [draw.texture(background, 0, false), draw.texture(sticker, 0, true)])[1];
+  const disposed = [countDisposes(shared), countDisposes(own)];
+  textures.release("camera_preview");
+  assert.deepEqual(disposed.map((each) => each.count), [0, 1]);
+  assert.equal(textures.size, 1);
+  // Shown again, the preview draws with the stage's texture.
+  assert.equal(drawWith(textures, "camera_preview", (draw) => draw.texture(background, 0, false)), shared);
+  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
+  assert.match(view, /function releaseSplats\(owner\) \{\s*sparkViews\.release\(owner\);\s*layerTextures\.release\(owner\);\s*\}/);
+}));
+
+// One <video> element of both owners loads another source: the owner that has not drawn the new source's
+// picture yet must not take the texture of it as the picture of its source before.
+test("an owner switching a shared media's source does not make it drawable for another owner", () => withVideoElement(() => {
+  const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 2 });
+  const textures = createLayerTextures();
+  const layer = (source) => ({ id: "background", media: video, revision: "1", source });
+  const before = drawWith(textures, "a", (draw) => draw.texture(layer("a.mp4"), 0, false));
+  drawWith(textures, "b", (draw) => draw.texture(layer("a.mp4"), 0, false));
+  const disposed = countDisposes(before);
+  const next = drawWith(textures, "a", (draw) => draw.texture(layer("b.mp4"), 0, false));
+  assert.notEqual(next, before);
+  // b still draws with the texture of a.mp4 until it moves on.
+  assert.equal(disposed.count, 0);
+  video.readyState = 1;
+  drawWith(textures, "b", (draw) => {
+    assert.equal(draw.drawable(layer("b.mp4")), false);
+  });
+  assert.equal(disposed.count, 1);
+  video.readyState = 2;
+  assert.equal(drawWith(textures, "b", (draw) => draw.texture(layer("b.mp4"), 0, false)), next);
+  assert.equal(textures.size, 1);
+}));
+
+// The stage moves from the still to the playing VIDEO first; the preview, whose VIDEO is seeking when it
+// draws, keeps the still until the VIDEO has a picture.
+test("the stage advanced to the VIDEO, the preview keeps its still until the VIDEO has a picture", () => withVideoElement(() => {
+  const video = Object.assign(new globalThis.HTMLVideoElement(), { videoWidth: 64, videoHeight: 32, readyState: 2 });
+  const still = { width: 64, height: 32 };
+  const textures = createLayerTextures();
+  const stillLayer = { id: "background", media: still, revision: "1", source: "bg.mp4" };
+  const videoLayer = { id: "background", media: video, revision: "v", source: "bg.mp4" };
+  const stillTexture = drawWith(textures, undefined, (draw) => draw.texture(stillLayer, 0, false));
+  drawWith(textures, "camera_preview", (draw) => draw.texture(stillLayer, 0, false));
+  const disposed = countDisposes(stillTexture);
+  const videoTexture = drawWith(textures, undefined, (draw) => draw.texture(videoLayer, 0, false));
+  assert.notEqual(videoTexture, stillTexture);
+  video.readyState = 1;
+  drawWith(textures, "camera_preview", (draw) => {
+    assert.equal(draw.drawable(videoLayer), true);
+    assert.equal(draw.texture(videoLayer, 0, false), stillTexture);
+  });
+  assert.equal(disposed.count, 0);
+  video.readyState = 2;
+  assert.equal(drawWith(textures, "camera_preview", (draw) => draw.texture(videoLayer, 0, false)), videoTexture);
+  assert.equal(disposed.count, 1);
+  assert.equal(textures.size, 1);
+}));
+
+// wrapS is a sampler state of the texture: a 360 and a 180 ERP of one media are textures of their own, so
+// owners drawing both do not re-upload it on each draw.
+test("one media drawn with two wraps has a texture for each", () => withVideoElement(() => {
+  const image = { naturalWidth: 32, naturalHeight: 16 };
+  const textures = createLayerTextures();
+  const [repeat, clamp] = drawWith(textures, "a", (draw) => [
+    draw.texture({ id: "x", media: image, revision: "1" }, 1000, false),
+    draw.texture({ id: "y", media: image, revision: "1" }, 1001, false),
+  ]);
+  assert.notEqual(repeat, clamp);
+  assert.deepEqual([repeat.wrapS, clamp.wrapS], [1000, 1001]);
+  const versions = [repeat.version, clamp.version];
+  drawWith(textures, "a", (draw) => [
+    draw.texture({ id: "x", media: image, revision: "1" }, 1000, false),
+    draw.texture({ id: "y", media: image, revision: "1" }, 1001, false),
+  ]);
+  assert.deepEqual([repeat.version, clamp.version], versions);
+}));
+
+// A draw that throws still marks what it used, so nothing is left without an owner.
+test("a draw that throws ends with its marks", () => {
+  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
+  assert.match(view, /const owned = layerTextures\.draw\(input\.owner\);\s*try \{[\s\S]*?\} finally \{\s*owned\.end\(\);\s*\}/);
+});
 
 test("the port Sticker's source is its media, so a swap on the port changes it", () => {
   const first = { naturalWidth: 32, naturalHeight: 32 };

@@ -849,6 +849,8 @@ async function showEditor(node, type, options = {}) {
   async function closeEditor() {
     if (closeEditorPromise) return closeEditorPromise;
     closeEditorPromise = (async () => {
+      const session = peekEditorSession(node);
+      if (session) session.open = false;
       _paintLayerSyncRegistry.delete(String(node.id ?? "0"));
       flushFrameWheelCommit();
       endFrameKeyMove();
@@ -859,7 +861,6 @@ async function showEditor(node, type, options = {}) {
       }
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       stateSync(node).liveState = null;
-      const session = peekEditorSession(node);
       if (session?.flushBeforeQueue === flushStateBeforeQueue) session.flushBeforeQueue = null;
       peekNodeSurface(node)?.dom?.requestDraw?.();
       node.graph?.setDirtyCanvas?.(true, true);
@@ -957,6 +958,9 @@ async function showEditor(node, type, options = {}) {
   runBootStep("video-source", refreshModalVideoSource);
   runBootStep("canvas-size", syncCanvasSize);
   runBootStep("cursor", () => updateCursor(editor.pointerPos));
+  // The node surface lets its VIDEO, stills and textures go while the editor covers it.
+  editorSession(node).open = true;
+  peekNodeSurface(node)?.dom?.requestDraw?.();
   requestDraw();
   sampleEditorDiagnostics();
 }

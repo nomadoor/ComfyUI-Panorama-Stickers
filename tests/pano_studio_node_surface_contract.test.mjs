@@ -70,8 +70,8 @@ test("the run's output ERP is turned back into World by its Camera rotation, onl
   // The rotation the run shot the ERP with, which an edit since the run does not change.
   assert.match(runtime, /quaternion: studioRunQuaternion\(output\.entry\.rotation\),/);
   assert.doesNotMatch(runtime, /cached\.quaternion/);
-  // A collapsed or hidden surface does not load the run's image.
-  assert.match(runtime, /const run = studioOptions && surfaceShown\(wrap, !!node\.flags\?\.collapsed\)/);
+  // A collapsed or hidden surface, or one under its open editor, does not load the run's image.
+  assert.match(runtime, /const run = studioOptions && surfaceShown\(wrap, !!node\.flags\?\.collapsed, editorOpen\(node\)\)/);
   // The image counts as ready once it is decoded, so the first draw with it does not stall.
   assert.match(runtime, /image\.decode\(\)\.then\(/);
   assert.match(runtime, /if \(!cached\.ready\) return null;/);

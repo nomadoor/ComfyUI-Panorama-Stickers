@@ -109,7 +109,7 @@ export function viewProjection(camera, width, height) {
 // and paint share one z_index axis; #52 adds z_index to the sky Stickers of state v2, and until then the
 // editor's z_index is passed in.
 // media(sticker) returns { media, revision, source? } for a Sticker (source: see pano_three_view.js
-// layerTexture), or null. evaluated is evaluateSceneState(sceneState, frame), when the caller has it.
+// createLayerTextures), or null. evaluated is evaluateSceneState(sceneState, frame), when the caller has it.
 export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evaluated = evaluateSceneState(sceneState, frame) }) {
   const layers = [];
   sceneState.stickers.forEach((sticker, index) => {
