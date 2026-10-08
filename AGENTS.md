@@ -64,6 +64,10 @@ Procedures for these live in `docs/agents/workflow.md`.
 8) **Delete what is obsolete**
 - Superseded code, docs, flags, and dev leftovers go in the change that supersedes them.
 
+9) **Stop early, report facts**
+- When an approach is not working or a spec looks wrong, stop and report at once: what was verified and where, the suspected cause, and one proposed fix. Do not work around it silently or report failure only at the end.
+- Keep verified facts apart from assumptions. Agreement among reviewers is not proof; raise disagreement with the problem and an alternative.
+
 ## Stop & ask before proceeding
 
 - Changing **node ids**, **port meaning**, or **parameter formats**.
