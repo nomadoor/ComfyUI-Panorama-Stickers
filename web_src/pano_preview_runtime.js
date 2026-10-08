@@ -1,7 +1,6 @@
 import * as appModule from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { createApp, reactive } from "vue";
-import { createPaintEngineManager } from "./pano_paint_engine.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
 import { clamp } from "./pano_math.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "./pano_diagnostics.js";
@@ -9,6 +8,7 @@ import { yawPitchToDir } from "./pano_camera_math.js";
 import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
 import { editorActive, editorStateWrite, parsePanoEditorState, setEditorActive, sourceAsset } from "./pano_editor_state.js";
 import { loadSceneState } from "./pano_scene_state.js";
+import { surfacePaintLayers } from "./pano_surface_paint.js";
 import { shotCamera, viewProjection, workingSkyLayers } from "./pano_editor_view.js";
 import { acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { createComfyMediaAdapter } from "./pano_comfy_media.js";
@@ -54,10 +54,6 @@ import {
   stickerSelectionAccent,
 } from "./pano_sticker_affordance.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
-import {
-  createRasterObjectSurfaceCache,
-  resolveRasterPreviewSize,
-} from "./pano_raster_object_surface.js";
 import {
   buildSharedImageCacheKey,
   createSharedImageCache,
@@ -1216,69 +1212,6 @@ function getNodePreviewImage(node, assetId, asset, sceneItem = null) {
   return img || null;
 }
 
-function buildRuntimeCutoutLayerEntries(node, state) {
-  const surface = nodeSurface(node);
-  const engine = getNodePreviewPaintEngine(node, state);
-  const orderedGroups = getPreviewOrderedGroupIds(state);
-  const groups = Array.isArray(state?.painting?.groups) ? state.painting.groups : [];
-  const zByGroup = new Map(
-    groups
-      .filter((group) => group && typeof group === "object")
-      .map((group) => [String(group?.actionGroupId || group?.id || "").trim(), Number(group?.z_index || 0)]),
-  );
-  const groupEntries = engine ? orderedGroups.map((gid) => {
-    const source = engine.getGroupDisplayCanvas(gid);
-    if (!source) return null;
-    return {
-      id: `paint_group:${gid}`,
-      source,
-      revision: `${String(surface.paintRevisionKey || "")}:${gid}`,
-      zIndex: Number(zByGroup.get(gid) || 0),
-      opacity: 1,
-      visible: true,
-    };
-  }).filter(Boolean) : [];
-  const rasterObjects = Array.isArray(state?.painting?.raster_objects)
-    ? state.painting.raster_objects
-    : [];
-  if (rasterObjects.length === 0) {
-    surface.rasterCache?.retain?.([]);
-    return groupEntries;
-  }
-  if (!surface.rasterCache) {
-    surface.rasterCache = createRasterObjectSurfaceCache();
-  }
-  if (!surface.rasterReady) {
-    surface.rasterReady = () => surface.dom?.requestDraw?.();
-  }
-  const previewSize = resolveRasterPreviewSize(state?.output_preset);
-  const retainedRasterIds = rasterObjects
-    .filter((item) => item?.visible !== false && String(item?.layerKind || "paint") === "paint")
-    .map((item) => String(item?.id || ""));
-  surface.rasterCache.retain(retainedRasterIds);
-  const rasterEntries = rasterObjects.map((item) => {
-    const resolved = surface.rasterCache.get(
-      item,
-      previewSize.width,
-      previewSize.height,
-      surface.rasterReady,
-    );
-    if (!resolved) return null;
-    return {
-      id: `raster:${String(item?.id || "")}`,
-      source: resolved.source,
-      revision: resolved.revision,
-      zIndex: Number(item?.z_index || 0),
-      opacity: 1,
-      visible: item?.visible !== false,
-    };
-  }).filter(Boolean);
-  return [...groupEntries, ...rasterEntries];
-}
-
-
-
-
 export function localPosFromEvent(node, e, arg2, canvas) {
   if (Array.isArray(arg2) && arg2.length >= 2) return { x: arg2[0], y: arg2[1] };
   if (arg2 && typeof arg2 === "object" && Number.isFinite(Number(arg2.x)) && Number.isFinite(Number(arg2.y))) {
@@ -1338,74 +1271,6 @@ function localPosFromClientEvent(node, e, canvas) {
     x: graphPos.x - Number(node?.pos?.[0] || 0),
     y: graphPos.y - Number(node?.pos?.[1] || 0),
   };
-}
-
-// Returns the display paint canvas for a node's paint state, or null if there are no strokes.
-// Creates and caches a lightweight paint engine per node; rebuilds only when the stroke list changes.
-function getDesiredPreviewPaintDescriptor(node, state) {
-  // Match the modal editor's ERP paint workspace exactly.
-  // Paint strokes are authored in panorama UV space, so inheriting arbitrary
-  // linked-image dimensions here can squash/stretch the node preview and any
-  // browser-rendered cutout export built from this preview engine.
-  const presetWidth = Math.max(1, Number(state?.output_preset || 2048));
-  return {
-    kind: "ERP_GLOBAL",
-    width: presetWidth,
-    height: Math.max(1, Math.round(presetWidth * 0.5)),
-  };
-}
-
-function getNodePreviewPaintEngine(node, state) {
-  const strokes = state?.painting?.paint?.strokes;
-  const maskStrokes = state?.painting?.mask?.strokes;
-  const hasPaint = Array.isArray(strokes) && strokes.length > 0;
-  const hasMask = Array.isArray(maskStrokes) && maskStrokes.length > 0;
-  if (!hasPaint && !hasMask) return null;
-  const surface = nodeSurface(node);
-
-  const descriptor = getDesiredPreviewPaintDescriptor(node, state);
-  const descriptorKey = `${descriptor.width}x${descriptor.height}`;
-  if (!surface.paintEngine || surface.paintDescriptorKey !== descriptorKey) {
-    surface.paintEngine = createPaintEngineManager(descriptor);
-    surface.paintDescriptorKey = descriptorKey;
-    surface.paintRevision = null;
-    surface.paintRevisionKey = "";
-  }
-
-  const revision = {
-    paint: strokes || null,
-    mask: maskStrokes || null,
-    groups: state?.painting?.groups || null,
-    rasterObjects: state?.painting?.raster_objects || null,
-  };
-
-  if (
-    surface.paintRevision?.paint !== revision.paint
-    || surface.paintRevision?.mask !== revision.mask
-    || surface.paintRevision?.groups !== revision.groups
-    || surface.paintRevision?.rasterObjects !== revision.rasterObjects
-  ) {
-    surface.paintRevision = revision;
-    surface.paintRevisionKey = [
-      hasPaint ? "p1" : "p0",
-      hasMask ? "m1" : "m0",
-      String(Array.isArray(state?.painting?.groups) ? state.painting.groups.length : 0),
-      String(Array.isArray(state?.painting?.raster_objects) ? state.painting.raster_objects.length : 0),
-    ].join(":");
-    surface.paintEngine.rebuildCommitted(state);
-  }
-
-  return surface.paintEngine;
-}
-
-function getPreviewOrderedGroupIds(state) {
-  const groups = Array.isArray(state?.painting?.groups) ? state.painting.groups : [];
-  return groups
-    .filter((group) => group && typeof group === "object")
-    .slice()
-    .sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0))
-    .map((group) => String(group?.actionGroupId || group?.id || "").trim())
-    .filter(Boolean);
 }
 
 function getSourcePixelSize(source) {
@@ -1654,10 +1519,7 @@ function surfaceViewInput(node, state, bgImg) {
     }
     return isRenderableMediaReady(img) ? { media: img, revision: getRenderableMediaRevisionToken(img) } : null;
   };
-  // A hidden painting (state v2 `painting_visible`) is not drawn.
-  const paintLayers = (state.painting_visible === false ? [] : buildRuntimeCutoutLayerEntries(node, state))
-    .filter((entry) => entry.visible !== false)
-    .map((entry) => ({ id: entry.id, media: entry.source, revision: entry.revision, opacity: entry.opacity, zIndex: entry.zIndex }));
+  const paintLayers = surfacePaintLayers(nodeSurface(node), state);
   // Outside the background's Clip range and media (Panorama Studio), bg_color shows in its place, as in the output.
   const upstreamColor = isNodeOutputMediaCurrent(node, "scene") ? upstreamBackgroundOf((key) => ownOutputUiList(node, key))?.color : null;
   const background = nodeSurface(node).playback?.playback.backgroundShows === false
@@ -3153,6 +3015,10 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     surface.rasterCache?.dispose?.();
     surface.rasterCache = null;
     surface.rasterReady = null;
+    // The paint engine and the painting it drew go with the surface; a surface attached again rebuilds them.
+    surface.paintEngine = null;
+    surface.paintState = null;
+    surface.paintRevision = null;
     unregisterExternalStickerSync();
     viewportRestoreScheduler.dispose();
     if (dropCueTimer) clearTimeout(dropCueTimer);

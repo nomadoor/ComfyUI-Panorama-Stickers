@@ -140,8 +140,6 @@ test("drags defer the node preview to their end and Clip ranges do not reload th
   assert.match(input, /if \(editorViewScene\.revision !== scheduler\.stateRevision\) \{/);
   assert.doesNotMatch(input, /JSON\.stringify/);
   assert.match(input, /if \(stateV2\) copyClipRanges\(editorViewScene\.sceneState\);/);
-  // The mask layer reads its canvas once per build, keyed by the paint engine's mask revision.
-  const mask = editorFunction("appendMaskDisplayLayerEntry");
-  assert.equal(mask.match(/getMaskDisplayCanvas/g).length, 1);
-  assert.match(mask, /getMaskDisplayRevision\(\)/);
+  // The mask layer is the paint engine's mask display, keyed by its mask revision (engineMask).
+  assert.match(editorFunction("buildEditorViewPaintLayers"), /mask: \(\) => engineMask\(engine\),/);
 });

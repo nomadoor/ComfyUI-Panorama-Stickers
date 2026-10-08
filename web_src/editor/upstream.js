@@ -8,6 +8,7 @@ import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_di
 import { sourceAsset } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { createPaintEngineManager } from "../pano_paint_engine.js";
+import { engineMask, skyPaintLayers } from "../pano_paint_layers.js";
 import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } from "../pano_port_media.js";
 import { isNodeOutputMediaCurrent, linkedInputType } from "../pano_preview_video.js";
 import {
@@ -23,7 +24,6 @@ import {
   upstreamLayersOf,
   upstreamLayerView,
   upstreamOverriddenEnds,
-  upstreamPaintEntries,
   upstreamPending,
   upstreamPrunedRecords,
   upstreamRestoredRecords,
@@ -311,8 +311,8 @@ export function createUpstream(deps) {
     return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
   }
 
-  // A layer's paint as Sky layers (upstreamPaintEntries of its working copy), drawn by a paint engine of its
-  // own at the size of the node's own paint.
+  // A layer's paint as Sky layers (skyPaintLayers of its working copy), drawn by a paint engine of its own at the
+  // size of the node's own paint.
   function paintLayers(entry) {
     const { sceneState } = entry.working;
     const { painting } = sceneState;
@@ -328,16 +328,18 @@ export function createUpstream(deps) {
       entry.rasters = new Map();
     }
     const engine = entry.paintEngine;
-    const mask = engine?.getMaskDisplayCanvas() || null;
-    const layers = [];
-    for (const item of upstreamPaintEntries(sceneState, engine ? engine.getAllGroupIds() : [], !!mask)) {
+    return skyPaintLayers(sceneState, {
       // A painting with groups but no strokes has no engine, and its groups show nothing.
-      const media = item.kind === "group" ? engine?.getGroupDisplayCanvas(item.id)
-        : item.kind === "mask" ? mask
-          : rasterCanvas(entry, item.item, descriptor);
-      if (media) layers.push({ id: `${item.kind}:${item.id}`, media, revision: size, opacity: 1, zIndex: item.zIndex });
-    }
-    return layers;
+      group: (id) => {
+        const media = engine?.getGroupDisplayCanvas(id);
+        return media && { media, revision: size };
+      },
+      raster: (item) => {
+        const media = rasterCanvas(entry, item, descriptor);
+        return media && { media, revision: size };
+      },
+      mask: () => engineMask(engine),
+    });
   }
 
   // A raster object of a layer on an ERP canvas of the paint's size, once its image has loaded.

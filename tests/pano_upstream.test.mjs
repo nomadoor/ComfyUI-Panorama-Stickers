@@ -21,7 +21,6 @@ import {
   upstreamLayersOf,
   upstreamLayerView,
   upstreamOverriddenClips,
-  upstreamPaintEntries,
   upstreamPending,
   upstreamRowId,
   upstreamWorkingLayers,
@@ -211,29 +210,6 @@ test("the editor waits for a run only while a Scene is linked and no upstream la
   assert.equal(upstreamPending(PANO_SCENE_TYPE, []), false);
   assert.equal(upstreamPending("SPLAT", null), false);
   assert.equal(upstreamPending("", null), false);
-});
-
-test("upstream paint is ordered by z_index with the Stickers, loose strokes and the mask over all, and hidden with the painting", () => {
-  const raster = (id, z, layerKind = "paint") => ({
-    id, type: "raster_frozen", layerKind, z_index: z, rasterDataUrl: "data:image/png;base64,AA", bbox: { u0: 0, v0: 0, u1: 0.1, v1: 0.1 },
-  });
-  const state = {
-    stickers: [sky("s", { z_index: 4 })],
-    painting: {
-      version: 1,
-      groups: [{ id: "g1", actionGroupId: "g1", z_index: 2 }, { id: "g0", actionGroupId: "g0", z_index: 0 }],
-      raster_objects: [raster("r1", 1), raster("m1", 3, "mask")],
-    },
-  };
-  const entries = upstreamPaintEntries(layerOf(state).sceneState, ["g0", "g1", "loose"], true);
-  assert.deepEqual(entries.map((entry) => [entry.kind, entry.id, entry.zIndex]), [
-    ["group", "g1", 2],
-    ["group", "g0", 0],
-    ["raster", "r1", 1],
-    ["group", "loose", 5],
-    ["mask", "mask", 5],
-  ]);
-  assert.deepEqual(upstreamPaintEntries(layerOf({ ...state, painting_visible: false }).sceneState, ["g0"], true), []);
 });
 
 test("the upstream background is the result's pano_upstream_ media with its coverage, or none", () => {

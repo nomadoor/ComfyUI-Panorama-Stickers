@@ -161,10 +161,9 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn('return (preserveReadyWhilePending && cacheEntry.img && (cacheEntry.img.complete || cacheEntry.img.naturalWidth || cacheEntry.img.width))', preview_js)
 
     def test_cutout_preview_paint_workspace_does_not_follow_linked_image_aspect(self):
-        preview_js = (REPO_ROOT / "web_src" / "pano_preview_runtime.js").read_text(encoding="utf-8")
-        self.assertIn("function getDesiredPreviewPaintDescriptor(node, state) {", preview_js)
-        self.assertIn("const presetWidth = Math.max(1, Number(state?.output_preset || 2048));", preview_js)
-        self.assertIn("height: Math.max(1, Math.round(presetWidth * 0.5)),", preview_js)
+        preview_js = (REPO_ROOT / "web_src" / "pano_surface_paint.js").read_text(encoding="utf-8")
+        self.assertIn("const width = Math.max(1, Number(state.output_preset || 2048));", preview_js)
+        self.assertIn('const descriptor = { kind: "ERP_GLOBAL", width, height: Math.max(1, Math.round(width * 0.5)) };', preview_js)
         self.assertNotIn("const connectedWidth = Number(connected?.naturalWidth || connected?.width || 0);", preview_js)
         self.assertNotIn("const connectedHeight = Number(connected?.naturalHeight || connected?.height || 0);", preview_js)
         self.assertNotIn("width: Math.max(1, Math.round(connectedWidth)),", preview_js)

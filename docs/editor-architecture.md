@@ -94,12 +94,12 @@ export function createHistory(deps) {
 | `editor/selection.js` | 464 | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
 | `editor/projection.js` | 346 | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |
 | `editor/object_geometry.js` | 324 | 品目の画面上の形（オーバーレイと当たり判定が読む） |
-| `editor/paint_layers.js` | 564 | ペイントの表示の層、ラスターの画像とアルファ、消しゴムのプレビュー、ノードへ送る塗りの層 |
+| `editor/paint_layers.js` | 523 | ペイントの表示の層（並びは `pano_paint_layers.js`。下記「Paint layers」）、ラスターの画像とアルファ、消しゴムのプレビュー、ノードへ送る塗りの層 |
 | `editor/paint_strokes.js` | 587 | 筆跡の点・半径・ラスター化、ペイントエンジンと表示のキャッシュの revision |
 | `editor/external_stickers.js` | 242 | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
 | `editor/space.js` | 340 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作（キーの移動 `stepKeyMove`）、閉じたときの視点の記憶と復元（`saveView`・`restoreView`） |
 | `editor/view_input.js` | 269 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
-| `editor/upstream.js` | 406 | Panorama Studio の上流の Scene（#90、ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`、`upstreamStickers`）、その編集の上書きへの書き戻し（`syncUpstreamEdits`）、タイムラインの行（`upstreamTimelineLayers`・`upstreamRow`）と Auto の長さに入る上流の長さ（`upstreamOutput`・`upstreamPortMeta`）、消す・上流に戻す・消したものを戻す・上書きの掃除（`deleteUpstreamStickers`・`revertUpstreamSticker`・`revertUpstreamLayer`・`restoreUpstreamDeleted`・`pruneUpstreamRecords`）、その素材とペイント、実行待ちの表示 |
+| `editor/upstream.js` | 408 | Panorama Studio の上流の Scene（#90、ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`、`upstreamStickers`）、その編集の上書きへの書き戻し（`syncUpstreamEdits`）、タイムラインの行（`upstreamTimelineLayers`・`upstreamRow`）と Auto の長さに入る上流の長さ（`upstreamOutput`・`upstreamPortMeta`）、消す・上流に戻す・消したものを戻す・上書きの掃除（`deleteUpstreamStickers`・`revertUpstreamSticker`・`revertUpstreamLayer`・`restoreUpstreamDeleted`・`pruneUpstreamRecords`）、その素材とペイント、実行待ちの表示 |
 | `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
 | `editor/overlay.js` | 602 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
 | `editor/render_loop.js` | 422 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
@@ -134,6 +134,50 @@ export function createHistory(deps) {
 `requestDraw` を呼ぶのは、`connect()` で `requestDraw` を受け取るモジュールと、`pano_editor.js` の
 登録のコード（`editorView` の通知、`canvas.onmouseleave`、起動の最後）だけ。
 `grep -ln "requestDraw" web_src/editor` で一覧になる。
+
+## Paint layers
+
+ペイントを Sky の層（ERP のキャンバス）に並べるのは、エディタ、ノード上の面、上流の Scene の層の 3 か所で、
+どれも `web_src/pano_paint_layers.js` の `skyPaintLayers(state, { group, raster, mask })` を使う。
+どの層があり、どの順と `z_index` で並ぶかはこの関数だけが決め、ノードの描画（`core/render.py` の
+`_sky_layers`、`docs/scene-state-v2.md` の「Sky の重なり順」）と同じにする。
+
+- ストロークのグループと `paint` のラスタオブジェクトを `z_index` の順（同じ値ならグループ、ラスタの順、
+  それぞれリストの順。ラスタの小数の `z_index` はノードと同じく整数に切り捨てる）。
+- どのグループにも属さないストロークは、そのグループごとに全部の上（Sticker の上）。ノードは 1 枚にまとめて描く。
+- マスクの表示はさらにその上。
+- `painting_visible` が `false` なら何もなく、素材も求めない。
+- 戻り値の `zIndex` で、`skyLayers`（`pano_editor_view.js`）が `sky` の Sticker の間に入れる（同じ値なら Sticker が下）。
+
+画素は呼び出し側が自分のペイントエンジン（`pano_paint_engine.js`）とラスタのキャッシュで描き、
+`{ media, revision }` を返す関数で渡す（描くものがなければ `null`。エンジンにそのグループの画素がない、
+画像が読み込み中など）。エンジンとキャッシュの持ち主と寿命は呼び出し側のまま。
+
+| 呼び出し側 | 関数 | 渡すもの |
+| --- | --- | --- |
+| エディタ | `editor/paint_layers.js` の `buildEditorViewPaintLayers` | 描き途中のストロークを含むグループ、描き始めたグループを選択に合わせた `z_index` で `painting.groups` に足す（`getOrderedDisplayListObjects`）、消しゴムのプレビューを当てたラスタ、マスク（`engineMask`） |
+| ノード上の面 | `pano_surface_paint.js` の `surfacePaintLayers`（`pano_preview_runtime.js` の `surfaceViewInput` が呼ぶ） | 面のエンジン（グループを描くときに作る）、面のラスタのキャッシュ。マスクは見せない |
+| 上流の Scene の層 | `editor/upstream.js` の `paintLayers` | 層ごとのエンジンとラスタ、マスク（`engineMask`） |
+
+`skyPaintLayers` は正規化した状態（`normalizePaintingState` の `painting`）を受け取る。ノード上の面のうち旧
+Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON をそのまま読む（`parseState`）ので、`painting` が
+無いか欠けていることがある。`surfacePaintLayers` は `painting` を正規化してから渡し、同じ `painting` の間は
+正規化の結果を面のレコード（`nodeSurface(node).paintState`）に持つ。面のエンジンは `painting` が変わるたびに
+描き直し、`paintRevisionKey` にその回数を数えるので、同じグループにストロークを足しても（キャンバスも数も同じでも）
+ビューはキャンバスを上げ直す。ノード上の面でペイントを隠すと、ラスタオブジェクトのキャンバスを手放し
+（`rasterCache.retain([])`）、見せたときに作り直す。
+
+既知の問題（後で直す）：
+
+- 投げ縄の塗りを分割したラスタは `z_index` に `index * 0.001` を足す。並びはノードと同じく整数に切り捨てて決めるが、
+  当たり判定（`editor/hit_test.js`）は小数のまま並べるので、リストの順と小数の大小が逆のとき、重なりと当たる順が逆になる。
+- マスクのラスタオブジェクト（`layerKind: "mask"`）は、エンジンのマスクの表示に入らない（エンジンはマスクのストロークだけを描く）。
+  ノードの MASK には入る。
+- どのグループにも属さないストロークが複数のグループにあり、ストロークの順が交互になるとき、ノードはストロークの順に
+  1 枚に描き、フロントはグループごとに描くので、重なった画素がわずかに違う。
+
+並びがノードと同じことは `tests/test_paint_layers_parity.py`（`_sky_layers` と比べる）、
+層の規則は `tests/pano_paint_layers.test.mjs`、ノード上の面は `tests/pano_surface_paint.test.mjs` が確かめる。
 
 ## Node bridge
 

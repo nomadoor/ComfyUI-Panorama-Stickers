@@ -1311,10 +1311,6 @@ export function createPaintEngineManager(options = {}) {
     return groupTargets.get(String(actionGroupId)) ?? null;
   }
 
-  function getAllGroupIds() {
-    return [...groupTargets.keys()];
-  }
-
   // A paint group as the views draw it: its committed paint, with the live stroke while it is drawn.
   // The canvas with the live stroke is rebuilt only when the group's or the stroke's pixels change.
   function getGroupDisplayCanvas(actionGroupId) {
@@ -1392,6 +1388,5 @@ export function createPaintEngineManager(options = {}) {
     getGroupDisplayCanvas,
     getMaskDisplayCanvas,
     getMaskDisplayRevision,
-    getAllGroupIds,
   };
 }

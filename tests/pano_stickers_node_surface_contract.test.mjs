@@ -262,10 +262,13 @@ test("surface teardown restores lifecycle hooks only while it still owns each wr
 test("shared composite includes raster paint objects as independent z-ordered layers", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
 
-  assert.match(runtime, /createRasterObjectSurfaceCache/);
-  assert.match(runtime, /painting\?\.raster_objects/);
-  assert.match(runtime, /id:\s*`raster:/);
-  assert.match(runtime, /const paintLayers = \(state\.painting_visible === false \? \[\] : buildRuntimeCutoutLayerEntries\(node, state\)\)/);
+  // The order and which layers there are come from skyPaintLayers (tests/pano_paint_layers.test.mjs); the surface's
+  // engine and raster canvases are pano_surface_paint.js's (tests/pano_surface_paint.test.mjs).
+  const surfacePaint = await read("../web_src/pano_surface_paint.js");
+  assert.match(surfacePaint, /const layers = skyPaintLayers\(painted, \{[\s\S]*?raster: \(item\) => \{[\s\S]*?surface\.rasterCache \?\?= createRasterObjectSurfaceCache\(\);/);
+  // The legacy nodes' state (parseState, the widget's JSON as it is) and state v2 both go to it.
+  assert.match(runtime, /const parsed = sceneText\s*\? surfaceSceneEditorState\([\s\S]*?: parseState\(source, bg\);/);
+  assert.match(runtime, /function surfaceViewInput\(node, state, bgImg\)[\s\S]*?const paintLayers = surfacePaintLayers\(nodeSurface\(node\), state\);/);
 });
 
 test("external sticker textures resolve only from the node's current dedicated output", async () => {
