@@ -11,7 +11,7 @@
 // createVideoPlayback; onChange also runs when the VIDEO of a source fails. onStickerCapture is the
 // follower's onCapture. With `camera` (Panorama Studio, #89) the Camera's Keyframes count, as in its editor.
 // The Timeline is exactly the output's length (pano_timeline.js timelineSpan), as in the editor.
-import { createFrameSequence, portMediaTime } from "./pano_port_media.js";
+import { backgroundPlace, backgroundShownAt, createFrameSequence, portMediaTime } from "./pano_port_media.js";
 import { NODE_SURFACE_FRAME } from "./pano_stickers_node_surface.js";
 import { isTimed, timelineSpan } from "./pano_timeline.js";
 import { createVideoFollower, createVideoPlayback } from "./pano_video_playback.js";
@@ -37,11 +37,16 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
   let media = {};
   const fps = () => readState().timeline.fps;
   const port = (state) => state.stickers.find((item) => item.source.kind === "port");
-  // The editor's Timeline span: the output's length. Without a background from the node's result
-  // (`media.bg` undefined), the VIDEO the surface plays counts, by its length.
+  // The background as autoTimelineLength reads it. Without one from the node's result (`media.bg` undefined), the
+  // VIDEO the surface plays counts, by its length.
+  const background = () => (media.bg !== undefined ? media.bg : chosen && duration > 0 ? { video: true, frames: Math.round(duration * fps()), duration } : null);
+  // The Clip range of the background the surface shows: the node's own, or an upstream background's
+  // (`media.bg` null) in the Timeline's frames (`media.upstreamClip`, null with the default one).
+  const backgroundClip = () => (media.bg === null ? media.upstreamClip ?? null : readState().background.clip);
+  // The editor's Timeline span: the output's length.
   const span = () => timelineSpan(readState(), {
     ...media,
-    bg: media.bg !== undefined ? media.bg : chosen && duration > 0 ? { video: true, frames: Math.round(duration * fps()), duration } : null,
+    bg: background(),
     port: sticker?.meta ?? media.port ?? null,
     camera,
   });
@@ -51,6 +56,10 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
     fps,
     span,
     loop: () => true,
+    place: () => {
+      const clip = backgroundClip();
+      return clip ? backgroundPlace(clip) : null;
+    },
     onFrame,
     onCapture,
     onChange,
@@ -110,6 +119,14 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
     get source() {
       return loaded;
     },
+    // Whether the background shows at the playhead (backgroundShownAt); where it does not, the surface shows
+    // bg_color, as the node's output does.
+    get backgroundShows() {
+      const clip = backgroundClip();
+      // An upstream background ends with its media (`media.upstreamMedia`), which an upstream Scene set at its own fps.
+      if (media.bg === null) return !clip || backgroundShownAt(clip, playback.frame, fps(), media.upstreamMedia ?? null, true);
+      return !clip || backgroundShownAt(clip, playback.frame, fps(), background(), !!media.upstream);
+    },
     pause,
     // The port Sticker's media it follows: { src, meta }, { frames, meta } or null.
     get stickerMedia() {
@@ -128,8 +145,8 @@ export function createNodePlayback({ video, stickerVideo, createImage, clock, re
     // background VIDEO URLs, best first; one that failed is skipped until it leaves them. `sticker`
     // is the port Sticker's MP4 ({ src, meta }) or PNGs ({ frames, meta }), or null; it plays too. `media` is
     // what the node's result gives autoTimelineLength of its inputs ({ bg, port, sceneItems, upstream }; `bg`
-    // left out while no result gives it, null when an upstream background stands in). Out of sight, the node pauses
-    // and lets its VIDEOs go, keeping the frame. Another background VIDEO, a Timeline that no longer
+    // left out while no result gives it, null when an upstream background stands in, which `upstreamClip`
+    // places and `upstreamMedia` ({ video, frames, duration } of its MP4) ends). Out of sight, the node pauses and lets its VIDEOs go, keeping the frame. Another background VIDEO, a Timeline that no longer
     // reaches the frame, or nothing to play brings the node back to NODE_SURFACE_FRAME.
     follow({ shown, sources, state, sticker: portMedia = null, media: inputs = {} }) {
       sticker = shown ? portMedia : null;

@@ -50,9 +50,9 @@ from .core.painting import (
     render_painting_to_erp,
 )
 from .core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
-from .core.scene_eval import FRAME_EPSILON, evaluate_scene_state
+from .core.scene_eval import FRAME_EPSILON, clip_active, evaluate_scene_state
 from .core.scene_inherit import apply_upstream_overrides
-from .core.scene_state import CAMERA_LANES, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state
+from .core.scene_state import CAMERA_LANES, DEFAULT_CLIP, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import load_source_rgba
 from .core.video import (
@@ -1032,8 +1032,9 @@ class PanoSceneValue:
     `layers` holds a `SceneLayer` for each node of the chain, from the farthest upstream to the node that made it,
     flat: a PANO_SCENE never holds another. `bg_media` (IMAGE, VIDEO, or None) is the input as given, `coverage`
     its span, and `bg_color` 0..1 RGB, all from the farthest upstream node that has a `bg_media`. `bg_ui` is the
-    `ui` that shows that `bg_media` in an editor. The output size is not part of it; each consumer sets its own.
-    `rate` is the Timeline fps as the fraction (a)
+    `ui` that shows that `bg_media` in an editor, and `bg_clip` its Clip range (`background.clip`) with the
+    `timeline.fps` of that node's state, or None without `bg_media`. The output size is not part of it; each
+    consumer sets its own. `rate` is the Timeline fps as the fraction (a)
     decided (`fps` as a float), `times` each output frame's time in seconds (Fraction), and `time_base` the step
     those times are rounded to (0: exact). `frames` holds per output frame the `bg_media` frame to draw and, for
     each layer, the Timeline frame of its state to evaluate, the `port` frame, and the `scene` item, as
@@ -1052,6 +1053,7 @@ class PanoSceneValue:
     frames: tuple
     bg_ui: dict
     media_ui: dict
+    bg_clip: tuple | None = None
 
     @property
     def fps(self) -> float:
@@ -1368,21 +1370,25 @@ def _output_times(given, rate: Fraction, length: int) -> list[Fraction]:
     return times + [times[-1] + index / rate for index in range(1, length - len(times) + 1)]
 
 
+def _timeline_frame(time, stored_fps: float, time_base) -> float:
+    """The Timeline frame of a state recorded at `stored_fps` at `time` seconds. PTS are rounded to the time base,
+    so a frame within half of it of a whole Timeline frame is that frame."""
+    frame = float(time * Fraction(stored_fps))
+    return float(round(frame)) if abs(frame - round(frame)) <= float(time_base) / 2 * stored_fps else frame
+
+
 def _layer_frames(state: dict, port: PortMedia | None, scene: SceneContent | None, times, fps: float, time_base) -> list[tuple]:
     """Per output frame at `times` (seconds), the Timeline frame of `state` to evaluate, the frame of its port media
     (`port.index_at`), and the item of its `scene` content (`batch_index`; None without `scene`). Times are read at
     the state's recorded `timeline.fps`, so its Keyframes keep their seconds at any Timeline `fps`; the state is not
     rebased."""
     stored_fps = state["timeline"]["fps"]
-    # PTS are rounded to the time base, so a frame within half of it of a whole Timeline frame is that frame.
     tolerance = float(time_base) / 2 * stored_fps
     clip = state["scene"]["clip"]
     origin = clip["start"] - clip["in"]
     frames = []
     for time in times:
-        frame = float(time * Fraction(stored_fps))
-        if abs(frame - round(frame)) <= tolerance:
-            frame = float(round(frame))
+        frame = _timeline_frame(time, stored_fps, time_base)
         frames.append((
             frame,
             None if port is None else port.index_at(frame, fps, tolerance),
@@ -1391,13 +1397,30 @@ def _layer_frames(state: dict, port: PortMedia | None, scene: SceneContent | Non
     return frames
 
 
-def _bg_frames(bg, times, time_base, timing: bool) -> list[int | None]:
+def _bg_place(bg, clip: dict, stored_fps: float) -> PortMedia | None:
+    """The opened bg_media placed on the Timeline by its Clip range `clip` (`background.clip` of the state recorded at
+    `stored_fps`) as the port Sticker's media is placed (`PortMedia`), or None for the default Clip range, with which
+    its frames map as they did before the Clip range (`_bg_frames`)."""
+    if bg is None or clip == DEFAULT_CLIP:
+        return None
+    return PortMedia("background", clip, bg, stored_fps, video=None if isinstance(bg, torch.Tensor) else bg)
+
+
+def _bg_frames(bg, times, time_base, timing: bool, place: PortMedia | None, fps: float) -> list[int | None]:
     """The bg_media frame to draw at each of `times`, or None. An IMAGE batch maps one to one to the output frames
     and ends there; a single image shows throughout. A VIDEO that set the Timeline (`timing`) maps one to one too;
     another (an upstream Scene set it) shows its last frame that starts at or before each time, within half the time
-    base of either, and nothing after its last frame has lasted one frame at its average rate."""
+    base of either, and nothing after its last frame has lasted one frame at its average rate.
+
+    With a `place` (`_bg_place`), each time shows the frame `place` shows at the Timeline frame of the state that
+    owns bg_media, at the Timeline `fps`, and nothing outside its Clip range."""
     if bg is None:
         return [None] * len(times)
+    if place is not None:
+        stored_fps = place.stored_fps
+        tolerance = float(time_base) / 2 * stored_fps
+        frames = [_timeline_frame(time, stored_fps, time_base) for time in times]
+        return [place.index_at(frame, fps, tolerance) if clip_active(place.clip, frame) else None for frame in frames]
     if not isinstance(bg, OPENED_VIDEOS):
         batch = int(bg.shape[0])
         return [index if index < batch else (0 if batch == 1 else None) for index in range(len(times))]
@@ -1425,6 +1448,10 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     background is already in the upstream's. Without the `timeline.length`, the Clip ranges this state overrides in
     the upstream layers (`overridden_ends`, from `_override_layers`) count too; the others are already in the
     upstream's length. `upstream` holds the layers with the overrides applied.
+
+    The own `bg_media` is placed by the state's `background.clip`, an upstream background by the Clip range of the
+    Studio it came from (`PanoSceneValue.bg_clip`); a Clip range other than the default ends the background where it
+    ends (`_bg_place`, `_bg_frames`).
     """
     stored_fps = state["timeline"]["fps"]
     if upstream is None:
@@ -1438,6 +1465,11 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     own_bg = bg if upstream is None or upstream.bg_media is None else None
     video = isinstance(own_bg, OPENED_VIDEOS)
     batch = 0 if own_bg is None or video else int(own_bg.shape[0])
+    bg_clip = state["background"]["clip"]
+    if own_bg is not None:
+        place = _bg_place(own_bg, bg_clip, stored_fps)
+    else:
+        place = None if bg is None or upstream.bg_clip is None else _bg_place(bg, *upstream.bg_clip)
 
     def output_frames(frame):
         return math.floor(frame * fps / stored_fps + 0.5)
@@ -1449,6 +1481,9 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
         port_end = port.end(fps)
         if port_end is not None:
             clip_ends.append(port_end)
+    if batch == 1 and bg_clip["duration"] is not None:
+        # A single background image ends with its Clip range, as a Sticker's image does.
+        clip_ends.append(bg_clip["start"] + bg_clip["duration"])
     scene_clip = state["scene"]["clip"]
     if scene is not None and scene.count > 1 and scene_clip["duration"] is None:
         clip_ends.append(scene_clip["start"] - scene_clip["in"] + scene.count * stored_fps / fps)
@@ -1459,7 +1494,10 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     if state["timeline"]["length"]:
         length = max(1, output_frames(state["timeline"]["length"]))
     else:
-        if video:
+        if own_bg is not None and place is not None and (video or batch > 1):
+            # The background's Clip range ends with it, or without a duration with its media.
+            length = max(1, output_frames(place.end(fps) if bg_clip["duration"] is None else bg_clip["start"] + bg_clip["duration"]))
+        elif video:
             # A background VIDEO that does not set the Timeline lasts until its last frame ends.
             length = len(own_bg.times) if upstream is None else max(1, math.floor(float(own_bg.times[-1] + 1 / own_bg.frame_rate) * fps + 0.5))
         elif batch > 1:
@@ -1477,7 +1515,7 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     layers = [] if upstream is None else [(layer.state, layer.port, _scene_content(layer.scene)) for layer in upstream.layers]
     layers.append((state, port, scene))
     per_layer = [_layer_frames(layer_state, layer_port, content, times, fps, time_base) for layer_state, layer_port, content in layers]
-    frames = tuple(zip(_bg_frames(bg, times, time_base, upstream is None), zip(*per_layer)))
+    frames = tuple(zip(_bg_frames(bg, times, time_base, upstream is None, place, fps), zip(*per_layer)))
     return rate, times, time_base, frames
 
 
@@ -1584,12 +1622,40 @@ def _open_media(media, name: str):
     return open_video(media, name) if isinstance(media, Input.Video) else media
 
 
+def _bg_audio(bg, bg_clip: tuple | None, frames: int, rate: Fraction) -> dict | None:
+    """The audio of the opened background VIDEO `bg` under an output of `frames` at the Timeline fps `rate`, or None
+    without one: from the start of its trim window, or placed by its Clip range (`PanoSceneValue.bg_clip`) other
+    than the default as its frames are, silent outside the Clip range and outside the media."""
+    if not isinstance(bg, OPENED_VIDEOS):
+        return None
+    if bg_clip is None or bg_clip[0] == DEFAULT_CLIP:
+        return bg.audio(frames / float(rate))
+    clip, stored_fps = bg_clip
+    seconds, stored_fps = frames / rate, Fraction(stored_fps)
+    start = clip["start"] / stored_fps
+    end = seconds if clip["duration"] is None else min(seconds, (clip["start"] + clip["duration"]) / stored_fps)
+    origin = (clip["start"] - clip["in"]) / stored_fps
+    audio = bg.audio(float(end - origin)) if end > start else None
+    if audio is None:
+        return None
+    sample_rate = audio["sample_rate"]
+    waveform = audio["waveform"]
+    placed = waveform.new_zeros((*waveform.shape[:-1], int(seconds * sample_rate)))
+    # The media's sample i plays at output sample i + shift.
+    shift = math.floor(origin * sample_rate + Fraction(1, 2))
+    first = max(int(start * sample_rate), shift)
+    last = min(int(end * sample_rate), shift + waveform.shape[-1], placed.shape[-1])
+    if last > first:
+        placed[..., first:last] = waveform[..., first - shift:last - shift]
+    return {"waveform": placed, "sample_rate": sample_rate}
+
+
 def _render_outputs(built: PanoSceneValue, bg, capture, size: tuple[int, int]):
     """(c) The first output frame's IMAGE and MASK of the Scene `built`, rendered now from the opened `bg`, and the
     `video` of every frame, rendered when it is read with `bg_media` and the `scene` content opened again for
     each pass."""
     color, mask = next(_render_frames(built, bg, capture, comfy.model_management.get_torch_device(), size))
-    audio = bg.audio(len(built.frames) / built.fps) if isinstance(bg, OPENED_VIDEOS) else None
+    audio = _bg_audio(bg, built.bg_clip, len(built.frames), built.rate)
 
     def render(device):
         return _render_frames(built, _open_media(built.bg_media, "bg_media"), capture, device, size)
@@ -1743,7 +1809,8 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
         media_ui["pano_timeline_frames"] = [len(frames)]
     layer = SceneLayer(state, sources, port, scene, layer_ui)
     layers = (layer,) if upstream is None else (*applied.layers, layer)
-    built = PanoSceneValue(layers, bg_media, coverage, bg_rgb, rate, tuple(times), time_base, frames, bg_ui, media_ui)
+    bg_clip = upstream.bg_clip if upstream_bg else None if bg_media is None else (state["background"]["clip"], state["timeline"]["fps"])
+    built = PanoSceneValue(layers, bg_media, coverage, bg_rgb, rate, tuple(times), time_base, frames, bg_ui, media_ui, bg_clip)
     return built, bg, stored_port
 
 
@@ -1751,8 +1818,9 @@ def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
     """The `ui` that shows the layers of the Scene on the `scene` input in the editor, apart from the node's own
     media: `pano_upstream_layers` with each layer's state (with its Scene `id`, ADR 0030) and media `ui` from the
     farthest upstream, its output frame count (`pano_upstream_frames`, which the editor's Auto length counts),
-    and the upstream background (`bg_ui`, None when it has none) under `pano_upstream_` keys with its coverage and
-    color."""
+    and the upstream background (`bg_ui`, None when it has none) under `pano_upstream_` keys with its coverage,
+    color, and Clip range (`pano_upstream_bg_clip`: the `background.clip` of the Studio it came from, with that
+    state's `timeline.fps`)."""
     ui = {
         "pano_upstream_layers": [{"state": layer.state, "ui": layer.media_ui} for layer in upstream.layers],
         "pano_upstream_frames": [len(upstream.frames)],
@@ -1761,6 +1829,8 @@ def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
         ui.update({key.replace("pano_", "pano_upstream_", 1): value for key, value in bg_ui.items()})
         ui["pano_upstream_coverage"] = [upstream.coverage]
         ui["pano_upstream_bg_color"] = [list(upstream.bg_color)]
+        if upstream.bg_clip is not None:
+            ui["pano_upstream_bg_clip"] = [{"clip": upstream.bg_clip[0], "fps": upstream.bg_clip[1]}]
     return ui
 
 

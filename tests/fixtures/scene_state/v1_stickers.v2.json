@@ -191,5 +191,12 @@
     "revision": "r1"
   },
   "painting_visible": true,
-  "upstream": []
+  "upstream": [],
+  "background": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    }
+  }
 }

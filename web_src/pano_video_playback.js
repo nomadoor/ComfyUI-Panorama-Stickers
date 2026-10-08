@@ -17,7 +17,12 @@
 // readyState, play(), pause(), ended, events loadeddata/seeked/pause/ended/error, and optionally
 // requestVideoFrameCallback/cancelVideoFrameCallback. `clock` is { now(), requestFrame(cb),
 // cancelFrame(id) }. fps(), span() and loop() are read when needed: the Timeline's fps, its length
-// in frames, and whether playback starts over at its end (else it stops on its last frame).
+// in frames, and whether playback starts over at its end (else it stops on its last frame). place() is
+// read when needed too: null for a VIDEO whose first frame is at Timeline frame 0, or where a Clip range puts
+// it (the background's, backgroundPlace in pano_port_media.js): { origin, start, end }, its first frame at
+// Timeline frame `origin`, shown from `start` until `end` (Infinity: its own end). Outside that and past its end
+// nothing of the VIDEO shows: playback runs on the clock there and hands over to the VIDEO where it starts, and
+// the still is not sought there (the editor shows bg_color).
 // onFrame(frame) runs for each playhead move and each presented VIDEO frame; onCapture() asks the
 // editor to copy the VIDEO's picture into its still; onChange() runs on each change of state.
 
@@ -34,7 +39,7 @@ export function frameShownAt(time, fps) {
   return Math.floor(time * fps + 1e-3);
 }
 
-export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, onCapture, onChange }) {
+export function createVideoPlayback({ video, clock, fps, span, loop, place = () => null, onFrame, onCapture, onChange }) {
   let frame = 0;
   let source = false;
   let failed = false;
@@ -83,6 +88,16 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
     return enter(failed ? "error" : "idle");
   }
 
+  const origin = () => place()?.origin ?? 0;
+  // The VIDEO's time at Timeline frame `at`.
+  const timeAt = (at) => (at - origin()) / fps();
+
+  // Whether the VIDEO shows at Timeline frame `at`: inside its place, before its end.
+  function inVideo(at) {
+    const { start = 0, end = Infinity } = place() ?? {};
+    return at >= start && at < end && !(timeAt(at) >= Number(video.duration));
+  }
+
   function fail() {
     failed = true;
     rest();
@@ -92,37 +107,43 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
   function seekTarget() {
     const { seekable } = video;
     const end = seekable?.length ? seekable.end(seekable.length - 1) : Number(video.duration);
-    return Math.max(0, Math.min(frame / fps(), Number.isFinite(end) ? end : Infinity));
+    return Math.max(0, Math.min(timeAt(frame), Number.isFinite(end) ? end : Infinity));
   }
 
   // Shows `frame` once the VIDEO can, then keeps it (still) or plays from it (play).
   function show(then) {
     if (!usable()) return then === "play" ? runClock() : rest();
-    if (video.readyState < HAVE_CURRENT_DATA) {
+    // A VIDEO seeking has no current frame either; its seek lands with `seeked`, not `loadeddata`.
+    if (video.readyState < HAVE_CURRENT_DATA && !video.seeking) {
       const owner = enter("loading", { then });
       listen(owner, "loadeddata", () => show(owner.then));
       listen(owner, "error", fail);
       return owner;
     }
-    // From the VIDEO's end on, the clock plays to the Timeline's end.
-    if (then === "play" && frame / fps() >= Number(video.duration)) return runClock();
+    // From the VIDEO's end on, and outside its place, the clock plays to the Timeline's end.
+    if (then === "play" && !inVideo(frame)) return runClock();
+    // A placed VIDEO shows nothing outside its place, so the still is left as it is.
+    if (place() && !inVideo(frame)) return rest();
     return seekTo(then, false);
   }
 
-  // An ended VIDEO always seeks: its play() would start over from 0.
+  // An ended VIDEO always seeks: its play() would start over from 0. A seek already in flight to the target (the
+  // clock waiting a placed VIDEO on its start) is waited for, not sent again. The target is the VIDEO's time, which
+  // a moved place changes at the same frame.
   function seekTo(then, retried) {
     const target = seekTarget();
-    if (!video.ended && frameAtTime(Number(video.currentTime), fps()) === frameAtTime(target, fps())) return land(then);
-    const owner = enter("seeking", { then, frame, retried });
+    const there = frameAtTime(Number(video.currentTime), fps()) === frameAtTime(target, fps());
+    if (!video.ended && !video.seeking && there) return land(then);
+    const owner = enter("seeking", { then, target, retried });
     listen(owner, "seeked", () => {
       const landed = frameAtTime(Number(video.currentTime), fps()) === frameAtTime(seekTarget(), fps());
-      const sameTarget = frame === owner.frame;
+      const sameTarget = seekTarget() === owner.target;
       // A landing short of the same target again is where the VIDEO stops; a new target seeks anew.
       if (landed || (sameTarget && owner.retried)) land(owner.then);
       else seekTo(owner.then, sameTarget);
     });
     listen(owner, "error", fail);
-    video.currentTime = target;
+    if (!(video.seeking && there)) video.currentTime = target;
     return owner;
   }
 
@@ -141,7 +162,7 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
     listen(owner, "ended", videoEnded);
     listen(owner, "error", fail);
     // A VIDEO as long as the Timeline loops by itself, without a seek and with its audio unbroken.
-    if (loop() && frameAtTime(Number(video.duration), fps()) >= span()) {
+    if (loop() && !place() && frameAtTime(Number(video.duration), fps()) >= span()) {
       const ownLoop = video.loop;
       video.loop = true;
       releases.push(() => {
@@ -153,7 +174,8 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
         owner.shown = true;
         onChange();
       }
-      advance(frameAtTime(time, fps()));
+      // The Timeline's time of the VIDEO's time; an upstream background's origin can fall between frames.
+      advance(frameAtTime(time + origin() / fps(), fps()));
     };
     if (frameCallback()) {
       let handle = video.requestVideoFrameCallback(function onVideoFrame(_now, metadata) {
@@ -178,13 +200,25 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
 
   function runClock() {
     const owner = enter("playingClock", { startTs: clock.now(), startFrame: frame });
+    // A VIDEO placed later on the Timeline waits on the time it starts at, so it plays from there without a seek.
+    const start = place()?.start ?? 0;
+    if (usable() && frame < start && video.readyState >= HAVE_CURRENT_DATA) video.currentTime = Math.max(0, timeAt(start));
     tick(owner, (now) => advance(owner.startFrame + Math.floor(((now - owner.startTs) / 1000) * fps())));
     return owner;
   }
 
   function advance(next) {
     if (next < span()) {
+      // A placed VIDEO hands over to the clock where its place ends, and the clock to it where it starts.
+      if (place() && state.name === "playingVideo" && !inVideo(next)) {
+        leave();
+        video.pause();
+        setFrame(next);
+        runClock();
+        return;
+      }
       setFrame(next);
+      if (place() && state.name === "playingClock" && usable() && inVideo(next)) show("play");
       return;
     }
     // A Timeline of one frame has nothing to loop.
@@ -224,7 +258,7 @@ export function createVideoPlayback({ video, clock, fps, span, loop, onFrame, on
     } else if (state.name === "playingVideo") {
       leave();
       video.pause();
-      const shown = frameShownAt(Number(video.currentTime), fps());
+      const shown = frameShownAt(Number(video.currentTime) + origin() / fps(), fps());
       setFrame(Math.min(shown, span() - 1));
       onCapture();
       if (frame === shown) rest();

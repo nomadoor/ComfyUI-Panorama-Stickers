@@ -268,5 +268,12 @@
         "visible": true
       }
     }
-  ]
+  ],
+  "background": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    }
+  }
 }

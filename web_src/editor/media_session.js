@@ -36,7 +36,7 @@ export function createMediaSession(deps) {
     scheduler, stageWrap, state, stateV2, stillCanvas, studio, timelinePlayhead, type, uiState, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames;
+  let backgroundVideoPlace, isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames;
 
   const videoState = {
     thumbnailJobId: 0,
@@ -234,6 +234,8 @@ export function createMediaSession(deps) {
       return videoEl.loop || !(frames > 0) ? Infinity : frames;
     },
     loop: () => stateV2,
+    // Panorama Studio's background VIDEO is where its Clip range puts it (state.background).
+    place: () => backgroundVideoPlace(),
     onFrame: (frame) => {
       if (stateV2) setTimelineFrame(frame);
       else syncVideoTransportState();
@@ -746,7 +748,7 @@ export function createMediaSession(deps) {
   return {
     connect(api) {
       ({
-        isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames,
+        backgroundVideoPlace, isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames,
       } = api);
     },
     videoState, queueVideoTransportLayout, playback, portVideo, getNodeUiValue,

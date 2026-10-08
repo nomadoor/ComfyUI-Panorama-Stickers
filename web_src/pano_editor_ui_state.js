@@ -451,6 +451,8 @@ function selectionMenuAt(corners, items) {
 
 // The id of the painting's Timeline row.
 export const PAINTING_ROW = "painting";
+// The id of the Timeline row of the node's own background (state.background).
+export const BACKGROUND_ROW = "background";
 
 function hasPainting(painting) {
   return painting.paint.strokes.length > 0 || painting.mask.strokes.length > 0 || painting.raster_objects.length > 0;
@@ -491,7 +493,10 @@ const LANE_LABELS = {
 // layer has 3D content, Keyframes or a Clip range, or is hidden. An upstream row is `upstream`, `overridden` while
 // the layer's record holds an override of it, and `editable` only when the node can keep overrides of its layer;
 // the node's own rows are always `editable`.
-export function buildTimelineModel(state, { span, portBarEnd = () => null, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false, upstream = [] }) {
+// `background` is null, or { end } while the node's own bg_media is shown: the Background row comes first, with
+// only the Clip range of state.background (no eye, no Keyframes); without a duration its bar ends at `end`, where
+// the background media ends (bgMediaEnd), or with the Timeline while that is not known (null) or for an image.
+export function buildTimelineModel(state, { span, portBarEnd = () => null, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false, upstream = [], background = null }) {
   // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
   const row = (id, owner, rowLabel, icon, clip, offset, { keyable = true, hideable = true, origin = null } = {}) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
@@ -502,7 +507,8 @@ export function buildTimelineModel(state, { span, portBarEnd = () => null, selec
       clip,
       selected: id === selectedId,
       hideable,
-      visible: owner.visible,
+      // The background has no eye and always shows.
+      visible: owner.visible !== false,
       ...upstreamRowFlags(origin),
       keyable,
       open: keyable && openRows.has(id),
@@ -568,6 +574,10 @@ export function buildTimelineModel(state, { span, portBarEnd = () => null, selec
     fpsLocked,
     length: state.timeline.length,
     rows: [
+      ...(background ? [(() => {
+        const { clip, offset } = clipRange(state.background.clip, background.end);
+        return row(BACKGROUND_ROW, state.background, "Background", ICON.unwrap, clip, offset, { keyable: false, hideable: false });
+      })()] : []),
       ...(camera ? [row("camera", state.camera, "Camera", ICON.camera, null, 0, { hideable: cameraHideable })] : []),
       ...stateRows(state, { sceneRow: scene }),
     ],

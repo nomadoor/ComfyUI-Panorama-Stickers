@@ -104,5 +104,6 @@
   "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
   "painting_layer": null,
   "painting_visible": true,
-  "upstream": []
+  "upstream": [],
+  "background": {"clip": {"start": 0, "in": 0, "duration": null}}
 }

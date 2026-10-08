@@ -39,7 +39,7 @@ Timeline fps で数えた整数のフレーム番号。状態に保存する時�
 _Avoid_: 秒, タイムスタンプ
 
 **Clip range**:
-Sticker や `scene` 入力が Timeline 上で有効な範囲。`start`・`in`・`duration` で表す。
+Sticker、`scene` 入力、Panorama Studio 自身の `bg_media`（背景）が Timeline 上で有効な範囲。`start`・`in`・`duration` で表す。
 
 **Lane**:
 Keyframe を持つ単位となるパラメータ。位置、回転、方向、サイズ、不透明度など。

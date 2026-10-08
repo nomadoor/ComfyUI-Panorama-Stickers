@@ -439,7 +439,7 @@ test("Panorama Studio's Timeline shows the Camera, the Stickers and the `scene` 
   const timelineVue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
   assert.match(timelineVue, /v-if="row\.keyable"\s*class="pano-timeline-key"/);
   const editorJs = readEditorSource();
-  assert.match(editorJs, /if \(action\.owner === "scene" \|\| !timelineEditable\(action\.owner\)\) return;/);
+  assert.match(editorJs, /if \(action\.owner === "scene" \|\| action\.owner === BACKGROUND_ROW \|\| !timelineEditable\(action\.owner\)\) return;/);
   // Without its input, the `scene` row shows only while the `scene` changes over time.
   const still = loadSceneState({ version: 2 });
   assert.equal(buildTimelineModel(still, options).rows.some((row) => row.id === "scene"), false);

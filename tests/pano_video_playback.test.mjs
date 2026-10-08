@@ -144,7 +144,7 @@ class FakeClock {
   }
 }
 
-function setup({ video = new FakeVideo(), span = 72, loop = true, source = true } = {}) {
+function setup({ video = new FakeVideo(), span = 72, loop = true, source = true, place = null } = {}) {
   const clock = new FakeClock();
   const log = { frames: [], captures: 0, still: null, blank: 0 };
   // What the editor would draw: the VIDEO while the playback shows it, else the still.
@@ -158,6 +158,7 @@ function setup({ video = new FakeVideo(), span = 72, loop = true, source = true 
     fps: () => FPS,
     span: () => (typeof span === "function" ? span() : span),
     loop: () => loop,
+    place: () => place,
     onFrame: (frame) => {
       log.frames.push(frame);
       check();
@@ -592,4 +593,136 @@ test("a Timeline cut to one frame while it plays stops on frame 0 instead of sta
   assert.equal(playback.playing, false);
   assert.equal(playback.frame, 0);
   assert.equal(clock.callbacks.size, 0);
+});
+
+// The background's Clip range places the VIDEO on the Timeline (backgroundPlace): its first frame at `origin`,
+// shown from `start` until `end`.
+test("a placed VIDEO shows its time at the playhead and nothing outside its place", () => {
+  // start 24, in 12: the VIDEO's first frame is at Timeline frame 12, shown from frame 24 (its time 0.5 s).
+  const { playback, video } = setup({ place: { origin: 12, start: 24, end: 60 } });
+  assert.equal(playback.state, "idle");
+  // Before the place, nothing is sought: the still is left as it is (the editor shows bg_color).
+  playback.seek(10);
+  assert.equal(playback.state, "idle");
+  assert.deepEqual(video.seeks, []);
+  playback.seek(30);
+  assert.equal(playback.state, "seeking");
+  assert.deepEqual(video.seeks, [18 / FPS]);
+  video.land();
+  playback.seek(60);
+  assert.equal(playback.state, "idle");
+  assert.deepEqual(video.seeks, [18 / FPS]);
+});
+
+test("a placed VIDEO starts where its place starts and hands over to the clock where it ends", () => {
+  const { playback, video, clock } = setup({ place: { origin: 12, start: 24, end: 36 } });
+  playback.play();
+  // The clock runs until the place, the VIDEO waiting on its first shown time.
+  assert.equal(playback.state, "playingClock");
+  assert.deepEqual(video.seeks, [12 / FPS]);
+  video.land();
+  clock.framesAhead(24);
+  assert.equal(playback.frame, 24);
+  // It plays from there without another seek, and its frames set the playhead.
+  assert.equal(playback.state, "playingVideo");
+  assert.deepEqual(video.seeks, [12 / FPS]);
+  assert.equal(video.plays, 1);
+  video.present(20 / FPS);
+  assert.equal(playback.frame, 32);
+  assert.equal(video.loop, false);
+  // At the end of its place the VIDEO pauses and the clock goes on.
+  video.present(24 / FPS);
+  assert.equal(playback.frame, 36);
+  assert.equal(playback.state, "playingClock");
+  assert.equal(video.paused, true);
+  clock.framesAhead(4);
+  assert.equal(playback.frame, 40);
+});
+
+test("a placed VIDEO stops on the frame its paused time shows", () => {
+  const { playback, video } = setup({ place: { origin: -6, start: 0, end: Infinity } });
+  startPlaying({ playback, video });
+  // From frame 0 the VIDEO plays from 0.25 s, its head trimmed by 6 frames.
+  assert.deepEqual(video.seeks, [6 / FPS]);
+  video.present(16 / FPS);
+  assert.equal(playback.frame, 10);
+  video.time = 20 / FPS;
+  playback.stop();
+  assert.equal(playback.frame, 14);
+  assert.equal(playback.state, "idle");
+});
+
+test("a placed VIDEO runs on the clock past its own end", () => {
+  // A 2 s VIDEO from frame 24 ends at frame 72; the Timeline is 100 frames long.
+  const { playback, video, clock } = setup({ span: 100, place: { origin: 24, start: 24, end: Infinity } });
+  playback.seek(70);
+  video.land();
+  playback.play();
+  assert.equal(playback.state, "playingVideo");
+  video.end();
+  assert.equal(playback.state, "playingClock");
+  clock.framesAhead(10);
+  assert.equal(playback.frame, 80);
+});
+
+// A <video> that, as a browser does, has no current frame while a seek is in flight (readyState HAVE_METADATA,
+// `seeking` set) until it lands.
+class SeekingVideo extends FakeVideo {
+  constructor(options) {
+    super(options);
+    this.seeking = false;
+  }
+
+  set currentTime(value) {
+    super.currentTime = value;
+    this.seeking = true;
+    this.readyState = 1;
+  }
+
+  get currentTime() {
+    return super.currentTime;
+  }
+
+  land(time = this.time) {
+    this.seeking = false;
+    this.readyState = 4;
+    super.land(time);
+  }
+}
+
+test("a placed VIDEO still seeking to its start when the clock reaches it plays once the seek lands", () => {
+  const video = new SeekingVideo();
+  const { playback, clock } = setup({ video, place: { origin: 12, start: 24, end: 60 } });
+  playback.play();
+  // The clock waits the VIDEO on its first shown time; that seek is still in flight at frame 24.
+  assert.equal(video.seeking, true);
+  clock.framesAhead(24);
+  assert.equal(playback.frame, 24);
+  assert.equal(playback.state, "seeking");
+  assert.equal(playback.playing, true);
+  // It waits for that seek instead of sending another, and plays when it lands.
+  assert.deepEqual(video.seeks, [12 / FPS]);
+  video.land();
+  assert.equal(playback.state, "playingVideo");
+  assert.equal(video.plays, 1);
+});
+
+test("a seek lands on the VIDEO's time for the place at its landing, not a time of the place before", () => {
+  const video = new SeekingVideo();
+  const place = { origin: 12, start: 0, end: Infinity };
+  const { playback } = setup({ video, place });
+  video.land();
+  playback.seek(30);
+  // It lands short, so the same target is sought once more.
+  video.land(17 / FPS);
+  assert.deepEqual(video.seeks.slice(-1), [18 / FPS]);
+  // The Clip range moves while that seek is in flight: the same frame now shows another time.
+  place.origin = 14;
+  playback.seek(30);
+  video.land(18 / FPS);
+  assert.equal(playback.state, "seeking");
+  assert.deepEqual(video.seeks.slice(-1), [16 / FPS]);
+  video.land();
+  assert.equal(playback.state, "idle");
+  assert.equal(video.time, 16 / FPS);
 });

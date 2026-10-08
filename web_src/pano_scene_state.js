@@ -179,6 +179,11 @@ function clip(raw) {
   };
 }
 
+// Whether a Clip range is the default one: the whole Timeline from the content's first frame.
+export function defaultClip(value) {
+  return value.start === 0 && value.in === 0 && value.duration === null;
+}
+
 function crop(raw) {
   const src = isObject(raw) ? raw : {};
   const x0 = clamp(number(src.x0, 0), 0, 1);
@@ -358,7 +363,13 @@ function normalizeV2(raw) {
     painting_layer: isObject(raw.painting_layer) ? structuredClone(raw.painting_layer) : null,
     painting_visible: bool(raw.painting_visible, true),
     upstream: upstream(raw.upstream),
+    background: background(raw.background),
   };
+}
+
+// The node's own `bg_media` on the Timeline: its Clip range.
+function background(raw) {
+  return { clip: clip(isObject(raw) ? raw.clip : undefined) };
 }
 
 function v1Source(item, assets) {
@@ -454,6 +465,7 @@ export function sceneStateText(state) {
   if (out.id === null) delete out.id;
   if (out.next_sticker_id === leastStickerNumber(state.stickers)) delete out.next_sticker_id;
   if (!out.upstream.length) delete out.upstream;
+  if (defaultClip(out.background.clip)) delete out.background;
   return JSON.stringify({
     ...out,
     camera: state.camera && withoutDefaults(state.camera, TEXT_DEFAULTS.camera),
@@ -509,6 +521,7 @@ export function rebaseSceneState(state, value) {
     painting_visible: state.painting_visible,
     // The override records keep their own fps (docs/scene-state-v2.md "上流の上書き").
     upstream: state.upstream,
+    background: { clip: rebaseClip(state.background.clip, rebase).clip },
   });
 }
 

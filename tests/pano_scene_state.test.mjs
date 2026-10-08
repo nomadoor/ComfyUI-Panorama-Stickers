@@ -323,6 +323,19 @@ test("the state text of a state saved before ADR 0030 stays the same", () => {
   }
 });
 
+test("the state text leaves out the default background clip and keeps another", () => {
+  for (const name of ["v2_canonical", "v2_hidden", "v1_stickers", "v2_upstream"]) {
+    const text = sceneStateText(loadSceneState(fixture(name)));
+    assert.equal("background" in JSON.parse(text), false, name);
+  }
+  const state = loadSceneState(fixture("v2_background"));
+  assert.deepEqual(state.background, { clip: { start: 12, in: 7, duration: 47 } });
+  const text = sceneStateText(state);
+  assert.deepEqual(JSON.parse(text).background, { clip: { start: 12, in: 7, duration: 47 } });
+  assert.deepEqual(loadSceneState(text), state);
+  assert.deepEqual(rebaseSceneState(state, 60).background.clip, { start: 30, in: 17, duration: 118 });
+});
+
 test("the state text keeps an id, a counter past the Stickers, overrides and upstream records", () => {
   const state = loadSceneState(fixture("v2_upstream"));
   const text = sceneStateText(state);

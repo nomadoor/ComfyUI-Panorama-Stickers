@@ -86,16 +86,17 @@ class PortMedia:
     its last frame that starts at or before it (PTS <= t), and the last frame lasts one frame at the average
     rate. `frame_rate`, `times` (seconds from the first frame of the trim window), and `time_base` are the
     VIDEO's, None otherwise; `first_frame` is None for 3D media; `streamed` is whether `open_video` streams the
-    VIDEO from its file. Timeline frames are those of the state, at `stored_fps`.
+    VIDEO from its file. Timeline frames are those of the state, at `stored_fps`. A VIDEO already opened by
+    `open_video` can be given as `video`; Panorama Studio places its `bg_media` this way too (`_bg_place`).
     """
 
-    def __init__(self, sticker_id: str, clip: dict, media, stored_fps: float):
+    def __init__(self, sticker_id: str, clip: dict, media, stored_fps: float, video=None):
         self.sticker_id = sticker_id
         self.clip = clip
         self.media = media
         self.is_3d = isinstance(media, (Types.SPLAT, Types.MESH))
         self._origin = clip["start"] - clip["in"]
-        self._stored_fps = stored_fps
+        self.stored_fps = stored_fps
         if isinstance(media, torch.Tensor) or self.is_3d:
             self.frame_rate = self.times = self.time_base = self._starts = None
             self.streamed = False
@@ -103,7 +104,8 @@ class PortMedia:
             self._count = item_count(media) if self.is_3d else media.shape[0]
             return
         self._count = None
-        video = open_video(media, "sticker")
+        if video is None:
+            video = open_video(media, "sticker")
         self.frame_rate, self.times, self.time_base, self.first_frame = video.frame_rate, video.times, video.time_base, video.first_frame
         self.streamed = isinstance(video, StreamedVideo)
         # Half the step its PTS are rounded to, in Timeline frames.
@@ -124,7 +126,7 @@ class PortMedia:
         if self._starts is not None:
             return self._origin + self._starts[-1]
         if self._count > 1:
-            return self._origin + self._count * self._stored_fps / fps
+            return self._origin + self._count * self.stored_fps / fps
         return None
 
     def index_at(self, frame: float, fps: float, tolerance: float) -> int | None:
@@ -138,7 +140,7 @@ class PortMedia:
         if self._starts is not None:
             index = bisect.bisect_right(self._starts, clip_frame + max(FRAME_EPSILON, self._tolerance, tolerance)) - 1
             return index if 0 <= index < len(self._starts) - 1 else None
-        return batch_index(clip_frame, self._count, fps, self._stored_fps)
+        return batch_index(clip_frame, self._count, fps, self.stored_fps)
 
     def frames(self):
         """The frames to index with `index_at`, in non-decreasing order, or for 3D media its `SceneContent`. A

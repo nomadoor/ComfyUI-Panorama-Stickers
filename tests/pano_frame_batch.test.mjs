@@ -112,7 +112,10 @@ test("a Timeline drag's moves leave the node preview, the inspector and a full r
     assert.match(action, /dragFrames\.cancel\(\);\s*timeline\.drag = null;/, type);
   }
   // A Clip range redraws the view only when what it shows at the playhead changes.
-  assert.match(timelineAction("clip"), /if \(clipView\(sticker\.clip\) !== shown\) dragFrames\.request\("view"\);/);
+  assert.match(timelineAction("clip"), /if \(clipView\(sticker\.clip\) !== shown\) \{\s*dragFrames\.request\("view"\);/);
+  // The background's VIDEO is sought once per frame of its drag (the `background` task), not on each move.
+  assert.match(timelineAction("clip"), /if \(action\.id === BACKGROUND_ROW\) dragFrames\.request\("background"\);/);
+  assert.match(editorSource, /background: \(\) => playback\.seek\(editor\.frame\),/);
   // A scrub seeks once per frame.
   assert.match(timelineAction("seek"), /if \(action\.phase === "move"\) \{\s*timeline\.scrubFrame = action\.frame;\s*dragFrames\.request\("seek"\);\s*return;/);
 });

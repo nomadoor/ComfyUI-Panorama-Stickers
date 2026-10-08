@@ -3,6 +3,7 @@
 // a shot and the Unwrap view with it.
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { shotCamera, workingSkyLayers, worldStickerLayers } from "../pano_editor_view.js";
+import { bgColorBackground } from "../pano_port_media.js";
 import { evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import {
@@ -30,7 +31,7 @@ export function createViewInput(deps) {
     canvas, editor, editorView, imageCache, readOnly, scheduler, state, stateV2, stillCanvas, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let applySpaceMode, backgroundCoverage, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
+  let applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
     currentViewCamera, cutoutCamera, deviceRect, followPortSticker, frameViewDistance, getConnectedErpImage,
     getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
     isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, sceneFiles,
@@ -95,9 +96,11 @@ export function createViewInput(deps) {
     const layers = [...upstream.sky, ...workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers, evaluated })];
     // The background VIDEO and its still are one source, so a seek keeps the frame before.
     const bgSource = bgImg && (bgImg === videoEl || bgImg === stillCanvas) ? videoEl.dataset.panoSrc : bgImg;
-    const background = isDecodedImageReady(bgImg)
+    // Outside the background's Clip range and media, bg_color shows in its place, as in the node's output.
+    let background = isDecodedImageReady(bgImg)
       ? { media: bgImg, revision: getMediaRevisionToken(bgImg), coverage: backgroundCoverage(), source: bgSource }
       : null;
+    if (!backgroundShowsAt(editor.frame)) background = bgColorBackground(backgroundColor());
     // When the World content goes away, 6DoF goes back to 3DoF at the origin at once, ending a transition.
     const hasContent = hasSpaceContent();
     const spaceMode = spaceModeWithContent(spaceModeState(), hasContent, spaceOrigin());
@@ -255,7 +258,7 @@ export function createViewInput(deps) {
   return {
     connect(api) {
       ({
-        applySpaceMode, backgroundCoverage, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
+        applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
         currentViewCamera, cutoutCamera, deviceRect, followPortSticker, frameViewDistance, getConnectedErpImage,
         getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
         isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, sceneFiles,
