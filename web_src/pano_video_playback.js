@@ -203,7 +203,9 @@ export function createVideoPlayback({ video, clock, fps, span, loop, place = () 
     // A VIDEO placed later on the Timeline waits on the time it starts at, so it plays from there without a seek.
     const start = place()?.start ?? 0;
     if (usable() && frame < start && video.readyState >= HAVE_CURRENT_DATA) video.currentTime = Math.max(0, timeAt(start));
-    tick(owner, (now) => advance(owner.startFrame + Math.floor(((now - owner.startTs) / 1000) * fps())));
+    // A tick's time is its rendering frame's start, which is before clock.now() when the clock starts inside a
+    // VIDEO frame callback: the clock never runs before where it started, which would step the playhead back.
+    tick(owner, (now) => advance(owner.startFrame + Math.floor((Math.max(0, now - owner.startTs) / 1000) * fps())));
     return owner;
   }
 
@@ -217,8 +219,12 @@ export function createVideoPlayback({ video, clock, fps, span, loop, place = () 
         runClock();
         return;
       }
+      // The clock hands over only when it moves forward into the VIDEO's place: on the VIDEO's last frame, which
+      // it starts from when the VIDEO ends, the VIDEO would end again at once.
+      const entering = place() && state.name === "playingClock" && usable()
+        && next > frame && !inVideo(frame) && inVideo(next);
       setFrame(next);
-      if (place() && state.name === "playingClock" && usable() && inVideo(next)) show("play");
+      if (entering) show("play");
       return;
     }
     // A Timeline of one frame has nothing to loop.
