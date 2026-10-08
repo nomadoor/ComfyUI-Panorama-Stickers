@@ -1,14 +1,33 @@
 # Editor architecture
 
 Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモーダル）のコードの地図と、
-依存の向きの決まり。UI の DOM を Vue に置く決まりは `docs/vue-ui-boundary.md` にある。
+依存の向きの決まりを定める：モジュールの形、依存の向きと import の循環、モジュールの一覧、描き直しの入口、
+ペイントの層をフロントで並べる部品、ノードごとの実行時の状態の置き場（node bridge）、コードの足し方。
+
+この文書が持たない規則：UI の DOM を Vue に置く決まり（`AGENTS.md` の Non-negotiables 6 と `docs/vue-ui-boundary.md`）、
+視点・`world` の Sticker・Camera・上流の Scene の操作（`docs/editor-interaction.md`）、
+描画のスケジュール・three.js と Spark で描く仕組み（`docs/threejs-spark-integration.md` の「エディタの描画を直接表示する」ほか）、
+タイムラインと Keyframe の記録・再生（`docs/timeline-ui.md`）、Sky の重なり順そのもの（`docs/scene-state-v2.md` の「Sky の重なり順」）。
+
+## この文書が owner である規則
+
+| 規則 | Python | JS | test |
+|---|---|---|---|
+| モジュールの形（`createX(deps)` の factory、`connect()` で受け取る名前と `let` の宣言、誰も渡していない名前は投げる） | — | `web_src/editor/modules.js` `createEditorModules`、`web_src/editor/*.js` の `createX` | `tests/editor_architecture.test.mjs`、`tests/editor_wiring.test.mjs`、`tests/editor_modules.test.mjs` |
+| 依存の向き（`pano_editor.js` → `editor/*.js` → ライブラリ。`editor/*.js` は `pano_editor.js`・ComfyUI の `app` / `api`・振る舞いを持つモジュールを import しない） | — | `web_src/editor/*.js` の import | `tests/editor_architecture.test.mjs` |
+| `web_src` の静的な import に循環を作らない | — | `web_src` の `*.js`・`*.vue` の import | `tests/web_src_import_cycles.test.mjs` |
+| モジュールの一覧と配線（各 factory を `createEditorModules` で一度ずつ作る、配線の名前の過不足がない） | — | `web_src/pano_editor.js` の配線の区画、`web_src/editor/*.js` | `tests/editor_architecture.test.mjs`、`tests/editor_wiring.test.mjs`（下の Module map の責任の欄そのものは test しない） |
+| 描き直しは `requestDraw` からだけ頼む | — | `web_src/editor/render_loop.js` `requestDraw`・`tickFrame`・`drawScene` | — |
+| ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/editor/upstream.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
+| ノードごとの実行時の状態は node bridge に置く（グループ、片付け、許可する `__pano*` の一覧） | — | `web_src/pano_node_bridge.js`、`web_src/pano_editor_extension.js` の `onRemoved` | `tests/pano_node_bridge.test.mjs`、`tests/pano_editor_extension.test.mjs` |
+
+エディタのソースの形を確かめるテストは、`tests/editor_source.mjs`（`readEditorSource()`）・
+`tests/editor_source.py`（`editor_source()`）で `pano_editor.js` と `web_src/editor/*.js` の全部を読む。
 
 ## Overview
 
 エディタは `web_src/pano_editor.js` の `showEditor(node, type, options)` が開く。
-以前は約 11,500 行の 1 ファイルで、`showEditor` の中に 400 以上の関数が入り、どの関数も
-`state`・`editor`・`runtime`・`uiState`・キャンバス・`<video>` を閉包から直接読み書きしていた。
-今は次の 3 層に分かれている。
+コードは次の 3 層に分かれている。
 
 | 層 | ファイル | 役割 |
 | --- | --- | --- |
@@ -67,62 +86,59 @@ export function createHistory(deps) {
 - 振る舞いを持つモジュール同士は import しない。呼び合いは `connect()` で行う。
   import してよいのは、振る舞いを持たない `constants.js`、`helpers.js`、`ui_settings.js`、
   `video_thumbnail_cache.js` だけ。
-- 準備の文（リスナーの登録、観測の開始）は、元の順のまま `showEditor` に置く。
-  例外は `media_session.js`：VIDEO の準備の文は配線の区画の直前にあったので、その順のまま
-  factory に入れ、最初に作るモジュールにしている。
+- 準備の文（リスナーの登録、観測の開始）は `showEditor` に置き、その順を変えない。
+  例外は `media_session.js`：VIDEO の準備の文はその factory の中にあり、
+  `media_session.js` を最初に作るモジュールにしている。
 - 配線の区画より前の文は、モジュールの関数を同期で呼ばない（ラムダやリスナーの中で後から呼ぶのはよい）。
 
 `tests/editor_architecture.test.mjs` と `tests/editor_wiring.test.mjs` が、これらの決まりと
-配線の名前の過不足を確かめる。エディタのソースの形を確かめるテストは、
-`tests/editor_source.mjs`（`readEditorSource()`）・`tests/editor_source.py`（`editor_source()`）で
-`pano_editor.js` と `web_src/editor/*.js` の全部を読む。
+配線の名前の過不足を確かめる。
 
 ## Module map
 
-行数は分割の後（分割の前は全部が `pano_editor.js` の 11,511 行の中）。
-
-| Module | 行 | Responsibility |
-| --- | ---: | --- |
-| `pano_editor.js` | 971 | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
-| `editor/modules.js` | 27 | `createEditorModules`：factory を作ってつなぐ。名前の過不足を投げる |
-| `editor/constants.js` | 48 | 定数 |
-| `editor/helpers.js` | 243 | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
-| `editor/ui_settings.js` | 77 | localStorage の設定（視点の反転、ノードごとのグリッド） |
-| `editor/video_thumbnail_cache.js` | 32 | VIDEO のサムネイルのキャッシュ（直近 12 本） |
-| `editor/media_session.js` | 758 | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
-| `editor/history.js` | 101 | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。段を積む前に上流の編集を書き戻させ（`syncUpstreamEdits`）、上流で消えた要素の上書きを捨てさせ（`pruneUpstreamRecords`。開いたときの最初の段 `pushHistory({ initial: true })` では捨てない）、戻した状態に合わせて上流の作業コピーを作り直させる（`rebuildUpstreamWorking`） |
-| `editor/items.js` | 688 | Sticker（上流の作業コピーの Sticker を含む。`stickerById`・`upstreamSkyStickers`）、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
-| `editor/selection.js` | 464 | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
-| `editor/projection.js` | 346 | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |
-| `editor/object_geometry.js` | 324 | 品目の画面上の形（オーバーレイと当たり判定が読む） |
-| `editor/paint_layers.js` | 523 | ペイントの表示の層（並びは `pano_paint_layers.js`。下記「Paint layers」）、ラスターの画像とアルファ、消しゴムのプレビュー、ノードへ送る塗りの層 |
-| `editor/paint_strokes.js` | 587 | 筆跡の点・半径・ラスター化、ペイントエンジンと表示のキャッシュの revision |
-| `editor/external_stickers.js` | 242 | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
-| `editor/space.js` | 340 | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作（キーの移動 `stepKeyMove`）、閉じたときの視点の記憶と復元（`saveView`・`restoreView`） |
-| `editor/view_input.js` | 269 | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
-| `editor/upstream.js` | 408 | Panorama Studio の上流の Scene（#90、ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`、`upstreamStickers`）、その編集の上書きへの書き戻し（`syncUpstreamEdits`）、タイムラインの行（`upstreamTimelineLayers`・`upstreamRow`）と Auto の長さに入る上流の長さ（`upstreamOutput`・`upstreamPortMeta`）、消す・上流に戻す・消したものを戻す・上書きの掃除（`deleteUpstreamStickers`・`revertUpstreamSticker`・`revertUpstreamLayer`・`restoreUpstreamDeleted`・`pruneUpstreamRecords`）、その素材とペイント、実行待ちの表示 |
-| `editor/camera_preview.js` | 182 | Cutout / Studio のカメラのプレビュー |
-| `editor/overlay.js` | 602 | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
-| `editor/render_loop.js` | 422 | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
-| `editor/panels.js` | 443 | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
-| `editor/timeline.js` | 235 | Timeline のモデル（上流の層の行を含む）、範囲（出力の長さ、`timelineSpanFrames`）、再生位置と再生、owner と Lane（`timelineOwner`・`timelineEditable`・`rowEditable`）、fps |
-| `editor/timeline_actions.js` | 252 | `onTimelineAction`（上流の層の行も同じ操作で作業コピーを変える。層の見出しの Revert・Restore deleted） |
-| `editor/commit.js` | 92 | 状態の widget への書き戻し、ノードのプレビューの更新 |
-| `editor/commands.js` | 320 | 全消去、複製、削除（上流の要素は上書きの消した記録に）と確認、上流の層の Restore deleted と Revert（`restoreUpstreamDeletedCommand`・`revertUpstreamLayerCommand`） |
-| `editor/sticker_import.js` | 430 | 画像の追加・置き換え・アップロード、drop |
-| `editor/camera.js` | 426 | Cutout / Studio の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
-| `editor/frame_view.js` | 372 | Frame のビュー（ゲート、パン・ドラッグ・ホイール、キーの移動 `moveFrameByKeys`・`endFrameKeyMove`） |
-| `editor/paint_input.js` | 661 | ペイントの入力、カーソル、筆跡と投げ縄の記録、消しゴム |
-| `editor/hit_test.js` | 278 | ポインターの下の品目（上流の `sky` の Sticker は自分のものの後）、選択の矩形、カーソル |
-| `editor/selection_menu.js` | 200 | 選択メニューとツールチップ |
-| `editor/pointer_input.js` | 1,185 | キャンバスのポインターとホイール |
-| `editor/side_panel_events.js` | 234 | サイドパネルのクリック・入力・変更 |
-| `editor/modal_events.js` | 553 | モーダルのボタン、色の選択、VIDEO のトランスポート、全画面 |
-| `editor/keyboard.js` | 193 | Escape、Delete、Space、6DoF と Frame 表示の移動のキー（WASD / QE、`moveKeys`）、修飾キー、Undo / Redo |
+| Module | Responsibility |
+| --- | --- |
+| `pano_editor.js` | Composition：値、`uiState`、Vue、配線、イベントの登録、`closeEditor`、起動 |
+| `editor/modules.js` | `createEditorModules`：factory を作ってつなぐ。名前の過不足を投げる |
+| `editor/constants.js` | 定数 |
+| `editor/helpers.js` | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
+| `editor/ui_settings.js` | localStorage の設定（視点の反転、ノードごとのグリッド） |
+| `editor/video_thumbnail_cache.js` | VIDEO のサムネイルのキャッシュ（直近 12 本） |
+| `editor/media_session.js` | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
+| `editor/history.js` | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。段を積む前に上流の編集を書き戻させ（`syncUpstreamEdits`）、上流で消えた要素の上書きを捨てさせ（`pruneUpstreamRecords`。開いたときの最初の段 `pushHistory({ initial: true })` では捨てない）、戻した状態に合わせて上流の作業コピーを作り直させる（`rebuildUpstreamWorking`） |
+| `editor/items.js` | Sticker（上流の作業コピーの Sticker を含む。`stickerById`・`upstreamSkyStickers`）、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
+| `editor/selection.js` | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
+| `editor/projection.js` | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |
+| `editor/object_geometry.js` | 品目の画面上の形（オーバーレイと当たり判定が読む） |
+| `editor/paint_layers.js` | ペイントの表示の層（並びは `pano_paint_layers.js`。下記「Paint layers」）、ラスターの画像とアルファ、消しゴムのプレビュー、ノードへ送る塗りの層 |
+| `editor/paint_strokes.js` | 筆跡の点・半径・ラスター化、ペイントエンジンと表示のキャッシュの revision |
+| `editor/external_stickers.js` | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
+| `editor/space.js` | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作（キーの移動 `stepKeyMove`）、閉じたときの視点の記憶と復元（`saveView`・`restoreView`） |
+| `editor/view_input.js` | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
+| `editor/upstream.js` | Panorama Studio の上流の Scene（ADR 0030）：実行結果の上流の層、自分の上書きを当てた作業コピー（`rebuildUpstreamWorking`、`upstreamStickers`）、その編集の上書きへの書き戻し（`syncUpstreamEdits`）、タイムラインの行（`upstreamTimelineLayers`・`upstreamRow`）と Auto の長さに入る上流の長さ（`upstreamOutput`・`upstreamPortMeta`）、消す・上流に戻す・消したものを戻す・上書きの掃除（`deleteUpstreamStickers`・`revertUpstreamSticker`・`revertUpstreamLayer`・`restoreUpstreamDeleted`・`pruneUpstreamRecords`）、その素材とペイント、実行待ちの表示 |
+| `editor/camera_preview.js` | Cutout / Studio のカメラのプレビュー |
+| `editor/overlay.js` | 2D のオーバーレイ（グリッド、枠、選択の印、Frame のゲート、投げ縄、ロール） |
+| `editor/render_loop.js` | `requestDraw`、`tickFrame`、`drawScene`、キャンバスの大きさ、`stopRenderLoop` |
+| `editor/panels.js` | ツールのレール、ビューのボタン、ペイントのドック、サイドパネル、Undo / Redo の同期 |
+| `editor/timeline.js` | Timeline のモデル（上流の層の行を含む）、範囲（出力の長さ、`timelineSpanFrames`）、再生位置と再生、owner と Lane（`timelineOwner`・`timelineEditable`・`rowEditable`）、fps |
+| `editor/timeline_actions.js` | `onTimelineAction`（上流の層の行も同じ操作で作業コピーを変える。層の見出しの Revert・Restore deleted） |
+| `editor/commit.js` | 状態の widget への書き戻し、ノードのプレビューの更新 |
+| `editor/commands.js` | 全消去、複製、削除（上流の要素は上書きの消した記録に）と確認、上流の層の Restore deleted と Revert（`restoreUpstreamDeletedCommand`・`revertUpstreamLayerCommand`） |
+| `editor/sticker_import.js` | 画像の追加・置き換え・アップロード、drop |
+| `editor/camera.js` | Cutout / Studio の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
+| `editor/frame_view.js` | Frame のビュー（ゲート、パン・ドラッグ・ホイール、キーの移動 `moveFrameByKeys`・`endFrameKeyMove`） |
+| `editor/paint_input.js` | ペイントの入力、カーソル、筆跡と投げ縄の記録、消しゴム |
+| `editor/hit_test.js` | ポインターの下の品目（上流の `sky` の Sticker は自分のものの後）、選択の矩形、カーソル |
+| `editor/selection_menu.js` | 選択メニューとツールチップ |
+| `editor/pointer_input.js` | キャンバスのポインターとホイール |
+| `editor/side_panel_events.js` | サイドパネルのクリック・入力・変更 |
+| `editor/modal_events.js` | モーダルのボタン、色の選択、VIDEO のトランスポート、全画面 |
+| `editor/keyboard.js` | Escape、Delete、Space、6DoF と Frame 表示の移動のキー（WASD / QE、`moveKeys`）、修飾キー、Undo / Redo |
 
 ## Drawing
 
-描き直しは `render_loop.js` の `requestDraw(options)` からだけ頼む。
+描き直しは `render_loop.js` の `requestDraw(options)` からだけ頼む。スケジュールと描き直しの理由の規則は
+`docs/threejs-spark-integration.md` の「エディタの描画を直接表示する」にある。
 
 1. `requestDraw({ reason, localOnly, cause, externalSync })` が、three.js のキャンバスを描き直すか
    （`runtime.backgroundDirty`）、ボタンを合わせるか、ノードのプレビューに知らせるかを決め、
@@ -168,7 +184,7 @@ Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON �
 ビューはキャンバスを上げ直す。ノード上の面でペイントを隠すと、ラスタオブジェクトのキャンバスを手放し
 （`rasterCache.retain([])`）、見せたときに作り直す。
 
-既知の問題（後で直す）：
+既知の問題：
 
 - 投げ縄の塗りを分割したラスタは `z_index` に `index * 0.001` を足す。並びはノードと同じく整数に切り捨てて決めるが、
   当たり判定（`editor/hit_test.js`）は小数のまま並べるので、リストの順と小数の大小が逆のとき、重なりと当たる順が逆になる。
@@ -201,8 +217,8 @@ Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON �
   LiteGraph はノードの削除のほか、`graph.clear()`（ワークフローの読み込み）とサブグラフへの変換でも
   各ノードの `onRemoved` を呼ぶ。`restore` はノード上の面を unmount し、途中のジェスチャーを widget に
   確定する（Stickers。Cutout は取り消す）ので、これらのたびに起きる。面の `onRemoved` のフックも
-  以前から同じ `restore` を呼ぶ。bridge が足したのは、そのフックが外れていても `restore` が残っていれば呼ぶことと、
-  `restore` が止めないタイマーと画像を放すこと。
+  同じ `restore` を呼ぶ。`disposeNodeRuntime` は、そのフックが外れていても `restore` が残っていれば呼び、
+  `restore` が止めないタイマーと画像も放す。
 - レコードはノードの外にあるので、`serialize()` にも `clone()` にも入らない（どちらも LiteGraph の項目だけを書く）。
 - 新しい状態はノードに `node.__panoX` と書かず、持ち主のグループに項目を足す。ノードに残すのは
   `__panoSceneStateV2` と `__panoStudio` のフラグだけ（ノード型から一度決まり、`pano_editor_state.js` と
