@@ -14,7 +14,6 @@ Flux.2向けに「パノラマ画像（主にERP: equirectangular projection）�
 ## 関連ADR
 
 * `docs/adr/0001-preview-architecture-split.md`
-* `docs/preview_regressions.md`（Preview/Cutoutの恒久回帰ログと運用ルール）
 
 ## 非目的（スコープ外）
 

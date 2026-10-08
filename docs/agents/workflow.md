@@ -63,7 +63,7 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 - 各 spec から経緯を外す。決定の理由は ADR へ移し、理由を持たない経緯は消す（git の履歴に残る）。
 - 規則の表と code 列を埋める。spec の間で重複している規則は owner を一つに決める。
 - まだ登録していない文書を、登録するか、まとめるか、消す：
-  `preview_regressions.md`、`ops.md`。
+  `ops.md`。
 
 整理が終わった後、`docs/` 直下に置くのは、登録された living spec と、手順・計測の文書（`diagnostics.md`、
 `legacy-baselines.md` など）だけとする。

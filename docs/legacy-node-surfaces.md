@@ -125,6 +125,8 @@ surfaceに含めない操作:
 
 ### Runtime Contract
 
+- Node 2.0でwheelを受けるには、DOM widget rootの`data-capture-wheel="true"`と、そのroot内のfocus（`tabindex="0"`、pointerdownでfocus）の両方が要る。wheelの不具合は、listenerをroot / canvas / wrapの間で動かす前に、まずこの2つが満たされているかを確かめる。
+- live previewのlayoutを、実行時に `node.size` を書き換えて直さない（Panorama Studioと同じ。`docs/studio-node-surface.md` の「描画と後始末」）。
 - Node2 DOM camera frameはpreview canvasだけを更新し、host graph canvas全体を再描画しない。
 - animation frameは同時に1件だけ予約する。
 - fullscreen changeとResizeObserverはpreview再描画を要求する。
