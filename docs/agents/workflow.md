@@ -45,6 +45,8 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 | state v2、評価関数、上流の上書き、Python/JS の一致 | `docs/scene-state-v2.md` | `core/scene_state.py`・`core/scene_eval.py`・`core/scene_inherit.py`、`web_src/pano_scene_state.js`・`pano_scene_eval.js`・`pano_scene_inherit.js` |
 | 描画関数、3D ファイルの読み分け | `docs/render-contract.md` | `core/render.py`・`world_render.py`・`mesh_render.py`、`splat_render.py`・`scene_mesh.py`・`core_adapters.py` |
 | Panorama Studio のノード（Timeline、素材の時間、出力、`ui`、`PANO_SCENE`、上流の Scene、Pose handoff） | `docs/studio-node.md` | `comfyui_pano_suite/nodes.py`・`scene_video.py`・`sticker_media.py`、`core/video_source.py` |
+| Panorama Studio のノード上の表示（上端の bar と状態、実行の出力の表示、見回し、表示フレームと VIDEO） | `docs/studio-node-surface.md` | `web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl`（Panorama Studio の表示）・`studioRunPicture`・`studioStatusOptions`・`surfaceTimelineMedia`、`pano_studio_status.js`・`pano_node_playback.js`、`components/PanoStudioNodeSurface.vue`、`nodes.py` の `PanoramaStudioNode.execute` の `pano_output_*`・`_studio_run_key` |
+| 旧ノード（`PanoramaStickers`・`PanoramaPreview`・`PanoramaCutout`）のノード上の表示 | `docs/legacy-node-surfaces.md` | `web_src/pano_stickers_node_surface.js`・`pano_cutout_node_surface.js`・`pano_preview_previewnode.js`・`pano_preview_node_surface.js`・`pano_sticker_file_import.js`、`components/PanoStickersNodeSurface.vue`・`PanoCutoutNodeSurface.vue`・`PanoCutoutAspectPicker.vue`・`PanoPreviewNodeSurface.vue`、`pano_preview_video.js` の `createLoopingPreviewVideo` |
 | Preview ノード | `docs/preview-node.md` | `nodes.py` の `PanoramaPreviewSceneNode`、`core/video.py` の `_fit_audio_to_frame_count` |
 | メモリ・中断・キャッシュ・一時ファイル | `docs/runtime-resources.md` | `nodes.py` の `_render_memory`、`progress.py`、`core/cache.py`・`temp_files.py` |
 | timeline、keyframe、背景の行、再生 | `docs/timeline-ui.md` | `web_src/pano_timeline.js`・`pano_video_playback.js`・`pano_node_playback.js`・`pano_port_media.js`・`pano_frame_batch.js`、`pano_editor_ui_state.js` の `buildTimelineModel`、`editor/timeline.js`・`timeline_actions.js`・`keyboard.js`、`components/PanoTimeline.vue`・`PanoTimelineGroup.vue`・`PanoEasingGraph.vue`、上流の層の行は `pano_upstream.js`・`editor/upstream.js`、Keyframe のない Lane の扱いは `pano_editor_state.js` の `unkeyedPose` |
@@ -60,8 +62,7 @@ canonical term は English を維持する。Issue、commit message、PR、ADR�
 - 各 spec から経緯を外す。決定の理由は ADR へ移し、理由を持たない経緯は消す（git の履歴に残る）。
 - 規則の表と code 列を埋める。spec の間で重複している規則は owner を一つに決める。
 - まだ登録していない文書を、登録するか、まとめるか、消す：
-  `panorama-stickers-node-surface-spec.md`、`panorama-preview-node-surface-spec.md`、`cutout-node-frame-surface-spec.md`
-  （node surface）、`design.md` と `design_system.md`（見た目）、`preview_regressions.md`、`ops.md`。
+  `design.md` と `design_system.md`（見た目）、`preview_regressions.md`、`ops.md`。
 
 整理が終わった後、`docs/` 直下に置くのは、登録された living spec と、手順・計測の文書（`diagnostics.md`、
 `legacy-baselines.md` など）だけとする。

@@ -2,7 +2,7 @@
 
 ユーザーがエディタをどう操作するかの規則を定める：視点の操作（3DoF・6DoF、3D view controls のプリセット、オービット・パン・見回し、WASD / QE、ホイール、Reset View、Frame Selected、視点の遷移、視点の記憶）、`world` の Sticker の選択・ギズモ・インスペクタと Add World Image、Camera の編集、Panorama Studio のエディタ（Add Camera、Frame タブ、画角のプリセット、Camera を隠したとき）、上流の Scene の表示と編集、`port` の Sticker の同期、Pose handoff の表示と記録、インスペクタの行。用語は `CONTEXT.md` に従う。決めた理由は ADR 0029（Panorama Studio）、0030（上流の上書き）にある。
 
-この文書が持たない規則：three.js と Spark で描く仕組み・GPU の当たり判定・空間の表示の描き方・エディタでの描画（`docs/threejs-spark-integration.md`）、Keyframe を打つ・直す・消すときの記録の規則・タイムライン・目のアイコン・再生・上流の層の行（`docs/timeline-ui.md`）、状態 v2・評価関数・上書きの記録を一つの層に当てる規則（`docs/scene-state-v2.md`）、ノードの出力・実行結果の `ui`・上流の Scene の重ね方・`port` の Sticker と Pose handoff のノードの規則（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の UI の細かい規則（`docs/panorama-stickers-node-surface-spec.md`）。
+この文書が持たない規則：three.js と Spark で描く仕組み・GPU の当たり判定・空間の表示の描き方・エディタでの描画（`docs/threejs-spark-integration.md`）、Keyframe を打つ・直す・消すときの記録の規則・タイムライン・目のアイコン・再生・上流の層の行（`docs/timeline-ui.md`）、状態 v2・評価関数・上書きの記録を一つの層に当てる規則（`docs/scene-state-v2.md`）、ノードの出力・実行結果の `ui`・上流の Scene の重ね方・`port` の Sticker と Pose handoff のノードの規則（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の表示の規則（`docs/studio-node-surface.md`）。
 
 ## この文書が owner である規則
 
