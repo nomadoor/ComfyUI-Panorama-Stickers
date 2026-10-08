@@ -17,6 +17,7 @@ Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモ�
 | 依存の向き（`pano_editor.js` → `editor/*.js` → ライブラリ。`editor/*.js` は `pano_editor.js`・ComfyUI の `app` / `api`・振る舞いを持つモジュールを import しない） | — | `web_src/editor/*.js` の import | `tests/editor_architecture.test.mjs` |
 | `web_src` の静的な import に循環を作らない | — | `web_src` の `*.js`・`*.vue` の import | `tests/web_src_import_cycles.test.mjs` |
 | モジュールの一覧と配線（各 factory を `createEditorModules` で一度ずつ作る、配線の名前の過不足がない） | — | `web_src/pano_editor.js` の配線の区画、`web_src/editor/*.js` | `tests/editor_architecture.test.mjs`、`tests/editor_wiring.test.mjs`（下の Module map の責任の欄そのものは test しない） |
+| キャンバスのポインターの操作の振り分け（押したときに始める操作を決める順、`editor.interaction.kind` ごとの動き・離す・取り消す、操作ごとのモジュール） | — | `web_src/editor/pointer_input.js`、`web_src/editor/pointer_*.js` | `tests/editor_pointer_input.test.mjs` |
 | 描き直しは `requestDraw` からだけ頼む | — | `web_src/editor/render_loop.js` `requestDraw`・`tickFrame`・`drawScene` | — |
 | ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/editor/upstream.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
 | ノードごとの実行時の状態は node bridge に置く（グループ、片付け、許可する `__pano*` の一覧） | — | `web_src/pano_node_bridge.js`、`web_src/pano_editor_extension.js` の `onRemoved` | `tests/pano_node_bridge.test.mjs`、`tests/pano_editor_extension.test.mjs` |
@@ -130,10 +131,34 @@ export function createHistory(deps) {
 | `editor/paint_input.js` | ペイントの入力、カーソル、筆跡と投げ縄の記録、消しゴム |
 | `editor/hit_test.js` | ポインターの下の品目（上流の `sky` の Sticker は自分のものの後）、選択の矩形、カーソル |
 | `editor/selection_menu.js` | 選択メニューとツールチップ |
-| `editor/pointer_input.js` | キャンバスのポインターとホイール |
+| `editor/pointer_input.js` | キャンバスのポインターとホイールの入口：押したときにどのジェスチャーを始めるか（決まった順で確かめ、最初に当てはまったもの。品目のクリックでの選択と空のクリックでの選択の解除、Ctrl / Meta の範囲選択の開始を含む）、動かす・離す・取り消すを `editor.interaction.kind` のジェスチャーへ回す、再生中の編集の最初の動きで止めて止まったフレームからやり直す（`restartEditAtStoppedFrame`）、ホイール |
+| `editor/pointer_view.js` | 視点を動かすジェスチャー：見回し（`view`）、6DoF の空間のドラッグ（`space_pan`・`space_orbit`。始めるのは `space.js` の `startSpaceDrag`）、空の場所の左ドラッグ |
+| `editor/pointer_frame.js` | Frame のビューで Camera の shot を動かすジェスチャー：中ボタンのパン（`pan_frame`）、Alt / Shift のロール（`roll_frame`）、Frame のビューのジェスチャー（`frame_view.js` のドラッグを含む）の終わりの Undo の段 |
+| `editor/pointer_paint.js` | ペイントとマスクの筆跡（`paint_stroke`・`paint_lasso_fill`）の開始・点の追加（Frame のビューの枠の外の点を捨て、戻ったところで区切る）・確定・取り消し |
+| `editor/pointer_world.js` | `world` の Sticker のジェスチャー：ギズモのつかみと選択（`world_gizmo`・`world_select`）、ギズモのドラッグとホバー、終わり（Camera のギズモのドラッグと終わりもここ。押したときは `camera.js` の `startCameraPress`） |
+| `editor/pointer_marquee.js` | 範囲選択（`marquee_select`）の動きと、離したときの選択 |
+| `editor/pointer_transform.js` | 一つの品目の移動・拡大縮小・回転（`move`・`scale`・`scale_x`・`scale_y`・`rotate`、ストロークのグループの `*_stroke_group`、ラスターの品目の `*_raster_object`）の開始と動き、品目の編集を離したときの Undo の段（`endTransform`。複数の選択の移動も）。ペイントの品目の UV（`editUvAt`）、ドラッグの始めのスナップショット、画面の点への姿勢の書き込み（`writePoseAtScreenPoint`）を `pointer_multi_move.js` と共有する |
+| `editor/pointer_multi_move.js` | 複数の選択の移動（`move_multi`）の開始と動き |
 | `editor/side_panel_events.js` | サイドパネルのクリック・入力・変更 |
 | `editor/modal_events.js` | モーダルのボタン、色の選択、VIDEO のトランスポート、全画面 |
 | `editor/keyboard.js` | Escape、Delete、Space、6DoF と Frame 表示の移動のキー（WASD / QE、`moveKeys`）、修飾キー、Undo / Redo |
+
+### Pointer gestures
+
+キャンバスのポインターの操作は、`pointer_input.js` が振り分け、操作ごとのモジュール（`pointer_*.js`）が持つ。
+
+- 操作の途中は `editor.interaction = { kind, ... }` に置く。`kind` の名前と項目は、`hit_test.js`（カーソル）、
+  `overlay.js`、`panels.js`、`render_loop.js`、`frame_view.js`、`camera.js`、`commands.js`、`paint_layers.js`（`isPaintCompositeInteraction`）
+  も読むので変えない。
+- 押したときにどの操作を始めるかは `onCanvasPointerDown` の確かめる順だけが決める。操作のモジュールは、
+  その操作を始める関数、動きの関数、終わりの関数を返し（名前は操作ごとに違う。例：`startMultiMove`・`moveMulti`、
+  `scaleItem`、`dragWorldGizmo`、`endTransform`）、`pointer_input.js` が `kind` で呼び分ける。
+- 操作を足すときは、操作のモジュールに始め・動き・終わりを置き、`pointer_input.js` の押したときの順の中の
+  一か所と、動き・離す・取り消すの振り分けに一行ずつ足す。再生中に始まる編集の操作なら、
+  `pointer_input.js` の `restartEditAtStoppedFrame` にもその `kind` を足す。
+- `tests/editor_pointer_input.test.mjs` は `web_src/editor/pointer_*.js` の factory を全部本物で作ってつなぎ、
+  ほかの名前を記録するスタブにして、押したときの分かれ道ごとに始まる操作と、動き・離す・取り消す・ホイールの
+  呼び出しを確かめる。ポインターの操作のモジュールは `pointer_` で始める。
 
 ## Drawing
 
