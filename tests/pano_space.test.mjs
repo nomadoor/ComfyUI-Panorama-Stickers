@@ -17,6 +17,8 @@ import {
   contentPoints,
   depthOf,
   facingRotation,
+  fileStickerKey,
+  fileStickerRequests,
   frameSphere,
   frameView,
   gizmoDragLanes,
@@ -25,6 +27,7 @@ import {
   hasWorldContent,
   initialSpaceView,
   navigationTarget,
+  newWorld3dStickerTransform,
   newWorldStickerTransform,
   NEW_WORLD_STICKER_DISTANCE,
   orbitView,
@@ -525,10 +528,14 @@ test("a scene GLB draws unlit on both sides with its base color, texture and ver
   assert.equal(colored.material[0].side, DoubleSide);
 });
 
-test("the scene files of a node result give the kind and a URL per item, null for an empty item", () => {
+test("the scene files of a node result give the kind, whether light falls on it and a URL per item, null for an empty item", () => {
   const source = (entry) => `/view?filename=${entry.filename}`;
   const files = [{ filename: "a.glb" }, null, { filename: "c.glb" }];
-  assert.deepEqual(sceneFilesOf(files, [{ kind: "mesh" }], source), { kind: "mesh", urls: ["/view?filename=a.glb", null, "/view?filename=c.glb"] });
+  assert.deepEqual(sceneFilesOf(files, [{ kind: "mesh", unlit: false }], source), { kind: "mesh", unlit: false, urls: ["/view?filename=a.glb", null, "/view?filename=c.glb"] });
+  assert.equal(sceneFilesOf(files, [{ kind: "mesh", unlit: true }], source).unlit, true);
+  // A result without the mark (a SPLAT, or one from before the mark) draws without light, as before.
+  assert.equal(sceneFilesOf(files, [{ kind: "mesh" }], source).unlit, true);
+  assert.equal(sceneFilesOf(files, [{ kind: "splat" }], source).unlit, true);
   assert.equal(sceneFilesOf([], [{ kind: "mesh" }], source), null);
   assert.equal(sceneFilesOf(files, [{ kind: "points" }], source), null);
   assert.equal(sceneFilesOf(files, [], source), null);
@@ -556,6 +563,9 @@ test("the scene request names the item of the frame, the next one ahead, and the
   assert.equal(sceneRequest(files, { ...scene, active: false }), null);
   assert.equal(sceneRequest(null, scene), null);
   assert.deepEqual(sceneRequest({ kind: "splat", urls: ["s"] }, { ...scene, clip_frame: 40 }).itemQuaternion, SPLAT_TO_SCENE);
+  // The material follows the mark of the files.
+  assert.equal(sceneRequest({ ...files, unlit: false }, scene).unlit, false);
+  assert.equal(sceneRequest(files, scene).unlit, true);
 });
 
 test("3DoF keeps the view at the World origin, where the ERP is taken from, whatever 6DoF did", () => {
@@ -901,4 +911,104 @@ test("the Camera is picked within a few pixels of its frustum's lines on screen"
 test("the trajectory is drawn as the segments between its positions", () => {
   assert.deepEqual(polylineSegments([[0, 0, 0], [1, 0, 0], [1, 1, 0]]), [[[0, 0, 0], [1, 0, 0]], [[1, 0, 0], [1, 1, 0]]]);
   assert.deepEqual(polylineSegments([[0, 0, 0]]), []);
+});
+
+// docs/threejs-spark-integration.md "3D ファイルの `file` の Source の `world` の Sticker".
+test("each world Sticker of a 3D file asks for its own item, by its id, with its transform and opacity", () => {
+  const world = (id, filename, extra = {}) => ({
+    id,
+    placement: "world",
+    source: { kind: "file", filename, subfolder: "3d" },
+    clip: { start: 10, in: 0, duration: 20 },
+    position: { value: [0, 0, -2], keyframes: [] },
+    rotation: { value: { yaw_deg: 30, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
+    scale: { value: 1.5, keyframes: [] },
+    opacity: { value: 0.5, keyframes: [] },
+    ...extra,
+  });
+  const state = loadSceneState({
+    version: 2,
+    stickers: [
+      { id: "sky_1", placement: "sky", source: { kind: "file", filename: "a.png" } },
+      { id: "plane_1", placement: "world", source: { kind: "file", filename: "a.png" } },
+      world("sticker_1", "chair.glb"),
+      // The same file twice: two items, since an object has one parent and opacity is on its materials.
+      world("sticker_2", "chair.glb", { opacity: { value: 1, keyframes: [] } }),
+      world("sticker_3", "points.ply"),
+      world("sticker_4", "rig.fbx"),
+      { id: "sticker_5", placement: "world", source: { kind: "port" } },
+    ],
+  });
+  const files = {
+    "chair.glb": { state: "ready", kind: "mesh", unlit: false, url: "/view?filename=e.glb", generation: 0 },
+    "points.ply": { state: "ready", kind: "splat", unlit: true, url: "/view?filename=e.ply", generation: 2 },
+    "rig.fbx": { state: "failed" },
+  };
+  const editorFile = (sticker) => {
+    const entry = files[sticker.source.filename];
+    return entry?.state === "ready" ? entry : null;
+  };
+  const at = (frame) => fileStickerRequests(state, evaluateSceneState(state, frame), editorFile);
+  const entries = at(15);
+  // Only the 3D files that have their editor file: not the planes, the port, or a file the route refused.
+  assert.deepEqual(entries.map((entry) => entry.id), ["sticker_1", "sticker_2", "sticker_3"]);
+  assert.deepEqual(entries.map((entry) => entry.key), [fileStickerKey("sticker_1", 0), fileStickerKey("sticker_2", 0), fileStickerKey("sticker_3", 2)]);
+  assert.notEqual(fileStickerKey("sticker_1", 0), fileStickerKey("sticker_1", 1));
+  const [first, second, splat] = entries.map((entry) => entry.request);
+  // The item is keyed by the Sticker, not by its URL.
+  assert.equal(first.url, entries[0].key);
+  assert.deepEqual(first.urls, [entries[0].key]);
+  assert.deepEqual(first.prefetch, []);
+  assert.equal(first.src, "/view?filename=e.glb");
+  assert.equal(second.src, "/view?filename=e.glb");
+  assert.notEqual(first.url, second.url);
+  assert.equal(first.kind, "mesh");
+  assert.equal(first.unlit, false);
+  assert.equal(first.id, "sticker_1");
+  assert.equal(first.opacity, 0.5);
+  assert.equal(second.opacity, 1);
+  assert.deepEqual(first.itemQuaternion, { x: 0, y: 0, z: 0, w: 1 });
+  closeVec(first.transform.position, [0, 0, -2]);
+  assert.equal(first.transform.scale, 1.5);
+  const expected = sceneTransform({ position: [0, 0, -2], yaw_deg: 30, pitch_deg: 0, roll_deg: 0, scale: 1.5 });
+  closeVec(Object.values(first.transform.quaternion), Object.values(expected.quaternion));
+  assert.equal(first.value.active, true);
+  // A SPLAT turns into the glTF frame first, as a 3D port Sticker's.
+  assert.equal(splat.kind, "splat");
+  assert.deepEqual(splat.itemQuaternion, SPLAT_TO_SCENE);
+  // Outside its Clip range, or hidden, it asks for nothing but keeps its item (the key stays).
+  assert.deepEqual(at(5).map((entry) => [entry.key, entry.request]), entries.map((entry) => [entry.key, null]));
+  const hidden = loadSceneState({ version: 2, stickers: [world("sticker_1", "chair.glb", { visible: false })] });
+  assert.deepEqual(fileStickerRequests(hidden, evaluateSceneState(hidden, 15), editorFile).map((entry) => entry.request), [null]);
+  // A sky Sticker with a 3D file is not drawn (the node warns).
+  const sky = loadSceneState({ version: 2, stickers: [{ ...world("sticker_1", "chair.glb"), placement: "sky" }] });
+  assert.deepEqual(fileStickerRequests(sky, evaluateSceneState(sky, 15), editorFile), []);
+});
+
+test("a new 3D file Sticker goes where a new world image would, upright, turned to the view, at its own size", () => {
+  const start = { position: [0.5, 1, 2], yaw_deg: 40, pitch_deg: 20, hFOV_deg: 90, distance: 1 };
+  const image = newWorldStickerTransform(start, null, { center: [9, 9, 9], radius: 6 });
+  const placed = newWorld3dStickerTransform(start, null, { center: [9, 9, 9], radius: 6 });
+  closeVec(placed.position, image.position);
+  // Its front (glTF +Z) turns to the view about the vertical only: no pitch, no roll.
+  close(placed.rotation.yaw_deg, facingRotation(start.position, placed.position).yaw_deg);
+  assert.equal(placed.rotation.pitch_deg, 0);
+  assert.equal(placed.rotation.roll_deg, 0);
+  // Its own units are World units, as the node's 3D port Sticker.
+  assert.equal(placed.scale, 1);
+  // On a surface under the pointer it goes there too.
+  const hit = [3, -1, -4];
+  const onSurface = newWorld3dStickerTransform(start, hit, null);
+  closeVec(onSurface.position, hit);
+  close(onSurface.rotation.yaw_deg, facingRotation(start.position, hit).yaw_deg);
+  const front = worldRotation(onSurface.rotation.yaw_deg, 0, 0);
+  const toView = [start.position[0] - hit[0], start.position[2] - hit[2]];
+  const length = Math.hypot(...toView);
+  // The item's +Z, level, points back at the view.
+  close(front[0][2], toView[0] / length, 1e-9);
+  close(front[2][2], toView[1] / length, 1e-9);
+  // Without content, NEW_WORLD_STICKER_DISTANCE ahead of the origin in 3DoF.
+  const empty = newWorld3dStickerTransform({ ...start, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 }, null, null);
+  closeVec(empty.position, [0, 0, -NEW_WORLD_STICKER_DISTANCE]);
+  assert.deepEqual(empty.rotation, { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
 });

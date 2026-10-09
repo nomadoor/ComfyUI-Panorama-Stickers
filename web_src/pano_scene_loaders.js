@@ -12,8 +12,9 @@ export function loadSpark() {
   return spark;
 }
 
-// The `scene` GLBs draw without lights on both sides like the node's renderer (docs/render-contract.md):
-// each material becomes a MeshBasicMaterial with its base color, texture and vertex colors.
+// A GLB that draws without light (its meta's `unlit`, docs/render-contract.md "光が効く要素") draws on both sides
+// like the node's renderer: each material becomes a MeshBasicMaterial with its base color, texture and vertex
+// colors.
 export function makeUnlit(root) {
   root.traverse((object) => {
     if (!object.isMesh) return;
@@ -23,6 +24,16 @@ export function makeUnlit(root) {
       return basic;
     };
     object.material = Array.isArray(object.material) ? object.material.map(unlit) : unlit(object.material);
+  });
+  return root;
+}
+
+// A GLB light falls on keeps the MeshStandardMaterial GLTFLoader made of it, drawn on both sides as the node
+// draws it (docs/render-contract.md "材質"). Its sampler stays as the GLB has it.
+export function makeLit(root) {
+  root.traverse((object) => {
+    if (!object.isMesh) return;
+    for (const material of [object.material].flat()) material.side = DoubleSide;
   });
   return root;
 }
@@ -51,8 +62,9 @@ const gltfLoader = new GLTFLoader();
 
 // load() of createSceneItems (pano_scene_items.js): the item's object, its box in its own frame (a
 // SPLAT's in 3DGS coordinates) and the bytes it loaded, for the budget of loaded items. The fetched bytes
-// are let go once handed to the parser, so only the parsed item stays.
-export async function loadSceneItem(kind, url, signal) {
+// are let go once handed to the parser, so only the parsed item stays. A GLB draws without light unless
+// `unlit` is false (the meta's mark).
+export async function loadSceneItem(kind, url, signal, { unlit = true } = {}) {
   let bytes = await fetchBytes(url, signal);
   signal.throwIfAborted();
   const size = bytes.byteLength;
@@ -70,7 +82,8 @@ export async function loadSceneItem(kind, url, signal) {
   const parsing = gltfLoader.parseAsync(bytes, "");
   bytes = null;
   const gltf = await parsing;
-  return { object: makeUnlit(gltf.scene), box: boxValue(new Box3().setFromObject(gltf.scene)), size };
+  const object = unlit ? makeUnlit(gltf.scene) : makeLit(gltf.scene);
+  return { object, box: boxValue(new Box3().setFromObject(gltf.scene)), size };
 }
 
 export function disposeSceneItem(item) {

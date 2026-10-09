@@ -40,7 +40,7 @@ export function createUpstream(deps) {
     comfyMedia, editor, mediaAssetSource, mediaSource, node, state, studio,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw;
+  let file3dEditorFile, getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw;
 
   // The layers of the result last read ({ list, entries, fps }): per layer its loaded state and media `ui`
   // (`layer`), its working copy (`working`, upstreamWorkingLayers at the Timeline `fps`), and what shows its
@@ -374,6 +374,7 @@ export function createUpstream(deps) {
         media: (sticker) => stickerMedia(entry, sticker, frame),
         paintLayers: paintLayers(entry),
         source: mediaSource,
+        editorFile: file3dEditorFile,
       });
       input.sky.push(...view.sky);
       input.stickers.push(...view.stickers);
@@ -398,7 +399,7 @@ export function createUpstream(deps) {
 
   return {
     connect(api) {
-      ({ getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw } = api);
+      ({ file3dEditorFile, getDesiredPaintTargetDescriptor, getMediaRevisionToken, playback, requestDraw } = api);
     },
     upstreamEntries, upstreamLinked, upstreamNotice, upstreamOutput, upstreamPortMeta, upstreamViewInput, rebuildUpstreamWorking,
     syncUpstreamEdits, pruneUpstreamRecords, deleteUpstreamStickers, revertUpstreamSticker, revertUpstreamLayer,

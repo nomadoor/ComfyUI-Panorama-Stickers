@@ -964,7 +964,7 @@ async function editorTimeline(state, upstream, overrides = {}) {
   const api = {
     ...items, ...upstream, ...timeline,
     commitAndRefreshNode: upstream.syncUpstreamEdits, getPortMediaMeta: () => null, hasCamera: () => false, inspectorTimed: () => false,
-    isExternalSticker: (item) => item?.source?.kind === "port", markObjectVisualsDirty: noop, playback: { frame: 0, seek: noop, stop: noop },
+    isExternalSticker: (item) => item?.source?.kind === "port", loading3dIds: () => new Set(), markObjectVisualsDirty: noop, playback: { frame: 0, seek: noop, stop: noop },
     sceneFiles: () => null,
     pushHistory: () => {
       steps.count += 1;

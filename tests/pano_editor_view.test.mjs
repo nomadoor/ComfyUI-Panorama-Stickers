@@ -658,6 +658,29 @@ test("the space view draws the world Stickers shown at the playhead as planes of
   assert.deepEqual(worldStickerLayers(state, 12, state.stickers, { media: () => ({ media: image, revision: 1 }) }).map((layer) => layer.id), ["w1", "w2", "w4"]);
 });
 
+// docs/threejs-spark-integration.md: a 3D file Sticker draws its item, never a plane, and is not read as an image.
+test("a Sticker whose Source is a 3D file is neither a plane nor a Sky layer, and its media is never asked for", async () => {
+  const { skyLayers, worldStickerLayers } = await import("../web_src/pano_editor_view.js");
+  const state = loadSceneState({
+    version: 2,
+    stickers: [
+      { id: "w1", placement: "world", source: { kind: "file", filename: "chair.glb", subfolder: "3d" } },
+      { id: "w2", placement: "world", source: { kind: "file", filename: "a.png" } },
+      // A sky Sticker with a 3D file (a hand-written state) is not drawn, as the node does not draw it.
+      { id: "s1", placement: "sky", source: { kind: "file", filename: "points.ply", subfolder: "3d" } },
+      { id: "s2", placement: "sky", source: { kind: "file", filename: "b.png" } },
+    ],
+  });
+  const asked = [];
+  const media = (item) => {
+    asked.push(item.id);
+    return { media: { naturalWidth: 4, naturalHeight: 2 }, revision: 1 };
+  };
+  assert.deepEqual(worldStickerLayers(state, 0, state.stickers, { media }).map((layer) => layer.id), ["w2"]);
+  assert.deepEqual(skyLayers(state, 0, { media, zIndex: () => 0, paintLayers: [] }).map((layer) => layer.id), ["s2"]);
+  assert.deepEqual(asked, ["w2", "s2"]);
+});
+
 test("in 6DoF the drags of the 3D view controls preset move the view about the point under the pointer, and 3DoF looks around like the panorama view", () => {
   const editor = readEditorSource();
   const down = editor.slice(editor.indexOf("  function onCanvasPointerDown(e) {"), editor.indexOf("    if (e.button !== 0) return;", editor.indexOf("  function onCanvasPointerDown(e) {")));

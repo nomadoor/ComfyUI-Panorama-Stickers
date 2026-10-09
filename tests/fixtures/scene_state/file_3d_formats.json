@@ -1,0 +1,26 @@
+{
+  "extensions": [".gltf", ".glb", ".obj", ".fbx", ".stl", ".spz", ".splat", ".ply", ".ksplat"],
+  "cases": [
+    {"filename": "model.gltf", "is_3d": true},
+    {"filename": "model.glb", "is_3d": true},
+    {"filename": "model.obj", "is_3d": true},
+    {"filename": "model.fbx", "is_3d": true},
+    {"filename": "model.stl", "is_3d": true},
+    {"filename": "model.spz", "is_3d": true},
+    {"filename": "model.splat", "is_3d": true},
+    {"filename": "model.ply", "is_3d": true},
+    {"filename": "model.ksplat", "is_3d": true},
+    {"filename": "MODEL.GLB", "is_3d": true},
+    {"filename": "Scan.Ply", "is_3d": true},
+    {"filename": "archive.tar.glb", "is_3d": true},
+    {"filename": ".glb", "is_3d": true},
+    {"filename": "photo.png", "is_3d": false},
+    {"filename": "clip.mp4", "is_3d": false},
+    {"filename": "model.usdz", "is_3d": false},
+    {"filename": "model.glb.png", "is_3d": false},
+    {"filename": "glb", "is_3d": false},
+    {"filename": "model.gl", "is_3d": false},
+    {"filename": "model.splats", "is_3d": false},
+    {"filename": "model", "is_3d": false}
+  ]
+}

@@ -22,7 +22,7 @@ export function createRenderLoop(deps) {
     endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
     getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
     rebuildPaintEngineIfNeeded, stepKeyMove, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
-    syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice;
+    syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice;
 
   // Removes the editor from the diagnostics samples (set when the render loop starts).
   let removeDiagnosticsSource = () => {};
@@ -64,9 +64,10 @@ export function createRenderLoop(deps) {
     const stageStatus = getStageImageStatus();
     uiState.stageStatus = stageStatus.status;
     uiState.stageStatusDetail = stageStatus.detail;
-    // Panorama Studio notes that the Scene linked to `scene` shows once the workflow has run, or that its
+    // Panorama Studio notes a 3D file being placed ("Loading 3D model…", or why it failed), a 3D file in the
+    // editor that could not be read, that the Scene linked to `scene` shows once the workflow has run, or that its
     // background takes the place of bg_media (#90).
-    uiState.stageNotice = upstreamNotice();
+    uiState.stageNotice = file3dImportNotice() || file3dNotice() || upstreamNotice();
     if (stageStatus.status === IMAGE_LOADING) {
       stageWrap?.removeAttribute("data-stage-ready");
       stageWrap?.setAttribute("data-stage-loading-kind", stageStatus.detail);
@@ -413,7 +414,7 @@ export function createRenderLoop(deps) {
         endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
         getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
         rebuildPaintEngineIfNeeded, stepKeyMove, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
-        syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice,
+        syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice,
       } = api);
     },
     requestDraw, syncCanvasSize, startAnimation, editorAnimating, tick, stageResizeObserver, watchPixelRatio,

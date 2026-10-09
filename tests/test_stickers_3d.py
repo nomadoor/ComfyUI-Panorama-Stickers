@@ -20,6 +20,7 @@ from comfy_extras.nodes_gaussian_splat import SplatToFile3D
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import mesh_render
+from comfyui_pano_suite.core.mesh_render import srgb_to_linear
 from comfyui_pano_suite.core.world_render import ContentSource
 from scene_test_helpers import batch_index_at_center, blob, blobs, camera_state, center, glb_positions, shoot, state_text, temp_entry_path, video_frames
 from tools.bake_legacy_goldens import _painting, _stroke
@@ -35,8 +36,9 @@ SQUARE_FACES = [[0, 3, 2], [0, 2, 1]]
 RIGHT = (256, 768)
 
 
-def _square(rgb=RED, size=1.0):
-    return Types.MESH(torch.tensor([SQUARE]) * size, torch.tensor([SQUARE_FACES]), vertex_colors=torch.tensor([[rgb] * 4]))
+def _square(rgb=RED, size=1.0, unlit=True):
+    """A colored square; unlit (as a splat-derived MESH is marked), so that it shows its color where it is placed."""
+    return Types.MESH(torch.tensor([SQUARE]) * size, torch.tensor([SQUARE_FACES]), vertex_colors=torch.tensor([[rgb] * 4]), unlit=unlit)
 
 
 def _execute(state=None, **inputs):
@@ -75,7 +77,7 @@ def test_mesh_on_the_sticker_input_becomes_a_world_sticker_ahead_of_the_camera()
     [pose] = output.ui["pano_sticker_input_pose"]
     assert pose["placement"] == "world" and np.allclose(pose["position"], [0.0, 0.0, -2.0])
     assert pose["rotation"] == port["rotation"]["value"] and pose["scale"] == 1.0
-    assert output.ui["pano_sticker_meta"] == [{"kind": "mesh"}]
+    assert output.ui["pano_sticker_meta"] == [{"kind": "mesh", "unlit": True}]
     assert np.allclose(np.sort(glb_positions(temp_entry_path(output.ui["pano_sticker_files"][0])), axis=0), np.sort(np.asarray(SQUARE), axis=0))
     assert "pano_sticker_input_images" not in output.ui
 
@@ -115,7 +117,7 @@ def test_without_a_camera_the_output_is_taken_from_the_origin_at_rotation_0(tmp_
         paint=[_stroke("paint", "paint", [(0.1, 0.3), (0.15, 0.3)], 10, {"r": 1.0, "g": 1.0, "b": 0.0, "a": 1.0})],
         mask=[_stroke("mask", "mask", [(0.9, 0.7), (0.95, 0.7)], 10)],
     )
-    scene = Types.MESH(torch.tensor([SQUARE]) + torch.tensor([3.0, 0.0, -3.0]), torch.tensor([SQUARE_FACES]), vertex_colors=torch.tensor([[BLUE] * 4]))
+    scene = Types.MESH(torch.tensor([SQUARE]) + torch.tensor([3.0, 0.0, -3.0]), torch.tensor([SQUARE_FACES]), vertex_colors=torch.tensor([[BLUE] * 4]), unlit=True)
     bg = torch.zeros((1, 64, 128, 3))
     bg[:, 32:] = 0.5
     state = {"version": 2, "stickers": [sky], "painting": painting}
@@ -156,13 +158,13 @@ def test_3d_stickers_are_drawn_at_their_transform(kind, tmp_path):
 
     image = output.result[0][0]
     red, green, blue = image[RIGHT].tolist()
-    # An OBJ has no colors: the core's bare gray.
+    # An OBJ has no colors and no material: the core's bare gray, lit by the default lights.
     if kind == "mesh file":
-        assert np.allclose([red, green, blue], [mesh_render.BARE_COLOR] * 3, atol=1e-3)
+        assert red == pytest.approx(green, abs=1e-6) and red == pytest.approx(blue, abs=1e-6) and 0.2 < red < 0.95
     else:
         assert red > 0.8 and green < 0.2 and blue < 0.2
     assert _close(image[256, 512], GREEN)
-    assert output.ui["pano_sticker_meta"] == [{"kind": "splat" if "splat" in kind else "mesh"}]
+    assert output.ui["pano_sticker_meta"] == [{"kind": "splat"} if "splat" in kind else {"kind": "mesh", "unlit": kind == "mesh"}]
 
 
 def test_3d_sticker_follows_its_keyframes():
@@ -196,8 +198,9 @@ def test_3d_sticker_is_ordered_by_depth_with_the_scene_content(distance, center)
 def test_3d_sticker_items_follow_the_output_frames():
     vertices = torch.tensor([SQUARE] * 2)
     colors = torch.zeros((2, 4, 3))
-    colors[0, :, 0], colors[1, :, 0] = 0.1, 0.2
-    mesh = Types.MESH(vertices, torch.tensor([SQUARE_FACES] * 2), vertex_colors=colors)
+    # Linear values that show as red 0.1 and 0.2.
+    colors[0, :, 0], colors[1, :, 0] = srgb_to_linear(torch.tensor([0.1, 0.2]))
+    mesh = Types.MESH(vertices, torch.tensor([SQUARE_FACES] * 2), vertex_colors=colors, unlit=True)
 
     output = _execute(sticker=mesh)
 
@@ -313,3 +316,138 @@ def test_a_camera_shoots_the_splat_sticker_of_an_upstream_scene():
 
     red, green, blue = center(frames).tolist()
     assert red > 0.8 and green < 0.2 and blue < 0.2
+
+
+# 3D file `file` Sources (docs/studio-node.md, "3D ファイルの `file` の Source").
+
+@pytest.fixture
+def input_dir(tmp_path, monkeypatch):
+    directory = tmp_path / "input"
+    (directory / "3d").mkdir(parents=True)
+    monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(directory))
+    return directory
+
+
+def _lit_glb(path):
+    """A lit square GLB (colors and normals, no KHR_materials_unlit), as the core's save_glb writes it."""
+    from comfy_extras.nodes_save_3d import save_glb
+
+    colors = torch.tensor([[0.8, 0.3, 0.2]] * 4)
+    normals = torch.tensor([[0.0, 0.0, 1.0]] * 4)
+    path.write_bytes(save_glb(torch.tensor(SQUARE), torch.tensor(SQUARE_FACES), vertex_colors=colors, normals=normals))
+    return path
+
+
+def _file_sticker(filename, sticker_id="f", placement="world", position=(2.0, 0.0, 0.0), clip=None, **rotation):
+    sticker = {"id": sticker_id, "placement": placement, "source": {"kind": "file", "filename": filename, "subfolder": "3d", "storage": "input"}}
+    if placement == "world":
+        sticker.update(position={"value": list(position)}, rotation={"value": rotation or {"yaw_deg": -90.0, "pitch_deg": 10.0}}, scale={"value": 1.5})
+    if clip is not None:
+        sticker["clip"] = clip
+    return sticker
+
+
+@pytest.mark.parametrize("make", ["glb", "splat"])
+def test_a_3d_file_source_is_drawn_as_the_same_file_on_the_sticker_input(make, input_dir):
+    name = "model.glb" if make == "glb" else "blob.ply"
+    if make == "glb":
+        _lit_glb(input_dir / "3d" / name)
+    else:
+        _splat_file().save_to(str(input_dir / "3d" / name))
+    placed = _file_sticker(name)
+    port = {**placed, "id": "p", "source": {"kind": "port"}}
+
+    from_file = _execute({"version": 2, "stickers": [placed]})
+    from_input = _execute({"version": 2, "stickers": [port]}, sticker=Types.File3D(str(input_dir / "3d" / name)))
+
+    assert torch.equal(from_file.result[0], from_input.result[0])
+    assert not _close(from_file.result[0][0][RIGHT], GREEN)
+    # The editor asks the route for its file; the run shows none, and warns of nothing.
+    assert "pano_sticker_files" not in from_file.ui and "pano_sticker_warnings" not in from_file.ui
+    layer = from_file.result[4].layers[-1]
+    assert set(layer.sources.contents) == {"f"} and "f" not in layer.sources.stickers
+    assert layer.sources.contents["f"] is nodes._read_scene_file(Types.File3D(str(input_dir / "3d" / name)), "sticker")
+
+
+def test_a_3d_file_source_is_read_once_across_runs(input_dir, monkeypatch):
+    _lit_glb(input_dir / "3d" / "model.glb")
+    reads = []
+    read = nodes.read_mesh_file
+    monkeypatch.setattr(nodes, "read_mesh_file", lambda file: reads.append(file) or read(file))
+    state = {"version": 2, "stickers": [_file_sticker("model.glb")]}
+
+    first = _execute(state)
+    again = _execute(state)
+
+    assert len(reads) == 1
+    assert again.result[4].layers[-1].sources.contents["f"] is first.result[4].layers[-1].sources.contents["f"]
+
+
+def test_a_3d_file_source_follows_its_clip_range_through_the_video(input_dir):
+    _lit_glb(input_dir / "3d" / "model.glb")
+    state = {"version": 2, "timeline": {"length": 3}, "stickers": [_file_sticker("model.glb", clip={"start": 1, "duration": 1})]}
+
+    frames = _frames(_execute(state))
+
+    assert [_close(frame[RIGHT], GREEN) for frame in frames] == [True, False, True]
+
+
+def test_unreadable_3d_file_sources_are_not_drawn_and_warn(input_dir):
+    (input_dir / "3d" / "model.fbx").write_bytes(b"Kaydara FBX Binary")
+    (input_dir / "3d" / "points.ply").write_bytes(b"ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n0 0 0\n")
+    _lit_glb(input_dir / "3d" / "model.glb")
+    stickers = [
+        _file_sticker("missing.glb", "a"),
+        _file_sticker("model.fbx", "b"),
+        _file_sticker("points.ply", "c"),
+        {**_file_sticker("model.glb", "d", placement="sky"), "direction": {"value": {"yaw_deg": 90.0}}},
+        {**_file_sticker("model.glb", "e"), "source": {"kind": "file", "filename": "model.glb", "subfolder": "../input/3d", "storage": "output"}},
+    ]
+
+    output = _execute({"version": 2, "stickers": stickers})
+
+    warnings = output.ui["pano_sticker_warnings"]
+    assert "Could not read the 3D file 3d/missing.glb: the file was not found. Sticker a is not drawn." in warnings
+    assert any(text.startswith("Could not read the 3D file 3d/model.fbx: Get3DComponents: .fbx parsing is not supported") and text.endswith(" Sticker b is not drawn.") for text in warnings)
+    assert ("Could not read the 3D file 3d/points.ply: it is neither a splat file (a PLY with 3DGS properties, SPLAT, SPZ, KSPLAT) nor a mesh file "
+            "(GLB, GLTF, OBJ, STL). Sticker c is not drawn.") in warnings
+    assert "Could not read the 3D file 3d/model.glb: a sky Sticker cannot show a 3D file. Sticker d is not drawn." in warnings
+    assert "Could not read the 3D file ../input/3d/model.glb: the file was not found. Sticker e is not drawn." in warnings
+    assert output.result[4].layers[-1].sources.contents == {}
+    assert _close(output.result[0][0][RIGHT], GREEN)
+
+
+def test_other_errors_of_the_reader_stop_the_run(input_dir, monkeypatch):
+    _lit_glb(input_dir / "3d" / "model.glb")
+
+    def broken(file):
+        raise RuntimeError("broken reader")
+
+    monkeypatch.setattr(nodes, "read_mesh_file", broken)
+    with pytest.raises(RuntimeError, match="broken reader"):
+        _execute({"version": 2, "stickers": [_file_sticker("model.glb")]})
+
+
+def test_a_downstream_scene_draws_the_3d_file_and_an_override_that_deletes_it_drops_it(input_dir):
+    _lit_glb(input_dir / "3d" / "model.glb")
+    upstream = _execute({"version": 2, "id": "up", "stickers": [_file_sticker("model.glb", position=(0.0, 0.0, -2.0), yaw_deg=0.0)]}).result[4]
+
+    kept = shoot(upstream, camera_state(hFOV_deg=20.0), bg_color="#00ff00")
+    deleted = shoot(upstream, {**camera_state(hFOV_deg=20.0), "upstream": [{"layer": "up", "fps": 24.0, "deleted": ["f"]}]}, bg_color="#00ff00")
+
+    assert not _close(center(video_frames(kept)), GREEN)
+    assert _close(center(video_frames(deleted)), GREEN)
+    assert deleted[4].layers[0].sources.contents == {} and upstream.layers[0].sources.contents.keys() == {"f"}
+
+
+def test_a_port_3d_sticker_and_a_3d_file_sticker_render_together_in_one_layer(input_dir):
+    # `_render_frames` puts the port's content and the file's content in the same layer's sources for every frame.
+    _lit_glb(input_dir / "3d" / "model.glb")
+    state = {"version": 2, "timeline": {"length": 2}, "stickers": [_port(position=[0.0, 0.0, -2.0]), _file_sticker("model.glb")]}
+
+    output = _execute(state, sticker=_square())
+
+    for frame in (output.result[0][0], *_frames(output)):
+        assert _close(frame[256, 512], RED) and not _close(frame[RIGHT], GREEN)
+    layer = output.result[4].layers[-1]
+    assert layer.port.is_3d and set(layer.sources.contents) == {"f"}

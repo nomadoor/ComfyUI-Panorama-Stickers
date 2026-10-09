@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
+import { FILE_3D_EXTENSIONS, is3dFileSource, loadSceneState, loadStickerState, rebaseSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/scene_state/${name}.json`, import.meta.url), "utf8");
@@ -390,4 +390,22 @@ test("a Scene id is a non-empty string or null and is written as it is", () => {
   assert.equal(named.id, "made_1");
   assert.equal(JSON.parse(sceneStateText(named)).id, "made_1");
   for (const bad of ["", 3, null, ["a"]]) assert.equal(loadSceneState({ version: 2, id: bad }).id, null);
+});
+
+// docs/scene-state-v2.md "3D ファイルの `file` の Source": the table Python reads too (file_3d_formats.json).
+test("a file Source is a 3D file by the extension of its filename alone, as Load3D accepts it", () => {
+  const formats = JSON.parse(fixture("file_3d_formats"));
+  assert.deepEqual([...FILE_3D_EXTENSIONS], formats.extensions);
+  for (const { filename, is_3d: expected } of formats.cases) {
+    assert.equal(is3dFileSource({ kind: "file", filename, subfolder: "3d", storage: "input" }), expected, filename);
+  }
+  // An embedded image, the port and a Source without a filename are not 3D files.
+  assert.equal(is3dFileSource({ kind: "file", data_url: "data:image/png;base64,AAAA" }), false);
+  assert.equal(is3dFileSource({ kind: "port" }), false);
+  assert.equal(is3dFileSource(null), false);
+  // Loading the state keeps a 3D file Source as it is, and its placement.
+  const state = loadSceneState({ version: 2, stickers: [{ id: "sticker_1", placement: "world", source: { kind: "file", filename: "a.glb", subfolder: "3d" } }] });
+  assert.deepEqual(state.stickers[0].source, { kind: "file", filename: "a.glb", subfolder: "3d", storage: "input" });
+  assert.equal(is3dFileSource(state.stickers[0].source), true);
+  assert.equal(state.stickers[0].placement, "world");
 });

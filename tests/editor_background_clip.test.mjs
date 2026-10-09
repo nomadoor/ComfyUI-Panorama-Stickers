@@ -60,7 +60,7 @@ function editorTimeline(saved, { node = studioNode(), transport = { ready: true,
   const api = {
     ...items, ...timeline,
     commitAndRefreshNode: () => { steps.commits += 1; }, getPortMediaMeta: () => null, hasCamera: () => false, inspectorTimed: () => false,
-    isExternalSticker: (item) => item?.source?.kind === "port", markObjectVisualsDirty: noop, playback,
+    isExternalSticker: (item) => item?.source?.kind === "port", loading3dIds: () => new Set(), markObjectVisualsDirty: noop, playback,
     sceneFiles: () => null,
     pushHistory: () => {
       steps.count += 1;

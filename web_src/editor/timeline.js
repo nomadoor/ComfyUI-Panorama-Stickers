@@ -15,7 +15,7 @@ export function createTimeline(deps) {
     uiState, videoEl, videoTimelineFps,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let commitAndRefreshNode, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
+  let commitAndRefreshNode, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
     playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles,
     syncCutoutShot, stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground,
     upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers;
@@ -55,6 +55,8 @@ export function createTimeline(deps) {
       scene: sceneV2 && !!nodeInputOrigins(node).scene && !upstreamLinked(),
       upstream: upstreamTimelineLayers(),
       background: backgroundShown() ? { end: portBarEnd(state.background) } : null,
+      // A 3D file still uploading is a 3D Sticker before its Source names it.
+      loading3d: loading3dIds(),
     });
     // Keyframes the Timeline cannot change (locked, only inherited, an upstream `scene`'s) have no Easing panel.
     uiState.easing = timeline.selection && timelineEditable(timeline.selection.owner)
@@ -280,7 +282,7 @@ export function createTimeline(deps) {
   return {
     connect(api) {
       ({
-        commitAndRefreshNode, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, markObjectVisualsDirty,
+        commitAndRefreshNode, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
         playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles,
         syncCutoutShot, stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground,
         upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers,

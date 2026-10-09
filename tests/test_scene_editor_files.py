@@ -103,8 +103,20 @@ def test_mesh_items_are_written_as_glb_in_their_own_coordinates():
 
     ui = nodes._scene_ui(_mesh(vertices))
 
-    assert ui["pano_scene_meta"] == [{"kind": "mesh"}]
+    assert ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": False}]
     assert [np.allclose(_glb_positions(_path(entry)), item) for entry, item in zip(ui["pano_scene_files"], vertices)] == [True, True]
+
+
+def test_the_editor_meta_carries_the_mesh_unlit_mark_even_where_the_glb_does_not():
+    # The core's save_glb writes KHR_materials_unlit only without a texture, so the editor reads the mark from here.
+    vertices = torch.tensor([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]])
+    uvs = torch.tensor([[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]])
+    textured = Types.MESH(vertices, torch.tensor([[[0, 1, 2]]]), uvs=uvs, texture=torch.rand((1, 2, 2, 3)), unlit=True)
+
+    ui = nodes._scene_ui(textured)
+
+    assert ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
+    assert b"KHR_materials_unlit" not in _path(ui["pano_scene_files"][0]).read_bytes()
 
 
 def test_empty_items_keep_their_place_in_the_batch():
@@ -120,7 +132,8 @@ def test_moge_panorama_frames_are_grid_meshes_in_world_directions_of_the_erp():
 
     ui = nodes._scene_ui(_moge(points))
 
-    assert ui["pano_scene_meta"] == [{"kind": "mesh"}]
+    # MoGe's frames are photos: never lit (docs/render-contract.md, "光が効く要素").
+    assert ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
     assert len(ui["pano_scene_files"]) == 3
     vertices = _glb_positions(_path(ui["pano_scene_files"][0]))
     # Each pixel of the ERP MoGe saw lies along the World direction of the same pixel of a Camera at rotation 0
@@ -223,7 +236,7 @@ def test_studio_shows_the_scene_files_after_running(monkeypatch):
     output = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=mesh)
     without = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="")
 
-    assert output.ui["pano_scene_meta"] == [{"kind": "mesh"}] and len(output.ui["pano_scene_files"]) == 2
+    assert output.ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": False}] and len(output.ui["pano_scene_files"]) == 2
     assert all(_path(entry).exists() for entry in output.ui["pano_scene_files"])
     assert "pano_scene_files" not in without.ui
 

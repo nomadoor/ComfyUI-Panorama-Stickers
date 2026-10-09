@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { DoubleSide } from "three";
+
 import { loadSceneItem } from "../web_src/pano_scene_loaders.js";
+import { DEFAULT_LIGHTS, createDefaultLights } from "../web_src/pano_three_view.js";
 
 // A GLB of one triangle, as the node writes a MESH item (no texture).
 function triangleGlb() {
@@ -47,4 +51,52 @@ test("a loaded item reports the bytes it loaded and keeps no reference to them",
   assert.equal(buffers.length, 1);
   assert.equal(buffers.includes(bytes), false);
   assert.deepEqual(Object.keys(item).sort(), ["box", "object", "size"]);
+});
+
+const materialsOf = (root) => {
+  const materials = [];
+  root.traverse((object) => {
+    if (object.isMesh) materials.push(...[object.material].flat());
+  });
+  return materials;
+};
+
+// docs/threejs-spark-integration.md: the `unlit` of the meta decides the material, not the GLB's own mark.
+test("a GLB marked unlit draws without light, one light falls on keeps GLTFLoader's material on both sides", async (t) => {
+  const bytes = triangleGlb();
+  t.mock.method(globalThis, "fetch", async () => ({ ok: true, arrayBuffer: async () => bytes }));
+  const signal = new AbortController().signal;
+
+  const unlit = await loadSceneItem("mesh", "/view?filename=a.glb", signal, { unlit: true });
+  assert.deepEqual(materialsOf(unlit.object).map((material) => [material.type, material.side]), [["MeshBasicMaterial", DoubleSide]]);
+  const lit = await loadSceneItem("mesh", "/view?filename=a.glb", signal, { unlit: false });
+  const [standard] = materialsOf(lit.object);
+  assert.equal(standard.type, "MeshStandardMaterial");
+  assert.equal(standard.side, DoubleSide);
+  // A GLB without normals is shaded by its faces, as GLTFLoader sets it.
+  assert.equal(standard.flatShading, true);
+  // Without the mark it draws as before, without light.
+  const before = await loadSceneItem("mesh", "/view?filename=a.glb", signal);
+  assert.equal(materialsOf(before.object)[0].type, "MeshBasicMaterial");
+});
+
+// docs/render-contract.md "既定の照明": the values Python reads from the same fixture.
+test("the default lights are the documented rig, fixed in the World and aimed at its origin", () => {
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/default_lighting.json", import.meta.url), "utf8"));
+  assert.deepEqual(JSON.parse(JSON.stringify(DEFAULT_LIGHTS)), fixture.lights);
+  const group = createDefaultLights();
+  const lights = group.children.filter((object) => object.isLight);
+  const drawn = lights.map((light) => ({
+    type: light.isAmbientLight ? "ambient" : "directional",
+    color: light.color.toArray(),
+    intensity: light.intensity,
+    ...(light.isDirectionalLight ? { position: light.position.toArray() } : {}),
+  }));
+  assert.deepEqual(drawn, fixture.lights);
+  const directional = lights.filter((light) => light.isDirectionalLight);
+  group.updateMatrixWorld(true);
+  for (const light of directional) {
+    assert.deepEqual(light.target.position.toArray(), [0, 0, 0]);
+    assert.equal(light.castShadow, false);
+  }
 });

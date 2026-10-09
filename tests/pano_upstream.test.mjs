@@ -185,6 +185,32 @@ test("upstream 3D content is asked for per layer and kind at its own opacity, an
   assert.deepEqual(upstreamLayerView(layerOf({}), 0, 0, { media: () => null, paintLayers: [], source }).items, []);
 });
 
+// docs/threejs-spark-integration.md: an upstream layer's 3D file Stickers draw as the node's own, each in a slot of
+// the layer's key and the Sticker's id.
+test("an upstream layer's 3D file Stickers ask for the same editor files and draw as the node's own", () => {
+  const file = (id, filename, extra = {}) => world(id, { source: { kind: "file", filename, subfolder: "3d" }, opacity: { value: 0.5, keyframes: [] }, ...extra });
+  const layer = workingOf({ id: "scene_a", stickers: [file("chair", "chair.glb"), file("rig", "rig.fbx"), file("off", "chair.glb", { visible: false }), world("plane")] });
+  const asked = [];
+  const editorFile = (sticker) => {
+    asked.push(sticker.id);
+    return sticker.source.filename === "chair.glb" ? { kind: "mesh", unlit: false, url: "/view?filename=e.glb", generation: 0 } : null;
+  };
+  const media = (sticker) => (sticker.source.filename.endsWith(".png") ? { media: image, revision: 1 } : assert.fail(`media of ${sticker.id}`));
+  const view = upstreamLayerView(layer, layer.key, 0, { media, paintLayers: [], source, editorFile });
+  // The 3D files are not planes; the image is.
+  assert.deepEqual(view.stickers.map((item) => item.id), ["upstream:scene_a:plane"]);
+  assert.deepEqual(asked, ["upstream:scene_a:chair", "upstream:scene_a:rig", "upstream:scene_a:off"]);
+  assert.deepEqual(view.items.map((item) => [item.slot, item.urls, item.request?.url ?? null, item.request?.src ?? null, item.opacity, item.source.filename]), [
+    ["scene_a:file:upstream:scene_a:chair", ["file3d:0:upstream:scene_a:chair"], "file3d:0:upstream:scene_a:chair", "/view?filename=e.glb", 0.5, "chair.glb"],
+    // Hidden: it keeps its item loaded and shows nothing.
+    ["scene_a:file:upstream:scene_a:off", ["file3d:0:upstream:scene_a:off"], null, null, 1, "chair.glb"],
+  ]);
+  assert.equal(view.items[0].request.unlit, false);
+  assert.equal(view.items[0].request.id, "upstream:scene_a:chair");
+  // Without editorFile (a surface that asks no route) a layer draws no 3D file.
+  assert.deepEqual(upstreamLayerView(layer, layer.key, 0, { media, paintLayers: [], source }).items, []);
+});
+
 // ADR 0030: what is drawn of an upstream layer is keyed by its Scene id, so a key stays with the layer when
 // layers are added or removed upstream; a layer whose state was never written has no id and keeps its index.
 test("upstream layers are keyed by their Scene id, else their index, and a repeated id by the nearest downstream", () => {

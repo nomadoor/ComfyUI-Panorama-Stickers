@@ -6,7 +6,7 @@ One call draws one frame from the layers of a Scene (`RenderLayer`: a state eval
 World content of all layers by depth (`world_render.py`).
 """
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import torch
@@ -66,12 +66,16 @@ class SceneSources:
     """Sources for one frame.
 
     `stickers` maps Sticker ids to their sources; a Sticker without one is not drawn. `painting` is the state's
-    painting and `painting_layer` its uploaded rasters from `resolve_painting_layer_payload`.
+    painting and `painting_layer` its uploaded rasters from `resolve_painting_layer_payload`. `contents` maps the ids
+    of `world` Stickers whose `file` Source is a 3D file to the SPLAT or MESH read from it; it holds no device
+    tensors, and the caller turns each into a `ContentSource` in `stickers` for a render pass (`render_frame` reads
+    only `stickers`).
     """
 
     stickers: dict
     painting: dict
     painting_layer: dict | None = None
+    contents: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

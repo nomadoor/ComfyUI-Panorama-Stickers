@@ -14,11 +14,13 @@ function takePendingIntent() {
   return { active: true, intent };
 }
 
-function open(intent) {
+// accept is what this intent may choose: images (the default), or for Add to World images and 3D files.
+function open(intent, accept = "image/*") {
   const input = inputRef.value;
   if (!(input instanceof HTMLInputElement)) return false;
   pendingIntent = intent;
   requestOpen = true;
+  input.accept = accept;
   input.value = "";
   input.click();
   return true;

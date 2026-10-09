@@ -57,7 +57,8 @@ test("modal image drag feedback reuses the shared generic-MIME detector", async 
   const detector = editor.slice(start, end);
 
   assert.match(editor, /dragHasStickerImageFile,/);
-  assert.match(detector, /return dragHasStickerImageFile\(e\?\.dataTransfer\);/);
+  // Panorama Studio's editor also takes 3D files (dragHasStudioFile); the legacy editor images only.
+  assert.match(detector, /return sceneV2 \? dragHasStudioFile\(e\?\.dataTransfer\) : dragHasStickerImageFile\(e\?\.dataTransfer\);/);
   assert.doesNotMatch(detector, /startsWith\("image\/"\)/);
 });
 

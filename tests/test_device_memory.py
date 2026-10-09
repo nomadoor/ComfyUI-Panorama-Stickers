@@ -48,6 +48,23 @@ def test_the_estimate_counts_the_3d_media(monkeypatch, tmp_path):
     assert calls[0][0] == 256 * 128 * RENDER_FLOATS_PER_PIXEL * 4 + nbytes(splat)
 
 
+def test_the_estimate_counts_the_3d_files_of_stickers(monkeypatch, tmp_path):
+    from comfy_extras.nodes_save_3d import save_glb
+
+    import folder_paths
+
+    (tmp_path / "3d").mkdir()
+    (tmp_path / "3d" / "quad.glb").write_bytes(save_glb(torch.tensor([[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]), torch.tensor([[0, 1, 2]])))
+    monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
+    calls = _record_free_memory(monkeypatch)
+    sticker = {"id": "f", "placement": "world", "source": {"kind": "file", "filename": "quad.glb", "subfolder": "3d"}}
+
+    result = PanoramaStudioNode.execute("#00ff00", "360", "256", json.dumps({"version": 2, "stickers": [sticker]})).result
+
+    mesh = result[4].layers[-1].sources.contents["f"]
+    assert calls[0][0] == 256 * 128 * RENDER_FLOATS_PER_PIXEL * 4 + nbytes(mesh) and nbytes(mesh) > 0
+
+
 def test_cpu_renders_do_not_free_device_memory(monkeypatch):
     calls = []
     monkeypatch.setattr(nodes.comfy.model_management, "get_torch_device", lambda: torch.device("cpu"))

@@ -52,9 +52,9 @@ from .core.painting import (
 from .core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
 from .core.scene_eval import FRAME_EPSILON, clip_active, evaluate_scene_state
 from .core.scene_inherit import apply_upstream_overrides
-from .core.scene_state import CAMERA_LANES, DEFAULT_CLIP, DEFAULT_EASING, STICKER_STATE_KIND, load_scene_state, load_sticker_state
+from .core.scene_state import CAMERA_LANES, DEFAULT_CLIP, DEFAULT_EASING, STICKER_STATE_KIND, is_3d_file_source, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
-from .core.stickers import load_source_rgba
+from .core.stickers import comfy_file_path, load_source_rgba
 from .core.video import (
     editor_ready,
     encode_editor_mp4,
@@ -70,7 +70,7 @@ from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world import world_rotation
 from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
-from .scene_mesh import is_mesh_file, mesh_scene_content, moge_scene_content, read_mesh_file
+from .scene_mesh import is_mesh_file, is_unlit, mesh_scene_content, moge_scene_content, read_mesh_file
 from .scene_video import SceneVideo
 from .splat_render import read_splat_file, splat_content
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video, stream_video
@@ -1071,12 +1071,20 @@ def _scene_content(scene) -> SceneContent | None:
     return moge_scene_content(scene)
 
 
-def _read_scene_file(scene, name: str):
+# Why a 3D file that neither reader takes is not read (`docs/studio-node.md`, "3D ファイルの `file` の Source").
+NEITHER_3D_READER = "neither a splat file (a PLY with 3DGS properties, SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL)"
+# Why a 3D file `file` Source outside ComfyUI's folders, or not there, is not read.
+FILE_NOT_FOUND = "the file was not found"
+
+
+def _read_scene_file(scene, name: str | None):
     """A 3D file on the `scene` or `sticker` input (`name`) as what is read from it: a splat file (told by its
     contents, as Load3D does) as its SPLAT, else a mesh file (by its format) as its MESH; other inputs as given. A 3D
-    file that neither reads (a PLY without 3DGS properties, a non-splat file without a format) is a ValueError.
+    file that neither reads (a PLY without 3DGS properties, a non-splat file without a format) is a ValueError naming
+    the input, or for a 3D file `file` Source (`name` None) a ValueError of the reason alone.
     What is read is kept per file (on disk by its path and modification, else by the object) in the cache of its
-    kind, so the same file is not parsed again and keeps its editor files."""
+    kind, so the same file is not parsed again and keeps its editor files; concurrent readers of one file (a prompt
+    and the editor's route) read it once."""
     if not isinstance(scene, Types.File3D):
         return scene
     if scene.is_disk_backed:
@@ -1084,20 +1092,37 @@ def _read_scene_file(scene, name: str):
         cache_key = (scene.get_source(), stat.st_mtime_ns, stat.st_size)
     else:
         cache_key = NODE_RUNTIME.object_identity(scene)
-    for namespace in ("splat_files", "mesh_files"):
-        value = NODE_RUNTIME.cache.get(namespace, cache_key)
-        if value is not None:
-            return value
-    splat = read_splat_file(scene)
+    mesh = NODE_RUNTIME.cache.get("mesh_files", cache_key)
+    if mesh is not None:
+        return mesh
+    splat = NODE_RUNTIME.cache.get_or_put("splat_files", cache_key, lambda: read_splat_file(scene))
     if splat is not None:
-        NODE_RUNTIME.cache.put("splat_files", cache_key, splat)
         return splat
     if not is_mesh_file(scene):
-        raise ValueError(f"Panorama Stickers: the 3D file on the {name} input is neither a splat file (a PLY with 3DGS properties, "
-                         "SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL, FBX, USDZ).")
-    mesh = read_mesh_file(scene)
-    NODE_RUNTIME.cache.put("mesh_files", cache_key, mesh)
-    return mesh
+        if name is None:
+            raise ValueError(f"it is {NEITHER_3D_READER}")
+        raise ValueError(f"Panorama Stickers: the 3D file on the {name} input is {NEITHER_3D_READER}.")
+    return NODE_RUNTIME.cache.get_or_put("mesh_files", cache_key, lambda: read_mesh_file(scene))
+
+
+def _file_3d_error(source: dict, reason: str) -> str:
+    """The text that says why a 3D file `file` Source is not read, for the node's warning and the route's error."""
+    name = f"{source['subfolder']}/{source['filename']}" if source.get("subfolder") else source["filename"]
+    reason = str(reason).strip()
+    return f"Could not read the 3D file {name}: {reason}{'' if reason.endswith(('.', '!', '?')) else '.'}"
+
+
+def _read_file_3d(source: dict) -> tuple[object, str | None]:
+    """A 3D file `file` Source read as `scene` and `sticker` read theirs (`_read_scene_file`): its SPLAT or MESH and
+    None, or None and why it was not read: a path outside ComfyUI's folders or no file there, or the reader's
+    ValueError or OSError. Other errors are raised."""
+    path = comfy_file_path(source["filename"], source["subfolder"], source["storage"])
+    if path is None:
+        return None, FILE_NOT_FOUND
+    try:
+        return _read_scene_file(Types.File3D(str(path)), None), None
+    except (ValueError, OSError) as error:
+        return None, str(error)
 
 
 def _take_sticker_id(state: dict) -> str:
@@ -1259,9 +1284,10 @@ def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tup
 
 def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -> SceneSources:
     """Read every Sticker source into memory; the port Sticker's source holds the first frame of `port`, and
-    3D media has none (`_render_frames` makes it for each pass). A hidden painting (`painting_visible`) is not drawn,
-    its mask included. A source that cannot be read adds to `warnings`."""
-    stickers = {}
+    3D media has none (`_render_frames` makes it for each pass). A 3D file `file` Source is read as its SPLAT or MESH
+    into `contents`, for a `world` Sticker only. A hidden painting (`painting_visible`) is not drawn, its mask
+    included. A source that cannot be read adds to `warnings`, and its Sticker is not drawn."""
+    stickers, contents = {}, {}
     port_image = None if port is None or port.is_3d else _port_rgba(port.first_frame)
     for item in state["stickers"]:
         source = item["source"]
@@ -1269,19 +1295,28 @@ def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -
             if port_image is not None:
                 stickers[item["id"]] = StickerSource(port_image, item["crop"], item.get("z_index", 0), derive_vfov=True)
             continue
+        if is_3d_file_source(source):
+            content, reason = (None, "a sky Sticker cannot show a 3D file") if item["placement"] == "sky" else _read_file_3d(source)
+            if content is None:
+                warnings.append(f"{_file_3d_error(source, reason)} Sticker {item['id']} is not drawn.")
+            else:
+                contents[item["id"]] = content
+            continue
         rgba = load_source_rgba(source)
         if rgba is None:
             warnings.append(f"Could not read the source of Sticker {item['id']}; it is not drawn.")
             continue
         stickers[item["id"]] = StickerSource(rgba, item["crop"], item.get("z_index", 0))
-    return _painting_sources(state, stickers)
+    return _painting_sources(state, stickers, contents)
 
 
-def _painting_sources(state: dict, stickers: dict) -> SceneSources:
-    """`SceneSources` of the Sticker sources `stickers` and the painting of `state`, empty when it is hidden."""
+def _painting_sources(state: dict, stickers: dict, contents: dict | None = None) -> SceneSources:
+    """`SceneSources` of the Sticker sources `stickers`, the 3D files read for Stickers (`contents`), and the
+    painting of `state`, empty when it is hidden."""
+    contents = {} if contents is None else contents
     if not state["painting_visible"]:
-        return SceneSources(stickers, empty_painting_state())
-    return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]))
+        return SceneSources(stickers, empty_painting_state(), contents=contents)
+    return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]), contents)
 
 
 def _override_layers(upstream: PanoSceneValue, records: list[dict], warnings: list[str]) -> tuple[tuple, list[tuple]]:
@@ -1321,10 +1356,12 @@ def _override_layer(layer: SceneLayer, record: dict, rate: float) -> tuple[Scene
         if item is not None:
             crop, z_index = item["crop"], item.get("z_index", 0)
             sources[sticker_id] = source if (crop, z_index) == (source.crop, source.z_index) else replace(source, crop=crop, z_index=z_index)
+    # A deleted Sticker keeps no 3D file either.
+    contents = {sticker_id: content for sticker_id, content in layer.sources.contents.items() if sticker_id in stickers}
     if state["painting_visible"] == layer.state["painting_visible"]:
-        sources = replace(layer.sources, stickers=sources)
+        sources = replace(layer.sources, stickers=sources, contents=contents)
     else:
-        sources = _painting_sources(state, sources)
+        sources = _painting_sources(state, sources, contents)
     port = layer.port
     if port is not None and port.sticker_id not in stickers:
         port = None
@@ -1543,7 +1580,8 @@ DEVICE_SOURCE_FACTOR = 4
 def _render_memory(built: PanoSceneValue, bg, size: tuple[int, int]) -> int:
     """The bytes a render pass of `built` at `size` (width, height) needs on the device, by `docs/runtime-resources.md`:
     the per-pixel working set of a frame, and every source it uploads as float32 with its ripmap levels (one
-    background frame, the Sticker sources, the uploaded paint layers) or as given (the 3D media)."""
+    background frame, the Sticker sources, the uploaded paint layers) or as given (the 3D media, the 3D files of
+    Stickers included)."""
     sources = 0
     if bg is not None:
         frame = bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg[0]
@@ -1553,6 +1591,7 @@ def _render_memory(built: PanoSceneValue, bg, size: tuple[int, int]) -> int:
         sources += sum(source.rgba.shape[0] * source.rgba.shape[1] * 4 * 4 for source in layer.sources.stickers.values())
         sources += sum(array.size * 4 for array in _payload_arrays(layer.sources.painting_layer))
         media += nbytes(layer.scene) + (nbytes(layer.port.media) if layer.port is not None and layer.port.is_3d else 0)
+        media += sum(nbytes(content) for content in layer.sources.contents.values())
     return size[0] * size[1] * RENDER_FLOATS_PER_PIXEL * 4 + sources * DEVICE_SOURCE_FACTOR + media
 
 
@@ -1568,8 +1607,9 @@ def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, 
     at its Timeline frame, its port Sticker's source at the frame of its `port` and its `scene` item that (a) chose,
     as one `RenderLayer` each. `capture` maps the evaluated state of the last layer (the node that shoots) to the
     Camera value and the Projection to draw it with; the Projection's size is the same for every frame.
-    `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media (and its content when 3D) and the
-    `scene` content are opened for this pass, so nothing they put on `device` outlives it.
+    `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media (and its content when 3D), the 3D files of
+    `world` Stickers (`SceneSources.contents`, item 0 drawn at every frame), and the `scene` content are opened for
+    this pass, so nothing they put on `device` outlives it.
     Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
     the same tensors as the previous one. Before the first frame, when `device` has less free memory than the pass
     needs (`_render_memory` at the output `size`), ComfyUI frees that much, unloading models only as far as it takes."""
@@ -1585,6 +1625,10 @@ def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, 
         port = layer.port
         port_frames = None if port is None else port.frames()
         others = layer.sources.stickers if port is None else {key: value for key, value in layer.sources.stickers.items() if key != port.sticker_id}
+        world = {item["id"] for item in layer.state["stickers"] if item["placement"] == "world"}
+        files = {key: ContentSource(_scene_content(value), 0) for key, value in layer.sources.contents.items() if key in world}
+        if files:
+            others = {**others, **files}
         opened.append((port_frames, others, _scene_content(layer.scene)))
     cache = {}
     port_sources = [None] * len(built.layers)
@@ -1594,11 +1638,11 @@ def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, 
         drawn = []
         for index, (layer, (port_frames, others, content), (frame, port_index, scene_index)) in enumerate(zip(built.layers, opened, entries)):
             evaluated = evaluate_scene_state(layer.state, frame)
-            sources = layer.sources
+            sources = layer.sources if others is layer.sources.stickers else replace(layer.sources, stickers=others)
             port = layer.port
             if port is not None:
                 active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
-                port_sources[index] = _port_source_at(active, port_index, port_frames, sources.stickers.get(port.sticker_id), port_sources[index])
+                port_sources[index] = _port_source_at(active, port_index, port_frames, layer.sources.stickers.get(port.sticker_id), port_sources[index])
                 sources = replace(sources, stickers=others if port_sources[index] is None else {**others, port.sticker_id: port_sources[index]})
             drawn.append(RenderLayer(evaluated, sources, content, scene_index))
         camera, projection = capture(drawn[-1].evaluated)
@@ -1727,23 +1771,27 @@ def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
 SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary"}
 
 
-def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_scene_meta") -> dict:
+def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_scene_meta", *, in_execution: bool = True) -> dict:
     """The `ui` of the `scene` input, or of 3D media on the `sticker` input under the given keys: a temp file per
-    item for the editor (`write_editor_files`), None for an empty item, and the kind it loads. The files are written
-    once per input and reused while they are there, keyed by the input and the tensors it is read from (a
-    MOGE_GEOMETRY is a dict), so the same SPLAT or MESH on both inputs shares them."""
+    item for the editor (`write_editor_files`), None for an empty item, and the kind it loads with, for a mesh,
+    whether it is `unlit`. The files are written once per input and reused while they are there, keyed by the input
+    and the tensors it is read from (a MOGE_GEOMETRY is a dict), so the same SPLAT or MESH on both inputs, or read
+    for the editor's route, shares them; concurrent callers write them once. Outside an execution (the route) the
+    writing reports no progress and checks no Cancel."""
     if isinstance(scene, dict):
         cache_key = tuple((key, _tensor_cache_identity(scene[key])) for key in ("points", "mask", "image", "intrinsics") if key in scene)
     else:
         positions = scene.positions if isinstance(scene, Types.SPLAT) else scene.vertices
         cache_key = (NODE_RUNTIME.object_identity(scene), _tensor_cache_identity(positions))
-    saved = NODE_RUNTIME.cache.get("scene_files", cache_key)
-    if saved is None or not all(path is None or path.exists() for path in saved[1]):
-        saved = write_editor_files(scene, loop_progress())
-        NODE_RUNTIME.cache.put("scene_files", cache_key, saved)
+    saved = NODE_RUNTIME.cache.get_or_put(
+        "scene_files", cache_key,
+        lambda: write_editor_files(scene, loop_progress() if in_execution else None),
+        valid=lambda saved: all(path is None or path.exists() for path in saved[1]),
+    )
     kind, paths = saved
     files = [None if path is None else entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]]) for path in paths]
-    return {files_key: files, meta_key: [{"kind": kind}]}
+    meta = {"kind": kind} if kind == "splat" else {"kind": kind, "unlit": is_unlit(scene)}
+    return {files_key: files, meta_key: [meta]}
 
 
 def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings: list[str]):

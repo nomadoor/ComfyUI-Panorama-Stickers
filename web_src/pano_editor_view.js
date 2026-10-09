@@ -3,6 +3,7 @@
 // are in pano_space.js.
 import { skyStickerVfov } from "./pano_editor_state.js";
 import { evaluateSceneState } from "./pano_scene_eval.js";
+import { is3dFileSource } from "./pano_scene_state.js";
 import { watchThreeView } from "./pano_diagnostics.js";
 import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
 import { contextHalfExtentsPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
@@ -114,7 +115,8 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evalu
   const layers = [];
   sceneState.stickers.forEach((sticker, index) => {
     const value = evaluated.stickers[index];
-    if (sticker.placement !== "sky") return;
+    // A 3D file is no image; a sky Sticker with one is not drawn, as the node does not draw it.
+    if (sticker.placement !== "sky" || is3dFileSource(sticker.source)) return;
     const hiddenPort = sticker.source.kind === "port" && !sticker.visible;
     if (!value.active && !hiddenPort) return;
     const shown = media(sticker);
@@ -173,7 +175,8 @@ function mediaSize(media) {
 
 // The planes of the world Stickers shown at a Timeline frame, for the space view's `stickers`: each is
 // a worldStickerPlane() with its media (media(item) as in workingSkyLayers, by the working Sticker of
-// the same id) and opacity. A Sticker without media, or whose media has no size yet, is left out.
+// the same id) and opacity. A Sticker without media, or whose media has no size yet, and a 3D file Sticker are
+// left out.
 // evaluated is evaluateSceneState(sceneState, frame), when the caller has it.
 export function worldStickerLayers(sceneState, frame, stickers, { media, evaluated = evaluateSceneState(sceneState, frame) }) {
   const byId = new Map();
@@ -183,7 +186,8 @@ export function worldStickerLayers(sceneState, frame, stickers, { media, evaluat
   const layers = [];
   sceneState.stickers.forEach((sticker, index) => {
     const value = evaluated.stickers[index];
-    if (sticker.placement !== "world" || !value.active) return;
+    // A 3D file Sticker draws its item (pano_space.js fileStickerRequests), not a plane.
+    if (sticker.placement !== "world" || !value.active || is3dFileSource(sticker.source)) return;
     const item = byId.get(sticker.id);
     const shown = item ? media(item) : null;
     if (!shown) return;
@@ -255,6 +259,10 @@ export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {
     // The box of a loaded `scene` item (pano_three_view.js sceneBox), or null.
     sceneBox(url) {
       return view ? view.sceneBox(url) : null;
+    },
+    // Why a `scene` or 3D Sticker item failed to load (pano_three_view.js sceneItemError), or null.
+    sceneItemError(url) {
+      return view ? view.sceneItemError(url) : null;
     },
     // The World point of the content under (x, y) in the last space frame (pano_three_view.js pick), or
     // null.

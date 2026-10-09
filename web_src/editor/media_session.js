@@ -4,6 +4,7 @@
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { normalizeCoverageValue, sourceAsset } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
+import { createFile3dEditorFiles } from "../pano_file_3d.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import {
   IMAGE_FAILED,
@@ -18,6 +19,7 @@ import {
 import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } from "../pano_port_media.js";
 import { isPanoramaPreviewNodeName } from "../pano_preview_identity.js";
 import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
+import { is3dFileSource } from "../pano_scene_state.js";
 import { sceneFilesOf } from "../pano_space.js";
 import { upstreamBackgroundOf } from "../pano_upstream.js";
 import { createVideoFollower, createVideoPlayback } from "../pano_video_playback.js";
@@ -31,12 +33,19 @@ import { getCachedVideoThumbnails, setCachedVideoThumbnails } from "./video_thum
 
 export function createMediaSession(deps) {
   const {
-    comfyMedia, editor, editorView, floatingRightEl, imageCache, loadPreferredExactLinkedImage,
+    api, comfyMedia, editor, editorView, floatingRightEl, imageCache, loadPreferredExactLinkedImage,
     mediaAssetSource, mediaSource, mediaUiImage, node, portStillCanvas, portVideoEl, readOnly, runtime,
     scheduler, stageWrap, state, stateV2, stillCanvas, studio, timelinePlayhead, type, uiState, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let backgroundVideoPlace, isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames;
+  let backgroundVideoPlace, isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames,
+    upstreamStickers;
+
+  // The editor files of the 3D file Sources (pano_file_3d.js), asked for once each while the editor is open
+  // (Panorama Studio only).
+  const file3dFiles = stateV2
+    ? createFile3dEditorFiles({ fetchApi: (path, options) => api.fetchApi(path, options), onUpdate: () => requestDraw() })
+    : null;
 
   const videoState = {
     thumbnailJobId: 0,
@@ -605,7 +614,39 @@ export function createMediaSession(deps) {
     return sceneFilesOf(getNodeUiList("pano_sticker_files"), getNodeUiList("pano_sticker_meta"), mediaSource);
   }
 
+  // The editor file of a 3D file Sticker (docs/threejs-spark-integration.md): { kind, unlit, url, generation } once
+  // the route answered, else null. The first call for its Source asks the route.
+  function file3dEditorFile(sticker) {
+    if (!file3dFiles || !is3dFileSource(sticker?.source)) return null;
+    const entry = file3dFiles.get(sticker.source);
+    const url = entry.state === "ready" ? mediaSource(entry.file) : null;
+    return url ? { kind: entry.kind, unlit: entry.unlit, url, generation: entry.generation } : null;
+  }
+
+  // The route's answer for a 3D file's Source, once it came ({ state "ready" or "failed", error, ... }).
+  function requestFile3d(source) {
+    return file3dFiles.request(source);
+  }
+
+  // Asks the route again for a Source whose editor file is gone (404).
+  function refreshFile3d(source) {
+    file3dFiles?.refresh(source);
+  }
+
+  // The node's text for a 3D file of a Sticker in the editor (its own or the upstream Scene's) that could not be
+  // read, or "". A Sticker that is there keeps its place; only the text tells.
+  function file3dNotice() {
+    if (!file3dFiles) return "";
+    const failures = file3dFiles.failures();
+    if (!failures.length) return "";
+    const sources = [...state.stickers, ...upstreamStickers()].map((sticker) => sticker.source).filter(is3dFileSource);
+    const same = (a, b) => a.filename === b.filename && (a.subfolder ?? "") === b.subfolder && (a.storage ?? "input") === b.storage;
+    return failures.find((failure) => sources.some((source) => same(source, failure.source)))?.error ?? "";
+  }
+
   function getStickerImage(stickerOrAssetId) {
+    // A 3D file has no image: its item draws instead (file3dEditorFile).
+    if (stateV2 && is3dFileSource(stickerOrAssetId?.source)) return null;
     if (stickerOrAssetId && typeof stickerOrAssetId === "object"
       && (isExternalSticker(stickerOrAssetId) || stickerOrAssetId.external === true)) {
       return getExternalStickerPreviewImage(() => {
@@ -739,6 +780,7 @@ export function createMediaSession(deps) {
   // Lets go of what the session made when the editor closes: the background VIDEO stops, and the playback,
   // the port's follower, the listeners and the filmstrip job are released.
   function disposeMediaSession() {
+    file3dFiles?.close();
     if (videoEl instanceof HTMLVideoElement) videoEl.pause();
     videoCleanupFns.forEach((fn) => {
       try { fn(); } catch { }
@@ -749,12 +791,13 @@ export function createMediaSession(deps) {
     connect(api) {
       ({
         backgroundVideoPlace, isExternalSticker, requestDraw, setTimelineFrame, skyStickers, syncTimeline, timelineSpanFrames,
+        upstreamStickers,
       } = api);
     },
     videoState, queueVideoTransportLayout, playback, portVideo, getNodeUiValue,
     getMediaRevisionToken, playbackFps, syncVideoTransportState, toggleVideoMuted, syncVideoTransportVisibility,
     refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage, getPortMediaMeta, followPortSticker,
     getStickerImage, stickerImageKey, getConnectedErpImage, backgroundCoverage, upstreamBackground, isDecodedImageReady, getStageImageStatus, sceneFiles,
-    stickerFiles, disposeMediaSession,
+    stickerFiles, file3dEditorFile, requestFile3d, refreshFile3d, file3dNotice, disposeMediaSession,
   };
 }

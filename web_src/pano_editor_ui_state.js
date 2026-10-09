@@ -1,5 +1,6 @@
 import { ICON } from "./icons.js";
 import { sceneStickerLabel } from "./pano_editor_state.js";
+import { is3dFileSource } from "./pano_scene_state.js";
 import { laneNames, ownerTimed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
 import { upstreamLayerOverridden, upstreamRowId } from "./pano_upstream.js";
 
@@ -496,7 +497,9 @@ const LANE_LABELS = {
 // `background` is null, or { end } while the node's own bg_media is shown: the Background row comes first, with
 // only the Clip range of state.background (no eye, no Keyframes); without a duration its bar ends at `end`, where
 // the background media ends (bgMediaEnd), or with the Timeline while that is not known (null) or for an image.
-export function buildTimelineModel(state, { span, portBarEnd = () => null, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false, upstream = [], background = null }) {
+// A 3D Sticker's row (a world port Sticker, a 3D file Sticker, or one in `loading3d`: the ids of the 3D files
+// still uploading, whose Source has no file name yet) has the box of the `scene` row; the others the image.
+export function buildTimelineModel(state, { span, portBarEnd = () => null, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false, upstream = [], background = null, loading3d = new Set() }) {
   // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
   const row = (id, owner, rowLabel, icon, clip, offset, { keyable = true, hideable = true, origin = null } = {}) => {
     const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
@@ -535,7 +538,8 @@ export function buildTimelineModel(state, { span, portBarEnd = () => null, selec
       ...[...sky, ...world].map((sticker) => {
         const { clip, offset } = clipRange(sticker.clip, portBarEnd(sticker));
         const label = sceneStickerLabel(origin ? { ...sticker, id: sticker.origin.id } : sticker);
-        return row(sticker.id, sticker, label, ICON.image, clip, offset, { origin: origin && { ...origin, overridden: origin.stickerOverridden(sticker) } });
+        const threeD = sticker.placement === "world" && (sticker.source.kind === "port" || is3dFileSource(sticker.source) || loading3d.has(sticker.id));
+        return row(sticker.id, sticker, label, threeD ? ICON.box : ICON.image, clip, offset, { origin: origin && { ...origin, overridden: origin.stickerOverridden(sticker) } });
       }),
       ...(hasPainting(sceneState.painting) || !sceneState.painting_visible ? [{
         id: idOf(PAINTING_ROW),

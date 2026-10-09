@@ -11,6 +11,7 @@
 // the depth of what the pointer is over, so a drag of the same length moves the view the same way.
 import { DEG2RAD, RAD2DEG, clamp, wrapYaw } from "./pano_camera_math.js";
 import { evaluateLane } from "./pano_scene_eval.js";
+import { is3dFileSource } from "./pano_scene_state.js";
 import { panoramaAngles, quaternionToRotation, rotationToQuaternion, worldRotation } from "./pano_world.js";
 
 // A zoom step toward a point is this part of the distance to it.
@@ -259,12 +260,13 @@ function cameraAxes(camera) {
 }
 
 // The `scene` input's editor files in a node result (`pano_scene_files` and `pano_scene_meta`,
-// docs/studio-node.md): the kind the editor loads and a URL per item (null for an empty item, by
-// source(entry)), or null when the result has none.
+// docs/studio-node.md): the kind the editor loads, whether its meshes draw without light (`unlit`; only a mesh
+// marked false is lit, so a result without the mark draws as before) and a URL per item (null for an empty
+// item, by source(entry)), or null when the result has none.
 export function sceneFilesOf(files, meta, source) {
   const kind = meta[0]?.kind;
   if (!files.length || (kind !== "splat" && kind !== "mesh")) return null;
-  return { kind, urls: files.map((entry) => (entry ? source(entry) : null)) };
+  return { kind, unlit: kind !== "mesh" || meta[0].unlit !== false, urls: files.map((entry) => (entry ? source(entry) : null)) };
 }
 
 // Whether there is World content to show in space: a linked `scene` input, its files in the node's
@@ -288,6 +290,7 @@ export function sceneRequest(files, evaluatedScene) {
     prefetch: next ? [next] : [],
     transform: sceneTransform(evaluatedScene),
     itemQuaternion: files.kind === "splat" ? SPLAT_TO_SCENE : { x: 0, y: 0, z: 0, w: 1 },
+    unlit: files.unlit !== false,
   };
 }
 
@@ -309,6 +312,44 @@ export function stickerContentRequest(files, sceneState, evaluated) {
 export function stickerContentUrls(files, sceneState) {
   const port = sceneState.stickers.find((sticker) => sticker.source.kind === "port");
   return files && port?.placement === "world" ? files.urls.filter(Boolean) : [];
+}
+
+// The key a 3D file Sticker's item loads under (docs/threejs-spark-integration.md): the Sticker's id, not the
+// URL, so two Stickers of one file load apart, with the generation of its editor file, so the file asked for
+// again (it was gone) loads anew.
+export function fileStickerKey(id, generation) {
+  return `file3d:${generation}:${id}`;
+}
+
+// What the space view asks pano_three_view.js to draw of the world Stickers whose Source is a 3D file: per
+// Sticker whose editor file is there (editorFile(sticker): { kind, unlit, url, generation }, null while it is
+// asked for or when it could not be read), its item's key (fileStickerKey) and a request as
+// stickerContentRequest() makes one, the item keyed by that key and fetched from `src`; the request is null
+// where the Sticker is not active (outside its Clip range, hidden), which keeps its item loaded.
+export function fileStickerRequests(sceneState, evaluated, editorFile) {
+  const entries = [];
+  sceneState.stickers.forEach((sticker, index) => {
+    if (sticker.placement !== "world" || !is3dFileSource(sticker.source)) return;
+    const file = editorFile(sticker);
+    if (!file) return;
+    const key = fileStickerKey(sticker.id, file.generation);
+    const value = evaluated.stickers[index];
+    const request = value.active ? {
+      kind: file.kind,
+      unlit: file.unlit !== false,
+      url: key,
+      urls: [key],
+      prefetch: [],
+      src: file.url,
+      transform: sceneTransform(value),
+      itemQuaternion: file.kind === "splat" ? SPLAT_TO_SCENE : { x: 0, y: 0, z: 0, w: 1 },
+      id: sticker.id,
+      opacity: value.opacity,
+      value,
+    } : null;
+    entries.push({ id: sticker.id, key, request });
+  });
+  return entries;
 }
 
 // The item of the `scene` input's `count` items shown at its clip frame: the nearest one, as the
@@ -442,6 +483,14 @@ export function newWorldStickerTransform(view, hit, sphere = null) {
   const rotation = distance > 0 ? facingRotation(view.position, position) : { yaw_deg: view.yaw_deg, pitch_deg: view.pitch_deg, roll_deg: 0 };
   const scale = 2 * Math.max(distance, 1e-3) * Math.tan(NEW_STICKER_HFOV * 0.5 * DEG2RAD);
   return { position, rotation, scale };
+}
+
+// Where a 3D file added at a point of the view goes: where newWorldStickerTransform() puts an image, turned
+// about the vertical alone so its front (glTF +Z) faces the view and it stands upright, at scale 1 (its own
+// units are World units, as the node's 3D port Sticker). Its contents are not moved to center them.
+export function newWorld3dStickerTransform(view, hit, sphere = null) {
+  const { position, rotation } = newWorldStickerTransform(view, hit, sphere);
+  return { position, rotation: { yaw_deg: rotation.yaw_deg, pitch_deg: 0, roll_deg: 0 }, scale: 1 };
 }
 
 function multiply(a, b) {

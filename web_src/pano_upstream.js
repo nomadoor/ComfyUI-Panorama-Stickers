@@ -16,7 +16,7 @@ import {
   rebaseSceneState,
   rebaseUpstreamRecord,
 } from "./pano_scene_state.js";
-import { sceneFilesOf, sceneRequest, stickerContentRequest, stickerContentUrls } from "./pano_space.js";
+import { fileStickerRequests, sceneFilesOf, sceneRequest, stickerContentRequest, stickerContentUrls } from "./pano_space.js";
 
 // The type of the link that brings another Studio's `scene` output.
 export const PANO_SCENE_TYPE = "PANO_SCENE";
@@ -362,8 +362,9 @@ export function upstreamPrunedRecords(records, layers) {
 // layers'; its paint layers' ids are made apart too. Everything is drawn as the node draws it, at its own
 // opacity: a hidden Sticker or `scene` is not drawn. A deleted 3D port Sticker asks for nothing but keeps its
 // items loaded, as a hidden one does, so undoing the delete does not load them again. media(sticker) is as
-// skyLayers'; source(entry) is the URL of a `ui` file entry.
-export function upstreamLayerView(layer, key, frame, { media, paintLayers, source }) {
+// skyLayers'; source(entry) is the URL of a `ui` file entry. The 3D file Stickers' items come with editorFile
+// (pano_space.js fileStickerRequests), each in a slot of the layer's key and its Sticker's id, with its `source`.
+export function upstreamLayerView(layer, key, frame, { media, paintLayers, source, editorFile = null }) {
   const { sceneState, ui, received } = layer;
   const evaluated = evaluateSceneState(sceneState, frame);
   const shown = (sticker) => (sticker.visible ? media(sticker) : null);
@@ -379,6 +380,11 @@ export function upstreamLayerView(layer, key, frame, { media, paintLayers, sourc
   if (stickerFiles) {
     const request = stickerContentRequest(stickerFiles, sceneState, evaluated);
     items.push({ slot: `${key}:sticker`, urls: stickerContentUrls(stickerFiles, received), request, value: request?.value ?? null, opacity: request?.opacity ?? 1 });
+  }
+  for (const entry of editorFile ? fileStickerRequests(sceneState, evaluated, editorFile) : []) {
+    const { request } = entry;
+    const sticker = sceneState.stickers.find((item) => item.id === entry.id);
+    items.push({ slot: `${key}:file:${entry.id}`, urls: [entry.key], request, value: request?.value ?? null, opacity: request?.opacity ?? 1, source: sticker.source });
   }
   return { evaluated, sky, stickers, items };
 }

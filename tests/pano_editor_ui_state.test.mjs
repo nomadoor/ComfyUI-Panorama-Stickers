@@ -4,6 +4,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 
 import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, stickerParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, upstreamInspectorModel, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { ICON } from "../web_src/icons.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { keyedAt, setSegmentEasing } from "../web_src/pano_timeline.js";
@@ -380,6 +381,35 @@ test("the Camera has Move | Rotate in its gizmo menu, and its frame menu has no 
   assert.deepEqual(model.items.map((item) => item.key), ["aspect", "rotate-90", "delete"]);
 });
 
+// docs/editor-interaction.md: a 3D Sticker's row has the box of the `scene` row, an image's the image.
+test("the rows of the 3D Stickers, the port's and the 3D files', have the box icon", () => {
+  const world = (id, source) => ({ id, placement: "world", source });
+  const state = loadSceneState({
+    version: 2,
+    stickers: [
+      { id: "s1", placement: "sky", source: { kind: "file", filename: "a.png" } },
+      { id: "s2", placement: "sky", source: { kind: "file", data_url: "data:image/png;base64,AAAA" } },
+      world("w1", { kind: "file", filename: "a.png" }),
+      world("w2", { kind: "port" }),
+      world("w3", { kind: "file", filename: "chair.glb", subfolder: "3d" }),
+      world("w4", { kind: "file", filename: "points.PLY", subfolder: "3d" }),
+    ],
+  });
+  const options = { span: 120, selection: null, selectedId: null, expanded: true, openRows: new Set() };
+  const icons = (model) => Object.fromEntries(model.rows.map((row) => [row.id, row.icon]));
+  assert.deepEqual(icons(buildTimelineModel(state, options)), { s1: ICON.image, s2: ICON.image, w1: ICON.image, w2: ICON.box, w3: ICON.box, w4: ICON.box });
+  // A 3D file still uploading has no file name yet; the editor names it among the 3D Stickers.
+  const uploading = loadSceneState({ version: 2, stickers: [world("w5", { kind: "file", filename: "chair.glb" })] });
+  uploading.stickers[0].source = { kind: "file", filename: "" };
+  assert.equal(icons(buildTimelineModel(uploading, options)).w5, ICON.image);
+  assert.equal(icons(buildTimelineModel(uploading, { ...options, loading3d: new Set(["w5"]) })).w5, ICON.box);
+});
+
+test("Panorama Studio's Add to World takes an image or a 3D model", () => {
+  const add = buildModalShellPreset("studio").toolButtons.find((button) => button.key === "add-world");
+  assert.deepEqual([add.value, add.label, add.tip, add.icon], ["add-world", "Add to World", "Add an image or 3D model in space", ICON.globe]);
+});
+
 // --- Panorama Studio (#89): the Stickers editor of state v2 with the Cutout's Camera.
 
 test("Panorama Studio's editor has the Stickers tools with Add Camera, and always shows the Frame tab", () => {
@@ -425,8 +455,9 @@ test("Panorama Studio's Timeline shows the Camera, the Stickers and the `scene` 
   const withCamera = buildTimelineModel(state, { ...options, camera: true });
   const withScene = buildTimelineModel(state, { ...options, camera: true, scene: true });
 
-  assert.deepEqual(rows(withoutCamera), [["st_sky", "image"], ["st_hidden", "image"], ["st_world", "image"]]);
-  assert.deepEqual(rows(withCamera), [["camera", "camera"], ["st_sky", "image"], ["st_hidden", "image"], ["st_world", "image"]]);
+  // The world port Sticker is 3D media: the box, as the `scene` row.
+  assert.deepEqual(rows(withoutCamera), [["st_sky", "image"], ["st_hidden", "image"], ["st_world", "box"]]);
+  assert.deepEqual(rows(withCamera), [["camera", "camera"], ["st_sky", "image"], ["st_hidden", "image"], ["st_world", "box"]]);
   assert.deepEqual(rows(withScene).at(-1), ["scene", "box"]);
   // The Camera row only adds a row: the bar above the rows is the same.
   const bar = ({ rows: _rows, ...rest }) => rest;
