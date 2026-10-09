@@ -46,6 +46,7 @@ import {
   polylineSegments,
   projectPoint,
   reuseWheelPick,
+  multiviewKey,
   sceneFilesOf,
   sceneItemBox,
   sceneItemIndex,
@@ -539,7 +540,7 @@ test("a scene GLB draws unlit on both sides with its base color, texture and ver
 test("the scene files of a node result give the kind, whether light falls on it and a URL per item, null for an empty item", () => {
   const source = (entry) => `/view?filename=${entry.filename}`;
   const files = [{ filename: "a.glb" }, null, { filename: "c.glb" }];
-  assert.deepEqual(sceneFilesOf(files, [{ kind: "mesh", unlit: false }], source), { kind: "mesh", unlit: false, urls: ["/view?filename=a.glb", null, "/view?filename=c.glb"] });
+  assert.deepEqual(sceneFilesOf(files, [{ kind: "mesh", unlit: false }], source), { kind: "mesh", unlit: false, urls: ["/view?filename=a.glb", null, "/view?filename=c.glb"], sources: {} });
   assert.equal(sceneFilesOf(files, [{ kind: "mesh", unlit: true }], source).unlit, true);
   // A result without the mark (a SPLAT, or one from before the mark) draws without light, as before.
   assert.equal(sceneFilesOf(files, [{ kind: "mesh" }], source).unlit, true);
@@ -1066,4 +1067,52 @@ test("a new 3D file Sticker stands upright 2 along its direction, turned to the 
   const empty = newWorld3dStickerTransform({ ...view, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 }, [0, 0, -1]);
   closeVec(empty.position, [0, 0, -NEW_WORLD_STICKER_DISTANCE]);
   assert.deepEqual(empty.rotation, { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
+});
+
+// docs/threejs-spark-integration.md: an element whose value is a list of paths (DA3_GEOMETRY multiview) is one
+// element of all its views, keyed like the others by its files.
+test("an element of several views is one item, keyed by its views' URLs and loaded from all of them", () => {
+  const source = (entry) => `/view?filename=${entry.filename}`;
+  const views = [{ filename: "v0.glb" }, { filename: "v1.glb" }];
+  const files = sceneFilesOf([views, { filename: "b.glb" }, [], null], [{ kind: "mesh", unlit: true }], source);
+  const key = multiviewKey(["/view?filename=v0.glb", "/view?filename=v1.glb"]);
+  assert.deepEqual(files.urls, [key, "/view?filename=b.glb", null, null]);
+  assert.deepEqual(files.sources, { [key]: ["/view?filename=v0.glb", "/view?filename=v1.glb"] });
+  assert.equal(files.unlit, true);
+  // The same views give the same key; other views another.
+  assert.equal(multiviewKey(["/view?filename=v0.glb", "/view?filename=v1.glb"]), key);
+  assert.notEqual(multiviewKey(["/view?filename=v1.glb", "/view?filename=v0.glb"]), key);
+  assert.notEqual(key, "/view?filename=v0.glb");
+  // The requests of `scene` and of a 3D port Sticker carry where each key loads from.
+  const scene = { active: true, clip_frame: 0, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 };
+  const request = sceneRequest(files, scene);
+  assert.equal(request.url, key);
+  assert.deepEqual(request.sources, files.sources);
+  const state = loadSceneState({ version: 2, stickers: [{ id: "sticker_1", placement: "world", source: { kind: "port" } }] });
+  const sticker = stickerContentRequest(files, state, evaluateSceneState(state, 0));
+  assert.equal(sticker.url, key);
+  assert.deepEqual(sticker.sources, files.sources);
+});
+
+// The node's editor-file contract (scene_files.py write_editor_files, tests/test_scene_mesh.py): a multiview element is
+// the list of the ui entries of its non-empty views, and an element whose views are all empty is null itself
+// (`pano_scene_files == [None]`), not a list holding null.
+test("the node's multiview shapes: both views, one view left, and no view left", () => {
+  const source = (entry) => `/view?filename=${entry.filename}&type=${entry.type}`;
+  const meta = [{ kind: "mesh", unlit: true }];
+  const entry = (name) => ({ filename: name, subfolder: "", type: "temp", pano_evictable: true });
+  const both = sceneFilesOf([[entry("pano_scene_a_0_0.glb"), entry("pano_scene_a_0_1.glb")]], meta, source);
+  assert.deepEqual(Object.values(both.sources), [["/view?filename=pano_scene_a_0_0.glb&type=temp", "/view?filename=pano_scene_a_0_1.glb&type=temp"]]);
+  assert.deepEqual(both.urls, Object.keys(both.sources));
+  const one = sceneFilesOf([[entry("pano_scene_b_0_1.glb")]], meta, source);
+  assert.deepEqual(Object.values(one.sources), [["/view?filename=pano_scene_b_0_1.glb&type=temp"]]);
+  // No view left: one empty element, nothing to load; the Timeline still counts one element.
+  const none = sceneFilesOf([null], meta, source);
+  assert.deepEqual(none, { kind: "mesh", unlit: true, urls: [null], sources: {} });
+  const scene = { active: true, clip_frame: 0, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 };
+  assert.equal(sceneRequest(none, scene).url, null);
+  // A list of only nulls (not what the node writes) is empty too.
+  assert.deepEqual(sceneFilesOf([[null]], meta, source).urls, [null]);
+  // A mono DA3_GEOMETRY: one entry per frame, null for an empty frame.
+  assert.deepEqual(sceneFilesOf([entry("f0.glb"), null], meta, source).urls, ["/view?filename=f0.glb&type=temp", null]);
 });

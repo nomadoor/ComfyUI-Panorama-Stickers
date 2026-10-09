@@ -70,10 +70,10 @@ from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position, world_rotation
 from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
-from .scene_mesh import is_mesh_file, is_unlit, mesh_scene_content, moge_scene_content, read_mesh_file
+from .scene_mesh import check_da3, da3_device_bytes, da3_key, is_da3, is_mesh_file, is_unlit, needs_default_k, read_mesh_file
 from .scene_video import SceneVideo
-from .splat_render import read_splat_file, splat_content
-from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, open_video, stream_video
+from .splat_render import read_splat_file
+from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, content_of, is_3d_media, open_video, stream_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -998,6 +998,7 @@ class PanoramaStickersNode(io.ComfyNode):
 
 
 MoGeGeometry = io.Custom("MOGE_GEOMETRY")
+DA3Geometry = io.Custom("DA3_GEOMETRY")
 PanoScene = io.Custom("PANO_SCENE")
 MESH_FILE_TYPES = [io.File3DGLB, io.File3DGLTF, io.File3DFBX, io.File3DOBJ, io.File3DSTL, io.File3DUSDZ, io.File3DAny]
 SPLAT_FILE_TYPES = [io.File3DPLY, io.File3DSPLAT, io.File3DSPZ, io.File3DKSPLAT, io.File3DSplatAny]
@@ -1062,13 +1063,7 @@ class PanoSceneValue:
 
 def _scene_content(scene) -> SceneContent | None:
     """The `scene` input as World content, or None without one."""
-    if scene is None:
-        return None
-    if isinstance(scene, Types.SPLAT):
-        return splat_content(scene)
-    if isinstance(scene, Types.MESH):
-        return mesh_scene_content(scene)
-    return moge_scene_content(scene)
+    return None if scene is None else content_of(scene)
 
 
 # Why a 3D file that neither reader takes is not read (`docs/studio-node.md`, "3D ファイルの `file` の Source").
@@ -1103,6 +1098,17 @@ def _read_scene_file(scene, name: str | None):
             raise ValueError(f"it is {NEITHER_3D_READER}")
         raise ValueError(f"Panorama Stickers: the 3D file on the {name} input is {NEITHER_3D_READER}.")
     return NODE_RUNTIME.cache.get_or_put("mesh_files", cache_key, lambda: read_mesh_file(scene))
+
+
+def _check_da3_inputs(*inputs):
+    """At the entry, as for an unreadable 3D file: refuse a multiview DA3_GEOMETRY without poses (`check_da3`), and
+    say once per run when a mono one is drawn with the core's default K."""
+    da3 = [value for value in inputs if is_da3(value)]
+    for geometry in da3:
+        check_da3(geometry)
+    if any(needs_default_k(geometry) for geometry in da3):
+        _log.warning("Panorama Stickers: a DA3_GEOMETRY has no intrinsics (a mono model), so its meshes use the core's default "
+                     "camera of about 71 degrees across; if the photo's field of view differs, the shapes stretch in depth.")
 
 
 def _file_3d_error(source: dict, reason: str) -> str:
@@ -1270,7 +1276,7 @@ def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tup
     its Clip range, visibility and lock (its sky Lanes do not apply to a world Sticker)."""
     if sticker is None:
         return None, None
-    is_3d = isinstance(sticker, (Types.SPLAT, Types.MESH))
+    is_3d = is_3d_media(sticker)
     parsed = load_sticker_state(sticker_state)
     handoff = None if is_3d or parsed is None else _handoff_lanes(parsed, state["timeline"]["fps"])
     index = next((i for i, item in enumerate(state["stickers"]) if item["source"]["kind"] == "port"), None)
@@ -1596,9 +1602,15 @@ def _render_memory(built: PanoSceneValue, bg, size: tuple[int, int]) -> int:
     for layer in built.layers:
         sources += sum(source.rgba.shape[0] * source.rgba.shape[1] * 4 * 4 for source in layer.sources.stickers.values())
         sources += sum(array.size * 4 for array in _payload_arrays(layer.sources.painting_layer))
-        media += nbytes(layer.scene) + (nbytes(layer.port.media) if layer.port is not None and layer.port.is_3d else 0)
+        media += _media_bytes(layer.scene) + (_media_bytes(layer.port.media) if layer.port is not None and layer.port.is_3d else 0)
         media += sum(nbytes(content) for content in layer.sources.contents.values())
     return size[0] * size[1] * RENDER_FLOATS_PER_PIXEL * 4 + sources * DEVICE_SOURCE_FACTOR + media
+
+
+def _media_bytes(media) -> int:
+    """What 3D media takes on the device: its tensors, but for a DA3_GEOMETRY the meshes made from it
+    (`da3_device_bytes`)."""
+    return da3_device_bytes(media) if is_da3(media) else nbytes(media)
 
 
 def _payload_arrays(payload: dict | None) -> list:
@@ -1777,14 +1789,22 @@ def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
 SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary"}
 
 
+def _editor_paths(paths: list) -> list:
+    """Every file of the items' editor files: an item is None, a path, or a list of paths (DA3_GEOMETRY multiview)."""
+    return [view for path in paths if path is not None for view in (path if isinstance(path, list) else [path])]
+
+
 def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_scene_meta", *, in_execution: bool = True) -> dict:
     """The `ui` of the `scene` input, or of 3D media on the `sticker` input under the given keys: a temp file per
-    item for the editor (`write_editor_files`), None for an empty item, and the kind it loads with, for a mesh,
+    item for the editor (`write_editor_files`; a list of files for a DA3_GEOMETRY multiview), None for an empty item,
+    and the kind it loads with, for a mesh,
     whether it is `unlit`. The files are written once per input and reused while they are there, keyed by the input
     and the tensors it is read from (a MOGE_GEOMETRY is a dict), so the same SPLAT or MESH on both inputs, or read
     for the editor's route, shares them; concurrent callers write them once. Outside an execution (the route) the
     writing reports no progress and checks no Cancel."""
-    if isinstance(scene, dict):
+    if is_da3(scene):
+        cache_key = da3_key(scene)
+    elif isinstance(scene, dict):
         cache_key = tuple((key, _tensor_cache_identity(scene[key])) for key in ("points", "mask", "image", "intrinsics") if key in scene)
     else:
         positions = scene.positions if isinstance(scene, Types.SPLAT) else scene.vertices
@@ -1792,10 +1812,15 @@ def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_
     saved = NODE_RUNTIME.cache.get_or_put(
         "scene_files", cache_key,
         lambda: write_editor_files(scene, loop_progress() if in_execution else None),
-        valid=lambda saved: all(path is None or path.exists() for path in saved[1]),
+        valid=lambda saved: all(path.exists() for path in _editor_paths(saved[1])),
     )
     kind, paths = saved
-    files = [None if path is None else entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]]) for path in paths]
+
+    def entry(path):
+        return entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]])
+
+    # A DA3_GEOMETRY multiview item is the list of its views' files.
+    files = [None if path is None else [entry(view) for view in path] if isinstance(path, list) else entry(path) for path in paths]
     meta = {"kind": kind} if kind == "splat" else {"kind": kind, "unlit": is_unlit(scene)}
     return {files_key: files, meta_key: [meta]}
 
@@ -1814,6 +1839,7 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     upstream = scene if isinstance(scene, PanoSceneValue) else None
     scene = None if upstream is not None else _read_scene_file(scene, "scene")
     sticker = _read_scene_file(sticker, "sticker")
+    _check_da3_inputs(scene, sticker)
     state = load_scene_state(state_json)
     stored_port = next((item for item in state["stickers"] if item["source"]["kind"] == "port"), None)
     port, handoff = _port_media(state, sticker, sticker_state, warnings)
@@ -2004,9 +2030,9 @@ class PanoramaStudioNode(io.ComfyNode):
             category="Panorama Suite",
             inputs=[
                 io.MultiType.Input(io.Image.Input("bg_media"), types=[io.Video], optional=True),
-                io.MultiType.Input(io.Image.Input("sticker"), types=[io.Video, io.Mesh, io.Splat, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES], optional=True),
+                io.MultiType.Input(io.Image.Input("sticker"), types=[io.Video, io.Mesh, io.Splat, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry, DA3Geometry], optional=True),
                 io.String.Input("sticker_state", default="", multiline=False, dynamic_prompts=False, optional=True, force_input=True),
-                io.MultiType.Input("scene", types=[io.Splat, io.Mesh, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry, PanoScene], optional=True),
+                io.MultiType.Input("scene", types=[io.Splat, io.Mesh, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry, DA3Geometry, PanoScene], optional=True),
                 io.Color.Input("bg_color", default="#00ff00"),
                 io.Combo.Input("coverage", options=["360", "180"], default="360"),
                 io.Combo.Input("output_size", options=STUDIO_OUTPUT_SIZES, default="2048"),

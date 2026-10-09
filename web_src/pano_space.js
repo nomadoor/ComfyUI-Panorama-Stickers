@@ -312,14 +312,30 @@ function cameraAxes(camera) {
   return { right: column(rotation, 0), up: column(rotation, 1), forward: back.map((value) => -value) };
 }
 
+// The key of an item made of several views (a DA3_GEOMETRY multiview element): its views' URLs, in order.
+export function multiviewKey(urls) {
+  return `views:${JSON.stringify(urls)}`;
+}
+
 // The `scene` input's editor files in a node result (`pano_scene_files` and `pano_scene_meta`,
 // docs/studio-node.md): the kind the editor loads, whether its meshes draw without light (`unlit`; only a mesh
-// marked false is lit, so a result without the mark draws as before) and a URL per item (null for an empty
-// item, by source(entry)), or null when the result has none.
+// marked false is lit, so a result without the mark draws as before), a key per item (its URL, by
+// source(entry); null for an empty item), and `sources`, where the item of several views (an element whose value
+// is a list of files, DA3_GEOMETRY multiview) loads from: its key (multiviewKey) -> its views' URLs. null when the
+// result has none.
 export function sceneFilesOf(files, meta, source) {
   const kind = meta[0]?.kind;
   if (!files.length || (kind !== "splat" && kind !== "mesh")) return null;
-  return { kind, unlit: kind !== "mesh" || meta[0].unlit !== false, urls: files.map((entry) => (entry ? source(entry) : null)) };
+  const sources = {};
+  const urls = files.map((entry) => {
+    if (!Array.isArray(entry)) return entry ? source(entry) : null;
+    const views = entry.filter(Boolean).map(source);
+    if (!views.length) return null;
+    const key = multiviewKey(views);
+    sources[key] = views;
+    return key;
+  });
+  return { kind, unlit: kind !== "mesh" || meta[0].unlit !== false, urls, sources };
 }
 
 // Whether there is World content to show in space: a linked `scene` input, its files in the node's
@@ -344,6 +360,8 @@ export function sceneRequest(files, evaluatedScene) {
     transform: sceneTransform(evaluatedScene),
     itemQuaternion: files.kind === "splat" ? SPLAT_TO_SCENE : { x: 0, y: 0, z: 0, w: 1 },
     unlit: files.unlit !== false,
+    // Where an item of several views loads from (sceneFilesOf).
+    sources: files.sources ?? {},
   };
 }
 

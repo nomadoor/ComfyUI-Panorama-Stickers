@@ -15,7 +15,7 @@ from .core.world_render import SceneContent
 from .core_adapters import _gaussian_item, get_mesh_batch_item
 from .node_runtime import NodeRuntime
 from .progress import loop_progress
-from .scene_mesh import mesh_scene_content
+from .scene_mesh import da3_count, da3_meshes, da3_scene_content, is_da3, is_moge, mesh_scene_content, moge_scene_content
 from .scene_video import RenderedVideo, SceneVideo
 from .scene_files import moge_grid_mesh
 from .splat_render import _GLTF_TO_SPLAT, splat_content
@@ -56,14 +56,29 @@ def open_video(video, name: str) -> StreamedVideo | MaterializedVideo | Rendered
     return MaterializedVideo(video.get_components(), name)
 
 
-def content_of(model: Types.SPLAT | Types.MESH) -> SceneContent:
-    """A SPLAT or MESH as World content. What it uploads lives as long as it, so it is made for each render pass."""
-    return splat_content(model) if isinstance(model, Types.SPLAT) else mesh_scene_content(model)
+def content_of(model) -> SceneContent:
+    """3D media (`is_3d_media`) as World content. What it uploads lives as long as it, so it is made for each render
+    pass."""
+    if isinstance(model, Types.SPLAT):
+        return splat_content(model)
+    if isinstance(model, Types.MESH):
+        return mesh_scene_content(model)
+    return moge_scene_content(model) if is_moge(model) else da3_scene_content(model)
 
 
-def item_count(model: Types.SPLAT | Types.MESH) -> int:
-    """The number of items of a SPLAT or MESH."""
-    return (model.positions if isinstance(model, Types.SPLAT) else model.vertices).shape[0]
+def is_3d_media(media) -> bool:
+    """Whether media on the `sticker` or `scene` input is 3D: a SPLAT, a MESH, or a dict, which is MOGE_GEOMETRY
+    with `points` and DA3_GEOMETRY with `mode`."""
+    return isinstance(media, (Types.SPLAT, Types.MESH)) or is_moge(media) or is_da3(media)
+
+
+def item_count(model) -> int:
+    """The number of items of 3D media (`is_3d_media`)."""
+    if isinstance(model, Types.SPLAT):
+        return model.positions.shape[0]
+    if isinstance(model, Types.MESH):
+        return model.vertices.shape[0]
+    return model["points"].shape[0] if is_moge(model) else da3_count(model)
 
 
 def batch_index(clip_frame: float, count: int, fps: float, stored_fps: float) -> int | None:
@@ -81,8 +96,8 @@ class PortMedia:
     """The `sticker` input's media for the port Sticker `sticker_id` with the Clip range `clip`: which of its
     frames shows at a Timeline frame.
 
-    `media` is the IMAGE tensor, the VIDEO input itself, or a SPLAT or MESH (`is_3d`; a 3D file is read into
-    one before). Its first frame is at `start - in` of the Clip range. A single IMAGE or 3D item shows for the
+    `media` is the IMAGE tensor, the VIDEO input itself, or 3D media (`is_3d`: a SPLAT or MESH, a 3D file read into
+    one before, MOGE_GEOMETRY, or DA3_GEOMETRY). Its first frame is at `start - in` of the Clip range. A single IMAGE or 3D item shows for the
     whole Clip range. An IMAGE batch, like the items of a SPLAT or MESH, is a sequence at the Timeline fps without
     PTS, so each Timeline frame shows its nearest image. A VIDEO plays in real time: each Timeline frame shows
     its last frame that starts at or before it (PTS <= t), and the last frame lasts one frame at the average
@@ -96,7 +111,7 @@ class PortMedia:
         self.sticker_id = sticker_id
         self.clip = clip
         self.media = media
-        self.is_3d = isinstance(media, (Types.SPLAT, Types.MESH))
+        self.is_3d = is_3d_media(media)
         self._origin = clip["start"] - clip["in"]
         self.stored_fps = stored_fps
         if isinstance(media, torch.Tensor) or self.is_3d:
@@ -157,7 +172,7 @@ def content_box(media) -> dict | None:
     """The axis-aligned box `{"min": [x, y, z], "max": [x, y, z]}` of 3D media in its own (`scene`) glTF frame, over
     all its items, from the points that are drawn: a MESH's vertices (`get_mesh_batch_item`, without the batch's
     padding), a SPLAT's gaussian centers (`_gaussian_item`) turned from 3DGS to glTF, a MOGE_GEOMETRY's grid vertices
-    (`moge_grid_mesh`, without the masked pixels). None when it has no point (docs/studio-node.md, "中身の箱"). The
+    (`moge_grid_mesh`, without the masked pixels), a DA3_GEOMETRY's meshes of every frame and view (`da3_meshes`). None when it has no point (docs/studio-node.md, "中身の箱"). The
     one owner of the box: the node's 3D port Sticker and the editor's route both use it."""
     points = []
     if isinstance(media, Types.SPLAT):
@@ -168,11 +183,14 @@ def content_box(media) -> dict | None:
     elif isinstance(media, Types.MESH):
         for index in range(media.vertices.shape[0]):
             points.append(get_mesh_batch_item(media, index)[0].float().cpu())
-    elif isinstance(media, dict) and "points" in media:
+    elif is_moge(media):
         for index in range(media["points"].shape[0]):
             points.append(moge_grid_mesh(media, index)[0].float().cpu())
+    elif is_da3(media):
+        for index in range(da3_count(media)):
+            points += [mesh.vertices[0].float().cpu() for mesh in da3_meshes(media, index)]
     else:
-        raise TypeError(f"content_box takes a SPLAT, MESH, or MOGE_GEOMETRY, not {type(media).__name__}")
+        raise TypeError(f"content_box takes a SPLAT, MESH, MOGE_GEOMETRY, or DA3_GEOMETRY, not {type(media).__name__}")
     points = torch.cat(points) if points else torch.zeros((0, 3))
     # A point that is not finite is never drawn, and JSON (the route's `box`) cannot hold it.
     points = points[torch.isfinite(points).all(-1)]

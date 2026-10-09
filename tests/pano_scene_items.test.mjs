@@ -321,3 +321,19 @@ test("the 3D Stickers' items stay loaded while their Stickers are inactive, and 
   draw({ stickerUrls: [], sticker: null, fileStickerKeys: [], fileStickers: [] });
   assert.deepEqual(disposed.sort(), ["/view?filename=e.glb", "p0"]);
 });
+
+test("an item of several views loads from all of them once, under its key", async () => {
+  const { items, calls } = harness();
+  const views = () => ["/view?filename=v0.glb", "/view?filename=v1.glb"];
+  const input = () => ({ kind: "mesh", urls: ["views:k"], url: "views:k", prefetch: [], sources: { "views:k": views() } });
+  assert.equal(items.request(input()), null);
+  assert.deepEqual(calls.map((call) => call.url), [views()]);
+  calls[0].resolve(7);
+  await settle();
+  // Each render makes its lists anew: the same views do not load again.
+  assert.deepEqual(items.request(input()).object, { url: views() });
+  assert.equal(calls.length, 1);
+  // Other views under the key load again.
+  items.request({ ...input(), sources: { "views:k": ["/view?filename=v2.glb"] } });
+  assert.equal(calls.length, 2);
+});

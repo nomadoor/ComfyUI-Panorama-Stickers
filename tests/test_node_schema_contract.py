@@ -366,8 +366,8 @@ def test_studio_media_ports_accept_the_spec_types():
 
     assert inputs["bg_media"].get_io_type() == "IMAGE,VIDEO"
     # Studio's `scene` also takes the `scene` output of another Studio (ADR 0029).
-    assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,PANO_SCENE"
-    assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES}"
+    assert inputs["scene"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,DA3_GEOMETRY,PANO_SCENE"
+    assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,DA3_GEOMETRY"
 
 
 def test_preview_node_passes_its_source_type_through():

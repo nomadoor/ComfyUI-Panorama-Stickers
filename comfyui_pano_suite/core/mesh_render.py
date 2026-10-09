@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F
 
 from .three_dfg_lut import DFG_LUT_HALVES, DFG_LUT_SIZE
-from .world_render import CameraView, SceneContent
+from .world_render import CameraView, SceneContent, over_by_depth
 
 # The base color of a mesh with neither a texture nor vertex colors, as the core's GLB writer gives bare geometry.
 BARE_COLOR = 0.22
@@ -102,17 +102,33 @@ class MeshItem:
 
 
 def mesh_content(count: int, item_at) -> SceneContent:
-    """The `scene` content of `count` items, item `index` given by `item_at(index)` as a MeshItem. The last item
-    drawn stays on the device for the next frame of the same execution, and so do the rays of the last view."""
+    """The `scene` content of `count` items, item `index` given by `item_at(index)` as a MeshItem, or as a list of
+    them (the views of a DA3_GEOMETRY multiview, none for an empty item) drawn each and folded by depth into one
+    straight-alpha layer. The last item drawn stays on the device for the next frame of the same execution, and so
+    do the rays of the last view."""
     uploaded = {}
     kept_rays = {}
 
     def render(view, index, device):
         if uploaded.get("key") != (index, device):
             uploaded.clear()
-            uploaded["item"] = _upload(item_at(index), device)
+            item = item_at(index)
+            uploaded["item"] = [_upload(part, device) for part in item] if isinstance(item, (list, tuple)) else _upload(item, device)
             uploaded["key"] = (index, device)
-        return _render(view, uploaded["item"], view.cached_rays(device, kept_rays))
+        rays = view.cached_rays(device, kept_rays)
+        item = uploaded["item"]
+        if not isinstance(item, list):
+            return _render(view, item, rays)
+        composite = None
+        for part in item:
+            composite = over_by_depth(composite, _render(view, part, rays))
+        if composite is None:
+            height, width = view.projection.height, view.projection.width
+            return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
+        total, depth = composite
+        # over_by_depth gives premultiplied color; a mesh's alpha is 0 or 1, so this is exact.
+        alpha = total[..., 3:]
+        return torch.cat([torch.where(alpha > 0.0, total[..., :3] / alpha.clamp_min(1e-12), 0.0), alpha], dim=-1), depth
 
     return SceneContent(count, render)
 

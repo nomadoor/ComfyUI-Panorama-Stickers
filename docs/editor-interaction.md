@@ -23,7 +23,7 @@
 | Camera の編集（shot、Frame 表示の操作、6DoF の視錐台とギズモ、インスペクタ） | — | `pano_editor_state.js` `cameraShot`・`setCameraShot`・`cameraFields`・`setCameraField`、`web_src/editor/camera.js` `syncCutoutShot`、`web_src/editor/frame_view.js` `frameViewDistance`・`moveFrameByKeys`・`endFrameKeyMove`、`pano_space.js` `orbitView`・`zoomView`・`segmentsHit` | `tests/pano_editor_state.test.mjs`、`tests/pano_editor_view.test.mjs`、`tests/editor_frame_key_move.test.mjs`、`tests/pano_space.test.mjs` |
 | Panorama Studio のエディタ（Add Camera、削除、Camera の出入りと視点、Frame タブ、画角のプリセット、`state_json`） | — | `pano_editor_state.js` `newStudioCamera`・`sameEditorStateText`、`editor/camera.js` `followCameraChange`、`editor/frame_view.js` `leaveFrameView`、`pano_editor_ui_state.js` `frameViewButton`・`cameraAspectChoices`、`web_src/pano_sticker_affordance.js` `hitFrameAffordance` | `tests/pano_editor_state.test.mjs`、`tests/pano_editor_view.test.mjs`、`tests/pano_editor_ui_state.test.mjs`、`tests/pano_sticker_affordance.test.mjs` |
 | 上流の Scene の表示と編集（作業コピー、選ぶ、編集の書き戻し、消す、上流に戻す、掃除、上流の背景） | — | `web_src/pano_upstream.js` `upstreamWorkingLayers`・`upstreamLayerView`・`isUpstreamSticker`・`upstreamEditedRecords`・`upstreamDeletedRecords`・`upstreamRevertedRecords`・`upstreamPrunedRecords`・`upstreamBackgroundOf`、`web_src/editor/upstream.js` `syncUpstreamEdits`・`deleteUpstreamStickers`・`revertUpstreamSticker`・`pruneUpstreamRecords`・`upstreamLinked`・`upstreamNotice` | `tests/pano_upstream.test.mjs`、`tests/editor_upstream.test.mjs`、`tests/test_upstream_editor_parity.py` |
-| `port` の Sticker の同期 | — | `web_src/pano_stickers_node_surface.js` `portStickerSyncValue`・`reconcilePortStickerState`、`web_src/pano_external_sticker_sync.js` `runExternalStickerSync` | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_external_sticker_sync.test.mjs` |
+| `port` の Sticker の同期 | — | `web_src/pano_stickers_node_surface.js` `portStickerSyncValue`・`reconcilePortStickerState`・`stickerMediaKind`、`web_src/pano_external_sticker_sync.js` `runExternalStickerSync` | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_external_sticker_sync.test.mjs` |
 | Pose handoff の表示と記録 | — | `web_src/pano_port_handoff.js` `inheritPortHandoff`・`storedPortSticker`・`recordHandoffEdits`、`web_src/editor/external_stickers.js` `storedEditorState`・`revertPortHandoffLane` | `tests/pano_port_handoff.test.mjs`、`tests/editor_upstream.test.mjs` |
 | インスペクタの行 | — | `pano_editor_ui_state.js` `inspectorRows`、`web_src/components/PanoSidePanel.vue` | `tests/pano_editor_ui_state.test.mjs` |
 
@@ -203,7 +203,7 @@ Panorama Studio のエディタとノード上の UI は、`sticker` 入力の�
 「`port` の Sticker と Pose handoff」。
 
 - 入力がつながっていて状態に `port` の Sticker がなければ加え、入力を外すと取り除く。
-- 入力の型（接続が `*` のとき（Reroute など）は、つながった先の出力の型）が IMAGE・VIDEO のときは、すぐに `sky` の Sticker を加える。
+- 入力の型（接続が `*` のとき（Reroute など）は、つながった先の出力の型。`pano_stickers_node_surface.js` の `stickerMediaKind`）が IMAGE・VIDEO のときは、すぐに `sky` の Sticker を加える。
   それ以外（MESH・SPLAT・3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`、型が分からないとき）は、ノードの姿勢（実行結果の `pano_sticker_input_pose`）が届くまで加えず、
   届いたら姿勢の `placement` で加える。何を描くかを知っているのはノードなので、型が分からないときにフロントエンドは決め打ちしない。
 - `sticker_state` がつながっているときも、ノードの姿勢が届くまで加えない。

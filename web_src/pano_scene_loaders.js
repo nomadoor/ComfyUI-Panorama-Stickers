@@ -1,7 +1,7 @@
 // Loading the `scene` items of the space view (#71), in the three.js chunk. A GLB loads with three.js's
 // GLTFLoader; a PLY loads with Spark, which is its own chunk and is imported the first time a SPLAT
 // loads, so editors and node previews without a SPLAT never load it.
-import { Box3, DoubleSide, MeshBasicMaterial } from "three";
+import { Box3, DoubleSide, Group, MeshBasicMaterial } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 let spark = null;
@@ -65,6 +65,7 @@ const gltfLoader = new GLTFLoader();
 // are let go once handed to the parser, so only the parsed item stays. A GLB draws without light unless
 // `unlit` is false (the meta's mark).
 export async function loadSceneItem(kind, url, signal, { unlit = true } = {}) {
+  if (Array.isArray(url)) return loadViews(url, signal, unlit);
   let bytes = await fetchBytes(url, signal);
   signal.throwIfAborted();
   const size = bytes.byteLength;
@@ -84,6 +85,24 @@ export async function loadSceneItem(kind, url, signal, { unlit = true } = {}) {
   const gltf = await parsing;
   const object = unlit ? makeUnlit(gltf.scene) : makeLit(gltf.scene);
   return { object, box: boxValue(new Box3().setFromObject(gltf.scene)), size };
+}
+
+// An item of several views (a DA3_GEOMETRY multiview element, docs/threejs-spark-integration.md): the GLB of every
+// view in one object, which resolves once all of them loaded (a view that fails fails the item), its box around
+// them all and its size the sum of their bytes.
+async function loadViews(urls, signal, unlit) {
+  const settled = await Promise.allSettled(urls.map((url) => loadSceneItem("mesh", url, signal, { unlit })));
+  const views = settled.filter((result) => result.status === "fulfilled").map((result) => result.value);
+  const failed = settled.find((result) => result.status === "rejected");
+  if (failed || signal.aborted) {
+    // The views that did load go with the item.
+    views.forEach((view) => disposeObject(view.object));
+    signal.throwIfAborted();
+    throw failed.reason;
+  }
+  const object = new Group();
+  for (const view of views) object.add(view.object);
+  return { object, box: boxValue(new Box3().setFromObject(object)), size: views.reduce((total, view) => total + view.size, 0) };
 }
 
 export function disposeSceneItem(item) {

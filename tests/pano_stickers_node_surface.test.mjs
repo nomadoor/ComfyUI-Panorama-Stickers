@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  stickerMediaKind,
   applyStickersNodeSurfaceAction,
   buildStickersDisplayEntries,
   createStickersNodeSurfaceSession,
@@ -775,4 +776,20 @@ test("a world port Sticker the node adds comes with the Keyframes of the Camera 
   const [port] = portStickers(reconcilePortStickerState(v2EditorState({}), portStickerSyncValue(node, { pose })).state);
 
   assert.deepEqual(port.position.keyframes.map((key) => [key.frame, key.value]), [[0, [0, 0, -2]], [6, [1, 0, -2]]]);
+});
+
+// docs/editor-interaction.md: MOGE_GEOMETRY and DA3_GEOMETRY on `sticker` are 3D media, a world port Sticker the
+// node places, as MESH and SPLAT are.
+test("a MOGE_GEOMETRY or DA3_GEOMETRY sticker is 3D media, added as a world Sticker once the node placed it", () => {
+  for (const type of ["MOGE_GEOMETRY", "DA3_GEOMETRY"]) {
+    assert.equal(stickerMediaKind(type), "3d");
+    const node = stickersNode(["sticker"], { sticker: type });
+    const state = v2EditorState({});
+    assert.equal(reconcilePortStickerState(state, portStickerSyncValue(node)).changed, false);
+    const pose = { placement: "world", position: [0, 0, -2], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 };
+    assert.deepEqual(portStickers(reconcilePortStickerState(state, portStickerSyncValue(node, { pose })).state).map((item) => item.placement), ["world"]);
+  }
+  assert.equal(stickerMediaKind("MESH,SPLAT,DA3_GEOMETRY"), "3d");
+  assert.equal(stickerMediaKind("IMAGE,DA3_GEOMETRY"), null);
+  assert.equal(stickerMediaKind("IMAGE"), "2d");
 });

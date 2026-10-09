@@ -131,7 +131,8 @@ export function createSceneItems({ load, dispose, onUpdate = () => {}, concurren
   }
 
   // The requests of one render, one per input: { kind, urls (its item keys in item order), url (the key to
-  // show), prefetch (the keys to load ahead), src (the URL its items load from, when the keys are not URLs),
+  // show), prefetch (the keys to load ahead), src (the URL its items load from, when the keys are not URLs), sources
+// (key -> the URLs of the views an item of several views loads from),
   // unlit (its meshes draw without light, the default) }, or a keep-only input { urls } of keys whose items stay
   // as they are without being drawn or loaded (a 3D Sticker hidden or outside its Clip range). Returns per input
   // the loaded item to draw (see nearestLoaded), or null at a frame without an item, before anything of the
@@ -151,7 +152,9 @@ export function createSceneItems({ load, dispose, onUpdate = () => {}, concurren
     const ahead = inputs.flatMap((input) => input.prefetch ?? []).filter(Boolean);
     wanted = [...shownKeys, ...ahead].filter((key, index, list) => list.indexOf(key) === index);
     shown = new Set(shownKeys);
-    const sourceOf = (input, key) => input.src ?? key;
+    // An item of several views loads from all of them (sources); a list made anew each render is the same source.
+    const sourceOf = (input, key) => input.sources?.[key] ?? input.src ?? key;
+    const sameSource = (a, b) => (Array.isArray(a) || Array.isArray(b) ? JSON.stringify(a) === JSON.stringify(b) : a === b);
     const unlitOf = (input) => input.unlit !== false;
     for (const [key, item] of [...items]) {
       const input = owner.get(key);
@@ -159,7 +162,7 @@ export function createSceneItems({ load, dispose, onUpdate = () => {}, concurren
         if (item.state === "queued") drop(key);
         continue;
       }
-      if (!input || item.kind !== input.kind || item.src !== sourceOf(input, key) || item.unlit !== unlitOf(input)) drop(key);
+      if (!input || item.kind !== input.kind || !sameSource(item.src, sourceOf(input, key)) || item.unlit !== unlitOf(input)) drop(key);
       // A queued load no longer wanted gives way to the newest request; a running one carries on.
       else if (item.state === "queued" && !wanted.includes(key)) drop(key);
     }

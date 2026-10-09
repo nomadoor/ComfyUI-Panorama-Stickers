@@ -100,3 +100,26 @@ test("the default lights are the documented rig, fixed in the World and aimed at
     assert.equal(light.castShadow, false);
   }
 });
+
+// docs/threejs-spark-integration.md: the views of a DA3_GEOMETRY multiview element are one item, shown once all of
+// them loaded, counted as the sum of their bytes, without light as its meta says.
+test("an item of several views is all their GLBs in one object, its box around them and its size their sum", async (t) => {
+  const glb = triangleGlb();
+  const fetched = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    fetched.push(url);
+    return { ok: true, arrayBuffer: async () => glb.slice(0) };
+  });
+  const item = await loadSceneItem("mesh", ["/view?filename=v0.glb", "/view?filename=v1.glb"], new AbortController().signal, { unlit: true });
+  assert.deepEqual(fetched, ["/view?filename=v0.glb", "/view?filename=v1.glb"]);
+  assert.equal(item.size, glb.byteLength * 2);
+  assert.deepEqual(item.box, { min: [0, 0, -1], max: [1, 1, -1] });
+  assert.equal(item.object.children.length, 2);
+  assert.deepEqual(materialsOf(item.object).map((material) => material.type), ["MeshBasicMaterial", "MeshBasicMaterial"]);
+});
+
+test("an item of several views fails as a whole when one view does not load", async (t) => {
+  const glb = triangleGlb();
+  t.mock.method(globalThis, "fetch", async (url) => (url.endsWith("v1.glb") ? { ok: false, status: 404 } : { ok: true, arrayBuffer: async () => glb.slice(0) }));
+  await assert.rejects(loadSceneItem("mesh", ["/view?filename=v0.glb", "/view?filename=v1.glb"], new AbortController().signal, { unlit: true }), /HTTP 404/);
+});
