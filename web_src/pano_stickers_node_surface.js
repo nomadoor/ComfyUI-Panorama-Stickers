@@ -168,21 +168,27 @@ function isInputConnected(node, name) {
 
 const MEDIA_KINDS_2D = ["IMAGE", "VIDEO"];
 
-function mediaKind(type) {
+// The 3D media of the `sticker` input: drawn as a world port Sticker that the node places.
+const MEDIA_TYPES_3D = ["MESH", "SPLAT", "MOGE_GEOMETRY", "DA3_GEOMETRY"];
+
+// What a `sticker` link of `type` (a type or a comma list of types) carries: "2d", "3d", or null when it may
+// carry either or does not tell.
+export function stickerMediaKind(type) {
   const types = String(type || "").split(",").filter(Boolean);
-  if (types.length && types.every((item) => item === "MESH" || item === "SPLAT" || item.startsWith("FILE_3D"))) return "3d";
+  if (types.length && types.every((item) => MEDIA_TYPES_3D.includes(item) || item.startsWith("FILE_3D"))) return "3d";
   if (types.length && types.every((item) => MEDIA_KINDS_2D.includes(item))) return "2d";
   return null;
 }
 
-// What the input carries: "2d" (IMAGE, VIDEO), "3d" (MESH, SPLAT, a 3D file), or null when its link
+// What the input carries: "2d" (IMAGE, VIDEO), "3d" (MESH, SPLAT, a 3D file, MOGE_GEOMETRY, DA3_GEOMETRY), or
+// null when its link
 // does not tell (a `*` link through a Reroute, say), read from the link and else from the output it
 // comes from.
 function inputMediaKind(node, name) {
   const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
   const link = slot >= 0 && node.graph ? node.getInputLink?.(slot) : null;
   if (!link) return null;
-  return mediaKind(link.type) ?? mediaKind(node.graph.getNodeById?.(link.origin_id)?.outputs?.[link.origin_slot]?.type);
+  return stickerMediaKind(link.type) ?? stickerMediaKind(node.graph.getNodeById?.(link.origin_id)?.outputs?.[link.origin_slot]?.type);
 }
 
 // Panorama Studio keeps the Sticker of its `sticker` input as the Sticker with the Source
@@ -195,7 +201,7 @@ function inputMediaKind(node, name) {
 // (`pano_sticker_input_pose`), with the Keyframes of a Camera that moved. With `sticker_state`
 // connected, the Sticker is added only with that pose, so that it keeps the pose of `sticker_state`
 // as the node places it.
-// 3D media (MESH, SPLAT, a 3D file) is a world Sticker that the node places, and only the node knows
+// 3D media (MESH, SPLAT, a 3D file, MOGE_GEOMETRY, DA3_GEOMETRY) is a world Sticker that the node places, and only the node knows
 // what an input of an unknown type carries: unless the input is an IMAGE or a VIDEO, the Sticker is
 // added only with the node's pose, as a world one when the pose says `placement: "world"`. The node
 // replaces a stored sky port Sticker by a world one for 3D media (`replace`), which is applied here.

@@ -1,5 +1,6 @@
 import gc
 import json
+import logging
 import math
 import struct
 import weakref
@@ -19,15 +20,17 @@ from PIL import Image
 from comfy.ldm.moge.geometry import depth_map_to_point_map, intrinsics_from_focal_center
 from comfy_api.latest import Types
 from comfy_extras import nodes_moge
+from comfy_extras.nodes_depth_anything_3 import DA3GeometryToMesh
 from comfy_extras.nodes_save_3d import mesh_item_to_glb_bytes, save_glb
 
 from comfyui_pano_suite import nodes
-from comfyui_pano_suite import scene_mesh
+from comfyui_pano_suite import scene_mesh, sticker_media
 from comfyui_pano_suite.core import mesh_render
 from comfyui_pano_suite.core.mesh_render import DEFAULT_LIGHTS, linear_to_srgb, shade_standard, srgb_to_linear
 from comfyui_pano_suite.core.render import Projection
 from comfyui_pano_suite.core.world import world_rotation
 from comfyui_pano_suite.core.world_render import CameraView
+from scene_test_helpers import state_text, temp_entry_path
 from scene_test_helpers import camera_state as _camera, center as _center, shoot as _shoot, video_frames as _shot_frames
 from test_studio_camera import _upstream as _studio
 from test_scene_editor_files import _glb_positions, _path
@@ -116,8 +119,9 @@ def test_core_moge_nodes_output_the_shape_the_renderer_reads(monkeypatch):
         recording = _Recording(geometry)
         content = nodes._scene_content(recording)
         content.render(_origin(Projection.erp(32, 16)), content.count - 1, torch.device("cpu"))
-        # Only the points, the mask, and the image are read; the intrinsics only tell a perspective frame apart.
-        assert recording.read == {"points", "mask", "image"} and recording.asked <= {"mask", "intrinsics"}
+        # Only the points, the mask, and the image are read; the intrinsics only tell a perspective frame apart, and
+        # `points` (against DA3_GEOMETRY's `mode`) tells the dict apart.
+        assert recording.read == {"points", "mask", "image"} and recording.asked <= {"points", "mask", "intrinsics"}
 
 
 def test_moge_panorama_seen_from_its_center_is_its_own_erp(monkeypatch):
@@ -366,3 +370,221 @@ def test_moge_frames_and_marked_meshes_are_not_lit_and_others_are():
     # The marked one is save_glb's unlit material: white; the lit one is gray under the lights.
     assert torch.allclose(shown_marked, torch.ones(3), atol=1e-6)
     assert float(shown_lit[0]) < 0.95
+
+
+# DA3_GEOMETRY (the core's Run Depth Anything 3 output; docs/render-contract.md, "`DA3_GEOMETRY` のメッシュ"). The dicts
+# are small and synthetic: there is no DA3 model in the tests.
+
+H, W = 6, 8
+DEFAULTS = (1, 0.04, 0.1, True, True)
+
+
+def _mono(count=2, depth=2.0, **extra):
+    """A mono DA3_GEOMETRY of `count` frames of a plane `depth` ahead, frame i red (i + 1) / 10 (an sRGB photo)."""
+    image = torch.zeros((count, H, W, 3))
+    for index in range(count):
+        image[index, ..., 0] = (index + 1) / 10.0
+    return {"depth": torch.full((count, H, W), depth), "image": image, "mode": "mono", **extra}
+
+
+def _k():
+    return torch.tensor([[0.7 * W, 0.0, (W - 1) / 2.0], [0.0, 0.7 * W, (H - 1) / 2.0], [0.0, 0.0, 1.0]])
+
+
+def _multiview(intrinsics=None, sky=None):
+    """Two views of planes 2 ahead; view 1's camera stands 3 to the right (+X) of view 0's."""
+    extrinsics = torch.zeros((1, 2, 3, 4))
+    extrinsics[0, :, :3, :3] = torch.eye(3)
+    extrinsics[0, 1, :3, 3] = torch.tensor([-3.0, 0.0, 0.0])
+    geometry = {
+        "depth": torch.full((2, H, W), 2.0), "image": torch.rand((2, H, W, 3), generator=torch.Generator().manual_seed(0)), "mode": "multiview",
+        "extrinsics": extrinsics, "intrinsics": _k()[None, None].expand(1, 2, 3, 3).clone() if intrinsics is None else intrinsics,
+    }
+    if sky is not None:
+        geometry["sky"] = sky
+    return geometry
+
+
+def _da3_view(projection, position=(0.0, 0.0, 0.0)):
+    return CameraView(np.asarray(position, dtype=np.float64), world_rotation(0.0, 0.0, 0.0), projection)
+
+
+def _da3_execute(**inputs):
+    return nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json=state_text(inputs.pop("state", None)), **inputs)
+
+
+def test_the_core_names_an_all_empty_frame_by_the_text_da3_scene_content_takes():
+    # Everything is sky: the core's converter refuses with the text that marks an empty frame.
+    geometry = _mono(count=1, sky=torch.ones((1, H, W)), intrinsics=_k()[None, None])
+
+    with pytest.raises(ValueError) as raised:
+        DA3GeometryToMesh.execute(geometry, 0, *DEFAULTS)
+
+    assert str(raised.value).startswith(scene_mesh.DA3_EMPTY_MESH)
+
+
+def test_mono_frames_are_the_cores_meshes_with_its_default_k_and_one_warning_per_run(caplog):
+    geometry = _mono()
+    caplog.set_level(logging.WARNING)
+
+    meshes = [scene_mesh.da3_meshes(geometry, index) for index in range(2)]
+
+    # The core's own conversion without intrinsics (which warns for each frame) gives the same meshes.
+    with caplog.at_level(logging.WARNING):
+        caplog.clear()
+        meshes = [scene_mesh.da3_meshes(geometry, index) for index in range(2)]
+        assert not any("has no intrinsics" in record.getMessage() for record in caplog.records)
+        core = [DA3GeometryToMesh.execute(geometry, index, *DEFAULTS).result[0] for index in range(2)]
+    for [mine], theirs in zip(meshes, core):
+        assert torch.equal(mine.vertices, theirs.vertices) and torch.equal(mine.faces, theirs.faces) and torch.equal(mine.uvs, theirs.uvs)
+    # The input is not changed.
+    assert "intrinsics" not in geometry
+    caplog.clear()
+    _da3_execute(scene=_mono(), sticker=_mono())
+    studio = [record for record in caplog.records if "intrinsics" in record.getMessage()]
+    assert len(studio) == 1 and "Panorama Stickers" in studio[0].getMessage() and studio[0].name.startswith("comfyui_pano_suite")
+
+
+def test_mono_frames_follow_the_output_frames_and_are_not_lit():
+    output = _da3_execute(scene=_mono(count=3))
+    frames = output.result[2].get_components().images
+
+    assert [round(float(frame[256, 512, 0]) * 10) for frame in frames] == [1, 2, 3]
+    assert output.ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
+    assert len(output.ui["pano_scene_files"]) == 3 and all(temp_entry_path(entry).exists() for entry in output.ui["pano_scene_files"])
+
+
+def test_empty_frames_are_drawn_empty_and_have_no_editor_file(monkeypatch):
+    sky = torch.zeros((2, H, W))
+    sky[1] = 1.0
+    geometry = _mono(sky=sky)
+    content = nodes._scene_content(geometry)
+
+    rgba, depth = content.render(_da3_view(Projection.perspective(16, 16, 60.0)), 1, torch.device("cpu"))
+
+    assert float(rgba[..., 3].max()) == 0.0 and bool(torch.isinf(depth).all())
+    files = nodes._scene_ui(geometry)["pano_scene_files"]
+    assert files[0] is not None and files[1] is None
+    # A MESH the core returns without faces is empty too; other errors stop the run.
+    from comfy_api.latest import Types
+
+    monkeypatch.setattr(scene_mesh, "DA3GeometryToMesh", type("Fake", (), {"execute": staticmethod(
+        lambda *args: type("Out", (), {"result": [Types.MESH(torch.zeros((1, 3, 3)), torch.zeros((1, 0, 3), dtype=torch.long))]})())}))
+    assert scene_mesh.da3_meshes(_mono(count=1), 0) == []
+
+    def broken(*args):
+        raise ValueError("DA3GeometryToMesh: something else")
+
+    monkeypatch.setattr(scene_mesh, "DA3GeometryToMesh", type("Broken", (), {"execute": staticmethod(broken)}))
+    with pytest.raises(ValueError, match="something else"):
+        scene_mesh.da3_meshes(_mono(count=1), 0)
+
+
+def test_multiview_is_one_still_item_of_every_view_folded_by_depth():
+    geometry = _multiview()
+    content = nodes._scene_content(geometry)
+
+    # From between the two cameras: both planes, each about 2.9 wide around x 0 and 3, show side by side.
+    rgba, depth = content.render(_da3_view(Projection.perspective(64, 32, 120.0), position=(1.5, 0.0, 0.0)), 0, torch.device("cpu"))
+
+    assert content.count == 1
+    row = rgba[16, :, 3]
+    assert bool(row[7:20].all()) and bool(row[-20:-7].all()) and not bool(row[:3].any())
+    # Straight alpha: the folded layer's colors are not darkened where it is opaque.
+    alone, _depth = nodes._scene_content({**geometry, "depth": geometry["depth"][:1], "image": geometry["image"][:1], "extrinsics": geometry["extrinsics"][:, :1], "intrinsics": geometry["intrinsics"][:, :1]}).render(
+        _da3_view(Projection.perspective(64, 32, 120.0), position=(1.5, 0.0, 0.0)), 0, torch.device("cpu"))
+    both = alone[..., 3] > 0
+    assert torch.allclose(rgba[both], alone[both], atol=1e-6)
+    assert bool(torch.isfinite(depth[16, 7:20]).all())
+
+
+def test_multiview_editor_files_are_one_item_of_the_views_glbs_and_empty_views_are_left_out():
+    sky = torch.zeros((2, H, W))
+    sky[1] = 1.0
+
+    both = nodes._scene_ui(_multiview())
+    one = nodes._scene_ui(_multiview(sky=sky))
+    none = nodes._scene_ui(_multiview(sky=torch.ones((2, H, W))))
+
+    assert both["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
+    [views] = both["pano_scene_files"]
+    assert isinstance(views, list) and len(views) == 2 and all(temp_entry_path(entry).exists() for entry in views)
+    assert len(one["pano_scene_files"][0]) == 1
+    assert none["pano_scene_files"] == [None]
+
+
+def test_multiview_without_poses_stops_at_the_entry():
+    geometry = _multiview(intrinsics=torch.eye(3)[None, None].expand(1, 2, 3, 3).clone())
+
+    for name in ("scene", "sticker"):
+        with pytest.raises(ValueError, match="multiview.*mono"):
+            _da3_execute(**{name: geometry})
+
+
+def test_editor_files_are_written_once_per_input_dict(monkeypatch):
+    geometry = _mono()
+    writes = []
+    write = nodes.write_editor_files
+    monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
+
+    first = _da3_execute(scene=geometry)
+    again = _da3_execute(scene=geometry, state={"version": 2, "timeline": {"fps": 12}})
+
+    assert len(writes) == 1 and again.ui["pano_scene_files"] == first.ui["pano_scene_files"]
+
+
+@pytest.mark.parametrize("make", ["mono", "moge"])
+def test_dicts_on_the_sticker_input_are_3d_stickers(make):
+    media = _mono(count=1) if make == "mono" else _moge(torch.full((1, 12, 16, 3), 0.5))
+
+    output = _da3_execute(sticker=media)
+
+    layer = output.result[4].layers[-1]
+    assert layer.port.is_3d and layer.state["stickers"][0]["placement"] == "world"
+    assert output.ui["pano_sticker_meta"] == [{"kind": "mesh", "unlit": True}]
+    assert "pano_sticker_input_images" not in output.ui
+    box = sticker_media.content_box(media)
+    assert box is not None and np.isfinite(box["min"]).all()
+    assert not torch.allclose(output.result[0][0, 256, 512], torch.tensor([0.0, 1.0, 0.0]))
+
+
+def test_the_content_box_of_da3_is_the_cores_vertices_over_every_view():
+    geometry = _multiview()
+
+    box = sticker_media.content_box(geometry)
+
+    vertices = torch.cat([mesh.vertices[0] for mesh in scene_mesh.da3_meshes(geometry, 0)])
+    assert box == {"min": vertices.amin(0).tolist(), "max": vertices.amax(0).tolist()}
+    # View 1 stands 3 to the right.
+    assert box["max"][0] > 3.0 and box["min"][2] == pytest.approx(-2.0)
+    assert sticker_media.content_box(_mono(count=1, sky=torch.ones((1, H, W)))) is None
+
+
+def test_the_memory_estimate_counts_the_converted_meshes_not_the_dict():
+    mono, multiview = _mono(count=3), _multiview()
+
+    one, both = scene_mesh.da3_device_bytes(mono), scene_mesh.da3_device_bytes(multiview)
+
+    # One frame's full grid on the device (float32 vertices, uvs, linear texture; int64 faces), all views for multiview.
+    grid = H * W * (3 + 2 + 3) * 4 + (H - 1) * (W - 1) * 2 * 3 * 8
+    assert one == grid and both == 2 * grid
+
+
+def test_each_da3_frame_is_converted_once_for_the_render_the_editor_files_and_the_box(monkeypatch):
+    converted = []
+    execute = DA3GeometryToMesh.execute
+
+    class Counting:
+        @staticmethod
+        def execute(geometry, index, *args):
+            converted.append(index)
+            return execute(geometry, index, *args)
+
+    monkeypatch.setattr(scene_mesh, "DA3GeometryToMesh", Counting)
+    geometry = _mono(count=3)
+
+    # The sticker input places by the content box, then the run draws and writes the editor files; the video reads again.
+    output = _da3_execute(sticker=geometry)
+    output.result[2].get_components()
+
+    assert sorted(converted) == [0, 1, 2]

@@ -45,16 +45,37 @@ def _splat_ply(splat: Types.SPLAT, index: int) -> bytes | None:
     )
 
 
-def write_editor_files(value, progress=None) -> tuple[str, list[Path | None]]:
-    """Write each item of a SPLAT, MESH, or MOGE_GEOMETRY to temp. Returns the kind the editor loads ("splat" or
-    "mesh") and the paths in item order, None for an empty item. `progress(done, total)` is called after each item
-    and may raise to stop; the files written so far are then removed."""
+def _da3_glbs(geometry: dict, index: int):
+    """Item `index` of a DA3_GEOMETRY as the GLB of its frame's mesh (mono) or a list of its views' GLBs (multiview),
+    written from the same MESHes that are drawn (`da3_meshes`); None when it is empty."""
+    # scene_mesh reads this module's MoGe grid, so it is imported here.
+    from .scene_mesh import da3_meshes, is_multiview
+
+    glbs = [mesh_item_to_glb_bytes(mesh, 0) for mesh in da3_meshes(geometry, index)]
+    if not glbs:
+        return None
+    return glbs if is_multiview(geometry) else glbs[0]
+
+
+def write_editor_files(value, progress=None) -> tuple[str, list]:
+    """Write each item of a SPLAT, MESH, MOGE_GEOMETRY, or DA3_GEOMETRY to temp. Returns the kind the editor loads
+    ("splat" or "mesh") and per item, in order, its path, None for an empty item, or for a DA3_GEOMETRY multiview the
+    list of its views' paths (one GLB each; the core's GLB writer holds one material). `progress(done, total)` is
+    called after each item and may raise to stop; the files written so far are then removed."""
     if isinstance(value, Types.SPLAT):
         kind, extension, count, item = "splat", "ply", value.positions.shape[0], _splat_ply
     elif isinstance(value, Types.MESH):
         kind, extension, count, item = "mesh", "glb", value.vertices.shape[0], mesh_item_to_glb_bytes
     else:
-        kind, extension, count, item = "mesh", "glb", value["points"].shape[0], _moge_glb
+        # scene_mesh reads this module's MoGe grid, so it is imported here; it owns how the dicts are told apart.
+        from .scene_mesh import da3_count, is_da3, is_moge
+
+        if is_moge(value):
+            kind, extension, count, item = "mesh", "glb", value["points"].shape[0], _moge_glb
+        elif is_da3(value):
+            kind, extension, count, item = "mesh", "glb", da3_count(value), _da3_glbs
+        else:
+            raise TypeError("write_editor_files takes a SPLAT, MESH, MOGE_GEOMETRY, or DA3_GEOMETRY")
     name = uuid.uuid4().hex[:12]
     paths = []
     written = []
@@ -62,7 +83,13 @@ def write_editor_files(value, progress=None) -> tuple[str, list[Path | None]]:
         for index in range(count):
             data = item(value, index)
             path = None
-            if data is not None:
+            if isinstance(data, list):
+                path = []
+                for view, part in enumerate(data):
+                    path.append(temp_file_path(f"pano_scene_{name}_{index}_{view}.{extension}"))
+                    written.append(path[-1])
+                    path[-1].write_bytes(part)
+            elif data is not None:
                 path = temp_file_path(f"pano_scene_{name}_{index}.{extension}")
                 written.append(path)
                 path.write_bytes(data)

@@ -500,3 +500,21 @@ test("reverting a layer drops its scene and painting overrides and keeps its ele
   assert.equal(upstreamLayerRevertedRecords(reverted, "scene_a"), reverted);
   assert.equal(upstreamLayerRevertedRecords(records, "scene_x"), records);
 });
+
+// docs/threejs-spark-integration.md: an upstream layer's element of several views (DA3_GEOMETRY multiview) is one
+// item, as the node's own.
+test("an upstream layer's element of several views is one item loaded from all its views", () => {
+  const ui = {
+    pano_scene_files: [[{ filename: "v0.glb" }, { filename: "v1.glb" }]],
+    pano_scene_meta: [{ kind: "mesh", unlit: true }],
+    pano_sticker_files: [[{ filename: "s0.glb" }, { filename: "s1.glb" }]],
+    pano_sticker_meta: [{ kind: "mesh", unlit: true }],
+  };
+  const layer = layerOf({ stickers: [world("port3d", { source: { kind: "port" } })] }, ui);
+  const view = upstreamLayerView({ ...layer, received: layer.sceneState }, 1, 0, { media: () => null, paintLayers: [], source });
+  const [scene, sticker] = view.items;
+  assert.deepEqual(scene.urls, [scene.request.url]);
+  assert.deepEqual(scene.request.sources[scene.request.url], ["/view?filename=v0.glb", "/view?filename=v1.glb"]);
+  assert.deepEqual(sticker.request.sources[sticker.request.url], ["/view?filename=s0.glb", "/view?filename=s1.glb"]);
+  assert.equal(scene.request.unlit, true);
+});
