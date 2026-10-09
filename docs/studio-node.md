@@ -23,10 +23,10 @@ Panorama Studio（`PanoramaStudio`）のノードが Scene を組み立てて撮
 | 実行結果の `ui` とエディタ用ファイル（`pano_scene_meta` の `unlit` を含む） | `nodes.py` `_build_scene`・`_port_media_ui`・`_scene_ui`・`_editor_mp4`、`core/video.py` `encode_editor_mp4`・`editor_ready`・`save_editor_frames`、`scene_files.py` `write_editor_files` | — | `tests/test_editor_mp4.py`、`tests/test_scene_editor_files.py`、`tests/test_studio_upstream.py` |
 | 上流の Scene の重ね方と、上書きをどの層に当てるか（Source・`port`・長さの扱い） | `nodes.py` `_override_layers`・`_layer_frames` | 作業コピーは `web_src/pano_upstream.js` `upstreamWorkingLayers`・`upstreamLayerKeys` | `tests/test_studio_upstream.py`、`tests/test_studio_overrides.py`、`tests/test_upstream_editor_parity.py` |
 | `port` の Sticker と Pose handoff | `nodes.py` `_port_media`・`_handoff_lanes`・`_inherit_handoff` | 表示は `web_src/pano_port_handoff.js` `inheritPortHandoff` | `tests/test_pose_handoff.py`、`tests/pano_port_handoff.test.mjs`、`tests/test_studio_scene.py` |
-| 3D ファイルの `file` の Source（読み方、描き方、読めないとき） | `nodes.py` `_resolve_sources`・`_render_frames`、`core/render.py` `SceneSources.contents`（作る） | — | `tests/test_stickers_3d.py`（作る：下の「3D ファイルの `file` の Source」の test） |
-| 3D ファイルの `file` の Source のエディタ用ファイル（エディタの問い合わせ、経路の登録） | `comfyui_pano_suite/routes.py` `file_3d_editor_file`・`register_routes`（作る）、`__init__.py` | `web_src/pano_file_3d.js` `requestFile3dEditorFile`（作る） | `tests/test_file_3d_route.py`（作る）、`tests/pano_file_3d.test.mjs`（作る） |
+| 3D ファイルの `file` の Source（読み方、描き方、読めないとき） | `nodes.py` `_resolve_sources`・`_read_file_3d`・`_file_3d_error`・`_read_scene_file`・`_render_frames`・`_override_layer`、`core/render.py` `SceneSources.contents`、`core/cache.py` `MemoryCache.get_or_put` | — | `tests/test_stickers_3d.py`、`tests/test_memory_cache.py`、`tests/test_device_memory.py` |
+| 3D ファイルの `file` の Source のエディタ用ファイル（エディタの問い合わせ、経路の登録） | `routes.py` `FILE_3D_ROUTE`・`file_3d_editor_file`・`register_routes`、`__init__.py`、`nodes.py` `_scene_ui` | `web_src/pano_file_3d.js` `requestFile3dEditorFile` | `tests/test_file_3d_route.py`、`tests/pano_file_3d.test.mjs` |
 
-Python のファイルは `comfyui_pano_suite/` の下にある。表の「（作る）」の code と test は、この spec の差分の後に作る。
+Python のファイルは `comfyui_pano_suite/` の下にある。
 
 ## Scene の組み立てと撮影の入口
 
@@ -134,9 +134,9 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。
 
 ### 3D ファイルの `file` の Source
 
-エディタの Add to World（`docs/editor-interaction.md` の「`world` の Sticker の操作」）で置いた 3D ファイルの Sticker を、`sticker` の 3D の素材と同じ読み手と同じ描き方で描く（この節は作る）。
+エディタの Add to World（`docs/editor-interaction.md` の「`world` の Sticker の操作」）で置いた 3D ファイルの Sticker を、`sticker` の 3D の素材と同じ読み手と同じ描き方で描く。
 
-- 読み方（`_resolve_sources`）：`is_3d_file_source` が真の Source は、画像と同じ `core/stickers.py` の `comfy_file_path`（`folder_paths` の input・output・temp のディレクトリの中だけ）でパスにし、コアの `Types.File3D(パス)` にして、`scene`・`sticker` の 3D ファイルと同じ `_read_scene_file` で SPLAT か MESH に読む。同じ `splat_files`・`mesh_files` のキャッシュ（キーはパス・更新時刻・大きさ）に入るので、同じファイルは実行をまたいで読み直さず、同じファイルを `scene`・`sticker` につないだときとも同じ値になる。同じキーの読み込みとエディタ用ファイルの書き出しは、キーごとのロックの下で 1 回だけ行う（作る：`core/cache.py` のキーごとのロックを持つ `get_or_put`）。下の経路と実行中のプロンプトが同じファイルを同時に求めても、2 回読まず、2 回書かない。読んだ SPLAT・MESH は `SceneSources.contents`（Sticker の `id` → SPLAT・MESH。作る）に入れ、2D の素材の `stickers` には入れない。
+- 読み方（`_resolve_sources`）：`is_3d_file_source` が真の Source は、画像と同じ `core/stickers.py` の `comfy_file_path`（`folder_paths` の input・output・temp のディレクトリの中だけ）でパスにし、コアの `Types.File3D(パス)` にして、`scene`・`sticker` の 3D ファイルと同じ `_read_scene_file` で SPLAT か MESH に読む。同じ `splat_files`・`mesh_files` のキャッシュ（キーはパス・更新時刻・大きさ）に入るので、同じファイルは実行をまたいで読み直さず、同じファイルを `scene`・`sticker` につないだときとも同じ値になる。同じキーの読み込みとエディタ用ファイルの書き出しは、キーごとのロックの下で 1 回だけ行う（`core/cache.py` の `MemoryCache.get_or_put`）。下の経路と実行中のプロンプトが同じファイルを同時に求めても、2 回読まず、2 回書かない。読んだ SPLAT・MESH は `SceneSources.contents`（Sticker の `id` → SPLAT・MESH）に入れ、2D の素材の `stickers` には入れない。
 - 描き方：`_render_frames` が描画のパスごとに、`contents` の値を `_scene_content` で `SceneContent` にし、`ContentSource(content, 0)` をその Sticker の Source として `render_frame` に渡す。device に置いたものは、`port` の 3D の Sticker と同じくそのパスの間だけ持つ。`PANO_SCENE` と `video` が持つのは、読んだ SPLAT・MESH だけである。描く規則（変形、不透明度、光が効くか）は `docs/render-contract.md` の「3D の `world` の Sticker」と「光が効く要素」で、`port` の 3D の Sticker と同じ。
 - 時間：要素は 1 つで、Clip range の間ずっと要素 0 を描く。出力の長さには、1 枚の画像の `file` の Source と同じ扱いで効く（上の出力の長さの規則）。
 - 上流の Scene：`SceneLayer.sources` の `contents` は `stickers` と同じく層の中の `id` で引き、上書きで消した Sticker のものは除く（`_override_layers`）。下流の Panorama Studio と Preview も同じ読んだ値で描く。
@@ -144,23 +144,23 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。
   - パスが範囲の外、またはファイルが無い。
   - 読み手が `ValueError` か `OSError` を出した（FBX・USDZ はコアの Get3DComponents が読まない。3DGS の属性の無い PLY、外部の `.bin` やテクスチャを参照する `.gltf` でその参照先が無いもの、壊れたファイルなど）。ほかの例外はそのまま上げる。
   - `sky` の Sticker が 3D ファイルの Source を持つ（エディタは作らない。手で書いた状態など）。
-  - 文（作る：`nodes.py` の `_file_3d_error`。経路の `error` と同じ関数で作る）：`Could not read the 3D file <subfolder/filename>: <理由>`。ノードの警告はこの文に ` Sticker <id> is not drawn.` を足す。理由は、`the file was not found`（範囲の外・ファイルが無い）、`only files in the input folder are read`（経路だけ。`storage` が `input` でない）、`a sky Sticker cannot show a 3D file`（ノードだけ）、または読み手の文。どちらの読み手も読まないファイルの理由は `it is neither a splat file (a PLY with 3DGS properties, SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL)` とし、`scene`・`sticker` の入力の名前を含めない（`_read_scene_file` は入力の名前の代わりにこの理由を返せる形にする。作る）。
+  - 文（`nodes.py` の `_file_3d_error`。経路の `error` と同じ関数で作る）：`Could not read the 3D file <subfolder/filename>: <理由>`。ノードの警告はこの文に ` Sticker <id> is not drawn.` を足す。理由は、`the file was not found`（範囲の外・ファイルが無い）、`only files in the input folder are read`（経路だけ。`storage` が `input` でない）、`a sky Sticker cannot show a 3D file`（ノードだけ）、または読み手の文。どちらの読み手も読まないファイルの理由は `it is neither a splat file (a PLY with 3DGS properties, SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL)` とし、`scene`・`sticker` の入力の名前を含めない（`NEITHER_3D_READER`。`_read_scene_file` は入力の名前を渡されないとき、この理由だけの `ValueError` を出す）。
 - メモリ：読んだ SPLAT・MESH は `_render_memory` の見積もりに入る（`docs/runtime-resources.md` の「デバイスとメモリ」）。
 - エディタ用ファイル：実行結果の `ui` には出さない。エディタは実行を待たずに下の「3D ファイルの `file` の Source のエディタ用ファイル」で求める。
 
 ### 3D ファイルの `file` の Source のエディタ用ファイル
 
-エディタが、置いた 3D ファイルを実行の前に出力と同じ見た目で描くための、読み取り専用のサーバーの経路（オーナーの決定 2026-10-09、作る）。出力と同じ見た目には、ノードと同じ読み手が読んだ結果（コアの Get3DComponents が全体を 1 つのメッシュにまとめ、最初の材質だけを残したものを `save_glb` が書き直した GLB と、`MESH.unlit`）が要る。元のファイルを three.js でそのまま読むと、2 つ目以降の材質、`KHR_texture_transform`、sampler などで出力と違う見た目になる。この経路はノードと同じ Python のコードで読むので、見た目の規則の owner はノードの一つだけで、写しを持たない。
+エディタが、置いた 3D ファイルを実行の前に出力と同じ見た目で描くための、読み取り専用のサーバーの経路。出力と同じ見た目には、ノードと同じ読み手が読んだ結果（コアの Get3DComponents が全体を 1 つのメッシュにまとめ、最初の材質だけを残したものを `save_glb` が書き直した GLB と、`MESH.unlit`）が要る。元のファイルを three.js でそのまま読むと、2 つ目以降の材質、`KHR_texture_transform`、sampler などで出力と違う見た目になる。この経路はノードと同じ Python のコードで読むので、見た目の規則の owner はノードの一つだけで、写しを持たない。
 
 選ばなかった案：エディタが元のファイルを読み、コアの読み手のすることを JS に写す（規則の二つ目の写しになり、コアの読み手が変わるたびにずれる）。元のファイルをそのまま描いて差を残す（置いた瞬間から出力と同じ見た目にならない）。
 
-- 経路：`POST /panorama_suite/file_3d`（`comfyui_pano_suite/routes.py`、作る）。本文は JSON の `{"filename", "subfolder", "storage"}`（状態の `file` の Source と同じ値と正規化）。`storage` は `input` だけを受ける。JSON として読めない本文、オブジェクトでない本文、`filename` が無いか空の本文は `400`（`subfolder` と `storage` は Source と同じ既定値）。
+- 経路：`POST /panorama_suite/file_3d`（`routes.py` の `FILE_3D_ROUTE`）。本文は JSON の `{"filename", "subfolder", "storage"}`（状態の `file` の Source と同じ値と正規化）。`storage` は `input` だけを受ける。JSON として読めない本文、オブジェクトでない本文、`filename` が無いか空の本文は `400`（`subfolder` と `storage` は Source と同じ既定値）。
 - 登録：`__init__.py` が読み込まれたときに `routes.py` の `register_routes` を呼び、ComfyUI の `server.PromptServer.instance.routes` に足す。`server` を import できない、または `PromptServer.instance` が無いとき（ComfyUI の外の test）は登録しない。`core_adapters.py` がコアのシンボルを `try` / `except ImportError` で読むのと同じ形で、ノードの読み込みは止めない。
-- 処理：Source を上の「3D ファイルの `file` の Source」と同じ `comfy_file_path` と `_read_scene_file` で読み、`_scene_ui` と同じ `write_editor_files` と `scene_files` のキャッシュでエディタ用ファイルを得る。ノードの実行と同じキャッシュなので、同じファイルは経路と実行のどちらで読んでも 1 回しか読まない。
+- 処理：Source を上の「3D ファイルの `file` の Source」と同じ `_read_file_3d`（`comfy_file_path` と `_read_scene_file`）で読み、`_scene_ui`（`in_execution=False`。`write_editor_files` と `scene_files` のキャッシュ）でエディタ用ファイルとメタを得る。ノードの実行と同じキャッシュなので、同じファイルは経路と実行のどちらで読んでも 1 回しか読まない。
 - 応答：`200 {"kind": "mesh" か "splat", "unlit": 真偽（mesh のときだけ。`docs/render-contract.md` の「光が効く要素」）, "file": ui の項目（`entry_from_path`、`pano_evictable` 付き）}`。`is_3d_file_source` が偽の Source、`storage` が `input` でない、範囲の外、ファイルが無いときは `400`、読み手が `ValueError` か `OSError` を出したときは `422`。どちらも `{"error": 文}` で、文は上の「3D ファイルの `file` の Source」の文と同じ関数で作る。
 - 安全：読むのは ComfyUI の input のディレクトリ（`folder_paths.get_input_directory()`）の中のファイルだけ（`comfy_file_path` で範囲を確かめる）。output と temp は読まない。書くのは temp のエディタ用ファイルだけで、`TEMP_FILES` に登録する。コードを実行しない。
 - 読み込みはイベントループを止めないよう、別のスレッドで行う（`asyncio.to_thread`）。共有のキャッシュ（`CACHE`）と `TEMP_FILES` は実行中のプロンプトとも同時に使うので、どちらもロックの下で触る（今の `core/cache.py`・`core/temp_files.py` はロックを持つ）。実行の外なので、中断と進み具合（`loop_progress`）は使わない。
-- 経路が書いたファイルは、実行の外なので実行を持たない（`TEMP_FILES` の記録の実行は `None`）。寿命は `docs/runtime-resources.md` の「一時ファイル」のとおり：temp の合計が上限を超えたとき古いものから消え、後の実行がそのファイルを `ui` で指せば、その実行の間は残る。エディタは 404 のとき経路を呼び直す（キャッシュはファイルの有無を確かめて書き直す）。`tests/test_file_3d_route.py` が、経路の書いたファイルが実行 `None` で登録されることを確かめる。
+- 経路が書いたファイルは、実行の外なので実行を持たない（`TEMP_FILES` の記録の実行は `None`）。寿命は `docs/runtime-resources.md` の「一時ファイル」のとおり：temp の合計が上限を超えたとき古いものから消え、後の実行がそのファイルを `ui` で指せば、その実行の間は残る。エディタは 404 のとき経路を呼び直す（1 つの Source につき 3 回まで。`docs/threejs-spark-integration.md` の「空間の表示」。キャッシュはファイルの有無を確かめて書き直す）。`tests/test_file_3d_route.py` が、経路の書いたファイルが実行 `None` で登録されることを確かめる。
 - 端から端まで（アップロード → 経路 → `/view` → three.js の読み込み）は、milestone の実機の通し（`docs/agents/workflow.md` の Review）で確かめる。自動の test は、それぞれのつなぎ目（経路の入出力、エディタの問い合わせ、読み込みと描画）を確かめる。
 
 ## `video` 出力

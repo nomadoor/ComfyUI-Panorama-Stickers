@@ -201,7 +201,9 @@ export function createSpace(deps) {
     const id = editor.worldSelectedId || editor.selectedId;
     const index = sceneState.stickers.findIndex((sticker) => sticker.id === id);
     const upstream = index < 0 ? stickerById(id) : null;
-    const request = index < 0 ? space.upstreamItems.find((entry) => entry.request?.id === id)?.request : space.sticker;
+    const request = index < 0
+      ? space.upstreamItems.find((entry) => entry.request?.id === id)?.request
+      : [space.sticker, ...(space.fileStickers ?? [])].find((item) => item?.id === id);
     const selected = index < 0 && !isUpstreamSticker(upstream) ? null : {
       sticker: upstream ?? sceneState.stickers[index],
       value: upstream ? evaluateSticker(upstream, editor.frame) : evaluateSceneState(sceneState, editor.frame).stickers[index],

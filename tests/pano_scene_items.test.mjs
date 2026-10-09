@@ -9,9 +9,9 @@ function harness(options = {}) {
   const disposed = [];
   let updates = 0;
   const items = createSceneItems({
-    load: (kind, url, signal) => new Promise((resolve, reject) => {
+    load: (kind, url, signal, options) => new Promise((resolve, reject) => {
       signal.addEventListener("abort", () => reject(new Error("aborted")));
-      calls.push({ kind, url, signal, resolve: (size = 1) => resolve({ object: { url }, box: { min: [0, 0, 0], max: [1, 1, 1] }, size }), reject });
+      calls.push({ kind, url, signal, options, resolve: (size = 1) => resolve({ object: { url }, box: { min: [0, 0, 0], max: [1, 1, 1] }, size }), reject });
     }),
     dispose: (item) => disposed.push(item.object.url),
     onUpdate: () => { updates += 1; },
@@ -244,4 +244,80 @@ test("a failed item keeps showing the loaded item before it", async (t) => {
   await settle();
   assert.deepEqual(ask(items, "f1").object, { url: "f0" });
   assert.equal(calls.length, 2);
+});
+
+// docs/threejs-spark-integration.md: the 3D file Stickers load in the 3D Sticker queue beside the port Sticker's
+// items, each by its Sticker's key and fetched from its own URL, within one budget.
+test("one render asks for several inputs at once, each item by its key and loaded from its source", async () => {
+  const { items, calls, disposed } = harness({ concurrency: 4 });
+  const port = { kind: "mesh", urls: ["p0", "p1"], url: "p0", prefetch: ["p1"], unlit: true };
+  const file = (id, src, extra = {}) => ({ kind: "mesh", urls: [id], url: id, prefetch: [], src, unlit: false, ...extra });
+  const one = file("file3d:0:sticker_1", "/view?filename=e.glb");
+  const two = file("file3d:0:sticker_2", "/view?filename=e.glb");
+  assert.deepEqual(items.requestMany([port, one, two]), [null, null, null]);
+  // Every shown item loads first, the ones ahead after; the same file under two keys loads twice.
+  assert.deepEqual(calls.map((call) => call.url), ["p0", "/view?filename=e.glb", "/view?filename=e.glb"]);
+  assert.deepEqual(calls.map((call) => call.options), [{ unlit: true }, { unlit: false }, { unlit: false }]);
+  calls.forEach((call) => call.resolve());
+  await settle();
+  assert.deepEqual(calls.map((call) => call.url).slice(3), ["p1"]);
+  const drawn = items.requestMany([port, one, two]);
+  assert.deepEqual(drawn.map((item) => item.object.url), ["p0", "/view?filename=e.glb", "/view?filename=e.glb"]);
+  assert.notEqual(drawn[1], drawn[2]);
+  assert.deepEqual(items.box("file3d:0:sticker_1"), { min: [0, 0, 0], max: [1, 1, 1] });
+  // A key no input draws or keeps (its Sticker left the state) is dropped like a replaced input; one only kept
+  // (its Sticker is hidden or outside its Clip range) stays loaded.
+  assert.deepEqual(items.requestMany([port, one, { urls: [two.url] }]), [drawn[0], drawn[1], null]);
+  assert.deepEqual(disposed, []);
+  items.requestMany([port, one]);
+  assert.deepEqual(disposed, ["/view?filename=e.glb"]);
+  assert.equal(items.items.has("file3d:0:sticker_2"), false);
+  // A key whose source or material changes loads again.
+  items.requestMany([port, { ...one, unlit: true }]);
+  assert.equal(calls.length, 5);
+  assert.deepEqual(calls[4].options, { unlit: true });
+  // request() is requestMany() of one input.
+  assert.equal(items.request(port).object.url, "p0");
+  assert.equal(items.items.size, 2);
+});
+
+test("a failed item tells why, so the editor can ask for its file again", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const { items, calls } = harness();
+  ask(items, "f0");
+  assert.equal(items.error("f0"), null);
+  calls[0].reject(new Error("HTTP 404"));
+  await settle();
+  assert.equal(items.error("f0"), "HTTP 404");
+  assert.equal(items.error("f9"), null);
+});
+
+// Review P1: a 3D Sticker hidden or outside its Clip range asks for nothing to draw but keeps its loaded item, so
+// coming back shows it at once without loading it again (the port Sticker's items and a 3D file Sticker's alike).
+test("the 3D Stickers' items stay loaded while their Stickers are inactive, and coming back loads nothing", async () => {
+  const { stickerItemInputs } = await import("../web_src/pano_three_view.js");
+  const { items, calls, disposed } = harness({ concurrency: 4 });
+  const port = { kind: "mesh", urls: ["p0"], url: "p0", prefetch: [], unlit: true, id: "sticker_1", opacity: 1 };
+  const file = { kind: "mesh", urls: ["file3d:0:sticker_2"], url: "file3d:0:sticker_2", prefetch: [], src: "/view?filename=e.glb", unlit: false, id: "sticker_2", opacity: 1 };
+  const active = { stickerUrls: ["p0"], sticker: port, fileStickerKeys: [file.url], fileStickers: [file] };
+  const inactive = { stickerUrls: ["p0"], sticker: null, fileStickerKeys: [file.url], fileStickers: [] };
+  const draw = (space) => {
+    const { drawn, inputs } = stickerItemInputs(space);
+    return items.requestMany(inputs).slice(0, drawn.length);
+  };
+  draw(active);
+  calls.forEach((call) => call.resolve());
+  await settle();
+  assert.deepEqual(draw(active).map((item) => item.object.url), ["p0", "/view?filename=e.glb"]);
+  assert.equal(calls.length, 2);
+  // Inactive: nothing drawn, nothing dropped.
+  assert.deepEqual(draw(inactive), []);
+  assert.deepEqual(disposed, []);
+  assert.deepEqual([...items.items.values()].map((item) => item.state), ["loaded", "loaded"]);
+  // Back: the same items, without a load.
+  assert.deepEqual(draw(active).map((item) => item.object.url), ["p0", "/view?filename=e.glb"]);
+  assert.equal(calls.length, 2);
+  // Gone from the state (no key kept): dropped.
+  draw({ stickerUrls: [], sticker: null, fileStickerKeys: [], fileStickers: [] });
+  assert.deepEqual(disposed.sort(), ["/view?filename=e.glb", "p0"]);
 });

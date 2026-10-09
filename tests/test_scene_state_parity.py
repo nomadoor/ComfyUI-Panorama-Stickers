@@ -150,3 +150,18 @@ def test_js_rejects_the_same_states(js_out):
         with pytest.raises(ValueError):
             load_scene_state(text)
         assert message is not None and "state_json" in message
+
+
+def test_3d_file_sources_are_told_by_the_extension_table():
+    # The table both Python and JS read (pano_scene_state.test.mjs reads it on its own); it is not a state.
+    from comfyui_pano_suite.core.scene_state import FILE_3D_EXTENSIONS, is_3d_file_source
+
+    table = json.loads((FIXTURES / "file_3d_formats.json").read_text(encoding="utf-8"))
+
+    assert list(FILE_3D_EXTENSIONS) == table["extensions"]
+    for case in table["cases"]:
+        source = {"kind": "file", "filename": case["filename"], "subfolder": "3d", "storage": "input"}
+        assert is_3d_file_source(source) is case["is_3d"], case["filename"]
+    # A data URL is an image, and so is the port.
+    assert is_3d_file_source({"kind": "file", "data_url": "data:image/png;base64,AAAA"}) is False
+    assert is_3d_file_source({"kind": "port"}) is False

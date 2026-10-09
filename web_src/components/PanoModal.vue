@@ -46,8 +46,8 @@ function getPaintOverlayRefs() {
   };
 }
 
-function openImagePicker(intent) {
-  return imageFilePickerRef.value?.open?.(intent) === true;
+function openImagePicker(intent, accept) {
+  return imageFilePickerRef.value?.open?.(intent, accept) === true;
 }
 
 function onImageFileSelected(payload) {

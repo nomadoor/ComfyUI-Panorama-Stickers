@@ -15,13 +15,13 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 重なり順と合成 | `render.py` `composite_frame`、`core/world_render.py` `over_by_depth` | — | `tests/test_render.py`、`tests/test_world_render.py` |
 | Sky の標本化（直接の標本化、縮めるときの平均、Sky の幅） | `render.py` `_sky_layers`・`_shoot_sky`・`_sample_filtered`・`_shrink`・`_sky_size` | — | `tests/test_render.py`、`tests/test_studio_node.py`、`tests/test_studio_scene.py` |
 | World の層と `world` の Sticker の板 | `world_render.py` `world_layer` | — | `tests/test_world_render.py`、`tests/test_stickers_world.py`、`tests/test_studio_upstream.py` |
-| 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source。作る） | — | `tests/test_stickers_3d.py` |
+| 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source） | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
 | MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY` の描画 | `core/mesh_render.py` `render_mesh`・`mesh_content`・`MeshItem`、`scene_mesh.py` `read_mesh_file`・`da3_scene_content`（作る） | — | `tests/test_mesh_render.py`、`tests/test_scene_mesh.py` |
-| 光が効く要素（`unlit`） | `core/mesh_render.py` `MeshItem.unlit`（作る）、`scene_mesh.py` `mesh_scene_content`・`moge_scene_content`・`da3_scene_content` | エディタは `pano_scene_meta` の `unlit` を読む（`docs/threejs-spark-integration.md`） | `tests/test_scene_mesh.py` |
-| 材質（コアの MESH から読む値） | `scene_mesh.py` `mesh_material`（作る） | エディタは同じ値を GLB から GLTFLoader で読む | `tests/test_scene_mesh.py`（コアの `mesh_item_to_glb_bytes` が書く GLB の材質と比べる） |
-| 既定の照明の値と光の式 | `core/mesh_render.py` `DEFAULT_LIGHTS`・`shade_standard`（作る） | `web_src/pano_three_view.js` `DEFAULT_LIGHTS`（作る） | 値は `tests/fixtures/default_lighting.json` を Python と JS が読む parity の test（作る）。式は `tests/test_mesh_render.py` の three.js r184 との数値の比較と、`tests/browser/` の既定の照明の場面（作る） |
-| メッシュの色とテクスチャの標本化（色空間、wrap、filter、画面の微分）、交差と光の式の精度 | `core/mesh_render.py` `_base_color`（作る：直す）・`_intersect`（作る：直す） | エディタは GLB の sampler のまま（置き換えない） | `tests/test_mesh_render.py`（作る：線形の空間の補間、CLAMP、mip を使わない、2×2 の微分、TF32 を有効にしても同じ値）、下の「エディタとの一致」の場面 |
+| 光が効く要素（`unlit`） | `core/mesh_render.py` `MeshItem.unlit`、`scene_mesh.py` `is_unlit`・`mesh_scene_content`・`moge_scene_content`・`da3_scene_content`（作る） | エディタは `pano_scene_meta` の `unlit` を読む（`web_src/pano_space.js` `sceneFilesOf`。`docs/threejs-spark-integration.md`） | `tests/test_scene_mesh.py`、`tests/test_mesh_render.py`、`tests/test_scene_editor_files.py`、`tests/pano_space.test.mjs` |
+| 材質（コアの MESH から読む値） | `scene_mesh.py` `mesh_material`・`mesh_item` | エディタは同じ値を GLB から GLTFLoader で読む | `tests/test_scene_mesh.py`（コアの `mesh_item_to_glb_bytes` が書く GLB の材質と比べる） |
+| 既定の照明の値と光の式 | `core/mesh_render.py` `DEFAULT_LIGHTS`・`shade_standard`、`core/three_dfg_lut.py` | `web_src/pano_three_view.js` `DEFAULT_LIGHTS`・`createDefaultLights` | 値は `tests/fixtures/default_lighting.json` を Python（`tests/test_mesh_render.py`）と JS（`tests/pano_scene_loaders.test.mjs`）が読む。式は `tests/test_mesh_render.py` が `tests/fixtures/standard_material_r184.json`（three.js r184 が描いた値。`tools/bake_standard_material.mjs` で焼く）と比べる。エディタの描画は `tests/browser/file_3d.spec.js` |
+| メッシュの色とテクスチャの標本化（色空間、wrap、filter、画面の微分）、交差と光の式の精度 | `core/mesh_render.py` `_base_color`・`_sample`・`_solve`・`_intersect`・`_Lighting.partners`・`_Lighting.derivatives` | エディタは GLB の sampler のまま（置き換えない） | `tests/test_mesh_render.py`（線形の空間の補間、CLAMP、mip を使わない、2×2 の微分、面の法線の微分が 0、TF32 を有効にしても同じ値）、下の「エディタとの一致」の場面 |
 | SPLAT の描画 | `splat_render.py` `splat_content`・`_view_colors` | — | `tests/test_splat_render.py` |
 | 3D ファイルの読み分けと読めないときのエラー | `nodes.py` `_read_scene_file` | — | `tests/test_studio_scene.py`、`tests/test_stickers_3d.py`、`tests/test_scene_mesh.py` |
 | コアの内部のシンボルの読み込み | `core_adapters.py` | — | `tests/test_core_adapters.py` |
@@ -71,7 +71,7 @@ render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, c
 
 ### `ContentSource`
 
-3D（MESH・SPLAT）の `world` の Sticker の Source（`core/world_render.py`）。`content` は `SceneContent`（下記「`scene` の共通処理」）、`frame` はそのうち描く要素の番号で、`StickerSource.frame` と同じく World のキーに入る。`content` は device に置いたものを持つので、描画のパスごとに作る（`PANO_SCENE`・`video` には入れない）。`sky` の Sticker には渡さない。`port` の 3D の Sticker と、3D ファイルの `file` の Source の Sticker（`frame` は常に 0。作る。`docs/studio-node.md` の「3D ファイルの `file` の Source」）が使う。
+3D（MESH・SPLAT）の `world` の Sticker の Source（`core/world_render.py`）。`content` は `SceneContent`（下記「`scene` の共通処理」）、`frame` はそのうち描く要素の番号で、`StickerSource.frame` と同じく World のキーに入る。`content` は device に置いたものを持つので、描画のパスごとに作る（`PANO_SCENE`・`video` には入れない）。`sky` の Sticker には渡さない。`port` の 3D の Sticker と、3D ファイルの `file` の Source の Sticker（`frame` は常に 0。`docs/studio-node.md` の「3D ファイルの `file` の Source」）が使う。
 
 ### `Projection`
 
@@ -181,7 +181,7 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
   - ERP：角の経度を囲む最短の弧と、角・辺（大円の弧）の最も高い点と低い点・囲む極までの緯度の範囲。弧が半周以上なら全経度。経度の継ぎ目は列を周期で回してつなぐ。180 は 360 の列の周期で数え、前方の半球の列だけを描く。
   - 三角形の前処理は `TRIANGLES`（約 100 万）ずつ行い、三角形ごとには光線の式（float32 × 10）と画素の範囲（int32 × 4）と累積の組の数（int64）だけを残す。画素と三角形の組は `CHUNK` ずつ試し、画素ごとの最も近い交点を距離のビットと三角形の番号の 64 bit の値の最小（`scatter_reduce` の `amin`）で選ぶ。最後に画素ごとに選ばれた三角形だけで重心座標を求め直して色を付ける（これも `CHUNK` 画素ずつ）。距離が有限でない交点は捨てる。
   - 辺と頂点の上の画素の中心が丸めで抜けないよう、重心座標の判定を `EDGE` だけ広げる（MoGe のグリッドを同じ大きさで描くと、すべての画素の中心が頂点の上に来る）。
-- 色（作る：`core/mesh_render.py` の `_base_color`）：base color は、下の「材質」の表の base color と同じ値（テクスチャを sRGB から線形に戻したもの × 頂点色の RGB（線形）× `material.base_color_factor` の RGB。テクスチャも頂点色も無ければ `save_glb` の既定の 0.22 の灰色（`BARE_COLOR`）を線形の値として）とする。`MOGE_GEOMETRY` の要素はテクスチャだけ。光が効く要素も効かない要素も、同じ base color を使う（エディタの `makeUnlit` も GLTFLoader の `color`（`baseColorFactor`）・`map`・頂点色を保つ）。テクスチャは uv (0, 0) を画像の左上とし、下の「テクスチャの標本化」で標本化する。`EDGE` の内側で三角形の外に出た交点は、重心座標を三角形の中に寄せてから値を補間する。光が効かない要素（下の「光が効く要素」）は base color をそのまま、光が効く要素は下の「既定の照明」と「光の式」で照らした色を出す。どちらも線形の値を、層を返す前に three.js と同じ `sRGBTransferOETF` で sRGB にする（下の「光の式」の色空間）。そのため素のジオメトリの灰色は、エディタと同じく sRGB で約 0.51 になる。頂点色のアルファとテクスチャのアルファは読まず、当たった画素は不透明にする。
+- 色（`core/mesh_render.py` の `_base_color`）：base color は、下の「材質」の表の base color と同じ値（テクスチャを sRGB から線形に戻したもの × 頂点色の RGB（線形）× `material.base_color_factor` の RGB。テクスチャも頂点色も無い要素の値は、表の base color の補足のとおり）とする。`MOGE_GEOMETRY` の要素はテクスチャだけ。光が効く要素も効かない要素も、同じ base color を使う（エディタの `makeUnlit` も GLTFLoader の `color`（`baseColorFactor`）・`map`・頂点色を保つ）。テクスチャは uv (0, 0) を画像の左上とし、下の「テクスチャの標本化」で標本化する。`EDGE` の内側で三角形の外に出た交点は、重心座標を三角形の中に寄せてから値を補間する。光が効かない要素（下の「光が効く要素」）は base color をそのまま、光が効く要素は下の「既定の照明」と「光の式」で照らした色を出す。どちらも線形の値を、層を返す前に three.js と同じ `sRGBTransferOETF` で sRGB にする（下の「光の式」の色空間）。頂点色のアルファとテクスチャのアルファは読まず、当たった画素は不透明にする。
   - MoGe の uv は画素 `x / (W − 1)` なので、テクセルの中心で標本化すると画像の端で最大半テクセルずれる。エディタ（three.js）の表示と同じである。
 - 両面を描く（MoGe のパノラマの面は外向きで、原点の Camera からは裏面になる）。縁はアンチエイリアスしない。
 - エディタは、この描画と揃えるため、光が効かない要素の GLB を光源の影響を受けない材質（`MeshBasicMaterial` 相当）で、光が効く要素の GLB を同じ既定の照明と同じ材質（`MeshStandardMaterial`）で、どちらも両面（`DoubleSide`）に描く（`docs/threejs-spark-integration.md`）。エディタが印を知る経路は下の「光が効く要素」。
@@ -191,7 +191,7 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 
 ### テクスチャの標本化
 
-メッシュのテクスチャ（base color、`metallic_roughness`、法線マップ、発光）は、three.js r184 がエディタ用の GLB を描くときと同じ規則で標本化する（ADR 0037 の条件 8 と「テクスチャの mip」。作る：`core/mesh_render.py`）。
+メッシュのテクスチャ（base color、`metallic_roughness`、法線マップ、発光）は、three.js r184 がエディタ用の GLB を描くときと同じ規則で標本化する（ADR 0037 の条件 8 と「テクスチャの mip」。`core/mesh_render.py` の `_sample`）。
 
 - 色空間：base color と発光のテクスチャは、テクセルを sRGB から線形に戻してから補間する。three.js は sRGB のテクスチャを `SRGB8_ALPHA8` で GPU に上げ、GPU が線形に戻してから補間する（`src/renderers/webgl/WebGLTextures.js:234`）。`metallic_roughness` と法線マップは線形のまま補間する。
 - 位置：uv (0, 0) が画像の左上で、テクセルの中心で標本化する。
@@ -208,10 +208,11 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 - 値の求め方：出力の画素を 2×2 の組に分け、組の相手の画素の光線を、当たった三角形と同じ平面と交差させ、uv と法線を外挿して差を取る（GPU の helper の画素と同じ考え方。ADR 0037 の試作で分かったこと）。隣が別の面・別の物・空でも働き、画像全体の一時の領域を要らない。
 - 法線は Camera の向きの座標（three.js のビュー空間と同じ。`camera_basis` の右・上・後ろ）で表してから微分する。`geometryRoughness` は成分ごとの最大を取るので、座標の向きで値が変わるためである。
 - 軸：透視投影も ERP も、出力の画像の画素の軸（隣の列と隣の行）で取る。GPU の画面の `dFdx`・`dFdy` と同じ。ERP の経度の継ぎ目は列を周期でつなぐ。GPU の数値の決め方を写す。エディタは ERP を描かないので、ERP の値はエディタと比べられない（透視投影の場面で比べる）。
+- 法線の無い要素（面の法線で照らす。下の「材質」の表の法線）：`geometryRoughness` は面の法線の画面の微分で、2×2 の組の中では 0 になる。GPU では組の helper の画素は同じ三角形のもので、面の法線は組の 4 画素で同じだからである。組の相手の画素が別の面や空の上にあっても 0 とする（`tests/test_mesh_render.py` の `test_flat_shading_has_no_geometry_roughness_even_at_a_face_edge`）。法線マップの接空間に使う位置と uv の微分は、この要素でも上の求め方で取る。
 
 #### 精度
 
-交差と光の式は、グローバルな精度の設定（`torch.backends.cuda.matmul.allow_tf32` など。ほかの custom node や利用者が変えうる）に左右されない演算で書く（要素ごとの積和にするか、呼び出しの中で TF32 を明示的に切る）。ADR 0037 の試作で、TF32 を有効にすると環境の間の基準を超えた。今の `mesh_render._intersect` の行列積はこの設定に左右される（作る：直す）。
+交差と光の式は、グローバルな精度の設定（`torch.backends.cuda.matmul.allow_tf32` など。ほかの custom node や利用者が変えうる）に左右されない演算で書く（要素ごとの積和にするか、呼び出しの中で TF32 を明示的に切る）。ADR 0037 の試作で、TF32 を有効にすると環境の間の基準を超えた。`mesh_render.py` の `_ray_planes`・`_solve`（`_intersect` と `_Hit` が使う）は要素ごとの積和で書き、行列積を使わない（`tests/test_mesh_render.py` の `test_lit_meshes_do_not_depend_on_the_matmul_precision`）。
 
 ### `DA3_GEOMETRY` のメッシュ
 
@@ -294,7 +295,7 @@ multiview（`mode` が `"multiview"`）の `DA3_GEOMETRY` は、同じ場面を 
 
 | 使う値 | MESH のどこから | 補足 |
 |---|---|---|
-| base color | `texture`（RGB）× 頂点色（RGB）× `material.base_color_factor` の RGB | テクスチャは sRGB として線形に戻し、頂点色と係数は線形のまま掛ける（GLTFLoader が `map` を `SRGBColorSpace` にする。`examples/jsm/loaders/GLTFLoader.js:3582`）。テクスチャも頂点色も無い要素は 0.22 の灰色（`save_glb` の既定。`nodes_save_3d.py:384-387`） |
+| base color | `texture`（RGB）× 頂点色（RGB）× `material.base_color_factor` の RGB | テクスチャは sRGB として線形に戻し、頂点色と係数は線形のまま掛ける（GLTFLoader が `map` を `SRGBColorSpace` にする。`examples/jsm/loaders/GLTFLoader.js:3582`）。`unlit` でテクスチャの無い MESH は、`save_glb` が `KHR_materials_unlit` の材質（`baseColorFactor` 1.0、metalness 0、roughness 1）を書き、`material` の上書きを使わない（`nodes_save_3d.py:369-381`）ので、係数は 1.0 で、頂点色も無ければ白（1.0）になる。それ以外の、テクスチャも頂点色も無い要素は 0.22 の灰色（PBR の材質の `save_glb` の既定 `BARE_COLOR`。`nodes_save_3d.py:383-387`） |
 | metalness・roughness | `material.metallic_factor`・`roughness_factor` × `metallic_roughness` の B・G | 既定は `save_glb` が決める（素のジオメトリは 0・0.5、テクスチャか頂点色があれば 0・1.0、`metallic_roughness` があれば係数 1.0。`nodes_save_3d.py:384-411`）。glTF の材質を持つ 3D ファイルでは、係数の無い値は glTF の既定の 1.0（`gltf_read.py:384-385`） |
 | 法線 | `normals` | 無ければ面の法線（GLTFLoader は `NORMAL` の無い GLB を `flatShading` にする。`GLTFLoader.js:3446`。`save_glb` は `normals` が無ければ `NORMAL` を書かない） |
 | 法線マップ | `normal_map`・`tangents`・`material.normal_scale` | 接線が無ければ画面の微分から作る（`normal_fragment_maps`・`normalmap_pars_fragment` の `getTangentFrame`。GLTFLoader はこのとき `normalScale.y` を反転する。`GLTFLoader.js:3507-3510`） |
@@ -314,7 +315,7 @@ multiview（`mode` が `"multiview"`）の `DA3_GEOMETRY` は、同じ場面を 
   - 材質の値：`diffuseContribution = base color × (1 − metalness)`、鏡面の f0 は 0.04 と base color を metalness で混ぜたもの、f90 は 1（`lights_physical_fragment.glsl.js:3-5, 50-52`。`MeshStandardMaterial` は `IOR` を定義しない）。roughness は 0.0525 以上に寄せ、`geometryRoughness`（法線マップを掛ける前の法線の画面の微分の大きさ）を足して 1 以下に寄せる（同 `:7-12`）。法線は `normal_fragment_begin`・`normal_fragment_maps` のとおり。
 - 色空間：base color と発光のテクスチャは sRGB から線形に戻して照らし、照らした線形の色を three.js と同じ `sRGBTransferOETF`（指数 0.41666。`colorspace_pars_fragment.glsl.js:11-13`）で sRGB にしてから 0〜1 に寄せる。tone mapping は無い（`WebGLRenderer.js:269` の既定 `NoToneMapping`）。
 - 影・環境マップ・光のプローブ・IBL は使わない。ERP の背景を環境光に使うこともしない。
-- `geometryRoughness` と法線マップの接線に要る画面の微分は、上の「画面の微分」で求める。
+- `geometryRoughness` と法線マップの接線に要る画面の微分は、上の「画面の微分」で求める（法線の無い要素の `geometryRoughness` は 0）。
 
 ### エディタとの一致（照明の場面）
 
@@ -322,13 +323,13 @@ ADR 0037 の「一致の測り方」の場面のうち、影の場面と平行�
 
 - 光が効く場面：PBR の球とトーラス（metalness と roughness の違う数個）と、法線の無い（面の法線で照らす）メッシュを、既定の照明で描く。光の向きが効くよう、正面・上・下から撮る。
 - 光が効かない場面：テクスチャの市松（遠近あり）を、`unlit` の印の立った MESH と `MOGE_GEOMETRY` で描く。
-- 3D ファイルの Sticker の場面（作る。3D ファイルの投入の最初の 1 本）：milestone ごとに回す確認の道具で、CI の test ではない。リポジトリに素材のファイル（GLB・PNG）を置かず、結果もコミットしない。
+- 3D ファイルの Sticker の場面：milestone ごとに回す確認の道具で、CI の test ではない。リポジトリに素材のファイル（GLB・PNG）を置かず、結果もコミットしない。
   - 素材：市松のテクスチャと法線を持つ箱を手続きで作り、コアの `save_glb` で GLB に書く（道具が毎回、作業用のディレクトリに作る）。光が効く要素（`unlit` が偽）。
   - 場面：その GLB を 3D ファイルの `file` の Source の `world` の Sticker として、Camera の前に回転を付けて置く。光の向きが効くよう、3 つ以上の面が見える向きにする。Camera と出力の大きさは ADR 0037 の「一致の測り方」のとおり。
-  - 出力の側（`tools/parity_file_3d.py`、作る）：Panorama Studio のノードと同じ経路（`_resolve_sources` → `render_frame`）で描き、作業用のディレクトリに書く。
-  - エディタの側（`tools/parity_file_3d.mjs`、作る）：Playwright の headless Chromium で、同じ GLB と状態を空間の表示と同じ部品（`loadSceneItem`、既定の照明、`buildWorld`）で描いて読み出す。取り込み方は ADR 0037 の試作（branch `proto/renderer-spike` の `spike/parity/capture.mjs`。キャンバス 1024 × 1024、`deviceScaleFactor: 1`）を元に作り、Chromium に `--use-angle=vulkan --enable-features=Vulkan` を渡して llvmpipe にする（試作の取り込みはこの引数と renderer の確認を持たないので、道具に足す）。WebGL の renderer 名（`UNMASKED_RENDERER_WEBGL`）が llvmpipe でなければ、比べずに失敗する。
-  - 比べ方：二つの画像を ADR 0037 の指標と暫定の合格（縁を 1 画素削った内側で、平均 ≤ 1/255、8/255 超 ≤ 0.5%）で比べ、数値と差の画像を作業用のディレクトリに出す。Vite の開発サーバーを起動するので、回し方は `docs/agents/workflow.md` の Verification に従う。
-  - 自動の test は部品を確かめる：式と標本化は `tests/test_mesh_render.py`、材質は `tests/test_scene_mesh.py`（その場で `save_glb` で書いた GLB を読む）、照明の値は `default_lighting.json` の parity、エディタの描画は `tests/browser/file_3d.spec.js`（renderer によらない smoke の test。`docs/threejs-spark-integration.md`）。
+  - 出力の側（`tools/parity_file_3d.py`）：Panorama Studio のノードと同じ経路（`_resolve_sources` → `render_frame`）で描き、状態・エディタ用の GLB（経路が返すものと同じ）・`unlit`（`scene.json`）と出力のフレーム（`output.png`）を作業用のディレクトリに書く。
+  - エディタの側（`tools/parity_file_3d.mjs`）：Playwright の headless Chromium で、同じ GLB と状態を空間の表示と同じ部品（`fileStickerRequests`、3D の Sticker のキューと `loadSceneItem`、既定の照明、`buildWorld`）で描いて読み出す。キャンバスは 1024 × 1024、`deviceScaleFactor: 1`。Chromium に `--use-angle=vulkan --enable-features=Vulkan` を渡して llvmpipe にする。WebGL の renderer 名（`UNMASKED_RENDERER_WEBGL`）が llvmpipe でなければ、比べずに失敗する。
+  - 比べ方：二つの画像を ADR 0037 の指標と暫定の合格（縁を 1 画素削った内側で、平均 ≤ 1/255、8/255 超 ≤ 0.5%）で比べ、数値（`parity.json`）と差の画像（`diff.png`）を作業用のディレクトリに出す。ページは `file://` で開き、サーバーもネットワークも使わない。
+  - 自動の test は部品を確かめる：式と標本化は `tests/test_mesh_render.py`、材質は `tests/test_scene_mesh.py`（その場で `save_glb` で書いた GLB を読む）、照明の値は `default_lighting.json` の parity（上の owner の表）、エディタの描画は `tests/browser/file_3d.spec.js`（renderer によらない smoke の test。`docs/threejs-spark-integration.md`）。
 - 指標と許容差、Camera の設定、基準の焼き方は ADR 0037 の「一致の測り方」のとおり。
 
 ### SPLAT の描き方

@@ -325,13 +325,14 @@ async function showEditor(node, type, options = {}) {
   const mountHost = document.createElement("div");
   document.body.appendChild(mountHost);
   const onImageFileSelected = ({ intent, file } = {}) => {
+    // Add to World takes an image or a 3D file (addWorldStickerFromFile tells them apart).
+    if (intent === "add-world") {
+      void addWorldStickerFromFile(file);
+      return;
+    }
     if (!isStickerImageFile(file)) return;
     if (intent === "add") {
       void addImageStickerFromFile(file);
-      return;
-    }
-    if (intent === "add-world") {
-      void addWorldStickerFromFile(file);
       return;
     }
     if (intent === "replace") void replaceSelectedImageFromFile(file);

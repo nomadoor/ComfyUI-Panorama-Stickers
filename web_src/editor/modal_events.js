@@ -25,7 +25,7 @@ export function createModalEvents(deps) {
     tooltip, uiState, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let addCutoutFrame, addImageSticker, addStudioCamera, addWorldImageSticker, applyCutoutAspectCustom,
+  let addCutoutFrame, addImageSticker, addStudioCamera, addToWorld, applyCutoutAspectCustom,
     bringSelectedToFront, clearAll, clearPaintingLayer, clearSelection, commitAndRefreshNode, contentSphere,
     deleteSelected, duplicateSelected, forceCursorTool, frameSpaceContent, getActiveCutoutShot,
     getBrushPresetIdForTool, getSelected, hidePaintSizePreview, hideTooltip, isErpCamera, isFreeSpaceView,
@@ -123,7 +123,7 @@ export function createModalEvents(deps) {
         else if (action === "redo") restoreHistory(1);
         else if (action === "clear") clearAll();
         else if (action === "add" || action === "add-image") addImageSticker();
-        else if (action === "add-world") addWorldImageSticker();
+        else if (action === "add-world") addToWorld();
         else if (action === "add-or-look") addCutoutFrame();
         else if (action === "add-camera") addStudioCamera();
         return;
@@ -534,7 +534,7 @@ export function createModalEvents(deps) {
   return {
     connect(api) {
       ({
-        addCutoutFrame, addImageSticker, addStudioCamera, addWorldImageSticker, applyCutoutAspectCustom,
+        addCutoutFrame, addImageSticker, addStudioCamera, addToWorld, applyCutoutAspectCustom,
         bringSelectedToFront, clearAll, clearPaintingLayer, clearSelection, commitAndRefreshNode, contentSphere,
         deleteSelected, duplicateSelected, forceCursorTool, frameSpaceContent, getActiveCutoutShot,
         getBrushPresetIdForTool, getSelected, hidePaintSizePreview, hideTooltip, isErpCamera, isFreeSpaceView,

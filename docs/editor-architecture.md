@@ -105,7 +105,7 @@ export function createHistory(deps) {
 | `editor/helpers.js` | 小さな純粋な関数（easing、ベクトル、2D の幾何、色、ノードの値） |
 | `editor/ui_settings.js` | localStorage の設定（視点の反転、ノードごとのグリッド） |
 | `editor/video_thumbnail_cache.js` | VIDEO のサムネイルのキャッシュ（直近 12 本） |
-| `editor/media_session.js` | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
+| `editor/media_session.js` | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、3D ファイルのエディタ用ファイルの問い合わせ（`file3dEditorFile`）、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
 | `editor/history.js` | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。段を積む前に上流の編集を書き戻させ（`syncUpstreamEdits`）、上流で消えた要素の上書きを捨てさせ（`pruneUpstreamRecords`。開いたときの最初の段 `pushHistory({ initial: true })` では捨てない）、戻した状態に合わせて上流の作業コピーを作り直させる（`rebuildUpstreamWorking`） |
 | `editor/items.js` | Sticker（上流の作業コピーの Sticker を含む。`stickerById`・`upstreamSkyStickers`）、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
 | `editor/selection.js` | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
@@ -125,7 +125,7 @@ export function createHistory(deps) {
 | `editor/timeline_actions.js` | `onTimelineAction`（上流の層の行も同じ操作で作業コピーを変える。層の見出しの Revert・Restore deleted） |
 | `editor/commit.js` | 状態の widget への書き戻し、ノードのプレビューの更新 |
 | `editor/commands.js` | 全消去、複製、削除（上流の要素は上書きの消した記録に）と確認、上流の層の Restore deleted と Revert（`restoreUpstreamDeletedCommand`・`revertUpstreamLayerCommand`） |
-| `editor/sticker_import.js` | 画像の追加・置き換え・アップロード、drop |
+| `editor/sticker_import.js` | 画像の追加・置き換え・アップロード、3D ファイルの追加（アップロード・経路への問い合わせ・待つ間と失敗の知らせ）、drop |
 | `editor/camera.js` | Cutout / Studio の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
 | `editor/frame_view.js` | Frame のビュー（ゲート、パン・ドラッグ・ホイール、キーの移動 `moveFrameByKeys`・`endFrameKeyMove`） |
 | `editor/paint_input.js` | ペイントの入力、カーソル、筆跡と投げ縄の記録、消しゴム |

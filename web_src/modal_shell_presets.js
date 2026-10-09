@@ -30,8 +30,8 @@ export function buildModalShellPreset(type = "stickers") {
           ]
         : [
             { key: "add", attr: "data-tool-ui-action", value: "add", label: "Add Image", tip: "Add image", active: false, accent: true, icon: ICON.image, pressed: null },
-            // Panorama Studio only (#72): an image placed in space as a world Sticker.
-            { key: "add-world", attr: "data-tool-ui-action", value: "add-world", label: "Add World Image", tip: "Add image in space", active: false, accent: false, icon: ICON.globe, pressed: null, visible: false },
+            // Panorama Studio only (#72): an image or a 3D file placed in space as a world Sticker.
+            { key: "add-world", attr: "data-tool-ui-action", value: "add-world", label: "Add to World", tip: "Add an image or 3D model in space", active: false, accent: false, icon: ICON.globe, pressed: null, visible: false },
             // Panorama Studio's one Camera; disabled, not hidden, while it has one.
             ...(isStudio ? [{ key: "add-camera", attr: "data-tool-ui-action", value: "add-camera", label: "Add Camera", tip: "Add camera", active: false, accent: false, icon: ICON.camera_plus, pressed: null }] : []),
           ]),

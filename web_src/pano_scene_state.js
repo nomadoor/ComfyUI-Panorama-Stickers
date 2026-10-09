@@ -213,6 +213,23 @@ function source(raw) {
   return null;
 }
 
+// The extensions of a 3D file, the ones ComfyUI's Load3D accepts (docs/scene-state-v2.md "3D ファイルの `file` の
+// Source"; scene_state.py reads the same table from tests/fixtures/scene_state/file_3d_formats.json).
+export const FILE_3D_EXTENSIONS = Object.freeze([".gltf", ".glb", ".obj", ".fbx", ".stl", ".spz", ".splat", ".ply", ".ksplat"]);
+
+// Whether a file name ends in a 3D file's extension (any case). The file is not opened.
+export function is3dFileName(name) {
+  const lower = String(name ?? "").toLowerCase();
+  const dot = lower.lastIndexOf(".");
+  return dot >= 0 && FILE_3D_EXTENSIONS.includes(lower.slice(dot));
+}
+
+// Whether a Source is a 3D file: a `file` Source whose filename has a 3D file's extension. Any other file
+// Source, and an embedded data URL, is an image.
+export function is3dFileSource(src) {
+  return src?.kind === "file" && typeof src.filename === "string" && is3dFileName(src.filename);
+}
+
 function sticker(raw) {
   const src = source(raw.source);
   if (!src) return null;

@@ -12,6 +12,7 @@ import {
   cameraFrustumSegments,
   cameraTrajectory,
   contentPoints,
+  fileStickerRequests,
   gridSpec,
   placedCamera,
   polylineSegments,
@@ -32,9 +33,9 @@ export function createViewInput(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
-    currentViewCamera, cutoutCamera, deviceRect, followPortSticker, frameViewDistance, getConnectedErpImage,
+    currentViewCamera, cutoutCamera, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
     getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
-    isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, sceneFiles,
+    isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, refreshFile3d, sceneFiles,
     selectedWorldSticker, spaceModeState, spaceOrigin, spaceViewState, stickerFiles, stickerImageKey,
     syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput, worldStickerEditable;
 
@@ -125,9 +126,9 @@ export function createViewInput(deps) {
   }
 
   // The World at the playhead: the `scene` item the node draws at this frame with the `scene` transform,
-  // the item of the 3D port Sticker with its transform and opacity, the world Sticker planes, the upstream
-  // Scene's planes and items (`upstream`, upstreamViewInput()), and the sphere around all of it (null without
-  // content) that frames it and scales the navigation.
+  // the items of the 3D port Sticker and of the 3D file Stickers with their transforms and opacities, the world
+  // Sticker planes, the upstream Scene's planes and items (`upstream`, upstreamViewInput()), and the sphere
+  // around all of it (null without content) that frames it and scales the navigation.
   function buildSpaceContent(sceneState, evaluated, media, upstream) {
     const files = sceneFiles();
     const scene = sceneRequest(files, evaluated.scene);
@@ -137,6 +138,12 @@ export function createViewInput(deps) {
     const sticker = stickerContentRequest(portFiles, sceneState, evaluated);
     const stickerBox = sticker?.url ? editorView.sceneBox(sticker.url) : null;
     const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
+    const fileStickers = fileStickerRequests(sceneState, evaluated, file3dEditorFile);
+    for (const { request } of fileStickers) {
+      const fileBox = request ? editorView.sceneBox(request.url) : null;
+      if (fileBox) items.push({ box: sceneItemBox(request.kind, fileBox), value: request.value });
+    }
+    refreshGoneFiles(sceneState, fileStickers, upstream.items);
     const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media, evaluated });
     for (const { request, value } of upstream.items) {
       const upstreamBox = request?.url ? editorView.sceneBox(request.url) : null;
@@ -149,11 +156,26 @@ export function createViewInput(deps) {
       scene,
       stickerUrls: stickerContentUrls(portFiles, sceneState),
       sticker,
+      fileStickers: fileStickers.map((entry) => entry.request).filter(Boolean),
+      fileStickerKeys: fileStickers.map((entry) => entry.key),
       stickers,
       upstreamStickers: upstream.stickers,
       upstreamItems: upstream.items,
       sphere,
     };
+  }
+
+  // A 3D file Sticker (its own or an upstream layer's) whose editor file is gone (a 404: the server dropped the
+  // temp file) asks the route again.
+  function refreshGoneFiles(sceneState, fileStickers, upstreamItems) {
+    const gone = (key) => /\b404\b/.test(editorView.sceneItemError(key) ?? "");
+    for (const { id, key } of fileStickers) {
+      const sticker = gone(key) ? sceneState.stickers.find((item) => item.id === id) : null;
+      if (sticker) refreshFile3d(sticker.source);
+    }
+    for (const item of upstreamItems) {
+      if (item.source && gone(item.urls[0])) refreshFile3d(item.source);
+    }
   }
 
   // The guides of the panorama view over the World `content`: the grid, the gizmo, and in the Cutout
@@ -259,9 +281,9 @@ export function createViewInput(deps) {
     connect(api) {
       ({
         applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
-        currentViewCamera, cutoutCamera, deviceRect, followPortSticker, frameViewDistance, getConnectedErpImage,
+        currentViewCamera, cutoutCamera, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
         getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
-        isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, sceneFiles,
+        isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, refreshFile3d, sceneFiles,
         selectedWorldSticker, spaceModeState, spaceOrigin, spaceViewState, stickerFiles, stickerImageKey,
         syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput, worldStickerEditable,
       } = api);

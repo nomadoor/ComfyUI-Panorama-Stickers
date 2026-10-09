@@ -8,12 +8,14 @@
 // Every render sets the scene up from the given layers. Only GPU resources (meshes, materials, textures,
 // the loaded `scene` items and the World's objects) are reused between renders; nothing here is saved.
 import {
+  AmbientLight,
   AxesHelper,
   BackSide,
   BufferGeometry,
   ClampToEdgeWrapping,
   Color,
   CustomBlending,
+  DirectionalLight,
   DoubleSide,
   Float32BufferAttribute,
   FloatType,
@@ -53,6 +55,51 @@ import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWind
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
 import { createSparkViews } from "./pano_spark_views.js";
+
+// The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
+// mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
+const light = (type, intensity, position = null) => Object.freeze({
+  type,
+  color: Object.freeze([1, 1, 1]),
+  intensity,
+  ...(position ? { position: Object.freeze(position) } : {}),
+});
+export const DEFAULT_LIGHTS = Object.freeze([
+  light("ambient", 1.5),
+  light("directional", 2.4, [0, 10, 10]),
+  light("directional", 1.5, [0, 10, -10]),
+  light("directional", 0.9, [-10, 0, 0]),
+  light("directional", 0.9, [10, 0, 0]),
+  light("directional", 0.6, [0, -10, 0]),
+]);
+
+// The default lights in a group the World holds as it is, apart from the `scene` and Sticker transforms: each
+// directional light shines from its position toward the World origin, where its target is. They fall only on
+// the MeshStandardMaterial of a lit GLB; MeshBasicMaterial and Spark do not see them.
+export function createDefaultLights(lights = DEFAULT_LIGHTS) {
+  const group = new Group();
+  for (const { type, color, intensity, position } of lights) {
+    const rgb = new Color(...color);
+    if (type === "ambient") {
+      group.add(new AmbientLight(rgb, intensity));
+      continue;
+    }
+    const directional = new DirectionalLight(rgb, intensity);
+    directional.position.set(...position);
+    directional.target.position.set(0, 0, 0);
+    group.add(directional, directional.target);
+  }
+  return group;
+}
+
+// What the 3D Sticker queue (createSceneItems requestMany) is asked for in one render of a space input: `drawn`,
+// the requests of the port Sticker's item and the 3D file Stickers' items shown at this frame, and `inputs`, those
+// with a keep-only input of every key whose item stays loaded (stickerUrls, fileStickerKeys), so a 3D Sticker hidden
+// or outside its Clip range keeps its item and shows it again without loading.
+export function stickerItemInputs(space) {
+  const drawn = [...(space.sticker ? [space.sticker] : []), ...(space.fileStickers ?? [])];
+  return { drawn, inputs: [...drawn, { urls: [...(space.stickerUrls ?? []), ...(space.fileStickerKeys ?? [])] }] };
+}
 
 const DOME_RADIUS = 100;
 const STICKER_DISTANCE = 50;
@@ -565,6 +612,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return new Mesh(planeGeometry, material);
   };
   let guides = null;
+  // The default lights, always in the World (they change nothing that is not lit).
+  const lights = createDefaultLights();
   const lines = { sets: null, lines: [] };
   // The `scene` and 3D Sticker items' groups (by item object), kept while the item is drawn.
   const contentGroups = new WeakMap();
@@ -711,10 +760,10 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   }
 
   // The item of `items` for input (a `scene` or 3D Sticker request), or the one shown before while it
-  // loads (an item of the same input), in a group with the input's transform.
-  function contentGroup(items, input) {
+  // loads (an item of the same input), in a group with the input's transform. `item` is what
+  // items.request(input) gave, when the caller asked for several inputs at once.
+  function contentGroup(items, input, item = items.request(input)) {
     const { transform, itemQuaternion } = input;
-    const item = items.request(input);
     if (!item) return null;
     item.object.quaternion.set(itemQuaternion.x, itemQuaternion.y, itemQuaternion.z, itemQuaternion.w);
     let group = contentGroups.get(item.object);
@@ -757,22 +806,26 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return mesh;
   }
 
-  // The World of a space input: the guides, the `scene` item, the 3D Sticker's item, the world Sticker
-  // planes and lines, with the Spark renderer of owner's view, and the upstream Scene's items and planes
-  // (ADR 0030), which are drawn and picked as the node's own. The objects are kept between renders, and
-  // `world` is filled again only when they change. What is not seen (opacity 0) is not picked.
+  // The World of a space input: the default lights, the guides, the `scene` item, the 3D Stickers' items (the
+  // port Sticker's and the 3D file Stickers', in one queue), the world Sticker planes and lines, with the Spark
+  // renderer of owner's view, and the upstream Scene's items and planes (ADR 0030), which are drawn and picked
+  // as the node's own. The objects are kept between renders, and `world` is filled again only when they
+  // change. What is not seen (opacity 0) is not picked.
   function buildWorld(owned, space, owner) {
-    const children = [];
+    const children = [lights];
     const parts = [];
     pickable = [];
     pickBoxes = [];
     if (space.grid) children.push(guideGroup(space.grid));
     sceneItems.retain(space.sceneUrls ?? []);
-    stickerItems.retain(space.stickerUrls ?? []);
     // Each content with its opacity, which the `scene` item's materials keep as they are (opaque).
     const contents = [];
     if (space.scene) contents.push({ content: contentGroup(sceneItems, space.scene), opacity: 1, keepMaterials: true });
-    if (space.sticker) contents.push({ content: contentGroup(stickerItems, space.sticker), opacity: space.sticker.opacity });
+    const stickerInputs = stickerItemInputs(space);
+    const stickerShown = stickerItems.requestMany(stickerInputs.inputs);
+    stickerInputs.drawn.forEach((input, index) => {
+      contents.push({ content: contentGroup(stickerItems, input, stickerShown[index]), opacity: input.opacity });
+    });
     const slots = new Set();
     for (const entry of space.upstreamItems ?? []) {
       slots.add(entry.slot);
@@ -906,12 +959,14 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // { kind: "sticker", id, media, revision, opacity, quaternion, rect }. Each may name its `source`
   // (see createLayerTextures). owner is optional.
   // With `space`, the view stands at camera.position (a spaceCamera(), pano_space.js) and draws the World
-  // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickerUrls, sticker,
+  // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickerUrls, sticker, fileStickers, fileStickerKeys,
   // stickers, lines }. sceneUrls are the item URLs of the `scene` input; loaded items of other URLs are
   // dropped. grid is a gridSpec() or null. scene is null or { kind ("splat" or "mesh"), url, urls (every item of the input), prefetch
   // (urls to load ahead), transform ({ position, quaternion, scale }), itemQuaternion (the item's turn into
-  // the `scene` frame) }. sticker is the same for the `sticker` input's 3D media with its opacity, and
-  // stickerUrls its item URLs. stickers are world Sticker planes { id, media, revision, source, opacity,
+  // the `scene` frame), unlit (its meshes draw without light; false: lit by the default lights) }. sticker is the
+  // same for the `sticker` input's 3D media with its opacity, and stickerUrls its item URLs. fileStickers are the
+  // requests of the 3D file Stickers (pano_space.js fileStickerRequests: by the Sticker's key, loaded from
+  // `src`), and fileStickerKeys the keys of every one whose item stays loaded. stickers are world Sticker planes { id, media, revision, source, opacity,
   // position, quaternion, width, height, crop }, and lines are { segments: [[a, b], ...], color }.
   // upstreamItems ([{ slot, urls, request, opacity }], pano_upstream.js upstreamLayerView) and upstreamStickers
   // (planes as `stickers`) are the upstream Scene's, drawn and picked as the own ones (ADR 0030). gizmo is
@@ -945,12 +1000,21 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (color !== null) renderer.setClearColor(0x000000, 0);
   }
 
-  // The box of the loaded `scene` or 3D Sticker item at url in its own frame ({ min, max }; a SPLAT's in
-  // 3DGS coordinates), or null while it loads.
+  // The box of the loaded `scene` or 3D Sticker item at url (or a 3D file Sticker's key) in its own frame
+  // ({ min, max }; a SPLAT's in 3DGS coordinates), or null while it loads.
   function sceneBox(url) {
     for (const items of [sceneItems, stickerItems, ...upstreamItems.values()]) {
       const box = items.box(url);
       if (box) return box;
+    }
+    return null;
+  }
+
+  // Why the `scene` or 3D Sticker item at url (or key) failed to load ("HTTP 404" when its file is gone), or null.
+  function sceneItemError(url) {
+    for (const items of [sceneItems, stickerItems, ...upstreamItems.values()]) {
+      const error = items.error(url);
+      if (error) return error;
     }
     return null;
   }
@@ -1159,5 +1223,5 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!lost) renderer.forceContextLoss();
   }
 
-  return { canvas, render, renderUnwrap, resize, clear, sceneBox, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
+  return { canvas, render, renderUnwrap, resize, clear, sceneBox, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
 }

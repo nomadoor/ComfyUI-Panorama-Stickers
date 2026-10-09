@@ -17,6 +17,9 @@ PLACEMENTS = ("sky", "world")
 # How the Camera shoots; the first is the default.
 PROJECTIONS = ("perspective", "erp")
 FILE_STORAGES = ("input", "output", "temp")
+# The extensions of the 3D files a `file` Source may name, as ComfyUI's Load3D takes them (docs/scene-state-v2.md);
+# tests/fixtures/scene_state/file_3d_formats.json holds the same table for the JS side.
+FILE_3D_EXTENSIONS = (".gltf", ".glb", ".obj", ".fbx", ".stl", ".spz", ".splat", ".ply", ".ksplat")
 # ease-in-out, the Easing of a Keyframe without a valid one.
 DEFAULT_EASING = (0.42, 0.0, 0.58, 1.0)
 # The Clip range a missing or invalid one reads as: the whole Timeline from the content's first frame.
@@ -234,6 +237,19 @@ def _source(raw):
     if isinstance(data_url, str) and data_url.startswith("data:image"):
         return {"kind": "file", "data_url": data_url}
     return None
+
+
+def normalize_source(raw):
+    """A Source as a loaded state holds it (`port`, a `file` with `filename`, `subfolder`, and `storage`, or a v1
+    `data_url`), or None when it is not valid."""
+    return _source(raw)
+
+
+def is_3d_file_source(source) -> bool:
+    """Whether a loaded Source is a 3D file: a `file` Source whose `filename` ends with an extension of
+    FILE_3D_EXTENSIONS, whatever its case. The file is not opened; any other Source is an image or the port."""
+    filename = source.get("filename") if isinstance(source, dict) and source.get("kind") == "file" else None
+    return isinstance(filename, str) and filename.lower().endswith(FILE_3D_EXTENSIONS)
 
 
 def _sticker(raw):
