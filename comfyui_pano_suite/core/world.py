@@ -144,3 +144,53 @@ def camera_info_from_camera(camera: dict, aspect: float) -> dict:
         "fov": 2.0 * math.atan(tan_half_h / aspect) * RAD2DEG,
         "aspect": float(aspect),
     }
+
+
+# Placing a new 3D Sticker so that its content fits the view (docs/editor-interaction.md, "3D の Sticker を収めて
+# 置く"); web_src/pano_space.js has the same rule, both checked against tests/fixtures/place_3d/fit.json.
+# The margin between the content's bounding sphere and the edge of the view.
+FIT_MARGIN = 1.1
+# The nearest a new 3D Sticker's content is put (World units).
+FIT_3D_MIN_DISTANCE = 0.1
+# How far ahead a new Sticker without content (or with broken content) puts its origin.
+NEW_WORLD_STICKER_DISTANCE = 2.0
+
+
+def _finite_vector(value) -> bool:
+    return (isinstance(value, (list, tuple)) and len(value) == 3
+            and all(isinstance(number, (int, float)) and not isinstance(number, bool) and math.isfinite(number) for number in value))
+
+
+def box_sphere(box):
+    """The bounding sphere (center, radius) of a content box `{"min", "max"}` as the sphere of its 8 corners, or None
+    for no box or a broken one (not 3 finite numbers each, or a min past its max)."""
+    if not isinstance(box, dict) or not _finite_vector(box.get("min")) or not _finite_vector(box.get("max")):
+        return None
+    low, high = np.asarray(box["min"], dtype=np.float64), np.asarray(box["max"], dtype=np.float64)
+    if (low > high).any():
+        return None
+    return ((low + high) / 2.0).tolist(), float(np.linalg.norm(high - low) / 2.0)
+
+
+def fit_distance(radius: float, fov_deg: float) -> float:
+    """The distance at which a sphere of `radius` fits a view `fov_deg` wide, with FIT_MARGIN."""
+    return radius / math.sin(math.radians(fov_deg) / 2.0) * FIT_MARGIN
+
+
+def fit_3d_position(eye, direction, center, radius, rotation: dict, fov_deg, min_distance: float, fallback_fov_deg: float) -> list:
+    """The `position` of a new 3D Sticker whose content (bounding sphere `center`, `radius` in its own glTF frame)
+    is turned by `rotation` (yaw, pitch, roll) and fits a view `fov_deg` wide (the smaller of its two angles) from
+    `eye` looking along `direction`: the sphere's center goes `max(fit_distance, min_distance)` along `direction`.
+    A `fov_deg` that is not a positive finite number takes `fallback_fov_deg` (the node's, `nodes.py`
+    PORT_3D_FIT_FOV_DEG). Without content (`center` or `radius` None or not finite) the content's origin goes
+    NEW_WORLD_STICKER_DISTANCE ahead."""
+    eye = np.asarray(eye, dtype=np.float64)
+    ahead = np.asarray(direction, dtype=np.float64)
+    ahead = ahead / np.linalg.norm(ahead)
+    valid_fov = isinstance(fov_deg, (int, float)) and math.isfinite(fov_deg) and fov_deg > 0.0
+    fov = fov_deg if valid_fov else fallback_fov_deg
+    if center is None or radius is None or not _finite_vector(center) or not math.isfinite(radius):
+        return (eye + NEW_WORLD_STICKER_DISTANCE * ahead).tolist()
+    turn = world_rotation(rotation["yaw_deg"], rotation["pitch_deg"], rotation["roll_deg"])
+    distance = max(fit_distance(radius, fov), min_distance)
+    return (eye + distance * ahead - turn @ np.asarray(center, dtype=np.float64)).tolist()

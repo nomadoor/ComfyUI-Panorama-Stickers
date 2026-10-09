@@ -146,6 +146,61 @@ function tanHalfFov(view, width, height) {
   return { tanX, tanY: tanX * height / width };
 }
 
+// The FOV, in degrees, a view of width x height pixels fits content in: the smaller of its horizontal FOV
+// (hFOV_deg) and its vertical one.
+export function viewFitFov(view, width, height) {
+  const { tanX, tanY } = tanHalfFov(view, width, height);
+  return 2 * Math.atan(Math.min(tanX, tanY)) * RAD2DEG;
+}
+
+// --- Fitting a 3D Sticker in view (docs/editor-interaction.md "3D の Sticker を収めて置く"; core/world.py has the
+// same values, both checked against tests/fixtures/place_3d/fit.json).
+
+// The default horizontal FOV of Panorama Studio's view in the editor and on the node.
+export const DEFAULT_VIEW_HFOV = 100;
+// The space between a fitted sphere and the edges of the view.
+export const FIT_MARGIN = 1.1;
+// The nearest a new 3D Sticker goes, in World units (the editor keeps it past twice its near plane too).
+export const FIT_3D_MIN_DISTANCE = 0.1;
+// The FOV a fit takes when it is given none: DEFAULT_VIEW_HFOV made the vertical FOV of a 16:9 view (the node's
+// PORT_3D_FIT_FOV_DEG).
+export const FIT_FALLBACK_FOV_DEG = 2 * Math.atan(Math.tan(DEFAULT_VIEW_HFOV * 0.5 * DEG2RAD) * 9 / 16) * RAD2DEG;
+
+function fitFov(fovDeg) {
+  return Number.isFinite(fovDeg) && fovDeg > 0 ? fovDeg : FIT_FALLBACK_FOV_DEG;
+}
+
+// How far from its center a sphere of `radius` fits a view of `fovDeg` (the smaller of its FOVs), with
+// FIT_MARGIN. Frame Selected (frameView) and the placing of a new 3D Sticker (fit3dPosition) both use it.
+export function fitDistance(radius, fovDeg) {
+  return radius / Math.sin(fitFov(fovDeg) * 0.5 * DEG2RAD) * FIT_MARGIN;
+}
+
+// The sphere a fit takes around a box { min, max } in the content's own (scene glTF) frame, as the route gives
+// it: no sceneItemBox turn, which is for the boxes three.js loads. null for no box or a malformed one.
+export function fitSphereOfBox(box) {
+  const triple = (value) => Array.isArray(value) && value.length === 3 && value.every((item) => typeof item === "number" && Number.isFinite(item));
+  if (!box || typeof box !== "object" || !triple(box.min) || !triple(box.max)) return null;
+  if (box.min.some((value, axis) => value > box.max[axis])) return null;
+  const center = box.min.map((value, axis) => (value + box.max[axis]) / 2);
+  const radius = Math.hypot(...box.max.map((value, axis) => value - box.min[axis])) / 2;
+  return { center, radius };
+}
+
+// Where a new 3D Sticker turned by `rotation` ({ yaw_deg, pitch_deg, roll_deg }) goes so its content, of bounding
+// `sphere` ({ center, radius } in its own frame), fits a view at `eye` looking along `dir` with a FOV of `fovDeg`:
+// the sphere's center lands at max(fitDistance, minDistance) along dir. Without a sphere (or a broken one) its
+// origin goes NEW_WORLD_STICKER_DISTANCE along dir.
+export function fit3dPosition(eye, dir, sphere, rotation, fovDeg, minDistance) {
+  const length = Math.hypot(...dir);
+  const unit = dir.map((value) => value / length);
+  const valid = sphere && sphere.center.every(Number.isFinite) && Number.isFinite(sphere.radius) && sphere.radius >= 0;
+  const center = valid ? sphere.center : [0, 0, 0];
+  const distance = valid ? Math.max(fitDistance(sphere.radius, fovDeg), minDistance) : NEW_WORLD_STICKER_DISTANCE;
+  const turned = apply(worldRotation(rotation.yaw_deg, rotation.pitch_deg, rotation.roll_deg), center);
+  return add(eye, unit, distance).map((value, axis) => value - turned[axis]);
+}
+
 // Turns the view about the point `pivot` (its own pivot by default) by a pointer drag of (dx, dy) pixels
 // on a view `height` pixels tall, like three.js OrbitControls (and core's Load3D): a drag across the view's
 // height turns it a full turn, and the content follows the pointer. The pivot stays where it is on the
@@ -204,9 +259,7 @@ export function zoomView(view, target, direction, scale = DEFAULT_DISTANCE) {
 
 // The view keeping its direction that fits the sphere { center, radius } in a width x height view.
 export function frameView(view, sphere, width, height) {
-  const { tanX, tanY } = tanHalfFov(view, width, height);
-  const halfAngle = Math.atan(Math.min(tanX, tanY));
-  const distance = Math.max(sphere.radius, 1e-6) / Math.sin(halfAngle) * 1.1;
+  const distance = fitDistance(Math.max(sphere.radius, 1e-6), viewFitFov(view, width, height));
   const { forward } = viewAxes(view.yaw_deg, view.pitch_deg);
   return { ...view, position: add(sphere.center, forward, -distance), distance };
 }
@@ -452,9 +505,9 @@ export function frameSphere(content, selected = null) {
 
 // --- Placing and transforming world Stickers (#72).
 
-// A new world Sticker without World content goes this far ahead of the view, as far as the node puts a
-// 3D port Sticker from the origin (WORLD_STICKER_POSITION). With content it goes half the radius of the
-// content's bounding sphere ahead.
+// A new world image without World content goes this far ahead of the view; with content it goes half the radius
+// of the content's bounding sphere ahead. A new 3D Sticker goes this far along its direction while its content is
+// not known, or when it has none (fit3dPosition; core/world.py has the same constant).
 export const NEW_WORLD_STICKER_DISTANCE = 2;
 const NEW_WORLD_STICKER_RADIUS_RATIO = 0.5;
 // A new world Sticker is as wide as a new sky Sticker (30 degrees) seen from the view.
@@ -485,12 +538,15 @@ export function newWorldStickerTransform(view, hit, sphere = null) {
   return { position, rotation, scale };
 }
 
-// Where a 3D file added at a point of the view goes: where newWorldStickerTransform() puts an image, turned
-// about the vertical alone so its front (glTF +Z) faces the view and it stands upright, at scale 1 (its own
-// units are World units, as the node's 3D port Sticker). Its contents are not moved to center them.
-export function newWorld3dStickerTransform(view, hit, sphere = null) {
-  const { position, rotation } = newWorldStickerTransform(view, hit, sphere);
-  return { position, rotation: { yaw_deg: rotation.yaw_deg, pitch_deg: 0, roll_deg: 0 }, scale: 1 };
+// Where a 3D file added along `dir` (pano_editor_view.js placeDirection) goes until its content is known: its
+// origin NEW_WORLD_STICKER_DISTANCE along dir (fit3dPosition then fits it). It is turned about the vertical alone,
+// so its front (glTF +Z) faces back along dir's horizontal (the view's yaw for a dir straight up or down) and it
+// stands upright, at scale 1 (its own units are World units, as the node's 3D port Sticker).
+export function newWorld3dStickerTransform(view, dir) {
+  const level = Math.hypot(dir[0], dir[2]) > 1e-9;
+  const yaw = level ? Math.atan2(dir[0], -dir[2]) * RAD2DEG + 0 : view.yaw_deg;
+  const position = fit3dPosition(view.position, dir, null, { yaw_deg: yaw, pitch_deg: 0, roll_deg: 0 }, 0, 0);
+  return { position, rotation: { yaw_deg: yaw, pitch_deg: 0, roll_deg: 0 }, scale: 1 };
 }
 
 function multiply(a, b) {

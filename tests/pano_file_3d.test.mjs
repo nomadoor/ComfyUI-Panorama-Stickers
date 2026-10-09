@@ -15,7 +15,7 @@ test("the editor asks the route for a 3D file's editor file with the Source's va
   const calls = [];
   const fetchApi = async (path, options) => {
     calls.push({ path, options });
-    return respond(200, { kind: "mesh", unlit: false, file: entry });
+    return respond(200, { kind: "mesh", unlit: false, file: entry, box: { min: [-1, 0, -1], max: [1, 2, 1] } });
   };
   const result = await requestFile3dEditorFile(source, { fetchApi });
   assert.equal(FILE_3D_ROUTE, "/panorama_suite/file_3d");
@@ -24,12 +24,15 @@ test("the editor asks the route for a 3D file's editor file with the Source's va
   assert.equal(calls[0].options.method, "POST");
   assert.equal(calls[0].options.headers["Content-Type"], "application/json");
   assert.deepEqual(JSON.parse(calls[0].options.body), { filename: "chair.glb", subfolder: "3d", storage: "input" });
-  assert.deepEqual(result, { ok: true, kind: "mesh", unlit: false, file: entry });
+  // The content's box comes as the route gives it, for the fit of a new 3D Sticker (pano_space.js fitSphereOfBox
+  // checks its shape).
+  assert.deepEqual(result, { ok: true, kind: "mesh", unlit: false, file: entry, box: { min: [-1, 0, -1], max: [1, 2, 1] } });
 });
 
 test("a SPLAT has no unlit, and a reply of another shape is a failure", async () => {
   const splat = await requestFile3dEditorFile(source, { fetchApi: async () => respond(200, { kind: "splat", file: entry }) });
-  assert.deepEqual(splat, { ok: true, kind: "splat", unlit: true, file: entry });
+  // Without a box (an empty content, or an older node pack) it is null.
+  assert.deepEqual(splat, { ok: true, kind: "splat", unlit: true, file: entry, box: null });
   const odd = await requestFile3dEditorFile(source, { fetchApi: async () => respond(200, { kind: "voxels", file: entry }) });
   assert.equal(odd.ok, false);
   assert.equal(odd.error, "Could not read the 3D file 3d/chair.glb: the server's reply was not understood.");
@@ -63,7 +66,7 @@ test("each Source is asked once while the editor is open, again after its file i
   const ready = await files.request(source);
   assert.equal(calls.length, 1);
   assert.equal(updates, 1);
-  assert.deepEqual(ready, { state: "ready", kind: "mesh", unlit: true, file: { ...entry, filename: "f1.glb" }, error: null, generation: 0 });
+  assert.deepEqual(ready, { state: "ready", kind: "mesh", unlit: true, file: { ...entry, filename: "f1.glb" }, box: null, error: null, generation: 0 });
   assert.equal(files.get(source), ready);
   // Another file is another question.
   await files.request({ ...source, filename: "table.glb" });

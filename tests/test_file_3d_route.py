@@ -63,6 +63,8 @@ def test_a_mesh_file_gets_its_editor_glb_and_its_unlit_mark(input_dir):
     _status, flat = _post({"filename": " flat.glb ", "subfolder": "/3d/"})
 
     assert status == 200 and lit["kind"] == "mesh" and lit["unlit"] is False and flat["unlit"] is True
+    # The content's box in its own glTF frame (`content_box`), for the editor to fit the new Sticker with.
+    assert lit["box"] == {"min": [-0.5, -0.5, 0.0], "max": [0.5, 0.5, 0.0]}
     entry = lit["file"]
     assert entry["type"] == "temp" and entry["format"] == "model/gltf-binary" and entry["pano_evictable"] is True
     path = temp_entry_path(entry)
@@ -77,6 +79,7 @@ def test_a_splat_file_gets_its_editor_ply(input_dir):
     status, payload = _post({"filename": "blob.ply", "subfolder": "3d"})
 
     assert status == 200 and payload["kind"] == "splat" and "unlit" not in payload
+    assert payload["box"] == {"min": [0.0, 0.0, 0.0], "max": [0.0, 0.0, 0.0]}
     assert payload["file"]["format"] == "application/ply" and temp_entry_path(payload["file"]).exists()
 
 

@@ -2,9 +2,18 @@
 // only in Panorama Studio, as a world Sticker), replacing a Sticker's image, uploading them, the legacy embedded
 // assets moved to files, and the drop cue on the stage.
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
+import { placeDirection } from "../pano_editor_view.js";
 import { fileSource, newSceneSticker, newWorldSceneSticker, takeStickerId } from "../pano_editor_state.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
-import { fileStickerKey, newWorld3dStickerTransform, newWorldStickerTransform } from "../pano_space.js";
+import {
+  FIT_3D_MIN_DISTANCE,
+  fileStickerKey,
+  fit3dPosition,
+  fitSphereOfBox,
+  newWorld3dStickerTransform,
+  newWorldStickerTransform,
+  viewFitFov,
+} from "../pano_space.js";
 import {
   WORLD_FILE_ACCEPT,
   decodeStickerImageFile,
@@ -27,7 +36,7 @@ export function createStickerImport(deps) {
   // Bound by connect() to the other modules and showEditor.
   let clearWorldSelection, commitAndRefreshNode, computeStickerVFov, contentSphere, currentSpaceCamera,
     file3dEditorFile, forceCursorTool, getNextStickerZIndex, getSelected, isExternalSticker, isSpaceView,
-    isStickerItem, markObjectVisualsDirty, pushHistory, requestDraw, requestFile3d, selectWorldSticker,
+    isStickerItem, markObjectVisualsDirty, pushHistory, requestDraw, requestFile3d, screenPos, selectWorldSticker,
     setSelectedItem, spaceViewState, stickerImageKey, stopTimelinePlayback, syncTimeline, updateSelectionMenu,
     updateSidePanel;
 
@@ -142,23 +151,41 @@ export function createStickerImport(deps) {
     vueModal?.openImagePicker?.("add-world", WORLD_FILE_ACCEPT);
   }
 
-  // A picked (or dropped) image or 3D file placed in space as a world Sticker.
-  async function addWorldStickerFromFile(file) {
+  // A picked (or dropped) image or 3D file placed in space as a world Sticker. `point` is where a 3D file was
+  // dropped on the canvas (canvas pixels), null for the button.
+  async function addWorldStickerFromFile(file, point = null) {
     if (readOnly || !sceneV2) return;
     if (isStickerImageFile(file)) {
       stopTimelinePlayback();
       await addSceneStickerFromFile(file, "world");
     } else if (isSticker3dFile(file)) {
       stopTimelinePlayback();
-      await addFile3dSticker(file);
+      await addFile3dSticker(file, file3dPlacement(point));
     }
+  }
+
+  // What a new 3D file is fitted with once the route gives its box (docs/editor-interaction.md "3D の Sticker を
+  // 収めて置く"), taken when it is placed so moving the view meanwhile changes nothing: the view, the direction
+  // through the drop point on the panorama view (else through the view's center), the FOV the view fits content
+  // in, and the nearest distance (twice the view's near plane, at least FIT_3D_MIN_DISTANCE).
+  function file3dPlacement(point) {
+    const view = spaceViewState();
+    const camera = currentSpaceCamera();
+    const at = point && editor.mode === "pano" ? point : null;
+    return {
+      view,
+      eye: [...view.position],
+      dir: placeDirection(camera, at, canvas.width, canvas.height),
+      fovDeg: viewFitFov(view, canvas.width, canvas.height),
+      minDistance: Math.max(FIT_3D_MIN_DISTANCE, camera.near * 2),
+    };
   }
 
   // A 3D file placed as a world Sticker (docs/editor-interaction.md "3D ファイルを置く流れ"): it shows nothing
   // until the route's editor file draws, since only the node's readers give the output's look. The Sticker is
   // selected at once, and its Source has no file (it is not saved, and no Undo step is taken) until the route
   // answered; then placing it is one Undo step. When it fails it goes, and the reason shows.
-  async function addFile3dSticker(file) {
+  async function addFile3dSticker(file, placement) {
     file3dFailure = "";
     const tooLarge = file3dTooLargeMessage(file);
     if (tooLarge) {
@@ -167,7 +194,8 @@ export function createStickerImport(deps) {
       return;
     }
     const id = takeStickerId(state);
-    state.stickers.push(newWorldSceneSticker(id, { kind: "file", filename: "" }, newWorldStickerPlace(newWorld3dStickerTransform)));
+    const provisional = newWorld3dStickerTransform(placement.view, placement.dir);
+    state.stickers.push(newWorldSceneSticker(id, { kind: "file", filename: "" }, provisional));
     loading3d.add(id);
     selectWorldSticker(id);
     forceCursorTool();
@@ -188,6 +216,7 @@ export function createStickerImport(deps) {
           return;
         }
         live.source = source;
+        fitFile3dSticker(live, provisional.position, placement, answer.box);
         pushHistory();
         commitAndRefreshNode();
       } catch (error) {
@@ -210,6 +239,18 @@ export function createStickerImport(deps) {
     try {
       await operation;
     } catch { }
+  }
+
+  // A new 3D file Sticker goes where its content (the route's `box`) fits the view it was placed from, unless it
+  // was moved or keyed while it uploaded (its position is no longer the provisional one), or it has no usable box.
+  // It is turned as it is at the playhead.
+  function fitFile3dSticker(sticker, provisionalPosition, placement, box) {
+    const lane = sticker.position;
+    const untouched = !lane.keyframes.length && lane.value.every((value, axis) => value === provisionalPosition[axis]);
+    const sphere = fitSphereOfBox(box);
+    if (!untouched || !sphere) return;
+    const value = evaluateSticker(sticker, editor.frame);
+    lane.value = fit3dPosition(placement.eye, placement.dir, sphere, value, placement.fovDeg, placement.minDistance);
   }
 
   // The stage's line about the 3D files being placed: the reason the last one failed, else "Loading 3D model…"
@@ -238,13 +279,13 @@ export function createStickerImport(deps) {
   }
 
 
-  // Where a world Sticker added now goes (pano_space.js newWorldStickerTransform, or newWorld3dStickerTransform
-  // for a 3D file): on the World content at the center of the view, else ahead of the view. The button that
-  // adds it is not over the view, so the center of the view stands for the pointer.
-  function newWorldStickerPlace(transform = newWorldStickerTransform) {
+  // Where a world image added now goes (pano_space.js newWorldStickerTransform): on the World content at the
+  // center of the view, else ahead of the view. The button that adds it is not over the view, so the center of
+  // the view stands for the pointer.
+  function newWorldStickerPlace() {
     const center = { x: canvas.width / 2, y: canvas.height / 2 };
     const hit = isSpaceView() ? editorView.pick(currentSpaceCamera(), center.x, center.y, canvas.width, canvas.height) : null;
-    return transform(spaceViewState(), hit, contentSphere());
+    return newWorldStickerTransform(spaceViewState(), hit, contentSphere());
   }
 
   // Panorama Studio: the new Sticker shows from the decoded image while it uploads. Its Source
@@ -496,7 +537,7 @@ export function createStickerImport(deps) {
       return;
     }
     const model = sceneV2 ? files.find((f) => isSticker3dFile(f)) : null;
-    if (model) void addWorldStickerFromFile(model);
+    if (model) void addWorldStickerFromFile(model, screenPos(e));
   }
 
   function onWindowDragEnter(e) {
@@ -530,7 +571,7 @@ export function createStickerImport(deps) {
       ({
         clearWorldSelection, commitAndRefreshNode, computeStickerVFov, contentSphere, currentSpaceCamera,
         file3dEditorFile, forceCursorTool, getNextStickerZIndex, getSelected, isExternalSticker, isSpaceView,
-        isStickerItem, markObjectVisualsDirty, pushHistory, requestDraw, requestFile3d, selectWorldSticker,
+        isStickerItem, markObjectVisualsDirty, pushHistory, requestDraw, requestFile3d, screenPos, selectWorldSticker,
         setSelectedItem, spaceViewState, stickerImageKey, stopTimelinePlayback, syncTimeline, updateSelectionMenu,
         updateSidePanel,
       } = api);

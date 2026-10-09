@@ -67,13 +67,13 @@ from .core.video import (
     save_video_to_mp4,
 )
 from .core.video_source import MaterializedVideo, StreamedVideo
-from .core.world import world_rotation
+from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position, world_rotation
 from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
 from .scene_mesh import is_mesh_file, is_unlit, mesh_scene_content, moge_scene_content, read_mesh_file
 from .scene_video import SceneVideo
 from .splat_render import read_splat_file, splat_content
-from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, open_video, stream_video
+from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, open_video, stream_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -1202,18 +1202,24 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
     return placement, lanes
 
 
-# A 3D Sticker that the node adds has its origin here: 2 World units ahead of the World origin along -Z, the
-# center of the ERP output without a Camera, which is taken from the origin at rotation 0.
-WORLD_STICKER_POSITION = [0.0, 0.0, -2.0]
+# The view a 3D port Sticker that the node adds is fitted to (docs/editor-interaction.md, "3D の Sticker を収めて
+# 置く"): the editor's default horizontal 100 degrees on a 16:9 view, vertically. The node has no view of its own.
+PORT_3D_FIT_FOV_DEG = math.degrees(2.0 * math.atan(math.tan(math.radians(50.0)) * 9.0 / 16.0))
 
 # Without a Camera (or with a hidden one), Studio takes its ERP output from the World origin at rotation 0 (ADR 0029).
 ORIGIN_CAMERA = {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
 
 
-def _world_port_sticker(state: dict, sticker_id: str | None = None) -> dict:
-    """The port Sticker for 3D media: `world`, at WORLD_STICKER_POSITION with rotation 0 and scale 1, so the
-    content keeps its own orientation and its front (+Z) faces the origin."""
-    raw = {"id": sticker_id or _take_sticker_id(state), "placement": "world", "source": {"kind": "port"}, "position": {"value": WORLD_STICKER_POSITION}}
+def _world_port_sticker(state: dict, media, sticker_id: str | None = None) -> dict:
+    """The port Sticker for 3D media: `world`, with rotation 0 and scale 1 (the content keeps its own orientation
+    and its front (+Z) faces the origin), placed so that the whole content (`content_box`, every item) fits the
+    front of the ERP taken from the World origin at rotation 0 (`fit_3d_position` with PORT_3D_FIT_FOV_DEG);
+    without content its origin goes NEW_WORLD_STICKER_DISTANCE ahead along -Z."""
+    sphere = box_sphere(content_box(media))
+    center, radius = sphere if sphere is not None else (None, None)
+    rotation = {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
+    position = fit_3d_position([0.0, 0.0, 0.0], [0.0, 0.0, -1.0], center, radius, rotation, PORT_3D_FIT_FOV_DEG, FIT_3D_MIN_DISTANCE, PORT_3D_FIT_FOV_DEG)
+    raw = {"id": sticker_id or _take_sticker_id(state), "placement": "world", "source": {"kind": "port"}, "position": {"value": position}}
     return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
 
 
@@ -1270,14 +1276,14 @@ def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tup
     index = next((i for i, item in enumerate(state["stickers"]) if item["source"]["kind"] == "port"), None)
     if index is None:
         if is_3d and parsed is not None:
-            warnings.append("sticker_state places only 2D Stickers; the 3D Sticker is placed 2 ahead of the origin.")
-        state["stickers"].append(_world_port_sticker(state) if is_3d else _port_sticker(state, handoff))
+            warnings.append("sticker_state places only 2D Stickers; the 3D Sticker is placed in front of the origin to fit the view.")
+        state["stickers"].append(_world_port_sticker(state, sticker) if is_3d else _port_sticker(state, handoff))
         index = len(state["stickers"]) - 1
     elif handoff is not None:
         state["stickers"][index] = _inherit_handoff(state, state["stickers"][index], *handoff)
     elif is_3d and state["stickers"][index]["placement"] == "sky":
         stored = state["stickers"][index]
-        state["stickers"][index] = {**_world_port_sticker(state, stored["id"]), **{key: stored[key] for key in ("clip", "visible", "locked")}}
+        state["stickers"][index] = {**_world_port_sticker(state, sticker, stored["id"]), **{key: stored[key] for key in ("clip", "visible", "locked")}}
     port = state["stickers"][index]
     return PortMedia(port["id"], port["clip"], sticker, state["timeline"]["fps"]), handoff
 

@@ -26,7 +26,8 @@ function failure(values, reason) {
 }
 
 // Asks the route for the editor file of a 3D file's Source: { ok: true, kind ("mesh" or "splat"), unlit (true
-// unless light falls on a mesh), file (the `ui` file entry) }, or { ok: false, error } with the route's text (the
+// unless light falls on a mesh), file (the `ui` file entry), box (the content's box as the route gives it, null
+// without one) }, or { ok: false, error } with the route's text (the
 // node's warning for the same file) or, without one, what went wrong.
 export async function requestFile3dEditorFile(source, { fetchApi }) {
   const values = sourceValues(source);
@@ -53,7 +54,7 @@ export async function requestFile3dEditorFile(source, { fetchApi }) {
   if ((kind !== "mesh" && kind !== "splat") || !body.file || typeof body.file !== "object") {
     return failure(values, "the server's reply was not understood.");
   }
-  return { ok: true, kind, unlit: kind !== "mesh" || body.unlit !== false, file: body.file };
+  return { ok: true, kind, unlit: kind !== "mesh" || body.unlit !== false, file: body.file, box: body.box ?? null };
 }
 
 export function file3dSourceKey(source) {
@@ -70,11 +71,11 @@ export function createFile3dEditorFiles({ fetchApi, onUpdate = () => {} }) {
   let closed = false;
 
   function ask(key, values, generation, refreshes) {
-    const entry = { state: "pending", kind: null, unlit: true, file: null, error: null, generation };
+    const entry = { state: "pending", kind: null, unlit: true, file: null, box: null, error: null, generation };
     const pending = requestFile3dEditorFile(values, { fetchApi }).then((result) => {
       if (entries.get(key)?.entry !== entry) return entry;
       Object.assign(entry, result.ok
-        ? { state: "ready", kind: result.kind, unlit: result.unlit, file: result.file }
+        ? { state: "ready", kind: result.kind, unlit: result.unlit, file: result.file, box: result.box }
         : { state: "failed", error: result.error });
       if (!closed) onUpdate();
       return entry;

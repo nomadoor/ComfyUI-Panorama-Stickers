@@ -6,7 +6,7 @@ import { BRUSH_PRESETS } from "../pano_brush_presets.js";
 import { patchUiButton } from "../pano_editor_ui_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { clamp } from "../pano_math.js";
-import { DEFAULT_DISTANCE } from "../pano_space.js";
+import { DEFAULT_DISTANCE, DEFAULT_VIEW_HFOV } from "../pano_space.js";
 import { frameAtTime } from "../pano_video_playback.js";
 import { shownSpaceMode } from "../pano_view_transition.js";
 import { PAINT_COLOR_SWATCHES } from "./constants.js";
@@ -321,7 +321,7 @@ export function createModalEvents(deps) {
       // In space the view also goes back to where 3DoF stands (the World origin, where the ERP is taken from,
       // or the Camera), as it opened.
       transitionView(
-        { position: spaceOrigin(), yaw_deg: 0, pitch_deg: 0, hFOV_deg: 100, distance: contentSphere()?.radius || DEFAULT_DISTANCE },
+        { position: spaceOrigin(), yaw_deg: 0, pitch_deg: 0, hFOV_deg: DEFAULT_VIEW_HFOV, distance: contentSphere()?.radius || DEFAULT_DISTANCE },
         { mode: shownSpaceMode(editor.spaceMode, editor.viewTransition), moved: false },
       );
       return;
