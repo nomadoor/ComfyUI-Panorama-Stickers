@@ -57,13 +57,10 @@ Keyframe 間の時間方向の補間。cubic-bezier（既定は ease-in-out）�
 **Cut**:
 `hold` の Easing によって Camera を次の Keyframe へ瞬時に移すこと。専用の仕組みは持たない。
 
-**Drone**:
-通過点だけを決め、Camera がその道筋を一定の速さで止まらずに通り抜ける撮り方。Keyframe とは別のデータで、Camera はどちらか一方で動く。
-
 ### Capture
 
 **Camera**:
-Scene を撮影する唯一の視点。Panorama Studio が 1 台まで持ち、無いときは World の原点から回転 0 で撮った ERP を出す（ADR 0029）。位置・回転・FOV と、静的な撮り方（透視投影か ERP）を持ち、Keyframe か Drone で Timeline 全体にわたって動かせる。
+Scene を撮影する唯一の視点。Panorama Studio が 1 台まで持ち、無いときは World の原点から回転 0 で撮った ERP を出す（ADR 0029）。位置・回転・FOV と、静的な撮り方（透視投影か ERP）を持ち、Keyframe で Timeline 全体にわたって動かせる。
 _Avoid_: Shot
 
 **Viewport camera**:

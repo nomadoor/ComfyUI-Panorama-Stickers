@@ -176,7 +176,7 @@ Panorama Studio のエディタとノード上の UI は、`sticker` 入力の�
 
 - 入力がつながっていて状態に `port` の Sticker がなければ加え、入力を外すと取り除く。
 - 入力の型（接続が `*` のとき（Reroute など）は、つながった先の出力の型）が IMAGE・VIDEO のときは、すぐに `sky` の Sticker を加える。
-  それ以外（MESH・SPLAT・3D ファイル、型が分からないとき）は、ノードの姿勢（実行結果の `pano_sticker_input_pose`）が届くまで加えず、
+  それ以外（MESH・SPLAT・3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`、型が分からないとき）は、ノードの姿勢（実行結果の `pano_sticker_input_pose`）が届くまで加えず、
   届いたら姿勢の `placement` で加える。何を描くかを知っているのはノードなので、型が分からないときにフロントエンドは決め打ちしない。
 - `sticker_state` がつながっているときも、ノードの姿勢が届くまで加えない。
 - ノードが 3D の素材のために `sky` の `port` の Sticker を `world` に置き換えたとき（姿勢の `replace`）は、同じ置き換えを状態に当てる。

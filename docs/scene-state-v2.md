@@ -539,7 +539,7 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 | `kind` | `"pano_sticker_state"` | — | |
 | `version` | `2` | — | |
 | `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない） |
-| `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる。Camera が Drone で動いたときは、`position`・`rotation` は出力の全フレームに `easing: "auto"` の Keyframe を置き（補間に頼らず軌道を渡す。fps が違っても隣のフレームの間を滑らかにつなぐ）、`fov` は Keyframe 一つにする |
+| `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる |
 | `source_aspect` | 数値 または `null` | `null` | 撮影した画面の幅 ÷ 高さ |
 
 `load_sticker_state(text)` / `loadStickerState(text)` は v1 と v2 を読み、どちらも v2 の形で返す（フィクスチャ：`sticker_state_v1.json`、`sticker_state_v2.json`）。
