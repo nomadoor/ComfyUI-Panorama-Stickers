@@ -1133,7 +1133,7 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
     its rotation, as wide as its hFOV at that distance, so that seen from the Camera it covers the shot.
 
     A Camera that moves is read at every Timeline frame over its Keyframes and baked into `auto` Keyframes,
-    like a Drone's, because a Camera rotation and a Sticker direction interpolate differently between Keyframes.
+    because a Camera rotation and a Sticker direction interpolate differently between Keyframes.
     A frame inside a `hold` segment of the Camera is a `hold` Keyframe, so a cut stays a cut. A Lane that the
     Camera does not move is a static value.
     """

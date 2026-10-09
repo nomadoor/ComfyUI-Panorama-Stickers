@@ -1,7 +1,7 @@
 # 描画関数
 
 Panorama Studio のバックエンドの描画関数（`render_frame`、重なり順と合成、Sky・World・3D の中身の描き方）と、3D ファイルの読み分けを定める。
-用語は `CONTEXT.md` に従う。決めた理由は ADR 0023（座標）、0025（Scene の正）、0034（Sky の直接の標本化）、0035（World をまとめて畳む）にある。
+用語は `CONTEXT.md` に従う。決めた理由は ADR 0023（座標）、0025（Scene の正）、0034（Sky の直接の標本化）、0035（World をまとめて畳む）、0037（3D の描き方）、0038（既定の照明、`DA3_GEOMETRY`）にある。
 
 この文書が持たない規則：状態 v2・評価関数・Sky の重なり順（`docs/scene-state-v2.md`）、Panorama Studio のノードが Scene を組み立てて撮る規則と出力
 （`docs/studio-node.md`）、メモリ・中断・キャッシュ・一時ファイル（`docs/runtime-resources.md`）、エディタでの表示（`docs/threejs-spark-integration.md`）と操作（`docs/editor-interaction.md`）、
@@ -17,12 +17,16 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | World の層と `world` の Sticker の板 | `world_render.py` `world_layer` | — | `tests/test_world_render.py`、`tests/test_stickers_world.py`、`tests/test_studio_upstream.py` |
 | 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media` | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
-| MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY` の描画 | `core/mesh_render.py` `render_mesh`・`mesh_content`、`scene_mesh.py` `read_mesh_file` | — | `tests/test_mesh_render.py`、`tests/test_scene_mesh.py` |
+| MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY` の描画 | `core/mesh_render.py` `render_mesh`・`mesh_content`・`MeshItem`、`scene_mesh.py` `read_mesh_file`・`da3_scene_content`（作る） | — | `tests/test_mesh_render.py`、`tests/test_scene_mesh.py` |
+| 光が効く要素（`unlit`） | `core/mesh_render.py` `MeshItem.unlit`（作る）、`scene_mesh.py` `mesh_scene_content`・`moge_scene_content`・`da3_scene_content` | エディタは `pano_scene_meta` の `unlit` を読む（`docs/threejs-spark-integration.md`） | `tests/test_scene_mesh.py` |
+| 材質（コアの MESH から読む値） | `scene_mesh.py` `mesh_material`（作る） | エディタは同じ値を GLB から GLTFLoader で読む | `tests/test_scene_mesh.py`（コアの `mesh_item_to_glb_bytes` が書く GLB の材質と比べる） |
+| 既定の照明の値と光の式 | `core/mesh_render.py` `DEFAULT_LIGHTS`・`shade_standard`（作る） | `web_src/pano_three_view.js` `DEFAULT_LIGHTS`（作る） | 値は `tests/fixtures/default_lighting.json` を Python と JS が読む parity の test（作る）。式は `tests/test_mesh_render.py` の three.js r184 との数値の比較と、`tests/browser/` の既定の照明の場面（作る） |
 | SPLAT の描画 | `splat_render.py` `splat_content`・`_view_colors` | — | `tests/test_splat_render.py` |
 | 3D ファイルの読み分けと読めないときのエラー | `nodes.py` `_read_scene_file` | — | `tests/test_studio_scene.py`、`tests/test_stickers_3d.py`、`tests/test_scene_mesh.py` |
 | コアの内部のシンボルの読み込み | `core_adapters.py` | — | `tests/test_core_adapters.py` |
 
 Python のファイルは `comfyui_pano_suite/` の下にある。旧ノードとの差は `docs/legacy-baselines.md` の基準画像で確かめる。
+表の「（作る）」の code と test は、この spec の差分の後に作る。
 
 ## 入口
 
@@ -146,7 +150,7 @@ render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, c
 
 ### `scene` の共通処理
 
-SPLAT（下の「SPLAT の描き方」）と MESH・MoGe（下の「MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`」）のレンダラーは、`SceneContent(count, render)` を作ってラスタライズだけを受け持つ。
+SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`」）のレンダラーは、`SceneContent(count, render)` を作ってラスタライズだけを受け持つ。
 
 | 処理 | 持ち主 |
 |---|---|
@@ -162,26 +166,138 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe（下の「MESH・メ�
 - `render` は、同じ `view` と `index` に対して同じ層を返す（使い回しの条件は `view` の値と `index` だけ）。
 - `SceneContent` は描画のパス（最初のフレーム、`video` を読むたび）ごとに `_render_frames` が `_scene_content` で作り、`render` が device に置いたものはそのパスの間だけ持つ。`video` の出力（ComfyUI の出力キャッシュに残る）が持つのは入力そのものだけで、device のテンソルは持たない（`tests/test_scene_mesh.py`）。(a) は要素の数のためだけに別に作る。
 
-### MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`
+### MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`
 
-`core/mesh_render.py` が pure torch で三角形を描き、`scene_mesh.py` が入力を要素ごとの `MeshItem`（頂点・面・あれば uv とテクスチャ・頂点色）にする。
+`core/mesh_render.py` が pure torch で三角形を描き、`scene_mesh.py` が入力を要素ごとの `MeshItem`（頂点・面・あれば uv とテクスチャ・頂点色・法線、光が効くかの印 `unlit`、光が効く要素では材質）にする。
 
 - 入力：
   - MESH：要素ごとに `get_mesh_batch_item`（コア。`vertex_counts`・`face_counts` で切る）と、あれば `texture` の同じ番号。座標はそのまま（glTF）。
   - メッシュ系の 3D ファイル（GLB・GLTF・OBJ・STL）：`execute` の入口（`_read_scene_file`）で、コアの Get3DComponents で 1 要素の MESH にする。以降（描画・エディタ用ファイル・`PANO_SCENE`）は MESH として扱う。読んだ MESH は共有のキャッシュ（`core/cache.py`、`docs/runtime-resources.md` の「キャッシュ」）の `mesh_files` に、ディスク上のファイルはパス・更新時刻・大きさ、それ以外はオブジェクトの同一性をキーに入れ、同じファイルでは読み直さず、同じ MESH なのでエディタ用ファイルも使い回す。FBX・USDZ はコアが読めないので、コアのエラーになる。`_read_scene_file` は先にスプラットとして読めるか（下の「SPLAT の描き方」）を見て、読めなかった 3D ファイルのうち形式がメッシュ系のものだけをここで読む。形式のない 3D ファイルはメッシュとしては読まない。
   - `MOGE_GEOMETRY`：フレームごとに `moge_grid_mesh`（エディタ用ファイルと同じグリッドのメッシュ）と `image` の同じフレームをテクスチャにする。読むキーは `points`・`mask`・`image` と `intrinsics` の有無だけ（`tests/test_scene_mesh.py` で、コアの MoGeInference・MoGePanoramaInference が出す形とあわせて固定）。`mask` の外の画素と、コアと同じ段差の判定（`discontinuity_threshold` 0.04）で切れた画素は描かない。
+  - `DA3_GEOMETRY`（コアの Run Depth Anything 3 の出力）：下の「`DA3_GEOMETRY` のメッシュ」。
 - 描き方：出力の画素ごとの光線（`view.rays`）と三角形の交点を Moller–Trumbore で求め、最も近い交点を残す（距離は光線の長さ）。三角形ごとに、交わりうる画素の範囲だけを試す。
   - 透視投影：Camera の前にある角と、辺が Camera の前の面（`NEAR`）を横切る点のピンホールの像の範囲。
   - ERP：角の経度を囲む最短の弧と、角・辺（大円の弧）の最も高い点と低い点・囲む極までの緯度の範囲。弧が半周以上なら全経度。経度の継ぎ目は列を周期で回してつなぐ。180 は 360 の列の周期で数え、前方の半球の列だけを描く。
   - 三角形の前処理は `TRIANGLES`（約 100 万）ずつ行い、三角形ごとには光線の式（float32 × 10）と画素の範囲（int32 × 4）と累積の組の数（int64）だけを残す。画素と三角形の組は `CHUNK` ずつ試し、画素ごとの最も近い交点を距離のビットと三角形の番号の 64 bit の値の最小（`scatter_reduce` の `amin`）で選ぶ。最後に画素ごとに選ばれた三角形だけで重心座標を求め直して色を付ける（これも `CHUNK` 画素ずつ）。距離が有限でない交点は捨てる。
   - 辺と頂点の上の画素の中心が丸めで抜けないよう、重心座標の判定を `EDGE` だけ広げる（MoGe のグリッドを同じ大きさで描くと、すべての画素の中心が頂点の上に来る）。
-- 色：glTF の base color と同じく、テクスチャ（uv (0, 0) が画像の左上。テクセルの中心で双線形に標本化する。0〜1 の外の uv は glTF の既定の REPEAT で折り返し、範囲内の値はそのまま。双線形の隣の画素は画像の端で延ばす）に頂点色の RGB を掛ける。`EDGE` の内側で三角形の外に出た交点は、重心座標を三角形の中に寄せてから値を補間する。どちらもなければコアの GLB の書き出しの素のジオメトリと同じ灰色（`BARE_COLOR` 0.22）。光源による陰影は付けない（unlit）。頂点色のアルファ・マテリアルの係数・法線などのマップは読まず、当たった画素は不透明にする。
+- 色：glTF の base color と同じく、テクスチャ（uv (0, 0) が画像の左上。テクセルの中心で双線形に標本化する。0〜1 の外の uv は glTF の既定の REPEAT で折り返し、範囲内の値はそのまま。双線形の隣の画素は画像の端で延ばす）に頂点色の RGB を掛ける。`EDGE` の内側で三角形の外に出た交点は、重心座標を三角形の中に寄せてから値を補間する。どちらもなければコアの GLB の書き出しの素のジオメトリと同じ灰色（`BARE_COLOR` 0.22）。光が効かない要素（下の「光が効く要素」）はこの色をそのまま出し、光源による陰影を付けない。光が効く要素は、この色を材質の base color として下の「既定の照明」で照らす。頂点色のアルファとテクスチャのアルファは読まず、当たった画素は不透明にする。
   - MoGe の uv は画素 `x / (W − 1)` なので、テクセルの中心で標本化すると画像の端で最大半テクセルずれる。エディタ（three.js）の表示と同じである。
 - 両面を描く（MoGe のパノラマの面は外向きで、原点の Camera からは裏面になる）。縁はアンチエイリアスしない。
-- エディタは、この描画と揃えるため、`scene` の GLB を光源の影響を受けない材質（`MeshBasicMaterial` 相当）で両面（`DoubleSide`）に描く必要がある。コアの `save_glb` は `unlit` をテクスチャのない場合にしか書かない（`KHR_materials_unlit`）ので、テクスチャ付きの MoGe の GLB には unlit を書けず、エディタ側で扱う。
+- エディタは、この描画と揃えるため、光が効かない要素の GLB を光源の影響を受けない材質（`MeshBasicMaterial` 相当）で、光が効く要素の GLB を同じ既定の照明と同じ材質（`MeshStandardMaterial`）で、どちらも両面（`DoubleSide`）に描く（`docs/threejs-spark-integration.md`）。エディタが印を知る経路は下の「光が効く要素」。
 - 要素は描画のパスの間だけ、直前に描いた 1 つを device に置いておき、同じ要素の次のフレームでは置き直さない（`mesh_content`）。
 - VRAM は、描画のパスの始めにまとめて見積もって空ける（`docs/runtime-resources.md` の「デバイスとメモリ」。中身のテンソルの大きさを見積もりに入れる）。
 - MoGe のグリッドは ERP の経度の継ぎ目（最後の列と最初の列の間）と極の周り（最初と最後の行の外）をつながないので、出力が MoGe より細かいとそこに 1〜2 画素の隙間が出る。コアの MoGePointMapToMesh とエディタの GLB も同じである。
+
+### `DA3_GEOMETRY` のメッシュ
+
+`DA3_GEOMETRY`（コアの Run Depth Anything 3 の出力の辞書）は、`MOGE_GEOMETRY` と同じく要素を出力のフレームに順に対応させ、フレームごとのグリッドのメッシュにする（`scene_mesh.py` の `da3_scene_content`）。光は効かない（上の「光が効く要素」）。コアの Convert DA3 Geometry to Mesh は `batch_index` の 1 つしか出さないので、それを通すと動きが失われる（ADR 0038）。
+
+- mono の要素の数は `depth` の 1 つ目の次元（multiview は 1 つ。下の「multiview」）。要素 `i` のメッシュは、コアの `DA3GeometryToMesh.execute` を `batch_index = i` と、そのノードの既定の値（`decimation` 1、`discontinuity_threshold` 0.04、`confidence_threshold` 0.1、`use_sky_mask` 真、`texture` 真）で呼んだ MESH そのものとする（`comfy_extras/nodes_depth_anything_3.py:480-571`）。変換をここに写さない。コアの内部のシンボルなので `core_adapters.py` から読み込む。描画とエディタ用ファイルは同じ MESH を使う。
+- コアの変換がすること（コアが owner。ここでは事実として書く）：
+  - 有限でない `depth` を 0 にしてから、画素の座標 `(u, v)`（整数の画素の番号）を `K⁻¹` で戻して `depth` を掛け、OpenCV の Camera の座標の点にする（`_da3_unproject`、`:49-57`）。`depth` は光線の長さではなく、Camera の前方への奥行き（z）である。
+  - `K` は `intrinsics` があればその要素の値、なければ仮の値（`_da3_get_K`・`_da3_default_K`、`:60-77`）。Panorama Studio は mono の要素に仮の値を前もって `intrinsics` として渡す（下の「mono の画角と座標」）。仮の値は `fx = fy = 0.7 × W`、主点 `((W − 1) ÷ 2, (H − 1) ÷ 2)` で、水平の画角は約 71°（`2 · atan((W − 1) ÷ (1.4 W))`。コアのログと docstring は「約 60°」と書くが、式の値は約 71°）。コアは仮の値を使うたびにログに警告を出す。
+  - `extrinsics`（world から Camera への `[R|t]`）があれば、その逆を掛けて、すべての視点に共通の world の座標にする（`_da3_get_extrinsic`・`_da3_apply_extrinsic`、`:80-107`）。値が有限でなければ Camera の座標のままにする。
+  - 捨てる画素：`sky` があれば `sky ≥ 0.5` の画素（`use_sky_mask`）。`confidence` があれば、要素ごとに最小と最大で 0〜1 に正規化した値が 0.1 未満の画素（`_da3_build_mask`・`_normalize_confidence`、`:110-129`）。`depth` が 0 以下か有限でない画素。捨てた画素は点を無限にして、`triangulate_grid_mesh`（`comfy/ldm/moge/geometry.py:144-188`）が頂点にしない。段差の判定は `depth`（z）で、`MOGE_GEOMETRY` と同じ 0.04。捨てた画素は段差の判定では奥行き 0 として扱われるので、その隣の画素も段差として落ちることがある（コアと同じ）。
+  - 全画素を頂点にし、4 隅が残る格子の四角を三角形 2 つにする。uv は `x ÷ (W − 1)`・`y ÷ (H − 1)`、テクスチャは `image` の同じ要素（RGB）。座標は OpenCV から glTF へ `(x, −y, −z)`、面の向きを反転（`:559-562`。MoGe の透視投影と同じ）。法線は持たない。
+- 既定の値は Convert DA3 Geometry to Mesh の既定と同じにする。コアの DA3 のほかの経路は、既定で空も信頼度も使わない：Run Depth Anything 3（`DA3Inference`）は `sky`・`confidence` を生の値で辞書に入れるだけで画素を捨てない（`:299-367`）。DA3Render の `apply_sky_clip` は既定で偽で、正規化にだけ使う（`:380`）。点群への変換（`DA3GeometryToPointCloud`）は既定が Convert DA3 Geometry to Mesh と同じ（空を使い、信頼度 0.1）だが、ノードとして登録されていない（`:676`）。
+- 座標：mono の要素は、DA3 の Camera を `scene` 自身の原点に置き、`−Z` を向き、像の上が `+Y` になる。`scene` の変形が既定で、Camera が原点で回転 0 なら、透視投影の出力の中央に像の中央が来る（画角が `K` と同じなら像と重なる）。
+- 画素が全部捨てられてメッシュが空になる要素は、`MOGE_GEOMETRY` と同じく空の要素にする（描かず、エディタ用ファイルは `null`。実行は止めない）。コアの変換はこのとき `ValueError`（`DA3GeometryToMesh produced an empty mesh. ...`、`comfy_extras/nodes_depth_anything_3.py:552-557`）を出すので、`da3_scene_content`（作る）はこの文言で始まる `ValueError` だけを空の要素として受け、ほかの例外はそのまま通す。例外にならずに返った MESH でも、面が 0 なら空の要素にする（`MOGE_GEOMETRY` と同じ。`scene_files.py:33-34`）。
+  - 呼ぶ前に空かを確かめる方法は採らない。コアと同じ捨て方（空・信頼度・奥行き・段差の判定）をここに写すことになり、規則の owner が二つになるためである。
+  - コアが文言を変えると、空の要素でもコアのエラーで実行が止まる（黙って別の扱いにはならない）。文言は `tests/test_scene_mesh.py` の test（作る）で、全画素が空の `DA3_GEOMETRY` をコアに渡して固定する。
+
+#### mono の画角と座標（オーナーの決定 2026-10-09、案 A）
+
+mono（`mode` が `"mono"`。`intrinsics` も `extrinsics` も持たない）の要素は、コアの仮の `K`（`_da3_default_K`、水平約 71°）と、コアの OpenCV から glTF への変換（`(x, −y, −z)` と面の向きの反転。MoGe の透視投影と同じ）をそのまま使う。画角を持つ値も UI も足さない（ADR 0038 の物差しと、一つの規則に一つの owner）。
+
+- `intrinsics` の無い辞書は、`DA3GeometryToMesh` を呼ぶ前に、`intrinsics` だけを足した浅い写しにする。値はコアの `_da3_default_K(H, W)`（`H`・`W` は `depth` の大きさ）を (1, B, 3, 3) に並べたもの（B は要素の数）。`_da3_default_K` はほかのコアのシンボルと同じく `core_adapters.py` から読み込む。コアの `_da3_get_K` はこの値を読むので、要素ごとの警告を出さない（`comfy_extras/nodes_depth_anything_3.py:68-77`）。`intrinsics` を読むのは `_da3_get_K` だけなので、できるメッシュは写しを作らずに呼んだときと同じで、仮の `K` の owner はコアのままである。入力の辞書そのものは変えない。
+- 描画とエディタ用ファイルのどちらの経路も、この写しを使う。
+- 代わりに Panorama Studio が、実行ごとに 1 回だけ警告をログに出す（入力が `intrinsics` を持たないので、コアの既定の水平約 71° の画角を使った、という内容）。
+- 元の写真の画角と違えば、形が奥行きの方向に伸び縮みする（スケールでは直らない）。画角を合わせる機能は、要る素材が出たときに足す。
+- 写しと警告は `tests/test_scene_mesh.py` の test（作る）で守る：写しから作ったメッシュが写しを作らずにコアで変換したものと一致すること、コアの警告が出ないこと、Panorama Studio の警告が 1 回であること。
+
+#### multiview（オーナーの決定 2026-10-09）
+
+multiview（`mode` が `"multiview"`）の `DA3_GEOMETRY` は、同じ場面を S 個の視点から見たもので、時間ではない。全体を 1 つの静止した要素にし、S 個の視点のメッシュをまとめて描く。mono はフレームごとの要素のまま（上記）。
+
+- 視点 `i` のメッシュは、コアの `DA3GeometryToMesh.execute` を `batch_index = i` と mono と同じ既定の値で呼んだ MESH。コアが視点の `extrinsics` の逆を掛けるので、すべての視点が共通の world の座標に並ぶ（上の「コアの変換がすること」）。multiview は `intrinsics` を持つので、仮の `K` の写しは作らない。
+- 各視点は自分の写真（`image` の同じ要素）をテクスチャに持つ。視点の重なる所は面が二重になる。そのまま受け入れ、まとめ直さない。
+- 姿勢の無いモデル：モデルが姿勢を出さないと、コアは `extrinsics` を 4 × 4 の単位行列、`intrinsics` を 3 × 3 の単位行列で埋める（`comfy_extras/nodes_depth_anything_3.py:345-350`）。このとき `K = I`（`fx` = 1 画素、主点 0）でメッシュが潰れる。Panorama Studio は、すべての視点の `intrinsics` が 3 × 3 の単位行列と完全に等しい（要素ごとの厳密な一致）ときにこの場合と判定し、このモデルは multiview の姿勢を出さないので mono で推論するよう示す `ValueError` にする。エラーは読めない 3D ファイルと同じ `execute` の入口で出すので、`scene` でも `sticker` でも描画を始めず、`PANO_SCENE` も出ない（下の「読めない 3D ファイル」と同じ扱い）。
+  - 判定が確かな理由：単位行列はコアが `torch.eye(3)` で埋めた値そのもので、厳密に一致する。モデルが出す `intrinsics` は画素の単位で、焦点距離 1 画素・主点 (0, 0) のカメラは実際の画像ではありえない。`extrinsics` は判定に使わない（基準の視点は正しい姿勢でも単位行列になりうる）。
+- 空の視点：メッシュが空で返る視点（mono の空の要素と同じ判定。上記）は除く。すべての視点が空なら、要素は空の要素になる（描かず、エディタ用ファイルは `null`。実行は止めない）。
+- 要素の数と出力フレームの対応：要素は 1 つ。1 要素の MESH と同じく、Clip range の間ずっと同じ要素を描く（`sticker_media.py` の `batch_index` は要素が 1 つなら常に 0）。
+- 光：効かない（ほかの `DA3_GEOMETRY` と同じ。上の「光が効く要素」）。
+- 描画：今の `mesh_content` は 1 要素を 1 つの `MeshItem`（テクスチャは 1 枚）として描き、1 要素に複数のメッシュを持てない（`core/mesh_render.py` の `mesh_content`・`MeshItem`）。multiview の要素は、視点ごとの `MeshItem` を `render_mesh` で描き、`over_by_depth` で 1 つの層に畳む。`over_by_depth` の結果は乗算済みのアルファなので、`render` の戻り値の約束に合わせてストレートアルファに戻して返す（メッシュの画素のアルファは 0 か 1 なので、値は変わらない）（作る：`scene_mesh.py` の `da3_scene_content`、`core/mesh_render.py` の複数の `MeshItem` の要素）。`SceneContent` の契約（要素ごとに 1 つの層を返す）は変えない。device に置くのは、描いている要素の全視点。
+- エディタ用ファイル：視点ごとに 1 つの GLB（MESH と同じコアの `mesh_item_to_glb_bytes`）にし、まとめた GLB は作らない。コアの `save_glb` は 1 つの GLB に材質とテクスチャを 1 つしか書かないので、まとめるには GLB の書き出しを自前で持つことになり、書き出しの owner が二つになるためである。`pano_scene_files`（`pano_sticker_files`）は要素が 1 つのリストで、その値が空でない視点の GLB のパスのリストになる（すべて空なら `null`）。エディタでの読み方と大きさの上限は `docs/threejs-spark-integration.md` の「空間の表示」の `scene` の要素の読み込み。`pano_scene_meta` の `unlit` は真。
+
+### 光が効く要素
+
+光が効くのは、MESH 型の要素のうち、コアの `MESH.unlit` が偽のものだけである（ADR 0038）。どの要素に光が効くかは使う人に見せず、状態にも入力にも持たない。
+
+| 要素 | 光 |
+|---|---|
+| `scene`・`sticker` の MESH、メッシュ系の 3D ファイル（`_read_scene_file` で MESH に読んだもの） | `MESH.unlit` が偽なら効く。真なら効かない |
+| `MOGE_GEOMETRY`・`DA3_GEOMETRY`（Panorama Studio が自分でメッシュにする） | 効かない |
+| SPLAT・スプラット系の 3D ファイル、背景、Sky、ペイント、`world` の Sticker の板 | 効かない（光の式を通らない） |
+
+- `MESH.unlit` は、コアの glTF の読み手が `KHR_materials_unlit` の有無から立てる（`comfy_extras/mesh3d/fileio/gltf_read.py:363`、`comfy_extras/nodes_mesh_io.py:147`）。コアの splat からメッシュへの変換も立てる（`comfy_extras/nodes_gaussian_splat.py:1591`）。材質の無い OBJ・STL と、材質の無い glTF は偽になり、照らす。
+- 同じ GLB を 3D ファイルとして置いても、Get3DComponents の MESH としてつないでも同じになる。例外：コアの SaveGLB はテクスチャのある MESH には `KHR_materials_unlit` を書かない（`comfy_extras/nodes_save_3d.py:369`）ので、テクスチャ付きで印の立った MESH は、Load3D では照らされ、Panorama Studio では照らされない。同じ理由で、テクスチャ付きの要素のエディタ用 GLB は印を持たないので、エディタは印を GLB からではなく、実行結果の `pano_scene_meta`（3D の Sticker は `pano_sticker_meta`）の `unlit` から知る（`docs/studio-node.md`）。
+- コアの MoGePointMapToMesh と Convert DA3 Geometry to Mesh の MESH は印が無いので照らされ、写真に写った光と二重になる（Load3D で見ても同じ）。避けたいときは `MOGE_GEOMETRY`・`DA3_GEOMETRY` を直接つなぐ。
+- 印は `MeshItem.unlit` が運ぶ。MESH は `MESH.unlit`、`MOGE_GEOMETRY`・`DA3_GEOMETRY` は真にする。`PANO_SCENE` の層は `scene` に MESH そのものを持つので、使う側でも同じ印になる。
+- 要素ごとの明るさの倍率は持たない。3D ファイルの中の光源（`KHR_lights_punctual`）は読まない（ADR 0038）。
+
+### 既定の照明
+
+光が効く要素は、いつもこの照明で描く。照明を切り替える UI も状態の項目も持たない。値はこの節だけが持ち、Python と JS の定数は `tests/fixtures/default_lighting.json` と一致することを parity の test で守る。
+
+| 光源 | 強さ | 位置 |
+|---|---|---|
+| 環境光（AmbientLight） | 1.5 | — |
+| 平行光源（DirectionalLight） | 2.4 | (0, 10, 10) |
+| 平行光源 | 1.5 | (0, 10, −10) |
+| 平行光源 | 0.9 | (−10, 0, 0) |
+| 平行光源 | 0.9 | (10, 0, 0) |
+| 平行光源 | 0.6 | (0, −10, 0) |
+
+- 出典：ComfyUI の Load3D の既定。ComfyUI_frontend（5276d1b）の `src/extensions/core/load3d/LightingManager.ts:39-59` の光源と倍率（0.5・0.8・0.5・0.3・0.3・0.2）に、`src/extensions/core/load3d.ts:197-203` の `Comfy.Load3D.LightIntensity` の既定 3 を `setLightIntensity`（`LightingManager.ts:62-66`）のとおり掛けた値。
+- 平行光源は、位置から World の原点へ向かって照らす（three.js の DirectionalLight の `target` は原点の Object3D で、光の向きは位置 − `target` の位置。`src/lights/DirectionalLight.js:70`、`src/renderers/webgl/WebGLLights.js:509-512`）。距離による減衰は無い。
+- 色はすべて白（強さだけが違う）。影は無い。tone mapping は無い。
+- 光源は World に固定する。Camera にも、`scene` と Sticker の変形にも付いて動かない。`render` は中身自身の座標で描くので、光の向きに `scene` の回転の逆、3D の `world` の Sticker では Sticker の回転の逆を掛けてから使う（`scale` は向きを変えない）。
+
+### 材質
+
+コアの読み手は最初の材質だけを取り、ほかの材質の値は捨てる（`comfy_extras/nodes_mesh_io.py:115-120`）。光が効く要素の材質は、コアの `save_glb` がその MESH から書く glTF の材質（`comfy_extras/nodes_save_3d.py:383-441`）を、three.js r184 の GLTFLoader が `MeshStandardMaterial` にしたものとする。エディタはこの GLB をそのまま読むので、同じ材質になる（`scene_mesh.py` の `mesh_material` が同じ値を MESH から求め、`mesh_item_to_glb_bytes` が書いた GLB の材質と比べる test で守る）。
+
+| 使う値 | MESH のどこから | 補足 |
+|---|---|---|
+| base color | `texture`（RGB）× 頂点色（RGB）× `material.base_color_factor` の RGB | テクスチャは sRGB として線形に戻し、頂点色と係数は線形のまま掛ける（GLTFLoader が `map` を `SRGBColorSpace` にする。`examples/jsm/loaders/GLTFLoader.js:3582`）。テクスチャも頂点色も無い要素は 0.22 の灰色（`save_glb` の既定。`nodes_save_3d.py:384-387`） |
+| metalness・roughness | `material.metallic_factor`・`roughness_factor` × `metallic_roughness` の B・G | 既定は `save_glb` が決める（素のジオメトリは 0・0.5、テクスチャか頂点色があれば 0・1.0、`metallic_roughness` があれば係数 1.0。`nodes_save_3d.py:384-411`）。glTF の材質を持つ 3D ファイルでは、係数の無い値は glTF の既定の 1.0（`gltf_read.py:384-385`） |
+| 法線 | `normals` | 無ければ面の法線（GLTFLoader は `NORMAL` の無い GLB を `flatShading` にする。`GLTFLoader.js:3446`。`save_glb` は `normals` が無ければ `NORMAL` を書かない） |
+| 法線マップ | `normal_map`・`tangents`・`material.normal_scale` | 接線が無ければ画面の微分から作る（`normal_fragment_maps`・`normalmap_pars_fragment` の `getTangentFrame`。GLTFLoader はこのとき `normalScale.y` を反転する。`GLTFLoader.js:3507-3510`） |
+| 遮蔽 | `metallic_roughness` の R（`occlusion_in_mr` が真のときだけ）× `material.occlusion_strength` | 環境光の分にだけ掛かる（`aomap_fragment`）。ORM に詰めていない `occlusionTexture` はコアの読み手が捨てる（`gltf_read.py:374-378`） |
+| 発光 | `emissive`（sRGB）× `material.emissive_factor`（1 に寄せる）× `emissive_strength` | `nodes_save_3d.py:425-441`、`emissivemap_fragment`、`src/renderers/webgl/WebGLMaterials.js:150` |
+
+- 使わない値：`material.double_sided`（光が効く要素も両面に描き、裏から見た面は法線を反対に向けて照らす。three.js の `DoubleSide` と同じ。`normal_fragment_begin`）。理由：今もすべてのメッシュを両面に描いており振る舞いを変えないためと、MoGe・DA3 のような閉じていないメッシュは裏から見られるためである。アルファ（`alphaMode`・`alphaCutoff` はコアの読み手が読まず、`save_glb` も書かないので、いつも不透明）。
+- コアの読み手が捨てるので届かない値：2 つ目以降の材質、`KHR_texture_transform`、`TEXCOORD_1`、テクスチャのアルファ（RGB で読む）、`KHR_materials_*` のうち `unlit` と `emissive_strength` 以外（`gltf_read.py:330-388`）。複数の材質は 3D ファイルの投入の作業で扱う（ADR 0038）。
+
+### 光の式
+
+光が効く要素の色は、three.js r184 の `MeshStandardMaterial` を上の照明で描いた色と同じにする（物理的に正しい単位。r155 以降の three.js の既定）。式は three.js の shader chunk を写し、three.js の版が上がるたびに写し直す（ADR 0031、0037）。読んだ源は `node_modules/three/src/renderers/shaders/` の下（以下、chunk の名前で書く）。
+
+- 照らす色（線形）＝ 平行光源ごとの直接光の和 ＋ 環境光の拡散 ＋ 発光（`meshphysical.glsl.js:193-198`）。
+  - 直接光：光源ごとに `RE_Direct_Physical`（`lights_physical_pars_fragment.glsl.js:527-558`）。照度 `saturate(N·L) × 強さ` に、鏡面の `BRDF_GGX_Multiscatter`（同 `:424-460`。単散乱の `BRDF_GGX` `:153` と、16 × 16 の DFG の表 `DFGLUTData.js:36` による多重散乱の補償）と、拡散の `BRDF_Lambert(diffuseContribution)`（`common.glsl.js:94-98`、色 ÷ π）を掛ける。光の向きと色は `getDirectionalLightInfo`（`lights_pars_begin.glsl.js:88-94`）、色は強さ × 白（`WebGLLights.js:281`）。
+  - 環境光：照度は強さそのもの（`getAmbientLightIrradiance`、`lights_pars_begin.glsl.js:48-54`。`WebGLLights.js:261-264`）で、`RE_IndirectDiffuse_Physical`（`lights_physical_pars_fragment.glsl.js:561-577`）の拡散だけになる。環境マップが無いので、`RE_IndirectSpecular_Physical` の入力（`radiance`・`iblIrradiance`）は 0 で、鏡面の間接光は 0 になる（`lights_fragment_begin.glsl.js:175-212`、`lights_fragment_maps`、`lights_fragment_end.glsl.js:10-16`）。遮蔽はこの拡散にだけ掛かる（`aomap_fragment`）。
+  - 材質の値：`diffuseContribution = base color × (1 − metalness)`、鏡面の f0 は 0.04 と base color を metalness で混ぜたもの、f90 は 1（`lights_physical_fragment.glsl.js:3-5, 50-52`。`MeshStandardMaterial` は `IOR` を定義しない）。roughness は 0.0525 以上に寄せ、`geometryRoughness`（法線マップを掛ける前の法線の画面の微分の大きさ）を足して 1 以下に寄せる（同 `:7-12`）。法線は `normal_fragment_begin`・`normal_fragment_maps` のとおり。
+- 色空間：base color と発光のテクスチャは sRGB から線形に戻して照らし、照らした線形の色を three.js と同じ `sRGBTransferOETF`（指数 0.41666。`colorspace_pars_fragment.glsl.js:11-13`）で sRGB にしてから 0〜1 に寄せる。tone mapping は無い（`WebGLRenderer.js:269` の既定 `NoToneMapping`）。
+- 影・環境マップ・光のプローブ・IBL は使わない。ERP の背景を環境光に使うこともしない。
+- 未定：`geometryRoughness` と法線マップの接線に要る画面の微分を、出力（特に ERP）でどの軸で取るかは、ADR 0037 の描き方の差分で決める。
+
+### エディタとの一致（照明の場面）
+
+ADR 0037 の「一致の測り方」の場面のうち、影の場面と平行光源 1 つの PBR の場面は使わず、既定の照明で描いた場面に置き換える（ADR 0038）。
+
+- 光が効く場面：PBR の球とトーラス（metalness と roughness の違う数個）と、法線の無い（面の法線で照らす）メッシュを、既定の照明で描く。光の向きが効くよう、正面・上・下から撮る。
+- 光が効かない場面：テクスチャの市松（遠近あり）を、`unlit` の印の立った MESH と `MOGE_GEOMETRY` で描く。
+- 指標と許容差、Camera の設定、基準の焼き方は ADR 0037 の「一致の測り方」のとおり。
 
 ### SPLAT の描き方
 

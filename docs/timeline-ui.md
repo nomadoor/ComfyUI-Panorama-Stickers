@@ -1,7 +1,7 @@
 # タイムラインと Keyframe の UI
 
 エディタのタイムラインと、ノード上の UI の再生の規則を定める：Keyframe を打つ・直す・消すときの記録の規則、Easing の選び方、
-タイムラインの表示と長さ、表示（目のアイコン）、Camera のモード、再生の状態機械、背景の行、`port` の Sticker の素材の表示、
+タイムラインの表示と長さ、表示（目のアイコン）、Camera の動き、再生の状態機械、背景の行、`port` の Sticker の素材の表示、
 上流の層の行、Pose handoff の `port` の Sticker の行。用語は `CONTEXT.md` に従う。決めた理由は ADR 0024（時間）、
 0026（Keyframe の Lane）、0029（Panorama Studio）、0030（上流の上書き）、0033（Timeline の上限）にある。
 
@@ -136,9 +136,9 @@ Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端
 
 - Lane ごとに Keyframe を表示し、Lane 単位で選択・移動・削除・Easing の変更ができる。
 
-## Camera のモード
+## Camera の動き
 
-Camera は Keyframe と Drone の二つのモードを持ち、出力にはいま選ばれている方だけを使う。両方のデータは独立に保持し、切り替えても他方は消えない。一本のタイムラインの中で混ぜることはしない。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。画角はどちらのモードでもインスペクタで変える値で、Drone では Keyframe を持たない一定の値である。Drone モードのとき、Camera の行にポチは出さない（位置と回転は通過点から決まる）。Drone の通過点・道筋・状態の項目はまだ定めていない。
+Camera は Keyframe だけで動く（撮り方のモードは持たない）。止まらずに複数の点を通る動きは、Easing の `auto` で作る（ADR 0026、0038）。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。
 
 ## 再生の状態
 
