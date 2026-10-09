@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Quaternion, Scene, Texture, Vector3 } from "three";
 
+import { placeDirection } from "../web_src/pano_editor_view.js";
 import { makeUnlit } from "../web_src/pano_scene_loaders.js";
 import { applyViewportCamera, createGizmo } from "../web_src/pano_three_view.js";
 import { pickRay, pointAt } from "../web_src/pano_pick.js";
@@ -17,6 +19,12 @@ import {
   contentPoints,
   depthOf,
   facingRotation,
+  fit3dPosition,
+  fitDistance,
+  fitSphereOfBox,
+  FIT_3D_MIN_DISTANCE,
+  FIT_FALLBACK_FOV_DEG,
+  DEFAULT_VIEW_HFOV,
   fileStickerKey,
   fileStickerRequests,
   frameSphere,
@@ -985,30 +993,77 @@ test("each world Sticker of a 3D file asks for its own item, by its id, with its
   assert.deepEqual(fileStickerRequests(sky, evaluateSceneState(sky, 15), editorFile), []);
 });
 
-test("a new 3D file Sticker goes where a new world image would, upright, turned to the view, at its own size", () => {
-  const start = { position: [0.5, 1, 2], yaw_deg: 40, pitch_deg: 20, hFOV_deg: 90, distance: 1 };
-  const image = newWorldStickerTransform(start, null, { center: [9, 9, 9], radius: 6 });
-  const placed = newWorld3dStickerTransform(start, null, { center: [9, 9, 9], radius: 6 });
-  closeVec(placed.position, image.position);
-  // Its front (glTF +Z) turns to the view about the vertical only: no pitch, no roll.
-  close(placed.rotation.yaw_deg, facingRotation(start.position, placed.position).yaw_deg);
+// docs/editor-interaction.md "3D の Sticker を収めて置く": the one fit of a new 3D Sticker, the same values as Python's
+// core/world.py fit_3d_position (tests/fixtures/place_3d/fit.json, which tests/test_place_3d_parity.py reads too).
+const fitCases = () => JSON.parse(readFileSync(new URL("./fixtures/place_3d/fit.json", import.meta.url), "utf8")).cases;
+
+test("a new 3D Sticker is placed by the shared fit, as the fixture gives it", () => {
+  const cases = fitCases();
+  assert.ok(cases.length >= 6);
+  for (const item of cases) {
+    const sphere = item.center === null ? null : { center: item.center, radius: item.radius };
+    const position = fit3dPosition(item.eye, item.dir, sphere, item.rotation, item.fov_deg, item.min_distance);
+    closeVec(position, item.position, 1e-9);
+    if (item.fit_distance !== null) close(fitDistance(item.radius, item.fov_deg), item.fit_distance, 1e-9);
+  }
+});
+
+test("Frame Selected keeps its distance to the fit distance of the fixture", () => {
+  for (const item of fitCases()) {
+    if (item.fit_distance === null || !(item.radius > 0) || !(item.fov_deg > 0 && item.fov_deg < 180)) continue;
+    // A square view: its smaller FOV is its hFOV.
+    const framed = frameView({ position: [0, 0, 0], yaw_deg: 10, pitch_deg: 5, hFOV_deg: item.fov_deg, distance: 1 }, { center: [1, 2, 3], radius: item.radius }, 400, 400);
+    close(framed.distance, item.fit_distance, 1e-9);
+  }
+});
+
+test("the node's FOV is the default view hFOV made the vertical of a 16:9 view, as in the front case", () => {
+  assert.equal(DEFAULT_VIEW_HFOV, 100);
+  close(FIT_FALLBACK_FOV_DEG, 2 * Math.atan(Math.tan(50 * Math.PI / 180) * 9 / 16) * 180 / Math.PI, 1e-12);
+  const front = fitCases().find((item) => item.dir[0] === 0 && item.dir[1] === 0 && item.dir[2] === -1 && item.eye.every((value) => value === 0) && item.min_distance === FIT_3D_MIN_DISTANCE && item.center !== null);
+  close(front.fov_deg, FIT_FALLBACK_FOV_DEG, 1e-9);
+  // A FOV that is not a positive finite number fits with the node's FOV.
+  close(fitDistance(1, 0), fitDistance(1, FIT_FALLBACK_FOV_DEG), 1e-12);
+  close(fitDistance(1, Number.NaN), fitDistance(1, FIT_FALLBACK_FOV_DEG), 1e-12);
+  assert.equal(FIT_3D_MIN_DISTANCE, 0.1);
+});
+
+test("the route's box is the sphere the fit uses as it is, and a missing or malformed box is none", () => {
+  // The route's box is in the scene glTF frame already: no sceneItemBox turn (a SPLAT's box keeps its signs).
+  assert.deepEqual(fitSphereOfBox({ min: [-1, 2, -3], max: [3, 4, 1] }), { center: [1, 3, -1], radius: Math.hypot(4, 2, 4) / 2 });
+  assert.deepEqual(fitSphereOfBox({ min: [1, 1, 1], max: [1, 1, 1] }), { center: [1, 1, 1], radius: 0 });
+  for (const box of [null, undefined, {}, { min: [0, 0, 0] }, { min: [0, 0], max: [1, 1, 1] }, { min: [0, 0, "0"], max: [1, 1, 1] }, { min: [0, 0, 0], max: [1, Infinity, 1] }, { min: [0, 2, 0], max: [1, 1, 1] }, "box"]) {
+    assert.equal(fitSphereOfBox(box), null, JSON.stringify(box));
+  }
+});
+
+test("a 3D file is placed along the ray through the button's view center or the drop point", () => {
+  const view = { position: [0.5, 1, 2], yaw_deg: 40, pitch_deg: 20, hFOV_deg: 90, distance: 1 };
+  const camera = spaceCamera(view, 800, 400);
+  // The button: the view's forward, pitch included.
+  closeVec(placeDirection(camera, null, 800, 400), viewAxes(40, 20).forward, 1e-9);
+  // A drop: the ray through the drop point, of length 1.
+  const dropped = placeDirection(camera, { x: 100, y: 300 }, 800, 400);
+  const ray = pickRay(camera, 100, 300, 800, 400).direction;
+  close(Math.hypot(...dropped), 1, 1e-12);
+  closeVec(dropped, ray.map((value) => value / Math.hypot(...ray)), 1e-12);
+});
+
+test("a new 3D file Sticker stands upright 2 along its direction, turned to the view, at its own size", () => {
+  const view = { position: [0.5, 1, 2], yaw_deg: 40, pitch_deg: 20, hFOV_deg: 90, distance: 1 };
+  const dir = [0.6, -0.48, -0.64];
+  const placed = newWorld3dStickerTransform(view, dir);
+  closeVec(placed.position, [0.5 + 1.2, 1 - 0.96, 2 - 1.28], 1e-12);
+  // Its front (glTF +Z) faces back along the horizontal of dir: no pitch, no roll.
+  close(placed.rotation.yaw_deg, Math.atan2(0.6, 0.64) * 180 / Math.PI, 1e-9);
+  close(placed.rotation.yaw_deg, facingRotation(view.position, placed.position).yaw_deg, 1e-9);
   assert.equal(placed.rotation.pitch_deg, 0);
   assert.equal(placed.rotation.roll_deg, 0);
-  // Its own units are World units, as the node's 3D port Sticker.
   assert.equal(placed.scale, 1);
-  // On a surface under the pointer it goes there too.
-  const hit = [3, -1, -4];
-  const onSurface = newWorld3dStickerTransform(start, hit, null);
-  closeVec(onSurface.position, hit);
-  close(onSurface.rotation.yaw_deg, facingRotation(start.position, hit).yaw_deg);
-  const front = worldRotation(onSurface.rotation.yaw_deg, 0, 0);
-  const toView = [start.position[0] - hit[0], start.position[2] - hit[2]];
-  const length = Math.hypot(...toView);
-  // The item's +Z, level, points back at the view.
-  close(front[0][2], toView[0] / length, 1e-9);
-  close(front[2][2], toView[1] / length, 1e-9);
-  // Without content, NEW_WORLD_STICKER_DISTANCE ahead of the origin in 3DoF.
-  const empty = newWorld3dStickerTransform({ ...start, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 }, null, null);
+  // Straight up or down, it keeps the view's yaw.
+  assert.equal(newWorld3dStickerTransform(view, [0, 1, 0]).rotation.yaw_deg, 40);
+  // In 3DoF from the origin, ahead: NEW_WORLD_STICKER_DISTANCE down -Z.
+  const empty = newWorld3dStickerTransform({ ...view, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 }, [0, 0, -1]);
   closeVec(empty.position, [0, 0, -NEW_WORLD_STICKER_DISTANCE]);
   assert.deepEqual(empty.rotation, { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
 });

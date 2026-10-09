@@ -12,11 +12,13 @@ from .core.cache import CACHE
 from .core.scene_eval import FRAME_EPSILON
 from .core.video_source import MaterializedVideo, PtsTimes, StreamedVideo, coded_size, scan_video
 from .core.world_render import SceneContent
+from .core_adapters import _gaussian_item, get_mesh_batch_item
 from .node_runtime import NodeRuntime
 from .progress import loop_progress
 from .scene_mesh import mesh_scene_content
 from .scene_video import RenderedVideo, SceneVideo
-from .splat_render import splat_content
+from .scene_files import moge_grid_mesh
+from .splat_render import _GLTF_TO_SPLAT, splat_content
 
 # What `open_video` returns; each has `frame_rate`, `times`, `time_base`, `first_frame`, frames read in order by
 # index, and `audio(seconds)`.
@@ -149,3 +151,31 @@ class PortMedia:
         if self.is_3d:
             return content_of(self.media)
         return self.media if self._starts is None else open_video(self.media, "sticker")
+
+
+def content_box(media) -> dict | None:
+    """The axis-aligned box `{"min": [x, y, z], "max": [x, y, z]}` of 3D media in its own (`scene`) glTF frame, over
+    all its items, from the points that are drawn: a MESH's vertices (`get_mesh_batch_item`, without the batch's
+    padding), a SPLAT's gaussian centers (`_gaussian_item`) turned from 3DGS to glTF, a MOGE_GEOMETRY's grid vertices
+    (`moge_grid_mesh`, without the masked pixels). None when it has no point (docs/studio-node.md, "中身の箱"). The
+    one owner of the box: the node's 3D port Sticker and the editor's route both use it."""
+    points = []
+    if isinstance(media, Types.SPLAT):
+        turn = torch.tensor(_GLTF_TO_SPLAT, dtype=torch.float32)
+        for index in range(media.positions.shape[0]):
+            centers = _gaussian_item(media, index, torch.device("cpu"))[0]
+            points.append((centers[:, :, None] * turn.T[None]).sum(1))
+    elif isinstance(media, Types.MESH):
+        for index in range(media.vertices.shape[0]):
+            points.append(get_mesh_batch_item(media, index)[0].float().cpu())
+    elif isinstance(media, dict) and "points" in media:
+        for index in range(media["points"].shape[0]):
+            points.append(moge_grid_mesh(media, index)[0].float().cpu())
+    else:
+        raise TypeError(f"content_box takes a SPLAT, MESH, or MOGE_GEOMETRY, not {type(media).__name__}")
+    points = torch.cat(points) if points else torch.zeros((0, 3))
+    # A point that is not finite is never drawn, and JSON (the route's `box`) cannot hold it.
+    points = points[torch.isfinite(points).all(-1)]
+    if points.shape[0] == 0:
+        return None
+    return {"min": points.amin(0).tolist(), "max": points.amax(0).tolist()}

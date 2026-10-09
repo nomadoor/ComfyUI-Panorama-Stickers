@@ -68,6 +68,15 @@ export function frameViewContext(shot, gate, canvasSize) {
   };
 }
 
+// The direction, a World [x, y, z] of length 1, a new 3D Sticker is placed along from the view `camera` (a
+// spaceCamera()) of width x height pixels: the ray through `point` (a drop, in those pixels), or through the view's
+// center (the button). It is the direction of pano_pick.js pickRay, which the three.js chunk keeps to itself.
+export function placeDirection(camera, point, width, height) {
+  const at = point ?? { x: width / 2, y: height / 2 };
+  const { x, y, z } = panoToWorld(viewProjection(camera, width, height).ray(at.x, at.y));
+  return [x, y, z];
+}
+
 // The screen mapping of a width x height view drawn with camera (a viewportCamera() or shotCamera()
 // setup), the same projection the three.js camera renders with. Hit testing and the 2D overlays
 // use it so they line up with the drawn frame. Directions are in the panorama convention.

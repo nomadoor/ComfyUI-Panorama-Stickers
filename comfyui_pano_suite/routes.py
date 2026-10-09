@@ -11,6 +11,7 @@ import logging
 from aiohttp import web
 
 from .core.scene_state import is_3d_file_source, normalize_source
+from .sticker_media import content_box
 from .nodes import FILE_NOT_FOUND, NEITHER_3D_READER, _file_3d_error, _read_file_3d, _scene_ui
 
 FILE_3D_ROUTE = "/panorama_suite/file_3d"
@@ -20,7 +21,7 @@ _log = logging.getLogger(__name__)
 
 def _file_3d_response(body) -> tuple[int, dict]:
     """The status and JSON for a request `body`: 200 with the kind the editor loads, for a mesh whether it is
-    `unlit`, and the `ui` entry of its editor file; 400 for a body that is not a Source of a 3D file in the input
+    `unlit`, the `ui` entry of its editor file, and the content's `box` (`content_box`, None when empty); 400 for a body that is not a Source of a 3D file in the input
     folder that is there; 422 when the reader cannot read the file. Errors are `{"error": text}`."""
     if not isinstance(body, dict) or not isinstance(body.get("filename"), str) or not body["filename"].strip():
         return 400, {"error": "The request needs a JSON object with the filename of a 3D file."}
@@ -34,7 +35,7 @@ def _file_3d_response(body) -> tuple[int, dict]:
         return (400 if reason == FILE_NOT_FOUND else 422), {"error": _file_3d_error(source, reason)}
     ui = _scene_ui(content, in_execution=False)
     meta = ui["pano_scene_meta"][0]
-    return 200, {**meta, "file": ui["pano_scene_files"][0]}
+    return 200, {**meta, "file": ui["pano_scene_files"][0], "box": content_box(content)}
 
 
 async def file_3d_editor_file(request) -> web.Response:

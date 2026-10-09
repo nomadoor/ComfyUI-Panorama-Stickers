@@ -200,7 +200,7 @@ test("the on-node Stickers and Cutout surfaces draw through the same shared view
 test("an on-node Stickers surface with nothing to draw shows the grid without loading the view", () => {
   const runtime = source("pano_preview_runtime.js");
   const draw = runtime.slice(runtime.indexOf("function drawCanvas("), runtime.indexOf("\nfunction drawLineOnSphere("));
-  const stickers = draw.slice(draw.indexOf("  if (!surface.view) surface.view = { yaw: 0, pitch: 0, fov: 100 };\n  let panoramaDrawn"));
+  const stickers = draw.slice(draw.indexOf("  if (!surface.view) surface.view = { yaw: 0, pitch: 0, fov: DEFAULT_VIEW_HFOV };\n  let panoramaDrawn"));
   assert.match(stickers, /if \(!input\.background && !input\.layers\.length\) \{\s*surfaceView\.release\(\);\s*panoramaDrawn = true;\s*\} else \{\s*panoramaDrawn = drawView\(/);
   assert.match(stickers, /if \(!bgImg && panoramaDrawn\) drawPanoGrid\(/);
 });

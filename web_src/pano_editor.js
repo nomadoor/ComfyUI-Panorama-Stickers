@@ -22,7 +22,7 @@ import {
 } from "./pano_editor_state.js";
 import { timelineFps } from "./pano_scene_state.js";
 import { createEditorView } from "./pano_editor_view.js";
-import { DEFAULT_DISTANCE } from "./pano_space.js";
+import { DEFAULT_DISTANCE, DEFAULT_VIEW_HFOV } from "./pano_space.js";
 import { presetUsesButton } from "./pano_view_controls.js";
 import { createPanoCanvas, trackPanoCanvas, trackPanoVideo } from "./pano_diagnostics.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
@@ -461,7 +461,7 @@ async function showEditor(node, type, options = {}) {
     selectedId: initialSelectedId,
     viewYaw: 0,
     viewPitch: 0,
-    viewFov: 100,
+    viewFov: DEFAULT_VIEW_HFOV,
     // Panorama Studio with World content: where the Viewport camera stands (World glTF) and how far
     // ahead its pivot is (pano_space.js). It starts at the World origin, where the ERP is taken from,
     // or where the editor was last closed on this page (restoreView), and is not saved. Until it moves
@@ -650,7 +650,7 @@ async function showEditor(node, type, options = {}) {
     setView: (next) => {
       editor.viewYaw = wrapYaw(Number(next.yaw || 0));
       editor.viewPitch = clamp(Number(next.pitch || 0), -89.9, 89.9);
-      editor.viewFov = clamp(Number(next.fov || editor.viewFov || 100), 35, 140);
+      editor.viewFov = clamp(Number(next.fov || editor.viewFov || DEFAULT_VIEW_HFOV), 35, 140);
     },
     getViewportSize: () => {
       const rect = canvas.getBoundingClientRect();

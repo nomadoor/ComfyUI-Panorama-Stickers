@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createStickerImport } from "../web_src/editor/sticker_import.js";
-import { fileStickerKey } from "../web_src/pano_space.js";
+import { placeDirection } from "../web_src/pano_editor_view.js";
+import { FIT_3D_MIN_DISTANCE, fileStickerKey, fit3dPosition, fitSphereOfBox, newWorld3dStickerTransform, spaceCamera, viewFitFov } from "../web_src/pano_space.js";
 
 // docs/editor-interaction.md "3D ファイルを置く流れ": Add to World and the drop with a 3D file, in Panorama Studio's
 // editor (sceneV2) and in the legacy modal (not taken).
 function harness({ sceneV2 = true, upload = { status: 200, body: { name: "chair.glb", subfolder: "3d", type: "input" } }, route = { state: "ready", kind: "mesh", unlit: false, generation: 0 } } = {}) {
   const calls = { uploads: [], routes: [], history: 0, commits: 0, picks: [] };
   const state = { stickers: [], next_sticker_id: 1 };
-  const editor = { selectedId: null, worldSelectedId: null, viewYaw: 0, viewPitch: 0, frame: 0 };
+  const editor = { selectedId: null, worldSelectedId: null, viewYaw: 0, viewPitch: 0, frame: 0, mode: "pano" };
+  // The Viewport camera, which a test may move while a file uploads.
+  const view = { position: [0, 0, 0], yaw_deg: 30, pitch_deg: 20, hFOV_deg: 90, distance: 1 };
   const boxes = new Map();
   const dragCue = { active: false, depth: 0 };
   const editorView = { pick: () => null, sceneBox: (key) => boxes.get(key) ?? null, sceneItemError: () => null };
@@ -41,7 +44,7 @@ function harness({ sceneV2 = true, upload = { status: 200, body: { name: "chair.
     commitAndRefreshNode: () => { calls.commits += 1; },
     computeStickerVFov: () => 30,
     contentSphere: () => null,
-    currentSpaceCamera: noop,
+    currentSpaceCamera: () => spaceCamera({ ...view }, 800, 400),
     file3dEditorFile: (sticker) => (sticker.source.filename && route.state === "ready" ? { kind: route.kind, unlit: route.unlit, url: "/view?filename=e.glb", generation: route.generation } : null),
     forceCursorTool: noop,
     getNextStickerZIndex: () => 0,
@@ -59,14 +62,15 @@ function harness({ sceneV2 = true, upload = { status: 200, body: { name: "chair.
     },
     selectWorldSticker: (id) => { editor.worldSelectedId = id; },
     setSelectedItem: (item) => { editor.selectedId = item?.id ?? null; },
-    spaceViewState: () => ({ position: [0, 0, 0], yaw_deg: 30, pitch_deg: 20, hFOV_deg: 90, distance: 1 }),
+    screenPos: (event) => ({ x: event.clientX, y: event.clientY }),
+    spaceViewState: () => ({ ...view, position: [...view.position] }),
     stickerImageKey: (item) => `sticker:${item.id}`,
     stopTimelinePlayback: noop,
     syncTimeline: noop,
     updateSelectionMenu: noop,
     updateSidePanel: noop,
   });
-  return { module, state, editor, calls, boxes, dragCue, releaseRoute };
+  return { module, state, editor, calls, boxes, dragCue, view, releaseRoute };
 }
 
 const glb = (size = 4) => new File([new Uint8Array(size)], "chair.glb");
@@ -177,4 +181,70 @@ test("a 3D file dropped on Panorama Studio's editor goes into space; the legacy 
   studio.module.onWindowDragEnter(dragged);
   assert.equal(legacy.dragCue.active, false);
   assert.equal(studio.dragCue.active, true);
+});
+
+// docs/editor-interaction.md "3D の Sticker を収めて置く": the route's box fits the new Sticker in the view it was
+// placed from, along the ray through the view's center (the button) or the drop point.
+const BOX = { min: [-1, 0, -2], max: [3, 2, 0] };
+const placedFrom = (view, dir) => ({ eye: [...view.position], dir, fovDeg: viewFitFov(view, 800, 400), minDistance: Math.max(FIT_3D_MIN_DISTANCE, spaceCamera(view, 800, 400).near * 2) });
+const fitted = ({ eye, dir, fovDeg, minDistance }, rotation) => fit3dPosition(eye, dir, fitSphereOfBox(BOX), rotation, fovDeg, minDistance);
+
+test("Add to World places a 3D file at its provisional point, then fits its box in the view it was placed from, one Undo step", async () => {
+  const route = { state: "ready", kind: "mesh", unlit: false, generation: 0, box: BOX };
+  const { module, state, calls, view, releaseRoute } = harness({ route });
+  const before = { ...view, position: [...view.position] };
+  const dir = placeDirection(spaceCamera(before, 800, 400), null, 800, 400);
+  const done = module.addWorldStickerFromFile(glb());
+  const [sticker] = state.stickers;
+  // Provisional: its origin 2 along the view's forward.
+  assert.deepEqual(sticker.position.value, newWorld3dStickerTransform(before, dir).position);
+  // The view moves while it uploads; the fit keeps the view it was placed from.
+  view.position = [5, 5, 5];
+  view.hFOV_deg = 30;
+  releaseRoute();
+  await done;
+  const expected = fitted(placedFrom(before, dir), sticker.rotation.value);
+  sticker.position.value.forEach((value, axis) => assert.ok(Math.abs(value - expected[axis]) < 1e-9));
+  assert.notDeepEqual(sticker.position.value, newWorld3dStickerTransform(before, dir).position);
+  assert.equal(calls.history, 1);
+});
+
+test("a 3D file dropped on the view is placed along the ray through the drop point", async () => {
+  const route = { state: "ready", kind: "mesh", unlit: false, generation: 0, box: BOX };
+  const { module, state, view, releaseRoute } = harness({ route });
+  const before = { ...view, position: [...view.position] };
+  const point = { x: 120, y: 330 };
+  const dir = placeDirection(spaceCamera(before, 800, 400), point, 800, 400);
+  module.onCanvasDrop({ preventDefault() {}, stopPropagation() {}, clientX: point.x, clientY: point.y, dataTransfer: { files: [glb()] } });
+  const [sticker] = state.stickers;
+  assert.deepEqual(sticker.position.value, newWorld3dStickerTransform(before, dir).position);
+  releaseRoute();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const expected = fitted(placedFrom(before, dir), sticker.rotation.value);
+  sticker.position.value.forEach((value, axis) => assert.ok(Math.abs(value - expected[axis]) < 1e-9));
+});
+
+test("a 3D file moved, keyed, or without a usable box keeps the position it has when the route answers", async () => {
+  const cases = [
+    // Moved while it uploaded.
+    [BOX, (sticker) => { sticker.position.value = [1, 2, 3]; }, () => [1, 2, 3]],
+    // A Keyframe on its position, even at the same value.
+    [BOX, (sticker) => { sticker.position.keyframes.push({ frame: 0, value: [...sticker.position.value] }); }, (provisional) => provisional],
+    // No box, an empty content, a malformed box: the provisional position.
+    [undefined, () => {}, (provisional) => provisional],
+    [null, () => {}, (provisional) => provisional],
+    [{ min: [0, 0, 0], max: [1, "1", 1] }, () => {}, (provisional) => provisional],
+  ];
+  for (const [box, change, expected] of cases) {
+    const { module, state, calls, releaseRoute } = harness({ route: { state: "ready", kind: "splat", unlit: true, generation: 0, box } });
+    const done = module.addWorldStickerFromFile(glb());
+    const [sticker] = state.stickers;
+    const provisional = [...sticker.position.value];
+    change(sticker);
+    releaseRoute();
+    await done;
+    assert.deepEqual(sticker.position.value, expected(provisional), JSON.stringify(box));
+    assert.equal(calls.history, 1);
+  }
 });

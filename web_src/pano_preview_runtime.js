@@ -95,6 +95,7 @@ import {
   removeTrackedDomWidget,
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
+import { DEFAULT_VIEW_HFOV } from "./pano_space.js";
 import { createViewportRestoreScheduler } from "./pano_viewport_restore.js";
 import { editorOpen, mediaCache, nodeSurface, stateSync } from "./pano_node_bridge.js";
 const { app } = appModule;
@@ -1296,7 +1297,7 @@ function drawStickerSelectionOverlay(ctx, item, projection) {
 
 // The camera projection of the on-node Stickers view, for its overlays and hit testing.
 function stickersSurfaceProjection(node, width, height) {
-  return viewProjection(previewNodeCamera(nodeSurface(node).view || { yaw: 0, pitch: 0, fov: 100 }, width, height), width, height);
+  return viewProjection(previewNodeCamera(nodeSurface(node).view || { yaw: 0, pitch: 0, fov: DEFAULT_VIEW_HFOV }, width, height), width, height);
 }
 
 // The Timeline frame the node shows: its playback's, NODE_SURFACE_FRAME until it plays.
@@ -1609,7 +1610,7 @@ function drawCanvas(node, canvas, surfaceView, run = null) {
         surface.view = buildCutoutPanoramaViewFromShot(lastShot, { width: surfW, height: surfH });
         surface.lastCutoutShot = null;
       } else if (!surface.view) {
-        surface.view = { yaw: 0, pitch: 0, fov: 100 };
+        surface.view = { yaw: 0, pitch: 0, fov: DEFAULT_VIEW_HFOV };
       }
       if (bgReady) {
         if (!drawView(rect, previewNodeCamera(surface.view, surfW, surfH))) statusType = "loading";
@@ -1664,7 +1665,7 @@ function drawCanvas(node, canvas, surfaceView, run = null) {
     return;
   }
 
-  if (!surface.view) surface.view = { yaw: 0, pitch: 0, fov: 100 };
+  if (!surface.view) surface.view = { yaw: 0, pitch: 0, fov: DEFAULT_VIEW_HFOV };
   let panoramaDrawn = false;
   if (!bgImg || bgReady) {
     input = viewInput();
@@ -2409,7 +2410,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
           }
           let resolvedAction = action;
           if (action?.type === "add-frame") {
-            const view = surface.view || { yaw: 0, pitch: 0, fov: 100 };
+            const view = surface.view || { yaw: 0, pitch: 0, fov: DEFAULT_VIEW_HFOV };
             resolvedAction = {
               ...action,
               ...buildCutoutAddFrameAction(view, {
@@ -2497,7 +2498,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
 
   const interaction = createPanoInteractionController({
     getView: () => {
-      if (!surface.view) surface.view = { yaw: 0, pitch: 0, fov: 100 };
+      if (!surface.view) surface.view = { yaw: 0, pitch: 0, fov: DEFAULT_VIEW_HFOV };
       return surface.view;
     },
     setView: (v) => {

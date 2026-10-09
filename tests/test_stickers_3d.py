@@ -1,5 +1,6 @@
 import gc
 import json
+import math
 import weakref
 from io import BytesIO
 
@@ -34,6 +35,9 @@ SQUARE = [[-0.5, 0.5, 0.0], [0.5, 0.5, 0.0], [0.5, -0.5, 0.0], [-0.5, -0.5, 0.0]
 SQUARE_FACES = [[0, 3, 2], [0, 2, 1]]
 # Where the World direction +X (yaw 90) is in the 1024 x 512 ERP of a Camera at rotation 0.
 RIGHT = (256, 768)
+# Where the node puts a new port Sticker of `_square()`: its bounding sphere (radius sqrt(0.5) around its origin)
+# fitted to the node's view ahead of the origin (docs/editor-interaction.md, "3D の Sticker を収めて置く").
+SQUARE_FIT = [0.0, 0.0, -math.sqrt(0.5) / math.sin(math.radians(nodes.PORT_3D_FIT_FOV_DEG) / 2.0) * 1.1]
 
 
 def _square(rgb=RED, size=1.0, unlit=True):
@@ -68,14 +72,14 @@ def test_mesh_on_the_sticker_input_becomes_a_world_sticker_ahead_of_the_camera()
 
     [port] = output.result[4].layers[-1].state["stickers"]
     assert port["placement"] == "world" and port["source"] == {"kind": "port"} and "z_index" not in port
-    assert np.allclose(port["position"]["value"], [0.0, 0.0, -2.0])
+    assert np.allclose(port["position"]["value"], SQUARE_FIT) and abs(SQUARE_FIT[2] + 1.397) < 1e-3
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0} and port["scale"]["value"] == 1.0
     image = output.result[0][0]
-    # 1 wide at 2 ahead: about 28 degrees (80 pixels) around the output center.
-    assert _close(image[256, 512], RED) and _close(image[256, 512 + 30], RED) and _close(image[256, 512 + 50], GREEN)
+    # 1 wide at 1.397 ahead: about 39 degrees (112 pixels) around the output center.
+    assert _close(image[256, 512], RED) and _close(image[256, 512 + 50], RED) and _close(image[256, 512 + 62], GREEN)
     # The editor adds the same Sticker, and loads the media from its editor file.
     [pose] = output.ui["pano_sticker_input_pose"]
-    assert pose["placement"] == "world" and np.allclose(pose["position"], [0.0, 0.0, -2.0])
+    assert pose["placement"] == "world" and np.allclose(pose["position"], SQUARE_FIT)
     assert pose["rotation"] == port["rotation"]["value"] and pose["scale"] == 1.0
     assert output.ui["pano_sticker_meta"] == [{"kind": "mesh", "unlit": True}]
     assert np.allclose(np.sort(glb_positions(temp_entry_path(output.ui["pano_sticker_files"][0])), axis=0), np.sort(np.asarray(SQUARE), axis=0))
@@ -87,7 +91,7 @@ def test_a_new_3d_sticker_is_placed_from_the_origin_whatever_the_camera_lanes():
 
     port = _execute({"version": 2, "camera": camera}, sticker=_square()).result[4].layers[-1].state["stickers"][0]
 
-    assert port["position"]["value"] == [0.0, 0.0, -2.0]
+    assert np.allclose(port["position"]["value"], SQUARE_FIT)
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
 
 
@@ -262,7 +266,8 @@ def test_3d_media_replaces_a_stored_sky_port_sticker_by_a_world_one_and_then_sta
     output = _execute({"version": 2, "stickers": [sky]}, sticker=_square())
 
     [port] = output.result[4].layers[-1].state["stickers"]
-    assert [port["id"], port["placement"], port["position"]["value"], port["clip"]["duration"], port["locked"]] == ["p", "world", [0.0, 0.0, -2.0], 5, True]
+    assert [port["id"], port["placement"], port["clip"]["duration"], port["locked"]] == ["p", "world", 5, True]
+    assert np.allclose(port["position"]["value"], SQUARE_FIT)
     assert "direction" not in port
     assert _close(output.result[0][0, 256, 512], RED)
     # The editor replaces its Sticker the same way; run again with that state, the node changes nothing more.
@@ -283,9 +288,9 @@ def test_sticker_state_does_not_place_a_3d_sticker():
     output = _execute(sticker=_square(), sticker_state=sticker_state)
 
     [port] = output.result[4].layers[-1].state["stickers"]
-    assert port["placement"] == "world" and np.allclose(port["position"]["value"], [0.0, 0.0, -2.0])
+    assert port["placement"] == "world" and np.allclose(port["position"]["value"], SQUARE_FIT)
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0} and port["scale"]["value"] == 1.0
-    assert any("sticker_state places only 2D Stickers" in message for message in output.ui["pano_sticker_warnings"])
+    assert any("sticker_state places only 2D Stickers; the 3D Sticker is placed in front of the origin to fit the view." == message for message in output.ui["pano_sticker_warnings"])
     assert "pano_sticker_handoff" not in output.ui
 
 
@@ -451,3 +456,58 @@ def test_a_port_3d_sticker_and_a_3d_file_sticker_render_together_in_one_layer(in
         assert _close(frame[256, 512], RED) and not _close(frame[RIGHT], GREEN)
     layer = output.result[4].layers[-1]
     assert layer.port.is_3d and set(layer.sources.contents) == {"f"}
+
+
+# The content box (docs/studio-node.md, "中身の箱").
+
+def test_the_content_box_spans_every_item_of_a_mesh_without_the_padding():
+    from comfyui_pano_suite.sticker_media import content_box
+
+    vertices = torch.zeros((2, 4, 3))
+    vertices[0, :3] = torch.tensor([[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]])
+    vertices[1] = torch.tensor([[-2.0, 0.5, 3.0], [0.5, -1.0, 0.0], [0.0, 0.0, 0.5], [1.5, 0.0, 0.0]])
+    # Item 0 has 3 vertices; its padding vertex at the origin is not content.
+    vertices[1] += torch.tensor([0.0, 0.0, -5.0])
+    mesh = Types.MESH(vertices, torch.tensor([[[0, 1, 2]], [[0, 1, 2]]]), vertex_counts=torch.tensor([3, 4]), face_counts=torch.tensor([1, 1]))
+
+    assert content_box(mesh) == {"min": [-2.0, -1.0, -5.0], "max": [1.5, 1.0, -1.0]}
+
+
+def test_the_content_box_of_a_splat_is_in_gltf_coordinates():
+    from comfyui_pano_suite.sticker_media import content_box
+
+    # 3DGS is Y down and Z forward; glTF turns it half a turn about X.
+    splat = blobs(blob((1.0, 2.0, 3.0), RED), blob((-1.0, -2.0, 1.0), RED))
+
+    assert content_box(splat) == {"min": [-1.0, -2.0, -3.0], "max": [1.0, 2.0, -1.0]}
+
+
+def test_the_content_box_of_moge_frames_leaves_out_masked_pixels_and_empty_content_has_none():
+    from comfyui_pano_suite.scene_files import moge_grid_mesh
+    from comfyui_pano_suite.sticker_media import content_box
+
+    points = torch.stack(torch.meshgrid(torch.linspace(-1.0, 1.0, 4), torch.linspace(-1.0, 1.0, 4), indexing="xy"), dim=-1)
+    points = torch.cat([points, torch.full((4, 4, 1), 2.0)], dim=-1)[None]
+    mask = torch.ones((1, 4, 4), dtype=torch.bool)
+    mask[0, :, 0] = False
+    geometry = {"points": points, "mask": mask, "image": torch.rand((1, 4, 4, 3)), "intrinsics": torch.eye(3)[None]}
+    vertices = moge_grid_mesh(geometry, 0)[0]
+
+    assert content_box(geometry) == {"min": vertices.amin(0).tolist(), "max": vertices.amax(0).tolist()}
+    assert content_box(geometry)["min"][0] > -1.0
+    empty = Types.MESH(torch.zeros((1, 3, 3)), torch.tensor([[[0, 1, 2]]]), vertex_counts=torch.tensor([0]), face_counts=torch.tensor([0]))
+    assert content_box(empty) is None
+
+
+def test_a_new_port_sticker_of_off_center_content_is_fitted_and_without_content_goes_2_ahead():
+    # Content 4 wide around (3, 0, 0) of its own frame: the sphere's center goes ahead of the origin.
+    shifted = _square(size=4.0)
+    shifted.vertices = shifted.vertices + torch.tensor([3.0, 0.0, 0.0])
+    empty = Types.MESH(torch.zeros((1, 3, 3)), torch.tensor([[[0, 1, 2]]]), vertex_counts=torch.tensor([0]), face_counts=torch.tensor([0]))
+
+    fitted = _execute(sticker=shifted).result[4].layers[-1].state["stickers"][0]["position"]["value"]
+    nothing = _execute(sticker=empty).result[4].layers[-1].state["stickers"][0]["position"]["value"]
+
+    distance = math.sqrt(8.0) / math.sin(math.radians(nodes.PORT_3D_FIT_FOV_DEG) / 2.0) * 1.1
+    assert np.allclose(fitted, [-3.0, 0.0, -distance])
+    assert np.allclose(nothing, [0.0, 0.0, -2.0])
