@@ -22,7 +22,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
 - 見積もり（`_render_memory`）は次の和。粗い上側の見積もりで、細かな一時テンソルは含めない。
   - 出力の画素あたり `RENDER_FLOATS_PER_PIXEL`（32）個の float32。1 フレームの間にデバイスに同時にあるもの（光線とその向き、Sky の層ごとのサンプルと footprint・重み、背景のサンプル、World の層、色・マスク・深度）の分。32 は実測（`docs/legacy-baselines.md` の「Panorama Studio の描画の計測」）に余裕を持たせた値。光線（3 個）とその向き（2 個）、World の光線（3 個）、MESH・SPLAT の光線（各 3 個）はフレームの間も描画のパスの終わりまで持ち続けるが、これらを合わせても画素あたり約 14 個で、32 の内に収まる。
   - デバイスに上げる素材の float32 の大きさの `DEVICE_SOURCE_FACTOR`（4）倍：`bg_media` の 1 フレーム（RGB）、各層の Sticker の素材（RGBA）、アップロード済みのペイントのラスタ。4 倍は、本体と `_sample_filtered` の ripmap（本体の 3 倍まで）の分。
-  - 3D の中身（`scene` と 3D の Sticker）のテンソルの大きさ（`core/cache.py` の `nbytes`）。`DA3_GEOMETRY` は入力の辞書ではなく、device に置く変換後のメッシュ（頂点・面・uv・テクスチャ）の大きさで数え、multiview は全視点を同時に置くので全視点の和にする（作る）。
+  - 3D の中身（`scene` と 3D の Sticker。3D の Sticker は `port` の素材と、3D ファイルの `file` の Source から読んだ SPLAT・MESH（`SceneSources.contents`。作る））のテンソルの大きさ（`core/cache.py` の `nbytes`）。`DA3_GEOMETRY` は入力の辞書ではなく、device に置く変換後のメッシュ（頂点・面・uv・テクスチャ）の大きさで数え、multiview は全視点を同時に置くので全視点の和にする（作る）。
 - 例：ERP 4096 x 2048 の出力に 4096 x 2048 の背景と 2048 四方の Sticker 一つなら、1 GiB（画素）＋ 384 MiB（背景）＋ 256 MiB（Sticker）で約 1.6 GiB。
 
 ## 中断と進み具合
@@ -41,7 +41,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - `painting_erp`：状態のペイント（ストローク、ラスタオブジェクト）を ERP に描いた結果（`render_painting_to_erp`）。1 回の描画のパスの中で同じペイントを何度も求め（ペイントとマスクを別々に、グループごとに）、1 回の実行で複数のパス（最初のフレーム、`video` 出力を読むたび）を描くので、ComfyUI の出力キャッシュでは代わりにならない。ストロークを描くのは CPU で数秒かかることがあるため残す。
   - `cutout_sampling_map`：旧 Cutout の標本化の表。
   - `video`・`scene_files`：エディタ用の MP4・PNG・PLY/GLB のパス。
-  - `splat_files`・`mesh_files`：3D ファイルから読んだ SPLAT・MESH。
+  - `splat_files`・`mesh_files`：3D ファイルから読んだ SPLAT・MESH。`scene`・`sticker` の入力の 3D ファイルも、3D ファイルの `file` の Source（作る）も、エディタ用ファイルの問い合わせ（`docs/studio-node.md`。作る）も、同じキー（パス・更新時刻・大きさ）で引く。
 - 持たないもの：
   - 旧 `PanoramaStickers` の背景のバッチ。プレビューの MP4 を作る間だけ持つ。
   - 旧 Cutout のペイントの描画結果（本番の呼び出し元がない）と、アップロード済みのペイントの拡大縮小の結果（元の画像は `image_file` にあり、拡大縮小はパスごとに一度で軽い）。
@@ -50,6 +50,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
 ## 一時ファイル
 
 - エディタのために temp に書くファイル（エディタ用の MP4・RGBA の PNG・PLY/GLB、旧ノードのプレビュー MP4、`video` 出力のストリームソース、Panorama Studio の出力 ERP の PNG（`core/video.py` の `save_output_png`。ノード上の表示用、元の大きさ））は、`core/temp_files.py` の `TEMP_FILES` に登録する（書き終えたら `TEMP_FILES.writing` / `add`）。ComfyUI は temp を起動時と終了時にしか消さないので、合計が `TEMP_MAX_BYTES`（既定 5 GiB。モジュールの定数）を超えたら、最近使っていないものから消す。
+  - 3D ファイルの `file` の Source のエディタ用ファイルの問い合わせ（`docs/studio-node.md`。作る）が実行の外で書いた PLY/GLB も登録する。実行の外で書いたので記録の実行は `None` で、下の保護は受けず、上限を超えれば古いものから消える。後の実行の `ui` が指せば（`entry_from_path`）、その実行の間は残る。エディタは消えたファイル（404）を問い合わせ直す。
   - 今の実行（ComfyUI のプロンプト。`comfy_execution.utils.get_executing_context()` の `prompt_id`、`node_runtime.py` が設定する）が書いたファイルと、今の実行の出力の `ui` が指したファイル（`entry_from_path` を通ったもの）は、その実行の間は消さない。上限を超えていても残す。
   - 消したファイルをキャッシュが指していても、次に要るときに作り直す（キャッシュはファイルがあるかを確かめる。`SceneVideo` のストリームソースも同じ）。
   - 消せないファイル（Windows でブラウザが再生中の MP4 など。`unlink` の `OSError`）は登録と合計に残し、次に書いたときにもう一度消す。消せないことで実行は失敗しない。書きかけのファイルを消すとき（`removed_on_failure`）も同じで、元の例外をそのまま上げる。旧ノードのプレビュー MP4 は、エンコーダの試行のループを抜けてから登録する（登録の処理をエンコーダの失敗と取り違えないため）。

@@ -25,6 +25,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | Sticker の id の採番 | 正規化は `load_scene_state`、加えるときは `nodes.py` `_take_sticker_id` | 正規化は `loadSceneState`、加えるときは `pano_editor_state.js` `takeStickerId` | `pano_editor_state.test.mjs`、`tests/test_studio_node.py`、フィクスチャ `v2_upstream` |
 | `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`） | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
 | Sky の重なり順 | `core/display_list.py` `build_display_entries` | ペイントの並びは `web_src/pano_paint_layers.js` `skyPaintLayers` | `tests/test_display_list_core.py`、`tests/test_paint_layers_parity.py` |
+| `file` の Source が 3D ファイルか | `scene_state.py` `is_3d_file_source`（作る） | `pano_scene_state.js` `is3dFileSource`（作る） | フィクスチャ `file_3d_formats`（作る）を専用に読む `test_scene_state_parity.py`・`pano_scene_state.test.mjs` |
 
 フィクスチャは `tests/fixtures/scene_state/`（状態と `sticker_state`）と `tests/fixtures/scene_inherit/`（上書き）にあり、
 Python と JS の両方の test が同じファイルを読む。Python と JS の数値の一致の許容差は 1e-4 とする。
@@ -273,7 +274,14 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 
 `filename`・`subfolder`・`storage` は信頼しない入力である。ファイルを読む側は、既存の `folder_paths` による範囲の確認を必ず通す。この契約のコードはファイルを読まない。
 
-ノードは `file` の Source を画像として読む（`core/stickers.py` の `load_source_rgba`）。3D ファイルの `file` の Source は読めないので、警告を出して描かない。
+#### 3D ファイルの `file` の Source
+
+`file` の Source が 3D ファイルかどうかは、`filename` の拡張子だけで決める（大文字と小文字は区別しない）。3D ファイルの拡張子は、ComfyUI の Load3D が受け付ける 9 つ（`.gltf`・`.glb`・`.obj`・`.fbx`・`.stl`・`.spz`・`.splat`・`.ply`・`.ksplat`）と同じにする（出典：ComfyUI_frontend（5276d1b）の `src/extensions/core/load3d/constants.ts:6-20` の `SUPPORTED_EXTENSIONS`、コアの `comfy_extras/nodes_load_3d.py:29`）。それ以外の `file` の Source と、`data_url` の Source は画像とする。
+
+- Python と JS は同じ表（フィクスチャ `tests/fixtures/scene_state/file_3d_formats.json`（作る）。拡張子の一覧と、`filename` と期待する判定の組）を読み、同じ判定になることを parity の test で守る。この表は状態ではないので、`test_scene_state_parity.py` の `STATE_CASES` には入れず、Python と JS の test がそれぞれ専用に読む。
+- 判定はファイルを開かない。PLY がスプラットかメッシュか、読めるかどうかは、読む側が中身で決める（`docs/render-contract.md` の「SPLAT の描き方」と「読めない 3D ファイル」）。
+- 3D ファイルの Source を持つ Sticker は `world` の Sticker である（上の「`world` の 2D の素材」の段落）。状態の読み込みは `placement` を書き換えない。`sky` の Sticker が 3D ファイルの Source を持つ状態は、ノードが描かずに警告する（`docs/studio-node.md` の「3D ファイルの `file` の Source」）。
+- 読み方は、ノードが `docs/studio-node.md` の「3D ファイルの `file` の Source」、エディタが `docs/threejs-spark-integration.md` の「空間の表示」で決める。画像の `file` の Source は、ノードが `core/stickers.py` の `load_source_rgba` で読む。
 
 ## 評価関数
 
