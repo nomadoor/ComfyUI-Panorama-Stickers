@@ -7,6 +7,7 @@ kept as given and handed out read-only: callers must not write to what they get 
 """
 import threading
 from collections import OrderedDict
+from contextlib import contextmanager
 
 import numpy as np
 import torch
@@ -59,6 +60,8 @@ class MemoryCache:
         self._entries = OrderedDict()
         self._bytes = 0
         self._lock = threading.Lock()
+        # (namespace, key) -> [its lock, the callers holding or waiting for it]
+        self._key_locks = {}
 
     @property
     def bytes(self) -> int:
@@ -95,10 +98,31 @@ class MemoryCache:
                 self._bytes -= evicted
         return value
 
-    def get_or_put(self, namespace: str, key, make):
-        """The value under `key`, or `make()` kept there."""
-        value = self.get(namespace, key)
-        return self.put(namespace, key, make()) if value is None else value
+    @contextmanager
+    def _locked(self, namespace: str, key):
+        """Hold the lock of one key, so that callers of the same key run one at a time and other keys do not wait."""
+        with self._lock:
+            entry = self._key_locks.setdefault((namespace, key), [threading.Lock(), 0])
+            entry[1] += 1
+        try:
+            with entry[0]:
+                yield
+        finally:
+            with self._lock:
+                entry[1] -= 1
+                if entry[1] == 0:
+                    del self._key_locks[(namespace, key)]
+
+    def get_or_put(self, namespace: str, key, make, valid=None):
+        """The value under `key`, or `make()` kept there (None from `make` is returned and not kept). A kept value that
+        `valid(value)` rejects is made again. Callers of the same key wait for each other, so concurrent callers (a
+        running prompt and a server route) make it once."""
+        with self._locked(namespace, key):
+            value = self.get(namespace, key)
+            if value is not None and (valid is None or valid(value)):
+                return value
+            value = make()
+            return value if value is None else self.put(namespace, key, value)
 
     def clear(self):
         with self._lock:

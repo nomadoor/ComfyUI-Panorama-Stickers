@@ -19,11 +19,14 @@ from .world import world_rotation
 @dataclass(frozen=True)
 class CameraView:
     """A Camera in a glTF frame (World, or the `scene` input's own frame): `position` (3,) and `rotation` (3, 3)
-    whose columns are its right, up, and back axes as `world_rotation` returns them (it looks down -Z)."""
+    whose columns are its right, up, and back axes as `world_rotation` returns them (it looks down -Z).
+    `to_world` (3, 3) turns directions of this frame into World ones (None: this frame is World), so that what is
+    fixed in World, such as the default lights, can be brought into the content's frame."""
 
     position: np.ndarray
     rotation: np.ndarray
     projection: object
+    to_world: np.ndarray | None = None
 
     def rays(self, device) -> torch.Tensor:
         """Unit directions (H, W, 3) of the output pixels from `position`."""
@@ -160,7 +163,7 @@ def _scene_layer(scene: SceneContent, index: int, transform: dict, view: CameraV
     # from the Camera moved into its frame, and its distances are scaled back to World.
     rotation = world_rotation(transform["yaw_deg"], transform["pitch_deg"], transform["roll_deg"])
     scale = transform["scale"]
-    local = CameraView(rotation.T @ (view.position - np.asarray(transform["position"])) / scale, rotation.T @ view.rotation, view.projection)
+    local = CameraView(rotation.T @ (view.position - np.asarray(transform["position"])) / scale, rotation.T @ view.rotation, view.projection, rotation)
     rgba, depth = scene.render(local, index, device)
     return rgba, depth * scale
 

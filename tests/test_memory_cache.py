@@ -2,6 +2,8 @@
 import base64
 import io
 import json
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -69,6 +71,59 @@ def test_kept_arrays_are_read_only_and_not_copied():
     assert kept is pair and CACHE.get("test", 1) is pair
     with pytest.raises(ValueError):
         pair[0][0, 0] = 1.0
+
+
+def test_concurrent_callers_of_one_key_make_it_once_and_other_keys_do_not_wait():
+    cache = MemoryCache()
+    made = []
+    inside = threading.Barrier(2, timeout=5)
+
+    def slow(name):
+        def make():
+            made.append(name)
+            time.sleep(0.2)
+            return np.zeros(4)
+        return make
+
+    def other():
+        # Another key runs while the first key is being made.
+        def make():
+            inside.wait()
+            return np.ones(4)
+        return make
+
+    def first_key():
+        def make():
+            made.append("a")
+            inside.wait()
+            time.sleep(0.2)
+            return np.zeros(4)
+        return make
+
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(cache.get_or_put("ns", "a", first_key()))),
+               threading.Thread(target=lambda: results.append(cache.get_or_put("ns", "b", other())))]
+    for thread in threads:
+        thread.start()
+    time.sleep(0.05)
+    # A second caller of key "a" waits for the first and gets its value without making it again.
+    waiting = threading.Thread(target=lambda: results.append(cache.get_or_put("ns", "a", slow("again"))))
+    waiting.start()
+    for thread in (*threads, waiting):
+        thread.join(5)
+
+    assert made == ["a"]
+    assert len(results) == 3 and results[0] is not None
+    assert sum(value is cache.get("ns", "a") for value in results) == 2
+    assert cache._key_locks == {}
+
+
+def test_a_value_that_is_no_longer_valid_is_made_again_and_none_is_not_kept():
+    cache = MemoryCache()
+    cache.put("ns", "k", np.zeros(2))
+
+    assert cache.get_or_put("ns", "k", lambda: np.ones(2), valid=lambda value: value.sum() > 0).sum() == 2
+    assert cache.get_or_put("ns", "none", lambda: None) is None and cache.get("ns", "none") is None
 
 
 def test_nbytes_counts_the_tensors_of_a_splat():
