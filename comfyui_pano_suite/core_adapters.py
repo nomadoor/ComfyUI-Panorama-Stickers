@@ -11,7 +11,7 @@ import logging
 import comfy.model_management
 
 try:
-    from comfy.ldm.moge.geometry import depth_map_edge, triangulate_grid_mesh
+    from comfy.ldm.moge.geometry import depth_map_edge, depth_map_to_point_map, triangulate_grid_mesh
     from comfy_extras.nodes_gaussian_splat import (
         _C0,
         File3DToSplat,
@@ -45,7 +45,7 @@ except ImportError as error:
     triangulate_grid_mesh = _C0 = File3DToSplat = SplatToFile3D = _detect_splat_format = _gaussian_item = _Unavailable()
     _linear_to_srgb = _quantile = _quat_to_mat = _srgb_to_linear = Get3DComponents = _Unavailable()
     get_mesh_batch_item = mesh_item_to_glb_bytes = save_glb = DA3GeometryToMesh = _da3_default_K = _Unavailable()
-    depth_map_edge = _da3_build_mask = _da3_get_K = _da3_unproject = _Unavailable()
+    depth_map_edge = depth_map_to_point_map = _da3_build_mask = _da3_get_K = _da3_unproject = _Unavailable()
 else:
     FEATURE_3D_UNAVAILABLE = None
 

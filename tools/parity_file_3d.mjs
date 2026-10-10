@@ -12,13 +12,15 @@
 //               (MESH.unlit), "width": 1024, "height": 1024 }
 //   output.png  the node's frame of the same state (optional: without it only editor.png is written)
 //   da3/        (optional) the DA3 mono scene: scene.json { "kind": "depth_grid", "meta": the node's pano_scene_meta
-//               item without `video`, "depth": [its depth files], "image": the frame's image as a PNG, "video": the
-//               color proxy MP4, "shots": [{ "name", "state", "output" }], "width", "height" }, and the files it names
-// and gets editor.png (with output.png also diff.png, the per-pixel difference x8, and parity.json). In da3/, per
-// shot, the grid is drawn twice: with the colors of image.png ((a) the shape: editor_<shot>_image.png, held to the
+//               item without `video`, "depth": [its depth files, one per frame], "image": frame 0's image as a PNG,
+//               "video": the color proxy MP4, "shots": [{ "name", "state", "output" }] (outputs of frame 0), "width",
+//               "height" }, and the files it names
+//   moge/       (optional) the MOGE_GEOMETRY perspective sequence (ADR 0040), the same shape with several frames
+// and gets editor.png (with output.png also diff.png, the per-pixel difference x8, and parity.json). In da3/ and
+// moge/, per shot, frame 0's grid is drawn twice: with the colors of image.png ((a) the shape: editor_<shot>_image.png, held to the
 // 3D file's tolerance) and with the colors of the proxy, its <video> paused at the item's time and drawn as a
 // VideoTexture as when it plays ((b) the proxy:
-// editor_<shot>_proxy.png, held to the proxy's looser tolerance), each with its diff_*.png; da3/parity.json has the
+// editor_<shot>_proxy.png, held to the proxy's looser tolerance), each with its diff_*.png; its parity.json has the
 // numbers.
 //
 // Headless Chromium runs with `--use-angle=vulkan --enable-features=Vulkan`, which picks Mesa's llvmpipe
@@ -62,8 +64,12 @@ const png = (dataUrl) => Buffer.from(dataUrl.split(",")[1], "base64");
 const scene = await readJson(path.join(workDir, "scene.json")).catch(() => usage(`No scene.json in ${workDir}.`));
 const width = scene.width ?? 1024;
 const height = scene.height ?? 1024;
-const da3Dir = path.join(workDir, "da3");
-const da3 = (await exists(path.join(da3Dir, "scene.json"))) ? await readJson(path.join(da3Dir, "scene.json")) : null;
+// The depth grid scenes there are: [label, dir, scene].
+const depthScenes = [];
+for (const [label, name] of [["DA3 mono", "da3"], ["MoGe perspective sequence", "moge"]]) {
+  const dir = path.join(workDir, name);
+  if (await exists(path.join(dir, "scene.json"))) depthScenes.push([label, dir, await readJson(path.join(dir, "scene.json"))]);
+}
 
 // The page imports the editor's modules from web_src and three from node_modules through an import map.
 const modules = pathToFileURL(await realpath(path.join(repoRoot, "node_modules"))).href;
@@ -165,8 +171,8 @@ async function proxyVideo(base64) {
 }
 
 // The DA3 mono depth grid of each shot, with the colors of the frame's image (a) and of the proxy (b).
-window.renderDepthGrid = async ({ meta, depthBase64, imageBase64, videoBase64, shots, width, height, loadMs }) => {
-  const depthUrl = blobUrl(depthBase64, "application/octet-stream");
+window.renderDepthGrid = async ({ meta, depthBase64s, imageBase64, videoBase64, shots, width, height, loadMs }) => {
+  const depthUrls = depthBase64s.map((value) => blobUrl(value, "application/octet-stream"));
   const image = await createImageBitmap(new Blob([bytesOf(imageBase64)], { type: "image/png" }), { colorSpaceConversion: "none" });
   let proxy = null;
   let proxyError = null;
@@ -175,7 +181,7 @@ window.renderDepthGrid = async ({ meta, depthBase64, imageBase64, videoBase64, s
   } catch (error) {
     proxyError = String(error.message || error);
   }
-  const files = sceneFilesOf([{ filename: "depth" }], [{ ...meta, video: { filename: "proxy" } }], (entry) => (entry.filename === "depth" ? depthUrl : "proxy"));
+  const files = sceneFilesOf(depthUrls.map((url) => ({ filename: url })), [{ ...meta, video: { filename: "proxy" } }], (entry) => (entry.filename === "proxy" ? "proxy" : entry.filename));
   if (!files) throw new Error("The meta is not a depth grid's.");
   const results = [];
   for (const shot of shots) {
@@ -324,44 +330,44 @@ try {
     }
   }
 
-  // The DA3 mono depth grid.
-  if (da3) {
-    if (da3.kind !== "depth_grid" || da3.depth?.length !== 1) throw new Error("da3/scene.json is not one depth grid frame.");
+  // The depth grids (DA3 mono, MoGe perspective sequence), each at frame 0.
+  for (const [label, dir, grid3d] of depthScenes) {
+    if (grid3d.kind !== "depth_grid" || !grid3d.depth?.length) throw new Error(`${dir}/scene.json is not a depth grid scene.`);
     const grid = await page.evaluate((input) => window.renderDepthGrid(input), {
-      meta: da3.meta,
-      depthBase64: await base64(path.join(da3Dir, da3.depth[0])),
-      imageBase64: await base64(path.join(da3Dir, da3.image)),
-      videoBase64: await base64(path.join(da3Dir, da3.video)),
-      shots: da3.shots,
-      width: da3.width ?? width,
-      height: da3.height ?? height,
+      meta: grid3d.meta,
+      depthBase64s: await Promise.all(grid3d.depth.map((name) => base64(path.join(dir, name)))),
+      imageBase64: await base64(path.join(dir, grid3d.image)),
+      videoBase64: await base64(path.join(dir, grid3d.video)),
+      shots: grid3d.shots,
+      width: grid3d.width ?? width,
+      height: grid3d.height ?? height,
       loadMs: LOAD_MS,
     });
-    console.log(`DA3 mono depth grid: ${da3Dir}`);
+    console.log(`${label} depth grid (${grid3d.depth.length} frames, frame 0): ${dir}`);
     if (grid.proxyError) {
       console.error(`  (b) not drawn: ${grid.proxyError}`);
       failed = true;
     }
-    const report = { shots: {} };
+    const report = { frames: grid3d.depth.length, shots: {} };
     for (const { name, frames } of grid.results) {
-      const shot = da3.shots.find((item) => item.name === name);
+      const shot = grid3d.shots.find((item) => item.name === name);
       report.shots[name] = {};
       for (const [kind, limits] of [["image", SHAPE], ["proxy", PROXY]]) {
         const frame = frames[kind];
         if (!frame) continue;
-        await writeFile(path.join(da3Dir, `editor_${name}_${kind}.png`), png(frame.png));
+        await writeFile(path.join(dir, `editor_${name}_${kind}.png`), png(frame.png));
         report.renderer = frame.renderer;
         if (!llvmpipe(frame.renderer)) continue;
-        if (!(await exists(path.join(da3Dir, shot.output)))) {
+        if (!(await exists(path.join(dir, shot.output)))) {
           console.log(`  No ${shot.output}: nothing to compare.`);
           continue;
         }
         // The proxy's chroma block in output pixels: the output is this many pixels per source pixel.
-        const chromaEdge = kind === "proxy" ? Math.ceil(CHROMA_BLOCK * (da3.width ?? width) / da3.meta.width) : 0;
-        report.shots[name][kind] = await compare(frame.pixels, da3Dir, shot.output, `diff_${name}_${kind}.png`, limits, chromaEdge);
+        const chromaEdge = kind === "proxy" ? Math.ceil(CHROMA_BLOCK * (grid3d.width ?? width) / grid3d.meta.width) : 0;
+        report.shots[name][kind] = await compare(frame.pixels, dir, shot.output, `diff_${name}_${kind}.png`, limits, chromaEdge);
       }
     }
-    await writeFile(path.join(da3Dir, "parity.json"), `${JSON.stringify(report, null, 2)}\n`);
+    await writeFile(path.join(dir, "parity.json"), `${JSON.stringify(report, null, 2)}\n`);
   }
   if (problems.length) {
     console.error(problems.join("\n"));

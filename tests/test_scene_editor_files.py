@@ -354,3 +354,81 @@ def test_the_depth_grid_fixture_is_what_python_writes():
     assert np.allclose(np.asarray(case["points"])[:, 2:], points.numpy(), atol=0) and [row[:2] for row in case["points"]] == keep.nonzero()[:, [1, 0]].tolist()
     quads = keep[:-1, :-1] & keep[:-1, 1:] & keep[1:, 1:] & keep[1:, :-1]
     assert case["quads"] == quads.nonzero()[:, [1, 0]].tolist()
+
+
+def test_moge_sequences_are_depth_grids_with_the_pixel_k(caplog):
+    import logging
+
+    from test_scene_mesh import _moge_panorama_points, _moge_sequence
+
+    from comfyui_pano_suite import scene_mesh
+
+    geometry = _moge_sequence(count=3)
+    # Frame 1 all masked: empty.
+    geometry["mask"][1] = False
+    count, height, width = geometry["points"].shape[:3]
+
+    ui = nodes._scene_ui(geometry, fps=10.0)
+
+    [meta] = ui["pano_scene_meta"]
+    files = ui["pano_scene_files"]
+    assert files[1] is None and all(_path(files[index]).suffix == ".f32" for index in (0, 2))
+    for index in (0, 2):
+        values = np.frombuffer(_path(files[index]).read_bytes(), dtype="<f4").reshape(height, width)
+        keep = scene_mesh.moge_keep(geometry, index).numpy()
+        assert np.array_equal(values > 0, keep) and (values[~keep] == 0).all()
+        assert np.array_equal(values[keep], geometry["points"][index][..., 2].numpy()[keep])
+    expected_k = [scene_mesh.moge_pixel_k(geometry["intrinsics"][index], height, width).reshape(-1).tolist() for index in range(count)]
+    assert {key: meta[key] for key in meta if key != "video"} == {
+        "kind": "depth_grid", "unlit": True, "width": width, "height": height,
+        "depth": {"dtype": "float32", "byte_order": "little", "bytes": width * height * 4},
+        "intrinsics": expected_k, "video_fps": 10.0, "frames": count,
+    }
+    assert _path(meta["video"]).exists()
+
+    # What does not qualify stays GLB, with one warning per run that says why.
+    single = _moge_sequence(count=1)
+    projected_off = _moge_sequence(count=2)
+    projected_off["points"] = projected_off["points"].clone()
+    projected_off["points"][1, 5:8, 2:6, 0] += 0.05
+    mixed = {key: torch.cat([_moge_sequence(count=1)[key], projected_off[key][1:]]) for key in ("points", "depth", "intrinsics", "image", "mask")}
+    cases = {
+        "a panorama": (_moge_panorama_points(), "no intrinsics"),
+        "one frame": (single, "one frame"),
+        "force_projection off": (projected_off, "frame 1"),
+        "mixed dicts": (mixed, "frame 1"),
+    }
+    for name, (value, reason) in cases.items():
+        assert nodes._scene_ui(value, fps=10.0)["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}], name
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            nodes.PanoramaStudioNode.execute(bg_color="#000000", coverage="360", output_size="1024", state_json="", scene=value, sticker=value)
+        warned = [record.getMessage() for record in caplog.records if "MOGE_GEOMETRY" in record.getMessage()]
+        assert len(warned) == 1 and reason in warned[0], (name, warned)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        nodes.PanoramaStudioNode.execute(bg_color="#000000", coverage="360", output_size="1024", state_json="", scene=_moge_sequence(count=2))
+    assert not [record for record in caplog.records if "MOGE_GEOMETRY" in record.getMessage()]
+
+
+def test_the_moge_depth_grid_fixture_is_what_python_writes():
+    """tests/fixtures/da3_depth_grid/case_moge.json: a MoGe frame the JS reader takes as a DA3 mono frame."""
+    from comfy.ldm.moge.geometry import depth_map_to_point_map
+
+    from comfyui_pano_suite import scene_mesh
+
+    root = Path(__file__).resolve().parent / "fixtures" / "da3_depth_grid"
+    case = json.loads((root / "case_moge.json").read_text(encoding="utf-8"))
+    depth, k = torch.tensor(case["input"]["depth"]), torch.tensor(case["input"]["intrinsics"])
+    mask = torch.tensor(case["input"]["mask"], dtype=torch.bool)
+    points = depth_map_to_point_map(depth, k)
+    geometry = {"points": points[None].repeat(2, 1, 1, 1), "mask": mask[None].repeat(2, 1, 1), "intrinsics": k[None].repeat(2, 1, 1), "image": torch.zeros((2, *depth.shape, 3))}
+    keep = scene_mesh.moge_keep(geometry, 0)
+
+    assert scene_mesh.moge_uses_depth_grid(geometry)[0]
+    values = np.frombuffer((root / "moge_depth_0.f32").read_bytes(), dtype="<f4").reshape(case["meta"]["height"], case["meta"]["width"])
+    assert np.array_equal(values > 0, keep.numpy()) and case["keep"] == keep.int().tolist()
+    assert case["meta"]["intrinsics"] == [scene_mesh.moge_pixel_k(k, *depth.shape).reshape(-1).tolist()]
+    assert np.allclose(np.asarray(case["points"])[:, 2:], scene_mesh.moge_points(geometry, 0, keep).numpy(), atol=0)
+    quads = keep[:-1, :-1] & keep[:-1, 1:] & keep[1:, 1:] & keep[1:, :-1]
+    assert case["quads"] == quads.nonzero()[:, [1, 0]].tolist()

@@ -92,7 +92,9 @@ test("the item's box is around the points of the pixels with depth above 0", () 
 
 test("a grid larger than the GPU's textures is refused with the GPU's limit", () => {
   assert.equal(depthGridTooLarge(4096, 2160, 4096), null);
-  assert.equal(depthGridTooLarge(3840, 2160, 2048), "The depth of this DA3 geometry is 3840 × 2160, larger than this GPU's textures (MAX_TEXTURE_SIZE 2048).");
+  assert.equal(depthGridTooLarge(3840, 2160, 2048), "The depth of this 3D content is 3840 × 2160, larger than this GPU's textures (MAX_TEXTURE_SIZE 2048).");
+  // The same words for DA3_GEOMETRY and MOGE_GEOMETRY (ADR 0040): the editor does not tell them apart.
+  assert.doesNotMatch(depthGridTooLarge(3840, 2160, 2048), /DA3|MoGe/i);
 });
 
 test("one static grid per size: no vertex data, 6 vertices per quad instance, never culled by bounds", () => {
@@ -129,24 +131,28 @@ test("the material and its pick material share the depth, K⁻¹ and grid, and d
 
 // The file Python writes for a DA3_GEOMETRY mono frame and what it keeps (tests/fixtures/da3_depth_grid, which
 // tests/test_scene_editor_files.py checks): the editor reads the same pixels, points and quads.
-test("the editor reads Python's depth file to the same kept pixels, points and quads", () => {
-  const fixture = (name) => new URL(`./fixtures/da3_depth_grid/${name}`, import.meta.url);
-  const { meta, keep, points, quads } = JSON.parse(readFileSync(fixture("case.json"), "utf8"));
-  const file = readFileSync(fixture("depth_0.f32"));
-  const values = readDepthGrid(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength), meta);
-  const { width, height } = meta;
-  assert.deepEqual(Array.from({ length: height }, (_, y) => Array.from({ length: width }, (_, x) => (values[y * width + x] > 0 ? 1 : 0))), keep);
-  const inverse = inverseIntrinsics(meta.intrinsics[0]);
-  const kept = [];
-  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) if (values[y * width + x] > 0) kept.push([x, y]);
-  assert.deepEqual(kept, points.map(([x, y]) => [x, y]));
-  points.forEach(([x, y, ...expected]) => {
-    depthGridPoint(inverse, x, y, values[y * width + x]).forEach((value, axis) => close(value, expected[axis], 1e-5));
+// Both kinds of depth grid (ADR 0039 and 0040): a DA3_GEOMETRY mono frame, and a MOGE_GEOMETRY perspective frame of odd
+// sizes with its principal point off the middle, whose pixel-center rule Python puts into the meta's K.
+for (const [label, caseFile, depthFile] of [["DA3_GEOMETRY mono", "case.json", "depth_0.f32"], ["MOGE_GEOMETRY perspective", "case_moge.json", "moge_depth_0.f32"]]) {
+  test(`the editor reads Python's ${label} depth file to the same kept pixels, points and quads`, () => {
+    const fixture = (name) => new URL(`./fixtures/da3_depth_grid/${name}`, import.meta.url);
+    const { meta, keep, points, quads } = JSON.parse(readFileSync(fixture(caseFile), "utf8"));
+    const file = readFileSync(fixture(depthFile));
+    const values = readDepthGrid(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength), meta);
+    const { width, height } = meta;
+    assert.deepEqual(Array.from({ length: height }, (_, y) => Array.from({ length: width }, (_, x) => (values[y * width + x] > 0 ? 1 : 0))), keep);
+    const inverse = inverseIntrinsics(meta.intrinsics[0]);
+    const kept = [];
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) if (values[y * width + x] > 0) kept.push([x, y]);
+    assert.deepEqual(kept, points.map(([x, y]) => [x, y]));
+    points.forEach(([x, y, ...expected]) => {
+      depthGridPoint(inverse, x, y, values[y * width + x]).forEach((value, axis) => close(value, expected[axis], 1e-5));
+    });
+    const drawn = [];
+    for (let quad = 0; quad < (width - 1) * (height - 1); quad += 1) if (quadDrawn(values, width, quad)) drawn.push(quadCorner(quad, 0, width));
+    assert.deepEqual(drawn, quads);
   });
-  const drawn = [];
-  for (let quad = 0; quad < (width - 1) * (height - 1); quad += 1) if (quadDrawn(values, width, quad)) drawn.push(quadCorner(quad, 0, width));
-  assert.deepEqual(drawn, quads);
-});
+}
 
 // Review P2: a depth grid's colors are one texture per input (the `scene`, a 3D Sticker, an upstream slot), which every
 // item of that input draws with, freed when the input goes; not one per item, which would pile up outside the budget.

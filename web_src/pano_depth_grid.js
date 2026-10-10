@@ -1,5 +1,5 @@
-// The depth grid of a DA3_GEOMETRY mono item (docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド",
-// ADR 0039), in the three.js chunk: one static grid per size, raised from the item's depth texture in the vertex
+// The depth grid of a DA3_GEOMETRY mono item or of a MOGE_GEOMETRY perspective sequence's (docs/threejs-spark-integration.md
+// "DA3_GEOMETRY mono の深度のグリッド", ADR 0039 and 0040; the editor does not tell them apart), in the three.js chunk: one static grid per size, raised from the item's depth texture in the vertex
 // shader, so an item is its R32F depth texture and a few uniforms. WebGL2 (gl_VertexID, gl_InstanceID, texelFetch):
 // three.js compiles its shaders as GLSL ES 3.0 there, with `varying` and gl_FragColor defined for it.
 // The file's form is docs/studio-node.md "DA3_GEOMETRY mono のエディタ用ファイル": no header, float32 little-endian,
@@ -172,7 +172,7 @@ export function depthGridBox(values, width, height, inverse) {
 // Why a grid of width × height does not load on a GPU whose textures are at most maxTextureSize on a side, or null.
 export function depthGridTooLarge(width, height, maxTextureSize) {
   if (!(maxTextureSize > 0) || (width <= maxTextureSize && height <= maxTextureSize)) return null;
-  return `The depth of this DA3 geometry is ${width} × ${height}, larger than this GPU's textures (MAX_TEXTURE_SIZE ${maxTextureSize}).`;
+  return `The depth of this 3D content is ${width} × ${height}, larger than this GPU's textures (MAX_TEXTURE_SIZE ${maxTextureSize}).`;
 }
 
 // The one grid of each size, shared by its items: no vertex data, (W − 1) × (H − 1) instances of 6 vertices. It has

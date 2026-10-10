@@ -70,7 +70,7 @@ from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position, world_rotation
 from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
-from .scene_mesh import check_da3, da3_device_bytes, da3_k, da3_key, is_da3, is_mesh_file, is_unlit, needs_default_k, read_mesh_file
+from .scene_mesh import check_da3, da3_device_bytes, depth_grid_intrinsics, is_moge, moge_uses_depth_grid, da3_key, is_da3, is_mesh_file, is_unlit, needs_default_k, read_mesh_file
 from .scene_video import SceneVideo
 from .splat_render import read_splat_file
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, content_of, is_3d_media, open_video, stream_video
@@ -1111,6 +1111,15 @@ def _check_da3_inputs(*inputs):
                      "camera of about 71 degrees across; if the photo's field of view differs, the shapes stretch in depth.")
 
 
+def _check_moge_inputs(*inputs):
+    """Say once per run why a MOGE_GEOMETRY goes to the editor as GLB, not as a depth grid (`moge_uses_depth_grid`):
+    it is drawn all the same, the editor only plays it slower."""
+    reasons = [reason for value in inputs if is_moge(value) for uses, reason in [moge_uses_depth_grid(value)] if not uses]
+    if reasons:
+        _log.warning("Panorama Stickers: a MOGE_GEOMETRY goes to the editor as one GLB per frame, not as a depth grid, because "
+                     + "; ".join(dict.fromkeys(reasons)) + ". It is drawn the same; the editor plays it slower.")
+
+
 def _file_3d_error(source: dict, reason: str) -> str:
     """The text that says why a 3D file `file` Source is not read, for the node's warning and the route's error."""
     name = f"{source['subfolder']}/{source['filename']}" if source.get("subfolder") else source["filename"]
@@ -1829,17 +1838,19 @@ def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_
 
 
 def _depth_grid_meta(geometry: dict, fps: float) -> dict:
-    """The meta of a DA3_GEOMETRY mono's depth files (docs/studio-node.md, "`DA3_GEOMETRY` mono のエディタ用ファイル"):
-    the grid's size, the files' layout, each frame's K (row order; the core's default K without `intrinsics`), and the
-    color proxy MP4 of the frames' `image` at the Timeline `fps` (frame i at i / fps), made as an IMAGE batch's."""
+    """The meta of the depth files of a DA3_GEOMETRY mono or a MOGE_GEOMETRY perspective sequence (docs/studio-node.md,
+    "`DA3_GEOMETRY` mono のエディタ用ファイル"): the grid's size, the files' layout, each frame's K of pixel numbers
+    (row order, `depth_grid_intrinsics`), and the color proxy MP4 of the frames' `image` at the Timeline `fps` (frame
+    i at i / fps), made as an IMAGE batch's."""
     if fps is None:
-        raise ValueError("_scene_ui needs the Timeline fps for a DA3_GEOMETRY mono: its color proxy plays at that fps.")
-    count, height, width = geometry["depth"].shape
+        raise ValueError("_scene_ui needs the Timeline fps for a depth grid: its color proxy plays at that fps.")
+    # The size of the depth files: the points' (MoGe) or the depth's (DA3), not the image's.
+    count, height, width = (geometry["points"] if is_moge(geometry) else geometry["depth"]).shape[:3]
     proxy = _batch_mp4_ui(geometry["image"], "scene", fps, {"video": "video", "meta": "meta"})
     return {
         "width": int(width), "height": int(height),
         "depth": {"dtype": "float32", "byte_order": "little", "bytes": int(width * height * 4)},
-        "intrinsics": [da3_k(geometry, index).reshape(-1).tolist() for index in range(count)],
+        "intrinsics": depth_grid_intrinsics(geometry),
         "video": proxy["video"][0], "video_fps": float(fps), "frames": int(count),
     }
 
@@ -1859,6 +1870,7 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     scene = None if upstream is not None else _read_scene_file(scene, "scene")
     sticker = _read_scene_file(sticker, "sticker")
     _check_da3_inputs(scene, sticker)
+    _check_moge_inputs(scene, sticker)
     state = load_scene_state(state_json)
     stored_port = next((item for item in state["stickers"] if item["source"]["kind"] == "port"), None)
     port, handoff = _port_media(state, sticker, sticker_state, warnings)

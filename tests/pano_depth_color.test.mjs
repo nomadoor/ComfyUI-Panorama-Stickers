@@ -100,7 +100,7 @@ test("while the playhead advances the playing video is the picture once it plays
 // The stage's line for the depth grids shown (editor/render_loop.js, after the 3D file notes).
 test("Loading depth video… shows while a depth grid shown has no colors, and a grid too large for the GPU says so", async () => {
   const { DEPTH_VIDEO_LOADING, depthGridNotice } = await import("../web_src/pano_depth_color.js");
-  const errorOf = (url) => (url === "big" ? "The depth of this DA3 geometry is 3840 × 2160, larger than this GPU's textures (MAX_TEXTURE_SIZE 2048)." : url === "gone" ? "HTTP 404" : null);
+  const errorOf = (url) => (url === "big" ? "The depth of this 3D content is 3840 × 2160, larger than this GPU's textures (MAX_TEXTURE_SIZE 2048)." : url === "gone" ? "HTTP 404" : null);
   const grid = (url, color) => ({ kind: "depth_grid", url, color });
   assert.equal(DEPTH_VIDEO_LOADING, "Loading depth video…");
   assert.equal(depthGridNotice([grid("a", { media: {} })], errorOf), "");
