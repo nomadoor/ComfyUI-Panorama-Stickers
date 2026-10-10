@@ -522,11 +522,11 @@ test("Panorama Studio's Camera menu has the 360° preset and Delete, and a 360°
 });
 
 test("a 360° Camera's FOV and lens fields are disabled, saying why, and the others stay as they are (#89, ADR 0042)", () => {
-  for (const key of ["hFOV_deg", "vFOV_deg", "curve", "focal_mm"]) {
+  for (const key of ["hFOV_deg", "curve"]) {
     assert.equal(cameraParamEnabled(key, { erp: true }), false);
     assert.equal(cameraParamEnabled(key), true);
   }
-  for (const key of ["curve", "focal_mm"]) {
+  for (const key of ["curve"]) {
     assert.equal(typeof cameraParamTip(key, { erp: true }), "string");
     assert.equal(cameraParamTip(key), null);
   }

@@ -4,7 +4,8 @@
 // ("move_raster_object", "scale_raster_object"). pointer_input.js decides from the handle under the press
 // which one starts. Letting go of any item edit, a multi-selection move (pointer_multi_move.js) too, is
 // one Undo step (endTransform).
-import { deriveCutoutAspectLabelFromFov } from "../pano_cutout_view_math.js";
+import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, fovPairKeepingAspect, getCutoutCameraParams } from "../pano_cutout_view_math.js";
+import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import { RAD2DEG } from "./constants.js";
@@ -263,10 +264,19 @@ export function createPointerTransform(deps) {
     }
   }
 
-  // "scale" writes both FOVs, "scale_x" the hFOV, "scale_y" the vFOV.
+  // "scale" writes both FOVs, "scale_x" the hFOV, "scale_y" the vFOV. Panorama Studio's Camera keeps its frame's
+  // aspect (docs/editor-interaction.md): each handle changes its angle of view, its hFOV from the handle's axis.
   function scaleItem(it, p) {
     const d = Math.max(1, Math.hypot(p.x - it.center.x, p.y - it.center.y));
     const ratio = d / it.startDist;
+    if (it.item?.id === CAMERA_SHOT_ID) {
+      const start = { ...it.item, hFOV_deg: it.startHFOV, vFOV_deg: it.startVFOV };
+      const { aspect, curve } = getCutoutCameraParams(start);
+      const hFov = it.kind === "scale_y" ? deriveHorizontalFovDeg(it.startVFOV * ratio, aspect, curve) : it.startHFOV * ratio;
+      writePose(it.item, fovPairKeepingAspect(start, hFov));
+      requestDraw({ localOnly: true });
+      return;
+    }
     if (it.kind === "scale") writePose(it.item, { hFOV_deg: clamp(it.startHFOV * ratio, 1, 179), vFOV_deg: clamp(it.startVFOV * ratio, 1, 179) });
     else if (it.kind === "scale_x") writePose(it.item, { hFOV_deg: clamp(it.startHFOV * ratio, 1, 179) });
     else writePose(it.item, { vFOV_deg: clamp(it.startVFOV * ratio, 1, 179) });

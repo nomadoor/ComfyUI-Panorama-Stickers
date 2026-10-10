@@ -6,11 +6,8 @@
 export const LENS_CURVE_DEFAULT = 1;
 export const LENS_CURVE_MIN = 0;
 export const LENS_CURVE_MAX = 1.5;
-// The width of the sensor the inspector's focal length assumes (a full-frame 36 mm).
-export const LENS_SENSOR_WIDTH_MM = 36;
 
 const DEG2RAD = Math.PI / 180;
-const RAD2DEG = 180 / Math.PI;
 
 // Below this |κθ| (or |κρ|) the ratios take their series, as core/math.py's do (`_LENS_SERIES`).
 const LENS_SERIES = 1e-4;
@@ -39,17 +36,6 @@ export function lensAngle(rho, kappa) {
 // The largest hFOV (degrees) a κ allows, keeping the edge ray's κ·hFOV/2 under 90°: min(360, 179 ÷ κ).
 export function lensFovLimit(kappa) {
   return kappa > 0 ? Math.min(360, 179 / kappa) : 360;
-}
-
-// The focal length (mm) the inspector shows for an hFOV and κ, on a LENS_SENSOR_WIDTH_MM wide sensor:
-// f = (width ÷ 2) ÷ lens_radius(hFOV ÷ 2, κ). Not kept in the state.
-export function lensFocalLengthMm(hFovDeg, kappa) {
-  return (LENS_SENSOR_WIDTH_MM / 2) / lensRadius(hFovDeg * 0.5 * DEG2RAD, kappa);
-}
-
-// The hFOV (degrees) of a focal length (mm) at κ: the inverse of lensFocalLengthMm.
-export function lensHFovFromFocalMm(focalMm, kappa) {
-  return 2 * lensAngle((LENS_SENSOR_WIDTH_MM / 2) / focalMm, kappa) * RAD2DEG;
 }
 
 // The image a lens Camera draws, as directions (ADR 0042). A film point is a point of the image in units of f from

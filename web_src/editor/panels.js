@@ -26,7 +26,7 @@ import {
   upstreamOriginLabel,
   worldFieldRange,
 } from "../pano_editor_ui_state.js";
-import { lensFocalLengthMm, lensFovLimit } from "../pano_lens.js";
+import { lensFovLimit } from "../pano_lens.js";
 import { clamp } from "../pano_math.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
 import { ownerTimed } from "../pano_timeline.js";
@@ -389,13 +389,11 @@ export function createPanels(deps) {
       if (selectedKind === "image" || (type === "stickers" && !shotInspected)) pushParam("rot_deg", "Roll", -180, 180, 0.1);
       else pushParam("roll_deg", "Roll", -180, 180, 0.1);
       pushParam("hFOV_deg", "H FOV", 1, lens ? lensFovLimit(lens.curve) : 179, 0.1);
-      pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
-      // The lens rows after the Camera's fields (docs/editor-interaction.md, ADR 0042): its curve κ, and the
-      // focal length, which an edit turns into its H FOV.
-      if (lens) {
-        pushParam("curve", "Lens curve", 0, 1.5, 0.01);
-        pushParam("focal_mm", "Focal length", lensFocalLengthMm(lensFovLimit(lens.curve), lens.curve), lensFocalLengthMm(1, lens.curve), 0.1);
-      }
+      // Panorama Studio's Camera has no V FOV field: its V FOV follows its H FOV through the frame's aspect, which
+      // the aspect presets set (docs/editor-interaction.md). The legacy Cutout's shot keeps both.
+      if (!lens) pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
+      // The lens row after the Camera's fields (docs/editor-interaction.md, ADR 0042): its curve κ.
+      if (lens) pushParam("curve", "Lens curve", 0, 1.5, 0.01);
       // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
       if (shotInspected) {
         params.forEach((param) => {

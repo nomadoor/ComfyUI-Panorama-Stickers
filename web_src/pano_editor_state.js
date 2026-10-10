@@ -1,8 +1,8 @@
 import { normalizePaintingState } from "./pano_paint_types.js";
 import { wrapYaw } from "./pano_math.js";
 import { DEG2RAD } from "./pano_camera_math.js";
-import { deriveCutoutAspectFromFov, deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
-import { lensAngle, lensFocalLengthMm, lensFovLimit, lensRadius } from "./pano_lens.js";
+import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
+import { lensAngle, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { loadSceneState, rebaseSceneState, sceneStateText, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
@@ -319,8 +319,8 @@ function nearestTurn(delta) {
 // Writes the fields of `shot` that differ from `base` (the cameraShot() it was edited from) to the
 // Camera at a Timeline frame, each Lane by the recording rule: the angles to `rotation`, hFOV_deg to
 // `fov`, the position to `position`. An angle keeps the turn of its base, so a yaw wrapped across 180
-// degrees does not send the Camera the long way round. The aspect is not keyed: a change of either FOV
-// sets it from the pair.
+// degrees does not send the Camera the long way round. The aspect is not keyed: an aspect preset sets it to its
+// ratio.
 export function setCameraShot(camera, frame, shot, base) {
   const rotation = {};
   for (const field of ["yaw_deg", "pitch_deg", "roll_deg"]) {
@@ -328,11 +328,12 @@ export function setCameraShot(camera, frame, shot, base) {
   }
   if (Object.keys(rotation).length) setLaneValue(camera, "rotation", frame, rotation);
   if (shot.hFOV_deg !== base.hFOV_deg) setLaneValue(camera, "fov", frame, shot.hFOV_deg);
-  if (shot.hFOV_deg !== base.hFOV_deg || shot.vFOV_deg !== base.vFOV_deg) {
-    // The image's aspect: the ratio of its radii at the shot's lens curve (tan for a pinhole).
-    camera.aspect = shot.curve === undefined || shot.curve === 1
-      ? Math.tan(shot.hFOV_deg * DEG2RAD * 0.5) / Math.tan(shot.vFOV_deg * DEG2RAD * 0.5)
-      : deriveCutoutAspectFromFov(shot);
+  // Only an aspect preset changes the frame's aspect, to the preset's own ratio (`aspect_ratio`, which the edit
+  // puts on the shot and this takes off); any other FOV edit keeps it, and the next cameraShot() gives the V FOV
+  // that aspect makes (docs/editor-interaction.md).
+  if (Number.isFinite(shot.aspect_ratio) && shot.aspect_ratio > 0) {
+    camera.aspect = shot.aspect_ratio;
+    delete shot.aspect_ratio;
   }
   if (shot.position.some((value, axis) => value !== base.position[axis])) setLaneValue(camera, "position", frame, [...shot.position]);
 }
@@ -350,11 +351,11 @@ export function cameraFields(camera, frame) {
   };
 }
 
-// The Camera's lens in the inspector's fields (ADR 0042): its evaluated hFOV (under the limit of its κ), its lens
-// curve κ, and the focal length they make on a 36 mm wide sensor, which the state does not keep.
+// The Camera's lens in the inspector's fields (ADR 0042): its evaluated hFOV (under the limit of its κ) and its
+// lens curve κ.
 export function cameraLensFields(camera, frame) {
   const value = evaluateCamera(camera, frame);
-  return { hFOV_deg: value.hFOV_deg, curve: value.curve, focal_mm: lensFocalLengthMm(value.hFOV_deg, value.curve) };
+  return { hFOV_deg: value.hFOV_deg, curve: value.curve };
 }
 
 // An inspector edit of one Camera field at a Timeline frame, by the recording rule of its Lane.

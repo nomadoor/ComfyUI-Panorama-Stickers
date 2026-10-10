@@ -1654,6 +1654,24 @@ test("scale_x and scale_y write one FOV each", () => {
   assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true }]]);
 });
 
+// docs/editor-interaction.md (the owner, 2026-10-11): Panorama Studio's Camera keeps its frame's aspect under every
+// size handle; only the aspect presets change it.
+test("the size handles of Panorama Studio's Camera change its angle of view and keep its aspect", () => {
+  const tanRatio = (pose) => Math.tan(pose.hFOV_deg * Math.PI / 360) / Math.tan(pose.vFOV_deg * Math.PI / 360);
+  for (const [kind, startDist] of [["scale", 2.5], ["scale_x", 2.5], ["scale_y", 10]]) {
+    const camera = { id: "camera", hFOV_deg: 60, vFOV_deg: 40, aspect_id: "3:2" };
+    const aspect = tanRatio(camera);
+    const h = harness();
+    h.editor.interaction = { kind, item: camera, center: { x: 97, y: 46 }, startDist, startHFOV: 60, startVFOV: 40 };
+    h.onCanvasPointerMove(h.event());
+    const [[item, pose]] = h.calls("writePose");
+    assert.equal(item, camera);
+    assert.ok(Math.abs(tanRatio(pose) - aspect) < 1e-9, `${kind}: ${tanRatio(pose)}`);
+    assert.notEqual(pose.hFOV_deg, 60, kind);
+    assert.equal(camera.aspect_id, "3:2", kind);
+  }
+});
+
 test("rotate writes rot_deg of a sticker and roll_deg of another item; Shift snaps it", () => {
   const item = sticker("s");
   let h = harness({ api: { isSceneSticker: () => true } });

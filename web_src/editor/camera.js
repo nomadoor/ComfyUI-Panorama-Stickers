@@ -12,6 +12,7 @@ import {
   getCutoutCameraParams,
   resolveFrameRollDeg,
   shortestAngleDeltaRad,
+  shotCurve,
 } from "../pano_cutout_view_math.js";
 import { cameraShot, newStudioCamera, setCameraShot } from "../pano_editor_state.js";
 import { ERP_ASPECT } from "../pano_editor_ui_state.js";
@@ -161,7 +162,7 @@ export function createCamera(deps) {
     const safeRect = runtime.frameSafeRect;
     if (!selected || !safeRect || editor.mode !== "frame") return false;
     const focal = FRAME_GATE_OCCUPANCY * fitFocalPx(safeRect, selected);
-    const next = fovPairForGate(aspectFitGateSize(safeRect, ratio), focal);
+    const next = fovPairForGate(aspectFitGateSize(safeRect, ratio), focal, shotCurve(selected));
     selected.hFOV_deg = next.hFOV_deg;
     selected.vFOV_deg = next.vFOV_deg;
     return true;
@@ -192,9 +193,15 @@ export function createCamera(deps) {
     if (!applyGateAspectAtCurrentScale(selected, ratio)) {
       const vf = clamp(Number(selected.vFOV_deg || 40), 1, 179);
       selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio);
+      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio, shotCurve(selected));
     }
     selected.aspect_id = `${aw}:${ah}`;
+    presetAspect(selected, ratio);
+  }
+
+  // Panorama Studio's Camera takes a preset's ratio exactly (setCameraShot), every time one is chosen.
+  function presetAspect(selected, ratio) {
+    if (cameraV2) selected.aspect_ratio = ratio;
   }
 
   function applyCutoutAspectCustom(selected, w, h) {
@@ -205,9 +212,10 @@ export function createCamera(deps) {
     if (!applyGateAspectAtCurrentScale(selected, ratio)) {
       const vf = clamp(Number(selected.vFOV_deg || 40), 1, 179);
       selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio);
+      selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio, shotCurve(selected));
     }
     selected.aspect_id = pair.label;
+    presetAspect(selected, ratio);
     return true;
   }
 
@@ -229,13 +237,16 @@ export function createCamera(deps) {
     if (!applyGateAspectAtCurrentScale(selected, inverted)) {
       const vf = clamp(Number(selected.vFOV_deg || 60), 1, 179);
       selected.vFOV_deg = vf;
-      selected.hFOV_deg = deriveHorizontalFovDeg(vf, inverted);
+      selected.hFOV_deg = deriveHorizontalFovDeg(vf, inverted, shotCurve(selected));
     }
     if (/^\d+:\d+$/.test(storedAspect)) {
       const [w, h] = storedAspect.split(":");
       selected.aspect_id = `${h}:${w}`;
+      // The flipped preset's exact ratio.
+      presetAspect(selected, Number(h) / Number(w));
     } else {
       selected.aspect_id = deriveCutoutAspectLabelFromFov(selected);
+      presetAspect(selected, inverted);
     }
   }
 
