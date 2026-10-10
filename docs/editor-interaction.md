@@ -149,6 +149,9 @@ Panorama Studio のエディタは、状態 v2 の `camera` を Cutout のエデ
   - Timeline 上の Camera の軌道（`cameraTrajectory`）を線で描く（Paint / Images を隠すと消える）。
   - 6DoF では Camera の視錐台（`cameraFrustumSegments`、長さは内容の大きさの 1/5、選んでいる間は枠と同じ黄色）を描き、Panorama 上の枠とその周りの暗がりは描かない。視錐台の線の 6px 以内を押すと Camera を選び（`segmentsHit`）、何もないところを押すと外れる（`world` の Sticker の選択と同じ流儀。タイムラインの Camera の行でも選べる）。選んでいる Camera にはギズモ（`TransformControls`）を出し、選択メニューの Move | Rotate で切り替える（Scale はない）。ギズモのドラッグはモードの Lane（`position` か `rotation`）だけを記録の規則で書く（`gizmoDragLanes`）。Frame Selected と Look At Frame は Camera の視錐台が収まるように寄る（Look At Frame はまず Camera の方を向く）。
 - インスペクタ：Camera を選ぶと、Yaw・Pitch・H FOV・V FOV・Roll に加え、World の内容があるときは X・Y・Z（World の glTF 座標、上限なし）を出す（`cameraFields`・`setCameraField`）。欄の並びは下の「インスペクタの行」。
+- `sky` の Sticker の `curve` と `world` の Sticker の `lens` には、インスペクタの行を出さない（UI を最小にするため。Pose handoff が書くだけ。魚眼の Sticker を道具として使う行は UI の段の候補）。κ ≠ 1 の `world` の Sticker も、ギズモ・移動・拡大縮小は平らな板と同じ値（`position`・`rotation`・`scale`）を動かす。
+- κ ≠ 1 の Frame 表示の当たり判定（作る）：オービットの中心・ホイールの先・キーの移動の基準は、ポインタの画素をレンズの逆の写し方で描いた像の画素に戻してから求める（`docs/threejs-spark-integration.md` の「Camera から見た空間の表示」のレンズ）。曲がった像の上でも、ポインタの下の物を中心に回る。
+- レンズの行（作る。ADR 0042。オーナーが後で UI を作り直すので、今の部品だけで素直に並べる）：Camera の欄の後に、Lens curve（κ、0〜1.5。1 が直線の像、0 が魚眼）と Focal length（mm。36 mm 幅を仮定して H FOV と κ から求めて出し、入力すると H FOV に直して書く。状態には持たない）。H FOV の入力の上限は κ による上限（`docs/scene-state-v2.md`）。ERP のときは隠さずに無効にし、理由を tooltip で示す。Lens curve は、ほかの Camera の Lane と同じ記録の規則で Keyframe になる（`docs/timeline-ui.md` の「記録の規則」。Camera の行を開くと Lane ごとの行に出る）。
 - Frame 表示とカメラプレビューの描き方と、出力との一致は `docs/threejs-spark-integration.md` の「Camera から見た空間の表示」。
 
 ## Panorama Studio のエディタ
