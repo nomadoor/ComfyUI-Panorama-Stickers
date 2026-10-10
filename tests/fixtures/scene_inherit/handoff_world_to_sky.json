@@ -137,6 +137,10 @@
       "value": 0.5,
       "keyframes": []
     },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
+    },
     "z_index": 5,
     "handoff_overrides": [
       "opacity"

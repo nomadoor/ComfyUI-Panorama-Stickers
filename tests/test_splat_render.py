@@ -342,3 +342,67 @@ def test_splat_content_makes_the_camera_rays_once_per_projection(monkeypatch):
     assert len(made) == 2
     # The kept rays draw what new ones draw.
     assert all(torch.equal(a, b) for view, frame in zip(views, drawn) for a, b in zip(frame, splat_content(splat).render(view, 0, CPU)))
+
+
+@pytest.mark.parametrize("projection, center", [
+    (Projection.perspective(96, 64, 90.0), (0.6, -0.3, 2.0)),
+    (Projection.perspective(96, 64, 140.0, curve=0.5), (1.4, 0.5, 1.2)),
+    (Projection.perspective(96, 64, 100.0, curve=1.3), (0.9, 0.4, 1.5)),
+    # A fisheye that sees a gaussian beside and behind the Camera, where the image bends most.
+    (Projection.perspective(96, 64, 250.0, curve=0.0), (1.5, 0.2, -0.6)),
+    (Projection.erp(128, 64), (0.3, 1.8, 0.4)),
+])
+def test_the_window_holds_the_gaussian_through_any_lens(projection, center):
+    # One stretched, turned gaussian: inside its window each pixel's alpha is its density peak along the pixel's ray
+    # (`docs/render-contract.md`, "SPLAT の描き方"). A window sized from the ray field holds every pixel where that is
+    # clearly visible, whatever the lens bends.
+    positions = torch.tensor([center])
+    scales = torch.tensor([[0.25, 0.08, 0.12]])
+    splat = _splat(positions, scales, torch.tensor([0.9]), torch.tensor([[1.0, 0.0, 0.0]]), seed=3)
+    view = CameraView(np.zeros(3), world_rotation(0.0, 0.0, 0.0), projection)
+
+    rgba, _depth = splat_content(splat).render(view, 0, CPU)
+
+    # The same density along every pixel's ray, with no window: the Camera's axes in the SPLAT frame are x, -y, z.
+    from comfyui_pano_suite.core_adapters import _quat_to_mat
+
+    axes = torch.tensor([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]])
+    mu = positions[0] @ axes.T
+    rotation = axes @ _quat_to_mat(splat.rotations[0])[0]
+    cov = rotation @ torch.diag(scales[0].square()) @ rotation.T
+    cov = cov + cov.diagonal().mean() * 1e-3 * torch.eye(3)
+    si = torch.linalg.inv(cov)
+    rays = splat_render.ray_directions([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], projection, CPU).reshape(-1, 3)
+    dsid = ((rays @ si) * rays).sum(-1)
+    dsimu = rays @ (si @ mu)
+    q = (mu @ si @ mu - dsimu.square() / dsid).clamp_min(0)
+    alpha = (0.9 * torch.exp(-0.5 * q)).clamp(0, 0.999).reshape(projection.height, projection.width)
+    alpha = torch.where(dsimu.reshape(alpha.shape) > 0, alpha, 0.0)
+
+    visible = alpha > 0.03
+    assert int(visible.sum()) > 20
+    assert torch.allclose(rgba[..., 3][visible], alpha[visible], atol=1e-4)
+
+
+def test_pinhole_and_erp_splats_draw_with_the_analytic_windows(monkeypatch):
+    # A pinhole (κ = 1) and both ERPs draw exactly as with the pinhole and ERP formulas' windows, as before the lens
+    # curve (ADR 0042): nothing of a lens's windows reaches them.
+    generator = torch.Generator().manual_seed(7)
+    count = 200
+    positions = torch.randn((count, 3), generator=generator) * torch.tensor([1.5, 1.0, 1.0]) + torch.tensor([0.0, 0.0, 3.0])
+    positions[:80] = torch.nn.functional.normalize(torch.randn((80, 3), generator=generator), dim=-1) * 3.0
+    splat = _splat(positions, torch.rand((count, 3), generator=generator) * 0.15 + 0.02, torch.rand((count,), generator=generator),
+                   torch.rand((count, 3), generator=generator), seed=7)
+    projections = (Projection.perspective(64, 48, 80.0), Projection.erp(64, 32), Projection.erp(48, 32, coverage=180))
+
+    def draw(projection):
+        view = CameraView(np.array([0.1, -0.2, 0.0]), world_rotation(10.0, -5.0, 3.0), projection)
+        return splat_content(splat).render(view, 0, CPU)
+
+    drawn = [draw(projection) for projection in projections]
+    monkeypatch.setattr(splat_render, "_center_and_jacobian", splat_render._analytic_jacobian)
+    reference = [draw(projection) for projection in projections]
+
+    for (rgba, depth), (expected_rgba, expected_depth) in zip(drawn, reference):
+        assert float(rgba[..., 3].max()) > 0.5
+        assert torch.equal(rgba, expected_rgba) and torch.equal(depth, expected_depth)

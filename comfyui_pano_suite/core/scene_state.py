@@ -9,6 +9,7 @@ import math
 import re
 from copy import deepcopy
 
+from .math import CURVE_MAX, CURVE_MIN
 from .paint_state import normalize_painting_state
 
 STATE_VERSION = 2
@@ -107,8 +108,14 @@ def _rotation_value(raw):
     }
 
 
-def _fov_value(raw):
-    return _clamp(_number(raw, 90.0), 0.1, 179.0)
+def _camera_fov_value(raw):
+    # A Camera's hFOV is saved up to 360; its evaluated value is held under the limit its lens curve sets.
+    return _clamp(_number(raw, 90.0), 0.1, 360.0)
+
+
+def _curve_value(raw):
+    # The lens curve κ (ADR 0042): 1 a pinhole, 0 the equidistant fisheye.
+    return _clamp(_number(raw, 1.0), CURVE_MIN, CURVE_MAX)
 
 
 def _scale_value(raw):
@@ -130,8 +137,9 @@ def _roll_value(raw):
 def _size_value(raw):
     raw = raw if isinstance(raw, dict) else {}
     return {
-        "hFOV_deg": _clamp(_number(raw.get("hFOV_deg"), 20.0), 0.1, 179.0),
-        "vFOV_deg": _clamp(_number(raw.get("vFOV_deg"), 20.0), 0.1, 179.0),
+        # Saved up to 360, as a fisheye's shot is (ADR 0042); the evaluated value is held under its curve's limit.
+        "hFOV_deg": _clamp(_number(raw.get("hFOV_deg"), 20.0), 0.1, 360.0),
+        "vFOV_deg": _clamp(_number(raw.get("vFOV_deg"), 20.0), 0.1, 360.0),
     }
 
 
@@ -140,10 +148,24 @@ def _opacity_value(raw):
 
 
 # The Lanes of each owner, in the order they are stored.
-CAMERA_LANES = (("position", _position_value), ("rotation", _rotation_value), ("fov", _fov_value))
+CAMERA_LANES = (("position", _position_value), ("rotation", _rotation_value), ("fov", _camera_fov_value), ("curve", _curve_value))
 SCENE_LANES = (("position", _position_value), ("rotation", _rotation_value), ("scale", _scale_value))
-SKY_STICKER_LANES = (("direction", _direction_value), ("roll", _roll_value), ("size", _size_value), ("opacity", _opacity_value))
+SKY_STICKER_LANES = (("direction", _direction_value), ("roll", _roll_value), ("size", _size_value), ("opacity", _opacity_value), ("curve", _curve_value))
 WORLD_STICKER_LANES = (*SCENE_LANES, ("opacity", _opacity_value))
+def _lens_value(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    return {"curve": _curve_value(raw.get("curve")), "hFOV_deg": _camera_fov_value(raw.get("hFOV_deg"))}
+
+
+# A `world` Sticker's lens (ADR 0042): only Pose handoff writes it, so a Sticker has it only when its state does.
+WORLD_STICKER_LENS = ("lens", _lens_value)
+
+
+def _sticker_lanes(sticker_or_raw, placement):
+    """The Lanes of a Sticker of `placement`: a `world` one's `lens` only when it has one."""
+    if placement != "world":
+        return SKY_STICKER_LANES
+    return (*WORLD_STICKER_LANES, WORLD_STICKER_LENS) if isinstance(sticker_or_raw.get("lens"), dict) else WORLD_STICKER_LANES
 
 
 def _easing(raw):
@@ -266,7 +288,7 @@ def _sticker(raw):
         "visible": _bool(raw.get("visible"), True),
         "locked": _bool(raw.get("locked"), False),
         "crop": _crop(raw.get("crop")),
-        **_lanes(raw, WORLD_STICKER_LANES if world else SKY_STICKER_LANES),
+        **_lanes(raw, _sticker_lanes(raw, placement)),
     }
     if not world:
         z_index = _frame(raw.get("z_index"))
@@ -544,7 +566,7 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
     stickers = []
     for sticker in state["stickers"]:
         clip = _rebase_clip(sticker["clip"], rebase)
-        lanes = WORLD_STICKER_LANES if sticker["placement"] == "world" else SKY_STICKER_LANES
+        lanes = _sticker_lanes(sticker, sticker["placement"])
         stickers.append({**sticker, "clip": clip["clip"], **_rebase_lanes(sticker, lanes, rebase, clip["anchor"], clip["new_anchor"])})
     return _normalize_v2({
         "id": state["id"],

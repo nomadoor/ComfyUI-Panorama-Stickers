@@ -57,6 +57,7 @@ import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
 import { createSparkViews } from "./pano_spark_views.js";
 import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
+import { LENS_GLSL } from "./pano_lens_glsl.js";
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -107,6 +108,18 @@ const DOME_RADIUS = 100;
 const STICKER_DISTANCE = 50;
 const ORIGIN_COLOR = 0xffdd57;
 
+// The Sky's and the world Sticker planes' shaders write their images' (sRGB) values as they are, which the canvas
+// shows as they are. Into a lens face (drawLens), a target three keeps in sRGB like any color-managed output, they
+// write linear light as three's own materials do there: `linearOutput` (shared by all of them) is on only then.
+const linearOutput = { value: false };
+const LINEAR_OUTPUT_GLSL = `
+uniform bool linearOutput;
+vec4 outputColor(vec4 color) {
+  if (!linearOutput || color.a <= 0.0) return color;
+  return vec4(sRGBTransferEOTF(vec4(color.rgb / color.a, 1.0)).rgb * color.a, color.a);
+}
+`;
+
 // The ERP is laid out in the panorama convention (forward +Z); World is glTF (forward -Z).
 const ERP_VERTEX = `
 varying vec3 vDirection;
@@ -116,6 +129,7 @@ void main() {
 }`;
 
 const ERP_FRAGMENT = `
+${LINEAR_OUTPUT_GLSL}
 uniform sampler2D map;
 uniform float opacity;
 uniform bool halfCoverage;
@@ -133,7 +147,7 @@ void main() {
     }
     uv.x = clamp(lon / PI + 0.5, 0.0, 1.0);
   }
-  gl_FragColor = texture2D(map, uv) * opacity;
+  gl_FragColor = outputColor(texture2D(map, uv) * opacity);
 }`;
 
 const STICKER_VERTEX = `
@@ -147,8 +161,9 @@ const STICKER_FRAGMENT = `
 uniform sampler2D map;
 uniform float opacity;
 varying vec2 vUv;
+${LINEAR_OUTPUT_GLSL}
 void main() {
-  gl_FragColor = texture2D(map, vUv) * opacity;
+  gl_FragColor = outputColor(texture2D(map, vUv) * opacity);
 }`;
 
 // A world Sticker's plane shows its crop (x0, v of y1, x1, v of y0) of the image; v runs up the image.
@@ -157,10 +172,11 @@ uniform sampler2D map;
 uniform float opacity;
 uniform vec4 crop;
 varying vec2 vUv;
+${LINEAR_OUTPUT_GLSL}
 void main() {
   vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, vUv.x), mix(crop.y, crop.w, vUv.y))) * opacity;
   if (color.a <= 0.0) discard;
-  gl_FragColor = color;
+  gl_FragColor = outputColor(color);
 }`;
 
 // The Unwrap view draws every layer on a full-view quad in the ERP layout: longitude runs across
@@ -182,22 +198,107 @@ void main() {
 
 // A sky Sticker seen along each ERP pixel's World direction, in the Sticker's own frame (looking
 // down -Z) where its image plane is rect one unit ahead.
+// A sky Sticker's image at a direction in its own axes (toSticker of the World direction): on its image plane one
+// unit ahead, or at a lens curve other than 1 (ADR 0042) on the image of that lens, whose film rect it covers.
+const STICKER_IMAGE_GLSL = `
+${LENS_GLSL}
+uniform mat3 toSticker;
+uniform vec4 rect;
+uniform float curve;
+bool stickerImage(vec3 local, out vec2 uv) {
+  vec2 plane;
+  if (curve == 1.0) {
+    if (local.z >= -1e-5) return false;
+    plane = local.xy / -local.z;
+  } else if (!lensFilm(local, curve, plane)) {
+    return false;
+  }
+  if (plane.x < rect.x || plane.x > rect.z || plane.y < rect.y || plane.y > rect.w) return false;
+  uv = (plane - rect.xy) / (rect.zw - rect.xy);
+  return true;
+}
+`;
+
 const UNWRAP_STICKER_FRAGMENT = `
 uniform sampler2D map;
 uniform float opacity;
-uniform mat3 toSticker;
-uniform vec4 rect;
 varying vec2 vUv;
+${STICKER_IMAGE_GLSL}
 const float PI = 3.1415926535897932384626433832795;
 void main() {
   float lon = (vUv.x - 0.5) * 2.0 * PI;
   float lat = (vUv.y - 0.5) * PI;
-  vec3 local = toSticker * vec3(cos(lat) * sin(lon), sin(lat), -cos(lat) * cos(lon));
-  if (local.z >= -1e-5) discard;
-  vec2 plane = local.xy / -local.z;
-  if (plane.x < rect.x || plane.x > rect.z || plane.y < rect.y || plane.y > rect.w) discard;
-  gl_FragColor = texture2D(map, (plane - rect.xy) / (rect.zw - rect.xy)) * opacity;
+  vec2 uv;
+  if (!stickerImage(toSticker * vec3(cos(lat) * sin(lon), sin(lat), -cos(lat) * cos(lon)), uv)) discard;
+  gl_FragColor = texture2D(map, uv) * opacity;
 }`;
+
+// A sky Sticker of a lens curve other than 1 in the panorama view: drawn on the dome, as its image covers more than a
+// plane can hold (past 90° off its axis).
+const LENS_STICKER_FRAGMENT = `
+uniform sampler2D map;
+uniform float opacity;
+varying vec3 vDirection;
+${STICKER_IMAGE_GLSL}
+${LINEAR_OUTPUT_GLSL}
+void main() {
+  vec2 uv;
+  if (!stickerImage(toSticker * normalize(vDirection), uv)) discard;
+  gl_FragColor = outputColor(texture2D(map, uv) * opacity);
+}`;
+
+// A world Sticker with a lens (ADR 0042): the part of a sphere around its lens's center whose directions, in the
+// Sticker's own axes, the lens maps into its image (x of halfX, y of halfY each way); the rest is discarded. The
+// mesh is a unit sphere scaled to the radius and placed at the center.
+const LENS_PATCH_VERTEX = `
+varying vec3 vLocal;
+void main() {
+  vLocal = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+const LENS_PATCH_GLSL = `
+${LENS_GLSL}
+uniform float curve;
+uniform vec2 patchHalf;
+varying vec3 vLocal;
+bool patchPoint(out vec2 at) {
+  vec2 film;
+  if (!lensFilm(vLocal, curve, film)) return false;
+  at = film / patchHalf;
+  return abs(at.x) <= 1.0 && abs(at.y) <= 1.0;
+}
+`;
+
+const LENS_PATCH_FRAGMENT = `
+uniform sampler2D map;
+uniform float opacity;
+uniform vec4 crop;
+${LENS_PATCH_GLSL}
+${LINEAR_OUTPUT_GLSL}
+void main() {
+  vec2 at;
+  if (!patchPoint(at)) discard;
+  vec2 uv = at * 0.5 + 0.5;
+  vec4 color = texture2D(map, vec2(mix(crop.x, crop.z, uv.x), mix(crop.y, crop.w, uv.y))) * opacity;
+  if (color.a <= 0.0) discard;
+  gl_FragColor = outputColor(color);
+}`;
+
+// Its pick material: the same part of the sphere, writing what PICK_FRAGMENT writes.
+const LENS_PATCH_PICK_VERTEX = `
+varying vec3 vLocal;
+varying float vDepth;
+void main() {
+  vLocal = position;
+  vec4 view = modelViewMatrix * vec4(position, 1.0);
+  vDepth = -view.z;
+  gl_Position = projectionMatrix * view;
+}`;
+
+const LENS_PATCH_PICK_FRAGMENT = PICK_FRAGMENT
+  .replace("varying float vDepth;", `varying float vDepth;\n${LENS_PATCH_GLSL}`)
+  .replace("void main() {", "void main() {\n  vec2 at;\n  if (!patchPoint(at)) discard;");
 
 export function applyViewportCamera(camera, setup) {
   const { quaternion } = setup;
@@ -226,6 +327,7 @@ export function unwrapStickerUniforms(layer) {
   return {
     toSticker: new Matrix3().setFromMatrix4(rotation).transpose(),
     rect: new Vector4(rect.x0, rect.y0, rect.x1, rect.y1),
+    curve: layer.curve ?? 1,
   };
 }
 
@@ -422,11 +524,55 @@ export function createLayerTextures() {
   };
 }
 
+// The lens pass (ADR 0042): each output pixel's ray by lens_angle, sampled from the face of the pinhole or the cube
+// it goes through (pano_lens.js lensRenderPlan); past 180° off the axis, and where no face reaches, the background.
+const LENS_FACES = 6;
+const LENS_FRAGMENT = `
+${Array.from({ length: LENS_FACES }, (_, index) => `uniform sampler2D face${index};`).join("\n")}
+uniform mat3 faceTurn[${LENS_FACES}];
+uniform vec2 faceTan[${LENS_FACES}];
+uniform int faceCount;
+uniform float curve;
+uniform float focal;
+uniform vec2 center;
+uniform vec4 window;
+uniform float windowHeight;
+uniform vec4 background;
+${LENS_GLSL}
+vec4 sampleFace(int index, vec2 uv) {
+${Array.from({ length: LENS_FACES }, (_, index) => `  if (index == ${index}) return texture2D(face${index}, uv);`).join("\n")}
+  return vec4(0.0);
+}
+void main() {
+  vec2 local = gl_FragCoord.xy - window.xy;
+  vec2 pixel = vec2(window.z + local.x, window.w + windowHeight - local.y);
+  vec2 film = vec2(pixel.x - center.x, center.y - pixel.y) / focal;
+  float rho = length(film);
+  float theta = lensAngle(rho, curve);
+  if (theta > 3.141592653589793) {
+    gl_FragColor = background;
+    return;
+  }
+  vec3 direction = rho > 0.0 ? vec3(film / rho * sin(theta), -cos(theta)) : vec3(0.0, 0.0, -1.0);
+  for (int index = 0; index < ${LENS_FACES}; index++) {
+    if (index >= faceCount) break;
+    vec3 seen = faceTurn[index] * direction;
+    if (seen.z >= 0.0) continue;
+    vec2 at = seen.xy / -seen.z / faceTan[index];
+    if (abs(at.x) > 1.0 || abs(at.y) > 1.0) continue;
+    // The faces hold linear light (three draws into an sRGB target so); the canvas takes sRGB values.
+    vec4 color = sampleFace(index, at * 0.5 + 0.5);
+    gl_FragColor = color.a > 0.0 ? vec4(sRGBTransferOETF(vec4(color.rgb / color.a, 1.0)).rgb * color.a, color.a) : vec4(0.0);
+    return;
+  }
+  gl_FragColor = background;
+}`;
+
 function createMaterial(vertexShader, fragmentShader, uniforms, blending = CustomBlending) {
   return new ShaderMaterial({
     vertexShader,
     fragmentShader,
-    uniforms: { map: { value: null }, opacity: { value: 1 }, ...uniforms },
+    uniforms: { map: { value: null }, opacity: { value: 1 }, linearOutput, ...uniforms },
     depthTest: false,
     depthWrite: false,
     transparent: true,
@@ -708,8 +854,10 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       packedSplats.splatEncoding = encoding;
       return mesh;
     },
-    onDirty: (owner) => onSplats(owner),
+    // A lens face's renderer draws for the view it is a face of.
+    onDirty: (owner) => onSplats(lensFaceBase.has(owner) ? lensFaceBase.get(owner).base : owner),
   });
+
   // A loaded SPLAT that goes takes the views' SplatMeshes of it along.
   const disposeItem = (item) => {
     if (item.kind === "splat" && item.object) sparkViews.forget(item.object);
@@ -758,6 +906,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     sticker: [],
     createErp: () => createErpMesh(domeGeometry, CustomBlending),
     createSticker: () => new Mesh(planeGeometry, createMaterial(STICKER_VERTEX, STICKER_FRAGMENT, {})),
+    // A sky Sticker of a lens curve other than 1, on the dome (ADR 0042).
+    lensSticker: [],
+    createLensSticker: () => {
+      const material = createMaterial(ERP_VERTEX, LENS_STICKER_FRAGMENT, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } });
+      material.side = BackSide;
+      return new Mesh(domeGeometry, material);
+    },
+    placeLensSticker(mesh, layer) {
+      Object.entries(unwrapStickerUniforms(layer)).forEach(([name, value]) => { mesh.material.uniforms[name].value = value; });
+    },
     // An ERP may come turned (Panorama Studio's run output, shot by a Camera): its dome takes the rotation.
     placeErp(mesh, halfCoverage, quaternion) {
       mesh.material.uniforms.halfCoverage.value = halfCoverage;
@@ -771,12 +929,10 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     erp: [],
     sticker: [],
     createErp: () => createQuad(quadGeometry, UNWRAP_ERP_FRAGMENT, {}),
-    createSticker: () => createQuad(quadGeometry, UNWRAP_STICKER_FRAGMENT, { toSticker: { value: null }, rect: { value: null } }),
+    createSticker: () => createQuad(quadGeometry, UNWRAP_STICKER_FRAGMENT, { toSticker: { value: null }, rect: { value: null }, curve: { value: 1 } }),
     placeErp() {},
     placeSticker(mesh, layer) {
-      const { toSticker, rect } = unwrapStickerUniforms(layer);
-      mesh.material.uniforms.toSticker.value = toSticker;
-      mesh.material.uniforms.rect.value = rect;
+      Object.entries(unwrapStickerUniforms(layer)).forEach(([name, value]) => { mesh.material.uniforms[name].value = value; });
     },
   };
   // Per owner: the size it last rendered at. Surfaces that share this view (the on-node Previews, the
@@ -859,6 +1015,34 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   }
 
 
+  // A world Sticker with a lens (ADR 0042): its sphere patch (LENS_PATCH_FRAGMENT) at its lens's center
+  // (pano_space.js lensPatch: center, radius and the image's half extents), picked with a pick material of its own
+  // shape.
+  const worldLensStickers = [];
+  const lensPatchGeometry = new SphereGeometry(1, 192, 96);
+  const createWorldLensSticker = () => {
+    const material = createMaterial(LENS_PATCH_VERTEX, LENS_PATCH_FRAGMENT, { crop: { value: new Vector4() }, curve: { value: 1 }, patchHalf: { value: new Vector2(1, 1) } });
+    material.side = DoubleSide;
+    material.depthTest = true;
+    material.depthWrite = true;
+    const mesh = new Mesh(lensPatchGeometry, material);
+    mesh.userData.lensPatch = true;
+    return mesh;
+  };
+
+  function addWorldLensSticker(owned, mesh, layer) {
+    const { uniforms } = mesh.material;
+    uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
+    uniforms.opacity.value = layer.opacity;
+    uniforms.crop.value.set(layer.crop.x0, 1 - layer.crop.y1, layer.crop.x1, 1 - layer.crop.y0);
+    uniforms.curve.value = layer.patch.curve;
+    uniforms.patchHalf.value.set(layer.patch.halfX, layer.patch.halfY);
+    mesh.position.set(...layer.patch.center);
+    mesh.quaternion.set(layer.quaternion.x, layer.quaternion.y, layer.quaternion.z, layer.quaternion.w);
+    mesh.scale.setScalar(layer.patch.radius);
+    return mesh;
+  }
+
   function addWorldSticker(owned, mesh, layer) {
     const { uniforms } = mesh.material;
     uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
@@ -934,13 +1118,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     depthColors.retain(colorSlots);
     if (splat && Spark) children.push(sparkViews.renderer(owner));
     let index = 0;
+    let lensIndex = 0;
     for (const layer of [...space.stickers, ...(space.upstreamStickers ?? [])]) {
       if (!owned.drawable(layer)) continue;
-      const mesh = addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
+      const mesh = layer.patch
+        ? addWorldLensSticker(owned, pooled(worldLensStickers, lensIndex++, createWorldLensSticker), layer)
+        : addWorldSticker(owned, pooled(worldStickers, index++, createWorldSticker), layer);
       children.push(mesh);
       if (!(layer.opacity > 0)) continue;
       pickable.push({ object: mesh, stickerId: layer.id, plane: true });
-      parts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height]);
+      parts.push([layer.id, layer.position, layer.quaternion, layer.width, layer.height, layer.patch ?? null]);
     }
     children.push(...cachedLines(lines, space.lines ?? []));
     // Picks are reused while the revision stays (pickCacheKey): whatever changes what is hit (an item's
@@ -978,7 +1165,168 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return { x: 0, y: canvas.height - height, width, height, offsetX: 0, offsetY: 0, fullWidth: width, fullHeight: height };
   }
 
+  // The Sky of input (its background and layers) in `scene`.
+  function fillSky(owned, projection, input) {
+    scene.clear();
+    const background = input.background;
+    if (background && owned.drawable({ id: "background", ...background })) {
+      addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
+    }
+    let erpIndex = 0;
+    let stickerIndex = 0;
+    let lensIndex = 0;
+    input.layers.forEach((layer, index) => {
+      if (!owned.drawable(layer)) return;
+      let mesh;
+      if (layer.kind === "erp") mesh = addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false);
+      else if (projection.lensSticker && layer.curve !== undefined && layer.curve !== 1) {
+        mesh = pooled(projection.lensSticker, lensIndex++, projection.createLensSticker);
+        mesh.material.uniforms.map.value = owned.texture(layer, ClampToEdgeWrapping, true);
+        mesh.material.uniforms.opacity.value = layer.opacity;
+        projection.placeLensSticker(mesh, layer);
+        scene.add(mesh);
+      } else mesh = addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
+      mesh.renderOrder = index + 1;
+    });
+  }
+
+  // The lens images (ADR 0042): the faces a lens render draws into, by index, and the owners each face's Spark
+  // renderer draws for (one per face, so each sorts for its own camera), by owner.
+  const lensTargets = [];
+  const lensFaceOwners = new Map();
+  const lensFaceBase = new WeakMap();
+  const lensScene = new Scene();
+  const lensQuad = createQuad(quadGeometry, LENS_FRAGMENT, {
+    ...Object.fromEntries(Array.from({ length: LENS_FACES }, (_, index) => [`face${index}`, { value: null }])),
+    faceTurn: { value: Array.from({ length: LENS_FACES }, () => new Matrix3()) },
+    faceTan: { value: Array.from({ length: LENS_FACES }, () => new Vector2(1, 1)) },
+    faceCount: { value: 0 },
+    curve: { value: 1 },
+    focal: { value: 1 },
+    center: { value: new Vector2() },
+    window: { value: new Vector4() },
+    windowHeight: { value: 1 },
+    background: { value: new Vector4(0, 0, 0, 1) },
+  }, NoBlending);
+  lensScene.add(lensQuad);
+  const lensCamera = new PerspectiveCamera();
+  const faceTurn = new Quaternion();
+  const faceRotation = new Matrix4();
+
+  // A face's target: sRGB (three draws linear light into it and the GPU stores it in sRGB, as three documents for a
+  // render target), which the pass reads back as linear light and encodes for the canvas.
+  function lensTarget(index, width, height) {
+    let target = lensTargets[index];
+    if (!target) {
+      target = new WebGLRenderTarget(width, height, { format: RGBAFormat, type: UnsignedByteType, depthBuffer: true, minFilter: LinearFilter, magFilter: LinearFilter, generateMipmaps: false });
+      target.texture.colorSpace = SRGBColorSpace;
+      lensTargets[index] = target;
+    } else if (target.width !== width || target.height !== height) {
+      target.setSize(width, height);
+    }
+    return target;
+  }
+
+  // The owners of base's faces, made the first time; a Spark renderer of a face tells base's view to draw again.
+  function lensFaceOwner(base, index) {
+    let faces = lensFaceOwners.get(base);
+    if (!faces) lensFaceOwners.set(base, faces = []);
+    if (!faces[index]) {
+      faces[index] = { lensFace: index };
+      lensFaceBase.set(faces[index], { base });
+    }
+    return faces[index];
+  }
+
+  // The face renderers of base past `count` faces (all of them without a lens) let go.
+  function releaseLensFaces(base, count = 0) {
+    const faces = lensFaceOwners.get(base);
+    if (!faces) return;
+    faces.slice(count).forEach((owner) => owner && sparkViews.release(owner));
+    faces.length = Math.min(faces.length, count);
+    if (!faces.length) lensFaceOwners.delete(base);
+  }
+
+  // A lens Camera's image (input.lens: { curve, focal, centerX, centerY, background, faces }, the faces of
+  // pano_lens.js lensRenderPlan; focal and the center in pixels of the whole view): each face drawn from the Camera
+  // as a pinhole turned by the face, then the pass samples them per pixel of the part on the canvas.
+  function drawLens(input, space) {
+    let entry = owners.get(input.owner);
+    if (!entry) owners.set(input.owner, entry = {});
+    const at = place(input, entry);
+    if (!at) return null;
+    const { lens } = input;
+    const base = new Quaternion(input.camera.quaternion.x, input.camera.quaternion.y, input.camera.quaternion.z, input.camera.quaternion.w);
+    releaseLensFaces(input.owner, lens.faces.length);
+    const owned = layerTextures.draw(input.owner);
+    linearOutput.value = true;
+    try {
+      fillSky(owned, panorama, input);
+      lens.faces.forEach((face, index) => {
+        const q = face.quaternion;
+        faceTurn.set(q.x, q.y, q.z, q.w);
+        const turned = base.clone().multiply(faceTurn);
+        const setup = {
+          ...input.camera,
+          quaternion: { x: turned.x, y: turned.y, z: turned.z, w: turned.w },
+          fovY_deg: 2 * Math.atan(face.tanY) * 180 / Math.PI,
+          aspect: face.tanX / face.tanY,
+        };
+        renderer.setRenderTarget(lensTarget(index, face.width, face.height));
+        renderer.setViewport(0, 0, face.width, face.height);
+        renderer.setScissor(0, 0, face.width, face.height);
+        if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
+        renderer.clear(true, true, false);
+        setView(camera, setup);
+        renderer.autoClear = false;
+        renderer.render(scene, camera);
+        if (space) {
+          const faceOwner = lensFaceOwner(input.owner, index);
+          buildWorld(owned, space, faceOwner);
+          setCamera(worldCamera, setup);
+          sparkViews.aim(worldCamera, faceOwner);
+          // Spark writes its splats' sRGB colors as they are unless told to write linear light. Its linear is
+          // pow(rgb, 2.2), not the exact sRGB curve the pass encodes with, so under a lens other than 1 the editor
+          // shows splats' dark tones up to about 7 levels off; the node's output is not affected. Accepted (a target
+          // of their own would lose their depth order against the meshes).
+          const spark = sparkViews.has(faceOwner) ? sparkViews.renderer(faceOwner) : null;
+          if (spark) spark.encodeLinear = true;
+          renderer.clearDepth();
+          renderer.render(world, worldCamera);
+        }
+        renderer.autoClear = true;
+        if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
+        const uniforms = lensQuad.material.uniforms;
+        uniforms[`face${index}`].value = lensTargets[index].texture;
+        faceRotation.makeRotationFromQuaternion(faceTurn.clone().invert());
+        uniforms.faceTurn.value[index].setFromMatrix4(faceRotation);
+        uniforms.faceTan.value[index].set(face.tanX, face.tanY);
+      });
+    } finally {
+      linearOutput.value = false;
+      owned.end();
+      renderer.setRenderTarget(null);
+    }
+    const uniforms = lensQuad.material.uniforms;
+    uniforms.faceCount.value = lens.faces.length;
+    uniforms.curve.value = lens.curve;
+    uniforms.focal.value = lens.focal;
+    uniforms.center.value.set(lens.centerX, lens.centerY);
+    const bottom = canvas.height - at.y - at.height;
+    uniforms.window.value.set(at.x, bottom, at.offsetX, at.offsetY);
+    uniforms.windowHeight.value = at.height;
+    const color = Number(lens.background ?? 0);
+    uniforms.background.value.set(((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255, 1);
+    renderer.setViewport(at.x, bottom, at.width, at.height);
+    renderer.setScissor(at.x, bottom, at.width, at.height);
+    renderer.render(lensScene, lensCamera);
+    settleUnpack();
+    return { canvas, x: at.x, y: at.y, width: at.width, height: at.height };
+  }
+
   function draw(projection, input, space = null) {
+    if (projection === panorama && input.lens) return drawLens(input, space);
+    releaseLensFaces(input.owner);
     let entry = owners.get(input.owner);
     if (!entry) owners.set(input.owner, entry = {});
     const at = place(input, entry);
@@ -988,23 +1336,10 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     renderer.setViewport(at.x, bottom, at.width, at.height);
     renderer.setScissor(at.x, bottom, at.width, at.height);
     if (input.camera) setView(camera, input.camera, at);
-    scene.clear();
     // A draw that throws still marks what it used, so no texture is left without an owner.
     const owned = layerTextures.draw(input.owner);
     try {
-      const background = input.background;
-      if (background && owned.drawable({ id: "background", ...background })) {
-        addErp(owned, projection, projection.background, { id: "background", opacity: 1, ...background }, background.coverage === 180);
-      }
-      let erpIndex = 0;
-      let stickerIndex = 0;
-      input.layers.forEach((layer, index) => {
-        if (!owned.drawable(layer)) return;
-        const mesh = layer.kind === "erp"
-          ? addErp(owned, projection, pooled(projection.erp, erpIndex++, projection.createErp), layer, false)
-          : addSticker(owned, projection, pooled(projection.sticker, stickerIndex++, projection.createSticker), layer);
-        mesh.renderOrder = index + 1;
-      });
+      fillSky(owned, projection, input);
       if (space) buildWorld(owned, space, input.owner);
     } finally {
       owned.end();
@@ -1098,6 +1433,18 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // The pick material of pickable entry `index` for one of its meshes: one per entry, or a depth grid's own (its
   // uniforms are its item's), kept on the mesh and freed with it.
   function pickMaterial(index, object) {
+    // A world Sticker's lens patch is hit where it shows: its own shape, with its uniforms.
+    if (object?.userData.lensPatch) {
+      object.userData.pickMaterial ||= new ShaderMaterial({
+        vertexShader: LENS_PATCH_PICK_VERTEX,
+        fragmentShader: LENS_PATCH_PICK_FRAGMENT,
+        uniforms: { pickId: { value: 0 }, ...pickShared, curve: object.material.uniforms.curve, patchHalf: object.material.uniforms.patchHalf },
+        side: DoubleSide,
+        blending: NoBlending,
+      });
+      object.userData.pickMaterial.uniforms.pickId.value = index + 1;
+      return object.userData.pickMaterial;
+    }
     if (object?.userData.depthGrid) {
       object.userData.pickMaterial ||= createDepthGridPickMaterial(object.material, pickShared);
       object.userData.pickMaterial.uniforms.pickId.value = index + 1;
@@ -1236,6 +1583,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // its marks on the layer textures, so those no other owner uses are disposed; it gets a new renderer and
   // its textures again when it draws again.
   function releaseSplats(owner) {
+    releaseLensFaces(owner);
     sparkViews.release(owner);
     layerTextures.release(owner);
   }
@@ -1249,6 +1597,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // Frees the textures and the Spark renderer of an owner that stops drawing; the canvas shrinks on the next
   // render if this owner was the largest.
   function release(owner) {
+    releaseLensFaces(owner);
     layerTextures.release(owner);
     owners.delete(owner);
     sparkViews.release(owner);
@@ -1293,8 +1642,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     lines.lines.forEach((line) => disposeObject(line));
     gizmo?.dispose();
     worldStickers.forEach((mesh) => mesh.material.dispose());
+    worldLensStickers.forEach((mesh) => {
+      mesh.material.dispose();
+      mesh.userData.pickMaterial?.dispose();
+    });
+    lensPatchGeometry.dispose();
+    panorama.lensSticker.forEach((mesh) => mesh.material.dispose());
     pickMaterials.forEach((material) => material.dispose());
     pickTarget?.dispose();
+    lensTargets.forEach((target) => target.dispose());
+    lensQuad.material.dispose();
     sparkViews.dispose();
     layerTextures.dispose();
     owners.clear();

@@ -10,12 +10,11 @@ import {
   DEFAULT_EASING,
   defaultClip,
   SCENE_LANES,
-  SKY_STICKER_LANES,
   TIMELINE_FPS_MAX,
   TIMELINE_LENGTH_MAX,
   timelineFps,
   timelineLength,
-  WORLD_STICKER_LANES,
+  stickerLanes,
 } from "./pano_scene_state.js";
 
 function merged(value, patch) {
@@ -55,24 +54,33 @@ export function setLaneValue(owner, name, frame, patch) {
 
 // The names of the Lanes an owner of a working state v2 has, in their stored order.
 export function laneNames(owner) {
-  if (owner.placement === "world") return WORLD_STICKER_LANES.map(([name]) => name);
-  if (owner.placement === "sky") return SKY_STICKER_LANES.map(([name]) => name);
+  if (owner.placement === "world" || owner.placement === "sky") return stickerLanes(owner).map(([name]) => name);
   // The background (state.background) has a Clip range and no Lanes.
   if (owner.clip && !owner.position) return [];
   return (owner.clip ? SCENE_LANES : CAMERA_LANES).map(([name]) => name);
 }
 
+// The lens Lanes (ADR 0042): the Camera's `curve`, and the `curve` and `lens` Pose handoff writes on a Sticker. A
+// row's key button and its pins leave them out, so a row keyed everywhere stays one full pin and pressing the
+// button writes no lens Keyframes; a lens Lane is keyed by its own edits and shows on its own Lane line.
+const ROW_EXCLUDED_LANES = new Set(["curve", "lens"]);
+
+// The Lanes a row's key button and pins act on: laneNames() without the lens Lanes.
+export function rowLaneNames(owner) {
+  return laneNames(owner).filter((name) => !ROW_EXCLUDED_LANES.has(name));
+}
+
 // The row's key button: every Lane of owner gets a Keyframe at frame holding its current value. This
 // also makes the first Keyframe of a Lane.
 export function keyAllLanes(owner, frame) {
-  for (const name of laneNames(owner)) {
+  for (const name of rowLaneNames(owner)) {
     if (!keyAt(owner[name], frame)) insertKeyframe(owner[name], frame, evaluateLane(owner, name, frame));
   }
 }
 
 // The frames of a row's Keyframes, one pin per frame: `full` when every Lane has a Keyframe there.
 export function rowKeyframes(owner) {
-  const names = laneNames(owner);
+  const names = rowLaneNames(owner);
   const counts = new Map();
   for (const name of names) {
     for (const key of owner[name].keyframes) counts.set(key.frame, (counts.get(key.frame) || 0) + 1);

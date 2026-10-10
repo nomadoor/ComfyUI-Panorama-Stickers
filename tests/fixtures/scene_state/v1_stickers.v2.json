@@ -79,6 +79,10 @@
         "value": 1.0,
         "keyframes": []
       },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
       "z_index": 1
     },
     {
@@ -123,6 +127,10 @@
         "value": 1.0,
         "keyframes": []
       },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
       "z_index": 2
     },
     {
@@ -163,6 +171,10 @@
         "keyframes": []
       },
       "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "curve": {
         "value": 1.0,
         "keyframes": []
       },

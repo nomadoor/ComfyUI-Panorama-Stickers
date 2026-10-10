@@ -88,6 +88,7 @@ def test_camera_object_has_the_default_camera_fields():
         "position": {"value": [0.0, 0.0, 0.0], "keyframes": []},
         "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []},
         "fov": {"value": 90.0, "keyframes": []},
+        "curve": {"value": 1.0, "keyframes": []},
     }
 
 
@@ -225,9 +226,9 @@ def test_state_v2_has_no_unread_fields():
     state = load_scene_state(read_fixture("v2_canonical"))
     assert list(state.keys()) == ["version", "id", "timeline", "camera", "scene", "stickers", "next_sticker_id", "painting", "painting_layer", "painting_visible", "upstream", "background"]
     assert list(state["timeline"].keys()) == ["fps", "length"]
-    assert list(state["camera"].keys()) == ["aspect", "projection", "visible", "position", "rotation", "fov"]
+    assert list(state["camera"].keys()) == ["aspect", "projection", "visible", "position", "rotation", "fov", "curve"]
     assert list(state["scene"].keys()) == ["clip", "visible", "position", "rotation", "scale"]
-    lanes = {"sky": ["direction", "roll", "size", "opacity", "z_index"], "world": ["position", "rotation", "scale", "opacity"]}
+    lanes = {"sky": ["direction", "roll", "size", "opacity", "curve", "z_index"], "world": ["position", "rotation", "scale", "opacity"]}
     for sticker in state["stickers"]:
         port = ["handoff_overrides"] if sticker["source"]["kind"] == "port" else []
         assert list(sticker.keys()) == ["id", "placement", "source", "clip", "visible", "locked", "crop", *lanes[sticker["placement"]], *port]
@@ -255,6 +256,7 @@ def test_sticker_state_v2_without_camera_gets_one_default_keyframe_per_lane():
         "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": easing}],
         "rotation": [{"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": easing}],
         "fov": [{"frame": 0, "value": 90.0, "easing": easing}],
+        "curve": [{"frame": 0, "value": 1.0, "easing": easing}],
     }
 
 
@@ -269,7 +271,7 @@ def test_evaluate_returns_static_values_without_keyframes():
     out = evaluate_scene_state(state, 3.25)
     assert out["camera"] is None
     camera = evaluate_scene_state(load_scene_state('{"version":2,"camera":{}}'), 3.25)["camera"]
-    assert camera == {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "aspect": 1.0}
+    assert camera == {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "curve": 1.0, "aspect": 1.0}
     assert [s["active"] for s in out["stickers"]] == [False, True, True]
     assert out["stickers"][0]["yaw_deg"] == 190.0
 

@@ -1,7 +1,8 @@
 import { normalizePaintingState } from "./pano_paint_types.js";
 import { wrapYaw } from "./pano_math.js";
 import { DEG2RAD } from "./pano_camera_math.js";
-import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
+import { deriveCutoutAspectFromFov, deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
+import { lensAngle, lensFocalLengthMm, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { loadSceneState, rebaseSceneState, sceneStateText, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
@@ -225,8 +226,16 @@ export function setTimelineFps(state, fps) {
 // its hFOV and the aspect of the media on the port (`size`, { width, height }), as the run derives it
 // (core/render.py `derive_vfov`, core/math.py `vfov_from_hfov`): the media changes outside the state, so
 // the state never holds it, and the stored vFOV_deg stands in only while the media has no size.
+// At a lens curve other than 1 (ADR 0042), g_κ(vFOV ÷ 2) = g_κ(hFOV ÷ 2) × height ÷ width (pano_lens.js).
 export function skyStickerVfov(sticker, value, size) {
   if (sticker.source.kind !== "port" || !(size?.width > 0 && size?.height > 0)) return value.vFOV_deg;
+  const curve = value.curve ?? 1;
+  if (curve !== 1) {
+    const limit = lensFovLimit(curve);
+    const hfov = Math.min(limit, Math.max(0.1, value.hFOV_deg)) * DEG2RAD;
+    const vfov = 2 * lensAngle(lensRadius(hfov * 0.5, curve) * (size.height / size.width), curve) / DEG2RAD;
+    return Math.min(limit, Math.max(0.1, vfov));
+  }
   const hfov = Math.min(179, Math.max(0.1, value.hFOV_deg)) * DEG2RAD;
   const vfov = 2 * Math.atan(Math.tan(hfov * 0.5) * (size.height / size.width)) / DEG2RAD;
   return Math.min(179, Math.max(0.1, vfov));
@@ -237,7 +246,7 @@ export function skyStickerVfov(sticker, value, size) {
 // size of a port Sticker's media (skyStickerVfov).
 export function stickerPose(sticker, frame, size = null) {
   const value = evaluateSticker(sticker, frame);
-  return { yaw_deg: value.yaw_deg, pitch_deg: value.pitch_deg, hFOV_deg: value.hFOV_deg, vFOV_deg: skyStickerVfov(sticker, value, size), rot_deg: value.roll_deg };
+  return { yaw_deg: value.yaw_deg, pitch_deg: value.pitch_deg, hFOV_deg: value.hFOV_deg, vFOV_deg: skyStickerVfov(sticker, value, size), rot_deg: value.roll_deg, curve: value.curve };
 }
 
 // The Lane of each pose field of a sky Sticker.
@@ -281,7 +290,9 @@ export function cameraShot(camera, frame) {
     pitch_deg: value.pitch_deg,
     roll_deg: value.roll_deg,
     hFOV_deg: value.hFOV_deg,
-    vFOV_deg: deriveVerticalFovDeg(value.hFOV_deg, camera.aspect),
+    vFOV_deg: deriveVerticalFovDeg(value.hFOV_deg, camera.aspect, value.curve),
+    // The lens curve (ADR 0042): the shot's FOVs and film are its lens's (pano_cutout_view_math.js shotCurve).
+    curve: value.curve,
     position: value.position,
     locked: false,
   });
@@ -318,7 +329,10 @@ export function setCameraShot(camera, frame, shot, base) {
   if (Object.keys(rotation).length) setLaneValue(camera, "rotation", frame, rotation);
   if (shot.hFOV_deg !== base.hFOV_deg) setLaneValue(camera, "fov", frame, shot.hFOV_deg);
   if (shot.hFOV_deg !== base.hFOV_deg || shot.vFOV_deg !== base.vFOV_deg) {
-    camera.aspect = Math.tan(shot.hFOV_deg * DEG2RAD * 0.5) / Math.tan(shot.vFOV_deg * DEG2RAD * 0.5);
+    // The image's aspect: the ratio of its radii at the shot's lens curve (tan for a pinhole).
+    camera.aspect = shot.curve === undefined || shot.curve === 1
+      ? Math.tan(shot.hFOV_deg * DEG2RAD * 0.5) / Math.tan(shot.vFOV_deg * DEG2RAD * 0.5)
+      : deriveCutoutAspectFromFov(shot);
   }
   if (shot.position.some((value, axis) => value !== base.position[axis])) setLaneValue(camera, "position", frame, [...shot.position]);
 }
@@ -336,6 +350,13 @@ export function cameraFields(camera, frame) {
   };
 }
 
+// The Camera's lens in the inspector's fields (ADR 0042): its evaluated hFOV (under the limit of its κ), its lens
+// curve κ, and the focal length they make on a 36 mm wide sensor, which the state does not keep.
+export function cameraLensFields(camera, frame) {
+  const value = evaluateCamera(camera, frame);
+  return { hFOV_deg: value.hFOV_deg, curve: value.curve, focal_mm: lensFocalLengthMm(value.hFOV_deg, value.curve) };
+}
+
 // An inspector edit of one Camera field at a Timeline frame, by the recording rule of its Lane.
 export function setCameraField(camera, frame, field, value) {
   const axis = POSITION_FIELDS.indexOf(field);
@@ -345,6 +366,8 @@ export function setCameraField(camera, frame, field, value) {
     setLaneValue(camera, "position", frame, position);
   } else if (field === "hFOV_deg") {
     setLaneValue(camera, "fov", frame, value);
+  } else if (field === "curve") {
+    setLaneValue(camera, "curve", frame, value);
   } else {
     setLaneValue(camera, "rotation", frame, { [field]: value });
   }

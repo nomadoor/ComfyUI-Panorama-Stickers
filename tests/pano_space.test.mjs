@@ -14,6 +14,8 @@ import {
   SPLAT_TO_SCENE,
   boundingSphere,
   cameraFrustumSegments,
+  planeCorners,
+  planeOutlineSegments,
   cameraTrajectory,
   cameraView,
   contentPoints,
@@ -1162,4 +1164,38 @@ test("a depth grid loads DEPTH_GRID_PREFETCH items ahead, and its color comes fr
   const meshes = sceneFilesOf(names, [{ kind: "mesh" }], source);
   assert.deepEqual(sceneRequest(meshes, scene).prefetch, ["/view?filename=d3.f32"]);
   assert.equal(sceneRequest(meshes, scene).video, null);
+});
+
+// docs/threejs-spark-integration.md (ADR 0042): a lens Camera's frustum is the rays of its image's edges, which past
+// 180° no pyramid could show.
+test("a lens Camera's frustum follows the rays of its image's edges", () => {
+  const camera = { position: [1, 2, 3], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 300, aspect: 1.5, curve: 0.3 };
+  const segments = cameraFrustumSegments(camera, 2);
+  const ends = segments.flat().filter((point) => point.some((value, axis) => value !== camera.position[axis]));
+  const angles = ends.map((point) => {
+    const d = point.map((value, axis) => value - camera.position[axis]);
+    assert.ok(Math.abs(Math.hypot(...d) - 2) < 1e-9, "every edge point is `length` out along its ray");
+    return Math.acos(-d[2] / 2) * 180 / Math.PI;
+  });
+  // The side edges' middles are 150° off the axis, behind the Camera; none is past the image.
+  assert.ok(angles.some((angle) => Math.abs(angle - 150) < 1e-6));
+  assert.ok(Math.max(...angles) <= 180 + 1e-9);
+});
+
+// docs/render-contract.md "`world` の Sticker の板" (ADR 0042): a world Sticker's lens makes it a sphere patch.
+test("a world Sticker's lens patch lies on its sphere around the lens's center, its middle where the plane's is", () => {
+  const value = { position: [1, 0, -2], yaw_deg: 30, pitch_deg: 0, roll_deg: 0, scale: 2, lens: { curve: 0, hFOV_deg: 220 } };
+  const plane = worldStickerPlane(value, { x0: 0, y0: 0, x1: 1, y1: 1 }, 200, 100);
+  const { patch } = plane;
+  // Radius scale ÷ (2·g(hFOV ÷ 2)); g is θ at κ 0.
+  assert.ok(Math.abs(patch.radius - 2 / (2 * (110 * Math.PI / 180))) < 1e-12);
+  const distance = (point) => Math.hypot(...point.map((x, axis) => x - patch.center[axis]));
+  assert.ok(Math.abs(Math.hypot(...plane.position.map((x, axis) => x - patch.center[axis])) - patch.radius) < 1e-12);
+  const outline = planeOutlineSegments(plane, 8).flat();
+  assert.ok(outline.length > 0 && outline.every((point) => Math.abs(distance(point) - patch.radius) < 1e-9));
+  // Its corners reach past the plane's side: wider than 180° across, some lie behind the center.
+  const forward = plane.position.map((x, axis) => x - patch.center[axis]);
+  assert.ok(planeCorners(plane).some((point) => point.reduce((sum, x, axis) => sum + (x - patch.center[axis]) * forward[axis], 0) < 0));
+  // Without a lens it stays a plane.
+  assert.equal(worldStickerPlane({ ...value, lens: undefined }, { x0: 0, y0: 0, x1: 1, y1: 1 }, 200, 100).patch, undefined);
 });

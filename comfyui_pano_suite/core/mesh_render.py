@@ -16,6 +16,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .math import lens_angle, lens_focal, lens_radius
 from .three_dfg_lut import DFG_LUT_HALVES, DFG_LUT_SIZE
 from .world_render import CameraView, SceneContent, over_by_depth
 
@@ -186,7 +187,7 @@ def _render(view: CameraView, item: MeshItem, rays: torch.Tensor | None = None, 
     rays = (view.rays(device) if rays is None else rays).reshape(-1, 3)
     origin = torch.tensor(view.position, dtype=torch.float32, device=device)
     rotation = torch.tensor(view.rotation, dtype=torch.float32, device=device)
-    bounds_of = _erp_bounds if projection.kind == "erp" else _perspective_bounds
+    bounds_of = _erp_bounds if projection.kind == "erp" else _perspective_bounds if projection.curve == 1.0 else _lens_bounds
     # Per triangle only its ray planes and its pixel bounds are kept: first and last column (unwrapped for an ERP,
     # which repeats every `period` columns), first and last row.
     planes, bounds = [], []
@@ -520,15 +521,16 @@ def _pixel_range(low: torch.Tensor, high: torch.Tensor, size: int | None = None)
     return torch.stack([first, last], dim=-1)
 
 
-def _erp_bounds(corners: torch.Tensor, projection):
-    """Columns (unwrapped) and rows per triangle for an ERP, as (M, 4) int32. `corners` (M, 3, 3) are in the
-    Camera's axes: x right, y up, z back."""
-    width, height = projection.width, projection.height
-    span = math.pi if projection.coverage == 180 else 2.0 * math.pi
+def _sphere_ranges(corners: torch.Tensor):
+    """Per triangle (corners (M, 3, 3) around the origin, in axes x right, y up, z back), the angles its directions
+    span on the sphere seen with +y as the pole: the shortest longitude arc around its corners (longitude from -z
+    toward +x; -pi..pi when the arc is half a turn or more, as around a pole) and the latitudes of its corners, of
+    its edges (great circle arcs), and of a pole it surrounds. Returns lon_min, lon_max, lat_min, lat_max."""
     directions = F.normalize(corners, dim=-1)
     x, y, z = directions.unbind(-1)
     lon, _order = torch.atan2(x, -z).sort(dim=-1)
-    lat = torch.asin(y.clamp(-1.0, 1.0))
+    # atan2 rather than asin keeps the angles near a pole precise (a lens image's center is its pole).
+    lat = torch.atan2(y, torch.hypot(x, z))
     # The shortest arc holding the three longitudes starts after the widest gap between them.
     gaps = torch.cat([lon[:, 1:] - lon[:, :-1], lon[:, :1] + 2.0 * math.pi - lon[:, 2:]], dim=-1)
     widest, after = gaps.max(dim=-1)
@@ -545,7 +547,7 @@ def _erp_bounds(corners: torch.Tensor, projection):
     top = F.normalize(torch.stack([-unit[..., 0] * unit[..., 1], 1.0 - unit[..., 1] ** 2, -unit[..., 2] * unit[..., 1]], dim=-1), dim=-1)
     before = (torch.linalg.cross(a, top) * normals).sum(-1)
     behind = (torch.linalg.cross(top, b) * normals).sum(-1)
-    edge_lat = torch.asin(top[..., 1].clamp(-1.0, 1.0))
+    edge_lat = torch.atan2(top[..., 1], torch.hypot(top[..., 0], top[..., 2]))
     lat_max = torch.maximum(lat.amax(-1), torch.where((before > 0.0) & (behind > 0.0), edge_lat, -math.pi).amax(-1))
     lat_min = torch.minimum(lat.amin(-1), torch.where((before < 0.0) & (behind < 0.0), -edge_lat, math.pi).amin(-1))
     lat_max = torch.where(north, 0.5 * math.pi, lat_max)
@@ -554,8 +556,60 @@ def _erp_bounds(corners: torch.Tensor, projection):
     around = lon_max - lon_min >= math.pi
     lon_min = torch.where(around, -math.pi, lon_min)
     lon_max = torch.where(around, math.pi, lon_max)
+    return lon_min, lon_max, lat_min, lat_max
+
+
+def _erp_bounds(corners: torch.Tensor, projection):
+    """Columns (unwrapped) and rows per triangle for an ERP, as (M, 4) int32. `corners` (M, 3, 3) are in the
+    Camera's axes: x right, y up, z back."""
+    width, height = projection.width, projection.height
+    span = math.pi if projection.coverage == 180 else 2.0 * math.pi
+    lon_min, lon_max, lat_min, lat_max = _sphere_ranges(corners)
     columns = _pixel_range((lon_min / span + 0.5) * width - 0.5, (lon_max / span + 0.5) * width - 0.5)
     rows = _pixel_range((0.5 - lat_max / math.pi) * height - 0.5, (0.5 - lat_min / math.pi) * height - 0.5, height)
+    return torch.cat([columns, rows], dim=-1)
+
+
+def _lens_bounds(corners: torch.Tensor, projection):
+    """Columns and rows per triangle for a Camera image through a lens curve other than 1, as (M, 4) int32: a box
+    sure to hold every pixel its directions reach. Seen with the optical axis as the pole, the triangle spans the
+    angles off the axis θ_min..θ_max and an arc of azimuths (`_sphere_ranges`); the image radius r = f·lens_radius(θ)
+    grows with θ, so the triangle lies in the annular sector r(θ_min)..r(θ_max) over that arc, whose box it gets
+    (the whole disc when the arc is half a turn or more, or the triangle holds the axis). `corners` are in the
+    Camera's axes: x right, y up, z back."""
+    width, height = projection.width, projection.height
+    f = lens_focal(width, projection.hfov_deg, projection.curve)
+    # The farthest image corner's angle: a radius past it is off the image anyway, and lens_radius stays defined.
+    theta_cap = float(lens_angle(math.hypot(width, height) * 0.5 / f, projection.curve))
+    # Turn the axes so the forward axis (-z) is the pole (+y') and longitude' runs from up (+y) toward right (+x).
+    x, y, z = corners.unbind(-1)
+    lon_min, lon_max, lat_min, lat_max = _sphere_ranges(torch.stack([x, -z, -y], dim=-1))
+    theta_min = (0.5 * math.pi - lat_max).clamp(0.0, theta_cap)
+    theta_max = (0.5 * math.pi - lat_min).clamp(0.0, theta_cap)
+    r_min, r_max = f * lens_radius(theta_min, projection.curve), f * lens_radius(theta_max, projection.curve)
+    full = (lon_max - lon_min >= math.pi) | (r_min <= 0.0)
+    # The sector's box: its 4 corners, and its outer arc where it crosses an axis.
+    sin_a, cos_a = torch.stack([lon_min.sin(), lon_max.sin()], -1), torch.stack([lon_min.cos(), lon_max.cos()], -1)
+    xs = torch.cat([sin_a * r_min[:, None], sin_a * r_max[:, None]], -1)
+    ys = torch.cat([cos_a * r_min[:, None], cos_a * r_max[:, None]], -1)
+    x_low, x_high, y_low, y_high = xs.amin(-1), xs.amax(-1), ys.amin(-1), ys.amax(-1)
+    for angle, axis, sign in ((0.0, "y", 1.0), (0.5 * math.pi, "x", 1.0), (-0.5 * math.pi, "x", -1.0), (math.pi, "y", -1.0)):
+        # The arc runs from lon_min (at least -pi) for less than half a turn, so it may reach past pi.
+        inside = ((lon_min <= angle) & (angle <= lon_max)) | ((lon_min <= angle + 2 * math.pi) & (angle + 2 * math.pi <= lon_max))
+        if axis == "x":
+            x_high = torch.where(inside & (sign > 0), torch.maximum(x_high, r_max), x_high)
+            x_low = torch.where(inside & (sign < 0), torch.minimum(x_low, -r_max), x_low)
+        else:
+            y_high = torch.where(inside & (sign > 0), torch.maximum(y_high, r_max), y_high)
+            y_low = torch.where(inside & (sign < 0), torch.minimum(y_low, -r_max), y_low)
+    x_low, x_high = torch.where(full, -r_max, x_low), torch.where(full, r_max, x_high)
+    y_low, y_high = torch.where(full, -r_max, y_low), torch.where(full, r_max, y_high)
+    # A triangle wholly past the image's farthest corner is not seen.
+    unseen = (0.5 * math.pi - lat_max) > theta_cap
+    center_x, center_y = width * 0.5 - 0.5, height * 0.5 - 0.5
+    columns = _pixel_range((center_x + x_low).clamp(-1.0, width), (center_x + x_high).clamp(-1.0, width), width)
+    rows = _pixel_range((center_y - y_high).clamp(-1.0, height), (center_y - y_low).clamp(-1.0, height), height)
+    columns = torch.where(unseen[:, None], torch.tensor([1, 0], dtype=columns.dtype, device=columns.device), columns)
     return torch.cat([columns, rows], dim=-1)
 
 

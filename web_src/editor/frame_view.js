@@ -7,6 +7,7 @@ import {
   stepCutoutFovPairByWheel,
 } from "../pano_cutout_view_math.js";
 import { frameViewContext } from "../pano_editor_view.js";
+import { lensPickWindow, multiplyQuaternions } from "../pano_lens.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import {
   DEFAULT_DISTANCE,
@@ -211,16 +212,28 @@ export function createFrameView(deps) {
   }
 
   // The Camera as a space view (pano_space.js) over the context rect.
+  // A lens Camera's view (ADR 0042) moves at its image center's scale: a pinhole over the rect with the lens's f.
   function frameSpaceView(context) {
-    const { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg } = context.shot;
+    const { position, yaw_deg, pitch_deg, roll_deg } = context.shot;
+    const hFOV_deg = context.lens
+      ? 2 * Math.atan(context.rect.w / 2 / context.lens.focalPx) * 180 / Math.PI
+      : context.shot.hFOV_deg;
     return { position, yaw_deg, pitch_deg, roll_deg, hFOV_deg, distance: frameViewDistance() };
   }
 
   // The World point of the content under canvas point p in the Frame view that an orbit or a wheel step
   // works on, or null (also over a SPLAT's box, pano_three_view.js pickSurface).
+  // On a lens Camera's image (ADR 0042) the pointer's pixel goes back along the lens to its ray, which is picked
+  // through the face of the cube it crosses (pano_lens.js lensPickWindow); past 180° off the axis nothing is hit.
   function pickFrame(context, p) {
-    const { rect } = context;
-    return editorView.pickSurface(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
+    const { rect, lens } = context;
+    if (!lens) return editorView.pickSurface(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
+    const film = { x: (p.x - rect.x - lens.centerX) / lens.focalPx, y: (lens.centerY - (p.y - rect.y)) / lens.focalPx };
+    const face = lensPickWindow(film.x, film.y, lens.curve);
+    if (!face) return null;
+    const camera = shotViewCamera(context.shot);
+    const turned = { ...camera, quaternion: multiplyQuaternions(camera.quaternion, face.quaternion), fovY_deg: 90, aspect: 1 };
+    return editorView.pickSurface(turned, face.x, face.y, face.size, face.size);
   }
 
   // The point a Frame view orbit or wheel step at canvas point p works on: the content under it, else the

@@ -199,7 +199,7 @@ function onScrubDown(event, field) {
                   </div>
                 </div>
               </div>
-              <div v-else class="pano-field" :data-key="row.key">
+              <div v-else class="pano-field" :data-key="row.key" :data-tip="row.fields[0].tip || null">
                 <label>{{ row.label }}</label>
                 <input
                   type="range"

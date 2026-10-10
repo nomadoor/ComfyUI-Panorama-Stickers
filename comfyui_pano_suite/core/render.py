@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 from .display_layers import render_group_layer_from_state, render_raster_layer_from_state, render_remaining_flat_paint_layer_from_state
 from .display_list import build_display_entries
-from .math import camera_basis, ray_directions, unit_float_tensor, vfov_from_hfov
+from .math import camera_basis, lens_drawn, lens_radius, ray_directions, unit_float_tensor, vfov_from_hfov
 from .painting import load_painting_layer_payload, render_painting_to_erp
 from .world_render import SceneContent, over_by_depth, world_key, world_layer
 
@@ -24,8 +24,9 @@ class Projection:
     """How the Camera turns the Scene into a `width` x `height` image.
 
     `erp` spans `coverage` (360 or 180) degrees of longitude; 180 is the Camera's front hemisphere.
-    `perspective` is a pinhole image with horizontal FOV `hfov_deg` and square pixels, so its vertical FOV
-    follows from the size. Its `coverage` is the span of the `bg_media` ERP it looks into.
+    `perspective` is a Camera image with horizontal FOV `hfov_deg` and square pixels through the lens curve `curve`
+    (1: a pinhole; docs/render-contract.md, "カメラのレンズ"), so its vertical FOV follows from the size. Its
+    `coverage` is the span of the `bg_media` ERP it looks into.
     """
 
     kind: str
@@ -33,14 +34,15 @@ class Projection:
     height: int
     coverage: int = 360
     hfov_deg: float = 90.0
+    curve: float = 1.0
 
     @classmethod
     def erp(cls, width: int, height: int, coverage: int = 360) -> "Projection":
         return cls("erp", int(width), int(height), coverage=180 if int(coverage) == 180 else 360)
 
     @classmethod
-    def perspective(cls, width: int, height: int, hfov_deg: float, coverage: int = 360) -> "Projection":
-        return cls("perspective", int(width), int(height), coverage=180 if int(coverage) == 180 else 360, hfov_deg=float(hfov_deg))
+    def perspective(cls, width: int, height: int, hfov_deg: float, coverage: int = 360, curve: float = 1.0) -> "Projection":
+        return cls("perspective", int(width), int(height), coverage=180 if int(coverage) == 180 else 360, hfov_deg=float(hfov_deg), curve=float(curve))
 
 
 @dataclass(frozen=True)
@@ -122,7 +124,7 @@ def _drawn_sky_stickers(evaluated: dict, sources: SceneSources):
             continue
         vfov = sticker["vFOV_deg"]
         if source.derive_vfov:
-            vfov = vfov_from_hfov(sticker["hFOV_deg"], source.rgba.shape[1], source.rgba.shape[0])
+            vfov = vfov_from_hfov(sticker["hFOV_deg"], source.rgba.shape[1], source.rgba.shape[0], sticker["curve"])
         yield sticker, source, vfov
 
 
@@ -376,7 +378,7 @@ def _sky_size(projection: Projection, bg_width: int | None) -> tuple[int, int]:
     """
     if projection.kind == "erp":
         return projection.width, projection.height if projection.coverage == 360 else max(1, projection.width // 2)
-    width = math.pi * projection.width / math.tan(math.radians(projection.hfov_deg) * 0.5)
+    width = math.pi * projection.width / lens_radius(math.radians(projection.hfov_deg) * 0.5, projection.curve)
     width = 2 ** max(6, math.ceil(math.log2(width)))
     if bg_width is not None:
         width = max(width, bg_width * 360 // projection.coverage)
@@ -396,15 +398,30 @@ def _shoot_sticker(texture: torch.Tensor, levels: dict, item: dict, rays: torch.
         return rays.new_zeros((*rays.shape[:2], 4))
     right, up, forward = (rays.new_tensor(axis) for axis in camera_basis(sticker["yaw_deg"], sticker["pitch_deg"], sticker["roll_deg"], dtype=np.float64))
     depth = rays @ forward
-    distance = depth.clamp_min(1e-6)
-    across = (rays @ right) / distance / math.tan(math.radians(max(0.1, sticker["hFOV_deg"])) * 0.5)
-    down = (rays @ up) / distance / math.tan(math.radians(max(0.1, item["vfov"])) * 0.5)
+    curve = sticker["curve"]
+    if curve == 1.0:
+        distance = depth.clamp_min(1e-6)
+        across = (rays @ right) / distance / math.tan(math.radians(max(0.1, sticker["hFOV_deg"])) * 0.5)
+        down = (rays @ up) / distance / math.tan(math.radians(max(0.1, item["vfov"])) * 0.5)
+        seen = depth > 1e-6
+    else:
+        # The Sticker as the image of a lens of `curve` (ADR 0042): a direction θ off its forward axis, at azimuth φ on
+        # its right and up axes, lands lens_radius(θ) from its center, which the hFOV and vFOV edges scale to 1.
+        side, lift = rays @ right, rays @ up
+        off_axis = torch.hypot(side, lift)
+        theta = torch.atan2(off_axis, depth)
+        seen = (theta * curve < 0.5 * math.pi) & (theta <= math.pi)
+        radius = lens_radius(torch.where(seen, theta, 0.0), curve)
+        # radius / sin θ as the scale of (side, lift); its limit on the axis is 1.
+        scale_r = torch.where(off_axis > 1e-12, radius / off_axis.clamp_min(1e-12), 1.0)
+        across = side * scale_r / lens_radius(math.radians(max(0.1, sticker["hFOV_deg"])) * 0.5, curve)
+        down = lift * scale_r / lens_radius(math.radians(max(0.1, item["vfov"])) * 0.5, curve)
     plane = torch.stack([across, down], dim=-1)
     # A pixel covers at most the Sticker's whole width (2) of the plane: across the plane's horizon (depth 0), where
     # the plane runs off to infinity between neighbors, the step would otherwise give the pixels there half coverage.
     steps = _pixel_steps(plane).clamp(1e-12, 2.0)
     coverage = ((1.0 - plane.abs()) / steps + 0.5).clamp(0.0, 1.0).prod(dim=-1)
-    coverage = torch.where(depth > 1e-6, coverage, 0.0)
+    coverage = torch.where(seen, coverage, 0.0)
     inside = coverage > 0.0
     # The legacy drawing puts u = 0 and 1 on the centers of the first and last source pixels.
     height, width = texture.shape[:2]
@@ -433,7 +450,7 @@ def _sky_key(evaluated: dict, sources: SceneSources, size: tuple[int, int]) -> t
     # A Sticker without a source has no frame (None).
     frames = {sticker_id: source.frame for sticker_id, source in sources.stickers.items()}
     return (size, tuple(
-        (sticker["id"], *(round(sticker[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg", "vFOV_deg", "opacity")),
+        (sticker["id"], *(round(sticker[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg", "vFOV_deg", "opacity", "curve")),
          frames.get(sticker["id"]))
         if sticker["active"] else (sticker["id"],)
         for sticker in evaluated["stickers"] if sticker["placement"] == "sky"
@@ -500,7 +517,7 @@ def render_frame(
     turned = projection.kind != "erp" or projection.coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
     view_key = None
     if turned:
-        view_key = (replace(projection, hfov_deg=round(projection.hfov_deg, 9)), *(round(camera[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg")))
+        view_key = (replace(projection, hfov_deg=round(projection.hfov_deg, 9), curve=round(projection.curve, 9)), *(round(camera[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg")))
     bg_entry = None if bg is None else ("bg", bg_key)
     # A background without a key cannot be told apart from the previous frame's, so it is never reused.
     reusable = bg is None or bg_key is not None
@@ -563,6 +580,14 @@ def render_frame(
             cache.pop(key, None)
     world_layers = () if cache.get("world") is None else (cache["world"],)
     color, depth = composite_frame(bg_color, background, sky, world_layers, bg_valid=bg_valid)
+    # A lens that sees past 180 degrees off its axis (a wide fisheye's corners) draws those pixels as `bg_color`.
+    if cache.get("drawn_key") != projection:
+        cache["drawn"], cache["drawn_key"] = lens_drawn(projection, device), projection
+    drawn = cache["drawn"]
+    if drawn is not None:
+        color = torch.where(drawn[..., None], color, torch.tensor(bg_color, dtype=color.dtype, device=device))
+        mask = torch.where(drawn, mask, 0.0)
+        depth = torch.where(drawn, depth, math.inf)
     if reusable:
         cache["frame_key"], cache["frame"] = frame_key, (color, mask, depth)
     return color, mask, depth

@@ -93,6 +93,10 @@
     "fov": {
       "value": 90.0,
       "keyframes": []
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
     }
   },
   "scene": {
@@ -181,6 +185,10 @@
             "easing": "hold"
           }
         ]
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
       },
       "z_index": 0,
       "handoff_overrides": []
@@ -274,6 +282,10 @@
         "value": 1.0,
         "keyframes": []
       },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
       "z_index": 2
     },
     {
@@ -317,6 +329,10 @@
         "keyframes": []
       },
       "opacity": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "curve": {
         "value": 1.0,
         "keyframes": []
       },

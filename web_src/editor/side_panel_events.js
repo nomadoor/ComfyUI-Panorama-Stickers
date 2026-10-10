@@ -2,11 +2,13 @@
 // its Lanes' keys, and the panel's buttons.
 import { deriveCutoutAspectLabelFromFov } from "../pano_cutout_view_math.js";
 import {
+  cameraLensFields,
   normalizeCoverageValue,
   setCameraField,
   setStickerOpacity,
   setWorldStickerField,
 } from "../pano_editor_state.js";
+import { lensFovLimit, lensHFovFromFocalMm } from "../pano_lens.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { WORLD_MIN_SCALE, WORLD_UNLIMITED_FIELDS } from "./constants.js";
@@ -40,7 +42,15 @@ export function createSidePanelEvents(deps) {
     if ((worldInspected || cameraV2) && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
     else out = clamp(out, Number(param.min), Number(param.max));
     if (key === "yaw_deg") out = wrapYaw(out);
-    if (!worldInspected && cameraV2 && key.startsWith("position_")) {
+    // The Camera's lens (ADR 0042): a focal length is written as the H FOV it makes at the Camera's κ.
+    if (!worldInspected && cameraV2 && state.camera && key === "focal_mm") {
+      const { curve } = cameraLensFields(state.camera, editor.frame);
+      key = "hFOV_deg";
+      out = clamp(lensHFovFromFocalMm(out, curve), 1, lensFovLimit(curve));
+    }
+    // κ, and an H FOV past the shot's 179 degrees, go to the Camera's Lanes directly.
+    const cameraLens = !worldInspected && cameraV2 && state.camera && (key === "curve" || (key === "hFOV_deg" && out > 179));
+    if (!worldInspected && cameraV2 && (key.startsWith("position_") || cameraLens)) {
       syncCutoutShot();
       setCameraField(state.camera, editor.frame, key, out);
       updateSidePanel();

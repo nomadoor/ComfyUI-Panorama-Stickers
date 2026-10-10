@@ -80,27 +80,121 @@ def camera_basis(
     return right, up, forward
 
 
+# The lens curve κ (docs/render-contract.md, "カメラのレンズ"; ADR 0042): a ray at angle θ from the optical axis lands
+# r = f·tan(κθ)/κ from the image center (κ = 0: f·θ). web_src/pano_lens.js holds the same pair; tests/fixtures/lens/
+# binds both. Below this |κθ| (or |κ·r|) the ratios tan(x)/x and atan(x)/x take their series, so κ near 0 neither
+# loses digits nor divides 0 by 0, and κ = 0 is exactly the equidistant fisheye.
+_LENS_SERIES = 1e-4
+CURVE_MIN, CURVE_MAX = 0.0, 1.5
+
+
+def _tan_ratio(x):
+    """tan(x) / x, 1 at x = 0."""
+    if HAS_TORCH and isinstance(x, torch.Tensor):
+        small = x.abs() < _LENS_SERIES
+        safe = torch.where(small, torch.ones_like(x), x)
+        return torch.where(small, 1.0 + x * x / 3.0, torch.tan(safe) / safe)
+    return 1.0 + x * x / 3.0 if abs(x) < _LENS_SERIES else math.tan(x) / x
+
+
+def _atan_ratio(x):
+    """atan(x) / x, 1 at x = 0."""
+    if HAS_TORCH and isinstance(x, torch.Tensor):
+        small = x.abs() < _LENS_SERIES
+        safe = torch.where(small, torch.ones_like(x), x)
+        return torch.where(small, 1.0 - x * x / 3.0, torch.atan(safe) / safe)
+    return 1.0 - x * x / 3.0 if abs(x) < _LENS_SERIES else math.atan(x) / x
+
+
+def lens_radius(theta, curve: float):
+    """Where a ray `theta` radians off the optical axis lands, from the image center in units of f:
+    tan(κθ)/κ, θ at κ = 0. Defined for κθ < π/2. A pinhole (κ = 1) is tan θ exactly."""
+    if curve == 1.0:
+        return torch.tan(theta) if HAS_TORCH and isinstance(theta, torch.Tensor) else math.tan(theta)
+    return theta * _tan_ratio(theta * curve)
+
+
+def lens_angle(radius, curve: float):
+    """The angle off the optical axis of the ray through a point `radius` (in units of f) from the image center,
+    the inverse of `lens_radius`: atan(κr)/κ, r at κ = 0."""
+    if curve == 1.0:
+        return torch.atan(radius) if HAS_TORCH and isinstance(radius, torch.Tensor) else math.atan(radius)
+    return radius * _atan_ratio(radius * curve)
+
+
+def lens_fov_limit(curve: float) -> float:
+    """The widest hFOV (degrees) a lens of `curve` takes: its edge ray keeps κθ < 90 degrees, at most 360."""
+    return 360.0 if curve * 360.0 <= 179.0 else 179.0 / curve
+
+
+def lens_focal(width: int, hfov_deg: float, curve: float) -> float:
+    """f in pixels: the image edge (width / 2 from the center) is the ray hfov / 2 off the axis."""
+    return (width * 0.5) / lens_radius(math.radians(hfov_deg) * 0.5, curve)
+
+
+def _lens_angles(projection, columns: "torch.Tensor", rows: "torch.Tensor"):
+    """At pixel coordinates `columns`, `rows` (pixel i spans [i, i + 1)) of a perspective `projection`: the offset
+    (x right, y up, in pixels, float64) from the image center and the ray's angle off the optical axis."""
+    f = lens_focal(projection.width, projection.hfov_deg, projection.curve)
+    x = columns.double() - projection.width * 0.5
+    y = projection.height * 0.5 - rows.double()
+    return x, y, lens_angle(torch.hypot(x, y) / f, projection.curve)
+
+
+def _pixel_grid(projection, device):
+    columns = (torch.arange(projection.width, dtype=torch.float32, device=device) + 0.5)[None, :]
+    rows = (torch.arange(projection.height, dtype=torch.float32, device=device) + 0.5)[:, None]
+    return columns, rows
+
+
+def lens_drawn(projection, device) -> "torch.Tensor | None":
+    """Which output pixels (H, W, bool) the lens draws: those whose ray is at most 180 degrees off the axis; the
+    others are `bg_color`. None when it draws every pixel (an ERP, a pinhole, or a lens whose corners stay in)."""
+    if projection.kind != "perspective" or projection.curve == 1.0:
+        return None
+    _x, _y, theta = _lens_angles(projection, *_pixel_grid(projection, device))
+    drawn = (theta <= math.pi).expand(projection.height, projection.width)
+    return None if bool(drawn.all()) else drawn
+
+
+def pixel_rays(right, up, forward, projection, columns: "torch.Tensor", rows: "torch.Tensor") -> "torch.Tensor":
+    """Unit directions (..., 3) through the image points at pixel coordinates `columns` and `rows` (float32 tensors
+    that broadcast; pixel i spans [i, i + 1), so its center is i + 0.5) of `projection`, for a Camera with these axes.
+    Points off the image get the rays the projection's formula gives there."""
+    width, height = projection.width, projection.height
+    if projection.kind == "perspective" and projection.curve != 1.0:
+        x, y, theta = _lens_angles(projection, columns, rows)
+        radius = torch.hypot(x, y)
+        # sin(θ)/r, its limit where r is 0 (the axis pixel of an odd image), so that the ray is the axis there.
+        f = lens_focal(width, projection.hfov_deg, projection.curve)
+        scale = torch.where(radius > 0, torch.sin(theta) / radius.clamp_min(1e-300), torch.full_like(radius, 1.0 / f))
+        side, lift, ahead = (x * scale).float(), (y * scale).float(), torch.cos(theta).float()
+        return torch.stack([right[i] * side + up[i] * lift + forward[i] * ahead for i in range(3)], dim=-1)
+    columns, rows = columns / width, rows / height
+    if projection.kind == "erp":
+        lon = (columns - 0.5) * (math.pi if projection.coverage == 180 else 2.0 * math.pi)
+        lat = (0.5 - rows) * math.pi
+        cos_lat, sin_lat = lat.cos(), lat.sin()
+        sin_lon, cos_lon = lon.sin(), lon.cos()
+        return torch.stack([torch.addcmul(up[i] * sin_lat, cos_lat, right[i] * sin_lon + forward[i] * cos_lon) for i in range(3)], dim=-1)
+    tan_x = math.tan(math.radians(projection.hfov_deg) * 0.5)
+    x = (columns * 2.0 - 1.0) * tan_x
+    y = (1.0 - rows * 2.0) * (tan_x * height / width)
+    norm = torch.hypot(torch.hypot(x, y), torch.ones((), device=x.device))
+    return torch.stack([(right[i] * x + up[i] * y + forward[i]) / norm for i in range(3)], dim=-1)
+
+
 def ray_directions(right, up, forward, projection, device) -> "torch.Tensor":
     """Unit directions (H, W, 3) through the output pixel centers of `projection` for a Camera with these axes
     (three floats each, as `camera_basis` returns them or in any other frame).
 
     An ERP spans longitude -180 to 180 (coverage 180: -90 to 90) left to right and latitude 90 to -90 top to
-    bottom. A perspective image is a pinhole spanning `hfov_deg` across the width, with square pixels.
+    bottom. A perspective image spans `hfov_deg` across the width, with square pixels, through the lens curve
+    `curve`: 1 is a pinhole, other values bend the image (`lens_angle`); pixels past 180 degrees get a ray all the
+    same, and `lens_drawn` tells them apart.
     """
-    width, height = projection.width, projection.height
-    columns = (torch.arange(width, dtype=torch.float32, device=device) + 0.5) / width
-    rows = (torch.arange(height, dtype=torch.float32, device=device) + 0.5) / height
-    if projection.kind == "erp":
-        lon = (columns - 0.5) * (math.pi if projection.coverage == 180 else 2.0 * math.pi)
-        lat = (0.5 - rows) * math.pi
-        cos_lat, sin_lat = lat.cos()[:, None], lat.sin()[:, None]
-        sin_lon, cos_lon = lon.sin(), lon.cos()
-        return torch.stack([torch.addcmul(up[i] * sin_lat, cos_lat, right[i] * sin_lon + forward[i] * cos_lon) for i in range(3)], dim=-1)
-    tan_x = math.tan(math.radians(projection.hfov_deg) * 0.5)
-    x = (columns * 2.0 - 1.0) * tan_x
-    y = ((1.0 - rows * 2.0) * (tan_x * height / width))[:, None]
-    norm = torch.hypot(torch.hypot(x, y), torch.ones((), device=device))
-    return torch.stack([(right[i] * x + up[i] * y + forward[i]) / norm for i in range(3)], dim=-1)
+    rays = pixel_rays(right, up, forward, projection, *_pixel_grid(projection, device))
+    return rays.expand(projection.height, projection.width, 3)
 
 
 def dir_to_lon_lat(d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -249,9 +343,16 @@ def calculate_dimensions_from_megapixels(
     return w_final, h_final
 
 
-def vfov_from_hfov(hfov_deg: float, image_w: int, image_h: int) -> float:
+def vfov_from_hfov(hfov_deg: float, image_w: int, image_h: int, curve: float = 1.0) -> float:
+    """The vFOV of an image `image_w` x `image_h` with square pixels and hFOV `hfov_deg` through the lens `curve`: its
+    edges keep the same f, g(vFOV / 2) = g(hFOV / 2) x height / width with g = `lens_radius` (tan for a pinhole)."""
     width = max(1, int(image_w))
     height = max(1, int(image_h))
+    if curve != 1.0:
+        limit = lens_fov_limit(curve)
+        hfov = min(limit, max(0.1, float(hfov_deg)))
+        vfov = 2.0 * math.degrees(lens_angle(lens_radius(math.radians(hfov) * 0.5, curve) * height / width, curve))
+        return min(limit, max(0.1, vfov))
     hfov = float(np.clip(hfov_deg, 0.1, 179.0))
     vfov = 2.0 * math.degrees(math.atan(math.tan(math.radians(hfov) * 0.5) * (height / width)))
     return float(np.clip(vfov, 0.1, 179.0))

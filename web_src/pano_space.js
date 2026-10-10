@@ -10,6 +10,7 @@
 // point's depth, so the pivot stays in sight. A pan always moves at the pivot's depth (panDepth), never at
 // the depth of what the pointer is over, so a drag of the same length moves the view the same way.
 import { DEG2RAD, RAD2DEG, clamp, wrapYaw } from "./pano_camera_math.js";
+import { lensFilmDirection, lensRadius } from "./pano_lens.js";
 import { evaluateLane } from "./pano_scene_eval.js";
 import { is3dFileSource } from "./pano_scene_state.js";
 import { panoramaAngles, quaternionToRotation, rotationToQuaternion, worldRotation } from "./pano_world.js";
@@ -514,25 +515,65 @@ export function contentPoints(evaluated, sceneBox, planes, items = []) {
 // The plane of a world Sticker evaluated at a frame: centered at its position, turned by its rotation,
 // facing its local +Z. It is scale wide and as tall as its cropped media's aspect makes it (media sizes
 // in pixels). null when the crop or the media is empty.
+// A world Sticker with a `lens` (ADR 0042) is a patch of a sphere instead: `patch` (lensPatch()).
 export function worldStickerPlane(value, crop, mediaWidth, mediaHeight) {
   const cropWidth = (crop.x1 - crop.x0) * mediaWidth;
   const cropHeight = (crop.y1 - crop.y0) * mediaHeight;
   if (!(cropWidth > 0 && cropHeight > 0)) return null;
-  return {
+  const plane = {
     position: [...value.position],
     quaternion: rotationToQuaternion(worldRotation(value.yaw_deg, value.pitch_deg, value.roll_deg)),
     rotation: worldRotation(value.yaw_deg, value.pitch_deg, value.roll_deg),
     width: value.scale,
     height: value.scale * cropHeight / cropWidth,
   };
+  if (value.lens) plane.patch = lensPatch(plane, value.lens);
+  return plane;
 }
 
-// The World corners of a worldStickerPlane() (or a world Sticker layer of the same shape).
+// The sphere patch of a world Sticker's lens { curve, hFOV_deg } (docs/render-contract.md "`world` の Sticker の板"):
+// the lens's center `center` (the plane's middle `radius` behind it), the radius scale ÷ (2·g_κ(hFOV ÷ 2)), and the
+// image's half extents in film units (halfX = g_κ(hFOV ÷ 2), halfY by the plane's aspect). The patch is the
+// directions from the center the lens maps into the image; its middle is the plane's position.
+export function lensPatch(plane, lens) {
+  const halfX = lensRadius(lens.hFOV_deg * 0.5 * DEG2RAD, lens.curve);
+  const radius = plane.width / (2 * halfX);
+  return {
+    curve: lens.curve,
+    center: add(plane.position, apply(plane.rotation, [0, 0, radius])),
+    radius,
+    halfX,
+    halfY: halfX * plane.height / plane.width,
+  };
+}
+
+// The World point of a plane at (x, y), each -1 to 1 across it: on its sphere patch when it has one.
+function planePoint(plane, x, y) {
+  if (!plane.patch) return add(plane.position, apply(plane.rotation, [x * plane.width / 2, y * plane.height / 2, 0]));
+  const { patch } = plane;
+  const ray = lensFilmDirection(x * patch.halfX, y * patch.halfY, patch.curve);
+  return ray && add(patch.center, apply(plane.rotation, ray.map((value) => value * patch.radius)));
+}
+
+// The World corners of a worldStickerPlane() (or a world Sticker layer of the same shape); a patch's past 180° off
+// its lens's axis are left out.
 export function planeCorners(plane) {
-  const halfW = plane.width / 2;
-  const halfH = plane.height / 2;
-  return [[-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]]
-    .map(([x, y]) => add(plane.position, apply(plane.rotation, [x, y, 0])));
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => planePoint(plane, x, y)).filter(Boolean);
+}
+
+// The edge of a plane's image as World segments, `steps` per side: a lens patch's selection frame (ADR 0042), its
+// image's edge on its sphere.
+export function planeOutlineSegments(plane, steps = 24) {
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  const points = [];
+  corners.forEach(([x0, y0], index) => {
+    const [x1, y1] = corners[(index + 1) % 4];
+    for (let step = 0; step < steps; step += 1) points.push(planePoint(plane, x0 + (x1 - x0) * step / steps, y0 + (y1 - y0) * step / steps));
+  });
+  return points.flatMap((point, index) => {
+    const next = points[(index + 1) % points.length];
+    return point && next ? [[point, next]] : [];
+  });
 }
 
 // The sphere Frame Selected fits, like Blender's View Selected: around the selected Sticker where
@@ -704,6 +745,7 @@ export function cameraView(camera) {
 // the far rectangle at its hFOV and aspect, and a triangle above the rectangle that marks its up.
 export function cameraFrustumSegments(camera, length) {
   const rotation = worldRotation(camera.yaw_deg, camera.pitch_deg, camera.roll_deg);
+  if (camera.curve !== undefined && camera.curve !== 1) return lensFrustumSegments(camera, rotation, length);
   const halfW = Math.tan(camera.hFOV_deg * 0.5 * DEG2RAD) * length;
   const halfH = halfW / camera.aspect;
   const at = (x, y, z) => add(camera.position, apply(rotation, [x, y, z]));
@@ -712,6 +754,38 @@ export function cameraFrustumSegments(camera, length) {
   corners.forEach((corner, index) => segments.push([corner, corners[(index + 1) % 4]]));
   const top = [at(-halfW * 0.5, halfH * 1.1, -length), at(0, halfH * 1.5, -length), at(halfW * 0.5, halfH * 1.1, -length)];
   segments.push([top[0], top[1]], [top[1], top[2]], [top[2], top[0]]);
+  return segments;
+}
+
+// A lens Camera's frustum (ADR 0042): its image's edges as the rays they shoot (pano_lens.js lensFilmDirection),
+// `length` out, with lines from the Camera to the corners and the edges' middles, and the mark above the top. An
+// edge point past 180° off the axis is left out.
+const LENS_FRUSTUM_STEPS = 8;
+
+function lensFrustumSegments(camera, rotation, length) {
+  const halfX = lensRadius(camera.hFOV_deg * 0.5 * DEG2RAD, camera.curve);
+  const halfY = halfX / camera.aspect;
+  const at = (x, y) => {
+    const ray = lensFilmDirection(x, y, camera.curve);
+    return ray && add(camera.position, apply(rotation, ray.map((value) => value * length)));
+  };
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  const outline = [];
+  corners.forEach(([x0, y0], index) => {
+    const [x1, y1] = corners[(index + 1) % 4];
+    for (let step = 0; step < LENS_FRUSTUM_STEPS; step += 1) {
+      const t = step / LENS_FRUSTUM_STEPS;
+      outline.push(at((x0 + (x1 - x0) * t) * halfX, (y0 + (y1 - y0) * t) * halfY));
+    }
+  });
+  const segments = [];
+  outline.forEach((point, index) => {
+    const next = outline[(index + 1) % outline.length];
+    if (point && next) segments.push([point, next]);
+    if (point && index % (LENS_FRUSTUM_STEPS / 2) === 0) segments.push([camera.position, point]);
+  });
+  const top = [at(-halfX * 0.5, halfY * 1.1), at(0, halfY * 1.5), at(halfX * 0.5, halfY * 1.1)];
+  if (top.every(Boolean)) segments.push([top[0], top[1]], [top[1], top[2]], [top[2], top[0]]);
   return segments;
 }
 

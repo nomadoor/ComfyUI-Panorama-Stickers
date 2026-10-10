@@ -181,10 +181,18 @@ export function frameViewButton({ hasShot, erp = false, hidden = false, studio =
   return { disabled, tip };
 }
 
-// Whether the inspector edits a Camera field: a 360-degree ERP Camera reads no FOV, so its H FOV and V FOV
-// stay, disabled (ADR 0029, #89).
+// The Camera fields a 360-degree ERP Camera does not read: its FOV (ADR 0029, #89) and its lens (ADR 0042).
+const ERP_UNREAD_CAMERA_FIELDS = new Set(["hFOV_deg", "vFOV_deg", "curve", "focal_mm"]);
+const ERP_LENS_FIELDS = new Set(["curve", "focal_mm"]);
+
+// Whether the inspector edits a Camera field: the fields a 360-degree ERP Camera does not read stay, disabled.
 export function cameraParamEnabled(key, { erp = false } = {}) {
-  return !(erp && (key === "hFOV_deg" || key === "vFOV_deg"));
+  return !(erp && ERP_UNREAD_CAMERA_FIELDS.has(key));
+}
+
+// Why a Camera field is disabled, for its tooltip, or null: the lens fields of a 360-degree ERP Camera.
+export function cameraParamTip(key, { erp = false } = {}) {
+  return erp && ERP_LENS_FIELDS.has(key) ? "A 360° camera has no lens" : null;
 }
 
 // Whether the inspector edits a Sticker field: a port Sticker's vFOV follows its media, so its V FOV shows the
@@ -463,6 +471,8 @@ const LANE_LABELS = {
   position: "Position",
   rotation: "Rotation",
   fov: "FOV",
+  curve: "Lens curve",
+  lens: "Lens",
   scale: "Scale",
   direction: "Direction",
   roll: "Roll",

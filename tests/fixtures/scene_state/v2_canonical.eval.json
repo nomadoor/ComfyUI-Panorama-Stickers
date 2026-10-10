@@ -11,6 +11,7 @@
       "pitch_deg": 5.0,
       "roll_deg": 0.0,
       "hFOV_deg": 90.0,
+      "curve": 1.0,
       "aspect": 1.7777777777777777
     },
     "scene": {
@@ -37,6 +38,7 @@
         "roll_deg": 5.0,
         "hFOV_deg": 20.0,
         "vFOV_deg": 15.0,
+        "curve": 1.0,
         "opacity": 0.0
       },
       {
@@ -65,6 +67,7 @@
         "roll_deg": 0.0,
         "hFOV_deg": 30.0,
         "vFOV_deg": 30.0,
+        "curve": 1.0,
         "opacity": 1.0
       }
     ]
@@ -81,6 +84,7 @@
       "pitch_deg": 5.0,
       "roll_deg": 0.0,
       "hFOV_deg": 90.0,
+      "curve": 1.0,
       "aspect": 1.7777777777777777
     },
     "scene": {
@@ -107,6 +111,7 @@
         "roll_deg": 5.0,
         "hFOV_deg": 20.0,
         "vFOV_deg": 15.0,
+        "curve": 1.0,
         "opacity": 0.0
       },
       {
@@ -135,6 +140,7 @@
         "roll_deg": 0.0,
         "hFOV_deg": 30.0,
         "vFOV_deg": 30.0,
+        "curve": 1.0,
         "opacity": 1.0
       }
     ]
@@ -151,6 +157,7 @@
       "pitch_deg": 5.0,
       "roll_deg": 0.0,
       "hFOV_deg": 90.0,
+      "curve": 1.0,
       "aspect": 1.7777777777777777
     },
     "scene": {
@@ -177,6 +184,7 @@
         "roll_deg": 5.0,
         "hFOV_deg": 20.0,
         "vFOV_deg": 15.0,
+        "curve": 1.0,
         "opacity": 0.0
       },
       {
@@ -205,6 +213,7 @@
         "roll_deg": 0.0,
         "hFOV_deg": 30.0,
         "vFOV_deg": 30.0,
+        "curve": 1.0,
         "opacity": 1.0
       }
     ]
@@ -221,6 +230,7 @@
       "pitch_deg": 5.0,
       "roll_deg": 0.0,
       "hFOV_deg": 90.0,
+      "curve": 1.0,
       "aspect": 1.7777777777777777
     },
     "scene": {
@@ -247,6 +257,7 @@
         "roll_deg": 5.0,
         "hFOV_deg": 20.0,
         "vFOV_deg": 15.0,
+        "curve": 1.0,
         "opacity": 0.0
       },
       {
@@ -275,6 +286,7 @@
         "roll_deg": 0.0,
         "hFOV_deg": 30.0,
         "vFOV_deg": 30.0,
+        "curve": 1.0,
         "opacity": 1.0
       }
     ]
@@ -291,6 +303,7 @@
       "pitch_deg": -20.0,
       "roll_deg": 15.0,
       "hFOV_deg": 60.0,
+      "curve": 1.0,
       "aspect": 1.7777777777777777
     },
     "scene": {
@@ -317,6 +330,7 @@
         "roll_deg": 5.0,
         "hFOV_deg": 20.0,
         "vFOV_deg": 15.0,
+        "curve": 1.0,
         "opacity": 0.5
       },
       {
@@ -345,6 +359,7 @@
         "roll_deg": 0.0,
         "hFOV_deg": 30.0,
         "vFOV_deg": 30.0,
+        "curve": 1.0,
         "opacity": 1.0
       }
     ]
@@ -361,6 +376,7 @@
       "pitch_deg": 0.0,
       "roll_deg": 0.0,
       "hFOV_deg": 60.0,
+      "curve": 1.0,
       "aspect": 1.7777777777777777
     },
     "scene": {
@@ -387,6 +403,7 @@
         "roll_deg": 5.0,
         "hFOV_deg": 20.0,
         "vFOV_deg": 15.0,
+        "curve": 1.0,
         "opacity": 1.0
       },
       {
@@ -415,6 +432,7 @@
         "roll_deg": 0.0,
         "hFOV_deg": 30.0,
         "vFOV_deg": 30.0,
+        "curve": 1.0,
         "opacity": 1.0
       }
     ]
@@ -431,6 +449,7 @@
       "pitch_deg": 0.0,
       "roll_deg": 0.0,
       "hFOV_deg": 60.0,
+      "curve": 1.0,
       "aspect": 1.7777777777777777
     },
     "scene": {
@@ -457,6 +476,7 @@
         "roll_deg": 5.0,
         "hFOV_deg": 20.0,
         "vFOV_deg": 15.0,
+        "curve": 1.0,
         "opacity": 1.0
       },
       {
@@ -485,6 +505,7 @@
         "roll_deg": 0.0,
         "hFOV_deg": 30.0,
         "vFOV_deg": 30.0,
+        "curve": 1.0,
         "opacity": 1.0
       }
     ]
@@ -501,6 +522,7 @@
       "pitch_deg": 0.0,
       "roll_deg": 0.0,
       "hFOV_deg": 60.0,
+      "curve": 1.0,
       "aspect": 1.7777777777777777
     },
     "scene": {
@@ -527,6 +549,7 @@
         "roll_deg": 5.0,
         "hFOV_deg": 20.0,
         "vFOV_deg": 15.0,
+        "curve": 1.0,
         "opacity": 1.0
       },
       {
@@ -555,6 +578,7 @@
         "roll_deg": 0.0,
         "hFOV_deg": 30.0,
         "vFOV_deg": 30.0,
+        "curve": 1.0,
         "opacity": 1.0
       }
     ]

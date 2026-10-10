@@ -2,7 +2,7 @@
 // guides), built once per frame from the state at the playhead, and the calls that draw the panorama view,
 // a shot and the Unwrap view with it.
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
-import { shotCamera, workingSkyLayers, worldStickerLayers } from "../pano_editor_view.js";
+import { shotCamera, shotLensImage, workingSkyLayers, worldStickerLayers } from "../pano_editor_view.js";
 import { bgColorBackground } from "../pano_port_media.js";
 import { evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
 import { loadSceneState } from "../pano_scene_state.js";
@@ -15,6 +15,7 @@ import {
   fileStickerRequests,
   gridSpec,
   placedCamera,
+  planeOutlineSegments,
   polylineSegments,
   sceneItemBox,
   sceneRequest,
@@ -209,8 +210,15 @@ export function createViewInput(deps) {
     return {
       gizmo: isCameraSelected() ? cameraGizmo() : worldGizmo(content.evaluated),
       grid: editor.showGrid && !editor.fullscreen ? gridSpec(radius) : null,
-      lines: cameraShoots() ? cameraLines(radius) : [],
+      lines: [...(cameraShoots() ? cameraLines(radius) : []), ...lensPatchLines(content)],
     };
+  }
+
+  // The selected world Sticker's sphere patch (ADR 0042): its image's edge on its sphere, as its selection frame.
+  function lensPatchLines(content) {
+    const id = selectedWorldSticker()?.id;
+    const layer = id ? [...content.stickers, ...(content.upstreamStickers ?? [])].find((item) => item.id === id && item.patch) : null;
+    return layer ? [{ segments: planeOutlineSegments(layer), color: CUTOUT_FRAME_ACCENT }] : [];
   }
 
   // The gizmo of the selected world Sticker where it shows at the playhead (its evaluated value in
@@ -288,11 +296,14 @@ export function createViewInput(deps) {
   // canvas). Returns the part of the canvas drawn ({ canvas, x, y, width, height }), or null when there is
   // nothing to draw yet.
   // clearColor is what shows where nothing is drawn (as editorView.clear's), transparent without one.
-  function drawEditorViewShot(rect, shot, owner, clearColor = null) {
+  // A lens Camera (ADR 0042) draws through the lens pass (pano_editor_view.js shotLensImage): `lens` places its image
+  // in rect's pixels (the Frame view's), else the image fills rect (the camera preview).
+  function drawEditorViewShot(rect, shot, owner, clearColor = null, lens = null) {
     const { background, layers, content } = editorViewInput();
     if (!background && !layers.length && !content) return null;
     const space = content && shot.position ? content : null;
-    return editorView.render({ rect, camera: shotViewCamera(shot), background, layers, space, owner, clearColor });
+    const lensImage = shotLensImage(shot, rect.w, rect.h, parseInt(String(backgroundColor() ?? "#000000").replace("#", ""), 16) || 0, lens);
+    return editorView.render({ rect, camera: shotViewCamera(shot), background, layers, space, owner, clearColor, ...(lensImage ? { lens: lensImage } : {}) });
   }
 
   // The Unwrap view in rect of the 2D overlay, on the three.js canvas. Returns whether it could draw.

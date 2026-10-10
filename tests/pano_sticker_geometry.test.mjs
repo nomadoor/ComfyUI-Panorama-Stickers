@@ -169,3 +169,16 @@ test("the view projection and its rays follow the three.js camera", () => {
   }
   assert.ok(drawn.project(yawPitchToDir(view.yaw + 180, -view.pitch)).z < 0, "behind the camera");
 });
+
+// ADR 0042: a sky Sticker of a lens curve has its frame where its lens puts its image's edges.
+test("a lens sky Sticker's frame is its lens image's edge, past 90 degrees off its axis", () => {
+  const side = nodeView({ yaw: 80, pitch: 0, fov: 100 }, 1000, 500);
+  const fisheye = { ...sticker, hFOV_deg: 200, vFOV_deg: 100, curve: 0 };
+  const geometry = buildStickerGeometry(fisheye, side);
+  assert.equal(geometry.visible, true);
+  // The middle of its right edge is 100° to the right of its center.
+  const rightEdge = geometry.boundaryEdges[1];
+  const middle = rightEdge[Math.floor(rightEdge.length / 2)];
+  const ray = side.ray(middle.x, middle.y);
+  assert.ok(Math.abs(Math.atan2(ray.x, ray.z) * RAD2DEG - 100) < 0.5, `at ${Math.atan2(ray.x, ray.z) * RAD2DEG}`);
+});

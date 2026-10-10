@@ -7,7 +7,7 @@ import { backgroundClipAt, backgroundPlace, backgroundShownAt, bgMediaEnd, portM
 import { nodeInputOrigins, videoLinked } from "../pano_preview_video.js";
 import { clipActive } from "../pano_scene_eval.js";
 import { timelineFps } from "../pano_scene_state.js";
-import { deleteKeyframes, isTimed, laneNames, timelineSpan } from "../pano_timeline.js";
+import { deleteKeyframes, isTimed, rowLaneNames, timelineSpan } from "../pano_timeline.js";
 
 export function createTimeline(deps) {
   const {
@@ -169,7 +169,7 @@ export function createTimeline(deps) {
 
   // The Lanes a Keyframe selection acts on: its Lane, or every Lane of its row.
   function selectedLanes(selection) {
-    return selection.lane ? [selection.lane] : laneNames(timelineOwner(selection.owner));
+    return selection.lane ? [selection.lane] : rowLaneNames(timelineOwner(selection.owner));
   }
 
   // A Sticker's Keyframes are on its material, which starts at start - in; the Camera's on the Timeline.

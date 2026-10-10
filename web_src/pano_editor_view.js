@@ -6,7 +6,8 @@ import { evaluateSceneState } from "./pano_scene_eval.js";
 import { is3dFileSource } from "./pano_scene_state.js";
 import { watchThreeView } from "./pano_diagnostics.js";
 import { DEG2RAD, RAD2DEG, norm } from "./pano_camera_math.js";
-import { contextHalfExtentsPx, getCutoutCameraParams } from "./pano_cutout_view_math.js";
+import { contextHalfExtentsPx, getCutoutCameraParams, shotCurve } from "./pano_cutout_view_math.js";
+import { lensRadius, lensRenderPlan } from "./pano_lens.js";
 import { worldStickerPlane } from "./pano_space.js";
 import { panoToWorld, quaternionToRotation, rotationToQuaternion, worldRotation, worldToPano } from "./pano_world.js";
 
@@ -53,11 +54,23 @@ export function shotCamera(shot) {
 // The Frame view (ADR 0021) looks through the shot over the whole canvas, not only its gate: the
 // context around the gate keeps the gate's focal length and stops at 85 degrees off axis. gate is
 // the gateRectFromFocal() layout. Returns the canvas rect to draw into and the shot that spans it.
+// A lens Camera (κ ≠ 1, ADR 0042) draws its image over the whole canvas instead, as the lens maps it (θ past 180°
+// shows bg_color): `lens` is then { curve, focalPx, centerX, centerY }, the image's f and its center in the rect.
 export function frameViewContext(shot, gate, canvasSize) {
   const focal = Math.max(1, gate.focalPx);
-  const { halfW, halfH } = contextHalfExtentsPx(canvasSize, focal);
   const centerX = gate.x + gate.w * 0.5;
   const centerY = gate.y + gate.h * 0.5;
+  const curve = shotCurve(shot);
+  if (curve !== 1) {
+    const halfW = Math.max(centerX, (canvasSize.width ?? canvasSize.w) - centerX, 1);
+    const halfH = Math.max(centerY, (canvasSize.height ?? canvasSize.h) - centerY, 1);
+    return {
+      rect: { x: centerX - halfW, y: centerY - halfH, w: halfW * 2, h: halfH * 2 },
+      shot,
+      lens: { curve, focalPx: focal, centerX: halfW, centerY: halfH },
+    };
+  }
+  const { halfW, halfH } = contextHalfExtentsPx(canvasSize, focal);
   return {
     rect: { x: centerX - halfW, y: centerY - halfH, w: halfW * 2, h: halfH * 2 },
     shot: {
@@ -66,6 +79,24 @@ export function frameViewContext(shot, gate, canvasSize) {
       vFOV_deg: 2 * Math.atan(halfH / focal) * RAD2DEG,
     },
   };
+}
+
+// frameViewContext()'s lens in pixels `scale` times the overlay's (the three.js canvas's device pixels).
+export function deviceLens(lens, scale) {
+  return { ...lens, focalPx: lens.focalPx * scale, centerX: lens.centerX * scale, centerY: lens.centerY * scale };
+}
+
+// The lens of a shot drawn into a rect of width x height device pixels (render()'s input.lens, ADR 0042), or null
+// for a pinhole: `lens` places the image (frameViewContext()'s, in those pixels), else it fills the rect. background
+// is the node's bg_color as a hex RGB, which shows past 180° off the axis.
+export function shotLensImage(shot, width, height, background, lens = null) {
+  const curve = shotCurve(shot);
+  if (curve === 1) return null;
+  const focal = lens?.focalPx ?? (width / 2) / lensRadius(getCutoutCameraParams(shot).hFovDeg * DEG2RAD * 0.5, curve);
+  const centerX = lens?.centerX ?? width / 2;
+  const centerY = lens?.centerY ?? height / 2;
+  const { faces } = lensRenderPlan({ width, height, centerX, centerY, focal, curve });
+  return { curve, focal, centerX, centerY, background, faces };
 }
 
 // The direction, a World [x, y, z] of length 1, a new 3D Sticker is placed along from the view `camera` (a
@@ -130,8 +161,10 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evalu
     if (!value.active && !hiddenPort) return;
     const shown = media(sticker);
     if (!shown) return;
-    const tanX = Math.tan(value.hFOV_deg * 0.5 * DEG2RAD);
-    const tanY = Math.tan(skyStickerVfov(sticker, value, mediaSize(shown.media)) * 0.5 * DEG2RAD);
+    // At a lens curve other than 1 (ADR 0042) the rect is on that lens's image (pano_lens.js lensRadius).
+    const curve = value.curve ?? 1;
+    const tanX = lensRadius(value.hFOV_deg * 0.5 * DEG2RAD, curve);
+    const tanY = lensRadius(skyStickerVfov(sticker, value, mediaSize(shown.media)) * 0.5 * DEG2RAD, curve);
     const { crop } = sticker;
     layers.push({
       kind: "sticker",
@@ -142,6 +175,7 @@ export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evalu
       opacity: hiddenPort ? HIDDEN_PREVIEW_OPACITY : value.opacity,
       zIndex: zIndex(sticker),
       quaternion: rotationToQuaternion(worldRotation(value.yaw_deg, value.pitch_deg, value.roll_deg)),
+      curve,
       // Crop edges on the image plane one unit ahead; the image's top edge is y0.
       rect: {
         x0: (2 * crop.x0 - 1) * tanX,
@@ -215,6 +249,7 @@ export function worldStickerLayers(sceneState, frame, stickers, { media, evaluat
       width: plane.width,
       height: plane.height,
       crop: sticker.crop,
+      ...(plane.patch ? { patch: plane.patch } : {}),
     });
   });
   return layers;

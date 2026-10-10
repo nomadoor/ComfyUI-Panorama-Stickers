@@ -12,9 +12,6 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         editor_js = editor_source()
         self.assertNotIn("pano_cutout_camera", editor_js)
         self.assertIn('uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();', editor_js)
-        # The Frame view and the camera preview draw on the stage's own three.js canvas.
-        self.assertIn("const drawn = !!drawEditorViewShot(device, contextShot, undefined, 0x0a0a0a);", editor_js)
-        self.assertIn('drawEditorViewShot({ x: 0, y: backgroundCanvas.height - size.height, w: size.width, h: size.height }, shot, CAMERA_PREVIEW_OWNER)', editor_js)
         self.assertIn('export const CAMERA_PREVIEW_OWNER = "camera_preview";', editor_js)
 
     def test_cutout_frame_entry_points_are_not_stubbed(self):

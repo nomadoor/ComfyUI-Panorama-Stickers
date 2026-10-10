@@ -4,7 +4,7 @@ import { deriveCutoutAspectFromFov } from "../pano_cutout_view_math.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import {
-  HANDOFF_LANES,
+  HANDOFF_ROW_LANES,
   inheritPortHandoff,
   recordHandoffEdits,
   revertHandoffLane,
@@ -251,7 +251,7 @@ export function createExternalStickers(deps) {
     if (!portHandoffShown() || sticker?.source?.kind !== "port") return null;
     const { handoff } = portSession;
     const shown = !!handoff && handoff.placement === sticker.placement;
-    return HANDOFF_LANES[sticker.placement].map((name) => ({ name, overridden: shown && sticker.handoff_overrides.includes(name) }));
+    return HANDOFF_ROW_LANES[sticker.placement].map((name) => ({ name, overridden: shown && sticker.handoff_overrides.includes(name) }));
   }
 
   // "Revert to upstream": the port Sticker's Lane `name` follows the Pose handoff again (ADR 0030).

@@ -120,6 +120,8 @@ export function createObjectGeometry(deps) {
   }
 
   function projectSceneItemDir(dir, refX = null, frameShot = null, frameRect = null, options = {}) {
+    // A lens image's point past 180° off its axis has no direction (ADR 0042).
+    if (!dir) return null;
     if (editor.mode === "frame") {
       const shot = frameShot || getActiveCutoutShot();
       const rect = frameRect || getFrameViewRect(shot);
@@ -286,7 +288,7 @@ export function createObjectGeometry(deps) {
       else { u = 0; v = 1 - t; }                // left
 
       const d = stickerSampleDir(item, u, v);
-      const p = editor.mode === "unwrap" ? projectDirUnwrap(d, refX) : projectDir(d);
+      const p = !d ? null : editor.mode === "unwrap" ? projectDirUnwrap(d, refX) : projectDir(d);
       if (p) out.push(p);
     }
     return out;

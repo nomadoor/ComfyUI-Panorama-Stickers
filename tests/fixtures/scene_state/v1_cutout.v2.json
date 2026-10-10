@@ -28,6 +28,10 @@
     "fov": {
       "value": 90.0,
       "keyframes": []
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
     }
   },
   "scene": {

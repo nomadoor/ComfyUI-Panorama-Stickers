@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .math import ray_directions, unit_float_tensor
+from .math import lens_radius, ray_directions, unit_float_tensor
 from .world import world_rotation
 
 
@@ -83,7 +83,8 @@ def world_key(layers, camera: dict, projection) -> tuple | None:
     contents = tuple(
         (
             tuple(
-                (sticker["id"], *_transform_key(sticker), round(sticker["opacity"], 9), layer.sources.stickers[sticker["id"]].frame)
+                (sticker["id"], *_transform_key(sticker), round(sticker["opacity"], 9), layer.sources.stickers[sticker["id"]].frame,
+                 None if "lens" not in sticker else (round(sticker["lens"]["curve"], 9), round(sticker["lens"]["hFOV_deg"], 9)))
                 for sticker in layer.evaluated["stickers"]
                 if sticker["placement"] == "world" and sticker["active"] and sticker["id"] in layer.sources.stickers
             ),
@@ -129,7 +130,8 @@ def world_layer(layers, camera: dict, projection, *, device, textures: dict, kep
             rays = view.cached_rays(device, kept_rays)
         key = (index, sticker["id"])
         drawn.add(key)
-        layer = _sticker_layer(rays, view.position, sticker, _texture(textures, key, source, device), source.crop)
+        draw = _sticker_layer if "lens" not in sticker else _lens_sticker_layer
+        layer = draw(rays, view.position, sticker, _texture(textures, key, source, device), source.crop)
         if layer is not None:
             composite = over_by_depth(composite, layer)
     for key in textures.keys() - drawn:
@@ -197,6 +199,54 @@ def _sticker_layer(rays: torch.Tensor, origin: np.ndarray, sticker: dict, textur
     y = (distance * along[..., 2] - float(offset @ up)) / half_h
     inside = (distance > 0.0) & (x.abs() <= 1.0) & (y.abs() <= 1.0)
     # The crop in grid_sample coordinates; texel centers at the corners, as the Sky Stickers sample.
+    grid = torch.stack([(crop["x0"] + crop_w * (x + 1.0) * 0.5) * 2.0 - 1.0, (crop["y0"] + crop_h * (1.0 - y) * 0.5) * 2.0 - 1.0], dim=-1)
+    grid = torch.where(inside[..., None], grid, 0.0)
+    sampled = F.grid_sample(texture, grid[None], mode="bilinear", padding_mode="border", align_corners=True)[0].permute(1, 2, 0)
+    alpha = sampled[..., 3:]
+    rgb = torch.where(alpha > 1e-6, sampled[..., :3] / alpha.clamp_min(1e-6), 0.0)
+    alpha = torch.where(inside[..., None], alpha * sticker["opacity"], 0.0)
+    return torch.cat([rgb, alpha], dim=-1), torch.where(alpha[..., 0] > 0.0, distance, math.inf)
+
+
+def _lens_sticker_layer(rays: torch.Tensor, origin: np.ndarray, sticker: dict, texture: torch.Tensor, crop: dict):
+    """A `world` Sticker with a `lens` (ADR 0042; docs/render-contract.md, "`world` の Sticker の板"): its source as the
+    image of a lens of `lens.curve` and `lens.hFOV_deg` on part of the sphere around the lens center
+    L = position + ρ · back, ρ = scale / (2 g(hFOV / 2)), g = `lens_radius`. A point of the sphere whose direction from L
+    is θ off the Sticker's forward axis at azimuth φ shows the image at (g(θ) cos φ / g(hFOV / 2), g(θ) sin φ /
+    g(vFOV / 2)), the vFOV keeping f with the cropped source's aspect, as a `sky` Sticker of that curve is drawn. Each
+    ray takes its nearest crossing ahead (t > 0) that is on the patch, from either side. Returns None for an empty
+    crop."""
+    crop_w, crop_h = crop["x1"] - crop["x0"], crop["y1"] - crop["y0"]
+    if crop_w < 1e-6 or crop_h < 1e-6:
+        return None
+    curve, hfov = sticker["lens"]["curve"], sticker["lens"]["hFOV_deg"]
+    half_w = lens_radius(math.radians(max(0.1, hfov)) * 0.5, curve)
+    half_h = half_w * (crop_h * texture.shape[2]) / (crop_w * texture.shape[3])
+    radius = sticker["scale"] / (2.0 * half_w)
+    right, up, back = world_rotation(sticker["yaw_deg"], sticker["pitch_deg"], sticker["roll_deg"]).T
+    center = np.asarray(sticker["position"], dtype=np.float64) + radius * back
+    offset = torch.tensor(origin - center, dtype=torch.float32, device=rays.device)
+    # |offset + t d|^2 = radius^2 for unit rays d.
+    b = (rays * offset).sum(-1)
+    discriminant = b * b - (float((offset * offset).sum()) - radius * radius)
+    root = discriminant.clamp_min(0.0).sqrt()
+    axes = torch.tensor(np.stack([right, up, -back], axis=1), dtype=torch.float32, device=rays.device)
+    best = None
+    for t in (-b - root, -b + root):
+        point = (offset + rays * t[..., None]) / radius
+        side, lift, ahead = (point @ axes).unbind(-1)
+        off_axis = torch.hypot(side, lift)
+        theta = torch.atan2(off_axis, ahead)
+        valid = (discriminant >= 0.0) & (t > 0.0) & (theta * curve < 0.5 * math.pi) & (theta <= math.pi)
+        scale_r = torch.where(off_axis > 1e-12, lens_radius(torch.where(valid, theta, 0.0), curve) / off_axis.clamp_min(1e-12), 1.0)
+        x, y = side * scale_r / half_w, lift * scale_r / half_h
+        inside = valid & (x.abs() <= 1.0) & (y.abs() <= 1.0)
+        if best is None:
+            best = (inside, x, y, t)
+        else:
+            take = ~best[0] & inside
+            best = (best[0] | inside, torch.where(take, x, best[1]), torch.where(take, y, best[2]), torch.where(take, t, best[3]))
+    inside, x, y, distance = best
     grid = torch.stack([(crop["x0"] + crop_w * (x + 1.0) * 0.5) * 2.0 - 1.0, (crop["y0"] + crop_h * (1.0 - y) * 0.5) * 2.0 - 1.0], dim=-1)
     grid = torch.where(inside[..., None], grid, 0.0)
     sampled = F.grid_sample(texture, grid[None], mode="bilinear", padding_mode="border", align_corners=True)[0].permute(1, 2, 0)

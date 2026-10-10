@@ -492,3 +492,18 @@ test("no Timeline has a minimum length", () => {
     assert.doesNotMatch(source, /fps\(?\)?\s*\*\s*5\b|timelineSpan\([^)]*minimum|ownersSpan/, name);
   }
 });
+
+// docs/timeline-ui.md (ADR 0042): the row's key button and its pins leave out the lens Lanes, `curve` and `lens`.
+// A row keyed at a frame stays a full pin there, and a lens Lane gets Keyframes only through its own edits.
+test("the row's key button does not key the lens Lanes, and its pins do not count them", () => {
+  const camera = loadSceneState({ version: 2, camera: { curve: { keyframes: [{ frame: 12, value: 0.5 }] } } }).camera;
+  keyAllLanes(camera, 0);
+  assert.deepEqual(camera.curve.keyframes.map((key) => key.frame), [12]);
+  assert.deepEqual(rowKeyframes(camera), [{ frame: 0, full: true }]);
+  // Lenses Pose handoff writes on a Sticker are left alone too.
+  const sticker = skySticker();
+  sticker.curve = { value: 0.5, keyframes: [] };
+  keyAllLanes(sticker, 0);
+  assert.deepEqual(sticker.curve.keyframes, []);
+  assert.deepEqual(rowKeyframes(sticker), [{ frame: 0, full: true }]);
+});

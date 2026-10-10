@@ -36,6 +36,7 @@ test("a state has no Camera unless `camera` is an object, and a Camera has a pro
     position: { value: [0, 0, 0], keyframes: [] },
     rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
     fov: { value: 90, keyframes: [] },
+    curve: { value: 1, keyframes: [] },
   });
   for (const [projection, expected] of [["erp", "erp"], ["perspective", "perspective"], ["ERP", "perspective"], [null, "perspective"], [1, "perspective"]]) {
     assert.equal(loadSceneState({ version: 2, camera: { projection } }).camera.projection, expected);
@@ -408,4 +409,59 @@ test("a file Source is a 3D file by the extension of its filename alone, as Load
   assert.deepEqual(state.stickers[0].source, { kind: "file", filename: "a.glb", subfolder: "3d", storage: "input" });
   assert.equal(is3dFileSource(state.stickers[0].source), true);
   assert.equal(state.stickers[0].placement, "world");
+});
+
+// docs/scene-state-v2.md `camera.curve` (ADR 0042): the Camera's lens curve κ.
+test("the Camera's lens curve loads in 0 to 1.5 with 1 by default, and its hFOV stays under the limit κ sets", () => {
+  const camera = (fields) => loadSceneState({ version: 2, camera: { fov: { value: 300 }, ...fields } }).camera;
+  assert.deepEqual(camera({}).curve, { value: 1, keyframes: [] });
+  assert.equal(camera({ curve: { value: 2 } }).curve.value, 1.5);
+  assert.equal(camera({ curve: { value: -1 } }).curve.value, 0);
+  assert.equal(camera({ curve: { value: "fish" } }).curve.value, 1);
+  // The stored hFOV keeps up to 360; the evaluated one is held under min(360, 179 ÷ κ).
+  assert.equal(camera({}).fov.value, 300);
+  assert.equal(camera({ fov: { value: 400 } }).fov.value, 360);
+  const evaluate = (fields, frame = 0) => evaluateSceneState({ ...loadSceneState({ version: 2, camera: { fov: { value: 300 }, ...fields } }) }, frame).camera;
+  assert.deepEqual([evaluate({}).curve, evaluate({}).hFOV_deg], [1, 179]);
+  assert.equal(evaluate({ curve: { value: 0.25 } }).hFOV_deg, 300);
+  assert.ok(Math.abs(evaluate({ curve: { value: 0.75 } }).hFOV_deg - 179 / 0.75) < 1e-9);
+  // κ interpolates linearly between Keyframes, and the limit follows the evaluated κ.
+  const keyed = { curve: { keyframes: [{ frame: 0, value: 1, easing: [0, 0, 1, 1] }, { frame: 10, value: 0, easing: [0, 0, 1, 1] }] } };
+  assert.ok(Math.abs(evaluate(keyed, 5).curve - 0.5) < 1e-9);
+  assert.ok(Math.abs(evaluate(keyed, 5).hFOV_deg - 300) < 1e-9);
+});
+
+test("a lens curve at its default is not saved, so the texts of states saved before stay the same", () => {
+  const text = (camera) => JSON.parse(sceneStateText(loadSceneState({ version: 2, camera }))).camera;
+  assert.equal(Object.hasOwn(text({}), "curve"), false);
+  assert.deepEqual(text({ curve: { value: 0.5 } }).curve, { value: 0.5, keyframes: [] });
+  const keyedAtDefault = { value: 1, keyframes: [{ frame: 4, value: 1, easing: [0.42, 0, 0.58, 1] }] };
+  assert.deepEqual(text({ curve: keyedAtDefault }).curve, keyedAtDefault);
+  // A rebase keeps the curve's Keyframes on their times.
+  const rebased = rebaseSceneState(loadSceneState({ version: 2, timeline: { fps: 24 }, camera: { curve: keyedAtDefault } }), 48);
+  assert.equal(rebased.camera.curve.keyframes[0].frame, 8);
+});
+
+// docs/scene-state-v2.md (ADR 0042): a sky Sticker's `curve` and a world Sticker's `lens`, which Pose handoff writes.
+test("a sky Sticker's lens curve and a world Sticker's lens load, evaluate under their limits, and save only when set", () => {
+  const source = { kind: "file", filename: "a.png" };
+  const load = (stickers) => loadSceneState({ version: 2, stickers });
+  const [sky, plain, world] = load([
+    { id: "s", placement: "sky", source, curve: { value: 0.25 }, size: { value: { hFOV_deg: 300, vFOV_deg: 400 } } },
+    { id: "p", placement: "sky", source },
+    { id: "w", placement: "world", source, lens: { keyframes: [{ frame: 0, value: { curve: 0, hFOV_deg: 220 }, easing: [0, 0, 1, 1] }, { frame: 10, value: { curve: 1, hFOV_deg: 90 }, easing: [0, 0, 1, 1] }] } },
+  ]).stickers;
+  assert.deepEqual([sky.curve.value, sky.size.value.hFOV_deg, sky.size.value.vFOV_deg], [0.25, 300, 360]);
+  assert.deepEqual(plain.curve, { value: 1, keyframes: [] });
+  // A world Sticker without `lens` stays a flat plane: none is added.
+  assert.equal(Object.hasOwn(load([{ id: "w", placement: "world", source }]).stickers[0], "lens"), false);
+  assert.deepEqual(world.lens.keyframes.map((key) => key.value), [{ curve: 0, hFOV_deg: 220 }, { curve: 1, hFOV_deg: 90 }]);
+  // Evaluated: the size under min(360, 179 ÷ κ), the lens's two numbers each in a straight line, its hFOV under the limit.
+  const evaluated = evaluateSceneState({ ...loadSceneState({ version: 2 }), stickers: [sky, world] }, 5).stickers;
+  assert.deepEqual([evaluated[0].curve, evaluated[0].hFOV_deg, evaluated[0].vFOV_deg], [0.25, 300, 360]);
+  assert.ok(Math.abs(evaluated[1].lens.curve - 0.5) < 1e-9 && Math.abs(evaluated[1].lens.hFOV_deg - 155) < 1e-9);
+  assert.deepEqual(evaluateSceneState({ ...loadSceneState({ version: 2 }), stickers: [{ ...world, lens: { value: { curve: 1, hFOV_deg: 300 }, keyframes: [] } }] }, 0).stickers[0].lens, { curve: 1, hFOV_deg: 179 });
+  // Saved: a curve at its default is left out, a lens is always kept.
+  const text = JSON.parse(sceneStateText(load([{ id: "p", placement: "sky", source }, { id: "s", placement: "sky", source, curve: { value: 0.5 } }, { id: "w", placement: "world", source, lens: { value: { curve: 1, hFOV_deg: 90 } } }])));
+  assert.deepEqual(text.stickers.map((item) => [Object.hasOwn(item, "curve"), Object.hasOwn(item, "lens")]), [[false, false], [true, false], [false, true]]);
 });

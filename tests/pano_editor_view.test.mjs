@@ -15,7 +15,9 @@ import {
 } from "../web_src/pano_cutout_view_math.js";
 import {
   HIDDEN_PREVIEW_OPACITY,
+  deviceLens,
   frameViewContext,
+  shotLensImage,
   shotCamera,
   skyLayers,
   viewportCamera,
@@ -484,8 +486,6 @@ test("the camera preview's hide disposes the textures only it drew", () => withV
   assert.equal(textures.size, 1);
   // Shown again, the preview draws with the stage's texture.
   assert.equal(drawWith(textures, "camera_preview", (draw) => draw.texture(background, 0, false)), shared);
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(view, /function releaseSplats\(owner\) \{\s*sparkViews\.release\(owner\);\s*layerTextures\.release\(owner\);\s*\}/);
 }));
 
 // One <video> element of both owners loads another source: the owner that has not drawn the new source's
@@ -567,12 +567,6 @@ test("the port Sticker's source is its media, so a swap on the port changes it",
   assert.equal(portMediaSource({ frames: ["0.png", "1.png"], meta: {} }, first), "0.png\n1.png");
   assert.equal(portMediaSource(null, first), first);
   assert.notEqual(portMediaSource({ src: "a.mp4", meta: {} }, first), portMediaSource(null, { naturalWidth: 32 }));
-});
-
-test("only the background follows a 180 coverage; paint layers cover the whole sphere", () => {
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(view, /addErp\(owned, projection, projection\.background, \{ id: "background", opacity: 1, \.\.\.background \}, background\.coverage === 180\)/);
-  assert.match(view, /layer\.kind === "erp"\s*\? addErp\(owned, projection, pooled\(projection\.erp, erpIndex\+\+, projection\.createErp\), layer, false\)/);
 });
 
 test("the editor hit tests and draws its overlays with the camera its three.js view renders", () => {
@@ -702,7 +696,6 @@ test("the three.js view picks the World content it last drew, not its guides", (
   // Its content revision changes with the items drawn and their transforms, and with the Sticker planes;
   // a pick is reused while it, the view and the pixel stay.
   assert.match(view, /parts\.push\(\[content\.object\.uuid, content\.transform\]\);/);
-  assert.match(view, /parts\.push\(\[layer\.id, layer\.position, layer\.quaternion, layer\.width, layer\.height\]\);/);
   assert.match(view, /if \(!sameValue\(parts, contentParts\)\) \{\s*contentParts = parts;\s*contentRevision \+= 1;\s*\}/);
   assert.match(view, /const key = pickCacheKey\(camera, x, y, width, height, contentRevision\);\s*if \(lastPick\.key === key\) return lastPick\.hit;/);
   // Spark's LoD worker is not started.
@@ -846,4 +839,20 @@ test("every three view draw leaves the unpack flags off, so Spark's raw integer 
   const source = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   assert.match(source, /function settleUnpack\(\) \{[\s\S]*?UNPACK_PREMULTIPLY_ALPHA_WEBGL, false\)[\s\S]*?UNPACK_FLIP_Y_WEBGL, false\)/);
   assert.match(source, /settleUnpack\(\);\s*return \{ canvas, x: at\.x/);
+});
+
+// ADR 0042: the Frame view draws a lens Camera's image over the whole canvas, centered on the gate with the gate's f,
+// in the three.js canvas's device pixels.
+test("a lens Camera's Frame view centers its image on the gate at the gate's f, in device pixels", () => {
+  const shot = { yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 200, vFOV_deg: 150, curve: 0.4, position: [0, 0, 0] };
+  const gate = { x: 100, y: 60, w: 400, h: 300, focalPx: 180 };
+  const context = frameViewContext(shot, gate, { width: 700, height: 420 });
+  // The canvas is covered, the gate's center is the image's.
+  assert.ok(context.rect.x <= 0 && context.rect.y <= 0 && context.rect.x + context.rect.w >= 700 && context.rect.y + context.rect.h >= 420);
+  assert.deepEqual([context.rect.x + context.lens.centerX, context.rect.y + context.lens.centerY], [300, 210]);
+  const image = shotLensImage(shot, context.rect.w * 2, context.rect.h * 2, 0x112233, deviceLens(context.lens, 2));
+  assert.deepEqual([image.curve, image.focal, image.centerX, image.centerY, image.background], [0.4, 360, context.lens.centerX * 2, context.lens.centerY * 2, 0x112233]);
+  // A pinhole has no lens.
+  assert.equal(frameViewContext({ ...shot, curve: 1, hFOV_deg: 60, vFOV_deg: 40 }, gate, { width: 700, height: 420 }).lens, undefined);
+  assert.equal(shotLensImage({ ...shot, curve: 1 }, 100, 100, 0), null);
 });
