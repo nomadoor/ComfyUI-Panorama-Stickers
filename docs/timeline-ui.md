@@ -52,6 +52,7 @@ After Effects のストップウォッチのような UI は作らない（ADR 0
 - ドラッグ中は、最初の変化でそのフレームに Keyframe が入り、以後はその Keyframe を更新する。
 - Keyframe のある Lane を変えても、静的な `value` は変えない。Lane の最後の Keyframe を消したときは、その Keyframe の値を `value` にする（消した瞬間に値が飛ばない）。複数の Keyframe を一度に消して Lane が空になるときは、再生ヘッドの位置での値を `value` にする。
 - タイムラインの行のポチを押すと、その時点の値で全 Lane に Keyframe が入る（あれば更新する）。最初の Keyframe もこの操作で打つ。
+- 行のポチは、Sticker の `curve`（`sky`）と `lens`（`world`）には Keyframe を入れない（作る。ADR 0042）。この 2 つは Pose handoff だけが書く Lane で、エディタに欄が無いためである（`pano_timeline.js` の `keyAllLanes`・`rowKeyframes` が除く。`tests/pano_timeline.test.mjs` に、ポチを押してもこの 2 つが変わらず、閉じた行のまとめ表示にも数えないことを確かめる test を足す）。
 - Keyframe と Keyframe の間に入れた Keyframe の Easing は、入れた区間の Easing を引き継ぐ。前後の区間がどちらも元の区間と同じ Easing になる。手で曲げた cubic-bezier も同じ値をそのまま写す（元の動きと厳密には一致しない）。最初の Keyframe より前に入れたときは、新しい Keyframe の Easing を既定値の ease-in-out とする。最後の Keyframe より後に入れたときは、それまで最後だった Keyframe の Easing（使われていなかった値）が新しい区間に掛かり、新しい Keyframe の Easing は既定値とする。
 - Keyframe を消せるのは、タイムラインで選んで Delete したときだけ。消した後は残った Keyframe で補間し直す。全 Keyframe を一度に消すスイッチは作らない。
 - インスペクタには Keyframe を打つボタンを置かない。
@@ -138,7 +139,7 @@ Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端
 
 ## Camera の動き
 
-Camera は Keyframe だけで動く（撮り方のモードは持たない）。止まらずに複数の点を通る動きは、Easing の `auto` で作る（ADR 0026、0038）。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。
+Camera は Keyframe だけで動く（撮り方のモードは持たない）。ドリーズームは `position` と `fov` の Lane に Keyframe を打って作る（κ を一緒に動かしてもよい）。レンズの曲線の Lane（`curve`。作る）も、Camera の行を開いた Lane ごとの行に、ほかの Lane と同じく出る（`docs/scene-state-v2.md`）。止まらずに複数の点を通る動きは、Easing の `auto` で作る（ADR 0026、0038）。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。
 
 ## 再生の状態
 

@@ -87,7 +87,7 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。
   - 要素の数は IMAGE バッチと同じ扱い（`batch_index`）。2 つ以上の要素は出力フレームと 1 対 1 に対応し、`duration` が `null` なら最後の要素で Clip range が終わる。1 つなら Clip range の間ずっと描く。
   - `SceneSources` には 3D の `port` の Sticker の Source を入れない（テンプレートを持たない）。(b) の `_render_frames` がパスごとに `port.frames()`（`sticker_media.py` の `content_of` で作った `SceneContent`）を作り、`_port_source_at` がフレームごとの `ContentSource` にする。device に置いたものはそのパスの間だけ持つ（`tests/test_stickers_3d.py`）。
 - Pose handoff（`sticker_state`、ADR 0030）：2D の素材が接続され、`sticker_state` が読めるときは、`_port_media` が実行のたびに `_handoff_lanes` で配置と Lane を求め、状態に `port` の Sticker があっても当てる（`_inherit_handoff`）。規則は下記の「`sticker_state` で届く `port` の Sticker」。
-  - 配置：上流の Camera の位置が、評価したフレーム（Camera の Keyframe の範囲の Timeline frame の整数）のどれかで原点から離れれば（`|position| > 1e-9`）`world`、そうでなければ `sky`。`world` は Camera の前方 2 に、Camera の回転で、幅 `2 · 2 · tan(hFOV ÷ 2)` で置き、フレームごとの `position`・`rotation`・`scale` を `auto` の Keyframe（Camera の `hold` の区間は `hold`）に焼く。上流の Camera の位置と向きで撮れば、撮った絵と一致する（`tests/test_pose_handoff.py`）。
+  - 配置：上流の Camera の位置が、評価したフレーム（Camera の Keyframe の範囲の Timeline frame の整数）のどれかで原点から離れれば（`|position| > 1e-9`）`world`、そうでなければ `sky`。`world` は Camera の前方 2 に、Camera の回転で、幅 `2 · 2 · tan(hFOV ÷ 2)`（κ ≠ 1 では下の「レンズの曲線」）で置き、フレームごとの `position`・`rotation`・`scale` を `auto` の Keyframe（Camera の `hold` の区間は `hold`）に焼く。上流の Camera の位置と向きで撮れば、撮った絵と一致する（`tests/test_pose_handoff.py`）。
   - 保存した `port` の Sticker の `handoff_overrides` にある Lane は保存した値のまま、ほかの Lane は引き継ぐ。配置が違えば同じ `id` の Sticker に置き換える（`clip`・`visible`・`locked`・`crop`・`opacity` と、新しい配置の Lane の `handoff_overrides` を保つ）。
   - 引き継いだ値は実行の中だけのもので、ノードは `state_json` を書き換えない。`sticker_state` がないとき、3D の素材のときは上記のとおり。
 - `video` を読む側（`get_components`・`save_to`）は、`render_frame` が直前と同じテンソルを返したフレームを、device から再び転送せず、直前のフレームから写す。
@@ -306,17 +306,17 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
 - Camera の判定：状態 v2 の `camera`（`docs/scene-state-v2.md`）。`null`（欠け・空の `state_json` を含む）なら Camera が無い。`camera.visible` が `false`（タイムラインの目で隠した Camera）も、撮り方・出力の大きさ・`sticker_state` では Camera が無いのと同じに扱う（`nodes.py` の `_studio_camera`。`_studio_output_size` と `execute` が使う）。隠した Camera は状態に残り、表示を戻せば元の Camera で撮る（`scene` 出力は Camera の表示によらず `camera` を `null` にする）。Timeline の長さは `_decide_timeline` で決め、Camera があるときだけ Camera の Keyframe が長さに入る。隠した Camera の Keyframe も長さに入る（表示の切り替えで出力の長さを変えない。隠した Sticker の Clip range を数えるのと同じ）。`erp` の Camera でも、描画に使わない `fov` の Keyframe を含めてすべての Lane の Keyframe が長さに入る。
   - Camera が無い：World の原点から回転 0（`ORIGIN_CAMERA`）で、`coverage` の範囲の ERP を撮る。旧 Stickers の基準画像（差の出る case は Studio 自身の基準画像 `studio_*`）と一致する（`tests/test_studio_node.py`）。
   - `projection` が `erp`：評価した Camera の位置と回転から ERP を撮る（`Projection.erp`。ERP は Camera の回転に従って回り、`world` の Sticker と `scene` は Camera の位置から見る）。`fov`・`aspect` は読まない。`coverage` が 180 なら Camera の前方の半球。原点・回転 0 なら Camera が無いときと同じ出力になる。
-  - `projection` が `perspective`：評価した Camera と `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` で撮る。画素は正方なので、垂直の FOV は丸めた大きさから決まり、`camera.aspect` から決まる値とわずかに違うことがある。旧 Cutout の case `cutout_single_shot` と同じショットと背景を 224 x 128（`tools/bake_legacy_goldens.py` の `STUDIO_SHOT_SIZE`）で撮った基準画像 `studio_camera_single_shot` と一致する（`tests/test_studio_camera.py`。この大きさは `output_size` からは決まらないので、テストと焼き直しでは `_studio_output_size` を差し替える）。
+  - `projection` が `perspective`：評価した Camera と `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` で撮る。レンズの曲線 κ（`curve`）も `Projection` に入れる（作る）。画素は正方なので、垂直の FOV は丸めた大きさから決まり、`camera.aspect` から決まる値とわずかに違うことがある。旧 Cutout の case `cutout_single_shot` と同じショットと背景を 224 x 128（`tools/bake_legacy_goldens.py` の `STUDIO_SHOT_SIZE`）で撮った基準画像 `studio_camera_single_shot` と一致する（`tests/test_studio_camera.py`。この大きさは `output_size` からは決まらないので、テストと焼き直しでは `_studio_output_size` を差し替える）。
 - 出力の大きさ（`_studio_output_size`）：`output_size` は全体（360°）の ERP の幅 `W` を選ぶ。`auto` は `bg_media`（VIDEO は最初に復号できたフレーム）の幅を 360° に換算した値（`coverage` が 180 なら 2 倍）で、`bg_media` が無ければ 2048 にして警告する（ログと `pano_sticker_warnings`）。
 
   | 撮り方 | 幅 | 高さ |
   |---|---|---|
   | Camera が無い・`erp`（`coverage` 360） | `W` | `W ÷ 2`（切り捨て） |
   | Camera が無い・`erp`（`coverage` 180） | `W ÷ 2` | `W ÷ 2` |
-  | `perspective` | `2·f·tan(hFOV_max ÷ 2)`、`f = W ÷ 2π` | 幅 ÷ `camera.aspect` |
+  | `perspective` | Timeline の全出力フレームでの `2·f·g_κ(hFOV ÷ 2)` の最大、`f = W ÷ 2π`、`g_κ(x) = tan(κx) ÷ κ`（κ = 0 では `x`。作る。κ = 1 では今の `2·f·tan(hFOV_max ÷ 2)` と同じ） | 幅 ÷ `camera.aspect` |
 
   - ERP の出力は画素の細かさが `W` の 360° の ERP と同じになる。`auto` は旧 Stickers の `auto` と同じ大きさになる。ただし 360 では高さを `W ÷ 2` にそろえ、`bg_media` の高さは引き継がない（2:1 でない背景では旧 Stickers と違う）。`coverage` 180 の `auto` は `bg_media` と同じ大きさになる（固定の値では、旧 Stickers は `coverage` 180 で選んだ値を出力の幅にするので、Studio はその半分の幅になる）。ERP には上限を設けない（`auto` は大きな `bg_media` ならそのまま大きくなる）。
-  - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV が動いても大きさは変わらない。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
+  - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV（と κ）が動いても大きさは変わらない。像の中心の 1 ラジアンあたりの画素はどの κ でも `f` で、`W` の ERP と同じになる。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
 - `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` を `null` にする（撮影する世界で、Camera を含まない。`_scene_output`）。自分の層の `state` の `upstream`（上流の層への上書き）も空にする。下流は上書きを当てた後の姿を受け取るためである（ADR 0030。当て方は下記「上流の Scene」の「上書き」）。`id` は保ち、下流はこの `id` ごとに上書きを記録する。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
 - `sticker_state` は `projection` が `perspective` のときだけ、`_camera_sticker_state` が作る v2（`docs/scene-state-v2.md`）。`fps` は状態の `timeline.fps`、`camera` は Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。Camera が無いとき（隠したときを含む）と `erp` のときは空文字列。
 - 隠した `scene`（`scene.visible`）と Sticker は評価関数の `active` が偽になるので描かない。隠したペイント（`painting_visible`）は `_resolve_sources` が空のペイントを渡すので、色にも MASK にも出ない。上流の Scene の層でも同じ。
@@ -385,6 +385,7 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
   - 時刻は秒で合わせる。素材の時刻（`port` の Sticker の clip frame ÷ `timeline.fps`）が、Camera で撮った時刻と同じでなければならない。VIDEO（撮った Studio の `video` や、それを加工して実時間を保った VIDEO）はそのまま合う。IMAGE バッチは Timeline fps のフレームの列とみなす（ADR 0027）ので、撮った Studio と同じ Timeline fps で使う（受ける Studio の Timeline fps が違うときは、Create Video で撮った Studio の fps を付けてからつなぐ）。
   - すべての値が同じ Lane（Camera がその Lane を動かさない場合）は Keyframe を置かず、静的な値にする。Camera の各 Lane の Keyframe が一つずつ（v1 の `sticker_state` を含む）なら、すべての Lane が静的な値になり、v1 の `sticker_state` と同じ単一の姿勢になる。
   - `size` の `vFOV_deg` は、`port` の Sticker では描画時に `hFOV_deg` と素材のアスペクト比から求める（`StickerSource.derive_vfov`）。
+  - レンズの曲線（作る。ADR 0042）：配置の規則は κ によらず今のまま（Camera が動かなければ `sky`、動けば `world`）。`sticker_state` の Camera の `curve` も、ほかの Lane と同じくフレームごとに評価して焼く（すべて同じなら静的な値）。`sky` では Sticker の `curve` の Lane に焼く。`world` では、評価したフレームのどれかで κ ≠ 1 のときだけ Sticker に `lens` の Lane（`curve` と `hFOV_deg`）を足して Camera の κ と hFOV を焼き（κ = 1 だけなら今の平らな板）、`scale` を `2 · 2 · g_κ(hFOV ÷ 2)`（`g_κ` は `docs/render-contract.md` の `lens_radius`。κ = 1 では今の `2 · 2 · tan(hFOV ÷ 2)`）にする。κ ≠ 1 の `world` の Sticker は、Camera の位置を中心とする半径 2 の球面の一部になり（`docs/render-contract.md` の「`world` の Sticker の板」）、同じ姿勢から撮り直すと撮った絵と一致する。`sticker_state` を出す Studio は、Camera の `curve` の Keyframe を `camera` に入れる（`_camera_sticker_state`）。
 
 #### `sticker_state` で届く `port` の Sticker
 
