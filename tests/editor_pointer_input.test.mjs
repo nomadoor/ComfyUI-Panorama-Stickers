@@ -13,7 +13,7 @@ import test from "node:test";
 import { newStudioCamera, newWorldSceneSticker, setWorldStickerTransform } from "../web_src/pano_editor_state.js";
 import { DRAW_REASON } from "../web_src/pano_frame_scheduler.js";
 import { evaluateSticker } from "../web_src/pano_scene_eval.js";
-import { gizmoDragLanes, initialSpaceView, orbitView, panView } from "../web_src/pano_space.js";
+import { gizmoDragLanes, initialSpaceView } from "../web_src/pano_space.js";
 import { panCutoutShotByScreenDelta } from "../web_src/pano_cutout_node_surface.js";
 import { deriveCutoutAspectLabelFromFov } from "../web_src/pano_cutout_view_math.js";
 import { VIEW_CONTROL_PRESETS } from "../web_src/pano_view_controls.js";
@@ -1347,21 +1347,15 @@ test("the Frame view's drags go to dragFrame", () => {
   }
 });
 
-test("the space drags pan and orbit the space view", () => {
-  const view = initialSpaceView(0, 0, 90);
-  let h = harness({ api: { spaceViewState: () => view } });
-  let it = { kind: "space_pan", last: { x: 90, y: 45 }, depth: 2 };
-  h.editor.interaction = it;
-  h.onCanvasPointerMove(h.event());
-  assert.deepEqual(h.calls("setSpaceView"), [[panView(view, 10, 5, 800, 400, 2)]]);
-  assert.deepEqual(it.last, { x: 100, y: 50 });
-  assert.equal(h.called("requestDraw"), false);
-
-  h = harness({ api: { spaceViewState: () => view } });
-  it = { kind: "space_orbit", last: { x: 90, y: 45 }, pivot: [0, 0, -1] };
-  h.editor.interaction = it;
-  h.onCanvasPointerMove(h.event());
-  assert.deepEqual(h.calls("setSpaceView"), [[orbitView(view, 10, 5, 400, [0, 0, -1])]]);
+// The way a space drag moves the view is pano_space_navigation.js's (tests/editor_space_navigation.test.mjs).
+test("the space drags' moves go to the space view", () => {
+  for (const kind of ["space_pan", "space_orbit"]) {
+    const h = harness();
+    const it = { kind, last: { x: 0, y: 0 } };
+    h.editor.interaction = it;
+    h.onCanvasPointerMove(h.event());
+    assert.deepEqual(h.calls("moveSpaceView"), [[it, { x: 100, y: 50 }]]);
+  }
 });
 
 test("a Frame pan turns the shot by the screen delta", () => {
