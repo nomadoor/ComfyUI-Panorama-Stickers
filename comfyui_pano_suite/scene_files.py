@@ -16,15 +16,15 @@ def moge_grid_mesh(geometry: dict, index: int):
     """Frame `index` of a MOGE_GEOMETRY as a grid mesh (vertices, faces, uvs) in glTF, as the core's
     MoGePointMapToMesh converts it: a panorama (no `intrinsics`) from MoGe's Z up, a perspective frame from
     OpenCV. Reads `points`, `mask` when present, and whether there are `intrinsics`; pixels outside the mask
-    are dropped."""
-    points = geometry["points"][index]
-    mask = geometry["mask"][index] if "mask" in geometry else None
-    if "intrinsics" not in geometry:
-        # Radial depth for the edge check, as the core passes it for panoramas.
-        vertices, faces, uvs = triangulate_grid_mesh(points, mask, depth=points.norm(dim=-1))
-        return vertices[:, [1, 2, 0]].contiguous(), faces, uvs
-    vertices, faces, uvs = triangulate_grid_mesh(points, mask)
-    return vertices * vertices.new_tensor([1.0, -1.0, -1.0]), faces[:, [0, 2, 1]].contiguous(), uvs
+    are dropped. The kept pixels are `moge_keep`'s (the core's parts in its order), so the core's
+    `triangulate_grid_mesh` gets them as its mask with no discontinuity check of its own, and `moge_to_gltf` turns
+    the result into glTF."""
+    # scene_mesh reads this module's grid for drawing, so it is imported here.
+    from .scene_mesh import moge_keep, moge_to_gltf
+
+    vertices, faces, uvs = triangulate_grid_mesh(geometry["points"][index], moge_keep(geometry, index), discontinuity_threshold=0.0)
+    vertices, faces = moge_to_gltf(geometry, vertices, faces)
+    return vertices, faces, uvs
 
 
 def _moge_glb(geometry: dict, index: int) -> bytes | None:

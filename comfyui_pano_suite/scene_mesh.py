@@ -246,3 +246,34 @@ def da3_points(geometry: dict, index: int, keep: torch.Tensor) -> torch.Tensor:
     depth = torch.where(torch.isfinite(depth), depth, torch.zeros_like(depth))
     points = _da3_unproject(depth, da3_k(geometry, index)).reshape(-1, 3)[keep.reshape(-1)]
     return points * torch.tensor([1.0, -1.0, -1.0], dtype=points.dtype)
+
+
+# MOGE_GEOMETRY (docs/render-contract.md, "MoGe の残す画素"): the pixels its grid keeps, composed from the parts of the
+# core's `triangulate_grid_mesh` in its order, and its axes in glTF.
+
+# The core's discontinuity threshold of MoGePointMapToMesh, which `moge_grid_mesh` keeps.
+MOGE_DISCONTINUITY = 0.04
+
+
+def moge_keep(geometry: dict, index: int) -> torch.Tensor:
+    """The pixels (H, W, bool) of frame `index` that the core's `triangulate_grid_mesh` keeps as vertices, as
+    `moge_grid_mesh` has called it: finite points inside `mask` (when present), less the discontinuities of the
+    edge-check depth (z for a perspective frame, the distance for a panorama) with the non-finite points at 0."""
+    points = geometry["points"][index]
+    # A panorama's distance is taken where the points are, before they come to the CPU, as `moge_grid_mesh` always did.
+    depth = None if "intrinsics" in geometry else points.norm(dim=-1).detach().cpu()
+    points = points.detach().cpu()
+    finite = torch.isfinite(points).all(dim=-1)
+    mask = finite if "mask" not in geometry else geometry["mask"][index].detach().cpu().to(torch.bool) & finite
+    depth = points[..., 2] if depth is None else depth
+    edge = depth_map_edge(torch.where(finite, depth, torch.zeros_like(depth)), rtol=MOGE_DISCONTINUITY)
+    return mask & ~edge
+
+
+def moge_to_gltf(geometry: dict, vertices: torch.Tensor, faces: torch.Tensor | None = None):
+    """MoGe's points (N, 3) in glTF, and the faces turned to match: a panorama from MoGe's Z up (axes [1, 2, 0]), a
+    perspective frame from OpenCV ((X, -Y, -Z), faces turned over), as the core's MoGePointMapToMesh does."""
+    if "intrinsics" not in geometry:
+        return vertices[:, [1, 2, 0]].contiguous(), faces
+    vertices = vertices * vertices.new_tensor([1.0, -1.0, -1.0])
+    return vertices, None if faces is None else faces[:, [0, 2, 1]].contiguous()
