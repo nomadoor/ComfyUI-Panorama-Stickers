@@ -214,6 +214,15 @@ export function deriveVerticalFovDeg(hFovDeg, aspect, curve = 1) {
   return clamp(fovOfTangent(halfTangent(horizontal, curve) / ratio, curve), CUTOUT_FOV_MIN_DEG, fovMax);
 }
 
+// The FOV pair of `shot` at hFovDeg that keeps its frame's aspect (its film tangents' ratio, at its lens curve):
+// how Panorama Studio's Camera changes its angle of view (docs/editor-interaction.md; only the aspect presets
+// change the aspect).
+export function fovPairKeepingAspect(shot, hFovDeg) {
+  const camera = getCutoutCameraParams(shot);
+  const hFOV_deg = clamp(finiteOr(hFovDeg, camera.hFovDeg), CUTOUT_FOV_MIN_DEG, shotFovMaxDeg(camera.curve));
+  return { hFOV_deg, vFOV_deg: deriveVerticalFovDeg(hFOV_deg, camera.aspect, camera.curve) };
+}
+
 export function deriveHorizontalFovDeg(vFovDeg, aspect, curve = 1) {
   const fovMax = shotFovMaxDeg(curve);
   const vertical = clamp(finiteOr(vFovDeg, 60), CUTOUT_FOV_MIN_DEG, fovMax);

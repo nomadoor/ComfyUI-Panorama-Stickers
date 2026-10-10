@@ -8,9 +8,7 @@ import {
   lensDirectionFilm,
   lensFaceCoordinates,
   lensFilmDirection,
-  lensFocalLengthMm,
   lensFovLimit,
-  lensHFovFromFocalMm,
   lensPickWindow,
   lensRadius,
   lensRenderPlan,
@@ -47,16 +45,6 @@ test("each pixel's ray of a lens Camera matches the fixture, and pixels past 180
       // And back to the same film point, where the lens reaches.
       const film = lensDirectionFilm(direction, curve);
       if (film) [film.x, film.y].forEach((value, axis) => close(value * focal, [x, y][axis], `${label} film ${axis}`));
-    }
-  }
-});
-
-// docs/editor-interaction.md: the inspector's focal length is not kept; an entered one is written as its hFOV.
-test("a focal length goes back to the hFOV it came from at any lens curve, and κ = 1 is the usual 36 mm lens", () => {
-  close(lensFocalLengthMm(90, 1), 18, "90 degrees on a pinhole");
-  for (const curve of [0, 0.5, 1, 1.5]) {
-    for (const hfov of [10, 60, Math.min(170, lensFovLimit(curve) - 1)]) {
-      close(lensHFovFromFocalMm(lensFocalLengthMm(hfov, curve), curve), hfov, `${hfov} at ${curve}`);
     }
   }
 });

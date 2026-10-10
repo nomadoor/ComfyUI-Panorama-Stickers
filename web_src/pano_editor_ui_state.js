@@ -182,8 +182,8 @@ export function frameViewButton({ hasShot, erp = false, hidden = false, studio =
 }
 
 // The Camera fields a 360-degree ERP Camera does not read: its FOV (ADR 0029, #89) and its lens (ADR 0042).
-const ERP_UNREAD_CAMERA_FIELDS = new Set(["hFOV_deg", "vFOV_deg", "curve", "focal_mm"]);
-const ERP_LENS_FIELDS = new Set(["curve", "focal_mm"]);
+const ERP_UNREAD_CAMERA_FIELDS = new Set(["hFOV_deg", "curve"]);
+const ERP_LENS_FIELDS = new Set(["curve"]);
 
 // Whether the inspector edits a Camera field: the fields a 360-degree ERP Camera does not read stay, disabled.
 export function cameraParamEnabled(key, { erp = false } = {}) {
