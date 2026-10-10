@@ -19,6 +19,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
 | MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY` の描画 | `core/mesh_render.py` `render_mesh`・`mesh_content`・`MeshItem`、`scene_mesh.py` `read_mesh_file`・`moge_scene_content`・`da3_scene_content`・`da3_meshes`・`check_da3`・`_with_default_k`・`DA3_EMPTY_MESH`、`sticker_media.py` `content_of`・`is_3d_media`、`nodes.py` `_check_da3_inputs` | — | `tests/test_mesh_render.py`、`tests/test_scene_mesh.py`、`tests/test_stickers_3d.py` |
 | `DA3_GEOMETRY` mono の残す画素（keep。エディタ用ファイルと中身の箱が使う。コアの部品の組み立ての順だけを持つ） | `scene_mesh.py` `da3_keep`・`da3_keep_is_empty`・`da3_k`・`da3_points`、`core_adapters.py` の `_da3_build_mask`・`_da3_get_K`・`_da3_unproject`・`depth_map_edge` の読み込み | 深度のグリッドのシェーダーが同じ規則で四角を描く（`web_src/pano_depth_grid.js` の `DEPTH_GRID_VERTEX`。`docs/threejs-spark-integration.md` の「`DA3_GEOMETRY` mono の深度のグリッド」） | `tests/test_scene_mesh.py` `test_da3_keep_is_the_pixels_the_core_keeps`・`test_the_content_box_of_mono_is_the_keep_points_without_converting`、`tests/pano_depth_grid.test.mjs`（fixture `tests/fixtures/da3_depth_grid/`）、下の「エディタとの一致（DA3 mono の場面）」 |
+| `MOGE_GEOMETRY` の残す画素（keep。エディタ用ファイルと中身の箱が使う。`triangulate_grid_mesh` の部品の組み立ての順だけを持つ） | `scene_mesh.py` `moge_keep`・`moge_points`・`moge_to_gltf`（作る）、`scene_files.py` `moge_grid_mesh`（`moge_keep` を mask にして `triangulate_grid_mesh` を段差の判定なしで呼ぶ。作る、振る舞いを変えない整理） | 深度のグリッドは DA3 のまま（`web_src/pano_depth_grid.js`） | `tests/test_scene_mesh.py` `test_moge_keep_is_the_pixels_the_grid_mesh_keeps`・`test_moge_content_box_is_the_kept_points`（作る） |
 | 光が効く要素（`unlit`） | `core/mesh_render.py` `MeshItem.unlit`、`scene_mesh.py` `is_unlit`・`mesh_scene_content`・`moge_scene_content`・`da3_scene_content` | エディタは `pano_scene_meta` の `unlit` を読む（`web_src/pano_space.js` `sceneFilesOf`。`docs/threejs-spark-integration.md`） | `tests/test_scene_mesh.py`、`tests/test_mesh_render.py`、`tests/test_scene_editor_files.py`、`tests/pano_space.test.mjs` |
 | 材質（コアの MESH から読む値） | `scene_mesh.py` `mesh_material`・`mesh_item` | エディタは同じ値を GLB から GLTFLoader で読む | `tests/test_scene_mesh.py`（コアの `mesh_item_to_glb_bytes` が書く GLB の材質と比べる） |
 | 既定の照明の値と光の式 | `core/mesh_render.py` `DEFAULT_LIGHTS`・`shade_standard`、`core/three_dfg_lut.py` | `web_src/pano_three_view.js` `DEFAULT_LIGHTS`・`createDefaultLights` | 値は `tests/fixtures/default_lighting.json` を Python（`tests/test_mesh_render.py`）と JS（`tests/pano_scene_loaders.test.mjs`）が読む。式は `tests/test_mesh_render.py` が `tests/fixtures/standard_material_r184.json`（three.js r184 が描いた値。`tools/bake_standard_material.mjs` で焼く）と比べる。エディタの描画は `tests/browser/file_3d.spec.js` |
@@ -174,7 +175,7 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 - 入力：
   - MESH：要素ごとに `get_mesh_batch_item`（コア。`vertex_counts`・`face_counts` で切る）と、あれば `texture` の同じ番号。座標はそのまま（glTF）。
   - メッシュ系の 3D ファイル（GLB・GLTF・OBJ・STL）：`execute` の入口（`_read_scene_file`）で、コアの Get3DComponents で 1 要素の MESH にする。以降（描画・エディタ用ファイル・`PANO_SCENE`）は MESH として扱う。読んだ MESH は共有のキャッシュ（`core/cache.py`、`docs/runtime-resources.md` の「キャッシュ」）の `mesh_files` に、ディスク上のファイルはパス・更新時刻・大きさ、それ以外はオブジェクトの同一性をキーに入れ、同じファイルでは読み直さず、同じ MESH なのでエディタ用ファイルも使い回す。FBX・USDZ はコアが読めないので、コアのエラーになる。`_read_scene_file` は先にスプラットとして読めるか（下の「SPLAT の描き方」）を見て、読めなかった 3D ファイルのうち形式がメッシュ系のものだけをここで読む。形式のない 3D ファイルはメッシュとしては読まない。
-  - `MOGE_GEOMETRY`：フレームごとに `moge_grid_mesh`（エディタ用ファイルと同じグリッドのメッシュ）と `image` の同じフレームをテクスチャにする。読むキーは `points`・`mask`・`image` と `intrinsics` の有無だけ（`tests/test_scene_mesh.py` で、コアの MoGeInference・MoGePanoramaInference が出す形とあわせて固定）。`mask` の外の画素と、コアと同じ段差の判定（`discontinuity_threshold` 0.04）で切れた画素は描かない。
+  - `MOGE_GEOMETRY`：フレームごとに `moge_grid_mesh`（GLB のエディタ用ファイルと同じグリッドのメッシュ。深度のグリッドで運ぶ入力も、出力はこのメッシュで描く。下の「MoGe の残す画素」）と `image` の同じフレームをテクスチャにする。読むキーは `points`・`mask`・`image` と `intrinsics` の有無だけ（`tests/test_scene_mesh.py` で、コアの MoGeInference・MoGePanoramaInference が出す形とあわせて固定）。`mask` の外の画素と、コアと同じ段差の判定（`discontinuity_threshold` 0.04）で切れた画素は描かない。
   - `DA3_GEOMETRY`（コアの Run Depth Anything 3 の出力）：下の「`DA3_GEOMETRY` のメッシュ」。
 - 描き方：出力の画素ごとの光線（`view.rays`）と三角形の交点を Moller–Trumbore で求め、最も近い交点を残す（距離は光線の長さ）。三角形ごとに、交わりうる画素の範囲だけを試す。
   - 透視投影：Camera の前にある角と、辺が Camera の前の面（`NEAR`）を横切る点のピンホールの像の範囲。
@@ -213,6 +214,21 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 #### 精度
 
 交差と光の式は、グローバルな精度の設定（`torch.backends.cuda.matmul.allow_tf32` など。ほかの custom node や利用者が変えうる）に左右されない演算で書く（要素ごとの積和にするか、呼び出しの中で TF32 を明示的に切る）。ADR 0037 の試作で、TF32 を有効にすると環境の間の基準を超えた。`mesh_render.py` の `_ray_planes`・`_solve`（`_intersect` と `_Hit` が使う）は要素ごとの積和で書き、行列積を使わない（`tests/test_mesh_render.py` の `test_lit_meshes_do_not_depend_on_the_matmul_precision`）。
+
+### MoGe の残す画素
+
+`MOGE_GEOMETRY` の深度のグリッドのエディタ用ファイル（`docs/studio-node.md` の「`MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル」）と中身の箱は、`moge_grid_mesh` を呼ばず、それが頂点に残す画素（keep）を、同じコアの部品を同じ順に組み立てて求める（`scene_mesh.py` の `moge_keep`。作る）。描画は `moge_grid_mesh` のまま。決めた理由は ADR 0040。
+
+- フレーム `i`（`p = points[i]`、`d` は段差の判定に使う値：透視投影（`intrinsics` あり）は `p[..., 2]`、パノラマは `p.norm(dim=-1)`。`moge_grid_mesh` が `triangulate_grid_mesh` に渡すものと同じ）：
+  1. `finite = isfinite(p).all(-1)`
+  2. `mask = mask[i] & finite`（`mask` のない入力は `finite`）
+  3. `edge = depth_map_edge(where(finite, d, 0), rtol=0.04)`（`kernel_size` は既定の 3、`atol` は渡さない）
+  4. `keep = mask & ~edge`
+- `comfy/ldm/moge/geometry.py:152-164`（`triangulate_grid_mesh`）と同じ順。DA3（上の「mono の残す画素」）と違い、段差の判定で 0 にするのは `finite` の外だけで、`mask` の外の画素の値は段差の判定に残る（コアと同じ）。
+- 四角と三角形、空の要素（4 隅が keep の四角が 1 つもない要素）は DA3 と同じ（`triangulate_grid_mesh`、`:184-187`）。`moge_grid_mesh` の面が 0 の要素が空の要素である。
+- 点：keep の画素の `points` を、透視投影は `(X, −Y, −Z)`、パノラマは軸の並べ替え `[1, 2, 0]` で glTF にしたもの（`moge_points`。`moge_grid_mesh` と同じ）。中身の箱はこの点を囲む。
+- 一致の test（`tests/test_scene_mesh.py` の `test_moge_keep_is_the_pixels_the_grid_mesh_keeps`。作る）：`mask` の外、`apply_mask` で inf の画素、NaN、段差のある画素、`mask` のない入力、透視投影とパノラマを含む合成の `MOGE_GEOMETRY` で、今の組み立てのまま呼んだコアの `triangulate_grid_mesh(points, mask, depth=d)`（段差の判定 0.04。整理の後の `moge_grid_mesh` は keep をそのまま使うので、比べる相手はコアの関数にする）の頂点の uv から戻した画素の集合（`x = round(u × (W − 1))`、`y = round(v × (H − 1))`）が `keep` と等しいこと、頂点が `moge_points` と等しいこと、面の集合が keep の四角と等しいこと、面が 0 の要素で空の判定が一致することを確かめる。`moge_grid_mesh` とコアの MoGePointMapToMesh が一致する範囲（`mask` がなく、パノラマでは `depth` が点の距離のとき）は、今ある `tests/test_scene_editor_files.py` の比べ方が守る。
+- `moge_grid_mesh` は、`triangulate_grid_mesh` を `mask = moge_keep(...)`・`discontinuity_threshold = 0` で呼び、`moge_to_gltf`（`moge_points` と同じ軸の変換）で glTF にする（作る。振る舞いを変えない別の commit）。keep と軸の変換の owner は `moge_keep` と `moge_to_gltf` の 1 つずつになる。
 
 ### `DA3_GEOMETRY` のメッシュ
 
@@ -360,6 +376,7 @@ ADR 0037 の「一致の測り方」の場面のうち、影の場面と平行�
   - (a) 形の一致：色を `image` そのもの（作業用のディレクトリの PNG を `ImageBitmap` にしたもの。色のテクスチャの向きは深度のグリッドと同じ規則）から取る。上の場面と同じ暫定の合格（縁を 1 画素削った内側で、平均 ≤ 1/255、8/255 超 ≤ 0.5%）で比べる。深度から位置への計算、`keep`、四角の消え方、テクスチャの標本化の違いはここで出る。
   - (b) プロキシの一致：色をプロキシの MP4 から、止めた再生ヘッドで取る。色はその時刻にシークして止めた `<video>` そのもの（`VideoTexture`）で、再生中と同じ経路（RGBA8 と、シェーダーでの sRGB からの戻し）を通る（再生中の ±1 フレームのずれは測らない）。H.264 の誤差の分だけ緩め、縁を 1 画素削った内側で、平均 ≤ 2/255、16/255 超 ≤ 1% を暫定の合格とする。市松は明るさだけが違うので、4:2:0 の色差の間引きは境目に効かず、残る誤差は量子化（crf 23）と輝度の縁のにじみである。色のある画素と灰色の画素の境目（ノードの出力のフレームで求める）のまわりは、色差の 1 区画（元の画素で 2、この場面の出力で 8 画素）を比べる画素から除く（`CHROMA_BLOCK`）。4:2:0 は色差を元の画素の 2 × 2 ごとに持つので、単色の帯の縁で色が最大 1 区画にじむためである。輝度の境目（市松）は除かない。除いた画素の数は `parity.json` に書く。許容差の値はこのために変えない。単色の帯は、色の行列（BT.709）の取り違えを許容差よりずっと大きな差として出す。最初の計測の後に、測った値に合わせて締める。
 - 深度から位置への数値は、上の「mono の残す画素」の test と (a) の画像で守る。
+- MoGe の場面（作る）：同じ道具に、合成の `MOGE_GEOMETRY`（透視投影、`force_projection` と同じくコアの `depth_map_to_point_map` で点を作ったもの、2 フレーム、`mask` の外と段差を含む、`image` は上と同じ市松と単色の帯）を足し、同じ (a)・(b) と同じ合格で比べる。`moge_pixel_k`（`docs/studio-node.md`）の画素の中心の半画素のずれは (a) で出る。
 
 ### SPLAT の描き方
 

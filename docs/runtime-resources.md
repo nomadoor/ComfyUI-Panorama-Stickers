@@ -61,11 +61,11 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - `type` を外して `storage` だけにはできない：フロントエンドの `pano_comfy_media.js` の `comfyImageEntryToUrl` は `type` だけを読む（`storage` を先に読むのは `pano_preview_previewnode.js` だけ）。そのため、ComfyUI を `--enable-assets` で起動したときは、コアの `comfy_execution/asset_enrichment.py` が `type` の付いた `ui` の項目をすべてジョブの出力として登録し、この入力の MP4 も実行のたびに、その実行の出力として登録し直される（同じパスの前の記録は missing になる）。既定（assets なし）では影響はない。
 - `ui` の項目の `subfolder` は、ディレクトリの直下のファイルでは `""`。
 - RGBA の IMAGE バッチの `pano_sticker_input_frames` は 1 枚ずつの PNG で、長いバッチでは PNG の数と大きさが増えるが、登録の上限で抑える。
-- `DA3_GEOMETRY` mono のエディタ用ファイル（`docs/studio-node.md` の「`DA3_GEOMETRY` mono のエディタ用ファイル」）は、1 フレームあたり `W × H × 4` バイトの深度のファイル（1080p で約 8.3 MB。`keep` は値の `> 0` で表し、マスクのファイルは持たない）と、全フレームで 1 つの色のプロキシの MP4。1080p × 314 フレームで約 2.6 GB（約 2.4 GiB）と MP4 で、`TEMP_MAX_BYTES` の中に収まる（フレームごとの GLB では約 13 GB だった。実測）。同じ大きさの別の入力をもう一つ実行すると、上限を超えた分の古いファイルから消える。
+- `DA3_GEOMETRY` mono と `MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル（`docs/studio-node.md` の「`DA3_GEOMETRY` mono のエディタ用ファイル」と「`MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル」。量は同じ）は、1 フレームあたり `W × H × 4` バイトの深度のファイル（1080p で約 8.3 MB。`keep` は値の `> 0` で表し、マスクのファイルは持たない）と、全フレームで 1 つの色のプロキシの MP4。1080p × 314 フレームで約 2.6 GB（約 2.4 GiB）と MP4 で、`TEMP_MAX_BYTES` の中に収まる（フレームごとの GLB では約 13 GB だった。実測）。同じ大きさの別の入力をもう一つ実行すると、上限を超えた分の古いファイルから消える。
   - 4K（3840 × 2160）は 1 フレーム約 33.2 MB で、314 フレームで約 10.4 GB（約 9.7 GiB）になり、`TEMP_MAX_BYTES` を超える。実行の間は消さないが、実行の後に temp に書くたびに古いフレームから消えるので、エディタがそのフレームを読むと 404 になりうる（そのときの表示は `docs/threejs-spark-integration.md` の「空間の表示」の既知の挙動。実行し直すと書き直す）。
 
 ## エディタのメモリの目安
 
 規則の owner は `docs/threejs-spark-integration.md`（「空間の表示」の大きさの上限と「`DA3_GEOMETRY` mono の深度のグリッド」）。ここには量の目安だけを書く。
 
-- `scene` と 3D の Sticker のキューは、それぞれ読み込んだ要素を `SCENE_ITEM_BUDGET`（1.5 GiB）まで持つ。`DA3_GEOMETRY` mono の深度のグリッドの要素は GPU のテクスチャ（R32F の深度、1 画素 4 バイト）として持ち、ほかの要素と同じ `SCENE_ITEM_BUDGET` で数える。1080p で 1 要素約 8.3 MB、上限まで約 190 要素（約 1.5 GiB の VRAM）になる。グリッドのジオメトリは頂点ごとの値を持たず、同じ大きさの要素で共有する。色のプロキシは動画 1 本と、止めたときの静止画 1 枚。
+- `scene` と 3D の Sticker のキューは、それぞれ読み込んだ要素を `SCENE_ITEM_BUDGET`（1.5 GiB）まで持つ。深度のグリッドの要素（`DA3_GEOMETRY` mono と `MOGE_GEOMETRY` の透視投影の列）は GPU のテクスチャ（R32F の深度、1 画素 4 バイト）として持ち、ほかの要素と同じ `SCENE_ITEM_BUDGET` で数える。1080p で 1 要素約 8.3 MB、上限まで約 190 要素（約 1.5 GiB の VRAM）になる。グリッドのジオメトリは頂点ごとの値を持たず、同じ大きさの要素で共有する。色のプロキシは動画 1 本と、止めたときの静止画 1 枚。
