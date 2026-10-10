@@ -38,6 +38,7 @@ import {
   Quaternion,
   RGBAFormat,
   RepeatWrapping,
+  SRGBColorSpace,
   Scene,
   ShaderMaterial,
   SphereGeometry,
@@ -55,6 +56,7 @@ import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWind
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
 import { createSparkViews } from "./pano_spark_views.js";
+import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -248,6 +250,63 @@ function createTexture(media, flipY) {
   texture.flipY = flipY;
   texture.needsUpdate = true;
   return texture;
+}
+
+// The texture of a depth grid's colors (the proxy's picture, pano_depth_color.js): sRGB, linear, clamped, without
+// mips, as the GLBs' sampler (docs/render-contract.md "テクスチャの標本化"). Never flipped (the shader reads the
+// picture's top row at v 0): three.js cannot flip an ImageBitmap, so a flip would turn a bitmap's colors upside down
+// against a VIDEO's or a canvas's.
+function depthColorTexture(media) {
+  const texture = media instanceof HTMLVideoElement ? new VideoTexture(media) : new Texture(media);
+  texture.colorSpace = SRGBColorSpace;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.generateMipmaps = false;
+  texture.wrapS = ClampToEdgeWrapping;
+  texture.wrapT = ClampToEdgeWrapping;
+  texture.flipY = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// The color textures of the depth grids: one per input (`slot`: the `scene`, a 3D Sticker, an upstream layer's),
+// which every item of that input draws with, made by make(media). texture(slot, { media, revision }) gives the
+// slot's texture for its picture: uploaded again for a new revision, made anew (the old one freed) for another
+// picture (the playing VIDEO in place of the still) or another size. retain(slots) frees the textures of the other
+// slots. They are not counted against SCENE_ITEM_BUDGET: one picture per input.
+export function createDepthColorTextures(make) {
+  const slots = new Map();
+  return {
+    texture(slot, { media, revision }) {
+      let entry = slots.get(slot);
+      const size = mediaSize(media);
+      if (entry && (entry.media !== media || entry.width !== size.width || entry.height !== size.height)) {
+        entry.texture.dispose();
+        entry = null;
+      }
+      if (!entry) {
+        entry = { media, revision, texture: make(media), ...size };
+        slots.set(slot, entry);
+      } else if (entry.revision !== revision) {
+        entry.revision = revision;
+        entry.texture.needsUpdate = true;
+      }
+      return entry.texture;
+    },
+    retain(keep) {
+      for (const [slot, entry] of [...slots]) {
+        if (keep.includes(slot)) continue;
+        entry.texture.dispose();
+        slots.delete(slot);
+      }
+    },
+    get size() {
+      return slots.size;
+    },
+    dispose() {
+      this.retain([]);
+    },
+  };
 }
 
 // A <video> has a picture to upload from HAVE_CURRENT_DATA on; before that (loading, seeking) its
@@ -454,11 +513,11 @@ export function pickPass(world, entries, materialOf, draw) {
   const hidden = world.children.filter((child) => child.visible && !roots.has(child));
   const swapped = [];
   entries.forEach((entry, index) => {
-    const material = materialOf(index);
     entry.object.traverse((object) => {
       if (object.isMesh) {
         swapped.push([object, object.material]);
-        object.material = material;
+        // A mesh may have a pick material of its own (a depth grid, which makes its positions in its shader).
+        object.material = materialOf(index, object);
       } else if ((object.isLine || object.isPoints || object.isSprite) && object.visible) {
         hidden.push(object);
       }
@@ -656,11 +715,15 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (item.kind === "splat" && item.object) sparkViews.forget(item.object);
     disposeSceneItem(item);
   };
+  // The colors of the depth grids: one texture per input, which its items draw with.
+  const depthColors = createDepthColorTextures(depthColorTexture);
+  // The GPU's largest texture side: a depth grid larger than it does not load.
+  const loadItem = (kind, url, signal, options) => loadSceneItem(kind, url, signal, { ...options, maxTextureSize: renderer.capabilities.maxTextureSize });
   let closed = false;
   // The selected world Sticker's gizmo (createGizmo), made the first time one shows.
   let gizmo = null;
   const sceneItems = createSceneItems({
-    load: loadSceneItem,
+    load: loadItem,
     dispose: disposeItem,
     onUpdate,
     concurrency: SCENE_LOADS,
@@ -668,7 +731,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // The items of the `sticker` input's 3D media (#63), loaded the same way. An item loads here even when
   // `scene` has the same file, since an object has one parent.
   const stickerItems = createSceneItems({
-    load: loadSceneItem,
+    load: loadItem,
     dispose: disposeItem,
     onUpdate,
     concurrency: SCENE_LOADS,
@@ -679,7 +742,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   const upstreamItemsOf = (slot) => {
     let items = upstreamItems.get(slot);
     if (!items) {
-      items = createSceneItems({ load: loadSceneItem, dispose: disposeItem, onUpdate, concurrency: SCENE_LOADS });
+      items = createSceneItems({ load: loadItem, dispose: disposeItem, onUpdate, concurrency: SCENE_LOADS });
       upstreamItems.set(slot, items);
     }
     return items;
@@ -776,7 +839,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     group.quaternion.set(transform.quaternion.x, transform.quaternion.y, transform.quaternion.z, transform.quaternion.w);
     group.scale.setScalar(transform.scale);
     // A 3D Sticker is picked as that Sticker.
-    return { group, splat: item.kind === "splat", object: item.object, box: item.box, transform, stickerId: input.id ?? null };
+    return { group, splat: item.kind === "splat", depthGrid: item.kind === "depth_grid", object: item.object, box: item.box, transform, stickerId: input.id ?? null };
   }
 
   // A 3D Sticker's opacity: a SPLAT's own, a GLB's on its unlit materials. A see-through GLB does not
@@ -794,6 +857,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       }
     });
   }
+
 
   function addWorldSticker(owned, mesh, layer) {
     const { uniforms } = mesh.material;
@@ -820,18 +884,18 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     sceneItems.retain(space.sceneUrls ?? []);
     // Each content with its opacity, which the `scene` item's materials keep as they are (opaque).
     const contents = [];
-    if (space.scene) contents.push({ content: contentGroup(sceneItems, space.scene), opacity: 1, keepMaterials: true });
+    if (space.scene) contents.push({ content: contentGroup(sceneItems, space.scene), input: space.scene, opacity: 1, keepMaterials: true });
     const stickerInputs = stickerItemInputs(space);
     const stickerShown = stickerItems.requestMany(stickerInputs.inputs);
     stickerInputs.drawn.forEach((input, index) => {
-      contents.push({ content: contentGroup(stickerItems, input, stickerShown[index]), opacity: input.opacity });
+      contents.push({ content: contentGroup(stickerItems, input, stickerShown[index]), input, opacity: input.opacity });
     });
     const slots = new Set();
     for (const entry of space.upstreamItems ?? []) {
       slots.add(entry.slot);
       const items = upstreamItemsOf(entry.slot);
       items.retain(entry.urls);
-      if (entry.request) contents.push({ content: contentGroup(items, entry.request), opacity: entry.opacity });
+      if (entry.request) contents.push({ content: contentGroup(items, entry.request), input: entry.request, opacity: entry.opacity });
     }
     for (const [slot, items] of upstreamItems) {
       if (slots.has(slot)) continue;
@@ -848,8 +912,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
         onUpdate();
       }).catch((error) => console.error("[PanoramaStickers] Spark is unavailable", error));
     }
-    for (const { content, opacity, keepMaterials } of contents) {
+    // The inputs whose depth grids draw now; the color textures of the others go.
+    const colorSlots = [];
+    for (const { content, input, opacity, keepMaterials } of contents) {
       if (!content) continue;
+      // A depth grid draws only with its colors (the proxy's picture, which the editor gives as input.color).
+      if (content.depthGrid) {
+        if (!input.color) continue;
+        content.object.material.uniforms.colorMap.value = depthColors.texture(input.color.slot ?? input.color.source, input.color);
+        colorSlots.push(input.color.slot ?? input.color.source);
+      }
       if (!keepMaterials) setContentOpacity(content, opacity);
       if (content.splat && !Spark) continue;
       if (content.splat) sparkViews.splat(owner, content.object);
@@ -859,6 +931,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       else pickable.push({ object: content.group, stickerId: content.stickerId, plane: false });
       parts.push([content.object.uuid, content.transform]);
     }
+    depthColors.retain(colorSlots);
     if (splat && Spark) children.push(sparkViews.renderer(owner));
     let index = 0;
     for (const layer of [...space.stickers, ...(space.upstreamStickers ?? [])]) {
@@ -1019,7 +1092,17 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return null;
   }
 
-  function pickMaterial(index) {
+  // The pick pass's mode and far, which the depth grids' pick materials share.
+  const pickShared = { pickMode: { value: 0 }, far: { value: 1 } };
+
+  // The pick material of pickable entry `index` for one of its meshes: one per entry, or a depth grid's own (its
+  // uniforms are its item's), kept on the mesh and freed with it.
+  function pickMaterial(index, object) {
+    if (object?.userData.depthGrid) {
+      object.userData.pickMaterial ||= createDepthGridPickMaterial(object.material, pickShared);
+      object.userData.pickMaterial.uniforms.pickId.value = index + 1;
+      return object.userData.pickMaterial;
+    }
     if (!pickMaterials[index]) {
       pickMaterials[index] = new ShaderMaterial({
         vertexShader: PICK_VERTEX,
@@ -1062,6 +1145,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
         material.uniforms.pickMode.value = mode;
         material.uniforms.far.value = camera.far;
       });
+      pickShared.pickMode.value = mode;
+      pickShared.far.value = camera.far;
       renderer.setRenderTarget(target);
       try {
         renderer.render(world, pickCamera);
@@ -1190,6 +1275,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
         mb: Math.round(items.reduce((total, item) => total + (item.state === "loaded" ? item.size : 0), 0) / 1024 ** 2),
       },
       sparks: sparkViews.stats(),
+      depthColorTextures: depthColors.size,
     };
   }
 
@@ -1200,6 +1286,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     closed = true;
     sceneItems.close();
     stickerItems.close();
+    depthColors.dispose();
     upstreamItems.forEach((items) => items.close());
     upstreamItems.clear();
     if (guides) disposeObject(guides.group);

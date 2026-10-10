@@ -1,13 +1,19 @@
 // Media made in the page, so the checks need no files in the repo.
 
 // A looping WebM recorded from an animated canvas.
-export async function makeVideo({ width = 256, height = 128, seconds = 1.5 } = {}) {
+// paint(g, frame, width, height) draws a frame (by default a hue that changes with a white bar that moves).
+export async function makeVideo({ width = 256, height = 128, seconds = 1.5, paint: painter = null } = {}) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const g = canvas.getContext("2d");
   let frame = 0;
   const paint = () => {
+    if (painter) {
+      painter(g, frame, width, height);
+      frame += 1;
+      return;
+    }
     g.fillStyle = `hsl(${(frame * 9) % 360} 60% 45%)`;
     g.fillRect(0, 0, width, height);
     g.fillStyle = "#fff";

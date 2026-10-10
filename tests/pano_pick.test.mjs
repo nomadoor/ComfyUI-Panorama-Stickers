@@ -167,8 +167,8 @@ test("the upstream Scene's planes and items are picked as the node's own (ADR 00
   // in the loops of the node's own, by the ids their requests and planes have (upstream:<key>:<id>).
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
   const build = view.slice(view.indexOf("  function buildWorld("), view.indexOf("  // Where a render draws"));
-  assert.match(build, /if \(entry\.request\) contents\.push\(\{ content: contentGroup\(items, entry\.request\), opacity: entry\.opacity \}\);/);
-  assert.match(build, /for \(const \{ content, opacity, keepMaterials \} of contents\) \{[\s\S]*?pickBoxes\.push[\s\S]*?pickable\.push[\s\S]*?parts\.push/);
+  assert.match(build, /if \(entry\.request\) contents\.push\(\{ content: contentGroup\(items, entry\.request\), input: entry\.request, opacity: entry\.opacity \}\);/);
+  assert.match(build, /for \(const \{ content, input, opacity, keepMaterials \} of contents\) \{[\s\S]*?pickBoxes\.push[\s\S]*?pickable\.push[\s\S]*?parts\.push/);
   assert.match(build, /for \(const layer of \[\.\.\.space\.stickers, \.\.\.\(space\.upstreamStickers \?\? \[\]\)\]\) \{[\s\S]*?pickable\.push\(\{ object: mesh, stickerId: layer\.id, plane: true \}\);/);
   assert.equal([...build.matchAll(/for \(const \w+ of (?:upstream|space\.upstream\w+ \?\? \[\])\) \{/g)].length, 1);
 });

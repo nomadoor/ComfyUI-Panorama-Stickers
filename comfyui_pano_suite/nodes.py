@@ -70,7 +70,7 @@ from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position, world_rotation
 from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
-from .scene_mesh import check_da3, da3_device_bytes, da3_key, is_da3, is_mesh_file, is_unlit, needs_default_k, read_mesh_file
+from .scene_mesh import check_da3, da3_device_bytes, da3_k, da3_key, is_da3, is_mesh_file, is_unlit, needs_default_k, read_mesh_file
 from .scene_video import SceneVideo
 from .splat_render import read_splat_file
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, content_of, is_3d_media, open_video, stream_video
@@ -1763,7 +1763,7 @@ def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
     seconds before a PTS that count as its frame (half the time base of the media or `time_base`, that of the
     Timeline's times). 3D media is its editor files instead (`_scene_ui`)."""
     if port.is_3d:
-        return _scene_ui(port.media, "pano_sticker_files", "pano_sticker_meta")
+        return _scene_ui(port.media, "pano_sticker_files", "pano_sticker_meta", fps=fps)
     contract = _get_preview_ui_contract("stickers_input")
     ui_ret = _init_ui_preview(port.first_frame[None], key=contract["image"])
     video = port.media
@@ -1786,7 +1786,7 @@ def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
     return _merge_ui_payload(ui_ret, payload)
 
 
-SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary"}
+SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary", "f32": "application/octet-stream"}
 
 
 def _editor_paths(paths: list) -> list:
@@ -1794,7 +1794,7 @@ def _editor_paths(paths: list) -> list:
     return [view for path in paths if path is not None for view in (path if isinstance(path, list) else [path])]
 
 
-def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_scene_meta", *, in_execution: bool = True) -> dict:
+def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_scene_meta", *, in_execution: bool = True, fps: float | None = None) -> dict:
     """The `ui` of the `scene` input, or of 3D media on the `sticker` input under the given keys: a temp file per
     item for the editor (`write_editor_files`; a list of files for a DA3_GEOMETRY multiview), None for an empty item,
     and the kind it loads with, for a mesh,
@@ -1822,7 +1822,26 @@ def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_
     # A DA3_GEOMETRY multiview item is the list of its views' files.
     files = [None if path is None else [entry(view) for view in path] if isinstance(path, list) else entry(path) for path in paths]
     meta = {"kind": kind} if kind == "splat" else {"kind": kind, "unlit": is_unlit(scene)}
+    if kind == "depth_grid":
+        meta.update(_depth_grid_meta(scene, fps))
     return {files_key: files, meta_key: [meta]}
+
+
+
+def _depth_grid_meta(geometry: dict, fps: float) -> dict:
+    """The meta of a DA3_GEOMETRY mono's depth files (docs/studio-node.md, "`DA3_GEOMETRY` mono のエディタ用ファイル"):
+    the grid's size, the files' layout, each frame's K (row order; the core's default K without `intrinsics`), and the
+    color proxy MP4 of the frames' `image` at the Timeline `fps` (frame i at i / fps), made as an IMAGE batch's."""
+    if fps is None:
+        raise ValueError("_scene_ui needs the Timeline fps for a DA3_GEOMETRY mono: its color proxy plays at that fps.")
+    count, height, width = geometry["depth"].shape
+    proxy = _batch_mp4_ui(geometry["image"], "scene", fps, {"video": "video", "meta": "meta"})
+    return {
+        "width": int(width), "height": int(height),
+        "depth": {"dtype": "float32", "byte_order": "little", "bytes": int(width * height * 4)},
+        "intrinsics": [da3_k(geometry, index).reshape(-1).tolist() for index in range(count)],
+        "video": proxy["video"][0], "video_fps": float(fps), "frames": int(count),
+    }
 
 
 def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_color, coverage, warnings: list[str]):
@@ -1863,7 +1882,7 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
     layer_ui = {}
     if scene is not None:
-        _merge_ui_payload(layer_ui, _scene_ui(scene))
+        _merge_ui_payload(layer_ui, _scene_ui(scene, fps=fps))
     if port is not None:
         _merge_ui_payload(layer_ui, _port_media_ui(port, fps, time_base))
     if upstream_bg:

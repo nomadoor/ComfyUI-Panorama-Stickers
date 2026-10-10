@@ -38,3 +38,36 @@ test("a VIDEO background and a 3DGS sticker draw while the camera turns", async 
   expect(check.videoGap).toBeLessThan(1000);
   expect(check.nonEmpty).toBe(true);
 });
+
+// docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド": the grid draws from its depth and video, the
+// quads with a corner of depth 0 are not drawn, and a pick lands on the drawn surface.
+test("a DA3 mono depth grid draws its plane with a hole where the depth is 0, and is picked on its surface", async ({ page }, testInfo) => {
+  const problems = watch(page);
+  await page.goto("/tests/browser/pages/depth_grid.html");
+  await page.waitForFunction(() => window.__check?.done, null, { timeout: 45_000 }).catch(() => {});
+  const check = problems.some((p) => p.startsWith("crash")) ? null : await page.evaluate(() => window.__check);
+  if (check?.renderer) {
+    testInfo.annotations.push({ type: "renderer", description: check.renderer });
+    console.log(`renderer: ${check.renderer}`);
+  }
+  if (check) console.log(`check: ${JSON.stringify({ inside: check.inside, hole: check.hole, pick: check.pick, sceneItems: check.stats?.sceneItems })}`);
+  expect(problems).toEqual([]);
+  expect(check.error).toBeNull();
+  expect(check.done).toBe(true);
+  expect(check.contextLost).toBe(false);
+  expect(check.stats.sceneItems.loaded).toBe(1);
+  // Drawn (opaque) on the plane, nothing in the hole.
+  expect(check.inside[3]).toBeGreaterThan(250);
+  expect(check.hole[3]).toBeLessThan(5);
+  expect(check.pick).not.toBeNull();
+  expect(Math.abs(check.pick[2] + 2)).toBeLessThan(0.02);
+  // The image's top is drawn at the top, from a playing VIDEO, a still canvas and an ImageBitmap alike.
+  for (const name of ["video", "canvas", "bitmap"]) {
+    const { top, bottom } = check.orientation[name];
+    expect(top[0], name).toBeGreaterThan(top[2] + 100);
+    expect(bottom[2], name).toBeGreaterThan(bottom[0] + 100);
+  }
+  // The colors are one texture per input, let go when the input no longer draws.
+  expect(check.colorTextures).toBe(1);
+  expect(check.colorTexturesAfter).toBe(0);
+});

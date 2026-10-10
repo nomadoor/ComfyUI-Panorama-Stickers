@@ -12,7 +12,7 @@ from comfy_api.latest import Types
 
 from .core.cache import CACHE
 from .core.mesh_render import BARE_COLOR, MeshItem, MeshMaterial, mesh_content
-from .core_adapters import DA3GeometryToMesh, Get3DComponents, _da3_default_K, get_mesh_batch_item
+from .core_adapters import DA3GeometryToMesh, Get3DComponents, _da3_build_mask, _da3_default_K, _da3_get_K, _da3_unproject, depth_map_edge, get_mesh_batch_item
 from .node_runtime import NodeRuntime
 from .scene_files import moge_grid_mesh
 
@@ -149,8 +149,12 @@ def needs_default_k(geometry: dict) -> bool:
 
 
 def check_da3(geometry: dict):
-    """Refuse a multiview DA3_GEOMETRY of a model that gave no poses: the core then fills every view's `intrinsics`
-    with the identity, which flattens its meshes."""
+    """Refuse a multiview DA3_GEOMETRY of a model that gave no poses (the core then fills every view's `intrinsics`
+    with the identity, which flattens its meshes), and a mono one with `extrinsics` (the editor's depth grid does
+    not apply them, so it would differ from the output)."""
+    if not is_multiview(geometry) and "extrinsics" in geometry:
+        raise ValueError("Panorama Stickers: this DA3_GEOMETRY is mono but has extrinsics; a mono DA3_GEOMETRY has none. "
+                         "Connect the mono output of Run Depth Anything 3 as it is.")
     if is_multiview(geometry) and "intrinsics" in geometry:
         intrinsics = geometry["intrinsics"].float()
         if bool((intrinsics == torch.eye(3, device=intrinsics.device)).all()):
@@ -207,3 +211,38 @@ def da3_device_bytes(geometry: dict) -> int:
     count, height, width = geometry["depth"].shape
     grid = height * width * (3 + 2 + 3) * 4 + (height - 1) * (width - 1) * 2 * 3 * 8
     return grid * (count if is_multiview(geometry) else 1)
+
+
+# The mono depth grid (ADR 0039; docs/render-contract.md, "mono の残す画素"): which pixels the core's converter keeps as
+# vertices, composed from the core's parts in its order, without converting.
+
+def da3_keep(geometry: dict, index: int) -> torch.Tensor:
+    """The pixels (H, W, bool) of mono frame `index` that the core's converter keeps as vertices, with its defaults
+    (DA3_MESH_DEFAULTS): its mask (`_da3_build_mask`, depth > 0 and finite), less the depth discontinuities
+    (`depth_map_edge` of the masked depth). Only the order of the core's parts is held here."""
+    _decimation, discontinuity, confidence, sky, _texture = DA3_MESH_DEFAULTS
+    depth = geometry["depth"][index].detach().cpu()
+    height, width = depth.shape
+    mask = _da3_build_mask(geometry, index, height, width, confidence, sky) & (depth > 0) & torch.isfinite(depth)
+    edge = depth_map_edge(torch.where(mask, depth, torch.zeros_like(depth)), rtol=discontinuity)
+    return mask & ~edge
+
+
+def da3_keep_is_empty(keep: torch.Tensor) -> bool:
+    """Whether a frame has no quad of 4 kept corners: the frames the core's converter calls empty (DA3_EMPTY_MESH)."""
+    return not bool((keep[:-1, :-1] & keep[:-1, 1:] & keep[1:, 1:] & keep[1:, :-1]).any())
+
+
+def da3_k(geometry: dict, index: int) -> torch.Tensor:
+    """The K (3, 3) the core converts mono frame `index` with: its `intrinsics`, or the core's default K."""
+    height, width = geometry["depth"].shape[1:]
+    return _da3_get_K(_with_default_k(geometry), index, height, width).float()
+
+
+def da3_points(geometry: dict, index: int, keep: torch.Tensor) -> torch.Tensor:
+    """The glTF points (N, 3) of the kept pixels of mono frame `index`, in row order: the core's unprojection
+    (`_da3_unproject`, its non-finite depth zeroed as the converter does), turned from OpenCV to glTF."""
+    depth = geometry["depth"][index].detach().cpu()
+    depth = torch.where(torch.isfinite(depth), depth, torch.zeros_like(depth))
+    points = _da3_unproject(depth, da3_k(geometry, index)).reshape(-1, 3)[keep.reshape(-1)]
+    return points * torch.tensor([1.0, -1.0, -1.0], dtype=points.dtype)

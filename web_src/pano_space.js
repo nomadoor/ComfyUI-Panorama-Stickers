@@ -325,6 +325,7 @@ export function multiviewKey(urls) {
 // result has none.
 export function sceneFilesOf(files, meta, source) {
   const kind = meta[0]?.kind;
+  if (kind === "depth_grid") return depthGridFilesOf(files, meta[0], source);
   if (!files.length || (kind !== "splat" && kind !== "mesh")) return null;
   const sources = {};
   const urls = files.map((entry) => {
@@ -336,6 +337,31 @@ export function sceneFilesOf(files, meta, source) {
     return key;
   });
   return { kind, unlit: kind !== "mesh" || meta[0].unlit !== false, urls, sources };
+}
+
+// The items of a depth grid a request loads ahead: the next ones, as the item is small and playback must keep up
+// (docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド"), within the budget's aheadFits.
+export const DEPTH_GRID_PREFETCH = 8;
+
+const positiveInteger = (value) => Number.isInteger(value) && value > 0;
+
+// sceneFilesOf of a DA3_GEOMETRY mono result (kind `depth_grid`, docs/studio-node.md "DA3_GEOMETRY mono のエディタ用
+// ファイル"): a key per item (the URL of its depth file, null for an empty item), `sources` with what each loads with
+// ({ url, width, height, depth (the file's form), intrinsics (its own K, 9 numbers by rows) }), and `video`, the color
+// proxy ({ src, fps }). null for a meta without its grid's form.
+function depthGridFilesOf(files, meta, source) {
+  const { width, height, depth, intrinsics } = meta;
+  if (!files.length || !positiveInteger(width) || !positiveInteger(height) || !depth || typeof depth !== "object") return null;
+  if (!Array.isArray(intrinsics) || intrinsics.length !== files.length) return null;
+  const sources = {};
+  const urls = files.map((entry, index) => {
+    const url = entry && !Array.isArray(entry) ? source(entry) : null;
+    if (url) sources[url] = { url, width, height, depth, intrinsics: intrinsics[index] };
+    return url || null;
+  });
+  const video = meta.video ? source(meta.video) : null;
+  const fps = Number(meta.video_fps);
+  return { kind: "depth_grid", unlit: true, urls, sources, video: video && fps > 0 ? { src: video, fps } : null };
 }
 
 // Whether there is World content to show in space: a linked `scene` input, its files in the node's
@@ -350,13 +376,16 @@ export function hasWorldContent({ sceneLinked, files, stickers }) {
 export function sceneRequest(files, evaluatedScene) {
   if (!files || !evaluatedScene.active) return null;
   const index = sceneItemIndex(evaluatedScene.clip_frame, files.urls.length);
-  const next = index === null ? null : files.urls[index + 1];
+  const depthGrid = files.kind === "depth_grid";
+  // The next item of a batch (a MoGe VIDEO) loads ahead for playback; DEPTH_GRID_PREFETCH of a depth grid.
+  const ahead = index === null ? [] : files.urls.slice(index + 1, index + 1 + (depthGrid ? DEPTH_GRID_PREFETCH : 1));
   return {
     kind: files.kind,
     url: index === null ? null : files.urls[index],
     urls: files.urls.filter(Boolean),
-    // The next item of a batch (a MoGe VIDEO) loads ahead for playback.
-    prefetch: next ? [next] : [],
+    prefetch: ahead.filter(Boolean),
+    // A depth grid's colors: its proxy MP4 at the item's time (i / video_fps).
+    video: depthGrid && files.video && index !== null ? { ...files.video, time: index / files.video.fps } : null,
     transform: sceneTransform(evaluatedScene),
     itemQuaternion: files.kind === "splat" ? SPLAT_TO_SCENE : { x: 0, y: 0, z: 0, w: 1 },
     unlit: files.unlit !== false,

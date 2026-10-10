@@ -38,7 +38,7 @@ def _with_ball(monkeypatch, count=3):
     content = SceneContent(count, content.render)
     monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else content)
     # The stand-in input has no editor files.
-    monkeypatch.setattr(nodes, "_scene_ui", lambda scene: {})
+    monkeypatch.setattr(nodes, "_scene_ui", lambda scene, **_options: {})
     return views
 
 

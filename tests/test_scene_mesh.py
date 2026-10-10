@@ -450,7 +450,8 @@ def test_mono_frames_follow_the_output_frames_and_are_not_lit():
     frames = output.result[2].get_components().images
 
     assert [round(float(frame[256, 512, 0]) * 10) for frame in frames] == [1, 2, 3]
-    assert output.ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
+    [meta] = output.ui["pano_scene_meta"]
+    assert meta["kind"] == "depth_grid" and meta["unlit"] is True and meta["frames"] == 3
     assert len(output.ui["pano_scene_files"]) == 3 and all(temp_entry_path(entry).exists() for entry in output.ui["pano_scene_files"])
 
 
@@ -463,7 +464,7 @@ def test_empty_frames_are_drawn_empty_and_have_no_editor_file(monkeypatch):
     rgba, depth = content.render(_da3_view(Projection.perspective(16, 16, 60.0)), 1, torch.device("cpu"))
 
     assert float(rgba[..., 3].max()) == 0.0 and bool(torch.isinf(depth).all())
-    files = nodes._scene_ui(geometry)["pano_scene_files"]
+    files = nodes._scene_ui(geometry, fps=24.0)["pano_scene_files"]
     assert files[0] is not None and files[1] is None
     # A MESH the core returns without faces is empty too; other errors stop the run.
     from comfy_api.latest import Types
@@ -541,7 +542,7 @@ def test_dicts_on_the_sticker_input_are_3d_stickers(make):
 
     layer = output.result[4].layers[-1]
     assert layer.port.is_3d and layer.state["stickers"][0]["placement"] == "world"
-    assert output.ui["pano_sticker_meta"] == [{"kind": "mesh", "unlit": True}]
+    assert output.ui["pano_sticker_meta"][0]["kind"] == ("depth_grid" if make == "mono" else "mesh") and output.ui["pano_sticker_meta"][0]["unlit"] is True
     assert "pano_sticker_input_images" not in output.ui
     box = sticker_media.content_box(media)
     assert box is not None and np.isfinite(box["min"]).all()
@@ -571,20 +572,115 @@ def test_the_memory_estimate_counts_the_converted_meshes_not_the_dict():
 
 
 def test_each_da3_frame_is_converted_once_for_the_render_the_editor_files_and_the_box(monkeypatch):
+    # Mono: the editor files and the content box do not convert (they use `da3_keep`); the render converts each frame
+    # once, frame 0 for the first frame and the others when the video is read.
     converted = []
+    stage = ["placing and editor files"]
     execute = DA3GeometryToMesh.execute
 
     class Counting:
         @staticmethod
         def execute(geometry, index, *args):
-            converted.append(index)
+            converted.append((stage[0], index))
             return execute(geometry, index, *args)
 
     monkeypatch.setattr(scene_mesh, "DA3GeometryToMesh", Counting)
     geometry = _mono(count=3)
+    content = nodes._scene_content
+    monkeypatch.setattr(nodes, "_scene_content", lambda scene: (stage.__setitem__(0, "render"), content(scene))[1])
 
-    # The sticker input places by the content box, then the run draws and writes the editor files; the video reads again.
     output = _da3_execute(sticker=geometry)
     output.result[2].get_components()
+    sticker_media.content_box(geometry)
+    nodes._scene_ui(geometry, fps=24.0)
 
-    assert sorted(converted) == [0, 1, 2]
+    assert all(where == "render" for where, _index in converted)
+    assert sorted(index for _where, index in converted) == [0, 1, 2]
+
+
+def _keep_case(with_intrinsics: bool):
+    """A mono DA3_GEOMETRY of 3 frames, 12 x 16: frame 0 a slanted plane with a step, a sky corner, a low-confidence
+    corner, and pixels of depth 0, -1, NaN, and inf; frame 1 all sky; frame 2 stripes whose steps leave no quad."""
+    height, width = 12, 16
+    y, x = torch.meshgrid(torch.arange(height, dtype=torch.float32), torch.arange(width, dtype=torch.float32), indexing="ij")
+    depth = torch.stack([2.0 + 0.05 * x + 0.02 * y + (x >= 10).float() * 1.5, torch.full((height, width), 2.0), 1.0 + 9.0 * (x % 2)])
+    depth[0, 6, 3], depth[0, 7, 4], depth[0, 8, 5], depth[0, 9, 6] = 0.0, -1.0, float("nan"), float("inf")
+    sky = torch.zeros((3, height, width))
+    sky[0, :3, :4] = 1.0
+    sky[1] = 1.0
+    confidence = torch.ones((3, height, width))
+    confidence[0, -3:, -4:] = 0.0
+    confidence[0, 0, -1] = 0.05
+    geometry = {"depth": depth, "image": torch.rand((3, height, width, 3), generator=torch.Generator().manual_seed(2)), "mode": "mono", "sky": sky, "confidence": confidence}
+    if with_intrinsics:
+        geometry["intrinsics"] = torch.tensor([[12.0, 0.0, 7.0], [0.0, 13.0, 6.0], [0.0, 0.0, 1.0]])[None, None].expand(1, 3, 3, 3).clone()
+    return geometry
+
+
+@pytest.mark.parametrize("with_intrinsics", [False, True])
+def test_da3_keep_is_the_pixels_the_core_keeps(with_intrinsics):
+    geometry = _keep_case(with_intrinsics)
+    height, width = geometry["depth"].shape[1:]
+
+    for index in range(3):
+        keep = scene_mesh.da3_keep(geometry, index)
+        try:
+            mesh = DA3GeometryToMesh.execute(geometry, index, *DEFAULTS).result[0]
+        except ValueError as error:
+            # The core's empty frames are the frames `da3_keep` finds empty.
+            assert str(error).startswith(scene_mesh.DA3_EMPTY_MESH) and index in (1, 2)
+            assert scene_mesh.da3_keep_is_empty(keep)
+            continue
+        assert index == 0 and not scene_mesh.da3_keep_is_empty(keep)
+        uvs = mesh.uvs[0]
+        pixels = torch.stack([torch.round(uvs[:, 1] * (height - 1)), torch.round(uvs[:, 0] * (width - 1))], dim=-1).long()
+        # The pixels the core made vertices of, in its order, are the keep pixels in row order.
+        assert torch.equal(pixels, keep.nonzero())
+        # Their positions are the core's unprojection of the keep pixels, in glTF.
+        k = scene_mesh.da3_k(geometry, index)
+        depth = geometry["depth"][index]
+        expected = scene_mesh.da3_points(geometry, index, keep)
+        assert torch.equal(mesh.vertices[0], expected)
+        # The faces are the quads whose 4 corners are kept, as (a, b, c) and (a, c, d), turned over for glTF.
+        vertex_pixel = [tuple(pixel) for pixel in pixels.tolist()]
+        faces = {tuple(vertex_pixel[v] for v in face) for face in mesh.faces[0].tolist()}
+        quads = keep[:-1, :-1] & keep[:-1, 1:] & keep[1:, 1:] & keep[1:, :-1]
+        expected_faces = set()
+        for y, x in quads.nonzero().tolist():
+            a, b, c, d = (y, x), (y, x + 1), (y + 1, x + 1), (y + 1, x)
+            expected_faces |= {(a, c, b), (a, d, c)}
+        assert faces == expected_faces
+        assert k.shape == (3, 3) and bool(torch.isfinite(depth[keep]).all()) and bool((depth[keep] > 0).all())
+
+
+def test_a_mono_dict_with_extrinsics_stops_at_the_entry():
+    geometry = _mono(count=1, extrinsics=torch.eye(4)[None, None, :3].clone())
+
+    with pytest.raises(ValueError, match="mono.*extrinsics"):
+        _da3_execute(scene=geometry)
+
+
+def test_the_content_box_of_mono_is_the_keep_points_without_converting(monkeypatch):
+    geometry = _keep_case(False)
+    expected = DA3GeometryToMesh.execute(geometry, 0, *DEFAULTS).result[0].vertices[0]
+    monkeypatch.setattr(scene_mesh, "DA3GeometryToMesh", None)
+
+    box = sticker_media.content_box(geometry)
+
+    assert box == {"min": expected.amin(0).tolist(), "max": expected.amax(0).tolist()}
+
+
+def test_the_depth_grid_needs_the_timeline_fps():
+    with pytest.raises(ValueError, match="Timeline fps"):
+        nodes._scene_ui(_mono(count=1))
+
+
+def test_a_mono_dict_on_the_sticker_input_gets_the_depth_grid_meta():
+    output = _da3_execute(sticker=_mono(count=2), state={"version": 2, "timeline": {"fps": 12}})
+
+    [meta] = output.ui["pano_sticker_meta"]
+    assert meta["kind"] == "depth_grid" and meta["unlit"] is True and meta["frames"] == 2 and meta["video_fps"] == 12.0
+    assert (meta["width"], meta["height"]) == (W, H) and meta["depth"] == {"dtype": "float32", "byte_order": "little", "bytes": W * H * 4}
+    assert len(meta["intrinsics"]) == 2 and temp_entry_path(meta["video"]).exists()
+    assert [temp_entry_path(entry).suffix for entry in output.ui["pano_sticker_files"]] == [".f32", ".f32"]
+    assert "pano_scene_meta" not in output.ui
