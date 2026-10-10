@@ -42,6 +42,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - `cutout_sampling_map`：旧 Cutout の標本化の表。
   - `video`・`scene_files`：エディタ用の MP4・PNG・PLY/GLB・`DA3_GEOMETRY` mono の深度（`.f32`）のパス。`DA3_GEOMETRY` mono の色のプロキシの MP4 は `video` に入る。
   - `da3_meshes`：`DA3_GEOMETRY` の要素ごとの、コアの変換の結果の MESH（`scene_mesh.py` の `da3_meshes`。規則は `docs/render-contract.md` の「`DA3_GEOMETRY` のメッシュ」）。キーは `mode` と、メッシュの元になるテンソルの同一性と、要素の番号。mono のエディタ用ファイルはこの変換を使わないので、mono の要素を入れるのは描画だけである。`video` の読み出しは、上限で追い出された要素だけを変換し直す（`docs/render-contract.md` の「`DA3_GEOMETRY` のメッシュ」）。
+  - `moge_depth_grid`：`MOGE_GEOMETRY` を深度のグリッドで運ぶかの判定の結果（`scene_mesh.py` の `moge_uses_depth_grid`。規則は `docs/studio-node.md` の「`MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル」）。キーは入力のテンソルの同一性。
   - `splat_files`・`mesh_files`：3D ファイルから読んだ SPLAT・MESH。`scene`・`sticker` の入力の 3D ファイルも、3D ファイルの `file` の Source も、エディタ用ファイルの問い合わせ（`docs/studio-node.md`）も、同じキー（パス・更新時刻・大きさ）で引く。同じキーを同時に求める呼び出し（実行中のプロンプトと経路）は、キーごとのロックで待ち合わせ、1 回だけ読む（`MemoryCache.get_or_put`）。`scene_files` も同じく 1 回だけ書く。
 - 持たないもの：
   - 旧 `PanoramaStickers` の背景のバッチ。プレビューの MP4 を作る間だけ持つ。

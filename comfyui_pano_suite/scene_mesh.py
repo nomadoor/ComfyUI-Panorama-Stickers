@@ -12,7 +12,7 @@ from comfy_api.latest import Types
 
 from .core.cache import CACHE
 from .core.mesh_render import BARE_COLOR, MeshItem, MeshMaterial, mesh_content
-from .core_adapters import DA3GeometryToMesh, Get3DComponents, _da3_build_mask, _da3_default_K, _da3_get_K, _da3_unproject, depth_map_edge, get_mesh_batch_item
+from .core_adapters import DA3GeometryToMesh, Get3DComponents, _da3_build_mask, _da3_default_K, _da3_get_K, _da3_unproject, depth_map_edge, depth_map_to_point_map, get_mesh_batch_item
 from .node_runtime import NodeRuntime
 from .scene_files import moge_grid_mesh
 
@@ -228,7 +228,7 @@ def da3_keep(geometry: dict, index: int) -> torch.Tensor:
     return mask & ~edge
 
 
-def da3_keep_is_empty(keep: torch.Tensor) -> bool:
+def keep_is_empty(keep: torch.Tensor) -> bool:
     """Whether a frame has no quad of 4 kept corners: the frames the core's converter calls empty (DA3_EMPTY_MESH)."""
     return not bool((keep[:-1, :-1] & keep[:-1, 1:] & keep[1:, 1:] & keep[1:, :-1]).any())
 
@@ -277,3 +277,74 @@ def moge_to_gltf(geometry: dict, vertices: torch.Tensor, faces: torch.Tensor | N
         return vertices[:, [1, 2, 0]].contiguous(), faces
     vertices = vertices * vertices.new_tensor([1.0, -1.0, -1.0])
     return vertices, None if faces is None else faces[:, [0, 2, 1]].contiguous()
+
+
+def moge_points(geometry: dict, index: int, keep: torch.Tensor) -> torch.Tensor:
+    """The glTF points (N, 3) of the kept pixels of frame `index`, in row order: `moge_grid_mesh`'s vertices without
+    making the mesh."""
+    return moge_to_gltf(geometry, geometry["points"][index].detach().cpu()[keep])[0]
+
+
+def moge_pixel_k(intrinsics: torch.Tensor, height: int, width: int) -> torch.Tensor:
+    """MoGe's normalized K (x 0..1 across, a pixel's center at (x + 0.5) / W) as the K of pixel numbers, so that
+    K⁻¹ (x, y, 1) at the integer pixel is the direction the core's `depth_map_to_point_map` takes:
+    [[W fx, 0, W cx - 0.5], [0, H fy, H cy - 0.5], [0, 0, 1]]."""
+    to_pixels = torch.tensor([[float(width), 0.0, -0.5], [0.0, float(height), -0.5], [0.0, 0.0, 1.0]], dtype=torch.float64)
+    return (to_pixels @ intrinsics.detach().cpu().double()).float()
+
+
+# How far a kept point may lie from the core's unprojection of its z, relative to its distance (`moge_is_pinhole`).
+MOGE_PINHOLE_RTOL = 1e-4
+
+
+def moge_is_pinhole(geometry: dict) -> tuple[bool, int | None, int]:
+    """Whether every kept point of a perspective MOGE_GEOMETRY is the core's unprojection of its own z
+    (`depth_map_to_point_map`, as MoGeInference remakes them with `force_projection`) with z > 0, compared by the
+    norm (|p - p̂| <= 1e-4 |p|, so that points on the optical axis do not blow up a per-component ratio). Returns
+    whether, the first frame that is not, and how many of its kept points are not."""
+    for index in range(geometry["points"].shape[0]):
+        keep = moge_keep(geometry, index)
+        points = geometry["points"][index].detach().cpu().float()
+        depth = points[..., 2]
+        remade = depth_map_to_point_map(torch.where(torch.isfinite(depth), depth, torch.zeros_like(depth)), geometry["intrinsics"][index].detach().cpu().float())
+        # |p - p̂| <= rtol |p|, squared and summed per axis (a norm over a 3-long, strided axis is slow on the CPU).
+        x, y, z = points.unbind(-1)
+        dx, dy, dz = (points - remade).unbind(-1)
+        close = dx * dx + dy * dy + dz * dz <= MOGE_PINHOLE_RTOL ** 2 * (x * x + y * y + z * z)
+        good = torch.isfinite(depth) & (depth > 0) & close
+        bad = int((keep & ~good).sum())
+        if bad:
+            return False, index, bad
+    return True, None, 0
+
+
+def moge_key(geometry: dict) -> tuple:
+    """What identifies a MOGE_GEOMETRY for what is made from it: the tensors its grid is made from."""
+    return tuple((key, NodeRuntime.tensor_identity(geometry[key])) for key in ("points", "mask", "image", "intrinsics") if key in geometry)
+
+
+def moge_uses_depth_grid(geometry: dict) -> tuple[bool, str | None]:
+    """Whether a MOGE_GEOMETRY goes to the editor as a depth grid (ADR 0040): a perspective sequence (`intrinsics`,
+    two frames or more) whose kept points are all pinhole (`moge_is_pinhole`); else why it stays GLB. Checked once
+    per input (the shared cache)."""
+    def decide():
+        if "intrinsics" not in geometry:
+            return False, "it has no intrinsics (a panorama)"
+        if geometry["points"].shape[0] < 2:
+            return False, "it has one frame"
+        pinhole, frame, count = moge_is_pinhole(geometry)
+        if not pinhole:
+            return False, (f"its points are not the pinhole unprojection of their depth (frame {frame}: {count} kept points differ), "
+                           "as when force_projection is off or the points were edited after inference")
+        return True, None
+
+    return CACHE.get_or_put("moge_depth_grid", moge_key(geometry), decide)
+
+
+def depth_grid_intrinsics(geometry: dict) -> list:
+    """Each frame's K of pixel numbers (row order) for the depth grid's meta: DA3 mono's as the core converts it,
+    MoGe's normalized K turned into pixel numbers (`moge_pixel_k`)."""
+    if is_moge(geometry):
+        count, height, width = geometry["points"].shape[:3]
+        return [moge_pixel_k(geometry["intrinsics"][index], height, width).reshape(-1).tolist() for index in range(count)]
+    return [da3_k(geometry, index).reshape(-1).tolist() for index in range(geometry["depth"].shape[0])]

@@ -58,35 +58,55 @@ def _da3_glbs(geometry: dict, index: int):
     return glbs if is_multiview(geometry) else glbs[0]
 
 
-def _da3_depth_files(geometry: dict, progress=None) -> list:
-    """The editor files of a DA3_GEOMETRY mono (ADR 0039; docs/studio-node.md, "`DA3_GEOMETRY` mono のエディタ用ファイル"):
-    per frame `pano_scene_<name>_<i>.f32`, its depth as headerless little-endian float32, H x W in row order, with the
-    pixels outside `da3_keep` set to 0 (a kept pixel's depth is always > 0), or None for an empty frame. Nothing is
-    converted."""
-    from .scene_mesh import da3_count, da3_keep, da3_keep_is_empty
-
+def _write_depth_files(count: int, frame_depth, progress=None) -> list:
+    """Per frame `pano_scene_<name>_<i>.f32`: `frame_depth(i)` (H, W, float32, 0 outside the kept pixels) as headerless
+    little-endian float32 in row order, or None (no file) for an empty frame."""
     name = uuid.uuid4().hex[:12]
-    count = da3_count(geometry)
     paths, written = [], []
     with TEMP_FILES.writing(written):
         for index in range(count):
-            keep = da3_keep(geometry, index)
+            values = frame_depth(index)
             path = None
-            if not da3_keep_is_empty(keep):
-                depth = geometry["depth"][index].detach().cpu().float()
-                values = torch.where(keep, depth, torch.zeros_like(depth)).numpy().astype("<f4", copy=False)
+            if values is not None:
                 path = temp_file_path(f"pano_scene_{name}_{index}.f32")
                 written.append(path)
-                path.write_bytes(values.tobytes())
+                path.write_bytes(values.numpy().astype("<f4", copy=False).tobytes())
             paths.append(path)
             if progress is not None:
                 progress(index + 1, count)
     return paths
 
 
+def _kept_depth(depth: torch.Tensor, keep: torch.Tensor):
+    from .scene_mesh import keep_is_empty
+
+    if keep_is_empty(keep):
+        return None
+    depth = depth.detach().cpu().float()
+    return torch.where(keep, depth, torch.zeros_like(depth))
+
+
+def _da3_depth_files(geometry: dict, progress=None) -> list:
+    """The editor files of a DA3_GEOMETRY mono (ADR 0039; docs/studio-node.md, "`DA3_GEOMETRY` mono のエディタ用ファイル"):
+    per frame its depth with the pixels outside `da3_keep` set to 0 (a kept pixel's depth is always > 0), or None for
+    an empty frame. Nothing is converted."""
+    from .scene_mesh import da3_count, da3_keep
+
+    return _write_depth_files(da3_count(geometry), lambda index: _kept_depth(geometry["depth"][index], da3_keep(geometry, index)), progress)
+
+
+def _moge_depth_files(geometry: dict, progress=None) -> list:
+    """The editor files of a MOGE_GEOMETRY perspective sequence (ADR 0040): per frame its points' z with the pixels
+    outside `moge_keep` set to 0 (a kept z is > 0 by `moge_uses_depth_grid`), or None for an empty frame."""
+    from .scene_mesh import moge_keep
+
+    return _write_depth_files(geometry["points"].shape[0], lambda index: _kept_depth(geometry["points"][index][..., 2], moge_keep(geometry, index)), progress)
+
+
 def write_editor_files(value, progress=None) -> tuple[str, list]:
     """Write each item of a SPLAT, MESH, MOGE_GEOMETRY, or DA3_GEOMETRY to temp. Returns the kind the editor loads
-    ("splat", "mesh", or "depth_grid" for a DA3_GEOMETRY mono, `_da3_depth_files`) and per item, in order, its path,
+    ("splat", "mesh", or "depth_grid" for a DA3_GEOMETRY mono, `_da3_depth_files`, or a MOGE_GEOMETRY
+    perspective sequence, `_moge_depth_files`) and per item, in order, its path,
     None for an empty item, or for a DA3_GEOMETRY multiview the list of its views' paths (one GLB each; the core's GLB writer holds one material). `progress(done, total)` is
     called after each item and may raise to stop; the files written so far are then removed."""
     if isinstance(value, Types.SPLAT):
@@ -95,8 +115,10 @@ def write_editor_files(value, progress=None) -> tuple[str, list]:
         kind, extension, count, item = "mesh", "glb", value.vertices.shape[0], mesh_item_to_glb_bytes
     else:
         # scene_mesh reads this module's MoGe grid, so it is imported here; it owns how the dicts are told apart.
-        from .scene_mesh import da3_count, is_da3, is_moge, is_multiview
+        from .scene_mesh import da3_count, is_da3, is_moge, is_multiview, moge_uses_depth_grid
 
+        if is_moge(value) and moge_uses_depth_grid(value)[0]:
+            return "depth_grid", _moge_depth_files(value, progress)
         if is_moge(value):
             kind, extension, count, item = "mesh", "glb", value["points"].shape[0], _moge_glb
         elif is_da3(value) and not is_multiview(value):

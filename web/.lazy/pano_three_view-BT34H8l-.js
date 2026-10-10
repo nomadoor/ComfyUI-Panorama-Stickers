@@ -27130,7 +27130,7 @@ function t_(i, e, t, n) {
   return a ? { min: r, max: s } : null;
 }
 function n_(i, e, t) {
-  return !(t > 0) || i <= t && e <= t ? null : `The depth of this DA3 geometry is ${i} × ${e}, larger than this GPU's textures (MAX_TEXTURE_SIZE ${t}).`;
+  return !(t > 0) || i <= t && e <= t ? null : `The depth of this 3D content is ${i} × ${e}, larger than this GPU's textures (MAX_TEXTURE_SIZE ${t}).`;
 }
 const tl = /* @__PURE__ */ new Map();
 function i_(i, e) {
@@ -27180,7 +27180,7 @@ function a_(i, e) {
 }
 let nl = null;
 function Bl() {
-  return nl || (nl = import("./spark.module-B3dG6tJc.js")), nl;
+  return nl || (nl = import("./spark.module-CKLwi4Kn.js")), nl;
 }
 function o_(i) {
   return i.traverse((e) => {

@@ -15,9 +15,8 @@ from .core.world_render import SceneContent
 from .core_adapters import _gaussian_item, get_mesh_batch_item
 from .node_runtime import NodeRuntime
 from .progress import loop_progress
-from .scene_mesh import da3_count, da3_keep, da3_keep_is_empty, da3_meshes, da3_points, is_multiview, da3_scene_content, is_da3, is_moge, mesh_scene_content, moge_scene_content
+from .scene_mesh import da3_count, da3_keep, keep_is_empty, moge_keep, moge_points, da3_meshes, da3_points, is_multiview, da3_scene_content, is_da3, is_moge, mesh_scene_content, moge_scene_content
 from .scene_video import RenderedVideo, SceneVideo
-from .scene_files import moge_grid_mesh
 from .splat_render import _GLTF_TO_SPLAT, splat_content
 
 # What `open_video` returns; each has `frame_rate`, `times`, `time_base`, `first_frame`, frames read in order by
@@ -171,8 +170,8 @@ class PortMedia:
 def content_box(media) -> dict | None:
     """The axis-aligned box `{"min": [x, y, z], "max": [x, y, z]}` of 3D media in its own (`scene`) glTF frame, over
     all its items, from the points that are drawn: a MESH's vertices (`get_mesh_batch_item`, without the batch's
-    padding), a SPLAT's gaussian centers (`_gaussian_item`) turned from 3DGS to glTF, a MOGE_GEOMETRY's grid vertices
-    (`moge_grid_mesh`, without the masked pixels), a DA3_GEOMETRY multiview's meshes of every view (`da3_meshes`), a mono one's kept pixels' points of every non-empty frame (`da3_keep`, `da3_points`; no conversion). None when it has no point (docs/studio-node.md, "中身の箱"). The
+    padding), a SPLAT's gaussian centers (`_gaussian_item`) turned from 3DGS to glTF, a MOGE_GEOMETRY's kept points
+    (`moge_keep`, `moge_points`: `moge_grid_mesh`'s vertices without making the mesh), a DA3_GEOMETRY multiview's meshes of every view (`da3_meshes`), a mono one's kept pixels' points of every non-empty frame (`da3_keep`, `da3_points`; no conversion). None when it has no point (docs/studio-node.md, "中身の箱"). The
     one owner of the box: the node's 3D port Sticker and the editor's route both use it."""
     points = []
     if isinstance(media, Types.SPLAT):
@@ -184,15 +183,16 @@ def content_box(media) -> dict | None:
         for index in range(media.vertices.shape[0]):
             points.append(get_mesh_batch_item(media, index)[0].float().cpu())
     elif is_moge(media):
+        # The kept pixels' points of every frame, without making the meshes (ADR 0040).
         for index in range(media["points"].shape[0]):
-            points.append(moge_grid_mesh(media, index)[0].float().cpu())
+            points.append(moge_points(media, index, moge_keep(media, index)).float())
     elif is_da3(media) and is_multiview(media):
         points += [mesh.vertices[0].float().cpu() for mesh in da3_meshes(media, 0)]
     elif is_da3(media):
         # Mono: the kept pixels' points of every non-empty frame, without converting (ADR 0039).
         for index in range(da3_count(media)):
             keep = da3_keep(media, index)
-            if not da3_keep_is_empty(keep):
+            if not keep_is_empty(keep):
                 points.append(da3_points(media, index, keep).float())
     else:
         raise TypeError(f"content_box takes a SPLAT, MESH, MOGE_GEOMETRY, or DA3_GEOMETRY, not {type(media).__name__}")

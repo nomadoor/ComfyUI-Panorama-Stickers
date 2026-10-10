@@ -13,12 +13,13 @@ It writes, for tools/parity_file_3d.mjs:
   output.png   the node's frame
 
 It also makes the DA3_GEOMETRY mono scene (docs/render-contract.md, "エディタとの一致（DA3 mono の場面）") in
-<work dir>/da3/: a synthetic 256 x 144 frame without intrinsics, connected to `scene` and shot twice, and writes
+<work dir>/da3/: a synthetic 256 x 144 frame without intrinsics, connected to `scene` and shot twice, and the MoGe
+scene in <work dir>/moge/ (2 perspective frames, `_moge_sequence`), the same way; each writes
 
   scene.json   {"kind": "depth_grid", "meta", "depth", "image", "video", "shots", "width", "height"}: the editor meta
                as the node gives it (`pano_scene_meta`) with its `video` entry left out, the depth file, the frame's
                image as a PNG (color (a)), the color proxy MP4 (color (b)), and per shot {"name", "state", "output"}
-  depth_0.f32, image.png, proxy.mp4, output_<shot>.png
+  depth_<i>.f32 (every frame; "depth" lists them), image.png, proxy.mp4, output_<shot>.png (frame 0)
 
 ComfyUI's input and temp folders are pointed into the work directory while it runs.
 """
@@ -93,18 +94,32 @@ def _da3_mono():
             "sky": sky[None], "confidence": confidence[None]}, image
 
 
-def _da3_scene(work: Path):
+def _moge_sequence():
+    """The synthetic MOGE_GEOMETRY of the MoGe scene: 2 frames of the same plane and step as `_da3_mono`, its points
+    the core's `depth_map_to_point_map` of that depth through a normalized K with the same view (as MoGeInference
+    makes them with force_projection), the top-left corner outside `mask`, and the same image."""
+    from comfyui_pano_suite.core_adapters import depth_map_to_point_map
+
+    da3, image = _da3_mono()
+    depth = torch.nan_to_num(da3["depth"][0], nan=2.5).expand(2, DA3_HEIGHT, DA3_WIDTH).contiguous()
+    k = torch.tensor([[0.7, 0.0, 0.5], [0.0, 0.7 * DA3_WIDTH / DA3_HEIGHT, 0.5], [0.0, 0.0, 1.0]])[None].repeat(2, 1, 1)
+    mask = torch.ones((2, DA3_HEIGHT, DA3_WIDTH), dtype=torch.bool)
+    mask[:, :30, :40] = False
+    return {"points": depth_map_to_point_map(depth, k), "depth": depth, "mask": mask, "intrinsics": k,
+            "image": da3["image"].expand(2, DA3_HEIGHT, DA3_WIDTH, 3).contiguous()}, image
+
+
+def _depth_grid_scene(work: Path, geometry: dict, image, label: str):
     import folder_paths
 
     from comfyui_pano_suite import nodes
 
     work.mkdir(parents=True, exist_ok=True)
-    geometry, image = _da3_mono()
     Image.fromarray(image, mode="RGB").save(work / "image.png")
     erp_width = next(width for width in range(SIZE, 8 * SIZE) if nodes._even_side(width / math.pi * math.tan(math.radians(DA3_HFOV_DEG) / 2)) == SIZE)
     # From the DA3 camera (the image lies on the output), and from the side, looking back at the plane's middle.
     shots = {"front": ([0.0, 0.0, 0.0], 0.0), "side": ([1.2, 0.3, 0.0], -25.0)}
-    scene = {"kind": "depth_grid", "depth": ["depth_0.f32"], "image": "image.png", "video": "proxy.mp4", "shots": [], "width": SIZE, "height": SIZE}
+    scene = {"kind": "depth_grid", "depth": [], "image": "image.png", "video": "proxy.mp4", "shots": [], "width": SIZE, "height": SIZE}
     for name, (position, yaw) in shots.items():
         state = {"version": 2, "camera": {"aspect": 1.0, "fov": {"value": DA3_HFOV_DEG}, "position": {"value": position},
                                           "rotation": {"value": {"yaw_deg": yaw, "pitch_deg": 0.0, "roll_deg": 0.0}}}}
@@ -116,13 +131,16 @@ def _da3_scene(work: Path):
         scene["shots"].append({"name": name, "state": state, "output": f"output_{name}.png"})
         if name == "front":
             [meta] = output.ui["pano_scene_meta"]
-            [entry] = output.ui["pano_scene_files"]
+            if meta["kind"] != "depth_grid":
+                raise SystemExit(f"The {label} scene went to the editor as {meta['kind']}, not a depth grid.")
             temp = Path(folder_paths.get_temp_directory())
-            shutil.copyfile(temp / entry["subfolder"] / entry["filename"], work / "depth_0.f32")
+            for index, entry in enumerate(output.ui["pano_scene_files"]):
+                shutil.copyfile(temp / entry["subfolder"] / entry["filename"], work / f"depth_{index}.f32")
+                scene["depth"].append(f"depth_{index}.f32")
             shutil.copyfile(temp / meta["video"]["subfolder"] / meta["video"]["filename"], work / "proxy.mp4")
             scene["meta"] = {key: value for key, value in meta.items() if key != "video"}
     (work / "scene.json").write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
-    print(f"DA3 mono: {SIZE} x {SIZE}, shots {list(shots)} -> {work}")
+    print(f"{label}: {SIZE} x {SIZE}, shots {list(shots)} of frame 0 -> {work}")
 
 
 def main(work: Path):
@@ -169,7 +187,8 @@ def main(work: Path):
     scene = {"state": state, "glb": "editor_box.glb", "unlit": payload["unlit"], "width": width, "height": height}
     (work / "scene.json").write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
     print(f"{width} x {height} -> {work / 'output.png'}, {work / 'scene.json'}")
-    _da3_scene(work / "da3")
+    _depth_grid_scene(work / "da3", *_da3_mono(), "DA3 mono")
+    _depth_grid_scene(work / "moge", *_moge_sequence(), "MoGe")
 
 
 if __name__ == "__main__":

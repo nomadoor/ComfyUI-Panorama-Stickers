@@ -24,7 +24,7 @@ from comfy_extras.nodes_depth_anything_3 import DA3GeometryToMesh
 from comfy_extras.nodes_save_3d import mesh_item_to_glb_bytes, save_glb
 
 from comfyui_pano_suite import nodes
-from comfyui_pano_suite import scene_mesh, sticker_media
+from comfyui_pano_suite import scene_files as scene_files_module, scene_mesh, sticker_media
 from comfyui_pano_suite.core import mesh_render
 from comfyui_pano_suite.core.mesh_render import DEFAULT_LIGHTS, linear_to_srgb, shade_standard, srgb_to_linear
 from comfyui_pano_suite.core.render import Projection
@@ -629,9 +629,9 @@ def test_da3_keep_is_the_pixels_the_core_keeps(with_intrinsics):
         except ValueError as error:
             # The core's empty frames are the frames `da3_keep` finds empty.
             assert str(error).startswith(scene_mesh.DA3_EMPTY_MESH) and index in (1, 2)
-            assert scene_mesh.da3_keep_is_empty(keep)
+            assert scene_mesh.keep_is_empty(keep)
             continue
-        assert index == 0 and not scene_mesh.da3_keep_is_empty(keep)
+        assert index == 0 and not scene_mesh.keep_is_empty(keep)
         uvs = mesh.uvs[0]
         pixels = torch.stack([torch.round(uvs[:, 1] * (height - 1)), torch.round(uvs[:, 0] * (width - 1))], dim=-1).long()
         # The pixels the core made vertices of, in its order, are the keep pixels in row order.
@@ -684,3 +684,138 @@ def test_a_mono_dict_on_the_sticker_input_gets_the_depth_grid_meta():
     assert len(meta["intrinsics"]) == 2 and temp_entry_path(meta["video"]).exists()
     assert [temp_entry_path(entry).suffix for entry in output.ui["pano_sticker_files"]] == [".f32", ".f32"]
     assert "pano_scene_meta" not in output.ui
+
+
+# MOGE_GEOMETRY's depth grid (ADR 0040; docs/render-contract.md, "MoGe の残す画素"; docs/studio-node.md,
+# "`MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル").
+
+from comfy.ldm.moge.geometry import depth_map_to_point_map, triangulate_grid_mesh
+
+
+def _moge_k(fx=0.9, fy=1.2, cx=0.45, cy=0.55):
+    return torch.tensor([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])
+
+
+def _moge_sequence(count=3, height=12, width=16, mask=True):
+    """A perspective MOGE_GEOMETRY as MoGeInference makes it with force_projection: points from the core's
+    `depth_map_to_point_map`; a slanted plane with a step, mask holes, and pixels the model left at inf."""
+    y, x = torch.meshgrid(torch.arange(height, dtype=torch.float32), torch.arange(width, dtype=torch.float32), indexing="ij")
+    depth = torch.stack([2.0 + 0.01 * x + 0.02 * y + 0.002 * index + (x >= 10).float() * 1.0 for index in range(count)])
+    intrinsics = torch.stack([_moge_k(0.9 + 0.01 * index) for index in range(count)])
+    points = depth_map_to_point_map(depth, intrinsics)
+    points[:, 2, 3] = float("inf")
+    geometry = {"points": points, "depth": depth, "intrinsics": intrinsics, "image": torch.rand((count, height, width, 3), generator=torch.Generator().manual_seed(3))}
+    if mask:
+        geometry["mask"] = torch.ones((count, height, width), dtype=torch.bool)
+        geometry["mask"][:, :3, :4] = False
+    return geometry
+
+
+def _moge_panorama_points(count=2, height=8, width=16):
+    lat = (0.5 - (torch.arange(height) + 0.5) / height) * math.pi
+    lon = ((torch.arange(width) + 0.5) / width - 0.5) * 2 * math.pi
+    lat, lon = torch.meshgrid(lat, lon, indexing="ij")
+    # MoGe's Z up.
+    directions = torch.stack([lat.cos() * lon.cos(), lat.cos() * lon.sin(), lat.sin()], dim=-1)
+    radius = 2.0 + (lon > 1.0).float()
+    points = (directions * radius[..., None])[None].repeat(count, 1, 1, 1)
+    points[:, 4, 5] = float("nan")
+    return {"points": points, "mask": torch.ones((count, height, width), dtype=torch.bool), "image": torch.rand((count, height, width, 3))}
+
+
+@pytest.mark.parametrize("make", ["perspective", "no mask", "panorama"])
+def test_moge_keep_is_the_pixels_the_grid_mesh_keeps(make):
+    geometry = {"perspective": lambda: _moge_sequence(), "no mask": lambda: _moge_sequence(mask=False), "panorama": _moge_panorama_points}[make]()
+    count, height, width = geometry["points"].shape[:3]
+
+    for index in range(count):
+        keep = scene_mesh.moge_keep(geometry, index)
+        points = geometry["points"][index]
+        depth = None if "intrinsics" in geometry else points.norm(dim=-1)
+        mask = geometry["mask"][index] if "mask" in geometry else None
+        # The core's function as `moge_grid_mesh` called it before it took `moge_keep`.
+        vertices, faces, uvs = triangulate_grid_mesh(points, mask, depth=depth)
+        pixels = torch.stack([torch.round(uvs[:, 1] * (height - 1)), torch.round(uvs[:, 0] * (width - 1))], dim=-1).long()
+        assert torch.equal(pixels, keep.nonzero())
+        assert torch.equal(scene_mesh.moge_points(geometry, index, keep), scene_mesh.moge_to_gltf(geometry, vertices)[0])
+        vertex_pixel = [tuple(pixel) for pixel in pixels.tolist()]
+        quads = keep[:-1, :-1] & keep[:-1, 1:] & keep[1:, 1:] & keep[1:, :-1]
+        expected = set()
+        for y, x in quads.nonzero().tolist():
+            a, b, c, d = (y, x), (y, x + 1), (y + 1, x + 1), (y + 1, x)
+            expected |= {(a, b, c), (a, c, d)}
+        assert {tuple(vertex_pixel[v] for v in face) for face in faces.tolist()} == expected
+        assert (faces.shape[0] == 0) == scene_mesh.keep_is_empty(keep)
+    # An all-masked frame is empty.
+    empty = {**geometry, "mask": torch.zeros_like(geometry["points"][..., 0], dtype=torch.bool)}
+    assert scene_mesh.keep_is_empty(scene_mesh.moge_keep(empty, 0)) and nodes.write_editor_files(empty)[1][0] is None
+
+
+@pytest.mark.parametrize("height, width", [(6, 8), (5, 7), (9, 4)])
+def test_moge_pixel_k_reconstructs_the_cores_points(height, width):
+    k = _moge_k(0.83, 1.17, 0.43, 0.61)
+    depth = 1.0 + torch.rand((height, width), generator=torch.Generator().manual_seed(height))
+    core = depth_map_to_point_map(depth, k)
+
+    pixel_k = scene_mesh.moge_pixel_k(k, height, width)
+
+    # What the depth grid's shader does: z times K_pix^-1 (x, y, 1) at the integer pixel.
+    y, x = torch.meshgrid(torch.arange(height, dtype=torch.float64), torch.arange(width, dtype=torch.float64), indexing="ij")
+    rays = torch.einsum("ij,hwj->hwi", torch.linalg.inv(pixel_k.double()), torch.stack([x, y, torch.ones_like(x)], dim=-1))
+    assert torch.allclose(rays * depth.double()[..., None], core.double(), rtol=1e-6, atol=1e-6)
+    assert torch.allclose(pixel_k, torch.tensor([[0.83 * width, 0.0, 0.43 * width - 0.5], [0.0, 1.17 * height, 0.61 * height - 0.5], [0.0, 0.0, 1.0]]), atol=1e-5)
+
+
+def test_moge_pinhole_check_uses_the_norm():
+    # Odd sizes with the principal point at the middle: the middle pixel lies on the optical axis (x, y about 0).
+    k = _moge_k(1.0, 1.0, 0.5, 0.5)
+    depth = 2.0 + 0.01 * torch.rand((2, 7, 9), generator=torch.Generator().manual_seed(0))
+    points = depth_map_to_point_map(depth, k)
+    assert abs(float(points[0, 3, 4, 0])) < 1e-6
+    geometry = {"points": points, "intrinsics": k[None].repeat(2, 1, 1), "image": torch.zeros((2, 7, 9, 3))}
+    # Rounding at the 1e-6 level: the on-axis x and y are off by far more than 1e-4 of themselves, not of the norm.
+    jittered = {**geometry, "points": points + 1e-6}
+
+    assert scene_mesh.moge_is_pinhole(geometry) == (True, None, 0)
+    assert scene_mesh.moge_is_pinhole(jittered)[0] is True
+    # force_projection off: the model's own points, not the core's unprojection of their z.
+    moved = points.clone()
+    moved[1, 2:4, 2:6, 0] += 0.05
+    assert scene_mesh.moge_is_pinhole({**geometry, "points": moved}) == (False, 1, 8)
+    # Kept points behind the camera: the unprojection of a flat negative z, which the edge check keeps.
+    behind = points.clone()
+    behind[0] = depth_map_to_point_map(torch.full((7, 9), -2.0), k)
+    assert scene_mesh.moge_is_pinhole({**geometry, "points": behind}) == (False, 0, 63)
+
+
+def test_moge_content_box_is_the_kept_points(monkeypatch):
+    for geometry in (_moge_sequence(), _moge_panorama_points()):
+        vertices = torch.cat([scene_files_module.moge_grid_mesh(geometry, index)[0] for index in range(geometry["points"].shape[0])])
+        vertices = vertices[torch.isfinite(vertices).all(-1)]
+        monkeypatch.setattr(scene_files_module, "moge_grid_mesh", None)
+
+        assert sticker_media.content_box(geometry) == {"min": vertices.amin(0).tolist(), "max": vertices.amax(0).tolist()}
+        monkeypatch.undo()
+
+
+def test_a_moge_sequence_on_the_sticker_input_gets_the_depth_grid_meta():
+    output = _da3_execute(sticker=_moge_sequence(count=2), state={"version": 2, "timeline": {"fps": 12}})
+
+    [meta] = output.ui["pano_sticker_meta"]
+    assert meta["kind"] == "depth_grid" and meta["frames"] == 2 and meta["video_fps"] == 12.0 and (meta["width"], meta["height"]) == (16, 12)
+    assert [temp_entry_path(entry).suffix for entry in output.ui["pano_sticker_files"]] == [".f32", ".f32"]
+
+
+def test_moge_uses_depth_grid_decides_once_per_input(monkeypatch):
+    checks = []
+    check = scene_mesh.moge_is_pinhole
+    monkeypatch.setattr(scene_mesh, "moge_is_pinhole", lambda geometry: checks.append(1) or check(geometry))
+    geometry = _moge_sequence(count=2)
+
+    _da3_execute(scene=geometry, sticker=geometry)
+    _da3_execute(scene=geometry, state={"version": 2, "timeline": {"fps": 12}})
+    assert scene_mesh.moge_uses_depth_grid(geometry) == (True, None)
+
+    assert len(checks) == 1
+    scene_mesh.moge_uses_depth_grid(_moge_sequence(count=2))
+    assert len(checks) == 2
