@@ -4,6 +4,7 @@
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { normalizeCoverageValue, sourceAsset } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
+import { createDepthColors } from "../pano_depth_color.js";
 import { createFile3dEditorFiles } from "../pano_file_3d.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import {
@@ -279,6 +280,16 @@ export function createMediaSession(deps) {
     })
     : null;
   if (portVideo) videoCleanupFns.push(() => portVideo.dispose());
+  // The colors of the depth grids (DA3_GEOMETRY mono), a proxy MP4 per input following the playhead.
+  const depthColors = stateV2
+    ? createDepthColors({
+      createVideo: () => createPanoVideo(document, "editor.depth-video"),
+      createCanvas: () => createPanoCanvas({ label: "editor.depth-still" }),
+      releaseCanvas: releasePanoCanvas,
+      onChange: () => requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.MEDIA }),
+    })
+    : null;
+  if (depthColors) videoCleanupFns.push(() => depthColors.dispose());
   // An RGBA IMAGE batch on the port shows its PNGs instead, which keep its alpha.
   const portFrames = stateV2
     ? createFrameSequence({
@@ -614,6 +625,17 @@ export function createMediaSession(deps) {
     return sceneFilesOf(getNodeUiList("pano_sticker_files"), getNodeUiList("pano_sticker_meta"), mediaSource);
   }
 
+  // The colors of the depth grid of input `name` (a request's `video`, pano_space.js sceneRequest) at the
+  // playhead: { media, revision, source }, or null until its video has a picture.
+  function depthColor(name, video) {
+    return depthColors?.picture(name, video, playback.advancing) ?? null;
+  }
+
+  // Lets the depth grid videos of the inputs not in `names` go.
+  function retainDepthColors(names) {
+    depthColors?.retain(names);
+  }
+
   // The editor file of a 3D file Sticker (docs/threejs-spark-integration.md): { kind, unlit, url, generation } once
   // the route answered, else null. The first call for its Source asks the route.
   function file3dEditorFile(sticker) {
@@ -798,6 +820,6 @@ export function createMediaSession(deps) {
     getMediaRevisionToken, playbackFps, syncVideoTransportState, toggleVideoMuted, syncVideoTransportVisibility,
     refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage, getPortMediaMeta, followPortSticker,
     getStickerImage, stickerImageKey, getConnectedErpImage, backgroundCoverage, upstreamBackground, isDecodedImageReady, getStageImageStatus, sceneFiles,
-    stickerFiles, file3dEditorFile, requestFile3d, refreshFile3d, file3dNotice, disposeMediaSession,
+    stickerFiles, depthColor, retainDepthColors, file3dEditorFile, requestFile3d, refreshFile3d, file3dNotice, disposeMediaSession,
   };
 }

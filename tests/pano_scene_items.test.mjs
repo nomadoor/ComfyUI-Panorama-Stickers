@@ -337,3 +337,17 @@ test("an item of several views loads from all of them once, under its key", asyn
   items.request({ ...input(), sources: { "views:k": ["/view?filename=v2.glb"] } });
   assert.equal(calls.length, 2);
 });
+
+test("a depth grid item's source, made anew each render, is the same source and does not load again", async () => {
+  const { items, calls } = harness();
+  const source = () => ({ url: "d0", width: 4, height: 3, depth: { dtype: "float32", byte_order: "little", bytes: 48 }, intrinsics: [1, 0, 0, 0, 1, 0, 0, 0, 1] });
+  const input = () => ({ kind: "depth_grid", urls: ["d0"], url: "d0", prefetch: [], sources: { d0: source() } });
+  items.request(input());
+  assert.deepEqual(calls.map((call) => [call.kind, call.url]), [["depth_grid", source()]]);
+  calls[0].resolve(48);
+  await settle();
+  assert.ok(items.request(input()));
+  assert.equal(calls.length, 1);
+  // The budget counts what the loader gives: W × H × 4.
+  assert.equal([...items.items.values()][0].size, 48);
+});

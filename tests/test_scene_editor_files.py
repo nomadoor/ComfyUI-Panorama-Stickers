@@ -297,3 +297,60 @@ def test_meshes_without_faces_are_empty_items():
     files = nodes._scene_ui(mesh)["pano_scene_files"]
 
     assert files[0] is None and _path(files[1]).exists()
+
+
+
+def test_da3_mono_editor_files_are_depth_with_keep_as_positive():
+    from test_scene_mesh import _keep_case
+
+    from comfyui_pano_suite import scene_mesh
+
+    geometry = _keep_case(False)
+    height, width = geometry["depth"].shape[1:]
+
+    ui = nodes._scene_ui(geometry, fps=12.5)
+
+    [meta] = ui["pano_scene_meta"]
+    files = ui["pano_scene_files"]
+    # Frames 1 and 2 are empty: no file, and the numbers do not shift.
+    assert files[1] is None and files[2] is None and files[0]["format"] == "application/octet-stream"
+    path = _path(files[0])
+    assert path.suffix == ".f32" and path.name.startswith("pano_scene_") and path.name.endswith("_0.f32")
+    data = path.read_bytes()
+    assert len(data) == width * height * 4 == meta["depth"]["bytes"]
+    values = np.frombuffer(data, dtype="<f4").reshape(height, width)
+    keep = scene_mesh.da3_keep(geometry, 0).numpy()
+    assert np.isfinite(values).all() and np.array_equal(values > 0, keep)
+    assert np.array_equal(values[keep], geometry["depth"][0].numpy().astype(np.float32)[keep]) and (values[~keep] == 0).all()
+    k = [scene_mesh.da3_k(geometry, index).reshape(-1).tolist() for index in range(3)]
+    assert {key: meta[key] for key in meta if key != "video"} == {
+        "kind": "depth_grid", "unlit": True, "width": width, "height": height,
+        "depth": {"dtype": "float32", "byte_order": "little", "bytes": width * height * 4},
+        "intrinsics": k, "video_fps": 12.5, "frames": 3,
+    }
+    # The color proxy: the frames' image as the editor MP4.
+    assert meta["video"]["format"] == "video/mp4" and _path(meta["video"]).exists()
+    assert k[0][0] == pytest.approx(0.7 * width) and k[0][2] == pytest.approx((width - 1) / 2)
+
+
+def test_the_depth_grid_fixture_is_what_python_writes():
+    """tests/fixtures/da3_depth_grid/ is the small case the JS reader is checked with; Python writes it."""
+    from comfyui_pano_suite import scene_mesh
+
+    root = Path(__file__).resolve().parent / "fixtures" / "da3_depth_grid"
+    case = json.loads((root / "case.json").read_text(encoding="utf-8"))
+    def tensor(rows):
+        return torch.tensor([[float("nan") if value is None else value for value in row] for row in rows], dtype=torch.float32)[None]
+
+    raw = case["input"]
+    geometry = {"depth": tensor(raw["depth"]), "sky": tensor(raw["sky"]), "confidence": tensor(raw["confidence"]), "mode": "mono",
+                "image": torch.zeros((1, len(raw["depth"]), len(raw["depth"][0]), 3))}
+    keep = scene_mesh.da3_keep(geometry, 0)
+
+    values = np.frombuffer((root / "depth_0.f32").read_bytes(), dtype="<f4").reshape(case["meta"]["height"], case["meta"]["width"])
+    assert np.array_equal(values > 0, keep.numpy()) and case["keep"] == keep.int().tolist()
+    assert case["meta"]["intrinsics"] == [scene_mesh.da3_k(geometry, 0).reshape(-1).tolist()]
+    points = scene_mesh.da3_points(geometry, 0, keep)
+    assert np.allclose(np.asarray(case["points"])[:, 2:], points.numpy(), atol=0) and [row[:2] for row in case["points"]] == keep.nonzero()[:, [1, 0]].tolist()
+    quads = keep[:-1, :-1] & keep[:-1, 1:] & keep[1:, 1:] & keep[1:, :-1]
+    assert case["quads"] == quads.nonzero()[:, [1, 0]].tolist()

@@ -12,6 +12,14 @@ It writes, for tools/parity_file_3d.mjs:
                route returns it (copied into the work directory), and whether it draws without light
   output.png   the node's frame
 
+It also makes the DA3_GEOMETRY mono scene (docs/render-contract.md, "エディタとの一致（DA3 mono の場面）") in
+<work dir>/da3/: a synthetic 256 x 144 frame without intrinsics, connected to `scene` and shot twice, and writes
+
+  scene.json   {"kind": "depth_grid", "meta", "depth", "image", "video", "shots", "width", "height"}: the editor meta
+               as the node gives it (`pano_scene_meta`) with its `video` entry left out, the depth file, the frame's
+               image as a PNG (color (a)), the color proxy MP4 (color (b)), and per shot {"name", "state", "output"}
+  depth_0.f32, image.png, proxy.mp4, output_<shot>.png
+
 ComfyUI's input and temp folders are pointed into the work directory while it runs.
 """
 import json
@@ -58,6 +66,65 @@ def _checker(size=256, squares=8):
     return Image.fromarray(np.where(on, np.array([230, 190, 50]), np.array([30, 60, 140])).astype(np.uint8), mode="RGB")
 
 
+DA3_WIDTH, DA3_HEIGHT = 256, 144
+# The core's default K (fx = 0.7 W, principal point at the middle): the view that lays the image onto the output.
+DA3_HFOV_DEG = math.degrees(2.0 * math.atan(DA3_WIDTH / 2.0 / (0.7 * DA3_WIDTH)))
+
+
+def _da3_mono():
+    """The synthetic DA3_GEOMETRY mono of the scene: a slanted plane (2 to about 3 ahead, gentle enough to keep every
+    pixel) with one step (+0.5 from column 160), the top-left corner sky (1.0), the bottom-right corner of low
+    confidence, a few NaN pixels; its image a 16-pixel checker of a light and a dark gray (edges on even pixels,
+    brightness alone differs) with two plain color bands (for the color matrix)."""
+    y, x = torch.meshgrid(torch.arange(DA3_HEIGHT, dtype=torch.float32), torch.arange(DA3_WIDTH, dtype=torch.float32), indexing="ij")
+    depth = 2.0 + 0.004 * x + 0.002 * y + (x >= 160).float() * 0.5
+    for row, column in ((70, 30), (71, 90), (90, 200), (20, 220)):
+        depth[row, column] = float("nan")
+    sky = torch.zeros_like(depth)
+    sky[:30, :40] = 1.0
+    confidence = torch.ones_like(depth)
+    confidence[-30:, -40:] = 0.0
+    light, dark = np.array([200, 200, 200]), np.array([70, 70, 70])
+    checker = (((x // 16) + (y // 16)) % 2 == 0).numpy()[..., None]
+    image = np.where(checker, light, dark).astype(np.uint8)
+    image[96:112, 48:208] = (210, 70, 40)
+    image[116:132, 48:208] = (40, 90, 210)
+    return {"depth": depth[None], "image": torch.tensor(image, dtype=torch.float32)[None] / 255.0, "mode": "mono",
+            "sky": sky[None], "confidence": confidence[None]}, image
+
+
+def _da3_scene(work: Path):
+    import folder_paths
+
+    from comfyui_pano_suite import nodes
+
+    work.mkdir(parents=True, exist_ok=True)
+    geometry, image = _da3_mono()
+    Image.fromarray(image, mode="RGB").save(work / "image.png")
+    erp_width = next(width for width in range(SIZE, 8 * SIZE) if nodes._even_side(width / math.pi * math.tan(math.radians(DA3_HFOV_DEG) / 2)) == SIZE)
+    # From the DA3 camera (the image lies on the output), and from the side, looking back at the plane's middle.
+    shots = {"front": ([0.0, 0.0, 0.0], 0.0), "side": ([1.2, 0.3, 0.0], -25.0)}
+    scene = {"kind": "depth_grid", "depth": ["depth_0.f32"], "image": "image.png", "video": "proxy.mp4", "shots": [], "width": SIZE, "height": SIZE}
+    for name, (position, yaw) in shots.items():
+        state = {"version": 2, "camera": {"aspect": 1.0, "fov": {"value": DA3_HFOV_DEG}, "position": {"value": position},
+                                          "rotation": {"value": {"yaw_deg": yaw, "pitch_deg": 0.0, "roll_deg": 0.0}}}}
+        output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color="#000000", coverage="360", output_size=str(erp_width), scene=geometry)
+        frame = output.result[0][0]
+        if tuple(frame.shape[:2]) != (SIZE, SIZE):
+            raise SystemExit(f"The node drew {tuple(frame.shape[:2])}, not {SIZE} x {SIZE}.")
+        Image.fromarray((frame.clamp(0.0, 1.0) * 255.0 + 0.5).floor().byte().cpu().numpy(), mode="RGB").save(work / f"output_{name}.png")
+        scene["shots"].append({"name": name, "state": state, "output": f"output_{name}.png"})
+        if name == "front":
+            [meta] = output.ui["pano_scene_meta"]
+            [entry] = output.ui["pano_scene_files"]
+            temp = Path(folder_paths.get_temp_directory())
+            shutil.copyfile(temp / entry["subfolder"] / entry["filename"], work / "depth_0.f32")
+            shutil.copyfile(temp / meta["video"]["subfolder"] / meta["video"]["filename"], work / "proxy.mp4")
+            scene["meta"] = {key: value for key, value in meta.items() if key != "video"}
+    (work / "scene.json").write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
+    print(f"DA3 mono: {SIZE} x {SIZE}, shots {list(shots)} -> {work}")
+
+
 def main(work: Path):
     import folder_paths
     from comfy_extras.nodes_save_3d import save_glb
@@ -102,6 +169,7 @@ def main(work: Path):
     scene = {"state": state, "glb": "editor_box.glb", "unlit": payload["unlit"], "width": width, "height": height}
     (work / "scene.json").write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
     print(f"{width} x {height} -> {work / 'output.png'}, {work / 'scene.json'}")
+    _da3_scene(work / "da3")
 
 
 if __name__ == "__main__":

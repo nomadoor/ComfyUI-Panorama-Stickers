@@ -123,3 +123,40 @@ test("an item of several views fails as a whole when one view does not load", as
   t.mock.method(globalThis, "fetch", async (url) => (url.endsWith("v1.glb") ? { ok: false, status: 404 } : { ok: true, arrayBuffer: async () => glb.slice(0) }));
   await assert.rejects(loadSceneItem("mesh", ["/view?filename=v0.glb", "/view?filename=v1.glb"], new AbortController().signal, { unlit: true }), /HTTP 404/);
 });
+
+// docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド": a depth file becomes its R32F texture on the
+// shared grid, counted as W × H × 4 bytes.
+function depthFile(values) {
+  const buffer = new ArrayBuffer(values.length * 4);
+  const view = new DataView(buffer);
+  values.forEach((value, index) => view.setFloat32(index * 4, value, true));
+  return buffer;
+}
+const depthSource = (extra = {}) => ({
+  url: "/view?filename=d0.f32", width: 3, height: 2, depth: { dtype: "float32", byte_order: "little", bytes: 24 },
+  intrinsics: [1, 0, 0, 0, 1, 0, 0, 0, 1], ...extra,
+});
+
+test("a depth grid item is its depth texture on the shared grid, its box from the depths above 0", async (t) => {
+  const { FloatType, NearestFilter, RedFormat } = await import("three");
+  const { depthGridGeometry } = await import("../web_src/pano_depth_grid.js");
+  const bytes = depthFile([1, 2, 0, 1, 1, 1]);
+  t.mock.method(globalThis, "fetch", async () => ({ ok: true, arrayBuffer: async () => bytes }));
+  const item = await loadSceneItem("depth_grid", depthSource(), new AbortController().signal, { unlit: true, maxTextureSize: 4096 });
+  assert.equal(item.size, 3 * 2 * 4);
+  assert.equal(item.object.geometry, depthGridGeometry(3, 2));
+  assert.equal(item.object.frustumCulled, false);
+  const texture = item.object.material.uniforms.depthMap.value;
+  assert.deepEqual([texture.format, texture.type, texture.minFilter, texture.magFilter, texture.generateMipmaps, texture.flipY], [RedFormat, FloatType, NearestFilter, NearestFilter, false, false]);
+  assert.deepEqual([...texture.image.data], [1, 2, 0, 1, 1, 1]);
+  assert.deepEqual(item.box, { min: [0, -1, -2], max: [2, 0, -1] });
+});
+
+test("a depth file of another form, or larger than the GPU's textures, does not load", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => ({ ok: true, arrayBuffer: async () => depthFile([1, 1, 1, 1, 1]) }));
+  const signal = new AbortController().signal;
+  await assert.rejects(loadSceneItem("depth_grid", depthSource(), signal, { maxTextureSize: 4096 }), /20 bytes, not 24/);
+  await assert.rejects(loadSceneItem("depth_grid", depthSource({ depth: { dtype: "float32", byte_order: "big", bytes: 24 } }), signal, { maxTextureSize: 4096 }), /big/);
+  await assert.rejects(loadSceneItem("depth_grid", depthSource({ intrinsics: [0, 0, 0, 0, 0, 0, 0, 0, 0] }), signal, { maxTextureSize: 4096 }), /K/);
+  await assert.rejects(loadSceneItem("depth_grid", depthSource(), signal, { maxTextureSize: 2 }), /MAX_TEXTURE_SIZE 2/);
+});

@@ -840,7 +840,7 @@ test("a 3D world port Sticker (#63) has no plane: the space view draws its item 
   const editor = readEditorSource();
   // Its files are used while the `sticker` input comes from where the run's did.
   assert.match(editor, /isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;\s*return sceneFilesOf\(getNodeUiList\("pano_sticker_files"\), getNodeUiList\("pano_sticker_meta"\), mediaSource\);/);
-  assert.match(editor, /const sticker = stickerContentRequest\(portFiles, sceneState, evaluated\);/);
+  assert.match(editor, /const sticker = withColors\("sticker", stickerContentRequest\(portFiles, sceneState, evaluated\)\);/);
   assert.match(editor, /stickerUrls: stickerContentUrls\(portFiles, sceneState\),/);
   // A see-through GLB does not write depth, and writes it again at full opacity.
   const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");

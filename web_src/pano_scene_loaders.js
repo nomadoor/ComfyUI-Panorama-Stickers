@@ -1,8 +1,16 @@
 // Loading the `scene` items of the space view (#71), in the three.js chunk. A GLB loads with three.js's
 // GLTFLoader; a PLY loads with Spark, which is its own chunk and is imported the first time a SPLAT
 // loads, so editors and node previews without a SPLAT never load it.
-import { Box3, DoubleSide, Group, MeshBasicMaterial } from "three";
+import { Box3, DataTexture, DoubleSide, FloatType, Group, Mesh, MeshBasicMaterial, NearestFilter, RedFormat } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import {
+  createDepthGridMaterial,
+  depthGridBox,
+  depthGridGeometry,
+  depthGridTooLarge,
+  inverseIntrinsics,
+  readDepthGrid,
+} from "./pano_depth_grid.js";
 
 let spark = null;
 
@@ -64,7 +72,8 @@ const gltfLoader = new GLTFLoader();
 // SPLAT's in 3DGS coordinates) and the bytes it loaded, for the budget of loaded items. The fetched bytes
 // are let go once handed to the parser, so only the parsed item stays. A GLB draws without light unless
 // `unlit` is false (the meta's mark).
-export async function loadSceneItem(kind, url, signal, { unlit = true } = {}) {
+export async function loadSceneItem(kind, url, signal, { unlit = true, maxTextureSize = Infinity } = {}) {
+  if (kind === "depth_grid") return loadDepthGrid(url, signal, maxTextureSize);
   if (Array.isArray(url)) return loadViews(url, signal, unlit);
   let bytes = await fetchBytes(url, signal);
   signal.throwIfAborted();
@@ -105,8 +114,44 @@ async function loadViews(urls, signal, unlit) {
   return { object, box: boxValue(new Box3().setFromObject(object)), size: views.reduce((total, view) => total + view.size, 0) };
 }
 
+// A DA3_GEOMETRY mono item (docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド"): its depth file
+// (source: { url, width, height, depth, intrinsics }, sceneFilesOf) as an R32F texture (nearest, no mip, no flipY:
+// texture row 0 is the file's row 0, the image's top) on the shared grid of its size. Its size is W × H × 4 bytes and
+// its box is around the points of the depths above 0. A file of another form than the meta's, a K without an
+// inverse, or a grid larger than the GPU's textures (maxTextureSize) does not load.
+async function loadDepthGrid(source, signal, maxTextureSize) {
+  const { url, width, height, intrinsics } = source;
+  const tooLarge = depthGridTooLarge(width, height, maxTextureSize);
+  if (tooLarge) throw new Error(tooLarge);
+  const inverseK = inverseIntrinsics(intrinsics);
+  if (!inverseK) throw new Error("The depth grid's K has no inverse.");
+  let bytes = await fetchBytes(url, signal);
+  signal.throwIfAborted();
+  const values = readDepthGrid(bytes, source);
+  bytes = null;
+  const depthMap = new DataTexture(values, width, height, RedFormat, FloatType);
+  depthMap.minFilter = NearestFilter;
+  depthMap.magFilter = NearestFilter;
+  depthMap.generateMipmaps = false;
+  depthMap.flipY = false;
+  depthMap.needsUpdate = true;
+  const object = new Mesh(depthGridGeometry(width, height), createDepthGridMaterial({ depthMap, inverseK, width, height }));
+  object.frustumCulled = false;
+  object.userData.depthGrid = true;
+  return { object, box: depthGridBox(values, width, height, inverseK), size: width * height * 4 };
+}
+
+// A depth grid's mesh frees its texture and materials; its grid is shared by its size and holds no vertex data.
+function disposeDepthGrid(object) {
+  const { material } = object;
+  material.uniforms.depthMap.value?.dispose();
+  material.dispose();
+  object.userData.pickMaterial?.dispose();
+}
+
 export function disposeSceneItem(item) {
   if (!item.object) return;
   if (item.kind === "splat") item.object.dispose();
+  else if (item.kind === "depth_grid") disposeDepthGrid(item.object);
   else disposeObject(item.object);
 }

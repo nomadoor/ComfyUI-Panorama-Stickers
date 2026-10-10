@@ -47,6 +47,7 @@ import {
   projectPoint,
   reuseWheelPick,
   multiviewKey,
+  DEPTH_GRID_PREFETCH,
   sceneFilesOf,
   sceneItemBox,
   sceneItemIndex,
@@ -1115,4 +1116,50 @@ test("the node's multiview shapes: both views, one view left, and no view left",
   assert.deepEqual(sceneFilesOf([[null]], meta, source).urls, [null]);
   // A mono DA3_GEOMETRY: one entry per frame, null for an empty frame.
   assert.deepEqual(sceneFilesOf([entry("f0.glb"), null], meta, source).urls, ["/view?filename=f0.glb&type=temp", null]);
+});
+
+// docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド" and docs/studio-node.md "DA3_GEOMETRY mono の
+// エディタ用ファイル": the depth files by URL, each loaded with the grid's size, its depth's form and its own K; the
+// colors from the proxy MP4 at i / video_fps.
+const depthMeta = (extra = {}) => ({
+  kind: "depth_grid", unlit: true, width: 4, height: 3,
+  depth: { dtype: "float32", byte_order: "little", bytes: 48 },
+  intrinsics: [[2, 0, 1.5, 0, 2, 1, 0, 0, 1], [3, 0, 1.5, 0, 3, 1, 0, 0, 1], [4, 0, 1.5, 0, 4, 1, 0, 0, 1]],
+  video: { filename: "proxy.mp4", type: "temp" }, video_fps: 24, frames: 3,
+  ...extra,
+});
+
+test("a DA3 mono result is depth files by URL, each loaded with its grid and its own K", () => {
+  const source = (entry) => `/view?filename=${entry.filename}`;
+  const files = sceneFilesOf([{ filename: "d0.f32" }, null, { filename: "d2.f32" }], [depthMeta()], source);
+  assert.equal(files.kind, "depth_grid");
+  assert.equal(files.unlit, true);
+  assert.deepEqual(files.urls, ["/view?filename=d0.f32", null, "/view?filename=d2.f32"]);
+  assert.deepEqual(files.sources["/view?filename=d2.f32"], {
+    url: "/view?filename=d2.f32", width: 4, height: 3, depth: { dtype: "float32", byte_order: "little", bytes: 48 }, intrinsics: [4, 0, 1.5, 0, 4, 1, 0, 0, 1],
+  });
+  assert.equal(files.sources["/view?filename=d0.f32"].intrinsics[0], 2);
+  assert.deepEqual(files.video, { src: "/view?filename=proxy.mp4", fps: 24 });
+  // A meta without its grid's form is not drawn.
+  assert.equal(sceneFilesOf([{ filename: "d0.f32" }], [depthMeta({ width: undefined })], source), null);
+  assert.equal(sceneFilesOf([{ filename: "d0.f32" }], [depthMeta({ intrinsics: [] })], source), null);
+});
+
+test("a depth grid loads DEPTH_GRID_PREFETCH items ahead, and its color comes from the proxy at the item's time", () => {
+  assert.equal(DEPTH_GRID_PREFETCH, 8);
+  const source = (entry) => `/view?filename=${entry.filename}`;
+  const names = Array.from({ length: 12 }, (_, index) => (index === 5 ? null : { filename: `d${index}.f32` }));
+  const files = sceneFilesOf(names, [depthMeta({ intrinsics: names.map(() => [1, 0, 0, 0, 1, 0, 0, 0, 1]), frames: 12 })], source);
+  const scene = { active: true, clip_frame: 2, position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 };
+  const request = sceneRequest(files, scene);
+  assert.equal(request.url, "/view?filename=d2.f32");
+  // The next 8 items, an empty one left out.
+  assert.deepEqual(request.prefetch, [3, 4, 6, 7, 8, 9, 10].map((index) => `/view?filename=d${index}.f32`));
+  assert.deepEqual(request.video, { src: "/view?filename=proxy.mp4", fps: 24, time: 2 / 24 });
+  assert.equal(request.unlit, true);
+  assert.deepEqual(request.itemQuaternion, { x: 0, y: 0, z: 0, w: 1 });
+  // Other items still load one ahead.
+  const meshes = sceneFilesOf(names, [{ kind: "mesh" }], source);
+  assert.deepEqual(sceneRequest(meshes, scene).prefetch, ["/view?filename=d3.f32"]);
+  assert.equal(sceneRequest(meshes, scene).video, null);
 });

@@ -24,6 +24,7 @@ import {
   stickerContentRequest,
   stickerContentUrls,
 } from "../pano_space.js";
+import { depthGridNotice } from "../pano_depth_color.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { CUTOUT_FRAME_ACCENT, CUTOUT_FRUSTUM_COLOR, CUTOUT_TRAJECTORY_COLOR } from "./constants.js";
 
@@ -33,11 +34,14 @@ export function createViewInput(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
-    currentViewCamera, cutoutCamera, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
+    currentViewCamera, cutoutCamera, depthColor, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
     getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
     isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, refreshFile3d, sceneFiles,
     selectedWorldSticker, spaceModeState, spaceOrigin, spaceViewState, stickerFiles, stickerImageKey,
-    syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput, worldStickerEditable;
+    retainDepthColors, syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput,
+    worldStickerEditable;
+  // The stage's line for the depth grids of the frame built last (depthVideoNotice).
+  let depthNotice = "";
 
   // The state v2 the views draw, made again when the state changes (scheduler.stateRevision).
   let editorViewScene = { revision: -1, sceneState: null };
@@ -110,6 +114,10 @@ export function createViewInput(deps) {
     // `content` is the World alone, as the Camera sees it in the Frame view and the camera
     // preview (#77); `space` adds the guides of the panorama view.
     const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, evaluated, media, upstream) : null;
+    if (!content) {
+      retainDepthColors([]);
+      depthNotice = "";
+    }
     const space = isSpaceView() ? { ...content, ...spaceGuides(content) } : null;
     return { background, layers, space, content };
   }
@@ -131,11 +139,20 @@ export function createViewInput(deps) {
   // around all of it (null without content) that frames it and scales the navigation.
   function buildSpaceContent(sceneState, evaluated, media, upstream) {
     const files = sceneFiles();
-    const scene = sceneRequest(files, evaluated.scene);
+    // A depth grid (DA3_GEOMETRY mono) draws with the colors of its input's proxy video, by the input's name.
+    const depthNames = [];
+    const withColors = (name, request) => {
+      if (request?.kind !== "depth_grid") return request;
+      depthNames.push(name);
+      const color = depthColor(name, request.video);
+      // The input's name keys its one color texture (pano_three_view.js createDepthColorTextures).
+      return { ...request, color: color && { ...color, slot: name } };
+    };
+    const scene = withColors("scene", sceneRequest(files, evaluated.scene));
     const box = scene?.url ? editorView.sceneBox(scene.url) : null;
     const sceneBox = box && sceneItemBox(scene.kind, box);
     const portFiles = stickerFiles();
-    const sticker = stickerContentRequest(portFiles, sceneState, evaluated);
+    const sticker = withColors("sticker", stickerContentRequest(portFiles, sceneState, evaluated));
     const stickerBox = sticker?.url ? editorView.sceneBox(sticker.url) : null;
     const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
     const fileStickers = fileStickerRequests(sceneState, evaluated, file3dEditorFile);
@@ -144,8 +161,11 @@ export function createViewInput(deps) {
       if (fileBox) items.push({ box: sceneItemBox(request.kind, fileBox), value: request.value });
     }
     refreshGoneFiles(sceneState, fileStickers, upstream.items);
+    const upstreamItems = upstream.items.map((entry) => (entry.request?.kind === "depth_grid" ? { ...entry, request: withColors(entry.slot, entry.request) } : entry));
+    retainDepthColors(depthNames);
+    depthNotice = depthGridNotice([scene, sticker, ...upstreamItems.map((entry) => entry.request)], (key) => editorView.sceneItemError(key));
     const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media, evaluated });
-    for (const { request, value } of upstream.items) {
+    for (const { request, value } of upstreamItems) {
       const upstreamBox = request?.url ? editorView.sceneBox(request.url) : null;
       if (upstreamBox) items.push({ box: sceneItemBox(request.kind, upstreamBox), value });
     }
@@ -160,7 +180,7 @@ export function createViewInput(deps) {
       fileStickerKeys: fileStickers.map((entry) => entry.key),
       stickers,
       upstreamStickers: upstream.stickers,
-      upstreamItems: upstream.items,
+      upstreamItems,
       sphere,
     };
   }
@@ -176,6 +196,11 @@ export function createViewInput(deps) {
     for (const item of upstreamItems) {
       if (item.source && gone(item.urls[0])) refreshFile3d(item.source);
     }
+  }
+
+  // The stage's line for the depth grids shown in the frame built last (pano_depth_color.js depthGridNotice).
+  function depthVideoNotice() {
+    return depthNotice;
   }
 
   // The guides of the panorama view over the World `content`: the grid, the gizmo, and in the Cutout
@@ -281,14 +306,15 @@ export function createViewInput(deps) {
     connect(api) {
       ({
         applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
-        currentViewCamera, cutoutCamera, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
+        currentViewCamera, cutoutCamera, depthColor, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
         getMediaRevisionToken, getStickerImage, hasSpaceContent, isDecodedImageReady, isExternalSticker,
         isFreeSpaceView, isSpaceView, isUploadingSticker, isWorldMenuShown, portVideo, refreshFile3d, sceneFiles,
         selectedWorldSticker, spaceModeState, spaceOrigin, spaceViewState, stickerFiles, stickerImageKey,
-        syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput, worldStickerEditable,
+        retainDepthColors, syncFloatingViewButtonState, timelineSpanFrames, updateSelectionMenu, upstreamViewInput,
+        worldStickerEditable,
       } = api);
     },
-    editorViewInput, endEditorViewFrame, editorViewSceneState, isCameraSelected, renderEditorView,
+    depthVideoNotice, editorViewInput, endEditorViewFrame, editorViewSceneState, isCameraSelected, renderEditorView,
     shotViewCamera, drawEditorViewShot, renderEditorViewUnwrap,
   };
 }
