@@ -105,6 +105,7 @@ surfaceに含めない操作:
 - `erp_image`、`coverage`、`fps`、`audio` のinput port semanticsを維持する。
 - `image: IMAGE` outputは、core `PreviewImage` と同様に入力 `erp_image` tensorを加工・copyせずそのまま返す。後続のTerminate系nodeへ接続できる。
 - dedicated runtime `web_src/pano_preview_previewnode.js` を維持し、Cutout shared runtimeへ統合しない。
+- 同じ runtime を新しい Preview（id `PanoramaPreviewNode`。`docs/preview-node.md`）の IMAGE と VIDEO にも付ける（作る）。そこでは画像の入力は `source`（`imageInputName`）で、`image` 出力の復元（`ensurePanoramaPreviewImageOutput`）はしない。`PANO_SCENE` は別の表示（`docs/preview-node.md` の「`PANO_SCENE` を見る」）で、この runtime は描かない。
 - image解決、video muted / loop、double-click / Space再生切替、coverage、drag、wheel、inertiaを維持する。
 - videoは自動再生しない。既定は停止で先頭のframeを表示し、double-click / Spaceで再生する。画面外（collapse、別のgraph、subgraphの中）では停止する（見えないかの判定は Panorama Studio と同じ `surfaceShown`。停止するだけで、src は外さない）。
 - cameraは一時状態のままとし、workflowへ新しいparameterやstateを保存しない。
