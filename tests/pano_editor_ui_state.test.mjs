@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, stickerParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, upstreamInspectorModel, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
+import { ERP_ASPECT, PAINTING_ROW, cameraParamEnabled, cameraParamTip, stickerParamEnabled, buildEasingModel, buildSelectionMenuModel, buildTimelineModel, buildWorldSelectionMenuModel, cameraAspectChoices, floatingRightState, frameViewButton, inspectorRows, selectionMenuPlacement, upstreamInspectorModel, worldFieldRange } from "../web_src/pano_editor_ui_state.js";
 import { ICON } from "../web_src/icons.js";
 import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
@@ -97,11 +97,12 @@ test("the Timeline has one row per object: the Camera with `camera`, then the St
     ["position", "Position", [0, 24, 48]],
     ["rotation", "Rotation", [0, 24, 48]],
     ["fov", "FOV", [0, 24]],
+    ["curve", "Lens curve", []],
   ]);
   assert.deepEqual(sky.clip, { start: 10, end: 50 });
   // st_sky's material starts at 10 - 5 = 5; only its opacity has Keyframes.
   assert.deepEqual(sky.keys, [{ frame: 10, full: false }, { frame: 20, full: false }, { frame: 30, full: false }]);
-  assert.deepEqual(sky.lanes.map((lane) => lane.label), ["Direction", "Roll", "Size", "Opacity"]);
+  assert.deepEqual(sky.lanes.map((lane) => lane.label), ["Direction", "Roll", "Size", "Opacity", "Lens curve"]);
   assert.deepEqual(world.lanes.map((lane) => lane.label), ["Position", "Rotation", "Scale", "Opacity"]);
   assert.deepEqual(world.clip, { start: 0, end: null });
 
@@ -520,10 +521,14 @@ test("Panorama Studio's Camera menu has the 360° preset and Delete, and a 360°
   assert.equal(buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate" }).items.length, 1);
 });
 
-test("a 360° Camera's FOV fields are disabled, and the others stay as they are (#89)", () => {
-  for (const key of ["hFOV_deg", "vFOV_deg"]) {
+test("a 360° Camera's FOV and lens fields are disabled, saying why, and the others stay as they are (#89, ADR 0042)", () => {
+  for (const key of ["hFOV_deg", "vFOV_deg", "curve", "focal_mm"]) {
     assert.equal(cameraParamEnabled(key, { erp: true }), false);
     assert.equal(cameraParamEnabled(key), true);
+  }
+  for (const key of ["curve", "focal_mm"]) {
+    assert.equal(typeof cameraParamTip(key, { erp: true }), "string");
+    assert.equal(cameraParamTip(key), null);
   }
   for (const key of ["yaw_deg", "pitch_deg", "roll_deg", "position_x"]) assert.equal(cameraParamEnabled(key, { erp: true }), true);
   // The disabled tab is left out of the Tab order, and keeps its colour under the pointer.

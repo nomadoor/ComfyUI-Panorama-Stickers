@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createExternalStickers } from "../web_src/editor/external_stickers.js";
@@ -333,7 +333,10 @@ test("the node surface shows the handoff without writing state_json, and its syn
 });
 
 // Held to the node's `_inherit_handoff` by the same fixtures (tests/test_pose_handoff.py).
-for (const name of ["handoff_same_placement", "handoff_sky_to_world", "handoff_world_to_sky"]) {
+// Every `handoff_*` case there is, the lens's (ADR 0042) among them.
+const HANDOFF_FIXTURES = readdirSync(new URL("./fixtures/scene_inherit/", import.meta.url))
+  .filter((file) => /^handoff_.*\.json$/.test(file)).map((file) => file.slice(0, -5)).sort();
+for (const name of HANDOFF_FIXTURES) {
   test(`inheriting the handoff matches the fixture the node shares: ${name}`, () => {
     const fixture = JSON.parse(readFileSync(new URL(`./fixtures/scene_inherit/${name}.json`, import.meta.url), "utf8"));
     const state = loadSceneState(fixture.state);
@@ -341,3 +344,17 @@ for (const name of ["handoff_same_placement", "handoff_sky_to_world", "handoff_w
     assert.deepEqual(inheritPortHandoff(state, port(state), portHandoff(fixture.handoff)), fixture.expected);
   });
 }
+
+// ADR 0042: the handoff hands its lens too, as the node's `_inherit_handoff` does.
+test("the handoff hands a sky Sticker's curve and a world Sticker's lens, and a pinhole shot takes the lens away", () => {
+  const source = { kind: "port" };
+  const world = loadSceneState({ version: 2, stickers: [{ id: "p", placement: "world", source, lens: { value: { curve: 0.5, hFOV_deg: 120 } } }] });
+  const lens = { value: { curve: 0, hFOV_deg: 200 }, keyframes: [] };
+  const handed = inheritPortHandoff(world, world.stickers[0], portHandoff({ placement: "world", lanes: { position: { value: [0, 0, -2] }, lens }, fps: 24 }));
+  assert.deepEqual(handed.lens, lens);
+  const pinhole = inheritPortHandoff(world, world.stickers[0], portHandoff({ placement: "world", lanes: { position: { value: [0, 0, -2] } }, fps: 24 }));
+  assert.equal(Object.hasOwn(pinhole, "lens"), false);
+  const sky = loadSceneState({ version: 2, stickers: [{ id: "p", placement: "sky", source }] });
+  const curve = { value: 0.3, keyframes: [{ frame: 0, value: 0.3, easing: [0.42, 0, 0.58, 1] }] };
+  assert.deepEqual(inheritPortHandoff(sky, sky.stickers[0], portHandoff({ placement: "sky", lanes: { curve }, fps: 24 })).curve, curve);
+});

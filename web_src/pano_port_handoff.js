@@ -3,10 +3,18 @@
 // stored value, the others follow the handoff, and its placement follows the handoff (nodes.py
 // `_inherit_handoff`). The state keeps the stored Lanes: showing the handoff never changes state_json, and an
 // edit of an inherited Lane makes it an override (docs/editor-interaction.md).
-import { loadSceneState, timelineFps } from "./pano_scene_state.js";
+import { loadSceneState, SKY_STICKER_LANES, timelineFps, WORLD_STICKER_LANES } from "./pano_scene_state.js";
 
-// The Lanes a handoff of each placement hands.
-export const HANDOFF_LANES = { sky: ["direction", "roll", "size"], world: ["position", "rotation", "scale"] };
+// The Lanes a handoff of each placement hands: with a lens (ADR 0042) a sky Sticker's `curve`, and a world
+// Sticker's `lens` when a shot was not through a pinhole alone.
+export const HANDOFF_LANES = { sky: ["direction", "roll", "size", "curve"], world: ["position", "rotation", "scale", "lens"] };
+
+// The handed Lanes the inspector's Upstream row lists: not the lens Lanes, which have no row (ADR 0042).
+export const HANDOFF_ROW_LANES = { sky: ["direction", "roll", "size"], world: ["position", "rotation", "scale"] };
+
+// The Lanes an edit can make overrides of, in the order a state keeps `handoff_overrides` (its Sticker's Lanes;
+// a world Sticker's `lens`, which only the handoff writes, is not one).
+const OVERRIDE_ORDER = { sky: SKY_STICKER_LANES.map(([name]) => name), world: WORLD_STICKER_LANES.map(([name]) => name) };
 
 // The fields a port Sticker keeps when the handoff replaces it by one of the other placement.
 const KEPT_FIELDS = ["id", "source", "clip", "visible", "locked", "crop", "opacity", "handoff_overrides"];
@@ -51,7 +59,9 @@ export function inheritPortHandoff(state, stored, handoff) {
   let raw;
   if (stored.placement === handoff.placement) {
     raw = { ...stored };
-    for (const name of HANDOFF_LANES[handoff.placement]) if (!stored.handoff_overrides.includes(name)) raw[name] = lanes[name];
+    for (const name of HANDOFF_LANES[handoff.placement]) if (lanes[name] && !stored.handoff_overrides.includes(name)) raw[name] = lanes[name];
+    // A shot through a pinhole alone hands today's plane, whatever lens an earlier shot handed.
+    if (!lanes.lens) delete raw.lens;
   } else {
     raw = { ...Object.fromEntries(KEPT_FIELDS.map((key) => [key, stored[key]])), placement: handoff.placement, ...lanes };
     if (handoff.placement === "sky") {
@@ -72,12 +82,13 @@ export function showPortHandoff(state, handoff) {
 // among those the handoff gives: they become its overrides (ADR 0030, touched = changed by this edit). Added to
 // its `handoff_overrides` in Lane order, which it returns.
 export function recordHandoffEdits(sticker, shown) {
-  const names = HANDOFF_LANES[sticker.placement];
+  const order = OVERRIDE_ORDER[sticker.placement];
+  const names = HANDOFF_LANES[sticker.placement].filter((name) => order.includes(name));
   if (shown.id !== sticker.id || shown.placement !== sticker.placement) return sticker.handoff_overrides;
   const touched = names.filter((name) => !sameValue(sticker[name], shown[name]));
   if (touched.length) {
     const overrides = new Set([...sticker.handoff_overrides, ...touched]);
-    sticker.handoff_overrides = [...names, "opacity"].filter((name) => overrides.has(name));
+    sticker.handoff_overrides = order.filter((name) => overrides.has(name));
   }
   return sticker.handoff_overrides;
 }
@@ -91,7 +102,11 @@ export function storedPortSticker(shown, stored) {
   if (!stored || stored.id !== shown.id) return clone(shown);
   if (shown.placement === stored.placement) {
     const out = clone(shown);
-    for (const name of HANDOFF_LANES[shown.placement]) if (!shown.handoff_overrides.includes(name)) out[name] = clone(stored[name]);
+    for (const name of HANDOFF_LANES[shown.placement]) {
+      if (shown.handoff_overrides.includes(name)) continue;
+      if (stored[name] === undefined) delete out[name];
+      else out[name] = clone(stored[name]);
+    }
     return out;
   }
   if (shown.handoff_overrides.some((name) => HANDOFF_LANES[shown.placement].includes(name))) return clone(shown);

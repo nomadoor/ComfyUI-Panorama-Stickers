@@ -377,8 +377,8 @@ test("the node shows the sky Stickers of state v2 at Timeline frame 0", () => {
   const state = parseSceneEditorState(readFileSync(new URL("./fixtures/scene_state/v2_canonical.json", import.meta.url), "utf8"));
   // st_sky starts at frame 10, so the node shows it hidden; the world Sticker is not on the node.
   assert.deepEqual(surfacePoseStickers(state), [
-    { id: "st_sky", z_index: 2, locked: false, visible: false, external: false, yaw_deg: 30, pitch_deg: 10, hFOV_deg: 20, vFOV_deg: 15, rot_deg: 5 },
-    { id: "st_hidden", z_index: 0, locked: false, visible: false, external: false, yaw_deg: -45, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0 },
+    { id: "st_sky", z_index: 2, locked: false, visible: false, external: false, yaw_deg: 30, pitch_deg: 10, hFOV_deg: 20, vFOV_deg: 15, rot_deg: 5, curve: 1 },
+    { id: "st_hidden", z_index: 0, locked: false, visible: false, external: false, yaw_deg: -45, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 0, curve: 1 },
   ]);
   assert.deepEqual(buildStickersDisplayEntries(state).map((entry) => entry.id), ["st_hidden", "st_sky"]);
   // While the node plays, the Stickers are posed at the played frame.

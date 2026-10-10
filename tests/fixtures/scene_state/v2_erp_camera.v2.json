@@ -66,6 +66,10 @@
     "fov": {
       "value": 70.0,
       "keyframes": []
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
     }
   },
   "scene": {

@@ -52,6 +52,9 @@ test("the output size follows ADR 0029", () => {
     { width: 1024, height: 512, reducedFrom: null, defaulted: false });
   assert.deepEqual(sizes({ camera: camera({ fov: 150, aspect: 4 }) }, "4096", 360, null),
     { width: 4096, height: 1024, reducedFrom: [4866, 1216], defaulted: false });
+  // A lens curve keeps f at the center (ADR 0042): a 180° equidistant fisheye is 2·f·π/2 wide, f = width ÷ 2π.
+  assert.deepEqual(sizes({ camera: { ...camera({ fov: 180 }), curve: { value: 0 } } }, "2048", 360, null),
+    { width: 1024, height: 1024, reducedFrom: null, defaulted: false });
 });
 
 test("the node status names what the node shoots, its size, and whether it was capped", () => {

@@ -173,7 +173,7 @@ MOVING = _sticker_state({
     ],
     "fov": [{"frame": 0, "value": 70.0}, {"frame": 6, "value": 50.0}],
 })
-SKY_LANES = ("direction", "roll", "size")
+SKY_LANES = ("direction", "roll", "size", "curve")
 # A port Sticker as the editor adds it when `sticker` is connected before `sticker_state`.
 STORED_PORT = {"id": "sticker_1", "source": {"kind": "port"}, "direction": {"value": {"yaw_deg": -90.0, "pitch_deg": 5.0}},
                "size": {"value": {"hFOV_deg": 20.0, "vFOV_deg": 20.0}}, "clip": {"start": 2, "in": 1, "duration": 30},
@@ -342,10 +342,61 @@ def test_the_placement_follows_the_handoff_and_drops_the_other_placements_overri
 HANDOFF_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_inherit"
 
 
-@pytest.mark.parametrize("name", ["handoff_same_placement", "handoff_sky_to_world", "handoff_world_to_sky"])
+@pytest.mark.parametrize("name", ["handoff_same_placement", "handoff_sky_to_world", "handoff_world_to_sky", "handoff_sky_curve", "handoff_world_drop_lens"])
 def test_inheriting_the_handoff_matches_the_fixture_the_editor_shares(name):
     case = json.loads((HANDOFF_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
     state = load_scene_state(case["state"])
     port = next(item for item in state["stickers"] if item["source"]["kind"] == "port")
 
     assert _inherit_handoff(state, port, case["handoff"]["placement"], case["handoff"]["lanes"]) == case["expected"]
+
+
+# The lens curve κ (ADR 0042): a shot through a lens hands a Sticker of the same lens, so that the same Camera shoots
+# the same frames again; a still Camera's `sky` Sticker carries a `curve`, a moving one's `world` Sticker a `lens`.
+
+def _lens_camera(lanes):
+    """A Camera of these Keyframes, its lens curve among them."""
+    camera = _camera({name: keys for name, keys in lanes.items() if name != "curve"})
+    camera["camera"]["curve"] = {"value": 1.0, "keyframes": lanes["curve"]}
+    return camera
+
+
+MOVING_LENS = {"position": [{"frame": 0, "value": [0.0, 0.0, 0.0]}, {"frame": 6, "value": [0.6, 0.2, -0.4]}],
+               "rotation": [{"frame": 0, "value": {"yaw_deg": -20.0, "pitch_deg": 10.0, "roll_deg": 0.0}}, {"frame": 6, "value": {"yaw_deg": 25.0, "pitch_deg": -5.0, "roll_deg": 8.0}}]}
+# κ keyframed through 1 (with an hFOV the pincushion end can hold), and a fisheye wider than 180 degrees.
+THROUGH_ONE = {"curve": [{"frame": 0, "value": 0.6}, {"frame": 6, "value": 1.3}], "fov": [{"frame": 0, "value": 110.0}, {"frame": 6, "value": 100.0}]}
+
+
+@pytest.mark.parametrize("aspect", [1.0, 16 / 9], ids=["square", "16:9"])
+@pytest.mark.parametrize("lanes, placement", [
+    ({"curve": [{"frame": 0, "value": 0.5}], "fov": [{"frame": 0, "value": 140.0}]}, "sky"),
+    ({"curve": [{"frame": 0, "value": 0.0}], "fov": [{"frame": 0, "value": 220.0}]}, "sky"),
+    ({**THROUGH_ONE, "rotation": MOVING_LENS["rotation"]}, "sky"),
+    ({"curve": [{"frame": 0, "value": 0.5}], "fov": [{"frame": 0, "value": 140.0}], **MOVING_LENS}, "world"),
+    ({"curve": [{"frame": 0, "value": 0.0}], "fov": [{"frame": 0, "value": 220.0}], **MOVING_LENS}, "world"),
+    ({**THROUGH_ONE, **MOVING_LENS}, "world"),
+], ids=["sky k0.5", "sky k0 220", "sky k through 1", "world k0.5", "world k0 220", "world k through 1"])
+def test_a_lens_shot_returns_where_it_was_shot(lanes, placement, aspect):
+    # A wide frame also checks the port Sticker's vFOV through the lens (g(vFOV / 2) = g(hFOV / 2) x height / width).
+    camera = _with_aspect(_lens_camera(lanes), aspect)
+    shot = _shoot(_textured_erp(), camera)
+    scene = _upstream(None, sticker=_frames(shot), sticker_state=shot[3], output_size="2048")[4]
+
+    [port] = scene.layers[-1].state["stickers"]
+    again = _frames(_shoot(scene, camera))
+
+    assert port["placement"] == placement
+    if placement == "sky":
+        assert port["curve"]["keyframes"] or port["curve"]["value"] != 1.0
+    else:
+        assert "lens" in port
+    assert _interior_error(again, _frames(shot)) < ROUND_TRIP_ERROR
+
+
+def test_a_pinhole_only_moving_shot_hands_todays_plane():
+    camera = _camera(MOVING_LENS)
+    shot = _shoot(_textured_erp(), camera)
+
+    [port] = _upstream(None, sticker=_frames(shot), sticker_state=shot[3], output_size="2048")[4].layers[-1].state["stickers"]
+
+    assert port["placement"] == "world" and "lens" not in port

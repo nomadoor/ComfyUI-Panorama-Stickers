@@ -1,5 +1,6 @@
 // What Panorama Studio's node surface shows before a run: what the node shoots and the output size, by the
 // rule `_studio_output_size` (nodes.py) runs (ADR 0029). tests/test_studio_status_parity.py holds the two together.
+import { lensRadius } from "./pano_lens.js";
 import { evaluateCamera } from "./pano_scene_eval.js";
 import { BROKEN_SPAN, timelineSpan } from "./pano_timeline.js";
 import { rotationToQuaternion, worldRotation } from "./pano_world.js";
@@ -36,8 +37,12 @@ export function studioOutputSize(state, frames, outputSize, coverage, bgWidth) {
   if (!camera || camera.projection === "erp") {
     return { width: Math.floor(width * coverage / 360), height: Math.floor(width / 2), reducedFrom: null, defaulted };
   }
-  const hfov = Math.max(...frames.map((frame) => evaluateCamera(camera, frame).hFOV_deg));
-  const shotWidth = width / Math.PI * Math.tan(hfov * Math.PI / 360);
+  // 2·f·g_κ(hFOV ÷ 2) at each output frame, the widest, f = width ÷ 2π: the lens curve (ADR 0042) keeps f at the
+  // center, so a pinhole (κ = 1) is the usual 2·f·tan(hFOV ÷ 2).
+  const shotWidth = Math.max(...frames.map((frame) => {
+    const value = evaluateCamera(camera, frame);
+    return width / Math.PI * lensRadius(value.hFOV_deg * Math.PI / 360, value.curve);
+  }));
   const shotHeight = shotWidth / camera.aspect;
   const size = [evenSide(shotWidth), evenSide(shotHeight)];
   if (Math.max(...size) <= STUDIO_MAX_OUTPUT_SIDE) return { width: size[0], height: size[1], reducedFrom: null, defaulted };

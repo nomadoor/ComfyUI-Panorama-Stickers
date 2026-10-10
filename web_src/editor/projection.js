@@ -1,6 +1,7 @@
 // Where things are on the screen: the panorama view's projection, the Unwrap rect, and the conversions
 // between canvas points, view directions, ERP points and the Frame view.
 import { cameraBasis } from "../pano_camera_math.js";
+import { lensAxesDirection, lensAxesFilm, lensFovLimit, lensRadius } from "../pano_lens.js";
 import { viewProjection, viewportCamera } from "../pano_editor_view.js";
 import { clamp } from "../pano_math.js";
 import { DEG2RAD } from "./constants.js";
@@ -99,6 +100,19 @@ export function createProjection(deps) {
       Number(pose.rot_deg || pose.roll_deg || 0),
     );
 
+    // A lens curve other than 1 (a Camera's shot, a sky Sticker, ADR 0042): its tangents are its lens's image radii.
+    const curve = Number.isFinite(pose.curve) ? pose.curve : 1;
+    if (curve !== 1) {
+      const limit = lensFovLimit(curve);
+      return {
+        centerDir: basis.fwd,
+        right: basis.right,
+        up: basis.up,
+        curve,
+        tanX: lensRadius(clamp(Number(pose.hFOV_deg || 20), 0.1, limit) * 0.5 * DEG2RAD, curve),
+        tanY: lensRadius(clamp(Number(pose.vFOV_deg || 20), 0.1, limit) * 0.5 * DEG2RAD, curve),
+      };
+    }
     const tanX = Math.tan(clamp(Number(pose.hFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
     const tanY = Math.tan(clamp(Number(pose.vFOV_deg || 20), 0.1, 179) * 0.5 * DEG2RAD);
     return {
@@ -111,6 +125,7 @@ export function createProjection(deps) {
   }
 
   function stickerDirFromFrame(frame, x, y) {
+    if (frame.curve !== undefined) return lensAxesDirection({ fwd: frame.centerDir, right: frame.right, up: frame.up }, x, y, frame.curve);
     return norm(add(add(frame.centerDir, mul(frame.right, x)), mul(frame.up, y)));
   }
 
@@ -183,6 +198,10 @@ export function createProjection(deps) {
   function worldDirToFrameLocalPoint(shot, dir) {
     if (!shot || !dir) return null;
     const frame = getStickerFrame(shot);
+    if (frame.curve !== undefined) {
+      const film = lensAxesFilm({ fwd: frame.centerDir, right: frame.right, up: frame.up }, dir, frame.curve);
+      return film && { x: (film.x / Math.max(1e-6, frame.tanX) + 1) * 0.5, y: (1 - (film.y / Math.max(1e-6, frame.tanY))) * 0.5 };
+    }
     const cz = dot(dir, frame.centerDir);
     if (!Number.isFinite(cz) || cz <= 1e-6) return null;
     const x = dot(dir, frame.right) / cz;

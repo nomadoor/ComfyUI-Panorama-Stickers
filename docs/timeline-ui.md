@@ -14,7 +14,7 @@
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| 記録の規則（静的な値・Keyframe の更新と追加・追加した Keyframe の Easing・行のポチ・消したときの `value`） | — | `web_src/pano_timeline.js` `setLaneValue`・`keyAllLanes`・`deleteKeyframes` | `tests/pano_timeline.test.mjs`、`tests/pano_editor_state.test.mjs` |
+| 記録の規則（静的な値・Keyframe の更新と追加・追加した Keyframe の Easing・行のポチ・消したときの `value`） | — | `web_src/pano_timeline.js` `setLaneValue`・`keyAllLanes`・`rowLaneNames`・`rowKeyframes`・`deleteKeyframes` | `tests/pano_timeline.test.mjs`、`tests/pano_editor_state.test.mjs` |
 | ノード上の UI は Keyframe のある Lane を変えない | — | `web_src/pano_editor_state.js` `unkeyedPose`（`pano_stickers_node_surface.js` の `set-transform`） | `pano_editor_state.test.mjs`、`pano_stickers_node_surface.test.mjs` |
 | 閉じた行のポチ（まとめ表示・移動・削除）と Keyframe の移動の端 | — | `pano_timeline.js` `rowKeyframes`・`moveKeyframes` | `pano_timeline.test.mjs`、`tests/test_upstream_editor_parity.py` |
 | Easing の対象区間と「混在」 | — | `pano_timeline.js` `setSegmentEasing`・`selectedEasing`、`web_src/pano_editor_ui_state.js` `buildEasingModel`、`web_src/components/PanoEasingGraph.vue` | `pano_timeline.test.mjs`、`tests/pano_editor_ui_state.test.mjs` |
@@ -52,7 +52,7 @@ After Effects のストップウォッチのような UI は作らない（ADR 0
 - ドラッグ中は、最初の変化でそのフレームに Keyframe が入り、以後はその Keyframe を更新する。
 - Keyframe のある Lane を変えても、静的な `value` は変えない。Lane の最後の Keyframe を消したときは、その Keyframe の値を `value` にする（消した瞬間に値が飛ばない）。複数の Keyframe を一度に消して Lane が空になるときは、再生ヘッドの位置での値を `value` にする。
 - タイムラインの行のポチを押すと、その時点の値で全 Lane に Keyframe が入る（あれば更新する）。最初の Keyframe もこの操作で打つ。
-- 行のポチは、Sticker の `curve`（`sky`）と `lens`（`world`）には Keyframe を入れない（作る。ADR 0042）。この 2 つは Pose handoff だけが書く Lane で、エディタに欄が無いためである（`pano_timeline.js` の `keyAllLanes`・`rowKeyframes` が除く。`tests/pano_timeline.test.mjs` に、ポチを押してもこの 2 つが変わらず、閉じた行のまとめ表示にも数えないことを確かめる test を足す）。
+- 行のポチは、レンズの Lane（Camera の `curve`、Sticker の `curve`（`sky`）と `lens`（`world`））には Keyframe を入れず、閉じた行のまとめ表示にも数えない（ADR 0042）。Blender の LocRotScale のキーがレンズの値を含まないのと同じである。レンズの値は、その Lane の行で、その Lane の編集（Camera の Lens curve の欄など）が記録の規則で Keyframe にする。行が扱う Lane は `pano_timeline.js` の `rowLaneNames` が決め、`keyAllLanes`・`rowKeyframes` が使う（`tests/pano_timeline.test.mjs` の「the row's key button does not key the lens Lanes, and its pins do not count them」）。
 - Keyframe と Keyframe の間に入れた Keyframe の Easing は、入れた区間の Easing を引き継ぐ。前後の区間がどちらも元の区間と同じ Easing になる。手で曲げた cubic-bezier も同じ値をそのまま写す（元の動きと厳密には一致しない）。最初の Keyframe より前に入れたときは、新しい Keyframe の Easing を既定値の ease-in-out とする。最後の Keyframe より後に入れたときは、それまで最後だった Keyframe の Easing（使われていなかった値）が新しい区間に掛かり、新しい Keyframe の Easing は既定値とする。
 - Keyframe を消せるのは、タイムラインで選んで Delete したときだけ。消した後は残った Keyframe で補間し直す。全 Keyframe を一度に消すスイッチは作らない。
 - インスペクタには Keyframe を打つボタンを置かない。
@@ -139,7 +139,7 @@ Camera・Sticker・`scene`・ペイントは、タイムラインの行の左端
 
 ## Camera の動き
 
-Camera は Keyframe だけで動く（撮り方のモードは持たない）。ドリーズームは `position` と `fov` の Lane に Keyframe を打って作る（κ を一緒に動かしてもよい）。レンズの曲線の Lane（`curve`。作る）も、Camera の行を開いた Lane ごとの行に、ほかの Lane と同じく出る（`docs/scene-state-v2.md`）。止まらずに複数の点を通る動きは、Easing の `auto` で作る（ADR 0026、0038）。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。
+Camera は Keyframe だけで動く（撮り方のモードは持たない）。ドリーズームは `position` と `fov` の Lane に Keyframe を打って作る（κ を一緒に動かしてもよい）。レンズの曲線の Lane（`curve`）も、Camera の行を開いた Lane ごとの行に、ほかの Lane と同じく出る（`docs/scene-state-v2.md`）。行のポチは `curve` に Keyframe を入れない（上の「記録の規則」）。止まらずに複数の点を通る動きは、Easing の `auto` で作る（ADR 0026、0038）。Camera のタイムラインは Panorama Studio が持つ（ADR 0029）。
 
 ## 再生の状態
 

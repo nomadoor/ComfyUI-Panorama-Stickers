@@ -7,6 +7,7 @@ must return the same values within 1e-4.
 import math
 from bisect import bisect_right
 
+from .math import CURVE_MAX, CURVE_MIN, lens_fov_limit
 from .world import panorama_angles, quaternion_to_rotation, rotation_to_quaternion, world_rotation
 
 
@@ -297,12 +298,16 @@ def _size(keyframes, frames, k, p):
     return {field: _scalar(keyframes, frames, [key["value"][field] for key in keyframes], k, p) for field in ("hFOV_deg", "vFOV_deg")}
 
 
+def _lens(keyframes, frames, k, p):
+    return {field: _scalar(keyframes, frames, [key["value"][field] for key in keyframes], k, p) for field in ("curve", "hFOV_deg")}
+
+
 def _scalar_lane(keyframes, frames, k, p):
     return _scalar(keyframes, frames, [key["value"] for key in keyframes], k, p)
 
 
 # How each Lane interpolates inside a segment; the other Lanes (fov, roll, scale, opacity) are scalars.
-INTERPOLATIONS = {"position": _position, "rotation": _rotation, "direction": _direction, "size": _size}
+INTERPOLATIONS = {"position": _position, "rotation": _rotation, "direction": _direction, "size": _size, "lens": _lens}
 
 
 def _evaluate_lane(owner, name, frame):
@@ -324,8 +329,10 @@ def _evaluate_lane(owner, name, frame):
 
 
 # Interpolation may leave a range by rounding; these bring values back into the range the state allows.
-def _fov(value):
-    return min(179.0, max(0.1, value))
+def _camera_lens(camera: dict, frame: float) -> dict:
+    """The Camera's lens curve κ (0..1.5) and hFOV, held under the limit κ sets (`lens_fov_limit`, ADR 0042)."""
+    curve = _curve(_evaluate_lane(camera, "curve", frame))
+    return {"hFOV_deg": min(lens_fov_limit(curve), max(0.1, _evaluate_lane(camera, "fov", frame))), "curve": curve}
 
 
 def _opacity(value):
@@ -346,19 +353,32 @@ def clip_active(clip, frame):
     return frame >= clip["start"] - FRAME_EPSILON and (end is None or frame < end - FRAME_EPSILON)
 
 
+def _curve(value):
+    return min(CURVE_MAX, max(CURVE_MIN, value))
+
+
 def _sticker_values(sticker, frame):
     if sticker["placement"] == "world":
-        return {
+        values = {
             "position": _evaluate_lane(sticker, "position", frame),
             **_evaluate_lane(sticker, "rotation", frame),
             "scale": _scale(_evaluate_lane(sticker, "scale", frame)),
         }
+        if "lens" in sticker:
+            # Its lens curve and hFOV (ADR 0042), the hFOV held under the curve's limit as a Camera's is.
+            lens = _evaluate_lane(sticker, "lens", frame)
+            curve = _curve(lens["curve"])
+            values["lens"] = {"curve": curve, "hFOV_deg": min(lens_fov_limit(curve), max(0.1, lens["hFOV_deg"]))}
+        return values
     size = _evaluate_lane(sticker, "size", frame)
+    curve = _curve(_evaluate_lane(sticker, "curve", frame))
+    limit = lens_fov_limit(curve)
     return {
         **_evaluate_lane(sticker, "direction", frame),
         "roll_deg": _evaluate_lane(sticker, "roll", frame),
-        "hFOV_deg": _fov(size["hFOV_deg"]),
-        "vFOV_deg": _fov(size["vFOV_deg"]),
+        "hFOV_deg": min(limit, max(0.1, size["hFOV_deg"])),
+        "vFOV_deg": min(limit, max(0.1, size["vFOV_deg"])),
+        "curve": curve,
     }
 
 
@@ -385,7 +405,7 @@ def evaluate_scene_state(state: dict, frame: float) -> dict:
         "camera": None if camera is None else {
             "position": _evaluate_lane(camera, "position", frame),
             **_evaluate_lane(camera, "rotation", frame),
-            "hFOV_deg": _fov(_evaluate_lane(camera, "fov", frame)),
+            **_camera_lens(camera, frame),
             "aspect": camera["aspect"],
         },
         "scene": {

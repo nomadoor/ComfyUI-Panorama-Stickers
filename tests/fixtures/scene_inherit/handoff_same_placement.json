@@ -138,6 +138,10 @@
       "value": 0.5,
       "keyframes": []
     },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
+    },
     "z_index": 1,
     "handoff_overrides": [
       "size",

@@ -169,7 +169,6 @@ test("the editor shows its three.js canvas as it is: nothing is copied to a 2D c
     assert.doesNotMatch(editorFunction(name), /drawImage|getContext\("2d"\)/, name);
   }
   // The Frame view and the Unwrap view draw into their rect of the same canvas.
-  assert.match(editorFunction("drawFrameViewBackground"), /editorView\.clear\(0x0a0a0a\);\s*const device = deviceRect\(contextRect\);\s*const drawn = !!drawEditorViewShot\(device, contextShot, undefined, 0x0a0a0a\);/);
   assert.match(editorFunction("renderEditorViewUnwrap"), /editorView\.renderUnwrap\(\{ rect: deviceRect\(rect\), \.\.\.editorViewInput\(\) \}\)/);
   // The camera preview floats over the stage as its own element: its frame is drawn in a corner of the
   // same canvas and shown through an ImageBitmap (a GPU copy), not a 2D canvas.

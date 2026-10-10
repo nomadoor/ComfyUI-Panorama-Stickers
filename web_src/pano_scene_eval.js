@@ -2,6 +2,7 @@
 // The contract is documented in docs/scene-state-v2.md. comfyui_pano_suite/core/scene_eval.py
 // must return the same values within 1e-4.
 import { panoramaAngles, quaternionToRotation, rotationToQuaternion, worldRotation } from "./pano_world.js";
+import { LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "./pano_lens.js";
 
 function copyValue(value) {
   if (Array.isArray(value)) return [...value];
@@ -298,8 +299,15 @@ function scalarLane(keyframes, frames, k, p) {
   return scalar(keyframes, frames, keyframes.map((key) => key.value), k, p);
 }
 
-// How each Lane interpolates inside a segment; the other Lanes (fov, roll, scale, opacity) are scalars.
-const INTERPOLATIONS = { position, rotation, direction, size };
+// A world Sticker's lens: its two numbers each as a scalar, as a size.
+function lens(keyframes, frames, k, p) {
+  const out = {};
+  for (const field of ["curve", "hFOV_deg"]) out[field] = scalar(keyframes, frames, keyframes.map((key) => key.value[field]), k, p);
+  return out;
+}
+
+// How each Lane interpolates inside a segment; the other Lanes (fov, roll, scale, opacity, curve) are scalars.
+const INTERPOLATIONS = { position, rotation, direction, size, lens };
 
 // The value of the Lane `name` of `owner` at a fractional frame of its own time base.
 export function evaluateLane(owner, name, frame) {
@@ -318,10 +326,6 @@ export function evaluateLane(owner, name, frame) {
 }
 
 // Interpolation may leave a range by rounding; these bring values back into the range the state allows.
-function fov(value) {
-  return Math.min(179, Math.max(0.1, value));
-}
-
 function opacity(value) {
   return Math.min(1, Math.max(0, value));
 }
@@ -341,11 +345,14 @@ export function clipActive(clip, frame) {
 }
 
 // The Camera of a state at a fractional Timeline frame, as evaluateSceneState() gives it.
+// Its hFOV is held under the limit of its evaluated lens curve κ (docs/scene-state-v2.md, ADR 0042).
 export function evaluateCamera(camera, frame) {
+  const curve = Math.min(LENS_CURVE_MAX, Math.max(LENS_CURVE_MIN, evaluateLane(camera, "curve", frame)));
   return {
     position: evaluateLane(camera, "position", frame),
     ...evaluateLane(camera, "rotation", frame),
-    hFOV_deg: fov(evaluateLane(camera, "fov", frame)),
+    hFOV_deg: Math.min(lensFovLimit(curve), Math.max(0.1, evaluateLane(camera, "fov", frame))),
+    curve,
     aspect: camera.aspect,
   };
 }
@@ -369,20 +376,35 @@ export function evaluateSceneState(state, frame) {
   };
 }
 
+function curveOf(value) {
+  return Math.min(LENS_CURVE_MAX, Math.max(LENS_CURVE_MIN, value));
+}
+
+// A world Sticker with a `lens` has it evaluated ({ curve, hFOV_deg } under the limit of its curve); a sky Sticker
+// has its lens curve, and its size under that curve's limit (ADR 0042).
 function stickerValues(sticker, frame) {
   if (sticker.placement === "world") {
-    return {
+    const out = {
       position: evaluateLane(sticker, "position", frame),
       ...evaluateLane(sticker, "rotation", frame),
       scale: scale(evaluateLane(sticker, "scale", frame)),
     };
+    if (sticker.lens) {
+      const value = evaluateLane(sticker, "lens", frame);
+      const curve = curveOf(value.curve);
+      out.lens = { curve, hFOV_deg: Math.min(lensFovLimit(curve), Math.max(0.1, value.hFOV_deg)) };
+    }
+    return out;
   }
   const angles = evaluateLane(sticker, "size", frame);
+  const curve = sticker.curve ? curveOf(evaluateLane(sticker, "curve", frame)) : 1;
+  const limit = lensFovLimit(curve);
   return {
     ...evaluateLane(sticker, "direction", frame),
     roll_deg: evaluateLane(sticker, "roll", frame),
-    hFOV_deg: fov(angles.hFOV_deg),
-    vFOV_deg: fov(angles.vFOV_deg),
+    hFOV_deg: Math.min(limit, Math.max(0.1, angles.hFOV_deg)),
+    vFOV_deg: Math.min(limit, Math.max(0.1, angles.vFOV_deg)),
+    curve,
   };
 }
 

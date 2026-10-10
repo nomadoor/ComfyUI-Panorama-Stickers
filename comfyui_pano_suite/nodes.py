@@ -39,6 +39,7 @@ from .core.math import (
     calculate_dimensions_from_megapixels,
     calculate_output_dimensions,
     finite_float,
+    lens_radius,
     unit_float,
     vfov_from_hfov,
 )
@@ -1197,20 +1198,26 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
             forward = -world_rotation(value["yaw_deg"], value["pitch_deg"], value["roll_deg"])[:, 2]
             position.append((np.asarray(value["position"], dtype=np.float64) + 2.0 * forward).tolist())
             rotation.append({name: value[name] for name in ("yaw_deg", "pitch_deg", "roll_deg")})
-            scale.append(4.0 * math.tan(math.radians(value["hFOV_deg"]) / 2.0))
-        series = (("position", position, "position"), ("rotation", rotation, "rotation"), ("scale", scale, "fov"))
+            # As wide as the shot at distance 2: 2 · 2 · g(hFOV / 2), g the lens curve's `lens_radius` (tan for a pinhole).
+            scale.append(4.0 * lens_radius(math.radians(value["hFOV_deg"]) / 2.0, value["curve"]))
+        series = [("position", position, ("position",)), ("rotation", rotation, ("rotation",)), ("scale", scale, ("fov", "curve"))]
+        if any(value["curve"] != 1.0 for value in shots):
+            # Through a lens other than a pinhole the Sticker is the part of the sphere of radius 2 around the Camera
+            # that the shot saw (ADR 0042); a pinhole-only shot stays today's plane.
+            series.append(("lens", [{"curve": value["curve"], "hFOV_deg": value["hFOV_deg"]} for value in shots], ("fov", "curve")))
     else:
         placement = "sky"
         direction = [{"yaw_deg": value["yaw_deg"], "pitch_deg": value["pitch_deg"]} for value in shots]
         roll = [value["roll_deg"] for value in shots]
         # A port Sticker's vFOV follows its media (`derive_vfov`); stored, it is hFOV (docs/scene-state-v2.md).
         size = [{"hFOV_deg": value["hFOV_deg"], "vFOV_deg": value["hFOV_deg"]} for value in shots]
-        series = (("direction", direction, "rotation"), ("roll", roll, "rotation"), ("size", size, "fov"))
+        curve = [value["curve"] for value in shots]
+        series = [("direction", direction, ("rotation",)), ("roll", roll, ("rotation",)), ("size", size, ("fov",)), ("curve", curve, ("curve",))]
     lanes = {}
-    for name, values, source in series:
+    for name, values, sources in series:
         moves = any(abs(a - b) > 1e-9 for value in values for a, b in zip(_lane_numbers(value), _lane_numbers(values[0])))
         keyframes = [
-            {"frame": frame, "value": value, "easing": "hold" if _in_hold(camera[source], frame * ratio) else "auto"}
+            {"frame": frame, "value": value, "easing": "hold" if any(_in_hold(camera[source], frame * ratio) for source in sources) else "auto"}
             for frame, value in zip(frames, values)
         ] if moves else []
         lanes[name] = {"value": values[0], "keyframes": keyframes}
@@ -1259,6 +1266,9 @@ def _inherit_handoff(state: dict, stored: dict, placement: str, lanes: dict) -> 
     opacity, and the `handoff_overrides` of Lanes the new placement has; its other Lanes and overrides are dropped."""
     if stored["placement"] == placement:
         raw = {**stored, **{name: lane for name, lane in lanes.items() if name not in stored["handoff_overrides"]}}
+        if "lens" not in lanes:
+            # A shot through a pinhole alone hands today's plane, whatever lens an earlier shot handed.
+            raw.pop("lens", None)
     else:
         kept = {key: stored[key] for key in ("id", "source", "clip", "visible", "locked", "crop", "opacity", "handoff_overrides")}
         raw = {**kept, "placement": placement, **lanes}
@@ -2011,8 +2021,9 @@ def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg
     """The Studio output's size (ADR 0029). `output_size` picks the width of the whole (360) ERP; auto is the
     bg_media width over 360 degrees (twice it for a 180 one), or 2048 with a warning without bg_media. Without a
     Camera (`_studio_camera`), or with an `erp` one, the output is that ERP over `coverage`. A `perspective` Camera is
-    2 f tan(hFOV_max / 2) wide with f = width / 2pi (the ERP's pixels per radian at the equator) and hFOV_max the
-    widest hFOV over the Timeline's `frames` (of the last layer, `state`), and the width over its aspect high, both even; a longest side past
+    2 f g(hFOV / 2) wide with f = width / 2pi (the ERP's pixels per radian at the equator), at the output frame of
+    the Timeline's `frames` (of the last layer, `state`) where that is widest, g being the lens curve's
+    `lens_radius` (tan for a pinhole), and the width over its aspect high, both even; a longest side past
     STUDIO_MAX_OUTPUT_SIDE is reduced to it, keeping the aspect, with a warning. Returns the width, the height, and the
     size before that reduction (None when it was not reduced)."""
     if output_size != "auto":
@@ -2027,8 +2038,9 @@ def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg
         return width * coverage // 360, width // 2, None
     # Only the Camera is evaluated; the Stickers do not change its hFOV.
     shot = {**state, "stickers": []}
-    hfov = max(evaluate_scene_state(shot, layers[-1][0])["camera"]["hFOV_deg"] for _bg_index, layers in frames)
-    shot_width = width / math.pi * math.tan(math.radians(hfov) / 2)
+    # 2 f g_κ(hFOV / 2) at each output frame, the widest: the lens curve (ADR 0042) keeps f at the center.
+    lenses = [evaluate_scene_state(shot, layers[-1][0])["camera"] for _bg_index, layers in frames]
+    shot_width = max(width / math.pi * lens_radius(math.radians(lens["hFOV_deg"]) / 2, lens["curve"]) for lens in lenses)
     shot_height = shot_width / camera["aspect"]
     size = (_even_side(shot_width), _even_side(shot_height))
     if max(size) <= STUDIO_MAX_OUTPUT_SIDE:
@@ -2097,7 +2109,7 @@ class PanoramaStudioNode(io.ComfyNode):
                 return ORIGIN_CAMERA if camera is None else evaluated["camera"], projection
         else:
             def capture(evaluated):
-                return evaluated["camera"], Projection.perspective(width, height, evaluated["camera"]["hFOV_deg"], built.coverage)
+                return evaluated["camera"], Projection.perspective(width, height, evaluated["camera"]["hFOV_deg"], built.coverage, evaluated["camera"]["curve"])
 
         image, mask, video = _render_outputs(built, bg, capture, (width, height))
         # Only a perspective Camera hands its pose to a Sticker (Pose handoff).

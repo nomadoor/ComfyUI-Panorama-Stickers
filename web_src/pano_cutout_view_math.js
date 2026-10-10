@@ -8,6 +8,7 @@ import {
   mul,
   norm,
 } from "./pano_camera_math.js";
+import { lensAngle, lensAxesDirection, lensAxesFilm, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { PANO_FOV_WHEEL_STEP_DEG } from "./pano_wheel.js";
 
 export const CUTOUT_FOV_MIN_DEG = 1;
@@ -39,14 +40,39 @@ function finiteOr(value, fallback) {
   return Number.isFinite(number) ? number : Number(fallback);
 }
 
+// A shot's lens curve κ (Panorama Studio's Camera, ADR 0042): 1, the pinhole, for the legacy Cutout's shots. A shot's
+// film tangents are its lens's image radii (pano_lens.js lensRadius), so its frame, gate and wheel steps keep their
+// pinhole rules with κ in place of tan: at κ = 1 they are tan exactly.
+export function shotCurve(shot) {
+  const curve = Number(shot?.curve);
+  return Number.isFinite(curve) ? curve : 1;
+}
+
+// The widest FOV a shot of κ takes: 179 for the pinhole, up to 360 below κ ≈ 0.497 (pano_lens.js lensFovLimit).
+export function shotFovMaxDeg(curve = 1) {
+  return curve === 1 ? CUTOUT_FOV_MAX_DEG : lensFovLimit(curve);
+}
+
+// The film tangent (image radius in units of f) of a half FOV in degrees, and back.
+function halfTangent(fovDeg, curve) {
+  return lensRadius(fovDeg * DEG2RAD * 0.5, curve);
+}
+
+function fovOfTangent(tangent, curve) {
+  return 2 * lensAngle(tangent, curve) * RAD2DEG;
+}
+
 export function getCutoutCameraParams(shot = {}) {
   // Intentional legacy compatibility: falsy serialized FOV values mean the
   // historical 90/60-degree defaults, not the 1-degree clamp minimum.
-  const hFovDeg = clamp(finiteOr(shot.hFOV_deg || 90, 90), CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
-  const vFovDeg = clamp(finiteOr(shot.vFOV_deg || 60, 60), CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
-  const tanHalfX = Math.tan(hFovDeg * DEG2RAD * 0.5);
-  const tanHalfY = Math.tan(vFovDeg * DEG2RAD * 0.5);
+  const curve = shotCurve(shot);
+  const fovMax = shotFovMaxDeg(curve);
+  const hFovDeg = clamp(finiteOr(shot.hFOV_deg || 90, 90), CUTOUT_FOV_MIN_DEG, fovMax);
+  const vFovDeg = clamp(finiteOr(shot.vFOV_deg || 60, 60), CUTOUT_FOV_MIN_DEG, fovMax);
+  const tanHalfX = halfTangent(hFovDeg, curve);
+  const tanHalfY = halfTangent(vFovDeg, curve);
   return {
+    curve,
     yawDeg: finiteOr(shot.yaw_deg, 0),
     pitchDeg: finiteOr(shot.pitch_deg, 0),
     rollDeg: finiteOr(shot.roll_deg ?? shot.rot_deg, 0),
@@ -86,12 +112,13 @@ export function aspectFitGateSize(safeRect, aspect) {
 // holding the scale and re-deriving the FOV moves only the crop. The captured
 // solid angle is not conserved, which is correct for Frame view — what matters
 // is the crop being composed, not the area it happens to cover.
-export function fovPairForGate(gateSize, focalPx) {
+export function fovPairForGate(gateSize, focalPx, curve = 1) {
   const focal = Math.max(1e-12, finiteOr(focalPx, 1));
   const width = Math.max(1e-6, finiteOr(gateSize?.width ?? gateSize?.w, 1));
   const height = Math.max(1e-6, finiteOr(gateSize?.height ?? gateSize?.h, 1));
-  const hFOV_deg = clamp(2 * Math.atan(width / (2 * focal)) * RAD2DEG, CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
-  const vFOV_deg = clamp(2 * Math.atan(height / (2 * focal)) * RAD2DEG, CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
+  const fovMax = shotFovMaxDeg(curve);
+  const hFOV_deg = clamp(fovOfTangent(width / (2 * focal), curve), CUTOUT_FOV_MIN_DEG, fovMax);
+  const vFOV_deg = clamp(fovOfTangent(height / (2 * focal), curve), CUTOUT_FOV_MIN_DEG, fovMax);
   return { hFOV_deg, vFOV_deg };
 }
 
@@ -138,8 +165,8 @@ export function clampFovPairToGate(shot, focalPx, safeRect) {
     safeWidth / (2 * focal * camera.tanHalfX),
     safeHeight / (2 * focal * camera.tanHalfY),
   );
-  const hFOV_deg = 2 * Math.atan(camera.tanHalfX * scale) * RAD2DEG;
-  const vFOV_deg = 2 * Math.atan(camera.tanHalfY * scale) * RAD2DEG;
+  const hFOV_deg = fovOfTangent(camera.tanHalfX * scale, camera.curve);
+  const vFOV_deg = fovOfTangent(camera.tanHalfY * scale, camera.curve);
   if (hFOV_deg < CUTOUT_FOV_MIN_DEG || vFOV_deg < CUTOUT_FOV_MIN_DEG) return null;
   return {
     hFOV_deg,
@@ -155,9 +182,10 @@ export function fitFovPairToGate(shot, focalPx, safeRect) {
     Math.max(1, finiteOr(safeRect?.w ?? safeRect?.width, 1)) / (2 * focal * camera.tanHalfX),
     Math.max(1, finiteOr(safeRect?.h ?? safeRect?.height, 1)) / (2 * focal * camera.tanHalfY),
   );
-  const hFOV_deg = 2 * Math.atan(camera.tanHalfX * scale) * RAD2DEG;
-  const vFOV_deg = 2 * Math.atan(camera.tanHalfY * scale) * RAD2DEG;
-  if (hFOV_deg > CUTOUT_FOV_MAX_DEG || vFOV_deg > CUTOUT_FOV_MAX_DEG) return null;
+  const hFOV_deg = fovOfTangent(camera.tanHalfX * scale, camera.curve);
+  const vFOV_deg = fovOfTangent(camera.tanHalfY * scale, camera.curve);
+  const fovMax = shotFovMaxDeg(camera.curve);
+  if (!(hFOV_deg <= fovMax) || !(vFOV_deg <= fovMax)) return null;
   return { hFOV_deg, vFOV_deg };
 }
 
@@ -177,24 +205,20 @@ export function filmTangentToCanvas(center, focalPx, tangent) {
   };
 }
 
-export function deriveVerticalFovDeg(hFovDeg, aspect) {
-  const horizontal = clamp(finiteOr(hFovDeg, 90), CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
+// The vFOV of an hFOV over an image of `aspect` (width ÷ height): the image radii keep the aspect, so at κ
+// g_κ(vFOV ÷ 2) = g_κ(hFOV ÷ 2) ÷ aspect (docs/scene-state-v2.md), tan at κ = 1.
+export function deriveVerticalFovDeg(hFovDeg, aspect, curve = 1) {
+  const fovMax = shotFovMaxDeg(curve);
+  const horizontal = clamp(finiteOr(hFovDeg, 90), CUTOUT_FOV_MIN_DEG, fovMax);
   const ratio = Math.max(1e-6, finiteOr(aspect, 1));
-  return clamp(
-    2 * Math.atan(Math.tan(horizontal * DEG2RAD * 0.5) / ratio) * RAD2DEG,
-    CUTOUT_FOV_MIN_DEG,
-    CUTOUT_FOV_MAX_DEG,
-  );
+  return clamp(fovOfTangent(halfTangent(horizontal, curve) / ratio, curve), CUTOUT_FOV_MIN_DEG, fovMax);
 }
 
-export function deriveHorizontalFovDeg(vFovDeg, aspect) {
-  const vertical = clamp(finiteOr(vFovDeg, 60), CUTOUT_FOV_MIN_DEG, CUTOUT_FOV_MAX_DEG);
+export function deriveHorizontalFovDeg(vFovDeg, aspect, curve = 1) {
+  const fovMax = shotFovMaxDeg(curve);
+  const vertical = clamp(finiteOr(vFovDeg, 60), CUTOUT_FOV_MIN_DEG, fovMax);
   const ratio = Math.max(1e-6, finiteOr(aspect, 1));
-  return clamp(
-    2 * Math.atan(Math.tan(vertical * DEG2RAD * 0.5) * ratio) * RAD2DEG,
-    CUTOUT_FOV_MIN_DEG,
-    CUTOUT_FOV_MAX_DEG,
-  );
+  return clamp(fovOfTangent(halfTangent(vertical, curve) * ratio, curve), CUTOUT_FOV_MIN_DEG, fovMax);
 }
 
 function positiveFinite(value, fallback = 0) {
@@ -215,9 +239,11 @@ function ratioTextFromPair(width, height) {
 }
 
 export function deriveCutoutAspectFromFov(item) {
-  const horizontal = clamp(Number(item?.hFOV_deg || 90), 1, 179) * DEG2RAD;
-  const vertical = clamp(Number(item?.vFOV_deg || 60), 1, 179) * DEG2RAD;
-  return Math.max(0.05, Math.min(20, Math.tan(horizontal * 0.5) / Math.max(1e-6, Math.tan(vertical * 0.5))));
+  const curve = shotCurve(item);
+  const fovMax = shotFovMaxDeg(curve);
+  const horizontal = clamp(Number(item?.hFOV_deg || 90), 1, fovMax);
+  const vertical = clamp(Number(item?.vFOV_deg || 60), 1, fovMax);
+  return Math.max(0.05, Math.min(20, halfTangent(horizontal, curve) / Math.max(1e-6, halfTangent(vertical, curve))));
 }
 
 export function deriveCutoutAspectLabelFromFov(item) {
@@ -281,10 +307,10 @@ export function scaleCutoutFovPair(shot, scale) {
   const camera = getCutoutCameraParams(shot);
   const factor = finiteOr(scale, 1);
   if (!(factor > 0)) return null;
-  const nextH = 2 * Math.atan(camera.tanHalfX * factor) * RAD2DEG;
-  const nextV = 2 * Math.atan(camera.tanHalfY * factor) * RAD2DEG;
-  if (nextH < CUTOUT_FOV_MIN_DEG || nextH > CUTOUT_FOV_MAX_DEG
-    || nextV < CUTOUT_FOV_MIN_DEG || nextV > CUTOUT_FOV_MAX_DEG) return null;
+  const nextH = fovOfTangent(camera.tanHalfX * factor, camera.curve);
+  const nextV = fovOfTangent(camera.tanHalfY * factor, camera.curve);
+  const fovMax = shotFovMaxDeg(camera.curve);
+  if (!(nextH >= CUTOUT_FOV_MIN_DEG && nextH <= fovMax && nextV >= CUTOUT_FOV_MIN_DEG && nextV <= fovMax)) return null;
   return { hFOV_deg: nextH, vFOV_deg: nextV };
 }
 
@@ -298,17 +324,19 @@ export function stepCutoutFovPairByWheel(
   if (!sign || !(step > 0)) return null;
   const camera = getCutoutCameraParams(shot);
   const nextHorizontal = camera.hFovDeg + sign * step;
-  if (nextHorizontal < CUTOUT_FOV_MIN_DEG || nextHorizontal > CUTOUT_FOV_MAX_DEG) return null;
-  const nextTanHalfX = Math.tan(nextHorizontal * DEG2RAD * 0.5);
+  if (nextHorizontal < CUTOUT_FOV_MIN_DEG || nextHorizontal > shotFovMaxDeg(camera.curve)) return null;
+  const nextTanHalfX = halfTangent(nextHorizontal, camera.curve);
   return scaleCutoutFovPair(shot, nextTanHalfX / camera.tanHalfX);
 }
 
+// The World direction of a film point: at κ ≠ 1 its ray by the lens (null past 180° off the axis).
 export function cutoutFilmPointToWorldDir(shot, filmPoint) {
   const camera = getCutoutCameraParams(shot);
   const basis = cameraBasis(camera.yawDeg, camera.pitchDeg, camera.rollDeg);
   const x = finiteOr(filmPoint?.x, 0);
   const y = finiteOr(filmPoint?.y, 0);
-  return norm(add(add(basis.fwd, mul(basis.right, x)), mul(basis.up, y)));
+  if (camera.curve === 1) return norm(add(add(basis.fwd, mul(basis.right, x)), mul(basis.up, y)));
+  return lensAxesDirection(basis, x, y, camera.curve);
 }
 
 export function worldDirToCutoutFilmPoint(shot, direction) {
@@ -316,6 +344,7 @@ export function worldDirToCutoutFilmPoint(shot, direction) {
   const camera = getCutoutCameraParams(shot);
   const basis = cameraBasis(camera.yawDeg, camera.pitchDeg, camera.rollDeg);
   const forward = dot(direction, basis.fwd);
+  if (camera.curve !== 1) return lensAxesFilm(basis, direction, camera.curve);
   if (!Number.isFinite(forward) || forward <= 1e-8) return null;
   return {
     x: dot(direction, basis.right) / forward,

@@ -156,6 +156,7 @@ def test_sticker_state_holds_the_camera_value_as_one_keyframe_and_the_source_asp
             "position": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": [0.42, 0.0, 0.58, 1.0]}],
             "rotation": [{"frame": 0, "value": {"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 5.0}, "easing": [0.42, 0.0, 0.58, 1.0]}],
             "fov": [{"frame": 0, "value": 60.0, "easing": [0.42, 0.0, 0.58, 1.0]}],
+            "curve": [{"frame": 0, "value": 1.0, "easing": [0.42, 0.0, 0.58, 1.0]}],
         },
         "source_aspect": image.shape[2] / image.shape[1],
     }
@@ -176,6 +177,7 @@ def test_legacy_shot_becomes_the_sticker_state_camera():
         "position": [[0.0, 0.0, 0.0]],
         "rotation": [{"yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 15.0}],
         "fov": [90.0],
+        "curve": [1.0],
     }
     assert payload["source_aspect"] == image.shape[2] / image.shape[1]
 
@@ -221,7 +223,7 @@ def test_video_source_keeps_the_camera_keyframes_at_the_recorded_fps(tmp_path):
     payload = json.loads(_shoot(_video(tmp_path), _camera({"rotation": keyframes}))[3])
 
     assert payload["fps"] == 24.0
-    assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 13], "fov": [0]}
+    assert {name: [key["frame"] for key in keys] for name, keys in payload["camera"].items()} == {"position": [0], "rotation": [0, 13], "fov": [0], "curve": [0]}
 
 
 def _upstream(state=None, **inputs):
@@ -401,7 +403,7 @@ def test_sticker_state_round_trips_camera_keyframes_with_easing_and_handles():
     loaded = load_sticker_state(sticker_state)
     assert loaded["fps"] == 12.0
     camera = load_scene_state(state)["camera"]
-    assert loaded["camera"] == {name: camera[name]["keyframes"] for name in ("position", "rotation", "fov")}
+    assert {name: keys for name, keys in loaded["camera"].items() if name != "curve"} == {name: camera[name]["keyframes"] for name in ("position", "rotation", "fov")}
     # A Camera made from the sticker_state shoots the same frames.
     again = _shoot(_halves_erp(), _camera(loaded["camera"], fps=loaded["fps"]))[0]
     assert torch.equal(again, image)

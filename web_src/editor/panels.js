@@ -5,6 +5,7 @@ import { ICON } from "../icons.js";
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
 import {
   cameraFields,
+  cameraLensFields,
   normalizeCoverageValue,
   sceneStickerLabel,
   worldStickerFields,
@@ -16,6 +17,7 @@ import {
   buildUiSettingsModel,
   cameraAspectChoices,
   cameraParamEnabled,
+  cameraParamTip,
   stickerParamEnabled,
   floatingRightState,
   frameViewButton,
@@ -24,6 +26,7 @@ import {
   upstreamOriginLabel,
   worldFieldRange,
 } from "../pano_editor_ui_state.js";
+import { lensFocalLengthMm, lensFovLimit } from "../pano_lens.js";
 import { clamp } from "../pano_math.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
 import { ownerTimed } from "../pano_timeline.js";
@@ -266,9 +269,14 @@ export function createPanels(deps) {
     const worldInspected = selectedWorldSticker();
     // Panorama Studio's Camera has a position in space too.
     const cameraPositionShown = cameraV2 && (selectedKind === "shot" || selectedKind === "frame") && hasSpaceContent();
-    const effective = worldInspected ? worldStickerFields(worldInspected, editor.frame)
+    // Panorama Studio's Camera has a lens (ADR 0042): its fields come from the Camera, whose hFOV may pass the
+    // shot's 179 degrees under a lens curve below 1.
+    const lensShown = cameraV2 && !worldInspected && selectedItems.length <= 1 && (selectedKind === "shot" || selectedKind === "frame") && !!state.camera;
+    const lens = lensShown ? cameraLensFields(state.camera, editor.frame) : null;
+    const base = worldInspected ? worldStickerFields(worldInspected, editor.frame)
       : cameraPositionShown ? { ...inspectorSelected, ...cameraFields(state.camera, editor.frame), vFOV_deg: inspectorSelected.vFOV_deg }
         : isSceneSticker(inspectorSelected) ? editor.panelLastValues : (inspectorSelected || fallback);
+    const effective = lens ? { ...base, ...lens } : base;
     const enabled = worldInspected ? worldStickerEditable(worldInspected) : (!!inspectorSelected && !isItemLocked(inspectorSelected));
     editor.panelWasEnabled = enabled;
     syncLookAtFrameButtonState();
@@ -380,10 +388,21 @@ export function createPanels(deps) {
       pushParam("pitch_deg", "Pitch", -90, 90, 0.1);
       if (selectedKind === "image" || (type === "stickers" && !shotInspected)) pushParam("rot_deg", "Roll", -180, 180, 0.1);
       else pushParam("roll_deg", "Roll", -180, 180, 0.1);
-      pushParam("hFOV_deg", "H FOV", 1, 179, 0.1);
+      pushParam("hFOV_deg", "H FOV", 1, lens ? lensFovLimit(lens.curve) : 179, 0.1);
       pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
+      // The lens rows after the Camera's fields (docs/editor-interaction.md, ADR 0042): its curve κ, and the
+      // focal length, which an edit turns into its H FOV.
+      if (lens) {
+        pushParam("curve", "Lens curve", 0, 1.5, 0.01);
+        pushParam("focal_mm", "Focal length", lensFocalLengthMm(lensFovLimit(lens.curve), lens.curve), lensFocalLengthMm(1, lens.curve), 0.1);
+      }
       // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
-      if (shotInspected) params.forEach((param) => { param.enabled = param.enabled && cameraParamEnabled(param.key, { erp: isErpCamera() }); });
+      if (shotInspected) {
+        params.forEach((param) => {
+          param.enabled = param.enabled && cameraParamEnabled(param.key, { erp: isErpCamera() });
+          param.tip = cameraParamTip(param.key, { erp: isErpCamera() });
+        });
+      }
       if (isSceneSticker(inspectorSelected) && !shotInspected) params.forEach((param) => { param.enabled = param.enabled && stickerParamEnabled(param.key, { port: isExternalSticker(inspectorSelected) }); });
       if (sceneV2 && !shotInspected) pushParam("opacity", "Opacity", 0, 100, 1);
     }

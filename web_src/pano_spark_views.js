@@ -179,7 +179,12 @@ export function createSparkViews({ create, cloneSplat, onDirty, setTimeout = glo
     });
   }
 
-  return { renderer, splat, aim, release, forget, dispose, stats };
+  // Whether owner's view has a renderer (it has drawn SPLATs).
+  function has(owner) {
+    return views.has(owner);
+  }
+
+  return { renderer, has, splat, aim, release, forget, dispose, stats };
 }
 
 // A SparkRenderer disposed while it sorts would make a new sort worker when its read-back resolves (Spark 2.1

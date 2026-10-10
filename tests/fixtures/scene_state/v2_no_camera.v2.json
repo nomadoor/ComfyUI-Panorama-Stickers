@@ -120,6 +120,10 @@
         "value": 1.0,
         "keyframes": []
       },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
       "z_index": 0
     }
   ],

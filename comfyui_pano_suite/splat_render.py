@@ -15,7 +15,7 @@ import numpy as np
 import torch
 from comfy_api.latest import Types
 
-from .core.math import ray_directions
+from .core.math import lens_focal, lens_radius, pixel_rays, ray_directions
 from .core.world_render import CameraView, SceneContent
 from .core_adapters import _C0, File3DToSplat, _detect_splat_format, _gaussian_item, _linear_to_srgb, _quantile, _quat_to_mat, _srgb_to_linear
 
@@ -98,6 +98,66 @@ def _view_colors(sh: torch.Tensor, offset: torch.Tensor) -> torch.Tensor:
     return (torch.einsum("nk,nkc->nc", torch.stack(basis[:count], dim=-1), sh[:, :count]) + 0.5).clamp(0, 1)
 
 
+def _analytic_jacobian(projection, mu, distance):
+    """The center (u, v) in pixels (pixel i spans [i, i + 1)) of each gaussian at `mu` (Camera axes: right, up, forward)
+    and the Jacobian (N, 2, 3) of the projection there, by the formulas of a pinhole and of an ERP."""
+    width, height = projection.width, projection.height
+    x, y, z = mu.unbind(-1)
+    jacobian = torch.zeros((x.shape[0], 2, 3), device=mu.device)
+    if projection.kind == "perspective":
+        focal = width / (2.0 * math.tan(math.radians(projection.hfov_deg) * 0.5))
+        invz = 1.0 / z
+        u, v = width * 0.5 + focal * x * invz, height * 0.5 - focal * y * invz
+        jacobian[:, 0, 0], jacobian[:, 0, 2] = focal * invz, -focal * x * invz.square()
+        jacobian[:, 1, 1], jacobian[:, 1, 2] = -focal * invz, focal * y * invz.square()
+        return u, v, jacobian
+    span = math.pi if projection.coverage == 180 else 2.0 * math.pi
+    rho2 = (x.square() + z.square()).clamp_min(1e-12)
+    rho = rho2.sqrt()
+    u = (torch.atan2(x, z) / span + 0.5) * width
+    v = (0.5 - torch.atan2(y, rho) / math.pi) * height
+    per_lon, per_lat = width / span, height / math.pi / (rho * distance.square())
+    jacobian[:, 0, 0], jacobian[:, 0, 2] = per_lon * z / rho2, -per_lon * x / rho2
+    jacobian[:, 1, 0], jacobian[:, 1, 1], jacobian[:, 1, 2] = per_lat * x * y, -per_lat * rho2, per_lat * z * y
+    return u, v, jacobian
+
+
+def _lens_jacobian(projection, mu, distance):
+    """`_analytic_jacobian` for a Camera image through a lens curve other than 1: the center by the lens's formula
+    (`lens_radius`), and the Jacobian from the ray field there (`_ray_field_jacobian`, ADR 0037)."""
+    width, height = projection.width, projection.height
+    x, y, z = mu.unbind(-1)
+    side = torch.hypot(x, y)
+    radius = lens_focal(width, projection.hfov_deg, projection.curve) * lens_radius(torch.atan2(side, z), projection.curve)
+    scale_r = torch.where(side > 0, radius / side.clamp_min(1e-30), torch.zeros_like(side))
+    u, v = width * 0.5 + scale_r * x, height * 0.5 - scale_r * y
+    return u, v, _ray_field_jacobian(projection, u, v, mu, distance)
+
+
+def _center_and_jacobian(projection, mu, distance):
+    """The window's center and Jacobian: analytic for a pinhole and an ERP, as before the lens curve; from the ray
+    field for a lens curve other than 1."""
+    if projection.kind == "perspective" and projection.curve != 1.0:
+        return _lens_jacobian(projection, mu, distance)
+    return _analytic_jacobian(projection, mu, distance)
+
+
+def _ray_field_jacobian(projection, u, v, mu, distance) -> torch.Tensor:
+    """The Jacobian (N, 2, 3) of output pixel coordinates by Camera-space position at each gaussian center `mu`,
+    from the ray field (ADR 0037): the change of the rays across a pixel at the center's image point (u, v)
+    (`pixel_rays` half a pixel to each side, so it is the same wherever the center falls, on or off the image) is
+    d ray / d pixel (3 x 2); its pseudo-inverse maps the change of the direction to the center, (I - d d^T) / |mu|,
+    to pixels."""
+    axes = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0])
+    along_x = pixel_rays(*axes, projection, u + 0.5, v) - pixel_rays(*axes, projection, u - 0.5, v)
+    along_y = pixel_rays(*axes, projection, u, v + 0.5) - pixel_rays(*axes, projection, u, v - 0.5)
+    field = torch.stack([along_x, along_y], dim=-1)
+    inverse = torch.linalg.pinv(field.transpose(1, 2) @ field) @ field.transpose(1, 2)
+    direction = mu / distance[:, None]
+    tangent = (torch.eye(3, device=mu.device) - direction[:, :, None] * direction[:, None, :]) / distance[:, None, None]
+    return inverse @ tangent
+
+
 def _levels(half: torch.Tensor) -> list[int]:
     """Window half sizes for `half`: from 4, doubling, up to its largest value. The core uses 16, 64, and 256; the
     finer steps keep small gaussians in small windows (twice as fast at 4K)."""
@@ -126,10 +186,15 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
     distance = offset.norm(dim=-1)
     mu = offset @ axes.T
     perspective = projection.kind == "perspective"
-    # The slabs follow the depth along the view axis in a perspective image, as in the core, and the distance
-    # in an ERP, which does not change as the Camera turns.
-    depth_key = mu[:, 2] if perspective else distance
+    pinhole = perspective and projection.curve == 1.0
+    # The slabs follow the depth along the view axis in a pinhole image, as in the core, and the distance in an ERP,
+    # which does not change as the Camera turns, and through a lens curve, which may see behind the Camera.
+    depth_key = mu[:, 2] if pinhole else distance
     keep = depth_key > 1e-2
+    if perspective and not pinhole:
+        # Inside the lens's domain (κθ < 90 degrees) and at most 180 degrees off the axis.
+        theta = torch.atan2(mu[:, :2].norm(dim=-1), mu[:, 2])
+        keep &= theta < min(math.pi, 0.5 * math.pi / max(projection.curve, 1e-12) - 1e-6)
     if not bool(keep.any()):
         return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
     mu, distance, depth_key, rgb, opacity, scale, rot = (value[keep] for value in (mu, distance, depth_key, rgb, opacity, scale, rot))
@@ -144,25 +209,10 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
     simu = (si @ mu[:, :, None])[:, :, 0]
     musimu = (mu * simu).sum(-1)
 
-    # The center in pixels (pixel i spans [i, i + 1)) and the Jacobian of the projection there, which sizes the
-    # window each gaussian is evaluated in.
-    x, y, z = mu.unbind(-1)
-    jacobian = torch.zeros((x.shape[0], 2, 3), device=device)
-    if perspective:
-        focal = width / (2.0 * math.tan(math.radians(projection.hfov_deg) * 0.5))
-        invz = 1.0 / z
-        u, v = width * 0.5 + focal * x * invz, height * 0.5 - focal * y * invz
-        jacobian[:, 0, 0], jacobian[:, 0, 2] = focal * invz, -focal * x * invz.square()
-        jacobian[:, 1, 1], jacobian[:, 1, 2] = -focal * invz, focal * y * invz.square()
-    else:
-        span = math.pi if projection.coverage == 180 else 2.0 * math.pi
-        rho2 = (x.square() + z.square()).clamp_min(1e-12)
-        rho = rho2.sqrt()
-        u = (torch.atan2(x, z) / span + 0.5) * width
-        v = (0.5 - torch.atan2(y, rho) / math.pi) * height
-        per_lon, per_lat = width / span, height / math.pi / (rho * distance.square())
-        jacobian[:, 0, 0], jacobian[:, 0, 2] = per_lon * z / rho2, -per_lon * x / rho2
-        jacobian[:, 1, 0], jacobian[:, 1, 1], jacobian[:, 1, 2] = per_lat * x * y, -per_lat * rho2, per_lat * z * y
+    # The center in pixels and the Jacobian of the projection there, which sizes the window each gaussian is evaluated in.
+    u, v, jacobian = _center_and_jacobian(projection, mu, distance)
+    if not perspective:
+        rho = (mu[:, 0].square() + mu[:, 2].square()).clamp_min(1e-12).sqrt()
     wrap = not perspective and projection.coverage != 180
     cov2 = jacobian @ cov @ jacobian.transpose(1, 2)
     a, b, c = cov2[:, 0, 0], cov2[:, 0, 1], cov2[:, 1, 1]
@@ -177,6 +227,15 @@ def render_gaussians(xyz, rgb, opacity, scale, rot, view: CameraView, rays: torc
         half_x = half_x.clamp(max=cap)
     else:
         half_x = torch.minimum(half_x, (cap * distance / rho).clamp(max=(width - 1) // 2 if wrap else width))
+    if perspective and not pinhole:
+        # A window wholly off the image adds nothing; through a lens a gaussian far off its axis can land far off
+        # the image with a wide window, so it is left out before any pixel is evaluated. (A pinhole keeps them: its
+        # slabs count them, and its output stays as it was.)
+        seen = (u + half_x >= 0) & (u - half_x < width) & (v + half_y >= 0) & (v - half_y < height)
+        if not bool(seen.any()):
+            return torch.zeros((height, width, 4), device=device), torch.full((height, width), math.inf, device=device)
+        u, v, half_x, half_y, depth_key, si, simu, musimu, opacity, rgb = (
+            value[seen] for value in (u, v, half_x, half_y, depth_key, si, simu, musimu, opacity, rgb))
     levels_x, levels_y = _levels(half_x), _levels(half_y)
     level_x = torch.bucketize(half_x, torch.tensor(levels_x, device=device, dtype=torch.float32)).clamp_(max=len(levels_x) - 1)
     level_y = torch.bucketize(half_y, torch.tensor(levels_y, device=device, dtype=torch.float32)).clamp_(max=len(levels_y) - 1)

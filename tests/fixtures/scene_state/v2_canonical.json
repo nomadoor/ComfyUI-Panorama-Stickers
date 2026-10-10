@@ -28,6 +28,10 @@
         {"frame": 0, "value": 90.0, "easing": "hold"},
         {"frame": 24, "value": 60.0, "easing": "auto"}
       ]
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
     }
   },
   "scene": {
@@ -57,6 +61,7 @@
           {"frame": 25, "value": 1.0, "easing": "auto"}
         ]
       },
+      "curve": {"value": 1.0, "keyframes": []},
       "z_index": 2
     },
     {
@@ -97,6 +102,7 @@
       "roll": {"value": 0.0, "keyframes": []},
       "size": {"value": {"hFOV_deg": 30.0, "vFOV_deg": 30.0}, "keyframes": []},
       "opacity": {"value": 1.0, "keyframes": []},
+      "curve": {"value": 1.0, "keyframes": []},
       "z_index": 0
     }
   ],

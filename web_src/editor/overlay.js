@@ -1,7 +1,7 @@
 // The 2D overlay over the three.js canvas: the grids, the items' boundaries and selection handles, the
 // Cutout's frame and passepartout, the Frame view's gate, the lasso outline and the roll overlay.
 import { yawPitchToDir } from "../pano_camera_math.js";
-import { frameViewContext } from "../pano_editor_view.js";
+import { deviceLens, frameViewContext } from "../pano_editor_view.js";
 import { clamp } from "../pano_math.js";
 import { projectPoint, spaceCamera } from "../pano_space.js";
 import { drawStickerSelectionBoundary, drawStickerSelectionHandles } from "../pano_sticker_affordance.js";
@@ -410,7 +410,7 @@ export function createOverlay(deps) {
     const rect = { x: layout.x, y: layout.y, w: layout.w, h: layout.h };
     // The context fills the whole canvas. Do NOT bound it relative to the gate — that makes the
     // rendered area shrink together with the gate and leaves unpainted margins.
-    const { rect: contextRect, shot: contextShot } = frameViewContext(shot, layout, { width: canvas.width, height: canvas.height });
+    const { rect: contextRect, shot: contextShot, lens } = frameViewContext(shot, layout, { width: canvas.width, height: canvas.height });
     const gateRadius = getFrameGateRadius(rect);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (drawView) {
@@ -419,7 +419,7 @@ export function createOverlay(deps) {
       // (#111111, the base under white at 3%).
       editorView.clear(0x0a0a0a);
       const device = deviceRect(contextRect);
-      const drawn = !!drawEditorViewShot(device, contextShot, undefined, 0x0a0a0a);
+      const drawn = !!drawEditorViewShot(device, contextShot, undefined, 0x0a0a0a, lens && deviceLens(lens, device.w / contextRect.w));
       if (!drawn) editorView.clear(0x111111, device);
       runtime.backgroundDirty = !drawn;
     }

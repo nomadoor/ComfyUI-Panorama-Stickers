@@ -16,12 +16,19 @@
 //               "video": the color proxy MP4, "shots": [{ "name", "state", "output" }] (outputs of frame 0), "width",
 //               "height" }, and the files it names
 //   moge/       (optional) the MOGE_GEOMETRY perspective sequence (ADR 0040), the same shape with several frames
+//   lens/       (optional) the lens scenes ("エディタとの一致（レンズの場面）", ADR 0042): scene.json { "size", "erp": the
+//               bg_media ERP as a PNG, "glb", "unlit" (the box, as above), "splat_meta": the node's pano_scene_meta of
+//               the SPLAT and "scene.ply" its editor file, "cases": [{ "name", "curve", "hfov", "mesh": the state of the
+//               box over the ERP, "splat": the state of the SPLAT alone, "output", "splat_output" }] }, both on
+//               bg_color #204060; each case's frames are drawn through the editor's lens pass (pano_editor_view.js
+//               shotLensImage) and held to the lens tolerance (editor_<name>.png, editor_<name>_splat.png, diffs)
 // and gets editor.png (with output.png also diff.png, the per-pixel difference x8, and parity.json). In da3/ and
 // moge/, per shot, frame 0's grid is drawn twice: with the colors of image.png ((a) the shape: editor_<shot>_image.png, held to the
 // 3D file's tolerance) and with the colors of the proxy, its <video> paused at the item's time and drawn as a
 // VideoTexture as when it plays ((b) the proxy:
 // editor_<shot>_proxy.png, held to the proxy's looser tolerance), each with its diff_*.png; its parity.json has the
 // numbers.
+// The lens scenes are held to LENS: their pass resamples the image (docs/render-contract.md).
 //
 // Headless Chromium runs with `--use-angle=vulkan --enable-features=Vulkan`, which picks Mesa's llvmpipe
 // (lavapipe) where its Vulkan ICD is installed (ADR 0037 "一致の測り方"). The frames are compared only when the
@@ -39,6 +46,9 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 // measured).
 const SHAPE = { mean: 1, over: 8, fraction: 0.005 };
 const PROXY = { mean: 2, over: 16, fraction: 0.01 };
+// ADR 0042 (provisional): inside a one-pixel border, mean <= 2/255 and at most 2% of pixels over 8/255.
+const LENS = { mean: 2, over: 8, fraction: 0.02 };
+const LENS_BG = 0x204060;
 // The proxy is 4:2:0, so its colors are kept per 2 x 2 source pixels: next to an edge between a colored band and the
 // gray checker the chroma bleeds by up to a block (measured: over 99% of the pixels over 16/255 lie within 6 output
 // pixels of such an edge). The spec looks at the bands inside, away from their edges (docs/render-contract.md "エディタ
@@ -90,7 +100,7 @@ ${JSON.stringify({ imports: {
 <script type="module">
 import { createThreeView } from "${webSrc}/pano_three_view.js";
 import { cameraShot } from "${webSrc}/pano_editor_state.js";
-import { shotCamera } from "${webSrc}/pano_editor_view.js";
+import { shotCamera, shotLensImage, skyLayers, worldStickerLayers } from "${webSrc}/pano_editor_view.js";
 import { evaluateSceneState } from "${webSrc}/pano_scene_eval.js";
 import { loadSceneState } from "${webSrc}/pano_scene_state.js";
 import { fileStickerRequests, sceneFilesOf, sceneRequest } from "${webSrc}/pano_space.js";
@@ -114,17 +124,19 @@ function makeView(width, height) {
   const probe2d = probe.getContext("2d", { willReadFrequently: true });
   // Draws until the item loaded and a few frames after, so its textures are uploaded; returns the frame as a PNG
   // and its pixels.
-  async function capture(input, loadMs) {
+  // noItems: nothing loads (Stickers only), so it draws its frames without waiting for an item.
+  async function capture(input, loadMs, noItems = false) {
     const draw = () => {
       view.render({ rect: { x: 0, y: 0, w: width, h: height }, background: null, layers: [], clearColor: 0x000000, ...input });
       probe2d.drawImage(view.canvas, 0, 0, width, height);
     };
     const begin = performance.now();
     let loaded = 0;
-    while (loaded < 3) {
+    // A SPLAT is drawn some more frames, so that Spark's sorts for the view (each face's, through a lens) are in.
+    while (loaded < (input.settle ?? 3)) {
       await new Promise((resolve) => { update = resolve; requestAnimationFrame(resolve); });
       draw();
-      if (view.stats().sceneItems.loaded > 0) loaded += 1;
+      if (noItems || view.stats().sceneItems.loaded > 0) loaded += 1;
       else if (performance.now() - begin > loadMs) throw new Error("The item did not load.");
     }
     return { png: probe.toDataURL("image/png"), pixels: Array.from(probe2d.getImageData(0, 0, width, height).data) };
@@ -152,6 +164,73 @@ window.renderParity = async ({ glbBase64, state: raw, unlit, width, height, load
   const frame = await capture({ camera: shotOf(state), space }, loadMs);
   dispose();
   return { renderer, editor: frame.png, pixels: frame.pixels };
+};
+
+// The lens scenes: the box over the ERP, and the SPLAT alone, each through the lens pass as the Frame view draws it.
+window.renderLens = async ({ erpBase64, glbBase64, plyBase64, unlit, splatMeta, cases, size, background, loadMs }) => {
+  const erp = await createImageBitmap(new Blob([bytesOf(erpBase64)], { type: "image/png" }), { colorSpaceConversion: "none" });
+  const glb = blobUrl(glbBase64, "model/gltf-binary");
+  const ply = blobUrl(plyBase64, "application/octet-stream");
+  const results = [];
+  const lensShot = (raw) => {
+    const state = loadSceneState(raw);
+    const shot = cameraShot(state.camera, 0);
+    return { state, camera: { ...shotCamera(shot), position: shot.position, near: 0.01, far: 1000 }, lens: shotLensImage(shot, size, size, background) };
+  };
+  for (const item of cases) {
+    const frames = {};
+    {
+      const { state, camera, lens } = lensShot(item.mesh);
+      const entries = fileStickerRequests(state, evaluateSceneState(state, 0), () => ({ kind: "mesh", unlit, url: glb, generation: 0 }));
+      const space = {
+        grid: null, sceneUrls: [], scene: null, stickerUrls: [], sticker: null,
+        fileStickers: [entries[0].request], fileStickerKeys: [entries[0].key],
+        stickers: [], lines: [], upstreamItems: [], upstreamStickers: [], gizmo: null,
+      };
+      const { renderer, capture, dispose } = makeView(size, size);
+      frames.mesh = { renderer, kind: lens?.faces.length === 6 ? "cube" : "pinhole", ...(await capture({ camera, lens, space, clearColor: background, background: { media: erp, revision: "erp", coverage: 360, source: "erp" } }, loadMs)) };
+      dispose();
+    }
+    {
+      const { state, camera, lens } = lensShot(item.splat);
+      const files = sceneFilesOf([{ filename: ply }], splatMeta, (entry) => entry.filename);
+      const space = {
+        grid: null, sceneUrls: files.urls, scene: sceneRequest(files, evaluateSceneState(state, 0).scene),
+        stickerUrls: [], sticker: null, stickers: [], lines: [], upstreamItems: [], upstreamStickers: [], gizmo: null,
+      };
+      const { renderer, capture, dispose } = makeView(size, size);
+      frames.splat = { renderer, ...(await capture({ camera, lens, space, clearColor: background, settle: 40 }, loadMs)) };
+      dispose();
+    }
+    results.push({ name: item.name, frames });
+  }
+  return results;
+};
+
+// The lens Sticker scenes: a sky Sticker of a lens curve, or a world Sticker's sphere patch, alone on bg_color, as
+// the editor builds and draws them (its Sky layers and World planes), through the Camera's lens.
+window.renderLensStickers = async ({ imageBase64, cases, size, background, loadMs }) => {
+  const image = new Image();
+  image.src = "data:image/png;base64," + imageBase64;
+  await image.decode();
+  const media = () => ({ media: image, revision: "sticker", source: "sticker" });
+  const results = [];
+  for (const item of cases) {
+    const state = loadSceneState(item.state);
+    const shot = cameraShot(state.camera, 0);
+    const camera = { ...shotCamera(shot), position: shot.position, near: 0.01, far: 1000 };
+    const lens = shotLensImage(shot, size, size, background);
+    const layers = skyLayers(state, 0, { media, zIndex: () => 0, paintLayers: [] });
+    const stickers = worldStickerLayers(state, 0, state.stickers, { media });
+    const space = stickers.length ? {
+      grid: null, sceneUrls: [], scene: null, stickerUrls: [], sticker: null, stickers, lines: [], upstreamItems: [], upstreamStickers: [], gizmo: null,
+    } : null;
+    const { renderer, capture, dispose } = makeView(size, size);
+    const frame = await capture({ camera, layers, space, clearColor: background, settle: 3, ...(lens ? { lens } : {}) }, loadMs, true);
+    dispose();
+    results.push({ name: item.name, frame: { renderer, ...frame } });
+  }
+  return results;
 };
 
 // The proxy at the item's time (0) as the <video> itself, paused there: it draws as a VideoTexture, the upload a
@@ -306,6 +385,17 @@ try {
     if (!pass) failed = true;
     return { mean: compared.mean, [`over_${limits.over}_fraction`]: compared.overFraction, limits, pass, ...(chromaEdge ? { chroma_edge: chromaEdge, excluded: compared.excluded } : {}) };
   };
+  // compare() of a frame of size x size.
+  const compareSized = async (pixels, dir, output, diffName, limits, size) => {
+    const compared = await page.evaluate((input) => window.compareParity(input), {
+      editorPixels: pixels, outputBase64: await base64(path.join(dir, output)), width: size, height: size, over: limits.over,
+    });
+    await writeFile(path.join(dir, diffName), png(compared.diff));
+    const pass = compared.mean <= limits.mean && compared.overFraction <= limits.fraction;
+    console.log(`  ${diffName}: mean ${compared.mean.toFixed(3)}/255 (limit ${limits.mean}), over ${limits.over}/255 ${(compared.overFraction * 100).toFixed(3)}% (limit ${limits.fraction * 100}%) ${pass ? "pass" : "FAIL"}`);
+    if (!pass) failed = true;
+    return { mean: compared.mean, [`over_${limits.over}_fraction`]: compared.overFraction, limits, pass };
+  };
   // The baseline is llvmpipe's: another renderer is not compared (ADR 0037).
   const llvmpipe = (renderer) => {
     console.log(`renderer: ${renderer}`);
@@ -368,6 +458,54 @@ try {
       }
     }
     await writeFile(path.join(dir, "parity.json"), `${JSON.stringify(report, null, 2)}\n`);
+  }
+  // The lens scenes.
+  const lensDir = path.join(workDir, "lens");
+  if (await exists(path.join(lensDir, "scene.json"))) {
+    const lens = await readJson(path.join(lensDir, "scene.json"));
+    const results = await page.evaluate((input) => window.renderLens(input), {
+      erpBase64: await base64(path.join(lensDir, lens.erp)),
+      glbBase64: await base64(path.join(lensDir, lens.glb)),
+      plyBase64: await base64(path.join(lensDir, "scene.ply")),
+      unlit: lens.unlit === true,
+      splatMeta: lens.splat_meta,
+      cases: lens.cases,
+      size: lens.size,
+      background: LENS_BG,
+      loadMs: LOAD_MS,
+    });
+    console.log(`lens scenes: ${lensDir}`);
+    const report = {};
+    for (const { name, frames } of results) {
+      const item = lens.cases.find((entry) => entry.name === name);
+      report[name] = { curve: item.curve, hfov: item.hfov, kind: frames.mesh.kind };
+      for (const [kind, output] of [["mesh", item.output], ["splat", item.splat_output]]) {
+        const frame = frames[kind];
+        const suffix = kind === "mesh" ? "" : "_splat";
+        await writeFile(path.join(lensDir, `editor_${name}${suffix}.png`), png(frame.png));
+        report.renderer = frame.renderer;
+        if (!llvmpipe(frame.renderer)) continue;
+        console.log(`  κ ${item.curve}, hFOV ${item.hfov}, ${kind} (${frames.mesh.kind}):`);
+        report[name][kind] = await compareSized(frame.pixels, lensDir, output, `diff_${name}${suffix}.png`, LENS, lens.size);
+      }
+    }
+    if (lens.sticker_cases?.length) {
+      const stickerResults = await page.evaluate((input) => window.renderLensStickers(input), {
+        imageBase64: await base64(path.join(lensDir, lens.sticker_image)),
+        cases: lens.sticker_cases,
+        size: lens.size,
+        background: LENS_BG,
+        loadMs: LOAD_MS,
+      });
+      for (const { name, frame } of stickerResults) {
+        const item = lens.sticker_cases.find((entry) => entry.name === name);
+        await writeFile(path.join(lensDir, `editor_${name}.png`), png(frame.png));
+        if (!llvmpipe(frame.renderer)) continue;
+        console.log(`  Sticker ${name}:`);
+        report[name] = await compareSized(frame.pixels, lensDir, item.output, `diff_${name}.png`, LENS, lens.size);
+      }
+    }
+    await writeFile(path.join(lensDir, "parity.json"), `${JSON.stringify(report, null, 2)}\n`);
   }
   if (problems.length) {
     console.error(problems.join("\n"));

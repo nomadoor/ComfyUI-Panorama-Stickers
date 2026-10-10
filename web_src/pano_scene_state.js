@@ -1,6 +1,7 @@
 // State v2 (`state_json`) and `sticker_state` loading.
 // The contract is documented in docs/scene-state-v2.md. comfyui_pano_suite/core/scene_state.py
 // must produce the same result for the same input.
+import { LENS_CURVE_DEFAULT, LENS_CURVE_MAX, LENS_CURVE_MIN } from "./pano_lens.js";
 import { normalizePaintingState } from "./pano_paint_types.js";
 
 export const STATE_VERSION = 2;
@@ -86,8 +87,15 @@ function rotationValue(raw) {
   };
 }
 
+// A Camera's hFOV keeps up to 360 (a fisheye's); the evaluated value is held under the limit of its lens curve
+// (pano_scene_eval.js, pano_lens.js lensFovLimit).
 function fovValue(raw) {
-  return clamp(number(raw, 90), 0.1, 179);
+  return clamp(number(raw, 90), 0.1, 360);
+}
+
+// The Camera's lens curve κ (ADR 0042).
+function curveValue(raw) {
+  return clamp(number(raw, LENS_CURVE_DEFAULT), LENS_CURVE_MIN, LENS_CURVE_MAX);
 }
 
 function scaleValue(raw) {
@@ -106,12 +114,20 @@ function rollValue(raw) {
   return number(raw, 0);
 }
 
+// A sky Sticker's size keeps up to 360, as its lens curve allows (ADR 0042); the evaluated one is held under the
+// limit of its curve (pano_scene_eval.js).
 function sizeValue(raw) {
   const src = isObject(raw) ? raw : {};
   return {
-    hFOV_deg: clamp(number(src.hFOV_deg, 20), 0.1, 179),
-    vFOV_deg: clamp(number(src.vFOV_deg, 20), 0.1, 179),
+    hFOV_deg: clamp(number(src.hFOV_deg, 20), 0.1, 360),
+    vFOV_deg: clamp(number(src.vFOV_deg, 20), 0.1, 360),
   };
+}
+
+// A world Sticker's lens (ADR 0042): the curve κ and the hFOV of the sphere patch it is.
+function lensValue(raw) {
+  const src = isObject(raw) ? raw : {};
+  return { curve: curveValue(src.curve), hFOV_deg: clamp(number(src.hFOV_deg, 90), 0.1, 360) };
 }
 
 function opacityValue(raw) {
@@ -119,10 +135,18 @@ function opacityValue(raw) {
 }
 
 // The Lanes of each owner, in the order they are stored.
-export const CAMERA_LANES = [["position", positionValue], ["rotation", rotationValue], ["fov", fovValue]];
+export const CAMERA_LANES = [["position", positionValue], ["rotation", rotationValue], ["fov", fovValue], ["curve", curveValue]];
 export const SCENE_LANES = [["position", positionValue], ["rotation", rotationValue], ["scale", scaleValue]];
-export const SKY_STICKER_LANES = [["direction", directionValue], ["roll", rollValue], ["size", sizeValue], ["opacity", opacityValue]];
+export const SKY_STICKER_LANES = [["direction", directionValue], ["roll", rollValue], ["size", sizeValue], ["opacity", opacityValue], ["curve", curveValue]];
 export const WORLD_STICKER_LANES = [...SCENE_LANES, ["opacity", opacityValue]];
+// A world Sticker's `lens` Lane, which only Pose handoff adds: a Sticker without it has none (a flat plane).
+export const WORLD_LENS_LANE = ["lens", lensValue];
+
+// The Lanes a Sticker has: a world Sticker's `lens` only when it has one.
+export function stickerLanes(sticker) {
+  if (sticker.placement !== "world") return SKY_STICKER_LANES;
+  return sticker.lens ? [...WORLD_STICKER_LANES, WORLD_LENS_LANE] : WORLD_STICKER_LANES;
+}
 
 function easing(raw) {
   if (raw === "auto" || raw === "hold") return raw;
@@ -245,6 +269,7 @@ function sticker(raw) {
     crop: crop(raw.crop),
     ...lanes(raw, world ? WORLD_STICKER_LANES : SKY_STICKER_LANES),
   };
+  if (world && isObject(raw.lens)) Object.assign(out, lanes(raw, [WORLD_LENS_LANE]));
   if (!world) out.z_index = frameNumber(raw.z_index) ?? 0;
   if (src.kind === "port") out.handoff_overrides = laneNames(raw.handoff_overrides, placement);
   return out;
@@ -470,6 +495,19 @@ const TEXT_DEFAULTS = {
   scene: { visible: true },
 };
 
+// A Lane without Keyframes at its default value, which the text leaves out.
+function defaultLane(lane, value) {
+  return !lane.keyframes.length && lane.value === value;
+}
+
+// The Camera as its text keeps it: without the fields of TEXT_DEFAULTS.camera at their defaults, nor a lens curve
+// at its default (added with ADR 0042).
+function cameraText(camera) {
+  const out = withoutDefaults(camera, TEXT_DEFAULTS.camera);
+  if (defaultLane(camera.curve, LENS_CURVE_DEFAULT)) delete out.curve;
+  return out;
+}
+
 function withoutDefaults(object, defaults) {
   return Object.fromEntries(Object.entries(object).filter(([key, value]) => !Object.hasOwn(defaults, key) || value !== defaults[key]));
 }
@@ -485,9 +523,11 @@ export function sceneStateText(state) {
   if (defaultClip(out.background.clip)) delete out.background;
   return JSON.stringify({
     ...out,
-    camera: state.camera && withoutDefaults(state.camera, TEXT_DEFAULTS.camera),
+    camera: state.camera && cameraText(state.camera),
     scene: withoutDefaults(state.scene, TEXT_DEFAULTS.scene),
-    stickers: state.stickers.map((item) => Object.fromEntries(Object.entries(item).filter(([key, value]) => key !== "handoff_overrides" || value.length))),
+    // A sky Sticker's lens curve at its default is left out (ADR 0042), as the Camera's.
+    stickers: state.stickers.map((item) => Object.fromEntries(Object.entries(item).filter(([key, value]) => (key !== "handoff_overrides" || value.length)
+      && !(key === "curve" && defaultLane(value, LENS_CURVE_DEFAULT))))),
   });
 }
 
@@ -529,8 +569,7 @@ export function rebaseSceneState(state, value) {
     scene: { clip: scene.clip, visible: state.scene.visible, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
-      const list = item.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES;
-      return { ...item, clip, ...rebaseLanes(item, list, rebase, anchor, newAnchor) };
+      return { ...item, clip, ...rebaseLanes(item, stickerLanes(item), rebase, anchor, newAnchor) };
     }),
     next_sticker_id: state.next_sticker_id,
     painting: state.painting,

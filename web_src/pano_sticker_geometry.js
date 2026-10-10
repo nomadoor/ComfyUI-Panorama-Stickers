@@ -12,11 +12,13 @@ import {
   STICKER_NODE_ROTATE_HANDLE_OFFSET_PX,
   hitStickerSelectionAffordance,
 } from "./pano_sticker_affordance.js";
+import { lensAxesDirection, lensFovLimit, lensRadius } from "./pano_lens.js";
 
 export { hitStickerSelectionAffordance as hitStickerGeometry } from "./pano_sticker_affordance.js";
 
 // Screen points follow projection, a viewProjection() of the view the stickers are drawn in.
 function projectWorldDirection(direction, projection) {
+  if (!direction) return null;
   const point = projection.project(direction);
   if (!Number.isFinite(point.z)) return null;
   const guard = Math.max(projection.width, projection.height) * 2;
@@ -33,6 +35,19 @@ function stickerFrame(item) {
     Number(item?.pitch_deg || 0),
     Number(item?.rot_deg ?? item?.roll_deg ?? 0),
   );
+  // A sky Sticker of a lens curve other than 1 (ADR 0042): its tangents are its lens's image radii.
+  const curve = Number.isFinite(item?.curve) ? item.curve : 1;
+  if (curve !== 1) {
+    const limit = lensFovLimit(curve);
+    return {
+      centerDir: basis.fwd,
+      right: basis.right,
+      up: basis.up,
+      curve,
+      tanX: lensRadius(clamp(Number(item?.hFOV_deg || 20), 0.1, limit) * DEG2RAD * 0.5, curve),
+      tanY: lensRadius(clamp(Number(item?.vFOV_deg || 20), 0.1, limit) * DEG2RAD * 0.5, curve),
+    };
+  }
   return {
     centerDir: basis.fwd,
     right: basis.right,
@@ -43,6 +58,7 @@ function stickerFrame(item) {
 }
 
 function stickerDirection(frame, x, y) {
+  if (frame.curve !== undefined) return lensAxesDirection({ fwd: frame.centerDir, right: frame.right, up: frame.up }, x, y, frame.curve);
   return norm(add(
     add(frame.centerDir, mul(frame.right, x)),
     mul(frame.up, y),

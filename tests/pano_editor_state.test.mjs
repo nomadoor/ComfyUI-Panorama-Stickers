@@ -37,6 +37,7 @@ import {
   worldStickerFields,
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
+import { cutoutFilmPointToWorldDir, deriveVerticalFovDeg, worldDirToCutoutFilmPoint } from "../web_src/pano_cutout_view_math.js";
 import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
 import { readEditorSource } from "./editor_source.mjs";
@@ -276,7 +277,7 @@ test("editing a sky Sticker changes its static value, or keys it once it has Key
   assert.deepEqual(saved.stickers[0].opacity.keyframes.map((key) => [key.frame, key.value]), [[5, 0], [15, 0.5], [17, 0.75], [25, 1]]);
   assert.deepEqual(saved.stickers[0].size, { value: { ...loaded.stickers[0].size.value, hFOV_deg: 33 }, keyframes: [] });
   assert.deepEqual([saved.stickers[0].direction, saved.stickers[0].roll], [loaded.stickers[0].direction, loaded.stickers[0].roll]);
-  assert.deepEqual(stickerPose(plain, 0), { yaw_deg: 50, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 12 });
+  assert.deepEqual(stickerPose(plain, 0), { yaw_deg: 50, pitch_deg: 0, hFOV_deg: 30, vFOV_deg: 30, rot_deg: 12, curve: 1 });
 });
 
 test("a port Sticker's vFOV follows its media and is never written to the state", () => {
@@ -313,7 +314,7 @@ test("the pose the editor shows is the evaluator's value at the Timeline frame",
       const value = evaluated[loaded.stickers.findIndex((item) => item.id === sticker.id)];
       const pose = stickerPose(sticker, frame);
       assert.deepEqual(pose, {
-        yaw_deg: value.yaw_deg, pitch_deg: value.pitch_deg, hFOV_deg: value.hFOV_deg, vFOV_deg: value.vFOV_deg, rot_deg: value.roll_deg,
+        yaw_deg: value.yaw_deg, pitch_deg: value.pitch_deg, hFOV_deg: value.hFOV_deg, vFOV_deg: value.vFOV_deg, rot_deg: value.roll_deg, curve: value.curve,
       }, `${sticker.id} at ${frame}`);
     }
   }
@@ -506,15 +507,15 @@ test("Scene ids are random, URL-safe and 16 characters", () => {
 
 // A v2 state saved before the Camera had a projection reads as a Camera that shoots in perspective;
 // saving it again writes the same text, so the node's execution cache still hits.
-// The same holds for the fields of ADR 0030 (`id`, `next_sticker_id`, `upstream`, `handoff_overrides`) and for the
+// The same holds for the lens curve (ADR 0042), for the fields of ADR 0030 (`id`, `next_sticker_id`, `upstream`, `handoff_overrides`) and for the
 // background's Clip range (`background`).
 test("a state saved before the Camera had a projection and before the visibility fields is saved as the same text", () => {
   const node = { __panoSceneStateV2: true };
   for (const name of ["v2_canonical", "v2_interpolation"]) {
     const { painting_visible: paintingVisible, id, next_sticker_id: nextStickerId, upstream, background, ...loaded } = loadSceneState(readFixture(name));
-    const { projection, visible, ...camera } = loaded.camera;
+    const { projection, visible, curve, ...camera } = loaded.camera;
     const { visible: sceneVisible, ...scene } = loaded.scene;
-    const stickers = loaded.stickers.map(({ handoff_overrides: handoffOverrides, ...item }) => item);
+    const stickers = loaded.stickers.map(({ handoff_overrides: handoffOverrides, curve: stickerCurve, ...item }) => item);
     const before = JSON.stringify({ ...loaded, camera, scene, stickers });
     const state = parseSceneEditorState(before);
     assert.equal(state.camera.projection, "perspective");
@@ -853,7 +854,7 @@ test("Panorama Studio adds its Camera at the view and saves none once it is dele
   state.camera = newStudioCamera(view);
 
   assert.deepEqual(state.camera, loadSceneState({ version: 2, camera: state.camera }).camera, "a normalized Camera");
-  assert.deepEqual(evaluateCamera(state.camera, 0), { position: [1, 2, 3], yaw_deg: -160, pitch_deg: -10, roll_deg: 0, hFOV_deg: 90, aspect: 16 / 9 });
+  assert.deepEqual(evaluateCamera(state.camera, 0), { position: [1, 2, 3], yaw_deg: -160, pitch_deg: -10, roll_deg: 0, hFOV_deg: 90, curve: 1, aspect: 16 / 9 });
   assert.equal(state.camera.projection, "perspective");
   assert.deepEqual(["position", "rotation", "fov"].map((name) => state.camera[name].keyframes), [[], [], []]);
   const added = loadSceneState(editorStateText(node, state));
@@ -896,4 +897,22 @@ test("a new Sticker id comes from the counter, which only goes up, also through 
   // Undoing to a step before the new Stickers keeps the counter, so their ids are not given out again.
   assert.equal(restoredHistoryState(state, before).state.next_sticker_id, 7);
   assert.equal(restoredHistoryState(JSON.parse(before), JSON.stringify(state)).state.next_sticker_id, 7);
+});
+
+// ADR 0042: the editor's shot of a lens Camera keeps its κ, its hFOV past 179° below κ ≈ 0.497, and the aspect as
+// the ratio of its image radii; a Frame view point maps to its ray by the lens.
+test("a lens Camera's shot keeps its curve, an hFOV past 179 degrees and its aspect in image radii", () => {
+  const camera = loadSceneState({ version: 2, camera: { aspect: 2, fov: { value: 300 }, curve: { value: 0.3 } } }).camera;
+  const shot = cameraShot(camera, 0);
+  assert.deepEqual([shot.curve, shot.hFOV_deg], [0.3, 300]);
+  const radius = (fov) => Math.tan(0.3 * fov * Math.PI / 360) / 0.3;
+  assert.ok(Math.abs(radius(shot.hFOV_deg) / radius(shot.vFOV_deg) - 2) < 1e-9);
+  // A wider shot written back keeps the image's aspect.
+  setCameraShot(camera, 0, { ...shot, hFOV_deg: 320, vFOV_deg: deriveVerticalFovDeg(320, 2, 0.3) }, shot);
+  assert.equal(camera.fov.value, 320);
+  assert.ok(Math.abs(camera.aspect - 2) < 1e-9);
+  // A point of its image goes to its ray and back.
+  const film = { x: 1.7, y: -0.4 };
+  const back = worldDirToCutoutFilmPoint(shot, cutoutFilmPointToWorldDir(shot, film));
+  assert.ok(Math.abs(back.x - film.x) < 1e-9 && Math.abs(back.y - film.y) < 1e-9);
 });
