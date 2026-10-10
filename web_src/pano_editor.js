@@ -97,7 +97,11 @@ import { createPointerMultiMove } from "./editor/pointer_multi_move.js";
 import { createSidePanelEvents } from "./editor/side_panel_events.js";
 import { createModalEvents } from "./editor/modal_events.js";
 import { createKeyboard } from "./editor/keyboard.js";
-import { editorSession, peekEditorSession, peekNodeSurface, stateSync } from "./pano_node_bridge.js";
+import { editorSession, noteStudioEditorOpen, peekEditorSession, peekNodeSurface, stateSync } from "./pano_node_bridge.js";
+import { createFile3dEditorFiles, file3dEditorFileOf } from "./pano_file_3d.js";
+import { getRenderableMediaRevisionToken } from "./pano_preview_runtime.js";
+import { attachSceneViewerNode, redrawSceneViewers, touchSceneViewer } from "./pano_scene_viewer_node.js";
+import { openSceneViewerWindow } from "./pano_scene_viewer_window.js";
 
 const _paintLayerSyncRegistry = new Map();
 
@@ -860,6 +864,8 @@ async function showEditor(node, type, options = {}) {
     closeEditorPromise = (async () => {
       const session = peekEditorSession(node);
       if (session) session.open = false;
+      noteStudioEditorOpen(node, false);
+      redrawSceneViewers();
       _paintLayerSyncRegistry.delete(String(node.id ?? "0"));
       flushFrameWheelCommit();
       endFrameKeyMove();
@@ -971,8 +977,25 @@ async function showEditor(node, type, options = {}) {
   editorSession(node).open = true;
   peekNodeSurface(node)?.dom?.requestDraw?.();
   requestDraw();
+  // The Preview's Scene viewers on the graph do not draw while a Studio editor is open (docs/preview-node.md).
+  if (node.__panoStudio === true) noteStudioEditorOpen(node, true);
   sampleEditorDiagnostics();
 }
+
+// The Preview's Scene viewer (docs/preview-node.md "`PANO_SCENE` を見る"): what it reads of the node's current
+// result (its `source` channel), the editor files of 3D file Stickers in the Scene (one registry for every
+// viewer), and its window.
+const sceneViewerFiles = createFile3dEditorFiles({ fetchApi: (path, options) => api.fetchApi(path, options), onUpdate: () => redrawSceneViewers() });
+const sceneViewerMedia = {
+  app,
+  uiList: (node, key) => (isNodeOutputMediaCurrent(node, "background") ? comfyMedia.uiList(node, key) : []),
+  mediaSource,
+  mediaAssetSource,
+  revisionOf: getRenderableMediaRevisionToken,
+  editorFile: (sticker) => file3dEditorFileOf(sceneViewerFiles, sticker, mediaSource),
+  refreshFile: (source) => sceneViewerFiles.refresh(source),
+};
+const openSceneViewer = (node) => openSceneViewerWindow(node, sceneViewerMedia);
 
 app.registerExtension(createPanoEditorExtension({
   app,
@@ -980,6 +1003,9 @@ app.registerExtension(createPanoEditorExtension({
   attachStickers: attachStickersNodePreview,
   attachCutout: attachCutoutPreview,
   attachPreview: attachPreviewNode,
+  attachSceneViewer: (node) => attachSceneViewerNode(node, { ...sceneViewerMedia, openViewer: openSceneViewer }),
+  openSceneViewer,
+  onSceneViewerExecuted: touchSceneViewer,
   restoreOutput: restoreNodeOutput,
   requestFrame: requestAnimationFrame,
   enableStickersPreview: ENABLE_STICKERS_NODE_PREVIEW,

@@ -3,6 +3,7 @@ import { ICON } from "./icons.js";
 // "studio" is Panorama Studio's editor (#89): the Stickers tools with Add Camera, and the Frame tab of the
 // Cutout, which it always shows (disabled without a Camera) so the tabs never move.
 export function buildModalShellPreset(type = "stickers") {
+  if (type === "viewer") return buildViewerPreset();
   const isCutout = String(type || "stickers") === "cutout";
   const isStudio = type === "studio";
   return {
@@ -78,5 +79,24 @@ export function buildModalShellPreset(type = "stickers") {
         ],
       },
     ],
+  };
+}
+
+// "viewer" is the Preview's window (docs/preview-node.md "大きなウィンドウ"): the stage, the bottom-right group (the
+// space group with Frame all in Frame Selected's place, as nothing can be selected, Reset View, Hide Grid and
+// Fullscreen) and the close button; nothing to edit.
+function buildViewerPreset() {
+  const editor = buildModalShellPreset("studio");
+  return {
+    viewButtons: [],
+    spaceButtons: editor.spaceButtons,
+    spaceFrameButton: { ...editor.spaceFrameButton, label: "Frame all", tip: "Frame all" },
+    toolButtons: [],
+    floatingButtons: [
+      ...editor.floatingButtons,
+      { action: "toggle-fullscreen", label: "Fullscreen", tip: "Fullscreen", pressed: null, icon: ICON.fullscreen },
+    ],
+    closeButton: { action: "close", label: "Close", tip: "Close", icon: ICON.close },
+    paintPanes: [],
   };
 }

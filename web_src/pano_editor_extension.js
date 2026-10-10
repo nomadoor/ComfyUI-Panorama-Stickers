@@ -1,10 +1,11 @@
 import { normalizeCoverageValue, parsePanoEditorState } from "./pano_editor_state.js";
 import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
-import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
+import { isPanoramaPreviewNodeName, isPanoramaPreviewSceneNodeName } from "./pano_preview_identity.js";
+import { linkedInputType } from "./pano_preview_video.js";
 import { runExternalStickerSync } from "./pano_external_sticker_sync.js";
 import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
 import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
-import { disposeNodeRuntime, editorSession, nodeSurface, previewNode, stateSync } from "./pano_node_bridge.js";
+import { disposeNodeRuntime, editorSession, nodeSurface, peekSceneViewer, previewNode, stateSync } from "./pano_node_bridge.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -374,12 +375,95 @@ function installStandalonePreviewInstance(node, {
   requestFrame(tryInstall);
 }
 
+// The Preview of IMAGE, VIDEO and PANO_SCENE (`PanoramaPreviewNode`, docs/preview-node.md "ノード上の表示"). Its
+// `source` is a MatchType that passes the input through, so it gets no `image` output. What shows `source` follows
+// the type linked to it, before any run: a Scene in the Scene viewer, IMAGE and VIDEO in the legacy Preview's
+// runtime reading `source`. A changed link switches it.
+function installScenePreviewNode(nodeType, { requestFrame, onExecuted }) {
+  if (!nodeType?.prototype) return;
+  const previousCreated = nodeType.prototype.onNodeCreated;
+  nodeType.prototype.onNodeCreated = function () {
+    const result = previousCreated ? previousCreated.apply(this, arguments) : undefined;
+    if (!Array.isArray(this.size) || this.size[0] < 10 || this.size[1] < 10) this.size = [360, 260];
+    return result;
+  };
+  // The legacy runtime wraps the node's own hooks and calls these; the switch waits for a frame so that it does
+  // not tear the runtime down inside its own hook.
+  const previousConnections = nodeType.prototype.onConnectionsChange;
+  nodeType.prototype.onConnectionsChange = function () {
+    const result = previousConnections ? previousConnections.apply(this, arguments) : undefined;
+    const node = this;
+    const install = previewNode(node);
+    if (install?.installDone) requestFrame(() => install.sync?.());
+    return result;
+  };
+  const previousExecuted = nodeType.prototype.onExecuted;
+  nodeType.prototype.onExecuted = function () {
+    const result = previousExecuted ? previousExecuted.apply(this, arguments) : undefined;
+    if (previewNode(this)?.display === "scene") onExecuted?.(this);
+    return result;
+  };
+  disposeRuntimeOnRemoved(nodeType);
+}
+
+function scenePreviewDisplay(node) {
+  return linkedInputType(node, "source") === "PANO_SCENE" ? "scene" : "media";
+}
+
+function installScenePreviewInstance(node, { app, openEditor, attachPreview, attachSceneViewer, openSceneViewer, requestFrame }) {
+  const install = previewNode(node);
+  if (!install || install.installDone || install.installProbeActive) return;
+  install.installProbeActive = true;
+  const openMedia = (target = node) => openEditor(target, "stickers", { readOnly: true, hideSidebar: false });
+  const open = () => (install.display === "scene" ? openSceneViewer?.(node) : openMedia(node));
+  install.sync = () => {
+    if (previewNode(node) !== install) return;
+    const display = scenePreviewDisplay(node);
+    if (display === install.display) return;
+    if (install.display === "scene") peekSceneViewer(node)?.surface?.detach?.();
+    if (install.display === "media") install.runtime?.teardown?.();
+    install.display = display;
+    if (display === "scene") {
+      attachSceneViewer?.(node);
+    } else {
+      attachPreview(node, {
+        buttonText: "Open Preview",
+        modalTitle: "Panorama Preview",
+        imageInputName: "source",
+        onOpen: openMedia,
+      });
+    }
+    if (install.surface || peekSceneViewer(node)?.surface) hideWidget(node, "Open Preview");
+    else ensureActionButtonWidget(node, "Open Preview", open);
+    node.setDirtyCanvas?.(true, true);
+  };
+  const tryInstall = () => {
+    if (previewNode(node) !== install) return;
+    const ready = Number(node?.id ?? -1) >= 0 && !!node?.graph;
+    const tries = install.installProbeTries + 1;
+    install.installProbeTries = tries;
+    if (!ready && tries < 40) {
+      requestFrame(tryInstall);
+      return;
+    }
+    syncCoverageWidgetRedraw(node, app);
+    ensureActionButtonWidget(node, "Open Preview", open);
+    install.installDone = true;
+    install.installProbeActive = false;
+    install.sync();
+  };
+  requestFrame(tryInstall);
+}
+
 export function createPanoEditorExtension({
   app,
   openEditor,
   attachStickers,
   attachCutout,
   attachPreview,
+  attachSceneViewer = null,
+  openSceneViewer = null,
+  onSceneViewerExecuted = null,
   restoreOutput,
   requestFrame,
   enableStickersPreview = false,
@@ -429,6 +513,7 @@ export function createPanoEditorExtension({
         });
       }
       if (isPanoramaPreviewNodeName(name)) installStandalonePreviewNode(nodeType);
+      if (isPanoramaPreviewSceneNodeName(name)) installScenePreviewNode(nodeType, { requestFrame, onExecuted: onSceneViewerExecuted });
     },
     // ComfyUI calls this for each node once a loaded graph is configured, links included.
     loadedGraphNode(node) {
@@ -437,6 +522,10 @@ export function createPanoEditorExtension({
     nodeCreated(node) {
       const name = String(node?.comfyClass || node?.type || node?.title || "");
       syncCoverageWidgetRedraw(node, app);
+      if (isPanoramaPreviewSceneNodeName(name)) {
+        installScenePreviewInstance(node, { app, openEditor, attachPreview, attachSceneViewer, openSceneViewer, requestFrame });
+        return;
+      }
       if (!isPanoramaPreviewNodeName(name)) return;
       installStandalonePreviewInstance(node, { app, openEditor, attachPreview, requestFrame });
     },

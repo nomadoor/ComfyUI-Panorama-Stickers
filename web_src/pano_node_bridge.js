@@ -11,6 +11,8 @@
 // - nodeSurface:   the on-node surface of Stickers, Cutout and Panorama Studio (pano_preview_runtime.js),
 //                  and whether pano_editor_extension.js attached it.
 // - previewNode:   the Preview nodes' runtime (pano_preview_previewnode.js) and its install probe.
+// - sceneViewer:   the Preview's viewer of a Scene on its node (pano_scene_viewer_node.js): its view and playhead
+//                  (pano_scene_viewer.js sceneViewerRecord), which the window continues from, and its surface.
 // - mediaCache:    media loaded for the node (its inputs' images, its output's VIDEO and ERP).
 // - stateSync:     the working state the surfaces read, and what must reach state_json before a run.
 
@@ -70,6 +72,19 @@ const GROUPS = {
     installDone: false,
     installProbeActive: false,
     installProbeTries: 0,
+    // What the Preview (`PanoramaPreviewNode`) shows its `source` in: "scene" (the Scene viewer), "media" (this
+    // runtime) or null before it is chosen.
+    display: null,
+  }),
+  sceneViewer: () => ({
+    // sceneViewerRecord() once the viewer is made; kept across the window and re-attaching, never saved.
+    record: null,
+    // The surface on the node: { detach() }.
+    surface: null,
+    // The window is open: the node does not draw meanwhile.
+    windowOpen: false,
+    // The open window: { close() }, or null.
+    window: null,
   }),
   mediaCache: () => ({
     // Shared by the node surface and the editor (pano_comfy_media.js), each under its own keys.
@@ -110,6 +125,7 @@ function existing(node, name) {
 export const editorSession = (node) => group(node, "editorSession");
 export const nodeSurface = (node) => group(node, "nodeSurface");
 export const previewNode = (node) => group(node, "previewNode");
+export const sceneViewer = (node) => group(node, "sceneViewer");
 export const mediaCache = (node) => group(node, "mediaCache");
 export const stateSync = (node) => group(node, "stateSync");
 
@@ -117,9 +133,34 @@ export const stateSync = (node) => group(node, "stateSync");
 export const peekEditorSession = (node) => existing(node, "editorSession");
 export const peekNodeSurface = (node) => existing(node, "nodeSurface");
 export const peekPreviewNode = (node) => existing(node, "previewNode");
+export const peekSceneViewer = (node) => existing(node, "sceneViewer");
 
 // Whether the node's modal editor is open.
 export const editorOpen = (node) => existing(node, "editorSession")?.open === true;
+
+// The window on the node's Scene (pano_scene_viewer_window.js, { close() }) opened: the node does not draw while it
+// is open.
+export function sceneViewerWindowOpened(node, window) {
+  const owner = group(node, "sceneViewer");
+  owner.window = window;
+  owner.windowOpen = true;
+}
+
+// The window closed: the node goes on from the view and playhead the window left in the record, as the one used last.
+export function sceneViewerWindowClosed(node) {
+  const owner = group(node, "sceneViewer");
+  owner.window = null;
+  owner.windowOpen = false;
+  owner.surface?.activate();
+}
+
+// The nodes whose Studio editor is open, so the Preview's viewers on the graph stop drawing meanwhile.
+const openStudioEditors = new Set();
+export function noteStudioEditorOpen(node, open) {
+  if (open) openStudioEditors.add(node);
+  else openStudioEditors.delete(node);
+}
+export const anyStudioEditorOpen = () => openStudioEditors.size > 0;
 
 function releaseImage(image) {
   if (!image) return;
@@ -138,6 +179,10 @@ const CLEAR = {
   },
   previewNode(preview) {
     preview.runtime?.teardown?.();
+  },
+  sceneViewer(viewer) {
+    viewer.window?.close?.();
+    viewer.surface?.detach?.();
   },
   mediaCache(media) {
     media.linkedImages.forEach((entry) => {
@@ -164,6 +209,7 @@ function clearGroup(node, name) {
 export const clearEditorSession = (node) => clearGroup(node, "editorSession");
 export const clearNodeSurface = (node) => clearGroup(node, "nodeSurface");
 export const clearPreviewNode = (node) => clearGroup(node, "previewNode");
+export const clearSceneViewer = (node) => clearGroup(node, "sceneViewer");
 export const clearMediaCache = (node) => clearGroup(node, "mediaCache");
 export const clearStateSync = (node) => clearGroup(node, "stateSync");
 

@@ -57,7 +57,7 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
   - 上流の層の組み立て（`editor/upstream.js` の `pano_upstream_layers` の読み込み、層ごとの素材の follower、`upstreamViewInput`、ファイルの 404 の問い合わせ直し）を `web_src/pano_upstream_layers.js` に移す（作る）。上書きの記録・編集の書き戻しは `editor/upstream.js` に残す。
   - エディタは分けたモジュールを呼ぶだけになり、test は変えずに通す（`docs/agents/workflow.md` の「refactor の commit では test を変えない」）。
 - ビューアの組み立て（`pano_scene_viewer.js` の `createSceneViewer`。作る）：分けた 2 つのモジュールと、再生の部品（`createNodePlayback`、深度のグリッドの色）を 1 つの Scene の表示に組み立てる。ノード上と大きなウィンドウの両方がこれを使う（組み立てを二か所に書かないため。付け替えの仕組みは持たない）。描く先だけが違う：ノード上は共有のビュー（`pano_preview_view.js` の `acquirePreviewView`）、ウィンドウは `PanoModal.vue` の `viewer` の配置のステージ。
-- データ：Preview の実行結果の `pano_upstream_layers` を、Studio のエディタと同じく上流の層として読む（`pano_upstream_layers.js`）。実行結果が新しいかは、Preview の `source` の接続で判断する（`isNodeOutputMediaCurrent`）。Preview の状態は空の状態 v2（Sticker なし、Camera なし、`upstream` は空）で、どこにも保存しない。
+- データ：Preview の実行結果の `pano_upstream_layers` を、Studio のエディタと同じく上流の層として読む（`pano_upstream_layers.js`）。実行結果が新しいかは、Preview の `source` の接続で判断する（`isNodeOutputMediaCurrent`）。そのため `source` は背景のチャンネルの入力名（`BACKGROUND_INPUT_NAMES`）に入る。`source` を持つのはこのノードだけなので、旧ノードの判定は変わらない。Preview の状態は空の状態 v2（Sticker なし、Camera なし、`upstream` は空）で、どこにも保存しない。ペイントの層を描く大きさは、エディタの既定と同じ 2048 × 1024 に固定する（`pano_scene_viewer.js` の `paintTarget`）。Preview は Scene を作った Studio の出力の大きさを受け取らないためで、ペイントの多い Scene では Studio のエディタより粗く見えることがある。
 - 当たり判定：視点の操作が使う `pickSurface`（オービットの中心とホイールの先）だけを使う。Sticker を選ぶ当たり判定（`pickSticker`）は使わない。
 - 始めの視点：World の原点で、ERP の正面（yaw 0、pitch 0、エディタの既定の画角）を向く。`PANO_SCENE` は 6DoF から始める（エディタは 3DoF から始めるが、Preview は動き回って見る場所なので）。IMAGE・VIDEO は 3DoF だけ。
 - 視点の操作：エディタと同じ 6DoF のプリセット（`PanoramaSuite.Editor.ViewControls`、`docs/editor-interaction.md` の「6DoF の操作」）。ピボット・パン・ズームの規則も同じ。
