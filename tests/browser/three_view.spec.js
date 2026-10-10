@@ -67,6 +67,11 @@ test("a DA3 mono depth grid draws its plane with a hole where the depth is 0, an
     expect(top[0], name).toBeGreaterThan(top[2] + 100);
     expect(bottom[2], name).toBeGreaterThan(bottom[0] + 100);
   }
+  // A playing VIDEO and its still draw the same color (a VideoTexture is decoded from sRGB in the shader).
+  for (let channel = 0; channel < 3; channel += 1) expect(Math.abs(check.tone.video[channel] - check.tone.still[channel]), `channel ${channel}`).toBeLessThan(8);
+  // Across a magnified edge the VIDEO blends in linear space as the still does.
+  const edgeGap = Math.max(...check.edge.video.map((value, index) => Math.abs(value - check.edge.still[index])));
+  expect(edgeGap).toBeLessThan(8);
   // The colors are one texture per input, let go when the input no longer draws.
   expect(check.colorTextures).toBe(1);
   expect(check.colorTexturesAfter).toBe(0);

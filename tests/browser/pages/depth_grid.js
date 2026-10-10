@@ -108,6 +108,57 @@ try {
       }
       check.orientation[name] = { top: sample(probe2d, SIZE / 2, SIZE / 8), bottom: sample(probe2d, SIZE / 2, (SIZE * 7) / 8) };
     }
+    // The same mid-tone color drawn from the playing VIDEO and from the still the follower copies off it: the two
+    // uploads differ (three keeps a VideoTexture in RGBA8 and an sRGB still in SRGB8_ALPHA8), and must draw alike.
+    const tone = await makeVideo({ width: 64, height: 64, seconds: 1, paint: (g, frame, w, h) => {
+      g.fillStyle = `rgb(180 ${90 + (frame % 2)} 40)`;
+      g.fillRect(0, 0, w, h);
+    } });
+    await tone.play();
+    await new Promise((resolve) => tone.requestVideoFrameCallback(resolve));
+    const toneStill = document.createElement("canvas");
+    toneStill.width = 64;
+    toneStill.height = 64;
+    toneStill.getContext("2d").drawImage(tone, 0, 0);
+    check.tone = {};
+    for (const [name, media] of [["video", tone], ["still", toneStill]]) {
+      const drawn = { ...space, scene: { ...request, color: { media, revision: name, source: name } } };
+      for (let index = 0; index < 20; index += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        view.clear();
+        view.render({ rect: { x: 0, y: 0, w: SIZE, h: SIZE }, camera, background: null, layers: [], space: drawn });
+        probe2d.clearRect(0, 0, SIZE, SIZE);
+        probe2d.drawImage(view.canvas, 0, 0);
+      }
+      check.tone[name] = sample(probe2d, SIZE / 4, SIZE / 4);
+    }
+    // A sharp edge between white and black, magnified (16 x 16 picture over the grid): a playing VIDEO must blend it
+    // in linear space, as its still and the node do, not in sRGB.
+    const edge = await makeVideo({ width: 16, height: 16, seconds: 1, paint: (g, frame, w, h) => {
+      g.fillStyle = `rgb(255 ${255 - (frame % 2)} 255)`;
+      g.fillRect(0, 0, w / 2, h);
+      g.fillStyle = `rgb(0 ${frame % 2} 0)`;
+      g.fillRect(w / 2, 0, w / 2, h);
+    } });
+    await edge.play();
+    await new Promise((resolve) => edge.requestVideoFrameCallback(resolve));
+    const edgeStill = document.createElement("canvas");
+    edgeStill.width = 16;
+    edgeStill.height = 16;
+    edgeStill.getContext("2d").drawImage(edge, 0, 0);
+    check.edge = {};
+    for (const [name, media] of [["video", edge], ["still", edgeStill]]) {
+      const drawn = { ...space, scene: { ...request, color: { media, revision: name, source: name } } };
+      for (let index = 0; index < 20; index += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        view.clear();
+        view.render({ rect: { x: 0, y: 0, w: SIZE, h: SIZE }, camera, background: null, layers: [], space: drawn });
+        probe2d.clearRect(0, 0, SIZE, SIZE);
+        probe2d.drawImage(view.canvas, 0, 0);
+      }
+      // The red of a row across the edge, away from the hole in the middle.
+      check.edge[name] = Array.from(probe2d.getImageData(SIZE / 2 - 24, SIZE / 8, 48, 1).data).filter((_, index) => index % 4 === 0);
+    }
     // One color texture per input, however many pictures it showed; none once no depth grid draws.
     check.colorTextures = view.stats().depthColorTextures;
     view.render({ rect: { x: 0, y: 0, w: SIZE, h: SIZE }, camera, background: null, layers: [], space: { ...space, scene: null, sceneUrls: [] } });

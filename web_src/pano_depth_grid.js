@@ -5,10 +5,12 @@
 // The file's form is docs/studio-node.md "DA3_GEOMETRY mono のエディタ用ファイル": no header, float32 little-endian,
 // W × H by rows, row 0 the image's top; a pixel of depth 0 is outside `keep`.
 import {
+  ColorManagement,
   DoubleSide,
   InstancedBufferGeometry,
   Matrix3,
   NoBlending,
+  SRGBTransfer,
   ShaderMaterial,
   Vector2,
 } from "three";
@@ -56,14 +58,32 @@ void main() {
   gl_Position = depthGridDrawn ? projectionMatrix * modelViewMatrix * vec4(position, 1.0) : DEPTH_GRID_OUTSIDE;
 }`;
 
-// Without light (unlit, as the meta says): the proxy's color, an sRGB texture sampled in linear space, out through
-// the renderer's output color space as MeshBasicMaterial does.
+// Without light (unlit, as the meta says): the proxy's color in linear space, out through the renderer's output color
+// space as MeshBasicMaterial does. A still is an SRGB8_ALPHA8 texture: the GPU decodes it and blends in linear space,
+// as the GLBs' sampler and the node do (docs/render-contract.md "テクスチャの標本化"). three uploads a VideoTexture as
+// RGBA8 whatever its color space (WebGLTextures.js getInternalFormat, forceLinearTransfer), and the hardware would
+// blend its sRGB values; so a playing sRGB VIDEO is sampled here by hand: its 4 nearest texels (clamped to the edge,
+// as ClampToEdgeWrapping), each decoded (sRGBTransferEOTF), blended in linear space.
 const FRAGMENT = `
 uniform sampler2D colorMap;
+uniform bool decodeVideoSrgb;
 uniform float opacity;
 varying vec2 depthGridUv;
+vec4 linearColor(vec2 uv) {
+  if (!decodeVideoSrgb) return texture(colorMap, uv);
+  ivec2 size = textureSize(colorMap, 0);
+  ivec2 last = size - 1;
+  vec2 p = uv * vec2(size) - 0.5;
+  ivec2 i = ivec2(floor(p));
+  vec2 f = p - floor(p);
+  vec4 a = sRGBTransferEOTF(texelFetch(colorMap, clamp(i, ivec2(0), last), 0));
+  vec4 b = sRGBTransferEOTF(texelFetch(colorMap, clamp(i + ivec2(1, 0), ivec2(0), last), 0));
+  vec4 c = sRGBTransferEOTF(texelFetch(colorMap, clamp(i + ivec2(0, 1), ivec2(0), last), 0));
+  vec4 d = sRGBTransferEOTF(texelFetch(colorMap, clamp(i + ivec2(1, 1), ivec2(0), last), 0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
 void main() {
-  gl_FragColor = vec4(texture(colorMap, depthGridUv).rgb, opacity);
+  gl_FragColor = vec4(linearColor(depthGridUv).rgb, opacity);
   #include <colorspace_fragment>
 }`;
 
@@ -189,6 +209,13 @@ export function createDepthGridMaterial({ depthMap, inverseK, width, height }) {
     side: DoubleSide,
   });
   material.uniforms.opacity = { get value() { return material.opacity; } };
+  // three's rule for decoding in the shader (WebGLPrograms.js decodeVideoTexture), read from the texture it draws.
+  material.uniforms.decodeVideoSrgb = {
+    get value() {
+      const texture = material.uniforms.colorMap.value;
+      return texture?.isVideoTexture === true && ColorManagement.getTransfer(texture.colorSpace) === SRGBTransfer;
+    },
+  };
   return material;
 }
 

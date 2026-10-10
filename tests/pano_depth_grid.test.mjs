@@ -182,3 +182,28 @@ test("the colors are one texture per input, shared by its items and freed when t
   assert.equal(playing.disposed, true);
   assert.equal(textures.size, 0);
 });
+
+// The video washed out while playing: three uploads a VideoTexture as RGBA8 even when it is sRGB (WebGLTextures.js
+// getInternalFormat, forceLinearTransfer) and its own materials decode it in the shader (DECODE_VIDEO_TEXTURE). The
+// depth grid's shader decodes it the same way, by the same rule; a still (SRGB8_ALPHA8) is decoded by the GPU.
+test("a playing sRGB VIDEO's colors are decoded in the shader, as three's materials do; a still's are not", async () => {
+  const { DataTexture, FloatType, RedFormat, SRGBColorSpace, Texture, VideoTexture } = await import("three");
+  const material = createDepthGridMaterial({ depthMap: new DataTexture(new Float32Array(12), 4, 3, RedFormat, FloatType), inverseK: inverseIntrinsics([2, 0, 1, 0, 2, 1, 0, 0, 1]), width: 4, height: 3 });
+  const texture = (Type) => {
+    const made = new Type({ addEventListener() {}, removeEventListener() {} });
+    made.colorSpace = SRGBColorSpace;
+    return made;
+  };
+  globalThis.HTMLVideoElement ??= class {};
+  material.uniforms.colorMap.value = texture(VideoTexture);
+  assert.equal(material.uniforms.decodeVideoSrgb.value, true);
+  material.uniforms.colorMap.value = texture(Texture);
+  assert.equal(material.uniforms.decodeVideoSrgb.value, false);
+  const linearVideo = new VideoTexture({ addEventListener() {}, removeEventListener() {} });
+  material.uniforms.colorMap.value = linearVideo;
+  assert.equal(material.uniforms.decodeVideoSrgb.value, false);
+  // Decoded per texel before the blend (linear-space bilinear, clamped to the edge); a still keeps the hardware path.
+  assert.match(material.fragmentShader, /if \(!decodeVideoSrgb\) return texture\(colorMap, uv\);/);
+  assert.equal((material.fragmentShader.match(/sRGBTransferEOTF\(texelFetch\(colorMap, clamp\(/g) ?? []).length, 4);
+  assert.match(material.fragmentShader, /return mix\(mix\(a, b, f\.x\), mix\(c, d, f\.x\), f\.y\);/);
+});

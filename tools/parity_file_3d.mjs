@@ -16,7 +16,8 @@
 //               color proxy MP4, "shots": [{ "name", "state", "output" }], "width", "height" }, and the files it names
 // and gets editor.png (with output.png also diff.png, the per-pixel difference x8, and parity.json). In da3/, per
 // shot, the grid is drawn twice: with the colors of image.png ((a) the shape: editor_<shot>_image.png, held to the
-// 3D file's tolerance) and with the colors of the proxy at the stopped playhead ((b) the proxy:
+// 3D file's tolerance) and with the colors of the proxy, its <video> paused at the item's time and drawn as a
+// VideoTexture as when it plays ((b) the proxy:
 // editor_<shot>_proxy.png, held to the proxy's looser tolerance), each with its diff_*.png; da3/parity.json has the
 // numbers.
 //
@@ -147,8 +148,10 @@ window.renderParity = async ({ glbBase64, state: raw, unlit, width, height, load
   return { renderer, editor: frame.png, pixels: frame.pixels };
 };
 
-// The proxy's picture at time 0 as the editor's follower captures it when the playhead is stopped: a still canvas.
-async function proxyStill(base64) {
+// The proxy at the item's time (0) as the <video> itself, paused there: it draws as a VideoTexture, the upload a
+// playing proxy has (three keeps a VideoTexture in RGBA8 and the shader decodes its sRGB), not the still the follower
+// copies off it when the playhead stops (a canvas, uploaded as SRGB8_ALPHA8).
+async function proxyVideo(base64) {
   const video = document.createElement("video");
   video.muted = true;
   video.src = blobUrl(base64, "video/mp4");
@@ -156,14 +159,9 @@ async function proxyStill(base64) {
     video.onloadeddata = resolve;
     video.onerror = () => reject(new Error("This Chromium cannot decode the proxy MP4 (H.264): (b) needs a Chromium that can, or Chrome."));
   });
-  // As the follower does: seek to the time and take the picture once the seek is done (a picture taken on
-  // loadeddata alone can be empty).
   await new Promise((resolve) => { video.onseeked = resolve; video.currentTime = 0; });
-  const still = document.createElement("canvas");
-  still.width = video.videoWidth;
-  still.height = video.videoHeight;
-  still.getContext("2d").drawImage(video, 0, 0);
-  return still;
+  video.pause();
+  return video;
 }
 
 // The DA3 mono depth grid of each shot, with the colors of the frame's image (a) and of the proxy (b).
@@ -173,7 +171,7 @@ window.renderDepthGrid = async ({ meta, depthBase64, imageBase64, videoBase64, s
   let proxy = null;
   let proxyError = null;
   try {
-    proxy = await proxyStill(videoBase64);
+    proxy = await proxyVideo(videoBase64);
   } catch (error) {
     proxyError = String(error.message || error);
   }

@@ -7230,7 +7230,7 @@ function gg(e, t, n, { media: r, evaluated: i = os(e, t) }) {
 function pw({ canvas: e, onReady: t, onFailed: n, onUpdate: r = () => {
 }, onSplats: i = () => {
 }, onRestored: o = () => {
-}, load: s = () => import("./.lazy/pano_three_view-B5VUxG9x.js").then((a) => a.$) }) {
+}, load: s = () => import("./.lazy/pano_three_view-DP2ylGR5.js").then((a) => a.$) }) {
   let a = null, l = null, c = !1, d = 0;
   const u = () => {
     l = Bh(a.createThreeView({ onUpdate: r, onSplats: i, createCanvas: () => e }), "editor");
@@ -7350,7 +7350,7 @@ function hw(e) {
   };
 }
 const bg = hw(
-  () => import("./.lazy/pano_three_view-B5VUxG9x.js").then((e) => e.$).then((e) => Bh(e.createThreeView({ createCanvas: () => Gt({ label: "three.node" }) }), "node"))
+  () => import("./.lazy/pano_three_view-DP2ylGR5.js").then((e) => e.$).then((e) => Bh(e.createThreeView({ createCanvas: () => Gt({ label: "three.node" }) }), "node"))
 ), On = ["erp_image", "bg_erp", "bg_media"], Yu = ["sticker_image", "sticker"], vg = ["scene"], qu = ["sticker", "sticker_state"], mw = {
   background: On,
   "external-sticker": Yu,
