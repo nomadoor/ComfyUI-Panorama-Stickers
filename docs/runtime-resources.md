@@ -40,8 +40,8 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - `image_file`・`image_data_url`：8 ビットの画像（Sticker の `file` の Source、アップロード済みのペイントのラスタ）を、復号した RGBA の uint8 のまま。キーはファイルならパス・更新時刻・大きさ、data URL なら URL の SHA-1（URL の文字列そのものはキーにしない）。
   - `painting_erp`：状態のペイント（ストローク、ラスタオブジェクト）を ERP に描いた結果（`render_painting_to_erp`）。1 回の描画のパスの中で同じペイントを何度も求め（ペイントとマスクを別々に、グループごとに）、1 回の実行で複数のパス（最初のフレーム、`video` 出力を読むたび）を描くので、ComfyUI の出力キャッシュでは代わりにならない。ストロークを描くのは CPU で数秒かかることがあるため残す。
   - `cutout_sampling_map`：旧 Cutout の標本化の表。
-  - `video`・`scene_files`：エディタ用の MP4・PNG・PLY/GLB のパス。
-  - `da3_meshes`：`DA3_GEOMETRY` の要素ごとの、コアの変換の結果の MESH（`scene_mesh.py` の `da3_meshes`。規則は `docs/render-contract.md` の「`DA3_GEOMETRY` のメッシュ」）。キーは `mode` と、メッシュの元になるテンソルの同一性と、要素の番号。
+  - `video`・`scene_files`：エディタ用の MP4・PNG・PLY/GLB・`DA3_GEOMETRY` mono の深度（`.f32`）のパス。`DA3_GEOMETRY` mono の色のプロキシの MP4 は `video` に入る。
+  - `da3_meshes`：`DA3_GEOMETRY` の要素ごとの、コアの変換の結果の MESH（`scene_mesh.py` の `da3_meshes`。規則は `docs/render-contract.md` の「`DA3_GEOMETRY` のメッシュ」）。キーは `mode` と、メッシュの元になるテンソルの同一性と、要素の番号。mono のエディタ用ファイルはこの変換を使わないので、mono の要素を入れるのは描画だけである。`video` の読み出しは、上限で追い出された要素だけを変換し直す（`docs/render-contract.md` の「`DA3_GEOMETRY` のメッシュ」）。
   - `splat_files`・`mesh_files`：3D ファイルから読んだ SPLAT・MESH。`scene`・`sticker` の入力の 3D ファイルも、3D ファイルの `file` の Source も、エディタ用ファイルの問い合わせ（`docs/studio-node.md`）も、同じキー（パス・更新時刻・大きさ）で引く。同じキーを同時に求める呼び出し（実行中のプロンプトと経路）は、キーごとのロックで待ち合わせ、1 回だけ読む（`MemoryCache.get_or_put`）。`scene_files` も同じく 1 回だけ書く。
 - 持たないもの：
   - 旧 `PanoramaStickers` の背景のバッチ。プレビューの MP4 を作る間だけ持つ。
@@ -61,3 +61,11 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - `type` を外して `storage` だけにはできない：フロントエンドの `pano_comfy_media.js` の `comfyImageEntryToUrl` は `type` だけを読む（`storage` を先に読むのは `pano_preview_previewnode.js` だけ）。そのため、ComfyUI を `--enable-assets` で起動したときは、コアの `comfy_execution/asset_enrichment.py` が `type` の付いた `ui` の項目をすべてジョブの出力として登録し、この入力の MP4 も実行のたびに、その実行の出力として登録し直される（同じパスの前の記録は missing になる）。既定（assets なし）では影響はない。
 - `ui` の項目の `subfolder` は、ディレクトリの直下のファイルでは `""`。
 - RGBA の IMAGE バッチの `pano_sticker_input_frames` は 1 枚ずつの PNG で、長いバッチでは PNG の数と大きさが増えるが、登録の上限で抑える。
+- `DA3_GEOMETRY` mono のエディタ用ファイル（`docs/studio-node.md` の「`DA3_GEOMETRY` mono のエディタ用ファイル」）は、1 フレームあたり `W × H × 4` バイトの深度のファイル（1080p で約 8.3 MB。`keep` は値の `> 0` で表し、マスクのファイルは持たない）と、全フレームで 1 つの色のプロキシの MP4。1080p × 314 フレームで約 2.6 GB（約 2.4 GiB）と MP4 で、`TEMP_MAX_BYTES` の中に収まる（フレームごとの GLB では約 13 GB だった。実測）。同じ大きさの別の入力をもう一つ実行すると、上限を超えた分の古いファイルから消える。
+  - 4K（3840 × 2160）は 1 フレーム約 33.2 MB で、314 フレームで約 10.4 GB（約 9.7 GiB）になり、`TEMP_MAX_BYTES` を超える。実行の間は消さないが、実行の後に temp に書くたびに古いフレームから消えるので、エディタがそのフレームを読むと 404 になりうる（そのときの表示は `docs/threejs-spark-integration.md` の「空間の表示」の既知の挙動。実行し直すと書き直す）。
+
+## エディタのメモリの目安
+
+規則の owner は `docs/threejs-spark-integration.md`（「空間の表示」の大きさの上限と「`DA3_GEOMETRY` mono の深度のグリッド」）。ここには量の目安だけを書く。
+
+- `scene` と 3D の Sticker のキューは、それぞれ読み込んだ要素を `SCENE_ITEM_BUDGET`（1.5 GiB）まで持つ。`DA3_GEOMETRY` mono の深度のグリッドの要素は GPU のテクスチャ（R32F の深度、1 画素 4 バイト）として持ち、ほかの要素と同じ `SCENE_ITEM_BUDGET` で数える。1080p で 1 要素約 8.3 MB、上限まで約 190 要素（約 1.5 GiB の VRAM）になる。グリッドのジオメトリは頂点ごとの値を持たず、同じ大きさの要素で共有する。色のプロキシは動画 1 本と、止めたときの静止画 1 枚。

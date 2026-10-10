@@ -18,6 +18,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 3D の `world` の Sticker | `world_render.py` `ContentSource`、`nodes.py` `_port_media`・`_resolve_sources`（3D ファイルの `file` の Source） | — | `tests/test_stickers_3d.py` |
 | `scene` の共通処理 | `world_render.py` `SceneContent`、`nodes.py` `_scene_content` | — | `tests/test_world_render.py`、`tests/test_scene_mesh.py` |
 | MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY` の描画 | `core/mesh_render.py` `render_mesh`・`mesh_content`・`MeshItem`、`scene_mesh.py` `read_mesh_file`・`moge_scene_content`・`da3_scene_content`・`da3_meshes`・`check_da3`・`_with_default_k`・`DA3_EMPTY_MESH`、`sticker_media.py` `content_of`・`is_3d_media`、`nodes.py` `_check_da3_inputs` | — | `tests/test_mesh_render.py`、`tests/test_scene_mesh.py`、`tests/test_stickers_3d.py` |
+| `DA3_GEOMETRY` mono の残す画素（keep。エディタ用ファイルと中身の箱が使う。コアの部品の組み立ての順だけを持つ） | `scene_mesh.py` `da3_keep`（作る）、`core_adapters.py` の `_da3_build_mask`・`_da3_get_K`・`_da3_unproject`・`depth_map_edge` の読み込み（作る） | 深度のグリッドのシェーダーが同じ規則で四角を描く（`web_src/pano_depth_grid.js`（作る）。`docs/threejs-spark-integration.md` の「`DA3_GEOMETRY` mono の深度のグリッド」） | `tests/test_scene_mesh.py` `test_da3_keep_is_the_pixels_the_core_keeps`（作る）、下の「エディタとの一致（DA3 mono の場面）」 |
 | 光が効く要素（`unlit`） | `core/mesh_render.py` `MeshItem.unlit`、`scene_mesh.py` `is_unlit`・`mesh_scene_content`・`moge_scene_content`・`da3_scene_content` | エディタは `pano_scene_meta` の `unlit` を読む（`web_src/pano_space.js` `sceneFilesOf`。`docs/threejs-spark-integration.md`） | `tests/test_scene_mesh.py`、`tests/test_mesh_render.py`、`tests/test_scene_editor_files.py`、`tests/pano_space.test.mjs` |
 | 材質（コアの MESH から読む値） | `scene_mesh.py` `mesh_material`・`mesh_item` | エディタは同じ値を GLB から GLTFLoader で読む | `tests/test_scene_mesh.py`（コアの `mesh_item_to_glb_bytes` が書く GLB の材質と比べる） |
 | 既定の照明の値と光の式 | `core/mesh_render.py` `DEFAULT_LIGHTS`・`shade_standard`、`core/three_dfg_lut.py` | `web_src/pano_three_view.js` `DEFAULT_LIGHTS`・`createDefaultLights` | 値は `tests/fixtures/default_lighting.json` を Python（`tests/test_mesh_render.py`）と JS（`tests/pano_scene_loaders.test.mjs`）が読む。式は `tests/test_mesh_render.py` が `tests/fixtures/standard_material_r184.json`（three.js r184 が描いた値。`tools/bake_standard_material.mjs` で焼く）と比べる。エディタの描画は `tests/browser/file_3d.spec.js` |
@@ -218,7 +219,8 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 `DA3_GEOMETRY`（コアの Run Depth Anything 3 の出力の辞書）は、`MOGE_GEOMETRY` と同じく要素を出力のフレームに順に対応させ、フレームごとのグリッドのメッシュにする（`scene_mesh.py` の `da3_scene_content`）。光は効かない（上の「光が効く要素」）。コアの Convert DA3 Geometry to Mesh は `batch_index` の 1 つしか出さないので、それを通すと動きが失われる（ADR 0038）。
 
 - mono の要素の数は `depth` の 1 つ目の次元（multiview は 1 つ。下の「multiview」）。要素 `i` のメッシュは、コアの `DA3GeometryToMesh.execute` を `batch_index = i` と、そのノードの既定の値（`decimation` 1、`discontinuity_threshold` 0.04、`confidence_threshold` 0.1、`use_sky_mask` 真、`texture` 真）で呼んだ MESH そのものとする（`comfy_extras/nodes_depth_anything_3.py:480-571`）。変換をここに写さない。コアの内部のシンボルなので `core_adapters.py` から読み込む。
-- 変換した MESH は、入力と要素ごとに共有のキャッシュ（`core/cache.py` の `da3_meshes` の名前空間。キーは `mode` と、メッシュの元になるテンソルの同一性）に入れ、`scene_mesh.py` の `da3_meshes` が返す。描画（`da3_scene_content`）、エディタ用ファイル（`scene_files.py` の `write_editor_files`）、中身の箱（`sticker_media.py` の `content_box`）は同じ MESH を使う。変換を共有するのは、変換した MESH が共有のキャッシュ（`MemoryCache`）の上限に収まる間である。上限より大きい入力は、同じ要素をもう一度変換することがある（キャッシュはメモリを上限の中に保つ）。
+- 変換した MESH は、入力と要素ごとに共有のキャッシュ（`core/cache.py` の `da3_meshes` の名前空間。キーは `mode` と、メッシュの元になるテンソルの同一性）に入れ、`scene_mesh.py` の `da3_meshes` が返す。変換を呼ぶのは描画（`da3_scene_content`）と、multiview のエディタ用ファイルと中身の箱だけである。mono のエディタ用ファイルと中身の箱は変換を呼ばず、下の「mono の残す画素」から作る。
+  - mono の要素は、1 回の描画のパスの中では 1 回だけ変換する（要素は出力のフレームの順に進み、`mesh_content` が直前の要素を device に持つ）。最初のフレームの描画と `video` の読み出しは別のパスなので、後のパスは、共有のキャッシュ（`MemoryCache`）の上限に収まって残っている要素を変換し直さず、追い出された要素だけをもう一度変換する（キャッシュはメモリを上限の中に保つ）。1080p で 1 要素の変換は約 0.09 秒（実測）。
 - コアの変換がすること（コアが owner。ここでは事実として書く）：
   - 有限でない `depth` を 0 にしてから、画素の座標 `(u, v)`（整数の画素の番号）を `K⁻¹` で戻して `depth` を掛け、OpenCV の Camera の座標の点にする（`_da3_unproject`、`:49-57`）。`depth` は光線の長さではなく、Camera の前方への奥行き（z）である。
   - `K` は `intrinsics` があればその要素の値、なければ仮の値（`_da3_get_K`・`_da3_default_K`、`:60-77`）。Panorama Studio は mono の要素に仮の値を前もって `intrinsics` として渡す（下の「mono の画角と座標」）。仮の値は `fx = fy = 0.7 × W`、主点 `((W − 1) ÷ 2, (H − 1) ÷ 2)` で、水平の画角は約 71°（`2 · atan((W − 1) ÷ (1.4 W))`。コアのログと docstring は「約 60°」と書くが、式の値は約 71°）。コアは仮の値を使うたびにログに警告を出す。
@@ -228,7 +230,7 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 - 既定の値は Convert DA3 Geometry to Mesh の既定と同じにする。コアの DA3 のほかの経路は、既定で空も信頼度も使わない：Run Depth Anything 3（`DA3Inference`）は `sky`・`confidence` を生の値で辞書に入れるだけで画素を捨てない（`:299-367`）。DA3Render の `apply_sky_clip` は既定で偽で、正規化にだけ使う（`:380`）。点群への変換（`DA3GeometryToPointCloud`）は既定が Convert DA3 Geometry to Mesh と同じ（空を使い、信頼度 0.1）だが、ノードとして登録されていない（`:676`）。
 - 座標：mono の要素は、DA3 の Camera を `scene` 自身の原点に置き、`−Z` を向き、像の上が `+Y` になる。`scene` の変形が既定で、Camera が原点で回転 0 なら、透視投影の出力の中央に像の中央が来る（画角が `K` と同じなら像と重なる）。
 - 画素が全部捨てられてメッシュが空になる要素は、`MOGE_GEOMETRY` と同じく空の要素にする（描かず、エディタ用ファイルは `null`。実行は止めない）。コアの変換はこのとき `ValueError`（`DA3GeometryToMesh produced an empty mesh. ...`、`comfy_extras/nodes_depth_anything_3.py:552-557`）を出すので、`da3_meshes` はこの文言（`DA3_EMPTY_MESH`）で始まる `ValueError` だけを空の要素として受け、ほかの例外はそのまま通す。例外にならずに返った MESH でも、面が 0 なら空の要素にする（`MOGE_GEOMETRY` と同じ。`scene_files.py:33-34`）。
-  - 呼ぶ前に空かを確かめる方法は採らない。コアと同じ捨て方（空・信頼度・奥行き・段差の判定）をここに写すことになり、規則の owner が二つになるためである。
+  - 描画は、呼ぶ前に空かを確かめない。mono のエディタ用ファイルは下の「mono の残す画素」で空かを決めるが、それはコアの部品を組み立てたもので、捨て方を写したものではない。二つが同じ要素を空とすることは、その節の test で守る。
   - コアが文言を変えると、空の要素でもコアのエラーで実行が止まる（黙って別の扱いにはならない）。文言は `tests/test_scene_mesh.py` の `test_the_core_names_an_all_empty_frame_by_the_text_da3_scene_content_takes` で、全画素が空の `DA3_GEOMETRY` をコアに渡して固定する。
 
 #### mono の画角と座標
@@ -238,8 +240,23 @@ mono（`mode` が `"mono"`。`intrinsics` も `extrinsics` も持たない）の
 - `intrinsics` の無い辞書は、`DA3GeometryToMesh` を呼ぶ前に（`_with_default_k`）、`intrinsics` だけを足した浅い写しにする。値はコアの `_da3_default_K(H, W)`（`H`・`W` は `depth` の大きさ）を (1, B, 3, 3) に並べたもの（B は要素の数）。`_da3_default_K` はほかのコアのシンボルと同じく `core_adapters.py` から読み込む。コアの `_da3_get_K` はこの値を読むので、要素ごとの警告を出さない（`comfy_extras/nodes_depth_anything_3.py:68-77`）。`intrinsics` を読むのは `_da3_get_K` だけなので、できるメッシュは写しを作らずに呼んだときと同じで、仮の `K` の owner はコアのままである。入力の辞書そのものは変えない。
 - 描画とエディタ用ファイルのどちらの経路も、この写しを使う。
 - 代わりに Panorama Studio が、実行ごとに 1 回だけ警告をログに出す（`nodes.py` の `_check_da3_inputs`。入力が `intrinsics` を持たないので、コアの既定の水平約 71° の画角を使った、という内容）。
+- `extrinsics` を持つ mono の辞書は、`execute` の入口の `check_da3`（multiview の姿勢の無いモデルの判定と同じ場所）で、mono は `extrinsics` を持たないと示す `ValueError` にする（作る）。コアの変換は `extrinsics` を掛けるが、エディタの深度のグリッドは掛けないので、受けるとエディタと出力が黙って食い違うためである。
 - 元の写真の画角と違えば、形が奥行きの方向に伸び縮みする（スケールでは直らない）。画角を合わせる機能は、要る素材が出たときに足す。
 - 写しと警告は `tests/test_scene_mesh.py` の `test_mono_frames_are_the_cores_meshes_with_its_default_k_and_one_warning_per_run` で守る：写しから作ったメッシュが写しを作らずにコアで変換したものと一致すること、コアの警告が出ないこと、Panorama Studio の警告が 1 回であること。
+
+#### mono の残す画素
+
+mono の要素のエディタ用ファイル（`docs/studio-node.md` の「`DA3_GEOMETRY` mono のエディタ用ファイル」）と中身の箱は、コアの変換（`DA3GeometryToMesh.execute`）を呼ばず、コアの部品を組み立てて、変換が頂点に残す画素（`keep`）を求める（`scene_mesh.py` の `da3_keep`（作る））。捨て方の規則はコアの部品が持ち、ここが持つのは組み立ての順だけである。値は変換と同じ `DA3_MESH_DEFAULTS` から読む。決めた理由は ADR 0039。
+
+- 要素 `i`（`depth` は入力の `depth[i]`、`H`・`W` はその大きさ、`g` は `_with_default_k` の写し）：
+  1. `mask = _da3_build_mask(g, i, H, W, confidence_threshold, use_sky_mask) & (depth > 0) & isfinite(depth)`（コアの `comfy_extras/nodes_depth_anything_3.py:540-542` と同じ式。`confidence_threshold` 0.1、`use_sky_mask` 真）
+  2. `edge = depth_map_edge(where(mask, depth, 0), rtol=discontinuity_threshold)`（`comfy/ldm/moge/geometry.py` の `depth_map_edge`。`triangulate_grid_mesh` は `finite`（点が有限か）の外を 0 にした奥行きを同じ関数に渡す。`:153-164`。`discontinuity_threshold` 0.04、`kernel_size` は既定の 3、`atol` は渡さない）
+  3. `keep = mask & ~edge`
+- 1 の `mask` と、`triangulate_grid_mesh` の `finite` は同じ画素になる。コアは `mask` の外の点を無限にし、`mask` の中の点は有限の `depth` と有限の `K⁻¹` の積だからである（`K` が逆行列を持たないか、積があふれる値では違いうる。test で固定する）。
+- 四角：格子の四角（左上 `a = (x, y)`、`b = (x+1, y)`、`c = (x+1, y+1)`、`d = (x, y+1)`）は、4 隅がすべて `keep` のときだけ描かれ、三角形は `(a, b, c)` と `(a, c, d)`（対角線は `a`–`c`）。コアの `triangulate_grid_mesh`（`comfy/ldm/moge/geometry.py:184-187`）が作る面で、glTF にするとき面の向きが反転する（両面に描くので見た目は変わらない）。
+- 空の要素：`keep` の 4 隅を持つ四角が 1 つもない要素。コアの変換が空のメッシュのエラー（`DA3_EMPTY_MESH`）を出す要素と同じである（頂点はあっても面が 0 なら、コアはエラーにする）。
+- 点の位置：画素 `(x, y)`（整数の画素の番号）の点は、コアの `_da3_unproject` と同じく `depth × K⁻¹ · (x, y, 1)` を glTF の `(X, −Y, −Z)` にしたもの。`K` はコアの `_da3_get_K(g, i, H, W)`。中身の箱は、空でない要素の `keep` の画素の点を `_da3_unproject` で求めて囲む（`docs/studio-node.md` の「中身の箱」）。
+- 一致の test（`tests/test_scene_mesh.py` の `test_da3_keep_is_the_pixels_the_core_keeps`（作る））：空（`sky ≥ 0.5`）、信頼度が 0.1 未満、`depth` が 0 以下・NaN・inf、段差のある画素を含む合成の `DA3_GEOMETRY`（mono、`intrinsics` の有無の両方）を、同じ入力のままコアの `DA3GeometryToMesh.execute` に通す。頂点の uv から画素を戻した集合（`x = round(u × (W − 1))`、`y = round(v × (H − 1))`）が `keep` と等しいこと、頂点の位置が `_da3_unproject` の `keep` の点の glTF と等しいこと、面の集合が上の「四角」と等しいこと、全画素を捨てた要素と段差だけで四角が残らない要素で、コアが `DA3_EMPTY_MESH` のエラーを出し、`da3_keep` が空の要素とすることを確かめる。コアが部品か組み立てを変えたら、この test が落ちる。
 
 #### multiview
 
@@ -253,7 +270,7 @@ multiview（`mode` が `"multiview"`）の `DA3_GEOMETRY` は、同じ場面を 
 - 要素の数と出力フレームの対応：要素は 1 つ。1 要素の MESH と同じく、Clip range の間ずっと同じ要素を描く（`sticker_media.py` の `batch_index` は要素が 1 つなら常に 0）。
 - 光：効かない（ほかの `DA3_GEOMETRY` と同じ。上の「光が効く要素」）。
 - 描画：`core/mesh_render.py` の `mesh_content` は、要素を 1 つの `MeshItem` か、`MeshItem` のリストとして受ける。multiview の要素は視点ごとの `MeshItem` のリスト（`da3_scene_content`）で、`mesh_content` が視点ごとに描き、`over_by_depth` で 1 つの層に畳む。`over_by_depth` の結果は乗算済みのアルファなので、`render` の戻り値の約束に合わせてストレートアルファに戻して返す（メッシュの画素のアルファは 0 か 1 なので、値は変わらない）。リストが空（すべての視点が空）なら空の層を返す。`SceneContent` の契約（要素ごとに 1 つの層を返す）は変えない。device に置くのは、描いている要素の全視点。
-- エディタ用ファイル：視点ごとに 1 つの GLB（MESH と同じコアの `mesh_item_to_glb_bytes`）にし、まとめた GLB は作らない。コアの `save_glb` は 1 つの GLB に材質とテクスチャを 1 つしか書かないので、まとめるには GLB の書き出しを自前で持つことになり、書き出しの owner が二つになるためである。`pano_scene_files`（`pano_sticker_files`）は要素が 1 つのリストで、その値は空でない視点の GLB の `ui` の項目のリストになる。すべての視点が空なら `[null]`。mono は今までどおり、フレームごとに 1 つの `ui` の項目で、空のフレームは `null`。エディタでの読み方と大きさの上限は `docs/threejs-spark-integration.md` の「空間の表示」の `scene` の要素の読み込み。`pano_scene_meta` の `unlit` は真。
+- エディタ用ファイル：視点ごとに 1 つの GLB（MESH と同じコアの `mesh_item_to_glb_bytes`）にし、まとめた GLB は作らない。コアの `save_glb` は 1 つの GLB に材質とテクスチャを 1 つしか書かないので、まとめるには GLB の書き出しを自前で持つことになり、書き出しの owner が二つになるためである。`pano_scene_files`（`pano_sticker_files`）は要素が 1 つのリストで、その値は空でない視点の GLB の `ui` の項目のリストになる。すべての視点が空なら `[null]`。mono は GLB ではなく、フレームごとの深度のファイル（`keep` の外は 0）で、空のフレームは `null`（`docs/studio-node.md` の「`DA3_GEOMETRY` mono のエディタ用ファイル」）。エディタでの読み方と大きさの上限は `docs/threejs-spark-integration.md` の「空間の表示」の `scene` の要素の読み込み。`pano_scene_meta` の `unlit` は真。
 
 ### 光が効く要素
 
@@ -331,6 +348,18 @@ ADR 0037 の「一致の測り方」の場面のうち、影の場面と平行�
   - 比べ方：二つの画像を ADR 0037 の指標と暫定の合格（縁を 1 画素削った内側で、平均 ≤ 1/255、8/255 超 ≤ 0.5%）で比べ、数値（`parity.json`）と差の画像（`diff.png`）を作業用のディレクトリに出す。ページは `file://` で開き、サーバーもネットワークも使わない。
   - 自動の test は部品を確かめる：式と標本化は `tests/test_mesh_render.py`、材質は `tests/test_scene_mesh.py`（その場で `save_glb` で書いた GLB を読む）、照明の値は `default_lighting.json` の parity（上の owner の表）、エディタの描画は `tests/browser/file_3d.spec.js`（renderer によらない smoke の test。`docs/threejs-spark-integration.md`）。
 - 指標と許容差、Camera の設定、基準の焼き方は ADR 0037 の「一致の測り方」のとおり。
+
+### エディタとの一致（DA3 mono の場面）
+
+`DA3_GEOMETRY` mono の深度のグリッド（`docs/threejs-spark-integration.md` の「`DA3_GEOMETRY` mono の深度のグリッド」）と、この描画（コアの変換）を比べる。上の「3D ファイルの Sticker の場面」と同じ道具（`tools/parity_file_3d.py`・`tools/parity_file_3d.mjs`）に場面を足す（作る）。milestone ごとに回す確認で、CI の test ではない。素材のファイルも結果もコミットしない。読み出しの条件（llvmpipe、1024 × 1024、`file://`）は上の場面と同じ。
+
+- 素材（道具が毎回作る）：合成の `DA3_GEOMETRY`（mono、`intrinsics` なし、256 × 144、1 要素）。`depth` は斜めの面に段差を 1 つ足したもの。一角を `sky` 1.0、別の一角を信頼度の低い画素、数画素を NaN にする。`image` は 16 画素の市松（四角の境目は偶数の画素。明るい灰色と暗い灰色で、明るさだけが違う）と、色の違う単色の帯 2 つ（色の行列を確かめるため。境目から離れた内側で見る）。長辺は `EDITOR_MAX_SIZE` より小さく、プロキシで縮まない。
+- 場面：それを `scene` につなぎ、Camera を原点に回転 0、画角を `K` の水平の画角に合わせて撮る（像と重なる）。もう 1 つ、Camera を横に動かして斜めから撮る（段差の縁と四角の消え方を見る）。
+- 出力の側：Panorama Studio のノードと同じ経路（`_scene_content` → `render_frame`）で描き、エディタ用ファイル（深度・メタ・プロキシの MP4）と出力のフレームを作業用のディレクトリに書く。
+- エディタの側：同じファイルを深度のグリッドの部品で描く。色は 2 通りに描いて、それぞれ比べる。
+  - (a) 形の一致：色を `image` そのもの（作業用のディレクトリの PNG を `DataTexture` にしたもの）から取る。上の場面と同じ暫定の合格（縁を 1 画素削った内側で、平均 ≤ 1/255、8/255 超 ≤ 0.5%）で比べる。深度から位置への計算、`keep`、四角の消え方、テクスチャの標本化の違いはここで出る。
+  - (b) プロキシの一致：色をプロキシの MP4 から、止めた再生ヘッドで取る（再生中の ±1 フレームのずれは測らない）。H.264 の誤差の分だけ緩め、縁を 1 画素削った内側で、平均 ≤ 2/255、16/255 超 ≤ 1% を暫定の合格とする。市松は明るさだけが違うので、4:2:0 の色差の間引きは境目に効かず、残る誤差は量子化（crf 23）と輝度の縁のにじみである。単色の帯は、色の行列（BT.709）の取り違えを許容差よりずっと大きな差として出す。最初の計測の後に、測った値に合わせて締める。
+- 深度から位置への数値は、上の「mono の残す画素」の test と (a) の画像で守る。
 
 ### SPLAT の描き方
 
