@@ -39,6 +39,7 @@ Panorama Studio のエディタの Panorama 表示に World の内容がある�
   - 3DoF（既定）：視点は World の原点に固定する（Camera があるときは下の「Camera の編集」）。Camera が無いときの ERP 出力と同じ見え方になる。操作は World の内容がないときの Panorama 表示と同じ（何もないところの左ドラッグと中ボタンのドラッグで見回し、ホイールで画角）。右ドラッグは使わず、右クリックのメニューも抑止しない。World の内容は原点から奥行き付きで描く（`docs/threejs-spark-integration.md` の「空間の表示」の 2 パスの描画）。
   - 6DoF：Viewport camera で空間を自由に動く。操作は下の「6DoF の操作」の割り当てに従う。Frame Selected ボタン（右下）は 6DoF のときだけ押せる（3DoF では無効で、位置は変わらない）。
   - 6DoF から 3DoF に戻すと、視点は原点に戻る（向きと画角は保つ）。注視点の距離も、内容の大きさに戻る。原点へは下の「視点の遷移」で動き、着いてから 3DoF の固定に入る。6DoF のまま World の内容がなくなったときも同じく 3DoF に戻り、内容が再び現れると 3DoF から始まる（`switchSpaceMode`・`spaceModeWithContent`）。
+- Preview のビューア（`docs/preview-node.md` の「`PANO_SCENE` を見る」。作る）も、この節の 3DoF・6DoF・プリセット・ピボット・遷移・キーの規則をそのまま使う。違いは `docs/preview-node.md` が持つ（`PANO_SCENE` は 6DoF から始める、ノード上ではキーを受けない、オブジェクトの操作が無いので左ドラッグはいつも表の何もないところの扱い）。
 - 6DoF の操作（`web_src/pano_view_controls.js`）：ボタンと修飾キーから動きを決める表をプリセットごとにデータで持ち、`viewDragAction`（ボタンの割り当て）と `emptyLeft`（何もないところの左ドラッグ）が決める。プリセットは ComfyUI の設定の「Panorama Suite › Editor › 3D view controls」（id `PanoramaSuite.Editor.ViewControls`、拡張の `settings` で登録し、保存は ComfyUI のコアが行う）で選ぶ。動きは三つ：オービット（ポインタの下の点のまわりを回る。three.js の OrbitControls・コアの Load3D と同じ向きと速さ）、パン（ポインタの下の点がポインタに付いて動く）、見回し（その場で向きを変える。Unity-like の右ドラッグだけ。慣性あり）。
 
   | 操作 | Default（既定） | Blender-like | Unity-like |
