@@ -220,8 +220,9 @@ def test_preview_passes_a_scene_of_several_layers_through():
 
     output = PanoramaPreviewSceneNode.execute(source=b, coverage="360")
 
-    # Showing it is #76.
-    assert output.result[0] is b and not output.ui
+    # It passes through, and gives every layer for the viewer (ADR 0041).
+    assert output.result[0] is b
+    assert [layer["state"] for layer in output.ui["pano_upstream_layers"]] == [layer.state for layer in b.layers] and len(b.layers) == 2
 
 
 def test_a_camera_downstream_shoots_a_scene_of_several_layers():

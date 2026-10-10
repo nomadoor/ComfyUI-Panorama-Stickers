@@ -14,19 +14,29 @@ export function previewNodeCamera(view, width, height) {
   return viewportCamera({ yaw_deg: view.yaw, pitch_deg: view.pitch, roll_deg: 0, hFOV_deg: view.fov }, width, height);
 }
 
-// load() resolves to a view with render(input), release(owner) and dispose(). Returns acquire(onChange),
-// which hands out a handle per node; onChange runs when the view becomes ready or fails to load.
-// A failed load is tried again once every node has gone and a node draws again.
+// load({ onUpdate, onSplats }) resolves to a view with render(input), release(owner) and dispose(), made with those
+// hooks (pano_three_view.js createThreeView). Returns acquire(onChange, { items }), which hands out a handle per node;
+// onChange runs when the view becomes ready or fails to load. A node that draws 3D items (`items`, the Preview's
+// Scene viewer) is also told when an item the view loads is ready and when its own splats are sorted again; the
+// other nodes are not. A failed load is tried again once every node has gone and a node draws again.
 export function createSharedView(load) {
   let view = null;
   let loading = false;
   let failed = false;
   const users = new Set();
+  const hooks = {
+    onUpdate: () => users.forEach((user) => {
+      if (user.items) user.onChange();
+    }),
+    onSplats: (owner) => {
+      if (users.has(owner) && owner.items) owner.onChange();
+    },
+  };
 
   function ensureView() {
     if (view || loading || failed) return;
     loading = true;
-    load().then((created) => {
+    load(hooks).then((created) => {
       loading = false;
       if (!users.size) {
         created.dispose();
@@ -43,8 +53,8 @@ export function createSharedView(load) {
     });
   }
 
-  return function acquire(onChange) {
-    const user = { onChange };
+  return function acquire(onChange, { items = false } = {}) {
+    const user = { onChange, items };
     let disposed = false;
     users.add(user);
     return {
@@ -57,6 +67,21 @@ export function createSharedView(load) {
         if (disposed) return null;
         ensureView();
         return view ? view.render({ ...input, owner: user }) : null;
+      },
+      // The World under a point of the last space render (pano_three_view.js pickSurface), the box and the load
+      // error of a 3D item, and the count that changes with what is hit: the Preview's viewer of a Scene moves its
+      // view by them (pano_scene_viewer.js). Its draw is the space render they read while it is the one that draws.
+      pickSurface(camera, x, y, width, height) {
+        return view ? view.pickSurface(camera, x, y, width, height) : null;
+      },
+      sceneBox(url) {
+        return view ? view.sceneBox(url) : null;
+      },
+      sceneItemError(url) {
+        return view ? view.sceneItemError(url) : null;
+      },
+      contentRevision() {
+        return view ? view.contentRevision() : 0;
       },
       // Frees this node's textures when it has no media to show.
       release() {
@@ -77,7 +102,7 @@ export function createSharedView(load) {
 }
 
 export const acquirePreviewView = createSharedView(
-  () => import("./pano_three_view.js").then((module) => (
-    watchThreeView(module.createThreeView({ createCanvas: () => createPanoCanvas({ label: "three.node" }) }), "node")
+  ({ onUpdate, onSplats }) => import("./pano_three_view.js").then((module) => (
+    watchThreeView(module.createThreeView({ onUpdate, onSplats, createCanvas: () => createPanoCanvas({ label: "three.node" }) }), "node")
   )),
 );

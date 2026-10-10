@@ -5,7 +5,11 @@ import PanoIconButton from "./PanoIconButton.vue";
 
 const props = defineProps({
   state: { type: Object, default: () => ({}) },
+  // "playback" is the Preview's playback bar (docs/preview-node.md "再生の帯"): play and pause, seek and the time
+  // only, without the editor's VIDEO elements, filmstrip, loop and sound.
+  variant: { type: String, default: "editor" },
 });
+const playbackOnly = computed(() => props.variant === "playback");
 
 const playLabel = computed(() => props.state?.playing === true ? "Pause" : "Play");
 const playTip = computed(() => props.state?.playing === true ? "Pause video" : "Play video");
@@ -73,11 +77,12 @@ const transportStyle = computed(() => ({
 <template>
   <div
     class="pano-video-transport"
-    :class="{ 'is-hidden': state.visible !== true }"
+    :class="{ 'is-hidden': state.visible !== true, 'pano-video-transport-playback': playbackOnly }"
     :data-video-ready="state.ready === true ? 'true' : 'false'"
     :style="transportStyle"
   >
     <video
+      v-if="!playbackOnly"
       class="pano-video-source"
       data-video-element
       preload="auto"
@@ -86,6 +91,7 @@ const transportStyle = computed(() => ({
     />
     <!-- The port Sticker's MP4, which follows the Timeline's playhead muted. -->
     <video
+      v-if="!playbackOnly"
       class="pano-video-source"
       data-port-video-element
       preload="auto"
@@ -110,7 +116,7 @@ const transportStyle = computed(() => ({
       </div>
 
       <div class="pano-video-filmstrip">
-        <div class="pano-video-filmstrip-track" aria-hidden="true">
+        <div v-if="!playbackOnly" class="pano-video-filmstrip-track" aria-hidden="true">
           <div
             v-for="thumb in thumbnailItems"
             :key="getThumbnailKey(thumb)"
@@ -150,6 +156,7 @@ const transportStyle = computed(() => ({
       <div class="pano-video-controls-right">
         <div class="pano-video-time pano-video-time-end" :style="timeStyle">{{ state.durationLabel || "0:00" }}</div>
         <PanoIconButton
+          v-if="!playbackOnly"
           extra-class="pano-video-control"
           :icon="loopIcon"
           :label="loopLabel"
@@ -161,6 +168,7 @@ const transportStyle = computed(() => ({
           }"
         />
         <div
+          v-if="!playbackOnly"
           class="pano-video-volume-stack"
           :data-has-audio="state.hasAudio === true ? 'true' : 'false'"
         >

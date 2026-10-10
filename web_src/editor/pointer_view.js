@@ -2,13 +2,12 @@
 // Unwrap), the 6DoF space drags that space.js startSpaceDrag starts ("space_pan", "space_orbit"), and a
 // left drag on empty space. pointer_input.js decides when they start.
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
-import { orbitView, panView } from "../pano_space.js";
 
 export function createPointerView(deps) {
   const { canvas, editor, viewController } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let isFreeSpaceView, requestDraw, screenPosCss, setSpaceView, spaceViewState, startAnimation, startSpaceDrag,
-    updateCursor, updateSelectionMenu, viewControls;
+  let isFreeSpaceView, moveSpaceView, requestDraw, screenPosCss, startAnimation, startSpaceDrag, updateCursor,
+    updateSelectionMenu, viewControls;
 
   // Looks around from dragPos: CSS pixels in the panorama view, canvas pixels in Unwrap.
   function startLookDrag(e, p, dragPos) {
@@ -44,11 +43,7 @@ export function createPointerView(deps) {
   }
 
   function moveSpaceDrag(it, p) {
-    const view = spaceViewState();
-    setSpaceView(it.kind === "space_pan"
-      ? panView(view, p.x - it.last.x, p.y - it.last.y, canvas.width, canvas.height, it.depth)
-      : orbitView(view, p.x - it.last.x, p.y - it.last.y, canvas.height, it.pivot));
-    it.last = p;
+    moveSpaceView(it, p);
   }
 
   function endSpaceDrag() {
@@ -60,8 +55,8 @@ export function createPointerView(deps) {
   return {
     connect(api) {
       ({
-        isFreeSpaceView, requestDraw, screenPosCss, setSpaceView, spaceViewState, startAnimation, startSpaceDrag,
-        updateCursor, updateSelectionMenu, viewControls,
+        isFreeSpaceView, moveSpaceView, requestDraw, screenPosCss, startAnimation, startSpaceDrag, updateCursor,
+        updateSelectionMenu, viewControls,
       } = api);
     },
     startLookDrag, startEmptyDrag, moveLookDrag, endLookDrag, moveSpaceDrag, endSpaceDrag,

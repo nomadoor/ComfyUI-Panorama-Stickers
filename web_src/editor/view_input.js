@@ -26,6 +26,7 @@ import {
 } from "../pano_space.js";
 import { depthGridNotice } from "../pano_depth_color.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
+import { refreshGoneUpstreamFiles } from "../pano_upstream_layers.js";
 import { CUTOUT_FRAME_ACCENT, CUTOUT_FRUSTUM_COLOR, CUTOUT_TRAJECTORY_COLOR } from "./constants.js";
 
 export function createViewInput(deps) {
@@ -193,9 +194,7 @@ export function createViewInput(deps) {
       const sticker = gone(key) ? sceneState.stickers.find((item) => item.id === id) : null;
       if (sticker) refreshFile3d(sticker.source);
     }
-    for (const item of upstreamItems) {
-      if (item.source && gone(item.urls[0])) refreshFile3d(item.source);
-    }
+    refreshGoneUpstreamFiles(upstreamItems, (key) => editorView.sceneItemError(key), refreshFile3d);
   }
 
   // The stage's line for the depth grids shown in the frame built last (pano_depth_color.js depthGridNotice).

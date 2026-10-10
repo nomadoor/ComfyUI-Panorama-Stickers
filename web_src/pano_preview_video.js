@@ -1,8 +1,8 @@
 import { createPanoVideo } from "./pano_diagnostics.js";
 
 // The inputs that carry the background: Cutout and Preview's erp_image, the legacy Stickers bg_erp,
-// and Panorama Studio's bg_media.
-export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media"];
+// Panorama Studio's bg_media, and the Preview's `source` (`PanoramaPreviewNode`; its Scene too).
+export const BACKGROUND_INPUT_NAMES = ["erp_image", "bg_erp", "bg_media", "source"];
 // The inputs that carry the media of the port Sticker: the legacy Stickers sticker_image and
 // Panorama Studio's sticker.
 export const STICKER_INPUT_NAMES = ["sticker_image", "sticker"];

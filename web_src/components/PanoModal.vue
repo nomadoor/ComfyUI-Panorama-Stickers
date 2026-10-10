@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { ICON } from "../icons.js";
 import PanoFloatingRight from "./PanoFloatingRight.vue";
 import PanoFrameRail from "./PanoFrameRail.vue";
+import PanoIconButton from "./PanoIconButton.vue";
 import PanoConfirmDialog from "./PanoConfirmDialog.vue";
 import PanoImageFilePicker from "./PanoImageFilePicker.vue";
 import PanoPaintDock from "./PanoPaintDock.vue";
@@ -28,6 +29,9 @@ const props = defineProps({
   // The Timeline's playhead refs ({ frame, playing }), apart from uiState so that a frame of playback
   // updates only the Timeline.
   playhead: { type: Object, default: undefined },
+  // "viewer" is the Preview's window (docs/preview-node.md "大きなウィンドウ"): the stage, the bottom-right view
+  // buttons, the playback bar and the close button, nothing to edit.
+  layout: { type: String, default: "editor" },
 });
 
 const emit = defineEmits(["close", "image-file-selected", "image-file-cancelled", "timeline"]);
@@ -61,6 +65,7 @@ function onImageFileCancelled(payload) {
 defineExpose({ getPaintOverlayRefs, openImagePicker });
 
 const previewMode = computed(() => props.readOnly === true);
+const viewerLayout = computed(() => props.layout === "viewer");
 const shellPreset = computed(() => props.shellPreset || buildModalShellPreset(props.type));
 const stageFailureMessage = computed(() => {
   const detail = String((
@@ -188,7 +193,7 @@ watch(() => props.open, (nextOpen) => {
 
 <template>
   <div v-if="open" class="pano-modal-overlay" @click.self="emit('close')">
-    <section ref="modalRef" class="pano-modal" role="dialog" aria-modal="true" :aria-label="nodeTitle" tabindex="-1">
+    <section ref="modalRef" class="pano-modal" :class="{ 'pano-modal-viewer': viewerLayout }" role="dialog" aria-modal="true" :aria-label="nodeTitle" tabindex="-1">
       <div class="pano-stage-column">
         <div class="pano-stage-wrap">
           <canvas class="pano-stage pano-stage-bg" data-stage-background width="1600" height="800" />
@@ -201,6 +206,26 @@ watch(() => props.open, (nextOpen) => {
           >
             {{ stageMessage }}
           </div>
+          <template v-if="viewerLayout">
+            <!-- The playback bar and the view buttons share the bottom row, so neither covers the other. -->
+            <div class="pano-viewer-bottom">
+              <PanoVideoTransport variant="playback" :state="uiState.videoTransport || {}" />
+              <PanoFloatingRight
+                :buttons="uiState.floatingButtons || shellPreset.floatingButtons || []"
+                :space="uiState.space || null"
+              />
+            </div>
+            <div class="pano-viewer-close">
+              <PanoIconButton
+                :icon="shellPreset.closeButton.icon"
+                :label="shellPreset.closeButton.label"
+                :tip="shellPreset.closeButton.tip"
+                :attrs="{ 'data-action': shellPreset.closeButton.action }"
+              />
+            </div>
+            <PanoTooltip :model="uiState.tooltip || {}" />
+          </template>
+          <template v-else>
           <div class="pano-stage-drop-hint" aria-hidden="true">
             <div class="pano-stage-drop-hint-text">Drag and drop image here</div>
           </div>
@@ -236,10 +261,14 @@ watch(() => props.open, (nextOpen) => {
           <PanoSelectionMenu :model="uiState.selectionMenu || {}" />
           <PanoTooltip :model="uiState.tooltip || {}" />
           <PanoConfirmDialog :model="uiState.confirmDialog || {}" />
+          </template>
         </div>
-        <PanoTimeline :model="uiState.timeline || {}" :playhead="playhead" @action="emit('timeline', $event)" />
+        <template v-if="!viewerLayout">
+          <PanoTimeline :model="uiState.timeline || {}" :playhead="playhead" @action="emit('timeline', $event)" />
+        </template>
       </div>
 
+      <!-- The viewer opens with hideSidebar. -->
       <PanoSidePanel
         v-if="!hideSidebar"
         :node-title="nodeTitle"

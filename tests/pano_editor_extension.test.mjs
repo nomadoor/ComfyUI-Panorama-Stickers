@@ -7,7 +7,7 @@ import {
   queuePendingStickerOperation,
 } from "../web_src/pano_editor_extension.js";
 import { registerExternalStickerSync } from "../web_src/pano_external_sticker_sync.js";
-import { disposeNodeRuntime, editorSession, nodeSurface, previewNode, stateSync } from "../web_src/pano_node_bridge.js";
+import { disposeNodeRuntime, editorSession, nodeSurface, previewNode, sceneViewer, stateSync } from "../web_src/pano_node_bridge.js";
 
 function makeWidget(name, value = "") {
   return { name, value, callback() {} };
@@ -739,4 +739,57 @@ test("sticker operations serialize consecutive replacements", async () => {
   await first;
   await second;
   assert.deepEqual(events, ["first:start", "first:end", "second:start", "second:end"]);
+});
+
+// docs/preview-node.md "ノード上の表示": the Preview (`PanoramaPreviewNode`) shows its `source` by the type linked to
+// it, before any run: a Scene in the Scene viewer, IMAGE and VIDEO in the legacy Preview's runtime.
+test("the Preview shows a linked Scene in the Scene viewer and IMAGE or VIDEO in the legacy Preview's view, switching with the link", () => {
+  const shown = [];
+  const queue = [];
+  function NodeType() {}
+  NodeType.prototype.onConfigure = function (serialized) {
+    this.outputs = [...serialized.outputs];
+  };
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview(node, options) {
+      shown.push(["media", options.imageInputName]);
+      previewNode(node).runtime = { teardown: () => { shown.push(["media gone"]); previewNode(node).runtime = null; } };
+    },
+    attachSceneViewer(node) {
+      shown.push(["scene"]);
+      sceneViewer(node).surface = { detach: () => { shown.push(["scene gone"]); sceneViewer(node).surface = null; } };
+    },
+    requestFrame(callback) { queue.push(callback); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaPreviewNode" });
+  const node = makeNode([360, 260]);
+  let linked = "PANO_SCENE";
+  node.comfyClass = "PanoramaPreviewNode";
+  node.id = 3;
+  node.inputs = [{ name: "source", type: "IMAGE,VIDEO,PANO_SCENE" }];
+  node.getInputLink = () => (linked ? { type: linked, origin_id: 1 } : null);
+  node.outputs = [{ name: "source", type: "PANO_SCENE", links: null }];
+  node.addOutput = () => { throw new Error("no image output is added"); };
+  const flush = () => { while (queue.length) queue.shift()(); };
+
+  extension.nodeCreated(node);
+  flush();
+  NodeType.prototype.onConfigure.call(node, { outputs: node.outputs });
+  linked = "VIDEO";
+  NodeType.prototype.onConnectionsChange.call(node);
+  flush();
+  linked = "IMAGE";
+  NodeType.prototype.onConnectionsChange.call(node);
+  flush();
+  linked = "PANO_SCENE";
+  NodeType.prototype.onConnectionsChange.call(node);
+  flush();
+
+  assert.deepEqual(shown, [["scene"], ["scene gone"], ["media", "source"], ["media gone"], ["scene"]]);
+  assert.deepEqual(node.outputs, [{ name: "source", type: "PANO_SCENE", links: null }]);
+  assert.equal(node.widgets.filter((widget) => widget.name === "Open Preview").length, 1);
 });

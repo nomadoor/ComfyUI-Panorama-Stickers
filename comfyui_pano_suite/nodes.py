@@ -1928,17 +1928,18 @@ def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
     """The `ui` that shows the layers of the Scene on the `scene` input in the editor, apart from the node's own
     media: `pano_upstream_layers` with each layer's state (with its Scene `id`, ADR 0030) and media `ui` from the
     farthest upstream, its output frame count (`pano_upstream_frames`, which the editor's Auto length counts),
-    and the upstream background (`bg_ui`, None when it has none) under `pano_upstream_` keys with its coverage,
-    color, and Clip range (`pano_upstream_bg_clip`: the `background.clip` of the Studio it came from, with that
-    state's `timeline.fps`)."""
+    its coverage and color (`pano_upstream_coverage`, `pano_upstream_bg_color`, given with or without a background:
+    the Preview, which has none of its own, draws with them), and the upstream background (`bg_ui`, None when it has
+    none) under `pano_upstream_` keys with its Clip range (`pano_upstream_bg_clip`: the `background.clip` of the
+    Studio it came from, with that state's `timeline.fps`)."""
     ui = {
         "pano_upstream_layers": [{"state": layer.state, "ui": layer.media_ui} for layer in upstream.layers],
         "pano_upstream_frames": [len(upstream.frames)],
+        "pano_upstream_coverage": [upstream.coverage],
+        "pano_upstream_bg_color": [list(upstream.bg_color)],
     }
     if bg_ui is not None:
         ui.update({key.replace("pano_", "pano_upstream_", 1): value for key, value in bg_ui.items()})
-        ui["pano_upstream_coverage"] = [upstream.coverage]
-        ui["pano_upstream_bg_color"] = [list(upstream.bg_color)]
         if upstream.bg_clip is not None:
             ui["pano_upstream_bg_clip"] = [{"clip": upstream.bg_clip[0], "fps": upstream.bg_clip[1]}]
     return ui
@@ -2496,6 +2497,16 @@ def _video_ui(video, opened, fps: float, frame_count: int, contract: dict) -> di
     return ui_ret
 
 
+def _preview_scene_ui(scene: PanoSceneValue) -> dict:
+    """The Preview `ui` of a PANO_SCENE (ADR 0041; docs/preview-node.md, "`PANO_SCENE` を見る"): the keys Studio gives
+    for the same Scene upstream (`_upstream_ui`), and its Timeline (`pano_timeline_fps`, `pano_timeline_frames`).
+    Nothing is drawn or written; the files are those the Studio that made the Scene wrote."""
+    ui = _upstream_ui(scene, scene.bg_ui if scene.bg_media is not None else None)
+    ui["pano_timeline_fps"] = [scene.fps]
+    ui["pano_timeline_frames"] = [len(scene.frames)]
+    return ui
+
+
 def _video_preview_ui(video) -> dict:
     """The Preview `ui` of a VIDEO, with the Timeline fps decided as in Studio."""
     bg = open_video(video, "source")
@@ -2527,10 +2538,9 @@ class PanoramaPreviewSceneNode(io.ComfyNode):
     @classmethod
     def execute(cls, source, coverage="360", unique_id=None):
         # `coverage` is read by the node's widget on the frontend. A PANO_SCENE carries its own.
-        # TODO(#76): show a PANO_SCENE on the node. Until then it passes through without a preview.
         if isinstance(source, PanoSceneValue):
-            return io.NodeOutput(source)
-        # TODO(#76): bind the editor frontend to this node id; it reads the same `ui` keys as the legacy Preview.
+            return io.NodeOutput(source, ui=_preview_scene_ui(source))
+        # IMAGE and VIDEO give the legacy Preview's keys, which its node display reads.
         if isinstance(source, Input.Video):
             return io.NodeOutput(source, ui=_video_preview_ui(source))
         # MatchType is not checked by the backend, so an API prompt can send another type.

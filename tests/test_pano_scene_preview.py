@@ -176,18 +176,35 @@ def test_preview_rejects_a_source_of_another_type():
         _preview(torch.zeros((1, 4, 8)))
 
 
-def test_preview_passes_a_pano_scene_through_without_rendering(monkeypatch):
-    pano_scene = _studio(bg_media=_solid([0.5, 0.5, 0.5], batch=3))[4]
+@pytest.mark.parametrize("background", [True, False])
+def test_a_pano_scene_preview_gives_the_upstream_keys(monkeypatch, background):
+    # ADR 0041: the Preview shows a PANO_SCENE with the keys Studio gives for the same Scene upstream, and draws nothing.
+    inputs = {"bg_media": _solid([0.5, 0.5, 0.5], batch=3)} if background else {}
+    pano_scene = _studio(**inputs)[4]
+    downstream = PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=pano_scene).ui
+    rendered = []
+    monkeypatch.setattr(nodes, "render_frame", lambda *args, **kwargs: rendered.append(1))
+    monkeypatch.setattr(nodes, "_render_frames", lambda *args, **kwargs: rendered.append(1))
+    monkeypatch.setattr(nodes, "write_editor_files", lambda *args, **kwargs: rendered.append(1))
 
-    def fail(*args, **kwargs):
-        raise AssertionError("Preview must not render a PANO_SCENE")
-
-    monkeypatch.setattr(nodes, "render_frame", fail)
-    monkeypatch.setattr(nodes, "evaluate_scene_state", fail)
     output = _preview(pano_scene)
 
-    assert output.result[0] is pano_scene
-    assert not output.ui
+    assert output.result[0] is pano_scene and rendered == []
+    upstream_keys = {key for key in downstream if key.startswith("pano_upstream_")} | {"pano_timeline_fps", "pano_timeline_frames"}
+    assert set(output.ui) == upstream_keys
+    assert {key: output.ui[key] for key in upstream_keys} == {key: downstream[key] for key in upstream_keys}
+    # Even without a background, the Scene's coverage and color are given, for the Preview to draw with.
+    assert output.ui["pano_upstream_coverage"] == [pano_scene.coverage] and output.ui["pano_upstream_bg_color"] == [list(pano_scene.bg_color)]
+    assert ("pano_upstream_input_images" in output.ui) == background
+    assert output.ui["pano_timeline_frames"] == [len(pano_scene.frames)] and output.ui["pano_timeline_fps"] == [pano_scene.fps]
+
+
+def test_preview_image_ui_is_the_keys_the_legacy_runtime_reads():
+    single = _preview(_solid([0.2, 0.4, 0.6])).ui
+    batch = _preview(_solid([0.2, 0.4, 0.6], batch=2)).ui
+
+    assert set(single) == {"pano_input_images"}
+    assert set(batch) == {"pano_input_images", "pano_videos", "pano_video_meta"}
 
 
 def test_preview_decides_its_timeline_with_the_stickers_rules(monkeypatch, tmp_path):

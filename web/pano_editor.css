@@ -3031,3 +3031,144 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The Preview's viewer of a Scene (docs/preview-node.md "`PANO_SCENE` を見る"). */
+/* The window: the stage alone, with a close button at its top right. */
+.pano-modal.pano-modal-viewer {
+  grid-template-columns: minmax(0, 1fr);
+}
+.pano-viewer-close {
+  position: absolute;
+  top: var(--pano-space-xl, 12px);
+  right: var(--pano-space-xl, 12px);
+  z-index: 5;
+  display: inline-flex;
+  padding: var(--pano-float-pad);
+  border-radius: var(--pano-float-radius);
+  background: var(--pano-float-bg);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+}
+/* The playback bar: play and pause, seek and the time, no filmstrip. */
+.pano-video-transport-playback .pano-video-filmstrip {
+  min-height: 24px;
+}
+/* On the node. */
+.pano-scene-viewer-dom {
+  background: var(--pano-node-frame-bg, #111);
+  outline: none;
+}
+.pano-scene-viewer-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--pano-text);
+  font: 500 11px/1 var(--pano-node-font-family);
+}
+.pano-scene-viewer-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.pano-scene-viewer-buttons {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: inline-flex;
+  gap: 4px;
+}
+.pano-scene-viewer-buttons .pano-btn {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  background: rgba(27, 30, 37, 0.9);
+  color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+.pano-scene-viewer-buttons .pano-btn:hover,
+.pano-scene-viewer-buttons .pano-btn:focus-visible {
+  background: rgba(37, 41, 50, 0.96);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: none;
+}
+.pano-scene-viewer-buttons .pano-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.3px;
+}
+/* The play / pause cue of a double click, shown for a moment in the middle. */
+.pano-scene-viewer-cue {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+  animation: pano-scene-viewer-cue 600ms ease-out forwards;
+}
+.pano-scene-viewer-cue svg {
+  width: 24px;
+  height: 24px;
+}
+@keyframes pano-scene-viewer-cue {
+  0% { opacity: 0; transform: scale(0.8); }
+  20% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.1); }
+}
+.pano-scene-viewer-bar {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  z-index: 4;
+}
+.pano-scene-viewer-bar .pano-video-transport {
+  position: static;
+  width: 100%;
+  transform: none;
+}
+.pano-scene-viewer-bar .pano-video-transport-shell {
+  min-height: 30px;
+  padding: 3px;
+  gap: 4px;
+}
+/* The window's bottom row: the playback bar takes the room the view buttons leave. */
+.pano-viewer-bottom {
+  position: absolute;
+  left: var(--pano-space-xl);
+  right: var(--pano-space-xl);
+  bottom: var(--pano-space-2xl);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: var(--pano-float-gap);
+  pointer-events: none;
+}
+.pano-viewer-bottom > * {
+  pointer-events: auto;
+}
+.pano-viewer-bottom .pano-video-transport {
+  position: static;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  transform: none;
+}
+.pano-viewer-bottom .pano-floating-right {
+  position: static;
+  flex: none;
+}

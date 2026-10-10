@@ -724,7 +724,7 @@ function isRenderableMediaReady(media) {
   return !!media.complete && Number(media.naturalWidth || media.width || 0) > 0;
 }
 
-function getRenderableMediaRevisionToken(media) {
+export function getRenderableMediaRevisionToken(media) {
   if (!media) return "";
   if (media instanceof HTMLVideoElement) {
     return [

@@ -742,3 +742,16 @@ test("an upstream group's header has Revert of the layer's scene and paint overr
   const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
   assert.match(timeline, /<PanoTimelineGroup v-if="group" :group="group" @action="emit\('action', \$event\)" \/>/);
 });
+
+// docs/preview-node.md "大きなウィンドウ": the Preview's window shows the stage, the view buttons at the bottom right and
+// the close button only; nothing to edit.
+test("the viewer layout has no tools, view tabs or paint, and keeps the bottom-right group where the editor has it", () => {
+  const viewer = buildModalShellPreset("viewer");
+  const editor = buildModalShellPreset("studio");
+  assert.deepEqual([viewer.toolButtons, viewer.viewButtons, viewer.paintPanes], [[], [], []]);
+  assert.deepEqual(viewer.spaceButtons, editor.spaceButtons);
+  assert.deepEqual([viewer.spaceFrameButton.action, viewer.spaceFrameButton.label, viewer.spaceFrameButton.icon], ["frame-view", "Frame all", editor.spaceFrameButton.icon]);
+  // Reset View and Hide Grid where the editor has them, Fullscreen after them as in the read-only Preview.
+  assert.deepEqual(viewer.floatingButtons.map((button) => button.action), [...editor.floatingButtons.map((button) => button.action), "toggle-fullscreen"]);
+  assert.equal(viewer.closeButton.action, "close");
+});

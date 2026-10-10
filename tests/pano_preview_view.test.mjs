@@ -146,6 +146,31 @@ test("on-node Previews share one view that loads on the first frame and goes wit
   assert.equal(loads[1].view.disposed, true, "a view that arrives after every node left is dropped");
 });
 
+// A Scene drawn on a node (docs/preview-node.md "`PANO_SCENE` を見る") loads its items and Spark sorts its splats after
+// the frame that asked for them. Only the nodes that draw 3D items are told; the other on-node views draw as before.
+test("an item loaded or splats sorted in the shared view are told only to the nodes that draw 3D items", async () => {
+  let hooks = null;
+  const view = { render: (input) => ({ owner: input.owner }), release() {}, dispose() {} };
+  const acquire = createSharedView((given) => {
+    hooks = given;
+    return Promise.resolve(view);
+  });
+  const changes = [];
+  const scene = acquire(() => changes.push("scene"), { items: true });
+  const other = acquire(() => changes.push("other"));
+  const scene2 = acquire(() => changes.push("scene2"), { items: true });
+  scene.render({});
+  await settle();
+  changes.length = 0;
+  hooks.onUpdate();
+  assert.deepEqual(changes, ["scene", "scene2"]);
+  changes.length = 0;
+  hooks.onSplats(scene2.render({}).owner);
+  hooks.onSplats(other.render({}).owner);
+  assert.deepEqual(changes, ["scene2"]);
+  [scene, other, scene2].forEach((handle) => handle.dispose());
+});
+
 test("a failed load marks every node failed until every node has gone", async (t) => {
   t.mock.method(console, "error", () => {});
   const { load, loads } = fakeLoader();

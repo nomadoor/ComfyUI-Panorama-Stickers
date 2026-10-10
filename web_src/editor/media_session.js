@@ -5,7 +5,7 @@ import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_di
 import { normalizeCoverageValue, sourceAsset } from "../pano_editor_state.js";
 import { runExternalStickerSync } from "../pano_external_sticker_sync.js";
 import { createDepthColors } from "../pano_depth_color.js";
-import { createFile3dEditorFiles } from "../pano_file_3d.js";
+import { createFile3dEditorFiles, file3dEditorFileOf } from "../pano_file_3d.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import {
   IMAGE_FAILED,
@@ -639,10 +639,7 @@ export function createMediaSession(deps) {
   // The editor file of a 3D file Sticker (docs/threejs-spark-integration.md): { kind, unlit, url, generation } once
   // the route answered, else null. The first call for its Source asks the route.
   function file3dEditorFile(sticker) {
-    if (!file3dFiles || !is3dFileSource(sticker?.source)) return null;
-    const entry = file3dFiles.get(sticker.source);
-    const url = entry.state === "ready" ? mediaSource(entry.file) : null;
-    return url ? { kind: entry.kind, unlit: entry.unlit, url, generation: entry.generation } : null;
+    return file3dEditorFileOf(file3dFiles, sticker, mediaSource);
   }
 
   // The route's answer for a 3D file's Source, once it came ({ state "ready" or "failed", error, ... }).

@@ -3,6 +3,8 @@
 // editor draws, its kind and whether light falls on it. The editor asks for it as soon as a Sticker is placed, so a
 // 3D file shows as the output draws it before any run.
 
+import { is3dFileSource } from "./pano_scene_state.js";
+
 export const FILE_3D_ROUTE = "/panorama_suite/file_3d";
 
 // Times one Source is asked again after its editor file is gone (a 404: the server dropped the temp file),
@@ -116,4 +118,14 @@ export function createFile3dEditorFiles({ fetchApi, onUpdate = () => {} }) {
       entries.clear();
     },
   };
+}
+
+// The editor file of a 3D file Sticker (docs/threejs-spark-integration.md) from `files` (createFile3dEditorFiles):
+// { kind, unlit, url, generation } once the route answered, else null. The first call for its Source asks the route.
+// source(entry): the URL of the route's `file`.
+export function file3dEditorFileOf(files, sticker, source) {
+  if (!files || !is3dFileSource(sticker?.source)) return null;
+  const entry = files.get(sticker.source);
+  const url = entry.state === "ready" ? source(entry.file) : null;
+  return url ? { kind: entry.kind, unlit: entry.unlit, url, generation: entry.generation } : null;
 }

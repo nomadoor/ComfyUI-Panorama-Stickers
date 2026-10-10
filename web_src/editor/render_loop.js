@@ -7,7 +7,6 @@ import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { IMAGE_FAILED, IMAGE_LOADING } from "../pano_image_state.js";
 import { clamp } from "../pano_math.js";
 import { nodeSurface, stateSync } from "../pano_node_bridge.js";
-import { viewTransitionFrame } from "../pano_view_transition.js";
 import { CUTOUT_PANO_DIM_TRANSITION_MS, FRAME_ROLL_OVERLAY_TRANSITION_MS } from "./constants.js";
 import { easeInCubic, easeInOutCubic, easeOutCubic, lerp } from "./helpers.js";
 
@@ -17,11 +16,11 @@ export function createRenderLoop(deps) {
     state, timeline, type, uiState, viewController,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let applyViewTransitionEnd, drawCutoutOutputPreview, drawCutoutPanoPassepartout, drawFrameRollOverlay,
+  let drawCutoutOutputPreview, drawCutoutPanoPassepartout, drawFrameRollOverlay,
     drawFrameViewBackground, drawGridPano, drawGridUnwrap, drawLassoOutlineOverlay, drawObjects,
     endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
     getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
-    rebuildPaintEngineIfNeeded, stepKeyMove, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
+    rebuildPaintEngineIfNeeded, stepKeyMove, stepViewTransition, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
     syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice, depthVideoNotice;
 
   // Removes the editor from the diagnostics samples (set when the render loop starts).
@@ -289,19 +288,7 @@ export function createRenderLoop(deps) {
       }
     }
 
-    if (editor.viewTransition) {
-      const { view, done } = viewTransitionFrame(editor.viewTransition, ts);
-      editor.viewPosition = view.position;
-      editor.viewYaw = view.yaw_deg;
-      editor.viewPitch = view.pitch_deg;
-      editor.viewFov = view.hFOV_deg;
-      editor.viewDistance = view.distance;
-      if (done) {
-        const { end } = editor.viewTransition;
-        editor.viewTransition = null;
-        if (end) applyViewTransitionEnd(end);
-        syncFloatingViewButtonState();
-      }
+    if (stepViewTransition(ts)) {
       runtime.backgroundDirty = true;
       runtime.dirty = true;
     }
@@ -409,11 +396,11 @@ export function createRenderLoop(deps) {
   return {
     connect(api) {
       ({
-        applyViewTransitionEnd, drawCutoutOutputPreview, drawCutoutPanoPassepartout, drawFrameRollOverlay,
+        drawCutoutOutputPreview, drawCutoutPanoPassepartout, drawFrameRollOverlay,
         drawFrameViewBackground, drawGridPano, drawGridUnwrap, drawLassoOutlineOverlay, drawObjects,
         endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
         getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
-        rebuildPaintEngineIfNeeded, stepKeyMove, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
+        rebuildPaintEngineIfNeeded, stepKeyMove, stepViewTransition, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
         syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice, depthVideoNotice,
       } = api);
     },

@@ -227,7 +227,6 @@ test("whatever editorAnimating() reads is started through startAnimation, which 
   assert.match(editorFunction("startAnimation"), /start\(\);\s*scheduler\.wake\(\);/);
   // Each condition of editorAnimating() and where it starts: none is set outside startAnimation.
   const starts = [
-    /editor\.viewTransition = startViewTransition\(/g,
     /runtime\.pendingStableLayoutFrames = Math\.max\(/g,
     /editor\.outputPreviewAnimTo = nextExpanded/g,
     /viewController\.endDrag\(/g,
