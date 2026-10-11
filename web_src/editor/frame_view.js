@@ -1,7 +1,6 @@
 // The Frame view: looking through the Camera's shot, its gate in the UI-safe rect, and moving the shot by
 // panning, dragging and the wheel.
 import {
-  contextHalfExtentsPx,
   fitFocalPx,
   gateRectFromFocal,
   stepCutoutFovPairByWheel,
@@ -147,24 +146,13 @@ export function createFrameView(deps) {
   function zoomFrameViewAt(anchor, direction) {
     const shot = getActiveCutoutShot();
     if (!shot || shot.locked === true) return false;
-    const zoomingOut = Number(direction) > 0;
     const next = stepCutoutFovPairByWheel(shot, direction);
     if (!next) return false;
     // The gate keeps its screen size on its own: scaling both tangents by k
     // scales the aspect fit by 1/k, so no presentation compensation is needed.
-    // The ERP behind the gate zooms instead, which is the intent.
-    //
-    // The one hard stop is the projection itself: a rectilinear context can no
-    // longer cover the canvas once it nears 90 degrees off-axis, and pushing
-    // past that would reopen dark margins. Refuse the step there.
-    if (zoomingOut) {
-      const projectedFocal = FRAME_GATE_OCCUPANCY * fitFocalPx(
-        runtime.frameSafeRect || { w: canvas.width, h: canvas.height },
-        next,
-      );
-      const reach = contextHalfExtentsPx({ width: canvas.width, height: canvas.height }, projectedFocal);
-      if (reach.halfW < canvas.width * 0.5 - 1e-6 || reach.halfH < canvas.height * 0.5 - 1e-6) return false;
-    }
+    // The ERP behind the gate zooms instead, which is the intent. Past the
+    // context's 85-degree reach the canvas shows the neutral background
+    // (frameViewContext, ADR 0021 D5), as it does for the inspector's angle.
     // Panorama Studio's Camera takes its new angle of view as its `fov` (items.js writePose), and its shot is
     // derived again from it for what reads it next.
     writePose(shot, next);

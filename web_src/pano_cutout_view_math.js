@@ -303,15 +303,22 @@ export function getCutoutAspectLabel(item) {
   return deriveCutoutAspectLabelFromFov(item);
 }
 
+// Both tangents scaled by `scale`, keeping the aspect. A scale that would take either FOV past its range stops at
+// the range: the FOV of the wider axis lands on the limit (the narrower one on the minimum). null when nothing
+// changes, at the limit already.
 export function scaleCutoutFovPair(shot, scale) {
   const camera = getCutoutCameraParams(shot);
-  const factor = finiteOr(scale, 1);
-  if (!(factor > 0)) return null;
-  const nextH = fovOfTangent(camera.tanHalfX * factor, camera.curve);
-  const nextV = fovOfTangent(camera.tanHalfY * factor, camera.curve);
+  const requested = finiteOr(scale, 1);
+  if (!(requested > 0)) return null;
   const fovMax = shotFovMaxDeg(camera.curve);
-  if (!(nextH >= CUTOUT_FOV_MIN_DEG && nextH <= fovMax && nextV >= CUTOUT_FOV_MIN_DEG && nextV <= fovMax)) return null;
-  return { hFOV_deg: nextH, vFOV_deg: nextV };
+  const tanMax = halfTangent(fovMax, camera.curve);
+  const tanMin = halfTangent(CUTOUT_FOV_MIN_DEG, camera.curve);
+  const wide = Math.max(camera.tanHalfX, camera.tanHalfY);
+  const narrow = Math.min(camera.tanHalfX, camera.tanHalfY);
+  const factor = clamp(requested, tanMin / narrow, tanMax / wide);
+  if (Math.abs(factor - 1) <= 1e-12) return null;
+  const fov = (tangent) => clamp(fovOfTangent(tangent * factor, camera.curve), CUTOUT_FOV_MIN_DEG, fovMax);
+  return { hFOV_deg: fov(camera.tanHalfX), vFOV_deg: fov(camera.tanHalfY) };
 }
 
 export function stepCutoutFovPairByWheel(
@@ -323,8 +330,8 @@ export function stepCutoutFovPairByWheel(
   const step = Math.abs(finiteOr(stepDeg, PANO_FOV_WHEEL_STEP_DEG));
   if (!sign || !(step > 0)) return null;
   const camera = getCutoutCameraParams(shot);
-  const nextHorizontal = camera.hFovDeg + sign * step;
-  if (nextHorizontal < CUTOUT_FOV_MIN_DEG || nextHorizontal > shotFovMaxDeg(camera.curve)) return null;
+  // A step past the range stops at it (scaleCutoutFovPair), so the wheel reaches the limit the inspector does.
+  const nextHorizontal = clamp(camera.hFovDeg + sign * step, CUTOUT_FOV_MIN_DEG, shotFovMaxDeg(camera.curve));
   const nextTanHalfX = halfTangent(nextHorizontal, camera.curve);
   return scaleCutoutFovPair(shot, nextTanHalfX / camera.tanHalfX);
 }
