@@ -1982,26 +1982,16 @@ test("a mouse move updates the cursor without a gesture, and draws the Frame vie
   assert.deepEqual(h.effects(), ["setPointerPos"]);
 });
 
-test("the wheel in the Frame view zooms the Camera with World content, the Frame view's zoom without", () => {
-  let h = harness({ editor: { mode: "frame" }, api: { isFreeFrameView: () => true } });
+// What a Frame view wheel step does is frame_view.js wheelFrameView's (tests/editor_frame_wheel.test.mjs).
+test("the wheel in the Frame view is the Frame view's step at the pointer", () => {
+  let h = harness({ editor: { mode: "frame" } });
   h.onCanvasWheel(h.event({ deltaY: 3 }));
-  assert.deepEqual(h.effects(), ["stopTimelinePlayback", "zoomFrameAt", "e.preventDefault"]);
-  assert.deepEqual(h.calls("zoomFrameAt"), [[{ x: 100, y: 50 }, -1]]);
+  assert.deepEqual(h.effects(), ["wheelFrameView", "e.preventDefault"]);
+  assert.deepEqual(h.calls("wheelFrameView"), [[{ x: 100, y: 50 }, 1]]);
 
-  h = harness({ editor: { mode: "frame" }, api: { zoomFrameViewAt: () => true } });
-  h.onCanvasWheel(h.event({ deltaY: -3 }));
-  assert.deepEqual(h.calls("zoomFrameViewAt"), [[{ x: 100, y: 50 }, -1]]);
-  assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true }]]);
-
-  h = harness({ editor: { mode: "frame" }, api: { zoomFrameViewAt: () => false } });
-  h.onCanvasWheel(h.event({ deltaY: 3 }));
-  assert.equal(h.called("requestDraw"), false);
-
-  h = harness({ editor: { mode: "frame" }, api: { isFreeFrameView: () => true } });
+  h = harness({ editor: { mode: "frame" } });
   h.onCanvasWheel(h.event({ deltaY: 0 }));
-  assert.equal(h.called("stopTimelinePlayback"), false);
-  assert.equal(h.called("zoomFrameAt"), false);
-  assert.equal(h.called("zoomFrameViewAt"), false);
+  assert.equal(h.called("wheelFrameView"), false);
   assert.equal(h.calls("e.preventDefault").length, 1);
   assert.equal(h.called("cancelViewTransition"), false);
 });

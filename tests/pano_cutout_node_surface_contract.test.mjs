@@ -189,8 +189,6 @@ test("node and modal wheel adapters use the shared direction and Cutout step", a
   assert.match(runtime, /type:\s*"step-fov"/);
   assert.doesNotMatch(runtime, /scale:\s*delta\s*<\s*0\s*\?\s*\(1\s*\/\s*1\.1\)/);
   assert.match(editor, /readWheelDirection\(e\)/);
-  assert.match(editor, /stepCutoutFovPairByWheel\(shot,\s*direction\)/);
-  assert.match(editor, /function zoomFrameViewAt\([\s\S]*?if \(!shot \|\| shot\.locked === true\) return false;/);
   assert.doesNotMatch(editor, /e\.deltaY\s*<\s*0\s*\?\s*1\.1/);
   assert.match(controller, /readWheelDirection\(ev,\s*fallbackDelta\)/);
 });

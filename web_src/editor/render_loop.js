@@ -21,7 +21,7 @@ export function createRenderLoop(deps) {
     endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
     getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
     rebuildPaintEngineIfNeeded, stepKeyMove, stepViewTransition, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
-    syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice, depthVideoNotice;
+    syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice, depthVideoNotice, frameWheelNotice;
 
   // Removes the editor from the diagnostics samples (set when the render loop starts).
   let removeDiagnosticsSource = () => {};
@@ -65,8 +65,9 @@ export function createRenderLoop(deps) {
     uiState.stageStatusDetail = stageStatus.detail;
     // Panorama Studio notes a 3D file being placed ("Loading 3D model…", or why it failed), a 3D file in the
     // editor that could not be read, a depth grid waiting for its colors ("Loading depth video…") or too large, that the Scene linked to `scene` shows once the workflow has run, or that its
-    // background takes the place of bg_media (#90).
-    uiState.stageNotice = file3dImportNotice() || file3dNotice() || depthVideoNotice() || upstreamNotice();
+    // background takes the place of bg_media (#90). A wheel in the Frame view that cannot move the picture says how to
+    // zoom (frame_view.js frameWheelNotice).
+    uiState.stageNotice = frameWheelNotice() || file3dImportNotice() || file3dNotice() || depthVideoNotice() || upstreamNotice();
     if (stageStatus.status === IMAGE_LOADING) {
       stageWrap?.removeAttribute("data-stage-ready");
       stageWrap?.setAttribute("data-stage-loading-kind", stageStatus.detail);
@@ -401,7 +402,7 @@ export function createRenderLoop(deps) {
         endEditorViewFrame, getActiveCutoutShot, getCutoutPanoDimTarget, getSharedLivePaintSurface,
         getStageImageStatus, isPaintCompositeInteraction, measureFrameSafeRect, moveKeys, playback,
         rebuildPaintEngineIfNeeded, stepKeyMove, stepViewTransition, syncCutoutShot, syncFloatingViewButtonState, syncFrameRollKnob,
-        syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice, depthVideoNotice,
+        syncLookAtFrameButtonState, syncViewToggleState, updateSelectionMenu, upstreamNotice, file3dImportNotice, file3dNotice, depthVideoNotice, frameWheelNotice,
       } = api);
     },
     requestDraw, syncCanvasSize, startAnimation, editorAnimating, tick, stageResizeObserver, watchPixelRatio,
