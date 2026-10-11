@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { Mesh, PerspectiveCamera, PlaneGeometry, Vector3 } from "three";
@@ -320,16 +320,6 @@ test("working Stickers with a numeric, missing or repeated id are left out inste
   });
   assert.deepEqual(layers.map((layer) => [layer.id, layer.revision, layer.zIndex]), [["a", "asset_1", 1], ["b", "asset_4", 4]]);
   assert.ok(seen.every((item) => item === editorState.stickers[1] || item === editorState.stickers[4]));
-});
-
-test("three.js stays out of the eagerly loaded bundle", () => {
-  const bundle = readFileSync(new URL("../web/panorama_suite.js", import.meta.url), "utf8");
-  const [chunkName] = readdirSync(new URL("../web/.lazy/", import.meta.url)).filter((name) => name.startsWith("pano_three_view-"));
-  const chunk = readFileSync(new URL(`../web/.lazy/${chunkName}`, import.meta.url), "utf8");
-  assert.ok(!bundle.includes("Three.js Authors"));
-  assert.ok(bundle.includes(`import("./.lazy/${chunkName}")`));
-  assert.ok(chunk.includes("Three.js Authors"));
-  assert.ok(!/^import\s/m.test(chunk));
 });
 
 test("a background VIDEO uploads through a VideoTexture, which sizes its storage from the video", () => {

@@ -32,7 +32,7 @@ const FRAME_WHEEL_NOTICE_MS = 2000;
 export function createFrameView(deps) {
   const {
     cameraV2, canvas, editor, editorView, floatingRightEl, floatingTopEl, frameRailEl, paintDockEl, readOnly,
-    runtime, shotEditor, toolRailEl, uiState, videoTransportEl,
+    runtime, shotEditor, timers, toolRailEl, uiState, videoTransportEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
@@ -157,8 +157,8 @@ export function createFrameView(deps) {
   function wheelFrameView(p, direction) {
     if (cameraV2 && !isFreeFrameView()) {
       frameWheelNoticeUntil = performance.now() + FRAME_WHEEL_NOTICE_MS;
-      window.clearTimeout(frameWheelNoticeTimer);
-      frameWheelNoticeTimer = window.setTimeout(() => requestDraw({ localOnly: true }), FRAME_WHEEL_NOTICE_MS);
+      timers.clear(frameWheelNoticeTimer);
+      frameWheelNoticeTimer = timers.set(() => requestDraw({ localOnly: true }), FRAME_WHEEL_NOTICE_MS);
       requestDraw({ localOnly: true });
       return;
     }
@@ -194,8 +194,8 @@ export function createFrameView(deps) {
   // A run of wheel steps in the Frame view is one Undo step, taken once the wheel rests.
   function scheduleFrameWheelCommit() {
     editor.frameWheelChanged = true;
-    if (editor.frameWheelCommitTimer) window.clearTimeout(editor.frameWheelCommitTimer);
-    editor.frameWheelCommitTimer = window.setTimeout(() => {
+    timers.clear(editor.frameWheelCommitTimer);
+    editor.frameWheelCommitTimer = timers.set(() => {
       editor.frameWheelCommitTimer = 0;
       if (!editor.frameWheelChanged) return;
       editor.frameWheelChanged = false;
@@ -355,10 +355,8 @@ export function createFrameView(deps) {
   }
 
   function flushFrameWheelCommit() {
-    if (editor.frameWheelCommitTimer) {
-      window.clearTimeout(editor.frameWheelCommitTimer);
-      editor.frameWheelCommitTimer = 0;
-    }
+    timers.clear(editor.frameWheelCommitTimer);
+    editor.frameWheelCommitTimer = 0;
     if (!editor.frameWheelChanged) return false;
     editor.frameWheelChanged = false;
     pushHistory();

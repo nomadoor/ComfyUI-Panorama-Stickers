@@ -7,6 +7,7 @@
 import { createThreeView } from "../../../web_src/pano_three_view.js";
 import { lensFilmDirection, lensRadius, lensRenderPlan } from "../../../web_src/pano_lens.js";
 import { makeSplatPly } from "./media.js";
+import { drawUntilSettled, sparkIdle } from "./settle.js";
 
 const check = (window.__check = { done: false, error: null, renderer: null, contextLost: false, cases: [], splat: null, cache: null });
 const W = 320;
@@ -134,19 +135,23 @@ try {
   const focal = (W / 2) / lensRadius(Math.PI * 300 / 360, 0);
   const lens = { curve: 0, focal, centerX: W / 2, centerY: H / 2, background: BG, faces: lensRenderPlan({ width: W, height: H, focal, curve: 0 }).faces };
   const camera = { quaternion: { x: 0, y: 0, z: 0, w: 1 }, fovY_deg: 60, aspect: W / H, position: [0, 0, 0], near: 0.01, far: 100 };
-  let drawnSplat = 0;
-  for (let frame = 0; frame < 300 && drawnSplat < 20; frame += 1) {
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+  // Drawn until the SPLAT has loaded, the faces' Spark renderers are made and have sorted it, and the picture holds
+  // still.
+  let loaded = false;
+  let sparks = 0;
+  const { shown: center } = await drawUntilSettled(() => {
     view.clear();
     view.render({ rect: { x: 0, y: 0, w: W, h: H }, camera, background: null, layers: [], space, lens, owner: "preview" });
-    if (view.stats().sceneItems.loaded > 0) drawnSplat += 1;
-  }
-  probe2d.clearRect(0, 0, W, H);
-  probe2d.drawImage(view.canvas, 0, 0);
-  const center = probe2d.getImageData(W / 2 - 2, H / 2 - 2, 4, 4).data;
+    const stats = view.stats();
+    loaded ||= stats.sceneItems.loaded > 0;
+    sparks = stats.sparks.length;
+    probe2d.clearRect(0, 0, W, H);
+    probe2d.drawImage(view.canvas, 0, 0);
+    return probe2d.getImageData(W / 2 - 2, H / 2 - 2, 4, 4).data;
+  }, { ready: () => loaded && sparks > 0 && sparkIdle() });
   const renderers = view.stats().sparks.length;
   view.releaseSplats("preview");
-  check.splat = { loaded: drawnSplat > 0, centerAlpha: center[3], renderers, afterHide: view.stats().sparks.length };
+  check.splat = { loaded, centerAlpha: center[3], renderers, afterHide: view.stats().sparks.length };
 
   // A Lens curve leaving 1 (or coming back to the lens) shows the splats in its first frame: the frame drawn as the
   // edit lands is the one drawn once the Spark renderers have sorted again. Mean difference per channel, in levels.
@@ -159,14 +164,10 @@ try {
     probe2d.drawImage(view.canvas, 0, 0);
     return { kind: plan?.kind ?? null, pixels: probe2d.getImageData(0, 0, W, H).data };
   };
-  const settle = async (owner, curve, hfov) => {
-    let last = null;
-    for (let frame = 0; frame < 30; frame += 1) {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      last = shotOf(owner, curve, hfov);
-    }
-    return last;
-  };
+  // The shot once Spark has sorted for it and it holds still.
+  const settle = async (owner, curve, hfov) => (await drawUntilSettled(() => shotOf(owner, curve, hfov), {
+    same: (a, b) => a.kind === b.kind && a.pixels.every((value, index) => value === b.pixels[index]),
+  })).shown;
   const meanDifference = (a, b) => {
     let sum = 0;
     for (let i = 0; i < a.length; i += 4) sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);

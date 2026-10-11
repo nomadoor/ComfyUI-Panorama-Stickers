@@ -1,31 +1,14 @@
-// The pointer gestures of the Frame view that edit the active Camera's shot: the middle button's pan
-// ("pan_frame"; the left drag's is frame_view.js startPanFrame) and the Alt / Shift roll ("roll_frame";
-// the roll knob's is camera.js). A gesture that changed the shot is one Undo step, as are the Frame view's
-// drags of frame_view.js ("frame_pan", "frame_orbit").
+// The pointer gestures of the Frame view that edit the active Camera's shot: the moves of its pan
+// ("pan_frame", which the left drag and the middle button start with frame_view.js startPanFrame) and the
+// Alt / Shift roll ("roll_frame"; the roll knob's is camera.js). A gesture that changed the shot is one Undo
+// step, as are the Frame view's drags of frame_view.js ("frame_pan", "frame_orbit").
 import { beginCutoutRollGesture, panCutoutShotByScreenDelta } from "../pano_cutout_node_surface.js";
 
 export function createPointerFrame(deps) {
-  const { canvas, editor, readOnly, state } = deps;
+  const { canvas, editor, state } = deps;
   // Bound by connect() to the other modules and showEditor.
   let applySharedRollInteractionPoint, commitAndRefreshNode, getActiveCutoutShot, getFrameViewLayout,
-    getFrameViewRect, pushHistory, requestDraw, syncFrameRollKnob, updateCursor, updateSidePanel;
-
-  function startMiddlePanFrame(e, p) {
-    const shot = getActiveCutoutShot();
-    if (!shot || readOnly || shot.locked === true) return;
-    editor.interaction = {
-      kind: "pan_frame",
-      shot,
-      last: p,
-      start: {
-        yaw_deg: Number(shot.yaw_deg || 0),
-        pitch_deg: Number(shot.pitch_deg || 0),
-      },
-      changed: false,
-    };
-    updateCursor(p);
-    canvas.setPointerCapture(e.pointerId);
-  }
+    getFrameViewRect, pushHistory, requestDraw, syncFrameRollKnob, updateSidePanel;
 
   function startFrameRoll(e, p) {
     const shot = getActiveCutoutShot();
@@ -95,9 +78,9 @@ export function createPointerFrame(deps) {
     connect(api) {
       ({
         applySharedRollInteractionPoint, commitAndRefreshNode, getActiveCutoutShot, getFrameViewLayout,
-        getFrameViewRect, pushHistory, requestDraw, syncFrameRollKnob, updateCursor, updateSidePanel,
+        getFrameViewRect, pushHistory, requestDraw, syncFrameRollKnob, updateSidePanel,
       } = api);
     },
-    startMiddlePanFrame, startFrameRoll, movePanFrame, moveRollFrame, endFrameGesture,
+    startFrameRoll, movePanFrame, moveRollFrame, endFrameGesture,
   };
 }

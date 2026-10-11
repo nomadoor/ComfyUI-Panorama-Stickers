@@ -68,7 +68,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("frameRollKnob:", editor_js)
         self.assertIn("frameRollAngleForEvent(event, center)", editor_js)
         self.assertIn('uiState.tooltip.variant = "roll"', editor_js)
-        self.assertIn("clearTimeout(tooltip.timer)", editor_js)
+        self.assertIn("timers.clear(tooltip.timer)", editor_js)
         self.assertIn('if (it.source === "knob") return;', editor_js)
         self.assertIn('ended?.kind === "roll_frame" && ended.source === "knob"', editor_js)
         self.assertIn("frameRollOverlayAlpha:", editor_js)

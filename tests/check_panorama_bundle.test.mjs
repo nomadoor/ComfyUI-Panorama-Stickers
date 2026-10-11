@@ -56,3 +56,15 @@ test("reports stale and leftover chunks in web/.lazy", async () => {
     assert.match(result.stderr, /web\/\.lazy\/old_chunk\.js is not produced by the build; delete it\./);
   });
 });
+
+test("reports three.js in the eagerly loaded bundle", async () => {
+  await withWebCopy(async (webDir) => {
+    const bundlePath = path.join(webDir, "panorama_suite.js");
+    await writeFile(bundlePath, Buffer.concat([await readFile(bundlePath), Buffer.from("\n// Three.js Authors\n")]));
+
+    const result = runChecker(webDir);
+
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.match(result.stderr, /web\/panorama_suite\.js includes three\.js; it must load lazily\./);
+  });
+});

@@ -21,9 +21,9 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
 - Timeline は `source` から Studio と同じ `_decide_timeline` で決める。IMAGE と VIDEO は既定の状態（`timeline.fps` 24）に対して決める。`PANO_SCENE` の Timeline はその `fps`・`times`・`frames`。
 - IMAGE と VIDEO の実行結果の `ui` は旧 Preview と同じキー（`pano_input_images`、2 フレーム以上なら `pano_videos`・`pano_video_meta`）。`pano_video_meta` の fps は Timeline fps、`frames` は Timeline の長さ。
   - IMAGE：旧 Preview と同じく、最初の画像を保存し、バッチを MP4 にエンコードする（`encode_frames_to_mp4`。キーフレームは `EDITOR_KEYINT` フレームごと、B フレームなし）。音声はない。
-- 旧ノード（`PanoramaStickers`・`PanoramaCutout`・`PanoramaPreview`）のプレビュー MP4 に入れる `audio` は、フレームの長さ（フレーム数 ÷ fps）に合わせて、長ければ切り、短ければ無音で延ばす（`_fit_audio_to_frame_count`）。伸縮はしないので、速さと音程は変わらず、先頭からフレームと揃う。
   - VIDEO：`open_video(video, "source")`（Studio と同じ）で開き、最初に復号できたフレームをプレビュー画像にし、Timeline は `frame_rate` と `times` から決める。全フレームを一括では展開しない（クロップ付きや `VideoFromFile` 以外で `open_video` が `get_components()` に落ちる場合は、それに従う）。MP4 は Studio と同じエディタの MP4（`_editor_mp4`）で、シークしやすいファイルはコアの `save_to(MP4, H264)` でストリームコピーし、それ以外はプロキシを作る。`has_audio` はコピーなら書いた MP4 に音声ストリームがあるか、プロキシなら音声を入れたかで決める。
   - プレビュー画像と MP4 のために VIDEO を 2 回開く（`open_video` と、コピーの `save_to` またはプロキシの `StreamedVideo`）。PTS の走査は `VideoIndex` を共有するので 1 回だけ。Studio の `bg_media` の VIDEO も同じ方法で MP4 を書く。
+- 旧ノード（`PanoramaStickers`・`PanoramaCutout`・`PanoramaPreview`）のプレビュー MP4 に入れる `audio` は、フレームの長さ（フレーム数 ÷ fps）に合わせて、長ければ切り、短ければ無音で延ばす（`_fit_audio_to_frame_count`）。伸縮はしないので、速さと音程は変わらず、先頭からフレームと揃う。チャンネルの並びは `docs/studio-node.md` の `video` の音声の `_prepare_audio_layout`。
 - `PANO_SCENE` のときも、出力は入力の同じオブジェクトをそのまま返し、描画はしない（ポートの意味は変えない）。`ui` に、その Scene を見るためのキーを返す（下の「`PANO_SCENE` を見る」）。
 - ノード上の表示（`pano_preview_identity.js` の `isPanoramaPreviewSceneNodeName` が新しい id `PanoramaPreviewNode` を見分け、`pano_editor_extension.js` が付ける）：IMAGE と VIDEO は旧 `PanoramaPreview` の専用 runtime（`docs/legacy-node-surfaces.md`。3DoF の見回し）で、`PANO_SCENE` は下の Scene のビューアで見せる。どちらを使うかは、実行の前から `source` の接続の型（`pano_preview_video.js` の `linkedInputType`。`PANO_SCENE` ならビューア）で決める。実行結果を待たずに表示が決まり、型が変わればすぐ切り替わる。
 
@@ -43,7 +43,7 @@ Preview は見るための場所で、編集とは分ける（ADR 0041）。Stud
 
 `PANO_SCENE` のとき、`execute` は描かずに、Studio が上流の Scene に返すのと同じキーを返す（`_preview_scene_ui`）。Studio の `_upstream_ui` をそのまま呼ぶので、キーの形の owner は `docs/studio-node.md` の「上流の Scene」のまま。
 
-- `pano_upstream_layers`（全部の層の `state` と素材の `ui`）、`pano_upstream_frames`、背景があれば `pano_upstream_input_*`・`pano_upstream_coverage`・`pano_upstream_bg_color`・`pano_upstream_bg_clip`、`pano_timeline_fps`（`PanoSceneValue.fps`）、`pano_timeline_frames`（`len(frames)`）。
+- `pano_upstream_layers`（全部の層の `state` と素材の `ui`）、`pano_upstream_frames`、`pano_upstream_coverage`・`pano_upstream_bg_color`（いつも）、背景があれば `pano_upstream_input_*`・`pano_upstream_bg_clip`、`pano_timeline_fps`（`PanoSceneValue.fps`）、`pano_timeline_frames`（`len(frames)`）。
 - `pano_upstream_coverage` と `pano_upstream_bg_color` は、背景の無い Scene でも `_upstream_ui` がいつも出す（規則は `docs/studio-node.md` の「上流の Scene」）。Preview には自分の背景が無いので、Scene の値で描く。
 - 参照するファイル（エディタ用ファイル、MP4、深度のファイル）は、Scene を作った Studio が書いたもので、Preview は書き直さない（`PANO_SCENE` の `media_ui` の規則のまま）。Preview の実行は描画もファイルの書き出しもしないので、ほぼ時間がかからない。
 - 3D ファイルの Sticker のエディタ用ファイルが消えたとき（404）の問い合わせ直しは、エディタと同じ部品で行う（`pano_upstream_layers.js` の `refreshGoneUpstreamFiles` と、`pano_file_3d.js` の `createFile3dEditorFiles`。ビューアの全体で 1 つを持ち、1 つの Source につき問い合わせ直しの上限もエディタと同じ。`docs/threejs-spark-integration.md` の「空間の表示」）。
@@ -69,7 +69,7 @@ Scene を見る表示（ビューア）は、エディタの部品を、エデ�
 
 - 置くもの（`PANO_SCENE` のとき）：Vue の overlay の右上に、アイコンのボタンを 2 つ：`Reset view`（原点の正面に戻る。エディタの Reset View と同じ遷移。小さなノードで迷ったときに戻る手段が要るため）と `Open viewer`（下の大きなウィンドウ）。下端に再生の帯（下の「再生の帯」）。IMAGE・VIDEO のときは旧 Preview の runtime の表示のまま。
 - マウス：エディタと同じプリセットの表を、ノードの上でもそのまま使う（同じ操作を二通り覚えさせないため）。オブジェクトの操作が無いので、左ドラッグはいつも表の「何もないところ」の扱い。surface の上の押し下げ・ドラッグ・ホイールは surface が受け、ComfyUI のキャンバスのパンやノードの移動にしない（Studio のノード上の表示と同じ）。ノードのタイトルの帯は ComfyUI のまま。
-- ホイール：Studio のノード上の表示と同じ捕捉の規則（DOM widget の root が `tabindex="0"` と `data-capture-wheel="true"`、pointer enter で root に focus）で受け、エディタと同じポインタの下へのズームにする。
+- ホイール：Studio のノード上の表示と同じ捕捉の規則（`docs/studio-node-surface.md` の「見回し」）で受け、エディタと同じポインタの下へのズームにする。
 - 右クリックのメニュー：右ドラッグを使うプリセット（Default・Unity-like）では、surface の上の右クリックのメニューを抑止する（エディタの 6DoF と同じ。ノードのメニューはタイトルの帯の右クリックで出る）。
 - キー：ノード上では WASD・QE も Space も受けない（キャンバスのキーは ComfyUI のもの。Studio のノード上の表示も Space を割り当てない）。キーで動くのはウィンドウだけ。
 - ダブルクリック：旧 Preview と同じく再生と一時停止を切り替える。切り替えた瞬間に、surface の中央に再生か一時停止のアイコンを短く出して知らせる（`docs/agents/ux-principles.md` の「状態が変わった瞬間は、一瞬だけはっきり知らせる」）。最初は止めて frame 0 を出す。

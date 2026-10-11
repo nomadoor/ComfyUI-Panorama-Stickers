@@ -8,6 +8,8 @@ Accepted（2026-10-09。試作の結果は判断の規則の 1 行目に当た�
 
 一部（「D の設計の規則」のカメラの型のうち、Brown–Conrady の歪みと魚眼を別々に持つこと）を ADR 0042 が置き換えた（2026-10-10）。
 
+一部（条件 8 のテクスチャの mip と sampler、`KHR_texture_transform`・`TEXCOORD_1`、`alphaMode`、`doubleSided`）は今のコードと違う。mip を使わず CLAMP・LINEAR で標本化し、材質はコアの読み手が読む値だけを使い、いつも不透明で両面に描く（`docs/render-contract.md` の「テクスチャの標本化」と「材質」。置き換えた ADR は無い）（2026-10-11 に記す）。
+
 ## Date
 
 2026-10-09

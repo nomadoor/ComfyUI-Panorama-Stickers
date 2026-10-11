@@ -53,8 +53,9 @@ export function createPointerWorld(deps) {
     const id = editorView.pickSticker(currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
     if (stickerById(id)?.placement !== "world") return false;
     if (editor.worldSelectedId !== id) {
+      // Selecting is not an edit: the step prunes nothing.
       if (editor.selectedId) {
-        pushHistory();
+        pushHistory({ prune: false });
         commitState();
       }
       selectWorldSticker(id);

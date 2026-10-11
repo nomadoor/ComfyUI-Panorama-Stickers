@@ -46,7 +46,7 @@
 記録とは別に、`events` に WebGL コンテキストの作成・喪失（`webglcontextlost`）・復帰（`webglcontextrestored`）・破棄を、
 時刻付きで最後の 100 件まで残します。
 エディタのビューは、コンテキストを失うと GPU の資源を放して復帰を待ち、復帰したら同じキャンバスにビューを作り直します。
-失ったビューは復帰まで同じコンテキストとして数えるので、1 回の喪失と復帰は `created` 2・`lost` 1・`restored` 1・`disposed` 1・`alive` 1 になります。
+1 回の喪失と復帰がどう数えられるかは、`docs/threejs-spark-integration.md` の「エディタの描画を直接表示する」の WebGL コンテキストの喪失の項にあります。
 
 ## 記録の残し方
 

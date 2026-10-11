@@ -7,6 +7,7 @@ import { createSharedView } from "../../../web_src/pano_preview_view.js";
 import { createSceneViewer, sceneViewerRecord } from "../../../web_src/pano_scene_viewer.js";
 import { VIEW_CONTROL_PRESETS } from "../../../web_src/pano_view_controls.js";
 import { makeSplatPly } from "./media.js";
+import { drawUntilSettled, nextFrame, sparkIdle } from "./settle.js";
 
 const check = (window.__check = {
   done: false, error: null, renderer: null, contexts: 0, contextLost: false, stats: null,
@@ -87,24 +88,24 @@ try {
     check.draws += 1;
     return true;
   };
-  const frames = (count) => new Promise((resolve) => {
-    let left = count;
-    const step = (ts) => {
-      nodes.forEach((node) => node.viewer.tick(ts));
-      draw(nodes[0]);
-      if (--left <= 0) resolve();
-      else requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  });
+  const step = () => {
+    const ts = performance.now();
+    nodes.forEach((node) => node.viewer.tick(ts));
+    draw(nodes[0]);
+  };
+  // The first node drawn once a frame until Spark has sorted for its view and the picture holds still.
+  const settle = () => drawUntilSettled(() => {
+    step();
+    return nodes[0].canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  }, { ready: () => view.stats().sparks.length > 0 && sparkIdle() });
 
   // Draw until the splats load.
   const begin = performance.now();
-  while (performance.now() - begin < LOAD_MS) {
-    await frames(5);
-    if (view?.stats().sceneItems.loaded > 0) break;
+  while (performance.now() - begin < LOAD_MS && !(view?.stats().sceneItems.loaded > 0)) {
+    await nextFrame();
+    step();
   }
-  await frames(10);
+  await settle();
   check.firstNonEmpty = nonEmpty(nodes[0].canvas);
   const gl = view.canvas.getContext("webgl2");
   const info = gl.getExtension("WEBGL_debug_renderer_info");
@@ -118,7 +119,7 @@ try {
   for (let i = 0; i < 4; i += 1) viewer.wheel(-1, { x: W / 2, y: H / 2 });
   const keys = { t: 0, elapsed(ts) { const s = this.t ? (ts - this.t) / 1000 : 0; this.t = ts; return s; }, direction: () => ({ forward: -1, right: 0, up: 0 }), speed: (scale) => scale };
   for (const ts of [1000, 1300, 1600]) viewer.stepKeys(keys, ts);
-  await frames(20);
+  await settle();
   check.moved = { mode: record.view.spaceMode, position: record.view.viewPosition, yaw: record.view.viewYaw };
   check.movedNonEmpty = nonEmpty(nodes[0].canvas);
 

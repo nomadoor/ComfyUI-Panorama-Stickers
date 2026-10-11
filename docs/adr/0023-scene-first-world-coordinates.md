@@ -4,6 +4,8 @@
 
 Accepted
 
+一部（「ERP 出力には Camera の回転も反映する」とその括弧書き）を ADR 0028 が、続いて ADR 0029 が置き換えた。今は Panorama Studio の Camera の ERP が Camera の回転に従う（2026-10-03）。
+
 ## Date
 
 2026-09-30

@@ -1,6 +1,6 @@
 # 旧ノードの基準画像と性能基準値
 
-旧 `PanoramaStickers` と旧 `PanoramaCutout` を作り直す前に固定した、描画結果と処理時間の基準。以後の ticket は、ここと比べて退行を確かめる（#47、#48）。
+旧 `PanoramaStickers` と旧 `PanoramaCutout` を作り直す前に固定した、描画結果と処理時間の基準。以後の作業は、ここと比べて退行を確かめる。
 
 ## 基準画像
 
@@ -29,7 +29,7 @@
 
 旧ノードと意図して変えた出力は、Panorama Studio の出力から別の基準画像として生成する（`tools/bake_legacy_goldens.py` の `STUDIO_CASES`。`PYTHONPATH=<ComfyUI> python tools/bake_legacy_goldens.py <case>` で一つだけ生成できる）。保存先と比べ方は旧ノードと同じ。
 
-これらは、状態 v2 の Stickers・Cutout（`PanoramaStickersNode`・`PanoramaCutoutNode`）の出力から焼いた `stickers_node_*`・`cutout_node_single_shot` を、#92 でそのノードを外したときに名前だけ変えたものである（中身は焼き直していない）。Panorama Studio は同じ描画の経路を通るので、そのまま一致する。
+これらは、開発中にあった状態 v2 の Stickers・Cutout のノード（ノード ID `PanoramaStickersNode`・`PanoramaCutoutNode`。今の旧ノード `PanoramaStickers`・`PanoramaCutout` の Python のクラス名と同じ名前だが、別のノード）の出力から焼いた基準画像を、そのノードを外したときに `studio_*` に名前だけ変えたものである（中身は焼き直していない。`studio_camera_single_shot` は v2 の Cutout の単一ショットの基準画像だったもの）。Panorama Studio は同じ描画の経路を通るので、そのまま一致する。
 
 | case | 内容 | 出力サイズ |
 |---|---|---|
@@ -69,7 +69,7 @@ Panorama Studio は、ERP の出力の Sky も透視投影と同じく、出力�
 
   - どれも、平均では収まり、8/255 を超える画素の割合で不合格になる差である。MASK はどの case も変わらない。
 
-### ペイントの焼き直し（#80）
+### ペイントの焼き直し
 
 `stickers_paint`・`stickers_paint_mask`・`stickers_paint_interleaved` は、旧ノードの出力から意図して変えて焼き直した。
 

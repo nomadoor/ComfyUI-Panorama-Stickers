@@ -801,14 +801,19 @@ export function createMediaSession(deps) {
     });
   }
 
-  // Lets go of what the session made when the editor closes: the background VIDEO stops, and the playback,
-  // the port's follower, the listeners and the filmstrip job are released.
+  // Lets go of what the session made when the editor closes: the background VIDEO stops, the playback,
+  // the port's follower, the listeners and the filmstrip job are released, and then the VIDEO lets go of its
+  // source as the follower's does (pano_video_playback.js), so the browser stops loading and decoding it.
   function disposeMediaSession() {
     file3dFiles?.close();
     if (videoEl instanceof HTMLVideoElement) videoEl.pause();
     videoCleanupFns.forEach((fn) => {
       try { fn(); } catch { }
     });
+    if (videoEl instanceof HTMLVideoElement) {
+      videoEl.removeAttribute("src");
+      videoEl.load();
+    }
   }
 
   return {

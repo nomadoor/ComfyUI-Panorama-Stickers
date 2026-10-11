@@ -13,10 +13,11 @@ pytest.importorskip(
 
 import av
 from PIL import Image
-from comfy_api.latest import InputImpl
+from comfy_api.latest import InputImpl, Types
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import video as core_video
+from comfyui_pano_suite.core.video_source import MaterializedVideo
 from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode
 
 # A variable frame rate: the gaps are 40, 60 and 20 ms.
@@ -303,3 +304,15 @@ def test_an_rgba_sticker_image_batch_keeps_its_alpha_as_pngs(tmp_path, monkeypat
             assert np.array_equal(np.asarray(image), expected)
     assert len(saved) == 1
     assert again["pano_sticker_input_frames"] == entries
+
+
+@pytest.mark.parametrize("channels", [3, 8])
+def test_audio_without_its_own_layout_is_downmixed_to_stereo(channels):
+    audio = {"waveform": torch.rand(1, channels, 8000) * 0.1, "sample_rate": 8000}
+    video = MaterializedVideo(Types.VideoComponents(images=torch.rand(4, 16, 32, 3), frame_rate=Fraction(4), audio=audio), "batch")
+
+    path, has_audio = core_video.encode_editor_mp4(video)
+
+    assert has_audio
+    with av.open(str(path)) as container:
+        assert container.streams.audio[0].codec_context.channels == 2

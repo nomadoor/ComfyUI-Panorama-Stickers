@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { BoxGeometry, Group, LineSegments, Mesh, MeshBasicMaterial, Object3D, PerspectiveCamera, PlaneGeometry, Scene, ShaderMaterial, Vector3 } from "three";
@@ -163,14 +162,7 @@ test("the upstream Scene's planes and items are picked as the node's own (ADR 00
   const entries = [{ object: own }, { object: upstreamPlane }, { object: upstreamItem }];
   const seen = pickPass(world, entries, () => new ShaderMaterial(), () => [own, upstreamPlane, upstreamItem].map((object) => object.visible));
   assert.deepEqual(seen, [true, true, true]);
-  // buildWorld makes the pickable entries, the SPLAT boxes and the pick's parts of the upstream items and planes
-  // in the loops of the node's own, by the ids their requests and planes have (upstream:<key>:<id>).
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  const build = view.slice(view.indexOf("  function buildWorld("), view.indexOf("  // Where a render draws"));
-  assert.match(build, /if \(entry\.request\) contents\.push\(\{ content: contentGroup\(items, entry\.request\), input: entry\.request, opacity: entry\.opacity \}\);/);
-  assert.match(build, /for \(const \{ content, input, opacity, keepMaterials \} of contents\) \{[\s\S]*?pickBoxes\.push[\s\S]*?pickable\.push[\s\S]*?parts\.push/);
-  assert.match(build, /for \(const layer of \[\.\.\.space\.stickers, \.\.\.\(space\.upstreamStickers \?\? \[\]\)\]\) \{[\s\S]*?pickable\.push\(\{ object: mesh, stickerId: layer\.id, plane: true \}\);/);
-  assert.equal([...build.matchAll(/for \(const \w+ of (?:upstream|space\.upstream\w+ \?\? \[\])\) \{/g)].length, 1);
+  // buildWorld picks the upstream items and planes as the node's own: tests/browser (file_3d, lens_stickers).
 });
 
 test("the pick pass puts all back when drawing throws", () => {

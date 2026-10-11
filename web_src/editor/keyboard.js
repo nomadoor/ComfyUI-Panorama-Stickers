@@ -10,13 +10,31 @@ export function createKeyboard(deps) {
   // Bound by connect() to the other modules and showEditor.
   let canKeyMove, cancelFrameCameraGesture, cancelViewTransition, closeEditor, deleteSelected,
     deleteSelectedKeyframes, deleteSelectedWorldSticker, endFrameKeyMove, getHistoryCapabilities, getSelected,
-    restoreHistory, setFullscreenState, startAnimation, syncFrameRollKnob, togglePlayback, updateCursor;
+    restoreHistory, setFullscreenState, settleCanvasConfirm, startAnimation, syncFrameRollKnob, togglePlayback,
+    updateCursor;
 
   // The movement keys held down (pano_view_keys.js); space.js moves the view by them each frame.
   const moveKeys = createMoveKeys();
 
+  // Escape takes back one thing, the innermost: the confirm dialog (Cancel), a field being typed in (it
+  // leaves the field), the Frame view's Camera gesture, full screen, and last the editor itself.
   function onEscClose(ev) {
     if (ev.key !== "Escape") return;
+    if (uiState.confirmDialog.visible) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation?.();
+      settleCanvasConfirm(false);
+      return;
+    }
+    const target = ev.composedPath()[0];
+    if (overlay.contains(target) && isTextField(target)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation?.();
+      target.blur?.();
+      return;
+    }
     if (cancelFrameCameraGesture()) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -49,9 +67,9 @@ export function createKeyboard(deps) {
     const isDeleteKey = key === "Delete" || code === "Delete" || keyCode === 46;
     const isBackspaceKey = key === "Backspace" || code === "Backspace" || keyCode === 8;
     if (!isDeleteKey && !isBackspaceKey) return;
-    const t = ev.target;
-    const tag = (t?.tagName || "").toUpperCase();
-    if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
+    // Unlike Undo, Delete removes what is selected, so no form control takes it to the stage: Backspace on a focused
+    // slider or checkbox deletes nothing.
+    if (!stageOwnsKey(ev) || isFormControl(ev.composedPath()[0])) return;
     if (timeline.selection) {
       deleteSelectedKeyframes();
       ev.preventDefault();
@@ -75,9 +93,18 @@ export function createKeyboard(deps) {
     if (uiState.confirmDialog.visible) return false;
     const t = ev.composedPath()[0];
     if (t !== document.body && t !== document.documentElement && !overlay.contains(t)) return false;
+    return !isTextField(t);
+  }
+  // Any input of the editor's form (a field, a slider, a checkbox).
+  function isFormControl(t) {
+    return (t?.tagName || "").toUpperCase() === "INPUT" || isTextField(t);
+  }
+  // A field being typed in: a text-like input, a textarea, a select or editable text (not a slider, a
+  // checkbox or a button).
+  function isTextField(t) {
     const tag = (t?.tagName || "").toUpperCase();
-    if (tag === "INPUT") return !TEXT_INPUT_TYPES.has(String(t.type || "text").toLowerCase());
-    return tag !== "TEXTAREA" && tag !== "SELECT" && !t?.isContentEditable;
+    if (tag === "INPUT") return TEXT_INPUT_TYPES.has(String(t.type || "text").toLowerCase());
+    return tag === "TEXTAREA" || tag === "SELECT" || !!t?.isContentEditable;
   }
   // Space plays and stops the Timeline like its play button, also over a focused button or slider.
   // Space with Ctrl, Meta or Alt is left to the browser and the OS, and typing keeps its spaces.
@@ -169,9 +196,7 @@ export function createKeyboard(deps) {
     const key = String(ev.key || "").toLowerCase();
     const code = String(ev.code || "");
     if (key !== "z" && code !== "KeyZ") return;
-    const t = ev.target;
-    const tag = (t?.tagName || "").toUpperCase();
-    if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
+    if (!stageOwnsKey(ev)) return;
     const { canUndo, canRedo } = getHistoryCapabilities();
     if ((ev.shiftKey && !canRedo) || (!ev.shiftKey && !canUndo)) return;
     restoreHistory(ev.shiftKey ? 1 : -1);
@@ -184,7 +209,8 @@ export function createKeyboard(deps) {
       ({
         canKeyMove, cancelFrameCameraGesture, cancelViewTransition, closeEditor, deleteSelected,
         deleteSelectedKeyframes, deleteSelectedWorldSticker, endFrameKeyMove, getHistoryCapabilities, getSelected,
-        restoreHistory, setFullscreenState, startAnimation, syncFrameRollKnob, togglePlayback, updateCursor,
+        restoreHistory, setFullscreenState, settleCanvasConfirm, startAnimation, syncFrameRollKnob, togglePlayback,
+        updateCursor,
       } = api);
     },
     moveKeys, onEscClose, onDeleteKey, onSpaceKey, onSpaceKeyUp, onMoveKeyDown, onMoveKeyUp, onVisibilityChange,

@@ -8,7 +8,7 @@ import { cloneColor, colorToCss, getLassoCursorBackground, logPaintDebug, makePa
 
 export function createPaintInput(deps) {
   const {
-    editor, paintCursorEl, paintSizePreviewEl, paintSizePreviewSampleEl, state,
+    editor, paintCursorEl, paintSizePreviewEl, paintSizePreviewSampleEl, state, timers,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let buildRasterObjectEditCanvas, clearSelection, createRasterFrozenObjectsFromCanvas, createRasterSurface,
@@ -209,10 +209,8 @@ export function createPaintInput(deps) {
     paintSizePreviewSampleEl.style.boxShadow = `0 0 0 1px ${borderColorOuter}`;
     paintSizePreviewSampleEl.style.transform = `rotate(${rotateDeg}deg)`;
 
-    if (paintSizePreviewTimer) {
-      clearTimeout(paintSizePreviewTimer);
-      paintSizePreviewTimer = 0;
-    }
+    timers.clear(paintSizePreviewTimer);
+    paintSizePreviewTimer = 0;
     paintSizePreviewEl.classList.remove("fade-out");
     paintSizePreviewEl.classList.add("show");
   }
@@ -220,8 +218,8 @@ export function createPaintInput(deps) {
   function hidePaintSizePreview() {
     if (!paintSizePreviewEl || !paintSizePreviewEl.classList.contains("show")) return;
     paintSizePreviewEl.classList.add("fade-out");
-    if (paintSizePreviewTimer) clearTimeout(paintSizePreviewTimer);
-    paintSizePreviewTimer = window.setTimeout(() => {
+    timers.clear(paintSizePreviewTimer);
+    paintSizePreviewTimer = timers.set(() => {
       paintSizePreviewEl.classList.remove("show", "fade-out");
       paintSizePreviewTimer = 0;
     }, 180);

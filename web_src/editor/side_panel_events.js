@@ -16,7 +16,7 @@ import { WORLD_MIN_SCALE, WORLD_UNLIMITED_FIELDS } from "./constants.js";
 
 export function createSidePanelEvents(deps) {
   const {
-    cameraV2, coverageWidget, editor, node, previewMode, runtime, shotEditor, state, studio, type, uiState,
+    cameraV2, coverageWidget, editor, node, previewMode, runtime, shotEditor, state, studio, timers, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let animationClipsOf, apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
@@ -205,7 +205,7 @@ export function createSidePanelEvents(deps) {
         await navigator.clipboard.writeText(text);
         if (uiState.sidePanel?.copyStateButton) {
           uiState.sidePanel.copyStateButton.label = "Copied";
-          window.setTimeout(() => {
+          timers.set(() => {
             if (uiState.sidePanel?.copyStateButton) uiState.sidePanel.copyStateButton.label = "Copy State";
           }, 900);
         }

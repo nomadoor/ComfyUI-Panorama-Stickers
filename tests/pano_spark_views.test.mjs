@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { Group, Mesh, Object3D, PerspectiveCamera, Scene } from "three";
@@ -254,18 +253,9 @@ test("a Spark renderer and a SplatMesh never see two cameras in one frame", () =
   assert.equal(loaded.pose, null);
 });
 
-test("the three.js view aims the World's camera at the view's own Spark renderer and SplatMeshes for every draw", () => {
-  const view = readFileSync(new URL("../web_src/pano_three_view.js", import.meta.url), "utf8");
-  assert.match(view, /if \(space\) buildWorld\(owned, space, input\.owner\);/);
-  assert.match(view, /if \(content\.splat\) sparkViews\.splat\(owner, content\.object\);\s*children\.push\(content\.group\);/);
-  assert.match(view, /if \(splat && Spark\) children\.push\(sparkViews\.renderer\(owner\)\);/);
-  assert.match(view, /setCamera\(worldCamera, input\.camera, at\);\s*\/\/[^\n]*\n\s*sparkViews\.aim\(worldCamera, input\.owner\);[\s\S]*?renderer\.render\(world, worldCamera\);/);
-  assert.match(view, /new Spark\.SplatMesh\(\{ packedSplats, raycastable: false \}\);\s*packedSplats\.splatEncoding = encoding;/);
-  assert.match(view, /if \(item\.kind === "splat" && item\.object\) sparkViews\.forget\(item\.object\);\s*disposeSceneItem\(item\);/);
-  // Every set of loaded items (the `scene` input's, the 3D Sticker's, the upstream Scene's) frees through it.
-  assert.equal(view.match(/dispose: disposeItem,/g).length, view.match(/createSceneItems\(\{/g).length);
-  assert.equal(view.match(/createSceneItems\(\{/g).length, 3);
-  // The editor passes its camera preview as its own owner, and frees its renderer when it hides.
+// The three.js view's own Spark renderer per owner, sorted for its camera, is held by tests/browser (scene_viewer,
+// lens_view). The editor wiring below goes with the editor's rewrite.
+test("the editor passes its camera preview as its own owner, and frees its renderer when it hides", () => {
   const editor = readEditorSource();
   assert.match(editor, /drawEditorViewShot\(\{ x: 0, y: backgroundCanvas\.height - size\.height, w: size\.width, h: size\.height \}, shot, CAMERA_PREVIEW_OWNER\)/);
   assert.match(editor, /editorView\.releaseSplats\(CAMERA_PREVIEW_OWNER\)/);

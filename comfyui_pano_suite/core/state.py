@@ -55,8 +55,8 @@ def merge_state(state_in: str | None, internal_state: str | None, fallback_prese
         state["assets"] = {}
     if "stickers" not in state or not isinstance(state["stickers"], list):
         state["stickers"] = []
-    if "shots" not in state or not isinstance(state["shots"], list):
-        state["shots"] = []
+    # A shot that is not an object is dropped, as a Sticker that is not one is not drawn.
+    state["shots"] = [shot for shot in state["shots"] if isinstance(shot, dict)] if isinstance(state.get("shots"), list) else []
     state["painting"] = normalize_painting_state(state.get("painting"))
     if not isinstance(state.get("painting_layer"), dict):
         state["painting_layer"] = None

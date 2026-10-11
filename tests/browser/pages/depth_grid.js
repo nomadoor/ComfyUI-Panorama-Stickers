@@ -5,6 +5,7 @@
 import { createThreeView } from "../../../web_src/pano_three_view.js";
 import { sceneFilesOf, sceneRequest } from "../../../web_src/pano_space.js";
 import { makeVideo } from "./media.js";
+import { drawUntilSettled, presentedFrames, within } from "./settle.js";
 
 const check = (window.__check = { done: false, contextLost: false, error: null, renderer: null, stats: null, inside: null, hole: null, pick: null, orientation: {}, colorTextures: null, colorTexturesAfter: null });
 
@@ -80,6 +81,19 @@ try {
     void orientation();
   }
 
+  // Draws `drawn` until its picture is uploaded and holds still: from a VIDEO, once it has presented two frames
+  // since, and within two levels of the frame before (each of the page's VIDEO frames changes by one level).
+  function showSettled(drawn, media) {
+    const presented = media instanceof HTMLVideoElement ? presentedFrames(media) : () => Infinity;
+    return drawUntilSettled(() => {
+      view.clear();
+      view.render({ rect: { x: 0, y: 0, w: SIZE, h: SIZE }, camera, background: null, layers: [], space: drawn });
+      probe2d.clearRect(0, 0, SIZE, SIZE);
+      probe2d.drawImage(view.canvas, 0, 0);
+      return probe2d.getImageData(0, 0, SIZE, SIZE).data;
+    }, { ready: () => presented() >= 2, same: within(2) });
+  }
+
   // The image's top is the grid's top whatever picture the colors come from: the proxy VIDEO playing, the still
   // canvas the follower captures, an ImageBitmap. Each is red above and blue below.
   async function orientation() {
@@ -99,13 +113,7 @@ try {
     const pictures = { canvas: still, bitmap: await createImageBitmap(still), video: halvesVideo };
     for (const [name, media] of Object.entries(pictures)) {
       const drawn = { ...space, scene: { ...request, color: { media, revision: name, source: name } } };
-      for (let index = 0; index < 20; index += 1) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        view.clear();
-        view.render({ rect: { x: 0, y: 0, w: SIZE, h: SIZE }, camera, background: null, layers: [], space: drawn });
-        probe2d.clearRect(0, 0, SIZE, SIZE);
-        probe2d.drawImage(view.canvas, 0, 0);
-      }
+      await showSettled(drawn, media);
       check.orientation[name] = { top: sample(probe2d, SIZE / 2, SIZE / 8), bottom: sample(probe2d, SIZE / 2, (SIZE * 7) / 8) };
     }
     // The same mid-tone color drawn from the playing VIDEO and from the still the follower copies off it: the two
@@ -123,13 +131,7 @@ try {
     check.tone = {};
     for (const [name, media] of [["video", tone], ["still", toneStill]]) {
       const drawn = { ...space, scene: { ...request, color: { media, revision: name, source: name } } };
-      for (let index = 0; index < 20; index += 1) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        view.clear();
-        view.render({ rect: { x: 0, y: 0, w: SIZE, h: SIZE }, camera, background: null, layers: [], space: drawn });
-        probe2d.clearRect(0, 0, SIZE, SIZE);
-        probe2d.drawImage(view.canvas, 0, 0);
-      }
+      await showSettled(drawn, media);
       check.tone[name] = sample(probe2d, SIZE / 4, SIZE / 4);
     }
     // A sharp edge between white and black, magnified (16 x 16 picture over the grid): a playing VIDEO must blend it
@@ -149,13 +151,7 @@ try {
     check.edge = {};
     for (const [name, media] of [["video", edge], ["still", edgeStill]]) {
       const drawn = { ...space, scene: { ...request, color: { media, revision: name, source: name } } };
-      for (let index = 0; index < 20; index += 1) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        view.clear();
-        view.render({ rect: { x: 0, y: 0, w: SIZE, h: SIZE }, camera, background: null, layers: [], space: drawn });
-        probe2d.clearRect(0, 0, SIZE, SIZE);
-        probe2d.drawImage(view.canvas, 0, 0);
-      }
+      await showSettled(drawn, media);
       // The red of a row across the edge, away from the hole in the middle.
       check.edge[name] = Array.from(probe2d.getImageData(SIZE / 2 - 24, SIZE / 8, 48, 1).data).filter((_, index) => index % 4 === 0);
     }

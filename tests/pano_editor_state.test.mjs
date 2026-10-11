@@ -886,6 +886,24 @@ test("a VIDEO above the fps limit rebases the state once and never again", () =>
   assert.deepEqual(parseSceneEditorState(text, { fps: 300 }).timeline.fps, 300, "a VIDEO within the limits keeps its fps");
 });
 
+// The same cases test_scene_state.py (normalizing) and the node's _take_sticker_id read.
+test("Sticker ids are numbered and taken as the fixture shared with Python says, past 2^53 too", () => {
+  const { normalize, take } = JSON.parse(readFileSync(new URL("./fixtures/scene_state/sticker_ids.json", import.meta.url), "utf8"));
+  for (const { state, ids, next_sticker_id: next } of normalize) {
+    const loaded = loadSceneState(state);
+    assert.deepEqual([loaded.stickers.map((item) => item.id), loaded.next_sticker_id], [ids, next]);
+  }
+  for (const { state, ids, next_sticker_id: next } of take) {
+    const loaded = loadSceneState(state);
+    const taken = ids.map(() => {
+      const id = takeStickerId(loaded);
+      loaded.stickers.push({ ...loaded.stickers[0], id });
+      return id;
+    });
+    assert.deepEqual([taken, loaded.next_sticker_id], [ids, next]);
+  }
+});
+
 test("a new Sticker id comes from the counter, which only goes up, also through undo", () => {
   const state = parseSceneEditorState(JSON.stringify({ version: 2, stickers: [{ id: "sticker_4", source: { kind: "port" } }] }));
   const before = JSON.stringify(state);

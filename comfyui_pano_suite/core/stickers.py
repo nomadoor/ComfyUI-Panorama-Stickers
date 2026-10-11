@@ -27,8 +27,13 @@ def _hex_to_rgb01(hex_color: str) -> np.ndarray:
 
 
 def _decode_rgba8(source) -> np.ndarray:
-    with Image.open(source) as image:
-        return np.asarray(image.convert("RGBA"))
+    """An image as RGBA uint8. An image that cannot be decoded raises OSError or ValueError; PIL's decompression bomb
+    error is raised as ValueError, so that every reader turns it into "cannot be read"."""
+    try:
+        with Image.open(source) as image:
+            return np.asarray(image.convert("RGBA"))
+    except Image.DecompressionBombError as error:
+        raise ValueError(str(error)) from error
 
 
 def read_image_file_rgba8(path: Path) -> np.ndarray:
@@ -39,9 +44,13 @@ def read_image_file_rgba8(path: Path) -> np.ndarray:
 
 
 def _load_dataurl_rgba8(v: str) -> np.ndarray:
-    """A data URL image as `read_image_file_rgba8` reads a file, keyed by the hash of the URL."""
+    """A data URL image as `read_image_file_rgba8` reads a file, keyed by the hash of the URL. A URL without data
+    raises ValueError, as one whose base64 or image cannot be decoded does."""
+    _header, comma, data = v.partition(",")
+    if not comma:
+        raise ValueError("The data URL has no data.")
     key = hashlib.sha1(v.encode("utf-8")).hexdigest()
-    return CACHE.get_or_put("image_data_url", key, lambda: _decode_rgba8(io.BytesIO(base64.b64decode(v.split(",", 1)[1]))))
+    return CACHE.get_or_put("image_data_url", key, lambda: _decode_rgba8(io.BytesIO(base64.b64decode(data))))
 
 
 def comfy_file_path(filename: str, subfolder: str, storage: str) -> Path | None:

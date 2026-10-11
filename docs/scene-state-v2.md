@@ -23,7 +23,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | 保存するテキスト（既定値を書かない） | — | `pano_scene_state.js` `sceneStateText` | `pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | Scene の id を振る | — | `web_src/pano_editor_state.js` `editorStateWrite`・`newSceneId` | `tests/pano_editor_state.test.mjs` |
 | Sticker の id の採番 | 正規化は `load_scene_state`、加えるときは `nodes.py` `_take_sticker_id` | 正規化は `loadSceneState`、加えるときは `pano_editor_state.js` `takeStickerId` | `pano_editor_state.test.mjs`、`tests/test_studio_node.py`、フィクスチャ `v2_upstream` |
-| `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`） | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
+| `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`）、式は `core/math.py` `vfov_from_hfov` | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
 | Sky の重なり順 | `core/display_list.py` `build_display_entries` | ペイントの並びは `web_src/pano_paint_layers.js` `skyPaintLayers` | `tests/test_display_list_core.py`、`tests/test_paint_layers_parity.py` |
 | `file` の Source が 3D ファイルか | `scene_state.py` `is_3d_file_source`・`FILE_3D_EXTENSIONS` | `pano_scene_state.js` `is3dFileSource`・`FILE_3D_EXTENSIONS` | フィクスチャ `file_3d_formats` を専用に読む `test_scene_state_parity.py`・`pano_scene_state.test.mjs` |
 
@@ -32,7 +32,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 
 ## 共通の規則
 
-- 数値は JSON の数値だけを受け付ける。文字列・真偽値・`null`・非有限値は不正とする。
+- 数値は JSON の数値だけを受け付ける。文字列・真偽値・`null`・非有限値は不正とする。float にできないほど大きな整数も、非有限値と同じく不正（既定値）とする。
 - 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。Keyframe の `frame` と Clip range の `start`・`in`・`duration` は、丸めたあと ±10,000,000（`TIMELINE_FRAME_MAX`）の内に寄せる。
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
@@ -94,15 +94,15 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
 | `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（`docs/studio-node.md` の「Scene の組み立てと撮影の入口」） |
 | `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
-| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない |
+| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない。1/2048〜2048 に寄せる（案。オーナーの承認待ち。今は正の有限の値をすべて受け、`5e-324` では出力の大きさの計算が落ちる）。2048 は `2 : STUDIO_MAX_OUTPUT_SIDE`（4096）の比で、出力の短い辺は 2 画素より小さくならず長い辺は 4096 を超えないので、これより細い比は出力の大きさを変えない（`docs/studio-node.md` の出力の大きさ。範囲の外の値を端に寄せても出力は同じ）。プリセット（1:1・4:3・3:2・16:9 とその縦向き）、インスペクタの Aspect の欄（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）はこの中にある。Frame の比の入力（任意の正の数の組）と v1 の Cutout の読み替え（FOV 1〜179 からの比で、最大約 13,131）はこの範囲に寄せ、寄せても出力は変わらない |
 | `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方で、Keyframe を持たない。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` と `curve` を読まない。`perspective` は Camera の画像で、レンズの曲線 `curve`（κ）で直線の像から魚眼までをつなぐ（`docs/render-contract.md` の「カメラのレンズ」） |
 | `camera.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` は Camera を置いたまま非表示にする。Panorama Studio は非表示の Camera を Camera が無いときと同じに撮る（下記） |
 | `camera.position`・`camera.rotation`・`camera.fov` | Lane | 下記 | Camera の値（Viewport camera は保存しない） |
 | `camera.curve` | Lane | 下記 | レンズの曲線 κ（ADR 0042）。`erp` では読まない |
 | `scene.clip` | Clip range | 下記 | `scene` 入力が有効な範囲 |
-| `scene.animation` | オブジェクト または欠け | 欠け | `scene` 入力の 3D ファイルの glTF のアニメーション（ADR 0043）。形は下の Sticker の `animation` と同じ |
 | `scene.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` なら `scene` 入力を描かない |
 | `scene.position`・`scene.rotation`・`scene.scale` | Lane | 下記 | `scene` 入力に掛ける変形 |
+| `scene.animation` | オブジェクト または欠け | 欠け | `scene` 入力の 3D ファイルの glTF のアニメーション（ADR 0043）。形は下の Sticker の `animation` と同じ |
 | `stickers` | 配列 | `[]` | `sky` の層は `z_index`（ペイントと共通の軸）で並べ、同じ値ならリストの順（先頭が奥）。`world` の Sticker は奥行きで重なる |
 | `next_sticker_id` | 整数 | 下記 | 次に加える Sticker の番号 `n`（`sticker_<n>`）。下記「Sticker の id の採番」 |
 | `painting` | オブジェクト | 空のペイント | 既存の `normalize_painting_state` / `normalizePaintingState` で正規化する。`sky` の静的な層 |
@@ -113,7 +113,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 
 `scene` は、`scene` 入力が接続されていなくても常に存在する。
 
-`camera` は、Camera を 1 台まで持つ（ADR 0029）。`null` は Camera が無いことを表し、Camera が無いときは World の原点から回転 0 で撮った ERP を出す。オブジェクトのときは、正規化した結果は常に `aspect`・`projection`・`visible`・`position`・`rotation`・`fov` をこの順に持つ。
+`camera` は、Camera を 1 台まで持つ（ADR 0029）。`null` は Camera が無いことを表し、Camera が無いときは World の原点から回転 0 で撮った ERP を出す。オブジェクトのときは、正規化した結果は常に `aspect`・`projection`・`visible`・`position`・`rotation`・`fov`・`curve` をこの順に持つ。
 
 表示（`visible`）は、Camera・`scene`・Sticker・ペイントのそれぞれが持つ。エディタのタイムラインの各行の目のアイコンで切り替える（`docs/timeline-ui.md`）。ペイントの表示は、旧ノードと共有する `painting` の形（`normalize_painting_state`）を変えないように、`painting` の中ではなく最上位の `painting_visible` に置く。
 
@@ -141,17 +141,17 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 |---|---|---|
 | `camera` | `position` | 位置（`[0, 0, 0]`） |
 | `camera` | `rotation` | 回転 |
-| `camera` | `fov` | `hFOV_deg` の数値（`90`、保存は 0.1〜360。評価した値は、評価した `curve` の κ による上限 `min(360, 179 ÷ κ)`（`lens_fov_limit`・`lensFovLimit`）に寄せる。κ = 1 で 179、κ ≤ 179/360（約 0.497）で 360）。画像の横の端の光線が光軸となす角の 2 倍 |
-| `camera` | `curve` | レンズの曲線 κ の数値（`1`、0〜1）。像の中心からの距離 `r = f·tan(κθ) ÷ κ`（κ = 0 では `r = f·θ`）。1 が直線の像、0.5 が立体射影、0 が等距離射影の魚眼 |
+| `camera` | `fov` | `hFOV_deg` の数値（`90`、保存は 0.1〜360。評価した値は、評価した `curve` の κ による画角の上限（式は `docs/render-contract.md` の「カメラのレンズ」、`lens_fov_limit`・`lensFovLimit`）に寄せる）。画像の横の端の光線が光軸となす角の 2 倍 |
+| `camera` | `curve` | レンズの曲線 κ の数値（`1`、0〜1）。1 が直線の像、0.5 が立体射影、0 が等距離射影の魚眼。写し方の式は `docs/render-contract.md` の「カメラのレンズ」 |
 | `scene`・`world` の Sticker | `position` | 位置（`[0, 0, 0]`） |
 | `scene`・`world` の Sticker | `rotation` | 回転 |
 | `scene`・`world` の Sticker | `scale` | 数値（`1`、0 以下は既定値） |
 | `sky` の Sticker | `direction` | `yaw_deg`（`0`）、`pitch_deg`（`0`、−90〜90） |
 | `sky` の Sticker | `roll` | `roll_deg` の数値（`0`） |
-| `sky` の Sticker | `size` | `hFOV_deg`（`20`、保存は 0.1〜360）、`vFOV_deg`（`20`、保存は 0.1〜360）。評価した値は、評価した `curve` の κ による上限 `min(360, 179 ÷ κ)` に寄せる |
+| `sky` の Sticker | `size` | `hFOV_deg`（`20`、保存は 0.1〜360）、`vFOV_deg`（`20`、保存は 0.1〜360）。評価した値は、評価した `curve` の κ による上限（Camera の `fov` と同じ）に寄せる |
 | `sky`・`world` の Sticker | `opacity` | 数値（`1`、0〜1） |
-| `world` の Sticker | `lens` | 持たない（既定）か、`curve`（κ、`1`、0〜1）と `hFOV_deg`（`90`、0.1〜360、κ による上限 `min(360, 179 ÷ κ)` に寄せる）の組（ADR 0042）。持たない Sticker は平らな板、持つ Sticker は κ = 1 も含めていつも球面の一部の板（`docs/render-contract.md` の「`world` の Sticker の板」。κ を Keyframe で 1 をまたいで動かしても形が跳ばない） |
-| `sky` の Sticker | `curve` | レンズの曲線 κ の数値（`1`、0〜1。ADR 0042）。Camera の `curve` と同じ写し方で、素材をその κ のレンズの像として向きに置く（`docs/render-contract.md` の「Sky の描き方」）。`size` の画角の上限は Camera と同じ `min(360, 179 ÷ κ)`。保存するテキストでは `opacity` の後、`z_index` の前に置く |
+| `world` の Sticker | `lens` | 持たない（既定）か、`curve`（κ、`1`、0〜1）と `hFOV_deg`（`90`、0.1〜360、κ による上限（Camera の `fov` と同じ）に寄せる）の組（ADR 0042）。持たない Sticker は平らな板、持つ Sticker は κ = 1 も含めていつも球面の一部の板（`docs/render-contract.md` の「`world` の Sticker の板」。κ を Keyframe で 1 をまたいで動かしても形が跳ばない） |
+| `sky` の Sticker | `curve` | レンズの曲線 κ の数値（`1`、0〜1。ADR 0042）。Camera の `curve` と同じ写し方で、素材をその κ のレンズの像として向きに置く（`docs/render-contract.md` の「Sky の描き方」）。`size` の画角の上限は Camera の `fov` と同じ。保存するテキストでは `opacity` の後、`z_index` の前に置く |
 
 回転は `yaw_deg`（`0`）、`pitch_deg`（`0`、−90〜90）、`roll_deg`（`0`）である。欠けたフィールドや不正なフィールドは、Lane の `value` ではなく、このフィールドの既定値になる。Lane 自体が欠けている・オブジェクトでないときは `{"value": 既定値, "keyframes": []}` になり、`value` が数値の Lane で `value` が不正なときも既定値になる。
 
@@ -159,7 +159,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 - `yaw_deg`・`roll_deg` は範囲に丸めない。360° の差は同じ向きを表す。
 - `sky` の Sticker の `direction` は yaw と pitch を一つの Lane にまとめる。別々に補間すると、球面上をまっすぐ進まないためである。
 - `sky` の Sticker の値は、中心の方向（`direction`）、画面内の回転（`roll`）、角度サイズ（`size`）である。
-- `sky` の Sticker の `curve` は Lane にする。Pose handoff（ADR 0036）は Camera の値をフレームごとに焼くので、撮った Camera の `curve` に Keyframe があれば、Sticker の `curve` もフレームごとの Keyframe になる。動かない κ は Keyframe の無い静的な値になる（ほかの Lane と同じ）。Keyframe が無く `value` が 1 の `curve` は、保存するテキストに書かない（見た目も今と同じ）。`world` の Sticker の `lens` は、`curve` と `hFOV_deg` の組で持つ。球面の一部の形は κ だけでは決まらず（半径か角度の広さがもう一つ要る）、`hFOV_deg` があれば `scale` と合わせて半径が決まるためである（`size` と同じく 2 つの数値をそれぞれ補間する）。`lens` は欠けてよい Lane で、欠けていれば読み込みでも足さず、保存するテキストにも書かない（平らな板）。あれば値によらず書く。書くのは Pose handoff だけで（`nodes.py` の `_handoff_lanes`）、評価したフレームのどれかで κ ≠ 1 のときだけ足す（κ = 1 だけの shot は平らな板にし、前に足した `lens` も外す）。
+- `sky` の Sticker の `curve` は Lane にする。Pose handoff（ADR 0036）は Camera の値をフレームごとに焼くので、撮った Camera の `curve` に Keyframe があれば、Sticker の `curve` もフレームごとの Keyframe になる。動かない κ は Keyframe の無い静的な値になる（ほかの Lane と同じ）。Keyframe が無く `value` が 1 の `curve` は、保存するテキストに書かない（見た目も今と同じ）。`world` の Sticker の `lens` は、`curve` と `hFOV_deg` の組で持つ。球面の一部の形は κ だけでは決まらず（半径か角度の広さがもう一つ要る）、`hFOV_deg` があれば `scale` と合わせて半径が決まるためである（`size` と同じく 2 つの数値をそれぞれ補間する）。`lens` は欠けてよい Lane で、欠けていれば読み込みでも足さず、保存するテキストにも書かない（平らな板）。あれば値によらず書く。書くのは Pose handoff だけで、いつ足し、いつ外すかは `docs/studio-node.md` の「`port` の Sticker と Pose handoff」のレンズの曲線の項にある。
 - Source が `port` の Sticker の vFOV は、`hFOV_deg` と素材（最初のフレーム）のアスペクト比から求める派生値で、状態には書かない。ポートの素材は状態の外で差し替わるためである。ノードは描くときに求め（`core/render.py` の `derive_vfov`）、エディタとノード上の表示も描くときと当たり判定のときに同じ式で求める（`web_src/pano_editor_state.js` の `skyStickerVfov`）。`port` の Sticker を加えるときは `vFOV_deg` を `hFOV_deg` と同じ値で保存し（Keyframe も同じ）、素材が読み込まれても書き直さない。これで素材の読み込みが `state_json` を変えず、実行の key（`docs/studio-node-surface.md` の「上端の bar と状態」）がずれない。保存された `vFOV_deg` は、素材の大きさがわかるまでの表示にだけ使い、エディタで `port` の Sticker の大きさを変えても `hFOV_deg` だけを書く（inspector の V FOV は無効）。ノードが加える `port` の Sticker（Pose handoff の Keyframe を含む）も `vFOV_deg` を `hFOV_deg` と同じ値にする。 κ ≠ 1 では、像の中心の `f` が縦横で同じになるよう `g_κ(vFOV ÷ 2) = g_κ(hFOV ÷ 2) × 高さ ÷ 幅` から求める（`core/math.py` の `vfov_from_hfov(..., curve)`。`g_κ` は `docs/render-contract.md` の `lens_radius`。κ = 1 では `tan` の式）。
 
 ### Keyframe
@@ -238,15 +238,17 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `direction`・`roll`・`size` | Lane | 上記 | `sky` の Sticker だけが持つ（`world` では捨てる） |
 | `position`・`rotation`・`scale` | Lane | 上記 | `world` の Sticker だけが持つ（`sky` では捨てる） |
 | `opacity` | Lane | `1` | 不透明度 |
+| `curve` | Lane | `1` | `sky` の Sticker だけが持つ（上の Lane の表。`world` では捨てる） |
+| `lens` | Lane または欠け | 欠け | `world` の Sticker だけが持てる（上の Lane の表。`sky` では捨てる） |
 | `animation` | オブジェクト または欠け | 欠け | 3D ファイル（`file` の 3D ファイルの Source と、`port` の 3D ファイルの素材）の glTF のアニメーション（ADR 0043。`scene_state.py` の `_animation`、`pano_scene_state.js` の `animationValue`。`tests/test_scene_state.py`・`tests/pano_scene_state.test.mjs`、フィクスチャ `v2_animation` を読む `tests/test_scene_state_parity.py`）。`{"clip": 文字列 または null, "speed": 数値}`。`clip` は clip の名前で、`null` は最初の clip（コアの Load3D が最初に選ぶもの）。`speed` は 0.1〜10 の連続の値（Load3D の 0.1・0.5・1・1.5・2 の選択を含む。既定 1、0 以下を含む範囲の外は 0.1〜10 に寄せ、数値でなければ既定値）。Keyframe を持たず、ワークフローに保存する（Load3D の値も時間で変わらない。形はオーナーが承認、2026-10-11）。欠けていれば `{"clip": null, "speed": 1}` と同じ（置いたファイルは最初の clip でタイムラインに沿って動く。Load3D が最初の clip を選ぶのに合わせ、時計は再生ヘッドだけ）で、既定値は保存するテキストに書かない。名前の clip がファイルに無ければ最初の clip にし、警告を出す。アニメーションの無いファイルでは読まない。時刻の規則は `docs/render-contract.md` の「glTF のアニメーション」 |
 | `z_index` | 整数 | `0` | `sky` の Sticker だけが持つ（`world` では捨てる）。読み込みで `floor(x + 0.5)` に丸める。数値でない・非有限の値は既定値。下記「Sky の重なり順」 |
-| `handoff_overrides` | Lane の名前の配列 | `[]` | `port` の Sticker だけが持つ（ほかでは捨てる）。`sticker_state` から引き継がずに、保存した Lane を使う Lane（ADR 0030 の「`sticker_state` で届く Sticker」）。`placement` の Lane の名前だけを、重複を除いて上の Lane の順に並べる。`[]` はすべての Lane を引き継ぐ |
+| `handoff_overrides` | Lane の名前の配列 | `[]` | `port` の Sticker だけが持つ（ほかでは捨てる）。`sticker_state` から引き継がずに、保存した Lane を使う Lane（ADR 0030 の「`sticker_state` で届く Sticker」）。`placement` の Lane の名前だけを、重複を除いて上の Lane の順に並べる（`sky` の `curve` は持てる。`world` の `lens` は持てず、捨てる）。`[]` はすべての Lane を引き継ぐ |
 
 #### Sticker の id の採番
 
 Sticker の `id` は、一度使った値を別の Sticker に使い直さない。下流の Studio の上書き（`upstream`）と消した記録は上流の Sticker の `id` を指すので、消した Sticker の `id` を新しい Sticker が使うと、上書きが別の Sticker に当たるためである（ADR 0030）。
 
-- `next_sticker_id` は、次に加える Sticker の番号 `n` である。新しい Sticker（エディタとノード上の UI で投入した画像、複製、`port` の Sticker）は `sticker_<next_sticker_id>` を受け取り、`next_sticker_id` を 1 進める（`takeStickerId`、`pano_editor_state.js`）。Undo で戻しても `next_sticker_id` は戻さない（`restoredHistoryState`）。ノードが状態にない `port` の Sticker を加えるとき（`nodes.py` の `_take_sticker_id`）も同じ番号を使う。ノードは状態を保存しないので、進めた値は実行の中だけのものである。
+- `next_sticker_id` は、次に加える Sticker の番号 `n` である。新しい Sticker（エディタとノード上の UI で投入した画像、複製、`port` の Sticker）は、`next_sticker_id` から数えて、今ある Sticker の `id` が使っていない最初の番号 `n` の `sticker_<n>` を受け取り、`next_sticker_id` を `n + 1` にする（使っている番号は飛ばす。`takeStickerId`、`pano_editor_state.js`）。番号は上限を超えても正確な整数で数える（JS は `BigInt`。`pano_scene_state.js` の `freeStickerNumber`、Python は `scene_state.py` の整数）ので、`2^53 − 1` の先でも使っている番号を正しく飛ばす。上限 `STICKER_NUMBER_MAX`（`2^53 − 1`）に寄せるのは `next_sticker_id` だけである（`stickerCounter`）。フィクスチャ `tests/fixtures/scene_state/sticker_ids.json`。Undo で戻しても `next_sticker_id` は戻さない（`restoredHistoryState`）。ノードが状態にない `port` の Sticker を加えるとき（`nodes.py` の `_take_sticker_id`）も同じ番号を使う。ノードは状態を保存しないので、進めた値は実行の中だけのものである。
 - 正規化：`sticker_<数字>` の形の `id`（数字は ASCII の `0`〜`9`）の最大の番号 + 1（なければ `1`）を最小値とする。保存された値が数値なら `floor(x + 0.5)` に丸め、最小値より小さければ最小値にする。数値でなければ最小値とする。番号と `next_sticker_id` は JS で正確に表せる `2^53 − 1` までとし、それ以上の番号の `id` と、数字が 17 桁以上の `id` は数えず、`next_sticker_id` はそこに寄せる。
 - 空・重複・文字列でない `id` は、`next_sticker_id` の番号から順に振り直し、そのぶん `next_sticker_id` を進める。数えない番号の `id` がすでにあれば、その番号は飛ばす。読み直すと、振り直した `id` が最大の番号になり、同じ結果になる。
 - 保存するテキストには、最小値と同じときは書かない。一番大きい番号を振った Sticker がテキストにないとき（消したとき）だけ、最小値より大きくなって書かれる。毎回 Sticker から求めるだけにすると、一番大きい番号の Sticker を消して次に加えた Sticker が同じ `id` を使い直すので、保存する。最小値と同じときに書かないので、この項目より前に保存した状態は、開いて閉じてもテキストが変わらず、ノードのキャッシュも外れない。
@@ -311,10 +313,10 @@ evaluateSceneState(state, frame) // -> object
 ```json
 {
   "frame": 12.5,
-  "camera": {"position": [0.0, 1.6, 0.0], "yaw_deg": 10.0, "pitch_deg": 5.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "aspect": 1.78},
+  "camera": {"position": [0.0, 1.6, 0.0], "yaw_deg": 10.0, "pitch_deg": 5.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "curve": 1.0, "aspect": 1.78},
   "scene": {"active": true, "clip_frame": 12.5, "position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "scale": 2.0},
   "stickers": [
-    {"id": "st_sky", "placement": "sky", "active": true, "clip_frame": 7.5, "yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 5.0, "hFOV_deg": 20.0, "vFOV_deg": 15.0, "opacity": 0.0}
+    {"id": "st_sky", "placement": "sky", "active": true, "clip_frame": 7.5, "yaw_deg": 30.0, "pitch_deg": 10.0, "roll_deg": 5.0, "hFOV_deg": 20.0, "vFOV_deg": 15.0, "curve": 1.0, "opacity": 0.0}
   ]
 }
 ```
@@ -322,7 +324,7 @@ evaluateSceneState(state, frame) // -> object
 | フィールド | 意味 |
 |---|---|
 | `frame` | 受け取った Timeline frame |
-| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`aspect`、`curve`。状態の `camera` が `null` なら `null`。`projection` は時間で変わらないので、状態の `camera.projection` を読む |
+| `camera` | `position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`hFOV_deg`（`fov`、κ による上限に寄せた値）、`curve`、`aspect`。状態の `camera` が `null` なら `null`。`projection` は時間で変わらないので、状態の `camera.projection` を読む |
 | `scene` | `active`（`visible` かつ `frame` が `scene.clip` の範囲内）、`clip_frame`、`position`、`yaw_deg`・`pitch_deg`・`roll_deg`（`rotation`）、`scale` |
 | `clip_frame` | 素材の先頭からの経過（Timeline frame、端数あり）。`frame − (start − in)`。素材の時刻（秒）は `clip_frame ÷ timeline.fps` |
 | `stickers[]` | `state.stickers` と同じ順。`id`・`placement`、`active`（`visible` かつ Clip range の範囲内）、`clip_frame`、各 Lane の値のフィールド（`sky` は `yaw_deg`・`pitch_deg`・`roll_deg`・`hFOV_deg`・`vFOV_deg`・`curve`、`world` は `position`・`yaw_deg`・`pitch_deg`・`roll_deg`・`scale` と、`lens` の Lane を持つ Sticker だけ `lens`（`curve`・`hFOV_deg`））、`opacity` |
@@ -372,7 +374,7 @@ Lane の評価の規則：
 - 1 区間の回転は、必ず 180° 以下の最短の経路になる。180° を超える回転や多回転（yaw 0 → 720 など）は、途中に Keyframe を打つ。
 - 回転の数値：yaw と roll は、区間の両端に保存された値を `p` で混ぜた `c = a + (b − a) × p` に対して、`c − 180 − 1e-6 ≤ 値 < c + 180 − 1e-6` となるよう 360° の倍数だけずらして返す（ちょうど 180° 離れた同点は負の側、`c − 180` を取る）。区間の両端で保存された値の数値に一致する。最短の向きが保存された数値の向きと逆のとき（例：yaw 0 → 350）は、区間の途中で yaw・roll の値が 360° 跳ぶ。これは数値の表し方だけで、向きは連続している。使う側は回転行列を使うか、値を 360° で回して扱う。
 - 極（pitch ±90 をちょうど通るとき）では、yaw と roll が同じ軸を共有するため、yaw の値は保証しない（その分は roll が受け持つ）。極の近くでも yaw・roll の数値は大きく動きうる。向きの連続は回転行列で判断する。
-- `curve` の Lane はスカラーの Lane と同じく線形の値として補間し（κ は像の形を連続に変えるので、ほかの数値の Lane と別の扱いにする理由が無い）、結果を 0〜1 に寄せる（読み込みも同じ範囲に寄せる）。`hFOV_deg`・`vFOV_deg` は、寄せた κ による上限 `min(360, 179 ÷ κ)` にも寄せる。
+- `curve` の Lane はスカラーの Lane と同じく線形の値として補間し（κ は像の形を連続に変えるので、ほかの数値の Lane と別の扱いにする理由が無い）、結果を 0〜1 に寄せる（読み込みも同じ範囲に寄せる）。`hFOV_deg`・`vFOV_deg` は、寄せた κ による上限（`docs/render-contract.md` の「カメラのレンズ」）にも寄せる。
 - 範囲の扱い：補間の結果（数値の誤差を含む）が範囲を外れた `hFOV_deg`・`vFOV_deg` は 0.1〜（κ による上限）に、`opacity` は 0〜1 に、`scale` は `1e-6` 以上に寄せる。
 
 ## fps の再基準化
@@ -400,7 +402,7 @@ rebaseSceneState(state, fps) // -> object
 
 - Timeline 上のすべての出来事（Keyframe、Clip range の始まりと終わり、素材の先頭）は、新しい fps の半フレーム以内に丸まる。同じ時刻にあった Camera と Sticker の Keyframe は、同じ frame に落ちる。
 - 丸めた結果、同じ Lane で `frame` が重なった Keyframe は、正規化の規則どおり後ろのものを残す。`duration` は正規化で 1 以上になる。
-- ハンドルは空間のずれなので変えない。表示（`camera.visible`・`scene.visible`・Sticker の `visible`・`painting_visible`）も変えない。
+- 変えるのはフレームの値だけで、フレームでない項目（`scene.animation` などを含む）はすべて保つ。ハンドルは空間のずれなので変えない。表示（`camera.visible`・`scene.visible`・Sticker の `visible`・`painting_visible`）も変えない。
 - `id`・`next_sticker_id`・`upstream`・`handoff_overrides` も変えない。`upstream` の記録は自分の `fps` を持ち、その fps で読む（下記「上流の上書き（`upstream`）」）。
 - `fps` は 1〜1000 に寄せてから使う（例：`1e308` は 1000 にする）。長さも正規化で 10,000,000 以下に寄せる。
 - `fps` が正の有限の数値でなければエラーにする（Python は `ValueError`、JS は `Error`）。文面は `Cannot rebase state_json to fps <値>; fps must be a positive number.` で、`<値>` の書き方は実装ごとに違う（Python は `repr`、JS は `JSON.stringify`）。
@@ -452,7 +454,7 @@ Sticker の上書きは `id`・`placement` と、上書きしたフィールド�
 | `clip` | オブジェクトなら Clip range として正規化する |
 | `visible`・`locked` | 真偽値 |
 | `crop` | オブジェクトなら `crop` として正規化する |
-| Lane | `placement` の Lane（`sky`：`direction`・`roll`・`size`・`opacity`、`world`：`position`・`rotation`・`scale`・`opacity`）。オブジェクトなら Lane として正規化する（`value` と、Easing・ハンドルを含む `keyframes` のすべて）。上書きは Lane ごとに丸ごと置き換える |
+| Lane | `placement` の Lane（`sky`：`direction`・`roll`・`size`・`opacity`・`curve`、`world`：`position`・`rotation`・`scale`・`opacity`。`world` の `lens` の上書きは捨て、上流から引き継ぐ）。オブジェクトなら Lane として正規化する（`value` と、Easing・ハンドルを含む `keyframes` のすべて）。上書きは Lane ごとに丸ごと置き換える |
 | `z_index` | `sky` の上書きだけ。数値なら `floor(x + 0.5)` に丸める |
 
 ここだけの規則：**不正な値は既定値にせず、捨てる。捨てたフィールドは上流から引き継ぐ。** 状態のほかの部分では不正な値は既定値に戻すが、上書きで既定値にすると、上流の値を黙って既定値で置き換えることになるためである。型が合っているフィールド（Clip range・`crop`・Lane のオブジェクト）の中身は、状態のほかの部分と同じ規則で正規化する。
@@ -522,8 +524,8 @@ Python は `ValueError`、JS は `Error` を投げる。
 | `assets[asset_id]` が `type: "comfy_image"` | `source: {"kind": "file", filename, subfolder, storage}` |
 | `assets[asset_id]` が `type: "dataurl"` | `source: {"kind": "file", "data_url": ...}` |
 | `assets[asset_id]` が `type: "path"`、または資産が見つからない | Sticker を捨てる |
-| `shots[0]`（Cutout） | `camera`（Camera あり、`projection` は `perspective`）。`yaw_deg`・`pitch_deg`・`roll_deg` は `rotation.value`、`hFOV_deg`（1〜179 に寄せる）は `fov.value`、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
-| `shots` がない、空、または先頭がオブジェクトでない | `camera: null`（Camera が無い）。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは `null` になる。v1 の Cutout はこのとき ERP をそのまま出力していた。Panorama Studio は Camera の無い状態を原点・回転 0 の ERP で撮る |
+| `shots` のうちオブジェクトであるものの最初（Cutout。オブジェクトでない shot は除く） | `camera`（Camera あり、`projection` は `perspective`）。`yaw_deg`・`pitch_deg`・`roll_deg` は `rotation.value`、`hFOV_deg`（1〜179 に寄せる）は `fov.value`、`aspect = tan(hFOV/2) ÷ tan(vFOV/2)`（`vFOV_deg` の既定値 60、1〜179 に寄せる）。旧 Cutout の出力と同じ画面比になる。Stickers の v1 の状態は通常 `shots` を持たない（持っていれば Camera に写る） |
+| `shots` がない、空、またはオブジェクトの shot が一つも無い | `camera: null`（Camera が無い）。v1 の Stickers の状態はこれにあたる。v1 の Cutout でもこのときは `null` になる。v1 の Cutout はこのとき ERP をそのまま出力していた。Panorama Studio は Camera の無い状態を原点・回転 0 の ERP で撮る |
 | `painting`・`painting_layer` | 同名のフィールド |
 | `version`・`projection_model`・`alpha_mode` | 捨てる |
 | `coverage`・`bg_color`・`output_preset` | 捨てる。ノードの入力（ウィジェット）が持つ |
@@ -555,12 +557,14 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 |---|---|---|---|
 | `kind` | `"pano_sticker_state"` | — | |
 | `version` | `2` | — | |
-| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない） |
+| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない）。0 以下と数値でない値は既定値。`timeline.fps` と同じ 1〜1000（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）に寄せる（案。オーナーの承認待ち。今は範囲を持たず、小さな値では Pose handoff の焼き込みのループが終わらない） |
 | `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`・`curve`（無ければ κ = 1）） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる |
 | `source_aspect` | 数値 または `null` | `null` | 撮影した画面の幅 ÷ 高さ |
 
 `load_sticker_state(text)` / `loadStickerState(text)` は v1 と v2 を読み、どちらも v2 の形で返す（フィクスチャ：`sticker_state_v1.json`、`sticker_state_v2.json`）。
 
 - v1（`pose` を一つ持つ形）は、従来の `parse_sticker_state` と同じ規則（yaw を −180〜180 に回す、pitch を ±89.9、`hFOV_deg` を 0.1〜179 に寄せる、`"30"` のような数値の文字列を許す）で読み、各 Lane に `frame: 0` の Keyframe を一つずつ置く（`position` は `[0, 0, 0]`、`easing` は既定値）。`fps` は `24`。
+  - v1 の数値の文字列は、Python の `float()` が読むとおりに読む。JS も同じに読む：ASCII の 10 進（符号、小数点、指数、前後の空白）で、数字の間の 1 つの `_` は受け、16 進・8 進・2 進の接頭辞と `Infinity` は受けない（フィクスチャ `tests/fixtures/scene_state/sticker_state_v1_numbers.json`）。
+  - （案。オーナーの承認待ち）Python と JS の両方が、`_` の無い ASCII の 10 進だけを受けるようにする。今の Python の `float()` は全角の数字（`"３０"` など）といくつかの余分な空白の文字も受け、JS は受けないので、そこだけ食い違う。
 - 空、JSON でない、`kind` が違う、v1 の `pose` が読めない場合は `None` / `null` を返す（従来どおり無視される）。
 - `kind` が一致して `version` が `1`・`2` 以外なら、エラー `Unsupported sticker_state version <値>; supported versions are 1 and 2.` にする。

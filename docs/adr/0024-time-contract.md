@@ -4,6 +4,8 @@
 
 Accepted
 
+一部（Consequences の、IMAGE で全フレームを出力し VIDEO 出力は後で足すこと）を ADR 0027 が置き換えた（2026-10-02）。
+
 ## Date
 
 2026-09-30

@@ -20,7 +20,7 @@ function assertClose(actual, expected, path = "$") {
 
 test("state_json v1 and v2 fixtures load as the documented v2 state", () => {
   assertClose(loadSceneState(fixture("v2_canonical")), JSON.parse(fixture("v2_canonical")));
-  for (const name of ["v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_upstream"]) {
+  for (const name of ["v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_upstream", "v2_big_numbers", "v1_cutout_shots"]) {
     assertClose(loadSceneState(fixture(name)), JSON.parse(fixture(`${name}.v2`)));
   }
 });
@@ -113,6 +113,14 @@ test("a hold Cut lands on a frame that misses the Keyframe only by float roundin
   assert.equal(yawAt(24 + 5e-7), 90);
   assert.equal(yawAt(48 - 5e-7), 180);
   assert.equal(yawAt(24 - 1e-5), 0);
+});
+
+// The same cases test_scene_state.py reads.
+test("a v1 pose number is read as the fixture shared with Python says", () => {
+  for (const { json, fov } of JSON.parse(fixture("sticker_state_v1_numbers")).cases) {
+    const parsed = loadStickerState(`{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":0,"pitch_deg":0,"roll_deg":0,"hFOV_deg":${json}}}`);
+    assert.equal(parsed === null ? null : parsed.camera.fov[0].value, fov, json.slice(0, 20));
+  }
 });
 
 test("sticker_state v1 accepts numeric strings like the old parser", () => {
@@ -468,6 +476,12 @@ test("a sky Sticker's lens curve and a world Sticker's lens load, evaluate under
 
 // docs/scene-state-v2.md (ADR 0043): a 3D file's `animation` { clip, speed } on a 3D file Sticker, the port Sticker
 // and `scene`; the default is left out of the text.
+// The same case test_scene_state.py reads.
+test("rebasing moves only the frames and keeps the scene's and a Sticker's animation", () => {
+  const { state, fps, expected } = JSON.parse(fixture("rebase_animation"));
+  assertClose(rebaseSceneState(loadSceneState(state), fps), expected);
+});
+
 test("a 3D file's animation loads with its speed in range, and its default is not written", () => {
   const raw = (animation) => ({
     version: 2,

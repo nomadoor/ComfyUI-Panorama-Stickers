@@ -19,7 +19,8 @@ Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモ�
 | モジュールの一覧と配線（各 factory を `createEditorModules` で一度ずつ作る、配線の名前の過不足がない） | — | `web_src/pano_editor.js` の配線の区画、`web_src/editor/*.js` | `tests/editor_architecture.test.mjs`、`tests/editor_wiring.test.mjs`（下の Module map の責任の欄そのものは test しない） |
 | キャンバスのポインターの操作の振り分け（押したときに始める操作を決める順、`editor.interaction.kind` ごとの動き・離す・取り消す、操作ごとのモジュール） | — | `web_src/editor/pointer_input.js`、`web_src/editor/pointer_*.js` | `tests/editor_pointer_input.test.mjs` |
 | 描き直しは `requestDraw` からだけ頼む | — | `web_src/editor/render_loop.js` `requestDraw`・`tickFrame`・`drawScene` | — |
-| ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/editor/upstream.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
+| エディタのタイマーと閉じるときの片付け（タイマーを全部止める、閉じた後の `requestDraw` は何もしない、背景の VIDEO の `src` を放す） | — | `web_src/pano_timers.js` `createTimers`、`web_src/pano_editor.js` の閉じる処理、`editor/render_loop.js` `stopRenderLoop`、`editor/media_session.js` `disposeMediaSession` | — |
+| ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_upstream_layers.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
 | ノードごとの実行時の状態は node bridge に置く（グループ、片付け、許可する `__pano*` の一覧） | — | `web_src/pano_node_bridge.js`、`web_src/pano_editor_extension.js` の `onRemoved` | `tests/pano_node_bridge.test.mjs`、`tests/pano_editor_extension.test.mjs` |
 
 エディタのソースの形を確かめるテストは、`tests/editor_source.mjs`（`readEditorSource()`）・
@@ -160,6 +161,31 @@ export function createHistory(deps) {
   ほかの名前を記録するスタブにして、押したときの分かれ道ごとに始まる操作と、動き・離す・取り消す・ホイールの
   呼び出しを確かめる。ポインターの操作のモジュールは `pointer_` で始める。
 
+#### 操作の取り消し（案。オーナーの承認待ち）
+
+進行中のポインターの操作を取り消すのは `pointer_input.js` の `cancelGesture()` 一つだけで、今の `onCanvasPointerCancel` と
+`cancelFrameCameraGesture` はこれにまとめる。操作の始めの値は `pointer_transform.js` の `takeGestureSnapshot` が取り、
+`restoreGestureSnapshot` が戻す（始めの値の owner）。戻すときは記録をその場で書き戻し（オブジェクトの同一性を保つ）、
+Undo の段を積まず、`state_json` にも書かない。
+
+| `kind` | 取り消しで戻すもの |
+|---|---|
+| `move`・`scale`・`scale_x`・`scale_y`・`rotate` | その Sticker の記録（Lane と Keyframe を含む）。旧ノードでは姿勢の項目、Studio の Camera では `state.camera` と shot |
+| ストロークのグループ（`*_stroke_group`） | そのストロークとグループの枠 |
+| ラスターの品目（`*_raster_object`） | その記録 |
+| `move_multi` | 選んでいる全部の記録と、ストロークとラスター |
+| `world_gizmo` | その記録、または `state.camera` |
+| `pan_frame`・`roll_frame`・`frame_pan`・`frame_orbit` | `state.camera` と shot |
+| `marquee` | 何も戻さない |
+| `paint` | エンジンの描きかけのストロークを取り消し、そのストローク全体を捨てる（Frame の端ですでに確定した区間も含む） |
+| `view`・`space_pan`・`space_orbit`・`world_select` | 戻さず、その場で止める（慣性なし） |
+
+- 視点は編集ではなく、戻すと画面が跳ぶので、その場で止める。描きかけのストロークは一部だけ残さず全体を捨てる。この 2 点は
+  一般的なツールの慣習に従って決めた（使う人に見えて慣習の無い選択ではない）。
+- 取り消すきっかけ（`pointercancel`、ウィンドウの `blur`、操作の途中の `lostpointercapture`、Escape、Undo・Delete・実行結果の
+  `executed` の前、2 本目のポインタ）は `docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの喪失」、タイムラインの
+  ドラッグの取り消しは `docs/timeline-ui.md` の「タイムラインの表示」にある。
+
 ## Drawing
 
 描き直しは `render_loop.js` の `requestDraw(options)` からだけ頼む。スケジュールと描き直しの理由の規則は
@@ -171,11 +197,22 @@ export function createHistory(deps) {
 2. scheduler は次のフレームで `tick` → `tickFrame` を呼ぶ。`tickFrame` はアニメーション
    （視点の慣性と遷移、プレビューの拡大、Cutout の暗がり）を進め、`drawScene` を呼ぶ。
 3. `drawScene` は `view_input.js` の入力で three.js のビューを描き（`renderEditorView` など）、
-   その上に `overlay.js` が 2D を描く。フレームの終わりに `endEditorViewFrame()` で入力を捨てる。
+   その上に `overlay.js` が 2D を描く。`drawScene` の最初に `endEditorViewFrame()` で前のフレームの入力を捨てる。
 
 `requestDraw` を呼ぶのは、`connect()` で `requestDraw` を受け取るモジュールと、`pano_editor.js` の
 登録のコード（`editorView` の通知、`canvas.onmouseleave`、起動の最後）だけ。
 `grep -ln "requestDraw" web_src/editor` で一覧になる。
+
+### エディタのタイマーと閉じるとき
+
+- エディタのタイマー（`setTimeout`）は、すべて `web_src/pano_timers.js` の `createTimers` で作り、その集まりが持つ。
+  エディタを閉じると `clearAll` で全部止める。閉じた後に残ったタイマーが動くことはない。
+- 閉じると描画のループを止め（`stopRenderLoop`）、その後の `requestDraw` は何もしない。遅れて届いた画像の読み込みや
+  タイマーが、閉じたエディタの状態をノードに渡さない。
+- 開いたままの確認のダイアログは Cancel で閉じる（`commands.js` の `settleCanvasConfirm`。`docs/editor-interaction.md` の
+  「キーと確認のダイアログ」）。
+- 背景の VIDEO は `src` を外して `load()` し、ブラウザが読み込みと復号を止める（`editor/media_session.js` の
+  `disposeMediaSession`）。3D の要素の材質のテクスチャの放し方は `docs/threejs-spark-integration.md` の「空間の表示」。
 
 ## Paint layers
 
@@ -184,9 +221,10 @@ export function createHistory(deps) {
 どの層があり、どの順と `z_index` で並ぶかはこの関数だけが決め、ノードの描画（`core/render.py` の
 `_sky_layers`、`docs/scene-state-v2.md` の「Sky の重なり順」）と同じにする。
 
-- ストロークのグループと `paint` のラスタオブジェクトを `z_index` の順（同じ値ならグループ、ラスタの順、
-  それぞれリストの順。ラスタの小数の `z_index` はノードと同じく整数に切り捨てる）。
-- どのグループにも属さないストロークは、そのグループごとに全部の上（Sticker の上）。ノードは 1 枚にまとめて描く。
+- 並び方（`z_index` の順、同じ値のときの順、どのグループにも属さないストロークを一番上に置くこと）は
+  `docs/scene-state-v2.md` の「Sky の重なり順」のとおりで、ここには書き写さない。ラスタの小数の `z_index` は
+  ノードと同じく整数に切り捨てる。どのグループにも属さないストロークは、フロントではそのグループごとに描く
+  （ノードは 1 枚にまとめて描く。差は下の項）。
 - マスクの表示はさらにその上。
 - `painting_visible` が `false` なら何もなく、素材も求めない。
 - 戻り値の `zIndex` で、`skyLayers`（`pano_editor_view.js`）が `sky` の Sticker の間に入れる（同じ値なら Sticker が下）。
@@ -199,7 +237,7 @@ export function createHistory(deps) {
 | --- | --- | --- |
 | エディタ | `editor/paint_layers.js` の `buildEditorViewPaintLayers` | 描き途中のストロークを含むグループ、描き始めたグループを選択に合わせた `z_index` で `painting.groups` に足す（`getOrderedDisplayListObjects`）、消しゴムのプレビューを当てたラスタ、マスク（`engineMask`） |
 | ノード上の面 | `pano_surface_paint.js` の `surfacePaintLayers`（`pano_preview_runtime.js` の `surfaceViewInput` が呼ぶ） | 面のエンジン（グループを描くときに作る）、面のラスタのキャッシュ。マスクは見せない |
-| 上流の Scene の層 | `editor/upstream.js` の `paintLayers` | 層ごとのエンジンとラスタ、マスク（`engineMask`） |
+| 上流の Scene の層 | `pano_upstream_layers.js` の `paintLayers` | 層ごとのエンジンとラスタ、マスク（`engineMask`） |
 
 `skyPaintLayers` は正規化した状態（`normalizePaintingState` の `painting`）を受け取る。ノード上の面のうち旧
 Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON をそのまま読む（`parseState`）ので、`painting` が
@@ -234,6 +272,7 @@ Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON �
 | `previewNode(node)` | `pano_preview_previewnode.js`、`pano_editor_extension.js` | Preview ノードの runtime、面、取り付けの待ち |
 | `mediaCache(node)` | `pano_preview_runtime.js`、`pano_comfy_media.js` | 入力の画像、出力の VIDEO と ERP、出力の revision |
 | `stateSync(node)` | `pano_editor_extension.js`、`pano_preview_runtime.js`、`editor/render_loop.js` | ライブの状態とその解析結果、flusher、Sticker のアップロード待ち |
+| `sceneViewer(node)` | `pano_scene_viewer_node.js`、`pano_scene_viewer_window.js`、`pano_editor_extension.js` | Preview の Scene のビューアの記録（視点と再生の位置。`pano_scene_viewer.js` の `sceneViewerRecord`）、ノード上の面、ウィンドウが開いているか |
 
 - グループの関数は、初めて呼ばれたときに既定値でグループを作り、以後は同じオブジェクトを返す。
   `clearX(node)` はそのグループだけを片付けて捨てる。

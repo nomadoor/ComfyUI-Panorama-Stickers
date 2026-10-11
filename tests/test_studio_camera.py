@@ -89,6 +89,15 @@ def test_legacy_cutout_still_reproduces_its_golden():
     assert json.loads(result[1])["version"] == 1
 
 
+def test_legacy_cutout_drops_a_shot_that_is_not_an_object():
+    erp = torch.rand(1, 4, 8, 3)
+
+    result = PanoramaCutoutNode.execute(erp_image=erp, coverage="360", state_json=json.dumps({"shots": ["shot"]})).result
+
+    # Without a shot, the Cutout passes the ERP through.
+    assert torch.equal(result[0], erp)
+
+
 def test_outputs_of_a_perspective_camera():
     image, mask, video, sticker_state, _scene = _shoot(_solid([0.5, 0.5, 0.5]), _camera(hFOV_deg=60.0))
 

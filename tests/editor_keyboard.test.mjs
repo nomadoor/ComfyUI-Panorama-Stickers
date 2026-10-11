@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createCommands } from "../web_src/editor/commands.js";
 import { createKeyboard } from "../web_src/editor/keyboard.js";
 
 const body = { tagName: "BODY" };
@@ -233,4 +234,71 @@ test("a key move ends when the last key goes up or every key is let go, once", (
   s.calls.length = 0;
   s.keyboard.onMoveKeyDown(key("KeyW", s.element("INPUT", "text"), { repeat: true }));
   assert.deepEqual(s.calls, ["end"], "focus gone to a field");
+});
+
+// Escape with the confirm dialog open, or in a field, takes back only that (docs/editor-interaction.md): the
+// commands' confirm dialog (commands.js) answers Cancel, and a field is left; the editor stays open.
+function escapeSetup() {
+  globalThis.document = { body, documentElement: { tagName: "HTML" }, hidden: false };
+  const inside = new Set();
+  const uiState = { timeline: { visible: true }, confirmDialog: { visible: false } };
+  const strokes = [{ id: "s1" }];
+  const commands = createCommands({ editor: { interaction: null }, readOnly: false, state: {}, type: "stickers", uiState });
+  commands.connect({ getPaintingLayerList: () => strokes });
+  const closed = [];
+  const keyboard = createKeyboard({ editor: {}, overlay: { contains: (target) => inside.has(target) }, readOnly: false, stateV2: true, timeline: {}, uiState });
+  keyboard.connect({
+    cancelFrameCameraGesture: () => false,
+    closeEditor: () => closed.push("close"),
+    settleCanvasConfirm: commands.settleCanvasConfirm,
+  });
+  const element = (tagName, type = "") => {
+    const el = { tagName, type, blurred: false, blur() { this.blurred = true; } };
+    inside.add(el);
+    return el;
+  };
+  return { keyboard, commands, uiState, strokes, closed, element };
+}
+
+test("Escape with the confirm dialog open cancels it and leaves the editor open", async (t) => {
+  t.after(() => delete globalThis.document);
+  const s = escapeSetup();
+  const clearing = s.commands.clearPaintingLayer("paint");
+  assert.equal(s.uiState.confirmDialog.visible, true);
+  const escape = key("Escape", s.element("BUTTON"), { key: "Escape", stopImmediatePropagation() {} });
+  s.keyboard.onEscClose(escape);
+  await clearing;
+  assert.equal(s.uiState.confirmDialog.visible, false);
+  assert.deepEqual(s.strokes, [{ id: "s1" }], "nothing cleared");
+  assert.deepEqual(s.closed, []);
+  assert.equal(escape.prevented, true);
+});
+
+test("Escape in a field only leaves the field; on a slider it closes the editor", (t) => {
+  t.after(() => delete globalThis.document);
+  const s = escapeSetup();
+  const field = s.element("INPUT", "number");
+  s.keyboard.onEscClose(key("Escape", field, { key: "Escape", stopImmediatePropagation() {} }));
+  assert.equal(field.blurred, true);
+  assert.deepEqual(s.closed, []);
+  const slider = s.element("INPUT", "range");
+  s.keyboard.onEscClose(key("Escape", slider, { key: "Escape", stopImmediatePropagation() {} }));
+  assert.equal(slider.blurred, false);
+  assert.deepEqual(s.closed, ["close"]);
+});
+
+test("Undo works with a slider or a checkbox focused, Delete does not, and a text field keeps both", (t) => {
+  t.after(() => delete globalThis.document);
+  for (const [tagName, type, owned] of [["INPUT", "range", true], ["INPUT", "checkbox", true], ["INPUT", "text", false], ["TEXTAREA", "", false]]) {
+    const s = setup();
+    const calls = [];
+    s.keyboard.connect({
+      deleteSelected: () => calls.push("delete"), deleteSelectedWorldSticker: () => false, getSelected: () => ({ id: "a" }),
+      getHistoryCapabilities: () => ({ canUndo: true, canRedo: true }), restoreHistory: (step) => calls.push(`history ${step}`),
+    });
+    const target = s.element(tagName, type);
+    s.keyboard.onDeleteKey(key("Delete", target, { key: "Delete", target }));
+    s.keyboard.onUndoRedoKey(key("KeyZ", target, { key: "z", ctrlKey: true, target }));
+    assert.deepEqual(calls, owned ? ["history -1"] : [], `${tagName} ${type}`);
+  }
 });

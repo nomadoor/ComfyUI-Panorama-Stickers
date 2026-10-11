@@ -12,7 +12,12 @@ const check = (window.__check = {
 const W = 960;
 const H = 540;
 const LOAD_MS = 20000;
+// The turn lasts at least TURN_MS and TURN_DRAWS draws, until Spark sorted again for the turned camera and the VIDEO
+// presented a frame since the draw before; a slow renderer takes more time for as many draws. Past TURN_MAX_MS it
+// ends anyway, and the checks report what was missing.
 const TURN_MS = 4000;
+const TURN_DRAWS = 60;
+const TURN_MAX_MS = 20000;
 
 try {
   const video = await makeVideo();
@@ -45,6 +50,8 @@ try {
   let yaw = 0;
   let begin = 0;
   let turnStart = 0;
+  let turnDraws = 0;
+  let videoFramesBefore = 0;
 
   // view.stats() hands over the Spark counts since the last call, so every call adds them up here.
   const sample = () => {
@@ -55,8 +62,8 @@ try {
     return stats;
   };
 
-  // Draw still until the splats load and Spark sorts them once (or LOAD_MS passes), then turn the camera for
-  // TURN_MS, so every sort counted while turning is a sort again for a moved camera.
+  // Draw still until the splats load and Spark sorts them once (or LOAD_MS passes), then turn the camera (see
+  // TURN_MS), so every sort counted while turning is a sort again for a moved camera.
   function frame(now) {
     raf = 0;
     if (check.done) return;
@@ -64,7 +71,10 @@ try {
     if (!turnStart && ((sample().sceneItems.loaded > 0 && check.sorts > 0) || now - begin > LOAD_MS)) {
       turnStart = now;
     }
-    if (turnStart) yaw += 0.03;
+    if (turnStart) {
+      yaw += 0.03;
+      turnDraws += 1;
+    }
     const camera = { quaternion: { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, fovY_deg: 60, aspect: W / H, position: [0, 0, 0], near: 0.01, far: 1000 };
     view.clear();
     view.render({ rect: { x: 0, y: 0, w: W, h: H }, camera, background, layers: [], space, owner: undefined });
@@ -80,7 +90,10 @@ try {
       max = Math.max(max, luma);
     }
     check.nonEmpty ||= max - min > 30;
-    if (!turnStart || now - turnStart < TURN_MS) request();
+    if (turnStart) sample();
+    const turned = now - turnStart >= TURN_MS && turnDraws >= TURN_DRAWS && check.turnSorts > 0 && check.videoFrames > videoFramesBefore;
+    videoFramesBefore = check.videoFrames;
+    if (!turnStart || (!turned && now - turnStart < TURN_MAX_MS)) request();
     else {
       check.stats = sample();
       check.videoPaused = video.paused;

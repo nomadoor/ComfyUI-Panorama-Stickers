@@ -103,8 +103,11 @@ export function createRenderLoop(deps) {
   }
 
   // Asks for the next frame. options.reason (DRAW_REASON) says what changed; without one the working
-  // state may have, which makes what is derived from it again (scheduler.stateRevision).
+  // state may have, which makes what is derived from it again (scheduler.stateRevision). After the editor
+  // closed (stopRenderLoop) it does nothing: a late image load or timer must not hand the node the closed
+  // editor's working state again.
   function requestDraw(options = {}) {
+    if (!runtime.running) return;
     const reason = options.reason ?? DRAW_REASON.STATE;
     const localOnly = !!options.localOnly;
     const externalSync = options.externalSync === true;

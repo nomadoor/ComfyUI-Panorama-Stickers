@@ -23,6 +23,7 @@ import {
 import { timelineFps } from "./pano_scene_state.js";
 import { createEditorView } from "./pano_editor_view.js";
 import { DEFAULT_DISTANCE, DEFAULT_VIEW_HFOV } from "./pano_space.js";
+import { createTimers } from "./pano_timers.js";
 import { presetUsesButton } from "./pano_view_controls.js";
 import { createPanoCanvas, trackPanoCanvas, trackPanoVideo } from "./pano_diagnostics.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
@@ -642,6 +643,8 @@ async function showEditor(node, type, options = {}) {
     if (canvas.style.cursor === cursor) return;
     canvas.style.cursor = cursor;
   };
+  // The editor's timeouts (pano_timers.js); closeEditor clears those still waiting, so none runs after it.
+  const timers = createTimers();
   const tooltip = {
     timer: 0,
     target: null,
@@ -670,7 +673,7 @@ async function showEditor(node, type, options = {}) {
       y: state.ui_settings?.invert_view_y ? -1 : 1,
     }),
     getUnwrapRect: () => getUnwrapRect(),
-    onInteraction: () => scheduler.requestDraw(DRAW_REASON.VIEW),
+    onInteraction: () => requestDraw({ localOnly: true, reason: DRAW_REASON.VIEW }),
   });
 
   // --- editor modules: begin (docs/editor-architecture.md) ---
@@ -688,7 +691,7 @@ async function showEditor(node, type, options = {}) {
     onSidePanelClick, onSidePanelInput, onSpaceKey, onSpaceKeyUp, onTimelineAction, onUndoRedoKey,
     onVisibilityChange, onWindowBlur, onWindowDragEnter, onWindowDragLeave, onWindowDragOver, onWindowDrop,
     playback, pushHistory, reconcileExternalStickerFromInputs, refreshModalVideoSource,
-    replaceSelectedImageFromFile, requestDraw, restoreView, sampleEditorDiagnostics, saveView, setDropCue,
+    replaceSelectedImageFromFile, requestDraw, restoreView, sampleEditorDiagnostics, saveView, setDropCue, settleCanvasConfirm,
     setPointerPos, stageResizeObserver, stickerCornerOrderSanity, stopRenderLoop, syncCanvasSize, syncCutoutShot,
     syncFullscreenButton, syncGridToggleButton, syncLookAtFrameButtonState, syncOutputPreviewToggleButton,
     syncPaintUi, syncPaintingLayerAsync, syncTimeline, syncUndoRedoButtons, tick,
@@ -703,7 +706,7 @@ async function showEditor(node, type, options = {}) {
     paintSizePreviewEl, paintSizePreviewSampleEl, portStillCanvas, portVideoEl, presetWidget, previewMode,
     rasterErpCanvasCache, rasterImageAlphaCache, rasterImageCache, readOnly, resolveEditorOutputPresetWidth, root,
     runtime, sceneV2, scheduler, selectionMenu, setCanvasCursor, shotEditor, stageWrap, state, stateV2,
-    stateWidget, stillCanvas, studio, timeline, timelinePlayhead, toolRailEl, tooltip, tooltipEl, type, uiState,
+    stateWidget, stillCanvas, studio, timeline, timelinePlayhead, timers, toolRailEl, tooltip, tooltipEl, type, uiState,
     videoEl, videoTimelineFps, videoTransportEl, viewController, vueModal,
   }, [
     createMediaSession, createHistory, createItems, createSelection, createProjection, createObjectGeometry,
@@ -825,10 +828,7 @@ async function showEditor(node, type, options = {}) {
   root.addEventListener("click", (ev) => {
     const target = ev.target.closest("[data-action='confirm-cancel'], [data-action='confirm-accept']");
     if (!target) return;
-    const ok = target.getAttribute("data-action") === "confirm-accept";
-    const resolver = uiState.confirmDialog?.resolve;
-    uiState.confirmDialog = { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null };
-    resolver?.(ok);
+    settleCanvasConfirm(target.getAttribute("data-action") === "confirm-accept");
   });
   document.addEventListener("fullscreenchange", onFullscreenChange);
   syncFullscreenButton();
@@ -885,6 +885,9 @@ async function showEditor(node, type, options = {}) {
       hideTooltip();
       dragFrames.cancel();
       stopRenderLoop();
+      timers.clearAll();
+      // A confirm dialog left open answers Cancel.
+      settleCanvasConfirm(false);
       disposeMediaSession();
       disposeUpstream();
       editorView.dispose();

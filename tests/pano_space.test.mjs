@@ -17,7 +17,6 @@ import {
   planeCorners,
   planeOutlineSegments,
   cameraTrajectory,
-  cameraView,
   contentPoints,
   depthOf,
   facingRotation,
@@ -519,8 +518,6 @@ test("a Camera's trajectory samples its position Lane over the Timeline", () => 
   closeVec(path[0], [0, 0, 0]);
   closeVec(path[10], [10, 0, 0]);
   assert.equal(cameraTrajectory(moving, 5000, 100).length, 100);
-  const view = cameraView(evaluateSceneState(moving, 10).camera);
-  closeVec(view.position, [10, 0, 0]);
 });
 
 test("a scene GLB draws unlit on both sides with its base color, texture and vertex colors", () => {

@@ -9,7 +9,7 @@ from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_s
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background", "v2_big_numbers", "v1_cutout_shots"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 
 
@@ -146,6 +146,12 @@ def test_a_3d_file_keeps_its_animation_brought_into_range():
         "port": {"clip": None, "speed": 0.1},
     }
     assert rebase_scene_state(state, 60.0)["stickers"][0]["animation"] == {"clip": "Dance", "speed": 10.0}
+
+
+def test_rebase_moves_only_the_frames_and_keeps_the_scene_and_sticker_animation():
+    # The same case pano_scene_state.test.mjs reads.
+    case = json.loads(read_fixture("rebase_animation"))
+    assert_close(rebase_scene_state(load_scene_state(case["state"]), case["fps"]), case["expected"])
 
 
 @pytest.mark.parametrize(("fps", "length", "expected"), [
@@ -339,6 +345,13 @@ def test_sticker_state_v1_accepts_numeric_strings():
     assert load_sticker_state('{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":true,"pitch_deg":0,"roll_deg":0,"hFOV_deg":30}}') is None
 
 
+def test_a_v1_pose_number_is_read_as_the_fixture_shared_with_js_says():
+    for case in json.loads(read_fixture("sticker_state_v1_numbers"))["cases"]:
+        text = '{"kind":"pano_sticker_state","version":1,"pose":{"yaw_deg":0,"pitch_deg":0,"roll_deg":0,"hFOV_deg":%s}}' % case["json"]
+        parsed = load_sticker_state(text)
+        assert (None if parsed is None else parsed["camera"]["fov"][0]["value"]) == case["fov"], case["json"][:20]
+
+
 @pytest.mark.parametrize("easing", [None, "smooth", [0.42, 0.0, 0.58], [0.2, -0.1, 0.8, 1.0], [0.2, 0.0, 0.8, 1.1], [1.2, 0.0, 0.5, 1.0]])
 def test_missing_or_invalid_easing_is_ease_in_out(easing):
     key = {"frame": 0, "value": 0.5} if easing is None else {"frame": 0, "value": 0.5, "easing": easing}
@@ -445,6 +458,13 @@ def test_rebase_keeps_the_id_the_counter_and_the_upstream_records():
 
     assert (rebased["id"], rebased["next_sticker_id"], rebased["upstream"]) == (state["id"], state["next_sticker_id"], state["upstream"])
     assert rebased["stickers"][1]["handoff_overrides"] == ["direction", "size", "opacity"]
+
+
+def test_sticker_ids_are_numbered_as_the_fixture_shared_with_js_says():
+    for case in json.loads(read_fixture("sticker_ids"))["normalize"]:
+        state = load_scene_state(case["state"])
+        assert [sticker["id"] for sticker in state["stickers"]] == case["ids"]
+        assert state["next_sticker_id"] == case["next_sticker_id"]
 
 
 def test_renumbering_skips_an_uncounted_id_the_counter_reaches():

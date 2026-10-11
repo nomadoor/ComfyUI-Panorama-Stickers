@@ -53,7 +53,7 @@ from .core.painting import (
 from .core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
 from .core.scene_eval import FRAME_EPSILON, clip_active, evaluate_scene_state
 from .core.scene_inherit import apply_upstream_overrides
-from .core.scene_state import CAMERA_LANES, DEFAULT_CLIP, DEFAULT_EASING, STICKER_STATE_KIND, is_3d_file_source, load_scene_state, load_sticker_state
+from .core.scene_state import CAMERA_LANES, DEFAULT_CLIP, DEFAULT_EASING, STICKER_NUMBER_MAX, STICKER_STATE_KIND, is_3d_file_source, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
 from .core.stickers import comfy_file_path, load_source_rgba
 from .core.video import (
@@ -1156,10 +1156,16 @@ def _read_file_3d(source: dict) -> tuple[object, str | None]:
 
 
 def _take_sticker_id(state: dict) -> str:
-    """A new Sticker id from the state's `next_sticker_id` counter, which it advances, as the editor does."""
-    sticker_id = f"sticker_{state['next_sticker_id']}"
-    state["next_sticker_id"] += 1
-    return sticker_id
+    """A new Sticker id from the state's `next_sticker_id` counter, which it advances, as the editor does. Like the
+    normalization of the ids (`_stickers`, core/scene_state.py), a number whose id is in use is skipped (ids past
+    STICKER_NUMBER_MAX are not counted, so the counter can stop on one), and the counter stays at most
+    STICKER_NUMBER_MAX."""
+    used = {sticker["id"] for sticker in state["stickers"]}
+    number = state["next_sticker_id"]
+    while f"sticker_{number}" in used:
+        number += 1
+    state["next_sticker_id"] = min(number + 1, STICKER_NUMBER_MAX)
+    return f"sticker_{number}"
 
 
 def _nearest_turn(angle: float, previous: float) -> float:
@@ -1200,6 +1206,8 @@ def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
     frames = range(math.floor(first / ratio), math.ceil(last / ratio) + 1)
     shots = []
     for frame in frames:
+        # A long bake stops at Cancel.
+        comfy.model_management.throw_exception_if_processing_interrupted()
         value = evaluate_scene_state(shot, frame * ratio)["camera"]
         if shots:
             # Yaw and roll keep turning past 180 instead of jumping back a whole turn between Keyframes.
@@ -1470,6 +1478,8 @@ def _layer_frames(state: dict, port: PortMedia | None, scene: SceneContent | Non
     origin = clip["start"] - clip["in"]
     frames = []
     for time in times:
+        # A long Timeline stops at Cancel while it is decided.
+        comfy.model_management.throw_exception_if_processing_interrupted()
         frame = _timeline_frame(time, stored_fps, time_base)
         frames.append((
             frame,
@@ -1665,8 +1675,8 @@ def _port_source_at(active: bool, index: int | None, frames, template: StickerSo
 
 # Floats per output pixel that a frame keeps on the device at once beyond its sources: the rays and where they look,
 # the Sky's layers' samples with their footprints and filter weights, the background's samples, the World layer, and
-# the color, mask, and depth. Measured peaks reach about 25 (ERP 4096 x 2048, the Sky drawn at every pixel) with the
-# sources counted as below (`docs/runtime-resources.md`); 32 leaves a margin.
+# the color, mask, and depth. The value is a measured peak with a margin: the measurement is in docs/legacy-baselines.md,
+# "デバイスのメモリの見積もり（`_render_memory`）".
 RENDER_FLOATS_PER_PIXEL = 32
 # A source on the device is float32 with the ripmap levels `_sample_filtered` makes, up to three times its size.
 DEVICE_SOURCE_FACTOR = 4
@@ -2173,7 +2183,11 @@ def _studio_output_size(state: dict, frames, output_size: str, coverage: int, bg
     # Only the Camera is evaluated; the Stickers do not change its hFOV.
     shot = {**state, "stickers": []}
     # 2 f g_κ(hFOV / 2) at each output frame, the widest: the lens curve (ADR 0042) keeps f at the center.
-    lenses = [evaluate_scene_state(shot, layers[-1][0])["camera"] for _bg_index, layers in frames]
+    lenses = []
+    for _bg_index, layers in frames:
+        # Each output frame is evaluated; a long Timeline stops at Cancel.
+        comfy.model_management.throw_exception_if_processing_interrupted()
+        lenses.append(evaluate_scene_state(shot, layers[-1][0])["camera"])
     shot_width = max(width / math.pi * lens_radius(math.radians(lens["hFOV_deg"]) / 2, lens["curve"]) for lens in lenses)
     shot_height = shot_width / camera["aspect"]
     size = (_even_side(shot_width), _even_side(shot_height))

@@ -4,6 +4,8 @@
 
 Accepted
 
+一部（2 の「`bg_erp` があれば `output_preset` ではなく背景画像の実サイズを使う」）は、今のコードでは `output_preset` が `auto` のときだけ当たる。固定の値では `output_preset` が勝つ（`nodes.py` の `PanoramaStickersNode._resolve_output_size`。置き換えた ADR も spec も無い）（2026-10-11 に記す）。
+
 ## Date
 
 2026-03-12

@@ -325,15 +325,28 @@ function stickers(raw, rawNext) {
     else item.id = null;
   }
   // A Sticker without a valid id takes the next number of the counter, so no id is used twice.
-  let n = nextStickerNumber(rawNext, out);
+  let n = BigInt(nextStickerNumber(rawNext, out));
   for (const item of out) {
     if (item.id !== null) continue;
-    // Ids past STICKER_NUMBER_MAX are not counted, so the counter may reach one of them.
-    while (used.has(`sticker_${n}`)) n += 1;
+    n = freeStickerNumber(used, n);
     item.id = `sticker_${n}`;
-    n += 1;
+    n += 1n;
   }
-  return { stickers: out, next: Math.min(n, STICKER_NUMBER_MAX) };
+  return { stickers: out, next: stickerCounter(n) };
+}
+
+// The first number from n (a BigInt) whose `sticker_<n>` id is not in `used`. Ids past STICKER_NUMBER_MAX are not
+// counted, so the counter may reach one of them; the numbers count on past it exactly, as Python's integers do
+// (a double would stop at 2^53 and never pass an id in use there).
+export function freeStickerNumber(used, n) {
+  let out = BigInt(n);
+  while (used.has(`sticker_${out}`)) out += 1n;
+  return out;
+}
+
+// The `next_sticker_id` for a number n (a BigInt): n, at most STICKER_NUMBER_MAX.
+export function stickerCounter(n) {
+  return Number(n < BigInt(STICKER_NUMBER_MAX) ? n : BigInt(STICKER_NUMBER_MAX));
 }
 
 function stickerNumber(id) {
@@ -463,9 +476,10 @@ function v1Source(item, assets) {
 }
 
 // The Cutout's shot as the Camera; a state without one (Stickers) has no Camera.
+// The Cutout's first shot that is an object, as the legacy node's merge_state keeps its shots.
 function v1Camera(shots) {
-  const shot = Array.isArray(shots) && shots.length ? shots[0] : null;
-  if (!isObject(shot)) return null;
+  const shot = (Array.isArray(shots) ? shots : []).find(isObject);
+  if (!shot) return null;
   const hFov = clamp(number(shot.hFOV_deg, 90), 1, 179);
   const vFov = clamp(number(shot.vFOV_deg, 60), 1, 179);
   const deg2rad = Math.PI / 180;
@@ -601,22 +615,18 @@ export function rebaseSceneState(state, value) {
   const rebase = (frame) => frameNumber(frame * ratio);
   const { length } = state.timeline;
   const scene = rebaseClip(state.scene.clip, rebase);
+  // Only the frames change: every other field (ids, the counter, painting, an animation, the `upstream` records,
+  // which keep their own fps (docs/scene-state-v2.md "上流の上書き")) is carried over as it is.
   return normalizeV2({
-    id: state.id,
+    ...state,
     timeline: { fps, length: length === null ? null : Math.max(1, rebase(length)) },
     camera: state.camera === null ? null : { ...state.camera, ...rebaseLanes(state.camera, CAMERA_LANES, rebase, 0, 0) },
-    scene: { clip: scene.clip, visible: state.scene.visible, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
+    scene: { ...state.scene, clip: scene.clip, ...rebaseLanes(state.scene, SCENE_LANES, rebase, scene.anchor, scene.newAnchor) },
     stickers: state.stickers.map((item) => {
       const { clip, anchor, newAnchor } = rebaseClip(item.clip, rebase);
       return { ...item, clip, ...rebaseLanes(item, stickerLanes(item), rebase, anchor, newAnchor) };
     }),
-    next_sticker_id: state.next_sticker_id,
-    painting: state.painting,
-    painting_layer: state.painting_layer,
-    painting_visible: state.painting_visible,
-    // The override records keep their own fps (docs/scene-state-v2.md "上流の上書き").
-    upstream: state.upstream,
-    background: { clip: rebaseClip(state.background.clip, rebase).clip },
+    background: { ...state.background, clip: rebaseClip(state.background.clip, rebase).clip },
   });
 }
 
@@ -650,9 +660,16 @@ function wrapYawDeg(value) {
   return ((((value + 180) % 360) + 360) % 360) - 180;
 }
 
+// A v1 number written as text, as Python's float() reads one in ASCII (the old parse_sticker_state,
+// docs/scene-state-v2.md): decimal digits with single underscores between them, an optional point and exponent.
+// Not Number()'s hex, octal and binary prefixes or its Infinity.
+const V1_NUMBER_TEXT = /^[+-]?(?:\d(?:_?\d)*(?:\.(?:\d(?:_?\d)*)?)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?$/;
+
 function v1PoseNumber(value) {
-  if (typeof value === "string" && !value.trim()) return NaN;
-  return typeof value === "number" || typeof value === "string" ? Number(value) : NaN;
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return NaN;
+  const text = value.trim();
+  return V1_NUMBER_TEXT.test(text) ? Number(text.replaceAll("_", "")) : NaN;
 }
 
 // Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0.
