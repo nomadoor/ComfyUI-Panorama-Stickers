@@ -1,6 +1,6 @@
 import { ICON } from "./icons.js";
 
-// "studio" is Panorama Studio's editor (#89): the Stickers tools with Add Camera, and the Frame tab of the
+// "studio" is Panorama Studio's editor: the Stickers tools with Add Camera, and the Frame tab of the
 // Cutout, which it always shows (disabled without a Camera) so the tabs never move.
 export function buildModalShellPreset(type = "stickers") {
   if (type === "viewer") return buildViewerPreset();
@@ -12,7 +12,7 @@ export function buildModalShellPreset(type = "stickers") {
       { key: "unwrap", label: "Unwrap", icon: ICON.unwrap, pressed: "false", extraClass: "" },
       ...(isCutout || isStudio ? [{ key: "frame", label: "Frame", icon: ICON.camera, pressed: "false", extraClass: "pano-view-btn-icon" }] : []),
     ],
-    // How the panorama view moves in space (#71): at the left end of the bottom-right buttons, the
+    // How the panorama view moves in space (3DoF or 6DoF): at the left end of the bottom-right buttons, the
     // 3DoF | 6DoF icon buttons and Frame Selected show together while the panorama view shows World content
     // (PanoFloatingRight.vue).
     spaceButtons: [
@@ -31,7 +31,7 @@ export function buildModalShellPreset(type = "stickers") {
           ]
         : [
             { key: "add", attr: "data-tool-ui-action", value: "add", label: "Add Image", tip: "Add image", active: false, accent: true, icon: ICON.image, pressed: null },
-            // Panorama Studio only (#72): an image or a 3D file placed in space as a world Sticker.
+            // Panorama Studio only: an image or a 3D file placed in space as a world Sticker.
             { key: "add-world", attr: "data-tool-ui-action", value: "add-world", label: "Add to World", tip: "Add an image or 3D model in space", active: false, accent: false, icon: ICON.globe, pressed: null, visible: false },
             // Panorama Studio's one Camera; disabled, not hidden, while it has one.
             ...(isStudio ? [{ key: "add-camera", attr: "data-tool-ui-action", value: "add-camera", label: "Add Camera", tip: "Add camera", active: false, accent: false, icon: ICON.camera_plus, pressed: null }] : []),

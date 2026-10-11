@@ -32,7 +32,7 @@ test("Stickers image drop uses the shared host hook and restores prior hooks on 
 
   assert.match(runtime, /const onDragOverPrev = node\.onDragOver/);
   assert.match(runtime, /const onDragDropPrev = node\.onDragDrop/);
-  // Panorama Studio's surface takes no image drop (#91): stickerDrop is stickersMode without it.
+  // Panorama Studio's surface takes no image drop: stickerDrop is stickersMode without it.
   assert.match(runtime, /const stickerDragOverHook = stickerDrop \? function/);
   assert.match(runtime, /const stickerDragDropHook = stickerDrop \? function/);
   assert.match(runtime, /if \(stickerDrop\) \{[\s\S]*?node\.onDragOver = stickerDragOverHook;[\s\S]*?node\.onDragDrop = stickerDragDropHook;/);
@@ -385,8 +385,6 @@ test("Panorama Studio syncs its port Sticker in the editor and on the node", asy
   const runtime = await read("../web_src/pano_preview_runtime.js");
   const editor = readEditorSource();
 
-  assert.doesNotMatch(runtime, /TODO\(#75\)/);
-  assert.doesNotMatch(editor, /TODO\(#75\)/);
   assert.match(runtime, /if \(node\.__panoSceneStateV2\) \{[\s\S]*?type: "sync-port",[\s\S]*?portStickerSyncValue\(node,/);
   assert.match(editor, /node\.__panoSceneStateV2 \? reconcilePortStickerFromInputs\(\) : reconcileLegacyExternalStickerFromInputs\(\)/);
   assert.match(editor, /function getExternalStickerPreviewImage\(onLoad = null\) \{\s*if \(!isNodeOutputMediaCurrent\(node, "external-sticker"\)\) return null;/);

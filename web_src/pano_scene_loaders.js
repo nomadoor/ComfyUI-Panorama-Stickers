@@ -1,4 +1,4 @@
-// Loading the `scene` items of the space view (#71), in the three.js chunk. A GLB loads with three.js's
+// Loading the `scene` items of the space view, in the three.js chunk. A GLB loads with three.js's
 // GLTFLoader; a PLY loads with Spark, which is its own chunk and is imported the first time a SPLAT
 // loads, so editors and node previews without a SPLAT never load it.
 import { AnimationMixer, Box3, BufferAttribute, DataTexture, DoubleSide, FloatType, Group, LoopRepeat, Mesh, MeshBasicMaterial, NearestFilter, RedFormat } from "three";

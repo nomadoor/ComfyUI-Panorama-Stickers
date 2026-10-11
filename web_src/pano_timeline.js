@@ -194,7 +194,7 @@ export function ownerTimed(owner) {
 }
 
 // Whether anything in the state changes over time; the editor's Timeline opens by itself when it does.
-// The Camera's Keyframes count only with `camera` (Panorama Studio, #89); the background's Clip range always.
+// The Camera's Keyframes count only with `camera` (Panorama Studio); the background's Clip range always.
 export function isTimed(state, { camera = false } = {}) {
   return [...(camera && state.camera ? [state.camera] : []), state.background, state.scene, ...state.stickers].some(ownerTimed);
 }

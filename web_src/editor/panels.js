@@ -71,7 +71,7 @@ export function createPanels(deps) {
   }
 
   function syncLookAtFrameButtonState() {
-    // Panorama Studio has Add Camera instead, disabled rather than hidden while it has its Camera (#89).
+    // Panorama Studio has Add Camera instead, disabled rather than hidden while it has its Camera.
     if (studio) patchUiButton(uiState.toolButtons, "value", "add-camera", { disabled: hasCamera() });
     if (type !== "cutout") return;
     const shot = getActiveCutoutShot();
@@ -307,7 +307,7 @@ export function createPanels(deps) {
         item: null,
       }];
       if (type === "stickers") {
-        // Panorama Studio's Camera comes first, as on its Timeline (#89).
+        // Panorama Studio's Camera comes first, as on its Timeline.
         const shot = getActiveCutoutShot();
         if (shot) items.push({ id: shot.id, label: "Camera", icon: getSelectionItemIcon("frame"), item: shot, kind: "frame" });
         getList().forEach((item, i) => {
@@ -400,7 +400,7 @@ export function createPanels(deps) {
       notes.push(`Selected objects: ${selectedItems.length}`);
       notes.push("Multi-selection supports z-order and delete.");
     } else {
-      // Panorama Studio's Camera is a shot in the Stickers editor (#89): it has a roll and no opacity.
+      // Panorama Studio's Camera is a shot in the Stickers editor: it has a roll and no opacity.
       const shotInspected = selectedKind === "shot" || selectedKind === "frame";
       if (cameraPositionShown) {
         for (const [key, label] of [["position_x", "X"], ["position_y", "Y"], ["position_z", "Z"]]) {

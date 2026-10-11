@@ -4,7 +4,7 @@ import SvgIcon from "./SvgIcon.vue";
 
 defineProps({
   buttons: { type: Array, default: () => [] },
-  // The space group (#71): { visible, mode, frameDisabled, modes, frame } (floatingRightState), null
+  // The space group: { visible, mode, frameDisabled, modes, frame } (floatingRightState), null
   // without one. It shows or hides as a whole at the left end, so the buttons right of it never move.
   space: { type: Object, default: null },
   preview: { type: Object, default: () => ({}) },

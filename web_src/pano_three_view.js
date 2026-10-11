@@ -707,7 +707,7 @@ export function cachedLines(cache, sets) {
   return cache.lines;
 }
 
-// The gizmo of the selected world Sticker (#72): three.js TransformControls seen from camera, on a
+// The gizmo of the selected world Sticker: three.js TransformControls seen from camera, on a
 // stand-in object. The editor feeds it the pointer and writes what it moved back to the state, which the
 // next render draws. It is not hooked to DOM events.
 export function createGizmo(camera) {
@@ -888,7 +888,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     onUpdate,
     concurrency: SCENE_LOADS,
   });
-  // The items of the `sticker` input's 3D media (#63), loaded the same way. An item loads here even when
+  // The items of the `sticker` input's 3D media, loaded the same way. An item loads here even when
   // `scene` has the same file, since an object has one parent.
   const stickerItems = createSceneItems({
     load: loadItem,
@@ -896,7 +896,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     onUpdate,
     concurrency: SCENE_LOADS,
   });
-  // The 3D items of the upstream Scene's layers (#90), by slot (a layer and its `scene` or 3D Sticker), loaded
+  // The 3D items of the upstream Scene's layers, by slot (a layer and its `scene` or 3D Sticker), loaded
   // the same way; a slot no render asks for any more is closed.
   const upstreamItems = new Map();
   const upstreamItemsOf = (slot) => {
@@ -1150,7 +1150,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       contentParts = parts;
       contentRevision += 1;
     }
-    // A space without `gizmo` (the Cutout's camera preview, #77) leaves the gizmo of the view as it is, so
+    // A space without `gizmo` (the Cutout's camera preview) leaves the gizmo of the view as it is, so
     // drawing the preview between two frames of the view does not end a drag.
     if (space.gizmo) children.push(...(gizmo ||= createGizmo(worldCamera)).show(space.gizmo));
     else if (space.gizmo === null) gizmo?.hide();

@@ -1,4 +1,4 @@
-// The `scene` items the space view loads (#71), in the three.js chunk: the GLB or PLY of each item of
+// The `scene` items the space view loads, in the three.js chunk: the GLB or PLY of each item of
 // the `scene` input, by URL (or by the key an input gives it, as a 3D file Sticker's id). A MoGe VIDEO asks for a new item every frame while it plays or scrubs, so
 // loads wait in a queue and run `concurrency` at a time, the newest request first. A queued load nobody
 // wants any more does not start; a running one runs to its end (it is aborted only when its input goes

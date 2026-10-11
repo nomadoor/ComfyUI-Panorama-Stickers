@@ -107,7 +107,7 @@ export function createHistory(deps) {
 | `editor/ui_settings.js` | localStorage の設定（視点の反転、ノードごとのグリッド） |
 | `editor/video_thumbnail_cache.js` | VIDEO のサムネイルのキャッシュ（直近 12 本） |
 | `editor/media_session.js` | 背景（ERP、VIDEO と静止画）、port の VIDEO とフレーム、Sticker の画像、3D ファイルのエディタ用ファイルの問い合わせ（`file3dEditorFile`）、旧 VIDEO トランスポートとサムネイル。`playback` と port の follower を作り、`disposeMediaSession()` で放す |
-| `editor/history.js` | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。段を積む前に上流の編集を書き戻させ（`syncUpstreamEdits`）、上流で消えた要素の上書きを捨てさせ（`pruneUpstreamRecords`。開いたときの最初の段 `pushHistory({ initial: true })` では捨てない）、戻した状態に合わせて上流の作業コピーを作り直させる（`rebuildUpstreamWorking`） |
+| `editor/history.js` | Undo の履歴。スナップショットに残すもの（`historySnapshot`）と数（`HISTORY_LIMIT`）。段は `pano_paint_history.js` の `createSharedStringHistory` が持ち、長い文字列（ラスターの PNG の data URL など）は段ごとに写さず表に一度だけ置いて、残っている段のどれも使わなくなったら捨てる。段を積む前に上流の編集を書き戻させ（`syncUpstreamEdits`）、上流で消えた要素の上書きを捨てさせ（`pruneUpstreamRecords`。開いたときの最初の段 `pushHistory({ initial: true })` では捨てない）、戻した状態に合わせて上流の作業コピーを作り直させる（`rebuildUpstreamWorking`） |
 | `editor/items.js` | Sticker（上流の作業コピーの Sticker を含む。`stickerById`・`upstreamSkyStickers`）、shot、ストロークのグループ、ラスターの品目の検索・並び・移動 |
 | `editor/selection.js` | キャンバスの選択、world Sticker の選択、ロック、インスペクターの品目、z の順 |
 | `editor/projection.js` | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |

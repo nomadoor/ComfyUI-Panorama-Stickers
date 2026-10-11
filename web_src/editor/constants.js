@@ -3,7 +3,7 @@ export const STATE_WIDGET = "state_json";
 // Inputs Space types into; it does not play the Timeline there.
 export const TEXT_INPUT_TYPES = new Set(["text", "search", "number", "email", "url", "tel", "password", "date", "time", "datetime-local", "month", "week"]);
 export const EXTERNAL_STICKER_ID = "sticker_image_1";
-// A world Sticker's inspector fields that have no upper limit (#72), and the smallest scale it sets.
+// A world Sticker's inspector fields that have no upper limit, and the smallest scale it sets.
 export const WORLD_UNLIMITED_FIELDS = new Set(["position_x", "position_y", "position_z", "scale"]);
 export const WORLD_MIN_SCALE = 0.01;
 export const EXTERNAL_STICKER_SOURCE_KIND = "external_image";

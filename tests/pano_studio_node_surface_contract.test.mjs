@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("the Studio surface has the status, the Open Editor action, and no editing or playback controls (#91)", async () => {
+test("the Studio surface has the status, the Open Editor action, and no editing or playback controls", async () => {
   const source = await read("../web_src/components/PanoStudioNodeSurface.vue");
 
   assert.match(source, /model\.status\.shot/);

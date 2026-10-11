@@ -254,7 +254,7 @@ export function createOverlay(deps) {
       drawStickerSelectionHandles(ctx, geom, { accent });
       return;
     }
-    // Panorama Studio's 360-degree Camera has no size handles, only its rotate handle (#89).
+    // Panorama Studio's 360-degree Camera has no size handles, only its rotate handle.
     const resizable = !(isShotItem(item) && isErpCamera());
     ctx.fillStyle = accent;
     if (resizable) geom.corners.forEach((p) => { ctx.beginPath(); ctx.arc(p.x, p.y, 6.5, 0, Math.PI * 2); ctx.fill(); });
@@ -552,7 +552,7 @@ export function createOverlay(deps) {
 
   function getCutoutPanoDimTarget() {
     // In 6DoF the Camera is its frustum, not a frame on the panorama to dim around. Panorama Studio dims
-    // around its Camera's frame only while the Camera is selected, so its Stickers stay in full view (#89).
+    // around its Camera's frame only while the Camera is selected, so its Stickers stay in full view.
     if (!shotEditor || !getActiveCutoutShot() || (cameraV2 && isFreeSpaceView()) || (studio && !isCameraSelected())) return 0;
     return CUTOUT_PANO_DIM_ALPHA;
   }

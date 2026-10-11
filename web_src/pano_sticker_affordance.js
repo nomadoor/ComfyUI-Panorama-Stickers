@@ -54,7 +54,7 @@ export function hitStickerSelectionAffordance(geometry, point) {
 
 // The handle of a frame (a Cutout shot, or the box of a multi-selection) at point: with `edges` the edge
 // midpoints scale one axis, the corners scale both, the rotate handle turns it, and inside moves it.
-// Without `resize` (Panorama Studio's 360-degree Camera, which reads no FOV, #89) only the rotate handle and
+// Without `resize` (Panorama Studio's 360-degree Camera, which reads no FOV) only the rotate handle and
 // the move are left. `emptyCursor` is the cursor off the frame.
 export function hitFrameAffordance(geometry, point, { edges = false, resize = true, emptyCursor = "default" } = {}) {
   if (resize && edges && Array.isArray(geometry.edgeMidpoints)) {

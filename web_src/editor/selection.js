@@ -324,7 +324,7 @@ export function createSelection(deps) {
     state.active.selected_sticker_id = null;
     state.active.selected_shot_id = null;
   }
-  // The selected world Sticker of state v2 (#72), or null: the node's own or an upstream element's working
+  // The selected world Sticker of state v2, or null: the node's own or an upstream element's working
   // Sticker (ADR 0030). It is selected in the space view or on its Timeline row, and the gizmo and the inspector
   // edit it.
   function selectedWorldSticker() {

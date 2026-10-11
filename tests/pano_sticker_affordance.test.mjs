@@ -83,7 +83,7 @@ test("shared sticker handles use compact circle sizes and a white rotation stem"
   }]);
 });
 
-test("a frame's handles: edges and corners resize it unless it cannot be resized, which keeps rotate and move (#89)", () => {
+test("a frame's handles: edges and corners resize it unless it cannot be resized, which keeps rotate and move (Panorama Studio's 360-degree Camera)", () => {
   const geometry = {
     corners: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }, { x: 0, y: 60 }],
     center: { x: 50, y: 30 },

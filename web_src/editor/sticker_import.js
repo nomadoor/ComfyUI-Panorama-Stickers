@@ -145,7 +145,7 @@ export function createStickerImport(deps) {
     vueModal?.openImagePicker?.("add");
   }
 
-  // Panorama Studio (#72): Add to World picks an image or a 3D file to place in space.
+  // Panorama Studio: Add to World picks an image or a 3D file to place in space.
   function addToWorld() {
     if (readOnly || !sceneV2) return;
     vueModal?.openImagePicker?.("add-world", WORLD_FILE_ACCEPT);

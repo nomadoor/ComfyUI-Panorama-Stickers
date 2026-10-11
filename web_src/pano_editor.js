@@ -172,7 +172,7 @@ async function showEditor(node, type, options = {}) {
   // the Stickers editor of state v2.
   const stateV2 = node.__panoSceneStateV2 === true;
   const sceneV2 = type === "stickers" && stateV2;
-  // Panorama Studio (#89) is the Stickers editor of state v2 with the Cutout's Camera, which the user adds
+  // Panorama Studio is the Stickers editor of state v2 with the Cutout's Camera, which the user adds
   // and deletes. cameraV2 edits state v2's Camera through the Cutout's shot (cameraShot / setCameraShot);
   // shotEditor has the shot and the Frame view, which have nothing to show while Studio has no Camera.
   const studio = sceneV2 && node.__panoStudio === true;
@@ -219,7 +219,7 @@ async function showEditor(node, type, options = {}) {
     stageStatus: IMAGE_LOADING,
     stageStatusDetail: "boot",
     stageWarningDetail: "",
-    // A note on the stage that is not a failure (its text), as Panorama Studio's upstream Scene gives it (#90).
+    // A note on the stage that is not a failure (its text), as Panorama Studio's upstream Scene gives it.
     stageNotice: "",
     viewButtons: (shellPreset.viewButtons || []).map((button) => ({ ...button, visible: true, disabled: false })),
     // The space group of the bottom-right buttons (floatingRightState); none in the Cutout editor.
@@ -533,8 +533,8 @@ async function showEditor(node, type, options = {}) {
     marqueeModifier: false,
     altModifier: false,
     panelLastValues: null,
-    // Panorama Studio: the id of the world Sticker selected in the space view or on its Timeline row
-    // (#72). The canvas selection (selectedId) holds sky Stickers only; selecting one clears the other.
+    // Panorama Studio: the id of the world Sticker selected in the space view or on its Timeline row.
+    // The canvas selection (selectedId) holds sky Stickers only; selecting one clears the other.
     worldSelectedId: null,
     // The mode of the selected world Sticker's gizmo: "translate", "rotate" or "scale".
     gizmoMode: "translate",
@@ -565,7 +565,7 @@ async function showEditor(node, type, options = {}) {
   const rasterErpCanvasCache = new Map();
   const stillCanvas = createPanoCanvas({ label: "editor.still" });
   stillCanvas.__panoFrameIdx = 0;
-  // The still of the port Sticker's MP4 (#83).
+  // The still of the port Sticker's MP4 (Panorama Studio's `sticker` input).
   const portStillCanvas = createPanoCanvas({ label: "editor.port-still" });
   portStillCanvas.__panoFrameIdx = 0;
   const runtime = {

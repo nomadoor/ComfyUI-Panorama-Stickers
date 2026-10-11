@@ -48,10 +48,10 @@ export function createTimeline(deps) {
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
       // A VIDEO on bg_media or sticker sets the Timeline fps (ADR 0024).
       fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker"]),
-      // Panorama Studio shows its Camera, its Stickers and its `scene` on one Timeline (#89).
+      // Panorama Studio shows its Camera, its Stickers and its `scene` on one Timeline.
       camera: hasCamera(),
       cameraHideable: studio,
-      // Another Studio's Scene on `scene` is upstream: its own `scene` is not drawn (#90), and its elements have
+      // Another Studio's Scene on `scene` is upstream: its own `scene` is not drawn, and its elements have
       // rows of their own below (ADR 0030).
       scene: sceneV2 && !!nodeInputOrigins(node).scene && !upstreamLinked(),
       upstream: upstreamTimelineLayers(),

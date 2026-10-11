@@ -209,7 +209,7 @@ export function createTimelineActions(deps) {
       return;
     }
     if (action.type === "key-row") {
-      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet (#89); the background has
+      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet; the background has
       // no Lanes; an upstream `scene` row is not editable here (timelineEditable).
       if (action.owner === "scene" || action.owner === BACKGROUND_ROW || !timelineEditable(action.owner)) return;
       // Recording edits stop at the frame shown, so playback stops before a Keyframe is set.

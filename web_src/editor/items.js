@@ -327,7 +327,7 @@ export function createItems(deps) {
       .filter(Boolean);
   }
   // The Stickers the Cutout editor selects and moves; the sky ones in Panorama Studio's, as the Stickers
-  // editor (#89).
+  // editor does.
   function cutoutStickers() {
     return !Array.isArray(state.stickers) ? [] : skyStickers();
   }

@@ -3,6 +3,14 @@ function finiteNumber(value, fallback = null) {
   return Number.isFinite(out) ? out : fallback;
 }
 
+// The first finite JSON number (not a boolean, not text) of `z_index`, then `zIndex`, or null.
+function zIndexOf(item) {
+  for (const value of [item.z_index, item.zIndex]) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
 function emptyPaintingState() {
   return {
     version: 1,
@@ -22,7 +30,7 @@ function normalizeGroups(raw) {
     const actionGroupId = String(item.actionGroupId || item.id || "").trim();
     if (!actionGroupId || seen.has(actionGroupId)) continue;
     seen.add(actionGroupId);
-    const z = finiteNumber(item.z_index ?? item.zIndex, out.length);
+    const z = zIndexOf(item);
     out.push({
       id: String(item.id || actionGroupId),
       type: "strokeGroup",
@@ -210,7 +218,7 @@ function normalizeRasterObject(item, fallbackZIndex) {
     id,
     type: "raster_frozen",
     layerKind,
-    z_index: Math.max(0, finiteNumber(item.z_index ?? item.zIndex, fallbackZIndex) ?? fallbackZIndex),
+    z_index: Math.max(0, zIndexOf(item) ?? fallbackZIndex),
     locked: item.locked === true,
     bbox,
     rasterDataUrl,

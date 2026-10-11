@@ -350,7 +350,7 @@ export function createVideoPlayback({ video, clock, fps, span, loop, place = () 
 }
 
 // A second VIDEO that follows the playhead of a playback without a state machine of its own: the
-// port Sticker's media (#83). follow() runs on each draw with the source, the media time the
+// port Sticker's media. follow() runs on each draw with the source, the media time the
 // playhead shows (null where the media shows nothing), whether the playhead advances
 // (playback.advancing) and the Timeline fps. While the playhead advances, the VIDEO plays muted and
 // is sought again only when it drifts more than a frame from the playhead. Otherwise it rests

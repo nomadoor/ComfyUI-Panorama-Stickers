@@ -1,4 +1,4 @@
-// The upstream Scene on Panorama Studio's `scene` input (#90, ADR 0029, ADR 0030): its layers from the node's
+// The upstream Scene on Panorama Studio's `scene` input (ADR 0029, ADR 0030): its layers from the node's
 // current result, their working copies with the node's overrides applied (pano_upstream.js
 // upstreamWorkingLayers), which the editor selects and edits like its own Stickers, the edits written back as
 // the node's overrides (syncUpstreamEdits), what the views draw of them at the playhead (their Stickers' images,

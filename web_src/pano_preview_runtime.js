@@ -1703,7 +1703,7 @@ function drawCanvas(node, canvas, surfaceView, run = null) {
   if (!bgImg && panoramaDrawn) drawPanoGrid(ctx, projection, getNodeUiScale(canvas, rect));
   const selectedId = String(state?.active?.selected_sticker_id || "");
   const poseStickers = surfacePoseStickers(state, surfaceFrame(node));
-  // Panorama Studio's surface only shows the Scene (#91): no selection.
+  // Panorama Studio's surface only shows the Scene: no selection.
   const selected = panoramaDrawn && node.__panoStudio !== true
     ? poseStickers.find((item) => String(item?.id || "") === selectedId && item?.visible !== false)
     : null;
@@ -1938,7 +1938,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
   }
   surface.mode = String(options.mode || "stickers") === "cutout" ? "cutout" : "stickers";
   const stickersMode = surface.mode === "stickers";
-  // Panorama Studio's surface shows the Scene to look around in, without editing or playback (#91).
+  // Panorama Studio's surface shows the Scene to look around in, without editing or playback.
   const studioSurface = stickersMode && node.__panoStudio === true;
   const stickerDrop = stickersMode && !studioSurface;
   const panoramaInteractiveView = surface.mode !== "cutout";
@@ -2155,7 +2155,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
         cancelFrame: (id) => cancelAnimationFrame(id),
       },
       readState: () => getCachedState(node),
-      // Panorama Studio plays its Camera's Keyframes too, as its editor does (#89).
+      // Panorama Studio plays its Camera's Keyframes too, as its editor does.
       camera: node.__panoStudio === true,
       onFrame: requestDraw,
       // The still is at most NODE_STILL_MAX_WIDTH wide; the node shows it small.
