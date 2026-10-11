@@ -3,7 +3,7 @@
 // them for display and moves them.
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "../pano_brush_presets.js";
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
-import { setStickerPose, stickerPose } from "../pano_editor_state.js";
+import { CAMERA_SHOT_ID, setCameraField, setStickerPose, stickerPose } from "../pano_editor_state.js";
 import { HIDDEN_PREVIEW_OPACITY } from "../pano_editor_view.js";
 import { clamp } from "../pano_math.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
@@ -12,7 +12,7 @@ import { DEG2RAD, EXTERNAL_STICKER_ID, EXTERNAL_STICKER_SOURCE_KIND } from "./co
 
 export function createItems(deps) {
   const {
-    canvas, editor, sceneV2, state, stateV2, type,
+    cameraV2, canvas, editor, sceneV2, state, stateV2, type,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let getActiveCutoutShot, getBrushPresetIdForTool, getFrameViewRect, getPaintingLayerList, getPaintingRevisionKey,
@@ -54,9 +54,16 @@ export function createItems(deps) {
     const media = !isExternalSticker(item) ? null : isUpstreamSticker(item) ? upstreamStickerImage(item) : getStickerImage(item);
     return stickerPose(item, editor.frame, media && { width: media.naturalWidth || media.width, height: media.naturalHeight || media.height });
   }
+  // Panorama Studio's Camera (docs/editor-interaction.md): its angle of view goes to the Camera's `fov`, its V FOV
+  // is computed from the aspect and not written, its pose goes to the shot, which syncCutoutShot writes back.
   function writePose(item, pose) {
     if (isSceneSticker(item)) setStickerPose(item, editor.frame, pose);
-    else Object.assign(item, pose);
+    else if (cameraV2 && item?.id === CAMERA_SHOT_ID && state.camera) {
+      const { hFOV_deg: hFov, vFOV_deg: vFov, ...rest } = pose;
+      void vFov;
+      if (hFov !== undefined) setCameraField(state.camera, editor.frame, "hFOV_deg", hFov);
+      Object.assign(item, rest);
+    } else Object.assign(item, pose);
   }
   function getPaintingGroupList() {
     const painting = state.painting || (state.painting = normalizePaintingState(null));

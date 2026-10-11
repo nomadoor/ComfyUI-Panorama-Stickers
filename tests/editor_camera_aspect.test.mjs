@@ -4,6 +4,7 @@ import test from "node:test";
 import { createCamera } from "../web_src/editor/camera.js";
 import { cameraShot } from "../web_src/pano_editor_state.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { cameraAspectChoices } from "../web_src/pano_editor_ui_state.js";
 
 // docs/editor-interaction.md (the owner, 2026-10-11): an aspect preset of Panorama Studio's Camera gives its frame
 // exactly that aspect, chosen from the Frame view's rail or elsewhere, at any lens curve, every time it is chosen.
@@ -41,4 +42,26 @@ test("an aspect preset gives the Camera exactly its ratio, from the Frame view o
       assert.equal(state.camera.aspect, 21 / 9, `${curve} ${mode} custom`);
     }
   }
+});
+
+// The presets write the aspect alone: the Camera's angle of view stays.
+test("an aspect preset or the portrait flip keeps the Camera's H FOV", () => {
+  const { state, camera } = studioCamera(1);
+  camera.setShotAspect(state.shots[0], "4:3");
+  camera.syncCutoutShot();
+  camera.rotateCutoutAspect90(state.shots[0]);
+  camera.syncCutoutShot();
+  assert.deepEqual([state.camera.fov.value, state.camera.aspect, state.shots[0].hFOV_deg], [100, 3 / 4, 100]);
+});
+
+// One table of presets for the menus and the editors; a preset it does not hold is an error, not 1:1.
+test("the menus offer the presets the Camera takes, and an unknown preset is an error", () => {
+  const { state, camera } = studioCamera(1);
+  for (const { value } of cameraAspectChoices(null)) {
+    camera.setShotAspect(state.shots[0], value);
+    camera.syncCutoutShot();
+    const [w, h] = value.split(":").map(Number);
+    assert.equal(state.camera.aspect, w / h);
+  }
+  assert.throws(() => camera.setShotAspect(state.shots[0], "5:4"), /Unknown aspect preset/);
 });

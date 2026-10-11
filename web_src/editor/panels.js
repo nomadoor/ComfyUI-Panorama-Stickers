@@ -4,6 +4,8 @@
 import { ICON } from "../icons.js";
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
 import {
+  CAMERA_ASPECT_MAX,
+  CAMERA_ASPECT_MIN,
   cameraFields,
   cameraLensFields,
   normalizeCoverageValue,
@@ -389,9 +391,11 @@ export function createPanels(deps) {
       if (selectedKind === "image" || (type === "stickers" && !shotInspected)) pushParam("rot_deg", "Roll", -180, 180, 0.1);
       else pushParam("roll_deg", "Roll", -180, 180, 0.1);
       pushParam("hFOV_deg", "H FOV", 1, lens ? lensFovLimit(lens.curve) : 179, 0.1);
-      // Panorama Studio's Camera has no V FOV field: its V FOV follows its H FOV through the frame's aspect, which
-      // the aspect presets set (docs/editor-interaction.md). The legacy Cutout's shot keeps both.
-      if (!lens) pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
+      // Panorama Studio's Camera shows its own fields (docs/editor-interaction.md): H FOV and the aspect; its V FOV
+      // is computed from them and has no field. The legacy Cutout's shot keeps its pair.
+      // Any step: a preset's exact ratio (16 ÷ 9) is not rounded by the field.
+      if (lens) pushParam("aspect", "Aspect", CAMERA_ASPECT_MIN, CAMERA_ASPECT_MAX, "any");
+      else pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
       // The lens row after the Camera's fields (docs/editor-interaction.md, ADR 0042): its curve κ.
       if (lens) pushParam("curve", "Lens curve", 0, 1.5, 0.01);
       // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).

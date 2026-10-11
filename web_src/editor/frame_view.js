@@ -34,7 +34,7 @@ export function createFrameView(deps) {
   // Bound by connect() to the other modules and showEditor.
   let applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
     hasSpaceContent, hideTooltip, invalidateLivePaintPreviewCaches, pushHistory, requestDraw, shotViewCamera,
-    spaceScale, spaceViewState, stopTimelinePlayback, syncViewToggleState, updateCursor, updateSidePanel;
+    spaceScale, spaceViewState, stopTimelinePlayback, syncCutoutShot, syncViewToggleState, updateCursor, updateSidePanel, writePose;
 
   let frameWheel = null;
   // The movement keys moved the Camera since they went down (moveFrameByKeys); endFrameKeyMove() makes it
@@ -165,8 +165,10 @@ export function createFrameView(deps) {
       const reach = contextHalfExtentsPx({ width: canvas.width, height: canvas.height }, projectedFocal);
       if (reach.halfW < canvas.width * 0.5 - 1e-6 || reach.halfH < canvas.height * 0.5 - 1e-6) return false;
     }
-    shot.hFOV_deg = next.hFOV_deg;
-    shot.vFOV_deg = next.vFOV_deg;
+    // Panorama Studio's Camera takes its new angle of view as its `fov` (items.js writePose), and its shot is
+    // derived again from it for what reads it next.
+    writePose(shot, next);
+    syncCutoutShot();
     void anchor;
     scheduleFrameWheelCommit();
     updateSidePanel();
@@ -374,7 +376,7 @@ export function createFrameView(deps) {
       ({
         applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
         hasSpaceContent, hideTooltip, invalidateLivePaintPreviewCaches, pushHistory, requestDraw, shotViewCamera,
-        spaceScale, spaceViewState, stopTimelinePlayback, syncViewToggleState, updateCursor, updateSidePanel,
+        spaceScale, spaceViewState, stopTimelinePlayback, syncCutoutShot, syncViewToggleState, updateCursor, updateSidePanel, writePose,
       } = api);
     },
     leaveFrameView, measureFrameSafeRect, getFrameViewLayout, getFrameViewRect, supportsFramePainting,

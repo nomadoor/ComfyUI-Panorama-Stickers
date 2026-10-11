@@ -316,25 +316,17 @@ function nearestTurn(delta) {
   return delta - 360 * Math.round(delta / 360);
 }
 
-// Writes the fields of `shot` that differ from `base` (the cameraShot() it was edited from) to the
-// Camera at a Timeline frame, each Lane by the recording rule: the angles to `rotation`, hFOV_deg to
-// `fov`, the position to `position`. An angle keeps the turn of its base, so a yaw wrapped across 180
-// degrees does not send the Camera the long way round. The aspect is not keyed: an aspect preset sets it to its
-// ratio.
+// Writes the pose of `shot` that differs from `base` (the cameraShot() it was edited from) to the Camera at a
+// Timeline frame, each Lane by the recording rule: the angles to `rotation`, the position to `position`. An angle
+// keeps the turn of its base, so a yaw wrapped across 180 degrees does not send the Camera the long way round. The
+// shot's FOV pair is computed from the Camera and never written back: the angle of view and the aspect are
+// written as the Camera's own fields (setCameraField, docs/editor-interaction.md).
 export function setCameraShot(camera, frame, shot, base) {
   const rotation = {};
   for (const field of ["yaw_deg", "pitch_deg", "roll_deg"]) {
     if (shot[field] !== base[field]) rotation[field] = base[field] + nearestTurn(shot[field] - base[field]);
   }
   if (Object.keys(rotation).length) setLaneValue(camera, "rotation", frame, rotation);
-  if (shot.hFOV_deg !== base.hFOV_deg) setLaneValue(camera, "fov", frame, shot.hFOV_deg);
-  // Only an aspect preset changes the frame's aspect, to the preset's own ratio (`aspect_ratio`, which the edit
-  // puts on the shot and this takes off); any other FOV edit keeps it, and the next cameraShot() gives the V FOV
-  // that aspect makes (docs/editor-interaction.md).
-  if (Number.isFinite(shot.aspect_ratio) && shot.aspect_ratio > 0) {
-    camera.aspect = shot.aspect_ratio;
-    delete shot.aspect_ratio;
-  }
   if (shot.position.some((value, axis) => value !== base.position[axis])) setLaneValue(camera, "position", frame, [...shot.position]);
 }
 
@@ -351,12 +343,16 @@ export function cameraFields(camera, frame) {
   };
 }
 
-// The Camera's lens in the inspector's fields (ADR 0042): its evaluated hFOV (under the limit of its κ) and its
-// lens curve κ.
+// The Camera's angle of view in the inspector's fields: its evaluated hFOV (under the limit of its κ), its aspect
+// (width ÷ height) and its lens curve κ (ADR 0042).
 export function cameraLensFields(camera, frame) {
   const value = evaluateCamera(camera, frame);
-  return { hFOV_deg: value.hFOV_deg, curve: value.curve };
+  return { hFOV_deg: value.hFOV_deg, aspect: camera.aspect, curve: value.curve };
 }
+
+// The range the inspector's Aspect field takes (width ÷ height).
+export const CAMERA_ASPECT_MIN = 0.25;
+export const CAMERA_ASPECT_MAX = 4;
 
 // An inspector edit of one Camera field at a Timeline frame, by the recording rule of its Lane.
 export function setCameraField(camera, frame, field, value) {
@@ -369,6 +365,9 @@ export function setCameraField(camera, frame, field, value) {
     setLaneValue(camera, "fov", frame, value);
   } else if (field === "curve") {
     setLaneValue(camera, "curve", frame, value);
+  } else if (field === "aspect") {
+    // Not a Lane: the frame's aspect has no Keyframes.
+    camera.aspect = value;
   } else {
     setLaneValue(camera, "rotation", frame, { [field]: value });
   }

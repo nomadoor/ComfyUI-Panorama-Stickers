@@ -14,8 +14,8 @@ import {
   shortestAngleDeltaRad,
   shotCurve,
 } from "../pano_cutout_view_math.js";
-import { cameraShot, newStudioCamera, setCameraShot } from "../pano_editor_state.js";
-import { ERP_ASPECT } from "../pano_editor_ui_state.js";
+import { CAMERA_SHOT_ID, cameraShot, newStudioCamera, setCameraShot } from "../pano_editor_state.js";
+import { ASPECT_PRESETS, ERP_ASPECT, aspectPreset } from "../pano_editor_ui_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import { cameraFrustumSegments, segmentsHit } from "../pano_space.js";
 import { FRAME_GATE_OCCUPANCY } from "./constants.js";
@@ -127,7 +127,28 @@ export function createCamera(deps) {
       state.camera.projection = aspect === ERP_ASPECT ? "erp" : "perspective";
       if (aspect === ERP_ASPECT) return;
     }
+    if (isStudioCamera(shot)) {
+      if (shot.locked === true) return;
+      // The preset in the frame's orientation.
+      let [aw, ah] = aspectPreset(aspect);
+      if ((aw >= ah) !== (state.camera.aspect >= 1)) [aw, ah] = [ah, aw];
+      setCameraAspect(aw / ah);
+      return;
+    }
     applyCutoutAspect(shot, aspect);
+  }
+
+  // Panorama Studio's Camera (docs/editor-interaction.md): its frame's aspect is a field of its own, which the
+  // presets, the portrait flip and a custom ratio write directly; its angle of view stays, and its shot is computed
+  // from it again.
+  function isStudioCamera(shot) {
+    return cameraV2 && shot?.id === CAMERA_SHOT_ID && !!state.camera;
+  }
+
+  function setCameraAspect(ratio) {
+    syncCutoutShot();
+    state.camera.aspect = ratio;
+    syncCutoutShot();
   }
 
   function clearCutoutFrame() {
@@ -170,12 +191,6 @@ export function createCamera(deps) {
 
   function applyCutoutAspect(selected, aspect) {
     if (!selected || selected.locked === true) return;
-    const pairs = {
-      "1:1": [1, 1],
-      "3:2": [3, 2],
-      "4:3": [4, 3],
-      "16:9": [16, 9],
-    };
     const currentLandscape = (() => {
       const stored = String(selected.aspect_id || "").trim();
       if (/^\d+:\d+$/.test(stored)) {
@@ -187,7 +202,7 @@ export function createCamera(deps) {
       if (Math.abs(hf - vf) > 1e-6) return hf >= vf;
       return deriveCutoutAspectFromFov(selected) >= 1;
     })();
-    let [aw, ah] = pairs[String(aspect)] || pairs["1:1"];
+    let [aw, ah] = aspectPreset(aspect);
     if ((aw >= ah) !== currentLandscape) [aw, ah] = [ah, aw];
     const ratio = aw / ah;
     if (!applyGateAspectAtCurrentScale(selected, ratio)) {
@@ -196,12 +211,6 @@ export function createCamera(deps) {
       selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio, shotCurve(selected));
     }
     selected.aspect_id = `${aw}:${ah}`;
-    presetAspect(selected, ratio);
-  }
-
-  // Panorama Studio's Camera takes a preset's ratio exactly (setCameraShot), every time one is chosen.
-  function presetAspect(selected, ratio) {
-    if (cameraV2) selected.aspect_ratio = ratio;
   }
 
   function applyCutoutAspectCustom(selected, w, h) {
@@ -209,13 +218,16 @@ export function createCamera(deps) {
     const pair = parseCutoutAspectPair(w, h);
     if (!pair) return false;
     const ratio = pair.ratio;
+    if (isStudioCamera(selected)) {
+      setCameraAspect(ratio);
+      return true;
+    }
     if (!applyGateAspectAtCurrentScale(selected, ratio)) {
       const vf = clamp(Number(selected.vFOV_deg || 40), 1, 179);
       selected.vFOV_deg = vf;
       selected.hFOV_deg = deriveHorizontalFovDeg(vf, ratio, shotCurve(selected));
     }
     selected.aspect_id = pair.label;
-    presetAspect(selected, ratio);
     return true;
   }
 
@@ -230,6 +242,13 @@ export function createCamera(deps) {
   // behind it does not move.
   function rotateCutoutAspect90(selected) {
     if (!selected || selected.locked === true) return;
+    if (isStudioCamera(selected)) {
+      // A preset's flip is its exact ratio flipped.
+      const { aspect } = state.camera;
+      const preset = Object.values(ASPECT_PRESETS).flatMap(([w, h]) => [[w, h], [h, w]]).find(([w, h]) => Math.abs(w / h - aspect) < 1e-9);
+      setCameraAspect(preset ? preset[1] / preset[0] : 1 / aspect);
+      return;
+    }
     const storedAspect = String(selected.aspect_id || "").trim();
     const camera = getCutoutCameraParams(selected);
     const aspect = camera.tanHalfX / Math.max(1e-12, camera.tanHalfY);
@@ -242,11 +261,8 @@ export function createCamera(deps) {
     if (/^\d+:\d+$/.test(storedAspect)) {
       const [w, h] = storedAspect.split(":");
       selected.aspect_id = `${h}:${w}`;
-      // The flipped preset's exact ratio.
-      presetAspect(selected, Number(h) / Number(w));
     } else {
       selected.aspect_id = deriveCutoutAspectLabelFromFov(selected);
-      presetAspect(selected, inverted);
     }
   }
 

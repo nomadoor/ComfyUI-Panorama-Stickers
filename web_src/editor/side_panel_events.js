@@ -40,9 +40,8 @@ export function createSidePanelEvents(deps) {
     if ((worldInspected || cameraV2) && WORLD_UNLIMITED_FIELDS.has(key)) out = key === "scale" ? Math.max(out, WORLD_MIN_SCALE) : out;
     else out = clamp(out, Number(param.min), Number(param.max));
     if (key === "yaw_deg") out = wrapYaw(out);
-    // The Camera's H FOV and κ go to its Lanes directly: its frame keeps its aspect, so its V FOV follows
-    // (docs/editor-interaction.md).
-    const cameraLens = !worldInspected && cameraV2 && state.camera && (key === "curve" || key === "hFOV_deg");
+    // The Camera's H FOV, aspect and κ are its own fields, written directly (docs/editor-interaction.md).
+    const cameraLens = !worldInspected && cameraV2 && state.camera && (key === "curve" || key === "hFOV_deg" || key === "aspect");
     if (!worldInspected && cameraV2 && (key.startsWith("position_") || cameraLens)) {
       syncCutoutShot();
       setCameraField(state.camera, editor.frame, key, out);
