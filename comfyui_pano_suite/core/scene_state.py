@@ -274,6 +274,22 @@ def is_3d_file_source(source) -> bool:
     return isinstance(filename, str) and filename.lower().endswith(FILE_3D_EXTENSIONS)
 
 
+# A 3D file's glTF animation (ADR 0043): the clip by name (None: the first) and the speed, 0.1 to 10.
+ANIMATION_SPEED_MIN = 0.1
+ANIMATION_SPEED_MAX = 10.0
+
+
+def _animation(raw):
+    """A stored `animation` as a loaded state holds it, `{"clip": name or None, "speed"}`: a speed out of range is
+    brought into it and anything else that is not a number is 1. None for the default (the first clip at speed 1),
+    which a state does not hold, and for anything that is not an object."""
+    if not isinstance(raw, dict):
+        return None
+    clip = raw.get("clip")
+    animation = {"clip": clip if isinstance(clip, str) else None, "speed": _clamp(_number(raw.get("speed"), 1.0), ANIMATION_SPEED_MIN, ANIMATION_SPEED_MAX)}
+    return None if animation == {"clip": None, "speed": 1.0} else animation
+
+
 def _sticker(raw):
     source = _source(raw.get("source"))
     if source is None:
@@ -290,6 +306,10 @@ def _sticker(raw):
         "crop": _crop(raw.get("crop")),
         **_lanes(raw, _sticker_lanes(raw, placement)),
     }
+    # The animation of a 3D file: a `file` Source of one, or the port's 3D media.
+    animation = _animation(raw.get("animation")) if is_3d_file_source(source) or source["kind"] == "port" else None
+    if animation is not None:
+        sticker["animation"] = animation
     if not world:
         z_index = _frame(raw.get("z_index"))
         sticker["z_index"] = 0 if z_index is None else z_index
@@ -433,7 +453,7 @@ def _normalize_v2(raw):
             "length": _timeline_length(timeline.get("length")),
         },
         "camera": _camera(raw.get("camera")),
-        "scene": {"clip": _clip(scene.get("clip")), "visible": _bool(scene.get("visible"), True), **_lanes(scene, SCENE_LANES)},
+        "scene": {"clip": _clip(scene.get("clip")), "visible": _bool(scene.get("visible"), True), **_lanes(scene, SCENE_LANES), **_scene_animation(scene)},
         "stickers": stickers,
         "next_sticker_id": next_sticker_id,
         "painting": normalize_painting_state(raw.get("painting")),
@@ -442,6 +462,11 @@ def _normalize_v2(raw):
         "upstream": _upstream(raw.get("upstream")),
         "background": _background(raw.get("background")),
     }
+
+
+def _scene_animation(raw):
+    animation = _animation(raw.get("animation"))
+    return {} if animation is None else {"animation": animation}
 
 
 def _background(raw):

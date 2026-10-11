@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "scene_state"
 TOLERANCE = 1e-4
 
-STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_interpolation", "v2_half_turns", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background"]
+STATE_CASES = ["v2_canonical", "v1_stickers", "v1_cutout", "v2_invalid_fields", "v2_interpolation", "v2_half_turns", "v2_no_camera", "v2_erp_camera", "v2_hidden", "v2_timeline_limits", "v2_upstream", "v2_background", "v2_animation"]
 STICKER_STATE_CASES = ["sticker_state_v1", "sticker_state_v2"]
 EVAL_FRAMES = {
     "v2_canonical": [10.0 - 1e-7, 50.0 - 1e-7] + [case["frame"] for case in json.loads((FIXTURES / "v2_canonical.eval.json").read_text(encoding="utf-8"))] + [0.0, 1.0, 23.999, 24.0 - 5e-7, 24.0 + 5e-7, 48.0, 119.0],
@@ -32,6 +32,7 @@ EVAL_FRAMES = {
     "v2_timeline_limits": [0.0, 1000.0, 1250.0, 1500.0, 2000.0, 1e7],
     "v2_upstream": [0.0, 5.0],
     "v2_background": [0.0, 12.0, 58.0, 59.0],
+    "v2_animation": [0.0, 30.0],
 }
 REBASE_CASES = [[name, fps] for name in STATE_CASES for fps in (30000 / 1001, 12.0, 60.0)] + [["v2_timeline_limits", fps] for fps in (1e308, 300.0, 0.5)]
 # States that probe the edges of the Sticker id counter and the upstream records.

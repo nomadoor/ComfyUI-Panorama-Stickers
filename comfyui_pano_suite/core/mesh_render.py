@@ -10,12 +10,13 @@ is worked in linear space and returned in sRGB. Intersections and lighting are e
 they do not depend on global precision settings such as TF32 matrix products.
 """
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
+from . import gltf_animation
 from .math import lens_angle, lens_focal, lens_radius
 from .three_dfg_lut import DFG_LUT_HALVES, DFG_LUT_SIZE
 from .world_render import CameraView, SceneContent, over_by_depth
@@ -102,22 +103,31 @@ class MeshItem:
     occlusion_in_mr: bool = False
 
 
-def mesh_content(count: int, item_at) -> SceneContent:
+def mesh_content(count: int, item_at, animation=None) -> SceneContent:
     """The `scene` content of `count` items, item `index` given by `item_at(index)` as a MeshItem, or as a list of
     them (the views of a DA3_GEOMETRY multiview, none for an empty item) drawn each and folded by depth into one
     straight-alpha layer. The last item drawn stays on the device for the next frame of the same execution, and so
-    do the rays of the last view."""
+    do the rays of the last view.
+
+    With the glTF `animation` (a `GltfAnimation` of the one item, ADR 0043), a `pose` (clip index, seconds in the
+    clip) draws the item reshaped (`gltf_animation.evaluate` and `deform`): its rest values, joints, weights, and
+    morph targets stay on the device, and each frame passes only its matrices and morph weights."""
     uploaded = {}
     kept_rays = {}
 
-    def render(view, index, device):
+    def render(view, index, device, pose=None):
         if uploaded.get("key") != (index, device):
             uploaded.clear()
             item = item_at(index)
             uploaded["item"] = [_upload(part, device) for part in item] if isinstance(item, (list, tuple)) else _upload(item, device)
+            if animation is not None:
+                uploaded["animation"] = gltf_animation.upload(animation, device)
             uploaded["key"] = (index, device)
         rays = view.cached_rays(device, kept_rays)
         item = uploaded["item"]
+        if animation is not None and pose is not None:
+            vertices, normals, tangents = gltf_animation.deform(animation, uploaded["animation"], gltf_animation.evaluate(animation, *pose))
+            item = replace(item, vertices=vertices, normals=item.normals if normals is None else normals, tangents=item.tangents if tangents is None else tangents)
         if not isinstance(item, list):
             return _render(view, item, rays)
         composite = None
@@ -131,7 +141,7 @@ def mesh_content(count: int, item_at) -> SceneContent:
         alpha = total[..., 3:]
         return torch.cat([torch.where(alpha > 0.0, total[..., :3] / alpha.clamp_min(1e-12), 0.0), alpha], dim=-1), depth
 
-    return SceneContent(count, render)
+    return SceneContent(count, render, animation)
 
 
 def srgb_to_linear(value: torch.Tensor) -> torch.Tensor:

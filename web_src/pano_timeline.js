@@ -3,6 +3,7 @@
 // the Keyframes on the content, and Easing edits. Frames passed for an owner (the Camera, scene or a
 // Sticker) are in its own time base: Timeline frames for the Camera, Clip frames (from start - in) for
 // scene and the Stickers.
+import { animationCycleFrames } from "./pano_animation.js";
 import { portMediaFrames } from "./pano_port_media.js";
 import { evaluateLane, FRAME_EPSILON } from "./pano_scene_eval.js";
 import {
@@ -223,9 +224,12 @@ export function timelineSpan(state, media = {}) {
 //               this node overrides in it (pano_upstream.js upstreamOverriddenEnds)
 //   openClip    a Clip range counted as one without a duration (the one being dragged)
 //   camera      whether the Camera's Keyframes count (Panorama Studio shoots with it)
+//   animations  the clips of the animated 3D files ({ scene: [{ name, duration }] or null, stickers: { id: clips } },
+//               the meta's `animation.clips`): an animated `scene` or 3D Sticker without a duration ends one cycle of
+//               its clip after its material starts (start − in + animationCycleFrames), as a VIDEO ends with its media
 // The state is at the Timeline fps (the editor rebases it to a VIDEO's or the upstream Scene's), so its frames
 // are output frames.
-export function autoTimelineLength(state, { bg = null, port = null, sceneItems = 0, upstream = null, openClip = null, camera = false } = {}) {
+export function autoTimelineLength(state, { bg = null, port = null, sceneItems = 0, upstream = null, openClip = null, camera = false, animations = null } = {}) {
   const fps = state.timeline.fps;
   const open = (clip) => clip.duration === null || clip === openClip;
   const ends = [state.scene.clip, ...state.stickers.map((sticker) => sticker.clip)]
@@ -236,6 +240,16 @@ export function autoTimelineLength(state, { bg = null, port = null, sceneItems =
   if (port && portSticker && open(portSticker.clip)) ends.push(portMediaFrames({ ...portSticker.clip, duration: null }, fps, port));
   const sceneClip = state.scene.clip;
   if (sceneItems > 1 && open(sceneClip)) ends.push(sceneClip.start - sceneClip.in + sceneItems);
+  // An animated 3D file without a duration ends with one cycle of its clip (ADR 0043).
+  const cycleEnd = (owner, clips) => {
+    const frames = animationCycleFrames(clips, owner.animation, fps);
+    if (frames !== null && open(owner.clip)) ends.push(owner.clip.start - owner.clip.in + frames);
+  };
+  if (animations?.scene) cycleEnd(state.scene, animations.scene);
+  for (const sticker of state.stickers) {
+    const clips = animations?.stickers?.[sticker.id];
+    if (clips) cycleEnd(sticker, clips);
+  }
   // A single background image ends with its Clip range, as a Sticker's image does.
   const bgClip = state.background.clip;
   if (bg?.frames === 1 && !bg.video && !open(bgClip)) ends.push(bgClip.start + bgClip.duration);

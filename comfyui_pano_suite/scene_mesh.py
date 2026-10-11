@@ -5,14 +5,29 @@ A MESH item is drawn as three.js draws its editor GLB, which the core's `save_gl
 (its maps, its material) is read here from the MESH in the same way (`mesh_material`), and a MESH is lit unless the
 core marks it `unlit` (docs/render-contract.md, "光が効く要素", "材質")."""
 import logging
+import os
 from dataclasses import replace
 
 import torch
 from comfy_api.latest import Types
 
 from .core.cache import CACHE
+from .core.gltf_animation import has_animation, read_animation
 from .core.mesh_render import BARE_COLOR, MeshItem, MeshMaterial, mesh_content
-from .core_adapters import DA3GeometryToMesh, Get3DComponents, _da3_build_mask, _da3_default_K, _da3_get_K, _da3_unproject, depth_map_edge, depth_map_to_point_map, get_mesh_batch_item
+from .core_adapters import (
+    DA3GeometryToMesh,
+    Get3DComponents,
+    _da3_build_mask,
+    _da3_default_K,
+    _da3_get_K,
+    _da3_unproject,
+    depth_map_edge,
+    depth_map_to_point_map,
+    get_mesh_batch_item,
+    load_gltf,
+    parse_container,
+    read_accessor,
+)
 from .node_runtime import NodeRuntime
 from .scene_files import moge_grid_mesh
 
@@ -26,9 +41,41 @@ def is_mesh_file(scene) -> bool:
     return isinstance(scene, Types.File3D) and scene.format in MESH_FILE_FORMATS
 
 
+class AnimatedMesh(Types.MESH):
+    """The MESH the core reads from a glTF with clips, with what `read_animation` reads beside it (`animation`), the
+    file's path (`source`, None for a file that is not on disk), and whether that file holds all its data
+    (`self_contained`: a GLB, or a GLTF whose buffers are data URIs), so the editor can load it whole (ADR 0043)."""
+
+    def __init__(self, mesh: Types.MESH, animation, source: str | None, self_contained: bool):
+        vars(self).update(vars(mesh))
+        self.animation = animation
+        self.source = source
+        self.self_contained = self_contained
+
+
 def read_mesh_file(file: Types.File3D) -> Types.MESH:
-    """A mesh 3D file as the one-item MESH the core reads from it (Get3DComponents)."""
-    return Get3DComponents.execute(file).result[0]
+    """A mesh 3D file as the one-item MESH the core reads from it (Get3DComponents); a GLB or GLTF with clips as an
+    `AnimatedMesh`. A file whose primitives `read_animation` cannot tie to the MESH is a ValueError."""
+    mesh = Get3DComponents.execute(file).result[0]
+    if file.format not in ("glb", "gltf"):
+        return mesh
+    data = file.get_bytes()
+    gltf, _bin = parse_container(data)
+    if not has_animation(gltf):
+        return mesh
+    source = file.get_source() if file.is_disk_backed else None
+    gltf, buffers, prims = load_gltf(data, None if source is None else os.path.dirname(source), lambda _key, _message: None)
+    animation = read_animation(gltf, buffers, prims, read_accessor)
+    if animation.positions.shape[0] != mesh.vertices.shape[1]:
+        raise ValueError(f"the core read {mesh.vertices.shape[1]} vertices from this glTF but its primitives have {animation.positions.shape[0]}, "
+                         "so its animation cannot be drawn")
+    self_contained = all(str(buffer.get("uri", "data:")).startswith("data:") for buffer in gltf.get("buffers", []))
+    return AnimatedMesh(mesh, animation, source, self_contained)
+
+
+def mesh_animation(media):
+    """The glTF clips (`GltfAnimation`) of read 3D media or of its World content, or None without any."""
+    return getattr(media, "animation", None)
 
 
 def is_unlit(value) -> bool | None:
@@ -96,7 +143,7 @@ def mesh_item(mesh: Types.MESH, index: int) -> MeshItem:
 
 
 def mesh_scene_content(mesh: Types.MESH):
-    return mesh_content(mesh.vertices.shape[0], lambda index: mesh_item(mesh, index))
+    return mesh_content(mesh.vertices.shape[0], lambda index: mesh_item(mesh, index), mesh_animation(mesh))
 
 
 def moge_scene_content(geometry: dict):

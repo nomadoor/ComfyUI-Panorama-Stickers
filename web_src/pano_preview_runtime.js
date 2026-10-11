@@ -95,14 +95,21 @@ import {
   removeTrackedDomWidget,
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
-import { DEFAULT_VIEW_HFOV } from "./pano_space.js";
+import { DEFAULT_VIEW_HFOV, stateAnimationClips } from "./pano_space.js";
+import { createFile3dEditorFiles, file3dEditorFileOf } from "./pano_file_3d.js";
 import { createViewportRestoreScheduler } from "./pano_viewport_restore.js";
 import { editorOpen, mediaCache, nodeSurface, stateSync } from "./pano_node_bridge.js";
 const { app } = appModule;
 setNodeOutputLookup((node) => lookupNodeOutputEntry(node.id));
 trackRunOutputs(api);
 const sharedPreviewImageCache = createSharedImageCache();
-const { linkedVideoFile } = createComfyMediaAdapter({ app, api });
+const { linkedVideoFile, source: mediaSource } = createComfyMediaAdapter({ app, api });
+// The editor files of the 3D file Stickers the node surfaces' Auto length reads (their animated files' clips, ADR 0043),
+// one registry for every surface, as the editor asks the same route; an answer draws the graph again.
+const surfaceFile3dFiles = createFile3dEditorFiles({
+  fetchApi: (path, options) => api.fetchApi(path, options),
+  onUpdate: () => app?.graph?.setDirtyCanvas?.(true, true),
+});
 
 function getAnimPreviewWidgetName() {
   return String(
@@ -1373,6 +1380,17 @@ function surfaceTimelineMedia(node, state) {
   } else if (scene) {
     media.sceneItems = list("pano_scene_files").length;
   }
+  // The animated 3D files (ADR 0043): the `scene` input's and the port Sticker's 3D media as the result tells of them,
+  // and each 3D file Sticker's from the file route, as the editor asks it, so the surface counts the length the run
+  // decides before and after a run.
+  const clips = (metaKey) => list(metaKey)[0]?.animation?.clips;
+  const portSticker = state.stickers.find((sticker) => sticker.source.kind === "port");
+  const portClips = isNodeOutputMediaCurrent(node, "external-sticker") ? clips("pano_sticker_meta") : null;
+  media.animations = stateAnimationClips(state, {
+    sceneFiles: scene && !layers.length && Array.isArray(clips("pano_scene_meta")) ? { animation: { clips: clips("pano_scene_meta") } } : null,
+    stickerFiles: portSticker && Array.isArray(portClips) ? { animation: { clips: portClips } } : null,
+    editorFile: (sticker) => file3dEditorFileOf(surfaceFile3dFiles, sticker, mediaSource),
+  });
   return media;
 }
 

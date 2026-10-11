@@ -22,6 +22,12 @@
 //               box over the ERP, "splat": the state of the SPLAT alone, "output", "splat_output" }] }, both on
 //               bg_color #204060; each case's frames are drawn through the editor's lens pass (pano_editor_view.js
 //               shotLensImage) and held to the lens tolerance (editor_<name>.png, editor_<name>_splat.png, diffs)
+//   anim/       (optional) the glTF animation scene ("エディタとの一致（glTF のアニメーションの場面）", ADR 0043):
+//               scene.json { "size", "cases": [{ "name", "unlit", "source" (the original glTF), "glb" (the editor GLB),
+//               "meta" (its `animation` meta), "state", "clip", "speed", "seconds", "clip_time", "output" }] } on bg_color
+//               #204060; each case is drawn as the editor draws the 3D file Sticker (pano_space.js fileStickerRequests
+//               with the editor file's animation), its pose checked against the case's clip, speed and seconds, and
+//               held to SHAPE (editor_<name>.png, diff_<name>.png)
 // and gets editor.png (with output.png also diff.png, the per-pixel difference x8, and parity.json). In da3/ and
 // moge/, per shot, frame 0's grid is drawn twice: with the colors of image.png ((a) the shape: editor_<shot>_image.png, held to the
 // 3D file's tolerance) and with the colors of the proxy, its <video> paused at the item's time and drawn as a
@@ -203,6 +209,30 @@ window.renderLens = async ({ erpBase64, glbBase64, plyBase64, unlit, splatMeta, 
       dispose();
     }
     results.push({ name: item.name, frames });
+  }
+  return results;
+};
+
+// The glTF animation scene: each case's 3D file Sticker with its original (source) and editor GLB (glb), as the
+// editor asks for it, and the pose its request carries.
+window.renderAnim = async ({ files, cases, size, background, loadMs }) => {
+  const urls = Object.fromEntries(Object.entries(files).map(([name, value]) => [name, blobUrl(value, "model/gltf-binary")]));
+  const results = [];
+  for (const item of cases) {
+    const state = loadSceneState(item.state);
+    const editorFile = () => ({ kind: "mesh", unlit: item.unlit, url: urls[item.glb], generation: 0, animation: { src: urls[item.source], clips: item.meta.clips } });
+    const entries = fileStickerRequests(state, evaluateSceneState(state, 0), editorFile);
+    const request = entries[0]?.request;
+    if (!request?.animation) throw new Error(\`\${item.name}: the request has no animation.\`);
+    const space = {
+      grid: null, sceneUrls: [], scene: null, stickerUrls: [], sticker: null,
+      fileStickers: [request], fileStickerKeys: [entries[0].key],
+      stickers: [], lines: [], upstreamItems: [], upstreamStickers: [], gizmo: null,
+    };
+    const { renderer, capture, dispose } = makeView(size, size);
+    const frame = await capture({ camera: shotOf(state), space, clearColor: background }, loadMs);
+    dispose();
+    results.push({ name: item.name, pose: request.animation, frame: { renderer, ...frame } });
   }
   return results;
 };
@@ -506,6 +536,28 @@ try {
       }
     }
     await writeFile(path.join(lensDir, "parity.json"), `${JSON.stringify(report, null, 2)}\n`);
+  }
+  // The glTF animation scene.
+  const animDir = path.join(workDir, "anim");
+  if (await exists(path.join(animDir, "scene.json"))) {
+    const anim = await readJson(path.join(animDir, "scene.json"));
+    const names = [...new Set(anim.cases.flatMap((item) => [item.source, item.glb]))];
+    const files = Object.fromEntries(await Promise.all(names.map(async (name) => [name, await base64(path.join(animDir, name))])));
+    const results = await page.evaluate((input) => window.renderAnim(input), { files, cases: anim.cases, size: anim.size, background: LENS_BG, loadMs: LOAD_MS });
+    console.log(`glTF animation scene: ${animDir}`);
+    const report = {};
+    for (const { name, pose, frame } of results) {
+      const item = anim.cases.find((entry) => entry.name === name);
+      await writeFile(path.join(animDir, `editor_${name}.png`), png(frame.png));
+      // The editor plays the case's clip at its speed, set to its seconds (the mixer repeats it to clip_time).
+      const posed = pose.clip === item.clip && pose.speed === item.speed && Math.abs(pose.time - item.seconds) < 1e-9;
+      console.log(`  ${name}: clip ${pose.clip} at speed ${pose.speed}, ${pose.time} s (clip time ${item.clip_time} s) ${posed ? "as the node" : "NOT as the node"}`);
+      if (!posed) failed = true;
+      report[name] = { pose, clip_time: item.clip_time, posed };
+      if (!llvmpipe(frame.renderer)) continue;
+      report[name].compare = await compareSized(frame.pixels, animDir, item.output, `diff_${name}.png`, SHAPE, anim.size);
+    }
+    await writeFile(path.join(animDir, "parity.json"), `${JSON.stringify(report, null, 2)}\n`);
   }
   if (problems.length) {
     console.error(problems.join("\n"));

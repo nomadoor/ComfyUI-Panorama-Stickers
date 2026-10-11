@@ -84,12 +84,14 @@ class SceneSources:
 class RenderLayer:
     """One layer of a frame: `evaluate_scene_state` of its state at the frame (`evaluated`), its `SceneSources`,
     and its `scene` content (`SceneContent` or None), of which item `scene_index` (None: none) is drawn while
-    `evaluated["scene"]` is active. Each Panorama Studio of a chain of `scene` inputs is one layer."""
+    `evaluated["scene"]` is active, at `scene_pose` (clip index, seconds in the clip) when it has glTF clips. Each
+    Panorama Studio of a chain of `scene` inputs is one layer."""
 
     evaluated: dict
     sources: SceneSources
     scene: SceneContent | None = None
     scene_index: int | None = None
+    scene_pose: tuple | None = None
 
 
 def composite_frame(bg_color, bg: torch.Tensor | None, sky: torch.Tensor, world=(), bg_valid: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:

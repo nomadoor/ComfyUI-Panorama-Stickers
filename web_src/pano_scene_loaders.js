@@ -1,7 +1,7 @@
 // Loading the `scene` items of the space view (#71), in the three.js chunk. A GLB loads with three.js's
 // GLTFLoader; a PLY loads with Spark, which is its own chunk and is imported the first time a SPLAT
 // loads, so editors and node previews without a SPLAT never load it.
-import { Box3, DataTexture, DoubleSide, FloatType, Group, Mesh, MeshBasicMaterial, NearestFilter, RedFormat } from "three";
+import { AnimationMixer, Box3, BufferAttribute, DataTexture, DoubleSide, FloatType, Group, LoopRepeat, Mesh, MeshBasicMaterial, NearestFilter, RedFormat } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   createDepthGridMaterial,
@@ -27,13 +27,18 @@ export function makeUnlit(root) {
   root.traverse((object) => {
     if (!object.isMesh) return;
     const unlit = (material) => {
-      const basic = new MeshBasicMaterial({ map: material.map ?? null, color: material.color, vertexColors: material.vertexColors, side: DoubleSide });
+      const basic = unlitMaterial(material);
       material.dispose();
       return basic;
     };
     object.material = Array.isArray(object.material) ? object.material.map(unlit) : unlit(object.material);
   });
   return root;
+}
+
+// The material a GLB's material draws with without light: its base color, texture and vertex colors, on both sides.
+function unlitMaterial(material) {
+  return new MeshBasicMaterial({ map: material.map ?? null, color: material.color, vertexColors: material.vertexColors, side: DoubleSide });
 }
 
 // A GLB light falls on keeps the MeshStandardMaterial GLTFLoader made of it, drawn on both sides as the node
@@ -47,7 +52,10 @@ export function makeLit(root) {
 }
 
 export function disposeObject(root) {
+  const animation = root.userData?.animation;
+  if (animation) animation.mixer.uncacheRoot(root);
   root.traverse((object) => {
+    object.skeleton?.dispose();
     object.geometry?.dispose();
     for (const material of [object.material].flat()) {
       material?.map?.dispose();
@@ -74,6 +82,7 @@ const gltfLoader = new GLTFLoader();
 // `unlit` is false (the meta's mark).
 export async function loadSceneItem(kind, url, signal, { unlit = true, maxTextureSize = Infinity } = {}) {
   if (kind === "depth_grid") return loadDepthGrid(url, signal, maxTextureSize);
+  if (kind === "mesh" && url?.animation) return loadAnimated(url, signal, unlit);
   if (Array.isArray(url)) return loadViews(url, signal, unlit);
   let bytes = await fetchBytes(url, signal);
   signal.throwIfAborted();
@@ -94,6 +103,72 @@ export async function loadSceneItem(kind, url, signal, { unlit = true, maxTextur
   const gltf = await parsing;
   const object = unlit ? makeUnlit(gltf.scene) : makeLit(gltf.scene);
   return { object, box: boxValue(new Box3().setFromObject(gltf.scene)), size };
+}
+
+// An animated 3D file (ADR 0043, docs/threejs-spark-integration.md "glTF のアニメーション"): its original file's default
+// scene as GLTFLoader reads it (its SkinnedMeshes, morphs and node hierarchy, which three.js poses), every mesh drawn
+// with the one material of the editor GLB (the core's MESH that save_glb wrote, so the material is the output's), and
+// the editor GLB's box (the bind pose's, the content box). A material with vertex colors on a shape without them sees
+// colors of 1. Its AnimationMixer is posed by poseAnimation; it never runs on a clock. size is both files' bytes.
+async function loadAnimated({ url, animation }, signal, unlit) {
+  const [glb, original] = await Promise.all([fetchBytes(url, signal), fetchBytes(animation, signal)]);
+  signal.throwIfAborted();
+  const size = glb.byteLength + original.byteLength;
+  const [core, gltf] = await Promise.all([gltfLoader.parseAsync(glb, ""), gltfLoader.parseAsync(original, "")]);
+  let material = null;
+  core.scene.traverse((object) => {
+    if (object.isMesh && !material) material = [object.material].flat()[0];
+  });
+  const box = boxValue(new Box3().setFromObject(core.scene));
+  // Of the editor GLB only its material stays.
+  core.scene.traverse((object) => {
+    object.geometry?.dispose();
+    for (const each of object.isMesh ? [object.material].flat() : []) if (each !== material) each.dispose();
+  });
+  if (!material) {
+    disposeObject(gltf.scene);
+    throw new Error("The 3D file's editor GLB has no mesh.");
+  }
+  let drawn = material;
+  if (unlit) {
+    drawn = unlitMaterial(material);
+    material.dispose();
+  } else material.side = DoubleSide;
+  const root = gltf.scene;
+  root.traverse((object) => {
+    if (!object.isMesh) return;
+    for (const own of [object.material].flat()) {
+      own.map?.dispose();
+      own.dispose();
+    }
+    object.material = drawn;
+    const { geometry } = object;
+    if (drawn.vertexColors && !geometry.attributes.color) {
+      geometry.setAttribute("color", new BufferAttribute(new Float32Array(geometry.attributes.position.count * 3).fill(1), 3));
+    }
+    // A posed shape leaves the bounds of its rest shape.
+    if (object.isSkinnedMesh || geometry.morphAttributes.position) object.frustumCulled = false;
+  });
+  root.userData.animation = { mixer: new AnimationMixer(root), clips: gltf.animations, action: null };
+  return { object: root, box, size };
+}
+
+// Poses an animated 3D file's object (loadAnimated) as a request's `animation` says ({ clip: the clip's index in the
+// file, speed, time: the clip frame in seconds; pano_animation.js animationPose}): the clip's action loops
+// (LoopRepeat) at timeScale = speed, and the mixer is set to `time`. An object of a static file is left as it is.
+export function poseAnimation(object, pose) {
+  const animation = object?.userData?.animation;
+  if (!animation || !pose) return;
+  const clip = animation.clips[pose.clip] ?? animation.clips[0];
+  if (!clip) return;
+  if (animation.action?.getClip() !== clip) {
+    animation.action?.stop();
+    animation.action = animation.mixer.clipAction(clip);
+    animation.action.setLoop(LoopRepeat, Infinity);
+    animation.action.play();
+  }
+  animation.action.timeScale = pose.speed;
+  animation.mixer.setTime(pose.time);
 }
 
 // An item of several views (a DA3_GEOMETRY multiview element, docs/threejs-spark-integration.md): the GLB of every

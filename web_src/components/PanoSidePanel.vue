@@ -199,6 +199,23 @@ function onScrubDown(event, field) {
                   </div>
                 </div>
               </div>
+              <div v-else-if="row.fields[0].options" class="pano-field" :data-key="row.key" :data-tip="row.fields[0].tip || null">
+                <label>{{ row.label }}</label>
+                <select
+                  :disabled="isParamDisabled(row.fields[0], model)"
+                  :aria-label="row.label"
+                  data-action="param-input"
+                  data-input-kind="select"
+                  :data-param-key="row.fields[0].key"
+                >
+                  <option
+                    v-for="option in row.fields[0].options"
+                    :key="option.value"
+                    :value="option.value"
+                    :selected="option.value === row.fields[0].value"
+                  >{{ option.label }}</option>
+                </select>
+              </div>
               <div v-else class="pano-field" :data-key="row.key" :data-tip="row.fields[0].tip || null">
                 <label>{{ row.label }}</label>
                 <input

@@ -28,7 +28,9 @@ import {
   upstreamOriginLabel,
   worldFieldRange,
 } from "../pano_editor_ui_state.js";
+import { animationClipIndex, animationClipMissing } from "../pano_animation.js";
 import { LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
+import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN } from "../pano_scene_state.js";
 import { clamp } from "../pano_math.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
 import { ownerTimed } from "../pano_timeline.js";
@@ -43,7 +45,7 @@ export function createPanels(deps) {
     readOnly, runtime, sceneV2, shotEditor, state, studio, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let cameraPreviewShown, cameraShoots, getActiveCutoutShot, getBrushPresetIdForTool, getCutoutInspectorItems,
+  let animationClipsOf, cameraPreviewShown, cameraShoots, getActiveCutoutShot, getBrushPresetIdForTool, getCutoutInspectorItems,
     getHistoryCapabilities, getList, getSelected, getSelectedItems, getSelectedKind,
     getSelectionItemIcon, getSelectionItemLabelData, hasCamera, hasSpaceContent, isActiveLassoTool, isErpCamera,
     isExternalSticker, isItemLocked, isPaintCursorEnabled, isSceneSticker, isShotItem, isSpaceView, isStickerHidden,
@@ -362,6 +364,27 @@ export function createPanels(deps) {
         enabled: enabled && !readOnly,
       });
     };
+    // An animated 3D file's rows (ADR 0043, docs/editor-interaction.md "アニメーションの行"): its clip by name, in the
+    // file's order, and its speed. Neither has Keyframes. An upstream element's are shown but not edited (its override
+    // is a later step).
+    const pushAnimationParams = (sticker) => {
+      const clips = animationClipsOf(sticker);
+      if (!clips) return;
+      const animation = sticker.animation ?? ANIMATION_DEFAULT;
+      const editable = enabled && !readOnly && !isUpstreamSticker(sticker);
+      const index = animationClipIndex(clips, animation);
+      params.push({
+        key: "animation_clip", label: "Clip", value: String(index), enabled: editable,
+        options: clips.map((clip, at) => ({ value: String(at), label: clip.name })),
+        tip: animationClipMissing(clips, animation) ? `No clip "${animation.clip}" in the file; it plays "${clips[index].name}"` : null,
+      });
+      const speed = animation.speed;
+      params.push({
+        key: "animation_speed", label: "Speed", min: ANIMATION_SPEED_MIN, max: ANIMATION_SPEED_MAX, step: 0.1, value: speed,
+        displayValue: formatParamValue(speed), fillPct: clamp(((speed - ANIMATION_SPEED_MIN) / (ANIMATION_SPEED_MAX - ANIMATION_SPEED_MIN)) * 100, 0, 100),
+        enabled: editable,
+      });
+    };
     const notes = [];
     if (worldInspected) {
       // Positions and the scale have no limit; the scale's slider reaches past the value (worldFieldRange).
@@ -374,6 +397,7 @@ export function createPanels(deps) {
       pushParam("roll_deg", "Roll", -180, 180, 0.1);
       pushParam("scale", "Scale", WORLD_MIN_SCALE, worldFieldRange(effective.scale), 0.01);
       pushParam("opacity", "Opacity", 0, 100, 1);
+      pushAnimationParams(worldInspected);
     } else if (selectedItems.length > 1) {
       notes.push(`Selected objects: ${selectedItems.length}`);
       notes.push("Multi-selection supports z-order and delete.");
@@ -450,7 +474,7 @@ export function createPanels(deps) {
   return {
     connect(api) {
       ({
-        cameraPreviewShown, cameraShoots, getActiveCutoutShot, getBrushPresetIdForTool, getCutoutInspectorItems,
+        animationClipsOf, cameraPreviewShown, cameraShoots, getActiveCutoutShot, getBrushPresetIdForTool, getCutoutInspectorItems,
         getHistoryCapabilities, getList, getSelected, getSelectedItems, getSelectedKind,
         getSelectionItemIcon, getSelectionItemLabelData, hasCamera, hasSpaceContent, isActiveLassoTool, isErpCamera,
         isExternalSticker, isItemLocked, isPaintCursorEnabled, isSceneSticker, isShotItem, isSpaceView,

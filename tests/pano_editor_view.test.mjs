@@ -693,9 +693,8 @@ test("the three.js view picks the World content it last drew, not its guides", (
   assert.match(view, /if \(drawn !== false\) lastPick = \{ key, hit \};/);
   const loaders = readFileSync(new URL("../web_src/pano_scene_loaders.js", import.meta.url), "utf8");
   assert.match(loaders, /new SplatMesh\(\{ fileBytes: bytes, fileType: "ply", raycastable: false \}\)/);
-  // Its content revision changes with the items drawn and their transforms, and with the Sticker planes;
-  // a pick is reused while it, the view and the pixel stay.
-  assert.match(view, /parts\.push\(\[content\.object\.uuid, content\.transform\]\);/);
+  // Its content revision changes with the items drawn, their transforms and poses (tests/browser/gltf_animation.spec.js
+  // picks a posed item at two times), and with the Sticker planes; a pick is reused while it, the view and the pixel stay.
   assert.match(view, /if \(!sameValue\(parts, contentParts\)\) \{\s*contentParts = parts;\s*contentRevision \+= 1;\s*\}/);
   assert.match(view, /const key = pickCacheKey\(camera, x, y, width, height, contentRevision\);\s*if \(lastPick\.key === key\) return lastPick\.hit;/);
   // Spark's LoD worker is not started.

@@ -165,7 +165,7 @@ Camera は Keyframe だけで動く（撮り方のモードは持たない）。
 
 ## glTF のアニメーション
 
-アニメーションを持つ 3D ファイルの Sticker と `scene` は、再生ヘッドに合わせて clip の姿勢を出す（作る。ADR 0043。時刻の式は `docs/render-contract.md` の「glTF のアニメーション」）。再生、一時停止、シーク、Clip range の移動は、タイムラインのいつもの操作がそのまま効き、clip だけの再生ボタンやシークは作らない。Auto の長さには、clip の 1 周（`clip の長さ ÷ speed` を Timeline fps のフレーム数に切り上げたもの）を、VIDEO の素材と同じく要素の Clip range の始まりから数える（オーナーの決定、2026-10-11。規則の owner は `docs/studio-node.md` の出力の長さ）。エディタの `autoTimelineLength` は、メタの `animation.clips` の `duration` と状態の `speed` から求める（作る）。
+アニメーションを持つ 3D ファイルの Sticker と `scene` は、再生ヘッドに合わせて clip の姿勢を出す（ADR 0043。時刻の式は `docs/render-contract.md` の「glTF のアニメーション」）。再生、一時停止、シーク、Clip range の移動は、タイムラインのいつもの操作がそのまま効き、clip だけの再生ボタンやシークは作らない。Auto の長さには、clip の 1 周（`clip の長さ ÷ speed` を Timeline fps のフレーム数に切り上げたもの）を、VIDEO の素材と同じく要素の Clip range の始まりから数える（規則の owner は `docs/studio-node.md` の出力の長さ）。エディタとノード上の表示の `autoTimelineLength` は、`pano_space.js` の `stateAnimationClips` が集めた clip の `duration` と状態の `speed` から求める（`pano_animation.js` の `animationCycleFrames`。clip の集め方は `docs/studio-node.md`）。
 
 ## 背景の行
 

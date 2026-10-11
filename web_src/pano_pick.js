@@ -13,10 +13,18 @@ const PICK_24 = 16777215;
 // write the id and the depth to an RGBA8 target in two draws, packed as packPick24() does. id 0 is
 // nothing (the clear color). The depth is the distance along the view axis (view space -z); on an RGBA8
 // target it is its part of `far`.
+// A SkinnedMesh or a shape with morphs (an animated 3D file, ADR 0043) is picked in its pose: three.js defines
+// USE_SKINNING and USE_MORPHTARGETS only for those, so a static shape's program is as before.
 export const PICK_VERTEX = `
+#include <morphtarget_pars_vertex>
+#include <skinning_pars_vertex>
 varying float vDepth;
 void main() {
-  vec4 local = vec4(position, 1.0);
+  vec3 transformed = vec3(position);
+  #include <morphtarget_vertex>
+  #include <skinbase_vertex>
+  #include <skinning_vertex>
+  vec4 local = vec4(transformed, 1.0);
 #ifdef USE_INSTANCING
   local = instanceMatrix * local;
 #endif

@@ -254,6 +254,28 @@ export function is3dFileSource(src) {
   return src?.kind === "file" && typeof src.filename === "string" && is3dFileName(src.filename);
 }
 
+// A 3D file's glTF animation (ADR 0043, docs/scene-state-v2.md): the clip by name (null: the first clip) and the
+// speed, 0.1 to 10 (a number out of range is brought into it, anything else is the default). null without one, and
+// for the default one, which is the same as none (scene_state.py reads it so), so loading what was saved is stable.
+export const ANIMATION_SPEED_MIN = 0.1;
+export const ANIMATION_SPEED_MAX = 10;
+export const ANIMATION_DEFAULT = Object.freeze({ clip: null, speed: 1 });
+
+export function animationValue(raw) {
+  if (!isObject(raw)) return null;
+  const speed = number(raw.speed, null);
+  const value = {
+    clip: typeof raw.clip === "string" ? raw.clip : null,
+    speed: speed === null ? ANIMATION_DEFAULT.speed : clamp(speed, ANIMATION_SPEED_MIN, ANIMATION_SPEED_MAX),
+  };
+  return defaultAnimation(value) ? null : value;
+}
+
+// Whether an animation is the default one, which the text leaves out.
+function defaultAnimation(value) {
+  return value.clip === ANIMATION_DEFAULT.clip && value.speed === ANIMATION_DEFAULT.speed;
+}
+
 function sticker(raw) {
   const src = source(raw.source);
   if (!src) return null;
@@ -270,6 +292,9 @@ function sticker(raw) {
     ...lanes(raw, world ? WORLD_STICKER_LANES : SKY_STICKER_LANES),
   };
   if (world && isObject(raw.lens)) Object.assign(out, lanes(raw, [WORLD_LENS_LANE]));
+  // A 3D file's animation: a `file` Source of a 3D file, or the port Sticker's 3D media.
+  const animation = is3dFileSource(src) || src.kind === "port" ? animationValue(raw.animation) : null;
+  if (animation) out.animation = animation;
   if (!world) out.z_index = frameNumber(raw.z_index) ?? 0;
   if (src.kind === "port") out.handoff_overrides = laneNames(raw.handoff_overrides, placement);
   return out;
@@ -398,7 +423,7 @@ function normalizeV2(raw) {
       length: timelineLength(timeline.length),
     },
     camera: camera(raw.camera),
-    scene: { clip: clip(scene.clip), visible: bool(scene.visible, true), ...lanes(scene, SCENE_LANES) },
+    scene: { clip: clip(scene.clip), visible: bool(scene.visible, true), ...lanes(scene, SCENE_LANES), ...sceneAnimation(scene) },
     stickers: stickerList,
     next_sticker_id: next,
     painting: normalizePaintingState(raw.painting),
@@ -407,6 +432,12 @@ function normalizeV2(raw) {
     upstream: upstream(raw.upstream),
     background: background(raw.background),
   };
+}
+
+// The `scene` input's animation (ADR 0043), when it has one.
+function sceneAnimation(raw) {
+  const animation = animationValue(raw.animation);
+  return animation ? { animation } : {};
 }
 
 // The node's own `bg_media` on the Timeline: its Clip range.
@@ -508,6 +539,13 @@ function cameraText(camera) {
   return out;
 }
 
+function withoutDefaultAnimation(object) {
+  if (!object.animation || !defaultAnimation(object.animation)) return object;
+  const { animation, ...rest } = object;
+  void animation;
+  return rest;
+}
+
 function withoutDefaults(object, defaults) {
   return Object.fromEntries(Object.entries(object).filter(([key, value]) => !Object.hasOwn(defaults, key) || value !== defaults[key]));
 }
@@ -524,10 +562,11 @@ export function sceneStateText(state) {
   return JSON.stringify({
     ...out,
     camera: state.camera && cameraText(state.camera),
-    scene: withoutDefaults(state.scene, TEXT_DEFAULTS.scene),
-    // A sky Sticker's lens curve at its default is left out (ADR 0042), as the Camera's.
+    scene: withoutDefaultAnimation(withoutDefaults(state.scene, TEXT_DEFAULTS.scene)),
+    // A sky Sticker's lens curve at its default is left out (ADR 0042), as the Camera's, and so is a default
+    // animation (ADR 0043).
     stickers: state.stickers.map((item) => Object.fromEntries(Object.entries(item).filter(([key, value]) => (key !== "handoff_overrides" || value.length)
-      && !(key === "curve" && defaultLane(value, LENS_CURVE_DEFAULT))))),
+      && !(key === "curve" && defaultLane(value, LENS_CURVE_DEFAULT)) && !(key === "animation" && defaultAnimation(value))))),
   });
 }
 

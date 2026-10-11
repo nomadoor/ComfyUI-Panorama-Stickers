@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { FILE_3D_ROUTE, createFile3dEditorFiles, requestFile3dEditorFile } from "../web_src/pano_file_3d.js";
+import { FILE_3D_ROUTE, createFile3dEditorFiles, file3dEditorFileOf, requestFile3dEditorFile } from "../web_src/pano_file_3d.js";
 
 const source = { kind: "file", filename: "chair.glb", subfolder: "3d", storage: "input" };
 const entry = { filename: "pano_scene_ab12.glb", subfolder: "", type: "temp", pano_evictable: true };
@@ -26,16 +26,35 @@ test("the editor asks the route for a 3D file's editor file with the Source's va
   assert.deepEqual(JSON.parse(calls[0].options.body), { filename: "chair.glb", subfolder: "3d", storage: "input" });
   // The content's box comes as the route gives it, for the fit of a new 3D Sticker (pano_space.js fitSphereOfBox
   // checks its shape).
-  assert.deepEqual(result, { ok: true, kind: "mesh", unlit: false, file: entry, box: { min: [-1, 0, -1], max: [1, 2, 1] } });
+  assert.deepEqual(result, { ok: true, kind: "mesh", unlit: false, file: entry, box: { min: [-1, 0, -1], max: [1, 2, 1] }, animation: null });
 });
 
 test("a SPLAT has no unlit, and a reply of another shape is a failure", async () => {
   const splat = await requestFile3dEditorFile(source, { fetchApi: async () => respond(200, { kind: "splat", file: entry }) });
   // Without a box (an empty content, or an older node pack) it is null.
-  assert.deepEqual(splat, { ok: true, kind: "splat", unlit: true, file: entry, box: null });
+  assert.deepEqual(splat, { ok: true, kind: "splat", unlit: true, file: entry, box: null, animation: null });
   const odd = await requestFile3dEditorFile(source, { fetchApi: async () => respond(200, { kind: "voxels", file: entry }) });
   assert.equal(odd.ok, false);
   assert.equal(odd.error, "Could not read the 3D file 3d/chair.glb: the server's reply was not understood.");
+});
+
+// ADR 0043: an animated file's answer adds its original and clips, which the editor file carries as { src, clips }.
+test("an animated mesh's editor file carries its original file and clips", async () => {
+  const original = { filename: "robot.glb", subfolder: "3d", type: "input" };
+  const clips = [{ name: "Walking", duration: 2.5 }, { name: "Idle", duration: 4 }];
+  const files = createFile3dEditorFiles({ fetchApi: async () => respond(200, { kind: "mesh", unlit: false, file: entry, animation: { source: original, clips } }) });
+  const sticker = { source };
+  const url = (item) => `/view?filename=${item.filename}`;
+  assert.equal(file3dEditorFileOf(files, sticker, url), null, "until the route answers");
+  await files.request(source);
+  assert.deepEqual(file3dEditorFileOf(files, sticker, url), {
+    kind: "mesh", unlit: false, url: "/view?filename=pano_scene_ab12.glb", generation: 0,
+    animation: { src: "/view?filename=robot.glb", clips },
+  });
+  // A static file's has none, nor has a reply whose clips are not understood.
+  const plain = createFile3dEditorFiles({ fetchApi: async () => respond(200, { kind: "mesh", file: entry, animation: { source: original, clips: [{ name: 1 }] } }) });
+  await plain.request(source);
+  assert.equal("animation" in file3dEditorFileOf(plain, sticker, url), false);
 });
 
 test("a refused or unreadable 3D file gives the route's text, the node's warning", async () => {
@@ -66,7 +85,7 @@ test("each Source is asked once while the editor is open, again after its file i
   const ready = await files.request(source);
   assert.equal(calls.length, 1);
   assert.equal(updates, 1);
-  assert.deepEqual(ready, { state: "ready", kind: "mesh", unlit: true, file: { ...entry, filename: "f1.glb" }, box: null, error: null, generation: 0 });
+  assert.deepEqual(ready, { state: "ready", kind: "mesh", unlit: true, file: { ...entry, filename: "f1.glb" }, box: null, animation: null, error: null, generation: 0 });
   assert.equal(files.get(source), ready);
   // Another file is another question.
   await files.request({ ...source, filename: "table.glb" });

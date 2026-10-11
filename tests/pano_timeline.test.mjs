@@ -529,3 +529,29 @@ test("the row's key button does not key the lens Lanes, and its pins do not coun
   assert.deepEqual(sticker.curve.keyframes, []);
   assert.deepEqual(rowKeyframes(sticker), [{ frame: 0, full: true }]);
 });
+
+// ADR 0043, docs/studio-node.md: an animated 3D file without a duration ends one cycle of its clip (duration ÷ speed,
+// rounded up to a frame) after its material starts, as a VIDEO ends with its media.
+test("the Auto length counts one cycle of an animated 3D file's clip", () => {
+  const clips = [{ name: "Walking", duration: 2.5 }, { name: "Idle", duration: 4 }];
+  const state = (extra = {}) => loadSceneState({
+    version: 2,
+    timeline: { fps: 24 },
+    scene: { clip: { start: 10, in: 4 }, ...extra.scene },
+    stickers: [{ id: "robot", placement: "world", source: { kind: "file", filename: "robot.glb" }, clip: { start: 0, in: 0 }, ...extra.robot }],
+  });
+  // The first clip by default: 2.5 s at 24 fps is 60 frames from the material's start.
+  assert.equal(autoTimelineLength(state(), { animations: { scene: null, stickers: { robot: clips } } }), 60);
+  // By name, and at its speed (4 s ÷ 1.5 = 64 frames, rounded up).
+  assert.equal(autoTimelineLength(state({ robot: { animation: { clip: "Idle", speed: 1.5 } } }), { animations: { stickers: { robot: clips } } }), 64);
+  // A name the file does not have plays the first clip.
+  assert.equal(autoTimelineLength(state({ robot: { animation: { clip: "Run" } } }), { animations: { stickers: { robot: clips } } }), 60);
+  // The `scene` input's counts from its own start − in: 10 − 4 + 96.
+  assert.equal(autoTimelineLength(state(), { animations: { scene: [{ name: "a", duration: 4 }] } }), 102);
+  // A Clip range with a duration ends there; a clip of no length counts nothing; a longer VIDEO wins.
+  assert.equal(autoTimelineLength(state({ robot: { clip: { start: 0, in: 0, duration: 30 } } }), { animations: { stickers: { robot: clips } } }), 30);
+  assert.equal(autoTimelineLength(state(), { animations: { stickers: { robot: [{ name: "x", duration: 0 }] } } }), 1);
+  assert.equal(autoTimelineLength(state(), { bg: { video: true, frames: 200, duration: 200 / 24 }, animations: { stickers: { robot: clips } } }), 200);
+  // Without the clips (before the file is read) nothing is counted.
+  assert.equal(autoTimelineLength(state()), 1);
+});

@@ -374,7 +374,7 @@ export function upstreamLayerView(layer, key, frame, { media, paintLayers, sourc
   const items = [];
   const sceneFiles = sceneFilesOf(layerUiList(ui, "pano_scene_files"), layerUiList(ui, "pano_scene_meta"), source);
   if (sceneFiles) {
-    items.push({ slot: `${key}:scene`, urls: sceneFiles.urls.filter(Boolean), request: sceneRequest(sceneFiles, evaluated.scene), value: evaluated.scene, opacity: 1 });
+    items.push({ slot: `${key}:scene`, urls: sceneFiles.urls.filter(Boolean), request: sceneRequest(sceneFiles, evaluated.scene, sceneState.scene.animation, sceneState.timeline.fps), value: evaluated.scene, opacity: 1 });
   }
   const stickerFiles = sceneFilesOf(layerUiList(ui, "pano_sticker_files"), layerUiList(ui, "pano_sticker_meta"), source);
   if (stickerFiles) {

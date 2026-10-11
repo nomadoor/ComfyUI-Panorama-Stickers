@@ -61,7 +61,7 @@ function editorTimeline(saved, { node = studioNode(), transport = { ready: true,
     ...items, ...timeline,
     commitAndRefreshNode: () => { steps.commits += 1; }, getPortMediaMeta: () => null, hasCamera: () => false, inspectorTimed: () => false,
     isExternalSticker: (item) => item?.source?.kind === "port", loading3dIds: () => new Set(), markObjectVisualsDirty: noop, playback,
-    sceneFiles: () => null,
+    sceneFiles: () => null, stickerFiles: () => null, file3dEditorFile: () => null,
     pushHistory: () => {
       steps.count += 1;
       history.pushHistory();

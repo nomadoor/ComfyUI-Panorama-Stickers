@@ -24,6 +24,7 @@ try:
         _srgb_to_linear,
     )
     from comfy_extras.nodes_depth_anything_3 import DA3GeometryToMesh, _da3_build_mask, _da3_default_K, _da3_get_K, _da3_unproject
+    from comfy_extras.mesh3d.fileio.gltf_read import load_gltf, parse_container, read_accessor
     from comfy_extras.nodes_mesh_io import Get3DComponents
     from comfy_extras.nodes_save_3d import get_mesh_batch_item, mesh_item_to_glb_bytes, save_glb
 except ImportError as error:
@@ -46,6 +47,7 @@ except ImportError as error:
     _linear_to_srgb = _quantile = _quat_to_mat = _srgb_to_linear = Get3DComponents = _Unavailable()
     get_mesh_batch_item = mesh_item_to_glb_bytes = save_glb = DA3GeometryToMesh = _da3_default_K = _Unavailable()
     depth_map_edge = depth_map_to_point_map = _da3_build_mask = _da3_get_K = _da3_unproject = _Unavailable()
+    load_gltf = parse_container = read_accessor = _Unavailable()
 else:
     FEATURE_3D_UNAVAILABLE = None
 
