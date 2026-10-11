@@ -36,6 +36,8 @@ export function createHistory(deps) {
   // upstream elements are in its `upstream` records, without the overrides of elements gone upstream. The
   // `initial` step the editor adds as it opens prunes nothing, so opening and closing writes nothing.
   function pushHistory({ initial = false } = {}) {
+    // An Undo step ends the inspector's Lens curve edit (editor/side_panel_events.js).
+    editor.lensCurveEdit = null;
     if (readOnly) return;
     syncCutoutShot();
     syncPortHandoff();
@@ -49,6 +51,7 @@ export function createHistory(deps) {
 
   function restoreHistory(step) {
     if (readOnly) return;
+    editor.lensCurveEdit = null;
     stopTimelinePlayback();
     const snapshot = step < 0 ? editor.historyController.undo() : editor.historyController.redo();
     syncUndoRedoButtons();

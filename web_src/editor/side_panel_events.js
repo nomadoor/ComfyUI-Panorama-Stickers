@@ -3,6 +3,8 @@
 import { deriveCutoutAspectLabelFromFov } from "../pano_cutout_view_math.js";
 import {
   normalizeCoverageValue,
+  cameraLensFields,
+  setCameraCurveKeepingCenter,
   setCameraField,
   setStickerOpacity,
   setWorldStickerField,
@@ -44,7 +46,19 @@ export function createSidePanelEvents(deps) {
     const cameraLens = !worldInspected && cameraV2 && state.camera && (key === "curve" || key === "hFOV_deg" || key === "aspect");
     if (!worldInspected && cameraV2 && (key.startsWith("position_") || cameraLens)) {
       syncCutoutShot();
-      setCameraField(state.camera, editor.frame, key, out);
+      // A Lens curve edit keeps the center scale of the Camera where it began (docs/editor-interaction.md "レンズの
+      // 行"): editor.lensCurveEdit holds its evaluated κ and hFOV until it commits, an Undo step is taken or the
+      // selection changes (editor/history.js, editor/selection.js), so a drag that lost its change event leaves none.
+      if (key === "curve") {
+        const edit = editor.lensCurveEdit;
+        if (edit?.camera !== state.camera || edit.frame !== editor.frame) {
+          editor.lensCurveEdit = { camera: state.camera, frame: editor.frame, start: cameraLensFields(state.camera, editor.frame) };
+        }
+        setCameraCurveKeepingCenter(state.camera, editor.frame, out, editor.lensCurveEdit.start);
+      } else {
+        editor.lensCurveEdit = null;
+        setCameraField(state.camera, editor.frame, key, out);
+      }
       updateSidePanel();
       requestDraw();
       if (commit) pushHistory();

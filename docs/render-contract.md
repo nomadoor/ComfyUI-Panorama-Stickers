@@ -95,7 +95,7 @@ Camera のレンズの曲線 κ（`docs/scene-state-v2.md` の `camera.curve`）
   - κ の範囲 0〜1：0 は魚眼の極限、1 はピンホール。1 より大きい糸巻き型は持たない（ADR 0042。2026-10-11 オーナーの決定）。読み込みと評価は 0〜1 に寄せる。
   - 画角の上限は κ で決まる：横の端の `κ·hFOV ÷ 2 < 90°` を保つため `min(360, 179 ÷ κ)`（`lens_fov_limit`。κ = 1 で 179、κ ≤ 179/360（約 0.497）で 360。`docs/scene-state-v2.md`）。評価した値に寄せる。
   - Brown–Conrady の歪み（実機のカメラに合わせる値）は使う人のつまみにしない。次の候補とする。
-  - κ を変えても保つのは画角（`hFOV`、画像の横の端から端の角度）。`f` はその κ から求め直すので、κ を 0 に近づけると像の中心が大きくなり、端は同じ角度のまま縮む。これは魚眼の見た目として意図したものである。
+  - 描くときは、そのフレームの `hFOV`（画像の横の端の角度）と κ から `f` を求める。状態が持つのは端の角度で、`f` は持たない。エディタで Lens curve を変えるときは、`f` を保つように `fov` も一緒に書く（ADR 0042 の 2026-10-11 の改訂、`docs/editor-interaction.md` の「レンズの行」）。描き方はその書いた値に従うだけで、κ によって振る舞いを変えない。
   - 写し方の関数の owner：光線の角度 θ から像の上の距離へ `lens_radius(θ, κ) = tan(κθ) ÷ κ`（κ = 0 では θ）と、その逆 `lens_angle` は、`core/math.py` と `web_src/pano_lens.js`（`lensRadius`・`lensAngle`。GLSL の写しは `pano_lens_glsl.js`）に一組だけ持ち、`tests/fixtures/lens/` で縛る。Camera の光線と、`sky` の Sticker の標本化（下の「Sky の描き方」）と、エディタの後処理と Sticker のシェーダが、すべてこの一組を使う。
   - κ ≠ 1 の Camera の Pose handoff は、撮った `curve` を `sky` の Sticker に渡して輪を閉じる（`docs/studio-node.md` の「`port` の Sticker と Pose handoff」）。
 - メッシュの三角形が交わりうる画素の範囲（上の「MESH・…」の描き方）：κ = 1 はピンホールの範囲のまま。それ以外は、三角形の光軸からの角度 θ の範囲と方位の範囲（`core/mesh_render.py` の `_sphere_ranges`）から、`r` が θ に単調に増えることを使って保守的な箱を求める（`_lens_bounds`）。

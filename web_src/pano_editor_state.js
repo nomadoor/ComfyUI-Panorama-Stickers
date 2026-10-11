@@ -2,7 +2,7 @@ import { normalizePaintingState } from "./pano_paint_types.js";
 import { wrapYaw } from "./pano_math.js";
 import { DEG2RAD } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
-import { lensAngle, lensFovLimit, lensRadius } from "./pano_lens.js";
+import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { loadSceneState, rebaseSceneState, sceneStateText, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
@@ -350,11 +350,20 @@ export function cameraLensFields(camera, frame) {
   return { hFOV_deg: value.hFOV_deg, aspect: camera.aspect, curve: value.curve };
 }
 
+// An inspector edit of the Camera's lens curve κ at a Timeline frame (docs/editor-interaction.md "レンズの行"): it
+// keeps the image's center scale of `start` (the cameraLensFields() where the edit began), so the hFOV follows, and
+// writes both the `curve` and the `fov` Lanes at the frame, each by its recording rule.
+export function setCameraCurveKeepingCenter(camera, frame, curve, start) {
+  setLaneValue(camera, "curve", frame, curve);
+  setLaneValue(camera, "fov", frame, lensFovKeepingCenter(start.hFOV_deg, start.curve, curve));
+}
+
 // The range the inspector's Aspect field takes (width ÷ height).
 export const CAMERA_ASPECT_MIN = 0.25;
 export const CAMERA_ASPECT_MAX = 4;
 
-// An inspector edit of one Camera field at a Timeline frame, by the recording rule of its Lane.
+// An inspector edit of one Camera field at a Timeline frame, by the recording rule of its Lane. The lens curve is
+// setCameraCurveKeepingCenter's.
 export function setCameraField(camera, frame, field, value) {
   const axis = POSITION_FIELDS.indexOf(field);
   if (axis >= 0) {
@@ -363,8 +372,6 @@ export function setCameraField(camera, frame, field, value) {
     setLaneValue(camera, "position", frame, position);
   } else if (field === "hFOV_deg") {
     setLaneValue(camera, "fov", frame, value);
-  } else if (field === "curve") {
-    setLaneValue(camera, "curve", frame, value);
   } else if (field === "aspect") {
     // Not a Lane: the frame's aspect has no Keyframes.
     camera.aspect = value;

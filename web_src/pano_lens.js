@@ -38,6 +38,14 @@ export function lensFovLimit(kappa) {
   return kappa > 0 ? Math.min(360, 179 / kappa) : 360;
 }
 
+// The hFOV (degrees) at κ of an image whose center scale f is that of hFOV₀ at κ₀ (docs/editor-interaction.md
+// "レンズの行"): f = r_edge ÷ lens_radius(hFOV₀ ÷ 2, κ₀) and hFOV = 2·lens_angle(r_edge ÷ f, κ), so r_edge cancels; under
+// lensFovLimit(κ).
+export function lensFovKeepingCenter(hFov0, kappa0, kappa) {
+  const edge = lensRadius(hFov0 * 0.5 * DEG2RAD, kappa0);
+  return Math.min(lensFovLimit(kappa), 2 * lensAngle(edge, kappa) / DEG2RAD);
+}
+
 // The image a lens Camera draws, as directions (ADR 0042). A film point is a point of the image in units of f from
 // its center, x right and y up; directions are in the camera's own axes as three.js has them (x right, y up, looking
 // down -z).

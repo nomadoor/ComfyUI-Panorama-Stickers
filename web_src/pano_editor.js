@@ -517,6 +517,8 @@ async function showEditor(node, type, options = {}) {
     frameRollOverlayTarget: 0,
     frameRollOverlayStartTs: 0,
     frameWheelCommitTimer: 0,
+    // The inspector's Lens curve edit in progress (editor/side_panel_events.js); an Undo step or a new selection ends it.
+    lensCurveEdit: null,
     frameWheelChanged: false,
     paintEngine: createPaintEngineManager(),
     paintEngineDescriptorKey: "",

@@ -152,6 +152,8 @@ export function createSelection(deps) {
     requestDraw();
   }
   function setSelectedItem(item) {
+    // A new selection ends the inspector's Lens curve edit (editor/side_panel_events.js).
+    editor.lensCurveEdit = null;
     clearWorldSelection();
     // Delete acts on the selection, so a Keyframe selection must not outlive a new selection.
     timeline.selection = null;
@@ -165,6 +167,7 @@ export function createSelection(deps) {
     else if (!isShotItem(item)) state.active.selected_shot_id = state.active.selected_shot_id;
   }
   function setSelectedItems(items, primaryId = null) {
+    editor.lensCurveEdit = null;
     const nextIds = [];
     const seen = new Set();
     (Array.isArray(items) ? items : []).forEach((item) => {

@@ -526,10 +526,10 @@ test("a 360° Camera's FOV and lens fields are disabled, saying why, and the oth
     assert.equal(cameraParamEnabled(key, { erp: true }), false);
     assert.equal(cameraParamEnabled(key), true);
   }
-  for (const key of ["curve"]) {
-    assert.equal(typeof cameraParamTip(key, { erp: true }), "string");
-    assert.equal(cameraParamTip(key), null);
-  }
+  assert.equal(cameraParamTip("curve", { erp: true }), "A 360° camera has no lens");
+  // Otherwise the Lens curve's hover tells what it does (docs/editor-interaction.md "レンズの行").
+  assert.equal(cameraParamTip("curve"), "0 is a fisheye. Keeps the center's size; the H FOV follows.");
+  assert.equal(cameraParamTip("hFOV_deg"), null);
   for (const key of ["yaw_deg", "pitch_deg", "roll_deg", "position_x"]) assert.equal(cameraParamEnabled(key, { erp: true }), true);
   // The disabled tab is left out of the Tab order, and keeps its colour under the pointer.
   const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
