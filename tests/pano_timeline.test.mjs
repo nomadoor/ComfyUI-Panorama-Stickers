@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { readdirSync, readFileSync } from "node:fs";
 
+import { createEditorHistory, createHistory } from "../web_src/editor/history.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import {
@@ -412,8 +413,29 @@ test("an edit on the canvas stops playback on its first move and starts from the
 
 test("deleting, undo and redo, and adding a Sticker stop playback first", () => {
   assert.match(editorFunction("deleteSelected"), /if \(selectedItems\.some\(\(item\) => isItemLocked\(item\)\)\) return;\s*stopTimelinePlayback\(\);/);
-  assert.match(editorFunction("restoreHistory"), /if \(readOnly\) return;\s*stopTimelinePlayback\(\);/);
   assert.match(editorSource, /if \(sceneV2\) \{\s*\/\/[^\n]*\n\s*stopTimelinePlayback\(\);\s*await addSceneStickerFromFile\(file\);/);
+});
+
+test("undo and redo stop playback before they restore a step", () => {
+  const state = { ...loadSceneState({ version: 2, camera: { fov: { value: 90 } } }), active: {} };
+  const editor = { frame: 0, historyController: createEditorHistory(state) };
+  const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
+  const noop = () => {};
+  const stops = [];
+  history.connect({
+    clearWorldSelection: noop, commitState: noop, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
+    markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop }, pruneUpstreamRecords: noop,
+    rebuildUpstreamWorking: noop, releaseHiddenSelection: noop, requestDraw: noop,
+    stopTimelinePlayback: () => stops.push(state.camera.fov.value), storedEditorState: () => state, syncCutoutShot: noop,
+    syncPaintUi: noop, syncPortHandoff: noop, syncUndoRedoButtons: noop, syncUpstreamEdits: noop, updateSidePanel: noop,
+  });
+  state.camera.fov.value = 120;
+  history.pushHistory();
+  history.restoreHistory(-1);
+  history.restoreHistory(1);
+  // Each stop came while the step before it was still shown.
+  assert.deepEqual(stops, [120, 90]);
+  assert.equal(state.camera.fov.value, 120);
 });
 
 test("the legacy transport seeks to its own time and leaves looping to the VIDEO", () => {

@@ -190,9 +190,12 @@ export function cameraParamEnabled(key, { erp = false } = {}) {
   return !(erp && ERP_UNREAD_CAMERA_FIELDS.has(key));
 }
 
-// Why a Camera field is disabled, for its tooltip, or null: the lens fields of a 360-degree ERP Camera.
+// A Camera field's tooltip, or null: why the lens fields of a 360-degree ERP Camera are disabled, else what the Lens
+// curve does.
 export function cameraParamTip(key, { erp = false } = {}) {
-  return erp && ERP_LENS_FIELDS.has(key) ? "A 360° camera has no lens" : null;
+  if (erp && ERP_LENS_FIELDS.has(key)) return "A 360° camera has no lens";
+  // A Lens curve edit keeps the image's center scale (docs/editor-interaction.md "レンズの行").
+  return key === "curve" ? "0 is a fisheye. Keeps the center's size; the H FOV follows." : null;
 }
 
 // Whether the inspector edits a Sticker field: a port Sticker's vFOV follows its media, so its V FOV shows the
