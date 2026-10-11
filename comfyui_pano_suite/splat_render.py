@@ -1,4 +1,4 @@
-"""The SPLAT `scene` content (#61): gaussians drawn the way the core's RenderSplat draws them, through any
+"""The SPLAT `scene` content: gaussians drawn the way the core's RenderSplat draws them, through any
 Projection.
 
 Each gaussian is weighted by the peak of its 3D density along each pixel's ray and composited front to back over

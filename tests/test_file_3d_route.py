@@ -19,7 +19,7 @@ from comfy_extras.nodes_save_3d import save_glb
 
 from comfyui_pano_suite import nodes, routes
 from comfyui_pano_suite.core.temp_files import TEMP_FILES
-from scene_test_helpers import blob, blobs, temp_entry_path
+from scene_test_helpers import blob, blobs, temp_entry_path, triangle_glb
 
 SQUARE = [[-0.5, 0.5, 0.0], [0.5, 0.5, 0.0], [0.5, -0.5, 0.0], [-0.5, -0.5, 0.0]]
 SQUARE_FACES = [[0, 3, 2], [0, 2, 1]]
@@ -168,6 +168,14 @@ def test_files_the_readers_cannot_read_are_422(input_dir):
 
     assert fbx[0] == 422 and fbx[1]["error"].startswith("Could not read the 3D file 3d/model.fbx: Get3DComponents: .fbx parsing is not supported")
     assert ply == (422, {"error": "Could not read the 3D file 3d/points.ply: it is neither a splat file (a PLY with 3DGS properties, SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL)."})
+
+
+def test_a_compressed_gltf_is_422_naming_its_extension(input_dir):
+    (input_dir / "3d" / "draco.glb").write_bytes(triangle_glb(["KHR_draco_mesh_compression"]))
+
+    assert _post({"filename": "draco.glb", "subfolder": "3d"}) == (422, {"error": (
+        "Could not read the 3D file 3d/draco.glb: it uses the glTF extension KHR_draco_mesh_compression, which Panorama "
+        "Studio cannot draw; export the model without this compression.")})
 
 
 def test_the_route_is_registered_on_comfyuis_server_and_skipped_without_one(monkeypatch):

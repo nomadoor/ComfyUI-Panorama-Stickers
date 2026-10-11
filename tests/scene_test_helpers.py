@@ -36,6 +36,28 @@ def glb_positions(path: Path) -> np.ndarray:
     return glb_accessor(path, lambda primitive: primitive["attributes"]["POSITION"]).reshape(-1, 3)
 
 
+def triangle_glb(extensions_used=(), extensions_required=(), quantized=False) -> bytes:
+    """A GLB of one triangle (corners (0, 0, 0), (1, 0, 0), (0, 1, 0)) whose JSON lists the given extensions. Its
+    positions are float32, or with `quantized` normalized int16 as KHR_mesh_quantization allows."""
+    corners = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]])
+    data = (corners * 32767).astype(np.int16).tobytes() if quantized else corners.astype(np.float32).tobytes()
+    data += b"\0" * (-len(data) % 4)
+    accessor = {"bufferView": 0, "componentType": 5122 if quantized else 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0]}
+    if quantized:
+        accessor["normalized"] = True
+    gltf = {"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}], "accessors": [accessor],
+            "bufferViews": [{"buffer": 0, "byteLength": len(data)}], "buffers": [{"byteLength": len(data)}]}
+    if extensions_used:
+        gltf["extensionsUsed"] = list(extensions_used)
+    if extensions_required:
+        gltf["extensionsRequired"] = list(extensions_required)
+    text = json.dumps(gltf).encode()
+    text += b" " * (-len(text) % 4)
+    body = struct.pack("<II", len(text), 0x4E4F534A) + text + struct.pack("<II", len(data), 0x004E4942) + data
+    return struct.pack("<III", 0x46546C67, 2, 12 + len(body)) + body
+
+
 def splat_of(positions, scales, opacities, colors, seed=0):
     """A SPLAT (3DGS frame: Y down, Z forward) of gaussians with random rotations and base colors."""
     count = positions.shape[0]

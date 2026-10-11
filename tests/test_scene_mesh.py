@@ -30,7 +30,7 @@ from comfyui_pano_suite.core.mesh_render import DEFAULT_LIGHTS, linear_to_srgb, 
 from comfyui_pano_suite.core.render import Projection
 from comfyui_pano_suite.core.world import world_rotation
 from comfyui_pano_suite.core.world_render import CameraView
-from scene_test_helpers import state_text, temp_entry_path
+from scene_test_helpers import state_text, temp_entry_path, triangle_glb
 from scene_test_helpers import camera_state as _camera, center as _center, shoot as _shoot, video_frames as _shot_frames
 from test_studio_camera import _upstream as _studio
 from test_scene_editor_files import _glb_positions, _path
@@ -272,6 +272,30 @@ def test_mesh_files_the_core_cannot_read_fail_clearly(tmp_path):
 
     with pytest.raises(ValueError, match="fbx"):
         _studio(scene=Types.File3D(str(tmp_path / "model.fbx")))
+
+
+COMPRESSED = ("KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu")
+
+
+@pytest.mark.parametrize("extension", COMPRESSED)
+@pytest.mark.parametrize("required", [False, True])
+def test_compressed_gltf_is_refused_naming_its_extension(tmp_path, extension, required):
+    # A compressed glTF may still read as some geometry (Draco's fallback accessors are zeros), so it is refused
+    # whether the extension is only used or required, and the reason names it.
+    path = tmp_path / "model.glb"
+    path.write_bytes(triangle_glb([extension], [extension] if required else []))
+
+    with pytest.raises(ValueError, match=f"uses the glTF extension {extension}, which Panorama Studio cannot draw"):
+        _studio(scene=Types.File3D(str(path)))
+
+
+def test_a_quantized_gltf_the_core_reads_is_accepted(tmp_path):
+    path = tmp_path / "model.glb"
+    path.write_bytes(triangle_glb(["KHR_mesh_quantization"], quantized=True))
+
+    mesh = scene_mesh.read_mesh_file(Types.File3D(str(path)))
+
+    assert torch.allclose(mesh.vertices[0], torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]))
 
 
 def test_a_camera_shoots_the_mesh_of_an_upstream_scene():

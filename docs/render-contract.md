@@ -27,7 +27,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 既定の照明の値と光の式 | `core/mesh_render.py` `DEFAULT_LIGHTS`・`shade_standard`、`core/three_dfg_lut.py` | `web_src/pano_three_view.js` `DEFAULT_LIGHTS`・`createDefaultLights` | 値は `tests/fixtures/default_lighting.json` を Python（`tests/test_mesh_render.py`）と JS（`tests/pano_scene_loaders.test.mjs`）が読む。式は `tests/test_mesh_render.py` が `tests/fixtures/standard_material_r184.json`（three.js r184 が描いた値。`tools/bake_standard_material.mjs` で焼く）と比べる。エディタの描画は `tests/browser/file_3d.spec.js` |
 | メッシュの色とテクスチャの標本化（色空間、wrap、filter、画面の微分）、交差と光の式の精度 | `core/mesh_render.py` `_base_color`・`_sample`・`_solve`・`_intersect`・`_Lighting.partners`・`_Lighting.derivatives` | エディタは GLB の sampler のまま（置き換えない） | `tests/test_mesh_render.py`（線形の空間の補間、CLAMP、mip を使わない、2×2 の微分、面の法線の微分が 0、TF32 を有効にしても同じ値）、下の「エディタとの一致」の場面 |
 | SPLAT の描画 | `splat_render.py` `splat_content`・`_view_colors` | — | `tests/test_splat_render.py` |
-| 3D ファイルの読み分けと読めないときのエラー | `nodes.py` `_read_scene_file` | — | `tests/test_studio_scene.py`、`tests/test_stickers_3d.py`、`tests/test_scene_mesh.py` |
+| 3D ファイルの読み分けと読めないときのエラー | `nodes.py` `_read_scene_file`、圧縮した glTF は `scene_mesh.py` `read_mesh_file`・`COMPRESSED_GLTF_EXTENSIONS` | — | `tests/test_studio_scene.py`、`tests/test_stickers_3d.py`、`tests/test_scene_mesh.py`、`tests/test_file_3d_route.py` |
 | コアの内部のシンボルの読み込み | `core_adapters.py` | — | `tests/test_core_adapters.py` |
 
 Python のファイルは `comfyui_pano_suite/` の下にある。旧ノードとの差は `docs/legacy-baselines.md` の基準画像で確かめる。
@@ -500,5 +500,7 @@ ADR 0037 の「一致の測り方」の場面のうち、影の場面と平行�
 `scene`・`sticker` 入力の 3D ファイルのうち、どちらの読み手も読まないもの（3DGS の属性のない PLY、形式がなくスプラットでもないもの）は、`_read_scene_file` が入力の名前と読める形式を示す `ValueError` にする（`scene` と `sticker` で同じ文言）。暫定の `NotImplementedError` は残っていない。
 
 FBX・USDZ はメッシュ系の 3D ファイルとして受けるが、コアの Get3DComponents が読めないので、コアの `ValueError` になる。
+
+圧縮した glTF（GLB・GLTF の `extensionsUsed` か `extensionsRequired` に `KHR_draco_mesh_compression`・`EXT_meshopt_compression`・`KHR_texture_basisu` のどれかがあるもの）は、エディタの GLTFLoader は読めるが出力は描けないので、`read_mesh_file` がコアに読ませる前に、その拡張の名前を示す `ValueError` にする（ADR 0037 の条件 8。理由の文は `it uses the glTF extension <名前>, which Panorama Studio cannot draw; export the model without this compression`）。`extensionsUsed` だけに挙がるものも断る。コアは必須でない拡張を無視して読むので、Draco の代わりの accessor（中身が 0）から崩れた形を黙って描くことがあるからである。`KHR_mesh_quantization` は断らず、コアの読み手に任せる（`extensionsUsed` だけなら読む。`extensionsRequired` にあるとコアが自分の `ValueError` で断る）。
 
 3D ファイルの `file` の Source（エディタの Add to World で置いたもの）が読めないときは、実行を止めず、その Sticker を描かずに警告を出す（`docs/studio-node.md` の「3D ファイルの `file` の Source」）。

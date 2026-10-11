@@ -226,7 +226,7 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。
 - 上流の Scene：`SceneLayer.sources` の `contents` は `stickers` と同じく層の中の `id` で引き、上書きで消した Sticker のものは除く（`_override_layers`）。下流の Panorama Studio と Preview も同じ読んだ値で描く。
 - 読めないとき：次の場合は、画像の `file` の Source と同じく、その Sticker を描かずに警告を出す（ログと `pano_sticker_warnings`）。実行は止めない。`scene`・`sticker` 入力の 3D ファイルが読めないときは実行を止める（`docs/render-contract.md` の「読めない 3D ファイル」）のと違うのは、`file` の Source はワークフローの接続ではなく、エディタで置いた Sticker の一つだからである。
   - パスが範囲の外、またはファイルが無い。
-  - 読み手が `ValueError` か `OSError` を出した（FBX・USDZ はコアの Get3DComponents が読まない。3DGS の属性の無い PLY、外部の `.bin` やテクスチャを参照する `.gltf` でその参照先が無いもの、壊れたファイルなど）。ほかの例外はそのまま上げる。
+  - 読み手が `ValueError` か `OSError` を出した（FBX・USDZ はコアの Get3DComponents が読まない。圧縮した glTF（`docs/render-contract.md` の「読めない 3D ファイル」）、3DGS の属性の無い PLY、外部の `.bin` やテクスチャを参照する `.gltf` でその参照先が無いもの、壊れたファイルなど）。ほかの例外はそのまま上げる。
   - `sky` の Sticker が 3D ファイルの Source を持つ（エディタは作らない。手で書いた状態など）。
   - 文（`nodes.py` の `_file_3d_error`。経路の `error` と同じ関数で作る）：`Could not read the 3D file <subfolder/filename>: <理由>`。ノードの警告はこの文に ` Sticker <id> is not drawn.` を足す。理由は、`the file was not found`（範囲の外・ファイルが無い）、`only files in the input folder are read`（経路だけ。`storage` が `input` でない）、`a sky Sticker cannot show a 3D file`（ノードだけ）、または読み手の文。どちらの読み手も読まないファイルの理由は `it is neither a splat file (a PLY with 3DGS properties, SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL)` とし、`scene`・`sticker` の入力の名前を含めない（`NEITHER_3D_READER`。`_read_scene_file` は入力の名前を渡されないとき、この理由だけの `ValueError` を出す）。
 - メモリ：読んだ SPLAT・MESH は `_render_memory` の見積もりに入る（`docs/runtime-resources.md` の「デバイスとメモリ」）。
