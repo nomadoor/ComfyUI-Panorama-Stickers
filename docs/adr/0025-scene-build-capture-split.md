@@ -4,6 +4,8 @@
 
 Accepted
 
+一部（出力ポートの先頭の並びを保つこと）を ADR 0027 が、（Stickers が組み立て Cutout と Preview が撮る分け方、新しい ID の `PanoramaStickersNode`・`PanoramaCutoutNode`）を ADR 0029 が置き換えた（2026-10-02、2026-10-03）。
+
 ## Date
 
 2026-09-30

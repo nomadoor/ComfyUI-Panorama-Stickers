@@ -28,7 +28,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
 ## 中断と進み具合
 
 - 長いループ（エディタ用の MP4 のエンコード `encode_editor_mp4`、RGBA の PNG の書き出し `save_editor_frames`、3D のエディタ用ファイルの書き出し `write_editor_files`、VIDEO の PTS の走査、旧ノードのプレビュー MP4 `encode_frames_to_mp4`、`video` 出力の保存）は、1 ステップごとに ComfyUI の中断を確かめ、進み具合をノードのバーに出す（`progress.loop_progress()`。旧ノードは `NodeProgress` が同じことをする）。
-- 中断や失敗で止まったときは、書きかけのファイル（`core/video.py` の `removed_on_failure`）を消してから例外をそのまま上げる。
+- 中断や失敗で止まったときは、書きかけのファイル（`core/temp_files.py` の `removed_on_failure`）を消してから例外をそのまま上げる。
 
 ## キャッシュ
 
@@ -43,6 +43,8 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - `video`・`scene_files`：エディタ用の MP4・PNG・PLY/GLB・`DA3_GEOMETRY` mono の深度（`.f32`）のパス。`DA3_GEOMETRY` mono の色のプロキシの MP4 は `video` に入る。
   - `da3_meshes`：`DA3_GEOMETRY` の要素ごとの、コアの変換の結果の MESH（`scene_mesh.py` の `da3_meshes`。規則は `docs/render-contract.md` の「`DA3_GEOMETRY` のメッシュ」）。キーは `mode` と、メッシュの元になるテンソルの同一性と、要素の番号。mono のエディタ用ファイルはこの変換を使わないので、mono の要素を入れるのは描画だけである。`video` の読み出しは、上限で追い出された要素だけを変換し直す（`docs/render-contract.md` の「`DA3_GEOMETRY` のメッシュ」）。
   - `moge_depth_grid`：`MOGE_GEOMETRY` を深度のグリッドで運ぶかの判定の結果（`scene_mesh.py` の `moge_uses_depth_grid`。規則は `docs/studio-node.md` の「`MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル」）。キーは入力のテンソルの同一性。
+  - `video_index`：ストリームで読む VIDEO の PTS の表と最初に復号できたフレーム（`core/video_source.py` の `VideoIndex`。`sticker_media.py` の `stream_video` が `scan_video` の結果を入れる）。キーはファイル（パス・更新時刻・大きさ、メモリ上のファイルはオブジェクト）とトリム範囲。PTS の表は int64 の配列としてバイト数に数える（規則は `docs/studio-node.md` の VIDEO の読み方）。
+  - `video_size`：VIDEO のファイルのストリームの大きさ（`sticker_media.py` の `open_video` がクロップの判定に使う `coded_size`）。キーはファイル。
   - `splat_files`・`mesh_files`：3D ファイルから読んだ SPLAT・MESH。`scene`・`sticker` の入力の 3D ファイルも、3D ファイルの `file` の Source も、エディタ用ファイルの問い合わせ（`docs/studio-node.md`）も、同じキー（パス・更新時刻・大きさ）で引く。同じキーを同時に求める呼び出し（実行中のプロンプトと経路）は、キーごとのロックで待ち合わせ、1 回だけ読む（`MemoryCache.get_or_put`）。`scene_files` も同じく 1 回だけ書く。
 - 持たないもの：
   - 旧 `PanoramaStickers` の背景のバッチ。プレビューの MP4 を作る間だけ持つ。
@@ -57,7 +59,7 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - 消したファイルをキャッシュが指していても、次に要るときに作り直す（キャッシュはファイルがあるかを確かめる。`SceneVideo` のストリームソースも同じ）。
   - 消せないファイル（Windows でブラウザが再生中の MP4 など。`unlink` の `OSError`）は登録と合計に残し、次に書いたときにもう一度消す。消せないことで実行は失敗しない。書きかけのファイルを消すとき（`removed_on_failure`）も同じで、元の例外をそのまま上げる。旧ノードのプレビュー MP4 は、エンコーダの試行のループを抜けてから登録する（登録の処理をエンコーダの失敗と取り違えないため）。
 - 登録したファイルの `ui` の項目には `"pano_evictable": true` を足す。ほかの項目（`filename`・`subfolder`・`type`・`storage`・`format`）は変えない。前の実行の `ui` を表示しているエディタがこの印の付いたファイルを開けなかった（404）ときは、「ファイルが消えたので、もう一度実行してください」と出せる。フロントエンドの表示はまだない。また、入力を変えずに実行し直すと ComfyUI はノードの出力をキャッシュから返し、`execute` が走らないので、消えたファイルを指す前の `ui` がそのまま返る（ファイルは書き直されない）。入力のどれかを変えて実行するまで、そのファイルは開けない。
-  - 対象のキー：`pano_videos`・`pano_input_videos`・`pano_sticker_input_videos`・`pano_sticker_input_frames`・`pano_scene_files`・`pano_sticker_files`・`pano_output_erp` と、上流の層の同じキー（`pano_upstream_*`・`pano_upstream_layers[].ui`）。
+  - 対象のキー：`pano_videos`・`pano_input_videos`・`pano_sticker_input_videos`・`pano_sticker_input_frames`・`pano_scene_files`・`pano_sticker_files`・`pano_output_erp`・`pano_output_frame`、`pano_scene_meta`・`pano_sticker_meta` の `video`（深度のグリッドの色のプロキシ）と、上流の層の同じキー（`pano_upstream_*`・`pano_upstream_layers[].ui`）。
 - 入力ディレクトリの VIDEO で、エディタがそのまま扱えるもの（`docs/studio-node.md` の「そのまま使う」の条件を満たす `.mp4`）は temp に複製せず、`{"filename", "subfolder", "type": "input", "storage": "input", "format": "video/mp4"}` で直接指す。登録しないので `pano_evictable` は付かない。
   - `type` を外して `storage` だけにはできない：フロントエンドの `pano_comfy_media.js` の `comfyImageEntryToUrl` は `type` だけを読む（`storage` を先に読むのは `pano_preview_previewnode.js` だけ）。そのため、ComfyUI を `--enable-assets` で起動したときは、コアの `comfy_execution/asset_enrichment.py` が `type` の付いた `ui` の項目をすべてジョブの出力として登録し、この入力の MP4 も実行のたびに、その実行の出力として登録し直される（同じパスの前の記録は missing になる）。既定（assets なし）では影響はない。
 - `ui` の項目の `subfolder` は、ディレクトリの直下のファイルでは `""`。

@@ -96,7 +96,8 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 - 空所primary dragはcameraをpanする。wheelは共有controllerで横FOVを1イベント3度変更する。
 - 空所drag / wheelはCutout / Previewと同じcamera感度で動く。
 - Node 2.0ではDOM widget rootを`tabindex="0"`かつ`data-capture-wheel="true"`とし、surfaceへのpointer enterで
-  rootへfocusを移してからwheelを受け取る。
+  rootへfocusを移してからwheelを受け取る（`pano_wheel.js` の `bindWheelCaptureRoot`）。wheelを受けるにはこの2つの両方が要る。
+  この捕捉の規則は旧ノードと Preview の Scene のビューアも使い、この節だけが持つ。
 - Space キーは割り当てない（canvas上の Space は ComfyUI の pan）。
 
 ## 表示フレームと VIDEO

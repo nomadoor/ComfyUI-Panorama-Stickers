@@ -4,6 +4,8 @@
 
 Accepted
 
+一部（出力の表の Stickers と Cutout の行、`pano_scene` の名前）を ADR 0029 が置き換えた（2026-10-03）。
+
 ## Date
 
 2026-10-02

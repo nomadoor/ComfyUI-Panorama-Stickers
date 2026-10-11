@@ -72,8 +72,9 @@ DOM surface（`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl`�
 - 背景の動画は先頭のframeを表示し、canvas左下の再生・一時停止を切り替えるボタン（play / pause）でloop再生（muted）・停止する。ボタンは再生できるVIDEOがあるときだけ出す。
 - surfaceが見えなくなったノード（collapse、subgraphの中や別のgraphを表示中）は、VIDEOを一時停止する。
 - 編集の前に再生を一時停止する（toolbarの操作、画像のdrop、Delete / Backspace）。
-- 旧ノード（`PanoramaStickers` の Stickers / Cutout の表示）のループ再生の VIDEO（`createLoopingPreviewVideo`）は変えていない。
-  エディタのモーダルの下でもデコードを続ける。
+- 背景の VIDEO（`createLoopingPreviewVideo`。`PanoramaStickers` と `PanoramaCutout` の表示が使う）は自動で再生しない。既定は止めて先頭のframeを表示し、
+  再生は操作でだけ始め、再生中はループする。エディタのモーダルが開いても止めない（再生中ならモーダルの下でもデコードを続ける）。
+- `PanoramaCutout` の表示には再生の操作がないので、背景の VIDEO は先頭のframeのままである。
 
 ### Scope Boundary
 
@@ -126,7 +127,7 @@ surfaceに含めない操作:
 
 ### Runtime Contract
 
-- Node 2.0でwheelを受けるには、DOM widget rootの`data-capture-wheel="true"`と、そのroot内のfocus（`tabindex="0"`、pointerdownでfocus）の両方が要る。wheelの不具合は、listenerをroot / canvas / wrapの間で動かす前に、まずこの2つが満たされているかを確かめる。
+- Node 2.0でのwheelの捕捉は Panorama Studio の表示と同じ（`docs/studio-node-surface.md` の「見回し」）。wheelの不具合は、listenerをroot / canvas / wrapの間で動かす前に、まずその規則が満たされているかを確かめる。
 - live previewのlayoutを、実行時に `node.size` を書き換えて直さない（Panorama Studioと同じ。`docs/studio-node-surface.md` の「描画と後始末」）。
 - Node2 DOM camera frameはpreview canvasだけを更新し、host graph canvas全体を再描画しない。
 - animation frameは同時に1件だけ予約する。
@@ -139,8 +140,7 @@ surfaceに含めない操作:
 `PanoramaCutout` のノード上UIは、詳細なカメラ編集を行う第二のEditorではなく、
 active frameの出力形状を素早く決めてFull Editorへ入るためのsurfaceとする。
 
-UIとinteractionの基準はPerspective Editorの実ノードUIとし、既存のPanorama Vue
-component、icon、control surfaceを再利用する。
+既存のPanorama Vue component、icon、control surfaceを再利用する。
 
 ### Compatibility Contract
 
@@ -169,10 +169,10 @@ component、icon、control surfaceを再利用する。
 
 ### Layout Contract
 
-- node surfaceはPerspective Editorと同じ、canvasを主面とする構成を使う。
+- node surfaceはcanvasを主面とする構成を使う。
 - toolbarはcanvas上端に浮かせ、Full Editor、frame追加/削除、aspect、roll、orientation swap、helpだけを置く。
 - toolbarの各列と数値領域は固定し、値や桁数が変わってもbox、icon、隣接controlを移動させない。
-- toolbar controlはPerspective Editorと同じ24px control / 26px icon button、6px radius、
+- toolbar controlは24px control / 26px icon button、6px radius、
   `#1b1e25` control、`#252932` hover、共通emphasis token、2.3px icon strokeを使う。
 - Full EditorはmodalのAdd Frameと同じemphasis tokenを使い、通常時は暗い青、hover / focus時は明るい青、active時は押下色とする。
 - button押下時に位置をずらすtransform animationは使わない。
@@ -180,7 +180,7 @@ component、icon、control surfaceを再利用する。
 - frame内外ともpanoramaを表示し、frame外だけを半透明のpassepartoutで暗くする。
 - 85°安全角を越える広角shotでは全面の広角contextを先に描き、正確なframe投影を最後に重ねて黒い未描画領域を残さない。単一のrectilinear面で180°近傍のframe外を連続投影することはできないため、この境界fallbackではframe端の連続性よりframe内の正確さを優先する。
 - output frameは左右下32px、上58px（workspace 32px + toolbar 26px）のsafe paddingを引いた矩形へ最大サイズでaspect-fitする。
-- surfaceがpadding合計より小さい場合は、Perspective Editorと同じ比率で対向paddingを縮める。
+- surfaceがpadding合計より小さい場合は、対向する2つのpaddingの比を保ったまま、合計が `surfaceの大きさ − 1` になるまで縮める（`fitCutoutNodeFrame`）。
 - DOM stageは260pxの最小高を持ち、基準paddingによってframeが実用不能な大きさまで潰れないようにする。
 - frameの位置と大きさを直接dragするhandleは置かない。
 - node resizeではframeを同じpadding規則で再計算し、shot state自体は変更しない。
@@ -216,8 +216,7 @@ component、icon、control surfaceを再利用する。
 ### FOV Contract
 
 - wheel upはFOVを狭め、wheel downはFOVを広げる。
-- Node 2.0ではDOM widget rootを`tabindex="0"`かつ`data-capture-wheel="true"`とし、
-  frame surfaceへのpointer enterでrootへfocusを移してからwheelを受け取る。
+- Node 2.0でのwheelの捕捉は Panorama Studio の表示と同じ（`docs/studio-node-surface.md` の「見回し」）。
 - H FOV / V FOVのtangent比を維持し、frameのaspectと画面上の固定geometryを変えない。
 - 連続wheel入力は1 gestureとしてlive draftへ反映し、180ms停止後に一度だけstateへ確定する。
 - prompt queue、Full Editor開始、pointer gesture開始、teardownでは確定待ちwheel gestureをflushする。

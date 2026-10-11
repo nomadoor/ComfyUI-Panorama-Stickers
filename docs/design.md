@@ -232,7 +232,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 
 | 状態 | 見た目 |
 |---|---|
-| 既定 | 地 `--pano-bg-control`、文字 `--pano-text-secondary`、枠なし、角丸 `--pano-space-md`、高さ 40px、左右の padding `--pano-space-lg`、12px / 500 |
+| 既定 | 地 `--pano-bg-control`、文字 `--pano-text-secondary`、枠なし、角丸 `--pano-radius-md`、高さ 40px、左右の padding `--pano-space-lg`、12px / 500 |
 | hover | 地 `--pano-surface-hover`、文字 `--pano-text` |
 | 選ばれている（`.active`） | 地 `--pano-surface-3`、文字 `--pano-text` |
 | フォーカス | `box-shadow: 0 0 0 1px var(--pano-accent)`、outline なし |
@@ -372,7 +372,7 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 
 ## アイコン
 
-- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 50 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
+- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 51 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
   `SvgIcon.vue` が `viewBox="0 0 24 24"`、`fill="none"`、`stroke="currentColor"`、`stroke-linecap` と `stroke-linejoin` は `round`、
   class `icon icon-tabler icons-tabler-outline` で描く。
 - 線の太さ：`.pano-modal` の中の Tabler のアイコンと、`.pano-btn-icon`・`.pano-btn-texticon` の中の SVG は `var(--pano-icon-stroke, 2.3)`

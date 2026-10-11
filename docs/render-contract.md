@@ -41,9 +41,9 @@ render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, c
 
 | 引数 | 内容 |
 |---|---|
-| `layers` | `RenderLayer` の列（下の層から）。各層は Panorama Studio 一つ分の Scene で、`evaluated`・`sources`・`scene`・`scene_index` を持つ（下記「層」）。上流の Scene を受けない描画では層は一つ |
+| `layers` | `RenderLayer` の列（下の層から）。各層は Panorama Studio 一つ分の Scene で、`evaluated`・`sources`・`scene`・`scene_index`・`scene_pose` を持つ（下記「層」）。上流の Scene を受けない描画では層は一つ |
 | `RenderLayer.evaluated` | `evaluate_scene_state(state, frame)` の戻り値（その時刻の Sticker・`scene`・Camera の値） |
-| `RenderLayer.sources` | `SceneSources`。そのフレームの素材。`stickers`（Sticker の `id` → `StickerSource`）、`painting`（状態のペイント）、`painting_layer`（アップロード済みのペイントのラスタ。`resolve_painting_layer_payload` の戻り値） |
+| `RenderLayer.sources` | `SceneSources`。そのフレームの素材。`stickers`（Sticker の `id` → `StickerSource`）、`painting`（状態のペイント）、`painting_layer`（アップロード済みのペイントのラスタ。`resolve_painting_layer_payload` の戻り値）、`contents`（3D ファイルの `file` の Source の Sticker の `id` → 読んだ SPLAT・MESH。device のテンソルは持たず、呼び出し側が描画のパスごとに `ContentSource` にして `stickers` に入れる。`render_frame` は `stickers` だけを読む） |
 | `camera` | 評価済みの Camera の値（`position`・`yaw_deg`・`pitch_deg`・`roll_deg`）。Panorama Studio は、Camera が無ければ `ORIGIN_CAMERA`（World の原点、回転 0）、あれば評価した Camera を渡す（`docs/studio-node.md` の「Panorama Studio」）。ERP の Projection の出力も Camera の回転に従って回る（描画関数の性質） |
 | `projection` | `Projection` |
 | `bg` | このフレームの `bg_media` の画像 (h, w, C) または `None` |
@@ -54,6 +54,7 @@ render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, c
 | `bg_width` | その実行の `bg_media` の画像の幅（`bg_media` がなければ `None`）。透視投影の Sky の解像度に使う。フレームごとの `bg` の有無では変えず、IMAGE バッチが Timeline より短くても途中で Sky の解像度が変わらない。Studio の (b) は `bg_media`（VIDEO なら最初のフレーム）の幅を渡す |
 | `RenderLayer.scene` | `scene` 入力の中身（`SceneContent`）または `None`。下記「`scene` の共通処理」 |
 | `RenderLayer.scene_index` | このフレームで描く `scene` の要素の番号。`None` なら描かない |
+| `RenderLayer.scene_pose` | glTF の clip を持つ `scene` の、このフレームの姿勢（clip の番号と clip の中の秒）。`None` なら休みの形（下記「glTF のアニメーション」） |
 
 - 戻り値はすべて float32 で、`device` 上にある。
 - `mask` はペイントで描いたマスクで、色と同じ Projection で写す。層が複数あれば、各層のマスクの画素ごとの最大値とする。
@@ -81,7 +82,7 @@ render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, c
 | 形 | 意味 |
 |---|---|
 | `Projection.erp(width, height, coverage)` | ERP。`coverage` は 360 または 180。180 は Camera の前方の半球 |
-| `Projection.perspective(width, height, hfov_deg, coverage=360, curve=1.0)` | Camera の画像（`curve` は作る。下の「カメラのレンズ」。`curve` が 1 なら今の透視投影）。正方の画素のピンホールで、`hfov_deg` を幅に当てる。垂直の FOV は出力の大きさから決まる（`tan(vFOV/2) = tan(hFOV/2) × height ÷ width`）。`coverage` は、写す `bg_media` の ERP の範囲（360 または 180） |
+| `Projection.perspective(width, height, hfov_deg, coverage=360, curve=1.0)` | Camera の画像。`curve` はレンズの曲線 κ（下の「カメラのレンズ」）で、1 ならピンホール（直線の像）。画素は正方で、`hfov_deg` を幅に当てる。垂直の FOV は出力の大きさから決まる（`g_κ(vFOV/2) = g_κ(hFOV/2) × height ÷ width`、`g_κ = lens_radius`。κ = 1 では `tan(vFOV/2) = tan(hFOV/2) × height ÷ width`）。`coverage` は、写す `bg_media` の ERP の範囲（360 または 180） |
 
 - 出力の画素ごとの向き（光線）は、ERP・透視投影とも `core/math.py` の `ray_directions` が画素の中心を通るものとして作る（下記「World の描き方」）。背景と Sky は `_view` でこの向きを ERP の座標に直して標本化し、その ERP も画素の中心で標本化する（`grid_sample` の `align_corners=False`）。エディタと Studio の出力の画素の位置はこれで一致する。
 
@@ -95,7 +96,7 @@ Camera のレンズの曲線 κ（`docs/scene-state-v2.md` の `camera.curve`）
   - 定義域は `κθ < 90°`。画素からの逆は `atan` なのでいつもその中に入る。`θ` が 180° を超える画素（κ が小さく、画像の隅が光軸の真後ろを越える）は描かずに `bg_color` にする（描く画素は `lens_drawn`）。
   - κ の範囲 0〜1：0 は魚眼の極限、1 はピンホール。1 より大きい糸巻き型は持たない（ADR 0042。2026-10-11 オーナーの決定）。読み込みと評価は 0〜1 に寄せる。
   - 画角の上限は κ で決まる：横の端の `κ·hFOV ÷ 2 < 90°` を保つため `min(360, 179 ÷ κ)`（`lens_fov_limit`。κ = 1 で 179、κ ≤ 179/360（約 0.497）で 360。`docs/scene-state-v2.md`）。評価した値に寄せる。
-  - Brown–Conrady の歪み（実機のカメラに合わせる値）は使う人のつまみにしない。次の候補とする。
+  - Brown–Conrady の歪み（実機のカメラに合わせる値）は使う人のつまみにしない。
   - 描くときは、そのフレームの `hFOV`（画像の横の端の角度）と κ から `f` を求める。状態が持つのは端の角度で、`f` は持たない。エディタで Lens curve を変えるときは、`f` を保つように `fov` も一緒に書く（ADR 0042 の 2026-10-11 の改訂、`docs/editor-interaction.md` の「レンズの行」）。描き方はその書いた値に従うだけで、κ によって振る舞いを変えない。
   - 写し方の関数の owner：光線の角度 θ から像の上の距離へ `lens_radius(θ, κ) = tan(κθ) ÷ κ`（κ = 0 では θ）と、その逆 `lens_angle` は、`core/math.py` と `web_src/pano_lens.js`（`lensRadius`・`lensAngle`。GLSL の写しは `pano_lens_glsl.js`）に一組だけ持ち、`tests/fixtures/lens/` で縛る。Camera の光線と、`sky` の Sticker の標本化（下の「Sky の描き方」）と、エディタの後処理と Sticker のシェーダが、すべてこの一組を使う。
   - κ ≠ 1 の Camera の Pose handoff は、撮った `curve` を `sky` の Sticker に渡して輪を閉じる（`docs/studio-node.md` の「`port` の Sticker と Pose handoff」）。
@@ -119,9 +120,6 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 状態 v2（Python と JS）、出力とエディタ、描画の層のすべてをまたぐ。parameter format（状態 v2 に `curve` の Lane が加わる。オーナーが承認：レンズの値は `camera` に直に Lane として置く）と座標の規約（κ の写し方。オーナーが決めた）の変更で、AGENTS の stop condition に当たる。ノードの id とポートは変えない。
 
 - 作らないもの：プリセット、主点のずらし、ERP のレンズ。
-- 次の候補（UI の段）：魚眼の Sticker を道具として使うための、Sticker の `curve`・`lens` のインスペクタの行（今は Pose handoff だけが書く）。Pose handoff の `sky` と `world` の自動の切り替えが使う人に見えないこと。Sticker が曲がっていることを見せる（例：インスペクタに「Lens κ=0.5 (handoff)」）。
-- 次の候補：実用の画角の上限（κ と画角の組み合わせで隅が引き伸ばされすぎる範囲を、上限の式とは別に抑えるか）。
-- 次の候補（作らない）：被写界深度（オーナーが今は作らないと決めた。3DGS がもっときれいになるまで効かず、下流の AI が描き直すため。設計の覚え書きは ADR 0042）、Brown–Conrady のつまみ（実機のカメラに合わせる）。
 - owner：状態の形と範囲は `docs/scene-state-v2.md`、光線の作り方（κ）はこの節（`core/math.py`、JS は `pano_lens.js` が同じ式）、出力の大きさは `docs/studio-node.md`、エディタの見せ方は `docs/threejs-spark-integration.md`、インスペクタは `docs/editor-interaction.md`。
 - data の流れ：`state_json` → `evaluate_scene_state` の `camera`（レンズの値、κ による画角の上限）→ `Projection` → `ray_directions`（`lens_angle`）→ 各層。エディタは同じ評価の値 → `pano_lens.js` → 余白付きの描画と後処理、または立方体の 6 面。
 - 一致を守る test：`tests/fixtures/lens/lens.json`（κ ごとの画素と光線、`f` と画角）を `tests/test_lens.py` と `tests/pano_lens.test.mjs` が読む（許容差は状態の parity と同じ 1e-4）。`tests/test_lens.py`：κ = 1 でピンホールの光線と同じ値、κ = 0 で等距離、θ > 180° の画素が `bg_color`、画角の上限、出力の大きさが像の中心の 1 ラジアンあたりの画素を保つこと、`world` の Sticker の `lens` が描く元に入ること。`tests/test_scene_state.py`・`pano_scene_state.test.mjs`：既定値を書かない、範囲、κ による画角の上限、欠けた値。下の一致の場面。
@@ -174,7 +172,9 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
   - `sky` の Sticker の `curve`（κ。ADR 0042。`core/render.py` の `_shoot_sticker`）：κ = 1 は次の項の式のまま。κ ≠ 1 は、出力の画素の向きと Sticker の中心の軸（`camera_basis(yaw, pitch, roll)` の前方）の角度 θ と、Sticker の右と上の軸での方位 φ から、`ρ = lens_radius(θ, κ)`、像の上の位置 `(ρ cos φ ÷ g_κ(hFOV ÷ 2), ρ sin φ ÷ g_κ(vFOV ÷ 2))`（それぞれ −1〜1 が Sticker の幅と高さ。`g_κ = lens_radius`）とし、そこから `crop` の範囲の uv へは今と同じ置き方。`κθ` が 90° 以上か θ が 180° を超える向き、−1〜1 の外は描かない。Camera と同じ写し方の関数なので、κ の Camera で撮った絵を同じ κ の Sticker にして同じ Camera で撮り直すと一致する。縁のアンチエイリアスと、縮めて写す画素の平均は κ = 1 と同じ規則で、出力の隣の画素への uv の動きを κ の写し方を通して求める（`_pixel_steps`）。
   - `sky` の Sticker（κ = 1）：出力の画素の向きを、Sticker の向き（`camera_basis(yaw, pitch, roll)`）の平面に投影し、`core/stickers.py` の `_compose_sticker_patch` と同じ式で素材の uv を求める（FOV は 0.1° 以上、`crop` の範囲、uv 0 と 1 を端の画素の中心に置く `align_corners=True` の置き方、前方の外と FOV の外は描かない）。Sticker の縁が横切る出力の画素は、画素のうち縁の内側にある割合（縁までの距離を、隣の画素への uv の動きで割ったもの）をアルファに掛ける。uv の動きは Sticker の幅（面の座標で 2）までにする（面の地平線、奥行き 0 をまたぐ画素では動きが無限に近くなり、Sticker の外に半分の被覆の線が出るため）。素材はアルファを掛けた状態で標本化し、不透明度はその 4 チャンネルに掛ける。素材は `device` に置いて、フレーム（`StickerSource.frame`）が変わるまで実行の中で使い回す（`render_frame` の `cache` の `sky_textures`）。
   - ペイント：エディタがアップロードしたラスタ（`painting_layer` の `paint`・`mask`・グループ）は、その大きさのまま 360 の ERP として、出力の画素の向きで標本化する。
-  - 状態だけが持つペイント（アップロードされていないストロークのグループ、ストロークのどのグループにも属さない分、ラスタオブジェクト、アップロードのない MASK）は、バックエンドが ERP に描いてから同じく標本化する。その幅は次の大きいほうを 4096 までに抑えたもの（`_sky_size`）。ストロークを 8192 の ERP に描くと、描き直すたびに CPU で約 7 秒・3GB を使うためである。
+  - 状態だけが持つペイント（アップロードされていないストロークのグループ、ストロークのどのグループにも属さない分、ラスタオブジェクト、アップロードのない MASK）は、バックエンドが 360 の ERP に描いてから同じく標本化する。その大きさ（`_sky_size`）は出力の撮り方で決まる。
+  - ERP の出力：幅は出力の幅、高さは `coverage` 360 なら出力の高さ、180 なら幅の半分。旧ノードが重ねの層を描いた大きさと同じで、Camera の回転の無い 360 の出力は画素どうしで標本化する。2 のべき乗にせず、4096 の上限も `bg_width` も使わない。
+  - 透視投影の出力：幅は次の大きいほうを 4096 までに抑えたもの、高さは幅の半分。ストロークを 8192 の ERP に描くと、描き直すたびに CPU で約 7 秒・3GB を使うためである。
     - 画素の細かさが出力の中央の画素とほぼ同じになる幅（`π × 出力の幅 ÷ g_κ(hFOV/2)`。κ = 1 では `tan`）を 2 のべき乗に切り上げたもの（64 以上）。FOV をアニメーションさせても、この幅が変わるときだけ描き直す。
     - `bg_media` があるとき、その画素の細かさの 360 の幅（`bg_width` × 360 ÷ `coverage`）。
   - Sky のキー（`_sky_key`）は、この大きさと、`sky` の Sticker の値と素材のフレーム。Camera の向きのキーに Projection を入れる。キーが変われば層の並びを組み直し（ペイントの層と MASK は、`device` に置いたものを `cache` の `sky_paint` に大きさごとに持ち、大きさが変わるまで使い回す）、向きのキーが変われば写し直す。
@@ -185,7 +185,7 @@ RTX 4070 Ti、1 フレーム、κ = 0.5・hFOV 140°（4K は 4096 × 2048 相�
 
 `core/world_render.py` が持つ。位置は World の glTF 座標、角度はパノラマの規約で、両者の間は `core/world.py` の `world_rotation` だけでつなぐ（ADR 0023）。
 
-- 出力の画素ごとに、Camera の位置から画素の中心を通る光線を作る（`core/math.py` の `ray_directions`）。ERP は Sky と同じ経度・緯度（180 は Camera の前方の半球）、透視投影は `hfov_deg` を幅に当てた正方の画素のピンホールとする。Sky の向き（`_view`）も同じ関数で作る。
+- 出力の画素ごとに、Camera の位置から画素の中心を通る光線を作る（`core/math.py` の `ray_directions`）。ERP は Sky と同じ経度・緯度（180 は Camera の前方の半球）、透視投影は `hfov_deg` を幅に当てた正方の画素で、レンズの曲線 κ（上の「カメラのレンズ」。κ = 1 ではピンホール）の光線とする。Sky の向き（`_view`）も同じ関数で作る。
 - 各内容は、ストレートアルファの色 (H, W, 4) と距離 (H, W) の層として描き、描くたびに `over_by_depth` で一枚に畳み込む（`world_layer`）。層の順は `scene` の中身、続いて `world` の Sticker を Camera の位置から `position`（板の中心）までの距離の遠い順（同じ距離では状態の順）。画素ごとの距離が同じときは、中心が近い Sticker、次に状態の順で後ろの Sticker が手前になる。交わらない板どうしは、これで奥行きの順と一致する。`scene` の中身は画素ごとに奥行きが変わり並べ替えられないので最初に畳み込み、その手前と奥に Sticker が重なる画素では上記の近似が残る。まとめた一枚を `composite_frame` に渡す。背景と Sky は World の層より常に奥になる。
 - 距離は光線の長さ（上記 `depth`）。
 
@@ -220,7 +220,7 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 | `scene` の変形（位置・回転・スケール）と Keyframe | `evaluate_scene_state` の `scene` を、`world_render.py` が Camera に逆に掛ける |
 | Clip range | `evaluated["scene"]["active"]` が偽のフレームでは描かない |
 | バッチと出力フレームの対応 | `sticker_media.py` の `batch_index`（IMAGE バッチの `sticker` と同じ規則）。(a) の `_decide_timeline` が `clip_frame`（`frame − (start − in)`）と Timeline fps から決め、`frames` の 4 つ目に入れる。`render_frame` の `scene_index` にはこの番号を渡し、`PANO_SCENE` を使う側も同じ番号を使う |
-| 出力の長さ | `duration` が `null` で要素が 2 つ以上のとき、`start − in + 要素の数` の Timeline fps のフレームを Clip の終わりとする（(a)） |
+| 出力の長さ | (a) の `_decide_timeline`（規則の owner は `docs/studio-node.md` の出力の長さ） |
 | 奥行きでの合成 | `over_by_depth`（`world_layer` と `composite_frame`） |
 
 - `render(view, index, device)` は、要素 `index` を `view`（`CameraView`）から見た層を返す。`view` は `scene` 自身の座標（`scene` の変形を外した glTF 座標）にある Camera で、`position` (3,)、`rotation`（`world_rotation` と同じく列が右・上・後ろの 3 × 3）、`projection` を持ち、`view.rays(device)` で画素ごとの光線の向き (H, W, 3) を返す。SPLAT のラスタライザは焦点距離を `projection` から求めるので、`CameraView` には加えていない。
@@ -243,8 +243,7 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 - 評価（フレームごと、CPU。`gltf_animation.py` の `evaluate`）：channel の値を three.js r184 と同じ規則で補間する。`LINEAR` の回転は `Quaternion.slerpFlat` と同じ（短い方の弧。内積が 0.9995 以上なら正規化した線形補間）、`CUBICSPLINE` は Hermite の後、回転だけ正規化する（GLTFLoader の `GLTFCubicSplineQuaternionInterpolant`）、`STEP` は前の値。最初の key より前は最初の値、最後の key より後は最後の値。node の world の行列を親からたどる。
 - 描く：`mesh_content` は、静止の MESH は今のまま、アニメーションのある要素（`mesh_content(..., animation)`）は休みの形・joint・重み・morph の差を device に置いたまま（`gltf_animation.py` の `upload`）、フレームごとに行列と morph の重みだけを渡して形を作り直す。三角形の前処理（画素の範囲）はフレームごとに作り直す。World のキー（`world_key` の Sticker と `scene`）に、姿勢（clip の番号と、小数第 9 位で丸めた clip の時刻。`world_render.py` の `_pose_key`）を入れる。姿勢は `nodes.py` の `_animation_pose` が clip frame と `animation` から求める。
 - 光：光が効くかの規則（`MESH.unlit`）と材質は今と同じ（コアの最初の材質）。
-- 中身の箱（`content_box`）は休みの形（コアの MESH、bind の形）のまま。clip で動く範囲は入れない（置いた位置が clip を選ぶたびに変わらないように。clip の全体の範囲は次の候補）。
-  - 次の候補：bind の形が見える形と大きく違うファイルでは、箱と収めて置く位置（`docs/editor-interaction.md` の「3D の Sticker を収めて置く」）が見える形に合わない。Xbot では bind の形が姿勢の形の 0.01 倍なので、箱と置く距離が見えるモデルの約 1/100 になる。
+- 中身の箱（`content_box`）は、最初の clip の時刻 0 の姿勢を、この節の `deform` で求めた頂点から作る（案。オーナーの承認待ち。規則の owner は `docs/studio-node.md` の「中身の箱」）。clip で動く範囲は入れない（置いた位置が clip を選ぶたびに変わらないように）。
 - 一致を守る test：`tests/fixtures/gltf_anim/`（`tools/bake_gltf_animation.mjs` が作る小さな skin・morph・node のアニメーションの glTF `anim.glb` と、three.js r184 の `AnimationMixer`・`SkinnedMesh` で求めた時刻ごとの node の world の行列・skin の行列・morph の重みと形 `three_r184.json`）を `tests/test_gltf_animation.py` が読む（許容差 1e-5）。`STEP`・`LINEAR`・`CUBICSPLINE`、短い方の弧、key の前後、繰り返し、`speed`、sparse の morph、2 つの skin、skin の無い node のアニメーション、node の行列が単位でない skin の mesh、対応の不一致のエラーを含む。
 
 #### 費用（計測）
