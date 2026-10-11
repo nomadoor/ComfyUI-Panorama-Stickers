@@ -13,7 +13,7 @@ import { isUpstreamSticker, upstreamStickerEditable } from "../pano_upstream.js"
 
 export function createSelectionMenu(deps) {
   const {
-    cameraV2, canvas, editor, scheduler, selectionMenu, stageWrap, state, tooltip, tooltipEl, type,
+    cameraV2, canvas, editor, scheduler, selectionMenu, stageWrap, state, timers, tooltip, tooltipEl, type,
     uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
@@ -126,10 +126,8 @@ export function createSelectionMenu(deps) {
   }
 
   function hideTooltip() {
-    if (tooltip.timer) {
-      clearTimeout(tooltip.timer);
-      tooltip.timer = 0;
-    }
+    timers.clear(tooltip.timer);
+    tooltip.timer = 0;
     tooltip.target = null;
     uiState.tooltip.visible = false;
   }

@@ -290,28 +290,11 @@ test("in 6DoF Ctrl leaves a press to the tools", () => {
   assert.equal(h.editor.interaction.kind, "marquee_select");
 });
 
-test("the middle button pans the active Camera's shot in the Frame view", () => {
-  const shot = { yaw_deg: 12, pitch_deg: -3 };
-  const h = harness({ api: { getActiveCutoutShot: () => shot }, editor: { mode: "frame" } });
+test("the middle button pans the active Camera's shot in the Frame view, as the left drag does", () => {
+  const h = harness({ editor: { mode: "frame" } });
   h.onCanvasPointerDown(h.event({ button: 1, pointerId: 9 }));
-  assert.deepEqual(h.editor.interaction, {
-    kind: "pan_frame", shot, last: { x: 100, y: 50 }, start: { yaw_deg: 12, pitch_deg: -3 }, changed: false,
-  });
-  assert.deepEqual(h.calls("updateCursor"), [[{ x: 100, y: 50 }]]);
-  assert.deepEqual(h.calls("canvas.setPointerCapture"), [[9]]);
+  assert.deepEqual(h.calls("startPanFrame"), [[{ x: 100, y: 50 }, 9]]);
   assert.equal(h.calls("e.preventDefault").length, 1);
-  assert.equal(h.called("startPanFrame"), false);
-});
-
-test("the middle button in the Frame view does nothing without a shot, read-only, or on a locked shot", () => {
-  for (const [shot, readOnly] of [[null, false], [{ yaw_deg: 1 }, true], [{ yaw_deg: 1, locked: true }, false]]) {
-    const h = harness({ api: { getActiveCutoutShot: () => shot }, deps: { readOnly }, editor: { mode: "frame" } });
-    h.onCanvasPointerDown(h.event({ button: 1 }));
-    assert.equal(h.editor.interaction, null);
-    assert.equal(h.calls("e.preventDefault").length, 1);
-    assert.equal(h.called("canvas.setPointerCapture"), false);
-    assert.equal(h.called("updateCursor"), false);
-  }
 });
 
 test("the middle button looks around: from the CSS position in the panorama, the canvas position in Unwrap", () => {
@@ -621,7 +604,7 @@ test("a gizmo the pointer is over but does not grab leaves the press to picking"
   assert.deepEqual(h.editor.interaction, { kind: "world_select" });
 });
 
-test("a press on another world Sticker commits the canvas selection and selects it", () => {
+test("a press on another world Sticker commits the canvas selection without pruning, and selects it", () => {
   const { h } = worldHarness({ editor: { worldSelectedId: null, selectedId: "s1" }, noGizmo: true, api: { pickSticker: () => "w1" } });
   h.onCanvasPointerDown(h.event({ pointerId: 14 }));
   assert.deepEqual(h.editor.interaction, { kind: "world_select" });
@@ -629,6 +612,7 @@ test("a press on another world Sticker commits the canvas selection and selects 
   assert.deepEqual(h.calls("selectWorldSticker"), [["w1"]]);
   assert.deepEqual(h.sequence("pushHistory", "commitState", "selectWorldSticker", "updateSidePanel", "updateSelectionMenu", "syncFloatingViewButtonState", "requestDraw", "canvas.setPointerCapture"),
     ["pushHistory", "commitState", "selectWorldSticker", "updateSidePanel", "updateSelectionMenu", "syncFloatingViewButtonState", "requestDraw", "canvas.setPointerCapture"]);
+  assert.deepEqual(h.calls("pushHistory"), [[{ prune: false }]], "selecting is not an edit");
   assert.equal(h.called("updateCursor"), false);
   assert.equal(h.called("hitObjectAt"), false);
 });
@@ -901,7 +885,7 @@ test("a locked or hidden single selection, or a press off its handles, goes on t
 
 // ---------------------------------------------------------------- pointerdown: hit, empty
 
-test("a press on an unselected item commits the old selection, selects it and moves it", () => {
+test("a press on an unselected item commits the old selection without pruning, selects it and moves it", () => {
   const item = sticker("b");
   const h = harness({ deps: { shotEditor: true }, editor: { selectedId: "a" }, api: { hitObjectAt: () => ({ item, geom: { center: { x: 90, y: 45 } } }) } });
   h.onCanvasPointerDown(h.event({ pointerId: 18 }));
@@ -910,6 +894,7 @@ test("a press on an unselected item commits the old selection, selects it and mo
   assert.equal(h.editor.cutoutAspectOpen, false);
   assert.deepEqual(h.sequence("pushHistory", "commitState", "setSelectedItem", "updateSidePanel", "updateSelectionMenu", "requestDraw", "updateCursor", "canvas.setPointerCapture"),
     ["pushHistory", "commitState", "setSelectedItem", "updateSidePanel", "updateSelectionMenu", "requestDraw", "updateCursor", "canvas.setPointerCapture"]);
+  assert.deepEqual(h.calls("pushHistory"), [[{ prune: false }]], "selecting is not an edit");
   assert.deepEqual(h.calls("hitObjectAt"), [[{ x: 100, y: 50 }]]);
 });
 
@@ -965,11 +950,12 @@ test("a press on an unselected stroke group or raster object moves it from its s
   assert.equal(h.editor.interaction.snapshot, undefined);
 });
 
-test("an empty press commits and clears the selection and looks around in the panorama", () => {
+test("an empty press commits the selection without pruning, clears it and looks around in the panorama", () => {
   const h = harness({ editor: { selectedId: "a" } });
   h.onCanvasPointerDown(h.event({ pointerId: 19 }));
   assert.deepEqual(h.sequence("pushHistory", "commitState", "clearSelection", "updateSidePanel", "updateSelectionMenu", "requestDraw", "viewController.startDrag", "updateCursor", "canvas.setPointerCapture"),
     ["pushHistory", "commitState", "clearSelection", "updateSidePanel", "updateSelectionMenu", "requestDraw", "viewController.startDrag", "updateCursor", "canvas.setPointerCapture"]);
+  assert.deepEqual(h.calls("pushHistory"), [[{ prune: false }]], "selecting is not an edit");
   assert.equal(h.editor.interaction.kind, "view");
   assert.deepEqual(h.editor.interaction.last, { x: 50, y: 25 });
 });
@@ -1865,10 +1851,10 @@ test("a release of a Frame view gesture that changed the Camera is one Undo step
   }
 });
 
-test("a release of an item edit is one Undo step, even without a move", () => {
+test("a release of an item edit that moved is one Undo step", () => {
   for (const kind of ["move", "scale", "scale_x", "scale_y", "rotate", "draw"]) {
     const h = harness();
-    h.editor.interaction = { kind };
+    h.editor.interaction = { kind, moved: true };
     h.onCanvasPointerUp();
     assert.deepEqual(h.effects(), [
       "pushHistory", "commitState", "node.setDirtyCanvas", "syncSidePanelControls", "updateSelectionMenu", "requestDraw",
@@ -1879,13 +1865,13 @@ test("a release of an item edit is one Undo step, even without a move", () => {
 
 test("a release of a paint item edit rebuilds the strokes or the composite first", () => {
   for (const [interaction, mark, args] of [
-    [{ kind: "move_stroke_group" }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
-    [{ kind: "scale_stroke_group" }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
-    [{ kind: "rotate_stroke_group" }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
-    [{ kind: "move_raster_object" }, "markPaintCompositeVisualsDirty", []],
-    [{ kind: "scale_raster_object" }, "markPaintCompositeVisualsDirty", []],
-    [{ kind: "move_multi", strokeSnapshots: [{}], rasterSnapshots: [{}] }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
-    [{ kind: "move_multi", strokeSnapshots: [], rasterSnapshots: [{}] }, "markPaintCompositeVisualsDirty", []],
+    [{ kind: "move_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
+    [{ kind: "scale_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
+    [{ kind: "rotate_stroke_group", moved: true }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
+    [{ kind: "move_raster_object", moved: true }, "markPaintCompositeVisualsDirty", []],
+    [{ kind: "scale_raster_object", moved: true }, "markPaintCompositeVisualsDirty", []],
+    [{ kind: "move_multi", moved: true, strokeSnapshots: [{}], rasterSnapshots: [{}] }, "markPaintStrokeVisualsDirty", [{ rebuildPaintEngine: true }]],
+    [{ kind: "move_multi", moved: true, strokeSnapshots: [], rasterSnapshots: [{}] }, "markPaintCompositeVisualsDirty", []],
   ]) {
     const h = harness();
     h.editor.interaction = interaction;
@@ -1893,9 +1879,29 @@ test("a release of a paint item edit rebuilds the strokes or the composite first
     assert.deepEqual(h.log.slice(0, 2).map((entry) => [entry.name, entry.args]), [[mark, args], ["pushHistory", []]], interaction.kind);
   }
   const h = harness();
-  h.editor.interaction = { kind: "move_multi", stickerSnapshots: [{}], strokeSnapshots: [], rasterSnapshots: [] };
+  h.editor.interaction = { kind: "move_multi", moved: true, stickerSnapshots: [{}], strokeSnapshots: [], rasterSnapshots: [] };
   h.onCanvasPointerUp();
   assert.equal(h.log[0].name, "pushHistory");
+});
+
+test("a click on an item that never moves writes no Undo step and no state; one that moves does", () => {
+  const item = sticker("b");
+  const press = () => {
+    const h = harness({ editor: { selectedId: "b" }, api: { hitObjectAt: () => ({ item, geom: { center: { x: 90, y: 45 } } }) } });
+    h.onCanvasPointerDown(h.event());
+    return h;
+  };
+  let h = press();
+  h.onCanvasPointerMove(h.event());
+  h.onCanvasPointerUp();
+  assert.equal(h.called("pushHistory"), false);
+  assert.equal(h.called("commitState"), false);
+  assert.equal(h.called("node.setDirtyCanvas"), false);
+  h = press();
+  h.onCanvasPointerMove(h.event({ x: 120 }));
+  h.onCanvasPointerUp();
+  assert.deepEqual(h.calls("pushHistory"), [[]]);
+  assert.equal(h.calls("commitState").length, 1);
 });
 
 test("a release of looking around lets the view coast", () => {

@@ -1,7 +1,7 @@
 // Paint strokes and the paint engine: the points of a freehand stroke, its radius, how it rasterizes, the
 // revisions that tell the paint engine and the display caches to rebuild, and the raster objects made
 // from a painted canvas.
-import { createPanoCanvas } from "../pano_diagnostics.js";
+import { createPanoCanvas, releasePanoCanvas } from "../pano_diagnostics.js";
 import { clamp } from "../pano_math.js";
 import { createPaintEngineManager } from "../pano_paint_engine.js";
 import { DEG2RAD } from "./constants.js";
@@ -536,7 +536,10 @@ export function createPaintStrokes(deps) {
       out.width = cw;
       out.height = ch;
       const outCtx = out.getContext("2d");
-      if (!outCtx) return null;
+      if (!outCtx) {
+        releasePanoCanvas(out);
+        return null;
+      }
       const outData = outCtx.createImageData(cw, ch);
       component.pixels.forEach(({ x, y }) => {
         const srcIdx = (y * w + x) * 4;
@@ -548,6 +551,9 @@ export function createPaintStrokes(deps) {
         outData.data[dstIdx + 3] = imageData.data[srcIdx + 3];
       });
       outCtx.putImageData(outData, 0, 0);
+      // The object keeps its PNG; the working canvas goes.
+      const rasterDataUrl = out.toDataURL("image/png");
+      releasePanoCanvas(out);
       return {
         id: makePaintId("raster"),
         type: "raster_frozen",
@@ -560,7 +566,7 @@ export function createPaintStrokes(deps) {
           u1: cw / w,
           v1: (component.maxY + 1) / h,
         },
-        rasterDataUrl: out.toDataURL("image/png"),
+        rasterDataUrl,
         transform: {
           du: startX / w,
           dv: 0,

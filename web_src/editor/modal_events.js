@@ -22,7 +22,7 @@ import { setNodeGridVisibility } from "./ui_settings.js";
 export function createModalEvents(deps) {
   const {
     editor, node, overlay, paintColorPop, paintColorSv, paintHueStrip, readOnly, root, runtime, shotEditor,
-    tooltip, uiState, videoEl,
+    timers, tooltip, uiState, videoEl,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let addCutoutFrame, addImageSticker, addStudioCamera, addToWorld, applyCutoutAspectCustom,
@@ -31,7 +31,7 @@ export function createModalEvents(deps) {
     getBrushPresetIdForTool, getSelected, hidePaintSizePreview, hideTooltip, isErpCamera, isFreeSpaceView,
     playback, playbackFps, pushHistory, queueVideoTransportLayout, replaceSelectedImage, requestDraw,
     restoreHistory, restoreSelectedToInitialPose, rotateCutoutAspect90, sendSelectedToBack, setShotAspect,
-    setSpaceMode, showPaintSizePreview, showTooltipFor, spaceOrigin, startAnimation, syncFloatingViewButtonState,
+    setSpaceMode, settleCanvasConfirm, showPaintSizePreview, showTooltipFor, spaceOrigin, startAnimation, syncFloatingViewButtonState,
     syncPaintUi, syncSidePanelControls, syncVideoTransportState, syncViewToggleState, togglePlayback,
     toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView,
     updateSelectionMenu, updateSidePanel, videoState;
@@ -71,9 +71,7 @@ export function createModalEvents(deps) {
   }
   function onRootClick(ev) {
     if (ev.target?.matches?.("[data-confirm-overlay]")) {
-      const resolver = uiState.confirmDialog?.resolve;
-      uiState.confirmDialog = { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null };
-      resolver?.(false);
+      settleCanvasConfirm(false);
       return;
     }
     const spaceModeTarget = ev.target.closest("[data-space-mode]");
@@ -426,8 +424,8 @@ export function createModalEvents(deps) {
     if (!target || !root.contains(target)) return;
     if (tooltip.target === target) return;
     tooltip.target = target;
-    if (tooltip.timer) clearTimeout(tooltip.timer);
-    tooltip.timer = window.setTimeout(() => {
+    timers.clear(tooltip.timer);
+    tooltip.timer = timers.set(() => {
       if (tooltip.target === target) showTooltipFor(target);
     }, 220);
   }
@@ -540,7 +538,7 @@ export function createModalEvents(deps) {
         getBrushPresetIdForTool, getSelected, hidePaintSizePreview, hideTooltip, isErpCamera, isFreeSpaceView,
         playback, playbackFps, pushHistory, queueVideoTransportLayout, replaceSelectedImage, requestDraw,
         restoreHistory, restoreSelectedToInitialPose, rotateCutoutAspect90, sendSelectedToBack, setShotAspect,
-        setSpaceMode, showPaintSizePreview, showTooltipFor, spaceOrigin, startAnimation, syncFloatingViewButtonState,
+        setSpaceMode, settleCanvasConfirm, showPaintSizePreview, showTooltipFor, spaceOrigin, startAnimation, syncFloatingViewButtonState,
         syncPaintUi, syncSidePanelControls, syncVideoTransportState, syncViewToggleState, togglePlayback,
         toggleSelectedExternalStickerVisibility, toggleSelectedLock, toggleVideoMuted, transitionView,
         updateSelectionMenu, updateSidePanel, videoState,

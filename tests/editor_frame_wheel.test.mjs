@@ -8,7 +8,6 @@ import { deriveVerticalFovDeg, getCutoutCameraParams, shotFovMaxDeg } from "../w
 // safe rect: Panorama Studio's Camera (`studio`) with World content or without, or the legacy Cutout's shot.
 function setup({ studio = true, content = false, locked = false, aspect = 16 / 9 } = {}) {
   const timers = [];
-  globalThis.window = { setTimeout: (run, ms) => timers.push({ run, ms }), clearTimeout() {} };
   let now = 1000;
   const clock = Object.getOwnPropertyDescriptor(performance, "now");
   Object.defineProperty(performance, "now", { configurable: true, value: () => now });
@@ -20,6 +19,7 @@ function setup({ studio = true, content = false, locked = false, aspect = 16 / 9
     cameraV2: studio, canvas: { width: 1280, height: 720 }, editor, readOnly: false,
     editorView: { contentRevision: () => 1, pickSurface: () => null },
     runtime: { frameSafeRect: { x: 96, y: 72, w: 1088, h: 576 } }, shotEditor: true, uiState: {},
+    timers: { set: (run, ms) => timers.push({ run, ms }), clear() {} },
   });
   frameView.connect({
     contentSphere: () => ({ center: [0, 0, -5], radius: 2 }),

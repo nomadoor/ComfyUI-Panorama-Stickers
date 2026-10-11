@@ -371,13 +371,8 @@ test("Space toggles playback outside text fields, once per press, without clicki
   const filter = editorSource.slice(editorSource.indexOf("function spaceTogglesPlayback(ev) {"), editorSource.indexOf("\n  }\n", editorSource.indexOf("function spaceTogglesPlayback(ev) {")));
   assert.match(filter, /if \(ev\.code !== "Space" \|\| ev\.ctrlKey \|\| ev\.metaKey \|\| ev\.altKey\) return false;/);
   assert.match(filter, /return stageOwnsKey\(ev\);/);
-  // The stage's keys (Space and the movement keys, tests/editor_keyboard.test.mjs): not over the confirm
-  // dialog, and focus outside the editor's overlay (another dialog on top) keeps them.
-  const owns = editorSource.slice(editorSource.indexOf("function stageOwnsKey(ev) {"), editorSource.indexOf("\n  }\n", editorSource.indexOf("function stageOwnsKey(ev) {")));
-  assert.match(owns, /if \(uiState\.confirmDialog\.visible\) return false;/);
-  assert.match(owns, /const t = ev\.composedPath\(\)\[0\];\s*if \(t !== document\.body && t !== document\.documentElement && !overlay\.contains\(t\)\) return false;/);
-  assert.match(owns, /if \(tag === "INPUT"\) return !TEXT_INPUT_TYPES\.has\(String\(t\.type \|\| "text"\)\.toLowerCase\(\)\);/);
-  assert.match(owns, /return tag !== "TEXTAREA" && tag !== "SELECT" && !t\?\.isContentEditable;/);
+  // The stage's keys (Space and the movement keys): which focus keeps them is tested at keyboard.js's seam
+  // (tests/editor_keyboard.test.mjs).
   const types = editorSource.match(/const TEXT_INPUT_TYPES = new Set\((\[[^\]]*\])\);/);
   assert.ok(JSON.parse(types[1]).includes("number"));
   assert.ok(!JSON.parse(types[1]).includes("range"));

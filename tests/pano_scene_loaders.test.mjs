@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { DoubleSide } from "three";
+import { BufferGeometry, DoubleSide, Group, Mesh, MeshStandardMaterial, Texture } from "three";
 
-import { loadSceneItem } from "../web_src/pano_scene_loaders.js";
+import { disposeObject, loadSceneItem, makeLit, makeUnlit } from "../web_src/pano_scene_loaders.js";
 import { DEFAULT_LIGHTS, createDefaultLights } from "../web_src/pano_three_view.js";
 
 // A GLB of one triangle, as the node writes a MESH item (no texture).
@@ -159,4 +159,29 @@ test("a depth file of another form, or larger than the GPU's textures, does not 
   await assert.rejects(loadSceneItem("depth_grid", depthSource({ depth: { dtype: "float32", byte_order: "big", bytes: 24 } }), signal, { maxTextureSize: 4096 }), /big/);
   await assert.rejects(loadSceneItem("depth_grid", depthSource({ intrinsics: [0, 0, 0, 0, 0, 0, 0, 0, 0] }), signal, { maxTextureSize: 4096 }), /K/);
   await assert.rejects(loadSceneItem("depth_grid", depthSource(), signal, { maxTextureSize: 2 }), /MAX_TEXTURE_SIZE 2/);
+});
+
+// A GLB lets go of every texture of its materials, not only the base color: those of a material made unlit go
+// as it is replaced (the base color stays with the unlit one), the rest when the item goes.
+test("a GLB's textures are all disposed: normal, roughness, metalness, emissive, occlusion and the base color", () => {
+  const slots = ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "aoMap"];
+  const glb = () => {
+    const disposed = new Set();
+    const material = new MeshStandardMaterial();
+    for (const slot of slots) {
+      material[slot] = new Texture();
+      material[slot].addEventListener("dispose", () => disposed.add(slot));
+    }
+    const root = new Group();
+    root.add(new Mesh(new BufferGeometry(), material));
+    return { root, disposed };
+  };
+  const unlit = glb();
+  makeUnlit(unlit.root);
+  assert.deepEqual([...unlit.disposed].sort(), slots.filter((slot) => slot !== "map").sort());
+  disposeObject(unlit.root);
+  assert.deepEqual([...unlit.disposed].sort(), [...slots].sort());
+  const lit = glb();
+  disposeObject(makeLit(lit.root));
+  assert.deepEqual([...lit.disposed].sort(), [...slots].sort());
 });

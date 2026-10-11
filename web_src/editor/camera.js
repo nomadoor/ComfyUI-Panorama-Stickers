@@ -24,7 +24,7 @@ import { formatParamValue } from "./helpers.js";
 export function createCamera(deps) {
   const {
     cameraV2, canvas, editor, frameRollKnobEl, initialShotBase, readOnly, runtime, shotEditor,
-    stageWrap, state, studio, tooltip, type, uiState,
+    stageWrap, state, studio, timers, tooltip, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let applySpaceMode, cameraFrustumLength, cameraShoots, commitAndRefreshNode, currentSpaceCamera,
@@ -364,10 +364,8 @@ export function createCamera(deps) {
   }
   function syncFrameRollTooltip(interaction) {
     if (interaction?.kind !== "roll_frame" || !interaction.shot) return;
-    if (tooltip.timer) {
-      clearTimeout(tooltip.timer);
-      tooltip.timer = 0;
-    }
+    timers.clear(tooltip.timer);
+    tooltip.timer = 0;
     tooltip.target = null;
     const rect = getFrameViewRect(interaction.shot);
     const canvasBounds = canvas.getBoundingClientRect?.();

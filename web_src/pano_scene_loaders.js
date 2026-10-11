@@ -23,16 +23,21 @@ export function loadSpark() {
 // A GLB that draws without light (its meta's `unlit`, docs/render-contract.md "光が効く要素") draws on both sides
 // like the node's renderer: each material becomes a MeshBasicMaterial with its base color, texture and vertex
 // colors.
+// The replaced materials go with their textures, except the base color textures the unlit ones keep.
 export function makeUnlit(root) {
+  const replaced = [];
+  const kept = new Set();
   root.traverse((object) => {
     if (!object.isMesh) return;
     const unlit = (material) => {
       const basic = unlitMaterial(material);
-      material.dispose();
+      replaced.push(material);
+      if (basic.map) kept.add(basic.map);
       return basic;
     };
     object.material = Array.isArray(object.material) ? object.material.map(unlit) : unlit(object.material);
   });
+  disposeMaterials(replaced, kept);
   return root;
 }
 
@@ -51,16 +56,23 @@ export function makeLit(root) {
   return root;
 }
 
+// Disposes `materials` and every texture they hold (map, normalMap, roughnessMap, metalnessMap, emissiveMap,
+// aoMap, …: each property that is a three.js Texture), except the textures in `keep`.
+function disposeMaterials(materials, keep = new Set()) {
+  for (const material of materials) {
+    if (!material) continue;
+    for (const value of Object.values(material)) if (value?.isTexture && !keep.has(value)) value.dispose();
+    material.dispose();
+  }
+}
+
 export function disposeObject(root) {
   const animation = root.userData?.animation;
   if (animation) animation.mixer.uncacheRoot(root);
   root.traverse((object) => {
     object.skeleton?.dispose();
     object.geometry?.dispose();
-    for (const material of [object.material].flat()) {
-      material?.map?.dispose();
-      material?.dispose();
-    }
+    disposeMaterials([object.material].flat());
   });
 }
 
@@ -120,10 +132,11 @@ async function loadAnimated({ url, animation }, signal, unlit) {
     if (object.isMesh && !material) material = [object.material].flat()[0];
   });
   const box = boxValue(new Box3().setFromObject(core.scene));
-  // Of the editor GLB only its material stays.
+  // Of the editor GLB only its material stays, with the textures it holds (others may share them).
+  const keep = new Set(material ? Object.values(material).filter((value) => value?.isTexture) : []);
   core.scene.traverse((object) => {
     object.geometry?.dispose();
-    for (const each of object.isMesh ? [object.material].flat() : []) if (each !== material) each.dispose();
+    disposeMaterials(object.isMesh ? [object.material].flat().filter((each) => each !== material) : [], keep);
   });
   if (!material) {
     disposeObject(gltf.scene);
@@ -132,15 +145,12 @@ async function loadAnimated({ url, animation }, signal, unlit) {
   let drawn = material;
   if (unlit) {
     drawn = unlitMaterial(material);
-    material.dispose();
+    disposeMaterials([material], new Set([drawn.map].filter(Boolean)));
   } else material.side = DoubleSide;
   const root = gltf.scene;
   root.traverse((object) => {
     if (!object.isMesh) return;
-    for (const own of [object.material].flat()) {
-      own.map?.dispose();
-      own.dispose();
-    }
+    disposeMaterials([object.material].flat());
     object.material = drawn;
     const { geometry } = object;
     if (drawn.vertexColors && !geometry.attributes.color) {

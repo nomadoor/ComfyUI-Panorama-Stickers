@@ -24,7 +24,7 @@ export function createPointerInput(deps) {
     moveRollFrame, moveSpaceDrag, moveStrokeGroup, moveItem, objectGeom, paintingShown, playback, poseOf,
     pushHistory, requestDraw, rotateItem, rotateStrokeGroup, scaleItem, scaleRasterObject, scaleStrokeGroup,
     screenPos, screenPosCss, setPointerPos, setSelectedItem, startAxisScale, startCameraPress,
-    startEmptyDrag, startFrameDrag, startFrameRoll, startHitMove, startLookDrag, startMiddlePanFrame, startMove,
+    startEmptyDrag, startFrameDrag, startFrameRoll, startHitMove, startLookDrag, startMove,
     startMultiMove, startPaintStroke, startPanFrame, startRotate, startScale, startSpaceDrag,
     startWorldStickerPress, stickerById, stopTimelinePlayback, supportsErpPainting, supportsFramePainting,
     syncTimeline, syncViewToggleState, updateCursor, updateSelectionMenu, updateSidePanel, viewControls,
@@ -77,7 +77,7 @@ export function createPointerInput(deps) {
     }
     if (e.button === 1) {
       e.preventDefault();
-      if (editor.mode === "frame") startMiddlePanFrame(e, p);
+      if (editor.mode === "frame") startPanFrame(p, e.pointerId);
       else startLookDrag(e, p, editor.mode === "unwrap" ? p : screenPosCss(e));
       return;
     }
@@ -148,12 +148,13 @@ export function createPointerInput(deps) {
       }
     }
 
-    // A press on an item selects it (a new selection commits the old one) and moves it, unless it is locked.
+    // A press on an item selects it (a new selection commits the old one, pruning nothing: it is not an
+    // edit) and moves it, unless it is locked.
     const hit = hitObjectAt(p);
     if (hit) {
       const isNewSelection = editor.selectedId !== hit.item.id;
       if (isNewSelection && editor.selectedId) {
-        pushHistory();
+        pushHistory({ prune: false });
         commitState();
       }
       setSelectedItem(hit.item);
@@ -172,7 +173,7 @@ export function createPointerInput(deps) {
     // A press on empty space clears the selection (committing it) and looks around in the panorama view.
     const hadSelection = !!editor.selectedId;
     if (hadSelection) {
-      pushHistory();
+      pushHistory({ prune: false });
       commitState();
     }
     clearSelection();
@@ -250,6 +251,8 @@ export function createPointerInput(deps) {
       const down = editPointerDown;
       editPointerDown = null;
       if (!["view", "marquee_select", "space_pan", "space_orbit", "world_select"].includes(it.kind)) restartEditAtStoppedFrame(it, down);
+      // The pointer moved: an item edit that lets go is an Undo step (endTransform), a click is not.
+      it.moved = true;
     }
 
     if (it.kind === "world_select") return;
@@ -420,7 +423,7 @@ export function createPointerInput(deps) {
         moveRollFrame, moveSpaceDrag, moveStrokeGroup, moveItem, objectGeom, paintingShown, playback, poseOf,
         pushHistory, requestDraw, rotateItem, rotateStrokeGroup, scaleItem, scaleRasterObject, scaleStrokeGroup,
         screenPos, screenPosCss, setPointerPos, setSelectedItem, startAxisScale, startCameraPress,
-        startEmptyDrag, startFrameDrag, startFrameRoll, startHitMove, startLookDrag, startMiddlePanFrame, startMove,
+        startEmptyDrag, startFrameDrag, startFrameRoll, startHitMove, startLookDrag, startMove,
         startMultiMove, startPaintStroke, startPanFrame, startRotate, startScale, startSpaceDrag,
         startWorldStickerPress, stickerById, stopTimelinePlayback, supportsErpPainting, supportsFramePainting,
         syncTimeline, syncViewToggleState, updateCursor, updateSelectionMenu, updateSidePanel, viewControls,

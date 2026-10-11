@@ -2,8 +2,8 @@
 // rotate of a sky Sticker or the shot ("move", "scale", "scale_x", "scale_y", "rotate"), of a stroke group
 // ("move_stroke_group", "scale_stroke_group", "rotate_stroke_group") and of a raster object
 // ("move_raster_object", "scale_raster_object"). pointer_input.js decides from the handle under the press
-// which one starts. Letting go of any item edit, a multi-selection move (pointer_multi_move.js) too, is
-// one Undo step (endTransform).
+// which one starts. Letting go of any item edit that moved, a multi-selection move (pointer_multi_move.js)
+// too, is one Undo step (endTransform).
 import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, getCutoutCameraParams } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
@@ -297,7 +297,9 @@ export function createPointerTransform(deps) {
 
   // ---- The end of an item edit (any gesture pointer_input.js does not end otherwise).
 
+  // A press that never moved changed nothing: it writes no step and no state.
   function endTransform() {
+    if (!editor.interaction.moved) return;
     let compositeChanged = false;
     if (editor.interaction.kind === "move_stroke_group"
       || editor.interaction.kind === "scale_stroke_group"

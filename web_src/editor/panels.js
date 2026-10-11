@@ -42,7 +42,7 @@ import { colorToCss, colorsApproximatelyEqual, formatParamValue, hsv01ToRgb, rgb
 export function createPanels(deps) {
   const {
     cameraV2, editor, hideSidebar, paintColorPop, paintColorRow, paintColorSvCursor, paintHueHandle, previewMode,
-    readOnly, runtime, sceneV2, shotEditor, state, studio, type, uiState,
+    readOnly, runtime, sceneV2, shotEditor, state, studio, timers, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let animationClipsOf, cameraPreviewShown, cameraShoots, getActiveCutoutShot, getBrushPresetIdForTool, getCutoutInspectorItems,
@@ -171,13 +171,11 @@ export function createPanels(deps) {
       if (paintColorPop) paintColorPop.hidden = true;
       return;
     }
-    if (paintPaneFadeTimer) {
-      clearTimeout(paintPaneFadeTimer);
-      paintPaneFadeTimer = 0;
-    }
+    timers.clear(paintPaneFadeTimer);
+    paintPaneFadeTimer = 0;
     if (paintColorRow) {
       if (!nextPaintDock.colorEnabled && paintColorPop && !paintColorPop.hidden) {
-        paintPaneFadeTimer = window.setTimeout(() => {
+        paintPaneFadeTimer = timers.set(() => {
           paintColorPop.hidden = true;
           uiState.paintDock.colorPopOpen = false;
           paintPaneFadeTimer = 0;

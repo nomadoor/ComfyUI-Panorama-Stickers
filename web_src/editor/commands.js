@@ -21,6 +21,8 @@ export function createCommands(deps) {
     stopTimelinePlayback, syncFloatingViewButtonState, syncPaintUi, updateSelectionMenu, updateSidePanel,
     worldStickerEditable;
 
+  // The confirm dialog over the stage: resolves true on its confirm button, false on Cancel, a click beside it
+  // or Escape (settleCanvasConfirm).
   function showCanvasConfirm(title, text, confirmLabel = "Clear") {
     return new Promise((resolve) => {
       uiState.confirmDialog = {
@@ -31,6 +33,13 @@ export function createCommands(deps) {
         resolve,
       };
     });
+  }
+
+  // Closes the confirm dialog with the answer `ok`.
+  function settleCanvasConfirm(ok) {
+    const resolve = uiState.confirmDialog?.resolve;
+    uiState.confirmDialog = { visible: false, title: "", text: "", confirmLabel: "Confirm", resolve: null };
+    resolve?.(ok);
   }
 
   async function clearAll() {
@@ -79,14 +88,17 @@ export function createCommands(deps) {
     const kind = layerKind === "mask" ? "mask" : "paint";
     const label = kind === "mask" ? "Mask" : "Paint";
     const strokes = getPaintingLayerList(kind);
-    if (!strokes.length && !(editor.interaction?.kind === "draw" && editor.interaction?.layerKind === kind)) return;
+    // A paint stroke under way on the layer (pointer_paint.js) is cleared with it.
+    const strokingLayer = () => (editor.interaction?.kind === "paint_stroke" || editor.interaction?.kind === "paint_lasso_fill")
+      && editor.interaction.layerKind === kind;
+    if (!strokes.length && !strokingLayer()) return;
     const ok = await showCanvasConfirm(
       `Clear ${label}`,
       `This will remove all ${kind} strokes in the current node.`,
       `Clear ${label}`,
     );
     if (!ok) return;
-    if (editor.interaction?.kind === "draw" && editor.interaction?.layerKind === kind) {
+    if (strokingLayer()) {
       const targetDescriptor = getActivePaintTargetDescriptor(editor.interaction);
       if (targetDescriptor) editor.paintEngine.cancelActiveStroke(targetDescriptor);
       editor.interaction = null;
@@ -315,6 +327,6 @@ export function createCommands(deps) {
       } = api);
     },
     clearAll, clearPaintingLayer, duplicateSelected, deleteSelectedWorldSticker, deleteSelected, restoreUpstreamDeletedCommand,
-    revertUpstreamLayerCommand, forceCursorTool,
+    revertUpstreamLayerCommand, forceCursorTool, settleCanvasConfirm,
   };
 }

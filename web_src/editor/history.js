@@ -33,16 +33,18 @@ export function createHistory(deps) {
 
   // A step keeps the state as the node keeps it: the port Sticker shown with the Pose handoff is its stored
   // one (ADR 0030), shown again with the handoff of the moment when the step is restored, and the edits of the
-  // upstream elements are in its `upstream` records, without the overrides of elements gone upstream. The
-  // `initial` step the editor adds as it opens prunes nothing, so opening and closing writes nothing.
-  function pushHistory({ initial = false } = {}) {
+  // upstream elements are in its `upstream` records, without the overrides of elements gone upstream. Only an
+  // edit prunes them (docs/editor-interaction.md「上書きの掃除」): the `initial` step the editor adds as it opens,
+  // and the step a selection change takes (`prune: false`), prune nothing, so opening, selecting and closing
+  // write nothing.
+  function pushHistory({ initial = false, prune = !initial } = {}) {
     // An Undo step ends the inspector's Lens curve edit (editor/side_panel_events.js).
     editor.lensCurveEdit = null;
     if (readOnly) return;
     syncCutoutShot();
     syncPortHandoff();
     syncUpstreamEdits();
-    if (!initial) pruneUpstreamRecords();
+    if (prune) pruneUpstreamRecords();
     // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
     if (stateV2 && state.stickers.some(isUploadingSticker)) return;
     editor.historyController.commitActionGroup(historySnapshot(storedEditorState()));
