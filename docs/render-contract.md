@@ -243,7 +243,7 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 - 評価（フレームごと、CPU。`gltf_animation.py` の `evaluate`）：channel の値を three.js r184 と同じ規則で補間する。`LINEAR` の回転は `Quaternion.slerpFlat` と同じ（短い方の弧。内積が 0.9995 以上なら正規化した線形補間）、`CUBICSPLINE` は Hermite の後、回転だけ正規化する（GLTFLoader の `GLTFCubicSplineQuaternionInterpolant`）、`STEP` は前の値。最初の key より前は最初の値、最後の key より後は最後の値。node の world の行列を親からたどる。
 - 描く：`mesh_content` は、静止の MESH は今のまま、アニメーションのある要素（`mesh_content(..., animation)`）は休みの形・joint・重み・morph の差を device に置いたまま（`gltf_animation.py` の `upload`）、フレームごとに行列と morph の重みだけを渡して形を作り直す。三角形の前処理（画素の範囲）はフレームごとに作り直す。World のキー（`world_key` の Sticker と `scene`）に、姿勢（clip の番号と、小数第 9 位で丸めた clip の時刻。`world_render.py` の `_pose_key`）を入れる。姿勢は `nodes.py` の `_animation_pose` が clip frame と `animation` から求める。
 - 光：光が効くかの規則（`MESH.unlit`）と材質は今と同じ（コアの最初の材質）。
-- 中身の箱（`content_box`）は、最初の clip の時刻 0 の姿勢を、この節の `deform` で求めた頂点から作る（案。オーナーの承認待ち。規則の owner は `docs/studio-node.md` の「中身の箱」）。clip で動く範囲は入れない（置いた位置が clip を選ぶたびに変わらないように）。
+- 中身の箱（`content_box`）は、最初の clip の時刻 0 の姿勢を、この節の `deform` で求めた頂点から作る（規則の owner は `docs/studio-node.md` の「中身の箱」）。clip で動く範囲は入れない（置いた位置が clip を選ぶたびに変わらないように）。
 - 一致を守る test：`tests/fixtures/gltf_anim/`（`tools/bake_gltf_animation.mjs` が作る小さな skin・morph・node のアニメーションの glTF `anim.glb` と、three.js r184 の `AnimationMixer`・`SkinnedMesh` で求めた時刻ごとの node の world の行列・skin の行列・morph の重みと形 `three_r184.json`）を `tests/test_gltf_animation.py` が読む（許容差 1e-5）。`STEP`・`LINEAR`・`CUBICSPLINE`、短い方の弧、key の前後、繰り返し、`speed`、sparse の morph、2 つの skin、skin の無い node のアニメーション、node の行列が単位でない skin の mesh、対応の不一致のエラーを含む。
 
 #### 費用（計測）

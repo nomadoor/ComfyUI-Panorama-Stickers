@@ -1945,7 +1945,8 @@ GLTF_TYPES = {".glb": "model/gltf-binary", ".gltf": "model/gltf+json"}
 
 def _animation_meta(media) -> dict | None:
     """What the editor plays the glTF clips of `media` with (docs/studio-node.md, "glTF のアニメーションのエディタ用ファイル"):
-    the original file's `ui` entry and the clips in the file's order, `{"source", "clips": [{"name", "duration"}]}`;
+    the original file's `ui` entry, the clips in the file's order, and the content's box (`content_box`: the first
+    clip's pose at time 0), `{"source", "clips": [{"name", "duration"}], "box": {"min", "max"}}`;
     None without clips, or when the browser cannot load the original whole (outside ComfyUI's folders, or a GLTF with
     an external buffer, which also logs a warning). The editor then draws the still GLB."""
     animation = mesh_animation(media)
@@ -1958,7 +1959,7 @@ def _animation_meta(media) -> dict | None:
     entry = None if media.source is None else _view_entry(media.source, GLTF_TYPES.get(Path(media.source).suffix.lower(), "model/gltf-binary"))
     if entry is None:
         return None
-    return {"source": entry, "clips": [{"name": clip.name, "duration": clip.duration} for clip in animation.clips]}
+    return {"source": entry, "clips": [{"name": clip.name, "duration": clip.duration} for clip in animation.clips], "box": content_box(media)}
 
 
 def _view_entry(path, media_type: str) -> dict | None:
