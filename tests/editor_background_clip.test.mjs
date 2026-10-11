@@ -10,7 +10,7 @@ import { buildTimelineModel } from "../web_src/pano_editor_ui_state.js";
 import { editorStateWrite, parseSceneEditorState } from "../web_src/pano_editor_state.js";
 import { backgroundPlace, backgroundShownAt, bgMediaEnd } from "../web_src/pano_port_media.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
-import { isTimed, laneNames } from "../web_src/pano_timeline.js";
+import { isTimed, keyAllLanes, laneNames } from "../web_src/pano_timeline.js";
 
 const noop = () => {};
 // The Timeline asks whether its VIDEO element plays a source.
@@ -49,7 +49,10 @@ function editorTimeline(saved, { node = studioNode(), transport = { ready: true,
   const dragFrames = { request: (name) => pending.add(name), cancel: () => pending.clear(), pending };
   const actions = createTimelineActions({ dragFrames, editor, readOnly: false, state, stateV2: true, timeline: timelineState, uiState });
   const steps = { count: 0, commits: 0 };
+  // The state's text each time a pointer's edit under way is cancelled (pointer_input.js cancelLiveEdits).
+  const cancels = [];
   history.connect({
+    cancelLiveEdits: () => { cancels.push(sceneStateText(loadSceneState(state))); return false; },
     clearWorldSelection: noop, commitState: noop, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
     markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback,
     pruneUpstreamRecords: noop, rebuildUpstreamWorking: noop,
@@ -58,6 +61,7 @@ function editorTimeline(saved, { node = studioNode(), transport = { ready: true,
     syncUpstreamEdits: noop, updateSidePanel: noop,
   });
   const api = {
+    cancelLiveEdits: () => { cancels.push(sceneStateText(loadSceneState(state))); return false; },
     ...items, ...timeline,
     commitAndRefreshNode: () => { steps.commits += 1; }, getPortMediaMeta: () => null, hasCamera: () => false, inspectorTimed: () => false,
     isExternalSticker: (item) => item?.source?.kind === "port", loading3dIds: () => new Set(), markObjectVisualsDirty: noop, playback,
@@ -76,7 +80,7 @@ function editorTimeline(saved, { node = studioNode(), transport = { ready: true,
   timeline.connect(api);
   actions.connect({ ...api, syncTimeline: timeline.syncTimeline });
   history.pushHistory({ initial: true });
-  return { act: actions.onTimelineAction, dragFrames, editor, history, seeks, state, steps, timeline, uiState };
+  return { act: actions.onTimelineAction, cancel: actions.cancelTimelineDrag, cancels, dragFrames, editor, history, seeks, state, steps, timeline, timelineState, uiState };
 }
 
 const drag = (act, action, delta) => {
@@ -322,4 +326,51 @@ test("the length's reset returns to the derived length as one Undo step, and doe
   const vue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
   assert.match(vue, /@click="emit\('action', \{ type: 'length', length: null \}\)"/);
   assert.match(vue, /if \(!text\) \{\n\s*event\.target\.value = lengthText\.value;\n\s*return;/);
+});
+
+// docs/timeline-ui.md: a Clip range or Keyframe drag that is cancelled goes back to where it started, with no Undo
+// step and nothing written, and what the Timeline sends for it afterwards does nothing.
+test("a cancelled Clip range or Keyframe drag puts them back without an Undo step", () => {
+  const { act, cancel, state, steps, timeline, timelineState } = editorTimeline({ version: 2, timeline: { fps: 24, length: 100 }, stickers: [sky("own")] });
+  timeline.syncTimeline();
+  const clip = { type: "clip", id: "background", mode: "move" };
+  act({ ...clip, phase: "start", delta: 0 });
+  act({ ...clip, phase: "move", delta: 10 });
+  assert.equal(state.background.clip.start, 10);
+  assert.equal(cancel(), true);
+  assert.equal(state.background.clip.start, 0);
+  act({ ...clip, phase: "end", delta: 10 });
+  assert.equal(state.background.clip.start, 0, "the drag's end finds no drag");
+
+  const [own] = state.stickers;
+  keyAllLanes(own, 0);
+  const lanes = structuredClone(laneNames(own).map((name) => own[name].keyframes));
+  const selection = { owner: "own", lane: null, frames: [0] };
+  timelineState.selection = selection;
+  act({ type: "move-keys", phase: "start", delta: 0 });
+  act({ type: "move-keys", phase: "move", delta: 5 });
+  assert.deepEqual(selection.frames, [5]);
+  assert.equal(cancel(), true);
+  assert.deepEqual(laneNames(own).map((name) => own[name].keyframes), lanes);
+  assert.deepEqual(selection.frames, [0]);
+  act({ type: "move-keys", phase: "end", delta: 5 });
+  assert.deepEqual(steps.count, 0);
+  assert.equal(cancel(), false, "nothing is under way");
+});
+
+test("Undo, deleting Keyframes and a run's result cancel a pointer's edit under way before they change anything", () => {
+  const { act, cancels, history, state, timeline, timelineState } = editorTimeline({ version: 2, timeline: { fps: 24, length: 100 }, stickers: [sky("own")] });
+  timeline.syncTimeline();
+  act({ type: "clip", id: "background", mode: "move", phase: "start", delta: 0 });
+  act({ type: "clip", id: "background", mode: "move", phase: "end", delta: 4 });
+  const edited = sceneStateText(loadSceneState(state));
+  history.restoreHistory(-1);
+  assert.deepEqual(cancels, [edited], "Undo cancels first, on the state it then restores from");
+  keyAllLanes(state.stickers[0], 0);
+  timelineState.selection = { owner: "own", lane: null, frames: [0] };
+  const keyed = sceneStateText(loadSceneState(state));
+  timeline.deleteSelectedKeyframes();
+  assert.deepEqual(cancels.at(-1), keyed);
+  timeline.applyRunResult();
+  assert.equal(cancels.length, 3);
 });

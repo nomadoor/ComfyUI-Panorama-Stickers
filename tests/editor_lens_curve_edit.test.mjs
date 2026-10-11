@@ -26,6 +26,7 @@ function inspector(camera, frame = 0) {
   const steps = { history: 0 };
   const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
   history.connect({
+    cancelLiveEdits: () => false,
     clearWorldSelection: noop, getActiveCutoutShot: () => null, isUploadingSticker: () => false, markObjectVisualsDirty: noop,
     markPaintStrokeVisualsDirty: noop, playback: { seek: noop }, pruneUpstreamRecords: noop, rebuildUpstreamWorking: noop,
     releaseHiddenSelection: noop, requestDraw: noop, stopTimelinePlayback: noop, storedEditorState: () => state,

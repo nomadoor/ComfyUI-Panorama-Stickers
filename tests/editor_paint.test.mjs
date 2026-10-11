@@ -60,3 +60,17 @@ test("Clear Paint during a paint stroke cancels the stroke in the paint engine",
     assert.equal(editor.interaction, null, kind);
   }
 });
+
+test("Delete cancels a pointer's edit under way before it deletes", () => {
+  const order = [];
+  const item = { id: "a" };
+  const commands = createCommands({ editor: { interaction: null }, readOnly: false, state: {}, type: "stickers", uiState: {} });
+  commands.connect({
+    cancelLiveEdits: () => order.push("cancel"), getSelected: () => item, getSelectedItems: () => [item], isItemLocked: () => false,
+    selectedWorldSticker: () => ({ id: "w" }), worldStickerEditable: () => true,
+    stopTimelinePlayback: () => { order.push("stop"); throw new Error("deleting"); },
+  });
+  assert.throws(() => commands.deleteSelected(), /deleting/);
+  assert.throws(() => commands.deleteSelectedWorldSticker(), /deleting/);
+  assert.deepEqual(order, ["cancel", "stop", "cancel", "stop"]);
+});

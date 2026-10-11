@@ -407,7 +407,7 @@ test("an edit on the canvas stops playback on its first move and starts from the
 });
 
 test("deleting, undo and redo, and adding a Sticker stop playback first", () => {
-  assert.match(editorFunction("deleteSelected"), /if \(selectedItems\.some\(\(item\) => isItemLocked\(item\)\)\) return;\s*stopTimelinePlayback\(\);/);
+  assert.match(editorFunction("deleteSelected"), /if \(selectedItems\.some\(\(item\) => isItemLocked\(item\)\)\) return;\s*cancelLiveEdits\(\);\s*stopTimelinePlayback\(\);/);
   assert.match(editorSource, /if \(sceneV2\) \{\s*\/\/[^\n]*\n\s*stopTimelinePlayback\(\);\s*await addSceneStickerFromFile\(file\);/);
 });
 
@@ -418,6 +418,7 @@ test("undo and redo stop playback before they restore a step", () => {
   const noop = () => {};
   const stops = [];
   history.connect({
+    cancelLiveEdits: () => false,
     clearWorldSelection: noop, commitState: noop, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
     markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop }, pruneUpstreamRecords: noop,
     rebuildUpstreamWorking: noop, releaseHiddenSelection: noop, requestDraw: noop,
@@ -440,7 +441,7 @@ test("the legacy transport seeks to its own time and leaves looping to the VIDEO
 });
 
 test("an fps from a run, an fps edit and undoing one keep the playhead's time", () => {
-  assert.match(editorSource, /if \(reason === "executed"\) \{[^}]*if \(sceneV2\) applyVideoTimelineFps\(\);/);
+  assert.match(editorSource, /if \(reason === "executed"\) \{[^}]*applyRunResult\(\);/);
   assert.match(editorFunction("applyVideoTimelineFps"), /if \(fps !== null && fps !== state\.timeline\.fps\) changeTimelineFps\(fps\);/);
   const change = editorFunction("changeTimelineFps");
   assert.match(change, /const frame = Math\.round\(editor\.frame \* fps \/ state\.timeline\.fps\);\s*setTimelineFps\(state, fps\);/);

@@ -11,7 +11,7 @@ export function createCommands(deps) {
     editor, readOnly, sceneV2, state, studio, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
+  let cancelLiveEdits, clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
     deleteStudioCamera, deleteUpstreamStickers, getActivePaintTargetDescriptor, getList, getNextStickerZIndex,
     getPaintingGroupList, getPaintingLayerList, getRasterObjectList, getSelected, getSelectedItems, isExternalSticker,
     isItemLocked, isRasterObjectItem, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,
@@ -150,6 +150,8 @@ export function createCommands(deps) {
     const sticker = selectedWorldSticker();
     if (!sticker) return false;
     if (!worldStickerEditable(sticker)) return true;
+    // An edit a pointer has under way is cancelled first (pointer_input.js cancelLiveEdits).
+    cancelLiveEdits();
     stopTimelinePlayback();
     // An upstream element is deleted in the node's overrides (ADR 0030).
     if (isUpstreamSticker(sticker)) deleteUpstreamStickers([sticker]);
@@ -171,6 +173,7 @@ export function createCommands(deps) {
     const selected = getSelected();
     if (!selected && selectedItems.length === 0) return;
     if (selectedItems.some((item) => isItemLocked(item))) return;
+    cancelLiveEdits();
     stopTimelinePlayback();
     // Upstream elements are deleted in the node's overrides (ADR 0030), in the same Undo step as the rest.
     const upstream = selectedItems.filter(isUpstreamSticker);
@@ -315,7 +318,7 @@ export function createCommands(deps) {
   return {
     connect(api) {
       ({
-        clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
+        cancelLiveEdits, clearCutoutFrame, clearWorldSelection, collectExternalStickersForClearAll, commitAndRefreshNode,
         deleteStudioCamera, deleteUpstreamStickers, getActivePaintTargetDescriptor, getList, getNextStickerZIndex,
         getPaintingGroupList, getPaintingLayerList, getRasterObjectList, getSelected, getSelectedItems, isExternalSticker,
         isItemLocked, isRasterObjectItem, isShotItem, isStickerHidden, isStickerItem, isStrokeGroupItem, isUploadingSticker,

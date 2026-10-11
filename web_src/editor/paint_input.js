@@ -15,7 +15,7 @@ export function createPaintInput(deps) {
     ensureGroupFrame, ensurePaintingGroupEntry, getActiveCutoutShot, getActivePaintTargetDescriptor,
     getDisplayListObjects, getPaintingGroupList, getRasterObjectList, getStrokeGroupStrokes,
     processFreehandPoints, rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, screenPosToErpPoint,
-    screenPosToFrameAsErpPoint, supportsFramePainting;
+    screenPosToFrameAsErpPoint, supportsFramePainting, takeGestureSnapshot;
 
   let paintSizePreviewTimer = 0;
 
@@ -571,6 +571,8 @@ export function createPaintInput(deps) {
   function _segmentFrameStroke(it) {
     const rawPoints = it.stroke?.geometry?.rawPoints || it.stroke?.geometry?.points || [];
     if (rawPoints.length >= 1) {
+      // The painting as the stroke started, which cancelling the stroke puts back (pointer_input.js cancelGesture).
+      takeGestureSnapshot(it);
       // Save the completed inside-frame segment.
       commitPaintInteraction(it);
       const targetDescriptor = getActivePaintTargetDescriptor(it);
@@ -598,6 +600,7 @@ export function createPaintInput(deps) {
   function _segmentFrameLassoFill(it) {
     const points = it.stroke?.geometry?.points || [];
     if (points.length >= 3) {
+      takeGestureSnapshot(it);
       commitPaintInteraction(it);
       const targetDescriptor = getActivePaintTargetDescriptor(it);
       if (targetDescriptor) editor.paintEngine.commitActiveStroke(it.stroke, targetDescriptor);
@@ -648,7 +651,7 @@ export function createPaintInput(deps) {
         ensureGroupFrame, ensurePaintingGroupEntry, getActiveCutoutShot, getActivePaintTargetDescriptor,
         getDisplayListObjects, getPaintingGroupList, getRasterObjectList, getStrokeGroupStrokes,
         processFreehandPoints, rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, screenPosToErpPoint,
-        screenPosToFrameAsErpPoint, supportsFramePainting,
+        screenPosToFrameAsErpPoint, supportsFramePainting, takeGestureSnapshot,
       } = api);
     },
     isActiveLassoTool, supportsErpPainting, getBrushPresetIdForTool, isPaintCursorEnabled,

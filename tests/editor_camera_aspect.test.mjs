@@ -40,6 +40,10 @@ test("an aspect preset gives the Camera exactly its ratio, from the Frame view o
       assert.equal(camera.applyCutoutAspectCustom(state.shots[0], 21, 9), true);
       camera.syncCutoutShot();
       assert.equal(state.camera.aspect, 21 / 9, `${curve} ${mode} custom`);
+      // A ratio past the stored range is held to it.
+      assert.equal(camera.applyCutoutAspectCustom(state.shots[0], 5000, 1), true);
+      camera.syncCutoutShot();
+      assert.equal(state.camera.aspect, 2048, `${curve} ${mode} held`);
     }
   }
 });

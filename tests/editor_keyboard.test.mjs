@@ -21,7 +21,7 @@ function setup({ freeSpace = true, confirm = false } = {}) {
   });
   const space = { free: freeSpace };
   keyboard.connect({
-    cancelFrameCameraGesture() {},
+    cancelLiveEdits: () => false,
     cancelViewTransition: () => calls.push("cancel"),
     closeEditor() {},
     deleteSelected() {},
@@ -248,6 +248,7 @@ function escapeSetup() {
   const closed = [];
   const keyboard = createKeyboard({ editor: {}, overlay: { contains: (target) => inside.has(target) }, readOnly: false, stateV2: true, timeline: {}, uiState });
   keyboard.connect({
+    cancelLiveEdits: () => false,
     cancelFrameCameraGesture: () => false,
     closeEditor: () => closed.push("close"),
     settleCanvasConfirm: commands.settleCanvasConfirm,
@@ -293,6 +294,7 @@ test("Undo works with a slider or a checkbox focused, Delete does not, and a tex
     const s = setup();
     const calls = [];
     s.keyboard.connect({
+      cancelLiveEdits: () => false,
       deleteSelected: () => calls.push("delete"), deleteSelectedWorldSticker: () => false, getSelected: () => ({ id: "a" }),
       getHistoryCapabilities: () => ({ canUndo: true, canRedo: true }), restoreHistory: (step) => calls.push(`history ${step}`),
     });
@@ -301,4 +303,27 @@ test("Undo works with a slider or a checkbox focused, Delete does not, and a tex
     s.keyboard.onUndoRedoKey(key("KeyZ", target, { key: "z", ctrlKey: true, target }));
     assert.deepEqual(calls, owned ? ["history -1"] : [], `${tagName} ${type}`);
   }
+});
+
+// docs/editor-interaction.md「ポインタの取り消しとフォーカスの喪失」.
+test("leaving the window cancels a pointer's edit under way, and Escape cancels any of them before closing", (t) => {
+  t.after(() => delete globalThis.document);
+  const s = setup();
+  const closed = [];
+  let live = true;
+  let cancels = 0;
+  s.keyboard.connect({
+    cancelLiveEdits: () => { cancels += 1; const was = live; live = false; return was; },
+    closeEditor: () => closed.push("close"), settleCanvasConfirm() {}, syncFrameRollKnob() {}, updateCursor() {},
+  });
+  s.keyboard.onWindowBlur();
+  assert.equal(cancels, 1);
+  live = true;
+  const escape = () => key("Escape", body, { key: "Escape", stopImmediatePropagation() {} });
+  const first = escape();
+  s.keyboard.onEscClose(first);
+  assert.equal(first.prevented, true);
+  assert.deepEqual(closed, [], "the edit is cancelled; the editor stays open");
+  s.keyboard.onEscClose(escape());
+  assert.deepEqual(closed, ["close"]);
 });

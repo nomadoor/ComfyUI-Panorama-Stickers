@@ -12,31 +12,50 @@ import { readWheelDirection } from "../pano_wheel.js";
 
 export function createPointerInput(deps) {
   const {
-    canvas, editor, paintColorPop, readOnly, sceneV2, shotEditor, stateV2, timeline, viewController,
+    canvas, dragFrames, editor, paintColorPop, readOnly, sceneV2, shotEditor, stateV2, timeline, viewController,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let cameraShoots, cancelFrameCameraGesture, cancelPaintStroke, cancelViewTransition, clearSelection, commitState,
+  let cameraShoots, cancelPaintStroke, cancelTimelineDrag, cancelViewTransition, clearSelection, commitState,
     cutoutCamera, dragFrame, dragWorldGizmo, endFrameGesture, endLookDrag, endMarquee, endPaintStroke,
     endSpaceDrag, endTransform, endWorldStickerPress, frameContext, frameSpaceView, frameTarget,
     getMultiSelectionGeom, getSelected, getSelectedItems, handleHit, hideTooltip, hitObjectAt, hoverWorldGizmo,
     invalidateLivePaintPreviewCaches, isFreeFrameView, isFreeSpaceView, isItemLocked, isSpaceView,
     moveLassoFill, moveLookDrag, moveMarquee, moveMulti, movePaintStroke, movePanFrame, moveRasterObject,
     moveRollFrame, moveSpaceDrag, moveStrokeGroup, moveItem, objectGeom, paintingShown, playback, poseOf,
-    pushHistory, requestDraw, rotateItem, rotateStrokeGroup, scaleItem, scaleRasterObject, scaleStrokeGroup,
+    pushHistory, releaseWorldGizmo, requestDraw, restoreGestureSnapshot, rotateItem, rotateStrokeGroup, scaleItem, scaleRasterObject, scaleStrokeGroup,
     screenPos, screenPosCss, setPointerPos, setSelectedItem, startAxisScale, startCameraPress,
     startEmptyDrag, startFrameDrag, startFrameRoll, startHitMove, startLookDrag, startMove,
     startMultiMove, startPaintStroke, startPanFrame, startRotate, startScale, startSpaceDrag,
     startWorldStickerPress, stickerById, stopTimelinePlayback, supportsErpPainting, supportsFramePainting,
-    syncTimeline, syncViewToggleState, updateCursor, updateSelectionMenu, updateSidePanel, viewControls,
+    syncTimeline, syncViewToggleState, takeGestureSnapshot, updateCursor, updateSelectionMenu, updateSidePanel, viewControls,
     wheelFrameView, zoomSpaceAt;
 
   // Where the pointer went down on the canvas, until its first move.
   let editPointerDown = null;
+  // The pointer of the gesture under way: another pointer's events leave it alone.
+  let gesturePointerId = null;
+
+  // A pointer going down while a gesture or a Timeline drag is under way (a second finger or pen) is
+  // ignored. A gesture that starts keeps its start values (takeGestureSnapshot) for cancelGesture; a paint
+  // stroke takes them only when the Frame view's edge commits a part of it (paint_input.js).
+  function onCanvasPointerDown(e) {
+    if (editor.interaction || timeline.drag) return;
+    startGesture(e);
+    const it = editor.interaction;
+    if (!it) return;
+    gesturePointerId = e.pointerId;
+    if (it.kind !== "paint_stroke" && it.kind !== "paint_lasso_fill") takeGestureSnapshot(it);
+  }
+
+  // Whether a pointer event is another pointer's than the gesture's under way.
+  function otherPointer(e) {
+    return !!editor.interaction && gesturePointerId !== null && e?.pointerId !== undefined && e.pointerId !== gesturePointerId;
+  }
 
   // Looking around and selecting keep the Timeline playing. A paint stroke stops it at once; any
   // other edit stops it on its first move (restartEditAtStoppedFrame), so a click only selects.
   // The checks go in this order, and the first that takes the press starts its gesture.
-  function onCanvasPointerDown(e) {
+  function startGesture(e) {
     if (timeline.selection) {
       timeline.selection = null;
       syncTimeline();
@@ -238,6 +257,7 @@ export function createPointerInput(deps) {
   }
 
   function onCanvasPointerMove(e) {
+    if (otherPointer(e)) return;
     const p = screenPos(e);
     setPointerPos(p, true);
     if (!editor.interaction) {
@@ -330,7 +350,8 @@ export function createPointerInput(deps) {
     }
   }
 
-  function onCanvasPointerUp() {
+  function onCanvasPointerUp(e) {
+    if (otherPointer(e)) return;
     const ended = editor.interaction;
     if (ended?.kind === "roll_frame" && ended.source === "knob") return;
     if (ended?.kind === "space_pan" || ended?.kind === "space_orbit") {
@@ -351,6 +372,7 @@ export function createPointerInput(deps) {
       endTransform();
     }
     editor.interaction = null;
+    gesturePointerId = null;
     if (ended?.kind === "roll_frame") hideTooltip();
     invalidateLivePaintPreviewCaches();
     if (ended && ended.kind === "view") {
@@ -362,23 +384,44 @@ export function createPointerInput(deps) {
     requestDraw();
   }
 
-  function onCanvasPointerCancel() {
-    if (cancelFrameCameraGesture()) return;
-    if (editor.interaction?.kind === "world_select" || editor.interaction?.kind === "world_gizmo") {
-      endWorldStickerPress(editor.interaction);
-      return;
-    }
-    if (editor.interaction?.kind === "view") {
-      endLookDrag();
-    }
-    if (editor.interaction?.kind === "paint_stroke" || editor.interaction?.kind === "paint_lasso_fill") {
-      cancelPaintStroke();
-    }
+  // The gesture's pointer went away without letting go: the browser took it (pointercancel), or it lost
+  // the capture without a pointerup.
+  function onCanvasPointerCancel(e) {
+    if (otherPointer(e)) return;
+    cancelGesture();
+  }
+
+  // Cancels the gesture under way (docs/editor-architecture.md「操作の取り消し」): its records go back to its
+  // start values (restoreGestureSnapshot), with no Undo step and nothing written to state_json. A paint
+  // stroke is discarded whole; the view stops where it is, without coasting. Returns whether one was
+  // under way.
+  function cancelGesture() {
+    const it = editor.interaction;
+    if (!it) return false;
+    if (it.kind === "paint_stroke" || it.kind === "paint_lasso_fill") cancelPaintStroke();
+    if (it.kind === "view") viewController.stopMotion();
+    if (it.kind === "world_gizmo") releaseWorldGizmo();
+    if (it.kind === "roll_frame") hideTooltip();
     editor.interaction = null;
+    gesturePointerId = null;
+    restoreGestureSnapshot(it);
+    dragFrames.cancel();
     invalidateLivePaintPreviewCaches();
     syncViewToggleState();
+    updateSidePanel();
+    updateSelectionMenu();
     updateCursor(editor.pointerPos);
-    requestDraw({ localOnly: true });
+    requestDraw();
+    return true;
+  }
+
+  // Cancels whatever edit a pointer has under way, on the canvas (cancelGesture) or on the Timeline
+  // (timeline_actions.js cancelTimelineDrag): before Undo, Delete and a run's result, and when the window
+  // loses the focus or Escape is pressed. Returns whether one was under way.
+  function cancelLiveEdits() {
+    const gesture = cancelGesture();
+    const drag = cancelTimelineDrag();
+    return gesture || drag;
   }
 
   function onCanvasMouseMove(e) {
@@ -414,23 +457,24 @@ export function createPointerInput(deps) {
   return {
     connect(api) {
       ({
-        cameraShoots, cancelFrameCameraGesture, cancelPaintStroke, cancelViewTransition, clearSelection, commitState,
+        cameraShoots, cancelPaintStroke, cancelTimelineDrag, cancelViewTransition, clearSelection, commitState,
         cutoutCamera, dragFrame, dragWorldGizmo, endFrameGesture, endLookDrag, endMarquee, endPaintStroke,
         endSpaceDrag, endTransform, endWorldStickerPress, frameContext, frameSpaceView, frameTarget,
         getMultiSelectionGeom, getSelected, getSelectedItems, handleHit, hideTooltip, hitObjectAt, hoverWorldGizmo,
         invalidateLivePaintPreviewCaches, isFreeFrameView, isFreeSpaceView, isItemLocked, isSpaceView,
         moveLassoFill, moveLookDrag, moveMarquee, moveMulti, movePaintStroke, movePanFrame, moveRasterObject,
         moveRollFrame, moveSpaceDrag, moveStrokeGroup, moveItem, objectGeom, paintingShown, playback, poseOf,
-        pushHistory, requestDraw, rotateItem, rotateStrokeGroup, scaleItem, scaleRasterObject, scaleStrokeGroup,
+        pushHistory, releaseWorldGizmo, requestDraw, restoreGestureSnapshot, rotateItem, rotateStrokeGroup, scaleItem, scaleRasterObject, scaleStrokeGroup,
         screenPos, screenPosCss, setPointerPos, setSelectedItem, startAxisScale, startCameraPress,
         startEmptyDrag, startFrameDrag, startFrameRoll, startHitMove, startLookDrag, startMove,
         startMultiMove, startPaintStroke, startPanFrame, startRotate, startScale, startSpaceDrag,
         startWorldStickerPress, stickerById, stopTimelinePlayback, supportsErpPainting, supportsFramePainting,
-        syncTimeline, syncViewToggleState, updateCursor, updateSelectionMenu, updateSidePanel, viewControls,
+        syncTimeline, syncViewToggleState, takeGestureSnapshot, updateCursor, updateSelectionMenu, updateSidePanel, viewControls,
         wheelFrameView, zoomSpaceAt,
       } = api);
     },
     onCanvasPointerDown, onCanvasPointerMove, onCanvasPointerUp, onCanvasPointerCancel, onCanvasMouseMove,
+    cancelGesture, cancelLiveEdits,
     onCanvasWheel,
   };
 }

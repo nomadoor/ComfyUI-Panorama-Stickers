@@ -26,7 +26,7 @@ export function createHistory(deps) {
     editor, readOnly, runtime, state, stateV2, studio, type,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
+  let cancelLiveEdits, clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
     markPaintStrokeVisualsDirty, playback, pruneUpstreamRecords, rebuildUpstreamWorking, releaseHiddenSelection,
     requestDraw, stopTimelinePlayback, storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff,
     syncUndoRedoButtons, syncUpstreamEdits, updateSidePanel;
@@ -53,6 +53,8 @@ export function createHistory(deps) {
 
   function restoreHistory(step) {
     if (readOnly) return;
+    // An edit a pointer has under way is cancelled first, so it writes nothing into the restored state.
+    cancelLiveEdits();
     editor.lensCurveEdit = null;
     stopTimelinePlayback();
     const snapshot = step < 0 ? editor.historyController.undo() : editor.historyController.redo();
@@ -98,7 +100,7 @@ export function createHistory(deps) {
   return {
     connect(api) {
       ({
-        clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
+        cancelLiveEdits, clearWorldSelection, commitState, getActiveCutoutShot, isUploadingSticker, markObjectVisualsDirty,
         markPaintStrokeVisualsDirty, playback, pruneUpstreamRecords, rebuildUpstreamWorking, releaseHiddenSelection,
         requestDraw, stopTimelinePlayback, storedEditorState, syncCutoutShot, syncPaintUi, syncPortHandoff,
         syncUndoRedoButtons, syncUpstreamEdits, updateSidePanel,

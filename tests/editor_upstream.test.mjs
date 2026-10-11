@@ -302,6 +302,7 @@ test("the working copies are made again for a new result and after Undo restores
     const noop = () => {};
     const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
     history.connect({
+      cancelLiveEdits: () => false,
       clearWorldSelection: noop, commitState: noop, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
       markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
       rebuildUpstreamWorking: upstream.rebuildUpstreamWorking, releaseHiddenSelection: noop, requestDraw: noop,
@@ -351,6 +352,7 @@ test("Undo on a v1 state (no Timeline, not Panorama Studio) restores, selects an
     const noop = () => {};
     const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: false, studio: false, type: "stickers" });
     history.connect({
+      cancelLiveEdits: () => false,
       clearWorldSelection: noop, commitState: () => { commits += 1; }, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
       markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
       rebuildUpstreamWorking: upstream.rebuildUpstreamWorking, releaseHiddenSelection: noop, requestDraw: noop,
@@ -398,6 +400,7 @@ const noop = () => {};
 function editorHistory(state, upstream, editor = { historyController: createEditorHistory(state), frame: 0 }) {
   const history = createHistory({ editor, readOnly: false, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
   history.connect({
+    cancelLiveEdits: () => false,
     clearWorldSelection: noop, commitState: upstream.syncUpstreamEdits, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
     markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
     pruneUpstreamRecords: upstream.pruneUpstreamRecords, rebuildUpstreamWorking: upstream.rebuildUpstreamWorking,
@@ -577,6 +580,7 @@ function editorSession(state, upstream, editor, widget = { value: sceneStateText
   });
   const commands = createCommands({ editor, readOnly: false, sceneV2: true, state, studio: true, type: "stickers", uiState: {} });
   commands.connect({
+    cancelLiveEdits: () => false,
     ...found,
     ...upstream,
     clearWorldSelection: () => { editor.worldSelectedId = null; },
@@ -954,6 +958,7 @@ async function editorTimeline(state, upstream, overrides = {}) {
   const actions = createTimelineActions({ dragFrames: { request: noop, cancel: noop }, editor, readOnly: false, state, stateV2: true, timeline: timelineState, uiState });
   const steps = { count: 0, selected: [] };
   history.connect({
+    cancelLiveEdits: () => false,
     clearWorldSelection: noop, commitState: upstream.syncUpstreamEdits, getActiveCutoutShot: () => null, isUploadingSticker: () => false,
     markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop },
     pruneUpstreamRecords: upstream.pruneUpstreamRecords, rebuildUpstreamWorking: upstream.rebuildUpstreamWorking,
@@ -962,6 +967,7 @@ async function editorTimeline(state, upstream, overrides = {}) {
     syncUpstreamEdits: upstream.syncUpstreamEdits, updateSidePanel: noop,
   });
   const api = {
+    cancelLiveEdits: () => false,
     ...items, ...upstream, ...timeline,
     commitAndRefreshNode: upstream.syncUpstreamEdits, getPortMediaMeta: () => null, hasCamera: () => false, inspectorTimed: () => false,
     isExternalSticker: (item) => item?.source?.kind === "port", loading3dIds: () => new Set(), markObjectVisualsDirty: noop, playback: { frame: 0, seek: noop, stop: noop },

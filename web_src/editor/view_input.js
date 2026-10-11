@@ -17,7 +17,7 @@ import {
   placedCamera,
   planeOutlineSegments,
   polylineSegments,
-  sceneItemBox,
+  sceneContentBox,
   sceneRequest,
   sceneTransform,
   spaceCamera,
@@ -153,16 +153,15 @@ export function createViewInput(deps) {
       return { ...request, color: color && { ...color, slot: name } };
     };
     const scene = withColors("scene", sceneRequest(files, evaluated.scene, sceneState.scene.animation, sceneState.timeline.fps));
-    const box = scene?.url ? editorView.sceneBox(scene.url) : null;
-    const sceneBox = box && sceneItemBox(scene.kind, box);
+    const sceneBox = scene?.url ? sceneContentBox(scene, editorView.sceneBox(scene.url)) : null;
     const portFiles = stickerFiles();
     const sticker = withColors("sticker", stickerContentRequest(portFiles, sceneState, evaluated));
-    const stickerBox = sticker?.url ? editorView.sceneBox(sticker.url) : null;
-    const items = stickerBox ? [{ box: sceneItemBox(sticker.kind, stickerBox), value: sticker.value }] : [];
+    const stickerBox = sticker?.url ? sceneContentBox(sticker, editorView.sceneBox(sticker.url)) : null;
+    const items = stickerBox ? [{ box: stickerBox, value: sticker.value }] : [];
     const fileStickers = fileStickerRequests(sceneState, evaluated, file3dEditorFile);
     for (const { request } of fileStickers) {
-      const fileBox = request ? editorView.sceneBox(request.url) : null;
-      if (fileBox) items.push({ box: sceneItemBox(request.kind, fileBox), value: request.value });
+      const fileBox = request ? sceneContentBox(request, editorView.sceneBox(request.url)) : null;
+      if (fileBox) items.push({ box: fileBox, value: request.value });
     }
     refreshGoneFiles(sceneState, fileStickers, upstream.items);
     const upstreamItems = upstream.items.map((entry) => (entry.request?.kind === "depth_grid" ? { ...entry, request: withColors(entry.slot, entry.request) } : entry));
@@ -170,8 +169,8 @@ export function createViewInput(deps) {
     depthNotice = depthGridNotice([scene, sticker, ...upstreamItems.map((entry) => entry.request)], (key) => editorView.sceneItemError(key));
     const stickers = worldStickerLayers(sceneState, editor.frame, state.stickers, { media, evaluated });
     for (const { request, value } of upstreamItems) {
-      const upstreamBox = request?.url ? editorView.sceneBox(request.url) : null;
-      if (upstreamBox) items.push({ box: sceneItemBox(request.kind, upstreamBox), value });
+      const upstreamBox = request?.url ? sceneContentBox(request, editorView.sceneBox(request.url)) : null;
+      if (upstreamBox) items.push({ box: upstreamBox, value });
     }
     const sphere = boundingSphere(contentPoints(evaluated, sceneBox, [...stickers, ...upstream.stickers], items));
     return {

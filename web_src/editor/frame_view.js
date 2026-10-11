@@ -36,8 +36,8 @@ export function createFrameView(deps) {
   } = deps;
   // Bound by connect() to the other modules and showEditor.
   let applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
-    hasSpaceContent, hideTooltip, invalidateLivePaintPreviewCaches, pushHistory, requestDraw, shotViewCamera,
-    spaceScale, spaceViewState, stopTimelinePlayback, syncCutoutShot, syncViewToggleState, updateCursor, updateSidePanel, writePose;
+    hasSpaceContent, pushHistory, requestDraw, shotViewCamera,
+    spaceScale, spaceViewState, stopTimelinePlayback, syncCutoutShot, updateCursor, updateSidePanel, writePose;
 
   let frameWheel = null;
   // Until when the stage shows frameWheelNotice(), and the timer that draws it away.
@@ -277,9 +277,7 @@ export function createFrameView(deps) {
     const shot = getActiveCutoutShot();
     if (!shot || readOnly || shot.locked === true) return;
     editor.interaction = {
-      kind: "pan_frame", shot, last: p,
-      start: { yaw_deg: Number(shot.yaw_deg || 0), pitch_deg: Number(shot.pitch_deg || 0) },
-      changed: false,
+      kind: "pan_frame", shot, last: p, changed: false,
     };
     updateCursor(p);
     canvas.setPointerCapture(pointerId);
@@ -365,38 +363,17 @@ export function createFrameView(deps) {
     return true;
   }
 
-  function cancelFrameCameraGesture() {
-    const interaction = editor.interaction;
-    if (!interaction?.shot || !interaction.start
-      || (interaction.kind !== "pan_frame" && interaction.kind !== "roll_frame")) return false;
-    const cancelledRoll = interaction.kind === "roll_frame";
-    if (interaction.kind === "pan_frame") {
-      interaction.shot.yaw_deg = interaction.start.yaw_deg;
-      interaction.shot.pitch_deg = interaction.start.pitch_deg;
-    } else {
-      interaction.shot.roll_deg = interaction.start.roll_deg;
-    }
-    if (cancelledRoll) hideTooltip();
-    editor.interaction = null;
-    invalidateLivePaintPreviewCaches();
-    syncViewToggleState();
-    updateSidePanel();
-    updateCursor(editor.pointerPos);
-    requestDraw({ localOnly: true });
-    return true;
-  }
-
   return {
     connect(api) {
       ({
         applySpaceMode, cancelViewTransition, commitAndRefreshNode, contentSphere, getActiveCutoutShot,
-        hasSpaceContent, hideTooltip, invalidateLivePaintPreviewCaches, pushHistory, requestDraw, shotViewCamera,
-        spaceScale, spaceViewState, stopTimelinePlayback, syncCutoutShot, syncViewToggleState, updateCursor, updateSidePanel, writePose,
+        hasSpaceContent, pushHistory, requestDraw, shotViewCamera,
+        spaceScale, spaceViewState, stopTimelinePlayback, syncCutoutShot, updateCursor, updateSidePanel, writePose,
       } = api);
     },
     leaveFrameView, measureFrameSafeRect, getFrameViewLayout, getFrameViewRect, supportsFramePainting,
     wheelFrameView, frameWheelNotice, isFreeFrameView, frameContext, frameViewDistance, frameSpaceView, frameTarget,
-    startPanFrame, startFrameDrag, dragFrame, flushFrameWheelCommit, cancelFrameCameraGesture,
+    startPanFrame, startFrameDrag, dragFrame, flushFrameWheelCommit,
     moveFrameByKeys, endFrameKeyMove,
   };
 }
