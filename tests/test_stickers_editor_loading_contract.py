@@ -56,7 +56,7 @@ class TestStickersEditorLoadingContract(unittest.TestCase):
     def test_failed_state_is_rendered_by_the_vue_modal(self):
         modal = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
         self.assertIn("uiState.stageStatus === 'failed'", modal)
-        # A warning shows once the stage is ready, and so does a note that is not a failure (#90).
+        # A warning shows once the stage is ready, and so does a note that is not a failure.
         self.assertIn("uiState.stageStatus === 'ready' && (uiState.stageWarningDetail || uiState.stageNotice)", modal)
         self.assertIn('class="pano-stage-failed"', modal)
 

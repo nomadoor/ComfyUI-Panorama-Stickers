@@ -195,7 +195,8 @@ def _sticker_layer(rays: torch.Tensor, origin: np.ndarray, sticker: dict, textur
     """A `world` Sticker as a plane: centered at `position`, spanning `scale` World units along its right axis and
     the cropped source's aspect along its up axis, facing its back axis (+Z of `world_rotation`). Both sides
     show the source, mirrored from behind. Returns None for an empty crop."""
-    # TODO(#61): limit the work to the plane's screen bounds before many Stickers or SPLAT content share a frame.
+    # TODO: every output pixel is tested against the plane, not only those it covers (docs/render-contract.md, "`world`
+    # の Sticker の板"); limit the work to the plane's screen bounds before many Stickers or SPLAT content share a frame.
     crop_w, crop_h = crop["x1"] - crop["x0"], crop["y1"] - crop["y0"]
     if crop_w < 1e-6 or crop_h < 1e-6:
         return None

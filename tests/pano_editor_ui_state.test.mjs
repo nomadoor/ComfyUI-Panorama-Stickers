@@ -411,7 +411,7 @@ test("Panorama Studio's Add to World takes an image or a 3D model", () => {
   assert.deepEqual([add.value, add.label, add.tip, add.icon], ["add-world", "Add to World", "Add an image or 3D model in space", ICON.globe]);
 });
 
-// --- Panorama Studio (#89): the Stickers editor of state v2 with the Cutout's Camera.
+// --- Panorama Studio: the Stickers editor of state v2 with the Cutout's Camera.
 
 test("Panorama Studio's editor has the Stickers tools with Add Camera, and always shows the Frame tab", () => {
   const studio = buildModalShellPreset("studio");
@@ -521,7 +521,7 @@ test("Panorama Studio's Camera menu has the 360° preset and Delete, and a 360°
   assert.equal(buildWorldSelectionMenuModel({ corners: [{ x: 10, y: 10 }], gizmoMode: "translate" }).items.length, 1);
 });
 
-test("a 360° Camera's FOV and lens fields are disabled, saying why, and the others stay as they are (#89, ADR 0042)", () => {
+test("a 360° Camera's FOV and lens fields are disabled, saying why, and the others stay as they are (ADR 0042)", () => {
   for (const key of ["hFOV_deg", "curve"]) {
     assert.equal(cameraParamEnabled(key, { erp: true }), false);
     assert.equal(cameraParamEnabled(key), true);

@@ -1,4 +1,4 @@
-// The Cutout's shot and Panorama Studio's Camera (#89): its shot at the playhead and the edits written back
+// The Cutout's shot and Panorama Studio's Camera: its shot at the playhead and the edits written back
 // to its Lanes (syncCutoutShot), adding and removing it, its aspect, and its roll knob.
 import { parseCutoutAspectPair, updateCutoutRollGesture } from "../pano_cutout_node_surface.js";
 import {
@@ -91,7 +91,7 @@ export function createCamera(deps) {
     requestDraw({ cause: "cutout_frame" });
   }
 
-  // Add Camera (Panorama Studio, #89): one Camera where the Viewport camera stands and looks
+  // Add Camera (Panorama Studio): one Camera where the Viewport camera stands and looks
   // (newStudioCamera), selected. The view stays where it is.
   function addStudioCamera() {
     if (readOnly || !studio || hasCamera()) return;
@@ -271,7 +271,7 @@ export function createCamera(deps) {
   // Panorama Studio: writes an edit of the shot since it was last derived to the Camera at the playhead
   // (setCameraShot, by the recording rule), then derives the shot from the Camera again, so it follows the
   // playhead, Keyframe edits and Undo. The shot stays the same object, which interactions hold. `keep`
-  // false drops an edit instead (the state was replaced). The shot comes and goes with the Camera (#89).
+  // false drops an edit instead (the state was replaced). The shot comes and goes with the Camera.
   function syncCutoutShot(keep = true) {
     if (!cameraV2) return;
     const before = cutoutShotBase;
@@ -289,7 +289,7 @@ export function createCamera(deps) {
     if (!before) followCameraChange(null, cutoutShotBase);
   }
 
-  // Panorama Studio's Camera came or went (#89), by an edit or by Undo. The Frame view ends without one,
+  // Panorama Studio's Camera came or went, by an edit or by Undo. The Frame view ends without one,
   // and 3DoF, which stands at the Camera (spaceOrigin), moves to where it stands now. The view goes there
   // over a transition instead of jumping.
   function followCameraChange(before, after) {

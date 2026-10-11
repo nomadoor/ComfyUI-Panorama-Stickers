@@ -608,7 +608,7 @@ test("the content bounds hold the boxes of the 3D Stickers' items moved by their
   closeVec(boundingSphere(points).center, transformPoint(value, [0.5, 0.5, 0.5]));
 });
 
-test("a 3D port Sticker (#63) draws the item of its batch at its clip frame with its transform and opacity", () => {
+test("a 3D port Sticker draws the item of its batch at its clip frame with its transform and opacity", () => {
   const port = (extra = {}) => ({
     id: "sticker_1",
     placement: "world",
@@ -880,7 +880,7 @@ test("near a pole a gizmo turn keeps the Sticker's yaw and turns its roll", () =
   closeVec([kept.yaw_deg, kept.pitch_deg, kept.roll_deg], [30, -89.95, 10], 1e-6);
 });
 
-// --- The Cutout's Camera in space (#77).
+// --- The Cutout's Camera in space.
 
 test("3DoF of the Cutout editor stands at the Camera's position, and 6DoF starts from there", () => {
   const view = { position: [5, 5, 5], yaw_deg: 30, pitch_deg: 10, hFOV_deg: 90, distance: 1 };

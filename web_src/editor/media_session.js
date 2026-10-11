@@ -262,7 +262,7 @@ export function createMediaSession(deps) {
     },
   });
   videoCleanupFns.push(() => playback.dispose());
-  // Panorama Studio's port Sticker plays its MP4 along the playhead, muted (#83).
+  // Panorama Studio's port Sticker plays its MP4 along the playhead, muted.
   const portVideo = stateV2 && portVideoEl instanceof HTMLVideoElement
     ? createVideoFollower({
       video: portVideoEl,
@@ -619,7 +619,7 @@ export function createMediaSession(deps) {
     return sceneFilesOf(getNodeUiList("pano_scene_files"), getNodeUiList("pano_scene_meta"), mediaSource);
   }
 
-  // The `sticker` input's 3D media (#63) in the node's current result, in the shape of sceneFiles().
+  // The `sticker` input's 3D media in the node's current result, in the shape of sceneFiles().
   function stickerFiles() {
     if (!stateV2 || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
     return sceneFilesOf(getNodeUiList("pano_sticker_files"), getNodeUiList("pano_sticker_meta"), mediaSource);
@@ -726,7 +726,7 @@ export function createMediaSession(deps) {
     }
     const displaySource = getDisplayBackgroundSource();
     if (displaySource) return displaySource;
-    // The upstream Scene's background takes the place of the node's own (Panorama Studio, #90).
+    // The upstream Scene's background takes the place of the node's own (Panorama Studio).
     const upstream = upstreamBackground();
     const uiImg = upstream || isNodeOutputMediaCurrent(node, "background")
       ? mediaUiImage(node, upstream?.imageKey ?? "pano_input_images", imageCache, () => requestDraw())
@@ -741,7 +741,7 @@ export function createMediaSession(deps) {
     return img || uiImg || null;
   }
 
-  // The background of the Scene on Panorama Studio's `scene` input in the node's current result (#90), used in
+  // The background of the Scene on Panorama Studio's `scene` input in the node's current result, used in
   // place of its own bg_media: { imageKey, videoKey, metaKey, coverage } (pano_upstream.js), or null. It comes
   // through `scene` alone, so a relinked bg_media (which the node does not use) leaves it current.
   function upstreamBackground() {

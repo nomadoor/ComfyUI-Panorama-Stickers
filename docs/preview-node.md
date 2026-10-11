@@ -16,7 +16,7 @@ Preview ノードの入力と素通しの規則、旧ノードのプレビュー
 
 Python のファイルは `comfyui_pano_suite/` の下にある。
 
-- Python のクラスは `PanoramaPreviewSceneNode`。旧 `PanoramaPreview` も登録したままである（ADR 0029）。
+- Python のクラスは `PanoramaPreviewSceneNode`、表示名は「Panorama Preview」。旧 `PanoramaPreview` はこのノードに置き換えたので、表示名を「Panorama Preview (legacy)」にして `is_deprecated` を付ける。登録は続けるので、旧 Preview を使う保存済みのワークフローは読めて動くが、ノードの検索と追加には出ない（ADR 0029 の「旧ノードは残す」はそのまま。2026-10-11、オーナー承認）。表示名と deprecated の印は `tests/test_node_schema_contract.py` が見る。
 - `source` は `io.MatchType`（テンプレート `source`、IMAGE・VIDEO・`PANO_SCENE`）で、出力は入力と同じ型の同じオブジェクトを返す。`is_output_node` は `True`。
 - Timeline は `source` から Studio と同じ `_decide_timeline` で決める。IMAGE と VIDEO は既定の状態（`timeline.fps` 24）に対して決める。`PANO_SCENE` の Timeline はその `fps`・`times`・`frames`。
 - IMAGE と VIDEO の実行結果の `ui` は旧 Preview と同じキー（`pano_input_images`、2 フレーム以上なら `pano_videos`・`pano_video_meta`）。`pano_video_meta` の fps は Timeline fps、`frames` は Timeline の長さ。

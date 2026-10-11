@@ -1,4 +1,4 @@
-// The mouse controls of the editor's space view (#71). 3DoF stands at the World origin and looks around
+// The mouse controls of the editor's space view. 3DoF stands at the World origin and looks around
 // like the panorama view; 6DoF moves the Viewport camera through the World with the controls of the
 // preset chosen in ComfyUI's settings (VIEW_CONTROLS_SETTING). ComfyUI saves the setting.
 //

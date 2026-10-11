@@ -1,6 +1,6 @@
 """The editor and the node surface show the port Sticker's MP4 at the time web_src/pano_port_media.js gives for a
 Timeline frame. The frame the MP4 shows there (PTS <= t, as a browser shows a sought time) is the frame the
-`video` output draws (#83)."""
+`video` output draws."""
 
 import bisect
 from fractions import Fraction

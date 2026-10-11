@@ -145,11 +145,13 @@ export function parsePanoEditorState(text, options = {}) {
   }
 }
 
+// The fields of the state an Undo step leaves out.
+export const HISTORY_SNAPSHOT_OMITS = Object.freeze(["editor_history", "painting_layer"]);
+
 export function makePanoEditorHistorySnapshot(state) {
   if (!state || typeof state !== "object") return state;
   const snapshot = JSON.parse(JSON.stringify(state));
-  delete snapshot.editor_history;
-  delete snapshot.painting_layer;
+  HISTORY_SNAPSHOT_OMITS.forEach((key) => delete snapshot[key]);
   return snapshot;
 }
 
@@ -298,7 +300,7 @@ export function cameraShot(camera, frame) {
   });
 }
 
-// Panorama Studio's Camera as Add Camera places it (#89): where the Viewport camera `view` stands and
+// Panorama Studio's Camera as Add Camera places it: where the Viewport camera `view` stands and
 // looks (pano_space.js), level, with a 90 degree hFOV and a 16:9 frame, and without Keyframes.
 export function newStudioCamera(view) {
   return loadSceneState({

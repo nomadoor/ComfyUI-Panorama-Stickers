@@ -1,6 +1,7 @@
 # 旧ノードのノード上の表示
 
 旧ノード `PanoramaStickers`・`PanoramaPreview`・`PanoramaCutout` のノード上の表示（node surface）の規則を定める。
+`PanoramaPreview` は Panorama Preview（`PanoramaPreviewNode`）に置き換え、表示名「Panorama Preview (legacy)」と deprecated の印で残す（`docs/preview-node.md`）。
 これらのノードは今のまま残し、表示は広げない。開発を続けるのは Panorama Studio だけで、その表示は
 `docs/studio-node-surface.md` にある。旧 `PanoramaStickers` と `PanoramaCutout` の表示は Panorama Studio と同じ
 DOM surface（`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl`）を使い、`PanoramaPreview` は専用の runtime を使う。

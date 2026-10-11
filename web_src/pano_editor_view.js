@@ -149,8 +149,8 @@ export function viewProjection(camera, width, height) {
 
 // Sky layers from back to front: the state's sky Stickers evaluated at the Timeline frame (a port
 // Sticker at the vFOV of its media, skyStickerVfov), and the paint layers (ERP canvases). Sky Stickers
-// and paint share one z_index axis; #52 adds z_index to the sky Stickers of state v2, and until then the
-// editor's z_index is passed in.
+// and paint share one z_index axis; zIndex(sticker) gives a Sticker's: the state's own z_index
+// (pano_upstream.js), or that of the editor's working Sticker (workingSkyLayers).
 // media(sticker) returns { media, revision, source? } for a Sticker (source: see pano_three_view.js
 // createLayerTextures), or null. evaluated is evaluateSceneState(sceneState, frame), when the caller has it.
 export function skyLayers(sceneState, frame, { media, zIndex, paintLayers, evaluated = evaluateSceneState(sceneState, frame) }) {

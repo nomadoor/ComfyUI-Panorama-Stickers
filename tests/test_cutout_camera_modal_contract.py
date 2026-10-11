@@ -39,8 +39,8 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("function applyGateAspectAtCurrentScale(selected, ratio)", editor_js)
         self.assertIn("applyGateAspectAtCurrentScale(selected, inverted)", editor_js)
         self.assertIn("frameRailBounds.width > 0 && frameRailBounds.height > 0", editor_js)
-        # Reset View and the grid toggle do nothing in the Frame view, so they are disabled there (#71 moved the
-        # rule into floatingRightState, which the editor feeds with the Frame view's mode).
+        # Reset View and the grid toggle do nothing in the Frame view, so they are disabled there (the rule
+        # lives in floatingRightState, which the editor feeds with the Frame view's mode).
         ui_state_js = (REPO_ROOT / "web_src" / "pano_editor_ui_state.js").read_text(encoding="utf-8")
         floating_body = ui_state_js.split("export function floatingRightState(", 1)[1].split("\nexport function ", 1)[0]
         self.assertIn('"reset-view": { disabled: !!readOnly || !!frameMode },', floating_body)

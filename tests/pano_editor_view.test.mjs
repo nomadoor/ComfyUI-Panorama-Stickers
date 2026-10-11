@@ -691,7 +691,7 @@ test("the three.js view picks the World content it last drew, not its guides", (
   assert.match(view, /new Spark\.SparkRenderer\(\{ renderer, onDirty, enableLod: false \}\)/);
 });
 
-test("a 3D world port Sticker (#63) has no plane: the space view draws its item instead", async () => {
+test("a 3D world port Sticker has no plane: the space view draws its item instead", async () => {
   const { worldStickerLayers } = await import("../web_src/pano_editor_view.js");
   const state = loadSceneState({ version: 2, stickers: [{ id: "sticker_image_1", placement: "world", source: { kind: "port" }, position: { value: [0, 0, -2], keyframes: [] } }] });
   // The node gives a 3D port Sticker no image (pano_sticker_input_images), so the editor has no media.
@@ -802,7 +802,7 @@ test("Panorama Studio's editor edits its Camera: the shot follows it, the Frame 
   assert.match(editor, /editorStateWrite\(node, stored, String\(stateWidget\.value \?\? ""\), \{ rebased: cameraV2 \}\)/);
 });
 
-test("Panorama Studio's editor adds and deletes its one Camera without moving the view at once (#89)", () => {
+test("Panorama Studio's editor adds and deletes its one Camera without moving the view at once", () => {
   const editor = readEditorSource();
   // The Stickers editor of state v2 with the Cutout's Camera, which the node marks.
   assert.match(editor, /const studio = sceneV2 && node\.__panoStudio === true;/);

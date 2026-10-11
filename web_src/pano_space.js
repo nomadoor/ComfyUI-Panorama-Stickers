@@ -1,4 +1,4 @@
-// The editor's view of the World (#71): the Viewport camera's navigation in space, where the `scene`
+// The editor's view of the World (3DoF and 6DoF): the Viewport camera's navigation in space, where the `scene`
 // content and the world Stickers are placed, and the guides drawn around them. Positions are World
 // glTF arrays [x, y, z] (ADR 0023); angles stay in the panorama convention and reach World only
 // through worldRotation (pano_world.js).
@@ -634,7 +634,7 @@ export function frameSphere(content, selected = null) {
   return { center: [...value.position], radius: value.scale };
 }
 
-// --- Placing and transforming world Stickers (#72).
+// --- Placing and transforming world Stickers (Panorama Studio).
 
 // A new world image without World content goes this far ahead of the view; with content it goes half the radius
 // of the content's bounding sphere ahead. A new 3D Sticker goes this far along its direction while its content is

@@ -20,6 +20,51 @@ test("an editor's history starts at the state it opens on and keeps the last HIS
   assert.equal(JSON.parse(history.undo()).step, HISTORY_LIMIT + 4);
 });
 
+// A state with raster objects, whose PNG data URLs are the large strings a step would otherwise copy.
+function rasterState(length) {
+  const raster = (letter) => `data:image/png;base64,${letter.repeat(length)}`;
+  return {
+    version: 2, stickers: [{ id: "a", yaw: { value: 0, keyframes: [] }, label: "pano-history-string:0" }],
+    painting: { strokes: [], groups: [], raster_objects: ["A", "B", "C"].map((letter, i) => ({ id: `r${i}`, rasterDataUrl: raster(letter), transform: { du: 0 } })) },
+    painting_layer: { revision: "r" },
+  };
+}
+
+test("Undo and Redo give back a step with raster objects exactly as it was recorded", () => {
+  const state = rasterState(4096);
+  const history = createEditorHistory(state);
+  const opened = historySnapshot(state);
+  state.painting.raster_objects[1].rasterDataUrl = `data:image/png;base64,${"D".repeat(4096)}`;
+  state.painting.raster_objects[2].transform.du = 0.5;
+  history.record(state);
+  const edited = historySnapshot(state);
+  assert.equal(history.undo(), opened);
+  assert.equal(history.redo(), edited);
+  assert.deepEqual(history.entries, [opened, edited]);
+  // Recording the same state again adds no step.
+  history.record(state);
+  assert.equal(history.entries.length, 2);
+});
+
+test("a large string the steps share is kept once, and goes when no kept step has it", () => {
+  const length = 64 * 1024;
+  const state = rasterState(length);
+  const history = createEditorHistory(state);
+  for (let edit = 1; edit <= HISTORY_LIMIT; edit += 1) {
+    state.stickers[0].yaw.value = edit;
+    history.record(state);
+  }
+  // Three rasters once each, plus small steps; not three rasters per step.
+  assert.ok(history.storedLength < 4 * length, `${history.storedLength}`);
+  // New rasters in every step: once the old ones are in no kept step, they are not kept either.
+  state.painting.raster_objects.forEach((item) => { item.rasterDataUrl = `data:image/png;base64,${"E".repeat(length)}${item.id}`; });
+  for (let edit = 1; edit <= HISTORY_LIMIT; edit += 1) {
+    state.stickers[0].yaw.value = -edit;
+    history.record(state);
+  }
+  assert.ok(history.storedLength < 4 * length, `${history.storedLength}`);
+});
+
 test("Undo restores the selection the editor of each type keeps: the Sticker, or the Cutout's shot", () => {
   const state = { active: { selected_sticker_id: "sticker", selected_shot_id: "shot" } };
   assert.equal(savedSelectionId("stickers", state), "sticker");

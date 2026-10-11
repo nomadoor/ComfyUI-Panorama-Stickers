@@ -9,7 +9,7 @@
 //
 // readState() is the node's working state v2. onFrame, onCapture and onChange are those of
 // createVideoPlayback; onChange also runs when the VIDEO of a source fails. onStickerCapture is the
-// follower's onCapture. With `camera` (Panorama Studio, #89) the Camera's Keyframes count, as in its editor.
+// follower's onCapture. With `camera` (Panorama Studio) the Camera's Keyframes count, as in its editor.
 // The Timeline is exactly the output's length (pano_timeline.js timelineSpan), as in the editor.
 import { backgroundPlace, backgroundShownAt, createFrameSequence, portMediaTime } from "./pano_port_media.js";
 import { NODE_SURFACE_FRAME } from "./pano_stickers_node_surface.js";

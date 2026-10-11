@@ -23,7 +23,7 @@ from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import mesh_render
 from comfyui_pano_suite.core.mesh_render import srgb_to_linear
 from comfyui_pano_suite.core.world_render import ContentSource
-from scene_test_helpers import batch_index_at_center, blob, blobs, camera_state, center, glb_positions, shoot, state_text, temp_entry_path, video_frames
+from scene_test_helpers import batch_index_at_center, blob, blobs, camera_state, center, glb_positions, shoot, state_text, temp_entry_path, triangle_glb, video_frames
 from tools.bake_legacy_goldens import _painting, _stroke
 
 
@@ -420,6 +420,17 @@ def test_unreadable_3d_file_sources_are_not_drawn_and_warn(input_dir):
     assert "Could not read the 3D file ../input/3d/model.glb: the file was not found. Sticker e is not drawn." in warnings
     assert output.result[4].layers[-1].sources.contents == {}
     assert _close(output.result[0][0][RIGHT], GREEN)
+
+
+def test_a_compressed_gltf_source_is_not_drawn_and_warns_naming_its_extension(input_dir):
+    (input_dir / "3d" / "basisu.glb").write_bytes(triangle_glb(["KHR_texture_basisu"]))
+
+    output = _execute({"version": 2, "stickers": [_file_sticker("basisu.glb", "a")]})
+
+    assert output.ui["pano_sticker_warnings"] == [
+        "Could not read the 3D file 3d/basisu.glb: it uses the glTF extension KHR_texture_basisu, which Panorama Studio "
+        "cannot draw; export the model without this compression. Sticker a is not drawn."]
+    assert output.result[4].layers[-1].sources.contents == {}
 
 
 def test_other_errors_of_the_reader_stop_the_run(input_dir, monkeypatch):

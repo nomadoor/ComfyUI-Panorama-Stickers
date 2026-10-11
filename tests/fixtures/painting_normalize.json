@@ -1,0 +1,227 @@
+{
+  "_doc": "normalize_painting_state (Python) and normalizePaintingState (JS) read `painting` the same (docs/scene-state-v2.md, `painting`): `version` is always 1. The z_index of a group or raster object is the first finite JSON number (not a boolean, not text) of `z_index`, then `zIndex`; an integer too large for a double is not finite. Without one, it is the item's place among the groups (raster objects). A group's is rounded as Math.round (halves toward +infinity), a raster object's is kept; both are at least 0. Only these fields are compared: the editor also reads a group's `locked`, which Python omits.",
+  "cases": {
+    "version_other_number": {
+      "painting": {
+        "version": 5
+      },
+      "expected": {
+        "version": 1,
+        "group_z_index": []
+      }
+    },
+    "version_text": {
+      "painting": {
+        "version": "2"
+      },
+      "expected": {
+        "version": 1,
+        "group_z_index": []
+      }
+    },
+    "version_missing": {
+      "painting": {},
+      "expected": {
+        "version": 1,
+        "group_z_index": []
+      }
+    },
+    "group_z_index": {
+      "painting": {
+        "version": 1,
+        "groups": [
+          {
+            "id": "missing",
+            "actionGroupId": "missing"
+          },
+          {
+            "id": "half",
+            "actionGroupId": "half",
+            "z_index": 1.5
+          },
+          {
+            "id": "two_and_half",
+            "actionGroupId": "two_and_half",
+            "z_index": 2.5
+          },
+          {
+            "id": "just_below_half",
+            "actionGroupId": "just_below_half",
+            "z_index": 0.49999999999999994
+          },
+          {
+            "id": "two_point_seven",
+            "actionGroupId": "two_point_seven",
+            "z_index": 2.7
+          },
+          {
+            "id": "two_point_two",
+            "actionGroupId": "two_point_two",
+            "z_index": 2.2
+          },
+          {
+            "id": "minus_half",
+            "actionGroupId": "minus_half",
+            "z_index": -0.5
+          },
+          {
+            "id": "huge",
+            "actionGroupId": "huge",
+            "z_index": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+          }
+        ]
+      },
+      "expected": {
+        "version": 1,
+        "group_z_index": [
+          0,
+          2,
+          3,
+          0,
+          3,
+          2,
+          0,
+          7
+        ]
+      }
+    },
+    "z_index_not_a_number": {
+      "painting": {
+        "version": 1,
+        "groups": [
+          {
+            "id": "g0",
+            "actionGroupId": "g0",
+            "z_index": null,
+            "zIndex": 3
+          },
+          {
+            "id": "g1",
+            "actionGroupId": "g1",
+            "z_index": ""
+          },
+          {
+            "id": "g2",
+            "actionGroupId": "g2",
+            "z_index": "3"
+          },
+          {
+            "id": "g3",
+            "actionGroupId": "g3",
+            "z_index": true
+          },
+          {
+            "id": "g4",
+            "actionGroupId": "g4",
+            "z_index": []
+          },
+          {
+            "id": "g5",
+            "actionGroupId": "g5",
+            "z_index": "0x10"
+          }
+        ],
+        "raster_objects": [
+          {
+            "id": "r0",
+            "type": "raster_frozen",
+            "layerKind": "paint",
+            "rasterDataUrl": "data:image/png;base64,AAAA",
+            "bbox": {
+              "u0": 0.1,
+              "v0": 0.1,
+              "u1": 0.2,
+              "v1": 0.2
+            },
+            "z_index": null,
+            "zIndex": 3
+          },
+          {
+            "id": "r1",
+            "type": "raster_frozen",
+            "layerKind": "paint",
+            "rasterDataUrl": "data:image/png;base64,AAAA",
+            "bbox": {
+              "u0": 0.1,
+              "v0": 0.1,
+              "u1": 0.2,
+              "v1": 0.2
+            },
+            "z_index": ""
+          },
+          {
+            "id": "r2",
+            "type": "raster_frozen",
+            "layerKind": "paint",
+            "rasterDataUrl": "data:image/png;base64,AAAA",
+            "bbox": {
+              "u0": 0.1,
+              "v0": 0.1,
+              "u1": 0.2,
+              "v1": 0.2
+            },
+            "z_index": "3"
+          },
+          {
+            "id": "r3",
+            "type": "raster_frozen",
+            "layerKind": "paint",
+            "rasterDataUrl": "data:image/png;base64,AAAA",
+            "bbox": {
+              "u0": 0.1,
+              "v0": 0.1,
+              "u1": 0.2,
+              "v1": 0.2
+            },
+            "z_index": true
+          },
+          {
+            "id": "r4",
+            "type": "raster_frozen",
+            "layerKind": "paint",
+            "rasterDataUrl": "data:image/png;base64,AAAA",
+            "bbox": {
+              "u0": 0.1,
+              "v0": 0.1,
+              "u1": 0.2,
+              "v1": 0.2
+            },
+            "z_index": []
+          },
+          {
+            "id": "r5",
+            "type": "raster_frozen",
+            "layerKind": "paint",
+            "rasterDataUrl": "data:image/png;base64,AAAA",
+            "bbox": {
+              "u0": 0.1,
+              "v0": 0.1,
+              "u1": 0.2,
+              "v1": 0.2
+            },
+            "z_index": "0x10"
+          }
+        ]
+      },
+      "expected": {
+        "version": 1,
+        "group_z_index": [
+          3,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "raster_z_index": [
+          3,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    }
+  }
+}

@@ -100,7 +100,7 @@ export function createViewInput(deps) {
       const img = getStickerImage(item);
       return img ? { media: img, revision: getMediaRevisionToken(img) } : null;
     };
-    // The upstream Scene's Sky (Panorama Studio, #90) lies under the node's own.
+    // The upstream Scene's Sky (Panorama Studio) lies under the node's own.
     const upstream = upstreamViewInput();
     const layers = [...upstream.sky, ...workingSkyLayers(editorViewScene.sceneState, editor.frame, state.stickers, { media, paintLayers, evaluated })];
     // The background VIDEO and its still are one source, so a seek keeps the frame before.
@@ -116,7 +116,7 @@ export function createViewInput(deps) {
     if (spaceMode.mode !== editor.spaceMode) cancelViewTransition();
     applySpaceMode(spaceMode);
     // `content` is the World alone, as the Camera sees it in the Frame view and the camera
-    // preview (#77); `space` adds the guides of the panorama view.
+    // preview; `space` adds the guides of the panorama view.
     const content = hasContent ? buildSpaceContent(editorViewScene.sceneState, evaluated, media, upstream) : null;
     if (!content) {
       retainDepthColors([]);

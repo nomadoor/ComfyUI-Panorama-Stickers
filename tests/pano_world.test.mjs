@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { Matrix4, Vector3 } from "three";
+
 import {
   cameraFromCameraInfo,
   cameraInfoFromCamera,
@@ -24,23 +26,11 @@ function column(matrix, index) {
   return matrix.map((row) => row[index]);
 }
 
-// Mirrors three.js Matrix4.lookAt for a camera (local +Z = eye - target) with
-// the default up vector, returned as a row-major 3x3 rotation.
-// TODO(#66): replace with THREE.Matrix4.lookAt and Quaternion.setFromRotationMatrix once three.js is a dependency.
+// three.js Matrix4.lookAt for a camera (local +Z = eye - target) with the default up vector, as a
+// row-major 3x3 rotation.
 function threeCameraLookAt(eye, target) {
-  const normalize = (v) => {
-    const length = Math.hypot(...v);
-    return v.map((c) => c / length);
-  };
-  const cross = (a, b) => [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-  const z = normalize([eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]]);
-  const x = normalize(cross([0, 1, 0], z));
-  const y = cross(z, x);
-  return [0, 1, 2].map((i) => [x[i], y[i], z[i]]);
+  const e = new Matrix4().lookAt(new Vector3(...eye), new Vector3(...target), new Vector3(0, 1, 0)).elements;
+  return [0, 1, 2].map((i) => [e[i], e[4 + i], e[8 + i]]);
 }
 
 test("positions and directions flip only z", () => {

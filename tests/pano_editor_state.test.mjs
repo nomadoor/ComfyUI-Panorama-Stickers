@@ -142,7 +142,7 @@ test("loaded state is normalized while widget and shared settings remain authori
   assert.equal(state.output_preset, 4096);
   assert.equal(state.bg_color, "#123456");
   assert.equal(state.coverage, 180);
-  // A saved preview_quality from before #69 is an unknown key and is dropped.
+  // A saved preview_quality from before the preview quality setting was removed is an unknown key and is dropped.
   assert.deepEqual(state.ui_settings, {
     invert_view_x: true,
     invert_view_y: false,
@@ -703,7 +703,7 @@ test("the editor has no way to switch a Sticker's Placement between sky and worl
     if (name.startsWith("components/")) assert.doesNotMatch(text, /placement/i, name);
   }
   // A Placement is written only where a Sticker is made: loading state v2, the evaluated copy, the
-  // editor's new Stickers, the port Sticker the node replaces by a world one (#63), and the port Sticker
+  // editor's new Stickers, the port Sticker the node replaces by a world one, and the port Sticker
   // the Pose handoff places (ADR 0030), and an upstream element's override, which takes its Placement (ADR 0030).
   const writers = sources.filter(([, text]) => /placement\s*:/.test(text.replace(/^\s*\/\/.*$/gm, ""))).map(([name]) => name).sort();
   assert.deepEqual(writers, ["pano_editor_state.js", "pano_port_handoff.js", "pano_scene_eval.js", "pano_scene_state.js", "pano_stickers_node_surface.js", "pano_upstream.js"]);
@@ -816,7 +816,7 @@ test("opening and closing the editor on another fps without an edit leaves state
   assert.equal(sameEditorStateText(node, editorStateText(node, state), own, { rebased: true }), false);
 });
 
-// Panorama Studio (#89) opens on its state as it is: without a Camera it has none, with
+// Panorama Studio opens on its state as it is: without a Camera it has none, with
 // one it edits it through the shot. Opening and closing without an edit, on the fps a video sets too,
 // leaves the text alone.
 test("opening and closing Panorama Studio without an edit leaves its state_json as it is, with or without a Camera", () => {

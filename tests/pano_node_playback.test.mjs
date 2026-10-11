@@ -193,7 +193,7 @@ test("the play button shows for a timed scene or a background VIDEO that loads",
   const camera = loadSceneState({ version: 2, camera: {} });
   keyAllLanes(camera.camera, 0);
   assert.equal(setup(camera).follow([]), false);
-  // Panorama Studio shoots through its Camera, so its Keyframes make the node play and set its span (#89).
+  // Panorama Studio shoots through its Camera, so its Keyframes make the node play and set its span.
   camera.camera.fov.keyframes.push({ frame: 200, value: 50, easing: "auto" });
   const studio = setup(camera, { camera: true });
   assert.equal(studio.follow([]), true);

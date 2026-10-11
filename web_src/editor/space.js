@@ -52,7 +52,7 @@ export function createSpace(deps) {
   }
 
   // The camera preview shows the Cutout's frame, or asks for one; Panorama Studio's shows only a Camera
-  // with a frame, and nothing without one (#89).
+  // with a frame, and nothing without one.
   function cameraPreviewShown() {
     return !studio || (cameraShoots() && !isErpCamera());
   }
@@ -80,7 +80,7 @@ export function createSpace(deps) {
 
   // Where 3DoF stands: the World origin, where the ERP without a Camera is taken from, or in Panorama
   // Studio with a Camera the Camera's position at the playhead, so the frame on the panorama is what the
-  // Camera sees (#89).
+  // Camera sees.
   function spaceOrigin() {
     return cameraShoots() ? cutoutCamera().position : [0, 0, 0];
   }

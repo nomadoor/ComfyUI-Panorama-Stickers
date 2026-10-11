@@ -401,7 +401,7 @@ test("an edit on the canvas stops playback on its first move and starts from the
   for (const field of ["it.offset", "it.startCenter", "snap.center", "it.center", "it.startRot", "it.startAng", "it.startDist", "it.startHFOV", "it.startVFOV"]) {
     assert.ok(restart.indexOf(`${field} =`) > restart.indexOf("playback.stop();"), field);
   }
-  // Looking around with the wheel keeps playing; in the Cutout's Frame view the wheel edits the Camera (#77).
+  // Looking around with the wheel keeps playing; in the Cutout's Frame view the wheel edits the Camera.
   const wheel = editorSource.slice(editorSource.indexOf("function onCanvasWheel(e) {"), editorSource.indexOf("\n  }\n", editorSource.indexOf("function onCanvasWheel(e) {")));
   assert.doesNotMatch(wheel.slice(wheel.indexOf('if (editor.mode !== "pano") return;')), /stopTimelinePlayback/);
 });
@@ -449,7 +449,7 @@ test("an fps from a run, an fps edit and undoing one keep the playhead's time", 
   assert.match(editorFunction("restoreHistory"), /if \(stateV2 && state\.timeline\.fps !== fps\) playback\.seek\(Math\.round\(editor\.frame \* state\.timeline\.fps \/ fps\)\);/);
 });
 
-test("Panorama Studio's Timeline opens by itself on its Camera's Keyframes and on the rest (#89)", () => {
+test("Panorama Studio's Timeline opens by itself on its Camera's Keyframes and on the rest", () => {
   const state = loadSceneState({ version: 2, camera: {} });
   assert.equal(isTimed(state, { camera: true }), false);
   keyAllLanes(state.camera, 0);

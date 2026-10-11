@@ -2538,8 +2538,11 @@ class PanoramaPreviewNode(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="PanoramaPreview",
-            display_name="Panorama Preview",
+            display_name="Panorama Preview (legacy)",
             category="Panorama Suite",
+            # Replaced by Panorama Preview (`PanoramaPreviewNode`): it stays registered, so saved workflows load it,
+            # but the node search no longer offers it (docs/preview-node.md).
+            is_deprecated=True,
             inputs=[
                 io.Image.Input("erp_image"),
                 io.Combo.Input(
@@ -2670,15 +2673,13 @@ def _video_preview_ui(video) -> dict:
     return _video_ui(video, bg, float(rate), len(frames), _get_preview_ui_contract("default"))
 
 
-# TODO(#76): when Preview gets its new display, choose a class and display name that can sit beside the legacy
-# Preview, which stays registered (ADR 0029: the legacy nodes stay).
 class PanoramaPreviewSceneNode(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         template = io.MatchType.Template("source", [io.Image, io.Video, PanoScene])
         return io.Schema(
             node_id="PanoramaPreviewNode",
-            display_name="Panorama Preview (new)",  # TODO(#76): a name that can sit beside the legacy Preview (ADR 0029).
+            display_name="Panorama Preview",
             category="Panorama Suite",
             inputs=[
                 io.MatchType.Input("source", template=template),

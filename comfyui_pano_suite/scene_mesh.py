@@ -35,6 +35,10 @@ _log = logging.getLogger(__name__)
 
 # The formats of the mesh file types the `scene` input takes; the core reads all but FBX and USDZ, which fail there.
 MESH_FILE_FORMATS = ("glb", "gltf", "obj", "stl", "fbx", "usdz")
+# glTF extensions three.js's GLTFLoader reads but the output does not (ADR 0037, condition 8): a glTF that lists one
+# in `extensionsUsed` or `extensionsRequired` is refused before the core reads it, since the core may still read
+# some geometry from it (Draco's fallback accessors are zeros) and draw it wrong.
+COMPRESSED_GLTF_EXTENSIONS = ("KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu")
 
 
 def is_mesh_file(scene) -> bool:
@@ -55,12 +59,14 @@ class AnimatedMesh(Types.MESH):
 
 def read_mesh_file(file: Types.File3D) -> Types.MESH:
     """A mesh 3D file as the one-item MESH the core reads from it (Get3DComponents); a GLB or GLTF with clips as an
-    `AnimatedMesh`. A file whose primitives `read_animation` cannot tie to the MESH is a ValueError."""
-    mesh = Get3DComponents.execute(file).result[0]
+    `AnimatedMesh`. A file whose primitives `read_animation` cannot tie to the MESH, and a glTF that uses a
+    COMPRESSED_GLTF_EXTENSIONS extension, are a ValueError."""
     if file.format not in ("glb", "gltf"):
-        return mesh
+        return Get3DComponents.execute(file).result[0]
     data = file.get_bytes()
     gltf, _bin = parse_container(data)
+    _refuse_compressed_gltf(gltf)
+    mesh = Get3DComponents.execute(file).result[0]
     if not has_animation(gltf):
         return mesh
     source = file.get_source() if file.is_disk_backed else None
@@ -71,6 +77,18 @@ def read_mesh_file(file: Types.File3D) -> Types.MESH:
                          "so its animation cannot be drawn")
     self_contained = all(str(buffer.get("uri", "data:")).startswith("data:") for buffer in gltf.get("buffers", []))
     return AnimatedMesh(mesh, animation, source, self_contained)
+
+
+def _refuse_compressed_gltf(gltf: dict):
+    listed = set()
+    for key in ("extensionsUsed", "extensionsRequired"):
+        names = gltf.get(key)
+        if isinstance(names, list):
+            listed.update(name for name in names if isinstance(name, str))
+    found = [name for name in COMPRESSED_GLTF_EXTENSIONS if name in listed]
+    if found:
+        raise ValueError(f"it uses the glTF extension{'s' if len(found) > 1 else ''} {', '.join(found)}, which Panorama Studio "
+                         "cannot draw; export the model without this compression")
 
 
 def mesh_animation(media):

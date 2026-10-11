@@ -307,7 +307,7 @@ def test_splat_files_are_told_by_their_contents():
     ply = SplatToFile3D.execute(splat, "ply").result[0].get_bytes()
     mesh_ply = b"ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nend_header\n" + bytes(12)
 
-    # A stream without a format is read as the core reads it; a PLY without 3DGS properties is a mesh (#62).
+    # A stream without a format is read as the core reads it; a PLY without 3DGS properties is a mesh.
     assert isinstance(splat_render.read_splat_file(Types.File3D(BytesIO(ply))), Types.SPLAT)
     assert isinstance(splat_render.read_splat_file(Types.File3D(BytesIO(_splat_file_bytes(splat)))), Types.SPLAT)
     assert splat_render.read_splat_file(Types.File3D(BytesIO(mesh_ply), file_format="ply")) is None

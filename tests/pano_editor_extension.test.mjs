@@ -94,7 +94,7 @@ test("stickers lifecycle hides the fallback button only after the shared DOM sur
   assert.equal(node.widgets.find((widget) => widget.name === "Open Stickers Editor").hidden, true);
 });
 
-test("Panorama Studio opens the Stickers editor and node surface on state v2 with its Camera, beside the legacy Stickers (#89)", () => {
+test("Panorama Studio opens the Stickers editor and node surface on state v2 with its Camera, beside the legacy Stickers", () => {
   const opened = [];
   const attached = [];
   const extension = createPanoEditorExtension({
@@ -131,7 +131,7 @@ test("Panorama Studio opens the Stickers editor and node surface on state v2 wit
   assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
 });
 
-test("the removed state v2 Stickers and Cutout node ids get no editor (#92)", () => {
+test("the removed state v2 Stickers and Cutout node ids get no editor", () => {
   const extension = createPanoEditorExtension({
     app: { canvas: { setDirty() {} } },
     openEditor() { throw new Error("no editor"); },

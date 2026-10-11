@@ -503,7 +503,7 @@ def test_hold_cut_is_not_late_on_a_video_frame_just_before_the_keyframe(tmp_path
 
     image = _frames(_execute(state, bg_media=_cfr(tmp_path, count=5), sticker=red))
 
-    # The 1 ms PTS of frame 3 is snapped to Timeline frame 3 (#56); without the snap it stays just short of it.
+    # The 1 ms PTS of frame 3 is snapped to Timeline frame 3; without the snap it stays just short of it.
     assert 3.0 - 1e-6 < frames[1:][3] <= 3.0
     center = image[:, image.shape[1] // 2, image.shape[2] // 2]
     is_red = [bool(torch.allclose(pixel, torch.tensor([1.0, 0.0, 0.0]), atol=1e-3)) for pixel in center]

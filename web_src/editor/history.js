@@ -1,6 +1,6 @@
 // The editor's Undo history: what a snapshot keeps, how many are kept, and undo / redo.
-import { makePanoEditorHistorySnapshot, restoredHistoryState } from "../pano_editor_state.js";
-import { createHistoryController } from "../pano_paint_history.js";
+import { HISTORY_SNAPSHOT_OMITS, makePanoEditorHistorySnapshot, restoredHistoryState } from "../pano_editor_state.js";
+import { createSharedStringHistory } from "../pano_paint_history.js";
 
 // The steps an editor keeps. Each is the whole state as JSON, without its history and painting layer
 // (makePanoEditorHistorySnapshot).
@@ -10,9 +10,12 @@ export function historySnapshot(state) {
   return JSON.stringify(makePanoEditorHistorySnapshot(state));
 }
 
-// The history of an editor opening on `state`, which is its first step.
+// The history of an editor opening on `state`, which is its first step. Undo, Redo and `entries` give the
+// steps as historySnapshot() JSON; `record(state)` records one.
 export function createEditorHistory(state) {
-  return createHistoryController(HISTORY_LIMIT, { version: 1, entries: [historySnapshot(state)], index: 0 });
+  const history = createSharedStringHistory(HISTORY_LIMIT, { omit: HISTORY_SNAPSHOT_OMITS });
+  history.record(state);
+  return history;
 }
 
 // The id the editor of `type` selects from a state: the Stickers editor (and Panorama Studio) keeps the
@@ -47,7 +50,7 @@ export function createHistory(deps) {
     if (prune) pruneUpstreamRecords();
     // A Sticker still uploading has no file to restore; the snapshot waits for the upload, which pushes one.
     if (stateV2 && state.stickers.some(isUploadingSticker)) return;
-    editor.historyController.commitActionGroup(historySnapshot(storedEditorState()));
+    editor.historyController.record(storedEditorState());
     syncUndoRedoButtons();
   }
 
@@ -74,7 +77,7 @@ export function createHistory(deps) {
     // The background VIDEO shows the time its restored Clip range puts at the playhead.
     else if (stateV2 && JSON.stringify(state.background.clip) !== backgroundClip) playback.seek(editor.frame);
     editor.selectedId = savedSelectionId(type, state);
-    // Panorama Studio's Camera stays selected while the restored state has it (#89).
+    // Panorama Studio's Camera stays selected while the restored state has it.
     if (studio && !editor.selectedId && state.active.selected_shot_id) editor.selectedId = getActiveCutoutShot()?.id ?? null;
     editor.selectedIds = editor.selectedId ? [editor.selectedId] : [];
     if (editor.selectedId) clearWorldSelection();
@@ -89,11 +92,11 @@ export function createHistory(deps) {
   }
 
   function getHistoryCapabilities() {
-    const historyEntries = Array.isArray(editor.historyController?.entries) ? editor.historyController.entries : [];
+    const historyLength = Number(editor.historyController?.length) || 0;
     const historyIndex = Number(editor.historyController?.index);
     return {
-      canUndo: !readOnly && historyEntries.length > 1 && historyIndex > 0,
-      canRedo: !readOnly && historyEntries.length > 1 && historyIndex >= 0 && historyIndex < historyEntries.length - 1,
+      canUndo: !readOnly && historyLength > 1 && historyIndex > 0,
+      canRedo: !readOnly && historyLength > 1 && historyIndex >= 0 && historyIndex < historyLength - 1,
     };
   }
 

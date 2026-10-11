@@ -47,8 +47,8 @@ export function createFrameView(deps) {
   // one Undo step.
   let frameKeyMoved = false;
 
-  // The Frame view ends while it shows Panorama Studio's shot (its Camera went, or shoots a 360-degree ERP,
-  // #89): the panorama view looks where the shot looked, and in 6DoF stands where it stood, so the view does
+  // The Frame view ends while it shows Panorama Studio's shot (its Camera went, or shoots a 360-degree
+  // ERP): the panorama view looks where the shot looked, and in 6DoF stands where it stood, so the view does
   // not jump.
   function leaveFrameView(shot) {
     editor.mode = "pano";

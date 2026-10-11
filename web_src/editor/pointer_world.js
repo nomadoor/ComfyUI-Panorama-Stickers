@@ -21,7 +21,7 @@ export function createPointerWorld(deps) {
     return editorView.gizmoPointer(phase, currentSpaceCamera(), p.x, p.y, canvas.width, canvas.height);
   }
 
-  // A left press with the cursor tool in the space view (#72): on a handle of the selected world
+  // A left press with the cursor tool in the space view: on a handle of the selected world
   // Sticker's gizmo it grabs the handle; on a world Sticker (the nearest content under the pointer, by
   // pick) it selects it. A world Sticker is in front of the Sky, so it comes before the sky Stickers,
   // except for the scale and rotate handles of a selected sky Sticker. The `scene` content is not

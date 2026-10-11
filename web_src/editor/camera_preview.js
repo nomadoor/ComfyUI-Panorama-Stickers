@@ -80,7 +80,7 @@ export function createCameraPreview(deps) {
   function drawCutoutOutputPreview(drawView, reasons) {
     editor.outputPreviewRect = null;
     uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();
-    // Panorama Studio's preview keeps one size: it has no size toggle (#89).
+    // Panorama Studio's preview keeps one size: it has no size toggle.
     if (studio) uiState.outputPreviewToggle.visible = false;
     if (!shotEditor || !uiState.cameraPreview) return;
     if (editor.mode === "frame" || !cameraPreviewShown()) {
