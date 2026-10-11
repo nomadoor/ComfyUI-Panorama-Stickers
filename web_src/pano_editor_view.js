@@ -88,16 +88,17 @@ export function deviceLens(lens, scale) {
 
 // The lens of a shot drawn into a rect of width x height device pixels (render()'s input.lens, ADR 0042), or null
 // for a pinhole: `lens` places the image (frameViewContext()'s, in those pixels), else it fills the rect. background
-// is the node's bg_color as a hex RGB, which shows past 180° off the axis.
-export function shotLensImage(shot, width, height, background, lens = null) {
+// is the node's bg_color as a hex RGB, which shows past 180° off the axis. `previous` is the kind of the lens the same
+// view drew last (its `kind`; lensRenderPlan).
+export function shotLensImage(shot, width, height, background, lens = null, previous = null) {
   const curve = shotCurve(shot);
   if (curve === 1) return null;
   const focal = lens?.focalPx ?? (width / 2) / lensRadius(getCutoutCameraParams(shot).hFovDeg * DEG2RAD * 0.5, curve);
   const centerX = lens?.centerX ?? width / 2;
   const centerY = lens?.centerY ?? height / 2;
   // The Camera's turn decides which faces of the World-aligned cube the image samples.
-  const { faces } = lensRenderPlan({ width, height, centerX, centerY, focal, curve, quaternion: shotCamera(shot).quaternion });
-  return { curve, focal, centerX, centerY, background, faces };
+  const { kind, faces } = lensRenderPlan({ width, height, centerX, centerY, focal, curve, quaternion: shotCamera(shot).quaternion, previous });
+  return { kind, curve, focal, centerX, centerY, background, faces };
 }
 
 // The direction, a World [x, y, z] of length 1, a new 3D Sticker is placed along from the view `camera` (a

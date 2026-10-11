@@ -26,6 +26,12 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
+// The polygon whose inside moves an item: its outline (the image's true edge, editor/object_geometry.js), or the
+// quad of its corners.
+function insideOf(geometry) {
+  return Array.isArray(geometry.outline) && geometry.outline.length >= 4 ? geometry.outline : geometry.corners;
+}
+
 export function hitStickerSelectionAffordance(geometry, point) {
   if (!geometry?.visible) return { kind: "none" };
   const cornerIndex = geometry.corners.findIndex((corner) => distanceSquared(corner, point) <= 11 * 11);
@@ -42,7 +48,7 @@ export function hitStickerSelectionAffordance(geometry, point) {
   if (distanceSquared(geometry.rotateHandle, point) <= 12 * 12) {
     return { kind: "rotate", cursor: "grab" };
   }
-  if (pointInPolygon(point, geometry.corners)) return { kind: "move", cursor: "default" };
+  if (pointInPolygon(point, insideOf(geometry))) return { kind: "move", cursor: "default" };
   return { kind: "none" };
 }
 
@@ -66,7 +72,7 @@ export function hitFrameAffordance(geometry, point, { edges = false, resize = tr
     return { kind: "scale", cornerIdx, cursor: (vx * vy) >= 0 ? "nwse-resize" : "nesw-resize" };
   }
   if (distanceSquared(geometry.rotateHandle, point) <= 12 * 12) return { kind: "rotate", cursor: "grab" };
-  if (pointInPolygon(point, geometry.corners)) return { kind: "move", cursor: "default" };
+  if (pointInPolygon(point, insideOf(geometry))) return { kind: "move", cursor: "default" };
   return { kind: "none", cursor: emptyCursor };
 }
 

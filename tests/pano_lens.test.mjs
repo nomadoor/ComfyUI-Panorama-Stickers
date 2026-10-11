@@ -49,6 +49,20 @@ test("each pixel's ray of a lens Camera matches the fixture, and pixels past 180
   }
 });
 
+// An edit near the bound does not switch the path back and forth: after the cube, the pinhole takes a smaller area.
+test("a view that drew through the cube goes back to the pinhole only well inside the pinhole's area", () => {
+  const kinds = (hfov, previous) => {
+    const focal = 160 / lensRadius((hfov / 2) * DEG, 0.9);
+    return lensRenderPlan({ width: 320, height: 240, focal, curve: 0.9, previous }).kind;
+  };
+  // Widening goes to the cube at the bound whatever the view drew before.
+  assert.deepEqual([152, 156, 158].map((hfov) => kinds(hfov, "pinhole")), ["pinhole", "pinhole", "cube"]);
+  // Narrowing from the cube stays there until the pinhole holds LENS_PINHOLE_RETURN of its area.
+  assert.deepEqual([156, 154, 152, 140].map((hfov) => kinds(hfov, "cube")), ["cube", "cube", "pinhole", "pinhole"]);
+  // A view's first lens image takes the plain bound.
+  assert.equal(kinds(156, null), "pinhole");
+});
+
 // docs/threejs-spark-integration.md "Camera から見た空間の表示": one rule picks the pinhole with overscan or the cube.
 test("a lens image draws through a pinhole the sampling never enlarges, within its area, else through the cube", () => {
   const plan = (curve, hfov, width = 1024, height = 1024) => {

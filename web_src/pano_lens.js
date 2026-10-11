@@ -77,6 +77,10 @@ export function lensDirectionFilm(direction, kappa) {
 // per output pixel along lensFilmDirection. The pinhole holds at most LENS_OVERSCAN_MAX_AREA times the output's
 // pixels; past that, or where the image's corners are 90° or more off the axis, the cube draws.
 export const LENS_OVERSCAN_MAX_AREA = 4;
+// A view that drew through the cube goes back to the pinhole only below this part of that area, so a Lens curve or
+// H FOV edit near the bound does not switch back and forth: the two draw a SPLAT's splats differently (each face
+// projects them on its own plane), which shows as a jump at each switch.
+export const LENS_PINHOLE_RETURN = 0.75;
 // The widest half angle a pinhole draws; past it its image would be unbounded.
 const PINHOLE_HALF_ANGLE_MAX = 89 * DEG2RAD;
 // The cube's faces: their pixels per tan unit at the center are f (the lens's at its center), within these sides.
@@ -166,8 +170,9 @@ export function lensCubeFaceSeen(quaternion, forward, thetaMax) {
 // way, turned by `quaternion` from the Camera (the pinhole) or from the World's axes (`world`, the cube's faces). The
 // pinhole's f is the lens's at its center, so the sampling pass never enlarges it (κ ≤ 1). A cube face is `seen`
 // when the image's cone of directions meets it (lensCubeFaceSeen); the others are not drawn. maxSide caps a face's
-// side (the GPU's).
-export function lensRenderPlan({ width, height, centerX = width / 2, centerY = height / 2, focal, curve, quaternion = null, maxSide = 4096 }) {
+// side (the GPU's). `previous` is the kind the same view drew last ("pinhole", "cube" or null): after the cube the
+// pinhole holds LENS_PINHOLE_RETURN of its area.
+export function lensRenderPlan({ width, height, centerX = width / 2, centerY = height / 2, focal, curve, quaternion = null, maxSide = 4096, previous = null }) {
   const corners = [[0, 0], [width, 0], [0, height], [width, height]].map(([px, py]) => Math.hypot(px - centerX, py - centerY) / focal);
   const thetaMax = Math.max(...corners.map((rho) => lensAngle(rho, curve)));
   if (thetaMax < PINHOLE_HALF_ANGLE_MAX) {
@@ -187,7 +192,8 @@ export function lensRenderPlan({ width, height, centerX = width / 2, centerY = h
     // A pixel more each way, for the sampling's bilinear neighbours.
     const pixelsX = 2 * Math.ceil(halfX * pinhole + 1);
     const pixelsY = 2 * Math.ceil(halfY * pinhole + 1);
-    if (pixelsX * pixelsY <= LENS_OVERSCAN_MAX_AREA * width * height) {
+    const area = LENS_OVERSCAN_MAX_AREA * (previous === "cube" ? LENS_PINHOLE_RETURN : 1);
+    if (pixelsX * pixelsY <= area * width * height) {
       const fit = Math.min(1, maxSide / Math.max(pixelsX, pixelsY));
       return {
         kind: "pinhole",

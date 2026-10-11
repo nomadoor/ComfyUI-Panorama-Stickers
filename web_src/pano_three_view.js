@@ -855,10 +855,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       packedSplats.splatEncoding = encoding;
       return mesh;
     },
-    // A lens face's renderer draws for the view it is a face of.
-    // A lens face's renderer draws for the view it is a face of, and its face is drawn again.
+    // A lens face's renderer draws for the view it is a face of, and its face is drawn again. The pinhole face is
+    // drawn with its view's own renderer (drawLens), so that renderer's sort draws it again too.
     onDirty: (owner) => {
       if (!lensFaceBase.has(owner)) {
+        const cache = lensCaches.get(owner);
+        if (cache?.shared) cache.dirty.add(0);
         onSplats(owner);
         return;
       }
@@ -1251,18 +1253,20 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return faces[index];
   }
 
-  // The face renderers of base past `count` faces (all of them without a lens) let go.
-  function releaseLensFaces(base, count = 0) {
-    if (!count) {
-      lensCaches.delete(base);
-      lensTargets.get(base)?.forEach((target) => target.dispose());
-      lensTargets.delete(base);
-    }
-    const faces = lensFaceOwners.get(base);
-    if (!faces) return;
-    faces.slice(count).forEach((owner) => owner && sparkViews.release(owner));
-    faces.length = Math.min(faces.length, count);
-    if (!faces.length) lensFaceOwners.delete(base);
+  // base's lens images let go: its faces' targets and what they held.
+  function releaseLensImages(base) {
+    lensCaches.delete(base);
+    lensTargets.get(base)?.forEach((target) => target?.dispose());
+    lensTargets.delete(base);
+  }
+
+  // base's lens images and its cube faces' Spark renderers let go, when base stops drawing or hides its SPLATs. A
+  // face's renderer stays while base draws otherwise (without a lens, or through the pinhole): a new one has no sort
+  // until its worker returns one, and its face would show without its splats until then.
+  function releaseLensFaces(base) {
+    releaseLensImages(base);
+    lensFaceOwners.get(base)?.forEach((owner) => owner && sparkViews.release(owner));
+    lensFaceOwners.delete(base);
   }
 
   // Per owner, the faces drawn ({ key, drawn: face indexes drawn under key, dirty: faces whose Spark renderer sorted
@@ -1321,7 +1325,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!at) return null;
     const { lens } = input;
     const base = new Quaternion(input.camera.quaternion.x, input.camera.quaternion.y, input.camera.quaternion.z, input.camera.quaternion.w);
-    releaseLensFaces(input.owner, lens.faces.length);
     // Each face's turn in the World.
     const faces = lens.faces.map((face) => {
       const q = new Quaternion(face.quaternion.x, face.quaternion.y, face.quaternion.z, face.quaternion.w);
@@ -1329,7 +1332,10 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       return { ...face, quaternion: { x: turn.x, y: turn.y, z: turn.z, w: turn.w }, turn };
     });
     let cache = lensCaches.get(input.owner);
-    if (!cache) lensCaches.set(input.owner, cache = { key: null, drawn: new Set(), dirty: new Set() });
+    if (!cache) lensCaches.set(input.owner, cache = { key: null, drawn: new Set(), dirty: new Set(), shared: false });
+    // The pinhole looks where the Camera looks, as a draw without a lens does: it draws with the view's own Spark
+    // renderer, whose sort holds for it, so going from no lens to a lens (κ leaving 1) shows the splats at once.
+    cache.shared = !faces[0].world;
     const owned = layerTextures.draw(input.owner);
     const uniforms = lensQuad.material.uniforms;
     let count = 0;
@@ -1338,7 +1344,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       fillSky(owned, panorama, input);
       // The World is built once for what picks and the content revision read; each drawn face builds it for its
       // own Spark renderer.
-      if (space) buildWorld(owned, space, lensFaceOwner(input.owner, 0));
+      if (space) buildWorld(owned, space, lensSplatOwner(input.owner, faces[0], 0));
       const key = lensCacheKey(input, faces);
       if (!sameValue(key, cache.key)) {
         cache.key = key;
@@ -1397,7 +1403,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     renderer.autoClear = false;
     renderer.render(scene, camera);
     if (space) {
-      const faceOwner = lensFaceOwner(input.owner, index);
+      const faceOwner = lensSplatOwner(input.owner, face, index);
       buildWorld(owned, space, faceOwner);
       setCamera(worldCamera, setup);
       sparkViews.aim(worldCamera, faceOwner);
@@ -1409,14 +1415,21 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       if (spark) spark.encodeLinear = true;
       renderer.clearDepth();
       renderer.render(world, worldCamera);
+      // The pinhole's renderer is its view's own, which draws without a lens in sRGB (encodeLinear is a uniform).
+      if (spark) spark.encodeLinear = false;
     }
     renderer.autoClear = true;
     if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
   }
 
+  // The owner whose Spark renderer draws a lens face's splats: the view's own for the pinhole, the face's for the cube.
+  function lensSplatOwner(base, face, index) {
+    return face.world ? lensFaceOwner(base, index) : base;
+  }
+
   function draw(projection, input, space = null) {
     if (projection === panorama && input.lens) return drawLens(input, space);
-    releaseLensFaces(input.owner);
+    releaseLensImages(input.owner);
     let entry = owners.get(input.owner);
     if (!entry) owners.set(input.owner, entry = {});
     const at = place(input, entry);
