@@ -133,7 +133,8 @@ export function createSceneItems({ load, dispose, onUpdate = () => {}, concurren
   // The requests of one render, one per input: { kind, urls (its item keys in item order), url (the key to
   // show), prefetch (the keys to load ahead), src (the URL its items load from, when the keys are not URLs), sources
 // (key -> the URLs of the views an item of several views loads from, or what a depth grid item loads with),
-  // unlit (its meshes draw without light, the default) }, or a keep-only input { urls } of keys whose items stay
+  // unlit (its meshes draw without light, the default), animation (an animated 3D file's: its original's URL `src`
+  // is part of what the item loads from) }, or a keep-only input { urls } of keys whose items stay
   // as they are without being drawn or loaded (a 3D Sticker hidden or outside its Clip range). Returns per input
   // the loaded item to draw (see nearestLoaded), or null at a frame without an item, before anything of the
   // input loaded, and for a keep-only input. Items of no input are dropped, and so is an item whose input now
@@ -152,8 +153,12 @@ export function createSceneItems({ load, dispose, onUpdate = () => {}, concurren
     const ahead = inputs.flatMap((input) => input.prefetch ?? []).filter(Boolean);
     wanted = [...shownKeys, ...ahead].filter((key, index, list) => list.indexOf(key) === index);
     shown = new Set(shownKeys);
-    // An item of several views loads from all of them (sources); a list made anew each render is the same source.
-    const sourceOf = (input, key) => input.sources?.[key] ?? input.src ?? key;
+    // An item of several views loads from all of them (sources); a list made anew each render is the same source. An
+    // animated 3D file (ADR 0043) loads its editor GLB with its original file ({ url, animation }).
+    const sourceOf = (input, key) => {
+      const base = input.sources?.[key] ?? input.src ?? key;
+      return input.animation?.src ? { url: base, animation: input.animation.src } : base;
+    };
     // A depth grid's source is an object of its form, also made anew each render.
     const sameSource = (a, b) => (typeof a === "object" || typeof b === "object" ? JSON.stringify(a) === JSON.stringify(b) : a === b);
     const unlitOf = (input) => input.unlit !== false;

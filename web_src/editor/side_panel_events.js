@@ -10,6 +10,7 @@ import {
   setWorldStickerField,
 } from "../pano_editor_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
+import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { WORLD_MIN_SCALE, WORLD_UNLIMITED_FIELDS } from "./constants.js";
 
@@ -18,12 +19,12 @@ export function createSidePanelEvents(deps) {
     cameraV2, coverageWidget, editor, node, previewMode, runtime, shotEditor, state, studio, type, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
+  let animationClipsOf, apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
     commitState, getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
     isItemLocked, isSceneSticker, isStrokeGroupItem, markObjectVisualsDirty, persistUiSettings, poseOf,
     pushHistory, releaseHiddenSelection, requestDraw, revertPortHandoffLane,
     revertUpstreamSticker, selectedWorldSticker, setSelectedItem, stopTimelinePlayback, syncCoverageChangeToNodePreviews,
-    syncCutoutShot, turnViewTo, updateSelectionMenu, updateSidePanel, worldStickerEditable, writePose;
+    syncCutoutShot, syncTimeline, turnViewTo, updateSelectionMenu, updateSidePanel, worldStickerEditable, writePose;
 
   function applySidePanelParam(key, rawValue, commit = false) {
     // Edits during playback would key every frame they pass.
@@ -36,6 +37,10 @@ export function createSidePanelEvents(deps) {
     if (!worldInspected && (!selected || selectedKind === "stroke" || isItemLocked(selected))) return;
     const param = (uiState.sidePanel?.params || []).find((item) => item.key === key);
     if (!param || param.enabled === false) return;
+    if (key === "animation_clip" || key === "animation_speed") {
+      applyAnimationParam(worldInspected, key, rawValue, commit);
+      return;
+    }
     let out = Number(rawValue);
     if (Number.isNaN(out)) out = 0;
     // A world Sticker's position has no limit, and its scale only stays above 0. Nor has the Camera's.
@@ -77,6 +82,30 @@ export function createSidePanelEvents(deps) {
     if (shotEditor && !isSceneSticker(selected) && (key === "hFOV_deg" || key === "vFOV_deg")) {
       selected.aspect_id = deriveCutoutAspectLabelFromFov(selected);
     }
+    updateSidePanel();
+    requestDraw();
+    if (commit) pushHistory();
+  }
+  // An animated 3D file's Clip (the index of a clip in the file's order, kept by its name) or Speed (0.1–10) of the
+  // world Sticker `sticker`, without Keyframes (ADR 0043). An upstream element's is not edited.
+  function applyAnimationParam(sticker, key, rawValue, commit) {
+    const clips = sticker && !isUpstreamSticker(sticker) ? animationClipsOf(sticker) : null;
+    if (!clips) return;
+    const current = sticker.animation ?? ANIMATION_DEFAULT;
+    let next;
+    if (key === "animation_clip") {
+      const clip = clips[Number(rawValue)];
+      if (!clip) return;
+      next = { ...current, clip: clip.name };
+    } else {
+      const speed = Number(rawValue);
+      if (!Number.isFinite(speed)) return;
+      next = { ...current, speed: clamp(speed, ANIMATION_SPEED_MIN, ANIMATION_SPEED_MAX) };
+    }
+    sticker.animation = next;
+    markObjectVisualsDirty();
+    // A clip's length and the Speed set the cycle that the Auto length counts (ADR 0043).
+    syncTimeline();
     updateSidePanel();
     requestDraw();
     if (commit) pushHistory();
@@ -237,12 +266,12 @@ export function createSidePanelEvents(deps) {
   return {
     connect(api) {
       ({
-        apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
+        animationClipsOf, apply, buildCanonicalCutoutStickerState, buildCanonicalSelectedStickerState, closeEditor, commitAndRefreshNode,
         commitState, getActiveCutoutShot, getCutoutInspectorItems, getList, getSelected, getSelectedItems, getSelectedKind,
         isItemLocked, isSceneSticker, isStrokeGroupItem, markObjectVisualsDirty, persistUiSettings, poseOf,
         pushHistory, releaseHiddenSelection, requestDraw, revertPortHandoffLane,
         revertUpstreamSticker, selectedWorldSticker, setSelectedItem, stopTimelinePlayback, syncCoverageChangeToNodePreviews,
-        syncCutoutShot, turnViewTo, updateSelectionMenu, updateSidePanel, worldStickerEditable, writePose,
+        syncCutoutShot, syncTimeline, turnViewTo, updateSelectionMenu, updateSidePanel, worldStickerEditable, writePose,
       } = api);
     },
     onSidePanelClick, onSidePanelInput, onSidePanelChange,

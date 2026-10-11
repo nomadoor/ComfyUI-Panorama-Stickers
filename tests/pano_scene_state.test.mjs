@@ -465,3 +465,37 @@ test("a sky Sticker's lens curve and a world Sticker's lens load, evaluate under
   const text = JSON.parse(sceneStateText(load([{ id: "p", placement: "sky", source }, { id: "s", placement: "sky", source, curve: { value: 0.5 } }, { id: "w", placement: "world", source, lens: { value: { curve: 1, hFOV_deg: 90 } } }])));
   assert.deepEqual(text.stickers.map((item) => [Object.hasOwn(item, "curve"), Object.hasOwn(item, "lens")]), [[false, false], [true, false], [false, true]]);
 });
+
+// docs/scene-state-v2.md (ADR 0043): a 3D file's `animation` { clip, speed } on a 3D file Sticker, the port Sticker
+// and `scene`; the default is left out of the text.
+test("a 3D file's animation loads with its speed in range, and its default is not written", () => {
+  const raw = (animation) => ({
+    version: 2,
+    scene: { animation },
+    stickers: [
+      { id: "robot", placement: "world", source: { kind: "file", filename: "robot.glb" }, animation },
+      { id: "photo", placement: "sky", source: { kind: "file", filename: "photo.png" }, animation },
+      { id: "port", placement: "world", source: { kind: "port" }, animation },
+    ],
+  });
+  const loaded = loadSceneState(raw({ clip: "Walking", speed: 2 }));
+  assert.deepEqual(loaded.scene.animation, { clip: "Walking", speed: 2 });
+  assert.deepEqual(loaded.stickers.map((item) => item.animation), [{ clip: "Walking", speed: 2 }, undefined, { clip: "Walking", speed: 2 }]);
+  const text = JSON.parse(sceneStateText(loaded));
+  assert.deepEqual(text.scene.animation, { clip: "Walking", speed: 2 });
+  assert.deepEqual(text.stickers.map((item) => item.animation), [{ clip: "Walking", speed: 2 }, undefined, { clip: "Walking", speed: 2 }]);
+  // The speed is brought into 0.1–10; a speed that is not a number is 1, a clip that is not a name is the first.
+  for (const [speed, expected] of [[0, 0.1], [-3, 0.1], [0.5, 0.5], [40, 10], ["2", 1], [null, 1]]) {
+    assert.equal(loadSceneState(raw({ clip: "Walking", speed })).stickers[0].animation.speed, expected, String(speed));
+  }
+  assert.deepEqual(loadSceneState(raw({ clip: 3, speed: 2 })).stickers[0].animation, { clip: null, speed: 2 });
+  // The default one is the same as none, so it is neither kept nor written, and what was saved loads the same.
+  for (const animation of [undefined, { clip: null, speed: 1 }, { clip: 3 }, { speed: "fast" }]) {
+    const state = loadSceneState(raw(animation));
+    assert.equal(state.stickers[0].animation, undefined, JSON.stringify(animation));
+    assert.equal(state.scene.animation, undefined);
+    assert.deepEqual(loadSceneState(JSON.parse(sceneStateText(state))), state);
+  }
+  const edited = loadSceneState(raw({ clip: "Idle", speed: 0.5 }));
+  assert.deepEqual(loadSceneState(JSON.parse(sceneStateText(edited))), edited);
+});

@@ -53,24 +53,34 @@ class SceneContent:
     device)` draws item `index` seen by `view`, a `CameraView` in the content's own frame: the `scene` transform
     is already undone, so `render` never sees it. It returns straight-alpha color (H, W, 4) and the distance from
     `view.position` (H, W) in the content's units, +inf where empty.
+
+    Content with glTF clips (`animation`, a `GltfAnimation`, ADR 0043) also takes a `pose`, (clip index, seconds in
+    the clip), as `render(view, index, device, pose)`; without one it is drawn at rest.
     """
 
     count: int
     render: Callable
+    animation: object = None
 
 
 @dataclass(frozen=True)
 class ContentSource:
     """The source of a 3D (MESH or SPLAT) `world` Sticker: item `frame` of `content`, placed by the Sticker's
     transform as the `scene` transform places the `scene` content. `frame` is part of the World's cache key like
-    `StickerSource.frame`. `content` uploads to the device, so it is made for each render pass."""
+    `StickerSource.frame`. `content` uploads to the device, so it is made for each render pass. `pose` is the
+    (clip index, seconds in the clip) of content with glTF clips (None: at rest), part of the key as `frame` is."""
 
     content: SceneContent
     frame: int = 0
+    pose: tuple | None = None
 
 
 def _transform_key(value: dict) -> tuple:
     return tuple(round(number, 9) for number in (*value["position"], value["yaw_deg"], value["pitch_deg"], value["roll_deg"], value["scale"]))
+
+
+def _pose_key(pose) -> tuple | None:
+    return None if pose is None else (pose[0], round(pose[1], 9))
 
 
 def _drawn_content(layer) -> bool:
@@ -84,11 +94,12 @@ def world_key(layers, camera: dict, projection) -> tuple | None:
         (
             tuple(
                 (sticker["id"], *_transform_key(sticker), round(sticker["opacity"], 9), layer.sources.stickers[sticker["id"]].frame,
-                 None if "lens" not in sticker else (round(sticker["lens"]["curve"], 9), round(sticker["lens"]["hFOV_deg"], 9)))
+                 None if "lens" not in sticker else (round(sticker["lens"]["curve"], 9), round(sticker["lens"]["hFOV_deg"], 9)),
+                 _pose_key(getattr(layer.sources.stickers[sticker["id"]], "pose", None)))
                 for sticker in layer.evaluated["stickers"]
                 if sticker["placement"] == "world" and sticker["active"] and sticker["id"] in layer.sources.stickers
             ),
-            (layer.scene_index, _transform_key(layer.evaluated["scene"])) if _drawn_content(layer) else None,
+            (layer.scene_index, _transform_key(layer.evaluated["scene"]), _pose_key(layer.scene_pose)) if _drawn_content(layer) else None,
         )
         for layer in layers
     )
@@ -112,7 +123,7 @@ def world_layer(layers, camera: dict, projection, *, device, textures: dict, kep
     composite = None
     for layer in layers:
         if _drawn_content(layer):
-            composite = over_by_depth(composite, _scene_layer(layer.scene, layer.scene_index, layer.evaluated["scene"], view, device))
+            composite = over_by_depth(composite, _scene_layer(layer.scene, layer.scene_index, layer.evaluated["scene"], view, device, layer.scene_pose))
     rays = None
     drawn = set()
     stickers = [
@@ -123,7 +134,7 @@ def world_layer(layers, camera: dict, projection, *, device, textures: dict, kep
     for index, sticker in stickers:
         source = layers[index].sources.stickers[sticker["id"]]
         if isinstance(source, ContentSource):
-            rgba, depth = _scene_layer(source.content, source.frame, sticker, view, device)
+            rgba, depth = _scene_layer(source.content, source.frame, sticker, view, device, source.pose)
             composite = over_by_depth(composite, (torch.cat([rgba[..., :3], rgba[..., 3:] * sticker["opacity"]], dim=-1), depth))
             continue
         if rays is None:
@@ -160,13 +171,13 @@ def over_by_depth(composite, layer):
     return total, torch.minimum(nearest, depth)
 
 
-def _scene_layer(scene: SceneContent, index: int, transform: dict, view: CameraView, device):
+def _scene_layer(scene: SceneContent, index: int, transform: dict, view: CameraView, device, pose=None):
     # The scene transform (or a 3D Sticker's) maps its own frame to World as position + scale * rotation @ x; the content is drawn
     # from the Camera moved into its frame, and its distances are scaled back to World.
     rotation = world_rotation(transform["yaw_deg"], transform["pitch_deg"], transform["roll_deg"])
     scale = transform["scale"]
     local = CameraView(rotation.T @ (view.position - np.asarray(transform["position"])) / scale, rotation.T @ view.rotation, view.projection, rotation)
-    rgba, depth = scene.render(local, index, device)
+    rgba, depth = scene.render(local, index, device) if pose is None else scene.render(local, index, device, pose)
     return rgba, depth * scale
 
 

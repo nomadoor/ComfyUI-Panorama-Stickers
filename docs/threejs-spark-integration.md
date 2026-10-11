@@ -133,14 +133,15 @@ Panorama Studio のエディタの Panorama 表示は、World の内容（`scene
 
 ### glTF のアニメーション
 
-アニメーションを持つ 3D ファイル（メタに `animation`。`docs/studio-node.md` の「glTF のアニメーションのエディタ用ファイル」）を、出力と同じ形で描く（作る。ADR 0043。規則の owner は `docs/render-contract.md` の「glTF のアニメーション」）。
+アニメーションを持つ 3D ファイル（メタに `animation`。`docs/studio-node.md` の「glTF のアニメーションのエディタ用ファイル」）を、出力と同じ形で描く（ADR 0043。`pano_scene_loaders.js` の `loadAnimated`・`poseAnimation`。規則の owner は `docs/render-contract.md` の「glTF のアニメーション」）。
 
-- 読み込み：元のファイルを GLTFLoader で読み、その既定の scene（`scene` の番号。無ければ最初。コアの読み手と同じ）の `SkinnedMesh`・morph・node の階層をそのまま描く。材質は、今の静止の GLB（コアの MESH を `save_glb` が書いたもの）を GLTFLoader で読んだ材質を一つ取り、元のファイルのすべての mesh に当てる。コアは `alphaMode`・テクスチャの変形・`TEXCOORD_1`・遮蔽・PBR の拡張を落とし、sampler を書き直すので、静止の GLB の材質がすでに出力と同じであり、静止の場面と同じ理由で一致する。その材質が `vertexColors` を使い、元の形に `color` が無ければ、1 の `color` の属性を足す。光が効くかは今と同じ `unlit` で `makeLit`・`makeUnlit` を掛ける。three.js は skin の mesh を単位行列で bind し、skinning の後に mesh の node の `matrixWorld` を掛ける（出力の式と同じ）。
-- 時刻：再生ヘッドの Sticker の clip frame から出力と同じ式で秒を求め、選んだ clip の `AnimationAction`（`LoopRepeat`、`timeScale = speed`）で `mixer.setTime(clip frame ÷ timeline.fps)`。実時間では進めない（`mixer.update` を時計で呼ばない）。
+- 読み込み（`loadAnimated`。要求の `animation` に元のファイルの URL を持つ）：元のファイルを GLTFLoader で読み、その既定の scene（`scene` の番号。無ければ最初。コアの読み手と同じ）の `SkinnedMesh`・morph・node の階層をそのまま描く。材質は、今の静止の GLB（コアの MESH を `save_glb` が書いたもの）を GLTFLoader で読んだ材質を一つ取り、元のファイルのすべての mesh に当てる。コアは `alphaMode`・テクスチャの変形・`TEXCOORD_1`・遮蔽・PBR の拡張を落とし、sampler を書き直すので、静止の GLB の材質がすでに出力と同じであり、静止の場面と同じ理由で一致する。その材質が `vertexColors` を使い、元の形に `color` が無ければ、1 の `color` の属性を足す。光が効くかは静止の要素と同じ `unlit` で分ける。skin の mesh は three.js r184 の既定の `AttachedBindMode` のままで、`bindMatrixInverse` が毎フレーム `matrixWorld` の逆になるので、skin の頂点では mesh の node の行列が打ち消し合う（出力の式と同じ。`docs/render-contract.md` の「glTF のアニメーション」）。大きさは静止の GLB と元のファイルのバイト数の和で数える。
+- 時刻：再生ヘッドの Sticker の clip frame から出力と同じ式で秒を求め（`pano_animation.js` の `animationPose`）、選んだ clip の `AnimationAction`（`LoopRepeat`、`timeScale = speed`）で `mixer.setTime(clip frame ÷ timeline.fps)`（`poseAnimation`）。実時間では進めない（`mixer.update` を時計で呼ばない）。
 - 補間：three.js r184 の規則（`LINEAR` の回転は `Quaternion.slerpFlat`、`CUBICSPLINE` の回転は Hermite の後に正規化、`STEP` は `InterpolateDiscrete`）。Python がこれに合わせる（fixture で縛る）。
-- 当たり判定：今の物ごとの当たり判定のマテリアル（`ShaderMaterial`）の頂点の部品（`pano_pick.js` の `PICK_VERTEX`）に、three.js の skin と morph の部品（`#include <skinning_pars_vertex>`・`<morphtarget_pars_vertex>`・`<skinbase_vertex>`・`<morphtarget_vertex>`・`<skinning_vertex>`）を足す（作る）。three.js は `ShaderMaterial` でも、描く物が `SkinnedMesh` か morph を持つときだけ `USE_SKINNING`・`USE_MORPHTARGETS` を定義した別の program を作るので、静止の物の当たり判定は今と同じで、動いた形にも当たる。別の組み立ては要らない。
+- 当たり判定：今の物ごとの当たり判定のマテリアル（`ShaderMaterial`）の頂点の部品（`pano_pick.js` の `PICK_VERTEX`）に、three.js の skin と morph の部品（`#include <skinning_pars_vertex>`・`<morphtarget_pars_vertex>`・`<skinbase_vertex>`・`<morphtarget_vertex>`・`<skinning_vertex>`）を足す。three.js は `ShaderMaterial` でも、描く物が `SkinnedMesh` か morph を持つときだけ `USE_SKINNING`・`USE_MORPHTARGETS` を定義した別の program を作るので、静止の物の当たり判定は今と同じで、動いた形にも当たる。別の組み立ては要らない。
 - 箱（Frame Selected、注視点の距離）は、読み込んだ静止の GLB の箱（bind の形）とする。コアの MESH の頂点なので、出力の中身の箱（`content_box`、経路の `box`）と同じ値になる。
-- 一致：`docs/render-contract.md` の「エディタとの一致（glTF のアニメーションの場面）」。
+- 一致：`docs/render-contract.md` の「エディタとの一致（glTF のアニメーションの場面）」。test は `tests/editor_animation.test.mjs`（要求の姿勢、読み込み）と `tests/browser/gltf_animation.spec.js`（再生ヘッドの clip の姿勢で描かれ、当たる）。
+- 外部の `.bin` を持つ `.gltf` と、`/view` で読めない場所のファイルは、メタに `animation` が無いので静止の GLB で描く（出力はアニメーションを描く）。
 
 ### `DA3_GEOMETRY` mono の深度のグリッド
 

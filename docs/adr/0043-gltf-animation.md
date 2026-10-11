@@ -29,9 +29,11 @@ Load3D がすること（`ComfyUI_frontend` の `AnimationManager.ts` と `useLo
 - 時刻：Sticker の clip frame の秒 × `speed` を clip の長さで繰り返す。
 - 長さ（オーナーの決定、2026-10-11）：アニメーションを持つ 3D の Sticker と `scene` は、clip の 1 周（clip の長さ ÷ speed）を、VIDEO の素材と同じく要素の Clip range の始まりから Auto の長さに数える。5 秒の clip だけなら Timeline は 5 秒、もっと長い VIDEO があれば長い方が勝って clip は繰り返す。`timeline.length` があればそれが勝つ。
 - 基準は three.js r184（Load3D の見え方）：補間（`slerpFlat`、`CUBICSPLINE` の正規化、`STEP`）、4 つまでの影響（`JOINTS_0`・`WEIGHTS_0`）、重みの正規化、skin の mesh の node の行列の扱い。Python の評価をそれに合わせ、three.js を Node で動かして焼いた fixture で縛る。
-- 形の式は一つ：まとめた頂点（コアが `M_node(0)` を掛けたもの）に `p = M_node(t) · (Σ wₖ B_k(t) IBM_k) · M_node(0)⁻¹ · v`（morph は先に足す。skin が無ければ Σ は単位行列）。three.js r184 は skin の mesh を単位行列で bind し（GLTFLoader の `mesh.bind(skeleton, _identityMatrix)`）、skinning の後に mesh の node の `matrixWorld` を掛けるので同じになる。コアのまとめた頂点との対応は、コアの公開の `load_gltf` の `prims[i]["positions"]` と自分のたどりの `M_node(0)·POSITION` が float32 で完全に等しいことで確かめ、違えばエラーにする（コアのたどる順を写さない）。
+- 形の式：`P` を primitive 自身の `POSITION`（mesh の座標）として、skin のある頂点は `p = Σ wₖ B_k(t) IBM_k · (P + Σ mᵢ Δᵢ)`、skin の無い頂点は `p = M_node(t) · (P + Σ mᵢ Δᵢ)`。three.js r184 の `SkinnedMesh` は既定の `AttachedBindMode` で、毎フレーム `bindMatrixInverse` を `matrixWorld` の逆にするので、skin の頂点では mesh の node の行列が打ち消し合う。three.js r184 を Node で動かして焼いた fixture で確かめた。コアのまとめた頂点（コアが `M_node(0) · P` を置いたもの）は、primitive との対応の照合にだけ使う：コアの公開の `load_gltf` の `prims[i]["positions"]` と自分のたどりの `M_node(0)·P` が float32 で完全に等しいことで確かめ、違えばエラーにする（コアのたどる順を写さない）。形は `P` から作り直す。
 - エディタは元のファイルの既定の scene を GLTFLoader で読み、その `SkinnedMesh` と morph をそのまま描く。材質は、今の静止の GLB（`save_glb` の出力）を GLTFLoader で読んだ材質を一つ取り、すべての mesh に当てる（コアは `alphaMode`・テクスチャの変形・`TEXCOORD_1`・遮蔽・PBR の拡張を落とし sampler を書き直すので、静止の GLB の材質がすでに出力と同じ）。その材質が頂点色を使い、元の形に `color` が無ければ 1 の `color` を足す。光が効くかは今の `makeLit`・`makeUnlit`。当たり判定は今の物ごとのマテリアルに three.js の skin と morph の部品を足す（`SkinnedMesh` のときだけ three.js が有効にする）。付けたしのファイルや JS の頂点の対応は作らない。箱は静止の GLB の箱（中身の箱と同じ値）。
 - 中身の箱は休みの形（bind の形）のまま。読んだ骨・重み・morph・clip は `mesh_files` のキャッシュに入れる。
+- エディタへのメタは `animation: {source, clips: [{name, duration}]}`（clip はファイルの順、名前の無い clip は `animation_<番号>`）。外部の `.bin` を持つ `.gltf` と `/view` の外のファイルには付けず、エディタは静止で描く。
+- ノード上の表示の Auto の長さも、3D ファイルの Sticker の clip を経路に問い合わせて数える（表示の全体で 1 つの記録を共有する）。実行の前から出力と同じ長さにするためで、実行結果の `pano_timeline_frames` は編集の後に古くなるので使わない。
 
 ## 考えた別案
 
@@ -52,5 +54,6 @@ Load3D がすること（`ComfyUI_frontend` の `AnimationManager.ts` と `useLo
 - コアのまとめた頂点と自分のたどりを値で照合し、合わなければエラーで止める。コアの読み手が変わると、この照合が落ちる（黙って崩れない）。
 - エディタの材質は静止の GLB から取るので、材質の差は静止の場面と同じ範囲にとどまる。元のファイルの形と静止の GLB の形が同じであることは、Python の値の照合が守る。
 - 法線の変え方など、glTF の仕様と three.js が違う所は three.js に合わせる。
-- アニメーションの 1 フレームの追加の費用は数 ms の見込みで、出力の大きさによらない。
-- 次の候補：clip の全体の中身の箱、`JOINTS_1` 以降、上流の要素の `animation` の上書き（ADR 0030）、外部の `.bin` を持つ `.gltf` のエディタでの再生。
+- 費用（RTX 4070 Ti、κ = 1、RobotExpressive の Walking、World の層、計測）：4K 75 ms、8K 247 ms。clip の評価 0.24 ms、形の作り直し 1.7 ms で、出力の大きさによらない。
+- エディタとの一致（llvmpipe）：4 つの場面（光が効かない・効く、clip の時刻 0.25 秒・繰り返しの時刻）はすべて合格した。
+- 次の候補：clip の全体の中身の箱、`JOINTS_1` 以降、上流の要素の `animation` の上書き（ADR 0030）、外部の `.bin` を持つ `.gltf` のエディタでの再生、`scene` の Clip と Speed の行（`scene` はエディタで選べないので、今は行を出さない）、bind の形が見える形と違うファイルの箱（Xbot は bind の形が姿勢の形の 0.01 倍で、中身の箱と収めて置く位置が見えるモデルの約 1/100 になる）。

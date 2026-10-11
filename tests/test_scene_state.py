@@ -130,6 +130,24 @@ def test_the_background_clip_is_normalized_like_a_sticker_clip_and_rebased_with_
     assert rebased["background"]["clip"] == rebased["stickers"][0]["clip"] == {"start": 30, "in": 17, "duration": 118}
 
 
+def test_a_3d_file_keeps_its_animation_brought_into_range():
+    state = load_scene_state(read_fixture("v2_animation"))
+    animations = {sticker["id"]: sticker.get("animation") for sticker in state["stickers"]}
+
+    assert state["scene"]["animation"] == {"clip": "Walking", "speed": 0.5}
+    # The default (the first clip at speed 1) is held as no animation, as the text leaves it out; an image has none.
+    assert animations == {
+        "glb": {"clip": "Dance", "speed": 10.0},
+        "default": None,
+        "low": {"clip": None, "speed": 0.1},
+        "not_a_number": {"clip": "", "speed": 1.0},
+        "not_an_object": None,
+        "image": None,
+        "port": {"clip": None, "speed": 0.1},
+    }
+    assert rebase_scene_state(state, 60.0)["stickers"][0]["animation"] == {"clip": "Dance", "speed": 10.0}
+
+
 @pytest.mark.parametrize(("fps", "length", "expected"), [
     (1e308, 1e308, {"fps": 1000.0, "length": 10_000_000}),
     (300.0, 100000, {"fps": 300.0, "length": 100000}),

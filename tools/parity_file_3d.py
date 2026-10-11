@@ -35,6 +35,20 @@ for each lens curve of LENS_CASES, the box over an ERP background and a SPLAT sh
   erp.png, editor_box.glb, scene.ply (the SPLAT's editor file), output_<name>.png, output_<name>_splat.png,
   sticker.png, output_<sticker case>.png
 
+And it makes the glTF animation scene (docs/render-contract.md, "エディタとの一致（glTF のアニメーションの場面）"; ADR 0043) in
+<work dir>/anim/: a small glTF made here each run (`_anim_glb`: a checker-textured column bent by two joints, a morph
+target, and two clips over LINEAR rotation, CUBICSPLINE translation, STEP scale, and weights), unlit and lit, placed as a
+3D file `file` Source and shot with clip1 at speed 1.5 at a clip time of 0.25 s and at one past the clip's length
+(it repeats), ANIM_SIZE square on bg_color #204060, and writes
+
+  scene.json   {"size", "cases": [{"name", "unlit", "source", "glb", "meta", "state", "clip", "speed", "seconds",
+               "clip_time", "output"}]}: per case the original glTF (`source`, what the editor's GLTFLoader plays), the
+               editor GLB the route gives (`glb`, whose material the editor puts on every mesh) and its `animation`
+               meta (`meta`), the state, which clip it plays (index and name in `meta.clips`) at which speed, the
+               seconds of the clip frame at the shot (the mixer's `setTime`), the clip time they give, and the node's
+               frame
+  anim_unlit.glb, anim_lit.glb, editor_unlit.glb, editor_lit.glb, output_<name>.png
+
 ComfyUI's input and temp folders are pointed into the work directory while it runs.
 """
 import json
@@ -272,6 +286,155 @@ def _lens_scenes(work: Path, editor_glb: Path, unlit: bool):
     print(f"lens: {LENS_SIZE} x {LENS_SIZE}, cases {[case[0] for case in LENS_CASES]}, Sticker cases {[case[0] for case in LENS_STICKER_CASES]} -> {work}")
 
 
+ANIM_SIZE = 512
+ANIM_BG_COLOR = "#204060"
+ANIM_FPS = 24
+ANIM_SPEED = 1.5
+# The shots: Clip range `in` frames, so that frame 0 shows that clip frame: 4 / 24 s x 1.5 = 0.25 s of the clip, and
+# 30 / 24 s x 1.5 = 1.875 s, past the 1.2 s clip (it repeats at 0.675 s).
+ANIM_SHOTS = (("t0_25", 4), ("repeat", 30))
+
+
+def _anim_glb(unlit: bool) -> bytes:
+    """A GLB of a column 0.6 wide and 2 tall, checker-textured on its four sides, skinned to two joints (the lower
+    half to the root, the upper half to a joint 1 up, the middle shared), with a morph target that widens its top,
+    and two clips: clip1 (LINEAR rotation of the upper joint, CUBICSPLINE translation of the root, STEP scale of the
+    upper joint, LINEAR weights) and clip2 (STEP rotation, CUBICSPLINE weights)."""
+    import io
+    import struct
+
+    def axis_angle(axis, degrees):
+        axis = np.asarray(axis, dtype=np.float64) / np.linalg.norm(axis)
+        half = math.radians(degrees) / 2
+        return [*(axis * math.sin(half)), math.cos(half)]
+
+    positions, normals, uvs, joints, weights, morph, indices = [], [], [], [], [], [], []
+    for normal, right in (((0, 0, 1), (1, 0, 0)), ((1, 0, 0), (0, 0, -1)), ((0, 0, -1), (-1, 0, 0)), ((-1, 0, 0), (0, 0, 1))):
+        n, r = np.asarray(normal, dtype=np.float32), np.asarray(right, dtype=np.float32)
+        base = len(positions)
+        for row, y in enumerate((0.0, 1.0, 2.0)):
+            for column, x in enumerate((-1.0, 1.0)):
+                positions.append(0.3 * n + 0.3 * x * r + np.array([0.0, y, 0.0], np.float32))
+                normals.append(n)
+                uvs.append(((x + 1) / 2, 1.0 - y / 2))
+                joints.append([0, 1, 0, 0])
+                weights.append([1.0 - y / 2, y / 2, 0.0, 0.0])
+                morph.append((0.15 * n + 0.15 * x * r) if row == 2 else np.zeros(3, np.float32))
+        for row in range(2):
+            a, b, c, d = base + 2 * row, base + 2 * row + 1, base + 2 * row + 3, base + 2 * row + 2
+            indices += [a, b, c, a, c, d]
+    texture = io.BytesIO()
+    _checker().save(texture, format="PNG")
+
+    blob, views, accessors = bytearray(), [], []
+
+    def view(data: bytes) -> int:
+        blob.extend(b"\0" * (-len(blob) % 4))
+        views.append({"buffer": 0, "byteOffset": len(blob), "byteLength": len(data)})
+        blob.extend(data)
+        return len(views) - 1
+
+    def accessor(values, kind, component=5126, **extra) -> int:
+        dtype = {5126: np.float32, 5123: np.uint16, 5121: np.uint8}[component]
+        array = np.asarray(values, dtype=dtype)
+        entry = {"bufferView": view(array.tobytes()), "componentType": component, "count": int(array.shape[0]), "type": kind, **extra}
+        if kind == "VEC3" and component == 5126:
+            entry.update(min=array.min(0).tolist(), max=array.max(0).tolist())
+        accessors.append(entry)
+        return len(accessors) - 1
+
+    def sampler(times, values, kind, interpolation):
+        return {"input": accessor(np.asarray(times, np.float32)[:, None], "SCALAR", min=[min(times)], max=[max(times)]),
+                "output": accessor(values, kind), "interpolation": interpolation}
+
+    def cubic(values, tangent):
+        return [row for value in values for row in (np.asarray(value) * -tangent, value, np.asarray(value) * tangent)]
+
+    clips = []
+    for name, channels in (
+        ("clip1", [(1, "rotation", "VEC4", "LINEAR", [0.0, 0.5, 1.2], [axis_angle((0, 0, 1), 0), axis_angle((0, 0, 1), 50), axis_angle((0, 0, 1), -30)]),
+                   (0, "translation", "VEC3", "CUBICSPLINE", [0.0, 0.6, 1.2], cubic([[0, 0, 0], [0.2, 0.1, 0], [0, 0, 0]], 0.5)),
+                   (1, "scale", "VEC3", "STEP", [0.0, 0.4, 0.9], [[1, 1, 1], [1.2, 0.9, 1.2], [0.9, 1.1, 0.9]]),
+                   (2, "weights", "SCALAR", "LINEAR", [0.1, 1.0], [[0.0], [1.0]])]),
+        ("clip2", [(0, "rotation", "VEC4", "STEP", [0.0, 0.5], [axis_angle((0, 1, 0), 0), axis_angle((0, 1, 0), 40)]),
+                   (2, "weights", "SCALAR", "CUBICSPLINE", [0.0, 0.8], cubic([[0.0], [1.0]], 0.5))]),
+    ):
+        samplers = [sampler(times, values, kind, interpolation) for _node, _path, kind, interpolation, times, values in channels]
+        clips.append({"name": name, "samplers": samplers,
+                      "channels": [{"sampler": index, "target": {"node": node, "path": path}} for index, (node, path, *_rest) in enumerate(channels)]})
+    material = {"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0.0, "roughnessFactor": 0.8}}
+    gltf = {
+        "asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0, 2]}],
+        "nodes": [{"name": "root", "children": [1]}, {"name": "upper", "translation": [0.0, 1.0, 0.0]}, {"name": "column", "mesh": 0, "skin": 0}],
+        "skins": [{"joints": [0, 1]}],
+        "meshes": [{"weights": [0.0], "primitives": [{
+            "attributes": {"POSITION": accessor(positions, "VEC3"), "NORMAL": accessor(normals, "VEC3"), "TEXCOORD_0": accessor(uvs, "VEC2"),
+                           "JOINTS_0": accessor(joints, "VEC4", 5121), "WEIGHTS_0": accessor(weights, "VEC4")},
+            "indices": accessor(indices, "SCALAR", 5123), "targets": [{"POSITION": accessor(morph, "VEC3")}], "material": 0}]}],
+        "materials": [{**material, "extensions": {"KHR_materials_unlit": {}}} if unlit else material],
+        "textures": [{"source": 0, "sampler": 0}], "samplers": [{"magFilter": 9729, "minFilter": 9729}],
+        "images": [{"bufferView": view(texture.getvalue()), "mimeType": "image/png"}],
+        "animations": clips, "accessors": accessors, "bufferViews": views,
+    }
+    # The inverse bind matrices of the joints at their rest (column-major): the root at the origin, the upper joint 1 up.
+    gltf["skins"][0]["inverseBindMatrices"] = accessor([np.eye(4).T.reshape(-1), np.linalg.inv(np.array(
+        [[1, 0, 0, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]], np.float64)).T.reshape(-1)], "MAT4")
+    if unlit:
+        gltf["extensionsUsed"] = ["KHR_materials_unlit"]
+    gltf["buffers"] = [{"byteLength": len(blob) + (-len(blob) % 4)}]
+    blob.extend(b"\0" * (-len(blob) % 4))
+    text = json.dumps(gltf).encode()
+    text += b" " * (-len(text) % 4)
+    return b"".join([struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(text) + 8 + len(blob)), struct.pack("<II", len(text), 0x4E4F534A), text,
+                     struct.pack("<II", len(blob), 0x004E4942), bytes(blob)])
+
+
+def _anim_scene(work: Path):
+    import folder_paths
+
+    from comfyui_pano_suite import nodes, routes
+    from comfyui_pano_suite.core.gltf_animation import clip_time
+
+    work.mkdir(parents=True, exist_ok=True)
+    width = next(w for w in range(256, 64 * ANIM_SIZE) if nodes._even_side(w / math.pi * math.tan(math.radians(HFOV_DEG) / 2)) == ANIM_SIZE)
+    scene = {"size": ANIM_SIZE, "cases": []}
+    for unlit in (True, False):
+        filename = f"anim_{'unlit' if unlit else 'lit'}.glb"
+        data = _anim_glb(unlit)
+        (work / filename).write_bytes(data)
+        (Path(folder_paths.get_input_directory()) / "3d" / filename).write_bytes(data)
+        status, payload = routes._file_3d_response({"filename": filename, "subfolder": "3d", "storage": "input"})
+        if status != 200 or "animation" not in payload:
+            raise SystemExit(f"The route did not give the animation of {filename}: {payload}")
+        clip = next(index for index, item in enumerate(payload["animation"]["clips"]) if item["name"] == "clip1")
+        editor_glb = f"editor_{'unlit' if unlit else 'lit'}.glb"
+        shutil.copyfile(Path(folder_paths.get_temp_directory()) / payload["file"]["subfolder"] / payload["file"]["filename"], work / editor_glb)
+        for shot, clip_in in ANIM_SHOTS:
+            name = f"{'unlit' if unlit else 'lit'}_{shot}"
+            state = {
+                "version": 2, "timeline": {"fps": ANIM_FPS},
+                "camera": {"aspect": 1.0, "fov": {"value": HFOV_DEG}, "position": {"value": [0.0, 1.0, 3.2]}},
+                "stickers": [{"id": "anim", "placement": "world", "source": {"kind": "file", "filename": filename, "subfolder": "3d", "storage": "input"},
+                              "clip": {"start": 0, "in": clip_in}, "animation": {"clip": "clip1", "speed": ANIM_SPEED},
+                              "position": {"value": [0.0, 0.0, 0.0]}, "rotation": {"value": {"yaw_deg": 25.0, "pitch_deg": 0.0, "roll_deg": 0.0}},
+                              "scale": {"value": 1.0}}],
+            }
+            output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color=ANIM_BG_COLOR, coverage="360", output_size=str(width))
+            if output.ui.get("pano_sticker_warnings"):
+                raise SystemExit(f"The node warned: {output.ui['pano_sticker_warnings']}")
+            frame = output.result[0][0]
+            if tuple(frame.shape[:2]) != (ANIM_SIZE, ANIM_SIZE):
+                raise SystemExit(f"The node drew {tuple(frame.shape[:2])}, not {ANIM_SIZE} x {ANIM_SIZE}.")
+            Image.fromarray((frame.clamp(0.0, 1.0) * 255.0 + 0.5).floor().byte().cpu().numpy(), mode="RGB").save(work / f"output_{name}.png")
+            seconds = clip_in / ANIM_FPS
+            duration = payload["animation"]["clips"][clip]["duration"]
+            scene["cases"].append({"name": name, "unlit": unlit, "source": filename, "glb": editor_glb, "meta": payload["animation"],
+                                   "state": state, "clip": clip, "speed": ANIM_SPEED, "seconds": seconds,
+                                   "clip_time": clip_time(seconds, ANIM_SPEED, duration), "output": f"output_{name}.png"})
+    (work / "scene.json").write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
+    print(f"anim: {ANIM_SIZE} x {ANIM_SIZE}, cases {[case['name'] for case in scene['cases']]} -> {work}")
+
+
 def main(work: Path):
     import folder_paths
     from comfy_extras.nodes_save_3d import save_glb
@@ -319,6 +482,7 @@ def main(work: Path):
     _depth_grid_scene(work / "da3", *_da3_mono(), "DA3 mono")
     _depth_grid_scene(work / "moge", *_moge_sequence(), "MoGe")
     _lens_scenes(work / "lens", work / "editor_box.glb", payload["unlit"])
+    _anim_scene(work / "anim")
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } fr
 import { isPanoramaPreviewNodeName } from "../pano_preview_identity.js";
 import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 import { is3dFileSource } from "../pano_scene_state.js";
-import { sceneFilesOf } from "../pano_space.js";
+import { sceneFilesOf, stickerAnimationClips } from "../pano_space.js";
 import { upstreamBackgroundOf } from "../pano_upstream.js";
 import { createVideoFollower, createVideoPlayback } from "../pano_video_playback.js";
 import {
@@ -642,6 +642,11 @@ export function createMediaSession(deps) {
     return file3dEditorFileOf(file3dFiles, sticker, mediaSource);
   }
 
+  // The clips of a Sticker's animated 3D file (ADR 0043), or null.
+  function animationClipsOf(sticker) {
+    return stickerAnimationClips(sticker, { stickerFiles: stickerFiles(), editorFile: file3dEditorFile });
+  }
+
   // The route's answer for a 3D file's Source, once it came ({ state "ready" or "failed", error, ... }).
   function requestFile3d(source) {
     return file3dFiles.request(source);
@@ -817,6 +822,6 @@ export function createMediaSession(deps) {
     getMediaRevisionToken, playbackFps, syncVideoTransportState, toggleVideoMuted, syncVideoTransportVisibility,
     refreshModalVideoSource, getStickerUiImage, getExternalStickerPreviewImage, getPortMediaMeta, followPortSticker,
     getStickerImage, stickerImageKey, getConnectedErpImage, backgroundCoverage, upstreamBackground, isDecodedImageReady, getStageImageStatus, sceneFiles,
-    stickerFiles, depthColor, retainDepthColors, file3dEditorFile, requestFile3d, refreshFile3d, file3dNotice, disposeMediaSession,
+    stickerFiles, depthColor, retainDepthColors, file3dEditorFile, animationClipsOf, requestFile3d, refreshFile3d, file3dNotice, disposeMediaSession,
   };
 }

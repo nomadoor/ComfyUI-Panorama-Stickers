@@ -232,7 +232,7 @@ test("with the upstream background the auto length is the upstream Scene's, not 
   const timeline = createTimeline({ editor: {}, node: {}, readOnly: false, sceneV2: true, state: loadSceneState({ version: 2, timeline: { fps: 24 } }), stateV2: true, studio: true, timeline: {}, timelinePlayhead: {}, uiState, videoEl: null, videoTimelineFps: () => null });
   let upstream = { imageKey: "pano_upstream_input_images" };
   timeline.connect({
-    getPortMediaMeta: () => null, isExternalSticker: () => false, sceneFiles: () => null, upstreamBackground: () => upstream,
+    getPortMediaMeta: () => null, isExternalSticker: () => false, sceneFiles: () => null, stickerFiles: () => null, file3dEditorFile: () => null, upstreamBackground: () => upstream,
     upstreamLinked: () => true, upstreamOutput: () => ({ frames: 240, ends: [] }),
   });
   assert.equal(timeline.timelineSpanFrames(), 240);
@@ -965,7 +965,7 @@ async function editorTimeline(state, upstream, overrides = {}) {
     ...items, ...upstream, ...timeline,
     commitAndRefreshNode: upstream.syncUpstreamEdits, getPortMediaMeta: () => null, hasCamera: () => false, inspectorTimed: () => false,
     isExternalSticker: (item) => item?.source?.kind === "port", loading3dIds: () => new Set(), markObjectVisualsDirty: noop, playback: { frame: 0, seek: noop, stop: noop },
-    sceneFiles: () => null,
+    sceneFiles: () => null, stickerFiles: () => null, file3dEditorFile: () => null,
     pushHistory: () => {
       steps.count += 1;
       history.pushHistory();

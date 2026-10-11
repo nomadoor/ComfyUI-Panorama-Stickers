@@ -69,9 +69,23 @@ from .core.video import (
 )
 from .core.video_source import MaterializedVideo, StreamedVideo
 from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position, world_rotation
+from .core.gltf_animation import clip_time
 from .core.world_render import ContentSource, SceneContent
 from .scene_files import write_editor_files
-from .scene_mesh import check_da3, da3_device_bytes, depth_grid_intrinsics, is_moge, moge_uses_depth_grid, da3_key, is_da3, is_mesh_file, is_unlit, needs_default_k, read_mesh_file
+from .scene_mesh import (
+    check_da3,
+    da3_device_bytes,
+    da3_key,
+    depth_grid_intrinsics,
+    is_da3,
+    is_mesh_file,
+    is_moge,
+    is_unlit,
+    mesh_animation,
+    moge_uses_depth_grid,
+    needs_default_k,
+    read_mesh_file,
+)
 from .scene_video import SceneVideo
 from .splat_render import read_splat_file
 from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, content_of, is_3d_media, open_video, stream_video
@@ -1308,7 +1322,7 @@ def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tup
         state["stickers"][index] = _inherit_handoff(state, state["stickers"][index], *handoff)
     elif is_3d and state["stickers"][index]["placement"] == "sky":
         stored = state["stickers"][index]
-        state["stickers"][index] = {**_world_port_sticker(state, sticker, stored["id"]), **{key: stored[key] for key in ("clip", "visible", "locked")}}
+        state["stickers"][index] = {**_world_port_sticker(state, sticker, stored["id"]), **{key: stored[key] for key in ("clip", "visible", "locked", "animation") if key in stored}}
     port = state["stickers"][index]
     return PortMedia(port["id"], port["clip"], sticker, state["timeline"]["fps"]), handoff
 
@@ -1500,8 +1514,43 @@ def _bg_frames(bg, times, time_base, timing: bool, place: PortMedia | None, fps:
     return [index if 0 <= index < len(bg.times) else None for index in indices]
 
 
+# A 3D file's animation when its state has none (ADR 0043): the first clip at speed 1.
+DEFAULT_ANIMATION = {"clip": None, "speed": 1.0}
+
+
+def _clip_of(animation, setting: dict | None):
+    """The clip (`Clip`) that the stored `animation` setting plays of the glTF `animation`: the one it names, else
+    the first."""
+    index = animation.clip_index((setting or DEFAULT_ANIMATION)["clip"])
+    return animation.clips[0 if index is None else index]
+
+
+def _animation_pose(animation, setting: dict | None, clip_frame: float, stored_fps: float) -> tuple | None:
+    """(clip index, seconds in the clip) of the glTF `animation` at `clip_frame` (the element's material time in
+    Timeline frames of a state at `stored_fps`), played as the stored `setting` says (`clip_time`); None without one."""
+    if animation is None or not animation.clips:
+        return None
+    setting = setting or DEFAULT_ANIMATION
+    clip = _clip_of(animation, setting)
+    return animation.clips.index(clip), clip_time(clip_frame / stored_fps, setting["speed"], clip.duration)
+
+
+def _animation_end(animation, owner: dict, stored_fps: float) -> float | None:
+    """Where an animated element (`owner`: a Sticker or `scene` of the state, at `stored_fps`) without a duration ends:
+    one cycle of its clip after its material starts, `start − in + ⌈duration ÷ speed × timeline.fps⌉`; None without
+    clips or for a clip of no duration."""
+    if animation is None or not animation.clips:
+        return None
+    setting = owner.get("animation") or DEFAULT_ANIMATION
+    duration = _clip_of(animation, setting).duration
+    if duration <= 0.0:
+        return None
+    clip = owner["clip"]
+    return clip["start"] - clip["in"] + math.ceil(duration / setting["speed"] * stored_fps)
+
+
 def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None, *,
-                     upstream: PanoSceneValue | None = None, overridden_ends=()) -> tuple[Fraction, list[Fraction], Fraction, tuple]:
+                     upstream: PanoSceneValue | None = None, overridden_ends=(), contents=None) -> tuple[Fraction, list[Fraction], Fraction, tuple]:
     """(a) Timeline: the Timeline fps as a fraction, each output frame's time in seconds, the time base those times
     are rounded to (0: exact), and per output frame the bg_media frame to draw and, for each layer (those of
     `upstream`, then `state` with its `port` and `scene`), the Timeline frame to evaluate, its port media frame, and
@@ -1520,6 +1569,10 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     The own `bg_media` is placed by the state's `background.clip`, an upstream background by the Clip range of the
     Studio it came from (`PanoSceneValue.bg_clip`); a Clip range other than the default ends the background where it
     ends (`_bg_place`, `_bg_frames`), but the length still counts the media's own frames.
+
+    An animated 3D file (ADR 0043) without a duration, the `scene`, the port's 3D media, or a 3D file Sticker read into
+    `contents` (Sticker id -> its SPLAT or MESH), ends one cycle of its clip after its material starts
+    (`_animation_end`).
     """
     stored_fps = state["timeline"]["fps"]
     if upstream is None:
@@ -1555,6 +1608,17 @@ def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneConten
     scene_clip = state["scene"]["clip"]
     if scene is not None and scene.count > 1 and scene_clip["duration"] is None:
         clip_ends.append(scene_clip["start"] - scene_clip["in"] + scene.count * stored_fps / fps)
+    # One cycle of an animated 3D file's clip, as a VIDEO's media.
+    animated = [(state["scene"], None if scene is None else scene.animation)]
+    for sticker in state["stickers"]:
+        if sticker["source"]["kind"] == "port":
+            animated.append((sticker, None if port is None or not port.is_3d else mesh_animation(port.media)))
+        elif contents and sticker["id"] in contents:
+            animated.append((sticker, mesh_animation(contents[sticker["id"]])))
+    for owner, animation in animated:
+        end = None if owner["clip"]["duration"] is not None else _animation_end(animation, owner, stored_fps)
+        if end is not None:
+            clip_ends.append(end)
     # The latest Keyframe over the Camera's Lanes.
     last_key = None
     if state["camera"] is not None:
@@ -1666,22 +1730,38 @@ def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, 
         files = {key: ContentSource(_scene_content(value), 0) for key, value in layer.sources.contents.items() if key in world}
         if files:
             others = {**others, **files}
-        opened.append((port_frames, others, _scene_content(layer.scene)))
+        # The 3D file Stickers with glTF clips, posed at each frame.
+        animated = {key: source for key, source in files.items() if source.content.animation is not None}
+        opened.append((port_frames, others, _scene_content(layer.scene), animated))
     cache = {}
     port_sources = [None] * len(built.layers)
     for bg_index, entries in built.frames:
         # Reading the `video` output renders in another node; Cancel stops it between frames.
         comfy.model_management.throw_exception_if_processing_interrupted()
         drawn = []
-        for index, (layer, (port_frames, others, content), (frame, port_index, scene_index)) in enumerate(zip(built.layers, opened, entries)):
+        for index, (layer, (port_frames, others, content, animated), (frame, port_index, scene_index)) in enumerate(zip(built.layers, opened, entries)):
             evaluated = evaluate_scene_state(layer.state, frame)
-            sources = layer.sources if others is layer.sources.stickers else replace(layer.sources, stickers=others)
+            stored_fps = layer.state["timeline"]["fps"]
+            if animated:
+                items = {item["id"]: item for item in layer.state["stickers"]}
+                clip_frames = {item["id"]: item["clip_frame"] for item in evaluated["stickers"]}
+                posed = {**others, **{key: replace(source, pose=_animation_pose(source.content.animation, items[key].get("animation"), clip_frames[key], stored_fps))
+                                      for key, source in animated.items()}}
+            else:
+                posed = others
+            sources = layer.sources if posed is layer.sources.stickers else replace(layer.sources, stickers=posed)
             port = layer.port
             if port is not None:
-                active = next(item["active"] for item in evaluated["stickers"] if item["id"] == port.sticker_id)
-                port_sources[index] = _port_source_at(active, port_index, port_frames, layer.sources.stickers.get(port.sticker_id), port_sources[index])
-                sources = replace(sources, stickers=others if port_sources[index] is None else {**others, port.sticker_id: port_sources[index]})
-            drawn.append(RenderLayer(evaluated, sources, content, scene_index))
+                item = next(item for item in evaluated["stickers"] if item["id"] == port.sticker_id)
+                port_sources[index] = _port_source_at(item["active"], port_index, port_frames, layer.sources.stickers.get(port.sticker_id), port_sources[index])
+                if isinstance(port_sources[index], ContentSource) and port_frames.animation is not None:
+                    setting = next(stored.get("animation") for stored in layer.state["stickers"] if stored["id"] == port.sticker_id)
+                    port_sources[index] = replace(port_sources[index], pose=_animation_pose(port_frames.animation, setting, item["clip_frame"], stored_fps))
+                sources = replace(sources, stickers=posed if port_sources[index] is None else {**posed, port.sticker_id: port_sources[index]})
+            scene_pose = None
+            if content is not None and content.animation is not None:
+                scene_pose = _animation_pose(content.animation, layer.state["scene"].get("animation"), evaluated["scene"]["clip_frame"], stored_fps)
+            drawn.append(RenderLayer(evaluated, sources, content, scene_index, scene_pose))
         camera, projection = capture(drawn[-1].evaluated)
         color, mask, _depth = render_frame(
             drawn,
@@ -1843,7 +1923,46 @@ def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_
     meta = {"kind": kind} if kind == "splat" else {"kind": kind, "unlit": is_unlit(scene)}
     if kind == "depth_grid":
         meta.update(_depth_grid_meta(scene, fps))
+    animation = _animation_meta(scene)
+    if animation is not None:
+        meta["animation"] = animation
     return {files_key: files, meta_key: [meta]}
+
+
+# The media types of the original glTF the editor plays an animation from.
+GLTF_TYPES = {".glb": "model/gltf-binary", ".gltf": "model/gltf+json"}
+
+
+def _animation_meta(media) -> dict | None:
+    """What the editor plays the glTF clips of `media` with (docs/studio-node.md, "glTF のアニメーションのエディタ用ファイル"):
+    the original file's `ui` entry and the clips in the file's order, `{"source", "clips": [{"name", "duration"}]}`;
+    None without clips, or when the browser cannot load the original whole (outside ComfyUI's folders, or a GLTF with
+    an external buffer, which also logs a warning). The editor then draws the still GLB."""
+    animation = mesh_animation(media)
+    if animation is None or not animation.clips:
+        return None
+    if not media.self_contained:
+        _log.warning("Panorama Stickers: %s keeps its data in another file, so the editor shows it still; the output plays its animation.",
+                     Path(media.source).name if media.source else "a glTF")
+        return None
+    entry = None if media.source is None else _view_entry(media.source, GLTF_TYPES.get(Path(media.source).suffix.lower(), "model/gltf-binary"))
+    if entry is None:
+        return None
+    return {"source": entry, "clips": [{"name": clip.name, "duration": clip.duration} for clip in animation.clips]}
+
+
+def _view_entry(path, media_type: str) -> dict | None:
+    """The `ui` entry of a file in ComfyUI's input, output, or temp directory, which `/view` serves, or None for a
+    file elsewhere."""
+    target = Path(path).resolve()
+    for storage, directory in (("input", folder_paths.get_input_directory), ("output", folder_paths.get_output_directory), ("temp", folder_paths.get_temp_directory)):
+        try:
+            rel = target.relative_to(Path(directory()).resolve())
+        except ValueError:
+            continue
+        subfolder = rel.parent.as_posix()
+        return {"filename": rel.name, "subfolder": "" if subfolder == "." else subfolder, "type": storage, "storage": storage, "format": media_type}
+    return None
 
 
 
@@ -1899,7 +2018,9 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     if upstream is not None:
         layers, overridden_ends = _override_layers(upstream, state["upstream"], warnings)
         applied = replace(upstream, layers=layers)
-    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(scene), upstream=applied, overridden_ends=overridden_ends)
+    _animation_warnings(state, scene, port, sources.contents, warnings)
+    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(scene), upstream=applied, overridden_ends=overridden_ends,
+                                                      contents=sources.contents)
     fps = float(rate)
     # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
     layer_ui = {}
@@ -1932,6 +2053,19 @@ def _build_scene(state_json: str, bg_media, scene, sticker, sticker_state, bg_co
     bg_clip = upstream.bg_clip if upstream_bg else None if bg_media is None else (state["background"]["clip"], state["timeline"]["fps"])
     built = PanoSceneValue(layers, bg_media, coverage, bg_rgb, rate, tuple(times), time_base, frames, bg_ui, media_ui, bg_clip)
     return built, bg, stored_port
+
+
+def _animation_warnings(state: dict, scene, port: PortMedia | None, contents: dict, warnings: list[str]):
+    """Say which animated 3D files are asked for a clip they do not have; they play their first clip."""
+    owners = [("the scene input", state["scene"], scene)]
+    for item in state["stickers"]:
+        media = port.media if item["source"]["kind"] == "port" and port is not None and port.is_3d else contents.get(item["id"])
+        owners.append((f"Sticker {item['id']}", item, media))
+    for name, owner, media in owners:
+        animation = mesh_animation(media)
+        clip = (owner.get("animation") or DEFAULT_ANIMATION)["clip"]
+        if animation is not None and animation.clips and animation.clip_index(clip) is None:
+            warnings.append(f"The 3D file of {name} has no clip named {clip!r}; it plays its first clip, {animation.clips[0].name!r}.")
 
 
 def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
@@ -2475,14 +2609,9 @@ def _editor_mp4(video, opened) -> tuple[Path, bool]:
 
 
 def _input_entry(path) -> dict | None:
-    """The `ui` entry of a file in ComfyUI's input directory, or None for a file elsewhere."""
-    root = Path(folder_paths.get_input_directory()).resolve()
-    try:
-        rel = Path(path).resolve().relative_to(root)
-    except ValueError:
-        return None
-    subfolder = rel.parent.as_posix()
-    return {"filename": rel.name, "subfolder": "" if subfolder == "." else subfolder, "type": "input", "storage": "input", "format": "video/mp4"}
+    """The `ui` entry of an MP4 in ComfyUI's input directory, or None for a file elsewhere."""
+    entry = _view_entry(path, "video/mp4")
+    return entry if entry is not None and entry["type"] == "input" else None
 
 
 def _editor_mp4_ui(cache_key: tuple, make, fps: float, frame_count: int, contract: dict) -> dict:

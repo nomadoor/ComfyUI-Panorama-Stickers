@@ -152,7 +152,7 @@ export function createViewInput(deps) {
       // The input's name keys its one color texture (pano_three_view.js createDepthColorTextures).
       return { ...request, color: color && { ...color, slot: name } };
     };
-    const scene = withColors("scene", sceneRequest(files, evaluated.scene));
+    const scene = withColors("scene", sceneRequest(files, evaluated.scene, sceneState.scene.animation, sceneState.timeline.fps));
     const box = scene?.url ? editorView.sceneBox(scene.url) : null;
     const sceneBox = box && sceneItemBox(scene.kind, box);
     const portFiles = stickerFiles();

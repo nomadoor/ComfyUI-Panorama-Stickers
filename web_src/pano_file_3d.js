@@ -3,6 +3,7 @@
 // editor draws, its kind and whether light falls on it. The editor asks for it as soon as a Sticker is placed, so a
 // 3D file shows as the output draws it before any run.
 
+import { animationMetaOf } from "./pano_animation.js";
 import { is3dFileSource } from "./pano_scene_state.js";
 
 export const FILE_3D_ROUTE = "/panorama_suite/file_3d";
@@ -29,7 +30,8 @@ function failure(values, reason) {
 
 // Asks the route for the editor file of a 3D file's Source: { ok: true, kind ("mesh" or "splat"), unlit (true
 // unless light falls on a mesh), file (the `ui` file entry), box (the content's box as the route gives it, null
-// without one) }, or { ok: false, error } with the route's text (the
+// without one), animation (an animated mesh's: { source (the original's `ui` entry), clips }, as the route gives it,
+// or null) }, or { ok: false, error } with the route's text (the
 // node's warning for the same file) or, without one, what went wrong.
 export async function requestFile3dEditorFile(source, { fetchApi }) {
   const values = sourceValues(source);
@@ -56,7 +58,8 @@ export async function requestFile3dEditorFile(source, { fetchApi }) {
   if ((kind !== "mesh" && kind !== "splat") || !body.file || typeof body.file !== "object") {
     return failure(values, "the server's reply was not understood.");
   }
-  return { ok: true, kind, unlit: kind !== "mesh" || body.unlit !== false, file: body.file, box: body.box ?? null };
+  const animation = kind === "mesh" && body.animation && typeof body.animation === "object" ? body.animation : null;
+  return { ok: true, kind, unlit: kind !== "mesh" || body.unlit !== false, file: body.file, box: body.box ?? null, animation };
 }
 
 export function file3dSourceKey(source) {
@@ -73,11 +76,11 @@ export function createFile3dEditorFiles({ fetchApi, onUpdate = () => {} }) {
   let closed = false;
 
   function ask(key, values, generation, refreshes) {
-    const entry = { state: "pending", kind: null, unlit: true, file: null, box: null, error: null, generation };
+    const entry = { state: "pending", kind: null, unlit: true, file: null, box: null, animation: null, error: null, generation };
     const pending = requestFile3dEditorFile(values, { fetchApi }).then((result) => {
       if (entries.get(key)?.entry !== entry) return entry;
       Object.assign(entry, result.ok
-        ? { state: "ready", kind: result.kind, unlit: result.unlit, file: result.file, box: result.box }
+        ? { state: "ready", kind: result.kind, unlit: result.unlit, file: result.file, box: result.box, animation: result.animation }
         : { state: "failed", error: result.error });
       if (!closed) onUpdate();
       return entry;
@@ -121,11 +124,14 @@ export function createFile3dEditorFiles({ fetchApi, onUpdate = () => {} }) {
 }
 
 // The editor file of a 3D file Sticker (docs/threejs-spark-integration.md) from `files` (createFile3dEditorFiles):
-// { kind, unlit, url, generation } once the route answered, else null. The first call for its Source asks the route.
-// source(entry): the URL of the route's `file`.
+// { kind, unlit, url, generation, animation } once the route answered, else null; `animation` ({ src, clips },
+// pano_animation.js animationMetaOf) only for an animated file. The first call for its Source asks the route.
+// source(entry): the URL of the route's `file` (and of an animated file's original).
 export function file3dEditorFileOf(files, sticker, source) {
   if (!files || !is3dFileSource(sticker?.source)) return null;
   const entry = files.get(sticker.source);
   const url = entry.state === "ready" ? source(entry.file) : null;
-  return url ? { kind: entry.kind, unlit: entry.unlit, url, generation: entry.generation } : null;
+  if (!url) return null;
+  const animation = animationMetaOf(entry.animation, source);
+  return { kind: entry.kind, unlit: entry.unlit, url, generation: entry.generation, ...(animation ? { animation } : {}) };
 }

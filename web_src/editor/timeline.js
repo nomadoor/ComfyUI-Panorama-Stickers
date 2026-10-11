@@ -6,6 +6,7 @@ import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { backgroundClipAt, backgroundPlace, backgroundShownAt, bgMediaEnd, portMediaFrames } from "../pano_port_media.js";
 import { nodeInputOrigins, videoLinked } from "../pano_preview_video.js";
 import { clipActive } from "../pano_scene_eval.js";
+import { stateAnimationClips } from "../pano_space.js";
 import { timelineFps } from "../pano_scene_state.js";
 import { deleteKeyframes, isTimed, rowLaneNames, timelineSpan } from "../pano_timeline.js";
 
@@ -15,8 +16,8 @@ export function createTimeline(deps) {
     uiState, videoEl, videoTimelineFps,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let commitAndRefreshNode, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
-    playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles,
+  let commitAndRefreshNode, file3dEditorFile, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
+    playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles, stickerFiles,
     syncCutoutShot, stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground,
     upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers;
 
@@ -84,6 +85,8 @@ export function createTimeline(deps) {
       upstream: upstreamOutput(openClip),
       openClip,
       camera: studio,
+      // The animated 3D files' clips (ADR 0043): one cycle counts as their media's length.
+      animations: stateAnimationClips(state, { sceneFiles: upstreamLinked() ? null : sceneFiles(), stickerFiles: stickerFiles(), editorFile: file3dEditorFile }),
     });
   }
 
@@ -282,8 +285,8 @@ export function createTimeline(deps) {
   return {
     connect(api) {
       ({
-        commitAndRefreshNode, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
-        playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles,
+        commitAndRefreshNode, file3dEditorFile, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
+        playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles, stickerFiles,
         syncCutoutShot, stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground,
         upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers,
       } = api);

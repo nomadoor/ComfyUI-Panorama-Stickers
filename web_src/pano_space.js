@@ -9,6 +9,7 @@
 // content works on the point under the pointer instead (navigationTarget), and leaves the pivot at that
 // point's depth, so the pivot stays in sight. A pan always moves at the pivot's depth (panDepth), never at
 // the depth of what the pointer is over, so a drag of the same length moves the view the same way.
+import { animationMetaOf, animationPose } from "./pano_animation.js";
 import { DEG2RAD, RAD2DEG, clamp, wrapYaw } from "./pano_camera_math.js";
 import { lensFilmDirection, lensRadius } from "./pano_lens.js";
 import { evaluateLane } from "./pano_scene_eval.js";
@@ -337,7 +338,9 @@ export function sceneFilesOf(files, meta, source) {
     sources[key] = views;
     return key;
   });
-  return { kind, unlit: kind !== "mesh" || meta[0].unlit !== false, urls, sources };
+  // An animated 3D file (ADR 0043) is one item: its original file and its clips.
+  const animation = kind === "mesh" && urls.length === 1 ? animationMetaOf(meta[0].animation, source) : null;
+  return { kind, unlit: kind !== "mesh" || meta[0].unlit !== false, urls, sources, ...(animation ? { animation } : {}) };
 }
 
 // The items of a depth grid a request loads ahead: the next ones, as the item is small and playback must keep up
@@ -374,7 +377,7 @@ export function hasWorldContent({ sceneLinked, files, stickers }) {
 // What the space view asks pano_three_view.js to draw of the `scene` input at an evaluated state: the
 // item the node draws at this frame (sceneItemIndex) with the next one to load ahead, or null outside the
 // `scene` Clip range. url is null at a frame without an item (outside the batch, or an empty item).
-export function sceneRequest(files, evaluatedScene) {
+export function sceneRequest(files, evaluatedScene, animation = undefined, fps = 24) {
   if (!files || !evaluatedScene.active) return null;
   const index = sceneItemIndex(evaluatedScene.clip_frame, files.urls.length);
   const depthGrid = files.kind === "depth_grid";
@@ -392,7 +395,37 @@ export function sceneRequest(files, evaluatedScene) {
     unlit: files.unlit !== false,
     // Where an item of several views loads from (sceneFilesOf).
     sources: files.sources ?? {},
+    // An animated 3D file (ADR 0043): where its original loads from and the pose at the clip frame.
+    ...animationRequest(files.animation, animation, evaluatedScene.clip_frame, fps),
   };
+}
+
+// The `animation` of a request for an animated 3D file (files.animation: { src, clips }, sceneFilesOf or the file
+// route's answer) whose state's animation is `animation`, at its clip frame: { src, clips, clip (the index the
+// mixer plays), speed, time }. Nothing for a file without one.
+function animationRequest(fileAnimation, animation, clipFrame, fps) {
+  if (!fileAnimation) return {};
+  const pose = animationPose(fileAnimation.clips, animation, clipFrame, fps);
+  return pose ? { animation: { src: fileAnimation.src, ...pose } } : {};
+}
+
+// The clips of the animated 3D files of a state, as autoTimelineLength counts them (`animations`): the `scene`
+// input's (sceneFiles), the port Sticker's 3D media (stickerFiles) and each 3D file Sticker's (editorFile(sticker),
+// its editor file), by Sticker id.
+export function stateAnimationClips(sceneState, { sceneFiles = null, stickerFiles = null, editorFile = () => null } = {}) {
+  const stickers = {};
+  for (const sticker of sceneState.stickers) {
+    const clips = stickerAnimationClips(sticker, { stickerFiles, editorFile });
+    if (clips) stickers[sticker.id] = clips;
+  }
+  return { scene: sceneFiles?.animation?.clips ?? null, stickers };
+}
+
+// The clips of a Sticker's animated 3D file (the port Sticker's from stickerFiles, a 3D file Sticker's from its editor
+// file), or null when it has none.
+export function stickerAnimationClips(sticker, { stickerFiles = null, editorFile = () => null } = {}) {
+  const files = sticker.source.kind === "port" ? stickerFiles : is3dFileSource(sticker.source) ? editorFile(sticker) : null;
+  return files?.animation?.clips ?? null;
 }
 
 // What the space view asks pano_three_view.js to draw of the `sticker` input's 3D media (its editor files
@@ -404,7 +437,7 @@ export function stickerContentRequest(files, sceneState, evaluated) {
   const sticker = sceneState.stickers[index];
   if (!files || sticker?.placement !== "world") return null;
   const value = evaluated.stickers[index];
-  const request = sceneRequest(files, value);
+  const request = sceneRequest(files, value, sticker.animation, sceneState.timeline.fps);
   return request && { ...request, id: sticker.id, opacity: value.opacity, value };
 }
 
@@ -447,6 +480,7 @@ export function fileStickerRequests(sceneState, evaluated, editorFile) {
       id: sticker.id,
       opacity: value.opacity,
       value,
+      ...animationRequest(file.animation, sticker.animation, value.clip_frame, sceneState.timeline.fps),
     } : null;
     entries.push({ id: sticker.id, key, request });
   });

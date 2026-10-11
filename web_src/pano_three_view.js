@@ -54,7 +54,7 @@ import {
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
 import { createSceneItems } from "./pano_scene_items.js";
-import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark } from "./pano_scene_loaders.js";
+import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark, poseAnimation } from "./pano_scene_loaders.js";
 import { createSparkViews } from "./pano_spark_views.js";
 import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
 import { LENS_GLSL } from "./pano_lens_glsl.js";
@@ -1119,13 +1119,15 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
         colorSlots.push(input.color.slot ?? input.color.source);
       }
       if (!keepMaterials) setContentOpacity(content, opacity);
+      // An animated 3D file shows its clip's pose at the playhead (ADR 0043).
+      poseAnimation(content.object, input.animation);
       if (content.splat && !Spark) continue;
       if (content.splat) sparkViews.splat(owner, content.object);
       children.push(content.group);
       if (!(opacity > 0)) continue;
       if (content.splat) pickBoxes.push({ object: content.object, box: content.box, stickerId: content.stickerId });
       else pickable.push({ object: content.group, stickerId: content.stickerId, plane: false });
-      parts.push([content.object.uuid, content.transform]);
+      parts.push([content.object.uuid, content.transform, input.animation ? [input.animation.clip, input.animation.speed, input.animation.time] : null]);
     }
     depthColors.retain(colorSlots);
     if (splat && Spark) children.push(sparkViews.renderer(owner));
