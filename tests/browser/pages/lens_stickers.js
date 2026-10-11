@@ -7,7 +7,7 @@ import { createThreeView } from "../../../web_src/pano_three_view.js";
 import { skyLayers, viewportCamera, worldStickerLayers } from "../../../web_src/pano_editor_view.js";
 import { loadSceneState } from "../../../web_src/pano_scene_state.js";
 
-const check = (window.__check = { done: false, error: null, sky: null, unwrap: null, patch: null, coverage: null });
+const check = (window.__check = { done: false, error: null, sky: null, unwrap: null, patch: null, upstreamPatch: null, coverage: null });
 const W = 64;
 const H = 48;
 
@@ -79,6 +79,13 @@ try {
     return { color, sticker: view.pickSticker(camera, W / 2, H / 2, W, H), distance: point && Math.hypot(...point.map((value, axis) => value - lensCenter[axis])) };
   };
   check.patch = { radius: planes[0].patch.radius, ahead: patch(0), right100: patch(100), left100: patch(-100), right125: patch(125) };
+  // The same patch as an upstream Scene's Sticker (ADR 0030) is drawn and picked as the node's own.
+  {
+    const camera = looking(0, lensCenter);
+    view.clear();
+    view.render({ rect: { x: 0, y: 0, w: W, h: H }, camera, background: null, layers: [], space: { ...space, stickers: [], upstreamStickers: [{ ...planes[0], id: "upstream:a:patch" }] } });
+    check.upstreamPatch = view.pickSticker(camera, W / 2, H / 2, W, H);
+  }
 
   // A 180 background ahead and a paint layer only behind: the background keeps to its half, the paint covers all.
   const background = { media: erp((g) => { g.fillStyle = "#0000ff"; g.fillRect(0, 0, 128, 64); }), revision: "blue", coverage: 180, source: "blue" };

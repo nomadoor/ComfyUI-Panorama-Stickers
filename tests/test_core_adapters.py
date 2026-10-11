@@ -1,5 +1,4 @@
 """The core's internal symbols are imported only by `core_adapters.py`; without them only the 3D features stop."""
-import ast
 import os
 import subprocess
 import sys
@@ -15,24 +14,23 @@ PACKAGE = Path(__file__).resolve().parent.parent / "comfyui_pano_suite"
 COMFY_ROOT = Path(sys.modules["comfy.model_management"].__file__).resolve().parent.parent
 
 
-def _imported_modules(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text())
-    modules = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            modules.add(node.module)
-        elif isinstance(node, ast.Import):
-            modules.update(alias.name for alias in node.names)
-    return modules
+def test_every_module_but_the_adapter_loads_without_the_core_internals():
+    # Without comfy_extras and comfy.ldm at all, each module of the package imports, and only the adapter notices.
+    modules = sorted(
+        ".".join(("comfyui_pano_suite", *path.relative_to(PACKAGE).with_suffix("").parts)).removesuffix(".__init__")
+        for path in PACKAGE.rglob("*.py")
+    )
+    code = f"""
+import importlib
+for name in {modules!r}:
+    importlib.import_module(name)
+from comfyui_pano_suite import core_adapters
+print("DISABLED" if hasattr(core_adapters, "FEATURE_3D_UNAVAILABLE") else "ENABLED")
+"""
+    result = _run_without(["comfy_extras", "comfy.ldm"], code)
 
-
-def test_only_the_adapter_imports_internal_core_modules():
-    internal = {}
-    for path in PACKAGE.rglob("*.py"):
-        found = sorted(module for module in _imported_modules(path) if module.startswith(("comfy_extras", "comfy.ldm")))
-        if found:
-            internal[path.name] = found
-    assert list(internal) == ["core_adapters.py"]
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().endswith("DISABLED")
 
 
 def test_runtime_uses_the_latest_api():
@@ -41,8 +39,10 @@ def test_runtime_uses_the_latest_api():
     assert node_runtime.ComfyAPISync is comfy_api.latest.ComfyAPISync
 
 
-def _run_without(module: str, code: str) -> subprocess.CompletedProcess:
-    script = f"import sys\nsys.modules[{module!r}] = None\n{code}"
+def _run_without(modules, code: str) -> subprocess.CompletedProcess:
+    """Runs `code` with `modules` (a name or a list) unimportable: None in sys.modules makes their import fail."""
+    blocked = "".join(f"sys.modules[{module!r}] = None\n" for module in ([modules] if isinstance(modules, str) else modules))
+    script = f"import sys\n{blocked}{code}"
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(COMFY_ROOT), str(PACKAGE.parent)])}
     return subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, env=env, cwd=PACKAGE.parent, timeout=120)
 

@@ -36,4 +36,11 @@ test("two Previews draw a Scene through one WebGL context, and it still draws af
   // The other Preview keeps its own view at the origin and draws through the same context.
   expect(check.secondPosition).toEqual([0, 0, 0]);
   expect(check.secondNonEmpty).toBe(true);
+  // Each Preview draws the SPLAT through a Spark renderer of its own, on a layer of its own, last updated for its own
+  // camera: the moved one's and the other's at the origin.
+  const sparks = check.stats.sparks;
+  expect(sparks.length).toBe(2);
+  expect(new Set(sparks.map((spark) => spark.layer)).size).toBe(2);
+  sparks[0].camera.position.forEach((value, axis) => expect(value).toBeCloseTo(check.moved.position[axis], 2));
+  expect(sparks[1].camera.position).toEqual([0, 0, 0]);
 });

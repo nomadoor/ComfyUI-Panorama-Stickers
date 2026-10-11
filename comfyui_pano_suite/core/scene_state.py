@@ -42,14 +42,32 @@ def _reject_constant(name):
     raise ValueError(f"JSON constant {name} is not allowed.")
 
 
+def _parse_int(text):
+    # Python's int() refuses more than sys.get_int_max_str_digits() digits; such a number is read as
+    # JSON.parse reads it (an infinity, so an invalid value), not as text that is not JSON.
+    try:
+        return int(text)
+    except ValueError:
+        return float(text)
+
+
 def _parse_json(text):
-    return json.loads(text, parse_constant=_reject_constant)
+    return json.loads(text, parse_constant=_reject_constant, parse_int=_parse_int)
+
+
+def _float(value):
+    """A JSON number as JS holds it (a double): an integer too large for one is an infinity, as in JSON.parse."""
+    try:
+        return float(value)
+    except OverflowError:
+        return math.inf if value > 0 else -math.inf
 
 
 def _number(value, default):
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return default
-    return float(value)
+    out = _float(value)
+    return out if math.isfinite(out) else default
 
 
 def _positive(value, default):
@@ -496,9 +514,10 @@ def _v1_source(sticker, assets):
 
 
 def _v1_camera(shots):
-    """The Cutout's shot as the Camera; a state without one (Stickers) has no Camera."""
-    shot = shots[0] if isinstance(shots, list) and shots else None
-    if not isinstance(shot, dict):
+    """The Cutout's first shot that is an object (as the legacy node's merge_state keeps them) as the Camera; a
+    state without one (Stickers) has no Camera."""
+    shot = next((item for item in shots if isinstance(item, dict)), None) if isinstance(shots, list) else None
+    if shot is None:
         return None
     h_fov = _clamp(_number(shot.get("hFOV_deg"), 90.0), 1.0, 179.0)
     v_fov = _clamp(_number(shot.get("vFOV_deg"), 60.0), 1.0, 179.0)
@@ -593,19 +612,15 @@ def rebase_scene_state(state: dict, fps: float) -> dict:
         clip = _rebase_clip(sticker["clip"], rebase)
         lanes = _sticker_lanes(sticker, sticker["placement"])
         stickers.append({**sticker, "clip": clip["clip"], **_rebase_lanes(sticker, lanes, rebase, clip["anchor"], clip["new_anchor"])})
+    # Only the frames change: every other field (ids, the counter, painting, an animation, the `upstream`
+    # records, which keep their own fps (docs/scene-state-v2.md "上流の上書き")) is carried over as it is.
     return _normalize_v2({
-        "id": state["id"],
+        **state,
         "timeline": {"fps": rate, "length": None if length is None else max(1, rebase(length))},
         "camera": None if camera is None else {**camera, **_rebase_lanes(camera, CAMERA_LANES, rebase, 0, 0)},
-        "scene": {"clip": scene["clip"], "visible": state["scene"]["visible"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
+        "scene": {**state["scene"], "clip": scene["clip"], **_rebase_lanes(state["scene"], SCENE_LANES, rebase, scene["anchor"], scene["new_anchor"])},
         "stickers": stickers,
-        "next_sticker_id": state["next_sticker_id"],
-        "painting": state["painting"],
-        "painting_layer": state["painting_layer"],
-        "painting_visible": state["painting_visible"],
-        # The override records keep their own fps (docs/scene-state-v2.md "上流の上書き").
-        "upstream": state["upstream"],
-        "background": {"clip": _rebase_clip(state["background"]["clip"], rebase)["clip"]},
+        "background": {**state["background"], "clip": _rebase_clip(state["background"]["clip"], rebase)["clip"]},
     })
 
 
@@ -646,6 +661,8 @@ def rebase_upstream_record(record: dict, layer_state: dict) -> dict:
 def _v1_pose_number(value):
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return math.nan
+    if not isinstance(value, str):
+        return _float(value)
     try:
         return float(value)
     except ValueError:

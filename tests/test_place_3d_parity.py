@@ -78,9 +78,6 @@ JS_SCRIPT = textwrap.dedent(
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is required for the JS half")
 def test_js_places_each_case_as_python_does():
-    source = (REPO_ROOT / "web_src" / "pano_space.js").read_text(encoding="utf-8")
-    if "export function fit3dPosition" not in source and "fit3dPosition" not in source:
-        pytest.skip("pano_space.js has no fit3dPosition yet")
     result = subprocess.run(["node", "--input-type=module", "-e", JS_SCRIPT], cwd=REPO_ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 

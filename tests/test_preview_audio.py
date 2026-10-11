@@ -1,5 +1,6 @@
 """The legacy Preview's MP4 keeps its audio as it is: cut or padded with silence to the frames, never stretched."""
-import ast
+import subprocess
+import sys
 from pathlib import Path
 
 import av
@@ -43,8 +44,17 @@ def test_preview_mp4_with_longer_audio_keeps_its_first_seconds_as_they_are(tmp_p
     assert abs(np.argmax(spectrum) * rate / tail.shape[0] - 440) < 10
 
 
-def test_the_video_module_does_not_use_torchaudio():
-    tree = ast.parse(Path(core_video.__file__).read_text())
-    imported = {alias.name for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom)) for alias in node.names}
-    imported |= {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
-    assert not any(name.startswith("torchaudio") for name in imported)
+def test_the_preview_mp4_with_audio_is_made_without_torchaudio(tmp_path):
+    # torchaudio blocked (None in sys.modules makes its import fail): the module still loads and encodes the audio.
+    code = """
+import sys
+sys.modules["torchaudio"] = None
+import torch
+from comfyui_pano_suite.core import video
+path = video.encode_frames_to_mp4(torch.rand(4, 16, 32, 3), 24.0, audio={"waveform": torch.zeros(1, 1, 8000), "sample_rate": 8000})
+print("OK", path.suffix)
+"""
+    package_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=package_root, timeout=120)
+    assert result.returncode == 0, result.stderr
+    assert "OK .mp4" in result.stdout

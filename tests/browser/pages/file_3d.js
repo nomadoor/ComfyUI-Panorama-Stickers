@@ -1,8 +1,9 @@
 // A 3D file Sticker in the editor's three.js view (docs/threejs-spark-integration.md "3D ファイルの `file` の Source の
 // `world` の Sticker"): a box with a checkered texture and normals, made into a GLB here with three.js's
 // GLTFExporter, drawn as the space view draws a 3D file Sticker (pano_space.js fileStickerRequests, the 3D Sticker
-// queue, loadSceneItem, the default lights). `?unlit=1` draws it as an item marked unlit. The page reports through
-// window.__check; tests/browser/file_3d.spec.js reads it. Nothing here depends on which renderer runs.
+// queue, loadSceneItem, the default lights). `?unlit=1` draws it as an item marked unlit. The same box as an item of
+// an upstream Scene (ADR 0030) is picked as the node's own. The page reports through window.__check;
+// tests/browser/file_3d.spec.js reads it. Nothing here depends on which renderer runs.
 import { BoxGeometry, CanvasTexture, Mesh, MeshStandardMaterial, SRGBColorSpace, Scene } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { createThreeView } from "../../../web_src/pano_three_view.js";
@@ -12,6 +13,7 @@ import { fileStickerRequests } from "../../../web_src/pano_space.js";
 
 const check = (window.__check = {
   done: false, contextLost: false, error: null, renderer: null, stats: null, nonEmpty: false, top: null, bottom: null,
+  upstreamPick: null,
 });
 
 const SIZE = 512;
@@ -96,16 +98,18 @@ try {
   };
 
   let begin = 0;
-  let loadedFrames = 0;
+  let last = null;
+  let stillFrames = 0;
   function frame(now) {
     raf = 0;
     if (check.done) return;
     begin ||= now;
-    draw("top");
+    const luma = draw("top");
     const loaded = view.stats().sceneItems.loaded > 0;
-    // A few frames after it loaded, so its texture is uploaded.
-    if (loaded) loadedFrames += 1;
-    if (loadedFrames < 3 && now - begin < LOAD_MS) {
+    // Once it loaded, until the picture holds still for 3 frames, so its texture is uploaded.
+    stillFrames = loaded && luma === last ? stillFrames + 1 : 0;
+    last = loaded ? luma : null;
+    if (stillFrames < 3 && now - begin < LOAD_MS) {
       request();
       return;
     }
@@ -113,6 +117,23 @@ try {
     check.bottom = draw("bottom");
     check.nonEmpty = check.top > 8 && check.bottom > 8;
     check.stats = view.stats();
+    void pickUpstream();
+  }
+
+  // The box as an upstream layer's item instead of a Sticker of the node: drawn until it loads, then picked from above.
+  async function pickUpstream() {
+    const request = { ...entries[0].request, id: "upstream:a:sticker_1" };
+    const upstream = { ...space, fileStickers: [], fileStickerKeys: [], upstreamItems: [{ slot: "a", urls: request.urls, request, opacity: 1 }] };
+    const camera = { ...cameras.top, fovY_deg: 60, aspect: 1, near: 0.01, far: 100 };
+    const started = performance.now();
+    let hit = null;
+    while (!hit && performance.now() - started < LOAD_MS) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      view.clear();
+      view.render({ rect: { x: 0, y: 0, w: SIZE, h: SIZE }, camera, background: null, layers: [], space: upstream });
+      hit = view.pickSticker(camera, SIZE / 2, SIZE / 2, SIZE, SIZE);
+    }
+    check.upstreamPick = { sticker: hit, point: view.pickSurface(camera, SIZE / 2, SIZE / 2, SIZE, SIZE) };
     check.done = true;
   }
   request();

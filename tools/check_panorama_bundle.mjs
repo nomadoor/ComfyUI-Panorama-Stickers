@@ -61,6 +61,25 @@ async function checkFile(name, generatedDir, webDir) {
   return false;
 }
 
+// three.js (its license header names "Three.js Authors") loads with the editor's view, not with the extension: the
+// eagerly loaded bundle imports the pano_three_view chunk on demand, and that chunk holds three.js itself.
+async function checkLazyThree(webDir) {
+  const bundle = await readFile(path.join(webDir, "panorama_suite.js"), "utf8");
+  const lazy = await readdir(path.join(webDir, LAZY_DIR)).catch(() => []);
+  const chunkName = lazy.find((name) => name.startsWith("pano_three_view-") && name.endsWith(".js"));
+  const problems = [];
+  if (bundle.includes("Three.js Authors")) problems.push("web/panorama_suite.js includes three.js; it must load lazily.");
+  if (!chunkName) problems.push(`web/${LAZY_DIR}/ has no pano_three_view chunk.`);
+  else {
+    const chunk = await readFile(path.join(webDir, LAZY_DIR, chunkName), "utf8");
+    if (!bundle.includes(`import("./${LAZY_DIR}/${chunkName}")`)) problems.push(`web/panorama_suite.js does not import web/${LAZY_DIR}/${chunkName} on demand.`);
+    if (!chunk.includes("Three.js Authors")) problems.push(`web/${LAZY_DIR}/${chunkName} does not hold three.js.`);
+    if (/^import\s/m.test(chunk)) problems.push(`web/${LAZY_DIR}/${chunkName} imports other files statically.`);
+  }
+  for (const problem of problems) console.error(problem);
+  return problems.length === 0;
+}
+
 async function main() {
   const webDir = parseWebDir(process.argv.slice(2));
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "panorama-bundle-check-"));
@@ -86,9 +105,15 @@ async function main() {
       console.error(`web/${name} is not produced by the build; delete it.`);
       inSync = false;
     }
-    if (inSync) {
+    const lazyThree = await checkLazyThree(webDir);
+    if (inSync && lazyThree) {
       console.log("Frontend bundle is in sync.");
       return;
+    }
+    if (!lazyThree) {
+      console.error("three.js is not split out of the eagerly loaded bundle (vite.lib.config.js).");
+      process.exitCode = 1;
+      if (inSync) return;
     }
     console.error("Frontend bundle is out of sync.");
     console.error("Run `npm run build:web` to update web/panorama_suite.js and web/.lazy/.");

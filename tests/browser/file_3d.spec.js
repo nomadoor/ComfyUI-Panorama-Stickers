@@ -30,6 +30,9 @@ async function run(page, testInfo, query = "") {
   expect(check.contextLost).toBe(false);
   expect(check.stats.sceneItems.loaded).toBe(1);
   expect(check.nonEmpty).toBe(true);
+  // An upstream Scene's item is picked as the node's own, on its surface: the box's top, 0.5 above its center.
+  expect(check.upstreamPick.sticker).toBe("upstream:a:sticker_1");
+  expect(check.upstreamPick.point[1]).toBeCloseTo(0.5, 2);
   return check;
 }
 

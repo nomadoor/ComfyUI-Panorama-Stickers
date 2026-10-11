@@ -761,19 +761,7 @@ export function gridSpec(radius) {
 }
 
 // --- Camera guides: a Camera's frustum and its trajectory over the Timeline. Panorama Studio's editor
-// draws them with renderSpace's `lines` and enters a Camera's view with cameraView().
-
-// A Camera value's view: its position and angles, its hFOV across the view width.
-export function cameraView(camera) {
-  return {
-    position: [...camera.position],
-    yaw_deg: camera.yaw_deg,
-    pitch_deg: camera.pitch_deg,
-    roll_deg: camera.roll_deg,
-    hFOV_deg: camera.hFOV_deg,
-    distance: DEFAULT_DISTANCE,
-  };
-}
+// draws them with renderSpace's `lines`.
 
 // Line segments [a, b] of a Camera value's frustum `length` ahead: the four edges from its position,
 // the far rectangle at its hFOV and aspect, and a triangle above the rectangle that marks its up.

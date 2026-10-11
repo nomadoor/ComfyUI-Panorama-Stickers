@@ -41,6 +41,8 @@ test("lens Stickers draw and pick by their lens, and a 180 background keeps to i
   // Past 110° it is neither drawn nor picked.
   expect(empty(check.patch.right125.color)).toBe(true);
   expect(check.patch.right125.sticker).toBeNull();
+  // An upstream Scene's Sticker is picked as the node's own.
+  expect(check.upstreamPatch).toBe("upstream:a:patch");
   // The 180 background ahead; behind, only the paint.
   expect(check.coverage.ahead.slice(0, 3)).toEqual([0, 0, 255]);
   expect(check.coverage.behind.slice(0, 3)).toEqual([255, 255, 0]);

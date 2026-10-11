@@ -342,7 +342,8 @@ def test_the_placement_follows_the_handoff_and_drops_the_other_placements_overri
 HANDOFF_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_inherit"
 
 
-@pytest.mark.parametrize("name", ["handoff_same_placement", "handoff_sky_to_world", "handoff_world_to_sky", "handoff_sky_curve", "handoff_world_drop_lens"])
+# Every `handoff_*` case, as tests/pano_port_handoff.test.mjs lists them.
+@pytest.mark.parametrize("name", sorted(path.stem for path in HANDOFF_FIXTURES.glob("handoff_*.json")))
 def test_inheriting_the_handoff_matches_the_fixture_the_editor_shares(name):
     case = json.loads((HANDOFF_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
     state = load_scene_state(case["state"])

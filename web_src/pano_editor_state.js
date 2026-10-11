@@ -4,7 +4,7 @@ import { DEG2RAD } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { loadSceneState, rebaseSceneState, sceneStateText, timelineFps } from "./pano_scene_state.js";
+import { freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
@@ -464,9 +464,9 @@ export function sourceAsset(source) {
 // A new Sticker id from the state's `next_sticker_id` counter, which it advances, so no id is given
 // out twice (docs/scene-state-v2.md).
 export function takeStickerId(state) {
-  const id = `sticker_${state.next_sticker_id}`;
-  state.next_sticker_id += 1;
-  return id;
+  const n = freeStickerNumber(new Set(state.stickers.map((item) => item.id)), state.next_sticker_id);
+  state.next_sticker_id = stickerCounter(n + 1n);
+  return `sticker_${n}`;
 }
 
 // A sky Sticker over the whole Timeline with the pose in the editor's fields.

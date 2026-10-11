@@ -17,38 +17,18 @@ import { evaluateSticker } from "../web_src/pano_scene_eval.js";
 import { createStickersNodeSurfaceSession, portStickerSyncValue, surfaceSceneEditorState } from "../web_src/pano_stickers_node_surface.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 
+// The handoff fixtures the node's `_inherit_handoff` is held to too (tests/test_pose_handoff.py).
+const handoffFixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/scene_inherit/${name}.json`, import.meta.url), "utf8"));
 // What a run hands the port Sticker (nodes.py `_handoff_lanes`), as `pano_sticker_handoff` gives it.
-const SKY_HANDOFF = {
-  placement: "sky",
-  lanes: {
-    direction: { value: { yaw_deg: 10, pitch_deg: 5 }, keyframes: [
-      { frame: 0, value: { yaw_deg: 10, pitch_deg: 5 }, easing: "auto" },
-      { frame: 4, value: { yaw_deg: 50, pitch_deg: 0 }, easing: "auto" },
-    ] },
-    roll: { value: 3, keyframes: [] },
-    size: { value: { hFOV_deg: 60, vFOV_deg: 60 }, keyframes: [] },
-  },
-  fps: 24,
-};
-const WORLD_HANDOFF = {
-  placement: "world",
-  lanes: {
-    position: { value: [0, 0, -2], keyframes: [
-      { frame: 0, value: [0, 0, -2], easing: "auto" },
-      { frame: 8, value: [1, 0, -2], easing: "hold" },
-    ] },
-    rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [] },
-    scale: { value: 4, keyframes: [] },
-  },
-  fps: 24,
-};
+const SKY_HANDOFF = { ...handoffFixture("handoff_same_placement").handoff, fps: 24 };
+const WORLD_HANDOFF = { ...handoffFixture("handoff_sky_to_world").handoff, fps: 24 };
 const CROP = { x0: 0.1, y0: 0.2, x1: 0.9, y1: 0.8 };
 const SKY_PORT = {
   id: "sticker_2", source: { kind: "port" }, z_index: 1, clip: { start: 2, in: 0, duration: null }, crop: CROP,
   direction: { value: { yaw_deg: -90, pitch_deg: 0 } }, size: { value: { hFOV_deg: 20, vFOV_deg: 20 } },
   opacity: { value: 0.5 },
 };
-const FILE_STICKER = { id: "sticker_1", source: { kind: "file", filename: "a.png" }, z_index: 4 };
+const [FILE_STICKER] = handoffFixture("handoff_sky_to_world").state.stickers;
 
 // A saved state with its Scene id (ADR 0030), which the first write would give it.
 function stateText(stickers, fps = 24) {
@@ -338,7 +318,7 @@ const HANDOFF_FIXTURES = readdirSync(new URL("./fixtures/scene_inherit/", import
   .filter((file) => /^handoff_.*\.json$/.test(file)).map((file) => file.slice(0, -5)).sort();
 for (const name of HANDOFF_FIXTURES) {
   test(`inheriting the handoff matches the fixture the node shares: ${name}`, () => {
-    const fixture = JSON.parse(readFileSync(new URL(`./fixtures/scene_inherit/${name}.json`, import.meta.url), "utf8"));
+    const fixture = handoffFixture(name);
     const state = loadSceneState(fixture.state);
 
     assert.deepEqual(inheritPortHandoff(state, port(state), portHandoff(fixture.handoff)), fixture.expected);
