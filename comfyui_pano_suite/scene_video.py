@@ -11,7 +11,7 @@ import comfy.utils
 from comfy_api.latest import Input, InputImpl, Types
 
 from .core.temp_files import TEMP_FILES, removed_on_failure
-from .core.video import _BT709, _set_srgb, _temp_mp4_path
+from .core.video import _BT709, _prepare_audio_layout, _set_srgb, _temp_mp4_path
 from .core_adapters import pin_memory
 
 # The size of a whole video (the color of every frame) from which `get_components` copies the frames from the
@@ -72,6 +72,8 @@ class SceneVideo(Input.Video):
         previous = None
         try:
             for index, (color, _mask) in enumerate(self._render(device)):
+                # Reading every frame stops at Cancel between frames, whatever `render` checks itself.
+                comfy.model_management.throw_exception_if_processing_interrupted()
                 # A reused frame is copied from the previous row instead of transferred from the device again.
                 if color is previous:
                     images[index] = images[index - 1]
@@ -132,11 +134,10 @@ class SceneVideo(Input.Video):
             _set_srgb(stream.codec_context)
             audio_stream = None
             if self._audio is not None:
-                waveform = self._audio["waveform"][0].float().cpu().contiguous().numpy()
-                sample_rate = int(self._audio["sample_rate"])
-                layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(waveform.shape[0], "stereo")
-                webm = format == Types.VideoContainer.WEBM
-                audio_stream = output.add_stream("libopus" if webm else "aac", rate=48000 if webm else sample_rate, layout=layout)
+                waveform, sample_rate, layout = _prepare_audio_layout(self._audio["waveform"][0].float().cpu().numpy(), int(self._audio["sample_rate"]))
+                if waveform is not None:
+                    webm = format == Types.VideoContainer.WEBM
+                    audio_stream = output.add_stream("libopus" if webm else "aac", rate=48000 if webm else sample_rate, layout=layout)
             previous = None
             for time, (color, _mask) in zip(self._times, self._render(device)):
                 if color is not previous:

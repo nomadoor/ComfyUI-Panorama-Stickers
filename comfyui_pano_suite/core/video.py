@@ -156,6 +156,9 @@ def _fit_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[np.n
 
 
 def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np.ndarray | None, int, str]:
+    """The waveform (channels, samples) as contiguous float32, its sample rate, and the layout every encoder here
+    gives it: mono, stereo, and 5.1 as they are, any other channel count downmixed to stereo. (None, 0, "mono")
+    when there is no audio to encode."""
     if waveform_np is None or sample_rate <= 0:
         return None, 0, "mono"
     waveform_np = np.ascontiguousarray(waveform_np, dtype=np.float32)
@@ -170,9 +173,6 @@ def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np
     }.get(channels)
     if explicit_layout:
         return waveform_np, sample_rate, explicit_layout
-
-    if channels == 1:
-        return waveform_np, sample_rate, "mono"
 
     # Unsupported channel counts are downmixed so frame data and advertised
     # layout stay consistent for AudioFrame.from_ndarray.
@@ -272,10 +272,9 @@ def encode_editor_mp4(video, progress=None) -> tuple[Path, bool]:
         stream.codec_context.time_base = time_base
         audio_stream = None
         if audio is not None:
-            waveform = audio["waveform"][0].float().cpu().contiguous().numpy()
-            sample_rate = int(audio["sample_rate"])
-            layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(waveform.shape[0], "stereo")
-            audio_stream = output.add_stream("aac", rate=sample_rate, layout=layout)
+            waveform, sample_rate, layout = _prepare_audio_layout(audio["waveform"][0].float().cpu().numpy(), int(audio["sample_rate"]))
+            if waveform is not None:
+                audio_stream = output.add_stream("aac", rate=sample_rate, layout=layout)
         codec = stream.codec_context
         done = 0
         for time, frame in _editor_frames(video):
@@ -308,7 +307,7 @@ def encode_editor_mp4(video, progress=None) -> tuple[Path, bool]:
             frame.pts = 0
             output.mux(audio_stream.encode(frame))
             output.mux(audio_stream.encode(None))
-    return output_path, audio is not None
+    return output_path, audio_stream is not None
 
 
 def mp4_has_audio(path) -> bool:

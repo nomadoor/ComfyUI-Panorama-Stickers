@@ -1,3 +1,5 @@
+import base64
+import io
 import json
 
 import numpy as np
@@ -12,7 +14,7 @@ pytest.importorskip(
 )
 
 from comfyui_pano_suite import nodes
-from comfyui_pano_suite.core.scene_state import load_scene_state
+from comfyui_pano_suite.core.scene_state import STICKER_NUMBER_MAX, load_scene_state
 from comfyui_pano_suite.nodes import PanoramaStudioNode, PanoSceneValue
 from comfyui_pano_suite.scene_video import SceneVideo
 from scene_test_helpers import blob, blobs, center as _center
@@ -139,6 +141,17 @@ def test_a_port_sticker_added_by_the_node_takes_its_id_from_the_counter():
 
     assert [item["id"] for item in scene.layers[-1].state["stickers"]] == ["sticker_1", "sticker_3"]
     assert scene.layers[-1].state["next_sticker_id"] == 4
+
+
+def test_a_port_sticker_added_at_the_largest_number_skips_an_id_in_use():
+    # Ids past STICKER_NUMBER_MAX are not counted, so the counter can stop on one in use.
+    used = f"sticker_{STICKER_NUMBER_MAX}"
+    state = {"version": 2, "stickers": [{"id": used, "source": {"kind": "file", "filename": "missing.png"}}], "next_sticker_id": STICKER_NUMBER_MAX}
+
+    scene = _outputs(state, output_size="1024", sticker=_solid([1.0, 0.0, 0.0]))[4]
+
+    assert [item["id"] for item in scene.layers[-1].state["stickers"]] == [used, f"sticker_{STICKER_NUMBER_MAX + 1}"]
+    assert scene.layers[-1].state["next_sticker_id"] == STICKER_NUMBER_MAX
 
 
 def test_an_empty_state_has_no_camera():
@@ -408,3 +421,25 @@ def test_scene_output_is_the_built_scene_without_the_camera():
     assert scene.bg_media is bg and scene.coverage == 360 and scene.bg_color == (0.0, 1.0, 0.0)
     assert scene.fps == 24.0 and len(scene.frames) == 3
     assert scene.media_ui["pano_input_images"]
+
+
+def _png_data_url(width, height):
+    buffer = io.BytesIO()
+    Image.new("RGBA", (width, height)).save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+@pytest.mark.parametrize("data_url", [
+    "data:image/png;base64",  # no comma
+    "data:image/png;base64,abc",  # bad base64 padding
+    "bomb",  # past PIL's decompression bomb limit
+])
+def test_a_data_url_that_cannot_be_decoded_is_not_drawn_with_a_warning(data_url, monkeypatch):
+    if data_url == "bomb":
+        data_url = _png_data_url(64, 64)
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 64)
+    state = {"version": 2, "stickers": [{"id": "sticker_1", "source": {"kind": "file", "data_url": data_url}}]}
+
+    ui = _studio(state, output_size="1024").ui
+
+    assert ui["pano_sticker_warnings"] == ["Could not read the source of Sticker sticker_1; it is not drawn."]

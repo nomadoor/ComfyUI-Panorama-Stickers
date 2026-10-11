@@ -265,3 +265,19 @@ def test_container_and_codec_resolve_auto_as_the_core_does(path, format, codec):
         return
 
     assert _container_and_codec(path, format, codec) == expected
+
+
+@pytest.mark.parametrize("format, channels", [("mp4", 3), ("webm", 8)])
+def test_save_downmixes_audio_without_its_own_layout_to_stereo(tmp_path, format, channels):
+    def render(device):
+        for _index in range(4):
+            yield torch.rand(16, 32, 3), torch.zeros(16, 32)
+
+    audio = {"waveform": torch.rand(1, channels, 8000) * 0.1, "sample_rate": 8000}
+    video = SceneVideo(render, 32, 16, Fraction(4), [Fraction(index, 4) for index in range(4)], Fraction(0), audio)
+    path = tmp_path / f"out.{format}"
+
+    video.save_to(str(path), crf=20)
+
+    with av.open(str(path)) as container:
+        assert container.streams.audio[0].codec_context.channels == 2

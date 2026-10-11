@@ -14,6 +14,7 @@ from comfy_api.latest import Types
 
 from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import video as core_video
+from comfyui_pano_suite.core.scene_state import STICKER_STATE_KIND, load_scene_state, load_sticker_state
 from comfyui_pano_suite.core.video_source import MaterializedVideo, scan_video
 from comfyui_pano_suite.node_runtime import NodeRuntime
 from comfyui_pano_suite.progress import loop_progress
@@ -168,3 +169,40 @@ def test_cancelled_legacy_stickers_batch_leaves_no_preview_mp4(tmp_path, monkeyp
                                            bg_erp=torch.rand(4, 64, 128, 3), fps=24.0)
 
     assert not [name for name in _files(tmp_path) if name.endswith(".mp4")]
+
+
+def _handoff():
+    keys = [{"frame": frame, "value": {"yaw_deg": frame * 9.0, "pitch_deg": 0.0, "roll_deg": 0.0}} for frame in (0, 10)]
+    nodes._handoff_lanes(load_sticker_state(json.dumps({"kind": STICKER_STATE_KIND, "version": 2, "camera": {"rotation": keys}})), 24.0)
+
+
+def _timeline():
+    nodes._decide_timeline(load_scene_state(json.dumps({"version": 2, "timeline": {"length": 10}})), None, None)
+
+
+def _output_size():
+    state = load_scene_state(json.dumps({"version": 2, "camera": {"fov": {"value": 90.0}}}))
+    nodes._studio_output_size(state, [(None, ((float(frame), None, None),)) for frame in range(10)], "1024", 360, None, [])
+
+
+def _components():
+    def render(device):
+        for _index in range(4):
+            yield torch.rand(16, 32, 3), torch.zeros(16, 32)
+
+    SceneVideo(render, 32, 16, Fraction(24), [Fraction(index, 24) for index in range(4)], Fraction(0), None).get_components()
+
+
+@pytest.mark.parametrize("run", [_handoff, _timeline, _output_size, _components], ids=["handoff", "timeline", "output_size", "components"])
+def test_cancel_stops_the_per_frame_loops_of_a_run(run, monkeypatch):
+    checks = []
+
+    def check():
+        checks.append(1)
+        if len(checks) == 2:
+            raise InterruptProcessingException()
+
+    monkeypatch.setattr(comfy.model_management, "throw_exception_if_processing_interrupted", check)
+
+    with pytest.raises(InterruptProcessingException):
+        run()
