@@ -100,6 +100,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `camera.position`・`camera.rotation`・`camera.fov` | Lane | 下記 | Camera の値（Viewport camera は保存しない） |
 | `camera.curve` | Lane | 下記 | レンズの曲線 κ（ADR 0042）。`erp` では読まない |
 | `scene.clip` | Clip range | 下記 | `scene` 入力が有効な範囲 |
+| `scene.animation` | オブジェクト または欠け | 欠け | `scene` 入力の 3D ファイルの glTF のアニメーション（作る。ADR 0043）。形は下の Sticker の `animation` と同じ |
 | `scene.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` なら `scene` 入力を描かない |
 | `scene.position`・`scene.rotation`・`scene.scale` | Lane | 下記 | `scene` 入力に掛ける変形 |
 | `stickers` | 配列 | `[]` | `sky` の層は `z_index`（ペイントと共通の軸）で並べ、同じ値ならリストの順（先頭が奥）。`world` の Sticker は奥行きで重なる |
@@ -237,6 +238,7 @@ Keyframe を持つ単位である。パラメータごとに一つあり、ど�
 | `direction`・`roll`・`size` | Lane | 上記 | `sky` の Sticker だけが持つ（`world` では捨てる） |
 | `position`・`rotation`・`scale` | Lane | 上記 | `world` の Sticker だけが持つ（`sky` では捨てる） |
 | `opacity` | Lane | `1` | 不透明度 |
+| `animation` | オブジェクト または欠け | 欠け | 3D ファイル（`file` の 3D ファイルの Source と、`port` の 3D ファイルの素材）の glTF のアニメーション（作る。ADR 0043）。`{"clip": 文字列 または null, "speed": 数値}`。`clip` は clip の名前で、`null` は最初の clip（コアの Load3D が最初に選ぶもの）。`speed` は 0.1〜10 の連続の値（Load3D の 0.1・0.5・1・1.5・2 の選択を含む。既定 1、0 以下を含む範囲の外は 0.1〜10 に寄せ、数値でなければ既定値）。Keyframe を持たず、ワークフローに保存する（Load3D の値も時間で変わらない。形はオーナーが承認、2026-10-11）。欠けていれば `{"clip": null, "speed": 1}` と同じ（置いたファイルは最初の clip でタイムラインに沿って動く。Load3D が最初の clip を選ぶのに合わせ、時計は再生ヘッドだけ）で、既定値は保存するテキストに書かない。名前の clip がファイルに無ければ最初の clip にし、警告を出す。アニメーションの無いファイルでは読まない。時刻の規則は `docs/render-contract.md` の「glTF のアニメーション」 |
 | `z_index` | 整数 | `0` | `sky` の Sticker だけが持つ（`world` では捨てる）。読み込みで `floor(x + 0.5)` に丸める。数値でない・非有限の値は既定値。下記「Sky の重なり順」 |
 | `handoff_overrides` | Lane の名前の配列 | `[]` | `port` の Sticker だけが持つ（ほかでは捨てる）。`sticker_state` から引き継がずに、保存した Lane を使う Lane（ADR 0030 の「`sticker_state` で届く Sticker」）。`placement` の Lane の名前だけを、重複を除いて上の Lane の順に並べる。`[]` はすべての Lane を引き継ぐ |
 
