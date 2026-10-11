@@ -12,6 +12,7 @@ Panorama Studio のバックエンドの描画関数（`render_frame`、重な�
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | カメラのレンズ（光線の作り方：レンズの曲線 κ） | `core/math.py` `lens_radius`・`lens_angle`・`lens_fov_limit`・`lens_focal`・`lens_drawn`・`pixel_rays`・`ray_directions`・`vfov_from_hfov`、`core/render.py` `Projection.curve`、`core/mesh_render.py` `_sphere_ranges`・`_lens_bounds`、`splat_render.py` `_ray_field_jacobian` | `web_src/pano_lens.js` `lensRadius`・`lensAngle`・`lensFovLimit`（エディタの後処理と Sticker のシェーダは `pano_lens_glsl.js` が同じ式を持つ） | `tests/test_lens.py`、`tests/pano_lens.test.mjs`（`tests/fixtures/lens/lens.json` の数値の fixture を両方が読む）、`tests/test_mesh_render.py`、`tests/test_splat_render.py` |
+| glTF のアニメーション（clip の時刻、補間、skinning と morph の式、コアのまとめた頂点との値での照合） | `core/gltf_animation.py`（作る）、`core_adapters.py` の `load_gltf`・`read_accessor` の読み込み（作る）、`core/mesh_render.py` `mesh_content`（形を作り直す。作る） | three.js r184 の `AnimationMixer`・`SkinnedMesh` がそのまま描く（`web_src/pano_scene_loaders.js` の読み込みで、静止の GLB の材質に合わせる。作る）。当たり判定は `web_src/pano_pick.js` の `PICK_VERTEX` に skin と morph の部品を足す（作る） | `tests/test_gltf_animation.py`（作る。`tests/fixtures/gltf_anim/` を読む）、`tests/pano_scene_loaders.test.mjs`（材質を合わせる。作る） |
 | 描画の入口、層、`cache` の使い回し | `core/render.py` `render_frame`・`RenderLayer`・`Projection` | — | `tests/test_render.py`、`tests/test_memory_cache.py`、`tests/test_studio_scene.py` |
 | 重なり順と合成 | `render.py` `composite_frame`、`core/world_render.py` `over_by_depth` | — | `tests/test_render.py`、`tests/test_world_render.py` |
 | Sky の標本化（直接の標本化、縮めるときの平均、Sky の幅） | `render.py` `_sky_layers`・`_shoot_sky`・`_sample_filtered`・`_shrink`・`_sky_size` | — | `tests/test_render.py`、`tests/test_studio_node.py`、`tests/test_studio_scene.py` |
@@ -228,6 +229,38 @@ SPLAT（下の「SPLAT の描き方」）と MESH・MoGe・DA3（下の「MESH�
 - `render` は、同じ `view` と `index` に対して同じ層を返す（使い回しの条件は `view` の値と `index` だけ）。
 - `SceneContent` は描画のパス（最初のフレーム、`video` を読むたび）ごとに `_render_frames` が `_scene_content` で作り、`render` が device に置いたものはそのパスの間だけ持つ。`video` の出力（ComfyUI の出力キャッシュに残る）が持つのは入力そのものだけで、device のテンソルは持たない（`tests/test_scene_mesh.py`）。(a) は要素の数のためだけに別に作る。
 
+### glTF のアニメーション
+
+3D ファイル（GLB・GLTF）の skin・morph・node のアニメーションを、コアの Load3D と同じく clip を選んで再生する（作る。ADR 0043、ADR 0037 の条件 8）。clip の編集・切り出し・混ぜ合わせ、骨の編集、IK は作らない。
+
+- 時刻：Sticker（`scene` は `scene` 自身）の clip frame（素材の時刻、`frame − (start − in)`）を `timeline.fps` で秒にし、`speed` を掛け、clip の長さで繰り返す（`t mod duration`、0 以上 duration 未満。Load3D と three.js の `LoopRepeat`）。clip の長さは、その clip のすべての channel の入力の時刻の最大（three.js の `AnimationClip.resetDuration`）。Clip range の外では描かない（今と同じ）。時計は再生ヘッドだけ。出力の長さ（Auto）には clip の 1 周を数える（`docs/studio-node.md` の出力の長さ。作る）。
+- 読む値（`core/gltf_animation.py`。作る。コアの公開の `load_gltf`・`read_accessor` を `core_adapters.py` から使う）：skin（`joints`・`inverseBindMatrices`）、各 primitive の `JOINTS_0`・`WEIGHTS_0`（4 つまで。three.js r184 の GLTFLoader も `JOINTS_1`・`WEIGHTS_1` を読まない）、morph の targets（`POSITION`・`NORMAL` の差。sparse の accessor はコアの `read_accessor` が読む）と mesh の `weights`（既定の重み）、animation の channel（node の `translation`・`rotation`・`scale` と `weights`。`STEP`・`LINEAR`・`CUBICSPLINE`）。読んだ骨・重み・morph・clip は、読んだ MESH と同じ共有のキャッシュの `mesh_files` の項目に入れる（`docs/runtime-resources.md`）。
+- 使う scene は glTF の既定の scene（`scene` の番号。無ければ最初）で、コアの読み手と GLTFLoader で同じ。
+- コアとの境：形・uv・材質・テクスチャはコアの Get3DComponents の MESH のまま（今と同じ。コアは各 primitive の `POSITION` に node の world の行列 `M_node(0)` を掛け、primitive を順にまとめ、最初の材質だけを残す）。`gltf_animation.py` は自分で node をたどり、まとめた頂点の範囲ごとに primitive と node を対応させる。対応は値で確かめる：コアの公開の `load_gltf` が返す `prims[i]["positions"]` と、自分のたどりで求めた `M_node(0) · POSITION` が float32 で完全に等しいこと。一つでも違えば理由を示す `ValueError` にする（黙って崩れた形を描かない。コアのたどる順を写さない）。
+- 式（どの primitive も同じ一つの式）：まとめた頂点 `v`（`M_node(0)` を掛けた後）に対して、`p = M_node(t) · (Σₖ wₖ · B_k(t) · IBM_k) · M_node(0)⁻¹ · (v + M_node(0) の 3 × 3 · Σᵢ mᵢ(t) Δᵢ)`。`B_k(t)` は joint の world の行列、`IBM_k` は逆の bind の行列、`mᵢ` と `Δᵢ` は morph の重みと差。skin の無い primitive では Σ の部分を単位行列とする（node のアニメーションだけが効く）。three.js r184 は skin の mesh を単位行列で bind し（GLTFLoader の `mesh.bind(skeleton, _identityMatrix)`）、skinning の後に mesh の node の `matrixWorld` を掛けるので、この式と同じになる。
+  - 重みは three.js の `normalizeSkinWeights` と同じく、和で割って 1 にする（和が 0 なら joint 0 に 1）。
+  - 法線は同じ行列の 3 × 3 で変えて正規化する（three.js の skinning の法線と同じ）。
+- 評価（フレームごと、CPU。`gltf_animation.py` の `evaluate`。作る）：channel の値を three.js r184 と同じ規則で補間する。`LINEAR` の回転は `Quaternion.slerpFlat` と同じ（短い方の弧。内積が 0.9995 以上なら正規化した線形補間）、`CUBICSPLINE` は Hermite の後、回転だけ正規化する（GLTFLoader の `GLTFCubicSplineQuaternionInterpolant`）、`STEP` は前の値。最初の key より前は最初の値、最後の key より後は最後の値。node の world の行列を親からたどる。
+- 描く：`mesh_content` は、静止の MESH は今のまま、アニメーションのある要素は休みの形・joint・重み・morph の差を device に置いたまま、フレームごとに行列と morph の重みだけを渡して形を作り直す。三角形の前処理（画素の範囲）はフレームごとに作り直す。World のキー（`world_key` の Sticker の `_transform_key`）と `scene` のキーに、`animation.clip`・`speed` とアニメーションの時刻（小数第 9 位で丸める）を入れる（作る）。
+- 光：光が効くかの規則（`MESH.unlit`）と材質は今と同じ（コアの最初の材質）。
+- 中身の箱（`content_box`）は休みの形（コアの MESH、bind の形）のまま。clip で動く範囲は入れない（置いた位置が clip を選ぶたびに変わらないように。clip の全体の範囲は次の候補）。
+- 一致を守る test（作る）：`tests/fixtures/gltf_anim/`（`tools/bake_gltf_animation.mjs` が作る小さな skin・morph・node のアニメーションの glTF と、three.js r184 の `AnimationMixer` で求めた時刻ごとの node の world の行列・skin の行列・morph の重み）を `tests/test_gltf_animation.py` が読む（許容差 1e-5）。`STEP`・`LINEAR`・`CUBICSPLINE`、短い方の弧、key の前後、繰り返し、`speed`、sparse の morph、2 つの skin、skin の無い node のアニメーション、node の行列が単位でない skin の mesh、対応の不一致のエラーを含む。
+
+#### 費用（見積もり）
+
+- 1 フレームの評価は channel と joint の数に比例し、CPU で 1 ms 未満の見込み（数十の joint）。
+- 形の作り直しは頂点の数に比例し、出力の大きさによらない：10 万頂点で CUDA で約 1 ms、100 万頂点で数 ms の見込み。三角形の前処理の作り直しは ADR 0037 の試作で CUDA で 2〜4 ms（頂点が毎フレーム変わる場面の計測）。
+- 4K・8K の 1 フレームの時間は、静止の同じ形とほぼ同じ（4K 光なし約 0.06 秒、8K 光あり約 0.57 秒。ADR 0037 の計測）に、上の数 ms を足したもの。許容時間（4K 1 秒、8K 3 秒）に収まる見込み。測っていない。
+
+#### 境界をまたぐ設計（AGENTS の原則 4）
+
+状態 v2（`animation`）、Python の読み手と描画、エディタの読み込みと描画、経路をまたぐ。parameter format の変更（AGENTS の stop condition。状態の形はオーナーが承認、2026-10-11）。ノードの id とポートは変えない。
+
+- 作らないもの：clip の編集・切り出し・混ぜ合わせ・複数の clip の同時の再生、骨の編集、IK、`JOINTS_1` 以降、`KHR_animation_pointer`、カメラと光のアニメーション、外部の `.bin` を持つ `.gltf` のエディタでの再生（静止で描く）。
+- owner：時刻と補間と skinning の規則はこの節。基準は three.js r184 の `AnimationMixer`・`SkinnedMesh`（Load3D と同じ見え方のため）で、Python の `core/gltf_animation.py`（作る）がそれと同じ値を出す。エディタは three.js がそのまま描き、式を持たない。fixture は `tools/bake_gltf_animation.mjs`（作る。three.js r184 を Node で動かして焼く）が作る。状態の形は `docs/scene-state-v2.md`。エディタ用ファイルと経路は `docs/studio-node.md`。エディタでの読み込みと描画は `docs/threejs-spark-integration.md`。
+- data の流れ：3D ファイル → コアの Get3DComponents（形・材質）＋ `gltf_animation.py`（骨・重み・morph・clip、値での対応の確認）→ フレームごとに `evaluate`（clip の時刻）→ `mesh_content` で形を作り直す → 描画。エディタは元のファイルの既定の scene（GLTFLoader）→ すべての材質を静止の GLB の材質にする → `AnimationMixer`（`setTime`）→ three.js の `SkinnedMesh` と morph。
+- 考えた別案：ADR 0043。
+
 ### MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`
 
 `core/mesh_render.py` が pure torch で三角形を描き、`scene_mesh.py` が入力を要素ごとの `MeshItem`（頂点・面・あれば uv とテクスチャ・頂点色・法線、光が効くかの印 `unlit`、光が効く要素では材質）にする。
@@ -437,6 +470,13 @@ ADR 0037 の「一致の測り方」の場面のうち、影の場面と平行�
   - (b) プロキシの一致：色をプロキシの MP4 から、止めた再生ヘッドで取る。色はその時刻にシークして止めた `<video>` そのもの（`VideoTexture`）で、再生中と同じ経路（RGBA8 と、シェーダーでの sRGB からの戻し）を通る（再生中の ±1 フレームのずれは測らない）。H.264 の誤差の分だけ緩め、縁を 1 画素削った内側で、平均 ≤ 2/255、16/255 超 ≤ 1% を暫定の合格とする。市松は明るさだけが違うので、4:2:0 の色差の間引きは境目に効かず、残る誤差は量子化（crf 23）と輝度の縁のにじみである。色のある画素と灰色の画素の境目（ノードの出力のフレームで求める）のまわりは、色差の 1 区画（元の画素で 2、この場面の出力で 8 画素）を比べる画素から除く（`CHROMA_BLOCK`）。4:2:0 は色差を元の画素の 2 × 2 ごとに持つので、単色の帯の縁で色が最大 1 区画にじむためである。輝度の境目（市松）は除かない。除いた画素の数は `parity.json` に書く。許容差の値はこのために変えない。単色の帯は、色の行列（BT.709）の取り違えを許容差よりずっと大きな差として出す。最初の計測の後に、測った値に合わせて締める。
 - 深度から位置への数値は、上の「mono の残す画素」の test と (a) の画像で守る。
 - MoGe の場面（作業用のディレクトリの `moge/`。`tools/parity_file_3d.py` の `_moge_sequence`）：同じ道具に、合成の `MOGE_GEOMETRY`（透視投影、`force_projection` と同じくコアの `depth_map_to_point_map` で点を作ったもの、2 フレーム、`mask` の外と段差を含む、`image` は上と同じ市松と単色の帯）を足し、同じ (a)・(b) と同じ合格で比べる。`moge_pixel_k`（`docs/studio-node.md`）の画素の中心の半画素のずれは (a) で出る。
+
+### エディタとの一致（glTF のアニメーションの場面）
+
+`tools/parity_file_3d.*` に場面を足す（作る）。milestone ごとの確認で、CI の test ではない。素材は道具が毎回作る小さな glTF（2 つの joint で曲がる市松の箱、morph の target 1 つ、`LINEAR` の回転・`CUBICSPLINE` の位置・`STEP`・`weights` の channel を持つ clip 2 つ）で、リポジトリに素材を置かない（`RobotExpressive.glb` などは手元の確認だけに使い、写さない）。
+
+- 場面：clip 1 を `speed` 1.5 で、clip の時刻が 0.25 秒と、長さを越えて繰り返す時刻の 2 つ。光が効かない場合と効く場合。
+- 合格：ADR 0037 の暫定の合格（縁を 1 画素削った内側で、平均 ≤ 1/255、8/255 超 ≤ 0.5%）。
 
 ### SPLAT の描き方
 

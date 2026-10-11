@@ -131,6 +131,17 @@ Panorama Studio のエディタの Panorama 表示は、World の内容（`scene
   - 半透明の重なり：Spark はスプラットを深度を書かずに重ね、板は深度を書く。半透明のスプラットと `world` の Sticker が重なる画素の前後と混ざり方は、ノード（`over_by_depth`、スプラットの奥行きは積算アルファ 0.5 の位置）と一致しない。
 - Camera 向けの部品：Camera の視錐台（`cameraFrustumSegments`）、Timeline 上の軌道（`cameraTrajectory`、評価関数で標本化）、Camera から覗く視点（`cameraView`）と、`render` の `space.lines`（線分の描画）。Camera が無いときは使わない。`cameraView` は使っていない（Frame 表示は Camera の shot から `shotCamera` を作り、`placedCamera` で位置に置く）。
 
+### glTF のアニメーション
+
+アニメーションを持つ 3D ファイル（メタに `animation`。`docs/studio-node.md` の「glTF のアニメーションのエディタ用ファイル」）を、出力と同じ形で描く（作る。ADR 0043。規則の owner は `docs/render-contract.md` の「glTF のアニメーション」）。
+
+- 読み込み：元のファイルを GLTFLoader で読み、その既定の scene（`scene` の番号。無ければ最初。コアの読み手と同じ）の `SkinnedMesh`・morph・node の階層をそのまま描く。材質は、今の静止の GLB（コアの MESH を `save_glb` が書いたもの）を GLTFLoader で読んだ材質を一つ取り、元のファイルのすべての mesh に当てる。コアは `alphaMode`・テクスチャの変形・`TEXCOORD_1`・遮蔽・PBR の拡張を落とし、sampler を書き直すので、静止の GLB の材質がすでに出力と同じであり、静止の場面と同じ理由で一致する。その材質が `vertexColors` を使い、元の形に `color` が無ければ、1 の `color` の属性を足す。光が効くかは今と同じ `unlit` で `makeLit`・`makeUnlit` を掛ける。three.js は skin の mesh を単位行列で bind し、skinning の後に mesh の node の `matrixWorld` を掛ける（出力の式と同じ）。
+- 時刻：再生ヘッドの Sticker の clip frame から出力と同じ式で秒を求め、選んだ clip の `AnimationAction`（`LoopRepeat`、`timeScale = speed`）で `mixer.setTime(clip frame ÷ timeline.fps)`。実時間では進めない（`mixer.update` を時計で呼ばない）。
+- 補間：three.js r184 の規則（`LINEAR` の回転は `Quaternion.slerpFlat`、`CUBICSPLINE` の回転は Hermite の後に正規化、`STEP` は `InterpolateDiscrete`）。Python がこれに合わせる（fixture で縛る）。
+- 当たり判定：今の物ごとの当たり判定のマテリアル（`ShaderMaterial`）の頂点の部品（`pano_pick.js` の `PICK_VERTEX`）に、three.js の skin と morph の部品（`#include <skinning_pars_vertex>`・`<morphtarget_pars_vertex>`・`<skinbase_vertex>`・`<morphtarget_vertex>`・`<skinning_vertex>`）を足す（作る）。three.js は `ShaderMaterial` でも、描く物が `SkinnedMesh` か morph を持つときだけ `USE_SKINNING`・`USE_MORPHTARGETS` を定義した別の program を作るので、静止の物の当たり判定は今と同じで、動いた形にも当たる。別の組み立ては要らない。
+- 箱（Frame Selected、注視点の距離）は、読み込んだ静止の GLB の箱（bind の形）とする。コアの MESH の頂点なので、出力の中身の箱（`content_box`、経路の `box`）と同じ値になる。
+- 一致：`docs/render-contract.md` の「エディタとの一致（glTF のアニメーションの場面）」。
+
 ### `DA3_GEOMETRY` mono の深度のグリッド
 
 `DA3_GEOMETRY` mono のエディタ用ファイル（形式は `docs/studio-node.md` の「`DA3_GEOMETRY` mono のエディタ用ファイル」）を、three.js の 1 つの静的なグリッドと、フレームごとの深度のテクスチャで描く（`web_src/pano_depth_grid.js`）。決めた理由は ADR 0039。`MOGE_GEOMETRY` の透視投影の列（`docs/studio-node.md` の「`MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル」、ADR 0040）も同じ形式で届き、この節のとおりに描く。エディタは二つを区別しない（MoGe の画素の中心の決まりは、Python がメタの `intrinsics` に織り込む）。大きすぎる要素の知らせの文は、DA3 に限らない言い方にする（`depthGridTooLarge`）。WebGL2 を前提にする（`gl_VertexID`・`gl_InstanceID`・`texelFetch`・頂点シェーダーのテクスチャ）。
