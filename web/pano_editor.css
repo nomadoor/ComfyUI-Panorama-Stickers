@@ -1394,6 +1394,7 @@
 }
 .pano-paint-size-slider:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 .pano-paint-size-value {
   font-size: 11px;
@@ -1989,8 +1990,10 @@
   background: #fff;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
 }
+/* Not the inputs' inset ring, which on a 3px track looks like a full fill (docs/design.md "フォーカスと無効"). */
 .pano-field input[type="range"]:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 .pano-field input[type="range"]:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 1.5px rgba(0,0,0,0.5);
