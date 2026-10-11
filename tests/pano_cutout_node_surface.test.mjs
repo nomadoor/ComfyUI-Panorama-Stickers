@@ -513,3 +513,15 @@ test("first-frame camera continuity survives crossing a panorama pole", () => {
   assert.ok(Math.abs(restoredView.pitch - view.pitch) < 1e-9);
   assert.ok(Math.abs(restoredView.fov - view.fov) < 1e-9);
 });
+
+test("the node surface's wheel widens a frame up to 179 degrees, the last step stopping there", () => {
+  let state = stateWithShots([{ id: "frame", yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 90, vFOV_deg: 90 }], "frame");
+  let steps = 0;
+  for (let result = applyCutoutNodeSurfaceAction(state, { type: "step-fov", direction: 1 }); result.changed && steps < 100;
+    result = applyCutoutNodeSurfaceAction(state, { type: "step-fov", direction: 1 })) {
+    state = result.state;
+    steps += 1;
+  }
+  assert.ok(Math.abs(state.shots[0].hFOV_deg - 179) < 1e-9, `stopped at ${state.shots[0].hFOV_deg}`);
+  assert.ok(Math.abs(state.shots[0].vFOV_deg - 179) < 1e-9);
+});

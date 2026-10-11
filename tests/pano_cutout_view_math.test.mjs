@@ -27,6 +27,7 @@ import {
   normalizeCutoutShotItem,
   wrapRollDeg,
   worldDirToCutoutFilmPoint,
+  shotFovMaxDeg,
 } from "../web_src/pano_cutout_view_math.js";
 
 const close = (actual, expected, tolerance = 1e-9) => {
@@ -125,7 +126,7 @@ test("a newly added cutout frame starts square instead of inheriting the ERP asp
   assert.equal(deriveCutoutAspectFromFov(shot), 1);
 });
 
-test("wheel scaling preserves tangent aspect and rejects an out-of-range pair atomically", () => {
+test("wheel scaling preserves tangent aspect and leaves a pair already at its limit unchanged", () => {
   const shot = { hFOV_deg: 100, vFOV_deg: 55 };
   const before = getCutoutCameraParams(shot).aspect;
   const next = scaleCutoutFovPair(shot, 0.8);
@@ -147,6 +148,28 @@ test("Cutout wheel step matches the shared three-degree horizontal FOV step", ()
   close(restored.hFOV_deg, 100);
   close(restored.vFOV_deg, 55, 1e-9);
   assert.equal(stepCutoutFovPairByWheel(shot, 0), null);
+});
+
+test("a wheel step that would pass the angle-of-view limit stops at it", () => {
+  for (const curve of [1, 0.5]) {
+    const limit = shotFovMaxDeg(curve);
+    for (const aspect of [16 / 9, 1]) {
+      const shot = { curve, hFOV_deg: limit - 1, vFOV_deg: deriveVerticalFovDeg(limit - 1, aspect, curve) };
+      const next = stepCutoutFovPairByWheel(shot, 1);
+      close(next.hFOV_deg, limit, 1e-9);
+      close(getCutoutCameraParams({ ...shot, ...next }).aspect, aspect, 1e-9);
+      assert.equal(stepCutoutFovPairByWheel({ ...shot, ...next }, 1), null, "at the limit nothing changes");
+    }
+    const narrow = { curve, hFOV_deg: 2, vFOV_deg: 2 };
+    close(stepCutoutFovPairByWheel(narrow, -1).hFOV_deg, 1, 1e-9);
+  }
+  // A pair whose V FOV is the wider one (portrait) stops where V reaches the limit, keeping the aspect.
+  const portrait = { hFOV_deg: 170, vFOV_deg: 178 };
+  let shot = portrait;
+  for (let next = stepCutoutFovPairByWheel(shot, 1); next; next = stepCutoutFovPairByWheel(shot, 1)) shot = next;
+  close(shot.vFOV_deg, 179, 1e-9);
+  assert.ok(shot.hFOV_deg < 179);
+  close(getCutoutCameraParams(shot).aspect, getCutoutCameraParams(portrait).aspect, 1e-9);
 });
 
 test("wheel changes the gate while the focal scalar stays fixed", () => {
