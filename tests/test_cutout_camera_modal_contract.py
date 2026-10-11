@@ -24,7 +24,6 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("if (!itemIsSticker && !itemIsShot) {", editor_js)
         self.assertIn('const activeShot = editor.mode === "frame" && supportsFramePainting() ? getActiveCutoutShot() : null;', editor_js)
         self.assertIn('kind: "pan_frame",', editor_js)
-        self.assertIn('shot.hFOV_deg = next.hFOV_deg;', editor_js)
         self.assertNotIn('frameView: { zoom: 1, panX: 0, panY: 0 }', editor_js)
         frame_rect_body = editor_js.split("function getFrameViewRect", 1)[1].split("function supportsFramePainting", 1)[0]
         self.assertNotIn("getBoundingClientRect", frame_rect_body)

@@ -4,7 +4,7 @@
 // ("move_raster_object", "scale_raster_object"). pointer_input.js decides from the handle under the press
 // which one starts. Letting go of any item edit, a multi-selection move (pointer_multi_move.js) too, is
 // one Undo step (endTransform).
-import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, fovPairKeepingAspect, getCutoutCameraParams } from "../pano_cutout_view_math.js";
+import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, getCutoutCameraParams } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { clamp, wrapYaw } from "../pano_math.js";
@@ -273,7 +273,7 @@ export function createPointerTransform(deps) {
       const start = { ...it.item, hFOV_deg: it.startHFOV, vFOV_deg: it.startVFOV };
       const { aspect, curve } = getCutoutCameraParams(start);
       const hFov = it.kind === "scale_y" ? deriveHorizontalFovDeg(it.startVFOV * ratio, aspect, curve) : it.startHFOV * ratio;
-      writePose(it.item, fovPairKeepingAspect(start, hFov));
+      writePose(it.item, { hFOV_deg: hFov });
       requestDraw({ localOnly: true });
       return;
     }

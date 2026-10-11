@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import {
   CAMERA_SHOT_ID,
+  cameraLensFields,
   cameraShot,
   duplicateSceneSticker,
   editorActive,
@@ -37,7 +38,7 @@ import {
   worldStickerFields,
 } from "../web_src/pano_editor_state.js";
 import { applyStickersNodeSurfaceAction } from "../web_src/pano_stickers_node_surface.js";
-import { cutoutFilmPointToWorldDir, deriveVerticalFovDeg, worldDirToCutoutFilmPoint, fovPairKeepingAspect } from "../web_src/pano_cutout_view_math.js";
+import { cutoutFilmPointToWorldDir, worldDirToCutoutFilmPoint } from "../web_src/pano_cutout_view_math.js";
 import { evaluateCamera, evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState, rebaseSceneState } from "../web_src/pano_scene_state.js";
 import { readEditorSource } from "./editor_source.mjs";
@@ -782,12 +783,9 @@ test("an edited shot writes only its changed fields to the Camera's Lanes by the
   // Without Keyframes the static value changes.
   const plain = cameraState();
   const shot = cameraShot(plain.camera, 0);
-  setCameraShot(plain.camera, 0, { ...shot, hFOV_deg: 50, vFOV_deg: shot.vFOV_deg, position: [0, 1, 0] }, shot);
-  assert.equal(plain.camera.fov.value, 50);
+  setCameraShot(plain.camera, 0, { ...shot, position: [0, 1, 0] }, shot);
   assert.deepEqual(plain.camera.position.value, [0, 1, 0]);
-  assert.equal(plain.camera.fov.keyframes.length + plain.camera.position.keyframes.length, 0);
-  // An FOV edit keeps the aspect (only an aspect preset changes it).
-  assert.equal(plain.camera.aspect, cameraState().camera.aspect);
+  assert.equal(plain.camera.position.keyframes.length, 0);
 });
 
 test("a yaw wrapped across 180 degrees keeps the Camera's turn", () => {
@@ -907,33 +905,33 @@ test("a lens Camera's shot keeps its curve, an hFOV past 179 degrees and its asp
   assert.deepEqual([shot.curve, shot.hFOV_deg], [0.3, 300]);
   const radius = (fov) => Math.tan(0.3 * fov * Math.PI / 360) / 0.3;
   assert.ok(Math.abs(radius(shot.hFOV_deg) / radius(shot.vFOV_deg) - 2) < 1e-9);
-  // A wider shot written back keeps the image's aspect.
-  setCameraShot(camera, 0, { ...shot, hFOV_deg: 320, vFOV_deg: deriveVerticalFovDeg(320, 2, 0.3) }, shot);
-  assert.equal(camera.fov.value, 320);
-  assert.ok(Math.abs(camera.aspect - 2) < 1e-9);
+  // A wider angle of view keeps the image's aspect.
+  setCameraField(camera, 0, "hFOV_deg", 320);
+  const wider = cameraShot(camera, 0);
+  assert.deepEqual([wider.hFOV_deg, camera.aspect], [320, 2]);
+  assert.ok(Math.abs(radius(wider.hFOV_deg) / radius(wider.vFOV_deg) - 2) < 1e-9);
   // A point of its image goes to its ray and back.
   const film = { x: 1.7, y: -0.4 };
   const back = worldDirToCutoutFilmPoint(shot, cutoutFilmPointToWorldDir(shot, film));
   assert.ok(Math.abs(back.x - film.x) < 1e-9 && Math.abs(back.y - film.y) < 1e-9);
 });
 
-// docs/editor-interaction.md (the owner, 2026-10-11): the Camera's aspect changes only through the aspect presets;
-// a change of its H FOV moves its V FOV through that aspect, at its lens curve too.
-test("a Camera's H FOV edit keeps the frame's aspect; only a new aspect preset changes it", () => {
+// docs/editor-interaction.md (the owner, 2026-10-11): the editor writes only the Camera's own fields; its shot is
+// computed from them.
+test("the Camera's shot is computed from the state and writes back only its pose", () => {
   for (const curve of [1, 0.4]) {
     const camera = loadSceneState({ version: 2, camera: { aspect: 16 / 9, fov: { value: 90 }, curve: { value: curve } } }).camera;
     const base = cameraShot(camera, 0);
-    // An edit that leaves V FOV behind (a stale pair) still keeps the aspect.
-    setCameraShot(camera, 0, { ...base, hFOV_deg: 120 }, base);
-    assert.ok(Math.abs(camera.aspect - 16 / 9) < 1e-12);
-    const wider = cameraShot(camera, 0);
-    assert.equal(wider.hFOV_deg, 120);
-    // The shot's pair keeps the aspect in its image radii.
-    const pair = fovPairKeepingAspect(wider, 70);
+    // Its V FOV is the one the aspect makes, in the lens's image radii.
     const radius = (fov) => (curve === 1 ? Math.tan(fov * Math.PI / 360) : Math.tan(curve * fov * Math.PI / 360) / curve);
-    assert.ok(Math.abs(radius(pair.hFOV_deg) / radius(pair.vFOV_deg) - 16 / 9) < 1e-9);
-    // An aspect preset (its ratio on the shot) changes it, to exactly that ratio.
-    setCameraShot(camera, 0, { ...wider, ...fovPairKeepingAspect({ ...wider, vFOV_deg: wider.hFOV_deg }, 120), aspect_id: "1:1", aspect_ratio: 1 }, wider);
-    assert.equal(camera.aspect, 1);
+    assert.ok(Math.abs(radius(base.hFOV_deg) / radius(base.vFOV_deg) - 16 / 9) < 1e-9);
+    // A changed pair on the shot is not written back; its pose is.
+    setCameraShot(camera, 0, { ...base, hFOV_deg: 120, vFOV_deg: 20, yaw_deg: 30, position: [0, 1, 0] }, base);
+    assert.deepEqual([camera.fov.value, camera.aspect, camera.rotation.value.yaw_deg, camera.position.value], [90, 16 / 9, 30, [0, 1, 0]]);
+    // The angle of view and the aspect are written as the state's own fields.
+    setCameraField(camera, 0, "hFOV_deg", 70);
+    setCameraField(camera, 0, "aspect", 1.25);
+    assert.deepEqual([camera.fov.value, camera.aspect], [70, 1.25]);
+    assert.deepEqual([cameraShot(camera, 0).hFOV_deg, cameraLensFields(camera, 0).aspect], [70, 1.25]);
   }
 });

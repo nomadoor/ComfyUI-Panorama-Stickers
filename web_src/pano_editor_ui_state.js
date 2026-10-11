@@ -182,7 +182,7 @@ export function frameViewButton({ hasShot, erp = false, hidden = false, studio =
 }
 
 // The Camera fields a 360-degree ERP Camera does not read: its FOV (ADR 0029, #89) and its lens (ADR 0042).
-const ERP_UNREAD_CAMERA_FIELDS = new Set(["hFOV_deg", "curve"]);
+const ERP_UNREAD_CAMERA_FIELDS = new Set(["hFOV_deg", "aspect", "curve"]);
 const ERP_LENS_FIELDS = new Set(["curve"]);
 
 // Whether the inspector edits a Camera field: the fields a 360-degree ERP Camera does not read stay, disabled.
@@ -203,13 +203,22 @@ export function stickerParamEnabled(key, { port = false } = {}) {
 
 // The aspect preset that makes Panorama Studio's Camera shoot an ERP (`projection: "erp"`, ADR 0029).
 export const ERP_ASPECT = "erp";
-const ASPECT_PRESETS = ["1:1", "4:3", "3:2", "16:9"];
+// The aspect presets of a Camera's or a Cutout shot's frame, in their order, as [width, height] (landscape; the
+// editors flip them to the frame's orientation). The one table the menus and the editors read.
+export const ASPECT_PRESETS = Object.freeze({ "1:1": [1, 1], "4:3": [4, 3], "3:2": [3, 2], "16:9": [16, 9] });
+
+// The [width, height] of an aspect preset; an unknown one is an error.
+export function aspectPreset(value) {
+  const preset = ASPECT_PRESETS[String(value)];
+  if (!preset) throw new Error(`Unknown aspect preset ${JSON.stringify(value)}`);
+  return preset;
+}
 
 // The aspect presets of the Camera's frame in the selection menu and the Frame rail, `active` marked.
 // With `erp` (Panorama Studio, #89) they end with 360°, named 180° for a 180 coverage.
 export function cameraAspectChoices(active, { erp = false, coverage = 360 } = {}) {
   return [
-    ...ASPECT_PRESETS.map((value) => ({ value, label: value, active: active === value })),
+    ...Object.keys(ASPECT_PRESETS).map((value) => ({ value, label: value, active: active === value })),
     ...(erp ? [{ value: ERP_ASPECT, label: Number(coverage) === 180 ? "180°" : "360°", active: active === ERP_ASPECT }] : []),
   ];
 }
