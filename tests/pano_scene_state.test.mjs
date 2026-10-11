@@ -123,6 +123,24 @@ test("a v1 pose number is read as the fixture shared with Python says", () => {
   }
 });
 
+// The same cases test_scene_state.py reads.
+test("a sticker_state fps is read as the fixture shared with Python says", () => {
+  for (const { json, expected } of JSON.parse(fixture("sticker_state_fps")).cases) {
+    assertClose(loadStickerState(`{"kind":"pano_sticker_state","version":2,"fps":${json}}`).fps, expected, json.slice(0, 20));
+  }
+});
+
+// The same cases test_scene_state.py reads.
+test("a camera aspect is read as the fixture shared with Python says", () => {
+  const table = JSON.parse(fixture("camera_aspect"));
+  for (const { json, expected } of table.cases) {
+    assertClose(loadSceneState(`{"version":2,"camera":{"aspect":${json}}}`).camera.aspect, expected, json.slice(0, 20));
+  }
+  for (const { shot, expected } of table.v1_shots) {
+    assertClose(loadSceneState({ version: 1, shots: [shot] }).camera.aspect, expected, JSON.stringify(shot));
+  }
+});
+
 test("sticker_state v1 accepts numeric strings like the old parser", () => {
   const parsed = loadStickerState('{"kind":"pano_sticker_state","version":"1","pose":{"yaw_deg":"190","pitch_deg":" -100 ","roll_deg":2,"hFOV_deg":"30"},"source_aspect":"1.5"}');
   assert.deepEqual(parsed.camera.rotation[0].value, { yaw_deg: -170, pitch_deg: -89.9, roll_deg: 2 });

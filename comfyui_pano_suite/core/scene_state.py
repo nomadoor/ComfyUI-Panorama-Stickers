@@ -32,6 +32,11 @@ TIMELINE_FPS_MAX = 1000.0
 # 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
 TIMELINE_FRAME_MAX = 10000000
 TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX
+# A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT: 2 : 4096, the thinnest frame the output
+# (at most 4096 on its long side, at least 2 on its short one) can take, so a thinner one shoots the same.
+CAMERA_ASPECT_LIMIT = 2048.0
+# A v1 number written as text: ASCII decimal without `_`, with ASCII whitespace around it.
+V1_NUMBER_TEXT = re.compile(r"[ \t\n\r\f\v]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\r\f\v]*")
 # The largest Sticker number (`sticker_<n>`) the `next_sticker_id` counter keeps: JS integers are exact up to here.
 STICKER_NUMBER_MAX = 2**53 - 1
 # At most 16 digits (past STICKER_NUMBER_MAX): a longer number is not counted, and int() of a very long one raises.
@@ -388,13 +393,18 @@ def _next_sticker_id(raw, stickers):
     return _clamp(least if stored is None else max(stored, least), 1, STICKER_NUMBER_MAX)
 
 
+def camera_aspect(value):
+    """A stored `camera.aspect`: 1 when it is not a positive number, else held to the CAMERA_ASPECT_LIMIT range."""
+    return _clamp(_positive(value, 1.0), 1.0 / CAMERA_ASPECT_LIMIT, CAMERA_ASPECT_LIMIT)
+
+
 def _camera(raw):
     """The Camera, or None when the state has none (`camera` missing, null or not an object)."""
     if not isinstance(raw, dict):
         return None
     projection = raw.get("projection") if raw.get("projection") in PROJECTIONS else PROJECTIONS[0]
     return {
-        "aspect": _positive(raw.get("aspect"), 1.0),
+        "aspect": camera_aspect(raw.get("aspect")),
         "projection": projection,
         "visible": _bool(raw.get("visible"), True),
         **_lanes(raw, CAMERA_LANES),
@@ -663,10 +673,7 @@ def _v1_pose_number(value):
         return math.nan
     if not isinstance(value, str):
         return _float(value)
-    try:
-        return float(value)
-    except ValueError:
-        return math.nan
+    return float(value) if V1_NUMBER_TEXT.fullmatch(value) else math.nan
 
 
 def _sticker_state_camera(raw):
@@ -714,7 +721,7 @@ def load_sticker_state(text) -> dict | None:
     elif not isinstance(version, bool) and version == 2:
         camera = _sticker_state_camera(raw.get("camera"))
         source_aspect = _positive(raw.get("source_aspect"), None)
-        fps = _positive(raw.get("fps"), 24.0)
+        fps = _timeline_fps(raw.get("fps")) or 24.0
     else:
         raise ValueError(f"Unsupported sticker_state version {version!r}; supported versions are 1 and 2.")
     return {

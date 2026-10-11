@@ -1,5 +1,5 @@
 {
-  "about": "A v1 sticker_state's pose number: `hFOV_deg` is each `json` text; `fov` is the hFOV read, or null when the sticker_state is not read. Python's float() reads a v1 string (docs/scene-state-v2.md: the old parse_sticker_state's rules).",
+  "about": "A v1 sticker_state's pose number: `hFOV_deg` is each `json` text; `fov` is the hFOV read, or null when the sticker_state is not read. A v1 string is ASCII decimal without `_`, with ASCII whitespace around it (docs/scene-state-v2.md).",
   "cases": [
     {
       "json": "\"30\"",
@@ -27,7 +27,7 @@
     },
     {
       "json": "\"1_0\"",
-      "fov": 10
+      "fov": null
     },
     {
       "json": "\"0x10\"",
@@ -99,6 +99,30 @@
     },
     {
       "json": "[30]",
+      "fov": null
+    },
+    {
+      "json": "\"３０\"",
+      "fov": null
+    },
+    {
+      "json": "\"\\u300030\"",
+      "fov": null
+    },
+    {
+      "json": "\"\\u00a030\"",
+      "fov": null
+    },
+    {
+      "json": "\"\\t30\\n\"",
+      "fov": 30
+    },
+    {
+      "json": "\"1_000\"",
+      "fov": null
+    },
+    {
+      "json": "\"٣\"",
       "fov": null
     }
   ]

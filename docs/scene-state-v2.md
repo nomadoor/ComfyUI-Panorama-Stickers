@@ -94,7 +94,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 | `timeline.fps` | 数値 | `24.0` | 0 以下は既定値。1〜1000 に寄せる（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）。記録された Timeline fps |
 | `timeline.length` | 整数 または `null` | `null` | エディタでの長さの上書き。1 未満は `null`。10,000,000 を超える値は 10,000,000 に寄せる（`TIMELINE_LENGTH_MAX`。`TIMELINE_FRAME_MAX` と同じ値なので、高い fps に再基準化しても長さの秒は縮まない）。`null` なら入力から決める（`docs/studio-node.md` の「Scene の組み立てと撮影の入口」） |
 | `camera` | オブジェクト または `null` | `null` | Camera（下記）。欠け・`null`・オブジェクトでない値は `null`（Camera が無い）。ADR 0029 |
-| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない。1/2048〜2048 に寄せる（案。オーナーの承認待ち。今は正の有限の値をすべて受け、`5e-324` では出力の大きさの計算が落ちる）。2048 は `2 : STUDIO_MAX_OUTPUT_SIDE`（4096）の比で、出力の短い辺は 2 画素より小さくならず長い辺は 4096 を超えないので、これより細い比は出力の大きさを変えない（`docs/studio-node.md` の出力の大きさ。範囲の外の値を端に寄せても出力は同じ）。プリセット（1:1・4:3・3:2・16:9 とその縦向き）、インスペクタの Aspect の欄（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）はこの中にある。Frame の比の入力（任意の正の数の組）と v1 の Cutout の読み替え（FOV 1〜179 からの比で、最大約 13,131）はこの範囲に寄せ、寄せても出力は変わらない |
+| `camera.aspect` | 数値 | `1.0` | 0 以下は既定値。Camera の画面の幅 ÷ 高さ。`projection` が `erp` のときは使わない。1/2048〜2048 に寄せる（`scene_state.py` の `camera_aspect`・`CAMERA_ASPECT_LIMIT`、`pano_scene_state.js` の `cameraAspect`・`CAMERA_ASPECT_LIMIT`。フィクスチャ `camera_aspect`）。2048 は `2 : STUDIO_MAX_OUTPUT_SIDE`（4096）の比で、出力の短い辺は 2 画素より小さくならず長い辺は 4096 を超えないので、これより細い比は出力の大きさを変えない（`docs/studio-node.md` の出力の大きさ。範囲の外の値を端に寄せても出力は同じ）。プリセット（1:1・4:3・3:2・16:9 とその縦向き）、インスペクタの Aspect の欄（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）はこの中にある。Frame の比の入力（任意の正の数の組）と v1 の Cutout の読み替え（FOV 1〜179 からの比で、最大約 13,131）はこの範囲に寄せ、寄せても出力は変わらない |
 | `camera.projection` | `"perspective"` または `"erp"` | `"perspective"` | それ以外は既定値。撮り方で、Keyframe を持たない。`erp` は Camera の位置と回転から ERP を撮り、`fov` と `aspect` と `curve` を読まない。`perspective` は Camera の画像で、レンズの曲線 `curve`（κ）で直線の像から魚眼までをつなぐ（`docs/render-contract.md` の「カメラのレンズ」） |
 | `camera.visible` | 真偽値 | `true` | 真偽値でなければ既定値。`false` は Camera を置いたまま非表示にする。Panorama Studio は非表示の Camera を Camera が無いときと同じに撮る（下記） |
 | `camera.position`・`camera.rotation`・`camera.fov` | Lane | 下記 | Camera の値（Viewport camera は保存しない） |
@@ -557,14 +557,13 @@ Sticker の位置と見た目は変わらない。`yaw_deg` は範囲に丸め�
 |---|---|---|---|
 | `kind` | `"pano_sticker_state"` | — | |
 | `version` | `2` | — | |
-| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない）。0 以下と数値でない値は既定値。`timeline.fps` と同じ 1〜1000（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）に寄せる（案。オーナーの承認待ち。今は範囲を持たず、小さな値では Pose handoff の焼き込みのループが終わらない） |
+| `fps` | 数値 | `24.0` | `camera` の `frame` の基準となる fps。撮った Studio の状態の `timeline.fps`（Timeline fps に再基準化しない）。0 以下と数値でない値は既定値。`timeline.fps` と同じ 1〜1000（`TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`）に寄せる（フィクスチャ `sticker_state_fps`） |
 | `camera` | Lane ごとの Keyframe の配列（`position`・`rotation`・`fov`・`curve`（無ければ κ = 1）） | 各 Lane に Keyframe 一つ | 各配列の形は `state_json` の `camera` の同名の Lane の `keyframes` と同じ。Keyframe のない Lane は、撮影した値を持つ `frame: 0` の Keyframe を一つだけ置く。空または不正な Lane は、既定値を持つ `frame: 0` の Keyframe 一つになる |
 | `source_aspect` | 数値 または `null` | `null` | 撮影した画面の幅 ÷ 高さ |
 
 `load_sticker_state(text)` / `loadStickerState(text)` は v1 と v2 を読み、どちらも v2 の形で返す（フィクスチャ：`sticker_state_v1.json`、`sticker_state_v2.json`）。
 
 - v1（`pose` を一つ持つ形）は、従来の `parse_sticker_state` と同じ規則（yaw を −180〜180 に回す、pitch を ±89.9、`hFOV_deg` を 0.1〜179 に寄せる、`"30"` のような数値の文字列を許す）で読み、各 Lane に `frame: 0` の Keyframe を一つずつ置く（`position` は `[0, 0, 0]`、`easing` は既定値）。`fps` は `24`。
-  - v1 の数値の文字列は、Python の `float()` が読むとおりに読む。JS も同じに読む：ASCII の 10 進（符号、小数点、指数、前後の空白）で、数字の間の 1 つの `_` は受け、16 進・8 進・2 進の接頭辞と `Infinity` は受けない（フィクスチャ `tests/fixtures/scene_state/sticker_state_v1_numbers.json`）。
-  - （案。オーナーの承認待ち）Python と JS の両方が、`_` の無い ASCII の 10 進だけを受けるようにする。今の Python の `float()` は全角の数字（`"３０"` など）といくつかの余分な空白の文字も受け、JS は受けないので、そこだけ食い違う。
+  - v1 の数値の文字列は、Python と JS の両方が `_` の無い ASCII の 10 進（符号、小数点、指数）だけを受け、前後には ASCII の空白（スペース・タブ・改行・`\r`・`\f`・`\v`）だけを許す。全角などの ASCII でない数字と空白、`_`、16 進・8 進・2 進の接頭辞、`Infinity` は受けない（`scene_state.py` と `pano_scene_state.js` の `V1_NUMBER_TEXT`。フィクスチャ `tests/fixtures/scene_state/sticker_state_v1_numbers.json`）。
 - 空、JSON でない、`kind` が違う、v1 の `pose` が読めない場合は `None` / `null` を返す（従来どおり無視される）。
 - `kind` が一致して `version` が `1`・`2` 以外なら、エラー `Unsupported sticker_state version <値>; supported versions are 1 and 2.` にする。

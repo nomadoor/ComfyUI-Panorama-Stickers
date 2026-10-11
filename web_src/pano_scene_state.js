@@ -19,6 +19,9 @@ export const TIMELINE_FPS_MAX = 1000;
 // 1000 fps. A length is one of these frames, so a rebase to a higher fps does not cut it short.
 export const TIMELINE_FRAME_MAX = 10000000;
 export const TIMELINE_LENGTH_MAX = TIMELINE_FRAME_MAX;
+// A Camera's aspect is held to 1/CAMERA_ASPECT_LIMIT..CAMERA_ASPECT_LIMIT: 2 : 4096, the thinnest frame the output
+// (at most 4096 on its long side, at least 2 on its short one) can take, so a thinner one shoots the same.
+export const CAMERA_ASPECT_LIMIT = 2048;
 // The largest Sticker number (`sticker_<n>`) the `next_sticker_id` counter keeps: JS integers are exact up to here.
 const STICKER_NUMBER_MAX = Number.MAX_SAFE_INTEGER;
 // At most 16 digits (past STICKER_NUMBER_MAX): a longer number is not counted, as in scene_state.py.
@@ -367,11 +370,16 @@ function nextStickerNumber(raw, list) {
   return clamp(stored === null ? least : Math.max(stored, least), 1, STICKER_NUMBER_MAX);
 }
 
+// A stored `camera.aspect`: 1 when it is not a positive number, else held to the CAMERA_ASPECT_LIMIT range.
+export function cameraAspect(value) {
+  return clamp(positive(value, 1), 1 / CAMERA_ASPECT_LIMIT, CAMERA_ASPECT_LIMIT);
+}
+
 // The Camera, or null when the state has none (`camera` missing, null or not an object).
 function camera(raw) {
   if (!isObject(raw)) return null;
   const projection = PROJECTIONS.includes(raw.projection) ? raw.projection : PROJECTIONS[0];
-  return { aspect: positive(raw.aspect, 1), projection, visible: bool(raw.visible, true), ...lanes(raw, CAMERA_LANES) };
+  return { aspect: cameraAspect(raw.aspect), projection, visible: bool(raw.visible, true), ...lanes(raw, CAMERA_LANES) };
 }
 
 // A non-empty string, or null.
@@ -660,16 +668,14 @@ function wrapYawDeg(value) {
   return ((((value + 180) % 360) + 360) % 360) - 180;
 }
 
-// A v1 number written as text, as Python's float() reads one in ASCII (the old parse_sticker_state,
-// docs/scene-state-v2.md): decimal digits with single underscores between them, an optional point and exponent.
+// A v1 number written as text: ASCII decimal without `_`, with ASCII whitespace around it (docs/scene-state-v2.md).
 // Not Number()'s hex, octal and binary prefixes or its Infinity.
-const V1_NUMBER_TEXT = /^[+-]?(?:\d(?:_?\d)*(?:\.(?:\d(?:_?\d)*)?)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?$/;
+const V1_NUMBER_TEXT = /^[ \t\n\r\f\v]*[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[ \t\n\r\f\v]*$/;
 
 function v1PoseNumber(value) {
   if (typeof value === "number") return value;
   if (typeof value !== "string") return NaN;
-  const text = value.trim();
-  return V1_NUMBER_TEXT.test(text) ? Number(text.replaceAll("_", "")) : NaN;
+  return V1_NUMBER_TEXT.test(value) ? Number(value) : NaN;
 }
 
 // Each Camera Lane's Keyframes; an empty or invalid Lane is one Keyframe of its default value at frame 0.
@@ -720,7 +726,7 @@ export function loadStickerState(text) {
   } else if (version === 2) {
     camera = stickerStateCamera(raw.camera);
     sourceAspect = positive(raw.source_aspect, null);
-    fps = positive(raw.fps, 24);
+    fps = timelineFps(raw.fps) ?? 24;
   } else {
     throw new Error(`Unsupported sticker_state version ${JSON.stringify(version)}; supported versions are 1 and 2.`);
   }
