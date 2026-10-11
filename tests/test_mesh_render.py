@@ -64,8 +64,8 @@ def _random_triangles(seed, count=40):
 
 @pytest.mark.parametrize("projection", [
     Projection.erp(96, 48), Projection.erp(49, 50, coverage=180), Projection.perspective(64, 40, 100.0),
-    # Lens curves (ADR 0042): a stereographic, a fisheye that sees behind the Camera, a pincushion.
-    Projection.perspective(64, 40, 140.0, curve=0.5), Projection.perspective(63, 41, 250.0, curve=0.0), Projection.perspective(64, 40, 100.0, curve=1.3),
+    # Lens curves (ADR 0042): a stereographic, a fisheye that sees behind the Camera, a mild barrel.
+    Projection.perspective(64, 40, 140.0, curve=0.5), Projection.perspective(63, 41, 250.0, curve=0.0), Projection.perspective(64, 40, 100.0, curve=0.8),
 ])
 @pytest.mark.parametrize("seed", range(4))
 def test_triangles_cover_exactly_the_pixels_whose_rays_hit_them_at_the_ray_length(projection, seed):

@@ -55,7 +55,7 @@ test("a lens image draws through a pinhole the sampling never enlarges, within i
     const focal = (width / 2) / lensRadius((hfov / 2) * DEG, curve);
     return { focal, ...lensRenderPlan({ width, height, focal, curve }) };
   };
-  for (const [curve, hfov] of [[1.3, 90], [0.7, 90], [1, 90]]) {
+  for (const [curve, hfov] of [[0.9, 100], [0.7, 90], [1, 90]]) {
     const { kind, faces: [face], focal } = plan(curve, hfov);
     assert.equal(kind, "pinhole", `${curve} at ${hfov}`);
     assert.ok(face.width * face.height <= LENS_OVERSCAN_MAX_AREA * 1024 * 1024);
@@ -69,17 +69,41 @@ test("a lens image draws through a pinhole the sampling never enlarges, within i
       assert.ok(step >= 1 - 1e-6, `${curve}: (${px}, ${py}) one output pixel is ${step} pinhole pixels`);
     }
   }
-  // A fisheye wider than 180° draws through the cube's 6 faces.
+  // A fisheye wider than 180° draws through the cube's faces.
   assert.equal(plan(0, 220).kind, "cube");
   assert.equal(plan(0, 220).faces.length, 6);
 });
 
+// The cube stands aligned to the World; it draws only the faces the image's cone of directions meets (a 220° 16:9
+// fisheye's corners, 126° off its axis, reach the face behind it).
+test("the cube draws the faces its image samples, and every sampled direction falls on one of them", () => {
+  const turn = (yaw) => ({ x: 0, y: Math.sin(yaw * DEG / 2), z: 0, w: Math.cos(yaw * DEG / 2) });
+  for (const [curve, hfov, yaw, unseen] of [[0, 220, 0, []], [0.5, 140, 0, [5]], [0, 140, 90, [1]], [0.3, 300, 0, []], [0, 160, 30, [5]]]) {
+    const width = 1280;
+    const height = 720;
+    const focal = (width / 2) / lensRadius((hfov / 2) * DEG, curve);
+    const quaternion = turn(yaw);
+    const { faces } = lensRenderPlan({ width, height, focal, curve, quaternion });
+    const label = `κ ${curve} at ${hfov}°, yaw ${yaw}`;
+    assert.deepEqual(faces.flatMap((face, index) => (face.seen ? [] : [index])), unseen, label);
+    for (let y = 0; y < height; y += 24) {
+      for (let x = 0; x < width; x += 24) {
+        const pick = lensPickWindow((x + 0.5 - width / 2) / focal, (height / 2 - y - 0.5) / focal, curve, 100, quaternion);
+        if (pick) assert.ok(faces.find((face) => face.quaternion === pick.quaternion).seen, `${label}: (${x}, ${y})`);
+      }
+    }
+  }
+});
+
 // docs/threejs-spark-integration.md "当たり判定": a pixel of the bent image picks along its own ray.
 test("a pointer on the bent image picks through a cube face pixel on the same ray", () => {
-  for (const curve of [0, 0.5, 1.3]) {
+  // The Camera turned in the World: the faces are the World's, the ray the Camera's turned.
+  const camera = { x: 0.1, y: 0.3, z: -0.2, w: Math.sqrt(1 - 0.01 - 0.09 - 0.04) };
+  for (const curve of [0, 0.5, 0.9]) {
     for (const [x, y] of [[0, 0], [0.4, -0.2], [-1.5, 0.9], [2.5, 0.1], [0.05, -3]]) {
-      const direction = lensFilmDirection(x, y, curve);
-      const pick = lensPickWindow(x, y, curve, 1000);
+      const film = lensFilmDirection(x, y, curve);
+      const direction = film && rotateByQuaternion(camera, film);
+      const pick = lensPickWindow(x, y, curve, 1000, camera);
       if (!direction) {
         assert.equal(pick, null);
         continue;

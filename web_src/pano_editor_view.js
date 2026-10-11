@@ -95,7 +95,8 @@ export function shotLensImage(shot, width, height, background, lens = null) {
   const focal = lens?.focalPx ?? (width / 2) / lensRadius(getCutoutCameraParams(shot).hFovDeg * DEG2RAD * 0.5, curve);
   const centerX = lens?.centerX ?? width / 2;
   const centerY = lens?.centerY ?? height / 2;
-  const { faces } = lensRenderPlan({ width, height, centerX, centerY, focal, curve });
+  // The Camera's turn decides which faces of the World-aligned cube the image samples.
+  const { faces } = lensRenderPlan({ width, height, centerX, centerY, focal, curve, quaternion: shotCamera(shot).quaternion });
   return { curve, focal, centerX, centerY, background, faces };
 }
 

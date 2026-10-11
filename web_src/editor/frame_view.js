@@ -7,7 +7,7 @@ import {
   stepCutoutFovPairByWheel,
 } from "../pano_cutout_view_math.js";
 import { frameViewContext } from "../pano_editor_view.js";
-import { lensPickWindow, multiplyQuaternions } from "../pano_lens.js";
+import { lensPickWindow } from "../pano_lens.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import {
   DEFAULT_DISTANCE,
@@ -226,15 +226,16 @@ export function createFrameView(deps) {
   // The World point of the content under canvas point p in the Frame view that an orbit or a wheel step
   // works on, or null (also over a SPLAT's box, pano_three_view.js pickSurface).
   // On a lens Camera's image (ADR 0042) the pointer's pixel goes back along the lens to its ray, which is picked
-  // through the face of the cube it crosses (pano_lens.js lensPickWindow); past 180° off the axis nothing is hit.
+  // through the face of the World-aligned cube it crosses (pano_lens.js lensPickWindow), as the view draws it; past
+  // 180° off the axis nothing is hit.
   function pickFrame(context, p) {
     const { rect, lens } = context;
     if (!lens) return editorView.pickSurface(shotViewCamera(context.shot), p.x - rect.x, p.y - rect.y, rect.w, rect.h);
     const film = { x: (p.x - rect.x - lens.centerX) / lens.focalPx, y: (lens.centerY - (p.y - rect.y)) / lens.focalPx };
-    const face = lensPickWindow(film.x, film.y, lens.curve);
-    if (!face) return null;
     const camera = shotViewCamera(context.shot);
-    const turned = { ...camera, quaternion: multiplyQuaternions(camera.quaternion, face.quaternion), fovY_deg: 90, aspect: 1 };
+    const face = lensPickWindow(film.x, film.y, lens.curve, 1024, camera.quaternion);
+    if (!face) return null;
+    const turned = { ...camera, quaternion: face.quaternion, fovY_deg: 90, aspect: 1 };
     return editorView.pickSurface(turned, face.x, face.y, face.size, face.size);
   }
 
