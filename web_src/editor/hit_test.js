@@ -131,7 +131,7 @@ export function createHitTest(deps) {
       }
       const g = objectGeom(item);
       if (!g.visible) continue;
-      if (pointInPoly(p, g.corners)) return { item, geom: g };
+      if (pointInPoly(p, g.outline?.length >= 4 ? g.outline : g.corners)) return { item, geom: g };
     }
     return null;
   }

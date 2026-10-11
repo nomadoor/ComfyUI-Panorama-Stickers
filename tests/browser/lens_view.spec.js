@@ -46,4 +46,9 @@ test("a lens Camera's image follows its rays through the pinhole and the cube, w
   expect(check.splat.centerAlpha).toBeGreaterThan(0);
   expect(check.splat.renderers).toBe(6);
   expect(check.splat.afterHide).toBe(0);
+  // Leaving κ 1 shows the splats in the first frame: through the pinhole always, and through the cube once that view
+  // drew its cube before (its faces' Spark renderers stay while it draws). Before, a fresh renderer of no sort left
+  // the first frame without its splats (about 130 levels off).
+  expect(check.entry.map((item) => item.kind)).toEqual(["pinhole", "cube"]);
+  for (const item of check.entry) expect(item.difference).toBeLessThan(0.5);
 });

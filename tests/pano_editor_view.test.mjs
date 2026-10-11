@@ -792,9 +792,8 @@ test("Panorama Studio's editor edits its Camera: the shot follows it, the Frame 
   // The shot is the Camera at the playhead; an edit goes back to its Lanes before the playhead moves.
   assert.match(editor, /function setTimelineFrame\(frame\) \{[\s\S]*?syncCutoutShot\(\);\s*editor\.frame = next;\s*timelinePlayhead\.frame\.value = next;\s*syncCutoutShot\(\);/);
   assert.match(editor, /if \(keep && shot && cutoutShotBase\) setCameraShot\(state\.camera, editor\.frame, shot, cutoutShotBase\);/);
-  // With World content the Frame view's drags of the 3D view controls orbit and pan the Camera, and the wheel
-  // moves it toward the point under the pointer.
-  assert.match(editor, /if \(direction && isFreeFrameView\(\)\) zoomFrameAt\(p, -direction\);/);
+  // With World content the Frame view's drags of the 3D view controls orbit and pan the Camera (its wheel:
+  // tests/editor_frame_wheel.test.mjs).
   assert.match(editor, /if \(freeFrame && spaceAction\) \{[\s\S]*?startFrameDrag\(spaceAction, p, e\.pointerId\);/);
   // The frame and the camera preview see the World from the Camera's position.
   assert.match(editor, /return placedCamera\(shotCamera\(shot\), shot\.position, frameViewDistance\(\), content\.sphere\);/);

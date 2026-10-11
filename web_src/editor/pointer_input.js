@@ -28,7 +28,7 @@ export function createPointerInput(deps) {
     startMultiMove, startPaintStroke, startPanFrame, startRotate, startScale, startSpaceDrag,
     startWorldStickerPress, stickerById, stopTimelinePlayback, supportsErpPainting, supportsFramePainting,
     syncTimeline, syncViewToggleState, updateCursor, updateSelectionMenu, updateSidePanel, viewControls,
-    zoomFrameAt, zoomFrameViewAt, zoomSpaceAt;
+    wheelFrameView, zoomSpaceAt;
 
   // Where the pointer went down on the canvas, until its first move.
   let editPointerDown = null;
@@ -390,13 +390,8 @@ export function createPointerInput(deps) {
 
   function onCanvasWheel(e) {
     if (editor.mode === "frame") {
-      const p = screenPos(e);
       const direction = readWheelDirection(e);
-      // Edits stop Panorama Studio's playback, so the wheel keys the frame shown.
-      if (direction) stopTimelinePlayback();
-      // With World content the wheel moves the Camera toward the point under the pointer, as in 6DoF.
-      if (direction && isFreeFrameView()) zoomFrameAt(p, -direction);
-      else if (direction && zoomFrameViewAt(p, direction)) requestDraw({ localOnly: true });
+      if (direction) wheelFrameView(screenPos(e), direction);
       e.preventDefault();
       return;
     }
@@ -429,7 +424,7 @@ export function createPointerInput(deps) {
         startMultiMove, startPaintStroke, startPanFrame, startRotate, startScale, startSpaceDrag,
         startWorldStickerPress, stickerById, stopTimelinePlayback, supportsErpPainting, supportsFramePainting,
         syncTimeline, syncViewToggleState, updateCursor, updateSelectionMenu, updateSidePanel, viewControls,
-        zoomFrameAt, zoomFrameViewAt, zoomSpaceAt,
+        wheelFrameView, zoomSpaceAt,
       } = api);
     },
     onCanvasPointerDown, onCanvasPointerMove, onCanvasPointerUp, onCanvasPointerCancel, onCanvasMouseMove,

@@ -5,6 +5,9 @@ import { yawPitchToDir } from "../pano_camera_math.js";
 import { clamp } from "../pano_math.js";
 import { smoothstep } from "./helpers.js";
 
+// The points of each edge of an item's outline (buildSceneItemGeom).
+const OUTLINE_SAMPLES = 24;
+
 export function createObjectGeometry(deps) {
   const {
     cameraV2, canvas, editor, state,
@@ -177,6 +180,18 @@ export function createObjectGeometry(deps) {
       .map((d) => projectSceneItemDir(d, center.x, frameShot, frameRect, projectOptions))
       .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y));
     if (corners.length < 4) return { visible: false };
+    // The outline is the image's true edge: each edge of the film sampled through the item's lens and the view's
+    // projection, so it bends wherever the two differ (a lens curve κ ≠ 1, the Unwrap view). The corners, the
+    // edge midpoints and their marks lie on it.
+    const outline = [];
+    for (const [fromX, fromY, toX, toY] of [[-1, 1, 1, 1], [1, 1, 1, -1], [1, -1, -1, -1], [-1, -1, -1, 1]]) {
+      for (let i = 0; i < OUTLINE_SAMPLES; i += 1) {
+        const t = i / OUTLINE_SAMPLES;
+        const dir = stickerDirFromFrame(frame, (fromX + (toX - fromX) * t) * frame.tanX, (fromY + (toY - fromY) * t) * frame.tanY);
+        const point = projectSceneItemDir(dir, center.x, frameShot, frameRect, projectOptions);
+        if (Number.isFinite(point?.x) && Number.isFinite(point?.y)) outline.push({ x: point.x, y: point.y });
+      }
+    }
     const rotateStemBaseDir = stickerDirFromFrame(frame, 0, frame.tanY);
     const rotateHandleDir = stickerDirFromFrame(frame, 0, frame.tanY + Math.max(frame.tanY * 0.43, 0.053));
     const rotateStemBase = projectSceneItemDir(rotateStemBaseDir, center.x, frameShot, frameRect, projectOptions);
@@ -239,6 +254,7 @@ export function createObjectGeometry(deps) {
     return {
       center: { x: center.x, y: center.y },
       corners: corners.map((c) => ({ x: c.x, y: c.y })),
+      outline,
       edgeMidpoints,
       rotateStemBase: { x: rotateStemBase.x, y: rotateStemBase.y },
       rotateHandle,

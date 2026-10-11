@@ -25,6 +25,10 @@ import {
   FRAME_GATE_SIDE_GAP_PX,
 } from "./constants.js";
 
+// What the stage says after a wheel in the Frame view without World content, and for how long (ms).
+export const FRAME_WHEEL_NOTICE = "The wheel moves the Camera; change the H FOV to zoom";
+const FRAME_WHEEL_NOTICE_MS = 2000;
+
 export function createFrameView(deps) {
   const {
     cameraV2, canvas, editor, editorView, floatingRightEl, floatingTopEl, frameRailEl, paintDockEl, readOnly,
@@ -36,6 +40,9 @@ export function createFrameView(deps) {
     spaceScale, spaceViewState, stopTimelinePlayback, syncCutoutShot, syncViewToggleState, updateCursor, updateSidePanel, writePose;
 
   let frameWheel = null;
+  // Until when the stage shows frameWheelNotice(), and the timer that draws it away.
+  let frameWheelNoticeUntil = 0;
+  let frameWheelNoticeTimer = 0;
   // The movement keys moved the Camera since they went down (moveFrameByKeys); endFrameKeyMove() makes it
   // one Undo step.
   let frameKeyMoved = false;
@@ -143,6 +150,29 @@ export function createFrameView(deps) {
     return shotEditor && !!getActiveCutoutShot();
   }
 
+  // One wheel step `direction` (readWheelDirection's: > 0 away) at canvas point p in the Frame view
+  // (docs/editor-interaction.md "Frame 表示のホイール"). Panorama Studio's Camera always dollies toward or away from the
+  // point under the pointer; without World content the panorama is at infinity and a dolly changes nothing, so the
+  // Camera stays and the stage says how to zoom. The legacy Cutout's shot, which has no position, changes its FOV.
+  function wheelFrameView(p, direction) {
+    if (cameraV2 && !isFreeFrameView()) {
+      frameWheelNoticeUntil = performance.now() + FRAME_WHEEL_NOTICE_MS;
+      window.clearTimeout(frameWheelNoticeTimer);
+      frameWheelNoticeTimer = window.setTimeout(() => requestDraw({ localOnly: true }), FRAME_WHEEL_NOTICE_MS);
+      requestDraw({ localOnly: true });
+      return;
+    }
+    // Edits stop Panorama Studio's playback, so the wheel keys the frame shown.
+    stopTimelinePlayback();
+    if (cameraV2) zoomFrameAt(p, -direction);
+    else if (zoomFrameViewAt(p, direction)) requestDraw({ localOnly: true });
+  }
+
+  // The stage's line after a wheel that could not move the picture (wheelFrameView), else nothing.
+  function frameWheelNotice() {
+    return editor.mode === "frame" && performance.now() < frameWheelNoticeUntil ? FRAME_WHEEL_NOTICE : "";
+  }
+
   function zoomFrameViewAt(anchor, direction) {
     const shot = getActiveCutoutShot();
     if (!shot || shot.locked === true) return false;
@@ -153,8 +183,6 @@ export function createFrameView(deps) {
     // The ERP behind the gate zooms instead, which is the intent. Past the
     // context's 85-degree reach the canvas shows the neutral background
     // (frameViewContext, ADR 0021 D5), as it does for the inspector's angle.
-    // Panorama Studio's Camera takes its new angle of view as its `fov` (items.js writePose), and its shot is
-    // derived again from it for what reads it next.
     writePose(shot, next);
     syncCutoutShot();
     void anchor;
@@ -369,8 +397,8 @@ export function createFrameView(deps) {
       } = api);
     },
     leaveFrameView, measureFrameSafeRect, getFrameViewLayout, getFrameViewRect, supportsFramePainting,
-    zoomFrameViewAt, isFreeFrameView, frameContext, frameViewDistance, frameSpaceView, frameTarget,
-    startPanFrame, startFrameDrag, dragFrame, zoomFrameAt, flushFrameWheelCommit, cancelFrameCameraGesture,
+    wheelFrameView, frameWheelNotice, isFreeFrameView, frameContext, frameViewDistance, frameSpaceView, frameTarget,
+    startPanFrame, startFrameDrag, dragFrame, flushFrameWheelCommit, cancelFrameCameraGesture,
     moveFrameByKeys, endFrameKeyMove,
   };
 }

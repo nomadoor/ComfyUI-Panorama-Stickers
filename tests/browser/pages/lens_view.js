@@ -147,6 +147,42 @@ try {
   const renderers = view.stats().sparks.length;
   view.releaseSplats("preview");
   check.splat = { loaded: drawnSplat > 0, centerAlpha: center[3], renderers, afterHide: view.stats().sparks.length };
+
+  // A Lens curve leaving 1 (or coming back to the lens) shows the splats in its first frame: the frame drawn as the
+  // edit lands is the one drawn once the Spark renderers have sorted again. Mean difference per channel, in levels.
+  const shotOf = (owner, curve, hfov) => {
+    const lensFocal = (W / 2) / lensRadius((hfov / 2) * Math.PI / 180, curve);
+    const plan = curve === 1 ? null : lensRenderPlan({ width: W, height: H, focal: lensFocal, curve, quaternion: camera.quaternion });
+    view.clear();
+    view.render({ rect: { x: 0, y: 0, w: W, h: H }, camera: { ...camera, fovY_deg: 2 * Math.atan(Math.tan(hfov / 2 * Math.PI / 180) * H / W) * 180 / Math.PI }, background: null, layers: [], space, owner, ...(plan ? { lens: { curve, focal: lensFocal, centerX: W / 2, centerY: H / 2, background: BG, faces: plan.faces } } : {}) });
+    probe2d.clearRect(0, 0, W, H);
+    probe2d.drawImage(view.canvas, 0, 0);
+    return { kind: plan?.kind ?? null, pixels: probe2d.getImageData(0, 0, W, H).data };
+  };
+  const settle = async (owner, curve, hfov) => {
+    let last = null;
+    for (let frame = 0; frame < 30; frame += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      last = shotOf(owner, curve, hfov);
+    }
+    return last;
+  };
+  const meanDifference = (a, b) => {
+    let sum = 0;
+    for (let i = 0; i < a.length; i += 4) sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+    return sum / (a.length / 4 * 3);
+  };
+  check.entry = [];
+  // κ 0.9 at 90° draws through the pinhole, at 170° through the cube; the cube's view drew through its cube once.
+  for (const [owner, hfov, warm] of [["pinhole-entry", 90, false], ["cube-entry", 170, true]]) {
+    if (warm) await settle(owner, 0.9, hfov);
+    await settle(owner, 1, hfov);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const first = shotOf(owner, 0.9, hfov);
+    const settled = await settle(owner, 0.9, hfov);
+    check.entry.push({ owner, kind: first.kind, difference: meanDifference(first.pixels, settled.pixels) });
+    view.releaseSplats(owner);
+  }
   check.done = true;
 } catch (error) {
   check.error = String(error?.stack || error);

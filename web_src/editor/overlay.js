@@ -146,6 +146,16 @@ export function createOverlay(deps) {
     ctx2d.closePath();
   }
 
+  // An item's outline (object_geometry.js buildSceneItemGeom: the image's true edge), or its corners' quad.
+  function traceOutline(ctx2d, geom) {
+    const outline = Array.isArray(geom?.outline) && geom.outline.length >= 4 ? geom.outline : geom?.corners;
+    if (!ctx2d || !Array.isArray(outline) || outline.length < 4) return;
+    ctx2d.beginPath();
+    ctx2d.moveTo(outline[0].x, outline[0].y);
+    for (let i = 1; i < outline.length; i += 1) ctx2d.lineTo(outline[i].x, outline[i].y);
+    ctx2d.closePath();
+  }
+
   function drawCameraFrameBody(geom, selected, locked) {
     const corners = Array.isArray(geom?.corners) ? geom.corners : [];
     if (corners.length < 4) return;
@@ -160,7 +170,7 @@ export function createOverlay(deps) {
       ? "rgba(255, 89, 89, 0.08)"
       : (selected ? "rgba(255, 221, 87, 0.08)" : "rgba(255, 214, 64, 0.05)");
     const edgeStroke = selected ? 3.2 : 2.6;
-    traceQuad(ctx, corners);
+    traceOutline(ctx, geom);
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.strokeStyle = accent;
@@ -214,7 +224,7 @@ export function createOverlay(deps) {
           ? "rgba(250, 250, 250, 0.9)"
           : (locked ? "rgba(255, 89, 89, 0.72)" : "#71717a");
         ctx.lineWidth = selected ? 2 : 1;
-        traceQuad(ctx, geom.corners);
+        traceOutline(ctx, geom);
         ctx.stroke();
       } else {
         drawStickerBoundary(item, selected);

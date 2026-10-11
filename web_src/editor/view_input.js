@@ -34,6 +34,8 @@ export function createViewInput(deps) {
   const {
     canvas, editor, editorView, imageCache, readOnly, scheduler, state, stateV2, stillCanvas, videoEl,
   } = deps;
+  // The kind of lens image each owner of a shot view drew last (pano_lens.js lensRenderPlan's `previous`).
+  const lensKinds = new Map();
   // Bound by connect() to the other modules and showEditor.
   let applySpaceMode, backgroundColor, backgroundCoverage, backgroundShowsAt, buildEditorViewPaintLayers, cameraFrustumLength, cameraShoots, cancelViewTransition,
     currentViewCamera, cutoutCamera, depthColor, deviceRect, file3dEditorFile, followPortSticker, frameViewDistance, getConnectedErpImage,
@@ -302,7 +304,8 @@ export function createViewInput(deps) {
     const { background, layers, content } = editorViewInput();
     if (!background && !layers.length && !content) return null;
     const space = content && shot.position ? content : null;
-    const lensImage = shotLensImage(shot, rect.w, rect.h, parseInt(String(backgroundColor() ?? "#000000").replace("#", ""), 16) || 0, lens);
+    const lensImage = shotLensImage(shot, rect.w, rect.h, parseInt(String(backgroundColor() ?? "#000000").replace("#", ""), 16) || 0, lens, lensKinds.get(owner) ?? null);
+    lensKinds.set(owner, lensImage?.kind ?? null);
     return editorView.render({ rect, camera: shotViewCamera(shot), background, layers, space, owner, clearColor, ...(lensImage ? { lens: lensImage } : {}) });
   }
 
