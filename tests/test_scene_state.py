@@ -352,6 +352,22 @@ def test_a_v1_pose_number_is_read_as_the_fixture_shared_with_js_says():
         assert (None if parsed is None else parsed["camera"]["fov"][0]["value"]) == case["fov"], case["json"][:20]
 
 
+def test_a_sticker_state_fps_is_read_as_the_fixture_shared_with_js_says():
+    for case in json.loads(read_fixture("sticker_state_fps"))["cases"]:
+        parsed = load_sticker_state('{"kind":"pano_sticker_state","version":2,"fps":%s}' % case["json"])
+        assert parsed["fps"] == pytest.approx(case["expected"]), case["json"][:20]
+
+
+def test_a_camera_aspect_is_read_as_the_fixture_shared_with_js_says():
+    table = json.loads(read_fixture("camera_aspect"))
+    for case in table["cases"]:
+        state = load_scene_state('{"version":2,"camera":{"aspect":%s}}' % case["json"])
+        assert state["camera"]["aspect"] == pytest.approx(case["expected"]), case["json"][:20]
+    for case in table["v1_shots"]:
+        state = load_scene_state({"version": 1, "shots": [case["shot"]]})
+        assert state["camera"]["aspect"] == pytest.approx(case["expected"]), case["shot"]
+
+
 @pytest.mark.parametrize("easing", [None, "smooth", [0.42, 0.0, 0.58], [0.2, -0.1, 0.8, 1.0], [0.2, 0.0, 0.8, 1.1], [1.2, 0.0, 0.5, 1.0]])
 def test_missing_or_invalid_easing_is_ease_in_out(easing):
     key = {"frame": 0, "value": 0.5} if easing is None else {"frame": 0, "value": 0.5, "easing": easing}

@@ -4,7 +4,7 @@ import { DEG2RAD } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter, timelineFps } from "./pano_scene_state.js";
+import { cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
@@ -373,8 +373,8 @@ export function setCameraField(camera, frame, field, value) {
   } else if (field === "hFOV_deg") {
     setLaneValue(camera, "fov", frame, value);
   } else if (field === "aspect") {
-    // Not a Lane: the frame's aspect has no Keyframes.
-    camera.aspect = value;
+    // Not a Lane: the frame's aspect has no Keyframes. Held to the range the state keeps (cameraAspect).
+    camera.aspect = cameraAspect(value);
   } else {
     setLaneValue(camera, "rotation", frame, { [field]: value });
   }

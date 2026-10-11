@@ -406,7 +406,7 @@ export function sceneRequest(files, evaluatedScene, animation = undefined, fps =
 function animationRequest(fileAnimation, animation, clipFrame, fps) {
   if (!fileAnimation) return {};
   const pose = animationPose(fileAnimation.clips, animation, clipFrame, fps);
-  return pose ? { animation: { src: fileAnimation.src, ...pose } } : {};
+  return pose ? { animation: { src: fileAnimation.src, ...(fileAnimation.box ? { box: fileAnimation.box } : {}), ...pose } } : {};
 }
 
 // The clips of the animated 3D files of a state, as autoTimelineLength counts them (`animations`): the `scene`
@@ -517,6 +517,15 @@ export function sceneItemBox(kind, box) {
   return { min: [box.min[0], -box.max[1], -box.max[2]], max: [box.max[0], -box.min[1], -box.min[2]] };
 }
 
+// The box of the item a `scene` or 3D Sticker request draws, in the `scene` glTF frame, as Frame Selected and the
+// content's sphere take it: an animated 3D file's content box (its meta's `animation.box`, the first clip's pose at
+// time 0, docs/studio-node.md "中身の箱"; already in that frame) in place of the box of the bind pose its editor GLB
+// loads with, else the loaded item's box (`loaded`, null while it loads) turned by sceneItemBox.
+export function sceneContentBox(request, loaded) {
+  if (request?.animation?.box) return request.animation.box;
+  return loaded && request ? sceneItemBox(request.kind, loaded) : null;
+}
+
 function boxCorners({ min, max }) {
   const corners = [];
   for (const x of [min[0], max[0]]) for (const y of [min[1], max[1]]) for (const z of [min[2], max[2]]) corners.push([x, y, z]);
@@ -612,16 +621,16 @@ export function planeOutlineSegments(plane, steps = 24) {
 
 // The sphere Frame Selected fits, like Blender's View Selected: around the selected Sticker where
 // it shows in the World, else around all the content (content, null without content). selected is
-// { sticker, value, plane, item }: the state v2 Sticker, its evaluated value at the playhead, its plane
-// (a worldStickerPlane(), null before its media has a size), and its 3D item ({ kind, box }: the loaded
-// item's own box, null while it loads). A plane is bounded by its corners and a 3D item by its box moved
-// by the Sticker's transform; until either is known, a sphere as big as its scale at its position. A sky
-// Sticker lies at infinity, so with one selected all the content is framed.
+// { sticker, value, plane, box }: the state v2 Sticker, its evaluated value at the playhead, its plane
+// (a worldStickerPlane(), null before its media has a size), and its 3D item's box in the `scene` glTF frame
+// (sceneContentBox; null while it loads). A plane is bounded by its corners and a 3D item by its box moved by the
+// Sticker's transform; until either is known, a sphere as big as its scale at its position. A sky Sticker lies at
+// infinity, so with one selected all the content is framed.
 export function frameSphere(content, selected = null) {
-  const { sticker, value, plane, item } = selected ?? {};
+  const { sticker, value, plane, box } = selected ?? {};
   if (sticker?.placement !== "world" || !value?.active) return content;
   if (plane) return boundingSphere(planeCorners(plane));
-  if (item?.box) return boundingSphere(boxCorners(sceneItemBox(item.kind, item.box)).map((p) => transformPoint(value, p)));
+  if (box) return boundingSphere(boxCorners(box).map((p) => transformPoint(value, p)));
   return { center: [...value.position], radius: value.scale };
 }
 

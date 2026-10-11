@@ -5,7 +5,8 @@ import { createSidePanelEvents } from "../web_src/editor/side_panel_events.js";
 import { createSceneItems } from "../web_src/pano_scene_items.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
-import { fileStickerRequests, sceneFilesOf, sceneRequest, stateAnimationClips } from "../web_src/pano_space.js";
+import { animationMetaOf } from "../web_src/pano_animation.js";
+import { fileStickerRequests, frameSphere, sceneContentBox, sceneFilesOf, sceneRequest, stateAnimationClips } from "../web_src/pano_space.js";
 
 // ADR 0043: an animated 3D file in the editor — what the views are asked to draw, where its item loads from, and the
 // inspector's Clip and Speed rows.
@@ -91,4 +92,28 @@ test("the inspector's Clip picks a clip by its name and Speed sets the speed in 
   upstream.change("animation_clip", "1");
   assert.equal(upstream.target.animation, undefined);
   assert.equal(upstream.steps.history, 0);
+});
+
+// docs/studio-node.md「中身の箱」: Frame Selected of an animated 3D file frames its meta's content box (the first clip's
+// pose at time 0, in the `scene` glTF frame), not the box of the bind pose its editor GLB loads with.
+test("an animated item's Frame Selected frames the meta box, not the bind GLB's box", () => {
+  const box = { min: [-1, 0, -1], max: [1, 2, 1] };
+  const meta = { source: { filename: "robot.glb" }, clips, box };
+  assert.deepEqual(animationMetaOf(meta, url).box, box);
+  assert.equal("box" in animationMetaOf({ ...meta, box: { min: [0, 0], max: [1, 1, 1] } }, url), false, "not a box");
+  const state = studio({ clip: "Idle", speed: 1 });
+  const evaluated = evaluateSceneState(state, 12);
+  const editorFile = () => ({ kind: "mesh", unlit: false, url: "/view?filename=e.glb", generation: 0, animation: animationMetaOf(meta, url) });
+  const [{ request }] = fileStickerRequests(state, evaluated, editorFile);
+  // The editor GLB's own box: the bind pose, a hundredth of the posed model (Xbot).
+  const bind = { min: [-0.01, 0, -0.01], max: [0.01, 0.02, 0.01] };
+  const value = { ...evaluated.stickers[0], position: [0, 0, 0], scale: 1 };
+  const sphere = frameSphere(null, {
+    sticker: state.stickers[0], value, plane: null,
+    box: sceneContentBox(request, bind),
+  });
+  assert.deepEqual(sphere.center, [0, 1, 0]);
+  // A static file keeps its loaded box.
+  assert.deepEqual(sceneContentBox({ kind: "mesh" }, bind), bind);
+  assert.ok(Math.abs(sphere.radius - Math.sqrt(3)) < 1e-9, `radius ${sphere.radius}`);
 });

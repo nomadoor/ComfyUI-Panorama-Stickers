@@ -8,6 +8,7 @@ import os
 import torch
 from comfy_api.latest import InputImpl, Types
 
+from .core import gltf_animation
 from .core.cache import CACHE
 from .core.scene_eval import FRAME_EPSILON
 from .core.video_source import MaterializedVideo, PtsTimes, StreamedVideo, coded_size, scan_video
@@ -15,7 +16,7 @@ from .core.world_render import SceneContent
 from .core_adapters import _gaussian_item, get_mesh_batch_item
 from .node_runtime import NodeRuntime
 from .progress import loop_progress
-from .scene_mesh import da3_count, da3_keep, keep_is_empty, moge_keep, moge_points, da3_meshes, da3_points, is_multiview, da3_scene_content, is_da3, is_moge, mesh_scene_content, moge_scene_content
+from .scene_mesh import mesh_animation, da3_count, da3_keep, keep_is_empty, moge_keep, moge_points, da3_meshes, da3_points, is_multiview, da3_scene_content, is_da3, is_moge, mesh_scene_content, moge_scene_content
 from .scene_video import RenderedVideo, SceneVideo
 from .splat_render import _GLTF_TO_SPLAT, splat_content
 
@@ -171,7 +172,8 @@ def content_box(media) -> dict | None:
     """The axis-aligned box `{"min": [x, y, z], "max": [x, y, z]}` of 3D media in its own (`scene`) glTF frame, over
     all its items, from the points that are drawn: a MESH's vertices (`get_mesh_batch_item`, without the batch's
     padding), a SPLAT's gaussian centers (`_gaussian_item`) turned from 3DGS to glTF, a MOGE_GEOMETRY's kept points
-    (`moge_keep`, `moge_points`: `moge_grid_mesh`'s vertices without making the mesh), a DA3_GEOMETRY multiview's meshes of every view (`da3_meshes`), a mono one's kept pixels' points of every non-empty frame (`da3_keep`, `da3_points`; no conversion). None when it has no point (docs/studio-node.md, "中身の箱"). The
+    (`moge_keep`, `moge_points`: `moge_grid_mesh`'s vertices without making the mesh), a glTF with clips' vertices at
+    its first clip's time 0 (`gltf_animation.deform`), a DA3_GEOMETRY multiview's meshes of every view (`da3_meshes`), a mono one's kept pixels' points of every non-empty frame (`da3_keep`, `da3_points`; no conversion). None when it has no point (docs/studio-node.md, "中身の箱"). The
     one owner of the box: the node's 3D port Sticker and the editor's route both use it."""
     points = []
     if isinstance(media, Types.SPLAT):
@@ -179,6 +181,11 @@ def content_box(media) -> dict | None:
         for index in range(media.positions.shape[0]):
             centers = _gaussian_item(media, index, torch.device("cpu"))[0]
             points.append((centers[:, :, None] * turn.T[None]).sum(1))
+    elif isinstance(media, Types.MESH) and mesh_animation(media) is not None:
+        # A glTF with clips: its first clip's pose at time 0, deformed as it is drawn, not its bind shape (whatever
+        # clip the state chooses, so that choosing another does not move the box).
+        animation = mesh_animation(media)
+        points.append(gltf_animation.deform(animation, gltf_animation.upload(animation, "cpu"), gltf_animation.evaluate(animation, 0, 0.0))[0])
     elif isinstance(media, Types.MESH):
         for index in range(media.vertices.shape[0]):
             points.append(get_mesh_batch_item(media, index)[0].float().cpu())

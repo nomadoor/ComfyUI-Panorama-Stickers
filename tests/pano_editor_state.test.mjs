@@ -953,3 +953,11 @@ test("the Camera's shot is computed from the state and writes back only its pose
     assert.deepEqual([cameraShot(camera, 0).hFOV_deg, cameraLensFields(camera, 0).aspect], [70, 1.25]);
   }
 });
+
+test("an aspect written to the Camera is held to the range the state keeps, as the saved text has it", () => {
+  const { camera } = loadSceneState({ version: 2, camera: {} });
+  for (const [value, expected] of [[1e9, 2048], [1e-9, 1 / 2048], [1.5, 1.5]]) {
+    setCameraField(camera, 0, "aspect", value);
+    assert.equal(camera.aspect, expected);
+  }
+});

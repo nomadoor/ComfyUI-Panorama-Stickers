@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import test from "node:test";
 
-import { newStudioCamera, newWorldSceneSticker, setWorldStickerTransform } from "../web_src/pano_editor_state.js";
+import { CAMERA_SHOT_ID, newStudioCamera, newWorldSceneSticker, setWorldStickerTransform } from "../web_src/pano_editor_state.js";
 import { DRAW_REASON } from "../web_src/pano_frame_scheduler.js";
 import { evaluateSticker } from "../web_src/pano_scene_eval.js";
 import { gizmoDragLanes, initialSpaceView } from "../web_src/pano_space.js";
@@ -76,7 +76,7 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
   };
   const values = {
     canvas: { width: 800, height: 400, setPointerCapture: record("canvas.setPointerCapture") },
-    dragFrames: { request: record("dragFrames.request") },
+    dragFrames: { request: record("dragFrames.request"), cancel: record("dragFrames.cancel") },
     editor,
     editorView: {
       gizmoPointer: record("editorView.gizmoPointer", api.gizmoPointer),
@@ -98,6 +98,7 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
       moveDrag: record("viewController.moveDrag"),
       endDrag: record("viewController.endDrag"),
       applyWheelEvent: record("viewController.applyWheelEvent", () => wheelApplies),
+      stopMotion: record("viewController.stopMotion"),
     },
     ...deps,
   };
@@ -151,7 +152,7 @@ function harness({ api = {}, deps = {}, editor: editorFields = {}, wheelApplies 
     rectFromPoints: (a, b) => ({ a, b }),
     rectIntersectsGeom: () => false,
     startAnimation: (fn) => fn(),
-    cancelFrameCameraGesture: () => false,
+    cancelTimelineDrag: () => false,
     shortestWrappedDelta: (a, b) => a - b,
     currentSpaceCamera: () => "space-camera",
     playback: { playing: false, stop: record("playback.stop") },
@@ -1923,51 +1924,127 @@ test("a release without a gesture only syncs", () => {
 
 // ---------------------------------------------------------------- cancel, mousemove, wheel
 
-test("a cancel the Frame view's Camera gesture takes ends there", () => {
-  const h = harness({ api: { cancelFrameCameraGesture: () => true } });
-  const it = { kind: "pan_frame" };
-  h.editor.interaction = it;
-  h.onCanvasPointerCancel();
-  assert.equal(h.editor.interaction, it);
-  assert.deepEqual(h.effects(), ["cancelFrameCameraGesture"]);
-});
-
-test("a cancel of a world gesture ends it as a release does", () => {
-  const h = harness();
-  h.editor.interaction = { kind: "world_gizmo", changed: true };
-  h.onCanvasPointerCancel();
-  assert.deepEqual(h.effects(), ["cancelFrameCameraGesture", "editorView.gizmoPointer", "pushHistory", "commitAndRefreshNode", "updateSidePanel", "updateCursor", "requestDraw"]);
-  assert.equal(h.editor.interaction, null);
-});
-
-test("a cancel of looking around lets the view coast; of a stroke drops it from the engine", () => {
-  let h = harness();
-  h.editor.interaction = { kind: "view" };
-  h.onCanvasPointerCancel();
-  assert.deepEqual(h.effects(), ["cancelFrameCameraGesture", "startAnimation", "viewController.endDrag", "invalidateLivePaintPreviewCaches", "syncViewToggleState", "updateCursor", "requestDraw"]);
-  assert.deepEqual(h.calls("requestDraw"), [[{ localOnly: true }]]);
-
-  for (const kind of ["paint_stroke", "paint_lasso_fill"]) {
-    h = harness();
-    const it = { kind };
-    h.editor.interaction = it;
-    h.onCanvasPointerCancel();
-    assert.deepEqual(h.effects(), ["cancelFrameCameraGesture", "invalidateLivePaintPreviewCaches", "paintEngine.cancelActiveStroke", "invalidateLivePaintPreviewCaches", "syncViewToggleState", "updateCursor", "requestDraw"]);
-    assert.deepEqual(h.calls("getActivePaintTargetDescriptor"), [[it]]);
-    assert.equal(h.editor.interaction, null);
+// docs/editor-architecture.md「操作の取り消し」: a cancel puts every record the gesture may have written back to its
+// start values, in place, with no Undo step and nothing written to the state.
+test("a pointercancel puts every edit gesture back to its start values, with no step and no commit", () => {
+  const cases = [];
+  // A sky Sticker's move, scale and rotate; its Lane took a Keyframe on the way.
+  for (const kind of ["move", "scale", "scale_x", "scale_y", "rotate"]) {
+    const item = sticker("s", { lanes: { yaw: { keyframes: [] } } });
+    cases.push({ kind, it: { kind, item }, records: [item], write: () => { item.pose.yaw_deg = 99; item.lanes.yaw.keyframes.push({ frame: 4 }); } });
   }
-  h = harness({ api: { getActivePaintTargetDescriptor: () => null } });
-  h.editor.interaction = { kind: "paint_stroke" };
-  h.onCanvasPointerCancel();
-  assert.equal(h.called("paintEngine.cancelActiveStroke"), false);
+  const strokes = [{ id: "s1", actionGroupId: "g-group", geometry: { points: [[0.1, 0.2]] } }];
+  const groups = [{ actionGroupId: "g-group", frame: { centerUv: { u: 0.1 } } }];
+  const rasters = [{ id: "r", transform: { du: 0, dv: 0, scale: 1 } }];
+  const paintApi = { getStrokeGroupStrokes: () => strokes, getPaintingGroupList: () => groups, getRasterObjectList: () => rasters };
+  const writePaint = () => { strokes[0].geometry.points = [[0.5, 0.5]]; groups[0].frame = null; rasters[0].transform.du = 0.3; };
+  for (const kind of ["move_stroke_group", "scale_stroke_group", "rotate_stroke_group"]) {
+    cases.push({ kind, it: { kind, item: strokeGroup("g") }, api: paintApi, records: [strokes, groups], write: writePaint, painting: true });
+  }
+  for (const kind of ["move_raster_object", "scale_raster_object"]) {
+    cases.push({ kind, it: { kind, item: raster("r") }, api: paintApi, records: [rasters], write: writePaint, painting: true });
+  }
+  const multi = sticker("m");
+  cases.push({
+    kind: "move_multi", it: { kind: "move_multi", items: [multi, strokeGroup("g"), raster("r")] }, api: paintApi,
+    records: [multi, strokes, groups, rasters], write: () => { multi.pose.pitch_deg = -40; writePaint(); }, painting: true,
+  });
+  const world = newWorldSceneSticker("w1", { kind: "file" }, { position: [1, 2, 3], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 });
+  cases.push({
+    kind: "world_gizmo", it: { kind: "world_gizmo", id: "w1" }, api: { stickerById: () => world }, records: [world],
+    write: () => setWorldStickerTransform(world, 12, { position: [5, 5, 5] }), gizmo: true,
+  });
+  // Panorama Studio's Camera: its shot and `state.camera`, whose Lanes take Keyframes.
+  for (const kind of ["pan_frame", "roll_frame", "frame_pan", "frame_orbit"]) {
+    const shot = { id: CAMERA_SHOT_ID, yaw_deg: 1, pitch_deg: 2, roll_deg: 3, position: [0, 0, 0] };
+    const camera = { yaw: { keyframes: [{ frame: 0, value: 1 }] } };
+    cases.push({
+      kind, it: { kind, shot }, deps: { cameraV2: true, state: { ui_settings: {}, camera } }, api: { getActiveCutoutShot: () => shot },
+      records: [shot, camera], write: () => { shot.yaw_deg = 50; shot.position = [1, 1, 1]; camera.yaw.keyframes.push({ frame: 9, value: 50 }); }, camera: true,
+    });
+  }
+  for (const c of cases) {
+    const h = harness({
+      deps: c.deps, api: { isPaintCompositeInteraction: () => !!c.painting, ...c.api }, editor: { pointerPos: { x: 1, y: 2 } },
+    });
+    h.editor.interaction = c.it;
+    h.takeGestureSnapshot(c.it);
+    const before = structuredClone(c.records);
+    c.write();
+    h.clear();
+    h.onCanvasPointerCancel(h.event());
+    assert.deepEqual(c.records, before, c.kind);
+    assert.equal(h.editor.interaction, null, c.kind);
+    for (const name of ["pushHistory", "commitState", "commitAndRefreshNode", "node.setDirtyCanvas"]) assert.equal(h.called(name), false, `${c.kind}: ${name}`);
+    assert.equal(h.called("dragFrames.cancel"), true, c.kind);
+    if (c.painting) assert.deepEqual(h.calls("markPaintStrokeVisualsDirty"), [[{ rebuildPaintEngine: true }]], c.kind);
+    else assert.equal(h.calls("markObjectVisualsDirty").length, 1, c.kind);
+    if (c.camera) assert.deepEqual(h.calls("syncCutoutShot"), [[false]], c.kind);
+    if (c.gizmo) assert.equal(h.calls("editorView.gizmoPointer")[0][0], "up", "the gizmo lets go of its handle");
+    // Afterwards the pointer only hovers.
+    h.clear();
+    h.onCanvasPointerMove(h.event({ x: 300 }));
+    assert.deepEqual(h.effects(), ["setPointerPos", "updateCursor"], c.kind);
+  }
 });
 
-test("a cancel of another gesture drops it without a history step", () => {
-  const h = harness();
-  h.editor.interaction = { kind: "move" };
-  h.onCanvasPointerCancel();
+test("a cancelled paint stroke is discarded whole, the segments the Frame view's edge committed too", () => {
+  const painting = { paint: { strokes: [{ id: "old" }] }, groups: [] };
+  const h = harness({ deps: { state: { ui_settings: {}, painting } }, api: { isPaintCompositeInteraction: () => true } });
+  const it = { kind: "paint_stroke", layerKind: "paint", stroke: {} };
+  h.editor.interaction = it;
+  // paint_input.js takes the snapshot just before a segment commits.
+  h.takeGestureSnapshot(it);
+  painting.paint.strokes.push({ id: "segment" });
+  painting.groups.push({ actionGroupId: "g" });
+  h.onCanvasPointerCancel(h.event());
+  assert.deepEqual(painting, { paint: { strokes: [{ id: "old" }] }, groups: [] });
+  assert.equal(h.calls("paintEngine.cancelActiveStroke").length, 1);
+  assert.deepEqual(h.calls("markPaintStrokeVisualsDirty"), [[{ rebuildPaintEngine: true }]]);
+});
+
+test("a press takes the start values: a cancelled move of a Sticker puts it back; marquee and the view restore nothing", () => {
+  const item = sticker("b");
+  let h = harness({ editor: { selectedId: "b" }, api: { hitObjectAt: () => ({ item, geom: { center: { x: 90, y: 45 } } }) } });
+  h.onCanvasPointerDown(h.event());
+  item.pose.yaw_deg = 123;
+  h.onCanvasPointerCancel(h.event());
+  assert.equal(item.pose.yaw_deg, 10);
+
+  h = harness();
+  h.editor.interaction = { kind: "view" };
+  h.onCanvasPointerCancel(h.event());
+  assert.equal(h.called("viewController.stopMotion"), true, "the view stops where it is");
+  assert.equal(h.called("viewController.endDrag"), false, "and does not coast");
+  assert.equal(h.called("startAnimation"), false);
+
+  h = harness();
+  h.onCanvasPointerDown(h.event({ ctrlKey: true }));
+  h.onCanvasPointerCancel(h.event());
   assert.equal(h.editor.interaction, null);
-  assert.deepEqual(h.effects(), ["cancelFrameCameraGesture", "invalidateLivePaintPreviewCaches", "syncViewToggleState", "updateCursor", "requestDraw"]);
+  assert.equal(h.called("setSelectedItems"), false, "the marquee selects nothing");
+});
+
+test("a second pointer is ignored while a gesture runs; only the gesture's own pointer ends or cancels it", () => {
+  const item = sticker("b");
+  const h = harness({ editor: { selectedId: "b" }, api: { hitObjectAt: () => ({ item, geom: { center: { x: 90, y: 45 } } }) } });
+  h.onCanvasPointerDown(h.event({ pointerId: 7 }));
+  const it = h.editor.interaction;
+  h.clear();
+  h.onCanvasPointerDown(h.event({ pointerId: 8, x: 300 }));
+  h.onCanvasPointerMove(h.event({ pointerId: 8, x: 300 }));
+  h.onCanvasPointerUp(h.event({ pointerId: 8 }));
+  // The other pointer losing its capture cancels nothing either (pano_editor.js lostpointercapture).
+  h.onCanvasPointerCancel(h.event({ pointerId: 8 }));
+  assert.deepEqual(h.log, []);
+  assert.equal(h.editor.interaction, it);
+  // The gesture's pointer losing its capture without a pointerup cancels it.
+  h.onCanvasPointerCancel(h.event({ pointerId: 7 }));
+  assert.equal(h.editor.interaction, null);
+  // A Timeline drag under way ignores a press on the canvas too.
+  const t = harness({ deps: { timeline: { selection: null, drag: {} } } });
+  t.onCanvasPointerDown(t.event());
+  assert.deepEqual(t.log, []);
 });
 
 test("a mouse move updates the cursor without a gesture, and draws the Frame view's overlay for the cursor tool", () => {

@@ -680,8 +680,8 @@ async function showEditor(node, type, options = {}) {
   // Each module takes what it uses from here and calls the others through connect() (editor/modules.js);
   // showEditor takes back what it registers and calls below. A name missing on either side throws.
   const {
-    addImageStickerFromFile, addWorldStickerFromFile, applyInitialCutoutFocus, applyVideoTimelineFps, bindDrag,
-    cancelFrameCameraGesture, closePaintColorPop, commitState, disposeMediaSession, disposeUpstream, editorAnimating,
+    addImageStickerFromFile, addWorldStickerFromFile, applyInitialCutoutFocus, applyRunResult, bindDrag,
+    cancelGesture, closePaintColorPop, commitState, disposeMediaSession, disposeUpstream, editorAnimating,
     endFrameKeyMove, finishKnobRoll, flushFrameWheelCommit, forgetCameraPreviewFrame, getUnwrapRect,
     hidePaintSizePreview, hideTooltip, hoverWorldGizmo, isFreeFrameView, isFreeSpaceView, migrateLegacyEmbeddedAssets, onCanvasDragOver,
     onCanvasDrop, onCanvasMouseMove, onCanvasPointerCancel, onCanvasPointerDown, onCanvasPointerMove,
@@ -732,9 +732,11 @@ async function showEditor(node, type, options = {}) {
   frameRollKnobEl?.addEventListener("pointerdown", onFrameRollKnobPointerDown);
   frameRollKnobEl?.addEventListener("pointermove", onFrameRollKnobPointerMove);
   frameRollKnobEl?.addEventListener("pointerup", finishKnobRoll);
-  frameRollKnobEl?.addEventListener("pointercancel", () => cancelFrameCameraGesture());
+  frameRollKnobEl?.addEventListener("pointercancel", () => {
+    if (editor.interaction?.source === "knob") cancelGesture();
+  });
   frameRollKnobEl?.addEventListener("lostpointercapture", () => {
-    if (editor.interaction?.source === "knob") cancelFrameCameraGesture();
+    if (editor.interaction?.source === "knob") cancelGesture();
   });
   frameRollKnobEl?.addEventListener("dblclick", onFrameRollKnobDoubleClick);
 
@@ -745,9 +747,9 @@ async function showEditor(node, type, options = {}) {
   canvas.onpointerup = onCanvasPointerUp;
 
   canvas.onpointercancel = onCanvasPointerCancel;
-  canvas.onlostpointercapture = () => {
-    cancelFrameCameraGesture();
-  };
+  // A gesture whose pointer lost the capture without a pointerup is cancelled; after a pointerup none is
+  // under way.
+  canvas.onlostpointercapture = onCanvasPointerCancel;
 
   canvas.onauxclick = (e) => {
     if (e.button === 1) e.preventDefault();
@@ -841,8 +843,7 @@ async function showEditor(node, type, options = {}) {
     unregisterModalExternalStickerSync = registerExternalStickerSync(node, (reason = "sync") => {
       if (reason === "executed") {
         invalidateMediaUiImage(imageCache, EXTERNAL_STICKER_PREVIEW_KEY);
-        refreshModalVideoSource();
-        if (sceneV2) applyVideoTimelineFps();
+        applyRunResult();
       }
       reconcileExternalStickerFromInputs(reason);
     }, { editor: true });

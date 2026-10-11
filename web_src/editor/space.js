@@ -5,7 +5,7 @@ import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { editorSession } from "../pano_node_bridge.js";
 import { nodeInputOrigins } from "../pano_preview_video.js";
 import { clipActive, evaluateCamera, evaluateSceneState, evaluateSticker } from "../pano_scene_eval.js";
-import { facingRotation, frameSphere, hasWorldContent } from "../pano_space.js";
+import { facingRotation, frameSphere, hasWorldContent, sceneContentBox } from "../pano_space.js";
 import { createSpaceNavigation } from "../pano_space_navigation.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { VIEW_CONTROLS_SETTING_ID, viewControlsPreset } from "../pano_view_controls.js";
@@ -134,7 +134,7 @@ export function createSpace(deps) {
       sticker: upstream ?? sceneState.stickers[index],
       value: upstream ? evaluateSticker(upstream, editor.frame) : evaluateSceneState(sceneState, editor.frame).stickers[index],
       plane: [...space.stickers, ...space.upstreamStickers].find((layer) => layer.id === id) ?? null,
-      item: request?.id === id && request.url ? { kind: request.kind, box: editorView.sceneBox(request.url) } : null,
+      box: request?.id === id && request.url ? sceneContentBox(request, editorView.sceneBox(request.url)) : null,
     };
     const sphere = isCameraSelected() ? cameraSphere() : frameSphere(contentSphere(), selected);
     if (sphere) navigation.frameSphereView(sphere);

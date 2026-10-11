@@ -100,13 +100,19 @@ export function createPointerWorld(deps) {
     requestDraw({ localOnly: true });
   }
 
+  // The gizmo lets go of the handle it holds (a gizmo drag's end, or its cancel in pointer_input.js).
+  function releaseWorldGizmo() {
+    editor.gizmoAxis = null;
+    worldGizmoPointer("up", editor.pointerPos);
+    runtime.backgroundDirty = true;
+  }
+
   // A press of startWorldStickerPress() ends: a gizmo drag that changed the Sticker is one Undo step.
   function endWorldStickerPress(ended) {
     editor.interaction = null;
     editor.gizmoAxis = null;
     if (ended.kind === "world_gizmo") {
-      worldGizmoPointer("up", editor.pointerPos);
-      runtime.backgroundDirty = true;
+      releaseWorldGizmo();
       if (ended.changed) {
         pushHistory();
         commitAndRefreshNode();
@@ -126,6 +132,6 @@ export function createPointerWorld(deps) {
         syncFloatingViewButtonState, updateCursor, updateSelectionMenu, updateSidePanel,
       } = api);
     },
-    worldGizmoPointer, startWorldStickerPress, hoverWorldGizmo, dragWorldGizmo, endWorldStickerPress,
+    worldGizmoPointer, startWorldStickerPress, hoverWorldGizmo, dragWorldGizmo, endWorldStickerPress, releaseWorldGizmo,
   };
 }

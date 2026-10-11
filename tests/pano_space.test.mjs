@@ -29,6 +29,7 @@ import {
   fileStickerKey,
   fileStickerRequests,
   frameSphere,
+  sceneContentBox,
   frameView,
   gizmoDragLanes,
   gizmoScreenBox,
@@ -469,25 +470,25 @@ test("Frame Selected fits the selected world Sticker, else all the content", () 
   const value = { active: true, position: [3, 0, -5], yaw_deg: 90, pitch_deg: 0, roll_deg: 0, scale: 2 };
   // A plane: the sphere through its corners, around its position.
   const plane = worldStickerPlane(value, { x0: 0, y0: 0, x1: 1, y1: 0.75 }, 400, 400);
-  const planeSphere = frameSphere(content, { sticker: world, value, plane, item: null });
+  const planeSphere = frameSphere(content, { sticker: world, value, plane, box: null });
   closeVec(planeSphere.center, [3, 0, -5]);
   close(planeSphere.radius, Math.hypot(1, 0.75));
   // A 3D item: its box in the scene frame (a SPLAT's turned by sceneItemBox) moved by the transform.
   const box = { min: [0, 0, 0], max: [2, 2, 2] };
   const unturned = { ...value, yaw_deg: 0 };
-  const splat = frameSphere(content, { sticker: world, value: unturned, plane: null, item: { kind: "splat", box } });
+  const splat = frameSphere(content, { sticker: world, value: unturned, plane: null, box: sceneContentBox({ kind: "splat" }, box) });
   closeVec(splat.center, [5, -2, -7]);
   close(splat.radius, 2 * Math.sqrt(3));
-  const mesh = frameSphere(content, { sticker: world, value: unturned, plane: null, item: { kind: "mesh", box } });
+  const mesh = frameSphere(content, { sticker: world, value: unturned, plane: null, box: sceneContentBox({ kind: "mesh" }, box) });
   closeVec(mesh.center, [5, 2, -3]);
   // Not loaded yet: a sphere as big as its scale at its position.
-  assert.deepEqual(frameSphere(content, { sticker: world, value, plane: null, item: null }), { center: [3, 0, -5], radius: 2 });
-  assert.deepEqual(frameSphere(null, { sticker: world, value, plane: null, item: { kind: "mesh", box: null } }), { center: [3, 0, -5], radius: 2 });
+  assert.deepEqual(frameSphere(content, { sticker: world, value, plane: null, box: null }), { center: [3, 0, -5], radius: 2 });
+  assert.deepEqual(frameSphere(null, { sticker: world, value, plane: null, box: sceneContentBox({ kind: "mesh" }, null) }), { center: [3, 0, -5], radius: 2 });
   // Nothing selected, a sky Sticker selected, or a world Sticker outside its Clip range: all the content.
   assert.equal(frameSphere(content, null), content);
   assert.equal(frameSphere(null, null), null);
-  assert.equal(frameSphere(content, { sticker: { placement: "sky" }, value, plane: null, item: null }), content);
-  assert.equal(frameSphere(content, { sticker: world, value: { ...value, active: false }, plane, item: null }), content);
+  assert.equal(frameSphere(content, { sticker: { placement: "sky" }, value, plane: null, box: null }), content);
+  assert.equal(frameSphere(content, { sticker: world, value: { ...value, active: false }, plane, box: null }), content);
 });
 
 test("the grid spacing follows the content size by powers of ten", () => {

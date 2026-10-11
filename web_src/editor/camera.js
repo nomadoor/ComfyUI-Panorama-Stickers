@@ -15,6 +15,7 @@ import {
   shotCurve,
 } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID, cameraShot, newStudioCamera, setCameraShot } from "../pano_editor_state.js";
+import { cameraAspect } from "../pano_scene_state.js";
 import { ASPECT_PRESETS, ERP_ASPECT, aspectPreset } from "../pano_editor_ui_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import { cameraFrustumSegments, segmentsHit } from "../pano_space.js";
@@ -31,7 +32,7 @@ export function createCamera(deps) {
     cutoutCamera, editorViewInput, forceCursorTool, getFrameViewRect, hasCamera, hasSpaceContent, hideTooltip,
     isCameraSelected, isShotItem, leaveFrameView, pushHistory, requestDraw,
     screenPos, setSelectedItem, spaceScale, spaceViewState, stopTimelinePlayback, syncFrameRollKnob,
-    syncViewToggleState, transitionView, turnViewTo, updateCursor, updateSelectionMenu, updateSidePanel,
+    syncViewToggleState, takeGestureSnapshot, transitionView, turnViewTo, updateCursor, updateSelectionMenu, updateSidePanel,
     worldGizmoPointer;
 
   // The Camera's shot as it was last derived (null without a Camera); an edit since then is written back to
@@ -147,7 +148,8 @@ export function createCamera(deps) {
 
   function setCameraAspect(ratio) {
     syncCutoutShot();
-    state.camera.aspect = ratio;
+    // Held to the stored range (docs/scene-state-v2.md `camera.aspect`), so the working state never leaves it.
+    state.camera.aspect = cameraAspect(ratio);
     syncCutoutShot();
   }
 
@@ -379,8 +381,10 @@ export function createCamera(deps) {
     uiState.tooltip.variant = "roll";
     uiState.tooltip.visible = true;
   }
+  // The knob's roll, a gesture of its own pointer: ignored while another gesture is under way, and cancelled
+  // like the others (pointer_input.js cancelGesture).
   function onFrameRollKnobPointerDown(event) {
-    if (event.button !== 0 || readOnly || editor.mode !== "frame") return;
+    if (event.button !== 0 || readOnly || editor.mode !== "frame" || editor.interaction) return;
     const shot = getActiveCutoutShot();
     if (!shot || shot.locked === true) return;
     const rect = getFrameViewRect(shot);
@@ -392,6 +396,7 @@ export function createCamera(deps) {
       start: { roll_deg: Number(shot.roll_deg ?? shot.rot_deg ?? 0) },
       changed: false, altStarted: false, source: "knob",
     };
+    takeGestureSnapshot(editor.interaction);
     frameRollKnobEl.setPointerCapture?.(event.pointerId);
     event.preventDefault();
     syncFrameRollKnob();
@@ -439,7 +444,7 @@ export function createCamera(deps) {
         cutoutCamera, editorViewInput, forceCursorTool, getFrameViewRect, hasCamera, hasSpaceContent, hideTooltip,
         isCameraSelected, isShotItem, leaveFrameView, pushHistory, requestDraw,
         screenPos, setSelectedItem, spaceScale, spaceViewState, stopTimelinePlayback, syncFrameRollKnob,
-        syncViewToggleState, transitionView, turnViewTo, updateCursor, updateSelectionMenu, updateSidePanel,
+        syncViewToggleState, takeGestureSnapshot, transitionView, turnViewTo, updateCursor, updateSelectionMenu, updateSidePanel,
         worldGizmoPointer,
       } = api);
     },

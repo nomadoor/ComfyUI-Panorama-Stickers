@@ -8,7 +8,7 @@ export function createKeyboard(deps) {
     editor, overlay, readOnly, stateV2, timeline, uiState,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let canKeyMove, cancelFrameCameraGesture, cancelViewTransition, closeEditor, deleteSelected,
+  let canKeyMove, cancelLiveEdits, cancelViewTransition, closeEditor, deleteSelected,
     deleteSelectedKeyframes, deleteSelectedWorldSticker, endFrameKeyMove, getHistoryCapabilities, getSelected,
     restoreHistory, setFullscreenState, settleCanvasConfirm, startAnimation, syncFrameRollKnob, togglePlayback,
     updateCursor;
@@ -17,7 +17,8 @@ export function createKeyboard(deps) {
   const moveKeys = createMoveKeys();
 
   // Escape takes back one thing, the innermost: the confirm dialog (Cancel), a field being typed in (it
-  // leaves the field), the Frame view's Camera gesture, full screen, and last the editor itself.
+  // leaves the field), a pointer's edit under way (any gesture or Timeline drag), full screen, and last the
+  // editor itself.
   function onEscClose(ev) {
     if (ev.key !== "Escape") return;
     if (uiState.confirmDialog.visible) {
@@ -35,7 +36,7 @@ export function createKeyboard(deps) {
       target.blur?.();
       return;
     }
-    if (cancelFrameCameraGesture()) {
+    if (cancelLiveEdits()) {
       ev.preventDefault();
       ev.stopPropagation();
       ev.stopImmediatePropagation?.();
@@ -183,7 +184,10 @@ export function createKeyboard(deps) {
     syncFrameRollKnob();
     updateCursor(editor.pointerPos);
   }
+  // Leaving the window lets every key go, and cancels a pointer's edit under way: its pointerup may never
+  // come, and a hover afterwards must not move anything.
   function onWindowBlur() {
+    cancelLiveEdits();
     releaseMoveKeys();
     editor.marqueeModifier = false;
     editor.altModifier = false;
@@ -207,7 +211,7 @@ export function createKeyboard(deps) {
   return {
     connect(api) {
       ({
-        canKeyMove, cancelFrameCameraGesture, cancelViewTransition, closeEditor, deleteSelected,
+        canKeyMove, cancelLiveEdits, cancelViewTransition, closeEditor, deleteSelected,
         deleteSelectedKeyframes, deleteSelectedWorldSticker, endFrameKeyMove, getHistoryCapabilities, getSelected,
         restoreHistory, setFullscreenState, settleCanvasConfirm, startAnimation, syncFrameRollKnob, togglePlayback,
         updateCursor,

@@ -73,6 +73,7 @@ function editorHistory({ readOnly = false, uploading = () => false } = {}) {
   let stored = (working) => working;
   const history = createHistory({ editor, readOnly, runtime: {}, state, stateV2: true, studio: true, type: "stickers" });
   history.connect({
+    cancelLiveEdits: () => false,
     clearWorldSelection: () => { calls.cleared += 1; }, commitState: () => { calls.commits += 1; },
     getActiveCutoutShot: () => (state.camera ? { id: "camera" } : null), isUploadingSticker: uploading,
     markObjectVisualsDirty: noop, markPaintStrokeVisualsDirty: noop, playback: { seek: noop }, pruneUpstreamRecords: noop,
@@ -141,6 +142,7 @@ test("an edit's step prunes the overrides of elements gone upstream; opening and
   const history = createHistory({ editor, readOnly: false, state, stateV2: true });
   let pruned = 0;
   history.connect({
+    cancelLiveEdits: () => false,
     isUploadingSticker: () => false, pruneUpstreamRecords: () => { pruned += 1; }, storedEditorState: () => state,
     syncCutoutShot() {}, syncPortHandoff() {},
     syncUndoRedoButtons() {}, syncUpstreamEdits() {},

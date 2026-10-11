@@ -16,7 +16,7 @@ export function createTimeline(deps) {
     uiState, videoEl, videoTimelineFps,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let commitAndRefreshNode, file3dEditorFile, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
+  let cancelLiveEdits, commitAndRefreshNode, file3dEditorFile, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
     playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles, stickerFiles,
     syncCutoutShot, stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground,
     upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers;
@@ -257,6 +257,7 @@ export function createTimeline(deps) {
   function deleteSelectedKeyframes() {
     const { selection } = timeline;
     if (!timelineEditable(selection.owner)) return;
+    cancelLiveEdits();
     stopTimelinePlayback();
     deleteKeyframes(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, editor.frame - timelineOffset(selection.owner));
     timeline.selection = null;
@@ -282,10 +283,18 @@ export function createTimeline(deps) {
     if (fps !== null && fps !== state.timeline.fps) changeTimelineFps(fps);
   }
 
+  // A run's result reached the open editor (its `executed`): an edit a pointer has under way is cancelled
+  // first, so nothing rebases under it, then the background VIDEO and Panorama Studio's fps follow the run.
+  function applyRunResult() {
+    cancelLiveEdits();
+    refreshModalVideoSource();
+    if (sceneV2) applyVideoTimelineFps();
+  }
+
   return {
     connect(api) {
       ({
-        commitAndRefreshNode, file3dEditorFile, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
+        cancelLiveEdits, commitAndRefreshNode, file3dEditorFile, getPortMediaMeta, hasCamera, inspectorTimed, isExternalSticker, loading3dIds, markObjectVisualsDirty,
         playback, pushHistory, refreshModalVideoSource, releaseHiddenSelection, requestDraw, sceneFiles, stickerFiles,
         syncCutoutShot, stickerById, syncSidePanelModel, updateSelectionMenu, updateSidePanel, upstreamBackground,
         upstreamLinked, upstreamOutput, upstreamPortMeta, upstreamRow, upstreamTimelineLayers,
@@ -293,6 +302,6 @@ export function createTimeline(deps) {
     },
     syncTimeline, timelineTimed, timelineSpanFrames, backgroundShown, backgroundShowsAt, backgroundVideoPlace, backgroundColor,
     portBarEnd, timelineOwner, selectedLanes, timelineOffset, clipView, timelineEditable, rowEditable, setTimelineFrame, jumpTimelineTo, stopTimelinePlayback, togglePlayback,
-    refreshTimelineEdit, commitTimelineEdit, deleteSelectedKeyframes, changeTimelineFps, applyVideoTimelineFps,
+    refreshTimelineEdit, commitTimelineEdit, deleteSelectedKeyframes, changeTimelineFps, applyRunResult,
   };
 }

@@ -13,7 +13,7 @@ import {
   contentPoints,
   gridSpec,
   orbitView,
-  sceneItemBox,
+  sceneContentBox,
   spaceCamera,
 } from "./pano_space.js";
 import { createSpaceNavigation } from "./pano_space_navigation.js";
@@ -199,8 +199,8 @@ export function createSceneViewer({
     refreshGoneUpstreamFiles(items, (key) => surface.sceneItemError(key), refreshFile);
     shownItems = items;
     const boxes = items.flatMap(({ request, value }) => {
-      const box = request?.url ? surface.sceneBox(request.url) : null;
-      return box ? [{ box: sceneItemBox(request.kind, box), value }] : [];
+      const box = request?.url ? sceneContentBox(request, surface.sceneBox(request.url)) : null;
+      return box ? [{ box, value }] : [];
     });
     sphere = boundingSphere(contentPoints({ scene: { active: false } }, null, upstream.stickers, boxes));
     const { width, height } = size();

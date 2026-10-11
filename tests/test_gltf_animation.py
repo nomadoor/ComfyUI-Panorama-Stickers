@@ -18,6 +18,7 @@ from comfyui_pano_suite import nodes, routes
 from comfyui_pano_suite.core import gltf_animation
 from comfyui_pano_suite.core_adapters import load_gltf, read_accessor
 from comfyui_pano_suite.scene_mesh import mesh_animation, read_mesh_file
+from comfyui_pano_suite.sticker_media import content_box
 from scene_test_helpers import state_text
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "gltf_anim"
@@ -98,6 +99,23 @@ def test_clip_time_repeats_the_clip(seconds, speed, duration, expected):
     assert gltf_animation.clip_time(seconds, speed, duration) == pytest.approx(expected)
 
 
+def _posed_box():
+    """The box of three.js's vertices at time 0 of the first clip."""
+    sample = next(sample for sample in BAKED["clips"][0]["samples"] if sample["clip_time"] == 0)
+    points = np.concatenate([np.reshape(shape, (-1, 3)) for primitives in sample["vertices"].values() for shape in primitives])
+    return points.min(0), points.max(0)
+
+
+def test_the_content_box_is_the_first_clip_s_pose_at_time_0(mesh):
+    low, high = _posed_box()
+    box = content_box(mesh)
+
+    # The fixture's bind shape has another box.
+    assert not np.allclose(mesh.vertices[0].amin(0).numpy(), low, atol=1e-3)
+    np.testing.assert_allclose(box["min"], low, atol=TOLERANCE)
+    np.testing.assert_allclose(box["max"], high, atol=TOLERANCE)
+
+
 # --- Through Panorama Studio.
 
 @pytest.fixture
@@ -158,6 +176,7 @@ def test_the_scene_input_and_the_sticker_input_play_the_file_as_a_sticker_does(i
     output, scene = _run({**_sticker(), "visible": False}, scene=file)
     assert not torch.equal(scene[0], scene[4])
     assert output.ui["pano_scene_meta"][0]["animation"]["clips"][1] == {"name": "wave", "duration": BAKED["clips"][1]["duration"]}
+    assert output.ui["pano_scene_meta"][0]["animation"]["box"] == content_box(read_mesh_file(file))
 
 
 def test_the_route_gives_the_editor_the_original_file_and_its_clips(input_dir):
@@ -167,4 +186,6 @@ def test_the_route_gives_the_editor_the_original_file_and_its_clips(input_dir):
     assert payload["animation"] == {
         "source": {"filename": "anim.glb", "subfolder": "3d", "type": "input", "storage": "input", "format": "model/gltf-binary"},
         "clips": [{"name": clip["name"], "duration": clip["duration"]} for clip in BAKED["clips"]],
+        "box": payload["box"],
     }
+    np.testing.assert_allclose(payload["box"]["min"], _posed_box()[0], atol=TOLERANCE)

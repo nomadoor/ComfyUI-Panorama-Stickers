@@ -133,7 +133,10 @@ export function createTimelineActions(deps) {
       const names = selectedLanes(selection);
       if (action.phase === "start") {
         stopTimelinePlayback();
-        timeline.drag = { keyframes: names.map((name) => structuredClone(owner[name].keyframes)), frames: selection.frames, limit: timelineSpanFrames() };
+        timeline.drag = {
+          owner: selection.owner, names, keyframes: names.map((name) => structuredClone(owner[name].keyframes)),
+          frames: selection.frames, limit: timelineSpanFrames(),
+        };
         return;
       }
       const { drag } = timeline;
@@ -168,7 +171,7 @@ export function createTimelineActions(deps) {
         const { clip } = sticker;
         const limit = timelineSpanFrames();
         const end = clip.duration === null ? portBarEnd(sticker) ?? limit : clip.start + clip.duration;
-        timeline.drag = { clip: { ...clip }, span: timelineSpanFrames(clip), limit, end };
+        timeline.drag = { id: action.id, clip: { ...clip }, span: timelineSpanFrames(clip), limit, end };
         return;
       }
       const { drag } = timeline;
@@ -245,6 +248,31 @@ export function createTimelineActions(deps) {
     }
   }
 
+  // Cancels a Keyframe or Clip range drag under way (docs/timeline-ui.md): the Keyframes, the Clip range and the
+  // selected Keyframes go back to where the drag started, with no Undo step and nothing written to state_json.
+  // What the Timeline sends for the drag afterwards finds no drag and does nothing. Returns whether one was under way.
+  function cancelTimelineDrag() {
+    const { drag } = timeline;
+    if (!drag || (!drag.keyframes && !drag.clip)) return false;
+    timeline.drag = null;
+    dragFrames.cancel();
+    if (drag.keyframes) {
+      const owner = timelineOwner(drag.owner);
+      drag.names.forEach((name, index) => {
+        if (owner?.[name]) owner[name].keyframes = structuredClone(drag.keyframes[index]);
+      });
+      if (timeline.selection?.owner === drag.owner) timeline.selection.frames = [...drag.frames];
+    } else {
+      const sticker = timelineOwner(drag.id);
+      if (sticker?.clip) sticker.clip = { ...drag.clip };
+      // The background VIDEO shows the time of its Clip range as it was.
+      if (drag.id === BACKGROUND_ROW) playback.seek(editor.frame);
+    }
+    syncTimeline();
+    refreshTimelineEdit();
+    return true;
+  }
+
   return {
     connect(api) {
       ({
@@ -256,6 +284,6 @@ export function createTimelineActions(deps) {
         togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel, upstreamRow,
       } = api);
     },
-    onTimelineAction,
+    onTimelineAction, cancelTimelineDrag,
   };
 }

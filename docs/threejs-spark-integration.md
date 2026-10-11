@@ -140,7 +140,7 @@ Panorama Studio のエディタの Panorama 表示は、World の内容（`scene
 - 時刻：再生ヘッドの Sticker の clip frame から出力と同じ式で秒を求め（`pano_animation.js` の `animationPose`）、選んだ clip の `AnimationAction`（`LoopRepeat`、`timeScale = speed`）で `mixer.setTime(clip frame ÷ timeline.fps)`（`poseAnimation`）。実時間では進めない（`mixer.update` を時計で呼ばない）。
 - 補間：three.js r184 の規則（`LINEAR` の回転は `Quaternion.slerpFlat`、`CUBICSPLINE` の回転は Hermite の後に正規化、`STEP` は `InterpolateDiscrete`）。Python がこれに合わせる（fixture で縛る）。
 - 当たり判定：今の物ごとの当たり判定のマテリアル（`ShaderMaterial`）の頂点の部品（`pano_pick.js` の `PICK_VERTEX`）に、three.js の skin と morph の部品（`#include <skinning_pars_vertex>`・`<morphtarget_pars_vertex>`・`<skinbase_vertex>`・`<morphtarget_vertex>`・`<skinning_vertex>`）を足す。three.js は `ShaderMaterial` でも、描く物が `SkinnedMesh` か morph を持つときだけ `USE_SKINNING`・`USE_MORPHTARGETS` を定義した別の program を作るので、静止の物の当たり判定は今と同じで、動いた形にも当たる。別の組み立ては要らない。
-- 箱（Frame Selected、注視点の距離）は、読み込んだ静止の GLB の箱（bind の形）とする。コアの MESH の頂点なので、出力の中身の箱（`content_box`、経路の `box`）と同じ値になる。
+- 箱（Frame Selected、注視点の距離の内容の大きさ）は、読み込んだ静止の GLB の箱（bind の形）ではなく、メタの `animation.box`（`pano_scene_meta`・`pano_sticker_meta`、3D ファイルの経路の応答の `animation`）を使う。最初の clip の時刻 0 の姿勢の箱で、出力の中身の箱（`content_box`）・経路の応答の `box` と同じ値であり、すでに `scene` の glTF の座標なので `sceneItemBox` を掛けない（`pano_animation.js` の `animationMetaOf` が残して要求の `animation.box` に載せ、`pano_space.js` の `sceneContentBox` が読み込んだ箱の代わりに使う。規則の owner は `docs/studio-node.md` の「中身の箱」）。メタに `box` が無ければ、読み込んだ GLB の箱を使う。test は `tests/editor_animation.test.mjs`。
 - 一致：`docs/render-contract.md` の「エディタとの一致（glTF のアニメーションの場面）」。test は `tests/editor_animation.test.mjs`（要求の姿勢、読み込み）と `tests/browser/gltf_animation.spec.js`（再生ヘッドの clip の姿勢で描かれ、当たる）。
 - 外部の `.bin` を持つ `.gltf` と、`/view` で読めない場所のファイルは、メタに `animation` が無いので静止の GLB で描く（出力はアニメーションを描く）。
 

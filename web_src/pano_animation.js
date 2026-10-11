@@ -39,13 +39,22 @@ export function animationPose(clips, animation, clipFrame, fps) {
 }
 
 // The `animation` of a meta or of the file route's answer (docs/studio-node.md "glTF のアニメーションのエディタ用ファイル":
-// { source: the original file's `ui` entry, clips: [{ name, duration }] }) as the editor keeps it: { src (the URL
-// `source(entry)` gives), clips }, or null without a readable one.
+// { source: the original file's `ui` entry, clips: [{ name, duration }], box: the content box }) as the editor keeps it:
+// { src (the URL `source(entry)` gives), clips, box }, or null without a readable one. `box` ({ min, max }, in the
+// `scene` glTF frame: the first clip's pose at time 0, docs/studio-node.md "中身の箱") is left out when it is not one.
 export function animationMetaOf(raw, source) {
   if (!raw || typeof raw !== "object" || !raw.source || typeof raw.source !== "object" || !Array.isArray(raw.clips)) return null;
   const clips = raw.clips
     .filter((clip) => clip && typeof clip === "object" && typeof clip.name === "string" && Number.isFinite(Number(clip.duration)))
     .map((clip) => ({ name: clip.name, duration: Number(clip.duration) }));
   const src = source(raw.source);
-  return src && clips.length === raw.clips.length && clips.length ? { src, clips } : null;
+  if (!src || clips.length !== raw.clips.length || !clips.length) return null;
+  const box = contentBoxOf(raw.box);
+  return box ? { src, clips, box } : { src, clips };
+}
+
+const point3 = (value) => Array.isArray(value) && value.length === 3 && value.every(Number.isFinite);
+
+function contentBoxOf(box) {
+  return box && typeof box === "object" && point3(box.min) && point3(box.max) ? { min: [...box.min], max: [...box.max] } : null;
 }

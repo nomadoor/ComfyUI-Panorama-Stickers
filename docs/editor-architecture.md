@@ -161,30 +161,39 @@ export function createHistory(deps) {
   ほかの名前を記録するスタブにして、押したときの分かれ道ごとに始まる操作と、動き・離す・取り消す・ホイールの
   呼び出しを確かめる。ポインターの操作のモジュールは `pointer_` で始める。
 
-#### 操作の取り消し（案。オーナーの承認待ち）
+#### 操作の取り消し
 
-進行中のポインターの操作を取り消すのは `pointer_input.js` の `cancelGesture()` 一つだけで、今の `onCanvasPointerCancel` と
-`cancelFrameCameraGesture` はこれにまとめる。操作の始めの値は `pointer_transform.js` の `takeGestureSnapshot` が取り、
-`restoreGestureSnapshot` が戻す（始めの値の owner）。戻すときは記録をその場で書き戻し（オブジェクトの同一性を保つ）、
+進行中のポインターの操作を取り消すのは `pointer_input.js` の `cancelGesture()` 一つだけである（`pointercancel` と
+`lostpointercapture` の `onCanvasPointerCancel`、Frame 表示のロールのつまみの取り消しも、これを呼ぶ）。キャンバスの操作と
+タイムラインのドラッグ（`timeline_actions.js` の `cancelTimelineDrag()`）の両方を取り消すのは `pointer_input.js` の
+`cancelLiveEdits()` で、取り消すきっかけ（下）はこれを呼ぶ。
+
+操作の始めの値は `pointer_transform.js` の `takeGestureSnapshot(interaction)` が取り、`restoreGestureSnapshot(interaction)` が
+戻す（始めの値の owner）。どの記録を取るかは同じファイルの `gestureRecords` が `kind` ごとに決める。キャンバスの操作は
+`onCanvasPointerDown` が操作を始めた直後に取り、ロールのつまみは `camera.js` の `onFrameRollKnobPointerDown` が取る。ペイントの
+ストロークは、Frame の端で区間を確定する直前（`paint_input.js` の `_segmentFrameStroke`・`_segmentFrameLassoFill`）にだけ
+`state.painting` を取る（区間を確定しないストロークは状態に何も書かない）。戻すときは記録をその場で書き戻し（オブジェクトの
+同一性を保つ）、Camera を戻したら `syncCutoutShot(false)` で shot を作り直し、ペイントを戻したらペイントエンジンを作り直す。
 Undo の段を積まず、`state_json` にも書かない。
 
 | `kind` | 取り消しで戻すもの |
 |---|---|
 | `move`・`scale`・`scale_x`・`scale_y`・`rotate` | その Sticker の記録（Lane と Keyframe を含む）。旧ノードでは姿勢の項目、Studio の Camera では `state.camera` と shot |
-| ストロークのグループ（`*_stroke_group`） | そのストロークとグループの枠 |
+| ストロークのグループ（`*_stroke_group`） | そのストロークとグループの記録（枠を含む） |
 | ラスターの品目（`*_raster_object`） | その記録 |
 | `move_multi` | 選んでいる全部の記録と、ストロークとラスター |
-| `world_gizmo` | その記録、または `state.camera` |
-| `pan_frame`・`roll_frame`・`frame_pan`・`frame_orbit` | `state.camera` と shot |
-| `marquee` | 何も戻さない |
-| `paint` | エンジンの描きかけのストロークを取り消し、そのストローク全体を捨てる（Frame の端ですでに確定した区間も含む） |
-| `view`・`space_pan`・`space_orbit`・`world_select` | 戻さず、その場で止める（慣性なし） |
+| `world_gizmo` | その記録、または `state.camera` と shot。ギズモはつかんだ取っ手を放す（`pointer_world.js` の `releaseWorldGizmo`） |
+| `pan_frame`・`roll_frame`・`frame_pan`・`frame_orbit` | `state.camera` と shot（旧ノードの Cutout では shot） |
+| `marquee_select` | 何も戻さない（選択は離したときにだけ変わる） |
+| `paint_stroke`・`paint_lasso_fill` | エンジンの描きかけのストロークを取り消し、そのストローク全体を捨てる（Frame の端ですでに確定した区間も含む） |
+| `view`・`space_pan`・`space_orbit`・`world_select` | 戻さず、その場で止める（慣性なし。`viewController.stopMotion`） |
 
 - 視点は編集ではなく、戻すと画面が跳ぶので、その場で止める。描きかけのストロークは一部だけ残さず全体を捨てる。この 2 点は
   一般的なツールの慣習に従って決めた（使う人に見えて慣習の無い選択ではない）。
 - 取り消すきっかけ（`pointercancel`、ウィンドウの `blur`、操作の途中の `lostpointercapture`、Escape、Undo・Delete・実行結果の
   `executed` の前、2 本目のポインタ）は `docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの喪失」、タイムラインの
   ドラッグの取り消しは `docs/timeline-ui.md` の「タイムラインの表示」にある。
+- `tests/editor_pointer_input.test.mjs` が、`kind` ごとに取り消しで記録が始めの値に戻り、Undo の段も書き込みも無いことを確かめる。
 
 ## Drawing
 
