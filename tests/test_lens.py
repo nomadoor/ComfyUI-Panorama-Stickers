@@ -68,12 +68,18 @@ def test_the_camera_curve_lane_interpolates_clamps_and_limits_the_fov():
         "curve": {"value": 1.0, "keyframes": [{"frame": 0, "value": 0.25, "easing": [0.0, 0.0, 1.0, 1.0]}, {"frame": 10, "value": 2.0, "easing": [0.0, 0.0, 1.0, 1.0]}]},
     }})
 
-    # Saved up to its range: hFOV to 360, κ to 1.5.
-    assert state["camera"]["fov"]["value"] == 300.0 and state["camera"]["curve"]["keyframes"][1]["value"] == 1.5
+    # Saved up to its range: hFOV to 360, κ to 1 (the pinhole; no pincushion past it).
+    assert state["camera"]["fov"]["value"] == 300.0 and state["camera"]["curve"]["keyframes"][1]["value"] == 1.0
     start, middle, end = (evaluate_scene_state(state, frame)["camera"] for frame in (0.0, 5.0, 10.0))
     assert (start["curve"], start["hFOV_deg"]) == (0.25, 300.0)
-    assert middle["curve"] == pytest.approx(0.875) and middle["hFOV_deg"] == pytest.approx(179.0 / 0.875)
-    assert (end["curve"], end["hFOV_deg"]) == (1.5, pytest.approx(179.0 / 1.5))
+    assert middle["curve"] == pytest.approx(0.625) and middle["hFOV_deg"] == pytest.approx(179.0 / 0.625)
+    assert (end["curve"], end["hFOV_deg"]) == (1.0, pytest.approx(179.0))
+    # A sky Sticker's curve and a world Sticker's lens keep the same range.
+    stickers = load_scene_state({"version": 2, "stickers": [
+        {"id": "s", "source": {"kind": "port"}, "curve": {"value": 1.4}},
+        {"id": "w", "placement": "world", "source": {"kind": "file", "filename": "w.png"}, "lens": {"value": {"curve": 1.4, "hFOV_deg": 90.0}}},
+    ]})["stickers"]
+    assert stickers[0]["curve"]["value"] == 1.0 and stickers[1]["lens"]["value"]["curve"] == 1.0
     assert evaluate_scene_state(load_scene_state({"version": 2, "camera": {}}), 0.0)["camera"]["curve"] == 1.0
 
 

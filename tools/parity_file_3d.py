@@ -158,8 +158,8 @@ def _depth_grid_scene(work: Path, geometry: dict, image, label: str):
 
 
 LENS_SIZE = 512
-# (name, κ, hFOV): a pincushion, a κ below 1 at 90 degrees, the stereographic lens, and the equidistant fisheye.
-LENS_CASES = (("k1", 1.0, 90.0), ("k1_3", 1.3, 90.0), ("k0_7", 0.7, 90.0), ("k0_5", 0.5, 140.0), ("k0", 0.0, 220.0))
+# (name, κ, hFOV): the pinhole, a κ below 1 at 90 degrees, the stereographic lens, and the equidistant fisheye.
+LENS_CASES = (("k1", 1.0, 90.0), ("k0_7", 0.7, 90.0), ("k0_5", 0.5, 140.0), ("k0", 0.0, 220.0))
 LENS_BG_COLOR = "#204060"
 _FORWARD = {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
 # (name, Camera, the Sticker's placement and Lanes): docs/render-contract.md, "エディタとの一致（レンズの場面）".

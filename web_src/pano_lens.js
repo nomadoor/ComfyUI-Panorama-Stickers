@@ -5,7 +5,7 @@
 
 export const LENS_CURVE_DEFAULT = 1;
 export const LENS_CURVE_MIN = 0;
-export const LENS_CURVE_MAX = 1.5;
+export const LENS_CURVE_MAX = 1;
 
 const DEG2RAD = Math.PI / 180;
 
@@ -75,7 +75,8 @@ const PINHOLE_HALF_ANGLE_MAX = 89 * DEG2RAD;
 const CUBE_FACE_MIN = 64;
 const CUBE_FACE_MAX = 2048;
 const HALF = Math.SQRT1_2;
-// The cube's faces as turns of the camera (quaternions in its own axes): front, right, left, up, down, back.
+// The cube's faces as turns from the World's axes (looking down -z): front, right, left, up, down, back. The cube stands
+// at the Camera's position aligned to the World, so a turn of the Camera alone leaves its faces as they are.
 export const LENS_CUBE_FACES = Object.freeze([
   { x: 0, y: 0, z: 0, w: 1 },
   { x: 0, y: -HALF, z: 0, w: HALF },
@@ -119,20 +120,50 @@ export function lensFaceCoordinates(face, direction) {
   return { x: x / -z / face.tanX, y: y / -z / face.tanY };
 }
 
+// Whether the cone of directions within `thetaMax` radians of `forward` (a World direction of length 1) meets the
+// face `quaternion` of the cube (its square, x and y from -1 to 1 at depth 1): the face's directions closest to the
+// axis are inside it, or on one of its edges, each an arc of a great circle.
+export function lensCubeFaceSeen(quaternion, forward, thetaMax) {
+  if (thetaMax >= Math.PI) return true;
+  const axis = rotateByQuaternion(quaternion, [0, 0, -1]);
+  const right = rotateByQuaternion(quaternion, [1, 0, 0]);
+  const up = rotateByQuaternion(quaternion, [0, 1, 0]);
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const unit = (v) => {
+    const length = Math.hypot(...v);
+    return v.map((value) => value / length);
+  };
+  const angle = (a, b) => Math.acos(Math.min(1, Math.max(-1, dot(a, b))));
+  const depth = dot(forward, axis);
+  if (depth > 0 && Math.abs(dot(forward, right)) <= depth && Math.abs(dot(forward, up)) <= depth) return true;
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => unit(axis.map((value, i) => value + x * right[i] + y * up[i])));
+  let nearest = Math.PI;
+  corners.forEach((a, index) => {
+    const b = corners[(index + 1) % 4];
+    nearest = Math.min(nearest, angle(forward, a));
+    const normal = unit([a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]);
+    const across = dot(forward, normal);
+    const onCircle = forward.map((value, i) => value - across * normal[i]);
+    if (Math.hypot(...onCircle) < 1e-12) return;
+    const point = unit(onCircle);
+    // The great circle's point nearest `forward` counts where it lies on the arc between the corners.
+    if (Math.abs(angle(a, point) + angle(point, b) - angle(a, b)) < 1e-9) nearest = Math.min(nearest, angle(forward, point));
+  });
+  return nearest <= thetaMax + 1e-9;
+}
+
 // How the editor draws the image of a lens Camera (κ, f in pixels) of width x height pixels whose center is at
-// (centerX, centerY) of it: { kind: "pinhole" | "cube", faces: [{ quaternion, tanX, tanY, width, height }] }, each
-// face a pinhole image turned by `quaternion` from the Camera that spans tanX and tanY each way. A pinhole is chosen
-// so that the sampling pass never enlarges it (its pixels per radian are at least the lens's everywhere in the
-// image): f at κ < 1, larger toward the corners at κ > 1. maxSide caps a face's side (the GPU's).
-export function lensRenderPlan({ width, height, centerX = width / 2, centerY = height / 2, focal, curve, maxSide = 4096 }) {
+// (centerX, centerY) of it, the Camera turned by `quaternion` in the World: { kind: "pinhole" | "cube", faces:
+// [{ quaternion, world, tanX, tanY, width, height, seen }] }, each face a pinhole image that spans tanX and tanY each
+// way, turned by `quaternion` from the Camera (the pinhole) or from the World's axes (`world`, the cube's faces). The
+// pinhole's f is the lens's at its center, so the sampling pass never enlarges it (κ ≤ 1). A cube face is `seen`
+// when the image's cone of directions meets it (lensCubeFaceSeen); the others are not drawn. maxSide caps a face's
+// side (the GPU's).
+export function lensRenderPlan({ width, height, centerX = width / 2, centerY = height / 2, focal, curve, quaternion = null, maxSide = 4096 }) {
   const corners = [[0, 0], [width, 0], [0, height], [width, height]].map(([px, py]) => Math.hypot(px - centerX, py - centerY) / focal);
   const thetaMax = Math.max(...corners.map((rho) => lensAngle(rho, curve)));
   if (thetaMax < PINHOLE_HALF_ANGLE_MAX) {
-    // The pinhole's f against the lens's: radially f·sec²θ against f·sec²(κθ), across tanθ against tan(κθ) ÷ κ.
-    const scale = curve > 1
-      ? Math.max(1, (Math.cos(thetaMax) / Math.cos(curve * thetaMax)) ** 2, lensRadius(thetaMax, curve) / Math.tan(thetaMax))
-      : 1;
-    const pinhole = focal * scale;
+    const pinhole = focal;
     // The image's edges on the pinhole's image: its farthest points from the axis each way.
     let halfX = 0;
     let halfY = 0;
@@ -154,10 +185,12 @@ export function lensRenderPlan({ width, height, centerX = width / 2, centerY = h
         kind: "pinhole",
         faces: [{
           quaternion: IDENTITY,
+          world: false,
           tanX: pixelsX / 2 / pinhole,
           tanY: pixelsY / 2 / pinhole,
           width: Math.max(1, Math.round(pixelsX * fit)),
           height: Math.max(1, Math.round(pixelsY * fit)),
+          seen: true,
         }],
       };
     }
@@ -165,24 +198,31 @@ export function lensRenderPlan({ width, height, centerX = width / 2, centerY = h
   const side = Math.min(maxSide, CUBE_FACE_MAX, Math.max(CUBE_FACE_MIN, 2 * Math.ceil(focal)));
   // A face reaches a pixel past 90° so that its edge samples have their neighbours.
   const reach = 1 + 2 / side;
+  // Without the Camera's turn every face counts as seen.
+  const forward = quaternion ? rotateByQuaternion(quaternion, [0, 0, -1]) : null;
   return {
     kind: "cube",
-    faces: LENS_CUBE_FACES.map((quaternion) => ({ quaternion, tanX: reach, tanY: reach, width: side, height: side })),
+    faces: LENS_CUBE_FACES.map((face) => ({
+      quaternion: face, world: true, tanX: reach, tanY: reach, width: side, height: side,
+      seen: !forward || lensCubeFaceSeen(face, forward, thetaMax),
+    })),
   };
 }
 
-// Where the Frame view picks the ray through the film point (x, y) at κ (docs/threejs-spark-integration.md
-// "当たり判定"): the face of the cube it goes through, as a pinhole camera turned by `quaternion` from the Camera
-// with a 90° square view, and its pixel { x, y } in a size x size image of that face; null past 180°.
-export function lensPickWindow(x, y, kappa, size = 1024) {
-  const direction = lensFilmDirection(x, y, kappa);
-  if (!direction) return null;
+// Where the Frame view picks the ray through the film point (x, y) at κ of a Camera turned by `quaternion` in the
+// World (docs/threejs-spark-integration.md "当たり判定"): the face of the World-aligned cube it goes through, as a
+// pinhole camera turned by the face's `quaternion` in the World with a 90° square view, and its pixel { x, y } in a
+// size x size image of that face; null past 180°.
+export function lensPickWindow(x, y, kappa, size = 1024, quaternion = IDENTITY) {
+  const film = lensFilmDirection(x, y, kappa);
+  if (!film) return null;
+  const direction = rotateByQuaternion(quaternion, film);
   const axes = direction.map(Math.abs);
   const major = axes.indexOf(Math.max(...axes));
   const index = major === 0 ? (direction[0] > 0 ? 1 : 2) : major === 1 ? (direction[1] > 0 ? 3 : 4) : (direction[2] < 0 ? 0 : 5);
-  const quaternion = LENS_CUBE_FACES[index];
-  const at = lensFaceCoordinates({ quaternion, tanX: 1, tanY: 1 }, direction);
-  return { quaternion, x: (at.x + 1) / 2 * size, y: (1 - at.y) / 2 * size, size };
+  const face = LENS_CUBE_FACES[index];
+  const at = lensFaceCoordinates({ quaternion: face, tanX: 1, tanY: 1 }, direction);
+  return { quaternion: face, x: (at.x + 1) / 2 * size, y: (1 - at.y) / 2 * size, size };
 }
 
 // The same for an image whose axes are { fwd, right, up } ({ x, y, z } each, as pano_camera_math.js cameraBasis

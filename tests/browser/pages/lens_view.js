@@ -1,6 +1,6 @@
 // A lens Camera's image as the editor draws it (docs/threejs-spark-integration.md "Camera から見た空間の表示", ADR
 // 0042): an ERP of smooth bands and large squares drawn through pano_three_view.js's lens pass, held to a direct
-// pinhole draw of the same ERP along pano_lens.js's rays. Through the pinhole with overscan (κ 1.3, 0.7) and the cube
+// pinhole draw of the same ERP along pano_lens.js's rays. Through the pinhole with overscan (κ 0.9, 0.7) and the cube
 // (κ 0 at 300°), where the pixels past 180° are bg_color; a SPLAT drawn through the cube sorts per face, and the
 // view's hide (releaseSplats) lets every face's Spark renderer go. The page reports through window.__check;
 // tests/browser/lens_view.spec.js reads it.
@@ -8,7 +8,7 @@ import { createThreeView } from "../../../web_src/pano_three_view.js";
 import { lensFilmDirection, lensRadius, lensRenderPlan } from "../../../web_src/pano_lens.js";
 import { makeSplatPly } from "./media.js";
 
-const check = (window.__check = { done: false, error: null, renderer: null, contextLost: false, cases: [], splat: null });
+const check = (window.__check = { done: false, error: null, renderer: null, contextLost: false, cases: [], splat: null, cache: null });
 const W = 320;
 const H = 240;
 const BG = 0x3366cc;
@@ -58,9 +58,9 @@ try {
   const reference = pixels(null, fovY);
   const tanY = Math.tan((fovY / 2) * Math.PI / 180);
   const tanX = tanY * W / H;
-  for (const [curve, hfov] of [[1.3, 90], [0.7, 90], [0, 300]]) {
+  for (const [curve, hfov] of [[0.9, 100], [0.7, 90], [0, 300]]) {
     const focal = (W / 2) / lensRadius((hfov / 2) * Math.PI / 180, curve);
-    const plan = lensRenderPlan({ width: W, height: H, focal, curve });
+    const plan = lensRenderPlan({ width: W, height: H, focal, curve, quaternion });
     const drawn = pixels({ curve, focal, centerX: W / 2, centerY: H / 2, background: BG, faces: plan.faces }, fovY);
     let sum = 0;
     let count = 0;
@@ -88,6 +88,41 @@ try {
     }
     check.cases.push({ curve, hfov, kind: plan.kind, compared: count / 3, mean: sum / Math.max(1, count), past, pastBg });
   }
+  // The cube's faces stand aligned to the World: a turn of the Camera alone draws only the pass, and the picture is
+  // the one a fresh draw makes.
+  {
+    // The draw calls a render makes: the pass is one, each face its Sky.
+    let viewports = 0;
+    const proto = WebGL2RenderingContext.prototype;
+    const drawElements = proto.drawElements;
+    proto.drawElements = function (...args) { viewports += 1; return drawElements.apply(this, args); };
+    // Two owners with lenses of their own, drawn in turn: each keeps its own faces.
+    const turned = { x: 0.05, y: 0.4, z: 0, w: Math.sqrt(1 - 0.0025 - 0.16) };
+    const draw = (owner, curve, hfov, q) => {
+      const focal = (W / 2) / lensRadius((hfov / 2) * Math.PI / 180, curve);
+      const lens = { curve, focal, centerX: W / 2, centerY: H / 2, background: BG, faces: lensRenderPlan({ width: W, height: H, focal, curve, quaternion: q }).faces };
+      view.clear();
+      view.render({ rect: { x: 0, y: 0, w: W, h: H }, camera: { quaternion: q, fovY_deg: 60, aspect: W / H }, background, layers: [], lens, owner });
+      probe2d.clearRect(0, 0, W, H);
+      probe2d.drawImage(view.canvas, 0, 0);
+      return probe2d.getImageData(0, 0, W, H).data;
+    };
+    const differing = (a, b) => a.reduce((total, value, index) => total + (value !== b[index] ? 1 : 0), 0);
+    const owners = [["a", 0, 220], ["b", 0.5, 140]];
+    for (const [owner, curve, hfov] of owners) draw(owner, curve, hfov, quaternion);
+    check.cache = {};
+    for (const [owner, curve, hfov] of owners) {
+      viewports = 0;
+      const reused = draw(owner, curve, hfov, turned);
+      const reusedDraws = viewports;
+      view.release(owner);
+      viewports = 0;
+      const fresh = draw(owner, curve, hfov, turned);
+      check.cache[owner] = { reusedDraws, freshDraws: viewports, different: differing(reused, fresh) };
+    }
+    proto.drawElements = drawElements;
+  }
+
   // A SPLAT ahead, through the fisheye's cube, for the owner "preview"; then its hide.
   const url = URL.createObjectURL(new Blob([makeSplatPly({ radius: 1 })]));
   const splat = {

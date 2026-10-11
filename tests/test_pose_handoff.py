@@ -363,8 +363,8 @@ def _lens_camera(lanes):
 
 MOVING_LENS = {"position": [{"frame": 0, "value": [0.0, 0.0, 0.0]}, {"frame": 6, "value": [0.6, 0.2, -0.4]}],
                "rotation": [{"frame": 0, "value": {"yaw_deg": -20.0, "pitch_deg": 10.0, "roll_deg": 0.0}}, {"frame": 6, "value": {"yaw_deg": 25.0, "pitch_deg": -5.0, "roll_deg": 8.0}}]}
-# κ keyframed through 1 (with an hFOV the pincushion end can hold), and a fisheye wider than 180 degrees.
-THROUGH_ONE = {"curve": [{"frame": 0, "value": 0.6}, {"frame": 6, "value": 1.3}], "fov": [{"frame": 0, "value": 110.0}, {"frame": 6, "value": 100.0}]}
+# κ keyframed up to the pinhole (1) and back down, and a fisheye wider than 180 degrees.
+THROUGH_ONE = {"curve": [{"frame": 0, "value": 0.6}, {"frame": 3, "value": 1.0}, {"frame": 6, "value": 0.7}], "fov": [{"frame": 0, "value": 110.0}, {"frame": 6, "value": 100.0}]}
 
 
 @pytest.mark.parametrize("aspect", [1.0, 16 / 9], ids=["square", "16:9"])

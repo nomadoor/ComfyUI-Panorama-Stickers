@@ -85,7 +85,7 @@ def camera_basis(
 # binds both. Below this |κθ| (or |κ·r|) the ratios tan(x)/x and atan(x)/x take their series, so κ near 0 neither
 # loses digits nor divides 0 by 0, and κ = 0 is exactly the equidistant fisheye.
 _LENS_SERIES = 1e-4
-CURVE_MIN, CURVE_MAX = 0.0, 1.5
+CURVE_MIN, CURVE_MAX = 0.0, 1.0
 
 
 def _tan_ratio(x):

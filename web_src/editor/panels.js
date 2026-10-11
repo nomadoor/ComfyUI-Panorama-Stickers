@@ -28,7 +28,7 @@ import {
   upstreamOriginLabel,
   worldFieldRange,
 } from "../pano_editor_ui_state.js";
-import { lensFovLimit } from "../pano_lens.js";
+import { LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
 import { clamp } from "../pano_math.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
 import { ownerTimed } from "../pano_timeline.js";
@@ -397,7 +397,7 @@ export function createPanels(deps) {
       if (lens) pushParam("aspect", "Aspect", CAMERA_ASPECT_MIN, CAMERA_ASPECT_MAX, "any");
       else pushParam("vFOV_deg", "V FOV", 1, 179, 0.1);
       // The lens row after the Camera's fields (docs/editor-interaction.md, ADR 0042): its curve κ.
-      if (lens) pushParam("curve", "Lens curve", 0, 1.5, 0.01);
+      if (lens) pushParam("curve", "Lens curve", LENS_CURVE_MIN, LENS_CURVE_MAX, 0.01);
       // A 360-degree ERP Camera reads no FOV; its fields stay, disabled (ADR 0029).
       if (shotInspected) {
         params.forEach((param) => {

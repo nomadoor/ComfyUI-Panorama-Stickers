@@ -412,10 +412,10 @@ test("a file Source is a 3D file by the extension of its filename alone, as Load
 });
 
 // docs/scene-state-v2.md `camera.curve` (ADR 0042): the Camera's lens curve κ.
-test("the Camera's lens curve loads in 0 to 1.5 with 1 by default, and its hFOV stays under the limit κ sets", () => {
+test("the Camera's lens curve loads in 0 to 1 with 1 by default, and its hFOV stays under the limit κ sets", () => {
   const camera = (fields) => loadSceneState({ version: 2, camera: { fov: { value: 300 }, ...fields } }).camera;
   assert.deepEqual(camera({}).curve, { value: 1, keyframes: [] });
-  assert.equal(camera({ curve: { value: 2 } }).curve.value, 1.5);
+  assert.equal(camera({ curve: { value: 1.3 } }).curve.value, 1);
   assert.equal(camera({ curve: { value: -1 } }).curve.value, 0);
   assert.equal(camera({ curve: { value: "fish" } }).curve.value, 1);
   // The stored hFOV keeps up to 360; the evaluated one is held under min(360, 179 ÷ κ).

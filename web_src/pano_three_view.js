@@ -529,6 +529,7 @@ export function createLayerTextures() {
 const LENS_FACES = 6;
 const LENS_FRAGMENT = `
 ${Array.from({ length: LENS_FACES }, (_, index) => `uniform sampler2D face${index};`).join("\n")}
+uniform mat3 cameraTurn;
 uniform mat3 faceTurn[${LENS_FACES}];
 uniform vec2 faceTan[${LENS_FACES}];
 uniform int faceCount;
@@ -556,7 +557,7 @@ void main() {
   vec3 direction = rho > 0.0 ? vec3(film / rho * sin(theta), -cos(theta)) : vec3(0.0, 0.0, -1.0);
   for (int index = 0; index < ${LENS_FACES}; index++) {
     if (index >= faceCount) break;
-    vec3 seen = faceTurn[index] * direction;
+    vec3 seen = faceTurn[index] * (cameraTurn * direction);
     if (seen.z >= 0.0) continue;
     vec2 at = seen.xy / -seen.z / faceTan[index];
     if (abs(at.x) > 1.0 || abs(at.y) > 1.0) continue;
@@ -855,7 +856,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
       return mesh;
     },
     // A lens face's renderer draws for the view it is a face of.
-    onDirty: (owner) => onSplats(lensFaceBase.has(owner) ? lensFaceBase.get(owner).base : owner),
+    // A lens face's renderer draws for the view it is a face of, and its face is drawn again.
+    onDirty: (owner) => {
+      if (!lensFaceBase.has(owner)) {
+        onSplats(owner);
+        return;
+      }
+      const { base, index } = lensFaceBase.get(owner);
+      lensCaches.get(base)?.dirty.add(index);
+      onSplats(base);
+    },
   });
 
   // A loaded SPLAT that goes takes the views' SplatMeshes of it along.
@@ -1190,14 +1200,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     });
   }
 
-  // The lens images (ADR 0042): the faces a lens render draws into, by index, and the owners each face's Spark
-  // renderer draws for (one per face, so each sorts for its own camera), by owner.
-  const lensTargets = [];
+  // The lens images (ADR 0042): per owner, the faces its lens renders draw into, by index (each owner keeps its own,
+  // so one owner's faces never overwrite another's kept ones), and the owners each face's Spark renderer draws for
+  // (one per face, so each sorts for its own camera).
+  const lensTargets = new Map();
   const lensFaceOwners = new Map();
   const lensFaceBase = new WeakMap();
   const lensScene = new Scene();
   const lensQuad = createQuad(quadGeometry, LENS_FRAGMENT, {
     ...Object.fromEntries(Array.from({ length: LENS_FACES }, (_, index) => [`face${index}`, { value: null }])),
+    cameraTurn: { value: new Matrix3() },
     faceTurn: { value: Array.from({ length: LENS_FACES }, () => new Matrix3()) },
     faceTan: { value: Array.from({ length: LENS_FACES }, () => new Vector2(1, 1)) },
     faceCount: { value: 0 },
@@ -1210,17 +1222,18 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   }, NoBlending);
   lensScene.add(lensQuad);
   const lensCamera = new PerspectiveCamera();
-  const faceTurn = new Quaternion();
   const faceRotation = new Matrix4();
 
   // A face's target: sRGB (three draws linear light into it and the GPU stores it in sRGB, as three documents for a
   // render target), which the pass reads back as linear light and encodes for the canvas.
-  function lensTarget(index, width, height) {
-    let target = lensTargets[index];
+  function lensTarget(owner, index, width, height) {
+    let targets = lensTargets.get(owner);
+    if (!targets) lensTargets.set(owner, targets = []);
+    let target = targets[index];
     if (!target) {
       target = new WebGLRenderTarget(width, height, { format: RGBAFormat, type: UnsignedByteType, depthBuffer: true, minFilter: LinearFilter, magFilter: LinearFilter, generateMipmaps: false });
       target.texture.colorSpace = SRGBColorSpace;
-      lensTargets[index] = target;
+      targets[index] = target;
     } else if (target.width !== width || target.height !== height) {
       target.setSize(width, height);
     }
@@ -1233,13 +1246,18 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!faces) lensFaceOwners.set(base, faces = []);
     if (!faces[index]) {
       faces[index] = { lensFace: index };
-      lensFaceBase.set(faces[index], { base });
+      lensFaceBase.set(faces[index], { base, index });
     }
     return faces[index];
   }
 
   // The face renderers of base past `count` faces (all of them without a lens) let go.
   function releaseLensFaces(base, count = 0) {
+    if (!count) {
+      lensCaches.delete(base);
+      lensTargets.get(base)?.forEach((target) => target.dispose());
+      lensTargets.delete(base);
+    }
     const faces = lensFaceOwners.get(base);
     if (!faces) return;
     faces.slice(count).forEach((owner) => owner && sparkViews.release(owner));
@@ -1247,9 +1265,55 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!faces.length) lensFaceOwners.delete(base);
   }
 
+  // Per owner, the faces drawn ({ key, drawn: face indexes drawn under key, dirty: faces whose Spark renderer sorted
+  // again }): a face is drawn again only when what it shows changed (lensCacheKey) or its splats were sorted again.
+  const lensCaches = new Map();
+
+  // What a lens render's faces show, but for the Camera's turn: the faces' places and sizes (a pinhole's turn is the
+  // Camera's), the Camera's position, the clear color, the Sky (background and layers with their images'
+  // revisions, a VIDEO's time) and the World (its content revision and the inputs drawn).
+  function lensCacheKey(input, faces) {
+    return plainValue({
+      faces: faces.map((face) => [face.quaternion, face.tanX, face.tanY, face.width, face.height]),
+      position: input.camera.position, near: input.camera.near, far: input.camera.far,
+      clearColor: input.clearColor ?? null,
+      background: input.background ?? null,
+      layers: input.layers,
+      space: input.space ?? null,
+      content: contentRevision,
+    });
+  }
+
+  const objectIds = new WeakMap();
+  let nextObjectId = 1;
+  function objectId(value) {
+    if (!objectIds.has(value)) objectIds.set(value, nextObjectId++);
+    return objectIds.get(value);
+  }
+
+  // A value as plain numbers, strings, arrays and objects (sameValue compares them): an image as its identity, size
+  // and frame count (its layer's revision says when it changed), a VIDEO as its identity and time; a draw's `owner`
+  // is left out. The World's guides (grid, lines, the gizmo's place) are drawn into the faces, so they stay in it.
+  function plainValue(value) {
+    if (value === null || typeof value !== "object") return value;
+    if (typeof HTMLVideoElement !== "undefined" && value instanceof HTMLVideoElement) return ["video", objectId(value), value.currentTime, value.videoWidth];
+    if (value.nodeType || (typeof ImageBitmap !== "undefined" && value instanceof ImageBitmap)) {
+      return ["media", objectId(value), value.width, value.height, value.__panoFrameIdx ?? 0];
+    }
+    // A buffer of data (a depth, a typed array) by identity: its contents are its item's, which the content revision
+    // follows.
+    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return ["data", objectId(value)];
+    if (Array.isArray(value)) return value.map(plainValue);
+    const out = {};
+    for (const [key, item] of Object.entries(value)) if (key !== "owner" && item !== undefined) out[key] = plainValue(item);
+    return out;
+  }
   // A lens Camera's image (input.lens: { curve, focal, centerX, centerY, background, faces }, the faces of
-  // pano_lens.js lensRenderPlan; focal and the center in pixels of the whole view): each face drawn from the Camera
-  // as a pinhole turned by the face, then the pass samples them per pixel of the part on the canvas.
+  // pano_lens.js lensRenderPlan; focal and the center in pixels of the whole view): each seen face drawn as a pinhole
+  // turned by its quaternion (from the Camera for the pinhole, from the World's axes for the cube) at the Camera's
+  // position, then the pass samples them per pixel of the part on the canvas through the Camera's turn. A face drawn
+  // before is used again while lensCacheKey stays and its splats were not sorted again, so a turn of the Camera alone
+  // draws only the pass.
   function drawLens(input, space) {
     let entry = owners.get(input.owner);
     if (!entry) owners.set(input.owner, entry = {});
@@ -1258,57 +1322,48 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     const { lens } = input;
     const base = new Quaternion(input.camera.quaternion.x, input.camera.quaternion.y, input.camera.quaternion.z, input.camera.quaternion.w);
     releaseLensFaces(input.owner, lens.faces.length);
+    // Each face's turn in the World.
+    const faces = lens.faces.map((face) => {
+      const q = new Quaternion(face.quaternion.x, face.quaternion.y, face.quaternion.z, face.quaternion.w);
+      const turn = face.world ? q : base.clone().multiply(q);
+      return { ...face, quaternion: { x: turn.x, y: turn.y, z: turn.z, w: turn.w }, turn };
+    });
+    let cache = lensCaches.get(input.owner);
+    if (!cache) lensCaches.set(input.owner, cache = { key: null, drawn: new Set(), dirty: new Set() });
     const owned = layerTextures.draw(input.owner);
+    const uniforms = lensQuad.material.uniforms;
+    let count = 0;
     linearOutput.value = true;
     try {
       fillSky(owned, panorama, input);
-      lens.faces.forEach((face, index) => {
-        const q = face.quaternion;
-        faceTurn.set(q.x, q.y, q.z, q.w);
-        const turned = base.clone().multiply(faceTurn);
-        const setup = {
-          ...input.camera,
-          quaternion: { x: turned.x, y: turned.y, z: turned.z, w: turned.w },
-          fovY_deg: 2 * Math.atan(face.tanY) * 180 / Math.PI,
-          aspect: face.tanX / face.tanY,
-        };
-        renderer.setRenderTarget(lensTarget(index, face.width, face.height));
-        renderer.setViewport(0, 0, face.width, face.height);
-        renderer.setScissor(0, 0, face.width, face.height);
-        if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
-        renderer.clear(true, true, false);
-        setView(camera, setup);
-        renderer.autoClear = false;
-        renderer.render(scene, camera);
-        if (space) {
-          const faceOwner = lensFaceOwner(input.owner, index);
-          buildWorld(owned, space, faceOwner);
-          setCamera(worldCamera, setup);
-          sparkViews.aim(worldCamera, faceOwner);
-          // Spark writes its splats' sRGB colors as they are unless told to write linear light. Its linear is
-          // pow(rgb, 2.2), not the exact sRGB curve the pass encodes with, so under a lens other than 1 the editor
-          // shows splats' dark tones up to about 7 levels off; the node's output is not affected. Accepted (a target
-          // of their own would lose their depth order against the meshes).
-          const spark = sparkViews.has(faceOwner) ? sparkViews.renderer(faceOwner) : null;
-          if (spark) spark.encodeLinear = true;
-          renderer.clearDepth();
-          renderer.render(world, worldCamera);
+      // The World is built once for what picks and the content revision read; each drawn face builds it for its
+      // own Spark renderer.
+      if (space) buildWorld(owned, space, lensFaceOwner(input.owner, 0));
+      const key = lensCacheKey(input, faces);
+      if (!sameValue(key, cache.key)) {
+        cache.key = key;
+        cache.drawn.clear();
+      }
+      faces.forEach((face, index) => {
+        if (!face.seen) return;
+        if (!cache.drawn.has(index) || cache.dirty.has(index)) {
+          drawLensFace(owned, input, space, face, index);
+          cache.drawn.add(index);
+          cache.dirty.delete(index);
         }
-        renderer.autoClear = true;
-        if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
-        const uniforms = lensQuad.material.uniforms;
-        uniforms[`face${index}`].value = lensTargets[index].texture;
-        faceRotation.makeRotationFromQuaternion(faceTurn.clone().invert());
-        uniforms.faceTurn.value[index].setFromMatrix4(faceRotation);
-        uniforms.faceTan.value[index].set(face.tanX, face.tanY);
+        uniforms[`face${count}`].value = lensTargets.get(input.owner)[index].texture;
+        faceRotation.makeRotationFromQuaternion(face.turn.clone().invert());
+        uniforms.faceTurn.value[count].setFromMatrix4(faceRotation);
+        uniforms.faceTan.value[count].set(face.tanX, face.tanY);
+        count += 1;
       });
     } finally {
       linearOutput.value = false;
       owned.end();
       renderer.setRenderTarget(null);
     }
-    const uniforms = lensQuad.material.uniforms;
-    uniforms.faceCount.value = lens.faces.length;
+    uniforms.faceCount.value = count;
+    uniforms.cameraTurn.value.setFromMatrix4(faceRotation.makeRotationFromQuaternion(base));
     uniforms.curve.value = lens.curve;
     uniforms.focal.value = lens.focal;
     uniforms.center.value.set(lens.centerX, lens.centerY);
@@ -1322,6 +1377,41 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     renderer.render(lensScene, lensCamera);
     settleUnpack();
     return { canvas, x: at.x, y: at.y, width: at.width, height: at.height };
+  }
+
+  // One face of a lens render into its target: the Sky, then the World from the Camera's position with the face's
+  // own Spark renderer.
+  function drawLensFace(owned, input, space, face, index) {
+    const setup = {
+      ...input.camera,
+      quaternion: face.quaternion,
+      fovY_deg: 2 * Math.atan(face.tanY) * 180 / Math.PI,
+      aspect: face.tanX / face.tanY,
+    };
+    renderer.setRenderTarget(lensTarget(input.owner, index, face.width, face.height));
+    renderer.setViewport(0, 0, face.width, face.height);
+    renderer.setScissor(0, 0, face.width, face.height);
+    if (input.clearColor != null) renderer.setClearColor(new Color(input.clearColor), 1);
+    renderer.clear(true, true, false);
+    setView(camera, setup);
+    renderer.autoClear = false;
+    renderer.render(scene, camera);
+    if (space) {
+      const faceOwner = lensFaceOwner(input.owner, index);
+      buildWorld(owned, space, faceOwner);
+      setCamera(worldCamera, setup);
+      sparkViews.aim(worldCamera, faceOwner);
+      // Spark writes its splats' sRGB colors as they are unless told to write linear light. Its linear is
+      // pow(rgb, 2.2), not the exact sRGB curve the pass encodes with, so under a lens other than 1 the editor
+      // shows splats' dark tones up to about 7 levels off; the node's output is not affected. Accepted (a target
+      // of their own would lose their depth order against the meshes).
+      const spark = sparkViews.has(faceOwner) ? sparkViews.renderer(faceOwner) : null;
+      if (spark) spark.encodeLinear = true;
+      renderer.clearDepth();
+      renderer.render(world, worldCamera);
+    }
+    renderer.autoClear = true;
+    if (input.clearColor != null) renderer.setClearColor(0x000000, 0);
   }
 
   function draw(projection, input, space = null) {
@@ -1650,7 +1740,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     panorama.lensSticker.forEach((mesh) => mesh.material.dispose());
     pickMaterials.forEach((material) => material.dispose());
     pickTarget?.dispose();
-    lensTargets.forEach((target) => target.dispose());
+    lensTargets.forEach((targets) => targets.forEach((target) => target.dispose()));
     lensQuad.material.dispose();
     sparkViews.dispose();
     layerTextures.dispose();

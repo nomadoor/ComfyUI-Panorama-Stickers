@@ -33,6 +33,14 @@ test("a lens Camera's image follows its rays through the pinhole and the cube, w
   }
   // At 300° the fisheye's corners pass 180°.
   expect(check.cases[2].past).toBeGreaterThan(0);
+  // A turn of the Camera alone draws only the pass (one draw, against the faces' Sky and the pass), and the same
+  // picture as a fresh draw.
+  // Two owners drawing different lenses in turn keep their own faces.
+  for (const owner of ["a", "b"]) {
+    expect(check.cache[owner].reusedDraws).toBe(1);
+    expect(check.cache[owner].freshDraws).toBeGreaterThan(check.cache[owner].reusedDraws);
+    expect(check.cache[owner].different).toBe(0);
+  }
   // The SPLAT through the cube draws, with a Spark renderer per face, and the hide lets them all go.
   expect(check.splat.loaded).toBe(true);
   expect(check.splat.centerAlpha).toBeGreaterThan(0);

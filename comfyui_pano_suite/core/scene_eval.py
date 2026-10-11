@@ -330,7 +330,7 @@ def _evaluate_lane(owner, name, frame):
 
 # Interpolation may leave a range by rounding; these bring values back into the range the state allows.
 def _camera_lens(camera: dict, frame: float) -> dict:
-    """The Camera's lens curve κ (0..1.5) and hFOV, held under the limit κ sets (`lens_fov_limit`, ADR 0042)."""
+    """The Camera's lens curve κ (0..1) and hFOV, held under the limit κ sets (`lens_fov_limit`, ADR 0042)."""
     curve = _curve(_evaluate_lane(camera, "curve", frame))
     return {"hFOV_deg": min(lens_fov_limit(curve), max(0.1, _evaluate_lane(camera, "fov", frame))), "curve": curve}
 

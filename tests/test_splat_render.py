@@ -347,7 +347,7 @@ def test_splat_content_makes_the_camera_rays_once_per_projection(monkeypatch):
 @pytest.mark.parametrize("projection, center", [
     (Projection.perspective(96, 64, 90.0), (0.6, -0.3, 2.0)),
     (Projection.perspective(96, 64, 140.0, curve=0.5), (1.4, 0.5, 1.2)),
-    (Projection.perspective(96, 64, 100.0, curve=1.3), (0.9, 0.4, 1.5)),
+    (Projection.perspective(96, 64, 100.0, curve=0.8), (0.9, 0.4, 1.5)),
     # A fisheye that sees a gaussian beside and behind the Camera, where the image bends most.
     (Projection.perspective(96, 64, 250.0, curve=0.0), (1.5, 0.2, -0.6)),
     (Projection.erp(128, 64), (0.3, 1.8, 0.4)),
