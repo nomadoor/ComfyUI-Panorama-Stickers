@@ -193,7 +193,8 @@ EXPECTED_SCHEMAS = {
         "is_output_node": True,
     },
     "PanoramaPreview": {
-        "display_name": "Panorama Preview",
+        "display_name": "Panorama Preview (legacy)",
+        "is_deprecated": True,
         "inputs": [
             ("erp_image", "IMAGE", False),
             ("coverage", "COMBO", False),
@@ -223,7 +224,7 @@ EXPECTED_SCHEMAS = {
         "is_output_node": True,
     },
     "PanoramaPreviewNode": {
-        "display_name": "Panorama Preview (new)",
+        "display_name": "Panorama Preview",
         "inputs": [
             ("source", "COMFY_MATCHTYPE_V3", False),
             ("coverage", "COMBO", False),
@@ -342,6 +343,8 @@ def test_v3_schema_preserves_public_ports(node_id):
     assert schema.display_name == expected["display_name"]
     assert schema.category == "Panorama Suite"
     assert schema.is_output_node is expected["is_output_node"]
+    # A deprecated node stays registered, so saved workflows still load it, but the node search hides it.
+    assert schema.is_deprecated is expected.get("is_deprecated", False)
     assert [
         (input_.id, input_.io_type, input_.optional)
         for input_ in schema.inputs
