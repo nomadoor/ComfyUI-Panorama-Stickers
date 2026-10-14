@@ -4,6 +4,8 @@
 
 Accepted（2026-10-10）
 
+一部を ADR 0044・0045 が置き換えた（2026-10-14）：ウィンドウは `PanoModal.vue` の `viewer` の配置ではなく新しい UI の外枠で描く。3DoF | 6DoF の切り替えは無くし、IMAGE・VIDEO も `PANO_SCENE` も同じ自由な視点で見る。
+
 ## Date
 
 2026-10-10
