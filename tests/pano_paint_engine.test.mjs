@@ -57,10 +57,9 @@ function drawsOf(run) {
 test("an empty mask has no display canvas", () => {
   withFakeCanvas(() => {
     const engine = createPaintEngineManager({ width: 64, height: 32 });
-    assert.equal(engine.getMaskDisplayCanvas(), null);
-    assert.equal(engine.getMaskDisplayRevision(), null);
+    assert.equal(engine.getMaskDisplay(), null);
     engine.rebuildCommitted({ painting: { mask: { strokes: [maskStroke("eraser")] } } });
-    assert.equal(engine.getMaskDisplayCanvas(), null, "erasing an empty mask leaves it empty");
+    assert.equal(engine.getMaskDisplay(), null, "erasing an empty mask leaves it empty");
   });
 });
 
@@ -68,33 +67,37 @@ test("the mask display canvas is rebuilt only when the mask changes", () => {
   withFakeCanvas(() => {
     const engine = createPaintEngineManager({ width: 64, height: 32 });
     engine.rebuildCommitted({ painting: { mask: { strokes: [maskStroke()] } } });
-    const first = drawsOf(() => engine.getMaskDisplayCanvas());
-    assert.ok(first.out);
+    const first = drawsOf(() => engine.getMaskDisplay());
+    assert.ok(first.out.media);
     assert.ok(first.draws > 0);
-    const revision = engine.getMaskDisplayRevision();
+    const { revision } = first.out;
     for (let index = 0; index < 100; index += 1) {
-      const again = drawsOf(() => engine.getMaskDisplayCanvas());
-      assert.equal(again.out, first.out);
+      const again = drawsOf(() => engine.getMaskDisplay());
+      assert.equal(again.out.media, first.out.media);
       assert.equal(again.draws, 0, "an unchanged mask is not drawn again");
+      assert.equal(again.out.revision, revision);
     }
-    assert.equal(engine.getMaskDisplayRevision(), revision);
 
     // A live mask stroke changes it on each point; the next frame draws it once.
     const stroke = maskStroke();
     engine.beginStroke(stroke);
     engine.appendStrokePoint(engine.ensureTarget(), 0.6, 0.5, stroke);
-    assert.notEqual(engine.getMaskDisplayRevision(), revision);
-    assert.ok(drawsOf(() => engine.getMaskDisplayCanvas()).draws > 0);
-    assert.equal(drawsOf(() => engine.getMaskDisplayCanvas()).draws, 0);
+    const live = drawsOf(() => engine.getMaskDisplay());
+    assert.ok(live.draws > 0);
+    assert.notEqual(live.out.revision, revision);
+    assert.equal(drawsOf(() => engine.getMaskDisplay()).draws, 0);
     engine.commitActiveStroke(stroke);
-    assert.ok(drawsOf(() => engine.getMaskDisplayCanvas()).draws > 0);
-    assert.equal(drawsOf(() => engine.getMaskDisplayCanvas()).draws, 0);
+    assert.ok(drawsOf(() => engine.getMaskDisplay()).draws > 0);
+    assert.equal(drawsOf(() => engine.getMaskDisplay()).draws, 0);
 
     // Painting does not touch the mask display.
     const paint = { ...maskStroke(), layerKind: "paint", actionGroupId: "g1" };
+    const before = engine.getMaskDisplay().revision;
     engine.beginStroke(paint);
     engine.appendStrokePoint(engine.ensureTarget(), 0.2, 0.5, paint);
-    assert.equal(drawsOf(() => engine.getMaskDisplayCanvas()).draws, 0);
+    const painted = drawsOf(() => engine.getMaskDisplay());
+    assert.equal(painted.draws, 0);
+    assert.equal(painted.out.revision, before);
   });
 });
 
@@ -103,43 +106,42 @@ test("a paint group with its live stroke is drawn once per change", () => {
     const engine = createPaintEngineManager({ width: 64, height: 32 });
     const paint = { ...maskStroke(), layerKind: "paint", actionGroupId: "g1" };
     engine.rebuildCommitted({ painting: { paint: { strokes: [paint] } } });
-    const committed = engine.getGroupDisplayCanvas("g1");
-    assert.equal(drawsOf(() => engine.getGroupDisplayCanvas("g1")).draws, 0, "without a live stroke it is the committed paint");
-    assert.equal(engine.getGroupDisplayCanvas("g1"), committed);
+    const committed = engine.getGroupDisplay("g1");
+    assert.equal(committed.media, engine.getGroupTarget("g1").committedPaint.canvas);
+    assert.equal(drawsOf(() => engine.getGroupDisplay("g1")).draws, 0, "without a live stroke it is the committed paint");
     engine.beginStroke(paint);
     engine.appendStrokePoint(engine.ensureTarget(), 0.2, 0.5, paint);
-    const live = drawsOf(() => engine.getGroupDisplayCanvas("g1"));
-    assert.notEqual(live.out, committed);
+    const live = drawsOf(() => engine.getGroupDisplay("g1"));
+    assert.notEqual(live.out.media, committed.media);
+    assert.notEqual(live.out.revision, committed.revision);
+    assert.equal(live.out.changed, committed.changed, "one damage log across both canvases");
     assert.ok(live.draws > 0);
-    assert.equal(drawsOf(() => engine.getGroupDisplayCanvas("g1")).draws, 0);
+    assert.equal(drawsOf(() => engine.getGroupDisplay("g1")).draws, 0);
     engine.appendStrokePoint(engine.ensureTarget(), 0.3, 0.5, paint);
-    assert.ok(drawsOf(() => engine.getGroupDisplayCanvas("g1")).draws > 0);
+    assert.ok(drawsOf(() => engine.getGroupDisplay("g1")).draws > 0);
+    engine.commitActiveStroke(paint);
+    assert.equal(engine.getGroupDisplay("g1").media, committed.media);
   });
 });
 
-test("a paint eraser shows on each group with that group's own paint", () => {
+test("a paint eraser shows on the groups it reaches, each with its own paint", () => {
   withFakeCanvas(() => {
     const engine = createPaintEngineManager({ width: 64, height: 32 });
     const paint = (actionGroupId, u) => ({ ...maskStroke(), layerKind: "paint", actionGroupId, geometry: { geometryKind: "freehand", rawPoints: [{ u, v: 0.5 }] } });
     engine.rebuildCommitted({ painting: { paint: { strokes: [paint("g1", 0.2), paint("g2", 0.7)] } } });
     const committed = (gid) => engine.getGroupTarget(gid).committedPaint.canvas;
-    const eraser = { ...maskStroke("eraser"), layerKind: "paint" };
+    const g2 = engine.getGroupDisplay("g2");
+    const eraser = { ...maskStroke("eraser"), layerKind: "paint", geometry: { geometryKind: "freehand", rawPoints: [{ u: 0.2, v: 0.5 }] } };
     engine.beginStroke(eraser);
-    engine.appendStrokePoint(engine.ensureTarget(), 0.5, 0.5, eraser);
-
-    const first = engine.getGroupDisplayCanvas("g1");
-    const second = engine.getGroupDisplayCanvas("g2");
-    assert.notEqual(first, second);
-    assert.notEqual(first, committed("g1"));
-    // Each preview starts from its own group's paint, and drawing the second leaves the first as it was.
-    assert.equal(first.drawn[0], committed("g1"));
-    assert.equal(second.drawn[0], committed("g2"));
-    assert.equal(engine.getGroupDisplayCanvas("g1"), first);
-    assert.equal(drawsOf(() => engine.getGroupDisplayCanvas("g1")).draws, 0);
-
-    // The eraser's end drops the previews; the groups show their committed paint again.
-    engine.commitActiveStroke(eraser);
-    assert.equal(engine.getGroupDisplayCanvas("g1"), committed("g1"));
-    assert.equal(engine.getGroupDisplayCanvas("g2"), committed("g2"));
+    engine.appendStrokePoint(engine.ensureTarget(), 0.2, 0.5, eraser);
+    const reached = engine.getGroupDisplay("g1");
+    assert.notEqual(reached.media, committed("g1"), "g1 shows the eraser");
+    // Its display starts from g1's own paint.
+    assert.equal(reached.media.drawn[0], committed("g1"));
+    assert.equal(engine.getGroupDisplay("g2").media, committed("g2"), "the eraser does not reach g2");
+    assert.equal(engine.getGroupDisplay("g2").revision, g2.revision);
+    assert.equal(drawsOf(() => engine.getGroupDisplay("g1")).draws, 0);
+    engine.cancelActiveStroke();
+    assert.equal(engine.getGroupDisplay("g1").media, committed("g1"));
   });
 });

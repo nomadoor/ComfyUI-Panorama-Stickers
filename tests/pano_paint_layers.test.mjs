@@ -146,17 +146,18 @@ test("a group the caller adds to the painting (the editor's stroke being drawn) 
   ]);
 });
 
-test("engineMask is the paint engine's mask display keyed by its mask revision, or none", () => {
-  let reads = 0;
-  const engine = (canvas) => ({
-    getMaskDisplayCanvas: () => {
-      reads += 1;
-      return canvas;
-    },
-    getMaskDisplayRevision: () => "3:true",
-  });
+test("engineMask is the paint engine's mask display, or none", () => {
+  const changed = () => [];
+  const display = { media: "canvas", revision: "damage1:3", changed };
+  const engine = (shown) => ({ getMaskDisplay: () => shown });
   assert.equal(engineMask(null), null);
   assert.equal(engineMask(engine(null)), null);
-  assert.deepEqual(engineMask(engine("canvas")), { media: "canvas", revision: "mask_display:3:true" });
-  assert.equal(reads, 2);
+  assert.equal(engineMask(engine(display)), display);
+});
+
+test("a source that says where its media changed passes it on with the layer", () => {
+  const changed = () => [];
+  const state = stateOf({ groups: [group("g0", 0)] });
+  const [layer] = skyPaintLayers(state, { group: () => ({ media: "canvas:g0", revision: "r", changed }), raster: () => null });
+  assert.equal(layer.changed, changed);
 });

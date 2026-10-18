@@ -12,7 +12,7 @@ export function createPaintStrokes(deps) {
     editor, runtime, state,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let getLivePaintRevisionSuffix, invalidatePaintingLayerState, resolveEditorOutputPresetWidth,
+  let invalidatePaintingLayerState, resolveEditorOutputPresetWidth,
     shortestWrappedDelta;
 
   function getTargetSpaceCoord(point) {
@@ -194,12 +194,6 @@ export function createPaintStrokes(deps) {
   function getPaintingCompositeRevisionKey() {
     const descriptor = getDesiredPaintTargetDescriptor();
     return `${String(editor.paintStrokeRevision)}:${String(editor.paintCompositeRevision)}:${descriptor.width}x${descriptor.height}`;
-  }
-
-  function getDisplayPaintRevisionKey() {
-    const liveSuffix = getLivePaintRevisionSuffix();
-    const base = getPaintingCompositeRevisionKey();
-    return liveSuffix ? `${base}:${liveSuffix}` : base;
   }
 
   function bumpPaintingStrokeRevision() {
@@ -414,6 +408,8 @@ export function createPaintStrokes(deps) {
     }));
   }
 
+  // Draws the stroke and returns the integer box { x0, y0, x1, y1 } (x1, y1 exclusive) of the canvas it may have
+  // drawn on, or false when it drew nothing.
   function rasterizeStrokeToSurface(surface, stroke, bounds = null) {
     if (!surface?.ctx || !stroke) return false;
     const targetBounds = bounds || { w: Number(surface.canvas?.width || 0), h: Number(surface.canvas?.height || 0) };
@@ -425,14 +421,42 @@ export function createPaintStrokes(deps) {
       }
       : stroke;
     const geometryKind = String(stroke?.geometry?.geometryKind || "");
+    // The box of shapes over [x0, x1) x [y0, y1), with a pixel or two of their anti-aliased edges.
+    const box = (x0, y0, x1, y1) => {
+      const width = Math.max(1, Math.round(Number(surface.canvas?.width || targetBounds.w || 1)));
+      const height = Math.max(1, Math.round(Number(surface.canvas?.height || targetBounds.h || 1)));
+      const out = {
+        x0: Math.max(0, Math.floor(x0) - 2), y0: Math.max(0, Math.floor(y0) - 2),
+        x1: Math.min(width, Math.ceil(x1) + 2), y1: Math.min(height, Math.ceil(y1) + 2),
+      };
+      if (!(out.x1 > out.x0 && out.y1 > out.y0)) return { x0: 0, y0: 0, x1: 0, y1: 0 };
+      return out;
+    };
     if (geometryKind === "lasso_fill") {
-      drawNativeLassoFill(surface.ctx, getStrokeRasterPoints(rasterStroke), rasterStroke, targetBounds);
-      return true;
+      const points = getStrokeRasterPoints(rasterStroke);
+      drawNativeLassoFill(surface.ctx, points, rasterStroke, targetBounds);
+      const xs = points.map((point) => Number(point?.u || 0) * targetBounds.w);
+      const ys = points.map((point) => Number(point?.v || 0) * targetBounds.h);
+      return xs.length ? box(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)) : box(0, 0, -1, -1);
     }
     const samples = buildNativeStrokeSamples(rasterStroke, targetBounds);
     if (!samples.length) return false;
     drawNativeStrokePath(surface.ctx, samples, rasterStroke, targetBounds);
-    return true;
+    // Each disc drawn lies within the discs of the samples it is drawn between (drawStampedStroke).
+    const maxRadiusPx = Math.max(targetBounds.w, targetBounds.h) * 0.25;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const sample of samples) {
+      const r = Math.max(0.5, Math.min(maxRadiusPx, Number(sample?.radiusPx || 0.5)));
+      if (!Number.isFinite(sample?.x) || !Number.isFinite(sample?.y) || !Number.isFinite(r)) continue;
+      x0 = Math.min(x0, sample.x - r);
+      y0 = Math.min(y0, sample.y - r);
+      x1 = Math.max(x1, sample.x + r);
+      y1 = Math.max(y1, sample.y + r);
+    }
+    return Number.isFinite(x0) ? box(x0, y0, x1, y1) : box(0, 0, -1, -1);
   }
 
   function findAlphaConnectedComponents(alpha, width, height, threshold = 8) {
@@ -580,12 +604,12 @@ export function createPaintStrokes(deps) {
   return {
     connect(api) {
       ({
-        getLivePaintRevisionSuffix, invalidatePaintingLayerState, resolveEditorOutputPresetWidth,
+        invalidatePaintingLayerState, resolveEditorOutputPresetWidth,
         shortestWrappedDelta,
       } = api);
     },
     processFreehandPoints, createRasterSurface, getPaintingRevisionKey, getPaintingCompositeRevisionKey,
-    getDisplayPaintRevisionKey, refreshPaintEngineRevisionCache, markObjectVisualsDirty,
+    refreshPaintEngineRevisionCache, markObjectVisualsDirty,
     markPaintStrokeVisualsDirty, markPaintCompositeVisualsDirty, rebuildPaintEngineIfNeeded,
     getDesiredPaintTargetDescriptor, getActivePaintTargetDescriptor, rasterizeStrokeToSurface,
     createRasterFrozenObjectsFromCanvas,

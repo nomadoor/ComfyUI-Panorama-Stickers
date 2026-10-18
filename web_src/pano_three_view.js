@@ -11,6 +11,7 @@ import {
   AmbientLight,
   AxesHelper,
   BackSide,
+  Box2,
   BufferGeometry,
   ClampToEdgeWrapping,
   Color,
@@ -34,6 +35,7 @@ import {
   OneMinusSrcAlphaFactor,
   PerspectiveCamera,
   NearestFilter,
+  NoColorSpace,
   PlaneGeometry,
   Quaternion,
   RGBAFormat,
@@ -354,6 +356,38 @@ function createTexture(media, flipY) {
   return texture;
 }
 
+// Uploads only `rects` (pano_paint_damage.js rectangles, in the picture's pixels) of a layer texture's canvas
+// again, through WebGLRenderer.copyTextureToTexture: for a source texture three has not uploaded, it calls
+// texSubImage2D(TEXTURE_2D, 0, x, y, width, height, format, type, canvas) with UNPACK_ROW_LENGTH at the
+// canvas's width and UNPACK_SKIP_PIXELS / UNPACK_SKIP_ROWS at the rectangle (three r184
+// src/renderers/WebGLRenderer.js `copyTextureToTexture`), and the unpack flags of the destination texture. So
+// the rectangles get the very pixels a whole upload gives them. The source is a texture of the same canvas
+// that is never uploaded itself. Returns false where a whole upload is needed instead: a texture three has not
+// uploaded yet, a VIDEO, a flipped or color-converted one, or a canvas larger than the GPU's textures (which
+// three uploads resized). Leaves the unpack flags off afterwards, as each draw does (settleUnpack).
+const regionSources = new WeakMap();
+const regionBox = new Box2();
+const regionAt = new Vector2();
+export function uploadTextureRegions(renderer, texture, rects) {
+  const media = texture.image;
+  const max = renderer.capabilities.maxTextureSize;
+  if (texture.isVideoTexture || texture.flipY || texture.colorSpace !== NoColorSpace || texture.version === 0) return false;
+  if (!renderer.properties.has(texture) || !(media?.width <= max && media?.height <= max)) return false;
+  let source = regionSources.get(texture);
+  if (source?.image !== media) regionSources.set(texture, source = new Texture(media));
+  const gl = renderer.getContext();
+  // What three's whole upload of a NoColorSpace texture sets (WebGLTextures.js uploadTexture).
+  renderer.state.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  for (const rect of rects) {
+    regionBox.min.set(rect.x0, rect.y0);
+    regionBox.max.set(rect.x1, rect.y1);
+    renderer.copyTextureToTexture(source, texture, regionBox, regionAt.set(rect.x0, rect.y0));
+  }
+  renderer.state.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  renderer.state.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  return true;
+}
+
 // The texture of a depth grid's colors (the proxy's picture, pano_depth_color.js): sRGB, linear, clamped, without
 // mips, as the GLBs' sampler (docs/render-contract.md "テクスチャの標本化"). Never flipped (the shader reads the
 // picture's top row at v 0): three.js cannot flip an ImageBitmap, so a flip would turn a bitmap's colors upside down
@@ -411,6 +445,10 @@ export function createDepthColorTextures(make) {
   };
 }
 
+function hasVideo(media) {
+  return typeof HTMLVideoElement !== "undefined" && media instanceof HTMLVideoElement;
+}
+
 // A <video> has a picture to upload from HAVE_CURRENT_DATA on; before that (loading, seeking) its
 // upload is empty.
 export function hasContent(media) {
@@ -430,10 +468,14 @@ export function hasContent(media) {
 // that drew it until they move on. Each draw marks the textures its owner uses; a texture no owner uses any
 // more is disposed.
 //
+// A layer whose revision changes is uploaded again: only where it changed when the layer says where
+// (`changed(revision)` gives the rectangles changed since the revision before, pano_paint_damage.js) and
+// uploadRegions(texture, rects) can upload them (uploadTextureRegions), whole otherwise.
+//
 // draw(owner) starts a draw of owner: { drawable(layer), texture(layer, wrapS, flipY), end() }. A 360 ERP
 // wraps around horizontally; a 180 ERP and a Sticker clamp at their edges. release(owner) drops the marks
 // of an owner that stops drawing.
-export function createLayerTextures() {
+export function createLayerTextures({ uploadRegions = null } = {}) {
   // media -> "flipY:wrapS" -> the current { texture, media, key, source, revision, width, height, users }
   const entries = new Map();
   // Every entry whose texture is held: the current ones and those replaced while an owner still draws them.
@@ -455,7 +497,7 @@ export function createLayerTextures() {
     if (!entry.users.size) forget(entry);
   }
 
-  function texture(previous, used, { id, media, revision, source: named }, wrapS, flipY) {
+  function texture(previous, used, { id, media, revision, changed, source: named }, wrapS, flipY) {
     const source = named ?? media;
     const size = mediaSize(media);
     const before = previous.get(id);
@@ -467,6 +509,27 @@ export function createLayerTextures() {
     if (!byKey) entries.set(media, byKey = new Map());
     const key = `${flipY}:${wrapS}`;
     let entry = byKey.get(key);
+    // A layer that moves to another canvas of the same size and says where it changed (a paint group's
+    // display going to the canvas with the live stroke and back) keeps its texture, uploaded only there.
+    if (!entry && uploadRegions && changed && before && before.key === key && before.media !== media
+      && byKey.size === 0 && before.width === size.width && before.height === size.height && !hasVideo(before.media)) {
+      const rects = changed(before.revision);
+      if (rects) {
+        const beforeKeys = entries.get(before.media);
+        if (beforeKeys?.get(key) === before) {
+          beforeKeys.delete(key);
+          if (!beforeKeys.size) entries.delete(before.media);
+        }
+        before.media = media;
+        before.source = source;
+        before.texture.image = media;
+        byKey.set(key, before);
+        before.revision = revision;
+        if (rects.length && !uploadRegions(before.texture, rects)) before.texture.needsUpdate = true;
+        used.set(id, before);
+        return before.texture;
+      }
+    }
     if (entry && (entry.source !== source || entry.width !== size.width || entry.height !== size.height)) {
       byKey.delete(key);
       if (!entry.users.size) forget(entry);
@@ -479,8 +542,9 @@ export function createLayerTextures() {
       byKey.set(key, entry);
       held.add(entry);
     } else if (entry.revision !== revision) {
+      const rects = uploadRegions && changed ? changed(entry.revision) : null;
       entry.revision = revision;
-      entry.texture.needsUpdate = true;
+      if (!rects || (rects.length && !uploadRegions(entry.texture, rects))) entry.texture.needsUpdate = true;
     }
     used.set(id, entry);
     return entry.texture;
@@ -952,7 +1016,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // resizing per owner. The layer textures are the view's (createLayerTextures): rendering one owner does
   // not drop the textures of the others, and owners that show the same media share its texture.
   const owners = new Map();
-  const layerTextures = createLayerTextures();
+  const layerTextures = createLayerTextures({ uploadRegions: (texture, rects) => uploadTextureRegions(renderer, texture, rects) });
   renderer.setScissorTest(true);
 
   function pooled(meshes, index, create) {

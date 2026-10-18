@@ -20,7 +20,7 @@ Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモ�
 | キャンバスのポインターの操作の振り分け（押したときに始める操作を決める順、`editor.interaction.kind` ごとの動き・離す・取り消す、操作ごとのモジュール） | — | `web_src/editor/pointer_input.js`、`web_src/editor/pointer_*.js` | `tests/editor_pointer_input.test.mjs` |
 | 描き直しは `requestDraw` からだけ頼む | — | `web_src/editor/render_loop.js` `requestDraw`・`tickFrame`・`drawScene` | — |
 | エディタのタイマーと閉じるときの片付け（タイマーを全部止める、閉じた後の `requestDraw` は何もしない、背景の VIDEO の `src` を放す） | — | `web_src/pano_timers.js` `createTimers`、`web_src/pano_editor.js` の閉じる処理、`editor/render_loop.js` `stopRenderLoop`、`editor/media_session.js` `disposeMediaSession` | — |
-| ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_upstream_layers.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
+| ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化、表示が変わった矩形） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/pano_paint_damage.js`、`web_src/pano_raster_eraser.js`、`web_src/pano_paint_engine.js` `getGroupDisplay`・`getMaskDisplay`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_upstream_layers.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/pano_paint_damage.test.mjs`、`tests/pano_raster_eraser.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
 | ノードごとの実行時の状態は node bridge に置く（グループ、片付け、許可する `__pano*` の一覧） | — | `web_src/pano_node_bridge.js`、`web_src/pano_editor_extension.js` の `onRemoved` | `tests/pano_node_bridge.test.mjs`、`tests/pano_editor_extension.test.mjs` |
 
 エディタのソースの形を確かめるテストは、`tests/editor_source.mjs`（`readEditorSource()`）・
@@ -239,14 +239,34 @@ Undo の段を積まず、`state_json` にも書かない。
 - 戻り値の `zIndex` で、`skyLayers`（`pano_editor_view.js`）が `sky` の Sticker の間に入れる（同じ値なら Sticker が下）。
 
 画素は呼び出し側が自分のペイントエンジン（`pano_paint_engine.js`）とラスタのキャッシュで描き、
-`{ media, revision }` を返す関数で渡す（描くものがなければ `null`。エンジンにそのグループの画素がない、
+`{ media, revision, changed? }` を返す関数で渡す（描くものがなければ `null`。エンジンにそのグループの画素がない、
 画像が読み込み中など）。エンジンとキャッシュの持ち主と寿命は呼び出し側のまま。
 
-| 呼び出し側 | 関数 | 渡すもの |
-| --- | --- | --- |
-| エディタ | `editor/paint_layers.js` の `buildEditorViewPaintLayers` | 描き途中のストロークを含むグループ、描き始めたグループを選択に合わせた `z_index` で `painting.groups` に足す（`getOrderedDisplayListObjects`）、消しゴムのプレビューを当てたラスタ、マスク（`engineMask`） |
-| ノード上の面 | `pano_surface_paint.js` の `surfacePaintLayers`（`pano_preview_runtime.js` の `surfaceViewInput` が呼ぶ） | 面のエンジン（グループを描くときに作る）、面のラスタのキャッシュ。マスクは見せない |
-| 上流の Scene の層 | `pano_upstream_layers.js` の `paintLayers` | 層ごとのエンジンとラスタ、マスク（`engineMask`） |
+`changed(revision)` は、前の `revision` から `media` が変わった矩形（`pano_paint_damage.js` の矩形の並び）を返し、
+知らないときは `null`（全体）を返す。どれだけ多くの変更が二つの読み出しの間にあっても（速いストロークは 1 フレームに
+多くの点を足す）、全体にはならず矩形のままにする。エディタのグループとラスタオブジェクトの層はこれを持つ。
+
+- グループの表示（`getGroupDisplay`）：確定したペイントか、描き途中のストロークを重ねたキャンバス。ストロークを
+  重ねるのは、そのグループに描いているときと、消しゴムがそのグループのペイント（描いた矩形）に届いたときだけで、
+  届かないグループは確定したペイントのまま（消しゴムが残すのと同じ画素）。重ねたキャンバスは、重ね始めたときに
+  確定したペイントとストロークから全体を描き、その後はストロークが変わった矩形だけを描き直す。
+  `revision` と `changed` はグループの表示一つの記録で、二つのキャンバスをまたいで続く（切り替えでは、二つが違う
+  矩形を記す）。ビューは切り替えでもテクスチャを作り直さず、その矩形だけ送る（`docs/threejs-spark-integration.md`
+  の「レイヤのテクスチャの共有」）。
+- 再構築（`rebuildCommitted`。ストロークの確定の後、Undo・Redo、グループの移動・拡大縮小・回転のたび）：
+  ストロークの値（キーも）が前の再構築と同じで、その後に確定したペイントを変えていないグループとマスクは描き直さない。
+  変わったものは全体を描き直し（ノードへ送る画素）、表示は、前と後で共通の先頭と末尾を除いたストロークの矩形
+  （グループではそのペイントのある矩形に限る）と、その間に確定で変えた矩形だけを変わったとする（その外の画素は、
+  同じストロークが同じ順に描くので変わらない）。
+- ラスタオブジェクト：描き途中のペイントの消しゴムが画素を取るときは、消しゴムを抜いたキャンバスを見せる。消しゴムの
+  プレビューは一枚のキャンバスに描き直し（前に描いた矩形を消してから描く）、画素を調べるのも描いた箱の中だけにする。
+  抜いたキャンバスは消しゴムが変わった箱だけ描き直す（`pano_raster_eraser.js` の `rasterEraserDisplay`）。ラスタ
+  オブジェクトの ERP のキャンバスは、画像・大きさ・`bbox`・`transform` が同じなら作り直さない（ほかのストロークで
+  描き直さない）。ラスタオブジェクトを動かす・拡大縮小するあいだは、`transform` ごとに新しいキャンバスを作り、全体を送る。
+
+描き直した矩形の画素は全体を描き直したときと同じで、確定した面（ノードへ送る物）はいつも全体を描く。
+大きさの変更と新しいグループは全体になる。キャンバスだけを使う呼び出し側（ノード上の面、上流の Scene の層、
+ノードへ送る塗りの層）は `getGroupDisplayCanvas`（`getGroupDisplay` の `media`）を使い、`revision` は自分で持つ。
 
 `skyPaintLayers` は正規化した状態（`normalizePaintingState` の `painting`）を受け取る。ノード上の面のうち旧
 Stickers / Cutout ノード（状態 v2 でないもの）は widget の JSON をそのまま読む（`parseState`）ので、`painting` が

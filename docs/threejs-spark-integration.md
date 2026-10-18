@@ -20,7 +20,7 @@
 | Camera 向けの部品と Camera から見た空間の表示 | — | `pano_space.js` `cameraFrustumSegments`・`cameraTrajectory`・`placedCamera`、`web_src/editor/view_input.js` `shotViewCamera` | `tests/pano_space.test.mjs`、`tests/pano_editor_view.test.mjs` |
 | GPU の当たり判定 | — | `pano_three_view.js` `pickAt`・`pickPass`・`pickSticker`・`pickSurface`・`pickMaterial`（深度のグリッドには `createDepthGridPickMaterial`）、`web_src/pano_pick.js` `pickWindow`・`packPick24`・`rayBoxDepth`・`nearestHit`・`pickCacheKey` | `tests/pano_pick.test.mjs`、`tests/pano_editor_view.test.mjs` |
 | Spark の描画はビューごとに 1 つ | — | `web_src/pano_spark_views.js` `createSparkViews`・`disposeSpark`、`pano_three_view.js` `releaseSplats` | `tests/pano_spark_views.test.mjs` |
-| レイヤのテクスチャの共有 | — | `pano_three_view.js` `createLayerTextures` | `tests/pano_editor_view.test.mjs` |
+| レイヤのテクスチャの共有（変わった矩形だけを送ること） | — | `pano_three_view.js` `createLayerTextures`・`uploadTextureRegions` | `tests/pano_editor_view.test.mjs`、`tests/pano_paint_damage.test.mjs`、`tests/browser/paint_regions.spec.js` |
 | World の組み立て | — | `pano_three_view.js` `buildWorld`・`setChildren`・`cachedLines` | `tests/pano_pick.test.mjs` |
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
@@ -225,7 +225,7 @@ Panorama Studio のエディタの Camera の編集は `docs/editor-interaction.
 
 - ビューの中での共有（`pano_three_view.js` の `createLayerTextures`）：テクスチャを `owner`（ステージとカメラのプレビュー（`"camera_preview"`）など）ごとではなくビュー全体で、メディア・`flipY`・`wrapS` の組ごとに 1 つ持ち（`revision` と `source` はレイヤごとの値で、キーには入れない）、各 `owner` は描画ごとに使った物に印を付ける。どの `owner` も使わなくなったテクスチャは `dispose` する。同じ WebGL コンテキストなので、どの `owner` からも描ける。
   - 費用：1080p の RGBA は 1 枚約 8 MB。再生中の VIDEO は送る回数も 1 フレームに 1 回になる。
-  - 保つこと：`source` が同じで新しいメディアにまだ絵が無いあいだ（読み込み中・シーク中）は、その `owner` の前の描画のテクスチャを使う。別の `source` の絵は出さない。`revision` が変わったら送り直し、大きさか `source` が変わったら、書き換えずに新しいテクスチャを作る。前の物は、それで描いた owner が次の描画で離れるまで残し、誰も使わなくなったら `dispose` する（`VideoTexture` の `dispose` が `requestVideoFrameCallback` を取り消す）。そのため、まだ新しい `source` の絵を描いていない owner が、それを前の絵として使うことはない。描画の途中で例外が出ても、`end()` は `finally` で必ず呼ぶので、印の無いテクスチャは残らない。
+  - 保つこと：`source` が同じで新しいメディアにまだ絵が無いあいだ（読み込み中・シーク中）は、その `owner` の前の描画のテクスチャを使う。別の `source` の絵は出さない。`revision` が変わったら送り直し（レイヤが `changed` で変わった矩形を言えるとき（ペイントの表示。`docs/editor-architecture.md` の「Paint layers」）は、その矩形だけを `uploadTextureRegions` で送る。three r184 の `WebGLRenderer.copyTextureToTexture` が、three が送っていない同じキャンバスのテクスチャから、`UNPACK_ROW_LENGTH`・`UNPACK_SKIP_PIXELS`・`UNPACK_SKIP_ROWS` を付けた `texSubImage2D` で送る。`Texture.updateRanges` は `DataTexture` だけのもので、キャンバスには効かない。まだ送っていないテクスチャ、VIDEO、`flipY`、色の変換のあるもの、GPU のテクスチャの上限より大きいキャンバスは全体を送る。同じレイヤが同じ大きさの別のキャンバスに移り、`changed` が前の `revision` からの矩形を言えるとき（ペイントのグループの表示が、ストロークを重ねたキャンバスに移るときと戻るとき）は、テクスチャを作り直さずにそのキャンバスに付け替え、その矩形だけを送る）、大きさか `source` が変わったら、書き換えずに新しいテクスチャを作る。前の物は、それで描いた owner が次の描画で離れるまで残し、誰も使わなくなったら `dispose` する（`VideoTexture` の `dispose` が `requestVideoFrameCallback` を取り消す）。そのため、まだ新しい `source` の絵を描いていない owner が、それを前の絵として使うことはない。描画の途中で例外が出ても、`end()` は `finally` で必ず呼ぶので、印の無いテクスチャは残らない。
   - カメラのプレビューが隠れたとき（`releaseSplats`）は、Spark に加えてプレビューの印も外すので、プレビューだけが使っていたテクスチャは解放される。
   - 診断：`sources["three.editor"].layerTextures` と `sources["three.node"].layerTextures` に、ビューが持つレイヤのテクスチャの数が出る。
 - ノード上の表示との重複：そのノードのエディタを開いているあいだ、ノード上の Panorama Studio の表示は VIDEO を外し、静止画を放し、描かずにテクスチャを放す（エディタのモーダルがノードを覆っているので、同じ VIDEO の 2 つ目のデコーダ、その静止画、ノード上の共有ビューのテクスチャを持たない。`docs/studio-node-surface.md` の「見えないときとエディタを開いている間」）。
@@ -263,6 +263,6 @@ render の外で生の `texSubImage2D(RGBA_INTEGER, UNSIGNED_INT, Uint32Array)` 
 （STATUS_BREAKPOINT。背景が VIDEO で 3DGS がある Scene で、視点を動かした瞬間に起きる）。
 `pano_three_view.js` の `draw` は、描き終わるたびに `settleUnpack` で両方を three の状態を通して false に戻す。
 three のアップロードは render の中でしか起きないので、Spark のアップロードは常に両方 false で走り、three の
-キャッシュも実際の値と揃う。Spark 2.2.0 以降は自分で両方を戻すので、コアのフロントエンドに合わせて Spark を上げたら、この回避を消す（ADR 0031、`tests/test_three_spark_core_pin.py` が知らせる）。
+キャッシュも実際の値と揃う。render の外で送るペイントの矩形（`uploadTextureRegions`）は、送り終えるたびに同じく両方を three の状態を通して false に戻す。Spark 2.2.0 以降は自分で両方を戻すので、コアのフロントエンドに合わせて Spark を上げたら、この回避を消す（ADR 0031、`tests/test_three_spark_core_pin.py` が知らせる）。
 この場面（再生中の VIDEO の背景、3DGS の Sticker、視点の回転）は `tests/browser/three_view.spec.js` が headless Chromium で描き、
 タブが落ちないことを確かめる。`settleUnpack` を外すと、このテストはクラッシュで落ちる（SwiftShader で確認）。
