@@ -4,7 +4,7 @@ import { DEG2RAD } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter, timelineFps } from "./pano_scene_state.js";
+import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
@@ -473,6 +473,12 @@ export function takeStickerId(state) {
 
 // A sky Sticker over the whole Timeline with the pose in the editor's fields.
 export function newSceneSticker(id, source, pose, zIndex) {
+  const values = {
+    direction: { yaw_deg: pose.yaw_deg, pitch_deg: pose.pitch_deg },
+    roll: pose.rot_deg,
+    size: { hFOV_deg: pose.hFOV_deg, vFOV_deg: pose.vFOV_deg },
+    opacity: 1,
+  };
   return {
     id,
     placement: "sky",
@@ -481,10 +487,9 @@ export function newSceneSticker(id, source, pose, zIndex) {
     visible: true,
     locked: false,
     crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    direction: { value: { yaw_deg: pose.yaw_deg, pitch_deg: pose.pitch_deg }, keyframes: [] },
-    roll: { value: pose.rot_deg, keyframes: [] },
-    size: { value: { hFOV_deg: pose.hFOV_deg, vFOV_deg: pose.vFOV_deg }, keyframes: [] },
-    opacity: { value: 1, keyframes: [] },
+    // Every Lane a loaded sky Sticker has (SKY_STICKER_LANES), each read as the loader reads it; a Lane missing
+    // here broke the Timeline's ownerTimed and dropped the new Sticker.
+    ...Object.fromEntries(SKY_STICKER_LANES.map(([name, valueOf]) => [name, { value: valueOf(values[name]), keyframes: [] }])),
     z_index: zIndex,
   };
 }
