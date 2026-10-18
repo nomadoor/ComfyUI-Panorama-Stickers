@@ -40,7 +40,7 @@
   --pano-float-pad: var(--pano-space-xs);
   --pano-float-gap: var(--pano-space-sm);
   --pano-float-radius: 10px;
-  --pano-float-bg: rgba(10, 10, 10, 0.74);
+  --pano-float-bg: rgba(10, 10, 10, 0.88);
   --pano-float-shadow: 0 8px 30px rgba(0,0,0,0.35);
   --pano-popover-bg: rgba(10, 10, 10, 0.92);
   --pano-node-text-secondary: #a1a1aa;
@@ -54,8 +54,7 @@
 .pano-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.62);
-  backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.7);
   z-index: 99999;
   display: flex;
   align-items: center;
@@ -179,7 +178,7 @@
   background: transparent;
 }
 .pano-stage-wrap.drop-active .pano-stage {
-  filter: blur(2px) brightness(0.76);
+  filter: brightness(0.76);
 }
 .pano-stage-loading {
   position: absolute;
@@ -271,7 +270,6 @@
   padding: 4px;
   gap: 0;
   box-shadow: var(--pano-float-shadow);
-  backdrop-filter: blur(12px);
   overflow: hidden;
 }
 .pano-view-toggle::before {
@@ -380,7 +378,6 @@
   min-height: 40px;
   border: 0;
   background: var(--pano-float-bg);
-  backdrop-filter: blur(12px);
   z-index: 2;
   color: var(--pano-text-secondary);
   font-size: 12px;
@@ -504,7 +501,6 @@
   border-radius: var(--pano-float-radius);
   background: var(--pano-float-bg);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(12px);
 }
 .pano-video-controls-left,
 .pano-video-controls-right {
@@ -700,7 +696,6 @@
   border-radius: 12px;
   background: var(--pano-popover-bg);
   box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(12px);
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, -8px);
@@ -751,7 +746,6 @@
   gap: 4px;
   border: 0;
   background: var(--pano-float-bg);
-  backdrop-filter: blur(12px);
   box-shadow: 0 2px 4px rgba(0,0,0,0.15);
   z-index: 3;
 }
@@ -855,7 +849,6 @@
   padding: 8px;
   border-radius: 10px;
   background: var(--pano-popover-bg);
-  backdrop-filter: blur(12px);
   box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
   z-index: 4;
 }
@@ -909,8 +902,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.5);
   z-index: 5;
 }
 .pano-canvas-confirm-card {
@@ -1085,7 +1077,6 @@
   background: var(--pano-float-bg);
   border: 0;
   box-shadow: var(--pano-float-shadow);
-  backdrop-filter: blur(12px);
 }
 .pano-floating-left .pano-btn-icon {
   width: 40px;
@@ -1136,7 +1127,6 @@
   border-radius: var(--pano-float-radius);
   border: 0;
   background: var(--pano-float-bg);
-  backdrop-filter: blur(12px);
   transition: none;
 }
 .pano-paint-footer-group {
@@ -1154,9 +1144,8 @@
   gap: 7px;
   padding: 7px 9px;
   border-radius: 999px;
-  background: rgba(18, 20, 26, 0.4);
+  background: rgba(18, 20, 26, 0.88);
   box-shadow: var(--pano-float-shadow);
-  backdrop-filter: blur(12px);
   transition: none;
 }
 .pano-paint-color-float[hidden] {
@@ -1429,7 +1418,6 @@
   box-shadow:
     inset 0 0 0 2px var(--pano-frame-yellow-edge),
     var(--pano-float-shadow);
-  backdrop-filter: blur(12px);
   visibility: visible;
   pointer-events: auto;
   opacity: 1;
@@ -1480,7 +1468,6 @@
   border-radius: var(--pano-float-radius);
   background: var(--pano-float-bg);
   box-shadow: var(--pano-float-shadow);
-  backdrop-filter: blur(12px);
 }
 .pano-frame-aspect-choice {
   min-width: 54px;
@@ -2233,7 +2220,6 @@
   border-radius: var(--pano-node-float-radius);
   background: var(--pano-node-float-bg);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.46);
-  backdrop-filter: blur(12px);
 }
 .pano-cutout-node-toolbar .pano-frame-aspect-control.is-node,
 .pano-cutout-node-toolbar .pano-cutout-aspect-trigger {
@@ -2277,7 +2263,7 @@
   padding: 5px 9px;
   border: 1px solid var(--pano-divider);
   border-radius: 999px;
-  background: rgba(10, 10, 10, 0.7);
+  background: rgba(10, 10, 10, 0.85);
   color: rgba(255, 255, 255, 0.68);
   font-size: 10px;
   font-weight: 550;
@@ -2285,7 +2271,6 @@
   letter-spacing: 0.01em;
   white-space: nowrap;
   transform: translateX(-50%);
-  backdrop-filter: blur(8px);
   pointer-events: none;
 }
 /* The help popovers of the PanoramaStickers and PanoramaCutout node surfaces differ only in width, text
@@ -3068,7 +3053,6 @@
   border-radius: var(--pano-float-radius);
   background: var(--pano-float-bg);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(12px);
 }
 /* The playback bar: play and pause, seek and the time, no filmstrip. */
 .pano-video-transport-playback .pano-video-filmstrip {
