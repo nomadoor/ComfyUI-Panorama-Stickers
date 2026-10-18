@@ -2,11 +2,12 @@
 // docs/scene-state-v2.md "Sky の重なり順"). The editor, the on-node surfaces and the upstream layers each draw
 // the pixels with a paint engine of their own; this decides which layers there are and where they go.
 
-// The paint of `state` ({ painting, painting_visible, stickers }) as { id, media, revision, opacity, zIndex } from
+// The paint of `state` ({ painting, painting_visible, stickers }) as { id, media, revision, changed?, opacity, zIndex } from
 // back to front, for skyLayers (pano_editor_view.js) to put among the sky Stickers by zIndex, Stickers first on ties:
 // the stroke groups and the paint raster objects at their z_index (groups first on ties, each in list order), then
 // the strokes of no group of the painting, and the mask over everything. None while the painting is hidden.
-// The sources give a layer's { media, revision }, or null when it has nothing to draw: group(actionGroupId) a
+// The sources give a layer's { media, revision, changed? }, or null when it has nothing to draw (`changed`, when a
+// source knows it, gives where the media changed since a revision before: pano_paint_damage.js); group(actionGroupId) a
 // stroke group's canvas (null when the engine has no strokes of the group), raster(item) a raster object's ERP
 // canvas, and mask() the mask's display (null without a mask, or where the mask is not shown).
 export function skyPaintLayers(state, { group, raster, mask = () => null }) {
@@ -20,7 +21,10 @@ export function skyPaintLayers(state, { group, raster, mask = () => null }) {
   ].sort((a, b) => a.zIndex - b.zIndex);
   const layers = [];
   const add = (id, zIndex, shown) => {
-    if (shown) layers.push({ id, media: shown.media, revision: shown.revision, opacity: 1, zIndex });
+    if (!shown) return;
+    const layer = { id, media: shown.media, revision: shown.revision, opacity: 1, zIndex };
+    if (shown.changed) layer.changed = shown.changed;
+    layers.push(layer);
   };
   for (const entry of ordered) add(entry.id, entry.zIndex, entry.shown());
   const top = Math.max(-1, ...layers.map((layer) => layer.zIndex), ...state.stickers.map(zIndexOf)) + 1;
@@ -30,10 +34,9 @@ export function skyPaintLayers(state, { group, raster, mask = () => null }) {
   return layers;
 }
 
-// The mask display of a paint engine (pano_paint_engine.js) as a skyPaintLayers source.
+// The mask display of a paint engine (pano_paint_engine.js getMaskDisplay) as a skyPaintLayers source.
 export function engineMask(engine) {
-  const media = engine?.getMaskDisplayCanvas() ?? null;
-  return media && { media, revision: `mask_display:${engine.getMaskDisplayRevision()}` };
+  return engine?.getMaskDisplay() ?? null;
 }
 
 function groupId(item) {

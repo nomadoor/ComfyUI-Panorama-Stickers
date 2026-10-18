@@ -3,7 +3,9 @@
 // uploaded for the node.
 import { createPanoCanvas } from "../pano_diagnostics.js";
 import { paintingLayerNeedsSync } from "../pano_editor_state.js";
+import { createDamageLog } from "../pano_paint_damage.js";
 import { engineMask, skyPaintLayers } from "../pano_paint_layers.js";
+import { rasterEraserDisplay } from "../pano_raster_eraser.js";
 import { clamp } from "../pano_math.js";
 import { cloneJson, drawRasterObjectErp, paintingCompositeCount, pointInPoly } from "./helpers.js";
 
@@ -16,9 +18,9 @@ export function createPaintLayers(deps) {
     rasterImageCache, state,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let commitState, createRasterSurface, ensureGroupFrame, getActivePaintTargetDescriptor,
-    getDesiredPaintTargetDescriptor, getDisplayPaintRevisionKey, getOrderedDisplayListObjects,
-    getOrderedPaintGroupIds, getPaintingCompositeRevisionKey, getPaintingRevisionKey, getStrokeGroupStrokes,
+  let commitState, createRasterSurface, getActivePaintTargetDescriptor,
+    getDesiredPaintTargetDescriptor, getOrderedDisplayListObjects,
+    getOrderedPaintGroupIds, getPaintingCompositeRevisionKey,
     inverseTransformErpPointAround, parseRasterObjectSelectionId, processFreehandPoints,
     rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint, shortestWrappedDelta;
 
@@ -152,10 +154,11 @@ export function createPaintLayers(deps) {
     return alpha > 8;
   }
 
+  // The size of the paint engine's ERP canvases (without composing them).
   function getRasterCompositeErpSize() {
-    const erpTarget = editor.paintEngine?.getErpTarget?.(getOrderedPaintGroupIds(false)) || null;
-    const width = Math.max(1, Number(erpTarget?.descriptor?.width || erpTarget?.displayPaint?.canvas?.width || 2048));
-    const height = Math.max(1, Number(erpTarget?.descriptor?.height || erpTarget?.displayPaint?.canvas?.height || 1024));
+    const descriptor = editor.paintEngine?.descriptor || null;
+    const width = Math.max(1, Number(descriptor?.width || 2048));
+    const height = Math.max(1, Number(descriptor?.height || 1024));
     return { width, height };
   }
 
@@ -177,21 +180,34 @@ export function createPaintLayers(deps) {
         : (Array.isArray(geometry.points) ? geometry.points : []);
       geometry.processedPoints = processFreehandPoints(raw, previewStroke.targetSpace, true);
     }
-    const surface = createRasterSurface(erpDesc.width, erpDesc.height, { readback: true });
-    if (!rasterizeStrokeToSurface(surface, previewStroke, { w: erpDesc.width, h: erpDesc.height })) return null;
-    const data = surface.ctx?.getImageData(0, 0, erpDesc.width, erpDesc.height)?.data || null;
-    if (!data) return null;
+    // One canvas for the eraser's preview, cleared where it was drawn before: a fresh canvas with the stroke.
+    let surface = editor._activePaintEraserSurface || null;
+    if (!surface || surface.canvas.width !== erpDesc.width || surface.canvas.height !== erpDesc.height) {
+      surface = editor._activePaintEraserSurface = createRasterSurface(erpDesc.width, erpDesc.height, { readback: true });
+      editor._activePaintEraserBox = null;
+    }
+    const before = editor._activePaintEraserBox;
+    if (before) surface.ctx.clearRect(before.x0, before.y0, before.x1 - before.x0, before.y1 - before.y0);
+    editor._activePaintEraserBox = null;
+    const box = rasterizeStrokeToSurface(surface, previewStroke, { w: erpDesc.width, h: erpDesc.height });
+    if (!box) return null;
+    editor._activePaintEraserBox = box;
+    // Where its pixels are over 8 (all of them are in the box it drew).
     let minX = erpDesc.width;
     let minY = erpDesc.height;
     let maxX = -1;
     let maxY = -1;
-    for (let y = 0; y < erpDesc.height; y += 1) {
-      for (let x = 0; x < erpDesc.width; x += 1) {
-        if (data[(y * erpDesc.width + x) * 4 + 3] <= 8) continue;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
+    const boxW = box.x1 - box.x0;
+    const boxH = box.y1 - box.y0;
+    const data = boxW > 0 && boxH > 0 ? surface.ctx?.getImageData(box.x0, box.y0, boxW, boxH)?.data || null : new Uint8ClampedArray(0);
+    if (!data) return null;
+    for (let y = 0; y < boxH; y += 1) {
+      for (let x = 0; x < boxW; x += 1) {
+        if (data[(y * boxW + x) * 4 + 3] <= 8) continue;
+        if (x + box.x0 < minX) minX = x + box.x0;
+        if (y + box.y0 < minY) minY = y + box.y0;
+        if (x + box.x0 > maxX) maxX = x + box.x0;
+        if (y + box.y0 > maxY) maxY = y + box.y0;
       }
     }
     if (maxX < minX || maxY < minY) {
@@ -201,114 +217,22 @@ export function createPaintLayers(deps) {
     const info = {
       surface,
       bounds: { minX, minY, maxX, maxY },
+      box,
       key: `${liveKey}:${minX}:${minY}:${maxX}:${maxY}`,
     };
     editor._activePaintEraserPreviewInfo = { cacheKey: liveKey, value: info };
-    editor._liveEraserPreviewCanvasCache = new Map();
     return info;
   }
 
   function invalidateLivePaintPreviewCaches() {
     editor._activePaintEraserPreviewInfo = null;
-    editor._liveEraserPreviewCanvasCache = null;
   }
 
-  function getPaintObjectApproxErpBounds(entry, width, height) {
-    if (!entry) return null;
-    if (entry.type === "rasterObject" && entry.item?.bbox) {
-      const bbox = entry.item.bbox;
-      const tf = entry.item?.transform || {};
-      const u0 = Number(bbox.u0 || 0) + Number(tf.du || 0);
-      const u1 = Number(bbox.u1 || 0) + Number(tf.du || 0);
-      const v0 = Number(bbox.v0 || 0) + Number(tf.dv || 0);
-      const v1 = Number(bbox.v1 || 0) + Number(tf.dv || 0);
-      return {
-        minX: Math.floor((((u0 % 1) + 1) % 1) * width),
-        maxX: Math.ceil((((u1 % 1) + 1) % 1) * width),
-        minY: Math.floor(clamp(v0, 0, 1) * height),
-        maxY: Math.ceil(clamp(v1, 0, 1) * height),
-        wraps: (u1 - u0) >= 1 || u0 < 0 || u1 > 1,
-      };
-    }
-    if (entry.type === "strokeGroup") {
-      const strokes = getStrokeGroupStrokes(entry.actionGroupId, "paint");
-      const frame = ensureGroupFrame(entry.actionGroupId, "paint", strokes);
-      if (!frame) return null;
-      const minU = frame.centerUv.u - frame.halfW;
-      const maxU = frame.centerUv.u + frame.halfW;
-      const minV = frame.centerUv.v - frame.halfH;
-      const maxV = frame.centerUv.v + frame.halfH;
-      return {
-        minX: Math.floor((((minU % 1) + 1) % 1) * width),
-        maxX: Math.ceil((((maxU % 1) + 1) % 1) * width),
-        minY: Math.floor(clamp(minV, 0, 1) * height),
-        maxY: Math.ceil(clamp(maxV, 0, 1) * height),
-        wraps: (maxU - minU) >= 1 || minU < 0 || maxU > 1,
-      };
-    }
-    return null;
-  }
-
-  function erpBoundsIntersect(a, b, width) {
-    if (!a || !b) return false;
-    const split = (box) => {
-      if (!box.wraps) return [box];
-      return [
-        { minX: 0, maxX: box.maxX, minY: box.minY, maxY: box.maxY, wraps: false },
-        { minX: box.minX, maxX: width - 1, minY: box.minY, maxY: box.maxY, wraps: false },
-      ];
-    };
-    const aa = split(a);
-    const bb = split(b);
-    return aa.some((x) => bb.some((y) => !(x.maxX < y.minX || y.maxX < x.minX || x.maxY < y.minY || y.maxY < x.minY)));
-  }
-
-  function getLiveEraserAppliedCanvas(sourceCanvas, entry, previewInfo) {
-    if (!sourceCanvas || !entry || !previewInfo?.surface?.canvas) return sourceCanvas;
-    if (entry.type !== "rasterObject") return sourceCanvas;
-    const width = Number(sourceCanvas.width || previewInfo.surface.canvas.width || 0);
-    const height = Number(sourceCanvas.height || previewInfo.surface.canvas.height || 0);
-    if (width < 1 || height < 1) return sourceCanvas;
-    const objectBounds = getPaintObjectApproxErpBounds(entry, width, height);
-    if (objectBounds && !erpBoundsIntersect(objectBounds, previewInfo.bounds, width)) return sourceCanvas;
-    const rid = String(entry.item?.id || entry.id || "");
-    const tf = entry.item?.transform || {};
-    const cacheKey = `${previewInfo.key}:${rid}:${width}:${height}:${Number(tf.du || 0).toFixed(6)}:${Number(tf.dv || 0).toFixed(6)}:${Number(tf.rot_deg || 0).toFixed(3)}:${Number(tf.scale || 1).toFixed(4)}`;
-    const cache = editor._liveEraserPreviewCanvasCache instanceof Map
-      ? editor._liveEraserPreviewCanvasCache
-      : (editor._liveEraserPreviewCanvasCache = new Map());
-    if (cache.has(cacheKey)) return cache.get(cacheKey);
-    const minX = clamp(Math.floor(Number(previewInfo.bounds?.minX || 0)), 0, Math.max(0, width - 1));
-    const minY = clamp(Math.floor(Number(previewInfo.bounds?.minY || 0)), 0, Math.max(0, height - 1));
-    const maxX = clamp(Math.ceil(Number(previewInfo.bounds?.maxX || 0)), minX, Math.max(0, width - 1));
-    const maxY = clamp(Math.ceil(Number(previewInfo.bounds?.maxY || 0)), minY, Math.max(0, height - 1));
-    const regionW = Math.max(1, maxX - minX + 1);
-    const regionH = Math.max(1, maxY - minY + 1);
-    const surface = createRasterSurface(width, height, { readback: true });
-    surface.ctx.clearRect(0, 0, width, height);
-    surface.ctx.drawImage(sourceCanvas, 0, 0);
-    const beforeData = surface.ctx.getImageData(minX, minY, regionW, regionH);
-    surface.ctx.save();
-    surface.ctx.globalCompositeOperation = "destination-out";
-    surface.ctx.drawImage(previewInfo.surface.canvas, 0, 0);
-    surface.ctx.restore();
-    const afterData = surface.ctx.getImageData(minX, minY, regionW, regionH);
-    let touched = false;
-    for (let i = 0; i < regionW * regionH; i += 1) {
-      const beforeAlpha = beforeData.data[i * 4 + 3];
-      const afterAlpha = afterData.data[i * 4 + 3];
-      if (beforeAlpha > afterAlpha) {
-        touched = true;
-        break;
-      }
-    }
-    if (!touched) {
-      cache.set(cacheKey, sourceCanvas);
-      return sourceCanvas;
-    }
-    if (cache.size > 64) cache.clear();
-    cache.set(cacheKey, surface.canvas);
-    return surface.canvas;
+  const imageIds = new WeakMap();
+  let nextImageId = 1;
+  function imageIdOf(img) {
+    if (!imageIds.has(img)) imageIds.set(img, nextImageId++);
+    return imageIds.get(img);
   }
 
   function buildRasterObjectEditCanvas(item, onLoad = null) {
@@ -331,7 +255,9 @@ export function createPaintLayers(deps) {
       tf.dv,
       tf.rot_deg,
       tf.scale,
-      getPaintingRevisionKey(),
+      // The image it draws (a new data URL is another image), rather than the painting's revision, so a stroke
+      // elsewhere does not draw it again.
+      imageIdOf(img),
     ].join(":");
     const cached = rasterErpCanvasCache.get(key);
     if (cached) return cached;
@@ -463,41 +389,37 @@ export function createPaintLayers(deps) {
     return promise;
   }
 
-  // The paint the views draw (skyPaintLayers): the engine's stroke groups with the live stroke, the group being
-  // drawn at the z_index it takes (getOrderedDisplayListObjects), the raster objects with the live eraser, and
-  // the mask.
+  // The paint the views draw (skyPaintLayers): the engine's stroke groups with the live stroke (the engine's
+  // display of each group, whose revision moves only when that group's display changes), the group being drawn
+  // at the z_index it takes (getOrderedDisplayListObjects), the raster objects with the live eraser, and the mask.
   function buildEditorViewPaintLayers() {
     const groups = getOrderedDisplayListObjects(true)
       .filter((entry) => entry.type === "strokeGroup")
       .map((entry) => ({ actionGroupId: entry.actionGroupId, z_index: entry.z_index }));
     const engine = editor.paintEngine;
-    const revision = getDisplayPaintRevisionKey();
-    const previewInfo = getActivePaintEraserPreviewInfo();
-    return skyPaintLayers({ ...state, painting: { ...state.painting, groups } }, {
-      group: (id) => {
-        const media = engine?.getGroupDisplayCanvas(id);
-        return media && { media, revision: `${revision}:${id}` };
-      },
+    // The live eraser's preview is made only when a raster object shows it.
+    let eraserInfo;
+    const eraserPreview = () => (eraserInfo === undefined ? (eraserInfo = getActivePaintEraserPreviewInfo()) : eraserInfo);
+    const shownRasters = new Set();
+    const layers = skyPaintLayers({ ...state, painting: { ...state.painting, groups } }, {
+      group: (id) => engine?.getGroupDisplay(id) ?? null,
       raster: (item) => {
         const baseSource = buildRasterObjectEditCanvas(item, () => requestDraw());
         if (!baseSource) return null;
-        const tf = item.transform || {};
-        return {
-          media: getLiveEraserAppliedCanvas(baseSource, { type: "rasterObject", item }, previewInfo),
-          revision: [
-            getPaintingCompositeRevisionKey(),
-            previewInfo?.key || "",
-            item.id,
-            Number(tf.du || 0).toFixed(6),
-            Number(tf.dv || 0).toFixed(6),
-            Number(tf.rot_deg || 0).toFixed(3),
-            Number(tf.scale || 1).toFixed(4),
-          ].join(":"),
-        };
+        const id = String(item.id);
+        shownRasters.add(id);
+        if (!rasterDisplays.has(id)) rasterDisplays.set(id, { log: createDamageLog(), base: null });
+        return rasterEraserDisplay(rasterDisplays.get(id), baseSource, item, eraserPreview(),
+          (width, height) => createRasterSurface(width, height, { readback: true }));
       },
       mask: () => engineMask(engine),
     });
+    for (const id of [...rasterDisplays.keys()]) if (!shownRasters.has(id)) rasterDisplays.delete(id);
+    return layers;
   }
+
+  // The raster objects' records as the views draw them (rasterEraserDisplay), by id.
+  const rasterDisplays = new Map();
 
   function invalidatePaintingLayerState() {
     if (state.painting_layer !== null) {
@@ -509,9 +431,9 @@ export function createPaintLayers(deps) {
   return {
     connect(api) {
       ({
-        commitState, createRasterSurface, ensureGroupFrame, getActivePaintTargetDescriptor,
-        getDesiredPaintTargetDescriptor, getDisplayPaintRevisionKey, getOrderedDisplayListObjects,
-        getOrderedPaintGroupIds, getPaintingCompositeRevisionKey, getPaintingRevisionKey, getStrokeGroupStrokes,
+        commitState, createRasterSurface, getActivePaintTargetDescriptor,
+        getDesiredPaintTargetDescriptor, getOrderedDisplayListObjects,
+        getOrderedPaintGroupIds, getPaintingCompositeRevisionKey,
         inverseTransformErpPointAround, parseRasterObjectSelectionId, processFreehandPoints,
         rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, requestDraw, screenPosToErpPoint, shortestWrappedDelta,
       } = api);
