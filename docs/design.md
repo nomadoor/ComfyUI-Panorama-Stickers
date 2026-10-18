@@ -55,7 +55,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | `--pano-emphasis-bg-hover` | `#2672d2` | 強調のボタンの hover（`.pano-btn-primary` は `:focus-visible` も） |
 | `--pano-emphasis-bg-active` | `#114f9d` | 強調のボタンの `:active` |
 | `--pano-emphasis-text` | `#ffffff` | 強調のボタンの文字 |
-| `--pano-float-bg` | `rgba(10,10,10,0.74)` | ステージの上に浮く群（HUD）の地 |
+| `--pano-float-bg` | `rgba(10,10,10,0.88)` | ステージの上に浮く群（HUD）の地 |
 | `--pano-popover-bg` | `rgba(10,10,10,0.92)` | HUD の上のポップオーバー（音量、aspect）の地 |
 | `--pano-keyframe` | `#f5b544` | Keyframe のある鍵のボタン、選んだ Keyframe の印、Easing の腕と handle |
 | `--pano-frame-yellow` | `rgb(255,221,87)` | Frame のツール群（`.pano-frame-rail`）の地の混色、roll の knob の armed |
@@ -82,7 +82,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 角丸 `--pano-radius-md`（8px）、`1px solid var(--pano-node-frame-border)`、地 `--pano-node-frame-bg`。位置と `overflow` は inline の style。
 ノードの小さいボタン（`.pano-preview-node-fullscreen`・`.pano-stickers-node-play`）は 26×26、角丸 6px、地 `rgba(27,30,37,0.9)`、
 文字 `rgba(255,255,255,0.72)`、hover と `:focus-visible` で `rgba(37,41,50,0.96)` と `rgba(255,255,255,0.96)`。
-ノードの注記（`.pano-*-node-empty-note`）は角丸 999px、`1px solid var(--pano-divider)`、地 `rgba(10,10,10,0.7)`、10px / 550、`blur(8px)`。
+ノードの注記（`.pano-*-node-empty-note`）は角丸 999px、`1px solid var(--pano-divider)`、地 `rgba(10,10,10,0.85)`、10px / 550。
 旧ノードの toolbar（`.pano-stickers-node-toolbar`・`.pano-cutout-node-toolbar`）、help（`.pano-*-node-help*`）、注記、
 小さいボタンは、同じ宣言を一つの rule に selector を並べて共有し、違う宣言（toolbar の列、help の幅と文字の色、ボタンの位置）だけを別の rule に持つ。
 
@@ -184,21 +184,25 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 
 ## 共有の部品
 
+ぼかし（`backdrop-filter`・`filter: blur`）は使わない。後ろの絵（エディタのステージ、裏の ComfyUI のグラフ）は毎フレーム変わるので、
+その上のぼかしは毎フレーム計算し直しになり、GPU の合成が詰まる（2026-10-18、実機の記録で確認）。重ねる部品は、ぼかしの代わりに
+不透明に近い地で読みやすくする。
+
 ### モーダル
 
-- スクリム（`.pano-modal-overlay`）：`rgba(0,0,0,0.62)`、`backdrop-filter: blur(12px)`、`z-index: 99999`。
+- スクリム（`.pano-modal-overlay`）：`rgba(0,0,0,0.7)`、`z-index: 99999`。
 - 本体（`.pano-modal`）：幅 `max(720px, 80vw)`、高さ `max(520px, 82vh)`、最大 `96vw` × `94vh`。地 `--pano-bg-panel`、枠なし、
   角丸 12px、影 `0 28px 80px rgba(0,0,0,0.66)`、padding と gap は `--pano-space-lg`、`overflow: hidden`。
   格子は `minmax(0,1fr)` と `var(--pano-side-w)`（300px）の 2 列。左の列（`.pano-stage-column`）はステージとタイムラインを
   `--pano-space-md` の間隔で縦に並べる。
 - fullscreen（`.pano-modal-fullscreen`）：100vw × 100vh、角丸・padding・gap は 0、格子は 1 列、ステージの角丸は 0。
   サイドパネル、左上の群、右下の群、Camera の出力のプレビュー、選択メニュー、ツールチップを `display: none` にする。
-- ステージ（`.pano-stage`）：地 `--pano-bg-base`、枠なし、角丸 10px。ファイルを持ち込む間は `blur(2px) brightness(0.76)`。
+- ステージ（`.pano-stage`）：地 `--pano-bg-base`、枠なし、角丸 10px。ファイルを持ち込む間は `brightness(0.76)`。
   読み込み中は地の上を明るい帯が 1.6s で流れる。
 
 ### HUD（ステージの上に浮く群）
 
-地 `--pano-float-bg`、`backdrop-filter: blur(12px)`、枠なし、角丸 `--pano-float-radius`、padding `--pano-float-pad`。
+地 `--pano-float-bg`、枠なし、角丸 `--pano-float-radius`、padding `--pano-float-pad`。
 
 | class | 位置 | gap | 影 | z-index |
 |---|---|---|---|---|
@@ -284,12 +288,12 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 
 ### 確認のダイアログ（`.pano-canvas-confirm`）
 
-ステージの上に `rgba(0,0,0,0.35)` と `blur(2px)` を敷く（`z-index: 5`）。カードは幅 `min(340px, calc(100% - 32px))`、地 `#111`、
+ステージの上に `rgba(0,0,0,0.5)` を敷く（`z-index: 5`）。カードは幅 `min(340px, calc(100% - 32px))`、地 `#111`、
 角丸 10px、padding 14px、影 `0 16px 44px rgba(0,0,0,0.45)`、gap 10px。見出しは 13px / 600、本文は 12px / `#b0b0b0`、ボタンは右寄せで gap 8px。
 
 ### ペイント
 
-- 色の float（`.pano-paint-color-float`）：角丸 999px、地 `rgba(18,20,26,0.4)`、`blur(12px)`、影 `--pano-float-shadow`。
+- 色の float（`.pano-paint-color-float`）：角丸 999px、地 `rgba(18,20,26,0.88)`、影 `--pano-float-shadow`。
   色の点は 20px、選ばれた点は内側に 2.5px の輪。無効は opacity 0.42 と `saturate(0.55)`。
 - 色のポップオーバー（`.pano-paint-color-pop`）：最小の幅 220px、padding 12px、角丸 14px、地 `rgba(20,20,23,0.98)`、
   影 `0 16px 40px rgba(0,0,0,0.42), inset 0 0 0 1px var(--pano-divider)`、`z-index: 6`。
@@ -297,7 +301,7 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 
 ### HUD の上のポップオーバー
 
-音量（`.pano-video-volume-pop`、角丸 12px）と aspect（`.pano-aspect-popover`、角丸 10px）は地 `--pano-popover-bg`、`blur(12px)`、
+音量（`.pano-video-volume-pop`、角丸 12px）と aspect（`.pano-aspect-popover`、角丸 10px）は地 `--pano-popover-bg`、
 影 `0 14px 38px rgba(0,0,0,0.42)`。Frame の aspect（`.pano-frame-aspect-popover`）は HUD の地と影。
 
 ## 影
