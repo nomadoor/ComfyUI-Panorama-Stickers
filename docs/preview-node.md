@@ -4,6 +4,8 @@ Preview ノードの入力と素通しの規則、旧ノードのプレビュー
 
 この文書が持たない規則：Panorama Studio の出力（`docs/studio-node.md`）、`PANO_SCENE` の形と上流の Scene の `ui` のキー（`docs/studio-node.md` の「`PANO_SCENE`」「上流の Scene」）、空間の表示の描き方と出力との差（`docs/threejs-spark-integration.md`）、視点の操作とプリセット（`docs/editor-interaction.md` の「視点の操作」）、IMAGE・VIDEO の表示の runtime（`docs/legacy-node-surfaces.md` の「PanoramaPreview」）。決めた理由は ADR 0041。
 
+新しい UI の層（ADR 0044）に切り替えるとき、新しい Preview の大きなウィンドウの視点の規則（「`PANO_SCENE` を見る」の始めの視点・視点の操作・大きなウィンドウの右下の群のうち視点に関わるもの）は `docs/space-and-view.md` の「Preview のウィンドウ」に移る。切り替えるまでは古い UI がこの文書の規則で動くので、ここの記述は消さずに残す。
+
 ## この文書が owner である規則
 
 | 規則 | Python | JS | test |
