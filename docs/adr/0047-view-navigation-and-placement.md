@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted（2026-10-29）（2026-10-29）
+Accepted（2026-10-29）
 
 ## Date
 
