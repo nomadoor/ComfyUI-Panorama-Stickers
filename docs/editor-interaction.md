@@ -4,6 +4,8 @@
 
 この文書が持たない規則：three.js と Spark で描く仕組み・GPU の当たり判定・空間の表示の描き方・エディタでの描画（`docs/threejs-spark-integration.md`）、Keyframe を打つ・直す・消すときの記録の規則・タイムライン・目のアイコン・再生・上流の層の行（`docs/timeline-ui.md`）、状態 v2・評価関数・上書きの記録を一つの層に当てる規則（`docs/scene-state-v2.md`）、ノードの出力・実行結果の `ui`・上流の Scene の重ね方・`port` の Sticker と Pose handoff のノードの規則（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の表示の規則（`docs/studio-node-surface.md`）。
 
+新しい UI の層（ADR 0044）に切り替えるとき、Panorama Studio のエディタと新しい Preview のウィンドウの視点の規則（この文書の「視点の操作」、Add to World とドロップの置き方、Frame 表示の割り当てとホイール、Camera の出入りと視点）は `docs/space-and-view.md` に移る。切り替えるまでは古い UI がこの文書の規則で動くので、ここの記述は消さずに残す。
+
 ## この文書が owner である規則
 
 | 規則 | Python | JS | test |

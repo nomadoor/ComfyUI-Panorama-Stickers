@@ -4,6 +4,8 @@
 
 この文書が持たない規則：視点の操作・`world` の Sticker と Camera の編集・ギズモ・Panorama Studio のエディタ・上流の Scene の表示と編集・`port` の Sticker の同期と Pose handoff の表示・インスペクタ（`docs/editor-interaction.md`）、タイムラインと Keyframe の記録の規則（`docs/timeline-ui.md`）、状態 v2 と評価関数（`docs/scene-state-v2.md`）、ノードの出力と実行結果の `ui`（`docs/studio-node.md`）、描画関数（`docs/render-contract.md`）、ノード上の表示の規則（`docs/studio-node-surface.md`）。
 
+新しい UI の層（ADR 0044）に切り替えるとき、空間の表示の地面のグリッドと原点の印（何をどの高さに描き、どこで薄れるか）は `docs/space-and-view.md` の「地面のグリッドと原点の印」に移る。描く仕組みと、視点のカメラの near と far はこの文書が持ち続け、新しい UI では far を `docs/space-and-view.md` の世界の境界の半径から決める（その差分はこの文書で行う）。切り替えるまでは古い UI がこの文書の規則で動くので、ここの記述は消さずに残す。
+
 ## この文書が owner である規則
 
 | 規則 | Python | JS | test |
