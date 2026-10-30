@@ -1,7 +1,12 @@
 import { ICON } from "./icons.js";
 import { sceneStickerLabel } from "./pano_editor_state.js";
 import { is3dFileSource } from "./pano_scene_state.js";
-import { laneNames, ownerTimed, rowKeyframes, selectedEasing } from "./pano_timeline.js";
+import {
+  BACKGROUND_ROW, LANE_LABELS, PAINTING_ROW, hasPainting, laneNames, ownerTimed, rowKeyframes, selectedEasing,
+} from "./pano_timeline.js";
+
+// The row ids live with the Timeline rules (pano_timeline.js); the old UI's importers keep reading them here.
+export { BACKGROUND_ROW, PAINTING_ROW };
 import { upstreamLayerOverridden, upstreamRowId } from "./pano_upstream.js";
 
 export function patchUiButton(list, matchKey, key, patch) {
@@ -469,28 +474,6 @@ function selectionMenuAt(corners, items) {
     anchor: { minX, maxX, minY, maxY },
   };
 }
-
-// The id of the painting's Timeline row.
-export const PAINTING_ROW = "painting";
-// The id of the Timeline row of the node's own background (state.background).
-export const BACKGROUND_ROW = "background";
-
-function hasPainting(painting) {
-  return painting.paint.strokes.length > 0 || painting.mask.strokes.length > 0 || painting.raster_objects.length > 0;
-}
-
-const LANE_LABELS = {
-  position: "Position",
-  rotation: "Rotation",
-  fov: "FOV",
-  curve: "Lens curve",
-  lens: "Lens",
-  scale: "Scale",
-  direction: "Direction",
-  roll: "Roll",
-  size: "Size",
-  opacity: "Opacity",
-};
 
 // The Timeline (PanoTimeline.vue) of a working state v2, one row per object on one Timeline: the Camera
 // row when `camera` is set (Panorama Studio while it has a Camera), then the Stickers from front to back (sky Stickers by z_index, then world Stickers), then the
