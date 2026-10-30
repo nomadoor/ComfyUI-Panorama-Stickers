@@ -83,7 +83,7 @@ render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, c
 |---|---|
 | `Projection.erp(width, height, coverage)` | ERP。`coverage` は 360 または 180。180 は Camera の前方の半球 |
 | `Projection.perspective(width, height, hfov_deg, coverage=360, curve=1.0)` | Camera の画像。`curve` はレンズの曲線 κ（下の「カメラのレンズ」）で、1 ならピンホール（直線の像）。画素は正方で、`hfov_deg` を幅に当てる。垂直の FOV は出力の大きさから決まる（`g_κ(vFOV/2) = g_κ(hFOV/2) × height ÷ width`、`g_κ = lens_radius`。κ = 1 では `tan(vFOV/2) = tan(hFOV/2) × height ÷ width`）。`coverage` は、写す `bg_media` の ERP の範囲（360 または 180） |
-| `bg_coverage`（新しい UI、未実装。ADR 0048） | 写す `bg_media` の ERP の範囲（360 または 180）。省くと `coverage` と同じ値になる。Panorama Studio だけが渡す |
+| `Projection.erp(width, height, coverage, bg_coverage)` の `bg_coverage`（ADR 0048） | 写す `bg_media` の ERP の範囲（360 または 180）。省くと `coverage` と同じ値になる。Panorama Studio だけが渡す |
 
 - `coverage` と `bg_coverage` の分け方（ADR 0048。Panorama Studio は出力の範囲（Camera の `erp_range`）と背景の範囲（入力の `background_range`）を
   別々に持つ。`docs/studio-node.md`）：

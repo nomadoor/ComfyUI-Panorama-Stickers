@@ -19,6 +19,11 @@ from .painting import load_painting_layer_payload, render_painting_to_erp
 from .world_render import SceneContent, over_by_depth, world_key, world_layer
 
 
+def _range(value) -> int:
+    """A span of longitude: 180, or else 360."""
+    return 180 if int(value) == 180 else 360
+
+
 @dataclass(frozen=True)
 class Projection:
     """How the Camera turns the Scene into a `width` x `height` image.
@@ -27,6 +32,9 @@ class Projection:
     `perspective` is a Camera image with horizontal FOV `hfov_deg` and square pixels through the lens curve `curve`
     (1: a pinhole; docs/render-contract.md, "カメラのレンズ"), so its vertical FOV follows from the size. Its
     `coverage` is the span of the `bg_media` ERP it looks into.
+
+    `bg_coverage` is the span of the `bg_media` ERP (360 or 180), which only Panorama Studio gives apart from the
+    output's span (ADR 0048); without it (None) it is `coverage`, as for the legacy nodes and the Preview.
     """
 
     kind: str
@@ -35,14 +43,20 @@ class Projection:
     coverage: int = 360
     hfov_deg: float = 90.0
     curve: float = 1.0
+    bg_coverage: int | None = None
+
+    def __post_init__(self):
+        if self.bg_coverage is None:
+            object.__setattr__(self, "bg_coverage", self.coverage)
 
     @classmethod
-    def erp(cls, width: int, height: int, coverage: int = 360) -> "Projection":
-        return cls("erp", int(width), int(height), coverage=180 if int(coverage) == 180 else 360)
+    def erp(cls, width: int, height: int, coverage: int = 360, bg_coverage: int | None = None) -> "Projection":
+        coverage = _range(coverage)
+        return cls("erp", int(width), int(height), coverage=coverage, bg_coverage=coverage if bg_coverage is None else _range(bg_coverage))
 
     @classmethod
     def perspective(cls, width: int, height: int, hfov_deg: float, coverage: int = 360, curve: float = 1.0) -> "Projection":
-        return cls("perspective", int(width), int(height), coverage=180 if int(coverage) == 180 else 360, hfov_deg=float(hfov_deg), curve=float(curve))
+        return cls("perspective", int(width), int(height), coverage=_range(coverage), hfov_deg=float(hfov_deg), curve=float(curve))
 
 
 @dataclass(frozen=True)
@@ -383,7 +397,7 @@ def _sky_size(projection: Projection, bg_width: int | None) -> tuple[int, int]:
     width = math.pi * projection.width / lens_radius(math.radians(projection.hfov_deg) * 0.5, projection.curve)
     width = 2 ** max(6, math.ceil(math.log2(width)))
     if bg_width is not None:
-        width = max(width, bg_width * 360 // projection.coverage)
+        width = max(width, bg_width * 360 // projection.bg_coverage)
     width = min(width, 4096)
     return width, width // 2
 
@@ -468,10 +482,10 @@ def _background(bg: torch.Tensor, device) -> torch.Tensor:
 def _project_background(bg: torch.Tensor, projection: Projection, view: torch.Tensor, levels: dict | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Sample `bg_media` at `view`, and where it has an image (None: everywhere).
 
-    A 360 `coverage` reads it as a 360 ERP. A 180 one reads it as the ERP of the Scene's front hemisphere, as
+    A 360 `bg_coverage` reads it as a 360 ERP. A 180 one reads it as the ERP of the Scene's front hemisphere, as
     the legacy nodes did, so a turned Camera also sees directions it does not cover.
     """
-    if projection.coverage == 360:
+    if projection.bg_coverage == 360:
         return _sample_filtered(bg, view, wrap=True, levels=levels), None
     grid = view.clone()
     grid[..., 0] *= 2.0
@@ -515,8 +529,8 @@ def render_frame(
     if cache is None:
         cache = {}
     sky_size = _sky_size(projection, bg_width)
-    # A 360 ERP output without Camera rotation is the background as it is.
-    turned = projection.kind != "erp" or projection.coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
+    # A 360 ERP output of a 360 background without Camera rotation is the background as it is.
+    turned = projection.kind != "erp" or projection.coverage == 180 or projection.bg_coverage == 180 or any(abs(math.remainder(camera[key], 360.0)) > 1e-6 for key in ("yaw_deg", "pitch_deg", "roll_deg"))
     view_key = None
     if turned:
         view_key = (replace(projection, hfov_deg=round(projection.hfov_deg, 9), curve=round(projection.curve, 9)), *(round(camera[key], 9) for key in ("yaw_deg", "pitch_deg", "roll_deg")))
