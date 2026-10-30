@@ -40,6 +40,7 @@ uniform vec4 majorColor;
 uniform vec4 axisXColor;
 uniform vec4 axisZColor;
 uniform float linePx;
+uniform bool linearOutput;
 varying vec3 vWorld;
 
 // How much of a line every \`step\` units covers this pixel: a line linePx render pixels wide whose edges are smoothed
@@ -81,7 +82,8 @@ void main() {
   color = over(vec4(axisXColor.rgb, axisXColor.a * axis(vWorld.z) * majorKeep), color);
   color = over(vec4(axisZColor.rgb, axisZColor.a * axis(vWorld.x) * majorKeep), color);
   if (color.a <= 0.002) discard;
-  gl_FragColor = color;
+  // Drawn into a target that holds linear light (the live ERP's faces), the sRGB colors are turned linear first.
+  gl_FragColor = linearOutput ? vec4(sRGBTransferEOTF(vec4(color.rgb, 1.0)).rgb, color.a) : color;
 }`;
 
 const RING_SEGMENTS = 64;
@@ -91,8 +93,9 @@ const vec4Of = (rgba) => new Vector4(rgba[0], rgba[1], rgba[2], rgba[3]);
 // The grid and the ring as one group. show(ground) places them for `ground` (web_src/studio/grid.js groundGrid():
 // { y, minorFade, majorFade, originRadius, colors: { minor, major, axisX, axisZ, origin } }, colors as sRGB
 // [r, g, b, a] in 0..1, and linePx: the lines' width in render pixels, 1 when missing) and returns the group to put
-// in the World.
-export function createGroundGrid() {
+// in the World. linearOutput: the view's shared { value } that is true while it draws into a target of linear light
+// (pano_three_view.js, the lens and live ERP faces).
+export function createGroundGrid({ linearOutput = { value: false } } = {}) {
   const uniforms = {
     viewPosition: { value: new Vector3() },
     minorFade: { value: new Vector2() },
@@ -102,6 +105,7 @@ export function createGroundGrid() {
     axisXColor: { value: new Vector4() },
     axisZColor: { value: new Vector4() },
     linePx: { value: 1 },
+    linearOutput,
   };
   const material = new ShaderMaterial({
     vertexShader: GRID_VERTEX,

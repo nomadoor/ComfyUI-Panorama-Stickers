@@ -285,6 +285,11 @@ export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {
     render(input) {
       return view && !editorView.lost ? view.render(input) : null;
     },
+    // The live ERP of Panorama mode on input.canvas (pano_three_view.js renderLiveErp): { faces, pass, counts }, or
+    // null until the view has loaded or while the context is lost.
+    renderLiveErp(input) {
+      return view && !editorView.lost ? view.renderLiveErp(input) : null;
+    },
     // The same layers laid out as an ERP (the Unwrap view); input has no camera.
     renderUnwrap(input) {
       return view && !editorView.lost ? view.renderUnwrap(input) : null;

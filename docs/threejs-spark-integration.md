@@ -27,7 +27,7 @@
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
 | 新しい UI のステージの描画（視点のカメラの far、地面のグリッドと原点の印を描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。three.js だけを import する）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ステージと Output の小窓への組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする）は（未実装） | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js` |
+| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。three.js だけを import する）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ビューへの組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする、描く物の変化で面を描き直す）は `pano_three_view.js` `renderLiveErp`、ステージ（Camera タブ）と Output の小窓から呼ぶのは `web_src/studio/stage.js` | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
 
 ## 版と同梱
 
@@ -46,7 +46,7 @@ ComfyUI の `get_extensions` は `glob.glob(os.path.join(dir, "**/*.js"), recurs
 - `vite.lib.config.js` の `chunkFileNames` で、動的 import したモジュールを `web/.lazy/<名前>-<ハッシュ>.js` に出力する。ハッシュを付けるのは、更新後にブラウザが古いチャンクを使わないようにするためである。エディタを開いたときに `pano_editor_view.js` がこれを読み込む。
 - `npm run build:web` は古いチャンクを消さない。ハッシュが変わったら古いファイルを消す（`check:web` が報告する）。
 - チャンクの読み込みか WebGL の初期化に失敗したときは、コンソールにエラーを出し、画面にもそのことを表示する。
-- `pano_three_view.js` が import するのは、three.js（`TransformControls` を含む）と、チャンクの中だけで使うモジュール（`pano_pick.js`・`pano_scene_items.js`・`pano_scene_loaders.js`・`pano_spark_views.js`・`pano_depth_grid.js`・`pano_lens_glsl.js`・`pano_ground_grid.js`）だけである。GLTFLoader と Spark は `pano_scene_loaders.js` が読み込む（Spark は動的 import の `loadSpark`）。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
+- `pano_three_view.js` が import するのは、three.js（`TransformControls` を含む）と、チャンクの中だけで使うモジュール（`pano_pick.js`・`pano_scene_items.js`・`pano_scene_loaders.js`・`pano_spark_views.js`・`pano_depth_grid.js`・`pano_lens_glsl.js`・`pano_ground_grid.js`・`pano_live_erp.js`）だけである。GLTFLoader と Spark は `pano_scene_loaders.js` が読み込む（Spark は動的 import の `loadSpark`）。計算は即時に読み込まれる側（`pano_editor_view.js`）で行い、チャンクが `panorama_suite.js` から import し返さないようにしている。
 - `npm run check:web` は `panorama_suite.js` と `web/.lazy/` の全チャンクを再ビルドした結果と比べ、ビルドが出力しない古いチャンクも報告する。
 - three.js の GLTFLoader は同じチャンクに静的に入れる（チャンクは約 1.0MB、gzip で約 0.22MB）。Spark は別のチャンク（`web/.lazy/spark.module-<ハッシュ>.js`、約 5.2MB、gzip で約 1.8MB）で、SPLAT の `scene` を初めて読み込むときだけ `import()` する（`pano_scene_loaders.js` の `loadSpark`）。3D を使わないエディタとノード上の表示は Spark を読まない。Spark のチャンクは three.js を最初のチャンクから import する。
 
@@ -287,7 +287,7 @@ three のアップロードは render の中でしか起きないので、Spark 
   すぐ読み込む側と module を共有できない（上の「遅延読み込み」）ので、`pano_pick.js` の `rayBoxDepth` を静的に import できない。
   そのため `web_src/pano_ray_box.js` に写しを置き、`tests/pano_ray_box.test.mjs` が二つの答えの一致を確かめる。
 
-## Panorama モードの ERP の表示（新しい UI、組み込みは未実装）
+## Panorama モードの ERP の表示（新しい UI）
 
 新しい UI の Output の小窓と、Panorama モードの Camera タブ（`docs/studio-ui.md`）は、撮る Camera の位置から描いた ERP をその場で見せる
 （直近の実行の出力は使わない。編集とずれるため。ADR 0048）。
@@ -301,6 +301,15 @@ three のアップロードは render の中でしか起きないので、Spark 
 - 向きと範囲の一致を守る test：ERP の画素と方向の対応は、出力と同じ `pano_camera_math.js` の写し方（`docs/scene-state-v2.md` の「パノラマの角度規約」の持ち主）を使い、既存の parity（`tests/test_camera_orientation.py`、`tests/test_studio_run_erp_orientation.py`）に、この表示で描いた ERP の向きの case を足す（未作成）。
 - 立方体の向き：6 方向は世界の軸にそろえた立方体で描き、Camera の回転は ERP に貼り直すときに掛ける。Camera が回るだけのとき
   （位置・状態・再生位置・読み込んだ要素が変わらない）は、6 面を描き直さず、貼り直しのパスだけを描く。
+- ビューの中の描き方（`renderLiveErp`）：面ごとに、Sky の層を面のカメラの行列から位置だけを除いたカメラで描き（`fillSky`）、深度を消して World を
+  面のカメラで描く（`buildWorld`）。面は線形の光を持つので、独自のシェーダは共有の `linearOutput`、Spark は `encodeLinear`、地面のグリッドも同じ
+  uniform で線形を書く（レンズの面と同じ）。面を描き直すのは、Sky・World の入力・`contentRevision`・`clearColor` を値にしたもの（レンズの面の
+  キーと同じ `plainValue`）が変わったときと、その所有者の Spark の並べ替えが終わったとき（`onDirty`）だけで、ほかは位置・大きさ・範囲の変化を
+  `pano_live_erp.js` が見分ける。所有者は Camera タブのフレーム（`studio-live-erp`、地面のグリッドを描く）と Output の小窓（`studio-output-erp`、
+  グリッドを描かない）で、Camera タブの Panorama モードで小窓を開いているときは二つを描く。
+- 読み戻し：貼り直したパスの画素は `readRenderTargetPixels` で同期に読み戻して 2D の canvas に置く（GPU を待つ）。headless の SwiftShader では
+  貼り直しだけで約 2〜3 ms、6 面と貼り直しで約 70〜90 ms（2026-10-30、568×284）だが、CPU の描画なので目安にしない。持ち主の実機の GPU で
+  確かめる。
 - 3D Gaussian Splatting：Spark の並べ替えは、Camera の位置からの距離で並べる radial の並べ替えを 1 回だけ行い、6 面すべてに使う
   （位置からの距離の順は向きによらないため。面ごとに並べ替えない）。6 面は一つの `SparkRenderer` で描く（上の表の「Spark の描画はビューごとに 1 つ」）。
   並べ替えはワーカーで非同期に終わるので、終わったときにも描き直す。
