@@ -23,9 +23,9 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 `web_src/components/studio/`）に作る予定のもの、「（未作成）」は作る予定の test である。印の無いものは今ある。作ってあるが規則の
 一部がまだ動かないものは、その部分を「未実装」と書く。
 
-開発の間の入口：新しい UI は、ComfyUI の設定 `PanoramaSuite.Editor.NewUI`（既定はオフ）がオンのときだけ Panorama Studio を開く。
-オフなら今までどおり古い UI で開く（`web_src/editor_choice.js` `NEW_UI_SETTING`。組み立ては `web_src/main.js`、新しい UI のエディタは
-`web_src/studio/editor.js`）。切り替えの change でこの設定を消す（ADR 0044 の「置き換えの進め方」）。
+入口：新しい UI は、ComfyUI の設定 `PanoramaSuite.Editor.NewUI`（既定はオン。持ち主の決定、2026-10-30、マイナーアップデートで既定にする）がオンのとき Panorama Studio を開く。
+オフにすると古い UI で開く（ペイントとマスクは、新しい UI に入るまで古い UI でだけ使える）（`web_src/editor_choice.js` `NEW_UI_SETTING`。組み立ては `web_src/main.js`、新しい UI のエディタは
+`web_src/studio/editor.js`）。古い UI を消す change でこの設定を消す（ADR 0044 の「置き換えの進め方」。それまでは古い UI へ戻る道として残す）。
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
