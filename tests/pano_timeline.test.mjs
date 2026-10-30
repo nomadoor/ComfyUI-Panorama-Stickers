@@ -373,7 +373,8 @@ test("Space toggles playback outside text fields, once per press, without clicki
   assert.match(filter, /return stageOwnsKey\(ev\);/);
   // The stage's keys (Space and the movement keys): which focus keeps them is tested at keyboard.js's seam
   // (tests/editor_keyboard.test.mjs).
-  const types = editorSource.match(/const TEXT_INPUT_TYPES = new Set\((\[[^\]]*\])\);/);
+  const keyFocus = readFileSync(new URL("../web_src/pano_key_focus.js", import.meta.url), "utf8");
+  const types = keyFocus.match(/const TEXT_INPUT_TYPES = new Set\((\[[^\]]*\])\);/);
   assert.ok(JSON.parse(types[1]).includes("number"));
   assert.ok(!JSON.parse(types[1]).includes("range"));
   assert.match(editorSource, /function onSpaceKey\(ev\) \{\s*if \(!spaceTogglesPlayback\(ev\)\) return;\s*ev\.preventDefault\(\);\s*ev\.stopPropagation\(\);\s*if \(!ev\.repeat\) togglePlayback\(\);/);

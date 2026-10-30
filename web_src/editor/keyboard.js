@@ -1,7 +1,7 @@
 // The editor's keys, listened to on the window while it is open: Escape, Delete, Space for playback,
 // W A S D Q E moving the 6DoF view and the Frame view's Camera, the modifiers of the marquee and the tools, and Undo / Redo.
 import { createMoveKeys, isMoveKey } from "../pano_view_keys.js";
-import { TEXT_INPUT_TYPES } from "./constants.js";
+import { isFormControl, isTextField, stageOwnsKey as keyIsStages } from "../pano_key_focus.js";
 
 export function createKeyboard(deps) {
   const {
@@ -91,21 +91,7 @@ export function createKeyboard(deps) {
   // Whether a key is the stage's: focus on the stage or a button or slider of the editor, not in a field
   // being typed in, and no dialog over the editor (its confirm dialog, or another ComfyUI dialog on top).
   function stageOwnsKey(ev) {
-    if (uiState.confirmDialog.visible) return false;
-    const t = ev.composedPath()[0];
-    if (t !== document.body && t !== document.documentElement && !overlay.contains(t)) return false;
-    return !isTextField(t);
-  }
-  // Any input of the editor's form (a field, a slider, a checkbox).
-  function isFormControl(t) {
-    return (t?.tagName || "").toUpperCase() === "INPUT" || isTextField(t);
-  }
-  // A field being typed in: a text-like input, a textarea, a select or editable text (not a slider, a
-  // checkbox or a button).
-  function isTextField(t) {
-    const tag = (t?.tagName || "").toUpperCase();
-    if (tag === "INPUT") return TEXT_INPUT_TYPES.has(String(t.type || "text").toLowerCase());
-    return tag === "TEXTAREA" || tag === "SELECT" || !!t?.isContentEditable;
+    return keyIsStages(ev, overlay, { dialogOpen: uiState.confirmDialog.visible });
   }
   // Space plays and stops the Timeline like its play button, also over a focused button or slider.
   // Space with Ctrl, Meta or Alt is left to the browser and the OS, and typing keeps its spaces.
