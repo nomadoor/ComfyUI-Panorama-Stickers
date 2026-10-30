@@ -483,8 +483,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     stateUnreadable,
     // The short notice of an operation that was done (notice_line.js), or null.
     done: null,
-    // Counts the Camera button's moves: each new count runs the stage's light band once (StudioEditor.vue).
-    sweep: 0,
+    // Counts the Camera button's moves: each new count runs the stage's viewfinder cue once (StudioCameraCue.vue).
+    cameraCue: 0,
   });
   const background = nodeBackground(node, media, () => {
     syncBackground();
@@ -731,7 +731,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the 3D tab's view, as one
   // Undo step (Panorama mode switching to Frame). The view does not move. A move selects the Camera (session.js) and
-  // says so at the top center with a light band across the stage, since the Camera at the view is not drawn.
+  // says so at the top center with the viewfinder cue over the stage, since the Camera at the view is not drawn.
   function cameraToView() {
     if (view.tab !== "3d" || !stage) return;
     stage.settle();
@@ -739,7 +739,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     objectOutcome(outcome);
     if (!outcome.changed) return;
     doneNotice(LINE_TEXT.cameraMoved);
-    ui.sweep += 1;
+    ui.cameraCue += 1;
   }
 
   function setTab(tab) {
