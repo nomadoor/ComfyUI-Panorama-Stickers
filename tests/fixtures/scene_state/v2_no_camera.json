@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "timeline": {"fps": 30.0, "length": null},
+  "scene": {
+    "clip": {"start": 6, "in": 0, "duration": null},
+    "position": {"value": [0.0, 0.0, -3.0], "keyframes": []},
+    "rotation": {
+      "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+      "keyframes": [
+        {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+        {"frame": 30, "value": {"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"}
+      ]
+    },
+    "scale": {"value": 1.0, "keyframes": []}
+  },
+  "stickers": [
+    {
+      "id": "st_a",
+      "placement": "sky",
+      "source": {"kind": "file", "filename": "a.png", "subfolder": "panorama_stickers", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": 45},
+      "z_index": 0,
+      "direction": {
+        "value": {"yaw_deg": 0.0, "pitch_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": -20.0, "pitch_deg": 5.0}, "easing": [0.42, 0.0, 0.58, 1.0]},
+          {"frame": 20, "value": {"yaw_deg": 20.0, "pitch_deg": -5.0}, "easing": "hold"}
+        ]
+      }
+    }
+  ],
+  "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
+  "painting_layer": null
+}

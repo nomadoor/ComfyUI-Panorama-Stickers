@@ -12,6 +12,8 @@ export const ICON = Object.freeze({
   volume_muted: "volume_muted",
   loop: "loop",
   loop_off: "loop_off",
+  grid: "grid",
+  grid_off: "grid_off",
   cursor_tool: "cursor_tool",
   palette_tool: "palette_tool",
   circle_dashed_tool: "circle_dashed_tool",
@@ -21,6 +23,7 @@ export const ICON = Object.freeze({
   undo: "undo",
   redo: "redo",
   reset: "reset",
+  focus: "focus",
   eye: "eye",
   eye_dashed: "eye_dashed",
   fullscreen: "fullscreen",
@@ -29,6 +32,8 @@ export const ICON = Object.freeze({
   copy: "copy",
   bring_front: "bring_front",
   send_back: "send_back",
+  order_front: "order_front",
+  order_back: "order_back",
   duplicate: "duplicate",
   replace_image: "replace_image",
   back_initial: "back_initial",
@@ -45,6 +50,25 @@ export const ICON = Object.freeze({
   paintbrush_vertical_tool: "paintbrush_vertical_tool",
   eraser_tool: "eraser_tool",
   lasso_tool: "lasso_tool",
+  keyframe: "keyframe",
+  dof_3: "dof_3",
+  dof_6: "dof_6",
+  camera_plus: "camera_plus",
+  box: "box",
+  close: "close",
+  key_prev: "key_prev",
+  key_next: "key_next",
+  sphere: "sphere",
+  hand: "hand",
+  arrows_vertical: "arrows_vertical",
+  ease_hold: "ease_hold",
+  ease_linear: "ease_linear",
+  ease_in_out: "ease_in_out",
+  ease_in: "ease_in",
+  ease_out: "ease_out",
+  gizmo_move: "gizmo_move",
+  gizmo_rotate: "gizmo_rotate",
+  gizmo_scale: "gizmo_scale",
 });
 
 const parseAttrs = (raw) => {
@@ -70,6 +94,10 @@ const TABLER_BODIES = {
   volume_muted: { name: "volume-off", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M15 8a5 5 0 0 1 1.912 4.934m-1.377 2.602a5 5 0 0 1 -.535 .464' /><path d='M17.7 5a9 9 0 0 1 2.362 11.086m-1.676 2.299a9 9 0 0 1 -.686 .615' /><path d='M9.069 5.054l.431 -.554a.8 .8 0 0 1 1.5 .5v2m0 4v8a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l1.294 -1.664' /><path d='M3 3l18 18' />` },
   loop: { name: "repeat", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3' /><path d='M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3' />` },
   loop_off: { name: "repeat-off", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 12v-3c0 -1.336 .873 -2.468 2.08 -2.856m3.92 -.144h10m-3 -3l3 3l-3 3' /><path d='M20 12v3a3 3 0 0 1 -.133 .886m-1.99 1.984a3 3 0 0 1 -.877 .13h-13m3 3l-3 -3l3 -3' /><path d='M3 3l18 18' />` },
+  // The ground grid shown and hidden (docs/design.md "新しい UI の見た目" "アイコン"). Tabler has no grid icon with an
+  // "-off" twin; table / table-off is its pair of a ruled square and the same with the slash.
+  grid: { name: "table", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14' /><path d='M3 10h18' /><path d='M10 3v18' />` },
+  grid_off: { name: "table-off", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M7 3h12a2 2 0 0 1 2 2v12m-.585 3.413a2 2 0 0 1 -1.415 .587h-14a2 2 0 0 1 -2 -2v-14c0 -.55 .223 -1.05 .583 -1.412' /><path d='M3 10h7m4 0h7' /><path d='M10 3v3m0 4v11' /><path d='M3 3l18 18' />` },
   cursor_tool: { name: "pointer", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M7.904 17.563a1.2 1.2 0 0 0 2.228 .308l2.09 -3.093l4.907 4.907a1.067 1.067 0 0 0 1.509 0l1.047 -1.047a1.067 1.067 0 0 0 0 -1.509l-4.907 -4.907l3.113 -2.09a1.2 1.2 0 0 0 -.309 -2.228l-13.582 -3.904l3.904 13.563' />` },
   palette_tool: { name: "palette", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.582 9 8c0 1.06 -.474 2.078 -1.318 2.828c-.844 .75 -1.989 1.172 -3.182 1.172h-2.5a2 2 0 0 0 -1 3.75a1.3 1.3 0 0 1 -1 2.25' /><path d='M7.5 10.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0' /><path d='M11.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0' /><path d='M15.5 10.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0' />` },
   circle_dashed_tool: { name: "circle-dashed", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8.56 3.69a9 9 0 0 0 -2.92 1.95' /><path d='M3.69 8.56a9 9 0 0 0 -.69 3.44' /><path d='M3.69 15.44a9 9 0 0 0 1.95 2.92' /><path d='M8.56 20.31a9 9 0 0 0 3.44 .69' /><path d='M15.44 20.31a9 9 0 0 0 2.92 -1.95' /><path d='M20.31 15.44a9 9 0 0 0 .69 -3.44' /><path d='M20.31 8.56a9 9 0 0 0 -1.95 -2.92' /><path d='M15.44 3.69a9 9 0 0 0 -3.44 -.69' />` },
@@ -79,6 +107,7 @@ const TABLER_BODIES = {
   undo: { name: "arrow-back-up", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M9 14l-4 -4l4 -4' /><path d='M5 10h11a4 4 0 1 1 0 8h-1' />` },
   redo: { name: "arrow-forward-up", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M15 14l4 -4l-4 -4' /><path d='M19 10h-11a4 4 0 1 0 0 8h1' />` },
   reset: { name: "refresh", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4' /><path d='M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4' />` },
+  focus: { name: "focus-2", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M11.5 12a.5 .5 0 1 0 1 0a.5 .5 0 1 0 -1 0' fill='currentColor' /><path d='M5 12a7 7 0 1 0 14 0a7 7 0 1 0 -14 0' /><path d='M12 3l0 2' /><path d='M3 12l2 0' /><path d='M12 19l0 2' /><path d='M19 12l2 0' />` },
   eye: { name: "eye", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0' /><path d='M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6' />` },
   eye_dashed: { name: "eye-off", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M10.585 10.587a2 2 0 0 0 2.829 2.828' /><path d='M16.681 16.673a8.717 8.717 0 0 1 -4.681 1.327c-3.6 0 -6.6 -2 -9 -6c1.272 -2.12 2.712 -3.678 4.32 -4.674m2.86 -1.146a9.055 9.055 0 0 1 1.82 -.18c3.6 0 6.6 2 9 6c-.666 1.11 -1.379 2.067 -2.138 2.87' /><path d='M3 3l18 18' />` },
   fullscreen: { name: "maximize", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 8v-2a2 2 0 0 1 2 -2h2' /><path d='M4 16v2a2 2 0 0 0 2 2h2' /><path d='M16 4h2a2 2 0 0 1 2 2v2' /><path d='M16 20h2a2 2 0 0 0 2 -2v-2' />` },
@@ -87,6 +116,12 @@ const TABLER_BODIES = {
   copy: { name: "copy", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666' /><path d='M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1' />` },
   bring_front: { name: "stack-front", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 4l-8 4l8 4l8 -4l-8 -4' /><path d='M8 14l-4 2l8 4l8 -4l-4 -2' /><path d='M8 10l-4 2l8 4l8 -4l-4 -2' />` },
   send_back: { name: "stack-back", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 8l8 4l8 -4l-8 -4l-8 4' /><path d='M12 16l-4 -2l-4 2l8 4l8 -4l-4 -2l-4 2' /><path d='M8 10l-4 2l4 2m8 0l4 -2l-4 -2' />` },
+  // The new UI's bring to front / send to back of a sky image (docs/design.md "新しい UI の見た目" "アイコン"): two
+  // rounded squares (11, radius 2) overlapping by 4, drawn in the Tabler stroke style. The bottom right one is the one
+  // moved and is filled: in front (the top left square's outline cut 3.5 short of it), or behind (cut to an L shape
+  // 3.5 clear of the top left square).
+  order_front: { name: "order-front", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M6.5 14h-1.5a2 2 0 0 1 -2 -2v-7a2 2 0 0 1 2 -2h7a2 2 0 0 1 2 2v1.5' /><path d='M10 12a2 2 0 0 1 2 -2h7a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-7a2 2 0 0 1 -2 -2z' fill='currentColor' />` },
+  order_back: { name: "order-back", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 5a2 2 0 0 1 2 -2h7a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-7a2 2 0 0 1 -2 -2z' /><path d='M17.5 10h1.5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-7a2 2 0 0 1 -2 -2v-1.5h7.5z' fill='currentColor' />` },
   duplicate: { name: "copy-plus", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666' /><path d='M4.012 16.737a2 2 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1' /><path d='M11 14h6' /><path d='M14 11v6' />` },
   replace_image: { name: "replace", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 4a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4' /><path d='M15 16a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4' /><path d='M21 11v-3a2 2 0 0 0 -2 -2h-6l3 3m0 -6l-3 3' /><path d='M3 13v3a2 2 0 0 0 2 2h6l-3 -3m0 6l3 -3' />` },
   back_initial: { name: "restore", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3.06 13a9 9 0 1 0 .49 -4.087' /><path d='M3 4.001v5h5' /><path d='M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0' />` },
@@ -103,6 +138,34 @@ const TABLER_BODIES = {
   paintbrush_vertical_tool: { name: "brush", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 21v-4a4 4 0 1 1 4 4h-4' /><path d='M21 3a16 16 0 0 0 -12.8 10.2' /><path d='M21 3a16 16 0 0 1 -10.2 12.8' /><path d='M10.6 9a9 9 0 0 1 4.4 4.4' />` },
   eraser_tool: { name: "eraser", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3' /><path d='M18 13.3l-6.3 -6.3' />` },
   lasso_tool: { name: "lasso", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4.028 13.252c-.657 -.972 -1.028 -2.078 -1.028 -3.252c0 -3.866 4.03 -7 9 -7s9 3.134 9 7s-4.03 7 -9 7c-1.913 0 -3.686 -.464 -5.144 -1.255' /><path d='M3 15a2 2 0 1 0 4 0a2 2 0 1 0 -4 0' /><path d='M5 17c0 1.42 .316 2.805 1 4' />` },
+  keyframe: { name: "keyframe", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M13.225 18.412a1.595 1.595 0 0 1 -1.225 .588c-.468 0 -.914 -.214 -1.225 -.588l-4.361 -5.248a1.844 1.844 0 0 1 0 -2.328l4.361 -5.248a1.595 1.595 0 0 1 1.225 -.588c.468 0 .914 .214 1.225 .588l4.361 5.248a1.844 1.844 0 0 1 0 2.328l-4.361 5.248' />` },
+  // The 3DoF | 6DoF view modes of the space view: the numerals 3 and 6, drawn in the Tabler stroke style.
+  dof_3: { name: "rotate-360", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 16h4v4' /><path d='M19.458 11.042c.86 -2.366 .722 -4.58 -.6 -5.9c-2.272 -2.274 -7.185 -1.045 -10.973 2.743c-3.788 3.788 -5.017 8.701 -2.744 10.974c2.227 2.226 6.987 1.093 10.74 -2.515' />` },
+  dof_6: { name: "arrows-move", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M18 9l3 3l-3 3' /><path d='M15 12h6' /><path d='M6 9l-3 3l3 3' /><path d='M3 12h6' /><path d='M9 18l3 3l3 -3' /><path d='M12 15v6' /><path d='M15 6l-3 -3l-3 3' /><path d='M12 3v6' />` },
+  // Add Camera (Panorama Studio) and the `scene` row of the Timeline.
+  camera_plus: { name: "camera-plus", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 20h-7a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v3.5' /><path d='M16 19h6' /><path d='M19 16v6' /><path d='M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0' />` },
+  box: { name: "box", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5' /><path d='M12 12l8 -4.5' /><path d='M12 12l0 9' /><path d='M12 12l-8 -4.5' />` },
+  close: { name: "x", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M18 6l-12 12' /><path d='M6 6l12 12' />` },
+  // The new UI's Timeline bar: to the previous and the next Keyframe.
+  key_prev: { name: "player-skip-back", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M20 5v14l-12 -7l12 -7' /><path d='M4 5l0 14' />` },
+  key_next: { name: "player-skip-forward", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 5v14l12 -7l-12 -7' /><path d='M20 5l0 14' />` },
+  // The new UI's view knobs (docs/space-and-view.md "視点の操作の部品"): the sphere (orbit), the hand (pan) and the
+  // up and down arrows (forward / back).
+  sphere: { name: "sphere", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 12c0 1.657 4.03 3 9 3s9 -1.343 9 -3' /><path d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0' />` },
+  hand: { name: "hand-stop", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 13v-7.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M11 5.5v-2a1.5 1.5 0 1 1 3 0v8.5' /><path d='M14 5.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M17 7.5a1.5 1.5 0 0 1 3 0v8.5a6 6 0 0 1 -6 6h-2h.208a6 6 0 0 1 -5.012 -2.7a69.74 69.74 0 0 1 -.196 -.3c-.312 -.479 -1.407 -2.388 -3.286 -5.728a1.5 1.5 0 0 1 .536 -2.022a1.867 1.867 0 0 1 2.28 .28l1.47 1.47' />` },
+  arrows_vertical: { name: "arrows-vertical", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 7l4 -4l4 4' /><path d='M8 17l4 4l4 -4' /><path d='M12 3l0 18' />` },
+  // The new UI's gizmo modes on the bar at the bottom center (docs/studio-ui.md "下の中央のバー"; specimen-11.html).
+  gizmo_move: { name: "arrows-move", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M18 9l3 3l-3 3' /><path d='M15 12h6' /><path d='M6 9l-3 3l3 3' /><path d='M3 12h6' /><path d='M9 18l3 3l3 -3' /><path d='M12 15v6' /><path d='M15 6l-3 -3l-3 3' /><path d='M12 3v6' />` },
+  gizmo_rotate: { name: "rotate-clockwise-2", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 16h4v4' /><path d='M19.458 11.042c.86 -2.366 .722 -4.58 -.6 -5.9c-2.272 -2.274 -7.185 -1.045 -10.973 2.743c-3.788 3.788 -5.017 8.701 -2.744 10.974c2.227 2.226 6.987 1.093 10.74 -2.515' />` },
+  gizmo_scale: { name: "maximize", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 8v-2a2 2 0 0 1 2 -2h2' /><path d='M4 16v2a2 2 0 0 0 2 2h2' /><path d='M16 4h2a2 2 0 0 1 2 2v2' /><path d='M16 20h2a2 2 0 0 0 2 -2v-2' />` },
+  // The new UI's Easing presets (docs/studio-ui.md "Easing のパネル"): each preset's curve from the bottom left to the top
+  // right, drawn in the Tabler stroke style. The curves are the presets' cubic-beziers (pano_timeline.js EASING_PRESETS)
+  // on a 16-unit square; Hold stays, then steps up at the end.
+  ease_hold: { name: "ease-hold", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20h16v-16' />` },
+  ease_linear: { name: "ease-linear", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20l16 -16' />` },
+  ease_in_out: { name: "ease-in-out", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20c6.72 0 9.28 -16 16 -16' />` },
+  ease_in: { name: "ease-in", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20c6.72 0 16 -16 16 -16' />` },
+  ease_out: { name: "ease-out", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20c0 0 9.28 -16 16 -16' />` },
 };
 
 export const ICON_PATHS = Object.fromEntries(

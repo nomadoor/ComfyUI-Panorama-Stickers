@@ -1,0 +1,1058 @@
+{
+  "about": "The Camera a state reads as (docs/scene-state-v2.md, \"\u65e2\u5b9a\u306e Camera\", ADR 0048). Each case: `state` is read with load_scene_state / loadSceneState, `camera` is the Camera it reads as, and `text_camera` is the `camera` that sceneStateText writes (null for the default Camera: the text of a state without a Camera before ADR 0048, which reads back as the default Camera). `default_camera` is the default Camera as a loaded state holds it.",
+  "default_camera": {
+    "aspect": 1.7777777777777777,
+    "projection": "erp",
+    "erp_range": 360,
+    "visible": true,
+    "locked": false,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "fov": {
+      "value": 90.0,
+      "keyframes": []
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
+  "cases": [
+    {
+      "name": "missing",
+      "state": {
+        "version": 2
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": null
+    },
+    {
+      "name": "null",
+      "state": {
+        "version": 2,
+        "camera": null
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": null
+    },
+    {
+      "name": "not an object",
+      "state": {
+        "version": 2,
+        "camera": "front"
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": null
+    },
+    {
+      "name": "an array",
+      "state": {
+        "version": 2,
+        "camera": [
+          1
+        ]
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": null
+    },
+    {
+      "name": "written as the default",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.7777777777777777,
+          "projection": "erp",
+          "erp_range": 360,
+          "visible": true,
+          "locked": false,
+          "position": {
+            "value": [
+              0,
+              0,
+              0
+            ]
+          },
+          "rotation": {
+            "value": {
+              "yaw_deg": 0,
+              "pitch_deg": 0,
+              "roll_deg": 0
+            }
+          },
+          "fov": {
+            "value": 90
+          },
+          "curve": {
+            "value": 1
+          }
+        }
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": null
+    },
+    {
+      "name": "v1 without shots",
+      "state": {
+        "version": 1,
+        "stickers": []
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": null
+    },
+    {
+      "name": "an empty object keeps the field defaults",
+      "state": {
+        "version": 2,
+        "camera": {}
+      },
+      "camera": {
+        "aspect": 1.0,
+        "projection": "perspective",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.0,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        }
+      }
+    },
+    {
+      "name": "Panorama 180",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp",
+          "erp_range": 180
+        }
+      },
+      "camera": {
+        "aspect": 1.0,
+        "projection": "erp",
+        "erp_range": 180,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.0,
+        "projection": "erp",
+        "erp_range": 180,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        }
+      }
+    },
+    {
+      "name": "the default Camera at 180",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.7777777777777777,
+          "projection": "erp",
+          "erp_range": 180.0,
+          "visible": true,
+          "locked": false,
+          "position": {
+            "value": [
+              0,
+              0,
+              0
+            ]
+          },
+          "rotation": {
+            "value": {
+              "yaw_deg": 0,
+              "pitch_deg": 0,
+              "roll_deg": 0
+            }
+          },
+          "fov": {
+            "value": 90
+          },
+          "curve": {
+            "value": 1
+          }
+        }
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 180,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 180,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        }
+      }
+    },
+    {
+      "name": "an erp_range other than 360 or 180",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp",
+          "erp_range": 90
+        }
+      },
+      "camera": {
+        "aspect": 1.0,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.0,
+        "projection": "erp",
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        }
+      }
+    },
+    {
+      "name": "an erp_range as text",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp",
+          "erp_range": "180"
+        }
+      },
+      "camera": {
+        "aspect": 1.0,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.0,
+        "projection": "erp",
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        }
+      }
+    },
+    {
+      "name": "an erp_range true",
+      "state": {
+        "version": 2,
+        "camera": {
+          "projection": "erp",
+          "erp_range": true
+        }
+      },
+      "camera": {
+        "aspect": 1.0,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.0,
+        "projection": "erp",
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        }
+      }
+    },
+    {
+      "name": "locked",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.7777777777777777,
+          "projection": "erp",
+          "erp_range": 360,
+          "visible": true,
+          "locked": true,
+          "position": {
+            "value": [
+              0,
+              0,
+              0
+            ]
+          },
+          "rotation": {
+            "value": {
+              "yaw_deg": 0,
+              "pitch_deg": 0,
+              "roll_deg": 0
+            }
+          },
+          "fov": {
+            "value": 90
+          },
+          "curve": {
+            "value": 1
+          }
+        }
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": true,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "locked": true,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        }
+      }
+    },
+    {
+      "name": "locked not a boolean",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.7777777777777777,
+          "projection": "erp",
+          "erp_range": 360,
+          "visible": true,
+          "locked": "yes",
+          "position": {
+            "value": [
+              0,
+              0,
+              0
+            ]
+          },
+          "rotation": {
+            "value": {
+              "yaw_deg": 0,
+              "pitch_deg": 0,
+              "roll_deg": 0
+            }
+          },
+          "fov": {
+            "value": 90
+          },
+          "curve": {
+            "value": 1
+          }
+        }
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": null
+    },
+    {
+      "name": "hidden",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.7777777777777777,
+          "projection": "erp",
+          "erp_range": 360,
+          "visible": false,
+          "locked": false,
+          "position": {
+            "value": [
+              0,
+              0,
+              0
+            ]
+          },
+          "rotation": {
+            "value": {
+              "yaw_deg": 0,
+              "pitch_deg": 0,
+              "roll_deg": 0
+            }
+          },
+          "fov": {
+            "value": 90
+          },
+          "curve": {
+            "value": 1
+          }
+        }
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": false,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "visible": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": []
+        }
+      }
+    },
+    {
+      "name": "the default Camera with a Keyframe",
+      "state": {
+        "version": 2,
+        "camera": {
+          "aspect": 1.7777777777777777,
+          "projection": "erp",
+          "erp_range": 360,
+          "visible": true,
+          "locked": false,
+          "position": {
+            "value": [
+              0,
+              0,
+              0
+            ]
+          },
+          "rotation": {
+            "value": {
+              "yaw_deg": 0,
+              "pitch_deg": 0,
+              "roll_deg": 0
+            }
+          },
+          "fov": {
+            "value": 90,
+            "keyframes": [
+              {
+                "frame": 3,
+                "value": 90,
+                "easing": "hold"
+              }
+            ]
+          },
+          "curve": {
+            "value": 1
+          }
+        }
+      },
+      "camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": true,
+        "locked": false,
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": [
+            {
+              "frame": 3,
+              "value": 90.0,
+              "easing": "hold"
+            }
+          ]
+        },
+        "curve": {
+          "value": 1.0,
+          "keyframes": []
+        }
+      },
+      "text_camera": {
+        "aspect": 1.7777777777777777,
+        "projection": "erp",
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "fov": {
+          "value": 90.0,
+          "keyframes": [
+            {
+              "frame": 3,
+              "value": 90.0,
+              "easing": "hold"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

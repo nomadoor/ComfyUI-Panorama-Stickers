@@ -1,0 +1,76 @@
+{
+  "about": "`camera.aspect` (docs/scene-state-v2.md): `aspect` is each `json` text of a v2 state's camera, `expected` the aspect read; `v1_shots` are v1 Cutout shots and the aspect their Camera reads with. Held to 1/2048-2048; 0 or less and anything not a number is 1.",
+  "cases": [
+    {
+      "json": "1.5",
+      "expected": 1.5
+    },
+    {
+      "json": "2048",
+      "expected": 2048
+    },
+    {
+      "json": "0.00048828125",
+      "expected": 0.00048828125
+    },
+    {
+      "json": "5e-324",
+      "expected": 0.00048828125
+    },
+    {
+      "json": "1e-9",
+      "expected": 0.00048828125
+    },
+    {
+      "json": "1e9",
+      "expected": 2048
+    },
+    {
+      "json": "1e308",
+      "expected": 2048
+    },
+    {
+      "json": "0",
+      "expected": 1
+    },
+    {
+      "json": "-1",
+      "expected": 1
+    },
+    {
+      "json": "\"2\"",
+      "expected": 1
+    },
+    {
+      "json": "null",
+      "expected": 1
+    },
+    {
+      "json": "1e400",
+      "expected": 1
+    }
+  ],
+  "v1_shots": [
+    {
+      "shot": {
+        "hFOV_deg": 179,
+        "vFOV_deg": 1
+      },
+      "expected": 2048
+    },
+    {
+      "shot": {
+        "hFOV_deg": 1,
+        "vFOV_deg": 179
+      },
+      "expected": 0.00048828125
+    },
+    {
+      "shot": {
+        "hFOV_deg": 90,
+        "vFOV_deg": 90
+      },
+      "expected": 1
+    }
+  ]
+}

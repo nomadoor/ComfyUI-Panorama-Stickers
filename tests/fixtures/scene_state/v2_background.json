@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "timeline": {"fps": 24.0, "length": 120},
+  "background": {"clip": {"start": 12.4, "in": 6.5, "duration": 47}, "visible": false, "extra": 1},
+  "stickers": [
+    {"id": "sticker_1", "source": {"kind": "file", "filename": "a.png"}, "clip": {"start": 12, "in": 7, "duration": 47}}
+  ]
+}

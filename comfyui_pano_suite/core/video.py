@@ -1,40 +1,23 @@
 from __future__ import annotations
 
-import math
-import tempfile
 import uuid
 import logging
 from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 try:
     import av
+    from av.video.reformatter import ColorPrimaries, ColorRange, ColorTrc
 except Exception:  # pragma: no cover - optional at import time
     av = None
 
-try:
-    import folder_paths
-except Exception:  # pragma: no cover - optional in tests
-    folder_paths = None
+from .temp_files import TEMP_FILES, ensure_temp_root, entry_from_path, remove_temp_file, temp_file_path
+from .video_source import StreamedVideo
 
 _log = logging.getLogger(__name__)
-
-
-def _resolve_temp_root() -> Path:
-    if folder_paths is not None:
-        try:
-            return Path(folder_paths.get_temp_directory())
-        except Exception:
-            pass
-    return Path(tempfile.gettempdir()) / "comfyui_panorama_stickers"
-
-
-def _ensure_temp_root() -> Path:
-    root = _resolve_temp_root()
-    root.mkdir(parents=True, exist_ok=True)
-    return root
 
 
 def _normalize_frames(frames) -> np.ndarray:
@@ -161,64 +144,21 @@ def _target_audio_sample_count(frame_count: int, frame_rate, sample_rate: int) -
     return max(0, int(round((float(frame_count) / float(frame_rate)) * sample_rate)))
 
 
-def _stretch_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[np.ndarray | None, int]:
+def _fit_audio_to_frame_count(audio, frame_count: int, frame_rate) -> tuple[np.ndarray | None, int]:
+    """The audio cut, or padded with silence, to the length of `frame_count` frames at `frame_rate`. It is not
+    stretched, so it keeps its speed and pitch and stays in sync with the frames from the start."""
     waveform, sample_rate = _extract_audio_tensor(audio)
     if waveform is None or sample_rate <= 0:
         return None, 0
     target_samples = _target_audio_sample_count(frame_count, frame_rate, sample_rate)
-    if target_samples <= 0:
-        return np.zeros((int(waveform.shape[0]), 0), dtype=np.float32), sample_rate
-
-    source_samples = int(waveform.shape[-1])
-    tolerance = max(1, int(round(sample_rate * 0.002)))
-    if abs(source_samples - target_samples) <= tolerance:
-        fitted = _trim_or_pad_audio(waveform, target_samples)
-        return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
-
-    try:
-        import torch
-        import torchaudio.functional as AF
-
-        # Keep preview pitch stable while fitting audio to the preview duration.
-        n_fft = 2048
-        win_length = 2048
-        hop_length = 512
-        rate = max(1e-6, float(source_samples) / float(target_samples))
-        window = torch.hann_window(win_length, dtype=waveform.dtype, device=waveform.device)
-        spec = torch.stft(
-            waveform,
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            window=window,
-            center=True,
-            return_complex=True,
-        )
-        phase_advance = torch.linspace(
-            0,
-            math.pi * hop_length,
-            spec.size(-2),
-            dtype=waveform.dtype,
-            device=waveform.device,
-        )[..., None]
-        stretched_spec = AF.phase_vocoder(spec, rate=rate, phase_advance=phase_advance)
-        stretched = torch.istft(
-            stretched_spec,
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            window=window,
-            center=True,
-            length=target_samples,
-        )
-        stretched = _trim_or_pad_audio(stretched, target_samples)
-        return np.ascontiguousarray(stretched.cpu().numpy(), dtype=np.float32), sample_rate
-    except Exception:
-        fitted = _trim_or_pad_audio(waveform, target_samples)
-        return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
+    fitted = _trim_or_pad_audio(waveform, target_samples)
+    return np.ascontiguousarray(fitted.cpu().numpy(), dtype=np.float32), sample_rate
 
 
 def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np.ndarray | None, int, str]:
+    """The waveform (channels, samples) as contiguous float32, its sample rate, and the layout every encoder here
+    gives it: mono, stereo, and 5.1 as they are, any other channel count downmixed to stereo. (None, 0, "mono")
+    when there is no audio to encode."""
     if waveform_np is None or sample_rate <= 0:
         return None, 0, "mono"
     waveform_np = np.ascontiguousarray(waveform_np, dtype=np.float32)
@@ -234,9 +174,6 @@ def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np
     if explicit_layout:
         return waveform_np, sample_rate, explicit_layout
 
-    if channels == 1:
-        return waveform_np, sample_rate, "mono"
-
     # Unsupported channel counts are downmixed so frame data and advertised
     # layout stay consistent for AudioFrame.from_ndarray.
     left_indices = np.arange(0, channels, 2)
@@ -247,21 +184,135 @@ def _prepare_audio_layout(waveform_np: np.ndarray, sample_rate: int) -> tuple[np
     return np.ascontiguousarray(downmixed), sample_rate, "stereo"
 
 
-def _entry_from_path(path: Path, *, media_type: str) -> dict:
-    root = _ensure_temp_root().resolve()
-    target = path.resolve()
-    try:
-        rel = target.relative_to(root)
-        subfolder = str(rel.parent).replace("\\", "/")
-    except Exception:
-        subfolder = ""
-    return {
-        "filename": target.name,
-        "subfolder": subfolder,
-        "type": "temp",
-        "storage": "temp",
-        "format": media_type,
-    }
+def _temp_mp4_path() -> Path:
+    return temp_file_path(f"pano_video_{uuid.uuid4().hex[:12]}.mp4")
+
+
+def save_video_to_mp4(video, container_format, codec) -> tuple[Path, bool]:
+    """Save a core VIDEO to a temp MP4 with its own `save_to`, which copies the streams when they already fit and
+    otherwise transcodes them frame by frame. Returns the path and whether the MP4 has audio."""
+    output_path = _temp_mp4_path()
+    with TEMP_FILES.writing(output_path):
+        video.save_to(str(output_path), format=container_format, codec=codec)
+    return output_path, mp4_has_audio(output_path)
+
+
+# The editor seeks its MP4 by decoding from the keyframe before the frame, so the MP4 it plays has a keyframe at
+# least every EDITOR_KEYINT frames, and its longer side is at most EDITOR_MAX_SIZE, enough to show it.
+EDITOR_KEYINT = 12
+EDITOR_MAX_SIZE = 2048
+
+# AVCOL_SPC_BT709, the matrix of the core's sRGB video.
+_BT709 = 1
+
+
+def _set_srgb(target):
+    target.color_primaries = ColorPrimaries.BT709
+    target.color_trc = ColorTrc.IEC61966_2_1
+    target.colorspace = _BT709
+    target.color_range = ColorRange.MPEG
+
+
+def editor_ready(path) -> bool:
+    """Whether the core's stream copy of the file at `path` into an MP4 seeks fast in the editor: an MP4 of H.264
+    4:2:0 with its longer side at most EDITOR_MAX_SIZE, with a keyframe at least every EDITOR_KEYINT frames. Only packets are read."""
+    with av.open(str(path)) as container:
+        stream = container.streams.video[0]
+        codec = stream.codec_context
+        if "mp4" not in container.format.name.split(",") or codec.name != "h264" or codec.pix_fmt != "yuv420p" or max(stream.width, stream.height) > EDITOR_MAX_SIZE:
+            return False
+        since_keyframe = 0
+        for packet in container.demux(stream):
+            # The demuxer ends with an empty packet.
+            if packet.size:
+                since_keyframe = 0 if packet.is_keyframe else since_keyframe + 1
+                if since_keyframe >= EDITOR_KEYINT:
+                    return False
+        return True
+
+
+def _editor_frames(video):
+    """The frames of an opened VIDEO as PyAV frames, with their times in seconds. A file's frames go to the encoder
+    as they decode, without the conversion to float RGB of reading them."""
+    if isinstance(video, StreamedVideo):
+        for time, frame in video.decoded_frames():
+            if frame.rotation:
+                # Upright, as `StreamedVideo` reads it.
+                quadrant = int(round(frame.rotation // 90)) % 4
+                frame = av.VideoFrame.from_ndarray(np.ascontiguousarray(np.rot90(frame.to_ndarray(format="rgb24"), k=quadrant)), format="rgb24")
+            yield time, frame
+        return
+    for index, time in enumerate(video.times):
+        image = video[index]
+        # An IMAGE batch can be gray or have alpha; it shows as opaque RGB, as `render_frame` draws it.
+        image = image[..., :1].expand(-1, -1, 3) if image.shape[-1] < 3 else image[..., :3]
+        yield time, av.VideoFrame.from_ndarray((image * 255).clamp(0, 255).byte().cpu().numpy(), format="rgb24")
+
+
+def encode_editor_mp4(video, progress=None) -> tuple[Path, bool]:
+    """Encode a VIDEO opened for reading (`StreamedVideo`, `MaterializedVideo`) one frame at a time into a temp MP4
+    for the editor: H.264 with a keyframe every EDITOR_KEYINT frames and no B-frames, its longer side at most
+    EDITOR_MAX_SIZE, each frame at its time, and the audio as AAC. Returns the path and whether the MP4 has audio.
+    `progress(done, total)` is called after each frame and may raise to stop; the partial MP4 is then removed."""
+    height, width = video.first_frame.shape[:2]
+    scale = min(1, EDITOR_MAX_SIZE / max(width, height))
+    width, height = max(2, round(width * scale / 2) * 2), max(2, round(height * scale / 2) * 2)
+    time_base = video.time_base or 1 / video.frame_rate
+    audio = video.audio(float(video.times[-1] + 1 / video.frame_rate))
+    output_path = _temp_mp4_path()
+    with TEMP_FILES.writing(output_path), av.open(str(output_path), mode="w", options={"movflags": "faststart"}) as output:
+        stream = output.add_stream("h264", rate=video.frame_rate)
+        stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
+        # fastdecode halves the decode time for about 10% more size.
+        stream.options = {"preset": "veryfast", "crf": "23", "tune": "fastdecode"}
+        stream.codec_context.gop_size = EDITOR_KEYINT
+        stream.codec_context.max_b_frames = 0
+        # PyAV asks for slice threads by default, about three times slower than frame threads here.
+        stream.codec_context.thread_type = "AUTO"
+        stream.codec_context.time_base = time_base
+        audio_stream = None
+        if audio is not None:
+            waveform, sample_rate, layout = _prepare_audio_layout(audio["waveform"][0].float().cpu().numpy(), int(audio["sample_rate"]))
+            if waveform is not None:
+                audio_stream = output.add_stream("aac", rate=sample_rate, layout=layout)
+        codec = stream.codec_context
+        done = 0
+        for time, frame in _editor_frames(video):
+            # Any RGB or paletted frame (its alpha dropped) is converted with the BT.709 matrix.
+            if frame.format.is_rgb or frame.format.has_palette:
+                if not codec.is_open:
+                    _set_srgb(codec)
+                if frame.format.has_palette:
+                    # swscale turns a palette into YUV with BT.601 whatever dst_colorspace says.
+                    frame = frame.reformat(format="rgb24")
+                frame = frame.reformat(width=width, height=height, format="yuv420p", dst_colorspace=_BT709, dst_color_range=ColorRange.MPEG, interpolation="AREA")
+            else:
+                # A file's YUV keeps its matrix and is only scaled, and brought to TV range, so it keeps its colors.
+                if not codec.is_open:
+                    codec.colorspace, codec.color_primaries, codec.color_trc = frame.colorspace, frame.color_primaries, frame.color_trc
+                    codec.color_range = ColorRange.MPEG
+                frame = frame.reformat(
+                    width=width, height=height, format="yuv420p", src_color_range=frame.color_range, dst_color_range=ColorRange.MPEG, interpolation="AREA"
+                )
+            frame.pts = round(time / time_base)
+            frame.time_base = time_base
+            output.mux(stream.encode(frame))
+            done += 1
+            if progress is not None:
+                progress(done, len(video.times))
+        output.mux(stream.encode(None))
+        if audio_stream is not None:
+            frame = av.AudioFrame.from_ndarray(waveform, format="fltp", layout=layout)
+            frame.sample_rate = sample_rate
+            frame.pts = 0
+            output.mux(audio_stream.encode(frame))
+            output.mux(audio_stream.encode(None))
+    return output_path, audio_stream is not None
+
+
+def mp4_has_audio(path) -> bool:
+    with av.open(str(path)) as container:
+        return bool(container.streams.audio)
 
 
 def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None) -> Path:
@@ -269,7 +320,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
         raise RuntimeError("PyAV is not available in this environment.")
 
     fps_value = max(1e-3, float(fps or 24.0))
-    output_path = _ensure_temp_root() / f"pano_video_{uuid.uuid4().hex[:12]}.mp4"
+    output_path = _temp_mp4_path()
     frame_rate = Fraction(round(fps_value * 1000), 1000)
 
     # Streaming mode: torch tensor → process one frame at a time (no full-batch numpy allocation)
@@ -295,7 +346,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
     sample_rate = 0
     layout = "mono"
     if _audio_has_waveform(audio):
-        waveform_np, sample_rate = _stretch_audio_to_frame_count(audio, frame_count, frame_rate)
+        waveform_np, sample_rate = _fit_audio_to_frame_count(audio, frame_count, frame_rate)
         waveform_np, sample_rate, layout = _prepare_audio_layout(waveform_np, sample_rate)
 
     _log.debug(
@@ -316,6 +367,10 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
             video_stream.width = int(width)
             video_stream.height = int(height)
             video_stream.pix_fmt = "yuv420p"
+            # Seekable in the editor like `encode_editor_mp4`.
+            video_stream.codec_context.gop_size = EDITOR_KEYINT
+            video_stream.codec_context.max_b_frames = 0
+            video_stream.codec_context.thread_type = "AUTO"
             if codec_name == "h264_nvenc":
                 video_stream.options = {"preset": "p4"}
 
@@ -375,7 +430,7 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
 
             container.close()
             _log.debug("[video] Encoded preview mp4 with %s -> %s", codec_name, output_path)
-            return output_path
+            break
         except Exception as ex:
             last_error = ex
             _log.debug("[video] Encoder %s failed, trying fallback: %s", codec_name, ex)
@@ -388,7 +443,53 @@ def encode_frames_to_mp4(frames, fps: float, audio=None, progress_callback=None)
             except Exception:
                 pass
             continue
-    raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
+        except BaseException:
+            # Cancelled from `progress_callback`: no partial MP4 is left.
+            container.close()
+            remove_temp_file(output_path)
+            raise
+    else:
+        raise last_error if last_error is not None else RuntimeError("No usable video encoder found (tried h264_nvenc, h264)")
+    # Registered after the encoder loop, so that nothing the registry does is taken for an encoder failure.
+    TEMP_FILES.add(output_path)
+    return output_path
+
+
+def save_editor_frames(images, progress=None) -> list[Path]:
+    """Each image of an RGBA IMAGE batch as a PNG in temp, with its alpha, which an MP4 cannot hold, for the editor
+    to show the image of the playhead. One image at a time, its longer side at most EDITOR_MAX_SIZE.
+    `progress(done, total)` is called after each image and may raise to stop; the PNGs saved so far are then removed."""
+    stem = f"pano_frames_{uuid.uuid4().hex[:12]}"
+    root = ensure_temp_root()
+    paths = []
+    with TEMP_FILES.writing(paths):
+        for index, image in enumerate(images):
+            picture = Image.fromarray(image.clamp(0.0, 1.0).mul_(255).add_(0.5).byte().cpu().numpy(), "RGBA")
+            scale = min(1, EDITOR_MAX_SIZE / max(picture.size))
+            if scale < 1:
+                picture = picture.resize((max(1, round(picture.width * scale)), max(1, round(picture.height * scale))), Image.BILINEAR)
+            path = root / f"{stem}_{index:05d}.png"
+            paths.append(path)
+            picture.save(path, compress_level=1)
+            if progress is not None:
+                progress(index + 1, len(images))
+    return paths
+
+
+def save_output_png(image) -> Path:
+    """An RGB IMAGE (h, w, 3) as a PNG in temp at its own size, for the node surface to show a run's output."""
+    path = temp_file_path(f"pano_output_{uuid.uuid4().hex[:12]}.png")
+    with TEMP_FILES.writing(path):
+        Image.fromarray(image.clamp(0.0, 1.0).mul_(255).add_(0.5).byte().cpu().numpy(), "RGB").save(path, compress_level=1)
+    return path
+
+
+def make_frames_ui_payload(paths: list[Path], fps: float, *, frames_key: str, meta_key: str) -> dict:
+    """The `ui` of the PNGs `save_editor_frames` saved, with the meta of an MP4 of them at `fps`."""
+    return {
+        frames_key: [entry_from_path(path, media_type="image/png") for path in paths],
+        meta_key: [{"fps": float(fps), "frames": len(paths), "duration": len(paths) / float(fps), "has_audio": False}],
+    }
 
 
 def make_video_ui_payload(
@@ -399,8 +500,10 @@ def make_video_ui_payload(
     include_comfy_preview: bool = False,
     video_key: str = "pano_videos",
     meta_key: str = "pano_video_meta",
+    video_entry: dict | None = None,
 ) -> dict:
-    video_entry = _entry_from_path(Path(mp4_path), media_type="video/mp4")
+    """The `ui` of an MP4: its entry (`video_entry`, else that of the temp file `mp4_path`) and its meta."""
+    video_entry = video_entry or entry_from_path(Path(mp4_path), media_type="video/mp4")
     payload = {
         video_key: [video_entry],
         meta_key: [{

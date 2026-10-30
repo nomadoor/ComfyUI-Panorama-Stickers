@@ -1,0 +1,289 @@
+// What the Timeline's actions do (PanoTimeline.vue emits them): selecting rows and Keyframes, seeking,
+// playback, keying Lanes, easing, and dragging Keyframes and Clip ranges. On an upstream layer's rows (ADR 0030)
+// they change its working copy, which pushHistory writes back as the node's overrides (editor/upstream.js
+// syncUpstreamEdits); a layer that is only inherited is not changed, as a locked row is not.
+import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_editor_ui_state.js";
+import { clipActive } from "../pano_scene_eval.js";
+import {
+  enteredTimelineFps,
+  enteredTimelineLength,
+  keyAllLanes,
+  moveClip,
+  moveKeyframes,
+  setSegmentEasing,
+  trimClipEnd,
+  trimClipStart,
+} from "../pano_timeline.js";
+
+export function createTimelineActions(deps) {
+  const {
+    dragFrames, editor, readOnly, state, stateV2, timeline, uiState,
+  } = deps;
+  // Bound by connect() to the other modules and showEditor.
+  let cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
+    playback, portBarEnd, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
+    restoreUpstreamDeletedCommand, revertUpstreamLayerCommand, rowEditable,
+    selectWorldSticker, selectedLanes, setSelectedItem, stickerById, stopTimelinePlayback, syncFloatingViewButtonState,
+    syncTimeline, timelineEditable, timelineOffset, timelineOwner, timelineSpanFrames, timelineTimed,
+    togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel, upstreamRow;
+
+  function onTimelineAction(action) {
+    if (readOnly || !stateV2) return;
+    if (action.type === "seek") {
+      // A scrub seeks once per frame, to where the pointer is then; its end seeks at once.
+      if (action.phase === "move") {
+        timeline.scrubFrame = action.frame;
+        dragFrames.request("seek");
+        return;
+      }
+      dragFrames.cancel();
+      if (action.phase === "start") refreshModalVideoSource();
+      playback.seek(action.frame);
+      return;
+    }
+    if (action.type === "play") {
+      togglePlayback();
+      return;
+    }
+    if (action.type === "mute") {
+      toggleVideoMuted();
+      syncTimeline();
+      return;
+    }
+    if (action.type === "toggle-expanded") {
+      timeline.expanded = !(timeline.expanded ?? timelineTimed());
+      timeline.selection = null;
+      syncTimeline();
+      return;
+    }
+    // The actions of an upstream layer's header (ADR 0030): each disabled in the model while it would do nothing.
+    if (action.type === "restore-upstream-deleted" || action.type === "revert-upstream-layer") {
+      const group = uiState.timeline?.groups?.find((item) => item.key === action.key);
+      const button = action.type === "restore-upstream-deleted" ? group?.restore : group?.revert;
+      if (!button || button.disabled) return;
+      if (action.type === "restore-upstream-deleted") restoreUpstreamDeletedCommand(action.key);
+      else revertUpstreamLayerCommand(action.key);
+      syncTimeline();
+      return;
+    }
+    if (action.type === "toggle-row") {
+      if (timeline.openRows.has(action.id)) timeline.openRows.delete(action.id);
+      else timeline.openRows.add(action.id);
+      syncTimeline();
+      return;
+    }
+    if (action.type === "toggle-visible") {
+      // Showing and hiding is an edit (Undo), but changes no value at a frame, so playback goes on. The eye of
+      // an upstream row is how a hidden upstream element shows again.
+      if (!rowEditable(action.id)) return;
+      const upstream = upstreamRow(action.id);
+      if (action.id === PAINTING_ROW) state.painting_visible = !state.painting_visible;
+      else if (upstream?.part === "painting") upstream.sceneState.painting_visible = !upstream.sceneState.painting_visible;
+      else {
+        const owner = timelineOwner(action.id);
+        if (!owner) return;
+        owner.visible = !owner.visible;
+      }
+      releaseHiddenSelection();
+      commitTimelineEdit();
+      return;
+    }
+    if (action.type === "select-row") {
+      // A Sticker is hidden outside its Clip range, so the playhead first moves to where it starts. An
+      // upstream element's row selects its working Sticker.
+      const sticker = stickerById(action.id);
+      // What is hidden is not selected; its row is still where its eye is.
+      if ((sticker && !sticker.visible) || (action.id === "camera" && !cameraShoots())) return;
+      if (sticker && !clipActive(sticker.clip, editor.frame)) jumpTimelineTo(sticker.clip.start);
+      // The canvas selection holds sky Stickers; a world row selects its world Sticker for the gizmo and
+      // the inspector.
+      if (sticker?.placement === "world") selectWorldSticker(sticker.id);
+      else if (action.id === "camera") setSelectedItem(getActiveCutoutShot());
+      else setSelectedItem(getList().find((item) => item.id === action.id) || null);
+      syncFloatingViewButtonState();
+      // Delete then acts on the row's Sticker, not on Keyframes selected before.
+      timeline.selection = null;
+      updateSidePanel();
+      updateSelectionMenu();
+      requestDraw();
+      return;
+    }
+    if (action.type === "select-keys") {
+      const offset = timelineOffset(action.owner);
+      const frames = action.frames.map((frame) => frame - offset);
+      const current = timeline.selection;
+      const sameLanes = current?.owner === action.owner && current.lane === action.lane;
+      if (action.additive && sameLanes) {
+        const toggled = new Set(current.frames);
+        for (const frame of frames) {
+          if (toggled.has(frame)) toggled.delete(frame);
+          else toggled.add(frame);
+        }
+        current.frames = [...toggled].sort((a, b) => a - b);
+      } else {
+        timeline.selection = frames.length ? { owner: action.owner, lane: action.lane, frames } : null;
+      }
+      syncTimeline();
+      return;
+    }
+    if (action.type === "move-keys") {
+      const selection = timeline.selection;
+      if (!selection || !timelineEditable(selection.owner)) return;
+      const owner = timelineOwner(selection.owner);
+      const names = selectedLanes(selection);
+      if (action.phase === "start") {
+        stopTimelinePlayback();
+        timeline.drag = {
+          owner: selection.owner, names, keyframes: names.map((name) => structuredClone(owner[name].keyframes)),
+          frames: selection.frames, limit: timelineSpanFrames(),
+        };
+        return;
+      }
+      const { drag } = timeline;
+      if (!drag?.keyframes) return;
+      names.forEach((name, index) => {
+        owner[name].keyframes = structuredClone(drag.keyframes[index]);
+      });
+      // Keyframes stay on the Timeline: from frame 0 to its last frame, in the owner's own frames.
+      const offset = timelineOffset(selection.owner);
+      const delta = moveKeyframes(owner, names, drag.frames, action.delta, -offset, drag.limit - 1 - offset);
+      selection.frames = drag.frames.map((frame) => frame + delta);
+      if (action.phase !== "end") {
+        // Moved Keyframes can change the values at the playhead.
+        dragFrames.request("timeline");
+        dragFrames.request("view");
+        return;
+      }
+      dragFrames.cancel();
+      timeline.drag = null;
+      if (delta) commitTimelineEdit();
+      else refreshTimelineEdit();
+      return;
+    }
+    if (action.type === "clip") {
+      // A Sticker's Clip range, or a `scene`'s (the node's own or an upstream layer's).
+      const sticker = timelineOwner(action.id);
+      if (!sticker?.clip || sticker.locked || !rowEditable(action.id)) return;
+      if (action.phase === "start") {
+        stopTimelinePlayback();
+        // Only the span set by everything else reopens the end, not the span this Clip range sets (`span`).
+        // `end` is where its bar ends (the end of a port Sticker's media, or the Timeline's, without a duration).
+        const { clip } = sticker;
+        const limit = timelineSpanFrames();
+        const end = clip.duration === null ? portBarEnd(sticker) ?? limit : clip.start + clip.duration;
+        timeline.drag = { id: action.id, clip: { ...clip }, span: timelineSpanFrames(clip), limit, end };
+        return;
+      }
+      const { drag } = timeline;
+      if (!drag?.clip) return;
+      const base = drag.clip;
+      const shown = clipView(sticker.clip);
+      sticker.clip = { ...base };
+      // A click (no movement) leaves the Clip range as it was, an open end included. A moved bar keeps its start
+      // on the Timeline, its last frame at most, and may run past the end, where it is outside the output. A drag
+      // never lengthens the output: a bar whose end sets the derived length stops at the current end. A trimmed
+      // start and a trimmed end are not dragged past the end. What is past it already is not pushed further.
+      if (action.delta && action.mode === "move") {
+        moveClip(sticker.clip, Math.min(action.delta, Math.max(0, drag.limit - 1 - base.start)));
+        const excess = timelineSpanFrames() - drag.limit;
+        if (excess > 0) moveClip(sticker.clip, -excess);
+      } else if (action.delta && action.mode === "start") trimClipStart(sticker.clip, Math.min(base.start + action.delta, Math.max(drag.limit - 1, base.start)));
+      else if (action.delta) trimClipEnd(sticker.clip, Math.min(drag.end + action.delta, Math.max(drag.limit, drag.end)), drag.span);
+      if (action.phase !== "end") {
+        dragFrames.request("timeline");
+        if (clipView(sticker.clip) !== shown) {
+          dragFrames.request("view");
+          // The background VIDEO is sought, once per frame, to the time its moved Clip range puts at the playhead.
+          if (action.id === BACKGROUND_ROW) dragFrames.request("background");
+        }
+        return;
+      }
+      dragFrames.cancel();
+      timeline.drag = null;
+      releaseHiddenSelection();
+      const changed = JSON.stringify(sticker.clip) !== JSON.stringify(base);
+      // The drag's end seeks the background VIDEO once more, so it shows the time of the final Clip range.
+      if (changed && action.id === BACKGROUND_ROW) playback.seek(editor.frame);
+      if (changed) commitTimelineEdit();
+      else refreshTimelineEdit();
+      return;
+    }
+    if (action.type === "key-row") {
+      // The `scene` row is not keyable: nothing sets the `scene`'s values in the editor yet; the background has
+      // no Lanes; an upstream `scene` row is not editable here (timelineEditable).
+      if (action.owner === "scene" || action.owner === BACKGROUND_ROW || !timelineEditable(action.owner)) return;
+      // Recording edits stop at the frame shown, so playback stops before a Keyframe is set.
+      stopTimelinePlayback();
+      keyAllLanes(timelineOwner(action.owner), editor.frame - timelineOffset(action.owner));
+      commitTimelineEdit();
+      return;
+    }
+    if (action.type === "fps") {
+      const fps = enteredTimelineFps(action.fps);
+      if (fps === null || fps === state.timeline.fps || uiState.timeline.fpsLocked) {
+        syncTimeline();
+        return;
+      }
+      changeTimelineFps(fps);
+      return;
+    }
+    if (action.type === "length") {
+      const length = enteredTimelineLength(action.length);
+      if (length === undefined || length === state.timeline.length) {
+        syncTimeline();
+        return;
+      }
+      stopTimelinePlayback();
+      state.timeline.length = length;
+      commitTimelineEdit();
+      return;
+    }
+    if (action.type === "easing") {
+      const selection = timeline.selection;
+      if (!selection || !timelineEditable(selection.owner)) return;
+      stopTimelinePlayback();
+      setSegmentEasing(timelineOwner(selection.owner), selectedLanes(selection), selection.frames, action.easing);
+      if (action.commit) commitTimelineEdit();
+      else refreshTimelineEdit();
+    }
+  }
+
+  // Cancels a Keyframe or Clip range drag under way (docs/timeline-ui.md): the Keyframes, the Clip range and the
+  // selected Keyframes go back to where the drag started, with no Undo step and nothing written to state_json.
+  // What the Timeline sends for the drag afterwards finds no drag and does nothing. Returns whether one was under way.
+  function cancelTimelineDrag() {
+    const { drag } = timeline;
+    if (!drag || (!drag.keyframes && !drag.clip)) return false;
+    timeline.drag = null;
+    dragFrames.cancel();
+    if (drag.keyframes) {
+      const owner = timelineOwner(drag.owner);
+      drag.names.forEach((name, index) => {
+        if (owner?.[name]) owner[name].keyframes = structuredClone(drag.keyframes[index]);
+      });
+      if (timeline.selection?.owner === drag.owner) timeline.selection.frames = [...drag.frames];
+    } else {
+      const sticker = timelineOwner(drag.id);
+      if (sticker?.clip) sticker.clip = { ...drag.clip };
+      // The background VIDEO shows the time of its Clip range as it was.
+      if (drag.id === BACKGROUND_ROW) playback.seek(editor.frame);
+    }
+    syncTimeline();
+    refreshTimelineEdit();
+    return true;
+  }
+
+  return {
+    connect(api) {
+      ({
+        cameraShoots, changeTimelineFps, clipView, commitTimelineEdit, getActiveCutoutShot, getList, jumpTimelineTo,
+        playback, portBarEnd, refreshModalVideoSource, refreshTimelineEdit, releaseHiddenSelection, requestDraw,
+        restoreUpstreamDeletedCommand, revertUpstreamLayerCommand, rowEditable,
+        selectWorldSticker, selectedLanes, setSelectedItem, stickerById, stopTimelinePlayback, syncFloatingViewButtonState,
+        syncTimeline, timelineEditable, timelineOffset, timelineOwner, timelineSpanFrames, timelineTimed,
+        togglePlayback, toggleVideoMuted, updateSelectionMenu, updateSidePanel, upstreamRow,
+      } = api);
+    },
+    onTimelineAction, cancelTimelineDrag,
+  };
+}

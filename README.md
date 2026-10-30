@@ -26,6 +26,7 @@ Usage details are documented here:
 ## Installation
 
 - Install via ComfyUI Manager.
+- Requires ComfyUI v0.35.0 or later.
 
 ## Demo
 
@@ -46,6 +47,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 ### On-node panorama controls
 
 `Panorama Stickers`, `Panorama Cutout`, and `Panorama Preview` now include lightweight on-node UIs for completing common interactions without opening the Full Editor. Both the legacy canvas and Node 2.0 are supported.
+
+### Video output of Panorama Studio
+
+`Panorama Studio` outputs only the first frame as IMAGE / MASK (`first_frame`, `first_frame_mask`). Every frame, with the fps and audio, is in `video` (VIDEO), which is rendered frame by frame when it is saved. To get all frames as IMAGE, connect `video` to Get Video Components. To give an IMAGE batch an fps or audio before connecting it, pass it through Create Video. When a Camera's shot goes into the `sticker` input of another `Panorama Studio` with its `sticker_state`, it is placed by time in seconds: keep a VIDEO in real time, and use an IMAGE batch only at the fps of the Studio that shot it (otherwise pass it through Create Video with that fps).
 
 ## Workflow
 

@@ -35,37 +35,6 @@ def test_progress_clamps_and_prefers_progress_bar_over_api_fallback():
     assert progress.node_id == "42"
 
 
-def test_manual_cache_store_applies_namespace_specific_eviction_rules():
-    from comfyui_pano_suite.node_runtime import ManualCacheStore
-
-    store = ManualCacheStore(
-        stickers_bg_limit=1,
-        video_limit=2,
-    )
-    first_background = np.zeros((1, 1, 1, 3), dtype=np.uint8)
-    second_background = np.ones((1, 1, 1, 3), dtype=np.uint8)
-    store.put("stickers_bg", ("first",), first_background)
-    store.put("stickers_bg", ("second",), second_background)
-
-    assert store.get("stickers_bg", ("first",)) is None
-    assert store.get("stickers_bg", ("second",)) is second_background
-
-def test_manual_cache_store_does_not_retain_cutout_node_outputs():
-    from comfyui_pano_suite.node_runtime import ManualCacheStore
-
-    store = ManualCacheStore()
-
-    with pytest.raises(ValueError, match="Unknown cache namespace"):
-        store.put(
-            "cutout_output",
-            ("cutout",),
-            (
-                np.zeros((1, 1, 1, 3), dtype=np.float32),
-                np.zeros((1, 1), dtype=np.float32),
-            ),
-        )
-
-
 def test_runtime_initializes_preview_with_first_frame_and_custom_contract_key():
     from comfyui_pano_suite.node_runtime import NodeRuntime
 
@@ -137,7 +106,8 @@ def test_runtime_appends_video_without_losing_uint8_or_audio_metadata():
 
 
 def test_runtime_reuses_cached_video_for_the_exact_caller_supplied_key(tmp_path):
-    from comfyui_pano_suite.node_runtime import ManualCacheStore, NodeRuntime
+    from comfyui_pano_suite.core.cache import MemoryCache
+    from comfyui_pano_suite.node_runtime import NodeRuntime
 
     encoded = []
     video_path = tmp_path / "cached.mp4"
@@ -153,7 +123,7 @@ def test_runtime_reuses_cached_video_for_the_exact_caller_supplied_key(tmp_path)
             kwargs["meta_key"]: [{"frame_count": frame_count}],
         }
 
-    store = ManualCacheStore()
+    store = MemoryCache()
     runtime = NodeRuntime(
         encode_video=encode_video,
         make_video_payload=make_video_payload,
@@ -294,21 +264,40 @@ def test_video_failure_is_a_deduplicated_warning_and_single_frame_is_skipped():
     assert ui == {"warnings": ["Video UI cache generation failed: encoder unavailable"]}
 
 
-def test_video_cache_access_refreshes_lru_and_deletes_only_evicted_path(tmp_path):
-    from comfyui_pano_suite.node_runtime import ManualCacheStore
+def test_video_cache_access_refreshes_lru_and_keeps_evicted_files(tmp_path):
+    from comfyui_pano_suite.core.cache import MemoryCache
 
     first = tmp_path / "first.mp4"
     second = tmp_path / "second.mp4"
     third = tmp_path / "third.mp4"
     for path in (first, second, third):
         path.write_bytes(b"video")
-    store = ManualCacheStore(video_limit=2)
+    store = MemoryCache(max_entries=2)
     store.put("video", ("first",), first)
     store.put("video", ("second",), second)
 
     assert store.get("video", ("first",)) == first
     store.put("video", ("third",), third)
 
-    assert first.exists()
-    assert not second.exists()
-    assert third.exists()
+    assert store.get("video", ("second",)) is None
+    assert store.get("video", ("first",)) == first
+    assert store.get("video", ("third",)) == third
+    # Job history and cached `ui` results may still name the evicted file.
+    assert first.exists() and second.exists() and third.exists()
+
+
+def test_default_runtime_shares_the_cache_and_reads_comfys_free_ram(monkeypatch):
+    import comfy.model_management
+
+    from comfyui_pano_suite import node_runtime
+    from comfyui_pano_suite.core.cache import CACHE
+
+    runtime = node_runtime.create_default_runtime()
+    seen = []
+    monkeypatch.setattr(comfy.model_management, "get_free_memory", lambda device: seen.append(device) or 8 * 1024 ** 3)
+    monkeypatch.setattr(node_runtime, "get_free_memory", comfy.model_management.get_free_memory)
+    node_runtime.create_default_runtime()
+
+    assert runtime.cache is CACHE
+    assert CACHE.limit() == min(CACHE.max_bytes, int((8 * 1024 ** 3 + CACHE.bytes) * CACHE.free_share))
+    assert seen == [torch.device("cpu")]

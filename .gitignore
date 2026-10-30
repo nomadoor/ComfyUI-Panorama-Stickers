@@ -30,8 +30,7 @@ Thumbs.db
 *.swo
 
 # Node.js
-node_modules/
-package-lock.json
+node_modules
 
 # Project-specific backups and local overrides
 web/*.bak
@@ -39,3 +38,7 @@ web/*.bak
 demo/config_local.py
 models/
 .git.backup-*/
+
+# Playwright
+test-results/
+playwright-report/

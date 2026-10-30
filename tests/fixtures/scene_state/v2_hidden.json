@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "timeline": {"fps": 24.0, "length": null},
+  "camera": {"aspect": 2.0, "visible": false, "rotation": {"value": {"yaw_deg": 30.0}}},
+  "scene": {"clip": {"start": 2, "in": 0, "duration": 6}, "visible": false},
+  "stickers": [
+    {"id": "hidden", "source": {"kind": "port"}, "visible": false},
+    {"id": "shown", "placement": "world", "source": {"kind": "file", "filename": "a.png"}, "clip": {"start": 0, "in": 0, "duration": 4}}
+  ],
+  "painting_visible": false
+}

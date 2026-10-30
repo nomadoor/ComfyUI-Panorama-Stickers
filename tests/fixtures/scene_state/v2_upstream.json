@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "id": "scene_a",
+  "timeline": {"fps": 24, "length": null},
+  "stickers": [
+    {"id": "sticker_2", "placement": "sky", "source": {"kind": "file", "filename": "a.png"}, "handoff_overrides": ["direction"]},
+    {"id": "sticker_1", "placement": "sky", "source": {"kind": "port"}, "handoff_overrides": ["opacity", "position", "size", "direction", "size", 3]},
+    {"id": "", "placement": "world", "source": {"kind": "file", "filename": "b.png"}}
+  ],
+  "next_sticker_id": 8,
+  "upstream": [
+    {
+      "layer": "up_a",
+      "fps": 30,
+      "deleted": ["sticker_3", "sticker_3", "", 5],
+      "stickers": [
+        {
+          "id": "sticker_1",
+          "placement": "sky",
+          "source": {"kind": "file", "filename": "ignored.png"},
+          "visible": false,
+          "locked": "yes",
+          "clip": {"start": 2, "duration": 10},
+          "crop": {"x0": 0.2, "x1": 0.1},
+          "direction": {"value": {"yaw_deg": 10}, "keyframes": [{"frame": 3, "value": {"yaw_deg": 20, "pitch_deg": 5}, "easing": "hold"}]},
+          "roll": 5,
+          "position": {"value": [1, 2, 3]},
+          "z_index": 4.6
+        },
+        {"id": "sticker_3", "placement": "sky", "visible": false},
+        {"id": "sticker_4", "placement": "world", "position": {"value": [0, 1, -2], "keyframes": [{"frame": 0, "value": [0, 1, -2], "handles": {"out": [0.5, 0, 0]}}]}, "z_index": 3, "opacity": {"value": 0.5}},
+        {"id": "sticker_4", "placement": "world", "scale": {"value": 2}},
+        {"id": "sticker_5", "placement": "moon", "visible": false},
+        {"id": "sticker_6", "placement": "sky"},
+        {"placement": "sky", "visible": false}
+      ],
+      "scene": {"visible": false, "clip": {"start": "x", "duration": 5}, "position": {"value": [1, 1, 1]}},
+      "painting_visible": "no"
+    },
+    {"layer": "up_b", "fps": 0, "painting_visible": false},
+    {"layer": "up_empty", "fps": 24, "stickers": [{"id": "x", "placement": "sky", "visible": "no"}], "scene": {}},
+    {"fps": 30, "deleted": ["sticker_1"]},
+    "not a record",
+    {"layer": "up_c", "fps": 2000, "deleted": ["sticker_9"]},
+    {"layer": "up_no_fps", "fps": "30", "deleted": ["sticker_1"]},
+    {"layer": "up_no_fps_2", "deleted": ["sticker_1"]},
+    {"layer": "up_b", "fps": 12, "scene": {"visible": true}}
+  ]
+}

@@ -1,6 +1,7 @@
 <script setup>
 import { ICON } from "../icons.js";
-import PanoIconButton from "./PanoIconButton.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
+import PanoViewUnavailable from "./shared/PanoViewUnavailable.vue";
 
 const props = defineProps({
   model: { type: Object, default: () => ({ fullscreen: false }) },
@@ -19,5 +20,6 @@ const props = defineProps({
       :attrs="{ 'data-action': 'toggle-fullscreen' }"
       @click="props.onAction?.({ type: 'toggle-fullscreen' })"
     />
+    <PanoViewUnavailable v-if="model.viewUnavailable" />
   </div>
 </template>

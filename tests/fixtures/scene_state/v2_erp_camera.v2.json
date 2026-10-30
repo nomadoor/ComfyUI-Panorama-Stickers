@@ -1,0 +1,128 @@
+{
+  "version": 2,
+  "id": null,
+  "timeline": {
+    "fps": 24.0,
+    "length": null
+  },
+  "camera": {
+    "aspect": 1.5,
+    "projection": "erp",
+    "erp_range": 360,
+    "visible": true,
+    "locked": false,
+    "position": {
+      "value": [
+        0.0,
+        1.6,
+        0.0
+      ],
+      "keyframes": [
+        {
+          "frame": 0,
+          "value": [
+            0.0,
+            1.6,
+            0.0
+          ],
+          "easing": "auto"
+        },
+        {
+          "frame": 36,
+          "value": [
+            0.0,
+            1.6,
+            -4.0
+          ],
+          "easing": "auto"
+        }
+      ]
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": [
+        {
+          "frame": 12,
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "easing": "hold"
+        },
+        {
+          "frame": 24,
+          "value": {
+            "yaw_deg": 180.0,
+            "pitch_deg": 10.0,
+            "roll_deg": 0.0
+          },
+          "easing": "auto"
+        }
+      ]
+    },
+    "fov": {
+      "value": 70.0,
+      "keyframes": []
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
+  "scene": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    },
+    "visible": true,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "scale": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
+  "stickers": [],
+  "next_sticker_id": 1,
+  "painting": {
+    "version": 1,
+    "groups": [],
+    "paint": {
+      "strokes": []
+    },
+    "mask": {
+      "strokes": []
+    },
+    "raster_objects": []
+  },
+  "painting_layer": null,
+  "painting_visible": true,
+  "upstream": [],
+  "background": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    }
+  }
+}

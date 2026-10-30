@@ -1,0 +1,70 @@
+{
+  "own": {
+    "version": 2,
+    "id": "scene_c",
+    "timeline": {"fps": 24},
+    "stickers": [{"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "own.png"}}],
+    "upstream": [
+      {
+        "layer": "scene_a",
+        "fps": 24,
+        "deleted": ["sticker_2"],
+        "stickers": [
+          {"id": "sticker_1", "placement": "sky", "z_index": 5, "crop": {"x0": 0.1, "x1": 0.9}, "clip": {"start": 6, "in": 2, "duration": 30},
+           "direction": {"value": {"yaw_deg": 45, "pitch_deg": 10}, "keyframes": [{"frame": 4, "value": {"yaw_deg": 60, "pitch_deg": 10}, "easing": "auto"}]}},
+          {"id": "sticker_3", "placement": "world", "visible": false}
+        ],
+        "scene": {"visible": false},
+        "painting_visible": false
+      },
+      {
+        "layer": "scene_b",
+        "fps": 24,
+        "stickers": [
+          {"id": "sticker_1", "placement": "world", "clip": {"start": 12, "in": 0, "duration": 24},
+           "position": {"value": [1, 0, -2], "keyframes": [{"frame": 0, "value": [1, 0, -2]}, {"frame": 12, "value": [2, 0, -2], "easing": "hold"}]}},
+          {"id": "sticker_2", "placement": "sky", "z_index": 0}
+        ],
+        "deleted": ["sticker_3"]
+      }
+    ]
+  },
+  "layers": [
+    {
+      "version": 2,
+      "id": "scene_b",
+      "timeline": {"fps": 24},
+      "stickers": [{"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "dup.png"}}]
+    },
+    {
+      "version": 2,
+      "id": "scene_a",
+      "timeline": {"fps": 24},
+      "scene": {"clip": {"start": 0, "in": 0, "duration": 48}},
+      "stickers": [
+        {"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "a.png"}, "z_index": 1,
+         "direction": {"value": {"yaw_deg": 10, "pitch_deg": 0}, "keyframes": [{"frame": 0, "value": {"yaw_deg": 10, "pitch_deg": 0}}, {"frame": 12, "value": {"yaw_deg": 40, "pitch_deg": 0}}]},
+         "roll": {"value": 15}},
+        {"id": "sticker_2", "placement": "sky", "source": {"kind": "file", "filename": "b.png"}, "z_index": 2},
+        {"id": "sticker_3", "placement": "world", "source": {"kind": "file", "filename": "c.png"}}
+      ],
+      "painting_visible": true
+    },
+    {
+      "version": 2,
+      "timeline": {"fps": 24},
+      "stickers": [{"id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "unnamed.png"}}]
+    },
+    {
+      "version": 2,
+      "id": "scene_b",
+      "timeline": {"fps": 30},
+      "stickers": [
+        {"id": "sticker_1", "placement": "world", "source": {"kind": "file", "filename": "d.png"}, "clip": {"start": 15, "in": 3, "duration": 60},
+         "rotation": {"value": {"yaw_deg": 0, "pitch_deg": 0, "roll_deg": 0}, "keyframes": [{"frame": 0, "value": {"yaw_deg": 0, "pitch_deg": 0, "roll_deg": 0}}, {"frame": 7, "value": {"yaw_deg": 30, "pitch_deg": 0, "roll_deg": 0}}]}},
+        {"id": "sticker_2", "placement": "sky", "source": {"kind": "port"}, "z_index": 3, "crop": {"y0": 0.2}},
+        {"id": "sticker_3", "placement": "sky", "source": {"kind": "file", "filename": "e.png"}}
+      ]
+    }
+  ]
+}

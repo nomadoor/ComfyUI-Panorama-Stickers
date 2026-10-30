@@ -3,6 +3,8 @@ import {
   attachCutoutPreview as runtimeAttachCutoutPreview,
 } from "./pano_preview_runtime.js";
 import { attachPreviewNodeRuntime } from "./pano_preview_previewnode.js";
+
+export { restoreNodeOutput } from "./pano_preview_runtime.js";
 import { patchNodeLifecycle } from "./pano_preview_hooks.js";
 
 function isNodeType(value) {

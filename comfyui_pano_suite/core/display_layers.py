@@ -7,6 +7,7 @@ import numpy as np
 
 from .cutout import sample_cutout_from_sampling_map
 from .display_list import alpha_composite_over_rgba, build_display_entries
+from .math import unit_float
 from .painting import alpha_composite_over_rgb, render_painting_to_erp
 from .stickers import compose_single_sticker_to_canvas_erp, render_stickers_to_rgba_erp
 
@@ -170,6 +171,7 @@ def compose_display_list_to_erp(
             item_start = time.perf_counter()
             action_group_id = str(entry.get("actionGroupId") or "").strip()
             layer = group_layers.get(action_group_id)
+            layer = None if layer is None else unit_float(layer)
             stats["stroke_groups"] += 1
             stats["stroke_group_ms"] += (time.perf_counter() - item_start) * 1000.0
         elif entry_type == "rasterObject":
@@ -240,6 +242,7 @@ def compose_display_list_to_overlay_rgba(
                 layer = render_group_layer_from_state(painting, action_group_id, width, height)
                 stats["group_fallback_renders"] += 1
             else:
+                layer = unit_float(layer)
                 stats["group_payload_hits"] += 1
             stats["stroke_groups"] += 1
             stats["stroke_group_ms"] += (time.perf_counter() - item_start) * 1000.0

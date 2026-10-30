@@ -1,8 +1,7 @@
-export function createHistoryController(limit = 80, initialState = null, serializeLimit = 8) {
+export function createHistoryController(limit = 80, initialState = null) {
   const entries = [];
   let index = -1;
   const maxEntries = Math.max(1, Number(limit || 80));
-  const maxSerializedEntries = Math.max(1, Number(serializeLimit || 8));
 
   function hydrate(raw) {
     entries.splice(0, entries.length);
@@ -33,14 +32,8 @@ export function createHistoryController(limit = 80, initialState = null, seriali
   hydrate(initialState);
 
   return {
-    beginActionGroup() {
-      return { active: true };
-    },
     commitActionGroup(snapshot) {
       pushSnapshot(String(snapshot || ""));
-    },
-    rollbackActionGroup() {
-      return null;
     },
     undo() {
       const next = index - 1;
@@ -60,18 +53,94 @@ export function createHistoryController(limit = 80, initialState = null, seriali
     get index() {
       return index;
     },
-    serialize() {
-      const windowEnd = entries.length;
-      const windowStart = Math.max(0, windowEnd - maxSerializedEntries);
-      const start = index >= 0 ? Math.max(0, Math.min(index, windowStart)) : windowStart;
-      const serializedEntries = entries.slice(start, start + maxSerializedEntries);
-      const serializedIndex = index < 0 ? -1 : Math.max(-1, Math.min(serializedEntries.length - 1, index - start));
-      return {
-        version: 1,
-        entries: serializedEntries,
-        index: serializedIndex,
-      };
+  };
+}
+
+// A string at least this long is kept once for all the steps that have it (raster objects' PNG data URLs,
+// embedded Sticker images), and a step has a reference to it instead.
+const SHARED_STRING_MIN_LENGTH = 1024;
+// A reference in a kept step. A string of the state that starts with it is kept as a shared string too, so
+// every string with this start in a kept step is a reference.
+const SHARED_STRING_REF = "pano-history-string:";
+
+// The step list of createHistoryController over values recorded as JSON, without the top-level fields `omit`
+// names. Undo, Redo and `entries` give each step as that JSON. A kept step has its large strings replaced by
+// references to a table that keeps each once, and drops it once no kept step has it.
+export function createSharedStringHistory(limit = 80, { omit = [] } = {}) {
+  const steps = createHistoryController(limit);
+  const idByString = new Map();
+  const stringById = new Map();
+  // The ids of the shared strings each kept step has.
+  const idsByStep = new Map();
+  let nextId = 0;
+
+  function encode(value, omitted) {
+    const ids = new Set();
+    const text = JSON.stringify(value, function share(key, item) {
+      if (this === value && omitted.includes(key)) return undefined;
+      if (typeof item !== "string" || (item.length < SHARED_STRING_MIN_LENGTH && !item.startsWith(SHARED_STRING_REF))) return item;
+      let id = idByString.get(item);
+      if (id === undefined) {
+        id = nextId;
+        nextId += 1;
+        idByString.set(item, id);
+        stringById.set(id, item);
+      }
+      ids.add(id);
+      return `${SHARED_STRING_REF}${id}`;
+    });
+    return { text: String(text ?? ""), ids };
+  }
+
+  function decode(text) {
+    if (text === null) return null;
+    return JSON.stringify(JSON.parse(text, (key, item) => (
+      typeof item === "string" && item.startsWith(SHARED_STRING_REF) ? stringById.get(Number(item.slice(SHARED_STRING_REF.length))) : item
+    )));
+  }
+
+  function commit({ text, ids }) {
+    steps.commitActionGroup(text);
+    idsByStep.set(text, ids);
+    const kept = new Set(steps.entries);
+    const live = new Set();
+    for (const [step, stepIds] of idsByStep) {
+      if (!kept.has(step)) idsByStep.delete(step);
+      else stepIds.forEach((id) => live.add(id));
+    }
+    for (const [id, item] of stringById) {
+      if (live.has(id)) continue;
+      stringById.delete(id);
+      idByString.delete(item);
+    }
+  }
+
+  return {
+    // Records `value` as a step, unless it is the same as the current one.
+    record(value) {
+      commit(encode(value, omit));
     },
-    hydrate,
+    // Records a step given as JSON, as it is.
+    commitActionGroup(snapshot) {
+      commit(encode(JSON.parse(snapshot), []));
+    },
+    undo: () => decode(steps.undo()),
+    redo: () => decode(steps.redo()),
+    get entries() {
+      return steps.entries.map(decode);
+    },
+    get length() {
+      return steps.entries.length;
+    },
+    get index() {
+      return steps.index;
+    },
+    // The length of the strings the history keeps: its steps and the shared strings.
+    get storedLength() {
+      let total = 0;
+      steps.entries.forEach((step) => { total += step.length; });
+      stringById.forEach((item) => { total += item.length; });
+      return total;
+    },
   };
 }

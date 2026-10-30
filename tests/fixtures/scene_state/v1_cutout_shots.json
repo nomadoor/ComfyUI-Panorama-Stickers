@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "stickers": [],
+  "shots": [
+    "frame_0",
+    null,
+    [1, 2],
+    {"id": "frame_1", "label": "Frame 1", "yaw_deg": 30, "pitch_deg": 10, "roll_deg": 0, "hFOV_deg": 60, "vFOV_deg": 60},
+    {"id": "frame_2", "label": "Frame 2", "yaw_deg": 0, "pitch_deg": 0, "roll_deg": 0, "hFOV_deg": 40, "vFOV_deg": 40}
+  ]
+}

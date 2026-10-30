@@ -1,3 +1,6 @@
+import { isVideoFile, outputSourceToken } from "./pano_preview_video.js";
+import { mediaCache } from "./pano_node_bridge.js";
+
 function comfyImageEntryToUrl(api, entry) {
   if (!entry || typeof entry !== "object") return "";
   const filename = String(entry.filename || "");
@@ -10,35 +13,10 @@ function comfyImageEntryToUrl(api, entry) {
   return typeof api?.apiURL === "function" ? api.apiURL(route) : route;
 }
 
-function getGraphLinkById(graph, linkId) {
-  if (!graph || linkId == null) return null;
-  const links = graph.links;
-  if (!links) return null;
-  if (links instanceof Map) return links.get(linkId) || links.get(Number(linkId)) || links.get(String(linkId)) || null;
-  return links[linkId] || links[String(linkId)] || null;
-}
-
 function getGraphNodeById(graph, id) {
   if (!graph || id == null) return null;
   if (typeof graph.getNodeById === "function") return graph.getNodeById(id);
   return graph._nodes_by_id?.[id] || graph._nodes_by_id?.[String(id)] || null;
-}
-
-function resolveOriginFromLinkInfo(linkInfo) {
-  if (!linkInfo) return { originId: null, originSlot: 0 };
-  if (typeof linkInfo === "object" && !Array.isArray(linkInfo)) {
-    return {
-      originId: linkInfo.origin_id ?? null,
-      originSlot: Number(linkInfo.origin_slot ?? 0),
-    };
-  }
-  if (Array.isArray(linkInfo)) {
-    return {
-      originId: linkInfo[1] ?? null,
-      originSlot: Number(linkInfo[2] ?? 0),
-    };
-  }
-  return { originId: null, originSlot: 0 };
 }
 
 function resolveInputOriginNode(node, inputIndex, fallbackOriginId = null) {
@@ -194,14 +172,12 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
     const inputIndex = inputs.findIndex((input) => String(input?.name || "") === wanted);
     if (inputIndex < 0) return { src: "", sourceType: "", inputName: wanted };
-    const input = inputs[inputIndex];
-    const linkId = input?.link;
-    if (linkId == null) return { src: "", sourceType: "", inputName: wanted };
-    const { originId, originSlot } = resolveOriginFromLinkInfo(getGraphLinkById(node?.graph, linkId));
-    if (originId == null) return { src: "", sourceType: "", inputName: wanted };
+    const link = node.graph ? node.getInputLink(inputIndex) : null;
+    if (link?.origin_id == null) return { src: "", sourceType: "", inputName: wanted };
+    const originId = link.origin_id;
     const originNode = resolveInputOriginNode(node, inputIndex, originId);
     if (!originNode) return { src: "", sourceType: "", inputName: wanted };
-    const preferredSlot = Number(originSlot || 0);
+    const preferredSlot = Number(link.origin_slot ?? 0);
 
     let appNodeImageUrls = [];
     try {
@@ -213,13 +189,16 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
       const ordered = [];
       if (preferredSlot >= 0 && preferredSlot < appNodeImageUrls.length) ordered.push(appNodeImageUrls[preferredSlot]);
       ordered.push(...appNodeImageUrls);
-      const srcCandidates = uniqueSources(ordered);
+      const srcCandidates = uniqueSources(ordered.filter((candidate) => !isVideoFile(candidate)));
       if (srcCandidates.length) {
         return { src: srcCandidates[0], srcCandidates, sourceType: "appNodeImageUrls", inputName: wanted };
       }
     }
 
-    const outputCandidates = uniqueSources(orderedOutputCandidates(output(originNode?.id ?? originId), preferredSlot));
+    const originOutput = output(originNode?.id ?? originId);
+    const outputCandidates = uniqueSources(orderedOutputCandidates(originOutput, preferredSlot)
+      .filter((candidate) => !isVideoFile(candidate)))
+      .map((src) => `${src}&pano_src=${outputSourceToken(originOutput)}`);
     if (outputCandidates.length) {
       return { src: outputCandidates[0], srcCandidates: outputCandidates, sourceType: "nodeOutputs", inputName: wanted };
     }
@@ -247,6 +226,21 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     }
 
     return { src: "", sourceType: "", inputName: wanted };
+  };
+
+  // The video file that the first linked of `inputNames` loads directly, as LoadVideo shows it in its
+  // output. Anything that processes the video in between has no such file and needs a run.
+  const linkedVideoFile = (node, inputNames = []) => {
+    const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
+    for (const name of inputNames) {
+      const inputIndex = inputs.findIndex((input) => String(input?.name || "") === name);
+      const link = inputIndex >= 0 && node.graph ? node.getInputLink(inputIndex) : null;
+      if (link?.origin_id == null) continue;
+      const payload = output(resolveInputOriginNode(node, inputIndex, link.origin_id)?.id ?? link.origin_id);
+      const entry = (Array.isArray(payload?.images) ? payload.images : []).find(isVideoFile);
+      return entry ? `${comfyImageEntryToUrl(api, entry)}&pano_src=${outputSourceToken(payload)}` : "";
+    }
+    return "";
   };
 
   const resolvePreferredExactLinkedSource = (node, inputNames = []) => {
@@ -283,10 +277,10 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     const candidates = uniqueSources(normalizedSources.flatMap((entry) => sourceCandidates(entry)));
     if (!candidates.length) return null;
 
-    if (!node.__panoLinkedInputImageCache) node.__panoLinkedInputImageCache = new Map();
+    const linkedImages = mediaCache(node).linkedImages;
     const key = String(cacheKey || orderedNames.join("|") || "image_exact");
     const sourceKey = normalizedSources.join("\n");
-    const cached = node.__panoLinkedInputImageCache.get(key);
+    const cached = linkedImages.get(key);
     if (cached && cached.srcRaw === sourceKey && cached.img) return cached.img;
 
     const Ctor = ImageCtor || globalThis.Image;
@@ -294,7 +288,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     const image = new Ctor();
     imageState?.markImageLoading?.(image, sourceKey);
     const cacheEntry = { srcRaw: sourceKey, resolvedSrc: "", img: image };
-    node.__panoLinkedInputImageCache.set(key, cacheEntry);
+    linkedImages.set(key, cacheEntry);
     let attempt = -1;
     const settle = (state) => {
       if (state === "ready") imageState?.markImageReady?.(image, sourceKey);
@@ -325,7 +319,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
 
   const clearFailedLinkedImages = (node) => {
     try {
-      node?.__panoLinkedInputImageCache?.forEach?.((entry, key, cache) => {
+      mediaCache(node)?.linkedImages.forEach((entry, key, cache) => {
         if (entry?.img && imageState?.isImageLoadFailed?.(entry.img)) cache.delete(key);
       });
     } catch {
@@ -364,12 +358,12 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
 
   const linkedValue = (node, inputName) => {
     const wanted = String(inputName || "");
-    const input = Array.isArray(node?.inputs)
-      ? node.inputs.find((entry) => String(entry?.name || "") === wanted)
-      : null;
-    if (input?.link != null) {
-      const { originId, originSlot } = resolveOriginFromLinkInfo(getGraphLinkById(node?.graph, input.link));
-      const payload = output(originId);
+    const inputIndex = Array.isArray(node?.inputs)
+      ? node.inputs.findIndex((entry) => String(entry?.name || "") === wanted)
+      : -1;
+    const link = inputIndex >= 0 && node.graph ? node.getInputLink(inputIndex) : null;
+    if (link) {
+      const payload = output(link.origin_id);
       const groups = [
         payload?.output,
         payload?.result,
@@ -380,7 +374,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
       ];
       for (const group of groups) {
         if (!Array.isArray(group)) continue;
-        const value = group[Number(originSlot || 0)];
+        const value = group[Number(link.origin_slot || 0)];
         if (typeof value === "string" && value.trim()) return value;
       }
     }
@@ -396,6 +390,7 @@ export function createComfyMediaAdapter({ app, api, ImageCtor, imageState } = {}
     externalStateHash,
     invalidateUiImage,
     linkedValue,
+    linkedVideoFile,
     loadPreferredExactLinkedImage,
     output,
     resolvePreferredExactLinkedSource,

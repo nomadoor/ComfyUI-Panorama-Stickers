@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   drawStickerSelectionBoundary,
   drawStickerSelectionHandles,
+  hitFrameAffordance,
   hitStickerSelectionAffordance,
   stickerSelectionAccent,
 } from "../web_src/pano_sticker_affordance.js";
@@ -81,3 +82,35 @@ test("shared sticker handles use compact circle sizes and a white rotation stem"
     width: 1.8,
   }]);
 });
+
+test("a frame's handles: edges and corners resize it unless it cannot be resized, which keeps rotate and move (Panorama Studio's 360-degree Camera)", () => {
+  const geometry = {
+    corners: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }, { x: 0, y: 60 }],
+    center: { x: 50, y: 30 },
+    edgeMidpoints: [{ edge: "top", x: 50, y: 0 }, { edge: "right", x: 100, y: 30 }, { edge: "bottom", x: 50, y: 60 }, { edge: "left", x: 0, y: 30 }],
+    rotateHandle: { x: 50, y: -30 },
+  };
+  const kind = (point, options) => hitFrameAffordance(geometry, point, options).kind;
+  assert.equal(kind({ x: 98, y: 30 }, { edges: true }), "scale_x");
+  assert.equal(kind({ x: 50, y: 2 }, { edges: true }), "scale_y");
+  assert.equal(kind({ x: 50, y: 2 }), "move", "the box of a multi-selection has no edge handles");
+  assert.equal(kind({ x: 2, y: 2 }, { edges: true }), "scale");
+  // Panorama Studio's 360-degree Camera: no size handles, the rotate handle and the move stay.
+  for (const point of [{ x: 98, y: 30 }, { x: 50, y: 2 }, { x: 2, y: 2 }]) assert.equal(kind(point, { edges: true, resize: false }), "move");
+  assert.equal(kind({ x: 50, y: -30 }, { edges: true, resize: false }), "rotate");
+  assert.equal(kind({ x: 50, y: 30 }, { edges: true, resize: false }), "move");
+  assert.deepEqual(hitFrameAffordance(geometry, { x: 300, y: 300 }, { emptyCursor: "grab" }), { kind: "none", cursor: "grab" });
+});
+
+test("a Sticker has no edge handles: its top and bottom edges do not scale it alone (a port Sticker's vFOV follows its media)", () => {
+  const geometry = {
+    visible: true,
+    center: { x: 50, y: 50 },
+    corners: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+    rotateHandle: { x: 50, y: -30 },
+  };
+  for (const point of [{ x: 50, y: 1 }, { x: 50, y: 99 }]) {
+    assert.deepEqual(hitStickerSelectionAffordance(geometry, point), { kind: "move", cursor: "default" });
+  }
+});
+

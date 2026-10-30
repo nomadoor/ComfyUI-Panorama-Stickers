@@ -1,3 +1,6 @@
+import { fileSource } from "./pano_editor_state.js";
+import { FILE_3D_EXTENSIONS, is3dFileName } from "./pano_scene_state.js";
+
 const IMAGE_SUFFIX_RE = /\.(png|jpe?g|webp|gif|bmp)$/i;
 
 export function isStickerImageFile(file) {
@@ -107,4 +110,68 @@ export async function uploadStickerAssetFile(file, { fetchApi } = {}) {
     storage: String(data?.type || "input"),
     name: String(file?.name || "sticker.png"),
   };
+}
+
+// --- 3D files (docs/editor-interaction.md "3D ファイルを置く流れ"). Only Panorama Studio's editor
+// (editor/sticker_import.js) takes them; the legacy nodes' image checks above stay images only.
+
+// The largest 3D file that uploads: Load3D's 100 MB (MAX_UPLOAD_SIZE_MB of ComfyUI_frontend's Load3dUtils.ts).
+export const FILE_3D_MAX_BYTES = 100 * 1024 * 1024;
+
+// What Add to World lets the file picker choose: images and the 3D files.
+export const WORLD_FILE_ACCEPT = ["image/*", ...FILE_3D_EXTENSIONS].join(",");
+
+// Whether a file is a 3D file, by its name's extension (is3dFileSource's table).
+export function isSticker3dFile(file) {
+  return !!file && is3dFileName(file.name);
+}
+
+// Whether a drag over Panorama Studio's editor may hold a file it takes: an image, or a 3D file. While
+// dragging the names are not readable, so an item of no type, application/octet-stream or a model/ type
+// counts too; the drop decides by the file.
+export function dragHasStudioFile(dataTransfer) {
+  if (!dataTransfer) return false;
+  if (dataTransfer.items?.length) {
+    return Array.from(dataTransfer.items).some((item) => {
+      const type = String(item?.type || "").trim().toLowerCase();
+      return item?.kind === "file"
+        && (!type || type.startsWith("image/") || type.startsWith("model/") || type === "application/octet-stream");
+    });
+  }
+  return Array.from(dataTransfer.files || []).some((file) => isStickerImageFile(file) || isSticker3dFile(file));
+}
+
+// Why a 3D file is refused before it uploads, or null when it is not too large.
+export function file3dTooLargeMessage(file) {
+  const size = Number(file?.size || 0);
+  if (size <= FILE_3D_MAX_BYTES) return null;
+  return `${file.name} is too large (${(size / 1024 / 1024).toFixed(1)} MB). The largest 3D file is ${FILE_3D_MAX_BYTES / 1024 / 1024} MB.`;
+}
+
+// Uploads a 3D file as Load3D does, to ComfyUI's input/3d (`image`, `subfolder` 3d, `type` input, no
+// `overwrite`: the server keeps a file of the same name and contents, else saves it under a new name), and
+// returns its file Source. Throws an Error that says why it did not upload.
+export async function uploadWorld3dFile(file, { fetchApi } = {}) {
+  if (!isSticker3dFile(file)) throw new TypeError("A 3D file is required.");
+  if (typeof fetchApi !== "function") throw new TypeError("fetchApi is required.");
+  const tooLarge = file3dTooLargeMessage(file);
+  if (tooLarge) throw new Error(tooLarge);
+  const body = new FormData();
+  body.append("image", file);
+  body.append("subfolder", "3d");
+  body.append("type", "input");
+  let response;
+  try {
+    response = await fetchApi("/upload/image", { method: "POST", body });
+  } catch (error) {
+    throw new Error(`Could not upload ${file.name} (${error?.message || error}).`);
+  }
+  if (!response || response.status !== 200) {
+    const status = response ? `${response.status}${response.statusText ? ` ${response.statusText}` : ""}` : "no response";
+    throw new Error(`Could not upload ${file.name} (${status}).`);
+  }
+  const data = await response.json();
+  const filename = String(data?.name || "").trim();
+  if (!filename) throw new Error(`Could not upload ${file.name} (the server returned no file name).`);
+  return fileSource({ filename, subfolder: String(data?.subfolder ?? "3d"), storage: String(data?.type || "input") });
 }

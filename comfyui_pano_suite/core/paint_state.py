@@ -30,11 +30,27 @@ def _finite_float(value):
 
 
 def _finite_int(value):
-    try:
-        out = int(value)
-    except Exception:
-        return None
-    return out
+    """An integer as JS reads the number (a double, truncated): one too large for a double is an infinity there, so
+    it is invalid (None) here too, rather than an exact integer that a later float() cannot hold."""
+    out = _finite_float(value)
+    return None if out is None else int(out)
+
+
+def _z_index(item: dict):
+    """The first finite JSON number (not a boolean, not text) of `z_index`, then `zIndex`, or None."""
+    for key in ("z_index", "zIndex"):
+        value = item.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out = _finite_float(value)
+            if out is not None:
+                return out
+    return None
+
+
+def _js_round(value: float) -> int:
+    """Math.round: the nearest integer, halves toward +infinity (-2.5 is -2), unlike Python's round()."""
+    out = math.floor(value)
+    return int(out + 1 if value - out >= 0.5 else out)
 
 
 def _normalize_target_space(raw):
@@ -249,12 +265,12 @@ def _normalize_groups(raw_groups):
         if not action_group_id or action_group_id in seen:
             continue
         seen.add(action_group_id)
-        z_index = _finite_int(item.get("z_index", item.get("zIndex", len(out))))
+        z_index = _z_index(item)
         out.append({
             "id": str(item.get("id") or action_group_id),
             "type": "strokeGroup",
             "actionGroupId": action_group_id,
-            "z_index": max(0, 0 if z_index is None else int(z_index)),
+            "z_index": max(0, len(out) if z_index is None else _js_round(z_index)),
         })
     return out
 
@@ -307,7 +323,7 @@ def _normalize_raster_object(item, fallback_z):
     bbox = _normalize_raster_bbox(item.get("bbox"))
     if bbox is None:
         return None
-    z_raw = _finite_float(item.get("z_index", item.get("zIndex", fallback_z)))
+    z_raw = _z_index(item)
     z_index = max(0.0, float(z_raw)) if z_raw is not None else float(fallback_z)
     return {
         "id": obj_id,
@@ -339,8 +355,6 @@ def normalize_painting_state(raw) -> dict:
     out = empty_painting_state()
     if not isinstance(raw, dict):
         return out
-    version = _finite_int(raw.get("version"))
-    out["version"] = 1 if version is None else int(version)
     out["groups"] = _normalize_groups(raw.get("groups"))
     out["paint"] = _normalize_layer(raw.get("paint"), "paint")
     out["mask"] = _normalize_layer(raw.get("mask"), "mask")

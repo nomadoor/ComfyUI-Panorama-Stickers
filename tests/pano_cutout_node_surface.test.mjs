@@ -17,7 +17,8 @@ import {
   updateCutoutRollGesture,
 } from "../web_src/pano_cutout_node_surface.js";
 import { cameraBasis, yawPitchToDir } from "../web_src/pano_camera_math.js";
-import { screenPointToWorldDirection } from "../web_src/pano_sticker_geometry.js";
+import { viewProjection } from "../web_src/pano_editor_view.js";
+import { previewNodeCamera } from "../web_src/pano_preview_view.js";
 
 function stateWithShots(shots, selectedId = null) {
   return {
@@ -452,10 +453,8 @@ test("adding the first frame preserves the panorama center and on-screen scale",
   assert.ok(Math.abs(action.frameFovDeg - 64.066012133414) < 1e-9);
 
   const frame = fitCutoutNodeFrame(viewport, 1);
-  const priorDirection = screenPointToWorldDirection({
-    x: frame.x + frame.w * 0.5,
-    y: frame.y + frame.h * 0.5,
-  }, view, viewport);
+  const priorDirection = viewProjection(previewNodeCamera(view, viewport.width, viewport.height), viewport.width, viewport.height)
+    .ray(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5);
   const frameDirection = yawPitchToDir(action.yawDeg, action.pitchDeg);
   assert.ok(Math.hypot(
     priorDirection.x - frameDirection.x,
@@ -513,4 +512,16 @@ test("first-frame camera continuity survives crossing a panorama pole", () => {
   assert.ok(Math.abs(restoredView.yaw - view.yaw) < 1e-9);
   assert.ok(Math.abs(restoredView.pitch - view.pitch) < 1e-9);
   assert.ok(Math.abs(restoredView.fov - view.fov) < 1e-9);
+});
+
+test("the node surface's wheel widens a frame up to 179 degrees, the last step stopping there", () => {
+  let state = stateWithShots([{ id: "frame", yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 90, vFOV_deg: 90 }], "frame");
+  let steps = 0;
+  for (let result = applyCutoutNodeSurfaceAction(state, { type: "step-fov", direction: 1 }); result.changed && steps < 100;
+    result = applyCutoutNodeSurfaceAction(state, { type: "step-fov", direction: 1 })) {
+    state = result.state;
+    steps += 1;
+  }
+  assert.ok(Math.abs(state.shots[0].hFOV_deg - 179) < 1e-9, `stopped at ${state.shots[0].hFOV_deg}`);
+  assert.ok(Math.abs(state.shots[0].vFOV_deg - 179) < 1e-9);
 });

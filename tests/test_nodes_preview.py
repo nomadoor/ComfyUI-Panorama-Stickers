@@ -8,6 +8,8 @@ from types import ModuleType, SimpleNamespace
 
 import torch
 
+from editor_source import editor_source
+
 
 _MISSING = object()
 
@@ -57,7 +59,15 @@ class TestNodesPreview(unittest.TestCase):
         class _ComfyNode:
             pass
 
-        io_module = SimpleNamespace(
+        class _IoModule(SimpleNamespace):
+            # Port types these tests do not look at, such as Panorama Studio's media ports.
+            def __getattr__(self, name):
+                return _PortFactory(name)
+
+            def Custom(self, io_type):
+                return _PortFactory(io_type)
+
+        io_module = _IoModule(
             ComfyNode=_ComfyNode,
             Schema=_Schema,
             NodeOutput=_NodeOutput,
@@ -73,6 +83,10 @@ class TestNodesPreview(unittest.TestCase):
         comfy_api_module = ModuleType("comfy_api")
         comfy_api_latest_module = ModuleType("comfy_api.latest")
         comfy_api_latest_module.io = io_module
+        comfy_api_latest_module.ComfyExtension = type("ComfyExtension", (), {})
+        comfy_api_latest_module.Input = SimpleNamespace(Video=type("VideoInput", (), {}))
+        comfy_api_latest_module.InputImpl = SimpleNamespace(VideoFromFile=type("VideoFromFile", (), {}))
+        comfy_api_latest_module.Types = SimpleNamespace(MESH=type("MESH", (), {}), SPLAT=type("SPLAT", (), {}), File3D=type("File3D", (), {}))
 
         self.mock_nodes = MagicMock()
         self.mock_preview_image = MagicMock()
@@ -283,11 +297,12 @@ class TestNodesPreview(unittest.TestCase):
         assert "attachPreview(node, {" in instance_block
 
     def test_editor_lifecycle_is_delegated_to_the_extension_boundary(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
+        main_js = self._web_source_path("main.js").read_text(encoding="utf-8")
         assert 'from "./pano_editor_extension.js";' in editor_js
-        assert "createPanoEditorExtension" in editor_js
         assert "queuePendingStickerOperation" in editor_js
-        assert "app.registerExtension(createPanoEditorExtension({" in editor_js
+        assert "createPanoEditorExtension({" in main_js
+        assert "app.registerExtension(extension);" in main_js
         assert "function installEditorButton" not in editor_js
         assert "function installStandalonePreviewInstance" not in editor_js
 
@@ -302,49 +317,29 @@ class TestNodesPreview(unittest.TestCase):
         assert candidate_block.index("selfOutput?.ui?.pano_input_images") < candidate_block.index("outputs?.ui?.pano_input_images")
         assert candidate_block.index("selfOutput?.pano_input_images") < candidate_block.index("outputs?.pano_input_images")
 
-    def test_webgl_preview_renderer_is_present(self):
-        gl_renderer_js = self._web_source_path("pano_gl_renderer.js").read_text(encoding="utf-8")
-        gl_scene_js = self._web_source_path("pano_gl_scene.js").read_text(encoding="utf-8")
-        render_core_js = self._web_source_path("pano_render_core.js").read_text(encoding="utf-8")
-        assert "export function createPanoGlRenderer(" in gl_renderer_js
-        assert "export function createPanoramaRenderCore" in render_core_js
-        assert "export function buildStickerSceneFromState" in gl_scene_js
-
-    def test_modal_runtime_and_preview_use_shared_scene_builder(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+    def test_editor_runtime_and_preview_draw_with_the_three_js_view(self):
+        editor_js = editor_source()
         runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
         preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'from "./pano_gl_scene.js"' in editor_js
-        assert 'from "./pano_gl_scene.js"' in runtime_js
-        assert 'from "./pano_gl_scene.js"' in preview_node_js
-        assert "buildStickerSceneFromState" in editor_js
-        assert "buildStickerSceneFromState" in runtime_js
-        assert "buildStickerSceneFromState" in preview_node_js
-        assert "buildCutoutViewParamsFromShot" in editor_js
-        assert "buildCutoutViewParamsFromShot" in runtime_js
-
-    def test_modal_runtime_and_preview_use_render_core_not_legacy_viewport(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
-        runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'from "./pano_gl_viewport.js"' not in editor_js
-        assert 'from "./pano_gl_viewport.js"' not in runtime_js
-        assert 'from "./pano_gl_viewport.js"' not in preview_node_js
-        assert "createPanoramaRenderCore" in editor_js
-        assert "createPanoramaRenderCore" in runtime_js
-        assert "createPanoramaRenderCore" in preview_node_js
-        assert "renderToTarget(" in editor_js
-        assert "renderToTarget(" in runtime_js
-        assert "renderToTarget(" in preview_node_js
+        assert 'from "./pano_editor_view.js"' in editor_js
+        assert 'from "./pano_preview_view.js"' in runtime_js
+        assert 'from "./pano_preview_view.js"' in preview_node_js
+        for source in (editor_js, runtime_js, preview_node_js):
+            assert "createPanoramaRenderCore" not in source
+            assert "renderToTarget(" not in source
+            assert "pano_gl_scene" not in source
+        for name in ("pano_gl_renderer.js", "pano_gl_scene.js", "pano_render_core.js"):
+            assert not self._web_source_path(name).exists()
 
     def test_preview_node_grid_is_fallback_only(self):
         preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
         assert "if (!isRenderableMediaReady(img) || width <= 1 || height <= 1) {" in preview_js
-        assert "if (!drawn) {" in preview_js
-        assert preview_js.count("drawGrid(ctx, width, height);") == 2
+        assert "else drawGrid(ctx, width, height);" in preview_js
+        # No media, a failed view (its message is on the node surface), and before the view loads.
+        assert preview_js.count("drawGrid(ctx, width, height);") == 3
 
     def test_editor_debug_probe_is_removed_from_normal_path(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         assert "function panoEditorDebug(" not in editor_js
 
     def test_preview_runtime_wheel_and_scheduler_guards(self):
@@ -382,7 +377,7 @@ class TestNodesPreview(unittest.TestCase):
         from comfyui_pano_suite.node_runtime import NodeRuntime
 
         repo_root = Path(__file__).resolve().parent.parent
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         nodes_py = (repo_root / "comfyui_pano_suite" / "nodes.py").read_text(encoding="utf-8")
         assert 'pano_sticker_input_images' in editor_js
         assert 'getLinkedInputImage(node, ["sticker_image"])' not in editor_js
@@ -394,7 +389,7 @@ class TestNodesPreview(unittest.TestCase):
         assert 'sticker_state_json' in nodes_py
 
     def test_paint_rebuild_ui_scaffold_strings(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         css = self._web_runtime_path("pano_editor.css").read_text(encoding="utf-8")
         assert 'data-tool-rail' in editor_js
         assert 'data-tool-mode' in editor_js
@@ -406,7 +401,7 @@ class TestNodesPreview(unittest.TestCase):
         assert 'Clear All Paint Data' in editor_js
 
     def test_no_new_active_preview_dependency_on_editor_core(self):
-        editor_js = self._web_source_path("pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
         preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
         assert 'from "./pano_editor_core.js"' not in editor_js

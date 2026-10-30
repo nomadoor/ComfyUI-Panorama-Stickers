@@ -1,24 +1,27 @@
 """ComfyUI runtime adaptation for panorama nodes.
 
 The rendering nodes depend on this module for host progress, preview UI, video
-payloads, and process-local caches.  Rendering and coordinate math stay out of
-this boundary.
+payloads, the process-local cache (`core/cache.py`, whose free RAM this module
+reads from ComfyUI), and the temp files (`core/temp_files.py`, whose current run it
+reads from ComfyUI).  Rendering and coordinate math stay out of this boundary.
 """
 
 from __future__ import annotations
 
 import logging
-from collections import OrderedDict
 from pathlib import Path
 import threading
 import weakref
 
 import numpy as np
+import torch
 
+from .core.cache import CACHE
+from .core.temp_files import TEMP_FILES
 from .core.video import encode_frames_to_mp4, make_video_ui_payload
 
 try:
-    from comfy_api.v0_0_2 import ComfyAPISync
+    from comfy_api.latest import ComfyAPISync
 except Exception:
     ComfyAPISync = None
 
@@ -26,6 +29,16 @@ try:
     from comfy.utils import ProgressBar as ComfyProgressBar
 except Exception:
     ComfyProgressBar = None
+
+try:
+    from comfy.model_management import get_free_memory, throw_exception_if_processing_interrupted
+except Exception:
+    get_free_memory = throw_exception_if_processing_interrupted = None
+
+try:
+    from comfy_execution.utils import get_executing_context
+except Exception:
+    get_executing_context = None
 
 
 PREVIEW_UI_KEYS = {
@@ -51,6 +64,9 @@ PREVIEW_UI_KEYS = {
     },
     "stickers_input": {
         "image": "pano_sticker_input_images",
+        "video": "pano_sticker_input_videos",
+        "frames": "pano_sticker_input_frames",
+        "meta": "pano_sticker_input_video_meta",
     },
 }
 
@@ -92,52 +108,6 @@ class _ObjectIdentityRegistry:
 _OBJECT_IDENTITIES = _ObjectIdentityRegistry()
 
 
-class ManualCacheStore:
-    """Thread-safe LRU storage with the existing node-specific limits."""
-
-    def __init__(
-        self,
-        *,
-        stickers_bg_limit: int = 1,
-        video_limit: int = 8,
-    ):
-        self._stickers_bg = OrderedDict()
-        self._video = OrderedDict()
-        self._lock = threading.Lock()
-        self._stickers_bg_limit = max(1, int(stickers_bg_limit))
-        self._video_limit = int(video_limit)
-
-    def _cache_for(self, namespace: str):
-        if namespace == "stickers_bg":
-            return self._stickers_bg
-        if namespace == "video":
-            return self._video
-        raise ValueError(f"Unknown cache namespace: {namespace}")
-
-    def get(self, namespace: str, key: tuple):
-        with self._lock:
-            cache = self._cache_for(namespace)
-            value = cache.get(key)
-            if value is None:
-                return None
-            cache.move_to_end(key)
-            return value
-
-    def put(self, namespace: str, key: tuple, value):
-        with self._lock:
-            cache = self._cache_for(namespace)
-            cache[key] = value
-            cache.move_to_end(key)
-            limit = self._stickers_bg_limit if namespace == "stickers_bg" else self._video_limit
-            while len(cache) > limit:
-                _old_key, old_value = cache.popitem(last=False)
-                if namespace == "video":
-                    try:
-                        if isinstance(old_value, Path):
-                            old_value.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-
 class NodeProgress:
     def __init__(
         self,
@@ -147,6 +117,7 @@ class NodeProgress:
         *,
         progress_bar_factory=None,
         api_sync=None,
+        interrupt_check=None,
         logger=None,
     ):
         self.node_id = str(node_id) if node_id is not None else None
@@ -155,10 +126,14 @@ class NodeProgress:
         self.label = str(label or "Node")
         self._progress_bar = progress_bar_factory(self.total) if progress_bar_factory is not None else None
         self._api_sync = api_sync
+        self._interrupt_check = interrupt_check
         self._logger = logger or logging.getLogger(__name__)
         self._last_stage = None
 
     def set(self, value: float):
+        # Each step of a long loop reports here, so Cancel stops it at the next step.
+        if self._interrupt_check is not None:
+            self._interrupt_check()
         self.value = max(0.0, min(self.total, float(value)))
         if self._progress_bar is not None:
             try:
@@ -203,6 +178,7 @@ class NodeRuntime:
         *,
         progress_bar_factory=None,
         api_sync=None,
+        interrupt_check=None,
         preview_saver=None,
         encode_video=None,
         make_video_payload=None,
@@ -211,10 +187,11 @@ class NodeRuntime:
     ):
         self._progress_bar_factory = progress_bar_factory
         self._api_sync = api_sync
+        self._interrupt_check = interrupt_check
         self._preview_saver = preview_saver
         self._encode_video = encode_video
         self._make_video_payload = make_video_payload
-        self.cache = cache_store or ManualCacheStore()
+        self.cache = cache_store or CACHE
         self._logger = logger or logging.getLogger(__name__)
 
     def progress(self, node_id: str | None, total: float, label: str = "Node") -> NodeProgress:
@@ -224,6 +201,7 @@ class NodeRuntime:
             label,
             progress_bar_factory=self._progress_bar_factory,
             api_sync=self._api_sync,
+            interrupt_check=self._interrupt_check,
             logger=self._logger,
         )
 
@@ -263,6 +241,10 @@ class NodeRuntime:
             return audio.get("waveform") is not None and int(audio.get("sample_rate") or 0) > 0
         except Exception:
             return False
+
+    @staticmethod
+    def object_identity(value) -> tuple:
+        return _OBJECT_IDENTITIES.token(value)
 
     @staticmethod
     def tensor_identity(image) -> tuple | None:
@@ -439,6 +421,11 @@ class NodeRuntime:
 
 
 def create_default_runtime(*, logger=None) -> NodeRuntime:
+    if get_free_memory is not None:
+        CACHE.free_memory = lambda: get_free_memory(torch.device("cpu"))
+    if get_executing_context is not None:
+        # The temp files a run wrote or showed are kept during that run.
+        TEMP_FILES.current_run = lambda: getattr(get_executing_context(), "prompt_id", None)
     try:
         import nodes as comfy_nodes
     except ImportError:
@@ -452,6 +439,7 @@ def create_default_runtime(*, logger=None) -> NodeRuntime:
     return NodeRuntime(
         progress_bar_factory=ComfyProgressBar,
         api_sync=ComfyAPISync() if ComfyAPISync is not None else None,
+        interrupt_check=throw_exception_if_processing_interrupted,
         preview_saver=save_preview if comfy_nodes is not None else None,
         encode_video=encode_frames_to_mp4,
         make_video_payload=make_video_ui_payload,

@@ -26,6 +26,7 @@ FLUX.2 Kleinのパノラマworkflowを中心に開発しており、4B・9Bの�
 ## インストール
 
 - ComfyUI Managerからインストールしてください。
+- ComfyUI v0.35.0 以降が必要です。
 
 ## デモ
 
@@ -46,6 +47,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 ### ノード上パノラマ操作
 
 `Panorama Stickers`、`Panorama Cutout`、`Panorama Preview`には、Full Editorを開かずに一般的な操作を完結できる軽量なノード上UIがあります。Legacy canvasとNode 2.0の両方に対応しています。
+
+### Panorama Studioの動画出力
+
+`Panorama Studio`のIMAGE／MASK出力（`first_frame`、`first_frame_mask`）は最初のフレームだけです。全フレームとfps・音声は`video`（VIDEO）に入り、保存するときに1フレームずつ描画されます。全フレームをIMAGEで使うときは、`video`をGet Video Componentsにつないでください。IMAGEバッチにfpsや音声を付けてからつなぐときは、Create Videoを通してください。Cameraで撮った結果を`sticker_state`と一緒に別の`Panorama Studio`の`sticker`へつなぐときは、秒の時刻で位置を合わせます。VIDEOは実時間を保ったまま使い、IMAGEバッチは撮ったStudioと同じfpsのときだけ使ってください（違うときはCreate Videoでそのfpsを付けてからつないでください）。
 
 ## Workflow
 

@@ -1,0 +1,154 @@
+{
+  "about": "The ground height (docs/scene-state-v2.md, `ground`, ADR 0046). Each case: `state` is read with load_scene_state / loadSceneState, `stored` is its `ground` field after loading (null: missing, it is left out), and `ground` is what scene_ground / sceneGround reads with the `upstream` layer states (from the farthest upstream), each loaded first. `default` is GROUND_DEFAULT.",
+  "default": -1.6,
+  "cases": [
+    {
+      "name": "missing",
+      "state": {
+        "version": 2
+      },
+      "stored": null,
+      "upstream": [],
+      "ground": -1.6
+    },
+    {
+      "name": "own",
+      "state": {
+        "version": 2,
+        "ground": -2.5
+      },
+      "stored": -2.5,
+      "upstream": [],
+      "ground": -2.5
+    },
+    {
+      "name": "zero",
+      "state": {
+        "version": 2,
+        "ground": 0
+      },
+      "stored": 0,
+      "upstream": [],
+      "ground": 0
+    },
+    {
+      "name": "text",
+      "state": {
+        "version": 2,
+        "ground": "-1"
+      },
+      "stored": null,
+      "upstream": [],
+      "ground": -1.6
+    },
+    {
+      "name": "true",
+      "state": {
+        "version": 2,
+        "ground": true
+      },
+      "stored": null,
+      "upstream": [],
+      "ground": -1.6
+    },
+    {
+      "name": "null",
+      "state": {
+        "version": 2,
+        "ground": null
+      },
+      "stored": null,
+      "upstream": [],
+      "ground": -1.6
+    },
+    {
+      "name": "an array",
+      "state": {
+        "version": 2,
+        "ground": [
+          -1
+        ]
+      },
+      "stored": null,
+      "upstream": [],
+      "ground": -1.6
+    },
+    {
+      "name": "v1",
+      "state": {
+        "version": 1,
+        "ground": -3
+      },
+      "stored": null,
+      "upstream": [],
+      "ground": -1.6
+    },
+    {
+      "name": "inherited",
+      "state": {
+        "version": 2
+      },
+      "stored": null,
+      "upstream": [
+        {
+          "version": 2,
+          "ground": -3
+        }
+      ],
+      "ground": -3
+    },
+    {
+      "name": "the most downstream that has one",
+      "state": {
+        "version": 2
+      },
+      "stored": null,
+      "upstream": [
+        {
+          "version": 2,
+          "ground": -3
+        },
+        {
+          "version": 2,
+          "ground": -0.5
+        },
+        {
+          "version": 2
+        }
+      ],
+      "ground": -0.5
+    },
+    {
+      "name": "no upstream layer has one",
+      "state": {
+        "version": 2
+      },
+      "stored": null,
+      "upstream": [
+        {
+          "version": 2
+        },
+        {
+          "version": 2,
+          "ground": "x"
+        }
+      ],
+      "ground": -1.6
+    },
+    {
+      "name": "own over upstream",
+      "state": {
+        "version": 2,
+        "ground": -2
+      },
+      "stored": -2,
+      "upstream": [
+        {
+          "version": 2,
+          "ground": -0.5
+        }
+      ],
+      "ground": -2
+    }
+  ]
+}

@@ -1,17 +1,17 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { createApp, reactive } from "vue";
-import { cameraBasis, DEG2RAD, clamp, wrapYaw } from "./pano_camera_math.js";
+import { clamp, wrapYaw } from "./pano_camera_math.js";
+import { createPanoCanvas, createPanoVideo } from "./pano_diagnostics.js";
 import { createPanoInteractionController } from "./pano_interaction_controller.js";
+import { surfaceShown } from "./pano_node_playback.js";
 import {
   createPreviewFullscreenController,
   measurePreviewCanvasSize,
   shouldTogglePreviewPlaybackFromKey,
 } from "./pano_preview_node_surface.js";
 import { bindWheelCaptureRoot } from "./pano_wheel.js";
-import { createPanoramaRenderCore } from "./pano_render_core.js";
-import { buildStickerRenderDescriptor } from "./pano_render_descriptors.js";
-import { buildPreviewNodeViewParams, buildStickerSceneFromState } from "./pano_gl_scene.js";
+import { VIEW_UNAVAILABLE_MESSAGE, acquirePreviewView, previewNodeCamera } from "./pano_preview_view.js";
 import { installPanoSuiteStylesheet } from "./pano_styles.js";
 import {
   assignFreshDomWidgetRenderIdentity,
@@ -19,11 +19,8 @@ import {
   trackDomWidgetRemoval,
 } from "./pano_dom_widget_lifecycle.js";
 import PanoPreviewNodeSurface from "./components/PanoPreviewNodeSurface.vue";
-import {
-  drawErpBackground,
-  STANDALONE_MESH_LOW,
-  localPosFromEvent,
-} from "./pano_preview_runtime.js";
+import { localPosFromEvent } from "./pano_preview_runtime.js";
+import { peekPreviewNode, previewNode } from "./pano_node_bridge.js";
 
 const PREVIEW_MIN_HEIGHT = 140;
 const PREVIEW_MIN_WIDTH = 180;
@@ -158,17 +155,13 @@ function getSelfVideoUrl(node) {
 
 function getLinkedImageUrl(node, imageInputName = "erp_image") {
   const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
-  let linkId = null;
-
-  const preferred = inputs.find((input) => String(input?.name || "") === String(imageInputName));
-  if (preferred?.link != null) linkId = preferred.link;
-  if (linkId == null) {
-    const anyImg = inputs.find((input) => String(input?.type || "").toUpperCase() === "IMAGE" && input?.link != null);
-    if (anyImg?.link != null) linkId = anyImg.link;
+  let slot = inputs.findIndex((input) => String(input?.name || "") === String(imageInputName));
+  if (slot < 0 || !node.isInputConnected(slot)) {
+    slot = inputs.findIndex((input, index) => String(input?.type || "").toUpperCase() === "IMAGE" && node.isInputConnected(index));
   }
-  if (linkId == null) return "";
+  if (slot < 0) return "";
 
-  const link = node?.graph?.links?.[linkId] || app?.graph?.links?.[linkId];
+  const link = node.getInputLink(slot);
   if (!link) return "";
   const originId = Number(link.origin_id);
   if (!Number.isFinite(originId)) return "";
@@ -229,7 +222,7 @@ function drawGrid(ctx, width, height) {
   ctx.stroke();
 }
 
-function drawPreview(node, ctx, width, height, view, img) {
+function drawPreview(node, ctx, width, height, view, img, previewView) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#070707";
   ctx.fillRect(0, 0, width, height);
@@ -238,40 +231,22 @@ function drawPreview(node, ctx, width, height, view, img) {
     drawGrid(ctx, width, height);
     return;
   }
-  const basis = cameraBasis(Number(view.yaw || 0), Number(view.pitch || 0), 0);
-  const tanHalfY = Math.tan((Number(view.fov || 100) * DEG2RAD) * 0.5);
-  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
-  if (!node.__panoStandaloneCore) node.__panoStandaloneCore = createPanoramaRenderCore();
-  const mediaRevision = getRenderableMediaRevisionToken(img);
-  const descriptor = buildStickerRenderDescriptor({
-    stateRevision: [
-      "standalone_preview_scene",
-      mediaRevision,
-      coverageDeg,
-    ].join("|"),
-    backgroundSource: img,
-    backgroundRevision: mediaRevision,
-    coverageDeg,
-    scene: buildStickerSceneFromState(null, {}),
-    textures: [],
-    backgroundOpacity: 1,
-    showMaskTint: false,
-  });
-  const drawn = !!node.__panoStandaloneCore.syncState(descriptor)
-    && (() => {
-      const surface = node.__panoStandaloneCore.renderToTarget(
-        "preview_node",
-        buildPreviewNodeViewParams(view, coverageDeg),
-        { width, height, dpr: window.devicePixelRatio || 1 },
-      );
-      if (!surface) return false;
-      ctx.drawImage(surface, 0, 0, width, height);
-      return true;
-    })();
-  if (!drawn) {
-    drawErpBackground(node, ctx, { x: 0, y: 0, w: width, h: height }, basis, tanHalfY, img, STANDALONE_MESH_LOW);
+  // The node surface shows a failed view; the grid stays behind it.
+  if (previewView.failed) {
     drawGrid(ctx, width, height);
+    return;
   }
+  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "background_range" || w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
+  const surface = previewView.render({
+    width,
+    height,
+    camera: previewNodeCamera(view, width, height),
+    background: { media: img, revision: getRenderableMediaRevisionToken(img), coverage: coverageDeg },
+    layers: [],
+  });
+  // The grid stays until the view has loaded.
+  if (surface) ctx.drawImage(surface.canvas, surface.x, surface.y, surface.width, surface.height, 0, 0, width, height);
+  else drawGrid(ctx, width, height);
 }
 
 function isPointInRect(x, y, rect) {
@@ -303,8 +278,8 @@ class PreviewNodeRuntime {
     this.img = null;
     this.imgSrc = "";
     this.mediaCleanup = null;
-    this.videoPaused = false;
     this.view = { yaw: 0, pitch: 0, fov: 100 };
+    this.previewView = acquirePreviewView(() => this.requestDraw());
     this.controller = createPanoInteractionController({
       getView: () => this.view,
       setView: (next) => {
@@ -370,7 +345,7 @@ class PreviewNodeRuntime {
       self.teardown();
       return out;
     };
-    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "coverage") || null;
+    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "background_range" || widget?.name === "coverage") || null;
     if (coverageWidget) {
       this.orig.coverageWidgetCallback = typeof coverageWidget.callback === "function"
         ? coverageWidget.callback.bind(coverageWidget)
@@ -411,6 +386,8 @@ class PreviewNodeRuntime {
     try {
       this.root = document.createElement("div");
       this.root.className = "pano-node-preview-dom pano-node-preview--preview";
+      // The frame's radius, border and background come from .pano-node-frame (web/pano_editor.css).
+      this.root.classList.add("pano-node-frame");
       this.root.setAttribute("data-capture-wheel", "true");
       this.root.setAttribute("tabindex", "0");
       this.root.style.cssText = [
@@ -420,12 +397,9 @@ class PreviewNodeRuntime {
         "position:relative",
         "display:block",
         "overflow:hidden",
-        "background:#070707",
-        "border-radius:8px",
-        "border:1px solid rgba(63,63,70,1)",
       ].join(";");
 
-      this.canvas = document.createElement("canvas");
+      this.canvas = createPanoCanvas({ label: "preview-node.surface" });
       this.canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;";
       this.root.appendChild(this.canvas);
 
@@ -478,7 +452,7 @@ class PreviewNodeRuntime {
       this.surfaceHost = document.createElement("div");
       this.surfaceHost.className = "pano-preview-node-surface-host";
       this.root.appendChild(this.surfaceHost);
-      this.surfaceModel = reactive({ fullscreen: false });
+      this.surfaceModel = reactive({ fullscreen: false, viewUnavailable: false });
       this.fullscreenController = createPreviewFullscreenController({
         root: this.root,
         documentRef: document,
@@ -495,7 +469,7 @@ class PreviewNodeRuntime {
         },
       });
       this.surfaceApp.mount(this.surfaceHost);
-      this.node.__panoPreviewNodeSurface = {
+      previewNode(this.node).surface = {
         mounted: true,
         toggleFullscreen: () => this.fullscreenController?.toggle?.(),
       };
@@ -508,7 +482,7 @@ class PreviewNodeRuntime {
       this.surfaceHost?.remove?.();
       this.surfaceHost = null;
       this.surfaceModel = null;
-      this.node.__panoPreviewNodeSurface = null;
+      previewNode(this.node).surface = null;
       return false;
     }
   }
@@ -568,14 +542,16 @@ class PreviewNodeRuntime {
 
   togglePlayback() {
     if (!(this.img instanceof HTMLVideoElement) || !isRenderableMediaReady(this.img)) return;
-    if (this.img.paused) {
-      this.videoPaused = false;
-      void this.img.play().catch(() => {});
-    } else {
-      this.videoPaused = true;
-      this.img.pause();
-    }
+    if (this.img.paused) void this.img.play().catch(() => {});
+    else this.img.pause();
     this.requestDraw();
+  }
+
+  // Whether the preview is on screen: its surface is laid out, or, drawn on the graph canvas, the node is
+  // not collapsed and is in the graph shown.
+  shown() {
+    if (this.root) return surfaceShown(this.root, !!this.node.flags?.collapsed);
+    return !this.node.flags?.collapsed && (!app.canvas?.graph || this.node.graph === app.canvas.graph);
   }
 
   attachLegacy() {
@@ -652,16 +628,18 @@ class PreviewNodeRuntime {
 
     ctx.save();
     ctx.translate(rect.x, rect.y);
-    drawPreview(this.node, ctx, rect.w, rect.h, this.view, this.img);
+    drawPreview(this.node, ctx, rect.w, rect.h, this.view, this.img, this.previewView);
 
-    if (this.errorText) {
+    // Drawn on the graph canvas, this path has no node surface to show a failed view.
+    const message = this.errorText || (this.previewView.failed ? VIEW_UNAVAILABLE_MESSAGE : "");
+    if (message) {
       ctx.fillStyle = "rgba(18,18,22,0.92)";
       ctx.fillRect(0, 0, rect.w, rect.h);
       ctx.fillStyle = "rgba(236,236,242,0.92)";
       ctx.font = "600 12px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(this.errorText, rect.w * 0.5, rect.h * 0.5);
+      ctx.fillText(message, rect.w * 0.5, rect.h * 0.5);
     }
     ctx.restore();
   }
@@ -676,7 +654,7 @@ class PreviewNodeRuntime {
   syncCanvasSize() {
     if (!this.root || !this.canvas) return false;
     const rect = this.root.getBoundingClientRect();
-    const { width, height } = measurePreviewCanvasSize(rect, window.devicePixelRatio || 1);
+    const { width, height } = measurePreviewCanvasSize(rect, window.devicePixelRatio || 1, Infinity, { width: window.innerWidth, height: window.innerHeight });
     if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width;
       this.canvas.height = height;
@@ -691,21 +669,22 @@ class PreviewNodeRuntime {
       if (nextVideoSrc === this.imgSrc && this.img instanceof HTMLVideoElement) return;
       this.mediaCleanup?.();
       this.imgSrc = nextVideoSrc;
-      this.videoPaused = false;
-      const video = document.createElement("video");
+      // Like Panorama Studio's Timeline on its node, the VIDEO shows its first frame and plays only
+      // when asked (double-click or Space); it loops while it plays and pauses out of sight.
+      const video = createPanoVideo(document, "preview-node.video");
       video.muted = true;
       video.loop = true;
+      video.preload = "auto";
       video.playsInline = true;
       video.crossOrigin = "anonymous";
       const onReady = () => {
         if (this.imgSrc !== nextVideoSrc) return;
         this.img = video;
-        if (!this.videoPaused) void video.play().catch(() => {});
         this.requestDraw();
       };
       const onTick = () => this.requestDraw();
       video.addEventListener("loadedmetadata", onReady);
-      video.addEventListener("canplay", onReady);
+      video.addEventListener("loadeddata", onReady);
       video.addEventListener("timeupdate", onTick);
       video.addEventListener("play", onTick);
       video.addEventListener("pause", onTick);
@@ -714,10 +693,12 @@ class PreviewNodeRuntime {
       this.mediaCleanup = () => {
         video.pause();
         video.removeEventListener("loadedmetadata", onReady);
-        video.removeEventListener("canplay", onReady);
+        video.removeEventListener("loadeddata", onReady);
         video.removeEventListener("timeupdate", onTick);
         video.removeEventListener("play", onTick);
         video.removeEventListener("pause", onTick);
+        video.removeAttribute("src");
+        video.load();
       };
       return;
     }
@@ -726,6 +707,7 @@ class PreviewNodeRuntime {
       this.mediaCleanup?.();
       this.mediaCleanup = null;
       this.img = null;
+      this.previewView.release();
       this.imgSrc = "";
       this.requestDraw();
       return;
@@ -743,6 +725,7 @@ class PreviewNodeRuntime {
     img.onerror = () => {
       if (this.imgSrc !== nextSrc) return;
       this.img = null;
+      this.previewView.release();
       this.requestDraw();
     };
     this.mediaCleanup = () => {
@@ -768,12 +751,15 @@ class PreviewNodeRuntime {
     this.inTick = true;
     this.queuedDuringTick = false;
     this.needsDraw = false;
+    // A playing VIDEO pauses out of sight, so it does not play on unseen.
+    if (this.img instanceof HTMLVideoElement && !this.img.paused && !this.shown()) this.img.pause();
     const moving = this.controller.stepInertia(ts);
     if (this.canvas && this.ctx) {
       // Resize and repaint in one frame so the cleared backing store is never
       // presented between a ResizeObserver callback and this draw.
       this.syncCanvasSize();
-      drawPreview(this.node, this.ctx, this.canvas.width, this.canvas.height, this.view, this.img);
+      drawPreview(this.node, this.ctx, this.canvas.width, this.canvas.height, this.view, this.img, this.previewView);
+      if (this.surfaceModel) this.surfaceModel.viewUnavailable = this.previewView.failed;
       if (this.errorText) {
         this.ctx.fillStyle = "rgba(18,18,22,0.92)";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -795,7 +781,7 @@ class PreviewNodeRuntime {
   }
 
   teardown() {
-    if (this.node?.__panoPreviewNodeRuntime !== this) return;
+    if (peekPreviewNode(this.node)?.runtime !== this) return;
     this.tearingDown = true;
     if (this.rafId) {
       cancelAnimationFrame(this.rafId);
@@ -812,7 +798,7 @@ class PreviewNodeRuntime {
     this.surfaceHost?.remove?.();
     this.surfaceHost = null;
     this.surfaceModel = null;
-    this.node.__panoPreviewNodeSurface = null;
+    previewNode(this.node).surface = null;
     this.mediaCleanup?.();
     this.mediaCleanup = null;
     this.img = null;
@@ -832,19 +818,18 @@ class PreviewNodeRuntime {
     this.node.onConnectionsChange = this.orig.onConnectionsChange;
     this.node.onResize = this.orig.onResize;
     this.node.onRemoved = this.orig.onRemoved;
-    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "coverage") || null;
+    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "background_range" || widget?.name === "coverage") || null;
     if (coverageWidget) {
       coverageWidget.callback = this.orig.coverageWidgetCallback;
     }
-    this.node.__panoStandaloneCore?.dispose?.();
-    this.node.__panoStandaloneCore = null;
-    this.node.__panoPreviewNodeRuntime = null;
+    this.previewView.dispose();
+    previewNode(this.node).runtime = null;
   }
 }
 
 export function attachPreviewNodeRuntime(node, options = {}) {
-  if (!node || node.__panoPreviewNodeRuntime) return;
+  if (!node || previewNode(node).runtime) return;
   const runtime = new PreviewNodeRuntime(node, options);
-  node.__panoPreviewNodeRuntime = runtime;
+  previewNode(node).runtime = runtime;
   runtime.attach();
 }

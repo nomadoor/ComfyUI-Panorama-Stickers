@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import PanoModal from "../components/PanoModal.vue";
 import { ICON } from "../icons.js";
-import SvgIcon from "../components/SvgIcon.vue";
+import SvgIcon from "../components/shared/SvgIcon.vue";
 
 const isOpen = ref(true);
 const paintSwatches = [

@@ -1,22 +1,24 @@
+import { ICON } from "./icons.js";
+import { sceneStickerLabel } from "./pano_editor_state.js";
+import { is3dFileSource } from "./pano_scene_state.js";
+import {
+  BACKGROUND_ROW, LANE_LABELS, PAINTING_ROW, hasPainting, laneNames, ownerTimed, rowKeyframes, selectedEasing,
+} from "./pano_timeline.js";
+
+// The row ids live with the Timeline rules (pano_timeline.js); the old UI's importers keep reading them here.
+export { BACKGROUND_ROW, PAINTING_ROW };
+import { upstreamLayerOverridden, upstreamRowId } from "./pano_upstream.js";
+
 export function patchUiButton(list, matchKey, key, patch) {
   const entry = Array.isArray(list) ? list.find((item) => String(item?.[matchKey] || "") === String(key || "")) : null;
   if (entry) Object.assign(entry, patch);
 }
 
 export function buildUiSettingsModel(uiSettings = {}) {
-  const qualityValue = String(uiSettings.preview_quality || "balanced");
-  const qualityOptions = [
-    { value: "draft", label: "Draft" },
-    { value: "balanced", label: "Balanced" },
-    { value: "high", label: "High" },
-  ];
   return {
     open: false,
     invertX: !!uiSettings.invert_view_x,
     invertY: !!uiSettings.invert_view_y,
-    qualityOpen: false,
-    qualityLabel: (qualityOptions.find((item) => item.value === qualityValue) || qualityOptions[1]).label,
-    qualityOptions: qualityOptions.map((item) => ({ ...item, active: item.value === qualityValue })),
   };
 }
 
@@ -105,9 +107,167 @@ export function buildPreviewSidePanelModel({ coverage, uiSettings, normalizeCove
     notes: [],
     params: [],
     paramsDisabled: true,
-    visibilityRows: [],
     uiSettings,
     footerButtons: [{ action: "close-preview", label: "Close", primary: true }],
+  };
+}
+
+// The fields that share a row of the inspector: [row label, short label, value per pixel of a drag].
+const FIELD_GROUPS = {
+  position_x: ["Position", "X", 0.01],
+  position_y: ["Position", "Y", 0.01],
+  position_z: ["Position", "Z", 0.01],
+  yaw_deg: ["Rotation", "Y", 0.5],
+  pitch_deg: ["Rotation", "P", 0.5],
+  roll_deg: ["Rotation", "R", 0.5],
+  rot_deg: ["Rotation", "R", 0.5],
+  hFOV_deg: ["FOV", "H", 0.25],
+  vFOV_deg: ["FOV", "V", 0.25],
+};
+
+// The rows of the inspector (PanoSidePanel.vue) for its fields, in order: the fields of a group
+// (Position, Rotation, FOV) side by side in one row under the group's name, each by its short label
+// without a slider (a drag on the label changes the value by `drag` per pixel), any other field alone
+// in its row with its slider.
+export function inspectorRows(params) {
+  const rows = [];
+  for (const param of params) {
+    const [group, short, drag] = FIELD_GROUPS[param.key] || [];
+    const last = rows[rows.length - 1];
+    if (group && last?.grouped && last.label === group) last.fields.push({ ...param, short, drag });
+    else rows.push({ key: param.key, label: group || param.label, grouped: !!group, fields: [{ ...param, short, drag }] });
+  }
+  return rows;
+}
+
+// The slider range (0 to it, or minus it to it) of a world Sticker's position or scale field: 100,
+// widened by powers of ten to hold the value. It limits only the slider; the value itself is not limited.
+export function worldFieldRange(value) {
+  const magnitude = Math.abs(Number(value) || 0);
+  return magnitude <= 100 ? 100 : 10 ** Math.ceil(Math.log10(magnitude));
+}
+
+// The state of the bottom-right buttons (PanoFloatingRight.vue). No button there shows or hides on its
+// own, so none moves when another changes: the space group (3DoF | 6DoF and Frame Selected) shows or hides
+// as a whole at the left end of the row, where the row grows away from the other buttons, and Frame
+// Content is disabled outside 6DoF instead of hidden. `buttons` patches the other buttons by action.
+export function floatingRightState({ spaceView, spaceMode, readOnly, frameMode, showGrid }) {
+  const gridVisible = !frameMode && !!showGrid;
+  return {
+    space: {
+      visible: !!spaceView,
+      mode: spaceMode,
+      frameDisabled: !!readOnly || !spaceView || spaceMode !== "6dof",
+    },
+    buttons: {
+      "reset-view": { disabled: !!readOnly || !!frameMode },
+      "toggle-grid": {
+        icon: gridVisible ? ICON.eye : ICON.eye_dashed,
+        pressed: gridVisible ? "true" : "false",
+        label: gridVisible ? "Hide Grid" : "Show Grid",
+        tip: gridVisible ? "Hide grid" : "Show grid",
+        disabled: !!readOnly || !!frameMode,
+      },
+    },
+  };
+}
+
+// The Frame tab (PanoViewToggle.vue). The editors with a shot always show it, so the tabs never move, and
+// disable it while there is no frame to look through. Panorama Studio says why in its tooltip: it has
+// no Camera yet (Add Camera is on the left), its Camera is hidden (its eye on the Timeline), or its Camera
+// shoots a 360-degree ERP, which has no frame.
+export function frameViewButton({ hasShot, erp = false, hidden = false, studio = false }) {
+  const disabled = !hasShot || erp;
+  let tip = null;
+  if (studio && disabled) {
+    if (hidden) tip = "The camera is hidden";
+    else tip = hasShot ? "A 360° camera has no frame" : "Add a camera to use the Frame view";
+  }
+  return { disabled, tip };
+}
+
+// The Camera fields a 360-degree ERP Camera does not read: its FOV (ADR 0029) and its lens (ADR 0042).
+const ERP_UNREAD_CAMERA_FIELDS = new Set(["hFOV_deg", "aspect", "curve"]);
+const ERP_LENS_FIELDS = new Set(["curve"]);
+
+// Whether the inspector edits a Camera field: the fields a 360-degree ERP Camera does not read stay, disabled.
+export function cameraParamEnabled(key, { erp = false } = {}) {
+  return !(erp && ERP_UNREAD_CAMERA_FIELDS.has(key));
+}
+
+// A Camera field's tooltip, or null: why the lens fields of a 360-degree ERP Camera are disabled, else what the Lens
+// curve does.
+export function cameraParamTip(key, { erp = false } = {}) {
+  if (erp && ERP_LENS_FIELDS.has(key)) return "A 360° camera has no lens";
+  // A Lens curve edit keeps the image's center scale (docs/editor-interaction.md "レンズの行").
+  return key === "curve" ? "0 is a fisheye. Keeps the center's size; the H FOV follows." : null;
+}
+
+// Whether the inspector edits a Sticker field: a port Sticker's vFOV follows its media, so its V FOV shows the
+// value the media gives, disabled (docs/scene-state-v2.md).
+export function stickerParamEnabled(key, { port = false } = {}) {
+  return !(port && key === "vFOV_deg");
+}
+
+// The aspect preset that makes Panorama Studio's Camera shoot an ERP (`projection: "erp"`, ADR 0029).
+export const ERP_ASPECT = "erp";
+// The aspect presets of a Camera's or a Cutout shot's frame, in their order, as [width, height] (landscape; the
+// editors flip them to the frame's orientation). The one table the menus and the editors read.
+export const ASPECT_PRESETS = Object.freeze({ "1:1": [1, 1], "4:3": [4, 3], "3:2": [3, 2], "16:9": [16, 9] });
+
+// The [width, height] of an aspect preset; an unknown one is an error.
+export function aspectPreset(value) {
+  const preset = ASPECT_PRESETS[String(value)];
+  if (!preset) throw new Error(`Unknown aspect preset ${JSON.stringify(value)}`);
+  return preset;
+}
+
+// The aspect presets of the Camera's frame in the selection menu and the Frame rail, `active` marked.
+// With `erp` (Panorama Studio) they end with 360°, named 180° for a 180 coverage.
+export function cameraAspectChoices(active, { erp = false, coverage = 360 } = {}) {
+  return [
+    ...Object.keys(ASPECT_PRESETS).map((value) => ({ value, label: value, active: active === value })),
+    ...(erp ? [{ value: ERP_ASPECT, label: Number(coverage) === 180 ? "180°" : "360°", active: active === ERP_ASPECT }] : []),
+  ];
+}
+
+const HANDOFF_LANE_LABELS = { direction: "Direction", roll: "Roll", size: "Size", position: "Position", rotation: "Rotation", scale: "Scale" };
+const UPSTREAM_LANES = { sky: ["direction", "roll", "size", "opacity"], world: ["position", "rotation", "scale", "opacity"] };
+const UPSTREAM_LANE_LABELS = { ...HANDOFF_LANE_LABELS, opacity: "Opacity" };
+
+// Where a selected upstream element comes from (ADR 0030): the key of its layer, the Scene id of the upstream
+// Panorama Studio or `#<n>` for a layer without one (pano_upstream.js upstreamLayerKeys).
+export function upstreamOriginLabel(layer) {
+  return `Upstream · ${layer}`;
+}
+
+// The inspector's upstream rows of a selected Panorama Studio Sticker (PanoUpstreamOrigin.vue), the same rows for
+// every Sticker so the panel keeps its layout: "Revert to upstream" of all its overrides and a button per Lane of
+// its `placement` (its eye is on its Timeline row, its lock in the selection menu, and Restore deleted is its
+// layer's, on the Timeline: buildTimelineModel). For an upstream element (`layer`, its layer's key) they are its
+// buttons, with where it comes from: a revert button is on while `override` (its override in the node's records,
+// or null) holds what it reverts and the element is not `locked`. An element of a layer that is only inherited
+// (not `editable`) has them disabled and says so. For the node's own Sticker (`layer` null) the rows are
+// disabled, but the Lane buttons of its port Sticker shown with the Pose handoff (`handoff`, [{ name, overridden }]
+// per Lane the handoff gives) revert a Lane to the handoff (ADR 0030) while it is an override and the Sticker is
+// not locked.
+export function upstreamInspectorModel({ layer, editable, locked, readOnly, placement, override = null, handoff = null }) {
+  const inherited = layer !== null && !editable;
+  const revertable = layer !== null && !readOnly && editable && !locked && !!override;
+  const handoffOverridden = (name) => !readOnly && !locked && !!handoff?.some((lane) => lane.name === name && lane.overridden);
+  return {
+    origin: layer === null ? "" : `${upstreamOriginLabel(layer)}${inherited ? " · inherited only" : ""}`,
+    note: inherited ? "Inherited only: edits of this upstream scene cannot be kept here. Edit it in its own Panorama Studio." : "",
+    revertAll: { disabled: !revertable },
+    lanes: UPSTREAM_LANES[placement].map((name) => ({
+      name,
+      label: UPSTREAM_LANE_LABELS[name],
+      action: layer === null && handoff ? "revert-handoff-lane" : "revert-upstream",
+      // An override made for the other placement has none of this one's Lanes.
+      disabled: layer === null
+        ? !handoffOverridden(name)
+        : !revertable || override.placement !== placement || !Object.hasOwn(override, name),
+    })),
   };
 }
 
@@ -120,22 +280,23 @@ export function buildEditorSidePanelModel({
   selectedItems,
   params,
   notes,
-  visibilityRows,
   uiSettings,
   normalizeCoverageValue,
+  upstream = null,
 }) {
   return {
     coverage: { value: normalizeCoverageValue(coverage), disabled: !!readOnly },
     transformTitle: true,
     selectionPicker,
     copyStateButton: {
-      disabled: !enabled || selectedKind === "stroke" || selectedItems.length > 1,
+      disabled: !enabled || selectedKind === "stroke" || selectedKind === "camera" || selectedKind === "world" || selectedItems.length > 1,
       label: "Copy State",
     },
     params,
+    rows: inspectorRows(params),
     notes,
+    upstream,
     paramsDisabled: !enabled,
-    visibilityRows,
     uiSettings: readOnly ? null : uiSettings,
     footerButtons: [
       { action: "cancel-close", label: "Cancel", primary: false },
@@ -159,6 +320,13 @@ export function buildSelectionMenuModel({
   isStickerHidden,
   canRestoreSelectedToInitial,
   iconSet,
+  // Panorama Studio's shot is its Camera, which is not locked, is deleted from its menu and has
+  // the 360° preset.
+  cameraShot = false,
+  coverage = 360,
+  // Upstream elements in the selection (ADR 0030): null, or { editable }. Only Lock and Delete act on them,
+  // while their layers keep overrides; the other buttons stay in place, disabled.
+  upstream = null,
 }) {
   if (!geom?.visible) return { visible: false, left: 0, top: 0, items: [] };
 
@@ -177,7 +345,7 @@ export function buildSelectionMenuModel({
       { key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed },
       { key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked },
     ];
-  } else if (type === "stickers" || selectedKind === "image") {
+  } else if (selectedKind === "image") {
     items = [
       { key: "bring-front", kind: "button", action: "bring-front", label: "Bring to Front", tip: "Bring to front", icon: iconSet.bring_front, disabled: !!selectedLocked },
       { key: "send-back", kind: "button", action: "send-back", label: "Send to Back", tip: "Send to back", icon: iconSet.send_back, disabled: !!selectedLocked },
@@ -208,7 +376,8 @@ export function buildSelectionMenuModel({
       });
     }
     items.push({ key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed });
-    if (!isExternalSticker(selected)) items.push({ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked });
+    // An upstream port Sticker is deleted as the other upstream elements are (ADR 0030).
+    if (!isExternalSticker(selected) || upstream) items.push({ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked });
   } else {
     items = [
       {
@@ -216,15 +385,77 @@ export function buildSelectionMenuModel({
         kind: "aspect",
         icon: iconSet.aspect,
         open: !!cutoutAspectOpen,
-        choices: ["1:1", "4:3", "3:2", "16:9"].map((value) => ({ value, label: value, active: activeAspect === value })),
+        choices: cameraAspectChoices(activeAspect, { erp: cameraShot, coverage }),
       },
-      { key: "rotate-90", kind: "button", action: "rotate-90", label: "Toggle Portrait/Landscape", tip: "Toggle portrait/landscape", icon: iconSet.rotate_90 },
-      { key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed },
-      { key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked },
+      // A 360-degree ERP has no frame to turn.
+      { key: "rotate-90", kind: "button", action: "rotate-90", label: "Toggle Portrait/Landscape", tip: "Toggle portrait/landscape", icon: iconSet.rotate_90, disabled: activeAspect === ERP_ASPECT },
     ];
+    if (!cameraShot) {
+      items.push(
+        { key: "toggle-lock", kind: "button", action: "toggle-lock", label: selectedLocked ? "Unlock" : "Lock", tip: selectedLocked ? "Unlock" : "Lock", icon: selectedLocked ? iconSet.lock_open : iconSet.lock_closed },
+        { key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete, disabled: !!selectedLocked },
+      );
+    } else {
+      items.push({ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: iconSet.delete });
+    }
+  }
+  if (upstream) {
+    items = items.map((item) => ({
+      ...item,
+      disabled: item.key === "toggle-lock" ? !upstream.editable : item.key === "delete" ? !upstream.editable || !!item.disabled : true,
+    }));
   }
 
-  const finiteCorners = geom.corners
+  return selectionMenuAt(geom.corners, items);
+}
+
+// The gizmo modes of a world Sticker (Panorama Studio), as segments of its selection menu. Panorama Studio's Camera
+// has no scale.
+const GIZMO_MODES = [
+  { key: "translate", label: "Move", tip: "Move the world sticker", cameraTip: "Move the camera" },
+  { key: "rotate", label: "Rotate", tip: "Rotate the world sticker", cameraTip: "Rotate the camera" },
+  { key: "scale", label: "Scale", tip: "Scale the world sticker" },
+];
+
+// The selection menu of the selected world Sticker, or of the Camera with `camera`: the Move | Rotate |
+// Scale (Move | Rotate) segments that pick its gizmo mode. It is placed around both its corners on the
+// canvas and gizmoBox, the box its gizmo covers (pano_space.js gizmoScreenBox, null when not in front), so
+// it stays clear of the handles.
+export function buildWorldSelectionMenuModel({ corners, gizmoBox = null, gizmoMode, camera = false }) {
+  const box = gizmoBox ? [{ x: gizmoBox.minX, y: gizmoBox.minY }, { x: gizmoBox.maxX, y: gizmoBox.maxY }] : [];
+  const modes = camera ? GIZMO_MODES.filter((mode) => mode.cameraTip) : GIZMO_MODES;
+  return selectionMenuAt([...corners, ...box], [{
+    key: "gizmo-mode",
+    kind: "segments",
+    attr: "data-gizmo-mode",
+    label: "Gizmo mode",
+    buttons: modes.map(({ key, label, tip, cameraTip }) => ({ key, label, tip: camera ? cameraTip : tip, pressed: key === gizmoMode ? "true" : "false" })),
+  },
+  // Panorama Studio's Camera is deleted from its menu too.
+  ...(camera ? [{ key: "delete", kind: "button", action: "delete", label: "Delete", tip: "Delete", icon: ICON.delete }] : [])]);
+}
+
+// Where a menuW x menuH selection menu goes in a canvasW x canvasH canvas for its anchor (the box of
+// its target): centered below the target, above it when it does not fit below, and moved into the
+// canvas when it fits neither, so it always shows. null when the anchor is not finite.
+export function selectionMenuPlacement(anchor, menuW, menuH, canvasW, canvasH) {
+  const pad = 14;
+  const gap = 18;
+  const { minX, maxX, minY, maxY } = anchor || {};
+  if (![minX, maxX, minY, maxY].every(Number.isFinite)) return null;
+  const left = Math.min(Math.max(((minX + maxX) * 0.5) - menuW * 0.5, pad), Math.max(pad, canvasW - menuW - pad));
+  const maxTop = Math.max(pad, canvasH - menuH - pad);
+  const below = maxY + gap;
+  const above = minY - gap - menuH;
+  let top;
+  if (below <= maxTop) top = Math.max(below, pad);
+  else if (above >= pad) top = Math.min(above, maxTop);
+  else top = Math.min(Math.max(below, pad), maxTop);
+  return { left, top };
+}
+
+function selectionMenuAt(corners, items) {
+  const finiteCorners = corners
     .map((point) => ({ x: Number(point?.x), y: Number(point?.y) }))
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
   if (!finiteCorners.length) return { visible: false, left: 0, top: 0, items: [] };
@@ -242,4 +473,155 @@ export function buildSelectionMenuModel({
     items,
     anchor: { minX, maxX, minY, maxY },
   };
+}
+
+// The Timeline (PanoTimeline.vue) of a working state v2, one row per object on one Timeline: the Camera
+// row when `camera` is set (Panorama Studio while it has a Camera), then the Stickers from front to back (sky Stickers by z_index, then world Stickers), then the
+// `scene` row when `scene` is set (its input is linked) or the `scene` changes over time. A row shows one pin per frame that has a
+// Keyframe on any of its Lanes (`full` when on all of them); an open row (openRows) also shows one
+// line per Lane. Frames in the model are Timeline frames; `offset` turns them back into the owner's own
+// frames. selection is { owner, lane, frames }: `lane` is a Lane's name, or null for the whole row, and
+// frames are in the owner's own frames. The playhead, the time and whether it plays are not in the model
+// (the editor's timelinePlayhead): the model changes only with the state, the selection and the layout.
+// audio is { muted } when the background VIDEO has audio, else null. fpsLocked is set when a video
+// input sets the Timeline fps (ADR 0024). `span` is the output's length (timelineSpan), which the length
+// field shows while `timeline.length` is null (the length the inputs give); a span of one frame is not `playable`.
+// portBarEnd(sticker) is where the bar of a port Sticker without a duration ends (its media's end), or null.
+// Every row has the place of the eye at its left; a `hideable` row has the eye there, which shows and
+// hides it (`visible`); the Camera row has one with `cameraHideable`. The painting has a row (`painting`,
+// after the Stickers) while it has strokes or rasters, or is hidden.
+// `upstream` are the upstream layers of Panorama Studio (editor/upstream.js upstreamTimelineLayers, ADR 0030),
+// shown below the node's own rows in `groups`, one per layer from the farthest upstream: its header
+// (`Upstream · <key>`) with the layer's actions, "Revert" of its `scene` and painting overrides (`revert`) and
+// "Restore deleted (n)" of its `deleted` elements still in it (`restore`), each disabled while it would do
+// nothing, and its rows as the node's own are made from its working state, with the ids
+// `upstream:<key>:<id>`, `upstream:<key>:painting` and `upstream:<key>:scene`. Its `scene` row shows while the
+// layer has 3D content, Keyframes or a Clip range, or is hidden. An upstream row is `upstream`, `overridden` while
+// the layer's record holds an override of it, and `editable` only when the node can keep overrides of its layer;
+// the node's own rows are always `editable`.
+// `background` is null, or { end } while the node's own bg_media is shown: the Background row comes first, with
+// only the Clip range of state.background (no eye, no Keyframes); without a duration its bar ends at `end`, where
+// the background media ends (bgMediaEnd), or with the Timeline while that is not known (null) or for an image.
+// A 3D Sticker's row (a world port Sticker, a 3D file Sticker, or one in `loading3d`: the ids of the 3D files
+// still uploading, whose Source has no file name yet) has the box of the `scene` row; the others the image.
+export function buildTimelineModel(state, { span, portBarEnd = () => null, selection, selectedId, expanded, openRows, audio = null, fpsLocked = false, camera = false, cameraHideable = false, scene = false, upstream = [], background = null, loading3d = new Set() }) {
+  // A row that is not `keyable` has no key button and no Lane lines: nothing in the editor sets its values yet.
+  const row = (id, owner, rowLabel, icon, clip, offset, { keyable = true, hideable = true, origin = null } = {}) => {
+    const selectedFrames = (lane) => (selection?.owner === id && selection.lane === lane ? selection.frames.map((item) => item + offset) : []);
+    return {
+      id,
+      label: rowLabel,
+      icon,
+      clip,
+      selected: id === selectedId,
+      hideable,
+      // The background has no eye and always shows.
+      visible: owner.visible !== false,
+      ...upstreamRowFlags(origin),
+      keyable,
+      open: keyable && openRows.has(id),
+      keys: rowKeyframes(owner).map((key) => ({ frame: key.frame + offset, full: key.full })),
+      selectedFrames: selectedFrames(null),
+      lanes: (keyable ? laneNames(owner) : []).map((name) => ({
+        key: `${id}:${name}`,
+        lane: name,
+        label: LANE_LABELS[name],
+        frames: owner[name].keyframes.map((key) => key.frame + offset),
+        selectedFrames: selectedFrames(name),
+      })),
+    };
+  };
+  // A Clip range without a duration ends with the Timeline (`end` null), or a port Sticker's with its media
+  // (`portBarEnd`, null while it is not known).
+  const clipRange = ({ start, in: clipIn, duration }, mediaEnd = null) => ({ clip: { start, end: duration === null ? mediaEnd : start + duration }, offset: start - clipIn });
+  // The rows of a state's Stickers from front to back, its painting and its `scene` (with `sceneRow`). `origin`
+  // gives an upstream layer's ids and flags.
+  const stateRows = (sceneState, { idOf = (id) => id, sceneRow, origin = null }) => {
+    const sky = sceneState.stickers.filter((sticker) => sticker.placement === "sky").sort((a, b) => b.z_index - a.z_index);
+    const world = sceneState.stickers.filter((sticker) => sticker.placement === "world");
+    return [
+      ...[...sky, ...world].map((sticker) => {
+        const { clip, offset } = clipRange(sticker.clip, portBarEnd(sticker));
+        const label = sceneStickerLabel(origin ? { ...sticker, id: sticker.origin.id } : sticker);
+        const threeD = sticker.placement === "world" && (sticker.source.kind === "port" || is3dFileSource(sticker.source) || loading3d.has(sticker.id));
+        return row(sticker.id, sticker, label, threeD ? ICON.box : ICON.image, clip, offset, { origin: origin && { ...origin, overridden: origin.stickerOverridden(sticker) } });
+      }),
+      ...(hasPainting(sceneState.painting) || !sceneState.painting_visible ? [{
+        id: idOf(PAINTING_ROW),
+        label: "Paint",
+        icon: ICON.paintbrush_vertical_tool,
+        clip: null,
+        selected: false,
+        hideable: true,
+        visible: sceneState.painting_visible,
+        ...upstreamRowFlags(origin && { ...origin, overridden: origin.paintingOverridden }),
+        keyable: false,
+        open: false,
+        keys: [],
+        selectedFrames: [],
+        lanes: [],
+      }] : []),
+      ...(sceneRow || ownerTimed(sceneState.scene) ? [(() => {
+        const { clip, offset } = clipRange(sceneState.scene.clip);
+        // The editor has no way to move the `scene` yet, so its row has only its Clip range.
+        return row(idOf("scene"), sceneState.scene, "Scene", ICON.box, clip, offset, {
+          keyable: false,
+          origin: origin && { ...origin, overridden: origin.sceneOverridden },
+        });
+      })()] : []),
+    ];
+  };
+  return {
+    visible: true,
+    expanded,
+    hasAudio: !!audio,
+    muted: !!audio?.muted,
+    span,
+    // A Timeline of one frame has nothing to play.
+    playable: span > 1,
+    fps: state.timeline.fps,
+    fpsLocked,
+    length: state.timeline.length,
+    rows: [
+      ...(background ? [(() => {
+        const { clip, offset } = clipRange(state.background.clip, background.end);
+        return row(BACKGROUND_ROW, state.background, "Background", ICON.unwrap, clip, offset, { keyable: false, hideable: false });
+      })()] : []),
+      ...(camera ? [row("camera", state.camera, "Camera", ICON.camera, null, 0, { hideable: cameraHideable })] : []),
+      ...stateRows(state, { sceneRow: scene }),
+    ],
+    groups: upstream.map(({ key, sceneState, editable, record, scene: content, deleted }) => ({
+      key,
+      label: `${upstreamOriginLabel(key)}${editable ? "" : " · inherited only"}`,
+      revert: { disabled: !editable || !upstreamLayerOverridden(record) },
+      restore: { label: `Restore deleted (${deleted})`, disabled: !editable || deleted === 0 },
+      rows: stateRows(sceneState, {
+        idOf: (part) => upstreamRowId(key, part),
+        sceneRow: content || !sceneState.scene.visible,
+        origin: {
+          editable,
+          stickerOverridden: (sticker) => !!record?.stickers.some((item) => item.id === sticker.origin.id && item.placement === sticker.placement),
+          paintingOverridden: !!record && Object.hasOwn(record, "painting_visible"),
+          sceneOverridden: !!record && Object.keys(record.scene).length > 0,
+        },
+      }),
+    })),
+  };
+}
+
+// The flags of a Timeline row (buildTimelineModel): an upstream layer's row (`origin`, { editable, overridden })
+// is `upstream`, `overridden` while the node overrides it, and `editable` when the node can keep overrides of it.
+function upstreamRowFlags(origin) {
+  return origin ? { upstream: true, overridden: origin.overridden, editable: origin.editable } : { upstream: false, overridden: false, editable: true };
+}
+
+// The Easing panel for the selected Keyframes (frames in the owner's own frames, `offset` to the
+// Timeline) of the Lanes `names`, or null when they have no segment. `easing` is null when the
+// segments differ.
+export function buildEasingModel(owner, names, frames, offset) {
+  const selected = selectedEasing(owner, names, frames);
+  if (!selected) return null;
+  const from = Math.min(...frames) + offset;
+  const to = Math.max(...frames) + offset;
+  return { label: from === to ? `Frame ${from}` : `${from} – ${to}`, ...selected };
 }

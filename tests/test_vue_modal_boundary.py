@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from editor_source import editor_source
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -35,7 +37,7 @@ class TestVueModalBoundary(unittest.TestCase):
         self.assertIn("defineExpose({ open })", picker_vue)
 
     def test_editor_consumes_vue_paint_refs_and_routes_image_picker_intents(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
 
         self.assertIn("vueModal = vueApp.mount(mountHost)", editor_js)
         self.assertIn("vueModal?.getPaintOverlayRefs?.()", editor_js)
@@ -53,7 +55,7 @@ class TestVueModalBoundary(unittest.TestCase):
         self.assertNotIn('document.createElement("input")', editor_js)
 
     def test_editor_no_longer_builds_side_panel_or_selection_menu_html(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         self.assertNotIn("side.innerHTML =", editor_js)
         self.assertNotIn("selectionMenu.innerHTML =", editor_js)
         self.assertNotIn('layer.className = "pano-canvas-confirm"', editor_js)
@@ -73,12 +75,14 @@ class TestVueModalBoundary(unittest.TestCase):
         self.assertIn('<PanoSelectionMenu :model="uiState.selectionMenu || {}" />', modal_vue)
         self.assertIn('<PanoConfirmDialog :model="uiState.confirmDialog || {}" />', modal_vue)
         self.assertIn('<PanoTooltip :model="uiState.tooltip || {}" />', modal_vue)
-        self.assertIn('<PanoSidePanel v-if="!hideSidebar" :node-title="nodeTitle" :model="uiState.sidePanel || {}" />', modal_vue)
+        self.assertRegex(modal_vue, r'<PanoSidePanel\s+v-if="!hideSidebar"\s+:node-title="nodeTitle"\s+:model="uiState.sidePanel \|\| \{\}"')
+        self.assertIn('<PanoTimeline :model="uiState.timeline || {}" :playhead="playhead" @action="emit(\'timeline\', $event)" />', modal_vue)
 
     def test_editor_uses_dedicated_ui_state_builder_module(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         builder_js = (REPO_ROOT / "web_src" / "pano_editor_ui_state.js").read_text(encoding="utf-8")
-        self.assertIn('from "./pano_editor_ui_state.js"', editor_js)
+        # pano_editor.js or a module of web_src/editor/ imports it.
+        self.assertRegex(editor_js, r'from "\.\.?/pano_editor_ui_state\.js"')
         self.assertIn("export function buildPaintDockModel(", builder_js)
         self.assertIn("export function buildEditorSidePanelModel(", builder_js)
         self.assertIn("export function buildSelectionMenuModel(", builder_js)

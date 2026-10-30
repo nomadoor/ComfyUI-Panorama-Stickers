@@ -7,11 +7,15 @@
     "check:web": "node tools/check_panorama_bundle.mjs",
     "dev:web": "vite",
     "test:bundle-sync": "node --test tests/check_panorama_bundle.test.mjs",
-    "build:web:legacy": "node tools/build_panorama_bundle.mjs"
+    "build:web:legacy": "node tools/build_panorama_bundle.mjs",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.6",
-    "vite": "^6.3.5",
-    "vue": "^3.5.32"
+    "@playwright/test": "1.63.0",
+    "@sparkjsdev/spark": "2.1.0",
+    "@vitejs/plugin-vue": "6.0.6",
+    "three": "0.184.0",
+    "vite": "6.3.5",
+    "vue": "3.5.32"
   }
 }

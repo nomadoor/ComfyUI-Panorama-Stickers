@@ -7,7 +7,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 test("Preview node surface exposes only one fullscreen action", async () => {
   const component = await read("../web_src/components/PanoPreviewNodeSurface.vue");
 
-  assert.ok(component.includes('import PanoIconButton from "./PanoIconButton.vue"'));
+  assert.ok(component.includes('import PanoIconButton from "./shared/PanoIconButton.vue"'));
   assert.ok(component.includes("ICON.fullscreen"));
   assert.ok(component.includes("ICON.fullscreen_close"));
   assert.match(component, /type:\s*'toggle-fullscreen'/);
@@ -25,7 +25,7 @@ test("dedicated Preview runtime mounts and tears down the Vue fullscreen surface
   assert.ok(runtime.includes("createPreviewFullscreenController"));
   assert.ok(runtime.includes('this.surfaceHost.className = "pano-preview-node-surface-host"'));
   assert.match(runtime, /createApp\(PanoPreviewNodeSurface/);
-  assert.match(runtime, /this\.node\.__panoPreviewNodeSurface\s*=/);
+  assert.match(runtime, /previewNode\(this\.node\)\.surface\s*=/);
   assert.match(runtime, /this\.surfaceApp\?\.unmount\?\.\(\)/);
   assert.match(runtime, /this\.fullscreenController\?\.destroy\?\.\(\)/);
   assert.match(runtime, /this\.wheelCaptureCleanup\?\.\(\)/);

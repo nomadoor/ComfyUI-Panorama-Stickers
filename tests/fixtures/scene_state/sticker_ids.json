@@ -1,0 +1,174 @@
+{
+  "about": "Sticker ids (docs/scene-state-v2.md \"Sticker \u306e id \u306e\u63a1\u756a\"). `normalize`: the ids and next_sticker_id a state loads with. `take`: the ids two takes give from the loaded state (takeStickerId, nodes.py _take_sticker_id) and the counter after them, each new Sticker added to the state before the next take. Numbers count on past 2^53 - 1 as exact integers; the counter stays at 2^53 - 1.",
+  "normalize": [
+    {
+      "state": {
+        "version": 2,
+        "next_sticker_id": 9007199254740991,
+        "stickers": [
+          {
+            "id": "sticker_9007199254740991",
+            "source": {
+              "kind": "file",
+              "filename": "1.png"
+            }
+          },
+          {
+            "id": "sticker_9007199254740992",
+            "source": {
+              "kind": "file",
+              "filename": "2.png"
+            }
+          },
+          {
+            "source": {
+              "kind": "file",
+              "filename": "3.png"
+            }
+          },
+          {
+            "id": "",
+            "source": {
+              "kind": "file",
+              "filename": "4.png"
+            }
+          }
+        ]
+      },
+      "ids": [
+        "sticker_9007199254740991",
+        "sticker_9007199254740992",
+        "sticker_9007199254740993",
+        "sticker_9007199254740994"
+      ],
+      "next_sticker_id": 9007199254740991
+    },
+    {
+      "state": {
+        "version": 2,
+        "next_sticker_id": 3,
+        "stickers": [
+          {
+            "id": "sticker_3",
+            "source": {
+              "kind": "file",
+              "filename": "1.png"
+            }
+          },
+          {
+            "source": {
+              "kind": "file",
+              "filename": "2.png"
+            }
+          }
+        ]
+      },
+      "ids": [
+        "sticker_3",
+        "sticker_4"
+      ],
+      "next_sticker_id": 5
+    }
+  ],
+  "take": [
+    {
+      "state": {
+        "version": 2,
+        "stickers": [
+          {
+            "id": "sticker_4",
+            "source": {
+              "kind": "port"
+            }
+          }
+        ]
+      },
+      "ids": [
+        "sticker_5",
+        "sticker_6"
+      ],
+      "next_sticker_id": 7
+    },
+    {
+      "state": {
+        "version": 2,
+        "next_sticker_id": 2,
+        "stickers": [
+          {
+            "id": "sticker_2",
+            "source": {
+              "kind": "file",
+              "filename": "1.png"
+            }
+          },
+          {
+            "id": "sticker_9",
+            "source": {
+              "kind": "file",
+              "filename": "2.png"
+            }
+          }
+        ]
+      },
+      "ids": [
+        "sticker_10",
+        "sticker_11"
+      ],
+      "next_sticker_id": 12
+    },
+    {
+      "state": {
+        "version": 2,
+        "next_sticker_id": 9007199254740990,
+        "stickers": [
+          {
+            "id": "sticker_9007199254740991",
+            "source": {
+              "kind": "file",
+              "filename": "1.png"
+            }
+          },
+          {
+            "id": "sticker_9007199254740992",
+            "source": {
+              "kind": "file",
+              "filename": "2.png"
+            }
+          }
+        ]
+      },
+      "ids": [
+        "sticker_9007199254740990",
+        "sticker_9007199254740993"
+      ],
+      "next_sticker_id": 9007199254740991
+    },
+    {
+      "state": {
+        "version": 2,
+        "next_sticker_id": 9007199254740991,
+        "stickers": [
+          {
+            "id": "sticker_9007199254740991",
+            "source": {
+              "kind": "file",
+              "filename": "1.png"
+            }
+          },
+          {
+            "id": "sticker_9007199254740992",
+            "source": {
+              "kind": "file",
+              "filename": "2.png"
+            }
+          }
+        ]
+      },
+      "ids": [
+        "sticker_9007199254740993",
+        "sticker_9007199254740994"
+      ],
+      "next_sticker_id": 9007199254740991
+    }
+  ]
+}

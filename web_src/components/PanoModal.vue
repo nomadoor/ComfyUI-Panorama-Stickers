@@ -3,15 +3,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { ICON } from "../icons.js";
 import PanoFloatingRight from "./PanoFloatingRight.vue";
 import PanoFrameRail from "./PanoFrameRail.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
 import PanoConfirmDialog from "./PanoConfirmDialog.vue";
 import PanoImageFilePicker from "./PanoImageFilePicker.vue";
 import PanoPaintDock from "./PanoPaintDock.vue";
 import PanoPaintOverlays from "./PanoPaintOverlays.vue";
 import PanoSelectionMenu from "./PanoSelectionMenu.vue";
 import PanoSidePanel from "./PanoSidePanel.vue";
+import PanoTimeline from "./PanoTimeline.vue";
 import PanoTooltip from "./PanoTooltip.vue";
 import PanoToolRail from "./PanoToolRail.vue";
-import PanoVideoTransport from "./PanoVideoTransport.vue";
+import PanoVideoTransport from "./shared/PanoVideoTransport.vue";
 import PanoViewToggle from "./PanoViewToggle.vue";
 import { buildModalShellPreset } from "../modal_shell_presets.js";
 
@@ -24,9 +26,15 @@ const props = defineProps({
   paintSwatches: { type: Array, default: () => [] },
   shellPreset: { type: Object, default: null },
   uiState: { type: Object, default: () => ({}) },
+  // The Timeline's playhead refs ({ frame, playing }), apart from uiState so that a frame of playback
+  // updates only the Timeline.
+  playhead: { type: Object, default: undefined },
+  // "viewer" is the Preview's window (docs/preview-node.md "大きなウィンドウ"): the stage, the bottom-right view
+  // buttons, the playback bar and the close button, nothing to edit.
+  layout: { type: String, default: "editor" },
 });
 
-const emit = defineEmits(["close", "image-file-selected", "image-file-cancelled"]);
+const emit = defineEmits(["close", "image-file-selected", "image-file-cancelled", "timeline"]);
 let previousOverflow = "";
 let didLockBody = false;
 let previousFocusedElement = null;
@@ -42,8 +50,8 @@ function getPaintOverlayRefs() {
   };
 }
 
-function openImagePicker(intent) {
-  return imageFilePickerRef.value?.open?.(intent) === true;
+function openImagePicker(intent, accept) {
+  return imageFilePickerRef.value?.open?.(intent, accept) === true;
 }
 
 function onImageFileSelected(payload) {
@@ -57,6 +65,7 @@ function onImageFileCancelled(payload) {
 defineExpose({ getPaintOverlayRefs, openImagePicker });
 
 const previewMode = computed(() => props.readOnly === true);
+const viewerLayout = computed(() => props.layout === "viewer");
 const shellPreset = computed(() => props.shellPreset || buildModalShellPreset(props.type));
 const stageFailureMessage = computed(() => {
   const detail = String((
@@ -64,12 +73,17 @@ const stageFailureMessage = computed(() => {
       ? props.uiState?.stageStatusDetail
       : props.uiState?.stageWarningDetail
   ) ?? "");
-  if (detail === "background") return "Background preview unavailable. Re-run the node to refresh it.";
+  if (detail === "background") return "Background preview unavailable. Run the workflow to load it; nodes ComfyUI still has cached finish instantly.";
   if (detail === "stickers") return "One or more sticker previews are unavailable.";
   if (detail === "frame") return "The editor hit a rendering error. Check the browser console for details.";
+  if (detail === "renderer") return "The 3D view could not start (WebGL or its script failed to load). Check the browser console for details.";
   if (detail.startsWith("boot:")) return "Part of the editor failed to initialize. Check the browser console for details.";
   return "Some image previews are unavailable. Re-run the node to refresh them.";
 });
+// What the stage's status line says: a failure or a warning, else a note that is not a failure.
+const stageMessage = computed(() => (
+  props.uiState?.stageStatus === "failed" || props.uiState?.stageWarningDetail ? stageFailureMessage.value : props.uiState?.stageNotice
+));
 const floatingButtons = computed(() => {
   const base = Array.isArray(shellPreset.value?.floatingButtons) ? shellPreset.value.floatingButtons.slice() : [];
   if (previewMode.value) {
@@ -179,55 +193,89 @@ watch(() => props.open, (nextOpen) => {
 
 <template>
   <div v-if="open" class="pano-modal-overlay" @click.self="emit('close')">
-    <section ref="modalRef" class="pano-modal" role="dialog" aria-modal="true" :aria-label="nodeTitle" tabindex="-1">
-      <div class="pano-stage-wrap">
-        <canvas class="pano-stage pano-stage-bg" data-stage-background width="1600" height="800" />
-        <canvas class="pano-stage pano-stage-overlay" data-stage-overlay width="1600" height="800" />
-        <div class="pano-stage-loading" aria-hidden="true" />
-        <div
-          v-if="uiState.stageStatus === 'failed' || (uiState.stageStatus === 'ready' && uiState.stageWarningDetail)"
-          class="pano-stage-failed"
-          role="status"
-        >
-          {{ stageFailureMessage }}
-        </div>
-        <div class="pano-stage-drop-hint" aria-hidden="true">
-          <div class="pano-stage-drop-hint-text">Drag and drop image here</div>
-        </div>
-        <PanoPaintOverlays ref="paintOverlaysRef" />
-        <PanoImageFilePicker
-          ref="imageFilePickerRef"
-          @file-selected="onImageFileSelected"
-          @file-cancelled="onImageFileCancelled"
-        />
-
-        <template v-if="!previewMode">
-          <PanoToolRail :buttons="uiState.toolButtons || shellPreset.toolButtons || []" />
-          <PanoFrameRail :model="uiState.frameRail || {}" />
-          <PanoPaintDock
-            :paint-swatches="paintSwatches"
-            :panes="shellPreset.paintPanes || []"
-            :state="uiState.paintDock || {}"
+    <section ref="modalRef" class="pano-modal" :class="{ 'pano-modal-viewer': viewerLayout }" role="dialog" aria-modal="true" :aria-label="nodeTitle" tabindex="-1">
+      <div class="pano-stage-column">
+        <div class="pano-stage-wrap">
+          <canvas class="pano-stage pano-stage-bg" data-stage-background width="1600" height="800" />
+          <canvas class="pano-stage pano-stage-overlay" data-stage-overlay width="1600" height="800" />
+          <div class="pano-stage-loading" aria-hidden="true" />
+          <div
+            v-if="uiState.stageStatus === 'failed' || (uiState.stageStatus === 'ready' && (uiState.stageWarningDetail || uiState.stageNotice))"
+            class="pano-stage-failed"
+            role="status"
+          >
+            {{ stageMessage }}
+          </div>
+          <template v-if="viewerLayout">
+            <!-- The playback bar and the view buttons share the bottom row, so neither covers the other. -->
+            <div class="pano-viewer-bottom">
+              <PanoVideoTransport variant="playback" :state="uiState.videoTransport || {}" />
+              <PanoFloatingRight
+                :buttons="uiState.floatingButtons || shellPreset.floatingButtons || []"
+                :space="uiState.space || null"
+              />
+            </div>
+            <div class="pano-viewer-close">
+              <PanoIconButton
+                :icon="shellPreset.closeButton.icon"
+                :label="shellPreset.closeButton.label"
+                :tip="shellPreset.closeButton.tip"
+                :attrs="{ 'data-action': shellPreset.closeButton.action }"
+              />
+            </div>
+            <PanoTooltip :model="uiState.tooltip || {}" />
+          </template>
+          <template v-else>
+          <div class="pano-stage-drop-hint" aria-hidden="true">
+            <div class="pano-stage-drop-hint-text">Drag and drop image here</div>
+          </div>
+          <PanoPaintOverlays ref="paintOverlaysRef" />
+          <PanoImageFilePicker
+            ref="imageFilePickerRef"
+            @file-selected="onImageFileSelected"
+            @file-cancelled="onImageFileCancelled"
           />
+
+          <template v-if="!previewMode">
+            <PanoToolRail :buttons="uiState.toolButtons || shellPreset.toolButtons || []" />
+            <PanoFrameRail :model="uiState.frameRail || {}" />
+            <PanoPaintDock
+              :paint-swatches="paintSwatches"
+              :panes="shellPreset.paintPanes || []"
+              :state="uiState.paintDock || {}"
+            />
+          </template>
+
+          <PanoVideoTransport :state="uiState.videoTransport || {}" />
+
+          <PanoViewToggle :buttons="uiState.viewButtons || shellPreset.viewButtons || []" />
+
+          <PanoFloatingRight
+            :buttons="uiState.floatingButtons || floatingButtons"
+            :space="uiState.space || null"
+            :fov-value="uiState.fovValue || '100°'"
+            :preview="uiState.cameraPreview || {}"
+            :preview-toggle="uiState.outputPreviewToggle || {}"
+          />
+
+          <PanoSelectionMenu :model="uiState.selectionMenu || {}" />
+          <PanoTooltip :model="uiState.tooltip || {}" />
+          <PanoConfirmDialog :model="uiState.confirmDialog || {}" />
+          </template>
+        </div>
+        <template v-if="!viewerLayout">
+          <PanoTimeline :model="uiState.timeline || {}" :playhead="playhead" @action="emit('timeline', $event)" />
         </template>
-
-        <PanoVideoTransport :state="uiState.videoTransport || {}" />
-
-        <PanoViewToggle :buttons="uiState.viewButtons || shellPreset.viewButtons || []" />
-
-        <PanoFloatingRight
-          :buttons="uiState.floatingButtons || floatingButtons"
-          :fov-value="uiState.fovValue || '100°'"
-          :preview="uiState.cameraPreview || {}"
-          :preview-toggle="uiState.outputPreviewToggle || {}"
-        />
-
-        <PanoSelectionMenu :model="uiState.selectionMenu || {}" />
-        <PanoTooltip :model="uiState.tooltip || {}" />
-        <PanoConfirmDialog :model="uiState.confirmDialog || {}" />
       </div>
 
-      <PanoSidePanel v-if="!hideSidebar" :node-title="nodeTitle" :model="uiState.sidePanel || {}" />
+      <!-- The viewer opens with hideSidebar. -->
+      <PanoSidePanel
+        v-if="!hideSidebar"
+        :node-title="nodeTitle"
+        :model="uiState.sidePanel || {}"
+        :easing="uiState.easing || null"
+        @timeline="emit('timeline', $event)"
+      />
     </section>
   </div>
 </template>
