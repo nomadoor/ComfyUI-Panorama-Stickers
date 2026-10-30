@@ -167,6 +167,7 @@ function setCollapsed(value) {
             :media="view.media"
             :background="view.background"
             :scene-row="view.sceneRow"
+            :fps-locked="view.fpsLocked"
             :collapsed="collapsed"
             @seek="(frame) => controller.seek(frame)"
             @play="controller.play()"

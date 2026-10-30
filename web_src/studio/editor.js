@@ -1,7 +1,8 @@
 // Panorama Studio's editor in the new UI (ADR 0044). In development: web_src/main.js opens it only while the
 // setting PanoramaSuite.Editor.NewUI is on. It puts together the node (its state_json, its inputs and its result), the
 // session (session.js: the working state, the shared selection, Undo), the stage (stage.js) and what it draws of the
-// state at the playhead (stage_content.js), the playback of the Timeline (pano_video_playback.js on its clock), the
+// state at the playhead (stage_content.js), the background VIDEO and the playback of the Timeline that drives it
+// (pano_media_session.js createBackgroundVideo, as the old editor; pano_video_fps.js for the fps a VIDEO sets), the
 // keys, and the Vue shell (StudioEditor.vue with <StudioInspector> and <StudioTimeline>).
 //
 // Closing (✕, or Escape with nothing left to take back: docs/studio-ui.md "閉じ方") always saves: the state goes to
@@ -11,15 +12,26 @@
 import { createApp, markRaw, reactive, shallowReactive } from "vue";
 import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
+import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { editorSession, noteStudioEditorOpen, peekNodeSurface } from "../pano_node_bridge.js";
-import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
+import {
+  backgroundLengthMedia,
+  backgroundVideoKeys,
+  backgroundVideoMedia,
+  createBackgroundVideo,
+  isDecodedImageReady,
+  mediaRevisionToken,
+  videoMetaEntry,
+} from "../pano_media_session.js";
+import { backgroundBarEnd, backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
+import { isNodeOutputMediaCurrent, videoLinked } from "../pano_preview_video.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
-import { createVideoPlayback } from "../pano_video_playback.js";
+import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
 import { groundOf } from "./defaults.js";
 import { createStudioSession } from "./session.js";
 import { createStage, stageUi } from "./stage.js";
@@ -46,20 +58,27 @@ function linked(node, names) {
   return (node?.inputs ?? []).some((input) => names.includes(input?.name) && input.link != null);
 }
 
-// The node's state v2 (a state that cannot be read opens as the empty state, as the old editor does).
-function nodeState(node) {
+// The inputs whose VIDEO sets the Timeline fps (pano_video_fps.js timelineFpsLocked).
+const VIDEO_FPS_INPUTS = [...BACKGROUND_INPUTS, "sticker"];
+
+// The node's state v2 (a state that cannot be read opens as the empty state, as the old editor does), rebased to the
+// fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
+function nodeState(node, media) {
+  let scene;
   try {
-    return loadSceneState(String(widgetOf(node, "state_json")?.value ?? ""));
+    scene = loadSceneState(String(widgetOf(node, "state_json")?.value ?? ""));
   } catch {
-    return loadSceneState(null);
+    scene = loadSceneState(null);
   }
+  return sceneAtVideoFps(scene, videoTimelineFps(node, media));
 }
 
 const loaded = (image) => !!image?.complete && image.naturalWidth > 0;
 
 // The node's background image, loaded once through its linked input (pano_comfy_media.js): get() is the render's
 // background ({ media, revision, coverage }) once it has loaded, null before or without one; state() is "none" (no
-// input linked), "loading", "ready" or "failed". A background VIDEO is not played yet.
+// input linked), "loading", "ready" or "failed". `coverage` is the background's span. A background VIDEO is
+// createBackgroundVideo's (openStudioEditor), shown in place of the image once it has a picture.
 function nodeBackground(node, media, onChange) {
   let image = null;
   let status = "none";
@@ -75,6 +94,7 @@ function nodeBackground(node, media, onChange) {
   return {
     get: () => (status === "ready" ? { media: image, revision: image.currentSrc || image.src, coverage } : null),
     state: () => status,
+    coverage,
   };
 }
 
@@ -92,7 +112,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     throw error;
   }
   const media = createComfyMediaAdapter({ app, api });
-  const session = createStudioSession({ state: nodeState(node), readOnly });
+  const session = createStudioSession({ state: nodeState(node, media), readOnly });
   const nodeSession = editorSession(node);
   const stateWidget = widgetOf(node, "state_json");
   const sceneLinked = linked(node, ["scene"]);
@@ -129,11 +149,13 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     canUndo: false,
     canRedo: false,
     readOnly,
-    // What the Timeline knows of the inputs (timeline_model.js ctx `media`): the background as a single image, the
-    // `scene` items, the animated 3D files' clips.
+    // What the Timeline knows of the inputs (timeline_model.js ctx `media`): the background (its VIDEO or IMAGE batch
+    // once its length is known, else a single image), the `scene` items, the animated 3D files' clips.
     media: {},
     background: backgroundLinked ? { end: null } : null,
     sceneRow: sceneLinked,
+    // A VIDEO sets the Timeline fps (pano_video_fps.js).
+    fpsLocked: false,
     imageSizes: {},
     animations: {},
   });
@@ -143,7 +165,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     const state = session.state;
     const files = sceneFiles();
     const animations = stateAnimationClips(state, { sceneFiles: files, editorFile: stageMedia.editorFile });
-    view.media = { bg: backgroundLinked ? { frames: 1 } : null, sceneItems: files?.urls.length ?? 0, animations };
+    view.media = { bg: backgroundMedia(), sceneItems: files?.urls.length ?? 0, animations };
+    view.background = backgroundLinked ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg) } : null;
+    view.fpsLocked = timelineFpsLocked(videoTimelineFps(node, media), node, VIDEO_FPS_INPUTS);
     view.animations = animations.stickers ?? {};
     view.imageSizes = stageMedia.imageSizes(state);
   }
@@ -160,12 +184,31 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     world.camera = outputView(session.state, view.playhead).position;
     ui.empty = ui.background === "none" && !session.state.stickers.length;
     syncMedia();
+    seekMovedBackground();
     redraw();
   }
 
-  // --- The playback of the Timeline, on its clock (a background VIDEO does not play yet).
-  const playback = createVideoPlayback({
-    video: null,
+  // --- The background VIDEO and the playback of the Timeline that drives it (pano_media_session.js, as the old
+  // editor): the VIDEO plays with its audio and its presented frames move the playhead; without one, or outside its
+  // Clip range and past its end, a clock does. The element is the editor's own, hidden.
+  const backgroundVideoElement = createPanoVideo(document, "studio.background");
+  backgroundVideoElement.playsInline = true;
+  backgroundVideoElement.preload = "auto";
+  backgroundVideoElement.crossOrigin = "anonymous";
+  backgroundVideoElement.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+  const backgroundStill = createPanoCanvas({ label: "studio.still" });
+  // What the last choose() learned of the VIDEO (backgroundVideoMedia's `source`).
+  let videoSource = { ready: false, frameCount: 0, duration: 0 };
+  const onVideoNews = () => {
+    if (closed) return;
+    refreshVideo();
+    syncMedia();
+    syncBackground();
+    redraw(DRAW_REASON.MEDIA);
+  };
+  const backgroundVideo = createBackgroundVideo({
+    video: backgroundVideoElement,
+    still: backgroundStill,
     clock: {
       now: () => performance.now(),
       requestFrame: (callback) => requestAnimationFrame(callback),
@@ -174,16 +217,83 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     fps: () => session.state.timeline.fps,
     span: () => spanOf(timelineCtx()),
     loop: () => view.loop,
+    // The node's own background is where its Clip range puts it (docs/timeline-ui.md "背景の行").
+    place: () => (backgroundLinked ? backgroundPlace(session.state.background.clip) : null),
     onFrame: (frame) => {
       view.playhead = frame;
       world.camera = outputView(session.state, frame).position;
       redraw();
     },
-    onCapture: () => {},
     onChange: () => {
       view.playing = playback.playing;
+      if (closed) return;
+      syncBackground();
+      redraw(DRAW_REASON.PLAYHEAD);
     },
+    onStill: () => {
+      if (closed) return;
+      syncBackground();
+      redraw(DRAW_REASON.MEDIA);
+    },
+    onReady: onVideoNews,
+    onError: onVideoNews,
   });
+  const { playback } = backgroundVideo;
+
+  // Picks the background VIDEO (the node's own result, then a video file the background input loads directly) and
+  // loads it; a result that came since the last call is picked up here.
+  function refreshVideo() {
+    const keys = backgroundVideoKeys({ nodeName: String(node?.comfyClass || node?.type || ""), type: "stickers" });
+    const own = isNodeOutputMediaCurrent(node, "background") ? media.uiList(node, keys.videoKey)[0] || null : null;
+    const chosen = backgroundVideo.choose({
+      own: media.source(own),
+      file: media.linkedVideoFile(node, BACKGROUND_INPUTS),
+      meta: () => videoMetaEntry(media.uiValue(node, keys.metaKey)),
+      fps: session.state.timeline.fps,
+    });
+    backgroundVideo.load(chosen.src, { loop: false, muted: false, volume: 1 });
+    videoSource = { ready: !!chosen.src, frameCount: chosen.frameCount, duration: chosen.duration };
+  }
+
+  // The node's own background as the Auto length reads it (pano_media_session.js).
+  function backgroundMedia() {
+    const video = videoLinked(node, BACKGROUND_INPUTS);
+    return backgroundLengthMedia(backgroundVideoMedia(videoSource, video), { linked: backgroundLinked, videoLinked: video });
+  }
+
+  // A moved, trimmed or restored background Clip range changes the VIDEO's time at the playhead: it is sought again.
+  let backgroundClipKey = null;
+  function seekMovedBackground() {
+    const clip = session.state.background.clip;
+    const key = `${clip.start}:${clip.in}:${clip.duration}`;
+    if (backgroundClipKey !== null && key !== backgroundClipKey && backgroundVideo.source && !playback.playing) playback.seek(view.playhead);
+    backgroundClipKey = key;
+  }
+
+  // The background the stage draws at the playhead: bg_color outside its Clip range and media (as the node's output),
+  // else the VIDEO or its still once one has a picture, else the image.
+  function stageBackground() {
+    const state = session.state;
+    if (backgroundLinked && !backgroundShownAt(state.background.clip, view.playhead, state.timeline.fps, view.media.bg ?? null)) {
+      return bgColorBackground(String(widgetOf(node, "bg_color")?.value || "#00ff00"));
+    }
+    const shown = backgroundVideo.displaySource();
+    if (shown && isDecodedImageReady(shown)) {
+      // The VIDEO and its still are one source, so a seek keeps the frame before (pano_three_view.js).
+      return { media: shown, revision: mediaRevisionToken(shown), coverage: background.coverage, source: backgroundVideo.source };
+    }
+    return background.get();
+  }
+
+  // Play / pause (the play button, Space), and a seek: a VIDEO that came with a result since the last one is picked up.
+  function togglePlayback() {
+    refreshVideo();
+    playback.toggle();
+  }
+  function seek(frame) {
+    refreshVideo();
+    playback.seek(frame);
+  }
 
   // --- The content at the playhead and what is selected, for the stage.
   const sceneBox = (url) => stage?.sceneBox(url) ?? null;
@@ -218,11 +328,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     empty: false,
   });
   const background = nodeBackground(node, media, () => {
-    ui.background = background.state();
+    syncBackground();
     redraw(DRAW_REASON.MEDIA);
   });
-  ui.background = background.state();
-  ui.empty = ui.background === "none" && !session.state.stickers.length;
+  // What the top-center line knows of the background: the VIDEO's while one is loaded, else the image's.
+  function syncBackground() {
+    const image = background.state();
+    if (backgroundVideo.source) ui.background = backgroundVideo.displaySource() ? "ready" : "loading";
+    else ui.background = image === "ready" || !backgroundVideo.failed ? image : "failed";
+    ui.empty = ui.background === "none" && !session.state.stickers.length;
+  }
+  syncBackground();
   let noticeTimer = 0;
   function notice(text) {
     ui.notice = text;
@@ -298,7 +414,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     } else if (!mod && event.code === "Space" && !event.repeat) {
       event.preventDefault();
       event.stopPropagation();
-      playback.toggle();
+      togglePlayback();
     }
   }
 
@@ -321,7 +437,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
         opening,
         output,
         world,
-        background: background.get,
+        background: stageBackground,
         content,
         selected: () => selectionOf(session.selection.row),
         ui,
@@ -339,8 +455,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       session.select(selection);
       sync();
     },
-    seek: (frame) => playback.seek(frame),
-    play: () => playback.toggle(),
+    seek: (frame) => seek(frame),
+    play: () => togglePlayback(),
     loop: (on) => {
       view.loop = !!on;
       writeLoopSetting(storage, view.loop);
@@ -366,7 +482,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     if (stage) nodeSession.view = rememberView(stage.destination(), "panorama");
     clearTimeout(noticeTimer);
     window.removeEventListener("keydown", onKeyDown, true);
-    playback.dispose();
+    backgroundVideo.close();
+    backgroundVideoElement.remove();
+    releasePanoCanvas(backgroundStill);
     stage?.dispose();
     stageMedia.dispose();
     vueApp.unmount();
@@ -378,9 +496,13 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     peekNodeSurface(node)?.dom?.requestDraw?.();
     node.setDirtyCanvas?.(true, true);
   };
+  refreshVideo();
   sync();
   const vueApp = createApp(StudioEditor, { nodeTitle: String(node.title || "Panorama Studio"), ui, view, storage, controller });
   vueApp.mount(mountHost);
+  // The background VIDEO lives in the page while the editor is open, hidden (an element in the page keeps presenting
+  // its frames).
+  mountHost.appendChild(backgroundVideoElement);
   window.addEventListener("keydown", onKeyDown, true);
   // The node surface lets its VIDEO and textures go while the editor covers it, and the Preview's Scene viewers on
   // the graph stop drawing (docs/preview-node.md), as with the old editor.
