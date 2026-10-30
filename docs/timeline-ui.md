@@ -225,6 +225,7 @@ Camera は Keyframe だけで動く（撮り方のモードは持たない）。
 - 再生中でも、VIDEO が最初のフレームを表示するまでは直前の静止画を出し続ける（シーク直後や再生開始直後の VIDEO には描けるフレームがない）。描画側（`pano_three_view.js`）も、差し替え先の素材に絵が来るまで前のテクスチャを使い続ける。
 - VIDEO が Timeline 以上の長さのときは、VIDEO 自身のループで繰り返す（長い分は Timeline の終わりで先頭へ戻す）（シークしないので映像も音声も途切れない）。Timeline が長いときは、終わりで先頭へシークしてから再生する。
 - 各状態が付けたイベントリスナーと requestVideoFrameCallback・時計のコールバックは、その状態を離れるときに外す。
+- （新しい UI）新しい UI のエディタ（`web_src/studio/editor.js`）も、背景の VIDEO を `pano_media_session.js` の `createBackgroundVideo` を通してこの状態機械で再生・シーク・停止し、表示する素材（再生中は VIDEO、止めている間は静止画）を描く。Timeline の終わりで先頭に戻るかは、新しい UI のタイムラインのループの切り替えに従う。どの VIDEO を再生するか・メタ情報の長さ・Auto の長さに数える背景・fps の欄を変えられないこと・開いたときの再基準化は、古い UI と同じ部品（`pano_media_session.js`・`pano_video_fps.js`）で決める。背景の Clip range の外と素材の外は `bg_color` を出す（「背景の行」）。再生ボタンとシークのときに、開いた後に届いた実行結果の VIDEO を拾う。新しい UI でまだしないこと：上流の Scene の背景、`port` の Sticker の素材、開いている間に届いた実行結果での fps の再基準化、消音の操作。
 
 ## glTF のアニメーション
 
