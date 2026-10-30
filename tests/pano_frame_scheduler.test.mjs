@@ -49,6 +49,47 @@ test("an idle editor asks for no animation frame", () => {
   assert.deepEqual(draws, []);
 });
 
+test("flush runs the pending frame now, with its reasons and callbacks, and the animation frame no longer runs it", () => {
+  const { frames, draws, scheduler } = setup();
+  const ran = [];
+  scheduler.requestFrame((ts) => ran.push(ts));
+  scheduler.requestDraw(DRAW_REASON.RESIZE);
+  scheduler.flush(5);
+  assert.deepEqual(ran, [5]);
+  assert.deepEqual(draws, [[DRAW_REASON.RESIZE]]);
+  assert.equal(frames.pending, 0);
+  assert.equal(scheduler.pending, false);
+  frames.runFrame();
+  assert.equal(draws.length, 1);
+  // With nothing pending, flush draws nothing.
+  scheduler.flush(6);
+  assert.equal(draws.length, 1);
+});
+
+test("flush inside a frame leaves the request to the frame's end", () => {
+  const frames = createFrames();
+  const draws = [];
+  let scheduler = null;
+  scheduler = createFrameScheduler({
+    requestAnimationFrame: frames.requestAnimationFrame,
+    cancelAnimationFrame: frames.cancelAnimationFrame,
+    draw: (ts, reasons) => {
+      draws.push([...reasons].sort());
+      if (draws.length === 1) {
+        scheduler.requestDraw(DRAW_REASON.RESIZE);
+        scheduler.flush(ts);
+      }
+    },
+    animating: () => false,
+  });
+  scheduler.requestDraw(DRAW_REASON.STATE);
+  frames.runFrame();
+  assert.equal(draws.length, 1);
+  assert.equal(frames.pending, 1);
+  frames.runFrame();
+  assert.deepEqual(draws, [[DRAW_REASON.STATE], [DRAW_REASON.RESIZE]]);
+});
+
 test("requestDraw draws the next frame once, with every reason asked for, and then stops", () => {
   const { frames, draws, scheduler } = setup();
   scheduler.requestDraw(DRAW_REASON.STATE);

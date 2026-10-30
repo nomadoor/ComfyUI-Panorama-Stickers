@@ -499,8 +499,13 @@ export function createStage({
     });
   }
 
+  // A change of size (the stage's canvas, the Camera tab's frame box or its ERP canvas, the Output window) draws at once,
+  // before the browser paints: a resized canvas is cleared and would otherwise show so, or stretched, for a frame
+  // (docs/timeline-ui.md: the view is drawn again at its new size in the same frame).
   function requestDraw(reason = DRAW_REASON.VIEW) {
-    if (!disposed) scheduler.requestDraw(reason);
+    if (disposed) return;
+    scheduler.requestDraw(reason);
+    if (reason === DRAW_REASON.RESIZE) scheduler.flush(now());
   }
 
   // --- The notice, the cursor and the knobs.
