@@ -4,6 +4,7 @@ import { cameraBasis } from "../pano_camera_math.js";
 import { lensAxesDirection, lensAxesFilm, lensFovLimit, lensRadius } from "../pano_lens.js";
 import { viewProjection, viewportCamera } from "../pano_editor_view.js";
 import { clamp } from "../pano_math.js";
+import { erpPointOfDirection } from "../pano_paint_strokes.js";
 import { DEG2RAD } from "./constants.js";
 import { add, dot, mul, norm, vec3 } from "./helpers.js";
 
@@ -316,14 +317,7 @@ export function createProjection(deps) {
         t: Number(ts || 0),
       };
     }
-    const d = screenToWorldDir(pos.x, pos.y);
-    const { lon, lat } = dirToLonLat(d);
-    return {
-      targetKind: "ERP_GLOBAL",
-      u: ((lon / (2 * Math.PI)) + 0.5 + 1) % 1,
-      v: clamp(0.5 - (lat / Math.PI), 0, 1),
-      t: Number(ts || 0),
-    };
+    return erpPointOfDirection(screenToWorldDir(pos.x, pos.y), ts);
   }
 
   // Convert a frame-view screen position to ERP UV coordinates via world direction.
@@ -340,13 +334,7 @@ export function createProjection(deps) {
     if (framePoint.x < 0 || framePoint.x > 1 || framePoint.y < 0 || framePoint.y > 1) return null;
     const dir = frameLocalPointToWorldDir(shot, framePoint);
     if (!dir) return null;
-    const { lon, lat } = dirToLonLat(dir);
-    return {
-      targetKind: "ERP_GLOBAL",
-      u: ((lon / (2 * Math.PI)) + 0.5 + 1) % 1,
-      v: clamp(0.5 - (lat / Math.PI), 0, 1),
-      t: Number(ts || 0),
-    };
+    return erpPointOfDirection(dir, ts);
   }
 
   return {

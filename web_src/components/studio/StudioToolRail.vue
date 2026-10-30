@@ -6,7 +6,7 @@ import StudioFloatGroup from "./StudioFloatGroup.vue";
 import StudioIconButton from "./StudioIconButton.vue";
 
 // The left column of the stage (docs/studio-ui.md "左の列"): the tools (Cursor, Paint, Mask), adding (Add, Camera),
-// and Undo / Redo at the bottom, in three groups. While the editor is being built, only Cursor is chosen; Add opens the
+// and Undo / Redo at the bottom, in three groups. One of Cursor, Paint and Mask is chosen (`tool`); Add opens the
 // file picker (the shell's); Camera brings the Camera to the view (studio/camera_ui.js); the others stay in their
 // places, disabled, with a tooltip saying so. Presentational:
 // props in, `press` out with the button's key.
@@ -16,6 +16,9 @@ const props = defineProps({
   canRedo: { type: Boolean, default: false },
   // Add can be pressed (not in a read-only editor: docs/studio-ui.md "Add とドロップの見せ方").
   canAdd: { type: Boolean, default: false },
+  // The chosen tool ("cursor", "paint", "mask"), and whether Paint and Mask can be chosen (not in a read-only editor).
+  tool: { type: String, default: "cursor" },
+  canPaint: { type: Boolean, default: false },
   // The Camera tab: every button but Undo and Redo stays in its place, disabled, saying why (docs/studio-ui.md
   // "左の列").
   cameraTab: { type: Boolean, default: false },
@@ -24,13 +27,12 @@ const props = defineProps({
 });
 const emit = defineEmits(["press"]);
 
-const LATER = "in development";
 const CAMERA_TAB_TIP = "Not available in the Camera view";
 const groups = computed(() => [
   [
-    { key: "cursor", icon: ICON.cursor_tool, label: "Cursor", active: true },
-    { key: "paint", icon: ICON.palette_tool, label: "Paint", disabled: true, tip: `Paint · ${LATER}` },
-    { key: "mask", icon: ICON.circle_dashed_tool, label: "Mask", disabled: true, tip: `Mask · ${LATER}` },
+    { key: "cursor", icon: ICON.cursor_tool, label: "Cursor", active: props.tool === "cursor" },
+    { key: "paint", icon: ICON.palette_tool, label: "Paint", active: props.tool === "paint", disabled: !props.canPaint, tip: props.canPaint ? "Paint" : "Paint · Read-only" },
+    { key: "mask", icon: ICON.circle_dashed_tool, label: "Mask", active: props.tool === "mask", disabled: !props.canPaint, tip: props.canPaint ? "Mask" : "Mask · Read-only" },
   ],
   [
     { key: "add", icon: "", drawn: "add", label: "Add", disabled: !props.canAdd, tip: "Add an image or a 3D file" },
