@@ -248,10 +248,17 @@ def _build_chisel_stamp_alpha(radius_px: float, hardness: float, aspect: float =
     return np.clip(alpha, 0.0, 1.0)
 
 
+def _brush_value(stroke: dict, key: str, default: float) -> float:
+    """A stroke's brush value, `default` only when it is missing or None (as the editor's paint engine reads it: 0 is
+    a value, not the default)."""
+    value = stroke.get(key)
+    return default if value is None else float(value)
+
+
 def _get_stamp_alpha(stroke: dict, radius_px: float) -> np.ndarray:
     stamp_kind = str(stroke.get("stampKind") or "round")
-    hardness = max(0.0, min(1.0, float(stroke.get("hardness") or 0.9)))
-    aspect = max(0.1, float(stroke.get("aspect") or 1.0))
+    hardness = max(0.0, min(1.0, _brush_value(stroke, "hardness", 0.9)))
+    aspect = max(0.1, _brush_value(stroke, "aspect", 1.0))
     angle = stroke.get("angle") or {}
     angle_rad = float(angle.get("value", 0.0)) if str(angle.get("kind") or "fixed") == "fixed" else 0.0
     if stamp_kind == "chisel":
@@ -340,7 +347,7 @@ def _stroke_freehand_alpha(stroke: dict, width: int, height: int) -> np.ndarray:
     radius_px = _stroke_radius_px(stroke, width, height)
     spacing_px = _stroke_spacing_px(stroke, radius_px)
     base_alpha = _get_stamp_alpha(stroke, radius_px)
-    stamp_alpha = np.clip(base_alpha * max(0.0, min(1.0, float(stroke.get("flow") or 1.0))), 0.0, 1.0)
+    stamp_alpha = np.clip(base_alpha * max(0.0, min(1.0, _brush_value(stroke, "flow", 1.0))), 0.0, 1.0)
     stroke_alpha = np.zeros((height, width), dtype=np.float32)
     half_h = stamp_alpha.shape[0] // 2
     half_w = stamp_alpha.shape[1] // 2

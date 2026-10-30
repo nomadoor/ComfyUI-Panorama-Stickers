@@ -253,3 +253,58 @@ test("Closing uploads the paint layer the editor draws, as the old editor does, 
   expect(maskPixel.pixel[3]).toBeGreaterThan(200);
   expect(problems).toEqual([]);
 });
+
+// docs/scene-state-v2.md 「ペイントのストロークの筆の値」: the normalizer used to drop the brush shape, so a Marker stroke
+// came back as a round brush when the editor was opened again.
+test("A Marker stroke keeps its brush shape through closing and opening again, and is drawn the same", async ({ page }) => {
+  const problems = await open(page);
+  await page.locator('[data-tool="paint"]').click();
+  await page.locator('[data-paint-brush="marker"]').click();
+  await page.locator('[data-paint-swatch="red"]').click();
+  await drag(page, line(0.35, 0.3, 0.65, 0.34));
+  const [drawn] = (await painting(page)).paint.strokes;
+  expect(drawn.stampKind).toBe("chisel");
+  expect(drawn.aspect).toBe(2.4);
+  expect(drawn.angle).toEqual({ kind: "fixed", value: Math.PI / 6 });
+  // Cursor, so that nothing but the paint differs between the two pictures (no brush outline under the pointer).
+  await page.locator('[data-tool="cursor"]').click();
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(300);
+  const box = await stageBox(page);
+  const rect = [box.width * 0.3, box.height * 0.22, box.width * 0.4, box.height * 0.2];
+  const before = await page.evaluate((r) => window.__studio.stageRegion(...r), rect);
+
+  await page.evaluate(() => window.__studio.close());
+  await page.waitForFunction(() => JSON.parse(window.__studio.node.widgets[0].value).painting_layer, null, { timeout: 15_000 });
+  const written = JSON.parse(await page.evaluate(() => window.__studio.node.widgets[0].value));
+  const [saved] = written.painting.paint.strokes;
+  expect([saved.stampKind, saved.aspect, saved.angle]).toEqual(["chisel", 2.4, { kind: "fixed", value: Math.PI / 6 }]);
+  expect([saved.hardness, saved.flow, saved.spacing]).toEqual([0.76, 0.8, 0.06]);
+  expect([saved.chiselEdgeLift, saved.chiselCenterDip, saved.chiselFiber]).toEqual([0.3, 0.12, 0.28]);
+
+  await page.evaluate(() => window.__studio.reopen());
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
+  await page.waitForTimeout(600);
+  const [reopened] = (await painting(page)).paint.strokes;
+  expect(reopened.id).toBe(drawn.id);
+  expect([reopened.stampKind, reopened.aspect, reopened.angle]).toEqual(["chisel", 2.4, { kind: "fixed", value: Math.PI / 6 }]);
+  const after = await page.evaluate((r) => window.__studio.stageRegion(...r), rect);
+  expect(after.length).toBe(before.length);
+  // The stroke is there (red), and the picture is the one drawn before: the mean difference per channel is small and
+  // few pixels differ by much. A round brush of the same stroke differs along the whole edge.
+  let red = 0;
+  let total = 0;
+  let far = 0;
+  for (let i = 0; i < before.length; i += 4) {
+    if (before[i] > 200 && before[i + 1] < 80) red += 1;
+    let diff = 0;
+    for (let c = 0; c < 3; c += 1) diff = Math.max(diff, Math.abs(before[i + c] - after[i + c]));
+    total += diff;
+    if (diff > 40) far += 1;
+  }
+  const pixels = before.length / 4;
+  expect(red).toBeGreaterThan(pixels * 0.03);
+  expect(total / pixels).toBeLessThan(2);
+  expect(far).toBeLessThan(pixels * 0.005);
+  expect(problems).toEqual([]);
+});

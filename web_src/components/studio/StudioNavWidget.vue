@@ -47,6 +47,7 @@ const KNOBS = [
       <StudioIconButton
         ref="help"
         data-action="shortcuts"
+        size="knob"
         :icon="ICON.help"
         label="Shortcuts"
         tip="Shortcuts"

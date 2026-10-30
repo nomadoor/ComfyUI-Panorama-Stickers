@@ -89,6 +89,26 @@ test("with the setting on, the Preview's read-only opening goes to the new windo
   }
 });
 
+// docs/preview-node.md "ノード上": the node surface's top-right button asks the chooser whether the window takes the node.
+test("the chooser says whether the new Preview window takes a node now, by the setting and previewTakes", () => {
+  let on = true;
+  const previewNode = { comfyClass: "PanoramaPreviewNode" };
+  const takes = createEditorChooser({
+    newUiOn: () => on,
+    openOld() {},
+    openStudio() {},
+    openPreview() {},
+    previewTakes: (node) => node === previewNode,
+  }).previewWindowTakes;
+  assert.equal(takes(previewNode), true);
+  assert.equal(takes({}), false);
+  on = false;
+  assert.equal(takes(previewNode), false);
+  on = undefined;
+  assert.equal(takes(previewNode), false);
+  assert.equal(createEditorChooser({ newUiOn: () => true, openOld() {}, openStudio() {}, previewTakes: () => true }).previewWindowTakes(previewNode), false);
+});
+
 test("the new Preview window takes the Panorama Preview node with an IMAGE or a VIDEO source only", () => {
   assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "IMAGE" }), true);
   assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "VIDEO" }), true);
