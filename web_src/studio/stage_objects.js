@@ -116,8 +116,10 @@ export function createStageObjects({
 
   // --- What shows.
 
-  // The gizmo to show ({ mode, transform }, gizmo_overlay.js) or null: on the selected World object where it shows and
-  // can be edited, or on the selected Camera, in the 3D tab.
+  // The gizmo to show ({ mode, transform, center }, gizmo_overlay.js) or null: on the selected World object where it
+  // shows and can be edited, or on the selected Camera, in the 3D tab. A World object's gizmo sits on its guide's center
+  // (docs/studio-ui.md "ギズモ" "物の中心"; a 3D file's origin can lie far outside its content), the Camera's on its
+  // position.
   function gizmo() {
     if (!editable()) return null;
     const row = selection();
@@ -131,7 +133,8 @@ export function createStageObjects({
     const sticker = stickerOf(row);
     const value = content()?.evaluated.stickers.find((item) => item.id === row);
     if (!sticker || sticker.locked || !value?.active) return null;
-    return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value) };
+    const guide = guides().find((item) => item.id === row);
+    return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value), center: guide ? [...guide.center] : null };
   }
 
   // The selected sky image's geometry with its handles (pano_sticker_geometry.js), or null.
@@ -213,6 +216,11 @@ export function createStageObjects({
         const moved = grab.move(camera(), next, now.width, now.height);
         if (!moved) return;
         const lanes = gizmoDragLanes(shown.mode, base, shown.transform, moved);
+        // Rotate and Scale keep the guide's center in place: an object whose origin is elsewhere moves too.
+        if (shown.mode !== "translate" && row !== "camera") {
+          const shift = moved.position.map((value, axis) => value - shown.transform.position[axis]);
+          if (shift.some((value) => Math.abs(value) > 1e-9)) lanes.position = base.position.map((value, axis) => value + shift[axis]);
+        }
         edits.live((draft) => {
           if (row === "camera") {
             draft.camera ??= cameraOf(draft);

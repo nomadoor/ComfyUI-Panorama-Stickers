@@ -4,7 +4,7 @@
 // (pano_three_view.js createGizmo); this module does not use it. Pure: transforms and screen points in, handles and
 // transforms out; stage_objects.js wires it, stage_overlay.js draws it, pano_space.js gizmoDragLanes turns a drag
 // into Lanes.
-import { projectPoint } from "../pano_space.js";
+import { projectPoint, uniformScale } from "../pano_space.js";
 import { placeDirection } from "../pano_editor_view.js";
 import { quaternionToRotation, rotationToQuaternion } from "../pano_world.js";
 import { distanceToSegment, focalPixels, viewForward } from "./world_guides.js";
@@ -45,19 +45,25 @@ const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a
 const unit = (a) => scale(a, 1 / (Math.hypot(...a) || 1));
 const column = (m, index) => [m[0][index], m[1][index], m[2][index]];
 
+// The World point the gizmo sits on, and that Rotate and Scale keep in place (docs/studio-ui.md "ギズモ" "物の中心").
+function pivotOf(gizmo) {
+  return gizmo.center ? [...gizmo.center] : [...gizmo.transform.position];
+}
+
 // How many World units one CSS px spans at depth `depth` of a `height` px stage seen from `camera`.
 function unitsPerPixel(camera, depth, height) {
   return depth / focalPixels(camera, height);
 }
 
 // The handles of the gizmo `gizmo` ({ mode ("translate", "rotate", "scale"), transform (pano_space.js sceneTransform's
-// { position, quaternion, scale }) }) on a width x height CSS px stage seen from `camera` (a stageCamera()), or null
-// when its center is not in front: { mode, center: { x, y }, length (World units of the reach), axes: [{ name, dir,
+// { position, quaternion, scale }), center (the World point it sits on: the object's guide's center, world_guides.js
+// worldGuideItems; the transform's position without one) }) on a width x height CSS px stage seen from `camera` (a
+// stageCamera()), or null when its center is not in front: { mode, center: { x, y }, length (World units of the reach), axes: [{ name, dir,
 // end: { x, y }, depth, shown }], rings: [{ name, dir, points: [{ x, y, world, front }] }] }. Move and Rotate use the
 // World axes, Scale the object's own.
 export function gizmoHandles(gizmo, camera, width, height) {
   if (!gizmo) return null;
-  const centerWorld = gizmo.transform.position;
+  const centerWorld = pivotOf(gizmo);
   const center = projectPoint(camera, centerWorld, width, height);
   if (!center) return null;
   const length = GIZMO_LOOK.reach * unitsPerPixel(camera, center.z, height);
@@ -167,6 +173,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   const handles = gizmoHandles(gizmo, camera, width, height);
   if (!handles || !name) return null;
   const start = gizmo.transform;
+  const pivot = pivotOf(gizmo);
   const result = (changes) => ({
     position: [...start.position],
     quaternion: { ...start.quaternion },
@@ -179,7 +186,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     const hitPlane = (r) => {
       const along = dot(r.direction, normal);
       if (Math.abs(along) < 1e-9) return null;
-      const t = dot(sub(start.position, r.origin), normal) / along;
+      const t = dot(sub(pivot, r.origin), normal) / along;
       return t > 0 ? add(r.origin, scale(r.direction, t)) : null;
     };
     const grabbed = hitPlane(ray(camera, point, width, height));
@@ -195,15 +202,15 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   const axis = handles.axes.find((entry) => entry.name === name);
   if (!axis) return null;
   // The axis guide line the drag shows: through the center where it was grabbed, along the axis.
-  const guide = { name, origin: [...start.position], dir: axis.dir };
+  const guide = { name, origin: [...pivot], dir: axis.dir };
   if (handles.mode === "translate") {
-    const t0 = lineParameter(start.position, axis.dir, ray(camera, point, width, height), camera.near);
+    const t0 = lineParameter(pivot, axis.dir, ray(camera, point, width, height), camera.near);
     if (t0 === null) return null;
     return {
       name,
       guide,
       move(view, next, w, h) {
-        const t = lineParameter(start.position, axis.dir, ray(view, next, w, h), view.near);
+        const t = lineParameter(pivot, axis.dir, ray(view, next, w, h), view.near);
         return t === null ? null : result({ position: add(start.position, scale(axis.dir, t - t0)) });
       },
     };
@@ -219,7 +226,9 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
       move(_view, next) {
         const scaled = [start.scale, start.scale, start.scale];
         scaled[index] = start.scale * (reach(next) / from);
-        return result({ scale: scaled });
+        // About the pivot: the origin moves toward or away from it by the uniform scale gizmoDragLanes takes.
+        const ratio = uniformScale(start.scale, scaled) / start.scale;
+        return result({ scale: scaled, position: add(pivot, scale(sub(start.position, pivot), ratio)) });
       },
     };
   }
@@ -230,13 +239,13 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     if (p && p.front && (!grabbed || Math.hypot(p.x - point.x, p.y - point.y) < Math.hypot(grabbed.x - point.x, grabbed.y - point.y))) grabbed = p;
   }
   if (!grabbed) return null;
-  const tangent = unit(cross(axis.dir, sub(grabbed.world, start.position)));
+  const tangent = unit(cross(axis.dir, sub(grabbed.world, pivot)));
   const ahead = projectPoint(camera, add(grabbed.world, scale(tangent, handles.length * 0.05)), width, height);
   let direction = ahead ? [ahead.x - grabbed.x, ahead.y - grabbed.y] : [0, 0];
   if (Math.hypot(...direction) < 1e-6) {
     // Grabbed where the ring runs along the line of sight: the turn goes across the axis on screen.
     const across = cross(viewForward(camera), axis.dir);
-    const tip = projectPoint(camera, add(start.position, scale(across, handles.length)), width, height);
+    const tip = projectPoint(camera, add(pivot, scale(across, handles.length)), width, height);
     direction = tip ? [tip.x - handles.center.x, tip.y - handles.center.y] : [1, 0];
   }
   const length = Math.hypot(...direction) || 1;
@@ -248,7 +257,11 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     move(_view, next) {
       const pixels = (next.x - point.x) * unitDirection[0] + (next.y - point.y) * unitDirection[1];
       const angle = pixels / GIZMO_LOOK.reach;
-      return result({ quaternion: rotationToQuaternion(multiply(axisAngle(axis.dir, angle), base)) });
+      const turn = axisAngle(axis.dir, angle);
+      // About the pivot: the origin turns around it with the object.
+      const arm = sub(start.position, pivot);
+      const turned = [0, 1, 2].map((row) => dot(turn[row], arm));
+      return result({ quaternion: rotationToQuaternion(multiply(turn, base)), position: add(pivot, turned) });
     },
   };
 }
