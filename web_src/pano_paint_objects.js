@@ -11,7 +11,7 @@
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js";
 import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
 import { PAINT_GROUP_ROW, PAINT_RASTER_ROW, paintObjectRowOf } from "./pano_paint_layers.js";
-import { shortestWrappedDelta, strokePoints, syncPaintGroups } from "./pano_paint_strokes.js";
+import { shortestWrappedDelta, strokeGroupFrame, strokePoints, syncPaintGroups } from "./pano_paint_strokes.js";
 import { isUpstreamSticker } from "./pano_upstream.js";
 
 export { paintObjectRowOf, strokePoints };
@@ -180,6 +180,13 @@ export function strokePathsHit(p, paths) {
     if (pts.length === 1 && dist2(p, pts[0]) <= threshold * threshold) return true;
   }
   return false;
+}
+
+// Whether `p` is on a stroke group that is only dots (each stroke one point, as a click with the pen leaves): its frame
+// is about as small as the dot, so a press on the dot is on its body (it moves) before its corner handles (it scales).
+export function strokeDotHit(p, paths) {
+  const list = Array.isArray(paths) ? paths : [];
+  return list.length > 0 && list.every((path) => Array.isArray(path?.points) && path.points.length === 1) && strokePathsHit(p, list);
 }
 
 // The corner handle of a selected paint object's screen geometry `geom` ({ center, corners }) under `p`:
@@ -370,14 +377,36 @@ export function skyStickersOf(state) {
   return state.stickers.filter((item) => item.placement === "sky");
 }
 
+// The paint objects of the state v2 `state`, made once per state (a state is replaced, never changed in place):
+// { groups: Map(actionGroupId -> { group, strokes, frame }) of the counted stroke groups that have points
+// (countedPaintGroups, strokeGroupFrame), rasters: its paint raster objects }.
+const paintIndexes = new WeakMap();
+export function paintIndexOf(state) {
+  let index = paintIndexes.get(state);
+  if (index) return index;
+  index = { groups: new Map(), rasters: [] };
+  if (state.painting) {
+    for (const group of countedPaintGroups(state.painting, skyStickersOf(state))) {
+      const id = String(group.actionGroupId || "");
+      const strokes = groupStrokes(state.painting.paint?.strokes, id);
+      const frame = strokeGroupFrame(strokes);
+      if (frame) index.groups.set(id, { group, strokes, frame });
+    }
+    index.rasters = (state.painting.raster_objects ?? []).filter((item) => String(item.layerKind || "paint") === "paint");
+  }
+  paintIndexes.set(state, index);
+  return index;
+}
+
 // The paint object the row `row` selects in the state v2 `state`: { kind, id, row, item, locked } (item the counted
 // group, or the paint raster object), or null when the row names none that is there.
 export function paintObjectOf(state, row) {
   const target = paintObjectRow(row);
   if (!target || !state?.painting) return null;
+  const index = paintIndexOf(state);
   const item = target.kind === "group"
-    ? countedPaintGroups(state.painting, skyStickersOf(state)).find((group) => String(group.actionGroupId || "") === target.id)
-    : (state.painting.raster_objects ?? []).find((entry) => entry.id === target.id && String(entry.layerKind || "paint") === "paint");
+    ? index.groups.get(target.id)?.group
+    : index.rasters.find((entry) => entry.id === target.id);
   return item ? { ...target, row, item, locked: item.locked === true } : null;
 }
 

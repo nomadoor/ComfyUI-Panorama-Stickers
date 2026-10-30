@@ -34,12 +34,12 @@ import {
 import { setLaneValue } from "../pano_timeline.js";
 import { pointInPoly } from "../pano_math.js";
 import {
-  countedPaintGroups, frameCornersUv, groupStrokes, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
-  paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt, rasterObjectCornersUv,
-  scaleRasterObject, skyStickersOf, strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup,
+  frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
+  paintIndexOf, paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt, rasterObjectCornersUv,
+  scaleRasterObject, skyStickersOf, strokeDotHit, strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup,
 } from "../pano_paint_objects.js";
 import {
-  brushPresetIdForTool, directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, strokeGroupFrame, syncPaintGroups,
+  brushPresetIdForTool, directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, syncPaintGroups,
 } from "../pano_paint_strokes.js";
 import { cameraOf } from "./defaults.js";
 import { ROTATE_SNAP_DEG } from "./view_scale.js";
@@ -76,25 +76,10 @@ function skyItems(state, content) {
   return items;
 }
 
-// The paint of a state as the Cursor grabs it, made once per state (states are never changed in place): its stroke
-// groups that have strokes ({ group, strokes, frame } by actionGroupId: the counted groups, pano_paint_objects.js
-// countedPaintGroups) and its paint raster objects. Empty while the painting is hidden.
-const paintIndexes = new WeakMap();
+// The paint the Cursor grabs in a state (pano_paint_objects.js paintIndexOf), none while the painting is hidden.
+const NO_PAINT = Object.freeze({ groups: new Map(), rasters: [] });
 function paintIndex(state) {
-  let index = paintIndexes.get(state);
-  if (index) return index;
-  index = { groups: new Map(), rasters: [] };
-  if (state.painting && state.painting_visible !== false) {
-    for (const group of countedPaintGroups(state.painting, skyStickersOf(state))) {
-      const id = String(group.actionGroupId || "");
-      const strokes = groupStrokes(state.painting.paint?.strokes, id);
-      const frame = strokeGroupFrame(strokes);
-      if (frame) index.groups.set(id, { group, strokes, frame });
-    }
-    index.rasters = (state.painting.raster_objects ?? []).filter((item) => String(item.layerKind || "paint") === "paint");
-  }
-  paintIndexes.set(state, index);
-  return index;
+  return state.painting_visible === false ? NO_PAINT : paintIndexOf(state);
 }
 
 // The node's own Sky objects as drawn, front to back (docs/studio-ui.md "ペイントのまとまり" "押したときの順" 5): the sky
@@ -312,6 +297,13 @@ export function createStageObjects({
     return geometry.visible ? { object, geometry } : null;
   }
 
+  // The corner handle of the selected paint group `paint` (selectedPaint) under `point`, or null: not on the dot of a
+  // stroke group that is only dots, whose corners lie about on it (pano_paint_objects.js strokeDotHit: the dot moves).
+  function paintHandleAt(paint, point) {
+    if (paint.object.kind === "group" && strokeDotHit(point, pathsIn(stageView(), paint.object))) return null;
+    return paintCornerHandle(paint.geometry, point);
+  }
+
   // The node's own Sky objects in order (skyObjects), made again only when the state or what is drawn changes.
   let ordered = { state: null, content: null, objects: [] };
   function skyObjectsNow() {
@@ -393,7 +385,7 @@ export function createStageObjects({
         if (handle.kind !== "none" && handle.kind !== "move") cursor = handle.cursor;
       }
       const paint = editable() ? selectedPaint() : null;
-      if (cursor === null && paint && !paint.object.locked) cursor = paintCornerHandle(paint.geometry, point)?.cursor ?? null;
+      if (cursor === null && paint && !paint.object.locked) cursor = paintHandleAt(paint, point)?.cursor ?? null;
       over = objectUnder(point);
       if (cursor === null && over) cursor = BODY_CURSOR;
       if (cursor === null && cameraMarkerHit(cameraMarker(), point)) cursor = BODY_CURSOR;
@@ -556,7 +548,7 @@ export function createStageObjects({
         }
       }
       const paint = selectedPaint();
-      if (paint && !paint.object.locked && paintCornerHandle(paint.geometry, point)) return paintDrag("scale", paint.object, paint.geometry, point);
+      if (paint && !paint.object.locked && paintHandleAt(paint, point)) return paintDrag("scale", paint.object, paint.geometry, point);
     }
     const view = through ?? { camera: camera(), ...size() };
     const picked = objectUnder(point, through);

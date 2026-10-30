@@ -23,11 +23,11 @@ const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined } = {}) {
+function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6] } = {}) {
   const session = createStudioSession({
     state: loadSceneState({
       version: 2,
-      camera: { projection: "perspective", position: { value: [0, -1, -6] }, rotation: { value: { yaw_deg: 180, pitch_deg: 0, roll_deg: 0 } } },
+      camera: { projection: "perspective", position: { value: cameraAt }, rotation: { value: { yaw_deg: 180, pitch_deg: 0, roll_deg: 0 } } },
       stickers: stickers ?? [
         { id: "sky", placement: "sky", source: file("poster.png"), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } } },
         { id: "board", placement: "world", source: file("board.png"), position: { value: [3, 0, -5] } },
@@ -37,7 +37,7 @@ function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile 
     }),
   });
   const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
-  const camera = stageCamera(pose, W, H, 50);
+  const camera = stageCamera(pose, view.width, view.height, 50);
   // The GPU pick is not used to select: a call to it fails the test.
   const editorView = {
     sceneBox,
@@ -52,7 +52,7 @@ function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile 
   const objects = createStageObjects({
     editorView,
     camera: () => camera,
-    size: () => ({ width: W, height: H }),
+    size: () => ({ width: view.width, height: view.height }),
     state: () => session.state,
     content,
     playhead: () => 0,
@@ -545,4 +545,30 @@ test("a paint group's drag copies only what it moves: the other strokes stay the
   drag.end();
   assert.equal(session.state.painting.paint.strokes[1], other);
   assert.notEqual(session.state.painting.paint.strokes[0].geometry.points[0].v, other.geometry.points[0].v);
+});
+
+test("a one-point stroke's dot moves it when pressed, though its frame's corners lie within the handles' reach", () => {
+  // A small stage: the dot's frame is a few px across.
+  const view = { width: 200, height: 100 };
+  const small = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] }, view.width, view.height, 50);
+  const erpOf = (p) => {
+    const { u, v } = erpPointOfDirection(viewProjection(small, view.width, view.height).ray(p.x, p.y));
+    return { u, v };
+  };
+  const dot = { x: 30, y: 15 };
+  const point = erpOf(dot);
+  const stroke = { ...strokeOn("st1", "g1", left, leftEnd), geometry: { geometryKind: "freehand_open", points: [point], rawPoints: [point], processedPoints: [point] } };
+  // The Camera behind the view: its mark is not on this small stage.
+  const { session, objects } = setup({ stickers: [], painting: painted(undefined, [stroke]), view, cameraAt: [0, 0, 50] });
+  session.selectObject("paint_group:g1");
+  const { corners } = objects.overlay().paint;
+  assert.ok(Math.hypot(corners[0].x - dot.x, corners[0].y - dot.y) < 11, "a corner is within reach of the dot");
+  assert.equal(objects.hover(dot).cursor, "default");
+  const drag = objects.press(dot);
+  assert.equal(session.selection.row, "paint_group:g1");
+  drag.move({ x: 40, y: 22 });
+  drag.end();
+  const want = erpOf({ x: 40, y: 22 });
+  const moved = session.state.painting.paint.strokes[0].geometry.points[0];
+  assert.ok(Math.abs(moved.u - want.u) < 1e-9 && Math.abs(moved.v - want.v) < 1e-9);
 });

@@ -1,7 +1,7 @@
 // What is under the pointer: the canvas items and their handles, the selection rects, and the cursor that
 // shows it. The upstream Scene's sky Stickers (ADR 0030) lie under the node's own Sky, so they are hit after it.
 import { hitFrameAffordance, hitStickerSelectionAffordance } from "../pano_sticker_affordance.js";
-import { paintCornerHandle, strokeHitThreshold, strokePathsHit } from "../pano_paint_objects.js";
+import { paintCornerHandle, strokeDotHit, strokeHitThreshold, strokePathsHit } from "../pano_paint_objects.js";
 import { FRAME_ROLL_CURSOR } from "./constants.js";
 import { distToSegment2, pointInPoly } from "./helpers.js";
 
@@ -121,6 +121,8 @@ export function createHitTest(deps) {
     if (!geom || !geom.visible) return { kind: "none", cursor: editor.mode === "pano" ? "grab" : "default" };
     if (isStickerItem(item)) return hitStickerSelectionAffordance(geom, p);
     if (geom.kind === "strokeGroup") {
+      // A dot's corners are about on it: a press on the dot moves it (pano_paint_objects.js strokeDotHit).
+      if (strokeDotHit(p, geom.strokePaths)) return { kind: "move", cursor: "default" };
       const corner = paintCornerHandle(geom, p);
       if (corner) return corner;
       const paths = Array.isArray(geom.strokePaths) ? geom.strokePaths : [];
