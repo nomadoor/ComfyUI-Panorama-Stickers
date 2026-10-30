@@ -117,12 +117,17 @@ export function boxDepth(origin, direction, { box, transform = null }) {
 // The first T of a view `p` (opening, Reset View, entering the Frame view): where the screen center's line first hits
 // the ground (y = ground) or a 3D box (`boxes`: the 3D Stickers' turned item boxes and the `scene` items' boxes, as
 // boxDepth() takes them) inside the world bound of `radius`, on the CPU; without a hit, TARGET_DEFAULT_DISTANCE along
-// the line. Either is kept within the distance range.
+// the line. The ground counts only up to TARGET_DEFAULT_DISTANCE: a view looking slightly down meets it tens of eye
+// heights away, and the pan and the wheel over nothing work at T's depth. Either is kept within the distance range.
 export function initialTarget(p, world, radius = boundOf(world)) {
   const eye = eyeHeight(world.ground);
+  const { TARGET_DEFAULT_DISTANCE } = eyeLengths(eye);
   const forward = forwardOf(p);
   const depths = [];
-  if (Math.abs(forward[1]) > EPSILON) depths.push((world.ground - p.position[1]) / forward[1]);
+  if (Math.abs(forward[1]) > EPSILON) {
+    const ground = (world.ground - p.position[1]) / forward[1];
+    if (ground <= TARGET_DEFAULT_DISTANCE) depths.push(ground);
+  }
   for (const item of world.boxes ?? []) depths.push(boxDepth(p.position, forward, item));
   let nearest = null;
   for (const depth of depths) {
@@ -130,7 +135,7 @@ export function initialTarget(p, world, radius = boundOf(world)) {
     if (length(add(p.position, forward, depth)) > radius) continue;
     if (nearest === null || depth < nearest) nearest = depth;
   }
-  const distance = nearest ?? eyeLengths(eye).TARGET_DEFAULT_DISTANCE;
+  const distance = nearest ?? TARGET_DEFAULT_DISTANCE;
   return targetWithin(p.position, add(p.position, forward, distance), eye, forward);
 }
 

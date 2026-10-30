@@ -85,6 +85,17 @@ test("the first T counts only hits inside the world bound", () => {
   closeVec(initialTarget(pose({ pitch_deg: -1 }), WORLD), viewAxes(0, -1).forward.map((v) => v * 8));
 });
 
+test("the first T counts the ground only up to TARGET_DEFAULT_DISTANCE", () => {
+  // Looking down 3 degrees: the ground is 30.5 away, inside the bound but past the default distance of 8.
+  closeVec(initialTarget(pose({ pitch_deg: -3 }), WORLD), viewAxes(0, -3).forward.map((v) => v * 8));
+  // Looking down 15 degrees: the ground is 6.2 away, nearer than 8, and T is on it.
+  const T = initialTarget(pose({ pitch_deg: -15 }), WORLD);
+  close(T[1], -1.6);
+  // A 3D box past the default distance still counts.
+  const boxes = [{ box: { min: [-1, -1.6, -21], max: [1, 1, -20] } }];
+  closeVec(initialTarget(pose({ pitch_deg: -3 }), { ...WORLD, boxes }), viewAxes(0, -3).forward.map((v) => v * (20 / Math.cos(3 * Math.PI / 180))));
+});
+
 test("the first T is kept within the distance range", () => {
   const boxes = [{ box: { min: [-1, -1, -1.001], max: [1, 1, 1] } }];
   // A box 2 mm ahead puts T at TARGET_MIN_DISTANCE.
