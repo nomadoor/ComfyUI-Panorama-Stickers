@@ -5,8 +5,8 @@
 //
 // The grid is one plane on y = ground under the view, as wide as the farthest fade, whose fragment shader draws the
 // 1-unit and 10-unit lines and the X and Z axes at about one pixel, each faded by its horizontal distance from the
-// view and faded where the lines crowd closer than a few pixels (so they do not flicker). It does not write depth,
-// so the World's objects draw over it in their own depth order.
+// view and faded where the lines crowd closer than a few pixels (so they do not flicker). It does not write depth and
+// draws before the World's translucent things, so the World's objects draw over it.
 import {
   DoubleSide,
   Group,
@@ -35,7 +35,6 @@ uniform vec4 majorColor;
 uniform vec4 axisXColor;
 uniform vec4 axisZColor;
 uniform float linePx;
-uniform bool linearOutput;
 varying vec3 vWorld;
 
 // How much of a line every \`step\` units covers this pixel: a line linePx render pixels wide whose edges are smoothed
@@ -77,8 +76,8 @@ void main() {
   color = over(vec4(axisXColor.rgb, axisXColor.a * axis(vWorld.z) * majorKeep), color);
   color = over(vec4(axisZColor.rgb, axisZColor.a * axis(vWorld.x) * majorKeep), color);
   if (color.a <= 0.002) discard;
-  // Drawn into a target that holds linear light (the live ERP's faces), the sRGB colors are turned linear first.
-  gl_FragColor = linearOutput ? vec4(sRGBTransferEOTF(vec4(color.rgb, 1.0)).rgb, color.a) : color;
+  // sRGB values, blended as the canvas blends them (the lens and live ERP faces hold the canvas's values too).
+  gl_FragColor = color;
 }`;
 
 const vec4Of = (rgba) => new Vector4(rgba[0], rgba[1], rgba[2], rgba[3]);
@@ -86,9 +85,8 @@ const vec4Of = (rgba) => new Vector4(rgba[0], rgba[1], rgba[2], rgba[3]);
 // The grid in a group. show(ground) places it for `ground` (web_src/studio/grid.js groundGrid():
 // { y, minorFade, majorFade, colors: { minor, major, axisX, axisZ } }, colors as sRGB
 // [r, g, b, a] in 0..1, and linePx: the lines' width in render pixels, 1 when missing) and returns the group to put
-// in the World. linearOutput: the view's shared { value } that is true while it draws into a target of linear light
-// (pano_three_view.js, the lens and live ERP faces).
-export function createGroundGrid({ linearOutput = { value: false } } = {}) {
+// in the World.
+export function createGroundGrid() {
   const uniforms = {
     viewPosition: { value: new Vector3() },
     minorFade: { value: new Vector2() },
@@ -98,7 +96,6 @@ export function createGroundGrid({ linearOutput = { value: false } } = {}) {
     axisXColor: { value: new Vector4() },
     axisZColor: { value: new Vector4() },
     linePx: { value: 1 },
-    linearOutput,
   };
   const material = new ShaderMaterial({
     vertexShader: GRID_VERTEX,
@@ -112,6 +109,10 @@ export function createGroundGrid({ linearOutput = { value: false } } = {}) {
   const plane = new Mesh(new PlaneGeometry(1, 1), material);
   plane.rotation.x = -Math.PI / 2;
   plane.frustumCulled = false;
+  // Drawn before the World's other translucent things (the splats, faded objects, world Sticker planes), which three.js
+  // otherwise orders by their objects' places: the splats' renderer stands at the World's origin and the plane under the
+  // view, so from some places the grid came after the splats and showed through them. Opaque things hide it by depth.
+  plane.renderOrder = -1;
   // The plane follows the view across the ground, so it reaches the farthest fade in every direction.
   plane.onBeforeRender = (renderer, scene, camera) => {
     camera.getWorldPosition(uniforms.viewPosition.value);
