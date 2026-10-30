@@ -168,14 +168,14 @@ function roundedSquare(ctx, center, size, radius) {
 // The gizmo (gizmo_overlay.js gizmoHandles) as the draft specimen-11.html draws Move: round-capped bars with a ball
 // (Move) or a rounded square (Scale) at the end, or rings whose far half is faint (Rotate), and the white center dot;
 // Move's plane squares under its bars.
-// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker. `guide` ({ name, a, b }) is the axis guide line of a drag,
-// in its axis's color under the handles.
-function drawGizmo(ctx, handles, active, guide) {
+// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker. `guides` ([{ name, a, b }]) are the axis guide lines
+// of a drag (a plane square's two), each in its axis's color under the handles.
+function drawGizmo(ctx, handles, active, guides = []) {
   const lit = (name) => name === active;
   const L = GIZMO_LOOK;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  if (guide) {
+  for (const guide of guides) {
     ctx.globalAlpha = L.guideAlpha;
     ctx.lineWidth = L.guideWidth;
     ctx.strokeStyle = GIZMO_COLORS[guide.name];
@@ -319,5 +319,5 @@ function drawScene(ctx, camera, width, height, scene) {
       dot(ctx, geometry.rotateHandle, ROTATE_RADIUS);
     }
   }
-  if (scene.gizmo) drawGizmo(ctx, scene.gizmo.handles, scene.gizmo.active, scene.gizmo.guide);
+  if (scene.gizmo) drawGizmo(ctx, scene.gizmo.handles, scene.gizmo.active, scene.gizmo.guides);
 }
