@@ -57,8 +57,10 @@ export async function makeVideo({ width = 256, height = 128, seconds = 1.5, pain
   return video;
 }
 
-// A 3DGS PLY (positions, DC colors, opacity, log scales, rotation) with `count` splats in a ball of `radius`.
-export function makeSplatPly({ count = 20000, radius = 1, seed = 1 } = {}) {
+// A 3DGS PLY (positions, DC colors, opacity, log scales, rotation) with `count` splats in a ball of `radius`. Each
+// splat's DC color is random, or `color` ([f_dc_0, f_dc_1, f_dc_2]) for all; `opacity` and `logScale` are the PLY's
+// values (a logit and a log).
+export function makeSplatPly({ count = 20000, radius = 1, seed = 1, color = null, opacity = 2, logScale = -4 } = {}) {
   const fields = ["x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3"];
   const header = ["ply", "format binary_little_endian 1.0", `element vertex ${count}`, ...fields.map((f) => `property float ${f}`), "end_header", ""].join("\n");
   const head = new TextEncoder().encode(header);
@@ -72,7 +74,8 @@ export function makeSplatPly({ count = 20000, radius = 1, seed = 1 } = {}) {
       y = random() * 2 - 1;
       z = random() * 2 - 1;
     } while (x * x + y * y + z * z > 1);
-    body.set([x * radius, y * radius, z * radius, random() * 2 - 1, random() * 2 - 1, random() * 2 - 1, 2, -4, -4, -4, 1, 0, 0, 0], i * fields.length);
+    const dc = [random() * 2 - 1, random() * 2 - 1, random() * 2 - 1];
+    body.set([x * radius, y * radius, z * radius, ...(color ?? dc), opacity, logScale, logScale, logScale, 1, 0, 0, 0], i * fields.length);
   }
   const bytes = new Uint8Array(head.length + body.byteLength);
   bytes.set(head, 0);

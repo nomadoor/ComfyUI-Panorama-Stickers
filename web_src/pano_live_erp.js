@@ -20,7 +20,6 @@
 // the faces draw, the renderer's own updates are off (each face's camera would sort again) and its splats are sized
 // for the face.
 import {
-  Color,
   CubeCamera,
   LinearFilter,
   Matrix3,
@@ -51,14 +50,14 @@ export function liveErpFaceSize(width, coverage = 360, maxCubemapSize = FACE_MAX
 // Each ERP pixel's direction (pixel centers; longitude -coverage/2 .. coverage/2 left to right, latitude 90 .. -90 top
 // to bottom; docs/render-contract.md) in the Camera's glTF frame (+X right, +Y up, forward -Z), turned into the World
 // and looked up in the cube. Rows are written from the top (gl_FragCoord.y 0.5 is the top row), so the read-back and
-// `texture` hold the top row first. The faces hold linear light (an sRGB target); the pass writes sRGB values.
+// `texture` hold the top row first. The faces hold the canvas's sRGB values (canvasValueTarget); the pass writes them as
+// they are.
 const PASS_VERTEX = `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 const PASS_FRAGMENT = `
 uniform samplerCube cube;
 uniform mat3 turn;
 uniform vec2 size;
 uniform float coverage;
-float encode(float c) { return c <= 0.0031308 ? 12.92 * c : 1.055 * pow(c, 1.0 / 2.4) - 0.055; }
 void main() {
   float u = gl_FragCoord.x / size.x;
   float v = gl_FragCoord.y / size.y;
@@ -66,8 +65,21 @@ void main() {
   float lat = (0.5 - v) * 3.141592653589793;
   vec3 local = vec3(cos(lat) * sin(lon), sin(lat), -cos(lat) * cos(lon));
   vec4 c = textureCube(cube, turn * local);
-  gl_FragColor = vec4(encode(c.r), encode(c.g), encode(c.b), 1.0);
+  gl_FragColor = vec4(c.rgb, 1.0);
 }`;
+
+// Makes `target` hold what the canvas holds: sRGB values, blended as sRGB values (so a translucent thing, the ground
+// grid or a splat's edge, looks as it does drawn on the canvas; docs/threejs-spark-integration.md "Camera から見た空間の表示"
+// 色空間). Its texture is RGBA8, which the GPU neither decodes nor encodes, and three.js writes sRGB into it as it does
+// into the canvas: three.js takes a target's color space as its output only for a WebXR target, so the target carries
+// that mark (tests/browser/ground_grid.spec.js tells if a three.js update drops it). The custom shaders and Spark
+// write the values they write on the canvas, and whoever samples the texture reads sRGB values. Returns `target`.
+export function canvasValueTarget(target) {
+  target.texture.colorSpace = SRGBColorSpace;
+  target.texture.internalFormat = "RGBA8";
+  target.isXRRenderTarget = true;
+  return target;
+}
 
 const samePosition = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 const sameTurn = (a, b) => !!a && !!b && a.length === b.length && a.every((row, i) => row.every((x, j) => x === b[i][j]));
@@ -102,7 +114,6 @@ export function createLiveErp({ renderer, canvas, near = 0.01, far = 1000 }) {
   passScene.add(passQuad);
   const passCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-  const clearColor = new Color();
 
   const view = { position: null, turn: null, coverage: 360, near, far, width: 0, height: 0, face: 0 };
   const dirty = { faces: true, pass: true, sort: true };
@@ -115,8 +126,8 @@ export function createLiveErp({ renderer, canvas, near = 0.01, far = 1000 }) {
         generateMipmaps: false,
         minFilter: LinearFilter,
         magFilter: LinearFilter,
-        colorSpace: SRGBColorSpace,
       });
+      canvasValueTarget(cubeTarget);
       cubeCamera = new CubeCamera(view.near, view.far, cubeTarget);
       passMaterial.uniforms.cube.value = cubeTarget.texture;
     }
@@ -231,10 +242,7 @@ export function createLiveErp({ renderer, canvas, near = 0.01, far = 1000 }) {
           cubeCamera.children.forEach((camera, index) => {
             aim?.(camera);
             renderer.setRenderTarget(cubeTarget, index);
-            // three.js works the clear color out for the target bound when it is set (sRGB values for the canvas,
-            // linear for a target), and renderer.clear() uses that as it is: set again for the face, or the first
-            // face is cleared to the canvas's sRGB values read as linear (the caller sets it on the canvas).
-            renderer.setClearColor(renderer.getClearColor(clearColor), renderer.getClearAlpha());
+            // The caller sets the clear color on the canvas; the faces hold the canvas's values, so it holds for them.
             renderer.clear(true, true, false);
             renderer.autoClear = false;
             if (drawFace) drawFace(camera, index);
