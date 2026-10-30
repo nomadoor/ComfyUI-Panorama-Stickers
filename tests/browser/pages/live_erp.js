@@ -139,6 +139,22 @@ async function run() {
   check.sparkAutoUpdate = spark.autoUpdate;
   check.sparkTarget = spark.target ?? null;
 
+  // An empty World with the stage's clear color, set as the editor sets it (pano_three_view.js renderLiveErp: on the
+  // canvas, before the faces): every face's direction reads the same color, the first face too.
+  erp.setSize(256, 128);
+  erp.setView(liveErpView({ position: [0, 0, 0] }));
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(new THREE.Color(0x070707), 1);
+  erp.draw({ scene: new THREE.Scene() });
+  renderer.setClearColor(0x000000, 0);
+  const blank = ctx.getImageData(0, 0, 256, 128).data;
+  const blankAt = (lon, lat) => {
+    const x = Math.min(255, Math.floor((lon / 360 + 0.5) * 256));
+    const y = Math.min(127, Math.floor((0.5 - lat / 180) * 128));
+    return Array.from(blank.slice((y * 256 + x) * 4, (y * 256 + x) * 4 + 3));
+  };
+  check.blank = { "+X": blankAt(90, 0), "-X": blankAt(-90, 0), "+Y": blankAt(0, 80), "-Y": blankAt(0, -80), "+Z": blankAt(179, 0), "-Z": blankAt(0, 0) };
+
   // Timing of the paths (SwiftShader is not a measure, docs/threejs-spark-integration.md).
   const time = (fn) => { const t = performance.now(); fn(); return +(performance.now() - t).toFixed(2); };
   check.timing = {
