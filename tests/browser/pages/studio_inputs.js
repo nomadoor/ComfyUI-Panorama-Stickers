@@ -169,6 +169,7 @@ try {
     inputs: setup.inputs.map((input, index) => ({ name: input.name, link: index + 1 })),
     widgets: [{ name: "state_json", value: JSON.stringify(setup.state) }, { name: "bg_color", value: "#000000" }],
     graph: { getNodeById: (id) => graphNodes.find((item) => item.id === id) ?? null, _nodes: graphNodes, nodes: graphNodes },
+    isInputConnected: (index) => !!origins[index],
     getInputLink: (index) => (origins[index] ? { origin_id: origins[index].id, origin_slot: 0, type: origins[index].type } : null),
     getInputNode: (index) => origins[index] ?? null,
   };

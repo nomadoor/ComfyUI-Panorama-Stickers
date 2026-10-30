@@ -98,7 +98,7 @@ export function createStage({
   now = () => performance.now(),
 }) {
   const camera = createViewCamera({ pose: opening.pose });
-  camera.setWorld({ ground: world.ground, boxes: [], content: null, camera: world.camera ?? null });
+  camera.setWorld({ ground: world.ground, boxes: content()?.boxes ?? [], content: null, camera: world.camera ?? null });
   const input = createViewInput();
   const wheelSteps = createWheelSteps();
   const notice = createNotice();
@@ -193,7 +193,7 @@ export function createStage({
     const want = cameraPose(shot);
     if (!frameCamera) {
       frameCamera = createViewCamera({ pose: { ...want, target: want.position }, frame: true });
-      frameCamera.setWorld({ ground: world.ground, boxes: [], content: content()?.sphere ?? null, camera: null });
+      frameCamera.setWorld({ ground: world.ground, boxes: content()?.boxes ?? [], content: content()?.sphere ?? null, camera: null });
       frameCamera.enter(want);
     }
     frameCamera.setScreen({ width: frame.width, height: frame.height, hFOV_deg: frameViewFov(shot) });
@@ -337,8 +337,8 @@ export function createStage({
     if (!camera.animating() && !motion && drag?.action !== "joystick" && !follow?.animating()) lastFrame = 0;
     if (!editorView.ready) return;
     const shown = content();
-    camera.setWorld({ ground: world.ground, camera: world.camera ?? null, content: shown?.sphere ?? null });
-    frameCamera?.setWorld({ ground: world.ground, camera: null, content: shown?.sphere ?? null });
+    camera.setWorld({ ground: world.ground, boxes: shown?.boxes ?? [], camera: world.camera ?? null, content: shown?.sphere ?? null });
+    frameCamera?.setWorld({ ground: world.ground, boxes: shown?.boxes ?? [], camera: null, content: shown?.sphere ?? null });
     const mode = viewMode();
     if (mode !== lastMode) changeMode(mode);
     // The Output window's Frame picture goes first, in a corner of the canvas the stage's frame then covers.

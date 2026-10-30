@@ -169,3 +169,21 @@ test("with depthColor the playhead's depth grid item carries its input's colors 
   assert.deepEqual(shown.space.upstreamItems.map((entry) => [entry.slot, entry.request.color?.slot ?? null]), [["up_depth", "up_depth"], ["up_mesh", null]]);
   assert.equal(stageDepthNotice(shown, () => null), "");
 });
+
+test("the loaded 3D items are the boxes the first T can hit", () => {
+  const content = stageContent(state, 0, { media, editorFile, sceneBox: (url) => (url.startsWith("file3d:") ? box : null) });
+  assert.equal(content.boxes.length, 1);
+  assert.deepEqual(content.boxes[0].box, box);
+  assert.deepEqual(content.boxes[0].transform.position, [3, 0, -3]);
+  assert.deepEqual(stageContent(state, 0, { media: () => null }).boxes, []);
+});
+
+test("the scene item's box for the first T is moved by the scene transform", () => {
+  const moved = loadSceneState({ version: 2, stickers: [], scene: { position: { value: [0, 0, -6] }, scale: { value: 2 } } });
+  const sceneFiles = { kind: "mesh", urls: ["scene.glb"] };
+  const content = stageContent(moved, 0, { media: () => null, sceneFiles, sceneBox: () => box });
+  assert.equal(content.boxes.length, 1);
+  assert.deepEqual(content.boxes[0].box, box);
+  assert.deepEqual(content.boxes[0].transform.position, [0, 0, -6]);
+  assert.equal(content.boxes[0].transform.scale, 2);
+});

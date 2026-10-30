@@ -11,7 +11,7 @@ function target(extra = {}) {
   return Object.assign(new EventTarget(), extra);
 }
 
-function setup() {
+function setup({ content } = {}) {
   const frames = [];
   let time = 0;
   const body = target({ tagName: "BODY" });
@@ -29,7 +29,7 @@ function setup() {
   const ui = stageUi();
   const opening = { pose: { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -8] } };
   const output = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0 };
-  const stage = createStage({ canvas, root, opening, output, world: { ground: -1.6, camera: [0, 0, 0] }, ui, view, win, now: () => time });
+  const stage = createStage({ canvas, root, opening, output, world: { ground: -1.6, camera: [0, 0, 0] }, ui, ...(content ? { content } : {}), view, win, now: () => time });
   // Runs the frames asked for, one after another, at 16 ms apart.
   const run = () => {
     for (let i = 0; i < 20 && frames.length; i += 1) {
@@ -42,7 +42,7 @@ function setup() {
     Object.defineProperty(event, "composedPath", { value: () => [body] });
     win.dispatchEvent(event);
   };
-  return { stage, ui, run, key, root };
+  return { stage, ui, run, key, root, frames };
 }
 
 test("a held movement key moves the view until Meta goes up, which lets it go", () => {
@@ -147,4 +147,15 @@ test("the Output window closes a bitmap its canvas cannot take, and draws again 
     globalThis.createImageBitmap = savedBitmap;
     console.error = savedError;
   }
+});
+
+test("Reset View puts T on a 3D box in front of the view, as the spec's first T counts the 3D boxes", () => {
+  const box = { min: [-1, -1, -1], max: [1, 1, 1] };
+  const content = () => ({ sphere: null, boxes: [{ box, transform: { position: [0, 0, -5], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, scale: 1 } }] });
+  const { stage, run } = setup({ content });
+  run();
+  stage.resetView();
+  for (let i = 0; i < 5; i += 1) run();
+  const target = stage.pose().target;
+  assert.ok(Math.abs(target[2] + 4) < 1e-6, `T is on the near face of the box, got ${target}`);
 });

@@ -1,0 +1,13 @@
+# Files kept in git for development but left out of the Comfy Registry archive (comfy node publish).
+tests/
+docs/
+tools/
+web_src/
+.github/
+.coderabbit.yaml
+AGENTS.md
+CONTEXT.md
+package.json
+package-lock.json
+playwright.config.js
+vite.lib.config.js
