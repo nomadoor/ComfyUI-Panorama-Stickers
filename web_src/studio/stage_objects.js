@@ -6,8 +6,8 @@
 // A left press, in this order:
 //   1. a handle of the gizmo of the selected World object or Camera (3D tab only; gizmo_overlay.js): drags it;
 //   2. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll);
-//   3. the World object under the pointer (objectUnder: by the GPU pick, pano_three_view.js pickSticker, or as the
-//      temporary dev setting of hit_test.js says): selects it (its drag does nothing: the gizmo moves it);
+//   3. the World object under the pointer (objectUnder: the same test as the hover, hit_test.js coarseUnder): selects
+//      it (its drag does nothing: the gizmo moves it);
 //   4. the Camera's mark (3D tab; camera_marker.js: anywhere on its filled shape or near its lines): selects the Camera;
 //   5. a sky image under the pointer, front to back (the selected one's body included): selects it and its drag turns
 //      it (its direction);
@@ -35,8 +35,8 @@ import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
 import { gizmoDrag as startGizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit } from "./gizmo_overlay.js";
-import { guideLook, hoverGuide, pointInPolygon, screenSegment, worldGuideItems } from "./world_guides.js";
-import { PIXEL_TOLERANCE, boxUnder, coarseUnder, createHoverPicker } from "./hit_test.js";
+import { guideLook, pointInPolygon, screenSegment, worldGuideItems } from "./world_guides.js";
+import { coarseUnder } from "./hit_test.js";
 
 // The cursor over an object's body (hit_test.js's rule: the default arrow; handles bring their own).
 const BODY_CURSOR = "default";
@@ -79,9 +79,6 @@ function skyUnder(items, projection, point) {
 // selection(): the selected row ("camera", a Sticker id, or null); select(row) selects (null lets go). mode(): the
 // gizmo's mode. tab(): "3d" or "camera". ground(): the ground height. readOnly(): no edits. loading: load_reveal.js
 // createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
-// hitMode(): the temporary dev setting's mode of finding the object under the pointer (hit_test.js; "current" is
-// today's). onHover(): a hover found later (the "pixels" mode's pick, read back without waiting) changed; the stage
-// asks hover() again. requestFrame(callback): runs callback at the next frame.
 export function createStageObjects({
   editorView,
   camera,
@@ -97,9 +94,6 @@ export function createStageObjects({
   ground = () => -1.6,
   readOnly = () => false,
   loading = null,
-  hitMode = () => "current",
-  onHover = () => {},
-  requestFrame = (callback) => (globalThis.requestAnimationFrame ? globalThis.requestAnimationFrame(callback) : setTimeout(callback, 16)),
 }) {
   let hovered = null;
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
@@ -172,36 +166,14 @@ export function createStageObjects({
     return cameraMarkerScreen(cameraMarkerShape(value, value.projection, length), view, width, height);
   }
 
-  // --- Which World object is under the pointer: one decision for the hover and the press (hit_test.js, a temporary dev
-  // comparison of its modes). "current" is today's: the CPU guide test for the hover (docs/space-and-view.md
-  // "ホバーの判定": no GPU read on a pointer move), the GPU pick for the press.
+  // --- Which World object is under the pointer: one decision for the hover and the press (docs/space-and-view.md
+  // "ホバーの判定"): the coarse grid of each 3D item (hit_test.js coarseUnder; a box whose grid is not built yet by its
+  // guide), a plane by its outline. No GPU read.
 
-  const hoverPicker = createHoverPicker({ requestFrame, onResult: (changed) => changed && onHover() });
-
-  // The id of the World object under `point` for `purpose` ("hover" or "press"), or null.
-  function objectUnder(point, purpose) {
-    const mode = hitMode();
+  // The id of the World object under `point`, or null.
+  function objectUnder(point) {
     const { width, height } = size();
-    const view = camera();
-    const items = guides();
-    const world = (id) => (id && stickerOf(id)?.placement === "world" ? id : null);
-    // The GPU pick within `radius` px: read now for a press, at most once a frame without waiting for a hover.
-    const pixels = (radius) => {
-      if (purpose === "press") {
-        if (radius > 0 && editorView.pickStickerNear) return world(editorView.pickStickerNear(view, point.x, point.y, width, height, { radius }));
-        return world(editorView.pickSticker(view, point.x, point.y, width, height));
-      }
-      if (!editorView.pickStickerNear) return null;
-      const key = JSON.stringify([point.x, point.y, width, height, view.position, view.quaternion, view.fovY_deg, radius]);
-      return world(hoverPicker.request(key, () => editorView.pickStickerNear(view, point.x, point.y, width, height, { radius, async: true })));
-    };
-    if (mode === "box") {
-      const { id, fallback } = boxUnder(items, view, point, width, height);
-      return id ?? (fallback ? pixels(0) : null);
-    }
-    if (mode === "pixels") return pixels(PIXEL_TOLERANCE);
-    if (mode === "coarse") return coarseUnder(items, (url) => editorView.sceneGrid?.(url) ?? null, view, point, width, height);
-    return purpose === "press" ? pixels(0) : hoverGuide(items, view, point, width, height);
+    return coarseUnder(guides(), (url) => editorView.sceneGrid?.(url) ?? null, camera(), point, width, height);
   }
 
   // --- The hover.
@@ -225,7 +197,7 @@ export function createStageObjects({
         const handle = hitFrameAffordance(sky.geometry, point, { edges: true });
         if (handle.kind !== "none" && handle.kind !== "move") cursor = handle.cursor;
       }
-      over = objectUnder(point, "hover");
+      over = objectUnder(point);
       if (cursor === null && over) cursor = BODY_CURSOR;
       if (cursor === null && cameraMarkerHit(cameraMarker(), point)) cursor = BODY_CURSOR;
       if (cursor === null && skyUnder(skyItems(state(), content()), projection(), point)) cursor = BODY_CURSOR;
@@ -344,7 +316,7 @@ export function createStageObjects({
         }
       }
     }
-    const picked = objectUnder(point, "press");
+    const picked = objectUnder(point);
     if (picked) {
       select(picked);
       return selectOnly();
@@ -402,11 +374,8 @@ export function createStageObjects({
     hover,
     press,
     overlay,
-    // For the tests and the dev measurement of hit_test.js's modes (temporary, with them).
-    objectUnder,
     // The pointer left the stage, or a drag began: nothing is hovered.
     leave() {
-      hoverPicker.clear();
       const changed = hovered !== null || gizmoAxis !== null;
       hovered = null;
       gizmoAxis = null;

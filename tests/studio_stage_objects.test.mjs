@@ -1,6 +1,6 @@
 // Selecting and editing objects on the stage (web_src/studio/stage_objects.js): the press order of
 // docs/editor-interaction.md "`world` の Sticker の操作" (the gizmo, the selected sky image's handles, the World object
-// by the GPU pick, the Camera's mark, a sky image), what a drag writes by the recording rule, the Camera tab's
+// by the hover's test (hit_test.js coarseUnder), the Camera's mark, a sky image), what a drag writes by the recording rule, the Camera tab's
 // select-only presses, and what the overlay draws. The three.js view is a stand-in; the gizmo is the overlay's
 // (gizmo_overlay.js), hit and dragged on screen.
 import assert from "node:assert/strict";
@@ -21,7 +21,7 @@ const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", picked = null, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate" } = {}) {
+function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate" } = {}) {
   const session = createStudioSession({
     state: loadSceneState({
       version: 2,
@@ -34,9 +34,10 @@ function setup({ tab = "3d", picked = null, stickers = null, sceneBox = () => nu
   });
   const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
   const camera = stageCamera(pose, W, H, 50);
+  // The GPU pick is not used to select: a call to it fails the test.
   const editorView = {
     sceneBox,
-    pickSticker: () => picked,
+    pickSticker: () => assert.fail("the GPU pick is read"),
   };
   let cached = null;
   const content = () => {
@@ -100,8 +101,13 @@ test("the selected sky image's corner scales both FOVs and its edge one, before 
   assert.ok(Math.abs(after.vFOV_deg - 60) < 1e-6, "and keeps the V FOV");
 });
 
-test("a World object under the pointer (the GPU pick) is selected before the sky behind it, and its drag moves nothing", () => {
-  const { session, objects } = setup({ picked: "board" });
+test("a World object under the pointer (its outline, as the hover) is selected before the sky behind it, and its drag moves nothing", () => {
+  const { session, objects } = setup({
+    stickers: [
+      { id: "sky", placement: "sky", source: file("poster.png"), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } } },
+      { id: "board", placement: "world", source: file("board.png"), position: { value: [0, 0, -5] } },
+    ],
+  });
   const before = session.state;
   const drag = objects.press(center);
   assert.equal(session.selection.row, "board");

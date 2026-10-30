@@ -142,28 +142,3 @@ export function pickCacheKey(camera, x, y, width, height, contentKey) {
   return JSON.stringify([camera, x, y, width, height, contentKey]);
 }
 
-// A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"): the "pixels" object hit test reads a
-// square of (2 radius + 1) pixels around the pointer, so a pointer a few px off an object's edge still hits it.
-// The view offset that draws that square centered on (x, y) of a width x height view.
-export function pickSquareWindow(x, y, width, height, radius) {
-  const side = 2 * radius + 1;
-  return { fullWidth: width, fullHeight: height, x: x - radius - 0.5, y: y - radius - 0.5, width: side, height: side };
-}
-
-// The id of the square's pixel nearest its center that holds one (a float target's red, else an RGBA8 target's
-// packed id), with that pixel's depth on a float target (null on RGBA8): { id, depth } or null over nothing.
-// `pixels` holds side x side RGBA pixels by rows; the center pixel is the pointer's.
-export function nearestSquareHit(pixels, side, float) {
-  const middle = (side - 1) / 2;
-  let best = null;
-  for (let row = 0; row < side; row += 1) {
-    for (let col = 0; col < side; col += 1) {
-      const at = (row * side + col) * 4;
-      const id = float ? Math.round(pixels[at]) : unpackPick24([pixels[at], pixels[at + 1], pixels[at + 2]]);
-      if (!(id > 0)) continue;
-      const distance = (row - middle) ** 2 + (col - middle) ** 2;
-      if (!best || distance < best.distance) best = { id, depth: float ? pixels[at + 1] : null, distance };
-    }
-  }
-  return best && { id: best.id, depth: best.depth };
-}
