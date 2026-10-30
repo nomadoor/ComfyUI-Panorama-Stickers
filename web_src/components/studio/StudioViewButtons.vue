@@ -10,13 +10,15 @@ defineProps({
   gridShown: { type: Boolean, default: true },
   resetDisabled: { type: Boolean, default: false },
   resetTip: { type: String, default: "" },
+  // Frame Selected's tooltip (the Camera tab's moves the camera, docs/studio-ui.md "Camera タブ").
+  frameTip: { type: String, default: "" },
 });
 const emit = defineEmits(["frame-selected", "reset-view", "grid"]);
 </script>
 
 <template>
   <StudioFloatGroup layout="row" label="View">
-    <StudioIconButton data-action="frame-selected" :icon="ICON.focus" label="Frame selected" @press="emit('frame-selected')" />
+    <StudioIconButton data-action="frame-selected" :icon="ICON.focus" label="Frame selected" :tip="frameTip" @press="emit('frame-selected')" />
     <StudioIconButton
       data-action="reset-view"
       :icon="ICON.reset"

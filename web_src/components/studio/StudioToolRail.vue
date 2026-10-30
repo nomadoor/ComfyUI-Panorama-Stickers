@@ -12,10 +12,14 @@ const props = defineProps({
   // Undo and Redo can be pressed (there is something to take back or to do again).
   canUndo: { type: Boolean, default: false },
   canRedo: { type: Boolean, default: false },
+  // The Camera tab: every button but Undo and Redo stays in its place, disabled, saying why (docs/studio-ui.md
+  // "左の列").
+  cameraTab: { type: Boolean, default: false },
 });
 const emit = defineEmits(["press"]);
 
 const LATER = "in development";
+const CAMERA_TAB_TIP = "Not available in the Camera view";
 const groups = [
   [
     { key: "cursor", icon: ICON.cursor_tool, label: "Cursor", active: true },
@@ -39,9 +43,9 @@ const groups = [
         :data-tool="button.key"
         :icon="button.icon"
         :label="button.label"
-        :tip="button.tip || ''"
-        :active="!!button.active"
-        :disabled="!!button.disabled"
+        :tip="props.cameraTab ? CAMERA_TAB_TIP : button.tip || ''"
+        :active="!!button.active && !props.cameraTab"
+        :disabled="!!button.disabled || props.cameraTab"
         @press="emit('press', button.key)"
       >
         <StudioAddIcon v-if="button.drawn === 'add'" />
