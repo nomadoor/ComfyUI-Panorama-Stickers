@@ -18,18 +18,22 @@ const along = (origin, direction, t) => origin.map((value, axis) => value + dire
 const lerp = (a, b, t) => a.map((value, axis) => value + (b[axis] - value) * t);
 const reach = (p) => Math.hypot(p[0], p[1], p[2]);
 
-// The drop mark's look (docs/design.md "大きさ" "ドロップの印", "ドロップのラベル"; the mock drop-3.html): the soft yellow
-// brackets over a darker line, the yellow's 25% inside, the bracket's share of an edge, and where the label sits from
-// the pointer (CSS px).
+// The drop mark's look (docs/design.md "色", "大きさ" "ドロップの印", "ドロップのラベル"; the mock drop-3.html): brackets in
+// the color of where it goes (World the soft yellow, Sky ice) over a darker line, that color's 25% inside, the
+// bracket's share of an edge; how far the label keeps from the mark (`labelGap`) and from the stage's edges
+// (`labelMargin`), in CSS px.
 export const DROP_LOOK = Object.freeze({
-  color: "#e8cf74",
-  fill: "rgba(232, 207, 116, 0.25)",
+  colors: Object.freeze({
+    world: Object.freeze({ line: "#e8cf74", fill: "rgba(232, 207, 116, 0.25)" }),
+    sky: Object.freeze({ line: "#aecedb", fill: "rgba(174, 206, 219, 0.25)" }),
+  }),
   under: "rgba(0, 0, 0, 0.28)",
   width: 2.5,
   underWidth: 4.5,
   bracket: 0.2,
   boxBracket: 0.25,
-  labelOffset: Object.freeze({ x: 16, y: 12 }),
+  labelGap: 12,
+  labelMargin: 8,
 });
 
 // --- Hits.
@@ -275,4 +279,56 @@ export function dropMarker({ kind, ray, hit, camera, width, height, ground, radi
   }
   const mark = hit ? planeMark(hit, view) : skyMark(ray.direction, view);
   return mark ? { placement: hit ? "world" : "sky", ...mark } : null;
+}
+
+// --- Where the label goes.
+
+// The screen rectangle around a mark's points (dropMarker()'s fills and brackets): { left, top, right, bottom }, or null
+// without points.
+export function markRect(mark) {
+  const points = [...(mark?.fills ?? []), ...(mark?.brackets ?? [])].flat();
+  if (!points.length) return null;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+}
+
+function overlap(a, b) {
+  const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+// The top left corner ({ x, y }, CSS px of the stage) of the drop label `size` ({ width, height }) for the mark `mark`
+// (dropMarker()'s) with the pointer at `pointer`, on a stage `stage` ({ width, height }) (docs/space-and-view.md
+// "ドラッグ中の印" "ラベルの置き場所"): never on the mark. DROP_LOOK.labelGap off the mark's screen rectangle, tried right
+// (level with the pointer), left, below (centered on the pointer), above; the first one inside the stage by
+// DROP_LOOK.labelMargin wins. A label is kept inside the stage only along the side of the rectangle it does not
+// cross. When none fits, the one kept inside the stage that overlaps the mark least.
+export function dropLabelPlace({ mark, pointer, size, stage }) {
+  const gap = DROP_LOOK.labelGap;
+  const margin = DROP_LOOK.labelMargin;
+  const { width, height } = size;
+  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+  const box = markRect(mark) ?? { left: pointer.x, top: pointer.y, right: pointer.x, bottom: pointer.y };
+  const fitX = (x) => clamp(x, margin, stage.width - margin - width);
+  const fitY = (y) => clamp(y, margin, stage.height - margin - height);
+  const level = fitY(pointer.y - height / 2);
+  const centered = fitX(pointer.x - width / 2);
+  const tries = [
+    { x: box.right + gap, y: level },
+    { x: box.left - gap - width, y: level },
+    { x: centered, y: box.bottom + gap },
+    { x: centered, y: box.top - gap - height },
+  ];
+  const inside = (p) => p.x >= margin - 1e-9 && p.y >= margin - 1e-9 && p.x + width <= stage.width - margin + 1e-9 && p.y + height <= stage.height - margin + 1e-9;
+  const fits = tries.find(inside);
+  if (fits) return fits;
+  let best = null;
+  for (const p of tries) {
+    const kept = { x: fitX(p.x), y: fitY(p.y) };
+    const covered = overlap({ left: kept.x, top: kept.y, right: kept.x + width, bottom: kept.y + height }, box);
+    if (!best || covered < best.covered) best = { ...kept, covered };
+  }
+  return { x: best.x, y: best.y };
 }

@@ -213,7 +213,14 @@ function setCollapsed(value) {
       <div ref="main" class="pano-studio-main">
         <div class="pano-studio-stage" data-region="stage">
           <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
-          <canvas ref="overlay" class="pano-studio-stage-overlay" data-stage-overlay aria-hidden="true" />
+          <canvas
+            ref="overlay"
+            class="pano-studio-stage-overlay"
+            :class="{ 'is-loading-guide': ui.loadingGuide }"
+            data-stage-overlay
+            :data-loading-guide="ui.loadingGuide ? '' : null"
+            aria-hidden="true"
+          />
           <StudioDropMarker v-if="ui.drop" :mark="ui.drop" />
 
           <StudioCameraFrame v-if="cameraTab && rulers" :aspect="frameAspect" @rect="(rect) => controller.frameRect?.(rect)">
@@ -309,7 +316,7 @@ function setCollapsed(value) {
             @press="onRail"
           />
           <input ref="filePicker" type="file" :accept="WORLD_FILE_ACCEPT" hidden data-add-picker @change="onFilesPicked">
-          <div v-if="ui.choice" class="pano-studio-at-center">
+          <div v-if="ui.choice" class="pano-studio-place-layer">
             <StudioPlaceChoice @choose="(side) => controller.place(side)" @cancel="controller.cancelPlace()" />
           </div>
           <div class="pano-studio-at-notice">

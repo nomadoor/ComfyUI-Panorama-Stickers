@@ -218,13 +218,14 @@ test("a 3D file dropped on the sky goes to the ground far along the ray; with no
   assert.ok(notices.length === 0);
 });
 
-test("dragging over the stage shows where it lands with the label beside the pointer; it leaves and closes the choice", async () => {
+test("dragging over the stage shows where it lands with the pointer and the stage for its label; it leaves and closes the choice", async () => {
   const { ui, add } = setup({ view: stage({ pitch: 0 }) });
   await add.pick([imageFile()]);
   add.dragOver({ x: 500, y: 100 }, "image");
   assert.equal(ui.choice, null);
   assert.equal(ui.drop.placement, "sky");
-  assert.deepEqual(ui.drop.label, { x: 516, y: 112 });
+  assert.deepEqual(ui.drop.pointer, { x: 500, y: 100 });
+  assert.deepEqual(ui.drop.stage, SIZE);
   add.dragOver({ x: 500, y: 550 }, "image");
   assert.equal(ui.drop.placement, "world");
   add.dragOver({ x: 500, y: 550 }, "3d");

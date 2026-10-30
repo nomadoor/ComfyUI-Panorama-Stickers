@@ -31,6 +31,7 @@ import {
 } from "../pano_sticker_geometry.js";
 import { setLaneValue } from "../pano_timeline.js";
 import { cameraOf } from "./defaults.js";
+import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
 import { gizmoDrag as startGizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit } from "./gizmo_overlay.js";
@@ -75,7 +76,8 @@ function skyUnder(items, projection, point) {
 // state(), content() (stage_content.js stageContent()), playhead(): the working state, what is drawn of it and the
 // Timeline frame. camera() and size(): the stage's three.js camera (stage_view.js stageCamera()) and its CSS size.
 // selection(): the selected row ("camera", a Sticker id, or null); select(row) selects (null lets go). mode(): the
-// gizmo's mode. tab(): "3d" or "camera". ground(): the ground height. readOnly(): no edits.
+// gizmo's mode. tab(): "3d" or "camera". ground(): the ground height. readOnly(): no edits. loading: load_reveal.js
+// createLoadReveal()'s for the guides of 3D files just placed (their stand-in box and band), or null.
 export function createStageObjects({
   editorView,
   camera,
@@ -90,6 +92,7 @@ export function createStageObjects({
   tab = () => "3d",
   ground = () => -1.6,
   readOnly = () => false,
+  loading = null,
 }) {
   let hovered = null;
   // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
@@ -116,8 +119,10 @@ export function createStageObjects({
 
   // --- What shows.
 
-  // The gizmo to show ({ mode, transform }, gizmo_overlay.js) or null: on the selected World object where it shows and
-  // can be edited, or on the selected Camera, in the 3D tab.
+  // The gizmo to show ({ mode, transform, center }, gizmo_overlay.js) or null: on the selected World object where it
+  // shows and can be edited, or on the selected Camera, in the 3D tab. A World object's gizmo sits on its guide's center
+  // (docs/studio-ui.md "ギズモ" "物の中心"; a 3D file's origin can lie far outside its content), the Camera's on its
+  // position.
   function gizmo() {
     if (!editable()) return null;
     const row = selection();
@@ -131,7 +136,8 @@ export function createStageObjects({
     const sticker = stickerOf(row);
     const value = content()?.evaluated.stickers.find((item) => item.id === row);
     if (!sticker || sticker.locked || !value?.active) return null;
-    return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value) };
+    const guide = guides().find((item) => item.id === row);
+    return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value), center: guide ? [...guide.center] : null };
   }
 
   // The selected sky image's geometry with its handles (pano_sticker_geometry.js), or null.
@@ -144,7 +150,7 @@ export function createStageObjects({
   }
 
   function guides() {
-    return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url));
+    return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url), (id) => loading?.pendingBox(id) ?? null);
   }
 
   // The Camera's mark on screen (camera_marker.js cameraMarkerScreen), or null: in the 3D tab only, and not while it
@@ -208,11 +214,17 @@ export function createStageObjects({
     draggedAxis = axis;
     dragGuide = grab.guide ?? null;
     return {
-      move(next) {
+      move(next, event = {}) {
         const now = size();
-        const moved = grab.move(camera(), next, now.width, now.height);
+        // Shift stops a turn at ROTATE_SNAP_DEG multiples of its axis's angle.
+        const moved = grab.move(camera(), next, now.width, now.height, { snap: event.shiftKey ? ROTATE_SNAP_DEG : 0 });
         if (!moved) return;
         const lanes = gizmoDragLanes(shown.mode, base, shown.transform, moved);
+        // Rotate and Scale keep the guide's center in place: an object whose origin is elsewhere moves too.
+        if (shown.mode !== "translate" && row !== "camera") {
+          const shift = moved.position.map((value, axis) => value - shown.transform.position[axis]);
+          if (shift.some((value) => Math.abs(value) > 1e-9)) lanes.position = base.position.map((value, axis) => value + shift[axis]);
+        }
         edits.live((draft) => {
           if (row === "camera") {
             draft.camera ??= cameraOf(draft);
@@ -267,7 +279,7 @@ export function createStageObjects({
           const field = kind === "scale_x" ? "hFOV_deg" : "vFOV_deg";
           write({ [field]: scaleStickerAxisFromPointer(item, kind, startDistance, distance)[field] });
         } else if (kind === "rotate") {
-          const turned = rotateStickerFromPointer(item, startAngle, Math.atan2(next.y - center.y, next.x - center.x), !!event.shiftKey);
+          const turned = rotateStickerFromPointer(item, startAngle, Math.atan2(next.y - center.y, next.x - center.x), !!event.shiftKey, ROTATE_SNAP_DEG);
           write({ rot_deg: turned.rot_deg });
         }
       },
@@ -317,10 +329,17 @@ export function createStageObjects({
   function overlay({ altHeld = false, gridHidden = false } = {}) {
     const row = selection();
     const shownTab = tab();
-    const items = guides().map((item) => ({
-      segments: item.segments,
-      look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden, tab: shownTab }),
-    })).filter((item) => item.look);
+    // A 3D file just placed: its guide's band of light while it loads and fades in (load_reveal.js).
+    const phase = loading ? loading.phase() : 0;
+    const items = guides().map((item) => {
+      const shimmer = loading && item.kind === "box" ? loading.shimmer(item.id) : 0;
+      return {
+        segments: item.segments,
+        corners: item.corners,
+        look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden, tab: shownTab }),
+        ...(shimmer > 0 ? { shimmer, phase } : {}),
+      };
+    }).filter((item) => item.look);
     const marker = cameraMarker();
     const sky = selectedSky();
     const shownHandles = handles();
@@ -328,8 +347,10 @@ export function createStageObjects({
     const guideLine = shownHandles && dragGuide ? screenSegment(camera(), gizmoGuideSegment(dragGuide, camera()), width, height) : null;
     return {
       guides: items,
+      // A guide's band runs now (StudioEditor.vue marks the overlay: data-loading-guide).
+      loading: items.some((item) => item.shimmer > 0),
       camera: marker ? { screen: marker, look: row === "camera" ? "selected" : "normal" } : null,
-      // The handle dragged, else the one under the pointer (none while Alt is held), is white.
+      // The handle dragged, else the one under the pointer (none while Alt is held), is lit.
       // While an axis handle is dragged, its guide line ({ name, a, b } in CSS px) runs across the stage.
       gizmo: shownHandles ? {
         handles: shownHandles,

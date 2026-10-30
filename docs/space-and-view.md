@@ -36,8 +36,8 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | カーソル | — | `web_src/studio/view_input.js` `stageCursor`・`LOOK_CURSOR`・`ORBIT_CURSOR`・`KNOB_CURSOR` | `tests/studio_view_input.test.mjs` |
 | 視点の操作の部品（球・手・矢印、操作中に光ること） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs` | `tests/studio_view_input.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | 地面のグリッド（何をどの高さに描き、どこで薄れるか） | — | `web_src/studio/grid.js` `groundGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| World の物のガイドと、CPU のホバーの判定 | — | `web_src/studio/world_guides.js`（形・ホバー・見え方）、Camera の印の形と当たりは `web_src/studio/camera_marker.js`、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`。Camera タブ（Frame 表示）では `stage.js` が Frame 表示の枠の箱で描く（`stage_overlay.js` の `origin`）。レンズの Camera（κ ≠ 1）の上には描かない（未実装） | `tests/studio_world_guides.test.mjs`、`tests/studio_camera_marker.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
-| Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | `web_src/studio/landing.js`（着く所 `landingHit`・`landingBoxes`・`groundLanding`・`groundBelow`、置く値 `skyPose`・`worldImageTransform`・`file3dTransform`・`file3dPosition`・`facingYaw`、印 `dropMarker`）、置くのは `web_src/studio/add_files.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、CPU の箱の当たりは `web_src/studio/view_camera.js` `boxDepth`、`pano_sticker_geometry.js` `buildStickerGeometry`（Sky の枠） | `tests/studio_landing.test.mjs`、`tests/studio_add_files.test.mjs`、`tests/browser/studio_add.spec.js` |
+| World の物のガイドと、CPU のホバーの判定 | — | `web_src/studio/world_guides.js`（形・中心・ホバー・見え方。読み込み中のガイドの箱は `web_src/studio/load_reveal.js` が渡す）、Camera の印の形と当たりは `web_src/studio/camera_marker.js`、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`。Camera タブ（Frame 表示）では `stage.js` が Frame 表示の枠の箱で描く（`stage_overlay.js` の `origin`）。レンズの Camera（κ ≠ 1）の上には描かない（未実装） | `tests/studio_world_guides.test.mjs`、`tests/studio_camera_marker.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
+| Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | `web_src/studio/landing.js`（着く所 `landingHit`・`landingBoxes`・`groundLanding`・`groundBelow`、置く値 `skyPose`・`worldImageTransform`・`file3dTransform`・`file3dPosition`・`facingYaw`、印 `dropMarker`、ラベルの置き場所 `dropLabelPlace`）、置くのは `web_src/studio/add_files.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、CPU の箱の当たりは `web_src/studio/view_camera.js` `boxDepth`、`pano_sticker_geometry.js` `buildStickerGeometry`（Sky の枠） | `tests/studio_landing.test.mjs`、`tests/studio_add_files.test.mjs`、`tests/browser/studio_add.spec.js` |
 | Preview のウィンドウの視点（エディタとの違い、引き継ぎ、減衰と慣性、グリッドの既定） | — | （未実装）`web_src/studio/preview_motion.js`、下の部品 `web_src/pano_interaction_controller.js` の慣性（ADR 0010） | （未作成）`tests/studio_preview_motion.test.mjs` |
 | ウィンドウがフォーカスを失ったとき、Meta を離したときと右クリックのメニューが開いたときにキーを離すこと | — | `web_src/studio/view_input.js` `createViewInput().lostFocus`、事象を受けるのは `web_src/studio/stage.js`（`blur`・`visibilitychange`・Meta の `keyup`・エディタの中の `contextmenu`）、下の部品 `pano_view_keys.js` `createMoveKeys` | `tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`（`blur`・右クリックのメニュー）、`tests/studio_stage.test.mjs`（Meta・右クリックのメニュー） |
 
@@ -66,6 +66,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `TARGET_MAX_DISTANCE` | `E` | 30 `E`（48） | `d` の上限。パンで掴む深さとホイールの中心までの距離の上限も兼ねる |
 | `CAMERA_FRAME_RADIUS` | `E` | 1 `E`（1.6） | Camera を選んで Frame Selected するときの球の半径（中心は Camera の位置） |
 | `CAMERA_GUIDE_LENGTH` | `E` | 0.5 `E`（0.8） | 3D タブの Camera の印の基本の長さ（Frame モードの視錐台の奥行き。Panorama モードの球の直径はその半分）。視点がこの距離より Camera に近いときは、印を描かず当たりにも数えない（開いたときの視点は Camera の位置にあり、印が視点を包んでしまうため） |
+| `ROTATE_SNAP_DEG` | 絶対 | 15° | Shift を押して回すときに止める角度の刻み（ギズモの Rotate、空の画像の回転のハンドル。絶対の角度の倍数に止める。`docs/studio-ui.md` の「ギズモ」「下の中央のバー」）。Camera タブの Roll の目盛りも同じ値を使う |
 | `CAMERA_GUIDE_MIN_PIXELS` | 絶対 | 80 px | Camera の印の長さの画面の下限。印の長さは、`CAMERA_GUIDE_LENGTH` と、Camera の位置の深さでこの CSS px に写る長さの大きい方にする（遠くから見ても、地面のグリッドの 1 マスほどに縮んでまぎれないため） |
 | `WORLD_IMAGE_HEIGHT` | `E` | 1 `E`（1.6） | World に置く画像の板の高さ |
 | `GRID_MINOR_FADE` | `E` | 8 `E` → 24 `E`（12.8 → 38.4） | 1 単位の線が薄れ始める距離と消える距離（視点からの水平の距離） |
@@ -81,7 +82,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `BOUND_NOTICE_SECONDS` | 絶対 | 2 秒 | 止まったときの知らせと、黙って何もしない操作の知らせ（下の「黙って何もしない操作」）を出しておく長さ（最後に出したときから） |
 | `WHEEL_STEP_PIXELS` | 絶対 | 100 px（仮。試作で詰める） | ピクセル単位の細かいホイールの事象（トラックパッド）を溜めて一段にする量（下の「ホイール」） |
 | `FRAME_WHEEL_REST_MS` | 絶対 | 180 ms（旧 UI の Frame 表示と同じ） | Frame 表示で続けて回したホイールを Undo の 1 段にまとめる待ち。最後の一段からこの時間ホイールが止まったら 1 段にする（下の「Frame 表示」の「記録」） |
-| `DROP_PREVIEW_BOX` | 絶対 | 横 1・高さ 1・奥 1（World の単位）、底の中央が原点 | 箱の大きさが分かる前の 3D ファイルの印 |
+| `DROP_PREVIEW_BOX` | 絶対 | 横 1・高さ 1・奥 1（World の単位）、底の中央が原点 | 箱の大きさが分かる前の 3D ファイルの印と、経路が答える前の読み込み中のガイド |
 | `PREVIEW_DAMPING` | 絶対 | 0.95 | Preview のウィンドウの減衰（下の「Preview のウィンドウ」） |
 
 ほかの spec と code が持つ値で、ここでは参照するだけのもの：
@@ -362,6 +363,10 @@ Panorama 表示で、表示している World の物（`world` の Sticker の�
 輪郭を描く。どこにあるか、どれが触れるかを、選ばなくても分かるようにする。
 
 - 形：3D の Sticker は、回した要素の箱の 12 本の辺（3D の箱）。画像の板は、板の四隅を結ぶ輪郭。
+- 置いて読み込んでいる 3D ファイル（`docs/studio-ui.md` の「Add とドロップの見せ方」の「置く間」）は、要素の箱がまだ無いので、代わりの
+  箱でガイドを描く：経路が答えるまでは `DROP_PREVIEW_BOX`（ドラッグ中の印と同じ箱）、答えた後は経路の応答の `box`。どちらも
+  その Sticker の今の値で回して置く。要素が描けたら、要素の箱に替わる。
+- ガイドの中心（ギズモの中心。`docs/studio-ui.md` の「ギズモ」）：3D の Sticker は回した箱の中心、画像の板は板の中心。
 - 見え方：いつも薄く、ポインタの下（ホバー）では明るく、選んでいるものは落ち着いた黄。明るい線の下に暗い線を重ね、明るい背景でも
   暗い背景でも見えるようにする（`docs/agents/ux-principles.md` の「見やすさ」）。値は `docs/design.md` に足す（平常は白 32% と
   黒 32%・1px、ホバーは白 90% と黒 60%・1.5px、選択は落ち着いた黄 `#e8cf74`（ドロップの印と同じ色。ADR 0048）と黒 70%・1.5px、暗い線は明るい線より 2px 太い）。
@@ -429,14 +434,20 @@ ADR 0047）。
 
 ファイルをステージの上でドラッグしている間、離したときに着く所を印で見せる。Sky か World かが離す前に分かる（ADR 0048）。
 
-- 形：着く所の輪郭の角にかぎ括弧を置き、内側を薄く塗る。色は落ち着いた黄 `#e8cf74`（選んだ物のガイドと同じ色）、塗りはその 25%、
-  かぎ括弧の下に暗い線を重ねて明るい背景でも見えるようにする。値の owner は `docs/design.md`。破線は使わない。
+- 形：着く所の輪郭の角にかぎ括弧を置き、内側を薄く塗る。色は行き先で変える：World は落ち着いた黄 `#e8cf74`（選んだ World の物の
+  ガイドと同じ色）、Sky は氷 `#aecedb`（選んだ空の画像の枠と同じ色）。塗りはその色の 25%、かぎ括弧の下に暗い線を重ねて明るい背景でも
+  見えるようにする。値の owner は `docs/design.md`。破線は使わない。
   - 画像で当たりあり：その点に立つ板の輪郭の 4 つの角（縦横比は離すまで分からないので 1:1 で、高さと位置は上の規則のまま）。
   - 画像で当たり無し：光線の向きの、横の画角 `NEW_STICKER_HFOV` の Sky の枠。枠は球に写すので辺が曲がる。かぎ括弧も平面の L 字では
     なく、写した枠の辺に沿って描く。
   - 3D ファイル：着く点に置いた `DROP_PREVIEW_BOX` の各頂点から、辺に沿って短い線（辺の長さの 25%）。
-- ラベル：ポインタの横に、行き先のラベル（空のアイコン `view-360`＋「Sky」、立方体のアイコン `box`＋「World」）を出す。同じ
-  アイコンを、置いた後の下の中央のバーの左端とタイムラインの行のアイコンにも使う（`docs/studio-ui.md`）。
+- ラベル：ポインタの近くに、行き先のラベル（空のアイコン `view-360`＋「Sky」、立方体のアイコン `box`＋「World」）を出す。アイコンと
+  縁は印と同じ行き先の色。同じアイコンを、置いた後の下の中央のバーの左端とタイムラインの行のアイコンにも使う（`docs/studio-ui.md`）。
+- ラベルの置き場所：印に重ねない。印の画面の上の外接の矩形（塗りとかぎ括弧のすべての点を囲む矩形）から `DROP_LABEL_GAP` 離して、
+  右（縦はポインタの高さに中央）、左、下（横はポインタに中央）、上の順に置いてみて、ステージの端から `DROP_LABEL_MARGIN` の内に
+  収まる最初の所に置く（ステージの端の近くでは反対の側へ回る）。縦か横のはみ出しは、矩形と重ならない向きにだけ端の内へ寄せる。
+  どこにも収まらない（印がステージのほとんどを占める）ときは、ステージの内に寄せたうちで印との重なりが最も小さい所に置く
+  （`web_src/studio/landing.js` `dropLabelPlace`）。
 - ドラッグの間の当たりは CPU だけで求める：地面と、3D の Sticker の箱（ガイドの箱）。GPU の当たりを読むのは離したときだけで、
   そのときは `scene` の中身も含めて求める。そのため、`scene` の中身の上では印と結果が食い違うことがある（下の「まだ決めて
   いないこと」）。
