@@ -258,8 +258,15 @@
 }
 
 .pano-studio-tabs .pano-studio-seg-item {
-  width: 84px;
+  width: 96px;
+  height: 34px;
   padding: 0;
+  font-size: var(--studio-text-md);
+}
+
+.pano-studio-tabs .pano-studio-seg-item svg.icon {
+  width: 18px;
+  height: 18px;
 }
 
 /* Floating parts over the stage: 85% opaque panel, no line, fully round, no blur and no shadow. The 2nd gray is
@@ -275,34 +282,35 @@
 .pano-studio-float.pano-studio-seg {
   background: var(--studio-float);
   border: 0;
+  padding: 4px;
 }
 
 .pano-studio-float.is-rail {
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
-  padding: 4px;
+  padding: 6px;
 }
 
 .pano-studio-float.is-knobs {
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
-  padding: 3px;
+  padding: 6px;
 }
 
 .pano-studio-float.is-bar {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 3px 4px 3px 12px;
+  padding: 6px 6px 6px 14px;
 }
 
 .pano-studio-float.is-row {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: 6px;
 }
 
 /* The left column's and the bottom right's buttons are as large as the view knobs (controls-2.html R1): 34px with an

@@ -28219,7 +28219,7 @@ const w0 = su({ fetchApi: (e, t) => Ut.fetchApi(e, t), onUpdate: () => zw() }), 
   onSceneViewerExecuted: TL,
   restoreOutput: zC,
   enableStickersPreview: PF
-}), Gw = 220, k0 = 120, $L = 240, zL = 40, Uw = 168, jL = 160, HL = 520, du = Object.freeze({
+}), Gw = 176, k0 = 120, $L = 240, zL = 40, Uw = 168, jL = 160, HL = 520, du = Object.freeze({
   timeline: "PanoramaSuite.Studio.timelineHeight",
   output: "PanoramaSuite.Studio.outputWindow"
 }), Ww = (e, t, n) => Math.min(n, Math.max(t, e));
@@ -28256,7 +28256,8 @@ function UL(e) {
   const t = Yw(e, du.output);
   return {
     width: Number.isFinite(t == null ? void 0 : t.width) ? t.width : Uw,
-    collapsed: (t == null ? void 0 : t.collapsed) === !0
+    // Folded unless the viewer opened it before (owner, 2026-10-30: no need to open it by default).
+    collapsed: t ? t.collapsed === !0 : !0
   };
 }
 function WL(e, { width: t, collapsed: n }) {

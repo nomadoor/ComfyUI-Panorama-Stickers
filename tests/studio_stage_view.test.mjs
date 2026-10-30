@@ -134,7 +134,8 @@ test("the Output window keeps the output's ratio within its least and largest wi
   const storage = memoryStorage();
   saveOutputWindow(storage, { width: 280, collapsed: true });
   assert.deepEqual(loadOutputWindow(storage), { width: 280, collapsed: true });
-  assert.deepEqual(loadOutputWindow(null).collapsed, false);
+  // Folded by default (owner, 2026-10-30).
+  assert.deepEqual(loadOutputWindow(null).collapsed, true);
 });
 
 test("the stage draws STAGE_RENDER_SCALE times the device pixels, its longer side at most STAGE_RENDER_MAX_SIDE", () => {
