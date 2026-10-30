@@ -7,12 +7,16 @@ import { boxCorners, planeCorners, planeOutlineSegments, projectPoint, sceneCont
 import { quaternionToRotation } from "../pano_world.js";
 
 // The looks of a guide (docs/design.md "新しい UI の見た目"): a light line over a dark line 2px wider, so it shows on
-// a light and a dark picture alike. The selected look's color is the soft yellow of the drop mark.
+// a light and a dark picture alike. The selected look's color is the soft yellow of the World drop mark; a selected
+// sky image's frame and handles (stage_overlay.js) take the ice of the Sky drop mark, so the color tells where a thing
+// is (docs/design.md "色").
 export const SELECTED_GUIDE_COLOR = "#e8cf74";
+export const SKY_SELECTED_COLOR = "#aecedb";
 export const GUIDE_LOOKS = Object.freeze({
   normal: Object.freeze({ light: "rgba(255, 255, 255, 0.32)", dark: "rgba(0, 0, 0, 0.32)", width: 1 }),
   hover: Object.freeze({ light: "rgba(255, 255, 255, 0.9)", dark: "rgba(0, 0, 0, 0.6)", width: 1.5 }),
   selected: Object.freeze({ light: SELECTED_GUIDE_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
+  skySelected: Object.freeze({ light: SKY_SELECTED_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
 });
 // How much wider the dark line under a guide is than the light one.
 export const GUIDE_UNDER_EXTRA = 2;

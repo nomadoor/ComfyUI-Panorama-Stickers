@@ -3,10 +3,10 @@
 // to draw and how it looks come from stage_objects.js, world_guides.js, camera_marker.js and gizmo_overlay.js.
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
 import { GIZMO_COLORS, GIZMO_LOOK } from "./gizmo_overlay.js";
-import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, SELECTED_GUIDE_COLOR, screenSegment } from "./world_guides.js";
+import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, screenSegment } from "./world_guides.js";
 
 // The sky image's handles (docs/studio-ui.md "下の中央のバー"; pano_sticker_affordance.js hits them): corner and rotate
-// dots, edge ticks, in the selected guide's yellow over a dark ring.
+// dots, edge ticks, in the selected sky image's ice over a dark ring (docs/design.md "色": the color of the Sky).
 const CORNER_RADIUS = 5;
 const EDGE_RADIUS = 3.5;
 const ROTATE_RADIUS = 6;
@@ -36,10 +36,10 @@ function segmentsPath(camera, segments, width, height) {
 function dot(ctx, point, radius) {
   ctx.beginPath();
   ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = SELECTED_GUIDE_COLOR;
+  ctx.fillStyle = GUIDE_LOOKS.skySelected.light;
   ctx.fill();
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = GUIDE_LOOKS.selected.dark;
+  ctx.strokeStyle = GUIDE_LOOKS.skySelected.dark;
   ctx.stroke();
 }
 
@@ -205,12 +205,12 @@ export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin
     const frame = new Path2D();
     geometry.boundaryEdges.flat().forEach((point, index) => (index ? frame.lineTo(point.x, point.y) : frame.moveTo(point.x, point.y)));
     frame.closePath();
-    strokeTwice(ctx, frame, GUIDE_LOOKS.selected);
+    strokeTwice(ctx, frame, GUIDE_LOOKS.skySelected);
     if (handles) {
       const stem = new Path2D();
       stem.moveTo(geometry.rotateStemBase.x, geometry.rotateStemBase.y);
       stem.lineTo(geometry.rotateHandle.x, geometry.rotateHandle.y);
-      strokeTwice(ctx, stem, GUIDE_LOOKS.selected);
+      strokeTwice(ctx, stem, GUIDE_LOOKS.skySelected);
       for (const mid of geometry.edgeMidpoints ?? []) dot(ctx, mid, EDGE_RADIUS);
       for (const corner of geometry.corners) dot(ctx, corner, CORNER_RADIUS);
       dot(ctx, geometry.rotateHandle, ROTATE_RADIUS);

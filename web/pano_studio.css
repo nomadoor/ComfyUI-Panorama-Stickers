@@ -1928,7 +1928,6 @@
 }
 
 .pano-studio-drop-fill {
-  fill: rgba(232, 207, 116, 0.25);
   stroke: none;
 }
 
@@ -1939,25 +1938,19 @@
   stroke-linejoin: round;
 }
 
-.pano-studio-drop-under {
-  stroke: rgba(0, 0, 0, 0.28);
-  stroke-width: 4.5px;
-}
+/* The mark's colors and widths come from studio/landing.js DROP_LOOK (the color of where it goes). */
 
-.pano-studio-drop-line {
-  stroke: #e8cf74;
-  stroke-width: 2.5px;
-}
-
-/* The label beside the pointer: the mark of where it goes and its name. */
+/* The label near the pointer, off the mark: the mark of where it goes and its name, in the color of where it goes
+   (World the soft yellow, Sky ice). */
 .pano-studio-drop-label {
+  --drop-color: var(--studio-yellow);
   position: absolute;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 26px;
   padding: 0 10px 0 8px;
-  border: 1px solid var(--studio-yellow);
+  border: 1px solid var(--drop-color);
   border-radius: var(--studio-r-part);
   background: color-mix(in srgb, var(--studio-panel) 92%, transparent);
   color: var(--studio-fg);
@@ -1967,11 +1960,15 @@
   pointer-events: none;
 }
 
+.pano-studio-drop-label.is-sky {
+  --drop-color: var(--studio-ice);
+}
+
 .pano-studio-drop-label svg.icon {
   width: 15px;
   height: 15px;
   flex: none;
-  color: var(--studio-yellow);
+  color: var(--drop-color);
   stroke-width: var(--studio-icon-stroke);
 }
 

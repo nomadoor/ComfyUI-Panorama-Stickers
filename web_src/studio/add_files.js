@@ -20,7 +20,7 @@ import {
   uploadStickerAssetFile,
   uploadWorld3dFile,
 } from "../pano_sticker_file_import.js";
-import { DROP_LOOK, dropMarker, file3dPosition, file3dTransform, groundBelow, groundLanding, landingBoxes, landingHit, skyPose, worldImageTransform } from "./landing.js";
+import { dropMarker, file3dPosition, file3dTransform, groundBelow, groundLanding, landingBoxes, landingHit, skyPose, worldImageTransform } from "./landing.js";
 import { stageRay } from "./stage_view.js";
 
 // The texts of the top-center line (docs/studio-ui.md "Add とドロップの見せ方").
@@ -50,7 +50,8 @@ export function dragKind(items) {
 }
 
 // session: session.js's. ui: the editor's reactive report, whose fields this writes: `choice` (null or { name }: the
-// Sky / World choice shows), `drop` (null or the drag's mark: dropMarker()'s with `sky` and `label` { x, y }), `adding` (a placed
+// Sky / World choice shows), `drop` (null or the drag's mark: dropMarker()'s with `sky`, the `pointer` { x, y } and the
+// `stage` { width, height }), `adding` (a placed
 // 3D file is loading) and `addWarning` (the last failure's text, or null).
 // view(): what the stage gives (stage.js `landing`: camera(), size(), pose(), bound(), pick(point)), null before it is
 // made. ground(): the ground height. content(), sceneBox(url): the content at the playhead (stage_content.js) and a loaded
@@ -289,7 +290,8 @@ export function createAddFiles({
     const ray = rayAt(v, point);
     const hit = landingHit(ray, { ground: v.ground, boxes: landingBoxes(content(), sceneBox), radius: v.radius });
     const mark = dropMarker({ kind, ray, hit, camera: v.camera, width: v.size.width, height: v.size.height, ground: v.ground, radius: v.radius, viewYaw: v.pose.yaw_deg });
-    ui.drop = mark ? { ...mark, sky: mark.placement === "sky", label: { x: point.x + DROP_LOOK.labelOffset.x, y: point.y + DROP_LOOK.labelOffset.y } } : null;
+    // The label's place is worked out where its size is known (StudioDropMarker.vue, landing.js dropLabelPlace).
+    ui.drop = mark ? { ...mark, sky: mark.placement === "sky", pointer: { ...point }, stage: { ...v.size } } : null;
   }
 
   // The drag left the stage, or ended elsewhere.
