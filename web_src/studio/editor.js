@@ -271,15 +271,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.imageSizes = { ...addFiles.sizes(state), ...stageMedia.imageSizes(state) };
   }
 
-  // The stage's world: the ground height and the Camera's position at the playhead.
-  const world = { ground: groundOf(session.state), camera: outputView(session.state, 0).position };
+  // The stage's world: the ground height (an upstream layer's while the state has none) and the Camera's position at
+  // the playhead.
+  const groundNow = () => groundOf(session.state, upstream.working());
+  const world = { ground: groundNow(), camera: outputView(session.state, 0).position };
 
   function sync() {
     view.state = session.state;
     view.selection = session.selection;
     view.canUndo = session.canUndo;
     view.canRedo = session.canRedo;
-    world.ground = groundOf(session.state);
+    world.ground = groundNow();
     world.camera = outputView(session.state, view.playhead).position;
     syncMedia();
     ui.empty = stageEmpty();
@@ -501,7 +503,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     session,
     ui,
     view: () => stage?.landing ?? null,
-    ground: () => groundOf(session.state),
+    ground: () => groundNow(),
     content: () => content(),
     sceneBox,
     playhead: () => view.playhead,
