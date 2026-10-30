@@ -15,6 +15,7 @@ import { DRAW_REASON, createFrameScheduler } from "./pano_frame_scheduler.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
 import {
   cameraShot,
+  createEditorHistory,
   editorActive,
   normalizeCoverageValue,
   parsePanoEditorState,
@@ -62,7 +63,7 @@ import {
 import { getNodeGridVisibility, loadSharedUiSettings } from "./editor/ui_settings.js";
 import { createEditorModules } from "./editor/modules.js";
 import { createMediaSession } from "./editor/media_session.js";
-import { createEditorHistory, createHistory, savedSelectionId } from "./editor/history.js";
+import { createHistory, savedSelectionId } from "./editor/history.js";
 import { createItems } from "./editor/items.js";
 import { createSelection } from "./editor/selection.js";
 import { createProjection } from "./editor/projection.js";

@@ -6,6 +6,7 @@ import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pan
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
+import { createSharedStringHistory } from "./pano_paint_history.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
 
@@ -153,6 +154,22 @@ export function makePanoEditorHistorySnapshot(state) {
   const snapshot = JSON.parse(JSON.stringify(state));
   HISTORY_SNAPSHOT_OMITS.forEach((key) => delete snapshot[key]);
   return snapshot;
+}
+
+// The steps an editor keeps. Each is the whole state as JSON, without its history and painting layer
+// (makePanoEditorHistorySnapshot).
+export const HISTORY_LIMIT = 80;
+
+export function historySnapshot(state) {
+  return JSON.stringify(makePanoEditorHistorySnapshot(state));
+}
+
+// The history of an editor opening on `state`, which is its first step. Undo, Redo and `entries` give the
+// steps as historySnapshot() JSON; `record(state)` records one.
+export function createEditorHistory(state) {
+  const history = createSharedStringHistory(HISTORY_LIMIT, { omit: HISTORY_SNAPSHOT_OMITS });
+  history.record(state);
+  return history;
 }
 
 // The state an undo or redo step restores from a history snapshot. The snapshot leaves out painting_layer,
