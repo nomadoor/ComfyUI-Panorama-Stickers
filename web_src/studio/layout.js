@@ -4,7 +4,7 @@
 // and the Output window's least and largest sizes are not decided yet); they live here and nowhere else.
 
 // The timeline's height when nothing is remembered, and the least heights of the timeline and the stage.
-export const TIMELINE_DEFAULT_HEIGHT = 220;
+export const TIMELINE_DEFAULT_HEIGHT = 176;
 export const TIMELINE_MIN_HEIGHT = 120;
 export const STAGE_MIN_HEIGHT = 240;
 // The timeline folded shows its bar only.
@@ -71,7 +71,8 @@ export function loadOutputWindow(storage) {
   const value = read(storage, KEYS.output);
   return {
     width: Number.isFinite(value?.width) ? value.width : OUTPUT_DEFAULT_WIDTH,
-    collapsed: value?.collapsed === true,
+    // Folded unless the viewer opened it before (owner, 2026-10-30: no need to open it by default).
+    collapsed: value ? value.collapsed === true : true,
   };
 }
 
