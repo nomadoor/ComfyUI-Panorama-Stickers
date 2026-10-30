@@ -11,6 +11,7 @@ import {
   moveStickerToScreenPoint,
   pickStickerAtPoint,
   rotateStickerFromPointer,
+  scaleStickerAxisFromPointer,
   scaleStickerFromPointer,
 } from "../web_src/pano_sticker_geometry.js";
 import { applyViewportCamera } from "../web_src/pano_three_view.js";
@@ -181,4 +182,22 @@ test("a lens sky Sticker's frame is its lens image's edge, past 90 degrees off i
   const middle = rightEdge[Math.floor(rightEdge.length / 2)];
   const ray = side.ray(middle.x, middle.y);
   assert.ok(Math.abs(Math.atan2(ray.x, ray.z) * RAD2DEG - 100) < 0.5, `at ${Math.atan2(ray.x, ray.z) * RAD2DEG}`);
+});
+
+test("sticker geometry gives the middle of each edge, where an edge handle scales one axis", () => {
+  const geom = buildStickerGeometry(sticker, projection);
+  assert.deepEqual(geom.edgeMidpoints.map((mid) => mid.edge), ["top", "right", "bottom", "left"]);
+  const [top, right, bottom, left] = geom.edgeMidpoints;
+  assert.ok(Math.abs(top.x - 500) < 1e-9 && top.y < 250);
+  assert.ok(Math.abs(bottom.x - 500) < 1e-9 && bottom.y > 250);
+  assert.ok(right.x > 500 && Math.abs(right.y - 250) < 1e-9);
+  assert.ok(left.x < 500 && Math.abs(left.y - 250) < 1e-9);
+  assert.deepEqual(top.a, geom.corners[0]);
+  assert.deepEqual(top.b, geom.corners[1]);
+});
+
+test("an edge handle scales only its axis, held to 1..179 degrees", () => {
+  assert.deepEqual(scaleStickerAxisFromPointer(sticker, "scale_x", 100, 150), { ...sticker, hFOV_deg: 30 });
+  assert.deepEqual(scaleStickerAxisFromPointer(sticker, "scale_y", 100, 50), { ...sticker, vFOV_deg: 5 });
+  assert.equal(scaleStickerAxisFromPointer(sticker, "scale_x", 10, 1000).hFOV_deg, 179);
 });

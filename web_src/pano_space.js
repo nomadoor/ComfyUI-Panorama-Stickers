@@ -526,7 +526,8 @@ export function sceneContentBox(request, loaded) {
   return loaded && request ? sceneItemBox(request.kind, loaded) : null;
 }
 
-function boxCorners({ min, max }) {
+// The 8 corners of a box { min, max }.
+export function boxCorners({ min, max }) {
   const corners = [];
   for (const x of [min[0], max[0]]) for (const y of [min[1], max[1]]) for (const z of [min[2], max[2]]) corners.push([x, y, z]);
   return corners;

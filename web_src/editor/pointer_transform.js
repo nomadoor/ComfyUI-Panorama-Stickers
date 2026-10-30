@@ -8,6 +8,7 @@ import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, getCutoutCamera
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { clamp, wrapYaw } from "../pano_math.js";
+import { scaleStickerAxisFromPointer, scaleStickerFromPointer } from "../pano_sticker_geometry.js";
 import { RAD2DEG } from "./constants.js";
 import { cloneJson, dirToYawPitch } from "./helpers.js";
 
@@ -278,9 +279,14 @@ export function createPointerTransform(deps) {
       requestDraw({ localOnly: true });
       return;
     }
-    if (it.kind === "scale") writePose(it.item, { hFOV_deg: clamp(it.startHFOV * ratio, 1, 179), vFOV_deg: clamp(it.startVFOV * ratio, 1, 179) });
-    else if (it.kind === "scale_x") writePose(it.item, { hFOV_deg: clamp(it.startHFOV * ratio, 1, 179) });
-    else writePose(it.item, { vFOV_deg: clamp(it.startVFOV * ratio, 1, 179) });
+    const start = { hFOV_deg: it.startHFOV, vFOV_deg: it.startVFOV };
+    if (it.kind === "scale") {
+      const { hFOV_deg, vFOV_deg } = scaleStickerFromPointer(start, it.startDist, d);
+      writePose(it.item, { hFOV_deg, vFOV_deg });
+    } else {
+      const field = it.kind === "scale_x" ? "hFOV_deg" : "vFOV_deg";
+      writePose(it.item, { [field]: scaleStickerAxisFromPointer(start, it.kind, it.startDist, d)[field] });
+    }
     if (!isSceneSticker(it.item)) it.item.aspect_id = deriveCutoutAspectLabelFromFov(it.item);
     if (isStickerItem(it.item)) markObjectVisualsDirty();
     requestDraw({ localOnly: true });
