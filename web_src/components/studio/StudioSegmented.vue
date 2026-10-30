@@ -1,8 +1,11 @@
 <script setup>
+import { computed } from "vue";
 import SvgIcon from "../shared/SvgIcon.vue";
 
 // A segmented control of the new UI: options of equal width, each an icon and/or text, the chosen one in the
-// strong fill (docs/design.md "新しい UI の見た目"). Presentational: `value` in, `select` out.
+// strong fill (docs/design.md "新しい UI の見た目"). Presentational: `value` in, `select` out. The strong fill is one
+// thumb under the options that slides to the chosen one (docs/design.md "動き"); every segmented control of the new
+// UI is this one, so all slide alike. Without a chosen option there is no thumb.
 const props = defineProps({
   // [{ value, label, icon?, iconOnly?, disabled?, tip? }]; an iconOnly option keeps its label as the accessible name.
   options: { type: Array, required: true },
@@ -16,6 +19,8 @@ const props = defineProps({
   extraClass: { type: [String, Array, Object], default: "" },
 });
 const emit = defineEmits(["select"]);
+
+const chosen = computed(() => props.options.findIndex((option) => option.value === props.value));
 
 const itemRole = () => (props.role === "tablist" ? "tab" : "radio");
 const off = (option) => props.disabled || !!option.disabled;
@@ -47,9 +52,10 @@ function onKeydown(event) {
     :role="role"
     :aria-label="label || null"
     :aria-disabled="disabled ? 'true' : null"
-    :style="{ '--studio-seg-count': options.length }"
+    :style="{ '--studio-seg-count': options.length, '--studio-seg-index': Math.max(0, chosen) }"
     @keydown="onKeydown"
   >
+    <span v-if="chosen >= 0" class="pano-studio-seg-thumb" aria-hidden="true" />
     <button
       v-for="option in options"
       :key="option.value"

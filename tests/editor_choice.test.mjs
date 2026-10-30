@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createEditorChooser, NEW_UI_SETTING, NEW_UI_SETTING_ID } from "../web_src/editor_choice.js";
+import { createEditorChooser, createStudioPreloader, NEW_UI_SETTING, NEW_UI_SETTING_ID } from "../web_src/editor_choice.js";
 
 function chooser(on) {
   const calls = [];
@@ -51,4 +51,20 @@ test("with the setting on, only Panorama Studio's editor opens the new editor", 
     ["old", stickersNode, "cutout", {}],
     ["old", {}, "stickers", { readOnly: true }],
   ]);
+});
+
+test("the new editor preloads once, when the page is idle, only while the setting is on", () => {
+  let on = false;
+  const idle = [];
+  let loads = 0;
+  const check = createStudioPreloader({ newUiOn: () => on, preload: () => (loads += 1), whenIdle: (callback) => idle.push(callback) });
+  check();
+  assert.equal(idle.length, 0);
+  on = true;
+  check();
+  check();
+  assert.equal(idle.length, 1);
+  assert.equal(loads, 0);
+  idle[0]();
+  assert.equal(loads, 1);
 });
