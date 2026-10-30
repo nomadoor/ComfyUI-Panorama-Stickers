@@ -174,6 +174,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     animations: {},
     // The stage's tab: "3d" or "camera" (docs/studio-ui.md "Camera タブ"). The 3D tab each time the editor opens.
     tab: "3d",
+    // The list of shortcuts is open (docs/studio-ui.md "ショートカットの一覧"): closed each time the editor opens.
+    shortcuts: false,
   });
   const timelineCtx = () => ({ state: session.state, upstream: [], media: view.media });
 
@@ -551,13 +553,19 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     else if (action === "redo") historyStep(1);
     else if (action === "delete") deleteSelection();
     else if (action === "play") togglePlayback();
+    else if (action === "shortcuts") view.shortcuts = !view.shortcuts;
   }
 
-  // Escape with no view drag to let go (docs/studio-ui.md "閉じ方"): the Keyframe selection, then the object's, then
-  // the editor closes.
+  // Escape with no view drag to let go (docs/studio-ui.md "閉じ方"): the Sky / World choice, the list of shortcuts, the
+  // Keyframe selection, then the object's, then the editor closes.
   function onEscape() {
     // [add-drop] Step 3: the Sky / World choice closes, placing nothing.
     if (addFiles.escape()) return;
+    // Step 4: the list of shortcuts closes.
+    if (view.shortcuts) {
+      view.shortcuts = false;
+      return;
+    }
     if (session.escape()) sync();
     else close();
   }
@@ -637,6 +645,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     addFiles: (files) => addFiles.pick(files),
     place: (placement) => addFiles.choose(placement),
     cancelPlace: () => addFiles.cancelChoice(),
+    // The list of shortcuts opened or closed ("?", a press outside it).
+    shortcuts: (open) => {
+      view.shortcuts = !!open;
+    },
   });
 
   const mountHost = document.createElement("div");
