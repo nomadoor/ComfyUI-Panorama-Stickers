@@ -1244,26 +1244,39 @@
   cursor: default;
 }
 
-/* A Keyframe: a 9px diamond, half filled where only some of the row's Lanes have one, ice while selected. */
+/* A Keyframe: a 9px diamond, half filled where only some of the row's Lanes have one, ice while selected. Its hit
+   area is 18px wide and the row's whole height, above the Clip range bar, so a press near the diamond grabs it
+   (docs/design.md "タイムラインの Keyframe のポチの当たり"). */
 .pano-studio-tl-key {
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   z-index: 1;
+  width: 18px;
+  margin-left: -9px;
+  cursor: pointer;
+}
+
+.pano-studio-tl-key::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
   width: 9px;
   height: 9px;
   margin: -4.5px 0 0 -4.5px;
   border-radius: 1.5px;
   background: var(--studio-fg-2);
   transform: rotate(45deg);
-  cursor: pointer;
 }
 
-.pano-studio-tl-key.is-half {
+.pano-studio-tl-key.is-half::before {
   border: 1.25px solid var(--studio-fg-2);
   background: linear-gradient(135deg, var(--studio-fg-2) 50%, transparent 50%);
 }
 
-.pano-studio-tl-key.is-selected {
+.pano-studio-tl-key.is-selected::before {
   border-color: var(--studio-ice);
   background: var(--studio-ice);
   outline: 2px solid var(--studio-panel);

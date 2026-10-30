@@ -35,6 +35,7 @@
 | `port` の Sticker の素材の表示 | — | `pano_port_media.js` `portMediaTime`・`portMediaFrames`・`portImageIndex`・`createFrameSequence`、`pano_video_playback.js` `createVideoFollower`、実行結果の `ui` から再生ヘッドの絵を選ぶのは `pano_port_picture.js` `createPortPicture`（上流の層は `pano_upstream_layers.js`。古い UI の自分の `port` は `editor/media_session.js` の `followPortSticker`） | `tests/pano_video_follower.test.mjs`、`tests/test_port_media_parity.py` |
 | 上流の層の行 | — | `web_src/pano_upstream.js` `upstreamRowId`・`upstreamEditedRecords`・`upstreamOverriddenEnds`・`upstreamLayerRevertedRecords`・`upstreamDeletedCount`、`editor/upstream.js` `syncUpstreamEdits`、`web_src/components/PanoTimelineGroup.vue` | `tests/pano_upstream.test.mjs`、`editor_upstream.test.mjs`、`test_upstream_editor_parity.py` |
 | （新しい UI）上の規則を新しい UI のタイムラインで使う所：行の組み立てと表示、行と Keyframe の選択、Keyframe の移動と削除、Keyframe のコピーと貼り付け、行のポチ、目のアイコン、Clip range のドラッグ、前後の Keyframe へ飛ぶ、fps と長さの欄、ループの記憶 | — | データは `web_src/studio/timeline_model.js` `buildStudioTimeline`・`timelineEntries`・`jumpFrames`、操作は `web_src/studio/timeline_actions.js`（`applyEdit`・`selectKeys`・`moveKeys`・`deleteKeys`・`copyKeys`・`pasteKeys`・`keyRow`・`toggleVisible`・`applyClipDrag`・`jumpTarget`・`lengthEdit`・`enteredFps`・`LOOP_SETTING_KEY`）、画面は `web_src/components/studio/StudioTimeline.vue`・`StudioTimelineBar.vue`・`StudioTimelineHead.vue`。記録の規則などの中身は上の行の下の部品（`pano_timeline.js` など）を呼ぶ | `tests/studio_timeline_model.test.mjs`、`tests/studio_timeline_actions.test.mjs`（共有の case は `tests/studio_timeline_fixtures.mjs`）、`tests/browser/studio_timeline.spec.js` |
+| （新しい UI）Clip range のバーを出す行（自分の時間を持つ物と、既定でない Clip range を持つ物）と、バーの上の Keyframe のポチの当たり | — | `web_src/studio/timeline_model.js` `hasOwnTime`（行のモデルの `clip`）、当たりは `web_src/components/studio/StudioTimeline.vue` と `web/pano_studio.css` の `.pano-studio-tl-key` | `tests/studio_timeline_model.test.mjs`、`tests/browser/studio_timeline.spec.js` |
 
 `tests/test_port_media_parity.py` は素材の時刻を `sticker_media.py` の `PortMedia`（`docs/studio-node.md`）と、
 `tests/test_timeline_length_parity.py` は長さをノードの `_decide_timeline` と比べる。
@@ -200,6 +201,27 @@ Keyframe の選び方（新しい UI。ADR 0048）：
 - 行の名前をダブルクリックすると、その物へ Frame Selected で寄る（`docs/space-and-view.md` の「Frame Selected」。tooltip で知らせる）。
   一回のクリックは今のまま選ぶだけで、視点を動かさない。
 
+### Clip range のバー（新しい UI）
+
+時間を持たない物の Clip range は既定ではタイムラインの終わりまで続くので、バーにしても切り詰める意味が無く、Keyframe のポチを掴む邪魔になる。
+そこで新しい UI のタイムラインは、行の物が自分の時間を持つときだけ Clip range のバー（移動と両端の切り詰め）を出す（Rive と同じ）。
+判定は一か所（`timeline_model.js` の `hasOwnTime`）で、自分の行と上流の層の行に同じ規則を使う。
+
+- 自分の時間を持つ物：
+  - 背景（「背景の行」）の VIDEO と IMAGE バッチ（エディタが知っている背景の長さ。VIDEO は、実行前でも `bg_media` が VIDEO の型でつながっていれば数える）。
+  - `port` の Sticker の素材が VIDEO か、2 枚以上の IMAGE バッチ（3D の素材は 2 つ以上）のとき（`portMediaMeta`。上流の層の行はその層の素材）。
+  - アニメーションを持つ 3D ファイルの Sticker と `scene`（「glTF のアニメーション」。clip の 1 周の長さが分かるとき）。
+  - `scene` の行で、`scene` 入力の内容が 2 つ以上の要素を持つとき（上流の層の行はその層の要素の数）。
+- 安全のための例外：Clip range が既定値（`start` 0・`in` 0・`duration` `null`）でない行も、時間を持たなくてもバーを出す。
+  すでに切り詰めた範囲を隠さず、直せるようにするためである。切り詰めを既定値に戻すと、次の表示からバーは消える。
+- そのほかの行（1 枚の画像、アニメーションの無い 3D ファイル、Camera、Paint、まだ長さの分からない入力など）は、トラックに Keyframe のポチだけを出す。
+  バーも切り詰めのつまみも出さない。
+- 状態の形とノードは変えない。Clip range のフィールドは残り、既定値は「タイムライン全体」を意味する。Auto の長さ（「タイムラインの長さ」）は
+  今までどおり状態の Clip range から求め、バーを出すかどうかで変わらない。
+- バーを出す行では、Keyframe のポチがバーより上にあり、ポインタもバーより先にポチが受ける。ポチの当たりは行の高さいっぱいで
+  （大きさは `docs/design.md`）、見えている菱形の少し外を押してもポチを掴む。
+- 古い UI と旧ノードのエディタは今のまま、Clip range を持つ行にいつもバーを出す。
+
 ### Keyframe のコピーと貼り付け（新しい UI）
 
 選んだ Keyframe を写し、再生ヘッドの所に貼る。値を別の時刻にもう一度置くための操作である。
@@ -261,7 +283,7 @@ Camera は Keyframe だけで動く（撮り方のモードは持たない）。
 
 ## 背景の行
 
-Panorama Studio の自分の `bg_media` は、タイムラインの自分の行の先頭に「Background」の行（パノラマのアイコン）を持つ。行は状態の `background.clip`（`docs/scene-state-v2.md` の「背景の Clip range」）を Sticker の行と同じ Clip range のバーで表し、移動（`start` を動かし、`in` は保つ）と両端の切り詰め（頭は `start` と `in` を一緒に動かし、素材の位置は動かない。終わりは `duration`）ができる。操作は `timeline_actions.js` の `clip` で、Sticker と同じく操作ごとに Undo の 1 段になる。
+Panorama Studio の自分の `bg_media` は、タイムラインの自分の行の先頭に「Background」の行（パノラマのアイコン）を持つ。行は状態の `background.clip`（`docs/scene-state-v2.md` の「背景の Clip range」）を Sticker の行と同じ Clip range のバーで表し（新しい UI では、VIDEO と IMAGE バッチのとき、または既定でない Clip range のときだけ。「Clip range のバー（新しい UI）」）、移動（`start` を動かし、`in` は保つ）と両端の切り詰め（頭は `start` と `in` を一緒に動かし、素材の位置は動かない。終わりは `duration`）ができる。操作は `timeline_actions.js` の `clip` で、Sticker と同じく操作ごとに Undo の 1 段になる。
 
 - 行が出るのは、`bg_media` がつながっていて、上流の Scene の背景が代わりに使われていないとき（`timeline.js` の `backgroundShown`。`scene` の行が `scene` のリンクで出るのと同じく、リンクで決める）。つないでいないときは出さない。リンクはエディタの外で変わるので、編集の途中で行が出入りしてほかの行が動くことはない。
 - 目のアイコンは無く（場所だけ空ける）、Keyframe も Lane も無い（行のポチは出さず、行を開くボタンは無効。`key-row` は何もしない）。背景を隠す手段は無い。
@@ -296,7 +318,7 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
   新しい UI では、上流のノードの名前で「From <ノードの名前>」と出し（例「From Studio #4」）、tooltip に「Items from the scene input.
   Changes here are saved in this node.」と添える（ADR 0048）。名前はワークフローの上のノードのタイトルで、エディタが層の Scene の id
   から上流のノードを見つけて読む（見つからないときは今の `<層のキー>`）。上書きを持てない層（キーが `#` で始まる層）には ` · inherited only` を添える。
-- 行は自分のものと同じ順：その層の Sticker（`sky` は手前から奥、次に `world`）、ペイント（「Paint」。ストロークなどを持つか、隠しているときだけ。目と名前だけ）、`scene`（「Scene」。その層が 3D の内容（`ui` の `pano_scene_files`）を持つか、Keyframe か既定でない Clip range を持つか、隠しているときだけ。目と Clip range だけで、行のポチと Lane の行は無い）。
+- 行は自分のものと同じ順：その層の Sticker（`sky` は手前から奥、次に `world`）、ペイント（「Paint」。ストロークなどを持つか、隠しているときだけ。目と名前だけ）、`scene`（「Scene」。その層が 3D の内容（`ui` の `pano_scene_files`）を持つか、Keyframe か既定でない Clip range を持つか、隠しているときだけ。目と Clip range だけで、行のポチと Lane の行は無い。新しい UI で Clip range のバーを出すかは「Clip range のバー（新しい UI）」）。
 - 行の id は `upstream:<層のキー>:<要素の id>`、ペイントは `upstream:<層のキー>:painting`、`scene` は `upstream:<層のキー>:scene`（`pano_upstream.js` の `upstreamRowId`）。フレームは自分の Timeline frame（作業コピーの値）。Sticker の id に `scene`・`painting` は使わない（エディタが振る id は常に `sticker_<番号>`。`docs/scene-state-v2.md` の `next_sticker_id`）ので、ペイントと `scene` の行の id は Sticker の行の id と重ならない。自分の行の `scene`・`painting` も同じ前提である。
 - 操作は自分の行と同じ：Keyframe を打つ・動かす・消す・Easing を変える、行のポチ（全 Lane に Keyframe）、Clip range の移動と両端の切り詰め、目のアイコン、行の選択と開閉。どれも作業コピーを変え、Undo の段を積むとき（`pushHistory`）に `syncUpstreamEdits` が、変えたフィールドだけを自分の状態の `upstream` の記録に上書きとして書く（Lane は Keyframe ごと丸ごと、`clip`・`visible`、層の `scene` の `visible`・`clip`、`painting_visible`。`docs/studio-node.md` の「上流の Scene」のエディタでの編集）。上流の層の状態そのものと自分の Sticker は変えない。操作ごとに Undo の 1 段になり、Undo・Redo で記録と作業コピーが戻る。開いて閉じただけ、行を開いた・選んだだけ、Clip range をクリックしただけでは何も書かない。
 - ロックは自分の行と同じに効く：ロックした上流の要素（ロックの上書き、または上流でロックされたもの）の行は、Keyframe と Clip range を変えず、目のアイコンは効く。ロックの切り替えは、行ではなく選択メニューにある（インスペクタには無い）。
