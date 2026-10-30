@@ -426,11 +426,14 @@ function installScenePreviewInstance(node, { app, openEditor, attachPreview, att
     if (display === "scene") {
       attachSceneViewer?.(node);
     } else {
+      // With the new window taking this node, the surface's top-right button opens it instead of the browser's
+      // fullscreen (docs/preview-node.md "ノード上").
       attachPreview(node, {
         buttonText: "Open Preview",
         modalTitle: "Panorama Preview",
         imageInputName: "source",
         onOpen: openMedia,
+        opensWindow: () => openEditor.previewWindowTakes?.(node) === true,
       });
     }
     if (install.surface || peekSceneViewer(node)?.surface) hideWidget(node, "Open Preview");

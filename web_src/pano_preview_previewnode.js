@@ -452,7 +452,7 @@ class PreviewNodeRuntime {
       this.surfaceHost = document.createElement("div");
       this.surfaceHost.className = "pano-preview-node-surface-host";
       this.root.appendChild(this.surfaceHost);
-      this.surfaceModel = reactive({ fullscreen: false, viewUnavailable: false });
+      this.surfaceModel = reactive({ fullscreen: false, viewUnavailable: false, opensWindow: this.opensWindow() });
       this.fullscreenController = createPreviewFullscreenController({
         root: this.root,
         documentRef: document,
@@ -465,7 +465,13 @@ class PreviewNodeRuntime {
       this.surfaceApp = createApp(PanoPreviewNodeSurface, {
         model: this.surfaceModel,
         onAction: (action) => {
-          if (action?.type === "toggle-fullscreen") void this.fullscreenController?.toggle?.();
+          if (action?.type !== "toggle-fullscreen" && action?.type !== "open-viewer") return;
+          // The setting or the link may have changed since the button last showed (docs/preview-node.md "ノード上").
+          if (this.opensWindow() && !this.fullscreenController?.isActive?.()) {
+            this.options.onOpen?.(this.node);
+            return;
+          }
+          void this.fullscreenController?.toggle?.();
         },
       });
       this.surfaceApp.mount(this.surfaceHost);
@@ -735,8 +741,15 @@ class PreviewNodeRuntime {
     img.src = nextSrc;
   }
 
+  // Whether the surface's top-right button opens the new Preview window rather than the browser's fullscreen
+  // (options.opensWindow, given for Panorama Preview's IMAGE and VIDEO; docs/preview-node.md "ノード上").
+  opensWindow() {
+    return typeof this.options.opensWindow === "function" && this.options.opensWindow() === true;
+  }
+
   requestDraw() {
     if (this.tearingDown) return;
+    if (this.surfaceModel) this.surfaceModel.opensWindow = this.opensWindow();
     this.needsDraw = true;
     if (this.inTick) {
       this.queuedDuringTick = true;

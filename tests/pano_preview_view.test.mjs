@@ -203,7 +203,7 @@ test("the on-node Preview draws through the shared three.js view and its Vue sur
   assert.ok(preview.includes('from "./pano_preview_view.js"'));
   const draw = preview.slice(preview.indexOf("function drawPreview("), preview.indexOf("function isPointInRect("));
   assert.match(draw, /if \(previewView\.failed\) \{\s*drawGrid\(ctx, width, height\);\s*return;/);
-  assert.match(preview, /reactive\(\{ fullscreen: false, viewUnavailable: false \}\)/);
+  assert.match(preview, /reactive\(\{ fullscreen: false, viewUnavailable: false, opensWindow: this\.opensWindow\(\) \}\)/);
   assert.match(preview, /this\.surfaceModel\.viewUnavailable = this\.previewView\.failed/);
   assert.match(source("components/PanoPreviewNodeSurface.vue"), /<PanoViewUnavailable v-if="model\.viewUnavailable" \/>/);
 });
