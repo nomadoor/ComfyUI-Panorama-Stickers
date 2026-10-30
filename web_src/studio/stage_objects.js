@@ -31,6 +31,7 @@ import {
 } from "../pano_sticker_geometry.js";
 import { setLaneValue } from "../pano_timeline.js";
 import { cameraOf } from "./defaults.js";
+import { ROTATE_SNAP_DEG } from "./view_scale.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
 import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
 import { gizmoDrag as startGizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit } from "./gizmo_overlay.js";
@@ -213,9 +214,10 @@ export function createStageObjects({
     draggedAxis = axis;
     dragGuide = grab.guide ?? null;
     return {
-      move(next) {
+      move(next, event = {}) {
         const now = size();
-        const moved = grab.move(camera(), next, now.width, now.height);
+        // Shift stops a turn at ROTATE_SNAP_DEG multiples of its axis's angle.
+        const moved = grab.move(camera(), next, now.width, now.height, { snap: event.shiftKey ? ROTATE_SNAP_DEG : 0 });
         if (!moved) return;
         const lanes = gizmoDragLanes(shown.mode, base, shown.transform, moved);
         // Rotate and Scale keep the guide's center in place: an object whose origin is elsewhere moves too.
@@ -277,7 +279,7 @@ export function createStageObjects({
           const field = kind === "scale_x" ? "hFOV_deg" : "vFOV_deg";
           write({ [field]: scaleStickerAxisFromPointer(item, kind, startDistance, distance)[field] });
         } else if (kind === "rotate") {
-          const turned = rotateStickerFromPointer(item, startAngle, Math.atan2(next.y - center.y, next.x - center.x), !!event.shiftKey);
+          const turned = rotateStickerFromPointer(item, startAngle, Math.atan2(next.y - center.y, next.x - center.x), !!event.shiftKey, ROTATE_SNAP_DEG);
           write({ rot_deg: turned.rot_deg });
         }
       },

@@ -6,7 +6,7 @@
 // into Lanes.
 import { projectPoint, uniformScale } from "../pano_space.js";
 import { placeDirection } from "../pano_editor_view.js";
-import { quaternionToRotation, rotationToQuaternion } from "../pano_world.js";
+import { panoramaAngles, quaternionToRotation, rotationToQuaternion, worldRotation } from "../pano_world.js";
 import { distanceToSegment, focalPixels, pointInPolygon, viewForward } from "./world_guides.js";
 
 // The gizmo's colors (docs/design.md "新しい UI の見た目": X coral, Y lime, Z ice). The handle under the pointer and the
@@ -223,6 +223,10 @@ function axisAngle(dir, angle) {
   ];
 }
 
+function transpose(m) {
+  return [0, 1, 2].map((row) => [0, 1, 2].map((col) => m[col][row]));
+}
+
 function multiply(a, b) {
   return a.map((row) => [0, 1, 2].map((index) => row[0] * b[0][index] + row[1] * b[1][index] + row[2] * b[2][index]));
 }
@@ -232,7 +236,8 @@ function multiply(a, b) {
 // `guide` ({ name, origin, dir }, or none for Move's center dot) is the axis guide line to draw while it lasts
 // (gizmoGuideSegment). Its move(camera, point, width, height) gives the transform the drag has taken the gizmo to ({ position, quaternion,
 // scale: [x, y, z] }, what pano_space.js gizmoDragLanes reads), or null to keep the last one. Every move is measured
-// from where the drag began.
+// from where the drag began. A Rotate move given { snap } (degrees, 0 for none) stops at multiples of it (docs/studio-ui.md
+// "ギズモ" Rotate's Shift).
 export function gizmoDrag(gizmo, name, camera, point, width, height) {
   const handles = gizmoHandles(gizmo, camera, width, height);
   if (!handles || !name) return null;
@@ -334,10 +339,19 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   return {
     name,
     guide,
-    move(_view, next) {
+    move(_view, next, _w, _h, { snap = 0 } = {}) {
       const pixels = (next.x - point.x) * unitDirection[0] + (next.y - point.y) * unitDirection[1];
       const angle = pixels / GIZMO_LOOK.reach;
-      const turn = axisAngle(axis.dir, angle);
+      let turn = axisAngle(axis.dir, angle);
+      if (snap > 0) {
+        // The ring's angle (Y: yaw, X: pitch, Z: roll) stops at a multiple of `snap` degrees, absolute; the other two
+        // stay as the turn makes them.
+        const angles = panoramaAngles(multiply(turn, base));
+        const field = { y: "yawDeg", x: "pitchDeg", z: "rollDeg" }[name];
+        angles[field] = Math.round(angles[field] / snap) * snap;
+        const snapped = worldRotation(angles.yawDeg, angles.pitchDeg, angles.rollDeg);
+        turn = multiply(snapped, transpose(base));
+      }
       // About the pivot: the origin turns around it with the object.
       const arm = sub(start.position, pivot);
       const turned = [0, 1, 2].map((row) => dot(turn[row], arm));

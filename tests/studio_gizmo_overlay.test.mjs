@@ -8,6 +8,7 @@ import test from "node:test";
 import { DEFAULT_VIEW_HFOV, gizmoDragLanes, projectPoint, sceneTransform, spaceCamera } from "../web_src/pano_space.js";
 import { GIZMO_LOOK, gizmoColor, gizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit, planeHit } from "../web_src/studio/gizmo_overlay.js";
 import { quaternionToRotation } from "../web_src/pano_world.js";
+import { ROTATE_SNAP_DEG } from "../web_src/studio/view_scale.js";
 
 const W = 1000;
 const H = 500;
@@ -226,4 +227,22 @@ test("a lit handle keeps its axis's color, brought GIZMO_LOOK.activeMix toward w
     const base = channel("#f37159", offset);
     assert.equal(channel(lit, offset), Math.round(base + (255 - base) * GIZMO_LOOK.activeMix));
   }
+});
+
+test("Rotate with snap stops the ring's own angle at multiples of ROTATE_SNAP_DEG (absolute), not of the turn", () => {
+  // The value starts at yaw 30 (not a multiple of the snap's start): Y snaps the yaw.
+  for (const [name, field, at] of [["y", "yaw_deg", { ...value, yaw_deg: 37 }], ["x", "pitch_deg", { ...value, yaw_deg: 0, pitch_deg: 7 }], ["z", "roll_deg", { ...value, yaw_deg: 0, roll_deg: -8 }]]) {
+    const shown = gizmo("rotate", at);
+    const handles = gizmoHandles(shown, oblique, W, H);
+    const ring = handles.rings.find((item) => item.name === name);
+    const grip = ring.points.filter((p) => p && p.front)[8];
+    const drag = gizmoDrag(shown, name, oblique, grip, W, H);
+    for (const dx of [9, 23, 41]) {
+      const moved = drag.move(oblique, { x: grip.x + dx, y: grip.y + dx / 3 }, W, H, { snap: ROTATE_SNAP_DEG });
+      const lanes = gizmoDragLanes("rotate", at, shown.transform, moved);
+      const angle = lanes.rotation[field];
+      assert.ok(Math.abs(angle / ROTATE_SNAP_DEG - Math.round(angle / ROTATE_SNAP_DEG)) < 1e-6, `${name}: ${field} ${angle} is a multiple of ${ROTATE_SNAP_DEG}`);
+    }
+  }
+  assert.equal(ROTATE_SNAP_DEG, 15);
 });
