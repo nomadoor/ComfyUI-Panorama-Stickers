@@ -25,9 +25,18 @@ function canvasOf(width, height, draw) {
   return canvas;
 }
 
-// An ERP: a sky and a ground, stripes every 30° of yaw.
+// An ERP: a sky and a ground, stripes every 30° of yaw; with ?bg=white, a white sky over a pale ground (to see the
+// overlay on a light picture).
 async function makeErp() {
+  const white = new URLSearchParams(location.search).get("bg") === "white";
   const canvas = canvasOf(1024, 512, (g) => {
+    if (white) {
+      g.fillStyle = "#f7f7f5";
+      g.fillRect(0, 0, 1024, 256);
+      g.fillStyle = "#e4e1da";
+      g.fillRect(0, 256, 1024, 256);
+      return;
+    }
     const sky = g.createLinearGradient(0, 0, 0, 256);
     sky.addColorStop(0, "#3a6fb0");
     sky.addColorStop(1, "#bcd6ee");

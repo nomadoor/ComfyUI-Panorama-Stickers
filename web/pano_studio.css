@@ -2013,6 +2013,11 @@
   stroke-linejoin: round;
 }
 
+.pano-studio-place-name {
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .pano-studio-place-pic .is-thin {
   stroke-width: 1;
   opacity: 0.6;
