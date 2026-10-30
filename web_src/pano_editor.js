@@ -21,7 +21,7 @@ import {
   parsePanoEditorState,
   parseSceneEditorState,
 } from "./pano_editor_state.js";
-import { timelineFps } from "./pano_scene_state.js";
+import { videoTimelineFps as resultVideoTimelineFps } from "./pano_video_fps.js";
 import { createEditorView } from "./pano_editor_view.js";
 import { DEFAULT_DISTANCE, DEFAULT_VIEW_HFOV } from "./pano_space.js";
 import { createTimers } from "./pano_timers.js";
@@ -119,13 +119,8 @@ const comfyMedia = createComfyMediaAdapter({
   },
 });
 
-// The Timeline fps a VIDEO input set in the node's current result (ADR 0024), or null. It is brought
-// into the range a state keeps, so a faster VIDEO compares equal to the state rebased to it.
-function videoTimelineFps(node) {
-  if (!isNodeOutputMediaCurrent(node, "background") || !isNodeOutputMediaCurrent(node, "external-sticker")) return null;
-  const fps = comfyMedia.uiValue(node, "pano_timeline_fps");
-  return Array.isArray(fps) ? timelineFps(fps[0]) : null;
-}
+// The Timeline fps a VIDEO input set in the node's current result (pano_video_fps.js), or null.
+const videoTimelineFps = (node) => resultVideoTimelineFps(node, comfyMedia);
 
 const mediaAssetSource = comfyMedia.assetSource;
 const mediaSource = comfyMedia.source;

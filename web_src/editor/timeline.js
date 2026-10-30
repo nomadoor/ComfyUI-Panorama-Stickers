@@ -3,11 +3,13 @@
 import { setTimelineFps } from "../pano_editor_state.js";
 import { BACKGROUND_ROW, buildEasingModel, buildTimelineModel } from "../pano_editor_ui_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
-import { backgroundClipAt, backgroundPlace, backgroundShownAt, bgMediaEnd, portMediaFrames } from "../pano_port_media.js";
+import { backgroundLengthMedia, backgroundVideoMedia } from "../pano_media_session.js";
+import { backgroundBarEnd, backgroundClipAt, backgroundPlace, backgroundShownAt, portMediaFrames } from "../pano_port_media.js";
 import { nodeInputOrigins, videoLinked } from "../pano_preview_video.js";
 import { clipActive } from "../pano_scene_eval.js";
 import { stateAnimationClips } from "../pano_space.js";
 import { timelineFps } from "../pano_scene_state.js";
+import { timelineFpsLocked } from "../pano_video_fps.js";
 import { deleteKeyframes, isTimed, rowLaneNames, timelineSpan } from "../pano_timeline.js";
 
 export function createTimeline(deps) {
@@ -47,7 +49,7 @@ export function createTimeline(deps) {
       openRows: timeline.openRows,
       audio: hasTimelineVideo() && uiState.videoTransport.hasAudio ? { muted: videoEl.muted } : null,
       // A VIDEO on bg_media or sticker sets the Timeline fps (ADR 0024).
-      fpsLocked: videoTimelineFps(node) !== null || videoLinked(node, ["bg_media", "sticker"]),
+      fpsLocked: timelineFpsLocked(videoTimelineFps(node), node),
       // Panorama Studio shows its Camera, its Stickers and its `scene` on one Timeline.
       camera: hasCamera(),
       cameraHideable: studio,
@@ -95,15 +97,13 @@ export function createTimeline(deps) {
   // before a run too); null without one, or while an upstream background stands in for it.
   function backgroundMedia() {
     if (upstreamBackground()) return null;
-    return transportMedia() ?? (nodeInputOrigins(node).bg_media && !videoLinked(node, ["bg_media"]) ? { frames: 1 } : null);
+    return backgroundLengthMedia(transportMedia(), { linked: !!nodeInputOrigins(node).bg_media, videoLinked: videoLinked(node, ["bg_media"]) });
   }
 
   // The background VIDEO or IMAGE batch the editor shows, from the node's result: { video, frames, duration }, or
   // null. An upstream background counts as a VIDEO, ending at its `duration` at any Timeline fps.
   function transportMedia() {
-    const transport = uiState.videoTransport;
-    if (!(transport.ready && transport.frameCount > 0)) return null;
-    return { video: !!upstreamBackground() || videoLinked(node, ["bg_media"]), frames: transport.frameCount, duration: Number(transport.duration || 0) };
+    return backgroundVideoMedia(uiState.videoTransport, !!upstreamBackground() || videoLinked(node, ["bg_media"]));
   }
 
   // Panorama Studio's own background has a Timeline row (its Clip range, state.background) while bg_media is
@@ -146,8 +146,7 @@ export function createTimeline(deps) {
   // `scene`), a single background image, or while its media is not known.
   function portBarEnd(sticker) {
     if (sticker === state.background) {
-      const media = sticker.clip.duration === null ? backgroundMedia() : null;
-      return media?.video || media?.frames > 1 ? bgMediaEnd(sticker.clip, state.timeline.fps, media, upstreamLinked()) : null;
+      return backgroundBarEnd(sticker.clip, state.timeline.fps, sticker.clip.duration === null ? backgroundMedia() : null, upstreamLinked());
     }
     if (sticker.source?.kind !== "port" || sticker.clip.duration !== null) return null;
     const meta = sticker.origin ? upstreamPortMeta(sticker) : isExternalSticker(sticker) ? getPortMediaMeta() : null;

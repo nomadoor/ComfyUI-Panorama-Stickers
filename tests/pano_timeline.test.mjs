@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { createEditorHistory, createHistory } from "../web_src/editor/history.js";
 import { evaluateSceneState } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
+import { videoTimelineFps } from "../web_src/pano_video_fps.js";
 import {
   BROKEN_SPAN,
   clusterFrames,
@@ -436,7 +437,7 @@ test("undo and redo stop playback before they restore a step", () => {
 });
 
 test("the legacy transport seeks to its own time and leaves looping to the VIDEO", () => {
-  assert.match(editorFunction("playbackFps"), /return stateV2 \? state\.timeline\.fps : videoState\.metaFps \|\| 1000;/);
+  assert.match(editorFunction("playbackFps"), /return stateV2 \? state\.timeline\.fps : background\.metaFps \|\| 1000;/);
   assert.match(editorSource, /return videoEl\.loop \|\| !\(frames > 0\) \? Infinity : frames;/);
   assert.match(editorSource, /loop: \(\) => stateV2,/);
 });
@@ -494,7 +495,10 @@ test("a huge length neither spans past the limit nor labels past MAX_TICKS", () 
 
 test("each result of a VIDEO above the fps limit leaves the playhead and the history as they are", () => {
   // The fps a result brings is brought into range before it is compared with the state's.
-  assert.match(editorSource, /function videoTimelineFps\(node\) \{[\s\S]*?return Array\.isArray\(fps\) \? timelineFps\(fps\[0\]\) : null;/);
+  // (pano_video_fps.js, which the editor calls: tests/pano_video_fps.test.mjs holds the rest.)
+  assert.equal(videoTimelineFps({}, { uiValue: () => [2400] }), 1000);
+  assert.equal(videoTimelineFps({}, { uiValue: () => [1000] }), 1000);
+  assert.match(editorSource, /const videoTimelineFps = \(node\) => resultVideoTimelineFps\(node, comfyMedia\);/);
   // The same fps after that is no change: no rebase, no playhead jump, no Undo step.
   assert.match(editorFunction("changeTimelineFps"), /const fps = timelineFps\(value\);\s*if \(fps === null \|\| fps === state\.timeline\.fps\) return;\s*stopTimelinePlayback\(\);/);
 });

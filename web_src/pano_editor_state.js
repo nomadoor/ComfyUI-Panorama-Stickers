@@ -4,10 +4,11 @@ import { DEG2RAD, RAD2DEG, clamp } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
-import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter, timelineFps } from "./pano_scene_state.js";
+import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
 import { NEW_STICKER_HFOV } from "./pano_space.js";
 import { createSharedStringHistory } from "./pano_paint_history.js";
+import { sceneAtVideoFps } from "./pano_video_fps.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
 
@@ -207,15 +208,14 @@ export function paintingLayerNeedsSync(layer, { paintCount, maskCount, width, he
 // `fps` is the Timeline fps a video input sets, from the node's last run; the state is rebased to it.
 export function parseSceneEditorState(text, options = {}) {
   const { outputPreset = 2048, backgroundColor = "#00ff00", coverage = 360, sharedUiSettings = null, active } = options;
-  // The fps a VIDEO sets, brought into the range a state keeps.
-  const fps = timelineFps(options.fps);
   let scene;
   try {
     scene = loadSceneState(text);
   } catch {
     scene = loadSceneState(null);
   }
-  if (fps && fps !== scene.timeline.fps) scene = rebaseSceneState(scene, fps);
+  // The fps a VIDEO sets (pano_video_fps.js).
+  scene = sceneAtVideoFps(scene, options.fps);
   return {
     ...scene,
     coverage: normalizeCoverageValue(coverage),

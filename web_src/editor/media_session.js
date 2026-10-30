@@ -18,12 +18,19 @@ import {
   stageImageStatus,
 } from "../pano_image_state.js";
 import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } from "../pano_port_media.js";
-import { isPanoramaPreviewNodeName } from "../pano_preview_identity.js";
 import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 import { is3dFileSource } from "../pano_scene_state.js";
 import { sceneFilesOf, stickerAnimationClips } from "../pano_space.js";
 import { upstreamBackgroundOf } from "../pano_upstream.js";
-import { createVideoFollower, createVideoPlayback } from "../pano_video_playback.js";
+import { createVideoFollower } from "../pano_video_playback.js";
+import {
+  backgroundVideoKeys,
+  createBackgroundVideo,
+  detectVideoHasAudio as videoHasAudio,
+  isDecodedImageReady,
+  mediaRevisionToken,
+  videoMetaEntry,
+} from "../pano_media_session.js";
 import {
   EXTERNAL_STICKER_PREVIEW_KEY,
   PORT_FRAMES_KEY,
@@ -53,13 +60,8 @@ export function createMediaSession(deps) {
     thumbnailSrc: "",
     // Sources whose filmstrip could not be built; a refresh does not build it again.
     thumbnailFailedSrcs: new Set(),
-    // Sources that failed to load (a temp MP4 the server deleted) are not tried again in this editor.
-    failedSrcs: new Set(),
-    videoFailed: false,
     // The legacy transport's slider paused playback and plays again when it is let go.
     resumeAfterScrub: false,
-    // The fps of the editor's own background VIDEO result, 0 for a file without one.
-    metaFps: 0,
   };
   const VIDEO_THUMBNAIL_COUNT = 9;
   const videoCleanupFns = [];
@@ -85,26 +87,7 @@ export function createMediaSession(deps) {
       syncVideoTransportLayout();
     });
   };
-  const detectVideoHasAudio = (video) => {
-    if (!(video instanceof HTMLVideoElement)) return false;
-    try {
-      if (Array.isArray(video.audioTracks) && video.audioTracks.length > 0) return true;
-      if (video.audioTracks && typeof video.audioTracks.length === "number" && video.audioTracks.length > 0) return true;
-    } catch {
-      // Ignore browser-specific audioTracks access issues.
-    }
-    try {
-      if (typeof video.mozHasAudio === "boolean") return video.mozHasAudio;
-    } catch {
-      // Ignore Firefox-only property access issues.
-    }
-    try {
-      if (Number(video.webkitAudioDecodedByteCount || 0) > 0) return true;
-    } catch {
-      // Ignore WebKit-only property access issues.
-    }
-    return !!uiState.videoTransport.hasAudio;
-  };
+  const detectVideoHasAudio = (video) => videoHasAudio(video, uiState.videoTransport.hasAudio);
   const transportLayoutObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(() => queueVideoTransportLayout())
     : null;
@@ -227,11 +210,12 @@ export function createMediaSession(deps) {
   videoCleanupFns.push(() => {
     resetVideoThumbnails();
   });
-  // The background VIDEO's playback: Panorama Studio's Timeline, else the legacy transport, on
-  // a Timeline of the VIDEO's own length. The legacy transport loops seamlessly through the VIDEO's
+  // The background VIDEO (pano_media_session.js) and its playback: Panorama Studio's Timeline, else the legacy
+  // transport, on a Timeline of the VIDEO's own length. The legacy transport loops seamlessly through the VIDEO's
   // own loop, so its playback then has no end.
-  const playback = createVideoPlayback({
-    video: videoEl instanceof HTMLVideoElement ? videoEl : null,
+  const background = createBackgroundVideo({
+    video: videoEl,
+    still: stillCanvas,
     clock: {
       now: () => performance.now(),
       requestFrame: (callback) => scheduler.requestFrame(callback),
@@ -251,8 +235,11 @@ export function createMediaSession(deps) {
       else syncVideoTransportState();
       requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.PLAYHEAD });
     },
-    onCapture: () => {
-      if (captureStillFrameFromVideo()) runtime.backgroundDirty = true;
+    onStill: () => {
+      runtime.backgroundDirty = true;
+    },
+    onStillDropped: () => {
+      runtime.backgroundDirty = true;
     },
     onChange: () => {
       syncVideoTransportState();
@@ -260,8 +247,18 @@ export function createMediaSession(deps) {
       syncTimeline();
       requestDraw({ cause: "frame_view", localOnly: true, reason: DRAW_REASON.PLAYHEAD });
     },
+    // The VIDEO's length and audio are known from its metadata on.
+    onReady: () => {
+      refreshModalVideoSource();
+      requestDraw({ cause: "frame_view", localOnly: true });
+    },
+    onError: () => {
+      refreshModalVideoSource();
+      requestDraw();
+    },
   });
-  videoCleanupFns.push(() => playback.dispose());
+  const { playback } = background;
+  videoCleanupFns.push(() => background.dispose());
   // Panorama Studio's port Sticker plays its MP4 along the playhead, muted.
   const portVideo = stateV2 && portVideoEl instanceof HTMLVideoElement
     ? createVideoFollower({
@@ -304,11 +301,6 @@ export function createMediaSession(deps) {
     })
     : null;
   if (videoEl instanceof HTMLVideoElement) {
-    // The VIDEO's length and audio are known from its metadata on.
-    const onVideoReady = () => {
-      refreshModalVideoSource();
-      requestDraw({ cause: "frame_view", localOnly: true });
-    };
     const onVolumeChange = () => {
       syncVideoTransportState({
         hasAudio: uiState.videoTransport.hasAudio,
@@ -316,23 +308,8 @@ export function createMediaSession(deps) {
         volume: Number(videoEl.volume ?? uiState.videoTransport.volume ?? 1),
       });
     };
-    const onVideoError = () => {
-      const src = videoEl.dataset.panoSrc;
-      if (!src) return;
-      videoState.failedSrcs.add(src);
-      refreshModalVideoSource();
-      requestDraw();
-    };
-    for (const [type, listener] of [
-      ["loadedmetadata", onVideoReady],
-      ["loadeddata", onVideoReady],
-      ["canplay", onVideoReady],
-      ["volumechange", onVolumeChange],
-      ["error", onVideoError],
-    ]) {
-      videoEl.addEventListener(type, listener);
-      videoCleanupFns.push(() => videoEl.removeEventListener(type, listener));
-    }
+    videoEl.addEventListener("volumechange", onVolumeChange);
+    videoCleanupFns.push(() => videoEl.removeEventListener("volumechange", onVolumeChange));
   }
   function getNodeUiList(key) {
     return comfyMedia.uiList(node, key);
@@ -342,47 +319,13 @@ export function createMediaSession(deps) {
   }
   function getModalVideoUiKeys() {
     const nodeName = String(node?.comfyClass || node?.type || node?.title || "");
-    if (isPanoramaPreviewNodeName(nodeName)) {
-      return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
-    }
-    const upstream = upstreamBackground();
-    if (upstream) return { videoKey: upstream.videoKey, metaKey: upstream.metaKey };
-    if (type === "stickers" || type === "cutout") {
-      return { videoKey: "pano_input_videos", metaKey: "pano_input_video_meta" };
-    }
-    return { videoKey: "pano_videos", metaKey: "pano_video_meta" };
+    return backgroundVideoKeys({ nodeName, upstream: upstreamBackground(), type });
   }
   function getVideoMetaEntry() {
     const { metaKey } = getModalVideoUiKeys();
-    const meta = getNodeUiValue(metaKey);
-    if (Array.isArray(meta) && meta.length > 0 && meta[0] && typeof meta[0] === "object") return meta[0];
-    if (meta && typeof meta === "object") return meta;
-    return null;
+    return videoMetaEntry(getNodeUiValue(metaKey));
   }
-  function getMediaRevisionToken(media) {
-    if (!media) return "none";
-    // A VIDEO's VideoTexture uploads each new frame by itself (pano_three_view.js).
-    if (media instanceof HTMLVideoElement) {
-      return [
-        String(media.currentSrc || media.src || ""),
-        Number(media.videoWidth || 0),
-        Number(media.videoHeight || 0),
-      ].join("|");
-    }
-    if (media instanceof HTMLCanvasElement) {
-      return [
-        "canvas",
-        Number(media.width || 0),
-        Number(media.height || 0),
-        String(media.__panoFrameIdx || 0),
-      ].join("|");
-    }
-    return [
-      String(media.currentSrc || media.src || ""),
-      Number(media.naturalWidth || media.width || 0),
-      Number(media.naturalHeight || media.height || 0),
-    ].join("|");
-  }
+  const getMediaRevisionToken = mediaRevisionToken;
   function formatVideoTime(seconds) {
     const total = Math.max(0, Math.floor(Number(seconds || 0)));
     const mins = Math.floor(total / 60);
@@ -391,7 +334,7 @@ export function createMediaSession(deps) {
   }
   // Without a known fps the legacy transport counts milliseconds, so its slider seeks to the time itself.
   function playbackFps() {
-    return stateV2 ? state.timeline.fps : videoState.metaFps || 1000;
+    return stateV2 ? state.timeline.fps : background.metaFps || 1000;
   }
   // The transport shows the playback's frame and state; `extra` brings what the source refresh learned.
   function syncVideoTransportState(extra = {}) {
@@ -467,85 +410,30 @@ export function createMediaSession(deps) {
       visible: getVideoTransportVisible(),
     });
   }
-  function captureStillFrameFromVideo() {
-    if (!(videoEl instanceof HTMLVideoElement)) return false;
-    if (Number(videoEl.videoWidth || 0) < 1 || Number(videoEl.videoHeight || 0) < 1) return false;
-    const width = Number(videoEl.videoWidth || 0);
-    const height = Number(videoEl.videoHeight || 0);
-    if (stillCanvas.width !== width || stillCanvas.height !== height) {
-      stillCanvas.width = width;
-      stillCanvas.height = height;
-    }
-    const ctx2d = stillCanvas.getContext("2d");
-    if (!ctx2d) return false;
-    ctx2d.clearRect(0, 0, width, height);
-    ctx2d.drawImage(videoEl, 0, 0, width, height);
-    stillCanvas.__panoFrameIdx = Number(stillCanvas.__panoFrameIdx || 0) + 1;
-    return true;
-  }
   // ADR 0019: the VIDEO is on screen while it plays; otherwise its last confirmed frame, the still.
   function getDisplayBackgroundSource() {
-    if (
-      !playback.showsVideo
-      && Number(stillCanvas.width || 0) > 0
-      && Number(stillCanvas.height || 0) > 0
-      && Number(stillCanvas.__panoFrameIdx || 0) > 0
-    ) {
-      return stillCanvas;
-    }
-    if (
-      videoEl instanceof HTMLVideoElement
-      && Number(videoEl.videoWidth || 0) > 0
-      && Number(videoEl.videoHeight || 0) > 0
-      && Number(videoEl.readyState || 0) >= 2
-    ) {
-      return videoEl;
-    }
-    return null;
-  }
-  // The still of one source must not show for the next.
-  function dropVideoStill() {
-    stillCanvas.__panoFrameIdx = 0;
-    runtime.backgroundDirty = true;
+    return background.displaySource();
   }
   function refreshModalVideoSource() {
     if (!(videoEl instanceof HTMLVideoElement)) return null;
     const { videoKey } = getModalVideoUiKeys();
     const ownEntry = upstreamBackground() || isNodeOutputMediaCurrent(node, "background") ? getNodeUiList(videoKey)[0] || null : null;
-    const ownSrc = mediaSource(ownEntry);
     // The node's own result wins. Without one, a video file the background input loads directly plays,
-    // with its length from the file and the Timeline's fps.
-    const candidates = [ownSrc, comfyMedia.linkedVideoFile(node, backgroundInputNames())].filter(Boolean);
-    const nextSrc = candidates.find((src) => !videoState.failedSrcs.has(src)) || "";
-    videoState.videoFailed = !nextSrc && candidates.length > 0;
-    const meta = nextSrc && nextSrc === ownSrc ? getVideoMetaEntry() : null;
-    videoState.metaFps = Number(meta?.fps) > 0 ? Number(meta.fps) : 0;
-    const fps = Math.max(1, Number(meta?.fps || (stateV2 ? state.timeline.fps : 24)));
-    const fileDuration = videoEl.dataset.panoSrc === nextSrc && Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
-    const duration = Number(meta?.duration || (meta?.frames > 0 ? meta.frames / fps : fileDuration));
-    const frameCount = Math.max(0, Number(meta?.frames || Math.round(duration * fps)));
-    const hasAudio = !!meta?.has_audio || detectVideoHasAudio(videoEl);
+    // with its length from the file and the Timeline's fps (pano_media_session.js choose).
+    const { src: nextSrc, fps, duration, frameCount, hasAudio } = background.choose({
+      own: mediaSource(ownEntry),
+      file: comfyMedia.linkedVideoFile(node, backgroundInputNames()),
+      meta: getVideoMetaEntry,
+      fps: stateV2 ? state.timeline.fps : 24,
+      audio: uiState.videoTransport.hasAudio,
+    });
     // Panorama Studio shows the playhead's frame of a new source; the legacy transport starts it at 0.
-    if (nextSrc && videoEl.dataset.panoSrc !== nextSrc) {
-      videoEl.pause();
-      dropVideoStill();
-      videoEl.dataset.panoSrc = nextSrc;
-      videoEl.loop = !stateV2 && !!uiState.videoTransport.loop;
-      videoEl.muted = !!uiState.videoTransport.muted;
-      videoEl.volume = Math.max(0, Math.min(1, Number(uiState.videoTransport.volume ?? 1)));
-      videoEl.src = nextSrc;
-      videoEl.load();
-      playback.setSource(true);
-      if (!stateV2) playback.seek(0);
-    } else if (!nextSrc && videoEl.getAttribute("src")) {
-      videoEl.pause();
-      videoEl.removeAttribute("src");
-      delete videoEl.dataset.panoSrc;
-      videoEl.load();
-      dropVideoStill();
-      resetVideoThumbnails();
-      playback.setSource(false);
-    }
+    const loaded = background.load(nextSrc, {
+      loop: !stateV2 && !!uiState.videoTransport.loop,
+      muted: !!uiState.videoTransport.muted,
+      volume: uiState.videoTransport.volume ?? 1,
+    });
+    if (loaded === "loaded" && !stateV2) playback.seek(0);
     // The legacy transport loops through the VIDEO's own loop; Panorama Studio's playback sets it.
     if (!stateV2) videoEl.loop = !!uiState.videoTransport.loop;
     if (nextSrc && !stateV2 && videoState.thumbnailSrc !== nextSrc && !videoState.thumbnailFailedSrcs.has(nextSrc)) {
@@ -767,27 +655,11 @@ export function createMediaSession(deps) {
     return type === "stickers" ? ["bg_media", "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
   }
 
-  function isDecodedImageReady(img) {
-    if (!img) return false;
-    if (img instanceof HTMLImageElement) {
-      return !!img.complete
-        && Number(img.naturalWidth || img.width || 0) > 0
-        && Number(img.naturalHeight || img.height || 0) > 0;
-    }
-    if (img instanceof HTMLVideoElement) {
-      return Number(img.videoWidth || 0) > 0
-        && Number(img.videoHeight || 0) > 0
-        && Number(img.readyState || 0) >= 2;
-    }
-    return Number(img.width || img.naturalWidth || 0) > 0
-      && Number(img.height || img.naturalHeight || 0) > 0;
-  }
-
   function getStageImageStatus() {
     if (editorView.failed) return { status: IMAGE_FAILED, detail: "renderer" };
     if (!editorView.ready) return { status: IMAGE_LOADING, detail: "boot" };
     const bgImg = getConnectedErpImage();
-    const backgroundState = videoState.videoFailed ? IMAGE_FAILED : getImageLoadState(bgImg, isDecodedImageReady);
+    const backgroundState = background.failed ? IMAGE_FAILED : getImageLoadState(bgImg, isDecodedImageReady);
     const stickerStates = [];
     for (const item of skyStickers()) {
       if (item?.visible === false) continue;
