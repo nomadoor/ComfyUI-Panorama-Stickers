@@ -10,7 +10,11 @@
 // Points are ERP points { u, v } (u wraps in 0..1, v runs 0..1 from the top); screen points are { x, y } px.
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js";
 import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
-import { shortestWrappedDelta, syncPaintGroups } from "./pano_paint_strokes.js";
+import { PAINT_GROUP_ROW, PAINT_RASTER_ROW, paintObjectRowOf } from "./pano_paint_layers.js";
+import { shortestWrappedDelta, strokePoints, syncPaintGroups } from "./pano_paint_strokes.js";
+import { isUpstreamSticker } from "./pano_upstream.js";
+
+export { paintObjectRowOf, strokePoints };
 
 const DEG2RAD = Math.PI / 180;
 
@@ -75,12 +79,9 @@ export function inverseTransformErpPointAround(point, center, scale = 1, rotatio
 
 // --- Stroke groups.
 
-// The points a stroke is drawn and hit along: a lasso's outline, else its processed, raw or recorded points.
-export function strokePoints(stroke) {
-  const geometry = stroke?.geometry || null;
-  return geometry?.geometryKind === "lasso_fill"
-    ? geometry?.points
-    : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
+// The paint strokes of the stroke group `gid` in the stroke list `strokes`.
+export function groupStrokes(strokes, gid) {
+  return (Array.isArray(strokes) ? strokes : []).filter((stroke) => String(stroke?.actionGroupId || "").trim() === gid);
 }
 
 // The mean of the strokes' points (u averaged the short way round from the first), { u: 0.5, v: 0.5 } without any.
@@ -160,6 +161,11 @@ export function strokeHitLineWidth(stroke, presetId) {
   return Math.max(10, Number(stroke?.size || 10) * Math.max(0.1, Number(preset?.sizeScale ?? 1)) + 10);
 }
 
+// How near (px) a stroke drawn `lineWidth` px wide is hit: max(8, lineWidth / 2 + 6).
+export function strokeHitThreshold(lineWidth) {
+  return Math.max(8, Number(lineWidth || 0) * 0.5 + 6);
+}
+
 // Whether the screen point `p` hits a stroke group drawn as `paths` ([{ points, closed, lineWidth }], screen px):
 // inside a closed (lasso) path, or within max(8, lineWidth / 2 + 6) px of a path's line.
 export function strokePathsHit(p, paths) {
@@ -167,7 +173,7 @@ export function strokePathsHit(p, paths) {
     const pts = Array.isArray(path?.points) ? path.points : [];
     if (!pts.length) continue;
     if (path.closed && pts.length >= 3 && pointInPoly(p, pts)) return true;
-    const threshold = Math.max(8, Number(path?.lineWidth || 0) * 0.5 + 6);
+    const threshold = strokeHitThreshold(path?.lineWidth);
     for (let i = 0; i < pts.length - 1; i += 1) {
       if (distToSegment2(p, pts[i], pts[i + 1]) <= threshold * threshold) return true;
     }
@@ -344,14 +350,11 @@ export function deletePaintObjects(painting, { groupIds = [], rasterIds = [] } =
 
 // --- The new editor's rows of the paint objects.
 
-const GROUP_ROW = "paint_group:";
-const RASTER_ROW = "raster:";
-
 // The paint object a selection row names: { kind: "group", id } (an actionGroupId), { kind: "raster", id }, or null.
 export function paintObjectRow(row) {
   const text = typeof row === "string" ? row : "";
-  if (text.startsWith(GROUP_ROW) && text.length > GROUP_ROW.length) return { kind: "group", id: text.slice(GROUP_ROW.length) };
-  if (text.startsWith(RASTER_ROW) && text.length > RASTER_ROW.length) return { kind: "raster", id: text.slice(RASTER_ROW.length) };
+  if (text.startsWith(PAINT_GROUP_ROW) && text.length > PAINT_GROUP_ROW.length) return { kind: "group", id: text.slice(PAINT_GROUP_ROW.length) };
+  if (text.startsWith(PAINT_RASTER_ROW) && text.length > PAINT_RASTER_ROW.length) return { kind: "raster", id: text.slice(PAINT_RASTER_ROW.length) };
   return null;
 }
 
@@ -362,8 +365,10 @@ export function countedPaintGroups(painting, skyStickers) {
   return syncPaintGroups({ ...painting, groups: Array.isArray(painting.groups) ? [...painting.groups] : [] }, skyStickers);
 }
 
-// The sky Stickers of a state v2.
-const skyStickersOf = (state) => state.stickers.filter((item) => item.placement === "sky");
+// The sky Stickers of a state v2 (the ones the painting shares the z_index axis with).
+export function skyStickersOf(state) {
+  return state.stickers.filter((item) => item.placement === "sky");
+}
 
 // The paint object the row `row` selects in the state v2 `state`: { kind, id, row, item, locked } (item the counted
 // group, or the paint raster object), or null when the row names none that is there.
@@ -380,12 +385,12 @@ export function paintObjectOf(state, row) {
 // the groups): [{ key, item }] with keys the selection rows (a sky Sticker's id, `paint_group:`, `raster:`). The upstream
 // Stickers are not in it (they lie under the node's own Sky).
 export function skyDisplayList(draft) {
-  const sky = skyStickersOf(draft).filter((item) => !item.origin);
+  const sky = skyStickersOf(draft).filter((item) => !isUpstreamSticker(item));
   const groups = draft.painting ? syncPaintGroups(draft.painting, skyStickersOf(draft)) : [];
   const rasters = (draft.painting?.raster_objects ?? []).filter((item) => String(item.layerKind || "paint") === "paint");
   return skyDisplayOrder([
     ...sky.map((item) => ({ key: item.id, z_index: item.z_index, item })),
-    ...groups.map((item) => ({ key: `${GROUP_ROW}${item.actionGroupId}`, z_index: item.z_index, item })),
-    ...rasters.map((item) => ({ key: `${RASTER_ROW}${item.id}`, z_index: item.z_index, item })),
+    ...groups.map((item) => ({ key: paintObjectRowOf("group", item.actionGroupId), z_index: item.z_index, item })),
+    ...rasters.map((item) => ({ key: paintObjectRowOf("raster", item.id), z_index: item.z_index, item })),
   ]);
 }

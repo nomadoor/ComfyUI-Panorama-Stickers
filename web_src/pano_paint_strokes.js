@@ -844,16 +844,21 @@ export function topDisplayZIndex(painting, skyStickers) {
   return [...skyStickers, ...groups, ...rasters].reduce((max, entry) => Math.max(max, Number(entry?.z_index || 0)), -1);
 }
 
+// The points a stroke is drawn and hit along: a lasso's outline, else its processed, raw or recorded points.
+export function strokePoints(stroke) {
+  const geometry = stroke?.geometry || null;
+  return geometry?.geometryKind === "lasso_fill"
+    ? geometry?.points
+    : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
+}
+
 // The axis-aligned box of a stroke group's points (rot_deg 0): { centerUv, rot_deg, halfW, halfH, uvPad }, or null
 // with no points. `presetIdOf(toolKind)` gives a stroke's brush preset (for its width).
 export function strokeGroupFrame(strokes, presetIdOf = (toolKind) => brushPresetIdForTool(toolKind)) {
   const normalizeU = (u) => ((Number(u || 0) % 1) + 1) % 1;
   const sourcePoints = [];
   for (const stroke of strokes) {
-    const geometry = stroke?.geometry;
-    const pts = geometry?.geometryKind === "lasso_fill"
-      ? geometry?.points
-      : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
+    const pts = strokePoints(stroke);
     if (Array.isArray(pts)) sourcePoints.push(...pts);
   }
   if (!sourcePoints.length) return null;

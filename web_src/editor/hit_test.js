@@ -1,7 +1,7 @@
 // What is under the pointer: the canvas items and their handles, the selection rects, and the cursor that
 // shows it. The upstream Scene's sky Stickers (ADR 0030) lie under the node's own Sky, so they are hit after it.
 import { hitFrameAffordance, hitStickerSelectionAffordance } from "../pano_sticker_affordance.js";
-import { paintCornerHandle, strokePathsHit } from "../pano_paint_objects.js";
+import { paintCornerHandle, strokeHitThreshold, strokePathsHit } from "../pano_paint_objects.js";
 import { FRAME_ROLL_CURSOR } from "./constants.js";
 import { distToSegment2, pointInPoly } from "./helpers.js";
 
@@ -127,7 +127,7 @@ export function createHitTest(deps) {
       for (const path of paths) {
         const pts = Array.isArray(path?.points) ? path.points : [];
         if (path.closed && pts.length >= 3 && pointInPoly(p, pts)) return { kind: "move", cursor: "default" };
-        const threshold = Math.max(8, Number(path?.lineWidth || 0) * 0.5 + 6);
+        const threshold = strokeHitThreshold(path?.lineWidth);
         for (let i = 0; i < pts.length - 1; i += 1) {
           if (distToSegment2(p, pts[i], pts[i + 1]) <= threshold * threshold) return { kind: "move", cursor: "default" };
         }

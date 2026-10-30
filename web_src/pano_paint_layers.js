@@ -2,6 +2,14 @@
 // docs/scene-state-v2.md "Sky の重なり順"). The editor, the on-node surfaces and the upstream layers each draw
 // the pixels with a paint engine of their own; this decides which layers there are and where they go.
 
+// The id of a paint object's Sky layer, which the new editor also selects it by (pano_paint_objects.js paintObjectRow):
+// `kind` "group" (a stroke group, `id` its actionGroupId) gives `paint_group:<id>`, "raster" (a raster object) `raster:<id>`.
+export const PAINT_GROUP_ROW = "paint_group:";
+export const PAINT_RASTER_ROW = "raster:";
+export function paintObjectRowOf(kind, id) {
+  return `${kind === "raster" ? PAINT_RASTER_ROW : PAINT_GROUP_ROW}${id}`;
+}
+
 // The paint of `state` ({ painting, painting_visible, stickers }) as { id, media, revision, changed?, opacity, zIndex } from
 // back to front, for skyLayers (pano_editor_view.js) to put among the sky Stickers by zIndex, Stickers first on ties:
 // the stroke groups and the paint raster objects at their z_index (groups first on ties, each in list order), then
@@ -15,9 +23,9 @@ export function skyPaintLayers(state, { group, raster, mask = () => null }) {
   const { groups, paint, raster_objects: rasters } = state.painting;
   const listed = new Set(groups.map(groupId));
   const ordered = [
-    ...groups.map((item) => ({ id: `paint_group:${groupId(item)}`, zIndex: zIndexOf(item), shown: () => group(groupId(item)) })),
+    ...groups.map((item) => ({ id: paintObjectRowOf("group", groupId(item)), zIndex: zIndexOf(item), shown: () => group(groupId(item)) })),
     ...rasters.filter((item) => item.layerKind === "paint")
-      .map((item) => ({ id: `raster:${item.id}`, zIndex: zIndexOf(item), shown: () => raster(item) })),
+      .map((item) => ({ id: paintObjectRowOf("raster", item.id), zIndex: zIndexOf(item), shown: () => raster(item) })),
   ].sort((a, b) => a.zIndex - b.zIndex);
   const layers = [];
   const add = (id, zIndex, shown) => {
@@ -29,7 +37,7 @@ export function skyPaintLayers(state, { group, raster, mask = () => null }) {
   for (const entry of ordered) add(entry.id, entry.zIndex, entry.shown());
   const top = Math.max(-1, ...layers.map((layer) => layer.zIndex), ...state.stickers.map(zIndexOf)) + 1;
   const loose = new Set(paint.strokes.map((stroke) => stroke.actionGroupId).filter((id) => !listed.has(id)));
-  for (const id of loose) add(`paint_group:${id}`, top, group(id));
+  for (const id of loose) add(paintObjectRowOf("group", id), top, group(id));
   add("mask_display", top, mask());
   return layers;
 }

@@ -70,7 +70,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
     const disabled = readOnly || locked;
     return {
       kind,
-      icon: ICON.paintbrush_vertical_tool,
+      icon: ICON.palette_tool,
       name: "Paint",
       groups: [
         [button("front", ICON.order_front, "Bring to front", { disabled }), button("back", ICON.order_back, "Send to back", { disabled })],

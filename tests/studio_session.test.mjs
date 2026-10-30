@@ -548,6 +548,7 @@ test("Lock turns a paint group's lock over as one step; a locked group is neithe
   session.selectObject("paint_group:g1");
   assert.equal(session.toggleLock().changed, true);
   assert.equal(session.state.painting.groups.find((group) => group.actionGroupId === "g1").locked, true);
+  assert.deepEqual(session.state.painting_layer, { paint: { filename: "x.png" } }, "the lock is the editor's own: the uploaded layer stays");
   assert.equal(session.orderSelected("front").changed, false);
   assert.deepEqual(session.deleteSelectedObject(), { changed: false, notice: null });
   assert.equal(session.state.painting.paint.strokes.length, 2);

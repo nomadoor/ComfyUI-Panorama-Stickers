@@ -34,9 +34,9 @@ import {
 import { setLaneValue } from "../pano_timeline.js";
 import { pointInPoly } from "../pano_math.js";
 import {
-  countedPaintGroups, frameCornersUv, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf, pointerDistance,
-  pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt, rasterObjectCornersUv, scaleRasterObject, strokeHitLineWidth,
-  strokePathsHit, strokePoints, transformStrokeGroup,
+  countedPaintGroups, frameCornersUv, groupStrokes, offsetRasterObject, offsetStrokeGroup, paintCornerHandle, paintObjectOf,
+  paintObjectRowOf, pointerDistance, pointerScaleRatio, rasterAlphaHits, rasterObjectAlphaAt, rasterObjectCornersUv,
+  scaleRasterObject, skyStickersOf, strokeHitLineWidth, strokePathsHit, strokePoints, transformStrokeGroup,
 } from "../pano_paint_objects.js";
 import {
   brushPresetIdForTool, directionOfErpPoint, erpPointOfDirection, shortestWrappedDelta, strokeGroupFrame, syncPaintGroups,
@@ -76,31 +76,41 @@ function skyItems(state, content) {
   return items;
 }
 
-const skyStickersOf = (state) => state.stickers.filter((item) => item.placement === "sky");
-
-// The paint strokes of the stroke group `gid`.
-function groupStrokes(state, gid) {
-  return (state.painting?.paint?.strokes ?? []).filter((stroke) => String(stroke?.actionGroupId || "").trim() === gid);
-}
-
-// The node's own Sky objects as drawn, front to back (docs/studio-ui.md "ペイントのまとまり" "押したときの順" 5): the sky
-// images and the paint groups (the counted stroke groups that have strokes, the paint raster objects; none while the
-// painting is hidden) by the order they are drawn (pano_editor_view.js skyLayers over pano_paint_layers.js
-// skyPaintLayers: by z_index, a paint group's truncated as drawn, ties the sky images, then the stroke groups, then
-// the raster objects, each in list order), reversed. Each is { kind: "sky", row, item } or { kind: "group" | "raster",
-// id, row, item, locked }. The upstream Stickers lie under the node's own Sky and are not among them.
-function skyObjects(state, content) {
-  const entries = skyItems(state, content).map((item) => ({ kind: "sky", row: item.id, item, zIndex: item.z_index }));
+// The paint of a state as the Cursor grabs it, made once per state (states are never changed in place): its stroke
+// groups that have strokes ({ group, strokes, frame } by actionGroupId: the counted groups, pano_paint_objects.js
+// countedPaintGroups) and its paint raster objects. Empty while the painting is hidden.
+const paintIndexes = new WeakMap();
+function paintIndex(state) {
+  let index = paintIndexes.get(state);
+  if (index) return index;
+  index = { groups: new Map(), rasters: [] };
   if (state.painting && state.painting_visible !== false) {
     for (const group of countedPaintGroups(state.painting, skyStickersOf(state))) {
       const id = String(group.actionGroupId || "");
-      if (!strokeGroupFrame(groupStrokes(state, id))) continue;
-      entries.push({ kind: "group", id, row: `paint_group:${id}`, item: group, locked: group.locked === true, zIndex: Math.trunc(Number(group.z_index) || 0) });
+      const strokes = groupStrokes(state.painting.paint?.strokes, id);
+      const frame = strokeGroupFrame(strokes);
+      if (frame) index.groups.set(id, { group, strokes, frame });
     }
-    for (const item of state.painting.raster_objects ?? []) {
-      if (String(item.layerKind || "paint") !== "paint") continue;
-      entries.push({ kind: "raster", id: item.id, row: `raster:${item.id}`, item, locked: item.locked === true, zIndex: Math.trunc(Number(item.z_index) || 0) });
-    }
+    index.rasters = (state.painting.raster_objects ?? []).filter((item) => String(item.layerKind || "paint") === "paint");
+  }
+  paintIndexes.set(state, index);
+  return index;
+}
+
+// The node's own Sky objects as drawn, front to back (docs/studio-ui.md "ペイントのまとまり" "押したときの順" 5): the sky
+// images and the paint groups (paintIndex) by the order they are drawn (pano_editor_view.js skyLayers over
+// pano_paint_layers.js skyPaintLayers: by z_index, a paint group's truncated as drawn, ties the sky images, then the
+// stroke groups, then the raster objects, each in list order), reversed. Each is { kind: "sky", row, item } or
+// { kind: "group" | "raster", id, row, item, locked }. The upstream Stickers lie under the node's own Sky and are not
+// among them.
+function skyObjects(state, content) {
+  const entries = skyItems(state, content).map((item) => ({ kind: "sky", row: item.id, item, zIndex: item.z_index }));
+  const index = paintIndex(state);
+  for (const [id, { group }] of index.groups) {
+    entries.push({ kind: "group", id, row: paintObjectRowOf("group", id), item: group, locked: group.locked === true, zIndex: Math.trunc(Number(group.z_index) || 0) });
+  }
+  for (const item of index.rasters) {
+    entries.push({ kind: "raster", id: item.id, row: paintObjectRowOf("raster", item.id), item, locked: item.locked === true, zIndex: Math.trunc(Number(item.z_index) || 0) });
   }
   return entries.map((entry, order) => ({ entry, order }))
     .sort((a, b) => b.entry.zIndex - a.entry.zIndex || b.order - a.order)
@@ -119,27 +129,18 @@ function erpUnder(projection, point) {
   return erpPointOfDirection(projection.ray(point.x, point.y));
 }
 
-// A paint group's geometry on the screen of `projection`: { visible, center, corners, paths } (paths only for a stroke
-// group: each stroke's points, closed for a lasso, with the width it is hit within), as the old editor's
-// editor/object_geometry.js. Not visible when its frame's center or a corner is behind the view.
-function paintGeometry(state, object, projection) {
+// A paint group's frame on the screen of `projection`: { visible, center, corners } (a stroke group's frame is its
+// strokeGroupFrame, a raster object's its transformed box), as the old editor's editor/object_geometry.js. Not visible
+// when its center or a corner is behind the view: the frame and its handles are not drawn then (its strokes are still
+// hit, paintPaths).
+function paintFrame(state, object, projection) {
   let center = null;
-  let cornersUv = [];
-  let paths = [];
+  let cornersUv;
   if (object.kind === "group") {
-    const strokes = groupStrokes(state, object.id);
-    const frame = strokeGroupFrame(strokes);
-    if (!frame) return { visible: false };
-    center = screenOfErp(projection, frame.centerUv);
-    cornersUv = frameCornersUv(frame);
-    paths = strokes.map((stroke) => {
-      const points = strokePoints(stroke);
-      return {
-        points: (Array.isArray(points) ? points : []).map((point) => screenOfErp(projection, point)).filter(Boolean),
-        closed: String(stroke?.geometry?.geometryKind || "") === "lasso_fill",
-        lineWidth: strokeHitLineWidth(stroke, brushPresetIdForTool(String(stroke?.toolKind || "pen"))),
-      };
-    }).filter((path) => path.points.length);
+    const entry = paintIndex(state).groups.get(object.id);
+    if (!entry) return { visible: false };
+    center = screenOfErp(projection, entry.frame.centerUv);
+    cornersUv = frameCornersUv(entry.frame);
   } else {
     cornersUv = rasterObjectCornersUv(object.item);
   }
@@ -147,7 +148,44 @@ function paintGeometry(state, object, projection) {
   if (corners.length < 4 || corners.some((corner) => !corner)) return { visible: false };
   if (object.kind === "raster") center = { x: corners.reduce((sum, p) => sum + p.x, 0) / 4, y: corners.reduce((sum, p) => sum + p.y, 0) / 4 };
   if (!center) return { visible: false };
-  return { visible: true, center, corners, paths };
+  return { visible: true, center, corners };
+}
+
+// A stroke group's strokes on the screen of `projection`, as pano_paint_objects.js strokePathsHit takes them: each
+// stroke's points in front of the view, closed for a lasso, with the width it is hit within.
+function paintPaths(state, id, projection) {
+  const entry = paintIndex(state).groups.get(id);
+  if (!entry) return [];
+  return entry.strokes.map((stroke) => {
+    const points = strokePoints(stroke);
+    return {
+      points: (Array.isArray(points) ? points : []).map((point) => screenOfErp(projection, point)).filter(Boolean),
+      closed: String(stroke?.geometry?.geometryKind || "") === "lasso_fill",
+      lineWidth: strokeHitLineWidth(stroke, brushPresetIdForTool(String(stroke?.toolKind || "pen"))),
+    };
+  }).filter((path) => path.points.length);
+}
+
+// What a drag of the paint group `object` copies of the state `base` (session.js gesture's copy): the stroke group's
+// strokes or the raster object, and the groups' entries (written with the counted groups); everything else is shared.
+function paintDraft(base, object) {
+  const painting = base.painting;
+  const own = (stroke) => object.kind === "group" && String(stroke?.actionGroupId || "").trim() === object.id;
+  return {
+    ...base,
+    painting: {
+      ...painting,
+      groups: (painting.groups ?? []).map((group) => ({ ...group })),
+      paint: { ...painting.paint, strokes: (painting.paint?.strokes ?? []).map((stroke) => (own(stroke) ? structuredClone(stroke) : stroke)) },
+      raster_objects: (painting.raster_objects ?? []).map((item) => (object.kind === "raster" && item.id === object.id ? { ...item, transform: { ...item.transform } } : item)),
+    },
+  };
+}
+
+// The key of a view (a three.js camera setup seen at width x height px) for the caches of the paint's screen shapes.
+function viewKey(camera, width, height) {
+  const q = camera.quaternion;
+  return `${q.x},${q.y},${q.z},${q.w}|${camera.fovY_deg}|${camera.aspect}|${width}|${height}`;
 }
 
 // state(), content() (stage_content.js stageContent()), playhead(): the working state, what is drawn of it and the
@@ -192,9 +230,43 @@ export function createStageObjects({
     return { ...evaluateCamera(shown, playhead()), projection: shown.projection, visible: shown.visible !== false };
   }
 
-  function projection() {
+  // The views seen lately ({ key, projection, state, frames, paths }: the stage's, and a lens Camera's cube face), with
+  // the paint's screen shapes made in them for the state they were made for: a hover does not project the paint again
+  // until the view or the state changes.
+  const views = [];
+  function viewOf(view, width, height) {
+    const key = viewKey(view, width, height);
+    let entry = views.find((item) => item.key === key);
+    if (!entry) {
+      entry = { key, projection: viewProjection(view, width, height), state: null, frames: new Map(), paths: new Map() };
+      views.unshift(entry);
+      views.length = Math.min(views.length, 2);
+    }
+    if (entry.state !== state()) {
+      entry.state = state();
+      entry.frames.clear();
+      entry.paths.clear();
+    }
+    return entry;
+  }
+
+  function stageView() {
     const { width, height } = size();
-    return viewProjection(camera(), width, height);
+    return viewOf(camera(), width, height);
+  }
+
+  function projection() {
+    return stageView().projection;
+  }
+
+  function frameIn(view, object) {
+    if (!view.frames.has(object.row)) view.frames.set(object.row, paintFrame(view.state, object, view.projection));
+    return view.frames.get(object.row);
+  }
+
+  function pathsIn(view, object) {
+    if (!view.paths.has(object.row)) view.paths.set(object.row, paintPaths(view.state, object.id, view.projection));
+    return view.paths.get(object.row);
   }
 
   // --- What shows.
@@ -229,36 +301,44 @@ export function createStageObjects({
     return geometry.visible ? { item, geometry } : null;
   }
 
-  // The selected paint group with its geometry on the stage ({ object, geometry }, paintGeometry), or null: not while
+  // The selected paint group with its geometry on the stage ({ object, geometry }, paintFrame), or null: not while
   // the painting is hidden or it is out of the view.
   function selectedPaint() {
     const scene = state();
     if (scene.painting_visible === false) return null;
     const object = paintObjectOf(scene, selection());
     if (!object) return null;
-    const geometry = paintGeometry(scene, object, projection());
+    const geometry = frameIn(stageView(), object);
     return geometry.visible ? { object, geometry } : null;
   }
 
-  // The node's own Sky object under `point` on the screen of `view` (the stage's projection by default), front to back
-  // (skyObjects): { object, geometry } or null. A sky image is hit inside its edge, a stroke group along its strokes
-  // (pano_paint_objects.js strokePathsHit), a raster object where its pixels show (rasterAlphaHits).
-  function skyObjectUnder(point, view = projection()) {
+  // The node's own Sky objects in order (skyObjects), made again only when the state or what is drawn changes.
+  let ordered = { state: null, content: null, objects: [] };
+  function skyObjectsNow() {
     const scene = state();
-    for (const object of skyObjects(scene, content())) {
+    const shown = content();
+    if (ordered.state !== scene || ordered.content !== shown) ordered = { state: scene, content: shown, objects: skyObjects(scene, shown) };
+    return ordered.objects;
+  }
+
+  // The node's own Sky object under `point` in `view` (viewOf: the stage's by default), front to back (skyObjects):
+  // { object, geometry } or null (geometry: a sky image's, or a paint group's frame). A sky image is hit inside its
+  // edge, a stroke group along its strokes wherever its frame is (pano_paint_objects.js strokePathsHit), a raster
+  // object inside its box on the screen where its pixels show (rasterAlphaHits).
+  function skyObjectUnder(point, view = stageView()) {
+    for (const object of skyObjectsNow()) {
       if (object.kind === "sky") {
-        const geometry = buildStickerGeometry(object.item, view);
+        const geometry = buildStickerGeometry(object.item, view.projection);
         if (geometry.visible && pointInPolygon(point, geometry.boundaryEdges.flat())) return { object, geometry };
         continue;
       }
-      const geometry = paintGeometry(scene, object, view);
-      if (!geometry.visible) continue;
       if (object.kind === "group") {
-        if (strokePathsHit(point, geometry.paths)) return { object, geometry };
+        if (strokePathsHit(point, pathsIn(view, object))) return { object, geometry: frameIn(view, object) };
         continue;
       }
-      if (!pointInPoly(point, geometry.corners)) continue;
-      const alpha = rasterObjectAlphaAt(object.item, erpUnder(view, point), (u, v) => rasterAlpha(object.item, u, v));
+      const geometry = frameIn(view, object);
+      if (!geometry.visible || !pointInPoly(point, geometry.corners)) continue;
+      const alpha = rasterObjectAlphaAt(object.item, erpUnder(view.projection, point), (u, v) => rasterAlpha(object.item, u, v));
       if (rasterAlphaHits(alpha)) return { object, geometry };
     }
     return null;
@@ -423,8 +503,8 @@ export function createStageObjects({
   function paintDrag(kind, object, geometry, point) {
     const start = erpUnder(projection(), point);
     const center = geometry.center;
-    const startDistance = pointerDistance(center, point);
-    const pivot = object.kind === "group" ? strokeGroupFrame(groupStrokes(state(), object.id))?.centerUv : null;
+    const startDistance = center ? pointerDistance(center, point) : 1;
+    const pivot = object.kind === "group" ? paintIndex(state()).groups.get(object.id)?.frame.centerUv : null;
     return {
       move(next) {
         const at = erpUnder(projection(), next);
@@ -448,7 +528,7 @@ export function createStageObjects({
           if (!changed) return false;
           draft.painting_layer = null;
           return true;
-        });
+        }, (base) => paintDraft(base, object));
       },
       end: () => edits.commit(),
       cancel: () => edits.cancel(),
@@ -488,7 +568,7 @@ export function createStageObjects({
       select("camera");
       return selectOnly();
     }
-    const under = skyObjectUnder(point, through ? viewProjection(view.camera, view.width, view.height) : projection());
+    const under = skyObjectUnder(point, through ? viewOf(view.camera, view.width, view.height) : stageView());
     if (under) {
       const { object, geometry } = under;
       select(object.row);

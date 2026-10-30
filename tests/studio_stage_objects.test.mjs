@@ -58,7 +58,7 @@ function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile 
     playhead: () => 0,
     selection: () => session.selection.row,
     select: (row) => session.selectObject(row),
-    edits: { live: (apply) => session.gesture(apply), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
+    edits: { live: (apply, copy) => session.gesture(apply, copy), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
     tab: () => tab,
     mode: () => gizmoMode.value,
     rasterAlpha,
@@ -514,4 +514,35 @@ test("in the Camera tab a press on the paint only selects it", () => {
   drag.end();
   assert.equal(session.state, before);
   assert.equal(objects.overlay().paint.handles, false);
+});
+
+test("a long stroke whose frame reaches behind the view is still grabbed on its visible part, without a frame drawn", () => {
+  // From 100° left to 100° right through the middle of the view: its frame's corners are behind it.
+  const high = { x: center.x, y: 80 };
+  const middle = erpAt(high);
+  const points = Array.from({ length: 57 }, (_, index) => ({ u: (middle.u - 0.28 + index * 0.01 + 1) % 1, v: middle.v }));
+  const stroke = { ...strokeOn("st1", "g1", left, leftEnd), geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
+  const { session, objects } = setup({ stickers: [], painting: painted(undefined, [stroke]) });
+  const drag = objects.press({ x: high.x + 30, y: high.y });
+  assert.ok(drag);
+  assert.equal(session.selection.row, "paint_group:g1");
+  assert.equal(objects.overlay().paint, null, "no frame while its corners are out of the view");
+  drag.move({ x: high.x + 30, y: high.y + 40 });
+  drag.end();
+  assert.ok(session.state.painting.paint.strokes[0].geometry.points[28].v > middle.v);
+});
+
+test("a paint group's drag copies only what it moves: the other strokes stay the same objects", () => {
+  const { session, objects } = setup({ painting: painted(
+    [{ id: "g1", actionGroupId: "g1", z_index: 3 }, { id: "g2", actionGroupId: "g2", z_index: 4 }],
+    [strokeOn("st1", "g1", left, leftEnd), strokeOn("st2", "g2", { x: 600, y: 400 }, { x: 700, y: 400 })],
+  ) });
+  const other = session.state.painting.paint.strokes[1];
+  const drag = objects.press(strokeAt);
+  drag.move({ x: 300, y: 200 });
+  drag.move({ x: 320, y: 220 });
+  assert.equal(session.state.painting.paint.strokes[1], other);
+  drag.end();
+  assert.equal(session.state.painting.paint.strokes[1], other);
+  assert.notEqual(session.state.painting.paint.strokes[0].geometry.points[0].v, other.geometry.points[0].v);
 });

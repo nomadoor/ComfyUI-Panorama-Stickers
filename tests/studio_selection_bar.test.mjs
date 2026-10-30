@@ -87,7 +87,7 @@ test("the Camera's Lock turns camera.locked over: its icon and tip show the stat
   assert.equal(lockOf(selectionBar({ state, row: "camera", readOnly: true })).disabled, true);
 });
 
-test("a paint group (a stroke group or a paint raster object) has the bar Bring to front / Send to back ／ Lock / Delete, with the brush and Paint", () => {
+test("a paint group (a stroke group or a paint raster object) has the bar Bring to front / Send to back ／ Lock / Delete, with the Paint icon and name", () => {
   const points = [{ u: 0.5, v: 0.5 }];
   const painted = loadSceneState({
     version: 2,
@@ -101,7 +101,7 @@ test("a paint group (a stroke group or a paint raster object) has the bar Bring 
   assert.equal(selectedKind(painted, "raster:r1"), "paint");
   assert.equal(selectedKind(painted, "raster:gone"), null);
   const bar = selectionBar({ state: painted, row: "raster:r1" });
-  assert.deepEqual([bar.kind, bar.icon, bar.name], ["paint", ICON.paintbrush_vertical_tool, "Paint"]);
+  assert.deepEqual([bar.kind, bar.icon, bar.name], ["paint", ICON.palette_tool, "Paint"]);
   assert.deepEqual(keys(bar), [["front", "back"], ["lock", "delete"]]);
   assert.ok(bar.groups.flat().every((button) => !button.disabled));
   // A locked group: the order and Delete are disabled, Lock shows it is locked.

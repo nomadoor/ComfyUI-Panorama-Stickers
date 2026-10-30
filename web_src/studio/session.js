@@ -14,7 +14,7 @@
 import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
 import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
-import { deletePaintObjects, numberSkyOrder, paintObjectOf, paintObjectRow, restackSkyOrder, skyDisplayList } from "../pano_paint_objects.js";
+import { deletePaintObjects, numberSkyOrder, paintObjectOf, paintObjectRow, restackSkyOrder, skyDisplayList, skyStickersOf } from "../pano_paint_objects.js";
 import { syncPaintGroups } from "../pano_paint_strokes.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
@@ -176,11 +176,13 @@ export function createStudioSession({ state: opening, readOnly = false }) {
 
   // A drag's change: apply(draft) changes a copy of the state the drag started from (each move starts again from it,
   // so a move writes where the pointer is, not on top of the move before) and returns whether it changed anything.
-  // The first change keeps that start, which cancelGesture() puts back.
-  function gesture(apply) {
+  // The first change keeps that start, which cancelGesture() puts back. copy(base) makes the copy: a deep one by
+  // default; a drag that knows what it changes may copy only that and share the rest (a paint group's drag,
+  // stage_objects.js), since a state is never changed in place.
+  function gesture(apply, copy = structuredClone) {
     if (readOnly) return result(false);
     const base = gestureBase ?? state;
-    const draft = structuredClone(base);
+    const draft = copy(base);
     if (!apply(draft)) return result(false);
     gestureBase = base;
     state = draft;
@@ -304,18 +306,19 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   }
 
   // Lock: the selected Sticker's `locked`, the selected Camera's `camera.locked`, or the selected paint group's (the
-  // stroke group's entry, written with the counted groups, or the raster object's) turns over.
+  // stroke group's entry, written with the counted groups, or the raster object's) turns over. A paint group's lock is
+  // the editor's own (the node does not read it), so the uploaded `painting_layer` stays.
   function toggleLock() {
     const paint = paintObjectOf(state, selection.row);
     if (paint) {
       return editPainting((draft) => {
         const item = paint.kind === "group"
-          ? syncPaintGroups(draft.painting, draft.stickers.filter((sticker) => sticker.placement === "sky")).find((group) => String(group.actionGroupId || "") === paint.id)
+          ? syncPaintGroups(draft.painting, skyStickersOf(draft)).find((group) => String(group.actionGroupId || "") === paint.id)
           : draft.painting.raster_objects.find((entry) => entry.id === paint.id);
         if (!item) return false;
         item.locked = item.locked !== true;
         return true;
-      });
+      }, { keepLayer: true });
     }
     if (selection.row === "camera") {
       return editCamera((camera) => {
@@ -383,13 +386,14 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   // --- The painting (docs/studio-ui.md "ペイントの道具"): a stroke and a Clear are one Undo step each.
 
   // An edit of the painting: apply(draft) changes a copy of the state (its `painting`, made when missing) and returns
-  // whether it changed it. A changed painting drops the uploaded `painting_layer` (the node draws from `painting`).
-  function editPainting(apply) {
+  // whether it changed it. A changed painting drops the uploaded `painting_layer` (the node draws from `painting`),
+  // but with `keepLayer` (a change the node does not draw: a lock).
+  function editPainting(apply, { keepLayer = false } = {}) {
     if (readOnly || gestureBase) return result(false);
     const draft = structuredClone(state);
     draft.painting ??= normalizePaintingState(null);
     if (!apply(draft)) return result(false);
-    draft.painting_layer = null;
+    if (!keepLayer) draft.painting_layer = null;
     state = draft;
     keepSelection();
     record();

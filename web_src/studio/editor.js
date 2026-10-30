@@ -713,7 +713,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   }
 
   const objectEdits = {
-    live: (apply) => objectOutcome(session.gesture(apply)),
+    live: (apply, copy) => objectOutcome(session.gesture(apply, copy)),
     commit: () => objectOutcome(session.commitGesture()),
     cancel: () => objectOutcome(session.cancelGesture()),
   };
