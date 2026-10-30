@@ -511,6 +511,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | ギズモ | 見本 `specimen-11.html`。X は珊瑚、Y はライム、Z は氷、ポインタの下とドラッグしている取っ手は白 `#ffffff`。届く長さ（中心から棒の先、輪の半径）52px、線 2.5px で端は丸。Move の玉は半径 5px、中心の白い点は半径 4px。Rotate の輪の奥の半分は 35% の不透明。Scale の先は一辺 9px・角丸 2px の四角。下に暗い線を付けない。視線とほぼ平行な軸を隠す `GIZMO_HIDE_RATIO` は 0.2。当たりの幅は玉・四角・中心の点が 9px、棒と輪が 6px。ドラッグ中の軸のガイドの線は、その軸の色の 1.5px・不透明度 80%・端は丸、2D の層でなめらかに描く（`web_src/studio/gizmo_overlay.js` `GIZMO_LOOK`・`GIZMO_COLORS`） |
 | 地面のグリッドの軸 | X 軸はギズモの X と同じ珊瑚 `#f37159`、Z 軸は氷 `#aecedb`、どちらも不透明度 75%（Y 軸の線は描かない。`web_src/studio/grid.js` `GRID_COLORS`。古い UI のグリッドは変えない） |
 | Sky の画像のハンドル | 枠は選択のガイドと同じ線、四隅は半径 5px・辺の中点は 3.5px・回転は 6px の落ち着いた黄の丸に黒 70% の 1.5px の縁（`web_src/studio/stage_overlay.js`） |
+| タイムラインのスクロールバー | 縦だけ。幅 6px、溝は透明、つまみは主の文字の色の 22%（hover で 40%）、角丸 3px。Firefox は `scrollbar-width: thin` と同じ色 |
 | タイムラインの最小の高さ | 未定 |
 | ステージの最小の高さ | 未定 |
 | Output の小窓の最小と最大の大きさ | 未定 |
