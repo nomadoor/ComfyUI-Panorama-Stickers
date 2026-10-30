@@ -1,13 +1,12 @@
 // docs/space-and-view.md "World の物のガイド" and "ホバーの判定" (web_src/studio/world_guides.js): which World objects have
-// a guide and what outline, the CPU hover test, how each guide is drawn, the Camera's mark in the 3D tab, and the
-// near cut of a segment that passes behind the view.
+// a guide and what outline, the CPU hover test, how each guide is drawn, and the near cut of a segment that passes
+// behind the view. The Camera's mark is tests/studio_camera_marker.test.mjs's.
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { DEFAULT_VIEW_HFOV, spaceCamera, worldStickerPlane } from "../web_src/pano_space.js";
-import { cameraGuideSegments, guideLook, hoverGuide, screenSegment, worldGuideItems } from "../web_src/studio/world_guides.js";
-import { eyeLengths } from "../web_src/studio/view_scale.js";
+import { guideLook, hoverGuide, screenSegment, worldGuideItems } from "../web_src/studio/world_guides.js";
 
 const W = 1000;
 const H = 500;
@@ -65,19 +64,6 @@ test("a guide is thin normally, bright under the pointer, yellow when selected; 
   assert.equal(guideLook({ tab: "camera", selected: true }), "selected");
   assert.equal(guideLook({ gridHidden: true, hovered: true }), null);
   assert.equal(guideLook({ gridHidden: true, selected: true }), "selected");
-});
-
-test("the Camera's mark is its frustum in the Frame mode and a ring with a forward arrow in the Panorama mode, sized by E", () => {
-  const value = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, hFOV_deg: 90, aspect: 16 / 9, curve: 1 };
-  const frustum = cameraGuideSegments(value, "perspective", -1.6);
-  assert.equal(frustum.length, 11);
-  const length = eyeLengths(1.6).CAMERA_GUIDE_LENGTH;
-  assert.ok(Math.abs(frustum[0][1][2] + length) < 1e-9, "the frustum reaches CAMERA_GUIDE_LENGTH ahead");
-  const ring = cameraGuideSegments(value, "erp", -1.6);
-  assert.equal(ring.length, 32 + 3);
-  const tip = ring[32][1];
-  assert.ok(tip[2] < -length * 0.5, "the arrow points to the Camera's front (-Z)");
-  assert.ok(ring.slice(0, 32).every(([a]) => Math.abs(a[1]) < 1e-9), "the ring lies on the equator");
 });
 
 test("a segment passing behind the view is cut at the near plane; one wholly behind is not drawn", () => {

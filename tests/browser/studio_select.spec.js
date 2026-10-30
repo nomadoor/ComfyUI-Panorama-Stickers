@@ -47,7 +47,38 @@ async function places(page) {
       return { x: rect.left + q.x, y: rect.top + q.y };
     };
     const sky = viewProjection(camera, rect.width, rect.height).project(yawPitchToDir(-38, 6));
+    // The Move gizmo's X ball on the World image (gizmo_overlay.js; Move uses the World axes).
+    const { gizmoHandles } = await import("/web_src/studio/gizmo_overlay.js");
+    const handles = gizmoHandles({ mode: "translate", transform: { position: [0.9, -0.4, -2.6], quaternion: { x: 0, y: 0, z: 0, w: 1 }, scale: 1 } }, camera, rect.width, rect.height);
+    const xBall = handles.axes.find((axis) => axis.name === "x").end;
+    // The point of the Camera's filled mark farthest from its lines (camera_marker.js).
+    const { cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape } = await import("/web_src/studio/camera_marker.js");
+    const { evaluateCamera } = await import("/web_src/pano_scene_eval.js");
+    const { loadSceneState } = await import("/web_src/pano_scene_state.js");
+    const { pointInPolygon } = await import("/web_src/studio/world_guides.js");
+    const state = loadSceneState(window.__studio.session.state);
+    const value = evaluateCamera(state.camera, 0);
+    const length = cameraMarkerLength(value, camera, rect.height, -1.6);
+    const marker = cameraMarkerScreen(cameraMarkerShape(value, state.camera.projection, length), camera, rect.width, rect.height);
+    const toLine = (p, { a, b }) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / Math.max(dx * dx + dy * dy, 1e-12)));
+      return Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y);
+    };
+    let fill = null;
+    let clear = 0;
+    for (let x = 0; x < rect.width; x += 2) {
+      for (let y = 0; y < rect.height; y += 2) {
+        const p = { x, y };
+        if (!marker.fills.some((face) => pointInPolygon(p, face))) continue;
+        const distance = Math.min(...marker.lines.map((line) => toLine(p, line)));
+        if (distance > clear) [fill, clear] = [p, distance];
+      }
+    }
     return {
+      xBall: { x: rect.left + xBall.x, y: rect.top + xBall.y },
+      cameraFill: { x: rect.left + fill.x, y: rect.top + fill.y, clear },
       stage: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
       board: at([0.9, -0.4, -2.6]),
       camera: at([-1.3, -0.5, -1.6]),
@@ -102,17 +133,23 @@ test("a click selects the World image (GPU pick), the bar shows its buttons, the
   expect(problems).toEqual([]);
 });
 
-test("the gizmo moves the World image by its X handle as one Undo step, and Escape gives a drag up", async ({ page }, testInfo) => {
+test("dragging the gizmo's X ball moves the World image along X only, as one Undo step, and Escape gives a drag up", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);
   const at = await places(page);
   await click(page, at.board);
   const before = (await stateOf(page)).stickers[1].position.value;
-  // The X arrow points right from the gizmo's center: grab its arrow right of the center.
-  const handle = { x: at.board.x + 60, y: at.board.y };
-  await drag(page, handle, { x: handle.x + 120, y: handle.y });
+  // The overlay draws the X ball in coral (the gizmo is the overlay's, not three.js's).
+  const ball = await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), { x: at.xBall.x - at.stage.x, y: at.xBall.y - at.stage.y });
+  expect(ball[3]).toBeGreaterThan(200);
+  expect(Math.abs(ball[0] - 0xf3)).toBeLessThan(24);
+  expect(Math.abs(ball[1] - 0x71)).toBeLessThan(24);
+  // Pulled right and down: it goes along X only.
+  const handle = at.xBall;
+  await drag(page, handle, { x: handle.x + 120, y: handle.y + 50 });
   const after = (await stateOf(page)).stickers[1].position.value;
   expect(after[0]).toBeGreaterThan(before[0] + 0.1);
   expect(Math.abs(after[1] - before[1])).toBeLessThan(1e-6);
+  expect(Math.abs(after[2] - before[2])).toBeLessThan(1e-6);
   expect(await selected(page)).toBe("sticker_2");
   await page.keyboard.press("Control+z");
   expect((await stateOf(page)).stickers[1].position.value).toEqual(before);
@@ -156,6 +193,23 @@ test("the sky image: a click selects it, its body's drag turns it, a corner scal
   const grown = (await stateOf(page)).stickers[0].size.value;
   expect(grown.hFOV_deg).toBeGreaterThan(size.hFOV_deg * 1.3);
   expect(grown.vFOV_deg).toBeGreaterThan(size.vFOV_deg * 1.3);
+  expect(problems).toEqual([]);
+});
+
+test("a click in the middle of the Camera's filled face, away from its lines, selects it", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const at = await places(page);
+  expect(at.cameraFill.clear).toBeGreaterThan(10);
+  // The face is filled on the overlay there (a light see-through white).
+  const pixel = await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), { x: at.cameraFill.x - at.stage.x, y: at.cameraFill.y - at.stage.y });
+  expect(pixel[3]).toBeGreaterThan(10);
+  expect(pixel[3]).toBeLessThan(160);
+  await page.mouse.move(at.cameraFill.x, at.cameraFill.y);
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("[data-stage-canvas]")).cursor)).toBe("default");
+  await click(page, at.cameraFill);
+  expect(await selected(page)).toBe("camera");
+  // Selected, its lines turn yellow.
+  await expect.poll(() => page.evaluate(() => window.__studio.yellowPixels())).toBeGreaterThan(40);
   expect(problems).toEqual([]);
 });
 
