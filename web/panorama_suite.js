@@ -32877,6 +32877,7 @@ const s6 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
             ref_key: "help",
             ref: i,
             "data-action": "shortcuts",
+            size: "knob",
             icon: Xe(Oe).help,
             label: "Shortcuts",
             tip: "Shortcuts",
