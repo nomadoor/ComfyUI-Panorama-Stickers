@@ -33,7 +33,8 @@ const path = computed(() => {
 });
 
 const active = computed(() => props.model.presets.find((preset) => preset.active)?.label ?? null);
-const options = computed(() => props.model.presets.map((preset) => ({ value: preset.label, label: preset.label })));
+// Icons only: the names do not fit the panel's width, so they are the tooltips (and the accessible names).
+const options = computed(() => props.model.presets.map((preset) => ({ value: preset.label, label: preset.label, icon: preset.icon, iconOnly: true, tip: preset.label })));
 const placeholder = computed(() => {
   if (props.model.mixed) return "Mixed";
   if (props.model.easing === "auto") return "Auto";

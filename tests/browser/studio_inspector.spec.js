@@ -192,8 +192,12 @@ test("selecting Keyframes brings the Easing panel at the bottom: presets, a squa
   await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
   const panel = page.locator(".pano-studio-easing");
   await expect(panel).toBeVisible();
-  await expect(panel.locator(".pano-studio-seg-item")).toHaveText(["Hold", "Linear", "Ease in-out", "Ease in", "Ease out"]);
-  await expect(panel.locator('[aria-checked="true"]')).toHaveText("Ease in-out");
+  // Icons only; the names are the tooltips and the accessible names (docs/studio-ui.md "Easing のパネル").
+  const presets = panel.locator(".pano-studio-seg-item");
+  await expect(presets).toHaveText(["", "", "", "", ""]);
+  expect(await presets.evaluateAll((items) => items.map((item) => [item.title, item.getAttribute("aria-label"), item.querySelectorAll("svg").length])))
+    .toEqual(["Hold", "Linear", "Ease in-out", "Ease in", "Ease out"].map((name) => [name, name, 1]));
+  await expect(panel.locator('[aria-checked="true"]')).toHaveAttribute("title", "Ease in-out");
   await expect(panel.locator(".pano-studio-easing-text")).toHaveValue("0.42, 0, 0.58, 1");
   await expect(panel.locator(".pano-studio-icon-btn")).toHaveAttribute("aria-disabled", "true");
   // The panel sits at the bottom of the inspector; the graph is square and as wide as the panel's content.

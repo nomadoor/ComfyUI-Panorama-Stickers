@@ -33,7 +33,14 @@ export function easingGraphSide({ width, height, chrome }) {
 
 // The Easing presets of the panel in their order (docs/studio-ui.md "Easing のパネル"); the values are
 // pano_timeline.js EASING_PRESETS'.
-const PANEL_PRESETS = ["Hold", "Linear", "Ease in-out", "Ease in", "Ease out"].map((label) => EASING_PRESETS.find((preset) => preset.label === label));
+// Each shows its icon only, its name in the tooltip.
+const PANEL_PRESETS = [
+  ["Hold", ICON.ease_hold],
+  ["Linear", ICON.ease_linear],
+  ["Ease in-out", ICON.ease_in_out],
+  ["Ease in", ICON.ease_in],
+  ["Ease out", ICON.ease_out],
+].map(([label, icon]) => ({ ...EASING_PRESETS.find((preset) => preset.label === label), icon }));
 
 const BEZIER_NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 
@@ -429,7 +436,7 @@ function easingModel(state, upstream, keyframes) {
     mixed,
     text: Array.isArray(easing) ? formatBezier(easing) : "",
     atDefault: !!selected && !mixed && sameJson(easing, DEFAULT_EASING),
-    presets: PANEL_PRESETS.map((preset) => ({ label: preset.label, easing: preset.easing, active: !mixed && sameJson(preset.easing, easing) })),
+    presets: PANEL_PRESETS.map((preset) => ({ label: preset.label, icon: preset.icon, easing: preset.easing, active: !mixed && sameJson(preset.easing, easing) })),
   };
 }
 

@@ -57,6 +57,11 @@ export const ICON = Object.freeze({
   sphere: "sphere",
   hand: "hand",
   arrows_vertical: "arrows_vertical",
+  ease_hold: "ease_hold",
+  ease_linear: "ease_linear",
+  ease_in_out: "ease_in_out",
+  ease_in: "ease_in",
+  ease_out: "ease_out",
 });
 
 const parseAttrs = (raw) => {
@@ -132,6 +137,14 @@ const TABLER_BODIES = {
   sphere: { name: "sphere", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 12c0 1.657 4.03 3 9 3s9 -1.343 9 -3' /><path d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0' />` },
   hand: { name: "hand-stop", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 13v-7.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M11 5.5v-2a1.5 1.5 0 1 1 3 0v8.5' /><path d='M14 5.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M17 7.5a1.5 1.5 0 0 1 3 0v8.5a6 6 0 0 1 -6 6h-2h.208a6 6 0 0 1 -5.012 -2.7a69.74 69.74 0 0 1 -.196 -.3c-.312 -.479 -1.407 -2.388 -3.286 -5.728a1.5 1.5 0 0 1 .536 -2.022a1.867 1.867 0 0 1 2.28 .28l1.47 1.47' />` },
   arrows_vertical: { name: "arrows-vertical", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 7l4 -4l4 4' /><path d='M8 17l4 4l4 -4' /><path d='M12 3l0 18' />` },
+  // The new UI's Easing presets (docs/studio-ui.md "Easing のパネル"): each preset's curve from the bottom left to the top
+  // right, drawn in the Tabler stroke style. The curves are the presets' cubic-beziers (pano_timeline.js EASING_PRESETS)
+  // on a 16-unit square; Hold stays, then steps up at the end.
+  ease_hold: { name: "ease-hold", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20h16v-16' />` },
+  ease_linear: { name: "ease-linear", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20l16 -16' />` },
+  ease_in_out: { name: "ease-in-out", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20c6.72 0 9.28 -16 16 -16' />` },
+  ease_in: { name: "ease-in", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20c6.72 0 16 -16 16 -16' />` },
+  ease_out: { name: "ease-out", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 20c0 0 9.28 -16 16 -16' />` },
 };
 
 export const ICON_PATHS = Object.fromEntries(

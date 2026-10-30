@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ICON } from "../web_src/icons.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { upstreamWorkingLayers } from "../web_src/pano_upstream.js";
 import {
@@ -283,6 +284,9 @@ test("the Easing panel shows only while Keyframes are selected: the shared Easin
   assert.equal(one.segment, true);
   assert.equal(one.text, "0, 0, 1, 1");
   assert.deepEqual(one.presets.map((preset) => preset.label), ["Hold", "Linear", "Ease in-out", "Ease in", "Ease out"]);
+  // docs/studio-ui.md "Easing のパネル": each preset shows its own icon, the name goes to the tooltip.
+  assert.deepEqual(one.presets.map((preset) => preset.icon), [ICON.ease_hold, ICON.ease_linear, ICON.ease_in_out, ICON.ease_in, ICON.ease_out]);
+  assert.ok(one.presets.every((preset) => typeof preset.icon === "string" && preset.icon));
   assert.deepEqual(one.presets.filter((preset) => preset.active).map((preset) => preset.label), ["Linear"]);
   assert.equal(one.atDefault, false);
 
