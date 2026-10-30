@@ -37,6 +37,7 @@ import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_vi
 import { createAddFiles } from "./add_files.js";
 import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
+import { createPortMedia } from "./port_media.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { createStage, stageUi } from "./stage.js";
@@ -144,6 +145,19 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       redraw(DRAW_REASON.MEDIA);
     },
   });
+  // [inputs] The `sticker` input's media in the node's current result (docs/studio-ui.md "ノードの入力から来た物").
+  const portMedia = createPortMedia({
+    uiList: (key) => media.uiList(node, key),
+    source: media.source,
+    current: () => isNodeOutputMediaCurrent(node, "external-sticker"),
+    fps: () => session.state.timeline.fps,
+    playing: () => !!backgroundVideo?.playback.advancing,
+    onChange: () => {
+      if (closed) return;
+      syncMedia();
+      redraw(DRAW_REASON.MEDIA);
+    },
+  });
   // The `scene` input's files in the node's current result (its 3D content), or null.
   const sceneFiles = () => (isNodeOutputMediaCurrent(node, "scene")
     ? sceneFilesOf(media.uiList(node, "pano_scene_files"), media.uiList(node, "pano_scene_meta"), media.source)
@@ -173,6 +187,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     animations: {},
     // The stage's tab: "3d" or "camera" (docs/studio-ui.md "Camera タブ"). The 3D tab each time the editor opens.
     tab: "3d",
+    // [inputs] The size of the port Sticker's media (its vFOV follows it), null before it loads.
+    portSize: null,
   });
   const timelineCtx = () => ({ state: session.state, upstream: [], media: view.media });
 
@@ -180,7 +196,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     const state = session.state;
     const files = sceneFiles();
     const animations = stateAnimationClips(state, { sceneFiles: files, editorFile: stageMedia.editorFile });
-    view.media = { bg: backgroundMedia(), sceneItems: files?.urls.length ?? 0, animations };
+    view.media = { bg: backgroundMedia(), sceneItems: files?.urls.length ?? 0, animations, port: portMedia.meta() };
+    view.portSize = portMedia.size();
     view.background = backgroundLinked ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg) } : null;
     view.fpsLocked = timelineFpsLocked(videoTimelineFps(node, media), node, VIDEO_FPS_INPUTS);
     view.animations = animations.stickers ?? {};
@@ -317,16 +334,20 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // --- The content at the playhead and what is selected, for the stage.
   const sceneBox = (url) => stage?.sceneBox(url) ?? null;
   // [add-drop] A placed image draws from its decoded file until its uploaded file has loaded (add_files.js).
-  const mediaOf = (sticker) => stageMedia.media(sticker) ?? addFiles.media(sticker);
+  // [inputs] The port Sticker draws the `sticker` input's picture at the playhead.
+  const mediaOf = (sticker) => (sticker.source.kind === "port" ? portMedia.picture(sticker, view.playhead) : stageMedia.media(sticker) ?? addFiles.media(sticker));
   let contentCache = null;
   function content() {
     const files = sceneFiles();
+    // [inputs] The port Sticker's 3D media.
+    const stickerFiles = portMedia.files();
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
-    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : ""];
+    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : ""];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox });
-    // A World item may still be loading (no box yet): the content is made again on the next frame.
-    const pending = value.space.fileStickers.length > 0 || !!value.space.scene;
+    const value = stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles });
+    // A World item may still be loading (no box yet): the content is made again on the next frame. [inputs] The port
+    // Sticker's 3D item too.
+    const pending = value.space.fileStickers.length > 0 || !!value.space.scene || !!value.space.sticker;
     contentCache = { key, value, pending };
     return value;
   }
@@ -663,6 +684,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     releasePanoCanvas(backgroundStill);
     stage?.dispose();
     stageMedia.dispose();
+    portMedia.dispose();
     vueApp.unmount();
     mountHost.remove();
     openNodes.delete(node);
