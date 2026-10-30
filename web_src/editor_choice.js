@@ -3,10 +3,10 @@
 // new UI has them.
 // web_src/main.js puts this together with the two editors.
 
-// The new Preview window shows an IMAGE source so far; a VIDEO or a PANO_SCENE source opens the old window.
+// The new Preview window shows an IMAGE or a VIDEO source so far; a PANO_SCENE source opens the old window.
 // type: the class of the node, sourceType: the type linked to its `source` input.
 export function previewUsesNewWindow({ type, sourceType }) {
-  return type === "PanoramaPreviewNode" && sourceType === "IMAGE";
+  return type === "PanoramaPreviewNode" && (sourceType === "IMAGE" || sourceType === "VIDEO");
 }
 
 export const NEW_UI_SETTING_ID = "PanoramaSuite.Editor.NewUI";

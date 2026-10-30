@@ -89,9 +89,9 @@ test("with the setting on, the Preview's read-only opening goes to the new windo
   }
 });
 
-test("the new Preview window takes the Panorama Preview node with an IMAGE source only", () => {
+test("the new Preview window takes the Panorama Preview node with an IMAGE or a VIDEO source only", () => {
   assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "IMAGE" }), true);
-  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "VIDEO" }), false);
+  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "VIDEO" }), true);
   assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "PANO_SCENE" }), false);
   assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "" }), false);
   assert.equal(previewUsesNewWindow({ type: "PanoramaStickerPreview", sourceType: "IMAGE" }), false);

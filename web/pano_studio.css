@@ -2319,7 +2319,11 @@
   outline: none;
 }
 .pano-studio-preview:fullscreen { width: 100vw; height: 100vh; max-width: none; max-height: none; border-radius: 0; }
+.pano-studio-preview { flex-direction: column; gap: var(--studio-window-gap); }
 .pano-studio-preview > .pano-studio-stage { flex: 1 1 auto; min-width: 0; }
+.pano-studio-preview-strip { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; padding: 0 4px; }
+.pano-studio-preview-seek { flex: 1 1 auto; min-width: 0; accent-color: var(--studio-fg); }
+.pano-studio-preview-time { font-variant-numeric: tabular-nums; color: var(--studio-fg-2); font-size: var(--studio-text-sm); white-space: nowrap; }
 .pano-studio-preview.is-knob-drag,
 .pano-studio-preview.is-knob-drag * { cursor: grabbing !important; }
 .pano-studio-at-close { position: absolute; right: var(--studio-float-inset); top: var(--studio-float-inset); }

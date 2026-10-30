@@ -2,6 +2,11 @@
 // is linked to an ERP made in the page, for tests/browser/preview_window.spec.js. ComfyUI is not used. ComfyUI's key
 // listeners are stood in for by listeners on window and document (window.__comfy).
 import { openPreviewWindow } from "/web_src/studio/preview_window.js";
+import { makeVideo } from "./media.js";
+
+// ?video: the source is a VIDEO (its gray goes from dark to light over its length), in the node's result.
+const VIDEO = new URLSearchParams(location.search).has("video");
+const FPS = 30;
 
 const getContext = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
@@ -33,8 +38,25 @@ for (const target of [window, document]) {
   }
 }
 try {
-  const url = await makeErp();
-  const origin = { id: 7, title: "Load Image" };
+  const url = VIDEO ? "" : await makeErp();
+  let recorded = null;
+  if (VIDEO) {
+    let start = null;
+    recorded = await makeVideo({
+      width: 256,
+      height: 128,
+      seconds: 2,
+      paint: (g, frame, width, height) => {
+        const now = performance.now();
+        if (start === null) start = now;
+        const level = Math.max(0, Math.min(255, Math.round(16 + ((now - start) / 2000) * 220)));
+        g.fillStyle = `rgb(${level}, ${level}, ${level})`;
+        g.fillRect(0, 0, width, height);
+      },
+    });
+    preview.frames = Math.round(recorded.duration * FPS);
+  }
+  const origin = { id: 7, title: VIDEO ? "Load Video" : "Load Image" };
   const node = {
     id: 21,
     title: "Panorama Preview",
@@ -42,16 +64,20 @@ try {
     inputs: [{ name: "source", link: 1 }],
     widgets: [],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
-    getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0, type: "IMAGE" } : null),
+    getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0, type: VIDEO ? "VIDEO" : "IMAGE" } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
   };
-  const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
+  const nodeOutputs = VIDEO
+    ? { 21: { pano_videos: [recorded.src], pano_video_meta: [{ fps: FPS, frames: preview.frames, duration: recorded.duration, has_audio: false }] } }
+    : {};
+  const app = { getNodeImageUrls: (target) => (target === origin && url ? [url] : []), nodeOutputs };
   let win = null;
   preview.open = async () => {
-    win = await openPreviewWindow(node, { app, api: null });
+    win = await openPreviewWindow(node, { app, api: null, storage: { getItem: () => null, setItem: () => {} } });
     return !!win;
   };
   preview.close = () => win?.close();
+  preview.playback = () => ({ ...win.playback });
   // The mean color of the stage's middle band.
   preview.sample = () => {
     const canvas = document.querySelector("[data-stage-canvas]");
