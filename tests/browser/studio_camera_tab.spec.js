@@ -142,6 +142,16 @@ test("dragging a ruler moves its scale under the mark: input on the way, change 
   events = await take();
   expect(events.slice(-2)).toEqual([{ name: "roll:input", value: -8.5 }, { name: "roll:cancel" }]);
 
+  // pointercancel during the drag (docs/editor-interaction.md "ポインタの取り消しとフォーカスの喪失"): the same as Escape,
+  // so the editor's gesture does not stay open.
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 80, cy, { steps: 4 });
+  await roll.evaluate((el) => el.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 1, bubbles: true })));
+  await page.mouse.up();
+  events = await take();
+  expect(events.slice(-2)).toEqual([{ name: "roll:input", value: -8.5 }, { name: "roll:cancel" }]);
+
   // A press without a move records nothing.
   await page.mouse.move(cx, cy);
   await page.mouse.down();
