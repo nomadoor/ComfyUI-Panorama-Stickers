@@ -41,7 +41,7 @@ Python と JS の両方の test が同じファイルを読む。Python と JS �
 - 整数のフィールド（`frame`、Clip range、`length`、Sticker の `z_index`）は、数値を `floor(x + 0.5)` で整数に丸めて保存する。fps の再基準化で Timeline frame を整数に丸めるときも、同じ `floor(x + 0.5)` を使う。Keyframe の `frame` と Clip range の `start`・`in`・`duration` は、丸めたあと ±10,000,000（`TIMELINE_FRAME_MAX`）の内に寄せる。
 - JSON の `NaN`・`Infinity`・`-Infinity` のリテラルは受け付けない（JS の `JSON.parse` と同じく、JSON として読めないものとして扱う）。
 - 不正な値は、そのフィールドの既定値に戻す。範囲外の値は範囲の端に寄せる。状態全体を捨てることはしない。
-- 旧ノードの `merge_state`・`parse_sticker_state`（`core/state.py`）も、同じ JSON の読み方（`scene_state.py` の `parse_json`。`NaN`・`Infinity` のリテラルは JSON として読めず、float にできない整数は非有限値）で読み、一つの値のために状態全体を捨てない。
+- 旧ノードの `merge_state`・`parse_sticker_state`（`core/state.py`）も、同じ JSON の読み方（`scene_state.py` の `parse_json`。`NaN`・`Infinity` のリテラルは JSON として読めず、float にできない整数は非有限値）で読み、一つの値のために状態全体を捨てない。`merge_state` は Sticker と shot の中の非有限の値をキーごと除き、読む側がそのフィールドの既定値を使う。
 - 正規化は冪等である。`load_scene_state` の結果をもう一度読むと同じ結果になる。
 - 未知のフィールドは読み込み時に捨てる。状態 v2 には、どのコードも読まない予約項目を置かない。Clip range 外の保持やループなどは、実装するときに項目を追加する。
 - 出力のキーの順序は、この文書の表の順とする（Python と JS で同じ）。

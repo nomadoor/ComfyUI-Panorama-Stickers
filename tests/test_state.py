@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from comfyui_pano_suite.core.state import DEFAULT_STATE, merge_state, normalize_coverage, parse_sticker_state
@@ -117,3 +118,50 @@ def test_a_state_with_a_nan_or_infinity_literal_is_not_json_as_in_json_parse(lit
 
     assert state["bg_color"] == DEFAULT_STATE["bg_color"]
     assert sticker is None
+
+
+def _red_png_data_url():
+    import base64
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGBA", (4, 4), (255, 0, 0, 255)).save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+@pytest.mark.parametrize("field", ["yaw_deg", "pitch_deg", "hFOV_deg", "vFOV_deg", "rot_deg", "z_index"])
+def test_a_non_finite_legacy_sticker_value_takes_its_default_and_the_sticker_still_draws(field):
+    # parse_json reads an integer too long for a double as an infinity (as JSON.parse does); the renderer reads the
+    # field with its default instead of failing on it (docs/scene-state-v2.md, 共通の規則).
+    from comfyui_pano_suite.core.stickers import render_stickers_to_rgba_erp
+
+    huge = "9" * 5000
+    sticker = {"id": "s", "asset_id": "a", "yaw_deg": 0, "pitch_deg": 0, "hFOV_deg": 40, "vFOV_deg": 40, "rot_deg": 0, "z_index": 0}
+    text = json.dumps({"assets": {"a": {"type": "dataurl", "value": _red_png_data_url()}}, "stickers": [sticker]})
+    text = text.replace(f'"{field}": {sticker[field]}', f'"{field}": {huge}')
+
+    state = merge_state(None, text)
+    canvas = render_stickers_to_rgba_erp(state, 64, 32)
+
+    assert canvas[16, 32, 3] > 0.5
+
+
+def test_a_non_finite_legacy_crop_and_shot_value_is_dropped_so_readers_use_their_default():
+    huge = "9" * 5000
+    state = merge_state(None, '{"stickers": [{"id": "s", "crop": {"x0": 0, "x1": ' + huge + '}}], '
+                              '"shots": [{"id": "c", "yaw_deg": ' + huge + ', "pitch_deg": 5}]}')
+
+    assert state["stickers"][0]["crop"] == {"x0": 0}
+    assert state["shots"][0] == {"id": "c", "pitch_deg": 5}
+
+
+@pytest.mark.parametrize("field", ["yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg"])
+def test_a_sticker_state_pose_with_an_infinite_value_is_not_read(field):
+    # The clamps of pitch and hFOV used to turn an infinity into a finite edge before the finiteness check.
+    pose = {"yaw_deg": 10, "pitch_deg": 5, "roll_deg": 0, "hFOV_deg": 30}
+    text = json.dumps({"kind": "pano_sticker_state", "version": 1, "pose": pose}).replace(
+        f'"{field}": {pose[field]}', f'"{field}": 1e400')
+
+    assert parse_sticker_state(text) is None

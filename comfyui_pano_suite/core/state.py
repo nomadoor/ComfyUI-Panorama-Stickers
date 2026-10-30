@@ -37,6 +37,21 @@ def make_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
+def _without_non_finite(value):
+    """`value` with every non-finite number key of its objects removed (also inside lists), so each reader of a
+    legacy Sticker or shot uses that field's default (`.get(key, default)`): parse_json reads an integer too long for
+    a double as an infinity, which the renderers cannot draw."""
+    if isinstance(value, dict):
+        return {
+            key: _without_non_finite(item)
+            for key, item in value.items()
+            if not (isinstance(item, float) and not math.isfinite(item))
+        }
+    if isinstance(value, list):
+        return [_without_non_finite(item) for item in value]
+    return value
+
+
 def merge_state(state_in: str | None, internal_state: str | None, fallback_preset: int = 2048, fallback_bg: str = "#00ff00") -> dict:
     state = deepcopy(DEFAULT_STATE)
     state["output_preset"] = int(fallback_preset)
@@ -56,8 +71,9 @@ def merge_state(state_in: str | None, internal_state: str | None, fallback_prese
         state["assets"] = {}
     if "stickers" not in state or not isinstance(state["stickers"], list):
         state["stickers"] = []
+    state["stickers"] = _without_non_finite(state["stickers"])
     # A shot that is not an object is dropped, as a Sticker that is not one is not drawn.
-    state["shots"] = [shot for shot in state["shots"] if isinstance(shot, dict)] if isinstance(state.get("shots"), list) else []
+    state["shots"] = [_without_non_finite(shot) for shot in state["shots"] if isinstance(shot, dict)] if isinstance(state.get("shots"), list) else []
     state["painting"] = normalize_painting_state(state.get("painting"))
     if not isinstance(state.get("painting_layer"), dict):
         state["painting_layer"] = None
@@ -129,16 +145,16 @@ def parse_sticker_state(state_raw: str | None) -> dict | None:
         return None
 
     try:
-        yaw_deg = _wrap_yaw(float(pose["yaw_deg"]))
-        pitch_deg = max(-89.9, min(89.9, float(pose["pitch_deg"])))
-        roll_deg = float(pose["roll_deg"])
-        h_fov_deg = max(0.1, min(179.0, float(pose["hFOV_deg"])))
+        values = [float(pose[key]) for key in ("yaw_deg", "pitch_deg", "roll_deg", "hFOV_deg")]
     except Exception:
         return None
-
-    values = [yaw_deg, pitch_deg, roll_deg, h_fov_deg]
+    # Finiteness before the clamps, which would turn an infinite pitch or hFOV into an edge value.
     if not all(math.isfinite(v) for v in values):
         return None
+    yaw_deg = _wrap_yaw(values[0])
+    pitch_deg = max(-89.9, min(89.9, values[1]))
+    roll_deg = values[2]
+    h_fov_deg = max(0.1, min(179.0, values[3]))
 
     out = {
         "yaw_deg": yaw_deg,
