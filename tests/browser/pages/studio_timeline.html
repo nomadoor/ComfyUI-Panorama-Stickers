@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>studio timeline</title>
+<link rel="stylesheet" href="/web/pano_studio.css">
+<style>
+  /* The page only: the theme columns and a stand-in stage above each Timeline. */
+  body { margin: 0; background: #808084; }
+  .col { padding: 12px 16px 16px; }
+  .col.dark { background: #121314; }
+  .col.light { background: #f6f6f7; }
+  .stage { height: 64px; border-radius: 12px; margin-bottom: 8px;
+    background: linear-gradient(180deg, #9fc7e6 0%, #dceaf3 46%, #e9dcc4 54%, #b9a685 100%); }
+  .area { height: 360px; }
+</style>
+<body>
+<div id="app"></div>
+<script type="module" src="./studio_timeline.js"></script>

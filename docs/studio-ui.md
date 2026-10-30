@@ -32,7 +32,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | （新しい UI、未実装）`web_src/studio/frame_layout.js`、`web_src/components/studio/StudioFrameRulers.vue` | （未作成）`tests/studio_frame_layout.test.mjs`、`tests/browser/` の場面 |
 | Add のアイコンと、画像を Add したときの Sky / World の二択、ドラッグ中の印の見た目とラベル | — | （新しい UI、未実装）`web_src/components/studio/StudioPlaceChoice.vue`、`web_src/studio/landing.js`（着く所は `docs/space-and-view.md`） | （未作成）`tests/browser/` の場面 |
 | 読み込み中と空の画面、一行の知らせ | — | （新しい UI、未実装）`web_src/components/studio/StudioNotice.vue` | （未作成）`tests/browser/` の場面 |
-| タイムラインのバーの並びと、行の頭の並び | — | （新しい UI、未実装）`web_src/components/studio/StudioTimelineBar.vue` | （未作成）`tests/browser/` の場面 |
+| タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
 | ショートカットの一覧の中身 | — | （新しい UI、未実装）`web_src/components/studio/StudioShortcuts.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
 | 閉じ方 | — | （新しい UI、未実装）`web_src/components/studio/StudioEditor.vue`、下の部品 `pano_node_bridge.js` | （未作成）`tests/studio_ui_model.test.mjs` |
 | Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |

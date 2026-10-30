@@ -319,3 +319,27 @@ export function clusterFrames(frames, minGap) {
   for (const pin of pins) pin.frame = (pin.frames[0] + pin.frames[pin.frames.length - 1]) / 2;
   return pins;
 }
+
+// The id of the painting's Timeline row.
+export const PAINTING_ROW = "painting";
+// The id of the Timeline row of the node's own background (state.background).
+export const BACKGROUND_ROW = "background";
+
+// Whether the painting holds anything (strokes, mask strokes or rasters); its Timeline row shows while it does.
+export function hasPainting(painting) {
+  return painting.paint.strokes.length > 0 || painting.mask.strokes.length > 0 || painting.raster_objects.length > 0;
+}
+
+// The name each Lane has on its Timeline line.
+export const LANE_LABELS = {
+  position: "Position",
+  rotation: "Rotation",
+  fov: "FOV",
+  curve: "Lens curve",
+  lens: "Lens",
+  scale: "Scale",
+  direction: "Direction",
+  roll: "Roll",
+  size: "Size",
+  opacity: "Opacity",
+};
