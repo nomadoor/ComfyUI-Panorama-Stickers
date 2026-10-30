@@ -64,6 +64,9 @@ export const ICON = Object.freeze({
   ease_in_out: "ease_in_out",
   ease_in: "ease_in",
   ease_out: "ease_out",
+  gizmo_move: "gizmo_move",
+  gizmo_rotate: "gizmo_rotate",
+  gizmo_scale: "gizmo_scale",
 });
 
 const parseAttrs = (raw) => {
@@ -143,6 +146,10 @@ const TABLER_BODIES = {
   sphere: { name: "sphere", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 12c0 1.657 4.03 3 9 3s9 -1.343 9 -3' /><path d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0' />` },
   hand: { name: "hand-stop", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 13v-7.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M11 5.5v-2a1.5 1.5 0 1 1 3 0v8.5' /><path d='M14 5.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M17 7.5a1.5 1.5 0 0 1 3 0v8.5a6 6 0 0 1 -6 6h-2h.208a6 6 0 0 1 -5.012 -2.7a69.74 69.74 0 0 1 -.196 -.3c-.312 -.479 -1.407 -2.388 -3.286 -5.728a1.5 1.5 0 0 1 .536 -2.022a1.867 1.867 0 0 1 2.28 .28l1.47 1.47' />` },
   arrows_vertical: { name: "arrows-vertical", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 7l4 -4l4 4' /><path d='M8 17l4 4l4 -4' /><path d='M12 3l0 18' />` },
+  // The new UI's gizmo modes on the bar at the bottom center (docs/studio-ui.md "下の中央のバー"; specimen-11.html).
+  gizmo_move: { name: "arrows-move", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M18 9l3 3l-3 3' /><path d='M15 12h6' /><path d='M6 9l-3 3l3 3' /><path d='M3 12h6' /><path d='M9 18l3 3l3 -3' /><path d='M12 15v6' /><path d='M15 6l-3 -3l-3 3' /><path d='M12 3v6' />` },
+  gizmo_rotate: { name: "rotate-clockwise-2", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 16h4v4' /><path d='M19.458 11.042c.86 -2.366 .722 -4.58 -.6 -5.9c-2.272 -2.274 -7.185 -1.045 -10.973 2.743c-3.788 3.788 -5.017 8.701 -2.744 10.974c2.227 2.226 6.987 1.093 10.74 -2.515' />` },
+  gizmo_scale: { name: "maximize", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 8v-2a2 2 0 0 1 2 -2h2' /><path d='M4 16v2a2 2 0 0 0 2 2h2' /><path d='M16 4h2a2 2 0 0 1 2 2v2' /><path d='M16 20h2a2 2 0 0 0 2 -2v-2' />` },
   // The new UI's Easing presets (docs/studio-ui.md "Easing のパネル"): each preset's curve from the bottom left to the top
   // right, drawn in the Tabler stroke style. The curves are the presets' cubic-beziers (pano_timeline.js EASING_PRESETS)
   // on a 16-unit square; Hold stays, then steps up at the end.

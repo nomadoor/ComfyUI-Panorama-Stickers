@@ -10,10 +10,11 @@
 //
 // The selection is the Timeline's { row, keys } (timeline_model.js): `row` the selected object's row id ("camera" or a
 // Sticker id), `keys` the selected Keyframes. The inspector reads it through inspectorSelection().
-import { createEditorHistory, editorStateWrite, restoredHistoryState } from "../pano_editor_state.js";
+import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
 import { rebaseSceneState } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
+import { ROW_LANES } from "./inspector_model.js";
 import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
 
 const EMPTY_SELECTION = Object.freeze({ row: null, keys: [] });
@@ -138,6 +139,108 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     return { changed: true, notice: null };
   }
 
+  // --- The stage's edits of the selected object (docs/studio-ui.md "下の中央のバー", docs/editor-interaction.md
+  // "`world` の Sticker の操作"): a drag on the stage (the gizmo, a sky image's handles) and the bar's buttons.
+
+  // A drag's change: apply(draft) changes a copy of the state the drag started from (each move starts again from it,
+  // so a move writes where the pointer is, not on top of the move before) and returns whether it changed anything.
+  // The first change keeps that start, which cancelGesture() puts back.
+  function gesture(apply) {
+    if (readOnly) return result(false);
+    const base = gestureBase ?? state;
+    const draft = structuredClone(base);
+    if (!apply(draft)) return result(false);
+    gestureBase = base;
+    state = draft;
+    return result(true, { stopPlayback: true });
+  }
+
+  // A drag ends: what it changed is one Undo step; a drag that changed nothing writes none.
+  function commitGesture() {
+    if (!gestureBase) return result(false);
+    record();
+    return result(true, { history: true });
+  }
+
+  // A drag is given up (Escape, the window lost the focus): the state it started from comes back, with no step.
+  function cancelGesture() {
+    if (!gestureBase) return result(false);
+    state = gestureBase;
+    gestureBase = null;
+    return result(true, { cancel: true });
+  }
+
+  const selectedSticker = () => state.stickers.find((item) => item.id === selection.row) ?? null;
+
+  // An edit of the selected Sticker as one Undo step: edit(draft, sticker) changes the copy and returns whether it did.
+  function editSelected(edit) {
+    const sticker = selectedSticker();
+    if (readOnly || !sticker || gestureBase) return result(false);
+    const draft = structuredClone(state);
+    const copy = draft.stickers.find((item) => item.id === sticker.id);
+    if (!edit(draft, copy)) return result(false);
+    state = draft;
+    keepSelection();
+    record();
+    return result(true, { history: true });
+  }
+
+  // Lock: the selected Sticker's `locked` turns over (the Camera's waits for `camera.locked` in the loaders).
+  function toggleLock() {
+    return editSelected((draft, sticker) => {
+      sticker.locked = !sticker.locked;
+      return true;
+    });
+  }
+
+  // Duplicate: a copy of the selected Sticker under a new id, selected. A sky image's copy is turned 8° to the right
+  // and goes in front (pano_editor_state.js duplicateSceneSticker); a World object's copy stays where it is, for the
+  // gizmo to move. Not for a port Sticker or an upstream element.
+  function duplicateSelected() {
+    let copyId = null;
+    const outcome = editSelected((draft, sticker) => {
+      if (sticker.source.kind === "port" || isUpstreamSticker(sticker)) return false;
+      const id = takeStickerId(draft);
+      const front = Math.max(0, ...draft.stickers.map((item) => Number(item.z_index || 0))) + 1;
+      const copy = sticker.placement === "sky" ? duplicateSceneSticker(sticker, id, front) : { ...structuredClone(sticker), id };
+      draft.stickers.push(copy);
+      copyId = id;
+      return true;
+    });
+    if (copyId) selection = { row: copyId, keys: [] };
+    return outcome;
+  }
+
+  // Bring to front / Send to back (`where` "front" or "back"): the selected sky image's place among the sky images,
+  // which are numbered again in their order.
+  function orderSelected(where) {
+    return editSelected((draft, sticker) => {
+      if (sticker.placement !== "sky" || sticker.locked) return false;
+      const sky = draft.stickers.filter((item) => item.placement === "sky").sort((a, b) => Number(a.z_index || 0) - Number(b.z_index || 0));
+      const rest = sky.filter((item) => item !== sticker);
+      const order = where === "front" ? [...rest, sticker] : [sticker, ...rest];
+      const before = sky.map((item) => item.z_index);
+      order.forEach((item, index) => {
+        item.z_index = index;
+      });
+      return sky.some((item, index) => item.z_index !== before[index]);
+    });
+  }
+
+  // Back to source: every row of the selected port Sticker or upstream element back to the input's or the upstream's
+  // value (each row's reset of the inspector, inspector_actions.js), as one Undo step. `context` is the inspector's.
+  function revertSelected(context = {}) {
+    return editSelected((draft, sticker) => {
+      if (sticker.locked || !(sticker.source.kind === "port" || isUpstreamSticker(sticker))) return false;
+      let changed = false;
+      for (const row of Object.keys(ROW_LANES[sticker.placement] ?? {})) {
+        const outcome = applyInspectorEdit(draft, { type: "reset", target: { kind: "sticker", id: sticker.id }, row }, { ...context, readOnly });
+        changed = outcome.changed || changed;
+      }
+      return changed;
+    });
+  }
+
   // Escape's steps 5 and 6 of docs/studio-ui.md "閉じ方": the Keyframe selection, then the object's. Returns what it
   // let go ("keys", "object"), or null when nothing is selected (the editor closes then).
   function escape() {
@@ -182,6 +285,20 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     select(next) {
       selection = { row: next?.row ?? null, keys: next?.keys ?? [] };
     },
+    // The stage selects an object (null lets the selection go): the Keyframes selected stay with the same object only.
+    selectObject(row) {
+      const next = row && (row === "camera" || state.stickers.some((item) => item.id === row)) ? row : null;
+      if (next === selection.row) return false;
+      selection = { row: next, keys: [] };
+      return true;
+    },
+    gesture,
+    commitGesture,
+    cancelGesture,
+    toggleLock,
+    duplicateSelected,
+    orderSelected,
+    revertSelected,
     applyInspector,
     applyTimeline,
     deleteSelectedObject,
