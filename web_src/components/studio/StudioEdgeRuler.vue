@@ -3,15 +3,20 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { rulerDragValue, rulerMarks } from "../../studio/frame_layout.js";
 import { FINE_FACTOR, roundValue } from "../../studio/ui_drag.js";
 import StudioKeyDot from "./StudioKeyDot.vue";
+import StudioResetButton from "./StudioResetButton.vue";
 
 // An edge ruler of the Camera tab (docs/studio-ui.md "Camera タブ"; looks: docs/design.md): FOV on the frame's left,
-// Lens on its right (vertical), Roll under it (horizontal). A head with the name, the value and the Keyframe dot, and a
-// scale with numbers under a fixed middle mark. Dragging the scale moves it under the mark (the value under the mark is
-// the value); Shift makes the movement finer; Escape during the drag puts the value back. Arrow keys step it. Drawn in
-// white over the dimmed picture outside the frame.
+// Lens on its right (vertical), Roll under it (horizontal). The element is the tick strip (the parent sizes and places
+// it: frame_layout.js rulerStrips), with numbers under a fixed middle mark; the head (the name, the value in a fixed
+// width, the Keyframe dot and the reset) sits outside the strip, above a vertical one and left of Roll, so it never
+// moves or shortens the strip. Dragging the scale moves it under the mark (the value under the mark is the value);
+// Shift makes the movement finer; Escape during the drag puts the value back. The strip takes the pointer on a wider
+// transparent band than its ticks. Arrow keys step it; the focus looks as everywhere in the editor (docs/design.md
+// "フォーカス"), its fill lighter over the dim. Drawn in white over the dimmed picture outside the frame.
 //
 // Presentational, like StudioSlider: `value` in; `input` (each change), `change` (once when a drag or a key press ends
-// with a different value: one Undo step), `cancel`, and `key` (the Keyframe dot pressed) out.
+// with a different value: one Undo step), `cancel`, `key` (the Keyframe dot pressed) and `reset` (the reset pressed)
+// out.
 const props = defineProps({
   orientation: { type: String, default: "vertical" },
   // Vertical: the side of the frame it sits on ("left" or "right"); its numbers go on the outer side.
@@ -29,12 +34,16 @@ const props = defineProps({
   step: { type: Number, default: 0 },
   name: { type: String, default: "" },
   valueText: { type: String, default: "" },
+  // The value text's width in digits (frame_layout.js CAMERA_RULERS valueChars), enough for the widest value.
+  valueChars: { type: Number, default: 4 },
+  // The reset is grayed (not hidden) while the value is where it returns to.
+  atDefault: { type: Boolean, default: false },
   // The Keyframe dot: "none", "has", "now" (StudioKeyDot), or "" for no dot.
   keyState: { type: String, default: "none" },
   disabled: { type: Boolean, default: false },
   tip: { type: String, default: "" },
 });
-const emit = defineEmits(["input", "change", "cancel", "key"]);
+const emit = defineEmits(["input", "change", "cancel", "key", "reset"]);
 
 const vertical = computed(() => props.orientation !== "horizontal");
 const track = ref(null);
@@ -73,7 +82,7 @@ function onPointerDown(event) {
   if (props.disabled || event.button !== 0 || drag) return;
   event.preventDefault();
   event.stopPropagation();
-  track.value.focus();
+  track.value.focus({ preventScroll: true });
   drag = { pointerId: event.pointerId, start: props.value, sent: props.value, raw: props.value, at: coord(event) };
   track.value.setPointerCapture?.(event.pointerId);
   window.addEventListener("keydown", onDragKeydown, true);
@@ -146,11 +155,6 @@ onBeforeUnmount(() => {
     :title="tip || null"
     :data-ruler="name"
   >
-    <div class="pano-studio-edge-ruler-cap pano-studio-cap">
-      <span class="pano-studio-edge-ruler-name">{{ name }}</span>
-      <b class="pano-studio-edge-ruler-value" data-ruler-value>{{ valueText }}</b>
-      <StudioKeyDot v-if="keyState" :state="keyState" :disabled="disabled" :label="`${name} Keyframe`" @toggle="emit('key')" />
-    </div>
     <div
       ref="track"
       class="pano-studio-edge-ruler-track"
@@ -163,17 +167,26 @@ onBeforeUnmount(() => {
       :aria-valuemin="Number.isFinite(min) ? min : null"
       :aria-valuemax="Number.isFinite(max) ? max : null"
       :aria-disabled="disabled ? 'true' : null"
+      data-ruler-track
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="endDrag"
       @keydown="onKeydown"
     >
-      <div class="pano-studio-edge-ruler-scale">
+      <div class="pano-studio-edge-ruler-scale" data-ruler-ticks>
         <i v-for="(tick, index) in marks.ticks" :key="index" class="pano-studio-edge-ruler-tick" :style="along(tick.at)" />
       </div>
       <span v-for="label in marks.labels" :key="label.text" class="pano-studio-edge-ruler-num" :style="along(label.at)">{{ label.text }}</span>
-      <i class="pano-studio-edge-ruler-mark" />
+      <i class="pano-studio-edge-ruler-mark" data-ruler-mark />
+    </div>
+    <div class="pano-studio-edge-ruler-head" data-ruler-head>
+      <span class="pano-studio-edge-ruler-name pano-studio-cap">{{ name }}</span>
+      <b class="pano-studio-edge-ruler-value pano-studio-cap" :style="{ width: `${valueChars}ch` }" data-ruler-value>{{ valueText }}</b>
+      <span class="pano-studio-edge-ruler-acts">
+        <StudioKeyDot v-if="keyState" :state="keyState" :disabled="disabled" :label="`${name} Keyframe`" @toggle="emit('key')" />
+        <StudioResetButton :at-default="disabled || atDefault" :label="`Reset ${name}`" @reset="emit('reset')" />
+      </span>
     </div>
   </div>
 </template>

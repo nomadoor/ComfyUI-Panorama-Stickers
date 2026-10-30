@@ -20,15 +20,12 @@ export const LINE_TEXT = Object.freeze({
 // ui: the stage's and the editor's report (stage.js stageUi() with `background` and `empty`): `notice` the text of an
 // operation that did nothing (null without one), `view` "loading" | "ready" | "failed", `background` "none" |
 // "loading" | "ready" | "failed", `empty`; and add_files.js's `adding` (a placed 3D file is loading) and `addWarning`
-// (why the last file could not be placed, or null). timecode: the Camera tab's timecode text (null outside it), which
-// hides only while a notice or a loading line shows (docs/studio-ui.md "画面の区画"). Returns { kind, text }; text ""
-// shows nothing; kind "timecode" is shown as the timecode, without a mark.
-export function topLine(ui, { timecode = null } = {}) {
+// (why the last file could not be placed, or null). Returns { kind, text }; text "" shows nothing.
+export function topLine(ui) {
   if (ui.notice) return { kind: "stopped", text: String(ui.notice) };
   if (ui.view === "loading") return { kind: "loading", text: LINE_TEXT.viewLoading };
   if (ui.background === "loading") return { kind: "loading", text: LINE_TEXT.backgroundLoading };
   if (ui.adding) return { kind: "loading", text: LINE_TEXT.addLoading };
-  if (timecode) return { kind: "timecode", text: timecode };
   if (ui.view === "failed") return { kind: "warning", text: LINE_TEXT.viewFailed };
   if (ui.background === "failed") return { kind: "warning", text: LINE_TEXT.backgroundFailed };
   if (ui.addWarning) return { kind: "warning", text: String(ui.addWarning) };

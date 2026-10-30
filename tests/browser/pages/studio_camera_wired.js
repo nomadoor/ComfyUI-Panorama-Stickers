@@ -105,6 +105,8 @@ try {
   studio.session = editor.session;
   studio.stage = () => editor.stage();
   studio.node = node;
+  // What the editor keeps per browser (studio/layout.js), parsed.
+  studio.kept = (key) => JSON.parse(storage.get(key) ?? "null");
   studio.close = () => editor.close();
   studio.rendererOf = () => {
     const canvas = document.querySelector("[data-stage-canvas]");

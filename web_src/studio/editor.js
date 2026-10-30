@@ -174,8 +174,6 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     animations: {},
     // The stage's tab: "3d" or "camera" (docs/studio-ui.md "Camera タブ"). The 3D tab each time the editor opens.
     tab: "3d",
-    // The Timeline's span in frames (the Camera tab's timecode, timeline_model.js spanOf).
-    span: 1,
   });
   const timelineCtx = () => ({ state: session.state, upstream: [], media: view.media });
 
@@ -196,7 +194,6 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   function sync() {
     view.state = session.state;
-    view.span = spanOf(timelineCtx());
     view.selection = session.selection;
     view.canUndo = session.canUndo;
     view.canRedo = session.canRedo;
@@ -241,7 +238,6 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     place: () => (backgroundLinked ? backgroundPlace(session.state.background.clip) : null),
     onFrame: (frame) => {
       view.playhead = frame;
-      view.span = spanOf(timelineCtx());
       world.camera = outputView(session.state, frame).position;
       redraw();
     },

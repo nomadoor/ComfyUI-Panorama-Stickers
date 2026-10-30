@@ -8,8 +8,8 @@ import { buildInspectorModel } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
+import { trackInputMode } from "../../studio/input_modality.js";
 import { inspectorSelection } from "../../studio/session.js";
-import { timecode } from "../../studio/timeline_model.js";
 import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
 import StudioDropMarker from "./StudioDropMarker.vue";
 import StudioCameraFrame from "./StudioCameraFrame.vue";
@@ -50,11 +50,14 @@ const canvas = ref(null);
 const overlay = ref(null);
 const timeline = ref(null);
 let stage = null;
+// The focus look shows only while the keyboard works the editor (docs/design.md "フォーカス").
+let stopInputMode = null;
 
 // The inspector's selection follows the Timeline's (studio/session.js).
 const selected = computed(() => inspectorSelection(props.view.selection));
 
 onMounted(() => {
+  stopInputMode = trackInputMode(root.value);
   stage = props.controller.onStage({ canvas: canvas.value, overlay: overlay.value, root: root.value }) ?? null;
   props.controller.onTimeline({ handleDelete: () => timeline.value?.handleDelete() ?? false });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
@@ -63,14 +66,13 @@ onMounted(() => {
   window.addEventListener("resize", fitTimeline);
 });
 onBeforeUnmount(() => {
+  stopInputMode?.();
   window.removeEventListener("resize", fitTimeline);
 });
 
-// --- The top-center line and its kind (studio/notice_line.js); in the Camera tab the timecode is one of them.
+// --- The top-center line and its kind (studio/notice_line.js).
 const cameraTab = computed(() => props.view.tab === "camera");
-const line = computed(() => topLine(props.ui, {
-  timecode: cameraTab.value ? `${timecode(props.view.playhead, props.view.state.timeline.fps)} · ${props.view.playhead} / ${props.view.span}` : null,
-}));
+const line = computed(() => topLine(props.ui));
 
 // --- A click on the dimmed page behind the frame closes the editor like ✕ (studio/backdrop.js).
 const backdrop = createBackdropClose();
@@ -82,7 +84,8 @@ function onBackdropUp(event) {
 const bar = computed(() => (cameraTab.value ? null : selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly })));
 
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
-// with the edge rulers, which are the Camera card's rows and send the inspector's edits.
+// with the edge rulers, which are the Camera card's rows and send the inspector's edits. Each tick strip has its fixed
+// length, centered on its edge (frame_layout.js rulerStrips, from the frame's slot).
 const CAMERA_TAB_TIP = "Not available in the Camera view";
 const camera = computed(() => cameraOf(props.view.state));
 const panorama = computed(() => camera.value.projection === "erp");
@@ -99,6 +102,9 @@ function onRuler(which, event, value) {
   if (event !== "input") lensStart = null;
   if (edit) props.controller.inspectorEdit(edit);
 }
+function stripStyle(place, vertical) {
+  return vertical ? { top: `${place.offset}px`, height: `${place.length}px` } : { left: `${place.offset}px`, width: `${place.length}px` };
+}
 // The stage's knobs: nothing moves in Panorama mode, nor a locked Camera or a read-only editor's in the Camera tab.
 const navOff = computed(() => {
   if (!cameraTab.value) return "";
@@ -112,7 +118,8 @@ watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
 
 // --- The Output window's picture (docs/studio-ui.md "Output の小窓"): the stage draws the Camera's output on these
 // canvases while the window is open (a "bitmaprenderer" one in Frame mode, the live ERP's 2D one in Panorama mode).
-// The window stays in the page while folded (it shrinks by a transform), so it says itself whether it is open.
+// The window stays in the page while folded (it shrinks by a transform), so it says itself whether it is open. The
+// Camera tab folds it and keeps it folded (its picture is the stage's), without changing what it keeps.
 const outputFrame = ref(null);
 const outputErp = ref(null);
 const outputOpen = ref(false);
@@ -217,7 +224,7 @@ function setCollapsed(value) {
           <StudioDropMarker v-if="ui.drop" :mark="ui.drop" />
 
           <StudioCameraFrame v-if="cameraTab && rulers" :aspect="frameAspect" @rect="(rect) => controller.frameRect?.(rect)">
-            <template #default="{ rollWidth }">
+            <template #default="{ rulers: place }">
               <canvas v-if="panorama" ref="erpCanvas" class="pano-studio-camera-erp" data-erp aria-hidden="true" />
               <StudioEdgeRuler
                 class="pano-studio-at-edge-left"
@@ -236,6 +243,10 @@ function setCollapsed(value) {
                 :key-state="rulers.fov.keyState"
                 :disabled="rulers.fov.disabled"
                 :tip="rulers.fov.tip"
+                :value-chars="rulers.fov.scale.valueChars"
+                :at-default="rulers.fov.atDefault"
+                :style="stripStyle(place.vertical, true)"
+                @reset="onRuler('fov', 'reset')"
                 @input="(value) => onRuler('fov', 'input', value)"
                 @change="(value) => onRuler('fov', 'change', value)"
                 @cancel="onRuler('fov', 'cancel')"
@@ -258,6 +269,10 @@ function setCollapsed(value) {
                 :key-state="rulers.lens.keyState"
                 :disabled="rulers.lens.disabled"
                 :tip="rulers.lens.tip"
+                :value-chars="rulers.lens.scale.valueChars"
+                :at-default="rulers.lens.atDefault"
+                :style="stripStyle(place.vertical, true)"
+                @reset="onRuler('lens', 'reset')"
                 @input="(value) => onRuler('lens', 'input', value)"
                 @change="(value) => onRuler('lens', 'change', value)"
                 @cancel="onRuler('lens', 'cancel')"
@@ -265,7 +280,7 @@ function setCollapsed(value) {
               />
               <StudioEdgeRuler
                 class="pano-studio-at-edge-bottom"
-                :style="{ width: `${rollWidth}px` }"
+                :style="stripStyle(place.roll, false)"
                 orientation="horizontal"
                 :name="rulers.roll.name"
                 :value="rulers.roll.value"
@@ -280,6 +295,9 @@ function setCollapsed(value) {
                 :key-state="rulers.roll.keyState"
                 :disabled="rulers.roll.disabled"
                 :tip="rulers.roll.tip"
+                :value-chars="rulers.roll.scale.valueChars"
+                :at-default="rulers.roll.atDefault"
+                @reset="onRuler('roll', 'reset')"
                 @input="(value) => onRuler('roll', 'input', value)"
                 @change="(value) => onRuler('roll', 'change', value)"
                 @cancel="onRuler('roll', 'cancel')"
@@ -302,11 +320,10 @@ function setCollapsed(value) {
             <StudioPlaceChoice @choose="(side) => controller.place(side)" @cancel="controller.cancelPlace()" />
           </div>
           <div class="pano-studio-at-notice">
-            <span v-if="line.kind === 'timecode'" class="pano-studio-timecode pano-studio-cap" data-timecode>{{ line.text }}</span>
-            <StudioNotice v-else :text="line.text" :kind="line.kind" />
+            <StudioNotice :text="line.text" :kind="line.kind" />
           </div>
           <div class="pano-studio-at-output">
-            <StudioOutputPreview :storage="storage" :ratio="frameAspect" @open="(open) => (outputOpen = open)">
+            <StudioOutputPreview :storage="storage" :ratio="frameAspect" :suspended="cameraTab" :suspended-tip="CAMERA_TAB_TIP" @open="(open) => (outputOpen = open)">
               <canvas v-if="!panorama" ref="outputFrame" class="pano-studio-output-picture" data-output-picture="frame" aria-hidden="true" />
               <canvas v-else ref="outputErp" class="pano-studio-output-picture" data-output-picture="erp" aria-hidden="true" />
             </StudioOutputPreview>

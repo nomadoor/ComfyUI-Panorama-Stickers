@@ -79,3 +79,11 @@ export function loadOutputWindow(storage) {
 export function saveOutputWindow(storage, { width, collapsed }) {
   write(storage, KEYS.output, { width: Math.round(width), collapsed: !!collapsed });
 }
+
+// How the Output window shows (docs/studio-ui.md "Output の小窓"): `collapsed` is what the viewer chose and the browser
+// keeps; `suspended` is the Camera tab, which folds it, makes its fold button inert and stops its picture, without
+// touching `collapsed`, so leaving the tab brings back the viewer's choice. { folded, open (its picture is drawn),
+// foldable }.
+export function outputWindowView({ collapsed, suspended = false }) {
+  return { folded: !!collapsed || !!suspended, open: !collapsed && !suspended, foldable: !suspended };
+}

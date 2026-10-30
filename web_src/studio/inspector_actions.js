@@ -7,7 +7,7 @@
 //   { type: "field", target, field, value, phase: "input" | "commit" | "cancel", start? }  a value box or slider
 //   { type: "choice", target, field, value }       the Camera's Mode (projection) and Range (erp_range), a 3D's Clip
 //   { type: "key", target, row }                   a row's Keyframe dot
-//   { type: "reset", target, row }                 a row's reset
+//   { type: "reset", target, row }                 a row's reset (the Camera's "roll": its Roll alone)
 //   { type: "set-ground" }                         Set ground: the shell starts picking the ground (no state change)
 //   { type: "easing", keyframes, easing, phase }   a preset, the curve or the bezier text of the Easing panel
 //   { type: "easing-reset", keyframes }            the Easing panel's reset
@@ -139,6 +139,9 @@ function laneDefault(list, name) {
   return list.find(([lane]) => lane === name)[1](undefined);
 }
 
+// The Roll the Camera tab's Roll reset returns to: the rotation Lane's default (frame_layout.js grays the reset there).
+export const CAMERA_ROLL_DEFAULT = laneDefault(CAMERA_LANES, "rotation").roll_deg;
+
 // An upstream element's reset: the override of the row's Lanes goes, so it inherits them again, and its working copy
 // shows the upstream value at once.
 function resetUpstream(state, sticker, lanes, upstream) {
@@ -167,6 +170,11 @@ function applyReset(state, found, row, context) {
     const camera = editedCamera(state);
     if (row === "aspect") {
       camera.aspect = DEFAULT_CAMERA_RAW.aspect;
+      return { done: true };
+    }
+    // The Camera tab's Roll ruler resets the Roll alone; the Rotation row's reset returns Yaw and Pitch too.
+    if (row === "roll") {
+      setCameraField(camera, playhead, "roll_deg", CAMERA_ROLL_DEFAULT);
       return { done: true };
     }
     const lanes = rowLanes(found, row);

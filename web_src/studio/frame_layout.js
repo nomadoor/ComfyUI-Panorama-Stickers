@@ -1,22 +1,27 @@
 // The Camera tab's layout (docs/studio-ui.md "Camera タブ"; values: docs/design.md "大きさ"): where the frame sits in the
-// stage, how wide the Roll ruler is, and the edge rulers' marks and drag. Pure functions;
+// stage, where the edge rulers' tick strips sit on it, and their marks, drag, resets. Pure functions;
 // components/studio/StudioCameraFrame.vue and StudioEdgeRuler.vue use them.
+import { CAMERA_ROLL_DEFAULT } from "./inspector_actions.js";
 import { FINE_FACTOR } from "./ui_drag.js";
 
-// The stage's margins around the area the frame is fitted into, in CSS px. Left and right keep the edge rulers' numbers
-// clear of the left column and the view knobs (docs/design.md "大きさ": 16 + 46 + 12 + 61 + 14, rounded up to 150).
-export const CAMERA_FRAME_MARGIN = Object.freeze({ left: 150, right: 150, top: 60, bottom: 84 });
-// The Roll ruler under the frame: this fraction of the frame's width, at least ROLL_RULER_MIN px.
-export const ROLL_RULER_FRACTION = 0.7;
-export const ROLL_RULER_MIN = 380;
+// The stage's margins around the area the frame is fitted into, in CSS px. The top keeps 30px clear under the tabs
+// (16 + 42 + 30); left and right keep the edge rulers' numbers clear of the left column and the view knobs
+// (docs/design.md "大きさ": 16 + 46 + 12 + 61 + 14, rounded up to 150).
+export const CAMERA_FRAME_MARGIN = Object.freeze({ left: 150, right: 150, top: 88, bottom: 84 });
 
 // The edge rulers' scales: px per unit, the units between two small ticks, between two numbered ticks, and the
-// decimals of the numbers. Provisional (chosen against frame-4.html: a small tick every 8px, a number every 80px).
+// decimals of the numbers (provisional, chosen against frame-4.html: a small tick every 8px, a number every 80px);
+// `length` the tick strip's fixed length in px, and `valueChars` the width of the value text in digits, enough for
+// the widest value (FOV "360°", Lens "0.00", Roll "-180°"), so the head never changes width (docs/design.md "大きさ").
 export const CAMERA_RULERS = Object.freeze({
-  fov: Object.freeze({ unitPx: 4, minor: 2, major: 20, precision: 0 }),
-  lens: Object.freeze({ unitPx: 400, minor: 0.02, major: 0.2, precision: 2 }),
-  roll: Object.freeze({ unitPx: 8, minor: 1, major: 10, precision: 0 }),
+  fov: Object.freeze({ unitPx: 4, minor: 2, major: 20, precision: 0, length: 200, valueChars: 4 }),
+  lens: Object.freeze({ unitPx: 400, minor: 0.02, major: 0.2, precision: 2, length: 200, valueChars: 4 }),
+  roll: Object.freeze({ unitPx: 8, minor: 1, major: 10, precision: 0, length: 320, valueChars: 5 }),
 });
+// The room a vertical ruler's head (name, value, Keyframe dot and reset, above the strip: 44px) takes, with its 8px gap: a
+// strip shorter than the frame's height by this much on both ends keeps the head inside the frame's height, clear of
+// the tabs.
+export const RULER_HEAD_ROOM = 52;
 
 // The frame's box in a stage of width x height: the largest box of `aspect` (width / height) inside the stage less
 // the margins, centered in that area, in whole px. Empty (zero size) when the area is.
@@ -32,8 +37,21 @@ export function frameRect(width, height, aspect, margin = CAMERA_FRAME_MARGIN) {
   return { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) };
 }
 
-export function rollRulerWidth(frameWidth) {
-  return Math.max(ROLL_RULER_MIN, frameWidth * ROLL_RULER_FRACTION);
+// Where the edge rulers' tick strips sit on the frame `rect` (frameRect's): each strip is its fixed length
+// (CAMERA_RULERS), centered on the edge, shorter only when the edge is (a vertical strip also leaves RULER_HEAD_ROOM at
+// both ends). `offset` is the strip's start from the frame's top (vertical) or left (Roll), in px, so the strip's
+// middle is the edge's middle. The scale (px per unit) does not change with the length.
+export function rulerStrips(rect, rulers = CAMERA_RULERS, headRoom = RULER_HEAD_ROOM) {
+  // `room`: what the strip may not take at each end of the edge.
+  const fit = (length, edge, room = 0) => {
+    const size = Math.max(0, Math.min(length, edge - 2 * room));
+    // Whole px, so the ticks stay sharp: the strip's middle is within half a px of the edge's.
+    return { length: size, offset: Math.round((edge - size) / 2) };
+  };
+  return {
+    vertical: fit(Math.max(rulers.fov.length, rulers.lens.length), rect.height, headRoom),
+    roll: fit(rulers.roll.length, rect.width),
+  };
 }
 
 const EPSILON = 1e-6;
@@ -79,8 +97,10 @@ export function rulerDragValue(start, deltaPx, unitPx, { fine = false, min = -In
 // FOV ruler is its H FOV row, Lens its Lens row, Roll the Roll of its Rotation row, so their values, ranges, the
 // Keyframe dots' states (docs/timeline-ui.md "インスペクタの Keyframe のポチ": `fov`, `curve`, `rotation`) and what is
 // grayed (Panorama mode, a locked Camera, a read-only editor) are the card's. Each ruler: { name, row, field, value,
-// min, max, precision, valueText, keyState, disabled, tip, scale (CAMERA_RULERS') }; `lensStart` is the Lens row's
-// (a κ edit keeps the image's center scale from where it began). Null without the Camera card.
+// min, max, precision, valueText, keyState, disabled, tip, scale (CAMERA_RULERS'), reset (the row its reset sends:
+// the inspector's H FOV and Lens rows; Roll's own "roll", which leaves Yaw and Pitch), atDefault (its reset is grayed) };
+// `lensStart` is the Lens row's (a κ edit keeps the image's center scale from where it began). Null without the
+// Camera card.
 export const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
 
 export function cameraRulers(card) {
@@ -98,13 +118,16 @@ export function cameraRulers(card) {
       keyState: source.keyState ?? "",
       disabled: !!source.disabled,
       tip: source.disabled ? source.tip : "",
+      reset: source.id,
+      atDefault: !!source.disabled || !!source.atDefault,
       ...extra,
     };
   };
   const hfov = row("hfov");
   const lens = row("lens");
   const rotation = row("rotation");
-  const roll = ruler("Roll", rotation, "roll_deg", { ...ROLL_RULER_RANGE, precision: 1, scale: CAMERA_RULERS.roll });
+  const roll = ruler("Roll", rotation, "roll_deg", { ...ROLL_RULER_RANGE, precision: 1, scale: CAMERA_RULERS.roll, reset: "roll" });
+  roll.atDefault = roll.disabled || Math.abs(roll.value - CAMERA_ROLL_DEFAULT) < 1e-9;
   return {
     target: card.target,
     fov: ruler("FOV", hfov, "hFOV_deg", { precision: 1, scale: CAMERA_RULERS.fov, valueText: `${rulerLabel(hfov.fields[0].value, 0)}°` }),
@@ -115,11 +138,12 @@ export function cameraRulers(card) {
 
 // The inspector edit (inspector_actions.js applyInspectorEdit) of a ruler's event: "input" (a value on the way),
 // "change" (the drag or the key press ended: one Undo step), "cancel" (Escape, or a press that moved nothing), "key"
-// (its Keyframe dot). `lensStart` is the Lens row's lensStart where the drag began.
+// (its Keyframe dot), "reset" (its reset: one Undo step). `lensStart` is the Lens row's lensStart where the drag began.
 export function rulerEdit(rulers, which, event, value, lensStart = null) {
   const ruler = rulers[which];
   const target = rulers.target;
   if (event === "key") return { type: "key", target, row: ruler.row };
+  if (event === "reset") return { type: "reset", target, row: ruler.reset };
   const phase = { input: "input", change: "commit", cancel: "cancel" }[event];
   if (!phase) return null;
   const edit = { type: "field", target, field: ruler.field, value, phase };

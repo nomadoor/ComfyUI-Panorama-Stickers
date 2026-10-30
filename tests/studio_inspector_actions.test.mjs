@@ -179,6 +179,21 @@ test("a row reset returns its Lanes to their defaults by the recording rule, and
   assert.deepEqual(state.camera.position.value, [0, 0, 0]);
 });
 
+test("the Camera tab's Roll reset returns the Roll alone to 0, one Undo step, keyed by the recording rule", () => {
+  const state = load({ camera: { projection: "perspective", rotation: { value: { yaw_deg: 30, pitch_deg: 6, roll_deg: -14 } } } });
+  const result = applyInspectorEdit(state, { type: "reset", target: camera, row: "roll" }, { playhead: 0 });
+  assert.equal(result.changed, true);
+  assert.equal(result.history, true);
+  assert.deepEqual(state.camera.rotation.value, { yaw_deg: 30, pitch_deg: 6, roll_deg: 0 });
+  // A keyed rotation Lane: a Keyframe at the playhead, Yaw and Pitch as they are there.
+  const keyed = load({ camera: { projection: "perspective", rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, keyframes: [{ frame: 0, value: { yaw_deg: 30, pitch_deg: 6, roll_deg: -14 } }] } } });
+  applyInspectorEdit(keyed, { type: "reset", target: camera, row: "roll" }, { playhead: 8 });
+  assert.deepEqual(keys(keyed.camera.rotation), [[0, { yaw_deg: 30, pitch_deg: 6, roll_deg: -14 }], [8, { yaw_deg: 30, pitch_deg: 6, roll_deg: 0 }]]);
+  // Read-only: nothing.
+  const readOnly = load({ camera: { rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 5 } } } });
+  assert.equal(applyInspectorEdit(readOnly, { type: "reset", target: camera, row: "roll" }, { playhead: 0, readOnly: true }).changed, false);
+});
+
 test("the Camera's Aspect reset returns to 16:9; Ground's reset leaves the state without a ground", () => {
   const state = load({ camera: { projection: "perspective", aspect: 1 } });
   state.ground = -0.5;

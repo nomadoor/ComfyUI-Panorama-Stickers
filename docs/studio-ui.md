@@ -35,14 +35,14 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
 | 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、ギズモの中心はガイドの中心 `web_src/studio/world_guides.js` `worldGuideItems`、描くのは `web_src/studio/stage_overlay.js`）。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、Camera の Lock（`camera.locked` を読み込みがまだ読まない、`docs/scene-state-v2.md`）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js` |
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンとカードは（新しい UI、未実装）`web_src/studio/camera_ui.js` | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、（未作成）`tests/studio_camera_ui.test.mjs` |
-| Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rollRulerWidth`・`rulerMarks`・`rulerDragValue`、目盛りの縮尺 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集はインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`）。ステージへの組み込み（タブ、フレームの中の絵、目盛り、タイムコードの席）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor.js`、描くのと操作は `web_src/studio/stage.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
+| Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rulerStrips`（目盛りの長さと置き場所）・`rulerMarks`・`rulerDragValue`、目盛りの縮尺と長さと値の幅 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集とリセットはインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`、Roll だけのリセットは行 `roll`）。ステージへの組み込み（タブ、フレームの中の絵、目盛り、Camera タブで Output の小窓を畳むこと）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor.js`、描くのと操作は `web_src/studio/stage.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_inspector_actions.test.mjs`（Roll だけのリセット）、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
 | Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
 | 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
 | ショートカットの一覧の中身 | — | （新しい UI、未実装）`web_src/components/studio/StudioShortcuts.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
 | 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段は `web_src/studio/add_files.js` `escape`、5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2・4 段（地面を拾う待ち、ショートカットの一覧）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |
-| Output の小窓（折りたたみとその動き、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`。中の絵の canvas は `StudioEditor.vue` が小窓の slot に置き、描くのは `web_src/studio/stage.js`（Frame モードはステージの canvas の隅に描いて `createImageBitmap`、Panorama モードは `pano_three_view.js` `renderLiveErp`。描き方は `docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
+| Output の小窓（折りたたみとその動き、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`、Camera タブで畳んで触れなくするのは `outputWindowView`。中の絵の canvas は `StudioEditor.vue` が小窓の slot に置き、描くのは `web_src/studio/stage.js`（Frame モードはステージの canvas の隅に描いて `createImageBitmap`、Panorama モードは `pano_three_view.js` `renderLiveErp`。描き方は `docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
 
 ## 目指すもの
 
@@ -79,8 +79,8 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | ステージの左（上下の中央） | 左の列（下の「左の列」） |
 | ステージの右（上下の中央） | 視点の操作のつまみ（球・パン・前後）を縦に並べ、その下に「?」（ショートカットの一覧） |
 | ステージの右下 | ボタンの群（3D タブ：Frame Selected・Reset View・グリッドのボタン。Camera タブ：同じ席に Frame Selected・Reset View（無効）・グリッドのボタン）。グリッドのボタンは状態をアイコンの形で示す（`docs/agents/ux-principles.md` の例外） |
-| ステージの右上 | Output の小窓（下の「Output の小窓」）。どちらのタブでも出す |
-| ステージの上端の中央 | 一行の知らせ（左に種類の印。下の「一行の知らせの種類」）と、読み込み中の一行。Camera タブではタイムコードもここ。一度に一つだけ出し、知らせ＞読み込み中＞タイムコードの順で前のものが勝つ（タイムコードは知らせか読み込み中を出している間だけ隠れる） |
+| ステージの右上 | Output の小窓（下の「Output の小窓」）。3D タブで出す。Camera タブでは畳んだ形で薄く出し、触れない |
+| ステージの上端の中央 | 一行の知らせ（左に種類の印。下の「一行の知らせの種類」）と、読み込み中の一行。一度に一つだけ出す。タイムコードは置かない（時刻はいつも出ているタイムラインのバーにある） |
 | ステージの下の中央 | 下の中央のバー（下の「下の中央のバー」） |
 | 右の列 | インスペクタの窓（幅は `docs/design.md`）。上から下まで伸びる |
 | ステージの下 | タイムラインの窓（中身は `docs/timeline-ui.md`、バーの並びは下の「タイムラインのバー」）。ステージの窓の幅だけで、インスペクタの下には入らない |
@@ -118,6 +118,9 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   大きさの解像度で描く（`docs/threejs-spark-integration.md` の「Panorama モードの ERP の表示」の描き直しの条件と同じ）。
 - Panorama モード：撮る Camera の位置から描いた ERP を、開いた絵としてその場で出す。描き方（何かが変わったときだけ、小窓の大きさの低い
   解像度で描き直す）は `docs/threejs-spark-integration.md` の「Panorama モードの ERP の表示」。直近の実行の出力は使わない（編集とずれるため）。
+- Camera タブでは使わない（ステージそのものが出力の絵のため）。開いていても畳んだ形にし、その間は中の絵を描かない。畳んだ形の
+  「Output」は同じ席に薄く出したまま触れない（押しても開かず、hover でも変わらない。tooltip は「Not available in the Camera view」）。
+  覚えた開閉の状態は書き換えず、3D タブに戻ると前の状態（開いていれば開く）に戻る。
 
 ## インスペクタ
 
@@ -327,17 +330,29 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   収まり直す。
 - 枠の外：同じ絵を暗くして見せ、枠の境目に細い明るい線を引く。枠の外の絵は、同じレンズ（κ）をそのまま外へ延ばして描き、レンズの
   画角の上限（`docs/render-contract.md` の「カメラのレンズ」、`lens_fov_limit`）を越える画素は `background_color` で塗る（今の 180° を越えた所と同じ）。
-- 辺の目盛り：フレームの左に FOV、右に Lens（縦の目盛り、フレームの高さいっぱい）、下に Roll（横の目盛り、幅はフレームの 70%、最小の
-  幅を持つ）。それぞれ名前・値・Keyframe のポチ（どの Lane に打つかは `docs/timeline-ui.md` の「インスペクタの Keyframe のポチ」）を付け、
-  目盛りに数値を振る。真ん中の印は動かず、目盛りを左右（上下）にドラッグして値を変える。目盛りはフレームの辺について動く。枠の外の上に
-  描く文字と線は、明るい色にする（`docs/design.md`）。
+- 辺の目盛り：フレームの左に FOV、右に Lens（縦の目盛り）、下に Roll（横の目盛り）。目盛りに数値を振る。真ん中の印は動かず、目盛りを
+  左右（上下）にドラッグして値を変える。目盛りはフレームの辺について動く。枠の外の上に描く文字と線は、明るい色にする（`docs/design.md`）。
+  - 長さ：目盛りの線の帯は、ステージの大きさで伸び縮みしない決まった長さ（値は `docs/design.md` の「大きさ」）。帯の真ん中（真ん中の印）を、
+    Roll はフレームの左右の中央に、FOV と Lens はフレームの上下の中央に合わせる。フレームの辺が決まった長さより短いときだけ、辺に収まる
+    長さに縮める（縦の目盛りは、上に置く頭の分を上下とも辺から除いた長さ。頭がフレームの上端より上に出て左上のタブにぶつからないように
+    するため）。1 目盛りの px（縮尺）は長さによらず同じ。
+  - 頭：名前・値・Keyframe のポチ（どの Lane に打つかは `docs/timeline-ui.md` の「インスペクタの Keyframe のポチ」）・リセットを、目盛りの帯の
+    外に置く（縦の目盛りは帯の上、Roll は帯の左）。頭は帯の位置と長さを動かさない。値の文字は、その目盛りで一番幅をとる値（FOV `360°`、
+    Lens `0.00`、Roll `-180°`）が収まる決まった幅を持ち、数字が変わっても頭の幅は変わらない。
+  - リセット：Keyframe のポチの隣に、インスペクタの行と同じアイコンで置く。FOV と Lens はインスペクタの H FOV・Lens の行のリセットと同じ
+    働き（既定に戻す。上流から受け取った Camera では上流の値）。Roll は Roll だけを既定の 0° に戻す（インスペクタの Rotation の行のリセットは
+    Yaw・Pitch も戻すため、それとは分ける）。どれも Undo の 1 段で、Keyframe のある Lane では記録の規則に従う。今が戻す先と同じとき、
+    インスペクタと同じく隠さずに無効にする。Panorama モードの FOV と Lens は、目盛りと一緒に無効。
+  - 当たり：ドラッグを受ける所は、目盛りの線の帯より太い透明な帯にする（Roll は上下に、FOV と Lens は左右に広げる。値は `docs/design.md`）。
+    見た目は変えない。フレームの中（枠の内側）には広げない。
+  - フォーカス：ポインタで押したときは何も出さない。キーボードで移ったときだけ、帯の地を薄く明るくして示す（縁の線は使わない。規則は
+    `docs/design.md` の「フォーカス」）。
 - Camera タブ（Frame モードと Panorama モード）でも地面のグリッドを描き、右下のグリッドのボタンで出し入れする。何も無い空間でも、
   自分がどこにいてどちらを向いているかが分かるようにするためである。Camera に張り付いた目安（三分割・水平の目安など）は置かない
   （持ち主の決定、2026-10-30）。グリッドは出力にも Output の小窓にも写さない。何をどこに描くか、3D タブとスイッチを共有することは
   `docs/space-and-view.md` の「地面のグリッド」。
-- 上端の中央に、タイムコード（時刻とフレーム）。
 - 無効にするもの（同じ席に出したまま灰色にし、tooltip で理由を示す）：左の列（Undo・Redo を除く）、Reset View。出さないもの：下の中央の
-  バー。Output の小窓は出したまま。シャッターのボタンは無い（カメラの値は各値のポチか、タイムラインの行のポチで打つ）。
+  バー。Output の小窓は畳んだ形で薄く無効にする（上の「Output の小窓」）。タイムコードは出さない（タイムラインのバーにある）。シャッターのボタンは無い（カメラの値は各値のポチか、タイムラインの行のポチで打つ）。
 - Panorama モードのときは、撮る Camera の位置から描いた ERP を開いた絵として見せる（描き方は Output の小窓と同じ）。ステージの操作では
   何も動かない（見るだけ）。Frame に切り替える入口は、インスペクタの Camera のカードの Mode だけで、Camera タブに別のボタンや案内の
   一行は足さない（ADR 0048。使い方は README で見せる）。辺の目盛りは同じ席に出したまま、FOV と Lens は灰色で触れない（Panorama では効かない）。Roll は効く
