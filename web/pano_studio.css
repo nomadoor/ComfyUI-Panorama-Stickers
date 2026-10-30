@@ -1870,3 +1870,111 @@
   height: 100%;
   border-radius: inherit;
 }
+
+/* --- Add and the drop (docs/studio-ui.md "Add とドロップの見せ方"; values: docs/design.md "大きさ" "ドロップの印",
+   "ドロップのラベル", "Add の二択"; the mock drop-3.html). */
+
+/* The Sky / World choice at the stage's center: a floating group of two buttons with an icon and text. */
+.pano-studio-at-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+.pano-studio-place-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+}
+
+.pano-studio-place-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--studio-knob);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg);
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
+  cursor: pointer;
+  transition: background-color var(--studio-motion-hover) ease, color var(--studio-motion-hover) ease;
+}
+
+.pano-studio-place-btn:hover {
+  background: var(--studio-fill);
+}
+
+.pano-studio-place-btn:active {
+  background: var(--studio-fill-active);
+  transition: none;
+}
+
+.pano-studio-place-btn svg.icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  stroke-width: var(--studio-icon-stroke);
+}
+
+/* The drag's mark over the stage: drawn only, under the floating parts. The stage is not themed, so the brackets keep
+   the dark theme's yellow (as the selected guide does). */
+.pano-studio-drop-mark {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.pano-studio-drop-fill {
+  fill: rgba(232, 207, 116, 0.25);
+  stroke: none;
+}
+
+.pano-studio-drop-under,
+.pano-studio-drop-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pano-studio-drop-under {
+  stroke: rgba(0, 0, 0, 0.28);
+  stroke-width: 4.5px;
+}
+
+.pano-studio-drop-line {
+  stroke: #e8cf74;
+  stroke-width: 2.5px;
+}
+
+/* The label beside the pointer: the mark of where it goes and its name. */
+.pano-studio-drop-label {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--studio-yellow);
+  border-radius: var(--studio-r-part);
+  background: color-mix(in srgb, var(--studio-panel) 92%, transparent);
+  color: var(--studio-fg);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pano-studio-drop-label svg.icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--studio-yellow);
+  stroke-width: var(--studio-icon-stroke);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pano-studio-place-btn { transition: none; }
+}

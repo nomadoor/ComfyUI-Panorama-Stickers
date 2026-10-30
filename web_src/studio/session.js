@@ -55,11 +55,15 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   // The state before the first live change of a gesture (a value box's or the Easing graph's drag, a Timeline drag),
   // which its cancel puts back; null between gestures.
   let gestureBase = null;
+  // A placed object was settled while a gesture was under way: placing it is recorded when the gesture ends, even when
+  // the gesture is given up.
+  let settledInGesture = false;
   const history = createEditorHistory(state);
 
   function record() {
     history.record(state);
     gestureBase = null;
+    settledInGesture = false;
   }
 
   // A selection whose object is gone lets it go; its Keyframes go with any change of the state's shape.
@@ -167,7 +171,59 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     if (!gestureBase) return result(false);
     state = gestureBase;
     gestureBase = null;
+    if (settledInGesture) record();
     return result(true, { cancel: true });
+  }
+
+  // --- Add and the drop (docs/studio-ui.md "Add とドロップの見せ方", docs/editor-interaction.md "3D ファイルを置く流れ"):
+  // a placed object goes into the state at once and is selected, with no Undo step; settlePlaced() then makes placing it
+  // one step (its file has uploaded), or dropPlaced() takes it away again and leaves no step.
+
+  // make(id, draft) returns the new Sticker under the id taken from the state's counter; `draft` is the state it goes
+  // into (for the sky images' order). Returns the id, or null in a read-only editor.
+  function addPlaced(make) {
+    if (readOnly) return null;
+    const draft = { ...state, stickers: [...state.stickers] };
+    const id = takeStickerId(draft);
+    draft.stickers.push(make(id, draft));
+    state = draft;
+    selection = { row: id, keys: [] };
+    return id;
+  }
+
+  // A copy of `from` with apply(sticker, copy) done to the Sticker `id`'s copy, or null when it is not there.
+  function withPlaced(from, id, apply) {
+    if (!from.stickers.some((item) => item.id === id)) return null;
+    const copy = structuredClone(from);
+    apply(copy.stickers.find((item) => item.id === id), copy);
+    return copy;
+  }
+
+  // The placed Sticker `id` is complete: apply(sticker, draft) changes its copy (its Source, its place), and that is
+  // one Undo step. false when it is gone (Undo took it, it was deleted). During a gesture the change goes under the
+  // gesture's start too, and the step waits for the gesture's end.
+  function settlePlaced(id, apply) {
+    if (readOnly) return false;
+    const next = withPlaced(state, id, apply);
+    if (!next) return false;
+    state = next;
+    if (gestureBase) {
+      gestureBase = withPlaced(gestureBase, id, apply) ?? gestureBase;
+      settledInGesture = true;
+      return true;
+    }
+    record();
+    return true;
+  }
+
+  // The placed Sticker `id` could not be completed: it goes, with no Undo step. Returns whether it was there.
+  function dropPlaced(id) {
+    if (!state.stickers.some((item) => item.id === id)) return false;
+    const without = (from) => ({ ...from, stickers: from.stickers.filter((item) => item.id !== id) });
+    state = without(state);
+    if (gestureBase) gestureBase = without(gestureBase);
+    keepSelection();
+    return true;
   }
 
   const selectedSticker = () => state.stickers.find((item) => item.id === selection.row) ?? null;
@@ -295,6 +351,9 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     gesture,
     commitGesture,
     cancelGesture,
+    addPlaced,
+    settlePlaced,
+    dropPlaced,
     toggleLock,
     duplicateSelected,
     orderSelected,

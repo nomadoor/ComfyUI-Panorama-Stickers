@@ -104,7 +104,7 @@ function centered(p, distance, eye) {
 // How far along the ray origin + t direction (direction of length 1) it enters a box ({ box: { min, max }, transform }
 // with the item's transform { position, yaw_deg, pitch_deg, roll_deg, scale } taking it to the World, as pano_space.js
 // transformPoint does; no transform for a box in the World frame). null when it misses.
-function boxDepth(origin, direction, { box, transform = null }) {
+export function boxDepth(origin, direction, { box, transform = null }) {
   if (!transform) return rayBoxDepth(origin, direction, box);
   const rotation = worldRotation(transform.yaw_deg, transform.pitch_deg, transform.roll_deg);
   const scale = transform.scale;
