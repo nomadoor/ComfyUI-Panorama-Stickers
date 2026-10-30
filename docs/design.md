@@ -379,7 +379,7 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 
 ## アイコン
 
-- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 51 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
+- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 68 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
   `SvgIcon.vue` が `viewBox="0 0 24 24"`、`fill="none"`、`stroke="currentColor"`、`stroke-linecap` と `stroke-linejoin` は `round`、
   class `icon icon-tabler icons-tabler-outline` で描く。
 - 線の太さ：`.pano-modal` の中の Tabler のアイコンと、`.pano-btn-icon`・`.pano-btn-texticon` の中の SVG は `var(--pano-icon-stroke, 2.3)`
@@ -497,6 +497,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | Camera のカードの撮り方の札 | 2 枚を横に等分、間 6px、見出しとの間 8px、下の行との間 12px。札は高さ 68px（上の余白 10px・絵 64×32px・間 6px・名前 12px・下の余白 8px）、角丸 8px、縁の線なし。選んでいない札は地なし・二次の文字、hover で値の箱の地（`#2c2c2e`）と主の文字、選んでいる札は押したときの地（`#3c3c3f`）と主の文字。絵の線は 1.5px、格子と十字の細い線は 1px・不透明度 0.6（見本 `mode-3.html` の M1） |
 | 左上のタブ | 3D・Camera を同じ幅 108px・高さ 34px（Camera のアイコン 18px・間 6px・文字 13px の左右に約 16px） |
 | 一行の知らせの印 | 丸は 7px。読み込み中の輪は 10px、線 1.5px（線の 1/4 を主の文字の色、残りを強い線の色） |
+| 下の中央のバーの名前の欄 | 140px（どの名前、どの種類でも同じ。12px・600 の文字でおよそ 20 字）。収まらない名前は末尾を「…」で切る（`web/pano_studio.css` の `--studio-bar-name-width`、使うのは `.pano-studio-bar-name`） |
 | 左の列・視点の操作のつまみ・右下のボタン | 34px の正円、アイコン 18px（Add のアイコンだけ 22px）。見本 `controls-2.html` の R1 |
 | Easing のグラフ | 縦横 1:1（インスペクタの幅いっぱい）。上の領域が `EASING_MIN_ABOVE` より狭くなるときは、一辺を縮めて 1:1 のまま小さくする |
 | `EASING_MIN_ABOVE` | 180px（行 5 つ分）。Easing のパネルを出している間に、上の領域に残す最小の高さ |
@@ -547,6 +548,11 @@ OS で動きを減らす設定（`prefers-reduced-motion: reduce`）のときは
   Camera の印は `camera-plus`（見本 `specimen-11.html`）。
 - ループ（タイムラインのバー）とグリッド（ステージの右下）は、一つのアイコンのボタンで、今の状態をアイコンの形で示す（ループ
   `repeat` ／ `repeat-off`、グリッド `table` ／ `table-off`）。オンでも強い塗りにしない（`docs/agents/ux-principles.md` の例外）。
+- 下の中央のバーの前面へ・背面へ（空に貼った画像）は、Tabler の線の形にならって描いた二つの角丸の四角（`web_src/icons.js`
+  `order_front`・`order_back`。一辺 11・角丸 2 の四角を左上と右下に 4 だけ重ね、右下を動かす物にする）。前面へは右下を塗りの四角に
+  して手前に描き、左上の線の四角は右下に隠れる所を間 3.5 を空けて切る。背面へは左上の線の四角を手前に描き、右下の塗りは左上の四角に
+  隠れる所を同じ間で切った L の形にする。16〜18px で、塗りの四角が一つ見えるか L が見えるかで見分ける。古い UI の `stack-front`・
+  `stack-back`（`bring_front`・`send_back`）は変えない。
 
 ### 描画のくっきりさ
 
