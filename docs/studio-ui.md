@@ -640,6 +640,16 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - 右上に閉じる ✕、右の中央に視点の操作のつまみと「?」、右下に Reset View・グリッドのスイッチ・Fullscreen（状態はアイコンの形で示す。
   `docs/agents/ux-principles.md` の例外）。
 - 下端に再生の帯：再生と一時停止、ループのスイッチ、シークの帯、時刻（並びはノード上の表示と同じ。`docs/preview-node.md`）。
+- Space は再生と一時停止を切り替える。受け方はエディタの Space と同じ（`web_src/studio/shortcuts.js` の `play`：Ctrl・Meta との組と
+  キーのリピートは受けない。入力欄やボタンなど、ステージがキーを持たない所では受けない。`pano_key_focus.js` の `stageOwnsKey`）。
+  再生の帯が無い（時間の無い）ときは何もしない。
+- 何を背景に描くか：IMAGE・VIDEO の source は、ノードの `background_range`（360・180）の範囲に貼る。`PANO_SCENE` は、その Scene の
+  背景（`pano_upstream_*`）を、その Clip range とメディアの長さの中でだけ描き、外では Scene の `bg_color`
+  （`pano_upstream_bg_color`）で塗る（Studio のエディタが上流の背景を描く規則と同じ。`web_src/pano_port_media.js`
+  `backgroundShownAt`）。背景のメディアが無い Scene も `bg_color` で塗る。
+- `PANO_SCENE` のとき：開くとノード上の Scene のビューアの再生の位置と再生中かどうかを引き継ぎ、ノード上の表示は描くのも再生も
+  止める（`web_src/pano_node_bridge.js` `sceneViewerWindowOpened`）。閉じるとウィンドウの最後の再生の位置と再生中かどうかを返し、
+  ノード上の表示はそこから続ける（`sceneViewerWindowClosed`。`docs/preview-node.md` の「大きなウィンドウ」）。
 - 見た目はエディタと同じ（`docs/design.md` の「新しい UI の見た目」）。
 
 ## まだ決めていないこと（spec ではない）
