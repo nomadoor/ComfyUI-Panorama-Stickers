@@ -236,7 +236,7 @@ function drawPreview(node, ctx, width, height, view, img, previewView) {
     drawGrid(ctx, width, height);
     return;
   }
-  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
+  const coverageDeg = Number(node?.widgets?.find?.((w) => w?.name === "background_range" || w?.name === "coverage")?.value || 360) === 180 ? 180 : 360;
   const surface = previewView.render({
     width,
     height,
@@ -345,7 +345,7 @@ class PreviewNodeRuntime {
       self.teardown();
       return out;
     };
-    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "coverage") || null;
+    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "background_range" || widget?.name === "coverage") || null;
     if (coverageWidget) {
       this.orig.coverageWidgetCallback = typeof coverageWidget.callback === "function"
         ? coverageWidget.callback.bind(coverageWidget)
@@ -818,7 +818,7 @@ class PreviewNodeRuntime {
     this.node.onConnectionsChange = this.orig.onConnectionsChange;
     this.node.onResize = this.orig.onResize;
     this.node.onRemoved = this.orig.onRemoved;
-    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "coverage") || null;
+    const coverageWidget = this.node?.widgets?.find?.((widget) => widget?.name === "background_range" || widget?.name === "coverage") || null;
     if (coverageWidget) {
       coverageWidget.callback = this.orig.coverageWidgetCallback;
     }

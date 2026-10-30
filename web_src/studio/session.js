@@ -268,7 +268,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     return result(true, { history: true });
   }
 
-  // Lock: the selected Sticker's `locked` turns over (the Camera's waits for `camera.locked` in the loaders).
+  // Lock: the selected Sticker's `locked` turns over (the Camera's `camera.locked` is not turned over here yet).
   function toggleLock() {
     return editSelected((draft, sticker) => {
       sticker.locked = !sticker.locked;

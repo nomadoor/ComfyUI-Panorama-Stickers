@@ -421,7 +421,6 @@ function setCollapsed(value) {
         :animations="view.animations"
         :image-sizes="view.imageSizes"
         :port-size="view.portSize"
-        :ground-saved="false"
         @edit="(edit) => controller.inspectorEdit(edit)"
         @close="controller.close()"
       />

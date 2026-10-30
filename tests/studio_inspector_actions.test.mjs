@@ -95,9 +95,10 @@ test("a world Sticker's scale is held at the smallest scale, and its opacity is 
   assert.equal(state.stickers[0].opacity.value, 0.25);
 });
 
-test("the first Camera edit of a state without one makes the default Camera with that edit", () => {
+test("the first Camera edit of a state without one changes the default Camera it reads as", () => {
   const state = load();
-  assert.equal(state.camera, null);
+  // A state without a Camera reads as the default Camera (ADR 0048).
+  assert.deepEqual(state.camera.position.value, [0, 0, 0]);
   applyInspectorEdit(state, { type: "field", target: camera, field: "position_y", value: 1.5, phase: "commit" }, { playhead: 0 });
   assert.equal(state.camera.projection, "erp");
   assert.equal(state.camera.aspect, 16 / 9);

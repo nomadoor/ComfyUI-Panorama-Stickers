@@ -47,8 +47,8 @@ const LATER = "in development";
 
 // The bar for the row `row` of `state` with the gizmo in `mode`: null when it is not shown (nothing selected), else
 // { kind, icon, name, groups: [[{ key, icon, label, tip, active, disabled }]] }. `readOnly` disables the edits.
-// Not yet here: the paint group and the multi-selection (their tools do not exist yet); the Camera's Lock waits for
-// the state's `camera.locked` (docs/scene-state-v2.md), which the loaders do not read yet; Replace waits for a file
+// Not yet here: the paint group and the multi-selection (their tools do not exist yet); the Camera's Lock (the
+// state keeps `camera.locked`, docs/scene-state-v2.md, but the button does not turn it over yet); Replace waits for a file
 // picker below the old UI.
 export function selectionBar({ state, row, mode = "translate", readOnly = false }) {
   const kind = selectedKind(state, row);

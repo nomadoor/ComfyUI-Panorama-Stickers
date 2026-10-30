@@ -79,11 +79,11 @@ test("a Ground the state holds is shown and is not at its default", () => {
   assert.equal(ground.atDefault, false);
 });
 
-test("while the ground height cannot be saved, the Ground row is grayed with the reason, its seat kept", () => {
-  const ground = row(model(load(), { groundSaved: false }).cards[0], "ground");
-  assert.equal(ground.disabled, true);
-  assert.equal(ground.fields[0].disabled, true);
-  assert.match(ground.tip, /not saved/i);
+test("the Ground row takes edits (the state keeps `ground`), its seat kept", () => {
+  const ground = row(model(load()).cards[0], "ground");
+  assert.equal(ground.disabled, false);
+  assert.equal(ground.fields[0].disabled, false);
+  assert.equal(ground.tip, "");
   assert.equal(ground.seat, true);
 });
 
@@ -198,7 +198,7 @@ test("a row at the value its reset returns to says so; the Sticker's Rotation an
 
 test("a state without a Camera shows the default Camera: Panorama, 360°, 16:9, 90°, κ 1, at the origin, every row at its default", () => {
   const state = load();
-  assert.equal(state.camera, null);
+  assert.equal(state.camera.projection, "erp");
   const card = model(state, { selection: { ids: ["camera"] } }).cards[0];
   assert.equal(card.kind, "camera");
   assert.deepEqual(card.rows.map((item) => item.id), ["mode", "range", "aspect", "hfov", "lens", "position", "rotation"]);

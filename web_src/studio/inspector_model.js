@@ -21,7 +21,7 @@ import {
 import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
-import { DEFAULT_CAMERA_RAW, cameraOf, groundOf } from "./defaults.js";
+import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { objectLabel } from "./timeline_model.js";
 
 // The least height (px) left above the Easing panel for the rows (docs/design.md "大きさ" EASING_MIN_ABOVE).
@@ -269,7 +269,7 @@ function cameraRows(camera, playhead) {
       control: "aspect",
       lanes: [],
       fields: [{ field: "aspect", value: camera.aspect, step: 0.005, min: CAMERA_ASPECT_MIN, max: CAMERA_ASPECT_MAX }],
-      atDefault: near(camera.aspect, DEFAULT_CAMERA_RAW.aspect),
+      atDefault: near(camera.aspect, defaultCamera().aspect),
       ...frameOnly,
     },
     {
@@ -402,13 +402,9 @@ function cameraCard(state, { playhead, readOnly }) {
   };
 }
 
-// Until the state keeps `ground` (defaults.js), an edited ground height would not be saved: `groundSaved` false grays
-// the row with the reason instead of taking an edit that closing would lose.
-export const GROUND_NOT_SAVED_TIP = "The ground height is not saved yet: the node does not keep it";
-
-function sceneCard(state, { readOnly, groundSaved }) {
+function sceneCard(state, { readOnly }) {
   const ground = groundOf(state);
-  const off = readOnly || !groundSaved;
+  const off = readOnly;
   return {
     kind: "scene",
     title: "Scene",
@@ -430,7 +426,7 @@ function sceneCard(state, { readOnly, groundSaved }) {
       atDefault: !Number.isFinite(state.ground),
       disabled: off,
       marked: false,
-      tip: readOnly ? "Read-only" : groundSaved ? "" : GROUND_NOT_SAVED_TIP,
+      tip: readOnly ? "Read-only" : "",
     }],
   };
 }
@@ -467,11 +463,10 @@ function easingModel(state, upstream, keyframes) {
 // `upstream:<key>:<id>`), the `tab` ("3d" | "camera") and the Timeline frame `playhead`. `upstream` is the working
 // layers (pano_upstream.js upstreamWorkingLayers), `animations` the clips of the 3D files by Sticker id
 // ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the
-// Stickers' images by Sticker id ({ width, height } px, once loaded), `groundSaved` whether an edited ground height
-// is saved (GROUND_NOT_SAVED_TIP).
+// Stickers' images by Sticker id ({ width, height } px, once loaded).
 // Returns { cards: [{ kind, title, icon, note, target, rows }], easing }.
-export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {}, groundSaved = true }) {
-  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, groundSaved };
+export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {} }) {
+  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes };
   const ids = selection.ids ?? [];
   let cards;
   if (tab === "camera") cards = [cameraCard(state, options)];

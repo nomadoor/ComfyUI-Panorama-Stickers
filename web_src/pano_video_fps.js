@@ -5,8 +5,8 @@
 import { isNodeOutputMediaCurrent, videoLinked } from "./pano_preview_video.js";
 import { rebaseSceneState, timelineFps } from "./pano_scene_state.js";
 
-// The inputs whose VIDEO sets the Timeline fps (the background is `bg_media`).
-export const VIDEO_FPS_INPUTS = ["bg_media", "sticker"];
+// The inputs whose VIDEO sets the Timeline fps (the background is `background`, `bg_media` before ADR 0048).
+export const VIDEO_FPS_INPUTS = ["bg_media", "background", "sticker"];
 
 // The Timeline fps a VIDEO input set in the node's current result (ADR 0024), or null. It is brought into the range a
 // state keeps, so a faster VIDEO compares equal to the state rebased to it. `media` reads the node's result

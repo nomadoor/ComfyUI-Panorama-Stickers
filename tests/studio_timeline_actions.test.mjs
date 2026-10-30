@@ -136,7 +136,7 @@ test("the row dot changes nothing where every row Lane already has a Keyframe, a
 test("keying the Camera row of a state without a Camera writes the default Camera with the Keyframes", () => {
   const ctx = ctxOf(studioState({ camera: null }));
   const { state } = keyRow(ctx, "camera", 5);
-  assert.equal(ctx.state.camera, null);
+  assert.deepEqual(frames(ctx.state.camera.position), []);
   assert.deepEqual(frames(state.camera.position), [5]);
   assert.equal(state.camera.projection, "erp");
 });

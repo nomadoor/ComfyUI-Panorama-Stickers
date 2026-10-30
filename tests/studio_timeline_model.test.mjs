@@ -34,7 +34,7 @@ test("without bg_media, a painting or a scene input those rows are left out", ()
 
 test("a state whose camera is null shows the Camera row as the default Camera, without Keyframes", () => {
   const state = studioState({ camera: null });
-  assert.equal(state.camera, null);
+  assert.equal(state.camera.projection, "erp");
   const camera = row(view(ctxOf(state)), "camera");
   assert.deepEqual(camera.pins, []);
   assert.equal(camera.dot.state, "none");

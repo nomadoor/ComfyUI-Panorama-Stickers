@@ -416,8 +416,10 @@ function getCachedState(node) {
   const sync = stateSync(node);
   const source = getEffectiveStateSource(node);
   const liveVersion = sync.liveStateVersion;
-  const bg = String(getWidget(node, "bg_color")?.value || "#1a1a1e");
-  const coverage = Number(getWidget(node, "coverage")?.value || 360) === 180 ? 180 : 360;
+  // Panorama Studio and the Preview name these `background_color` and `background_range` (ADR 0048); the legacy nodes
+  // `bg_color` and `coverage`.
+  const bg = String((getWidget(node, "background_color") ?? getWidget(node, "bg_color"))?.value || "#1a1a1e");
+  const coverage = Number((getWidget(node, "background_range") ?? getWidget(node, "coverage"))?.value || 360) === 180 ? 180 : 360;
   const sceneText = node.__panoSceneStateV2 && typeof source === "string";
   // The handoff applies while the inputs it came from are linked as they were (the cache follows that too).
   const handoff = sceneText && portHandoffLinked(node) && isNodeOutputMediaCurrent(node, "sticker-handoff")
@@ -1518,7 +1520,7 @@ function surfaceViewInput(node, state, bgImg) {
   // Outside the background's Clip range and media (Panorama Studio), bg_color shows in its place, as in the output.
   const upstreamColor = isNodeOutputMediaCurrent(node, "scene") ? upstreamBackgroundOf((key) => ownOutputUiList(node, key))?.color : null;
   const background = nodeSurface(node).playback?.playback.backgroundShows === false
-    ? bgColorBackground(upstreamColor || String(getWidget(node, "bg_color")?.value || "#000000"))
+    ? bgColorBackground(upstreamColor || String((getWidget(node, "background_color") ?? getWidget(node, "bg_color"))?.value || "#000000"))
     : isRenderableMediaReady(bgImg)
       ? { media: bgImg, revision: getRenderableMediaRevisionToken(bgImg), coverage: Number(state.coverage) === 180 ? 180 : 360 }
       : null;
@@ -2862,7 +2864,7 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     sw.callback = swCallbackWrapper;
     sw.__panoPreviewPatchedCb = swCallbackWrapper;
   }
-  const bgw = getWidget(node, "bg_color");
+  const bgw = getWidget(node, "background_color") ?? getWidget(node, "bg_color");
   let bgwCallbackPrev = null;
   let bgwCallbackWrapper = null;
   if (bgw && !bgw.__panoPreviewPatchedCb) {

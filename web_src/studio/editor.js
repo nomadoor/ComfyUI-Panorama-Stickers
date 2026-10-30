@@ -144,7 +144,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const session = createStudioSession({ state: nodeState(node, media), readOnly });
   const nodeSession = editorSession(node);
   const stateWidget = widgetOf(node, "state_json");
-  const sceneLinked = linked(node, ["scene"]);
+  // The state's own 3D comes on `world` (docs/studio-node.md); before that rename, a 3D on `scene`.
+  const sceneLinked = linked(node, ["world"]) || linked(node, ["scene"]);
   const backgroundLinked = linked(node, BACKGROUND_INPUTS);
 
   let stage = null;
@@ -372,7 +373,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   }
 
   // The node's background color (its `bg_color` setting, "#00ff00" when it is missing), as "#rrggbb".
-  const nodeBackgroundColor = () => String(widgetOf(node, "bg_color")?.value || "#00ff00");
+  const nodeBackgroundColor = () => String((widgetOf(node, "background_color") ?? widgetOf(node, "bg_color"))?.value || "#00ff00");
 
   // The background the stage draws at the playhead: bg_color outside its Clip range and media (as the node's output),
   // else the VIDEO or its still once one has a picture, else the image.

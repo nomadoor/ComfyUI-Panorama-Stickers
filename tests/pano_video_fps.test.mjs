@@ -17,14 +17,14 @@ test("a VIDEO's fps from the node's result is brought into the range a state kee
   assert.equal(videoTimelineFps({}, { uiValue: () => undefined }), null);
 });
 
-test("the fps field is locked by a VIDEO's fps in the result or by a VIDEO link on bg_media or sticker", () => {
+test("the fps field is locked by a VIDEO's fps in the result or by a VIDEO link on background, bg_media or sticker", () => {
   assert.equal(timelineFpsLocked(24, nodeWith({})), true);
   assert.equal(timelineFpsLocked(null, nodeWith({ bg_media: "VIDEO" })), true);
   assert.equal(timelineFpsLocked(null, nodeWith({ sticker: "VIDEO" })), true);
   assert.equal(timelineFpsLocked(null, nodeWith({ bg_media: "IMAGE" })), false);
-  // The new UI names the background's input too (studio/editor.js).
-  assert.equal(timelineFpsLocked(null, nodeWith({ background: "VIDEO" })), false);
-  assert.equal(timelineFpsLocked(null, nodeWith({ background: "VIDEO" }), ["background", "bg_media", "sticker"]), true);
+  // Panorama Studio's background input is `background` since ADR 0048.
+  assert.equal(timelineFpsLocked(null, nodeWith({ background: "VIDEO" })), true);
+  assert.equal(timelineFpsLocked(null, nodeWith({ background: "IMAGE" })), false);
 });
 
 test("an opened state is rebased to the VIDEO's fps, keeping its times in seconds", () => {

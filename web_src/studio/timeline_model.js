@@ -47,8 +47,8 @@ export function objectLabel(sticker) {
 export const CAMERA_ROW = "camera";
 export const SCENE_ROW = "scene";
 
-// The Camera the Camera row shows and edits: the state's, or the default Camera (defaults.js; not written to the state
-// by reading, docs/studio-node.md "入れる順番"; an edit of the Camera row writes it).
+// The Camera the Camera row shows and edits: the state's (a loaded state always has one, ADR 0048), or the default
+// Camera (defaults.js).
 export function timelineCamera(state) {
   return cameraOf(state);
 }
