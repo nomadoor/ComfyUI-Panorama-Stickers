@@ -632,3 +632,441 @@
   opacity: 0.35;
   cursor: default;
 }
+
+/* The Timeline (components/studio/StudioTimeline*.vue; the bar's order and a row's head: docs/studio-ui.md
+   "タイムラインのバー"; the rules: docs/timeline-ui.md). The playhead is coral, Keyframe selection ice. */
+.pano-studio-tl {
+  --studio-tl-head: 236px;
+  --studio-tl-row: 28px;
+  --studio-tl-bar: 40px;
+  --studio-tl-ruler: 26px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--studio-panel);
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-r-box);
+  font-size: var(--studio-text-xs);
+  outline: none;
+}
+
+.pano-studio-tl.is-collapsed {
+  height: auto;
+}
+
+.pano-studio-tl-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: var(--studio-tl-bar);
+  padding: 0 8px 0 6px;
+  border-bottom: 1px solid var(--studio-line);
+}
+
+.pano-studio-tl.is-collapsed .pano-studio-tl-bar {
+  border-bottom: 0;
+}
+
+.pano-studio-tl-bar .pano-studio-icon-btn[aria-disabled="true"],
+.pano-studio-tl-head-btn[aria-disabled="true"],
+.pano-studio-tl-chip[aria-disabled="true"] {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
+
+.pano-studio-icon-btn.is-flipped svg {
+  transform: rotate(180deg);
+}
+
+/* The loop switch: its knob's side shows on and off. */
+.pano-studio-tl-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg-2);
+  cursor: pointer;
+}
+
+.pano-studio-tl-switch:hover {
+  background: var(--studio-fill-hover);
+  color: var(--studio-fg);
+}
+
+.pano-studio-tl-switch-track {
+  position: relative;
+  width: 22px;
+  height: 12px;
+  border-radius: var(--studio-r-part);
+  background: var(--studio-line-strong);
+}
+
+.pano-studio-tl-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--studio-panel);
+}
+
+.pano-studio-tl-switch[aria-checked="true"] {
+  color: var(--studio-fg);
+}
+
+.pano-studio-tl-switch[aria-checked="true"] .pano-studio-tl-switch-track {
+  background: var(--studio-strong);
+}
+
+.pano-studio-tl-switch[aria-checked="true"] .pano-studio-tl-switch-knob {
+  left: 12px;
+  background: var(--studio-on-strong);
+}
+
+.pano-studio-tl-time {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+.pano-studio-tl-timecode {
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-tl-frame {
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-sm);
+}
+
+.pano-studio-tl-spacer {
+  flex: 1;
+}
+
+.pano-studio-tl-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--studio-text-sm);
+}
+
+.pano-studio-tl-field-name {
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-tl-field .pano-studio-num {
+  min-width: 48px;
+}
+
+.pano-studio-tl-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.pano-studio-tl-line {
+  display: grid;
+  grid-template-columns: var(--studio-tl-head) minmax(0, 1fr);
+  height: var(--studio-tl-row);
+}
+
+.pano-studio-tl-line.is-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: var(--studio-tl-ruler);
+  background: var(--studio-panel);
+}
+
+.pano-studio-tl-line.is-selected {
+  background: var(--studio-fill);
+}
+
+.pano-studio-tl-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 4px 0 6px;
+  border-right: 1px solid var(--studio-line);
+  border-bottom: 1px solid var(--studio-line);
+}
+
+.pano-studio-tl-head.is-lane {
+  padding-left: 50px;
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-tl-head-btn,
+.pano-studio-tl-head-gap {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.pano-studio-tl-head-btn {
+  padding: 0;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg-2);
+  cursor: pointer;
+}
+
+.pano-studio-tl-head-btn:hover {
+  background: var(--studio-fill-hover);
+  color: var(--studio-fg);
+}
+
+.pano-studio-tl-head-btn svg.icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ▶ closed, ▼ open. */
+.pano-studio-tl-expand svg.icon {
+  transform: rotate(-90deg);
+}
+
+.pano-studio-tl-expand.is-open svg.icon {
+  transform: none;
+}
+
+.pano-studio-tl-head svg.pano-studio-tl-head-icon {
+  width: 15px;
+  height: 15px;
+  margin: 0 4px 0 2px;
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-tl-head-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.pano-studio-tl-head.is-hidden .pano-studio-tl-head-name {
+  color: var(--studio-fg-2);
+}
+
+/* The place of the "overridden" dot is kept on every upstream row. */
+.pano-studio-tl-override {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin: 0 4px;
+  border-radius: 50%;
+  background: var(--studio-fg);
+  visibility: hidden;
+}
+
+.pano-studio-tl-override.is-on {
+  visibility: visible;
+}
+
+.pano-studio-tl-head .pano-studio-keydot {
+  height: 20px;
+}
+
+.pano-studio-tl-head-dot-gap {
+  flex: none;
+  width: 16px;
+}
+
+.pano-studio-tl-ruler {
+  position: relative;
+  border-bottom: 1px solid var(--studio-line);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.pano-studio-tl-tick {
+  position: absolute;
+  top: 7px;
+  transform: translateX(-50%);
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-xs);
+  pointer-events: none;
+}
+
+.pano-studio-tl-tick::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 13px;
+  width: 1px;
+  height: 5px;
+  background: var(--studio-line-strong);
+}
+
+/* The playhead's ▼, on the ruler only. */
+.pano-studio-tl-playhead-mark {
+  position: absolute;
+  top: 0;
+  width: 12px;
+  height: 10px;
+  transform: translateX(-50%);
+  background: var(--studio-coral);
+  clip-path: polygon(0 0, 100% 0, 100% 45%, 50% 100%, 0 45%);
+  pointer-events: none;
+}
+
+/* The line under the ▼, down to the tracks' own line. */
+.pano-studio-tl-playhead-stem {
+  position: absolute;
+  top: 8px;
+  bottom: -1px;
+  width: 0;
+  margin-left: -1px;
+  border-left: 2px solid var(--studio-coral);
+  pointer-events: none;
+}
+
+.pano-studio-tl-lines {
+  position: relative;
+}
+
+.pano-studio-tl-track {
+  position: relative;
+  border-bottom: 1px solid var(--studio-line);
+  touch-action: none;
+}
+
+.pano-studio-tl-clip {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  border-radius: var(--studio-r-field);
+  background: var(--studio-fill-hover);
+  cursor: grab;
+}
+
+.pano-studio-tl-clip.is-background {
+  background: var(--studio-fill-active);
+}
+
+.pano-studio-tl-clip.is-fixed {
+  cursor: default;
+}
+
+.pano-studio-tl-clip-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.pano-studio-tl-clip-edge.is-start {
+  left: 0;
+}
+
+.pano-studio-tl-clip-edge.is-end {
+  right: 0;
+}
+
+.pano-studio-tl-clip.is-fixed .pano-studio-tl-clip-edge {
+  cursor: default;
+}
+
+/* A Keyframe: a 9px diamond, half filled where only some of the row's Lanes have one, ice while selected. */
+.pano-studio-tl-key {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 1.5px;
+  background: var(--studio-fg-2);
+  transform: rotate(45deg);
+  cursor: pointer;
+}
+
+.pano-studio-tl-key.is-half {
+  border: 1.25px solid var(--studio-fg-2);
+  background: linear-gradient(135deg, var(--studio-fg-2) 50%, transparent 50%);
+}
+
+.pano-studio-tl-key.is-selected {
+  border-color: var(--studio-ice);
+  background: var(--studio-ice);
+  outline: 2px solid var(--studio-panel);
+}
+
+.pano-studio-tl-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 0;
+  margin-left: -1px;
+  border-left: 2px solid var(--studio-coral);
+  pointer-events: none;
+}
+
+.pano-studio-tl-marquee {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid var(--studio-ice);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--studio-ice) 12%, transparent);
+  pointer-events: none;
+}
+
+.pano-studio-tl-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--studio-line);
+  background: var(--studio-fill);
+  color: var(--studio-fg-2);
+  white-space: nowrap;
+}
+
+.pano-studio-tl-group-name {
+  color: var(--studio-fg);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-tl-group-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.pano-studio-tl-chip {
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: var(--studio-panel);
+  color: var(--studio-fg);
+  font-size: var(--studio-text-xs);
+  cursor: pointer;
+}
+
+.pano-studio-tl-chip:hover {
+  background: var(--studio-fill-hover);
+}
