@@ -414,10 +414,11 @@ export function createViewCamera({ pose: start, frame = false }) {
     // scale about G by k (P' = G + k (P - G)). G is T when there is no hit, it is farther than TARGET_MAX_DISTANCE
     // from the view, or outside the world bound. k is the WHEEL_FACTOR step within [1 / WHEEL_FACTOR, 1] in or
     // [1, WHEEL_FACTOR] out and within the distance range; when that leaves 1, nothing moves and the bound's notice
-    // shows. The bound stops P, and T moves by the same share. A step during an eased move starts from where it goes.
+    // shows. The bound stops P, and T moves by the same share. A step during an eased move starts from the view shown,
+    // where G was picked: the move stops there, as a direct operation stops it, and eases on from there.
     wheel(step, hit) {
       if (!step) return result(false);
-      const base = aim();
+      const base = direct();
       // In the Frame view a wheel step is a gesture of its own: the bound counts the Camera where it starts.
       const radius = frame ? boundOf(world, destination, gestureCamera ?? base.position) : bound();
       const { TARGET_MIN_DISTANCE, TARGET_MAX_DISTANCE } = eyeLengths(eye());
