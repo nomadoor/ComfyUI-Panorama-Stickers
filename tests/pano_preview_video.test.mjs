@@ -162,7 +162,9 @@ test("the legacy node surfaces and the legacy Preview node pause their VIDEO out
   assert.doesNotMatch(preview, /videoPaused/);
   const ready = preview.slice(preview.indexOf("const onReady = () => {"), preview.indexOf("const onTick = () => this.requestDraw();"));
   assert.doesNotMatch(ready, /play\(/);
-  assert.match(preview, /if \(this\.img instanceof HTMLVideoElement && !this\.img\.paused && !this\.shown\(\)\) this\.img\.pause\(\);/);
+  // Out of sight, or while the new Preview window is open on the node (docs/studio-ui.md "Preview のウィンドウ").
+  assert.match(preview, /if \(this\.img instanceof HTMLVideoElement && !this\.img\.paused && \(this\.windowOpen \|\| !this\.shown\(\)\)\) this\.img\.pause\(\);/);
+  assert.match(preview, /togglePlayback\(\) \{\s*if \(this\.windowOpen \|\|/);
   assert.match(preview, /if \(this\.root\) return surfaceShown\(this\.root, !!this\.node\.flags\?\.collapsed\);/);
 });
 

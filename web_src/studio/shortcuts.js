@@ -115,12 +115,15 @@ function moveRow(label, moves) {
 const gestureRow = (label, keys, ref) => ({ label, keys, refs: [`pointer:${ref}`] });
 
 // The groups of the list for the screen now: [{ id, title, note, rows: [{ label, keys: [[cap]], refs }] }].
-// tab: "3d" | "camera"; panorama: the Camera's mode is Panorama; readOnly: the editor edits nothing; mac: Ctrl shows
+// context: "editor" (Panorama Studio's editor) | "preview" (the Preview window: nothing to select or edit, the 3D tab's
+// view, no timeline; docs/studio-ui.md "ショートカットの一覧"). tab: "3d" | "camera"; panorama: the Camera's mode is
+// Panorama; readOnly: the editor edits nothing; playable: the Preview window has its playback strip; mac: Ctrl shows
 // as ⌘. A row's `keys` are the combinations that do it; `refs` name the table entries they come from.
-export function shortcutGroups({ tab = "3d", panorama = false, readOnly = false, mac = false } = {}) {
-  const space = tab !== "camera";
+export function shortcutGroups({ context = "editor", tab = "3d", panorama = false, readOnly = false, playable = false, mac = false } = {}) {
+  const preview = context === "preview";
+  const space = preview || tab !== "camera";
   const still = !space && panorama;
-  const edits = !readOnly;
+  const edits = !preview && !readOnly;
   const nav = navigationRows();
 
   const view = still
@@ -135,7 +138,7 @@ export function shortcutGroups({ tab = "3d", panorama = false, readOnly = false,
       gestureRow("Zoom to the pointer", [["Wheel"]], "wheel"),
       ...(space ? [gestureRow("Look at a point", [["Double-click"]], "double-click")] : []),
     ];
-  const objects = [
+  const objects = preview ? [] : [
     ...(still ? [] : [gestureRow("Select", [["Click"]], "click")]),
     ...(space && edits ? [
       { label: "Move / Rotate / Scale", ...(() => {
@@ -146,7 +149,7 @@ export function shortcutGroups({ tab = "3d", panorama = false, readOnly = false,
     ] : []),
     ...(edits ? [keyRow("Delete", "delete")] : []),
   ];
-  const timeline = [
+  const timeline = preview ? (playable ? [keyRow("Play / pause", "play")] : []) : [
     keyRow("Play / pause", "play"),
     gestureRow("Add to selection", [["Shift", "Click"], ["Shift", "Drag"]], "add-keyframes"),
     ...(edits ? [keyRow("Copy keyframes", "copy-keys"), keyRow("Cut keyframes", "cut-keys"), keyRow("Paste at the playhead", "paste-keys")] : []),
@@ -164,10 +167,14 @@ export function shortcutGroups({ tab = "3d", panorama = false, readOnly = false,
   let note = null;
   if (still) note = "Nothing moves the view in Panorama mode.";
   else if (!space) note = "These move the Camera.";
-  return [
+  const groups = [
     { id: "view", title: "View", note, rows: shown(view) },
     { id: "objects", title: "Objects", note: null, rows: shown(objects) },
-    { id: "timeline", title: "Timeline", note: null, rows: shown(timeline) },
+    preview
+      ? { id: "playback", title: "Playback", note: null, rows: shown(timeline) }
+      : { id: "timeline", title: "Timeline", note: null, rows: shown(timeline) },
     { id: "editor", title: "Editor", note: null, rows: shown(editor) },
   ];
+  // The Preview window shows no group without rows; the editor keeps its groups in place.
+  return preview ? groups.filter((group) => group.rows.length || group.note) : groups;
 }

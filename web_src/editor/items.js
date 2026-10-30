@@ -1,12 +1,11 @@
 // The items the editor shows and selects: sky Stickers, Cutout shots, paint stroke groups and raster
 // objects, and in Panorama Studio the upstream Scene's working Stickers (ADR 0030). Looks them up by id, orders
 // them for display and moves them.
-import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "../pano_brush_presets.js";
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID, setCameraField, setStickerPose, stickerPose } from "../pano_editor_state.js";
 import { HIDDEN_PREVIEW_OPACITY } from "../pano_editor_view.js";
 import { clamp } from "../pano_math.js";
-import { normalizePaintingState } from "../pano_paint_types.js";
+import { ensurePaintGroup, nextPaintZIndex, paintingGroups, shortestWrappedDelta, statePainting, strokeGroupFrame, syncPaintGroups } from "../pano_paint_strokes.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { DEG2RAD, EXTERNAL_STICKER_ID, EXTERNAL_STICKER_SOURCE_KIND } from "./constants.js";
 
@@ -66,24 +65,7 @@ export function createItems(deps) {
     } else Object.assign(item, pose);
   }
   function getPaintingGroupList() {
-    const painting = state.painting || (state.painting = normalizePaintingState(null));
-    if (!Array.isArray(painting.groups)) painting.groups = [];
-    return painting.groups;
-  }
-  function getStrokeActionGroupIds(layerKind = "paint") {
-    const strokes = Array.isArray(state.painting?.[layerKind]?.strokes) ? state.painting[layerKind].strokes : [];
-    const ids = [];
-    const seen = new Set();
-    for (const stroke of strokes) {
-      const gid = String(stroke?.actionGroupId || "").trim();
-      if (!gid || seen.has(gid)) continue;
-      seen.add(gid);
-      ids.push(gid);
-    }
-    return ids;
-  }
-  function getPaintStrokeActionGroupIds() {
-    return getStrokeActionGroupIds("paint");
+    return paintingGroups(statePainting(state));
   }
   function makeStrokeGroupSelectionId(layerKind, actionGroupId) {
     const gid = String(actionGroupId || "").trim();
@@ -107,38 +89,10 @@ export function createItems(deps) {
     return { layerKind: layerKind === "mask" ? "mask" : "paint", actionGroupId: raw };
   }
   function getNextDisplayZIndex() {
-    let maxZ = -1;
-    for (const item of skyStickers()) {
-      maxZ = Math.max(maxZ, Number(item?.z_index || 0));
-    }
-    for (const group of getPaintingGroupList()) {
-      maxZ = Math.max(maxZ, Number(group?.z_index || 0));
-    }
-    for (const item of (Array.isArray(state.painting?.raster_objects) ? state.painting.raster_objects : [])) {
-      if (String(item?.layerKind || "paint") !== "paint") continue;
-      maxZ = Math.max(maxZ, Number(item?.z_index || 0));
-    }
-    return maxZ + 1;
+    return nextPaintZIndex(statePainting(state), skyStickers());
   }
   function ensurePaintingGroupEntry(actionGroupId, zIndex = null) {
-    const gid = String(actionGroupId || "").trim();
-    if (!gid) return null;
-    const groups = getPaintingGroupList();
-    let entry = groups.find((group) => String(group?.actionGroupId || "") === gid);
-    if (!entry) {
-      entry = {
-        id: gid,
-        type: "strokeGroup",
-        actionGroupId: gid,
-        z_index: zIndex == null ? getNextDisplayZIndex() : Math.max(0, Number(zIndex || 0)),
-        locked: false,
-        frame: null,
-      };
-      groups.push(entry);
-    } else if (zIndex != null) {
-      entry.z_index = Math.max(0, Number(zIndex || 0));
-    }
-    return entry;
+    return ensurePaintGroup(statePainting(state), skyStickers(), actionGroupId, zIndex);
   }
   function getFrameCornersUv(frame) {
     if (!frame?.centerUv) return [];
@@ -166,73 +120,8 @@ export function createItems(deps) {
     ];
   }
   function syncPaintingGroupEntries() {
-    const ids = new Set(getPaintStrokeActionGroupIds());
-    const groups = getPaintingGroupList();
-    const next = groups.filter((group) => ids.has(String(group?.actionGroupId || "")));
-    ids.forEach((gid) => {
-      if (!next.some((group) => String(group?.actionGroupId || "") === gid)) {
-        next.push({
-          id: gid,
-          type: "strokeGroup",
-          actionGroupId: gid,
-          z_index: getNextDisplayZIndex(),
-          locked: false,
-          frame: null,
-        });
-      }
-    });
-    next.sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0));
-    state.painting.groups = next;
-    return next;
+    return syncPaintGroups(statePainting(state), skyStickers());
   }
-  // Compute an axis-aligned bounding box for a stroke group (rot_deg = 0).
-  // Returns { centerUv, rot_deg, halfW, halfH, uvPad } or null when no points.
-  // Rotation is stored separately and accumulated via transforms — no PCA.
-  function computeGroupFrame(actionGroupId, layerKind, strokes) {
-    const normalizeU = (u) => ((Number(u || 0) % 1) + 1) % 1;
-    const sourcePoints = [];
-    for (const stroke of strokes) {
-      const geometry = stroke?.geometry;
-      const pts = geometry?.geometryKind === "lasso_fill"
-        ? geometry?.points
-        : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
-      if (Array.isArray(pts)) sourcePoints.push(...pts);
-    }
-    if (!sourcePoints.length) return null;
-    const baseU = normalizeU(sourcePoints[0]?.u || 0);
-    let sumU = 0;
-    let sumV = 0;
-    sourcePoints.forEach((pt) => {
-      const u = normalizeU(pt?.u || 0);
-      sumU += baseU + shortestWrappedDelta(u, baseU);
-      sumV += Number(pt?.v || 0);
-    });
-    const centU = ((sumU / sourcePoints.length) % 1 + 1) % 1;
-    const centV = sumV / sourcePoints.length;
-    let minDU = Infinity, maxDU = -Infinity, minV = Infinity, maxV = -Infinity;
-    sourcePoints.forEach((pt) => {
-      const u = normalizeU(pt?.u || 0);
-      const du = shortestWrappedDelta(u, centU);
-      minDU = Math.min(minDU, du); maxDU = Math.max(maxDU, du);
-      const v = Number(pt?.v || 0);
-      minV = Math.min(minV, v); maxV = Math.max(maxV, v);
-    });
-    const maxStrokeWidth = strokes.reduce((max, stroke) => {
-      const presetId = getBrushPresetIdForTool(String(stroke?.toolKind || "pen"));
-      const preset = BRUSH_PRESETS[presetId] || BRUSH_PRESETS[DEFAULT_BRUSH_PRESET_ID];
-      const size = Math.max(1, Number(stroke?.size || 10)) * Math.max(0.1, Number(preset?.sizeScale ?? 1));
-      return Math.max(max, size);
-    }, 0);
-    const uvPad = Math.max(0.0035, maxStrokeWidth / 2048);
-    return {
-      centerUv: { u: ((centU + (minDU + maxDU) * 0.5) % 1 + 1) % 1, v: clamp((minV + maxV) * 0.5, 0, 1) },
-      rot_deg: 0,
-      halfW: (maxDU - minDU) * 0.5 + uvPad,
-      halfH: (maxV - minV) * 0.5 + uvPad,
-      uvPad,
-    };
-  }
-
   // Stroke groups must derive their frame from the current stroke data every time.
   // A persistent/stale frame breaks seam-crossing selection and transforms.
   function ensureGroupFrame(actionGroupId, layerKind, strokes) {
@@ -241,7 +130,8 @@ export function createItems(deps) {
     const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
     if (!entry) return null;
     const s = strokes || getStrokeGroupStrokes(gid, layerKind);
-    entry.frame = computeGroupFrame(gid, layerKind, s);
+    // Axis-aligned (rot_deg 0); rotation is stored separately and accumulated via transforms.
+    entry.frame = strokeGroupFrame(s, getBrushPresetIdForTool);
     return entry.frame;
   }
 
@@ -410,12 +300,6 @@ export function createItems(deps) {
       u: ((Number(point.u || 0) + Number(du || 0)) % 1 + 1) % 1,
       v: clamp(Number(point.v || 0) + Number(dv || 0), 0, 1),
     };
-  }
-  function shortestWrappedDelta(a, b) {
-    let d = Number(a || 0) - Number(b || 0);
-    while (d > 0.5) d -= 1;
-    while (d < -0.5) d += 1;
-    return d;
   }
   function getStrokeGroupCenterUv(idOrActionGroupId, layerKind = null, strokesOverride = null) {
     const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);

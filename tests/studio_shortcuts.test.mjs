@@ -115,3 +115,25 @@ test("editorKeyAction: one action per key event, as the handlers had them", () =
   assert.equal(editorKeyAction(key({ key: "v", code: "KeyV", ctrlKey: true, altKey: true })), null);
   assert.equal(editorKeyAction(key({ key: "v", code: "KeyV" })), null);
 });
+
+test("the Preview window's list (context preview) has no selection or editing rows, only the view, play and the window's keys", () => {
+  const preview = shortcutGroups({ context: "preview", playable: true, mac: false });
+  const labels = preview.flatMap((group) => group.rows.map((row) => row.label));
+  for (const label of ["Select", "Add to selection", "Move / Rotate / Scale", `Rotate in ${ROTATE_SNAP_DEG}° steps`, "Delete",
+    "Copy keyframes", "Cut keyframes", "Paste at the playhead", "Undo", "Redo", `Fine steps (×${FINE_FACTOR})`, `Roll in ${ROTATE_SNAP_DEG}° steps`]) {
+    assert.ok(!labels.includes(label), `${label} is not in the Preview's list`);
+  }
+  const refs = refsOf(preview);
+  for (const ref of refs.filter((item) => item.startsWith("key:"))) {
+    assert.ok(["key:play", "key:shortcuts", "key:escape"].includes(ref), `${ref} is a key the Preview window takes`);
+  }
+  assert.deepEqual(preview.map((group) => group.id), ["view", "playback", "editor"]);
+  assert.equal(preview.find((group) => group.id === "playback").title, "Playback");
+  // The view rows are the editor's 3D tab's, from the same tables.
+  assert.deepEqual(preview[0].rows, full[0].rows);
+  assert.deepEqual(rowOf(preview, "Play / pause").keys, [["Space"]]);
+  assert.deepEqual(preview.find((group) => group.id === "editor").rows.map((row) => row.label), ["Show shortcuts", "Step back / close"]);
+  // Without the playback strip, Space does nothing there, so the row and its group are not shown.
+  const still = shortcutGroups({ context: "preview", playable: false });
+  assert.deepEqual(still.map((group) => group.id), ["view", "editor"]);
+});

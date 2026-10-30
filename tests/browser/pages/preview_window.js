@@ -4,6 +4,7 @@
 import { openPreviewWindow } from "/web_src/studio/preview_window.js";
 import { peekSceneViewer, previewNode, sceneViewer } from "/web_src/pano_node_bridge.js";
 import { makeVideo } from "./media.js";
+import { pauseNodeVideoForWindow, resumeNodeVideoFromWindow } from "/web_src/pano_preview_node_surface.js";
 
 // ?video: the source is a VIDEO (its gray goes from dark to light over its length), in the node's result.
 const VIDEO = new URLSearchParams(location.search).has("video");
@@ -117,6 +118,26 @@ try {
       showGrid: true,
     };
     sceneViewer(node).surface = { rest: () => told.push("rest"), activate: () => told.push("activate"), detach() {} };
+  } else if (HANDOFF && VIDEO) {
+    // The node's VIDEO (the runtime's, pano_preview_previewnode.js windowOpened / windowClosed), playing when the
+    // window opens.
+    const nodeVideo = recorded;
+    await nodeVideo.play();
+    previewNode(node).runtime = {
+      view: { yaw: 0, pitch: 0, fov: 100 },
+      windowOpened: () => {
+        told.push("opened");
+        preview.handedOver = pauseNodeVideoForWindow(nodeVideo);
+        return preview.handedOver;
+      },
+      windowClosed: (handBack) => {
+        told.push("closed");
+        resumeNodeVideoFromWindow(nodeVideo, handBack, true);
+      },
+      requestDraw: () => {},
+      teardown() {},
+    };
+    preview.nodeVideo = () => ({ time: nodeVideo.currentTime, paused: nodeVideo.paused });
   } else if (HANDOFF) {
     previewNode(node).runtime = { view: { yaw: new URLSearchParams(location.search).has("back") ? 180 : 30, pitch: new URLSearchParams(location.search).has("back") ? 0 : 5, fov: 70 }, requestDraw: () => told.push("draw"), teardown() {} };
   }

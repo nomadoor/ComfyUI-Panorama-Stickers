@@ -50,7 +50,7 @@ function onBackdropUp(event) {
   if (backdrop.up(event)) props.controller.close();
 }
 const isMac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "");
-const shortcuts = computed(() => shortcutGroups({ tab: "3d", panorama: false, readOnly: true, mac: isMac }));
+const shortcuts = computed(() => shortcutGroups({ context: "preview", playable: props.playback.video, mac: isMac }));
 const helpButton = () => nav.value?.helpButton() ?? null;
 
 // --- The playback strip's time: "m:ss / m:ss" (the frame shown, the length).

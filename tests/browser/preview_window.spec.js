@@ -182,6 +182,56 @@ test("a Scene opens at the node viewer's view and playhead, stops the node meanw
   expect(problems).toEqual([]);
 });
 
+// docs/studio-ui.md "Preview のウィンドウ": an IMAGE / VIDEO source's VIDEO on the node stops while the window is open
+// and hands its playhead over and back, as a Scene's node viewer does.
+test("a VIDEO on the node stops while the window is open, the window goes on from it, and hands its playhead back", async ({ page }) => {
+  const problems = await open(page, "?video&handoff");
+  // The node was playing: it stops at once, and the window plays on from the node's frame.
+  expect(await page.evaluate(() => window.__preview.told)).toEqual(["opened"]);
+  expect(await page.evaluate(() => window.__preview.handedOver.playing)).toBe(true);
+  expect(await page.evaluate(() => window.__preview.nodeVideo().paused)).toBe(true);
+  const handedFrame = await page.evaluate(() => Math.floor(window.__preview.handedOver.time * 30 + 1e-3));
+  expect(await page.evaluate(() => window.__preview.playback().playing)).toBe(true);
+  const firstFrame = await page.evaluate(() => window.__preview.playback().frame);
+  expect(Math.abs(firstFrame - handedFrame)).toBeLessThanOrEqual(2);
+  // While the window plays, the node stays where it stopped.
+  const nodeTime = await page.evaluate(() => window.__preview.nodeVideo().time);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__preview.nodeVideo())).toEqual({ time: nodeTime, paused: true });
+  // Paused and sought in the window: closing hands that frame back, paused.
+  await page.locator("[data-stage-canvas]").click({ position: { x: 300, y: 300 } });
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => window.__preview.playback().playing)).toBe(false);
+  await page.locator("[data-seek]").fill("40");
+  await expect.poll(() => page.evaluate(() => window.__preview.playback().frame), { timeout: 10_000 }).toBe(40);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__preview.told)).toEqual(["opened", "closed"]);
+  const back = await page.evaluate(() => window.__preview.nodeVideo());
+  expect(back.paused).toBe(true);
+  expect(back.time).toBeCloseTo(40 / 30, 3);
+  // Opened again and closed while playing: the node plays on.
+  expect(await page.evaluate(() => window.__preview.open())).toBe(true);
+  await page.locator("[data-action=play]").click();
+  await expect.poll(() => page.evaluate(() => window.__preview.playback().playing)).toBe(true);
+  await page.locator("[data-action=close]").click();
+  await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__preview.nodeVideo().paused)).toBe(false);
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "Preview のウィンドウ": the "?" list has the window's keys only (shortcuts.js context "preview").
+test("the window's shortcut list has no selection or editing rows", async ({ page }) => {
+  await open(page, "?video");
+  await page.locator("[data-action=shortcuts]").click();
+  const list = page.locator("[data-shortcut-group]");
+  await expect(list.first()).toBeVisible();
+  expect(await list.evaluateAll((groups) => groups.map((group) => group.dataset.shortcutGroup))).toEqual(["view", "playback", "editor"]);
+  const text = await page.locator(".pano-studio-shortcuts-rows").allInnerTexts();
+  for (const label of ["Select", "Add to selection", "Delete", "Undo", "Copy keyframes"]) expect(text.join("\n")).not.toContain(label);
+  expect(text.join("\n")).toContain("Play / pause");
+});
+
 // docs/studio-ui.md "Preview のウィンドウ": Space as in the editor.
 test("Space plays and pauses; not with Ctrl", async ({ page }) => {
   await open(page, "?scene");

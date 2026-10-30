@@ -98,3 +98,25 @@ export function createPreviewFullscreenController({
 
   return { toggle, isActive, destroy };
 }
+
+// The new Preview window opens on the node (docs/studio-ui.md "Preview のウィンドウ"): the node's VIDEO (or null) stops
+// and hands over where it is and whether it played: { time (seconds), playing }, or null without a VIDEO.
+export function pauseNodeVideoForWindow(video) {
+  if (!video) return null;
+  const handOver = { time: Math.max(0, Number(video.currentTime) || 0), playing: !video.paused && !video.ended };
+  video.pause();
+  return handOver;
+}
+
+// The window closed: the node's VIDEO goes on from the window's last time and playing state. It plays only when the
+// node is on screen (`shown`), as a VIDEO out of sight does not play.
+export function resumeNodeVideoFromWindow(video, { time = null, playing = false } = {}, shown = true) {
+  if (!video) return;
+  const at = Number(time);
+  if (Number.isFinite(at)) {
+    const duration = Number(video.duration);
+    video.currentTime = Number.isFinite(duration) && duration > 0 ? Math.min(Math.max(0, at), duration) : Math.max(0, at);
+  }
+  if (playing && shown) void video.play()?.catch?.(() => {});
+  else video.pause();
+}
