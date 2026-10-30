@@ -4,7 +4,7 @@
 import { projectPoint } from "../pano_space.js";
 import { LOAD_LOOK } from "./load_reveal.js";
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
-import { GIZMO_COLORS, GIZMO_LOOK } from "./gizmo_overlay.js";
+import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
 import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, screenSegment } from "./world_guides.js";
 
 // The sky image's handles (docs/studio-ui.md "下の中央のバー"; pano_sticker_affordance.js hits them): corner and rotate
@@ -167,15 +167,16 @@ function roundedSquare(ctx, center, size, radius) {
 // The gizmo (gizmo_overlay.js gizmoHandles) as the draft specimen-11.html draws Move: round-capped bars with a ball
 // (Move) or a rounded square (Scale) at the end, or rings whose far half is faint (Rotate), and the white center dot;
 // Move's plane squares under its bars.
-// The far handles first; `active` (a handle name) is white. `guide` ({ name, a, b }) is the axis guide line of a drag,
+// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker. `guide` ({ name, a, b }) is the axis guide line of a drag,
 // in its axis's color under the handles.
 function drawGizmo(ctx, handles, active, guide) {
-  const colorOf = (name) => (name === active ? GIZMO_COLORS.active : GIZMO_COLORS[name]);
+  const lit = (name) => name === active;
+  const L = GIZMO_LOOK;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   if (guide) {
-    ctx.globalAlpha = GIZMO_LOOK.guideAlpha;
-    ctx.lineWidth = GIZMO_LOOK.guideWidth;
+    ctx.globalAlpha = L.guideAlpha;
+    ctx.lineWidth = L.guideWidth;
     ctx.strokeStyle = GIZMO_COLORS[guide.name];
     ctx.beginPath();
     ctx.moveTo(guide.a.x, guide.a.y);
@@ -183,21 +184,34 @@ function drawGizmo(ctx, handles, active, guide) {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+  // A path stroked twice: the dark underlay underExtra wider, then the color.
+  const strokeOver = (path, color, width, alpha = 1) => {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = L.under;
+    ctx.lineWidth = width + L.underExtra;
+    ctx.stroke(path);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke(path);
+    ctx.globalAlpha = 1;
+  };
   // Move's plane squares under the bars: the color of the axis across each, translucent, with an edge of it.
   for (const plane of handles.planes ?? []) {
     if (!plane.shown) continue;
-    const lit = plane.name === active;
-    const color = lit ? GIZMO_COLORS.active : GIZMO_COLORS[plane.normal];
+    const on = lit(plane.name);
+    const color = gizmoColor(plane.normal, on);
     const path = polygonPath(plane.points);
-    ctx.globalAlpha = lit ? GIZMO_LOOK.planeActiveAlpha : GIZMO_LOOK.planeAlpha;
+    ctx.strokeStyle = L.under;
+    ctx.lineWidth = L.planeLine + L.underExtra;
+    ctx.stroke(path);
+    ctx.globalAlpha = on ? L.planeActiveAlpha : L.planeAlpha;
     ctx.fillStyle = color;
     ctx.fill(path);
     ctx.globalAlpha = 1;
-    ctx.lineWidth = GIZMO_LOOK.planeLine;
+    ctx.lineWidth = L.planeLine;
     ctx.strokeStyle = color;
     ctx.stroke(path);
   }
-  ctx.lineWidth = GIZMO_LOOK.lineWidth;
   if (handles.mode === "rotate") {
     for (const front of [false, true]) {
       for (const ring of handles.rings) {
@@ -208,32 +222,46 @@ function drawGizmo(ctx, handles, active, guide) {
           path.moveTo(point.x, point.y);
           path.lineTo(next.x, next.y);
         });
-        ctx.globalAlpha = front ? 1 : GIZMO_LOOK.ringBackAlpha;
-        ctx.strokeStyle = colorOf(ring.name);
-        ctx.stroke(path);
+        const on = lit(ring.name);
+        strokeOver(path, gizmoColor(ring.name, on), on ? L.activeLineWidth : L.lineWidth, front ? 1 : L.ringBackAlpha);
       }
     }
-    ctx.globalAlpha = 1;
   } else {
     const axes = handles.axes.filter((axis) => axis.shown).sort((a, b) => b.depth - a.depth);
     for (const axis of axes) {
-      const color = colorOf(axis.name);
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(handles.center.x, handles.center.y);
-      ctx.lineTo(axis.end.x, axis.end.y);
-      ctx.stroke();
+      const on = lit(axis.name);
+      const color = gizmoColor(axis.name, on);
+      const bar = new Path2D();
+      bar.moveTo(handles.center.x, handles.center.y);
+      bar.lineTo(axis.end.x, axis.end.y);
+      strokeOver(bar, color, on ? L.activeLineWidth : L.lineWidth);
+      ctx.fillStyle = L.under;
       if (handles.mode === "scale") {
-        roundedSquare(ctx, axis.end, GIZMO_LOOK.squareSize, GIZMO_LOOK.squareRadius);
+        const size = on ? L.activeSquareSize : L.squareSize;
+        roundedSquare(ctx, axis.end, size + 2, L.squareRadius + 1);
+        ctx.fillStyle = color;
+        roundedSquare(ctx, axis.end, size, L.squareRadius);
       } else {
+        const radius = on ? L.activeBallRadius : L.ballRadius;
         ctx.beginPath();
-        ctx.arc(axis.end.x, axis.end.y, GIZMO_LOOK.ballRadius, 0, Math.PI * 2);
+        ctx.arc(axis.end.x, axis.end.y, radius + 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(axis.end.x, axis.end.y, radius, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
-  whiteDot(ctx, handles.center, GIZMO_LOOK.centerRadius);
+  // The white center dot with a dark rim (larger while Move's center is dragged).
+  const radius = lit("center") ? L.activeCenterRadius : L.centerRadius;
+  ctx.beginPath();
+  ctx.arc(handles.center.x, handles.center.y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.lineWidth = L.centerRim;
+  ctx.strokeStyle = L.under;
+  ctx.stroke();
 }
 
 // Draws `scene` (stage_objects.js overlay()) on the 2D context `ctx` of a canvas covering a width x height CSS px stage

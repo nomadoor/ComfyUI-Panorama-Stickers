@@ -9,9 +9,21 @@ import { placeDirection } from "../pano_editor_view.js";
 import { quaternionToRotation, rotationToQuaternion } from "../pano_world.js";
 import { distanceToSegment, focalPixels, pointInPolygon, viewForward } from "./world_guides.js";
 
-// The gizmo's colors (docs/design.md "新しい UI の見た目": X coral, Y lime, Z ice), the handle under the pointer and
-// the one dragged white.
-export const GIZMO_COLORS = Object.freeze({ x: "#f37159", y: "#d6e797", z: "#aecedb", active: "#ffffff" });
+// The gizmo's colors (docs/design.md "新しい UI の見た目": X coral, Y lime, Z ice). The handle under the pointer and the
+// one dragged keep their axis's color, brought GIZMO_LOOK.activeMix of the way to white (gizmoColor): white vanished on
+// a light picture.
+export const GIZMO_COLORS = Object.freeze({ x: "#f37159", y: "#d6e797", z: "#aecedb" });
+
+// The color of the axis `name` ("x", "y", "z"), lit (`active`) or not, as "#rrggbb".
+export function gizmoColor(name, active = false) {
+  const base = GIZMO_COLORS[name];
+  if (!active) return base;
+  const mix = (offset) => {
+    const value = parseInt(base.slice(offset, offset + 2), 16);
+    return Math.round(value + (255 - value) * GIZMO_LOOK.activeMix).toString(16).padStart(2, "0");
+  };
+  return `#${mix(1)}${mix(3)}${mix(5)}`;
+}
 
 // Its sizes in CSS px (docs/design.md "新しい UI の見た目" ギズモ): how far a bar reaches from the center and the
 // rings' radius, the line, Move's balls, the white center dot, Scale's rounded squares, how faint a ring's far half
@@ -31,6 +43,18 @@ export const GIZMO_LOOK = Object.freeze({
   lineHit: 6,
   guideWidth: 1.5,
   guideAlpha: 0.8,
+  // A lit handle: its color toward white by activeMix, a thicker line, a bigger ball and square; the center dot while
+  // Move's center drag lasts.
+  activeMix: 0.35,
+  activeLineWidth: 3.5,
+  activeBallRadius: 6.5,
+  activeSquareSize: 11,
+  activeCenterRadius: 5.5,
+  // The dark underlay under every handle (wider than its line by underExtra, 1px out round a ball or square) and the
+  // dark rim round the center dot, so the gizmo shows on a light picture.
+  under: "rgba(0, 0, 0, 0.4)",
+  underExtra: 2,
+  centerRim: 1.5,
   // Move's plane squares: from GIZMO_PLANE_FROM to GIZMO_PLANE_TO of the reach along both of their axes, filled in the
   // color of the axis across the plane at planeAlpha with a planeLine px edge; lit, white at planeActiveAlpha.
   planeFrom: 0.28,

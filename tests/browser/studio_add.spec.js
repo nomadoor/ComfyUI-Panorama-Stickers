@@ -312,12 +312,14 @@ test("Move's XZ square drags the object on the level plane only; its Y stays", a
   const before = (await stickers(page))[0].position;
   const h = await page.evaluate((row) => window.__studio.handles(row, "translate"), id);
   expect(h.planes.xz).not.toBeNull();
-  // The square lights white under the pointer.
+  // The square lights under the pointer: its lime brought toward white, never plain white.
+  const box = await page.locator("[data-stage-canvas]").boundingBox();
+  const at = { x: h.planes.xz.x - box.x, y: h.planes.xz.y - box.y };
+  const idle = await page.evaluate((p) => window.__studio.overlayAt(p.x, p.y), at);
   await page.mouse.move(h.planes.xz.x, h.planes.xz.y);
   await expect.poll(async () => {
-    const box = await page.locator("[data-stage-canvas]").boundingBox();
-    const px = await page.evaluate(({ x, y }) => window.__studio.overlayAt(x, y), { x: h.planes.xz.x - box.x, y: h.planes.xz.y - box.y });
-    return px[0] > 200 && px[1] > 200 && px[2] > 200;
+    const px = await page.evaluate((p) => window.__studio.overlayAt(p.x, p.y), at);
+    return px[3] > idle[3] + 20;
   }).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("plane-hover.png") });
   await drag(page, h.planes.xz, { x: h.planes.xz.x + 70, y: h.planes.xz.y + 30 });

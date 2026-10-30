@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DEFAULT_VIEW_HFOV, gizmoDragLanes, projectPoint, sceneTransform, spaceCamera } from "../web_src/pano_space.js";
-import { GIZMO_LOOK, gizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit, planeHit } from "../web_src/studio/gizmo_overlay.js";
+import { GIZMO_LOOK, gizmoColor, gizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit, planeHit } from "../web_src/studio/gizmo_overlay.js";
 import { quaternionToRotation } from "../web_src/pano_world.js";
 
 const W = 1000;
@@ -215,4 +215,15 @@ test("planeHit: the ray's point on the plane, none along it or behind the near p
   assert.ok(close(at[1], -2) && close(at[2], -2));
   assert.equal(planeHit({ origin: [0, 0, 0], direction: [1, 0, 0] }, [0, -2, 0], [0, 1, 0]), null);
   assert.equal(planeHit({ origin: [0, 0, 0], direction: [0, 1, 0] }, [0, -2, 0], [0, 1, 0]), null);
+});
+
+test("a lit handle keeps its axis's color, brought GIZMO_LOOK.activeMix toward white, not white", () => {
+  assert.equal(gizmoColor("x"), "#f37159");
+  const lit = gizmoColor("x", true);
+  assert.notEqual(lit, "#ffffff");
+  const channel = (hex, offset) => parseInt(hex.slice(offset, offset + 2), 16);
+  for (const offset of [1, 3, 5]) {
+    const base = channel("#f37159", offset);
+    assert.equal(channel(lit, offset), Math.round(base + (255 - base) * GIZMO_LOOK.activeMix));
+  }
 });

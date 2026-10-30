@@ -348,7 +348,7 @@ export function createStageObjects({
       // A guide's band runs now (StudioEditor.vue marks the overlay: data-loading-guide).
       loading: items.some((item) => item.shimmer > 0),
       camera: marker ? { screen: marker, look: row === "camera" ? "selected" : "normal" } : null,
-      // The handle dragged, else the one under the pointer (none while Alt is held), is white.
+      // The handle dragged, else the one under the pointer (none while Alt is held), is lit.
       // While an axis handle is dragged, its guide line ({ name, a, b } in CSS px) runs across the stage.
       gizmo: shownHandles ? {
         handles: shownHandles,
