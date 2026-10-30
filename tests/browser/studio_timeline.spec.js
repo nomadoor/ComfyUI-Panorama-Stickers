@@ -118,7 +118,7 @@ test("a Keyframe click selects it, Shift adds, a box selects what it covers, an 
   await cameraKeys.nth(1).click();
   expect(await scene(page, "selection")).toEqual({ row: null, keys: [{ row: "camera", lane: null, frame: 48 }] });
   await expect(cameraKeys.nth(1)).toHaveClass(/is-selected/);
-  const ice = await cameraKeys.nth(1).evaluate((el) => getComputedStyle(el).backgroundColor);
+  const ice = await cameraKeys.nth(1).evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
   expect(ice).toBe("rgb(174, 206, 219)");
   await page.keyboard.down("Shift");
   await cameraKeys.nth(0).click();
@@ -189,6 +189,65 @@ test("a Clip range moves by its bar and trims by its ends", async ({ page }) => 
   await events(page);
   await page.mouse.click(await frameX(page, 40), y);
   expect((await events(page)).filter((event) => event.name === "edit")).toEqual([]);
+});
+
+// docs/timeline-ui.md "Clip range のバー（新しい UI）".
+test("a still image's row has no Clip range bar, and its dot is grabbed from anywhere on its hit area", async ({ page }) => {
+  await open(page);
+  await expect(dark(page).locator('[data-track="sticker_2"] [data-part="clip"]')).toHaveCount(0);
+  await expect(dark(page).locator('[data-track="camera"] [data-part="clip"]')).toHaveCount(0);
+  // The chair's trimmed Clip range and the background VIDEO keep their bars.
+  await expect(dark(page).locator('[data-track="sticker_1"] [data-part="clip"]')).toHaveCount(1);
+  await expect(dark(page).locator('[data-track="background"] [data-part="clip"]')).toHaveCount(1);
+  await dark(page).locator('[data-head="sticker_2"] [data-part="dot"]').click();
+  const key = dark(page).locator('[data-track="sticker_2"] .pano-studio-tl-key');
+  await expect(key).toHaveAttribute("data-frame", "24");
+  const box = await key.boundingBox();
+  const track = await dark(page).locator('[data-track="sticker_2"]').boundingBox();
+  // The hit area spans the row's height and 18px, wider than the 9px diamond.
+  expect(Math.round(box.width)).toBe(18);
+  expect(box.height).toBeGreaterThanOrEqual(track.height - 2);
+  // Press near the row's bottom edge and 7px right of the diamond's centre: still the dot.
+  const x0 = box.x + box.width / 2 + 7;
+  const y0 = track.y + track.height - 3;
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  await page.mouse.move(x0 + (await frameX(page, 34)) - (await frameX(page, 24)), y0, { steps: 6 });
+  await page.mouse.up();
+  const poster = (await scene(page, "state")).stickers.find((sticker) => sticker.id === "sticker_2");
+  expect(poster.direction.keyframes.map((item) => item.frame)).toEqual([34]);
+  expect(poster.clip).toEqual({ start: 0, in: 0, duration: null });
+});
+
+test("a VIDEO row keeps its bar, and a dot on the bar is grabbed instead of the bar", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.__scene.portVideo());
+  const bar = dark(page).locator('[data-track="sticker_2"] [data-part="clip"]');
+  await expect(bar).toHaveCount(1);
+  await dark(page).locator('[data-head="sticker_2"] [data-part="dot"]').click();
+  const key = dark(page).locator('[data-track="sticker_2"] .pano-studio-tl-key');
+  const box = await key.boundingBox();
+  const barBox = await bar.boundingBox();
+  // The dot is on the bar.
+  expect(box.x + box.width / 2).toBeGreaterThan(barBox.x);
+  expect(box.x + box.width / 2).toBeLessThan(barBox.x + barBox.width);
+  const x0 = box.x + box.width / 2 + 6;
+  const y0 = barBox.y + barBox.height / 2 + 6;
+  const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.className, [x0, y0]);
+  expect(hit).toContain("pano-studio-tl-key");
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  await page.mouse.move(x0 + (await frameX(page, 30)) - (await frameX(page, 24)), y0, { steps: 6 });
+  await page.mouse.up();
+  const poster = (await scene(page, "state")).stickers.find((sticker) => sticker.id === "sticker_2");
+  expect(poster.direction.keyframes.map((item) => item.frame)).toEqual([30]);
+  expect(poster.clip).toEqual({ start: 0, in: 0, duration: null });
+  // Away from the dot, the bar still moves the Clip range.
+  await page.mouse.move(await frameX(page, 50), y0);
+  await page.mouse.down();
+  await page.mouse.move(await frameX(page, 55), y0, { steps: 5 });
+  await page.mouse.up();
+  expect((await scene(page, "state")).stickers.find((sticker) => sticker.id === "sticker_2").clip).toEqual({ start: 5, in: 0, duration: null });
 });
 
 test("a row's name selects its object (moving the playhead into its Clip range) and a double-click asks for Frame Selected", async ({ page }) => {

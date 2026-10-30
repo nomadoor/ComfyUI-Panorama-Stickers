@@ -166,7 +166,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // What the Timeline knows of the inputs (timeline_model.js ctx `media`): the background (its VIDEO or IMAGE batch
     // once its length is known, else a single image), the `scene` items, the animated 3D files' clips.
     media: {},
-    background: backgroundLinked ? { end: null } : null,
+    background: backgroundLinked ? { end: null, video: false } : null,
     sceneRow: sceneLinked,
     // A VIDEO sets the Timeline fps (pano_video_fps.js).
     fpsLocked: false,
@@ -182,7 +182,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     const files = sceneFiles();
     const animations = stateAnimationClips(state, { sceneFiles: files, editorFile: stageMedia.editorFile });
     view.media = { bg: backgroundMedia(), sceneItems: files?.urls.length ?? 0, animations };
-    view.background = backgroundLinked ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg) } : null;
+    view.background = backgroundLinked
+      ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg), video: videoLinked(node, BACKGROUND_INPUTS) }
+      : null;
     view.fpsLocked = timelineFpsLocked(videoTimelineFps(node, media), node, VIDEO_FPS_INPUTS);
     view.animations = animations.stickers ?? {};
     // [add-drop] A placed image's size is its decoded file's until its uploaded file has loaded.

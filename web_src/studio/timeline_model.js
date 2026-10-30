@@ -8,12 +8,14 @@
 //               then shows the default Camera (timelineCamera)
 //   upstream    the upstream layers, farthest first: [{ key, name, sceneState, editable, record, scene, deleted,
 //               portMeta }] (editor/upstream.js upstreamTimelineLayers, with `name` the upstream node's title and
-//               `portMeta` the media meta of its port Sticker)
+//               `portMeta` the media meta of its port Sticker; optional `sceneItems`, the number of items of its 3D
+//               content, and `animations`, its animated 3D files' clips as media.animations)
 //   media       what timelineSpan knows of the inputs (pano_timeline.js autoTimelineLength), `port` the node's own port
 //               Sticker's media meta
 //   spanOf      optional (ctx, openClip) => span, in place of timelineSpan(state, media) (for an upstream layer's
 //               Clip range that sets the Auto length)
-//   background  null, or { end } while the node's own bg_media has a row (`end` where its media ends, or null)
+//   background  null, or { end, video } while the node's own bg_media has a row (`end` where its media ends, or null;
+//               `video` whether a VIDEO is linked to it, before its length is known too)
 //   sceneRow    whether the `scene` input is linked (not to an upstream Scene)
 //   fpsLocked   whether a VIDEO sets the Timeline fps
 //   readOnly    a read-only editor
@@ -21,8 +23,10 @@
 // [{ row, lane, frame }], `lane` null for a pin of a closed row (all the row's Lanes at that frame), `frame` in the
 // owner's own frames (the Clip frames of a Sticker or `scene`), so a selection moves with its Clip range.
 import { ICON } from "../icons.js";
+import { animationCycleFrames } from "../pano_animation.js";
 import { sceneStickerLabel } from "../pano_editor_state.js";
 import { portMediaFrames } from "../pano_port_media.js";
+import { defaultClip } from "../pano_scene_state.js";
 import { FRAME_EPSILON } from "../pano_scene_eval.js";
 import {
   BACKGROUND_ROW,
@@ -130,6 +134,30 @@ export function entryVisible(entry) {
 // Whether a row keys its Lanes with its row dot and opens into Lane lines: the Camera and the Stickers.
 export function entryKeyable(entry) {
   return entry.kind === "camera" || entry.kind === "sticker";
+}
+
+// Whether a row's thing has a time of its own, so its row shows a Clip range bar (docs/timeline-ui.md "Clip range の
+// バー（新しい UI）"): a background VIDEO or IMAGE batch, a port Sticker's VIDEO or batch, an animated 3D file, a
+// `scene` with two or more items; and, so a trimmed range is never hidden, any Clip range that is not the default.
+// An upstream row reads its layer's media (`portMeta`, `sceneItems`, `animations`) where an own row reads ctx's.
+export function hasOwnTime(ctx, entry) {
+  const owner = entry.owner;
+  const clip = owner?.clip;
+  if (!clip) return false;
+  if (!defaultClip(clip)) return true;
+  const { layer } = entry;
+  const media = ctx.media || {};
+  if (entry.kind === "background") {
+    const bg = media.bg;
+    return !!(bg?.video || bg?.frames > 1 || ctx.background?.video);
+  }
+  const animations = layer ? layer.animations : media.animations;
+  const clips = entry.kind === "scene" ? animations?.scene : animations?.stickers?.[owner.id];
+  if (clips && animationCycleFrames(clips, owner.animation, ctx.state.timeline.fps) !== null) return true;
+  if (entry.kind === "scene") return (layer ? layer.sceneItems : media.sceneItems) > 1;
+  if (owner.source?.kind !== "port") return false;
+  const meta = layer ? layer.portMeta : media.port;
+  return !!meta && (meta.kind === "VIDEO" || meta.frames > 1);
 }
 
 // Where the bar of a row's Clip range ends, in Timeline frames: its duration's end; without one, where its media ends
@@ -249,7 +277,7 @@ function overridden(entry) {
 //     offset, pins, lanes, nameTip }
 // `eye` null for a row without one (its place is kept); `expand` "yes", "disabled" (no Lanes to open) or "none";
 // `dot` null for a row without Lanes, else { state, disabled, tip }; `clip` { start, end } in Timeline frames, `end`
-// null where the bar runs to the Timeline's end; `pins` and each Lane's `keys` { frame, ownerFrame, selected, full }.
+// null where the bar runs to the Timeline's end, or null for a row without a bar (hasOwnTime); `pins` and each Lane's `keys` { frame, ownerFrame, selected, full }.
 // `lines` lists the track lines top to bottom (a row's, then its open Lanes'), the ones keysInRange reads.
 export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playing = false, loop = true, openRows = new Set() } = {}) {
   const { state } = ctx;
@@ -302,7 +330,7 @@ export function buildStudioTimeline(ctx, { selection = null, playhead = 0, playi
       dot: keyable ? { state: rowDotState(entry, playhead), disabled: !!dotBlocked, tip: dotBlocked || "Keyframe all values here (not the lens)" } : null,
       upstream: !!entry.layer,
       overridden: overridden(entry),
-      clip: clip ? { start: clip.start, end: clipBarEnd(ctx, entry) } : null,
+      clip: clip && hasOwnTime(ctx, entry) ? { start: clip.start, end: clipBarEnd(ctx, entry) } : null,
       clipEditable: entryClipEditable(ctx, entry),
       keysEditable: entryKeysEditable(ctx, entry),
       offset: entry.offset,
