@@ -786,8 +786,17 @@ export function cameraFrustumShape(camera, length) {
   const halfH = halfW / camera.aspect;
   const at = (x, y, z) => add(camera.position, apply(rotation, [x, y, z]));
   const outline = [at(-halfW, -halfH, -length), at(halfW, -halfH, -length), at(halfW, halfH, -length), at(-halfW, halfH, -length)];
-  const top = [at(-halfW * 0.5, halfH * 1.1, -length), at(0, halfH * 1.5, -length), at(halfW * 0.5, halfH * 1.1, -length)];
+  const top = upMark(halfW, halfH).map(([x, y]) => at(x, y, -length));
   return { apex: [...camera.position], outline, spokes: [0, 1, 2, 3], top, lens: false };
+}
+
+// The triangle above a frame of half width `halfW` and half height `halfH` that marks its up, as [x, y] film points.
+// Its gap and height follow the width alone (the 16:9 look), so the triangle keeps its shape whatever the aspect.
+const UP_MARK_GAP = 0.1 * 9 / 16;
+const UP_MARK_HEIGHT = 0.4 * 9 / 16;
+function upMark(halfW, halfH) {
+  const base = halfH + halfW * UP_MARK_GAP;
+  return [[-halfW * 0.5, base], [0, base + halfW * UP_MARK_HEIGHT], [halfW * 0.5, base]];
 }
 
 // Line segments [a, b] of a Camera value's frustum `length` ahead (cameraFrustumShape): the four edges from its
@@ -832,7 +841,7 @@ function lensFrustumShape(camera, rotation, length) {
     }
   });
   const spokes = outline.map((_, index) => index).filter((index) => index % (LENS_FRUSTUM_STEPS / 2) === 0);
-  const top = [at(-halfX * 0.5, halfY * 1.1), at(0, halfY * 1.5), at(halfX * 0.5, halfY * 1.1)];
+  const top = upMark(halfX, halfY).map(([x, y]) => at(x, y));
   return { apex: [...camera.position], outline, spokes, top: top.every(Boolean) ? top : null, lens: true };
 }
 

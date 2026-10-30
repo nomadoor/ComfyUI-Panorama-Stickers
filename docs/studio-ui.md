@@ -30,17 +30,17 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | `web_src/components/studio/StudioEditor.vue`、大きさの規則は `web_src/studio/layout.js`（タイムラインの高さ、Output の小窓の大きさとその記憶）、開くのは `web_src/studio/editor.js` | `tests/studio_stage_view.test.mjs`（`layout.js`）、`tests/browser/studio_editor.spec.js` |
-| 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor と Undo・Redo だけが働き、ほかは席に置いて無効。Undo・Redo は `web_src/studio/session.js` の履歴）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
+| 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor・Add・Undo・Redo が働き、ほかは席に置いて無効。Undo・Redo は `web_src/studio/session.js` の履歴、Add は `web_src/studio/add_files.js`）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
 | インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
 | 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、描くのは `web_src/studio/stage_overlay.js`）。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、Camera の Lock（`camera.locked` を読み込みがまだ読まない、`docs/scene-state-v2.md`）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js` |
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンとカードは（新しい UI、未実装）`web_src/studio/camera_ui.js` | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、（未作成）`tests/studio_camera_ui.test.mjs` |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rulerStrips`（目盛りの長さと置き場所）・`rulerMarks`・`rulerDragValue`、目盛りの縮尺と長さと値の幅 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集とリセットはインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`、Roll だけのリセットは行 `roll`）。ステージへの組み込み（タブ、フレームの中の絵、目盛り、Camera タブで Output の小窓を畳むこと）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor.js`、描くのと操作は `web_src/studio/stage.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_inspector_actions.test.mjs`（Roll だけのリセット）、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
-| Add のアイコンと、画像を Add したときの Sky / World の二択、ドラッグ中の印の見た目とラベル | — | （新しい UI、未実装）`web_src/components/studio/StudioPlaceChoice.vue`、`web_src/studio/landing.js`（着く所は `docs/space-and-view.md`） | （未作成）`tests/browser/` の場面 |
-| 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。上流の警告と 3D ファイルの読み込みの失敗の知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/browser/studio_add.spec.js` |
+| 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
 | ショートカットの一覧の中身 | — | （新しい UI、未実装）`web_src/components/studio/StudioShortcuts.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
-| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2〜4 段（地面を拾う待ち、Add の二択、ショートカットの一覧）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
+| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段は `web_src/studio/add_files.js` `escape`、5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2・4 段（地面を拾う待ち、ショートカットの一覧）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |
 | Output の小窓（折りたたみとその動き、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`、Camera タブで畳んで触れなくするのは `outputWindowView`。中の絵の canvas は `StudioEditor.vue` が小窓の slot に置き、描くのは `web_src/studio/stage.js`（Frame モードはステージの canvas の隅に描いて `createImageBitmap`、Panorama モードは `pano_three_view.js` `renderLiveErp`。描き方は `docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
 
@@ -292,7 +292,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - 撮り方のモードを変えても、Camera は動かさない。
 - 目のアイコンで Camera を隠すのは表示だけで、出力は変えない。
 - 3D タブでの見た目（見本 `camera-1.html`。値は `docs/design.md`）：
-  - Frame モード：視錐台（三角錐）の面を薄く塗り、辺を線で描く。枠の上辺に、上の向きを示す小さな塗った三角。錐の頂点（Camera の
+  - Frame モード：視錐台（三角錐）の面を薄く塗り、辺を線で描く。枠の上辺に、上の向きを示す小さな塗った三角。三角の形は枠の幅だけから決め、アスペクト比を変えても歪まない（`pano_space.js` `cameraFrustumShape`）。錐の頂点（Camera の
     位置）に白い点。奥に隠れる辺は薄く描く。
   - Panorama モード：Camera の位置に小さな球を薄く塗って輪郭を線で描き、赤道に輪を一本、正面（出来上がる ERP の中心）の向きに
     球の外へ短い矢印、球の中心に白い点。
@@ -348,14 +348,30 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 
 着く所の規則（光線の当たり、境界、置く大きさと向き）は `docs/space-and-view.md` の「Add とドロップ」が持つ。
 
+- Add：左の列の Add を押すと、ファイルを選ぶ画面を開く（選べるファイルは `docs/space-and-view.md` の「Add とドロップ」）。一度に一つの
+  ファイルを置く。読み取り専用のエディタでは、Add を席に出したまま無効にし、ドロップを受けない。Camera タブでも、Add は左の列の
+  ほかのボタンと同じく無効で（上の「左の列」）、ドロップを受けない。二択はタブを切り替えると閉じる（何も置かない）。
 - Add で画像を選んだとき：読み込んだ後、ステージの中央に二つのボタン（Sky のアイコン＋`Sky`、World のアイコン＋`World`）を出し、
-  押したほうに置く。Escape か、二択の外を押すと取り消し、何も置かない。3D ファイルは選ばせない。二択の見せ方と取り消しの条件は
-  この文書が持ち、選んだ後の置き場所は `docs/space-and-view.md` の「Add とドロップ」が持つ。
-- ドロップ：離した点で行き先が決まり、選ばせない。
-- ファイルをドラッグしている間の印：着く所に角のかぎ括弧と薄い塗りを描く（色は `docs/design.md`）。Sky の枠は、球に写した枠の
+  押したほうに置く。Escape か、二択の外を押すと取り消し、何も置かない。外を押したときは、取り消した後もその押下がいつもどおり働く
+  （視点のドラッグなど）。二択を出している間に、ファイルをステージにドラッグしたときと、次のファイルを選んだときも取り消す。3D ファイルは
+  選ばせない。二択の見せ方と取り消しの条件はこの文書が持ち、選んだ後の置き場所は `docs/space-and-view.md` の「Add とドロップ」が持つ。
+  - 二択の見た目：浮かせる部品の地の丸い群（`docs/design.md` の「形と重なり」）に、二つのボタンを横に並べる。ボタンの大きさは
+    `docs/design.md` の「大きさ」の「Add の二択」。
+- ドロップ：離した点で行き先が決まり、選ばせない。いくつものファイルを落としたときは、画像があれば最初の画像を、無ければ最初の
+  3D ファイルを一つだけ置く（古い UI と同じ）。
+- ファイルをドラッグしている間の印：着く所に角のかぎ括弧と薄い塗りを描く（色と大きさは `docs/design.md`）。Sky の枠は、球に写した枠の
   曲がった辺に沿ってかぎ括弧を描く。3D ファイルの仮の箱は、すべての見える頂点から辺に沿って短い線を出す。ポインタの横に、
-  行き先のラベル（Sky のアイコン＋`Sky`、または World のアイコン＋`World`）を出す。
-- Sky / World の印（アイコン）は、ドラッグ中のラベル、下の中央のバーの左端、タイムラインの行のアイコンで同じものを使う。
+  行き先のラベル（Sky のアイコン＋`Sky`、または World のアイコン＋`World`）を出す。ドラッグの間はファイル名が読めないので、
+  最初のファイルの項目の種類が `image/` で始まれば画像の印、それ以外（種類が空、`model/`、`application/octet-stream`）は
+  3D ファイルの印を出す。
+- 置く間：置いた物はすぐ状態に入り、選んだ状態になる。画像は読み込んだ絵をすぐ描き、裏でアップロードする。3D ファイルは、アップロード
+  から中身が描けるまで、上端の中央に読み込み中の一行「Loading 3D model…」を出す（待つ間のほかの規則は `docs/editor-interaction.md` の
+  「3D ファイルを置く流れ」の 2・4・5 と同じ）。
+- 失敗：画像を読めない・アップロードできない、3D ファイルが上限より大きい・アップロードできない・経路が読めないときは、置いていた物を
+  消し（Undo の段は残さない）、上端の中央に「気をつけてほしい」の一行で理由を出す（文は「3D ファイルを置く流れ」の 6 と同じ。画像は
+  `Could not read <ファイル名>`・`Could not upload <ファイル名> (...)`）。この一行は、次のファイルを置くかエディタを閉じるまで出す。
+  「There is no ground to place it on」は「できなかった・止まった」の知らせ（`docs/space-and-view.md` の「着く所」）。
+- Sky / World の印（アイコン）は、ドラッグ中のラベル、二択のボタン、下の中央のバーの左端、タイムラインの行のアイコンで同じものを使う。
 
 ## 読み込み中と空の画面
 
@@ -375,11 +391,13 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 | 種類 | 印 | 出すとき |
 |---|---|---|
 | できなかった・止まった | 珊瑚の丸 | 効かなかった操作（境界で止まった、何もない所へのダブルクリック、Frame Selected で囲むものが無い、Camera を消そうとした） |
-| 気をつけてほしい | 落ち着いた黄の丸 | 背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、上流の警告、3D ファイルの読み込みの失敗 |
+| 気をつけてほしい | 落ち着いた黄の丸 | 背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、上流の警告、Add とドロップの失敗（3D ファイルの読み込みの失敗を含む。上の「Add とドロップの見せ方」） |
 | 知らせるだけ | なし | 空の画面の案内 |
-| 読み込み中 | 小さく回る輪 | 3D の表示や背景を読み込んでいる |
+| 読み込み中 | 小さく回る輪 | 3D の表示や背景、置いた 3D ファイルを読み込んでいる |
 
 - 3D の表示を作れないときは、ステージの真ん中ではなく、この一行に出す。
+- 出すものが重なったときは、できなかった・止まった ＞ 読み込み中（3D の表示 ＞ 背景 ＞ 置いた 3D ファイル）＞ 気をつけてほしい
+  （3D の表示 ＞ 背景 ＞ Add とドロップの失敗）＞ 空の画面の案内 の順で、前のものだけを出す（`web_src/studio/notice_line.js` `topLine`）。
 
 ## タイムラインのバー
 

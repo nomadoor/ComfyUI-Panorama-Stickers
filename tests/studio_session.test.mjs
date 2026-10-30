@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { newWorldSceneSticker } from "../web_src/pano_editor_state.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
 import { createStudioSession, inspectorSelection } from "../web_src/studio/session.js";
 import { keyRow } from "../web_src/studio/timeline_actions.js";
@@ -289,4 +290,62 @@ test("Back to source resets every row of an input's Sticker as one Undo step", (
   assert.equal(session.state.stickers[0].scale.value, 1);
   session.undo();
   assert.deepEqual(session.state.stickers[0].position.value, [4, 5, 6]);
+});
+
+// --- Add and the drop (docs/studio-ui.md "Add とドロップの見せ方").
+const placed = (id) => newWorldSceneSticker(id, { kind: "file", filename: "" }, { position: [0, -1.6, -3], rotation: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 }, scale: 1 });
+
+test("a placed object goes in at once and is selected, with no Undo step until it is settled; then placing is one step", () => {
+  const session = createStudioSession({ state: load({ stickers: [sky("sticker_1")] }) });
+  const id = session.addPlaced((newId) => placed(newId));
+  assert.equal(id, "sticker_2");
+  assert.equal(session.selection.row, id);
+  assert.equal(session.state.stickers.length, 2);
+  assert.equal(session.canUndo, false);
+  // Saving in between leaves it out (its Source has no file yet).
+  assert.equal(JSON.parse(session.stateText(node, "")).stickers.length, 1);
+  assert.equal(session.settlePlaced(id, (sticker) => {
+    sticker.source = file("box.glb");
+    sticker.position.value = [0, -1.1, -3];
+  }), true);
+  assert.equal(session.canUndo, true);
+  assert.deepEqual(session.state.stickers[1].position.value, [0, -1.1, -3]);
+  assert.ok(session.undo());
+  assert.equal(session.state.stickers.length, 1);
+  assert.ok(session.redo());
+  assert.equal(session.state.stickers[1].source.filename, "box.glb");
+});
+
+test("a placed object that fails goes with no step; one gone already is not settled", () => {
+  const session = createStudioSession({ state: load({ stickers: [] }) });
+  const id = session.addPlaced((newId) => placed(newId));
+  assert.equal(session.dropPlaced(id), true);
+  assert.equal(session.state.stickers.length, 0);
+  assert.equal(session.selection.row, null);
+  assert.equal(session.canUndo, false);
+  assert.equal(session.settlePlaced(id, () => {}), false);
+  // The id is not given out again (docs/scene-state-v2.md "Sticker の id の採番").
+  assert.equal(session.addPlaced((newId) => placed(newId)), "sticker_2");
+});
+
+test("settled during a gesture, placing is recorded when the gesture ends, given up or not", () => {
+  const session = createStudioSession({ state: load({ stickers: [] }) });
+  const id = session.addPlaced((newId) => placed(newId));
+  session.gesture((draft) => {
+    draft.stickers[0].opacity.value = 0.5;
+    return true;
+  });
+  session.settlePlaced(id, (sticker) => {
+    sticker.source = file("box.glb");
+  });
+  assert.equal(session.canUndo, false);
+  session.cancelGesture();
+  assert.equal(session.state.stickers[0].source.filename, "box.glb");
+  assert.equal(session.state.stickers[0].opacity.value, 1);
+  assert.equal(session.canUndo, true);
+});
+
+test("a read-only session places nothing", () => {
+  const session = createStudioSession({ state: load({ stickers: [] }), readOnly: true });
+  assert.equal(session.addPlaced((newId) => placed(newId)), null);
 });

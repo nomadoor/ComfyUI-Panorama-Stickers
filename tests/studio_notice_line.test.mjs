@@ -24,6 +24,15 @@ test("the empty stage's hint has no mark, and nothing else shows nothing", () =>
   assert.deepEqual(topLine(ui({ background: "ready" })), { kind: "info", text: "" });
 });
 
+test("a placed 3D file loading shows the ring after the background's; an Add failure is a warning after the others", () => {
+  assert.deepEqual(topLine(ui({ adding: true })), { kind: "loading", text: LINE_TEXT.addLoading });
+  assert.deepEqual(topLine(ui({ adding: true, background: "loading" })), { kind: "loading", text: LINE_TEXT.backgroundLoading });
+  assert.deepEqual(topLine(ui({ addWarning: "Could not read a.png", empty: true })), { kind: "warning", text: "Could not read a.png" });
+  assert.deepEqual(topLine(ui({ addWarning: "x", background: "failed" })), { kind: "warning", text: LINE_TEXT.backgroundFailed });
+  assert.deepEqual(topLine(ui({ addWarning: "x", adding: true })), { kind: "loading", text: LINE_TEXT.addLoading });
+  assert.deepEqual(topLine(ui({ addWarning: "x", notice: "There is no ground to place it on" })), { kind: "stopped", text: "There is no ground to place it on" });
+});
+
 test("every line's kind is one of the four", () => {
   for (const fields of [{ notice: "x" }, { view: "loading" }, { background: "failed" }, { empty: true }, {}]) {
     assert.ok(NOTICE_KINDS.includes(topLine(ui(fields)).kind));

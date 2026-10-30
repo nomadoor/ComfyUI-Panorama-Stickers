@@ -20,6 +20,7 @@
 // the faces draw, the renderer's own updates are off (each face's camera would sort again) and its splats are sized
 // for the face.
 import {
+  Color,
   CubeCamera,
   LinearFilter,
   Matrix3,
@@ -100,6 +101,8 @@ export function createLiveErp({ renderer, canvas, near = 0.01, far = 1000 }) {
   const passScene = new Scene();
   passScene.add(passQuad);
   const passCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+  const clearColor = new Color();
 
   const view = { position: null, turn: null, coverage: 360, near, far, width: 0, height: 0, face: 0 };
   const dirty = { faces: true, pass: true, sort: true };
@@ -228,6 +231,10 @@ export function createLiveErp({ renderer, canvas, near = 0.01, far = 1000 }) {
           cubeCamera.children.forEach((camera, index) => {
             aim?.(camera);
             renderer.setRenderTarget(cubeTarget, index);
+            // three.js works the clear color out for the target bound when it is set (sRGB values for the canvas,
+            // linear for a target), and renderer.clear() uses that as it is: set again for the face, or the first
+            // face is cleared to the canvas's sRGB values read as linear (the caller sets it on the canvas).
+            renderer.setClearColor(renderer.getClearColor(clearColor), renderer.getClearAlpha());
             renderer.clear(true, true, false);
             renderer.autoClear = false;
             if (drawFace) drawFace(camera, index);
