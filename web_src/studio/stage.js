@@ -147,6 +147,9 @@ export function createStage({
     },
     content: () => content(),
     ground: () => world.ground,
+    // The "pixels" hit test's hover, read back later (hit_test.js, a temporary dev comparison).
+    onHover: () => pointer && hoverAt(pointer),
+    requestFrame: (callback) => win.requestAnimationFrame(callback),
   }) : null;
 
   // --- The Camera tab: the Frame view, where the viewpoint is the Camera itself (a viewpoint of its own, whose moves
@@ -981,6 +984,8 @@ export function createStage({
       bound: () => camera.bound(),
       pick: ({ x, y }) => (editorView.ready ? editorView.pick(stageCamera(camera.pose(), size.width, size.height, camera.bound()), x, y, size.width, size.height) : null),
     },
+    // For the tests and the dev measurement of the hit test's modes (studio/hit_test.js; temporary, with them).
+    hitTest: { objects: () => objects, view: () => editorView },
     // The pose to remember on close: where an eased move goes.
     destination: () => camera.destination(),
     pose: () => camera.pose(),
