@@ -399,8 +399,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   }
 
   // [add-drop] Add and the drop (docs/studio-ui.md "Add とドロップの見せ方"): files become Stickers where they land.
-  // Uploads to ComfyUI's input go through its API; a queued prompt waits for them. One settled after the editor closed
-  // is written then, unless the editor was opened again.
+  // Uploads to ComfyUI's input go through its API; a queued prompt waits for them. One still uploading when the editor
+  // closes is taken over by the node's editor opened again before it ends; else it is written when it settles.
   const addFiles = createAddFiles({
     session,
     ui,
@@ -415,9 +415,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     changed: () => sync(),
     stopPlayback: () => playback.stop(),
     notice,
-    late: () => {
-      if (!openNodes.has(node)) save();
-    },
+    late: () => save(),
+    pending: nodeSession.placements,
     reveal,
   });
   let dropInput = () => {};

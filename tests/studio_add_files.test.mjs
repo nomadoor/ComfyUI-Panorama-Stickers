@@ -29,7 +29,7 @@ function stage({ pitch = -30, picked = null } = {}) {
 const imageFile = (name = "photo.png", type = "image/png") => ({ name, type, size: 10 });
 const glbFile = (name = "box.glb", size = 1000) => ({ name, type: "", size });
 
-function setup({ view = stage(), state = { stickers: [] }, readOnly = false, uploadImage, upload3d, route, decode, box = { min: [-0.5, -1, -0.5], max: [0.5, 1, 0.5] } } = {}) {
+function setup({ view = stage(), state = { stickers: [] }, readOnly = false, uploadImage, upload3d, route, decode, box = { min: [-0.5, -1, -0.5], max: [0.5, 1, 0.5] }, pending, late } = {}) {
   const session = createStudioSession({ state: loadSceneState({ version: 2, ...state }), readOnly });
   const ui = { choice: null, drop: null, adding: false, addWarning: null };
   const notices = [];
@@ -47,6 +47,8 @@ function setup({ view = stage(), state = { stickers: [] }, readOnly = false, upl
     decode: decode ?? (async () => ({ image: { tag: "img" }, width: 200, height: 100 })),
     notice: (text) => notices.push(text),
     timers: { set: () => 1, clear: () => {} },
+    ...(pending ? { pending } : {}),
+    ...(late ? { late } : {}),
   });
   return { session, ui, add, notices, draw: () => { drawn = true; add.refresh(); } };
 }
@@ -241,4 +243,78 @@ test("a read-only editor takes no file", async () => {
   add.dragOver({ x: 500, y: 550 }, "image");
   assert.equal(session.state.stickers.length, 0);
   assert.equal(ui.drop, null);
+});
+
+// docs/studio-ui.md "Add とドロップの見せ方" (置く間): an editor closed while a placed object uploads, and opened again
+// before the upload ends, takes the object over.
+function held() {
+  const calls = [];
+  const upload = (file) => new Promise((resolve, reject) => calls.push({ file, resolve, reject }));
+  return { calls, upload };
+}
+
+test("an image placed, the editor closed and opened again before its upload ends: the new editor takes it over and settles it", async () => {
+  const pending = new Set();
+  const uploads = held();
+  let lateWrites = 0;
+  const first = setup({ pending, uploadImage: uploads.upload, late: () => { lateWrites += 1; } });
+  const placing = await first.add.drop({ x: 500, y: 60 }, [imageFile()]);
+  const id = placing.id;
+  // Moved while it uploads: the new editor gets it as the closed one left it.
+  first.session.gesture((draft) => {
+    draft.stickers[0].opacity.value = 0.5;
+    return true;
+  });
+  first.session.commitGesture();
+  first.add.close();
+  lateWrites = 0;
+  // The new editor opens on the state written at closing (the placed object has no file yet, so it is left out).
+  const second = setup({ pending, uploadImage: uploads.upload });
+  assert.deepEqual(second.session.state.stickers.map((s) => s.id), [id]);
+  assert.equal(second.session.state.stickers[0].opacity.value, 0.5);
+  assert.equal(second.session.selection.row, null);
+  assert.equal(second.session.canUndo, false);
+  assert.ok(second.add.media(second.session.state.stickers[0]));
+  uploads.calls[0].resolve({ filename: "photo.png", subfolder: "panorama_stickers", storage: "input" });
+  await placing.done;
+  assert.equal(second.session.state.stickers[0].source.filename, "photo.png");
+  assert.equal(second.session.canUndo, true);
+  assert.equal(lateWrites, 0);
+  assert.equal(pending.size, 0);
+});
+
+test("a 3D file taken over shows the loading line in the new editor; a failure takes it away there and says why", async () => {
+  const pending = new Set();
+  let release;
+  const route = () => new Promise((resolve) => (release = resolve));
+  const first = setup({ pending, route });
+  const placing = await first.add.pick([glbFile()]);
+  first.add.close();
+  const second = setup({ pending, route });
+  assert.equal(second.session.state.stickers.length, 1);
+  assert.equal(second.ui.adding, true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  release({ state: "failed", error: "Could not read the 3D file 3d/box.glb." });
+  await placing.done;
+  assert.equal(second.session.state.stickers.length, 0);
+  assert.equal(second.ui.addWarning, "Could not read the 3D file 3d/box.glb.");
+  assert.equal(second.ui.adding, false);
+});
+
+test("closed and not opened again, or opened read-only, a settled placement is written by the closed editor", async () => {
+  for (const reopen of [false, true]) {
+    const pending = new Set();
+    const uploads = held();
+    let lateWrites = 0;
+    const first = setup({ pending, uploadImage: uploads.upload, late: () => { lateWrites += 1; } });
+    const placing = await first.add.drop({ x: 500, y: 60 }, [imageFile()]);
+    first.add.close();
+    lateWrites = 0;
+    const second = reopen ? setup({ pending, readOnly: true }) : null;
+    if (second) assert.equal(second.session.state.stickers.length, 0);
+    uploads.calls[0].resolve({ filename: "photo.png", subfolder: "panorama_stickers", storage: "input" });
+    await placing.done;
+    assert.equal(first.session.state.stickers[0].source.filename, "photo.png");
+    assert.ok(lateWrites >= 1);
+  }
 });

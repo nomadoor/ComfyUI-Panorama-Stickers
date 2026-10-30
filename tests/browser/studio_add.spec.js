@@ -348,6 +348,28 @@ test("Move's XZ square drags the object on the level plane only; its Y stays", a
   expect(problems).toEqual([]);
 });
 
+// docs/studio-ui.md "Add とドロップの見せ方" (置く間): closed while the image uploads and opened again before it ends,
+// the new editor takes the placed image over; the upload then settles it there and closing saves it.
+test("an image dropped, the editor closed and opened again before its upload ends is in the new editor and saved", async ({ page }, testInfo) => {
+  const { problems, sky } = await open(page, testInfo);
+  await page.evaluate(() => window.__studio.holdUploads());
+  await page.evaluate(({ x, y }) => window.__studio.drag("drop", "photo", x, y), sky);
+  await expect.poll(async () => (await stickers(page)).length).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__studio.uploads.length)).toBe(1);
+  await page.evaluate(() => window.__studio.reopen());
+  // Taken over as the closed editor left it, drawn from the decoded file meanwhile.
+  const [taken] = await stickers(page);
+  expect(taken.placement).toBe("sky");
+  expect(taken.source.filename).toBe("");
+  await page.evaluate(() => window.__studio.releaseUploads());
+  await expect.poll(async () => (await stickers(page))[0]?.source.filename ?? null).toBe("photo.png");
+  expect(await page.evaluate(() => window.__studio.session.canUndo)).toBe(true);
+  await page.evaluate(() => window.__studio.close());
+  const saved = JSON.parse(await page.evaluate(() => window.__studio.node.widgets[0].value));
+  expect(saved.stickers.map((s) => s.source.filename)).toEqual(["photo.png"]);
+  expect(problems).toEqual([]);
+});
+
 // docs/studio-ui.md "閉じ方": a state_json that cannot be read opens read-only with a warning, and closing leaves it.
 test("a node whose state_json cannot be read opens read-only with a warning; closing leaves the text byte for byte", async ({ page }, testInfo) => {
   const { problems } = await open(page, testInfo);
