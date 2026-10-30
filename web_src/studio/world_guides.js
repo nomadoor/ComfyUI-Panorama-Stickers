@@ -32,7 +32,8 @@ function loop(points) {
 }
 
 // The World objects that have a guide in `content` (stage_content.js stageContent(): the shown world image planes and
-// the shown 3D Stickers' items) of `state`: [{ id, kind ("plane" | "box"), locked, loading, segments, corners, center }]
+// the shown 3D Stickers' items) of `state`: [{ id, kind ("plane" | "box"), locked, loading, segments, corners, center }
+// (a box also has `url`, its item's key or null while it loads, and `value`, the Sticker's evaluated transform)]
 // in World units. `center` is where the object's gizmo sits too (docs/studio-ui.md "ギズモ" "物の中心"). `sceneBox(url)`
 // is the box of a loaded item (null while it loads: that object has no guide yet). `pendingBox(id)` is the box in its
 // own frame of a 3D file just placed whose item has not drawn yet (load_reveal.js: DROP_PREVIEW_BOX, then the route's
@@ -56,13 +57,16 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
       center: [...plane.position],
     });
   }
-  const boxItem = (sticker, box, value, loading) => {
+  const boxItem = (sticker, box, value, loading, url = null) => {
     const corners = boxCorners(box).map((point) => transformPoint(value, point));
     return {
       id: sticker.id,
       kind: "box",
       locked: sticker.locked === true,
       loading,
+      // The item's key and the Sticker's value, for the "coarse" hit test (hit_test.js; a temporary dev comparison).
+      url,
+      value,
       segments: BOX_EDGES.map(([a, b]) => [corners[a], corners[b]]),
       corners,
       center: transformPoint(value, box.min.map((v, axis) => (v + box.max[axis]) / 2)),
@@ -74,7 +78,7 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
     const box = sticker ? sceneContentBox(request, sceneBox(request.url)) : null;
     if (!box) continue;
     boxed.add(sticker.id);
-    items.push(boxItem(sticker, box, request.value, false));
+    items.push(boxItem(sticker, box, request.value, false, request.url));
   }
   // A placed 3D file still loading: the stand-in box at its value now (shown at the playhead only).
   state.stickers.forEach((sticker, index) => {
