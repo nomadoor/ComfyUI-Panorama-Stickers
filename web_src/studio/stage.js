@@ -327,6 +327,7 @@ export function createStage({
   let outputDrawn = null;
   let outputLensKind = null;
   let outputFrames = 0;
+  // The Frame picture failed (its canvas took no bitmap): none is drawn until the window folds and opens again.
   let outputFailed = false;
 
   // What the Output window shows now: { kind: "frame" | "erp", canvas, width, height } (device px), or null while it
@@ -339,6 +340,8 @@ export function createStage({
     const box = target ? { width: target.clientWidth, height: target.clientHeight } : null;
     if (!target || !(box?.width > 0 && box?.height > 0)) {
       releaseOutput();
+      // A picture that failed is tried again when the window opens again.
+      outputFailed = false;
       return null;
     }
     if (outputDrawn && outputDrawn.kind !== kind) releaseOutput();
@@ -390,7 +393,12 @@ export function createStage({
         bitmap.close();
         return;
       }
-      shownOn.getContext("bitmaprenderer")?.transferFromImageBitmap(bitmap);
+      const renderer = shownOn.getContext("bitmaprenderer");
+      if (!renderer) {
+        bitmap.close();
+        throw new Error("the Output window's canvas has no \"bitmaprenderer\" context");
+      }
+      renderer.transferFromImageBitmap(bitmap);
     }).catch((error) => {
       if (request !== outputFrames || disposed || outputFailed) return;
       outputFailed = true;
