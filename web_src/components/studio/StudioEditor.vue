@@ -12,10 +12,10 @@ import StudioTimeline from "./StudioTimeline.vue";
 import StudioToolRail from "./StudioToolRail.vue";
 import StudioViewButtons from "./StudioViewButtons.vue";
 
-// Panorama Studio's editor in the new UI: the regions of docs/studio-ui.md "画面の区画". No header. The stage fills
-// the left column to its edges with the parts floating over it in fixed places; the timeline (<StudioTimeline>) is
-// below it, behind a border dragged for its height (kept per browser); the inspector (<StudioInspector>, its top row
-// the node's name and ✕) runs down the right column. The bar at the bottom center is a seat (slot `bar`).
+// Panorama Studio's editor in the new UI: the regions of docs/studio-ui.md "画面の区画". No header. A modal frame over a
+// dimmed page holds three windows: the stage (the parts floating over it in fixed places), the timeline
+// (<StudioTimeline>) below it, behind the gap dragged for its height (kept per browser), and the inspector
+// (<StudioInspector>, its top row the node's name and ✕) down the right column. The bar at the bottom center is a seat (slot `bar`).
 //
 // The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
 // playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
@@ -103,93 +103,95 @@ function setCollapsed(value) {
 </script>
 
 <template>
-  <div
-    ref="root"
-    class="pano-studio pano-studio-editor"
-    :class="{ 'is-knob-drag': ui.knobDrag }"
-    role="dialog"
-    tabindex="-1"
-    aria-modal="true"
-    :aria-label="nodeTitle"
-  >
-    <div ref="main" class="pano-studio-main">
-      <div class="pano-studio-stage" :class="{ 'is-loading': ui.background === 'loading' || ui.view === 'loading' }" data-region="stage">
-        <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
-        <div v-if="ui.view === 'failed'" class="pano-studio-stage-failed pano-studio-cap">{{ VIEW_UNAVAILABLE_MESSAGE }}</div>
+  <div class="pano-studio-backdrop">
+    <div
+      ref="root"
+      class="pano-studio pano-studio-editor"
+      :class="{ 'is-knob-drag': ui.knobDrag }"
+      role="dialog"
+      tabindex="-1"
+      aria-modal="true"
+      :aria-label="nodeTitle"
+    >
+      <div ref="main" class="pano-studio-main">
+        <div class="pano-studio-stage" :class="{ 'is-loading': ui.background === 'loading' || ui.view === 'loading' }" data-region="stage">
+          <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
+          <div v-if="ui.view === 'failed'" class="pano-studio-stage-failed pano-studio-cap">{{ VIEW_UNAVAILABLE_MESSAGE }}</div>
 
-        <StudioTabs class="pano-studio-at-tabs" value="3d" camera-disabled camera-tip="Camera view · in development" />
-        <StudioToolRail
-          class="pano-studio-at-rail"
-          :can-undo="view.canUndo"
-          :can-redo="view.canRedo"
-          @press="(key) => controller.rail(key)"
+          <StudioTabs class="pano-studio-at-tabs" value="3d" camera-disabled camera-tip="Camera view · in development" />
+          <StudioToolRail
+            class="pano-studio-at-rail"
+            :can-undo="view.canUndo"
+            :can-redo="view.canRedo"
+            @press="(key) => controller.rail(key)"
+          />
+          <div class="pano-studio-at-notice">
+            <StudioNotice :text="line.text" :kind="line.kind" />
+          </div>
+          <div class="pano-studio-at-output">
+            <StudioOutputPreview :storage="storage" />
+          </div>
+          <div class="pano-studio-at-nav">
+            <StudioNavWidget :lit="ui.lit" @knob="(knob, event) => stage?.knobDown(knob, event)" />
+          </div>
+          <div class="pano-studio-at-bar" data-region="bar"><slot name="bar" /></div>
+          <StudioViewButtons
+            class="pano-studio-at-buttons"
+            :grid-shown="!ui.gridHidden"
+            @frame-selected="stage?.frameSelected()"
+            @reset-view="stage?.resetView()"
+            @grid="setGrid"
+          />
+        </div>
+        <div
+          class="pano-studio-splitter"
+          :class="{ 'is-collapsed': collapsed }"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Timeline height"
+          data-region="splitter"
+          @pointerdown="onSplitDown"
+          @pointermove="onSplitMove"
+          @pointerup="onSplitUp"
+          @pointercancel="onSplitUp"
         />
-        <div class="pano-studio-at-notice">
-          <StudioNotice :text="line.text" :kind="line.kind" />
+        <div class="pano-studio-timeline" data-region="timeline" :style="timelineStyle">
+          <StudioTimeline
+            ref="timeline"
+            :state="view.state"
+            :selection="view.selection"
+            :playhead="view.playhead"
+            :playing="view.playing"
+            :loop="view.loop"
+            :read-only="view.readOnly"
+            :media="view.media"
+            :background="view.background"
+            :scene-row="view.sceneRow"
+            :collapsed="collapsed"
+            @seek="(frame) => controller.seek(frame)"
+            @play="controller.play()"
+            @select="(selection) => controller.select(selection)"
+            @edit="(payload) => controller.timelineEdit(payload)"
+            @frame-selected="(row) => controller.frameSelected(row)"
+            @loop-change="(on) => controller.loop(on)"
+            @collapse-change="setCollapsed"
+          />
         </div>
-        <div class="pano-studio-at-output">
-          <StudioOutputPreview :storage="storage" />
-        </div>
-        <div class="pano-studio-at-nav">
-          <StudioNavWidget :lit="ui.lit" @knob="(knob, event) => stage?.knobDown(knob, event)" />
-        </div>
-        <div class="pano-studio-at-bar" data-region="bar"><slot name="bar" /></div>
-        <StudioViewButtons
-          class="pano-studio-at-buttons"
-          :grid-shown="!ui.gridHidden"
-          @frame-selected="stage?.frameSelected()"
-          @reset-view="stage?.resetView()"
-          @grid="setGrid"
-        />
       </div>
-      <div
-        class="pano-studio-splitter"
-        :class="{ 'is-collapsed': collapsed }"
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Timeline height"
-        data-region="splitter"
-        @pointerdown="onSplitDown"
-        @pointermove="onSplitMove"
-        @pointerup="onSplitUp"
-        @pointercancel="onSplitUp"
+      <StudioInspector
+        data-region="inspector"
+        :state="view.state"
+        :selection="selected"
+        tab="3d"
+        :playhead="view.playhead"
+        :node-name="nodeTitle"
+        :read-only="view.readOnly"
+        :animations="view.animations"
+        :image-sizes="view.imageSizes"
+        :ground-saved="false"
+        @edit="(edit) => controller.inspectorEdit(edit)"
+        @close="controller.close()"
       />
-      <div class="pano-studio-timeline" data-region="timeline" :style="timelineStyle">
-        <StudioTimeline
-          ref="timeline"
-          :state="view.state"
-          :selection="view.selection"
-          :playhead="view.playhead"
-          :playing="view.playing"
-          :loop="view.loop"
-          :read-only="view.readOnly"
-          :media="view.media"
-          :background="view.background"
-          :scene-row="view.sceneRow"
-          :collapsed="collapsed"
-          @seek="(frame) => controller.seek(frame)"
-          @play="controller.play()"
-          @select="(selection) => controller.select(selection)"
-          @edit="(payload) => controller.timelineEdit(payload)"
-          @frame-selected="(row) => controller.frameSelected(row)"
-          @loop-change="(on) => controller.loop(on)"
-          @collapse-change="setCollapsed"
-        />
-      </div>
     </div>
-    <StudioInspector
-      data-region="inspector"
-      :state="view.state"
-      :selection="selected"
-      tab="3d"
-      :playhead="view.playhead"
-      :node-name="nodeTitle"
-      :read-only="view.readOnly"
-      :animations="view.animations"
-      :image-sizes="view.imageSizes"
-      :ground-saved="false"
-      @edit="(edit) => controller.inspectorEdit(edit)"
-      @close="controller.close()"
-    />
   </div>
 </template>

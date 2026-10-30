@@ -57,7 +57,7 @@ function onExpand() {
       data-part="expand"
       @click="onExpand"
     >
-      <SvgIcon :icon="ICON.chevron" />
+      <span class="pano-studio-tl-tri" aria-hidden="true" />
     </button>
     <span v-else class="pano-studio-tl-head-gap" />
     <SvgIcon class-name="pano-studio-tl-head-icon" :icon="row.icon" />

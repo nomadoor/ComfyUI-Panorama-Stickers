@@ -72,6 +72,8 @@ test("the shell has its regions, the stage draws the background and the grid, an
   const places = await page.evaluate(() => {
     const box = (selector) => document.querySelector(selector).getBoundingClientRect().toJSON();
     return {
+      view: { width: window.innerWidth, height: window.innerHeight },
+      frame: box(".pano-studio-editor"),
       stage: box('[data-region="stage"]'),
       inspector: box('[data-region="inspector"]'),
       timeline: box('[data-region="timeline"]'),
@@ -82,19 +84,38 @@ test("the shell has its regions, the stage draws the background and the grid, an
       output: box(".pano-studio-at-output"),
     };
   });
+  // A modal frame (docs/design.md "形と重なり"): max(720px, 80vw) x max(520px, 82vh) up to 96vw x 94vh, centered;
+  // three windows on it 8px in from its edges and 8px apart; the timeline under the stage only.
+  const { view, frame } = places;
+  expect(frame.width).toBeCloseTo(Math.min(Math.max(720, view.width * 0.8), view.width * 0.96), 0);
+  expect(frame.height).toBeCloseTo(Math.min(Math.max(520, view.height * 0.82), view.height * 0.94), 0);
+  expect(frame.left).toBeCloseTo((view.width - frame.width) / 2, 0);
+  expect(frame.top).toBeCloseTo((view.height - frame.height) / 2, 0);
+  expect(places.stage.left - frame.left).toBeCloseTo(8, 0);
+  expect(places.stage.top - frame.top).toBeCloseTo(8, 0);
   expect(places.inspector.width).toBe(320);
-  expect(places.inspector.left).toBeCloseTo(places.stage.right, 0);
-  expect(places.timeline.top).toBeGreaterThanOrEqual(places.stage.bottom - 3);
-  expect(places.tabs.left - places.stage.left).toBe(12);
-  expect(places.tabs.top - places.stage.top).toBe(12);
+  expect(places.inspector.left - places.stage.right).toBeCloseTo(8, 0);
+  expect(frame.right - places.inspector.right).toBeCloseTo(8, 0);
+  expect(places.inspector.top - frame.top).toBeCloseTo(8, 0);
+  expect(frame.bottom - places.inspector.bottom).toBeCloseTo(8, 0);
+  expect(places.timeline.top - places.stage.bottom).toBeCloseTo(8, 0);
+  expect(places.timeline.left).toBeCloseTo(places.stage.left, 0);
+  expect(places.timeline.right).toBeCloseTo(places.stage.right, 0);
+  expect(frame.bottom - places.timeline.bottom).toBeCloseTo(8, 0);
+  // The windows and the floats carry no line.
+  expect(await page.evaluate(() => [".pano-studio-inspector", ".pano-studio-tl", ".pano-studio-tabs", ".pano-studio-output", ".pano-studio-at-rail"]
+    .map((selector) => getComputedStyle(document.querySelector(selector)).borderTopWidth))).toEqual(["0px", "0px", "0px", "0px", "0px"]);
+  // The floats sit 16px from the stage's edges.
+  expect(places.tabs.left - places.stage.left).toBe(16);
+  expect(places.tabs.top - places.stage.top).toBe(16);
   // The left column and the knobs sit at the vertical middle of the stage, left and right.
   const middle = places.stage.top + places.stage.height / 2;
   expect(Math.abs(places.rail.top + places.rail.height / 2 - middle)).toBeLessThan(2);
   expect(Math.abs(places.nav.top + places.nav.height / 2 - middle)).toBeLessThan(2);
-  expect(places.stage.right - places.nav.right).toBe(12);
-  expect(places.stage.right - places.buttons.right).toBe(12);
-  expect(places.stage.bottom - places.buttons.bottom).toBe(12);
-  expect(places.stage.right - places.output.right).toBe(12);
+  expect(places.stage.right - places.nav.right).toBe(16);
+  expect(places.stage.right - places.buttons.right).toBe(16);
+  expect(places.stage.bottom - places.buttons.bottom).toBe(16);
+  expect(places.stage.right - places.output.right).toBe(16);
   // The tools are placeholders, except Cursor; Undo and Redo have nothing to do yet.
   await expect(page.locator('[data-tool="cursor"]')).toHaveClass(/is-active/);
   for (const tool of ["paint", "mask", "add", "camera", "undo", "redo"]) {
@@ -125,7 +146,8 @@ test("a left drag turns the view, the wheel moves it toward the pointer, and the
   const before = await settled(page);
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
-  for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + i * 20, at.y);
+  // 160px: about 24° on the modal's stage, away from the page's 30° stripes, which would look the same after a 30° turn.
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + i * 16, at.y);
   // A drag looks around with the grabbing cursor.
   expect(await stage.evaluate((el) => el.style.cursor)).toBe("grabbing");
   await page.mouse.up();

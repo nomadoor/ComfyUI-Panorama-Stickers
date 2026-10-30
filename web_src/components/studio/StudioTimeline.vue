@@ -124,6 +124,18 @@ const x = (frame) => frameToX(frame, span.value, width.value, TRACK_PAD);
 const pxPerFrame = computed(() => (span.value > 1 ? (width.value - 2 * TRACK_PAD) / (span.value - 1) : width.value));
 const ticks = computed(() => (width.value > 0 ? timelineTicks(span.value, pxPerFrame.value) : []));
 const playheadX = computed(() => x(Math.min(props.playhead, span.value - 1)));
+// Unlabelled ticks between the labelled ones: four steps to each, while they stay at least 6px apart (timeline-2.html).
+const minorTicks = computed(() => {
+  const labelled = ticks.value;
+  if (labelled.length < 2) return [];
+  const step = (labelled[1] - labelled[0]) / 4;
+  if (step * pxPerFrame.value < 6) return [];
+  const out = [];
+  for (let frame = labelled[0] + step; frame < span.value; frame += step) {
+    if (Math.abs((frame - labelled[0]) / (step * 4) - Math.round((frame - labelled[0]) / (step * 4))) > 1e-6) out.push(frame);
+  }
+  return out;
+});
 
 function clipStyle(clip) {
   const left = x(clip.start);
@@ -448,6 +460,7 @@ defineExpose({ handleDelete });
             class="pano-studio-tl-tick pano-studio-num"
             :style="{ left: `${x(tick)}px` }"
           >{{ tick }}</span>
+          <i v-for="tick in minorTicks" :key="`m${tick}`" class="pano-studio-tl-minor" :style="{ left: `${x(tick)}px` }" />
           <span class="pano-studio-tl-playhead-stem" :style="{ left: `${playheadX}px` }" />
           <span class="pano-studio-tl-playhead-mark" :style="{ left: `${playheadX}px` }" />
         </div>

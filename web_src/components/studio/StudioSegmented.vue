@@ -67,7 +67,7 @@ function onKeydown(event) {
       @click="choose(option)"
     >
       <SvgIcon v-if="option.icon" :icon="option.icon" />
-      <span v-if="!option.iconOnly && option.label" class="pano-studio-seg-label pano-studio-cap">{{ option.label }}</span>
+      <span v-if="!option.iconOnly && option.label" class="pano-studio-seg-label">{{ option.label }}</span>
     </button>
   </div>
 </template>
