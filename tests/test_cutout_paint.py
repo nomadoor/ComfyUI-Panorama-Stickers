@@ -79,7 +79,7 @@ def test_render_painting_to_cutout_projects_erp_strokes_into_frame():
         "vFOV_deg": 90.0,
     }
 
-    paint_rgba, mask_bw = render_painting_to_cutout(painting, shot, 128, 128)
+    paint_rgba, mask_bw = render_painting_to_cutout(painting, shot, 128, 128, erp_width=512, erp_height=256)
 
     assert paint_rgba.shape == (128, 128, 4)
     assert mask_bw.shape == (128, 128)
@@ -114,7 +114,7 @@ def test_render_painting_to_cutout_projects_raster_objects_into_frame():
         "vFOV_deg": 90.0,
     }
 
-    paint_rgba, mask_bw = render_painting_to_cutout(painting, shot, 128, 128)
+    paint_rgba, mask_bw = render_painting_to_cutout(painting, shot, 128, 128, erp_width=512, erp_height=256)
 
     assert paint_rgba.shape == (128, 128, 4)
     assert float(np.max(mask_bw)) == 0.0
