@@ -8,6 +8,7 @@ import { boxCorners, transformPoint } from "../web_src/pano_space.js";
 import { buildStickerGeometry } from "../web_src/pano_sticker_geometry.js";
 import {
   DROP_LOOK,
+  dropLabelPlace,
   dropMarker,
   facingYaw,
   file3dPosition,
@@ -16,6 +17,7 @@ import {
   groundLanding,
   landingBoxes,
   landingHit,
+  markRect,
   skyPose,
   worldImageTransform,
 } from "../web_src/studio/landing.js";
@@ -188,4 +190,47 @@ test("a 3D file over the sky marks the box on the ground; with no ground inside 
   const outside = stageCamera({ position: [0, 0, 60], yaw_deg: 180, pitch_deg: 10, roll_deg: 0, target: [0, 0, 70] }, W, H, 48);
   const away = stageRay(outside, 500, 200, W, H);
   assert.equal(dropMarker({ kind: "3d", ray: away, hit: null, camera: outside, width: W, height: H, ground: GROUND, radius: 48 }), null);
+});
+
+// --- The label's place (docs/space-and-view.md "ドラッグ中の印" "ラベルの置き場所").
+
+const LABEL = { width: 70, height: 26 };
+const STAGE = { width: W, height: H };
+const rectOf = (p) => ({ left: p.x, top: p.y, right: p.x + LABEL.width, bottom: p.y + LABEL.height });
+const crosses = (a, b) => Math.min(a.right, b.right) > Math.max(a.left, b.left) && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
+const within = (r) => r.left >= DROP_LOOK.labelMargin && r.top >= DROP_LOOK.labelMargin && r.right <= W - DROP_LOOK.labelMargin && r.bottom <= H - DROP_LOOK.labelMargin;
+
+test("the drop marks are colored by where they go: World the soft yellow, Sky ice", () => {
+  assert.equal(DROP_LOOK.colors.world.line, "#e8cf74");
+  assert.equal(DROP_LOOK.colors.sky.line, "#aecedb");
+  assert.equal(DROP_LOOK.colors.sky.fill, "rgba(174, 206, 219, 0.25)");
+});
+
+test("the label never lies on the mark: right of it level with the pointer, else left, below, above, inside the stage", () => {
+  // The sky frame around the pointer at the stage's middle: the label goes to its right.
+  const pointer = { x: W / 2, y: H * 0.3 };
+  const sky = dropMarker({ kind: "image", ray: stageRay(CAMERA, pointer.x, pointer.y, W, H), hit: null, camera: CAMERA, width: W, height: H, ground: GROUND, radius: 48 });
+  const box = markRect(sky);
+  assert.ok(box.left < pointer.x && box.right > pointer.x, "the mark covers the pointer");
+  const right = dropLabelPlace({ mark: sky, pointer, size: LABEL, stage: STAGE });
+  assert.ok(near(right.x, box.right + DROP_LOOK.labelGap) && near(right.y, pointer.y - LABEL.height / 2));
+  assert.ok(!crosses(rectOf(right), box) && within(rectOf(right)));
+  // Near the right edge it flips to the left; near the bottom right corner too.
+  for (const at of [{ x: W - 30, y: H / 2 }, { x: W - 30, y: H - 20 }, { x: 30, y: 15 }]) {
+    const mark = { fills: [[{ x: at.x - 60, y: at.y - 40 }, { x: at.x + 20, y: at.y - 40 }, { x: at.x + 20, y: at.y + 10 }, { x: at.x - 60, y: at.y + 10 }]], brackets: [] };
+    const place = dropLabelPlace({ mark, pointer: at, size: LABEL, stage: STAGE });
+    assert.ok(!crosses(rectOf(place), markRect(mark)), `off the mark at ${at.x},${at.y}`);
+    assert.ok(within(rectOf(place)), `inside the stage at ${at.x},${at.y}`);
+  }
+  // A mark as wide as the stage: below it, centered on the pointer.
+  const wide = { fills: [[{ x: -50, y: 100 }, { x: W + 50, y: 100 }, { x: W + 50, y: 200 }, { x: -50, y: 200 }]], brackets: [] };
+  const below = dropLabelPlace({ mark: wide, pointer: { x: 400, y: 150 }, size: LABEL, stage: STAGE });
+  assert.ok(near(below.y, 200 + DROP_LOOK.labelGap) && near(below.x, 400 - LABEL.width / 2));
+});
+
+test("a mark that fills the stage: the label goes where it overlaps the mark least, still inside the stage", () => {
+  const all = { fills: [[{ x: -10, y: -10 }, { x: W + 10, y: -10 }, { x: W + 10, y: H - 30 }, { x: -10, y: H - 30 }]], brackets: [] };
+  const place = dropLabelPlace({ mark: all, pointer: { x: 500, y: 300 }, size: LABEL, stage: STAGE });
+  assert.ok(within(rectOf(place)));
+  assert.ok(near(place.y, H - DROP_LOOK.labelMargin - LABEL.height), "at the bottom, where the mark ends");
 });

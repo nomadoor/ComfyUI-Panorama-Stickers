@@ -1,11 +1,11 @@
 // The new UI's editor keys and its list of shortcuts (docs/studio-ui.md "ショートカットの一覧"). EDITOR_KEYS is the one
 // table of the editor's keys: studio/editor.js and studio/stage.js (Escape) take the keys it names, and the list shows
 // the same entries, so the two cannot drift. Which key goes to the stage at all is the caller's (stageOwnsKey).
-import { ROTATE_SNAP_DEG } from "../pano_sticker_geometry.js";
 import { MOVE_KEYS } from "../pano_view_keys.js";
 import { GIZMO_MODES } from "./selection_bar.js";
 import { FINE_FACTOR } from "./ui_drag.js";
 import { navigationAction } from "./view_input.js";
+import { ROTATE_SNAP_DEG } from "./view_scale.js";
 
 const ctrlOrMeta = (event) => !!(event.ctrlKey || event.metaKey);
 const keyOf = (event) => String(event.key || "");
@@ -134,6 +134,8 @@ export function shortcutGroups({ tab = "3d", panorama = false, readOnly = false,
   ];
   const editor = [
     ...(edits ? [keyRow("Undo", "undo"), keyRow("Redo", "redo"), gestureRow(`Fine steps (×${FINE_FACTOR})`, [["Shift", "Drag"]], "fine")] : []),
+    // The Camera tab's Roll ruler stops at the rotation's steps with Shift (frame_layout.js rulerSnapValue).
+    ...(edits && !space ? [gestureRow(`Roll in ${ROTATE_SNAP_DEG}° steps`, [["Shift", "Drag"]], "roll-snap")] : []),
     keyRow("Show shortcuts", "shortcuts"),
     keyRow("Step back / close", "escape"),
   ];

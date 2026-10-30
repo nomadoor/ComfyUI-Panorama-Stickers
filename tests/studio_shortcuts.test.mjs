@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MOVE_KEY_CODES } from "../web_src/pano_view_keys.js";
-import { ROTATE_SNAP_DEG } from "../web_src/pano_sticker_geometry.js";
 import { EDITOR_KEYS, editorKeyAction, shortcutGroups } from "../web_src/studio/shortcuts.js";
 import { FINE_FACTOR } from "../web_src/studio/ui_drag.js";
 import { navigationAction } from "../web_src/studio/view_input.js";
+import { ROTATE_SNAP_DEG } from "../web_src/studio/view_scale.js";
 
 const key = (fields) => ({ key: "", code: "", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...fields });
 const refsOf = (groups) => groups.flatMap((group) => group.rows.flatMap((row) => row.refs));
@@ -60,7 +60,7 @@ test("the list shows each key as the table has it, Ctrl as ⌘ on macOS", () => 
 
 test("the groups come in their order, and the numbers in the rows are their owners'", () => {
   assert.deepEqual(full.map((group) => group.title), ["View", "Objects", "Timeline", "Editor"]);
-  assert.ok(rowOf(full, `Rotate in ${ROTATE_SNAP_DEG}° steps`), "the sky image's rotate snap");
+  assert.ok(rowOf(full, `Rotate in ${ROTATE_SNAP_DEG}° steps`), "Shift on the gizmo's Rotate and the sky image's handle");
   assert.ok(rowOf(full, `Fine steps (×${FINE_FACTOR})`), "Shift on a value's drag");
 });
 
@@ -71,6 +71,8 @@ test("the list shows only what works on the screen: the tab, Panorama mode, a re
   assert.ok(!labels(frame).includes("Look at a point"), "no double-click in the Frame view");
   assert.ok(!labels(frame).includes("Move / Rotate / Scale"), "no gizmo in the Camera tab");
   assert.ok(labels(frame).includes("Select"));
+  assert.ok(labels(frame).includes(`Roll in ${ROTATE_SNAP_DEG}° steps`), "Shift on the Roll ruler");
+  assert.ok(!labels(full).includes(`Roll in ${ROTATE_SNAP_DEG}° steps`), "no Roll ruler in the 3D tab");
   const erp = shortcutGroups({ tab: "camera", panorama: true, readOnly: false, mac: false });
   assert.equal(erp[0].note, "Nothing moves the view in Panorama mode.");
   assert.deepEqual(erp[0].rows, []);

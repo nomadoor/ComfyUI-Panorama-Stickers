@@ -97,6 +97,14 @@ export function createFrameScheduler({ requestAnimationFrame, cancelAnimationFra
     cancelFrame(id) {
       callbacks.delete(id);
     },
+    // Runs the pending frame now instead of at the next animation frame: what changes the size of a canvas clears it,
+    // and a ResizeObserver's callback comes after this frame's animation frame callbacks, so a frame left for the next
+    // one would show the cleared canvas once. Nothing runs while a frame runs, nor when none is pending.
+    flush(ts) {
+      if (!frameId || inFrame || stopped) return;
+      cancelAnimationFrame(frameId);
+      run(ts);
+    },
     // Starts the frames again after something animating() reads began, which asks for no draw by itself.
     wake() {
       schedule();
