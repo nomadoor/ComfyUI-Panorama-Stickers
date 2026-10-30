@@ -9,7 +9,7 @@
 // createViewCamera() holds one viewpoint: the Panorama view's (and the Preview window's), or, with `frame`, the Frame
 // view's, where the pose is the Camera itself and its moves go to the Camera's Lane (the caller writes them).
 import { DEG2RAD, RAD2DEG, clamp, shortestYawDelta, wrapYaw } from "../pano_camera_math.js";
-import { rayBoxDepth } from "../pano_pick.js";
+import { rayBoxDepth } from "../pano_ray_box.js";
 import { DEFAULT_VIEW_HFOV, frameView, orbitView, viewAxes } from "../pano_space.js";
 import { KEY_MOVE_FAST, keyMoveView } from "../pano_view_keys.js";
 import { restoredView, viewMemory } from "../pano_view_memory.js";
