@@ -170,10 +170,10 @@ test("node primary drag pans, Shift-primary drag rolls, and wheel scales FOV", a
     /if \(!shot\)[\s\S]*?drawView\(rect, previewNodeCamera\(surface\.view, surfW, surfH\)\)/,
   );
   assert.doesNotMatch(runtime, /Open editor and add frame/);
-  assert.match(runtime, /const wheelTargets = stickersMode \? \[wrap, canvas\] : \[wrap\]/);
+  assert.match(runtime, /const wheelTargets = studioSurface \? \[\] : stickersMode \? \[wrap, canvas\] : \[wrap\]/);
   assert.match(runtime, /root\.setAttribute\("data-capture-wheel", "true"\)/);
   assert.match(runtime, /root\.tabIndex\s*=\s*0/);
-  assert.match(runtime, /const wheelCaptureCleanup = bindWheelCaptureRoot\(root\)/);
+  assert.match(runtime, /const wheelCaptureCleanup = studioSurface \? \(\) => \{\} : bindWheelCaptureRoot\(root\)/);
   assert.match(runtime, /wheelCaptureCleanup\(\)/);
   assert.match(runtime, /nodeSurfaceWheelCommitTimer/);
   assert.match(runtime, /else if \(!nodeSurfaceSession\.hasGestureChanges\(\)\)[\s\S]*?cancelGesture\(\)/);
@@ -241,7 +241,8 @@ test("DOM preview camera frames do not repaint the host graph canvas", async () 
   assert.ok(tickStart >= 0 && tickEnd > tickStart);
   const tick = runtime.slice(tickStart, tickEnd);
 
-  assert.match(tick, /drawCanvas\(node, canvas, surfaceView, run\)/);
+  assert.match(tick, /drawCanvas\(node, canvas, surfaceView\)/);
+  assert.match(tick, /drawStudioPicture\(node, canvas, surfaceView, layout, studioErpCanvas\)/);
   assert.doesNotMatch(tick, /node\.setDirtyCanvas/);
   assert.match(runtime, /if \(mode === "cutout" && surface\.cutoutState !== state\)/);
 });
@@ -253,9 +254,10 @@ test("Cutout node surface loops the input ERP video and revisions each presented
   assert.ok(drawStart >= 0 && cutoutStart > drawStart);
   const draw = runtime.slice(drawStart, cutoutStart);
 
-  assert.match(draw, /getNodeOwnOutputVideo\([\s\S]*?\["pano_input_videos"\]/);
+  assert.match(draw, /const bgImg = surfaceBackgroundMedia\(node\);/);
+  assert.match(runtime, /function surfaceBackgroundMedia\(node\) \{[\s\S]*?getNodeOwnOutputVideo\([\s\S]*?\["pano_input_videos"\]/);
   assert.match(draw, /isRenderableMediaReady\(bgImg\)/);
-  assert.match(runtime, /function surfaceViewInput[\s\S]*?getRenderableMediaRevisionToken\(bgImg\)/);
+  assert.match(runtime, /function surfaceBackground\([\s\S]*?getRenderableMediaRevisionToken\(bgImg\)/);
   assert.match(runtime, /function drawCanvas[\s\S]*?getSourcePixelSize\(bgImg\)/);
   assert.match(runtime, /invalidatePreviewImageCaches[\s\S]*?disposeNodeOutputVideoCache\(node\)/);
   assert.match(runtime, /getNodeOwnOutputVideo[\s\S]*?isNodeOutputMediaCurrent\(node, "background"\)/);
@@ -265,7 +267,7 @@ test("Cutout node surface loops the input ERP video and revisions each presented
 
 test("on-node surfaces resolve an external sticker's image by its id and leave hidden stickers out", async () => {
   const runtime = await read("../web_src/pano_preview_runtime.js");
-  const start = runtime.indexOf("function surfaceViewInput(");
+  const start = runtime.indexOf("function surfaceStickerMedia(");
   const end = runtime.indexOf("\nfunction ", start + 1);
   const input = runtime.slice(start, end);
 
