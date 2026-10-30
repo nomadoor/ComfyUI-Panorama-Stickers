@@ -27,6 +27,7 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | Sticker の id の採番 | 正規化は `load_scene_state`、加えるときは `nodes.py` `_take_sticker_id` | 正規化は `loadSceneState`、加えるときは `pano_editor_state.js` `takeStickerId` | `pano_editor_state.test.mjs`、`tests/test_studio_node.py`、フィクスチャ `v2_upstream` |
 | `port` の Sticker の vFOV | `core/render.py` の `StickerSource`（`derive_vfov`）、式は `core/math.py` `vfov_from_hfov` | `pano_editor_state.js` `skyStickerVfov` | `tests/test_sky_sticker_vfov_parity.py` |
 | ペイントの `version` と group の `z_index` の読み方 | `core/paint_state.py` `normalize_painting_state`・`_js_round` | `web_src/pano_paint_types.js` `normalizePaintingState` | フィクスチャ `tests/fixtures/painting_normalize.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
+| ペイントのストロークの筆の値（`hardness`・`flow`・`spacing` の `null`、筆の形の項目の既定値と範囲） | `core/paint_state.py` `_normalize_brush` | `web_src/pano_paint_types.js` `normalizeBrush` | フィクスチャ `tests/fixtures/paint_stroke_brush.json` を読む `tests/test_paint_state_parity.py`・`tests/pano_paint_state_parity.test.mjs` |
 | Sky の重なり順 | `core/display_list.py` `build_display_entries` | ペイントの並びは `web_src/pano_paint_layers.js` `skyPaintLayers` | `tests/test_display_list_core.py`、`tests/test_paint_layers_parity.py` |
 | `file` の Source が 3D ファイルか | `scene_state.py` `is_3d_file_source`・`FILE_3D_EXTENSIONS` | `pano_scene_state.js` `is3dFileSource`・`FILE_3D_EXTENSIONS` | フィクスチャ `file_3d_formats` を専用に読む `test_scene_state_parity.py`・`pano_scene_state.test.mjs` |
 
@@ -311,6 +312,39 @@ Sticker の `id` は、一度使った値を別の Sticker に使い直さない
 - 判定はファイルを開かない。PLY がスプラットかメッシュか、読めるかどうかは、読む側が中身で決める（`docs/render-contract.md` の「SPLAT の描き方」と「読めない 3D ファイル」）。
 - 3D ファイルの Source を持つ Sticker は `world` の Sticker である（上の「`world` の 2D の素材」の段落）。状態の読み込みは `placement` を書き換えない。`sky` の Sticker が 3D ファイルの Source を持つ状態は、ノードが描かずに警告する（`docs/studio-node.md` の「3D ファイルの `file` の Source」）。
 - 読み方は、ノードが `docs/studio-node.md` の「3D ファイルの `file` の Source」、エディタが `docs/threejs-spark-integration.md` の「空間の表示」で決める。画像の `file` の Source は、ノードが `core/stickers.py` の `load_source_rgba` で読む。
+
+### ペイントのストロークの筆の値
+
+ペイントのストローク（`painting.paint.strokes[]`・`painting.mask.strokes[]`）は、描いたときの筆の値を自分で持つ（`pano_brush_presets.js` の
+`applyPresetToStroke` が書く）。読み込み（`normalize_painting_state` / `normalizePaintingState`）はそれを保ち、開き直しても同じ筆で描き直す。
+Python のラスタ化（`core/painting.py`。`painting_layer` が無いときだけ使う）も、正規化したストロークの筆の形を読み、
+描く側と同じく `null`・欠けだけを既定値として読む（`0` の `hardness`・`flow` と `aspect` を既定値に読み替えない）。
+
+`hardness`・`flow`・`spacing` は、ストロークが常に持つ。JSON の数値（有限）ならその値をそのまま保ち、欠け・`null`・数値でない値は `null` にする。
+`null` は「描く側の既定値」を意味し、`0` に読み替えない（`0` は柔らかさ 0、流量 0 という別の値である）。描く側の既定値は、`hardness` 0.9、
+`flow` 1、`spacing` は道具による（`brush` と `eraser` は直径の 0.15、ほかは 0.2）。`spacing` が 0 以下のときも同じ既定値で描く。
+
+筆の形の項目は後から足したもので、既定値と違うときだけ正規化した結果に持つ（欠けは既定値と読む）。保存するテキストは正規化した状態を
+書くので、既定値は書かれず、この項目より前に保存した状態のテキストは変わらない。
+
+| フィールド | 型 | 既定値 | 読み方 |
+|---|---|---|---|
+| `stampKind` | `"round"`・`"chisel"`・`"crayon"` | `"round"` | それ以外は既定値。筆先の形（丸・平たいマーカー・パステル） |
+| `aspect` | 数値 | `1` | 筆先の横 ÷ 縦。0.1〜10 に寄せる |
+| `angle` | `{"kind": "fixed", "value": <ラジアン>}` または `{"kind": "stroke_dir"}` | `{"kind": "fixed", "value": 0}` | `kind` が `stroke_dir` ならその形。それ以外は `value` が数値なら `fixed`、数値でなければ既定値 |
+| `chiselEdgeLift` | 数値 | `0.4` | `stampKind` が `chisel` のときだけ持つ。0 以上 |
+| `chiselCenterDip` | 数値 | `0.3` | `stampKind` が `chisel` のときだけ持つ。0 以上 |
+| `chiselFiber` | 数値 | `0` | `stampKind` が `chisel` のときだけ持つ。0〜1 に寄せる |
+| `crayonGrain` | 数値 | `0.65` | `stampKind` が `crayon` のときだけ持つ。0〜1 に寄せる |
+| `scatter` | `null` または `{"radius": 数値, "count": 整数}` | `null` | オブジェクトなら、`radius`（数値でなければ 1.5、0 以上）と `count`（数値でなければ 6、`Math.round` と同じ丸めで 1〜64） |
+
+- 数値は JSON の数値（有限）だけを受け付ける（真偽値・文字列は数値でない）。数値でない値は既定値とする。寄せたあとの値が既定値と同じなら持たない。
+- 既定値は、描く側（`pano_paint_engine.js` の `buildStampContext`）が項目の無いストロークに使う値である。
+- `opacityMode` と `velocityWidthFactor` は描く側が使わない（筆の値の置き場だけある）ので保たない。
+- 旧ノードの状態も同じ読み込みを通る。筆の形の項目を持たない状態は既定値（丸い筆）として読み、今までと同じに描く。
+- Python のラスタ化が近似するのは `chisel` の形（平たい楕円）、`aspect`、`fixed` の `angle` までで、`crayon` の粒、`chisel*`、`scatter`、
+  `stroke_dir` は描かない。エディタは閉じるときにペイントの層（`painting_layer`）をアップロードし、ノードはそれを描くので、
+  ノードの出力の正はアップロードした層である。
 
 ## 評価関数
 

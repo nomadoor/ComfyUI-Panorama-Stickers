@@ -1,0 +1,466 @@
+{
+  "_doc": "normalize_painting_state (Python) and normalizePaintingState (JS) keep a stroke's brush values the same (docs/scene-state-v2.md, 「ペイントのストロークの筆の値」). Each case's `brush` is merged over `stroke` (the stroke record without brush values); `expected` is every brush key the normalized stroke has: hardness, flow and spacing always (null for missing, null or not a JSON number), the brush-shape keys only when they differ from their default. `opacityMode` and `velocityWidthFactor` are never kept.",
+  "brush_keys": [
+    "hardness",
+    "flow",
+    "spacing",
+    "stampKind",
+    "aspect",
+    "angle",
+    "chiselEdgeLift",
+    "chiselCenterDip",
+    "chiselFiber",
+    "crayonGrain",
+    "scatter",
+    "opacityMode",
+    "velocityWidthFactor"
+  ],
+  "stroke": {
+    "id": "s1",
+    "actionGroupId": "ag1",
+    "targetSpace": {
+      "kind": "ERP_GLOBAL"
+    },
+    "layerKind": "paint",
+    "toolKind": "pen",
+    "size": 12,
+    "opacity": 1,
+    "createdAt": 1,
+    "color": {
+      "r": 0.2,
+      "g": 0.4,
+      "b": 0.6,
+      "a": 1
+    },
+    "radiusModel": null,
+    "radiusValue": null,
+    "geometry": {
+      "geometryKind": "freehand_open",
+      "points": [
+        {
+          "u": 0.25,
+          "v": 0.5,
+          "t": 0
+        },
+        {
+          "u": 0.3,
+          "v": 0.5,
+          "t": 1
+        }
+      ]
+    }
+  },
+  "cases": {
+    "pen_preset": {
+      "brush": {
+        "brushPresetId": "pen",
+        "stampKind": "round",
+        "hardness": 0.92,
+        "spacing": 0.14,
+        "flow": 1,
+        "opacity": 1,
+        "opacityMode": "accumulate",
+        "aspect": 1,
+        "angle": {
+          "kind": "fixed",
+          "value": 0
+        },
+        "velocityWidthFactor": 0,
+        "chiselEdgeLift": 0,
+        "chiselCenterDip": 0,
+        "chiselFiber": 0,
+        "crayonGrain": 0,
+        "scatter": null
+      },
+      "expected": {
+        "hardness": 0.92,
+        "flow": 1,
+        "spacing": 0.14
+      }
+    },
+    "marker_preset": {
+      "brush": {
+        "brushPresetId": "marker",
+        "stampKind": "chisel",
+        "hardness": 0.76,
+        "spacing": 0.06,
+        "flow": 0.8,
+        "opacity": 0.88,
+        "opacityMode": "accumulate",
+        "aspect": 2.4,
+        "angle": {
+          "kind": "fixed",
+          "value": 0.5235987755982988
+        },
+        "velocityWidthFactor": 0,
+        "chiselEdgeLift": 0.3,
+        "chiselCenterDip": 0.12,
+        "chiselFiber": 0.28,
+        "crayonGrain": 0,
+        "scatter": null
+      },
+      "expected": {
+        "hardness": 0.76,
+        "flow": 0.8,
+        "spacing": 0.06,
+        "stampKind": "chisel",
+        "aspect": 2.4,
+        "angle": {
+          "kind": "fixed",
+          "value": 0.5235987755982988
+        },
+        "chiselEdgeLift": 0.3,
+        "chiselCenterDip": 0.12,
+        "chiselFiber": 0.28
+      }
+    },
+    "soft_brush_preset": {
+      "brush": {
+        "brushPresetId": "brush",
+        "stampKind": "round",
+        "hardness": 0.06,
+        "spacing": 0.06,
+        "flow": 0.28,
+        "opacity": 0.85,
+        "opacityMode": "accumulate",
+        "aspect": 1,
+        "angle": {
+          "kind": "fixed",
+          "value": 0
+        },
+        "velocityWidthFactor": 0,
+        "chiselEdgeLift": 0,
+        "chiselCenterDip": 0,
+        "chiselFiber": 0,
+        "crayonGrain": 0,
+        "scatter": null
+      },
+      "expected": {
+        "hardness": 0.06,
+        "flow": 0.28,
+        "spacing": 0.06
+      }
+    },
+    "pastel_preset": {
+      "brush": {
+        "brushPresetId": "crayon",
+        "stampKind": "crayon",
+        "hardness": 0.55,
+        "spacing": 0.1,
+        "flow": 0.82,
+        "opacity": 0.92,
+        "opacityMode": "accumulate",
+        "aspect": 1.2,
+        "angle": {
+          "kind": "fixed",
+          "value": 0
+        },
+        "velocityWidthFactor": 0,
+        "chiselEdgeLift": 0,
+        "chiselCenterDip": 0,
+        "chiselFiber": 0,
+        "crayonGrain": 0.68,
+        "scatter": null
+      },
+      "expected": {
+        "hardness": 0.55,
+        "flow": 0.82,
+        "spacing": 0.1,
+        "stampKind": "crayon",
+        "aspect": 1.2,
+        "crayonGrain": 0.68
+      }
+    },
+    "old_stroke_without_brush_fields": {
+      "brush": {},
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null
+      }
+    },
+    "null_is_kept_as_the_engine_default": {
+      "brush": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "stampKind": null,
+        "aspect": null,
+        "angle": null,
+        "scatter": null
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null
+      }
+    },
+    "zero_is_kept": {
+      "brush": {
+        "hardness": 0,
+        "flow": 0,
+        "spacing": 0
+      },
+      "expected": {
+        "hardness": 0,
+        "flow": 0,
+        "spacing": 0
+      }
+    },
+    "not_numbers_are_defaults": {
+      "brush": {
+        "hardness": "0.5",
+        "flow": true,
+        "spacing": [
+          0.1
+        ],
+        "stampKind": "star",
+        "aspect": "2",
+        "angle": {
+          "kind": "fixed",
+          "value": "1"
+        }
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null
+      }
+    },
+    "aspect_low_clamps": {
+      "brush": {
+        "aspect": 0.01
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "aspect": 0.1
+      }
+    },
+    "aspect_high_clamps": {
+      "brush": {
+        "aspect": 50
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "aspect": 10
+      }
+    },
+    "chisel_values_clamp_and_defaults_are_left_out": {
+      "brush": {
+        "stampKind": "chisel",
+        "chiselEdgeLift": -1,
+        "chiselCenterDip": 0.3,
+        "chiselFiber": 2
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "stampKind": "chisel",
+        "chiselEdgeLift": 0,
+        "chiselFiber": 1
+      }
+    },
+    "chisel_without_its_values": {
+      "brush": {
+        "stampKind": "chisel"
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "stampKind": "chisel"
+      }
+    },
+    "chisel_values_of_a_round_stroke_are_left_out": {
+      "brush": {
+        "stampKind": "round",
+        "chiselEdgeLift": 0.5,
+        "crayonGrain": 0.2
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null
+      }
+    },
+    "crayon_grain": {
+      "brush": {
+        "stampKind": "crayon",
+        "crayonGrain": 5,
+        "chiselFiber": 0.5
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "stampKind": "crayon",
+        "crayonGrain": 1
+      }
+    },
+    "crayon_default_grain_is_left_out": {
+      "brush": {
+        "stampKind": "crayon",
+        "crayonGrain": 0.65
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "stampKind": "crayon"
+      }
+    },
+    "angle_stroke_dir": {
+      "brush": {
+        "angle": {
+          "kind": "stroke_dir",
+          "value": 3
+        }
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "angle": {
+          "kind": "stroke_dir"
+        }
+      }
+    },
+    "angle_without_kind_is_fixed": {
+      "brush": {
+        "angle": {
+          "value": -1.25
+        }
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "angle": {
+          "kind": "fixed",
+          "value": -1.25
+        }
+      }
+    },
+    "angle_default_is_left_out": {
+      "brush": {
+        "angle": {
+          "kind": "fixed",
+          "value": 0
+        }
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null
+      }
+    },
+    "angle_not_an_object": {
+      "brush": {
+        "angle": 1.5
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null
+      }
+    },
+    "scatter_rounds_count": {
+      "brush": {
+        "scatter": {
+          "radius": 2,
+          "count": 3.5
+        }
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "scatter": {
+          "radius": 2,
+          "count": 4
+        }
+      }
+    },
+    "scatter_empty_object": {
+      "brush": {
+        "scatter": {}
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "scatter": {
+          "radius": 1.5,
+          "count": 6
+        }
+      }
+    },
+    "scatter_clamps": {
+      "brush": {
+        "scatter": {
+          "radius": -1,
+          "count": 1000
+        }
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "scatter": {
+          "radius": 0,
+          "count": 64
+        }
+      }
+    },
+    "scatter_negative_half_count": {
+      "brush": {
+        "scatter": {
+          "radius": "3",
+          "count": -2.5
+        }
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null,
+        "scatter": {
+          "radius": 1.5,
+          "count": 1
+        }
+      }
+    },
+    "scatter_not_an_object": {
+      "brush": {
+        "scatter": [
+          1,
+          2
+        ]
+      },
+      "expected": {
+        "hardness": null,
+        "flow": null,
+        "spacing": null
+      }
+    },
+    "mask_stroke_keeps_its_brush": {
+      "brush": {
+        "layerKind": "mask",
+        "stampKind": "chisel",
+        "aspect": 2.4,
+        "hardness": 0.76
+      },
+      "expected": {
+        "hardness": 0.76,
+        "flow": null,
+        "spacing": null,
+        "stampKind": "chisel",
+        "aspect": 2.4
+      }
+    }
+  }
+}

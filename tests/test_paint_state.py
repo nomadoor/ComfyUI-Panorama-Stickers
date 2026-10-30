@@ -178,3 +178,31 @@ def test_integers_too_large_for_a_double_fall_back_and_the_painting_still_draws(
     assert [group["z_index"] for group in state["groups"]] == [0, 1]
     assert state["paint"]["strokes"][0]["createdAt"] == 0
     assert paint[16, 35, 3] > 0
+
+
+def _brush_stroke(**brush):
+    return {
+        "id": "s1", "actionGroupId": "ag1", "targetSpace": {"kind": "ERP_GLOBAL"}, "layerKind": "paint",
+        "toolKind": "pen", "size": 40, "opacity": 1, "color": {"r": 1, "g": 0, "b": 0, "a": 1},
+        "geometry": {"geometryKind": "freehand_open", "points": [{"u": 0.4, "v": 0.5, "t": 0}, {"u": 0.6, "v": 0.5, "t": 1}]},
+        **brush,
+    }
+
+
+def _painted_alpha(**brush):
+    paint, _mask = render_painting_to_erp({"paint": {"strokes": [_brush_stroke(**brush)]}}, 256, 128)
+    return paint[..., 3]
+
+
+def test_the_rasterizer_draws_a_marker_stroke_with_its_chisel_shape_after_normalizing():
+    # The normalizer used to drop stampKind, aspect and angle, so the node drew every stroke as a round brush.
+    round_alpha = _painted_alpha(hardness=0.76)
+    marker_alpha = _painted_alpha(hardness=0.76, stampKind="chisel", aspect=2.4, angle={"kind": "fixed", "value": 0.5236})
+
+    assert (marker_alpha > 0.5).sum() > (round_alpha > 0.5).sum() * 1.3
+
+
+def test_the_rasterizer_reads_only_a_missing_hardness_or_flow_as_the_default():
+    assert _painted_alpha(flow=0).max() == 0.0
+    assert _painted_alpha(flow=None).max() > 0.9
+    assert (_painted_alpha(hardness=0) > 0.9).sum() < (_painted_alpha(hardness=None) > 0.9).sum()
