@@ -1479,3 +1479,242 @@
   border-radius: var(--studio-r-box);
   background: var(--studio-panel);
 }
+
+/* --- The Camera tab (docs/studio-ui.md "Camera タブ", docs/design.md "形と重なり"): the frame fitted into the stage less
+   its margins (studio/frame_layout.js), the picture outside it dimmed with black at 82%, a bright 1px line on its edge,
+   and the edge rulers riding on it. What is drawn over the dim is white with alpha, the same in light and dark. */
+.pano-studio-camera-frame {
+  --studio-dim: rgb(8 8 9 / 82%);
+  --studio-over-dim: rgb(255 255 255 / 72%);
+  --studio-over-dim-strong: #ffffff;
+  --studio-over-dim-num: rgb(255 255 255 / 70%);
+  --studio-over-dim-tick: rgb(255 255 255 / 55%);
+  --studio-over-dim-line: rgb(255 255 255 / 35%);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pano-studio-camera-frame-box {
+  position: absolute;
+  outline: 1px solid var(--studio-over-dim-line);
+}
+
+.pano-studio-camera-frame-dim {
+  position: absolute;
+  background: var(--studio-dim);
+}
+
+/* What rides on the frame takes the pointer; the frame itself does not. */
+.pano-studio-camera-frame-box > * {
+  pointer-events: auto;
+}
+
+/* The rulers' places on the frame: 14px out on the left and the right, 10px under it. */
+.pano-studio-at-edge-left { position: absolute; right: calc(100% + 14px); top: 0; bottom: 0; }
+.pano-studio-at-edge-right { position: absolute; left: calc(100% + 14px); top: 0; bottom: 0; }
+.pano-studio-at-edge-bottom { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+
+/* Composition guides inside the frame: thirds and a level line turned by the Roll. */
+.pano-studio-frame-guides {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none !important;
+}
+
+.pano-studio-frame-guides i {
+  position: absolute;
+  background: rgb(255 255 255 / 55%);
+}
+
+.pano-studio-frame-level {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 120px;
+  height: 0;
+}
+
+.pano-studio-frame-level::before,
+.pano-studio-frame-level::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  width: 44px;
+  height: 2px;
+  background: #ffffff;
+  outline: 1px solid rgb(0 0 0 / 25%);
+}
+
+.pano-studio-frame-level::before { left: 0; }
+.pano-studio-frame-level::after { right: 0; }
+
+/* Edge ruler: a head (name, value, Keyframe dot) and a 22px scale under a fixed middle mark. */
+.pano-studio-edge-ruler {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--studio-over-dim);
+  font-size: var(--studio-text-sm);
+}
+
+.pano-studio-edge-ruler.is-vertical {
+  flex-direction: column;
+  width: 48px;
+  height: 100%;
+}
+
+.pano-studio-edge-ruler.is-horizontal {
+  flex-direction: row;
+}
+
+.pano-studio-edge-ruler-cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-cap {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pano-studio-edge-ruler-name {
+  color: var(--studio-over-dim);
+}
+
+.pano-studio-edge-ruler-value {
+  color: var(--studio-over-dim-strong);
+  font-weight: var(--studio-weight-head);
+  font-variant-numeric: tabular-nums;
+}
+
+.pano-studio-edge-ruler .pano-studio-keydot::before {
+  border-color: rgb(255 255 255 / 60%);
+}
+
+.pano-studio-edge-ruler .pano-studio-keydot.is-has::before,
+.pano-studio-edge-ruler .pano-studio-keydot.is-now::before {
+  border-color: var(--studio-ice);
+}
+
+.pano-studio-edge-ruler-track {
+  position: relative;
+  flex: 1 1 auto;
+  touch-action: none;
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-track {
+  width: 22px;
+  min-height: 0;
+  cursor: ns-resize;
+}
+
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-track {
+  height: 22px;
+  min-width: 0;
+  cursor: ew-resize;
+}
+
+.pano-studio-edge-ruler-track:focus-visible {
+  outline: 1px solid var(--studio-over-dim);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The ticks fade out toward both ends. */
+.pano-studio-edge-ruler-scale {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-scale {
+  -webkit-mask: linear-gradient(180deg, transparent, #000 20%, #000 80%, transparent);
+  mask: linear-gradient(180deg, transparent, #000 20%, #000 80%, transparent);
+}
+
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-scale {
+  -webkit-mask: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
+  mask: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
+}
+
+.pano-studio-edge-ruler-tick {
+  position: absolute;
+  background: var(--studio-over-dim-tick);
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-tick {
+  left: 5px;
+  right: 5px;
+  height: 1px;
+  margin-top: -0.5px;
+}
+
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-tick {
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  margin-left: -0.5px;
+}
+
+.pano-studio-edge-ruler-mark {
+  position: absolute;
+  border-radius: 1px;
+  background: var(--studio-over-dim-strong);
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-mark {
+  top: 50%;
+  left: 1px;
+  right: 1px;
+  height: 2px;
+  margin-top: -1px;
+}
+
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-mark {
+  left: 50%;
+  top: 1px;
+  bottom: 1px;
+  width: 2px;
+  margin-left: -1px;
+}
+
+/* The numbers: on the outer side of a vertical ruler, under a horizontal one. */
+.pano-studio-edge-ruler-num {
+  position: absolute;
+  font-size: var(--studio-text-xs);
+  line-height: 1;
+  color: var(--studio-over-dim-num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-num { transform: translateY(-50%); }
+.pano-studio-edge-ruler.is-left .pano-studio-edge-ruler-num { right: 24px; }
+.pano-studio-edge-ruler.is-right .pano-studio-edge-ruler-num { left: 24px; }
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-num { top: 22px; transform: translateX(-50%); }
+
+/* Panorama mode: FOV and Lens stay in their places, gray and untouchable. */
+.pano-studio-edge-ruler.is-disabled {
+  opacity: 0.35;
+}
+
+.pano-studio-edge-ruler.is-disabled .pano-studio-edge-ruler-track {
+  cursor: default;
+}
+
+/* The timecode at the top center of the Camera tab: white over the dimmed picture (no shadow, docs/design.md). */
+.pano-studio-timecode {
+  display: inline-flex;
+  align-items: center;
+  height: var(--studio-btn);
+  font-size: var(--studio-text-sm);
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

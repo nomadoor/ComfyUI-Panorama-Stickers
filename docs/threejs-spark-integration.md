@@ -27,7 +27,7 @@
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
 | 新しい UI のステージの描画（視点のカメラの far、地面のグリッドと原点の印を描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | （新しい UI、未実装）`web_src/studio/erp_preview.js` | （未作成）`tests/studio_erp_preview.test.mjs`、（未作成）`tests/browser/` の場面 |
+| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。three.js だけを import する）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ステージと Output の小窓への組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする）は（未実装） | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js` |
 
 ## 版と同梱
 
@@ -287,7 +287,7 @@ three のアップロードは render の中でしか起きないので、Spark 
   すぐ読み込む側と module を共有できない（上の「遅延読み込み」）ので、`pano_pick.js` の `rayBoxDepth` を静的に import できない。
   そのため `web_src/pano_ray_box.js` に写しを置き、`tests/pano_ray_box.test.mjs` が二つの答えの一致を確かめる。
 
-## Panorama モードの ERP の表示（新しい UI、未実装）
+## Panorama モードの ERP の表示（新しい UI、組み込みは未実装）
 
 新しい UI の Output の小窓と、Panorama モードの Camera タブ（`docs/studio-ui.md`）は、撮る Camera の位置から描いた ERP をその場で見せる
 （直近の実行の出力は使わない。編集とずれるため。ADR 0048）。
