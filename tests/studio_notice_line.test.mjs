@@ -9,10 +9,10 @@ test("an operation that did nothing is a stopped notice and comes first", () => 
   assert.deepEqual(topLine(ui({ notice: "Nothing to frame", view: "loading", background: "failed" })), { kind: "stopped", text: "Nothing to frame" });
 });
 
-// docs/studio-ui.md "左の列の Camera のボタン": a short notice of an operation that was done has no mark, after a stopped
-// notice and before loading.
-test("a done operation's short notice has no mark, after a stopped notice and before loading", () => {
-  assert.deepEqual(topLine(ui({ done: LINE_TEXT.cameraMoved, view: "loading", empty: true })), { kind: "info", text: "Camera moved to this view" });
+// docs/studio-ui.md "一行の知らせの種類": a short notice of an operation that was done is the "done" kind (a lime dot),
+// after a stopped notice and before loading.
+test("a done operation's short notice is the done kind, after a stopped notice and before loading", () => {
+  assert.deepEqual(topLine(ui({ done: LINE_TEXT.cameraMoved, view: "loading", empty: true })), { kind: "done", text: "Camera moved to this view" });
   assert.deepEqual(topLine(ui({ done: LINE_TEXT.cameraMoved, notice: "Nothing to frame" })), { kind: "stopped", text: "Nothing to frame" });
 });
 
@@ -49,8 +49,8 @@ test("waiting for the upstream Scene says so with no mark, after the warnings an
   assert.deepEqual(topLine(ui({ upstreamPending: true, addWarning: "x" })), { kind: "warning", text: "x" });
 });
 
-test("every line's kind is one of the four", () => {
-  for (const fields of [{ notice: "x" }, { view: "loading" }, { background: "failed" }, { empty: true }, {}]) {
+test("every line's kind is one of the five", () => {
+  for (const fields of [{ notice: "x" }, { done: "x" }, { view: "loading" }, { background: "failed" }, { empty: true }, {}]) {
     assert.ok(NOTICE_KINDS.includes(topLine(ui(fields)).kind));
   }
 });

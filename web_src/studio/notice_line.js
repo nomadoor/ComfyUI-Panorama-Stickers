@@ -4,9 +4,9 @@
 import { VIEW_UNAVAILABLE_MESSAGE } from "../pano_preview_view.js";
 import { ADD_TEXT } from "./add_files.js";
 
-// The kinds and their marks: "stopped" a coral dot, "warning" a soft yellow dot, "info" no mark, "loading" a small
-// spinning ring.
-export const NOTICE_KINDS = Object.freeze(["stopped", "warning", "info", "loading"]);
+// The kinds and their marks: "stopped" a coral dot, "done" a lime dot, "warning" a soft yellow dot, "info" no mark,
+// "loading" a small spinning ring.
+export const NOTICE_KINDS = Object.freeze(["stopped", "done", "warning", "info", "loading"]);
 
 export const LINE_TEXT = Object.freeze({
   viewLoading: "Loading the 3D view…",
@@ -29,7 +29,7 @@ export const LINE_TEXT = Object.freeze({
 // yet (studio/upstream.js pending). Returns { kind, text }; text "" shows nothing.
 export function topLine(ui) {
   if (ui.notice) return { kind: "stopped", text: String(ui.notice) };
-  if (ui.done) return { kind: "info", text: String(ui.done) };
+  if (ui.done) return { kind: "done", text: String(ui.done) };
   if (ui.view === "loading") return { kind: "loading", text: LINE_TEXT.viewLoading };
   if (ui.background === "loading") return { kind: "loading", text: LINE_TEXT.backgroundLoading };
   if (ui.adding) return { kind: "loading", text: LINE_TEXT.addLoading };

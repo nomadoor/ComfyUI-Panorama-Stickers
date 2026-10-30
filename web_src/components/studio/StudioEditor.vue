@@ -15,6 +15,7 @@ import { trackInputMode } from "../../studio/input_modality.js";
 import { inspectorSelection } from "../../studio/session.js";
 import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
 import StudioDropMarker from "./StudioDropMarker.vue";
+import StudioCameraCue from "./StudioCameraCue.vue";
 import StudioCameraFrame from "./StudioCameraFrame.vue";
 import StudioConfirm from "./StudioConfirm.vue";
 import StudioEdgeRuler from "./StudioEdgeRuler.vue";
@@ -247,8 +248,8 @@ function setCollapsed(value) {
             aria-hidden="true"
           />
           <StudioDropMarker v-if="ui.drop" :mark="ui.drop" />
-          <!-- The Camera button's light band (docs/design.md "動き"): a CSS layer, run once per new count. -->
-          <div v-if="ui.sweep" :key="ui.sweep" class="pano-studio-sweep" data-sweep aria-hidden="true" />
+          <!-- The Camera button's viewfinder cue (docs/design.md "動き"): a CSS layer, run once per new count. -->
+          <StudioCameraCue v-if="ui.cameraCue" :key="ui.cameraCue" />
 
           <StudioCameraFrame v-if="cameraTab && rulers" :aspect="frameAspect" @rect="(rect) => controller.frameRect?.(rect)">
             <template #default="{ rulers: place }">

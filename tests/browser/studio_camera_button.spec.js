@@ -67,12 +67,12 @@ for (const [mode, projection, tip] of [["frame", "perspective", "Camera to view"
     expect((await camera(page)).projection).toBe("perspective");
     await expectAtView(page);
     expect(await view(page)).toEqual(before);
-    // The Camera is selected (its card in the inspector) and the top center says it moved, with no mark.
+    // The Camera is selected (its card in the inspector) and the top center says it moved, with the lime dot.
     expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("camera");
     await expect(page.locator('[data-card="camera"]')).toHaveCount(1);
     const line = page.locator(".pano-studio-notice");
     await expect(line).toHaveText("Camera moved to this view");
-    await expect(line).toHaveAttribute("data-notice", "info");
+    await expect(line).toHaveAttribute("data-notice", "done");
     await expect(rail(page)).toHaveAttribute("data-tip", "Camera to view");
     // Pressed again at the same view: nothing moves, no Undo step; the notice hides on its own.
     await expect(line).toHaveCount(0, { timeout: 5_000 });
@@ -89,33 +89,97 @@ for (const [mode, projection, tip] of [["frame", "perspective", "Camera to view"
   });
 }
 
-// docs/design.md "動き": a move runs the soft yellow light band across the stage once (a CSS layer); with reduced
-// motion only the line shows.
-async function sweepFrame(page, at) {
-  return page.evaluate((ms) => {
-    const animation = document.getAnimations().find((item) => item.animationName === "pano-studio-sweep");
-    if (!animation) return null;
-    animation.pause();
-    animation.currentTime = ms;
-    return getComputedStyle(document.querySelector("[data-sweep]")).display;
-  }, at);
+// docs/design.md "動き": a move runs the viewfinder cue once (a CSS layer of four brackets and a vignette) and removes
+// it; with reduced motion the brackets only show still and fade. FRAMES are the contact sheet's moments.
+const FRAMES = [0, 30, 60, 90, 120, 200, 300, 370, 410, 450, 600, 700, 1000, 1100, 1180];
+const cueAnimations = (page) => page.evaluate(() => document.getAnimations().filter((item) => item.animationName?.startsWith("pano-studio-cue-")).map((item) => item.animationName));
+
+// Every cue animation paused at the same moment from the press (each one's currentTime counts its delay).
+async function cueAt(page, ms) {
+  await page.evaluate((at) => {
+    for (const item of document.getAnimations()) {
+      if (!item.animationName?.startsWith("pano-studio-cue-")) continue;
+      item.pause();
+      item.currentTime = Math.min(at, 1259);
+    }
+  }, ms);
 }
 
-test("a move runs the light band across the stage once; reduced motion shows only the line", async ({ page }) => {
+const cueStyle = (page) => page.evaluate(() => [...document.querySelectorAll("[data-cue-bracket]")].map((el) => {
+  const style = getComputedStyle(el);
+  return { opacity: Number(style.opacity), transform: style.transform, width: el.getBoundingClientRect().width };
+}));
+
+test("a move runs the viewfinder cue once, a press mid-way restarts it, and a press that moves nothing runs none", async ({ page }) => {
   const problems = await load(page, "mode=frame");
   await rail(page).click();
-  await expect(page.locator("[data-sweep]")).toHaveCount(1);
-  for (const at of [120, 225]) {
-    expect(await sweepFrame(page, at)).toBe("block");
-    await page.screenshot({ path: `${SHOTS}/camera-button-flash-${at}ms.png` });
+  const cue = page.locator("[data-camera-cue]");
+  await expect(cue).toHaveCount(1);
+  await expect(cue.locator("[data-cue-bracket]")).toHaveCount(4);
+  await expect(cue.locator(".pano-studio-cue-vignette")).toHaveCount(1);
+  await expect(page.locator(".pano-studio-notice")).toHaveAttribute("data-notice", "done");
+  await expect(page.locator(".pano-studio-notice .pano-studio-notice-dot")).toHaveCSS("background-color", "rgb(214, 231, 151)");
+  expect((await cueAnimations(page)).sort()).toEqual([
+    "pano-studio-cue-glow", "pano-studio-cue-life",
+    ...Array(4).fill("pano-studio-cue-fade"), ...Array(4).fill("pano-studio-cue-move"),
+  ].sort());
+  for (const at of FRAMES) {
+    await cueAt(page, at);
+    await page.screenshot({ path: `${SHOTS}/camera-to-view-a-${String(at).padStart(4, "0")}ms.png` });
   }
-  await page.evaluate(() => document.getAnimations().find((item) => item.animationName === "pano-studio-sweep")?.finish());
+  // Settled and held at 700ms: all four fully shown at their rest, 8% of the stage's shorter side (28px to 56px).
+  await cueAt(page, 700);
+  const stage = await page.locator('[data-region="stage"]').boundingBox();
+  const size = Math.min(56, Math.max(28, 0.08 * Math.min(stage.width, stage.height)));
+  for (const bracket of await cueStyle(page)) {
+    expect(bracket.opacity).toBe(1);
+    expect(bracket.transform).toBe("matrix(1, 0, 0, 1, 0, 0)");
+    expect(Math.abs(bracket.width - size)).toBeLessThan(0.5);
+  }
+  // Before the press and after the fade, nothing shows.
+  await cueAt(page, 0);
+  expect((await cueStyle(page)).every((bracket) => bracket.opacity === 0)).toBe(true);
+  await cueAt(page, 1259);
+  expect((await cueStyle(page)).every((bracket) => bracket.opacity < 0.02)).toBe(true);
+  // Let it run out: the layer is removed.
+  await page.evaluate(() => document.getAnimations().forEach((item) => item.animationName?.startsWith("pano-studio-cue-") && item.play()));
+  await expect(cue).toHaveCount(0, { timeout: 3_000 });
+
+  // A press mid-way (after an Undo, so the Camera moves again) starts it over: one layer, from the start.
   await page.locator('[data-tool="undo"]').click();
+  await rail(page).click();
+  await page.waitForTimeout(400);
+  await page.locator('[data-tool="undo"]').click();
+  await rail(page).click();
+  await expect(cue).toHaveCount(1);
+  const times = await page.evaluate(() => document.getAnimations().filter((item) => item.animationName === "pano-studio-cue-life").map((item) => item.currentTime));
+  expect(times).toHaveLength(1);
+  expect(times[0]).toBeLessThan(300);
+  await expect(cue).toHaveCount(0, { timeout: 3_000 });
+  // Pressed again at the same view: the Camera does not move and no cue runs.
+  await rail(page).click();
+  await page.waitForTimeout(100);
+  await expect(cue).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+test("with reduced motion the cue's brackets show still and fade, with no vignette, then go", async ({ page }) => {
+  const problems = await load(page, "mode=frame");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await rail(page).click();
   await expect(page.locator(".pano-studio-notice")).toHaveText("Camera moved to this view");
-  expect(await page.evaluate(() => getComputedStyle(document.querySelector("[data-sweep]")).display)).toBe("none");
-  await page.screenshot({ path: `${SHOTS}/camera-button-flash-reduced-motion.png` });
+  const cue = page.locator("[data-camera-cue]");
+  await expect(cue).toHaveCount(1);
+  expect((await cueAnimations(page)).sort()).toEqual(["pano-studio-cue-life", ...Array(4).fill("pano-studio-cue-still")].sort());
+  await expect(cue.locator(".pano-studio-cue-vignette")).toBeHidden();
+  await cueAt(page, 100);
+  for (const bracket of await cueStyle(page)) {
+    expect(bracket.opacity).toBe(1);
+    expect(bracket.transform).toBe("none");
+  }
+  await page.screenshot({ path: `${SHOTS}/camera-to-view-a-reduced-motion.png` });
+  await page.evaluate(() => document.getAnimations().forEach((item) => item.animationName?.startsWith("pano-studio-cue-") && item.play()));
+  await expect(cue).toHaveCount(0, { timeout: 2_000 });
   expect(problems).toEqual([]);
 });
 
