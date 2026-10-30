@@ -1,11 +1,12 @@
 <script setup>
-// The one line at the top center of the stage (docs/studio-ui.md "画面の区画", "読み込み中と空の画面"): a notice with
-// a coral dot, or a line saying what the stage waits for or what to do on an empty stage. One at a time; the shell
-// decides which. Nothing shows without text, and the line never moves the other parts.
+// The one line at the top center of the stage (docs/studio-ui.md "画面の区画", "一行の知らせの種類"): its text and, on
+// its left, the mark of its kind: a coral dot (stopped), a soft yellow dot (warning), a small spinning ring (loading),
+// nothing (info). One at a time; the shell decides which (studio/notice_line.js). Nothing shows without text, and the
+// line never moves the other parts.
 defineProps({
   text: { type: String, default: "" },
-  // "notice" (an operation that did nothing, the bound), "loading" or "hint" (the empty stage).
-  kind: { type: String, default: "notice" },
+  // "stopped", "warning", "info" or "loading" (notice_line.js NOTICE_KINDS).
+  kind: { type: String, default: "info" },
 });
 </script>
 
@@ -18,7 +19,8 @@ defineProps({
     aria-live="polite"
     :data-notice="kind"
   >
-    <span v-if="kind === 'notice'" class="pano-studio-notice-dot" aria-hidden="true" />
+    <span v-if="kind === 'stopped' || kind === 'warning'" class="pano-studio-notice-dot" aria-hidden="true" />
+    <span v-else-if="kind === 'loading'" class="pano-studio-notice-ring" aria-hidden="true" />
     <span class="pano-studio-cap">{{ text }}</span>
   </div>
 </template>

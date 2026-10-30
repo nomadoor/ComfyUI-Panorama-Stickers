@@ -257,6 +257,13 @@ export function worldStickerLayers(sceneState, frame, stickers, { media, evaluat
   return layers;
 }
 
+// Imports the three.js chunk (pano_three_view.js) the editor's view draws with; the browser keeps the module, so an
+// editor opened later starts at once (docs/studio-ui.md "読み込み中と空の画面"). Spark stays its own chunk, imported
+// when a SPLAT first draws.
+export function preloadEditorView() {
+  return import("./pano_three_view.js");
+}
+
 // The editor's three.js view, drawing on `canvas`, the stage's own canvas in the page (nothing copies its
 // frames). onReady runs once the view can render. onFailed runs when the chunk or WebGL is unavailable;
 // the editor then shows the failure instead of a frame. onUpdate runs when the space view changes by itself
@@ -266,7 +273,7 @@ export function worldStickerLayers(sceneState, frame, stickers, { media, evaluat
 // When the WebGL context is lost, the view lets go of what it held and renders nothing (render() returns
 // null) until the context is restored; then a new view is made on the canvas and onRestored runs, so the
 // editor draws everything again. load imports pano_three_view.js.
-export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {}, onSplats = () => {}, onRestored = () => {}, load = () => import("./pano_three_view.js") }) {
+export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {}, onSplats = () => {}, onRestored = () => {}, load = preloadEditorView }) {
   let module = null;
   let view = null;
   let disposed = false;

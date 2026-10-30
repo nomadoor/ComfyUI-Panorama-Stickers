@@ -247,9 +247,48 @@ test("Frame Selected with nothing to frame says so on the top-center line; Escap
   await page.locator('[data-action="frame-selected"]').click();
   await expect(page.locator(".pano-studio-notice")).toHaveText("Nothing to frame");
   await expect(page.locator(".pano-studio-notice-dot")).toHaveCount(1);
+  await expect(page.locator(".pano-studio-notice")).toHaveAttribute("data-notice", "stopped");
   // It goes BOUND_NOTICE_SECONDS after it was shown.
   await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 4000 });
   await page.keyboard.press("Escape");
   await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+test("the tabs are 108px each; a click on the backdrop closes like ✕, a drag from inside the frame does not", async ({ page }, testInfo) => {
+  const { problems, stage } = await open(page, testInfo);
+  const widths = await page.locator(".pano-studio-tabs .pano-studio-seg-item").evaluateAll((items) => items.map((el) => el.getBoundingClientRect().width));
+  expect(widths).toEqual([108, 108]);
+  // A drag that starts on the stage and ends on the dimmed page keeps the editor.
+  const { x, y } = await stageCenter(stage);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(8, 8, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+  // A right click on the backdrop keeps it too; a left click closes it.
+  await page.mouse.click(8, 8, { button: "right" });
+  await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+  await page.mouse.click(8, 8);
+  await expect(page.locator(".pano-studio-editor")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+test("the Output window opens and folds with a short size and opacity move, its content kept in the page", async ({ page }, testInfo) => {
+  const { problems } = await open(page, testInfo);
+  const output = page.locator(".pano-studio-output");
+  const win = page.locator(".pano-studio-output-window");
+  await expect(output).toHaveClass(/is-collapsed/);
+  expect(await win.evaluate((el) => [getComputedStyle(el).transitionDuration, getComputedStyle(el).transitionTimingFunction])).toEqual(["0.16s, 0.16s", "ease-out, ease-out"]);
+  const body = await page.locator(".pano-studio-output-body").elementHandle();
+  await page.locator('[data-action="output-fold"]').click();
+  await expect(output).not.toHaveClass(/is-collapsed/);
+  await expect.poll(() => win.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  await page.locator('[data-action="output-fold"]').click();
+  await expect.poll(() => win.evaluate((el) => getComputedStyle(el).opacity)).toBe("0");
+  // The same element the whole time: what it shows is not made again.
+  expect(await body.evaluate((el) => el.isConnected)).toBe(true);
+  // Folded, the pill takes the clicks and the window none.
+  expect(await win.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe("none");
   expect(problems).toEqual([]);
 });

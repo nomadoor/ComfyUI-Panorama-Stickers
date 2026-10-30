@@ -204,6 +204,9 @@ test("a state without a Camera shows the default Camera: Panorama, 360°, 16:9, 
   assert.deepEqual(card.rows.map((item) => item.id), ["mode", "range", "aspect", "hfov", "lens", "position", "rotation"]);
   assert.equal(row(card, "mode").value, "erp");
   assert.deepEqual(row(card, "mode").options.map((option) => option.label), ["Panorama", "Frame"]);
+  // The mode is two tiles under the heading, not a row of the grid (docs/studio-ui.md "Camera のカード").
+  assert.equal(row(card, "mode").control, "mode");
+  assert.equal(row(card, "range").control, "choice");
   assert.equal(row(card, "range").value, 360);
   assert.equal(row(card, "aspect").fields[0].value, 16 / 9);
   assert.equal(row(card, "hfov").fields[0].value, 90);

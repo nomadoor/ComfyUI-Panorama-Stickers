@@ -4,11 +4,11 @@
 // what the pointer is over, what gizmo to draw and what to draw on the overlay. It builds no DOM.
 //
 // A left press, in this order:
-//   1. a handle of the gizmo of the selected World object or Camera (3D tab only): drags it;
+//   1. a handle of the gizmo of the selected World object or Camera (3D tab only; gizmo_overlay.js): drags it;
 //   2. a handle of the selected sky image (a corner scales both FOVs, an edge one, the rotate handle the Roll);
 //   3. the World object under the pointer by the GPU pick (pano_three_view.js pickSticker): selects it (its drag does
 //      nothing: the gizmo moves it);
-//   4. a line of the Camera's mark (3D tab; pano_space.js segmentsHit): selects the Camera;
+//   4. the Camera's mark (3D tab; camera_marker.js: anywhere on its filled shape or near its lines): selects the Camera;
 //   5. a sky image under the pointer, front to back (the selected one's body included): selects it and its drag turns
 //      it (its direction);
 //   6. nothing: the stage looks around, and a press let go without moving lets the selection go.
@@ -20,7 +20,7 @@
 import { viewProjection } from "../pano_editor_view.js";
 import { setStickerPose, setWorldStickerTransform } from "../pano_editor_state.js";
 import { evaluateCamera, evaluateSticker } from "../pano_scene_eval.js";
-import { gizmoDragLanes, sceneTransform, segmentsHit } from "../pano_space.js";
+import { gizmoDragLanes, sceneTransform } from "../pano_space.js";
 import { hitFrameAffordance } from "../pano_sticker_affordance.js";
 import {
   buildStickerGeometry,
@@ -32,11 +32,9 @@ import {
 import { setLaneValue } from "../pano_timeline.js";
 import { cameraOf } from "./defaults.js";
 import { shownGizmoMode, selectedKind } from "./selection_bar.js";
-import { eyeHeight, eyeLengths } from "./view_scale.js";
-import { CAMERA_HIT_PIXELS, cameraGuideSegments, guideLook, hoverGuide, pointInPolygon, worldGuideItems } from "./world_guides.js";
-
-// The gizmo's colors (docs/design.md "新しい UI の見た目": X coral, Y lime, Z ice), the handle under the pointer white.
-export const GIZMO_COLORS = Object.freeze({ x: "#f37159", y: "#d6e797", z: "#aecedb", active: "#ffffff" });
+import { cameraMarkerHit, cameraMarkerLength, cameraMarkerScreen, cameraMarkerShape, cameraMarkerShown } from "./camera_marker.js";
+import { gizmoDrag as startGizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit } from "./gizmo_overlay.js";
+import { guideLook, hoverGuide, pointInPolygon, screenSegment, worldGuideItems } from "./world_guides.js";
 
 // The cursor over an object's body (hit_test.js's rule: the default arrow; handles bring their own).
 const BODY_CURSOR = "default";
@@ -94,7 +92,11 @@ export function createStageObjects({
   readOnly = () => false,
 }) {
   let hovered = null;
+  // The gizmo's handle under the pointer, and the one being dragged (gizmo_overlay.js gizmoHit's names).
   let gizmoAxis = null;
+  let draggedAxis = null;
+  // The axis guide line of the gizmo drag under way (gizmo_overlay.js gizmoDrag's `guide`), or null.
+  let dragGuide = null;
 
   const editable = () => !readOnly() && tab() === "3d";
 
@@ -114,8 +116,8 @@ export function createStageObjects({
 
   // --- What shows.
 
-  // The gizmo to draw ({ mode, transform, colors }) or null: on the selected World object where it shows and can be
-  // edited, or on the selected Camera, in the 3D tab.
+  // The gizmo to show ({ mode, transform }, gizmo_overlay.js) or null: on the selected World object where it shows and
+  // can be edited, or on the selected Camera, in the 3D tab.
   function gizmo() {
     if (!editable()) return null;
     const row = selection();
@@ -123,13 +125,13 @@ export function createStageObjects({
     if (kind === "camera") {
       const value = cameraValue();
       if (!value.visible) return null;
-      return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }), colors: GIZMO_COLORS };
+      return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform({ ...value, scale: 1 }) };
     }
     if (kind !== "world-image" && kind !== "world-3d") return null;
     const sticker = stickerOf(row);
     const value = content()?.evaluated.stickers.find((item) => item.id === row);
     if (!sticker || sticker.locked || !value?.active) return null;
-    return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value), colors: GIZMO_COLORS };
+    return { mode: shownGizmoMode(kind, mode()), transform: sceneTransform(value) };
   }
 
   // The selected sky image's geometry with its handles (pano_sticker_geometry.js), or null.
@@ -145,22 +147,24 @@ export function createStageObjects({
     return worldGuideItems(state(), content(), (url) => editorView.sceneBox(url));
   }
 
-  // The Camera's mark, or null while it is hidden or while the view stands inside it (the view opens at the Camera's
-  // position: its mark would then wrap the view and catch every press).
-  function cameraSegments() {
+  // The Camera's mark on screen (camera_marker.js cameraMarkerScreen), or null: in the 3D tab only, and not while it
+  // is hidden or the view stands inside it (camera_marker.js cameraMarkerShown).
+  function cameraMarker() {
+    if (tab() !== "3d") return null;
     const value = cameraValue();
-    if (!value.visible) return null;
-    const { CAMERA_GUIDE_LENGTH } = eyeLengths(eyeHeight(ground()));
-    const from = camera().position;
-    if (Math.hypot(...value.position.map((v, axis) => v - from[axis])) < CAMERA_GUIDE_LENGTH) return null;
-    return cameraGuideSegments(value, value.projection, ground());
+    const view = camera();
+    if (!cameraMarkerShown(value, view.position, ground())) return null;
+    const { width, height } = size();
+    const length = cameraMarkerLength(value, view, height, ground());
+    return cameraMarkerScreen(cameraMarkerShape(value, value.projection, length), view, width, height);
   }
 
   // --- The CPU hover (docs/space-and-view.md "ホバーの判定"): no GPU read on a pointer move.
 
-  function gizmoPointer(phase, point) {
+  // The selected object's gizmo handles on screen (gizmo_overlay.js gizmoHandles), or null.
+  function handles(shown = gizmo()) {
     const { width, height } = size();
-    return editorView.gizmoPointer(phase, camera(), point.x, point.y, width, height);
+    return shown ? gizmoHandles(shown, camera(), width, height) : null;
   }
 
   // What the pointer at `point` is over: { cursor (null over nothing touchable), changed (the drawing changed) }.
@@ -169,7 +173,7 @@ export function createStageObjects({
     let axis = null;
     let over = null;
     if (point && !altHeld) {
-      if (gizmo()) axis = gizmoPointer("hover", point);
+      axis = gizmoHit(handles(), point);
       if (axis !== null) cursor = "grab";
       const sky = editable() ? selectedSky() : null;
       if (cursor === null && sky && !sky.item.locked) {
@@ -179,10 +183,7 @@ export function createStageObjects({
       const { width, height } = size();
       over = hoverGuide(guides(), camera(), point, width, height);
       if (cursor === null && over) cursor = BODY_CURSOR;
-      if (cursor === null && tab() === "3d") {
-        const segments = cameraSegments();
-        if (segments && segmentsHit(camera(), segments, point, width, height, CAMERA_HIT_PIXELS)) cursor = BODY_CURSOR;
-      }
+      if (cursor === null && cameraMarkerHit(cameraMarker(), point)) cursor = BODY_CURSOR;
       if (cursor === null && skyUnder(skyItems(state(), content()), projection(), point)) cursor = BODY_CURSOR;
     }
     const changed = over !== hovered || axis !== gizmoAxis;
@@ -193,16 +194,23 @@ export function createStageObjects({
 
   // --- Presses.
 
-  // A drag of the gizmo: the Lane of its mode (gizmoDragLanes), on the World object or the Camera.
+  // A drag of the gizmo (gizmo_overlay.js gizmoDrag): the Lane of its mode (gizmoDragLanes), on the World object or
+  // the Camera.
   function gizmoDrag(point) {
     const shown = gizmo();
-    if (!shown || gizmoPointer("hover", point) === null || !gizmoPointer("down", point)) return null;
+    const axis = gizmoHit(handles(shown), point);
+    const { width, height } = size();
+    const grab = axis ? startGizmoDrag(shown, axis, camera(), point, width, height) : null;
+    if (!grab) return null;
     const row = selection();
     const frame = playhead();
     const base = row === "camera" ? cameraValue() : evaluateSticker(stickerOf(row), frame);
+    draggedAxis = axis;
+    dragGuide = grab.guide ?? null;
     return {
       move(next) {
-        const moved = gizmoPointer("move", next);
+        const now = size();
+        const moved = grab.move(camera(), next, now.width, now.height);
         if (!moved) return;
         const lanes = gizmoDragLanes(shown.mode, base, shown.transform, moved);
         edits.live((draft) => {
@@ -218,11 +226,13 @@ export function createStageObjects({
         });
       },
       end() {
-        gizmoPointer("up", point);
+        draggedAxis = null;
+        dragGuide = null;
         edits.commit();
       },
       cancel() {
-        gizmoPointer("up", point);
+        draggedAxis = null;
+        dragGuide = null;
         edits.cancel();
       },
     };
@@ -290,12 +300,9 @@ export function createStageObjects({
       select(picked);
       return selectOnly();
     }
-    if (tab() === "3d") {
-      const segments = cameraSegments();
-      if (segments && segmentsHit(camera(), segments, point, width, height, CAMERA_HIT_PIXELS)) {
-        select("camera");
-        return selectOnly();
-      }
+    if (cameraMarkerHit(cameraMarker(), point)) {
+      select("camera");
+      return selectOnly();
     }
     const sky = skyUnder(skyItems(state(), content()), projection(), point);
     if (sky) {
@@ -305,8 +312,8 @@ export function createStageObjects({
     return null;
   }
 
-  // --- The overlay (stage_overlay.js draws it): the guides with their looks, the Camera's mark, the selected sky
-  // image's frame and handles.
+  // --- The overlay (stage_overlay.js draws it): the guides with their looks, the Camera's mark with its look, the
+  // gizmo's handles with the one lit, the selected sky image's frame and handles.
   function overlay({ altHeld = false, gridHidden = false } = {}) {
     const row = selection();
     const shownTab = tab();
@@ -314,18 +321,26 @@ export function createStageObjects({
       segments: item.segments,
       look: guideLook({ selected: item.id === row, hovered: item.id === hovered, locked: item.locked, altHeld, gridHidden, tab: shownTab }),
     })).filter((item) => item.look);
-    const segments = shownTab === "3d" ? cameraSegments() : null;
-    const cameraLook = segments ? guideLook({ selected: row === "camera", altHeld, gridHidden: false, tab: shownTab }) : null;
+    const marker = cameraMarker();
     const sky = selectedSky();
+    const shownHandles = handles();
+    const { width, height } = size();
+    const guideLine = shownHandles && dragGuide ? screenSegment(camera(), gizmoGuideSegment(dragGuide, camera()), width, height) : null;
     return {
       guides: items,
-      camera: segments && cameraLook ? { segments, look: cameraLook } : null,
+      camera: marker ? { screen: marker, look: row === "camera" ? "selected" : "normal" } : null,
+      // The handle dragged, else the one under the pointer (none while Alt is held), is white.
+      // While an axis handle is dragged, its guide line ({ name, a, b } in CSS px) runs across the stage.
+      gizmo: shownHandles ? {
+        handles: shownHandles,
+        active: draggedAxis ?? (altHeld ? null : gizmoAxis),
+        guide: guideLine ? { name: dragGuide.name, a: guideLine[0], b: guideLine[1] } : null,
+      } : null,
       sky: sky ? { geometry: sky.geometry, handles: editable() && !sky.item.locked } : null,
     };
   }
 
   return {
-    gizmo,
     hover,
     press,
     overlay,

@@ -1,7 +1,8 @@
 // Selecting and editing objects on the stage (web_src/studio/stage_objects.js): the press order of
 // docs/editor-interaction.md "`world` の Sticker の操作" (the gizmo, the selected sky image's handles, the World object
-// by the GPU pick, the Camera's lines, a sky image), what a drag writes by the recording rule, the Camera tab's
-// select-only presses, and what the overlay draws. The three.js view is a stand-in.
+// by the GPU pick, the Camera's mark, a sky image), what a drag writes by the recording rule, the Camera tab's
+// select-only presses, and what the overlay draws. The three.js view is a stand-in; the gizmo is the overlay's
+// (gizmo_overlay.js), hit and dragged on screen.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -19,7 +20,7 @@ const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", picked = null, gizmoHit = false, stickers = null } = {}) {
+function setup({ tab = "3d", picked = null, stickers = null } = {}) {
   const session = createStudioSession({
     state: loadSceneState({
       version: 2,
@@ -32,18 +33,9 @@ function setup({ tab = "3d", picked = null, gizmoHit = false, stickers = null } 
   });
   const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
   const camera = stageCamera(pose, W, H, 50);
-  const calls = [];
-  let moved = null;
   const editorView = {
     sceneBox: () => null,
     pickSticker: () => picked,
-    gizmoPointer(phase) {
-      calls.push(phase);
-      if (phase === "hover") return gizmoHit ? "X" : null;
-      if (phase === "down") return gizmoHit;
-      if (phase === "move") return moved;
-      return null;
-    },
   };
   let cached = null;
   const content = () => {
@@ -62,18 +54,20 @@ function setup({ tab = "3d", picked = null, gizmoHit = false, stickers = null } 
     edits: { live: (apply) => session.gesture(apply), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
     tab: () => tab,
   });
-  return { session, objects, camera, calls, setMoved: (value) => (moved = value) };
+  return { session, objects, camera };
 }
 
 const center = { x: W / 2, y: H / 2 };
+// On the sky image, above the Camera's filled mark (its up triangle reaches the center from below).
+const onSky = { x: W / 2, y: H / 2 - 80 };
 
 test("a press on a sky image selects it and its drag turns it, as one Undo step", () => {
   const { session, objects, camera } = setup();
-  const drag = objects.press(center);
+  const drag = objects.press(onSky);
   assert.ok(drag);
   assert.equal(session.selection.row, "sky");
   // Dragged a quarter of the stage to the right: its yaw follows the pointer.
-  drag.move({ x: W * 0.75, y: H / 2 });
+  drag.move({ x: W * 0.75, y: onSky.y });
   const projection = viewProjection(camera, W, H);
   const want = projection.ray(W * 0.75, H / 2);
   const yaw = evaluateLane(session.state.stickers[0], "direction", 0).yaw_deg;
@@ -113,55 +107,69 @@ test("a World object under the pointer (the GPU pick) is selected before the sky
   assert.equal(session.state, before);
 });
 
-test("the selected World object's gizmo shows and is pressed first; its drag writes the mode's Lane as one Undo step", () => {
-  const { session, objects, calls, setMoved } = setup({ gizmoHit: true });
+// The gizmo's handles on the overlay (gizmo_overlay.js gizmoHandles).
+const handlesOf = (objects) => objects.overlay().gizmo?.handles ?? null;
+const ballOf = (objects, name) => handlesOf(objects).axes.find((axis) => axis.name === name).end;
+
+test("the selected World object's gizmo shows on the overlay and is pressed first; its X ball's drag moves X only, as one Undo step", () => {
+  const { session, objects } = setup();
   session.selectObject("board");
-  const gizmo = objects.gizmo();
-  assert.equal(gizmo.mode, "translate");
-  assert.deepEqual(gizmo.transform.position, [3, 0, -5]);
-  assert.equal(gizmo.colors.x, "#f37159");
-  const drag = objects.press(center);
-  assert.deepEqual(calls, ["hover", "down"]);
-  setMoved({ position: [4, 0, -5], quaternion: gizmo.transform.quaternion, scale: [1, 1, 1] });
-  drag.move({ x: 600, y: 250 });
+  const handles = handlesOf(objects);
+  assert.equal(handles.mode, "translate");
+  // The board stands at (3, 0, -5): the gizmo's center is its middle on the screen.
+  assert.ok(Math.abs(handles.center.x - W / 2 * (1 + (3 / 5) / Math.tan(50 * Math.PI / 180))) < 1e-6);
+  const ball = ballOf(objects, "x");
+  assert.equal(objects.hover(ball).cursor, "grab");
+  assert.equal(objects.overlay().gizmo.active, "x", "the handle under the pointer is lit");
+  const drag = objects.press(ball);
+  drag.move({ x: ball.x + 100, y: ball.y + 40 });
+  assert.equal(objects.overlay().gizmo.active, "x", "the dragged handle stays lit");
+  const guide = objects.overlay().gizmo.guide;
+  assert.equal(guide.name, "x", "the X guide line shows while it is dragged");
+  assert.ok(Math.abs(guide.a.y - guide.b.y) < 1e-6 && Math.abs(guide.a.y - H / 2) < 1e-6, "level through the grabbed center");
   drag.end();
-  assert.deepEqual(evaluateLane(session.state.stickers[1], "position", 0), [4, 0, -5]);
-  assert.equal(calls.at(-1), "up");
+  assert.equal(objects.overlay().gizmo.guide, null, "and goes when it is let go");
+  const position = evaluateLane(session.state.stickers[1], "position", 0);
+  assert.ok(position[0] > 3.5, "it moved along X");
+  assert.ok(Math.abs(position[1]) < 1e-9 && Math.abs(position[2] + 5) < 1e-9, "and only along X");
   session.undo();
   assert.deepEqual(evaluateLane(session.state.stickers[1], "position", 0), [3, 0, -5]);
 });
 
 test("a gizmo drag given up puts the object back", () => {
-  const { session, objects, setMoved } = setup({ gizmoHit: true });
+  const { session, objects } = setup();
   session.selectObject("board");
-  const gizmo = objects.gizmo();
-  const drag = objects.press(center);
-  setMoved({ position: [9, 0, -5], quaternion: gizmo.transform.quaternion, scale: [1, 1, 1] });
-  drag.move({ x: 700, y: 250 });
+  const ball = ballOf(objects, "x");
+  const drag = objects.press(ball);
+  drag.move({ x: ball.x + 100, y: ball.y });
   drag.cancel();
   assert.deepEqual(evaluateLane(session.state.stickers[1], "position", 0), [3, 0, -5]);
   assert.equal(session.canUndo, false);
+  assert.equal(objects.overlay().gizmo.active, null);
 });
 
-test("the Camera is selected by its lines and gets a Move / Rotate gizmo that writes its Lanes", () => {
-  const { session, objects, camera, setMoved } = setup({ stickers: [] });
-  // The Camera stands at (0, -1, -6) facing +Z: its position projects below the center.
-  const at = { x: W / 2, y: H / 2 + (1 / 6) * (H / 2) / Math.tan((camera.fovY_deg / 2) * Math.PI / 180) };
-  assert.ok(objects.press(at), "a press on its lines");
+test("the Camera is selected anywhere on its filled mark and gets a Move / Rotate gizmo that writes its Lanes", () => {
+  const { session, objects, camera } = setup({ stickers: [] });
+  // The Camera stands at (0, -1, -6) facing +Z (toward the view): its frustum fills a patch below the center. A press
+  // inside a filled face, away from every line, selects it.
+  const screen = objects.overlay().camera.screen;
+  const face = screen.fills.at(-1);
+  const inside = { x: face.reduce((sum, p) => sum + p.x, 0) / face.length, y: face.reduce((sum, p) => sum + p.y, 0) / face.length };
+  assert.equal(objects.hover(inside).cursor, "default");
+  assert.ok(objects.press(inside), "a press on its fill");
   assert.equal(session.selection.row, "camera");
-  const gizmo = objects.gizmo();
-  assert.deepEqual(gizmo.transform.position, [0, -1, -6]);
+  assert.equal(objects.overlay().camera.look, "selected");
+  const handles = handlesOf(objects);
+  const at = { x: W / 2, y: H / 2 + (1 / 6) * (H / 2) / Math.tan((camera.fovY_deg / 2) * Math.PI / 180) };
+  assert.ok(Math.abs(handles.center.x - at.x) < 1e-6 && Math.abs(handles.center.y - at.y) < 1e-6, "the gizmo sits at its position");
   assert.equal(objects.press({ x: 5, y: 5 }), null, "a press on nothing is left to the view");
-  // Its gizmo moves it (the stand-in view grabs the handle).
-  const grab = setup({ stickers: [], gizmoHit: true });
-  grab.session.selectObject("camera");
-  const shown = grab.objects.gizmo();
-  const drag = grab.objects.press(center);
-  grab.setMoved({ position: [0, -1, -4], quaternion: shown.transform.quaternion, scale: [1, 1, 1] });
-  drag.move({ x: 1, y: 1 });
+  // Its Y ball lifts it.
+  const ball = ballOf(objects, "y");
+  const drag = objects.press(ball);
+  drag.move({ x: ball.x, y: ball.y - 30 });
   drag.end();
-  assert.deepEqual(evaluateLane(grab.session.state.camera, "position", 0), [0, -1, -4]);
-  setMoved(null);
+  const position = evaluateLane(session.state.camera, "position", 0);
+  assert.ok(position[1] > -1 + 0.05 && Math.abs(position[0]) < 1e-9 && Math.abs(position[2] + 6) < 1e-9);
 });
 
 test("a locked object is selected but shows no gizmo and no handles, and its drag moves nothing", () => {
@@ -169,18 +177,18 @@ test("a locked object is selected but shows no gizmo and no handles, and its dra
   session.selectObject("sky");
   session.toggleLock();
   const before = session.state;
-  const drag = objects.press(center);
+  const drag = objects.press(onSky);
   drag.move({ x: 900, y: 250 });
   drag.end();
   assert.equal(session.state, before);
   assert.equal(objects.overlay().sky.handles, false);
   session.selectObject("board");
   session.toggleLock();
-  assert.equal(objects.gizmo(), null);
+  assert.equal(objects.overlay().gizmo, null);
 });
 
 test("in the Camera tab a press only selects: no gizmo, no handles, no drag, and only the selected object's guide is drawn", () => {
-  const { session, objects } = setup({ tab: "camera", gizmoHit: true });
+  const { session, objects } = setup({ tab: "camera" });
   const before = session.state;
   const drag = objects.press(center);
   assert.equal(session.selection.row, "sky");
@@ -188,8 +196,8 @@ test("in the Camera tab a press only selects: no gizmo, no handles, no drag, and
   drag.end();
   assert.equal(session.state, before, "nothing moves");
   session.selectObject("board");
-  assert.equal(objects.gizmo(), null);
   const scene = objects.overlay();
+  assert.equal(scene.gizmo, null);
   assert.equal(scene.camera, null, "the Camera's mark is the 3D tab's");
   assert.deepEqual(scene.guides.map((guide) => guide.look), ["selected"]);
 });

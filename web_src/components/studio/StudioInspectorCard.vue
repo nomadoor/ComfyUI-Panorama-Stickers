@@ -5,6 +5,7 @@ import { roundValue } from "../../studio/ui_drag.js";
 import StudioAspectSlider from "./StudioAspectSlider.vue";
 import StudioCard from "./StudioCard.vue";
 import StudioInspectorRow from "./StudioInspectorRow.vue";
+import StudioModeTiles from "./StudioModeTiles.vue";
 import StudioNumberField from "./StudioNumberField.vue";
 import StudioSegmented from "./StudioSegmented.vue";
 import StudioSlider from "./StudioSlider.vue";
@@ -64,6 +65,16 @@ function boxProps(row, field) {
   <StudioCard :title="card.title" :icon="card.icon" :note="card.note" :data-card="card.kind">
     <template v-for="row in card.rows" :key="row.id">
       <div v-if="row.control === 'heading'" class="pano-studio-card-subhead pano-studio-cap" :data-row="row.name">{{ row.name }}</div>
+      <StudioModeTiles
+        v-else-if="row.control === 'mode'"
+        :options="row.options"
+        :value="row.value"
+        :disabled="row.disabled"
+        :label="row.name"
+        :tip="row.tip"
+        :data-row="row.name"
+        @select="(value) => send({ type: 'choice', field: 'projection', value })"
+      />
       <StudioInspectorRow
         v-else
         :name="row.name"
@@ -92,8 +103,6 @@ function boxProps(row, field) {
             :aria-disabled="row.disabled ? 'true' : null"
             @click="row.disabled || send({ type: 'set-ground' })"
           >Set ground</button>
-          <!-- The seat of the ground's estimate button (docs/studio-ui.md): kept empty. -->
-          <span class="pano-studio-row-seat" aria-hidden="true" />
         </template>
 
         <template v-else-if="row.control === 'choice'">
@@ -103,7 +112,7 @@ function boxProps(row, field) {
             :disabled="row.disabled"
             :label="row.name"
             fill
-            @select="(value) => send({ type: 'choice', field: row.id === 'mode' ? 'projection' : 'erp_range', value })"
+            @select="(value) => send({ type: 'choice', field: 'erp_range', value })"
           />
         </template>
 

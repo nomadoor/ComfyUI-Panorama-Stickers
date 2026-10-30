@@ -1,11 +1,12 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { VIEW_UNAVAILABLE_MESSAGE } from "../../pano_preview_view.js";
+import { createBackdropClose } from "../../studio/backdrop.js";
 import { cameraOf } from "../../studio/defaults.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
 import { buildInspectorModel } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
+import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
 import { inspectorSelection } from "../../studio/session.js";
 import { timecode } from "../../studio/timeline_model.js";
@@ -62,21 +63,17 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", fitTimeline);
 });
 
-// --- The top-center line: a notice before what the stage waits for; in the Camera tab the timecode before the hint of
-// an empty stage (docs/studio-ui.md "画面の区画": the timecode hides only while a notice or a loading line shows).
+// --- The top-center line and its kind (studio/notice_line.js); in the Camera tab the timecode is one of them.
 const cameraTab = computed(() => props.view.tab === "camera");
-const line = computed(() => {
-  if (props.ui.notice) return { kind: "notice", text: props.ui.notice };
-  if (props.ui.view === "loading") return { kind: "loading", text: "Loading the 3D view…" };
-  if (props.ui.background === "loading") return { kind: "loading", text: "Loading background…" };
-  if (props.ui.background === "failed") return { kind: "notice", text: "The background could not be loaded" };
-  if (cameraTab.value) {
-    const fps = props.view.state.timeline.fps;
-    return { kind: "timecode", text: `${timecode(props.view.playhead, fps)} · ${props.view.playhead} / ${props.view.span}` };
-  }
-  if (props.ui.empty) return { kind: "hint", text: "Drop an image or a 3D file, or press Add" };
-  return { kind: "notice", text: "" };
-});
+const line = computed(() => topLine(props.ui, {
+  timecode: cameraTab.value ? `${timecode(props.view.playhead, props.view.state.timeline.fps)} · ${props.view.playhead} / ${props.view.span}` : null,
+}));
+
+// --- A click on the dimmed page behind the frame closes the editor like ✕ (studio/backdrop.js).
+const backdrop = createBackdropClose();
+function onBackdropUp(event) {
+  if (backdrop.up(event)) props.controller.close();
+}
 
 // --- The bar at the bottom center: the selected object's (none while nothing is selected, nor in the Camera tab).
 const bar = computed(() => (cameraTab.value ? null : selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly })));
@@ -112,12 +109,15 @@ watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
 
 // --- The Output window's picture (docs/studio-ui.md "Output の小窓"): the stage draws the Camera's output on these
 // canvases while the window is open (a "bitmaprenderer" one in Frame mode, the live ERP's 2D one in Panorama mode).
+// The window stays in the page while folded (it shrinks by a transform), so it says itself whether it is open.
 const outputFrame = ref(null);
 const outputErp = ref(null);
+const outputOpen = ref(false);
 let outputObserver = null;
 function reportOutput() {
-  props.controller.output?.({ frame: outputFrame.value ?? null, erp: outputErp.value ?? null });
+  props.controller.output?.(outputOpen.value ? { frame: outputFrame.value ?? null, erp: outputErp.value ?? null } : null);
 }
+watch(outputOpen, reportOutput);
 watch([outputFrame, outputErp], ([frame, erp]) => {
   outputObserver?.disconnect();
   outputObserver = null;
@@ -172,7 +172,7 @@ function setCollapsed(value) {
 </script>
 
 <template>
-  <div class="pano-studio-backdrop">
+  <div class="pano-studio-backdrop" data-region="backdrop" @pointerdown="backdrop.down" @pointerup="onBackdropUp">
     <div
       ref="root"
       class="pano-studio pano-studio-editor"
@@ -183,10 +183,9 @@ function setCollapsed(value) {
       :aria-label="nodeTitle"
     >
       <div ref="main" class="pano-studio-main">
-        <div class="pano-studio-stage" :class="{ 'is-loading': ui.background === 'loading' || ui.view === 'loading' }" data-region="stage">
+        <div class="pano-studio-stage" data-region="stage">
           <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
           <canvas ref="overlay" class="pano-studio-stage-overlay" data-stage-overlay aria-hidden="true" />
-          <div v-if="ui.view === 'failed'" class="pano-studio-stage-failed pano-studio-cap">{{ VIEW_UNAVAILABLE_MESSAGE }}</div>
 
           <StudioCameraFrame v-if="cameraTab && rulers" :aspect="frameAspect" @rect="(rect) => controller.frameRect?.(rect)">
             <template #default="{ rollWidth }">
@@ -273,7 +272,7 @@ function setCollapsed(value) {
             <StudioNotice v-else :text="line.text" :kind="line.kind" />
           </div>
           <div class="pano-studio-at-output">
-            <StudioOutputPreview :storage="storage" :ratio="frameAspect">
+            <StudioOutputPreview :storage="storage" :ratio="frameAspect" @open="(open) => (outputOpen = open)">
               <canvas v-if="!panorama" ref="outputFrame" class="pano-studio-output-picture" data-output-picture="frame" aria-hidden="true" />
               <canvas v-else ref="outputErp" class="pano-studio-output-picture" data-output-picture="erp" aria-hidden="true" />
             </StudioOutputPreview>

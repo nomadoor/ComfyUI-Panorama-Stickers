@@ -305,7 +305,7 @@ for (const mode of ["frame", "panorama"]) {
     await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 30_000 });
     console.log(`renderer: ${await page.evaluate(() => window.__studio.rendererOf())}`);
     // Folded by default; opened, it draws (Frame mode: opened in the 3D tab; Panorama mode: in the Camera tab).
-    await expect(page.locator("[data-output-picture]")).toHaveCount(0);
+    await expect(page.locator('[data-region="output"]')).toHaveClass(/is-collapsed/);
     if (mode === "panorama") {
       await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();
       await page.waitForFunction(() => window.__studio.stage().liveErp()?.counts.faces > 0);

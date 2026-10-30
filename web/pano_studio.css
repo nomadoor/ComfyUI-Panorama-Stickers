@@ -65,6 +65,11 @@
   --studio-knob: 34px;
   --studio-icon: 16px;
   --studio-icon-stroke: 1.75;
+  /* Motion (docs/design.md "動き"): hover, the segmented control's thumb, the Output window's fold, the loading ring. */
+  --studio-motion-hover: 120ms;
+  --studio-motion-seg: 160ms;
+  --studio-motion-fold: 160ms;
+  --studio-motion-ring: 900ms;
 
   font-family: var(--studio-font);
   font-size: var(--studio-text-sm);
@@ -202,12 +207,38 @@
 
 /* Segmented control: equal widths, icon and text, the chosen one in the strong fill. Tabs are the same control. */
 .pano-studio-seg {
+  --studio-seg-pad: 2px;
+  position: relative;
   display: inline-grid;
   grid-template-columns: repeat(var(--studio-seg-count, 2), minmax(0, 1fr));
-  padding: 2px;
+  padding: var(--studio-seg-pad);
   border: 1px solid var(--studio-line);
   border-radius: var(--studio-r-part);
   background: var(--studio-fill);
+}
+
+/* The chosen option's strong fill is one thumb under the options, which slides to the chosen one (docs/design.md
+   "動き"). The options are equal columns, so the thumb is one column wide and moves by whole columns. */
+.pano-studio-seg-thumb {
+  position: absolute;
+  top: var(--studio-seg-pad);
+  bottom: var(--studio-seg-pad);
+  left: var(--studio-seg-pad);
+  width: calc((100% - 2 * var(--studio-seg-pad)) / var(--studio-seg-count, 2));
+  border-radius: var(--studio-r-part);
+  background: var(--studio-strong);
+  transform: translateX(calc(var(--studio-seg-index, 0) * 100%));
+  transition: transform var(--studio-motion-seg) ease-out;
+  pointer-events: none;
+}
+
+.pano-studio-seg.is-disabled .pano-studio-seg-thumb {
+  opacity: 0.4;
+}
+
+/* The options' text changes color with the thumb's slide, so it never sits dark on the thumb's way. */
+.pano-studio .pano-studio-seg-item {
+  transition: color var(--studio-motion-seg) ease-out;
 }
 
 .pano-studio-seg.is-fill {
@@ -216,6 +247,7 @@
 }
 
 .pano-studio-seg-item {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -238,7 +270,6 @@
 }
 
 .pano-studio-seg-item.is-active {
-  background: var(--studio-strong);
   color: var(--studio-on-strong);
 }
 
@@ -258,7 +289,7 @@
 }
 
 .pano-studio-tabs .pano-studio-seg-item {
-  width: 96px;
+  width: 108px;
   height: 34px;
   padding: 0;
   font-size: var(--studio-text-md);
@@ -280,9 +311,9 @@
 }
 
 .pano-studio-float.pano-studio-seg {
+  --studio-seg-pad: 4px;
   background: var(--studio-float);
   border: 0;
-  padding: 4px;
 }
 
 .pano-studio-float.is-rail {
@@ -463,7 +494,8 @@
   justify-content: center;
 }
 
-/* Number field: no fill until hovered, the arrows cursor; dragged left and right, clicked to type. */
+/* Number field: no fill until hovered, the arrows cursor; dragged left and right, clicked to type. Its content sits
+   at the left, axis letter, value, unit, so values line up whatever their unit (docs/studio-ui.md "欄"). */
 .pano-studio-field {
   display: flex;
   align-items: center;
@@ -504,11 +536,11 @@
 }
 
 .pano-studio-field-value {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--studio-fg);
   font-size: var(--studio-text-md);
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
 }
 
@@ -529,7 +561,7 @@
   color: var(--studio-fg);
   font-size: var(--studio-text-md);
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: left;
   cursor: text;
   user-select: text;
 }
@@ -700,9 +732,10 @@
   min-width: 0;
   height: var(--studio-field-h);
   padding: 0 10px;
-  border: 1px solid var(--studio-line-strong);
+  border: 0;
   border-radius: var(--studio-r-part);
-  background: transparent;
+  background: var(--studio-fill);
+  color: var(--studio-fg);
   font-size: var(--studio-text-sm);
   white-space: nowrap;
   cursor: pointer;
@@ -717,9 +750,9 @@
   cursor: default;
 }
 
-/* The row's seat kept for a later button (the ground's estimate). */
-.pano-studio-row-seat {
-  min-width: 0;
+/* Set ground takes the row's second and third value columns: one column is narrower than its label. */
+.pano-studio-text-btn[data-action="set-ground"] {
+  grid-column: span 2;
 }
 
 /* A choice by name across columns 1-3 (a 3D's Clip). */
@@ -930,7 +963,6 @@
 .pano-studio-tl-field .pano-studio-field-value,
 .pano-studio-tl-field .pano-studio-field-input {
   font-size: var(--studio-text-sm);
-  text-align: left;
 }
 
 .pano-studio-tl-field .pano-studio-field-input {
@@ -1309,17 +1341,6 @@
   user-select: none;
 }
 
-/* While the stage waits for its content, a slow gradient flows where it will show (the canvas is see-through). */
-.pano-studio-stage.is-loading {
-  background: linear-gradient(100deg, #0b0b0c 30%, #1a1a1c 50%, #0b0b0c 70%) 0 0 / 300% 100%;
-  animation: pano-studio-loading 2.4s linear infinite;
-}
-
-@keyframes pano-studio-loading {
-  from { background-position: 100% 0; }
-  to { background-position: 0% 0; }
-}
-
 .pano-studio-stage-canvas {
   position: absolute;
   inset: 0;
@@ -1328,16 +1349,6 @@
   height: 100%;
   touch-action: none;
   outline: none;
-}
-
-.pano-studio-stage-failed {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #dcdce0;
-  font-size: var(--studio-text-md);
 }
 
 /* The fixed places over the stage, 16px from its edges. */
@@ -1394,23 +1405,51 @@
   background: var(--studio-coral);
 }
 
-/* The Output window: a container (12px), 85% opaque, folded to a pill with its name. */
+.pano-studio-notice.is-warning .pano-studio-notice-dot {
+  background: var(--studio-yellow);
+}
+
+/* Loading: a small ring, a quarter of it in the text color, turning. */
+.pano-studio-notice-ring {
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border: 1.5px solid var(--studio-line-strong);
+  border-top-color: var(--studio-fg);
+  border-radius: 50%;
+  animation: pano-studio-ring var(--studio-motion-ring) linear infinite;
+}
+
+@keyframes pano-studio-ring {
+  to { transform: rotate(1turn); }
+}
+
+/* The Output window: a container (12px), 85% opaque, folded to a pill with its name. Folding shrinks the window to
+   the pill by a transform anchored at the top right while it fades (no relayout of what it shows) and the pill fades
+   in; opening runs the other way (docs/design.md "動き"). The element keeps the size of the shown state. */
 .pano-studio-output {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  padding: 8px 10px;
-  background: var(--studio-float);
-  border-radius: var(--studio-r-box);
   color: var(--studio-fg);
 }
 
-.pano-studio-output.is-collapsed {
-  align-items: center;
-  gap: 4px;
-  height: var(--studio-btn);
-  padding: 0 4px 0 12px;
-  border-radius: var(--studio-r-part);
+.pano-studio-output-window {
+  position: absolute;
+  top: 0;
+  right: 0;
+  box-sizing: border-box;
+  display: flex;
+  padding: 8px 10px;
+  background: var(--studio-float);
+  border-radius: var(--studio-r-box);
+  transform-origin: top right;
+  transition: transform var(--studio-motion-fold) ease-out, opacity var(--studio-motion-fold) ease-out;
+}
+
+.pano-studio-output.is-collapsed .pano-studio-output-window {
+  opacity: 0;
+  transform: scale(var(--studio-output-fold-x, 0.5), var(--studio-output-fold-y, 0.3));
+  pointer-events: none;
 }
 
 .pano-studio-output-body {
@@ -1420,19 +1459,43 @@
   height: 100%;
 }
 
+.pano-studio-output-pill {
+  position: absolute;
+  top: 0;
+  right: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: max-content;
+  height: var(--studio-btn);
+  padding: 0 30px 0 12px;
+  background: var(--studio-float);
+  border-radius: var(--studio-r-part);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--studio-motion-fold) ease-out;
+}
+
+.pano-studio-output.is-collapsed .pano-studio-output-pill {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .pano-studio-output-label {
   color: var(--studio-fg-2);
   font-size: var(--studio-text-sm);
 }
 
 .pano-studio-output-fold {
+  position: absolute;
+  top: 5px;
+  right: 5px;
   color: var(--studio-fg);
 }
 
-.pano-studio-output:not(.is-collapsed) .pano-studio-output-fold {
-  position: absolute;
-  right: 4px;
-  top: 4px;
+.pano-studio-output-fold svg.icon {
+  transition: transform var(--studio-motion-fold) ease-out;
 }
 
 .pano-studio-output-fold.is-folded svg.icon {
@@ -1700,6 +1763,93 @@
   color: #ffffff;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* --- Hover (docs/design.md "動き"): buttons, rows and fields ease their fill and text color in and out; a press
+   (:active) changes at once. */
+.pano-studio :where(button, .pano-studio-field, .pano-studio-tl-field),
+.pano-studio-splitter::after {
+  transition: background-color var(--studio-motion-hover) ease, color var(--studio-motion-hover) ease;
+}
+
+.pano-studio :where(button, .pano-studio-field, .pano-studio-tl-field):active {
+  transition-duration: 0s;
+}
+
+/* Less motion asked by the system: nothing moves; the loading ring shows still. */
+@media (prefers-reduced-motion: reduce) {
+  .pano-studio *,
+  .pano-studio *::before,
+  .pano-studio *::after {
+    transition: none !important;
+  }
+
+  .pano-studio-notice-ring {
+    animation: none;
+  }
+}
+
+/* --- The Camera card's mode tiles (docs/design.md "大きさ"; the mock mode-3.html M1): two tiles under the heading,
+   a picture of the shape and the name below. Unchosen: no fill, the secondary text; hover: the field fill; chosen:
+   the pressed fill and the main text. No line around them. The hover eases by the rule of the Hover section. */
+.pano-studio-mode-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+
+.pano-studio-mode-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 68px;
+  padding: 10px 8px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--studio-fg-2);
+  cursor: pointer;
+}
+
+.pano-studio-mode-tile:hover {
+  background: var(--studio-fill);
+  color: var(--studio-fg);
+}
+
+.pano-studio-mode-tile.is-active {
+  background: var(--studio-fill-active);
+  color: var(--studio-fg);
+}
+
+.pano-studio-mode-tile[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.pano-studio-mode-tile[aria-disabled="true"]:not(.is-active):hover {
+  background: transparent;
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-mode-pic {
+  flex: none;
+  width: 64px;
+  height: 32px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.pano-studio-mode-pic .is-thin {
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.pano-studio-mode-name {
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
 }
 
 /* --- The Camera tab wired into the stage (docs/studio-ui.md "Camera タブ"): Panorama mode's live ERP fills the frame

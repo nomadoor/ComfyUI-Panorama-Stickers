@@ -14,6 +14,7 @@ import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { cameraShot, normalizeCoverageValue, setCameraShot } from "../pano_editor_state.js";
+import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { editorSession, noteStudioEditorOpen, peekNodeSurface } from "../pano_node_bridge.js";
@@ -97,6 +98,12 @@ function nodeBackground(node, media, onChange) {
     state: () => status,
     coverage,
   };
+}
+
+// Loads what opening the editor waits for, ahead of the first opening: the new UI's stylesheet and the stage's
+// three.js chunk (docs/studio-ui.md "読み込み中と空の画面"). A failure here is left for the opening to report.
+export function preloadStudioEditor() {
+  return Promise.all([installStudioStylesheet(), preloadEditorView()]).then(() => true, () => false);
 }
 
 // Opens the editor for `node`. app and api are ComfyUI's (web_src/main.js passes them); storage keeps the sizes the

@@ -248,7 +248,8 @@ function cameraRows(camera, playhead) {
   const erp = camera.projection === "erp";
   const frameOnly = erp ? { disabled: true, tip: FRAME_ONLY_TIP } : {};
   return [
-    { id: "mode", name: "Mode", layout: "wide", control: "choice", lanes: [], options: MODE_OPTIONS, value: camera.projection, resettable: false },
+    // The mode is not a row of the grid: two tiles under the heading (docs/studio-ui.md "Camera のカード").
+    { id: "mode", name: "Mode", control: "mode", lanes: [], options: MODE_OPTIONS, value: camera.projection, resettable: false },
     {
       id: "range",
       name: "Range",

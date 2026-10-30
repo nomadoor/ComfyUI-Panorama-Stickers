@@ -79,6 +79,9 @@ test("the grid lies on the ground, fades by the eye height's distances, marks th
   closeVec(grid.majorFade, [25.6, 48], 1e-9);
   assert.equal(grid.originRadius, ORIGIN_MARK_RADIUS);
   assert.equal(grid.colors, GRID_COLORS);
+  // The axes take the gizmo's colors: X coral #f37159, Z ice #aecedb (docs/design.md 地面のグリッドの軸).
+  closeVec(GRID_COLORS.axisX, [0xf3 / 255, 0x71 / 255, 0x59 / 255, 0.75], 1e-9);
+  closeVec(GRID_COLORS.axisZ, [0xae / 255, 0xce / 255, 0xdb / 255, 0.75], 1e-9);
   // The distances follow E, with its floor near a ground of 0.
   closeVec(groundGrid({ ground: -3 }).minorFade, [24, 72], 1e-9);
   closeVec(groundGrid({ ground: 0.1 }).majorFade, [8, 15], 1e-9);

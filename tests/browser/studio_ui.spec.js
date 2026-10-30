@@ -257,29 +257,54 @@ test("a click without moving opens the box for typing; Enter sends the typed val
   expect(problems).toEqual([]);
 });
 
-test("the Aspect slider snaps to its ticks, 1:1 sits in the middle, and the knob follows", async ({ page }) => {
+test("the Aspect slider lands only on the presets; free ratios come from the box and the next slider move snaps", async ({ page }) => {
   const { problems } = await open(page);
-  const slider = col(page, "dark").locator('[data-slider="aspect"]');
+  const dark = col(page, "dark");
+  const slider = dark.locator('[data-slider="aspect"]');
+  const value = dark.locator('[data-field="aspect"] .pano-studio-field-value');
   const box = await slider.boundingBox();
   const y = box.y + box.height / 2;
-  // A press a little off the middle snaps to 1:1.
+  const changes = async () => (await events(page)).filter((e) => e.name === "aspect:change").map((e) => e.value);
+  const knobPos = async () => {
+    const knob = await slider.locator(".pano-studio-slider-knob").boundingBox();
+    return (knob.x + knob.width / 2 - box.x) / box.width;
+  };
+  // A press a little off the middle lands on 1:1.
   await page.mouse.click(box.x + box.width * 0.515, y);
-  let log = await events(page);
-  expect(log.filter((e) => e.name === "aspect:change").map((e) => e.value)).toEqual([1]);
-  await expect(col(page, "dark").locator('[data-field="aspect"] .pano-studio-field-value')).toHaveText("1:1");
-  // A press near the 3:4 tick snaps to it; between ticks the ratio is free.
-  const pos34 = 0.5 + Math.log2(4 / 3) / (2 * Math.log2(16 / 9));
-  await page.mouse.click(box.x + box.width * (pos34 + 0.01), y);
-  log = await events(page);
-  expect(log.filter((e) => e.name === "aspect:change").map((e) => e.value)).toEqual([3 / 4]);
-  await page.mouse.click(box.x + box.width * 0.07, y);
-  log = await events(page);
-  const free = log.filter((e) => e.name === "aspect:change").map((e) => e.value);
-  expect(free.length).toBe(1);
-  expect(free[0]).toBeGreaterThan(3 / 2);
-  expect(free[0]).toBeLessThan(16 / 9);
-  const knob = await slider.locator(".pano-studio-slider-knob").boundingBox();
-  expect(Math.abs(knob.x + knob.width / 2 - (box.x + box.width * 0.07))).toBeLessThan(2);
+  expect(await changes()).toEqual([1]);
+  await expect(value).toHaveText("1:1");
+  // A press between presets lands on the nearest one, never between: 0.09 is nearer 3:2 (0.148) than 16:9 (0).
+  const pos32 = 0.5 - Math.log2(3 / 2) / (2 * Math.log2(16 / 9));
+  await page.mouse.click(box.x + box.width * 0.09, y);
+  expect(await changes()).toEqual([3 / 2]);
+  expect(Math.abs((await knobPos()) - pos32)).toBeLessThan(0.01);
+  // A drag across the slider sends only preset ratios.
+  await page.mouse.move(box.x + box.width * 0.2, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i += 1) await page.mouse.move(box.x + box.width * (0.2 + i * 0.03), y);
+  await page.mouse.up();
+  const presets = [16 / 9, 3 / 2, 4 / 3, 1, 3 / 4, 2 / 3, 9 / 16];
+  const inputs = (await events(page)).filter((e) => e.name === "aspect:input").map((e) => e.value);
+  expect(inputs.length).toBeGreaterThan(1);
+  for (const v of inputs) expect(presets).toContain(v);
+  // The arrow keys step preset to preset.
+  await page.mouse.click(box.x + box.width * 0.5, y);
+  await events(page);
+  await slider.press("ArrowRight");
+  await slider.press("ArrowRight");
+  await slider.press("ArrowLeft");
+  expect(await changes()).toEqual([3 / 4, 2 / 3, 3 / 4]);
+  // A free ratio typed in the box shows the knob at its place; the next key or press snaps to a preset.
+  const field = dark.locator('[data-field="aspect"]');
+  await field.click();
+  await field.locator("input").fill("1.2");
+  await field.locator("input").press("Enter");
+  await expect(value).toHaveText("1.20");
+  const pos12 = 0.5 - Math.log2(1.2) / (2 * Math.log2(16 / 9));
+  expect(Math.abs((await knobPos()) - pos12)).toBeLessThan(0.01);
+  await events(page);
+  await slider.press("ArrowRight");
+  expect(await changes()).toEqual([1]);
   expect(problems).toEqual([]);
 });
 
@@ -297,5 +322,55 @@ test("the Keyframe dot sends toggle, a reset at its default and a disabled row s
   const log = await events(page);
   expect(log.map((e) => e.name)).toEqual(["pos:key", "pos:reset"]);
   await expect(dark.locator('[data-row="Lens"] input')).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+test("the top-center line's mark follows its kind: coral, soft yellow, none, a turning ring", async ({ page }) => {
+  const { problems } = await open(page);
+  const marks = await page.evaluate(() => [...document.querySelectorAll('[data-theme-col="dark"] [data-notices] .pano-studio-notice')].map((line) => {
+    const dot = line.querySelector(".pano-studio-notice-dot");
+    const ring = line.querySelector(".pano-studio-notice-ring");
+    return {
+      kind: line.dataset.notice,
+      dot: dot ? getComputedStyle(dot).backgroundColor : null,
+      ring: ring ? getComputedStyle(ring).animationName : null,
+    };
+  }));
+  expect(marks).toEqual([
+    { kind: "stopped", dot: "rgb(243, 113, 89)", ring: null },
+    { kind: "warning", dot: "rgb(232, 207, 116)", ring: null },
+    { kind: "info", dot: null, ring: null },
+    { kind: "loading", dot: null, ring: "pano-studio-ring" },
+  ]);
+  expect(problems).toEqual([]);
+});
+
+test("a segmented control's thumb slides to the chosen option; hover eases, a press and reduced motion do not", async ({ page }) => {
+  const { problems } = await open(page);
+  const tabs = col(page, "dark").locator(".pano-studio-tabs");
+  const thumb = tabs.locator(".pano-studio-seg-thumb");
+  const look = () => thumb.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { transform: style.transform, duration: style.transitionDuration, timing: style.transitionTimingFunction, width: el.getBoundingClientRect().width };
+  });
+  const before = await look();
+  expect(before.duration).toBe("0.16s");
+  expect(before.timing).toBe("ease-out");
+  const item = await tabs.locator('[data-value="camera"]').evaluate((el) => el.getBoundingClientRect().width);
+  expect(before.width).toBeCloseTo(item, 0);
+  await tabs.locator('[data-value="camera"]').click();
+  // Mid-slide the thumb is between the two options; then it sits under Camera.
+  await expect.poll(async () => (await look()).transform).toBe(`matrix(1, 0, 0, 1, ${item}, 0)`);
+  // Hover: the fill and the text color ease over 120ms; a press changes at once.
+  const button = col(page, "dark").locator('.pano-studio-float.is-rail [aria-label="Add"]');
+  expect(await button.evaluate((el) => [getComputedStyle(el).transitionProperty, getComputedStyle(el).transitionDuration])).toEqual(["background-color, color", "0.12s, 0.12s"]);
+  const box = await button.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  expect(await button.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+  await page.mouse.up();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await thumb.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+  expect(await button.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
   expect(problems).toEqual([]);
 });

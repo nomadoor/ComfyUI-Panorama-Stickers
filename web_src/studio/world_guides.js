@@ -1,11 +1,10 @@
 // The guides of the World objects on the new UI's stage (docs/space-and-view.md "World の物のガイド", "ホバーの判定"):
 // what outline each shown World object has (a world image plane's edge, a 3D Sticker's turned box), which one the
 // pointer is over by the CPU test (no GPU read on a pointer move), how each is drawn now (normal, hovered, selected,
-// or not at all), and the Camera's mark in the 3D tab (docs/studio-ui.md "エディタの中の Camera"), which the stage
-// selects by its lines. Pure: World segments in, screen segments out; stage_overlay.js draws them.
-import { boxCorners, cameraFrustumSegments, planeCorners, planeOutlineSegments, projectPoint, sceneContentBox, transformPoint } from "../pano_space.js";
-import { quaternionToRotation, worldRotation } from "../pano_world.js";
-import { eyeLengths, eyeHeight } from "./view_scale.js";
+// or not at all). The Camera's mark is camera_marker.js's. Pure: World segments in, screen segments out;
+// stage_overlay.js draws them.
+import { boxCorners, planeCorners, planeOutlineSegments, projectPoint, sceneContentBox, transformPoint } from "../pano_space.js";
+import { quaternionToRotation } from "../pano_world.js";
 
 // The looks of a guide (docs/design.md "新しい UI の見た目"): a light line over a dark line 2px wider, so it shows on
 // a light and a dark picture alike. The selected look's color is the soft yellow of the drop mark.
@@ -17,8 +16,6 @@ export const GUIDE_LOOKS = Object.freeze({
 });
 // How much wider the dark line under a guide is than the light one.
 export const GUIDE_UNDER_EXTRA = 2;
-// How near (CSS px) to a line of the Camera's mark a press selects it (pano_space.js segmentsHit).
-export const CAMERA_HIT_PIXELS = 6;
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -116,36 +113,32 @@ export function guideLook({ selected = false, hovered = false, locked = false, a
   return "normal";
 }
 
-function rotateBy(rotation, v) {
+// The 3-vector v turned by the 3x3 `rotation`.
+export function rotateBy(rotation, v) {
   return [0, 1, 2].map((row) => rotation[row][0] * v[0] + rotation[row][1] * v[1] + rotation[row][2] * v[2]);
 }
 
-// The steps of the ring of the Camera's mark in the Panorama mode.
-const RING_STEPS = 32;
-
-// The Camera's mark in the 3D tab as World segments, for the evaluated Camera `camera` (pano_scene_eval.js
-// evaluateCamera, with its `projection`) and the eye height of `ground`: the Frame mode's frustum
-// (pano_space.js cameraFrustumSegments, CAMERA_GUIDE_LENGTH ahead), or the Panorama mode's ring on its equator with a
-// short arrow toward its front (the middle of the ERP it makes).
-export function cameraGuideSegments(camera, projection, ground) {
-  const { CAMERA_GUIDE_LENGTH: length } = eyeLengths(eyeHeight(ground));
-  if (projection !== "erp") return cameraFrustumSegments(camera, length);
-  const rotation = worldRotation(camera.yaw_deg, camera.pitch_deg, camera.roll_deg);
-  const at = (x, y, z) => rotateBy(rotation, [x, y, z]).map((value, axis) => value + camera.position[axis]);
-  const radius = length * 0.5;
-  const ring = Array.from({ length: RING_STEPS }, (_, index) => {
-    const angle = (index / RING_STEPS) * Math.PI * 2;
-    return at(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-  });
-  const tip = at(0, 0, -radius * 1.8);
-  const arrow = [[at(0, 0, -radius), tip], [tip, at(-radius * 0.2, 0, -radius * 1.5)], [tip, at(radius * 0.2, 0, -radius * 1.5)]];
-  return [...loop(ring), ...arrow];
+// The direction `camera` (a stageCamera()) looks along, one unit long.
+export function viewForward(camera) {
+  return rotateBy(quaternionToRotation(camera.quaternion), [0, 0, -1]);
 }
 
 // The depth of the World point p along the view axis of `camera` (a stageCamera()).
-function viewDepth(camera, p) {
-  const forward = rotateBy(quaternionToRotation(camera.quaternion), [0, 0, -1]);
-  return dot(sub(p, camera.position), forward);
+export function viewDepth(camera, p) {
+  return dot(sub(p, camera.position), viewForward(camera));
+}
+
+// How many CSS px one World unit spans across the view at depth 1, on a stage `height` CSS px high seen from `camera`.
+export function focalPixels(camera, height) {
+  return (height * 0.5) / Math.tan(camera.fovY_deg * 0.5 * Math.PI / 180);
+}
+
+// The distance (CSS px) from the point p to the screen segment a-b.
+export function distanceToSegment(p, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / Math.max(dx * dx + dy * dy, 1e-12)));
+  return Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y);
 }
 
 // A World segment [a, b] on a width x height stage seen from `camera`, cut where it passes behind the near plane:

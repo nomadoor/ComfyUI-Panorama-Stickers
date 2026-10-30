@@ -54,7 +54,8 @@ export function stageUi() {
 // stageContent()) or null. selected(): what is selected for the orbit's center and Frame Selected (view_camera.js
 // orbitCenter: null, { kind: "object", sphere } or { kind: "camera", position }). ui: stageUi()'s fields, reactive.
 // onEscape(): Escape with no view drag to let go; the editor takes back one thing or closes (docs/studio-ui.md "閉じ方").
-// overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the sky image's handles; null draws none).
+// overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the gizmo, the sky image's handles; null draws
+// none).
 // objects: what selecting and editing the objects needs (stage_objects.js createStageObjects: state, playhead,
 // selection, select, edits, mode, tab, readOnly); without it the stage does not touch objects.
 // cameraTab: the Camera tab (docs/studio-ui.md "Camera タブ", docs/space-and-view.md "Frame 表示"), read at each frame:
@@ -330,7 +331,8 @@ export function createStage({
     const canvases = cameraTab?.output?.() ?? null;
     const kind = cameraTab ? (cameraTab.mode() === "panorama" ? "erp" : "frame") : null;
     const target = canvases && kind ? canvases[kind] : null;
-    const box = target?.getBoundingClientRect();
+    // Its layout size: the window's open and fold animations scale it by a transform, which does not change what it shows.
+    const box = target ? { width: target.clientWidth, height: target.clientHeight } : null;
     if (!target || !(box?.width > 0 && box?.height > 0)) {
       releaseOutput();
       return null;
@@ -441,7 +443,6 @@ export function createStage({
       gridHidden: ui.gridHidden,
       clearColor,
       content: shown,
-      gizmo: objects && mode === "space" ? objects.gizmo() : null,
       rect,
       lens,
     }));
