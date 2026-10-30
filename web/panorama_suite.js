@@ -9579,7 +9579,7 @@ function fm(e, t, n, { media: r, evaluated: i = Ta(e, t) }) {
   }), a;
 }
 function Ek() {
-  return import("./.lazy/pano_three_view-mzZmM7z6.js").then((e) => e.$);
+  return import("./.lazy/pano_three_view-CNktA3NY.js").then((e) => e.$);
 }
 function pm({ canvas: e, onReady: t, onFailed: n, onUpdate: r = () => {
 }, onSplats: i = () => {
@@ -9731,7 +9731,7 @@ function DC(e) {
   };
 }
 const mm = DC(
-  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-mzZmM7z6.js").then((n) => n.$).then((n) => Pv(n.createThreeView({ onUpdate: e, onSplats: t, createCanvas: () => Kt({ label: "three.node" }) }), "node"))
+  ({ onUpdate: e, onSplats: t }) => import("./.lazy/pano_three_view-CNktA3NY.js").then((n) => n.$).then((n) => Pv(n.createThreeView({ onUpdate: e, onSplats: t, createCanvas: () => Kt({ label: "three.node" }) }), "node"))
 );
 function Qi(e, t) {
   if (!t || typeof t != "object") return "";
