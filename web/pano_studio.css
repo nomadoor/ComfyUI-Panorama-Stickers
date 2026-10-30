@@ -1435,6 +1435,31 @@
   pointer-events: none;
 }
 
+/* The Camera button's light band (docs/design.md "新しい UI の見た目" "動き"): once, top left to bottom right across the
+   stage, the soft yellow at 25% at its middle, 30% of the stage's diagonal wide, 450ms ease-out. The ::before is four
+   times the stage (its gradient runs four diagonals, so 7.5% of it is 30% of one) and only its transform moves: the 3D
+   view is neither stopped nor drawn again. Its middle goes from 0.7 of the stage before the center to 0.7 after. */
+.pano-studio-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pano-studio-sweep::before {
+  content: "";
+  position: absolute;
+  inset: -150%;
+  background: linear-gradient(to bottom right, transparent 46.25%, rgb(232 207 116 / 0.25) 50%, transparent 53.75%);
+  animation: pano-studio-sweep 450ms ease-out forwards;
+}
+@keyframes pano-studio-sweep {
+  from { transform: translate(-17.5%, -17.5%); }
+  to { transform: translate(17.5%, 17.5%); visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pano-studio-sweep { display: none; }
+}
+
 /* The selected object's name on the bar at the bottom center: the same width for every name, left aligned, one line,
    cut with an ellipsis (docs/studio-ui.md "下の中央のバー"). */
 .pano-studio-bar-name {

@@ -247,6 +247,8 @@ function setCollapsed(value) {
             aria-hidden="true"
           />
           <StudioDropMarker v-if="ui.drop" :mark="ui.drop" />
+          <!-- The Camera button's light band (docs/design.md "動き"): a CSS layer, run once per new count. -->
+          <div v-if="ui.sweep" :key="ui.sweep" class="pano-studio-sweep" data-sweep aria-hidden="true" />
 
           <StudioCameraFrame v-if="cameraTab && rulers" :aspect="frameAspect" @rect="(rect) => controller.frameRect?.(rect)">
             <template #default="{ rulers: place }">

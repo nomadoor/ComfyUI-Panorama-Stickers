@@ -298,10 +298,12 @@ export function createStudioSession({ state: opening, readOnly = false }) {
 
   // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the view `pose` at the
   // Timeline frame `playhead` (camera_ui.js cameraToView, Panorama mode switching to Frame), as one Undo step. Not
-  // while the Camera is locked. The selection stays.
+  // while the Camera is locked. A move selects the Camera (the inspector shows its card); nothing moved changes nothing.
   function cameraToView(pose, playhead) {
     if (state.camera?.locked === true) return result(false);
-    return editCamera((camera) => moveCameraToView(camera, playhead, pose));
+    const outcome = editCamera((camera) => moveCameraToView(camera, playhead, pose));
+    if (outcome.changed) selection = { row: "camera", keys: [] };
+    return outcome;
   }
 
   // Duplicate: a copy of the selected Sticker under a new id, selected. A sky image's copy is turned 8° to the right
