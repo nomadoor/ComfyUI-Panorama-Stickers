@@ -70,3 +70,27 @@ test("a VIDEO source: the strip plays and seeks, and the frame on the stage foll
   await expect(page.locator("video")).toHaveCount(0);
   expect(problems).toEqual([]);
 });
+
+test("a PANO_SCENE source: its objects draw read-only over its background, and the strip seeks its Timeline", async ({ page }) => {
+  const problems = await open(page, "?scene");
+  // The red board ahead at the center, the blue upstream background above.
+  await expect.poll(async () => {
+    const { center } = await page.evaluate(() => window.__preview.colors());
+    return center[0] > 150 && center[1] < 90 && center[2] < 90;
+  }, { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => {
+    const { top } = await page.evaluate(() => window.__preview.colors());
+    return top[2] > top[0] + 40;
+  }, { timeout: 20_000 }).toBe(true);
+  await expect(page.locator("[data-region=playback]")).toBeVisible();
+  expect(await page.evaluate(() => window.__preview.playback().frames)).toBe(48);
+  await page.locator("[data-seek]").fill("30");
+  await expect.poll(() => page.evaluate(() => window.__preview.playback().frame)).toBe(30);
+  // Nothing is selected or edited: a click on the board keeps it as it is and no gizmo or selection bar shows.
+  await page.locator("[data-stage-canvas]").click({ position: { x: 568, y: 345 } });
+  await expect(page.locator(".pano-studio-at-bar, [data-region=inspector]")).toHaveCount(0);
+  if (process.env.PREVIEW_SHOT_SCENE) await page.screenshot({ path: process.env.PREVIEW_SHOT_SCENE });
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-preview-window]")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});

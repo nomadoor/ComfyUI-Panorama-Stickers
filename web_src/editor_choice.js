@@ -3,7 +3,9 @@
 // new UI has them.
 // web_src/main.js puts this together with the two editors.
 
-// The new Preview window shows an IMAGE or a VIDEO source so far; a PANO_SCENE source opens the old window.
+// The Preview's read-only opening of an IMAGE or a VIDEO source goes to the new window (a PANO_SCENE source opens
+// through the Scene viewer's opener instead, which web_src/main.js hands to the new window: pano_editor.js
+// oldEditorHooks.takeSceneViewer).
 // type: the class of the node, sourceType: the type linked to its `source` input.
 export function previewUsesNewWindow({ type, sourceType }) {
   return type === "PanoramaPreviewNode" && (sourceType === "IMAGE" || sourceType === "VIDEO");

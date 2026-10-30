@@ -20,6 +20,13 @@ const openEditor = createEditorChooser({
   previewTakes: (node) => previewUsesNewWindow({ type: node?.comfyClass ?? node?.type, sourceType: linkedInputType(node, "source") }),
 });
 
+// With the setting on, the Preview's Scene opens in the new window too (docs/studio-ui.md "Preview のウィンドウ").
+oldEditorHooks.takeSceneViewer((node) => {
+  if (newUiOn() !== true) return false;
+  openPreviewWindow(node, { app, api });
+  return true;
+});
+
 const extension = createPanoEditorExtension({
   ...oldEditorHooks,
   app,

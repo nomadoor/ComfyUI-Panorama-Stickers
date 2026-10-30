@@ -1,6 +1,7 @@
 // The new Preview window (docs/studio-ui.md "Preview のウィンドウ", ADR 0044): the Panorama Preview node's source shown
-// read-only on the new editor's stage (stage.js), filling the window. An IMAGE or a VIDEO source; a PANO_SCENE source
-// still opens the old window (web_src/editor_choice.js previewUsesNewWindow). A VIDEO plays with its sound through the
+// read-only on the new editor's stage (stage.js), filling the window. An IMAGE, a VIDEO or a PANO_SCENE source: a Scene
+// draws its layers as the Studio editor draws an upstream Scene (upstream.js, stage_content.js), with its background
+// and its Timeline (pano_timeline_fps / pano_timeline_frames of the node's result). A VIDEO plays with its sound through the
 // editor's background playback (pano_media_session.js createBackgroundVideo) under the bottom playback strip. Nothing
 // is written to the node. The Vue shell is StudioPreviewWindow.vue.
 import { createApp, reactive } from "vue";
@@ -8,7 +9,12 @@ import StudioPreviewWindow from "../components/studio/StudioPreviewWindow.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { createBackgroundVideo, isDecodedImageReady, mediaRevisionToken, videoMetaEntry } from "../pano_media_session.js";
-import { isNodeOutputMediaCurrent, videoLinked } from "../pano_preview_video.js";
+import { backgroundPlace } from "../pano_port_media.js";
+import { isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
+import { loadSceneState } from "../pano_scene_state.js";
+import { PANO_SCENE_TYPE } from "../pano_upstream.js";
+import { createStageMedia, stageContent } from "./stage_content.js";
+import { createStudioUpstream, upstreamBackground } from "./upstream.js";
 import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { guardEditorKeys } from "./key_guard.js";
@@ -47,18 +53,74 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   let releaseKeyGuard = () => {};
   const ui = reactive({ ...stageUi(), fullscreen: false });
   // The playback strip (a VIDEO source only): the frame shown, its count and fps, whether it plays and loops.
-  const playbackView = reactive({ video: videoLinked(node, SOURCE_INPUTS), frame: 0, frames: 1, fps: DEFAULT_FPS, playing: false, loop: readLoopSetting(storage) });
+  const isScene = linkedInputType(node, "source") === PANO_SCENE_TYPE;
+  const isVideo = !isScene && videoLinked(node, SOURCE_INPUTS);
+  const resultNumber = (key) => Number(media.uiList(node, key)[0]);
+  const sceneFps = resultNumber("pano_timeline_fps") > 0 ? resultNumber("pano_timeline_fps") : DEFAULT_FPS;
+  const sceneFrames = Math.max(1, Math.floor(resultNumber("pano_timeline_frames") || 1));
+  // `video`: the strip shows (a VIDEO, or a Scene longer than one frame).
+  const playbackView = reactive({
+    video: isVideo || (isScene && sceneFrames > 1),
+    frame: 0,
+    frames: isScene ? sceneFrames : 1,
+    fps: isScene ? sceneFps : DEFAULT_FPS,
+    playing: false,
+    loop: readLoopSetting(storage),
+  });
+
+  // --- A Scene: its layers (read-only) and the background its Studio gave it.
+  const sceneState = (() => {
+    const empty = loadSceneState(null);
+    return { ...empty, timeline: { ...empty.timeline, fps: sceneFps } };
+  })();
+  const sceneBg = isScene ? upstreamBackground({ uiList: (key) => media.uiList(node, key), current: true, ownLinked: false, fps: sceneFps }) : null;
+  const stageMedia = isScene
+    ? createStageMedia({ assetSource: media.assetSource, source: media.source, fetchApi: api?.fetchApi ? (path, options) => api.fetchApi(path, options) : null, onChange: () => !closed && stage?.redraw(DRAW_REASON.MEDIA) })
+    : null;
+  const upstreamList = () => {
+    const value = media.uiValue(node, "pano_upstream_layers");
+    return Array.isArray(value) && value.length ? value : null;
+  };
+  const upstream = isScene
+    ? createStudioUpstream({
+      list: upstreamList,
+      linkType: () => linkedInputType(node, "source"),
+      uiList: (key) => media.uiList(node, key),
+      state: () => sceneState,
+      nodeName: () => null,
+      mediaSource: media.source,
+      mediaAssetSource: media.assetSource,
+      revisionOf: mediaRevisionToken,
+      playing: () => playbackView.playing,
+      editorFile: (sticker) => stageMedia.editorFile(sticker),
+      onMedia: () => !closed && stage?.redraw(DRAW_REASON.MEDIA),
+    })
+    : null;
+  const content = () => (isScene
+    ? stageContent(sceneState, playbackView.frame, {
+      media: (sticker) => stageMedia.media(sticker),
+      editorFile: stageMedia.editorFile,
+      sceneBox: (url) => stage?.sceneBox(url) ?? null,
+      upstream: upstream.viewInput(playbackView.frame),
+    })
+    : null);
 
   let image = null;
   let status = "none";
-  if (media.resolvePreferredExactLinkedSource(node, SOURCE_INPUTS).src) {
+  if (sceneBg?.imageKey) {
+    image = media.uiImage(node, sceneBg.imageKey, new Map(), (settled) => {
+      status = loaded(settled) ? "ready" : "failed";
+      stage?.redraw(DRAW_REASON.MEDIA);
+    });
+    if (image) status = loaded(image) ? "ready" : "loading";
+  } else if (!isScene && media.resolvePreferredExactLinkedSource(node, SOURCE_INPUTS).src) {
     image = media.loadPreferredExactLinkedImage(node, SOURCE_INPUTS, (settled) => {
       status = loaded(settled) ? "ready" : "failed";
       stage?.redraw(DRAW_REASON.MEDIA);
     }, `preview-window:${SOURCE_INPUTS.join("|")}`);
     if (image) status = loaded(image) ? "ready" : "loading";
   }
-  const coverage = normalizeCoverageValue(undefined);
+  const coverage = sceneBg?.coverage ?? normalizeCoverageValue(undefined);
   const imageBackground = () => (status === "ready" ? { media: image, revision: image.currentSrc || image.src, coverage } : null);
 
   // --- The VIDEO source: the node's own result first, then the file its source loads directly.
@@ -68,19 +130,21 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   const redraw = (reason) => stage?.redraw(reason);
   function refreshVideo() {
     if (!backgroundVideo) return;
-    const keys = PREVIEW_VIDEO_KEYS;
-    const own = isNodeOutputMediaCurrent(node, "background") ? media.uiList(node, keys.videoKey)[0] || null : null;
+    const keys = sceneBg ?? PREVIEW_VIDEO_KEYS;
+    const own = sceneBg || isNodeOutputMediaCurrent(node, "background") ? media.uiList(node, keys.videoKey)[0] || null : null;
     const chosen = backgroundVideo.choose({
       own: media.source(own),
-      file: media.linkedVideoFile(node, SOURCE_INPUTS),
+      file: isScene ? "" : media.linkedVideoFile(node, SOURCE_INPUTS),
       meta: () => videoMetaEntry(media.uiValue(node, keys.metaKey)),
       fps: playbackView.fps,
     });
     backgroundVideo.load(chosen.src, { loop: false, muted: false, volume: 1 });
+    // A Scene keeps its Timeline's fps and length; a VIDEO source has its own.
+    if (isScene) return;
     if (Number(chosen.fps) > 0) playbackView.fps = Number(chosen.fps);
     if (Number(chosen.frameCount) > 0) playbackView.frames = Math.floor(Number(chosen.frameCount));
   }
-  if (playbackView.video) {
+  if (isVideo || isScene) {
     videoElement = createPanoVideo(document, "preview.background");
     videoElement.playsInline = true;
     videoElement.preload = "auto";
@@ -103,6 +167,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
       fps: () => playbackView.fps,
       span: () => Math.max(1, playbackView.frames),
       loop: () => playbackView.loop,
+      place: () => (sceneBg ? backgroundPlace(sceneBg.place) : null),
       onFrame: (frame) => {
         playbackView.frame = frame;
         redraw(DRAW_REASON.PLAYHEAD);
@@ -139,6 +204,8 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
       releasePanoCanvas(videoStill);
     }
     stage?.dispose();
+    stageMedia?.dispose();
+    upstream?.dispose();
     vueApp.unmount();
     mountHost.remove();
     openNodes.delete(node);
@@ -148,7 +215,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     onStage: ({ canvas, root }) => {
       releaseKeyGuard = guardEditorKeys(root);
       const opening = openingView({ output, world: { ...world, boxes: [], content: null }, frameAvailable: false });
-      stage = createStage({ canvas, root, opening, output, world, background, content: () => null, ui, onEscape: () => close() });
+      stage = createStage({ canvas, root, opening, output, world, background, content, ui, onEscape: () => close() });
       return stage;
     },
     close: () => close(),

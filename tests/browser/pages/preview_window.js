@@ -6,6 +6,17 @@ import { makeVideo } from "./media.js";
 
 // ?video: the source is a VIDEO (its gray goes from dark to light over its length), in the node's result.
 const VIDEO = new URLSearchParams(location.search).has("video");
+// ?scene: the source is a PANO_SCENE whose layer has a red board in the World ahead, over a blue upstream background.
+const SCENE = new URLSearchParams(location.search).has("scene");
+const solid = (width, height, color) => {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const g = canvas.getContext("2d");
+  g.fillStyle = color;
+  g.fillRect(0, 0, width, height);
+  return canvas.toDataURL("image/png");
+};
 const FPS = 30;
 
 const getContext = HTMLCanvasElement.prototype.getContext;
@@ -38,7 +49,7 @@ for (const target of [window, document]) {
   }
 }
 try {
-  const url = VIDEO ? "" : await makeErp();
+  const url = VIDEO || SCENE ? "" : await makeErp();
   let recorded = null;
   if (VIDEO) {
     let start = null;
@@ -64,10 +75,28 @@ try {
     inputs: [{ name: "source", link: 1 }],
     widgets: [],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
-    getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0, type: VIDEO ? "VIDEO" : "IMAGE" } : null),
+    getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0, type: SCENE ? "PANO_SCENE" : VIDEO ? "VIDEO" : "IMAGE" } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
   };
-  const nodeOutputs = VIDEO
+  const layer = {
+    version: 2,
+    id: "scene_up",
+    timeline: { fps: 24 },
+    camera: null,
+    stickers: [{ id: "sticker_1", placement: "world", source: { kind: "file", data_url: solid(128, 128, "#e02020") }, position: { value: [0, 0, -3] }, scale: { value: 1.2 } }],
+  };
+  const nodeOutputs = SCENE
+    ? {
+      21: {
+        pano_upstream_layers: [{ state: layer, ui: {} }],
+        pano_upstream_coverage: [360],
+        pano_upstream_bg_color: [[0, 0, 0]],
+        pano_upstream_input_images: [solid(512, 256, "#2040c0")],
+        pano_timeline_fps: [24],
+        pano_timeline_frames: [48],
+      },
+    }
+    : VIDEO
     ? { 21: { pano_videos: [recorded.src], pano_video_meta: [{ fps: FPS, frames: preview.frames, duration: recorded.duration, has_audio: false }] } }
     : {};
   const app = { getNodeImageUrls: (target) => (target === origin && url ? [url] : []), nodeOutputs };
@@ -78,6 +107,22 @@ try {
   };
   preview.close = () => win?.close();
   preview.playback = () => ({ ...win.playback });
+  // The mean [r, g, b] of the stage's center (a tenth of its width and height) and of its top band.
+  preview.colors = () => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    const probe = document.createElement("canvas");
+    probe.width = 40;
+    probe.height = 40;
+    const g = probe.getContext("2d", { willReadFrequently: true });
+    g.drawImage(canvas, 0, 0, 40, 40);
+    const mean = (x0, y0, x1, y1) => {
+      const data = g.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+      const sum = [0, 0, 0];
+      for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c += 1) sum[c] += data[i + c];
+      return sum.map((v) => Math.round(v / (data.length / 4)));
+    };
+    return { center: mean(18, 18, 22, 22), top: mean(0, 0, 40, 4) };
+  };
   // The mean color of the stage's middle band.
   preview.sample = () => {
     const canvas = document.querySelector("[data-stage-canvas]");
