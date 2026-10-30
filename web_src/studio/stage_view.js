@@ -2,9 +2,10 @@
 // camera of the view, the surface hit under a pixel (docs/space-and-view.md "注視点 `T`": the nearest of the GPU pick
 // of the World content and the ground y = ground, which the GPU pick does not draw), and a render's input for the
 // lower three.js view (pano_three_view.js render). Pure: the GPU pick comes in as a point.
-import { placeDirection, screenRenderSize } from "../pano_editor_view.js";
+import { getCutoutCameraParams, shotCurve } from "../pano_cutout_view_math.js";
+import { frameViewContext, placeDirection, screenRenderSize, shotCamera } from "../pano_editor_view.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
-import { DEFAULT_VIEW_HFOV, spaceCamera } from "../pano_space.js";
+import { DEFAULT_VIEW_HFOV, placedCamera, spaceCamera } from "../pano_space.js";
 import { groundGrid } from "./grid.js";
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -48,6 +49,29 @@ export function stageCamera(pose, width, height, radius) {
   return spaceCamera(view, width, height, { center: [0, 0, 0], radius });
 }
 
+// The Frame view of the Camera tab (docs/studio-ui.md "Camera タブ", docs/space-and-view.md "Frame 表示"): the Camera
+// `shot` (pano_editor_state.js cameraShot, at the playhead) seen through the frame box `frame` ({ x, y, width, height }
+// CSS px, frame_layout.js frameRect) of a stage of width x height CSS px, its picture going on past the box with the
+// same focal length (the old Frame view's context, pano_editor_view.js frameViewContext). Returns { camera, rect, lens }:
+// `camera` the three.js camera (a placedCamera(): near and far for the pivot `distance` ahead and the world bound of
+// `radius` about the origin) that spans `rect` ({ x, y, w, h } CSS px, centered on the box, reaching past the stage
+// where the box is off center), and `lens` frameViewContext's lens in those px for a lens Camera (κ ≠ 1), else null.
+// A pinhole's rect covers the stage on both sides of the box's center, up to the context's angle limit.
+export function cameraFrameView({ shot, frame, width, height, distance, radius }) {
+  const { tanHalfX } = getCutoutCameraParams(shot);
+  const gate = { x: frame.x, y: frame.y, w: frame.width, h: frame.height, focalPx: frame.width / (2 * tanHalfX) };
+  const centerX = frame.x + frame.width / 2;
+  const centerY = frame.y + frame.height / 2;
+  // frameViewContext's pinhole context spans half the canvas each way from the box's center: the canvas it is given is
+  // the one the stage would be with the box centered, so the context still reaches the stage's far edges.
+  const canvas = shotCurve(shot) === 1
+    ? { width: 2 * Math.max(centerX, width - centerX), height: 2 * Math.max(centerY, height - centerY) }
+    : { width, height };
+  const context = frameViewContext(shot, gate, canvas);
+  const camera = placedCamera(shotCamera(context.shot), shot.position, distance, { center: [0, 0, 0], radius });
+  return { camera, rect: context.rect, lens: context.lens ?? null, shot: context.shot };
+}
+
 // The ray from the view through (x, y) of a stage of width x height CSS px seen from `camera` (stageCamera()):
 // { origin, direction }, the direction one unit long (pano_editor_view.js placeDirection; pano_pick.js pickRay is the
 // three.js chunk's own).
@@ -86,14 +110,18 @@ export function surfaceHit(camera, x, y, width, height, { ground, picked = null 
 // stage_content.js stageContent(): its sky layers and its World part; null draws none). Where nothing draws the canvas is
 // `clearColor`, or see-through with null (the stage's loading gradient shows behind while the background loads).
 // The three.js view draws no gizmo: the new UI's is on the 2D overlay (gizmo_overlay.js).
-export function stageRenderInput({ camera, canvasWidth, canvasHeight, background, ground, gridHidden, clearColor = STAGE_CLEAR_COLOR, content = null }) {
+// `rect` ({ x, y, w, h } device px, render()'s) draws the view into that part instead (the Camera tab's Frame view), and
+// `lens` (pano_editor_view.js shotLensImage) draws it through a lens Camera's pass. `owner` is the draw's
+// (pano_three_view.js; the Output window's picture draws for its own).
+export function stageRenderInput({ camera, canvasWidth, canvasHeight, background, ground, gridHidden, clearColor = STAGE_CLEAR_COLOR, content = null, rect = null, lens = null, owner = "studio-stage" }) {
   const grid = groundGrid({ ground, hidden: gridHidden });
   return {
-    rect: { x: 0, y: 0, w: canvasWidth, h: canvasHeight },
+    rect: rect ?? { x: 0, y: 0, w: canvasWidth, h: canvasHeight },
+    ...(lens ? { lens } : {}),
     camera,
     background: background ?? null,
     layers: content?.layers ?? [],
-    owner: "studio-stage",
+    owner,
     clearColor,
     space: {
       grid: null,

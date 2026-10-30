@@ -13,7 +13,7 @@ import { createApp, markRaw, reactive, shallowReactive } from "vue";
 import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
-import { normalizeCoverageValue } from "../pano_editor_state.js";
+import { cameraShot, normalizeCoverageValue, setCameraShot } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
@@ -33,7 +33,7 @@ import { evaluateCamera } from "../pano_scene_eval.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
-import { groundOf } from "./defaults.js";
+import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { createStage, stageUi } from "./stage.js";
@@ -168,6 +168,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     fpsLocked: false,
     imageSizes: {},
     animations: {},
+    // The stage's tab: "3d" or "camera" (docs/studio-ui.md "Camera タブ"). The 3D tab each time the editor opens.
+    tab: "3d",
+    // The Timeline's span in frames (the Camera tab's timecode, timeline_model.js spanOf).
+    span: 1,
   });
   const timelineCtx = () => ({ state: session.state, upstream: [], media: view.media });
 
@@ -187,6 +191,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   function sync() {
     view.state = session.state;
+    view.span = spanOf(timelineCtx());
     view.selection = session.selection;
     view.canUndo = session.canUndo;
     view.canRedo = session.canRedo;
@@ -231,6 +236,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     place: () => (backgroundLinked ? backgroundPlace(session.state.background.clip) : null),
     onFrame: (frame) => {
       view.playhead = frame;
+      view.span = spanOf(timelineCtx());
       world.camera = outputView(session.state, frame).position;
       redraw();
     },
@@ -280,12 +286,15 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     backgroundClipKey = key;
   }
 
+  // The node's background color (its `bg_color` setting, "#00ff00" when it is missing), as "#rrggbb".
+  const nodeBackgroundColor = () => String(widgetOf(node, "bg_color")?.value || "#00ff00");
+
   // The background the stage draws at the playhead: bg_color outside its Clip range and media (as the node's output),
   // else the VIDEO or its still once one has a picture, else the image.
   function stageBackground() {
     const state = session.state;
     if (backgroundLinked && !backgroundShownAt(state.background.clip, view.playhead, state.timeline.fps, view.media.bg ?? null)) {
-      return bgColorBackground(String(widgetOf(node, "bg_color")?.value || "#00ff00"));
+      return bgColorBackground(nodeBackgroundColor());
     }
     const shown = backgroundVideo.displaySource();
     if (shown && isDecodedImageReady(shown)) {
@@ -361,12 +370,15 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // --- Edits.
 
   function inspectorEdit(edit) {
+    // A wheel run of the Camera tab's Frame view still waiting to be one Undo step is one first.
+    stage?.settle();
     const outcome = session.applyInspector(edit, { playhead: view.playhead, imageSizes: view.imageSizes, animations: view.animations });
     if (outcome.stopPlayback) playback.stop();
     sync();
   }
 
   function timelineEdit(payload) {
+    stage?.settle();
     const outcome = session.applyTimeline(payload);
     if (!outcome.changed) return;
     if (outcome.stopPlayback) playback.stop();
@@ -376,6 +388,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   }
 
   function historyStep(direction) {
+    stage?.settle();
     const outcome = direction < 0 ? session.undo() : session.redo();
     if (!outcome) return;
     playback.stop();
@@ -409,6 +422,47 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     commit: () => objectOutcome(session.commitGesture()),
     cancel: () => objectOutcome(session.cancelGesture()),
   };
+
+  // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the Frame view's moves of the Camera, written to its Lanes by
+  // the recording rule (pano_editor_state.js setCameraShot) as one drag of the session (one Undo step at its end).
+  const cameraEdits = {
+    live: (pose) => objectOutcome(session.gesture((draft) => {
+      draft.camera ??= defaultCamera();
+      if (draft.camera.locked === true) return false;
+      const base = cameraShot(draft.camera, view.playhead);
+      // A move back onto the start writes nothing, and the state is the start again (each move starts from it).
+      setCameraShot(draft.camera, view.playhead, { ...base, position: [...pose.position], yaw_deg: pose.yaw_deg, pitch_deg: pose.pitch_deg }, base);
+      return true;
+    })),
+    commit: () => objectOutcome(session.commitGesture()),
+    cancel: () => objectOutcome(session.cancelGesture()),
+  };
+  // The frame box the shell laid out (StudioCameraFrame.vue's rect, the stage's CSS px), and the canvas in it that
+  // shows the live ERP.
+  let frameRect = null;
+  let erpCanvas = null;
+  // The Output window's canvases while it is open ({ frame, erp }), else null.
+  let outputCanvases = null;
+  const backgroundColor = () => parseInt(nodeBackgroundColor().replace("#", ""), 16) || 0;
+  const cameraTab = {
+    tab: () => view.tab,
+    mode: () => (cameraOf(session.state).projection === "erp" ? "panorama" : "frame"),
+    shot: () => cameraShot(cameraOf(session.state), view.playhead),
+    erpRange: () => (cameraOf(session.state).erp_range === 180 ? 180 : 360),
+    frame: () => frameRect,
+    erpCanvas: () => erpCanvas,
+    movable: () => !readOnly && cameraOf(session.state).locked !== true,
+    backgroundColor,
+    output: () => outputCanvases,
+    edits: cameraEdits,
+  };
+
+  function setTab(tab) {
+    if (tab !== "3d" && tab !== "camera") return;
+    if (view.tab === tab) return;
+    view.tab = tab;
+    redraw();
+  }
 
   function selectObject(row) {
     if (session.selectObject(row)) sync();
@@ -492,9 +546,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
           select: selectObject,
           edits: objectEdits,
           mode: () => view.gizmoMode,
-          tab: () => "3d",
+          tab: () => view.tab,
           readOnly: () => readOnly,
         },
+        cameraTab,
         root,
         opening,
         output,
@@ -524,6 +579,21 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       writeLoopSetting(storage, view.loop);
     },
     frameSelected: (row) => stage?.frameSelected(selectionOf(row)),
+    setTab,
+    // The Camera tab's frame box moved or resized, and the canvas that shows the live ERP in it (null when it goes).
+    frameRect: (rect) => {
+      frameRect = rect;
+      redraw(DRAW_REASON.RESIZE);
+    },
+    erpCanvas: (element) => {
+      erpCanvas = element ?? null;
+      redraw(DRAW_REASON.RESIZE);
+    },
+    // The Output window opened, folded or resized: its canvases ({ frame, erp }, null while folded).
+    output: (canvases) => {
+      outputCanvases = canvases && (canvases.frame || canvases.erp) ? canvases : null;
+      redraw(DRAW_REASON.RESIZE);
+    },
     bar: barPress,
     rail: (key) => {
       if (key === "undo") historyStep(-1);
@@ -573,5 +643,6 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   if (!readOnly) nodeSession.flushBeforeQueue = flushBeforeQueue;
   noteStudioEditorOpen(node, true);
   peekNodeSurface(node)?.dom?.requestDraw?.();
-  return { close, session };
+  // The stage is handed out for the browser checks (tests/browser/), which read what it draws.
+  return { close, session, stage: () => stage };
 }

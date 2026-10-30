@@ -11,12 +11,12 @@ import {
   FRAME_GAP_LIMIT,
   JOYSTICK_PIXELS,
   ORBIT_DEG_PER_PIXEL,
-  ORIGIN_MARK_RADIUS,
   PITCH_LIMIT,
   PREVIEW_DAMPING,
   WHEEL_EASE_SECONDS,
   WHEEL_FACTOR,
   WHEEL_STEP_PIXELS,
+  FRAME_WHEEL_REST_MS,
   eyeHeight,
   eyeLengths,
   frameSeconds,
@@ -58,7 +58,7 @@ test("the absolute quantities have the table's values", () => {
   assert.equal(FRAME_FALLBACK_SECONDS, 1 / 60);
   assert.equal(BOUND_NOTICE_SECONDS, 2);
   assert.equal(WHEEL_STEP_PIXELS, 100);
-  assert.equal(ORIGIN_MARK_RADIUS, 0.18);
+  assert.equal(FRAME_WHEEL_REST_MS, 180);
   assert.deepEqual(DROP_PREVIEW_BOX, { min: [-0.5, 0, -0.5], max: [0.5, 1, 0.5] });
   assert.equal(PREVIEW_DAMPING, 0.95);
 });

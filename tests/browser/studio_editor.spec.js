@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // The new editor's shell and stage (web_src/studio/editor.js, stage.js, components/studio/StudioEditor.vue) on
 // tests/browser/pages/studio_editor.html: docs/studio-ui.md "画面の区画" and docs/space-and-view.md "マウスとキー",
-// "視点の操作の部品", "地面のグリッドと原点の印", "ウィンドウがフォーカスを失ったとき", "視点の記憶". The stage draws
+// "視点の操作の部品", "地面のグリッド", "ウィンドウがフォーカスを失ったとき", "視点の記憶". The stage draws
 // the background with the ground grid through the lower three.js view, in a real browser engine.
 
 function watch(page) {
@@ -121,7 +121,9 @@ test("the shell has its regions, the stage draws the background and the grid, an
   for (const tool of ["paint", "mask", "add", "camera", "undo", "redo"]) {
     await expect(page.locator(`[data-tool="${tool}"]`)).toHaveAttribute("aria-disabled", "true");
   }
-  await expect(page.locator('.pano-studio-tabs [data-value="camera"]')).toHaveAttribute("aria-disabled", "true");
+  // The 3D tab is chosen; the Camera tab can be chosen (tests/browser/studio_camera_wired.spec.js).
+  await expect(page.locator('.pano-studio-tabs [data-value="3d"]')).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator('.pano-studio-tabs [data-value="camera"]')).not.toHaveAttribute("aria-disabled", "true");
 
   const shown = await settled(page);
   expect(spread(shown)).toBeGreaterThan(120);
