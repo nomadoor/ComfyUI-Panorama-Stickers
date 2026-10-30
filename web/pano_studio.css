@@ -2254,6 +2254,7 @@
   font-size: var(--studio-text-xs);
   font-weight: var(--studio-weight-head);
   line-height: 1;
+}
 
 /* --- The tooltip (docs/studio-ui.md "ツールチップ", values docs/design.md "大きさ" and "動き"): one bubble per editor,
    beside the control (StudioTooltip.vue places it), over the floats and inside the frame. The strong fill with its
