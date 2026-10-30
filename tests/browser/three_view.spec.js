@@ -29,7 +29,9 @@ test("a VIDEO background and a 3DGS sticker draw while the camera turns", async 
   expect(check.done).toBe(true);
   expect(check.contextLost).toBe(false);
   expect(check.stats.sceneItems.loaded).toBe(1);
-  expect(check.draws).toBeGreaterThan(30);
+  // The view kept drawing while the camera turned: the page ends the turn only after TURN_DRAWS draws (not after a
+  // fixed time), so a count short of it means the turn gave up at its time limit with the draw loop stalled.
+  expect(check.turnDraws).toBeGreaterThanOrEqual(check.turnDrawsWanted);
   // Spark sorted the splats again while the camera turned: its raw upload of the order ran.
   expect(check.turnSorts).toBeGreaterThan(0);
   // The VIDEO kept playing (and looping) to the end of the turn, so its frames were uploaded as textures too.

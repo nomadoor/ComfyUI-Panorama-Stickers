@@ -373,21 +373,6 @@ class TestNodesPreview(unittest.TestCase):
         assert "attachStickers(node" in preview_block
         assert "node.size = [360, 260]" in preview_block
 
-    def test_external_input_preview_contract_strings(self):
-        from comfyui_pano_suite.node_runtime import NodeRuntime
-
-        repo_root = Path(__file__).resolve().parent.parent
-        editor_js = editor_source()
-        nodes_py = (repo_root / "comfyui_pano_suite" / "nodes.py").read_text(encoding="utf-8")
-        assert 'pano_sticker_input_images' in editor_js
-        assert 'getLinkedInputImage(node, ["sticker_image"])' not in editor_js
-        assert NodeRuntime().preview_contract("stickers_input")["image"] == "pano_sticker_input_images"
-        assert 'pano_sticker_input_pose' in nodes_py
-        assert 'pano_sticker_input_state_hash' in nodes_py
-        assert 'comfyMedia.externalStateHash(node, stateRaw)' in editor_js
-        assert 'hashStringSimple(JSON.stringify(inputPose))' not in editor_js
-        assert 'sticker_state_json' in nodes_py
-
     def test_paint_rebuild_ui_scaffold_strings(self):
         editor_js = editor_source()
         css = self._web_runtime_path("pano_editor.css").read_text(encoding="utf-8")

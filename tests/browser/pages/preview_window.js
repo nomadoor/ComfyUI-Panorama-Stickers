@@ -86,6 +86,7 @@ try {
     inputs: [{ name: "source", link: 1 }],
     widgets: [{ name: "background_range", value: RANGE_180 ? "180" : "360" }],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
+    isInputConnected: (index) => index === 0,
     getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0, type: SCENE ? "PANO_SCENE" : VIDEO ? "VIDEO" : "IMAGE" } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
   };

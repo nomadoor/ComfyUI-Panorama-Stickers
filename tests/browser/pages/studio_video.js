@@ -59,6 +59,7 @@ try {
     inputs: [{ name: "bg_media", link: 1 }],
     widgets: [{ name: "state_json", value: "" }, { name: "bg_color", value: "#00ff00" }],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
+    isInputConnected: (index) => index === 0,
     getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0, type: "VIDEO" } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
   };
