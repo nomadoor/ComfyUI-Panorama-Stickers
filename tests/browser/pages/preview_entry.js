@@ -8,6 +8,9 @@
 //
 // ?video / ?scene: the source is a VIDEO or a PANO_SCENE (an IMAGE without either). ?off: the setting
 // PanoramaSuite.Editor.NewUI is off.
+import { app } from "./comfy/app.js";
+import "/web_src/main.js";
+
 const query = new URLSearchParams(location.search);
 const SOURCE = query.has("scene") ? "PANO_SCENE" : query.has("video") ? "VIDEO" : "IMAGE";
 if (query.has("off")) window.__comfySettings = { "PanoramaSuite.Editor.NewUI": false };
@@ -21,8 +24,6 @@ Element.prototype.requestFullscreen = function (...args) {
 };
 
 try {
-  const { app } = await import("./comfy/app.js");
-  await import("/web_src/main.js");
   const extension = app.extensions.find((item) => item.name === "ComfyUI.PanoramaSuite.Editor");
   await extension.setup?.();
 
