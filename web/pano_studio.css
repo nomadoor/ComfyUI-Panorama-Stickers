@@ -327,13 +327,8 @@
   border: 0;
 }
 
-.pano-studio-float.is-rail {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px;
-}
-
+/* The vertical columns (the left column, the view knobs' column). */
+.pano-studio-float.is-rail,
 .pano-studio-float.is-knobs {
   display: inline-flex;
   flex-direction: column;
