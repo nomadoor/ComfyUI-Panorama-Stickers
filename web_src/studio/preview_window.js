@@ -4,8 +4,9 @@
 // and its Timeline (pano_timeline_fps / pano_timeline_frames of the node's result). A VIDEO plays with its sound through the
 // editor's background playback (pano_media_session.js createBackgroundVideo) under the bottom playback strip. Nothing
 // is written to the node. The view follows and coasts (preview_motion.js); it opens where the node's view is and hands
-// back on close, and a Scene's node viewer stops while the window is open (docs/space-and-view.md, docs/studio-ui.md
-// "Preview のウィンドウ"). The Vue shell is StudioPreviewWindow.vue.
+// back on close, and the node's display (a Scene's viewer, an IMAGE / VIDEO source's VIDEO) stops while the window is
+// open and hands its playhead over and back (docs/space-and-view.md, docs/studio-ui.md "Preview のウィンドウ"). The Vue
+// shell is StudioPreviewWindow.vue.
 import { createApp, reactive } from "vue";
 import StudioPreviewWindow from "../components/studio/StudioPreviewWindow.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
@@ -21,6 +22,7 @@ import { createStageMedia, stageContent } from "./stage_content.js";
 import { createStudioUpstream, upstreamBackground } from "./upstream.js";
 import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
+import { frameShownAt } from "../pano_video_playback.js";
 import { guardEditorKeys } from "./key_guard.js";
 import { createPreviewMotion, previewGround, previewHandBack, previewOpening } from "./preview_motion.js";
 import { editorKeyAction } from "./shortcuts.js";
@@ -68,6 +70,8 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   // The node's view and playhead the window goes on from: a Scene viewer's record, or the IMAGE / VIDEO runtime.
   const sceneRecord = isScene ? peekSceneViewer(node)?.record ?? null : null;
   const imageRuntime = isScene ? null : peekPreviewNode(node)?.runtime ?? null;
+  // What the node's VIDEO handed over when the window opened: { time, playing }, or null without one on the node.
+  let nodeVideoHandOver = null;
   // `video`: the strip shows (a VIDEO, or a Scene longer than one frame).
   const playbackView = reactive({
     video: isVideo || (isScene && sceneFrames > 1),
@@ -221,9 +225,11 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     // The node goes on from where the window was going and from its playhead.
     const last = stage?.destination();
     if (last) previewHandBack(last, { scene: sceneRecord?.view ?? null, image: imageRuntime });
+    const lastFrame = Math.max(0, Math.min(playbackView.frames - 1, playbackView.frame));
+    const lastPlaying = playbackView.video && playbackView.playing;
     if (sceneRecord) {
-      sceneRecord.frame = Math.max(0, Math.min(playbackView.frames - 1, playbackView.frame));
-      sceneRecord.playing = playbackView.video && playbackView.playing;
+      sceneRecord.frame = lastFrame;
+      sceneRecord.playing = lastPlaying;
     }
     document.removeEventListener("keydown", onKeyDown, true);
     releaseKeyGuard();
@@ -240,6 +246,8 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     mountHost.remove();
     openNodes.delete(node);
     if (isScene) sceneViewerWindowClosed(node);
+    // The node's VIDEO goes on from the window's playhead (its time is that frame's PTS).
+    imageRuntime?.windowClosed?.(nodeVideoHandOver ? { time: lastFrame / playbackView.fps, playing: lastPlaying } : {});
     imageRuntime?.requestDraw?.();
     if (document.fullscreenElement) document.exitFullscreen?.().catch?.(() => {});
   };
@@ -286,18 +294,25 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
   vueApp.mount(mountHost);
   if (videoElement) mountHost.appendChild(videoElement);
   document.addEventListener("keydown", onKeyDown, true);
-  // A Scene's node viewer hands its playhead over and stops (it does not draw while the window is open).
+  // The node hands its playhead over and stops while the window is open: a Scene's node viewer (it does not draw
+  // meanwhile), or an IMAGE / VIDEO source's VIDEO on the node (docs/studio-ui.md "Preview のウィンドウ").
+  let handOver = null;
   if (isScene) {
-    const wasPlaying = !!sceneRecord?.playing;
+    handOver = { frame: Math.floor(Number(sceneRecord?.frame) || 0), playing: !!sceneRecord?.playing };
     if (sceneRecord) {
       sceneRecord.playing = false;
       peekSceneViewer(node)?.surface?.rest?.();
     }
     sceneViewerWindowOpened(node, { close });
-    const frame = Math.max(0, Math.min(playbackView.frames - 1, Math.floor(Number(sceneRecord?.frame) || 0)));
+  } else {
+    nodeVideoHandOver = imageRuntime?.windowOpened?.() ?? null;
+    if (nodeVideoHandOver) handOver = { frame: frameShownAt(nodeVideoHandOver.time, playbackView.fps), playing: nodeVideoHandOver.playing };
+  }
+  if (handOver) {
+    const frame = Math.max(0, Math.min(playbackView.frames - 1, handOver.frame));
     if (frame > 0) backgroundVideo?.playback.seek(frame);
     playbackView.frame = backgroundVideo?.playback.frame ?? frame;
-    if (wasPlaying && playbackView.video) backgroundVideo?.playback.play();
+    if (handOver.playing && playbackView.video) backgroundVideo?.playback.play();
   }
   return { close, stage: () => stage, playback: playbackView };
 }

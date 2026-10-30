@@ -41,6 +41,11 @@ import { createLoadReveal } from "./load_reveal.js";
 import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
 import { guardEditorKeys } from "./key_guard.js";
+import { createStudioPaint, brushRing } from "./paint.js";
+import {
+  chooseBrush, chooseSwatch, chooseTool, clearQuestion, closeColor, createPaintTools, openColor, paintBar, painting as paintingTool,
+  setBrushSize, setCustomColor,
+} from "./paint_bar.js";
 import { createPortMedia } from "./port_media.js";
 import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
@@ -249,6 +254,12 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     upstream: [],
     upstreamWorking: [],
     upstreamSelected: false,
+    // The left column's tool ("cursor", "paint", "mask"; docs/studio-ui.md "左の列"): Cursor each time the editor
+    // opens. `paint` is the bar of a painting tool (paint_bar.js paintBar) or null; `confirm` the question a Clear asks
+    // ({ title, body, confirm, layer }) while it waits for the answer.
+    tool: "cursor",
+    paint: null,
+    confirm: null,
   });
   const timelineCtx = () => ({ state: session.state, upstream: view.upstream, media: view.media });
 
@@ -434,9 +445,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // [inputs] The port Sticker's 3D media.
     const stickerFiles = portMedia.files();
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
-    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", upstreamList(), upstreamMedia];
+    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", upstreamList(), upstreamMedia, paint.revision()];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead) }));
+    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead), paintLayers: paint.layers() }));
     // A World item may still be loading (no box yet): the content is made again on the next frame. [inputs] The port
     // Sticker's 3D item and the upstream items too.
     const pending = value.space.fileStickers.length > 0 || !!value.space.scene || !!value.space.sticker || value.space.upstreamItems.length > 0;
@@ -519,6 +530,88 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   });
   let dropInput = () => {};
 
+  // --- The paint tools (docs/studio-ui.md "ペイントの道具"): the left column's Paint and Mask, the bar's brushes, the
+  // strokes on the stage (paint.js) and Clear.
+  const tools = createPaintTools();
+  const paint = createStudioPaint({
+    state: () => session.state,
+    tools: () => tools,
+    edit: (apply) => {
+      const outcome = session.editPainting(apply);
+      if (outcome.changed) {
+        playback.stop();
+        sync();
+      }
+      return outcome;
+    },
+    onStart: () => playback.stop(),
+    onChange: () => redraw(DRAW_REASON.PAINT),
+  });
+  const paintDeps = {
+    active: () => paintingTool(tools),
+    press: (point, dirAt, samples) => (readOnly ? null : paint.press(point, dirAt, samples)),
+    ring: (point, dirAt) => brushRing(tools, point, dirAt),
+  };
+
+  function syncTools() {
+    view.tool = tools.tool;
+    view.paint = paintBar(tools, { readOnly });
+    stage?.toolChanged();
+  }
+
+  // Chooses the left column's tool: Paint and Mask let the selection go (as the old editor).
+  function setTool(tool) {
+    if (tool !== "cursor" && readOnly) return;
+    if (tool === tools.tool) return;
+    paint.cancel();
+    chooseTool(tools, tool);
+    if (paintingTool(tools) && session.selectObject(null)) sync();
+    syncTools();
+  }
+
+  // The bar of a painting tool (StudioPaintBar.vue's `edit`): { kind: "brush", key }, { kind: "size", value },
+  // { kind: "swatch", id }, { kind: "custom" } (opens or closes the Custom color), { kind: "close-color" }, { kind:
+  // "color", color } (the popover's color), { kind: "recent", index }, { kind: "clear" }.
+  function paintEdit(event) {
+    if (!paintingTool(tools)) return;
+    if (event.kind === "brush") chooseBrush(tools, event.key);
+    else if (event.kind === "size") setBrushSize(tools, event.value);
+    else if (event.kind === "swatch") chooseSwatch(tools, event.id);
+    else if (event.kind === "custom") {
+      if (tools.colorStart) closeColor(tools, true);
+      else openColor(tools);
+    } else if (event.kind === "close-color") closeColor(tools, true);
+    else if (event.kind === "color") setCustomColor(tools, event.color);
+    else if (event.kind === "recent") {
+      const color = tools.recentColors[event.index];
+      if (color) setCustomColor(tools, color);
+    } else if (event.kind === "clear") {
+      askClear();
+      return;
+    }
+    syncTools();
+  }
+
+  // Clear paint / Clear mask: asks first (the old editor's question), then one Undo step.
+  function askClear() {
+    const layer = tools.tool === "mask" ? "mask" : "paint";
+    if (readOnly || !session.paintingHas(layer)) return;
+    closeColor(tools, true);
+    syncTools();
+    view.confirm = { ...clearQuestion(layer), layer };
+  }
+  function answerClear(ok) {
+    const question = view.confirm;
+    view.confirm = null;
+    if (!ok || !question) return;
+    paint.cancel();
+    const outcome = session.clearPainting(question.layer);
+    if (outcome.changed) {
+      playback.stop();
+      sync();
+    }
+  }
+
   // --- Edits.
 
   function inspectorEdit(edit) {
@@ -541,6 +634,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   function historyStep(direction) {
     stage?.settle();
+    // A stroke under way is given up first (docs/studio-ui.md "ペイントの道具").
+    paint.cancel();
     const outcome = direction < 0 ? session.undo() : session.redo();
     if (!outcome) return;
     playback.stop();
@@ -635,6 +730,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.tab = tab;
     // [add-drop] The Sky / World choice is the 3D tab's: it closes with the tab.
     addFiles.cancelChoice();
+    // The Camera tab does not paint: the tool goes back to Cursor.
+    if (tab === "camera") setTool("cursor");
     redraw();
   }
 
@@ -705,11 +802,26 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // Escape with no view drag to let go (docs/studio-ui.md "閉じ方"): the Sky / World choice, the list of shortcuts, the
   // Keyframe selection, then the object's, then the editor closes.
   function onEscape() {
+    // Clear's question is answered "Cancel".
+    if (view.confirm) {
+      answerClear(false);
+      return;
+    }
     // [add-drop] Step 3: the Sky / World choice closes, placing nothing.
     if (addFiles.escape()) return;
     // Step 4: the list of shortcuts closes.
     if (view.shortcuts) {
       view.shortcuts = false;
+      return;
+    }
+    // Step 5: the Custom color's popover closes, then a painting tool goes back to Cursor.
+    if (tools.colorStart) {
+      closeColor(tools, true);
+      syncTools();
+      return;
+    }
+    if (paintingTool(tools)) {
+      setTool("cursor");
       return;
     }
     if (session.escape()) sync();
@@ -753,6 +865,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
         ui,
         onEscape,
         motion: reveal,
+        paint: paintDeps,
       });
       // [add-drop] Files dragged over the stage's window.
       dropInput = createDropInput({ element: canvas.parentElement, canvas, root, add: addFiles, takes: () => !readOnly && view.tab === "3d" });
@@ -794,8 +907,12 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     rail: (key) => {
       if (key === "undo") historyStep(-1);
       else if (key === "redo") historyStep(1);
+      else if (key === "cursor" || key === "paint" || key === "mask") setTool(key);
       else if (key === "camera") cameraToView();
     },
+    // The bar of a painting tool, and the answer to Clear's question.
+    paint: paintEdit,
+    confirm: answerClear,
     // [add-drop] The files picked with Add, and the Sky / World choice (StudioPlaceChoice.vue).
     addFiles: (files) => addFiles.pick(files),
     place: (placement) => addFiles.choose(placement),
@@ -826,7 +943,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     backgroundVideo.close();
     backgroundVideoElement.remove();
     releasePanoCanvas(backgroundStill);
+    paint.cancel();
     stage?.dispose();
+    paint.dispose();
     stageMedia.dispose();
     portMedia.dispose();
     upstream.dispose();
@@ -854,5 +973,5 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   noteStudioEditorOpen(node, true);
   peekNodeSurface(node)?.dom?.requestDraw?.();
   // The stage is handed out for the browser checks (tests/browser/), which read what it draws.
-  return { close, session, stage: () => stage };
+  return { close, session, stage: () => stage, paint: () => paint };
 }
