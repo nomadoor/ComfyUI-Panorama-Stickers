@@ -455,9 +455,9 @@ function easingModel(state, upstream, keyframes) {
   const easing = selected?.easing ?? null;
   const mixed = !!selected?.mixed;
   return {
-    owner: keyframes.owner,
+    // The selection the panel's edits send back (inspector_actions.js "easing").
+    keyframes: { owner: keyframes.owner, lane: keyframes.lane ?? null, frames: [...keyframes.frames] },
     names,
-    frames: [...keyframes.frames],
     segment: !!selected,
     easing,
     mixed,
