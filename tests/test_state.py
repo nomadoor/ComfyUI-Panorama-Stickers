@@ -1,3 +1,5 @@
+import pytest
+
 from comfyui_pano_suite.core.state import DEFAULT_STATE, merge_state, normalize_coverage, parse_sticker_state
 
 
@@ -86,3 +88,32 @@ def test_parse_sticker_state_reads_canonical_format():
 def test_parse_sticker_state_rejects_invalid_kind_or_version():
     assert parse_sticker_state('{"kind":"wrong","version":1,"pose":{"yaw_deg":0,"pitch_deg":0,"roll_deg":0,"hFOV_deg":30}}') is None
     assert parse_sticker_state('{"kind":"pano_sticker_state","version":2,"pose":{"yaw_deg":0,"pitch_deg":0,"roll_deg":0,"hFOV_deg":30}}') is None
+
+
+def test_an_integer_too_long_for_python_falls_back_alone_and_keeps_the_rest_of_the_state():
+    # Python's int() refuses more than 4300 digits; JSON.parse reads such a number as an infinity (an invalid value),
+    # so only that field takes its default, as load_scene_state does (docs/scene-state-v2.md, 共通の規則).
+    huge = "9" * 5000
+    state = merge_state(None, '{"bg_color": "#123456", "coverage": ' + huge + '}')
+
+    assert state["bg_color"] == "#123456"
+    assert state["coverage"] == 360
+
+
+def test_a_sticker_state_with_an_integer_too_long_for_python_is_still_read():
+    huge = "9" * 5000
+    text = ('{"kind": "pano_sticker_state", "version": 1, "extra": ' + huge + ', '
+            '"pose": {"yaw_deg": 10, "pitch_deg": 5, "roll_deg": 0, "hFOV_deg": 30}}')
+
+    assert parse_sticker_state(text) == {"yaw_deg": 10.0, "pitch_deg": 5.0, "roll_deg": 0.0, "hFOV_deg": 30.0}
+
+
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+def test_a_state_with_a_nan_or_infinity_literal_is_not_json_as_in_json_parse(literal):
+    # JSON.parse throws on these literals, so the text is not read at all (docs/scene-state-v2.md, 共通の規則).
+    state = merge_state(None, '{"bg_color": "#123456", "coverage": ' + literal + '}')
+    sticker = parse_sticker_state('{"kind": "pano_sticker_state", "version": 1, "extra": ' + literal + ', '
+                                  '"pose": {"yaw_deg": 10, "pitch_deg": 5, "roll_deg": 0, "hFOV_deg": 30}}')
+
+    assert state["bg_color"] == DEFAULT_STATE["bg_color"]
+    assert sticker is None

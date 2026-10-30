@@ -4,6 +4,7 @@ import uuid
 from copy import deepcopy
 
 from .paint_state import empty_painting_state, normalize_painting_state
+from .scene_state import parse_json
 
 DEFAULT_STATE = {
     "version": 1,
@@ -79,7 +80,7 @@ def parse_state(state_raw: str | None) -> dict | None:
         if not text:
             return None
         try:
-            parsed = json.loads(text)
+            parsed = parse_json(text)
             if isinstance(parsed, dict):
                 return parsed
         except Exception:
@@ -102,7 +103,7 @@ def parse_sticker_state(state_raw: str | None) -> dict | None:
     if not text:
         return None
     try:
-        parsed = json.loads(text)
+        parsed = parse_json(text)
     except Exception:
         return None
     if not isinstance(parsed, dict):
