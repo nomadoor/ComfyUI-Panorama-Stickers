@@ -66,6 +66,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `TARGET_MAX_DISTANCE` | `E` | 30 `E`（48） | `d` の上限。パンで掴む深さとホイールの中心までの距離の上限も兼ねる |
 | `CAMERA_FRAME_RADIUS` | `E` | 1 `E`（1.6） | Camera を選んで Frame Selected するときの球の半径（中心は Camera の位置） |
 | `CAMERA_GUIDE_LENGTH` | `E` | 0.5 `E`（0.8） | 3D タブの Camera の印の基本の長さ（Frame モードの視錐台の奥行き。Panorama モードの球の直径はその半分）。視点がこの距離より Camera に近いときは、印を描かず当たりにも数えない（開いたときの視点は Camera の位置にあり、印が視点を包んでしまうため） |
+| `ROTATE_SNAP_DEG` | 絶対 | 15° | Shift を押して回すときに止める角度の刻み（ギズモの Rotate、空の画像の回転のハンドル。絶対の角度の倍数に止める。`docs/studio-ui.md` の「ギズモ」「下の中央のバー」）。Camera タブの Roll の目盛りも同じ値を使う |
 | `CAMERA_GUIDE_MIN_PIXELS` | 絶対 | 80 px | Camera の印の長さの画面の下限。印の長さは、`CAMERA_GUIDE_LENGTH` と、Camera の位置の深さでこの CSS px に写る長さの大きい方にする（遠くから見ても、地面のグリッドの 1 マスほどに縮んでまぎれないため） |
 | `WORLD_IMAGE_HEIGHT` | `E` | 1 `E`（1.6） | World に置く画像の板の高さ |
 | `GRID_MINOR_FADE` | `E` | 8 `E` → 24 `E`（12.8 → 38.4） | 1 単位の線が薄れ始める距離と消える距離（視点からの水平の距離） |
