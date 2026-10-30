@@ -8,13 +8,8 @@ export const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
 // The port Sticker's `ui` keys belong to the lower layer (pano_port_media.js).
 export { EXTERNAL_STICKER_PREVIEW_KEY, PORT_FRAMES_KEY, PORT_VIDEO_KEY, PORT_VIDEO_META_KEY } from "../pano_port_media.js";
 export const ENABLE_STICKERS_NODE_PREVIEW = true;
-export const PAINT_COLOR_SWATCHES = [
-  { id: "green", label: "Green", color: { r: 0, g: 1, b: 0, a: 1 } },
-  { id: "red", label: "Red", color: { r: 1, g: 0, b: 0, a: 1 } },
-  { id: "blue", label: "Blue", color: { r: 0, g: 0, b: 1, a: 1 } },
-  { id: "black", label: "Black", color: { r: 0, g: 0, b: 0, a: 1 } },
-  { id: "white", label: "White", color: { r: 1, g: 1, b: 1, a: 1 } },
-];
+// The paint colors belong to the lower paint strokes (pano_paint_strokes.js).
+export { PAINT_COLOR_SWATCHES } from "../pano_paint_strokes.js";
 export const DEG2RAD = Math.PI / 180;
 export const RAD2DEG = 180 / Math.PI;
 // Fraction of the UI-safe rect the camera gate fills. The gate is always
