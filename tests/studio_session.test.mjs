@@ -242,8 +242,39 @@ test("Lock turns the selected Sticker's lock over as one Undo step", () => {
   assert.equal(session.state.stickers[0].locked, false);
   session.undo();
   assert.equal(session.state.stickers[0].locked, true);
+});
+
+test("Lock turns the Camera's camera.locked over as one Undo step; a read-only editor does not", () => {
+  const session = createStudioSession({ state: load({}) });
   session.select({ row: "camera" });
-  assert.equal(session.toggleLock().changed, false, "the Camera's lock waits for camera.locked in the loaders");
+  assert.equal(session.toggleLock().history, true);
+  assert.equal(session.state.camera.locked, true);
+  session.undo();
+  assert.equal(session.state.camera.locked, false);
+  session.redo();
+  assert.equal(session.state.camera.locked, true);
+  const readOnly = createStudioSession({ state: load({}), readOnly: true });
+  readOnly.select({ row: "camera" });
+  assert.equal(readOnly.toggleLock().changed, false);
+});
+
+test("the Camera button brings the Camera to the view as one Undo step, not while it is locked or read-only", () => {
+  const pose = { position: [1, 2, 3], yaw_deg: 30, pitch_deg: -10, roll_deg: 0, target: [0, 0, 0] };
+  const session = createStudioSession({ state: load({ camera: { projection: "erp" }, stickers: [world("w")] }) });
+  session.select({ row: "w" });
+  const outcome = session.cameraToView(pose, 0);
+  assert.equal(outcome.history, true);
+  assert.equal(session.state.camera.projection, "perspective");
+  assert.deepEqual(session.state.camera.position.value, [1, 2, 3]);
+  assert.equal(session.selection.row, "w", "the selection does not change");
+  assert.equal(session.cameraToView(pose, 0).changed, false, "at the view already: no step");
+  session.undo();
+  assert.equal(session.state.camera.projection, "erp", "one step takes back the mode and the move together");
+  assert.deepEqual(session.state.camera.position.value, [0, 0, 0]);
+  assert.equal(session.canUndo, false);
+  const locked = createStudioSession({ state: load({ camera: { locked: true } }) });
+  assert.equal(locked.cameraToView(pose, 0).changed, false);
+  assert.equal(createStudioSession({ state: load({}), readOnly: true }).cameraToView(pose, 0).changed, false);
 });
 
 test("Duplicate copies the selected Sticker under a new id and selects the copy; a sky copy turns 8° and goes in front", () => {

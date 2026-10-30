@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createBackdropClose } from "../../studio/backdrop.js";
+import { cameraButton } from "../../studio/camera_ui.js";
 import { cameraOf } from "../../studio/defaults.js";
 import { liveErpRatio } from "../../studio/erp_preview.js";
 import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
@@ -121,6 +122,9 @@ function onRuler(which, event, value) {
 function stripStyle(place, vertical) {
   return vertical ? { top: `${place.offset}px`, height: `${place.length}px` } : { left: `${place.offset}px`, width: `${place.length}px` };
 }
+// The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): off for a locked Camera and a read-only
+// editor (and, with the column, in the Camera tab).
+const cameraRailButton = computed(() => cameraButton({ projection: camera.value.projection, locked: camera.value.locked === true, readOnly: props.view.readOnly }));
 // The stage's knobs: nothing moves in Panorama mode, nor a locked Camera or a read-only editor's in the Camera tab.
 const navOff = computed(() => {
   if (!cameraTab.value) return "";
@@ -337,6 +341,7 @@ function setCollapsed(value) {
             :tool="view.tool"
             :can-paint="!view.readOnly"
             :camera-tab="cameraTab"
+            :camera-button="cameraRailButton"
             @press="onRail"
           />
           <input ref="filePicker" type="file" :accept="WORLD_FILE_ACCEPT" hidden data-add-picker @change="onFilesPicked">

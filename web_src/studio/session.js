@@ -14,6 +14,8 @@ import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredH
 import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
+import { cameraToView as moveCameraToView } from "./camera_ui.js";
+import { defaultCamera } from "./defaults.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
 import { ROW_LANES } from "./inspector_model.js";
 import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
@@ -269,12 +271,37 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     return result(true, { history: true });
   }
 
-  // Lock: the selected Sticker's `locked` turns over (the Camera's `camera.locked` is not turned over here yet).
+  // An edit of the Camera as one Undo step: edit(camera) changes the draft's Camera and returns whether it did.
+  function editCamera(edit) {
+    if (readOnly || gestureBase) return result(false);
+    const draft = structuredClone(state);
+    draft.camera ??= defaultCamera();
+    if (!edit(draft.camera)) return result(false);
+    state = draft;
+    record();
+    return result(true, { history: true });
+  }
+
+  // Lock: the selected Sticker's `locked`, or the selected Camera's `camera.locked`, turns over.
   function toggleLock() {
+    if (selection.row === "camera") {
+      return editCamera((camera) => {
+        camera.locked = camera.locked !== true;
+        return true;
+      });
+    }
     return editSelected((draft, sticker) => {
       sticker.locked = !sticker.locked;
       return true;
     });
+  }
+
+  // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the view `pose` at the
+  // Timeline frame `playhead` (camera_ui.js cameraToView, Panorama mode switching to Frame), as one Undo step. Not
+  // while the Camera is locked. The selection stays.
+  function cameraToView(pose, playhead) {
+    if (state.camera?.locked === true) return result(false);
+    return editCamera((camera) => moveCameraToView(camera, playhead, pose));
   }
 
   // Duplicate: a copy of the selected Sticker under a new id, selected. A sky image's copy is turned 8° to the right
@@ -424,6 +451,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     settlePlaced,
     dropPlaced,
     toggleLock,
+    cameraToView,
     duplicateSelected,
     orderSelected,
     revertSelected,

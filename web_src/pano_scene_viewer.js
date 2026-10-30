@@ -17,7 +17,7 @@ import {
   spaceCamera,
 } from "./pano_space.js";
 import { createSpaceNavigation } from "./pano_space_navigation.js";
-import { upstreamBackgroundOf } from "./pano_upstream.js";
+import { upstreamBackgroundOf, upstreamBgColor } from "./pano_upstream.js";
 import { createUpstreamLayers, refreshGoneUpstreamFiles } from "./pano_upstream_layers.js";
 import { createVideoFollower } from "./pano_video_playback.js";
 import { viewDragAction } from "./pano_view_controls.js";
@@ -167,10 +167,7 @@ export function createSceneViewer({
 
   // The Scene's background at the playhead (its image or VIDEO inside its Clip range), else its bg_color.
   function backgroundAt(frame) {
-    const color = uiList("pano_upstream_bg_color")[0];
-    const hex = Array.isArray(color) && color.length === 3
-      ? `#${color.map((value) => Math.round(Math.min(1, Math.max(0, Number(value) || 0)) * 255).toString(16).padStart(2, "0")).join("")}`
-      : "#000000";
+    const hex = upstreamBgColor(uiList) ?? "#000000";
     const bg = upstreamBackgroundOf(uiList);
     if (!bg) return bgColorBackground(hex);
     const clip = bg.clip ? backgroundClipAt(bg.clip.clip, bg.clip.fps, fps()) : { start: 0, in: 0, duration: null };

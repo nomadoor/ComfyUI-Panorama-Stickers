@@ -116,11 +116,11 @@ test("the shell has its regions, the stage draws the background and the grid, an
   expect(places.stage.right - places.buttons.right).toBe(16);
   expect(places.stage.bottom - places.buttons.bottom).toBe(16);
   expect(places.stage.right - places.output.right).toBe(16);
-  // Cursor is chosen; Paint, Mask (tests/browser/studio_paint.spec.js) and Add (tests/browser/studio_add.spec.js) can be
-  // pressed; Camera is a placeholder; Undo and Redo have nothing to do yet.
+  // Cursor is chosen; Paint, Mask (tests/browser/studio_paint.spec.js), Add (tests/browser/studio_add.spec.js) and
+  // Camera (tests/browser/studio_camera_button.spec.js) can be pressed; Undo and Redo have nothing to do yet.
   await expect(page.locator('[data-tool="cursor"]')).toHaveClass(/is-active/);
-  for (const tool of ["paint", "mask", "add"]) await expect(page.locator(`[data-tool="${tool}"]`)).not.toHaveAttribute("aria-disabled", "true");
-  for (const tool of ["camera", "undo", "redo"]) {
+  for (const tool of ["paint", "mask", "add", "camera"]) await expect(page.locator(`[data-tool="${tool}"]`)).not.toHaveAttribute("aria-disabled", "true");
+  for (const tool of ["undo", "redo"]) {
     await expect(page.locator(`[data-tool="${tool}"]`)).toHaveAttribute("aria-disabled", "true");
   }
   // The 3D tab is chosen; the Camera tab can be chosen (tests/browser/studio_camera_wired.spec.js).

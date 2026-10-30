@@ -30,7 +30,7 @@ import {
   videoMetaEntry,
 } from "../pano_media_session.js";
 import { backgroundBarEnd, backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
-import { isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
+import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
 import { PANO_SCENE_TYPE } from "../pano_upstream.js";
 import { loadSceneState } from "../pano_scene_state.js";
@@ -60,9 +60,8 @@ import { spanOf } from "./timeline_model.js";
 import { openingView, rememberView } from "./view_camera.js";
 import { BOUND_NOTICE_SECONDS } from "./view_scale.js";
 
-// The node's inputs that carry its background, the first linked one shown (the input is `background` after the
-// rename in docs/studio-node.md, `bg_media` before it).
-const BACKGROUND_INPUTS = ["background", "bg_media"];
+// The node's inputs that carry its background, the first linked one shown.
+const BACKGROUND_INPUTS = STUDIO_BACKGROUND_INPUT_NAMES;
 
 // The nodes whose editor is open, so a second open does not stack a second window.
 const openNodes = new WeakSet();
@@ -282,15 +281,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.imageSizes = { ...addFiles.sizes(state), ...stageMedia.imageSizes(state) };
   }
 
-  // The stage's world: the ground height and the Camera's position at the playhead.
-  const world = { ground: groundOf(session.state), camera: outputView(session.state, 0).position };
+  // The stage's world: the ground height (an upstream layer's while the state has none) and the Camera's position at
+  // the playhead.
+  const groundNow = () => groundOf(session.state, upstream.working());
+  const world = { ground: groundNow(), camera: outputView(session.state, 0).position };
 
   function sync() {
     view.state = session.state;
     view.selection = session.selection;
     view.canUndo = session.canUndo;
     view.canRedo = session.canRedo;
-    world.ground = groundOf(session.state);
+    world.ground = groundNow();
     world.camera = outputView(session.state, view.playhead).position;
     syncMedia();
     ui.empty = stageEmpty();
@@ -512,7 +513,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     session,
     ui,
     view: () => stage?.landing ?? null,
-    ground: () => groundOf(session.state),
+    ground: () => groundNow(),
     content: () => content(),
     sceneBox,
     playhead: () => view.playhead,
@@ -714,6 +715,14 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     edits: cameraEdits,
   };
 
+  // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the 3D tab's view, as one
+  // Undo step (Panorama mode switching to Frame). The view does not move.
+  function cameraToView() {
+    if (view.tab !== "3d" || !stage) return;
+    stage.settle();
+    objectOutcome(session.cameraToView(stage.pose(), view.playhead));
+  }
+
   function setTab(tab) {
     if (tab !== "3d" && tab !== "camera") return;
     if (view.tab === tab) return;
@@ -896,6 +905,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       if (key === "undo") historyStep(-1);
       else if (key === "redo") historyStep(1);
       else if (key === "cursor" || key === "paint" || key === "mask") setTool(key);
+      else if (key === "camera") cameraToView();
     },
     // The bar of a painting tool, and the answer to Clear's question.
     paint: paintEdit,

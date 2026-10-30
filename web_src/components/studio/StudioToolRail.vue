@@ -7,7 +7,8 @@ import StudioIconButton from "./StudioIconButton.vue";
 
 // The left column of the stage (docs/studio-ui.md "左の列"): the tools (Cursor, Paint, Mask), adding (Add, Camera),
 // and Undo / Redo at the bottom, in three groups. One of Cursor, Paint and Mask is chosen (`tool`); Add opens the
-// file picker (the shell's); the others stay in their places, disabled, with a tooltip saying so. Presentational:
+// file picker (the shell's); Camera brings the Camera to the view (studio/camera_ui.js); the others stay in their
+// places, disabled, with a tooltip saying so. Presentational:
 // props in, `press` out with the button's key.
 const props = defineProps({
   // Undo and Redo can be pressed (there is something to take back or to do again).
@@ -21,10 +22,11 @@ const props = defineProps({
   // The Camera tab: every button but Undo and Redo stays in its place, disabled, saying why (docs/studio-ui.md
   // "左の列").
   cameraTab: { type: Boolean, default: false },
+  // The Camera button: { disabled, tip } (studio/camera_ui.js cameraButton).
+  cameraButton: { type: Object, default: () => ({ disabled: true, tip: "Camera to view" }) },
 });
 const emit = defineEmits(["press"]);
 
-const LATER = "in development";
 const CAMERA_TAB_TIP = "Not available in the Camera view";
 const groups = computed(() => [
   [
@@ -34,7 +36,7 @@ const groups = computed(() => [
   ],
   [
     { key: "add", icon: "", drawn: "add", label: "Add", disabled: !props.canAdd, tip: "Add an image or a 3D file" },
-    { key: "camera", icon: ICON.camera_plus, label: "Camera", disabled: true, tip: `Camera · ${LATER}` },
+    { key: "camera", icon: ICON.camera_plus, label: "Camera", disabled: props.cameraButton.disabled, tip: props.cameraButton.tip },
   ],
 ]);
 </script>
