@@ -9,6 +9,7 @@ import { buildInspectorModel } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
+import { shortcutGroups } from "../../studio/shortcuts.js";
 import { trackInputMode } from "../../studio/input_modality.js";
 import { inspectorSelection } from "../../studio/session.js";
 import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
@@ -21,6 +22,7 @@ import StudioNotice from "./StudioNotice.vue";
 import StudioOutputPreview from "./StudioOutputPreview.vue";
 import StudioPlaceChoice from "./StudioPlaceChoice.vue";
 import StudioSelectionBar from "./StudioSelectionBar.vue";
+import StudioShortcuts from "./StudioShortcuts.vue";
 import StudioTabs from "./StudioTabs.vue";
 import StudioTimeline from "./StudioTimeline.vue";
 import StudioToolRail from "./StudioToolRail.vue";
@@ -114,6 +116,11 @@ const navOff = computed(() => {
   if (camera.value.locked === true) return "Locked";
   return "";
 });
+// --- The list of shortcuts (docs/studio-ui.md "ショートカットの一覧"): what works on the screen now.
+const nav = ref(null);
+const isMac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "");
+const shortcuts = computed(() => shortcutGroups({ tab: props.view.tab, panorama: panorama.value, readOnly: props.view.readOnly, mac: isMac }));
+const helpButton = () => nav.value?.helpButton() ?? null;
 const erpCanvas = ref(null);
 watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
 
@@ -331,7 +338,18 @@ function setCollapsed(value) {
             </StudioOutputPreview>
           </div>
           <div class="pano-studio-at-nav">
-            <StudioNavWidget :lit="ui.lit" :disabled="!!navOff" :disabled-tip="navOff" @knob="(knob, event) => stage?.knobDown(knob, event)" />
+            <StudioNavWidget
+              ref="nav"
+              :lit="ui.lit"
+              :disabled="!!navOff"
+              :disabled-tip="navOff"
+              :help-open="!!view.shortcuts"
+              @knob="(knob, event) => stage?.knobDown(knob, event)"
+              @help="controller.shortcuts(!view.shortcuts)"
+            />
+          </div>
+          <div v-if="view.shortcuts" class="pano-studio-at-shortcuts">
+            <StudioShortcuts :groups="shortcuts" :toggle="helpButton" @close="controller.shortcuts(false)" />
           </div>
           <div class="pano-studio-at-bar" data-region="bar">
             <StudioSelectionBar v-if="bar" :model="bar" @press="(key) => controller.bar(key)" />

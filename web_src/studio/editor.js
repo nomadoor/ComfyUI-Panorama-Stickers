@@ -40,6 +40,7 @@ import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
+import { editorKeyAction } from "./shortcuts.js";
 import { createStage, stageUi } from "./stage.js";
 import { createStageMedia, stageContent, stickerFrameSphere } from "./stage_content.js";
 import { outputView } from "./stage_view.js";
@@ -174,6 +175,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     animations: {},
     // The stage's tab: "3d" or "camera" (docs/studio-ui.md "Camera タブ"). The 3D tab each time the editor opens.
     tab: "3d",
+    // The list of shortcuts is open (docs/studio-ui.md "ショートカットの一覧"): closed each time the editor opens.
+    shortcuts: false,
   });
   const timelineCtx = () => ({ state: session.state, upstream: [], media: view.media });
 
@@ -543,39 +546,41 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     return true;
   }
 
-  // --- Keys while the editor is open: Undo / Redo, Delete, Space. The stage takes the movement keys and Escape.
+  // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js. The stage
+  // takes the movement keys and Escape.
   let rootElement = null;
   function onKeyDown(event) {
     if (!rootElement || !stageOwnsKey(event, rootElement)) return;
-    const mod = event.ctrlKey || event.metaKey;
-    const key = String(event.key || "").toLowerCase();
-    if (mod && !event.altKey && key === "z") {
-      event.preventDefault();
-      event.stopPropagation();
-      historyStep(event.shiftKey ? 1 : -1);
-    } else if (!mod && (event.key === "Delete" || event.key === "Backspace")) {
-      event.preventDefault();
-      event.stopPropagation();
-      deleteSelection();
-    } else if (!mod && event.code === "Space" && !event.repeat) {
-      event.preventDefault();
-      event.stopPropagation();
-      togglePlayback();
-    } else if (!mod && !event.altKey) {
-      // 1, 2, 3: the gizmo's Move, Rotate, Scale for the selected object that has them.
-      const mode = gizmoModeOfKey(selectedKind(session.state, session.selection.row), event.key);
-      if (!mode) return;
+    const action = editorKeyAction(event);
+    if (!action || action === "escape") return;
+    if (action.startsWith("gizmo:")) {
+      // The gizmo's Move, Rotate, Scale for the selected object that has them.
+      const mode = action.slice("gizmo:".length);
+      if (gizmoModeOfKey(selectedKind(session.state, session.selection.row), event.key) !== mode) return;
       event.preventDefault();
       event.stopPropagation();
       setGizmoMode(mode);
+      return;
     }
+    event.preventDefault();
+    event.stopPropagation();
+    if (action === "undo") historyStep(-1);
+    else if (action === "redo") historyStep(1);
+    else if (action === "delete") deleteSelection();
+    else if (action === "play") togglePlayback();
+    else if (action === "shortcuts") view.shortcuts = !view.shortcuts;
   }
 
-  // Escape with no view drag to let go (docs/studio-ui.md "閉じ方"): the Keyframe selection, then the object's, then
-  // the editor closes.
+  // Escape with no view drag to let go (docs/studio-ui.md "閉じ方"): the Sky / World choice, the list of shortcuts, the
+  // Keyframe selection, then the object's, then the editor closes.
   function onEscape() {
     // [add-drop] Step 3: the Sky / World choice closes, placing nothing.
     if (addFiles.escape()) return;
+    // Step 4: the list of shortcuts closes.
+    if (view.shortcuts) {
+      view.shortcuts = false;
+      return;
+    }
     if (session.escape()) sync();
     else close();
   }
@@ -657,6 +662,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     addFiles: (files) => addFiles.pick(files),
     place: (placement) => addFiles.choose(placement),
     cancelPlace: () => addFiles.cancelChoice(),
+    // The list of shortcuts opened or closed ("?", a press outside it).
+    shortcuts: (open) => {
+      view.shortcuts = !!open;
+    },
   });
 
   const mountHost = document.createElement("div");

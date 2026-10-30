@@ -39,8 +39,8 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
 | 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
-| ショートカットの一覧の中身 | — | （新しい UI、未実装）`web_src/components/studio/StudioShortcuts.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
-| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段は `web_src/studio/add_files.js` `escape`、5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2・4 段（地面を拾う待ち、ショートカットの一覧）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
+| ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutGroups`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
+| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段は `web_src/studio/add_files.js` `escape`、4 段は `web_src/studio/editor.js` `onEscape`（`view.shortcuts`）、5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2 段（地面を拾う待ち）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |
 | Output の小窓（折りたたみとその動き、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`、Camera タブで畳んで触れなくするのは `outputWindowView`。中の絵の canvas は `StudioEditor.vue` が小窓の slot に置き、描くのは `web_src/studio/stage.js`（Frame モードはステージの canvas の隅に描いて `createImageBitmap`、Panorama モードは `pano_three_view.js` `renderLiveErp`。描き方は `docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
 
@@ -466,16 +466,32 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 
 ## ショートカットの一覧
 
-右の中央の「?」を押すと、ステージの上に一覧を出す（もう一度押すか Escape で閉じる）。中身は、今の画面で効くものだけを
-次の群で並べる。それぞれの割り当ての持ち主は括弧の中の文書で、一覧はそれを表示するだけである。
+右の中央の「?」（視点の操作のつまみの列の下）を押すと、ステージの上に一覧を浮かせて出す。読むだけの一覧で、中に押せる部品は無い。
 
-- 視点（`docs/space-and-view.md` の「マウスとキー」）：左ドラッグ・右ドラッグ（見回し）、中ボタン（パン）、Alt＋ドラッグ（オービット）、
-  Alt＋中ボタン（前後）、ホイール、W/S・A/D・Q/E（Shift で速く）、ダブルクリック（そこを中心にして向く）。
-  Camera タブでは同じ操作が Camera を動かすことを一行で添える。
-- 物（`docs/editor-interaction.md`、切り替えの後はこの文書の「下の中央のバー」）：クリック（選ぶ）、1・2・3（Move・Rotate・Scale）、
-  Delete、Ctrl / Cmd＋Z・Shift＋Ctrl / Cmd＋Z。
-- 時間（`docs/timeline-ui.md`）：Space（再生と一時停止）、Shift＋クリック（Keyframe を選び足す）。
-- 閉じる：Escape（内側のものから一つずつ）。
+- 開く・閉じる：「?」のボタンと「?」のキー（`KeyboardEvent.key` が `?`。Ctrl・Meta・Alt を押していないとき。ステージがキーを受ける
+  とき（`stageOwnsKey`）だけ）は、押すたびに開く・閉じるを切り替える。開いている間、「?」のボタンはつまみの「光る」と同じ地で示し、
+  `aria-expanded` を持つ。ほかに閉じるのは、Escape（下の「閉じ方」の表の 4 段）と、一覧の外を押したとき。外を押したときは、閉じた後も
+  その押下がいつもどおり働く（Add の二択と同じ）。エディタを閉じると一覧も消え、次に開いたときは閉じている（覚えない）。
+- 一覧はモーダルにしない。開いている間も、視点・物・タイムラインのキーとマウスはふだんどおり効く。
+- キーボード：開くと一覧がフォーカスを受け（読み上げが一覧の名前「Shortcuts」を読む）、Escape で閉じたときにフォーカスが一覧の中に
+  あれば「?」のボタンに戻す。
+- 置き場所：ステージの右の中央の列の左に 8px 空けて、上下の中央。大きさと見た目は `docs/design.md` の「大きさ」の「ショートカットの
+  一覧」。
+- 中身は、今の画面（タブ、撮り方のモード、読み取り専用）で効くものだけを、次の群の順に並べる。群の名前は View・Objects・Timeline・
+  Editor。キーは小さな塗りの札（キーキャップ）で示し、修飾キーと `+` でつなぎ、同じことをする別の組み合わせは `/` で並べる（どの
+  組み合わせにも同じ修飾キーが付くときは、修飾キーを一度だけ書く：Shift + Click / Drag）。Ctrl の札は macOS では `⌘` と書く。
+- 割り当ての持ち主は括弧の中の文書と code で、一覧はそれを表示するだけである。エディタのキー（Undo・Redo・Delete・Space・1/2/3・
+  「?」・Escape）は一つの表（`web_src/studio/shortcuts.js` `EDITOR_KEYS`）に置き、キーを受ける code（`editor.js`、Escape は
+  `stage.js`）と一覧の両方がそれを読む。移動のキーは `pano_view_keys.js` の表、マウスのボタンは `view_input.js` `navigationAction`
+  から一覧を作る。ポインタと修飾キーの組み合わせ（ダブルクリック、Shift の刻み、Shift＋クリック）は一覧の行で持ち、数（`ROTATE_SNAP_DEG`、`FINE_FACTOR`）は
+  持ち主の定数を読む。
+
+| 群 | 行（出す条件） |
+|---|---|
+| View（`docs/space-and-view.md` の「マウスとキー」） | Look around：左ドラッグ・右ドラッグ。Orbit：Alt＋ドラッグ。Pan：中ボタンのドラッグ。Move forward / back：Alt＋中ボタンのドラッグ。Zoom to the pointer：ホイール。Move：W / S・A / D・Q / E。Move faster (hold)：Shift（移動のキーと一緒に押す）。Look at a point：ダブルクリック（3D タブだけ）。Camera タブの Frame モードでは群の頭に「These move the Camera.」の一行を添える。Camera タブの Panorama モードでは行を出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
+| Objects（この文書の「下の中央のバー」、`docs/space-and-view.md`） | Select：クリック。Move / Rotate / Scale：1 / 2 / 3（3D タブで、読み取り専用でないとき）。Rotate in 15° steps：Shift＋ギズモの Rotate と Sky の画像の回転のハンドルのドラッグ（同じ条件。数は `ROTATE_SNAP_DEG`）。Delete：Delete・Backspace（Keyframe を選んでいればそれ、そうでなければ物。読み取り専用でないとき） |
+| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift＋クリック・Shift＋ドラッグ（Keyframe） |
+| Editor | Undo：Ctrl＋Z。Redo：Shift＋Ctrl＋Z（どちらも読み取り専用でないとき）。Fine steps (×0.1)：Shift＋値のドラッグ（欄と FOV・Lens の辺の目盛り。読み取り専用でないとき）。Roll in 15° steps：Shift＋Roll の目盛りのドラッグ（Camera タブで、読み取り専用でないとき）。Shortcuts：?。Step back / close：Escape（下の「閉じ方」） |
 
 ## 消すもの（新しい UI に作らないもの）
 
