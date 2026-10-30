@@ -64,7 +64,6 @@ from .core.video import (
     make_video_ui_payload,
     mp4_has_audio,
     save_editor_frames,
-    save_output_png,
     save_video_to_mp4,
 )
 from .core.video_source import MaterializedVideo, StreamedVideo
@@ -2272,15 +2271,6 @@ class PanoramaStudioNode(io.ComfyNode):
         ui_ret["pano_output_size"] = [{"width": width, "height": height, "capped": reduced_from is not None,
                                        "reduced_from": None if reduced_from is None else list(reduced_from),
                                        "key": _studio_run_key(state_json, megapixels, multiple, background_range, background_color)}]
-        # The node surface shows the run's output at full size: an ERP to look around in, else the first frame flat.
-        output_entry = entry_from_path(save_output_png(image[0]), media_type="image/png")
-        if camera["projection"] == "erp":
-            # The rotation the ERP was shot with (frame 0), which the surface undoes to lay the ERP back in World.
-            shot = evaluate_scene_state(state, 0)["camera"]
-            rotation = {name: shot[name] for name in ("yaw_deg", "pitch_deg", "roll_deg")}
-            ui_ret["pano_output_erp"] = [{**output_entry, "coverage": camera["erp_range"], "rotation": rotation}]
-        else:
-            ui_ret["pano_output_frame"] = [output_entry]
         _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
         # The `scene` output is the World that is shot, without the Camera (ADR 0029).
         return io.NodeOutput(_scene_output(built), image, mask, video, handoff, ui=ui_ret)

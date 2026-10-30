@@ -1,0 +1,8 @@
+# CodeRabbit is called by hand (one "@coderabbitai review" comment) on changes that need it, not on every pull request.
+reviews:
+  auto_review:
+    enabled: false
+  # Built files: the frontend bundle is generated from web_src/ by `npm run build:web`.
+  path_filters:
+    - "!web/panorama_suite.js"
+    - "!web/.lazy/**"

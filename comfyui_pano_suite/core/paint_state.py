@@ -195,6 +195,65 @@ def _normalize_color(raw, allow_color):
     }
 
 
+def _json_number(value):
+    """A finite JSON number (not a boolean, not text) as a float, or None (one too large for a double too)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return _finite_float(value)
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+STAMP_KINDS = {"round", "chisel", "crayon"}
+
+
+def _normalize_brush(raw: dict) -> dict:
+    """The brush-shape values a stroke keeps (docs/scene-state-v2.md 「ペイントのストロークの筆の値」), each only when it
+    differs from its default, the value the editor's paint engine uses when it is missing. Hardness, flow and spacing
+    are always kept, None (the engine's default) unless a JSON number: None is never read as 0."""
+    out = {
+        "hardness": _json_number(raw.get("hardness")),
+        "flow": _json_number(raw.get("flow")),
+        "spacing": _json_number(raw.get("spacing")),
+    }
+    stamp_kind = raw.get("stampKind")
+    stamp_kind = stamp_kind if isinstance(stamp_kind, str) and stamp_kind in STAMP_KINDS else "round"
+    if stamp_kind != "round":
+        out["stampKind"] = stamp_kind
+    aspect = _json_number(raw.get("aspect"))
+    if aspect is not None and _clamp(aspect, 0.1, 10.0) != 1.0:
+        out["aspect"] = _clamp(aspect, 0.1, 10.0)
+    angle = raw.get("angle") if isinstance(raw.get("angle"), dict) else {}
+    angle_value = _json_number(angle.get("value"))
+    if angle.get("kind") == "stroke_dir":
+        out["angle"] = {"kind": "stroke_dir"}
+    elif angle_value is not None and angle_value != 0.0:
+        out["angle"] = {"kind": "fixed", "value": angle_value}
+
+    def keep(key, default, lo, hi):
+        value = _json_number(raw.get(key))
+        if value is not None and _clamp(value, lo, hi) != default:
+            out[key] = _clamp(value, lo, hi)
+
+    if stamp_kind == "chisel":
+        keep("chiselEdgeLift", 0.4, 0.0, math.inf)
+        keep("chiselCenterDip", 0.3, 0.0, math.inf)
+        keep("chiselFiber", 0.0, 0.0, 1.0)
+    if stamp_kind == "crayon":
+        keep("crayonGrain", 0.65, 0.0, 1.0)
+    scatter = raw.get("scatter")
+    if isinstance(scatter, dict):
+        radius = _json_number(scatter.get("radius"))
+        count = _json_number(scatter.get("count"))
+        out["scatter"] = {
+            "radius": max(0.0, 1.5 if radius is None else radius),
+            "count": int(_clamp(_js_round(6.0 if count is None else count), 1, 64)),
+        }
+    return out
+
+
 def _normalize_stroke(raw, layer_kind):
     if not isinstance(raw, dict):
         return None
@@ -229,9 +288,7 @@ def _normalize_stroke(raw, layer_kind):
         "color": color,
         "size": max(0.0, float(size)),
         "opacity": max(0.0, min(1.0, float(opacity))),
-        "hardness": _finite_float(raw.get("hardness")),
-        "flow": _finite_float(raw.get("flow")),
-        "spacing": _finite_float(raw.get("spacing")),
+        **_normalize_brush(raw),
         "createdAt": int(created_at),
         "radiusModel": radius_model,
         "radiusValue": None if radius_value is None else max(0.0, float(radius_value)),
