@@ -129,3 +129,18 @@ test("a Scene linked to scene before the node ran: the line asks for a run", asy
   await shot(page, "pending");
   expect(problems).toEqual([]);
 });
+
+test("the upstream background shows while the node has no background of its own, and the node's own replaces it", async ({ page }, testInfo) => {
+  let problems = await open(page, testInfo, "upstream");
+  const colors = await page.evaluate(() => window.__studio.colors);
+  // Above the sky images: only the background is there.
+  const { sky: [above] } = await places(page, { sky: [[0, 30]] });
+  await expect.poll(() => stageAt(page, above).then((rgb) => near(rgb, colors.upstreamBg, 30)), { timeout: 10_000 }).toBe(true);
+  await shot(page, "background");
+  expect(problems).toEqual([]);
+
+  problems = await open(page, testInfo, "upstream-own");
+  await expect.poll(() => stageAt(page, above).then((rgb) => near(rgb, colors.ownBg, 30)), { timeout: 10_000 }).toBe(true);
+  await shot(page, "background-own");
+  expect(problems).toEqual([]);
+});

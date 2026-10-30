@@ -307,8 +307,8 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - 上流の背景：自分の `background` がつながっていれば自分の背景を出し、上流の背景は出さない（`docs/studio-node.md` の「上流の
   Scene」の背景）。つながっていなければ、上流の背景（実行結果の `pano_upstream_input_*`、広さは `pano_upstream_coverage`）を、
   その背景を持つ Studio の Clip range（`pano_upstream_bg_clip`）で置いて出し、その外では上流の `bg_color`
-  （`pano_upstream_bg_color`）を出す（`docs/timeline-ui.md` の「背景の行」）。上流も背景を持たなければ、自分の `background_color`
-  で描く。上流の背景の行は無い。
+  （`pano_upstream_bg_color`）を出す（`docs/timeline-ui.md` の「背景の行」）。上流も背景を持たなければ、自分の背景が無いときと
+  同じに出す。上流の背景の行は無い。
 
 ## エディタの中の Camera
 
