@@ -67,8 +67,20 @@ for (const [mode, projection, tip] of [["frame", "perspective", "Camera to view"
     expect((await camera(page)).projection).toBe("perspective");
     await expectAtView(page);
     expect(await view(page)).toEqual(before);
-    expect(await page.evaluate(() => window.__studio.session.selection.row)).toBeNull();
+    // The Camera is selected (its card in the inspector) and the top center says it moved, with no mark.
+    expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("camera");
+    await expect(page.locator('[data-card="camera"]')).toHaveCount(1);
+    const line = page.locator(".pano-studio-notice");
+    await expect(line).toHaveText("Camera moved to this view");
+    await expect(line).toHaveAttribute("data-notice", "info");
     await expect(rail(page)).toHaveAttribute("data-tip", "Camera to view");
+    // Pressed again at the same view: nothing moves, no Undo step; the notice hides on its own.
+    await expect(line).toHaveCount(0, { timeout: 5_000 });
+    await page.evaluate(() => window.__studio.session.select({ row: null }));
+    await rail(page).click();
+    expect(await page.evaluate(() => window.__studio.session.selection.row)).toBeNull();
+    await page.waitForTimeout(200);
+    await expect(line).toHaveCount(0);
     await page.locator('[data-tool="undo"]').click();
     await expectOpening(page, projection);
     expect(await canUndo(page)).toBe(false);

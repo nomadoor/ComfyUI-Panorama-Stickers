@@ -266,8 +266,10 @@ test("the Camera button brings the Camera to the view as one Undo step, not whil
   assert.equal(outcome.history, true);
   assert.equal(session.state.camera.projection, "perspective");
   assert.deepEqual(session.state.camera.position.value, [1, 2, 3]);
-  assert.equal(session.selection.row, "w", "the selection does not change");
+  assert.equal(session.selection.row, "camera", "a move selects the Camera");
+  session.select({ row: "w" });
   assert.equal(session.cameraToView(pose, 0).changed, false, "at the view already: no step");
+  assert.equal(session.selection.row, "w", "nothing moved: the selection stays");
   session.undo();
   assert.equal(session.state.camera.projection, "erp", "one step takes back the mode and the move together");
   assert.deepEqual(session.state.camera.position.value, [0, 0, 0]);

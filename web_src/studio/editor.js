@@ -47,6 +47,7 @@ import {
   setBrushSize, setCustomColor,
 } from "./paint_bar.js";
 import { createPortMedia } from "./port_media.js";
+import { LINE_TEXT } from "./notice_line.js";
 import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
@@ -481,6 +482,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     addWarning: null,
     // The node's state_json cannot be read: the editor is read-only (notice_line.js).
     stateUnreadable,
+    // The short notice of an operation that was done (notice_line.js), or null.
+    done: null,
   });
   const background = nodeBackground(node, media, () => {
     syncBackground();
@@ -504,6 +507,15 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => {
       if (ui.notice === text) ui.notice = null;
+    }, BOUND_NOTICE_SECONDS * 1000);
+  }
+  // The short notice of an operation that was done: shown as long as the notices above.
+  let doneTimer = 0;
+  function doneNotice(text) {
+    ui.done = text;
+    clearTimeout(doneTimer);
+    doneTimer = setTimeout(() => {
+      if (ui.done === text) ui.done = null;
     }, BOUND_NOTICE_SECONDS * 1000);
   }
 
@@ -717,11 +729,14 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   };
 
   // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the 3D tab's view, as one
-  // Undo step (Panorama mode switching to Frame). The view does not move.
+  // Undo step (Panorama mode switching to Frame). The view does not move. A move selects the Camera (session.js) and
+  // says so at the top center, since the Camera at the view is not drawn.
   function cameraToView() {
     if (view.tab !== "3d" || !stage) return;
     stage.settle();
-    objectOutcome(session.cameraToView(stage.pose(), view.playhead));
+    const outcome = session.cameraToView(stage.pose(), view.playhead);
+    objectOutcome(outcome);
+    if (outcome.changed) doneNotice(LINE_TEXT.cameraMoved);
   }
 
   function setTab(tab) {
@@ -936,6 +951,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     save();
     if (stage) nodeSession.view = rememberView(stage.destination(), "panorama");
     clearTimeout(noticeTimer);
+    clearTimeout(doneTimer);
     addFiles.close();
     dropInput();
     window.removeEventListener("keydown", onKeyDown, true);

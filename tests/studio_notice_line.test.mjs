@@ -9,6 +9,13 @@ test("an operation that did nothing is a stopped notice and comes first", () => 
   assert.deepEqual(topLine(ui({ notice: "Nothing to frame", view: "loading", background: "failed" })), { kind: "stopped", text: "Nothing to frame" });
 });
 
+// docs/studio-ui.md "左の列の Camera のボタン": a short notice of an operation that was done has no mark, after a stopped
+// notice and before loading.
+test("a done operation's short notice has no mark, after a stopped notice and before loading", () => {
+  assert.deepEqual(topLine(ui({ done: LINE_TEXT.cameraMoved, view: "loading", empty: true })), { kind: "info", text: "Camera moved to this view" });
+  assert.deepEqual(topLine(ui({ done: LINE_TEXT.cameraMoved, notice: "Nothing to frame" })), { kind: "stopped", text: "Nothing to frame" });
+});
+
 test("loading shows the ring, the 3D view before the background", () => {
   assert.deepEqual(topLine(ui({ view: "loading", background: "loading" })), { kind: "loading", text: LINE_TEXT.viewLoading });
   assert.deepEqual(topLine(ui({ background: "loading" })), { kind: "loading", text: LINE_TEXT.backgroundLoading });
