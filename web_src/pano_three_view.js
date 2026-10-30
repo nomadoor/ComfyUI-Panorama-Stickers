@@ -54,8 +54,8 @@ import {
   WebGLRenderer,
 } from "three";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, nearestSquareHit, pickCacheKey, pickRay, pickSquareWindow, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
-import { itemCoarseGrid } from "./pano_coarse_grid.js";
+import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
+import { COARSE_GRID_IDLE_TIMEOUT_MS, coarseGridKey, createCoarseGridBuilds } from "./pano_coarse_grid.js";
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark, poseAnimation } from "./pano_scene_loaders.js";
 import { createSparkViews } from "./pano_spark_views.js";
@@ -899,9 +899,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // After a float target failed picks use RGBA8; after that failed too only the SPLAT boxes are picked.
   let pickFloat = true;
   let pickFailed = false;
-  // A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"): the target of the square picks of the
-  // "pixels" object hit test (pickStickerNear), and its side.
-  let squareTarget = null;
   const pickCamera = new PerspectiveCamera();
   const pickMaterials = [];
   // Spark's module once it has loaded (when a SPLAT first shows), and per view that draws SPLATs a renderer
@@ -967,6 +964,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     dispose: disposeItem,
     onUpdate,
     concurrency: SCENE_LOADS,
+  });
+  // The hit grids of the World 3D Stickers (the 3D file Stickers' and the port Sticker's items; sceneGrid), built
+  // in idle time once per input (coarseGridKey: a batch shares one) from its first item drawn, and the key of each
+  // item key's grid.
+  const gridKeys = new Map();
+  const coarseGrids = createCoarseGridBuilds({
+    schedule: (run) => (typeof requestIdleCallback === "function"
+      ? requestIdleCallback(run, { timeout: COARSE_GRID_IDLE_TIMEOUT_MS })
+      : setTimeout(run, 0)),
+    now: () => performance.now(),
   });
   // The 3D items of the upstream Scene's layers, by slot (a layer and its `scene` or 3D Sticker), loaded
   // the same way; a slot no render asks for any more is closed.
@@ -1157,6 +1164,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     const stickerInputs = stickerItemInputs(space);
     const stickerShown = stickerItems.requestMany(stickerInputs.inputs);
     stickerInputs.drawn.forEach((input, index) => {
+      // A World 3D Sticker asks for its hit grid at its first item's first draw, before an animation poses it.
+      if (input.id != null && stickerShown[index]) {
+        const key = coarseGridKey(input);
+        if (input.url && gridKeys.get(input.url) !== key) for (const url of [...(input.urls ?? []), input.url]) if (url) gridKeys.set(url, key);
+        coarseGrids.want(key, stickerShown[index]);
+      }
       contents.push({ content: contentGroup(stickerItems, input, stickerShown[index]), input, opacity: input.opacity });
     });
     const slots = new Set();
@@ -1812,90 +1825,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return pickAt(camera, x, y, width, height)?.stickerId ?? null;
   }
 
-  // A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"), for the "pixels" object hit test
-  // (web_src/studio/hit_test.js): the id of the world or 3D Sticker drawn nearest (x, y) within `radius` px, as
-  // pickSticker takes it (a SPLAT on its box along the pointer's ray, a plane before a nearer box), or null. The square
-  // draws the ids only; on an RGBA8 target its hit has no depth and is taken before a SPLAT's box. With `async` it
-  // returns a promise: the square is drawn now and read back without waiting for the GPU
-  // (readRenderTargetPixelsAsync).
-  function pickStickerNear(camera, x, y, width, height, { radius = 0, async = false } = {}) {
-    const finish = (square) => {
-      const hits = [];
-      const entry = square && pickable[square.id - 1];
-      if (entry) hits.push({ depth: square.depth ?? camera.near, stickerId: entry.stickerId, plane: entry.plane });
-      const ray = pickRay(camera, x, y, width, height);
-      for (const { object, box, stickerId } of pickBoxes) {
-        if (!box) continue;
-        const inverse = new Matrix4().copy(object.matrixWorld).invert();
-        const origin = new Vector3(...ray.origin).applyMatrix4(inverse).toArray();
-        const direction = new Vector3(...ray.direction).applyMatrix3(new Matrix3().setFromMatrix4(inverse)).toArray();
-        const depth = rayBoxDepth(origin, direction, box);
-        if (depth !== null) hits.push({ depth, stickerId, box: true });
-      }
-      return nearestHit(hits, camera, (each) => each.plane)?.stickerId ?? null;
-    };
-    world.updateMatrixWorld();
-    if (!pickable.length || pickFailed) return async ? Promise.resolve(finish(null)) : finish(null);
-    const side = 2 * radius + 1;
-    const float = pickFloat && renderer.extensions.has("EXT_color_buffer_float");
-    if (!squareTarget || squareTarget.width !== side || (squareTarget.texture.type === FloatType) !== float) {
-      squareTarget?.dispose();
-      squareTarget = new WebGLRenderTarget(side, side, {
-        type: float ? FloatType : UnsignedByteType,
-        format: RGBAFormat,
-        minFilter: NearestFilter,
-        magFilter: NearestFilter,
-        generateMipmaps: false,
-        depthBuffer: true,
-      });
-    }
-    const target = squareTarget;
-    setCamera(pickCamera, camera);
-    const offset = pickSquareWindow(x, y, width, height, radius);
-    pickCamera.setViewOffset(offset.fullWidth, offset.fullHeight, offset.x, offset.y, offset.width, offset.height);
-    const pixels = float ? new Float32Array(side * side * 4) : new Uint8Array(side * side * 4);
-    const mode = float ? 0 : 1;
-    const draw = () => {
-      pickMaterials.forEach((material) => {
-        material.uniforms.pickMode.value = mode;
-        material.uniforms.far.value = camera.far;
-      });
-      pickShared.pickMode.value = mode;
-      pickShared.far.value = camera.far;
-      renderer.setRenderTarget(target);
-      try {
-        renderer.render(world, pickCamera);
-      } finally {
-        renderer.setRenderTarget(null);
-      }
-      if (async) return renderer.readRenderTargetPixelsAsync(target, 0, 0, side, side, pixels);
-      renderer.readRenderTargetPixels(target, 0, 0, side, side, pixels);
-      return pixels;
-    };
-    try {
-      const read = pickPass(world, pickable, pickMaterial, draw);
-      if (!async) return finish(nearestSquareHit(pixels, side, float));
-      return read.then(() => finish(nearestSquareHit(pixels, side, float)), (error) => {
-        console.error("[PanoramaStickers] Picking on the GPU failed", error);
-        return null;
-      });
-    } catch (error) {
-      console.error("[PanoramaStickers] Picking on the GPU failed", error);
-      return async ? Promise.resolve(null) : null;
-    }
-  }
-
-  // A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"), for the "coarse" object hit test: the
-  // coarse occupancy grid of the loaded `scene` or 3D Sticker item at url (pano_coarse_grid.js itemCoarseGrid, in the
-  // `scene` glTF frame), built the first time it is asked and kept with the item, or null while it loads.
+  // The coarse occupancy grid of the World 3D Sticker whose item key is url (pano_coarse_grid.js, in the `scene`
+  // glTF frame; a batch's from its first item drawn), for the hover and the click (docs/space-and-view.md
+  // "ホバーの判定"), or null until its grid is built (buildWorld asks for it at the first draw). It never builds one.
   function sceneGrid(url) {
-    for (const items of [sceneItems, stickerItems, ...upstreamItems.values()]) {
-      const item = items.items.get(url);
-      if (item?.state !== "loaded") continue;
-      if (item.coarseGrid === undefined) item.coarseGrid = itemCoarseGrid(item);
-      return item.coarseGrid;
-    }
-    return null;
+    const key = gridKeys.get(url);
+    return key === undefined ? null : coarseGrids.get(key);
   }
 
   // The pointer at (x, y) of a width x height view from camera (a spaceCamera()) on the gizmo of the last
@@ -1963,6 +1898,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   function dispose({ lost = false } = {}) {
     if (closed) return;
     closed = true;
+    coarseGrids.close();
     sceneItems.close();
     stickerItems.close();
     depthColors.dispose();
@@ -1981,7 +1917,6 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     panorama.lensSticker.forEach((mesh) => mesh.material.dispose());
     pickMaterials.forEach((material) => material.dispose());
     pickTarget?.dispose();
-    squareTarget?.dispose();
     lensTargets.forEach((targets) => targets.forEach((target) => target.dispose()));
     lensQuad.material.dispose();
     liveErps.forEach((entry) => entry.erp.dispose());
@@ -2001,5 +1936,5 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!lost) renderer.forceContextLoss();
   }
 
-  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneGrid, sceneItemError, pick, pickSurface, pickSticker, pickStickerNear, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
+  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneGrid, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
 }
