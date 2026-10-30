@@ -103,8 +103,6 @@ function boxProps(row, field) {
             :aria-disabled="row.disabled ? 'true' : null"
             @click="row.disabled || send({ type: 'set-ground' })"
           >Set ground</button>
-          <!-- The seat of the ground's estimate button (docs/studio-ui.md): kept empty. -->
-          <span class="pano-studio-row-seat" aria-hidden="true" />
         </template>
 
         <template v-else-if="row.control === 'choice'">

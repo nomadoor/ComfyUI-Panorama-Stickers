@@ -30117,11 +30117,7 @@ const L$ = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
                   title: "Click a surface to make it the ground",
                   "aria-disabled": c.disabled ? "true" : null,
                   onClick: (f) => c.disabled || o({ type: "set-ground" })
-                }, "Set ground", 8, hV),
-                d[2] || (d[2] = ve("span", {
-                  class: "pano-studio-row-seat",
-                  "aria-hidden": "true"
-                }, null, -1))
+                }, "Set ground", 8, hV)
               ], 64)) : c.control === "choice" ? (_e(), ft(dh, {
                 key: 2,
                 options: c.options,

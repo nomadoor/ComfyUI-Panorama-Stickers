@@ -732,9 +732,10 @@
   min-width: 0;
   height: var(--studio-field-h);
   padding: 0 10px;
-  border: 1px solid var(--studio-line-strong);
+  border: 0;
   border-radius: var(--studio-r-part);
-  background: transparent;
+  background: var(--studio-fill);
+  color: var(--studio-fg);
   font-size: var(--studio-text-sm);
   white-space: nowrap;
   cursor: pointer;
@@ -749,9 +750,9 @@
   cursor: default;
 }
 
-/* The row's seat kept for a later button (the ground's estimate). */
-.pano-studio-row-seat {
-  min-width: 0;
+/* Set ground takes the row's second and third value columns: one column is narrower than its label. */
+.pano-studio-text-btn[data-action="set-ground"] {
+  grid-column: span 2;
 }
 
 /* A choice by name across columns 1-3 (a 3D's Clip). */
