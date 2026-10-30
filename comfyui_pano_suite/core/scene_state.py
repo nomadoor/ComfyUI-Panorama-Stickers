@@ -74,7 +74,10 @@ def _parse_int(text):
         return float(text)
 
 
-def _parse_json(text):
+def parse_json(text):
+    """Read JSON text as JSON.parse does: NaN and Infinity literals are not JSON (ValueError), and an integer longer
+    than Python's int() accepts is a float (an infinity, so an invalid value), not a reason to reject the text. Every
+    reader of a state text uses this (docs/scene-state-v2.md, 共通の規則)."""
     return json.loads(text, parse_constant=_reject_constant, parse_int=_parse_int)
 
 
@@ -614,7 +617,7 @@ def load_scene_state(raw) -> dict:
         return _normalize_v2({})
     if isinstance(raw, str):
         try:
-            raw = _parse_json(raw)
+            raw = parse_json(raw)
         except ValueError:
             raw = None
     if not isinstance(raw, dict):
@@ -748,7 +751,7 @@ def load_sticker_state(text) -> dict | None:
     if not isinstance(text, str) or not text.strip():
         return None
     try:
-        raw = _parse_json(text)
+        raw = parse_json(text)
     except ValueError:
         return None
     if not isinstance(raw, dict) or raw.get("kind") != STICKER_STATE_KIND:

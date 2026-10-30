@@ -206,3 +206,9 @@ def test_the_rasterizer_reads_only_a_missing_hardness_or_flow_as_the_default():
     assert _painted_alpha(flow=0).max() == 0.0
     assert _painted_alpha(flow=None).max() > 0.9
     assert (_painted_alpha(hardness=0) > 0.9).sum() < (_painted_alpha(hardness=None) > 0.9).sum()
+
+
+def test_the_rasterizer_draws_nothing_for_a_stroke_of_opacity_zero_as_the_editor_does():
+    # The editor composites a stroke at its opacity (0 stays 0); the rasterizer read 0 as missing and drew it opaque.
+    assert _painted_alpha(opacity=0).max() == 0.0
+    assert _painted_alpha(opacity=1).max() > 0.9
