@@ -23,8 +23,8 @@ Add とドロップの着く所、Preview のウィンドウの違い、ウィ�
 Python はこの文書の規則を持たない（列は `—`）。「（未実装）」は、ADR 0044 の置き場所（`web_src/studio/`、
 `web_src/components/studio/`）に作る予定のモジュールで、「（未作成）」は作る予定の test である。印の無いものは今ある。
 新しい UI のステージ（`web_src/studio/stage.js`）は、今は Panorama 表示だけを動かす。World の内容（`web_src/studio/stage_content.js`）と、
-タイムラインで選んだ物（回る中心と Frame Selected）はステージにつないである。Frame 表示と、ステージの上で物を選ぶことはまだで、
-その部分を各行に「未実装」と書く。
+タイムラインで選んだ物（回る中心と Frame Selected）はステージにつないである。ステージの上で物を選ぶこと（クリック、World の物のガイド、ギズモ、Sky の画像のハンドル）は
+`web_src/studio/stage_objects.js` にある。Frame 表示と Camera タブはまだで、その部分を各行に「未実装」と書く。
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
@@ -36,7 +36,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | カーソル | — | `web_src/studio/view_input.js` `stageCursor`・`LOOK_CURSOR`・`ORBIT_CURSOR`・`KNOB_CURSOR` | `tests/studio_view_input.test.mjs` |
 | 視点の操作の部品（球・手・矢印、操作中に光ること） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs` | `tests/studio_view_input.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | 地面のグリッドと原点の印（何をどの高さに描き、どこで薄れるか） | — | `web_src/studio/grid.js` `groundGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| World の物のガイドと、CPU のホバーの判定 | — | （未実装）`web_src/studio/world_guides.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`・`segmentsHit` | （未作成）`tests/studio_world_guides.test.mjs` |
+| World の物のガイドと、CPU のホバーの判定 | — | `web_src/studio/world_guides.js`（形・ホバー・見え方・Camera の印）、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`・`segmentsHit`。Camera タブでの描き方は、タブがまだ無い（未実装） | `tests/studio_world_guides.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js` |
 | Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | （未実装）`web_src/studio/landing.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、`pano_space.js` `facingRotation` | （未作成）`tests/studio_landing.test.mjs`、（未作成）`tests/browser/` の場面 |
 | Preview のウィンドウの視点（エディタとの違い、引き継ぎ、減衰と慣性、グリッドの既定） | — | （未実装）`web_src/studio/preview_motion.js`、下の部品 `web_src/pano_interaction_controller.js` の慣性（ADR 0010） | （未作成）`tests/studio_preview_motion.test.mjs` |
 | ウィンドウがフォーカスを失ったとき、Meta を離したときと右クリックのメニューが開いたときにキーを離すこと | — | `web_src/studio/view_input.js` `createViewInput().lostFocus`、事象を受けるのは `web_src/studio/stage.js`（`blur`・`visibilitychange`・Meta の `keyup`・エディタの中の `contextmenu`）、下の部品 `pano_view_keys.js` `createMoveKeys` | `tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`（`blur`・右クリックのメニュー）、`tests/studio_stage.test.mjs`（Meta・右クリックのメニュー） |
@@ -65,6 +65,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `TARGET_MIN_DISTANCE` | `E` | 0.005 `E`（0.008） | `d` の下限 |
 | `TARGET_MAX_DISTANCE` | `E` | 30 `E`（48） | `d` の上限。パンで掴む深さとホイールの中心までの距離の上限も兼ねる |
 | `CAMERA_FRAME_RADIUS` | `E` | 1 `E`（1.6） | Camera を選んで Frame Selected するときの球の半径（中心は Camera の位置） |
+| `CAMERA_GUIDE_LENGTH` | `E` | 0.5 `E`（0.8） | 3D タブの Camera の印の長さ（Frame モードの視錐台の奥行き。Panorama モードの輪の直径はその半分）。視点がこの距離より Camera に近いときは、印を描かず当たりにも数えない（開いたときの視点は Camera の位置にあり、印が視点を包んでしまうため） |
 | `WORLD_IMAGE_HEIGHT` | `E` | 1 `E`（1.6） | World に置く画像の板の高さ |
 | `GRID_MINOR_FADE` | `E` | 8 `E` → 24 `E`（12.8 → 38.4） | 1 単位の線が薄れ始める距離と消える距離（視点からの水平の距離） |
 | `GRID_MAJOR_FADE` | `E` | 16 `E` → 30 `E`（25.6 → 48） | 10 単位の線と軸が薄れ始める距離と消える距離 |
