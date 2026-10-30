@@ -1,6 +1,7 @@
 """Helpers shared by several test modules (Panorama Studio, SPLAT, MESH, and the 3D Sticker tests). Import this
 after the module's `pytest.importorskip` of the ComfyUI core."""
 import json
+import math
 import struct
 from pathlib import Path
 
@@ -96,19 +97,29 @@ def state_text(state) -> str:
     return state if isinstance(state, str) else ("" if state is None else json.dumps(state))
 
 
+def output_size(width: int, height: int | None = None) -> dict:
+    """The `megapixels` and `multiple` widgets that give a `width` x `height` output (by default half as high: a 360
+    ERP), as `_studio_output_size` works them out (ADR 0048). Small sizes are below the widgets' range, which only
+    the frontend holds to."""
+    height = width // 2 if height is None else height
+    return {"megapixels": width * height / 2**20, "multiple": math.gcd(width, height)}
+
+
 def shoot(source, state=None, **inputs):
     """The outputs of Panorama Studio shooting `source` through the Camera of `state`: an ERP IMAGE or VIDEO on
-    `bg_media` (black where it has no pixels), or a Scene on `scene`."""
-    inputs.setdefault("bg_color", "#000000")
-    inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_size", "1024")
-    media = {"scene" if isinstance(source, PanoSceneValue) else "bg_media": source}
+    `background` (black where it has no pixels), or a Scene on `scene`. 1024 x 512 unless `megapixels` and
+    `multiple` say otherwise."""
+    inputs.setdefault("background_color", "#000000")
+    inputs.setdefault("background_range", "360")
+    if "megapixels" not in inputs:
+        inputs.update(output_size(1024))
+    media = {"scene" if isinstance(source, PanoSceneValue) else "background": source}
     return PanoramaStudioNode.execute(state_json=state_text(state), **media, **inputs).result
 
 
 def video_frames(result):
     """Every output frame of Panorama Studio, as GetVideoComponents reads them from the `video` output."""
-    return result[2].get_components().images
+    return result[3].get_components().images
 
 
 def camera_state(keyframes=None, fps=24.0, position=None, hFOV_deg=None, **rotation):

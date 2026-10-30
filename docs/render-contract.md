@@ -44,7 +44,7 @@ render_frame(layers, camera, projection, *, bg, bg_key=None, bg_color, device, c
 | `layers` | `RenderLayer` の列（下の層から）。各層は Panorama Studio 一つ分の Scene で、`evaluated`・`sources`・`scene`・`scene_index`・`scene_pose` を持つ（下記「層」）。上流の Scene を受けない描画では層は一つ |
 | `RenderLayer.evaluated` | `evaluate_scene_state(state, frame)` の戻り値（その時刻の Sticker・`scene`・Camera の値） |
 | `RenderLayer.sources` | `SceneSources`。そのフレームの素材。`stickers`（Sticker の `id` → `StickerSource`）、`painting`（状態のペイント）、`painting_layer`（アップロード済みのペイントのラスタ。`resolve_painting_layer_payload` の戻り値）、`contents`（3D ファイルの `file` の Source の Sticker の `id` → 読んだ SPLAT・MESH。device のテンソルは持たず、呼び出し側が描画のパスごとに `ContentSource` にして `stickers` に入れる。`render_frame` は `stickers` だけを読む） |
-| `camera` | 評価済みの Camera の値（`position`・`yaw_deg`・`pitch_deg`・`roll_deg`）。Panorama Studio は、Camera が無ければ `ORIGIN_CAMERA`（World の原点、回転 0）、あれば評価した Camera を渡す（`docs/studio-node.md` の「Panorama Studio」）。ERP の Projection の出力も Camera の回転に従って回る（描画関数の性質） |
+| `camera` | 評価済みの Camera の値（`position`・`yaw_deg`・`pitch_deg`・`roll_deg`）。Panorama Studio は評価した Camera を渡す（Camera はいつもあり、既定の Camera は World の原点・回転 0。ADR 0048、`docs/studio-node.md` の「Panorama Studio」）。ERP の Projection の出力も Camera の回転に従って回る（描画関数の性質） |
 | `projection` | `Projection` |
 | `bg` | このフレームの `bg_media` の画像 (h, w, C) または `None` |
 | `bg_key` | `bg` を識別するハッシュ可能な値（Studio では `bg_media` のフレーム番号）。`None` のときは背景を使い回さない |

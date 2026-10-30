@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from comfyui_pano_suite import nodes
+from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.node_runtime import NodeRuntime
 from comfyui_pano_suite.nodes import PanoramaCutoutNode, PanoramaStickersNode, PanoramaStudioNode
 from tools.golden_png import write_png16
@@ -155,13 +156,13 @@ def _run_cutout(shot: dict):
 
 
 # The size of the Camera output of `studio_camera_single_shot`, the legacy Cutout's `cutout_single_shot` at
-# output_megapixels 0.03. output_size does not give it, so the golden is shot at this size.
+# output_megapixels 0.03. Studio's megapixels and multiple do not give it, so the golden is shot at this size.
 STUDIO_SHOT_SIZE = (224, 128)
 
 
 @contextmanager
 def studio_shot_size(size: tuple[int, int]):
-    """Panorama Studio with its Camera output at `size`, whatever output_size gives."""
+    """Panorama Studio with its Camera output at `size`, whatever megapixels and multiple give."""
     output_size = nodes._studio_output_size
     nodes._studio_output_size = lambda *_args, **_kwargs: (*size, None)
     try:
@@ -174,9 +175,9 @@ def _run_studio_shot(shot: dict):
     """The legacy Cutout case's shot (a v1 state, read as its Camera) and background through Panorama Studio."""
     with render_only_runtime(), studio_shot_size(STUDIO_SHOT_SIZE):
         result = PanoramaStudioNode.execute(
-            bg_color="#000000", coverage="360", output_size="1024", state_json=json.dumps({"shots": [shot]}), bg_media=build_background_erp(),
+            background_color="#000000", background_range="360", state_json=json.dumps({"shots": [shot]}), background=build_background_erp(),
         ).result
-    return result[0][0].numpy(), result[1][0].numpy()
+    return result[1][0].numpy(), result[2][0].numpy()
 
 
 # sky Stickers are the legacy direction-only stickers (yaw/pitch/FOV on the sphere).
@@ -214,16 +215,25 @@ CASES = {
 }
 
 def _run_studio(coverage: str, stickers=(), painting=None):
-    """A legacy Stickers case's v1 state (without a Camera) and background through Panorama Studio."""
+    """A legacy Stickers case's v1 state (without a Camera: the default Camera) and background through Panorama Studio,
+    at the size the legacy node's output_preset auto gave: the background's width over 360 degrees. A 180 case shoots
+    a 180 background with a Panorama 180 Camera (ADR 0048: the two ranges are set apart)."""
     state = {"assets": ASSETS, "stickers": list(stickers)}
     if painting is not None:
         state["painting"] = painting
+    state_json = json.dumps(state)
+    height = BG_WIDTH * 360 // int(coverage) // 2
+    if coverage == "180":
+        loaded = load_scene_state(state_json)
+        state_json = json.dumps({**loaded, "camera": {**loaded["camera"], "erp_range": 180}})
+    width = height * 2 if coverage == "360" else height
     with render_only_runtime():
         result = PanoramaStudioNode.execute(
-            bg_color="#00ff00", coverage=coverage, output_size="auto", state_json=json.dumps(state), bg_media=build_background_erp(),
+            background_color="#00ff00", background_range=coverage, megapixels=width * height / 2**20, multiple=height,
+            state_json=state_json, background=build_background_erp(),
         ).result
     # The outputs need not be contiguous (a 180 one is not); the PNG writer needs contiguous rows.
-    return np.ascontiguousarray(result[0][0].numpy()), np.ascontiguousarray(result[1][0].numpy())
+    return np.ascontiguousarray(result[1][0].numpy()), np.ascontiguousarray(result[2][0].numpy())
 
 
 def _on_studio(name: str):

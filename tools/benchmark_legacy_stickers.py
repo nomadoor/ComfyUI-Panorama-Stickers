@@ -53,12 +53,15 @@ def run_legacy(bg_erp: torch.Tensor) -> None:
 
 
 def run_studio(bg_erp: torch.Tensor) -> None:
+    # The legacy node's output_preset auto: the background's width, a 2 : 1 ERP.
+    height = bg_erp.shape[-2] // 2
     PanoramaStudioNode.execute(
-        bg_color="#00ff00",
-        coverage="360",
-        output_size="auto",
+        background_color="#00ff00",
+        background_range="360",
+        megapixels=2 * height * height / 2**20,
+        multiple=height,
         state_json=STATE_JSON,
-        bg_media=bg_erp,
+        background=bg_erp,
     )
 
 

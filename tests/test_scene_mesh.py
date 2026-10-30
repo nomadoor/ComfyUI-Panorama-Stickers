@@ -150,7 +150,7 @@ def test_moge_mask_drops_its_pixels():
 def test_moge_video_draws_each_frame_at_its_time():
     reds = torch.stack([torch.zeros((12, 16, 3)).index_fill_(-1, torch.tensor([0]), (index + 1) / 10) for index in range(3)])
 
-    image = _frames(_studio(scene=_moge(reds)))
+    image = _frames(_studio(world=_moge(reds)))
 
     assert _batch_index_at_center(image) == [0, 1, 2]
 
@@ -159,9 +159,9 @@ def test_mesh_is_drawn_and_written_for_the_editor():
     texture = torch.tensor([[[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], [[0.0, 0.0, 1.0], [1.0, 1.0, 1.0]]]])
     mesh = Types.MESH(torch.tensor([QUAD]), torch.tensor([QUAD_FACES]), uvs=torch.tensor([QUAD_UVS]), texture=texture, unlit=True)
 
-    output = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=mesh)
+    output = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=mesh)
 
-    image = output.result[0][0]
+    image = output.result[1][0]
     # The quad spans 53 degrees around the ERP center: its top left corner shows the red texel alone (past the
     # texel's center the edge texel is clamped), its bottom right corner the white one.
     assert torch.allclose(image[200, 450], torch.tensor([1.0, 0.0, 0.0]), atol=0.02)
@@ -180,7 +180,7 @@ def test_mesh_batch_items_follow_the_output_frames():
     colors[0, :, 0], colors[1, :, 0] = srgb_to_linear(torch.tensor([0.1, 0.2]))
     mesh = Types.MESH(vertices, faces, vertex_colors=colors, vertex_counts=torch.tensor([4, 3]), face_counts=torch.tensor([2, 1]), unlit=True)
 
-    assert _batch_index_at_center(_frames(_studio(scene=mesh))) == [0, 1]
+    assert _batch_index_at_center(_frames(_studio(world=mesh))) == [0, 1]
 
 
 def _write_obj(path):
@@ -208,10 +208,10 @@ def test_mesh_files_are_drawn_and_written_for_the_editor(tmp_path):
     # Neither has KHR_materials_unlit, so both are lit; neither has normals, so they shade flat. The textured GLB's
     # material is rough (1.0), the bare OBJ's is save_glb's gray at roughness 0.5.
     for name, color in (("quad.glb", _lit_center([1.0, 0.0, 0.0], 0.0, 1.0)), (_write_obj(tmp_path / "quad.obj").name, _lit_center([0.22] * 3, 0.0, 0.5))):
-        result = _studio(scene=Types.File3D(str(tmp_path / name)))
-        ui = nodes._scene_ui(result[4].layers[-1].scene)
+        result = _studio(world=Types.File3D(str(tmp_path / name)))
+        ui = nodes._scene_ui(result[0].layers[-1].scene)
 
-        assert torch.allclose(result[0][0, 256, 512], color, atol=2e-3)
+        assert torch.allclose(result[1][0, 256, 512], color, atol=2e-3)
         assert ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": False}]
         assert np.allclose(np.sort(_glb_positions(_path(ui["pano_scene_files"][0])), axis=0), np.sort(np.asarray(QUAD), axis=0))
 
@@ -220,11 +220,11 @@ def test_a_glb_marked_unlit_shows_its_vertex_colors(tmp_path):
     colors = torch.tensor([[0.2, 0.6, 0.9]] * 4)
     (tmp_path / "unlit.glb").write_bytes(save_glb(torch.tensor(QUAD), torch.tensor(QUAD_FACES), vertex_colors=colors, unlit=True))
 
-    result = _studio(scene=Types.File3D(str(tmp_path / "unlit.glb")))
+    result = _studio(world=Types.File3D(str(tmp_path / "unlit.glb")))
 
-    assert result[4].layers[-1].scene.unlit is True
-    assert torch.allclose(result[0][0, 256, 512], linear_to_srgb(colors[0]), atol=1e-5)
-    assert nodes._scene_ui(result[4].layers[-1].scene)["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
+    assert result[0].layers[-1].scene.unlit is True
+    assert torch.allclose(result[1][0, 256, 512], linear_to_srgb(colors[0]), atol=1e-5)
+    assert nodes._scene_ui(result[0].layers[-1].scene)["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}]
 
 
 def test_same_mesh_file_is_read_once_and_keeps_its_editor_files(tmp_path, monkeypatch):
@@ -234,14 +234,14 @@ def test_same_mesh_file_is_read_once_and_keeps_its_editor_files(tmp_path, monkey
     monkeypatch.setattr(nodes, "read_mesh_file", lambda file: reads.append(file) or read(file))
     monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
-    first = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=Types.File3D(str(path)))
-    again = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=Types.File3D(str(path)))
+    first = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=Types.File3D(str(path)))
+    again = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=Types.File3D(str(path)))
 
     assert len(reads) == 1 and len(writes) == 1
     assert again.ui["pano_scene_files"] == first.ui["pano_scene_files"]
     # A changed file is read again.
     path.write_text(path.read_text() + "v 0 0 0\n")
-    nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=Types.File3D(str(path)))
+    nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=Types.File3D(str(path)))
     assert len(reads) == 2
 
 
@@ -256,8 +256,8 @@ def test_nothing_uploaded_outlives_its_render_pass(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mesh_render, "_upload", recording)
     mesh = Types.MESH(torch.tensor([QUAD] * 2), torch.tensor([QUAD_FACES] * 2), vertex_colors=torch.rand((2, 4, 3)))
-    result = _studio(scene=mesh)
-    video = result[2]
+    result = _studio(world=mesh)
+    video = result[3]
 
     video.get_components()
     video.save_to(str(tmp_path / "out.mp4"))
@@ -271,7 +271,7 @@ def test_mesh_files_the_core_cannot_read_fail_clearly(tmp_path):
     (tmp_path / "model.fbx").write_bytes(b"")
 
     with pytest.raises(ValueError, match="fbx"):
-        _studio(scene=Types.File3D(str(tmp_path / "model.fbx")))
+        _studio(world=Types.File3D(str(tmp_path / "model.fbx")))
 
 
 COMPRESSED = ("KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu")
@@ -286,7 +286,7 @@ def test_compressed_gltf_is_refused_naming_its_extension(tmp_path, extension, re
     path.write_bytes(triangle_glb([extension], [extension] if required else []))
 
     with pytest.raises(ValueError, match=f"uses the glTF extension {extension}, which Panorama Studio cannot draw"):
-        _studio(scene=Types.File3D(str(path)))
+        _studio(world=Types.File3D(str(path)))
 
 
 def test_a_quantized_gltf_the_core_reads_is_accepted(tmp_path):
@@ -300,10 +300,10 @@ def test_a_quantized_gltf_the_core_reads_is_accepted(tmp_path):
 
 def test_a_camera_shoots_the_mesh_of_an_upstream_scene():
     mesh = Types.MESH(torch.tensor([QUAD]), torch.tensor([QUAD_FACES]), vertex_colors=torch.tensor([[[1.0, 0.0, 0.0]] * 4]), unlit=True)
-    pano_scene = _studio(scene=mesh)[4]
+    pano_scene = _studio(world=mesh)[0]
 
-    ahead = _shot_frames(_shoot(pano_scene, _camera(hFOV_deg=30.0), bg_color="#00ff00"))
-    behind = _shot_frames(_shoot(pano_scene, _camera(yaw_deg=180.0, hFOV_deg=30.0), bg_color="#00ff00"))
+    ahead = _shot_frames(_shoot(pano_scene, _camera(hFOV_deg=30.0), background_color="#00ff00"))
+    behind = _shot_frames(_shoot(pano_scene, _camera(yaw_deg=180.0, hFOV_deg=30.0), background_color="#00ff00"))
 
     assert torch.allclose(_center(ahead), torch.tensor([1.0, 0.0, 0.0]))
     assert torch.allclose(_center(behind), torch.tensor([0.0, 1.0, 0.0]))
@@ -434,7 +434,7 @@ def _da3_view(projection, position=(0.0, 0.0, 0.0)):
 
 
 def _da3_execute(**inputs):
-    return nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json=state_text(inputs.pop("state", None)), **inputs)
+    return nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json=state_text(inputs.pop("state", None)), **inputs)
 
 
 def test_the_core_names_an_all_empty_frame_by_the_text_da3_scene_content_takes():
@@ -464,14 +464,14 @@ def test_mono_frames_are_the_cores_meshes_with_its_default_k_and_one_warning_per
     # The input is not changed.
     assert "intrinsics" not in geometry
     caplog.clear()
-    _da3_execute(scene=_mono(), sticker=_mono())
+    _da3_execute(world=_mono(), sticker=_mono())
     studio = [record for record in caplog.records if "intrinsics" in record.getMessage()]
     assert len(studio) == 1 and "Panorama Stickers" in studio[0].getMessage() and studio[0].name.startswith("comfyui_pano_suite")
 
 
 def test_mono_frames_follow_the_output_frames_and_are_not_lit():
-    output = _da3_execute(scene=_mono(count=3))
-    frames = output.result[2].get_components().images
+    output = _da3_execute(world=_mono(count=3))
+    frames = output.result[3].get_components().images
 
     assert [round(float(frame[256, 512, 0]) * 10) for frame in frames] == [1, 2, 3]
     [meta] = output.ui["pano_scene_meta"]
@@ -541,7 +541,7 @@ def test_multiview_editor_files_are_one_item_of_the_views_glbs_and_empty_views_a
 def test_multiview_without_poses_stops_at_the_entry():
     geometry = _multiview(intrinsics=torch.eye(3)[None, None].expand(1, 2, 3, 3).clone())
 
-    for name in ("scene", "sticker"):
+    for name in ("world", "sticker"):
         with pytest.raises(ValueError, match="multiview.*mono"):
             _da3_execute(**{name: geometry})
 
@@ -552,8 +552,8 @@ def test_editor_files_are_written_once_per_input_dict(monkeypatch):
     write = nodes.write_editor_files
     monkeypatch.setattr(nodes, "write_editor_files", lambda value, progress=None: writes.append(value) or write(value, progress))
 
-    first = _da3_execute(scene=geometry)
-    again = _da3_execute(scene=geometry, state={"version": 2, "timeline": {"fps": 12}})
+    first = _da3_execute(world=geometry)
+    again = _da3_execute(world=geometry, state={"version": 2, "timeline": {"fps": 12}})
 
     assert len(writes) == 1 and again.ui["pano_scene_files"] == first.ui["pano_scene_files"]
 
@@ -564,13 +564,13 @@ def test_dicts_on_the_sticker_input_are_3d_stickers(make):
 
     output = _da3_execute(sticker=media)
 
-    layer = output.result[4].layers[-1]
+    layer = output.result[0].layers[-1]
     assert layer.port.is_3d and layer.state["stickers"][0]["placement"] == "world"
     assert output.ui["pano_sticker_meta"][0]["kind"] == ("depth_grid" if make == "mono" else "mesh") and output.ui["pano_sticker_meta"][0]["unlit"] is True
     assert "pano_sticker_input_images" not in output.ui
     box = sticker_media.content_box(media)
     assert box is not None and np.isfinite(box["min"]).all()
-    assert not torch.allclose(output.result[0][0, 256, 512], torch.tensor([0.0, 1.0, 0.0]))
+    assert not torch.allclose(output.result[1][0, 256, 512], torch.tensor([0.0, 1.0, 0.0]))
 
 
 def test_the_content_box_of_da3_is_the_cores_vertices_over_every_view():
@@ -614,7 +614,7 @@ def test_each_da3_frame_is_converted_once_for_the_render_the_editor_files_and_th
     monkeypatch.setattr(nodes, "_scene_content", lambda scene: (stage.__setitem__(0, "render"), content(scene))[1])
 
     output = _da3_execute(sticker=geometry)
-    output.result[2].get_components()
+    output.result[3].get_components()
     sticker_media.content_box(geometry)
     nodes._scene_ui(geometry, fps=24.0)
 
@@ -681,7 +681,7 @@ def test_a_mono_dict_with_extrinsics_stops_at_the_entry():
     geometry = _mono(count=1, extrinsics=torch.eye(4)[None, None, :3].clone())
 
     with pytest.raises(ValueError, match="mono.*extrinsics"):
-        _da3_execute(scene=geometry)
+        _da3_execute(world=geometry)
 
 
 def test_the_content_box_of_mono_is_the_keep_points_without_converting(monkeypatch):
@@ -836,8 +836,8 @@ def test_moge_uses_depth_grid_decides_once_per_input(monkeypatch):
     monkeypatch.setattr(scene_mesh, "moge_is_pinhole", lambda geometry: checks.append(1) or check(geometry))
     geometry = _moge_sequence(count=2)
 
-    _da3_execute(scene=geometry, sticker=geometry)
-    _da3_execute(scene=geometry, state={"version": 2, "timeline": {"fps": 12}})
+    _da3_execute(world=geometry, sticker=geometry)
+    _da3_execute(world=geometry, state={"version": 2, "timeline": {"fps": 12}})
     assert scene_mesh.moge_uses_depth_grid(geometry) == (True, None)
 
     assert len(checks) == 1

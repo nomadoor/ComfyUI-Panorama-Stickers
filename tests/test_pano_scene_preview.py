@@ -18,15 +18,18 @@ from comfy_api.latest import InputImpl
 from comfyui_pano_suite import nodes, sticker_media
 from comfyui_pano_suite.core.scene_state import load_scene_state
 from comfyui_pano_suite.nodes import PanoramaPreviewSceneNode, PanoramaStudioNode, PanoSceneValue
+from scene_test_helpers import output_size
 
 
 STATE = {"version": 2, "timeline": {"fps": 30.0}}
 
 
 def _studio(state=STATE, **inputs):
-    inputs.setdefault("bg_color", "#ff0000")
-    inputs.setdefault("coverage", "180")
-    inputs.setdefault("output_size", "1024")
+    """Panorama Studio's outputs: scene, first_frame, first_frame_mask, video, sticker_state."""
+    inputs.setdefault("background_color", "#ff0000")
+    inputs.setdefault("background_range", "180")
+    if "megapixels" not in inputs:
+        inputs.update(output_size(64))
     return PanoramaStudioNode.execute(state_json=json.dumps(state), **inputs).result
 
 
@@ -66,7 +69,7 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
     bg = _solid([0.5, 0.5, 0.5], batch=3)
     sticker = _solid([0.0, 0.0, 1.0])
 
-    video, _sticker_state, pano_scene = _studio(bg_media=bg, sticker=sticker)[2:5]
+    pano_scene, _image, _mask, video, _sticker_state = _studio(background=bg, sticker=sticker)
 
     assert isinstance(pano_scene, PanoSceneValue)
     expected_state = load_scene_state(json.dumps(STATE))
@@ -85,7 +88,7 @@ def test_pano_scene_binds_the_loaded_state_the_inputs_and_the_timeline():
 
 
 def test_pano_scene_state_is_plain_json_without_a_nested_scene():
-    pano_scene = _studio()[4]
+    pano_scene = _studio()[0]
 
     assert json.loads(json.dumps(pano_scene.layers[-1].state)) == pano_scene.layers[-1].state
     for value in vars(pano_scene).values():
@@ -97,7 +100,7 @@ def test_pano_scene_state_is_plain_json_without_a_nested_scene():
 def test_pano_scene_keeps_the_video_handle_as_given(tmp_path):
     video = _video(tmp_path)
 
-    output, _sticker_state, pano_scene = _studio({"version": 2}, bg_media=video)[2:5]
+    pano_scene, _image, _mask, output, _sticker_state = _studio({"version": 2}, background=video)
 
     assert pano_scene.bg_media is video
     assert pano_scene.fps == float(output.get_frame_rate()) == 25.0
@@ -109,8 +112,8 @@ def test_pano_scene_is_the_same_for_identical_inputs():
     bg = _solid([0.5, 0.5, 0.5], batch=2)
     sticker = _solid([0.0, 0.0, 1.0])
 
-    first = _studio(bg_media=bg, sticker=sticker)[4]
-    second = _studio(bg_media=bg, sticker=sticker)[4]
+    first = _studio(background=bg, sticker=sticker)[0]
+    second = _studio(background=bg, sticker=sticker)[0]
 
     assert first.layers[-1].state == second.layers[-1].state
     assert (first.fps, first.frames, first.coverage, first.bg_color) == (second.fps, second.frames, second.coverage, second.bg_color)
@@ -120,7 +123,7 @@ def test_pano_scene_is_the_same_for_identical_inputs():
 
 
 def _preview(source):
-    return PanoramaPreviewSceneNode.execute(source=source, coverage="360")
+    return PanoramaPreviewSceneNode.execute(source=source, background_range="360")
 
 
 def test_preview_passes_an_image_through_with_the_legacy_ui():
@@ -179,9 +182,9 @@ def test_preview_rejects_a_source_of_another_type():
 @pytest.mark.parametrize("background", [True, False])
 def test_a_pano_scene_preview_gives_the_upstream_keys(monkeypatch, background):
     # ADR 0041: the Preview shows a PANO_SCENE with the keys Studio gives for the same Scene upstream, and draws nothing.
-    inputs = {"bg_media": _solid([0.5, 0.5, 0.5], batch=3)} if background else {}
-    pano_scene = _studio(**inputs)[4]
-    downstream = PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=pano_scene).ui
+    inputs = {"background": _solid([0.5, 0.5, 0.5], batch=3)} if background else {}
+    pano_scene = _studio(**inputs)[0]
+    downstream = PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", **output_size(64), state_json="", scene=pano_scene).ui
     rendered = []
     monkeypatch.setattr(nodes, "render_frame", lambda *args, **kwargs: rendered.append(1))
     monkeypatch.setattr(nodes, "_render_frames", lambda *args, **kwargs: rendered.append(1))
@@ -224,9 +227,10 @@ def test_preview_decides_its_timeline_with_the_stickers_rules(monkeypatch, tmp_p
 
 
 def _studio_ui(state=STATE, **inputs):
-    inputs.setdefault("bg_color", "#ff0000")
-    inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_size", "1024")
+    inputs.setdefault("background_color", "#ff0000")
+    inputs.setdefault("background_range", "360")
+    if "megapixels" not in inputs:
+        inputs.update(output_size(64))
     return PanoramaStudioNode.execute(state_json=json.dumps(state), **inputs).ui
 
 
@@ -236,7 +240,7 @@ def _ui_mp4(ui, key, tmp_path):
 
 
 def test_studio_ui_shows_an_image_background_and_an_image_sticker():
-    ui = _studio_ui(bg_media=_solid([0.5, 0.5, 0.5]), sticker=_solid([0.0, 0.0, 1.0]))
+    ui = _studio_ui(background=_solid([0.5, 0.5, 0.5]), sticker=_solid([0.0, 0.0, 1.0]))
 
     assert ui["pano_input_images"]
     assert ui["pano_sticker_input_images"]
@@ -251,7 +255,7 @@ def test_studio_ui_has_no_media_without_inputs():
 
 
 def test_studio_ui_encodes_image_batches_at_the_timeline_fps(tmp_path):
-    ui = _studio_ui(bg_media=_solid([0.5, 0.5, 0.5], batch=3), sticker=_solid([0.0, 0.0, 1.0], batch=2))
+    ui = _studio_ui(background=_solid([0.5, 0.5, 0.5], batch=3), sticker=_solid([0.0, 0.0, 1.0], batch=2))
 
     assert ui["pano_input_video_meta"][0]["fps"] == 30.0
     assert ui["pano_input_video_meta"][0]["frames"] == 3
@@ -271,7 +275,7 @@ def test_studio_ui_saves_video_media_without_reading_it_whole(tmp_path, monkeypa
         raise AssertionError("Studio must not read a whole VIDEO for its ui")
 
     monkeypatch.setattr(InputImpl.VideoFromFile, "get_components", fail)
-    ui = _studio_ui({"version": 2}, bg_media=bg, sticker=sticker)
+    ui = _studio_ui({"version": 2}, background=bg, sticker=sticker)
 
     assert ui["pano_input_images"]
     assert ui["pano_input_video_meta"][0] == {"fps": 25.0, "frames": 30, "duration": 1.2, "has_audio": True}
@@ -291,10 +295,10 @@ def test_studio_ui_makes_the_background_mp4_once_per_input(tmp_path, monkeypatch
     video = _video(tmp_path, count=6)
     images = _solid([0.5, 0.5, 0.5], batch=3)
 
-    first = [_studio_ui(bg_media=media) for media in (video, images)]
+    first = [_studio_ui(background=media) for media in (video, images)]
     moved = {**STATE, "camera": {"rotation": {"value": {"yaw_deg": 30.0}}}}
-    second = [_studio_ui(moved, bg_media=media) for media in (video, images)]
-    reloaded = _studio_ui(bg_media=InputImpl.VideoFromFile(video.get_stream_source()))
+    second = [_studio_ui(moved, background=media) for media in (video, images)]
+    reloaded = _studio_ui(background=InputImpl.VideoFromFile(video.get_stream_source()))
 
     assert len(encoded) == 2
     assert [ui["pano_input_videos"] for ui in first] == [ui["pano_input_videos"] for ui in second]
@@ -308,8 +312,8 @@ def test_studio_ui_opens_the_background_video_file_once(tmp_path, monkeypatch):
         monkeypatch.setattr(module, "coded_size", lambda source: opened.append(source) or coded_size(source), raising=False)
     video = _video(tmp_path, count=6)
 
-    _studio_ui(bg_media=video)
-    _studio_ui(bg_media=video)
+    _studio_ui(background=video)
+    _studio_ui(background=video)
 
     # The coded size is read once per file, also across executions.
     assert opened == [video.get_stream_source()]
@@ -319,12 +323,9 @@ def test_studio_ui_reports_warnings(tmp_path, monkeypatch):
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
     state = {"version": 2, "stickers": [{"id": "missing", "source": {"kind": "file", "filename": "missing.png"}}]}
 
-    ui = _studio_ui(state, output_size="auto")
+    ui = _studio_ui(state)
 
-    assert ui["pano_sticker_warnings"] == [
-        "Could not read the source of Sticker missing; it is not drawn.",
-        "output_size is auto, but bg_media is not connected; using 2048 instead.",
-    ]
+    assert ui["pano_sticker_warnings"] == ["Could not read the source of Sticker missing; it is not drawn."]
 
 
 def test_studio_ui_reports_the_pose_of_an_added_port_sticker():
@@ -347,9 +348,9 @@ def test_studio_ui_reports_the_pose_of_an_added_port_sticker():
 def test_studio_ui_reports_the_timeline_fps_a_video_sets(tmp_path):
     video = _video(tmp_path, count=3)
 
-    assert _studio_ui(bg_media=video)["pano_timeline_fps"] == [25.0]
+    assert _studio_ui(background=video)["pano_timeline_fps"] == [25.0]
     assert _studio_ui(sticker=video)["pano_timeline_fps"] == [25.0]
-    assert "pano_timeline_fps" not in _studio_ui(bg_media=_solid([0.0, 0.0, 1.0], batch=3), sticker=_solid([1.0, 0.0, 0.0]))
+    assert "pano_timeline_fps" not in _studio_ui(background=_solid([0.0, 0.0, 1.0], batch=3), sticker=_solid([1.0, 0.0, 0.0]))
 
 
 def test_studio_ui_reports_the_keyframes_of_a_port_sticker_added_from_a_moving_camera():

@@ -22,7 +22,7 @@ scene in <work dir>/moge/ (2 perspective frames, `_moge_sequence`), the same way
   depth_<i>.f32 (every frame; "depth" lists them), image.png, proxy.mp4, output_<shot>.png (frame 0)
 
 And it makes the lens scenes (docs/render-contract.md, "エディタとの一致（レンズの場面）"; ADR 0042) in <work dir>/lens/:
-for each lens curve of LENS_CASES, the box over an ERP background and a SPLAT shell alone, both on bg_color
+for each lens curve of LENS_CASES, the box over an ERP background and a SPLAT shell alone, both on background_color
 #204060, LENS_SIZE square, and writes
 
   scene.json   {"size", "erp", "glb", "unlit", "splat_meta", "cases": [{"name", "curve", "hfov", "mesh", "splat",
@@ -30,7 +30,7 @@ for each lens curve of LENS_CASES, the box over an ERP background and a SPLAT sh
                "output"}]}: the ERP as a PNG, the box's editor GLB and mark, the SPLAT's `pano_scene_meta`, and per curve
                the states of the two shots and the node's frames; then the Sticker scenes (LENS_STICKER_CASES): a `sky`
                Sticker of one curve shot through a Camera of another, and a `world` Sticker's sphere patch (`lens`)
-               shot from its lens center and from the side, on bg_color alone, their `file` Source (`sticker_source`)
+               shot from its lens center and from the side, on background_color alone, their `file` Source (`sticker_source`)
                being `sticker_image` (low-frequency: smooth color bands under a soft 2 x 2 checker)
   erp.png, editor_box.glb, scene.ply (the SPLAT's editor file), output_<name>.png, output_<name>_splat.png,
   sticker.png, output_<sticker case>.png
@@ -39,7 +39,7 @@ And it makes the glTF animation scene (docs/render-contract.md, "エディタと
 <work dir>/anim/: a small glTF made here each run (`_anim_glb`: a checker-textured column bent by two joints, a morph
 target, and two clips over LINEAR rotation, CUBICSPLINE translation, STEP scale, and weights), unlit and lit, placed as a
 3D file `file` Source and shot with clip1 at speed 1.5 at a clip time of 0.25 s and at one past the clip's length
-(it repeats), ANIM_SIZE square on bg_color #204060, and writes
+(it repeats), ANIM_SIZE square on background_color #204060, and writes
 
   scene.json   {"size", "cases": [{"name", "unlit", "source", "glb", "meta", "state", "clip", "speed", "seconds",
                "clip_time", "output"}]}: per case the original glTF (`source`, what the editor's GLTFLoader plays), the
@@ -137,6 +137,11 @@ def _moge_sequence():
             "image": da3["image"].expand(2, DA3_HEIGHT, DA3_WIDTH, 3).contiguous()}, image
 
 
+def _square(side: int) -> dict:
+    """The Studio widgets that give a `side` x `side` output of a Frame Camera of aspect 1 (ADR 0048)."""
+    return {"megapixels": side * side / 2**20, "multiple": side}
+
+
 def _depth_grid_scene(work: Path, geometry: dict, image, label: str):
     import folder_paths
 
@@ -144,15 +149,14 @@ def _depth_grid_scene(work: Path, geometry: dict, image, label: str):
 
     work.mkdir(parents=True, exist_ok=True)
     Image.fromarray(image, mode="RGB").save(work / "image.png")
-    erp_width = next(width for width in range(SIZE, 8 * SIZE) if nodes._even_side(width / math.pi * math.tan(math.radians(DA3_HFOV_DEG) / 2)) == SIZE)
     # From the DA3 camera (the image lies on the output), and from the side, looking back at the plane's middle.
     shots = {"front": ([0.0, 0.0, 0.0], 0.0), "side": ([1.2, 0.3, 0.0], -25.0)}
     scene = {"kind": "depth_grid", "depth": [], "image": "image.png", "video": "proxy.mp4", "shots": [], "width": SIZE, "height": SIZE}
     for name, (position, yaw) in shots.items():
         state = {"version": 2, "camera": {"aspect": 1.0, "fov": {"value": DA3_HFOV_DEG}, "position": {"value": position},
                                           "rotation": {"value": {"yaw_deg": yaw, "pitch_deg": 0.0, "roll_deg": 0.0}}}}
-        output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color="#000000", coverage="360", output_size=str(erp_width), scene=geometry)
-        frame = output.result[0][0]
+        output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), background_color="#000000", background_range="360", **_square(SIZE), world=geometry)
+        frame = output.result[1][0]
         if tuple(frame.shape[:2]) != (SIZE, SIZE):
             raise SystemExit(f"The node drew {tuple(frame.shape[:2])}, not {SIZE} x {SIZE}.")
         Image.fromarray((frame.clamp(0.0, 1.0) * 255.0 + 0.5).floor().byte().cpu().numpy(), mode="RGB").save(work / f"output_{name}.png")
@@ -224,7 +228,6 @@ def _lens_scenes(work: Path, editor_glb: Path, unlit: bool):
     import folder_paths
 
     from comfyui_pano_suite import nodes
-    from comfyui_pano_suite.core.math import lens_radius
 
     work.mkdir(parents=True, exist_ok=True)
     erp = _lens_erp()
@@ -234,25 +237,23 @@ def _lens_scenes(work: Path, editor_glb: Path, unlit: bool):
     splat = _lens_splat()
     scene = {"size": LENS_SIZE, "erp": "erp.png", "glb": "editor_box.glb", "unlit": unlit, "cases": []}
 
-    def shoot(state, width, **inputs):
-        output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color=LENS_BG_COLOR, coverage="360", output_size=str(width), **inputs)
-        frame = output.result[0][0]
+    def shoot(state, **inputs):
+        output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), background_color=LENS_BG_COLOR, background_range="360", **_square(LENS_SIZE), **inputs)
+        frame = output.result[1][0]
         if tuple(frame.shape[:2]) != (LENS_SIZE, LENS_SIZE):
             raise SystemExit(f"The node drew {tuple(frame.shape[:2])}, not {LENS_SIZE} x {LENS_SIZE}.")
         return output, Image.fromarray((frame.clamp(0.0, 1.0) * 255.0 + 0.5).floor().byte().cpu().numpy(), mode="RGB")
 
     for name, curve, hfov in LENS_CASES:
-        # The ERP width that gives LENS_SIZE through this lens (the node's own size rule).
-        width = next(w for w in range(256, 64 * LENS_SIZE) if nodes._even_side(w / math.pi * lens_radius(math.radians(hfov) / 2, curve)) == LENS_SIZE)
         camera = {"aspect": 1.0, "fov": {"value": hfov}, "curve": {"value": curve}}
         mesh = {"version": 2, "camera": {**camera, "rotation": {"value": {"yaw_deg": 20.0, "pitch_deg": 10.0, "roll_deg": 0.0}}},
                 "stickers": [{"id": "box", "placement": "world", "source": {"kind": "file", "filename": "box.glb", "subfolder": "3d", "storage": "input"},
                               "position": {"value": [-0.6, 0.3, -2.6]}, "rotation": {"value": BOX_ROTATION}, "scale": {"value": 1.0}}]}
-        _output, image = shoot(mesh, width, bg_media=bg)
+        _output, image = shoot(mesh, background=bg)
         image.save(work / f"output_{name}.png")
         # The SPLAT alone, the Camera facing it (its 3DGS frame looks along +Z, the Camera's front at rotation 0).
         look = {"version": 2, "camera": {**camera, "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}}}}
-        output, image = shoot(look, width, scene=splat)
+        output, image = shoot(look, world=splat)
         image.save(work / f"output_{name}_splat.png")
         if "splat_meta" not in scene:
             [entry] = output.ui["pano_scene_files"]
@@ -274,12 +275,10 @@ def _lens_scenes(work: Path, editor_glb: Path, unlit: bool):
     source = {"kind": "file", "filename": "sticker.png", "subfolder": "panorama_stickers", "storage": "input"}
     scene.update(sticker_image="sticker.png", sticker_source=source, sticker_cases=[])
     for name, camera, sticker_value in LENS_STICKER_CASES:
-        width = next(w for w in range(256, 64 * LENS_SIZE)
-                     if nodes._even_side(w / math.pi * lens_radius(math.radians(camera["hfov"]) / 2, camera["curve"])) == LENS_SIZE)
         state = {"version": 2, "camera": {"aspect": 1.0, "fov": {"value": camera["hfov"]}, "curve": {"value": camera["curve"]},
                                           "position": {"value": camera["position"]}, "rotation": {"value": camera["rotation"]}},
                  "stickers": [{"id": "lens_sticker", "source": source, **sticker_value}]}
-        _output, image = shoot(state, width)
+        _output, image = shoot(state)
         image.save(work / f"output_{name}.png")
         scene["sticker_cases"].append({"name": name, "state": state, "output": f"output_{name}.png"})
     (work / "scene.json").write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
@@ -396,7 +395,6 @@ def _anim_scene(work: Path):
     from comfyui_pano_suite.core.gltf_animation import clip_time
 
     work.mkdir(parents=True, exist_ok=True)
-    width = next(w for w in range(256, 64 * ANIM_SIZE) if nodes._even_side(w / math.pi * math.tan(math.radians(HFOV_DEG) / 2)) == ANIM_SIZE)
     scene = {"size": ANIM_SIZE, "cases": []}
     for unlit in (True, False):
         filename = f"anim_{'unlit' if unlit else 'lit'}.glb"
@@ -419,10 +417,10 @@ def _anim_scene(work: Path):
                               "position": {"value": [0.0, 0.0, 0.0]}, "rotation": {"value": {"yaw_deg": 25.0, "pitch_deg": 0.0, "roll_deg": 0.0}},
                               "scale": {"value": 1.0}}],
             }
-            output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color=ANIM_BG_COLOR, coverage="360", output_size=str(width))
+            output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), background_color=ANIM_BG_COLOR, background_range="360", **_square(ANIM_SIZE))
             if output.ui.get("pano_sticker_warnings"):
                 raise SystemExit(f"The node warned: {output.ui['pano_sticker_warnings']}")
-            frame = output.result[0][0]
+            frame = output.result[1][0]
             if tuple(frame.shape[:2]) != (ANIM_SIZE, ANIM_SIZE):
                 raise SystemExit(f"The node drew {tuple(frame.shape[:2])}, not {ANIM_SIZE} x {ANIM_SIZE}.")
             Image.fromarray((frame.clamp(0.0, 1.0) * 255.0 + 0.5).floor().byte().cpu().numpy(), mode="RGB").save(work / f"output_{name}.png")
@@ -465,13 +463,11 @@ def main(work: Path):
         raise SystemExit(f"The route refused the box: {payload}")
     shutil.copyfile(Path(folder_paths.get_temp_directory()) / payload["file"]["subfolder"] / payload["file"]["filename"], work / "editor_box.glb")
 
-    # Studio makes a perspective Camera's output 2 f tan(hFOV / 2) wide with f = ERP width / 2 pi: pick the ERP width
-    # that gives SIZE (the node's own size rule, called with a width its menu does not list).
-    erp_width = next(width for width in range(SIZE, 8 * SIZE) if nodes._even_side(width / math.pi * math.tan(math.radians(HFOV_DEG) / 2)) == SIZE)
-    output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color="#000000", coverage="360", output_size=str(erp_width))
+    # A square Frame Camera output of SIZE (ADR 0048: megapixels and multiple, not the FOV, set the size).
+    output = nodes.PanoramaStudioNode.execute(state_json=json.dumps(state), background_color="#000000", background_range="360", **_square(SIZE))
     if output.ui.get("pano_sticker_warnings"):
         raise SystemExit(f"The node warned: {output.ui['pano_sticker_warnings']}")
-    frame = output.result[0][0]
+    frame = output.result[1][0]
     height, width = frame.shape[:2]
     if (width, height) != (SIZE, SIZE):
         raise SystemExit(f"The node drew {width} x {height}, not {SIZE} x {SIZE}.")

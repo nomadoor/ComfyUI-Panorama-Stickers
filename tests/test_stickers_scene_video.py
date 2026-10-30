@@ -21,12 +21,16 @@ from comfyui_pano_suite import nodes, scene_video, sticker_media
 from comfyui_pano_suite.core.video_source import MaterializedVideo, StreamedVideo
 from comfyui_pano_suite.sticker_media import open_video, stream_video
 from comfyui_pano_suite.nodes import PanoramaStudioNode
+from scene_test_helpers import output_size
 
 
 def _execute(state=None, **inputs):
-    inputs.setdefault("bg_color", "#00ff00")
-    inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_size", "auto")
+    """Panorama Studio's outputs (scene, first_frame, first_frame_mask, video, sticker_state); 64 x 32 (a 360 ERP
+    as wide as the test videos) unless `megapixels` and `multiple` say otherwise."""
+    inputs.setdefault("background_color", "#00ff00")
+    inputs.setdefault("background_range", "360")
+    if "megapixels" not in inputs:
+        inputs.update(output_size(64))
     return PanoramaStudioNode.execute(
         state_json="" if state is None else json.dumps(state),
         **inputs,
@@ -35,7 +39,7 @@ def _execute(state=None, **inputs):
 
 def _frames(result):
     """Every output frame, as GetVideoComponents reads them from the `video` output."""
-    return result[2].get_components().images
+    return result[3].get_components().images
 
 
 def _write_video(path, pts_ms, width=64, height=32, audio_rate=None):
@@ -71,6 +75,8 @@ def _gray(image):
 
 
 def _record_evaluated_frames(monkeypatch):
+    """The frames evaluate_scene_state is called at. `execute` calls it twice before the `video` output is read: for
+    the first frame and for the rotation of the output ERP (ADR 0048), so the `video` frames start at [2:]."""
     frames = []
     original = nodes.evaluate_scene_state
 
@@ -85,7 +91,7 @@ def _record_evaluated_frames(monkeypatch):
 def test_file_video_background_streams_the_same_frames_as_the_core_reader(tmp_path):
     video = _cfr(tmp_path)
 
-    first, mask, output, *_rest = _execute(bg_media=video)
+    _scene, first, mask, output, *_rest = _execute(background=video)
     components = output.get_components()
 
     assert components.images.shape == (10, 32, 64, 3)
@@ -99,7 +105,7 @@ def test_file_video_background_streams_the_same_frames_as_the_core_reader(tmp_pa
 def test_unaligned_width_matches_the_core_reader(tmp_path):
     video = _write_video(tmp_path / "narrow.mkv", [0, 40, 80], width=48, height=24)
 
-    image = _frames(_execute(bg_media=video))
+    image = _frames(_execute(background=video, **output_size(48)))
 
     assert torch.equal(image, video.get_components().images)
 
@@ -132,7 +138,7 @@ def test_rotated_video_is_turned_upright_like_the_core_reader(tmp_path):
 def test_trimmed_video_outputs_only_the_trimmed_range(tmp_path):
     trimmed = _cfr(tmp_path).as_trimmed(0.12, 0.2)
 
-    output = _execute(bg_media=trimmed)[2]
+    output = _execute(background=trimmed)[3]
     image = output.get_components().images
 
     assert _gray(image) == [3, 4, 5, 6, 7]
@@ -143,7 +149,7 @@ def test_trimmed_video_outputs_only_the_trimmed_range(tmp_path):
 def test_negative_start_trims_from_the_end_like_the_core_reader(tmp_path):
     tail = InputImpl.VideoFromFile(str(_cfr(tmp_path).get_stream_source()), start_time=-0.2)
 
-    image = _frames(_execute(bg_media=tail))
+    image = _frames(_execute(background=tail))
 
     assert _gray(image) == [5, 6, 7, 8, 9]
     assert torch.equal(image, tail.get_components().images)
@@ -152,19 +158,19 @@ def test_negative_start_trims_from_the_end_like_the_core_reader(tmp_path):
 def test_trimmed_frames_are_evaluated_from_the_start_of_the_trim(tmp_path, monkeypatch):
     frames = _record_evaluated_frames(monkeypatch)
 
-    _frames(_execute({"version": 2, "timeline": {"fps": 25.0}}, bg_media=_cfr(tmp_path).as_trimmed(0.12, 0.2)))
+    _frames(_execute({"version": 2, "timeline": {"fps": 25.0}}, background=_cfr(tmp_path).as_trimmed(0.12, 0.2)))
 
-    assert frames[1:] == pytest.approx([0.0, 1.0, 2.0, 3.0, 4.0])
+    assert frames[2:] == pytest.approx([0.0, 1.0, 2.0, 3.0, 4.0])
 
 
 def test_variable_frame_rate_frames_are_evaluated_at_their_pts(tmp_path, monkeypatch):
     video = _write_video(tmp_path / "vfr.mkv", [0, 40, 60, 120, 200, 240])
     frames = _record_evaluated_frames(monkeypatch)
 
-    output = _execute({"version": 2, "timeline": {"fps": 25.0}}, bg_media=video)[2]
+    output = _execute({"version": 2, "timeline": {"fps": 25.0}}, background=video)[3]
     components = output.get_components()
 
-    assert frames[1:] == pytest.approx([0.0, 1.0, 1.5, 3.0, 5.0, 6.0])
+    assert frames[2:] == pytest.approx([0.0, 1.0, 1.5, 3.0, 5.0, 6.0])
     assert _gray(components.images) == list(range(6))
     # The frame rate is the stream's average rate, as the core reports it.
     assert components.frame_rate == video.get_frame_rate() == output.get_frame_rate()
@@ -173,31 +179,31 @@ def test_variable_frame_rate_frames_are_evaluated_at_their_pts(tmp_path, monkeyp
 def test_recorded_fps_keeps_seconds_when_the_background_fps_differs(tmp_path, monkeypatch):
     frames = _record_evaluated_frames(monkeypatch)
     # Recorded at 50 fps: 10 Timeline frames are 0.2 s, which is 5 frames of the 25 fps background.
-    output = _execute({"version": 2, "timeline": {"fps": 50.0, "length": 10}}, bg_media=_cfr(tmp_path))[2]
+    output = _execute({"version": 2, "timeline": {"fps": 50.0, "length": 10}}, background=_cfr(tmp_path))[3]
     output.get_components()
 
     assert output.get_frame_rate() == 25
     assert output.get_frame_count() == 5
-    assert frames[1:] == pytest.approx([0.0, 2.0, 4.0, 6.0, 8.0])
+    assert frames[2:] == pytest.approx([0.0, 2.0, 4.0, 6.0, 8.0])
 
 
 def test_length_override_past_the_background_video_draws_bg_color(tmp_path, monkeypatch):
     frames = _record_evaluated_frames(monkeypatch)
 
-    image = _frames(_execute({"version": 2, "timeline": {"fps": 25.0, "length": 12}}, bg_media=_cfr(tmp_path), bg_color="#ff0000"))
+    image = _frames(_execute({"version": 2, "timeline": {"fps": 25.0, "length": 12}}, background=_cfr(tmp_path), background_color="#ff0000"))
 
     assert image.shape[0] == 12
     assert _gray(image[:10]) == list(range(10))
     assert torch.equal(image[10:], torch.tensor([1.0, 0.0, 0.0]).expand(2, 32, 64, 3))
-    assert frames[1:] == pytest.approx([float(index) for index in range(12)])
+    assert frames[2:] == pytest.approx([float(index) for index in range(12)])
 
 
 def test_audio_is_the_background_audio_cut_to_the_output_length(tmp_path):
     video = _cfr(tmp_path, audio_rate=8000)
     core_audio = video.get_components().audio
 
-    full = _execute(bg_media=video)[2].get_components().audio
-    short = _execute({"version": 2, "timeline": {"fps": 25.0, "length": 5}}, bg_media=video)[2].get_components().audio
+    full = _execute(background=video)[3].get_components().audio
+    short = _execute({"version": 2, "timeline": {"fps": 25.0, "length": 5}}, background=video)[3].get_components().audio
 
     assert full["sample_rate"] == 8000 and full["waveform"].shape == (1, 1, 3200)
     assert torch.equal(full["waveform"], core_audio["waveform"][..., :3200])
@@ -208,7 +214,7 @@ def test_audio_is_the_background_audio_cut_to_the_output_length(tmp_path):
 def test_audio_of_a_trimmed_video_starts_at_the_trim(tmp_path):
     trimmed = _cfr(tmp_path, audio_rate=8000).as_trimmed(0.12, 0.2)
 
-    audio = _execute(bg_media=trimmed)[2].get_components().audio
+    audio = _execute(background=trimmed)[3].get_components().audio
 
     assert torch.equal(audio["waveform"], trimmed.get_components().audio["waveform"])
     assert audio["waveform"].shape == (1, 1, 1600)
@@ -236,7 +242,7 @@ def test_trimmed_aac_audio_matches_the_core_reader(tmp_path):
             container.mux(packet)
     trimmed = InputImpl.VideoFromFile(str(path)).as_trimmed(0.3, 0.4)
 
-    audio = _execute(bg_media=trimmed)[2].get_components().audio
+    audio = _execute(background=trimmed)[3].get_components().audio
 
     assert torch.equal(audio["waveform"], trimmed.get_components().audio["waveform"])
 
@@ -263,7 +269,7 @@ def test_frames_missing_after_a_seek_keep_the_times_of_the_others(tmp_path, capl
     listed = len(open_video(video, "bg_media").times)
     assert listed > decoded.shape[0]
 
-    output = _execute(bg_media=video, bg_color="#ff0000")[2]
+    output = _execute(background=video, background_color="#ff0000")[3]
     caplog.clear()
 
     with caplog.at_level(logging.WARNING):
@@ -281,8 +287,8 @@ def test_video_whose_trim_decodes_no_frame_is_an_error(tmp_path):
     path = _write_gop_video(tmp_path / "offset.ts", "mpegts", "libx264")
     video = InputImpl.VideoFromFile(path, start_time=0.5, duration=0.4)
 
-    with pytest.raises(ValueError, match="no frame of the bg_media VIDEO could be decoded"):
-        _execute(bg_media=video)
+    with pytest.raises(ValueError, match="no frame of the background VIDEO could be decoded"):
+        _execute(background=video)
 
 
 def _components_video(count=3, audio=None):
@@ -294,13 +300,13 @@ def test_non_file_video_is_read_through_the_core(monkeypatch):
     waveform = torch.arange(16000, dtype=torch.float32).reshape(1, 1, -1)
     frames = _record_evaluated_frames(monkeypatch)
 
-    components = _execute({"version": 2, "timeline": {"fps": 30.0}}, bg_media=_components_video(audio={"waveform": waveform, "sample_rate": 8000}))[2].get_components()
+    components = _execute({"version": 2, "timeline": {"fps": 30.0}}, background=_components_video(audio={"waveform": waveform, "sample_rate": 8000}), **output_size(8))[3].get_components()
     image, audio = components.images, components.audio
 
     assert image.shape == (3, 4, 8, 3)
     assert torch.allclose(image[:, 0, 0, 0], torch.tensor([0.0, 0.25, 0.5]))
     assert components.frame_rate == 30
-    assert frames[1:] == pytest.approx([0.0, 1.0, 2.0])
+    assert frames[2:] == pytest.approx([0.0, 1.0, 2.0])
     # 3 frames at 30 fps are 0.1 s.
     assert torch.equal(audio["waveform"], waveform[..., :800]) and audio["sample_rate"] == 8000
 
@@ -309,7 +315,7 @@ def test_cropped_file_video_is_read_through_the_core(tmp_path):
     video = _cfr(tmp_path)
     cropped = video.as_cropped(0, 0, 32, 16)
 
-    image = _frames(_execute(bg_media=cropped))
+    image = _frames(_execute(background=cropped, **output_size(32)))
 
     assert isinstance(open_video(video, "bg_media"), StreamedVideo)
     assert isinstance(open_video(cropped, "bg_media"), MaterializedVideo)
@@ -392,7 +398,7 @@ def test_progress_advances_once_per_output_frame(tmp_path, monkeypatch):
     bars = _record_progress(monkeypatch)
     pins = _record_pins(monkeypatch)
     video = _cfr(tmp_path)
-    output = _execute(bg_media=video)[2]
+    output = _execute(background=video)[3]
     bars.clear()
 
     image = output.get_components().images
@@ -404,7 +410,7 @@ def test_progress_advances_once_per_output_frame(tmp_path, monkeypatch):
 
 def test_interrupted_render_releases_the_pinned_buffer(tmp_path, monkeypatch):
     pins = _record_pins(monkeypatch)
-    output = _execute(bg_media=_cfr(tmp_path))[2]
+    output = _execute(background=_cfr(tmp_path))[3]
     _record_progress(monkeypatch, fail_at=3)
 
     with pytest.raises(RuntimeError, match="interrupted"):
@@ -420,12 +426,12 @@ def test_pinning_is_decided_by_the_whole_render(tmp_path, monkeypatch):
 
     # Each frame is far below the size, the video as a whole reaches it.
     pins = _record_pins(monkeypatch, staged_render_bytes=render_bytes)
-    image = _frames(_execute(bg_media=video))
+    image = _frames(_execute(background=video))
     assert [kind for kind, _ptr in pins] == ["pin", "unpin"]
     assert torch.equal(image, video.get_components().images)
 
     pins = _record_pins(monkeypatch, staged_render_bytes=render_bytes + 1)
-    image = _frames(_execute(bg_media=video))
+    image = _frames(_execute(background=video))
     assert pins == []
     assert torch.equal(image, video.get_components().images)
 
@@ -441,7 +447,7 @@ def test_a_buffer_that_cannot_be_pinned_is_not_used(tmp_path, monkeypatch):
     monkeypatch.setattr(scene_video.comfy.model_management, "pin_memory", refuse)
     video = _cfr(tmp_path)
 
-    image = _frames(_execute(bg_media=video))
+    image = _frames(_execute(background=video))
 
     # Rows are copied straight from the device, not through the pageable buffer as well.
     assert len(buffers) == 1 and bool(buffers[0].isnan().all())
@@ -458,7 +464,7 @@ def _camera_keyframes(*frames, lane="rotation"):
 
 
 def _length(state, **inputs):
-    return _execute({"version": 2, **state}, output_size="1024", **inputs)[2].get_frame_count()
+    return _execute({"version": 2, **state}, **output_size(1024), **inputs)[3].get_frame_count()
 
 
 def test_length_comes_from_the_latest_clip_range_end():
@@ -474,18 +480,18 @@ def test_length_comes_from_the_latest_clip_range_end():
 def test_background_batch_comes_before_clip_ends():
     bg = torch.zeros((3, 4, 8, 3))
 
-    assert _length({"stickers": [_clip_sticker("a", {"start": 0, "duration": 9})]}, bg_media=bg) == 3
+    assert _length({"stickers": [_clip_sticker("a", {"start": 0, "duration": 9})]}, background=bg) == 3
 
 
 def test_background_video_comes_before_clip_ends_and_the_override_before_the_video(tmp_path):
     clip = {"stickers": [_clip_sticker("a", {"start": 0, "duration": 30})], "timeline": {"fps": 25.0}}
 
-    assert _length(clip, bg_media=_cfr(tmp_path)) == 10
-    assert _length({**clip, "timeline": {"fps": 25.0, "length": 4}}, bg_media=_cfr(tmp_path)) == 4
+    assert _length(clip, background=_cfr(tmp_path)) == 10
+    assert _length({**clip, "timeline": {"fps": 25.0, "length": 4}}, background=_cfr(tmp_path)) == 4
 
 
 def test_override_comes_before_the_background_batch():
-    assert _length({"timeline": {"length": 2}}, bg_media=torch.zeros((5, 4, 8, 3))) == 2
+    assert _length({"timeline": {"length": 2}}, background=torch.zeros((5, 4, 8, 3))) == 2
 
 
 def test_hold_cut_is_not_late_on_a_video_frame_just_before_the_keyframe(tmp_path, monkeypatch):
@@ -501,10 +507,10 @@ def test_hold_cut_is_not_late_on_a_video_frame_just_before_the_keyframe(tmp_path
     frames = _record_evaluated_frames(monkeypatch)
     red = torch.tensor([1.0, 0.0, 0.0]).expand(1, 4, 4, 3).clone()
 
-    image = _frames(_execute(state, bg_media=_cfr(tmp_path, count=5), sticker=red))
+    image = _frames(_execute(state, background=_cfr(tmp_path, count=5), sticker=red))
 
     # The 1 ms PTS of frame 3 is snapped to Timeline frame 3; without the snap it stays just short of it.
-    assert 3.0 - 1e-6 < frames[1:][3] <= 3.0
+    assert 3.0 - 1e-6 < frames[2:][3] <= 3.0
     center = image[:, image.shape[1] // 2, image.shape[2] // 2]
     is_red = [bool(torch.allclose(pixel, torch.tensor([1.0, 0.0, 0.0]), atol=1e-3)) for pixel in center]
     assert is_red == [True, True, True, False, False]
@@ -517,10 +523,10 @@ def test_each_video_file_is_scanned_once_per_trim_window(tmp_path, monkeypatch):
     bg = _cfr(tmp_path, count=6)
     sticker = _write_video(tmp_path / "sticker.mkv", [index * 40 for index in range(4)])
 
-    result = _execute(bg_media=bg, sticker=sticker)
-    result[2].get_components()
-    _execute(bg_media=bg, sticker=sticker)
-    _execute(bg_media=bg.as_trimmed(0.04, 0.12))
+    result = _execute(background=bg, sticker=sticker)
+    result[3].get_components()
+    _execute(background=bg, sticker=sticker)
+    _execute(background=bg.as_trimmed(0.04, 0.12))
 
     assert sorted(scans) == sorted([(bg.get_stream_source(), 0.0, 0.0), (sticker.get_stream_source(), 0.0, 0.0), (bg.get_stream_source(), 0.04, 0.12)])
     first, second = open_video(bg, "bg_media"), open_video(bg, "sticker")

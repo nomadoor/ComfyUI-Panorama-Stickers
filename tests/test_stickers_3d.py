@@ -23,7 +23,7 @@ from comfyui_pano_suite import nodes
 from comfyui_pano_suite.core import mesh_render
 from comfyui_pano_suite.core.mesh_render import srgb_to_linear
 from comfyui_pano_suite.core.world_render import ContentSource
-from scene_test_helpers import batch_index_at_center, blob, blobs, camera_state, center, glb_positions, shoot, state_text, temp_entry_path, triangle_glb, video_frames
+from scene_test_helpers import batch_index_at_center, blob, blobs, camera_state, center, glb_positions, output_size, shoot, state_text, temp_entry_path, triangle_glb, video_frames
 from tools.bake_legacy_goldens import _painting, _stroke
 
 
@@ -46,9 +46,10 @@ def _square(rgb=RED, size=1.0, unlit=True):
 
 
 def _execute(state=None, **inputs):
-    inputs.setdefault("bg_color", "#00ff00")
-    inputs.setdefault("coverage", "360")
-    inputs.setdefault("output_size", "1024")
+    inputs.setdefault("background_color", "#00ff00")
+    inputs.setdefault("background_range", "360")
+    if "megapixels" not in inputs:
+        inputs.update(output_size(1024))
     return nodes.PanoramaStudioNode.execute(state_json=state_text(state), **inputs)
 
 
@@ -60,7 +61,7 @@ def _port(position=None, scale=None, keyframes=None, opacity=None, **rotation):
 
 
 def _frames(output):
-    return output.result[2].get_components().images
+    return output.result[3].get_components().images
 
 
 def _close(pixel, rgb, atol=1e-3):
@@ -70,11 +71,11 @@ def _close(pixel, rgb, atol=1e-3):
 def test_mesh_on_the_sticker_input_becomes_a_world_sticker_ahead_of_the_camera():
     output = _execute(sticker=_square())
 
-    [port] = output.result[4].layers[-1].state["stickers"]
+    [port] = output.result[0].layers[-1].state["stickers"]
     assert port["placement"] == "world" and port["source"] == {"kind": "port"} and "z_index" not in port
     assert np.allclose(port["position"]["value"], SQUARE_FIT) and abs(SQUARE_FIT[2] + 1.397) < 1e-3
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0} and port["scale"]["value"] == 1.0
-    image = output.result[0][0]
+    image = output.result[1][0]
     # 1 wide at 1.397 ahead: about 39 degrees (112 pixels) around the output center.
     assert _close(image[256, 512], RED) and _close(image[256, 512 + 50], RED) and _close(image[256, 512 + 62], GREEN)
     # The editor adds the same Sticker, and loads the media from its editor file.
@@ -89,7 +90,7 @@ def test_mesh_on_the_sticker_input_becomes_a_world_sticker_ahead_of_the_camera()
 def test_a_new_3d_sticker_is_placed_from_the_origin_whatever_the_camera_lanes():
     camera = {"position": {"value": [1.0, 0.0, 0.0]}, "rotation": {"value": {"yaw_deg": 90.0, "pitch_deg": 30.0, "roll_deg": 10.0}}}
 
-    port = _execute({"version": 2, "camera": camera}, sticker=_square()).result[4].layers[-1].state["stickers"][0]
+    port = _execute({"version": 2, "camera": camera}, sticker=_square()).result[0].layers[-1].state["stickers"][0]
 
     assert np.allclose(port["position"]["value"], SQUARE_FIT)
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
@@ -126,10 +127,10 @@ def test_without_a_camera_the_output_is_taken_from_the_origin_at_rotation_0(tmp_
     bg[:, 32:] = 0.5
     state = {"version": 2, "stickers": [sky], "painting": painting}
 
-    output = _execute(state, bg_media=bg, scene=scene, sticker=_square()).result
+    output = _execute(state, background=bg, world=scene, sticker=_square()).result
 
-    assert output[2].get_frame_count() == 1
-    image, mask = output[0][0], output[1][0]
+    assert output[3].get_frame_count() == 1
+    image, mask = output[1][0], output[2][0]
     # From the origin at rotation 0: the world Sticker 2 ahead at the center, the `scene` square ahead and right (yaw 45).
     assert _close(image[256, 512], RED) and _close(image[256, 640], BLUE)
     # The sky Sticker, the paint, the mask, and the background stay where they are stored.
@@ -160,7 +161,7 @@ def test_3d_stickers_are_drawn_at_their_transform(kind, tmp_path):
     # Turned to face the Camera from +X.
     output = _execute({"version": 2, "stickers": [_port(position=[2.0, 0.0, 0.0], yaw_deg=-90.0)]}, sticker=sticker)
 
-    image = output.result[0][0]
+    image = output.result[1][0]
     red, green, blue = image[RIGHT].tolist()
     # An OBJ has no colors and no material: the core's bare gray, lit by the default lights.
     if kind == "mesh file":
@@ -182,7 +183,7 @@ def test_3d_sticker_follows_its_keyframes():
 
 
 def test_3d_sticker_opacity_blends_with_what_is_behind():
-    image = _execute({"version": 2, "stickers": [_port(position=[0.0, 0.0, -2.0], opacity=0.5)]}, sticker=_square()).result[0][0]
+    image = _execute({"version": 2, "stickers": [_port(position=[0.0, 0.0, -2.0], opacity=0.5)]}, sticker=_square()).result[1][0]
 
     assert _close(image[256, 512], [0.5, 0.5, 0.0])
 
@@ -192,7 +193,7 @@ def test_3d_sticker_is_ordered_by_depth_with_the_scene_content(distance, center)
     # The scene is a blue square 4 wide, 3 ahead.
     state = {"version": 2, "scene": {"position": {"value": [0.0, 0.0, -3.0]}}, "stickers": [_port(position=[0.0, 0.0, -distance])]}
 
-    image = _execute(state, scene=_square(BLUE, size=4.0), sticker=_square()).result[0][0]
+    image = _execute(state, world=_square(BLUE, size=4.0), sticker=_square()).result[1][0]
 
     assert _close(image[256, 512], center)
     # Beside the red square, inside the blue one.
@@ -210,14 +211,14 @@ def test_3d_sticker_items_follow_the_output_frames():
 
     # Like an IMAGE batch: one item per output frame, and the Sticker ends with its last item.
     assert batch_index_at_center(_frames(output)) == [0, 1]
-    assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[4].frames] == [0, 1]
+    assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[0].frames] == [0, 1]
 
 
 def test_a_camera_shoots_the_3d_sticker_of_an_upstream_scene():
-    pano_scene = _execute(sticker=_square()).result[4]
+    pano_scene = _execute(sticker=_square()).result[0]
 
     ahead = video_frames(shoot(pano_scene, camera_state(hFOV_deg=10.0)))
-    behind = video_frames(shoot(pano_scene, camera_state(yaw_deg=180.0, hFOV_deg=10.0), bg_color="#00ff00"))
+    behind = video_frames(shoot(pano_scene, camera_state(yaw_deg=180.0, hFOV_deg=10.0), background_color="#00ff00"))
 
     assert _close(center(ahead), RED) and _close(center(behind), GREEN)
 
@@ -233,7 +234,7 @@ def test_nothing_the_3d_sticker_uploads_outlives_its_render_pass(tmp_path, monke
 
     monkeypatch.setattr(mesh_render, "_upload", recording)
     output = _execute({"version": 2, "timeline": {"length": 2}}, sticker=_square())
-    video, pano_scene = output.result[2], output.result[4]
+    video, pano_scene = output.result[3], output.result[0]
 
     video.get_components()
     video.save_to(str(tmp_path / "out.mp4"))
@@ -256,7 +257,7 @@ def test_same_3d_file_on_the_sticker_input_is_read_once_and_keeps_its_editor_fil
 
     assert len(reads) == 1 and len(writes) == 1
     assert again.ui["pano_sticker_files"] == first.ui["pano_sticker_files"]
-    assert again.result[4].layers[-1].port.media is first.result[4].layers[-1].port.media
+    assert again.result[0].layers[-1].port.media is first.result[0].layers[-1].port.media
 
 
 def test_3d_media_replaces_a_stored_sky_port_sticker_by_a_world_one_and_then_stays():
@@ -265,17 +266,17 @@ def test_3d_media_replaces_a_stored_sky_port_sticker_by_a_world_one_and_then_sta
 
     output = _execute({"version": 2, "stickers": [sky]}, sticker=_square())
 
-    [port] = output.result[4].layers[-1].state["stickers"]
+    [port] = output.result[0].layers[-1].state["stickers"]
     assert [port["id"], port["placement"], port["clip"]["duration"], port["locked"]] == ["p", "world", 5, True]
     assert np.allclose(port["position"]["value"], SQUARE_FIT)
     assert "direction" not in port
-    assert _close(output.result[0][0, 256, 512], RED)
+    assert _close(output.result[1][0, 256, 512], RED)
     # The editor replaces its Sticker the same way; run again with that state, the node changes nothing more.
     [pose] = output.ui["pano_sticker_input_pose"]
     assert pose["placement"] == "world" and pose["replace"] is True
     again = _execute({"version": 2, "stickers": [port]}, sticker=_square())
     assert "pano_sticker_input_pose" not in again.ui
-    assert again.result[4].layers[-1].state["stickers"] == [port]
+    assert again.result[0].layers[-1].state["stickers"] == [port]
 
 
 def test_sticker_state_does_not_place_a_3d_sticker():
@@ -287,7 +288,7 @@ def test_sticker_state_does_not_place_a_3d_sticker():
 
     output = _execute(sticker=_square(), sticker_state=sticker_state)
 
-    [port] = output.result[4].layers[-1].state["stickers"]
+    [port] = output.result[0].layers[-1].state["stickers"]
     assert port["placement"] == "world" and np.allclose(port["position"]["value"], SQUARE_FIT)
     assert port["rotation"]["value"] == {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0} and port["scale"]["value"] == 1.0
     assert any("sticker_state places only 2D Stickers; the 3D Sticker is placed in front of the origin to fit the view." == message for message in output.ui["pano_sticker_warnings"])
@@ -308,14 +309,14 @@ def _two_splat_items():
 def test_splat_sticker_items_follow_the_output_frames_through_the_video():
     output = _execute(sticker=_two_splat_items())
 
-    assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[4].frames] == [0, 1]
+    assert [port_index for _bg, ((_frame, port_index, _scene),) in output.result[0].frames] == [0, 1]
     # The gaussian's center is opaque enough to read the item from its red.
     reds = [round(float(frame[256, 512, 0]) * 10) for frame in _frames(output)]
     assert reds == [1, 2]
 
 
 def test_a_camera_shoots_the_splat_sticker_of_an_upstream_scene():
-    pano_scene = _execute(sticker=blobs(blob((0.0, 0.0, 0.0), RED, size=0.3))).result[4]
+    pano_scene = _execute(sticker=blobs(blob((0.0, 0.0, 0.0), RED, size=0.3))).result[0]
 
     frames = video_frames(shoot(pano_scene, camera_state(hFOV_deg=10.0)))
 
@@ -365,11 +366,11 @@ def test_a_3d_file_source_is_drawn_as_the_same_file_on_the_sticker_input(make, i
     from_file = _execute({"version": 2, "stickers": [placed]})
     from_input = _execute({"version": 2, "stickers": [port]}, sticker=Types.File3D(str(input_dir / "3d" / name)))
 
-    assert torch.equal(from_file.result[0], from_input.result[0])
-    assert not _close(from_file.result[0][0][RIGHT], GREEN)
+    assert torch.equal(from_file.result[1], from_input.result[1])
+    assert not _close(from_file.result[1][0][RIGHT], GREEN)
     # The editor asks the route for its file; the run shows none, and warns of nothing.
     assert "pano_sticker_files" not in from_file.ui and "pano_sticker_warnings" not in from_file.ui
-    layer = from_file.result[4].layers[-1]
+    layer = from_file.result[0].layers[-1]
     assert set(layer.sources.contents) == {"f"} and "f" not in layer.sources.stickers
     assert layer.sources.contents["f"] is nodes._read_scene_file(Types.File3D(str(input_dir / "3d" / name)), "sticker")
 
@@ -385,7 +386,7 @@ def test_a_3d_file_source_is_read_once_across_runs(input_dir, monkeypatch):
     again = _execute(state)
 
     assert len(reads) == 1
-    assert again.result[4].layers[-1].sources.contents["f"] is first.result[4].layers[-1].sources.contents["f"]
+    assert again.result[0].layers[-1].sources.contents["f"] is first.result[0].layers[-1].sources.contents["f"]
 
 
 def test_a_3d_file_source_follows_its_clip_range_through_the_video(input_dir):
@@ -418,8 +419,8 @@ def test_unreadable_3d_file_sources_are_not_drawn_and_warn(input_dir):
             "(GLB, GLTF, OBJ, STL). Sticker c is not drawn.") in warnings
     assert "Could not read the 3D file 3d/model.glb: a sky Sticker cannot show a 3D file. Sticker d is not drawn." in warnings
     assert "Could not read the 3D file ../input/3d/model.glb: the file was not found. Sticker e is not drawn." in warnings
-    assert output.result[4].layers[-1].sources.contents == {}
-    assert _close(output.result[0][0][RIGHT], GREEN)
+    assert output.result[0].layers[-1].sources.contents == {}
+    assert _close(output.result[1][0][RIGHT], GREEN)
 
 
 def test_a_compressed_gltf_source_is_not_drawn_and_warns_naming_its_extension(input_dir):
@@ -430,7 +431,7 @@ def test_a_compressed_gltf_source_is_not_drawn_and_warns_naming_its_extension(in
     assert output.ui["pano_sticker_warnings"] == [
         "Could not read the 3D file 3d/basisu.glb: it uses the glTF extension KHR_texture_basisu, which Panorama Studio "
         "cannot draw; export the model without this compression. Sticker a is not drawn."]
-    assert output.result[4].layers[-1].sources.contents == {}
+    assert output.result[0].layers[-1].sources.contents == {}
 
 
 def test_other_errors_of_the_reader_stop_the_run(input_dir, monkeypatch):
@@ -446,14 +447,14 @@ def test_other_errors_of_the_reader_stop_the_run(input_dir, monkeypatch):
 
 def test_a_downstream_scene_draws_the_3d_file_and_an_override_that_deletes_it_drops_it(input_dir):
     _lit_glb(input_dir / "3d" / "model.glb")
-    upstream = _execute({"version": 2, "id": "up", "stickers": [_file_sticker("model.glb", position=(0.0, 0.0, -2.0), yaw_deg=0.0)]}).result[4]
+    upstream = _execute({"version": 2, "id": "up", "stickers": [_file_sticker("model.glb", position=(0.0, 0.0, -2.0), yaw_deg=0.0)]}).result[0]
 
-    kept = shoot(upstream, camera_state(hFOV_deg=20.0), bg_color="#00ff00")
-    deleted = shoot(upstream, {**camera_state(hFOV_deg=20.0), "upstream": [{"layer": "up", "fps": 24.0, "deleted": ["f"]}]}, bg_color="#00ff00")
+    kept = shoot(upstream, camera_state(hFOV_deg=20.0), background_color="#00ff00")
+    deleted = shoot(upstream, {**camera_state(hFOV_deg=20.0), "upstream": [{"layer": "up", "fps": 24.0, "deleted": ["f"]}]}, background_color="#00ff00")
 
     assert not _close(center(video_frames(kept)), GREEN)
     assert _close(center(video_frames(deleted)), GREEN)
-    assert deleted[4].layers[0].sources.contents == {} and upstream.layers[0].sources.contents.keys() == {"f"}
+    assert deleted[0].layers[0].sources.contents == {} and upstream.layers[0].sources.contents.keys() == {"f"}
 
 
 def test_a_port_3d_sticker_and_a_3d_file_sticker_render_together_in_one_layer(input_dir):
@@ -463,9 +464,9 @@ def test_a_port_3d_sticker_and_a_3d_file_sticker_render_together_in_one_layer(in
 
     output = _execute(state, sticker=_square())
 
-    for frame in (output.result[0][0], *_frames(output)):
+    for frame in (output.result[1][0], *_frames(output)):
         assert _close(frame[256, 512], RED) and not _close(frame[RIGHT], GREEN)
-    layer = output.result[4].layers[-1]
+    layer = output.result[0].layers[-1]
     assert layer.port.is_3d and set(layer.sources.contents) == {"f"}
 
 
@@ -516,8 +517,8 @@ def test_a_new_port_sticker_of_off_center_content_is_fitted_and_without_content_
     shifted.vertices = shifted.vertices + torch.tensor([3.0, 0.0, 0.0])
     empty = Types.MESH(torch.zeros((1, 3, 3)), torch.tensor([[[0, 1, 2]]]), vertex_counts=torch.tensor([0]), face_counts=torch.tensor([0]))
 
-    fitted = _execute(sticker=shifted).result[4].layers[-1].state["stickers"][0]["position"]["value"]
-    nothing = _execute(sticker=empty).result[4].layers[-1].state["stickers"][0]["position"]["value"]
+    fitted = _execute(sticker=shifted).result[0].layers[-1].state["stickers"][0]["position"]["value"]
+    nothing = _execute(sticker=empty).result[0].layers[-1].state["stickers"][0]["position"]["value"]
 
     distance = math.sqrt(8.0) / math.sin(math.radians(nodes.PORT_3D_FIT_FOV_DEG) / 2.0) * 1.1
     assert np.allclose(fitted, [-3.0, 0.0, -distance])

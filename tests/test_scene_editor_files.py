@@ -233,8 +233,8 @@ def test_studio_shows_the_scene_files_after_running(monkeypatch):
     monkeypatch.setattr(nodes, "_scene_content", lambda scene: None if scene is None else SceneContent(2, render))
     mesh = _mesh([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]] * 2)
 
-    output = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="", scene=mesh)
-    without = nodes.PanoramaStudioNode.execute(bg_color="#00ff00", coverage="360", output_size="1024", state_json="")
+    output = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="", world=mesh)
+    without = nodes.PanoramaStudioNode.execute(background_color="#00ff00", background_range="360", megapixels=0.5, multiple=8, state_json="")
 
     assert output.ui["pano_scene_meta"] == [{"kind": "mesh", "unlit": False}] and len(output.ui["pano_scene_files"]) == 2
     assert all(_path(entry).exists() for entry in output.ui["pano_scene_files"])
@@ -402,12 +402,12 @@ def test_moge_sequences_are_depth_grids_with_the_pixel_k(caplog):
         assert nodes._scene_ui(value, fps=10.0)["pano_scene_meta"] == [{"kind": "mesh", "unlit": True}], name
         caplog.clear()
         with caplog.at_level(logging.WARNING):
-            nodes.PanoramaStudioNode.execute(bg_color="#000000", coverage="360", output_size="1024", state_json="", scene=value, sticker=value)
+            nodes.PanoramaStudioNode.execute(background_color="#000000", background_range="360", megapixels=0.5, multiple=8, state_json="", world=value, sticker=value)
         warned = [record.getMessage() for record in caplog.records if "MOGE_GEOMETRY" in record.getMessage()]
         assert len(warned) == 1 and reason in warned[0], (name, warned)
     caplog.clear()
     with caplog.at_level(logging.WARNING):
-        nodes.PanoramaStudioNode.execute(bg_color="#000000", coverage="360", output_size="1024", state_json="", scene=_moge_sequence(count=2))
+        nodes.PanoramaStudioNode.execute(background_color="#000000", background_range="360", megapixels=0.5, multiple=8, state_json="", world=_moge_sequence(count=2))
     assert not [record for record in caplog.records if "MOGE_GEOMETRY" in record.getMessage()]
 
 

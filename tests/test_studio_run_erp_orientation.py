@@ -18,6 +18,7 @@ pytest.importorskip(
 )
 
 from comfyui_pano_suite.nodes import PanoramaStudioNode
+from scene_test_helpers import output_size
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # The ERP shader reads the dome's local direction p as the panorama direction S p, and three.js shows p at R p for
@@ -48,7 +49,7 @@ def _direction(lon, lat):
 
 
 def _erp_directions(height, width, coverage=360):
-    """The panorama direction of each ERP pixel center (`ray_directions` without a Camera)."""
+    """The panorama direction of each ERP pixel center (`ray_directions` of the default Camera)."""
     lon = ((np.arange(width) + 0.5) / width - 0.5) * math.radians(coverage)
     lat = (0.5 - (np.arange(height) + 0.5) / height) * math.pi
     return _direction(lon[None, :], lat[:, None])
@@ -58,7 +59,7 @@ MARKER = _direction(math.radians(60.0), math.radians(20.0))
 
 
 def _marker_erp(coverage):
-    """A black ERP over `coverage` (bg_media takes the same coverage) with a white disc 5 degrees wide around MARKER."""
+    """A black ERP over `coverage` (background_range takes the same) with a white disc 5 degrees wide around MARKER."""
     inside = _erp_directions(256, 512 * coverage // 360, coverage) @ MARKER > math.cos(math.radians(5.0))
     return torch.from_numpy(np.repeat(inside[None, ..., None], 3, axis=-1).astype(np.float32))
 
@@ -68,17 +69,20 @@ def _camera(**rotation):
 
 
 @pytest.mark.parametrize("coverage", ["360", "180"])
-@pytest.mark.parametrize("state", [
-    {"version": 2},
-    {"version": 2, "camera": _camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0)},
-    {"version": 2, "camera": _camera(yaw_deg=50.0, pitch_deg=-15.0, roll_deg=60.0)},
-    # A hidden Camera shoots as no Camera does.
-    {"version": 2, "camera": {**_camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0), "visible": False}},
-], ids=["no-camera", "yaw30-pitch10-roll5", "yaw50-pitch-15-roll60", "hidden-camera"])
-def test_the_surface_lays_the_output_erp_back_where_the_background_has_it(state, coverage):
-    result = PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color="#000000", coverage=coverage,
-                                        output_size="1024", bg_media=_marker_erp(int(coverage)))
-    output = result.result[0][0].numpy()
+@pytest.mark.parametrize("camera", [
+    None,
+    _camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0),
+    _camera(yaw_deg=50.0, pitch_deg=-15.0, roll_deg=60.0),
+    # A hidden Camera still shoots (ADR 0048).
+    {**_camera(yaw_deg=30.0, pitch_deg=10.0, roll_deg=5.0), "visible": False},
+], ids=["default-camera", "yaw30-pitch10-roll5", "yaw50-pitch-15-roll60", "hidden-camera"])
+def test_the_surface_lays_the_output_erp_back_where_the_background_has_it(camera, coverage):
+    # The Camera shoots `coverage` (its erp_range) of a background over the same range (background_range).
+    camera = {**(camera or _camera()), "erp_range": int(coverage)}
+    size = output_size(1024) if coverage == "360" else output_size(512, 512)
+    result = PanoramaStudioNode.execute(state_json=json.dumps({"version": 2, "camera": camera}), background_color="#000000",
+                                        background_range=coverage, background=_marker_erp(int(coverage)), **size)
+    output = result.result[1][0].numpy()
     # Where the marker landed in the output, as a direction in the output ERP's own frame.
     weight = output.mean(axis=-1)
     assert weight.sum() > 0
@@ -91,13 +95,15 @@ def test_the_surface_lays_the_output_erp_back_where_the_background_has_it(state,
     assert math.degrees(math.acos(float(np.clip(shown @ MARKER, -1.0, 1.0)))) < 0.5
 
 
-def test_the_output_erp_carries_the_camera_rotation_at_frame_0_or_none():
+def test_the_output_erp_carries_the_camera_rotation_at_frame_0():
     keyed = {**_camera(), "rotation": {"value": {"yaw_deg": 0.0}, "keyframes": [
         {"frame": 0, "value": {"yaw_deg": 20.0, "pitch_deg": 5.0, "roll_deg": -3.0}, "easing": [0, 0, 1, 1]},
         {"frame": 4, "value": {"yaw_deg": 80.0, "pitch_deg": 0.0, "roll_deg": 0.0}}]}}
     rotations = [
-        PanoramaStudioNode.execute(state_json=json.dumps(state), bg_color="#000000", coverage="360", output_size="1024").ui["pano_output_erp"][0]["rotation"]
+        PanoramaStudioNode.execute(state_json=json.dumps(state), background_color="#000000", **output_size(64)).ui["pano_output_erp"][0]["rotation"]
         for state in ({"version": 2}, {"version": 2, "camera": {**_camera(yaw_deg=30.0), "visible": False}}, {"version": 2, "camera": keyed})
     ]
 
-    assert rotations == [None, None, {"yaw_deg": 20.0, "pitch_deg": 5.0, "roll_deg": -3.0}]
+    # Never None (ADR 0048): the default Camera's is 0, and a hidden Camera's is its own.
+    assert rotations == [{"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, {"yaw_deg": 30.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+                         {"yaw_deg": 20.0, "pitch_deg": 5.0, "roll_deg": -3.0}]
