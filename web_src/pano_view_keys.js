@@ -11,15 +11,16 @@ import { viewAxes } from "./pano_space.js";
 export const KEY_MOVE_FAST = 4;
 export const KEY_MOVE_SLOW = 0.25;
 
-// code -> [axis, sign]
-const MOVE_KEYS = {
+// code -> [axis, sign]. The new UI's list of shortcuts reads it too (studio/shortcuts.js).
+export const MOVE_KEYS = Object.freeze({
   KeyW: ["forward", 1],
   KeyS: ["forward", -1],
   KeyD: ["right", 1],
   KeyA: ["right", -1],
   KeyE: ["up", 1],
   KeyQ: ["up", -1],
-};
+});
+export const MOVE_KEY_CODES = Object.freeze(Object.keys(MOVE_KEYS));
 
 export function isMoveKey(code) {
   return Object.hasOwn(MOVE_KEYS, code);

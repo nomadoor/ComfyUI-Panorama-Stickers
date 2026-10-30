@@ -6,9 +6,10 @@
 import { createEditorView, deviceLens, shotCamera, shotLensImage } from "../pano_editor_view.js";
 import { DRAW_REASON, createFrameScheduler } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
-import { isMoveKey } from "../pano_view_keys.js";
+import { MOVE_KEY_CODES, isMoveKey } from "../pano_view_keys.js";
 import { createStageObjects } from "./stage_objects.js";
 import { drawStageOverlay } from "./stage_overlay.js";
+import { editorKeyAction } from "./shortcuts.js";
 import { placedCamera } from "../pano_space.js";
 import { shortestYawDelta } from "../pano_camera_math.js";
 import { liveErpSize, liveErpView } from "./erp_preview.js";
@@ -754,7 +755,7 @@ export function createStage({
   // Escape takes back one thing (docs/studio-ui.md "閉じ方"): a view drag under way is let go; else the editor takes
   // back what is next in its order, or closes. A value box's drag takes its own Escape first, on the window's capture.
   function onEscapeKey(event) {
-    if (event.key !== "Escape" || !stageOwnsKey(event, root)) return;
+    if (editorKeyAction(event) !== "escape" || !stageOwnsKey(event, root)) return;
     event.preventDefault();
     event.stopPropagation();
     if (drag) end(true);
@@ -806,7 +807,7 @@ export function createStage({
 
   function releaseKeys() {
     let released = false;
-    for (const code of ["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"]) released = input.keyUp({ code, shiftKey: false }) || released;
+    for (const code of MOVE_KEY_CODES) released = input.keyUp({ code, shiftKey: false }) || released;
     return released;
   }
 
