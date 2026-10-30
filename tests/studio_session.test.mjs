@@ -316,6 +316,55 @@ test("a placed object goes in at once and is selected, with no Undo step until i
   assert.equal(session.state.stickers[1].source.filename, "box.glb");
 });
 
+test("Undo and Redo while a placed object uploads keep it; Delete takes it, and then it is not settled", () => {
+  const session = createStudioSession({ state: load({ stickers: [sky("sticker_1")] }) });
+  session.select({ row: "sticker_1" });
+  session.toggleLock();
+  const id = session.addPlaced((newId) => placed(newId));
+  assert.ok(session.undo());
+  assert.equal(session.state.stickers[0].locked, false);
+  assert.deepEqual(session.state.stickers.map((s) => s.id), ["sticker_1", id]);
+  assert.ok(session.redo());
+  assert.deepEqual(session.state.stickers.map((s) => s.id), ["sticker_1", id]);
+  assert.equal(session.settlePlaced(id, (sticker) => {
+    sticker.source = file("box.glb");
+  }), true);
+  assert.ok(session.undo());
+  assert.deepEqual(session.state.stickers.map((s) => s.id), ["sticker_1"]);
+
+  const other = createStudioSession({ state: load({ stickers: [] }) });
+  const gone = other.addPlaced((newId) => placed(newId));
+  other.select({ row: gone });
+  assert.equal(other.deleteSelectedObject().changed, true);
+  // Undo of the Delete goes back to before it was placed (placing had no step): it does not come back.
+  other.undo();
+  assert.equal(other.state.stickers.length, 0);
+  assert.equal(other.settlePlaced(gone, () => {}), false);
+});
+
+test("a placed object handed over from a closed editor goes in under its id, not selected, with no step", () => {
+  const session = createStudioSession({ state: load({ stickers: [sky("sticker_1")] }) });
+  const id = session.adoptPlaced(placed("sticker_2"));
+  assert.equal(id, "sticker_2");
+  assert.equal(session.selection.row, null);
+  assert.equal(session.canUndo, false);
+  assert.equal(session.addPlaced((newId) => placed(newId)), "sticker_3");
+  // An id already taken gives it a new one.
+  assert.equal(session.adoptPlaced(placed("sticker_1")), "sticker_4");
+  assert.equal(session.settlePlaced("sticker_2", (sticker) => {
+    sticker.source = file("box.glb");
+  }), true);
+  assert.equal(session.canUndo, true);
+  assert.equal(createStudioSession({ state: load({}), readOnly: true }).adoptPlaced(placed("sticker_1")), null);
+});
+
+test("a session opened on a state_json that cannot be read writes nothing over it unedited", () => {
+  for (const current of ["{not json", '{"version":3,"stickers":[]}']) {
+    const session = createStudioSession({ state: loadSceneState(null) });
+    assert.equal(session.stateText(node, current), null, current);
+  }
+});
+
 test("a placed object that fails goes with no step; one gone already is not settled", () => {
   const session = createStudioSession({ state: load({ stickers: [] }) });
   const id = session.addPlaced((newId) => placed(newId));

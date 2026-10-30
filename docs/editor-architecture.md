@@ -30,8 +30,8 @@ Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモ�
 
 エディタは `web_src/pano_editor.js` の `showEditor(node, type, options)` が開く。bundle の入口とノードの登録は
 `web_src/main.js` にあり、`pano_editor.js` が渡す `oldEditorHooks` で `createPanoEditorExtension` を登録する（ADR 0044 の「新旧の境」）。
-どちらのエディタを開くかは `web_src/editor_choice.js` の `createEditorChooser` が決める（開発の間だけの入口の設定 `PanoramaSuite.Editor.NewUI`、
-既定は off。off のときはどのノードも古い UI で開く）。
+どちらのエディタを開くかは `web_src/editor_choice.js` の `createEditorChooser` が決める（入口の設定 `PanoramaSuite.Editor.NewUI`、
+既定は on。off のときはどのノードも古い UI で開く。on でも旧ノードと読み取り専用は古い UI で開く）。
 コードは次の 3 層に分かれている。
 
 | 層 | ファイル | 役割 |

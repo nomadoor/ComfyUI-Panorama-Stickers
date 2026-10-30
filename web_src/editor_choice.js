@@ -1,17 +1,18 @@
-// Which editor opens for a node (ADR 0044 "置き換えの進め方"). While the new UI is in development, Panorama
-// Studio opens in it only when the setting below is on; otherwise every node opens in the old UI, as before.
+// Which editor opens for a node (ADR 0044 "置き換えの進め方"). Panorama Studio opens in the new UI while the setting
+// below is on (the default); turned off, every node opens in the old UI, which keeps painting and masks until the
+// new UI has them.
 // web_src/main.js puts this together with the two editors.
 
 export const NEW_UI_SETTING_ID = "PanoramaSuite.Editor.NewUI";
 
-// The ComfyUI setting (an extension's `settings`). Off by default: a user sees no change.
+// The ComfyUI setting (an extension's `settings`). On by default (docs/studio-ui.md "入口").
 export const NEW_UI_SETTING = {
   id: NEW_UI_SETTING_ID,
   category: ["Panorama Suite", "Editor", "New editor"],
-  name: "Panorama Studio: new editor (in development)",
-  tooltip: "Opens Panorama Studio in the new editor while it is being built. Closing it saves the edits; adding, painting and the Camera view are not there yet.",
+  name: "Panorama Studio: new editor",
+  tooltip: "Opens Panorama Studio in the new editor. Turn it off to use the previous editor, which still has painting and masks.",
   type: "boolean",
-  defaultValue: false,
+  defaultValue: true,
 };
 
 // Preloading the new editor (docs/studio-ui.md "読み込み中と空の画面"): returns check(), which, while the setting is on,

@@ -12,7 +12,7 @@ const props = defineProps({ onEvent: { type: Function, default: () => {} } });
 const record = { layer: "scene_up", stickers: [{ id: "sticker_1", placement: "world" }], scene: {}, deleted: ["gone"] };
 const ctx = shallowRef(ctxOf(studioState({ painting_visible: false }), {
   upstream: [upstreamLayer({ record, deleted: 1 })],
-  background: { end: 80 },
+  background: { end: 80, video: true },
 }));
 const selection = shallowRef({ row: null, keys: [] });
 const playhead = shallowRef(24);
@@ -28,6 +28,12 @@ window.__scene = {
   upstream: () => JSON.parse(JSON.stringify(ctx.value.upstream.map((layer) => layer.sceneState))),
   selection: () => selection.value,
   playhead: () => playhead.value,
+  // Makes poster.png (sticker_2) the port Sticker with a 60-frame VIDEO, a row with its own time.
+  portVideo: () => {
+    const state = JSON.parse(JSON.stringify(ctx.value.state));
+    state.stickers.find((sticker) => sticker.id === "sticker_2").source = { kind: "port" };
+    ctx.value = { ...ctx.value, state, media: { ...ctx.value.media, port: { kind: "VIDEO", frames: 60, duration: 2.5 } } };
+  },
 };
 
 function stop() {
@@ -90,6 +96,7 @@ const THEMES = ["dark", "light"];
           :state="ctx.state"
           :upstream="ctx.upstream"
           :background="ctx.background"
+          :media="ctx.media"
           :selection="selection"
           :playhead="playhead"
           :playing="playing"

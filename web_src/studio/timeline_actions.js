@@ -1,5 +1,5 @@
-// What the new UI's Timeline does (pure): selecting rows and Keyframes, moving and deleting Keyframes, the row dot,
-// the eye, Clip range drags, the jump to the previous or next Keyframe, the length and fps fields, and the loop
+// What the new UI's Timeline does (pure): selecting rows and Keyframes, moving, deleting, copying and pasting
+// Keyframes, the row dot, the eye, Clip range drags, the jump to the previous or next Keyframe, the length and fps fields, and the loop
 // setting. The rules are docs/timeline-ui.md's; the Lane edits themselves are pano_timeline.js's, called here.
 //
 // Nothing here changes what it is given: an edit returns { state, upstream }, the new state (the same object when
@@ -12,6 +12,7 @@ import {
   enteredTimelineFps,
   enteredTimelineLength,
   keyAllLanes,
+  laneNames,
   moveClip,
   moveKeyframes,
   rowLaneNames,
@@ -171,6 +172,68 @@ export function deleteKeys(ctx, selection, playhead) {
     for (const [name, list] of lanes) deleteKeyframes(owner, [name], list, playhead - entry.offset);
   }
   return { edit: draft.result(), selection: { row: selection.row ?? null, keys: [] } };
+}
+
+// Copy of the selected Keyframes (docs/timeline-ui.md "Keyframe のコピーと貼り付け"): the editor's own clipboard,
+// { keys: [{ row, lane, offset, values: [{ name, keyframe }] }] } with one item per selected Keyframe (a pin of a closed
+// row, `lane` null, holds its row's Lanes keyed at its frame), `offset` its Timeline frames after the earliest, and
+// copies of the Keyframes (value, Easing, handles). Locked rows copy too. null when no selected Keyframe exists.
+export function copyKeys(ctx, selection) {
+  const items = [];
+  for (const key of selection?.keys || []) {
+    if (items.some((item) => sameKey(item.key, key))) continue;
+    const entry = findEntry(ctx, key.row);
+    if (!entry?.owner) continue;
+    const values = [];
+    for (const name of key.lane ? [key.lane] : rowLaneNames(entry.owner)) {
+      const found = entry.owner[name]?.keyframes?.find((item) => Math.abs(item.frame - key.frame) <= FRAME_EPSILON);
+      if (found) values.push({ name, keyframe: structuredClone(found) });
+    }
+    if (values.length) items.push({ key, at: key.frame + entry.offset, values });
+  }
+  if (!items.length) return null;
+  const earliest = Math.min(...items.map((item) => item.at));
+  return { keys: items.map(({ key, at, values }) => ({ row: key.row, lane: key.lane ?? null, offset: at - earliest, values })) };
+}
+
+// Paste of the clipboard (copyKeys) at the playhead: the earliest Keyframe at the playhead, the others at their
+// offsets, none past the Timeline's last frame. Copied from one row, they go onto the selected object when it has
+// every copied Lane, else back onto that row; from several rows, each back onto its own. A Keyframe of the same Lane at
+// a target frame is replaced. Rows whose Keyframes may not change take nothing. { edit, selection } with the pasted
+// Keyframes selected, or null when nothing pastes.
+export function pasteKeys(ctx, clipboard, selection, playhead) {
+  const items = clipboard?.keys || [];
+  if (!items.length) return null;
+  const rows = [...new Set(items.map((item) => item.row))];
+  const targets = new Map(rows.map((row) => [row, findEntry(ctx, row)]));
+  if (rows.length === 1 && selection?.row) {
+    const chosen = findEntry(ctx, selection.row);
+    const names = new Set(items.flatMap((item) => item.values.map((value) => value.name)));
+    const lanes = chosen?.owner ? laneNames(chosen.owner) : [];
+    if (chosen && [...names].every((name) => lanes.includes(name) && chosen.owner[name])) targets.set(rows[0], chosen);
+  }
+  const last = spanOf(ctx) - 1;
+  const draft = createDraft(ctx);
+  const keys = [];
+  for (const item of items) {
+    const entry = targets.get(item.row);
+    const at = Math.round(playhead) + item.offset;
+    if (!entry || !entryKeysEditable(ctx, entry) || at > last) continue;
+    const frame = at - entry.offset;
+    const owner = draft.owner(entry);
+    for (const { name, keyframe } of item.values) {
+      const lane = owner[name];
+      if (!lane) continue;
+      lane.keyframes = [
+        ...lane.keyframes.filter((other) => Math.abs(other.frame - frame) > FRAME_EPSILON),
+        { ...structuredClone(keyframe), frame },
+      ].sort((a, b) => a.frame - b.frame);
+    }
+    const pasted = { row: entry.id, lane: item.lane, frame };
+    if (!keys.some((key) => sameKey(key, pasted))) keys.push(pasted);
+  }
+  if (!keys.length) return null;
+  return { edit: draft.result(), selection: { row: selection?.row ?? null, keys } };
 }
 
 // The row dot (docs/timeline-ui.md "記録の規則"): every Lane of the row but the lens ones gets a Keyframe at the

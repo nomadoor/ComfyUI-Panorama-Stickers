@@ -95,6 +95,8 @@ export function createStudioUpstream({
           readOnly: true,
           record: editable ? records.find((item) => item.layer === working.key) ?? null : null,
           scene: layerUiList(layer.ui, "pano_scene_files").length > 0,
+          // The number of its `scene` items: two or more give its Scene row a time of its own (timeline_model.js hasOwnTime).
+          sceneItems: layerUiList(layer.ui, "pano_scene_files").length,
           deleted: editable ? upstreamDeletedCount(records, working) : 0,
           portMeta: portMediaMeta((key) => layerUiList(layer.ui, key)),
         };

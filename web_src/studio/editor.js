@@ -6,7 +6,8 @@
 // keys, and the Vue shell (StudioEditor.vue with <StudioInspector> and <StudioTimeline>).
 //
 // Closing (✕, or Escape with nothing left to take back: docs/studio-ui.md "閉じ方") always saves: the state goes to
-// state_json the way the old editor writes it (session.stateText: nothing when the text already means it). The view
+// state_json the way the old editor writes it (session.stateText: nothing when the text already means it). A node
+// whose state_json cannot be read opens read-only and says so, so nothing writes over that text. The view
 // it was closed with is kept for the page (pano_node_bridge.js editorSession(node).view) and the next opening starts
 // there.
 import { createApp, markRaw, reactive, shallowReactive } from "vue";
@@ -14,7 +15,7 @@ import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
-import { cameraShot, normalizeCoverageValue, setCameraShot } from "../pano_editor_state.js";
+import { cameraShot, normalizeCoverageValue, readableStateText, setCameraShot } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
@@ -39,6 +40,7 @@ import { createAddFiles } from "./add_files.js";
 import { createLoadReveal } from "./load_reveal.js";
 import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
+import { guardEditorKeys } from "./key_guard.js";
 import { createPortMedia } from "./port_media.js";
 import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
@@ -71,8 +73,8 @@ function linked(node, names) {
 // The inputs whose VIDEO sets the Timeline fps (pano_video_fps.js timelineFpsLocked).
 const VIDEO_FPS_INPUTS = [...BACKGROUND_INPUTS, "sticker"];
 
-// The node's state v2 (a state that cannot be read opens as the empty state, as the old editor does), rebased to the
-// fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
+// The node's state v2 (a state that cannot be read opens as the empty state, read-only: openStudioEditor), rebased to
+// the fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
 function nodeState(node, media) {
   let scene;
   try {
@@ -136,6 +138,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     throw error;
   }
   const media = createComfyMediaAdapter({ app, api });
+  // A state_json that cannot be read is kept as it is: the editor opens read-only (docs/studio-ui.md "閉じ方").
+  const stateUnreadable = !readableStateText(String(widgetOf(node, "state_json")?.value ?? ""));
+  if (stateUnreadable) readOnly = true;
   const session = createStudioSession({ state: nodeState(node, media), readOnly });
   const nodeSession = editorSession(node);
   const stateWidget = widgetOf(node, "state_json");
@@ -225,7 +230,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // What the Timeline knows of the inputs (timeline_model.js ctx `media`): the background (its VIDEO or IMAGE batch
     // once its length is known, else a single image), the `scene` items, the animated 3D files' clips.
     media: {},
-    background: backgroundLinked ? { end: null } : null,
+    background: backgroundLinked ? { end: null, video: false } : null,
     // [inputs] An upstream Scene on `scene` has its groups of rows instead.
     sceneRow: sceneLinked && !upstreamLinked(),
     // A VIDEO sets the Timeline fps (pano_video_fps.js).
@@ -256,7 +261,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.upstreamWorking = upstream.working();
     view.upstreamSelected = String(session.selection.row ?? "").startsWith("upstream:");
     ui.upstreamPending = upstream.pending();
-    view.background = backgroundLinked ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg) } : null;
+    view.background = backgroundLinked
+      ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg), video: videoLinked(node, BACKGROUND_INPUTS) }
+      : null;
     view.fpsLocked = timelineFpsLocked(videoTimelineFps(node, media), node, VIDEO_FPS_INPUTS);
     view.animations = animations.stickers ?? {};
     // [add-drop] A placed image's size is its decoded file's until its uploaded file has loaded.
@@ -458,6 +465,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     drop: null,
     adding: false,
     addWarning: null,
+    // The node's state_json cannot be read: the editor is read-only (notice_line.js).
+    stateUnreadable,
   });
   const background = nodeBackground(node, media, () => {
     syncBackground();
@@ -485,8 +494,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   }
 
   // [add-drop] Add and the drop (docs/studio-ui.md "Add とドロップの見せ方"): files become Stickers where they land.
-  // Uploads to ComfyUI's input go through its API; a queued prompt waits for them. One settled after the editor closed
-  // is written then, unless the editor was opened again.
+  // Uploads to ComfyUI's input go through its API; a queued prompt waits for them. One still uploading when the editor
+  // closes is taken over by the node's editor opened again before it ends; else it is written when it settles.
   const addFiles = createAddFiles({
     session,
     ui,
@@ -501,9 +510,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     changed: () => sync(),
     stopPlayback: () => playback.stop(),
     notice,
-    late: () => {
-      if (!openNodes.has(node)) save();
-    },
+    late: () => save(),
+    pending: nodeSession.placements,
     reveal,
   });
   let dropInput = () => {};
@@ -539,6 +547,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // Delete: the selected Keyframes first (<StudioTimeline> handleDelete), else the selected object.
   let timeline = null;
+  // The copied Keyframes (docs/timeline-ui.md "Keyframe のコピーと貼り付け"): the editor's own, kept while it is open.
+  let keyClipboard = null;
+  // The keys "copy-keys", "cut-keys" and "paste-keys" (shortcuts.js): returns whether the editor took the key.
+  function keyClipboardKey(action) {
+    if (action === "paste-keys") return !!keyClipboard && !!timeline?.pasteKeys(keyClipboard);
+    const copied = timeline?.copyKeys() ?? null;
+    if (!copied) return false;
+    keyClipboard = copied;
+    if (action === "cut-keys") timeline.handleDelete();
+    return true;
+  }
   function deleteSelection() {
     if (timeline?.handleDelete()) return;
     const outcome = session.deleteSelectedObject();
@@ -639,13 +658,21 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     return true;
   }
 
-  // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js. The stage
-  // takes the movement keys and Escape.
+  // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js, the Keyframes'
+  // copy, cut and paste. The stage takes the movement keys and Escape.
   let rootElement = null;
+  let releaseKeyGuard = () => {};
   function onKeyDown(event) {
     if (!rootElement || !stageOwnsKey(event, rootElement)) return;
     const action = editorKeyAction(event);
     if (!action || action === "escape") return;
+    if (action === "copy-keys" || action === "cut-keys" || action === "paste-keys") {
+      // Not taken, C and X keep the browser's copy of selected text; V never pastes (nothing outside a field takes it).
+      if (!keyClipboardKey(action) && action !== "paste-keys") return;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (action.startsWith("gizmo:")) {
       // The gizmo's Move, Rotate, Scale for the selected object that has them.
       const mode = action.slice("gizmo:".length);
@@ -682,6 +709,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const controller = markRaw({
     onStage: ({ canvas, overlay = null, root }) => {
       rootElement = root;
+      // No key or clipboard event of the editor reaches ComfyUI behind it (docs/studio-ui.md "キーとクリップボードを
+      // ComfyUI に渡さない").
+      releaseKeyGuard();
+      releaseKeyGuard = guardEditorKeys(root);
       const output = outputView(session.state, 0);
       const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: [], content: null }, frameAvailable: false });
       stage = createStage({
@@ -777,6 +808,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     addFiles.close();
     dropInput();
     window.removeEventListener("keydown", onKeyDown, true);
+    releaseKeyGuard();
     backgroundVideo.close();
     backgroundVideoElement.remove();
     releasePanoCanvas(backgroundStill);

@@ -47,3 +47,10 @@ test("every line's kind is one of the four", () => {
     assert.ok(NOTICE_KINDS.includes(topLine(ui(fields)).kind));
   }
 });
+
+test("a state_json that cannot be read is a warning before the other warnings, after what did nothing and loading", () => {
+  assert.deepEqual(topLine(ui({ stateUnreadable: true, view: "failed", background: "failed", addWarning: "x", empty: true })), { kind: "warning", text: LINE_TEXT.stateUnreadable });
+  assert.equal(topLine(ui({ stateUnreadable: true, background: "loading" })).kind, "loading");
+  assert.equal(topLine(ui({ stateUnreadable: true, notice: "Nothing to frame" })).kind, "stopped");
+  assert.equal(LINE_TEXT.stateUnreadable, "This node's saved state can't be read, so changes won't be saved");
+});

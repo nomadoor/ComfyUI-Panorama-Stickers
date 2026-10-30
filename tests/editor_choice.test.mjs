@@ -18,9 +18,9 @@ const stickersNode = { __panoStudio: false };
 test("the new editor's setting is a boolean, off by default", () => {
   assert.equal(NEW_UI_SETTING.id, NEW_UI_SETTING_ID);
   assert.equal(NEW_UI_SETTING_ID, "PanoramaSuite.Editor.NewUI");
-  assert.equal(NEW_UI_SETTING.name, "Panorama Studio: new editor (in development)");
+  assert.equal(NEW_UI_SETTING.name, "Panorama Studio: new editor");
   assert.equal(NEW_UI_SETTING.type, "boolean");
-  assert.equal(NEW_UI_SETTING.defaultValue, false);
+  assert.equal(NEW_UI_SETTING.defaultValue, true);
 });
 
 test("with the setting off or unset, every node opens the old editor with what it was given", () => {
