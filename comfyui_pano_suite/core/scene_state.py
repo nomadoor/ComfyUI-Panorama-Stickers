@@ -15,8 +15,26 @@ from .paint_state import normalize_painting_state
 STATE_VERSION = 2
 STICKER_STATE_KIND = "pano_sticker_state"
 PLACEMENTS = ("sky", "world")
-# How the Camera shoots; the first is the default.
+# How the Camera shoots; the first is the default of a stored Camera that does not say.
 PROJECTIONS = ("perspective", "erp")
+# The spans a Panorama (`erp`) Camera shoots; the first is the default.
+ERP_RANGES = (360, 180)
+# The Camera a state without one (`camera` missing, null or not an object) reads as (ADR 0048): Panorama at the World
+# origin, which shoots what "no Camera" shot before. web_src/pano_scene_state.js holds the same values;
+# tests/fixtures/scene_state/camera_default.json holds the two together.
+DEFAULT_CAMERA = {
+    "aspect": 16.0 / 9.0,
+    "projection": "erp",
+    "erp_range": 360,
+    "visible": True,
+    "locked": False,
+    "position": {"value": [0.0, 0.0, 0.0]},
+    "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}},
+    "fov": {"value": 90.0},
+    "curve": {"value": 1.0},
+}
+# The ground height (World y) a state without its own `ground` reads as, when no upstream layer has one (ADR 0046).
+GROUND_DEFAULT = -1.6
 FILE_STORAGES = ("input", "output", "temp")
 # The extensions of the 3D files a `file` Source may name, as ComfyUI's Load3D takes them (docs/scene-state-v2.md);
 # tests/fixtures/scene_state/file_3d_formats.json holds the same table for the JS side.
@@ -398,17 +416,41 @@ def camera_aspect(value):
     return _clamp(_positive(value, 1.0), 1.0 / CAMERA_ASPECT_LIMIT, CAMERA_ASPECT_LIMIT)
 
 
+def _erp_range(value):
+    """A stored `camera.erp_range`: 180 or 360 as a JSON number, else 360."""
+    return int(value) if not isinstance(value, bool) and isinstance(value, (int, float)) and value in ERP_RANGES else ERP_RANGES[0]
+
+
 def _camera(raw):
-    """The Camera, or None when the state has none (`camera` missing, null or not an object)."""
+    """The Camera: the state always has one (ADR 0048), and `camera` missing, null or not an object reads as
+    DEFAULT_CAMERA. The missing fields of a stored one take the field defaults, which keep how it shot."""
     if not isinstance(raw, dict):
-        return None
+        raw = DEFAULT_CAMERA
     projection = raw.get("projection") if raw.get("projection") in PROJECTIONS else PROJECTIONS[0]
     return {
         "aspect": camera_aspect(raw.get("aspect")),
         "projection": projection,
+        "erp_range": _erp_range(raw.get("erp_range")),
         "visible": _bool(raw.get("visible"), True),
+        "locked": _bool(raw.get("locked"), False),
         **_lanes(raw, CAMERA_LANES),
     }
+
+
+def _ground(raw):
+    """`ground` as `_normalize_v2` keeps it: {"ground": value} for a finite JSON number, else {} (missing)."""
+    value = _number(raw, None)
+    return {} if value is None else {"ground": value}
+
+
+def scene_ground(state: dict, upstream_states=()) -> float:
+    """The ground height a loaded state reads as (ADR 0046): its own `ground`, else that of the most downstream of
+    `upstream_states` (the states of the upstream layers, from the farthest upstream) that has one, else
+    GROUND_DEFAULT."""
+    for owner in (state, *reversed(tuple(upstream_states))):
+        if "ground" in owner:
+            return owner["ground"]
+    return GROUND_DEFAULT
 
 
 def _text(value):
@@ -487,6 +529,7 @@ def _normalize_v2(raw):
         "painting": normalize_painting_state(raw.get("painting")),
         "painting_layer": deepcopy(painting_layer) if isinstance(painting_layer, dict) else None,
         "painting_visible": _bool(raw.get("painting_visible"), True),
+        **_ground(raw.get("ground")),
         "upstream": _upstream(raw.get("upstream")),
         "background": _background(raw.get("background")),
     }
@@ -525,7 +568,7 @@ def _v1_source(sticker, assets):
 
 def _v1_camera(shots):
     """The Cutout's first shot that is an object (as the legacy node's merge_state keeps them) as the Camera; a
-    state without one (Stickers) has no Camera."""
+    state without one (Stickers) gives None, which reads as the default Camera."""
     shot = next((item for item in shots if isinstance(item, dict)), None) if isinstance(shots, list) else None
     if shot is None:
         return None

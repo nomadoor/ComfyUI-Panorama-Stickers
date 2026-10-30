@@ -13,8 +13,8 @@ Panorama Studio の `state_json`（状態 v2）、Camera を持つ Panorama Stud
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | 状態の読み込み（版の判定、v1 の読み替え、正規化） | `core/scene_state.py` `load_scene_state` | `web_src/pano_scene_state.js` `loadSceneState` | `tests/test_scene_state.py`、`tests/pano_scene_state.test.mjs`、`tests/test_scene_state_parity.py` |
-| 既定の Camera（欠け・`null` の `camera` の読み方）と `camera.erp_range` | `scene_state.py` の既定の Camera の定数（新しく作る） | `pano_scene_state.js` の同じ定数（新しく作る） | （未作成）フィクスチャ `camera_default`、`test_scene_state_parity.py` |
-| 地面の高さ `ground`（既定・欠けたときの読み方・上流からの受け継ぎ） | `scene_state.py` の `GROUND_DEFAULT` と読み込み（新しく作る。ADR 0046） | `pano_scene_state.js` の同じ定数と読み込み（新しく作る） | （未作成）フィクスチャ `ground`、`test_scene_state_parity.py` |
+| 既定の Camera（欠け・`null` の `camera` の読み方）と `camera.erp_range` | `scene_state.py` の `DEFAULT_CAMERA`・`_camera`・`_erp_range` | `pano_scene_state.js` の `DEFAULT_CAMERA`・`defaultCamera`・`camera`・`erpRange`（保存するテキストは `sceneStateText`） | フィクスチャ `camera_default` を読む `test_scene_state.py`・`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
+| 地面の高さ `ground`（既定・欠けたときの読み方・上流からの受け継ぎ） | `scene_state.py` の `GROUND_DEFAULT`・`_ground`・`scene_ground`（ADR 0046） | `pano_scene_state.js` の `GROUND_DEFAULT`・`ground`・`sceneGround` | フィクスチャ `ground` を読む `test_scene_state.py`・`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |
 | パノラマの角度規約（yaw・pitch・roll と ERP の対応） | `core/math.py` `camera_basis`・`ray_directions`・`lon_lat_to_erp` | `web_src/pano_camera_math.js` | `tests/test_camera_orientation.py`、`tests/pano_camera_math.test.mjs` |
 | Timeline の上限の定数 | `scene_state.py` の `TIMELINE_FPS_MIN`・`TIMELINE_FPS_MAX`・`TIMELINE_LENGTH_MAX`・`TIMELINE_FRAME_MAX` | `pano_scene_state.js` の同名の定数 | フィクスチャ `v2_timeline_limits` |
 | `sticker_state` の読み込み | `scene_state.py` `load_sticker_state` | `pano_scene_state.js` `loadStickerState` | `test_scene_state.py`、`pano_scene_state.test.mjs`、`test_scene_state_parity.py` |

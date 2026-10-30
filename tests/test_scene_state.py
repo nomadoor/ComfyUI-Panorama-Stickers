@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from comfyui_pano_suite.core.scene_eval import evaluate_scene_state
-from comfyui_pano_suite.core.scene_state import load_scene_state, load_sticker_state, rebase_scene_state
+from comfyui_pano_suite.core.scene_state import DEFAULT_CAMERA, GROUND_DEFAULT, load_scene_state, load_sticker_state, rebase_scene_state, scene_ground
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scene_state"
 
@@ -65,7 +65,7 @@ def test_empty_state_is_default_v2():
     assert state == load_scene_state(None) == load_scene_state("  ")
     assert state["version"] == 2
     assert state["stickers"] == []
-    assert state["camera"] is None
+    assert state["camera"] == load_scene_state({"version": 2, "camera": DEFAULT_CAMERA})["camera"]
 
 
 def test_state_without_version_is_read_as_v1():
@@ -76,15 +76,28 @@ def test_state_without_version_is_read_as_v1():
 
 
 @pytest.mark.parametrize("camera", ["", ',"camera":null', ',"camera":"front"', ',"camera":[1]'])
-def test_state_without_a_camera_object_has_no_camera(camera):
-    assert load_scene_state(f'{{"version":2{camera}}}')["camera"] is None
+def test_state_without_a_camera_object_has_the_default_camera(camera):
+    # ADR 0048: the Camera is always there; Panorama at the origin shoots what "no Camera" did.
+    assert load_scene_state(f'{{"version":2{camera}}}')["camera"] == {
+        "aspect": 16.0 / 9.0,
+        "projection": "erp",
+        "erp_range": 360,
+        "visible": True,
+        "locked": False,
+        "position": {"value": [0.0, 0.0, 0.0], "keyframes": []},
+        "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []},
+        "fov": {"value": 90.0, "keyframes": []},
+        "curve": {"value": 1.0, "keyframes": []},
+    }
 
 
 def test_camera_object_has_the_default_camera_fields():
     assert load_scene_state('{"version":2,"camera":{}}')["camera"] == {
         "aspect": 1.0,
         "projection": "perspective",
+        "erp_range": 360,
         "visible": True,
+        "locked": False,
         "position": {"value": [0.0, 0.0, 0.0], "keyframes": []},
         "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []},
         "fov": {"value": 90.0, "keyframes": []},
@@ -98,14 +111,16 @@ def test_camera_projection_is_perspective_or_erp(projection, expected):
     assert state["camera"]["projection"] == expected
 
 
-def test_v1_cutout_has_a_camera_and_v1_stickers_has_none():
+def test_v1_cutout_has_its_camera_and_v1_stickers_the_default_one():
+    default = load_scene_state(None)["camera"]
     assert load_scene_state(read_fixture("v1_cutout"))["camera"]["projection"] == "perspective"
-    assert load_scene_state(read_fixture("v1_stickers"))["camera"] is None
-    assert load_scene_state('{"version":1,"shots":["bad"]}')["camera"] is None
+    assert load_scene_state(read_fixture("v1_stickers"))["camera"] == default
+    assert load_scene_state('{"version":1,"shots":["bad"]}')["camera"] == default
 
 
-def test_rebase_keeps_no_camera_and_the_projection():
-    assert rebase_scene_state(load_scene_state(read_fixture("v2_no_camera")), 60.0)["camera"] is None
+def test_rebase_keeps_the_default_camera_and_the_projection():
+    assert rebase_scene_state(load_scene_state(read_fixture("v2_no_camera")), 60.0)["camera"] == load_scene_state(None)["camera"]
+    assert rebase_scene_state(load_scene_state({"version": 2, "camera": {"projection": "erp", "erp_range": 180, "locked": True}}), 60.0)["camera"]["erp_range"] == 180
     rebased = rebase_scene_state(load_scene_state(read_fixture("v2_erp_camera")), 12.0)
     assert rebased["camera"]["projection"] == "erp"
     assert [key["frame"] for key in rebased["camera"]["position"]["keyframes"]] == [0, 18]
@@ -221,8 +236,9 @@ def test_a_hidden_scene_is_not_active_and_a_hidden_camera_still_evaluates():
     assert shown["scene"]["active"] is True
 
 
-def test_evaluating_a_state_without_camera_gives_no_camera():
-    state = load_scene_state(read_fixture("v2_no_camera"))
+def test_evaluating_an_upstream_layer_without_camera_gives_no_camera():
+    # The upstream layers of a PANO_SCENE hold the state with `camera` None (nodes.py `_scene_output`).
+    state = {**load_scene_state(read_fixture("v2_no_camera")), "camera": None}
     evaluated = evaluate_scene_state(state, 30.0)
     assert evaluated["camera"] is None
     assert evaluated["stickers"][0]["yaw_deg"] == pytest.approx(20.0)
@@ -250,7 +266,7 @@ def test_state_v2_has_no_unread_fields():
     state = load_scene_state(read_fixture("v2_canonical"))
     assert list(state.keys()) == ["version", "id", "timeline", "camera", "scene", "stickers", "next_sticker_id", "painting", "painting_layer", "painting_visible", "upstream", "background"]
     assert list(state["timeline"].keys()) == ["fps", "length"]
-    assert list(state["camera"].keys()) == ["aspect", "projection", "visible", "position", "rotation", "fov", "curve"]
+    assert list(state["camera"].keys()) == ["aspect", "projection", "erp_range", "visible", "locked", "position", "rotation", "fov", "curve"]
     assert list(state["scene"].keys()) == ["clip", "visible", "position", "rotation", "scale"]
     lanes = {"sky": ["direction", "roll", "size", "opacity", "curve", "z_index"], "world": ["position", "rotation", "scale", "opacity"]}
     for sticker in state["stickers"]:
@@ -293,7 +309,7 @@ def test_evaluate_canonical_state_matches_fixture():
 def test_evaluate_returns_static_values_without_keyframes():
     state = load_scene_state(read_fixture("v1_stickers"))
     out = evaluate_scene_state(state, 3.25)
-    assert out["camera"] is None
+    assert out["camera"] == {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "curve": 1.0, "aspect": 16.0 / 9.0}
     camera = evaluate_scene_state(load_scene_state('{"version":2,"camera":{}}'), 3.25)["camera"]
     assert camera == {"position": [0.0, 0.0, 0.0], "yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0, "hFOV_deg": 90.0, "curve": 1.0, "aspect": 1.0}
     assert [s["active"] for s in out["stickers"]] == [False, True, True]
@@ -366,6 +382,34 @@ def test_a_camera_aspect_is_read_as_the_fixture_shared_with_js_says():
     for case in table["v1_shots"]:
         state = load_scene_state({"version": 1, "shots": [case["shot"]]})
         assert state["camera"]["aspect"] == pytest.approx(case["expected"]), case["shot"]
+
+
+def test_the_camera_is_read_as_the_fixture_shared_with_js_says():
+    table = json.loads(read_fixture("camera_default"))
+    assert_close(load_scene_state(None)["camera"], table["default_camera"])
+    for case in table["cases"]:
+        state = load_scene_state(case["state"])
+        assert_close(state["camera"], case["camera"], case["name"])
+        if case["text_camera"] is not None:
+            # What the text keeps reads back as the same Camera.
+            assert load_scene_state({"version": 2, "camera": case["text_camera"]})["camera"] == state["camera"], case["name"]
+
+
+def test_the_default_camera_constant_is_the_default_camera():
+    assert load_scene_state({"version": 2, "camera": DEFAULT_CAMERA})["camera"] == load_scene_state({"version": 2})["camera"]
+
+
+def test_the_ground_is_read_as_the_fixture_shared_with_js_says():
+    table = json.loads(read_fixture("ground"))
+    assert GROUND_DEFAULT == table["default"]
+    for case in table["cases"]:
+        state = load_scene_state(case["state"])
+        assert state.get("ground") == case["stored"] and ("ground" in state) == (case["stored"] is not None), case["name"]
+        assert scene_ground(state, [load_scene_state(raw) for raw in case["upstream"]]) == case["ground"], case["name"]
+
+
+def test_the_ground_stays_where_the_spec_lists_it():
+    assert list(load_scene_state({"version": 2, "ground": -2.0}))[-4:] == ["painting_visible", "ground", "upstream", "background"]
 
 
 @pytest.mark.parametrize("easing", [None, "smooth", [0.42, 0.0, 0.58], [0.2, -0.1, 0.8, 1.0], [0.2, 0.0, 0.8, 1.1], [1.2, 0.0, 0.5, 1.0]])

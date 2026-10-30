@@ -5,7 +5,9 @@
   "camera": {
     "aspect": 1.7777777777777777,
     "projection": "perspective",
+    "erp_range": 360,
     "visible": true,
+    "locked": false,
     "position": {
       "value": [0.0, 1.6, 0.0],
       "keyframes": [

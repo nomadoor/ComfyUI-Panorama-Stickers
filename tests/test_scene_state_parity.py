@@ -44,7 +44,10 @@ PROBE_STATES = [
 ] + [
     {"version": 2, "next_sticker_id": 1e300, "stickers": [{"id": "sticker_9007199254740991", "source": {"kind": "port"}}, {"id": "", "source": {"kind": "file", "filename": "a.png"}}]},
     {"version": 2, "upstream": [{"layer": "a", "fps": fps, "deleted": ["x"]} for fps in (0, "30", None, 1e300, 0.5)]},
-] + [{"version": 2, "background": raw} for raw in (5, [], {"clip": 3}, {"clip": {"start": -3, "in": "x", "duration": 0}}, {"clip": {"start": 1e300, "in": 2.5, "duration": None}})]
+] + [{"version": 2, "background": raw} for raw in (5, [], {"clip": 3}, {"clip": {"start": -3, "in": "x", "duration": 0}}, {"clip": {"start": 1e300, "in": 2.5, "duration": None}})] + [
+    # The Camera and the ground as the fixtures the two loaders read on their own give them (ADR 0046, 0048).
+    case["state"] for name in ("camera_default", "ground") for case in json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))["cases"]
+]
 BAD_STATES = ['{"version":3}', '{"version":"2"}', "{not json", "[1]"]
 
 JS_SCRIPT = textwrap.dedent(

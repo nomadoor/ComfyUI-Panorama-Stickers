@@ -7,8 +7,26 @@ import { normalizePaintingState } from "./pano_paint_types.js";
 export const STATE_VERSION = 2;
 export const STICKER_STATE_KIND = "pano_sticker_state";
 const PLACEMENTS = ["sky", "world"];
-// How the Camera shoots; the first is the default.
+// How the Camera shoots; the first is the default of a stored Camera that does not say.
 const PROJECTIONS = ["perspective", "erp"];
+// The spans a Panorama (`erp`) Camera shoots; the first is the default.
+export const ERP_RANGES = Object.freeze([360, 180]);
+// The Camera a state without one (`camera` missing, null or not an object) reads as (ADR 0048): Panorama at the
+// World origin, which shoots what "no Camera" shot before. core/scene_state.py holds the same values;
+// tests/fixtures/scene_state/camera_default.json holds the two together.
+const DEFAULT_CAMERA = Object.freeze({
+  aspect: 16 / 9,
+  projection: "erp",
+  erp_range: 360,
+  visible: true,
+  locked: false,
+  position: { value: [0, 0, 0] },
+  rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } },
+  fov: { value: 90 },
+  curve: { value: 1 },
+});
+// The ground height (World y) a state without its own `ground` reads as, when no upstream layer has one (ADR 0046).
+export const GROUND_DEFAULT = -1.6;
 const FILE_STORAGES = ["input", "output", "temp"];
 // ease-in-out, the Easing of a Keyframe without a valid one.
 export const DEFAULT_EASING = [0.42, 0, 0.58, 1];
@@ -375,11 +393,44 @@ export function cameraAspect(value) {
   return clamp(positive(value, 1), 1 / CAMERA_ASPECT_LIMIT, CAMERA_ASPECT_LIMIT);
 }
 
-// The Camera, or null when the state has none (`camera` missing, null or not an object).
+// A stored `camera.erp_range`: 180 or 360 as a JSON number, else 360.
+function erpRange(value) {
+  return ERP_RANGES.includes(value) ? value : ERP_RANGES[0];
+}
+
+// The Camera: the state always has one (ADR 0048), and `camera` missing, null or not an object reads as
+// DEFAULT_CAMERA. The missing fields of a stored one take the field defaults, which keep how it shot.
 function camera(raw) {
-  if (!isObject(raw)) return null;
-  const projection = PROJECTIONS.includes(raw.projection) ? raw.projection : PROJECTIONS[0];
-  return { aspect: cameraAspect(raw.aspect), projection, visible: bool(raw.visible, true), ...lanes(raw, CAMERA_LANES) };
+  const source = isObject(raw) ? raw : DEFAULT_CAMERA;
+  const projection = PROJECTIONS.includes(source.projection) ? source.projection : PROJECTIONS[0];
+  return {
+    aspect: cameraAspect(source.aspect),
+    projection,
+    erp_range: erpRange(source.erp_range),
+    visible: bool(source.visible, true),
+    locked: bool(source.locked, false),
+    ...lanes(source, CAMERA_LANES),
+  };
+}
+
+// The default Camera as a loaded state holds it.
+export function defaultCamera() {
+  return camera(null);
+}
+
+// `ground` as normalizeV2 keeps it: { ground } for a finite JSON number, else {} (missing).
+function ground(raw) {
+  const value = number(raw, null);
+  return value === null ? {} : { ground: value };
+}
+
+// The ground height a loaded state reads as (ADR 0046): its own `ground`, else that of the most downstream of
+// `upstreamStates` (the states of the upstream layers, from the farthest upstream) that has one, else GROUND_DEFAULT.
+export function sceneGround(state, upstreamStates = []) {
+  for (const owner of [state, ...[...upstreamStates].reverse()]) {
+    if (Object.hasOwn(owner, "ground")) return owner.ground;
+  }
+  return GROUND_DEFAULT;
 }
 
 // A non-empty string, or null.
@@ -450,6 +501,7 @@ function normalizeV2(raw) {
     painting: normalizePaintingState(raw.painting),
     painting_layer: isObject(raw.painting_layer) ? structuredClone(raw.painting_layer) : null,
     painting_visible: bool(raw.painting_visible, true),
+    ...ground(raw.ground),
     upstream: upstream(raw.upstream),
     background: background(raw.background),
   };
@@ -483,7 +535,7 @@ function v1Source(item, assets) {
   return null;
 }
 
-// The Cutout's shot as the Camera; a state without one (Stickers) has no Camera.
+// The Cutout's shot as the Camera; a state without one (Stickers) gives null, which reads as the default Camera.
 // The Cutout's first shot that is an object, as the legacy node's merge_state keeps its shots.
 function v1Camera(shots) {
   const shot = (Array.isArray(shots) ? shots : []).find(isObject);
@@ -544,13 +596,18 @@ export function loadSceneState(raw) {
 // without them, they would change the text of those states and miss the node's execution cache.
 const TEXT_DEFAULTS = {
   state: { painting_visible: true },
-  camera: { projection: PROJECTIONS[0], visible: true },
+  camera: { projection: PROJECTIONS[0], erp_range: ERP_RANGES[0], visible: true, locked: false },
   scene: { visible: true },
 };
 
 // A Lane without Keyframes at its default value, which the text leaves out.
 function defaultLane(lane, value) {
   return !lane.keyframes.length && lane.value === value;
+}
+
+// Whether a loaded Camera is the default Camera, which the text leaves out (it reads back as it).
+function isDefaultCamera(value) {
+  return JSON.stringify(value) === JSON.stringify(defaultCamera());
 }
 
 // The Camera as its text keeps it: without the fields of TEXT_DEFAULTS.camera at their defaults, nor a lens curve
@@ -581,9 +638,11 @@ export function sceneStateText(state) {
   if (out.next_sticker_id === leastStickerNumber(state.stickers)) delete out.next_sticker_id;
   if (!out.upstream.length) delete out.upstream;
   if (defaultClip(out.background.clip)) delete out.background;
+  // The default Camera is written as null, the text states without a Camera were saved with before it was always
+  // there (ADR 0048), so that their texts stay the same; null reads back as the default Camera.
+  out.camera = !state.camera || isDefaultCamera(state.camera) ? null : cameraText(state.camera);
   return JSON.stringify({
     ...out,
-    camera: state.camera && cameraText(state.camera),
     scene: withoutDefaultAnimation(withoutDefaults(state.scene, TEXT_DEFAULTS.scene)),
     // A sky Sticker's lens curve at its default is left out (ADR 0042), as the Camera's, and so is a default
     // animation (ADR 0043).
