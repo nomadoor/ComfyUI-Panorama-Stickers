@@ -127,7 +127,7 @@ test("resizing the node keeps the picture as large as fits and centered, the lin
     const button = await page.locator(".pano-studio-node-open").boundingBox();
     expect(Math.abs(button.x + button.width / 2 - (node.x + box.x + box.w / 2))).toBeLessThan(1.5);
     expect(Math.abs(node.y + box.y + box.h - (button.y + button.height) - 8)).toBeLessThan(1.5);
-    // The picture is drawn to its edges, and around it is the surface's dark fill, not the node's background.
+    // The picture is drawn to its edges, and around it the surface is not filled: the node's background shows through.
     await expect.poll(async () => near(await color(page, 0.5, 0.5), RED)).toBe(true);
     await expect.poll(async () => near(await color(page, 0.02, 0.05), GREEN)).toBe(true);
     const outside = await page.evaluate(([w, h]) => {
@@ -138,7 +138,7 @@ test("resizing the node keeps the picture as large as fits and centered, the lin
       const probe = document.elementFromPoint(host.getBoundingClientRect().left + x, host.getBoundingClientRect().top + y);
       return { fill: getComputedStyle(host.querySelector(".pano-studio-node-frame")).backgroundColor, probe: Boolean(probe?.closest("#node")) };
     }, [width, height]);
-    expect(outside).toEqual({ fill: "rgb(7, 7, 7)", probe: true });
+    expect(outside).toEqual({ fill: "rgba(0, 0, 0, 0)", probe: true });
   }
   await page.screenshot({ path: test.info().outputPath("resized.png") });
   expect(problems).toEqual([]);

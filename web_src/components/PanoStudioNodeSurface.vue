@@ -48,7 +48,7 @@ const modeIcon = computed(() => (props.model.status.mode === "panorama" ? ICON.p
       <span class="label">Open Studio</span>
     </button>
     <!-- On the surface's dark fill in either theme: the dark tokens (web/pano_studio.css). -->
-    <div class="pano-studio dark-theme pano-studio-node-line" role="status" :style="lineStyle">
+    <div class="pano-studio pano-studio-node-line" role="status" :style="lineStyle">
       <span class="pano-studio-node-shot">
         <SvgIcon :icon="modeIcon" />
         <span class="label">{{ model.status.shot }}</span>

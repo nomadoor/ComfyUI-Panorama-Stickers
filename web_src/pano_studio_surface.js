@@ -10,7 +10,7 @@ export const STUDIO_BUTTON_INSET = 8;
 // The picture's corner radius (the surface's too), and the surface's dark fill around the picture and the line, which
 // is also the picture's box before the view draws (the stage's empty color, in either theme).
 export const STUDIO_PICTURE_RADIUS = 8;
-export const STUDIO_SURFACE_FILL = "#070707";
+export const STUDIO_SURFACE_FILL = "transparent";
 
 // The layout of a surface of width x height CSS px for an output of `ratio` (width / height): the picture
 // { x, y, w, h } at that ratio, as large as fits the width and the height less the line (contain); the line
