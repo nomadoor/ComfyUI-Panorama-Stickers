@@ -58,6 +58,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 - パノラマ静止画workflow
   - [flux-2-klein-4B-360-erp-outpaint.json](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)
   - [flux-2-klein-9B-360-erp-outpaint.json](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)
+  - [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json)（Qwen-Image 2.1、Panorama Studioを使用）
+- Panorama Studio：画像を3Dに持ち上げて別の角度から撮るworkflow
+  - MoGe 3で画像の形を推定してPanorama Studioに置き、Cameraで別の角度から撮って、Qwen-Image 2.1で仕上げます。
+  - [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json)
 - 360度パノラマ動画workflow
   - モデル作者が作成した[LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRAを使うことで、テキストから360度パノラマ動画を生成できます。
   - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
