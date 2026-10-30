@@ -13,6 +13,7 @@
 import { createPanoCanvas, releasePanoCanvas } from "../pano_diagnostics.js";
 import { createPaintEngineManager } from "../pano_paint_engine.js";
 import { drawRasterObjectErp, engineMask, skyPaintLayers } from "../pano_paint_layers.js";
+import { groupStrokes, skyStickersOf } from "../pano_paint_objects.js";
 import {
   brushPresetIdForTool, brushStrokeSize, colorToCss, commitPaintStroke, ensurePaintGroup, erpPointOfDirection,
   freehandStrokeRecord, lassoFillStrokeRecord, nextPaintZIndex, paintTargetDescriptor, strokeGroupFrame, strokeSample,
@@ -60,9 +61,10 @@ export function brushRing(tools, point, dirAt) {
 export function createStudioPaint({ state, tools, edit, onStart = () => {}, onChange = () => {}, now = () => performance.now() }) {
   const descriptor = paintTargetDescriptor();
   let engine = null;
-  // The painting the engine was rebuilt from (by reference, then by its strokes).
+  // The painting the engine was rebuilt from (by reference), and its strokes (by object: the session's states never
+  // change a stroke in place, so a stroke object kept is a stroke unchanged).
   let builtFrom = null;
-  let builtKey = null;
+  let builtStrokes = null;
   // The stroke under way: { layerKind, stroke }, or null.
   let active = null;
   // Counts what changed in the drawn painting (the stage's content is made again on a change).
@@ -74,7 +76,6 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
   const bump = () => {
     revision += 1;
   };
-  const skyOf = (scene) => scene.stickers.filter((item) => item.placement === "sky");
 
   function ensureEngine() {
     engine ??= createPaintEngineManager(descriptor);
@@ -82,14 +83,16 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
   }
 
   // The engine draws the committed painting of the state; not while a stroke is under way (a rebuild ends its preview).
+  // A drag of a paint group keeps the other strokes' objects (stage_objects.js), so the engine reads and draws only the
+  // strokes that changed (pano_paint_engine.js rebuildCommitted's immutableStrokes).
   function syncEngine() {
     const current = state().painting;
     if (active || !current || current === builtFrom) return;
     builtFrom = current;
-    const key = JSON.stringify([current.paint?.strokes ?? [], current.mask?.strokes ?? []]);
-    if (key === builtKey) return;
-    builtKey = key;
-    ensureEngine().rebuildCommitted({ painting: current });
+    const strokes = [...(current.paint?.strokes ?? []), ...(current.mask?.strokes ?? [])];
+    if (builtStrokes && strokes.length === builtStrokes.length && strokes.every((stroke, index) => stroke === builtStrokes[index])) return;
+    builtStrokes = strokes;
+    ensureEngine().rebuildCommitted({ painting: current }, { immutableStrokes: true });
     bump();
   }
 
@@ -125,6 +128,30 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     return entry.canvas;
   }
 
+  // The alpha (0..255) of the raster object `item`'s image at (u, v) of its box (0..1 across), for the Cursor's hit
+  // (stage_objects.js), or null while its image has not loaded. Its pixels are read once per image (by its data URL,
+  // kept while a raster object of the state has it).
+  const rasterPixels = new Map();
+  function rasterAlpha(item, u, v) {
+    const image = rasters.get(item.id)?.image;
+    if (!image?.complete || !image.naturalWidth) return null;
+    let pixels = rasterPixels.get(item.rasterDataUrl);
+    if (!pixels) {
+      const canvas = createPanoCanvas({ label: "studio.paint-raster-alpha" });
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return null;
+      ctx.drawImage(image, 0, 0);
+      pixels = { width: canvas.width, height: canvas.height, alpha: ctx.getImageData(0, 0, canvas.width, canvas.height).data };
+      releasePanoCanvas(canvas);
+      rasterPixels.set(item.rasterDataUrl, pixels);
+    }
+    const x = Math.min(pixels.width - 1, Math.max(0, Math.floor(u * pixels.width)));
+    const y = Math.min(pixels.height - 1, Math.max(0, Math.floor(v * pixels.height)));
+    return Number(pixels.alpha[(y * pixels.width + x) * 4 + 3] || 0);
+  }
+
   // The painting as Sky layers (skyPaintLayers), the live stroke's group at the top while a new paint stroke is under
   // way (as the old editor's getOrderedDisplayListObjects).
   function layers() {
@@ -137,7 +164,7 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     let groups = current.groups;
     const gid = active?.layerKind === "paint" && active.stroke.toolKind !== "eraser" ? String(active.stroke.actionGroupId || "") : "";
     if (gid && !groups.some((group) => String(group.actionGroupId || group.id || "") === gid)) {
-      groups = [...groups, { id: gid, actionGroupId: gid, z_index: nextPaintZIndex(current, skyOf(scene)) }];
+      groups = [...groups, { id: gid, actionGroupId: gid, z_index: nextPaintZIndex(current, skyStickersOf(scene)) }];
     }
     const kept = new Set(current.raster_objects.map((item) => item.id));
     for (const [id, entry] of [...rasters]) {
@@ -145,6 +172,8 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
       if (entry.canvas) releasePanoCanvas(entry.canvas);
       rasters.delete(id);
     }
+    const urls = new Set(current.raster_objects.map((item) => item.rasterDataUrl));
+    for (const url of [...rasterPixels.keys()]) if (!urls.has(url)) rasterPixels.delete(url);
     const shown = engine;
     return skyPaintLayers({ ...scene, painting: { ...current, groups } }, {
       group: (id) => shown?.getGroupDisplay(id) ?? null,
@@ -162,14 +191,14 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     const presetIdOf = (toolKind) => brushPresetIdForTool(toolKind, tools().activePresetId);
     return {
       descriptor,
-      groupStrokes: (gid) => draft.painting.paint.strokes.filter((stroke) => String(stroke?.actionGroupId || "").trim() === gid),
+      groupStrokes: (gid) => groupStrokes(draft.painting.paint.strokes, gid),
       groupFrame: (group, strokes) => {
         group.frame = strokeGroupFrame(strokes, presetIdOf);
         return group.frame;
       },
       groupCanvas: (gid) => engine?.getGroupTarget(gid)?.committedPaint?.canvas || null,
       rasterCanvas: (item) => rasterCanvas(item),
-      topZ: () => topDisplayZIndex(draft.painting, skyOf(draft)),
+      topZ: () => topDisplayZIndex(draft.painting, skyStickersOf(draft)),
     };
   }
 
@@ -231,7 +260,7 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
       end() {
         if (active?.stroke !== stroke) return;
         const outcome = edit((draft) => commitPaintStroke(draft.painting, layerKind, stroke, {
-          ensureGroup: (gid) => ensurePaintGroup(draft.painting, skyOf(draft), gid),
+          ensureGroup: (gid) => ensurePaintGroup(draft.painting, skyStickersOf(draft), gid),
           eraser: () => eraserSources(draft),
         }));
         if (outcome.changed && !(layerKind === "paint" && stroke.toolKind === "eraser")) engine.commitActiveStroke(stroke, descriptor);
@@ -269,7 +298,7 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     ensureEngine();
     const scene = state();
     const groupIds = scene.painting
-      ? syncPaintGroups(structuredClone(scene.painting), skyOf(scene)).map((group) => String(group.actionGroupId || "")).filter(Boolean)
+      ? syncPaintGroups(structuredClone(scene.painting), skyStickersOf(scene)).map((group) => String(group.actionGroupId || "")).filter(Boolean)
       : [];
     const target = engine.getErpTarget(groupIds);
     const shown = engine;
@@ -286,6 +315,7 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
     cancel,
     layers,
     nodeLayer,
+    rasterAlpha,
     get stroking() {
       return !!active;
     },
@@ -298,6 +328,7 @@ export function createStudioPaint({ state, tools, edit, onStart = () => {}, onCh
         entry.image.onload = null;
       }
       rasters.clear();
+      rasterPixels.clear();
       engine = null;
     },
   };

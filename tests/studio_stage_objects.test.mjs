@@ -9,6 +9,8 @@ import test from "node:test";
 import { evaluateLane } from "../web_src/pano_scene_eval.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { buildStickerGeometry } from "../web_src/pano_sticker_geometry.js";
+import { transformErpPointAround } from "../web_src/pano_paint_objects.js";
+import { erpPointOfDirection, strokeGroupFrame } from "../web_src/pano_paint_strokes.js";
 import { viewProjection } from "../web_src/pano_editor_view.js";
 import { projectPoint } from "../web_src/pano_space.js";
 import { createStudioSession } from "../web_src/studio/session.js";
@@ -21,19 +23,21 @@ const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate" } = {}) {
+function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate", painting = undefined, paintingVisible = true, rasterAlpha = undefined, view = { width: W, height: H }, cameraAt = [0, -1, -6] } = {}) {
   const session = createStudioSession({
     state: loadSceneState({
       version: 2,
-      camera: { projection: "perspective", position: { value: [0, -1, -6] }, rotation: { value: { yaw_deg: 180, pitch_deg: 0, roll_deg: 0 } } },
+      camera: { projection: "perspective", position: { value: cameraAt }, rotation: { value: { yaw_deg: 180, pitch_deg: 0, roll_deg: 0 } } },
       stickers: stickers ?? [
         { id: "sky", placement: "sky", source: file("poster.png"), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } } },
         { id: "board", placement: "world", source: file("board.png"), position: { value: [3, 0, -5] } },
       ],
+      painting,
+      painting_visible: paintingVisible,
     }),
   });
   const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
-  const camera = stageCamera(pose, W, H, 50);
+  const camera = stageCamera(pose, view.width, view.height, 50);
   // The GPU pick is not used to select: a call to it fails the test.
   const editorView = {
     sceneBox,
@@ -48,15 +52,16 @@ function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile 
   const objects = createStageObjects({
     editorView,
     camera: () => camera,
-    size: () => ({ width: W, height: H }),
+    size: () => ({ width: view.width, height: view.height }),
     state: () => session.state,
     content,
     playhead: () => 0,
     selection: () => session.selection.row,
     select: (row) => session.selectObject(row),
-    edits: { live: (apply) => session.gesture(apply), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
+    edits: { live: (apply, copy) => session.gesture(apply, copy), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
     tab: () => tab,
     mode: () => gizmoMode.value,
+    rasterAlpha,
   });
   return { session, objects, camera, gizmoMode };
 }
@@ -335,4 +340,235 @@ test("Rotate and Scale turn and size a 3D file about its box's center: the gizmo
     assert.ok(inside(after, guideRect(objects, camera)), `${mode}: and inside the guide box`);
     assert.equal(session.canUndo, true, `${mode}: one Undo step`);
   }
+});
+
+// --- The paint groups (docs/studio-ui.md "ペイントのまとまり"): a stroke group and a paint raster object are grabbed on the
+// Sky by the pointer's direction.
+
+const stageCam = () => stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] }, W, H, 50);
+const erpAt = (p) => {
+  const { u, v } = erpPointOfDirection(viewProjection(stageCam(), W, H).ray(p.x, p.y));
+  return { u, v };
+};
+// A pen stroke of the group `gid` from the screen point a to b (its points where those points look).
+function strokeOn(id, gid, a, b, layerKind = "paint") {
+  const points = [a, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, b].map(erpAt);
+  return { id, actionGroupId: gid, layerKind, toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
+}
+// A paint raster object covering the screen box from a to b.
+function rasterOn(id, a, b, extra = {}) {
+  const [p, q] = [erpAt(a), erpAt(b)];
+  return { id, type: "raster_frozen", layerKind: "paint", rasterDataUrl: "data:image/png;base64,AAAA", bbox: { u0: p.u, v0: p.v, u1: q.u, v1: q.v }, z_index: 5, ...extra };
+}
+const left = { x: 200, y: 120 };
+const leftEnd = { x: 320, y: 120 };
+const strokeAt = { x: 260, y: 120 };
+function painted(groups = [{ id: "g1", actionGroupId: "g1", z_index: 3 }], strokes = [strokeOn("st1", "g1", left, leftEnd)], rasters = []) {
+  return { groups, paint: { strokes }, raster_objects: rasters };
+}
+const groupPoints = (session) => session.state.painting.paint.strokes[0].geometry.points;
+
+test("a press on a stroke selects its group (paint_group:<id>); its drag adds the ERP difference to every point list, as one Undo step", () => {
+  const { session, objects } = setup({ painting: painted() });
+  const before = structuredClone(session.state.painting.paint.strokes[0].geometry);
+  const drag = objects.press(strokeAt);
+  assert.ok(drag);
+  assert.equal(session.selection.row, "paint_group:g1");
+  const to = { x: 420, y: 160 };
+  drag.move(to);
+  const start = erpAt(strokeAt);
+  const now = erpAt(to);
+  const du = now.u - start.u;
+  const dv = now.v - start.v;
+  for (const key of ["points", "rawPoints", "processedPoints"]) {
+    session.state.painting.paint.strokes[0].geometry[key].forEach((point, index) => {
+      assert.ok(Math.abs(point.u - (before[key][index].u + du)) < 1e-9 && Math.abs(point.v - (before[key][index].v + dv)) < 1e-9, key);
+    });
+  }
+  assert.equal(session.state.painting_layer, null);
+  assert.equal(session.canUndo, false, "no step while it drags");
+  drag.end();
+  assert.equal(session.canUndo, true);
+  session.undo();
+  assert.deepEqual(session.state.painting.paint.strokes[0].geometry, before);
+});
+
+test("a stroke group's drag given up (Escape) puts the paint back with no step", () => {
+  const { session, objects } = setup({ painting: painted() });
+  const before = session.state;
+  const drag = objects.press(strokeAt);
+  drag.move({ x: 420, y: 200 });
+  drag.cancel();
+  assert.equal(session.state, before);
+  assert.equal(session.canUndo, false);
+});
+
+test("the Sky is hit from the visual front: a stroke over a sky image before it, a sky image over the stroke before the stroke", () => {
+  const over = painted([{ id: "g1", actionGroupId: "g1", z_index: 3 }], [strokeOn("st1", "g1", { x: onSky.x - 40, y: onSky.y }, { x: onSky.x + 40, y: onSky.y })]);
+  let { session, objects } = setup({ painting: over });
+  objects.press(onSky);
+  assert.equal(session.selection.row, "paint_group:g1");
+  // The sky image at z 3 and the group at z 3: the sky image draws first (docs/scene-state-v2.md "Sky の重なり順"), so
+  // the group is in front.
+  ({ session, objects } = setup({
+    painting: over,
+    stickers: [{ id: "sky", placement: "sky", source: file("poster.png"), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } }, z_index: 3 }],
+  }));
+  objects.press(onSky);
+  assert.equal(session.selection.row, "paint_group:g1");
+  ({ session, objects } = setup({
+    painting: over,
+    stickers: [{ id: "sky", placement: "sky", source: file("poster.png"), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } }, z_index: 4 }],
+  }));
+  objects.press(onSky);
+  assert.equal(session.selection.row, "sky");
+});
+
+test("two sky images at the same z_index: the one drawn later (later in the list) is hit first", () => {
+  const image = (id) => ({ id, placement: "sky", source: file(`${id}.png`), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } }, z_index: 2 });
+  const { session, objects } = setup({ stickers: [image("back"), image("front")] });
+  objects.press(onSky);
+  assert.equal(session.selection.row, "front");
+});
+
+test("a World object under the pointer is selected before the paint on the Sky behind it", () => {
+  const { session, objects } = setup({
+    stickers: [{ id: "board", placement: "world", source: file("board.png"), position: { value: [0, 0, -5] } }],
+    painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 9 }], [strokeOn("st1", "g1", { x: center.x - 40, y: center.y }, { x: center.x + 40, y: center.y })]),
+  });
+  objects.press(center);
+  assert.equal(session.selection.row, "board");
+});
+
+test("the mask and a hidden painting are not grabbed; the press goes through to what lies behind", () => {
+  let { session, objects } = setup({ stickers: [], painting: painted([], [strokeOn("m1", "gm", left, leftEnd, "mask")]) });
+  assert.equal(objects.press(strokeAt), null);
+  ({ session, objects } = setup({ stickers: [], painting: painted(), paintingVisible: false }));
+  assert.equal(objects.press(strokeAt), null);
+  assert.equal(session.selection.row, null);
+});
+
+test("a locked stroke group is selected, but its drag moves nothing and its frame shows no handles", () => {
+  const { session, objects } = setup({ painting: painted([{ id: "g1", actionGroupId: "g1", z_index: 3, locked: true }]) });
+  const before = session.state;
+  const drag = objects.press(strokeAt);
+  assert.equal(session.selection.row, "paint_group:g1");
+  drag.move({ x: 500, y: 300 });
+  drag.end();
+  assert.equal(session.state, before);
+  const paint = objects.overlay().paint;
+  assert.equal(paint.corners.length, 4);
+  assert.equal(paint.handles, false);
+});
+
+test("the selected stroke group's corner scales its points about its frame's center by the pointer's distance ratio", () => {
+  const { session, objects } = setup({ painting: painted() });
+  session.selectObject("paint_group:g1");
+  const { corners, center: middle, handles } = objects.overlay().paint;
+  assert.equal(handles, true);
+  assert.equal(objects.hover(corners[1]).cursor, "nesw-resize");
+  const before = structuredClone(groupPoints(session));
+  const frame = strokeGroupFrame(session.state.painting.paint.strokes);
+  const drag = objects.press(corners[1]);
+  drag.move({ x: middle.x + (corners[1].x - middle.x) * 2, y: middle.y + (corners[1].y - middle.y) * 2 });
+  drag.end();
+  groupPoints(session).forEach((point, index) => {
+    const want = transformErpPointAround(before[index], frame.centerUv, 2, 0);
+    assert.ok(Math.abs(point.u - want.u) < 1e-9 && Math.abs(point.v - want.v) < 1e-9);
+  });
+  assert.equal(session.state.painting.paint.strokes[0].size, 10, "the brush size stays");
+  assert.equal(session.canUndo, true);
+});
+
+test("a raster object is hit where its pixels show; its drag moves its transform and its corner scales it", () => {
+  const raster = rasterOn("r1", { x: 600, y: 100 }, { x: 700, y: 200 });
+  const alpha = { value: 255 };
+  const { session, objects } = setup({ stickers: [], painting: painted([], [], [raster]), rasterAlpha: () => alpha.value });
+  alpha.value = 0;
+  assert.equal(objects.press({ x: 650, y: 150 }), null, "a clear pixel does not hit");
+  alpha.value = 255;
+  const drag = objects.press({ x: 650, y: 150 });
+  assert.equal(session.selection.row, "raster:r1");
+  drag.move({ x: 700, y: 150 });
+  drag.end();
+  const du = erpAt({ x: 700, y: 150 }).u - erpAt({ x: 650, y: 150 }).u;
+  assert.ok(Math.abs(session.state.painting.raster_objects[0].transform.du - du) < 1e-9);
+  assert.equal(objects.hover({ x: 700, y: 150 }).cursor, "default");
+  const { corners, center: middle } = objects.overlay().paint;
+  const scale = objects.press(corners[2]);
+  scale.move({ x: middle.x + (corners[2].x - middle.x) * 3, y: middle.y + (corners[2].y - middle.y) * 3 });
+  scale.end();
+  assert.ok(Math.abs(session.state.painting.raster_objects[0].transform.scale - 3) < 1e-6);
+  // Without its pixels to read, it is hit anywhere in its box.
+  const unread = setup({ stickers: [], painting: painted([], [], [raster]) });
+  assert.ok(unread.objects.press({ x: 610, y: 110 }));
+  assert.equal(unread.session.selection.row, "raster:r1");
+});
+
+test("in the Camera tab a press on the paint only selects it", () => {
+  const { session, objects } = setup({ tab: "camera", painting: painted() });
+  const before = session.state;
+  const drag = objects.press(strokeAt);
+  assert.equal(session.selection.row, "paint_group:g1");
+  drag.move({ x: 500, y: 300 });
+  drag.end();
+  assert.equal(session.state, before);
+  assert.equal(objects.overlay().paint.handles, false);
+});
+
+test("a long stroke whose frame reaches behind the view is still grabbed on its visible part, without a frame drawn", () => {
+  // From 100° left to 100° right through the middle of the view: its frame's corners are behind it.
+  const high = { x: center.x, y: 80 };
+  const middle = erpAt(high);
+  const points = Array.from({ length: 57 }, (_, index) => ({ u: (middle.u - 0.28 + index * 0.01 + 1) % 1, v: middle.v }));
+  const stroke = { ...strokeOn("st1", "g1", left, leftEnd), geometry: { geometryKind: "freehand_open", points, rawPoints: points, processedPoints: points } };
+  const { session, objects } = setup({ stickers: [], painting: painted(undefined, [stroke]) });
+  const drag = objects.press({ x: high.x + 30, y: high.y });
+  assert.ok(drag);
+  assert.equal(session.selection.row, "paint_group:g1");
+  assert.equal(objects.overlay().paint, null, "no frame while its corners are out of the view");
+  drag.move({ x: high.x + 30, y: high.y + 40 });
+  drag.end();
+  assert.ok(session.state.painting.paint.strokes[0].geometry.points[28].v > middle.v);
+});
+
+test("a paint group's drag copies only what it moves: the other strokes stay the same objects", () => {
+  const { session, objects } = setup({ painting: painted(
+    [{ id: "g1", actionGroupId: "g1", z_index: 3 }, { id: "g2", actionGroupId: "g2", z_index: 4 }],
+    [strokeOn("st1", "g1", left, leftEnd), strokeOn("st2", "g2", { x: 600, y: 400 }, { x: 700, y: 400 })],
+  ) });
+  const other = session.state.painting.paint.strokes[1];
+  const drag = objects.press(strokeAt);
+  drag.move({ x: 300, y: 200 });
+  drag.move({ x: 320, y: 220 });
+  assert.equal(session.state.painting.paint.strokes[1], other);
+  drag.end();
+  assert.equal(session.state.painting.paint.strokes[1], other);
+  assert.notEqual(session.state.painting.paint.strokes[0].geometry.points[0].v, other.geometry.points[0].v);
+});
+
+test("a one-point stroke's dot moves it when pressed, though its frame's corners lie within the handles' reach", () => {
+  // A small stage: the dot's frame is a few px across.
+  const view = { width: 200, height: 100 };
+  const small = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] }, view.width, view.height, 50);
+  const erpOf = (p) => {
+    const { u, v } = erpPointOfDirection(viewProjection(small, view.width, view.height).ray(p.x, p.y));
+    return { u, v };
+  };
+  const dot = { x: 30, y: 15 };
+  const point = erpOf(dot);
+  const stroke = { ...strokeOn("st1", "g1", left, leftEnd), geometry: { geometryKind: "freehand_open", points: [point], rawPoints: [point], processedPoints: [point] } };
+  // The Camera behind the view: its mark is not on this small stage.
+  const { session, objects } = setup({ stickers: [], painting: painted(undefined, [stroke]), view, cameraAt: [0, 0, 50] });
+  session.selectObject("paint_group:g1");
+  const { corners } = objects.overlay().paint;
+  assert.ok(Math.hypot(corners[0].x - dot.x, corners[0].y - dot.y) < 11, "a corner is within reach of the dot");
+  assert.equal(objects.hover(dot).cursor, "default");
+  const drag = objects.press(dot);
+  assert.equal(session.selection.row, "paint_group:g1");
+  drag.move({ x: 40, y: 22 });
+  drag.end();
+  const want = erpOf({ x: 40, y: 22 });
+  const moved = session.state.painting.paint.strokes[0].geometry.points[0];
+  assert.ok(Math.abs(moved.u - want.u) < 1e-9 && Math.abs(moved.v - want.v) < 1e-9);
 });

@@ -4,10 +4,13 @@
 import { getCutoutAspectLabel } from "../pano_cutout_view_math.js";
 import { CAMERA_SHOT_ID, setCameraField, setStickerPose, stickerPose } from "../pano_editor_state.js";
 import { HIDDEN_PREVIEW_OPACITY } from "../pano_editor_view.js";
-import { clamp } from "../pano_math.js";
+import {
+  frameCornersUv, offsetRasterObject, offsetStrokeGroup, rasterObjectCenterUv, rasterObjectCornersUv,
+  scaleRasterObject, skyDisplayOrder, strokeGroupCenterUv, transformStrokeGroup,
+} from "../pano_paint_objects.js";
 import { ensurePaintGroup, nextPaintZIndex, paintingGroups, shortestWrappedDelta, statePainting, strokeGroupFrame, syncPaintGroups } from "../pano_paint_strokes.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
-import { DEG2RAD, EXTERNAL_STICKER_ID, EXTERNAL_STICKER_SOURCE_KIND } from "./constants.js";
+import { EXTERNAL_STICKER_ID, EXTERNAL_STICKER_SOURCE_KIND } from "./constants.js";
 
 export function createItems(deps) {
   const {
@@ -95,29 +98,7 @@ export function createItems(deps) {
     return ensurePaintGroup(statePainting(state), skyStickers(), actionGroupId, zIndex);
   }
   function getFrameCornersUv(frame) {
-    if (!frame?.centerUv) return [];
-    const centerU = Number(frame.centerUv.u || 0);
-    const centerV = Number(frame.centerUv.v || 0);
-    const halfW = Number(frame.halfW || 0);
-    const halfH = Number(frame.halfH || 0);
-    return [
-      {
-        u: ((centerU - halfW) % 1 + 1) % 1,
-        v: clamp(centerV - halfH, 0, 1),
-      },
-      {
-        u: ((centerU + halfW) % 1 + 1) % 1,
-        v: clamp(centerV - halfH, 0, 1),
-      },
-      {
-        u: ((centerU + halfW) % 1 + 1) % 1,
-        v: clamp(centerV + halfH, 0, 1),
-      },
-      {
-        u: ((centerU - halfW) % 1 + 1) % 1,
-        v: clamp(centerV + halfH, 0, 1),
-      },
-    ];
+    return frameCornersUv(frame);
   }
   function syncPaintingGroupEntries() {
     return syncPaintGroups(statePainting(state), skyStickers());
@@ -157,7 +138,7 @@ export function createItems(deps) {
         z_index: Number(item?.z_index || 0),
         item,
       }));
-    return [...stickers, ...groups, ...rasterObjects].sort((a, b) => Number(a.z_index || 0) - Number(b.z_index || 0));
+    return skyDisplayOrder([...stickers, ...groups, ...rasterObjects]);
   }
   function getOrderedPaintGroupIds(includeActive = true) {
     const ordered = getDisplayListObjects()
@@ -293,84 +274,16 @@ export function createItems(deps) {
     }
     return `${base}:view:${Math.round(Number(editor.viewYaw || 0) * 100)}:${Math.round(Number(editor.viewPitch || 0) * 100)}:${Math.round(Number(editor.viewFov || 0) * 100)}:${Math.round(Number(canvas?.width || 0))}:${Math.round(Number(canvas?.height || 0))}`;
   }
-  function translateErpPoint(point, du, dv) {
-    if (!point || typeof point !== "object") return point;
-    return {
-      ...point,
-      u: ((Number(point.u || 0) + Number(du || 0)) % 1 + 1) % 1,
-      v: clamp(Number(point.v || 0) + Number(dv || 0), 0, 1),
-    };
-  }
   function getStrokeGroupCenterUv(idOrActionGroupId, layerKind = null, strokesOverride = null) {
     const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);
     const strokes = Array.isArray(strokesOverride) ? strokesOverride : getStrokeGroupStrokes(resolved.actionGroupId, resolved.layerKind);
-    const pts = [];
-    strokes.forEach((stroke) => {
-      const geometry = stroke?.geometry || null;
-      const src = geometry?.geometryKind === "lasso_fill"
-        ? geometry?.points
-        : (geometry?.processedPoints || geometry?.rawPoints || geometry?.points || []);
-      if (Array.isArray(src)) pts.push(...src);
-    });
-    if (!pts.length) return { u: 0.5, v: 0.5 };
-    const anchorU = Number(pts[0]?.u || 0);
-    let sumU = 0;
-    let sumV = 0;
-    pts.forEach((pt) => {
-      sumU += anchorU + shortestWrappedDelta(Number(pt?.u || 0), anchorU);
-      sumV += Number(pt?.v || 0);
-    });
-    return {
-      u: ((sumU / pts.length) % 1 + 1) % 1,
-      v: clamp(sumV / pts.length, 0, 1),
-    };
-  }
-  function transformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
-    if (!point || typeof point !== "object") return point;
-    const cu = Number(center?.u || 0);
-    const cv = Number(center?.v || 0);
-    const dx = shortestWrappedDelta(Number(point.u || 0), cu);
-    const dy = Number(point.v || 0) - cv;
-    const rad = Number(rotationDeg || 0) * DEG2RAD;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const s = Math.max(0.02, Number(scale || 1));
-    const rx = (dx * cos - dy * sin) * s;
-    const ry = (dx * sin + dy * cos) * s;
-    return {
-      ...point,
-      u: ((cu + rx) % 1 + 1) % 1,
-      v: clamp(cv + ry, 0, 1),
-    };
+    return strokeGroupCenterUv(strokes);
   }
   function applyStrokeGroupOffset(idOrActionGroupId, du, dv, snapshots = null, layerKind = null, frameSnapshot = null) {
     const resolved = parseStrokeGroupSelectionId(idOrActionGroupId, layerKind);
     const gid = String(resolved.actionGroupId || "").trim();
     if (!gid) return false;
-    const strokes = getPaintingLayerList(resolved.layerKind);
-    const snapshotMap = Array.isArray(snapshots)
-      ? new Map(snapshots.map((stroke) => [String(stroke?.id || ""), stroke]))
-      : null;
-    let changed = false;
-    strokes.forEach((stroke) => {
-      if (String(stroke?.actionGroupId || "").trim() !== gid) return;
-      const source = snapshotMap?.get(String(stroke?.id || "")) || stroke;
-      const geometry = stroke?.geometry;
-      const sourceGeometry = source?.geometry;
-      if (!geometry || !sourceGeometry) return;
-      if (Array.isArray(sourceGeometry.points)) {
-        geometry.points = sourceGeometry.points.map((pt) => translateErpPoint(pt, du, dv));
-        changed = true;
-      }
-      if (Array.isArray(sourceGeometry.rawPoints)) {
-        geometry.rawPoints = sourceGeometry.rawPoints.map((pt) => translateErpPoint(pt, du, dv));
-        changed = true;
-      }
-      if (Array.isArray(sourceGeometry.processedPoints)) {
-        geometry.processedPoints = sourceGeometry.processedPoints.map((pt) => translateErpPoint(pt, du, dv));
-        changed = true;
-      }
-    });
+    const changed = offsetStrokeGroup(getPaintingLayerList(resolved.layerKind), gid, du, dv, snapshots);
     if (changed && frameSnapshot) {
       const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
       if (entry) entry.frame = null;
@@ -383,63 +296,27 @@ export function createItems(deps) {
     if (!gid) return false;
     const strokes = getPaintingLayerList(resolved.layerKind);
     const sourceStrokes = Array.isArray(snapshots) ? snapshots : getStrokeGroupStrokes(gid, resolved.layerKind);
-    const snapshotMap = Array.isArray(sourceStrokes)
-      ? new Map(sourceStrokes.map((stroke) => [String(stroke?.id || ""), stroke]))
-      : null;
     // Use the frame's bbox center as pivot when available — it matches what objectGeom() draws.
-    const centerUv = frameSnapshot?.centerUv ?? getStrokeGroupCenterUv(gid, resolved.layerKind, sourceStrokes);
-    let changed = false;
-    strokes.forEach((stroke) => {
-      if (String(stroke?.actionGroupId || "").trim() !== gid) return;
-      const source = snapshotMap?.get(String(stroke?.id || "")) || stroke;
-      const geometry = stroke?.geometry;
-      const sourceGeometry = source?.geometry;
-      if (!geometry || !sourceGeometry) return;
-      if (Array.isArray(sourceGeometry.points)) {
-        geometry.points = sourceGeometry.points.map((pt) => transformErpPointAround(pt, centerUv, scale, rotationDeg));
-        changed = true;
-      }
-      if (Array.isArray(sourceGeometry.rawPoints)) {
-        geometry.rawPoints = sourceGeometry.rawPoints.map((pt) => transformErpPointAround(pt, centerUv, scale, rotationDeg));
-        changed = true;
-      }
-      if (Array.isArray(sourceGeometry.processedPoints)) {
-        geometry.processedPoints = sourceGeometry.processedPoints.map((pt) => transformErpPointAround(pt, centerUv, scale, rotationDeg));
-        changed = true;
-      }
-    });
+    const centerUv = frameSnapshot?.centerUv ?? strokeGroupCenterUv(sourceStrokes);
+    const changed = transformStrokeGroup(strokes, gid, scale, rotationDeg, sourceStrokes, centerUv);
     if (changed && frameSnapshot) {
       const entry = getPaintingGroupList().find((g) => String(g?.actionGroupId || "") === gid);
       if (entry) entry.frame = null;
     }
     return changed;
   }
-  function applyRasterObjectOffset(idOrRasterId, du, dv, snapshot = null) {
+  function rasterObjectOf(idOrRasterId) {
     const rid = parseRasterObjectSelectionId(idOrRasterId);
-    if (!rid) return false;
-    const item = getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid);
-    if (!item) return false;
-    const source = snapshot && typeof snapshot === "object" ? snapshot : item;
-    const sourceTf = source?.transform || {};
-    const nextDu = Number(sourceTf.du || 0) + Number(du || 0);
-    const nextDv = clamp(Number(sourceTf.dv || 0) + Number(dv || 0), -1, 1);
-    if (!item.transform) item.transform = { du: 0, dv: 0, rot_deg: 0, scale: 1 };
-    item.transform.du = nextDu;
-    item.transform.dv = nextDv;
-    return true;
+    if (!rid) return null;
+    return getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid) || null;
+  }
+  function applyRasterObjectOffset(idOrRasterId, du, dv, snapshot = null) {
+    const item = rasterObjectOf(idOrRasterId);
+    return item ? offsetRasterObject(item, du, dv, snapshot) : false;
   }
   function applyRasterObjectTransform(idOrRasterId, scale = 1, snapshot = null) {
-    const rid = parseRasterObjectSelectionId(idOrRasterId);
-    if (!rid) return false;
-    const item = getRasterObjectList().find((entry) => String(entry?.id || "").trim() === rid);
-    if (!item) return false;
-    const source = snapshot && typeof snapshot === "object" ? snapshot : item;
-    const sourceTf = source?.transform || {};
-    const sourceScale = Math.max(0.01, Number(sourceTf.scale || 1));
-    const nextScale = clamp(sourceScale * Math.max(0.01, Number(scale || 1)), 0.01, 100);
-    if (!item.transform) item.transform = { du: 0, dv: 0, rot_deg: 0, scale: 1 };
-    item.transform.scale = nextScale;
-    return true;
+    const item = rasterObjectOf(idOrRasterId);
+    return item ? scaleRasterObject(item, scale, snapshot) : false;
   }
   function getNextStickerZIndex() {
     return getNextDisplayZIndex();
@@ -458,56 +335,12 @@ export function createItems(deps) {
     return 1;
   }
 
-  function inverseTransformErpPointAround(point, center, scale = 1, rotationDeg = 0) {
-    if (!point || typeof point !== "object") return point;
-    const cu = Number(center?.u || 0);
-    const cv = Number(center?.v || 0);
-    const dx = shortestWrappedDelta(Number(point.u || 0), cu);
-    const dy = Number(point.v || 0) - cv;
-    const s = Math.max(0.02, Number(scale || 1));
-    const rad = Number(rotationDeg || 0) * DEG2RAD;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const sx = dx / s;
-    const sy = dy / s;
-    const rx = sx * cos + sy * sin;
-    const ry = -sx * sin + sy * cos;
-    return {
-      ...point,
-      u: ((cu + rx) % 1 + 1) % 1,
-      v: cv + ry,
-    };
-  }
-
   function getRasterObjectCenterUv(item) {
-    const bbox = item?.bbox || null;
-    const tf = item?.transform || {};
-    if (!bbox) return { u: 0.5, v: 0.5 };
-    const centerU = (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5 + Number(tf.du || 0);
-    return {
-      u: ((centerU % 1) + 1) % 1,
-      v: clamp((Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5 + Number(tf.dv || 0), 0, 1),
-    };
+    return rasterObjectCenterUv(item);
   }
 
   function getRasterObjectTransformedErpPoints(item) {
-    const bbox = item?.bbox || null;
-    if (!bbox) return [];
-    const center = {
-      u: (Number(bbox.u0 || 0) + Number(bbox.u1 || 0)) * 0.5,
-      v: (Number(bbox.v0 || 0) + Number(bbox.v1 || 0)) * 0.5,
-    };
-    const scale = Math.max(0.01, Number(item?.transform?.scale || 1));
-    const rotationDeg = Number(item?.transform?.rot_deg || 0);
-    const du = Number(item?.transform?.du || 0);
-    const dv = Number(item?.transform?.dv || 0);
-    const base = [
-      { u: Number(bbox.u0 || 0), v: Number(bbox.v0 || 0) },
-      { u: Number(bbox.u1 || 0), v: Number(bbox.v0 || 0) },
-      { u: Number(bbox.u1 || 0), v: Number(bbox.v1 || 0) },
-      { u: Number(bbox.u0 || 0), v: Number(bbox.v1 || 0) },
-    ];
-    return base.map((pt) => translateErpPoint(transformErpPointAround(pt, center, scale, rotationDeg), du, dv));
+    return rasterObjectCornersUv(item);
   }
 
   function getRasterObjectGeomCacheKey(item) {
@@ -573,7 +406,7 @@ export function createItems(deps) {
     getStrokeGroupStrokes, getStrokeGeomCacheKey, shortestWrappedDelta, getStrokeGroupCenterUv,
     applyStrokeGroupOffset, applyStrokeGroupTransform, applyRasterObjectOffset, applyRasterObjectTransform,
     getNextStickerZIndex, isExternalSticker, isStickerHidden, getStickerDisplayAlpha,
-    inverseTransformErpPointAround, getRasterObjectCenterUv, getRasterObjectTransformedErpPoints,
+    getRasterObjectCenterUv, getRasterObjectTransformedErpPoints,
     getRasterObjectGeomCacheKey, getSceneItemGeomCacheKey, normalizeDisplayZIndices,
   };
 }

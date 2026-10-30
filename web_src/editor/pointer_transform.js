@@ -8,6 +8,7 @@ import { deriveCutoutAspectLabelFromFov, deriveHorizontalFovDeg, getCutoutCamera
 import { CAMERA_SHOT_ID } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { clamp, wrapYaw } from "../pano_math.js";
+import { pointerDistance, pointerScaleRatio } from "../pano_paint_objects.js";
 import { scaleStickerAxisFromPointer, scaleStickerFromPointer } from "../pano_sticker_geometry.js";
 import { RAD2DEG } from "./constants.js";
 import { cloneJson, dirToYawPitch } from "./helpers.js";
@@ -84,7 +85,7 @@ export function createPointerTransform(deps) {
         kind: "scale_stroke_group",
         item: selected,
         center: selGeom.center,
-        startDist: Math.max(1, Math.hypot(p.x - selGeom.center.x, p.y - selGeom.center.y)),
+        startDist: pointerDistance(selGeom.center, p),
         snapshot: strokeGroupSnapshot(selected),
         frameSnapshot: strokeGroupFrameSnapshot(selected),
         cursor: h.cursor,
@@ -94,7 +95,7 @@ export function createPointerTransform(deps) {
         kind: "scale_raster_object",
         item: selected,
         center: selGeom.center,
-        startDist: Math.max(1, Math.hypot(p.x - selGeom.center.x, p.y - selGeom.center.y)),
+        startDist: pointerDistance(selGeom.center, p),
         snapshot: rasterObjectSnapshot(selected),
         cursor: h.cursor,
       }
@@ -240,8 +241,7 @@ export function createPointerTransform(deps) {
   }
 
   function scaleRasterObject(it, p) {
-    const d = Math.max(1, Math.hypot(p.x - it.center.x, p.y - it.center.y));
-    const ratio = d / Math.max(1, Number(it.startDist || 1));
+    const ratio = pointerScaleRatio(it.center, it.startDist, p);
     if (applyRasterObjectTransform(it.item?.rasterObjectId || it.item?.id || "", ratio, it.snapshot)) {
       markPaintCompositeVisualsDirty();
       requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });
@@ -249,8 +249,7 @@ export function createPointerTransform(deps) {
   }
 
   function scaleStrokeGroup(it, p) {
-    const d = Math.max(1, Math.hypot(p.x - it.center.x, p.y - it.center.y));
-    const ratio = d / Math.max(1, Number(it.startDist || 1));
+    const ratio = pointerScaleRatio(it.center, it.startDist, p);
     if (applyStrokeGroupTransform(it.item?.actionGroupId, ratio, 0, it.snapshot, it.item?.layerKind, it.frameSnapshot)) {
       markPaintStrokeVisualsDirty({ rebuildPaintEngine: false });
       requestDraw({ localOnly: true, reason: DRAW_REASON.PAINT });

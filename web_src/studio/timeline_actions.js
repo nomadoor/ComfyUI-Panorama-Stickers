@@ -6,8 +6,10 @@
 // only upstream layers changed) and the new working copies of the upstream layers it changed ({ [key]: sceneState }).
 // Unchanged parts are shared, the upstream painting too. `ctx` and selections are as timeline_model.js describes.
 // The shell applies an edit (applyEdit), records it as one Undo step and stops playback where the spec says so.
+import { paintObjectRow } from "../pano_paint_objects.js";
 import { clipActive, FRAME_EPSILON } from "../pano_scene_eval.js";
 import {
+  PAINTING_ROW,
   deleteKeyframes,
   enteredTimelineFps,
   enteredTimelineLength,
@@ -259,7 +261,8 @@ export function toggleVisible(ctx, selection, id) {
   const visible = entryVisible(entry);
   if (entry.kind === "painting") draft.sceneState(entry).painting_visible = !visible;
   else draft.owner(entry).visible = !visible;
-  const released = visible && selection?.row === id;
+  // Hiding the painting lets a selected paint group go too (docs/studio-ui.md "ペイントのまとまり").
+  const released = visible && (selection?.row === id || (id === PAINTING_ROW && !!paintObjectRow(selection?.row)));
   return { edit: draft.result(), selection: released ? { ...selection, row: null } : selection };
 }
 

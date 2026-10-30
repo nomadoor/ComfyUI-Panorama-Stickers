@@ -2,6 +2,7 @@
 // they may ask for.
 import { deleteWorldSticker, duplicateSceneSticker, retainActiveCutoutShot, takeStickerId } from "../pano_editor_state.js";
 import { wrapYaw } from "../pano_math.js";
+import { deletePaintObjects } from "../pano_paint_objects.js";
 import { normalizePaintingState } from "../pano_paint_types.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { uid } from "./helpers.js";
@@ -190,15 +191,11 @@ export function createCommands(deps) {
         .map((item) => parseRasterObjectSelectionId(item.rasterObjectId || item.id || "")));
       const stickerIds = new Set(selectedItems.filter(isStickerItem).map((item) => String(item.id || "")));
       if (paintStrokeIds.size > 0) {
-        state.painting.paint.strokes = (Array.isArray(state.painting?.paint?.strokes) ? state.painting.paint.strokes : [])
-          .filter((stroke) => !paintStrokeIds.has(String(stroke?.actionGroupId || "")));
-        state.painting.groups = getPaintingGroupList()
-          .filter((group) => !paintStrokeIds.has(String(group?.actionGroupId || group?.id || "")));
+        deletePaintObjects(state.painting, { groupIds: paintStrokeIds });
         markPaintStrokeVisualsDirty();
       }
       if (rasterIds.size > 0) {
-        state.painting.raster_objects = getRasterObjectList()
-          .filter((item) => !rasterIds.has(String(item?.id || "")));
+        deletePaintObjects(state.painting, { rasterIds });
         markPaintCompositeVisualsDirty();
       }
       if (stickerIds.size > 0) {
@@ -222,11 +219,7 @@ export function createCommands(deps) {
       return;
     }
     if (isStrokeGroupItem(selected)) {
-      const gid = String(selected.actionGroupId || selected.id || "").trim();
-      state.painting.paint.strokes = (Array.isArray(state.painting?.paint?.strokes) ? state.painting.paint.strokes : [])
-        .filter((stroke) => String(stroke?.actionGroupId || "").trim() !== gid);
-      state.painting.groups = getPaintingGroupList()
-        .filter((group) => String(group?.actionGroupId || group?.id || "").trim() !== gid);
+      deletePaintObjects(state.painting, { groupIds: [String(selected.actionGroupId || selected.id || "")] });
       markPaintStrokeVisualsDirty();
       editor.selectedId = null;
       editor.selectedIds = [];
@@ -238,9 +231,7 @@ export function createCommands(deps) {
       return;
     }
     if (isRasterObjectItem(selected)) {
-      const rid = parseRasterObjectSelectionId(selected.rasterObjectId || selected.id || "");
-      state.painting.raster_objects = getRasterObjectList()
-        .filter((item) => String(item?.id || "").trim() !== rid);
+      deletePaintObjects(state.painting, { rasterIds: [parseRasterObjectSelectionId(selected.rasterObjectId || selected.id || "")] });
       markPaintCompositeVisualsDirty();
       editor.selectedId = null;
       editor.selectedIds = [];

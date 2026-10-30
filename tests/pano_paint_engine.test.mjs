@@ -145,3 +145,22 @@ test("a paint eraser shows on the groups it reaches, each with its own paint", (
     assert.equal(engine.getGroupDisplay("g1").media, committed("g1"));
   });
 });
+
+test("a rebuild told that strokes do not change in place reads only the strokes it has not read before", () => {
+  withFakeCanvas(() => {
+    const engine = createPaintEngineManager({ width: 64, height: 32 });
+    let reads = 0;
+    const counted = (stroke) => new Proxy(stroke, {
+      get(object, key) {
+        if (key === "geometry") reads += 1;
+        return object[key];
+      },
+    });
+    const paintStroke = (gid, u) => ({ ...maskStroke(), layerKind: "paint", actionGroupId: gid, geometry: { geometryKind: "freehand", rawPoints: [{ u, v: 0.5 }, { u: u + 0.05, v: 0.5 }] } });
+    const kept = counted(paintStroke("g1", 0.2));
+    engine.rebuildCommitted({ painting: { paint: { strokes: [kept, paintStroke("g2", 0.6)] } } }, { immutableStrokes: true });
+    reads = 0;
+    engine.rebuildCommitted({ painting: { paint: { strokes: [kept, paintStroke("g2", 0.7)] } } }, { immutableStrokes: true });
+    assert.equal(reads, 0, "the stroke kept is not read again");
+  });
+});

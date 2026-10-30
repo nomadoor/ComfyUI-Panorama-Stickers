@@ -1400,3 +1400,14 @@ test("the Easing panel shows only for Keyframes the Timeline can change", async 
     restore();
   }
 });
+
+test("the old editor: a one-point stroke's dot is its body (move), though a frame corner lies within the handles' reach", () => {
+  const hit = createHitTest({ editor: { mode: "pano" }, readOnly: false, shotEditor: false, type: "stickers" });
+  hit.connect({ isStickerItem: () => false, isShotItem: () => false });
+  const corners = [{ x: 96, y: 96 }, { x: 104, y: 96 }, { x: 104, y: 104 }, { x: 96, y: 104 }];
+  const dot = { kind: "strokeGroup", visible: true, center: { x: 100, y: 100 }, corners, strokePaths: [{ points: [{ x: 100, y: 100 }], lineWidth: 20 }] };
+  assert.equal(hit.handleHit(dot, { x: 100, y: 100 }).kind, "move");
+  // A stroke with a line keeps its corner handles.
+  const line = { ...dot, strokePaths: [{ points: [{ x: 96, y: 100 }, { x: 104, y: 100 }], lineWidth: 20 }] };
+  assert.equal(hit.handleHit(line, { x: 97, y: 97 }).kind, "scale");
+});
