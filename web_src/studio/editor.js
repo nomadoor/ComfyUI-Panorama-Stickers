@@ -30,7 +30,7 @@ import {
   videoMetaEntry,
 } from "../pano_media_session.js";
 import { backgroundBarEnd, backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
-import { isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
+import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
 import { PANO_SCENE_TYPE } from "../pano_upstream.js";
 import { loadSceneState } from "../pano_scene_state.js";
@@ -55,9 +55,8 @@ import { spanOf } from "./timeline_model.js";
 import { openingView, rememberView } from "./view_camera.js";
 import { BOUND_NOTICE_SECONDS } from "./view_scale.js";
 
-// The node's inputs that carry its background, the first linked one shown (the input is `background` after the
-// rename in docs/studio-node.md, `bg_media` before it).
-const BACKGROUND_INPUTS = ["background", "bg_media"];
+// The node's inputs that carry its background, the first linked one shown.
+const BACKGROUND_INPUTS = STUDIO_BACKGROUND_INPUT_NAMES;
 
 // The nodes whose editor is open, so a second open does not stack a second window.
 const openNodes = new WeakSet();
