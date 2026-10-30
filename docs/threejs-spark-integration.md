@@ -27,7 +27,7 @@
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
 | 新しい UI のステージの描画（視点のカメラの far、地面のグリッドを描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/ground_grid.spec.js`（グリッドの濃さと、半透明の物との順） |
-| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。three.js だけを import する）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ビューへの組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする、描く物の変化で面を描き直す）は `pano_three_view.js` `renderLiveErp`、ステージ（Camera タブ）と Output の小窓から呼ぶのは `web_src/studio/stage.js` | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/ground_grid.spec.js`（面の色空間） |
+| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。three.js だけを import する）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ビューへの組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする、描く物の変化で面を描き直す）は `pano_three_view.js` `renderLiveErp`、ステージ（Camera タブ）と Output の小窓から呼ぶのは `web_src/studio/stage.js`、Panorama Studio のノード上の表示から呼ぶのは `pano_preview_runtime.js`（共有の view の `renderLiveErp`、`pano_preview_view.js`） | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/ground_grid.spec.js`（面の色空間） |
 
 ## 版と同梱
 
@@ -291,8 +291,8 @@ three のアップロードは render の中でしか起きないので、Spark 
 
 ## Panorama モードの ERP の表示（新しい UI）
 
-新しい UI の Output の小窓と、Panorama モードの Camera タブ（`docs/studio-ui.md`）は、撮る Camera の位置から描いた ERP をその場で見せる
-（直近の実行の出力は使わない。編集とずれるため。ADR 0048）。
+新しい UI の Output の小窓と、Panorama モードの Camera タブ（`docs/studio-ui.md`）、Panorama Studio のノード上の表示（`docs/studio-node-surface.md`）は、
+撮る Camera の位置から描いた ERP をその場で見せる（直近の実行の出力は使わない。編集とずれるため。ADR 0048・0049）。
 
 - 描き方：撮る Camera の位置から、Camera の回転に合わせた 6 方向（立方体の面）を、空間の表示と同じ描き方（2 パス、`world` の Sticker、
   3D の要素、Sky の層）で描き、ERP に貼り直す。範囲は Camera の `erp_range`（180 なら前の半球）。描くのはエディタの表示用で、出力の
@@ -308,7 +308,8 @@ three のアップロードは render の中でしか起きないので、Spark 
   貼り直しのパスはその値をそのまま出す。面を描き直すのは、Sky・World の入力・`contentRevision`・`clearColor` を値にしたもの（レンズの面の
   キーと同じ `plainValue`）が変わったときと、その所有者の Spark の並べ替えが終わったとき（`onDirty`）だけで、ほかは位置・大きさ・範囲の変化を
   `pano_live_erp.js` が見分ける。所有者は Camera タブのフレーム（`studio-live-erp`、地面のグリッドを描く）と Output の小窓（`studio-output-erp`、
-  グリッドを描かない）で、Camera タブの Panorama モードで小窓を開いているときは二つを描く。
+  グリッドを描かない）で、Camera タブの Panorama モードで小窓を開いているときは二つを描く。ノード上の表示は共有の view（`pano_preview_view.js`）の
+  ノードごとの所有者で描き（グリッドを描かない）、その所有者を放すと ERP も放す。
 - 読み戻し：貼り直したパスの画素は `readRenderTargetPixels` で同期に読み戻して 2D の canvas に置く（GPU を待つ）。headless の SwiftShader では
   貼り直しだけで約 2〜3 ms、6 面と貼り直しで約 70〜90 ms（2026-10-30、568×284）だが、CPU の描画なので目安にしない。持ち主の実機の GPU で
   確かめる。
