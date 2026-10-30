@@ -7,7 +7,6 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { cameraBasis, DEG2RAD } from "../web_src/pano_camera_math.js";
 import { createSharedView, previewNodeCamera } from "../web_src/pano_preview_view.js";
 import { applyViewportCamera } from "../web_src/pano_three_view.js";
-import { readEditorSource } from "./editor_source.mjs";
 
 const source = (name) => readFileSync(new URL(`../web_src/${name}`, import.meta.url), "utf8");
 
@@ -219,42 +218,9 @@ test("a failed load marks every node failed until every node has gone", async (t
   assert.deepEqual(c.render({}), { canvas: "canvas" });
 });
 
-test("the on-node Preview draws through the shared three.js view and its Vue surface shows a failed view", () => {
-  const preview = source("pano_preview_previewnode.js");
-  assert.ok(preview.includes('from "./pano_preview_view.js"'));
-  const draw = preview.slice(preview.indexOf("function drawPreview("), preview.indexOf("function isPointInRect("));
-  assert.match(draw, /if \(previewView\.failed\) \{\s*drawGrid\(ctx, width, height\);\s*return;/);
-  assert.match(preview, /reactive\(\{ fullscreen: false, viewUnavailable: false, opensWindow: this\.opensWindow\(\) \}\)/);
-  assert.match(preview, /this\.surfaceModel\.viewUnavailable = this\.previewView\.failed/);
-  assert.match(source("components/PanoPreviewNodeSurface.vue"), /<PanoViewUnavailable v-if="model\.viewUnavailable" \/>/);
-});
-
-test("the on-node Stickers and Cutout surfaces draw through the same shared view and show a failed view in Vue", () => {
-  const runtime = source("pano_preview_runtime.js");
-  assert.match(runtime, /const surfaceView = acquirePreviewView\(requestDraw, \{ items: studioSurface \}\)/);
-  assert.match(runtime, /if \(node\.flags\?\.collapsed \|\| editorOpen\(node\)\) surfaceView\.release\(\);/);
-  assert.match(runtime, /\} else drawCanvas\(node, canvas, surfaceView\);\s*nodeSurfaceUiModel\.viewUnavailable = surfaceView\.failed;/);
-  assert.match(runtime, /surfaceView\.dispose\(\)/);
-  for (const name of ["PanoStickersNodeSurface.vue", "PanoCutoutNodeSurface.vue"]) {
-    assert.match(source(`components/${name}`), /<PanoViewUnavailable v-if="model\.viewUnavailable" \/>/, name);
-  }
-  // One message for every node surface.
-  assert.match(source("components/shared/PanoViewUnavailable.vue"), /VIEW_UNAVAILABLE_MESSAGE/);
+// One message for every node surface (Working principles 1). Kept as a structural rule that
+// tests/architecture.test.mjs does not cover yet (ADR 0050).
+test("only pano_preview_view.js has the message of a view that failed", () => {
   const files = readdirSync(new URL("../web_src/", import.meta.url)).filter((name) => name.endsWith(".js"));
   assert.deepEqual(files.filter((name) => source(name).includes("3D view unavailable")), ["pano_preview_view.js"]);
-});
-
-test("an on-node Stickers surface with nothing to draw shows the grid without loading the view", () => {
-  const runtime = source("pano_preview_runtime.js");
-  const draw = runtime.slice(runtime.indexOf("function drawCanvas("), runtime.indexOf("\nfunction drawLineOnSphere("));
-  const stickers = draw.slice(draw.indexOf("  if (!surface.view) surface.view = { yaw: 0, pitch: 0, fov: DEFAULT_VIEW_HFOV };\n  let panoramaDrawn"));
-  assert.match(stickers, /if \(!input\.background && !input\.layers\.length\) \{\s*surfaceView\.release\(\);\s*panoramaDrawn = true;\s*\} else \{\s*panoramaDrawn = drawView\(/);
-  assert.match(stickers, /if \(!bgImg && panoramaDrawn\) drawPanoGrid\(/);
-});
-
-test("the Stickers and Cutout editors and the read-only Preview modal draw with three.js", () => {
-  const editor = readEditorSource();
-  assert.match(editor, /const editorView = createEditorView\(/);
-  assert.match(editor, /if \(editorView\.failed\) return \{ status: IMAGE_FAILED, detail: "renderer" \}/);
-  assert.match(source("components/PanoModal.vue"), /detail === "renderer"/);
 });

@@ -9,7 +9,6 @@ import { buildModalShellPreset } from "../web_src/modal_shell_presets.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { keyedAt, setSegmentEasing } from "../web_src/pano_timeline.js";
 import { upstreamLayersOf, upstreamWorkingLayers } from "../web_src/pano_upstream.js";
-import { readEditorSource } from "./editor_source.mjs";
 
 const canonical = () => loadSceneState(readFileSync(new URL("./fixtures/scene_state/v2_canonical.json", import.meta.url), "utf8"));
 
@@ -144,18 +143,6 @@ test("every Timeline row has the eye's place; the eye shows and hides what can b
   assert.equal(ids({ ...state, painting_visible: true }).includes(PAINTING_ROW), false);
 });
 
-test("the eye keeps its place in every row, and only the hideable rows have a button there", () => {
-  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.match(timeline, /<button\s+v-if="row\.hideable"\s+class="pano-timeline-eye"[\s\S]*?:aria-pressed="row\.visible \? 'true' : 'false'"[\s\S]*?<SvgIcon :icon="row\.visible \? ICON\.eye : ICON\.eye_dashed" \/>\s*<\/button>\s*<span v-else class="pano-timeline-eye" aria-hidden="true" \/>/);
-  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
-  assert.match(css, /\.pano-timeline-eye,\s*\.pano-timeline-open,\s*\.pano-timeline-key \{[^}]*width: 20px;/);
-  // Showing and hiding is one history step and does not stop playback.
-  const editor = readEditorSource();
-  const toggle = editor.slice(editor.indexOf('if (action.type === "toggle-visible") {'), editor.indexOf('if (action.type === "select-row") {'));
-  assert.match(toggle, /releaseHiddenSelection\(\);\s*commitTimelineEdit\(\);/);
-  assert.equal(toggle.includes("stopTimelinePlayback"), false);
-});
-
 test("the inspector puts grouped fields side by side in one row and the others alone with a slider", () => {
   const param = (key, label) => ({ key, label, value: 0, displayValue: "0" });
   const rows = inspectorRows([
@@ -172,10 +159,6 @@ test("the inspector puts grouped fields side by side in one row and the others a
     ["Opacity", false, ["Opacity"]],
   ]);
   assert.deepEqual(rows[1].fields.map((field) => [field.key, field.label, field.drag]), [["yaw_deg", "Yaw", 0.5], ["pitch_deg", "Pitch", 0.5], ["rot_deg", "Roll", 0.5]]);
-  // The grouped fields share three equal columns, whatever their digits.
-  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
-  assert.match(css, /\.pano-field-group-values \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
-  assert.match(css, /\.pano-field\.pano-field-group input\[type="number"\] \{[^}]*width: 100%;/);
 });
 
 test("the Easing panel shows the selected segments, and Mixed when they differ", () => {
@@ -227,18 +210,6 @@ test("a port Sticker's bar without a duration ends with its media, and a one-fra
   assert.deepEqual(ends(buildTimelineModel(state, options)), { p: null, f: null, d: 5 }, "a media end not known yet: the Timeline's end");
   assert.equal(buildTimelineModel(state, options).playable, true);
   assert.equal(buildTimelineModel(state, { ...options, span: 1 }).playable, false);
-  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.match(timeline, /class="pano-btn pano-btn-icon pano-timeline-play"\s*type="button"\s*:disabled="!model\.playable"/);
-  // The length field always shows a number: the set length, or the derived one the Timeline spans. No "Auto".
-  assert.match(timeline, /const lengthText = computed\(\(\) => String\(props\.model\.length \?\? span\.value\)\);/);
-  assert.match(timeline, /:value="lengthText" aria-label="Output length in frames"/);
-  assert.doesNotMatch(timeline, /Auto/);
-  // The reset button right of it keeps its slot: disabled without a set length.
-  assert.match(timeline, /class="pano-btn pano-btn-icon pano-timeline-length-reset"\s*type="button"\s*:disabled="model\.length == null"/);
-  // What lies past the output's end is not on the Timeline: no pins, Clip ranges cut at the end.
-  assert.match(timeline, /const shown = keys\.filter\(\(key\) => key\.frame < span\.value\);/);
-  assert.match(timeline, /v-if="row\.clip && row\.clip\.start < span"/);
-  assert.match(timeline, /Math\.min\(clip\.end, span\.value\)/);
 });
 
 test("a world Sticker's position and scale sliders reach past any value, which has no limit", () => {
@@ -247,9 +218,6 @@ test("a world Sticker's position and scale sliders reach past any value, which h
   assert.equal(worldFieldRange(150), 1000);
   assert.equal(worldFieldRange(-2500), 10000);
   assert.equal(worldFieldRange(1000), 1000);
-  const editor = readEditorSource();
-  // Typed values are not clamped to the slider; the scale only stays above 0.
-  assert.match(editor, /if \(\(worldInspected \|\| cameraV2\) && WORLD_UNLIMITED_FIELDS\.has\(key\)\) out = key === "scale" \? Math\.max\(out, WORLD_MIN_SCALE\) : out;/);
 });
 
 test("a world Sticker's selection menu holds the Move | Rotate | Scale segments, below its corners", () => {
@@ -346,14 +314,6 @@ test("no bottom-right button moves when another one shows, hides or changes", ()
   // The group's buttons carry no visibility of their own.
   const preset = buildModalShellPreset("stickers");
   assert.equal([...preset.spaceButtons, preset.spaceFrameButton].some((button) => "visible" in button), false);
-  // The group is at the left end of the row, which is anchored on the right, so it grows away from the
-  // other buttons. Only the group shows or hides.
-  const floatingRight = readFileSync(new URL("../web_src/components/PanoFloatingRight.vue", import.meta.url), "utf8");
-  const row = floatingRight.slice(floatingRight.indexOf('<div class="pano-floating-right">'), floatingRight.indexOf('<div\n    v-show="preview.visible"'));
-  assert.ok(row.indexOf('class="pano-floating-space"') < row.indexOf('v-for="button in buttons"'));
-  assert.deepEqual(row.match(/v-show="[^"]*"|v-if="[^"]*"/g), ['v-if="space"', 'v-show="space.visible"']);
-  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
-  assert.match(css, /\.pano-floating-right \{\s*position: absolute;\s*right: var\(--pano-space-xl\);/);
 });
 
 test("the Camera has Move | Rotate in its gizmo menu, and its frame menu has no lock", () => {
@@ -436,15 +396,6 @@ test("the Frame tab stays in place, disabled with the reason while Panorama Stud
   // The Cutout keeps its tab as before.
   assert.deepEqual(frameViewButton({ hasShot: false }), { disabled: true, tip: null });
   assert.deepEqual(frameViewButton({ hasShot: true }), { disabled: false, tip: null });
-  // A disabled tab keeps its tooltip: it is aria-disabled, and the editor ignores its clicks.
-  const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
-  assert.match(toggle, /:aria-disabled="button\.disabled === true \? 'true' : null"/);
-  assert.match(toggle, /:data-tip="button\.tip \|\| null"/);
-  assert.doesNotMatch(toggle, /:disabled=/);
-  const editor = readEditorSource();
-  assert.match(editor, /if \(viewTarget\.getAttribute\("aria-disabled"\) === "true"\) return;/);
-  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
-  assert.match(css, /\.pano-view-btn\[aria-disabled="true"\] \{/);
 });
 
 test("Panorama Studio's Timeline shows the Camera, the Stickers and the `scene` on one Timeline, and its bar stays as it is", () => {
@@ -471,17 +422,11 @@ test("Panorama Studio's Timeline shows the Camera, the Stickers and the `scene` 
   assert.deepEqual([scene.keyable, scene.lanes, scene.open], [false, [], false]);
   assert.equal(buildTimelineModel(state, { ...options, scene: true, openRows: new Set(["scene"]) }).rows.at(-1).open, false);
   assert.equal(withScene.rows[0].keyable, true);
-  const timelineVue = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.match(timelineVue, /v-if="row\.keyable"\s*class="pano-timeline-key"/);
-  const editorJs = readEditorSource();
-  assert.match(editorJs, /if \(action\.owner === "scene" \|\| action\.owner === BACKGROUND_ROW \|\| !timelineEditable\(action\.owner\)\) return;/);
   // Without its input, the `scene` row shows only while the `scene` changes over time.
   const still = loadSceneState({ version: 2 });
   assert.equal(buildTimelineModel(still, options).rows.some((row) => row.id === "scene"), false);
   still.scene.clip.start = 5;
   assert.equal(buildTimelineModel(still, options).rows.some((row) => row.id === "scene"), true);
-  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.match(timeline, /<SvgIcon :icon="row\.icon" \/>/);
 });
 
 test("Panorama Studio's Camera menu has the 360° preset and Delete, and a 360° Camera has no frame to turn", () => {
@@ -531,19 +476,12 @@ test("a 360° Camera's FOV and lens fields are disabled, saying why, and the oth
   assert.equal(cameraParamTip("curve"), "0 is a fisheye. Keeps the center's size; the H FOV follows.");
   assert.equal(cameraParamTip("hFOV_deg"), null);
   for (const key of ["yaw_deg", "pitch_deg", "roll_deg", "position_x"]) assert.equal(cameraParamEnabled(key, { erp: true }), true);
-  // The disabled tab is left out of the Tab order, and keeps its colour under the pointer.
-  const toggle = readFileSync(new URL("../web_src/components/PanoViewToggle.vue", import.meta.url), "utf8");
-  assert.match(toggle, /:tabindex="button\.disabled === true \? -1 : null"/);
-  const css = readFileSync(new URL("../web/pano_editor.css", import.meta.url), "utf8");
-  assert.doesNotMatch(css, /\.pano-view-btn\[data-view="frame"\]:hover/);
 });
 
 test("a port Sticker's V FOV shows the value its media gives, disabled; its other fields stay as they are", () => {
   assert.equal(stickerParamEnabled("vFOV_deg", { port: true }), false);
   assert.equal(stickerParamEnabled("vFOV_deg"), true);
   for (const key of ["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", "opacity"]) assert.equal(stickerParamEnabled(key, { port: true }), true);
-  const panels = readFileSync(new URL("../web_src/editor/panels.js", import.meta.url), "utf8");
-  assert.match(panels, /if \(isSceneSticker\(inspectorSelected\) && !shotInspected\) params\.forEach\(\(param\) => \{ param\.enabled = param\.enabled && stickerParamEnabled\(param\.key, \{ port: isExternalSticker\(inspectorSelected\) \}\); \}\);/);
 });
 
 
@@ -651,25 +589,8 @@ test("every Panorama Studio Sticker has the same inspector rows, Revert to upstr
   assert.deepEqual(enabled(worldPort), ["position"]);
   // Every kind of Sticker has the same number of Lane buttons.
   for (const model of [upstream, own, inherited, port, worldPort]) assert.equal(model.lanes.length, 4);
-  // The inspector gives the rows for any Sticker of Panorama Studio, own or upstream, sky or world; the panel
-  // always renders them and the origin's slot in the Transform title.
-  const editor = readEditorSource();
-  assert.match(editor, /upstream: studio && target && \(target === worldInspected \|\| isSceneSticker\(target\)\) \? upstreamInspectorModel\(\{\s*layer: isUpstreamSticker\(target\) \? target\.origin\.layer : null,/);
-  const panel = readFileSync(new URL("../web_src/components/PanoSidePanel.vue", import.meta.url), "utf8");
-  assert.match(panel, /<span class="meta">\{\{ model\.upstream\?\.origin \|\| "" \}\}<\/span>/);
-  const origin = readFileSync(new URL("../web_src/components/PanoUpstreamOrigin.vue", import.meta.url), "utf8");
-  assert.doesNotMatch(origin, /v-if="model\.note"/);
-  // One "Revert to upstream" row for upstream elements and the Pose handoff alike, with no rows of its own
-  // that come and go with the selection.
-  assert.doesNotMatch(panel, /PanoHandoffRevert/);
-  assert.match(origin, /:data-action="lane\.action"/);
-  assert.doesNotMatch(origin, /v-if="model\.(lanes|revertAll)/);
-  // Restore deleted is the layer's, on its Timeline header only.
-  assert.doesNotMatch(origin, /restore-upstream-deleted/);
-  // The eye is on the Timeline row and the lock in the selection menu: the inspector has no Visible or Lock row.
-  assert.doesNotMatch(origin, /Visible|Lock|upstream-visible|upstream-locked/);
+  // The inspector has no Visible or Lock row: the eye is on the Timeline row and the lock in the selection menu.
   assert.equal(Object.hasOwn(upstream, "visible") || Object.hasOwn(upstream, "locked"), false);
-  assert.match(editor, /handoff: isUpstreamSticker\(target\) \? null : portHandoffLanes\(target\)/);
 });
 
 // ADR 0030 T9: the upstream layers' rows, below the node's own.
@@ -739,13 +660,6 @@ test("an upstream group's header has Revert of the layer's scene and paint overr
   // A layer that is only inherited has both, disabled.
   const inherited = buildTimelineModel(state, { ...options, upstream: [{ key: "#0", sceneState, editable: false, record: null, scene: false, deleted: 0 }] }).groups[0];
   assert.deepEqual([inherited.revert.disabled, inherited.restore.disabled], [true, true]);
-  // The header renders both buttons always, and hands their actions to the Timeline.
-  const header = readFileSync(new URL("../web_src/components/PanoTimelineGroup.vue", import.meta.url), "utf8");
-  assert.doesNotMatch(header, /v-if/);
-  assert.match(header, /type: 'revert-upstream-layer', key: group\.key/);
-  assert.match(header, /type: 'restore-upstream-deleted', key: group\.key/);
-  const timeline = readFileSync(new URL("../web_src/components/PanoTimeline.vue", import.meta.url), "utf8");
-  assert.match(timeline, /<PanoTimelineGroup v-if="group" :group="group" @action="emit\('action', \$event\)" \/>/);
 });
 
 // docs/preview-node.md "大きなウィンドウ": the Preview's window shows the stage, the view buttons at the bottom right and

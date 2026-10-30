@@ -70,10 +70,3 @@ test("the Studio picture is the editor's Output window picture: the live ERP in 
   // The live ERP's canvas goes with the surface.
   assert.match(runtime, /if \(studioErpCanvas\) releasePanoCanvas\(studioErpCanvas\);/);
 });
-
-test("the editor's inspector shows a port Sticker's new vFOV once its image loads", async () => {
-  const stickers = await read("../web_src/editor/external_stickers.js");
-
-  assert.match(stickers, /\} else if \(reason === "image-loaded"\) \{\s*(?:\/\/.*\s*)?updateSidePanel\(\);\s*\}/);
-});
-

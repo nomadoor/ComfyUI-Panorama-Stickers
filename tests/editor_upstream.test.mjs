@@ -11,7 +11,6 @@ import { createSidePanelEvents } from "../web_src/editor/side_panel_events.js";
 import { createUpstream } from "../web_src/editor/upstream.js";
 import { setStickerPose } from "../web_src/pano_editor_state.js";
 import { loadSceneState, sceneStateText } from "../web_src/pano_scene_state.js";
-import { readEditorSource } from "./editor_source.mjs";
 
 // The browser parts the module makes: images (counted by URL), and the port VIDEO and its still.
 function browserStubs() {
@@ -810,8 +809,6 @@ test("an Undo step prunes the overrides of elements gone upstream while the resu
 });
 
 test("the editor's first Undo step at boot prunes nothing, so opening and closing writes nothing over stale overrides", () => {
-  // The boot (pano_editor.js) adds its first step as the initial one.
-  assert.match(readEditorSource(), /runBootStep\("history", \(\) => pushHistory\(\{ initial: true \}\)\)/);
   browserStubs();
   try {
     const text = sceneStateText(loadSceneState({
