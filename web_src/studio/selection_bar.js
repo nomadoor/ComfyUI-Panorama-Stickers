@@ -3,6 +3,7 @@
 // studio/editor.js does what its buttons say.
 import { ICON } from "../icons.js";
 import { sceneStickerLabel } from "../pano_editor_state.js";
+import { paintObjectOf } from "../pano_paint_objects.js";
 import { is3dFileSource } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 
@@ -13,11 +14,12 @@ export const GIZMO_MODES = Object.freeze([
   Object.freeze({ mode: "scale", key: "3", label: "Scale", icon: ICON.gizmo_scale }),
 ]);
 
-// The kind of the object of the row `row` in `state`: "sky", "world-image", "world-3d", "camera", or null (nothing,
-// or a row that is no object).
+// The kind of the object of the row `row` in `state`: "sky", "world-image", "world-3d", "camera", "paint" (a stroke group
+// or a paint raster object, pano_paint_objects.js paintObjectOf), or null (nothing, or a row that is no object).
 export function selectedKind(state, row) {
   if (!row) return null;
   if (row === "camera") return "camera";
+  if (paintObjectOf(state, row)) return "paint";
   const sticker = state.stickers.find((item) => item.id === row);
   if (!sticker) return null;
   if (sticker.placement === "sky") return "sky";
@@ -47,8 +49,9 @@ const LATER = "in development";
 
 // The bar for the row `row` of `state` with the gizmo in `mode`: null when it is not shown (nothing selected), else
 // { kind, icon, name, groups: [[{ key, icon, label, tip, active, disabled }]] }. `readOnly` disables the edits.
-// The Lock of the Camera turns `camera.locked` over (docs/scene-state-v2.md). Not yet here: the paint group and the
-// multi-selection (their tools do not exist yet); Replace waits for a file picker below the old UI.
+// The Lock of the Camera turns `camera.locked` over (docs/scene-state-v2.md). A paint group has Bring to front / Send to
+// back and Lock / Delete (docs/studio-ui.md "ペイントのまとまり"). Not yet here: the multi-selection; Replace waits for a
+// file picker below the old UI.
 export function selectionBar({ state, row, mode = "translate", readOnly = false }) {
   const kind = selectedKind(state, row);
   if (!kind) return null;
@@ -61,6 +64,19 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
   const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly });
   if (kind === "camera") {
     return { kind, icon: ICON.camera, name: "Camera", groups: [gizmo, [lockButton(state.camera?.locked === true)]] };
+  }
+  if (kind === "paint") {
+    const { locked } = paintObjectOf(state, row);
+    const disabled = readOnly || locked;
+    return {
+      kind,
+      icon: ICON.paintbrush_vertical_tool,
+      name: "Paint",
+      groups: [
+        [button("front", ICON.order_front, "Bring to front", { disabled }), button("back", ICON.order_back, "Send to back", { disabled })],
+        [lockButton(locked), button("delete", ICON.delete, "Delete", { disabled, tip: "Delete (Del)" })],
+      ],
+    };
   }
   const sticker = state.stickers.find((item) => item.id === row);
   const locked = sticker.locked === true;

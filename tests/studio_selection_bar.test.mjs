@@ -86,3 +86,27 @@ test("the Camera's Lock turns camera.locked over: its icon and tip show the stat
   assert.deepEqual([closed.icon, closed.tip, closed.disabled], [ICON.lock_closed, "Unlock", false]);
   assert.equal(lockOf(selectionBar({ state, row: "camera", readOnly: true })).disabled, true);
 });
+
+test("a paint group (a stroke group or a paint raster object) has the bar Bring to front / Send to back ／ Lock / Delete, with the brush and Paint", () => {
+  const points = [{ u: 0.5, v: 0.5 }];
+  const painted = loadSceneState({
+    version: 2,
+    painting: {
+      groups: [{ id: "g1", actionGroupId: "g1", z_index: 0, locked: true }],
+      paint: { strokes: [{ id: "st1", actionGroupId: "g1", layerKind: "paint", toolKind: "pen", size: 10, opacity: 1, color: { r: 1, g: 0, b: 0, a: 1 }, targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", points, rawPoints: points } }] },
+      raster_objects: [{ id: "r1", type: "raster_frozen", layerKind: "paint", rasterDataUrl: "data:image/png;base64,AAAA", bbox: { u0: 0.2, v0: 0.2, u1: 0.3, v1: 0.3 } }],
+    },
+  });
+  assert.equal(selectedKind(painted, "paint_group:g1"), "paint");
+  assert.equal(selectedKind(painted, "raster:r1"), "paint");
+  assert.equal(selectedKind(painted, "raster:gone"), null);
+  const bar = selectionBar({ state: painted, row: "raster:r1" });
+  assert.deepEqual([bar.kind, bar.icon, bar.name], ["paint", ICON.paintbrush_vertical_tool, "Paint"]);
+  assert.deepEqual(keys(bar), [["front", "back"], ["lock", "delete"]]);
+  assert.ok(bar.groups.flat().every((button) => !button.disabled));
+  // A locked group: the order and Delete are disabled, Lock shows it is locked.
+  const locked = selectionBar({ state: painted, row: "paint_group:g1" });
+  assert.deepEqual(locked.groups.flat().map((button) => [button.key, button.disabled]), [["front", true], ["back", true], ["lock", false], ["delete", true]]);
+  assert.equal(locked.groups[1][0].icon, ICON.lock_closed);
+  assert.ok(selectionBar({ state: painted, row: "raster:r1", readOnly: true }).groups.flat().every((button) => button.disabled));
+});

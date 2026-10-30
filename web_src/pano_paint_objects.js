@@ -4,10 +4,13 @@
 // paint_layers.js, object_geometry.js, pointer_transform.js, selection.js, commands.js) and the new one
 // (studio/stage_objects.js, session.js) both call these, so the two move and order the paint the same way.
 //
+// The new editor selects a paint object by the id of its Sky layer (pano_paint_layers.js skyPaintLayers): a stroke group
+// as `paint_group:<actionGroupId>`, a raster object as `raster:<id>` (paintObjectRow, paintObjectOf).
+//
 // Points are ERP points { u, v } (u wraps in 0..1, v runs 0..1 from the top); screen points are { x, y } px.
 import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "./pano_brush_presets.js";
 import { clamp, dist2, distToSegment2, pointInPoly } from "./pano_math.js";
-import { shortestWrappedDelta } from "./pano_paint_strokes.js";
+import { shortestWrappedDelta, syncPaintGroups } from "./pano_paint_strokes.js";
 
 const DEG2RAD = Math.PI / 180;
 
@@ -339,3 +342,50 @@ export function deletePaintObjects(painting, { groupIds = [], rasterIds = [] } =
   }
 }
 
+// --- The new editor's rows of the paint objects.
+
+const GROUP_ROW = "paint_group:";
+const RASTER_ROW = "raster:";
+
+// The paint object a selection row names: { kind: "group", id } (an actionGroupId), { kind: "raster", id }, or null.
+export function paintObjectRow(row) {
+  const text = typeof row === "string" ? row : "";
+  if (text.startsWith(GROUP_ROW) && text.length > GROUP_ROW.length) return { kind: "group", id: text.slice(GROUP_ROW.length) };
+  if (text.startsWith(RASTER_ROW) && text.length > RASTER_ROW.length) return { kind: "raster", id: text.slice(RASTER_ROW.length) };
+  return null;
+}
+
+// The stroke groups of `painting` as the editors count them, without writing it: syncPaintGroups over a copy (a stroke
+// of no group comes as a group of its own at the front, a group without strokes goes), sorted by z_index.
+export function countedPaintGroups(painting, skyStickers) {
+  if (!painting) return [];
+  return syncPaintGroups({ ...painting, groups: Array.isArray(painting.groups) ? [...painting.groups] : [] }, skyStickers);
+}
+
+// The sky Stickers of a state v2.
+const skyStickersOf = (state) => state.stickers.filter((item) => item.placement === "sky");
+
+// The paint object the row `row` selects in the state v2 `state`: { kind, id, row, item, locked } (item the counted
+// group, or the paint raster object), or null when the row names none that is there.
+export function paintObjectOf(state, row) {
+  const target = paintObjectRow(row);
+  if (!target || !state?.painting) return null;
+  const item = target.kind === "group"
+    ? countedPaintGroups(state.painting, skyStickersOf(state)).find((group) => String(group.actionGroupId || "") === target.id)
+    : (state.painting.raster_objects ?? []).find((entry) => entry.id === target.id && String(entry.layerKind || "paint") === "paint");
+  return item ? { ...target, row, item, locked: item.locked === true } : null;
+}
+
+// The Sky's display list of the state v2 `draft` from back to front, made to match its strokes (syncPaintGroups writes
+// the groups): [{ key, item }] with keys the selection rows (a sky Sticker's id, `paint_group:`, `raster:`). The upstream
+// Stickers are not in it (they lie under the node's own Sky).
+export function skyDisplayList(draft) {
+  const sky = skyStickersOf(draft).filter((item) => !item.origin);
+  const groups = draft.painting ? syncPaintGroups(draft.painting, skyStickersOf(draft)) : [];
+  const rasters = (draft.painting?.raster_objects ?? []).filter((item) => String(item.layerKind || "paint") === "paint");
+  return skyDisplayOrder([
+    ...sky.map((item) => ({ key: item.id, z_index: item.z_index, item })),
+    ...groups.map((item) => ({ key: `${GROUP_ROW}${item.actionGroupId}`, z_index: item.z_index, item })),
+    ...rasters.map((item) => ({ key: `${RASTER_ROW}${item.id}`, z_index: item.z_index, item })),
+  ]);
+}

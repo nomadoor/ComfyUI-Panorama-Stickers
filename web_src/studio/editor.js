@@ -18,6 +18,7 @@ import { queuePendingStickerOperation } from "../pano_editor_extension.js";
 import { cameraShot, normalizeCoverageValue, readableStateText, setCameraShot } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
+import { paintObjectRow } from "../pano_paint_objects.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { editorSession, noteStudioEditorOpen, peekNodeSurface } from "../pano_node_bridge.js";
 import {
@@ -463,13 +464,16 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     contentCache = { key, value, pending };
     return value;
   }
-  // The stage's selection (view_camera.js orbitCenter, frameSelectedSphere) of the object of the row `row`.
+  // The stage's selection (view_camera.js orbitCenter, frameSelectedSphere) of the object of the row `row` (a Sticker
+  // id, "camera", or a paint group's `paint_group:` / `raster:` row).
   function selectionOf(row) {
     if (!row) return null;
     if (row === "camera") {
       const camera = session.state.camera;
       return { kind: "camera", position: camera ? [...evaluateCamera(camera, view.playhead).position] : [0, 0, 0] };
     }
+    // A paint group is on the Sky, as a sky image: it has no sphere of its own (docs/space-and-view.md "Frame Selected").
+    if (paintObjectRow(row)) return { kind: "object", sphere: content().sphere };
     const sphere = stickerFrameSphere(session.state, content(), row, { media: mediaOf, editorFile: stageMedia.editorFile, sceneBox });
     return { kind: "object", sphere };
   }
@@ -910,6 +914,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
           tab: () => view.tab,
           readOnly: () => readOnly,
           loading: reveal,
+          rasterAlpha: (item, u, v) => paint.rasterAlpha(item, u, v),
         },
         cameraTab,
         root,

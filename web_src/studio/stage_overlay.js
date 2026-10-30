@@ -1,5 +1,5 @@
 // The 2D overlay over the new UI's stage: the World objects' guides, the Camera's mark, the gizmo and the selected sky
-// image's frame and handles (stage_objects.js overlay()), drawn on a canvas over the three.js one. Drawing only: what
+// image's or paint group's frame and handles (stage_objects.js overlay()), drawn on a canvas over the three.js one. Drawing only: what
 // to draw and how it looks come from stage_objects.js, world_guides.js, camera_marker.js and gizmo_overlay.js.
 import { projectPoint } from "../pano_space.js";
 import { LOAD_LOOK } from "./load_reveal.js";
@@ -318,6 +318,12 @@ function drawScene(ctx, camera, width, height, scene) {
       for (const corner of geometry.corners) dot(ctx, corner, CORNER_RADIUS);
       dot(ctx, geometry.rotateHandle, ROTATE_RADIUS);
     }
+  }
+  // The selected paint group (docs/studio-ui.md "ペイントのまとまり"): its frame through its four corners in the sky
+  // image's look, with the corner dots only (no edge or rotate handles).
+  if (scene.paint) {
+    strokeTwice(ctx, polygonPath(scene.paint.corners), GUIDE_LOOKS.skySelected);
+    if (scene.paint.handles) for (const corner of scene.paint.corners) dot(ctx, corner, CORNER_RADIUS);
   }
   if (scene.gizmo) drawGizmo(ctx, scene.gizmo.handles, scene.gizmo.active, scene.gizmo.guides);
 }

@@ -108,6 +108,14 @@ export function erpPointOfDirection(d, t = 0) {
   };
 }
 
+// The unit direction of an ERP point in the panorama convention (erpPointOfDirection's inverse).
+export function directionOfErpPoint(point) {
+  const lon = (Number(point.u || 0) - 0.5) * (2 * Math.PI);
+  const lat = (0.5 - Number(point.v || 0)) * Math.PI;
+  const cp = Math.cos(lat);
+  return { x: cp * Math.sin(lon), y: Math.sin(lat), z: cp * Math.cos(lon) };
+}
+
 // The paint target of the editors: an ERP of the node's output preset width (2048 when the node has none, as
 // Panorama Studio), half as tall.
 export function paintTargetDescriptor(presetWidth = 2048) {
