@@ -113,7 +113,7 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
 // and `editorFile(sticker)` are createStageMedia's; `sceneFiles` the `scene` input's files in the node's current result
 // (pano_space.js sceneFilesOf) or null; `sceneBox(url)` the box of a loaded item (the lower view's), null while it
 // loads. `layers` are the sky layers back to front; `space` the World part of a render's space (the `scene` item, the
-// 3D file Stickers' items, the world image planes); `sphere` the sphere around the World content, null without any.
+// 3D file Stickers' items, the world image planes); `sphere` the sphere around the World content, null without any; `boxes` the loaded 3D items' boxes for the first T.
 // [inputs] `stickerFiles` is the `sticker` input's 3D media (studio/port_media.js files()) or null; `upstream` what the
 // upstream layers draw at `frame` ({ sky, stickers, items }, pano_upstream_layers.js viewInput) or null. A sky port
 // Sticker's evaluated vFOV is the one its media's aspect gives (pano_editor_state.js skyStickerVfov), as drawn.
@@ -155,8 +155,12 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
   }
   const upstreamStickers = upstream?.stickers ?? [];
   const sphere = boundingSphere(contentPoints(evaluated, box, [...stickers, ...upstreamStickers], items));
+  // The 3D boxes the first T can hit (view_camera.js boxDepth): each item's box with the transform it is drawn with (the
+  // `scene` item's is the `scene` transform, as contentPoints takes it).
+  const boxes = [...(box && evaluated.scene.active ? [{ box, transform: evaluated.scene }] : []), ...items.map((item) => ({ box: item.box, transform: item.value }))];
   return {
     evaluated,
+    boxes,
     layers,
     sphere,
     space: {

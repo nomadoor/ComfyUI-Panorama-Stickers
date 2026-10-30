@@ -896,7 +896,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       releaseKeyGuard();
       releaseKeyGuard = guardEditorKeys(root);
       const output = outputView(session.state, 0);
-      const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: [], content: null }, frameAvailable: false });
+      const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: content()?.boxes ?? [], content: null }, frameAvailable: false });
       stage = createStage({
         canvas,
         overlay,

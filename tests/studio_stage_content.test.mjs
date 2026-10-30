@@ -122,3 +122,21 @@ test("the upstream layers' sky lies under the node's own, and their planes and i
   assert.deepEqual(content.space.upstreamItems, upstream.items);
   assert.ok(content.sphere.center[2] < -5 && content.sphere.radius >= 2, "the upstream plane is inside");
 });
+
+test("the loaded 3D items are the boxes the first T can hit", () => {
+  const content = stageContent(state, 0, { media, editorFile, sceneBox: (url) => (url.startsWith("file3d:") ? box : null) });
+  assert.equal(content.boxes.length, 1);
+  assert.deepEqual(content.boxes[0].box, box);
+  assert.deepEqual(content.boxes[0].transform.position, [3, 0, -3]);
+  assert.deepEqual(stageContent(state, 0, { media: () => null }).boxes, []);
+});
+
+test("the scene item's box for the first T is moved by the scene transform", () => {
+  const moved = loadSceneState({ version: 2, stickers: [], scene: { position: { value: [0, 0, -6] }, scale: { value: 2 } } });
+  const sceneFiles = { kind: "mesh", urls: ["scene.glb"] };
+  const content = stageContent(moved, 0, { media: () => null, sceneFiles, sceneBox: () => box });
+  assert.equal(content.boxes.length, 1);
+  assert.deepEqual(content.boxes[0].box, box);
+  assert.deepEqual(content.boxes[0].transform.position, [0, 0, -6]);
+  assert.equal(content.boxes[0].transform.scale, 2);
+});
