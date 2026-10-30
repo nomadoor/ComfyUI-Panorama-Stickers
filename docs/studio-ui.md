@@ -396,7 +396,8 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
     一瞬知らせる（未実装。見せ方は決まっていない）。今の構図と同じで何も変わらないときは、何もせず Undo の段も作らない（選択も変えず、知らせも出さない）。
   - 動かしたときは、Camera を選ぶ（インスペクタに Camera のカードが出て、値が変わったのが見える）。視点は動かさない（`docs/space-and-view.md` の「視点は一つ」）。
     Camera は視点と同じ位置に来るので 3D の見た目は描かれず、Output の小窓も既定では畳んであるため、選択のほかに上端の中央の一行に
-    「Camera moved to this view」を短く出す（下の「一行の知らせの種類」の知らせるだけ。ほかの短い知らせと同じ間で消える）。Output の小窓は開かない。
+    「Camera moved to this view」を短く出す（下の「一行の知らせの種類」の知らせるだけ。ほかの短い知らせと同じ間で消える）。同時に、ステージ全体に落ち着いた黄の斜めの光の帯を一度だけ走らせる（値は `docs/design.md` の
+    「新しい UI の見た目」の「動き」。動きを減らす設定では帯を出さず、一行だけ）。Output の小窓は開かない。
   - tooltip：Frame モードでは「Camera to view」、Panorama モードでは「Camera to view · Switches to Frame mode」。
   - Camera をロックしている間と、読み取り専用のエディタでは、隠さずに無効にし、tooltip で理由を示す（「Camera to view · Locked」
     「Camera to view · Read-only」）。Camera タブでは左の列のほかのボタンと同じく「Not available in the Camera view」。
