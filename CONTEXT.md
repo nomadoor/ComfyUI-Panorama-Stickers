@@ -60,7 +60,7 @@ Keyframe 間の時間方向の補間。cubic-bezier（既定は ease-in-out）�
 ### Capture
 
 **Camera**:
-Scene を撮影する唯一の視点。Panorama Studio が 1 台まで持ち、無いときは World の原点から回転 0 で撮った ERP を出す（ADR 0029）。位置・回転・FOV と、静的な撮り方（透視投影か ERP）を持ち、Keyframe で Timeline 全体にわたって動かせる。
+Scene を撮影する唯一の視点。Panorama Studio はいつも 1 台持ち、消せない（既定は World の原点・回転 0。ADR 0029、ADR 0048）。位置・回転・FOV と、静的な撮り方のモード（Panorama＝ERP か Frame＝透視投影。使う人が選ぶ）を持ち、Keyframe で Timeline 全体にわたって動かせる。隠しても撮る。
 _Avoid_: Shot
 
 **Viewport camera**:
@@ -84,8 +84,29 @@ _Avoid_: スケール, 単位（素材の単位は変えない。ADR 0023）
 **Projection**:
 Camera で Scene を画像にする方法。ERP、透視投影など。
 
+**背景の範囲（Background range）**:
+背景の絵（Panorama Studio の入力 `background`、旧ノードの `bg_media`）が球のどこまでを覆うか。360（全周）か 180（前の半球）。出力の範囲ではない（出力の範囲は Camera の Panorama モードが持つ）。ADR 0048。
+_Avoid_: coverage（旧ノードの入力の名前。Panorama Studio では使わない）
+
 **Pose handoff**:
 透視投影の Camera で撮影したときの Camera の軌道（`sticker_state`）を別の Panorama Studio の `sticker` に渡し、切り抜いた内容を撮影した位置と向きへ戻すこと。Camera が原点から動かなければ `sky` の Sticker、どこかのフレームで原点から離れれば Camera の前方 2 に置く `world` の Sticker になる。実行のたびに引き継ぎ、下流で触った Lane（`handoff_overrides`）だけが下流の値になる（ADR 0030）。
 
 **PANO_SCENE**:
 Panorama Studio が出力する Scene の値。Camera を含まない。状態と入力素材を結び付けた派生値であり、正は各ノードの `state_json` にある。
+
+### 画面の言葉
+
+使う人が画面とノードの入出力で目にする言葉と、データの言葉の対応。画面には左の列の言葉だけを出す（ADR 0048）。
+
+| 画面の言葉 | データの言葉 | 意味 |
+|---|---|---|
+| Sticker | Sticker | 置く物・往復で戻ってきた物（画像・動画・3D） |
+| Sky / World | `placement` の `sky` / `world` | Sticker の置き場所（無限遠に貼る／空間に置く） |
+| Background（入力 `background`、設定 `background_color`・`background_range`） | 背景 ERP（旧ノードの `bg_media`・`bg_color`・`coverage`） | 背景のパノラマ（Sky の層の一番下） |
+| World（入力 `world`） | 状態の `scene` の要素 | その場所の土台の 3D（選べず、動かさない） |
+| Scene（入力・出力 `scene`） | `PANO_SCENE` | Scene の全体。入力の `scene` は別の Panorama Studio からのつながりだけを受ける |
+| Camera（タブ・カード・ボタン） | `camera` | 撮る視点。いつも一台 |
+| Panorama / Frame | `camera.projection` の `erp` / `perspective` | 撮り方のモード。画面に ERP・Equirectangular・Perspective と出さない |
+| 360° / 180° | `camera.erp_range`、`background_range` | 範囲 |
+| From ＜ノードの名前＞ | 上流の層（upstream） | 上流の Studio から受け継いだ物のまとまり。画面に Upstream と出さない |
+

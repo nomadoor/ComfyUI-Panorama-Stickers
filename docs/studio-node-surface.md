@@ -58,6 +58,26 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
   `bg_media` の実際の幅と違えば、実行までは表示が実行結果と違うことがある。わからない間は大きさを
   `auto` と示す。上流の Scene の `bg_media` は実行結果からだけわかる。
 
+### 新しい UI の撮り方と出力の大きさに合わせた変更（ADR 0048。ノードと状態の変更と同じ change で入れる）
+
+上の規則のうち、次を置き換える（撮り方と出力の大きさの規則は `docs/studio-node.md`）。
+
+- 状態の一行：撮るものと出る大きさを一行で出す。例 `Panorama 360° · 2048 × 1024`、`Panorama 180° · 1448 × 1448`、`Frame 16:9 · 1928 × 1088`
+  （Frame の比は、`camera.aspect` との差が 1% 以内のプリセット（16:9・3:2・4:3・1:1・3:4・2:3・9:16）があればその比、無ければ
+  `W:H`（出る大きさの幅と高さ）で出す）。画面に `ERP`・`Perspective`・`Camera ·` の語は出さない
+  （`CONTEXT.md` の「画面の言葉」）。「Camera が無い」に当たる表示は無くなる（Camera はいつもある）。この一行が、ノードの上で出る大きさを
+  先に見せる唯一の場所である（`io.ResolutionPreview` は使わない。`docs/studio-node.md`）。
+- 出力の画素数は `megapixels`・`multiple` と状態の比から、`pano_studio_status.js` の `studioOutputSize`（新しい式）で求める。上限
+  （`STUDIO_MAX_OUTPUT_SIDE`）に収めたときは元の大きさを示す。`auto` と「`bg_media` が無いときの注記」は無くなる（`auto` が無いため）。
+  注記の欄の場所は、ほかの注記のために保つ。
+- 実行結果を使う条件の `pano_output_size.key`（`_studio_run_key` / `studioRunKey`）は、`state_json`・`megapixels`・`multiple`・
+  `background_range`・`background_color` の hash にする（`output_size`・`coverage` を外す）。
+- 実行の出力の分け方：`pano_output_erp` を返すのは `projection` が `erp`（Panorama モード）のときだけで、上の「Camera が無いか、隠したか」
+  の分岐は無くなる（Camera はいつもあり、隠しても撮る）。`pano_output_erp` に添える `rotation` はいつも Camera の frame 0 の値で、`null` に
+  ならない。
+- `pano_bg_width` は、`auto` の幅を求めるためだけにある（読むのは `pano_preview_runtime.js` の `studioBgWidth` だけ）。`auto` が無くなるので、
+  ノードの `ui` の `pano_bg_width` と `studioBgWidth` を消す。
+
 ## 実行前の表示
 
 - 実行前は、背景と sky Sticker・paint を Timeline の最初の frame で描き（live の描画）、drag / wheel で

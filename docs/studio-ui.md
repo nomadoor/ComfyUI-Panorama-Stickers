@@ -1,0 +1,371 @@
+# 新しい画面（Panorama Studio のエディタと Preview のウィンドウ）
+
+新しい UI の層（ADR 0044）の、Panorama Studio のエディタと新しい Preview ノード（`PanoramaPreviewNode`）の大きなウィンドウについて、
+画面に何がどこにあり、どう見えるかの規則を定める：目指すもの、画面の区画、インスペクタ、下の中央のバー、エディタの中の Camera の見せ方、
+Camera タブ、Add とドロップの見せ方、読み込み中と空の画面、タイムラインのバー、ショートカットの一覧、閉じ方、Preview のウィンドウ。
+画面に出す言葉は `CONTEXT.md` の「画面の言葉」に従う。決めた理由は ADR 0045（目的と視点）、ADR 0047（視点の操作と置き方）、
+ADR 0048（撮る Camera・入口の役割・画面の組み直し）にある。
+
+見た目の下書き（`design-drafts/*.html`。リポジトリには入れない）とこの文書が食い違うときは、この文書が正である。
+
+新しい UI に切り替えるまで、Panorama Studio と Preview は古い UI で開き、その画面の規則は `docs/editor-interaction.md`・
+`docs/preview-node.md`・`docs/vue-ui-boundary.md` が持つ（ADR 0044 の「置き換えの進め方」）。
+
+この文書が持たない規則：視点の動かし方・注視点・カーソル・視点の操作のつまみの働き・地面のグリッドと原点の印・World の物のガイド・
+Add とドロップの着く所（`docs/space-and-view.md`）、Keyframe の記録・範囲選択・再生・タイムラインの行（`docs/timeline-ui.md`）、
+撮る Camera と撮り方のモード・ノードの入力と出力の大きさ（`docs/studio-node.md`）、状態の形（`docs/scene-state-v2.md`）、
+Panorama モードの ERP をブラウザで描く仕組み（`docs/threejs-spark-integration.md`）、色・文字・余白・角丸・動きの値（`docs/design.md` の
+「新しい UI の見た目」）、Vue と JS の境界（`docs/vue-ui-boundary.md`）、押すたびに反転するボタンと隠す部品の例外（`docs/agents/ux-principles.md`）。
+
+## この文書が owner である規則
+
+Python はこの文書の規則を持たない（列は `—`）。「（新しい UI、未実装）」は ADR 0044 の置き場所（`web_src/studio/`、
+`web_src/components/studio/`）に作る予定のもの、「（未作成）」は作る予定の test である。
+
+| 規則 | Python | JS | test |
+|---|---|---|---|
+| 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | （新しい UI、未実装）`web_src/components/studio/StudioEditor.vue`・`StudioStageOverlay.vue`、`web_src/studio/layout.js` | （未作成）`tests/browser/` の場面 |
+| 左の列の中身と並び、タブごとの無効 | — | （新しい UI、未実装）`web_src/components/studio/StudioToolRail.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
+| インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | （新しい UI、未実装）`web_src/studio/inspector_rows.js`（data builder）、`web_src/components/studio/StudioInspector.vue`・`StudioField.vue`・`StudioEasingPanel.vue` | （未作成）`tests/studio_inspector_rows.test.mjs`、`tests/browser/` の場面 |
+| 下の中央のバーの中身 | — | （新しい UI、未実装）`web_src/studio/selection_bar.js`、`web_src/components/studio/StudioSelectionBar.vue` | （未作成）`tests/studio_selection_bar.test.mjs` |
+| エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | （新しい UI、未実装）`web_src/studio/camera_ui.js`、描く部品は `pano_three_view.js`（`docs/threejs-spark-integration.md`） | （未作成）`tests/studio_camera_ui.test.mjs`、`tests/browser/` の場面 |
+| Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | （新しい UI、未実装）`web_src/studio/frame_layout.js`、`web_src/components/studio/StudioFrameRulers.vue` | （未作成）`tests/studio_frame_layout.test.mjs`、`tests/browser/` の場面 |
+| Add のアイコンと、画像を Add したときの Sky / World の二択、ドラッグ中の印の見た目とラベル | — | （新しい UI、未実装）`web_src/components/studio/StudioPlaceChoice.vue`、`web_src/studio/landing.js`（着く所は `docs/space-and-view.md`） | （未作成）`tests/browser/` の場面 |
+| 読み込み中と空の画面、一行の知らせ | — | （新しい UI、未実装）`web_src/components/studio/StudioNotice.vue` | （未作成）`tests/browser/` の場面 |
+| タイムラインのバーの並びと、行の頭の並び | — | （新しい UI、未実装）`web_src/components/studio/StudioTimelineBar.vue` | （未作成）`tests/browser/` の場面 |
+| ショートカットの一覧の中身 | — | （新しい UI、未実装）`web_src/components/studio/StudioShortcuts.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
+| 閉じ方 | — | （新しい UI、未実装）`web_src/components/studio/StudioEditor.vue`、下の部品 `pano_node_bridge.js` | （未作成）`tests/studio_ui_model.test.mjs` |
+| Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |
+| Output の小窓（折りたたみ、大きさ、記憶） | — | （新しい UI、未実装）`web_src/components/studio/StudioOutputPreview.vue` | （未作成）`tests/browser/` の場面 |
+
+## 目指すもの
+
+画像か動画を 3D に持ち上げた空間を Panorama Studio で開き、**見て回り、物を置き、撮る**。撮った絵や動画は、下流の生成 AI で
+リファインする。画面は、この「見る・置く・撮る」を何より気持ちよくする。
+
+- 置く：物（Sticker）を空間に置き、位置・向き・大きさを合わせる。モデリングはしない。
+- 動かす：置いた物を時間に沿って動かせる（歩くモーションの人を道に沿って進ませる、など）。凝ったアニメーションの道具にはしない。
+- 使う人は、画像や動画の編集に慣れていない ComfyUI の利用者を主に考える。説明を読まなくても分かることを一番にする。プロの使い方は、
+  近道（ショートカット）と細かい設定で足し、初めての人の道をふさがない。
+- 撮ったものを空間に戻す流れは、今は Sky だけでできる。3D の切り抜き（Box、ADR 0045）は、後から足すための場所だけを取る。
+
+## 画面の区画
+
+一つの画面に全部を置き、選んだ物と今している操作に合わせて出す部品を変える（作業ごとの段は作らない）。ヘッダーは置かない。
+
+| 区画 | 置くもの |
+|---|---|
+| ステージ | 3D の空間。左右上下の端まで使う。下の部品はステージの上に浮かせる |
+| ステージの左上 | タブ `3D` / `Camera`（アイコンと文字、二つは同じ幅の segmented control） |
+| ステージの左（上下の中央） | 左の列（下の「左の列」） |
+| ステージの右（上下の中央） | 視点の操作のつまみ（球・パン・前後）を縦に並べ、その下に「?」（ショートカットの一覧） |
+| ステージの右下 | ボタンとスイッチの群（3D タブ：Frame Selected・Reset View・グリッドのスイッチ。Camera タブ：同じ席に Frame Selected・Reset View（無効）・グリッドのスイッチ・構図の目安のスイッチ） |
+| ステージの右上 | Output の小窓（下の「Output の小窓」）。どちらのタブでも出す |
+| ステージの上端の中央 | 一行の知らせ（左に珊瑚の丸）と、読み込み中の一行。Camera タブではタイムコードもここ。一度に一つだけ出し、知らせ＞読み込み中＞タイムコードの順で前のものが勝つ（タイムコードは知らせか読み込み中を出している間だけ隠れる） |
+| ステージの下の中央 | 下の中央のバー（下の「下の中央のバー」） |
+| 右の列 | インスペクタ（幅は `docs/design.md`）。上から下まで伸びる |
+| ステージの下 | タイムライン（中身は `docs/timeline-ui.md`、バーの並びは下の「タイムラインのバー」） |
+
+- 3D タブは空間を自由に見る表示、Camera タブは撮る Camera から出力をそのまま見る表示（下の「Camera タブ」）。Unwrap の表示は無い。
+- ステージの上に浮かせる部品は、置き場所が決まっていて、出たり消えたりしても他の部品を動かさない（`docs/agents/ux-principles.md`）。
+  タブを切り替えても、部品の席は変わらない。Camera タブで使えない部品は、同じ席に出したまま無効にし、tooltip で理由を示す。
+- 視点の操作のつまみの働きと、操作の最中に光る規則は `docs/space-and-view.md` の「視点の操作の部品」が持つ（光り方の見た目は
+  `docs/design.md`）。この文書は置き場所だけを持つ。
+- タイムラインは既定で開き、高さの決まった領域を取る。ステージとの境界をドラッグして高さを変え、ブラウザごとに覚える。ステージと
+  タイムラインの両方に最小の高さを持たせる。畳む操作もあり、畳んでもタイムラインのバー（再生・時刻など）は出す。行が収まらないときは
+  タイムラインの中だけでスクロールする。
+
+### 左の列
+
+上から次の 3 つの群を並べ、群の間を空ける。
+
+1. 道具：Cursor・Paint・Mask（Paint と Mask は別の道具。道具の中身は今のペイントの道具と同じ）
+2. 足す：Add（画像と 3D ファイル。アイコンは写真と立方体を重ね、立方体を手前にして、重なる所の写真の線を切り取る）・Camera
+3. 一番下に Undo・Redo
+
+Clear All は無い。ペイントとマスクを消すのはペイントの道具の Clear paint・Clear mask、Sky の画像を消すのは範囲選択と Delete。
+
+Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効にする（tooltip「Not available in the Camera view」のように理由を示す）。
+
+### Output の小窓
+
+- 撮る Camera の出力を右上に小さく出す。折りたたみのボタンだけを持つ（状態はアイコンの形で示す。`docs/agents/ux-principles.md` の例外）。
+- 大きさは左下の角をドラッグして変え、ブラウザごとに覚える。最小と最大を持ち、縦横比は出力の比に合わせる。ポインタを載せたときだけ
+  角のつまみをはっきり見せる。
+- Frame モード：撮る Camera から描いた絵を、その場で出す。描き直すのは Panorama モードと同じく何かが変わったときだけで、小窓の
+  大きさの解像度で描く（`docs/threejs-spark-integration.md` の「Panorama モードの ERP の表示」の描き直しの条件と同じ）。
+- Panorama モード：撮る Camera の位置から描いた ERP を、開いた絵としてその場で出す。描き方（何かが変わったときだけ、小窓の大きさの低い
+  解像度で描き直す）は `docs/threejs-spark-integration.md` の「Panorama モードの ERP の表示」。直近の実行の出力は使わない（編集とずれるため）。
+
+## インスペクタ
+
+インスペクタは「今その画面で触っているもの」を映す。
+
+| 画面 | 出すもの |
+|---|---|
+| 3D タブ | 選んだ物のカード（Camera を選べば Camera のカード）。何も選んでいなければ Scene のカード |
+| Camera タブ | Camera のカードだけ。Camera タブで物を選んでも（下の「Camera タブ」）、インスペクタには出さない |
+
+- 一番上の行：ノードの名前と、閉じる ✕（下の「閉じ方」）。
+- カードの中が収まらないときはスクロールする。スクロールバーは出さない。
+- タイムラインで Keyframe を選んでいる間だけ、インスペクタの下端に Easing のパネルを固定して出す（下の「Easing のパネル」）。出ている間は、
+  その上の領域だけがスクロールする。
+
+### 行の格子
+
+すべての行を一つの格子に乗せる：名前 ／ 1 ／ 2 ／ 3 ／ Keyframe のポチ ／ リセット（幅は `docs/design.md`）。値の箱とポチとリセットは、
+すべての行で縦一列にそろう。
+
+- 値が複数の行（Position の X・Y・Z、Rotation の Y・P・R など）：名前を左、値の箱を 1〜3 列目に置く。値が二つの行は 1〜2 列目に置き、
+  3 列目は空ける。
+- 値が一つの行（Scale・Opacity・H FOV・Lens など）：名前を左、スライダーを 1〜2 列目、値の箱を 3 列目に置く（DaVinci Resolve と同じ
+  並び）。上限と下限のある値に付ける。
+- Aspect の行：スライダーは横 16:9 から縦 9:16 までで、中央が 1:1。位置は log₂(比) で等間隔にとり（1:1 が中央、横と縦が対称）、
+  3:2・4:3・1:1・3:4・2:3 に目盛りを引いてスナップする。スライダーの外の比は箱に打ち込んで決める。箱に入る比は 0.25〜4
+  （`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`。持ち主は `docs/scene-state-v2.md` の `camera.aspect`）。
+- 選ぶ値（撮り方のモード、範囲など）：segmented control を 1〜3 列目に置く。
+- 使わない行（撮り方のモードで効かない行など）は、隠さずに灰色にして触れないようにする。行の位置は動かさない。
+
+### 欄
+
+- 値の箱はふだん地の色を持たず、ポインタを載せた欄にだけ地の色を出す。そのときカーソルは左右の矢印にする。
+- 欄そのものを左右にドラッグすると値が変わる。ドラッグの間はカーソルを消し（ポインタロック）、画面の端でも止まらない。Shift で
+  1/10 の細かさ。動かさずに放すと、その欄に文字で入力できる。名前の部分はドラッグしない。
+  - ポインタロックが取れない（ブラウザが断った、ページがフォーカスを持っていない）ときは、カーソルを出したまま同じドラッグで値を変える
+    （画面の端で止まる）。
+  - ドラッグ中の Escape は、ドラッグを取り消して値を押す前に戻す（エディタは閉じない）。ブラウザが Escape でポインタロックを解いたときも
+    同じに扱う。
+- 文字は大文字の高さで上下の中央にそろえる（`docs/design.md`）。
+
+### リセットと Keyframe のポチ
+
+- リセット：各行の右端。押すとその行の値だけを既定に戻す。上流から受け取った物では上流の値、ノードの入力から来た物（`port`）では入力の
+  値に戻す。今が戻す先と同じ行では、隠さずに無効にする。押すと Undo の 1 段で、Keyframe のある Lane では記録の規則に従う
+  （`docs/timeline-ui.md` の「記録の規則」）。
+- Keyframe のポチ：値の箱とリセットの間に置く。どの行に置くか、三つの状態、押したときの動き、無効になる条件は `docs/timeline-ui.md` の
+  「インスペクタの Keyframe のポチ」が持つ。この文書は置き場所だけを持ち、形と色は `docs/design.md`。
+- 上流から受け取った物で、上書きした行には、名前の横にタイムラインと同じ小さな点を付ける。
+
+### 種類ごとの中身
+
+3D タブのインスペクタに出すカード。
+
+| 選んだ物 | カード |
+|---|---|
+| 空に貼った画像（Sky） | 見出し（Sky のアイコンと名前）、Rotation（Y・P・R）、FOV（H・V）、Opacity |
+| World に置いた画像の板 | 見出し（World のアイコンと名前）、Position（X・Y・Z）、Rotation（Y・P・R）、Scale、Opacity |
+| World に置いた 3D | 上と同じ。アニメーションを持つときは、その下に小見出し Animation を置き、Clip（1〜3 列目の選択）と Speed |
+| Camera | Camera のカード（下の「Camera のカード」） |
+| 複数選択 | 見出しに数とアイコン（例：`3 stickers`）だけ。操作は下の中央のバー |
+| ペイントのまとまり | 見出し `Paint` だけ。操作は下の中央のバー |
+| 何も選んでいない | Scene のカード：Ground（地面の高さの値、`Set ground` のボタン、リセット）。`Set ground` の隣に、地面の自動推定のボタンのための席を空けておく（今は置かない） |
+
+- 土台の 3D（`world` の入力、`docs/studio-node.md`）は選べないので、カードは無い。土台を合わせるのは地面の高さだけ。
+- 画像の側のレンズの値（Sky の画像の `curve`、World の物の `lens`）はインスペクタに出さない。往復（Pose handoff）が撮った Camera の値を
+  入れ、描くときに逆に戻して貼る（ADR 0042、`docs/scene-state-v2.md`）。
+- `Set ground` を押すと、次の一回のクリックだけ地面にしたい面を拾う状態になり、カーソルを地面を拾う形に変える。Escape で取り消す。
+  拾った点の高さの規則は `docs/space-and-view.md`（ADR 0046）。
+
+### Camera のカード
+
+3D タブで Camera を選んだとき、と Camera タブで出す。Camera はいつも一台あるので、無いときの表示は無い（撮る Camera の規則は
+`docs/studio-node.md`）。行の並びはどちらの撮り方でも同じで、効かない行は灰色にして触れないようにする（上の「行の格子」）。
+
+| 行 | Panorama モード | Frame モード |
+|---|---|---|
+| Mode | `Panorama` / `Frame` の segmented control（押すと撮り方が変わる） | 同じ |
+| Range | 360° / 180° | 灰色・触れない |
+| Aspect | 灰色・触れない | スライダー（上の「行の格子」） |
+| H FOV | 灰色・触れない | スライダー |
+| Lens | 灰色・触れない | スライダー（κ） |
+| Position | X・Y・Z。リセットは原点（0, 0, 0）へ | 同じ |
+| Rotation | Y・P・R。リセットは向き 0 へ。Panorama モードの Yaw は ERP の正面の向き | 同じ |
+
+- 「原点に戻す」の専用のボタンは置かない。Position と Rotation の行のリセットで戻す。
+- 出力の大きさ（`megapixels`・`multiple`）はノードの上の設定で、Camera のカードには出さない（`docs/studio-node.md`）。
+
+### Easing のパネル
+
+- タイムラインで Keyframe を選んでいる間だけ、インスペクタの下端に置く。選んでいないときは消す。
+- 中身：見出し `Easing` と既定に戻すボタン、プリセット 5 つ（Hold・Linear・Ease in-out・Ease in・Ease out）の segmented control、
+  縦横 1:1 の曲線のグラフ、ベジェの 4 つの値の入力欄（例 `0.42, 0, 0.58, 1`。選んでコピーでき、貼り付けもできる）。
+- グラフはいつも 1:1。上の領域が 5 行分（約 180 px、値は `docs/design.md`）より狭くなるときは、グラフの一辺を縮めて 1:1 のまま小さくする。
+- 出し方：パネルの高さを伸ばして出さず、下端に重ねて透明から出す（値は `docs/design.md`）。上の領域の下の余白は動かさずに一度で取る。
+- 選んだ Keyframe の Easing が混ざっているときの表示と、変えたときの規則は `docs/timeline-ui.md` の「Easing」。
+
+## 下の中央のバー
+
+ステージの下の中央の決まった場所に、一本のバーとして固定する。Cursor の道具のときは選んだ物のバー、Paint・Mask の道具のときは
+ペイントの道具を出す（二つは同時に出ない）。何も選んでいないときと、Camera タブでは出さない（ビューの上に重ねる情報は状況で出し入れして
+よい。`docs/agents/ux-principles.md`）。
+
+- 左端に、選んだ物のアイコン（Sky / World の印、Camera、Paint）と名前。
+- ギズモの切り替えは Move・Rotate・Scale のアイコンで並べ、`1`・`2`・`3` のキーでも切り替える（tooltip に「Move (1)」のように出す）。
+
+| 選んだ物 | 並び（／は群の区切り） |
+|---|---|
+| 空に貼った画像 | 前面へ・背面へ ／ Duplicate・Replace ／ Lock・Delete |
+| World に置いた画像の板 | Move・Rotate・Scale ／ Duplicate・Replace ／ Lock・Delete |
+| World に置いた 3D | Move・Rotate・Scale ／ Duplicate・Replace ／ Lock・Delete |
+| Camera | Move・Rotate ／ Lock |
+| ペイントのまとまり、複数選択 | 前面へ・背面へ ／ Lock・Delete |
+| ノードの入力から来た物（`port`）、上流から受け取った物 | 上の並びに「元に戻す」を足す（その物の全部の値を元の値へ。`port` の Back to Initial と上流の Revert を一つにしたもの） |
+
+- 表示・非表示の切り替えはバーに置かない（タイムラインの目のアイコン、`docs/timeline-ui.md` の「表示（目のアイコン）」）。
+- Lock は押すたびに切り替わるボタンで、状態を鍵のアイコンの形で示す（`docs/agents/ux-principles.md` の例外）。
+- Camera は消せないので Delete を置かない。Delete キーを押したときは一行の知らせ「The camera can't be deleted」を出す。
+- 空に貼った画像にはギズモを出さない。ステージの上で、本体のドラッグで向き、四隅のハンドルで画角（縦横比を保つ）、辺のハンドルで
+  縦か横の画角だけ、回転のハンドルで Roll を変える（今の動きのまま、新しい UI でも変えない。今の動きは `web_src/editor/pointer_input.js` の
+  `startMove`・`startScale`・`startAxisScale`・`startRotate` にあり、当たりの順は `docs/editor-interaction.md` の「`world` の Sticker の操作」の
+  選択の順。古い UI の文書には独立した節が無いので、切り替えのときにこの文書へ規則として書き起こす。見た目の値は `docs/design.md`）。
+
+## エディタの中の Camera
+
+- Camera はいつも一台あり、消せない。撮り方は Panorama / Frame のモードで、既定は Panorama（規則は `docs/studio-node.md`）。
+- 左の列の Camera のボタン：
+  - Panorama モードで押すと、Frame モードに切り替え、今見ている構図（視点の位置と向き）に Camera を持ってくる。
+  - Frame モードで押すと、今見ている構図に Camera を持ってくる。ボタンは 3D タブでいつも押せる。
+  - どちらも編集で、Undo の 1 段。Camera の Lane に Keyframe があれば記録の規則で打ち、打った瞬間を一瞬知らせる。
+  - Camera をロックしている間と、読み取り専用のエディタでは、隠さずに無効にし、tooltip で理由を示す。
+- 撮り方のモードを変えても、Camera は動かさない。
+- 目のアイコンで Camera を隠すのは表示だけで、出力は変えない。
+- 3D タブでの見た目（値は `docs/design.md`）：
+  - Frame モード：視錐台（三角錐）を線で描き、面を薄く塗る。枠の上辺に上の向きを示す小さな三角。奥に隠れる辺は薄く描く。
+  - Panorama モード：Camera の位置に小さな球を薄く塗って描き、赤道に輪を一本、正面（出来上がる ERP の中心）の向きに短い矢印。
+  - 選んでいるときは、線を選択の色にし、塗りを少し濃くする。
+- 3D タブで Camera を選んでからオービットすると、Camera の位置のまわりを回る（`docs/space-and-view.md` の「回る中心」）。
+
+## Camera タブ
+
+撮る Camera から出力をそのまま見る画面。どのドラッグもカメラを動かす（割り当ては `docs/space-and-view.md` の「Frame 表示」）。
+物はクリックで選べるが、ギズモは出さず、ドラッグで物は動かない。選んだ物は回る中心と Frame Selected にだけ使い、インスペクタには出さない。
+選んだ物には、3D タブと同じ選んだ物のガイド（落ち着いた黄の輪郭。規則は `docs/space-and-view.md` の「World の物のガイド」）を描き、
+選んだことが見て分かるようにする。
+
+- フレームは、ステージから決まった余白（左右・上・下。値は `docs/design.md`）を除いた残りに、出力の比を保って収める。比が変わると
+  収まり直す。
+- 枠の外：同じ絵を暗くして見せ、枠の境目に細い明るい線を引く。枠の外の絵は、同じレンズ（κ）をそのまま外へ延ばして描き、レンズの
+  画角の上限（`docs/render-contract.md` の「カメラのレンズ」、`lens_fov_limit`）を越える画素は `background_color` で塗る（今の 180° を越えた所と同じ）。
+- 辺の目盛り：フレームの左に FOV、右に Lens（縦の目盛り、フレームの高さいっぱい）、下に Roll（横の目盛り、幅はフレームの 70%、最小の
+  幅を持つ）。それぞれ名前・値・Keyframe のポチ（どの Lane に打つかは `docs/timeline-ui.md` の「インスペクタの Keyframe のポチ」）を付け、
+  目盛りに数値を振る。真ん中の印は動かず、目盛りを左右（上下）にドラッグして値を変える。目盛りはフレームの辺について動く。枠の外の上に
+  描く文字と線は、明るい色にする（`docs/design.md`）。
+- 地面のグリッドと原点の印を Camera タブでも描く規則は `docs/space-and-view.md` の「地面のグリッドと原点の印」。スイッチは右下に置く。
+- 構図の目安（三分割のグリッドと水平の目安。水平の目安は Roll に合わせて傾く）は、右下のスイッチで出す。出力には写さない。
+- 上端の中央に、タイムコード（時刻とフレーム）。
+- 無効にするもの（同じ席に出したまま灰色にし、tooltip で理由を示す）：左の列（Undo・Redo を除く）、Reset View。出さないもの：下の中央の
+  バー。Output の小窓は出したまま。シャッターのボタンは無い（カメラの値は各値のポチか、タイムラインの行のポチで打つ）。
+- Panorama モードのときは、撮る Camera の位置から描いた ERP を開いた絵として見せる（描き方は Output の小窓と同じ）。ステージの操作では
+  何も動かない（見るだけ）。Frame に切り替える入口は、インスペクタの Camera のカードの Mode だけで、Camera タブに別のボタンや案内の
+  一行は足さない（ADR 0048。使い方は README で見せる）。辺の目盛りは同じ席に出したまま、FOV と Lens は灰色で触れない（Panorama では効かない）。Roll は効く
+  （ERP が Camera の向きで回るため）ので、触れる。
+- Camera タブの右下の Frame Selected は、視点ではなく Camera を動かす（Undo の 1 段。`docs/space-and-view.md` の「Frame 表示」）。tooltip は
+  「Frame selected · Moves the camera」。
+
+## Add とドロップの見せ方
+
+着く所の規則（光線の当たり、境界、置く大きさと向き）は `docs/space-and-view.md` の「Add とドロップ」が持つ。
+
+- Add で画像を選んだとき：読み込んだ後、ステージの中央に二つのボタン（Sky のアイコン＋`Sky`、World のアイコン＋`World`）を出し、
+  押したほうに置く。Escape か、二択の外を押すと取り消し、何も置かない。3D ファイルは選ばせない。二択の見せ方と取り消しの条件は
+  この文書が持ち、選んだ後の置き場所は `docs/space-and-view.md` の「Add とドロップ」が持つ。
+- ドロップ：離した点で行き先が決まり、選ばせない。
+- ファイルをドラッグしている間の印：着く所に角のかぎ括弧と薄い塗りを描く（色は `docs/design.md`）。Sky の枠は、球に写した枠の
+  曲がった辺に沿ってかぎ括弧を描く。3D ファイルの仮の箱は、すべての見える頂点から辺に沿って短い線を出す。ポインタの横に、
+  行き先のラベル（Sky のアイコン＋`Sky`、または World のアイコン＋`World`）を出す。
+- Sky / World の印（アイコン）は、ドラッグ中のラベル、下の中央のバーの左端、タイムラインの行のアイコンで同じものを使う。
+
+## 読み込み中と空の画面
+
+- エディタを開いたとき、3D の内容を読み込むとき：地面のグリッドと物のガイドを先に出し、まだ来ていない中身の所はゆっくり流れる
+  グラデーションで見せる。何を待っているかを、上端の中央に一行で出す。
+- 空の画面（背景も物も無い）：上端の中央の場所に「画像か 3D ファイルをドロップするか、Add を押す」の一行を出す。
+- 効かない操作の知らせ（境界で止まった、何もない所へのダブルクリックなど）も、上端の中央の一行に出す（どの操作で出すかは
+  `docs/space-and-view.md`）。
+
+## タイムラインのバー
+
+タイムラインの上端のバー。並びと見た目だけを持ち、それぞれの働きは `docs/timeline-ui.md` が持つ。畳んでもこのバーは出す。
+
+| 並び（左から） | 働きの持ち主 |
+|---|---|
+| 再生と一時停止（メディアの再生のボタン 1 つ。`docs/agents/ux-principles.md` の例外） | `docs/timeline-ui.md` の「タイムラインの表示」 |
+| 前の Keyframe へ、次の Keyframe へ | `docs/timeline-ui.md` の「前後の Keyframe へ飛ぶ」 |
+| ループのスイッチ（オンとオフが形で分かるスイッチ。既定はオン） | `docs/timeline-ui.md` の「タイムラインの長さ」 |
+| 時刻とフレーム（例 `00:03.12  78 / 240`） | `docs/timeline-ui.md` の「タイムラインの表示」 |
+| （ここから右寄せ）fps の欄、Length の欄とそのリセット、畳むボタン（状態はアイコンの形で示す） | `docs/timeline-ui.md` の「タイムラインの表示」 |
+
+- 再生位置は、ルーラーの上の ▼ の印と、トラックを縦に貫く 2 px の線で示す（色は `docs/design.md`。▼ はルーラーにだけ出す）。
+- 行の頭の並び（左から）：目のアイコン、▶（開閉）、アイコン（Sky / World の印、Camera、Paint、Background）、名前、行のポチ。目を持たない
+  行も同じ幅を空ける（`docs/timeline-ui.md` の「表示（目のアイコン）」）。
+- 上流の層の見出しは「From ＜元のノードの名前＞」（`docs/timeline-ui.md` の「上流の層の行」）。
+
+## ショートカットの一覧
+
+右の中央の「?」を押すと、ステージの上に一覧を出す（もう一度押すか Escape で閉じる）。中身は、今の画面で効くものだけを
+次の群で並べる。それぞれの割り当ての持ち主は括弧の中の文書で、一覧はそれを表示するだけである。
+
+- 視点（`docs/space-and-view.md` の「マウスとキー」）：左ドラッグ・右ドラッグ（見回し）、中ボタン（パン）、Alt＋ドラッグ（オービット）、
+  Alt＋中ボタン（前後）、ホイール、W/S・A/D・Q/E（Shift で速く）、ダブルクリック（そこを中心にして向く）。
+  Camera タブでは同じ操作が Camera を動かすことを一行で添える。
+- 物（`docs/editor-interaction.md`、切り替えの後はこの文書の「下の中央のバー」）：クリック（選ぶ）、1・2・3（Move・Rotate・Scale）、
+  Delete、Ctrl / Cmd＋Z・Shift＋Ctrl / Cmd＋Z。
+- 時間（`docs/timeline-ui.md`）：Space（再生と一時停止）、Shift＋クリック（Keyframe を選び足す）。
+- 閉じる：Escape（内側のものから一つずつ）。
+
+## 消すもの（新しい UI に作らないもの）
+
+古い UI にあり、新しい UI に作らないもの。ADR 0044 の切り替えで、古い UI の Panorama Studio・Preview の分岐からも消す手引きになる。
+決めた理由は ADR 0045・0047・0048。
+
+- Unwrap の表示、3DoF / 6DoF の切り替え、3D view controls のプリセット（Default・Blender-like・Unity-like）、ERP origin の文字。
+- Save・Cancel のボタン（閉じるのは ✕ だけ）、インスペクタの物を選ぶプルダウン、Copy State、UI Settings の Drag X / Y（ComfyUI の設定へ移す）。
+- 左の列の Clear All と Add to World（Add は一つ）。
+- `output_size` と Auto の大きさ、インスペクタの Coverage（ノードの `background_range`）。
+- Camera の Delete と「Camera が無い」状態、比率のプリセットの「360°」（撮り方のモードに置き換え）、Frame 表示の Roll のノブと
+  Alt / Shift＋左ドラッグの Roll、シャッターのボタン、「Shot」という呼び方（Camera に一本化）。
+- いつも出ている撮影のカード（インスペクタは今触っているものだけを出す）、「原点に戻す」の専用のボタン（行のリセットで戻す）。
+- 下の中央のバーの Hide / Show（タイムラインの目のアイコン）と、Camera の比率のメニュー（インスペクタの Aspect）。
+- 画面に出す言葉の ERP・Equirectangular・Perspective（Panorama・Frame にそろえる。`CONTEXT.md`）。
+
+## 閉じ方
+
+- 閉じるのはインスペクタの一番上の行の ✕ と、Escape だけ。Save・Cancel のボタンは無い。
+- Escape は内側のものから一つずつ戻す。一回の Escape は、次の表の上から最初に当たる一つだけを戻す。**何も選ばず、何も開いていない
+  ときだけ、エディタを閉じる**（閉じる＝保存なので、選択を外すつもりの Escape でエディタが閉じないようにする）。
+
+  | 順 | そのときの状態 | Escape でしたこと |
+  |---|---|---|
+  | 1 | 欄のドラッグの最中 | ドラッグを取り消し、値を押したときに戻す（上の「欄」） |
+  | 2 | 「Set ground」の後、地面を拾う待ち | 待ちを取り消す |
+  | 3 | Add の画像の二択（Sky / World）を出している | 二択を閉じ、何も置かない |
+  | 4 | ショートカットの一覧を開いている | 一覧を閉じる |
+  | 5 | Keyframe を選んでいる | Keyframe の選択を外す（Easing のパネルが消える） |
+  | 6 | 物を選んでいる | 物の選択を外す |
+  | 7 | 上のどれでもない | エディタを閉じる |
+
+  視点のドラッグやギズモのドラッグの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
+  喪失」）のまま、表より先に当たる。
+- 閉じると編集はいつも保存する。開いて閉じただけなら `state_json` を書かない（今の規則のまま。`docs/timeline-ui.md`）。
+
+## Preview のウィンドウ
+
+新しい Preview ノードの大きなウィンドウ（読み取り専用）。視点の規則は `docs/space-and-view.md` の「Preview のウィンドウ」。
+
+- ステージをウィンドウいっぱいに置く。インスペクタ・タイムライン・左の列・下の中央のバーは無い。
+- 右上に閉じる ✕、右の中央に視点の操作のつまみと「?」、右下に Reset View・グリッドのスイッチ・Fullscreen（状態はアイコンの形で示す。
+  `docs/agents/ux-principles.md` の例外）。
+- 下端に再生の帯：再生と一時停止、ループのスイッチ、シークの帯、時刻（並びはノード上の表示と同じ。`docs/preview-node.md`）。
+- 見た目はエディタと同じ（`docs/design.md` の「新しい UI の見た目」）。
+
+## まだ決めていないこと（spec ではない）
+
+- 二次の文字の濃さと、地面のグリッドの見た目の値（最初の画面を作るときに実際の画面で決める）。
+- Plus Jakarta Sans のファイルを足す承認（大きさとライセンスを見せてから。`docs/design.md`）。
+- 開発の間だけ新しい UI を開く入口の形（ADR 0044）。
+- ペイントの道具の見た目の細部（中身は今のまま）。
+- 右の中央に縦に置いたつまみの列（試してから、右下にまとめる形に戻すことがある）。
+- 地面の自動推定（Scene のカードに席だけを取る。やるなら ADR 0046 の「開くたびに測り直さない」と合わせ、押したときに一度だけ推定して
+  保存する形。次の候補）。
+- 次の候補：Panorama モードでは `sticker_state` が出ないことを、ノード上の一行に添える（例「· no sticker_state」）。
+- Sticker を複数つなげる入力（Autogrow。`sticker` と `sticker_state` を組で増やす必要があり、今は作らない。`docs/studio-node.md`）。

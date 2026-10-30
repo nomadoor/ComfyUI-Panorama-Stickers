@@ -19,7 +19,7 @@ Panorama Studio（`PanoramaStudio`）のノードが Scene を組み立てて撮
 | フレームごとの描画（(b)） | `nodes.py` `_render_frames` | — | `tests/test_scene_video.py`、`tests/test_studio_scene.py` |
 | `video` 出力 | `scene_video.py` `SceneVideo`・`RenderedVideo` | — | `tests/test_scene_video.py`、`tests/test_stickers_scene_video.py`、`tests/test_cancel_long_loops.py` |
 | `PANO_SCENE` | `nodes.py` `PanoSceneValue`・`SceneLayer`・`_scene_output` | — | `tests/test_studio_scene.py`、`tests/test_studio_upstream.py`、`tests/test_pano_scene_preview.py` |
-| Panorama Studio の入出力、Camera の判定、撮り方、出力の大きさ、`sticker_state` 出力 | `nodes.py` `PanoramaStudioNode`・`_studio_camera`・`_studio_output_size`・`_camera_sticker_state` | — | `tests/test_studio_node.py`、`tests/test_studio_camera.py`、`tests/test_studio_scene.py`、`tests/test_node_schema_contract.py` |
+| Panorama Studio の入出力、撮る Camera と撮り方（Panorama / Frame）、出力の大きさ（`megapixels`・`multiple`）、`sticker_state` 出力 | `nodes.py` `PanoramaStudioNode`・`_studio_camera`・`_studio_output_size`・`_camera_sticker_state` | 出力の大きさの式だけ `web_src/pano_studio_status.js` `studioOutputSize`（新しい式に書き換える） | `tests/test_studio_node.py`、`tests/test_studio_camera.py`、`tests/test_studio_scene.py`、`tests/test_node_schema_contract.py`、`tests/test_studio_status_parity.py`（新しい入力に書き換える） |
 | 実行結果の `ui` とエディタ用ファイル（`pano_scene_meta` の `unlit` を含む） | `nodes.py` `_build_scene`・`_port_media_ui`・`_scene_ui`・`_editor_mp4`、`core/video.py` `encode_editor_mp4`・`editor_ready`・`save_editor_frames`、`scene_files.py` `write_editor_files` | — | `tests/test_editor_mp4.py`、`tests/test_scene_editor_files.py`、`tests/test_studio_upstream.py` |
 | `DA3_GEOMETRY` mono のエディタ用ファイルの形式（深度（keep は値の `> 0`）・メタ・色のプロキシ） | `scene_files.py` `write_editor_files` の `DA3_GEOMETRY` mono の枝（`_da3_depth_files`）、`nodes.py` `_scene_ui`・`_depth_grid_meta`（メタと色のプロキシ。プロキシは `_batch_mp4_ui` と同じ作り）・`SCENE_FILE_TYPES` の `f32` | `web_src/pano_space.js` `sceneFilesOf` の `depth_grid` の枝、`web_src/pano_depth_grid.js` `readDepthGrid` | `tests/test_scene_editor_files.py` `test_da3_mono_editor_files_are_depth_with_keep_as_positive`・`test_the_depth_grid_fixture_is_what_python_writes`、`tests/pano_depth_grid.test.mjs`（形式の読み方。fixture `tests/fixtures/da3_depth_grid/`）、`tests/pano_space.test.mjs` |
 | `MOGE_GEOMETRY` の透視投影の列を深度のグリッドにする条件と、MoGe の `K` を画素の番号の `K` に直す規則 | `scene_mesh.py` `moge_uses_depth_grid`・`moge_is_pinhole`・`moge_pixel_k`・`depth_grid_intrinsics`、`core_adapters.py` の `depth_map_to_point_map` の読み込み、`scene_files.py` `_moge_depth_files`、`nodes.py` `_check_moge_inputs`（GLB に戻した理由の警告）・`_depth_grid_meta`（DA3 と共有。`intrinsics` は `depth_grid_intrinsics`） | JS は DA3 のまま（`depthGridTooLarge` の文は DA3・MoGe に共通） | `tests/test_scene_editor_files.py` `test_moge_sequences_are_depth_grids_with_the_pixel_k`・`test_the_moge_depth_grid_fixture_is_what_python_writes`、`tests/test_scene_mesh.py` `test_moge_pixel_k_reconstructs_the_cores_points`・`test_moge_pinhole_check_uses_the_norm`、`tests/pano_depth_grid.test.mjs`（fixture `tests/fixtures/da3_depth_grid/case_moge.json`・`moge_depth_0.f32`） |
@@ -41,7 +41,7 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。
 | (b) | `_render_frames` | フレームごとに層ごとの状態を評価し（層の数だけ `RenderLayer` を作る）、(a) が選んだ `sticker` の素材のフレームを `port` の Sticker の Source に、`scene` の要素を `scene_index` にして、`render_frame` を呼ぶ。Camera と Sticker の Keyframe はここでフレームごとに評価される。描く Camera と Projection は、評価した状態から呼び出し側の `capture` が決める（下記「Panorama Studio」の撮り方）。各フレームの `color`・`mask` を device のまま 1 枚ずつ返すジェネレーターで、`first_frame` と `video` の読み出しが同じ経路を使う |
 | (c) | `_render_outputs` と `execute` の末尾 | 出力（`first_frame`・`first_frame_mask`・`video`・`PANO_SCENE`）を組み立てる（ADR 0027）。`execute` で描くのは最初の出力フレームだけ |
 
-- Camera が無いとき（隠したときを含む）の ERP の出力は、World の原点から回転 0 で撮った `coverage` の範囲（`nodes.py` の `ORIGIN_CAMERA`）。背景 ERP と `sky` の Sticker・ペイントは保存した向きのまま出し、`world` の Sticker と `scene` は原点から見た位置に描く。
+- Panorama モードの Camera が原点・回転 0 にあるとき（既定の Camera）の ERP の出力は、World の原点から回転 0 で撮った、Camera の `erp_range` の範囲（ADR 0048。今の `ORIGIN_CAMERA` と同じ絵）。背景 ERP と `sky` の Sticker・ペイントは保存した向きのまま出し、`world` の Sticker と `scene` は原点から見た位置に描く。
 
 - Timeline fps は、背景 VIDEO の平均フレームレート（コアの `get_frame_rate()` と同じ `average_rate`、丸めない）、なければ `sticker` の VIDEO の平均フレームレート、どちらもなければ状態の `timeline.fps` とする。Timeline fps を決める VIDEO は `_timing_video` が選び、`_timeline_rate` がその fps を分数にする（分母 100 万以下。30000/1001 などは元の分数のまま）。`video` の `get_frame_rate()` はこの分数である。
 - 出力の長さは「状態の `timeline.length` → 背景 VIDEO のフレーム数 → 背景の IMAGE バッチ（2 枚以上）の枚数 → Sticker と `scene` の Clip range の終わりのうち最も遅いもの（非表示の Sticker と、未接続の `scene` の Clip range も含む。背景の 1 枚の IMAGE の Clip range が `duration` を持てば、その終わりもここに入る。`duration` が `null` の `port` の Sticker は、素材がフレームか要素を 2 つ以上持つとき（VIDEO、2 枚以上の IMAGE バッチ、2 つ以上の要素の 3D の素材）だけ、素材の終わり `start − in + 素材の長さ` を終わりとする（`sticker_media.py` の `PortMedia.end`。VIDEO の長さは最後のフレームの PTS ＋ 平均フレームレートの 1 フレームを `timeline.fps` のフレームにしたもの、IMAGE バッチと 3D の素材は `枚数（要素の数）× timeline.fps ÷ Timeline fps`。1 枚の IMAGE と 1 つの要素の 3D の素材は数えない）。`duration` が `null` の `scene` は、要素が 2 つ以上のときだけ `start − in + 要素の数 × timeline.fps ÷ Timeline fps` を終わりとする（1 つなら数えない。JS の `autoTimelineLength` も `sceneItems > 1` のときだけ数える）。`duration` が `null` で、glTF のアニメーションを持つ 3D の Sticker（`file` の 3D ファイルの Source と `port` の 3D ファイル）と `scene` は、VIDEO と同じく clip の 1 周を素材の長さとし、`start − in + ⌈clip の長さ ÷ speed × timeline.fps⌉` を終わりとする（clip の長さが 0 なら数えない））→ Camera の各 Lane の最後の Keyframe のうち最も遅いものの次のフレーム → 1」の順で決める。Camera の段は、状態に Camera があるときだけ使う（隠した Camera も数える）。状態から決める長さは `timeline.fps` の Timeline frame なので、秒を保って Timeline fps のフレーム数に直す（`floor(x × Timeline fps ÷ timeline.fps + 0.5)`、1 以上）。
@@ -80,7 +80,7 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。
   - 同じ `BytesIO` の VIDEO を `bg_media` と `sticker` の両方につないでもよい。`core/video_source.py` は container ごとに同じバイト列の別の読み手を作る（中身は写さない）。
   - 素材のフレームは `StickerSource.frame` で Sky のキーに入るので、Sky は素材のフレームが変わったときだけ作り直す。
   - `file` の Source（エディタで投入した素材）は時間を持たない。画像は 1 枚の画像として、3D ファイルは 1 つの要素として、Clip range の間ずっと同じものを描く（下の「3D ファイルの `file` の Source」）。
-- `scene` の入力は、3D ファイルを `_read_scene_file` で SPLAT か MESH に読んでから、`_scene_content` で `SceneContent` にする。SPLAT は上記「SPLAT」、MESH と `MOGE_GEOMETRY`・`DA3_GEOMETRY` は`docs/render-contract.md` の「MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`」。辞書の入力は、`points` を持つものを `MOGE_GEOMETRY`、`mode` を持つものを `DA3_GEOMETRY` として読む。`DA3_GEOMETRY` の mono の画角と座標は `docs/render-contract.md` の「mono の画角と座標」、multiview は同じ節の「multiview」（全視点で 1 つの静止した要素）。どちらの読み手も読まない 3D ファイルは`docs/render-contract.md` の「読めない 3D ファイル」のエラーにする。
+- 土台の 3D の入力（新しい入力名は `world`。切り替えまでは `scene` に刺す。ADR 0048）は、3D ファイルを `_read_scene_file` で SPLAT か MESH に読んでから、`_scene_content` で `SceneContent` にする。SPLAT は上記「SPLAT」、MESH と `MOGE_GEOMETRY`・`DA3_GEOMETRY` は`docs/render-contract.md` の「MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`」。辞書の入力は、`points` を持つものを `MOGE_GEOMETRY`、`mode` を持つものを `DA3_GEOMETRY` として読む。`DA3_GEOMETRY` の mono の画角と座標は `docs/render-contract.md` の「mono の画角と座標」、multiview は同じ節の「multiview」（全視点で 1 つの静止した要素）。どちらの読み手も読まない 3D ファイルは`docs/render-contract.md` の「読めない 3D ファイル」のエラーにする。
 - `sticker` の MESH・SPLAT・3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`：3D ファイルは `scene` と同じ `_read_scene_file` で SPLAT か MESH に読み（同じ `splat_files`・`mesh_files` のキャッシュ）、どちらも読まないファイルは `scene` と同じエラーにする。読んだ SPLAT・MESH と、`MOGE_GEOMETRY`・`DA3_GEOMETRY` の辞書は `PortMedia` の `media` になる（`is_3d`。`sticker_media.py` の `is_3d_media` で見分ける。`tests/test_stickers_3d.py` の `test_dicts_on_the_sticker_input_are_3d_stickers`）。二つの辞書は `scene` と `sticker` のどちらでも同じ規則で扱い、`scene` と同じ見分け方（`points` か `mode`）で読む。要素の数は `MOGE_GEOMETRY` が `points`、`DA3_GEOMETRY` が mono なら `depth` の 1 つ目の次元、multiview なら 1 つで、要素は `scene` と同じくフレームごとのメッシュとして描く（`docs/render-contract.md` の「MESH・メッシュ系の 3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`」）。
   - `port` の Sticker が状態になければ、`world` の Sticker として加える（`sky` にはしない）。回転 0、スケール 1、不透明度・Clip range は既定値。位置は、中身の全体が ERP の正面に収まるように、`docs/editor-interaction.md` の「3D の Sticker を収めて置く」の式で決める（`nodes.py` の `_world_port_sticker`）。視点は World の原点、向きは `[0, 0, -1]`（`-Z`。回転 0 の Camera の前方で、Camera が無いときの ERP の中央の向き）、画角はその節の「ノードの画角」（`PORT_3D_FIT_FOV_DEG`）、距離の下限は `FIT_3D_MIN_DISTANCE`（0.1。ノードには near 面が無いので固定）、回転 `R` は 0 なので、位置は `[−c_x, −c_y, −d − c_z]` になる。中身の球は、描くまえに `sticker` の素材の箱（下の「中身の箱」の `content_box`）から求める。要素が 2 つ以上でも Clip range の間に動かさない一つの位置にする。箱が `None`（中身が空）なら、その節の「中身が無いとき」の位置（原点から `-Z` に `NEW_WORLD_STICKER_DISTANCE`、2）にする。状態の Camera の Lane には依らない。中身の位置は合わせ直さない（中身の原点がその位置に来る）。Pose handoff（`sticker_state`）は 2D の素材の Sticker だけのもので、3D の Sticker を加えるときに `sticker_state` があれば使わずに警告（`sticker_state places only 2D Stickers; the 3D Sticker is placed in front of the origin to fit the view.`）を出す。この規則は Sticker を加えるときの初めの値だけを決め、状態にある `world` の `port` の Sticker の位置は、素材が変わっても動かさない。
   - 中身の箱（`sticker_media.py` の `content_box`）：3D の中身の、`scene` の glTF の座標での軸に沿った箱 `{min, max}`（中身が空なら `None`）。全要素の、描くときと同じ点から作る：MESH は `core_adapters.py` が読むコアの `get_mesh_batch_item` の頂点、SPLAT は `core_adapters.py` が読むコアの `_gaussian_item` の中心を `splat_render.py` の `_GLTF_TO_SPLAT` で glTF の座標に回したもの、`MOGE_GEOMETRY` は全フレームの `moge_keep` の画素の `points` を glTF にしたもの（`scene_mesh.py` の `moge_points`）で、`moge_grid_mesh` の頂点と同じ点になる（`mask` の外の画素の点は入れない）。メッシュにはしない。バッチの詰め物の点は入れない。有限の数でない座標を持つ点も入れない。そのような点は描かれず、経路の応答の `box`（JSON）にも書けないためである。`DA3_GEOMETRY` の multiview は全視点の、描くのと同じ MESH（`scene_mesh.py` の `da3_meshes`）の頂点。mono は変換を呼ばず、空でない全要素の `keep` の画素の点（コアの `_da3_unproject` を glTF にしたもの。`docs/render-contract.md` の「mono の残す画素」）（`scene_mesh.py` の `da3_points`）で、変換した MESH の頂点と同じ点になる（`tests/test_scene_mesh.py` の `test_the_content_box_of_mono_is_the_keep_points_without_converting`）。箱を求めるのはこの関数だけで、ノードの 3D の `port` の Sticker と、下の経路の応答の `box` が使う。
@@ -279,8 +279,8 @@ Panorama Studio の `scene` 出力は、`nodes.py` の `PanoSceneValue`（frozen
 | フィールド | 内容 |
 |---|---|
 | `layers` | `SceneLayer` のタプル。最も上流のノードの層から、この値を作ったノードの層まで（下記） |
-| `bg_media` | `bg_media` の入力そのもの（IMAGE のテンソル、VIDEO のハンドル、または `None`）。層のうち最も上流で `bg_media` を持つノードのもの。VIDEO は開いた状態で渡さないので、使う側が `sticker_media.py` の `open_video` で開き直す |
-| `coverage` | `bg_media` の範囲（360 または 180）。`bg_media` と同じノードのもの（どの層も持たなければ、この値を作ったノードのもの） |
+| `bg_media` | `bg_media` の入力そのもの（IMAGE のテンソル、VIDEO のハンドル、または `None`）。層のうち最も**下流**で背景を持つノードのもの（自分の `background` がつながっていれば自分。下の「上流の Scene」の「背景」と同じ規則。ADR 0048。今までの「最も上流」はやめた）。VIDEO は開いた状態で渡さないので、使う側が `sticker_media.py` の `open_video` で開き直す |
+| `coverage` | `bg_media` の範囲（360 または 180。Panorama Studio では `background_range` の値。フィールドと `ui` のキーの名前は今のまま `coverage`）。`bg_media` と同じノードのもの（どの層も持たなければ、この値を作ったノードのもの） |
 | `bg_color` | 0〜1 の 3 つの数値のタプル。`coverage` と同じノードのもの |
 | `rate` | Timeline fps の分数（(a) が決めたもの。`video` の `get_frame_rate()` と同じ値）。`fps` はこれを float にしたもの（プロパティ） |
 | `times` | 出力フレームごとの時刻（秒、`Fraction`）のタプル。`video` の PTS と同じ値（`_output_times`）。長さが出力のフレーム数 |
@@ -310,32 +310,118 @@ Panorama Studio の `scene` 出力は、`nodes.py` の `PanoSceneValue`（frozen
 
 Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `PanoramaStudioNode`。開発中にあった状態 v2 の Stickers・Cutout のノード ID（`PanoramaStickersNode`・`PanoramaCutoutNode`）は登録せず、置き換え（NodeReplace）も持たない（ADR 0029）。旧ノード `PanoramaStickers`・`PanoramaCutout` は別の ID で登録したまま。
 
-- 入力は `bg_media`（IMAGE・VIDEO）、`sticker`（IMAGE・VIDEO・MESH・SPLAT・3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`）、`sticker_state`、`scene`、`bg_color`、`coverage`、`output_size`（`1024`・`1536`・`2048`・`2560`・`3072`・`4096`・`auto`、既定 `2048`）、`state_json` の順。`scene` は 3D の素材（SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY`）か、別の Panorama Studio の `scene` 出力（`PANO_SCENE`。下記「上流の Scene」）を受ける。
-- 出力は `first_frame`（IMAGE）、`first_frame_mask`（MASK）、`video`（VIDEO）、`sticker_state`（STRING）、`scene`（`PANO_SCENE`）の順（入力の `sticker_state`・`scene` と同じ並び。ADR 0029 の追記）。`is_output_node` は `True`。
+- 入力（ADR 0048。役割で分け、名前を変えた。旧ノードの入力は今のまま）は次の順。線でつなぐ入力は、受け継ぐ空間から、奥（背景）から手前（置く物）へ並ぶ。
+  | 順 | 入力 | 受けるもの | 役割 |
+  |---|---|---|---|
+  | 1 | `scene` | `PANO_SCENE` だけ | 別の Panorama Studio の `scene` 出力を受け継ぐ（Studio どうしをつなぐ専用の入口。下記「上流の Scene」） |
+  | 2 | `background` | IMAGE・VIDEO | 背景のパノラマ（無限遠。今までの `bg_media`） |
+  | 3 | `world` | SPLAT・MESH・3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY` | その場所の土台の 3D（今まで `scene` に刺していた 3D の素材）。状態では `scene` の要素として持つ（`docs/scene-state-v2.md`）。選べず、動かせない。位置・回転・大きさの Lane は状態に残るが、新しい UI はそれを変えない（合わせるのは地面の高さだけ。ADR 0046） |
+  | 4 | `sticker` | IMAGE・VIDEO・MESH・SPLAT・3D ファイル・`MOGE_GEOMETRY`・`DA3_GEOMETRY` | 足す物・往復で戻ってきた物（`port` の Sticker。一本だけ。複数は下記「まだ決めていないこと」） |
+  | 5 | `sticker_state` | STRING | `sticker` の置き方（Pose handoff） |
+
+  続けてノードの上の設定：`background_color`（今までの `bg_color`）、`background_range`（`360`・`180`、既定 `360`。今までの `coverage`）、
+  `megapixels`（Float、0.1〜16、刻み 0.1、既定 2.0。ComfyUI の Resolution Selector と同じ範囲）、`multiple`（Int、8〜128、刻み 4、既定 8、advanced）、
+  `state_json`（隠した値）。`output_size` は外した。
+  - 名前の対応：この文書のほかの節は、切り替えまでの今の名前で書いている。入力の `bg_media` は `background`、`coverage` は `background_range`、
+    `bg_color` は `background_color`、3D の素材を刺す `scene` は `world` にあたる。`PANO_SCENE` のフィールド・`ui` のキー・内部の関数の名前
+    （`bg_media`・`coverage`・`bg_color`、`pano_upstream_coverage` など）は今のまま。
+  - 出る大きさはノード上の表示の上端の一行で見せ、`io.ResolutionPreview` は使わない（下記「撮る Camera と出力の大きさの設計」）。
+  - `background_range` は背景の絵（`background`）が球のどこまでを覆うかだけを表す（360 は全周、180 は前の半球で、外は `background_color`。Unity の Panoramic skybox の Image Type 360 / 180 と同じ考え）。出力の範囲は決めない（出力の範囲は Camera の `erp_range`。下記）。VR180 の背景を VR180 で出すときは、`background_range` と Camera の `erp_range` の両方を 180 にする（ADR 0048。二つは互いを参照しない）。
+- 出力は `scene`（`PANO_SCENE`）、`first_frame`（IMAGE）、`first_frame_mask`（MASK）、`video`（VIDEO）、`sticker_state`（STRING）の順（入力と鏡にそろえ、`scene` を一番上に置く。ADR 0048）。`is_output_node` は `True`。
 - Scene の組み立ては `_build_scene`（状態の読み込み、`port` の Sticker、Source、(a) の `_decide_timeline`、エディタ用の `ui`）で、描画は (b)・(c)（`_render_frames`・`_render_outputs`）。撮り方（`capture`）と出力の大きさは下記。
 - `state_json` は状態 v2（v1 も読む。旧 Cutout の `shots[0]` は Camera になり、FOV は 1〜179 に寄せ、`roll_deg` だけを読む（`rot_deg` は読まない）。`docs/scene-state-v2.md`）。
-- Camera の判定：状態 v2 の `camera`（`docs/scene-state-v2.md`）。`null`（欠け・空の `state_json` を含む）なら Camera が無い。`camera.visible` が `false`（タイムラインの目で隠した Camera）も、撮り方・出力の大きさ・`sticker_state` では Camera が無いのと同じに扱う（`nodes.py` の `_studio_camera`。`_studio_output_size` と `execute` が使う）。隠した Camera は状態に残り、表示を戻せば元の Camera で撮る（`scene` 出力は Camera の表示によらず `camera` を `null` にする）。Timeline の長さは `_decide_timeline` で決め、Camera があるときだけ Camera の Keyframe が長さに入る。隠した Camera の Keyframe も長さに入る（表示の切り替えで出力の長さを変えない。隠した Sticker の Clip range を数えるのと同じ）。`erp` の Camera でも、描画に使わない `fov` の Keyframe を含めてすべての Lane の Keyframe が長さに入る。
-  - Camera が無い：World の原点から回転 0（`ORIGIN_CAMERA`）で、`coverage` の範囲の ERP を撮る。旧 Stickers の基準画像（差の出る case は Studio 自身の基準画像 `studio_*`）と一致する（`tests/test_studio_node.py`）。
-  - `projection` が `erp`：評価した Camera の位置と回転から ERP を撮る（`Projection.erp`。ERP は Camera の回転に従って回り、`world` の Sticker と `scene` は Camera の位置から見る）。`fov`・`aspect` は読まない。`coverage` が 180 なら Camera の前方の半球。原点・回転 0 なら Camera が無いときと同じ出力になる。
-  - `projection` が `perspective`：評価した Camera と `Projection.perspective(幅, 高さ, Camera の hFOV, coverage)` で撮る。レンズの曲線 κ（`curve`）も `Projection` に入れる（`Projection.perspective(..., curve)`）。画素は正方なので、垂直の FOV は丸めた大きさから決まり、`camera.aspect` から決まる値とわずかに違うことがある。旧 Cutout の case `cutout_single_shot` と同じショットと背景を 224 x 128（`tools/bake_legacy_goldens.py` の `STUDIO_SHOT_SIZE`）で撮った基準画像 `studio_camera_single_shot` と一致する（`tests/test_studio_camera.py`。この大きさは `output_size` からは決まらないので、テストと焼き直しでは `_studio_output_size` を差し替える）。
-- 出力の大きさ（`_studio_output_size`）：`output_size` は全体（360°）の ERP の幅 `W` を選ぶ。`auto` は `bg_media`（VIDEO は最初に復号できたフレーム）の幅を 360° に換算した値（`coverage` が 180 なら 2 倍）で、`bg_media` が無ければ 2048 にして警告する（ログと `pano_sticker_warnings`）。
+- Camera（ADR 0048）：Panorama Studio の Camera はいつも一台ある。状態 v2 の `camera` が欠け・`null` なら、既定の Camera（原点・回転 0、Panorama モード（`projection` が `erp`）、`erp_range` 360。`docs/scene-state-v2.md` の「既定の Camera」）として読む。Camera は消せない。撮り方（モード）は `camera.projection` で、使う人がエディタのCamera のカードで選ぶ（`erp` は表示名 Panorama、`perspective` は Frame）。もう一方のモードの値（`fov`・`aspect`・`curve`、`erp_range`）は保つので、モードを行き来しても値は消えない。`camera.visible` が `false`（タイムラインの目で隠した Camera）は表示だけの切り替えで、撮り方・出力の大きさ・`sticker_state` を変えない（今までの「隠すと Camera が無いのと同じ」はやめた）。Timeline の長さは `_decide_timeline` で決め、Camera の Keyframe はいつも長さに入る（Panorama モードでも、描画に使わない `fov` の Keyframe を含めてすべての Lane の Keyframe が入る）。
+  - Panorama モード（`erp`）：評価した Camera の位置と回転から ERP を撮る（`Projection.erp`。ERP は Camera の回転に従って回り、`world` の Sticker と `scene` は Camera の位置から見る）。`fov`・`aspect`・`curve` は読まない。範囲は Camera の `erp_range`（180 なら Camera の前方の半球）。原点・回転 0 なら、今までの「Camera が無い」ときと同じ出力になる（旧 Stickers の基準画像と、差の出る case は Studio 自身の基準画像 `studio_*` と一致する。`tests/test_studio_node.py`）。
+  - Frame モード（`perspective`）：評価した Camera と `Projection.perspective(幅, 高さ, Camera の hFOV, 範囲)` で撮る。レンズの曲線 κ（`curve`）も `Projection` に入れる（`Projection.perspective(..., curve)`）。画素は正方なので、垂直の FOV は丸めた大きさから決まり、`camera.aspect` から決まる値とわずかに違うことがある。`Projection.perspective` の範囲の引数には今と同じく背景の範囲（`background_range`）を渡す（背景の絵をどこまで引くかの範囲で、出力の範囲ではない）。旧 Cutout の case `cutout_single_shot` と同じショットと背景を 224 x 128（`tools/bake_legacy_goldens.py` の `STUDIO_SHOT_SIZE`）で撮った基準画像 `studio_camera_single_shot` と一致する（`tests/test_studio_camera.py`。テストと焼き直しでは `_studio_output_size` を差し替える）。
+- 出力の大きさ（`_studio_output_size`。ADR 0048）：`megapixels` と `multiple` から決める。考え方は ComfyUI の Resolution Selector
+  （`comfy_extras/nodes_resolution.py`：`total = megapixels × 1024 × 1024`、`multiple` の倍数に丸める）と同じだが、Panorama モードは ERP の
+  比を厳密に保つため、高さを先に決めて幅をその倍数にする（幅と高さを別々に丸めると 2 : 1 から外れ、`Projection.erp` が緯度を高さいっぱいに
+  割り当てるので縦に伸び縮みした ERP になる。`docs/render-contract.md`）。
 
-  | 撮り方 | 幅 | 高さ |
-  |---|---|---|
-  | Camera が無い・`erp`（`coverage` 360） | `W` | `W ÷ 2`（切り捨て） |
-  | Camera が無い・`erp`（`coverage` 180） | `W ÷ 2` | `W ÷ 2` |
-  | `perspective` | Timeline の全出力フレームでの `2·f·g_κ(hFOV ÷ 2)` の最大、`f = W ÷ 2π`、`g_κ(x) = tan(κx) ÷ κ`（`lens_radius`。κ = 0 では `x`。κ = 1 では `2·f·tan(hFOV_max ÷ 2)` と同じ。`tests/test_lens.py` の `test_the_output_size_keeps_the_center_pixels_per_radian`） | 幅 ÷ `camera.aspect` |
+  ```
+  total  = megapixels × 1024 × 1024
+  丸め   = Python の round（偶数への丸め）。Resolution Selector と同じ。JS も同じ丸めの関数を使う
 
-  - ERP の出力は画素の細かさが `W` の 360° の ERP と同じになる。`auto` は旧 Stickers の `auto` と同じ大きさになる。ただし 360 では高さを `W ÷ 2` にそろえ、`bg_media` の高さは引き継がない（2:1 でない背景では旧 Stickers と違う）。`coverage` 180 の `auto` は `bg_media` と同じ大きさになる（固定の値では、旧 Stickers は `coverage` 180 で選んだ値を出力の幅にするので、Studio はその半分の幅になる）。ERP には上限を設けない（`auto` は大きな `bg_media` ならそのまま大きくなる）。
-  - `perspective` の `hFOV_max` は、Timeline の全出力フレーム（`frames` の評価する Timeline frame）で評価した Camera の hFOV の最大値。幅と高さはそれぞれ最も近い偶数に丸め（最小 2）、FOV（と κ）が動いても大きさは変わらない。像の中心の 1 ラジアンあたりの画素はどの κ でも `f` で、`W` の ERP と同じになる。丸めた長辺が 4096（`STUDIO_MAX_OUTPUT_SIDE`）を超えるときは、比を保って長辺を 4096 に縮め（丸める前の値に掛けて丸め直す）、警告する。
-- `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` を `null` にする（撮影する世界で、Camera を含まない。`_scene_output`）。自分の層の `state` の `upstream`（上流の層への上書き）も空にする。下流は上書きを当てた後の姿を受け取るためである（ADR 0030。当て方は下記「上流の Scene」の「上書き」）。`id` は保ち、下流はこの `id` ごとに上書きを記録する。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
-- `sticker_state` は `projection` が `perspective` のときだけ、`_camera_sticker_state` が作る v2（`docs/scene-state-v2.md`）。`fps` は状態の `timeline.fps`、`camera` は Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。Camera が無いとき（隠したときを含む）と `erp` のときは空文字列。
+  Panorama モード（erp_range 360 は比 2 : 1、180 は 1 : 1。r = 比の幅 ÷ 比の高さ）
+    scale  = sqrt(total ÷ r)
+    高さ   = 丸め(scale ÷ multiple) × multiple   （最小 multiple）
+    幅     = 高さ × r                              （360 は 2 × 高さ、180 は 高さ）
+
+  Frame モード（比は camera.aspect : 1。Resolution Selector と同じ形）
+    scale  = sqrt(total ÷ (比の幅 × 比の高さ))
+    幅     = 丸め(比の幅 × scale ÷ multiple) × multiple   （最小 multiple）
+    高さ   = 丸め(比の高さ × scale ÷ multiple) × multiple （最小 multiple）
+  ```
+
+  - 例：2.0 MP・`multiple` 8 の Panorama 360 は 2048 × 1024、1.0 MP は 1456 × 728、0.3 MP は 800 × 400。Frame の 16 : 9（2.0 MP）は 1928 × 1088。
+  - FOV・κ・Keyframe は大きさに効かない（Timeline のどのフレームでも同じ大きさ）。背景の解像度にも合わせない（`auto` はやめた。生成 AI に渡す大きさは決まっていてほしいため。ADR 0048）。
+  - 長い辺の上限：`STUDIO_MAX_OUTPUT_SIDE` は 8192（全部のモード。今までの Frame だけの 4096 から上げた。ADR 0048）。16 MP で、インスペクタの欄から
+    入る比（0.25〜4、`CAMERA_ASPECT_MIN`・`CAMERA_ASPECT_MAX`）の端の 4 : 1 まで（8192 × 2048）、選んだ `megapixels` が縮められずにそのまま出る。
+    状態の `camera.aspect` は 1/2048〜2048 まで持てる（v1 の Cutout の読み替えなど、欄の外から入る比。`docs/scene-state-v2.md`）ので、4 : 1 より
+    細い比では上限を超えうる。そのときは比を保って長い辺をその値に縮め（Panorama モードは高さから決め直し、Frame モードは
+    `multiple` に寄せ直す）、警告する（ログと `pano_sticker_warnings`）。大きな出力のメモリと時間は `docs/runtime-resources.md` と
+    `docs/render-contract.md`（大きな ERP にストロークを描く重さ）。
+  - エディタのCamera のカードには出力の大きさを出さない（大きさはノードの上の値。`docs/studio-ui.md`）。ノードの上には、ノード上の表示の上端の一行で出る大きさを出す（`docs/studio-node-surface.md`）。
+- `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` を `null` にする（撮影する世界で、Camera を含まない。`_scene_output`。この `null` は `PanoSceneValue` の中の値で、`state_json` の読み込み（欠け・`null` を既定の Camera にする）を通らない。下流は上流の層の Camera を使わない）。自分の層の `state` の `upstream`（上流の層への上書き）も空にする。下流は上書きを当てた後の姿を受け取るためである（ADR 0030。当て方は下記「上流の Scene」の「上書き」）。`id` は保ち、下流はこの `id` ごとに上書きを記録する。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
+- `sticker_state` は `projection` が `perspective`（Frame モード）のときだけ、`_camera_sticker_state` が作る v2（`docs/scene-state-v2.md`）。`fps` は状態の `timeline.fps`、`camera` は Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。Panorama モード（`erp`）のときは空文字列（隠した Camera でも出す。ADR 0048）。
 - 隠した `scene`（`scene.visible`）と Sticker は評価関数の `active` が偽になるので描かない。隠したペイント（`painting_visible`）は `_resolve_sources` が空のペイントを渡すので、色にも MASK にも出ない。上流の Scene の層でも同じ。
 - 実行結果の `ui` は上記「Scene の組み立てと撮影の入口」の表のキー（`pano_input_images` などの素材、`pano_sticker_input_pose`、`pano_sticker_warnings`）。上流の Scene を受けたときのキーは下記。エディタでの表示は `docs/editor-interaction.md` の「Panorama Studio のエディタ」と「上流の Scene の表示と編集」。
 
+### 撮る Camera と出力の大きさの設計（ADR 0048。境界をまたぐ設計、AGENTS の原則 4）
+
+上の「Camera」と「出力の大きさ」に変えるための、合意する設計。Panorama Studio は main に無い（main `ef900eb` に `PanoramaStudio` は
+無い）ので、既存のワークフローを移す手順は持たない（AGENTS.md の Non-negotiables 1 の対象外）。旧ノード（`PanoramaStickers`・
+`PanoramaCutout`・Panorama Preview (legacy)）の `coverage`・`output_size` と、その出力は変えない。
+
+- 作らないもの：`output_size` の `auto`（背景に合わせる大きさ）と「背景に合わせる」ボタン、出力の範囲の「背景に合わせる」の選択肢、
+  ノードの上のモードの切り替え（撮り方のモードは状態の `camera.projection` だけが持つ）、Camera が無い状態、`port` の 3D の置き方の変更。
+- 規則の持ち主：
+  | 規則 | 持ち主 |
+  |---|---|
+  | 既定の Camera と `camera` の読み方（欠け・`null` → 既定の Camera）、`erp_range` のフィールド | `docs/scene-state-v2.md`（`core/scene_state.py` `load_scene_state`、`web_src/pano_scene_state.js` `loadSceneState`） |
+  | 既定の Camera を保存するテキストに書かない | `docs/scene-state-v2.md`（`pano_scene_state.js` `sceneStateText`） |
+  | 撮り方（Panorama / Frame）、隠しても撮ること、`sticker_state` を出す条件 | この文書（`nodes.py` `_studio_camera`・`execute`・`_camera_sticker_state`） |
+  | 出力の大きさの式 | この文書。Python は `nodes.py` `_studio_output_size`、JS（ノードの上の表示）は今ある `web_src/pano_studio_status.js` の `studioOutputSize` を新しい式に書き換える（新しい関数は作らない）。一致は今ある `tests/test_studio_status_parity.py` を書き換えて守る |
+  | Camera のカード・Camera のボタン・モードの切り替えの画面 | `docs/studio-ui.md` |
+- データの流れ：ノードの widget（`background_color`・`background_range`・`megapixels`・`multiple`）は ComfyUI のワークフローに保存され、`execute` の
+  引数で Python に届く。撮り方・`erp_range`・`aspect` などは `state_json`（状態 v2）にあり、エディタが書き、Python が読む。出力の大きさは
+  Python が `megapixels`・`multiple` と状態の比から求める。ノードの上の出る大きさは、ノード上の表示の上端の一行（`docs/studio-node-surface.md`）が、
+  JS で同じ widget の値と、ノードの `state_json` を `loadSceneState` で読んだ比から、同じ式で求めて出す。`io.ResolutionPreview` は使わない
+  （確かめた事実：その widget は `ratio_widget` で名指しした隣の widget の値を `W:H` の文字列として読む。`comfy_api/latest/_io.py` の
+  `ResolutionPreview`、frontend の `WidgetResolutionPreview`。Panorama Studio の比は `state_json` の中にあり widget ではないので読めない。
+  比を文字列の widget にも持つと同じ値が二か所に住む。そのうえ Resolution Selector の表示は Node 2.0 でしか出ない）。式は `studioOutputSize` 一つ。
+- 入れる順番：ノードと状態の変更（入力の役割と名前、既定の Camera、`erp_range`、`megapixels`・`multiple`、`bg_coverage`）は、新しい UI への
+  切り替え（ADR 0044）と同じ change で入れる。それまでは今の形（`bg_media`・`coverage`・`output_size`・`null` の Camera）のままにし、古い UI と
+  開発の環境を壊さない。作っている間の新しい UI は、`camera` が `null` の状態を読んだら、その場で既定の Camera として扱う（状態には書かない）。
+  完成するまで main へは出さない（ADR 0044）。
+- 古い開発中の状態：公開前なので、手元の `state_json` のための特別な読み方は持たない。`camera` の欠け・`null` を既定の Camera として読むことだけで、
+  背景が 180 で Camera の無かった状態は、既定の Camera（`erp_range` 360）で 360 の出力に変わる（受け入れた。ADR 0048）。
+- 一致を守る test：
+  - 今ある `tests/test_studio_status_parity.py`（Python の `_studio_output_size` と JS の `studioOutputSize` の一致）を新しい入力
+    （`megapixels`・`multiple`・モード・`erp_range`・`aspect` → 幅・高さ）に書き換える。case には、Panorama で幅と高さを別々に丸めると 2 : 1 から
+    外れる大きさ（0.3 MP・1.0 MP・`multiple` 8）、上限で縮む case、`.5` ちょうどで偶数への丸めが効く case を入れる。
+  - フィクスチャ `tests/fixtures/scene_state/` に、`camera` が欠け・`null`・既定と同じ・`erp_range` 180 の case を足す（読み込みと
+    `sceneStateText` の往復）。
+  - `tests/test_studio_node.py`：既定の Camera の出力が今の「Camera が無い」ときの基準画像と同じこと、隠した Camera でも撮ること、
+    `erp_range` 180 と `background_range` 360 の組、`scene` と `world` を両方つないだときに重なること、自分の `background` が上流の背景と差し替わること。
+  - `tests/test_node_schema_contract.py`：Panorama Studio と新しい Preview の入力・出力の並び・名前・型（`scene` は `PANO_SCENE` だけ）。旧ノードの入力が変わらないこと。
+- 考えた別案：
+  | 案 | 選ばなかった理由 |
+  |---|---|
+  | `output_size`（横幅のコンボ）と `auto` を残す | 2048 と書いてあるのに Frame の出力が 376 px になるなど、何が出るかが分からない。生成 AI に渡す大きさが背景しだいで変わる |
+  | 撮り方のモードをノードの上の widget に置く（Resize Image/Mask のように欄を出し分ける） | 時間で変わらない値はノード、変わる値はエディタ、と分けても、モードとカメラの構図が二か所に分かれる。モードはカメラの性質としてエディタのCamera のカードに置いた |
+  | 撮る設定をすべてエディタに置き、ノードには結果だけを出す（P1） | 持ち主の決定で、`background_color`・`background_range` と出力の大きさ（Resolution Selector と同じ形）はノードの上に残す |
+  | Camera を `null` にできるまま、無いときは原点の ERP | 「Camera があるか分からない」「Camera を足したのに何も変わらない」の元。Blender も最初からカメラを置く |
+  | 出力の範囲を背景の範囲に合わせる既定 | 二つの設定をつなぐ規則が増え、どちらが効いているか分からない。VR180 は二か所を 180 にする |
+
+#### まだ決めていないこと（設計）
+
+- `sticker` を複数つなげる入力（ComfyUI の `Autogrow`、名前は `sticker0`・`sticker1`…）。`sticker` と `sticker_state` を組で増やす必要があり、
+  今は安定して作れないので作らない。作るときは、状態の Source に番号を足し、`PortMedia`・`pano_sticker_input_*`・エディタの同期を配列にする。
+
 ### 上流の Scene
 
-`scene` に別の Panorama Studio の `scene` 出力（`PANO_SCENE`）をつなぐと、その Scene の上に自分の Scene を重ねて撮る（ADR 0029）。`_build_scene` が、自分の状態の上書き（`upstream`）を当てた上流の層の後ろに自分の層を足す。
+`scene` に別の Panorama Studio の `scene` 出力（`PANO_SCENE`）をつなぐと、その Scene の上に自分の Scene を重ねて撮る（ADR 0029）。`scene` は `PANO_SCENE` だけを受ける（3D の素材は `world` へ。ADR 0048）。`_build_scene` が、自分の状態の上書き（`upstream`）を当てた上流の層の後ろに自分の層を足す。
 
 - 重ね方：上流の各層と自分の層を `RenderLayer` にして `render_frame` に渡す（`docs/render-contract.md` の「層」）。`sky` は上流の上に自分を重ね、`world` は奥行きで混ざる。Sticker の `id` と `port` は層ごとに分かれるので、上流と同じ `id` や、上流にも `port` の Sticker があっても、それぞれ描く。撮るのは自分の Camera（自分の状態の `camera`、上の「Camera の判定」）で、上流の Camera は無い（`scene` 出力は Camera を含まない）。
 - 上書き（ADR 0030、`_override_layers`）：状態を読み込んだ後、Timeline を決める前に、自分の状態の `upstream` の各記録を、その `layer` と同じ `id` を状態に持つ上流の層に `apply_upstream_overrides`（`docs/scene-state-v2.md` の「上書きを当てる」）で当てる。描くのも、`scene` 出力で下流へ渡すのも、当てた後の層である。
@@ -347,10 +433,22 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
 - Timeline fps は上流の `rate`。出力フレームの時刻は上流の `times` で、上流より長いときはその後を Timeline fps の間隔で続ける（`_output_times`）。丸めの幅も上流の `time_base`。自分の `bg_media`・`sticker` の VIDEO は Timeline fps を決めない。
 - 長さ：自分の `timeline.length` があればそれ（秒を保って Timeline fps のフレーム数に直す。上流より短くも長くもできる）。なければ、上流の出力フレーム数と、自分の状態から通常の規則（上記「Scene の組み立てと撮影の入口」の長さの規則。背景 VIDEO の段は、自分の `bg_media` を使うときだけで、その VIDEO の最後のフレームが終わる時刻を Timeline fps のフレーム数にしたもの）で決まる長さと、上書きした Clip range の終わり（記録が `clip` を持つ Sticker の上書きのうち、層に同じ `id` と同じ `placement` の Sticker があるもの（`placement` が違う上書きは当たらないので数えない）と、記録が `clip` を持つ `scene` の Clip range の `start + duration`。`duration` の無い Clip range は数えないが、`port` の Sticker は例外で、自分の層と同じく素材が終わるフレーム（`PortMedia.end`。フレームを持つ素材だけ）を終わりとする）の、いちばん長いもの。上書きした Clip range の終わりはその層の Timeline frame なので、`floor(終わり × Timeline fps ÷ 層の timeline.fps + 0.5)` で出力フレーム数に直す。上書きしていない上流の Clip range は上流の出力フレーム数にすでに入っているので数えず、上流の Sticker を消しても短くならない。
 - 時刻の評価：各層は、出力フレームの時刻 `t` 秒について `t × その層の timeline.fps` の Timeline frame で評価する（`_layer_frames`。上流の Timeline frame から見れば `frame × 層の timeline.fps ÷ 上流の timeline.fps`）。上流と自分の fps が違っても、自分の Keyframe と Clip range は秒を保つ。状態は再基準化しない（整数の Timeline frame に丸めない）。各層の `port` と `scene` の番号も、その層の Timeline frame から通常の規則（`PortMedia.index_at`・`batch_index`）で選ぶ。上流の層の番号は、上流で決めたものと同じ規則で、延ばした分も含めて選び直す。
-- 背景：上流が `bg_media` を持てば、その `bg_media`・`coverage`・`bg_color` を使い、自分の `bg_media` は使わない。自分の `bg_media` も接続されていれば `bg_media is not used: the scene input has a background of its own.` と警告する（ログと `pano_sticker_warnings`）。自分の `coverage`・`bg_color` も使わない。上流が `bg_media` を持たなければ、自分の `bg_media`・`coverage`・`bg_color` を使う。
+- 背景（ADR 0048。今までの「上流が背景を持てば上流を使い、自分の `bg_media` は使わず警告する」をやめた）：自分の `background` がつながって
+  いれば、それを使い、上流の背景と差し替える（自分の `background_range`・`background_color` も使う）。つながっていなければ、上流の背景
+  （その `bg_media`・`coverage`・`bg_color`）を受け継ぐ。上流も背景を持たなければ、自分の `background_range`・`background_color` で描く。
+  警告は出さない。直したパノラマで背景を差し替える往復のためで、つないだものが黙って無視されることをなくす。
+  `scene` 出力の `bg_media`・`coverage`・`bg_color`（上の `PANO_SCENE` の表）も同じ規則で、差し替えた背景が下流へ渡る（3 段つないでも、
+  途中で差し替えた背景が残る）。`tests/test_studio_node.py` の「自分の `background` が上流と差し替わる」case で、`scene` 出力の `bg_media` も
+  差し替えた背景であることを確かめる（未作成）。
+  - 差し替えた背景が、上流の Panorama の出力を外で直したものなら、上流の空に貼った Sticker とペイントは、その絵に焼き込まれている。
+    それでも上流の層の Sticker とペイントは今までどおり上に重ねて描くので、二重に見える。知らせは出さない（ADR 0048。持ち主の決定）。
+    使う人が、要らない上流の Sticker を消す（Delete。消したものは上流の見出しの Restore deleted で戻せる）か、上流のペイントの行を
+    目のアイコンで隠す。設計上、焼き込んだかどうかはノードには分からないので、どれを描くかは使う人が決める。
+- 土台の 3D（`world`）：上流の層の土台と自分の `world` は重ねる（ADR 0048）。自分の `world` は自分の層の `scene` の要素として、上流の層の
+  土台と同じ空間に描き、3D どうしは奥行きで前後が決まる。上流の土台が要らないときは、タイムラインの上流の層の行の目のアイコンで隠す
+  （上書きの `scene.visible`。`docs/scene-state-v2.md` の「上書き」）。背景と違って重ねられるので、どちらかを捨てる規則は持たない。
   - 背景のフレーム（`_bg_frames`）：既定の Clip range では、IMAGE バッチは出力フレームと 1 対 1、1 枚の IMAGE は全フレーム。VIDEO は、Timeline を決めた VIDEO（上流がないとき）なら 1 対 1。上流がある（Timeline fps を上流が決めた）ときは、各出力フレームの時刻以前に始まる最後のフレーム（PTS ≤ `t`、比較の許容差は出力の時刻と VIDEO の time base の大きいほうの半分）で、最後のフレームが平均フレームレートの 1 フレームの間続いた後は描かない（`bg_color`）。上流の背景の VIDEO が終わった先も同じく `bg_color`。
   - 下流が延ばした区間でも、上流の背景の VIDEO は時刻で続き、最後のフレームが終わった後は `bg_color` になる。上流の背景は下流の長さの規則には入らない（上流の出力フレーム数がすでにそれを含み、上流の `timeline.length` で短くした分もそのまま保つ）。
-  - `output_size` の `auto` は、使う背景（上流のものを含む）の幅で決める。
 - マスク：`first_frame_mask` は、上流の各層のペイントのマスクも含む（層ごとのマスクの画素ごとの最大値）。
 - `sticker_state` 入力と Pose handoff は自分の層の `port` の Sticker だけに効く。
 - 実行結果の `ui`（エディタ用）：

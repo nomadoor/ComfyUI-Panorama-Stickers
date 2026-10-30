@@ -24,6 +24,9 @@ Python のファイルは `comfyui_pano_suite/` の下にある。
   - デバイスに上げる素材の float32 の大きさの `DEVICE_SOURCE_FACTOR`（4）倍：`bg_media` の 1 フレーム（RGB）、各層の Sticker の素材（RGBA）、アップロード済みのペイントのラスタ。4 倍は、本体と `_sample_filtered` の ripmap（本体の 3 倍まで）の分。
   - 3D の中身（`scene` と 3D の Sticker。3D の Sticker は `port` の素材と、3D ファイルの `file` の Source から読んだ SPLAT・MESH（`SceneSources.contents`））のテンソルの大きさ（`core/cache.py` の `nbytes`）。`DA3_GEOMETRY` は入力の辞書ではなく、device に置く変換後のメッシュの大きさの上限で数える（`scene_mesh.py` の `da3_device_bytes`、`nodes.py` の `_media_bytes`）。見積もりのために変換はせず、`depth` の大きさから、格子の全画素を頂点にしたメッシュ（float32 の頂点・uv・線形のテクスチャと、int64 の面）を device に置いたときの量とする。mono は 1 フレーム分、multiview は全視点を同時に置くので全視点の和にする。
 - 例：ERP 4096 x 2048 の出力に 4096 x 2048 の背景と 2048 四方の Sticker 一つなら、1 GiB（画素）＋ 384 MiB（背景）＋ 256 MiB（Sticker）で約 1.6 GiB。
+- 新しい UI の上限（`megapixels` 16、`STUDIO_MAX_OUTPUT_SIDE` 8192。`docs/studio-node.md`）では、16 MP の出力（Panorama 360 で 5792 x 2896）の画素だけで
+  約 2 GiB（16.8 M 画素 × 32 × 4 バイト）になる。大きな ERP にストロークを描く重さ（8192 の ERP で描き直すたびに CPU で約 7 秒・3 GB）は
+  `docs/render-contract.md` の「ペイント」。見積もりと足りないときの扱いは上のとおりで、大きさのために別の規則は持たない。
 
 ## 中断と進み具合
 
