@@ -38,7 +38,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンの押せる・押せないと tooltip、Camera を視点へ持ってくる書き方は `web_src/studio/camera_ui.js`（`cameraButton`・`cameraToView`）、Undo の 1 段にするのは `web_src/studio/session.js` `cameraToView`、今の視点を渡すのは `web_src/studio/editor.js`（`stage.pose()`）、ボタンは `StudioToolRail.vue`。打った瞬間の知らせは（未実装） | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/studio_camera_ui.test.mjs`、`tests/studio_session.test.mjs`、`tests/browser/studio_camera_button.spec.js` |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rulerStrips`（目盛りの長さと置き場所）・`rulerMarks`・`rulerDragValue`、目盛りの縮尺と長さと値の幅 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集とリセットはインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`、Roll だけのリセットは行 `roll`）。ステージへの組み込み（タブ、フレームの中の絵、目盛り、Camera タブで Output の小窓を畳むこと）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor.js`、描くのと操作は `web_src/studio/stage.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_inspector_actions.test.mjs`（Roll だけのリセット）、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
 | Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
-| ノードの入力から来た物（`port` の Sticker、上流の Scene の層、上流の背景）をステージとタイムラインに出すこと | — | `port` の Sticker の絵と 3D の素材は `web_src/studio/port_media.js` `createPortMedia`（下の部品 `pano_port_picture.js` `createPortPicture`、`pano_space.js` `stickerContentRequest`）、上流の層は `web_src/studio/upstream.js` `createStudioUpstream`（下の部品 `pano_upstream_layers.js` `createUpstreamLayers`）、上流の背景は `web_src/studio/upstream.js` `upstreamBackground`、ステージに描く物にまとめるのは `web_src/studio/stage_content.js` `stageContent`、つなぐのは `web_src/studio/editor.js`。上流の物の編集は（未実装） | `tests/studio_port_media.test.mjs`、`tests/studio_upstream.test.mjs`、`tests/studio_stage_content.test.mjs`、`tests/browser/studio_inputs.spec.js` |
+| ノードの入力から来た物（`port` の Sticker、上流の Scene の層、上流の背景）をステージとタイムラインに出すこと | — | `port` の Sticker の絵と 3D の素材は `web_src/studio/port_media.js` `createPortMedia`（下の部品 `pano_port_picture.js` `createPortPicture`、`pano_space.js` `stickerContentRequest`）、上流の層は `web_src/studio/upstream.js` `createStudioUpstream`（下の部品 `pano_upstream_layers.js` `createUpstreamLayers`）、上流の背景は `web_src/studio/upstream.js` `upstreamBackground`、ステージに描く物にまとめるのは `web_src/studio/stage_content.js` `stageContent`（深度のグリッドの色は `depthColor` で受け、知らせは `stageDepthNotice`。色の動画は `pano_depth_color.js` `createDepthColors`）、つなぐのは `web_src/studio/editor.js`。上流の物の編集は（未実装） | `tests/studio_port_media.test.mjs`、`tests/studio_upstream.test.mjs`、`tests/studio_stage_content.test.mjs`、`tests/browser/studio_inputs.spec.js` |
 | 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | Preview のウィンドウ（IMAGE・VIDEO・PANO_SCENE の source、Space、背景の範囲と `bg_color`、Scene とノード上の VIDEO の再生の位置の引き継ぎとノード上の表示・再生を止めること。視点の規則は `docs/space-and-view.md`） | — | 開くのと閉じるのは `web_src/studio/preview_window.js` `openPreviewWindow`（Scene の `bg_color` は `pano_upstream.js` `upstreamBgColor`、ノード上の Scene のビューアを止めるのは `pano_node_bridge.js` `sceneViewerWindowOpened`・`sceneViewerWindowClosed` と `pano_scene_viewer_node.js` の `rest`、ノード上の VIDEO を止めて引き継ぐのは `pano_preview_previewnode.js` の runtime の `windowOpened`・`windowClosed`。Scene の層は `upstream.js` `createStudioUpstream` と `stage_content.js` `stageContent` で読み取り専用に描く。VIDEO と Scene の背景の再生は `pano_media_session.js` `createBackgroundVideo`、ループのスイッチの記憶は `timeline_actions.js` `readLoopSetting`・`writeLoopSetting`）、画面と下端の再生の帯は `web_src/components/studio/StudioPreviewWindow.vue`、どちらで開くかは `web_src/editor_choice.js` `previewUsesNewWindow`・`createEditorChooser` の `openPreview`、Scene は `web_src/pano_editor.js` `oldEditorHooks.takeSceneViewer`（組み立ては `web_src/main.js`）。IMAGE・VIDEO のノード上の右上の `Open viewer` は `createEditorChooser` の `previewWindowTakes` を `web_src/pano_editor_extension.js` が `pano_preview_previewnode.js` の `opensWindow` に渡す | `tests/editor_choice.test.mjs`、`tests/pano_editor_extension.test.mjs`、`tests/browser/preview_window.spec.js`、`tests/browser/preview_entry.spec.js`（`web_src/main.js` を本物の frontend と同じ形の MatchType の `source` を持つノードで動かす） |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
@@ -371,6 +371,12 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 （`docs/studio-node.md` の「実行結果の `ui`」）から読む。入力をつなぎ替えた後、ノードがまだ実行していない間は、その入力の素材を
 描かない（タイムラインの行は状態にある物のとおり出る）。
 
+- `world` の 3D（実行結果の `pano_scene_files`・`pano_scene_meta`）：`docs/threejs-spark-integration.md` の「空間の表示」の `scene`
+  の項のとおり、再生ヘッドのフレームの要素を描く。深度のグリッド（`kind` が `depth_grid`：`DA3_GEOMETRY` mono と `MOGE_GEOMETRY`
+  の透視投影の列）は、`sticker` 入力の 3D と上流の層の要素も含めて、同じ文書の「`DA3_GEOMETRY` mono の深度のグリッド」のとおり、
+  入力ごとの色のプロキシの動画を再生ヘッドに合わせて描く（色が届くまでその要素は描かない。古いエディタと Preview と同じ）。
+  色を待つ間と、大きすぎる要素の知らせは、上端の中央の一行に出す（下の「一行の知らせの種類」）。ノード上の面は深度のグリッドを
+  描かない（`docs/studio-node-surface.md`、ADR 0049）。
 - `port` の Sticker（`sticker` 入力の素材）：状態にある `port` の Sticker を、その姿勢で描く。絵は再生ヘッドに合わせる
   （`docs/timeline-ui.md` の「`port` の Sticker の素材の表示」）。3D の素材は `world` の Sticker として、状態の変形で描く。
   ステージの上で自分の物と同じに選べ、ギズモ・Sky の画像のハンドル・インスペクタで動かせる。下の中央のバーは上の表のとおり
@@ -560,14 +566,14 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
 | 種類 | 印 | 出すとき |
 |---|---|---|
 | できなかった・止まった | 珊瑚の丸 | 効かなかった操作（境界で止まった、何もない所へのダブルクリック、Frame Selected で囲むものが無い、Camera を消そうとした） |
-| 気をつけてほしい | 落ち着いた黄の丸 | ノードの `state_json` を読めない（下の「閉じ方」）、背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、上流の警告、Add とドロップの失敗（3D ファイルの読み込みの失敗を含む。上の「Add とドロップの見せ方」） |
+| 気をつけてほしい | 落ち着いた黄の丸 | ノードの `state_json` を読めない（下の「閉じ方」）、背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、深度のグリッドの要素が GPU のテクスチャの上限より大きい（`depthGridTooLarge` の文。「ノードの入力から来た物」）、上流の警告、Add とドロップの失敗（3D ファイルの読み込みの失敗を含む。上の「Add とドロップの見せ方」） |
 | 済んだ | ライムの丸 | 済んだ操作の短い知らせ（左の列の Camera のボタンで Camera を動かした「Camera moved to this view」。ほかの短い知らせと同じ間で消える） |
 | 知らせるだけ | 中立の丸（主の文字の色を不透明度 55%） | 上流の Scene を待っている（「ノードの入力から来た物」）、空の画面の案内 |
-| 読み込み中 | 小さく回る輪 | 3D の表示や背景、置いた 3D ファイルを読み込んでいる |
+| 読み込み中 | 小さく回る輪 | 3D の表示や背景、置いた 3D ファイル、深度のグリッドの色の動画（「Loading depth video…」）を読み込んでいる |
 
 - 3D の表示を作れないときは、ステージの真ん中ではなく、この一行に出す。
-- 出すものが重なったときは、できなかった・止まった ＞ 済んだ操作の短い知らせ ＞ 読み込み中（3D の表示 ＞ 背景 ＞ 置いた 3D ファイル）＞ 気をつけてほしい
-  （読めない `state_json` ＞ 3D の表示 ＞ 背景 ＞ Add とドロップの失敗）＞ 上流の Scene を待っている ＞ 空の画面の案内 の順で、前のものだけを出す（`web_src/studio/notice_line.js` `topLine`）。
+- 出すものが重なったときは、できなかった・止まった ＞ 済んだ操作の短い知らせ ＞ 読み込み中（3D の表示 ＞ 背景 ＞ 置いた 3D ファイル ＞ 深度のグリッドの色）＞ 気をつけてほしい
+  （読めない `state_json` ＞ 3D の表示 ＞ 大きすぎる深度のグリッド ＞ 背景 ＞ Add とドロップの失敗）＞ 上流の Scene を待っている ＞ 空の画面の案内 の順で、前のものだけを出す（`web_src/studio/notice_line.js` `topLine`）。
 
 ## タイムラインのバー
 
@@ -733,6 +739,7 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
   背景（`pano_upstream_*`）を、その Clip range とメディアの長さの中でだけ描き、外では Scene の `bg_color`
   （`pano_upstream_bg_color`）で塗る（Studio のエディタが上流の背景を描く規則と同じ。`web_src/pano_port_media.js`
   `backgroundShownAt`）。背景のメディアが無い Scene も `bg_color` で塗る。
+- `PANO_SCENE` の層の深度のグリッドは、Studio のエディタと同じく色のプロキシの動画で描く（「ノードの入力から来た物」の `world` の 3D）。
 - IMAGE の source の絵は、ノード自身の実行結果の `pano_input_images`（実行が受けた絵の一時ファイル）を先に読み、無いときと読めないとき
   だけ、つないだ先がそのまま読めるファイル（Load Image など。実行の前）を読む。途中のノードで作った IMAGE は実行結果にしか無い
   （`docs/adr/0003-external-input-sticker-failure-boundaries.md` の Amendment 2026-03-11。Studio のエディタの自分の背景と同じ読み方で、
