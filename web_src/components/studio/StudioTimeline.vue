@@ -482,13 +482,13 @@ defineExpose({ handleDelete, copyKeys: copySelectedKeys, pasteKeys: pasteCopiedK
       </div>
       <div ref="lines" class="pano-studio-tl-lines">
         <template v-for="item in items" :key="item.key">
-          <div v-if="item.type === 'group'" class="pano-studio-tl-group" :title="item.group.tip" :data-group="item.group.key">
+          <div v-if="item.type === 'group'" class="pano-studio-tl-group" :data-tip="item.group.tip" :data-group="item.group.key">
             <span class="pano-studio-tl-group-name">{{ item.group.label }}</span>
             <span class="pano-studio-tl-group-actions">
               <button
                 type="button"
                 class="pano-studio-tl-chip"
-                :title="item.group.revert.tip"
+                :data-tip="item.group.revert.tip"
                 :aria-disabled="item.group.revert.disabled ? 'true' : null"
                 data-part="revert"
                 @click="onGroupAction(item.group, 'revert-upstream-layer')"

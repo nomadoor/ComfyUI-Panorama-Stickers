@@ -379,7 +379,7 @@ Tailwind の utility（`.hidden { display: none }` など）を持つので、Vu
 
 ## アイコン
 
-- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 51 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
+- Tabler の outline のアイコンを `web_src/icons.js` が持つ（`ICON` の名前 68 個と、Tabler の名前と SVG の中身を持つ `ICON_PATHS`）。
   `SvgIcon.vue` が `viewBox="0 0 24 24"`、`fill="none"`、`stroke="currentColor"`、`stroke-linecap` と `stroke-linejoin` は `round`、
   class `icon icon-tabler icons-tabler-outline` で描く。
 - 線の太さ：`.pano-modal` の中の Tabler のアイコンと、`.pano-btn-icon`・`.pano-btn-texticon` の中の SVG は `var(--pano-icon-stroke, 2.3)`
@@ -497,6 +497,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | Camera のカードの撮り方の札 | 2 枚を横に等分、間 6px、見出しとの間 8px、下の行との間 12px。札は高さ 68px（上の余白 10px・絵 64×32px・間 6px・名前 12px・下の余白 8px）、角丸 8px、縁の線なし。選んでいない札は地なし・二次の文字、hover で値の箱の地（`#2c2c2e`）と主の文字、選んでいる札は押したときの地（`#3c3c3f`）と主の文字。絵の線は 1.5px、格子と十字の細い線は 1px・不透明度 0.6（見本 `mode-3.html` の M1） |
 | 左上のタブ | 3D・Camera を同じ幅 108px・高さ 34px（Camera のアイコン 18px・間 6px・文字 13px の左右に約 16px） |
 | 一行の知らせの印 | 丸は 7px。読み込み中の輪は 10px、線 1.5px（線の 1/4 を主の文字の色、残りを強い線の色） |
+| 下の中央のバーの名前の欄 | 140px（どの名前、どの種類でも同じ。12px・600 の文字でおよそ 20 字）。収まらない名前は末尾を「…」で切る（`web/pano_studio.css` の `--studio-bar-name-width`、使うのは `.pano-studio-bar-name`） |
 | 左の列・視点の操作のつまみ・右下のボタン | 34px の正円、アイコン 18px（Add のアイコンだけ 22px）。見本 `controls-2.html` の R1 |
 | Easing のグラフ | 縦横 1:1（インスペクタの幅いっぱい）。上の領域が `EASING_MIN_ABOVE` より狭くなるときは、一辺を縮めて 1:1 のまま小さくする |
 | `EASING_MIN_ABOVE` | 180px（行 5 つ分）。Easing のパネルを出している間に、上の領域に残す最小の高さ |
@@ -511,11 +512,13 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | ドロップの印 | 見本 `drop-3.html`。行き先の色（World は落ち着いた黄 `#e8cf74`、Sky は氷 `#aecedb`）の角のかぎ括弧（2.5px、端と角は丸）と、同じ色の 25% の塗り。かぎ括弧の下に黒 28% の 4.5px の線。かぎ括弧の長さは、画像の板と Sky の枠では辺の 20%（Sky の枠は曲がった辺に沿って測る）、3D ファイルの仮の箱では辺の 25%（`docs/space-and-view.md`）。箱は見える面を塗る（`web_src/studio/landing.js` `DROP_LOOK`） |
 | ドロップのラベル | 見本 `drop-3.html`。高さ 26px の丸い札、左右の余白 8px と 10px、アイコン 15px（行き先の色）と文字 12px・600 の間 6px。地は窓の地の 92%、縁は行き先の色の 1px。印の外接の矩形から `DROP_LABEL_GAP` 12px 離し、ステージの端から `DROP_LABEL_MARGIN` 8px の内に置く（置き方は `docs/space-and-view.md` の「ドラッグ中の印」、`web_src/studio/landing.js` `DROP_LOOK`） |
 | Add の二択 | ステージの窓の全体に黒 55% の幕（窓の角丸に合わせる）。その中央に札を二枚横に並べ、間 16px。札は 180×150px、角丸 12px、縁の線なし、地は窓の地（不透明。後ろの絵が透けると札の形が読みにくいため）。中は上の余白 22px・絵 96×56px・間 14px・名前 15px・600（主の文字）。絵の線は 1.75px、細い線（グリッド、球の緯線）は 1px・不透明度 0.6、色は行き先の色（Sky は氷 `--studio-ice`、World は落ち着いた黄 `--studio-yellow`）。ポインタの下とフォーカスの札は、行き先の色の 16% を地に重ねる。押したときは 24% |
+| ショートカットの一覧 | 浮かせる部品の地（窓の地の 85%）、縁の線なし、角丸 12px（入れ物）、内側の余白 上 12px・左右 14px・下 12px。群を 2 列に流す（1 列の幅 248px、列の間 24px、群の間 16px）。幅はステージの窓の幅から左右の浮かせる部品の分を除いた幅を超えず、2 列が入らなければ 1 列。高さはステージの窓から上下 16px を除いた高さまでで、超えたら一覧の中だけスクロール。群の名前は 13px・600、行は 12px・500 の名前を左、キーを右寄せ、行の高さ 24px。キーの札は高さ 18px・最小の幅 18px・左右の余白 5px・角丸 5px、地は値の箱の地（`--studio-fill`）、文字 11px・600、札の間 3px、`+` は 11px。添える一行は 12px。開くと閉じるに動きは付けない |
 | World の物のガイド | 平常は白 32% の 1px と黒 32%、ホバーは白 90% の 1.5px と黒 60%、選択は落ち着いた黄 `#e8cf74` の 1.5px と黒 70%。暗い線は明るい線より 2px 太い（`web_src/studio/world_guides.js` `GUIDE_LOOKS`） |
 | 読み込み中のガイドの光の帯 | ガイドの見え方の上に、箱の画面の外接の矩形を左上から右下へ斜めに横切る白の帯。帯の幅は矩形の対角の 35%、真ん中が白 90%（線）と白 18%（見える面の塗り）で両側へ透明に。線は見え方の線より 1px 太い。帯は `LOAD_SHIMMER_MS` で一度横切り、繰り返す（`web_src/studio/load_reveal.js` `LOAD_LOOK`、描くのは `stage_overlay.js`） |
 | ギズモ | 見本 `specimen-11.html`。X は珊瑚、Y はライム、Z は氷。ポインタの下とドラッグしている取っ手は、その軸の色を白へ 35% 寄せた色で、線 3.5px・玉の半径 6.5px・Scale の四角の一辺 11px（白にはしない）。届く長さ（中心から棒の先、輪の半径）52px、線 2.5px で端は丸。Move の玉は半径 5px、中心の白い点は半径 4px（Move の中心の点のドラッグ中は 5.5px）。Rotate の輪の奥の半分は 35% の不透明。Scale の先は一辺 9px・角丸 2px の四角。棒・玉・四角・輪・平面の四角の下に黒 40% の下敷き（線は取っ手の線より 2px 太く、玉と四角は 1px ずつ外へ広い）、中心の白い点には黒 40% の 1.5px の縁。視線とほぼ平行な軸を隠す `GIZMO_HIDE_RATIO` は 0.2。当たりの幅は玉・四角・中心の点が 9px、棒と輪が 6px。Move の平面の四角は、二つの軸の届く長さの `GIZMO_PLANE_FROM` 0.28 から `GIZMO_PLANE_TO` 0.52 まで（正面から見て一辺約 12.5px）。色はその面に垂直な軸の色（Blender にならう：XY は氷、YZ は珊瑚、XZ はライム）の 40% の塗りと、同じ色の 1px の縁（下に黒 40% の 3px の縁）。ポインタの下とドラッグしている四角は、その色を白へ 35% 寄せた色の 60% の塗りと同じ色の縁。当たりは写した四角の中。ドラッグ中の軸のガイドの線は、その軸の色の 1.5px・不透明度 80%・端は丸、2D の層でなめらかに描く（`web_src/studio/gizmo_overlay.js` `GIZMO_LOOK`・`GIZMO_COLORS`） |
 | 地面のグリッドの軸 | X 軸はギズモの X と同じ珊瑚 `#f37159`、Z 軸は氷 `#aecedb`、どちらも不透明度 75%（Y 軸の線は描かない。`web_src/studio/grid.js` `GRID_COLORS`。古い UI のグリッドは変えない） |
 | Sky の画像のハンドル | 枠は選択のガイドと同じ太さで色は氷 `#aecedb`（下に黒 70%）、四隅は半径 5px・辺の中点は 3.5px・回転は 6px の氷の丸に黒 70% の 1.5px の縁（`web_src/studio/world_guides.js` `GUIDE_LOOKS.skySelected`、描くのは `web_src/studio/stage_overlay.js`） |
+| ツールチップ | 見本 `specimen-11.html` の `.tip`。地は強い塗り（`--studio-strong`）、文字は強い塗りの上の文字（`--studio-on-strong`）の 12px・500、行の高さ 16px、角丸 6px、余白 上下 4px・左右 8px、縁の線と影なし。文が 280px を超えるときだけ折り返す。ショートカットの印は 11px・600・不透明度 0.6、文との間 6px。部品との間 8px、エディタの枠の内側 8px より外に出さない（置き方の規則は `docs/studio-ui.md` の「ツールチップ」） |
 | タイムラインのスクロールバー | 縦だけ。幅 6px、溝は透明、つまみは主の文字の色の 22%（hover で 40%）、角丸 3px。Firefox は `scrollbar-width: thin` と同じ色 |
 | タイムラインの最小の高さ | 未定 |
 | ステージの最小の高さ | 未定 |
@@ -534,6 +537,7 @@ stylesheet の読み込みは上の「この文書が owner である規則」�
 | `160ms ease-out`、opacity | Add の二択の幕と札が出るとき |
 | `LOAD_SHIMMER_MS` 1400ms linear で一度横切る、繰り返し | 置いた 3D ファイルの読み込み中のガイドの光の帯 |
 | `LOAD_REVEAL_MS` 250ms ease-out（二次） | 置いた 3D ファイルが描けたとき：光の帯が消え、中身の不透明度が 0 から上がる。一つの描画で進むのは `LOAD_REVEAL_STEP_MS` 40ms まで（描き始めのシェーダーの準備で描画が止まっても、現れる動きを飛ばさない） |
+| `120ms ease-out`、opacity | ツールチップが出るとき（消えるときは動きを付けず即座に消す） |
 
 ほかの動きの値は、部品を作るときにこの表へ足す。頻繁に使う操作には動きを付けない（hover と切り替えの短い動きは持ち主の決定、2026-10-30）。
 OS で動きを減らす設定（`prefers-reduced-motion: reduce`）のときは、上の動きをすべて付けない（読み込み中の輪は回さずに出す。読み込み中の
@@ -547,6 +551,11 @@ OS で動きを減らす設定（`prefers-reduced-motion: reduce`）のときは
   Camera の印は `camera-plus`（見本 `specimen-11.html`）。
 - ループ（タイムラインのバー）とグリッド（ステージの右下）は、一つのアイコンのボタンで、今の状態をアイコンの形で示す（ループ
   `repeat` ／ `repeat-off`、グリッド `table` ／ `table-off`）。オンでも強い塗りにしない（`docs/agents/ux-principles.md` の例外）。
+- 下の中央のバーの前面へ・背面へ（空に貼った画像）は、Tabler の線の形にならって描いた二つの角丸の四角（`web_src/icons.js`
+  `order_front`・`order_back`。一辺 11・角丸 2 の四角を左上と右下に 4 だけ重ね、右下を動かす物にする）。前面へは右下を塗りの四角に
+  して手前に描き、左上の線の四角は右下に隠れる所を間 3.5 を空けて切る。背面へは左上の線の四角を手前に描き、右下の塗りは左上の四角に
+  隠れる所を同じ間で切った L の形にする。16〜18px で、塗りの四角が一つ見えるか L が見えるかで見分ける。古い UI の `stack-front`・
+  `stack-back`（`bring_front`・`send_back`）は変えない。
 
 ### 描画のくっきりさ
 

@@ -3,6 +3,7 @@ import { reactive } from "vue";
 import { ICON } from "/web_src/icons.js";
 import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN } from "/web_src/pano_editor_state.js";
 import { aspectLabel, parseAspect } from "/web_src/studio/ui_aspect.js";
+import { selectionBar } from "/web_src/studio/selection_bar.js";
 import StudioAspectSlider from "/web_src/components/studio/StudioAspectSlider.vue";
 import StudioCard from "/web_src/components/studio/StudioCard.vue";
 import StudioFloatGroup from "/web_src/components/studio/StudioFloatGroup.vue";
@@ -11,6 +12,7 @@ import StudioInspectorRow from "/web_src/components/studio/StudioInspectorRow.vu
 import StudioNotice from "/web_src/components/studio/StudioNotice.vue";
 import StudioNumberField from "/web_src/components/studio/StudioNumberField.vue";
 import StudioSegmented from "/web_src/components/studio/StudioSegmented.vue";
+import StudioSelectionBar from "/web_src/components/studio/StudioSelectionBar.vue";
 import StudioSlider from "/web_src/components/studio/StudioSlider.vue";
 import StudioTabs from "/web_src/components/studio/StudioTabs.vue";
 import SvgIcon from "/web_src/components/shared/SvgIcon.vue";
@@ -60,6 +62,16 @@ const NOTICES = [
   { kind: "loading", text: "Loading background…" },
 ];
 const RANGES = [{ value: "360", label: "360°" }, { value: "180", label: "180°" }];
+// The bar at the bottom center for two World objects whose names differ only in length, and for a sky image
+// (docs/studio-ui.md "下の中央のバー": the name never changes the bar's width).
+const BAR_STATE = {
+  stickers: [
+    { id: "short", placement: "world", source: { kind: "file", filename: "a.glb" } },
+    { id: "long", placement: "world", source: { kind: "file", filename: "a_very_long_file_name_for_testing.glb" } },
+    { id: "sky", placement: "sky", source: { kind: "file", filename: "poster.png" } },
+  ],
+};
+const BARS = ["short", "long", "sky"].map((row) => ({ row, model: selectionBar({ state: BAR_STATE, row }) }));
 </script>
 
 <template>
@@ -196,6 +208,10 @@ const RANGES = [{ value: "360", label: "360°" }, { value: "180", label: "180°"
 
       <div class="notices stage" :class="{ night: theme === 'dark' }" data-notices>
         <StudioNotice v-for="notice in NOTICES" :key="notice.kind" :kind="notice.kind" :text="notice.text" />
+      </div>
+
+      <div class="notices stage" :class="{ night: theme === 'dark' }" data-bars>
+        <StudioSelectionBar v-for="bar in BARS" :key="bar.row" :model="bar.model" :data-bar-row="bar.row" />
       </div>
     </div>
   </div>

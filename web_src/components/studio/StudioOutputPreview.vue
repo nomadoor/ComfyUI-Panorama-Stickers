@@ -86,7 +86,7 @@ function onGripUp() {
     class="pano-studio-output"
     :class="{ 'is-collapsed': shown.folded, 'is-suspended': suspended }"
     :style="shown.folded ? { width: `${pillWidth}px`, height: `${PILL_HEIGHT}px` } : { width: `${size.width}px`, height: `${size.height}px` }"
-    :title="suspended ? suspendedTip || null : null"
+    :data-tip="suspended ? suspendedTip || null : null"
     data-region="output"
   >
     <div class="pano-studio-output-window" :style="windowStyle" :inert="shown.folded || null" :aria-hidden="shown.folded ? 'true' : null">
@@ -95,7 +95,7 @@ function onGripUp() {
       </div>
       <span
         class="pano-studio-output-grip"
-        title="Drag to resize"
+        data-tip="Drag to resize"
         data-action="output-resize"
         @pointerdown="onGripDown"
         @pointermove="onGripMove"
@@ -111,7 +111,7 @@ function onGripUp() {
       class="pano-studio-icon-btn is-sm pano-studio-output-fold"
       :class="{ 'is-folded': shown.folded }"
       :aria-label="shown.foldable ? (shown.folded ? 'Show output' : 'Hide output') : suspendedTip || 'Output'"
-      :title="shown.foldable ? (shown.folded ? 'Show output' : 'Hide output') : suspendedTip || null"
+      :data-tip="shown.foldable ? (shown.folded ? 'Show output' : 'Hide output') : suspendedTip || null"
       :aria-expanded="String(!shown.folded)"
       :aria-disabled="shown.foldable ? null : 'true'"
       data-action="output-fold"
