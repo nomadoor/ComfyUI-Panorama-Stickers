@@ -226,6 +226,48 @@ test("Frame mode: over the background, a Camera looking slightly down pans and w
   expect(problems).toEqual([]);
 });
 
+test("Frame mode: a Lens ruler drag that shows 1.00 leaves the Camera a pinhole, so a click selects and a pan grabs 1:1", async ({ page }, testInfo) => {
+  // The Lens ruler's value is what its label shows (docs/studio-ui.md "Camera タブ" 辺の目盛り): a drag ending a pixel
+  // short of 1 (0.9975 at 400 px a unit) is 1.00, not a lens Camera that shows 1.00, on which nothing can be picked.
+  const problems = await open(page, testInfo);
+  const stage = await stageBox(page);
+  const r = await page.locator('[data-ruler="Lens"] [role="slider"]').boundingBox();
+  const cx = r.x + r.width / 2;
+  const cy = r.y + r.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy + 12, { steps: 4 });
+  await page.mouse.move(cx, cy + 1, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  await expect(page.locator('[data-ruler="Lens"] [data-ruler-value]')).toHaveText("1.00");
+  expect((await camera(page)).curve).toBe(1);
+  // A click on the red plane selects it, and a middle drag on it keeps it under the pointer.
+  const red = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
+  await page.mouse.click(stage.x + red.x, stage.y + red.y);
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("sticker_1");
+  await drag100(page, stage.x + red.x, stage.y + red.y, "middle");
+  const panned = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
+  expect(Math.abs(panned.x - (red.x + 100))).toBeLessThan(4);
+  expect(problems).toEqual([]);
+});
+
+test("Frame mode: on a lens Camera a click and a middle drag say that objects can't be picked through a lens yet", async ({ page }, testInfo) => {
+  // docs/space-and-view.md "黙って何もしない操作": the lens Camera's hits (lensPickWindow) are not wired yet.
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&curve=0.7");
+  const frame = await frameBox(page);
+  const stage = await stageBox(page);
+  const red = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
+  await page.mouse.click(stage.x + red.x, stage.y + red.y);
+  await expect(page.locator(".pano-studio-notice")).toHaveText("Objects can't be picked through a lens yet");
+  expect(await page.evaluate(() => window.__studio.session.selection.row ?? null)).toBeNull();
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0, { timeout: 5_000 });
+  await drag100(page, stage.x + frame.x + frame.width / 2, stage.y + frame.y + frame.height / 2, "middle");
+  await expect(page.locator(".pano-studio-notice")).toHaveText("Objects can't be picked through a lens yet");
+  expect(problems).toEqual([]);
+});
+
 test("Camera tab selection: a click selects the World object, outlined in yellow, with no gizmo and no bar", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo);
   const stage = await stageBox(page);
