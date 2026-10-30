@@ -578,6 +578,12 @@ export function createStage({
 
   // --- Gestures.
 
+  // On a lens Camera's Frame view a click selects nothing and a pan grabs nothing (lensPickWindow is not wired yet):
+  // the stage says so (docs/space-and-view.md "黙って何もしない操作").
+  function reportLensPick() {
+    if (viewMode() === "frame" && viewport().lens) report({ notice: "lens-pick" });
+  }
+
   function begin(action, point, pointerId, knob = null) {
     const view = navCamera();
     if (view === frameCamera) commitFrame();
@@ -588,6 +594,7 @@ export function createStage({
         break;
       case "pan":
         view?.beginPan(hitAt(knob ? center() : point));
+        if (frame && !knob) reportLensPick();
         break;
       case "joystick":
         view?.beginJoystick();
@@ -640,7 +647,10 @@ export function createStage({
       requestDraw();
       return;
     }
-    if (!cancel && ended.click && !ended.moved && viewMode() !== "erp") objectDeps?.select(null);
+    if (!cancel && ended.click && !ended.moved && viewMode() !== "erp") {
+      objectDeps?.select(null);
+      if (ended.camera === frameCamera) reportLensPick();
+    }
     input.endGesture();
     if (!keysMoving) ended.camera?.endGesture();
     if (ended.camera === frameCamera && frameCamera) {

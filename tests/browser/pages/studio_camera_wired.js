@@ -1,6 +1,6 @@
 // The new editor (web_src/studio/editor.js) on a stand-in Panorama Studio node for tests/browser/studio_camera_wired.spec.js
 // and the side-by-side with design-drafts/frame-4.html: the Camera tab wired into the stage. The state has a turned and
-// rolled Camera (?mode=frame|panorama, ?aspect=16:9|1:1|9:16, ?pitch= its pitch in degrees instead of CAMERA's), four World image planes of pure colors around the Camera
+// rolled Camera (?mode=frame|panorama, ?aspect=16:9|1:1|9:16, ?pitch= its pitch in degrees instead of CAMERA's, ?curve= its lens κ), four World image planes of pure colors around the Camera
 // (front red, right green, back blue, left yellow), a magenta sky image, and a background ERP with stripes. ComfyUI is
 // not used. The page reports through window.__studio.
 import { editorSession } from "/web_src/pano_node_bridge.js";
@@ -61,6 +61,7 @@ const STATE = {
     position: { value: [...CAMERA.position] },
     rotation: { value: { yaw_deg: CAMERA.yaw, pitch_deg: cameraPitch, roll_deg: CAMERA.roll } },
     fov: { value: CAMERA.fov },
+    ...(params.has("curve") ? { curve: { value: Number(params.get("curve")) } } : {}),
   },
   stickers: [
     ...MARKERS.map(([name, yaw, pitch, rgb], index) => ({

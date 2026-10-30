@@ -158,6 +158,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 |---|---|
 | 空（何にも当たらない所）へのダブルクリック | 「Nothing to focus on」 |
 | World の内容も選んだ物も無いときの Frame Selected | 「Nothing to frame」 |
+| Camera タブで、レンズの Camera（κ ≠ 1）の上のクリック（物を選ばない）と中ボタンのパン（掴む点が無く `T` の深さで動く）。レンズの当たり（`lensPickWindow`）が未実装の間 | 「Objects can't be picked through a lens yet」 |
 
 ## 注視点 `T`
 
