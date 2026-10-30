@@ -7,6 +7,10 @@ try:
 except ImportError:
     folder_paths = None
 
+from comfy_cpu import use_cpu_without_cuda
+
+use_cpu_without_cuda()
+
 
 @pytest.fixture(autouse=True)
 def isolated_temp_directory(tmp_path, monkeypatch):
