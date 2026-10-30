@@ -3,10 +3,12 @@
 // (web_src/studio/), ADR 0044 "新旧の境".
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { createEditorChooser, createStudioPreloader, NEW_UI_SETTING, NEW_UI_SETTING_ID } from "./editor_choice.js";
+import { createEditorChooser, createStudioPreloader, NEW_UI_SETTING, NEW_UI_SETTING_ID, previewUsesNewWindow } from "./editor_choice.js";
 import { createPanoEditorExtension } from "./pano_editor_extension.js";
 import { oldEditorHooks } from "./pano_editor.js";
+import { linkedInputType } from "./pano_preview_video.js";
 import { openStudioEditor, preloadStudioEditor } from "./studio/editor.js";
+import { openPreviewWindow } from "./studio/preview_window.js";
 
 const newUiOn = () => app?.ui?.settings?.getSettingValue?.(NEW_UI_SETTING_ID);
 
@@ -14,6 +16,8 @@ const openEditor = createEditorChooser({
   newUiOn,
   openOld: oldEditorHooks.openEditor,
   openStudio: (node) => openStudioEditor(node, { app, api }),
+  openPreview: (node) => openPreviewWindow(node, { app, api }),
+  previewTakes: (node) => previewUsesNewWindow({ type: node?.comfyClass ?? node?.type, sourceType: linkedInputType(node, "source") }),
 });
 
 const extension = createPanoEditorExtension({
