@@ -256,6 +256,8 @@ test("the Camera tab folds the Output window, faint and inert, stops its picture
   expect(await output.evaluate((el) => getComputedStyle(el).opacity)).toBe("0.4");
   // A press does nothing; a hover does not light it.
   await fold.hover();
+  // Past the hover's ease (docs/design.md "動き").
+  await page.waitForTimeout(300);
   expect(await fold.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
   await fold.click({ force: true });
   await expect(output).toHaveClass(/is-collapsed/);
@@ -338,5 +340,24 @@ test("a pressed button shows no outline and no focus fill, even refocused; the k
   expect(focused.inEditor).toBe(true);
   expect(focused.outline).toBe("none");
   if (focused.disabled !== "true") expect(focused.background).toBe(rgb);
+  // A container focused by script (the timeline, tabindex -1) keeps its own fill under the keyboard.
+  const timeline = page.locator(".pano-studio-tl");
+  const own = await timeline.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await timeline.evaluate((el) => el.focus());
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(300);
+  expect(await timeline.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(own);
+  expect(problems).toEqual([]);
+});
+
+test("over the Camera tab's dim, a ruler's reset reached by the keyboard is white on a faint fill", async ({ page }) => {
+  const problems = await open(page);
+  const reset = page.locator('[data-ruler="Roll"] [aria-label="Reset Roll"]');
+  await reset.evaluate((el) => el.focus());
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await page.waitForTimeout(300);
+  const look = await reset.evaluate((el) => ({ focused: document.activeElement === el, color: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor }));
+  expect(look).toEqual({ focused: true, color: "rgb(255, 255, 255)", background: "rgba(255, 255, 255, 0.1)" });
   expect(problems).toEqual([]);
 });

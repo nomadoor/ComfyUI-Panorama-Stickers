@@ -118,15 +118,16 @@
 
 /* Focus (docs/design.md "フォーカス"): never an outline. While the keyboard works the editor (studio/input_modality.js
    keeps data-input on its root), the focused part takes the hover fill and the main text color; a chosen (strong) or
-   disabled part keeps its fill. `--studio-focus-fill` changes the fill where the hover gray does not read (over the
-   Camera tab's dim). After a press nothing shows, nor when the focus comes back from a file picker or a dialog. */
+   disabled part keeps its fill, and a container focused only by script (tabindex -1: the timeline) takes none.
+   `--studio-focus-fill` and `--studio-focus-fg` change them where the hover gray and the main text do not read (over
+   the Camera tab's dim). After a press nothing shows, nor when the focus comes back from a file picker or a dialog. */
 .pano-studio :focus-visible {
   outline: none;
 }
 
-.pano-studio:not([data-input="pointer"]) :focus-visible:not(.is-active, .is-lit, [aria-disabled="true"], :disabled) {
+.pano-studio:not([data-input="pointer"]) :focus-visible:not(.is-active, .is-lit, [aria-disabled="true"], :disabled, [tabindex="-1"]) {
   background-color: var(--studio-focus-fill, var(--studio-fill-hover));
-  color: var(--studio-fg);
+  color: var(--studio-focus-fg, var(--studio-fg));
 }
 
 /* Text of different sizes on one line centers on the capital height (docs/design.md "文字"). Without text-box
@@ -1611,7 +1612,7 @@
 }
 
 /* The rulers' places on the frame: 14px out on the left and the right, 12px under it. Along the edge, the tick strip's
-   length and start come from studio/frame_layout.js rulerPlacement (inline), so its middle is the edge's middle. */
+   length and start come from studio/frame_layout.js rulerStrips (inline), so its middle is the edge's middle. */
 .pano-studio-at-edge-left { position: absolute; right: calc(100% + 14px); }
 .pano-studio-at-edge-right { position: absolute; left: calc(100% + 14px); }
 .pano-studio-at-edge-bottom { position: absolute; top: calc(100% + 12px); }
@@ -1621,6 +1622,7 @@
 .pano-studio-edge-ruler {
   --studio-ruler-hit: 12px;
   --studio-focus-fill: rgb(255 255 255 / 10%);
+  --studio-focus-fg: var(--studio-over-dim-strong);
   color: var(--studio-over-dim);
   font-size: var(--studio-text-sm);
 }

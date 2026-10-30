@@ -139,6 +139,9 @@ function laneDefault(list, name) {
   return list.find(([lane]) => lane === name)[1](undefined);
 }
 
+// The Roll the Camera tab's Roll reset returns to: the rotation Lane's default (frame_layout.js grays the reset there).
+export const CAMERA_ROLL_DEFAULT = laneDefault(CAMERA_LANES, "rotation").roll_deg;
+
 // An upstream element's reset: the override of the row's Lanes goes, so it inherits them again, and its working copy
 // shows the upstream value at once.
 function resetUpstream(state, sticker, lanes, upstream) {
@@ -171,7 +174,7 @@ function applyReset(state, found, row, context) {
     }
     // The Camera tab's Roll ruler resets the Roll alone; the Rotation row's reset returns Yaw and Pitch too.
     if (row === "roll") {
-      setCameraField(camera, playhead, "roll_deg", laneDefault(CAMERA_LANES, "rotation").roll_deg);
+      setCameraField(camera, playhead, "roll_deg", CAMERA_ROLL_DEFAULT);
       return { done: true };
     }
     const lanes = rowLanes(found, row);

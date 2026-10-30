@@ -110,7 +110,7 @@ function onGripUp() {
       type="button"
       class="pano-studio-icon-btn is-sm pano-studio-output-fold"
       :class="{ 'is-folded': shown.folded }"
-      :aria-label="shown.folded ? 'Show output' : 'Hide output'"
+      :aria-label="shown.foldable ? (shown.folded ? 'Show output' : 'Hide output') : suspendedTip || 'Output'"
       :title="shown.foldable ? (shown.folded ? 'Show output' : 'Hide output') : suspendedTip || null"
       :aria-expanded="String(!shown.folded)"
       :aria-disabled="shown.foldable ? null : 'true'"

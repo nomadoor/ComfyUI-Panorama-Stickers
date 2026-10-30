@@ -1,7 +1,7 @@
 // The Camera tab's layout (docs/studio-ui.md "Camera タブ"; values: docs/design.md "大きさ"): where the frame sits in the
-// stage, how wide the Roll ruler is, and the edge rulers' marks and drag. Pure functions;
+// stage, where the edge rulers' tick strips sit on it, and their marks, drag, resets. Pure functions;
 // components/studio/StudioCameraFrame.vue and StudioEdgeRuler.vue use them.
-import { CAMERA_LANES } from "../pano_scene_state.js";
+import { CAMERA_ROLL_DEFAULT } from "./inspector_actions.js";
 import { FINE_FACTOR } from "./ui_drag.js";
 
 // The stage's margins around the area the frame is fitted into, in CSS px. The top keeps 30px clear under the tabs
@@ -102,8 +102,6 @@ export function rulerDragValue(start, deltaPx, unitPx, { fine = false, min = -In
 // `lensStart` is the Lens row's (a κ edit keeps the image's center scale from where it began). Null without the
 // Camera card.
 export const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
-// The Roll a Camera's rotation Lane defaults to (pano_scene_state.js rotationValue).
-const ROLL_DEFAULT = CAMERA_LANES.find(([lane]) => lane === "rotation")[1](undefined).roll_deg;
 
 export function cameraRulers(card) {
   if (card?.kind !== "camera") return null;
@@ -129,7 +127,7 @@ export function cameraRulers(card) {
   const lens = row("lens");
   const rotation = row("rotation");
   const roll = ruler("Roll", rotation, "roll_deg", { ...ROLL_RULER_RANGE, precision: 1, scale: CAMERA_RULERS.roll, reset: "roll" });
-  roll.atDefault = roll.disabled || Math.abs(roll.value - ROLL_DEFAULT) < 1e-6;
+  roll.atDefault = roll.disabled || Math.abs(roll.value - CAMERA_ROLL_DEFAULT) < 1e-9;
   return {
     target: card.target,
     fov: ruler("FOV", hfov, "hFOV_deg", { precision: 1, scale: CAMERA_RULERS.fov, valueText: `${rulerLabel(hfov.fields[0].value, 0)}°` }),
