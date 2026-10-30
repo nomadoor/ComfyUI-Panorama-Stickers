@@ -79,7 +79,8 @@
   --studio-strong: #d6d6da;
   --studio-on-strong: #111112;
   --studio-fg-2: var(--muted-foreground, #8e8f93);
-  --studio-fg: var(--base-foreground, #dcdce0);
+  /* 主の文字だけは ComfyUI の #fff に乗せず、まぶしさを抑えた自前の値を持つ（持ち主の決定 2026-10-30）。 */
+  --studio-fg: #dcdce0;
   --studio-coral: #f37159;
   --studio-ice: #aecedb;
   --studio-lime: #d6e797;
