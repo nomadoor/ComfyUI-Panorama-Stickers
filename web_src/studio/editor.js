@@ -158,6 +158,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.canRedo = session.canRedo;
     world.ground = groundOf(session.state);
     world.camera = outputView(session.state, view.playhead).position;
+    ui.empty = ui.background === "none" && !session.state.stickers.length;
     syncMedia();
     redraw();
   }
@@ -188,9 +189,11 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const sceneBox = (url) => stage?.sceneBox(url) ?? null;
   let contentCache = null;
   function content() {
-    const key = [session.state, view.playhead, view.imageSizes, view.animations];
+    const files = sceneFiles();
+    // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
+    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : ""];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = stageContent(session.state, view.playhead, { media: stageMedia.media, editorFile: stageMedia.editorFile, sceneFiles: sceneFiles(), sceneBox });
+    const value = stageContent(session.state, view.playhead, { media: stageMedia.media, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox });
     // A World item may still be loading (no box yet): the content is made again on the next frame.
     const pending = value.space.fileStickers.length > 0 || !!value.space.scene;
     contentCache = { key, value, pending };

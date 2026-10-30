@@ -364,6 +364,16 @@ test("a wheel step during an eased move scales from the view shown, so the point
   close(len(sub(after.position, after.target)), len(sub(shown.position, shown.target)) / 1.2);
 });
 
+test("a wheel step that cannot move leaves an eased move under way going", () => {
+  // T at the farthest distance: a step out has nowhere to go.
+  const view = camera(pose({ target: [0, 0, -48] }));
+  view.focus([0, 0, -48]);
+  view.step(0.05);
+  assert.equal(view.animating(), true);
+  assert.deepEqual(view.wheel(-1, null), { moved: false, notice: "bound" });
+  assert.equal(view.animating(), true);
+});
+
 test("a wheel step eases over WHEEL_EASE_SECONDS", () => {
   const view = camera();
   view.wheel(1, null);
