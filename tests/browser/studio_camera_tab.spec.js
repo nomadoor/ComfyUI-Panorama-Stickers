@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { frameRect, rollRulerWidth } from "../../web_src/studio/frame_layout.js";
+import { frameRect, rulerStrips } from "../../web_src/studio/frame_layout.js";
 
 // The Camera tab's parts (StudioCameraFrame, StudioEdgeRuler; docs/studio-ui.md "Camera タブ", docs/design.md "大きさ")
-// on tests/browser/pages/studio_camera_tab.html: the frame fitted into the stage less 150 / 60 / 84 for each ratio, the
-// dim outside, the rulers on the frame's edges, Panorama mode's gray FOV and Lens over the live ERP, and the rulers'
+// on tests/browser/pages/studio_camera_tab.html: the frame fitted into the stage less 150 / 88 / 84 for each ratio, the
+// dim outside, the rulers' tick strips centered on the frame's edges, Panorama mode's gray FOV and Lens over the live ERP, and the rulers'
 // drag (Shift finer, Escape back).
 
 function watch(page) {
@@ -53,16 +53,18 @@ for (const [aspect, ratio] of [["16:9", 16 / 9], ["1:1", 1], ["9:16", 9 / 16]]) 
     const fov = await box(page, '[data-ruler="FOV"]');
     const lens = await box(page, '[data-ruler="Lens"]');
     const roll = await box(page, '[data-ruler="Roll"]');
+    const strips = rulerStrips(want);
     expect(fov.right).toBeCloseTo(want.x - 14, 0);
-    expect(fov.height).toBeCloseTo(want.height, 0);
+    expect(fov.height).toBeCloseTo(strips.vertical.length, 0);
     expect(lens.x).toBeCloseTo(want.x + want.width + 14, 0);
-    expect(roll.y).toBeCloseTo(want.y + want.height + 10, 0);
-    expect(roll.width).toBeCloseTo(Math.round(rollRulerWidth(want.width)), 0);
-    expect(roll.x + roll.width / 2).toBeCloseTo(want.x + want.width / 2, 0);
+    expect(roll.y).toBeCloseTo(want.y + want.height + 12, 0);
+    expect(roll.width).toBeCloseTo(strips.roll.length, 0);
+    expect(Math.abs(roll.x + roll.width / 2 - (want.x + want.width / 2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(fov.y + fov.height / 2 - (want.y + want.height / 2))).toBeLessThanOrEqual(1);
     // Numbers on the scales, the value under the middle mark among them.
     await expect(page.locator('[data-ruler="FOV"] .pano-studio-edge-ruler-num', { hasText: /^60$/ })).toHaveCount(1);
     await expect(page.locator('[data-ruler="Roll"] .pano-studio-edge-ruler-num', { hasText: /^0$/ })).toHaveCount(1);
-    await expect(page.locator("[data-timecode]")).toHaveText("00:03.06 · 78 / 240");
+    await expect(page.locator("[data-timecode]")).toHaveCount(0);
     // The left column but Undo and Redo, and Reset View, stay in place, disabled.
     for (const tool of ["cursor", "paint", "mask", "add", "camera"]) {
       await expect(page.locator(`[data-tool="${tool}"]`)).toHaveAttribute("aria-disabled", "true");

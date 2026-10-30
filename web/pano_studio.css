@@ -116,9 +116,17 @@
   stroke-width: var(--studio-icon-stroke);
 }
 
+/* Focus (docs/design.md "フォーカス"): never an outline. While the keyboard works the editor (studio/input_modality.js
+   keeps data-input on its root), the focused part takes the hover fill and the main text color; a chosen (strong) or
+   disabled part keeps its fill. `--studio-focus-fill` changes the fill where the hover gray does not read (over the
+   Camera tab's dim). After a press nothing shows, nor when the focus comes back from a file picker or a dialog. */
 .pano-studio :focus-visible {
-  outline: 2px solid var(--studio-fg);
-  outline-offset: 1px;
+  outline: none;
+}
+
+.pano-studio:not([data-input="pointer"]) :focus-visible:not(.is-active, .is-lit, [aria-disabled="true"], :disabled) {
+  background-color: var(--studio-focus-fill, var(--studio-fill-hover));
+  color: var(--studio-fg);
 }
 
 /* Text of different sizes on one line centers on the capital height (docs/design.md "文字"). Without text-box
@@ -1502,6 +1510,16 @@
   transform: rotate(180deg);
 }
 
+/* The Camera tab: folded and faint, nothing reacts (docs/design.md "大きさ"). */
+.pano-studio-output.is-suspended {
+  opacity: 0.4;
+}
+
+.pano-studio-output.is-suspended .pano-studio-output-fold {
+  opacity: 1;
+  color: var(--studio-fg);
+}
+
 /* The corner dragged for the size: faint until the pointer is over the window. */
 .pano-studio-output-grip {
   position: absolute;
@@ -1592,50 +1610,89 @@
   pointer-events: auto;
 }
 
-/* The rulers' places on the frame: 14px out on the left and the right, 10px under it. */
-.pano-studio-at-edge-left { position: absolute; right: calc(100% + 14px); top: 0; bottom: 0; }
-.pano-studio-at-edge-right { position: absolute; left: calc(100% + 14px); top: 0; bottom: 0; }
-.pano-studio-at-edge-bottom { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+/* The rulers' places on the frame: 14px out on the left and the right, 12px under it. Along the edge, the tick strip's
+   length and start come from studio/frame_layout.js rulerPlacement (inline), so its middle is the edge's middle. */
+.pano-studio-at-edge-left { position: absolute; right: calc(100% + 14px); }
+.pano-studio-at-edge-right { position: absolute; left: calc(100% + 14px); }
+.pano-studio-at-edge-bottom { position: absolute; top: calc(100% + 12px); }
 
-/* Edge ruler: a head (name, value, Keyframe dot) and a 22px scale under a fixed middle mark. */
+/* Edge ruler: the element is the tick strip (a 22px scale under a fixed middle mark); the head (name, value, Keyframe
+   dot, reset) is placed outside it, above a vertical strip and left of Roll, so it never moves the ticks. */
 .pano-studio-edge-ruler {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  --studio-ruler-hit: 12px;
+  --studio-focus-fill: rgb(255 255 255 / 10%);
   color: var(--studio-over-dim);
   font-size: var(--studio-text-sm);
 }
 
 .pano-studio-edge-ruler.is-vertical {
-  flex-direction: column;
   width: 48px;
-  height: 100%;
 }
 
 .pano-studio-edge-ruler.is-horizontal {
-  flex-direction: row;
+  height: 22px;
 }
 
-.pano-studio-edge-ruler-cap {
+.pano-studio-edge-ruler-head {
+  position: absolute;
   display: flex;
   align-items: center;
-  gap: 8px;
   white-space: nowrap;
 }
 
-.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-cap {
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-head {
+  bottom: calc(100% + 8px);
+  left: 50%;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  transform: translateX(-50%);
+}
+
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-head {
+  right: calc(100% + 10px);
+  top: 50%;
+  gap: 8px;
+  transform: translateY(-50%);
+}
+
+.pano-studio-edge-ruler-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pano-studio-edge-ruler-acts .pano-studio-keydot {
+  width: 12px;
+  height: var(--studio-btn-sm);
+}
+
+.pano-studio-edge-ruler-acts .pano-studio-icon-btn {
+  color: var(--studio-over-dim);
+}
+
+.pano-studio-edge-ruler-acts .pano-studio-icon-btn:not([aria-disabled="true"]):hover {
+  background: rgb(255 255 255 / 14%);
+  color: var(--studio-over-dim-strong);
 }
 
 .pano-studio-edge-ruler-name {
   color: var(--studio-over-dim);
 }
 
+/* A fixed width (inline, in digits) for the widest value, so the head keeps its width as the value changes. */
 .pano-studio-edge-ruler-value {
+  display: inline-block;
   color: var(--studio-over-dim-strong);
   font-weight: var(--studio-weight-head);
   font-variant-numeric: tabular-nums;
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-value {
+  text-align: center;
+}
+
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-value {
+  text-align: left;
 }
 
 .pano-studio-edge-ruler .pano-studio-keydot::before {
@@ -1648,27 +1705,45 @@
 }
 
 .pano-studio-edge-ruler-track {
-  position: relative;
-  flex: 1 1 auto;
+  position: absolute;
   touch-action: none;
+  border-radius: 6px;
 }
 
 .pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-track {
+  top: 0;
+  bottom: 0;
+  left: 13px;
   width: 22px;
-  min-height: 0;
   cursor: ns-resize;
 }
 
 .pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-track {
+  left: 0;
+  right: 0;
+  top: 0;
   height: 22px;
-  min-width: 0;
   cursor: ew-resize;
 }
 
-.pano-studio-edge-ruler-track:focus-visible {
-  outline: 1px solid var(--studio-over-dim);
-  outline-offset: 2px;
-  border-radius: 2px;
+/* The band that takes the pointer: wider than the ticks across the strip (docs/design.md "大きさ"), invisible. */
+.pano-studio-edge-ruler-track::before {
+  content: "";
+  position: absolute;
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-track::before {
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--studio-ruler-hit));
+  right: calc(-1 * var(--studio-ruler-hit));
+}
+
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-track::before {
+  left: 0;
+  right: 0;
+  top: calc(-1 * var(--studio-ruler-hit));
+  bottom: calc(-1 * var(--studio-ruler-hit));
 }
 
 /* The ticks fade out toward both ends. */
@@ -1752,17 +1827,6 @@
 
 .pano-studio-edge-ruler.is-disabled .pano-studio-edge-ruler-track {
   cursor: default;
-}
-
-/* The timecode at the top center of the Camera tab: white over the dimmed picture (no shadow, docs/design.md). */
-.pano-studio-timecode {
-  display: inline-flex;
-  align-items: center;
-  height: var(--studio-btn);
-  font-size: var(--studio-text-sm);
-  color: #ffffff;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* --- Hover (docs/design.md "動き"): buttons, rows and fields ease their fill and text color in and out; a press
