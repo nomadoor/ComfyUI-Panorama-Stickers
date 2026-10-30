@@ -3,13 +3,15 @@
 // (web_src/studio/), ADR 0044 "新旧の境".
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { createEditorChooser, NEW_UI_SETTING, NEW_UI_SETTING_ID } from "./editor_choice.js";
+import { createEditorChooser, createStudioPreloader, NEW_UI_SETTING, NEW_UI_SETTING_ID } from "./editor_choice.js";
 import { createPanoEditorExtension } from "./pano_editor_extension.js";
 import { oldEditorHooks } from "./pano_editor.js";
-import { openStudioEditor } from "./studio/editor.js";
+import { openStudioEditor, preloadStudioEditor } from "./studio/editor.js";
+
+const newUiOn = () => app?.ui?.settings?.getSettingValue?.(NEW_UI_SETTING_ID);
 
 const openEditor = createEditorChooser({
-  newUiOn: () => app?.ui?.settings?.getSettingValue?.(NEW_UI_SETTING_ID),
+  newUiOn,
   openOld: oldEditorHooks.openEditor,
   openStudio: (node) => openStudioEditor(node, { app, api }),
 });
@@ -20,5 +22,17 @@ const extension = createPanoEditorExtension({
   openEditor,
   requestFrame: requestAnimationFrame,
 });
-extension.settings = [...extension.settings, NEW_UI_SETTING];
+// With the new editor on, its stylesheet and the three.js chunk load while the page is idle, so its stage shows at
+// once when it opens (docs/studio-ui.md "読み込み中と空の画面").
+const preloadStudio = createStudioPreloader({
+  newUiOn,
+  preload: preloadStudioEditor,
+  whenIdle: (callback) => (globalThis.requestIdleCallback ? requestIdleCallback(callback, { timeout: 5000 }) : setTimeout(callback, 1500)),
+});
+const setup = extension.setup;
+extension.setup = async function (...args) {
+  await setup?.apply(this, args);
+  preloadStudio();
+};
+extension.settings = [...extension.settings, { ...NEW_UI_SETTING, onChange: (value) => value === true && setTimeout(preloadStudio) }];
 app.registerExtension(extension);

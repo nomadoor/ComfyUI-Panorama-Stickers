@@ -8,6 +8,7 @@ import StudioCard from "/web_src/components/studio/StudioCard.vue";
 import StudioFloatGroup from "/web_src/components/studio/StudioFloatGroup.vue";
 import StudioIconButton from "/web_src/components/studio/StudioIconButton.vue";
 import StudioInspectorRow from "/web_src/components/studio/StudioInspectorRow.vue";
+import StudioNotice from "/web_src/components/studio/StudioNotice.vue";
 import StudioNumberField from "/web_src/components/studio/StudioNumberField.vue";
 import StudioSegmented from "/web_src/components/studio/StudioSegmented.vue";
 import StudioSlider from "/web_src/components/studio/StudioSlider.vue";
@@ -51,6 +52,13 @@ const THEMES = ["dark", "light"];
 const AXES = ["X", "Y", "Z"];
 const ROT_AXES = ["Y", "P", "R"];
 const MODES = [{ value: "panorama", label: "Panorama" }, { value: "frame", label: "Frame" }];
+// One top-center line of each kind (docs/studio-ui.md "一行の知らせの種類").
+const NOTICES = [
+  { kind: "stopped", text: "Nothing to frame" },
+  { kind: "warning", text: "The background could not be loaded" },
+  { kind: "info", text: "Drop an image or a 3D file, or press Add" },
+  { kind: "loading", text: "Loading background…" },
+];
 const RANGES = [{ value: "360", label: "360°" }, { value: "180", label: "180°" }];
 </script>
 
@@ -184,6 +192,10 @@ const RANGES = [{ value: "360", label: "360°" }, { value: "180", label: "180°"
             <StudioNumberField axis="V" unit="°" :precision="0" :value="s.fovSky[1]" label="FOV V" v-bind="field(theme, 'fovV', (v) => (s.fovSky[1] = v))" />
           </StudioInspectorRow>
         </StudioCard>
+      </div>
+
+      <div class="notices stage" :class="{ night: theme === 'dark' }" data-notices>
+        <StudioNotice v-for="notice in NOTICES" :key="notice.kind" :kind="notice.kind" :text="notice.text" />
       </div>
     </div>
   </div>

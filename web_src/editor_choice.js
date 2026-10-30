@@ -14,6 +14,18 @@ export const NEW_UI_SETTING = {
   defaultValue: false,
 };
 
+// Preloading the new editor (docs/studio-ui.md "読み込み中と空の画面"): returns check(), which, while the setting is on,
+// asks `whenIdle` to run preload() once (later checks do nothing). main.js calls it after ComfyUI has set up and when
+// the setting changes. newUiOn(): whether the setting is on; whenIdle(callback): runs callback when the page is idle.
+export function createStudioPreloader({ newUiOn, preload, whenIdle }) {
+  let asked = false;
+  return () => {
+    if (asked || newUiOn() !== true) return;
+    asked = true;
+    whenIdle(() => preload());
+  };
+}
+
 // openEditor(node, type, options) for the node registration. newUiOn(): whether the setting is on.
 // openOld(node, type, options): the old UI's editor. openStudio(node): the new UI's Panorama Studio editor.
 export function createEditorChooser({ newUiOn, openOld, openStudio }) {

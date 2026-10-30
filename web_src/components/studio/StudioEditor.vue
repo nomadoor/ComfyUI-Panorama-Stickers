@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { VIEW_UNAVAILABLE_MESSAGE } from "../../pano_preview_view.js";
+import { createBackdropClose } from "../../studio/backdrop.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
+import { topLine } from "../../studio/notice_line.js";
 import { selectionBar } from "../../studio/selection_bar.js";
 import { inspectorSelection } from "../../studio/session.js";
 import StudioInspector from "./StudioInspector.vue";
@@ -55,15 +56,14 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", fitTimeline);
 });
 
-// --- The top-center line: a notice before what the stage waits for, before the hint of an empty stage.
-const line = computed(() => {
-  if (props.ui.notice) return { kind: "notice", text: props.ui.notice };
-  if (props.ui.view === "loading") return { kind: "loading", text: "Loading the 3D view…" };
-  if (props.ui.background === "loading") return { kind: "loading", text: "Loading background…" };
-  if (props.ui.background === "failed") return { kind: "notice", text: "The background could not be loaded" };
-  if (props.ui.empty) return { kind: "hint", text: "Drop an image or a 3D file, or press Add" };
-  return { kind: "notice", text: "" };
-});
+// --- The top-center line and its kind (studio/notice_line.js).
+const line = computed(() => topLine(props.ui));
+
+// --- A click on the dimmed page behind the frame closes the editor like ✕ (studio/backdrop.js).
+const backdrop = createBackdropClose();
+function onBackdropUp(event) {
+  if (backdrop.up(event)) props.controller.close();
+}
 
 // --- The bar at the bottom center: the selected object's (none while nothing is selected).
 const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly }));
@@ -110,7 +110,7 @@ function setCollapsed(value) {
 </script>
 
 <template>
-  <div class="pano-studio-backdrop">
+  <div class="pano-studio-backdrop" data-region="backdrop" @pointerdown="backdrop.down" @pointerup="onBackdropUp">
     <div
       ref="root"
       class="pano-studio pano-studio-editor"
@@ -121,10 +121,9 @@ function setCollapsed(value) {
       :aria-label="nodeTitle"
     >
       <div ref="main" class="pano-studio-main">
-        <div class="pano-studio-stage" :class="{ 'is-loading': ui.background === 'loading' || ui.view === 'loading' }" data-region="stage">
+        <div class="pano-studio-stage" data-region="stage">
           <canvas ref="canvas" class="pano-studio-stage-canvas" data-stage-canvas :style="{ cursor: ui.cursor || null }" />
           <canvas ref="overlay" class="pano-studio-stage-overlay" data-stage-overlay aria-hidden="true" />
-          <div v-if="ui.view === 'failed'" class="pano-studio-stage-failed pano-studio-cap">{{ VIEW_UNAVAILABLE_MESSAGE }}</div>
 
           <StudioTabs class="pano-studio-at-tabs" value="3d" camera-disabled camera-tip="Camera view · in development" />
           <StudioToolRail

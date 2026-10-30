@@ -299,3 +299,53 @@ test("the Keyframe dot sends toggle, a reset at its default and a disabled row s
   await expect(dark.locator('[data-row="Lens"] input')).toHaveCount(0);
   expect(problems).toEqual([]);
 });
+
+test("the top-center line's mark follows its kind: coral, soft yellow, none, a turning ring", async ({ page }) => {
+  const { problems } = await open(page);
+  const marks = await page.evaluate(() => [...document.querySelectorAll('[data-theme-col="dark"] [data-notices] .pano-studio-notice')].map((line) => {
+    const dot = line.querySelector(".pano-studio-notice-dot");
+    const ring = line.querySelector(".pano-studio-notice-ring");
+    return {
+      kind: line.dataset.notice,
+      dot: dot ? getComputedStyle(dot).backgroundColor : null,
+      ring: ring ? getComputedStyle(ring).animationName : null,
+    };
+  }));
+  expect(marks).toEqual([
+    { kind: "stopped", dot: "rgb(243, 113, 89)", ring: null },
+    { kind: "warning", dot: "rgb(232, 207, 116)", ring: null },
+    { kind: "info", dot: null, ring: null },
+    { kind: "loading", dot: null, ring: "pano-studio-ring" },
+  ]);
+  expect(problems).toEqual([]);
+});
+
+test("a segmented control's thumb slides to the chosen option; hover eases, a press and reduced motion do not", async ({ page }) => {
+  const { problems } = await open(page);
+  const tabs = col(page, "dark").locator(".pano-studio-tabs");
+  const thumb = tabs.locator(".pano-studio-seg-thumb");
+  const look = () => thumb.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { transform: style.transform, duration: style.transitionDuration, timing: style.transitionTimingFunction, width: el.getBoundingClientRect().width };
+  });
+  const before = await look();
+  expect(before.duration).toBe("0.16s");
+  expect(before.timing).toBe("ease-out");
+  const item = await tabs.locator('[data-value="camera"]').evaluate((el) => el.getBoundingClientRect().width);
+  expect(before.width).toBeCloseTo(item, 0);
+  await tabs.locator('[data-value="camera"]').click();
+  // Mid-slide the thumb is between the two options; then it sits under Camera.
+  await expect.poll(async () => (await look()).transform).toBe(`matrix(1, 0, 0, 1, ${item}, 0)`);
+  // Hover: the fill and the text color ease over 120ms; a press changes at once.
+  const button = col(page, "dark").locator('.pano-studio-float.is-rail [aria-label="Add"]');
+  expect(await button.evaluate((el) => [getComputedStyle(el).transitionProperty, getComputedStyle(el).transitionDuration])).toEqual(["background-color, color", "0.12s, 0.12s"]);
+  const box = await button.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  expect(await button.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+  await page.mouse.up();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await thumb.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+  expect(await button.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+  expect(problems).toEqual([]);
+});
