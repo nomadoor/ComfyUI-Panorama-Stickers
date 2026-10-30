@@ -31,7 +31,7 @@ async function open(page, testInfo) {
 }
 
 const inspector = (page) => page.locator('[data-region="inspector"]');
-const cardTitle = (page) => inspector(page).locator(".pano-studio-card-title .pano-studio-cap").first();
+const cardTitle = (page) => inspector(page).locator(".pano-studio-card-title .pano-studio-card-name").first();
 const rowName = (page, id) => page.locator(`.pano-studio-tl-head[data-head="${id}"] [data-part="name"]`);
 const field = (page, row, name) => inspector(page).locator(`[data-row="${row}"] [data-field="${name}"]`);
 

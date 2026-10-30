@@ -24,7 +24,7 @@ let raw = loadSceneState({
     {
       id: "sticker_2",
       placement: "sky",
-      source: file("moon.png"),
+      source: file("Wake up (360° VR) - Original Short Animation - 10.02 - moon.png"),
       direction: { value: { yaw_deg: 40, pitch_deg: 12 } },
       size: { value: { hFOV_deg: 30, vFOV_deg: 20 } },
     },

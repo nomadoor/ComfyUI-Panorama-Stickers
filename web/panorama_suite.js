@@ -31778,7 +31778,7 @@ const n8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
       onCancel: o[2] || (o[2] = (a) => n("cancel"))
     }, null, 8, ["value", "ticks", "mid-tick", "snap-to", "step-to", "to-pos", "from-pos", "disabled", "label", "value-text"]));
   }
-}, i8 = ["aria-label"], o8 = { class: "pano-studio-card-title" }, a8 = { class: "pano-studio-cap" }, s8 = {
+}, i8 = ["aria-label"], o8 = { class: "pano-studio-card-title" }, a8 = ["data-tip"], s8 = {
   key: 1,
   class: "pano-studio-card-sub pano-studio-cap"
 }, l8 = { class: "pano-studio-card-rows" }, c8 = {
@@ -31798,7 +31798,10 @@ const n8 = ["tabindex", "aria-label", "aria-valuenow", "aria-valuetext", "aria-v
           key: 0,
           icon: e.icon
         }, null, 8, ["icon"])) : et("", !0),
-        ye("span", a8, rt(e.title), 1),
+        ye("span", {
+          class: "pano-studio-card-name",
+          "data-tip": e.title
+        }, rt(e.title), 9, a8),
         e.note ? (be(), _e("span", s8, rt(e.note), 1)) : et("", !0)
       ]),
       ye("div", l8, [
