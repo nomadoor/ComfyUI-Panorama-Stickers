@@ -293,7 +293,10 @@ export function createStageObjects({
 
   // What a left press without Alt at `point` does: a drag handler { move(point, event), end(), cancel() }, or null
   // when it touches nothing (the stage looks around; its click without a move lets the selection go).
-  function press(point) {
+  // `through` ({ camera, width, height }, with `point` in its px) is the view a lens Camera's Frame view picks in (stage_view.js
+  // lensPickView: a cube face's pinhole): the GPU pick and the sky images are tested there (docs/space-and-view.md
+  // "レンズの Camera の当たり"). The stage hands it in the Camera tab only, where a press only selects.
+  function press(point, through = null) {
     const canEdit = editable();
     if (canEdit) {
       const drag = gizmoDrag(point);
@@ -306,8 +309,8 @@ export function createStageObjects({
         }
       }
     }
-    const { width, height } = size();
-    const picked = editorView.pickSticker(camera(), point.x, point.y, width, height);
+    const view = through ?? { camera: camera(), ...size() };
+    const picked = editorView.pickSticker(view.camera, point.x, point.y, view.width, view.height);
     if (picked && stickerOf(picked)?.placement === "world") {
       select(picked);
       return selectOnly();
@@ -316,7 +319,7 @@ export function createStageObjects({
       select("camera");
       return selectOnly();
     }
-    const sky = skyUnder(skyItems(state(), content()), projection(), point);
+    const sky = skyUnder(skyItems(state(), content()), through ? viewProjection(view.camera, view.width, view.height) : projection(), point);
     if (sky) {
       select(sky.item.id);
       return canEdit && !sky.item.locked ? skyDrag("move", sky.item, sky.geometry, point) : selectOnly();

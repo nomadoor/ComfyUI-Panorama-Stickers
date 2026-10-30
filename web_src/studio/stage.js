@@ -13,7 +13,7 @@ import { editorKeyAction } from "./shortcuts.js";
 import { placedCamera } from "../pano_space.js";
 import { shortestYawDelta } from "../pano_camera_math.js";
 import { liveErpSize, liveErpView } from "./erp_preview.js";
-import { STAGE_CLEAR_COLOR, cameraFrameView, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
+import { STAGE_CLEAR_COLOR, cameraFrameView, frameViewFov, lensPickView, lensPinholePoint, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
 import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, navigationAction, stageCursor } from "./view_input.js";
 import { BOUND_NOTICE_SECONDS, FRAME_WHEEL_REST_MS, PITCH_LIMIT, eyeHeight, frameSeconds } from "./view_scale.js";
@@ -187,7 +187,7 @@ export function createStage({
       frameCamera.setWorld({ ground: world.ground, boxes: [], content: content()?.sphere ?? null, camera: null });
       frameCamera.enter(want);
     }
-    frameCamera.setScreen({ width: frame.width, height: frame.height, hFOV_deg: shot.hFOV_deg });
+    frameCamera.setScreen({ width: frame.width, height: frame.height, hFOV_deg: frameViewFov(shot) });
     if (!frameGesture && !drag && !keysMoving && !samePose(frameCamera.pose(), want)) frameCamera.enter(want);
   }
 
@@ -213,8 +213,9 @@ export function createStage({
     return { x: point.x - view.x, y: point.y - view.y };
   }
 
-  // Objects are selected (and edited, in the 3D tab) on the 3D tab and the Frame view of a pinhole Camera. A lens
-  // Camera's picture is bent, so the pinhole hits and guides would not lie on it (lensPickWindow is not wired yet).
+  // The guides and the CPU hover show on the 3D tab and the Frame view of a pinhole Camera. A lens Camera's picture is
+  // bent, so the pinhole guides would not lie on it (not drawn yet: docs/space-and-view.md "レンズの Camera の当たり");
+  // its objects are still selected by a press (pickView()).
   function objectsOn() {
     const mode = viewMode();
     return !!objects && (mode === "space" || (mode === "frame" && !viewport().lens));
@@ -551,14 +552,32 @@ export function createStage({
     return { x: view.x + view.width / 2, y: view.y + view.height / 2 };
   }
 
-  // The surface hit under `point` (the stage's CSS px): the GPU pick of the World content (pano_three_view.js pick) and
-  // the ground. A lens Camera's bent picture is not hit (lensPickWindow is not wired yet): its moves use T.
-  function hitAt(point) {
+  // Where a pick at `point` (the stage's CSS px) looks: { camera, x, y, width, height }, the view's camera and the point
+  // in its box; on a lens Camera's Frame view the cube face its ray crosses and its pixel there (stage_view.js
+  // lensPickView), null past 180° off the axis.
+  function pickView(point) {
     const view = viewport();
-    if (view.lens) return null;
     const { x, y } = local(point, view);
-    const picked = editorView.pick(view.camera, x, y, view.width, view.height);
-    return surfaceHit(view.camera, x, y, view.width, view.height, { ground: world.ground, picked });
+    if (view.lens) return lensPickView(view, x, y);
+    return { camera: view.camera, x, y, width: view.width, height: view.height };
+  }
+
+  // The surface hit under `point` (the stage's CSS px): the GPU pick of the World content (pano_three_view.js pick) and
+  // the ground. Read on a press and a wheel step only, never on a pointer move.
+  function hitAt(point) {
+    const at = pickView(point);
+    if (!at) return null;
+    const picked = editorView.pick(at.camera, at.x, at.y, at.width, at.height);
+    return surfaceHit(at.camera, at.x, at.y, at.width, at.height, { ground: world.ground, picked });
+  }
+
+  // On a lens Camera's Frame view, the point a pan takes the pointer at `point` (the stage's CSS px) as (stage_view.js
+  // lensPinholePoint), or null where it takes none; elsewhere the point itself.
+  function panPoint(point) {
+    const view = viewport();
+    if (!view.lens) return point;
+    const at = lensPinholePoint(view.lens, point.x - view.x, point.y - view.y);
+    return at && { x: at.x + view.x, y: at.y + view.y };
   }
 
   // What the pointer is over (stage_objects.js hover, the CPU test): the cursor, and a redraw when a guide or the
@@ -578,12 +597,6 @@ export function createStage({
 
   // --- Gestures.
 
-  // On a lens Camera's Frame view a click selects nothing and a pan grabs nothing (lensPickWindow is not wired yet):
-  // the stage says so (docs/space-and-view.md "黙って何もしない操作").
-  function reportLensPick() {
-    if (viewMode() === "frame" && viewport().lens) report({ notice: "lens-pick" });
-  }
-
   function begin(action, point, pointerId, knob = null) {
     const view = navCamera();
     if (view === frameCamera) commitFrame();
@@ -594,7 +607,6 @@ export function createStage({
         break;
       case "pan":
         view?.beginPan(hitAt(knob ? center() : point));
-        if (frame && !knob) reportLensPick();
         break;
       case "joystick":
         view?.beginJoystick();
@@ -603,7 +615,8 @@ export function createStage({
         break;
     }
     input.beginGesture(action);
-    drag = { action, pointerId, last: point, start: point, offset: 0, knob, camera: view };
+    // A pan on a lens Camera follows the pointer's pinhole point (panPoint), the knob's its own px.
+    drag = { action, pointerId, last: point, start: point, offset: 0, knob, camera: view, panLast: action === "pan" && !knob ? panPoint(point) : null };
     syncUi();
     requestDraw();
   }
@@ -629,7 +642,12 @@ export function createStage({
     if (!view) return;
     if (drag.action === "look") moved(view, view.look(dx, dy), "drag");
     else if (drag.action === "orbit") moved(view, view.orbit(dx, dy), "drag");
-    else if (drag.action === "pan") moved(view, view.pan(dx, dy), "drag");
+    else if (drag.action === "pan") {
+      const at = drag.knob ? null : panPoint(point);
+      if (at && drag.panLast) moved(view, view.pan(at.x - drag.panLast.x, at.y - drag.panLast.y), "drag");
+      else if (drag.knob) moved(view, view.pan(dx, dy), "drag");
+      if (at) drag.panLast = at;
+    }
     requestDraw();
   }
 
@@ -647,10 +665,7 @@ export function createStage({
       requestDraw();
       return;
     }
-    if (!cancel && ended.click && !ended.moved && viewMode() !== "erp") {
-      objectDeps?.select(null);
-      if (ended.camera === frameCamera) reportLensPick();
-    }
+    if (!cancel && ended.click && !ended.moved && viewMode() !== "erp") objectDeps?.select(null);
     input.endGesture();
     if (!keysMoving) ended.camera?.endGesture();
     if (ended.camera === frameCamera && frameCamera) {
@@ -676,6 +691,14 @@ export function createStage({
     return selection?.kind === "object" ? selection : null;
   }
 
+  // A left press on the objects (stage_objects.js press): in the view's box, or through a lens Camera's cube face.
+  function pressObject(point) {
+    const view = viewport();
+    if (!view.lens) return objects.press(local(point, view));
+    const at = pickView(point);
+    return at ? objects.press({ x: at.x, y: at.y }, { camera: at.camera, width: at.width, height: at.height }) : null;
+  }
+
   // --- The stage's events.
 
   function onPointerDown(event) {
@@ -688,7 +711,7 @@ export function createStage({
     // In the Camera tab a press on an object selects it, and the drag still moves the Camera (docs/space-and-view.md
     // "Frame 表示"); a press on nothing lets the selection go on its click.
     let pressedObject = false;
-    let handler = plainLeft && objectsOn() && editorView.ready ? objects.press(local(point)) : null;
+    let handler = plainLeft && objects && editorView.ready ? pressObject(point) : null;
     if (handler && viewMode() !== "space") {
       handler.end();
       handler = null;
