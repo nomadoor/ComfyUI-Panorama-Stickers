@@ -7,10 +7,14 @@
 // createStageMedia loads what the state names (the Stickers' images, the 3D files' editor files from the file route)
 // once per source while the editor is open; stageContent() is pure over what has loaded.
 //
-// Not drawn yet: the painting, the port Sticker (its media and its 3D item), the upstream Scene's layers, a `scene`
-// input that is a depth grid (its colors come from a proxy video the editor does not play yet).
+// [inputs] What comes from the node's inputs is drawn too (docs/studio-ui.md "ノードの入力から来た物"): the port
+// Sticker through `media` (studio/port_media.js) and its 3D media (`stickerFiles`), and the upstream Scene's layers
+// (`upstream`, studio/upstream.js).
+//
+// Not drawn yet: the painting, a `scene` input or an upstream item that is a depth grid (its colors come from a proxy
+// video the editor does not play yet).
 import { skyLayers, worldStickerLayers } from "../pano_editor_view.js";
-import { sourceAsset } from "../pano_editor_state.js";
+import { skyStickerVfov, sourceAsset } from "../pano_editor_state.js";
 import { createFile3dEditorFiles, file3dEditorFileOf } from "../pano_file_3d.js";
 import { evaluateSceneState } from "../pano_scene_eval.js";
 import { is3dFileSource } from "../pano_scene_state.js";
@@ -22,6 +26,8 @@ import {
   sceneContentBox,
   sceneRequest,
   stickerAnimationClips,
+  stickerContentRequest,
+  stickerContentUrls,
   worldStickerPlane,
 } from "../pano_space.js";
 
@@ -106,20 +112,46 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
 // (pano_space.js sceneFilesOf) or null; `sceneBox(url)` the box of a loaded item (the lower view's), null while it
 // loads. `layers` are the sky layers back to front; `space` the World part of a render's space (the `scene` item, the
 // 3D file Stickers' items, the world image planes); `sphere` the sphere around the World content, null without any.
-export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null }) {
+// [inputs] `stickerFiles` is the `sticker` input's 3D media (studio/port_media.js files()) or null; `upstream` what the
+// upstream layers draw at `frame` ({ sky, stickers, items }, pano_upstream_layers.js viewInput) or null. A sky port
+// Sticker's evaluated vFOV is the one its media's aspect gives (pano_editor_state.js skyStickerVfov), as drawn.
+export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null }) {
   const evaluated = evaluateSceneState(state, frame);
-  const layers = skyLayers(state, frame, { media, zIndex: (sticker) => Number(sticker.z_index || 0), paintLayers: [], evaluated });
-  const stickers = worldStickerLayers(state, frame, state.stickers, { media, evaluated });
+  // Each Sticker's media once per content: the port Sticker's follows the playhead (one follow per frame).
+  const shown = new Map();
+  const mediaOnce = (sticker) => {
+    if (!shown.has(sticker)) shown.set(sticker, media(sticker));
+    return shown.get(sticker);
+  };
+  state.stickers.forEach((sticker, index) => {
+    if (sticker.placement !== "sky" || sticker.source.kind !== "port") return;
+    const picture = mediaOnce(sticker);
+    if (picture) evaluated.stickers[index].vFOV_deg = skyStickerVfov(sticker, evaluated.stickers[index], mediaSize(picture.media));
+  });
+  const ownLayers = skyLayers(state, frame, { media: mediaOnce, zIndex: (sticker) => Number(sticker.z_index || 0), paintLayers: [], evaluated });
+  // The upstream Scene's sky lies under the node's own (each layer keeps its own order).
+  const layers = upstream ? [...upstream.sky, ...ownLayers] : ownLayers;
+  const stickers = worldStickerLayers(state, frame, state.stickers, { media: mediaOnce, evaluated });
   const files = sceneFiles && sceneFiles.kind !== "depth_grid" ? sceneFiles : null;
   const scene = sceneRequest(files, evaluated.scene, state.scene.animation, state.timeline.fps);
   const box = scene?.url ? sceneContentBox(scene, sceneBox(scene.url)) : null;
-  const fileStickers = fileStickerRequests(state, evaluated, editorFile);
+  const portFiles = stickerFiles && stickerFiles.kind !== "depth_grid" ? stickerFiles : null;
+  const sticker = stickerContentRequest(portFiles, state, evaluated);
   const items = [];
+  const stickerBox = sticker?.url ? sceneContentBox(sticker, sceneBox(sticker.url)) : null;
+  if (stickerBox) items.push({ box: stickerBox, value: sticker.value });
+  const fileStickers = fileStickerRequests(state, evaluated, editorFile);
   for (const { request } of fileStickers) {
     const itemBox = request ? sceneContentBox(request, sceneBox(request.url)) : null;
     if (itemBox) items.push({ box: itemBox, value: request.value });
   }
-  const sphere = boundingSphere(contentPoints(evaluated, box, stickers, items));
+  const upstreamItems = (upstream?.items ?? []).filter((entry) => entry.request?.kind !== "depth_grid");
+  for (const { request, value } of upstreamItems) {
+    const itemBox = request?.url ? sceneContentBox(request, sceneBox(request.url)) : null;
+    if (itemBox) items.push({ box: itemBox, value });
+  }
+  const upstreamStickers = upstream?.stickers ?? [];
+  const sphere = boundingSphere(contentPoints(evaluated, box, [...stickers, ...upstreamStickers], items));
   return {
     evaluated,
     layers,
@@ -127,17 +159,20 @@ export function stageContent(state, frame, { media, editorFile = () => null, sce
     space: {
       sceneUrls: files ? files.urls.filter(Boolean) : [],
       scene,
-      stickerUrls: [],
-      sticker: null,
+      stickerUrls: stickerContentUrls(portFiles, state),
+      sticker,
       fileStickers: fileStickers.map((entry) => entry.request).filter(Boolean),
       fileStickerKeys: fileStickers.map((entry) => entry.key),
       stickers,
+      upstreamStickers,
+      upstreamItems,
     },
   };
 }
 
 // The sphere Frame Selected fits for the Sticker `id` (pano_space.js frameSphere): around it where it shows in the
-// World (its plane, or its 3D item's box), else around all the content (`content`, stageContent()'s).
+// World (its plane, or its 3D item's box), else around all the content (`content`, stageContent()'s). [inputs] The
+// port Sticker's 3D item is the `sticker` input's (content.space.sticker).
 export function stickerFrameSphere(state, content, id, { media, sceneBox = () => null, editorFile = () => null }) {
   const index = state.stickers.findIndex((item) => item.id === id);
   if (index < 0) return content.sphere;
@@ -146,7 +181,8 @@ export function stickerFrameSphere(state, content, id, { media, sceneBox = () =>
   const shown = sticker.placement === "world" && !is3dFileSource(sticker.source) ? media(sticker) : null;
   const size = shown ? mediaSize(shown.media) : null;
   const plane = size ? worldStickerPlane(value, sticker.crop, size.width, size.height) : null;
-  const request = is3dFileSource(sticker.source) ? fileStickerRequests({ ...state, stickers: [sticker] }, { ...content.evaluated, stickers: [value] }, editorFile)[0]?.request : null;
+  const portItem = sticker.source.kind === "port" && content.space.sticker?.id === id ? content.space.sticker : null;
+  const request = is3dFileSource(sticker.source) ? fileStickerRequests({ ...state, stickers: [sticker] }, { ...content.evaluated, stickers: [value] }, editorFile)[0]?.request : portItem;
   const box = request ? sceneContentBox(request, sceneBox(request.url)) : null;
   return frameSphere(content.sphere, { sticker, value, plane, box });
 }

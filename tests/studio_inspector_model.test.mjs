@@ -278,6 +278,14 @@ test("an upstream element's overridden rows carry the mark, and their reset is o
   assert.equal(row(card, "rotation").disabled, false);
 });
 
+test("an upstream element without a file name is titled by its own id, as its Timeline row is, not its working id", () => {
+  const layerState = load({ id: "scene_up", stickers: [{ ...sky("sticker_2"), source: { kind: "file", data_url: "data:image/png;base64,AA==" } }] });
+  const state = load();
+  const upstream = upstreamWorkingLayers([{ sceneState: layerState, ui: {} }], [], state.timeline.fps);
+  const card = model(state, { selection: { ids: ["upstream:scene_up:sticker_2"] }, upstream }).cards[0];
+  assert.equal(card.title, "sticker_2");
+});
+
 test("an element of an upstream layer whose overrides cannot be kept is shown with its rows disabled", () => {
   const { state, upstream } = upstreamFixture({ id: null });
   const card = model(state, { selection: { ids: ["upstream:#0:sticker_1"] }, upstream }).cards[0];

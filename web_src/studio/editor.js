@@ -6,7 +6,8 @@
 // keys, and the Vue shell (StudioEditor.vue with <StudioInspector> and <StudioTimeline>).
 //
 // Closing (✕, or Escape with nothing left to take back: docs/studio-ui.md "閉じ方") always saves: the state goes to
-// state_json the way the old editor writes it (session.stateText: nothing when the text already means it). The view
+// state_json the way the old editor writes it (session.stateText: nothing when the text already means it). A node
+// whose state_json cannot be read opens read-only and says so, so nothing writes over that text. The view
 // it was closed with is kept for the page (pano_node_bridge.js editorSession(node).view) and the next opening starts
 // there.
 import { createApp, markRaw, reactive, shallowReactive } from "vue";
@@ -14,7 +15,7 @@ import StudioEditor from "../components/studio/StudioEditor.vue";
 import { createComfyMediaAdapter } from "../pano_comfy_media.js";
 import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "../pano_diagnostics.js";
 import { queuePendingStickerOperation } from "../pano_editor_extension.js";
-import { cameraShot, normalizeCoverageValue, setCameraShot } from "../pano_editor_state.js";
+import { cameraShot, normalizeCoverageValue, readableStateText, setCameraShot } from "../pano_editor_state.js";
 import { preloadEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
@@ -29,8 +30,9 @@ import {
   videoMetaEntry,
 } from "../pano_media_session.js";
 import { backgroundBarEnd, backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
-import { isNodeOutputMediaCurrent, videoLinked } from "../pano_preview_video.js";
+import { isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
+import { PANO_SCENE_TYPE } from "../pano_upstream.js";
 import { loadSceneState } from "../pano_scene_state.js";
 import { sceneFilesOf, stateAnimationClips } from "../pano_space.js";
 import { sceneAtVideoFps, timelineFpsLocked, videoTimelineFps } from "../pano_video_fps.js";
@@ -38,6 +40,9 @@ import { createAddFiles } from "./add_files.js";
 import { createLoadReveal } from "./load_reveal.js";
 import { cameraOf, defaultCamera, groundOf } from "./defaults.js";
 import { createDropInput } from "./drop_input.js";
+import { guardEditorKeys } from "./key_guard.js";
+import { createPortMedia } from "./port_media.js";
+import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { editorKeyAction } from "./shortcuts.js";
@@ -68,8 +73,8 @@ function linked(node, names) {
 // The inputs whose VIDEO sets the Timeline fps (pano_video_fps.js timelineFpsLocked).
 const VIDEO_FPS_INPUTS = [...BACKGROUND_INPUTS, "sticker"];
 
-// The node's state v2 (a state that cannot be read opens as the empty state, as the old editor does), rebased to the
-// fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
+// The node's state v2 (a state that cannot be read opens as the empty state, read-only: openStudioEditor), rebased to
+// the fps a VIDEO set in the node's current result (docs/timeline-ui.md "タイムラインの表示"). `media` reads the result.
 function nodeState(node, media) {
   let scene;
   try {
@@ -86,10 +91,18 @@ const loaded = (image) => !!image?.complete && image.naturalWidth > 0;
 // background ({ media, revision, coverage }) once it has loaded, null before or without one; state() is "none" (no
 // input linked), "loading", "ready" or "failed". `coverage` is the background's span. A background VIDEO is
 // createBackgroundVideo's (openStudioEditor), shown in place of the image once it has a picture.
-function nodeBackground(node, media, onChange) {
+// [inputs] `upstream` is the upstream background standing in (studio/upstream.js upstreamBackground) or null: its image
+// comes from the node's result, at its coverage.
+function nodeBackground(node, media, onChange, upstream = null) {
   let image = null;
   let status = "none";
-  if (media.resolvePreferredExactLinkedSource(node, BACKGROUND_INPUTS).src) {
+  if (upstream) {
+    image = media.uiImage(node, upstream.imageKey, new Map(), (settled) => {
+      status = loaded(settled) ? "ready" : "failed";
+      onChange();
+    });
+    if (image) status = loaded(image) ? "ready" : "loading";
+  } else if (media.resolvePreferredExactLinkedSource(node, BACKGROUND_INPUTS).src) {
     image = media.loadPreferredExactLinkedImage(node, BACKGROUND_INPUTS, (settled) => {
       status = loaded(settled) ? "ready" : "failed";
       onChange();
@@ -97,7 +110,7 @@ function nodeBackground(node, media, onChange) {
     // A cached image may have loaded already.
     if (image) status = loaded(image) ? "ready" : "loading";
   }
-  const coverage = normalizeCoverageValue(widgetOf(node, "background_range")?.value ?? widgetOf(node, "coverage")?.value);
+  const coverage = upstream?.coverage ?? normalizeCoverageValue(widgetOf(node, "background_range")?.value ?? widgetOf(node, "coverage")?.value);
   return {
     get: () => (status === "ready" ? { media: image, revision: image.currentSrc || image.src, coverage } : null),
     state: () => status,
@@ -125,6 +138,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     throw error;
   }
   const media = createComfyMediaAdapter({ app, api });
+  // A state_json that cannot be read is kept as it is: the editor opens read-only (docs/studio-ui.md "閉じ方").
+  const stateUnreadable = !readableStateText(String(widgetOf(node, "state_json")?.value ?? ""));
+  if (stateUnreadable) readOnly = true;
   const session = createStudioSession({ state: nodeState(node, media), readOnly });
   const nodeSession = editorSession(node);
   const stateWidget = widgetOf(node, "state_json");
@@ -145,6 +161,53 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       syncMedia();
       redraw(DRAW_REASON.MEDIA);
     },
+  });
+  // [inputs] The `sticker` input's media in the node's current result (docs/studio-ui.md "ノードの入力から来た物").
+  const portMedia = createPortMedia({
+    uiList: (key) => media.uiList(node, key),
+    source: media.source,
+    current: () => isNodeOutputMediaCurrent(node, "external-sticker"),
+    fps: () => session.state.timeline.fps,
+    playing: () => !!backgroundVideo?.playback.advancing,
+    onChange: () => {
+      if (closed) return;
+      syncMedia();
+      redraw(DRAW_REASON.MEDIA);
+    },
+  });
+  // [inputs] The upstream Scene on `scene` (another Studio's PANO_SCENE): its layers from the node's current result,
+  // read-only for now (studio/upstream.js).
+  const upstreamList = () => {
+    const value = isNodeOutputMediaCurrent(node, "scene") ? media.uiValue(node, "pano_upstream_layers") : null;
+    return Array.isArray(value) && value.length ? value : null;
+  };
+  const graphNodes = () => node.graph?._nodes ?? node.graph?.nodes ?? app?.graph?._nodes ?? [];
+  const upstream = createStudioUpstream({
+    list: upstreamList,
+    linkType: () => linkedInputType(node, "scene"),
+    uiList: (key) => media.uiList(node, key),
+    state: () => session.state,
+    nodeName: (key) => upstreamNodeName(graphNodes(), key),
+    mediaSource: media.source,
+    mediaAssetSource: media.assetSource,
+    revisionOf: mediaRevisionToken,
+    playing: () => !!backgroundVideo?.playback.advancing,
+    editorFile: (sticker) => stageMedia.editorFile(sticker),
+    onMedia: () => {
+      if (closed) return;
+      upstreamMedia += 1;
+      redraw(DRAW_REASON.MEDIA);
+    },
+  });
+  // Counts the upstream layers' pictures that loaded or changed: what the stage draws of them is made again.
+  let upstreamMedia = 0;
+  const upstreamLinked = () => linkedInputType(node, "scene") === PANO_SCENE_TYPE || !!upstreamList();
+  // [inputs] The upstream background standing in while the node's own background is not linked, or null.
+  const upstreamBg = () => upstreamBackground({
+    uiList: (key) => media.uiList(node, key),
+    current: isNodeOutputMediaCurrent(node, "scene"),
+    ownLinked: backgroundLinked,
+    fps: session.state.timeline.fps,
   });
   // The `scene` input's files in the node's current result (its 3D content), or null.
   const sceneFiles = () => (isNodeOutputMediaCurrent(node, "scene")
@@ -168,7 +231,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // once its length is known, else a single image), the `scene` items, the animated 3D files' clips.
     media: {},
     background: backgroundLinked ? { end: null, video: false } : null,
-    sceneRow: sceneLinked,
+    // [inputs] An upstream Scene on `scene` has its groups of rows instead.
+    sceneRow: sceneLinked && !upstreamLinked(),
     // A VIDEO sets the Timeline fps (pano_video_fps.js).
     fpsLocked: false,
     imageSizes: {},
@@ -177,14 +241,26 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     tab: "3d",
     // The list of shortcuts is open (docs/studio-ui.md "ショートカットの一覧"): closed each time the editor opens.
     shortcuts: false,
+    // [inputs] The size of the port Sticker's media (its vFOV follows it), null before it loads.
+    portSize: null,
+    // [inputs] The upstream layers: as the Timeline shows them (studio/upstream.js timelineLayers), their working
+    // copies for the inspector, and whether the selected object is one of them (shown read-only).
+    upstream: [],
+    upstreamWorking: [],
+    upstreamSelected: false,
   });
-  const timelineCtx = () => ({ state: session.state, upstream: [], media: view.media });
+  const timelineCtx = () => ({ state: session.state, upstream: view.upstream, media: view.media });
 
   function syncMedia() {
     const state = session.state;
     const files = sceneFiles();
     const animations = stateAnimationClips(state, { sceneFiles: files, editorFile: stageMedia.editorFile });
-    view.media = { bg: backgroundMedia(), sceneItems: files?.urls.length ?? 0, animations };
+    view.media = { bg: backgroundMedia(), sceneItems: files?.urls.length ?? 0, animations, port: portMedia.meta(), upstream: upstream.output() };
+    view.portSize = portMedia.size();
+    view.upstream = upstream.timelineLayers();
+    view.upstreamWorking = upstream.working();
+    view.upstreamSelected = String(session.selection.row ?? "").startsWith("upstream:");
+    ui.upstreamPending = upstream.pending();
     view.background = backgroundLinked
       ? { end: backgroundBarEnd(state.background.clip, state.timeline.fps, view.media.bg), video: videoLinked(node, BACKGROUND_INPUTS) }
       : null;
@@ -204,8 +280,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.canRedo = session.canRedo;
     world.ground = groundOf(session.state);
     world.camera = outputView(session.state, view.playhead).position;
-    ui.empty = ui.background === "none" && !session.state.stickers.length;
     syncMedia();
+    ui.empty = stageEmpty();
     seekMovedBackground();
     redraw();
   }
@@ -240,7 +316,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     span: () => spanOf(timelineCtx()),
     loop: () => view.loop,
     // The node's own background is where its Clip range puts it (docs/timeline-ui.md "背景の行").
-    place: () => (backgroundLinked ? backgroundPlace(session.state.background.clip) : null),
+    // [inputs] An upstream background is where its Studio's Clip range puts it.
+    place: () => (backgroundLinked ? backgroundPlace(session.state.background.clip) : upstreamBg() ? backgroundPlace(upstreamBg().place) : null),
     onFrame: (frame) => {
       view.playhead = frame;
       world.camera = outputView(session.state, frame).position;
@@ -265,11 +342,13 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // Picks the background VIDEO (the node's own result, then a video file the background input loads directly) and
   // loads it; a result that came since the last call is picked up here.
   function refreshVideo() {
-    const keys = backgroundVideoKeys({ nodeName: String(node?.comfyClass || node?.type || ""), type: "stickers" });
-    const own = isNodeOutputMediaCurrent(node, "background") ? media.uiList(node, keys.videoKey)[0] || null : null;
+    // [inputs] An upstream background's VIDEO is in the result under its own keys; no file stands in for it.
+    const upstreamVideo = upstreamBg();
+    const keys = backgroundVideoKeys({ nodeName: String(node?.comfyClass || node?.type || ""), upstream: upstreamVideo, type: "stickers" });
+    const own = upstreamVideo || isNodeOutputMediaCurrent(node, "background") ? media.uiList(node, keys.videoKey)[0] || null : null;
     const chosen = backgroundVideo.choose({
       own: media.source(own),
-      file: media.linkedVideoFile(node, BACKGROUND_INPUTS),
+      file: upstreamVideo ? "" : media.linkedVideoFile(node, BACKGROUND_INPUTS),
       meta: () => videoMetaEntry(media.uiValue(node, keys.metaKey)),
       fps: session.state.timeline.fps,
     });
@@ -279,6 +358,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // The node's own background as the Auto length reads it (pano_media_session.js).
   function backgroundMedia() {
+    // [inputs] An upstream background is in the upstream length already (pano_upstream_frames).
+    if (upstreamBg()) return null;
     const video = videoLinked(node, BACKGROUND_INPUTS);
     return backgroundLengthMedia(backgroundVideoMedia(videoSource, video), { linked: backgroundLinked, videoLinked: video });
   }
@@ -302,6 +383,12 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     if (backgroundLinked && !backgroundShownAt(state.background.clip, view.playhead, state.timeline.fps, view.media.bg ?? null)) {
       return bgColorBackground(nodeBackgroundColor());
     }
+    // [inputs] An upstream background shows inside its Studio's Clip range and media, its bg_color outside them (an
+    // upstream VIDEO ends at its duration, docs/timeline-ui.md "背景の行").
+    const up = upstreamBg();
+    if (up && !backgroundShownAt(up.place, view.playhead, state.timeline.fps, backgroundVideoMedia(videoSource, true), true)) {
+      return bgColorBackground(up.color ?? nodeBackgroundColor());
+    }
     const shown = backgroundVideo.displaySource();
     if (shown && isDecodedImageReady(shown)) {
       // The VIDEO and its still are one source, so a seek keeps the frame before (pano_three_view.js).
@@ -323,7 +410,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   // --- The content at the playhead and what is selected, for the stage.
   const sceneBox = (url) => stage?.sceneBox(url) ?? null;
   // [add-drop] A placed image draws from its decoded file until its uploaded file has loaded (add_files.js).
-  const mediaOf = (sticker) => stageMedia.media(sticker) ?? addFiles.media(sticker);
+  // [inputs] The port Sticker draws the `sticker` input's picture at the playhead.
+  const mediaOf = (sticker) => (sticker.source.kind === "port" ? portMedia.picture(sticker, view.playhead) : stageMedia.media(sticker) ?? addFiles.media(sticker));
   // [add-drop] A placed 3D file's wait and reveal (load_reveal.js): its guide's band while it loads, then it fades in.
   const reducedMotion = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   const reveal = createLoadReveal({ now: () => performance.now(), reducedMotion: () => !!reducedMotion?.matches });
@@ -340,12 +428,15 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   function content() {
     reveal.retain(new Set(session.state.stickers.map((sticker) => sticker.id)));
     const files = sceneFiles();
+    // [inputs] The port Sticker's 3D media.
+    const stickerFiles = portMedia.files();
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
-    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : ""];
+    const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", upstreamList(), upstreamMedia];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox }));
-    // A World item may still be loading (no box yet): the content is made again on the next frame.
-    const pending = value.space.fileStickers.length > 0 || !!value.space.scene;
+    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead) }));
+    // A World item may still be loading (no box yet): the content is made again on the next frame. [inputs] The port
+    // Sticker's 3D item and the upstream items too.
+    const pending = value.space.fileStickers.length > 0 || !!value.space.scene || !!value.space.sticker || value.space.upstreamItems.length > 0;
     contentCache = { key, value, pending };
     return value;
   }
@@ -366,23 +457,31 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // What the top-center line says while nothing else does (docs/studio-ui.md "読み込み中と空の画面").
     background: "none",
     empty: false,
+    // [inputs] A Scene is linked to `scene` and the node's result does not have it yet.
+    upstreamPending: false,
     // [add-drop] Add and the drop (add_files.js): the Sky / World choice, the drag's mark, a placed 3D file loading,
     // and why the last file could not be placed.
     choice: null,
     drop: null,
     adding: false,
     addWarning: null,
+    // The node's state_json cannot be read: the editor is read-only (notice_line.js).
+    stateUnreadable,
   });
   const background = nodeBackground(node, media, () => {
     syncBackground();
     redraw(DRAW_REASON.MEDIA);
-  });
+  }, upstreamBg());
   // What the top-center line knows of the background: the VIDEO's while one is loaded, else the image's.
   function syncBackground() {
     const image = background.state();
     if (backgroundVideo.source) ui.background = backgroundVideo.displaySource() ? "ready" : "loading";
     else ui.background = image === "ready" || !backgroundVideo.failed ? image : "failed";
-    ui.empty = ui.background === "none" && !session.state.stickers.length;
+    ui.empty = stageEmpty();
+  }
+  // [inputs] The stage is empty with no background, no object of its own and no upstream layer.
+  function stageEmpty() {
+    return ui.background === "none" && !session.state.stickers.length && !view.upstream.length;
   }
   syncBackground();
   let noticeTimer = 0;
@@ -395,8 +494,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   }
 
   // [add-drop] Add and the drop (docs/studio-ui.md "Add とドロップの見せ方"): files become Stickers where they land.
-  // Uploads to ComfyUI's input go through its API; a queued prompt waits for them. One settled after the editor closed
-  // is written then, unless the editor was opened again.
+  // Uploads to ComfyUI's input go through its API; a queued prompt waits for them. One still uploading when the editor
+  // closes is taken over by the node's editor opened again before it ends; else it is written when it settles.
   const addFiles = createAddFiles({
     session,
     ui,
@@ -411,9 +510,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     changed: () => sync(),
     stopPlayback: () => playback.stop(),
     notice,
-    late: () => {
-      if (!openNodes.has(node)) save();
-    },
+    late: () => save(),
+    pending: nodeSession.placements,
     reveal,
   });
   let dropInput = () => {};
@@ -449,6 +547,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
 
   // Delete: the selected Keyframes first (<StudioTimeline> handleDelete), else the selected object.
   let timeline = null;
+  // The copied Keyframes (docs/timeline-ui.md "Keyframe のコピーと貼り付け"): the editor's own, kept while it is open.
+  let keyClipboard = null;
+  // The keys "copy-keys", "cut-keys" and "paste-keys" (shortcuts.js): returns whether the editor took the key.
+  function keyClipboardKey(action) {
+    if (action === "paste-keys") return !!keyClipboard && !!timeline?.pasteKeys(keyClipboard);
+    const copied = timeline?.copyKeys() ?? null;
+    if (!copied) return false;
+    keyClipboard = copied;
+    if (action === "cut-keys") timeline.handleDelete();
+    return true;
+  }
   function deleteSelection() {
     if (timeline?.handleDelete()) return;
     const outcome = session.deleteSelectedObject();
@@ -494,7 +603,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   let erpCanvas = null;
   // The Output window's canvases while it is open ({ frame, erp }), else null.
   let outputCanvases = null;
-  const backgroundColor = () => parseInt(nodeBackgroundColor().replace("#", ""), 16) || 0;
+  // [inputs] An upstream background's bg_color while it stands in.
+  const backgroundColor = () => parseInt((upstreamBg()?.color ?? nodeBackgroundColor()).replace("#", ""), 16) || 0;
   const cameraTab = {
     tab: () => view.tab,
     mode: () => (cameraOf(session.state).projection === "erp" ? "panorama" : "frame"),
@@ -548,13 +658,21 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     return true;
   }
 
-  // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js. The stage
-  // takes the movement keys and Escape.
+  // --- Keys while the editor is open: Undo / Redo, Delete, Space, 1 / 2 / 3, the table of shortcuts.js, the Keyframes'
+  // copy, cut and paste. The stage takes the movement keys and Escape.
   let rootElement = null;
+  let releaseKeyGuard = () => {};
   function onKeyDown(event) {
     if (!rootElement || !stageOwnsKey(event, rootElement)) return;
     const action = editorKeyAction(event);
     if (!action || action === "escape") return;
+    if (action === "copy-keys" || action === "cut-keys" || action === "paste-keys") {
+      // Not taken, C and X keep the browser's copy of selected text; V never pastes (nothing outside a field takes it).
+      if (!keyClipboardKey(action) && action !== "paste-keys") return;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (action.startsWith("gizmo:")) {
       // The gizmo's Move, Rotate, Scale for the selected object that has them.
       const mode = action.slice("gizmo:".length);
@@ -591,6 +709,10 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
   const controller = markRaw({
     onStage: ({ canvas, overlay = null, root }) => {
       rootElement = root;
+      // No key or clipboard event of the editor reaches ComfyUI behind it (docs/studio-ui.md "キーとクリップボードを
+      // ComfyUI に渡さない").
+      releaseKeyGuard();
+      releaseKeyGuard = guardEditorKeys(root);
       const output = outputView(session.state, 0);
       const opening = openingView({ memory: nodeSession.view, output, world: { ...world, boxes: [], content: null }, frameAvailable: false });
       stage = createStage({
@@ -686,11 +808,14 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     addFiles.close();
     dropInput();
     window.removeEventListener("keydown", onKeyDown, true);
+    releaseKeyGuard();
     backgroundVideo.close();
     backgroundVideoElement.remove();
     releasePanoCanvas(backgroundStill);
     stage?.dispose();
     stageMedia.dispose();
+    portMedia.dispose();
+    upstream.dispose();
     vueApp.unmount();
     mountHost.remove();
     openNodes.delete(node);

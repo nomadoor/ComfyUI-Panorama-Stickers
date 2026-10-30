@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { GROUND_DEFAULT } from "../../web_src/studio/defaults.js";
 import { frameRect } from "../../web_src/studio/frame_layout.js";
+import { WHEEL_FACTOR, eyeHeight, eyeLengths } from "../../web_src/studio/view_scale.js";
 
 // The Camera tab wired into the new editor's stage (web_src/studio/stage.js, stage_view.js cameraFrameView,
 // pano_three_view.js renderLiveErp, components/studio/StudioEditor.vue) on tests/browser/pages/studio_camera_wired.html,
@@ -169,6 +171,58 @@ test("Frame mode: a drag on the stage turns the Camera, one Undo step; the inspe
   expect((await camera(page)).yaw_deg).toBeCloseTo(start.yaw_deg, 4);
   // The inspector holds the Camera card only.
   await expect(page.locator('[data-region="inspector"]')).toContainText("Camera");
+  expect(problems).toEqual([]);
+});
+
+// A drag of 100 px to the right with `button` from (x, y) of the page.
+async function drag100(page, x, y, button) {
+  await page.mouse.move(x, y);
+  await page.mouse.down({ button });
+  await page.mouse.move(x + 100, y, { steps: 5 });
+  await page.mouse.up({ button });
+  await page.waitForTimeout(200);
+}
+
+test("Frame mode: a pan on a plane keeps the plane under the pointer; a wheel step there keeps it too", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const stage = await stageBox(page);
+  // The red plane, 3 ahead: grabbed with the middle button, it follows the pointer 1:1 (docs/space-and-view.md "パン").
+  const red = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
+  await drag100(page, stage.x + red.x, stage.y + red.y, "middle");
+  const panned = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
+  expect(Math.abs(panned.x - (red.x + 100))).toBeLessThan(4);
+  expect(Math.abs(panned.y - red.y)).toBeLessThan(4);
+  // One wheel step toward the plane scales about the point under the pointer: the plane stays there.
+  await page.mouse.move(stage.x + panned.x, stage.y + panned.y);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(200);
+  const wheeled = await page.evaluate((rgb) => window.__studio.stageCentroid(rgb), RED);
+  expect(Math.hypot(wheeled.x - panned.x, wheeled.y - panned.y)).toBeLessThan(4);
+  expect(problems).toEqual([]);
+});
+
+test("Frame mode: over the background, a Camera looking slightly down pans and wheels at the default depth, not at the far ground", async ({ page }, testInfo) => {
+  // Looking 3 degrees down from 1.5 above the ground: the center line meets the ground 28.6 ahead. The first T takes a
+  // ground hit only up to TARGET_DEFAULT_DISTANCE (docs/space-and-view.md "初めの `T`"), so it is that far ahead.
+  const problems = await open(page, testInfo, "aspect=16:9&mode=frame&pitch=-3");
+  const stage = await stageBox(page);
+  const frame = await frameBox(page);
+  const depth = eyeLengths(eyeHeight(GROUND_DEFAULT)).TARGET_DEFAULT_DISTANCE;
+  const sky = { x: stage.x + frame.x + frame.width / 2, y: stage.y + frame.y + frame.height * 0.1 };
+  const start = await camera(page);
+  // A pan over the sky at the top of the frame hits nothing: P moves 2 z tan(H FOV / 2) / W a pixel at T's depth z.
+  await drag100(page, sky.x, sky.y, "middle");
+  const panned = await camera(page);
+  const moved = Math.hypot(...panned.position.map((value, axis) => value - start.position[axis]));
+  const want = (2 * depth * Math.tan((start.hFOV_deg * Math.PI) / 360) / frame.width) * 100;
+  expect(Math.abs(moved - want)).toBeLessThan(want * 0.05);
+  // A wheel step toward the sky scales about T: P goes 1 - 1 / WHEEL_FACTOR of d.
+  await page.mouse.move(sky.x, sky.y);
+  await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(200);
+  const wheeled = await camera(page);
+  const stepped = Math.hypot(...wheeled.position.map((value, axis) => value - panned.position[axis]));
+  expect(Math.abs(stepped - depth * (1 - 1 / WHEEL_FACTOR))).toBeLessThan(depth * 0.02);
   expect(problems).toEqual([]);
 });
 

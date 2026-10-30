@@ -38,8 +38,8 @@ import StudioViewButtons from "./StudioViewButtons.vue";
 // The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
 // playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
 // `controller` what this shell calls: onStage({ canvas, root }) makes the stage once the elements are in the page and
-// returns its controls; onTimeline({ handleDelete }) hands over the Timeline's Delete; the inspector's and the
-// Timeline's events go to its handlers.
+// returns its controls; onTimeline({ handleDelete, copyKeys, pasteKeys }) hands over the Timeline's Delete and its
+// Keyframes' copy and paste; the inspector's and the Timeline's events go to its handlers.
 const props = defineProps({
   nodeTitle: { type: String, default: "" },
   ui: { type: Object, required: true },
@@ -63,7 +63,11 @@ const selected = computed(() => inspectorSelection(props.view.selection));
 onMounted(() => {
   stopInputMode = trackInputMode(root.value);
   stage = props.controller.onStage({ canvas: canvas.value, overlay: overlay.value, root: root.value }) ?? null;
-  props.controller.onTimeline({ handleDelete: () => timeline.value?.handleDelete() ?? false });
+  props.controller.onTimeline({
+    handleDelete: () => timeline.value?.handleDelete() ?? false,
+    copyKeys: () => timeline.value?.copyKeys() ?? null,
+    pasteKeys: (clipboard) => timeline.value?.pasteKeys(clipboard) ?? false,
+  });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
   root.value?.focus({ preventScroll: true });
   fitTimeline();
@@ -392,6 +396,7 @@ function setCollapsed(value) {
             :media="view.media"
             :background="view.background"
             :scene-row="view.sceneRow"
+            :upstream="view.upstream"
             :fps-locked="view.fpsLocked"
             :collapsed="collapsed"
             @seek="(frame) => controller.seek(frame)"
@@ -411,9 +416,11 @@ function setCollapsed(value) {
         :tab="view.tab"
         :playhead="view.playhead"
         :node-name="nodeTitle"
-        :read-only="view.readOnly"
+        :read-only="view.readOnly || view.upstreamSelected"
+        :upstream="view.upstreamWorking"
         :animations="view.animations"
         :image-sizes="view.imageSizes"
+        :port-size="view.portSize"
         :ground-saved="false"
         @edit="(edit) => controller.inspectorEdit(edit)"
         @close="controller.close()"

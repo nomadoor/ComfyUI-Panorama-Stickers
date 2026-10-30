@@ -27,14 +27,14 @@
 | 行の並びと形（Camera・背景・`scene`・ペイントの行、目の場所、`port` の Sticker のバー） | — | `pano_editor_ui_state.js` `buildTimelineModel`、`PanoTimeline.vue` | `pano_editor_ui_state.test.mjs`、`editor_background_clip.test.mjs` |
 | 目のアイコン | — | `timeline_actions.js` の `toggle-visible`、`buildTimelineModel` の `hideable` | `pano_editor_ui_state.test.mjs`、`editor_upstream.test.mjs`、`editor_background_clip.test.mjs`（`hideable`） |
 | ドラッグ中の更新を 1 フレームにまとめる | — | `web_src/pano_frame_batch.js` `createFrameBatch` | `tests/pano_frame_batch.test.mjs`、`editor_background_clip.test.mjs` |
-| 編集せずに閉じたときに `state_json` を書かない | — | `pano_editor_state.js` `sameEditorStateText` | `pano_editor_state.test.mjs` |
+| 編集せずに閉じたときに `state_json` を書かない、読めない `state_json` を空の状態で上書きしない | — | `pano_editor_state.js` `sameEditorStateText`・`editorStateWrite` | `pano_editor_state.test.mjs` |
 | 再生の状態機械 | — | `web_src/pano_video_playback.js` `createVideoPlayback`・`frameShownAt` | `tests/pano_video_playback.test.mjs`、`tests/pano_video_playback_placed_end.test.mjs` |
 | 背景の VIDEO（どの VIDEO を再生するか：自分の実行結果、次に背景の入力が直接読むファイル、読めなかったものは除く。メタ情報の長さ・fps・音声、要素への読み込みと放し方、静止画、表示する素材、Auto の長さに数える背景） | — | `web_src/pano_media_session.js` `createBackgroundVideo`・`backgroundVideoKeys`・`videoMetaEntry`・`backgroundVideoMedia`・`backgroundLengthMedia`。古い UI は `editor/media_session.js` の `refreshModalVideoSource` と `editor/timeline.js` の `transportMedia`・`backgroundMedia` から、新しい UI は `web_src/studio/editor.js` の `refreshVideo`・`backgroundMedia`・`stageBackground` から呼ぶ | `tests/pano_media_session.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs`、`tests/browser/studio_video.spec.js` |
 | VIDEO が決める Timeline fps（実行結果の `pano_timeline_fps`、fps の欄を変えられないか、開いたときの再基準化） | — | `web_src/pano_video_fps.js` `videoTimelineFps`・`timelineFpsLocked`・`sceneAtVideoFps`（`pano_editor_state.js` の `parseSceneEditorState` が呼ぶ） | `tests/pano_video_fps.test.mjs`、`tests/pano_timeline.test.mjs` |
 | 背景の行（置き方、`bg_color` を出す範囲、バーの終わり） | — | `web_src/pano_port_media.js` `backgroundPlace`・`backgroundShownAt`・`bgMediaEnd`・`backgroundBarEnd`、`editor/timeline.js` の `backgroundShown` | `editor_background_clip.test.mjs`、`pano_video_playback.test.mjs` |
-| `port` の Sticker の素材の表示 | — | `pano_port_media.js` `portMediaTime`・`portMediaFrames`・`portImageIndex`・`createFrameSequence`、`pano_video_playback.js` `createVideoFollower` | `tests/pano_video_follower.test.mjs`、`tests/test_port_media_parity.py` |
+| `port` の Sticker の素材の表示 | — | `pano_port_media.js` `portMediaTime`・`portMediaFrames`・`portImageIndex`・`createFrameSequence`、`pano_video_playback.js` `createVideoFollower`、実行結果の `ui` から再生ヘッドの絵を選ぶのは `pano_port_picture.js` `createPortPicture`（上流の層は `pano_upstream_layers.js`。古い UI の自分の `port` は `editor/media_session.js` の `followPortSticker`） | `tests/pano_video_follower.test.mjs`、`tests/test_port_media_parity.py` |
 | 上流の層の行 | — | `web_src/pano_upstream.js` `upstreamRowId`・`upstreamEditedRecords`・`upstreamOverriddenEnds`・`upstreamLayerRevertedRecords`・`upstreamDeletedCount`、`editor/upstream.js` `syncUpstreamEdits`、`web_src/components/PanoTimelineGroup.vue` | `tests/pano_upstream.test.mjs`、`editor_upstream.test.mjs`、`test_upstream_editor_parity.py` |
-| （新しい UI）上の規則を新しい UI のタイムラインで使う所：行の組み立てと表示、行と Keyframe の選択、Keyframe の移動と削除、行のポチ、目のアイコン、Clip range のドラッグ、前後の Keyframe へ飛ぶ、fps と長さの欄、ループの記憶 | — | データは `web_src/studio/timeline_model.js` `buildStudioTimeline`・`timelineEntries`・`jumpFrames`、操作は `web_src/studio/timeline_actions.js`（`applyEdit`・`selectKeys`・`moveKeys`・`deleteKeys`・`keyRow`・`toggleVisible`・`applyClipDrag`・`jumpTarget`・`lengthEdit`・`enteredFps`・`LOOP_SETTING_KEY`）、画面は `web_src/components/studio/StudioTimeline.vue`・`StudioTimelineBar.vue`・`StudioTimelineHead.vue`。記録の規則などの中身は上の行の下の部品（`pano_timeline.js` など）を呼ぶ | `tests/studio_timeline_model.test.mjs`、`tests/studio_timeline_actions.test.mjs`（共有の case は `tests/studio_timeline_fixtures.mjs`）、`tests/browser/studio_timeline.spec.js` |
+| （新しい UI）上の規則を新しい UI のタイムラインで使う所：行の組み立てと表示、行と Keyframe の選択、Keyframe の移動と削除、Keyframe のコピーと貼り付け、行のポチ、目のアイコン、Clip range のドラッグ、前後の Keyframe へ飛ぶ、fps と長さの欄、ループの記憶 | — | データは `web_src/studio/timeline_model.js` `buildStudioTimeline`・`timelineEntries`・`jumpFrames`、操作は `web_src/studio/timeline_actions.js`（`applyEdit`・`selectKeys`・`moveKeys`・`deleteKeys`・`copyKeys`・`pasteKeys`・`keyRow`・`toggleVisible`・`applyClipDrag`・`jumpTarget`・`lengthEdit`・`enteredFps`・`LOOP_SETTING_KEY`）、画面は `web_src/components/studio/StudioTimeline.vue`・`StudioTimelineBar.vue`・`StudioTimelineHead.vue`。記録の規則などの中身は上の行の下の部品（`pano_timeline.js` など）を呼ぶ | `tests/studio_timeline_model.test.mjs`、`tests/studio_timeline_actions.test.mjs`（共有の case は `tests/studio_timeline_fixtures.mjs`）、`tests/browser/studio_timeline.spec.js` |
 | （新しい UI）Clip range のバーを出す行（自分の時間を持つ物と、既定でない Clip range を持つ物）と、バーの上の Keyframe のポチの当たり | — | `web_src/studio/timeline_model.js` `hasOwnTime`（行のモデルの `clip`）、当たりは `web_src/components/studio/StudioTimeline.vue` と `web/pano_studio.css` の `.pano-studio-tl-key` | `tests/studio_timeline_model.test.mjs`、`tests/browser/studio_timeline.spec.js` |
 
 `tests/test_port_media_parity.py` は素材の時刻を `sticker_media.py` の `PortMedia`（`docs/studio-node.md`）と、
@@ -124,6 +124,7 @@
   - Camera の行が出入りしても、タイムラインのバー（再生ボタン・fps・長さ・開閉）は変わらない（`node --test` で確かめている）。行の一覧は Sticker を足したときと同じく 1 行増え、下の行が 1 行分下がる。タイムラインを開いているときは、行の分だけタイムラインが高くなり（34% まで）、ビューが低くなる。これも Sticker を足したときと同じである。
   - `scene` の行（アイコンは箱）は、`scene` 入力がつながっているとき、または `scene` が Keyframe か既定でない Clip range を持つとき（`pano_timeline.js` の `ownerTimed`）に出る。`scene` の位置・回転・大きさを変える操作とインスペクタは無いので、`scene` の行は Clip range（移動と両端の切り詰め。Sticker の行と同じ）だけを持ち、行のポチと Lane の行は出さない（行のモデルの `keyable: false`。エディタも `scene` の `key-row` を無視する。行を開くボタンは無効）。状態に `scene` の Keyframe があれば、行にポチの印だけは出る。行を選んでもキャンバスの選択は外れるだけで、何も選ばれない。
   - VIDEO や上流の Scene の fps に再基準化して開いても、編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`。今の `state_json` を再基準化したものと保存しようとする状態が同じなら書かない）ので、ノードは再実行されず、Keyframe も丸められない。
+  - 今の `state_json` が読めない（JSON として読めない、または読めない `version`）ときは、保存しようとする状態が空の状態（どの fps でも、読み込みの既定の状態を書いたものと同じ）なら書かない（`editorStateWrite`。古い UI のエディタとノード上の UI は、読めない状態を空の状態として開くので、開いて閉じただけで元のテキストを空の状態で上書きしないため）。空でない状態は書く（読めないテキストを開いた後に、物を足すなどの編集をしたとき）。新しい UI のエディタは、読めない状態を読み取り専用で開く（`docs/studio-ui.md` の「閉じ方」）。
 - タイムラインはビューの下にある。開閉や行の開閉で高さが変わるときは 180 ms かけて伸び縮みし、ビューは同じフレームのうちに新しい大きさで描き直す（横の画角と中心は保ち、上下が切れるだけ）。高さは画面の高さの 34% までで、それを超える行は中でスクロールする。prefers-reduced-motion では動かさずに切り替える。
 
 ### 前後の Keyframe へ飛ぶ（新しい UI）
@@ -221,6 +222,33 @@ Keyframe の選び方（新しい UI。ADR 0048）：
   （大きさは `docs/design.md`）、見えている菱形の少し外を押してもポチを掴む。
 - 古い UI と旧ノードのエディタは今のまま、Clip range を持つ行にいつもバーを出す。
 
+### Keyframe のコピーと貼り付け（新しい UI）
+
+選んだ Keyframe を写し、再生ヘッドの所に貼る。値を別の時刻にもう一度置くための操作である。
+
+| キー | 結果 |
+|---|---|
+| Ctrl / Cmd＋C | 選んだ Keyframe を写す |
+| Ctrl / Cmd＋X | 写してから、選んだ Keyframe を消す（消し方は Delete と同じ。Undo の 1 段） |
+| Ctrl / Cmd＋V | 写した Keyframe を再生ヘッドの所に貼る（Undo の 1 段） |
+
+- 写すもの：選んだ Keyframe（閉じた行のポチはそのフレームにある行の Lane の Keyframe、開いた行は Lane の Keyframe）の、Lane・値・
+  Easing（`position` の `handles` も）と、一番早い Keyframe からのずれ（Timeline frame の数）。どの行から写したかも覚える。ロックした行
+  の Keyframe も写せる（読むだけなので）。Keyframe を選んでいないときの Ctrl / Cmd＋C・X は何もせず、前に写したものを残す。
+- 写したものはエディタの中だけに持つ（システムのクリップボードは使わない）。エディタを開いている間は残り、閉じると消える。
+  Undo・Redo でも消えない。
+- 貼る時刻：一番早い Keyframe を再生ヘッドのフレームに置き、ほかはずれを保つ。Timeline の最後のフレーム（長さ − 1）より後に来る
+  Keyframe は貼らない（Keyframe の移動の端と同じく、貼り付けで出力を延ばさない）。Sticker と `scene` は素材基準のフレームに直して書く。
+- 貼る先：一つの行から写したときは、選んでいる物（行）が写した Lane をすべて持っていればその物に、そうでなければ写した元の行に貼る。
+  複数の行から写したときは、それぞれ写した元の行に貼る。貼る先がロックされている、読み取り専用のエディタ、上書きを持てない上流の
+  層の行、行が無くなったときは、その行には貼らない。
+- 貼る先の Lane の同じフレーム（`FRAME_EPSILON` で比べる）に Keyframe があれば、貼った方で置き換える（値と Easing ごと）。Keyframe の
+  無い Lane に貼ると、それがその Lane の最初の Keyframe になり、静的な `value` は変えない（「記録の規則」）。
+- 貼ると再生を止め、貼った Keyframe が選択になる（写したときと同じ形：ポチはポチ、Lane の Keyframe は Lane の Keyframe）。
+  貼るものが一つも無いとき（写していない、貼る先が無い、全部が最後のフレームより後）は何もしない。
+- キーを受ける条件は Delete と同じ（入力欄にフォーカスがあるときは、ブラウザの文字のコピーと貼り付けになる）。どの場合も、キーと
+  貼り付けの事象は ComfyUI に渡らない（`docs/studio-ui.md` の「キーとクリップボードを ComfyUI に渡さない」）。
+
 
 ## Camera の動き
 
@@ -301,6 +329,7 @@ Panorama Studio の `scene` 入力に上流の Scene があるとき、タイム
   - 「Revert」：その層の記録から、層の `scene` の上書き（`visible`・`clip`）と `painting_visible` を外し、`scene` とペイントを上流の値に戻す（`pano_upstream.js` の `upstreamLayerRevertedRecords`）。要素の上書きと消した記録は残す。要素の上書きを外すのはインスペクタの「Revert to upstream」。
   - 「Restore deleted (n)」：その層の記録の `deleted` を空にし、下流で消した要素をもう一度出す。n は消した記録のうち、上書きを当てる前の層にまだある要素の数（`upstreamDeletedCount`。上流で消えた id は数えない）。消した要素は選べないので、層の操作として見出しに置く（インスペクタには置かない）。
 - Delete キーは、Keyframe を選んでいればその Keyframe を消し（「記録の規則」）、そうでなければ選んだ上流の要素を消す（`docs/editor-interaction.md` の「上流の Scene の表示と編集」の「消す」）。
+- （新しい UI）上流の層の行は、編集ができるまで読み取り専用で出す（`docs/studio-ui.md` の「ノードの入力から来た物」）。
 - 自分の `scene` の行は、上流の Scene があるときは出さない（自分の `scene` は描画に使われない）。
 - タイムラインの範囲は、自分の行と同じく出力の長さちょうど（「タイムラインの長さ」）。Auto の長さに上流の Scene の長さ（実行結果の `pano_upstream_frames`）と上書きした Clip range の終わりを入れる規則は、`docs/studio-node.md` の「上流の Scene」の長さにある（`editor/upstream.js` の `upstreamOutput`、`pano_upstream.js` の `upstreamOverriddenEnds`）。エディタだけの扱いとして、まだ書き戻していない編集で変えた Clip range（ドラッグ中を含む）も上書きとして数え、ドラッグ中の Clip range は `duration` の無いものとして数える。上流の行の Clip range と Keyframe のドラッグも、自分の行と同じ規則（「タイムラインの長さ」。Clip range の移動は始まりが出力の中にある限り終わりより先へ出てよく、トリムと Keyframe は終わりで止まり、どのドラッグでも出力は延びない）。
 

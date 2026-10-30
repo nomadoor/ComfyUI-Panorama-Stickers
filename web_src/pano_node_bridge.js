@@ -26,6 +26,9 @@ const GROUPS = {
     flushBeforeQueue: null,
     // The view the editor was closed with (pano_view_memory.js viewMemory), which the next opening restores.
     view: null,
+    // The new UI's placements of Add and the drop still uploading (studio/add_files.js `pending`): an editor opened
+    // again before one ends takes it over from the closed one.
+    placements: new Set(),
   }),
   nodeSurface: () => ({
     attached: false,

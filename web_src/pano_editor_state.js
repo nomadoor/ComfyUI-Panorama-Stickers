@@ -572,12 +572,33 @@ export function newSceneId() {
 // when `current` already means it (sameEditorStateText). Panorama Studio's state without an id gets one
 // (newSceneId) on `state` here, only when the text changes anyway: opening and closing without an edit
 // still writes nothing, and a node whose state was never written has no id. Later writes keep the id.
+//
+// A `current` text that cannot be read (readableStateText) is not replaced by the empty state (docs/timeline-ui.md):
+// the editors and the node surface open such a text as the empty state, and opening and closing must leave it.
 export function editorStateWrite(node, state, current, options) {
   const text = editorStateText(node, state);
   if (sameEditorStateText(node, text, current, options)) return null;
+  if (node?.__panoSceneStateV2 && !readableStateText(current) && text === emptyStateText(state.timeline?.fps)) return null;
   if (!node?.__panoSceneStateV2 || state.id) return text;
   state.id = newSceneId();
   return editorStateText(node, state);
+}
+
+// Whether a node's state_json text can be read as a state (loadSceneState): an empty text can (the empty state); a
+// text that is not JSON, not an object or of a version it does not read cannot.
+export function readableStateText(text) {
+  try {
+    loadSceneState(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The text of the empty state at the Timeline fps `fps` (the state an unreadable text opens as, rebased).
+function emptyStateText(fps) {
+  const empty = loadSceneState(null);
+  return sceneStateText(Number.isFinite(fps) && fps !== empty.timeline.fps ? rebaseSceneState(empty, fps) : empty);
 }
 
 // Whether the widget's `current` text already means `text`. ComfyUI's execution cache compares the

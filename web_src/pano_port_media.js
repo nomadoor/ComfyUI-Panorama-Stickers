@@ -8,6 +8,13 @@ import { createPanoCanvas } from "./pano_diagnostics.js";
 import { clipActive } from "./pano_scene_eval.js";
 import { defaultClip } from "./pano_scene_state.js";
 
+// The keys of a result's `ui` that carry the port Sticker's media (docs/studio-node.md "実行結果の `ui`"): its first
+// frame, its editor MP4, the PNGs of an RGBA IMAGE batch, and their meta.
+export const EXTERNAL_STICKER_PREVIEW_KEY = "pano_sticker_input_images";
+export const PORT_VIDEO_KEY = "pano_sticker_input_videos";
+export const PORT_FRAMES_KEY = "pano_sticker_input_frames";
+export const PORT_VIDEO_META_KEY = "pano_sticker_input_video_meta";
+
 // A time a hair before a PTS (1/1000 frame) counts as that frame, as in frameShownAt.
 const PTS_HAIR = 1e-3;
 

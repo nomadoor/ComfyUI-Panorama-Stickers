@@ -82,8 +82,9 @@ const toBase64 = (bytes) => {
   return btoa(text);
 };
 
-// routeDelay: ms the 3D file route waits before it answers (a slow load).
-const studio = (window.__studio = { ready: false, error: null, uploads: [], routes: [], routeDelay: 0 });
+// routeDelay: ms the 3D file route waits before it answers (a slow load). uploadGate: a promise the upload waits
+// for before it answers (holdUploads()), or null.
+const studio = (window.__studio = { ready: false, error: null, uploads: [], routes: [], routeDelay: 0, uploadGate: null });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 
@@ -125,6 +126,7 @@ try {
         const file = options.body.get("image");
         const subfolder = options.body.get("subfolder");
         studio.uploads.push({ name: file.name, subfolder });
+        if (studio.uploadGate) await studio.uploadGate;
         served.set(`${subfolder}/${file.name}`, URL.createObjectURL(file));
         return new Response(JSON.stringify({ name: file.name, subfolder, type: "input" }), { status: 200 });
       }
@@ -155,10 +157,28 @@ try {
   // The view looks a little down from the origin: the sky in the upper half, the ground in the lower.
   studio.pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: -8, target: [0, -1.12, -7.92] };
   editorSession(node).view = rememberView(studio.pose, "panorama");
-  const editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
+  let editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
   studio.session = editor.session;
   studio.node = node;
   studio.close = () => editor.close();
+  // Closes the editor and opens it again on the same node (with `text` in state_json first, when given).
+  studio.reopen = async (text) => {
+    editor.close();
+    if (text !== undefined) node.widgets[0].value = text;
+    editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
+    studio.session = editor.session;
+    return true;
+  };
+  // The uploads wait until the returned release() is called.
+  studio.holdUploads = () => {
+    let release;
+    studio.uploadGate = new Promise((resolve) => (release = resolve));
+    studio.releaseUploads = () => {
+      studio.uploadGate = null;
+      release();
+    };
+    return true;
+  };
   studio.rendererOf = () => {
     const canvas = document.querySelector("[data-stage-canvas]");
     const gl = canvas.getContext("webgl2");

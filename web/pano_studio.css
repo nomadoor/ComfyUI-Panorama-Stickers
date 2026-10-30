@@ -1624,10 +1624,10 @@
 }
 
 /* --- The Camera tab (docs/studio-ui.md "Camera タブ", docs/design.md "形と重なり"): the frame fitted into the stage less
-   its margins (studio/frame_layout.js), the picture outside it dimmed with black at 82%, a bright 1px line on its edge,
+   its margins (studio/frame_layout.js), the picture outside it dimmed with black at 90%, a bright 1px line on its edge,
    and the edge rulers riding on it. What is drawn over the dim is white with alpha, the same in light and dark. */
 .pano-studio-camera-frame {
-  --studio-dim: rgb(8 8 9 / 82%);
+  --studio-dim: rgb(8 8 9 / 90%);
   --studio-over-dim: rgb(255 255 255 / 72%);
   --studio-over-dim-strong: #ffffff;
   --studio-over-dim-num: rgb(255 255 255 / 70%);
@@ -2267,6 +2267,7 @@
   font-size: var(--studio-text-xs);
   font-weight: var(--studio-weight-head);
   line-height: 1;
+}
 
 /* --- The tooltip (docs/studio-ui.md "ツールチップ", values docs/design.md "大きさ" and "動き"): one bubble per editor,
    beside the control (StudioTooltip.vue places it), over the floats and inside the frame. The strong fill with its

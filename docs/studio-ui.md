@@ -37,8 +37,10 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンとカードは（新しい UI、未実装）`web_src/studio/camera_ui.js` | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、（未作成）`tests/studio_camera_ui.test.mjs` |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rulerStrips`（目盛りの長さと置き場所）・`rulerMarks`・`rulerDragValue`、目盛りの縮尺と長さと値の幅 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`・`frameDisabled`（Panorama モードの Frame Selected）・`StudioNavWidget.vue` の `disabled`。辺の目盛りは Camera のカードの行（`frame_layout.js` `cameraRulers`）で、編集とリセットはインスペクタと同じ `inspector_actions.js` `applyInspectorEdit`（`rulerEdit`、Roll だけのリセットは行 `roll`）。ステージへの組み込み（タブ、フレームの中の絵、目盛り、Camera タブで Output の小窓を畳むこと）は `StudioEditor.vue`、タブと Camera の動きを状態に書くのは `web_src/studio/editor.js`、描くのと操作は `web_src/studio/stage.js`（Frame 表示は `stage_view.js` `cameraFrameView`、Panorama モードの ERP は `pano_three_view.js` `renderLiveErp`） | `tests/studio_frame_layout.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/studio_inspector_actions.test.mjs`（Roll だけのリセット）、`tests/browser/studio_camera_tab.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
 | Add のアイコンと、Add とドロップの流れ（選ぶファイル、画像の Sky / World の二択とその取り消し、置く間、失敗の知らせ）、ドラッグ中の印の見た目とラベル | — | 流れは `web_src/studio/add_files.js` `createAddFiles`（下の部品 `pano_sticker_file_import.js` のアップロード、`pano_file_3d.js` の経路）、ファイルを選ぶ画面は `web_src/components/studio/StudioEditor.vue`、二択は `web_src/components/studio/StudioPlaceChoice.vue`、ドラッグの事象は `web_src/studio/drop_input.js` `createDropInput`、印とラベルを描くのは `web_src/components/studio/StudioDropMarker.vue`（印の形と色、ラベルの置き場所 `dropLabelPlace`、着く所は `web_src/studio/landing.js`、`docs/space-and-view.md`）。読み込み中のガイドと現れる動きの時間は `web_src/studio/load_reveal.js` `createLoadReveal`（置いた 3D ファイルを知らせるのは `add_files.js`、中身の不透明度に掛けるのは `web_src/studio/editor.js`、光の帯を描くのは `stage_overlay.js`） | `tests/studio_add_files.test.mjs`、`tests/studio_landing.test.mjs`、`tests/studio_load_reveal.test.mjs`、`tests/browser/studio_add.spec.js` |
+| ノードの入力から来た物（`port` の Sticker、上流の Scene の層、上流の背景）をステージとタイムラインに出すこと | — | `port` の Sticker の絵と 3D の素材は `web_src/studio/port_media.js` `createPortMedia`（下の部品 `pano_port_picture.js` `createPortPicture`、`pano_space.js` `stickerContentRequest`）、上流の層は `web_src/studio/upstream.js` `createStudioUpstream`（下の部品 `pano_upstream_layers.js` `createUpstreamLayers`）、上流の背景は `web_src/studio/upstream.js` `upstreamBackground`、ステージに描く物にまとめるのは `web_src/studio/stage_content.js` `stageContent`、つなぐのは `web_src/studio/editor.js`。上流の物の編集は（未実装） | `tests/studio_port_media.test.mjs`、`tests/studio_upstream.test.mjs`、`tests/studio_stage_content.test.mjs`、`tests/browser/studio_inputs.spec.js` |
 | 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。Add とドロップの失敗と 3D ファイルの読み込み中は `web_src/studio/add_files.js` が `ui` に書く。上流の警告と、経路が答えた後に three.js が 3D ファイルを読めないときの知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
+| キーとクリップボードの事象をエディタの外へ出さない | — | `web_src/studio/key_guard.js` `guardEditorKeys`（組み込みは `web_src/studio/editor.js`） | `tests/studio_key_guard.test.mjs`、`tests/browser/studio_keys.spec.js` |
 | ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutGroups`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
 | ツールチップ（出す部品、出るまでの時間と消え方、置く側と反転、ショートカットの印、ドラッグ中とキーボードのフォーカス） | — | 置き場所の計算・置く側の表・ショートカットの切り出し・時間の値は `web_src/studio/tooltip.js`（`placeTip`・`tipSide`・`splitTipKeys`・`TIP_SIDES`・`TIP_DELAY`・`TIP_SKIP`・`TIP_GAP`・`TIP_EDGE`）、出し入れと描くのは `web_src/components/studio/StudioTooltip.vue`（`StudioEditor.vue` が一つ置く）。部品は説明を `data-tip` に書く | `tests/studio_tooltip.test.mjs`、`tests/studio_ui_components.test.mjs`（`title` を使わない）、`tests/browser/studio_tooltip.spec.js` |
 | 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段は `web_src/studio/add_files.js` `escape`、4 段は `web_src/studio/editor.js` `onEscape`（`view.shortcuts`）、5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2 段（地面を拾う待ち）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
@@ -313,6 +315,34 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - ドラッグはモードの Lane だけを記録の規則で書く（`pano_space.js` `gizmoDragLanes`。上の「物の中心」の Rotate と Scale の `position` を除く）。一つのドラッグが Undo の 1 段で、Escape と
   ウィンドウのフォーカスを失ったときは取り消す。ドラッグの間、取っ手の軸と比べる元の値は、つかんだときのものを使う。
 
+## ノードの入力から来た物
+
+ノードの入力から来た物を、自分の物と同じステージとタイムラインに出す。入力の素材と姿勢は、ノードの今の実行結果の `ui`
+（`docs/studio-node.md` の「実行結果の `ui`」）から読む。入力をつなぎ替えた後、ノードがまだ実行していない間は、その入力の素材を
+描かない（タイムラインの行は状態にある物のとおり出る）。
+
+- `port` の Sticker（`sticker` 入力の素材）：状態にある `port` の Sticker を、その姿勢で描く。絵は再生ヘッドに合わせる
+  （`docs/timeline-ui.md` の「`port` の Sticker の素材の表示」）。3D の素材は `world` の Sticker として、状態の変形で描く。
+  ステージの上で自分の物と同じに選べ、ギズモ・Sky の画像のハンドル・インスペクタで動かせる。下の中央のバーは上の表のとおり
+  「元に戻す」を足し、Duplicate と Delete は無効（入力から来るので、消しても次の実行で戻る）。
+  - 状態に `port` の Sticker が無いときに加えること（`docs/studio-node.md` の「`port` の Sticker が状態にないとき」）は、今は
+    ノード上の表示が実行の後に行い、エディタは開いたときの状態を描く。エディタが開いている間に加えることと、Pose handoff
+    （`pano_sticker_handoff`）を当てた姿で出すことは（未実装）。
+- 上流の Scene の層（`scene` 入力の `PANO_SCENE`）：自分の上書き（状態の `upstream`）を当てた作業コピー（`docs/studio-node.md`
+  の「上流の Scene」）を、再生ヘッドで描く。空に貼った物は自分の空の物の下に、World の物は自分の物と同じ空間に描く。タイムラインには
+  自分の行の下に層ごとのまとまりを出す（`docs/timeline-ui.md` の「上流の層の行」）。見出しの名前は、層の Scene の id を持つ
+  ワークフローの上の Panorama Studio のタイトル（見つからなければ層のキー）。
+  - 今は読み取り専用：ステージの上で上流の物は選べず、まとまりの行の操作（Keyframe・Clip range・目・行のポチ）と見出しの
+    Revert・Restore deleted は無効にし、tooltip は「Read-only」。行を押すとその物を選び、インスペクタは値を灰色で出す（tooltip は「Read-only」）。下の中央のバーは出さない。編集
+    （上書きを記録すること）は（未実装）。
+  - `scene` に上流の Scene がつながっているのに実行結果に層が無い（まだ実行していない）ときは、上端の中央に一行
+    「Run the workflow to show the upstream scene.」を出す（「一行の知らせの種類」の知らせるだけ）。
+- 上流の背景：自分の `background` がつながっていれば自分の背景を出し、上流の背景は出さない（`docs/studio-node.md` の「上流の
+  Scene」の背景）。つながっていなければ、上流の背景（実行結果の `pano_upstream_input_*`、広さは `pano_upstream_coverage`）を、
+  その背景を持つ Studio の Clip range（`pano_upstream_bg_clip`）で置いて出し、その外では上流の `bg_color`
+  （`pano_upstream_bg_color`）を出す（`docs/timeline-ui.md` の「背景の行」）。上流も背景を持たなければ、自分の背景が無いときと
+  同じに出す。上流の背景の行は無い。
+
 ## エディタの中の Camera
 
 - Camera はいつも一台あり、消せない。撮り方は Panorama / Frame のモードで、既定は Panorama（規則は `docs/studio-node.md`）。
@@ -415,6 +445,13 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
     その物の不透明度まで ease-out で現れる。
   - OS で動きを減らす設定のときは、光の帯を流さず（ガイドは止まったまま描く）、中身はすぐに出す。
   - 読み込み中のガイドと現れる動きは、この間に置いた 3D ファイルだけのもの。エディタを開いたときに読み込む 3D の Sticker には付けない。
+  - 置いた物は、アップロードが終わるまで Undo の段を持たない。その間の Undo・Redo は、置いた物を消さない（戻した段に置いた物が
+    無ければ、今の形のまま足し直す）。その間に置いた物を消すのは Delete だけで、消したらアップロードが終わっても置かない。
+  - アップロードの間にエディタを閉じたとき：アップロードが終わったら、その時に置いた物を `state_json` に書く（エディタは開いていない）。
+    終わる前に同じノードのエディタを開き直したら、新しいエディタが置いた物を引き継ぐ：閉じたときの形のまま状態に入れ（選ばない。
+    Undo の段は持たない）、画像は読み込んだ絵を描き、3D ファイルは読み込み中のガイドと一行を出す。アップロードが終わったら、新しい
+    エディタで置いたことが Undo の 1 段になり、閉じたときに保存する。失敗したら、新しいエディタで置いた物を消し、理由を一行に出す
+    （上の「失敗」と同じ）。開き直したエディタが読み取り専用なら引き継がず、終わった時に閉じたエディタの状態を書く。
 - 失敗：画像を読めない・アップロードできない、3D ファイルが上限より大きい・アップロードできない・経路が読めないときは、置いていた物を
   消し（Undo の段は残さない）、上端の中央に「気をつけてほしい」の一行で理由を出す（文は「3D ファイルを置く流れ」の 6 と同じ。画像は
   `Could not read <ファイル名>`・`Could not upload <ファイル名> (...)`）。この一行は、次のファイルを置くかエディタを閉じるまで出す。
@@ -440,13 +477,13 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 | 種類 | 印 | 出すとき |
 |---|---|---|
 | できなかった・止まった | 珊瑚の丸 | 効かなかった操作（境界で止まった、何もない所へのダブルクリック、Frame Selected で囲むものが無い、Camera を消そうとした） |
-| 気をつけてほしい | 落ち着いた黄の丸 | 背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、上流の警告、Add とドロップの失敗（3D ファイルの読み込みの失敗を含む。上の「Add とドロップの見せ方」） |
-| 知らせるだけ | なし | 空の画面の案内 |
+| 気をつけてほしい | 落ち着いた黄の丸 | ノードの `state_json` を読めない（下の「閉じ方」）、背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、上流の警告、Add とドロップの失敗（3D ファイルの読み込みの失敗を含む。上の「Add とドロップの見せ方」） |
+| 知らせるだけ | なし | 上流の Scene を待っている（「ノードの入力から来た物」）、空の画面の案内 |
 | 読み込み中 | 小さく回る輪 | 3D の表示や背景、置いた 3D ファイルを読み込んでいる |
 
 - 3D の表示を作れないときは、ステージの真ん中ではなく、この一行に出す。
 - 出すものが重なったときは、できなかった・止まった ＞ 読み込み中（3D の表示 ＞ 背景 ＞ 置いた 3D ファイル）＞ 気をつけてほしい
-  （3D の表示 ＞ 背景 ＞ Add とドロップの失敗）＞ 空の画面の案内 の順で、前のものだけを出す（`web_src/studio/notice_line.js` `topLine`）。
+  （読めない `state_json` ＞ 3D の表示 ＞ 背景 ＞ Add とドロップの失敗）＞ 上流の Scene を待っている ＞ 空の画面の案内 の順で、前のものだけを出す（`web_src/studio/notice_line.js` `topLine`）。
 
 ## タイムラインのバー
 
@@ -464,6 +501,22 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 - 行の頭の並び（左から）：目のアイコン、▶（開閉）、アイコン（Sky / World の印、Camera、Paint、Background）、名前、行のポチ。目を持たない
   行も同じ幅を空ける（`docs/timeline-ui.md` の「表示（目のアイコン）」）。
 - 上流の層の見出しは「From ＜元のノードの名前＞」（`docs/timeline-ui.md` の「上流の層の行」）。
+
+## キーとクリップボードを ComfyUI に渡さない
+
+エディタを開いている間、キーとクリップボードの事象は後ろの ComfyUI のグラフに届かない。ComfyUI は window と document で
+`keydown` と `copy`・`cut`・`paste` を聞き、Ctrl / Cmd＋V でノードを貼り、Delete でノードを消し、Ctrl / Cmd＋Z でグラフを戻す。
+エディタの後ろでユーザーのグラフが変わるのを防ぐ。
+
+- 対象の事象：`keydown`・`keyup`・`keypress`・`copy`・`cut`・`paste`。
+- 対象の場所：エディタの中（入力欄も含む）から出た事象と、フォーカスがページそのもの（`body`）にあるときの事象。エディタの外の
+  要素（上に出た別の ComfyUI のダイアログなど）から出た事象は対象にしない。
+- 止めるのは伝わりだけで、ブラウザの既定の動きは止めない。入力欄での文字の入力、選んだ文字のコピー、貼り付け（Easing のパネルの
+  ベジェの欄など）はそのまま動く。エディタ自身のキー（このあとの一覧の各キー）は、止める前にエディタが受ける。
+- 止める所は、エディタの外枠（エディタの中から出た事象）と `body`（`body` から出た事象）の、泡立ちの側である。window と document の
+  捕捉の側で聞く ComfyUI の部品（範囲選択のドラッグ中の Escape など）には届く。そこで止めると、エディタの中の部品が事象を受ける前に
+  止まってしまうためである。
+- エディタを閉じると元に戻る。
 
 ## ツールチップ
 
@@ -521,7 +574,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   Editor。キーは小さな塗りの札（キーキャップ）で示し、修飾キーと `+` でつなぎ、同じことをする別の組み合わせは `/` で並べる（どの
   組み合わせにも同じ修飾キーが付くときは、修飾キーを一度だけ書く：Shift + Click / Drag）。Ctrl の札は macOS では `⌘` と書く。
 - 割り当ての持ち主は括弧の中の文書と code で、一覧はそれを表示するだけである。エディタのキー（Undo・Redo・Delete・Space・1/2/3・
-  「?」・Escape）は一つの表（`web_src/studio/shortcuts.js` `EDITOR_KEYS`）に置き、キーを受ける code（`editor.js`、Escape は
+  Keyframe のコピー・切り取り・貼り付け・「?」・Escape）は一つの表（`web_src/studio/shortcuts.js` `EDITOR_KEYS`）に置き、キーを受ける code（`editor.js`、Escape は
   `stage.js`）と一覧の両方がそれを読む。移動のキーは `pano_view_keys.js` の表、マウスのボタンは `view_input.js` `navigationAction`
   から一覧を作る。ポインタと修飾キーの組み合わせ（ダブルクリック、Shift の刻み、Shift＋クリック）は一覧の行で持ち、数（`ROTATE_SNAP_DEG`、`FINE_FACTOR`）は
   持ち主の定数を読む。
@@ -530,7 +583,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 |---|---|
 | View（`docs/space-and-view.md` の「マウスとキー」） | Look around：左ドラッグ・右ドラッグ。Orbit：Alt＋ドラッグ。Pan：中ボタンのドラッグ。Move forward / back：Alt＋中ボタンのドラッグ。Zoom to the pointer：ホイール。Move：W / S・A / D・Q / E。Move faster (hold)：Shift（移動のキーと一緒に押す）。Look at a point：ダブルクリック（3D タブだけ）。Camera タブの Frame モードでは群の頭に「These move the Camera.」の一行を添える。Camera タブの Panorama モードでは行を出さず、「Nothing moves the view in Panorama mode.」の一行だけを出す |
 | Objects（この文書の「下の中央のバー」、`docs/space-and-view.md`） | Select：クリック。Move / Rotate / Scale：1 / 2 / 3（3D タブで、読み取り専用でないとき）。Rotate in 15° steps：Shift＋ギズモの Rotate と Sky の画像の回転のハンドルのドラッグ（同じ条件。数は `ROTATE_SNAP_DEG`）。Delete：Delete・Backspace（Keyframe を選んでいればそれ、そうでなければ物。読み取り専用でないとき） |
-| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift＋クリック・Shift＋ドラッグ（Keyframe） |
+| Timeline（`docs/timeline-ui.md`） | Play / pause：Space。Add to selection：Shift＋クリック・Shift＋ドラッグ（Keyframe）。Copy keyframes：Ctrl＋C。Cut keyframes：Ctrl＋X。Paste at the playhead：Ctrl＋V（この三つは読み取り専用でないとき。`docs/timeline-ui.md` の「Keyframe のコピーと貼り付け」） |
 | Editor | Undo：Ctrl＋Z。Redo：Shift＋Ctrl＋Z（どちらも読み取り専用でないとき）。Fine steps (×0.1)：Shift＋値のドラッグ（欄と FOV・Lens の辺の目盛り。読み取り専用でないとき）。Roll in 15° steps：Shift＋Roll の目盛りのドラッグ（Camera タブで、読み取り専用でないとき）。Shortcuts：?。Step back / close：Escape（下の「閉じ方」） |
 
 ## 消すもの（新しい UI に作らないもの）
@@ -569,6 +622,11 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   視点のドラッグやギズモのドラッグの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
   喪失」）のまま、表より先に当たる。
 - 閉じると編集はいつも保存する。開いて閉じただけなら `state_json` を書かない（今の規則のまま。`docs/timeline-ui.md`）。
+- 読めない `state_json`（JSON として読めない、または読めない `version`。空のテキストは読める：空の状態）：エディタを読み取り専用で開き
+  （中身は空の状態）、閉じても `state_json` を書かない。上端の中央に「気をつけてほしい」の一行
+  「This node's saved state can't be read, so changes won't be saved」を、エディタを閉じるまで出す。編集を受けてから捨てると気づかずに
+  作業を失うので、編集そのものを受けない（読み取り専用のエディタと同じく、Add は無効、ドロップは受けない）。元のテキストはそのまま残り、
+  ノードの実行が理由を出す。
 
 ## Preview のウィンドウ
 

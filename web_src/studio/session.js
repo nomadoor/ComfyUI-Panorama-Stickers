@@ -11,7 +11,7 @@
 // The selection is the Timeline's { row, keys } (timeline_model.js): `row` the selected object's row id ("camera" or a
 // Sticker id), `keys` the selected Keyframes. The inspector reads it through inspectorSelection().
 import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
-import { rebaseSceneState } from "../pano_scene_state.js";
+import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
 import { ROW_LANES } from "./inspector_model.js";
@@ -58,6 +58,9 @@ export function createStudioSession({ state: opening, readOnly = false }) {
   // A placed object was settled while a gesture was under way: placing it is recorded when the gesture ends, even when
   // the gesture is given up.
   let settledInGesture = false;
+  // The placed objects not settled yet (addPlaced, adoptPlaced): they have no Undo step, so a step taken back or
+  // done again leaves them in (docs/studio-ui.md "Add とドロップの見せ方").
+  const unsettled = new Set();
   const history = createEditorHistory(state);
 
   function record() {
@@ -138,6 +141,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     const sticker = state.stickers.find((item) => item.id === row);
     if (!sticker || sticker.locked || sticker.source.kind === "port" || isUpstreamSticker(sticker)) return { changed: false, notice: null };
     state = { ...state, stickers: state.stickers.filter((item) => item !== sticker) };
+    unsettled.delete(sticker.id);
     selection = EMPTY_SELECTION;
     record();
     return { changed: true, notice: null };
@@ -187,7 +191,28 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     const id = takeStickerId(draft);
     draft.stickers.push(make(id, draft));
     state = draft;
+    unsettled.add(id);
     selection = { row: id, keys: [] };
+    return id;
+  }
+
+  // A placed object handed over from an editor of the node closed while it uploaded (add_files.js): `sticker` as that
+  // editor left it goes in under its id (a new one when the id is taken here), not selected, with no Undo step, and is
+  // settled or dropped as one placed here. Returns its id, or null in a read-only editor.
+  function adoptPlaced(sticker) {
+    if (readOnly) return null;
+    const draft = { ...state, stickers: [...state.stickers] };
+    let id = sticker.id;
+    if (draft.stickers.some((item) => item.id === id)) {
+      id = takeStickerId(draft);
+    } else {
+      // The counter only goes up past an id in use (docs/scene-state-v2.md "Sticker の id の採番").
+      const number = /^sticker_(\d+)$/.exec(String(id))?.[1];
+      if (number && BigInt(number) >= BigInt(draft.next_sticker_id ?? 1)) draft.next_sticker_id = stickerCounter(BigInt(number) + 1n);
+    }
+    draft.stickers.push({ ...structuredClone(sticker), id });
+    state = draft;
+    unsettled.add(id);
     return id;
   }
 
@@ -207,6 +232,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     const next = withPlaced(state, id, apply);
     if (!next) return false;
     state = next;
+    unsettled.delete(id);
     if (gestureBase) {
       gestureBase = withPlaced(gestureBase, id, apply) ?? gestureBase;
       settledInGesture = true;
@@ -218,6 +244,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
 
   // The placed Sticker `id` could not be completed: it goes, with no Undo step. Returns whether it was there.
   function dropPlaced(id) {
+    unsettled.delete(id);
     if (!state.stickers.some((item) => item.id === id)) return false;
     const without = (from) => ({ ...from, stickers: from.stickers.filter((item) => item.id !== id) });
     state = without(state);
@@ -319,7 +346,11 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     const snapshot = direction < 0 ? history.undo() : history.redo();
     if (!snapshot) return null;
     const from = state.timeline.fps;
+    const placed = state.stickers.filter((item) => unsettled.has(item.id));
     state = restoredHistoryState(state, snapshot).state;
+    // A placed object still uploading stays, as it is now.
+    const missing = placed.filter((item) => !state.stickers.some((other) => other.id === item.id));
+    if (missing.length) state = { ...state, stickers: [...state.stickers, ...missing] };
     keepSelection({ row: selection.row, keys: [] });
     return { fps: state.timeline.fps === from ? null : { from, to: state.timeline.fps } };
   }
@@ -352,6 +383,7 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     commitGesture,
     cancelGesture,
     addPlaced,
+    adoptPlaced,
     settlePlaced,
     dropPlaced,
     toggleLock,

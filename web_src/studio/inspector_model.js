@@ -4,7 +4,7 @@
 // Keyframe のポチ"), whether it is at the value its reset returns to, and the mark of an overridden upstream value.
 // The edits the rows send are applied by inspector_actions.js.
 import { ICON } from "../icons.js";
-import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, sceneStickerLabel, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
+import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
 import { NEW_STICKER_HFOV } from "../pano_space.js";
 import { LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
 import { FRAME_EPSILON, evaluateCamera, evaluateLane, evaluateSticker } from "../pano_scene_eval.js";
@@ -22,6 +22,7 @@ import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.j
 import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
 import { DEFAULT_CAMERA_RAW, cameraOf, groundOf } from "./defaults.js";
+import { objectLabel } from "./timeline_model.js";
 
 // The least height (px) left above the Easing panel for the rows (docs/design.md "大きさ" EASING_MIN_ABOVE).
 export const EASING_MIN_ABOVE = 180;
@@ -364,7 +365,7 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
   const override = fromUpstream ? upstreamOverrideOf(state.upstream ?? [], sticker.origin) : null;
   return {
     kind: sticker.placement,
-    title: sceneStickerLabel(sticker),
+    title: objectLabel(sticker),
     icon: isWorld ? ICON.box : ICON.pano,
     note: fromUpstream ? `Upstream · ${sticker.origin.layer}` : isWorld ? "World" : "Sky",
     target: { kind: "sticker", id: sticker.id },
