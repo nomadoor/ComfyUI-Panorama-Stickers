@@ -7,9 +7,9 @@ import StudioResetButton from "./StudioResetButton.vue";
 
 // An edge ruler of the Camera tab (docs/studio-ui.md "Camera タブ"; looks: docs/design.md): FOV on the frame's left,
 // Lens on its right (vertical), Roll under it (horizontal). The element is the tick strip (the parent sizes and places
-// it: frame_layout.js rulerStrips), with numbers under a fixed middle mark; the head (the name, the value in a fixed
-// width, the Keyframe dot and the reset) sits outside the strip, above a vertical one and left of Roll, so it never
-// moves or shortens the strip. Dragging the scale moves it under the mark (the value under the mark is the value);
+// it: frame_layout.js rulerStrips), with numbers under a fixed middle mark; its heads sit outside the strip at its two
+// ends, so they never move or shorten it: the name and the value in a fixed width at one end (above a vertical strip,
+// left of Roll), the Keyframe dot and the reset at the other (below a vertical strip, stacked; right of Roll). Dragging the scale moves it under the mark (the value under the mark is the value);
 // Shift makes the movement finer; Escape during the drag puts the value back. The strip takes the pointer on a wider
 // transparent band than its ticks. Arrow keys step it; the focus looks as everywhere in the editor (docs/design.md
 // "フォーカス"), its fill lighter over the dim. Drawn in white over the dimmed picture outside the frame.
@@ -183,10 +183,10 @@ onBeforeUnmount(() => {
     <div class="pano-studio-edge-ruler-head" data-ruler-head>
       <span class="pano-studio-edge-ruler-name pano-studio-cap">{{ name }}</span>
       <b class="pano-studio-edge-ruler-value pano-studio-cap" :style="{ width: `${valueChars}ch` }" data-ruler-value>{{ valueText }}</b>
-      <span class="pano-studio-edge-ruler-acts">
-        <StudioKeyDot v-if="keyState" :state="keyState" :disabled="disabled" :label="`${name} Keyframe`" @toggle="emit('key')" />
-        <StudioResetButton :at-default="disabled || atDefault" :label="`Reset ${name}`" @reset="emit('reset')" />
-      </span>
+    </div>
+    <div class="pano-studio-edge-ruler-acts" data-ruler-acts>
+      <StudioKeyDot v-if="keyState" :state="keyState" :disabled="disabled" :label="`${name} Keyframe`" @toggle="emit('key')" />
+      <StudioResetButton :at-default="disabled || atDefault" :label="`Reset ${name}`" @reset="emit('reset')" />
     </div>
   </div>
 </template>
