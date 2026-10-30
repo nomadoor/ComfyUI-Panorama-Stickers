@@ -22,7 +22,7 @@
 | Clip range の移動・切り詰めと、ドラッグで出力を延ばさない | — | `pano_timeline.js` `moveClip`・`trimClipStart`・`trimClipEnd`、`web_src/editor/timeline_actions.js` の `clip` | `pano_timeline.test.mjs`、`tests/editor_background_clip.test.mjs`、`test_upstream_editor_parity.py` |
 | タイムラインの範囲と、エディタが知っている入力の長さ（Auto の長さの規則そのものは `docs/studio-node.md`） | — | `pano_timeline.js` `timelineSpan`・`autoTimelineLength`、`web_src/editor/timeline.js`、`web_src/editor/upstream.js` `upstreamOutput` | `pano_timeline.test.mjs`、`tests/test_timeline_length_parity.py`、`tests/editor_upstream.test.mjs` |
 | fps と長さの欄（上限、リセット、目盛り） | — | `pano_timeline.js` `enteredTimelineFps`・`enteredTimelineLength`・`timelineTicks`、`web_src/components/PanoTimeline.vue` `lengthText` | `pano_timeline.test.mjs`、`pano_editor_ui_state.test.mjs` |
-| 再生できるか | — | `pano_timeline.js` `isTimed`・`ownerTimed` | `pano_timeline.test.mjs`、`editor_background_clip.test.mjs` |
+| 再生できるか（Timeline の長さ `timelineSpan` が 1 フレームより長い。エディタとノード上の表示で同じ。`isTimed`・`ownerTimed` はタイムラインを自動で開くかに使う） | — | `pano_timeline.js` `timelineSpan`・`isTimed`・`ownerTimed`、`web_src/studio/timeline_model.js`、`web_src/pano_node_playback.js` `createNodePlayback` | `pano_timeline.test.mjs`、`editor_background_clip.test.mjs` |
 | Space キー | — | `web_src/editor/keyboard.js` `onSpaceKey`・`onSpaceKeyUp` | `pano_timeline.test.mjs` |
 | 行の並びと形（Camera・背景・`scene`・ペイントの行、目の場所、`port` の Sticker のバー） | — | `pano_editor_ui_state.js` `buildTimelineModel`、`PanoTimeline.vue` | `pano_editor_ui_state.test.mjs`、`editor_background_clip.test.mjs` |
 | 目のアイコン | — | `timeline_actions.js` の `toggle-visible`、`buildTimelineModel` の `hideable` | `pano_editor_ui_state.test.mjs`、`editor_upstream.test.mjs`、`editor_background_clip.test.mjs`（`hideable`） |
@@ -92,7 +92,7 @@
   消した Keyframe は上書きとして記録する（下の「上流の層の行」）。
 - `world` の Sticker も同じ規則で記録する。ギズモのドラッグはモードの Lane（Move は `position`、Rotate は `rotation`、Scale は `scale`）だけを、インスペクタは変えた欄の Lane だけを変える。Clip range があるので、`sky` の Sticker と同じく素材基準のフレームで比べる。ギズモとインスペクタは `docs/editor-interaction.md` の「`world` の Sticker の操作」。
 - 見回しは Viewport camera で行い、Camera の値は変えない。Camera の値を変えるのは、Camera を操作するとき（Panorama Studio の Camera タブと、Camera の行を選んだときの操作とインスペクタ）だけである。Camera が無いときの空間の表示では、3DoF の見回しは原点（ERP を撮る位置）に立ったまま向きを変え、6DoF は Viewport camera を空間の中で動かす（`docs/editor-interaction.md` の「視点の操作」）。
-- Panorama Studio のノード上の表示には、Keyframe の操作も再生ボタンも Sticker の操作も無い（`docs/studio-node-surface.md` の「表示の構成」。表示するフレームは同じ文書の「表示フレームと VIDEO」、Space キーは「見回し」）。旧 `PanoramaStickers` のノード上の表示の Sticker の操作と背景の VIDEO の再生は `docs/legacy-node-surfaces.md` にある。
+- Panorama Studio のノード上の表示には、Keyframe の操作も Sticker の操作も無い。再生と一時停止のボタンだけを持つ（`docs/studio-node-surface.md` の「表示の構成」「再生のボタン」。表示するフレームは同じ文書の「表示フレームと VIDEO」、Space キーは「見回し」）。旧 `PanoramaStickers` のノード上の表示の Sticker の操作と背景の VIDEO の再生は `docs/legacy-node-surfaces.md` にある。
 - Sticker がアップロード中（Source にファイルがまだない）の間は、Undo の履歴を記録しない。アップロードが終わったときに、その間の編集を含めて一度記録する（失敗して Sticker が消えたときも同じ）。
 
 ## Easing
