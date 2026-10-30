@@ -179,7 +179,7 @@ Panorama Studio のエディタの Camera の編集は `docs/editor-interaction.
   - `lens` を持つ `world` の Sticker：板の代わりに、球面の一部を覆う細かい球の帯のメッシュ（代わりの形）を描き、断片のシェーダでレンズの中心からの向きを求めて `lens_radius` と同じ式で素材の座標にし、板の外は捨てる（`discard`）。奥行きはメッシュのもので、形の近似の誤差は分割を細かくして抑える。当たり判定は同じ代わりの形と同じ捨て方の当たり判定のマテリアルで描き（深度のグリッドと同じく物ごとのマテリアル）、選択の枠は素材の縁を同じ写し方で球面に移した線にする（`pano_three_view.js` の `addWorldLensSticker`）。
   - Frame 表示の重ね描き（ペイント、Sticker の枠、選択の輪郭）：κ ≠ 1 の像の上では、`pano_lens.js` の `lensAxesDirection`（像の点から向き）と `lensAxesFilm`（向きから像の点）を通して描く（`pano_cutout_view_math.js`・`editor/projection.js`・`editor/overlay.js`）。縁は細かく標本化して曲がりに沿わせ、像の外に出る点（レンズが届かない向き）は `null` にして線を切る。
   - Panorama 表示・Unwrap 表示の Camera の枠と Sticker の輪郭：四隅を直線で結ぶのではなく、像の縁（フィルムの四辺）をレンズの写し方とビューの写し方を通して標本化した線（`editor/object_geometry.js` の `outline`、一辺 24 点）で描き、中を動かす当たり判定もその線を使う。四隅・辺の中点の印とハンドルはこの線の上に乗る（κ = 1 も含む。`tests/editor_frame_outline.test.mjs`）。
-  - 当たり判定：Frame 表示でのオービットの中心・ホイールの先・キーの移動の基準を求めるとき、ポインタの画素を `lens_angle` と同じ逆の写し方でピンホールの画素（立方体なら面とその画素）に戻してから `pickAt` に渡す（`pano_lens.js` の `lensPickWindow`、`editor/frame_view.js`。`tests/pano_lens.test.mjs` の「a pointer on the bent image picks through a cube face pixel on the same ray」）。
+  - 当たり判定：Frame 表示でのオービットの中心・ホイールの先・キーの移動の基準を求めるとき、ポインタの画素を `lens_angle` と同じ逆の写し方でピンホールの画素（立方体なら面とその画素）に戻してから `pickAt` に渡す（`pano_lens.js` の `lensPickWindow`、`editor/frame_view.js`、新しい UI は `studio/stage_view.js` の `lensPickView`（`docs/space-and-view.md` の「レンズの Camera の当たり」）。`tests/pano_lens.test.mjs` の「a pointer on the bent image picks through a cube face pixel on the same ray」）。
   - Panorama 表示の Camera の視錐台（`cameraFrustumSegments`）は、隅の光線が 90° を超えると四角錐にならないので、κ ≠ 1 では画像の縁の光線の向きの線にする（`pano_space.js` の `lensFrustumSegments`）。
   - test：`tests/pano_lens.test.mjs`（写し方、光線、焦点距離、`lensRenderPlan` の分け方、当たり判定）、`tests/browser/lens_view.spec.js`（`tests/browser/pages/lens_view.*`。余白付きのピンホールと立方体の後処理が光線に沿って描き、180° の先が `bg_color`）、`tests/browser/lens_stickers.spec.js`（`tests/browser/pages/lens_stickers.*`。κ の `sky` の Sticker が軸から 90° の先まで描け、`lens` の `world` の Sticker が球面の一部として描かれて当たる）。
 
@@ -197,6 +197,7 @@ Panorama Studio のエディタの Camera の編集は `docs/editor-interaction.
 - 使い回し：同じ画素・同じ視点（カメラの設定）・同じ内容（`contentRevision`：描いた要素と変形、`world` の Sticker の板の位置と大きさが前の描画と値で違うときに 1 つ進む数。不透明度 0 の物は入らない）なら、前の結果を返す（`pickCacheKey`）。当たる物を変える変更（ジオメトリ・変形・表示）を足すときは、比べる `parts` に入れて `contentRevision` も進むようにすること。1 回の押下で `pickSticker` と、何もない所なら続く `pickSpace` の 2 回呼ばれるが、2 回目はこの使い回しで描かない。ホイールの `reuseWheelPick` はこの上に残る（ホイールの一段ごとに視点が変わるため）。
 - 境目：`pano_pick.js` は WebGL を使わない純粋な関数（詰め方と戻し方、画素の窓、深度から World、光線と箱、最も近い当たり、使い回しのキー）で、`node --test`（`tests/pano_pick.test.mjs`）で確かめる。`pickPass` の表示とマテリアルの入れ替えと戻しも、three.js のオブジェクトだけで確かめる。描画と読み戻し（`drawPick`）は WebGLRenderer が要るので Node では動かず、実機で確かめる。
 - 期待する速さ：GPU の 1 画素の描画は頂点の処理が主で、1,610 万三角形でも数 ms〜数十 ms の見込み（実機で未計測）。CPU の Raycaster の 0.5 秒と比べて 1 桁以上速い。
+- 比べるための仮の部品（`docs/space-and-view.md` の「比べるための仮の設定」が持ち、決まったら消す）：`pickStickerNear`（ポインタのまわりの正方形の画素を描き、最も近い画素の Sticker。`async` で読み戻しを待たない）と `sceneGrid`（要素の粗い占有グリッド、`pano_coarse_grid.js`）。
 - Spark の `SparkRenderer` は `enableLod: false` で作る。エディタは SPLAT を LoD・ページングで描かないので、LoD のワーカーを起こさない。
 
 ## Spark の描画はビューごとに 1 つ

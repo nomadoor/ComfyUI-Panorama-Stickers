@@ -43,7 +43,7 @@ ComfyUI の数値の widget の callback が例外を投げ、その後の再描
 ## Consequences
 
 - その場の絵は、エディタの Output の小窓と同じ部品で、同じ物の作り方（`web_src/studio/stage_content.js` の `stageContent`）から描く。
-  ペイントは描く（エディタの新しい UI はまだ描かない）。上流の Scene（`scene` 入力の `PANO_SCENE`）の層はまだ描かず（エディタは描く）、
+  ペイントも描く。上流の Scene（`scene` 入力の `PANO_SCENE`）の層はまだ描かず（エディタは描く）、
   深度の格子の 3D はエディタと同じく描かない。どちらも、描くまでは実行の結果と違う。
 - 実行の出力の画像を temp に書く処理（`save_output_png`）が無くなり、実行ごとの PNG の書き出しが減る。
 - ADR 0029 の Consequences の「見回せるパノラマの表示」と追記（2026-10-05）のノード上の表示の段落は、この ADR が置き換える。

@@ -39,6 +39,8 @@ test("the live ERP's orientation matches the output's convention, and a turn dra
   expect(check.dirtyCalls).toBeGreaterThan(0);
   expect(check.sparkAutoUpdate).toBe(true);
   expect(check.sparkTarget).toBeNull();
+  // The sort's viewpoint uses the near and far planes setView gave.
+  expect(check.sortProjection).toBe(true);
   // Nothing drawn: every face is the clear color (#070707), the first face (+X) too, which once came out #2e2e2e (the
   // clear value three.js had worked out for the canvas, cleared into the faces' sRGB target).
   for (const [face, rgb] of Object.entries(check.blank)) expect(rgb, face).toEqual([7, 7, 7]);

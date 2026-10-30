@@ -43,8 +43,7 @@ const KNOBS = [
         :disabled="disabled"
         @pointerdown="!disabled && emit('knob', knob.key, $event)"
       />
-    </StudioFloatGroup>
-    <StudioFloatGroup layout="knobs" label="Help">
+      <span class="pano-studio-sep" />
       <StudioIconButton
         ref="help"
         data-action="shortcuts"

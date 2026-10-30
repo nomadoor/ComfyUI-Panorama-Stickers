@@ -76,3 +76,13 @@ test("an input's object adds the one Back to source, and cannot be duplicated or
 test("the kinds", () => {
   assert.deepEqual(["sky_1", "plane_1", "chair_1", "port_1", "camera", null].map((row) => selectedKind(state, row)), ["sky", "world-image", "world-3d", "world-3d", "camera", null]);
 });
+
+test("the Camera's Lock turns camera.locked over: its icon and tip show the state, a read-only editor disables it", () => {
+  const lockOf = (bar) => bar.groups.at(-1).find((button) => button.key === "lock");
+  const open = lockOf(selectionBar({ state, row: "camera" }));
+  assert.deepEqual([open.icon, open.tip, open.disabled], [ICON.lock_open, "Lock", false]);
+  const lockedState = loadSceneState({ version: 2, camera: { locked: true } });
+  const closed = lockOf(selectionBar({ state: lockedState, row: "camera" }));
+  assert.deepEqual([closed.icon, closed.tip, closed.disabled], [ICON.lock_closed, "Unlock", false]);
+  assert.equal(lockOf(selectionBar({ state, row: "camera", readOnly: true })).disabled, true);
+});

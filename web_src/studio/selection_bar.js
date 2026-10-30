@@ -47,9 +47,8 @@ const LATER = "in development";
 
 // The bar for the row `row` of `state` with the gizmo in `mode`: null when it is not shown (nothing selected), else
 // { kind, icon, name, groups: [[{ key, icon, label, tip, active, disabled }]] }. `readOnly` disables the edits.
-// Not yet here: the paint group and the multi-selection (their tools do not exist yet); the Camera's Lock (the
-// state keeps `camera.locked`, docs/scene-state-v2.md, but the button does not turn it over yet); Replace waits for a file
-// picker below the old UI.
+// The Lock of the Camera turns `camera.locked` over (docs/scene-state-v2.md). Not yet here: the paint group and the
+// multi-selection (their tools do not exist yet); Replace waits for a file picker below the old UI.
 export function selectionBar({ state, row, mode = "translate", readOnly = false }) {
   const kind = selectedKind(state, row);
   if (!kind) return null;
@@ -59,13 +58,9 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
     tip: `${entry.label} (${entry.key})`,
     active: entry.mode === shown,
   }));
+  const lockButton = (locked) => button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly });
   if (kind === "camera") {
-    return {
-      kind,
-      icon: ICON.camera,
-      name: "Camera",
-      groups: [gizmo, [button("lock", ICON.lock_open, "Lock", { tip: `Lock · ${LATER}`, disabled: true })]],
-    };
+    return { kind, icon: ICON.camera, name: "Camera", groups: [gizmo, [lockButton(state.camera?.locked === true)]] };
   }
   const sticker = state.stickers.find((item) => item.id === row);
   const locked = sticker.locked === true;
@@ -82,7 +77,7 @@ export function selectionBar({ state, row, mode = "translate", readOnly = false 
     button("replace", ICON.replace_image, "Replace", { disabled: true, tip: `Replace · ${LATER}` }),
   ];
   const keep = [
-    button("lock", locked ? ICON.lock_closed : ICON.lock_open, locked ? "Unlock" : "Lock", { disabled: readOnly }),
+    lockButton(locked),
     button("delete", ICON.delete, "Delete", { disabled: edits || fromSource, tip: fromSource ? "Delete · not for an input's or an upstream object" : "Delete (Del)" }),
   ];
   const groups = [first, copy, keep];

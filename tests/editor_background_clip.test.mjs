@@ -28,6 +28,19 @@ function studioNode({ linked = true, video = true } = {}) {
   };
 }
 
+// Panorama Studio's node with its inputs as named since ADR 0048 (docs/studio-node.md "Panorama Studio"), the inputs
+// `links` names linked: `background` to a VIDEO, `world` to a 3D file, `scene` to an upstream PANO_SCENE.
+function renamedStudioNode(links = ["background"]) {
+  const inputs = [{ name: "scene" }, { name: "background" }, { name: "world" }, { name: "sticker" }, { name: "sticker_state" }];
+  const types = { scene: "PANO_SCENE", background: "VIDEO", world: "File3DAny" };
+  return {
+    id: 1,
+    inputs,
+    graph: {},
+    getInputLink: (slot) => (links.includes(inputs[slot].name) ? { origin_id: 7 + slot, origin_slot: 0, type: types[inputs[slot].name] } : null),
+  };
+}
+
 // The editor's Timeline over `saved`: the real Timeline, its actions, items and history. `transport` is what the
 // node's result tells of the background VIDEO (uiState.videoTransport). The playback records its seeks.
 function editorTimeline(saved, { node = studioNode(), transport = { ready: true, frameCount: 48, duration: 2 }, upstreamBackground = null } = {}) {
@@ -114,6 +127,19 @@ test("the background row shows only while the node's own bg_media is linked", ()
   const image = editorTimeline({ version: 2, timeline: { fps: 24, length: 30 } }, { node: studioNode({ video: false }), transport: {} });
   image.timeline.syncTimeline();
   assert.deepEqual(image.uiState.timeline.rows[0].clip, { start: 0, end: null });
+});
+
+test("the old editor reads Panorama Studio's renamed inputs: `background` has its row and `world` its Scene row", () => {
+  const renamed = editorTimeline({ version: 2, timeline: { fps: 24 } }, { node: renamedStudioNode(["background", "world"]) });
+  renamed.timeline.syncTimeline();
+  const ids = renamed.uiState.timeline.rows.map((row) => row.id);
+  assert.equal(ids[0], "background");
+  assert.ok(ids.includes("scene"), "the own `world` content has its Scene row");
+  // Its bar ends with the background VIDEO, as with `bg_media`.
+  assert.deepEqual(renamed.uiState.timeline.rows[0].clip, { start: 0, end: 48 });
+  const unlinked = editorTimeline({ version: 2, timeline: { fps: 24 } }, { node: renamedStudioNode([]), transport: {} });
+  unlinked.timeline.syncTimeline();
+  assert.deepEqual(unlinked.uiState.timeline.rows.map((row) => row.id), []);
 });
 
 test("moving and trimming the background's Clip range are Undo steps through the Timeline's actions", () => {

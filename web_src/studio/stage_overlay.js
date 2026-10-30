@@ -6,6 +6,7 @@ import { LOAD_LOOK } from "./load_reveal.js";
 import { MARKER_DOT_RADIUS, MARKER_LOOKS, MARKER_TOP_FILL, MARKER_UNDER } from "./camera_marker.js";
 import { GIZMO_COLORS, GIZMO_LOOK, gizmoColor } from "./gizmo_overlay.js";
 import { GUIDE_LOOKS, GUIDE_UNDER_EXTRA, screenSegment } from "./world_guides.js";
+import { BRUSH_RING } from "./paint.js";
 
 // The sky image's handles (docs/studio-ui.md "下の中央のバー"; pano_sticker_affordance.js hits them): corner and rotate
 // dots, edge ticks, in the selected sky image's ice over a dark ring (docs/design.md "色": the color of the Sky).
@@ -167,14 +168,14 @@ function roundedSquare(ctx, center, size, radius) {
 // The gizmo (gizmo_overlay.js gizmoHandles) as the draft specimen-11.html draws Move: round-capped bars with a ball
 // (Move) or a rounded square (Scale) at the end, or rings whose far half is faint (Rotate), and the white center dot;
 // Move's plane squares under its bars.
-// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker. `guide` ({ name, a, b }) is the axis guide line of a drag,
-// in its axis's color under the handles.
-function drawGizmo(ctx, handles, active, guide) {
+// The far handles first, each over a dark underlay; `active` (a handle name) is lit: its color toward white, thicker. `guides` ([{ name, a, b }]) are the axis guide lines
+// of a drag (a plane square's two), each in its axis's color under the handles.
+function drawGizmo(ctx, handles, active, guides = []) {
   const lit = (name) => name === active;
   const L = GIZMO_LOOK;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  if (guide) {
+  for (const guide of guides) {
     ctx.globalAlpha = L.guideAlpha;
     ctx.lineWidth = L.guideWidth;
     ctx.strokeStyle = GIZMO_COLORS[guide.name];
@@ -267,11 +268,32 @@ function drawGizmo(ctx, handles, active, guide) {
 // Draws `scene` (stage_objects.js overlay()) on the 2D context `ctx` of a canvas covering a width x height CSS px stage
 // at `ratio` device px per CSS px, seen from `camera` (stage_view.js stageCamera()). `origin` is where the view of
 // width x height starts on the stage (the Camera tab's Frame view spans a box of its own, stage_view.js cameraFrameView).
-export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin = { x: 0, y: 0 }, scene }) {
+// `ring` is the paint tools' brush ring at the pointer (studio/paint.js brushRing), or null.
+export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin = { x: 0, y: 0 }, scene, ring = null }) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  if (!scene) return;
   ctx.setTransform(ratio, 0, 0, ratio, ratio * origin.x, ratio * origin.y);
+  if (scene) drawScene(ctx, camera, width, height, scene);
+  if (ring) drawBrushRing(ctx, ring);
+}
+
+// The paint tools' brush ring at the pointer (studio/paint.js brushRing; its look: BRUSH_RING).
+function drawBrushRing(ctx, { x, y, radius, fill }) {
+  const path = new Path2D();
+  path.arc(x, y, radius, 0, Math.PI * 2);
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill(path);
+  }
+  ctx.lineWidth = BRUSH_RING.underWidth;
+  ctx.strokeStyle = BRUSH_RING.under;
+  ctx.stroke(path);
+  ctx.lineWidth = BRUSH_RING.lineWidth;
+  ctx.strokeStyle = BRUSH_RING.line;
+  ctx.stroke(path);
+}
+
+function drawScene(ctx, camera, width, height, scene) {
   // Normal ones first, so a hovered or selected outline lies over them.
   const order = { normal: 0, hover: 1, selected: 2 };
   const lines = [...scene.guides].sort((a, b) => order[a.look] - order[b.look]);
@@ -297,5 +319,5 @@ export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin
       dot(ctx, geometry.rotateHandle, ROTATE_RADIUS);
     }
   }
-  if (scene.gizmo) drawGizmo(ctx, scene.gizmo.handles, scene.gizmo.active, scene.gizmo.guide);
+  if (scene.gizmo) drawGizmo(ctx, scene.gizmo.handles, scene.gizmo.active, scene.gizmo.guides);
 }

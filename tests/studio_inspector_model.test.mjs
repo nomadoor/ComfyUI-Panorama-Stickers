@@ -79,6 +79,17 @@ test("a Ground the state holds is shown and is not at its default", () => {
   assert.equal(ground.atDefault, false);
 });
 
+test("without a Ground of its own, the Scene card shows the most downstream upstream layer's that has one", () => {
+  const state = load();
+  const layers = [load({ ground: -3 }), load({ ground: -0.5 }), load()].map((sceneState) => ({ sceneState, ui: {} }));
+  const upstream = upstreamWorkingLayers(layers, [], state.timeline.fps);
+  const inherited = row(model(state, { upstream }).cards[0], "ground");
+  assert.deepEqual(values(inherited), [-0.5]);
+  assert.equal(inherited.atDefault, true, "the state holds none: reset has nothing to remove");
+  state.ground = -0.8;
+  assert.deepEqual(values(row(model(state, { upstream }).cards[0], "ground")), [-0.8], "its own Ground wins");
+});
+
 test("the Ground row takes edits (the state keeps `ground`), its seat kept", () => {
   const ground = row(model(load()).cards[0], "ground");
   assert.equal(ground.disabled, false);

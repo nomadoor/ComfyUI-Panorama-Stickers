@@ -11,7 +11,9 @@
 // Sticker through `media` (studio/port_media.js) and its 3D media (`stickerFiles`), and the upstream Scene's layers
 // (`upstream`, studio/upstream.js).
 //
-// Not drawn yet: the painting, a `scene` input or an upstream item that is a depth grid (its colors come from a proxy
+// The painting comes in as its Sky layers (`paintLayers`, studio/paint.js layers()).
+//
+// Not drawn yet: a `scene` input or an upstream item that is a depth grid (its colors come from a proxy
 // video the editor does not play yet).
 import { skyLayers, worldStickerLayers } from "../pano_editor_view.js";
 import { skyStickerVfov, sourceAsset } from "../pano_editor_state.js";
@@ -115,8 +117,7 @@ export function createStageMedia({ assetSource, source, fetchApi = null, onChang
 // [inputs] `stickerFiles` is the `sticker` input's 3D media (studio/port_media.js files()) or null; `upstream` what the
 // upstream layers draw at `frame` ({ sky, stickers, items }, pano_upstream_layers.js viewInput) or null. A sky port
 // Sticker's evaluated vFOV is the one its media's aspect gives (pano_editor_state.js skyStickerVfov), as drawn.
-// `paintLayers` are the painting's layers among the sky ones (pano_surface_paint.js surfacePaintLayers; the node surface
-// draws them, the editor does not yet).
+// `paintLayers` are the painting's Sky layers (pano_paint_layers.js skyPaintLayers' shape), put among the sky Stickers.
 export function stageContent(state, frame, { media, editorFile = () => null, sceneFiles = null, sceneBox = () => null, stickerFiles = null, upstream = null, paintLayers = [] }) {
   const evaluated = evaluateSceneState(state, frame);
   // Each Sticker's media once per content: the port Sticker's follows the playhead (one follow per frame).

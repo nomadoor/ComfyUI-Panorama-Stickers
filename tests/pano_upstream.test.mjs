@@ -6,6 +6,7 @@ import { loadSceneState } from "../web_src/pano_scene_state.js";
 import {
   PANO_SCENE_TYPE,
   isUpstreamSticker,
+  ownSceneLinked,
   upstreamBackgroundOf,
   upstreamBaseline,
   upstreamDeletedCount,
@@ -517,4 +518,14 @@ test("an upstream layer's element of several views is one item loaded from all i
   assert.deepEqual(scene.request.sources[scene.request.url], ["/view?filename=v0.glb", "/view?filename=v1.glb"]);
   assert.deepEqual(sticker.request.sources[sticker.request.url], ["/view?filename=s0.glb", "/view?filename=s1.glb"]);
   assert.equal(scene.request.unlit, true);
+});
+
+// docs/timeline-ui.md "Panorama Studio のタイムライン" and "上流の層の行": the own `scene` row follows the own 3D content.
+test("ownSceneLinked: `world` shows the own scene row with an upstream Scene too; the upstream link alone does not", () => {
+  assert.equal(ownSceneLinked({ world: true, scene: true, upstream: true }), true);
+  assert.equal(ownSceneLinked({ world: true, scene: false, upstream: false }), true);
+  assert.equal(ownSceneLinked({ world: false, scene: true, upstream: true }), false);
+  // A 3D on `scene` from before the rename to `world` is the node's own content.
+  assert.equal(ownSceneLinked({ world: false, scene: true, upstream: false }), true);
+  assert.equal(ownSceneLinked({ world: false, scene: false, upstream: false }), false);
 });

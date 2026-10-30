@@ -11,8 +11,9 @@ export function cameraOf(state) {
   return state.camera ?? defaultCamera();
 }
 
-// The ground height a state stands on: its own `ground`, else GROUND_DEFAULT. An upstream layer's `ground` is not
-// read here yet (sceneGround takes the upstream states).
-export function groundOf(state) {
-  return sceneGround(state);
+// The ground height a state stands on (docs/scene-state-v2.md `ground`): its own `ground`, else that of the most
+// downstream upstream layer that has one, else GROUND_DEFAULT. `upstream` is the upstream Scene's working layers
+// (pano_upstream.js upstreamWorkingLayers, from the farthest upstream), none without an upstream Scene.
+export function groundOf(state, upstream = []) {
+  return sceneGround(state, upstream.map((layer) => layer.sceneState));
 }

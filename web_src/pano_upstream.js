@@ -28,6 +28,13 @@ export function upstreamLayersOf(list) {
     .map((entry) => ({ sceneState: loadSceneState(entry.state), ui: entry.ui && typeof entry.ui === "object" ? entry.ui : {} }));
 }
 
+// The upstream Scene's bg_color (`pano_upstream_bg_color`, [r, g, b] in 0..1) as "#rrggbb", or null without one.
+export function upstreamBgColor(uiList) {
+  const color = uiList("pano_upstream_bg_color")[0];
+  if (!Array.isArray(color) || color.length !== 3) return null;
+  return `#${color.map((value) => Math.round(Math.min(1, Math.max(0, Number(value) || 0)) * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
 // The background of the upstream Scene in a result, used in place of the node's own bg_media (ADR 0029): the
 // `ui` keys of its image and VIDEO and its coverage, or null when the upstream Scene has none. uiList(key) reads
 // a list of the result. `color` is its bg_color (a hex RGB, null when the result has none) and `clip` the Clip
@@ -35,7 +42,6 @@ export function upstreamLayersOf(list) {
 // default one or none: it places the background as in that Studio's output (backgroundClipAt).
 export function upstreamBackgroundOf(uiList) {
   if (!uiList("pano_upstream_input_images").length && !uiList("pano_upstream_input_videos").length) return null;
-  const color = uiList("pano_upstream_bg_color")[0];
   const placed = uiList("pano_upstream_bg_clip")[0];
   const clip = loadSceneState({ version: 2, background: { clip: placed?.clip } }).background.clip;
   return {
@@ -43,7 +49,7 @@ export function upstreamBackgroundOf(uiList) {
     videoKey: "pano_upstream_input_videos",
     metaKey: "pano_upstream_input_video_meta",
     coverage: normalizeCoverageValue(uiList("pano_upstream_coverage")[0]),
-    color: Array.isArray(color) && color.length === 3 ? `#${color.map((value) => Math.round(Math.min(1, Math.max(0, Number(value) || 0)) * 255).toString(16).padStart(2, "0")).join("")}` : null,
+    color: upstreamBgColor(uiList),
     clip: defaultClip(clip) || !(Number(placed?.fps) > 0) ? null : { clip, fps: Number(placed.fps) },
   };
 }
@@ -106,6 +112,13 @@ function upstreamId(key, id) {
 // layer with `key`, as the node's own rows are "scene" and "painting".
 export function upstreamRowId(key, part) {
   return upstreamId(key, part);
+}
+
+// Whether the node's own 3D content is linked, which shows its own `scene` row (docs/timeline-ui.md): `world`, or a
+// 3D on `scene` from before that rename. An upstream Scene on `scene` is not the node's own content, but it does not
+// hide the row either: the own `world` is drawn over the upstream layers (ADR 0048), so its row shows with them.
+export function ownSceneLinked({ world, scene, upstream }) {
+  return !!world || (!!scene && !upstream);
 }
 
 // Whether a Sticker is a working copy's (upstreamWorkingLayers): the node's own never have an `origin`.

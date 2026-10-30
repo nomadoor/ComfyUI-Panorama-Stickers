@@ -2,12 +2,20 @@
 // is linked to an ERP made in the page, for tests/browser/preview_window.spec.js. ComfyUI is not used. ComfyUI's key
 // listeners are stood in for by listeners on window and document (window.__comfy).
 import { openPreviewWindow } from "/web_src/studio/preview_window.js";
+import { peekSceneViewer, previewNode, sceneViewer } from "/web_src/pano_node_bridge.js";
 import { makeVideo } from "./media.js";
+import { pauseNodeVideoForWindow, resumeNodeVideoFromWindow } from "/web_src/pano_preview_node_surface.js";
 
 // ?video: the source is a VIDEO (its gray goes from dark to light over its length), in the node's result.
 const VIDEO = new URLSearchParams(location.search).has("video");
 // ?scene: the source is a PANO_SCENE whose layer has a red board in the World ahead, over a blue upstream background.
 const SCENE = new URLSearchParams(location.search).has("scene");
+// ?clip (with ?scene): the Scene's background shows from frame 10 for 10 frames, its bg_color (green) outside.
+const CLIP = new URLSearchParams(location.search).has("clip");
+// ?range180: the node's background_range is 180.
+const RANGE_180 = new URLSearchParams(location.search).has("range180");
+// ?handoff: the node's view (a Scene viewer's record, or the IMAGE runtime's view) is set before the window opens.
+const HANDOFF = new URLSearchParams(location.search).has("handoff");
 const solid = (width, height, color) => {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -73,7 +81,7 @@ try {
     title: "Panorama Preview",
     comfyClass: "PanoramaPreviewNode",
     inputs: [{ name: "source", link: 1 }],
-    widgets: [],
+    widgets: [{ name: "background_range", value: RANGE_180 ? "180" : "360" }],
     graph: { getNodeById: (id) => (id === 7 ? origin : null) },
     getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0, type: SCENE ? "PANO_SCENE" : VIDEO ? "VIDEO" : "IMAGE" } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
@@ -90,8 +98,9 @@ try {
       21: {
         pano_upstream_layers: [{ state: layer, ui: {} }],
         pano_upstream_coverage: [360],
-        pano_upstream_bg_color: [[0, 0, 0]],
+        pano_upstream_bg_color: [CLIP ? [0, 1, 0] : [0, 0, 0]],
         pano_upstream_input_images: [solid(512, 256, "#2040c0")],
+        ...(CLIP ? { pano_upstream_bg_clip: [{ clip: { start: 10, in: 0, duration: 10 }, fps: 24 }] } : {}),
         pano_timeline_fps: [24],
         pano_timeline_frames: [48],
       },
@@ -99,6 +108,42 @@ try {
     : VIDEO
     ? { 21: { pano_videos: [recorded.src], pano_video_meta: [{ fps: FPS, frames: preview.frames, duration: recorded.duration, has_audio: false }] } }
     : {};
+  // The node's own display, stood in for: what the window takes over and hands back.
+  const told = (preview.told = []);
+  if (SCENE) {
+    sceneViewer(node).record = {
+      view: { spaceMode: "6dof", viewPosition: HANDOFF ? [0.5, 0, 1] : [0, 0, 0], viewYaw: HANDOFF ? 40 : 0, viewPitch: HANDOFF ? -10 : 0, viewFov: 100, viewDistance: 8, viewMoved: false, viewTransition: null },
+      frame: HANDOFF ? 12 : 0,
+      playing: HANDOFF,
+      showGrid: true,
+    };
+    sceneViewer(node).surface = { rest: () => told.push("rest"), activate: () => told.push("activate"), detach() {} };
+  } else if (HANDOFF && VIDEO) {
+    // The node's VIDEO (the runtime's, pano_preview_previewnode.js windowOpened / windowClosed), playing when the
+    // window opens.
+    const nodeVideo = recorded;
+    await nodeVideo.play();
+    previewNode(node).runtime = {
+      view: { yaw: 0, pitch: 0, fov: 100 },
+      windowOpened: () => {
+        told.push("opened");
+        preview.handedOver = pauseNodeVideoForWindow(nodeVideo);
+        return preview.handedOver;
+      },
+      windowClosed: (handBack) => {
+        told.push("closed");
+        resumeNodeVideoFromWindow(nodeVideo, handBack, true);
+      },
+      requestDraw: () => {},
+      teardown() {},
+    };
+    preview.nodeVideo = () => ({ time: nodeVideo.currentTime, paused: nodeVideo.paused });
+  } else if (HANDOFF) {
+    previewNode(node).runtime = { view: { yaw: new URLSearchParams(location.search).has("back") ? 180 : 30, pitch: new URLSearchParams(location.search).has("back") ? 0 : 5, fov: 70 }, requestDraw: () => told.push("draw"), teardown() {} };
+  }
+  preview.record = () => JSON.parse(JSON.stringify({ ...(peekSceneViewer(node)?.record ?? {}), windowOpen: !!peekSceneViewer(node)?.windowOpen }));
+  preview.runtimeView = () => ({ ...(previewNode(node).runtime?.view ?? {}) });
+  preview.pose = () => win.stage().pose();
   const app = { getNodeImageUrls: (target) => (target === origin && url ? [url] : []), nodeOutputs };
   let win = null;
   preview.open = async () => {
