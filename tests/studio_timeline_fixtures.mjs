@@ -33,7 +33,7 @@ export function studioState(patch = {}) {
 }
 
 // An upstream layer as the shell gives it (editor/upstream.js upstreamTimelineLayers plus the node's title).
-export function upstreamLayer({ key = "scene_up", name = "Studio #4", editable = true, record = null, deleted = 0, scene = false } = {}) {
+export function upstreamLayer({ key = "scene_up", name = "Studio #4", editable = true, record = null, deleted = 0, scene = false, readOnly = false } = {}) {
   const sceneState = loadSceneState({
     version: 2,
     timeline: { fps: 24, length: null },
@@ -45,7 +45,7 @@ export function upstreamLayer({ key = "scene_up", name = "Studio #4", editable =
     }],
   });
   sceneState.stickers[0].origin = { layer: key, id: "sticker_1" };
-  return { key, name, sceneState, editable, record, scene, deleted };
+  return { key, name, sceneState, editable, record, scene, deleted, readOnly };
 }
 
 export function ctxOf(state, extra = {}) {

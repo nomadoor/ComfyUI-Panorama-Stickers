@@ -10,15 +10,13 @@
 // { width, height } of the paint. playing(): whether the playhead advances. editorFile(sticker): the editor file of a
 // 3D file Sticker (or null). onMedia(): a picture changed (draw again). onRebuild(working): the working copies were
 // made again.
-import { createPanoCanvas, createPanoVideo, releasePanoCanvas } from "./pano_diagnostics.js";
+import { createPanoCanvas, releasePanoCanvas } from "./pano_diagnostics.js";
 import { sourceAsset } from "./pano_editor_state.js";
 import { createPaintEngineManager } from "./pano_paint_engine.js";
-import { engineMask, skyPaintLayers } from "./pano_paint_layers.js";
-import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } from "./pano_port_media.js";
+import { drawRasterObjectErp, engineMask, skyPaintLayers } from "./pano_paint_layers.js";
+import { EXTERNAL_STICKER_PREVIEW_KEY, portMediaMeta } from "./pano_port_media.js";
+import { createPortPicture } from "./pano_port_picture.js";
 import { layerUiList, upstreamLayersOf, upstreamLayerView, upstreamWorkingLayers } from "./pano_upstream.js";
-import { createVideoFollower } from "./pano_video_playback.js";
-import { EXTERNAL_STICKER_PREVIEW_KEY, PORT_FRAMES_KEY, PORT_VIDEO_KEY, PORT_VIDEO_META_KEY } from "./editor/constants.js";
-import { drawRasterObjectErp } from "./editor/helpers.js";
 
 export function createUpstreamLayers({
   list, fps, records, mediaSource, mediaAssetSource, revisionOf, paintTarget, playing, editorFile = null,
@@ -99,62 +97,12 @@ export function createUpstreamLayers({
     return entry ? portMediaMeta((key) => layerUiList(entry.layer.ui, key)) : null;
   }
 
-  // The port Sticker's picture of a layer at `frame`: its MP4 follows the playhead, an RGBA IMAGE batch shows its
-  // PNGs, else the first frame. `sticker` is the working copy's, whose Clip range is in the working frames.
+  // The port Sticker's picture of a layer at `frame` (pano_port_picture.js): its MP4 follows the playhead, an RGBA
+  // IMAGE batch shows its PNGs, else the first frame. `sticker` is the working copy's, whose Clip range is in the
+  // working frames.
   function portPicture(entry, sticker, frame) {
-    const { ui } = entry.layer;
-    const rate = fps();
-    const meta = layerUiList(ui, PORT_VIDEO_META_KEY)[0];
-    const frames = layerUiList(ui, PORT_FRAMES_KEY).map(mediaSource).filter(Boolean);
-    const src = mediaSource(layerUiList(ui, PORT_VIDEO_KEY)[0] || null);
-    const media = meta && typeof meta === "object" ? (frames.length ? { frames, meta } : src ? { src, meta } : null) : null;
-    const first = image(mediaSource(layerUiList(ui, EXTERNAL_STICKER_PREVIEW_KEY)[0] || null));
-    const time = media ? portMediaTime(sticker.clip, frame, rate, media.meta) : null;
-    let picture = first;
-    if (media?.frames) {
-      entry.frames ||= createFrameSequence({
-        createImage: (url, onLoad) => {
-          const img = new Image();
-          img.onload = onLoad;
-          img.onerror = onLoad;
-          img.src = url;
-          return img;
-        },
-        onLoad: onMedia,
-      });
-      picture = entry.frames.picture(media.frames, time, media.meta, first);
-    } else if (media?.src) {
-      const follower = portFollower(entry);
-      follower.follow({ src: media.src, time, playing: playing(), fps: rate });
-      picture = follower.picture(entry.still, first);
-    }
-    return picture ? { media: picture, revision: revisionOf(picture), source: portMediaSource(media, first) } : null;
-  }
-
-  function portFollower(entry) {
-    if (entry.follower) return entry.follower;
-    const video = createPanoVideo(document, "editor.upstream-port-video");
-    video.playsInline = true;
-    video.preload = "auto";
-    const still = createPanoCanvas({ label: "editor.upstream-port-still" });
-    still.__panoFrameIdx = 0;
-    entry.video = video;
-    entry.still = still;
-    entry.follower = createVideoFollower({
-      video,
-      onCapture: () => {
-        const width = Number(video.videoWidth || 0);
-        const height = Number(video.videoHeight || 0);
-        if (width < 1 || height < 1) return;
-        still.width = width;
-        still.height = height;
-        still.getContext("2d")?.drawImage(video, 0, 0);
-        still.__panoFrameIdx += 1;
-        onMedia();
-      },
-      onChange: onMedia,
-    });
-    return entry.follower;
+    entry.port ||= createPortPicture({ image, mediaSource, revisionOf, fps, playing, onMedia, label: "editor.upstream-port" });
+    return entry.port.picture((key) => layerUiList(entry.layer.ui, key), sticker.clip, frame);
   }
 
   // The picture of a layer's Sticker: its port media, or the image of its file Source.
@@ -234,8 +182,7 @@ export function createUpstreamLayers({
   }
 
   function disposeEntry(entry) {
-    entry.follower?.dispose();
-    if (entry.still) releasePanoCanvas(entry.still);
+    entry.port?.dispose();
     releasePaint(entry);
   }
 

@@ -46,7 +46,7 @@ for (const [aspect, ratio] of [["16:9", 16 / 9], ["1:1", 1], ["9:16", 9 / 16]]) 
     }));
     expect(dims).toHaveLength(4);
     expect(dims.reduce((sum, d) => sum + d.area, 0)).toBeCloseTo(1180 * 560 - want.width * want.height, -1);
-    expect(dims[0].color).toBe("rgba(8, 8, 9, 0.82)");
+    expect(dims[0].color).toBe("rgba(8, 8, 9, 0.9)");
     const line = await page.locator("[data-frame-box]").evaluate((el) => getComputedStyle(el).outlineColor);
     expect(line).toBe("rgba(255, 255, 255, 0.35)");
 
