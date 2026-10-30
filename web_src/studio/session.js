@@ -13,6 +13,7 @@
 import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
 import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
+import { normalizePaintingState } from "../pano_paint_types.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
 import { ROW_LANES } from "./inspector_model.js";
 import { BACKGROUND_ROW, PAINTING_ROW } from "../pano_timeline.js";
@@ -310,6 +311,42 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     });
   }
 
+  // --- The painting (docs/studio-ui.md "ペイントの道具"): a stroke and a Clear are one Undo step each.
+
+  // An edit of the painting: apply(draft) changes a copy of the state (its `painting`, made when missing) and returns
+  // whether it changed it. A changed painting drops the uploaded `painting_layer` (the node draws from `painting`).
+  function editPainting(apply) {
+    if (readOnly || gestureBase) return result(false);
+    const draft = structuredClone(state);
+    draft.painting ??= normalizePaintingState(null);
+    if (!apply(draft)) return result(false);
+    draft.painting_layer = null;
+    state = draft;
+    keepSelection();
+    record();
+    return result(true, { history: true, stopPlayback: true });
+  }
+
+  // Whether the layer `layerKind` ("paint" or "mask") has anything to clear: strokes or raster objects.
+  function paintingHas(layerKind) {
+    const painting = state.painting;
+    if (!painting) return false;
+    return (painting[layerKind]?.strokes?.length ?? 0) > 0 || (painting.raster_objects ?? []).some((item) => (item.layerKind || "paint") === layerKind);
+  }
+
+  // Clear paint / Clear mask: the layer's strokes and raster objects go (the paint's stroke groups too), as one step.
+  function clearPainting(layerKind) {
+    const kind = layerKind === "mask" ? "mask" : "paint";
+    if (!paintingHas(kind)) return result(false);
+    return editPainting((draft) => {
+      const { painting } = draft;
+      painting[kind] = { ...(painting[kind] ?? {}), strokes: [] };
+      painting.raster_objects = (painting.raster_objects ?? []).filter((item) => String(item?.layerKind || "paint") !== kind);
+      if (kind === "paint") painting.groups = [];
+      return true;
+    });
+  }
+
   // Back to source: every row of the selected port Sticker or upstream element back to the input's or the upstream's
   // value (each row's reset of the inspector, inspector_actions.js), as one Undo step. `context` is the inspector's.
   function revertSelected(context = {}) {
@@ -390,6 +427,9 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     duplicateSelected,
     orderSelected,
     revertSelected,
+    editPainting,
+    paintingHas,
+    clearPainting,
     applyInspector,
     applyTimeline,
     deleteSelectedObject,

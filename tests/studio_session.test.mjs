@@ -398,3 +398,36 @@ test("a read-only session places nothing", () => {
   const session = createStudioSession({ state: load({ stickers: [] }), readOnly: true });
   assert.equal(session.addPlaced((newId) => placed(newId)), null);
 });
+
+test("a painting edit is one Undo step and drops the painting layer; Clear takes its layer only; nothing to clear is no step", () => {
+  const session = createStudioSession({ state: load({ stickers: [sky("sticker_1")], painting_layer: { paint: { filename: "x.png" } } }) });
+  const stroke = (layerKind, gid) => ({ id: `${layerKind}_1`, actionGroupId: gid, layerKind, toolKind: "pen", targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", rawPoints: [{ u: 0.5, v: 0.5 }] } });
+  assert.equal(session.paintingHas("paint"), false);
+  assert.equal(session.clearPainting("paint").changed, false);
+  let outcome = session.editPainting((draft) => {
+    draft.painting.paint.strokes.push(stroke("paint", "ag_1"));
+    draft.painting.groups.push({ id: "ag_1", type: "strokeGroup", actionGroupId: "ag_1", z_index: 1 });
+    draft.painting.mask.strokes.push(stroke("mask", "ag_2"));
+    return true;
+  });
+  assert.deepEqual([outcome.changed, outcome.history, outcome.stopPlayback], [true, true, true]);
+  assert.equal(session.state.painting_layer, null);
+  assert.equal(session.paintingHas("paint"), true);
+  assert.equal(session.editPainting(() => false).changed, false);
+  outcome = session.clearPainting("mask");
+  assert.equal(outcome.changed, true);
+  assert.equal(session.state.painting.mask.strokes.length, 0);
+  assert.equal(session.state.painting.paint.strokes.length, 1);
+  assert.equal(session.state.painting.groups.length, 1);
+  session.clearPainting("paint");
+  assert.deepEqual([session.state.painting.paint.strokes.length, session.state.painting.groups.length], [0, 0]);
+  session.undo();
+  assert.equal(session.state.painting.paint.strokes.length, 1);
+  session.undo();
+  assert.equal(session.state.painting.mask.strokes.length, 1);
+  session.undo();
+  assert.equal(session.state.painting.paint.strokes.length, 0);
+  // A read-only session paints nothing.
+  const readOnly = createStudioSession({ state: load({}), readOnly: true });
+  assert.equal(readOnly.editPainting(() => true).changed, false);
+});

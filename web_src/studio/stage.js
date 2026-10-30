@@ -3,7 +3,7 @@
 // (pano_editor_view.js createEditorView). It owns the render loop (pano_frame_scheduler.js), which moves the eased
 // actions, the joystick and the movement keys, and draws. It builds no DOM: StudioEditor.vue renders the stage and
 // hands over its canvas and root, and reads `ui` (a Vue reactive object) for the notice, the cursor and the knobs.
-import { createEditorView, deviceLens, shotCamera, shotLensImage } from "../pano_editor_view.js";
+import { createEditorView, deviceLens, shotCamera, shotLensImage, viewProjection } from "../pano_editor_view.js";
 import { DRAW_REASON, createFrameScheduler } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { MOVE_KEY_CODES, isMoveKey } from "../pano_view_keys.js";
@@ -23,8 +23,9 @@ import { BOUND_NOTICE_SECONDS, FRAME_WHEEL_REST_MS, PITCH_LIMIT, eyeHeight, fram
 export const LIVE_ERP_OWNER = "studio-live-erp";
 export const OUTPUT_OWNER = "studio-output";
 export const OUTPUT_ERP_OWNER = "studio-output-erp";
-// The reasons that leave the Output window's picture as it is: the stage's view, its overlay, its own Spark sort.
-const OUTPUT_KEEPS = new Set([DRAW_REASON.VIEW, DRAW_REASON.OVERLAY, DRAW_REASON.SPLAT_STAGE]);
+// The reasons that leave the Output window's picture as it is: the stage's view, its overlay, its own Spark sort, and
+// a paint stroke under way (its end changes the state, which draws the window again).
+const OUTPUT_KEEPS = new Set([DRAW_REASON.VIEW, DRAW_REASON.OVERLAY, DRAW_REASON.SPLAT_STAGE, DRAW_REASON.PAINT]);
 
 // The fields of `ui` the stage writes (the shell reads them).
 export function stageUi() {
@@ -67,6 +68,10 @@ export function stageUi() {
 // { frame, erp }, a "bitmaprenderer" canvas for Frame mode and a 2D one for the live ERP, or null), and edits ({ live(pose), commit(), cancel() }: the Frame view's
 // moves of the Camera, pose { position, yaw_deg, pitch_deg }, written to its Lanes by the editor). Without it the
 // stage shows the 3D tab only.
+// paint: the paint tools on the stage (studio/paint.js, docs/studio-ui.md "ペイントの道具"): active() (a painting tool is
+// chosen), press(point, dirAt, samples) (a stroke starts at the view's point: its drag's handler, or null when it does
+// not paint) and ring(point, dirAt) (the brush ring at the pointer, or null). dirAt(point) is the direction (the
+// panorama convention) through a point of the view. Painting is the 3D tab's; a plain left press paints there.
 // motion: what moves on its own besides the view (load_reveal.js createLoadReveal()'s animating(), revealing()): while
 // animating() the stage draws each frame, and while revealing() an item fades in, so the Output window draws again too.
 export function createStage({
@@ -84,6 +89,7 @@ export function createStage({
   ui,
   onEscape = () => {},
   motion: ownMotion = null,
+  paint = null,
   view: makeView = createEditorView,
   win = window,
   now = () => performance.now(),
@@ -218,6 +224,25 @@ export function createStage({
   function objectsOn() {
     const mode = viewMode();
     return !!objects && (mode === "space" || (mode === "frame" && !viewport().lens));
+  }
+
+  // A painting tool is chosen and the stage paints (the 3D tab, once the view is ready).
+  function paintOn() {
+    return !!paint && paint.active() && viewMode() === "space" && editorView.ready;
+  }
+
+  // The direction (the panorama convention) through a point of the view `view` (viewport()).
+  function directionsOf(view) {
+    const projection = viewProjection(view.camera, view.width, view.height);
+    return (point) => projection.ray(point.x, point.y);
+  }
+
+  // The view's points of a pointer move: its coalesced events, else the move's own point.
+  function samplesOf(event, at) {
+    const list = typeof event?.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+    if (!list.length) return [at];
+    const view = viewport();
+    return list.map((sample) => local(pointOf(sample), view));
   }
 
   // The viewpoint the stage's operations move now, or null where nothing moves (Panorama mode, a locked Camera, a
@@ -497,6 +522,7 @@ export function createStage({
     if (!ctx) return;
     const view = viewport();
     const scene = objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null;
+    const ring = paintOn() && pointer && (!drag || drag.action === "paint") ? paint.ring(local(pointer, view), directionsOf(view)) : null;
     drawStageOverlay(ctx, {
       camera: view.camera,
       width: view.width,
@@ -504,6 +530,7 @@ export function createStage({
       origin: { x: view.x, y: view.y },
       ratio,
       scene,
+      ring,
     });
     const loading = !!scene?.loading;
     if (ui.loadingGuide !== loading) ui.loadingGuide = loading;
@@ -535,6 +562,12 @@ export function createStage({
     ui.lit = litKnobs({ gesture, keysMoving, altHeld: input.altHeld() });
     ui.knobDrag = !!drag?.knob;
     const dragged = drag?.action === "object" ? objectCursor : null;
+    // A painting tool shows its brush ring in place of the cursor (a crosshair for the lasso), but while the view moves.
+    if (paintOn() && !drag?.knob && (!drag || drag.action === "paint")) {
+      const view = viewport();
+      ui.cursor = pointer && paint.ring(local(pointer, view), directionsOf(view)) ? "none" : "crosshair";
+      return;
+    }
     ui.cursor = drag?.knob ? KNOB_CURSOR.drag : (dragged ?? stageCursor({ gesture, altHeld: input.altHeld(), objectCursor: drag ? null : objectCursor }));
   }
 
@@ -565,6 +598,13 @@ export function createStage({
   // gizmo's handle lights up or goes out.
   function hoverAt(point) {
     pointer = point;
+    if (paintOn()) {
+      // The brush ring follows the pointer; nothing lights up under it.
+      objectCursor = null;
+      objects?.leave();
+      requestDraw(DRAW_REASON.OVERLAY);
+      return;
+    }
     if (!objects || !editorView.ready) return;
     const on = point && objectsOn();
     const { cursor, changed } = on ? objects.hover(local(point), { altHeld: input.altHeld() }) : { cursor: null, changed: objects.leave() };
@@ -610,6 +650,12 @@ export function createStage({
 
   function move(point, event = {}) {
     if (Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > CLICK_SLOP) drag.moved = true;
+    if (drag.action === "paint") {
+      drag.last = point;
+      drag.handler.move(point, event);
+      requestDraw();
+      return;
+    }
     if (drag.action === "object") {
       drag.last = point;
       if (drag.moved) drag.handler.move(point, event);
@@ -639,7 +685,7 @@ export function createStage({
     if (!drag) return;
     const ended = drag;
     drag = null;
-    if (ended.action === "object") {
+    if (ended.action === "object" || ended.action === "paint") {
       if (cancel) ended.handler.cancel();
       else ended.handler.end();
       if (pointer) hoverAt(pointer);
@@ -685,6 +731,19 @@ export function createStage({
     const plainLeft = event.button === 0 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     // Panorama mode's frame only shows: nothing on the stage moves or selects there.
     if (viewMode() === "erp") return;
+    // A painting tool: a plain left press paints (nothing happens where it cannot, a hidden painting).
+    if (plainLeft && paintOn()) {
+      event.preventDefault();
+      const view = viewport();
+      const handler = paint.press(local(point, view), directionsOf(view), samplesOf);
+      if (!handler) return;
+      canvas.setPointerCapture?.(event.pointerId);
+      pointer = point;
+      drag = { action: "paint", pointerId: event.pointerId, last: local(point, view), start: local(point, view), offset: 0, knob: null, handler, moved: false };
+      syncUi();
+      requestDraw();
+      return;
+    }
     // In the Camera tab a press on an object selects it, and the drag still moves the Camera (docs/space-and-view.md
     // "Frame 表示"); a press on nothing lets the selection go on its click.
     let pressedObject = false;
@@ -727,7 +786,8 @@ export function createStage({
       return;
     }
     const point = drag.knob ? { x: event.clientX, y: event.clientY } : pointOf(event);
-    move(drag.action === "object" ? local(point) : point, event);
+    if (drag.action === "paint") pointer = point;
+    move(drag.action === "object" || drag.action === "paint" ? local(point) : point, event);
   }
 
   function onPointerUp(event) {
@@ -754,7 +814,7 @@ export function createStage({
   // A double click turns the view to what is under the pointer (World image planes included, the one exception). Not in
   // the Camera tab (docs/space-and-view.md "Frame 表示").
   function onDoubleClick(event) {
-    if (event.button !== 0 || event.altKey || viewMode() !== "space") return;
+    if (event.button !== 0 || event.altKey || viewMode() !== "space" || paintOn()) return;
     report(camera.focus(hitAt(pointOf(event))));
     requestDraw();
   }
@@ -771,7 +831,7 @@ export function createStage({
 
   // The pointer capture was lost without a pointerup (the element went away): the drag ends there.
   function onLostCapture(event) {
-    if (drag && event.pointerId === drag.pointerId) end(drag.action === "object");
+    if (drag && event.pointerId === drag.pointerId) end(drag.action === "object" || drag.action === "paint");
   }
 
   // --- Keys, while the editor is open.
@@ -840,7 +900,7 @@ export function createStage({
     input.lostFocus();
     keysMoving = false;
     wheelSteps.reset();
-    if (drag?.action === "object") {
+    if (drag?.action === "object" || drag?.action === "paint") {
       const ended = drag;
       drag = null;
       ended.handler.cancel();
@@ -931,6 +991,14 @@ export function createStage({
     // The shell changed something the stage draws (the grid switch, a background that loaded).
     redraw(reason = DRAW_REASON.STATE) {
       requestDraw(reason);
+    },
+    // The chosen tool or brush changed (docs/studio-ui.md "ペイントの道具"): the cursor and the brush ring follow; a
+    // stroke under way when the tools change (a tool chosen with the keys) is given up.
+    toolChanged() {
+      if (drag?.action === "paint" && !paint?.active()) end(true);
+      if (pointer) hoverAt(pointer);
+      syncUi();
+      requestDraw(DRAW_REASON.OVERLAY);
     },
     // The box of a loaded World item (the lower view's), null while it loads.
     sceneBox: (url) => editorView.sceneBox(url),
