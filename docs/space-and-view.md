@@ -278,7 +278,7 @@ Camera そのものを動かす。
 - 描画のループが動かし、独自のタイマーを持たない。エディタを閉じると止まる。
 - Frame Selected：向きを保ったまま、収める球が画面に収まる位置へ動き（`pano_space.js` の `frameView`。距離は `fitDistance`）、
   `T` を球の中心にする（`d` は距離の範囲に寄せる）。球は、選んでいる World の物の外接球（今の `frameSphere`。
-  `docs/editor-interaction.md`）、何も選んでいない・Sky の Sticker を選んでいるときは World の内容の全体、Camera を選んでいる
+  `docs/editor-interaction.md`）、何も選んでいない・Sky の Sticker かペイントのまとまりを選んでいるときは World の内容の全体、Camera を選んでいる
   ときは Camera の位置を中心に半径 `CAMERA_FRAME_RADIUS` の球。World の内容が無く、球が決まらないときは動かさず、「黙って何もしない
   操作」の知らせを出す。
 
@@ -336,7 +336,7 @@ Camera そのものを動かす。
 | 場所と状態 | カーソル |
 |---|---|
 | ステージの上（既定） | 見回しのカーソル（目の形。使えなければ `grab`） |
-| 触れる物の上（ギズモのハンドル、Sky の Sticker の取っ手と本体、`world` の Sticker、Camera の印（塗った面の中と、線から当たりの幅の中）） | 物のカーソル（今の `hit_test.js` の規則） |
+| 触れる物の上（ギズモのハンドル、Sky の Sticker の取っ手と本体、ペイントのまとまりの四隅のハンドルと本体（当たりは `docs/studio-ui.md` の「ペイントのまとまり」）、`world` の Sticker、Camera の印（塗った面の中と、線から当たりの幅の中）） | 物のカーソル（今の `hit_test.js` の規則） |
 | Alt を押している間（ステージのどこでも、物の上でも） | オービットのカーソル（輪の形。使えなければ `move`） |
 | 見回しのドラッグ中 | `grabbing` |
 | オービットのドラッグ中 | オービットのカーソル |
