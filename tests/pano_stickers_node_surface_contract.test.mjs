@@ -438,12 +438,13 @@ test("the editor follows the background VIDEO of a new result", async () => {
   const editor = readEditorSource();
 
   assert.match(editor, /dragFrames\.cancel\(\);\s*if \(action\.phase === "start"\) refreshModalVideoSource\(\);\s*playback\.seek\(action\.frame\);/);
-  assert.match(editor, /videoEl\.removeAttribute\("src"\);\s*delete videoEl\.dataset\.panoSrc;/);
-  // load() drops a seek in flight without `seeked`; the playback starts over with each source.
+  // Loading and letting go of a source, and the playback starting over with each (load() drops a seek in flight
+  // without `seeked`), are pano_media_session.js's load(), tested in tests/pano_media_session.test.mjs; the legacy
+  // transport starts a new source at 0 and drops its filmstrip without one.
   const refreshStart = editor.indexOf("function refreshModalVideoSource(");
   const refresh = editor.slice(refreshStart, editor.indexOf("\n  function ", refreshStart + 1));
-  assert.match(refresh, /videoEl\.src = nextSrc;\s*videoEl\.load\(\);\s*playback\.setSource\(true\);\s*if \(!stateV2\) playback\.seek\(0\);/);
-  assert.match(refresh, /resetVideoThumbnails\(\);\s*playback\.setSource\(false\);/);
+  assert.match(refresh, /const loaded = background\.load\(nextSrc, \{[\s\S]*?\}\);\s*if \(loaded === "loaded" && !stateV2\) playback\.seek\(0\);/);
+  assert.match(refresh, /if \(!nextSrc\) \{\s*resetVideoThumbnails\(\);/);
 });
 
 test("the editor plays its own background VIDEO first, then a directly loaded file, and never a failed source", async () => {
@@ -451,15 +452,14 @@ test("the editor plays its own background VIDEO first, then a directly loaded fi
   const start = editor.indexOf("  function refreshModalVideoSource() {");
   const body = editor.slice(start, editor.indexOf("\n  function normalizeInputPoseValue", start));
 
-  assert.match(body, /\[ownSrc, comfyMedia\.linkedVideoFile\(node, backgroundInputNames\(\)\)\]/);
-  assert.match(body, /candidates\.find\(\(src\) => !videoState\.failedSrcs\.has\(src\)\)/);
-  assert.match(body, /const meta = nextSrc && nextSrc === ownSrc \? getVideoMetaEntry\(\) : null;/);
+  // The order, the failed sources, the meta of the own result only and the still dropped for a new source are
+  // pano_media_session.js's choose() and load() (tests/pano_media_session.test.mjs); the editor gives them its own
+  // result and the file of its background input.
+  assert.match(body, /own: mediaSource\(ownEntry\),\s*file: comfyMedia\.linkedVideoFile\(node, backgroundInputNames\(\)\),\s*meta: getVideoMetaEntry,/);
   assert.match(body, /stateV2 \? state\.timeline\.fps : 24/);
-  // The still of one source is dropped when another takes its place.
-  assert.match(body, /videoEl\.pause\(\);\s*dropVideoStill\(\);\s*videoEl\.dataset\.panoSrc = nextSrc;/);
-  assert.match(editor, /function dropVideoStill\(\) \{\s*stillCanvas\.__panoFrameIdx = 0;/);
-  assert.match(editor, /const onVideoError = \(\) => \{[\s\S]*?videoState\.failedSrcs\.add\(src\);\s*refreshModalVideoSource\(\);/);
-  assert.match(editor, /backgroundState = videoState\.videoFailed \? IMAGE_FAILED :/);
+  assert.match(editor, /onStillDropped: \(\) => \{\s*runtime\.backgroundDirty = true;/);
+  assert.match(editor, /onError: \(\) => \{\s*refreshModalVideoSource\(\);/);
+  assert.match(editor, /backgroundState = background\.failed \? IMAGE_FAILED :/);
 });
 
 // The editor's commitState is held by tests/editor_commit.test.mjs.

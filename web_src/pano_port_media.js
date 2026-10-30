@@ -43,6 +43,14 @@ export function bgMediaEnd(clip, fps, bg, under = false) {
   return clip.start - clip.in + (bg.video && under ? bg.duration * fps : bg.frames);
 }
 
+// Where the background's bar on the Timeline ends (the background row): where its media ends (bgMediaEnd) for a VIDEO
+// or IMAGE batch with a Clip range without a duration, else null (the Timeline's end, or the end its duration sets).
+// `bg` as bgMediaEnd reads it, null for none or while it is not known.
+export function backgroundBarEnd(clip, fps, bg, under = false) {
+  const media = clip.duration === null ? bg : null;
+  return media?.video || media?.frames > 1 ? bgMediaEnd(clip, fps, media, under) : null;
+}
+
 // A background Clip range `clip` of a state at `fromFps` in the Timeline frames of `toFps`, keeping its seconds
 // (an upstream background's, pano_upstream.js upstreamBackgroundOf). The frames are not rounded: they only place
 // the media.
