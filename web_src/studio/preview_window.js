@@ -20,6 +20,7 @@ import { loadSceneState } from "../pano_scene_state.js";
 import { PANO_SCENE_TYPE, upstreamBgColor } from "../pano_upstream.js";
 import { createStageMedia, stageContent } from "./stage_content.js";
 import { createStudioUpstream, upstreamBackground } from "./upstream.js";
+import { loadNodeInputImage } from "./node_image.js";
 import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { frameShownAt } from "../pano_video_playback.js";
@@ -127,12 +128,22 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
       stage?.redraw(DRAW_REASON.MEDIA);
     });
     if (image) status = loaded(image) ? "ready" : "loading";
-  } else if (!isScene && media.resolvePreferredExactLinkedSource(node, SOURCE_INPUTS).src) {
-    image = media.loadPreferredExactLinkedImage(node, SOURCE_INPUTS, (settled) => {
-      status = loaded(settled) ? "ready" : "failed";
-      stage?.redraw(DRAW_REASON.MEDIA);
-    }, `preview-window:${SOURCE_INPUTS.join("|")}`);
-    if (image) status = loaded(image) ? "ready" : "loading";
+  } else if (!isScene) {
+    // An IMAGE: the node's own result first, then the file its source loads directly (node_image.js, ADR 0003).
+    const picture = loadNodeInputImage({
+      media,
+      node,
+      inputs: SOURCE_INPUTS,
+      channel: "background",
+      cacheKey: `preview-window:${SOURCE_INPUTS.join("|")}`,
+      onChange: () => {
+        image = picture.image();
+        status = picture.state();
+        stage?.redraw(DRAW_REASON.MEDIA);
+      },
+    });
+    image = picture.image();
+    status = picture.state();
   }
   // A Scene carries its range; an IMAGE or a VIDEO covers the node's background_range (360 or 180).
   const rangeWidget = () => node.widgets?.find?.((widget) => widget?.name === "background_range") ?? node.widgets?.find?.((widget) => widget?.name === "coverage");

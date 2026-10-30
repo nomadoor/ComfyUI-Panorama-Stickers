@@ -28,6 +28,13 @@ test("an IMAGE source fills the stage, with no inspector, timeline or rail", asy
   expect(problems).toEqual([]);
 });
 
+// The real shape after a run: the IMAGE is made upstream (no file to read), and only the node's own result has it.
+test("an IMAGE made upstream shows from the node's own run result (pano_input_images)", async ({ page }) => {
+  const problems = await open(page, "?processed");
+  await expect.poll(() => page.evaluate(() => window.__preview.sample()), { timeout: 20_000 }).toBeGreaterThan(20);
+  expect(problems).toEqual([]);
+});
+
 test("✕ closes the window", async ({ page }) => {
   await open(page);
   await page.locator("[data-action=close]").click();

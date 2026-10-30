@@ -50,6 +50,7 @@ import {
 import { createPortMedia } from "./port_media.js";
 import { LINE_TEXT, stageEmpty as emptyStage } from "./notice_line.js";
 import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
+import { loadNodeInputImage } from "./node_image.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { editorKeyAction } from "./shortcuts.js";
@@ -93,7 +94,7 @@ function nodeState(node, media) {
 
 const loaded = (image) => !!image?.complete && image.naturalWidth > 0;
 
-// The node's background image, loaded once through its linked input (pano_comfy_media.js): get() is the render's
+// The node's background image, loaded once from its own result or its linked input (node_image.js): get() is the render's
 // background ({ media, revision, coverage }) once it has loaded, null before or without one; state() is "none" (no
 // input linked), "loading", "ready" or "failed". `coverage` is the background's span. A background VIDEO is
 // createBackgroundVideo's (openStudioEditor), shown in place of the image once it has a picture.
@@ -108,13 +109,22 @@ function nodeBackground(node, media, onChange, upstream = null) {
       onChange();
     });
     if (image) status = loaded(image) ? "ready" : "loading";
-  } else if (media.resolvePreferredExactLinkedSource(node, BACKGROUND_INPUTS).src) {
-    image = media.loadPreferredExactLinkedImage(node, BACKGROUND_INPUTS, (settled) => {
-      status = loaded(settled) ? "ready" : "failed";
-      onChange();
-    }, `studio-background:${BACKGROUND_INPUTS.join("|")}`);
-    // A cached image may have loaded already.
-    if (image) status = loaded(image) ? "ready" : "loading";
+  } else {
+    // The node's own result first, then the file its background loads directly (node_image.js, ADR 0003).
+    const picture = loadNodeInputImage({
+      media,
+      node,
+      inputs: BACKGROUND_INPUTS,
+      channel: "background",
+      cacheKey: `studio-background:${BACKGROUND_INPUTS.join("|")}`,
+      onChange: () => {
+        image = picture.image();
+        status = picture.state();
+        onChange();
+      },
+    });
+    image = picture.image();
+    status = picture.state();
   }
   const coverage = upstream?.coverage ?? normalizeCoverageValue(widgetOf(node, "background_range")?.value ?? widgetOf(node, "coverage")?.value);
   return {

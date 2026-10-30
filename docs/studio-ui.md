@@ -387,6 +387,11 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
     （上書きを記録すること）は（未実装）。
   - `scene` に上流の Scene がつながっているのに実行結果に層が無い（まだ実行していない）ときは、上端の中央に一行
     「Run the workflow to show the upstream scene.」を出す（「一行の知らせの種類」の知らせるだけ）。
+- 自分の背景の画像：ノード自身の実行結果の `pano_input_images`（実行が受けた `background` の最初の画像の一時ファイル）を先に読み、
+  無いときと読めないときだけ、つないだ先がそのまま読めるファイル（Load Image など。実行の前）を読む。途中のノードで作った IMAGE は
+  実行結果にしか無いので、実行の後に出る（`docs/adr/0003-external-input-sticker-failure-boundaries.md` の Amendment 2026-03-11。
+  `web_src/studio/node_image.js` `loadNodeInputImage`。実行結果は `background` のつなぎ先が実行の時と同じ間だけ読む：
+  `pano_preview_video.js` `isNodeOutputMediaCurrent`）。
 - 上流の背景：自分の `background` がつながっていれば自分の背景を出し、上流の背景は出さない（`docs/studio-node.md` の「上流の
   Scene」の背景）。つながっていなければ、上流の背景（実行結果の `pano_upstream_input_*`、広さは `pano_upstream_coverage`）を、
   その背景を持つ Studio の Clip range（`pano_upstream_bg_clip`）で置いて出し、その外では上流の `bg_color`
@@ -728,6 +733,10 @@ Paint・Mask の道具を選んでいる間、下の中央のバーはペイン�
   背景（`pano_upstream_*`）を、その Clip range とメディアの長さの中でだけ描き、外では Scene の `bg_color`
   （`pano_upstream_bg_color`）で塗る（Studio のエディタが上流の背景を描く規則と同じ。`web_src/pano_port_media.js`
   `backgroundShownAt`）。背景のメディアが無い Scene も `bg_color` で塗る。
+- IMAGE の source の絵は、ノード自身の実行結果の `pano_input_images`（実行が受けた絵の一時ファイル）を先に読み、無いときと読めないとき
+  だけ、つないだ先がそのまま読めるファイル（Load Image など。実行の前）を読む。途中のノードで作った IMAGE は実行結果にしか無い
+  （`docs/adr/0003-external-input-sticker-failure-boundaries.md` の Amendment 2026-03-11。Studio のエディタの自分の背景と同じ読み方で、
+  `web_src/studio/node_image.js` `loadNodeInputImage`）。
 - `PANO_SCENE` のとき：開くとノード上の Scene のビューアの再生の位置と再生中かどうかを引き継ぎ、ノード上の表示は描くのも再生も
   止める（`web_src/pano_node_bridge.js` `sceneViewerWindowOpened`）。閉じるとウィンドウの最後の再生の位置と再生中かどうかを返し、
   ノード上の表示はそこから続ける（`sceneViewerWindowClosed`。`docs/preview-node.md` の「大きなウィンドウ」）。

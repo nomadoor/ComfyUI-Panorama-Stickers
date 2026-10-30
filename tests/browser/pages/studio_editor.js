@@ -32,13 +32,17 @@ async function makeErp() {
   return URL.createObjectURL(blob);
 }
 
+// ?processed: the background IMAGE comes from a node that makes it (no file, no images of its own, as ImageInvert in
+// ComfyUI), so the picture is only in the node's own run result (pano_input_images, a temp file; ADR 0003).
+const PROCESSED = new URLSearchParams(location.search).has("processed");
+
 const studio = (window.__studio = { ready: false, error: null, contextLost: false, renderer: null });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 
 try {
   const url = await makeErp();
-  const origin = { id: 7, title: "Load Image" };
+  const origin = { id: 7, title: PROCESSED ? "Invert Image" : "Load Image" };
   const node = {
     id: 12,
     title: "Panorama Studio",
@@ -49,7 +53,10 @@ try {
     getInputLink: (index) => (index === 0 ? { origin_id: 7, origin_slot: 0 } : null),
     getInputNode: (index) => (index === 0 ? origin : null),
   };
-  const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
+  const app = {
+    getNodeImageUrls: (target) => (target === origin && !PROCESSED ? [url] : []),
+    nodeOutputs: PROCESSED ? { 12: { pano_input_images: [url] } } : {},
+  };
   let editor = null;
   // A context lost while the editor is open counts; closing lets the context go on purpose.
   let canvas = null;

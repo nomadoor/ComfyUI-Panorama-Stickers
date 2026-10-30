@@ -43,10 +43,10 @@ async function settled(page) {
   return last;
 }
 
-async function open(page, testInfo) {
+async function open(page, testInfo, query = "") {
   const problems = watch(page);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/tests/browser/pages/studio_editor.html");
+  await page.goto(`/tests/browser/pages/studio_editor.html${query}`);
   await page.waitForFunction(() => window.__studio?.ready, null, { timeout: 30_000 });
   expect(await page.evaluate(() => window.__studio.error)).toBeNull();
   // The background loaded and the stage drew it: the loading line has gone.
@@ -142,6 +142,15 @@ test("the shell has its regions, the stage draws the background and the grid, an
   expect(await page.evaluate(() => window.__studio.contextLost)).toBe(false);
   expect(problems).toEqual([]);
   await stage.isVisible();
+});
+
+// The real shape after a run: the background IMAGE is made upstream (no file to read), and only the node's own result
+// has it (docs/adr/0003-external-input-sticker-failure-boundaries.md, Amendment 2026-03-11).
+test("a background IMAGE made upstream shows from the node's own run result (pano_input_images)", async ({ page }, testInfo) => {
+  const { problems } = await open(page, testInfo, "?processed");
+  const mean = (pixels) => pixels.reduce((sum, value, index) => (index % 4 === 3 ? sum : sum + value), 0) / ((pixels.length / 4) * 3);
+  await expect.poll(async () => mean(await sample(page)), { timeout: 20_000 }).toBeGreaterThan(40);
+  expect(problems).toEqual([]);
 });
 
 test("a left drag turns the view, the wheel moves it toward the pointer, and the close remembers the view", async ({ page }, testInfo) => {

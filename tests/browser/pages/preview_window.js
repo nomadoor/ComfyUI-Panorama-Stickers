@@ -16,6 +16,9 @@ const CLIP = new URLSearchParams(location.search).has("clip");
 const RANGE_180 = new URLSearchParams(location.search).has("range180");
 // ?handoff: the node's view (a Scene viewer's record, or the IMAGE runtime's view) is set before the window opens.
 const HANDOFF = new URLSearchParams(location.search).has("handoff");
+// ?processed: the IMAGE comes from a node that makes it (no file, no images of its own, as ImageInvert in ComfyUI),
+// so the picture is only in the Preview node's own run result (pano_input_images, a temp file, docs/preview-node.md).
+const PROCESSED = new URLSearchParams(location.search).has("processed");
 const solid = (width, height, color) => {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -75,7 +78,7 @@ try {
     });
     preview.frames = Math.round(recorded.duration * FPS);
   }
-  const origin = { id: 7, title: VIDEO ? "Load Video" : "Load Image" };
+  const origin = { id: 7, title: VIDEO ? "Load Video" : PROCESSED ? "Invert Image" : "Load Image" };
   const node = {
     id: 21,
     title: "Panorama Preview",
@@ -107,6 +110,8 @@ try {
     }
     : VIDEO
     ? { 21: { pano_videos: [recorded.src], pano_video_meta: [{ fps: FPS, frames: preview.frames, duration: recorded.duration, has_audio: false }] } }
+    : PROCESSED
+    ? { 21: { pano_input_images: [url] } }
     : {};
   // The node's own display, stood in for: what the window takes over and hands back.
   const told = (preview.told = []);
@@ -144,7 +149,7 @@ try {
   preview.record = () => JSON.parse(JSON.stringify({ ...(peekSceneViewer(node)?.record ?? {}), windowOpen: !!peekSceneViewer(node)?.windowOpen }));
   preview.runtimeView = () => ({ ...(previewNode(node).runtime?.view ?? {}) });
   preview.pose = () => win.stage().pose();
-  const app = { getNodeImageUrls: (target) => (target === origin && url ? [url] : []), nodeOutputs };
+  const app = { getNodeImageUrls: (target) => (target === origin && url && !PROCESSED ? [url] : []), nodeOutputs };
   let win = null;
   preview.open = async () => {
     win = await openPreviewWindow(node, { app, api: null, storage: { getItem: () => null, setItem: () => {} } });
