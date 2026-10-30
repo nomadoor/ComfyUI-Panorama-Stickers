@@ -89,6 +89,36 @@ for (const [mode, projection, tip] of [["frame", "perspective", "Camera to view"
   });
 }
 
+// docs/design.md "動き": a move runs the soft yellow light band across the stage once (a CSS layer); with reduced
+// motion only the line shows.
+async function sweepFrame(page, at) {
+  return page.evaluate((ms) => {
+    const animation = document.getAnimations().find((item) => item.animationName === "pano-studio-sweep");
+    if (!animation) return null;
+    animation.pause();
+    animation.currentTime = ms;
+    return getComputedStyle(document.querySelector("[data-sweep]")).display;
+  }, at);
+}
+
+test("a move runs the light band across the stage once; reduced motion shows only the line", async ({ page }) => {
+  const problems = await load(page, "mode=frame");
+  await rail(page).click();
+  await expect(page.locator("[data-sweep]")).toHaveCount(1);
+  for (const at of [120, 225]) {
+    expect(await sweepFrame(page, at)).toBe("block");
+    await page.screenshot({ path: `${SHOTS}/camera-button-flash-${at}ms.png` });
+  }
+  await page.evaluate(() => document.getAnimations().find((item) => item.animationName === "pano-studio-sweep")?.finish());
+  await page.locator('[data-tool="undo"]').click();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await rail(page).click();
+  await expect(page.locator(".pano-studio-notice")).toHaveText("Camera moved to this view");
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector("[data-sweep]")).display)).toBe("none");
+  await page.screenshot({ path: `${SHOTS}/camera-button-flash-reduced-motion.png` });
+  expect(problems).toEqual([]);
+});
+
 test("the Camera button is off in the Camera tab, saying why", async ({ page }) => {
   const problems = await load(page, "mode=frame");
   await page.locator('[role="tablist"] button', { hasText: "Camera" }).click();

@@ -34443,10 +34443,10 @@ const TH = ["data-side", "aria-hidden"], FH = {
   class: "pano-studio-stage",
   "data-region": "stage"
 }, $H = ["data-loading-guide"], VH = ["accept"], zH = {
-  key: 2,
+  key: 3,
   class: "pano-studio-place-layer"
 }, jH = { class: "pano-studio-at-notice" }, HH = { class: "pano-studio-at-output" }, BH = { class: "pano-studio-at-nav" }, KH = {
-  key: 4,
+  key: 5,
   class: "pano-studio-at-shortcuts"
 }, GH = {
   class: "pano-studio-at-bar",
@@ -34599,8 +34599,14 @@ const TH = ["data-side", "aria-hidden"], FH = {
               key: 0,
               mark: e.ui.drop
             }, null, 8, ["mark"])) : Ze("", !0),
+            e.ui.sweep ? (me(), ve("div", {
+              key: e.ui.sweep,
+              class: "pano-studio-sweep",
+              "data-sweep": "",
+              "aria-hidden": "true"
+            })) : Ze("", !0),
             d.value && y.value ? (me(), ht(cz, {
-              key: 1,
+              key: 2,
               aspect: k.value,
               onRect: U[15] || (U[15] = (re) => {
                 var ie, ae;
@@ -34729,7 +34735,7 @@ const TH = ["data-side", "aria-hidden"], FH = {
               })
             ])) : Ze("", !0),
             e.view.confirm ? (me(), ht(mz, {
-              key: 3,
+              key: 4,
               title: e.view.confirm.title,
               body: e.view.confirm.body,
               confirm: e.view.confirm.confirm,
@@ -36929,7 +36935,9 @@ async function ZB(e, { app: t = null, api: n = null, storage: r = globalThis.loc
     // The node's state_json cannot be read: the editor is read-only (notice_line.js).
     stateUnreadable: a,
     // The short notice of an operation that was done (notice_line.js), or null.
-    done: null
+    done: null,
+    // Counts the Camera button's moves: each new count runs the stage's light band once (StudioEditor.vue).
+    sweep: 0
   }), re = XB(e, o, () => {
     ie(), g(at.MEDIA);
   }, P());
@@ -37081,7 +37089,7 @@ async function ZB(e, { app: t = null, api: n = null, storage: r = globalThis.loc
     if (_.tab !== "3d" || !f) return;
     f.settle();
     const ee = s.cameraToView(f.pose(), _.playhead);
-    Oe(ee), ee.changed && Pe(oi.cameraMoved);
+    Oe(ee), ee.changed && (Pe(oi.cameraMoved), U.sweep += 1);
   }
   function _e(ee) {
     ee !== "3d" && ee !== "camera" || _.tab !== ee && (_.tab = ee, ye.cancelChoice(), ee === "camera" && K("cursor"), g());
