@@ -3,11 +3,12 @@
 // uploaded for the node.
 import { createPanoCanvas } from "../pano_diagnostics.js";
 import { paintingLayerNeedsSync } from "../pano_editor_state.js";
+import { paintingCompositeCount, uploadPaintingLayer } from "../pano_paint_upload.js";
 import { createDamageLog } from "../pano_paint_damage.js";
 import { engineMask, skyPaintLayers } from "../pano_paint_layers.js";
 import { rasterEraserDisplay } from "../pano_raster_eraser.js";
 import { clamp } from "../pano_math.js";
-import { cloneJson, drawRasterObjectErp, paintingCompositeCount, pointInPoly } from "./helpers.js";
+import { cloneJson, drawRasterObjectErp, pointInPoly } from "./helpers.js";
 
 // Global registry: nodeId → Promise for in-flight paint layer uploads.
 const _paintLayerUploadRegistry = new Map();
@@ -272,28 +273,6 @@ export function createPaintLayers(deps) {
     return erpCanvas;
   }
 
-  async function uploadCanvasAsPaintLayer(canvas, filename) {
-    const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
-    const body = new FormData();
-    body.append("image", blob, filename);
-    // Cutout export resolves these layers on the backend during prompt execution,
-    // so store them like other editor assets instead of relying on temp lifetime.
-    body.append("type", "input");
-    body.append("subfolder", "panorama_stickers");
-    body.append("overwrite", "1");
-    const resp = await api.fetchApi("/upload/image", { method: "POST", body });
-    if (!resp || resp.status !== 200) throw new Error(`upload failed (${resp?.status})`);
-    const data = await resp.json();
-    const fn = String(data?.name || "").trim();
-    if (!fn) throw new Error("upload response missing filename");
-    return {
-      type: "comfy_image",
-      filename: fn,
-      subfolder: String(data?.subfolder || "panorama_stickers"),
-      storage: String(data?.type || "input"),
-    };
-  }
-
   let _paintLayerSyncRevision = null;
   let _paintLayerSyncPending = false;
 
@@ -340,37 +319,17 @@ export function createPaintLayers(deps) {
         const uploadPaintCanvas = paintCanvas || (counts.totalPaintCount > 0 ? editor._paintLayerSyncBlankSurface?.canvas || null : null);
         const uploadMaskCanvas = maskCanvas || (counts.totalMaskCount > 0 ? editor._paintLayerSyncBlankSurface?.canvas || null : null);
         if (!uploadPaintCanvas && !uploadMaskCanvas) return;
-        let paintRef = null;
-        let maskRef = null;
-        const groupRefs = [];
-        if (counts.totalPaintCount > 0) {
-          paintRef = await uploadCanvasAsPaintLayer(uploadPaintCanvas, `pano_paint_${nodeId}.png`);
-          for (const actionGroupId of orderedGroupIds) {
-            const gid = String(actionGroupId || "").trim();
-            if (!gid) continue;
-            const groupCanvas = editor.paintEngine?.getGroupDisplayCanvas?.(gid) || null;
-            if (!groupCanvas) continue;
-            const safeGid = gid.replace(/[^a-zA-Z0-9_-]+/g, "_");
-            const groupRef = await uploadCanvasAsPaintLayer(groupCanvas, `pano_group_${nodeId}_${safeGid}.png`);
-            if (groupRef) {
-              groupRefs.push({
-                id: gid,
-                actionGroupId: gid,
-                image: groupRef,
-              });
-            }
-          }
-        }
-        if (counts.totalMaskCount > 0) {
-          maskRef = await uploadCanvasAsPaintLayer(uploadMaskCanvas, `pano_mask_${nodeId}.png`);
-        }
+        const layer = await uploadPaintingLayer(api, {
+          nodeId,
+          counts,
+          paintCanvas: uploadPaintCanvas,
+          maskCanvas: uploadMaskCanvas,
+          groupIds: orderedGroupIds,
+          groupCanvas: (gid) => editor.paintEngine?.getGroupDisplayCanvas?.(gid) || null,
+          revision: rev,
+        });
         if (rev === getPaintingCompositeRevisionKey()) {
-          state.painting_layer = {
-            paint: paintRef,
-            mask: maskRef,
-            groups: groupRefs,
-            revision: rev,
-          };
+          state.painting_layer = layer;
           _paintLayerSyncRevision = rev;
           commitState();
         }

@@ -116,6 +116,18 @@ function onDragKeydown(event) {
   if (!drag || event.key !== "Escape") return;
   event.preventDefault();
   event.stopPropagation();
+  cancelDrag();
+}
+
+// The browser took the pointer away: the drag is cancelled as with Escape (docs/editor-interaction.md "ポインタの取り消しと
+// フォーカスの喪失").
+function onPointerCancel(event) {
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  cancelDrag();
+}
+
+// The value goes back to where the drag started, and the drag ends with cancel.
+function cancelDrag() {
   const { start, sent } = drag;
   endDrag();
   if (sent !== start) emit("input", start);
@@ -180,7 +192,7 @@ onBeforeUnmount(() => {
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
-      @pointercancel="endDrag"
+      @pointercancel="onPointerCancel"
       @keydown="onKeydown"
     >
       <div class="pano-studio-edge-ruler-scale" data-ruler-ticks>

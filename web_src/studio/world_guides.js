@@ -32,8 +32,9 @@ function loop(points) {
 }
 
 // The World objects that have a guide in `content` (stage_content.js stageContent(): the shown world image planes and
-// the shown 3D Stickers' items) of `state`: [{ id, kind ("plane" | "box"), locked, loading, segments, corners, center }]
-// in World units. `center` is where the object's gizmo sits too (docs/studio-ui.md "ギズモ" "物の中心"). `sceneBox(url)`
+// the shown 3D Stickers' items, the 3D file Stickers' and the port Sticker's 3D media) of `state`: [{ id, kind
+// ("plane" | "box"), locked, loading, segments, corners, center } (a box also has `url`, its item's key or null while
+// it loads, and `value`, the Sticker's evaluated transform)] in World units. `center` is where the object's gizmo sits too (docs/studio-ui.md "ギズモ" "物の中心"). `sceneBox(url)`
 // is the box of a loaded item (null while it loads: that object has no guide yet). `pendingBox(id)` is the box in its
 // own frame of a 3D file just placed whose item has not drawn yet (load_reveal.js: DROP_PREVIEW_BOX, then the route's
 // box), or null: such an object has a guide of that box, `loading`. Hidden objects and those outside their Clip range
@@ -56,25 +57,30 @@ export function worldGuideItems(state, content, sceneBox = () => null, pendingBo
       center: [...plane.position],
     });
   }
-  const boxItem = (sticker, box, value, loading) => {
+  const boxItem = (sticker, box, value, loading, url = null) => {
     const corners = boxCorners(box).map((point) => transformPoint(value, point));
     return {
       id: sticker.id,
       kind: "box",
       locked: sticker.locked === true,
       loading,
+      // The item's key and the Sticker's value, for the hit test through its grid (hit_test.js coarseUnder).
+      url,
+      value,
       segments: BOX_EDGES.map(([a, b]) => [corners[a], corners[b]]),
       corners,
       center: transformPoint(value, box.min.map((v, axis) => (v + box.max[axis]) / 2)),
     };
   };
   const boxed = new Set();
-  for (const request of content.space?.fileStickers ?? []) {
+  // The 3D file Stickers' items and the port Sticker's 3D media (its item at the playhead).
+  const portRequest = content.space?.sticker?.id != null ? [content.space.sticker] : [];
+  for (const request of [...portRequest, ...(content.space?.fileStickers ?? [])]) {
     const sticker = byId.get(request.id);
     const box = sticker ? sceneContentBox(request, sceneBox(request.url)) : null;
     if (!box) continue;
     boxed.add(sticker.id);
-    items.push(boxItem(sticker, box, request.value, false));
+    items.push(boxItem(sticker, box, request.value, false, request.url));
   }
   // A placed 3D file still loading: the stand-in box at its value now (shown at the playhead only).
   state.stickers.forEach((sticker, index) => {

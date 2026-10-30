@@ -3,6 +3,7 @@ import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
 import { isPanoramaPreviewNodeName, isPanoramaPreviewSceneNodeName } from "./pano_preview_identity.js";
 import { linkedInputType } from "./pano_preview_video.js";
 import { runExternalStickerSync } from "./pano_external_sticker_sync.js";
+import { chainWidgetCallback } from "./pano_widget_callback.js";
 import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
 import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
 import { disposeNodeRuntime, editorSession, nodeSurface, peekSceneViewer, previewNode, stateSync } from "./pano_node_bridge.js";
@@ -31,13 +32,10 @@ function initializeNewCutoutFrame(node) {
 
 function syncCoverageWidgetRedraw(node, app) {
   if (!node || stateSync(node).coverageSyncInstalled) return;
-  const coverageWidget = getWidget(node, "coverage");
+  // Panorama Studio and the Preview name it `background_range` (ADR 0048); the legacy nodes `coverage`.
+  const coverageWidget = getWidget(node, "background_range") ?? getWidget(node, "coverage");
   if (!coverageWidget) return;
-  const previous = typeof coverageWidget.callback === "function"
-    ? coverageWidget.callback.bind(coverageWidget)
-    : null;
-  coverageWidget.callback = function (...args) {
-    const result = previous ? previous(...args) : undefined;
+  chainWidgetCallback(coverageWidget, () => {
     const sync = stateSync(node);
     sync.parsedState = null;
     sync.liveState = null;
@@ -46,8 +44,7 @@ function syncCoverageWidgetRedraw(node, app) {
     node.setDirtyCanvas?.(true, true);
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
-    return result;
-  };
+  });
   stateSync(node).coverageSyncInstalled = true;
 }
 
@@ -253,14 +250,9 @@ function installEditorButton(nodeType, {
 
     const stateWidget = getWidget(node, STATE_WIDGET);
     installStateQueueBarrier(node, stateWidget);
-    if (stateWidget && !stateWidget.__panoPreviewPatchedCb) {
-      stateWidget.__panoPreviewPatchedCb = true;
-      const previous = stateWidget.callback;
-      stateWidget.callback = (value) => {
-        const result = previous ? previous(value) : undefined;
-        node.setDirtyCanvas?.(true, false);
-        return result;
-      };
+    if (stateWidget && !stateSync(node).stateRedrawInstalled) {
+      stateSync(node).stateRedrawInstalled = true;
+      chainWidgetCallback(stateWidget, () => node.setDirtyCanvas?.(true, false));
     }
 
     if (matchType === "PanoramaStickers") {
@@ -426,11 +418,14 @@ function installScenePreviewInstance(node, { app, openEditor, attachPreview, att
     if (display === "scene") {
       attachSceneViewer?.(node);
     } else {
+      // With the new window taking this node, the surface's top-right button opens it instead of the browser's
+      // fullscreen (docs/preview-node.md "ノード上").
       attachPreview(node, {
         buttonText: "Open Preview",
         modalTitle: "Panorama Preview",
         imageInputName: "source",
         onOpen: openMedia,
+        opensWindow: () => openEditor.previewWindowTakes?.(node) === true,
       });
     }
     if (install.surface || peekSceneViewer(node)?.surface) hideWidget(node, "Open Preview");

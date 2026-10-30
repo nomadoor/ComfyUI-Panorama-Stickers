@@ -58,6 +58,9 @@
   --studio-frame-pad: 8px;
   --studio-window-gap: 8px;
   --studio-float-inset: 16px;
+  /* The top-left tabs: an item's height and the float's padding around the items (the group is 34 + 2 * 4 = 42px). */
+  --studio-tab-item: 34px;
+  --studio-float-seg-pad: 4px;
   /* The name on the bar at the bottom center: one width for every name, so a name never changes the bar's width. */
   --studio-bar-name-width: 140px;
   --studio-row-gap: 8px;
@@ -143,6 +146,79 @@
   .pano-studio-cap {
     text-box: trim-both cap alphabetic;
   }
+}
+
+/* --- Panorama Studio's node surface (PanoStudioNodeSurface.vue; docs/studio-node-surface.md "表示の構成", values
+   docs/design.md "Panorama Studio のノード上の表示"). The canvas under it draws the Camera's output picture; the overlay
+   places the Open Studio button and the line under the picture where pano_studio_surface.js lays them out (inline
+   left / top / bottom / width), over the node's own background (the surface is not filled: STUDIO_SURFACE_FILL is transparent). Only the button takes
+   the pointer. The line reads the theme's tokens (ComfyUI's `.dark-theme` on <html>). */
+.pano-studio-node-surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
+}
+.pano-studio-node-open {
+  position: absolute;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: var(--studio-float);
+  color: var(--studio-fg);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color var(--studio-motion-hover);
+}
+.pano-studio-node-open:hover {
+  background: color-mix(in srgb, var(--studio-fill-hover) var(--studio-float-alpha), transparent);
+}
+.pano-studio-node-open:active {
+  background: color-mix(in srgb, var(--studio-fill-active) var(--studio-float-alpha), transparent);
+}
+.pano-studio-node-line {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--studio-text-xs);
+  line-height: 1;
+}
+.pano-studio-node-shot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--studio-fg-2);
+  font-weight: var(--studio-weight);
+}
+.pano-studio-node-shot .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pano-studio-node-size {
+  flex: none;
+  color: var(--studio-fg);
+  font-weight: var(--studio-weight-head);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.pano-studio-node-unavailable {
+  position: absolute;
 }
 
 .pano-studio-num {
@@ -301,7 +377,7 @@
 
 .pano-studio-tabs .pano-studio-seg-item {
   width: 108px;
-  height: 34px;
+  height: var(--studio-tab-item);
   padding: 0;
   font-size: var(--studio-text-md);
 }
@@ -322,21 +398,19 @@
 }
 
 .pano-studio-float.pano-studio-seg {
-  --studio-seg-pad: 4px;
+  --studio-seg-pad: var(--studio-float-seg-pad);
   background: var(--studio-float);
   border: 0;
 }
 
-.pano-studio-float.is-rail {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px;
-}
-
+/* The vertical columns (the left column, the view knobs' column). Every button sits on the column's center line, also
+   one narrower than the rest ("?" under the knobs); the rows below center theirs on the row's middle (docs/design.md
+   "新しい UI の見た目", the floats' centering rule). */
+.pano-studio-float.is-rail,
 .pano-studio-float.is-knobs {
   display: inline-flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
   padding: 6px;
 }
@@ -381,6 +455,7 @@
 
 .is-rail > .pano-studio-sep,
 .is-knobs > .pano-studio-sep {
+  align-self: stretch;
   height: 1px;
   margin: 4px 6px;
 }
@@ -1420,8 +1495,23 @@
 /* The fixed places over the stage, 16px from its edges. */
 .pano-studio-at-tabs { position: absolute; left: var(--studio-float-inset); top: var(--studio-float-inset); }
 .pano-studio-at-rail { position: absolute; left: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
-.pano-studio-at-notice { position: absolute; left: 50%; top: var(--studio-float-inset); transform: translateX(-50%); pointer-events: none; }
-.pano-studio-at-output { position: absolute; right: var(--studio-float-inset); top: var(--studio-float-inset); }
+/* The top-center line: a box as tall as the tabs' group, the line at its vertical center, so both centers are one line. */
+.pano-studio-at-notice {
+  position: absolute;
+  left: 50%;
+  top: var(--studio-float-inset);
+  height: calc(var(--studio-tab-item) + 2 * var(--studio-float-seg-pad));
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* The Output window's corner: its folded pill's center on the tabs' center line (docs/design.md "大きさ"). */
+.pano-studio-at-output {
+  position: absolute;
+  right: var(--studio-float-inset);
+  top: calc(var(--studio-float-inset) + (var(--studio-tab-item) + 2 * var(--studio-float-seg-pad) - var(--studio-btn)) / 2);
+}
 .pano-studio-at-nav { position: absolute; right: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
 .pano-studio-at-bar { position: absolute; left: 50%; bottom: var(--studio-float-inset); transform: translateX(-50%); }
 
@@ -1435,6 +1525,124 @@
   pointer-events: none;
 }
 
+/* The Camera button's cue (docs/design.md "新しい UI の見た目" "動き"; the mock camera-to-view-1.html A): four soft
+   yellow viewfinder brackets fly in from the stage's corners, pinch once like a focus lock, hold, and lift away, over a
+   faint yellow vignette. Only transform and opacity move: the 3D view is neither stopped nor drawn again. The layer is
+   a size container, so the brackets' size and travel follow the stage (cqw, cqh, cqmin). Its own lifetime animation
+   does nothing visible; its end removes the layer (StudioCameraCue.vue). */
+.pano-studio-cue {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  container-type: size;
+  /* How far in from the stage's edges the brackets' outer corners rest: clear of the floating groups at the edges. */
+  --cue-ix: max(14cqw, 76px);
+  --cue-iy: max(14cqh, 76px);
+  /* The last bracket's delay (60ms) and its 1200ms. */
+  animation: pano-studio-cue-life 1260ms linear both;
+}
+@keyframes pano-studio-cue-life {
+  from { visibility: visible; }
+  to { visibility: visible; }
+}
+
+/* The vignette: the soft yellow at 26% at the stage's edges, clear inside 52% of the way out. It rises from 220ms to
+   410ms (peaking with the pinch) and decays for 500ms. */
+.pano-studio-cue-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse closest-side at center, transparent 52%, rgb(232 207 116 / 0.1) 76%, rgb(232 207 116 / 0.26) 100%);
+  opacity: 0;
+  animation: pano-studio-cue-glow 910ms linear both;
+}
+@keyframes pano-studio-cue-glow {
+  0%, 24.18% { opacity: 0; animation-timing-function: cubic-bezier(0.3, 0, 0.3, 1); }
+  45.05% { opacity: 1; animation-timing-function: cubic-bezier(0.2, 0.6, 0.35, 1); }
+  100% { opacity: 0; }
+}
+
+/* A bracket: 8% of the stage's shorter side (28px to 56px). --sx and --sy point out of the stage. It flies in from 80%
+   of the way to the stage's corner; the pinch and the lift are spreads of the four around the stage's center (0.94 and
+   1.03 of the way from the center). */
+.pano-studio-cue-bracket {
+  position: absolute;
+  width: clamp(28px, 8cqmin, 56px);
+  height: clamp(28px, 8cqmin, 56px);
+  --cue-hx: calc(50cqw - var(--cue-ix));
+  --cue-hy: calc(50cqh - var(--cue-iy));
+  overflow: visible;
+  opacity: 0;
+  animation:
+    pano-studio-cue-move 1200ms linear both,
+    pano-studio-cue-fade 1200ms linear both;
+}
+.pano-studio-cue-bracket.is-tl { left: var(--cue-ix); top: var(--cue-iy); --sx: -1; --sy: -1; transform-origin: 0 0; }
+.pano-studio-cue-bracket.is-tr { right: var(--cue-ix); top: var(--cue-iy); --sx: 1; --sy: -1; transform-origin: 100% 0; animation-delay: 20ms; }
+.pano-studio-cue-bracket.is-br { right: var(--cue-ix); bottom: var(--cue-iy); --sx: 1; --sy: 1; transform-origin: 100% 100%; animation-delay: 40ms; }
+.pano-studio-cue-bracket.is-bl { left: var(--cue-ix); bottom: var(--cue-iy); --sx: -1; --sy: 1; transform-origin: 0 100%; animation-delay: 60ms; }
+.pano-studio-cue-bracket path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.pano-studio-cue-under {
+  stroke: rgb(0 0 0 / 0.4);
+  stroke-width: 4.5px;
+}
+.pano-studio-cue-line {
+  stroke: var(--studio-yellow);
+  stroke-width: 2.5px;
+}
+
+/* 0 to 340ms: in from near the corner at 1.25 times the size, decelerating hard (a quartic ease-out). 340 to 410ms: the
+   pinch to 0.94 and 0.97 times the size. 410 to 590ms: back to 1 with a soft overshoot. 590 to 940ms: held. 940 to
+   1200ms: out to 1.03 as it fades. */
+@keyframes pano-studio-cue-move {
+  0% {
+    transform: translate(calc(var(--sx) * 0.8 * var(--cue-ix)), calc(var(--sy) * 0.8 * var(--cue-iy))) scale(1.25);
+    animation-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  28.33% {
+    transform: translate(0, 0) scale(1);
+    animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  }
+  34.17% {
+    transform: translate(calc(var(--sx) * -0.06 * var(--cue-hx)), calc(var(--sy) * -0.06 * var(--cue-hy))) scale(0.97);
+    animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  49.17%, 78.33% {
+    transform: translate(0, 0) scale(1);
+    animation-timing-function: cubic-bezier(0.25, 0, 0.3, 1);
+  }
+  100% {
+    transform: translate(calc(var(--sx) * 0.03 * var(--cue-hx)), calc(var(--sy) * 0.03 * var(--cue-hy))) scale(1);
+  }
+}
+/* In over the first 90ms, out over the last 260ms easing in (it stays, then goes). */
+@keyframes pano-studio-cue-fade {
+  0% { opacity: 0; animation-timing-function: cubic-bezier(0.3, 0, 0.6, 1); }
+  7.5%, 78.33% { opacity: 1; animation-timing-function: cubic-bezier(0.4, 0, 1, 1); }
+  100% { opacity: 0; }
+}
+
+/* Less motion: no movement and no vignette; the brackets show where they settle for 400ms and fade over 200ms. */
+@media (prefers-reduced-motion: reduce) {
+  .pano-studio-cue { animation-duration: 600ms; }
+  .pano-studio-cue-vignette { display: none; }
+  .pano-studio-cue-bracket.is-tl,
+  .pano-studio-cue-bracket.is-tr,
+  .pano-studio-cue-bracket.is-br,
+  .pano-studio-cue-bracket.is-bl {
+    animation: pano-studio-cue-still 600ms linear both;
+  }
+}
+@keyframes pano-studio-cue-still {
+  0%, 66.67% { opacity: 1; animation-timing-function: cubic-bezier(0.4, 0, 1, 1); }
+  100% { opacity: 0; }
+}
+
 /* The selected object's name on the bar at the bottom center: the same width for every name, left aligned, one line,
    cut with an ellipsis (docs/studio-ui.md "下の中央のバー"). */
 .pano-studio-bar-name {
@@ -1446,7 +1654,7 @@
 }
 .pano-studio-at-buttons { position: absolute; right: var(--studio-float-inset); bottom: var(--studio-float-inset); }
 
-/* The view knobs' column and "?" below it. */
+/* The view knobs' column and "?" below it, one float with a line between them. */
 .pano-studio-nav {
   display: flex;
   flex-direction: column;
@@ -1454,7 +1662,8 @@
   gap: 8px;
 }
 
-/* The one line at the top center: a notice (a coral dot), what the stage waits for, or the empty stage's hint. */
+/* The one line at the top center: a notice (a coral dot), an operation done (a lime dot), a warning (a soft yellow
+   dot), what the stage waits for (a ring), or an info line such as the empty stage's hint (a neutral dot). */
 .pano-studio-notice {
   display: inline-flex;
   align-items: center;
@@ -1475,6 +1684,16 @@
 
 .pano-studio-notice.is-warning .pano-studio-notice-dot {
   background: var(--studio-yellow);
+}
+
+.pano-studio-notice.is-done .pano-studio-notice-dot {
+  background: var(--studio-lime);
+}
+
+/* Info: a neutral dot, the text color at 55%. */
+.pano-studio-notice.is-info .pano-studio-notice-dot {
+  background: var(--studio-fg);
+  opacity: 0.55;
 }
 
 /* Loading: a small ring, a quarter of it in the text color, turning. */
@@ -1717,8 +1936,8 @@
 }
 
 .pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-acts {
-  top: calc(100% + 4px);
-  gap: 2px;
+  top: calc(100% + 12px);
+  gap: 4px;
 }
 
 .pano-studio-edge-ruler.is-horizontal :is(.pano-studio-edge-ruler-head, .pano-studio-edge-ruler-acts) {
@@ -1732,8 +1951,8 @@
 }
 
 .pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-acts {
-  left: calc(100% + 8px);
-  gap: 2px;
+  left: calc(100% + 16px);
+  gap: 4px;
 }
 
 .pano-studio-edge-ruler-acts .pano-studio-keydot {
@@ -2343,3 +2562,279 @@
 .pano-studio-preview.is-knob-drag,
 .pano-studio-preview.is-knob-drag * { cursor: grabbing !important; }
 .pano-studio-at-close { position: absolute; right: var(--studio-float-inset); top: var(--studio-float-inset); }
+
+/* The paint tools' bar (docs/studio-ui.md "ペイントの道具", docs/design.md "ペイントの道具のバー"): the bar's shape, a
+   name field as wide as "Paint" for both tools, the size slider and its number, the color dots. */
+.pano-studio-paint-label {
+  margin-right: 2px;
+}
+
+.pano-studio-paint-name {
+  flex: none;
+  width: 4.2ch;
+  white-space: nowrap;
+}
+
+.pano-studio-paint-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.pano-studio-paint-size-slider {
+  width: 96px;
+}
+
+.pano-studio-paint-size-value {
+  width: 3ch;
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.pano-studio-paint-size-value.is-disabled,
+.pano-studio-paint-size .pano-studio-slider[aria-disabled="true"] {
+  opacity: 0.4;
+}
+
+.pano-studio-paint-tools {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.pano-studio-float.pano-studio-paint-colors {
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.pano-studio-paint-dot {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--dot, transparent);
+  outline: 1px solid rgba(127, 127, 127, 0.35);
+  outline-offset: -1px;
+  cursor: pointer;
+}
+
+.pano-studio-paint-dot.is-active::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 2px solid var(--studio-fg);
+  border-radius: 50%;
+}
+
+.pano-studio-paint-dot.is-empty {
+  background: transparent;
+  outline: 1px solid var(--studio-line-strong);
+  outline-offset: -1px;
+  cursor: default;
+}
+
+.pano-studio-paint-dot.is-custom {
+  background: conic-gradient(#ff3b30, #ffcc00, #34c759, #00c7be, #007aff, #af52de, #ff3b30);
+}
+
+.pano-studio-paint-dot.is-custom::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot);
+  outline: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.pano-studio-paint-colors.is-disabled .pano-studio-paint-dot {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pano-studio-paint-custom {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The Custom color's popover, 8px above the color row, centered on it. */
+.pano-studio-paint-pop {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+}
+
+.pano-studio-color-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 224px;
+  padding: 12px;
+  border-radius: var(--studio-r-box);
+  background: var(--studio-panel);
+  color: var(--studio-fg);
+  cursor: default;
+}
+
+.pano-studio-color-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-color-title {
+  white-space: nowrap;
+}
+
+.pano-studio-color-preview {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  outline: 1px solid rgba(127, 127, 127, 0.35);
+  outline-offset: -1px;
+}
+
+.pano-studio-color-field {
+  position: relative;
+  height: 120px;
+  border-radius: var(--studio-r-field);
+  background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, var(--hue));
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pano-studio-color-hue {
+  position: relative;
+  height: 10px;
+  border-radius: var(--studio-r-part);
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.pano-studio-color-knob {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  outline: 1px solid rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.pano-studio-color-knob.is-hue {
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+}
+
+.pano-studio-color-alpha {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--studio-text-sm);
+}
+
+.pano-studio-color-alpha-name {
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-color-alpha-slider {
+  flex: 1 1 auto;
+}
+
+.pano-studio-color-alpha-value {
+  width: 4ch;
+  font-weight: var(--studio-weight-head);
+  font-variant-numeric: tabular-nums;
+}
+
+.pano-studio-color-recent {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* The question a Clear asks (docs/design.md "確かめのダイアログ"). */
+.pano-studio-confirm-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+}
+
+.pano-studio-confirm-veil {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.pano-studio-confirm {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  padding: 16px;
+  border-radius: var(--studio-r-box);
+  background: var(--studio-panel);
+  color: var(--studio-fg);
+}
+
+.pano-studio-confirm-title {
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-confirm-body {
+  font-size: var(--studio-text-sm);
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pano-studio-confirm-btn {
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg);
+  font: inherit;
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  cursor: pointer;
+}
+
+.pano-studio-confirm-btn:hover {
+  background: var(--studio-fill-hover);
+}
+
+.pano-studio-confirm-btn.is-strong {
+  background: var(--studio-strong);
+  color: var(--studio-on-strong);
+}

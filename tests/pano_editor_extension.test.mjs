@@ -793,3 +793,35 @@ test("the Preview shows a linked Scene in the Scene viewer and IMAGE or VIDEO in
   assert.deepEqual(node.outputs, [{ name: "source", type: "PANO_SCENE", links: null }]);
   assert.equal(node.widgets.filter((widget) => widget.name === "Open Preview").length, 1);
 });
+
+// docs/preview-node.md "ノード上": the IMAGE and VIDEO view's top-right button opens the new window when the chooser
+// takes the node, so the runtime is given the chooser's answer.
+test("the Preview's IMAGE or VIDEO view is told whether the chooser's new window takes the node", () => {
+  const given = [];
+  const queue = [];
+  function NodeType() {}
+  let takes = true;
+  const openEditor = () => {};
+  openEditor.previewWindowTakes = (target) => takes && target === node;
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor,
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview(target, options) { given.push(options); },
+    attachSceneViewer() {},
+    requestFrame(callback) { queue.push(callback); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaPreviewNode" });
+  const node = makeNode([360, 260]);
+  node.comfyClass = "PanoramaPreviewNode";
+  node.id = 3;
+  node.inputs = [{ name: "source", type: "IMAGE,VIDEO,PANO_SCENE", link: 1 }];
+  node.getInputLink = () => ({ type: "VIDEO", origin_id: 1 });
+  extension.nodeCreated(node);
+  while (queue.length) queue.shift()();
+  assert.equal(given.length, 1);
+  assert.equal(given[0].opensWindow(), true);
+  takes = false;
+  assert.equal(given[0].opensWindow(), false);
+});

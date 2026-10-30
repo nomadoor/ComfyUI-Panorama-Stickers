@@ -242,8 +242,41 @@ test("Lock turns the selected Sticker's lock over as one Undo step", () => {
   assert.equal(session.state.stickers[0].locked, false);
   session.undo();
   assert.equal(session.state.stickers[0].locked, true);
+});
+
+test("Lock turns the Camera's camera.locked over as one Undo step; a read-only editor does not", () => {
+  const session = createStudioSession({ state: load({}) });
   session.select({ row: "camera" });
-  assert.equal(session.toggleLock().changed, false, "the Camera's lock waits for camera.locked in the loaders");
+  assert.equal(session.toggleLock().history, true);
+  assert.equal(session.state.camera.locked, true);
+  session.undo();
+  assert.equal(session.state.camera.locked, false);
+  session.redo();
+  assert.equal(session.state.camera.locked, true);
+  const readOnly = createStudioSession({ state: load({}), readOnly: true });
+  readOnly.select({ row: "camera" });
+  assert.equal(readOnly.toggleLock().changed, false);
+});
+
+test("the Camera button brings the Camera to the view as one Undo step, not while it is locked or read-only", () => {
+  const pose = { position: [1, 2, 3], yaw_deg: 30, pitch_deg: -10, roll_deg: 0, target: [0, 0, 0] };
+  const session = createStudioSession({ state: load({ camera: { projection: "erp" }, stickers: [world("w")] }) });
+  session.select({ row: "w" });
+  const outcome = session.cameraToView(pose, 0);
+  assert.equal(outcome.history, true);
+  assert.equal(session.state.camera.projection, "perspective");
+  assert.deepEqual(session.state.camera.position.value, [1, 2, 3]);
+  assert.equal(session.selection.row, "camera", "a move selects the Camera");
+  session.select({ row: "w" });
+  assert.equal(session.cameraToView(pose, 0).changed, false, "at the view already: no step");
+  assert.equal(session.selection.row, "w", "nothing moved: the selection stays");
+  session.undo();
+  assert.equal(session.state.camera.projection, "erp", "one step takes back the mode and the move together");
+  assert.deepEqual(session.state.camera.position.value, [0, 0, 0]);
+  assert.equal(session.canUndo, false);
+  const locked = createStudioSession({ state: load({ camera: { locked: true } }) });
+  assert.equal(locked.cameraToView(pose, 0).changed, false);
+  assert.equal(createStudioSession({ state: load({}), readOnly: true }).cameraToView(pose, 0).changed, false);
 });
 
 test("Duplicate copies the selected Sticker under a new id and selects the copy; a sky copy turns 8° and goes in front", () => {
@@ -397,4 +430,37 @@ test("settled during a gesture, placing is recorded when the gesture ends, given
 test("a read-only session places nothing", () => {
   const session = createStudioSession({ state: load({ stickers: [] }), readOnly: true });
   assert.equal(session.addPlaced((newId) => placed(newId)), null);
+});
+
+test("a painting edit is one Undo step and drops the painting layer; Clear takes its layer only; nothing to clear is no step", () => {
+  const session = createStudioSession({ state: load({ stickers: [sky("sticker_1")], painting_layer: { paint: { filename: "x.png" } } }) });
+  const stroke = (layerKind, gid) => ({ id: `${layerKind}_1`, actionGroupId: gid, layerKind, toolKind: "pen", targetSpace: { kind: "ERP_GLOBAL" }, geometry: { geometryKind: "freehand_open", rawPoints: [{ u: 0.5, v: 0.5 }] } });
+  assert.equal(session.paintingHas("paint"), false);
+  assert.equal(session.clearPainting("paint").changed, false);
+  let outcome = session.editPainting((draft) => {
+    draft.painting.paint.strokes.push(stroke("paint", "ag_1"));
+    draft.painting.groups.push({ id: "ag_1", type: "strokeGroup", actionGroupId: "ag_1", z_index: 1 });
+    draft.painting.mask.strokes.push(stroke("mask", "ag_2"));
+    return true;
+  });
+  assert.deepEqual([outcome.changed, outcome.history, outcome.stopPlayback], [true, true, true]);
+  assert.equal(session.state.painting_layer, null);
+  assert.equal(session.paintingHas("paint"), true);
+  assert.equal(session.editPainting(() => false).changed, false);
+  outcome = session.clearPainting("mask");
+  assert.equal(outcome.changed, true);
+  assert.equal(session.state.painting.mask.strokes.length, 0);
+  assert.equal(session.state.painting.paint.strokes.length, 1);
+  assert.equal(session.state.painting.groups.length, 1);
+  session.clearPainting("paint");
+  assert.deepEqual([session.state.painting.paint.strokes.length, session.state.painting.groups.length], [0, 0]);
+  session.undo();
+  assert.equal(session.state.painting.paint.strokes.length, 1);
+  session.undo();
+  assert.equal(session.state.painting.mask.strokes.length, 1);
+  session.undo();
+  assert.equal(session.state.painting.paint.strokes.length, 0);
+  // A read-only session paints nothing.
+  const readOnly = createStudioSession({ state: load({}), readOnly: true });
+  assert.equal(readOnly.editPainting(() => true).changed, false);
 });

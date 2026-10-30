@@ -141,3 +141,4 @@ export function nearestHit(hits, camera, preferred = () => false) {
 export function pickCacheKey(camera, x, y, width, height, contentKey) {
   return JSON.stringify([camera, x, y, width, height, contentKey]);
 }
+

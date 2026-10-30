@@ -27,7 +27,7 @@
 | エディタの描画を直接表示する（スケジュール、キャンバス、解像度、コンテキストの喪失） | — | `web_src/pano_frame_scheduler.js` `createFrameScheduler`、`pano_editor_view.js` `screenRenderSize`、`pano_three_view.js` `fitRenderSize`、`web_src/components/PanoModal.vue` | `tests/pano_frame_scheduler.test.mjs`、`tests/pano_editor_direct_view.test.mjs`、`tests/pano_preview_view.test.mjs` |
 | WebGL の unpack 状態 | — | `pano_three_view.js` `settleUnpack` | `tests/pano_editor_view.test.mjs`、`tests/test_three_spark_core_pin.py`、`tests/browser/three_view.spec.js` |
 | 新しい UI のステージの描画（視点のカメラの far、地面のグリッドを描く部品、すぐ読み込む側の箱の当たり） | — | `web_src/studio/stage_view.js` `stageCamera`・`stageRenderInput`、`pano_space.js` `spaceCamera`、`web_src/pano_ground_grid.js` `createGroundGrid`（`pano_three_view.js` が `space.ground` のときだけ描く）、`web_src/pano_ray_box.js` `rayBoxDepth`（`pano_pick.js` `rayBoxDepth` の写し） | `tests/studio_stage_view.test.mjs`、`tests/pano_ray_box.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/ground_grid.spec.js`（グリッドの濃さと、半透明の物との順） |
-| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。three.js だけを import する）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ビューへの組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする、描く物の変化で面を描き直す）は `pano_three_view.js` `renderLiveErp`、ステージ（Camera タブ）と Output の小窓から呼ぶのは `web_src/studio/stage.js` | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/ground_grid.spec.js`（面の色空間） |
+| Panorama モードの ERP の表示（新しい UI の Output の小窓と Camera タブ。6 方向を描いて ERP に貼り直す、描き直す条件、解像度） | — | 描く部品は `web_src/pano_live_erp.js` `createLiveErp`（three.js のチャンクに入る側。three.js だけを import する）、渡す値（位置・回転の行列・範囲・大きさ）は `web_src/studio/erp_preview.js`。ビューへの組み込み（`drawFace` に 2 パスの描き方を渡す、Spark の `onDirty` を `invalidate("splats")` にする、描く物の変化で面を描き直す）は `pano_three_view.js` `renderLiveErp`、ステージ（Camera タブ）と Output の小窓から呼ぶのは `web_src/studio/stage.js`、Panorama Studio のノード上の表示から呼ぶのは `pano_preview_runtime.js`（共有の view の `renderLiveErp`、`pano_preview_view.js`） | `tests/studio_erp_preview.test.mjs`、`tests/browser/live_erp.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/ground_grid.spec.js`（面の色空間） |
 
 ## 版と同梱
 
@@ -179,7 +179,7 @@ Panorama Studio のエディタの Camera の編集は `docs/editor-interaction.
   - `lens` を持つ `world` の Sticker：板の代わりに、球面の一部を覆う細かい球の帯のメッシュ（代わりの形）を描き、断片のシェーダでレンズの中心からの向きを求めて `lens_radius` と同じ式で素材の座標にし、板の外は捨てる（`discard`）。奥行きはメッシュのもので、形の近似の誤差は分割を細かくして抑える。当たり判定は同じ代わりの形と同じ捨て方の当たり判定のマテリアルで描き（深度のグリッドと同じく物ごとのマテリアル）、選択の枠は素材の縁を同じ写し方で球面に移した線にする（`pano_three_view.js` の `addWorldLensSticker`）。
   - Frame 表示の重ね描き（ペイント、Sticker の枠、選択の輪郭）：κ ≠ 1 の像の上では、`pano_lens.js` の `lensAxesDirection`（像の点から向き）と `lensAxesFilm`（向きから像の点）を通して描く（`pano_cutout_view_math.js`・`editor/projection.js`・`editor/overlay.js`）。縁は細かく標本化して曲がりに沿わせ、像の外に出る点（レンズが届かない向き）は `null` にして線を切る。
   - Panorama 表示・Unwrap 表示の Camera の枠と Sticker の輪郭：四隅を直線で結ぶのではなく、像の縁（フィルムの四辺）をレンズの写し方とビューの写し方を通して標本化した線（`editor/object_geometry.js` の `outline`、一辺 24 点）で描き、中を動かす当たり判定もその線を使う。四隅・辺の中点の印とハンドルはこの線の上に乗る（κ = 1 も含む。`tests/editor_frame_outline.test.mjs`）。
-  - 当たり判定：Frame 表示でのオービットの中心・ホイールの先・キーの移動の基準を求めるとき、ポインタの画素を `lens_angle` と同じ逆の写し方でピンホールの画素（立方体なら面とその画素）に戻してから `pickAt` に渡す（`pano_lens.js` の `lensPickWindow`、`editor/frame_view.js`。`tests/pano_lens.test.mjs` の「a pointer on the bent image picks through a cube face pixel on the same ray」）。
+  - 当たり判定：Frame 表示でのオービットの中心・ホイールの先・キーの移動の基準を求めるとき、ポインタの画素を `lens_angle` と同じ逆の写し方でピンホールの画素（立方体なら面とその画素）に戻してから `pickAt` に渡す（`pano_lens.js` の `lensPickWindow`、`editor/frame_view.js`、新しい UI は `studio/stage_view.js` の `lensPickView`（`docs/space-and-view.md` の「レンズの Camera の当たり」）。`tests/pano_lens.test.mjs` の「a pointer on the bent image picks through a cube face pixel on the same ray」）。
   - Panorama 表示の Camera の視錐台（`cameraFrustumSegments`）は、隅の光線が 90° を超えると四角錐にならないので、κ ≠ 1 では画像の縁の光線の向きの線にする（`pano_space.js` の `lensFrustumSegments`）。
   - test：`tests/pano_lens.test.mjs`（写し方、光線、焦点距離、`lensRenderPlan` の分け方、当たり判定）、`tests/browser/lens_view.spec.js`（`tests/browser/pages/lens_view.*`。余白付きのピンホールと立方体の後処理が光線に沿って描き、180° の先が `bg_color`）、`tests/browser/lens_stickers.spec.js`（`tests/browser/pages/lens_stickers.*`。κ の `sky` の Sticker が軸から 90° の先まで描け、`lens` の `world` の Sticker が球面の一部として描かれて当たる）。
 
@@ -197,6 +197,7 @@ Panorama Studio のエディタの Camera の編集は `docs/editor-interaction.
 - 使い回し：同じ画素・同じ視点（カメラの設定）・同じ内容（`contentRevision`：描いた要素と変形、`world` の Sticker の板の位置と大きさが前の描画と値で違うときに 1 つ進む数。不透明度 0 の物は入らない）なら、前の結果を返す（`pickCacheKey`）。当たる物を変える変更（ジオメトリ・変形・表示）を足すときは、比べる `parts` に入れて `contentRevision` も進むようにすること。1 回の押下で `pickSticker` と、何もない所なら続く `pickSpace` の 2 回呼ばれるが、2 回目はこの使い回しで描かない。ホイールの `reuseWheelPick` はこの上に残る（ホイールの一段ごとに視点が変わるため）。
 - 境目：`pano_pick.js` は WebGL を使わない純粋な関数（詰め方と戻し方、画素の窓、深度から World、光線と箱、最も近い当たり、使い回しのキー）で、`node --test`（`tests/pano_pick.test.mjs`）で確かめる。`pickPass` の表示とマテリアルの入れ替えと戻しも、three.js のオブジェクトだけで確かめる。描画と読み戻し（`drawPick`）は WebGLRenderer が要るので Node では動かず、実機で確かめる。
 - 期待する速さ：GPU の 1 画素の描画は頂点の処理が主で、1,610 万三角形でも数 ms〜数十 ms の見込み（実機で未計測）。CPU の Raycaster の 0.5 秒と比べて 1 桁以上速い。
+- 新しい UI のエディタのホバーとクリックは GPU の当たりを使わず、3D の Sticker の要素の粗い占有グリッドで決める（`docs/space-and-view.md` の「ホバーの判定」）。`sceneGrid(url)` はその要素のできたグリッドを返すだけで、作るのは `buildWorld` が要素を初めて描いたときに予約する手の空いた時間の仕事（`pano_coarse_grid.js` `createCoarseGridBuilds`）。
 - Spark の `SparkRenderer` は `enableLod: false` で作る。エディタは SPLAT を LoD・ページングで描かないので、LoD のワーカーを起こさない。
 
 ## Spark の描画はビューごとに 1 つ
@@ -291,8 +292,8 @@ three のアップロードは render の中でしか起きないので、Spark 
 
 ## Panorama モードの ERP の表示（新しい UI）
 
-新しい UI の Output の小窓と、Panorama モードの Camera タブ（`docs/studio-ui.md`）は、撮る Camera の位置から描いた ERP をその場で見せる
-（直近の実行の出力は使わない。編集とずれるため。ADR 0048）。
+新しい UI の Output の小窓と、Panorama モードの Camera タブ（`docs/studio-ui.md`）、Panorama Studio のノード上の表示（`docs/studio-node-surface.md`）は、
+撮る Camera の位置から描いた ERP をその場で見せる（直近の実行の出力は使わない。編集とずれるため。ADR 0048・0049）。
 
 - 描き方：撮る Camera の位置から、Camera の回転に合わせた 6 方向（立方体の面）を、空間の表示と同じ描き方（2 パス、`world` の Sticker、
   3D の要素、Sky の層）で描き、ERP に貼り直す。範囲は Camera の `erp_range`（180 なら前の半球）。描くのはエディタの表示用で、出力の
@@ -300,7 +301,7 @@ three のアップロードは render の中でしか起きないので、Spark 
 - 描き直す条件：毎フレームは描かない。状態・再生位置・Camera・読み込んだ要素のどれかが変わったときだけ描き直す。再生中は再生の
   フレームごとに描き直す。
 - 解像度：Output の小窓（または Camera タブのフレーム）の画素の大きさに合わせた低い解像度で描く。
-- 向きと範囲の一致を守る test：ERP の画素と方向の対応は、出力と同じ `pano_camera_math.js` の写し方（`docs/scene-state-v2.md` の「パノラマの角度規約」の持ち主）を使い、既存の parity（`tests/test_camera_orientation.py`、`tests/test_studio_run_erp_orientation.py`）に、この表示で描いた ERP の向きの case を足す（未作成）。
+- 向きと範囲の一致を守る test：ERP の画素と方向の対応は、出力と同じ `pano_camera_math.js` の写し方（`docs/scene-state-v2.md` の「パノラマの角度規約」の持ち主）を使い、既存の parity（`tests/test_camera_orientation.py`）に、この表示で描いた ERP の向きの case を足す（未作成）。
 - 立方体の向き：6 方向は世界の軸にそろえた立方体で描き、Camera の回転は ERP に貼り直すときに掛ける。Camera が回るだけのとき
   （位置・状態・再生位置・読み込んだ要素が変わらない）は、6 面を描き直さず、貼り直しのパスだけを描く。
 - ビューの中の描き方（`renderLiveErp`）：面ごとに、Sky の層を面のカメラの行列から位置だけを除いたカメラで描き（`fillSky`）、深度を消して World を
@@ -308,7 +309,8 @@ three のアップロードは render の中でしか起きないので、Spark 
   貼り直しのパスはその値をそのまま出す。面を描き直すのは、Sky・World の入力・`contentRevision`・`clearColor` を値にしたもの（レンズの面の
   キーと同じ `plainValue`）が変わったときと、その所有者の Spark の並べ替えが終わったとき（`onDirty`）だけで、ほかは位置・大きさ・範囲の変化を
   `pano_live_erp.js` が見分ける。所有者は Camera タブのフレーム（`studio-live-erp`、地面のグリッドを描く）と Output の小窓（`studio-output-erp`、
-  グリッドを描かない）で、Camera タブの Panorama モードで小窓を開いているときは二つを描く。
+  グリッドを描かない）で、Camera タブの Panorama モードで小窓を開いているときは二つを描く。ノード上の表示は共有の view（`pano_preview_view.js`）の
+  ノードごとの所有者で描き（グリッドを描かない）、その所有者を放すと ERP も放す。
 - 読み戻し：貼り直したパスの画素は `readRenderTargetPixels` で同期に読み戻して 2D の canvas に置く（GPU を待つ）。headless の SwiftShader では
   貼り直しだけで約 2〜3 ms、6 面と貼り直しで約 70〜90 ms（2026-10-30、568×284）だが、CPU の描画なので目安にしない。持ち主の実機の GPU で
   確かめる。

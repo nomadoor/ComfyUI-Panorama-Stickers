@@ -39,11 +39,17 @@ export function createStudioPreloader({ newUiOn, preload, whenIdle }) {
 // openOld(node, type, options): the old UI's editor. openStudio(node): the new UI's Panorama Studio editor.
 // openPreview(node): the new UI's Preview window (docs/studio-ui.md "Preview のウィンドウ"); previewTakes(node): whether
 // it shows this node's read-only opening (the Panorama Preview node with what the window shows so far linked).
+// The returned function carries previewWindowTakes(node): whether a read-only opening of `node` goes to the new
+// window now, for an entry point that shows something else when it does not (the node surface's top-right button,
+// docs/preview-node.md "ノード上").
 export function createEditorChooser({ newUiOn, openOld, openStudio, openPreview = null, previewTakes = () => false }) {
-  return (node, type, options = {}) => {
+  const previewWindowTakes = (node) => !!openPreview && newUiOn() === true && previewTakes(node) === true;
+  const openEditor = (node, type, options = {}) => {
     const studio = node?.__panoStudio === true && type === "stickers" && !options.readOnly;
     if (studio && newUiOn() === true) return openStudio(node);
-    if (openPreview && type === "stickers" && options.readOnly && newUiOn() === true && previewTakes(node)) return openPreview(node);
+    if (type === "stickers" && options.readOnly && previewWindowTakes(node)) return openPreview(node);
     return openOld(node, type, options);
   };
+  openEditor.previewWindowTakes = previewWindowTakes;
+  return openEditor;
 }

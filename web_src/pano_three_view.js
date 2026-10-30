@@ -55,6 +55,7 @@ import {
 } from "three";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
+import { COARSE_GRID_IDLE_TIMEOUT_MS, coarseGridKey, createCoarseGridBuilds } from "./pano_coarse_grid.js";
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark, poseAnimation } from "./pano_scene_loaders.js";
 import { createSparkViews } from "./pano_spark_views.js";
@@ -964,6 +965,16 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     onUpdate,
     concurrency: SCENE_LOADS,
   });
+  // The hit grids of the World 3D Stickers (the 3D file Stickers' and the port Sticker's items; sceneGrid), built
+  // in idle time once per input (coarseGridKey: a batch shares one) from its first item drawn, and the key of each
+  // item key's grid.
+  const gridKeys = new Map();
+  const coarseGrids = createCoarseGridBuilds({
+    schedule: (run) => (typeof requestIdleCallback === "function"
+      ? requestIdleCallback(run, { timeout: COARSE_GRID_IDLE_TIMEOUT_MS })
+      : setTimeout(run, 0)),
+    now: () => performance.now(),
+  });
   // The 3D items of the upstream Scene's layers, by slot (a layer and its `scene` or 3D Sticker), loaded
   // the same way; a slot no render asks for any more is closed.
   const upstreamItems = new Map();
@@ -1153,6 +1164,12 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     const stickerInputs = stickerItemInputs(space);
     const stickerShown = stickerItems.requestMany(stickerInputs.inputs);
     stickerInputs.drawn.forEach((input, index) => {
+      // A World 3D Sticker asks for its hit grid at its first item's first draw, before an animation poses it.
+      if (input.id != null && stickerShown[index]) {
+        const key = coarseGridKey(input);
+        if (input.url && gridKeys.get(input.url) !== key) for (const url of [...(input.urls ?? []), input.url]) if (url) gridKeys.set(url, key);
+        coarseGrids.want(key, stickerShown[index]);
+      }
       contents.push({ content: contentGroup(stickerItems, input, stickerShown[index]), input, opacity: input.opacity });
     });
     const slots = new Set();
@@ -1808,6 +1825,14 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return pickAt(camera, x, y, width, height)?.stickerId ?? null;
   }
 
+  // The coarse occupancy grid of the World 3D Sticker whose item key is url (pano_coarse_grid.js, in the `scene`
+  // glTF frame; a batch's from its first item drawn), for the hover and the click (docs/space-and-view.md
+  // "ホバーの判定"), or null until its grid is built (buildWorld asks for it at the first draw). It never builds one.
+  function sceneGrid(url) {
+    const key = gridKeys.get(url);
+    return key === undefined ? null : coarseGrids.get(key);
+  }
+
   // The pointer at (x, y) of a width x height view from camera (a spaceCamera()) on the gizmo of the last
   // space render (createGizmo's pointer).
   function gizmoPointer(phase, camera, x, y, width, height) {
@@ -1873,6 +1898,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   function dispose({ lost = false } = {}) {
     if (closed) return;
     closed = true;
+    coarseGrids.close();
     sceneItems.close();
     stickerItems.close();
     depthColors.dispose();
@@ -1910,5 +1936,5 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!lost) renderer.forceContextLoss();
   }
 
-  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
+  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneGrid, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
 }

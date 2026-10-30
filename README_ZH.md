@@ -39,9 +39,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## 节点
 
+- `Panorama Studio`：将图像、视频和 3D 文件（GLB、Gaussian splat）放入全景周围的 3D 空间，在时间轴上用关键帧制作动画，绘制和遮罩，并用 Camera 以全景或画框视图拍摄。
 - `Panorama Stickers`：在 ERP 画布上放置和调整贴图，并输出合成后的全景图。
 - `Panorama Cutout`：从 ERP 图像构建并提取带画框的透视视图。
-- `Panorama Preview`：通过交互式全景查看器预览静态或动态 ERP 输入。
+- `Panorama Preview`：在交互式查看器中预览静态或动态 ERP 输入，或 `Panorama Studio` 的场景。旧节点保留为 `Panorama Preview (legacy)`。
 - `Panorama Seam Prep`：将 ERP 接缝移至中心，并生成用于接缝局部 inpainting 的硬边／模糊竖向遮罩。
 
 ### 节点内全景控制
@@ -66,6 +67,13 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 全景编辑器依赖浏览器硬件加速。如果小型节点内预览流畅，但大型编辑器异常卡顿，请打开 `chrome://gpu`（Edge 使用 `edge://gpu`），确认 Canvas、Compositing、Rasterization 和 WebGL 均显示为硬件加速。如果显示 `Software only`，请完全退出并重新启动浏览器；若问题仍然存在，请检查浏览器和 GPU 驱动设置。
 
 ## 更新日志
+
+### 2.0.0
+
+- 新增 `Panorama Studio`：将图像、视频和 3D 文件（GLB、Gaussian splat）放入 3D 空间，用关键帧制作动画，绘制和遮罩，并用 Camera（全景或画框视图）拍摄。输出首帧、其遮罩、视频和贴图状态，`scene` 输出可连接到另一个 `Panorama Studio` 或 `Panorama Preview`。
+- Panorama Studio 的新编辑器：3D / Camera 标签页、检查器、带关键帧的时间轴、图像和 3D 文件的添加与拖放、gizmo，以及 Camera 所拍画面的实时预览。节点上也会实时显示 Camera 的输出和输出尺寸。
+- `Panorama Preview` 在新窗口中打开图像、视频和 `Panorama Studio` 的场景。旧节点保留为 `Panorama Preview (legacy)`。
+- 如需使用旧编辑器，请在设置中关闭 "Panorama Studio: new editor"。
 
 ### 1.5.0
 
@@ -96,7 +104,6 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 - 添加将全景图拆分为多张图像以便外部 upscaling，并在处理后重新合并的工具。
 - 根据输入图像自动估算 camera intrinsics。
-- 添加 3D scene 支持。
 - 添加 Hugin 集成。
 
 ## 致谢

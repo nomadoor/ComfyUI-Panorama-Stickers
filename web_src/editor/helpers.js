@@ -1,5 +1,7 @@
 // Small pure helpers of the Panorama editor: easing, vectors, 2D geometry, colors and node values.
-import { LASSO_CURSOR_SIZE, PAINT_COLOR_SWATCHES, RAD2DEG } from "./constants.js";
+import { LASSO_CURSOR_SIZE, RAD2DEG } from "./constants.js";
+// The paint colors and ids belong to the lower paint strokes (pano_paint_strokes.js).
+export { cloneColor, colorToCss, colorsApproximatelyEqual, hsv01ToRgb, isPresetPaintColor, makePaintId, rgb01ToHsv } from "../pano_paint_strokes.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 
 export function easeInOutCubic(t) {
@@ -64,10 +66,6 @@ export function distToSegment2(p, a, b) {
 export function lerp(a, b, t) {
   return a + (b - a) * t;
 }
-export function colorToCss(color, alphaOverride = null) {
-  const alpha = alphaOverride == null ? Number(color?.a ?? 1) : Number(alphaOverride);
-  return `rgba(${Math.round(clamp(Number(color?.r ?? 0), 0, 1) * 255)}, ${Math.round(clamp(Number(color?.g ?? 0), 0, 1) * 255)}, ${Math.round(clamp(Number(color?.b ?? 0), 0, 1) * 255)}, ${clamp(alpha, 0, 1)})`;
-}
 export function svgToDataUrl(svg) {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
@@ -84,61 +82,8 @@ export function getLassoCursorBackground(fillStyle, borderColorOuter, borderColo
   lassoCursorSvgCache = { fillStyle: String(fillStyle || ""), url };
   return url;
 }
-export function colorsApproximatelyEqual(a, b, eps = 0.015) {
-  if (!a || !b) return false;
-  return Math.abs(Number(a.r ?? 0) - Number(b.r ?? 0)) <= eps
-    && Math.abs(Number(a.g ?? 0) - Number(b.g ?? 0)) <= eps
-    && Math.abs(Number(a.b ?? 0) - Number(b.b ?? 0)) <= eps
-    && Math.abs(Number(a.a ?? 1) - Number(b.a ?? 1)) <= eps;
-}
-export function cloneColor(color) {
-  return {
-    r: clamp(Number(color?.r ?? 0), 0, 1),
-    g: clamp(Number(color?.g ?? 0), 0, 1),
-    b: clamp(Number(color?.b ?? 0), 0, 1),
-    a: clamp(Number(color?.a ?? 1), 0, 1),
-  };
-}
 export function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
-}
-export function isPresetPaintColor(color) {
-  return PAINT_COLOR_SWATCHES.some((swatch) => colorsApproximatelyEqual(color, swatch.color));
-}
-export function hsv01ToRgb(h, s, v) {
-  const hue = ((Number(h) % 1) + 1) % 1;
-  const sat = clamp(Number(s), 0, 1);
-  const val = clamp(Number(v), 0, 1);
-  if (sat <= 1e-6) return { r: val, g: val, b: val };
-  const i = Math.floor(hue * 6);
-  const f = hue * 6 - i;
-  const p = val * (1 - sat);
-  const q = val * (1 - f * sat);
-  const t = val * (1 - (1 - f) * sat);
-  switch (i % 6) {
-    case 0: return { r: val, g: t, b: p };
-    case 1: return { r: q, g: val, b: p };
-    case 2: return { r: p, g: val, b: t };
-    case 3: return { r: p, g: q, b: val };
-    case 4: return { r: t, g: p, b: val };
-    default: return { r: val, g: p, b: q };
-  }
-}
-export function rgb01ToHsv(color) {
-  const r = clamp(Number(color?.r ?? 0), 0, 1);
-  const g = clamp(Number(color?.g ?? 0), 0, 1);
-  const b = clamp(Number(color?.b ?? 0), 0, 1);
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  let h = 0;
-  if (delta > 1e-6) {
-    if (max === r) h = ((g - b) / delta + (g < b ? 6 : 0)) / 6;
-    else if (max === g) h = ((b - r) / delta + 2) / 6;
-    else h = ((r - g) / delta + 4) / 6;
-  }
-  const s = max <= 1e-6 ? 0 : delta / max;
-  return { h, s, v: max };
 }
 export function formatParamValue(v) {
   const n = Number(v);
@@ -146,41 +91,20 @@ export function formatParamValue(v) {
   return Number(n.toFixed(3)).toString();
 }
 
-export function paintingStrokeCount(painting) {
-  const paintCount = Array.isArray(painting?.paint?.strokes) ? painting.paint.strokes.length : 0;
-  const maskCount = Array.isArray(painting?.mask?.strokes) ? painting.mask.strokes.length : 0;
-  return { paintCount, maskCount };
-}
-
-export function paintingCompositeCount(painting) {
-  const { paintCount, maskCount } = paintingStrokeCount(painting);
-  const rasterObjects = Array.isArray(painting?.raster_objects) ? painting.raster_objects : [];
-  let paintRasterCount = 0;
-  let maskRasterCount = 0;
-  rasterObjects.forEach((item) => {
-    if (String(item?.layerKind || "paint") === "mask") maskRasterCount += 1;
-    else paintRasterCount += 1;
-  });
-  return {
-    paintCount,
-    maskCount,
-    paintRasterCount,
-    maskRasterCount,
-    totalPaintCount: paintCount + paintRasterCount,
-    totalMaskCount: maskCount + maskRasterCount,
-  };
-}
-
 // Draws a raster object's image `img` where it lies on a width x height ERP (its bbox moved by its transform),
 // wrapped around the seam, on the 2D context ctx.
 // A raster object on an ERP canvas belongs to the lower paint layers (pano_paint_layers.js).
 export { drawRasterObjectErp } from "../pano_paint_layers.js";
 
-export function makePaintId(prefix) {
-  return `${prefix}_${Math.random().toString(16).slice(2, 10)}`;
-}
 
-export function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
+// The widget named `name`, or the first of the names `name` (a list) the node has, or null.
+export function getWidget(node, name) {
+  for (const each of Array.isArray(name) ? name : [name]) {
+    const widget = node.widgets?.find((w) => w.name === each);
+    if (widget) return widget;
+  }
+  return null;
+}
 export function getEditorNodeTitle(node, type) {
   const rawType = String(node?.comfyClass || node?.type || node?.title || "").trim();
   const titleMap = {

@@ -32,13 +32,13 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | 視点が一つであること、開いたときの視点、Reset View、視点の記憶 | — | `web_src/studio/view_camera.js` `openingView`・`rememberView`・`recallView`、開くと閉じるは `web_src/studio/editor.js`、出力の視点は `web_src/studio/stage_view.js` `outputView`、下の部品 `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_memory.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | 世界の境界と、止まったときの知らせ、黙って何もしない操作の知らせ | — | `web_src/studio/view_scale.js` `worldBoundRadius`、`web_src/studio/view_camera.js` `clipToBound`・`createNotice`・`VIEW_NOTICES`、一行の知らせを出すのは `web_src/components/studio/StudioNotice.vue` | `tests/studio_view_scale.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | 注視点 `T`（初めの `T`、付いて動くこと、距離の範囲、決め直す操作、回る中心） | — | `web_src/studio/view_camera.js` `initialTarget`・`orbitCenter`・`createViewCamera`、ポインタの下の当たりは `web_src/studio/stage_view.js` `surfaceHit`（GPU の当たりと地面の近い方）、下の部品 `pano_space.js` `orbitView`・`viewAxes`・`frameView`・`frameSphere`、`pano_three_view.js` `pick`、`web_src/pano_ray_box.js`。選んだ物（タイムラインで選んだ行の物）の中心は `web_src/studio/stage_content.js` `stickerFrameSphere`、つなぐのは `web_src/studio/editor.js` | `tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| マウスとキーの割り当て、直接の操作となめらかに動く操作（Panorama 表示と Frame 表示） | — | `web_src/studio/view_input.js` `navigationAction`・`createViewInput`・`createWheelSteps`、`web_src/studio/view_camera.js` `createViewCamera`、事象を受けるのは `web_src/studio/stage.js`、下の部品 `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_wheel.js` `readWheelDirection`。Frame 表示の視点（`view_camera.js` `createViewCamera` の `frame`）と Camera の Lane への記録はステージ（`stage.js`）と `web_src/studio/editor.js`（`pano_editor_state.js` `setCameraShot`）、続けて回したホイールを Undo の 1 段にまとめる待ちは `view_scale.js` `FRAME_WHEEL_REST_MS`。レンズの Camera（κ ≠ 1）の当たり（`pano_lens.js` `lensPickWindow`）は（未実装。今はパンとホイールが `T` を使い、物を選べない）。 | `tests/studio_view_input.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
+| マウスとキーの割り当て、直接の操作となめらかに動く操作（Panorama 表示と Frame 表示） | — | `web_src/studio/view_input.js` `navigationAction`・`createViewInput`・`createWheelSteps`、`web_src/studio/view_camera.js` `createViewCamera`、事象を受けるのは `web_src/studio/stage.js`、下の部品 `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_wheel.js` `readWheelDirection`。Frame 表示の視点（`view_camera.js` `createViewCamera` の `frame`）と Camera の Lane への記録はステージ（`stage.js`）と `web_src/studio/editor.js`（`pano_editor_state.js` `setCameraShot`）、続けて回したホイールを Undo の 1 段にまとめる待ちは `view_scale.js` `FRAME_WHEEL_REST_MS`。レンズの Camera（κ ≠ 1）の当たりと、パンでポインタの動きを写す点は `web_src/studio/stage_view.js` `lensPickView`・`lensPinholePoint`・`frameViewFov`（下の部品 `pano_lens.js` `lensPickWindow`・`lensAngle`）、使うのは `stage.js`、クリックで選ぶのは `stage_objects.js` `press`。 | `tests/studio_view_input.test.mjs`、`tests/studio_view_camera.test.mjs`、`tests/studio_stage_view.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
 | カーソル | — | `web_src/studio/view_input.js` `stageCursor`・`LOOK_CURSOR`・`ORBIT_CURSOR`・`KNOB_CURSOR` | `tests/studio_view_input.test.mjs` |
 | 視点の操作の部品（球・手・矢印、操作中に光ること） | — | `web_src/components/studio/StudioNavWidget.vue`、光る規則は `web_src/studio/view_input.js` `knobAction`・`litKnobs` | `tests/studio_view_input.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | 地面のグリッド（何をどの高さに描き、どこで薄れるか） | — | `web_src/studio/grid.js` `groundGrid`（量は `view_scale.js`）、描く部品は `web_src/pano_ground_grid.js`（`docs/threejs-spark-integration.md`）、スイッチは `web_src/components/studio/StudioViewButtons.vue` | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
-| World の物のガイドと、CPU のホバーの判定 | — | `web_src/studio/world_guides.js`（形・中心・ホバー・見え方。読み込み中のガイドの箱は `web_src/studio/load_reveal.js` が渡す）、Camera の印の形と当たりは `web_src/studio/camera_marker.js`、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`。Camera タブ（Frame 表示）では `stage.js` が Frame 表示の枠の箱で描く（`stage_overlay.js` の `origin`）。レンズの Camera（κ ≠ 1）の上には描かない（未実装） | `tests/studio_world_guides.test.mjs`、`tests/studio_camera_marker.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
+| World の物のガイドと、CPU のホバーとクリックの判定 | — | `web_src/studio/world_guides.js`（形・中心・箱の判定・見え方。読み込み中のガイドの箱は `web_src/studio/load_reveal.js` が渡す）、Camera の印の形と当たりは `web_src/studio/camera_marker.js`、3D の Sticker の粗い占有グリッドとその光線は `web_src/pano_coarse_grid.js`・`web_src/studio/hit_test.js`、ステージにつなぐのは `web_src/studio/stage_objects.js`、描くのは `web_src/studio/stage_overlay.js`、下の部品 `pano_space.js` `projectPoint`・`boxCorners`。Camera タブ（Frame 表示）では `stage.js` が Frame 表示の枠の箱で描く（`stage_overlay.js` の `origin`）。レンズの Camera（κ ≠ 1）の上には描かず、ホバーも判定しない（未実装。「レンズの Camera の当たり」） | `tests/studio_world_guides.test.mjs`、`tests/studio_camera_marker.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_hit_test.test.mjs`、`tests/browser/studio_select.spec.js`、`tests/browser/studio_hit.spec.js`、`tests/browser/studio_camera_wired.spec.js` |
 | Add とドロップの着く所（Add の画像の二択の後の置き場所を含む）と、ドラッグ中の印の形 | — | `web_src/studio/landing.js`（着く所 `landingHit`・`landingBoxes`・`groundLanding`・`groundBelow`、置く値 `skyPose`・`worldImageTransform`・`file3dTransform`・`file3dPosition`・`facingYaw`、印 `dropMarker`、ラベルの置き場所 `dropLabelPlace`）、置くのは `web_src/studio/add_files.js`、下の部品 `pano_three_view.js` `pick`（板を除く当たり）、CPU の箱の当たりは `web_src/studio/view_camera.js` `boxDepth`、`pano_sticker_geometry.js` `buildStickerGeometry`（Sky の枠） | `tests/studio_landing.test.mjs`、`tests/studio_add_files.test.mjs`、`tests/browser/studio_add.spec.js` |
-| Preview のウィンドウの視点（エディタとの違い、引き継ぎ、減衰と慣性、グリッドの既定） | — | （未実装）`web_src/studio/preview_motion.js`、下の部品 `web_src/pano_interaction_controller.js` の慣性（ADR 0010） | （未作成）`tests/studio_preview_motion.test.mjs` |
+| Preview のウィンドウの視点（エディタとの違い、引き継ぎ、地面の高さ、減衰と慣性、グリッドの既定） | — | 減衰と慣性は `web_src/studio/preview_motion.js` `createPreviewMotion`（ステージの `follow`、`web_src/studio/stage.js`）、引き継ぎと地面の高さは `preview_motion.js` `previewOpening`・`previewOpeningPose`・`previewHandBack`・`previewGround`（地面の規則は `pano_scene_state.js` `sceneGround`）、つなぐのは `web_src/studio/preview_window.js`、慣性の減り方の値は `web_src/pano_interaction_controller.js`（ADR 0010） | `tests/studio_preview_motion.test.mjs`、`tests/browser/preview_window.spec.js` |
 | ウィンドウがフォーカスを失ったとき、Meta を離したときと右クリックのメニューが開いたときにキーを離すこと | — | `web_src/studio/view_input.js` `createViewInput().lostFocus`、事象を受けるのは `web_src/studio/stage.js`（`blur`・`visibilitychange`・Meta の `keyup`・エディタの中の `contextmenu`）、下の部品 `pano_view_keys.js` `createMoveKeys` | `tests/studio_view_input.test.mjs`、`tests/pano_view_keys.test.mjs`、`tests/browser/studio_editor.spec.js`（`blur`・右クリックのメニュー）、`tests/studio_stage.test.mjs`（Meta・右クリックのメニュー） |
 
 ## 量の一覧
@@ -93,6 +93,9 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 | `KEY_MOVE_FAST`（参照） | 4 | `pano_view_keys.js`、`docs/editor-interaction.md`。WASD / QE の速さに Shift で掛ける数。新しい UI では Alt で遅くする `KEY_MOVE_SLOW` を使わない（下の「直接の操作」の WASD / QE。ADR 0048） |
 | `NEW_STICKER_HFOV`（参照） | 30° | `pano_space.js`。新しい Sky の Sticker の横の画角 |
 | `CAMERA_HIT_PIXELS` | 6 px | `web_src/studio/camera_marker.js`。Camera の印の線の当たりの幅（下の「ホバーの判定」。古い UI の `pano_space.js` `segmentsHit` と同じ値） |
+| `COARSE_GRID_CELLS` | 16 | `web_src/pano_coarse_grid.js`。3D の Sticker の当たりの粗い占有グリッドの、各辺のマスの数（下の「ホバーの判定」） |
+| `COARSE_GRID_SLICE_MS` | 4 ms | `web_src/pano_coarse_grid.js`。そのグリッドを手の空いた時間に作るとき、1 回に使う時間の上限 |
+| `COARSE_GRID_IDLE_TIMEOUT_MS` | 100 ms | `web_src/pano_coarse_grid.js`。手が空かなくても、グリッドを作る次の 1 回が呼ばれるまでの最長の待ち |
 
 視点の roll はいつも 0。Frame 表示の画角は Camera の H FOV である。
 
@@ -158,7 +161,6 @@ Python はこの文書の規則を持たない（列は `—`）。「（未実�
 |---|---|
 | 空（何にも当たらない所）へのダブルクリック | 「Nothing to focus on」 |
 | World の内容も選んだ物も無いときの Frame Selected | 「Nothing to frame」 |
-| Camera タブで、レンズの Camera（κ ≠ 1）の上のクリック（物を選ばない）と中ボタンのパン（掴む点が無く `T` の深さで動く）。レンズの当たり（`lensPickWindow`）が未実装の間 | 「Objects can't be picked through a lens yet」 |
 
 ## 注視点 `T`
 
@@ -295,8 +297,7 @@ Camera そのものを動かす。
   - パンの `W` は、ステージの上の Camera の枠の幅の画素。
   - roll した Camera では、パンとオービットのドラッグは roll した画面の軸で受ける（`orbitView`）。見回しも roll した画面の軸で
     受け、絵はおおよそポインタに付いて動く。
-  - レンズの Camera（κ ≠ 1）：パンで掴む点とホイールの中心は、ポインタの画素をレンズの逆の写し方で戻してから（`lensPickWindow`）、
-    World の内容だけで求め、地面には当てない。ピンホールの式は、像の中心から離れるほど近似になる。
+  - レンズの Camera（κ ≠ 1）：下の「レンズの Camera の当たり」。
 - `T`：Frame 表示の `T` は Camera の画面の中心の線の上にあり、上の「注視点 `T`」と同じ規則で付いて動く。Frame 表示に入ったとき
   は、Camera の位置と向きで求めた「初めの `T`」から始める。回る中心は上の「回る中心」と同じ（Camera タブで物を選んでいれば、オービットを始めたときにその中心を `T` にする。Camera そのものは数えない）。Panorama 表示の `T` は Frame 表示の
   間も変えず、Panorama 表示に戻るとそのまま使う。
@@ -310,6 +311,26 @@ Camera そのものを動かす。
   読み取り専用のエディタとロックした Camera は動かない。
 - ダブルクリックで `T` を決め直す操作は Frame 表示には無い。
 
+#### レンズの Camera の当たり
+
+レンズの Camera（κ ≠ 1）の Frame 表示でも、クリックで物を選び、パンとホイールはポインタの下の表面の当たりを使う。
+
+- 当たり：ポインタの画素を、像の中心と `f`（像の中心の縮尺）でフィルムの点にし、レンズの逆の写し方（`lens_angle`）で光線に戻す。
+  その光線が通る World の軸にそろえた立方体の面を 90° の正方形のピンホールとし、その面の画素で当たりを求める（`pano_lens.js` の
+  `lensPickWindow`。描く像と同じ面。`docs/threejs-spark-integration.md` の「当たり判定」）。求める物はピンホールの Frame 表示と同じ：
+  クリックは World の物（下の「ホバーの判定」と同じ CPU の判定を、その面のピンホールで）と Sky の画像（その面のピンホールに写した形）、パンとホイールは上の「表面の当たり」（GPU の当たりと地面の
+  近い方）。光線が像の軸から 180° を超える画素（`bg_color` の所）は何にも当たらない。
+- パン：掴んだ点の深さ `z` で動かすのは上の式のまま。ポインタの動きは画素の差ではなく、ポインタの光線を同じ縮尺 `f` のピンホールの
+  画素に写した点（`f·tan θ`）の差で受ける（`lensPinholePoint`）。向きが変わらないパンでは、深さ `z` の掴んだ点がこれでポインタの下に
+  付いて動く。光線が軸から `LENS_PAN_MAX_DEG`（89°）を超える所ではピンホールの点が無いので、その間の動きは受けない。
+- ホイール：`G` の向きは `P' = G + k (P - G)` で変わらないので、`G` はポインタの下に残る。
+- 量の `W` と H FOV：Frame 表示の視点は、像の中心の縮尺のピンホール（H FOV は `2·atan(W ÷ 2f)`、`frameViewFov`）として量を求める
+  （パン、見回し、Frame Selected）。レンズの H FOV は 180° を超えることがあり、そのままではピンホールの式が使えないため。
+- 当たりを読むのは押したとき（パンの始まり、クリック）とホイールの一段だけで、ポインタの動きでは読まない（パンの動きは CPU の計算だけ）。
+- 見回しは像の中心の縮尺で受ける（像の端では、絵はポインタからずれる）。
+- 作らないもの（未実装として残す）：レンズの Camera の上の World の物のガイドと CPU のホバー（ガイドの線を曲がった像に写す描き方が
+  要る）。
+
 ## カーソル
 
 | 場所と状態 | カーソル |
@@ -322,7 +343,7 @@ Camera そのものを動かす。
 | パンのドラッグ中 | `move` |
 | ジョイスティックのドラッグ中 | `ns-resize` |
 
-触れる物の判定は下の「ホバーの判定」と同じ CPU の判定で、GPU の当たりを読まない。
+触れる物の判定は下の「ホバーの判定」の CPU の判定（クリックと同じ）で、GPU の当たりを読まない。
 
 ## 視点の操作の部品
 
@@ -383,18 +404,38 @@ Panorama 表示で、表示している World の物（`world` の Sticker の�
 
 ### ホバーの判定
 
-ホバーと、カーソルを決める「触れる物の上か」は CPU で判定し、ポインタが動くたびに GPU の当たりを読まない（読み戻しは
-同期で、1 回が描画より重いことがある）。
+ホバー（カーソルを決める「触れる物の上か」）とクリックは、ポインタの下の World の物を同じ一つの CPU の判定で決める
+（`web_src/studio/stage_objects.js` `objectUnder`、中身は `web_src/studio/hit_test.js` `coarseUnder`）。明るくなった物はクリックで選ばれ、
+明るくならない所のクリックは物を選ばない。ポインタが動くたびに GPU の当たりを読まない（読み戻しは同期で、1 回が描画より重いことがある）。
 
-- 板：画面に写した板の輪郭の中にポインタがあれば当たり。
-- 3D の Sticker：画面に写した箱の 8 隅を囲む画面の矩形の中にあれば当たり（箱より少し広い）。
-- 隅が一つでも視点の後ろ（深さが 0 以下）にある板と箱は、当たりに数えない（画面に正しく写らないため）。
-- 重なっているときは、中心（板の中心、箱の中心）の視線の軸に沿った深さが最も浅いものを選ぶ。
+- 3D の Sticker：要素ごとの粗い占有グリッド（要素の箱を各辺 `COARSE_GRID_CELLS`（16）に分け、メッシュの三角形・深度のグリッドの点・
+  SPLAT の中心を含むマスを埋めたもの。`web_src/pano_coarse_grid.js`）を、ポインタの光線が進む。最初に入る埋まったマスで当たり、
+  その深さで比べる。箱の中の何もない所は当たらず、光線はその奥の物に届く。near より手前の当たりは数えない。
+- グリッドがまだ無い 3D の Sticker（読み込み中で代わりの箱のガイドのもの、グリッドを作っている途中のもの）は、画面に写した箱の 8 隅を
+  囲む画面の矩形の中なら当たり（箱より少し広い）。深さは箱の中心のもの。
+- 板：画面に写した板の輪郭の中にポインタがあれば当たり。深さは板の中心のもの。
+- 隅が一つでも視点の後ろ（深さが 0 以下）にある板と、グリッドの無い箱は、当たりに数えない（画面に正しく写らないため）。
+- 重なっているときは、上の深さが最も浅いものを選ぶ。
 - 判定の対象はガイドを描く物と同じ（非表示・Clip range の外は当たらない）。
+- 押したときと、カーソルを決めるときの勝つ順は、ギズモ → Sky のハンドル → World の物 → Camera の印 → Sky の本体 → 空
+  （`web_src/studio/stage_objects.js` の冒頭）。
 - Camera の印（3D タブ）：画面に写した塗りの面（Frame モードは錐の側面 4 つと奥の枠の面と上の向きの三角、Panorama モードは球の
   輪郭の円）のどれかの中か、印の線から `CAMERA_HIT_PIXELS`（6 CSS px）の中なら当たり。面の中のどこでも当たり、線の上だけではない。
-  印を描かないとき（隠している、視点が `CAMERA_GUIDE_LENGTH` より近い）は当たらない。押したときの順は `web_src/studio/stage_objects.js`
-  の冒頭（GPU の当たりの World の物の次）。
+  印を描かないとき（隠している、視点が `CAMERA_GUIDE_LENGTH` より近い）は当たらない。
+
+グリッドを作るとき（`web_src/pano_coarse_grid.js` `createCoarseGridBuilds`、つなぐのは `pano_three_view.js` `buildWorld`・`sceneGrid`）：
+
+- ガイドを持つ 3D の Sticker（3D ファイルの Sticker と、`port` の 3D の素材の Sticker）ごとに、その要素が読み込まれて初めて描かれた
+  ときに一度だけ作る（`pano_coarse_grid.js` `coarseGridKey`：Sticker・種類・読み込み元・最初の要素）。毎フレームは作らず、問われた
+  とき（ホバー・クリック）にも作らない。できるまではその物は上の箱の判定で当たる。
+- 描画を止めないよう、手の空いた時間に少しずつ作る：`requestIdleCallback`（無ければ `setTimeout`）で呼ばれた 1 回につき
+  `COARSE_GRID_SLICE_MS`（4 ms）まで進め、残りは次の回に回す。手が空かなくても `COARSE_GRID_IDLE_TIMEOUT_MS`（100 ms）で呼ばれる。
+  いくつもの要素は読み込まれた順に作る。
+- 形は初めて描かれたときのもの：メッシュの節の位置は、その時（アニメーションのある 3D ファイルは、アニメーションの姿勢を当てる前の
+  静止の姿勢）のものを先に控えて使い、作る途中で再生が進んでも変えない。スキンのメッシュは元の頂点（バインドの姿勢）を使う。
+- コマごとに要素が変わるもの（`port` の 3D の素材が MoGe の VIDEO などのバッチのとき）は、最初に描かれた要素（1 コマ）のグリッドを
+  全部のコマで使い、コマが変わっても作り直さない。`scene` 入力の中身（動画の深度のグリッドなど）はガイドも当たりも無く、グリッドを
+  作らない。
 
 ## Add とドロップ
 
@@ -469,8 +510,13 @@ ADR 0047）。
 - `T` を決め直すのはダブルクリックと Reset View だけ（Preview には選択が無いので、回る中心はいつも `T`）。
 - 開いたとき：ノード上の表示から `P`・`yaw`・`pitch` を引き継ぐ（`docs/preview-node.md` の「大きなウィンドウ」）。画角は
   `DEFAULT_VIEW_HFOV`、`T` は「初めの `T`」で求める。引き継ぐものが無ければ原点、yaw 0、pitch 0。閉じると、ノード上の表示が
-  ウィンドウの最後の `P`・`yaw`・`pitch` を引き継ぐ（今と同じ）。Preview は Camera を使わない。Reset View は原点、yaw 0、pitch 0
-  へ動く。
+  ウィンドウの最後の `P`・`yaw`・`pitch` を引き継ぐ（今と同じ。なめらかに動いている途中や慣性で動いている途中なら、その時の
+  行き先の視点）。Preview は Camera を使わない。Reset View は原点、yaw 0、pitch 0 へ動く。
+  - `PANO_SCENE`：ノード上の Scene のビューアの視点（位置・yaw・pitch）をそのまま引き継ぎ、閉じると返す。
+  - IMAGE・VIDEO：ノード上の表示は見回しだけ（3DoF）なので、yaw・pitch を引き継ぎ、`P` は原点から始める。閉じると yaw・pitch
+    だけを返す（ウィンドウで動いた `P` は返さない）。ノード上の画角は変えない。
+- 地面の高さ `ground`（グリッドの高さと `E`）：`PANO_SCENE` は、その層の状態から `docs/scene-state-v2.md` の `ground` の規則で読む
+  （自分の層は無いので、最も下流で `ground` を持つ層のもの、無ければ `GROUND_DEFAULT`）。IMAGE・VIDEO は `GROUND_DEFAULT`。
 - 世界の境界は上と同じ（Camera の項は無い）。
 - 手触り：見るための場所なので、エディタと違って減衰と慣性を付ける（ADR 0047）。
   - 減衰：操作は行き先の視点を動かし、表示の視点はそれを追う。追い方は、フレームごとに、行き先との差に
@@ -480,6 +526,11 @@ ADR 0047）。
     同じ減り方（`pano_interaction_controller.js` の `PANO_INERTIA_DAMPING`・`PANO_INERTIA_START_SPEED`・`PANO_INERTIA_STOP_SPEED`）で
     止まる。止めて離したときは慣性を付けない。ジョイスティック・ホイール・キーには慣性を付けない。慣性で動いている間に押すと、
     その場で止まる。慣性の動きにも世界の境界を当てる。
+  - 慣性の速さの単位：ポインタの速さ（CSS px / 秒）で測り、始めと止めの閾値（角度 / 秒）とは `ORBIT_DEG_PER_PIXEL` を掛けて比べる
+    （見回し・オービット・パンで同じ。パンは角度を持たないため、一つの換算にそろえる）。慣性の一フレームは、そのフレームの秒だけ
+    その速さでドラッグしたのと同じに動く（パンは離したときに掴んでいた深さのまま）。
+  - 慣性は、ほかの視点の操作（押す、ホイール、ダブルクリック、WASD / QE、Reset View）を始めたときにも止まる。慣性で動いている間に
+    別の操作が足されることはない。
 - 地面のグリッドは、既定で隠す。出すかどうかは見る人が右下のボタン群の決まった席のスイッチ（on / off）で決める
   （押すたびに状態が反転するボタンにしない。`docs/agents/ux-principles.md`）。席は出たり消えたりしない。World の内容の有無で
   自動で出し入れせず、隠している間に絵が変わらない移動をしても知らせない（スイッチがいつも見えているため。ADR 0047）。
@@ -509,8 +560,8 @@ ADR 0047）。
 
 ## まだ決めていないこと（spec ではない、次の候補）
 
-- 次の候補：レンズの Camera（κ ≠ 1）の Frame 表示の当たり（`lensPickWindow`）。今はパンとホイールが `T` を使い、物を選べず、選んだ物の
-  ガイドを描かない（上の表の「未実装」）。
+- 次の候補：レンズの Camera（κ ≠ 1）の Frame 表示の World の物のガイドと CPU のホバー（上の「レンズの Camera の当たり」）。今は選んだ物の
+  ガイドを描かず、物の上でカーソルが変わらない。
 - 次の候補：Camera タブで閉じたときに Camera タブで開き直すこと（視点の記憶は今は 3D タブの視点だけを覚える）。
 
 2026-10-30 に次を決めた（ADR 0048）：`E` の下限（`EYE_HEIGHT_MIN`）、Frame 表示の `T`（上の規則のまま）、水平に開いた視点での Add

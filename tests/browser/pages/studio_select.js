@@ -81,6 +81,10 @@ export const STATE = {
   ],
 };
 
+// The views the page can open with (?view=above for ABOVE_VIEW); studio_select.spec.js projects with the same poses.
+const OPEN_VIEW = Object.freeze({ position: [0, 0.1, 1.6], yaw_deg: 0, pitch_deg: -4, target: [0, -0.2, -2.4] });
+const ABOVE_VIEW = Object.freeze({ position: [0, 2.0, 1.4], yaw_deg: 0, pitch_deg: -Math.atan2(2.2, 3.8) * 180 / Math.PI, target: [0, -0.2, -2.4] });
+
 const studio = (window.__studio = { ready: false, error: null, renderer: null });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
@@ -101,7 +105,9 @@ try {
   };
   const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
   // The view opens behind the Camera, so the Camera's mark, the board and the sky image all show.
-  editorSession(node).view = rememberView({ position: [0, 0.1, 1.6], yaw_deg: 0, pitch_deg: -4, target: [0, -0.2, -2.4] }, "panorama");
+  // ?view=above opens it from higher up, looking down 30 degrees, so the gizmo's XZ square shows.
+  const above = new URLSearchParams(location.search).get("view") === "above";
+  editorSession(node).view = rememberView(above ? ABOVE_VIEW : OPEN_VIEW, "panorama");
   const editor = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
   studio.session = editor.session;
   studio.node = node;

@@ -1,26 +1,28 @@
 # Panorama Studio のノード上の表示
 
-Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）の規則を定める：表示の構成、上端の bar と状態、
-実行前の表示と実行の出力の表示、見回し、表示フレームと背景の VIDEO・`port` の素材、見えないときとエディタを開いている間の扱い、
-描画と後始末。ノード上の表示は見るためのもので、編集は Open Editor で開くエディタで行う。用語は `CONTEXT.md` に従う。
-決めた理由は ADR 0029（Panorama Studio）にある。
+Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）の規則を定める：表示の構成、撮る Camera の出力をその場で描く絵、
+絵の下の一行（撮り方と出力の大きさ）、Open Studio のボタン、表示フレームと背景の VIDEO・`port` の素材、見えないときとエディタを
+開いている間の扱い、描画と後始末。ノード上の表示は見るためのもので、編集は Open Studio で開くエディタで行う。用語は `CONTEXT.md` に従う。
+決めた理由は ADR 0029（Panorama Studio）と ADR 0049（撮る Camera の出力をその場で描く）にある。
 
-この文書が持たない規則：ノードの入出力・Timeline の長さ・出力の大きさ（`_studio_output_size`）・実行結果の `ui` の入力の素材のキー（`docs/studio-node.md`）、
+この文書が持たない規則：ノードの入出力・Timeline の長さ・撮り方と出力の大きさの式（`_studio_output_size`）・実行結果の `ui` の入力の素材のキー（`docs/studio-node.md`）、
 エディタのタイムライン・再生の状態機械・タイムラインの長さ・背景の行（`docs/timeline-ui.md`）、
 エディタの操作・インスペクタ・`port` の Sticker の同期（`docs/editor-interaction.md`）、
-共有の three.js ビュー・テクスチャ・エディタでの描画（`docs/threejs-spark-integration.md`）、
+共有の three.js ビュー・テクスチャ・その場の ERP（`docs/threejs-spark-integration.md`）、
+エディタの Output の小窓（`docs/studio-ui.md`）、
 状態 v2・`port` の Sticker の vFOV の求め方（`docs/scene-state-v2.md`）、
+色・文字・大きさの値（`docs/design.md` の「新しい UI の見た目」の「Panorama Studio のノード上の表示」）、
 旧ノード（`PanoramaStickers`・`PanoramaPreview`・`PanoramaCutout`）の表示（`docs/legacy-node-surfaces.md`）。
 
 ## この文書が owner である規則
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
-| 表示の構成（DOM canvas、Vue overlay、Node 2.0 と Legacy renderer、標準の `Open Studio Editor` widget、見回すだけ） | — | `web_src/pano_editor_extension.js` `createPanoEditorExtension`（`PanoramaStudio`）、`web_src/pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`studioSurface`）、`web_src/components/PanoStudioNodeSurface.vue` | `tests/pano_editor_extension.test.mjs`、`tests/pano_studio_node_surface_contract.test.mjs` |
-| 上端の bar の状態（撮るもの、出力の画素数、上限、注記） | `nodes.py` `PanoramaStudioNode.execute`（`pano_output_size`）・`_studio_run_key` | `web_src/pano_studio_status.js` `studioNodeStatus`・`studioOutputSize`・`studioRunKey`・`createStudioStatus`、`pano_preview_runtime.js` `studioStatusOptions` | `tests/pano_studio_status.test.mjs`、`tests/test_studio_status_parity.py`、`tests/test_studio_node.py` |
-| 実行の出力を示す（`pano_output_erp`・`pano_output_frame`、注記、読み込み） | `nodes.py` `PanoramaStudioNode.execute`、`core/video.py` `save_output_png` | `pano_studio_status.js` `studioRunOutput`、`pano_preview_runtime.js` `studioRunPicture`・`studioRunDisplay` | `tests/pano_studio_status.test.mjs`、`tests/pano_studio_node_surface_contract.test.mjs`、`tests/test_studio_node.py` |
-| 実行の ERP の向き | `nodes.py` `PanoramaStudioNode.execute`（`rotation`）、`core/render.py` `_rays` | `pano_studio_status.js` `studioRunQuaternion` | `tests/test_studio_run_erp_orientation.py`、`tests/pano_studio_node_surface_contract.test.mjs` |
-| 見回し（drag、wheel、wheel の捕捉） | — | `web_src/pano_interaction_controller.js` `createPanoInteractionController`、`web_src/pano_wheel.js` `PANO_FOV_WHEEL_STEP_DEG`・`bindWheelCaptureRoot` | `tests/pano_stickers_node_surface_contract.test.mjs`、`tests/pano_wheel.test.mjs` |
+| 表示の構成（DOM canvas、Vue overlay、Node 2.0 と Legacy renderer、標準の `Open Studio Editor` widget、絵と一行の置き方） | — | `web_src/pano_editor_extension.js` `createPanoEditorExtension`（`PanoramaStudio`）、`web_src/pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`studioSurface`）、`web_src/pano_studio_surface.js` `studioSurfaceLayout`、`web_src/components/PanoStudioNodeSurface.vue` | `tests/pano_editor_extension.test.mjs`、`tests/pano_studio_node_surface_contract.test.mjs`、`tests/pano_studio_surface.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| 撮る Camera の出力をその場で描く（描く物、描く部品、いつ描き直すか） | — | `pano_preview_runtime.js` `drawStudioPicture`、`web_src/studio/output_picture.js` `outputFrameInput`・`outputErpInput`（エディタの Output の小窓と共有）、`web_src/pano_preview_view.js` の `renderLiveErp` | `tests/output_picture.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| 一行の状態（撮り方、出力の大きさ、上限） | `nodes.py` `PanoramaStudioNode.execute`（`pano_output_size`）・`_studio_run_key` | `web_src/pano_studio_status.js` `studioNodeStatus`・`studioOutputSize`・`studioRunKey`・`createStudioStatus`、`pano_preview_runtime.js` `studioStatusOptions` | `tests/pano_studio_status.test.mjs`、`tests/test_studio_status_parity.py`、`tests/test_studio_node.py`、`tests/browser/studio_node_surface.spec.js` |
+| widget の変更を受けて描き直す（callback の連ね方） | — | `web_src/pano_widget_callback.js` `chainWidgetCallback` | `tests/pano_widget_callback.test.mjs`、`tests/browser/studio_node_surface.spec.js` |
+| wheel の捕捉（旧ノードと Preview の Scene のビューアが使う） | — | `web_src/pano_interaction_controller.js` `createPanoInteractionController`、`web_src/pano_wheel.js` `PANO_FOV_WHEEL_STEP_DEG`・`bindWheelCaptureRoot` | `tests/pano_stickers_node_surface_contract.test.mjs`、`tests/pano_wheel.test.mjs` |
 | 表示フレームと背景の VIDEO・`port` の素材 | — | `web_src/pano_node_playback.js` `createNodePlayback`、`web_src/pano_stickers_node_surface.js` `NODE_SURFACE_FRAME`、`pano_preview_runtime.js` `backgroundVideoSources`・`portStickerMedia`・`surfaceTimelineMedia` | `tests/pano_node_playback.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
 | 見えないときとエディタを開いている間 | — | `pano_node_playback.js` `surfaceShown`、`web_src/pano_node_bridge.js` `editorOpen`、`pano_preview_runtime.js` `attachPanoramaPreviewImpl`（`syncSurfacePlayback`） | `tests/pano_node_playback.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs`、`tests/pano_node_bridge.test.mjs` |
 | 描画と後始末（animation frame、DOM canvas だけの再描画、revision、media の失効、teardown、raster object の大きさ） | — | `pano_preview_runtime.js` `attachPanoramaPreviewImpl`、`web_src/pano_preview_video.js` `isNodeOutputMediaCurrent`・`isTrackedMediaInputConnectionChange`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_raster_object_surface.js` `resolveRasterPreviewSize`・`createRasterObjectSurfaceCache` | `tests/pano_cutout_node_surface_contract.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs`、`tests/pano_preview_video.test.mjs`、`tests/pano_raster_object_surface.test.mjs` |
@@ -28,97 +30,78 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 
 ## 表示の構成
 
-`PanoramaStudio` は旧 `PanoramaStickers` と同じDOM canvas、shared three.js view、teardownを使い、Vue overlayだけを
-`PanoStudioNodeSurface.vue` に替える（ADR 0029）。
+`PanoramaStudio` は旧 `PanoramaStickers` と同じ DOM canvas、shared three.js view、teardown を使い、Vue overlay だけを
+`PanoStudioNodeSurface.vue` に替える（ADR 0029）。見た目は持ち主が下書き `design-drafts/node-1.html` の案 B から選んだ（ADR 0049）。
 
-- Node 2.0とLegacy node rendererで同じDOM surface実装を使う。
-- canvasはnodeの利用可能領域を満たし、縦横resizeへ追従する。surface の大きさは出力の比で変わらない。
-- Vue mount成功後だけ標準 `Open Studio Editor` widgetを隠す。mount失敗時は標準widgetを表示したままとし、editorへの導線を失わない。
-- hidden overlay領域はcanvas操作を遮らない。
-- 置くのは上端の bar（状態と `Open Editor`）だけで、Sticker の選択・drag・削除、画像の追加と drop、Delete / Backspace、再生ボタンは持たない（ADR 0029）。
-- camera viewは一時状態とし、workflowへ保存しない。
+- Node 2.0 と Legacy node renderer で同じ DOM surface 実装を使う。
+- canvas は node の利用可能領域を満たし、縦横 resize へ追従する。surface の大きさは出力の比で変わらない。
+- 置くのは三つだけ：撮る Camera の出力の絵、絵の下の中央に浮かせた `Open Studio` のボタン、絵の下の一行（左に撮り方、右に出力の大きさ）。
+  Sticker の選択・drag・削除、画像の追加と drop、Delete / Backspace、再生ボタン、見回しは持たない（ADR 0029・0049）。
+- 置き方（`web_src/pano_studio_surface.js` の `studioSurfaceLayout`、値の名前は `docs/design.md`）：surface（widget の下からノードの下の端まで）
+  を一つの箱とする。絵は出力の比（Panorama 360° は 2 : 1、180° は 1 : 1、Frame は出る大きさの幅 : 高さ）のまま、箱の幅と、高さから一行の分
+  （`STUDIO_LINE_HEIGHT` と `STUDIO_LINE_GAP`）を除いた高さに収まる最大の大きさにする（contain）。絵と一行をひとまとまりとして、箱の上下と
+  左右の中央に置く（絵は箱から一行の分を除いた所の中央に来る）。一行は絵のすぐ下（間 `STUDIO_LINE_GAP`）に、絵と同じ幅で置き、絵から離れない。
+  箱の残り（絵と一行の外）は塗らず、ノードの地をそのまま見せる（`STUDIO_SURFACE_FILL` は透明。持ち主の決定、2026-10-30：暗い地は重い）。一行の文字は ComfyUI のテーマ（ライト・ダーク）に従う。
+  絵の角は丸める。ノードを縦にも横にも大きくすると、絵は箱に収まる最大の大きさに広がり、中央に留まる。
+- 一行は surface の暗い地の上に出るので、ComfyUI のテーマがライトでもダークの文字の値で書く（読めるように）。
+- ボタンは絵の下の辺から `STUDIO_BUTTON_INSET` 上、左右の中央に、いつも出す（ポインタを載せたときだけ出すことはしない）。
+  アイコン（maximize）と `Open Studio` の文字。押すとエディタを開く（先に再生を一時停止する）。
+- 一行の左は撮り方のアイコン（Panorama は 360° のアイコン、Frame は比のアイコン）と撮り方の名前、右は出力の大きさ。長いときは
+  左の名前を省略記号で切り、大きさは切らない。
+- Vue mount 成功後だけ標準 `Open Studio Editor` widget を隠す。mount 失敗時は標準 widget を表示したままとし、editor への導線を失わない。
+- overlay のうちボタンと出力の大きさ（上限の tooltip を出す）以外は canvas の操作を遮らない（`pointer-events: none`）。
+- ノード上の表示は新しい UI の stylesheet（`web/pano_studio.css`）を読み込み、overlay の root に `.pano-studio` を付けてその値を使う。
+  ライトとダークは ComfyUI のテーマに従う（`docs/design.md`）。
 
-## 上端の bar と状態
+## 撮る Camera の出力をその場で描く
 
-- 上端の固定高さのbarに、状態と `Open Editor` を置く。状態は撮るもの（`ERP`、`Camera · Perspective`、
-  `Camera · 360°` / `180°`）、出力の画素数、上限（4096）に収めたときの元の大きさ、auto で `bg_media` が
-  無いときの注記を示す。注記の欄は空でも場所を保ち、controlを動かさない。
-- 状態は実行前から `state_json` と `output_size`・`coverage` で決める（`web_src/pano_studio_status.js`、
-  Python の `_studio_output_size` と `tests/test_studio_status_parity.py` で一致させる）。`hFOV_max` は
-  media を読まない Timeline の frame で求める（見積もり）。
-- 実行後は、実行が返した大きさ（`ui` の `pano_output_size`）を見積もりより優先する。VIDEO・IMAGE batch・
-  port の media・上流の Scene は Timeline の長さや coverage を変えるため。使うのは、実行時の media の接続
-  （background・sticker・scene）が今と同じで、かつ `pano_output_size.key`（`state_json`・`output_size`・
-  `coverage`・`bg_color` の hash、`_studio_run_key` / `studioRunKey`）が今の値と一致するときだけで、実行後に
-  編集したら見積もりに戻る。状態はこれらの入力が変わったときだけ計算し直す。接続（link）を変えずに上流の
-  中身を変えたとき（LoadImage で別の画像を選ぶ、上流のノードの widget を変えるなど）は検出しないので、
-  実行し直すまで前の実行の結果を示す。
-- auto の `bg_media` の幅は、直近の実行結果の `pano_bg_width`、無ければ接続した画像、または node が
-  再生用に読む VIDEO file の幅とする。実行前は frontend が preview に読む画像の幅に従うため、それが
-  `bg_media` の実際の幅と違えば、実行までは表示が実行結果と違うことがある。わからない間は大きさを
-  `auto` と示す。上流の Scene の `bg_media` は実行結果からだけわかる。
+- 絵は、今の状態（`state_json`）と入力と widget から、撮る Camera の表示フレームでの出力をその場で描いたもの（ADR 0049）。実行の前も後も
+  同じで、実行の出力の画像は使わない。描く部品はエディタの Output の小窓と同じ `web_src/studio/output_picture.js`：
+  - Panorama モード：Camera の位置からの ERP（`outputErpInput`、`pano_three_view.js` の `renderLiveErp`。`docs/threejs-spark-integration.md`
+    の「Panorama モードの ERP の表示」）。Camera の `erp_range` の範囲で、平らな ERP として描く（見回さない）。
+  - Frame モード：Camera の枠の絵（`outputFrameInput`）。レンズの曲線 κ ≠ 1 の Camera はレンズの像として描く。
+  - どちらも地面のグリッドは描かない（編集の印なので、出力に無い）。
+- 描く物は、エディタと同じ作り方（`web_src/studio/stage_content.js` の `stageContent`）で、表示フレームの次のものとする：背景
+  （Clip range の外と素材が終わった先は `background_color`、背景が無いときも `background_color`。出力と同じ）、sky の Sticker とペイント
+  （同じ表示順）、`world` の画像の Sticker、3D ファイルの Sticker（エディタと同じ route で読む）、`world` 入力の 3D（実行結果の
+  `pano_scene_files`）、`port` の Sticker（画像と、実行結果の 3D）。
+  上流の Scene（`scene` 入力の `PANO_SCENE`）の層と深度の格子の 3D はまだ描かない（ADR 0049。描くまでは実行の結果と違う）。
+- 描く大きさは絵の箱の大きさ（canvas の画素）で、出力の大きさでは描かない。
+- 描き直すのは、描く物が変わりうるときだけ：`state_json` の変更、widget（`background_color`・`background_range`・`megapixels`・`multiple`）
+  の変更、入力の接続の変更、実行結果（`executed`）、素材の読み込み、表示フレームの VIDEO の絵、surface の大きさの変更。それ以外の
+  animation frame は持たない。Panorama モードの ERP は、Camera の位置と描く物が変わらなければ面を描き直さない（`pano_live_erp.js`）。
+- three.js の view を読み込む前と、読み込めないときは、絵の箱は塗らない（透明）。読み込めないときは
+  `PanoViewUnavailable` を重ねる。
 
-### 新しい UI の撮り方と出力の大きさに合わせた変更（ADR 0048。ノードと状態の変更と同じ change で入れる）
+## 一行の状態
 
-上の規則のうち、次を置き換える（撮り方と出力の大きさの規則は `docs/studio-node.md`）。
-
-- 状態の一行：撮るものと出る大きさを一行で出す。例 `Panorama 360° · 2048 × 1024`、`Panorama 180° · 1448 × 1448`、`Frame 16:9 · 1928 × 1088`
+- 撮り方と出る大きさを一行で出す。例 左 `Panorama 360°`・右 `2048 × 1024`、左 `Panorama 180°`・右 `1448 × 1448`、左 `Frame 16:9`・右 `1928 × 1088`
   （Frame の比は、`camera.aspect` との差が 1% 以内のプリセット（16:9・3:2・4:3・1:1・3:4・2:3・9:16）があればその比、無ければ
-  `W:H`（出る大きさの幅と高さ）で出す）。画面に `ERP`・`Perspective`・`Camera ·` の語は出さない
-  （`CONTEXT.md` の「画面の言葉」）。「Camera が無い」に当たる表示は無くなる（Camera はいつもある）。この一行が、ノードの上で出る大きさを
-  先に見せる唯一の場所である（`io.ResolutionPreview` は使わない。`docs/studio-node.md`）。
-- 出力の画素数は `megapixels`・`multiple` と状態の比から、`pano_studio_status.js` の `studioOutputSize`（新しい式）で求める。上限
-  （`STUDIO_MAX_OUTPUT_SIDE`）に収めたときは元の大きさを示す。`auto` と「`bg_media` が無いときの注記」は無くなる（`auto` が無いため）。
-  注記の欄の場所は、ほかの注記のために保つ。
-- 実行結果を使う条件の `pano_output_size.key`（`_studio_run_key` / `studioRunKey`）は、`state_json`・`megapixels`・`multiple`・
-  `background_range`・`background_color` の hash にする（`output_size`・`coverage` を外す）。
-- 実行の出力の分け方：`pano_output_erp` を返すのは `projection` が `erp`（Panorama モード）のときだけで、上の「Camera が無いか、隠したか」
-  の分岐は無くなる（Camera はいつもあり、隠しても撮る）。`pano_output_erp` に添える `rotation` はいつも Camera の frame 0 の値で、`null` に
-  ならない。
-- `pano_bg_width` は、`auto` の幅を求めるためだけにある（読むのは `pano_preview_runtime.js` の `studioBgWidth` だけ）。`auto` が無くなるので、
-  ノードの `ui` の `pano_bg_width` と `studioBgWidth` を消す。
+  `W:H`（出る大きさの幅と高さ）で出す）。画面に `ERP`・`Perspective`・`Camera ·` の語は出さない（`CONTEXT.md` の「画面の言葉」）。
+  この一行が、ノードの上で出る大きさを先に見せる唯一の場所である（`io.ResolutionPreview` は使わない。`docs/studio-node.md`）。
+- 出力の画素数は `megapixels`・`multiple` と状態の比から、`pano_studio_status.js` の `studioOutputSize` で求める（式の owner は
+  `docs/studio-node.md`。Python の `_studio_output_size` と `tests/fixtures/studio_output_size.json` で一致させる）。上限
+  （`STUDIO_MAX_OUTPUT_SIDE`）に収めたときは、大きさに元の大きさを添えた tooltip（`Capped at 8192 (W × H)`）を付ける。
+- 一行は、`megapixels`・`multiple`・`background_range`・`background_color` の widget を変えたとき（ComfyUI が widget の callback を呼んだとき）と
+  `state_json` が変わったとき（Camera のモード・`erp_range`・`aspect`）に、実行せずにすぐ変わる。callback は
+  `web_src/pano_widget_callback.js` の `chainWidgetCallback` で連ね、元の callback を同じ `this` と引数で呼び、元の callback が例外を
+  投げても描き直しを要求する（ComfyUI の数値の widget の callback は `this` を読む）。
+- 実行後は、実行が返した大きさ（`ui` の `pano_output_size`）を見積もりより優先する。使うのは、実行時の media の接続
+  （background・sticker・scene）が今と同じで、かつ `pano_output_size.key`（`state_json`・`megapixels`・`multiple`・`background_range`・
+  `background_color` の hash、`_studio_run_key` / `studioRunKey`）が今の値と一致するときだけで、実行後に編集したら見積もりに戻る。
+  一行はこれらの入力が変わったときだけ計算し直す。
 
-## 実行前の表示
+## 見回し（旧ノードと Preview の Scene のビューアの規則）
 
-- 実行前は、背景と sky Sticker・paint を Timeline の最初の frame で描き（live の描画）、drag / wheel で
-  見回すだけとする。world Sticker と 3D の素材（`scene`）は描かない。注記の欄の先頭に `Not run yet` と示す。
-- background、paint / raster、stickerはbackendと同じdisplay orderで描画する。
-
-## 実行の出力の表示
-
-- 一度実行すると、surface は常に直近の実行の出力を示す（ADR 0029）。実行は出力（`first_frame`、動画なら最初の
-  frame）を元の大きさの PNG で temp に書き（`TEMP_FILES` に登録、縮小しない）、`ui` で返す。出力が ERP のとき
-  （Camera が無いか、隠したか、`projection` が `erp`）は `pano_output_erp` に `coverage` を添えて返し、
-  パノラマはその画像だけを背景に描いて見回す。sky Sticker と paint は重ねない（3D・world・上流の Scene も
-  すでに入っている）。`coverage` 180 なら前半球として描く。`perspective` の Camera のときは `pano_output_frame`
-  で返し、surface はそれを平らな画像として、比を保ったまま上端の bar の下（surface の上から 38px より下）に
-  収めて描く（余白は黒、切り取らない、surface の大きさは変えない）。見回しはしない。
-- 実行の後に入力が実行と合わなくなっても（上の `pano_output_size` と同じ条件：media の接続と
-  `pano_output_size.key`）、出力を示し続け、注記の欄の先頭に `Edited — run to update` と示す。合っている間は
-  この注記を出さない。どちらの注記も同じ欄に入り、長ければ省略記号で切る（layout shift なし）。
-- 画像を読み込めるまでは live の描画を示す。読み込めなかったとき（再起動で temp が消えたなど）は live の描画に
-  戻し、注記を `Run output unavailable — run again` にする。読み込みに失敗した file は、次にこの node が実行
-  される（`executed` が届く。cache から同じ `ui` が送り直されたときも含む）まで読み直さない。実行のたびに一度だけ
-  読み直す。画像は結果の file ごとに一度だけ読んで decode し、node を外すと手放す。collapse や非表示の間は
-  読まない。
-- Camera の ERP は Camera の向きで撮った ERP なので、実行は `pano_output_erp` に撮った回転（Camera の frame 0 の
-  `yaw_deg`・`pitch_deg`・`roll_deg`、Camera が無いか隠したときは `null`）を `rotation` として添える。パノラマは
-  その回転（`studioRunQuaternion`）で ERP の球を回して World の向きに戻して描く。run が `core/render.py` の
-  `_rays` で回したものの逆で（`tests/test_studio_run_erp_orientation.py`）、二つの描き方を切り替えても向きは
-  跳ばない。実行の後に Camera を回しても、示す出力の向きは変わらない。
-- `port` の Sticker の vFOV は状態に書かない派生値なので（`docs/scene-state-v2.md`）、実行の後に port の
-  素材が読み込まれても `state_json` は変わらず、実行と合ったままになる。エディタの inspector は、`port` の
-  Sticker の V FOV を素材から求めた値で示し、無効にする（`stickerParamEnabled`）。Sticker には上下の辺の
-  handle がないので、vFOV だけを変える操作もない。
-
-## 見回し
+Panorama Studio の表示は見回さない（ADR 0049）。drag と wheel を受けず、wheel は ComfyUI のグラフに渡る（root に
+`data-capture-wheel` を付けない）。次の規則は旧ノードと Preview の Scene のビューアが使い、この節だけが持つ。
 
 - 空所primary dragはcameraをpanする。wheelは共有controllerで横FOVを1イベント3度変更する。
 - 空所drag / wheelはCutout / Previewと同じcamera感度で動く。
 - Node 2.0ではDOM widget rootを`tabindex="0"`かつ`data-capture-wheel="true"`とし、surfaceへのpointer enterで
   rootへfocusを移してからwheelを受け取る（`pano_wheel.js` の `bindWheelCaptureRoot`）。wheelを受けるにはこの2つの両方が要る。
-  この捕捉の規則は旧ノードと Preview の Scene のビューアも使い、この節だけが持つ。
 - Space キーは割り当てない（canvas上の Space は ComfyUI の pan）。
+- camera view は一時状態とし、workflow へ保存しない。
 
 ## 表示フレームと VIDEO
 
@@ -159,7 +142,7 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
   PTS ≤ currentTime のフレームに再生ヘッドと静止画を合わせ、シークしない。ADR 0024）。もう一度再生するとそのフレームから続ける。
 - 再生していないときはrAFもvideo frame callbackも持たない。再生中は表示されたVIDEOフレーム（VIDEOがないときは
   時計）ごとに1回描く。
-- `Open Editor` を押すと、先に再生を一時停止する。
+- `Open Studio` を押すと、先に再生を一時停止する。
 
 ## 見えないときとエディタを開いている間
 
@@ -186,6 +169,11 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 - backgroundと `port` のStickerの実行結果鮮度は独立して管理し、`bg_media` の接続変更で `port` のSticker textureを失効させない。
 - animation frameは同時に1件だけ予約する。
 - camera frameとresizeはDOM canvasだけを更新し、host graph canvas全体を継続再描画しない。
+- Panorama Studio の surface の大きさが変わったら（ノードの resize。ResizeObserver）、次の animation frame を待たずに、その callback の中で
+  置き方を求め直して絵を描き直す。canvas の大きさを変えると絵が消え、ResizeObserver の callback はその frame の animation frame の
+  callback より後に来るので、次の frame に回すと、消えた絵か伸びた古い絵が一度出る（新しい UI のステージの resize と同じ。
+  `web_src/pano_frame_scheduler.js` の `flush`）。
+- Panorama モードのその場の ERP は node ごとの 2D canvas に描いてから surface の canvas に写す。その canvas は teardown で大きさを 0 にして放す。Panorama と Frame を切り替えたときは、使わなくなった側（その場の ERP と canvas、レンズの面）を放す。
 - teardownはVue app、RAF、ResizeObserver、media callback、render core、listener、widget hookを破棄・復元する。
   remove / reconfigure / re-addで二重mount、listener、RAF、media callbackを残さない。
 - raster objectのnode preview用surfaceは最大1024×512とし、objectごとに最新revisionだけを保持する。

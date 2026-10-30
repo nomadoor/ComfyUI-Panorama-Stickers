@@ -336,6 +336,10 @@ export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {
     pickSticker(camera, x, y, width, height) {
       return view && !editorView.lost ? view.pickSticker(camera, x, y, width, height) : null;
     },
+    // The hit grid of a loaded 3D Sticker item, once built (pano_three_view.js sceneGrid), or null.
+    sceneGrid(url) {
+      return view ? view.sceneGrid(url) : null;
+    },
     // The pointer on the selected world Sticker's gizmo (pano_three_view.js gizmoPointer).
     gizmoPointer(phase, camera, x, y, width, height) {
       return view && !editorView.lost ? view.gizmoPointer(phase, camera, x, y, width, height) : null;

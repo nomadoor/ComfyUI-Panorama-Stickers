@@ -148,10 +148,10 @@ test("an axis drag carries its guide line through the grabbed center along the a
   const shown = gizmo("translate");
   const handles = gizmoHandles(shown, camera, W, H);
   const drag = gizmoDrag(shown, "x", camera, axisOf(handles, "x").end, W, H);
-  assert.deepEqual(drag.guide, { name: "x", origin: [0, 0, -5], dir: [1, 0, 0] });
-  const [a, b] = gizmoGuideSegment(drag.guide, camera);
+  assert.deepEqual(drag.guides, [{ name: "x", origin: [0, 0, -5], dir: [1, 0, 0] }]);
+  const [a, b] = gizmoGuideSegment(drag.guides[0], camera);
   assert.ok(a[0] < -100 && b[0] > 100 && a[1] === 0 && a[2] === -5, "it reaches far both ways");
-  assert.equal(gizmoDrag(shown, "center", camera, handles.center, W, H).guide, undefined);
+  assert.deepEqual(gizmoDrag(shown, "center", camera, handles.center, W, H).guides, []);
 });
 
 // Move's plane squares (docs/studio-ui.md "ギズモ" "Move の平面の取っ手").
@@ -193,7 +193,10 @@ test("a drag of the XZ square moves the object on the level plane through its ce
   const grip = middle(planeOf(handles, "xz").points);
   const drag = gizmoDrag(shown, "xz", oblique, grip, W, H);
   assert.ok(drag);
-  assert.equal(drag.guide, undefined, "no axis guide line");
+  assert.deepEqual(drag.guides, [
+    { name: "x", origin: [0, 0, -5], dir: [1, 0, 0] },
+    { name: "z", origin: [0, 0, -5], dir: [0, 0, 1] },
+  ], "both of the plane's axis guide lines, through the grabbed center");
   for (const to of [{ x: grip.x + 120, y: grip.y + 40 }, { x: grip.x - 80, y: grip.y - 30 }]) {
     const moved = drag.move(oblique, to, W, H);
     assert.ok(close(moved.position[1], 0), "Y stays");
@@ -245,4 +248,17 @@ test("Rotate with snap stops the ring's own angle at multiples of ROTATE_SNAP_DE
     }
   }
   assert.equal(ROTATE_SNAP_DEG, 15);
+});
+
+test("each plane square's drag carries the guide lines of its two axes, in World axis directions", () => {
+  const shown = gizmo("translate");
+  const handles = gizmoHandles(shown, oblique, W, H);
+  const expected = { xy: ["x", "y"], yz: ["y", "z"], xz: ["x", "z"] };
+  const dirs = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+  for (const [name, axes] of Object.entries(expected)) {
+    const plane = planeOf(handles, name);
+    if (!plane.shown) continue;
+    const drag = gizmoDrag(shown, name, oblique, middle(plane.points), W, H);
+    assert.deepEqual(drag.guides.map((guide) => [guide.name, guide.dir]), axes.map((axis) => [axis, dirs[axis]]), name);
+  }
 });

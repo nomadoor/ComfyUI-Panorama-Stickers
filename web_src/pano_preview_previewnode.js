@@ -8,6 +8,8 @@ import { surfaceShown } from "./pano_node_playback.js";
 import {
   createPreviewFullscreenController,
   measurePreviewCanvasSize,
+  pauseNodeVideoForWindow,
+  resumeNodeVideoFromWindow,
   shouldTogglePreviewPlaybackFromKey,
 } from "./pano_preview_node_surface.js";
 import { bindWheelCaptureRoot } from "./pano_wheel.js";
@@ -279,6 +281,8 @@ class PreviewNodeRuntime {
     this.imgSrc = "";
     this.mediaCleanup = null;
     this.view = { yaw: 0, pitch: 0, fov: 100 };
+    // The new Preview window is open on this node (studio/preview_window.js): the VIDEO does not play here meanwhile.
+    this.windowOpen = false;
     this.previewView = acquirePreviewView(() => this.requestDraw());
     this.controller = createPanoInteractionController({
       getView: () => this.view,
@@ -452,7 +456,7 @@ class PreviewNodeRuntime {
       this.surfaceHost = document.createElement("div");
       this.surfaceHost.className = "pano-preview-node-surface-host";
       this.root.appendChild(this.surfaceHost);
-      this.surfaceModel = reactive({ fullscreen: false, viewUnavailable: false });
+      this.surfaceModel = reactive({ fullscreen: false, viewUnavailable: false, opensWindow: this.opensWindow() });
       this.fullscreenController = createPreviewFullscreenController({
         root: this.root,
         documentRef: document,
@@ -465,7 +469,13 @@ class PreviewNodeRuntime {
       this.surfaceApp = createApp(PanoPreviewNodeSurface, {
         model: this.surfaceModel,
         onAction: (action) => {
-          if (action?.type === "toggle-fullscreen") void this.fullscreenController?.toggle?.();
+          if (action?.type !== "toggle-fullscreen" && action?.type !== "open-viewer") return;
+          // The setting or the link may have changed since the button last showed (docs/preview-node.md "ノード上").
+          if (this.opensWindow() && !this.fullscreenController?.isActive?.()) {
+            this.options.onOpen?.(this.node);
+            return;
+          }
+          void this.fullscreenController?.toggle?.();
         },
       });
       this.surfaceApp.mount(this.surfaceHost);
@@ -541,9 +551,25 @@ class PreviewNodeRuntime {
   }
 
   togglePlayback() {
-    if (!(this.img instanceof HTMLVideoElement) || !isRenderableMediaReady(this.img)) return;
+    if (this.windowOpen || !(this.img instanceof HTMLVideoElement) || !isRenderableMediaReady(this.img)) return;
     if (this.img.paused) void this.img.play().catch(() => {});
     else this.img.pause();
+    this.requestDraw();
+  }
+
+  // The new Preview window opened on this node (docs/studio-ui.md "Preview のウィンドウ"): the VIDEO stops and hands
+  // over { time, playing }, or null without a VIDEO; it does not play here until windowClosed.
+  windowOpened() {
+    this.windowOpen = true;
+    const handOver = pauseNodeVideoForWindow(this.img instanceof HTMLVideoElement ? this.img : null);
+    this.requestDraw();
+    return handOver;
+  }
+
+  // The window closed: the VIDEO goes on from the window's { time, playing }.
+  windowClosed(handBack = {}) {
+    this.windowOpen = false;
+    resumeNodeVideoFromWindow(this.img instanceof HTMLVideoElement ? this.img : null, handBack, this.shown());
     this.requestDraw();
   }
 
@@ -735,8 +761,15 @@ class PreviewNodeRuntime {
     img.src = nextSrc;
   }
 
+  // Whether the surface's top-right button opens the new Preview window rather than the browser's fullscreen
+  // (options.opensWindow, given for Panorama Preview's IMAGE and VIDEO; docs/preview-node.md "ノード上").
+  opensWindow() {
+    return typeof this.options.opensWindow === "function" && this.options.opensWindow() === true;
+  }
+
   requestDraw() {
     if (this.tearingDown) return;
+    if (this.surfaceModel) this.surfaceModel.opensWindow = this.opensWindow();
     this.needsDraw = true;
     if (this.inTick) {
       this.queuedDuringTick = true;
@@ -752,7 +785,7 @@ class PreviewNodeRuntime {
     this.queuedDuringTick = false;
     this.needsDraw = false;
     // A playing VIDEO pauses out of sight, so it does not play on unseen.
-    if (this.img instanceof HTMLVideoElement && !this.img.paused && !this.shown()) this.img.pause();
+    if (this.img instanceof HTMLVideoElement && !this.img.paused && (this.windowOpen || !this.shown())) this.img.pause();
     const moving = this.controller.stepInertia(ts);
     if (this.canvas && this.ctx) {
       // Resize and repaint in one frame so the cleared backing store is never

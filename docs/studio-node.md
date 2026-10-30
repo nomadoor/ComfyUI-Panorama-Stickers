@@ -99,7 +99,7 @@ Panorama Studio の `execute` は次の三つの入口に分かれる。
 
   | キー | 内容 |
   |---|---|
-  | `pano_input_images` | `bg_media` の最初のフレーム |
+  | `pano_input_images` | `bg_media` の最初のフレーム。エディタとノード上の表示は自分の背景の絵をまずここから読む（途中のノードで作った IMAGE はここにしか無い。`docs/adr/0003-external-input-sticker-failure-boundaries.md` の Amendment 2026-03-11、読み方は `docs/studio-ui.md` の「自分の背景の画像」） |
   | `pano_input_videos` / `pano_input_video_meta` | `bg_media` が 2 フレーム以上のときの一時 MP4 とメタ情報（`fps`・`frames`・`duration`・`has_audio`） |
   | `pano_sticker_input_images` | `sticker` の最初のフレーム |
   | `pano_sticker_input_videos` / `pano_sticker_input_video_meta` | `sticker` が 2 フレーム以上のときのエディタの MP4 とメタ情報。1 フレームの VIDEO は MP4 を作らず、メタ情報だけを出す（`frames` は 1。エディタの Auto の長さが素材の終わりを数えるため）。メタ情報は背景と同じ `fps`・`frames`・`duration`・`has_audio` に、`kind`（`VIDEO` か `IMAGE`）を足す。VIDEO の `duration` は素材の終わり（最後の PTS ＋ 平均フレームレートの 1 フレーム、`PortMedia.end`）で、`pts_tolerance` は PTS の手前で同じフレームと見なす秒数（素材と、Timeline を決めた VIDEO の time base の半分の大きいほう）。IMAGE バッチは Timeline fps の等間隔で、`fps` は Timeline fps。エディタとノード上の UI は、これで `port` の Sticker を再生ヘッドに合わせて表示する（`docs/timeline-ui.md`） |
@@ -325,7 +325,7 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
   - 名前の対応：この文書のほかの節は、切り替えまでの今の名前で書いている。入力の `bg_media` は `background`、`coverage` は `background_range`、
     `bg_color` は `background_color`、3D の素材を刺す `scene` は `world` にあたる。`PANO_SCENE` のフィールド・`ui` のキー・内部の関数の名前
     （`bg_media`・`coverage`・`bg_color`、`pano_upstream_coverage` など）は今のまま。
-  - 出る大きさはノード上の表示の上端の一行で見せ、`io.ResolutionPreview` は使わない（下記「撮る Camera と出力の大きさの設計」）。
+  - 出る大きさはノード上の表示の絵の下の一行で見せ、`io.ResolutionPreview` は使わない（下記「撮る Camera と出力の大きさの設計」）。
   - `background_range` は背景の絵（`background`）が球のどこまでを覆うかだけを表す（360 は全周、180 は前の半球で、外は `background_color`。Unity の Panoramic skybox の Image Type 360 / 180 と同じ考え）。出力の範囲は決めない（出力の範囲は Camera の `erp_range`。下記）。VR180 の背景を VR180 で出すときは、`background_range` と Camera の `erp_range` の両方を 180 にする（ADR 0048。二つは互いを参照しない）。
 - 出力は `scene`（`PANO_SCENE`）、`first_frame`（IMAGE）、`first_frame_mask`（MASK）、`video`（VIDEO）、`sticker_state`（STRING）の順（入力と鏡にそろえ、`scene` を一番上に置く。ADR 0048）。`is_output_node` は `True`。
 - Scene の組み立ては `_build_scene`（状態の読み込み、`port` の Sticker、Source、(a) の `_decide_timeline`、エディタ用の `ui`）で、描画は (b)・(c)（`_render_frames`・`_render_outputs`）。撮り方（`capture`）と出力の大きさは下記。
@@ -363,7 +363,7 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
     モードは高さから決め直す：幅（高さ × 比）が 8192 を超えない最大の `multiple` の倍数を高さにする（16 MP までの 2 : 1・1 : 1 は
     上限に届かない）。大きな出力のメモリと時間は `docs/runtime-resources.md` と
     `docs/render-contract.md`（大きな ERP にストロークを描く重さ）。
-  - エディタのCamera のカードには出力の大きさを出さない（大きさはノードの上の値。`docs/studio-ui.md`）。ノードの上には、ノード上の表示の上端の一行で出る大きさを出す（`docs/studio-node-surface.md`）。
+  - エディタのCamera のカードには出力の大きさを出さない（大きさはノードの上の値。`docs/studio-ui.md`）。ノードの上には、ノード上の表示の絵の下の一行で出る大きさを出す（`docs/studio-node-surface.md`）。
 - `scene` 出力は `PanoSceneValue`（上記「`PANO_SCENE`」）で、自分の層（最後の層）の `state` の `camera` を `null` にする（撮影する世界で、Camera を含まない。`_scene_output`。この `null` は `PanoSceneValue` の中の値で、`state_json` の読み込み（欠け・`null` を既定の Camera にする）を通らない。下流は上流の層の Camera を使わない）。自分の層の `state` の `upstream`（上流の層への上書き）も空にする。下流は上書きを当てた後の姿を受け取るためである（ADR 0030。当て方は下記「上流の Scene」の「上書き」）。`id` は保ち、下流はこの `id` ごとに上書きを記録する。上流の Scene を受けたときは、上流の層も含む。Timeline（`fps`・`times`・`frames`）は Camera の Keyframe を数えて決めたもの。
 - `sticker_state` は `projection` が `perspective`（Frame モード）のときだけ、`_camera_sticker_state` が作る v2（`docs/scene-state-v2.md`）。`fps` は状態の `timeline.fps`、`camera` は Camera の Lane ごとの Keyframe をそのまま写したもの。Timeline fps には再基準化しない（丸めで Keyframe が最大で半フレーム動くため。Pose handoff はどの fps の比でも評価できる）。Keyframe のない Lane は Camera の値を持つ `frame: 0` の Keyframe 一つ。`source_aspect` は出力の幅 ÷ 高さ。Panorama モード（`erp`）のときは空文字列（隠した Camera でも出す。ADR 0048）。
 - 隠した `scene`（`scene.visible`）と Sticker は評価関数の `active` が偽になるので描かない。隠したペイント（`painting_visible`）は `_resolve_sources` が空のペイントを渡すので、色にも MASK にも出ない。上流の Scene の層でも同じ。
@@ -387,7 +387,7 @@ Scene を組み立てて撮るノード（ADR 0029）。Python のクラスは `
   | Camera のカード・Camera のボタン・モードの切り替えの画面 | `docs/studio-ui.md` |
 - データの流れ：ノードの widget（`background_color`・`background_range`・`megapixels`・`multiple`）は ComfyUI のワークフローに保存され、`execute` の
   引数で Python に届く。撮り方・`erp_range`・`aspect` などは `state_json`（状態 v2）にあり、エディタが書き、Python が読む。出力の大きさは
-  Python が `megapixels`・`multiple` と状態の比から求める。ノードの上の出る大きさは、ノード上の表示の上端の一行（`docs/studio-node-surface.md`）が、
+  Python が `megapixels`・`multiple` と状態の比から求める。ノードの上の出る大きさは、ノード上の表示の絵の下の一行（`docs/studio-node-surface.md`）が、
   JS で同じ widget の値と、ノードの `state_json` を `loadSceneState` で読んだ比から、同じ式で求めて出す。`io.ResolutionPreview` は使わない
   （確かめた事実：その widget は `ratio_widget` で名指しした隣の widget の値を `W:H` の文字列として読む。`comfy_api/latest/_io.py` の
   `ResolutionPreview`、frontend の `WidgetResolutionPreview`。Panorama Studio の比は `state_json` の中にあり widget ではないので読めない。

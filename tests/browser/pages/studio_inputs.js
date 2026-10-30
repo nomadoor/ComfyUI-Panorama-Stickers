@@ -5,7 +5,10 @@
 //   port3d    the `sticker` input's GLB, its port Sticker a world object in front of the view
 //   upstream  another Studio's Scene on `scene`: a sky image, a world board and its background
 //   upstream-own  the same with the node's own `background` linked too
+//   upstream-world  the same with the node's own `world` linked too (its own `scene` row shows with the group)
 //   upstream-pending  a Scene linked to `scene`, the node not run yet
+//   world     an empty state with only `world` linked, the node not run yet
+//   empty     an empty state with nothing linked
 // The page reports through window.__studio.
 import { BoxGeometry, CanvasTexture, Mesh, MeshStandardMaterial, SRGBColorSpace, Scene } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
@@ -77,7 +80,7 @@ async function port3dCase() {
   };
 }
 
-function upstreamCase(own) {
+function upstreamCase(own, world = false) {
   const layer = {
     version: 2,
     id: "scene_up",
@@ -90,7 +93,11 @@ function upstreamCase(own) {
   };
   return {
     state: { version: 2, timeline: { fps: 24 }, stickers: [] },
-    inputs: [{ name: "scene", type: "PANO_SCENE" }, ...(own ? [{ name: "background", type: "IMAGE", image: erp(COLORS.ownBg) }] : [])],
+    inputs: [
+      { name: "scene", type: "PANO_SCENE" },
+      ...(own ? [{ name: "background", type: "IMAGE", image: erp(COLORS.ownBg) }] : []),
+      ...(world ? [{ name: "world", type: "MESH" }] : []),
+    ],
     result: {
       pano_upstream_layers: [{ state: layer, ui: {} }],
       pano_upstream_frames: [48],
@@ -104,8 +111,16 @@ function upstreamCase(own) {
   };
 }
 
+// An empty state with only `world` linked (the node not run yet), or with nothing linked ("empty").
+function worldCase(linked) {
+  return { state: { version: 2, timeline: { fps: 24 }, stickers: [] }, inputs: linked ? [{ name: "world", type: "MESH" }] : [], result: {} };
+}
+
 try {
-  const setup = which === "port" ? portCase() : which === "port3d" ? await port3dCase() : upstreamCase(which === "upstream-own");
+  const setup = which === "port" ? portCase()
+    : which === "port3d" ? await port3dCase()
+    : which === "world" || which === "empty" ? worldCase(which === "world")
+    : upstreamCase(which === "upstream-own", which === "upstream-world");
   if (which === "upstream-pending") setup.result = {};
   // Each input comes from a node of its own: ids 100, 101, ...
   const origins = setup.inputs.map((input, index) => ({ id: 100 + index, title: input.name, type: input.type, image: input.image ?? null }));

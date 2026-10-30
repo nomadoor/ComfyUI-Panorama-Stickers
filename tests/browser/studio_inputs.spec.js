@@ -123,10 +123,41 @@ test("another Studio's Scene on scene: its layers are drawn, shown read-only in 
   expect(problems).toEqual([]);
 });
 
+// docs/timeline-ui.md "上流の層の行": the own `world` is drawn over the upstream layers, so its `scene` row stays.
+test("an upstream Scene and the node's own world: the own scene row shows above the group and its eye edits the state", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo, "upstream-world");
+  const own = page.locator('[data-head="scene"]');
+  await expect(own).toBeVisible();
+  await expect(page.locator('[data-group="scene_up"]')).toContainText("From Studio Up");
+  await expect(page.locator('[data-head="upstream:scene_up:sticker_1"]')).toBeVisible();
+  // The own rows come first, the upstream group below them.
+  const ownBox = await own.boundingBox();
+  const groupBox = await page.locator('[data-group="scene_up"]').boundingBox();
+  expect(ownBox.y).toBeLessThan(groupBox.y);
+  // The own row is the node's own: its eye hides the own `scene` and writes no upstream override.
+  await own.locator('[data-part="eye"]').click();
+  await expect.poll(() => page.evaluate(() => window.__studio.session.state.scene.visible)).toBe(false);
+  expect(await page.evaluate(() => JSON.stringify(window.__studio.session.state.upstream))).toBe("[]");
+  await shot(page, "own-world");
+  expect(problems).toEqual([]);
+});
+
 test("a Scene linked to scene before the node ran: the line asks for a run", async ({ page }, testInfo) => {
   const problems = await open(page, testInfo, "upstream-pending");
   await expect(page.locator(".pano-studio-notice")).toContainText("Run the workflow to show the upstream scene.");
   await shot(page, "pending");
+  expect(problems).toEqual([]);
+});
+
+// docs/studio-ui.md "読み込み中と空の画面": a linked `world` brings 3D content, so the stage is not empty.
+test("the empty stage's hint shows with nothing linked, and not with `world` linked", async ({ page }, testInfo) => {
+  let problems = await open(page, testInfo, "empty");
+  await expect(page.locator(".pano-studio-notice")).toHaveText("Drop an image or a 3D file, or press Add");
+  await expect(page.locator(".pano-studio-notice")).toHaveAttribute("data-notice", "info");
+  expect(problems).toEqual([]);
+
+  problems = await open(page, testInfo, "world");
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
   expect(problems).toEqual([]);
 });
 

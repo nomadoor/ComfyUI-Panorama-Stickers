@@ -216,6 +216,11 @@ export function attachSceneViewerNode(node, { app, uiList, mediaSource, mediaAss
   const surface = {
     requestDraw,
     activate,
+    // The new Preview window took the playback (record.playing is false now): the node's media follow that at once,
+    // so its VIDEO stops while the node does not draw.
+    rest() {
+      viewer.input();
+    },
     detach() {
       surfaces.delete(surface);
       cancelAnimationFrame(raf);

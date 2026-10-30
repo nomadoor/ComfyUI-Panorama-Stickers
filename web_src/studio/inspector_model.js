@@ -402,8 +402,8 @@ function cameraCard(state, { playhead, readOnly }) {
   };
 }
 
-function sceneCard(state, { readOnly }) {
-  const ground = groundOf(state);
+function sceneCard(state, { readOnly, upstream }) {
+  const ground = groundOf(state, upstream);
   const off = readOnly;
   return {
     kind: "scene",
