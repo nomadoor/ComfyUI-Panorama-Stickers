@@ -137,6 +137,8 @@ behavior change ごとに、agent は次のどちらかを理由を一言添え�
 
 ## Verification
 
+- dev と main への PR（と dev への push）では、GitHub Actions（`.github/workflows/ci.yml`）が `node --test tests/*.test.mjs`、
+  `npm run check:web`、CPU 版 torch と pin した ComfyUI での `python -m pytest` を回す。ブラウザの test は CI では回らない。
 - 描画、WebGL、動画再生、pointer 入力に触れる変更は、review の前に `npm run test:browser` を通す。Playwright が
   Vite の開発サーバーを 127.0.0.1 で起動し、`tests/browser/pages/` のページを headless Chromium で開いて、
   コンソールのエラーが無い、タブが落ちない、WebGL context が失われない、決まった場面が空でなく描ける、を確かめる。
