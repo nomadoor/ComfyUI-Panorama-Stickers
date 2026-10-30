@@ -37,10 +37,13 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 - canvas は node の利用可能領域を満たし、縦横 resize へ追従する。surface の大きさは出力の比で変わらない。
 - 置くのは三つだけ：撮る Camera の出力の絵、絵の下の中央に浮かせた `Open Studio` のボタン、絵の下の一行（左に撮り方、右に出力の大きさ）。
   Sticker の選択・drag・削除、画像の追加と drop、Delete / Backspace、再生ボタン、見回しは持たない（ADR 0029・0049）。
-- 置き方（`web_src/pano_studio_surface.js` の `studioSurfaceLayout`、値の名前は `docs/design.md`）：絵は出力の比（Panorama 360° は 2 : 1、
-  180° は 1 : 1、Frame は出る大きさの幅 : 高さ）のまま、surface の幅と、高さから一行の分（`STUDIO_LINE_HEIGHT` と `STUDIO_LINE_GAP`）を
-  除いた高さに収まる最大の大きさにし、上に寄せて左右の中央に置く。一行は絵のすぐ下（間 `STUDIO_LINE_GAP`）に、絵と同じ幅で置く。
-  絵の外は透かす（ノードの地が見える）。絵の角は丸める。
+- 置き方（`web_src/pano_studio_surface.js` の `studioSurfaceLayout`、値の名前は `docs/design.md`）：surface（widget の下からノードの下の端まで）
+  を一つの箱とする。絵は出力の比（Panorama 360° は 2 : 1、180° は 1 : 1、Frame は出る大きさの幅 : 高さ）のまま、箱の幅と、高さから一行の分
+  （`STUDIO_LINE_HEIGHT` と `STUDIO_LINE_GAP`）を除いた高さに収まる最大の大きさにする（contain）。絵と一行をひとまとまりとして、箱の上下と
+  左右の中央に置く（絵は箱から一行の分を除いた所の中央に来る）。一行は絵のすぐ下（間 `STUDIO_LINE_GAP`）に、絵と同じ幅で置き、絵から離れない。
+  箱の残り（絵と一行の外）は surface の暗い地（`STUDIO_SURFACE_FILL`、角丸 `STUDIO_PICTURE_RADIUS`）で、ノードの地は見せない。
+  絵の角は丸める。ノードを縦にも横にも大きくすると、絵は箱に収まる最大の大きさに広がり、中央に留まる。
+- 一行は surface の暗い地の上に出るので、ComfyUI のテーマがライトでもダークの文字の値で書く（読めるように）。
 - ボタンは絵の下の辺から `STUDIO_BUTTON_INSET` 上、左右の中央に、いつも出す（ポインタを載せたときだけ出すことはしない）。
   アイコン（maximize）と `Open Studio` の文字。押すとエディタを開く（先に再生を一時停止する）。
 - 一行の左は撮り方のアイコン（Panorama は 360° のアイコン、Frame は比のアイコン）と撮り方の名前、右は出力の大きさ。長いときは
@@ -67,7 +70,7 @@ Panorama Studio（`PanoramaStudio`）のノード上の表示（node surface）�
 - 描き直すのは、描く物が変わりうるときだけ：`state_json` の変更、widget（`background_color`・`background_range`・`megapixels`・`multiple`）
   の変更、入力の接続の変更、実行結果（`executed`）、素材の読み込み、表示フレームの VIDEO の絵、surface の大きさの変更。それ以外の
   animation frame は持たない。Panorama モードの ERP は、Camera の位置と描く物が変わらなければ面を描き直さない（`pano_live_erp.js`）。
-- three.js の view を読み込む前と、読み込めないときは、絵の箱を `STUDIO_PICTURE_EMPTY` の色で塗る。読み込めないときは
+- three.js の view を読み込む前と、読み込めないときは、絵の箱は surface の地（`STUDIO_SURFACE_FILL`）のままである。読み込めないときは
   `PanoViewUnavailable` を重ねる。
 
 ## 一行の状態
@@ -166,6 +169,10 @@ Timeline のフレーム（表示フレーム）の背景の VIDEO と `port` �
 - backgroundと `port` のStickerの実行結果鮮度は独立して管理し、`bg_media` の接続変更で `port` のSticker textureを失効させない。
 - animation frameは同時に1件だけ予約する。
 - camera frameとresizeはDOM canvasだけを更新し、host graph canvas全体を継続再描画しない。
+- Panorama Studio の surface の大きさが変わったら（ノードの resize。ResizeObserver）、次の animation frame を待たずに、その callback の中で
+  置き方を求め直して絵を描き直す。canvas の大きさを変えると絵が消え、ResizeObserver の callback はその frame の animation frame の
+  callback より後に来るので、次の frame に回すと、消えた絵か伸びた古い絵が一度出る（新しい UI のステージの resize と同じ。
+  `web_src/pano_frame_scheduler.js` の `flush`）。
 - Panorama モードのその場の ERP は node ごとの 2D canvas に描いてから surface の canvas に写す。その canvas は teardown で大きさを 0 にして放す。Panorama と Frame を切り替えたときは、使わなくなった側（その場の ERP と canvas、レンズの面）を放す。
 - teardownはVue app、RAF、ResizeObserver、media callback、render core、listener、widget hookを破棄・復元する。
   remove / reconfigure / re-addで二重mount、listener、RAF、media callbackを残さない。

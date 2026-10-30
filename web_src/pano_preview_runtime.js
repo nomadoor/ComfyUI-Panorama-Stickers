@@ -32,7 +32,7 @@ import PanoCutoutNodeSurface from "./components/PanoCutoutNodeSurface.vue";
 import PanoStickersNodeSurface from "./components/PanoStickersNodeSurface.vue";
 import PanoStudioNodeSurface from "./components/PanoStudioNodeSurface.vue";
 import { createStudioStatus } from "./pano_studio_status.js";
-import { STUDIO_PICTURE_EMPTY, STUDIO_PICTURE_RADIUS, studioSurfaceLayout } from "./pano_studio_surface.js";
+import { STUDIO_PICTURE_RADIUS, STUDIO_SURFACE_FILL, studioSurfaceLayout } from "./pano_studio_surface.js";
 import { outputErpInput, outputFrameInput } from "./studio/output_picture.js";
 import { stageContent } from "./studio/stage_content.js";
 import { eyeHeight, worldBoundRadius } from "./studio/view_scale.js";
@@ -1518,8 +1518,6 @@ function drawStudioPicture(node, canvas, surfaceView, layout, erpCanvas) {
   ctx.beginPath();
   ctx.roundRect(box.x, box.y, box.w, box.h, STUDIO_PICTURE_RADIUS * ratio);
   ctx.clip();
-  ctx.fillStyle = STUDIO_PICTURE_EMPTY;
-  ctx.fillRect(box.x, box.y, box.w, box.h);
 
   const frame = surfaceFrame(node);
   const shot = cameraShot(sceneState.camera, frame);
@@ -2037,12 +2035,13 @@ function attachPanoramaPreviewImpl(node, options = {}) {
 
   const wrap = document.createElement("div");
   // The frame's radius, border and background come from .pano-node-frame (web/pano_editor.css); Panorama Studio's
-  // picture has its own corners and no frame around it.
+  // surface is its dark fill with the picture's corners (pano_studio_surface.js), the picture centered on it.
   wrap.className = studioSurface ? "pano-studio-node-frame" : "pano-node-frame";
   wrap.style.cssText = [
     "position:absolute",
     "inset:0",
     "overflow:hidden",
+    ...(studioSurface ? [`background:${STUDIO_SURFACE_FILL}`, `border-radius:${STUDIO_PICTURE_RADIUS}px`] : []),
   ].join(";");
 
   const canvas = createPanoCanvas({ label: "node.surface" });
@@ -2493,10 +2492,17 @@ function attachPanoramaPreviewImpl(node, options = {}) {
     }
   }
   // A surface that goes out of sight (collapse, subgraph, another graph) releases its playback at once.
+  // Panorama Studio's surface draws a new size at once: resizing its canvas clears it, and this callback comes after this
+  // frame's animation frame callbacks, so a draw left for the next frame would show the cleared or stretched picture
+  // once (docs/studio-node-surface.md "描画と後始末"; the stage's flush, pano_frame_scheduler.js).
   const resizeObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(() => {
       if (surfacePlayback) syncSurfacePlayback();
       requestDraw();
+      if (studioSurface && state.raf && !state.inTick) {
+        cancelAnimationFrame(state.raf);
+        tick(performance.now());
+      }
     })
     : null;
   resizeObserver?.observe(wrap);
