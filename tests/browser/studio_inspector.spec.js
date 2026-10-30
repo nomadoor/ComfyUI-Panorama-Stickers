@@ -95,6 +95,24 @@ test("Escape during a drag puts the state back, Keyframe and all, and takes no U
   expect(problems).toEqual([]);
 });
 
+test("a drag that comes back to where it began puts the state back, Keyframe and all, and takes no Undo step", async ({ page }) => {
+  const problems = await open(page);
+  await scene(page, "playhead", 12);
+  const before = await scene(page, "state");
+  const field = row(page, "Position").locator('[data-field="position_x"]');
+  const box = await field.boundingBox();
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + 5 * i, at.y);
+  for (let i = 9; i >= 0; i -= 1) await page.mouse.move(at.x + 5 * i, at.y);
+  await page.mouse.up();
+  expect(await scene(page, "state")).toEqual(before);
+  expect(await scene(page, "history")).toBe(0);
+  await expect(dot(page, "Position")).toHaveAttribute("data-state", "has");
+  expect(problems).toEqual([]);
+});
+
 test("a dot press keys only its row at the playhead, a second press removes it; the reset returns the default", async ({ page }) => {
   const problems = await open(page);
   await scene(page, "playhead", 6);
