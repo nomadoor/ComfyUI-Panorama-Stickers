@@ -6,7 +6,7 @@ import { makeSplatPly, makeVideo } from "./media.js";
 
 const check = (window.__check = {
   done: false, contextLost: false, error: null, renderer: null, stats: null,
-  draws: 0, sorts: 0, turnSorts: 0, nonEmpty: false, videoFrames: 0, videoGap: null, videoPaused: null,
+  draws: 0, turnDraws: 0, sorts: 0, turnSorts: 0, nonEmpty: false, videoFrames: 0, videoGap: null, videoPaused: null,
 });
 
 const W = 960;
@@ -18,6 +18,7 @@ const LOAD_MS = 20000;
 const TURN_MS = 4000;
 const TURN_DRAWS = 60;
 const TURN_MAX_MS = 20000;
+check.turnDrawsWanted = TURN_DRAWS;
 
 try {
   const video = await makeVideo();
@@ -96,6 +97,7 @@ try {
     if (!turnStart || (!turned && now - turnStart < TURN_MAX_MS)) request();
     else {
       check.stats = sample();
+      check.turnDraws = turnDraws;
       check.videoPaused = video.paused;
       check.videoGap = Math.round(now - lastVideoFrame);
       check.done = true;
