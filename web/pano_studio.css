@@ -2343,3 +2343,279 @@
 .pano-studio-preview.is-knob-drag,
 .pano-studio-preview.is-knob-drag * { cursor: grabbing !important; }
 .pano-studio-at-close { position: absolute; right: var(--studio-float-inset); top: var(--studio-float-inset); }
+
+/* The paint tools' bar (docs/studio-ui.md "ペイントの道具", docs/design.md "ペイントの道具のバー"): the bar's shape, a
+   name field as wide as "Paint" for both tools, the size slider and its number, the color dots. */
+.pano-studio-paint-label {
+  margin-right: 2px;
+}
+
+.pano-studio-paint-name {
+  flex: none;
+  width: 4.2ch;
+  white-space: nowrap;
+}
+
+.pano-studio-paint-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.pano-studio-paint-size-slider {
+  width: 96px;
+}
+
+.pano-studio-paint-size-value {
+  width: 3ch;
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.pano-studio-paint-size-value.is-disabled,
+.pano-studio-paint-size .pano-studio-slider[aria-disabled="true"] {
+  opacity: 0.4;
+}
+
+.pano-studio-paint-tools {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.pano-studio-float.pano-studio-paint-colors {
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.pano-studio-paint-dot {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--dot, transparent);
+  outline: 1px solid rgba(127, 127, 127, 0.35);
+  outline-offset: -1px;
+  cursor: pointer;
+}
+
+.pano-studio-paint-dot.is-active::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 2px solid var(--studio-fg);
+  border-radius: 50%;
+}
+
+.pano-studio-paint-dot.is-empty {
+  background: transparent;
+  outline: 1px solid var(--studio-line-strong);
+  outline-offset: -1px;
+  cursor: default;
+}
+
+.pano-studio-paint-dot.is-custom {
+  background: conic-gradient(#ff3b30, #ffcc00, #34c759, #00c7be, #007aff, #af52de, #ff3b30);
+}
+
+.pano-studio-paint-dot.is-custom::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot);
+  outline: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.pano-studio-paint-colors.is-disabled .pano-studio-paint-dot {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pano-studio-paint-custom {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The Custom color's popover, 8px above the color row, centered on it. */
+.pano-studio-paint-pop {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+}
+
+.pano-studio-color-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 224px;
+  padding: 12px;
+  border-radius: var(--studio-r-box);
+  background: var(--studio-panel);
+  color: var(--studio-fg);
+  cursor: default;
+}
+
+.pano-studio-color-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-color-title {
+  white-space: nowrap;
+}
+
+.pano-studio-color-preview {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  outline: 1px solid rgba(127, 127, 127, 0.35);
+  outline-offset: -1px;
+}
+
+.pano-studio-color-field {
+  position: relative;
+  height: 120px;
+  border-radius: var(--studio-r-field);
+  background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, var(--hue));
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pano-studio-color-hue {
+  position: relative;
+  height: 10px;
+  border-radius: var(--studio-r-part);
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.pano-studio-color-knob {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  outline: 1px solid rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.pano-studio-color-knob.is-hue {
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+}
+
+.pano-studio-color-alpha {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--studio-text-sm);
+}
+
+.pano-studio-color-alpha-name {
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-color-alpha-slider {
+  flex: 1 1 auto;
+}
+
+.pano-studio-color-alpha-value {
+  width: 4ch;
+  font-weight: var(--studio-weight-head);
+  font-variant-numeric: tabular-nums;
+}
+
+.pano-studio-color-recent {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* The question a Clear asks (docs/design.md "確かめのダイアログ"). */
+.pano-studio-confirm-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+}
+
+.pano-studio-confirm-veil {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.pano-studio-confirm {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  padding: 16px;
+  border-radius: var(--studio-r-box);
+  background: var(--studio-panel);
+  color: var(--studio-fg);
+}
+
+.pano-studio-confirm-title {
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-confirm-body {
+  font-size: var(--studio-text-sm);
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pano-studio-confirm-btn {
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg);
+  font: inherit;
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  cursor: pointer;
+}
+
+.pano-studio-confirm-btn:hover {
+  background: var(--studio-fill-hover);
+}
+
+.pano-studio-confirm-btn.is-strong {
+  background: var(--studio-strong);
+  color: var(--studio-on-strong);
+}

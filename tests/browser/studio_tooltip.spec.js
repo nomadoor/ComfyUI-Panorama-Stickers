@@ -89,11 +89,8 @@ test("the knobs' bubbles go left, the bottom-right buttons' above; at the top it
 
 test("a disabled button shows its reason; in the Camera tab the column says why", async ({ page }) => {
   await open(page);
-  const paint = page.locator('[data-tool="paint"]');
-  await expect(paint).toHaveAttribute("aria-disabled", "true");
-  await hover(page, paint);
-  await expect(shown(page)).toHaveText("Paint · in development");
-
+  // Every button of the column works in the 3D tab now (Paint and Mask: tests/browser/studio_paint.spec.js); the Camera
+  // tab disables them and says why.
   await page.locator('.pano-studio-tabs [data-value="camera"]').click();
   await hover(page, page.locator('[data-tool="add"]'));
   await expect(shown(page)).toHaveText("Not available in the Camera view");

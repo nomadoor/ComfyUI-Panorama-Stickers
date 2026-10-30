@@ -8,6 +8,8 @@ import { surfaceShown } from "./pano_node_playback.js";
 import {
   createPreviewFullscreenController,
   measurePreviewCanvasSize,
+  pauseNodeVideoForWindow,
+  resumeNodeVideoFromWindow,
   shouldTogglePreviewPlaybackFromKey,
 } from "./pano_preview_node_surface.js";
 import { bindWheelCaptureRoot } from "./pano_wheel.js";
@@ -279,6 +281,8 @@ class PreviewNodeRuntime {
     this.imgSrc = "";
     this.mediaCleanup = null;
     this.view = { yaw: 0, pitch: 0, fov: 100 };
+    // The new Preview window is open on this node (studio/preview_window.js): the VIDEO does not play here meanwhile.
+    this.windowOpen = false;
     this.previewView = acquirePreviewView(() => this.requestDraw());
     this.controller = createPanoInteractionController({
       getView: () => this.view,
@@ -547,9 +551,25 @@ class PreviewNodeRuntime {
   }
 
   togglePlayback() {
-    if (!(this.img instanceof HTMLVideoElement) || !isRenderableMediaReady(this.img)) return;
+    if (this.windowOpen || !(this.img instanceof HTMLVideoElement) || !isRenderableMediaReady(this.img)) return;
     if (this.img.paused) void this.img.play().catch(() => {});
     else this.img.pause();
+    this.requestDraw();
+  }
+
+  // The new Preview window opened on this node (docs/studio-ui.md "Preview のウィンドウ"): the VIDEO stops and hands
+  // over { time, playing }, or null without a VIDEO; it does not play here until windowClosed.
+  windowOpened() {
+    this.windowOpen = true;
+    const handOver = pauseNodeVideoForWindow(this.img instanceof HTMLVideoElement ? this.img : null);
+    this.requestDraw();
+    return handOver;
+  }
+
+  // The window closed: the VIDEO goes on from the window's { time, playing }.
+  windowClosed(handBack = {}) {
+    this.windowOpen = false;
+    resumeNodeVideoFromWindow(this.img instanceof HTMLVideoElement ? this.img : null, handBack, this.shown());
     this.requestDraw();
   }
 
@@ -765,7 +785,7 @@ class PreviewNodeRuntime {
     this.queuedDuringTick = false;
     this.needsDraw = false;
     // A playing VIDEO pauses out of sight, so it does not play on unseen.
-    if (this.img instanceof HTMLVideoElement && !this.img.paused && !this.shown()) this.img.pause();
+    if (this.img instanceof HTMLVideoElement && !this.img.paused && (this.windowOpen || !this.shown())) this.img.pause();
     const moving = this.controller.stepInertia(ts);
     if (this.canvas && this.ctx) {
       // Resize and repaint in one frame so the cleared backing store is never
