@@ -52,6 +52,8 @@ export const ICON = Object.freeze({
   camera_plus: "camera_plus",
   box: "box",
   close: "close",
+  key_prev: "key_prev",
+  key_next: "key_next",
 });
 
 const parseAttrs = (raw) => {
@@ -119,6 +121,9 @@ const TABLER_BODIES = {
   camera_plus: { name: "camera-plus", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 20h-7a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v3.5' /><path d='M16 19h6' /><path d='M19 16v6' /><path d='M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0' />` },
   box: { name: "box", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5' /><path d='M12 12l8 -4.5' /><path d='M12 12l0 9' /><path d='M12 12l-8 -4.5' />` },
   close: { name: "x", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M18 6l-12 12' /><path d='M6 6l12 12' />` },
+  // The new UI's Timeline bar: to the previous and the next Keyframe.
+  key_prev: { name: "player-skip-back", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M20 5v14l-12 -7l12 -7' /><path d='M4 5l0 14' />` },
+  key_next: { name: "player-skip-forward", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 5v14l12 -7l-12 -7' /><path d='M20 5l0 14' />` },
 };
 
 export const ICON_PATHS = Object.fromEntries(
