@@ -157,7 +157,8 @@ test("a ruler's reset is grayed where the inspector's is: at the default, or whi
 test("Roll with Shift stops at multiples of ROTATE_SNAP_DEG, by drag and by arrow key", () => {
   assert.equal(rulerSnapValue(-4, 15), 0);
   assert.equal(rulerSnapValue(8, 15), 15);
-  assert.equal(rulerSnapValue(-172, 15, { min: -180, max: 180 }), -180);
+  assert.equal(rulerSnapValue(-176, 15, { min: -180, max: 180 }), -180);
+  assert.equal(rulerSnapValue(-172, 15), -165);
   assert.equal(rulerSnapStep(-4, 1, 15), 0);
   assert.equal(rulerSnapStep(-4, -1, 15), -15);
   assert.equal(rulerSnapStep(0, 1, 15), 15);
