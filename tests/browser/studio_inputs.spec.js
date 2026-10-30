@@ -149,6 +149,25 @@ test("a Scene linked to scene before the node ran: the line asks for a run", asy
   expect(problems).toEqual([]);
 });
 
+// docs/studio-ui.md "ノードの入力から来た物", docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド": a MoGe
+// VIDEO batch on `world` arrives as a depth grid (a depth file and a K per frame, a color proxy video); the editor draws
+// the item of the playhead's frame with the proxy's colors.
+test("a MoGe VIDEO batch on world draws the depth grid item of the playhead's frame with its proxy colors", async ({ page }, testInfo) => {
+  let problems = await open(page, testInfo, "moge");
+  const colors = await page.evaluate(() => window.__studio.colors);
+  const { world: [center] } = await places(page, { world: [[0, 0, -3]] });
+  await expect.poll(() => stageAt(page, center).then((rgb) => near(rgb, colors.depth)), { timeout: 15_000 }).toBe(true);
+  await expect(page.locator(".pano-studio-notice")).toHaveCount(0);
+  await shot(page, "moge");
+  expect(problems).toEqual([]);
+
+  // The clip at item 0, whose depth is 0 everywhere: nothing is drawn there.
+  problems = await open(page, testInfo, "moge-empty");
+  await page.waitForTimeout(1500);
+  expect(near(await stageAt(page, center), colors.depth)).toBe(false);
+  expect(problems).toEqual([]);
+});
+
 // docs/studio-ui.md "読み込み中と空の画面": a linked `world` brings 3D content, so the stage is not empty.
 test("the empty stage's hint shows with nothing linked, and not with `world` linked", async ({ page }, testInfo) => {
   let problems = await open(page, testInfo, "empty");

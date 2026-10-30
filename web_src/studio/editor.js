@@ -55,7 +55,8 @@ import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
 import { editorKeyAction } from "./shortcuts.js";
 import { createStage, stageUi } from "./stage.js";
-import { createStageMedia, stageContent, stickerFrameSphere } from "./stage_content.js";
+import { createDepthColors } from "../pano_depth_color.js";
+import { createStageMedia, stageContent, stageDepthNotice, stickerFrameSphere } from "./stage_content.js";
 import { outputView } from "./stage_view.js";
 import { installStudioStylesheet } from "./stylesheet.js";
 import { readLoopSetting, writeLoopSetting } from "./timeline_actions.js";
@@ -214,6 +215,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
       redraw(DRAW_REASON.MEDIA);
     },
   });
+  // The colors of the depth grids drawn (docs/threejs-spark-integration.md "DA3_GEOMETRY mono の深度のグリッド"): a
+  // proxy MP4 per input (`scene`, `sticker`, an upstream layer) following the playhead.
+  const depthColors = createDepthColors({
+    createVideo: () => createPanoVideo(document, "studio.depth-video"),
+    createCanvas: () => createPanoCanvas({ label: "studio.depth-still" }),
+    releaseCanvas: releasePanoCanvas,
+    onChange: () => {
+      if (!closed) redraw(DRAW_REASON.MEDIA);
+    },
+  });
+  const depthColor = (slot, video) => depthColors.picture(slot, video, !!backgroundVideo?.playback.advancing);
   // Counts the upstream layers' pictures that loaded or changed: what the stage draws of them is made again.
   let upstreamMedia = 0;
   const upstreamLinked = () => linkedInputType(node, "scene") === PANO_SCENE_TYPE || !!upstreamList();
@@ -456,7 +468,9 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     // The `scene` result can arrive while the editor is open (the node ran): its files are part of the key.
     const key = [session.state, view.playhead, view.imageSizes, view.animations, files ? files.urls.join("\n") : "", stickerFiles ? stickerFiles.urls.join("\n") : "", upstreamList(), upstreamMedia, paint.revision()];
     if (contentCache && !contentCache.pending && contentCache.key.every((item, index) => item === key[index])) return contentCache.value;
-    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead), paintLayers: paint.layers() }));
+    const value = revealed(stageContent(session.state, view.playhead, { media: mediaOf, editorFile: stageMedia.editorFile, sceneFiles: files, sceneBox, stickerFiles, upstream: upstream.viewInput(view.playhead), paintLayers: paint.layers(), depthColor }));
+    depthColors.retain(value.space.depthSlots);
+    ui.depthNotice = stageDepthNotice(value, (key) => stage?.sceneItemError(key) ?? null);
     // A World item may still be loading (no box yet): the content is made again on the next frame. [inputs] The port
     // Sticker's 3D item and the upstream items too.
     const pending = value.space.fileStickers.length > 0 || !!value.space.scene || !!value.space.sticker || value.space.upstreamItems.length > 0;
@@ -482,6 +496,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     empty: false,
     // [inputs] A Scene is linked to `scene` and the node's result does not have it yet.
     upstreamPending: false,
+    // The line of the depth grids drawn (stage_content.js stageDepthNotice): "" without one.
+    depthNotice: "",
     // [add-drop] Add and the drop (add_files.js): the Sky / World choice, the drag's mark, a placed 3D file loading,
     // and why the last file could not be placed.
     choice: null,
@@ -1006,6 +1022,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     stage?.dispose();
     paint.dispose();
     stageMedia.dispose();
+    depthColors.dispose();
     portMedia.dispose();
     upstream.dispose();
     vueApp.unmount();
