@@ -26,7 +26,8 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | stylesheet の読み込み | — | `web_src/pano_styles.js` `installStylesheet`・`installPanoSuiteStylesheet`、新しい UI は `web_src/studio/stylesheet.js` `installStudioStylesheet` | — |
 | 共有のボタン（`.pano-btn` 系）の大きさと状態の見た目 | — | `web/pano_editor.css` の `.pano-btn`・`.pano-btn-icon`・`.pano-btn-texticon`・`.pano-btn-primary`・`.pano-btn.subtle`、`web_src/components/shared/PanoIconButton.vue` | — |
 | 共有の部品（モーダル、HUD、切り替え、サイドパネル、値の行、選択肢、ツールチップ、確認のダイアログ、ペイント）の値と、部品の中だけの custom property（`.pano-segments` の `--pano-segment-pad: 3px`、`.pano-modal` の `--pano-side-w: 300px`） | — | `web/pano_editor.css` | — |
-| 状態の class に ComfyUI の Tailwind の utility 名を使わない | — | `web_src/components/*.vue` | `tests/pano_css_class_safety.test.mjs` |
+| 状態の class に ComfyUI の Tailwind の utility 名を使わない | — | `web_src/components/*.vue` | `tests/architecture.test.mjs` |
+| Vue のコンポーネントは `<style>` を持たない。新しい UI の部品が使う `pano-studio-*` の class は `web/pano_studio.css` にある。ぼかしを使わず、新しい UI は影も使わない。`web/pano_studio.css` の括弧が閉じている | — | `web_src/components/**/*.vue`、`web/pano_studio.css`、`web/pano_editor.css` | `tests/architecture.test.mjs` |
 | アイコン（Tabler の線画、線の太さ、大きさ） | — | `web_src/icons.js` `ICON`・`ICON_PATHS`、`web_src/components/shared/SvgIcon.vue`、`web/pano_editor.css` の `.icon-tabler`・`.pano-btn-icon svg` | — |
 | 重なり順（`z-index`）とスクリム | — | `web/pano_editor.css`、`web_src/components/PanoPaintOverlays.vue`（ペイントのカーソル） | — |
 
@@ -374,7 +375,7 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 状態は `.active`・`.show`・`.open`・`.disabled`・`.selected`・`[aria-pressed]`・`[aria-disabled]`・`data-*` と、`is-` の接頭辞の class
 （`is-hidden`・`is-ready`・`is-active`・`is-loaded`・`is-pinned` など）で表す。ComfyUI のフロントエンドは同じ document に
 Tailwind の utility（`.hidden { display: none }` など）を持つので、Vue のコンポーネントは `hidden`・`block`・`flex`・`grid`・
-`invisible`・`visible`・`contents` を状態の class として `:class` に結ばない（`tests/pano_css_class_safety.test.mjs`）。
+`invisible`・`visible`・`contents` を状態の class として `:class` に結ばない（`tests/architecture.test.mjs`）。
 
 ## アイコン
 
