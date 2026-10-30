@@ -27,7 +27,7 @@
 | 行の並びと形（Camera・背景・`scene`・ペイントの行、目の場所、`port` の Sticker のバー） | — | `pano_editor_ui_state.js` `buildTimelineModel`、`PanoTimeline.vue` | `pano_editor_ui_state.test.mjs`、`editor_background_clip.test.mjs` |
 | 目のアイコン | — | `timeline_actions.js` の `toggle-visible`、`buildTimelineModel` の `hideable` | `pano_editor_ui_state.test.mjs`、`editor_upstream.test.mjs`、`editor_background_clip.test.mjs`（`hideable`） |
 | ドラッグ中の更新を 1 フレームにまとめる | — | `web_src/pano_frame_batch.js` `createFrameBatch` | `tests/pano_frame_batch.test.mjs`、`editor_background_clip.test.mjs` |
-| 編集せずに閉じたときに `state_json` を書かない | — | `pano_editor_state.js` `sameEditorStateText` | `pano_editor_state.test.mjs` |
+| 編集せずに閉じたときに `state_json` を書かない、読めない `state_json` を空の状態で上書きしない | — | `pano_editor_state.js` `sameEditorStateText`・`editorStateWrite` | `pano_editor_state.test.mjs` |
 | 再生の状態機械 | — | `web_src/pano_video_playback.js` `createVideoPlayback`・`frameShownAt` | `tests/pano_video_playback.test.mjs`、`tests/pano_video_playback_placed_end.test.mjs` |
 | 背景の VIDEO（どの VIDEO を再生するか：自分の実行結果、次に背景の入力が直接読むファイル、読めなかったものは除く。メタ情報の長さ・fps・音声、要素への読み込みと放し方、静止画、表示する素材、Auto の長さに数える背景） | — | `web_src/pano_media_session.js` `createBackgroundVideo`・`backgroundVideoKeys`・`videoMetaEntry`・`backgroundVideoMedia`・`backgroundLengthMedia`。古い UI は `editor/media_session.js` の `refreshModalVideoSource` と `editor/timeline.js` の `transportMedia`・`backgroundMedia` から、新しい UI は `web_src/studio/editor.js` の `refreshVideo`・`backgroundMedia`・`stageBackground` から呼ぶ | `tests/pano_media_session.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs`、`tests/browser/studio_video.spec.js` |
 | VIDEO が決める Timeline fps（実行結果の `pano_timeline_fps`、fps の欄を変えられないか、開いたときの再基準化） | — | `web_src/pano_video_fps.js` `videoTimelineFps`・`timelineFpsLocked`・`sceneAtVideoFps`（`pano_editor_state.js` の `parseSceneEditorState` が呼ぶ） | `tests/pano_video_fps.test.mjs`、`tests/pano_timeline.test.mjs` |
@@ -123,6 +123,7 @@
   - Camera の行が出入りしても、タイムラインのバー（再生ボタン・fps・長さ・開閉）は変わらない（`node --test` で確かめている）。行の一覧は Sticker を足したときと同じく 1 行増え、下の行が 1 行分下がる。タイムラインを開いているときは、行の分だけタイムラインが高くなり（34% まで）、ビューが低くなる。これも Sticker を足したときと同じである。
   - `scene` の行（アイコンは箱）は、`scene` 入力がつながっているとき、または `scene` が Keyframe か既定でない Clip range を持つとき（`pano_timeline.js` の `ownerTimed`）に出る。`scene` の位置・回転・大きさを変える操作とインスペクタは無いので、`scene` の行は Clip range（移動と両端の切り詰め。Sticker の行と同じ）だけを持ち、行のポチと Lane の行は出さない（行のモデルの `keyable: false`。エディタも `scene` の `key-row` を無視する。行を開くボタンは無効）。状態に `scene` の Keyframe があれば、行にポチの印だけは出る。行を選んでもキャンバスの選択は外れるだけで、何も選ばれない。
   - VIDEO や上流の Scene の fps に再基準化して開いても、編集せずに閉じたときは `state_json` を書き換えない（`sameEditorStateText` の `rebased`。今の `state_json` を再基準化したものと保存しようとする状態が同じなら書かない）ので、ノードは再実行されず、Keyframe も丸められない。
+  - 今の `state_json` が読めない（JSON として読めない、または読めない `version`）ときは、保存しようとする状態が空の状態（どの fps でも、読み込みの既定の状態を書いたものと同じ）なら書かない（`editorStateWrite`。古い UI のエディタとノード上の UI は、読めない状態を空の状態として開くので、開いて閉じただけで元のテキストを空の状態で上書きしないため）。空でない状態は書く（読めないテキストを開いた後に、物を足すなどの編集をしたとき）。新しい UI のエディタは、読めない状態を読み取り専用で開く（`docs/studio-ui.md` の「閉じ方」）。
 - タイムラインはビューの下にある。開閉や行の開閉で高さが変わるときは 180 ms かけて伸び縮みし、ビューは同じフレームのうちに新しい大きさで描き直す（横の画角と中心は保ち、上下が切れるだけ）。高さは画面の高さの 34% までで、それを超える行は中でスクロールする。prefers-reduced-motion では動かさずに切り替える。
 
 ### 前後の Keyframe へ飛ぶ（新しい UI）
