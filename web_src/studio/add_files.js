@@ -9,6 +9,11 @@
 // shows from the decoded file while it uploads (media()); a 3D file shows nothing until its route's editor file draws
 // (docs/editor-interaction.md "3D ファイルを置く流れ"), and the line says it is loading meanwhile.
 //
+// The placements still uploading are the node's (`pending`, shared by the node's editors): an editor closed while one
+// uploads keeps it until it ends and then writes it (late()), unless the node's editor was opened again meanwhile,
+// which takes it over when it is made (docs/studio-ui.md "Add とドロップの見せ方"). The upload settles or drops it
+// in whichever editor holds it then (`owner`).
+//
 // No DOM here: drop_input.js takes the drag events, StudioPlaceChoice.vue and StudioDropMarker.vue show `ui`.
 import { fileSource, newSceneSticker, newWorldSceneSticker } from "../pano_editor_state.js";
 import { evaluateSticker } from "../pano_scene_eval.js";
@@ -61,7 +66,9 @@ export function dragKind(items) {
 // { image, width, height }. queue(id, operation): runs the upload so a queued prompt waits for it
 // (pano_editor_extension.js queuePendingStickerOperation). changed(): the state or `ui` changed (the editor syncs).
 // stopPlayback(), notice(text): the playback stops; a stopped notice shows. late(): a placement was settled after the
-// editor closed (the editor writes it). reveal: load_reveal.js createLoadReveal()'s, told what is placed and its box.
+// editor closed and no editor took it over (the editor writes it). pending: the node's placements still uploading
+// (a Set the node's editors share, pano_node_bridge.js editorSession(node).placements); the ones of a closed editor
+// are taken over here. reveal: load_reveal.js createLoadReveal()'s, told what is placed and its box.
 // The shell may leave it out; then nothing is told.
 export function createAddFiles({
   session,
@@ -83,6 +90,7 @@ export function createAddFiles({
   late = () => {},
   reveal = null,
   timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (id) => clearTimeout(id) },
+  pending = new Set(),
 }) {
   let closed = false;
   // The decoded images of placed images by Sticker id, drawn until the uploaded file has loaded.
@@ -140,17 +148,19 @@ export function createAddFiles({
       : newWorldSceneSticker(newId, blank(), place.transform)));
     if (!id) return null;
     local.set(id, decoded);
+    const placement = track(id, "image", decoded);
     update();
     const done = queue(`add:${id}`, async () => {
+      let uploaded;
       try {
-        const uploaded = await uploadImage(file);
-        if (session.settlePlaced(id, (sticker) => {
-          sticker.source = fileSource(uploaded);
-        })) update();
+        uploaded = await uploadImage(file);
       } catch (error) {
-        session.dropPlaced(id);
-        warn(ADD_TEXT.uploadFailed(file.name, error?.message || error));
+        finish(placement).fail(placement, ADD_TEXT.uploadFailed(file.name, error?.message || error));
+        return;
       }
+      finish(placement).settle(placement, (sticker) => {
+        sticker.source = fileSource(uploaded);
+      });
     });
     return { id, done };
   }
@@ -170,34 +180,87 @@ export function createAddFiles({
     reveal?.start(id);
     loading.add(id);
     syncLoading();
+    const placement = track(id, "3d", null);
     update();
     const done = queue(`add:${id}`, async () => {
+      let source;
+      let answer;
       try {
-        const source = await upload3d(file);
-        const answer = await route(source);
+        source = await upload3d(file);
+        answer = await route(source);
         if (answer?.state !== "ready") throw new Error(answer?.error || `Could not read the 3D file ${file.name}.`);
-        reveal?.box(id, answer.box);
-        const settled = session.settlePlaced(id, (sticker) => {
-          sticker.source = source;
-          // The place follows the box unless it was moved or keyed while it uploaded.
-          const lane = sticker.position;
-          const untouched = !lane.keyframes.length && lane.value.every((value, axis) => value === transform.position[axis]);
-          if (!untouched) return;
-          const position = file3dPosition(point, answer.box, evaluateSticker(sticker, playhead()));
-          if (position) lane.value = position;
-        });
-        if (!settled) loading.delete(id);
-        syncLoading();
-        update();
       } catch (error) {
-        loading.delete(id);
-        reveal?.drop(id);
-        syncLoading();
-        session.dropPlaced(id);
-        warn(String(error?.message || error));
+        finish(placement).fail(placement, String(error?.message || error));
+        return;
       }
+      const owner = finish(placement);
+      owner.box(placement, answer.box);
+      owner.settle(placement, (sticker, frame) => {
+        sticker.source = source;
+        // The place follows the box unless it was moved or keyed while it uploaded.
+        const lane = sticker.position;
+        const untouched = !lane.keyframes.length && lane.value.every((value, axis) => value === transform.position[axis]);
+        if (!untouched) return;
+        const position = file3dPosition(point, answer.box, evaluateSticker(sticker, frame));
+        if (position) lane.value = position;
+      });
     });
     return { id, done };
+  }
+
+  // --- The node's placements still uploading, and the editor that holds each (docs/studio-ui.md "Add とドロップの見せ方").
+
+  // What the upload of a placement held here does when it ends.
+  const owner = {
+    closed: () => closed,
+    // The placed Sticker as this editor has it now, or null when it is gone.
+    sticker: (placement) => session.state.stickers.find((item) => item.id === placement.id) ?? null,
+    // The upload ended: apply(sticker, playhead) completes the Sticker (session.js settlePlaced).
+    settle(placement, apply) {
+      const settled = session.settlePlaced(placement.id, (sticker) => apply(sticker, playhead()));
+      if (!settled) loading.delete(placement.id);
+      syncLoading();
+      update();
+      return settled;
+    },
+    // The upload failed: the placed object goes, with no step, and the line says why.
+    fail(placement, text) {
+      loading.delete(placement.id);
+      reveal?.drop(placement.id);
+      syncLoading();
+      session.dropPlaced(placement.id);
+      warn(text);
+    },
+    box: (placement, box) => reveal?.box(placement.id, box),
+  };
+
+  // A placement of this editor: { id, kind ("image" or "3d"), decoded (an image's decoded file), owner }.
+  function track(id, kind, decoded) {
+    const placement = { id, kind, decoded, owner };
+    pending.add(placement);
+    return placement;
+  }
+
+  // The upload of `placement` ended: it is no longer pending. Returns the editor that holds it now.
+  function finish(placement) {
+    pending.delete(placement);
+    return placement.owner;
+  }
+
+  // A placement of an editor of the node closed while it uploaded comes here, as that editor left it.
+  function adopt(placement) {
+    if (session.readOnly || placement.owner === owner || !placement.owner.closed()) return;
+    const sticker = placement.owner.sticker(placement);
+    if (!sticker) return;
+    const id = session.adoptPlaced(sticker);
+    if (!id) return;
+    placement.id = id;
+    placement.owner = owner;
+    if (placement.decoded) local.set(id, placement.decoded);
+    if (placement.kind === "3d") {
+      reveal?.start(id);
+      loading.add(id);
+    }
   }
 
   // --- The line while a placed 3D file loads: until its item has drawn, it is gone, or it is not shown at the playhead.
@@ -224,6 +287,9 @@ export function createAddFiles({
       }, DRAWN_POLL_MS);
     }
   }
+
+  for (const placement of [...pending]) adopt(placement);
+  syncLoading();
 
   // --- The Sky / World choice of an image picked with Add.
 
