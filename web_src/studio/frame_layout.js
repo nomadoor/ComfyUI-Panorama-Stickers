@@ -23,9 +23,9 @@ export const CAMERA_RULERS = Object.freeze({
 // (web/pano_studio.css .pano-studio-edge-ruler-head, -acts) lays out; the browser test checks the heads fit them.
 export const RULER_HEADS = Object.freeze({
   label: Object.freeze({ height: 30, gap: 8 }),
-  acts: Object.freeze({ height: 42, gap: 4 }),
+  acts: Object.freeze({ height: 44, gap: 12 }),
 });
-// The room a vertical strip leaves at both ends of the frame's edge: the larger head with its gap (46px), so the strip's
+// The room a vertical strip leaves at both ends of the frame's edge: the larger head with its gap (56px), so the strip's
 // middle stays the edge's middle and both heads stay inside the frame's height (clear of the tabs above and the
 // stage's bottom below).
 export const RULER_HEAD_ROOM = Math.max(...Object.values(RULER_HEADS).map((head) => head.height + head.gap));
