@@ -861,6 +861,22 @@ function getNodeOwnOutputVideo(node, videoKeys = ["pano_videos"], onLoad = null)
 function findLinkedInputImageSource(node, preferredInputNames = []) {
   const inputs = Array.isArray(node?.inputs) ? node.inputs : [];
   if (!inputs.length) return { src: "", sourceType: "", inputName: "" };
+  // The node's own result first (pano_input_images: the picture its run got, the only place an IMAGE made by another
+  // node is), while it is current for the inputs; then the linked inputs (docs/adr/0003-external-input-sticker-failure-
+  // boundaries.md, Amendment 2026-03-11).
+  const selfOutput = isNodeOutputMediaCurrent(node, "background") ? lookupNodeOutputEntry(node?.id) : null;
+  const ownCandidates = [
+    ...(Array.isArray(selfOutput?.pano_input_images) ? selfOutput.pano_input_images : []),
+    ...(Array.isArray(selfOutput?.ui?.pano_input_images) ? selfOutput.ui.pano_input_images : []),
+  ];
+  for (const item of ownCandidates) {
+    const src = imageSourceFromCandidate(item);
+    if (src) {
+      panoPreviewLog(node, "image-resolve", { sourceType: "selfOutput", src, stage: "hit" });
+      return { src, sourceType: "selfOutput", inputName: "own" };
+    }
+  }
+
   const preferredResolved = preferredImageInputsForNode(node, preferredInputNames);
   const preferred = preferredResolved
     .map((name) => inputs.findIndex((i) => String(i?.name || "") === String(name)))
@@ -959,24 +975,6 @@ function findLinkedInputImageSource(node, preferredInputNames = []) {
           stage: "hit",
         });
         return { src, sourceType: "widget", inputName: String(input?.name || "") };
-      }
-    }
-  }
-
-  // Fallback: Check if the current node has explicitly saved input images (e.g. from upstream non-file nodes)
-  // We do this check regardless of linked inputs if preferred inputs are exhausted, to support
-  // scenarios where the link exists but provides no image data (e.g. some custom nodes).
-  const selfOutput = isNodeOutputMediaCurrent(node, "background") ? lookupNodeOutputEntry(node?.id) : null;
-  const fallbackCandidates = [];
-  if (Array.isArray(selfOutput?.pano_input_images)) fallbackCandidates.push(...selfOutput.pano_input_images);
-  if (Array.isArray(selfOutput?.ui?.pano_input_images)) fallbackCandidates.push(...selfOutput.ui.pano_input_images);
-
-  if (fallbackCandidates.length > 0) {
-    for (const item of fallbackCandidates) {
-      const src = imageSourceFromCandidate(item);
-      if (src) {
-        panoPreviewLog(node, "image-resolve", { sourceType: "selfOutput", src, stage: "hit" });
-        return { src, sourceType: "selfOutput", inputName: "fallback" };
       }
     }
   }

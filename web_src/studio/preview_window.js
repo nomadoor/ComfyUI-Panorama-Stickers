@@ -20,6 +20,7 @@ import { loadSceneState } from "../pano_scene_state.js";
 import { PANO_SCENE_TYPE, upstreamBgColor } from "../pano_upstream.js";
 import { createStageMedia, stageContent } from "./stage_content.js";
 import { createStudioUpstream, upstreamBackground } from "./upstream.js";
+import { loadNodeInputImage } from "./node_image.js";
 import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { frameShownAt } from "../pano_video_playback.js";
@@ -35,8 +36,6 @@ const SOURCE_INPUTS = ["source"];
 // Where the node's result has its VIDEO (Python's "default" preview contract, node_runtime.py PREVIEW_UI_KEYS, which
 // nodes.py _video_preview_ui writes for PanoramaPreviewNode).
 const PREVIEW_VIDEO_KEYS = { videoKey: "pano_videos", metaKey: "pano_video_meta" };
-// Where the node's result has its IMAGE (the same contract: the picture the run got, a temp file).
-const PREVIEW_IMAGE_KEY = "pano_input_images";
 // The fps a VIDEO plays at when its result does not say (the Timeline's default).
 const DEFAULT_FPS = 24;
 // The color a Scene's background shows outside its Clip range when its result gives none (pano_upstream_bg_color is
@@ -130,30 +129,21 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
     });
     if (image) status = loaded(image) ? "ready" : "loading";
   } else if (!isScene) {
-    // An IMAGE: the node's own result first (pano_input_images, the picture the run got, and the only place an IMAGE
-    // made upstream is), as the window's VIDEO and the editor's background take it; then the file its source loads
-    // directly (before a run), also when the result's picture does not load.
-    const linked = () => {
-      if (!media.resolvePreferredExactLinkedSource(node, SOURCE_INPUTS).src) return null;
-      return media.loadPreferredExactLinkedImage(node, SOURCE_INPUTS, (settled) => {
-        if (settled !== image) return;
-        status = loaded(settled) ? "ready" : "failed";
+    // An IMAGE: the node's own result first, then the file its source loads directly (node_image.js, ADR 0003).
+    const picture = loadNodeInputImage({
+      media,
+      node,
+      inputs: SOURCE_INPUTS,
+      channel: "background",
+      cacheKey: `preview-window:${SOURCE_INPUTS.join("|")}`,
+      onChange: () => {
+        image = picture.image();
+        status = picture.state();
         stage?.redraw(DRAW_REASON.MEDIA);
-      }, `preview-window:${SOURCE_INPUTS.join("|")}`);
-    };
-    const own = isNodeOutputMediaCurrent(node, "background")
-      ? media.uiImage(node, PREVIEW_IMAGE_KEY, new Map(), (settled) => {
-        if (settled !== image) return;
-        if (loaded(settled)) status = "ready";
-        else {
-          image = linked();
-          status = image ? (loaded(image) ? "ready" : "loading") : "failed";
-        }
-        stage?.redraw(DRAW_REASON.MEDIA);
-      })
-      : null;
-    image = own ?? linked();
-    if (image) status = loaded(image) ? "ready" : "loading";
+      },
+    });
+    image = picture.image();
+    status = picture.state();
   }
   // A Scene carries its range; an IMAGE or a VIDEO covers the node's background_range (360 or 180).
   const rangeWidget = () => node.widgets?.find?.((widget) => widget?.name === "background_range") ?? node.widgets?.find?.((widget) => widget?.name === "coverage");
