@@ -32,7 +32,8 @@ import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN, CAMERA_LAN
 import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamRevertedRecords, upstreamStickerEditable } from "../pano_upstream.js";
 import { revertHandoffLane } from "../pano_port_handoff.js";
-import { DEFAULT_CAMERA_RAW, ROW_LANES, defaultCamera, findSticker, inheritedSticker, keyframeOwner, ownerFrame } from "./inspector_model.js";
+import { DEFAULT_CAMERA_RAW, defaultCamera } from "./defaults.js";
+import { ROW_LANES, findSticker, inheritedSticker, keyframeOwner, ownerFrame } from "./inspector_model.js";
 
 const SKY_POSE_FIELDS = new Set(["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", "vFOV_deg"]);
 

@@ -14,47 +14,13 @@ import {
   CAMERA_LANES,
   DEFAULT_EASING,
   SCENE_LANES,
-  loadSceneState,
   rebaseSceneState,
   stickerLanes,
 } from "../pano_scene_state.js";
 import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
-
-// The ground height a state without `ground` stands on (docs/scene-state-v2.md `ground`, GROUND_DEFAULT). The state
-// does not hold `ground` yet; when pano_scene_state.js has GROUND_DEFAULT, this reads it from there.
-export const GROUND_DEFAULT = -1.6;
-
-// The Camera a state without one is read as (docs/scene-state-v2.md "既定の Camera"). pano_scene_state.js does not
-// hold it yet; when it does, this is replaced by its constant. Lanes without Keyframes.
-export const DEFAULT_CAMERA_RAW = Object.freeze({
-  aspect: 16 / 9,
-  projection: "erp",
-  erp_range: 360,
-  visible: true,
-  locked: false,
-  position: { value: [0, 0, 0] },
-  rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } },
-  fov: { value: 90 },
-  curve: { value: 1 },
-});
-
-// A new working Camera with the default values (a state's `camera`, normalized).
-export function defaultCamera() {
-  const camera = loadSceneState({ version: 2, camera: structuredClone(DEFAULT_CAMERA_RAW) }).camera;
-  return { ...camera, erp_range: DEFAULT_CAMERA_RAW.erp_range, locked: DEFAULT_CAMERA_RAW.locked };
-}
-
-// The Camera a state shows: its own, or the default one.
-export function cameraOf(state) {
-  return state.camera ?? defaultCamera();
-}
-
-// The ground height a state stands on.
-export function groundOf(state) {
-  return Number.isFinite(state.ground) ? state.ground : GROUND_DEFAULT;
-}
+import { DEFAULT_CAMERA_RAW, cameraOf, groundOf } from "./defaults.js";
 
 // The least height (px) left above the Easing panel for the rows (docs/design.md "大きさ" EASING_MIN_ABOVE).
 export const EASING_MIN_ABOVE = 180;

@@ -2,10 +2,8 @@
 // and where. The grid lies on y = ground, its 1-unit lines fade over GRID_MINOR_FADE and its 10-unit lines and axes
 // over GRID_MAJOR_FADE of horizontal distance from the view, and a ring of ORIGIN_MARK_RADIUS marks (0, ground, 0).
 // The Hide Grid switch hides both. pano_ground_grid.js draws what groundGrid() returns (a render's `space.ground`).
+import { GROUND_DEFAULT } from "./defaults.js";
 import { ORIGIN_MARK_RADIUS, eyeHeight, eyeLengths } from "./view_scale.js";
-
-// The state has no ground field yet (ADR 0046, docs/scene-state-v2.md): until it does, the editor uses this one.
-export const DEFAULT_GROUND = -1.6;
 
 // The colors, as sRGB [r, g, b, a] in 0..1. Provisional values (docs/design.md "まだ決めていないこと": the grid's
 // color, width and strength are decided on the real screen): white lines, the 10-unit ones fainter, the X axis red
@@ -19,7 +17,7 @@ export const GRID_COLORS = Object.freeze({
 });
 
 // What a render draws for the ground at height `ground`, or null while the grid is hidden.
-export function groundGrid({ ground = DEFAULT_GROUND, hidden = false } = {}) {
+export function groundGrid({ ground = GROUND_DEFAULT, hidden = false } = {}) {
   if (hidden) return null;
   const { GRID_MINOR_FADE, GRID_MAJOR_FADE } = eyeLengths(eyeHeight(ground));
   return {

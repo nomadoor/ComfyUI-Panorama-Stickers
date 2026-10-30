@@ -9,7 +9,7 @@ import { normalizeCoverageValue } from "../pano_editor_state.js";
 import { DRAW_REASON } from "../pano_frame_scheduler.js";
 import { editorSession, noteStudioEditorOpen, peekNodeSurface } from "../pano_node_bridge.js";
 import { loadSceneState } from "../pano_scene_state.js";
-import { DEFAULT_GROUND } from "./grid.js";
+import { GROUND_DEFAULT } from "./defaults.js";
 import { createStage, stageUi } from "./stage.js";
 import { outputView } from "./stage_view.js";
 import { installStudioStylesheet } from "./stylesheet.js";
@@ -71,7 +71,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     throw error;
   }
   const state = nodeState(node);
-  const ground = DEFAULT_GROUND;
+  const ground = GROUND_DEFAULT;
   // The playhead is at frame 0 until the timeline is in the new UI.
   const output = outputView(state, 0);
   const world = { ground, camera: output.position, boxes: [], content: null };
