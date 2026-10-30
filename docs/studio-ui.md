@@ -24,13 +24,14 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 一部がまだ動かないものは、その部分を「未実装」と書く。
 
 入口：新しい UI は、ComfyUI の設定 `PanoramaSuite.Editor.NewUI`（既定はオン。持ち主の決定、2026-10-30、マイナーアップデートで既定にする）がオンのとき Panorama Studio を開く。
-オフにすると古い UI で開く（ペイントとマスクは、新しい UI に入るまで古い UI でだけ使える）（`web_src/editor_choice.js` `NEW_UI_SETTING`。組み立ては `web_src/main.js`、新しい UI のエディタは
+オフにすると古い UI で開く（`web_src/editor_choice.js` `NEW_UI_SETTING`。組み立ては `web_src/main.js`、新しい UI のエディタは
 `web_src/studio/editor.js`）。古い UI を消す change でこの設定を消す（ADR 0044 の「置き換えの進め方」。それまでは古い UI へ戻る道として残す）。
 
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | 画面の区画（ステージ、タブ、左の列、右の中央の列、右下、右上、上端の中央、インスペクタ、タイムラインの領域と境界） | — | `web_src/components/studio/StudioEditor.vue`、大きさの規則は `web_src/studio/layout.js`（タイムラインの高さ、Output の小窓の大きさとその記憶）、開くのは `web_src/studio/editor.js` | `tests/studio_stage_view.test.mjs`（`layout.js`）、`tests/browser/studio_editor.spec.js` |
-| 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor・Add・Undo・Redo が働き、ほかは席に置いて無効。Undo・Redo は `web_src/studio/session.js` の履歴、Add は `web_src/studio/add_files.js`）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
+| 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor・Paint・Mask・Add・Undo・Redo が働き、ほかは席に置いて無効。Paint・Mask は下の「ペイントの道具」。Undo・Redo は `web_src/studio/session.js` の履歴、Add は `web_src/studio/add_files.js`）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
+| ペイントの道具（左の列の Paint・Mask、下の中央のバーのペイントの道具、ステージで描くこと、ブラシのカーソル、Clear paint・Clear mask） | — | 道具の選び方・太さ・色とバーの中身は `web_src/studio/paint_bar.js`（`createPaintTools`・`paintBar`）、画面は `web_src/components/studio/StudioPaintBar.vue`（色のポップオーバーは `StudioColorPicker.vue`、Clear の確かめは `StudioConfirm.vue`）。ステージで描くことと描く層は `web_src/studio/paint.js` `createStudioPaint`（下の部品：ストロークの記録・点・確定・消しゴムは `web_src/pano_paint_strokes.js`、画素は `pano_paint_engine.js`、層の並びは `pano_paint_layers.js` `skyPaintLayers`。古い UI も同じ下の部品を使う）。状態に書いて Undo の 1 段にするのは `web_src/studio/session.js` `editPainting`、組み立ては `web_src/studio/editor.js`、押したときの振り分けは `web_src/studio/stage.js` | `tests/pano_paint_strokes.test.mjs`、`tests/studio_paint.test.mjs`、`tests/studio_session.test.mjs`、`tests/browser/studio_paint.spec.js` |
 | インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
 | 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、ギズモの中心はガイドの中心 `web_src/studio/world_guides.js` `worldGuideItems`、描くのは `web_src/studio/stage_overlay.js`）。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、Camera の Lock（状態は `camera.locked` を持つが、ボタンがまだそれを切り替えない、`docs/scene-state-v2.md`）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js` |
@@ -44,7 +45,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | キーとクリップボードの事象をエディタの外へ出さない | — | `web_src/studio/key_guard.js` `guardEditorKeys`（組み込みは `web_src/studio/editor.js`） | `tests/studio_key_guard.test.mjs`、`tests/browser/studio_keys.spec.js` |
 | ショートカットの一覧（中身、エディタのキーの表、出し方と閉じ方） | — | キーの表と一覧の中身は `web_src/studio/shortcuts.js`（`EDITOR_KEYS`・`editorKeyAction`・`shortcutGroups`）、画面は `web_src/components/studio/StudioShortcuts.vue`、「?」のボタンは `StudioNavWidget.vue`、開く・閉じるの状態（`view.shortcuts`）と「?」のキーは `web_src/studio/editor.js`、置き場所は `StudioEditor.vue` | `tests/studio_shortcuts.test.mjs`、`tests/browser/studio_session.spec.js` |
 | ツールチップ（出す部品、出るまでの時間と消え方、置く側と反転、ショートカットの印、ドラッグ中とキーボードのフォーカス） | — | 置き場所の計算・置く側の表・ショートカットの切り出し・時間の値は `web_src/studio/tooltip.js`（`placeTip`・`tipSide`・`splitTipKeys`・`TIP_SIDES`・`TIP_DELAY`・`TIP_SKIP`・`TIP_GAP`・`TIP_EDGE`）、出し入れと描くのは `web_src/components/studio/StudioTooltip.vue`（`StudioEditor.vue` が一つ置く）。部品は説明を `data-tip` に書く | `tests/studio_tooltip.test.mjs`、`tests/studio_ui_components.test.mjs`（`title` を使わない）、`tests/browser/studio_tooltip.spec.js` |
-| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段は `web_src/studio/add_files.js` `escape`、4 段は `web_src/studio/editor.js` `onEscape`（`view.shortcuts`）、5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2 段（地面を拾う待ち）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
+| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 3 段は `web_src/studio/add_files.js` `escape`、4 段と 5 段は `web_src/studio/editor.js` `onEscape`（`view.shortcuts`、`view.paint`）、6・7 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2 段（地面を拾う待ち）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |
 | Output の小窓（折りたたみとその動き、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`、Camera タブで畳んで触れなくするのは `outputWindowView`。中の絵の canvas は `StudioEditor.vue` が小窓の slot に置き、描くのは `web_src/studio/stage.js`（Frame モードはステージの canvas の隅に描いて `createImageBitmap`、Panorama モードは `pano_three_view.js` `renderLiveErp`。描き方は `docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_camera_wired.spec.js`、`tests/browser/studio_camera_fixes.spec.js` |
 
@@ -109,6 +110,10 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 Clear All は無い。ペイントとマスクを消すのはペイントの道具の Clear paint・Clear mask、Sky の画像を消すのは範囲選択と Delete。
 
 Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効にする（tooltip「Not available in the Camera view」のように理由を示す）。
+
+- 道具の群（Cursor・Paint・Mask）は、いつも一つだけを選んでいる（選んだものを強い塗りで示す）。エディタを開くたびに Cursor。
+- Paint か Mask を押すと、その道具になり、物の選択を外す（古い UI と同じ）。下の中央のバーはペイントの道具になる（下の「ペイントの道具」）。
+- Camera タブに切り替えると、道具は Cursor に戻る（Camera タブでは描かない）。
 
 ### Output の小窓
 
@@ -192,7 +197,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 | World に置いた 3D | 上と同じ。アニメーションを持つときは、その下に小見出し Animation を置き、Clip（1〜3 列目の選択）と Speed |
 | Camera | Camera のカード（下の「Camera のカード」） |
 | 複数選択 | 見出しに数とアイコン（例：`3 stickers`）だけ。操作は下の中央のバー |
-| ペイントのまとまり | 見出し `Paint` だけ。操作は下の中央のバー |
+| ペイントのまとまり | 見出し `Paint` だけ。操作は下の中央のバー。Paint・Mask の道具を選んでいて物を選んでいないときも、このカードを出す |
 | 何も選んでいない | Scene のカード：Ground（地面の高さの値、`Set ground` のボタン、リセット）。`Set ground` は値の 2 列目と 3 列目を使う（1 列では名前が収まらない）。地面の自動推定のボタンは、置くときに席を決め直す |
 
 - 空に貼った画像（Sky）の FOV の行のリセットは、置いたときの大きさに戻す：H は `NEW_STICKER_HFOV`（30°、`pano_space.js`）、V は画像の
@@ -238,7 +243,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 ## 下の中央のバー
 
 ステージの下の中央の決まった場所に、一本のバーとして固定する。Cursor の道具のときは選んだ物のバー、Paint・Mask の道具のときは
-ペイントの道具を出す（二つは同時に出ない）。何も選んでいないときと、Camera タブでは出さない（ビューの上に重ねる情報は状況で出し入れして
+ペイントの道具を出す（二つは同時に出ない。下の「ペイントの道具」）。Cursor の道具で何も選んでいないときと、Camera タブでは出さない（ビューの上に重ねる情報は状況で出し入れして
 よい。`docs/agents/ux-principles.md`）。
 
 - 左端に、選んだ物のアイコン（Sky / World の印、Camera、Paint）と名前。名前の欄は、どの名前でも同じ決まった幅（`docs/design.md` の
@@ -269,6 +274,39 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   ただし回転のハンドルの Shift の止め方は、古い UI の 45° ではなく、ギズモの Rotate と同じ `ROTATE_SNAP_DEG` の倍数（絶対の Roll）にする。
   選んだ空の画像の枠とハンドルは、World の物の選択の黄ではなく氷の色で描く（ドロップの Sky の印と同じ色。Sky と World の行き先を色で
   見分けられるようにする。値は `docs/design.md` の「新しい UI の見た目」）。
+
+### ペイントの道具
+
+Paint・Mask の道具を選んでいる間、下の中央のバーはペイントの道具を出す（タイムラインで物を選んでも、道具を選んでいる間はペイントの
+道具のまま）。中身は古い UI のペイントの道具と同じで、並べ方だけを新しいバーに合わせる。見た目の値は `docs/design.md` の「新しい UI の
+見た目」の「ペイントの道具」。
+
+| 道具 | 並び（／は群の区切り） |
+|---|---|
+| Paint | 名前の欄（筆のアイコンと `Paint`） ／ Pen・Soft Brush・Marker・Pastel・Eraser・Lasso ／ 太さのスライダーと数 ／ 色の点 5 つ（Green・Red・Blue・Black・White）と Custom color ／ Clear paint |
+| Mask | 名前の欄（Mask のアイコンと `Mask`） ／ Mask pen・Mask eraser・Mask lasso ／ 太さのスライダーと数 ／ Clear mask |
+
+- 道具の中身（古い UI のまま）：選ぶ筆は Paint と Mask で別に覚え、既定はどちらも Pen。太さは 1〜120 で、筆の種類ごとに覚え（Eraser
+  と Mask の筆は Pen の太さを使う）、既定は 20。Lasso の間は太さのスライダーを無効にする。色の既定は Green。Eraser の間は色を無効に
+  する。どれもエディタを開いている間だけ覚え、状態には書かない。
+- Custom color を押すと、バーの上にポップオーバーを出す：彩度と明度の面、色相の帯、Opacity（0〜100%）、最近の色 8 つ。ポップオーバーで
+  変えた色がその場で筆の色になる。閉じたとき（Custom color をもう一度押す、色の点を押す、ポップオーバーの外を押す、Escape）に、開いた
+  ときと違う色で、色の点のどれでもなければ、最近の色の先頭に足す（同じ色は前のものを除く）。Custom color の点は、筆の色が色の点の
+  どれでもないとき選ばれた形になる。
+- Clear paint・Clear mask は、確かめのダイアログ（見出し `Clear Paint`、本文「This will remove all paint strokes in the current node.」、
+  ボタン `Cancel`・`Clear Paint`。Mask も同じ形）を出し、押したらその層のストロークとラスタ（Paint はストロークのまとまりも）を消して
+  Undo の 1 段にする（古い UI と同じ）。消すものが無いときは何もしない。
+- ステージ（3D タブ）：左ボタンのドラッグで、空（Sky）に描く。ペイントは Sky の層に属し、視点の位置によらず、向きだけで描く場所が
+  決まる（`CONTEXT.md` の Sky）。ほかのボタンと修飾キーの視点の操作（右ドラッグ、Alt、中ボタン、ホイール、移動のキー）はふだんのまま
+  効く。ダブルクリックの「注視点へ向く」は、ペイントの道具の間は働かない。
+- ポインタがステージの上にある間、ポインタの所にブラシの輪を出す（CSS のカーソルは出さない）。輪の大きさは、その太さでポインタの所に
+  描いたときの縦の幅に合わせる（ERP では筆の縦の幅が向きによらない）。Lasso の間は輪を出さず、十字のカーソルにする。
+- ストロークの記録・点の間引き・確定・消しゴムの規則と、状態に書く形は古い UI と同じ（同じ下の部品 `web_src/pano_paint_strokes.js`、
+  形は `docs/scene-state-v2.md` の `painting`）。一つのストローク（押してから離すまで）が Undo の 1 段になる。何も描かなかった
+  ストロークは段を作らない。ペイントを変えたときは `painting_layer` を `null` にする（ノードは `painting` から描く）。新しい UI は
+  ペイントの層をアップロードしない。
+- 描き始めで再生を止める（`docs/timeline-ui.md`）。描いている途中の Escape・ウィンドウのフォーカスの喪失・Undo は、そのストロークを
+  全部捨てる（古い UI と同じ）。隠したペイント（`painting_visible` が `false`）には描けない（押しても何も起きない、`docs/timeline-ui.md`）。
 
 ### ギズモ
 
@@ -619,11 +657,12 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   | 2 | 「Set ground」の後、地面を拾う待ち | 待ちを取り消す |
   | 3 | Add の画像の二択（Sky / World）を出している | 二択を閉じ、何も置かない |
   | 4 | ショートカットの一覧を開いている | 一覧を閉じる |
-  | 5 | Keyframe を選んでいる | Keyframe の選択を外す（Easing のパネルが消える） |
-  | 6 | 物を選んでいる | 物の選択を外す |
-  | 7 | 上のどれでもない | エディタを閉じる |
+  | 5 | Paint・Mask の道具を選んでいる | Cursor の道具に戻す（色のポップオーバーを開いていれば、先にそれだけを閉じる） |
+  | 6 | Keyframe を選んでいる | Keyframe の選択を外す（Easing のパネルが消える） |
+  | 7 | 物を選んでいる | 物の選択を外す |
+  | 8 | 上のどれでもない | エディタを閉じる |
 
-  視点のドラッグやギズモのドラッグの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
+  視点のドラッグ、ギズモのドラッグ、ペイントのストロークの最中の Escape（取り消し）は、今の規則（`docs/editor-interaction.md` の「ポインタの取り消しとフォーカスの
   喪失」）のまま、表より先に当たる。
 - 閉じると編集はいつも保存する。開いて閉じただけなら `state_json` を書かない（今の規則のまま。`docs/timeline-ui.md`）。
 - 読めない `state_json`（JSON として読めない、または読めない `version`。空のテキストは読める：空の状態）：エディタを読み取り専用で開き
@@ -648,7 +687,7 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   cache が読み込み中は毎フレーム作り直されるため）。
 
 - 二次の文字の濃さと、地面のグリッドの見た目の値（最初の画面を作るときに実際の画面で決める）。
-- ペイントの道具の見た目の細部（中身は今のまま）。
+- 次の候補：Cursor の道具でステージのペイントのまとまりを選ぶこと（選んだときのバーは上の表の「ペイントのまとまり」）と、ペイントの層のアップロード（古い UI は閉じるときに `painting_layer` をアップロードする）。
 - 右の中央に縦に置いたつまみの列（試してから、右下にまとめる形に戻すことがある）。
 - 地面の自動推定（Scene のカードに席だけを取る。やるなら ADR 0046 の「開くたびに測り直さない」と合わせ、押したときに一度だけ推定して
   保存する形。次の候補）。
