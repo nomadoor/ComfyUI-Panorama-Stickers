@@ -13,7 +13,7 @@
 | 視点のモード（3DoF・6DoF）と右下のボタン群の位置 | — | `web_src/pano_space.js` `switchSpaceMode`・`spaceModeWithContent`・`spaceModeView`、`web_src/pano_editor_ui_state.js` `floatingRightState`、`web_src/components/PanoFloatingRight.vue` | `tests/pano_space.test.mjs`、`tests/pano_editor_ui_state.test.mjs`、`tests/pano_editor_view.test.mjs` |
 | 3D view controls のプリセット（ボタンの割り当て） | — | `web_src/pano_view_controls.js` `viewDragAction`・`VIEW_CONTROLS_SETTING` | `tests/pano_view_controls.test.mjs`、`tests/pano_editor_view.test.mjs` |
 | ピボット・パン・ホイールの規則 | — | `pano_space.js` `navigationTarget`・`panDepth`・`panView`・`reuseWheelPick` | `tests/pano_space.test.mjs`、`tests/pano_editor_view.test.mjs` |
-| キーボードの移動（WASD / QE） | — | `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/editor/keyboard.js` `stageOwnsKey` | `tests/pano_view_keys.test.mjs`、`tests/pano_timeline.test.mjs` |
+| キーボードの移動（WASD / QE） | — | `web_src/pano_view_keys.js` `keyMoveView`・`createMoveKeys`、`web_src/pano_key_focus.js` `stageOwnsKey`・`TEXT_INPUT_TYPES`（古い UI は `web_src/editor/keyboard.js` から呼ぶ） | `tests/pano_view_keys.test.mjs`、`tests/pano_timeline.test.mjs` |
 | Frame Selected の外接球 | — | `pano_space.js` `frameSphere`、収める距離は `frameView` が `fitDistance` と `viewFitFov` で求める | `tests/pano_space.test.mjs` |
 | 視点の遷移 | — | `web_src/pano_view_transition.js` `blendView`・`viewTransitionFrame`・`viewTransitionDuration`・`shownSpaceMode`・`spaceModeChoice` | `tests/pano_view_transition.test.mjs`、`tests/pano_editor_view.test.mjs` |
 | 視点の記憶 | — | `web_src/pano_view_memory.js` `viewMemory`・`restoredView`、`web_src/editor/space.js` `saveView`・`restoreView`、`web_src/pano_node_bridge.js` `editorSession` | `tests/pano_view_memory.test.mjs` |
@@ -28,7 +28,7 @@
 | `port` の Sticker の同期 | — | `web_src/pano_stickers_node_surface.js` `portStickerSyncValue`・`reconcilePortStickerState`・`stickerMediaKind`、`web_src/pano_external_sticker_sync.js` `runExternalStickerSync` | `tests/pano_stickers_node_surface.test.mjs`、`tests/pano_external_sticker_sync.test.mjs` |
 | Pose handoff の表示と記録 | — | `web_src/pano_port_handoff.js` `inheritPortHandoff`・`storedPortSticker`・`recordHandoffEdits`、`web_src/editor/external_stickers.js` `storedEditorState`・`revertPortHandoffLane` | `tests/pano_port_handoff.test.mjs`、`tests/editor_upstream.test.mjs` |
 | インスペクタの行 | — | `pano_editor_ui_state.js` `inspectorRows`、`web_src/components/PanoSidePanel.vue` | `tests/pano_editor_ui_state.test.mjs` |
-| キーと確認のダイアログ（Escape の順、ステージのキー、確認のダイアログを閉じる、選択の段、動かなかったクリック） | — | `web_src/editor/keyboard.js` `onEscClose`・`stageOwnsKey`・`isTextField`、`web_src/editor/commands.js` `settleCanvasConfirm`、`web_src/editor/history.js` `pushHistory`、`web_src/editor/pointer_transform.js` `endTransform` | — |
+| キーと確認のダイアログ（Escape の順、ステージのキー、確認のダイアログを閉じる、選択の段、動かなかったクリック） | — | `web_src/editor/keyboard.js` `onEscClose`・`stageOwnsKey`、`web_src/pano_key_focus.js` `stageOwnsKey`・`isTextField`・`isFormControl`、`web_src/editor/commands.js` `settleCanvasConfirm`、`web_src/editor/history.js` `pushHistory`、`web_src/editor/pointer_transform.js` `endTransform` | — |
 
 
 ## 視点の操作
@@ -69,7 +69,7 @@ Panorama Studio のエディタの Panorama 表示に World の内容がある�
     - 向き：W / S は視点の向きを水平面に倒した向き（SuperSplat と同じく y = 0）に前後、A / D は水平の右の軸に沿って左右、Q / E は World の下・上（glTF の +Y）。真下を向いていても前に進む。2 つのキーを同時に押しても、1 つのときと同じ速さで斜めに進む。キーは物理的な位置（`KeyboardEvent.code`）で受けるので、他の配列のキーボードと macOS の Option でも同じ位置のキーになる。
     - 速さ：内容の大きさ（ホイールの一段と同じ、World の内容の外接球の半径 `spaceScale`。`pano_space_navigation.js`）を 1 秒に進む。Shift で 4 倍、Alt で 1/4（`KEY_MOVE_FAST`・`KEY_MOVE_SLOW`）。エディタのキーに Shift・Alt とキーの組み合わせはなく、Shift・Alt とボタンの組み合わせ（上の表、Frame 表示の roll）はドラッグの修飾で、キーの移動とは別に働く。Ctrl・Meta との組み合わせ（Ctrl + W など）はブラウザと OS に残す。
     - 描画：描画のループ（`tick`）が前のフレームからの時間だけ動かすので、フレームレートによらず同じだけ進む。キーを押している間だけフレームを頼み（`editorAnimating`）、全部のキーを離すと止まる。計算は `pano_view_keys.js`（`keyMoveView`・`createMoveKeys`）にあり、`node --test` で確かめている。
-    - 受けないとき：文字や数を入力している欄（`editor/constants.js` の `TEXT_INPUT_TYPES` の `input`、`textarea`、`select`、編集できる要素）にフォーカスがあるとき、確認のダイアログが出ているとき、エディタの外（上に重なった ComfyUI のダイアログ）にフォーカスがあるときは、キーを受けない（Space の再生と同じ規則、`stageOwnsKey`）。ステージがキーを受けるときは、動くものがないとき（3DoF・Unwrap 表示）も WASD / QE を ComfyUI とブラウザに渡さない（`preventDefault`・`stopPropagation`。ComfyUI の W はワークフロー、A はアセットのサイドバーをエディタの裏で開くため）。Ctrl・Meta との組み合わせは渡す。
+    - 受けないとき：文字や数を入力している欄（`pano_key_focus.js` の `TEXT_INPUT_TYPES` の `input`、`textarea`、`select`、編集できる要素）にフォーカスがあるとき、確認のダイアログが出ているとき、エディタの外（上に重なった ComfyUI のダイアログ）にフォーカスがあるときは、キーを受けない（Space の再生と同じ規則、`stageOwnsKey`）。ステージがキーを受けるときは、動くものがないとき（3DoF・Unwrap 表示）も WASD / QE を ComfyUI とブラウザに渡さない（`preventDefault`・`stopPropagation`。ComfyUI の W はワークフロー、A はアセットのサイドバーをエディタの裏で開くため）。Ctrl・Meta との組み合わせは渡す。
     - 3DoF は原点（Camera があればその位置）に立って向きだけを変えるので、キーでは動かない（6DoF にも切り替えない）。Unwrap 表示も動かない。遷移の間は遷移が視点を動かし、キーを押すと遷移はその場で止まる（つかんだときと同じ）。
     - 止める：ウィンドウがフォーカスを失ったとき、ページが隠れたとき（`visibilitychange`）、Meta を離したとき（macOS は Meta を押している間に離したキーの keyup を送らない）、右クリックのメニューが開いたとき（Chromium はメニューが開いている間 keyup を送らない）は、全部のキーを離したものとし、移動はそこで終わる。押したままのキーのリピートが、フォーカスの移った入力欄などステージのものでない所に来たときは、そのキーを離したものとする（入力欄で打つ文字で視点が動かない）。
     - 記録しない：Panorama 表示でキーが動かすのは Viewport camera（ステージの視点）だけで、状態にも Undo にも入らず、再生も止めない。

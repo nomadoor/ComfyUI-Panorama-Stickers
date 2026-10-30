@@ -1,7 +1,5 @@
 // Constants of the Panorama editor (showEditor in pano_editor.js and the modules of web_src/editor/).
 export const STATE_WIDGET = "state_json";
-// Inputs Space types into; it does not play the Timeline there.
-export const TEXT_INPUT_TYPES = new Set(["text", "search", "number", "email", "url", "tel", "password", "date", "time", "datetime-local", "month", "week"]);
 export const EXTERNAL_STICKER_ID = "sticker_image_1";
 // A world Sticker's inspector fields that have no upper limit (the smallest scale they set is WORLD_MIN_SCALE in
 // pano_editor_state.js).

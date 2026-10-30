@@ -60,6 +60,7 @@ import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark, poseAnimatio
 import { createSparkViews } from "./pano_spark_views.js";
 import { createDepthGridPickMaterial } from "./pano_depth_grid.js";
 import { LENS_GLSL } from "./pano_lens_glsl.js";
+import { createGroundGrid } from "./pano_ground_grid.js";
 
 // The lights of the World pass (docs/render-contract.md "既定の照明", which owns the values; Python's
 // mesh_render.py has the same, both checked against tests/fixtures/default_lighting.json). No shadows.
@@ -882,6 +883,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return new Mesh(planeGeometry, material);
   };
   let guides = null;
+  // The new UI's ground grid and origin mark (pano_ground_grid.js), made the first time a space asks for it.
+  let groundGrid = null;
   // The default lights, always in the World (they change nothing that is not lit).
   const lights = createDefaultLights();
   const lines = { sets: null, lines: [] };
@@ -1141,6 +1144,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     pickable = [];
     pickBoxes = [];
     if (space.grid) children.push(guideGroup(space.grid));
+    if (space.ground) children.push((groundGrid ||= createGroundGrid()).show(space.ground));
     sceneItems.retain(space.sceneUrls ?? []);
     // Each content with its opacity, which the `scene` item's materials keep as they are (opaque).
     const contents = [];
@@ -1538,7 +1542,8 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // With `space`, the view stands at camera.position (a spaceCamera(), pano_space.js) and draws the World
   // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickerUrls, sticker, fileStickers, fileStickerKeys,
   // stickers, lines }. sceneUrls are the item URLs of the `scene` input; loaded items of other URLs are
-  // dropped. grid is a gridSpec() or null. scene is null or { kind ("splat" or "mesh"), url, urls (every item of the input), prefetch
+  // dropped. grid is a gridSpec() or null; ground is the new UI's ground grid and origin mark (web_src/studio/grid.js
+  // groundGrid(), drawn by pano_ground_grid.js) or null. scene is null or { kind ("splat" or "mesh"), url, urls (every item of the input), prefetch
   // (urls to load ahead), transform ({ position, quaternion, scale }), itemQuaternion (the item's turn into
   // the `scene` frame), unlit (its meshes draw without light; false: lit by the default lights) }. sticker is the
   // same for the `sticker` input's 3D media with its opacity, and stickerUrls its item URLs. fileStickers are the
@@ -1808,6 +1813,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     upstreamItems.forEach((items) => items.close());
     upstreamItems.clear();
     if (guides) disposeObject(guides.group);
+    groundGrid?.dispose();
     lines.lines.forEach((line) => disposeObject(line));
     gizmo?.dispose();
     worldStickers.forEach((mesh) => mesh.material.dispose());

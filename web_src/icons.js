@@ -54,6 +54,9 @@ export const ICON = Object.freeze({
   close: "close",
   key_prev: "key_prev",
   key_next: "key_next",
+  sphere: "sphere",
+  hand: "hand",
+  arrows_vertical: "arrows_vertical",
 });
 
 const parseAttrs = (raw) => {
@@ -124,6 +127,11 @@ const TABLER_BODIES = {
   // The new UI's Timeline bar: to the previous and the next Keyframe.
   key_prev: { name: "player-skip-back", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M20 5v14l-12 -7l12 -7' /><path d='M4 5l0 14' />` },
   key_next: { name: "player-skip-forward", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M4 5v14l12 -7l-12 -7' /><path d='M20 5l0 14' />` },
+  // The new UI's view knobs (docs/space-and-view.md "視点の操作の部品"): the sphere (orbit), the hand (pan) and the
+  // up and down arrows (forward / back).
+  sphere: { name: "sphere", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M3 12c0 1.657 4.03 3 9 3s9 -1.343 9 -3' /><path d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0' />` },
+  hand: { name: "hand-stop", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 13v-7.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M11 5.5v-2a1.5 1.5 0 1 1 3 0v8.5' /><path d='M14 5.5a1.5 1.5 0 0 1 3 0v6.5' /><path d='M17 7.5a1.5 1.5 0 0 1 3 0v8.5a6 6 0 0 1 -6 6h-2h.208a6 6 0 0 1 -5.012 -2.7a69.74 69.74 0 0 1 -.196 -.3c-.312 -.479 -1.407 -2.388 -3.286 -5.728a1.5 1.5 0 0 1 .536 -2.022a1.867 1.867 0 0 1 2.28 .28l1.47 1.47' />` },
+  arrows_vertical: { name: "arrows-vertical", body: `<path stroke='none' d='M0 0h24v24H0z' fill='none' /><path d='M8 7l4 -4l4 4' /><path d='M8 17l4 4l4 -4' /><path d='M12 3l0 18' />` },
 };
 
 export const ICON_PATHS = Object.fromEntries(

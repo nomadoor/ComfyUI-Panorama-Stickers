@@ -127,39 +127,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.pano-studio-editor {
-  position: fixed;
-  inset: 0;
-  z-index: 99999;
-  display: flex;
-  flex-direction: column;
-  background: var(--studio-panel);
-}
-
-.pano-studio-editor-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  height: 44px;
-  padding: 0 6px 0 14px;
-  border-bottom: 1px solid var(--studio-line);
-}
-
-.pano-studio-editor-title {
-  font-size: var(--studio-text-md);
-  font-weight: var(--studio-weight-head);
-}
-
-.pano-studio-editor-body {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--studio-fg-2);
-  font-size: var(--studio-text-md);
-}
-
 /* Containers (inspector, dialogs, the Output window, the timeline body). */
 .pano-studio-panel {
   background: var(--studio-panel);
@@ -1272,4 +1239,300 @@
 
 .pano-studio-tl-chip:hover {
   background: var(--studio-fill-hover);
+}
+/* --- The editor's shell (docs/studio-ui.md "画面の区画"): no header; the stage and the timeline in the left column,
+   the inspector down the right one. Parts float over the stage in fixed places and never push each other. */
+.pano-studio-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--studio-inspector-w);
+  background: var(--studio-panel);
+}
+
+.pano-studio-editor.is-knob-drag,
+.pano-studio-editor.is-knob-drag * {
+  cursor: grabbing !important;
+}
+
+.pano-studio-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pano-studio-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: #070707;
+  user-select: none;
+}
+
+/* While the stage waits for its content, a slow gradient flows where it will show (the canvas is see-through). */
+.pano-studio-stage.is-loading {
+  background: linear-gradient(100deg, #0b0b0c 30%, #1a1a1c 50%, #0b0b0c 70%) 0 0 / 300% 100%;
+  animation: pano-studio-loading 2.4s linear infinite;
+}
+
+@keyframes pano-studio-loading {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+
+.pano-studio-stage-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  outline: none;
+}
+
+.pano-studio-stage-failed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #dcdce0;
+  font-size: var(--studio-text-md);
+}
+
+/* The fixed places over the stage. */
+.pano-studio-at-tabs { position: absolute; left: 12px; top: 12px; }
+.pano-studio-at-rail { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); }
+.pano-studio-at-notice { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); pointer-events: none; }
+.pano-studio-at-output { position: absolute; right: 12px; top: 12px; }
+.pano-studio-at-nav { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
+.pano-studio-at-bar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); }
+.pano-studio-at-buttons { position: absolute; right: 12px; bottom: 12px; }
+
+/* The view knobs' column and "?" below it. */
+.pano-studio-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The one line at the top center: a notice (a coral dot), what the stage waits for, or the empty stage's hint. */
+.pano-studio-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--studio-btn);
+  padding: 0 14px;
+  font-size: var(--studio-text-sm);
+  white-space: nowrap;
+}
+
+.pano-studio-notice-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--studio-coral);
+}
+
+/* The Output window: a container (12px), 85% opaque, folded to a pill with its name. */
+.pano-studio-output {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 10px;
+  background: var(--studio-float);
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-r-box);
+  color: var(--studio-fg);
+}
+
+.pano-studio-output.is-collapsed {
+  align-items: center;
+  gap: 4px;
+  height: var(--studio-btn);
+  padding: 0 4px 0 12px;
+  border-radius: var(--studio-r-part);
+}
+
+.pano-studio-output-body {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+}
+
+.pano-studio-output-label {
+  font-size: var(--studio-text-sm);
+}
+
+.pano-studio-output-fold {
+  color: var(--studio-fg);
+}
+
+.pano-studio-output:not(.is-collapsed) .pano-studio-output-fold {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
+.pano-studio-output-fold.is-folded svg.icon {
+  transform: rotate(180deg);
+}
+
+/* The corner dragged for the size: faint until the pointer is over the window. */
+.pano-studio-output-grip {
+  position: absolute;
+  left: -1px;
+  bottom: -1px;
+  width: 14px;
+  height: 14px;
+  border-left: 2px solid var(--studio-fg);
+  border-bottom: 2px solid var(--studio-fg);
+  border-bottom-left-radius: var(--studio-r-box);
+  opacity: 0.2;
+  cursor: nesw-resize;
+  touch-action: none;
+}
+
+.pano-studio-output:hover .pano-studio-output-grip {
+  opacity: 0.7;
+}
+
+/* The on / off switch: a track whose thumb sits right and fills when on, then its name. */
+.pano-studio-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--studio-btn);
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  color: var(--studio-fg);
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
+  cursor: pointer;
+}
+
+.pano-studio-switch:hover {
+  background: var(--studio-fill-hover);
+}
+
+.pano-studio-switch-track {
+  position: relative;
+  width: 24px;
+  height: 14px;
+  flex: none;
+  border: 1.5px solid var(--studio-fg-2);
+  border-radius: var(--studio-r-part);
+}
+
+.pano-studio-switch-thumb {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--studio-fg-2);
+}
+
+.pano-studio-switch-label {
+  white-space: nowrap;
+}
+
+.pano-studio-switch.is-on .pano-studio-switch-track {
+  border-color: var(--studio-strong);
+  background: var(--studio-strong);
+}
+
+.pano-studio-switch.is-on .pano-studio-switch-thumb {
+  left: 12px;
+  background: var(--studio-on-strong);
+}
+
+.pano-studio-switch[aria-disabled="true"] {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* The border between the stage and the timeline, dragged for the timeline's height. */
+.pano-studio-splitter {
+  position: relative;
+  flex: none;
+  height: 5px;
+  margin: -2px 0;
+  z-index: 1;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.pano-studio-splitter::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 2px;
+  height: 1px;
+  background: var(--studio-line);
+}
+
+.pano-studio-splitter:hover::after {
+  background: var(--studio-line-strong);
+}
+
+.pano-studio-splitter.is-collapsed {
+  cursor: default;
+}
+
+.pano-studio-timeline {
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--studio-panel);
+}
+
+/* The inspector: the node's name and ✕ on top, the cards scrolling without a scrollbar, a foot pinned below. */
+.pano-studio-inspector {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--studio-line);
+  background: var(--studio-panel);
+}
+
+.pano-studio-inspector-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 44px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--studio-line);
+}
+
+.pano-studio-inspector-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-inspector-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.pano-studio-inspector-body::-webkit-scrollbar {
+  display: none;
 }
