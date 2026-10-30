@@ -224,8 +224,11 @@ export function createLiveErp({ renderer, canvas, near = 0.01, far = 1000 }) {
         }
         if (spark && dirty.sort) {
           center.position.set(x, y, z);
-          center.near = view.near;
-          center.far = view.far;
+          if (center.near !== view.near || center.far !== view.far) {
+            center.near = view.near;
+            center.far = view.far;
+            center.updateProjectionMatrix();
+          }
           center.updateMatrixWorld(true);
           aim?.(center);
           // Spark generates now and sorts in its worker; the faces below draw the order it has until then.
