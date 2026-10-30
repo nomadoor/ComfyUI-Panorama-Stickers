@@ -100,6 +100,21 @@ export function rulerDragValue(start, deltaPx, unitPx, { fine = false, min = -In
   return Math.min(max, Math.max(min, next));
 }
 
+// A ruler that snaps (Roll with Shift: ROTATE_SNAP_DEG) shows the multiple of `snap` nearest the dragged value, and an
+// arrow key moves it to the next multiple in `dir` (+1 or -1) from where it is, so a value between two goes to one.
+const SNAP_EPSILON = 1e-9;
+export function rulerSnapValue(value, snap, { min = -Infinity, max = Infinity } = {}) {
+  // + 0 turns -0 (a small negative value rounded up) into 0.
+  return Math.min(max, Math.max(min, Math.round(value / snap) * snap)) + 0;
+}
+
+export function rulerSnapStep(value, dir, snap, { min = -Infinity, max = Infinity } = {}) {
+  const next = dir > 0
+    ? (Math.floor(value / snap + SNAP_EPSILON) + 1) * snap
+    : (Math.ceil(value / snap - SNAP_EPSILON) - 1) * snap;
+  return Math.min(max, Math.max(min, next)) + 0;
+}
+
 // The edge rulers of the Camera tab from the Camera card (inspector_model.js buildInspectorModel with tab "camera"): the
 // FOV ruler is its H FOV row, Lens its Lens row, Roll the Roll of its Rotation row, so their values, ranges, the
 // Keyframe dots' states (docs/timeline-ui.md "インスペクタの Keyframe のポチ": `fov`, `curve`, `rotation`) and what is

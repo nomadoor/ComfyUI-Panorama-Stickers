@@ -8,6 +8,8 @@ import {
   frameRect,
   rulerStrips,
   rulerDragValue,
+  rulerSnapStep,
+  rulerSnapValue,
   rulerLabel,
   rulerMarks,
 } from "../web_src/studio/frame_layout.js";
@@ -150,4 +152,15 @@ test("a ruler's reset is grayed where the inspector's is: at the default, or whi
   assert.deepEqual([home.fov.atDefault, home.roll.atDefault], [true, true]);
   const panorama = rulersOf(cameraState({ projection: "erp" }));
   assert.ok(panorama.fov.atDefault && panorama.lens.atDefault && !panorama.roll.atDefault);
+});
+
+test("Roll with Shift stops at multiples of ROTATE_SNAP_DEG, by drag and by arrow key", () => {
+  assert.equal(rulerSnapValue(-4, 15), 0);
+  assert.equal(rulerSnapValue(8, 15), 15);
+  assert.equal(rulerSnapValue(-172, 15, { min: -180, max: 180 }), -180);
+  assert.equal(rulerSnapStep(-4, 1, 15), 0);
+  assert.equal(rulerSnapStep(-4, -1, 15), -15);
+  assert.equal(rulerSnapStep(0, 1, 15), 15);
+  assert.equal(rulerSnapStep(15, -1, 15), 0);
+  assert.equal(rulerSnapStep(175, 1, 15, { min: -180, max: 180 }), 180);
 });
