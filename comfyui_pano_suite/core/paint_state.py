@@ -20,9 +20,14 @@ def empty_painting_state() -> dict:
 
 
 def _finite_float(value):
+    """A finite JSON number (not a boolean, not text, not a list) as a float, or None: every number of `painting` is
+    read so (docs/scene-state-v2.md, 共通の規則), as the editor's finiteNumber does. An integer too large for a double
+    is an infinity in JSON.parse, so it is None too."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
     try:
         out = float(value)
-    except Exception:
+    except OverflowError:
         return None
     if not math.isfinite(out):
         return None
@@ -39,11 +44,9 @@ def _finite_int(value):
 def _z_index(item: dict):
     """The first finite JSON number (not a boolean, not text) of `z_index`, then `zIndex`, or None."""
     for key in ("z_index", "zIndex"):
-        value = item.get(key)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            out = _finite_float(value)
-            if out is not None:
-                return out
+        out = _finite_float(item.get(key))
+        if out is not None:
+            return out
     return None
 
 
@@ -83,10 +86,11 @@ def _normalize_target_point(raw, target_space):
             frame_id = str(frame_id_raw).strip()
         if not frame_id:
             return None
-    t = _finite_float(raw.get("t", 0.0))
+    t = _finite_float(raw.get("t"))
+    t = 0.0 if t is None else t
     u = _finite_float(raw.get("u"))
     v = _finite_float(raw.get("v"))
-    if t is None or u is None or v is None:
+    if u is None or v is None:
         return None
     if target_kind == "ERP_GLOBAL":
         u = float(u % 1.0)
@@ -181,25 +185,18 @@ def _normalize_color(raw, allow_color):
         return None
     if not isinstance(raw, dict):
         return None
-    r = _finite_float(raw.get("r"))
-    g = _finite_float(raw.get("g"))
-    b = _finite_float(raw.get("b"))
-    a = _finite_float(raw.get("a"))
-    if None in (r, g, b, a):
-        return None
+
+    def component(key, default):
+        value = _finite_float(raw.get(key))
+        return default if value is None else value
+
+    r, g, b, a = component("r", 0.0), component("g", 0.0), component("b", 0.0), component("a", 1.0)
     return {
         "r": max(0.0, min(1.0, float(r))),
         "g": max(0.0, min(1.0, float(g))),
         "b": max(0.0, min(1.0, float(b))),
         "a": max(0.0, min(1.0, float(a))),
     }
-
-
-def _json_number(value):
-    """A finite JSON number (not a boolean, not text) as a float, or None (one too large for a double too)."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    return _finite_float(value)
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -214,26 +211,26 @@ def _normalize_brush(raw: dict) -> dict:
     differs from its default, the value the editor's paint engine uses when it is missing. Hardness, flow and spacing
     are always kept, None (the engine's default) unless a JSON number: None is never read as 0."""
     out = {
-        "hardness": _json_number(raw.get("hardness")),
-        "flow": _json_number(raw.get("flow")),
-        "spacing": _json_number(raw.get("spacing")),
+        "hardness": _finite_float(raw.get("hardness")),
+        "flow": _finite_float(raw.get("flow")),
+        "spacing": _finite_float(raw.get("spacing")),
     }
     stamp_kind = raw.get("stampKind")
     stamp_kind = stamp_kind if isinstance(stamp_kind, str) and stamp_kind in STAMP_KINDS else "round"
     if stamp_kind != "round":
         out["stampKind"] = stamp_kind
-    aspect = _json_number(raw.get("aspect"))
+    aspect = _finite_float(raw.get("aspect"))
     if aspect is not None and _clamp(aspect, 0.1, 10.0) != 1.0:
         out["aspect"] = _clamp(aspect, 0.1, 10.0)
     angle = raw.get("angle") if isinstance(raw.get("angle"), dict) else {}
-    angle_value = _json_number(angle.get("value"))
+    angle_value = _finite_float(angle.get("value"))
     if angle.get("kind") == "stroke_dir":
         out["angle"] = {"kind": "stroke_dir"}
     elif angle_value is not None and angle_value != 0.0:
         out["angle"] = {"kind": "fixed", "value": angle_value}
 
     def keep(key, default, lo, hi):
-        value = _json_number(raw.get(key))
+        value = _finite_float(raw.get(key))
         if value is not None and _clamp(value, lo, hi) != default:
             out[key] = _clamp(value, lo, hi)
 
@@ -245,8 +242,8 @@ def _normalize_brush(raw: dict) -> dict:
         keep("crayonGrain", 0.65, 0.0, 1.0)
     scatter = raw.get("scatter")
     if isinstance(scatter, dict):
-        radius = _json_number(scatter.get("radius"))
-        count = _json_number(scatter.get("count"))
+        radius = _finite_float(scatter.get("radius"))
+        count = _finite_float(scatter.get("count"))
         out["scatter"] = {
             "radius": max(0.0, 1.5 if radius is None else radius),
             "count": int(_clamp(_js_round(6.0 if count is None else count), 1, 64)),
@@ -355,12 +352,12 @@ def _normalize_raster_bbox(raw):
 
 def _normalize_raster_transform(raw):
     tf = raw if isinstance(raw, dict) else {}
-    du = _finite_float(tf.get("du")) or 0.0
-    dv = _finite_float(tf.get("dv")) or 0.0
-    rot_deg = _finite_float(tf.get("rot_deg")) or 0.0
-    scale_raw = _finite_float(tf.get("scale"))
-    scale = max(0.01, float(scale_raw)) if scale_raw is not None else 1.0
-    return {"du": float(du), "dv": float(dv), "rot_deg": float(rot_deg), "scale": scale}
+    def number(key, default):
+        value = _finite_float(tf.get(key))
+        return default if value is None else value
+
+    return {"du": number("du", 0.0), "dv": number("dv", 0.0), "rot_deg": number("rot_deg", 0.0),
+            "scale": max(0.01, number("scale", 1.0))}
 
 
 def _normalize_raster_object(item, fallback_z):
