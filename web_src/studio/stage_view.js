@@ -64,14 +64,15 @@ export function surfaceHit(camera, x, y, width, height, { ground, picked = null 
 
 // The render input (pano_three_view.js render) of the stage: the view `camera` on the whole canvas of
 // canvasWidth x canvasHeight device px, the background ({ media, revision, coverage } or null), and a space with
-// the ground grid (hidden with `gridHidden`) and, for now, no World content. Where nothing draws the canvas is
+// the ground grid (hidden with `gridHidden`) and the working state's content at the playhead (`content`,
+// stage_content.js stageContent(): its sky layers and its World part; null draws none). Where nothing draws the canvas is
 // `clearColor`, or see-through with null (the stage's loading gradient shows behind while the background loads).
-export function stageRenderInput({ camera, canvasWidth, canvasHeight, background, ground, gridHidden, clearColor = STAGE_CLEAR_COLOR }) {
+export function stageRenderInput({ camera, canvasWidth, canvasHeight, background, ground, gridHidden, clearColor = STAGE_CLEAR_COLOR, content = null }) {
   return {
     rect: { x: 0, y: 0, w: canvasWidth, h: canvasHeight },
     camera,
     background: background ?? null,
-    layers: [],
+    layers: content?.layers ?? [],
     owner: "studio-stage",
     clearColor,
     space: {
@@ -88,6 +89,7 @@ export function stageRenderInput({ camera, canvasWidth, canvasHeight, background
       upstreamItems: [],
       upstreamStickers: [],
       gizmo: null,
+      ...(content?.space ?? {}),
     },
   };
 }

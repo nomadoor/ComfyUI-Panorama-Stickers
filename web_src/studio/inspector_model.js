@@ -4,7 +4,8 @@
 // Keyframe のポチ"), whether it is at the value its reset returns to, and the mark of an overridden upstream value.
 // The edits the rows send are applied by inspector_actions.js.
 import { ICON } from "../icons.js";
-import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, sceneStickerLabel, skyStickerVfov } from "../pano_editor_state.js";
+import { CAMERA_ASPECT_MAX, CAMERA_ASPECT_MIN, WORLD_MIN_SCALE, sceneStickerLabel, skyStickerVfov, stickerVfovFromAspect } from "../pano_editor_state.js";
+import { NEW_STICKER_HFOV } from "../pano_space.js";
 import { LENS_CURVE_MAX, LENS_CURVE_MIN, lensFovLimit } from "../pano_lens.js";
 import { FRAME_EPSILON, evaluateCamera, evaluateLane, evaluateSticker } from "../pano_scene_eval.js";
 import {
@@ -14,47 +15,13 @@ import {
   CAMERA_LANES,
   DEFAULT_EASING,
   SCENE_LANES,
-  loadSceneState,
   rebaseSceneState,
   stickerLanes,
 } from "../pano_scene_state.js";
 import { EASING_PRESETS, rowLaneNames, selectedEasing } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { animationClipIndex } from "../pano_animation.js";
-
-// The ground height a state without `ground` stands on (docs/scene-state-v2.md `ground`, GROUND_DEFAULT). The state
-// does not hold `ground` yet; when pano_scene_state.js has GROUND_DEFAULT, this reads it from there.
-export const GROUND_DEFAULT = -1.6;
-
-// The Camera a state without one is read as (docs/scene-state-v2.md "既定の Camera"). pano_scene_state.js does not
-// hold it yet; when it does, this is replaced by its constant. Lanes without Keyframes.
-export const DEFAULT_CAMERA_RAW = Object.freeze({
-  aspect: 16 / 9,
-  projection: "erp",
-  erp_range: 360,
-  visible: true,
-  locked: false,
-  position: { value: [0, 0, 0] },
-  rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } },
-  fov: { value: 90 },
-  curve: { value: 1 },
-});
-
-// A new working Camera with the default values (a state's `camera`, normalized).
-export function defaultCamera() {
-  const camera = loadSceneState({ version: 2, camera: structuredClone(DEFAULT_CAMERA_RAW) }).camera;
-  return { ...camera, erp_range: DEFAULT_CAMERA_RAW.erp_range, locked: DEFAULT_CAMERA_RAW.locked };
-}
-
-// The Camera a state shows: its own, or the default one.
-export function cameraOf(state) {
-  return state.camera ?? defaultCamera();
-}
-
-// The ground height a state stands on.
-export function groundOf(state) {
-  return Number.isFinite(state.ground) ? state.ground : GROUND_DEFAULT;
-}
+import { DEFAULT_CAMERA_RAW, cameraOf, groundOf } from "./defaults.js";
 
 // The least height (px) left above the Easing panel for the rows (docs/design.md "大きさ" EASING_MIN_ABOVE).
 export const EASING_MIN_ABOVE = 180;
@@ -67,7 +34,14 @@ export function easingGraphSide({ width, height, chrome }) {
 
 // The Easing presets of the panel in their order (docs/studio-ui.md "Easing のパネル"); the values are
 // pano_timeline.js EASING_PRESETS'.
-const PANEL_PRESETS = ["Hold", "Linear", "Ease in-out", "Ease in", "Ease out"].map((label) => EASING_PRESETS.find((preset) => preset.label === label));
+// Each shows its icon only, its name in the tooltip.
+const PANEL_PRESETS = [
+  ["Hold", ICON.ease_hold],
+  ["Linear", ICON.ease_linear],
+  ["Ease in-out", ICON.ease_in_out],
+  ["Ease in", ICON.ease_in],
+  ["Ease out", ICON.ease_out],
+].map(([label, icon]) => ({ ...EASING_PRESETS.find((preset) => preset.label === label), icon }));
 
 const BEZIER_NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 
@@ -331,20 +305,33 @@ function laneRowAtDefault(owner, names, frame, base) {
   return names.every((name) => near(evaluateLane(owner, name, frame), laneDefault(owner, name)));
 }
 
-// A port sky Sticker's size reset returns its hFOV only; its vFOV follows its media.
-function skyFovAtDefault(sticker, frame) {
-  const size = evaluateLane(sticker, "size", frame);
-  const fallback = laneDefault(sticker, "size");
-  return sticker.source.kind === "port" ? near(size.hFOV_deg, fallback.hFOV_deg) : near(size, fallback);
+// The size a sky image's FOV reset returns to (docs/studio-ui.md "種類ごとの中身"): the size it was placed at, H
+// NEW_STICKER_HFOV and V from its image's aspect (`imageSize`, { width, height } px). Before the image has a size, the
+// aspect it is drawn at now (`size`, its size Lane's value) stands in, so the reset does not stretch it.
+export function skyPlacedSize(size, imageSize) {
+  const half = (fov) => Math.tan(fov * 0.5 * Math.PI / 180);
+  let aspect = imageSize?.width > 0 && imageSize?.height > 0 ? [imageSize.width, imageSize.height] : [half(size.hFOV_deg), half(size.vFOV_deg)];
+  if (!aspect.every((value) => Number.isFinite(value) && value > 0)) aspect = [1, 1];
+  // stickerVfovFromAspect reads pixel sizes of at least one.
+  const scale = 1000 / Math.min(...aspect);
+  return { hFOV_deg: NEW_STICKER_HFOV, vFOV_deg: stickerVfovFromAspect(NEW_STICKER_HFOV, aspect[0] * scale, aspect[1] * scale) };
 }
 
-function finishRows(rows, owner, { frame, disabled, disabledTip, base, override, keyable = true }) {
+// A port sky Sticker's size reset returns its hFOV only; its vFOV follows its media. Another sky image's returns the
+// size it was placed at.
+function skyFovAtDefault(sticker, frame, imageSize) {
+  const size = evaluateLane(sticker, "size", frame);
+  if (sticker.source.kind === "port") return near(size.hFOV_deg, laneDefault(sticker, "size").hFOV_deg);
+  return near(size, skyPlacedSize(size, imageSize));
+}
+
+function finishRows(rows, owner, { frame, disabled, disabledTip, base, override, keyable = true, imageSize = null }) {
   return rows.map((row) => {
     const lanes = row.lanes ?? [];
     const off = disabled || !!row.disabled;
     let atDefault = row.atDefault;
     if (atDefault === undefined && lanes.length) {
-      atDefault = owner.placement === "sky" && row.id === "fov" && !base ? skyFovAtDefault(owner, frame) : laneRowAtDefault(owner, lanes, frame, base);
+      atDefault = owner.placement === "sky" && row.id === "fov" && !base ? skyFovAtDefault(owner, frame, imageSize) : laneRowAtDefault(owner, lanes, frame, base);
     }
     const fields = (row.fields ?? []).map((field) => ({ unit: "", step: 0.01, precision: 2, min: -Infinity, max: Infinity, ...field, disabled: off || !!field.disabled }));
     return {
@@ -363,7 +350,7 @@ function finishRows(rows, owner, { frame, disabled, disabledTip, base, override,
   });
 }
 
-function stickerCard(state, sticker, { playhead, readOnly, upstream, animations, portSize }) {
+function stickerCard(state, sticker, { playhead, readOnly, upstream, animations, portSize, imageSizes }) {
   const frame = ownerFrame(sticker, playhead);
   const isWorld = sticker.placement === "world";
   const fromUpstream = isUpstreamSticker(sticker);
@@ -390,6 +377,7 @@ function stickerCard(state, sticker, { playhead, readOnly, upstream, animations,
         disabledTip,
         base: fromUpstream ? inheritedSticker(upstream, sticker, state.timeline.fps) : null,
         override: override && override.placement === sticker.placement ? override : null,
+        imageSize: imageSizes[sticker.id] ?? null,
       },
     ),
   };
@@ -412,8 +400,13 @@ function cameraCard(state, { playhead, readOnly }) {
   };
 }
 
-function sceneCard(state, { readOnly }) {
+// Until the state keeps `ground` (defaults.js), an edited ground height would not be saved: `groundSaved` false grays
+// the row with the reason instead of taking an edit that closing would lose.
+export const GROUND_NOT_SAVED_TIP = "The ground height is not saved yet: the node does not keep it";
+
+function sceneCard(state, { readOnly, groundSaved }) {
   const ground = groundOf(state);
+  const off = readOnly || !groundSaved;
   return {
     kind: "scene",
     title: "Scene",
@@ -426,16 +419,16 @@ function sceneCard(state, { readOnly }) {
       layout: "multi",
       control: "ground",
       lanes: [],
-      fields: [{ field: "ground", value: ground, unit: "", step: 0.01, precision: 2, min: -Infinity, max: Infinity, disabled: readOnly }],
+      fields: [{ field: "ground", value: ground, unit: "", step: 0.01, precision: 2, min: -Infinity, max: Infinity, disabled: off }],
       // The seat for the ground's estimate button (docs/studio-ui.md "種類ごとの中身"); nothing is placed in it yet.
       seat: true,
       keyState: null,
       keyDisabled: true,
       resettable: true,
       atDefault: !Number.isFinite(state.ground),
-      disabled: readOnly,
+      disabled: off,
       marked: false,
-      tip: readOnly ? "Read-only" : "",
+      tip: readOnly ? "Read-only" : groundSaved ? "" : GROUND_NOT_SAVED_TIP,
     }],
   };
 }
@@ -463,7 +456,7 @@ function easingModel(state, upstream, keyframes) {
     mixed,
     text: Array.isArray(easing) ? formatBezier(easing) : "",
     atDefault: !!selected && !mixed && sameJson(easing, DEFAULT_EASING),
-    presets: PANEL_PRESETS.map((preset) => ({ label: preset.label, easing: preset.easing, active: !mixed && sameJson(preset.easing, easing) })),
+    presets: PANEL_PRESETS.map((preset) => ({ label: preset.label, icon: preset.icon, easing: preset.easing, active: !mixed && sameJson(preset.easing, easing) })),
   };
 }
 
@@ -471,10 +464,12 @@ function easingModel(state, upstream, keyframes) {
 // keyframes?: { owner, lane, frames } }; ids are "camera" or Sticker ids, an upstream element's working id
 // `upstream:<key>:<id>`), the `tab` ("3d" | "camera") and the Timeline frame `playhead`. `upstream` is the working
 // layers (pano_upstream.js upstreamWorkingLayers), `animations` the clips of the 3D files by Sticker id
-// ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }).
+// ([{ name }]), `portSize` the size of the port Sticker's media ({ width, height }), `imageSizes` the sizes of the
+// Stickers' images by Sticker id ({ width, height } px, once loaded), `groundSaved` whether an edited ground height
+// is saved (GROUND_NOT_SAVED_TIP).
 // Returns { cards: [{ kind, title, icon, note, target, rows }], easing }.
-export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null }) {
-  const options = { playhead, readOnly, upstream, animations, portSize };
+export function buildInspectorModel({ state, selection = {}, tab = "3d", playhead = 0, readOnly = false, upstream = [], animations = {}, portSize = null, imageSizes = {}, groundSaved = true }) {
+  const options = { playhead, readOnly, upstream, animations, portSize, imageSizes, groundSaved };
   const ids = selection.ids ?? [];
   let cards;
   if (tab === "camera") cards = [cameraCard(state, options)];

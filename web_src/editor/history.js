@@ -1,22 +1,8 @@
-// The editor's Undo history: what a snapshot keeps, how many are kept, and undo / redo.
-import { HISTORY_SNAPSHOT_OMITS, makePanoEditorHistorySnapshot, restoredHistoryState } from "../pano_editor_state.js";
-import { createSharedStringHistory } from "../pano_paint_history.js";
+// The editor's Undo history: undo / redo of the old UI's editor. What a snapshot keeps and how many are kept is
+// pano_editor_state.js's (HISTORY_LIMIT, historySnapshot, createEditorHistory), shared with the new UI.
+import { restoredHistoryState } from "../pano_editor_state.js";
 
-// The steps an editor keeps. Each is the whole state as JSON, without its history and painting layer
-// (makePanoEditorHistorySnapshot).
-export const HISTORY_LIMIT = 80;
-
-export function historySnapshot(state) {
-  return JSON.stringify(makePanoEditorHistorySnapshot(state));
-}
-
-// The history of an editor opening on `state`, which is its first step. Undo, Redo and `entries` give the
-// steps as historySnapshot() JSON; `record(state)` records one.
-export function createEditorHistory(state) {
-  const history = createSharedStringHistory(HISTORY_LIMIT, { omit: HISTORY_SNAPSHOT_OMITS });
-  history.record(state);
-  return history;
-}
+export { HISTORY_LIMIT, createEditorHistory, historySnapshot } from "../pano_editor_state.js";
 
 // The id the editor of `type` selects from a state: the Stickers editor (and Panorama Studio) keeps the
 // selected Sticker, the Cutout editor the selected shot.

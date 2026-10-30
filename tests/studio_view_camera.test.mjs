@@ -343,13 +343,35 @@ test("a wheel step stopped by the bound moves T by the same share", () => {
   closeVec(shown.target, [0, 0, 37 + (38.4 - 37) * share]);
 });
 
-test("a wheel step during an eased move is taken from its destination", () => {
+test("a wheel step during an eased move scales from the view shown, so the point under the pointer stays there", () => {
   const view = camera();
   view.wheel(1, null);
   view.step(0.1);
-  view.wheel(1, null);
+  assert.equal(view.animating(), true);
+  // G is picked on the view shown mid-move, off the center line.
+  const shown = view.pose();
+  const G = [1, 0.5, -6];
+  const before = sub(G, shown.position);
+  view.wheel(1, G);
   view.step(1);
-  close(len(sub(view.pose().position, view.pose().target)), 8 / 1.44);
+  const after = view.pose();
+  // The view turned nowhere and G is in the same direction from P: it stays under the pointer.
+  close(after.yaw_deg, shown.yaw_deg);
+  close(after.pitch_deg, shown.pitch_deg);
+  closeVec(sub(G, after.position).map((v) => v / len(sub(G, after.position))), before.map((v) => v / len(before)));
+  // P and T scaled about G from where they showed, by one step.
+  closeVec(after.position, G.map((g, i) => g + (shown.position[i] - g) / 1.2));
+  close(len(sub(after.position, after.target)), len(sub(shown.position, shown.target)) / 1.2);
+});
+
+test("a wheel step that cannot move leaves an eased move under way going", () => {
+  // T at the farthest distance: a step out has nowhere to go.
+  const view = camera(pose({ target: [0, 0, -48] }));
+  view.focus([0, 0, -48]);
+  view.step(0.05);
+  assert.equal(view.animating(), true);
+  assert.deepEqual(view.wheel(-1, null), { moved: false, notice: "bound" });
+  assert.equal(view.animating(), true);
 });
 
 test("a wheel step eases over WHEEL_EASE_SECONDS", () => {

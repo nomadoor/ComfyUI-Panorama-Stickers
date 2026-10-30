@@ -1,40 +1,47 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { ICON } from "../../icons.js";
 import { VIEW_UNAVAILABLE_MESSAGE } from "../../pano_preview_view.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
-import SvgIcon from "../shared/SvgIcon.vue";
+import { inspectorSelection } from "../../studio/session.js";
+import StudioInspector from "./StudioInspector.vue";
 import StudioNavWidget from "./StudioNavWidget.vue";
 import StudioNotice from "./StudioNotice.vue";
 import StudioOutputPreview from "./StudioOutputPreview.vue";
 import StudioTabs from "./StudioTabs.vue";
+import StudioTimeline from "./StudioTimeline.vue";
 import StudioToolRail from "./StudioToolRail.vue";
 import StudioViewButtons from "./StudioViewButtons.vue";
 
 // Panorama Studio's editor in the new UI: the regions of docs/studio-ui.md "画面の区画". No header. The stage fills
-// the left column to its edges with the parts floating over it in fixed places; the timeline is below it, behind a
-// border dragged for its height (kept per browser); the inspector runs down the right column, its top row the node's
-// name and ✕. The inspector's cards, the timeline and the bar at the bottom center are other parts: they go in the
-// slots `inspector` (and `inspector-foot`, pinned at its bottom), `timeline` and `bar`.
+// the left column to its edges with the parts floating over it in fixed places; the timeline (<StudioTimeline>) is
+// below it, behind a border dragged for its height (kept per browser); the inspector (<StudioInspector>, its top row
+// the node's name and ✕) runs down the right column. The bar at the bottom center is a seat (slot `bar`).
 //
-// The stage itself (the canvas, the pointer, the keys, the viewpoint) is studio/stage.js: onStage({ canvas, root })
-// makes it once the elements are in the page and returns its controls; `ui` is what it reports (stage.js stageUi(),
-// with `background` and `empty` from studio/editor.js).
+// The editor's state lives in studio/editor.js: `view` is its view model (the working state, the selection, the
+// playhead, playback, Undo), `ui` what the stage reports (stage.js stageUi(), with `background` and `empty`), and
+// `controller` what this shell calls: onStage({ canvas, root }) makes the stage once the elements are in the page and
+// returns its controls; onTimeline({ handleDelete }) hands over the Timeline's Delete; the inspector's and the
+// Timeline's events go to its handlers.
 const props = defineProps({
   nodeTitle: { type: String, default: "" },
   ui: { type: Object, required: true },
+  view: { type: Object, required: true },
   storage: { type: Object, default: null },
-  onClose: { type: Function, default: null },
-  onStage: { type: Function, default: null },
+  controller: { type: Object, required: true },
 });
 
 const root = ref(null);
 const main = ref(null);
 const canvas = ref(null);
+const timeline = ref(null);
 let stage = null;
 
+// The inspector's selection follows the Timeline's (studio/session.js).
+const selected = computed(() => inspectorSelection(props.view.selection));
+
 onMounted(() => {
-  stage = props.onStage?.({ canvas: canvas.value, root: root.value }) ?? null;
+  stage = props.controller.onStage({ canvas: canvas.value, root: root.value }) ?? null;
+  props.controller.onTimeline({ handleDelete: () => timeline.value?.handleDelete() ?? false });
   // The editor takes the focus from the graph behind it, so the stage has the keys at once (pano_key_focus.js).
   root.value?.focus({ preventScroll: true });
   fitTimeline();
@@ -111,7 +118,12 @@ function setCollapsed(value) {
         <div v-if="ui.view === 'failed'" class="pano-studio-stage-failed pano-studio-cap">{{ VIEW_UNAVAILABLE_MESSAGE }}</div>
 
         <StudioTabs class="pano-studio-at-tabs" value="3d" camera-disabled camera-tip="Camera view · in development" />
-        <StudioToolRail class="pano-studio-at-rail" />
+        <StudioToolRail
+          class="pano-studio-at-rail"
+          :can-undo="view.canUndo"
+          :can-redo="view.canRedo"
+          @press="(key) => controller.rail(key)"
+        />
         <div class="pano-studio-at-notice">
           <StudioNotice :text="line.text" :kind="line.kind" />
         </div>
@@ -143,18 +155,41 @@ function setCollapsed(value) {
         @pointercancel="onSplitUp"
       />
       <div class="pano-studio-timeline" data-region="timeline" :style="timelineStyle">
-        <slot name="timeline" :collapsed="collapsed" :set-collapsed="setCollapsed" />
+        <StudioTimeline
+          ref="timeline"
+          :state="view.state"
+          :selection="view.selection"
+          :playhead="view.playhead"
+          :playing="view.playing"
+          :loop="view.loop"
+          :read-only="view.readOnly"
+          :media="view.media"
+          :background="view.background"
+          :scene-row="view.sceneRow"
+          :collapsed="collapsed"
+          @seek="(frame) => controller.seek(frame)"
+          @play="controller.play()"
+          @select="(selection) => controller.select(selection)"
+          @edit="(payload) => controller.timelineEdit(payload)"
+          @frame-selected="(row) => controller.frameSelected(row)"
+          @loop-change="(on) => controller.loop(on)"
+          @collapse-change="setCollapsed"
+        />
       </div>
     </div>
-    <aside class="pano-studio-inspector" data-region="inspector">
-      <div class="pano-studio-inspector-head">
-        <span class="pano-studio-inspector-title">{{ nodeTitle }}</span>
-        <button class="pano-studio-icon-btn" type="button" data-action="close" aria-label="Close" title="Close" @click="props.onClose?.()">
-          <SvgIcon :icon="ICON.close" />
-        </button>
-      </div>
-      <div class="pano-studio-inspector-body"><slot name="inspector" /></div>
-      <slot name="inspector-foot" />
-    </aside>
+    <StudioInspector
+      data-region="inspector"
+      :state="view.state"
+      :selection="selected"
+      tab="3d"
+      :playhead="view.playhead"
+      :node-name="nodeTitle"
+      :read-only="view.readOnly"
+      :animations="view.animations"
+      :image-sizes="view.imageSizes"
+      :ground-saved="false"
+      @edit="(edit) => controller.inspectorEdit(edit)"
+      @close="controller.close()"
+    />
   </div>
 </template>

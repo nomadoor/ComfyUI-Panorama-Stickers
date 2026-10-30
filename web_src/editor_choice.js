@@ -9,7 +9,7 @@ export const NEW_UI_SETTING = {
   id: NEW_UI_SETTING_ID,
   category: ["Panorama Suite", "Editor", "New editor"],
   name: "Panorama Studio: new editor (in development)",
-  tooltip: "Opens Panorama Studio in the new editor while it is being built. It does not edit or save anything yet.",
+  tooltip: "Opens Panorama Studio in the new editor while it is being built. Closing it saves the edits; adding, painting and the Camera view are not there yet.",
   type: "boolean",
   defaultValue: false,
 };

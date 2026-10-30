@@ -108,7 +108,11 @@ function onPointerUp(event) {
     startEditing();
     return;
   }
-  if (sent !== start) emit("change", sent);
+  // A drag that ends where it began records nothing, and what it showed on the way is taken back (a Keyframe its
+  // first change put in, docs/timeline-ui.md "記録の規則"), as with Escape.
+  // The start may be off the drag's grid (an interpolated value): back on its grid point counts as where it began.
+  if (sent !== start && sent !== dragValue(start, limits.value)) emit("change", sent);
+  else emit("cancel");
 }
 
 function onPointerCancel(event) {

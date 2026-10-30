@@ -95,6 +95,24 @@ test("Escape during a drag puts the state back, Keyframe and all, and takes no U
   expect(problems).toEqual([]);
 });
 
+test("a drag that comes back to where it began puts the state back, Keyframe and all, and takes no Undo step", async ({ page }) => {
+  const problems = await open(page);
+  await scene(page, "playhead", 12);
+  const before = await scene(page, "state");
+  const field = row(page, "Position").locator('[data-field="position_x"]');
+  const box = await field.boundingBox();
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i += 1) await page.mouse.move(at.x + 5 * i, at.y);
+  for (let i = 9; i >= 0; i -= 1) await page.mouse.move(at.x + 5 * i, at.y);
+  await page.mouse.up();
+  expect(await scene(page, "state")).toEqual(before);
+  expect(await scene(page, "history")).toBe(0);
+  await expect(dot(page, "Position")).toHaveAttribute("data-state", "has");
+  expect(problems).toEqual([]);
+});
+
 test("a dot press keys only its row at the playhead, a second press removes it; the reset returns the default", async ({ page }) => {
   const problems = await open(page);
   await scene(page, "playhead", 6);
@@ -192,8 +210,12 @@ test("selecting Keyframes brings the Easing panel at the bottom: presets, a squa
   await scene(page, "select", { ids: ["sticker_1"], keyframes: { owner: "sticker_1", lane: null, frames: [0] } });
   const panel = page.locator(".pano-studio-easing");
   await expect(panel).toBeVisible();
-  await expect(panel.locator(".pano-studio-seg-item")).toHaveText(["Hold", "Linear", "Ease in-out", "Ease in", "Ease out"]);
-  await expect(panel.locator('[aria-checked="true"]')).toHaveText("Ease in-out");
+  // Icons only; the names are the tooltips and the accessible names (docs/studio-ui.md "Easing のパネル").
+  const presets = panel.locator(".pano-studio-seg-item");
+  await expect(presets).toHaveText(["", "", "", "", ""]);
+  expect(await presets.evaluateAll((items) => items.map((item) => [item.title, item.getAttribute("aria-label"), item.querySelectorAll("svg").length])))
+    .toEqual(["Hold", "Linear", "Ease in-out", "Ease in", "Ease out"].map((name) => [name, name, 1]));
+  await expect(panel.locator('[aria-checked="true"]')).toHaveAttribute("title", "Ease in-out");
   await expect(panel.locator(".pano-studio-easing-text")).toHaveValue("0.42, 0, 0.58, 1");
   await expect(panel.locator(".pano-studio-icon-btn")).toHaveAttribute("aria-disabled", "true");
   // The panel sits at the bottom of the inspector; the graph is square and as wide as the panel's content.

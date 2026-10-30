@@ -6,7 +6,8 @@ import test from "node:test";
 
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { projectPoint } from "../web_src/pano_space.js";
-import { DEFAULT_GROUND, GRID_COLORS, groundGrid } from "../web_src/studio/grid.js";
+import { GROUND_DEFAULT as DEFAULT_GROUND } from "../web_src/studio/defaults.js";
+import { GRID_COLORS, groundGrid } from "../web_src/studio/grid.js";
 import {
   OUTPUT_MAX_WIDTH,
   OUTPUT_MIN_WIDTH,

@@ -64,7 +64,10 @@ function onPointerUp(event) {
   if (!drag || event.pointerId !== drag.pointerId) return;
   const { start, sent } = drag;
   endDrag();
+  // A drag that ends where it began records nothing, and what it showed on the way is taken back (a Keyframe its
+  // first change put in, docs/timeline-ui.md "記録の規則"), as with Escape.
   if (sent !== start) emit("change", sent);
+  else emit("cancel");
 }
 
 function onDragKeydown(event) {

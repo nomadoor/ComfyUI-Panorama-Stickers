@@ -24,7 +24,6 @@ import { ICON } from "../icons.js";
 import { sceneStickerLabel } from "../pano_editor_state.js";
 import { portMediaFrames } from "../pano_port_media.js";
 import { FRAME_EPSILON } from "../pano_scene_eval.js";
-import { loadSceneState } from "../pano_scene_state.js";
 import {
   BACKGROUND_ROW,
   hasPainting,
@@ -36,18 +35,15 @@ import {
   timelineSpan,
 } from "../pano_timeline.js";
 import { upstreamLayerOverridden, upstreamRowId } from "../pano_upstream.js";
+import { cameraOf } from "./defaults.js";
 
 export const CAMERA_ROW = "camera";
 export const SCENE_ROW = "scene";
 
-// The default Camera a state without one (`camera` null) is read as: in Panorama mode at the origin, unturned
-// (docs/scene-state-v2.md "既定の Camera"). Until pano_scene_state.js holds that constant, this stands in for it and
-// is not written to the state by reading (docs/studio-node.md "入れる順番"); an edit of the Camera row writes it.
-const DEFAULT_CAMERA = loadSceneState({ version: 2, camera: { aspect: 16 / 9, projection: "erp" } }).camera;
-
-// The Camera the Camera row shows and edits: the state's, or the default Camera.
+// The Camera the Camera row shows and edits: the state's, or the default Camera (defaults.js; not written to the state
+// by reading, docs/studio-node.md "入れる順番"; an edit of the Camera row writes it).
 export function timelineCamera(state) {
-  return state.camera ?? structuredClone(DEFAULT_CAMERA);
+  return cameraOf(state);
 }
 
 // The Timeline's span (the output's length) for ctx, `openClip` counted as a Clip range without a duration.

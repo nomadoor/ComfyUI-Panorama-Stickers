@@ -1,11 +1,13 @@
 import { normalizePaintingState } from "./pano_paint_types.js";
 import { wrapYaw } from "./pano_math.js";
-import { DEG2RAD } from "./pano_camera_math.js";
+import { DEG2RAD, RAD2DEG, clamp } from "./pano_camera_math.js";
 import { deriveVerticalFovDeg, normalizeCutoutShotItem } from "./pano_cutout_view_math.js";
 import { lensAngle, lensFovKeepingCenter, lensFovLimit, lensRadius } from "./pano_lens.js";
 import { evaluateCamera, evaluateLane, evaluateSticker } from "./pano_scene_eval.js";
 import { SKY_STICKER_LANES, cameraAspect, freeStickerNumber, loadSceneState, rebaseSceneState, sceneStateText, stickerCounter, timelineFps } from "./pano_scene_state.js";
 import { laneNames, setLaneValue } from "./pano_timeline.js";
+import { NEW_STICKER_HFOV } from "./pano_space.js";
+import { createSharedStringHistory } from "./pano_paint_history.js";
 
 let parseStateJsonCache = { text: null, parsed: null };
 
@@ -155,6 +157,22 @@ export function makePanoEditorHistorySnapshot(state) {
   return snapshot;
 }
 
+// The steps an editor keeps. Each is the whole state as JSON, without its history and painting layer
+// (makePanoEditorHistorySnapshot).
+export const HISTORY_LIMIT = 80;
+
+export function historySnapshot(state) {
+  return JSON.stringify(makePanoEditorHistorySnapshot(state));
+}
+
+// The history of an editor opening on `state`, which is its first step. Undo, Redo and `entries` give the
+// steps as historySnapshot() JSON; `record(state)` records one.
+export function createEditorHistory(state) {
+  const history = createSharedStringHistory(HISTORY_LIMIT, { omit: HISTORY_SNAPSHOT_OMITS });
+  history.record(state);
+  return history;
+}
+
 // The state an undo or redo step restores from a history snapshot. The snapshot leaves out painting_layer,
 // which stays while the painting is the same: dropping it would upload the same layer again.
 export function restoredHistoryState(current, snapshot) {
@@ -241,6 +259,16 @@ export function skyStickerVfov(sticker, value, size) {
   const hfov = Math.min(179, Math.max(0.1, value.hFOV_deg)) * DEG2RAD;
   const vfov = 2 * Math.atan(Math.tan(hfov * 0.5) * (size.height / size.width)) / DEG2RAD;
   return Math.min(179, Math.max(0.1, vfov));
+}
+
+// The vFOV of a sky Sticker of `hFovDeg` (NEW_STICKER_HFOV when it is none) over an image of width x height px, at
+// lens curve 1: the image's aspect kept (a new Sticker's, a replaced image's, a port Sticker's media).
+export function stickerVfovFromAspect(hFovDeg, width, height) {
+  const w = Math.max(1, Number(width || 1));
+  const h = Math.max(1, Number(height || 1));
+  const hf = clamp(Number(hFovDeg || NEW_STICKER_HFOV), 0.1, 179) * DEG2RAD;
+  const vf = 2 * Math.atan(Math.tan(hf * 0.5) * (h / w));
+  return clamp(vf * RAD2DEG, 0.1, 179);
 }
 
 // The editor moves, scales and turns Stickers in the v1 pose fields. These map them to the Lanes
