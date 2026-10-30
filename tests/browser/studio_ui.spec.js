@@ -257,29 +257,54 @@ test("a click without moving opens the box for typing; Enter sends the typed val
   expect(problems).toEqual([]);
 });
 
-test("the Aspect slider snaps to its ticks, 1:1 sits in the middle, and the knob follows", async ({ page }) => {
+test("the Aspect slider lands only on the presets; free ratios come from the box and the next slider move snaps", async ({ page }) => {
   const { problems } = await open(page);
-  const slider = col(page, "dark").locator('[data-slider="aspect"]');
+  const dark = col(page, "dark");
+  const slider = dark.locator('[data-slider="aspect"]');
+  const value = dark.locator('[data-field="aspect"] .pano-studio-field-value');
   const box = await slider.boundingBox();
   const y = box.y + box.height / 2;
-  // A press a little off the middle snaps to 1:1.
+  const changes = async () => (await events(page)).filter((e) => e.name === "aspect:change").map((e) => e.value);
+  const knobPos = async () => {
+    const knob = await slider.locator(".pano-studio-slider-knob").boundingBox();
+    return (knob.x + knob.width / 2 - box.x) / box.width;
+  };
+  // A press a little off the middle lands on 1:1.
   await page.mouse.click(box.x + box.width * 0.515, y);
-  let log = await events(page);
-  expect(log.filter((e) => e.name === "aspect:change").map((e) => e.value)).toEqual([1]);
-  await expect(col(page, "dark").locator('[data-field="aspect"] .pano-studio-field-value')).toHaveText("1:1");
-  // A press near the 3:4 tick snaps to it; between ticks the ratio is free.
-  const pos34 = 0.5 + Math.log2(4 / 3) / (2 * Math.log2(16 / 9));
-  await page.mouse.click(box.x + box.width * (pos34 + 0.01), y);
-  log = await events(page);
-  expect(log.filter((e) => e.name === "aspect:change").map((e) => e.value)).toEqual([3 / 4]);
-  await page.mouse.click(box.x + box.width * 0.07, y);
-  log = await events(page);
-  const free = log.filter((e) => e.name === "aspect:change").map((e) => e.value);
-  expect(free.length).toBe(1);
-  expect(free[0]).toBeGreaterThan(3 / 2);
-  expect(free[0]).toBeLessThan(16 / 9);
-  const knob = await slider.locator(".pano-studio-slider-knob").boundingBox();
-  expect(Math.abs(knob.x + knob.width / 2 - (box.x + box.width * 0.07))).toBeLessThan(2);
+  expect(await changes()).toEqual([1]);
+  await expect(value).toHaveText("1:1");
+  // A press between presets lands on the nearest one, never between: 0.09 is nearer 3:2 (0.148) than 16:9 (0).
+  const pos32 = 0.5 - Math.log2(3 / 2) / (2 * Math.log2(16 / 9));
+  await page.mouse.click(box.x + box.width * 0.09, y);
+  expect(await changes()).toEqual([3 / 2]);
+  expect(Math.abs((await knobPos()) - pos32)).toBeLessThan(0.01);
+  // A drag across the slider sends only preset ratios.
+  await page.mouse.move(box.x + box.width * 0.2, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i += 1) await page.mouse.move(box.x + box.width * (0.2 + i * 0.03), y);
+  await page.mouse.up();
+  const presets = [16 / 9, 3 / 2, 4 / 3, 1, 3 / 4, 2 / 3, 9 / 16];
+  const inputs = (await events(page)).filter((e) => e.name === "aspect:input").map((e) => e.value);
+  expect(inputs.length).toBeGreaterThan(1);
+  for (const v of inputs) expect(presets).toContain(v);
+  // The arrow keys step preset to preset.
+  await page.mouse.click(box.x + box.width * 0.5, y);
+  await events(page);
+  await slider.press("ArrowRight");
+  await slider.press("ArrowRight");
+  await slider.press("ArrowLeft");
+  expect(await changes()).toEqual([3 / 4, 2 / 3, 3 / 4]);
+  // A free ratio typed in the box shows the knob at its place; the next key or press snaps to a preset.
+  const field = dark.locator('[data-field="aspect"]');
+  await field.click();
+  await field.locator("input").fill("1.2");
+  await field.locator("input").press("Enter");
+  await expect(value).toHaveText("1.20");
+  const pos12 = 0.5 - Math.log2(1.2) / (2 * Math.log2(16 / 9));
+  expect(Math.abs((await knobPos()) - pos12)).toBeLessThan(0.01);
+  await events(page);
+  await slider.press("ArrowRight");
+  expect(await changes()).toEqual([1]);
   expect(problems).toEqual([]);
 });
 

@@ -494,7 +494,8 @@
   justify-content: center;
 }
 
-/* Number field: no fill until hovered, the arrows cursor; dragged left and right, clicked to type. */
+/* Number field: no fill until hovered, the arrows cursor; dragged left and right, clicked to type. Its content sits
+   at the left, axis letter, value, unit, so values line up whatever their unit (docs/studio-ui.md "欄"). */
 .pano-studio-field {
   display: flex;
   align-items: center;
@@ -535,11 +536,11 @@
 }
 
 .pano-studio-field-value {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--studio-fg);
   font-size: var(--studio-text-md);
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
 }
 
@@ -560,7 +561,7 @@
   color: var(--studio-fg);
   font-size: var(--studio-text-md);
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: left;
   cursor: text;
   user-select: text;
 }
@@ -961,7 +962,6 @@
 .pano-studio-tl-field .pano-studio-field-value,
 .pano-studio-tl-field .pano-studio-field-input {
   font-size: var(--studio-text-sm);
-  text-align: left;
 }
 
 .pano-studio-tl-field .pano-studio-field-input {
@@ -1821,4 +1821,67 @@
   .pano-studio-notice-ring {
     animation: none;
   }
+}
+
+/* --- The Camera card's mode tiles (docs/design.md "大きさ"; the mock mode-3.html M1): two tiles under the heading,
+   a picture of the shape and the name below. Unchosen: no fill, the secondary text; hover: the field fill; chosen:
+   the pressed fill and the main text. No line around them. The hover eases by the rule of the Hover section. */
+.pano-studio-mode-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+
+.pano-studio-mode-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 68px;
+  padding: 10px 8px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--studio-fg-2);
+  cursor: pointer;
+}
+
+.pano-studio-mode-tile:hover {
+  background: var(--studio-fill);
+  color: var(--studio-fg);
+}
+
+.pano-studio-mode-tile.is-active {
+  background: var(--studio-fill-active);
+  color: var(--studio-fg);
+}
+
+.pano-studio-mode-tile[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.pano-studio-mode-tile[aria-disabled="true"]:not(.is-active):hover {
+  background: transparent;
+  color: var(--studio-fg-2);
+}
+
+.pano-studio-mode-pic {
+  flex: none;
+  width: 64px;
+  height: 32px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.pano-studio-mode-pic .is-thin {
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.pano-studio-mode-name {
+  font-size: var(--studio-text-sm);
+  font-weight: var(--studio-weight-head);
 }

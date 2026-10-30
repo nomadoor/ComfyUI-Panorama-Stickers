@@ -1,10 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from "vue";
-import { pointerPos, posToValue, snapPos, valueToPos } from "../../studio/ui_slider.js";
+import { pointerPos, posToValue, valueToPos } from "../../studio/ui_slider.js";
 
 // A slider of the inspector (docs/studio-ui.md "行の格子"; looks: docs/design.md): a thin line, a round knob, the
 // part left of the knob filled. A press on the line moves the knob there and the drag goes on; Escape during the
-// drag puts the value back. Arrow keys step it.
+// drag puts the value back. Arrow keys step it. A slider given `snapTo` lands only where it says (the Aspect slider's
+// presets), and one given `stepTo` steps its keys there.
 //
 // Presentational: `value` in; `input` (each change), `change` (once when a drag or a key press ends with a different
 // value: one Undo step), `cancel` out. `toPos`/`fromPos` replace the linear mapping (the Aspect slider's log2).
@@ -14,10 +15,13 @@ const props = defineProps({
   max: { type: Number, default: 1 },
   // The value an arrow key moves; default 1/100 of the range.
   step: { type: Number, default: 0 },
-  // Positions (0..1) of ticks, the one at `midTick` drawn taller; the knob snaps to a tick within `snap` (0..1).
+  // Positions (0..1) of ticks, the one at `midTick` drawn taller.
   ticks: { type: Array, default: () => [] },
   midTick: { type: Number, default: -1 },
-  snap: { type: Number, default: 0 },
+  // The position a press or a drag at a position lands on (default: where it is), and the value an arrow key in
+  // direction ±1 moves to from a value (null: none that way; default: `step` along the line).
+  snapTo: { type: Function, default: null },
+  stepTo: { type: Function, default: null },
   fill: { type: Boolean, default: true },
   toPos: { type: Function, default: null },
   fromPos: { type: Function, default: null },
@@ -39,7 +43,8 @@ let drag = null;
 
 function moveTo(clientX) {
   const rect = root.value.getBoundingClientRect();
-  const next = toValue(snapPos(pointerPos(clientX, rect), props.ticks, props.snap));
+  const at = pointerPos(clientX, rect);
+  const next = toValue(props.snapTo ? props.snapTo(at) : at);
   if (next === drag.sent) return;
   drag.sent = next;
   live.value = next;
@@ -98,18 +103,13 @@ function onKeydown(event) {
   if (!dir) return;
   event.preventDefault();
   let next;
-  if (props.ticks.length && props.fromPos) {
-    // A mapped slider with ticks (Aspect) steps from tick to tick.
-    const here = pos.value;
-    const ticks = [0, ...props.ticks, 1].sort((a, b) => a - b);
-    const target = dir > 0 ? ticks.find((t) => t > here + 1e-6) : [...ticks].reverse().find((t) => t < here - 1e-6);
-    if (target == null) return;
-    next = toValue(target);
+  if (props.stepTo) {
+    next = props.stepTo(props.value, dir);
   } else {
     const step = props.step || (props.max - props.min) / 100;
     next = Math.min(props.max, Math.max(props.min, props.value + dir * step));
   }
-  if (next === props.value) return;
+  if (next == null || next === props.value) return;
   emit("input", next);
   emit("change", next);
 }
