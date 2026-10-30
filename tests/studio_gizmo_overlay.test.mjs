@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DEFAULT_VIEW_HFOV, gizmoDragLanes, projectPoint, sceneTransform, spaceCamera } from "../web_src/pano_space.js";
-import { GIZMO_LOOK, gizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit } from "../web_src/studio/gizmo_overlay.js";
+import { GIZMO_LOOK, gizmoDrag, gizmoGuideSegment, gizmoHandles, gizmoHit, planeHit } from "../web_src/studio/gizmo_overlay.js";
 import { quaternionToRotation } from "../web_src/pano_world.js";
 
 const W = 1000;
@@ -151,4 +151,68 @@ test("an axis drag carries its guide line through the grabbed center along the a
   const [a, b] = gizmoGuideSegment(drag.guide, camera);
   assert.ok(a[0] < -100 && b[0] > 100 && a[1] === 0 && a[2] === -5, "it reaches far both ways");
   assert.equal(gizmoDrag(shown, "center", camera, handles.center, W, H).guide, undefined);
+});
+
+// Move's plane squares (docs/studio-ui.md "ギズモ" "Move の平面の取っ手").
+const planeOf = (handles, name) => handles.planes.find((plane) => plane.name === name);
+const middle = (points) => ({ x: points.reduce((sum, p) => sum + p.x, 0) / points.length, y: points.reduce((sum, p) => sum + p.y, 0) / points.length });
+
+test("Move: three plane squares between the axes, GIZMO_LOOK.planeFrom to planeTo of the reach; one seen edge on hides; Rotate and Scale have none", () => {
+  const handles = gizmoHandles(gizmo("translate"), camera, W, H);
+  const xy = planeOf(handles, "xy");
+  assert.equal(xy.normal, "z", "XY is colored by Z, the axis across it");
+  assert.equal(planeOf(handles, "yz").normal, "x");
+  assert.equal(planeOf(handles, "xz").normal, "y");
+  // Seen face on from the view down -Z: a square right of and above the center.
+  assert.ok(xy.shown);
+  const xs = xy.points.map((p) => p.x - handles.center.x);
+  const ys = xy.points.map((p) => handles.center.y - p.y);
+  assert.ok(close(Math.min(...xs), GIZMO_LOOK.planeFrom * GIZMO_LOOK.reach, 0.5) && close(Math.max(...xs), GIZMO_LOOK.planeTo * GIZMO_LOOK.reach, 0.5));
+  assert.ok(close(Math.min(...ys), GIZMO_LOOK.planeFrom * GIZMO_LOOK.reach, 0.5) && close(Math.max(...ys), GIZMO_LOOK.planeTo * GIZMO_LOOK.reach, 0.5));
+  // YZ and XZ run along the line of sight (their normals are across it): hidden, and not hit.
+  assert.equal(planeOf(handles, "yz").shown, false);
+  assert.equal(planeOf(handles, "xz").shown, false);
+  const fromAbove = gizmoHandles(gizmo("translate"), oblique, W, H);
+  assert.ok(fromAbove.planes.every((plane) => plane.shown), "an oblique view sees all three");
+  assert.deepEqual(gizmoHandles(gizmo("rotate"), oblique, W, H).planes, []);
+  assert.deepEqual(gizmoHandles(gizmo("scale"), oblique, W, H).planes, []);
+});
+
+test("a point inside a plane square hits it, after the balls and the center dot and before the bars", () => {
+  const handles = gizmoHandles(gizmo("translate"), oblique, W, H);
+  for (const name of ["xy", "yz", "xz"]) assert.equal(gizmoHit(handles, middle(planeOf(handles, name).points)), name);
+  assert.equal(gizmoHit(handles, handles.center), "center");
+  const x = axisOf(handles, "x").end;
+  assert.equal(gizmoHit(handles, x), "x");
+});
+
+test("a drag of the XZ square moves the object on the level plane through its center only; Y never changes", () => {
+  const shown = gizmo("translate");
+  const handles = gizmoHandles(shown, oblique, W, H);
+  const grip = middle(planeOf(handles, "xz").points);
+  const drag = gizmoDrag(shown, "xz", oblique, grip, W, H);
+  assert.ok(drag);
+  assert.equal(drag.guide, undefined, "no axis guide line");
+  for (const to of [{ x: grip.x + 120, y: grip.y + 40 }, { x: grip.x - 80, y: grip.y - 30 }]) {
+    const moved = drag.move(oblique, to, W, H);
+    assert.ok(close(moved.position[1], 0), "Y stays");
+    assert.ok(Math.hypot(moved.position[0], moved.position[2] + 5) > 0.05, "it moved on the plane");
+    // The grabbed point keeps under the pointer: the point of the plane under it moved by as much as the object.
+    const lanes = gizmoDragLanes("translate", value, shown.transform, moved);
+    assert.ok(close(lanes.position[1], 0));
+  }
+  assert.ok(close(drag.move(oblique, grip, W, H).position[0], 0), "back where it was grabbed: back where it started");
+  // XY keeps Z, YZ keeps X.
+  const xy = gizmoDrag(shown, "xy", oblique, middle(planeOf(handles, "xy").points), W, H).move(oblique, { x: grip.x + 50, y: grip.y - 50 }, W, H);
+  assert.ok(close(xy.position[2], -5));
+  const yz = gizmoDrag(shown, "yz", oblique, middle(planeOf(handles, "yz").points), W, H).move(oblique, { x: grip.x + 50, y: grip.y - 50 }, W, H);
+  assert.ok(close(yz.position[0], 0));
+});
+
+test("planeHit: the ray's point on the plane, none along it or behind the near plane", () => {
+  const ray = { origin: [0, 0, 0], direction: [0, -1, -1] };
+  const at = planeHit(ray, [0, -2, 0], [0, 1, 0], 0.1);
+  assert.ok(close(at[1], -2) && close(at[2], -2));
+  assert.equal(planeHit({ origin: [0, 0, 0], direction: [1, 0, 0] }, [0, -2, 0], [0, 1, 0]), null);
+  assert.equal(planeHit({ origin: [0, 0, 0], direction: [0, 1, 0] }, [0, -2, 0], [0, 1, 0]), null);
 });

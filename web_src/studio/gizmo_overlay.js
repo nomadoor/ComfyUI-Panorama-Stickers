@@ -7,7 +7,7 @@
 import { projectPoint, uniformScale } from "../pano_space.js";
 import { placeDirection } from "../pano_editor_view.js";
 import { quaternionToRotation, rotationToQuaternion } from "../pano_world.js";
-import { distanceToSegment, focalPixels, viewForward } from "./world_guides.js";
+import { distanceToSegment, focalPixels, pointInPolygon, viewForward } from "./world_guides.js";
 
 // The gizmo's colors (docs/design.md "新しい UI の見た目": X coral, Y lime, Z ice), the handle under the pointer and
 // the one dragged white.
@@ -31,7 +31,22 @@ export const GIZMO_LOOK = Object.freeze({
   lineHit: 6,
   guideWidth: 1.5,
   guideAlpha: 0.8,
+  // Move's plane squares: from GIZMO_PLANE_FROM to GIZMO_PLANE_TO of the reach along both of their axes, filled in the
+  // color of the axis across the plane at planeAlpha with a planeLine px edge; lit, white at planeActiveAlpha.
+  planeFrom: 0.28,
+  planeTo: 0.52,
+  planeAlpha: 0.4,
+  planeActiveAlpha: 0.6,
+  planeLine: 1,
 });
+
+// Move's plane squares (docs/studio-ui.md "ギズモ" "Move の平面の取っ手"): each named by its two axes, colored by the axis
+// across it (Blender's way: XY the Z color, YZ the X color, XZ the Y color).
+export const GIZMO_PLANES = Object.freeze([
+  Object.freeze({ name: "xy", axes: [0, 1], normal: "z" }),
+  Object.freeze({ name: "yz", axes: [1, 2], normal: "x" }),
+  Object.freeze({ name: "xz", axes: [0, 2], normal: "y" }),
+]);
 
 const RING_STEPS = 64;
 const AXIS_NAMES = ["x", "y", "z"];
@@ -59,8 +74,9 @@ function unitsPerPixel(camera, depth, height) {
 // { position, quaternion, scale }), center (the World point it sits on: the object's guide's center, world_guides.js
 // worldGuideItems; the transform's position without one) }) on a width x height CSS px stage seen from `camera` (a
 // stageCamera()), or null when its center is not in front: { mode, center: { x, y }, length (World units of the reach), axes: [{ name, dir,
-// end: { x, y }, depth, shown }], rings: [{ name, dir, points: [{ x, y, world, front }] }] }. Move and Rotate use the
-// World axes, Scale the object's own.
+// end: { x, y }, depth, shown }], rings: [{ name, dir, points: [{ x, y, world, front }] }], planes (Move only):
+// [{ name ("xy" | "yz" | "xz"), normal (the name of the axis across it), points (its 4 screen corners), shown }] }.
+// Move and Rotate use the World axes, Scale the object's own.
 export function gizmoHandles(gizmo, camera, width, height) {
   if (!gizmo) return null;
   const centerWorld = pivotOf(gizmo);
@@ -97,12 +113,25 @@ export function gizmoHandles(gizmo, camera, width, height) {
     }
     return { name: AXIS_NAMES[index], dir, points };
   });
-  return { mode: gizmo.mode, center: { x: center.x, y: center.y }, length, axes, rings };
+  const sight = unit(sub(centerWorld, eye));
+  const planes = gizmo.mode !== "translate" ? [] : GIZMO_PLANES.map((plane) => {
+    const [a, b] = plane.axes.map((index) => dirs[index]);
+    const across = dirs[AXIS_NAMES.indexOf(plane.normal)];
+    const near = GIZMO_LOOK.planeFrom * length;
+    const far = GIZMO_LOOK.planeTo * length;
+    const corners = [[near, near], [far, near], [far, far], [near, far]]
+      .map(([u, v]) => projectPoint(camera, add(centerWorld, add(scale(a, u), scale(b, v))), width, height));
+    // Seen edge on, the square is a sliver: it hides, as an axis along the view does.
+    const shown = corners.every(Boolean) && Math.abs(dot(across, sight)) >= GIZMO_LOOK.hideRatio;
+    return { name: plane.name, normal: plane.normal, points: shown ? corners.map((p) => ({ x: p.x, y: p.y })) : null, shown };
+  });
+  return { mode: gizmo.mode, center: { x: center.x, y: center.y }, length, axes, rings, planes };
 }
 
 // The handle of `handles` (gizmoHandles) that the CSS px point `point` hits: "x", "y", "z", "center" (Move's center
-// dot) or null. The balls, squares and the center dot come before the bars and rings; of several, the nearest. A Scale
-// bar is hit only farther than GIZMO_LOOK.pointHit from the center (its drag measures from the center).
+// dot), "xy", "yz", "xz" (Move's plane squares) or null. The balls, Scale's squares and the center dot come first,
+// then a plane square the point is inside, then the bars and rings; of several, the nearest. A Scale bar is hit only
+// farther than GIZMO_LOOK.pointHit from the center (its drag measures from the center).
 export function gizmoHit(handles, point) {
   if (!handles) return null;
   let best = null;
@@ -114,6 +143,7 @@ export function gizmoHit(handles, point) {
   }
   if (handles.mode === "translate") consider("center", Math.hypot(point.x - handles.center.x, point.y - handles.center.y), GIZMO_LOOK.pointHit);
   if (best) return best.name;
+  for (const plane of handles.planes ?? []) if (plane.shown && pointInPolygon(point, plane.points)) return plane.name;
   if (handles.mode === "rotate") {
     for (const ring of handles.rings) {
       ring.points.forEach((p, index) => {
@@ -145,6 +175,16 @@ function lineParameter(origin, dir, { origin: from, direction }, near) {
   const along = (dot(d, w) - b * dot(dir, w)) / denominator;
   if (!(along > near)) return null;
   return (b * dot(d, w) - dot(dir, w)) / denominator;
+}
+
+// Where the ray meets the plane through `origin` across `normal` (one unit long), or null when it runs nearly along
+// the plane or meets it nearer than `near` along the ray.
+export function planeHit({ origin: from, direction }, origin, normal, near = 0) {
+  const d = unit(direction);
+  const along = dot(d, normal);
+  if (Math.abs(along) < 1e-6) return null;
+  const t = dot(sub(origin, from), normal) / along;
+  return t > near ? add(from, scale(d, t)) : null;
 }
 
 function axisAngle(dir, angle) {
@@ -195,6 +235,22 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
       name,
       move(view, next, w, h) {
         const at = hitPlane(ray(view, next, w, h));
+        return at ? result({ position: add(start.position, sub(at, grabbed)) }) : null;
+      },
+    };
+  }
+  const plane = GIZMO_PLANES.find((entry) => entry.name === name);
+  if (handles.mode === "translate" && plane) {
+    // On the plane through the pivot across the plane's normal axis (a ray-plane intersection), from where it was
+    // grabbed; nothing while the ray runs along the plane or meets it behind the near plane.
+    const normal = WORLD_AXES[AXIS_NAMES.indexOf(plane.normal)];
+    const hitPlane = (r, near) => planeHit(r, pivot, normal, near);
+    const grabbed = hitPlane(ray(camera, point, width, height), camera.near);
+    if (!grabbed) return null;
+    return {
+      name,
+      move(view, next, w, h) {
+        const at = hitPlane(ray(view, next, w, h), view.near);
         return at ? result({ position: add(start.position, sub(at, grabbed)) }) : null;
       },
     };
