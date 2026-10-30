@@ -386,6 +386,9 @@ export function setStickerOpacity(sticker, frame, opacity) {
   setLaneValue(sticker, "opacity", frame - (sticker.clip.start - sticker.clip.in), opacity);
 }
 
+// The smallest scale the inspector sets on a world Sticker (its scale has no upper limit).
+export const WORLD_MIN_SCALE = 0.01;
+
 // A world Sticker at a Timeline frame, in the inspector's fields (opacity in percent).
 export function worldStickerFields(sticker, frame) {
   const value = evaluateSticker(sticker, frame);

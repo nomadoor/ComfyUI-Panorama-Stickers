@@ -10,6 +10,7 @@ import {
   cameraLensFields,
   normalizeCoverageValue,
   sceneStickerLabel,
+  WORLD_MIN_SCALE,
   worldStickerFields,
 } from "../pano_editor_state.js";
 import {
@@ -36,7 +37,7 @@ import { evaluateSticker } from "../pano_scene_eval.js";
 import { ownerTimed } from "../pano_timeline.js";
 import { isUpstreamSticker, upstreamOverrideOf, upstreamStickerEditable } from "../pano_upstream.js";
 import { shownSpaceMode } from "../pano_view_transition.js";
-import { EXTERNAL_STICKER_ID, PAINT_COLOR_SWATCHES, WORLD_MIN_SCALE } from "./constants.js";
+import { EXTERNAL_STICKER_ID, PAINT_COLOR_SWATCHES } from "./constants.js";
 import { colorToCss, colorsApproximatelyEqual, formatParamValue, hsv01ToRgb, rgb01ToHsv } from "./helpers.js";
 
 export function createPanels(deps) {

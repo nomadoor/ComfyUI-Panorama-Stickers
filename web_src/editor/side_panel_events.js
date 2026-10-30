@@ -8,11 +8,12 @@ import {
   setCameraField,
   setStickerOpacity,
   setWorldStickerField,
+  WORLD_MIN_SCALE,
 } from "../pano_editor_state.js";
 import { clamp, wrapYaw } from "../pano_math.js";
 import { ANIMATION_DEFAULT, ANIMATION_SPEED_MAX, ANIMATION_SPEED_MIN } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
-import { WORLD_MIN_SCALE, WORLD_UNLIMITED_FIELDS } from "./constants.js";
+import { WORLD_UNLIMITED_FIELDS } from "./constants.js";
 
 export function createSidePanelEvents(deps) {
   const {

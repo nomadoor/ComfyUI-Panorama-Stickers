@@ -30,6 +30,17 @@ function keyAt(lane, frame) {
   return lane.keyframes.find((item) => Math.abs(item.frame - frame) <= FRAME_EPSILON);
 }
 
+// The Easing presets of the inspector's panel (docs/timeline-ui.md "Easing"): the cubic-bezier curves, `auto` and
+// `hold`, in the order the old UI's panel shows them. The panels show their own selection of them.
+export const EASING_PRESETS = Object.freeze([
+  Object.freeze({ label: "Ease in-out", easing: Object.freeze([...DEFAULT_EASING]) }),
+  Object.freeze({ label: "Linear", easing: Object.freeze([0, 0, 1, 1]) }),
+  Object.freeze({ label: "Ease in", easing: Object.freeze([0.42, 0, 1, 1]) }),
+  Object.freeze({ label: "Ease out", easing: Object.freeze([0, 0, 0.58, 1]) }),
+  Object.freeze({ label: "Auto", easing: "auto" }),
+  Object.freeze({ label: "Hold", easing: "hold" }),
+]);
+
 // Adds a Keyframe. Between two Keyframes it takes the Easing of the segment it splits, so both halves
 // keep it. Before the first it has the default; after the last, the former last Keyframe's stored
 // Easing now governs the new segment and the new Keyframe has the default.
@@ -71,12 +82,17 @@ export function rowLaneNames(owner) {
   return laneNames(owner).filter((name) => !ROW_EXCLUDED_LANES.has(name));
 }
 
-// The row's key button: every Lane of owner gets a Keyframe at frame holding its current value. This
+// Each of the Lanes `names` of owner without a Keyframe at frame gets one there holding its current value. This
 // also makes the first Keyframe of a Lane.
-export function keyAllLanes(owner, frame) {
-  for (const name of rowLaneNames(owner)) {
+export function keyLanes(owner, names, frame) {
+  for (const name of names) {
     if (!keyAt(owner[name], frame)) insertKeyframe(owner[name], frame, evaluateLane(owner, name, frame));
   }
+}
+
+// The row's key button: every Lane of the row (rowLaneNames) gets a Keyframe at frame (keyLanes).
+export function keyAllLanes(owner, frame) {
+  keyLanes(owner, rowLaneNames(owner), frame);
 }
 
 // The frames of a row's Keyframes, one pin per frame: `full` when every Lane has a Keyframe there.

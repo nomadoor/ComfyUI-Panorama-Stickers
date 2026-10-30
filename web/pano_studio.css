@@ -632,3 +632,206 @@
   opacity: 0.35;
   cursor: default;
 }
+
+/* Inspector (docs/studio-ui.md "インスペクタ"): the top row with the node's name and ✕, the cards scrolling without a
+   scrollbar, and the Easing panel laid over the bottom while Keyframes are selected. It fills the column the editor
+   gives it (320px wide, docs/design.md "大きさ"). */
+.pano-studio-inspector {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--studio-inspector-w);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pano-studio-inspector-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--studio-line);
+}
+
+.pano-studio-inspector-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pano-studio-inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.pano-studio-inspector-body::-webkit-scrollbar {
+  display: none;
+}
+
+.pano-studio-inspector-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* A sub-heading inside a card (a 3D's Animation). */
+.pano-studio-card-subhead {
+  margin-top: 6px;
+  color: var(--studio-fg-2);
+  font-size: var(--studio-text-xs);
+  font-weight: var(--studio-weight-head);
+}
+
+/* A text button inside a row (Set ground): a part, fully round, no fill until hovered. */
+.pano-studio-text-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: var(--studio-field-h);
+  padding: 0 10px;
+  border: 1px solid var(--studio-line-strong);
+  border-radius: var(--studio-r-part);
+  background: transparent;
+  font-size: var(--studio-text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pano-studio-text-btn:hover {
+  background: var(--studio-fill-hover);
+}
+
+.pano-studio-text-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The row's seat kept for a later button (the ground's estimate). */
+.pano-studio-row-seat {
+  min-width: 0;
+}
+
+/* A choice by name across columns 1-3 (a 3D's Clip). */
+.pano-studio-select {
+  width: 100%;
+  height: var(--studio-field-h);
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--studio-r-field);
+  background: var(--studio-fill);
+  color: var(--studio-fg);
+  font: inherit;
+  font-size: var(--studio-text-md);
+}
+
+/* Easing panel: laid over the inspector's bottom, it fades in with a 6px rise (docs/design.md "動き"); its height
+   never animates. The graph is square. */
+.pano-studio-easing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--studio-line);
+  background: var(--studio-panel);
+}
+
+.pano-studio-easing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  font-size: var(--studio-text-md);
+  font-weight: var(--studio-weight-head);
+}
+
+.pano-studio-easing-presets .pano-studio-seg-item {
+  padding: 0 2px;
+  font-size: var(--studio-text-xs);
+}
+
+.pano-studio-easing-graph {
+  display: block;
+  align-self: center;
+  overflow: visible;
+  touch-action: none;
+}
+
+.pano-studio-easing-square {
+  fill: none;
+  stroke: var(--studio-line);
+}
+
+.pano-studio-easing-diagonal {
+  stroke: var(--studio-line);
+  stroke-dasharray: 3 3;
+}
+
+.pano-studio-easing-curve {
+  fill: none;
+  stroke: var(--studio-fg);
+  stroke-width: 2;
+}
+
+.pano-studio-easing-arm {
+  stroke: var(--studio-fg-2);
+}
+
+.pano-studio-easing-handle {
+  fill: var(--studio-panel);
+  stroke: var(--studio-ice);
+  stroke-width: 2;
+  cursor: grab;
+}
+
+.pano-studio-easing.is-disabled .pano-studio-easing-handle {
+  cursor: default;
+}
+
+.pano-studio-easing.is-disabled .pano-studio-easing-graph {
+  opacity: 0.4;
+}
+
+.pano-studio-easing-text {
+  width: 100%;
+  height: var(--studio-field-h);
+  padding: 0 8px;
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-r-field);
+  outline: none;
+  background: transparent;
+  color: var(--studio-fg);
+  font-size: var(--studio-text-md);
+  user-select: text;
+}
+
+.pano-studio-easing-text:focus {
+  border-color: var(--studio-line-strong);
+  background: var(--studio-fill);
+}
+
+.pano-studio-easing-text:disabled {
+  opacity: 0.4;
+}
+
+.pano-studio-easing-fade-enter-active,
+.pano-studio-easing-fade-leave-active {
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+}
+
+.pano-studio-easing-fade-enter-from,
+.pano-studio-easing-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}

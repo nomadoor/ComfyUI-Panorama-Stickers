@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from "vue";
+import { EASING_PRESETS } from "../pano_timeline.js";
 
 // Easing of the selected segments (buildEasingModel): a preset or edited cubic-bezier, drawn in the
 // unit square (time across, progress up) with two draggable control points, `auto` or `hold`. When the
@@ -9,14 +10,7 @@ const emit = defineEmits(["timeline"]);
 
 const SIZE = 132;
 const PAD = 14;
-const PRESETS = [
-  { label: "Ease in-out", easing: [0.42, 0, 0.58, 1] },
-  { label: "Linear", easing: [0, 0, 1, 1] },
-  { label: "Ease in", easing: [0.42, 0, 1, 1] },
-  { label: "Ease out", easing: [0, 0, 0.58, 1] },
-  { label: "Auto", easing: "auto" },
-  { label: "Hold", easing: "hold" },
-];
+const PRESETS = EASING_PRESETS;
 
 const svgRef = ref(null);
 const curve = computed(() => (Array.isArray(props.model?.easing) ? props.model.easing : null));
