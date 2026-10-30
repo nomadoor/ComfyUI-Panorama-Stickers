@@ -37,12 +37,12 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | （新しい UI、未実装）`web_src/studio/camera_ui.js`、描く部品は `pano_three_view.js`（`docs/threejs-spark-integration.md`） | （未作成）`tests/studio_camera_ui.test.mjs`、`tests/browser/` の場面 |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rollRulerWidth`・`rulerMarks`・`rulerDragValue`、目盛りの縮尺 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`。ステージへの組み込み、タイムコードの席、構図の目安とそのスイッチは（未実装） | `tests/studio_frame_layout.test.mjs`、`tests/browser/studio_camera_tab.spec.js` |
 | Add のアイコンと、画像を Add したときの Sky / World の二択、ドラッグ中の印の見た目とラベル | — | （新しい UI、未実装）`web_src/components/studio/StudioPlaceChoice.vue`、`web_src/studio/landing.js`（着く所は `docs/space-and-view.md`） | （未作成）`tests/browser/` の場面 |
-| 読み込み中と空の画面、一行の知らせ | — | `web_src/components/studio/StudioNotice.vue`（どれを出すかはシェルの `StudioEditor.vue`）。読み込み中と空の画面の文言は（未実装） | `tests/browser/studio_editor.spec.js` |
+| 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。上流の警告と 3D ファイルの読み込みの失敗の知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
 | タイムラインのバーの並びと、行の頭の並び | — | `web_src/components/studio/StudioTimelineBar.vue`・`StudioTimelineHead.vue`（組み立ては `StudioTimeline.vue`、データは `web_src/studio/timeline_model.js`） | `tests/browser/studio_timeline.spec.js` |
 | ショートカットの一覧の中身 | — | （新しい UI、未実装）`web_src/components/studio/StudioShortcuts.vue` | （未作成）`tests/studio_ui_model.test.mjs` |
-| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2〜4 段（地面を拾う待ち、Add の二択、ショートカットの一覧）は、その部品がまだ無い（未実装） | `tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
+| 閉じ方 | — | `web_src/components/studio/StudioEditor.vue`、Escape を受けるのは `web_src/studio/stage.js`（ドキュメントの捕捉で受け、欄のドラッグの Escape は先に欄が取る）、枠の外のクリックは `web_src/studio/backdrop.js` `createBackdropClose`、閉じるのと保存は `web_src/studio/editor.js`（書く文字は `web_src/studio/session.js` `stateText`、下の部品 `pano_editor_state.js` `editorStateWrite`）、Escape の順の 5・6 段は `session.js` `escape`、下の部品 `pano_node_bridge.js`。Escape の順の表の 2〜4 段（地面を拾う待ち、Add の二択、ショートカットの一覧）は、その部品がまだ無い（未実装） | `tests/studio_backdrop.test.mjs`、`tests/browser/studio_editor.spec.js`、`tests/browser/studio_ui.spec.js`（欄のドラッグの Escape）、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | Preview のウィンドウの画面 | — | （新しい UI、未実装）`web_src/components/studio/StudioPreviewWindow.vue` | （未作成）`tests/browser/` の場面 |
-| Output の小窓（折りたたみ、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`。中の絵（Panorama モードの ERP、Frame モードの絵）は（未実装。`docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
+| Output の小窓（折りたたみとその動き、大きさ、記憶） | — | `web_src/components/studio/StudioOutputPreview.vue`、大きさと記憶は `web_src/studio/layout.js` `outputWindowSize`・`loadOutputWindow`・`saveOutputWindow`。中の絵（Panorama モードの ERP、Frame モードの絵）は（未実装。`docs/threejs-spark-integration.md`） | `tests/studio_stage_view.test.mjs`、`tests/browser/studio_editor.spec.js` |
 
 ## 目指すもの
 
@@ -69,7 +69,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | 窓 | ステージの窓（左上）、インスペクタの窓（右、幅 320px、上から下まで）、タイムラインの窓（ステージの窓の下だけ）。間 8px、角丸 12px、縁の線なし（地の色の段だけで分ける） |
 | ステージの上に浮かせる部品 | ステージの窓の端から 16px。地は 85%、縁の線なし |
 | 浮かせる部品の内側の余白 | 左の列・右の中央の列・右下・下の中央のバー 6px（下のバーの左は 14px）、左上のタブ 4px |
-| 左上のタブ | 3D・Camera を同じ幅 96px・高さ 34px、文字 13px、アイコン 18px |
+| 左上のタブ | 3D・Camera を同じ幅 108px（Camera のアイコンと文字の左右に約 16px）・高さ 34px、文字 13px、アイコン 18px |
 | タイムラインの高さ | 既定 176px（覚えた高さがあればそれ）。最小 120px、ステージは最小 240px |
 
 | 区画 | 置くもの |
@@ -80,7 +80,7 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | ステージの右（上下の中央） | 視点の操作のつまみ（球・パン・前後）を縦に並べ、その下に「?」（ショートカットの一覧） |
 | ステージの右下 | ボタンの群（3D タブ：Frame Selected・Reset View・グリッドのボタン。Camera タブ：同じ席に Frame Selected・Reset View（無効）・グリッドのボタン・構図の目安のスイッチ）。グリッドのボタンは状態をアイコンの形で示す（`docs/agents/ux-principles.md` の例外） |
 | ステージの右上 | Output の小窓（下の「Output の小窓」）。どちらのタブでも出す |
-| ステージの上端の中央 | 一行の知らせ（左に珊瑚の丸）と、読み込み中の一行。Camera タブではタイムコードもここ。一度に一つだけ出し、知らせ＞読み込み中＞タイムコードの順で前のものが勝つ（タイムコードは知らせか読み込み中を出している間だけ隠れる） |
+| ステージの上端の中央 | 一行の知らせ（左に種類の印。下の「一行の知らせの種類」）と、読み込み中の一行。Camera タブではタイムコードもここ。一度に一つだけ出し、知らせ＞読み込み中＞タイムコードの順で前のものが勝つ（タイムコードは知らせか読み込み中を出している間だけ隠れる） |
 | ステージの下の中央 | 下の中央のバー（下の「下の中央のバー」） |
 | 右の列 | インスペクタの窓（幅は `docs/design.md`）。上から下まで伸びる |
 | ステージの下 | タイムラインの窓（中身は `docs/timeline-ui.md`、バーの並びは下の「タイムラインのバー」）。ステージの窓の幅だけで、インスペクタの下には入らない |
@@ -110,6 +110,8 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 
 - 撮る Camera の出力を右上に小さく出す。折りたたみのボタンだけを持つ（状態はアイコンの形で示す。`docs/agents/ux-principles.md` の例外）。
 - 既定では畳んでおく。使う人が開けば開き、その状態をブラウザごとに覚える（持ち主の決定、2026-10-30）。
+- 開く・畳むときは、大きさと透明度をすっと変える（値は `docs/design.md` の「動き」）。動いている間、中の絵は描き直さず、
+  今の絵をそのまま縮めたり広げたりして見せる。
 - 大きさは左下の角をドラッグして変え、ブラウザごとに覚える。最小と最大を持ち、縦横比は出力の比に合わせる。ポインタを載せたときだけ
   角のつまみをはっきり見せる。
 - Frame モード：撮る Camera から描いた絵を、その場で出す。描き直すのは Panorama モードと同じく何かが変わったときだけで、小窓の
@@ -300,11 +302,27 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 
 ## 読み込み中と空の画面
 
-- エディタを開いたとき、3D の内容を読み込むとき：地面のグリッドと物のガイドを先に出し、まだ来ていない中身の所はゆっくり流れる
-  グラデーションで見せる。何を待っているかを、上端の中央に一行で出す。
+- エディタを開いたら、地面のグリッドをすぐに描く。読み込みの画面や、流れるグラデーション・ゆっくり現れる動きは出さない。まだ来ていない
+  中身（背景、3D の内容）の所はステージの地のままにし、来たものから描く。何を待っているかを、上端の中央に一行で出す（下の「一行の知らせの種類」の
+  読み込み中）。
+- すぐに描けるように、新しいエディタの設定がオンのとき、ComfyUI を開いた後の手の空いた時に、ステージの three.js のチャンクと新しい UI の
+  stylesheet を読んでおく（設定をオンに切り替えたときも同じ）。Spark は SPLAT を描くときに読む（今のまま）。
 - 空の画面（背景も物も無い）：上端の中央の場所に「画像か 3D ファイルをドロップするか、Add を押す」の一行を出す。
 - 効かない操作の知らせ（境界で止まった、何もない所へのダブルクリックなど）も、上端の中央の一行に出す（どの操作で出すかは
   `docs/space-and-view.md`）。
+
+### 一行の知らせの種類
+
+上端の中央の一行は、種類で左の印を変える（色の値は `docs/design.md` の「色」、大きさと動きは「大きさ」「動き」）。
+
+| 種類 | 印 | 出すとき |
+|---|---|---|
+| できなかった・止まった | 珊瑚の丸 | 効かなかった操作（境界で止まった、何もない所へのダブルクリック、Frame Selected で囲むものが無い、Camera を消そうとした） |
+| 気をつけてほしい | 落ち着いた黄の丸 | 背景を読めない、3D の表示を作れない（three.js のチャンクか WebGL が使えない）、上流の警告、3D ファイルの読み込みの失敗 |
+| 知らせるだけ | なし | 空の画面の案内 |
+| 読み込み中 | 小さく回る輪 | 3D の表示や背景を読み込んでいる |
+
+- 3D の表示を作れないときは、ステージの真ん中ではなく、この一行に出す。
 
 ## タイムラインのバー
 
@@ -353,7 +371,9 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
 
 ## 閉じ方
 
-- 閉じるのはインスペクタの一番上の行の ✕ と、Escape だけ。Save・Cancel のボタンは無い。
+- 閉じるのはインスペクタの一番上の行の ✕ と、Escape と、枠の外（後ろの暗い所）のクリックだけ。Save・Cancel のボタンは無い。
+- 枠の外のクリックは ✕ と同じ（同じように保存して閉じる。Escape の順の表は通さない）。押したのも離したのも枠の外のとき（左ボタン）だけ
+  閉じる。枠の中で押して枠の外で離したドラッグ（欄やタイムラインの境界のドラッグなど）では閉じない。
 - Escape は内側のものから一つずつ戻す。一回の Escape は、次の表の上から最初に当たる一つだけを戻す。**何も選ばず、何も開いていない
   ときだけ、エディタを閉じる**（閉じる＝保存なので、選択を外すつもりの Escape でエディタが閉じないようにする）。
 
