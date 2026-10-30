@@ -104,7 +104,9 @@ test("the Aspect ticks are 3:2, 4:3, 1:1, 3:4, 2:3 in order, and the knob snaps 
   assert.equal(ticks.length, 5);
   assert.ok(ticks.every((pos, i) => i === 0 || pos > ticks[i - 1]));
   near(ticks[2], 0.5);
-  near(posToAspect(snapPos(ticks[1] + ASPECT_SNAP / 2, ticks, ASPECT_SNAP)), 4 / 3);
+  assert.equal(posToAspect(snapPos(ticks[1] + ASPECT_SNAP / 2, ticks, ASPECT_SNAP)), 4 / 3);
+  assert.deepEqual(ticks.map(posToAspect), [3 / 2, 4 / 3, 1, 3 / 4, 2 / 3]);
+  assert.equal(posToAspect(0), 16 / 9);
   // The ticks lie farther apart than two snap distances, so each tick is reachable.
   assert.ok(ticks.every((pos, i) => i === 0 || pos - ticks[i - 1] > 2 * ASPECT_SNAP));
 });

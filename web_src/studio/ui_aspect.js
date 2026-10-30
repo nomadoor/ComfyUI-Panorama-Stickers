@@ -22,11 +22,17 @@ export function aspectToPos(ratio) {
   return clamp01(0.5 - Math.log2(ratio) / SPAN);
 }
 
-export function posToAspect(pos) {
-  return 2 ** ((0.5 - clamp01(pos)) * SPAN);
-}
-
 export const ASPECT_TICK_POSITIONS = Object.freeze(ASPECT_TICKS.map(aspectToPos));
+
+// The ratio at a position; a tick or an end gives its exact ratio (4 / 3, not 1.3333333333333335).
+export function posToAspect(pos) {
+  const p = clamp01(pos);
+  const tick = ASPECT_TICK_POSITIONS.indexOf(p);
+  if (tick >= 0) return ASPECT_TICKS[tick];
+  if (p === 0) return ASPECT_SLIDER_WIDE;
+  if (p === 1) return 1 / ASPECT_SLIDER_WIDE;
+  return 2 ** ((0.5 - p) * SPAN);
+}
 
 // "16:9" for a named ratio, else the ratio with two decimals.
 export function aspectLabel(ratio) {
