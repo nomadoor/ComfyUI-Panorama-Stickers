@@ -6,6 +6,8 @@ import {
   flushPanoStateProducers,
   queuePendingStickerOperation,
 } from "../web_src/pano_editor_extension.js";
+import { registerExternalStickerSync } from "../web_src/pano_external_sticker_sync.js";
+import { disposeNodeRuntime, editorSession, nodeSurface, previewNode, sceneViewer, stateSync } from "../web_src/pano_node_bridge.js";
 
 function makeWidget(name, value = "") {
   return { name, value, callback() {} };
@@ -78,7 +80,7 @@ test("stickers lifecycle hides the fallback button only after the shared DOM sur
   const extension = createPanoEditorExtension({
     app: { canvas: { setDirty() {} } },
     openEditor() {},
-    attachStickers(node) { node.__panoStickersNodeSurface = { mounted: true }; },
+    attachStickers(node) { nodeSurface(node).stickers = { mounted: true }; },
     attachCutout() {},
     attachPreview() {},
     requestFrame(callback) { callback(); },
@@ -90,6 +92,117 @@ test("stickers lifecycle hides the fallback button only after the shared DOM sur
   NodeType.prototype.onNodeCreated.call(node);
 
   assert.equal(node.widgets.find((widget) => widget.name === "Open Stickers Editor").hidden, true);
+});
+
+test("Panorama Studio opens the Stickers editor and node surface on state v2 with its Camera, beside the legacy Stickers", () => {
+  const opened = [];
+  const attached = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor(node, type) { opened.push([node, type]); },
+    attachStickers(node, options) {
+      attached.push(node);
+      nodeSurface(node).stickers = { mounted: true };
+      options.onOpen();
+    },
+    attachCutout() { throw new Error("Panorama Studio has no Cutout surface"); },
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  function StudioNodeType() {}
+  function LegacyNodeType() {}
+  extension.beforeRegisterNodeDef(StudioNodeType, { name: "PanoramaStudio" });
+  extension.beforeRegisterNodeDef(LegacyNodeType, { name: "PanoramaStickers" });
+  const node = makeNode([360, 260]);
+  node.widgets.find((widget) => widget.name === "bg_color").value = "#000000";
+  const legacy = makeNode([360, 260]);
+
+  StudioNodeType.prototype.onNodeCreated.call(node);
+  StudioNodeType.prototype.onConfigure.call(node);
+  LegacyNodeType.prototype.onNodeCreated.call(legacy);
+
+  assert.deepEqual(opened, [[node, "stickers"], [legacy, "stickers"]]);
+  assert.deepEqual(attached, [node, legacy]);
+  assert.deepEqual([node.__panoSceneStateV2, node.__panoStudio], [true, true]);
+  assert.deepEqual([legacy.__panoSceneStateV2, legacy.__panoStudio], [false, false]);
+  assert.equal(node.widgets.find((widget) => widget.name === "state_json").hidden, true);
+  // A black bg_color is the user's choice on Panorama Studio; only the legacy node replaces it.
+  assert.equal(node.widgets.find((widget) => widget.name === "bg_color").value, "#000000");
+});
+
+test("the removed state v2 Stickers and Cutout node ids get no editor", () => {
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() { throw new Error("no editor"); },
+    attachStickers() { throw new Error("no surface"); },
+    attachCutout() { throw new Error("no surface"); },
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  for (const name of ["PanoramaStickersNode", "PanoramaCutoutNode"]) {
+    function NodeType() {}
+    extension.beforeRegisterNodeDef(NodeType, { name });
+    assert.equal(NodeType.prototype.onNodeCreated, undefined, name);
+  }
+});
+
+// LiteGraph.createNode runs onNodeCreated before graph.add, and getInputLink throws without a graph.
+test("the sticker input syncs once the node is in the graph, for the legacy Stickers and Panorama Studio", () => {
+  const synced = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers(node) {
+      nodeSurface(node).stickers = { mounted: true };
+      registerExternalStickerSync(node, (reason) => synced.push([node.title, reason, node.getInputLink(0)]));
+    },
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  for (const name of ["PanoramaStickers", "PanoramaStudio"]) {
+    function NodeType() {}
+    extension.beforeRegisterNodeDef(NodeType, { name });
+    const node = { ...makeNode([360, 260]), title: name, graph: null, inputs: [{ name: "sticker" }] };
+    node.getInputLink = function () {
+      if (!this.graph) throw new Error("NullGraphError");
+      return null;
+    };
+
+    NodeType.prototype.onNodeCreated.call(node);
+    node.graph = { setDirtyCanvas() {} };
+    NodeType.prototype.onAdded.call(node);
+    NodeType.prototype.onConfigure.call(node);
+  }
+
+  assert.deepEqual(synced, [["PanoramaStickers", "attach", null], ["PanoramaStudio", "attach", null]]);
+});
+
+test("a loaded graph restores the last output of each editor node and leaves other nodes alone", () => {
+  const restored = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    restoreOutput(node) { restored.push(node); },
+    requestFrame(callback) { callback(); },
+    enableStickersPreview: true,
+  });
+  function NodeType() {}
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaStudio" });
+  const node = makeNode([360, 260]);
+  NodeType.prototype.onNodeCreated.call(node);
+  NodeType.prototype.onConfigure.call(node);
+
+  extension.loadedGraphNode(node);
+  extension.loadedGraphNode(makeNode());
+
+  assert.deepEqual(restored, [node]);
 });
 
 test("cutout lifecycle attaches once and initializes only an invalid node size", () => {
@@ -119,6 +232,24 @@ test("cutout lifecycle attaches once and initializes only an invalid node size",
   assert.equal(initialState.shots.length, 1);
   assert.equal(initialState.shots[0].aspect_id, "1:1");
   assert.equal(initialState.active.selected_shot_id, initialState.shots[0].id);
+});
+
+test("the legacy Cutout is marked as editing v1, not state v2", () => {
+  function NodeType() {}
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaCutout" });
+  const node = makeNode([360, 260]);
+
+  NodeType.prototype.onNodeCreated.call(node);
+
+  assert.equal(node.__panoSceneStateV2, false);
 });
 
 test("restoring legacy empty Cutout states overrides the new-node default", () => {
@@ -155,7 +286,7 @@ test("cutout lifecycle hides the fallback editor button only after the node surf
     app: { canvas: { setDirty() {} } },
     openEditor() {},
     attachStickers() {},
-    attachCutout(node) { node.__panoCutoutNodeSurface = { mounted: true }; },
+    attachCutout(node) { nodeSurface(node).cutout = { mounted: true }; },
     attachPreview() {},
     requestFrame(callback) { callback(); },
   });
@@ -175,7 +306,7 @@ test("cutout lifecycle restores a visible fallback button when a later node surf
     openEditor() {},
     attachStickers() {},
     attachCutout(node) {
-      node.__panoCutoutNodeSurface = mountSucceeds ? { mounted: true } : null;
+      nodeSurface(node).cutout = mountSucceeds ? { mounted: true } : null;
     },
     attachPreview() {},
     requestFrame(callback) { callback(); },
@@ -188,7 +319,7 @@ test("cutout lifecycle restores a visible fallback button when a later node surf
   assert.deepEqual(button.computeSize(), [0, 0]);
 
   mountSucceeds = false;
-  node.__panoPreviewAttached = false;
+  nodeSurface(node).attached = false;
   NodeType.prototype.onConfigure.call(node);
 
   assert.equal(button.hidden, false);
@@ -205,7 +336,7 @@ test("Preview hides its modal fallback button only after the fullscreen surface 
       attachStickers() {},
       attachCutout() {},
       attachPreview(node) {
-        node.__panoPreviewNodeSurface = surfaceMounted ? { mounted: true } : null;
+        previewNode(node).surface = surfaceMounted ? { mounted: true } : null;
       },
       requestFrame(callback) { callback(); },
     });
@@ -257,12 +388,10 @@ test("coverage changes preserve the widget callback and invalidate every preview
   const node = makeNode();
   const coverage = node.widgets.find((widget) => widget.name === "coverage");
   coverage.callback = (value) => `previous:${value}`;
-  node.__panoStateCache = {};
-  node.__panoLiveStateOverride = {};
-  node.__panoWrappedErpCache = {};
-  node.__panoPanoBackgroundCache = {};
-  node.__panoPreviewNodeRuntime = { requestDraw() { dirtied.push("runtime"); } };
-  node.__panoDomPreview = { requestDraw() { dirtied.push("dom"); } };
+  stateSync(node).parsedState = {};
+  stateSync(node).liveState = {};
+  previewNode(node).runtime = { requestDraw() { dirtied.push("runtime"); } };
+  nodeSurface(node).dom = { requestDraw() { dirtied.push("dom"); } };
   node.setDirtyCanvas = () => dirtied.push("node");
   node.graph.setDirtyCanvas = () => dirtied.push("graph");
   const extension = createPanoEditorExtension({
@@ -276,10 +405,8 @@ test("coverage changes preserve the widget callback and invalidate every preview
 
   extension.nodeCreated(node);
   assert.equal(coverage.callback("180"), "previous:180");
-  assert.equal(node.__panoStateCache, null);
-  assert.equal(node.__panoLiveStateOverride, null);
-  assert.equal(node.__panoWrappedErpCache, null);
-  assert.equal(node.__panoPanoBackgroundCache, null);
+  assert.equal(stateSync(node).parsedState, null);
+  assert.equal(stateSync(node).liveState, null);
   assert.deepEqual(dirtied, ["runtime", "dom", "node", "graph", "app"]);
 });
 
@@ -345,8 +472,65 @@ test("standalone preview waits for graph identity and attaches only once", () =>
   queue.shift()();
 
   assert.equal(attached.length, 1);
-  assert.equal(node.__panoStandaloneInstallDone, true);
+  assert.equal(previewNode(node).installDone, true);
   assert.equal(node.widgets.filter((widget) => widget.name === "Open Preview").length, 1);
+});
+
+test("removing a node disposes its runtime after the hooks before it", () => {
+  const calls = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview() {},
+    requestFrame(callback) { callback(); },
+  });
+  for (const name of ["PanoramaStudio", "PanoramaCutout", "PanoramaPreview"]) {
+    function NodeType() {}
+    NodeType.prototype.onRemoved = function () {
+      calls.push([name, "previous", nodeSurface(this).restore !== null]);
+      return "removed";
+    };
+    extension.beforeRegisterNodeDef(NodeType, { name });
+    const node = makeNode();
+    nodeSurface(node).restore = () => calls.push([name, "restore"]);
+    nodeSurface(node).attached = true;
+
+    assert.equal(NodeType.prototype.onRemoved.call(node), "removed");
+    assert.equal(nodeSurface(node).attached, false);
+  }
+  assert.deepEqual(calls, [
+    ["PanoramaStudio", "previous", true], ["PanoramaStudio", "restore"],
+    ["PanoramaCutout", "previous", true], ["PanoramaCutout", "restore"],
+    ["PanoramaPreview", "previous", true], ["PanoramaPreview", "restore"],
+  ]);
+});
+
+test("a Preview node removed while it waits for its graph is not installed", () => {
+  const queue = [];
+  const attached = [];
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview(node) { attached.push(node); },
+    requestFrame(callback) { queue.push(callback); },
+  });
+  const node = makeNode();
+  node.comfyClass = "PanoramaPreview";
+  node.id = -1;
+  node.graph = null;
+
+  extension.nodeCreated(node);
+  queue.shift()();
+  disposeNodeRuntime(node);
+  for (let frame = 0; frame < 40 && queue.length; frame += 1) queue.shift()();
+
+  assert.deepEqual(queue, []);
+  assert.deepEqual(attached, []);
+  assert.equal(node.widgets.some((widget) => widget.name === "Open Preview"), false);
 });
 
 test("state serialization waits for pending sticker uploads before flushing the latest editor state", async () => {
@@ -367,8 +551,8 @@ test("state serialization waits for pending sticker uploads before flushing the 
 
   let resolveUpload;
   const pendingUpload = new Promise((resolve) => { resolveUpload = resolve; });
-  node.__panoPendingStickerUploads = new Map([["replacement", pendingUpload]]);
-  node.__panoFlushStateBeforeQueue = () => { stateWidget.value = "replacement-state"; };
+  stateSync(node).pendingStickerUploads.set("replacement", pendingUpload);
+  editorSession(node).flushBeforeQueue = () => { stateWidget.value = "replacement-state"; };
 
   let settled = false;
   const serialized = stateWidget.serializeValue(node, 0).then((value) => {
@@ -397,14 +581,12 @@ test("state serialization flushes every registered state producer before reading
   NodeType.prototype.onNodeCreated.call(node);
   const stateWidget = node.widgets.find((widget) => widget.name === "state_json");
   const calls = [];
-  node.__panoStateFlushers = new Set([
-    async () => {
-      await Promise.resolve();
-      calls.push("node-surface");
-      stateWidget.value = "node-surface-state";
-    },
-    () => calls.push("secondary"),
-  ]);
+  stateSync(node).flushers.add(async () => {
+    await Promise.resolve();
+    calls.push("node-surface");
+    stateWidget.value = "node-surface-state";
+  });
+  stateSync(node).flushers.add(() => calls.push("secondary"));
 
   assert.equal(await stateWidget.serializeValue(node, 0), "node-surface-state");
   assert.deepEqual(calls, ["node-surface", "secondary"]);
@@ -412,15 +594,12 @@ test("state serialization flushes every registered state producer before reading
 
 test("state producers can be flushed through the same public seam before opening an editor", async () => {
   const calls = [];
-  const node = {
-    __panoStateFlushers: new Set([
-      async () => {
-        await Promise.resolve();
-        calls.push("node-surface");
-      },
-    ]),
-    __panoFlushStateBeforeQueue: () => calls.push("modal"),
-  };
+  const node = {};
+  stateSync(node).flushers.add(async () => {
+    await Promise.resolve();
+    calls.push("node-surface");
+  });
+  editorSession(node).flushBeforeQueue = () => calls.push("modal");
 
   await flushPanoStateProducers(node);
   assert.deepEqual(calls, ["node-surface", "modal"]);
@@ -428,10 +607,9 @@ test("state producers can be flushed through the same public seam before opening
 
 test("the public state barrier waits for image operations before opening an editor", async () => {
   const calls = [];
-  const node = {
-    __panoStateFlushers: new Set([() => calls.push("node-surface")]),
-    __panoFlushStateBeforeQueue: () => calls.push("modal"),
-  };
+  const node = {};
+  stateSync(node).flushers.add(() => calls.push("node-surface"));
+  editorSession(node).flushBeforeQueue = () => calls.push("modal");
   let releaseUpload;
   const uploadGate = new Promise((resolve) => { releaseUpload = resolve; });
   queuePendingStickerOperation(node, "add-image", async () => {
@@ -453,10 +631,9 @@ test("the public state barrier waits for image operations before opening an edit
 
 test("an editor barrier can continue after a failed image operation has settled", async () => {
   const calls = [];
-  const node = {
-    __panoStateFlushers: new Set([() => calls.push("node-surface")]),
-    __panoFlushStateBeforeQueue: () => calls.push("modal"),
-  };
+  const node = {};
+  stateSync(node).flushers.add(() => calls.push("node-surface"));
+  editorSession(node).flushBeforeQueue = () => calls.push("modal");
   queuePendingStickerOperation(node, "failed-add", async () => {
     throw new Error("upload failed");
   });
@@ -479,11 +656,8 @@ test("state serialization rejects instead of queueing stale state when a sticker
   const node = makeNode();
   NodeType.prototype.onNodeCreated.call(node);
   const stateWidget = node.widgets.find((widget) => widget.name === "state_json");
-  node.__panoPendingStickerUploads = new Map([[
-    "replacement",
-    Promise.reject(new Error("replacement upload failed")),
-  ]]);
-  node.__panoFlushStateBeforeQueue = () => { stateWidget.value = "must-not-queue"; };
+  stateSync(node).pendingStickerUploads.set("replacement", Promise.reject(new Error("replacement upload failed")));
+  editorSession(node).flushBeforeQueue = () => { stateWidget.value = "must-not-queue"; };
 
   await assert.rejects(
     () => stateWidget.serializeValue(node, 0),
@@ -511,15 +685,15 @@ test("state serialization also waits for a replacement started while another upl
   let resolveSecond;
   const firstUpload = new Promise((resolve) => { resolveFirst = resolve; });
   const secondUpload = new Promise((resolve) => { resolveSecond = resolve; });
-  node.__panoPendingStickerUploads = new Map([["first", firstUpload]]);
-  node.__panoFlushStateBeforeQueue = () => { stateWidget.value = "latest-state"; };
+  stateSync(node).pendingStickerUploads.set("first", firstUpload);
+  editorSession(node).flushBeforeQueue = () => { stateWidget.value = "latest-state"; };
 
   let settled = false;
   const serialized = stateWidget.serializeValue(node, 0).then((value) => {
     settled = true;
     return value;
   });
-  node.__panoPendingStickerUploads.set("second", secondUpload);
+  stateSync(node).pendingStickerUploads.set("second", secondUpload);
   resolveFirst();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(settled, false);
@@ -537,11 +711,11 @@ test("sticker operations register before decode or upload can yield", async () =
     return "uploaded";
   });
 
-  assert.equal(node.__panoPendingStickerUploads.get("replace-a"), operation);
+  assert.equal(stateSync(node).pendingStickerUploads.get("replace-a"), operation);
   resolveDecode();
   assert.equal(await operation, "uploaded");
   await Promise.resolve();
-  assert.equal(node.__panoPendingStickerUploads.size, 0);
+  assert.equal(stateSync(node).pendingStickerUploads.size, 0);
 });
 
 test("sticker operations serialize consecutive replacements", async () => {
@@ -565,4 +739,89 @@ test("sticker operations serialize consecutive replacements", async () => {
   await first;
   await second;
   assert.deepEqual(events, ["first:start", "first:end", "second:start", "second:end"]);
+});
+
+// docs/preview-node.md "ノード上の表示": the Preview (`PanoramaPreviewNode`) shows its `source` by the type linked to
+// it, before any run: a Scene in the Scene viewer, IMAGE and VIDEO in the legacy Preview's runtime.
+test("the Preview shows a linked Scene in the Scene viewer and IMAGE or VIDEO in the legacy Preview's view, switching with the link", () => {
+  const shown = [];
+  const queue = [];
+  function NodeType() {}
+  NodeType.prototype.onConfigure = function (serialized) {
+    this.outputs = [...serialized.outputs];
+  };
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor() {},
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview(node, options) {
+      shown.push(["media", options.imageInputName]);
+      previewNode(node).runtime = { teardown: () => { shown.push(["media gone"]); previewNode(node).runtime = null; } };
+    },
+    attachSceneViewer(node) {
+      shown.push(["scene"]);
+      sceneViewer(node).surface = { detach: () => { shown.push(["scene gone"]); sceneViewer(node).surface = null; } };
+    },
+    requestFrame(callback) { queue.push(callback); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaPreviewNode" });
+  const node = makeNode([360, 260]);
+  let linked = "PANO_SCENE";
+  node.comfyClass = "PanoramaPreviewNode";
+  node.id = 3;
+  node.inputs = [{ name: "source", type: "IMAGE,VIDEO,PANO_SCENE" }];
+  node.getInputLink = () => (linked ? { type: linked, origin_id: 1 } : null);
+  node.outputs = [{ name: "source", type: "PANO_SCENE", links: null }];
+  node.addOutput = () => { throw new Error("no image output is added"); };
+  const flush = () => { while (queue.length) queue.shift()(); };
+
+  extension.nodeCreated(node);
+  flush();
+  NodeType.prototype.onConfigure.call(node, { outputs: node.outputs });
+  linked = "VIDEO";
+  NodeType.prototype.onConnectionsChange.call(node);
+  flush();
+  linked = "IMAGE";
+  NodeType.prototype.onConnectionsChange.call(node);
+  flush();
+  linked = "PANO_SCENE";
+  NodeType.prototype.onConnectionsChange.call(node);
+  flush();
+
+  assert.deepEqual(shown, [["scene"], ["scene gone"], ["media", "source"], ["media gone"], ["scene"]]);
+  assert.deepEqual(node.outputs, [{ name: "source", type: "PANO_SCENE", links: null }]);
+  assert.equal(node.widgets.filter((widget) => widget.name === "Open Preview").length, 1);
+});
+
+// docs/preview-node.md "ノード上": the IMAGE and VIDEO view's top-right button opens the new window when the chooser
+// takes the node, so the runtime is given the chooser's answer.
+test("the Preview's IMAGE or VIDEO view is told whether the chooser's new window takes the node", () => {
+  const given = [];
+  const queue = [];
+  function NodeType() {}
+  let takes = true;
+  const openEditor = () => {};
+  openEditor.previewWindowTakes = (target) => takes && target === node;
+  const extension = createPanoEditorExtension({
+    app: { canvas: { setDirty() {} } },
+    openEditor,
+    attachStickers() {},
+    attachCutout() {},
+    attachPreview(target, options) { given.push(options); },
+    attachSceneViewer() {},
+    requestFrame(callback) { queue.push(callback); },
+  });
+  extension.beforeRegisterNodeDef(NodeType, { name: "PanoramaPreviewNode" });
+  const node = makeNode([360, 260]);
+  node.comfyClass = "PanoramaPreviewNode";
+  node.id = 3;
+  node.inputs = [{ name: "source", type: "IMAGE,VIDEO,PANO_SCENE", link: 1 }];
+  node.getInputLink = () => ({ type: "VIDEO", origin_id: 1 });
+  extension.nodeCreated(node);
+  while (queue.length) queue.shift()();
+  assert.equal(given.length, 1);
+  assert.equal(given[0].opensWindow(), true);
+  takes = false;
+  assert.equal(given[0].opensWindow(), false);
 });

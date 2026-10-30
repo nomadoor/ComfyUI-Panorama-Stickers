@@ -1,6 +1,6 @@
 <script setup>
 import { ICON } from "../icons.js";
-import PanoIconButton from "./PanoIconButton.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
 
 defineProps({
   paintSwatches: { type: Array, default: () => [] },

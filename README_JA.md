@@ -26,6 +26,7 @@ FLUX.2 Kleinのパノラマworkflowを中心に開発しており、4B・9Bの�
 ## インストール
 
 - ComfyUI Managerからインストールしてください。
+- ComfyUI v0.35.0 以降が必要です。
 
 ## デモ
 
@@ -38,14 +39,19 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 ## ノード
 
+- `Panorama Studio`: 画像・動画・3Dファイル（GLB、Gaussian splat）をパノラマの周りの3D空間に置き、タイムラインのKeyframeで動かし、ペイントとマスクを描き、Cameraでパノラマまたはフレームとして撮影します。
 - `Panorama Stickers`: ERPキャンバス上へステッカー画像を配置・調整し、合成済みパノラマを出力します。
 - `Panorama Cutout`: ERP画像からフレーム付きの透視投影ビューを構成して切り出します。
-- `Panorama Preview`: 静止画または動画のERP入力を、インタラクティブなパノラマビューアーで確認します。
+- `Panorama Preview`: 静止画・動画のERP入力や`Panorama Studio`のシーンを、インタラクティブなビューアーで確認します。以前のノードは`Panorama Preview (legacy)`として残しています。
 - `Panorama Seam Prep`: ERPの継ぎ目を中央へ移動し、継ぎ目のinpainting用にハード／ぼかし付きの縦マスクを生成します。
 
 ### ノード上パノラマ操作
 
 `Panorama Stickers`、`Panorama Cutout`、`Panorama Preview`には、Full Editorを開かずに一般的な操作を完結できる軽量なノード上UIがあります。Legacy canvasとNode 2.0の両方に対応しています。
+
+### Panorama Studioの動画出力
+
+`Panorama Studio`のIMAGE／MASK出力（`first_frame`、`first_frame_mask`）は最初のフレームだけです。全フレームとfps・音声は`video`（VIDEO）に入り、保存するときに1フレームずつ描画されます。全フレームをIMAGEで使うときは、`video`をGet Video Componentsにつないでください。IMAGEバッチにfpsや音声を付けてからつなぐときは、Create Videoを通してください。Cameraで撮った結果を`sticker_state`と一緒に別の`Panorama Studio`の`sticker`へつなぐときは、秒の時刻で位置を合わせます。VIDEOは実時間を保ったまま使い、IMAGEバッチは撮ったStudioと同じfpsのときだけ使ってください（違うときはCreate Videoでそのfpsを付けてからつないでください）。
 
 ## Workflow
 
@@ -61,6 +67,13 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 パノラマeditorはブラウザのハードウェアアクセラレーションを利用します。小さなノード上プレビューは軽いのに、大きなeditorだけ極端に遅い場合は、`chrome://gpu`（Edgeでは`edge://gpu`）を開き、Canvas、Compositing、Rasterization、WebGLがhardware acceleratedになっているか確認してください。`Software only`の場合はブラウザを完全終了して再起動し、改善しなければブラウザとGPU driverの設定を確認してください。
 
 ## 更新履歴
+
+### 2.0.0
+
+- `Panorama Studio`を追加しました。画像・動画・3Dファイル（GLB、Gaussian splat）を3D空間に置き、Keyframeで動かし、ペイントとマスクを描き、Camera（パノラマまたはフレーム）で撮影します。最初のフレーム、そのマスク、動画、ステッカーの状態を出力し、`scene`出力は別の`Panorama Studio`や`Panorama Preview`につなげます。
+- Panorama Studioの新しいエディタ：3D／Cameraタブ、インスペクタ、Keyframe付きのタイムライン、画像と3DファイルのAddとドラッグ＆ドロップ、ギズモ、Cameraが撮る絵のその場の表示。ノード上にも、Cameraの出力と出力の大きさをその場で出します。
+- `Panorama Preview`は、画像・動画・`Panorama Studio`のシーンを新しいウィンドウで開きます。以前のノードは`Panorama Preview (legacy)`として残しています。
+- 以前のエディタを使うときは、設定の「Panorama Studio: new editor」をオフにしてください。
 
 ### 1.5.0
 
@@ -91,7 +104,6 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 
 - 外部upscaling用にパノラマを複数画像へ分割し、処理後に再結合するツールを追加する。
 - 入力画像からcamera intrinsicsを自動推定する。
-- 3D sceneに対応する。
 - Huginと連携する。
 
 ## 謝辞

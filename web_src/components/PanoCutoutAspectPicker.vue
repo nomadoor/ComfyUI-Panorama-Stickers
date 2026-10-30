@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ICON } from "../icons.js";
-import PanoIconButton from "./PanoIconButton.vue";
-import SvgIcon from "./SvgIcon.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 const props = defineProps({
   model: { type: Object, default: () => ({}) },

@@ -4,7 +4,6 @@ import {
   add,
   cameraBasis,
   clamp,
-  dot,
   mul,
   norm,
   wrapYaw,
@@ -13,52 +12,20 @@ import {
   STICKER_NODE_ROTATE_HANDLE_OFFSET_PX,
   hitStickerSelectionAffordance,
 } from "./pano_sticker_affordance.js";
+import { lensAxesDirection, lensFovLimit, lensRadius } from "./pano_lens.js";
 
 export { hitStickerSelectionAffordance as hitStickerGeometry } from "./pano_sticker_affordance.js";
 
-function viewportSize(viewport) {
+// Screen points follow projection, a viewProjection() of the view the stickers are drawn in.
+function projectWorldDirection(direction, projection) {
+  if (!direction) return null;
+  const point = projection.project(direction);
+  if (!Number.isFinite(point.z)) return null;
+  const guard = Math.max(projection.width, projection.height) * 2;
   return {
-    width: Math.max(1, Number(viewport?.width ?? viewport?.w ?? 1)),
-    height: Math.max(1, Number(viewport?.height ?? viewport?.h ?? 1)),
-  };
-}
-
-function viewBasis(camera) {
-  return cameraBasis(
-    Number(camera?.yawDeg ?? camera?.yaw ?? 0),
-    Number(camera?.pitchDeg ?? camera?.pitch ?? 0),
-    0,
-  );
-}
-
-export function screenPointToWorldDirection(point, camera, viewport) {
-  const { width, height } = viewportSize(viewport);
-  const { right, up, fwd } = viewBasis(camera);
-  const horizontalFov = clamp(Number(camera?.fovDeg ?? camera?.fov ?? 100), 1, 179) * DEG2RAD;
-  const verticalFov = 2 * Math.atan(Math.tan(horizontalFov * 0.5) * (height / width));
-  const nx = ((Number(point?.x || 0) - width * 0.5) / (width * 0.5)) * Math.tan(horizontalFov * 0.5);
-  const ny = ((height * 0.5 - Number(point?.y || 0)) / (height * 0.5)) * Math.tan(verticalFov * 0.5);
-  return norm(add(add(mul(right, nx), mul(up, ny)), fwd));
-}
-
-function projectWorldDirection(direction, camera, viewport) {
-  const { width, height } = viewportSize(viewport);
-  const { right, up, fwd } = viewBasis(camera);
-  const cx = dot(direction, right);
-  const cy = dot(direction, up);
-  const rawZ = dot(direction, fwd);
-  const nearZ = 1e-4;
-  if (!Number.isFinite(rawZ)) return null;
-  const z = Math.max(rawZ, nearZ);
-  const horizontalFov = clamp(Number(camera?.fovDeg ?? camera?.fov ?? 100), 1, 179) * DEG2RAD;
-  const verticalFov = 2 * Math.atan(Math.tan(horizontalFov * 0.5) * (height / width));
-  const sx = (width * 0.5) / Math.tan(horizontalFov * 0.5);
-  const sy = (height * 0.5) / Math.tan(verticalFov * 0.5);
-  const guard = Math.max(width, height) * 2;
-  return {
-    x: clamp(width * 0.5 + (cx / z) * sx, -guard, width + guard),
-    y: clamp(height * 0.5 - (cy / z) * sy, -guard, height + guard),
-    rawZ,
+    x: clamp(point.x, -guard, projection.width + guard),
+    y: clamp(point.y, -guard, projection.height + guard),
+    rawZ: point.z,
   };
 }
 
@@ -68,6 +35,19 @@ function stickerFrame(item) {
     Number(item?.pitch_deg || 0),
     Number(item?.rot_deg ?? item?.roll_deg ?? 0),
   );
+  // A sky Sticker of a lens curve other than 1 (ADR 0042): its tangents are its lens's image radii.
+  const curve = Number.isFinite(item?.curve) ? item.curve : 1;
+  if (curve !== 1) {
+    const limit = lensFovLimit(curve);
+    return {
+      centerDir: basis.fwd,
+      right: basis.right,
+      up: basis.up,
+      curve,
+      tanX: lensRadius(clamp(Number(item?.hFOV_deg || 20), 0.1, limit) * DEG2RAD * 0.5, curve),
+      tanY: lensRadius(clamp(Number(item?.vFOV_deg || 20), 0.1, limit) * DEG2RAD * 0.5, curve),
+    };
+  }
   return {
     centerDir: basis.fwd,
     right: basis.right,
@@ -78,23 +58,24 @@ function stickerFrame(item) {
 }
 
 function stickerDirection(frame, x, y) {
+  if (frame.curve !== undefined) return lensAxesDirection({ fwd: frame.centerDir, right: frame.right, up: frame.up }, x, y, frame.curve);
   return norm(add(
     add(frame.centerDir, mul(frame.right, x)),
     mul(frame.up, y),
   ));
 }
 
-export function buildStickerGeometry(item, camera, viewport) {
+export function buildStickerGeometry(item, projection) {
   if (!item || item.visible === false) return { visible: false };
   const frame = stickerFrame(item);
-  const center = projectWorldDirection(frame.centerDir, camera, viewport);
+  const center = projectWorldDirection(frame.centerDir, projection);
   if (!center) return { visible: false };
   const corners = [
     stickerDirection(frame, -frame.tanX, frame.tanY),
     stickerDirection(frame, frame.tanX, frame.tanY),
     stickerDirection(frame, frame.tanX, -frame.tanY),
     stickerDirection(frame, -frame.tanX, -frame.tanY),
-  ].map((direction) => projectWorldDirection(direction, camera, viewport));
+  ].map((direction) => projectWorldDirection(direction, projection));
   const boundaryEdges = Array.from({ length: 4 }, (_, edge) => {
     const points = [];
     for (let index = 0; index <= 28; index += 1) {
@@ -105,17 +86,24 @@ export function buildStickerGeometry(item, camera, viewport) {
       else if (edge === 1) { x = frame.tanX; y = frame.tanY - (2 * frame.tanY * t); }
       else if (edge === 2) { x = frame.tanX - (2 * frame.tanX * t); y = -frame.tanY; }
       else { x = -frame.tanX; y = -frame.tanY + (2 * frame.tanY * t); }
-      const projected = projectWorldDirection(stickerDirection(frame, x, y), camera, viewport);
+      const projected = projectWorldDirection(stickerDirection(frame, x, y), projection);
       if (projected) points.push({ x: projected.x, y: projected.y });
     }
     return points;
   });
-  const rotateStemBase = projectWorldDirection(stickerDirection(frame, 0, frame.tanY), camera, viewport);
+  const rotateStemBase = projectWorldDirection(stickerDirection(frame, 0, frame.tanY), projection);
   const rotateHint = projectWorldDirection(
     stickerDirection(frame, 0, frame.tanY + Math.max(frame.tanY * 0.43, 0.053)),
-    camera,
-    viewport,
+    projection,
   );
+  // The middle of each edge, where a frame's edge handle scales one axis (pano_sticker_affordance.js
+  // hitFrameAffordance with `edges`).
+  const edgeCenters = [
+    ["top", 0, frame.tanY, 0, 1],
+    ["right", frame.tanX, 0, 1, 2],
+    ["bottom", 0, -frame.tanY, 2, 3],
+    ["left", -frame.tanX, 0, 3, 0],
+  ].map(([edge, x, y, a, b]) => ({ edge, point: projectWorldDirection(stickerDirection(frame, x, y), projection), a, b }));
   const projected = [center, ...corners, rotateStemBase, rotateHint];
   if (projected.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
     return { visible: false };
@@ -128,6 +116,13 @@ export function buildStickerGeometry(item, camera, viewport) {
     center: { x: center.x, y: center.y },
     corners: corners.map((point) => ({ x: point.x, y: point.y })),
     boundaryEdges,
+    edgeMidpoints: edgeCenters.filter((entry) => entry.point).map(({ edge, point, a, b }) => ({
+      edge,
+      x: point.x,
+      y: point.y,
+      a: { x: corners[a].x, y: corners[a].y },
+      b: { x: corners[b].x, y: corners[b].y },
+    })),
     rotateStemBase: { x: rotateStemBase.x, y: rotateStemBase.y },
     rotateHandle: {
       x: rotateStemBase.x + (handleDx / handleLength) * STICKER_NODE_ROTATE_HANDLE_OFFSET_PX,
@@ -137,10 +132,10 @@ export function buildStickerGeometry(item, camera, viewport) {
   };
 }
 
-export function pickStickerAtPoint(items, selectedId, point, camera, viewport) {
+export function pickStickerAtPoint(items, selectedId, point, projection) {
   const entries = (Array.isArray(items) ? items : [])
     .filter((item) => item && item.visible !== false)
-    .map((item) => ({ item, geometry: buildStickerGeometry(item, camera, viewport) }))
+    .map((item) => ({ item, geometry: buildStickerGeometry(item, projection) }))
     .filter((entry) => entry.geometry.visible)
     .sort((a, b) => Number(b.item?.z_index || 0) - Number(a.item?.z_index || 0));
   const selected = entries.find((entry) => String(entry.item?.id || "") === String(selectedId || ""));
@@ -155,8 +150,8 @@ export function pickStickerAtPoint(items, selectedId, point, camera, viewport) {
   return null;
 }
 
-export function moveStickerToScreenPoint(item, point, camera, viewport) {
-  const direction = screenPointToWorldDirection(point, camera, viewport);
+export function moveStickerToScreenPoint(item, point, projection) {
+  const direction = projection.ray(point.x, point.y);
   return {
     ...item,
     yaw_deg: wrapYaw(Math.atan2(direction.x, direction.z) * RAD2DEG),
@@ -173,9 +168,17 @@ export function scaleStickerFromPointer(item, startDistance, currentDistance) {
   };
 }
 
-export function rotateStickerFromPointer(item, startAngle, currentAngle, snap = false) {
+// An edge handle's scale ("scale_x" the hFOV, "scale_y" the vFOV) by the pointer's distance from the center against
+// where it started, as scaleStickerFromPointer scales both.
+export function scaleStickerAxisFromPointer(item, axis, startDistance, currentDistance) {
+  const ratio = Math.max(1, Number(currentDistance || 0)) / Math.max(1, Number(startDistance || 1));
+  const field = axis === "scale_x" ? "hFOV_deg" : "vFOV_deg";
+  return { ...item, [field]: clamp(Number(item?.[field] || 20) * ratio, 1, 179) };
+}
+
+export function rotateStickerFromPointer(item, startAngle, currentAngle, snap = false, step = 45) {
   const delta = (Number(currentAngle || 0) - Number(startAngle || 0)) * RAD2DEG;
   let rotation = Number(item?.rot_deg ?? item?.roll_deg ?? 0) - delta;
-  if (snap) rotation = Math.round(rotation / 45) * 45;
+  if (snap) rotation = Math.round(rotation / step) * step;
   return { ...item, rot_deg: rotation };
 }

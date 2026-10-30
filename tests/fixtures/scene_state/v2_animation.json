@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "scene": {"animation": {"clip": "Walking", "speed": 0.5}},
+  "stickers": [
+    {"id": "glb", "placement": "world", "source": {"kind": "file", "filename": "robot.GLB", "subfolder": "3d"}, "animation": {"clip": "Dance", "speed": 20}},
+    {"id": "default", "placement": "world", "source": {"kind": "file", "filename": "robot.gltf", "subfolder": "3d"}, "animation": {"clip": null, "speed": 1}},
+    {"id": "low", "placement": "world", "source": {"kind": "file", "filename": "robot.glb", "subfolder": "3d"}, "animation": {"clip": 7, "speed": -2}},
+    {"id": "not_a_number", "placement": "world", "source": {"kind": "file", "filename": "robot.glb", "subfolder": "3d"}, "animation": {"clip": "", "speed": "2"}},
+    {"id": "not_an_object", "placement": "world", "source": {"kind": "file", "filename": "robot.glb", "subfolder": "3d"}, "animation": "Dance"},
+    {"id": "image", "placement": "world", "source": {"kind": "file", "filename": "photo.png"}, "animation": {"clip": "Dance", "speed": 2}},
+    {"id": "port", "source": {"kind": "port"}, "animation": {"speed": 0.05}}
+  ]
+}

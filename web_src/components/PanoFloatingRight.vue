@@ -1,9 +1,12 @@
 <script setup>
-import PanoIconButton from "./PanoIconButton.vue";
-import SvgIcon from "./SvgIcon.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 defineProps({
   buttons: { type: Array, default: () => [] },
+  // The space group: { visible, mode, frameDisabled, modes, frame } (floatingRightState), null
+  // without one. It shows or hides as a whole at the left end, so the buttons right of it never move.
+  space: { type: Object, default: null },
   preview: { type: Object, default: () => ({}) },
   previewToggle: { type: Object, default: () => ({}) },
 });
@@ -11,6 +14,26 @@ defineProps({
 
 <template>
   <div class="pano-floating-right">
+    <div v-if="space" v-show="space.visible" class="pano-floating-space">
+      <div class="pano-space-modes" role="group" aria-label="Space view mode">
+        <PanoIconButton
+          v-for="button in space.modes"
+          :key="button.key"
+          :extra-class="{ active: button.key === space.mode }"
+          :icon="button.icon"
+          :label="button.label"
+          :tip="button.tip"
+          :pressed="button.key === space.mode ? 'true' : 'false'"
+          :attrs="{ 'data-space-mode': button.key }"
+        />
+      </div>
+      <PanoIconButton
+        :icon="space.frame.icon"
+        :label="space.frame.label"
+        :tip="space.frame.tip"
+        :attrs="{ 'data-action': space.frame.action, disabled: space.frameDisabled === true }"
+      />
+    </div>
     <PanoIconButton
       v-for="button in buttons"
       :key="button.action"
@@ -36,7 +59,9 @@ defineProps({
         height: `${preview.height || (preview.expanded ? 192 : 132)}px`,
       }"
     >
-      <div class="pano-camera-preview-host" data-camera-preview-host />
+      <div class="pano-camera-preview-host" data-camera-preview-host>
+        <canvas data-camera-preview-canvas />
+      </div>
       <button
         v-if="previewToggle.visible"
         class="pano-btn pano-btn-icon pano-camera-preview-toggle"

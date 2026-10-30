@@ -4,6 +4,8 @@
 
 Accepted
 
+一部（共有の WebGL2 の ERP renderer と CPU の投影の fallback）は今のコードに無い。ERP の表示は three.js のビューが受け持つ（`docs/threejs-spark-integration.md`。置き換えた ADR は無い）（2026-10-11 に記す）。
+
 ## Context
 
 The editor modal, node thumbnail preview, and standalone preview node were still

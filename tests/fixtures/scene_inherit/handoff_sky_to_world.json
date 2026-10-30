@@ -1,0 +1,175 @@
+{
+  "state": {
+    "version": 2,
+    "stickers": [
+      {
+        "id": "sticker_1",
+        "source": {
+          "kind": "file",
+          "filename": "a.png"
+        },
+        "z_index": 4
+      },
+      {
+        "id": "sticker_2",
+        "source": {
+          "kind": "port"
+        },
+        "z_index": 1,
+        "clip": {
+          "start": 2,
+          "in": 0,
+          "duration": null
+        },
+        "visible": false,
+        "locked": true,
+        "crop": {
+          "x0": 0.1,
+          "y0": 0.2,
+          "x1": 0.9,
+          "y1": 0.8
+        },
+        "direction": {
+          "value": {
+            "yaw_deg": -90,
+            "pitch_deg": 0
+          }
+        },
+        "opacity": {
+          "value": 0.5,
+          "keyframes": [
+            {
+              "frame": 3,
+              "value": 0.25
+            }
+          ]
+        },
+        "handoff_overrides": [
+          "direction",
+          "opacity"
+        ]
+      }
+    ]
+  },
+  "handoff": {
+    "placement": "world",
+    "lanes": {
+      "position": {
+        "value": [
+          0,
+          0,
+          -2
+        ],
+        "keyframes": [
+          {
+            "frame": 0,
+            "value": [
+              0,
+              0,
+              -2
+            ],
+            "easing": "auto"
+          },
+          {
+            "frame": 8,
+            "value": [
+              1,
+              0,
+              -2
+            ],
+            "easing": "hold"
+          }
+        ]
+      },
+      "rotation": {
+        "value": {
+          "yaw_deg": 0,
+          "pitch_deg": 0,
+          "roll_deg": 0
+        },
+        "keyframes": []
+      },
+      "scale": {
+        "value": 4,
+        "keyframes": []
+      }
+    }
+  },
+  "expected": {
+    "id": "sticker_2",
+    "placement": "world",
+    "source": {
+      "kind": "port"
+    },
+    "clip": {
+      "start": 2,
+      "in": 0,
+      "duration": null
+    },
+    "visible": false,
+    "locked": true,
+    "crop": {
+      "x0": 0.1,
+      "y0": 0.2,
+      "x1": 0.9,
+      "y1": 0.8
+    },
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        -2.0
+      ],
+      "keyframes": [
+        {
+          "frame": 0,
+          "value": [
+            0.0,
+            0.0,
+            -2.0
+          ],
+          "easing": "auto"
+        },
+        {
+          "frame": 8,
+          "value": [
+            1.0,
+            0.0,
+            -2.0
+          ],
+          "easing": "hold"
+        }
+      ]
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "scale": {
+      "value": 4.0,
+      "keyframes": []
+    },
+    "opacity": {
+      "value": 0.5,
+      "keyframes": [
+        {
+          "frame": 3,
+          "value": 0.25,
+          "easing": [
+            0.42,
+            0.0,
+            0.58,
+            1.0
+          ]
+        }
+      ]
+    },
+    "handoff_overrides": [
+      "opacity"
+    ]
+  }
+}

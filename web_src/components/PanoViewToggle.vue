@@ -1,6 +1,8 @@
 <script setup>
-import SvgIcon from "./SvgIcon.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
+// A disabled tab is aria-disabled rather than disabled, so its tooltip can still say why (Panorama
+// Studio's Frame tab, pano_editor_ui_state.js frameViewButton); the editor ignores its clicks.
 defineProps({
   buttons: { type: Array, default: () => [] },
 });
@@ -21,7 +23,9 @@ defineProps({
         :data-view="button.key"
         :aria-pressed="button.pressed"
         :aria-label="button.label"
-        :disabled="button.disabled === true"
+        :aria-disabled="button.disabled === true ? 'true' : null"
+        :tabindex="button.disabled === true ? -1 : null"
+        :data-tip="button.tip || null"
         v-show="button.visible !== false"
       >
         <SvgIcon :icon="button.icon" />

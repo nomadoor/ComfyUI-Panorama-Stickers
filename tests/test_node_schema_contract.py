@@ -1,3 +1,7 @@
+import asyncio
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 
@@ -6,12 +10,25 @@ pytest.importorskip(
     reason="ComfyUI's real V3 API is required for schema contract tests",
 )
 
-from comfy_api.latest import io
+from comfy_api.latest import ComfyExtension, io
 
-from comfyui_pano_suite.nodes import (
-    NODE_CLASS_MAPPINGS,
-    NODE_DISPLAY_NAME_MAPPINGS,
-)
+from comfyui_pano_suite.nodes import comfy_entrypoint
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+async def _load_extension_nodes():
+    extension = await comfy_entrypoint()
+    assert isinstance(extension, ComfyExtension)
+    await extension.on_load()
+    return await extension.get_node_list()
+
+
+REGISTERED_NODES = {
+    node_class.GET_SCHEMA().node_id: node_class
+    for node_class in asyncio.run(_load_extension_nodes())
+}
 
 
 EXPECTED_SCHEMAS = {
@@ -75,6 +92,73 @@ EXPECTED_SCHEMAS = {
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
     },
+    # ADR 0048 (approved change of the ports, before Panorama Studio is public): by role, the Scene it carries on,
+    # then from the far background to the things placed; the outputs mirror them with `scene` on top.
+    "PanoramaStudio": {
+        "display_name": "Panorama Studio",
+        "inputs": [
+            ("scene", "PANO_SCENE", True),
+            ("background", "COMFY_MULTITYPED_V3", True),
+            ("world", "COMFY_MULTITYPED_V3", True),
+            ("sticker", "COMFY_MULTITYPED_V3", True),
+            ("sticker_state", "STRING", True),
+            ("background_color", "COLOR", False),
+            ("background_range", "COMBO", False),
+            ("megapixels", "FLOAT", False),
+            ("multiple", "INT", False),
+            ("state_json", "STRING", False),
+        ],
+        "input_metadata": {
+            "scene": {},
+            "background": {},
+            "world": {},
+            "sticker": {},
+            "sticker_state": {
+                "default": "",
+                "multiline": False,
+                "dynamic_prompts": False,
+                "force_input": True,
+            },
+            "background_color": {
+                "default": "#00ff00",
+                "force_input": None,
+            },
+            "background_range": {
+                "default": "360",
+                "options": ["360", "180"],
+                "force_input": None,
+            },
+            "megapixels": {
+                "default": 2.0,
+                "min": 0.1,
+                "max": 16.0,
+                "step": 0.1,
+                "force_input": None,
+            },
+            "multiple": {
+                "default": 8,
+                "min": 8,
+                "max": 128,
+                "step": 4,
+                "force_input": None,
+            },
+            "state_json": {
+                "default": "",
+                "multiline": True,
+                "dynamic_prompts": False,
+                "force_input": None,
+            },
+        },
+        "outputs": [
+            ("scene", "scene", "PANO_SCENE"),
+            ("first_frame", "first_frame", "IMAGE"),
+            ("first_frame_mask", "first_frame_mask", "MASK"),
+            ("video", "video", "VIDEO"),
+            ("sticker_state", "sticker_state", "STRING"),
+        ],
+        "hidden": [],
+        "is_output_node": True,
+    },
     "PanoramaCutout": {
         "display_name": "Panorama Cutout",
         "inputs": [
@@ -123,7 +207,8 @@ EXPECTED_SCHEMAS = {
         "is_output_node": True,
     },
     "PanoramaPreview": {
-        "display_name": "Panorama Preview",
+        "display_name": "Panorama Preview (legacy)",
+        "is_deprecated": True,
         "inputs": [
             ("erp_image", "IMAGE", False),
             ("coverage", "COMBO", False),
@@ -148,6 +233,27 @@ EXPECTED_SCHEMAS = {
         },
         "outputs": [
             ("image", "image", "IMAGE"),
+        ],
+        "hidden": ["UNIQUE_ID"],
+        "is_output_node": True,
+    },
+    # ADR 0048: `coverage` is `background_range`, as on Panorama Studio. The legacy Preview keeps `coverage`.
+    "PanoramaPreviewNode": {
+        "display_name": "Panorama Preview",
+        "inputs": [
+            ("source", "COMFY_MATCHTYPE_V3", False),
+            ("background_range", "COMBO", False),
+        ],
+        "input_metadata": {
+            "source": {},
+            "background_range": {
+                "default": "360",
+                "options": ["360", "180"],
+                "force_input": None,
+            },
+        },
+        "outputs": [
+            ("output", "output", "COMFY_MATCHTYPE_V3"),
         ],
         "hidden": ["UNIQUE_ID"],
         "is_output_node": True,
@@ -215,25 +321,45 @@ def _public_input_metadata(input_):
 
 
 def test_public_node_registration_remains_stable():
-    assert set(NODE_CLASS_MAPPINGS) == set(EXPECTED_SCHEMAS)
-    assert NODE_DISPLAY_NAME_MAPPINGS == {
+    # The state v2 Stickers and Cutout (PanoramaStickersNode, PanoramaCutoutNode) never reached main; Panorama
+    # Studio replaces them without a NodeReplace (ADR 0029).
+    assert set(REGISTERED_NODES) == {
+        "PanoramaStickers", "PanoramaStudio", "PanoramaCutout", "PanoramaPreview", "PanoramaPreviewNode", "PanoramaSeamPrep",
+    }
+    assert set(REGISTERED_NODES) == set(EXPECTED_SCHEMAS)
+    assert {
+        node_id: node_class.GET_SCHEMA().display_name
+        for node_id, node_class in REGISTERED_NODES.items()
+    } == {
         node_id: expected["display_name"]
         for node_id, expected in EXPECTED_SCHEMAS.items()
     }
 
-    for node_id, node_class in NODE_CLASS_MAPPINGS.items():
+    for node_class in REGISTERED_NODES.values():
         assert issubclass(node_class, io.ComfyNode)
-        assert node_class.define_schema().node_id == node_id
+
+
+def test_package_root_registers_only_through_the_extension():
+    spec = importlib.util.spec_from_file_location("panorama_stickers_root", REPO_ROOT / "__init__.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # ComfyUI prefers NODE_CLASS_MAPPINGS over comfy_entrypoint when both exist.
+    assert not hasattr(module, "NODE_CLASS_MAPPINGS")
+    assert module.comfy_entrypoint is comfy_entrypoint
+    assert (REPO_ROOT / module.WEB_DIRECTORY).is_dir()
 
 
 @pytest.mark.parametrize("node_id", EXPECTED_SCHEMAS)
 def test_v3_schema_preserves_public_ports(node_id):
-    schema = NODE_CLASS_MAPPINGS[node_id].define_schema()
+    schema = REGISTERED_NODES[node_id].define_schema()
     expected = EXPECTED_SCHEMAS[node_id]
 
     assert schema.display_name == expected["display_name"]
     assert schema.category == "Panorama Suite"
     assert schema.is_output_node is expected["is_output_node"]
+    # A deprecated node stays registered, so saved workflows still load it, but the node search hides it.
+    assert schema.is_deprecated is expected.get("is_deprecated", False)
     assert [
         (input_.id, input_.io_type, input_.optional)
         for input_ in schema.inputs
@@ -249,9 +375,39 @@ def test_v3_schema_preserves_public_ports(node_id):
     assert [hidden.value for hidden in schema.hidden] == expected["hidden"]
 
 
-@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaCutout"])
+MESH_FILE_TYPES = "FILE_3D_GLB,FILE_3D_GLTF,FILE_3D_FBX,FILE_3D_OBJ,FILE_3D_STL,FILE_3D_USDZ,FILE_3D"
+SPLAT_FILE_TYPES = "FILE_3D_PLY,FILE_3D_SPLAT,FILE_3D_SPZ,FILE_3D_KSPLAT,FILE_3D_SPLAT_ANY"
+
+
+def test_studio_media_ports_accept_the_spec_types():
+    inputs = {input_.id: input_ for input_ in REGISTERED_NODES["PanoramaStudio"].define_schema().inputs}
+
+    assert inputs["background"].get_io_type() == "IMAGE,VIDEO"
+    # `scene` takes only the `scene` output of another Studio; the place's base 3D is on `world` (ADR 0048).
+    assert inputs["scene"].get_io_type() == "PANO_SCENE"
+    assert inputs["world"].get_io_type() == f"SPLAT,MESH,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,DA3_GEOMETRY"
+    assert inputs["sticker"].get_io_type() == f"IMAGE,VIDEO,MESH,SPLAT,{MESH_FILE_TYPES},{SPLAT_FILE_TYPES},MOGE_GEOMETRY,DA3_GEOMETRY"
+
+
+def test_studio_multiple_is_an_advanced_widget():
+    inputs = {input_.id: input_ for input_ in REGISTERED_NODES["PanoramaStudio"].define_schema().inputs}
+
+    assert inputs["multiple"].advanced is True
+    assert not inputs["megapixels"].advanced
+
+
+def test_preview_node_passes_its_source_type_through():
+    schema = REGISTERED_NODES["PanoramaPreviewNode"].define_schema()
+    source = schema.inputs[0]
+    output = schema.outputs[0]
+
+    assert output.template is source.template
+    assert source.template.as_dict() == {"template_id": "source", "allowed_types": "IMAGE,VIDEO,PANO_SCENE"}
+
+
+@pytest.mark.parametrize("node_id", ["PanoramaStickers", "PanoramaCutout", "PanoramaStudio"])
 def test_internal_state_widget_is_advanced_in_v3_schema(node_id):
-    schema = NODE_CLASS_MAPPINGS[node_id].define_schema()
+    schema = REGISTERED_NODES[node_id].define_schema()
     state_input = next(input_ for input_ in schema.inputs if input_.id == "state_json")
 
     assert state_input.advanced is True

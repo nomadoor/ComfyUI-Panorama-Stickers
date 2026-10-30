@@ -1,12 +1,16 @@
 <script setup>
 import { computed } from "vue";
 import { ICON } from "../icons.js";
-import SvgIcon from "./SvgIcon.vue";
+import PanoEasingGraph from "./PanoEasingGraph.vue";
+import PanoUpstreamOrigin from "./PanoUpstreamOrigin.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 const props = defineProps({
   nodeTitle: { type: String, default: "Panorama Stickers" },
   model: { type: Object, default: () => ({}) },
+  easing: { type: Object, default: null },
 });
+const emit = defineEmits(["timeline"]);
 
 const hasModel = computed(() => {
   const model = props.model;
@@ -20,6 +24,42 @@ function rangeStyle(param) {
 
 function isParamDisabled(param, model) {
   return model?.paramsDisabled === true || param?.enabled === false;
+}
+
+// The number fields of the grouped rows, by param key, for dragging their labels.
+const fieldInputs = {};
+
+// A drag on a grouped field's label changes its value by `drag` per pixel (a tenth with Shift), through
+// the field's own input and change events, which the editor handles as for typing; a click without a
+// drag puts the caret in the field.
+function onScrubDown(event, field) {
+  const input = fieldInputs[field.key];
+  if (event.button !== 0 || !input || isParamDisabled(field, props.model)) return;
+  event.preventDefault();
+  const handle = event.currentTarget;
+  const startX = event.clientX;
+  const start = Number(input.value) || 0;
+  let moved = false;
+  handle.setPointerCapture(event.pointerId);
+  const move = (ev) => {
+    if (!moved && Math.abs(ev.clientX - startX) < 3) return;
+    moved = true;
+    const next = start + (ev.clientX - startX) * field.drag * (ev.shiftKey ? 0.1 : 1);
+    input.value = String(Number(next.toFixed(3)));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const end = () => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", end);
+    handle.removeEventListener("pointercancel", end);
+    handle.removeEventListener("lostpointercapture", end);
+    if (moved) input.dispatchEvent(new Event("change", { bubbles: true }));
+    else input.focus();
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+  handle.addEventListener("lostpointercapture", end);
 }
 </script>
 
@@ -68,6 +108,7 @@ function isParamDisabled(param, model) {
 
         <div v-if="model.transformTitle !== false" class="pano-section-title">
           <span>Transform</span>
+          <span class="meta">{{ model.upstream?.origin || "" }}</span>
         </div>
 
         <div v-if="model.selectionPicker" class="pano-field-wide pano-target-row">
@@ -131,77 +172,83 @@ function isParamDisabled(param, model) {
             <div v-for="note in model.notes" :key="note" class="pano-param-note">{{ note }}</div>
           </template>
           <template v-else>
-            <div
-              v-for="param in model.params || []"
-              :key="param.key"
-              class="pano-field"
-              :data-key="param.key"
-            >
-              <label>{{ param.label }}</label>
-              <input
-                type="range"
-                :min="param.min"
-                :max="param.max"
-                :step="param.step"
-                :value="param.value"
-                :disabled="isParamDisabled(param, model)"
-                :style="rangeStyle(param)"
-                data-action="param-input"
-                data-input-kind="range"
-                :data-param-key="param.key"
-              >
-              <input
-                type="number"
-                :min="param.min"
-                :max="param.max"
-                :step="param.step"
-                :value="param.displayValue"
-                :disabled="isParamDisabled(param, model)"
-                data-action="param-input"
-                data-input-kind="number"
-                :data-param-key="param.key"
-              >
-            </div>
+            <template v-for="row in model.rows || []" :key="row.key">
+              <div v-if="row.grouped" class="pano-field pano-field-group" :data-key="row.key">
+                <label>{{ row.label }}</label>
+                <div class="pano-field-group-values">
+                  <div v-for="field in row.fields" :key="field.key" class="pano-axis-field">
+                    <span
+                      class="pano-axis"
+                      :class="{ disabled: isParamDisabled(field, model) }"
+                      :title="field.label"
+                      @pointerdown="onScrubDown($event, field)"
+                    >{{ field.short }}</span>
+                    <input
+                      :ref="(el) => { fieldInputs[field.key] = el; }"
+                      type="number"
+                      :min="field.min"
+                      :max="field.max"
+                      :step="field.step"
+                      :value="field.displayValue"
+                      :disabled="isParamDisabled(field, model)"
+                      :aria-label="`${row.label} ${field.label}`"
+                      data-action="param-input"
+                      data-input-kind="number"
+                      :data-param-key="field.key"
+                    >
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="row.fields[0].options" class="pano-field" :data-key="row.key" :data-tip="row.fields[0].tip || null">
+                <label>{{ row.label }}</label>
+                <select
+                  :disabled="isParamDisabled(row.fields[0], model)"
+                  :aria-label="row.label"
+                  data-action="param-input"
+                  data-input-kind="select"
+                  :data-param-key="row.fields[0].key"
+                >
+                  <option
+                    v-for="option in row.fields[0].options"
+                    :key="option.value"
+                    :value="option.value"
+                    :selected="option.value === row.fields[0].value"
+                  >{{ option.label }}</option>
+                </select>
+              </div>
+              <div v-else class="pano-field" :data-key="row.key" :data-tip="row.fields[0].tip || null">
+                <label>{{ row.label }}</label>
+                <input
+                  type="range"
+                  :min="row.fields[0].min"
+                  :max="row.fields[0].max"
+                  :step="row.fields[0].step"
+                  :value="row.fields[0].value"
+                  :disabled="isParamDisabled(row.fields[0], model)"
+                  :style="rangeStyle(row.fields[0])"
+                  data-action="param-input"
+                  data-input-kind="range"
+                  :data-param-key="row.fields[0].key"
+                >
+                <input
+                  type="number"
+                  :min="row.fields[0].min"
+                  :max="row.fields[0].max"
+                  :step="row.fields[0].step"
+                  :value="row.fields[0].displayValue"
+                  :disabled="isParamDisabled(row.fields[0], model)"
+                  data-action="param-input"
+                  data-input-kind="number"
+                  :data-param-key="row.fields[0].key"
+                >
+              </div>
+            </template>
           </template>
         </div>
 
-        <template v-if="(model.visibilityRows || []).length">
-          <div class="pano-divider" />
-          <div class="pano-visibility-section">
-            <div class="pano-section-title">
-              <span>Layers</span>
-            </div>
-            <div class="pano-visibility-stack">
-              <div
-                v-for="row in model.visibilityRows"
-                :key="row.key"
-                class="pano-visibility-row"
-                :class="{ 'is-hidden': row.visible === false, 'is-disabled': row.enabled === false }"
-                :data-visibility-row="row.key"
-              >
-                <span class="pano-visibility-name">
-                  <span class="pano-visibility-name-icon" aria-hidden="true">
-                    <SvgIcon :icon="row.icon" />
-                  </span>
-                  <span>{{ row.label }}</span>
-                </span>
-                <button
-                  class="pano-visibility-toggle"
-                  type="button"
-                  data-action="toggle-visibility"
-                  :data-visibility="row.key"
-                  :aria-label="row.ariaLabel"
-                  :aria-pressed="row.visible === true ? 'true' : 'false'"
-                  :data-tip="row.tip"
-                  :disabled="row.enabled === false"
-                  :class="{ active: row.visible === true }"
-                >
-                  <SvgIcon :icon="row.visible === true ? ICON.eye : ICON.eye_dashed" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </template>
+        <PanoUpstreamOrigin :model="model.upstream" />
+
+        <PanoEasingGraph :model="easing" @timeline="emit('timeline', $event)" />
 
         <details v-if="model.uiSettings" class="pano-ui-settings" :open="model.uiSettings.open === true">
           <summary>
@@ -223,26 +270,6 @@ function isParamDisabled(param, model) {
               <div class="pano-segment" data-setting="invert-y" :data-selected="model.uiSettings.invertY ? '1' : '0'">
                 <button class="pano-segment-btn" type="button" data-action="set-invert-y" data-value="0" :aria-pressed="model.uiSettings.invertY ? 'false' : 'true'">Normal</button>
                 <button class="pano-segment-btn" type="button" data-action="set-invert-y" data-value="1" :aria-pressed="model.uiSettings.invertY ? 'true' : 'false'">Inverted</button>
-              </div>
-            </div>
-            <div class="pano-ui-row">
-              <label for="pano-ui-quality">Render Quality</label>
-              <div class="pano-picker pano-ui-picker" data-ui-picker="quality">
-                <button id="pano-ui-quality" class="pano-picker-trigger" type="button" data-action="toggle-quality-picker">
-                  <span class="pano-picker-label">{{ model.uiSettings.qualityLabel }}</span>
-                  <span class="pano-picker-caret">▾</span>
-                </button>
-                <div class="pano-picker-pop" :hidden="model.uiSettings.qualityOpen !== true">
-                  <button
-                    v-for="option in model.uiSettings.qualityOptions || []"
-                    :key="option.value"
-                    type="button"
-                    class="pano-picker-item"
-                    :class="{ active: option.active === true }"
-                    data-action="set-quality"
-                    :data-quality="option.value"
-                  >{{ option.label }}</button>
-                </div>
               </div>
             </div>
             <div class="pano-ui-row">

@@ -2,7 +2,7 @@
 
 ## Status
 
-Active
+Active（world axis の記述は ADR 0023 で superseded）
 
 ## Date
 

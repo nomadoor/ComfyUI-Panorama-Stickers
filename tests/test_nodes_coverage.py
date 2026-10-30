@@ -42,7 +42,15 @@ def _load_nodes_module():
         def define_schema(cls):
             return _Schema()
 
-    io_module = SimpleNamespace(
+    class _IoModule(SimpleNamespace):
+        # Port types these tests do not look at, such as Panorama Studio's media ports.
+        def __getattr__(self, name):
+            return _PortFactory(name)
+
+        def Custom(self, io_type):
+            return _PortFactory(io_type)
+
+    io_module = _IoModule(
         ComfyNode=_ComfyNode,
         Schema=_Schema,
         NodeOutput=_NodeOutput,
@@ -57,8 +65,15 @@ def _load_nodes_module():
     comfy_api_module = ModuleType("comfy_api")
     comfy_api_latest_module = ModuleType("comfy_api.latest")
     comfy_api_latest_module.io = io_module
+    comfy_api_latest_module.ComfyExtension = type("ComfyExtension", (), {})
+    comfy_api_latest_module.Input = SimpleNamespace(Video=type("VideoInput", (), {}))
+    comfy_api_latest_module.InputImpl = SimpleNamespace(VideoFromFile=type("VideoFromFile", (), {}))
+    comfy_api_latest_module.Types = SimpleNamespace(MESH=type("MESH", (), {}), SPLAT=type("SPLAT", (), {}), File3D=type("File3D", (), {}))
     fake_nodes = MagicMock()
     fake_nodes.PreviewImage = MagicMock(return_value=MagicMock(save_images=MagicMock(return_value={})))
+    package = importlib.import_module("comfyui_pano_suite")
+    original_nodes = package.__dict__.get("nodes")
+    # Import a separate module instance so the stubs never leak into the real nodes module.
     with patch.dict(
         sys.modules,
         {
@@ -67,9 +82,11 @@ def _load_nodes_module():
             "nodes": fake_nodes,
         },
     ):
-        import comfyui_pano_suite.nodes as nodes_module
-
-        return importlib.reload(nodes_module)
+        sys.modules.pop("comfyui_pano_suite.nodes", None)
+        nodes_module = importlib.import_module("comfyui_pano_suite.nodes")
+    if original_nodes is not None:
+        package.nodes = original_nodes
+    return nodes_module
 
 
 def test_compose_display_list_to_overlay_rgba_keeps_workspace_shape():

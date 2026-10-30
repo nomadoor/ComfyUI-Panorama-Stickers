@@ -1,0 +1,53 @@
+{
+  "layer": {
+    "version": 2,
+    "id": "scene_a",
+    "timeline": {"fps": 24},
+    "stickers": [
+      {
+        "id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "a.png"}, "z_index": 2,
+        "direction": {"value": {"yaw_deg": 10, "pitch_deg": 0}, "keyframes": [{"frame": 0, "value": {"yaw_deg": 10}}, {"frame": 12, "value": {"yaw_deg": 40}}]},
+        "roll": {"value": 15, "keyframes": [{"frame": 6, "value": 15, "easing": "hold"}]},
+        "size": {"value": {"hFOV_deg": 30, "vFOV_deg": 20}}
+      },
+      {
+        "id": "sticker_2", "placement": "world", "source": {"kind": "file", "filename": "b.png"},
+        "position": {"value": [0, 0, -2], "keyframes": [{"frame": 0, "value": [0, 0, -2]}, {"frame": 24, "value": [1, 0, -2]}]},
+        "opacity": {"value": 0.8}
+      },
+      {"id": "sticker_3", "placement": "sky", "source": {"kind": "port"}, "handoff_overrides": ["roll"]}
+    ],
+    "next_sticker_id": 4
+  },
+  "records": [
+    {
+      "layer": "scene_a",
+      "fps": 24,
+      "stickers": [
+        {"id": "sticker_1", "placement": "sky", "visible": false, "z_index": 7, "direction": {"value": {"yaw_deg": -20}, "keyframes": [{"frame": 3, "value": {"yaw_deg": -20, "pitch_deg": 5}, "easing": "auto"}]}},
+        {"id": "sticker_2", "placement": "world", "locked": true, "crop": {"x0": 0.25, "x1": 0.75}, "opacity": {"value": 0.5}},
+        {"id": "sticker_9", "placement": "sky", "visible": false}
+      ]
+    }
+  ],
+  "expected": {
+    "version": 2,
+    "id": "scene_a",
+    "timeline": {"fps": 24},
+    "stickers": [
+      {
+        "id": "sticker_1", "placement": "sky", "source": {"kind": "file", "filename": "a.png"}, "z_index": 7, "visible": false,
+        "direction": {"value": {"yaw_deg": -20}, "keyframes": [{"frame": 3, "value": {"yaw_deg": -20, "pitch_deg": 5}, "easing": "auto"}]},
+        "roll": {"value": 15, "keyframes": [{"frame": 6, "value": 15, "easing": "hold"}]},
+        "size": {"value": {"hFOV_deg": 30, "vFOV_deg": 20}}
+      },
+      {
+        "id": "sticker_2", "placement": "world", "source": {"kind": "file", "filename": "b.png"}, "locked": true, "crop": {"x0": 0.25, "x1": 0.75},
+        "position": {"value": [0, 0, -2], "keyframes": [{"frame": 0, "value": [0, 0, -2]}, {"frame": 24, "value": [1, 0, -2]}]},
+        "opacity": {"value": 0.5}
+      },
+      {"id": "sticker_3", "placement": "sky", "source": {"kind": "port"}, "handoff_overrides": ["roll"]}
+    ],
+    "next_sticker_id": 4
+  }
+}

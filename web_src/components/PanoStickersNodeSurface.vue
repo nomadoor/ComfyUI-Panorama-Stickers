@@ -1,10 +1,11 @@
 <script setup>
 import { ref } from "vue";
 import { ICON } from "../icons.js";
-import PanoIconButton from "./PanoIconButton.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
 import PanoImageFilePicker from "./PanoImageFilePicker.vue";
 import PanoStickersNodeHelp from "./PanoStickersNodeHelp.vue";
-import SvgIcon from "./SvgIcon.vue";
+import PanoViewUnavailable from "./shared/PanoViewUnavailable.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 const props = defineProps({
   model: { type: Object, default: () => ({}) },
@@ -89,6 +90,19 @@ function onImageFileSelected(payload) {
       />
       <PanoStickersNodeHelp />
     </div>
+    <button
+      v-if="model.playable === true"
+      class="pano-btn pano-btn-icon pano-stickers-node-play"
+      type="button"
+      data-action="toggle-playback"
+      :aria-label="model.playing ? 'Pause' : 'Play'"
+      :data-tip="model.playing ? 'Pause' : 'Play'"
+      @pointerdown.stop
+      @wheel.stop
+      @click="emitAction({ type: 'toggle-playback' })"
+    >
+      <SvgIcon :icon="model.playing ? ICON.pause : ICON.play" />
+    </button>
     <div
       v-if="model.hasStickers === false"
       class="pano-stickers-node-empty-note"
@@ -100,5 +114,6 @@ function onImageFileSelected(payload) {
       ref="imageFilePickerRef"
       @file-selected="onImageFileSelected"
     />
+    <PanoViewUnavailable v-if="model.viewUnavailable" />
   </div>
 </template>

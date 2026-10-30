@@ -1,0 +1,231 @@
+{
+  "version": 2,
+  "id": null,
+  "timeline": {
+    "fps": 1000.0,
+    "length": 10000000
+  },
+  "camera": {
+    "aspect": 1.7777777777777777,
+    "projection": "erp",
+    "erp_range": 360,
+    "visible": true,
+    "locked": false,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "fov": {
+      "value": 90.0,
+      "keyframes": []
+    },
+    "curve": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
+  "scene": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": 2000
+    },
+    "visible": true,
+    "position": {
+      "value": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "keyframes": []
+    },
+    "rotation": {
+      "value": {
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0
+      },
+      "keyframes": []
+    },
+    "scale": {
+      "value": 1.0,
+      "keyframes": []
+    }
+  },
+  "stickers": [
+    {
+      "id": "st",
+      "placement": "sky",
+      "source": {
+        "kind": "port"
+      },
+      "clip": {
+        "start": 1000,
+        "in": 0,
+        "duration": 1000
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 20.0,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": [
+          {
+            "frame": 0,
+            "value": 1.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          },
+          {
+            "frame": 500,
+            "value": 0.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          }
+        ]
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 0,
+      "handoff_overrides": []
+    },
+    {
+      "id": "far",
+      "placement": "sky",
+      "source": {
+        "kind": "file",
+        "filename": "far.png",
+        "subfolder": "",
+        "storage": "input"
+      },
+      "clip": {
+        "start": 10000000,
+        "in": 10000000,
+        "duration": 10000000
+      },
+      "visible": true,
+      "locked": false,
+      "crop": {
+        "x0": 0.0,
+        "y0": 0.0,
+        "x1": 1.0,
+        "y1": 1.0
+      },
+      "direction": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 20.0,
+          "vFOV_deg": 20.0
+        },
+        "keyframes": []
+      },
+      "opacity": {
+        "value": 1.0,
+        "keyframes": [
+          {
+            "frame": -10000000,
+            "value": 1.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          },
+          {
+            "frame": 10000000,
+            "value": 0.0,
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          }
+        ]
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "z_index": 0
+    }
+  ],
+  "next_sticker_id": 1,
+  "painting": {
+    "version": 1,
+    "groups": [],
+    "paint": {
+      "strokes": []
+    },
+    "mask": {
+      "strokes": []
+    },
+    "raster_objects": []
+  },
+  "painting_layer": null,
+  "painting_visible": true,
+  "upstream": [],
+  "background": {
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    }
+  }
+}

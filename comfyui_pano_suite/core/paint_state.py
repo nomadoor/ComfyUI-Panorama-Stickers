@@ -30,11 +30,27 @@ def _finite_float(value):
 
 
 def _finite_int(value):
-    try:
-        out = int(value)
-    except Exception:
-        return None
-    return out
+    """An integer as JS reads the number (a double, truncated): one too large for a double is an infinity there, so
+    it is invalid (None) here too, rather than an exact integer that a later float() cannot hold."""
+    out = _finite_float(value)
+    return None if out is None else int(out)
+
+
+def _z_index(item: dict):
+    """The first finite JSON number (not a boolean, not text) of `z_index`, then `zIndex`, or None."""
+    for key in ("z_index", "zIndex"):
+        value = item.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out = _finite_float(value)
+            if out is not None:
+                return out
+    return None
+
+
+def _js_round(value: float) -> int:
+    """Math.round: the nearest integer, halves toward +infinity (-2.5 is -2), unlike Python's round()."""
+    out = math.floor(value)
+    return int(out + 1 if value - out >= 0.5 else out)
 
 
 def _normalize_target_space(raw):
@@ -179,6 +195,65 @@ def _normalize_color(raw, allow_color):
     }
 
 
+def _json_number(value):
+    """A finite JSON number (not a boolean, not text) as a float, or None (one too large for a double too)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return _finite_float(value)
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+STAMP_KINDS = {"round", "chisel", "crayon"}
+
+
+def _normalize_brush(raw: dict) -> dict:
+    """The brush-shape values a stroke keeps (docs/scene-state-v2.md 「ペイントのストロークの筆の値」), each only when it
+    differs from its default, the value the editor's paint engine uses when it is missing. Hardness, flow and spacing
+    are always kept, None (the engine's default) unless a JSON number: None is never read as 0."""
+    out = {
+        "hardness": _json_number(raw.get("hardness")),
+        "flow": _json_number(raw.get("flow")),
+        "spacing": _json_number(raw.get("spacing")),
+    }
+    stamp_kind = raw.get("stampKind")
+    stamp_kind = stamp_kind if isinstance(stamp_kind, str) and stamp_kind in STAMP_KINDS else "round"
+    if stamp_kind != "round":
+        out["stampKind"] = stamp_kind
+    aspect = _json_number(raw.get("aspect"))
+    if aspect is not None and _clamp(aspect, 0.1, 10.0) != 1.0:
+        out["aspect"] = _clamp(aspect, 0.1, 10.0)
+    angle = raw.get("angle") if isinstance(raw.get("angle"), dict) else {}
+    angle_value = _json_number(angle.get("value"))
+    if angle.get("kind") == "stroke_dir":
+        out["angle"] = {"kind": "stroke_dir"}
+    elif angle_value is not None and angle_value != 0.0:
+        out["angle"] = {"kind": "fixed", "value": angle_value}
+
+    def keep(key, default, lo, hi):
+        value = _json_number(raw.get(key))
+        if value is not None and _clamp(value, lo, hi) != default:
+            out[key] = _clamp(value, lo, hi)
+
+    if stamp_kind == "chisel":
+        keep("chiselEdgeLift", 0.4, 0.0, math.inf)
+        keep("chiselCenterDip", 0.3, 0.0, math.inf)
+        keep("chiselFiber", 0.0, 0.0, 1.0)
+    if stamp_kind == "crayon":
+        keep("crayonGrain", 0.65, 0.0, 1.0)
+    scatter = raw.get("scatter")
+    if isinstance(scatter, dict):
+        radius = _json_number(scatter.get("radius"))
+        count = _json_number(scatter.get("count"))
+        out["scatter"] = {
+            "radius": max(0.0, 1.5 if radius is None else radius),
+            "count": int(_clamp(_js_round(6.0 if count is None else count), 1, 64)),
+        }
+    return out
+
+
 def _normalize_stroke(raw, layer_kind):
     if not isinstance(raw, dict):
         return None
@@ -213,9 +288,7 @@ def _normalize_stroke(raw, layer_kind):
         "color": color,
         "size": max(0.0, float(size)),
         "opacity": max(0.0, min(1.0, float(opacity))),
-        "hardness": _finite_float(raw.get("hardness")),
-        "flow": _finite_float(raw.get("flow")),
-        "spacing": _finite_float(raw.get("spacing")),
+        **_normalize_brush(raw),
         "createdAt": int(created_at),
         "radiusModel": radius_model,
         "radiusValue": None if radius_value is None else max(0.0, float(radius_value)),
@@ -249,12 +322,12 @@ def _normalize_groups(raw_groups):
         if not action_group_id or action_group_id in seen:
             continue
         seen.add(action_group_id)
-        z_index = _finite_int(item.get("z_index", item.get("zIndex", len(out))))
+        z_index = _z_index(item)
         out.append({
             "id": str(item.get("id") or action_group_id),
             "type": "strokeGroup",
             "actionGroupId": action_group_id,
-            "z_index": max(0, 0 if z_index is None else int(z_index)),
+            "z_index": max(0, len(out) if z_index is None else _js_round(z_index)),
         })
     return out
 
@@ -307,7 +380,7 @@ def _normalize_raster_object(item, fallback_z):
     bbox = _normalize_raster_bbox(item.get("bbox"))
     if bbox is None:
         return None
-    z_raw = _finite_float(item.get("z_index", item.get("zIndex", fallback_z)))
+    z_raw = _z_index(item)
     z_index = max(0.0, float(z_raw)) if z_raw is not None else float(fallback_z)
     return {
         "id": obj_id,
@@ -339,8 +412,6 @@ def normalize_painting_state(raw) -> dict:
     out = empty_painting_state()
     if not isinstance(raw, dict):
         return out
-    version = _finite_int(raw.get("version"))
-    out["version"] = 1 if version is None else int(version)
     out["groups"] = _normalize_groups(raw.get("groups"))
     out["paint"] = _normalize_layer(raw.get("paint"), "paint")
     out["mask"] = _normalize_layer(raw.get("mask"), "mask")

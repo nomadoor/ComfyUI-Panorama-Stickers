@@ -1,7 +1,7 @@
 [project]
 name = "panorama-stickers"
 description = "A ComfyUI node set and frontend extension for interactive 360 panorama workflows."
-version = "1.5.2"
+version = "2.0.0"
 license = {file = "LICENSE"} 
 # classifiers = [
 #     # For OS-independent nodes (works on all operating systems)
@@ -32,5 +32,5 @@ PublisherId = "nomadoor"
 DisplayName = "ComfyUI-Panorama-Stickers"
 Icon = ""
 includes = [] 
-# "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
+"requires-comfyui" = ">=0.35.0"  # ComfyUI version compatibility
 

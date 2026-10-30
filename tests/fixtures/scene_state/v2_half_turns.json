@@ -1,0 +1,244 @@
+{
+  "version": 2,
+  "timeline": {"fps": 24.0, "length": null},
+  "camera": {
+    "aspect": 1.0,
+    "position": {
+      "value": [0.0, 0.0, 0.0],
+      "keyframes": [
+        {"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"},
+        {"frame": 2, "value": [0.0, 0.0, 0.0], "easing": "auto"},
+        {"frame": 102, "value": [0.0, 0.0, 0.0], "easing": "auto"}
+      ]
+    },
+    "rotation": {
+      "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+      "keyframes": [
+        {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+        {"frame": 2, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+        {"frame": 102, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"}
+      ]
+    },
+    "fov": {
+      "value": 90.0,
+      "keyframes": [
+        {"frame": 0, "value": 90.0, "easing": "auto"},
+        {"frame": 2, "value": 60.0, "easing": "auto"},
+        {"frame": 102, "value": 60.0, "easing": "auto"}
+      ]
+    }
+  },
+  "scene": {
+    "clip": {"start": 0, "in": 0, "duration": null},
+    "position": {"value": [0.0, 0.0, 0.0], "keyframes": []},
+    "rotation": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "keyframes": []},
+    "scale": {"value": 1.0, "keyframes": []}
+  },
+  "stickers": [
+    {
+      "id": "half_turn_view_axis",
+      "placement": "world",
+      "source": {"kind": "file", "filename": "half_turn_view_axis.png", "subfolder": "", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "position": {
+        "value": [0.0, 0.0, 0.0],
+        "keyframes": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"}, {"frame": 20, "value": [0.0, 0.0, 0.0], "easing": "auto"}]
+      },
+      "rotation": {
+        "value": {"yaw_deg": 45.0, "pitch_deg": 30.0, "roll_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": 45.0, "pitch_deg": 30.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 20, "value": {"yaw_deg": -135.0, "pitch_deg": -30.0, "roll_deg": 180.0}, "easing": "auto"}
+        ]
+      },
+      "scale": {"value": 1.0, "keyframes": [{"frame": 0, "value": 1.0, "easing": "auto"}, {"frame": 20, "value": 1.0, "easing": "auto"}]},
+      "opacity": {"value": 1.0, "keyframes": []}
+    },
+    {
+      "id": "half_turn_yaw",
+      "placement": "world",
+      "source": {"kind": "file", "filename": "half_turn_yaw.png", "subfolder": "", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "position": {
+        "value": [0.0, 0.0, 0.0],
+        "keyframes": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"}, {"frame": 20, "value": [0.0, 0.0, 0.0], "easing": "auto"}]
+      },
+      "rotation": {
+        "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 20, "value": {"yaw_deg": 180.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"}
+        ]
+      },
+      "scale": {"value": 1.0, "keyframes": [{"frame": 0, "value": 1.0, "easing": "auto"}, {"frame": 20, "value": 1.0, "easing": "auto"}]},
+      "opacity": {"value": 1.0, "keyframes": []}
+    },
+    {
+      "id": "half_turn_yaw_30",
+      "placement": "world",
+      "source": {"kind": "file", "filename": "half_turn_yaw_30.png", "subfolder": "", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "position": {
+        "value": [0.0, 0.0, 0.0],
+        "keyframes": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"}, {"frame": 20, "value": [0.0, 0.0, 0.0], "easing": "auto"}]
+      },
+      "rotation": {
+        "value": {"yaw_deg": 30.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": 30.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 20, "value": {"yaw_deg": 210.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"}
+        ]
+      },
+      "scale": {"value": 1.0, "keyframes": [{"frame": 0, "value": 1.0, "easing": "auto"}, {"frame": 20, "value": 1.0, "easing": "auto"}]},
+      "opacity": {"value": 1.0, "keyframes": []}
+    },
+    {
+      "id": "half_turn_pitch",
+      "placement": "world",
+      "source": {"kind": "file", "filename": "half_turn_pitch.png", "subfolder": "", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "position": {
+        "value": [0.0, 0.0, 0.0],
+        "keyframes": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"}, {"frame": 20, "value": [0.0, 0.0, 0.0], "easing": "auto"}]
+      },
+      "rotation": {
+        "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 20, "value": {"yaw_deg": 180.0, "pitch_deg": 0.0, "roll_deg": 180.0}, "easing": "auto"}
+        ]
+      },
+      "scale": {"value": 1.0, "keyframes": [{"frame": 0, "value": 1.0, "easing": "auto"}, {"frame": 20, "value": 1.0, "easing": "auto"}]},
+      "opacity": {"value": 1.0, "keyframes": []}
+    },
+    {
+      "id": "half_turn_roll",
+      "placement": "world",
+      "source": {"kind": "file", "filename": "half_turn_roll.png", "subfolder": "", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "position": {
+        "value": [0.0, 0.0, 0.0],
+        "keyframes": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"}, {"frame": 20, "value": [0.0, 0.0, 0.0], "easing": "auto"}]
+      },
+      "rotation": {
+        "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 20, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 180.0}, "easing": "auto"}
+        ]
+      },
+      "scale": {"value": 1.0, "keyframes": [{"frame": 0, "value": 1.0, "easing": "auto"}, {"frame": 20, "value": 1.0, "easing": "auto"}]},
+      "opacity": {"value": 1.0, "keyframes": []}
+    },
+    {
+      "id": "unwrap_tie",
+      "placement": "world",
+      "source": {"kind": "file", "filename": "unwrap_tie.png", "subfolder": "", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "position": {
+        "value": [0.0, 0.0, 0.0],
+        "keyframes": [{"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"}, {"frame": 20, "value": [0.0, 0.0, 0.0], "easing": "auto"}]
+      },
+      "rotation": {
+        "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 20, "value": {"yaw_deg": 350.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"}
+        ]
+      },
+      "scale": {"value": 1.0, "keyframes": [{"frame": 0, "value": 1.0, "easing": "auto"}, {"frame": 20, "value": 1.0, "easing": "auto"}]},
+      "opacity": {"value": 1.0, "keyframes": []}
+    },
+    {
+      "id": "fast_then_stop",
+      "placement": "world",
+      "source": {"kind": "file", "filename": "fast_then_stop.png", "subfolder": "", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "position": {
+        "value": [0.0, 0.0, 0.0],
+        "keyframes": [
+          {"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"},
+          {"frame": 2, "value": [5.0, 1.0, 0.0], "easing": "auto"},
+          {"frame": 102, "value": [5.0, 1.0, 0.0], "easing": "auto"}
+        ]
+      },
+      "rotation": {
+        "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 2, "value": {"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 102, "value": {"yaw_deg": 90.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"}
+        ]
+      },
+      "scale": {
+        "value": 1.0,
+        "keyframes": [
+          {"frame": 0, "value": 1.0, "easing": "auto"},
+          {"frame": 2, "value": 3.0, "easing": "auto"},
+          {"frame": 102, "value": 3.0, "easing": "auto"}
+        ]
+      },
+      "opacity": {"value": 1.0, "keyframes": []}
+    },
+    {
+      "id": "uneven_spacing",
+      "placement": "world",
+      "source": {"kind": "file", "filename": "uneven_spacing.png", "subfolder": "", "storage": "input"},
+      "clip": {"start": 0, "in": 0, "duration": null},
+      "visible": true,
+      "locked": false,
+      "crop": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0},
+      "position": {
+        "value": [0.0, 0.0, 0.0],
+        "keyframes": [
+          {"frame": 0, "value": [0.0, 0.0, 0.0], "easing": "auto"},
+          {"frame": 3, "value": [1.0, 0.0, 0.0], "easing": "auto"},
+          {"frame": 60, "value": [2.0, 3.0, 0.0], "easing": "auto"},
+          {"frame": 70, "value": [2.0, 4.0, 1.0], "easing": "auto"}
+        ]
+      },
+      "rotation": {
+        "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0},
+        "keyframes": [
+          {"frame": 0, "value": {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 3, "value": {"yaw_deg": 20.0, "pitch_deg": 5.0, "roll_deg": 0.0}, "easing": "auto"},
+          {"frame": 60, "value": {"yaw_deg": 100.0, "pitch_deg": 20.0, "roll_deg": 10.0}, "easing": "auto"},
+          {"frame": 70, "value": {"yaw_deg": 110.0, "pitch_deg": 25.0, "roll_deg": 10.0}, "easing": "auto"}
+        ]
+      },
+      "scale": {
+        "value": 1.0,
+        "keyframes": [
+          {"frame": 0, "value": 1.0, "easing": "auto"},
+          {"frame": 3, "value": 1.0, "easing": "auto"},
+          {"frame": 60, "value": 1.0, "easing": "auto"},
+          {"frame": 70, "value": 1.0, "easing": "auto"}
+        ]
+      },
+      "opacity": {"value": 1.0, "keyframes": []}
+    }
+  ],
+  "painting": {"version": 1, "groups": [], "paint": {"strokes": []}, "mask": {"strokes": []}, "raster_objects": []},
+  "painting_layer": null
+}

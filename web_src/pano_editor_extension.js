@@ -1,6 +1,12 @@
 import { normalizeCoverageValue, parsePanoEditorState } from "./pano_editor_state.js";
 import { applyCutoutNodeSurfaceAction } from "./pano_cutout_node_surface.js";
-import { isPanoramaPreviewNodeName } from "./pano_preview_identity.js";
+import { isPanoramaPreviewNodeName, isPanoramaPreviewSceneNodeName } from "./pano_preview_identity.js";
+import { linkedInputType } from "./pano_preview_video.js";
+import { runExternalStickerSync } from "./pano_external_sticker_sync.js";
+import { chainWidgetCallback } from "./pano_widget_callback.js";
+import { VIEW_CONTROLS_SETTING } from "./pano_view_controls.js";
+import { DIAGNOSTICS_EXPORT_COMMAND, DIAGNOSTICS_SETTING } from "./pano_diagnostics.js";
+import { disposeNodeRuntime, editorSession, nodeSurface, peekSceneViewer, previewNode, stateSync } from "./pano_node_bridge.js";
 
 const STATE_WIDGET = "state_json";
 
@@ -25,26 +31,21 @@ function initializeNewCutoutFrame(node) {
 }
 
 function syncCoverageWidgetRedraw(node, app) {
-  if (!node || node.__panoCoverageWidgetSyncInstalled) return;
-  const coverageWidget = getWidget(node, "coverage");
+  if (!node || stateSync(node).coverageSyncInstalled) return;
+  // Panorama Studio and the Preview name it `background_range` (ADR 0048); the legacy nodes `coverage`.
+  const coverageWidget = getWidget(node, "background_range") ?? getWidget(node, "coverage");
   if (!coverageWidget) return;
-  const previous = typeof coverageWidget.callback === "function"
-    ? coverageWidget.callback.bind(coverageWidget)
-    : null;
-  coverageWidget.callback = function (...args) {
-    const result = previous ? previous(...args) : undefined;
-    node.__panoStateCache = null;
-    node.__panoLiveStateOverride = null;
-    node.__panoWrappedErpCache = null;
-    node.__panoPanoBackgroundCache = null;
-    node.__panoPreviewNodeRuntime?.requestDraw?.();
-    node.__panoDomPreview?.requestDraw?.();
+  chainWidgetCallback(coverageWidget, () => {
+    const sync = stateSync(node);
+    sync.parsedState = null;
+    sync.liveState = null;
+    previewNode(node).runtime?.requestDraw?.();
+    nodeSurface(node).dom?.requestDraw?.();
     node.setDirtyCanvas?.(true, true);
     node.graph?.setDirtyCanvas?.(true, true);
     app?.canvas?.setDirty?.(true, true);
-    return result;
-  };
-  node.__panoCoverageWidgetSyncInstalled = true;
+  });
+  stateSync(node).coverageSyncInstalled = true;
 }
 
 function isHexColorString(value) {
@@ -139,8 +140,8 @@ function ensureActionButtonWidget(node, buttonText, callback) {
 }
 
 async function waitForPendingStickerUploads(node, { tolerateOperationFailure = false } = {}) {
-  const pending = node?.__panoPendingStickerUploads;
-  if (!(pending instanceof Map)) return;
+  const pending = stateSync(node)?.pendingStickerUploads;
+  if (!pending) return;
   while (pending.size > 0) {
     const entries = Array.from(pending.entries());
     if (tolerateOperationFailure) {
@@ -158,36 +159,32 @@ export function queuePendingStickerOperation(node, operationId, operation) {
   if (!node || typeof operation !== "function") {
     return Promise.reject(new TypeError("A node and sticker operation are required."));
   }
-  if (!(node.__panoPendingStickerUploads instanceof Map)) {
-    node.__panoPendingStickerUploads = new Map();
-  }
-  const previous = node.__panoStickerOperationTail;
+  const sync = stateSync(node);
+  const previous = sync.stickerOperationTail;
   const ready = previous && typeof previous.then === "function"
     ? previous.catch(() => undefined)
     : Promise.resolve();
   const pending = ready.then(() => operation());
   const tail = pending.catch(() => undefined);
-  node.__panoStickerOperationTail = tail;
-  node.__panoPendingStickerUploads.set(operationId, pending);
+  sync.stickerOperationTail = tail;
+  sync.pendingStickerUploads.set(operationId, pending);
   const cleanup = () => {
-    if (node.__panoPendingStickerUploads?.get?.(operationId) === pending) {
-      node.__panoPendingStickerUploads.delete(operationId);
+    if (sync.pendingStickerUploads.get(operationId) === pending) {
+      sync.pendingStickerUploads.delete(operationId);
     }
   };
   pending.then(cleanup, cleanup);
   tail.then(() => {
-    if (node.__panoStickerOperationTail === tail) node.__panoStickerOperationTail = null;
+    if (sync.stickerOperationTail === tail) sync.stickerOperationTail = null;
   });
   return pending;
 }
 
 export async function flushPanoStateProducers(node, options = {}) {
   await waitForPendingStickerUploads(node, options);
-  const flushers = node?.__panoStateFlushers instanceof Set
-    ? Array.from(node.__panoStateFlushers)
-    : [];
+  const flushers = Array.from(stateSync(node)?.flushers ?? []);
   for (const flush of flushers) await flush();
-  await node?.__panoFlushStateBeforeQueue?.();
+  await editorSession(node)?.flushBeforeQueue?.();
 }
 
 function installStateQueueBarrier(node, stateWidget) {
@@ -205,13 +202,21 @@ function installStateQueueBarrier(node, stateWidget) {
 }
 
 function cleanupPreviewBindings(node) {
-  try { node.__panoDomRestore?.(); } catch { }
-  try { node.__panoLegacyRestore?.(); } catch { }
-  node.__panoDomPreview = null;
-  node.__panoLegacyPreviewHooked = false;
-  node.__panoPreviewHooked = false;
-  node.__panoPreviewAttached = false;
-  node.__panoPreviewMountKey = null;
+  const surface = nodeSurface(node);
+  try { surface.restore?.(); } catch { }
+  surface.dom = null;
+  surface.attached = false;
+  surface.mountKey = null;
+}
+
+// LiteGraph calls onRemoved for a deleted node and for each node of a cleared or reloaded graph.
+function disposeRuntimeOnRemoved(nodeType) {
+  const previous = nodeType.prototype.onRemoved;
+  nodeType.prototype.onRemoved = function () {
+    const result = previous ? previous.apply(this, arguments) : undefined;
+    disposeNodeRuntime(this);
+    return result;
+  };
 }
 
 function ensurePanoramaPreviewImageOutput(node) {
@@ -230,31 +235,34 @@ function installEditorButton(nodeType, {
   attachStickers,
   attachCutout,
   enableStickersPreview,
+  sceneStateV2 = false,
+  studio = false,
 }) {
   if (!nodeType?.prototype) return;
 
   function installOrUpdate(node) {
     const mountKey = `editor_btn|${matchType}`;
-    if (node.__panoPreviewAttached === true && node.__panoPreviewMountKey === mountKey) return;
+    const surface = nodeSurface(node);
+    if (surface.attached === true && surface.mountKey === mountKey) return;
     cleanupPreviewBindings(node);
     syncCoverageWidgetRedraw(node, app);
     hideWidget(node, STATE_WIDGET);
 
     const stateWidget = getWidget(node, STATE_WIDGET);
     installStateQueueBarrier(node, stateWidget);
-    if (stateWidget && !stateWidget.__panoPreviewPatchedCb) {
-      stateWidget.__panoPreviewPatchedCb = true;
-      const previous = stateWidget.callback;
-      stateWidget.callback = (value) => {
-        const result = previous ? previous(value) : undefined;
-        node.setDirtyCanvas?.(true, false);
-        return result;
-      };
+    if (stateWidget && !stateSync(node).stateRedrawInstalled) {
+      stateSync(node).stateRedrawInstalled = true;
+      chainWidgetCallback(stateWidget, () => node.setDirtyCanvas?.(true, false));
     }
 
     if (matchType === "PanoramaStickers") {
+      // Panorama Studio keeps state v2 in state_json (see pano_editor_state.js). Its editor is the Stickers
+      // editor with a Camera the user adds; its node surface only shows the Scene, without editing or playback
+      // (PanoStudioNodeSurface.vue in pano_preview_runtime.js).
+      node.__panoSceneStateV2 = sceneStateV2;
+      node.__panoStudio = studio;
       const background = getWidget(node, "bg_color");
-      if (background && (background.value == null || String(background.value).trim() === "" || String(background.value).toLowerCase() === "#000000")) {
+      if (!sceneStateV2 && background && (background.value == null || String(background.value).trim() === "" || String(background.value).toLowerCase() === "#000000")) {
         background.value = "#00ff00";
         background.callback?.("#00ff00");
       }
@@ -265,23 +273,25 @@ function installEditorButton(nodeType, {
           buttonText,
           onOpen: () => openEditor(node, "stickers"),
         });
-        if (node.__panoStickersNodeSurface) hideWidget(node, buttonText);
+        if (surface.stickers) hideWidget(node, buttonText);
         if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) node.size = [360, 260];
       }
-      node.__panoPreviewAttached = true;
-      node.__panoPreviewMountKey = mountKey;
+      surface.attached = true;
+      surface.mountKey = mountKey;
       return;
     }
 
+    // The legacy Cutout edits v1.
+    node.__panoSceneStateV2 = false;
     ensureActionButtonWidget(node, buttonText, () => openEditor(node, "cutout"));
     attachCutout(node, {
       buttonText,
       onOpen: () => openEditor(node, "cutout"),
     });
-    if (node.__panoCutoutNodeSurface) hideWidget(node, buttonText);
+    if (surface.cutout) hideWidget(node, buttonText);
     if (!Array.isArray(node.size) || node.size[0] < 10 || node.size[1] < 10) node.size = [360, 260];
-    node.__panoPreviewAttached = true;
-    node.__panoPreviewMountKey = mountKey;
+    surface.attached = true;
+    surface.mountKey = mountKey;
   }
 
   for (const hook of ["onNodeCreated", "onConfigure", "onAdded"]) {
@@ -291,13 +301,18 @@ function installEditorButton(nodeType, {
       if (hook === "onNodeCreated" && matchType === "PanoramaCutout") {
         initializeNewCutoutFrame(this);
       }
-      if (hook === "onConfigure" && matchType === "PanoramaStickers" && this.widgets) {
+      if (hook === "onConfigure" && matchType === "PanoramaStickers" && !sceneStateV2 && this.widgets) {
         migratePanoramaStickersWidgetOrder(this);
       }
+      const attached = nodeSurface(this).attached;
       if (hook === "onNodeCreated" || this.widgets) installOrUpdate(this);
+      // LiteGraph.createNode runs onNodeCreated before graph.add, so a node attached then syncs its
+      // sticker input once it is in the graph.
+      if (hook === "onAdded" && attached) runExternalStickerSync(this, "attach");
       return result;
     };
   }
+  disposeRuntimeOnRemoved(nodeType);
 }
 
 function installStandalonePreviewNode(nodeType) {
@@ -314,6 +329,7 @@ function installStandalonePreviewNode(nodeType) {
     ensurePanoramaPreviewImageOutput(this);
     return result;
   };
+  disposeRuntimeOnRemoved(nodeType);
 }
 
 function installStandalonePreviewInstance(node, {
@@ -322,12 +338,15 @@ function installStandalonePreviewInstance(node, {
   attachPreview,
   requestFrame,
 }) {
-  if (!node || node.__panoStandaloneInstallDone || node.__panoStandaloneInstallProbeActive) return;
-  node.__panoStandaloneInstallProbeActive = true;
+  const install = previewNode(node);
+  if (!install || install.installDone || install.installProbeActive) return;
+  install.installProbeActive = true;
   const tryInstall = () => {
+    // A node removed while it waits for its graph is not installed (disposeNodeRuntime forgets its record).
+    if (previewNode(node) !== install) return;
     const ready = Number(node?.id ?? -1) >= 0 && !!node?.graph;
-    const tries = Number(node.__panoStandaloneInstallProbeTries || 0) + 1;
-    node.__panoStandaloneInstallProbeTries = tries;
+    const tries = install.installProbeTries + 1;
+    install.installProbeTries = tries;
     if (!ready && tries < 40) {
       requestFrame(tryInstall);
       return;
@@ -341,9 +360,92 @@ function installStandalonePreviewInstance(node, {
       imageInputName: "erp_image",
       onOpen: openPreview,
     });
-    if (node.__panoPreviewNodeSurface) hideWidget(node, "Open Preview");
-    node.__panoStandaloneInstallDone = true;
-    node.__panoStandaloneInstallProbeActive = false;
+    if (install.surface) hideWidget(node, "Open Preview");
+    install.installDone = true;
+    install.installProbeActive = false;
+  };
+  requestFrame(tryInstall);
+}
+
+// The Preview of IMAGE, VIDEO and PANO_SCENE (`PanoramaPreviewNode`, docs/preview-node.md "ノード上の表示"). Its
+// `source` is a MatchType that passes the input through, so it gets no `image` output. What shows `source` follows
+// the type linked to it, before any run: a Scene in the Scene viewer, IMAGE and VIDEO in the legacy Preview's
+// runtime reading `source`. A changed link switches it.
+function installScenePreviewNode(nodeType, { requestFrame, onExecuted }) {
+  if (!nodeType?.prototype) return;
+  const previousCreated = nodeType.prototype.onNodeCreated;
+  nodeType.prototype.onNodeCreated = function () {
+    const result = previousCreated ? previousCreated.apply(this, arguments) : undefined;
+    if (!Array.isArray(this.size) || this.size[0] < 10 || this.size[1] < 10) this.size = [360, 260];
+    return result;
+  };
+  // The legacy runtime wraps the node's own hooks and calls these; the switch waits for a frame so that it does
+  // not tear the runtime down inside its own hook.
+  const previousConnections = nodeType.prototype.onConnectionsChange;
+  nodeType.prototype.onConnectionsChange = function () {
+    const result = previousConnections ? previousConnections.apply(this, arguments) : undefined;
+    const node = this;
+    const install = previewNode(node);
+    if (install?.installDone) requestFrame(() => install.sync?.());
+    return result;
+  };
+  const previousExecuted = nodeType.prototype.onExecuted;
+  nodeType.prototype.onExecuted = function () {
+    const result = previousExecuted ? previousExecuted.apply(this, arguments) : undefined;
+    if (previewNode(this)?.display === "scene") onExecuted?.(this);
+    return result;
+  };
+  disposeRuntimeOnRemoved(nodeType);
+}
+
+function scenePreviewDisplay(node) {
+  return linkedInputType(node, "source") === "PANO_SCENE" ? "scene" : "media";
+}
+
+function installScenePreviewInstance(node, { app, openEditor, attachPreview, attachSceneViewer, openSceneViewer, requestFrame }) {
+  const install = previewNode(node);
+  if (!install || install.installDone || install.installProbeActive) return;
+  install.installProbeActive = true;
+  const openMedia = (target = node) => openEditor(target, "stickers", { readOnly: true, hideSidebar: false });
+  const open = () => (install.display === "scene" ? openSceneViewer?.(node) : openMedia(node));
+  install.sync = () => {
+    if (previewNode(node) !== install) return;
+    const display = scenePreviewDisplay(node);
+    if (display === install.display) return;
+    if (install.display === "scene") peekSceneViewer(node)?.surface?.detach?.();
+    if (install.display === "media") install.runtime?.teardown?.();
+    install.display = display;
+    if (display === "scene") {
+      attachSceneViewer?.(node);
+    } else {
+      // With the new window taking this node, the surface's top-right button opens it instead of the browser's
+      // fullscreen (docs/preview-node.md "ノード上").
+      attachPreview(node, {
+        buttonText: "Open Preview",
+        modalTitle: "Panorama Preview",
+        imageInputName: "source",
+        onOpen: openMedia,
+        opensWindow: () => openEditor.previewWindowTakes?.(node) === true,
+      });
+    }
+    if (install.surface || peekSceneViewer(node)?.surface) hideWidget(node, "Open Preview");
+    else ensureActionButtonWidget(node, "Open Preview", open);
+    node.setDirtyCanvas?.(true, true);
+  };
+  const tryInstall = () => {
+    if (previewNode(node) !== install) return;
+    const ready = Number(node?.id ?? -1) >= 0 && !!node?.graph;
+    const tries = install.installProbeTries + 1;
+    install.installProbeTries = tries;
+    if (!ready && tries < 40) {
+      requestFrame(tryInstall);
+      return;
+    }
+    syncCoverageWidgetRedraw(node, app);
+    ensureActionButtonWidget(node, "Open Preview", open);
+    install.installDone = true;
+    install.installProbeActive = false;
+    install.sync();
   };
   requestFrame(tryInstall);
 }
@@ -354,11 +456,20 @@ export function createPanoEditorExtension({
   attachStickers,
   attachCutout,
   attachPreview,
+  attachSceneViewer = null,
+  openSceneViewer = null,
+  onSceneViewerExecuted = null,
+  restoreOutput,
   requestFrame,
   enableStickersPreview = false,
 }) {
   return {
     name: "ComfyUI.PanoramaSuite.Editor",
+    // ComfyUI shows these in its settings dialog and saves them.
+    settings: [VIEW_CONTROLS_SETTING, DIAGNOSTICS_SETTING],
+    // Extensions › Panorama Suite › Export Panorama Suite diagnostics (pano_diagnostics.js).
+    commands: [DIAGNOSTICS_EXPORT_COMMAND],
+    menuCommands: [{ path: ["Extensions", "Panorama Suite"], commands: [DIAGNOSTICS_EXPORT_COMMAND.id] }],
     beforeRegisterNodeDef(nodeType, nodeData) {
       const name = String(nodeData?.name || "");
       if (name === "PanoramaStickers" || name === "Panorama Stickers") {
@@ -370,6 +481,19 @@ export function createPanoEditorExtension({
           attachStickers,
           attachCutout,
           enableStickersPreview,
+        });
+      }
+      if (name === "PanoramaStudio") {
+        installEditorButton(nodeType, {
+          app,
+          matchType: "PanoramaStickers",
+          buttonText: "Open Studio Editor",
+          openEditor,
+          attachStickers,
+          attachCutout,
+          enableStickersPreview,
+          sceneStateV2: true,
+          studio: true,
         });
       }
       if (name === "PanoramaCutout" || name === "Panorama Cutout") {
@@ -384,10 +508,19 @@ export function createPanoEditorExtension({
         });
       }
       if (isPanoramaPreviewNodeName(name)) installStandalonePreviewNode(nodeType);
+      if (isPanoramaPreviewSceneNodeName(name)) installScenePreviewNode(nodeType, { requestFrame, onExecuted: onSceneViewerExecuted });
+    },
+    // ComfyUI calls this for each node once a loaded graph is configured, links included.
+    loadedGraphNode(node) {
+      if (nodeSurface(node).attached) void restoreOutput(node);
     },
     nodeCreated(node) {
       const name = String(node?.comfyClass || node?.type || node?.title || "");
       syncCoverageWidgetRedraw(node, app);
+      if (isPanoramaPreviewSceneNodeName(name)) {
+        installScenePreviewInstance(node, { app, openEditor, attachPreview, attachSceneViewer, openSceneViewer, requestFrame });
+        return;
+      }
       if (!isPanoramaPreviewNodeName(name)) return;
       installStandalonePreviewInstance(node, { app, openEditor, attachPreview, requestFrame });
     },

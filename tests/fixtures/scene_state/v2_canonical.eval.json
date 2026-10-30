@@ -1,0 +1,586 @@
+[
+  {
+    "frame": -5.0,
+    "camera": {
+      "position": [
+        0.0,
+        1.6,
+        0.0
+      ],
+      "yaw_deg": 10.0,
+      "pitch_deg": 5.0,
+      "roll_deg": 0.0,
+      "hFOV_deg": 90.0,
+      "curve": 1.0,
+      "aspect": 1.7777777777777777
+    },
+    "scene": {
+      "active": false,
+      "clip_frame": -5.0,
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw_deg": 0.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "scale": 2.0
+    },
+    "stickers": [
+      {
+        "id": "st_sky",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": -10.0,
+        "yaw_deg": 30.0,
+        "pitch_deg": 10.0,
+        "roll_deg": 5.0,
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 15.0,
+        "curve": 1.0,
+        "opacity": 0.0
+      },
+      {
+        "id": "st_world",
+        "placement": "world",
+        "active": false,
+        "clip_frame": -5.0,
+        "position": [
+          0.0,
+          1.0,
+          -2.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.0,
+        "opacity": 0.8
+      },
+      {
+        "id": "st_hidden",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": -5.0,
+        "yaw_deg": -45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 30.0,
+        "vFOV_deg": 30.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      }
+    ]
+  },
+  {
+    "frame": 9.999,
+    "camera": {
+      "position": [
+        0.0,
+        1.6,
+        0.0
+      ],
+      "yaw_deg": 10.0,
+      "pitch_deg": 5.0,
+      "roll_deg": 0.0,
+      "hFOV_deg": 90.0,
+      "curve": 1.0,
+      "aspect": 1.7777777777777777
+    },
+    "scene": {
+      "active": true,
+      "clip_frame": 9.999,
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw_deg": 0.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "scale": 2.0
+    },
+    "stickers": [
+      {
+        "id": "st_sky",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 4.9990000000000006,
+        "yaw_deg": 30.0,
+        "pitch_deg": 10.0,
+        "roll_deg": 5.0,
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 15.0,
+        "curve": 1.0,
+        "opacity": 0.0
+      },
+      {
+        "id": "st_world",
+        "placement": "world",
+        "active": true,
+        "clip_frame": 9.999,
+        "position": [
+          0.0,
+          1.0,
+          -2.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.0,
+        "opacity": 0.8
+      },
+      {
+        "id": "st_hidden",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 9.999,
+        "yaw_deg": -45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 30.0,
+        "vFOV_deg": 30.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      }
+    ]
+  },
+  {
+    "frame": 10.0,
+    "camera": {
+      "position": [
+        0.0,
+        1.6,
+        0.0
+      ],
+      "yaw_deg": 10.0,
+      "pitch_deg": 5.0,
+      "roll_deg": 0.0,
+      "hFOV_deg": 90.0,
+      "curve": 1.0,
+      "aspect": 1.7777777777777777
+    },
+    "scene": {
+      "active": true,
+      "clip_frame": 10.0,
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw_deg": 0.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "scale": 2.0
+    },
+    "stickers": [
+      {
+        "id": "st_sky",
+        "placement": "sky",
+        "active": true,
+        "clip_frame": 5.0,
+        "yaw_deg": 30.0,
+        "pitch_deg": 10.0,
+        "roll_deg": 5.0,
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 15.0,
+        "curve": 1.0,
+        "opacity": 0.0
+      },
+      {
+        "id": "st_world",
+        "placement": "world",
+        "active": true,
+        "clip_frame": 10.0,
+        "position": [
+          0.0,
+          1.0,
+          -2.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.0,
+        "opacity": 0.8
+      },
+      {
+        "id": "st_hidden",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 10.0,
+        "yaw_deg": -45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 30.0,
+        "vFOV_deg": 30.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      }
+    ]
+  },
+  {
+    "frame": 12.5,
+    "camera": {
+      "position": [
+        0.0,
+        1.6,
+        0.0
+      ],
+      "yaw_deg": 10.0,
+      "pitch_deg": 5.0,
+      "roll_deg": 0.0,
+      "hFOV_deg": 90.0,
+      "curve": 1.0,
+      "aspect": 1.7777777777777777
+    },
+    "scene": {
+      "active": true,
+      "clip_frame": 12.5,
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw_deg": 0.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "scale": 2.0
+    },
+    "stickers": [
+      {
+        "id": "st_sky",
+        "placement": "sky",
+        "active": true,
+        "clip_frame": 7.5,
+        "yaw_deg": 30.0,
+        "pitch_deg": 10.0,
+        "roll_deg": 5.0,
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 15.0,
+        "curve": 1.0,
+        "opacity": 0.0
+      },
+      {
+        "id": "st_world",
+        "placement": "world",
+        "active": true,
+        "clip_frame": 12.5,
+        "position": [
+          0.0,
+          1.0,
+          -2.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.0,
+        "opacity": 0.8
+      },
+      {
+        "id": "st_hidden",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 12.5,
+        "yaw_deg": -45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 30.0,
+        "vFOV_deg": 30.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      }
+    ]
+  },
+  {
+    "frame": 24.0,
+    "camera": {
+      "position": [
+        2.0,
+        1.6,
+        -3.0
+      ],
+      "yaw_deg": -120.0,
+      "pitch_deg": -20.0,
+      "roll_deg": 15.0,
+      "hFOV_deg": 60.0,
+      "curve": 1.0,
+      "aspect": 1.7777777777777777
+    },
+    "scene": {
+      "active": true,
+      "clip_frame": 24.0,
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw_deg": 0.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "scale": 2.0
+    },
+    "stickers": [
+      {
+        "id": "st_sky",
+        "placement": "sky",
+        "active": true,
+        "clip_frame": 19.0,
+        "yaw_deg": 30.0,
+        "pitch_deg": 10.0,
+        "roll_deg": 5.0,
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 15.0,
+        "curve": 1.0,
+        "opacity": 0.5
+      },
+      {
+        "id": "st_world",
+        "placement": "world",
+        "active": true,
+        "clip_frame": 24.0,
+        "position": [
+          0.0,
+          1.0,
+          -2.0
+        ],
+        "yaw_deg": 0.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.0,
+        "opacity": 0.8
+      },
+      {
+        "id": "st_hidden",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 24.0,
+        "yaw_deg": -45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 30.0,
+        "vFOV_deg": 30.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      }
+    ]
+  },
+  {
+    "frame": 49.5,
+    "camera": {
+      "position": [
+        4.0,
+        1.6,
+        -6.0
+      ],
+      "yaw_deg": -90.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "hFOV_deg": 60.0,
+      "curve": 1.0,
+      "aspect": 1.7777777777777777
+    },
+    "scene": {
+      "active": true,
+      "clip_frame": 49.5,
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw_deg": 0.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "scale": 2.0
+    },
+    "stickers": [
+      {
+        "id": "st_sky",
+        "placement": "sky",
+        "active": true,
+        "clip_frame": 44.5,
+        "yaw_deg": 30.0,
+        "pitch_deg": 10.0,
+        "roll_deg": 5.0,
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 15.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      },
+      {
+        "id": "st_world",
+        "placement": "world",
+        "active": true,
+        "clip_frame": 49.5,
+        "position": [
+          1.0,
+          1.0,
+          -2.0
+        ],
+        "yaw_deg": 45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.5,
+        "opacity": 0.8
+      },
+      {
+        "id": "st_hidden",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 49.5,
+        "yaw_deg": -45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 30.0,
+        "vFOV_deg": 30.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      }
+    ]
+  },
+  {
+    "frame": 50.0,
+    "camera": {
+      "position": [
+        4.0,
+        1.6,
+        -6.0
+      ],
+      "yaw_deg": -90.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "hFOV_deg": 60.0,
+      "curve": 1.0,
+      "aspect": 1.7777777777777777
+    },
+    "scene": {
+      "active": true,
+      "clip_frame": 50.0,
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw_deg": 0.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "scale": 2.0
+    },
+    "stickers": [
+      {
+        "id": "st_sky",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 45.0,
+        "yaw_deg": 30.0,
+        "pitch_deg": 10.0,
+        "roll_deg": 5.0,
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 15.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      },
+      {
+        "id": "st_world",
+        "placement": "world",
+        "active": true,
+        "clip_frame": 50.0,
+        "position": [
+          1.0,
+          1.0,
+          -2.0
+        ],
+        "yaw_deg": 45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.5,
+        "opacity": 0.8
+      },
+      {
+        "id": "st_hidden",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 50.0,
+        "yaw_deg": -45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 30.0,
+        "vFOV_deg": 30.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      }
+    ]
+  },
+  {
+    "frame": 60.0,
+    "camera": {
+      "position": [
+        4.0,
+        1.6,
+        -6.0
+      ],
+      "yaw_deg": -90.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "hFOV_deg": 60.0,
+      "curve": 1.0,
+      "aspect": 1.7777777777777777
+    },
+    "scene": {
+      "active": true,
+      "clip_frame": 60.0,
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw_deg": 0.0,
+      "pitch_deg": 0.0,
+      "roll_deg": 0.0,
+      "scale": 2.0
+    },
+    "stickers": [
+      {
+        "id": "st_sky",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 55.0,
+        "yaw_deg": 30.0,
+        "pitch_deg": 10.0,
+        "roll_deg": 5.0,
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 15.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      },
+      {
+        "id": "st_world",
+        "placement": "world",
+        "active": true,
+        "clip_frame": 60.0,
+        "position": [
+          1.0,
+          1.0,
+          -2.0
+        ],
+        "yaw_deg": 45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "scale": 1.5,
+        "opacity": 0.8
+      },
+      {
+        "id": "st_hidden",
+        "placement": "sky",
+        "active": false,
+        "clip_frame": 60.0,
+        "yaw_deg": -45.0,
+        "pitch_deg": 0.0,
+        "roll_deg": 0.0,
+        "hFOV_deg": 30.0,
+        "vFOV_deg": 30.0,
+        "curve": 1.0,
+        "opacity": 1.0
+      }
+    ]
+  }
+]

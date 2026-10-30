@@ -1,0 +1,324 @@
+{
+ "node_fov_deg": 67.67274797076357,
+ "fit_margin": 1.1,
+ "fit_3d_min_distance": 0.1,
+ "new_world_sticker_distance": 2.0,
+ "cases": [
+  {
+   "name": "node front",
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dir": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "center": [
+    0.1,
+    0.5,
+    0.2
+   ],
+   "radius": 1.3,
+   "rotation": {
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": 67.67274797076357,
+   "min_distance": 0.1,
+   "fit_distance": 2.5681408107152057,
+   "position": [
+    -0.1,
+    -0.5,
+    -2.768140810715206
+   ]
+  },
+  {
+   "name": "pitched dir",
+   "eye": [
+    1.0,
+    2.0,
+    3.0
+   ],
+   "dir": [
+    0.0,
+    0.5,
+    -1.0
+   ],
+   "center": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "radius": 2.0,
+   "rotation": {
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": 60.0,
+   "min_distance": 0.1,
+   "fit_distance": 4.400000000000001,
+   "position": [
+    1.0,
+    3.9677398201998155,
+    -0.935479640399631
+   ]
+  },
+  {
+   "name": "yawed rotation, content off its origin",
+   "eye": [
+    0.5,
+    0.0,
+    0.5
+   ],
+   "dir": [
+    1.0,
+    0.0,
+    -1.0
+   ],
+   "center": [
+    3.0,
+    -1.0,
+    2.0
+   ],
+   "radius": 0.8,
+   "rotation": {
+    "yaw_deg": 40.0,
+    "pitch_deg": 10.0,
+    "roll_deg": 5.0
+   },
+   "fov_deg": 45.0,
+   "min_distance": 0.1,
+   "fit_distance": 2.299550818182423,
+   "position": [
+    0.9539095398916975,
+    1.0708616639919737,
+    -4.514153368268389
+   ]
+  },
+  {
+   "name": "small content, FIT_3D_MIN_DISTANCE wins",
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dir": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "center": [
+    0.0,
+    0.02,
+    0.0
+   ],
+   "radius": 0.01,
+   "rotation": {
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": 60.0,
+   "min_distance": 0.1,
+   "fit_distance": 0.022000000000000006,
+   "position": [
+    0.0,
+    -0.02,
+    -0.1
+   ]
+  },
+  {
+   "name": "small content, the editor's near x 2 wins",
+   "eye": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "dir": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "center": [
+    0.0,
+    0.0,
+    0.03
+   ],
+   "radius": 0.05,
+   "rotation": {
+    "yaw_deg": -30.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": 60.0,
+   "min_distance": 0.25,
+   "fit_distance": 0.11000000000000003,
+   "position": [
+    0.23500000000000001,
+    1.0,
+    -0.02598076211353316
+   ]
+  },
+  {
+   "name": "one point (radius 0): the minimum distance",
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dir": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "center": [
+    1.0,
+    2.0,
+    3.0
+   ],
+   "radius": 0.0,
+   "rotation": {
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": 67.67274797076357,
+   "min_distance": 0.1,
+   "fit_distance": 0.0,
+   "position": [
+    -1.0,
+    -2.0,
+    -3.1
+   ]
+  },
+  {
+   "name": "no content: NEW_WORLD_STICKER_DISTANCE",
+   "eye": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "dir": [
+    0.0,
+    0.0,
+    -2.0
+   ],
+   "center": null,
+   "radius": null,
+   "rotation": {
+    "yaw_deg": 90.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": 50.0,
+   "min_distance": 0.1,
+   "fit_distance": null,
+   "position": [
+    1.0,
+    0.0,
+    -2.0
+   ]
+  },
+  {
+   "name": "fov 0: the node's fov",
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dir": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "center": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "radius": 1.0,
+   "rotation": {
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": 0.0,
+   "min_distance": 0.1,
+   "fit_distance": 1.975492931319389,
+   "position": [
+    0.0,
+    0.0,
+    -1.975492931319389
+   ]
+  },
+  {
+   "name": "negative fov: the node's fov",
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dir": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "center": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "radius": 1.0,
+   "rotation": {
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": -10.0,
+   "min_distance": 0.1,
+   "fit_distance": 1.975492931319389,
+   "position": [
+    0.0,
+    0.0,
+    -1.975492931319389
+   ]
+  },
+  {
+   "name": "fov not a finite number (null): the node's fov",
+   "eye": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dir": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "center": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "radius": 1.0,
+   "rotation": {
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0
+   },
+   "fov_deg": null,
+   "min_distance": 0.1,
+   "fit_distance": 1.975492931319389,
+   "position": [
+    0.0,
+    0.0,
+    -1.975492931319389
+   ]
+  }
+ ]
+}

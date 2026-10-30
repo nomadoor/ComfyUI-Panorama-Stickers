@@ -1,7 +1,13 @@
+import { fileSource, newSceneSticker, parseSceneEditorState, setStickerPose, stickerPose, takeStickerId, unkeyedPose } from "./pano_editor_state.js";
 import { createNodeSurfaceSession } from "./pano_node_surface_session.js";
+import { evaluateSticker } from "./pano_scene_eval.js";
+import { portHandoff, showPortHandoff } from "./pano_port_handoff.js";
+import { loadSceneState } from "./pano_scene_state.js";
 
 const EXTERNAL_STICKER_ID = "sticker_image_1";
 const EXTERNAL_STICKER_SOURCE_KIND = "external_image";
+// The Timeline frame the node shows state v2 (Panorama Studio) at until it plays, and after a reload.
+export const NODE_SURFACE_FRAME = 0;
 
 function computeVerticalFov(hFovDeg, width, height) {
   const hFov = Math.min(179, Math.max(0.1, Number(hFovDeg || 30)));
@@ -15,22 +21,46 @@ function safeInteger(value) {
   return Number.isFinite(number) ? Math.trunc(number) : 0;
 }
 
+// The Stickers the node shows: every Sticker of the legacy v1 state, the sky Stickers of state v2.
+export function surfaceStickers(state) {
+  const stickers = Array.isArray(state?.stickers) ? state.stickers : [];
+  return state?.version === 2 ? stickers.filter((item) => item.placement === "sky") : stickers;
+}
+
+// The node's Stickers in the pose fields the geometry helpers (pano_sticker_geometry.js) read. A
+// Sticker of state v2 is posed at `frame`, the frame the node shows, and counts as hidden outside its
+// Clip range.
+export function surfacePoseStickers(state, frame = NODE_SURFACE_FRAME) {
+  if (state?.version !== 2) return surfaceStickers(state);
+  return surfaceStickers(state).map((sticker) => ({
+    id: sticker.id,
+    z_index: sticker.z_index,
+    locked: sticker.locked,
+    visible: evaluateSticker(sticker, frame).active,
+    external: sticker.source.kind === "port",
+    ...stickerPose(sticker, frame),
+  }));
+}
+
 function selectedSticker(state) {
   const id = String(state?.active?.selected_sticker_id || "");
   if (!id) return null;
-  return (Array.isArray(state?.stickers) ? state.stickers : [])
-    .find((item) => String(item?.id || "") === id) || null;
+  return surfaceStickers(state).find((item) => String(item?.id || "") === id) || null;
 }
 
-function isExternalSticker(item) {
+function isLegacyExternalSticker(item) {
   return String(item?.id || "") === EXTERNAL_STICKER_ID
     || String(item?.source_kind || "") === EXTERNAL_STICKER_SOURCE_KIND;
+}
+
+function isExternalSticker(state, item) {
+  return state?.version === 2 ? item?.source.kind === "port" : isLegacyExternalSticker(item);
 }
 
 const POSE_KEYS = ["yaw_deg", "pitch_deg", "hFOV_deg", "vFOV_deg", "rot_deg"];
 
 function externalInitialPose(item) {
-  if (!isExternalSticker(item) || !item?.initial_pose || typeof item.initial_pose !== "object") return null;
+  if (!isLegacyExternalSticker(item) || !item?.initial_pose || typeof item.initial_pose !== "object") return null;
   return Object.fromEntries(POSE_KEYS.map((key) => {
     const fallback = key === "hFOV_deg" || key === "vFOV_deg" ? 30 : 0;
     const current = Number(item[key]);
@@ -131,8 +161,141 @@ export function reconcileExternalStickerState(state, descriptor = {}) {
   return { state: { ...state, stickers: nextStickers }, changed: true };
 }
 
+function isInputConnected(node, name) {
+  const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
+  return slot >= 0 && node.isInputConnected(slot);
+}
+
+const MEDIA_KINDS_2D = ["IMAGE", "VIDEO"];
+
+// The 3D media of the `sticker` input: drawn as a world port Sticker that the node places.
+const MEDIA_TYPES_3D = ["MESH", "SPLAT", "MOGE_GEOMETRY", "DA3_GEOMETRY"];
+
+// What a `sticker` link of `type` (a type or a comma list of types) carries: "2d", "3d", or null when it may
+// carry either or does not tell.
+export function stickerMediaKind(type) {
+  const types = String(type || "").split(",").filter(Boolean);
+  if (types.length && types.every((item) => MEDIA_TYPES_3D.includes(item) || item.startsWith("FILE_3D"))) return "3d";
+  if (types.length && types.every((item) => MEDIA_KINDS_2D.includes(item))) return "2d";
+  return null;
+}
+
+// What the input carries: "2d" (IMAGE, VIDEO), "3d" (MESH, SPLAT, a 3D file, MOGE_GEOMETRY, DA3_GEOMETRY), or
+// null when its link
+// does not tell (a `*` link through a Reroute, say), read from the link and else from the output it
+// comes from.
+function inputMediaKind(node, name) {
+  const slot = (Array.isArray(node?.inputs) ? node.inputs : []).findIndex((input) => input?.name === name);
+  const link = slot >= 0 && node.graph ? node.getInputLink?.(slot) : null;
+  if (!link) return null;
+  return stickerMediaKind(link.type) ?? stickerMediaKind(node.graph.getNodeById?.(link.origin_id)?.outputs?.[link.origin_slot]?.type);
+}
+
+// Panorama Studio keeps the Sticker of its `sticker` input as the Sticker with the Source
+// {kind: "port"}. Like the node (docs/studio-node.md), the editor and the node surface add it when
+// the input is connected and the state has none, and remove it when the input is disconnected. Its
+// vFOV is not the state's: where it is drawn, it follows hFOV and the aspect of the media
+// (skyStickerVfov, as the run derives it), so the media loading never changes state_json; the state
+// keeps vFOV = hFOV. Until the node's result has the media it shows as a frame. `pose` is the pose the
+// node's current result placed the Sticker at
+// (`pano_sticker_input_pose`), with the Keyframes of a Camera that moved. With `sticker_state`
+// connected, the Sticker is added only with that pose, so that it keeps the pose of `sticker_state`
+// as the node places it.
+// 3D media (MESH, SPLAT, a 3D file, MOGE_GEOMETRY, DA3_GEOMETRY) is a world Sticker that the node places, and only the node knows
+// what an input of an unknown type carries: unless the input is an IMAGE or a VIDEO, the Sticker is
+// added only with the node's pose, as a world one when the pose says `placement: "world"`. The node
+// replaces a stored sky port Sticker by a world one for 3D media (`replace`), which is applied here.
+// Pose handoff (ADR 0030) places a sky or a world Sticker and replaces one of the other placement too,
+// on every run: `handoff` (the result's `pano_sticker_handoff`) is shown over the stored Sticker
+// (pano_port_handoff.js) and never written here.
+export function portStickerSyncValue(node, { pose = null, handoff = null } = {}) {
+  return {
+    connected: isInputConnected(node, "sticker"),
+    awaitingPose: !pose && (isInputConnected(node, "sticker_state") || inputMediaKind(node, "sticker") !== "2d"),
+    pose,
+    handoff: !!handoff,
+  };
+}
+
+// Whether the Pose handoff of a node's result can apply: `sticker` and `sticker_state` are connected.
+export function portHandoffLinked(node) {
+  return isInputConnected(node, "sticker") && isInputConnected(node, "sticker_state");
+}
+
+// The Pose handoff of a node's current result (`value`, its `pano_sticker_handoff`) while it can apply, or null.
+export function nodePortHandoff(node, value) {
+  return portHandoffLinked(node) ? portHandoff(value) : null;
+}
+
+// Panorama Studio's state_json `text` as its node surface shows it (parseSceneEditorState `options`): the port
+// Sticker with the Pose handoff `handoffValue` of the current result (null without one) as the run draws it.
+// It is not written: the text stays as it is.
+export function surfaceSceneEditorState(text, options, handoffValue) {
+  return showPortHandoff(parseSceneEditorState(text, options), portHandoff(handoffValue));
+}
+
+// The world port Sticker at the node's pose, with the Keyframes of a Camera that moved (Pose handoff).
+function worldPortSticker(id, pose, kept = {}) {
+  const keyframes = pose.keyframes ?? {};
+  const raw = {
+    ...kept,
+    id,
+    placement: "world",
+    source: { kind: "port" },
+    position: { value: pose.position, keyframes: keyframes.position ?? [] },
+    rotation: { value: pose.rotation, keyframes: keyframes.rotation ?? [] },
+    scale: { value: pose.scale, keyframes: keyframes.scale ?? [] },
+  };
+  return loadSceneState({ version: 2, stickers: [raw] }).stickers[0];
+}
+
+export function reconcilePortStickerState(state, { connected = false, awaitingPose = false, pose = null, handoff = false } = {}) {
+  const index = state.stickers.findIndex((item) => isExternalSticker(state, item));
+  const current = index >= 0 ? state.stickers[index] : null;
+  if (!connected) {
+    if (!current) return { state, changed: false };
+    const selected = state.active?.selected_sticker_id === current.id;
+    return {
+      state: {
+        ...state,
+        stickers: state.stickers.filter((_, i) => i !== index),
+        active: selected ? { ...state.active, selected_sticker_id: null } : state.active,
+      },
+      changed: true,
+    };
+  }
+  if (current && pose?.placement === "world" && pose.replace && current.placement === "sky" && !handoff) {
+    // The node replaced the stored sky port Sticker by a world one for 3D media under the same id, keeping
+    // these fields; loading keeps only the handoff_overrides of world Lanes.
+    const kept = Object.fromEntries(["clip", "visible", "locked", "crop", "opacity", "handoff_overrides"].map((key) => [key, current[key]]));
+    const port = worldPortSticker(current.id, pose, kept);
+    return { state: { ...state, stickers: state.stickers.map((item, i) => i === index ? port : item) }, changed: true };
+  }
+  if (current || awaitingPose) return { state, changed: false };
+  const next = { ...state };
+  const id = takeStickerId(next);
+  if (pose?.placement === "world") {
+    return { state: { ...next, stickers: [...state.stickers, worldPortSticker(id, pose)] }, changed: true };
+  }
+  const hFOV = Math.min(179, Math.max(0.1, Number(pose?.hFOV_deg ?? 30)));
+  const port = newSceneSticker(id, { kind: "port" }, {
+    yaw_deg: Number(pose?.yaw_deg ?? 0),
+    pitch_deg: Number(pose?.pitch_deg ?? 0),
+    rot_deg: Number(pose?.roll_deg ?? 0),
+    hFOV_deg: hFOV,
+    vFOV_deg: hFOV,
+  }, surfaceStickers(state).reduce((value, item) => Math.max(value, item.z_index), -1) + 1);
+  // A Camera that moved comes with the Keyframes the node baked from its trajectory (Pose handoff).
+  const keyframes = pose?.keyframes ?? {};
+  port.direction.keyframes = keyframes.direction ?? [];
+  port.roll.keyframes = keyframes.roll ?? [];
+  port.size.keyframes = (keyframes.size ?? []).map((key) => ({ ...key, value: { ...key.value, vFOV_deg: key.value.hFOV_deg } }));
+  port.handoff_overrides = [];
+  return { state: { ...next, stickers: [...state.stickers, port] }, changed: true };
+}
+
 export function buildStickersDisplayEntries(state) {
-  const stickers = (Array.isArray(state?.stickers) ? state.stickers : [])
+  const stickers = surfaceStickers(state)
     .filter((item) => item && typeof item === "object")
     .map((item) => ({
       type: "sticker",
@@ -163,9 +326,8 @@ export function buildStickersDisplayEntries(state) {
 
 export function stickersNodeSurfaceModel(state) {
   const selected = selectedSticker(state);
-  const isExternalSelection = isExternalSticker(selected);
-  const hasStickers = (Array.isArray(state?.stickers) ? state.stickers : [])
-    .some((item) => item && item.visible !== false);
+  const isExternalSelection = isExternalSticker(state, selected);
+  const hasStickers = surfaceStickers(state).some((item) => item && item.visible !== false);
   const entries = buildStickersDisplayEntries(state);
   const selectedIndex = selected
     ? entries.findIndex((entry) => entry.type === "sticker" && entry.item === selected)
@@ -230,6 +392,7 @@ function pruneUnusedAssets(state) {
 export function applyStickersNodeSurfaceAction(state, action = {}) {
   if (!state || typeof state !== "object") return { state, changed: false };
   if (action.type === "sync-external") return reconcileExternalStickerState(state, action.value);
+  if (action.type === "sync-port") return reconcilePortStickerState(state, action.value);
   if (action.type === "add-sticker") {
     const value = action.value && typeof action.value === "object" ? action.value : {};
     const stickerId = String(value.stickerId || "").trim();
@@ -241,16 +404,26 @@ export function applyStickersNodeSurfaceAction(state, action = {}) {
     const entries = buildStickersDisplayEntries(state);
     const maxZ = entries.reduce((maximum, entry) => Math.max(maximum, Number(entry.z_index || 0)), -1);
     const hFOV = 30;
-    const sticker = {
-      id: stickerId,
-      asset_id: assetId,
+    const pose = {
       yaw_deg: Number(value.yaw_deg || 0),
       pitch_deg: Number(value.pitch_deg || 0),
       hFOV_deg: hFOV,
       vFOV_deg: computeVerticalFov(hFOV, value.imageWidth, value.imageHeight),
       rot_deg: 0,
-      z_index: maxZ + 1,
     };
+    if (state.version === 2) {
+      const next = { ...state };
+      const id = takeStickerId(next);
+      return {
+        state: {
+          ...next,
+          stickers: [...state.stickers, newSceneSticker(id, fileSource(value.asset), pose, maxZ + 1)],
+          active: { ...(state.active || {}), selected_sticker_id: id },
+        },
+        changed: true,
+      };
+    }
+    const sticker = { id: stickerId, asset_id: assetId, ...pose, z_index: maxZ + 1 };
     return {
       state: {
         ...state,
@@ -263,7 +436,7 @@ export function applyStickersNodeSurfaceAction(state, action = {}) {
   }
   if (action.type === "select-sticker") {
     const id = String(action.id || "");
-    if (!id || !(Array.isArray(state.stickers) ? state.stickers : []).some((item) => String(item?.id || "") === id)) {
+    if (!id || !surfaceStickers(state).some((item) => String(item?.id || "") === id)) {
       return { state, changed: false };
     }
     if (String(state.active?.selected_sticker_id || "") === id) return { state, changed: false };
@@ -301,7 +474,7 @@ export function applyStickersNodeSurfaceAction(state, action = {}) {
   if (action.type === "bring-front") return reorderSelected(state, "front");
   if (action.type === "send-back") return reorderSelected(state, "back");
   if (action.type === "delete-selected") {
-    if (isExternalSticker(selected)) {
+    if (isExternalSticker(state, selected)) {
       if (selected.visible === false) return { state, changed: false };
       return {
         state: {
@@ -312,24 +485,36 @@ export function applyStickersNodeSurfaceAction(state, action = {}) {
       };
     }
     const stickers = state.stickers.filter((item) => item !== selected);
-    const nextSelectedId = stickers[0]?.id == null ? null : String(stickers[0].id);
+    const nextSelected = surfaceStickers({ ...state, stickers })[0];
+    const nextSelectedId = nextSelected?.id == null ? null : String(nextSelected.id);
     const next = {
       ...state,
       stickers,
       active: { ...(state.active || {}), selected_sticker_id: nextSelectedId },
     };
-    next.assets = pruneUnusedAssets(next);
+    if (state.version !== 2) next.assets = pruneUnusedAssets(next);
     return { state: next, changed: true };
   }
   if (action.type === "set-transform") {
     const value = action.value && typeof action.value === "object" ? action.value : {};
     const keys = ["yaw_deg", "pitch_deg", "hFOV_deg", "vFOV_deg", "rot_deg"];
+    const current = state.version === 2 ? stickerPose(selected, NODE_SURFACE_FRAME) : selected;
     const patch = {};
     keys.forEach((key) => {
       const number = Number(value[key]);
-      if (Number.isFinite(number) && Math.abs(number - Number(selected[key] || 0)) > 1e-12) patch[key] = number;
+      if (Number.isFinite(number) && Math.abs(number - Number(current[key] || 0)) > 1e-12) patch[key] = number;
     });
     if (!Object.keys(patch).length) return { state, changed: false };
+    if (state.version === 2) {
+      // Lanes with Keyframes are left to the editor's Timeline: an edit changes only the Lanes without
+      // Keyframes, whose value holds at every frame, so the frame the node shows does not matter
+      // (docs/timeline-ui.md).
+      const editable = unkeyedPose(selected, patch);
+      if (!Object.keys(editable).length) return { state, changed: false };
+      const next = structuredClone(selected);
+      setStickerPose(next, NODE_SURFACE_FRAME, editable);
+      return { state: { ...state, stickers: state.stickers.map((item) => item === selected ? next : item) }, changed: true };
+    }
     return {
       state: {
         ...state,

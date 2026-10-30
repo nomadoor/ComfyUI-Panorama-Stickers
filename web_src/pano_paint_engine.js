@@ -4,7 +4,8 @@
 //   Source of truth    = stroke records (durable, in state_json.painting)
 //   Native raster cache = committedPaint / committedMask per target (derived)
 //   Active stroke      = currentStroke (ephemeral, accumulated incrementally)
-//   Display            = composed from committed + currentStroke on demand (per rAF frame)
+//   Display            = composed from committed + currentStroke on demand, again only where they
+//                        changed (pano_paint_damage.js)
 //
 // Rendering strategy: Stamp-based soft brush
 //
@@ -20,8 +21,8 @@
 //   Rebuild (undo/redo, reload):
 //     - Full spacing walk replayed from processedPoints (or rawPoints if not set).
 //
-//   Eraser: draws white stamps to currentStroke (source-over); composeDisplayPaint
-//           applies destination-out for the live preview; commit applies destination-out
+//   Eraser: draws white stamps to currentStroke (source-over); the group displays
+//           (getGroupDisplay) apply destination-out for the live preview; commit applies destination-out
 //           to the committed layer.
 //
 //   Lasso fill: polygon fill via canvas Path2D — no stamps needed.
@@ -29,10 +30,13 @@
 //   ERP seam: stamps near the u=0 / u=1 wrap boundary are mirrored so the stroke
 //             renders correctly at the panorama seam.
 
+import { createPanoCanvas } from "./pano_diagnostics.js";
+import { addRect, createDamageLog, intersectRects, joinRects, shapeRect } from "./pano_paint_damage.js";
+
 // ─── Canvas Surface Utilities ─────────────────────────────────────────────────
 
 function createCanvasSurface(width, height) {
-  const canvas = document.createElement("canvas");
+  const canvas = createPanoCanvas({ label: "paint.surface" });
   canvas.width = Math.max(1, Math.round(width));
   canvas.height = Math.max(1, Math.round(height));
   const ctx = canvas.getContext("2d");
@@ -90,13 +94,12 @@ function measureAlphaBounds(canvas, threshold = 8) {
 }
 
 function createScratchCanvas(width, height) {
-  const w = Math.max(1, Math.ceil(width));
-  const h = Math.max(1, Math.ceil(height));
-  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  return canvas;
+  return createPanoCanvas({
+    label: "paint.scratch",
+    width: Math.max(1, Math.ceil(width)),
+    height: Math.max(1, Math.ceil(height)),
+    offscreen: true,
+  });
 }
 
 function resizeSurface(surface, width, height) {
@@ -116,6 +119,12 @@ function clearSurface(surface) {
   surface.ctx.clearRect(0, 0, surface.canvas.width, surface.canvas.height);
 }
 
+// A target's pixels (its committed surface or its live stroke) changed: globalDisplay is composed again
+// (composeAllLayers). Where the display canvases changed is the damage logs' (pano_paint_damage.js).
+function markDirty(target) {
+  target.displayDirty = true;
+}
+
 // ─── Mask Hatch Overlay ───────────────────────────────────────────────────────
 
 // Shared temp canvas for drawMaskTint.
@@ -129,8 +138,6 @@ let _maskHatchPatternCtx = null;
 let _eraserTmp = null;
 // Shared temp canvas reused for low-opacity stroke compositing (drawStrokeToSurface).
 let _strokeOpacityTmp = null;
-let _groupPreviewTmp = null;
-let _maskPreviewTmp = null;
 
 // Returns a small canvas with a 45° diagonal stripe pattern.
 // Cached after first creation; reused for every drawMaskTint call.
@@ -139,7 +146,7 @@ function getMaskHatchTile() {
   // lineWidth=6, sz=17: perpendicular period = 17/√2 ≈ 12px → stripe≈6px, gap≈6px (equal).
   const lw = 6;
   const sz = 17;
-  const c = document.createElement("canvas");
+  const c = createPanoCanvas({ label: "paint.hatch" });
   c.width = sz;
   c.height = sz;
   const ctx = c.getContext("2d");
@@ -159,28 +166,46 @@ function getMaskHatchTile() {
   return c;
 }
 
-// Overlay a diagonal-stripe (hatch) pattern over mask-shaped pixels on displayCtx.
-// Does NOT affect non-mask pixels (paint pixels remain unchanged).
-function drawMaskTint(displayCtx, maskCanvas) {
+// Overlay a diagonal-stripe (hatch) pattern over mask-shaped pixels on displayCtx, within `rect` (pano_paint_damage.js;
+// the whole canvas by default). The pattern is anchored at the canvas origin, so a rectangle is drawn exactly as
+// the whole canvas draws it there. Does NOT affect non-mask pixels (paint pixels remain unchanged).
+function drawMaskTint(displayCtx, maskCanvas, rect = wholeRect(maskCanvas)) {
   if (!displayCtx || !maskCanvas) return;
   const w = maskCanvas.width;
   const h = maskCanvas.height;
   _maskTintTmp = resizeSurface(_maskTintTmp, w, h);
   const tmp = _maskTintTmp;
-  clearSurface(tmp);
-  tmp.ctx.drawImage(maskCanvas, 0, 0);
+  clearRect(tmp.ctx, rect);
+  drawRect(tmp.ctx, maskCanvas, rect);
   tmp.ctx.globalCompositeOperation = "source-in";
   if (_maskHatchPatternCtx !== tmp.ctx) {
     _maskHatchPattern = tmp.ctx.createPattern(getMaskHatchTile(), "repeat");
     _maskHatchPatternCtx = tmp.ctx;
   }
   tmp.ctx.fillStyle = _maskHatchPattern;
-  tmp.ctx.fillRect(0, 0, w, h);
+  tmp.ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
   tmp.ctx.globalCompositeOperation = "source-over";
   displayCtx.save();
   displayCtx.globalCompositeOperation = "source-over";
-  displayCtx.drawImage(tmp.canvas, 0, 0);
+  drawRect(displayCtx, tmp.canvas, rect);
   displayCtx.restore();
+}
+
+// ─── Rectangles (pano_paint_damage.js) ───────────────────────────────────────
+
+function wholeRect(canvas) {
+  return { x0: 0, y0: 0, x1: canvas.width, y1: canvas.height };
+}
+
+function clearRect(ctx, rect) {
+  ctx.clearRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+}
+
+// Draws `rect` of source onto the same rectangle of ctx: whole pixels, unscaled, as drawImage(source, 0, 0) draws them.
+function drawRect(ctx, source, rect) {
+  const w = rect.x1 - rect.x0;
+  const h = rect.y1 - rect.y0;
+  ctx.drawImage(source, rect.x0, rect.y0, w, h, rect.x0, rect.y0, w, h);
 }
 
 // ─── Coordinate Helpers ───────────────────────────────────────────────────────
@@ -566,13 +591,21 @@ function _placeStamp(sc, ox, oy, rv, rh) {
     }
   }
 
-  _draw(ox, oy);
   // Seam wrap: use rotated bounding-box half-width so angled stamps near u=0/1 are mirrored.
   const seamW = ang === 0
     ? rh
     : rh * Math.abs(Math.cos(ang)) + rv * Math.abs(Math.sin(ang));
-  if (ox - seamW < 0) _draw(ox + W, oy);
-  if (ox + seamW > W) _draw(ox - W, oy);
+  // sc.bounds, when the caller keeps it, collects where the stamps land (pano_paint_damage.js).
+  const seamH = ang === 0
+    ? rv
+    : rh * Math.abs(Math.sin(ang)) + rv * Math.abs(Math.cos(ang));
+  const place = (x, y) => {
+    _draw(x, y);
+    if (sc.bounds) sc.bounds = addRect(sc.bounds, shapeRect(x - seamW, y - seamH, x + seamW, y + seamH, W, sc.desc.height));
+  };
+  place(ox, oy);
+  if (ox - seamW < 0) place(ox + W, oy);
+  if (ox + seamW > W) place(ox - W, oy);
 }
 
 // Draw one stamp at (cx, cy) using the shared stamp context sc.
@@ -613,13 +646,14 @@ function _drawSingleStamp(sc, cx, cy, widthScale) {
 // Draw a complete freehand stroke using the stamp engine.
 // Uses the same centripetal Catmull-Rom + midpoint-anchor algorithm as live rendering,
 // so rebuild (undo/redo) looks identical to the stroke as it was drawn.
+// Returns where it drew (pano_paint_damage.js rectangles).
 function drawStampStroke(ctx, stroke, descriptor) {
   const points = getRawPoints(stroke);
-  if (!ctx || points.length === 0) return;
+  if (!ctx || points.length === 0) return [];
 
   const W = descriptor.width;
   const H = descriptor.height;
-  const sc = buildStampContext(ctx, stroke, descriptor);
+  const sc = { ...buildStampContext(ctx, stroke, descriptor), bounds: [] };
 
   ctx.save();
   ctx.globalCompositeOperation = "source-over";
@@ -639,7 +673,7 @@ function drawStampStroke(ctx, stroke, descriptor) {
   // First stamp at p0
   _drawSingleStamp(sc, pts[0].x, pts[0].y, 1);
 
-  if (pts.length === 1) { ctx.restore(); return; }
+  if (pts.length === 1) { ctx.restore(); return sc.bounds; }
 
   // Mirror appendStrokePoint: midpoint anchors + centripetal CR
   let pprev = pts[0];
@@ -668,11 +702,13 @@ function drawStampStroke(ctx, stroke, descriptor) {
   }
 
   ctx.restore();
+  return sc.bounds;
 }
 
+// Returns where it drew (pano_paint_damage.js rectangles).
 function drawLassoFillNative(ctx, stroke, descriptor) {
   const points = Array.isArray(stroke?.geometry?.points) ? stroke.geometry.points : [];
-  if (!ctx || points.length < 3) return;
+  if (!ctx || points.length < 3) return [];
 
   const w = descriptor.width;
   const h = descriptor.height;
@@ -683,23 +719,30 @@ function drawLassoFillNative(ctx, stroke, descriptor) {
   const px = [];
   let minX = Infinity;
   let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
   for (let i = 0; i < points.length; i++) {
     const c = getTargetCoord(points[i]);
     let x = Number(c.x || 0) * w;
     if (i > 0 && Math.abs(x - px[i - 1].x) > w * 0.5) {
       x += x < px[i - 1].x ? w : -w;
     }
-    px.push({ x, y: Number(c.y || 0) * h });
+    const y = Number(c.y || 0) * h;
+    px.push({ x, y });
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
   }
 
+  let bounds = [];
   function drawPoly(offsetX) {
     ctx.beginPath();
     ctx.moveTo(px[0].x + offsetX, px[0].y);
     for (let i = 1; i < px.length; i++) ctx.lineTo(px[i].x + offsetX, px[i].y);
     ctx.closePath();
     ctx.fill();
+    bounds = addRect(bounds, shapeRect(minX + offsetX, minY, maxX + offsetX, maxY, w, h));
   }
 
   ctx.save();
@@ -709,31 +752,33 @@ function drawLassoFillNative(ctx, stroke, descriptor) {
   if (minX < 0) drawPoly(w);    // polygon crosses seam leftward → mirror to right half
   if (maxX > w) drawPoly(-w);   // polygon crosses seam rightward → mirror to left half
   ctx.restore();
+  return bounds;
 }
 
 // Draw a stroke to the given ctx.
 // Eraser strokes are rendered as WHITE marks; caller applies destination-out when compositing.
 // For non-eraser strokes, stroke.opacity is applied when compositing onto ctx.
+// Returns where it drew (pano_paint_damage.js rectangles).
 function drawStrokeToSurface(ctx, stroke, descriptor) {
   const kind = String(stroke?.geometry?.geometryKind || "");
   if (kind === "lasso_fill") {
-    drawLassoFillNative(ctx, stroke, descriptor);
-    return;
+    return drawLassoFillNative(ctx, stroke, descriptor);
   }
   const isEraser = String(stroke?.toolKind || "") === "eraser";
   const opacity = isEraser ? 1 : Math.max(0, Math.min(1, Number(stroke?.opacity ?? 1)));
   if (opacity >= 0.999) {
-    drawStampStroke(ctx, stroke, descriptor);
+    return drawStampStroke(ctx, stroke, descriptor);
   } else {
     // Two-step composite: draw stamps at full flow into a shared temp surface,
     // then composite at stroke opacity. Ensures correct flat/accumulate behaviour on rebuild.
     _strokeOpacityTmp = resizeSurface(_strokeOpacityTmp, descriptor.width, descriptor.height);
     clearSurface(_strokeOpacityTmp);
-    drawStampStroke(_strokeOpacityTmp.ctx, stroke, descriptor);
+    const bounds = drawStampStroke(_strokeOpacityTmp.ctx, stroke, descriptor);
     ctx.save();
     ctx.globalAlpha = opacity;
     ctx.drawImage(_strokeOpacityTmp.canvas, 0, 0);
     ctx.restore();
+    return bounds;
   }
 }
 
@@ -835,9 +880,10 @@ function _walkCRStamps(sc, p0, p1, p2, p3, distSinceStamp) {
 //   lastMidX/Y      — midpoint anchor stamps were last drawn up to
 //   radiusPx, stampTex, spacingPx, distSinceStamp
 //   isEraser, layerKind, pointCount
+// Returns where it drew (pano_paint_damage.js rectangles).
 function appendStrokePoint(target, x, y, stroke) {
   const ctx = target.currentStroke.ctx;
-  if (!ctx) return;
+  if (!ctx) return [];
 
   const desc = target.descriptor;
   const W  = desc.width;
@@ -852,7 +898,7 @@ function appendStrokePoint(target, x, y, stroke) {
 
   if (!as) {
     // First point: build stamp context, place initial stamp, initialize CR history.
-    const sc0 = buildStampContext(ctx, stroke, desc);
+    const sc0 = { ...buildStampContext(ctx, stroke, desc), bounds: [] };
     const strokeOpacity = Math.max(0, Math.min(1, Number(stroke?.opacity ?? 1)));
     const velocityWidthFactor = Math.max(0, Number(stroke?.velocityWidthFactor ?? 0));
     const isEraser = String(stroke?.toolKind || "") === "eraser";
@@ -873,8 +919,8 @@ function appendStrokePoint(target, x, y, stroke) {
       isEraser, layerKind,
       pointCount: 1,
     };
-    target.displayDirty = true;
-    return;
+    markDirty(target);
+    return sc0.bounds;
   }
 
   const midX = (as.prev.x + px) * 0.5;
@@ -886,6 +932,7 @@ function appendStrokePoint(target, x, y, stroke) {
     stampTex: as.stampTex, radiusPx: as.radiusPx, spacingPx: as.spacingPx,
     desc, aspect: as.aspect, angle: as.angle, stampKind: as.stampKind, scatter: as.scatter,
     latitudeCorrection: as.latitudeCorrection,
+    bounds: [],
   };
 
   if (as.pointCount === 1) {
@@ -908,7 +955,8 @@ function appendStrokePoint(target, x, y, stroke) {
   as.lastMidX = midX;
   as.lastMidY = midY;
   as.pointCount++;
-  target.displayDirty = true;
+  markDirty(target);
+  return sc.bounds;
 }
 
 // ─── Engine Factory ────────────────────────────────────────────────────────────
@@ -917,33 +965,81 @@ function appendStrokePoint(target, x, y, stroke) {
 //
 //   Each actionGroup is a first-class display object with its own ERP paint surface.
 //   Mask stays as a single separate surface (never in the display list).
-//   composeAllLayers() blends groups in z-order then overlays the mask tint.
+//   composeAllLayers() blends the groups in z-order (the mask is not in it), when getErpTarget asks.
 //
 //   getErpTarget(orderedGroupIds?) returns a view compatible with the old single-target
 //   interface so pano_editor.js callers need minimal changes:
-//     .displayPaint.canvas  — final composited ERP (all groups + mask overlay)
+//     .displayPaint.canvas  — final composited ERP (all groups, with the live stroke)
 //     .committedMask.canvas — raw mask ERP (for WebGL setMaskErp)
 //     .descriptor
+//
+//   Display canvases (pano_paint_damage.js): the views draw each group's display and the mask display
+//   (getGroupDisplay, getMaskDisplay), each with a damage log, so a stroke step draws them again and the views
+//   upload them only where the step drew. A group's display is its committed paint, or a canvas with the live
+//   stroke over it while the stroke shows on the group; the group's damage log follows the display across
+//   both canvases (where one differs from the other), so a view keeps its texture when the display moves to the
+//   other canvas (pano_three_view.js createLayerTextures). The committed surfaces (what the node gets) are
+//   always drawn whole, and a rebuild draws again only the groups whose strokes changed.
+
+// The values of a stroke record in order (keys too), to tell whether a stroke changed between rebuilds: the
+// editor changes strokes in place.
+function strokeValues(value, out = []) {
+  if (value === null || typeof value !== "object") {
+    out.push(value);
+  } else if (Array.isArray(value)) {
+    out.push("[", value.length);
+    for (const item of value) strokeValues(item, out);
+  } else {
+    out.push("{");
+    for (const key of Object.keys(value)) {
+      out.push(key);
+      strokeValues(value[key], out);
+    }
+    out.push("}");
+  }
+  return out;
+}
+
+function sameValues(a, b) {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) if (!Object.is(a[index], b[index])) return false;
+  return true;
+}
+
+function rectsOverlap(a, b) {
+  if (a === null || b === null) return true;
+  return a.some((x) => b.some((y) => x.x0 < y.x1 && y.x0 < x.x1 && x.y0 < y.y1 && y.y0 < x.y1));
+}
 
 export function createPaintEngineManager(options = {}) {
   const ERP_W = Math.max(1, Math.round(Number(options?.width || 2048)));
   const ERP_H = Math.max(1, Math.round(Number(options?.height || 1024)));
   const ERP_DESC = { kind: "ERP_GLOBAL", width: ERP_W, height: ERP_H };
+  const ERP_RECT = { x0: 0, y0: 0, x1: ERP_W, y1: ERP_H };
   // Per-actionGroup paint surfaces.  Keyed by String(actionGroupId).
   const groupTargets = new Map();
 
   // Shared current-stroke scratch canvas — only one group OR mask is active at a time,
   // so a single 8MB canvas suffices for all live-stroke rendering.
   const sharedCurrentStroke = createCanvasSurface(ERP_W, ERP_H);
+  // Where the shared stroke canvas changed, and where it may have pixels (rectangles; null: anywhere).
+  const strokeDamage = createDamageLog();
+  let strokeInk = [];
 
   // Single mask surface — not part of the display list.
   const maskTarget = {
     descriptor: ERP_DESC,
     committedMask: createCanvasSurface(ERP_W, ERP_H),
+    damage: createDamageLog(),
     currentStroke: sharedCurrentStroke,
     activeStroke: null,
     displayDirty: true,
+    // Whether a mask stroke was drawn since the last rebuild; until then the committed mask is empty.
+    painted: false,
     lassoPreviewActive: false,
+    // The mask strokes it was last rebuilt from ({ values, rects }), and where it changed since.
+    drawn: [],
+    changed: [],
   };
   const paintScratchTarget = {
     actionGroupId: "__eraser__",
@@ -962,14 +1058,24 @@ export function createPaintEngineManager(options = {}) {
   let activeGroupId = null;   // null when mask is active or idle
   let activeLayerKind = "";   // "paint" | "mask" | ""
   let previousOrderedGroupIds = null;
+  // The mask display: { surface, damage, seen }.
+  let maskDisplay = null;
 
   // ─── Group Target Helpers ──────────────────────────────────────────────────
 
+  // A group: its committed paint, the damage log of its display (`display`), the canvas with the live stroke
+  // while it shows (`preview`: { surface, seen }), where its paint may have pixels (`ink`), the strokes it was
+  // last rebuilt from (`drawn`, { values, rects, eraser }) and where its committed paint changed since (`changed`).
   function createGroupTarget(actionGroupId) {
     return {
       actionGroupId,
       descriptor: ERP_DESC,
       committedPaint: createCanvasSurface(ERP_W, ERP_H),
+      display: createDamageLog(),
+      preview: null,
+      ink: [],
+      drawn: [],
+      changed: [],
       currentStroke: sharedCurrentStroke,
       activeStroke: null,
       displayDirty: true,
@@ -994,15 +1100,44 @@ export function createPaintEngineManager(options = {}) {
     return ensureGroupTarget(activeGroupId);
   }
 
+  // A group's committed paint changed within rects (null: anywhere).
+  function commitChanged(group, rects) {
+    group.changed = joinRects(group.changed, rects);
+    if (!group.preview) group.display.mark(rects);
+  }
+
+  // The group shows its committed paint again; it differs from the canvas with the live stroke only where the
+  // stroke canvas has pixels.
+  function endPreview(group, changed = strokeInk) {
+    if (!group.preview) return;
+    group.preview = null;
+    group.display.mark(changed);
+  }
+
+  // ─── Shared stroke canvas ───────────────────────────────────────────────────
+
+  // The shared stroke canvas was drawn on within rects.
+  function inkStroke(rects) {
+    strokeInk = joinRects(strokeInk, rects);
+    strokeDamage.mark(rects);
+  }
+
+  // Clears the shared stroke canvas: it changes where it had pixels.
+  function clearStroke() {
+    clearSurface(sharedCurrentStroke);
+    strokeDamage.mark(strokeInk);
+    strokeInk = [];
+  }
+
   // ─── Composition ────────────────────────────────────────────────────────────
 
 // Composite all paint groups in display order.
 // Mask remains an independent layer and must be consumed explicitly via
-// committedMask / getMaskDisplayCanvas rather than being baked into displayPaint.
+// committedMask / getMaskDisplay rather than being baked into displayPaint.
 // orderedGroupIds: bottom → top (matches objects[] z-order).
 // Groups not in the map are silently skipped.
 // Composes directly from each group's committedPaint into globalDisplay —
-// no per-group displayPaint intermediate canvas needed.
+// no per-group displayPaint intermediate canvas needed. Only getErpTarget reads it, so it is composed there.
   function composeAllLayers(orderedGroupIds) {
     const orderChanged = !previousOrderedGroupIds
       || previousOrderedGroupIds.length !== orderedGroupIds.length
@@ -1063,66 +1198,107 @@ export function createPaintEngineManager(options = {}) {
 
   // ─── Rebuild ────────────────────────────────────────────────────────────────
 
-  function rebuildCommitted(state) {
-    // Clear all existing group surfaces (keep keys to preserve insertion order).
-    for (const group of groupTargets.values()) {
-      clearSurface(group.committedPaint);
-      clearSurface(group.currentStroke);
-      group.activeStroke = null;
-      group.displayDirty = true;
+  // Draws a stroke list onto a cleared surface, as the whole rebuild draws it: paint strokes as they are, an
+  // eraser through _eraserTmp. Returns the list as { values, rects, eraser } and whether a mask stroke painted.
+  function drawStrokes(surface, strokes, desc) {
+    clearSurface(surface);
+    let painted = false;
+    const drawn = strokes.map((stroke) => {
+      const eraser = String(stroke?.toolKind || "pen") === "eraser";
+      let rects;
+      if (eraser) {
+        _eraserTmp = resizeSurface(_eraserTmp, desc.width, desc.height);
+        clearSurface(_eraserTmp);
+        rects = drawStrokeToSurface(_eraserTmp.ctx, stroke, desc);
+        applyEraserToSurface(surface.ctx, _eraserTmp.canvas);
+      } else {
+        rects = drawStrokeToSurface(surface.ctx, stroke, desc);
+        painted = true;
+      }
+      return { values: strokeValues(stroke), rects, eraser };
+    });
+    return { drawn, painted };
+  }
+
+  // Where a surface drawn from `before` and drawn from `after` can differ: within the strokes that are not in
+  // both lists' common start and end (a pixel no such stroke covers is drawn by the same strokes in both).
+  function changedBetween(before, after) {
+    let start = 0;
+    while (start < before.length && start < after.length && sameValues(before[start].values, after[start].values)) start += 1;
+    let end = 0;
+    while (end < before.length - start && end < after.length - start
+      && sameValues(before[before.length - 1 - end].values, after[after.length - 1 - end].values)) end += 1;
+    let rects = [];
+    for (const item of [...before.slice(start, before.length - end), ...after.slice(start, after.length - end)]) {
+      rects = joinRects(rects, item.rects);
     }
-    clearSurface(maskTarget.committedMask);
-    clearSurface(maskTarget.currentStroke);
+    return rects;
+  }
+
+  // The strokes of the state drawn into the committed surfaces. A group or the mask is drawn again (whole) only
+  // when its strokes changed or its committed pixels changed since the last rebuild; its display then changes
+  // only where those strokes are.
+  function rebuildCommitted(state) {
+    for (const group of groupTargets.values()) {
+      endPreview(group, null);
+      group.activeStroke = null;
+      markDirty(group);
+    }
+    clearStroke();
     maskTarget.activeStroke = null;
-    maskTarget.displayDirty = true;
-    paintScratchTarget.displayDirty = true;
+    markDirty(maskTarget);
+    markDirty(paintScratchTarget);
     previousOrderedGroupIds = null;
 
     const allStrokes = [
       ...(Array.isArray(state?.painting?.paint?.strokes) ? state.painting.paint.strokes : []),
       ...(Array.isArray(state?.painting?.mask?.strokes) ? state.painting.mask.strokes : []),
-    ];
+    // Only ERP_GLOBAL strokes are supported. Legacy FRAME_LOCAL strokes are silently ignored.
+    ].filter((stroke) => stroke?.targetSpace?.kind === "ERP_GLOBAL");
+    const isMask = (stroke) => String(stroke?.layerKind || "paint") === "mask";
+    const paint = allStrokes.filter((stroke) => !isMask(stroke));
+    const mask = allStrokes.filter(isMask);
 
-    for (const stroke of allStrokes) {
-      // Only ERP_GLOBAL strokes are supported. Legacy FRAME_LOCAL strokes are silently ignored.
-      if (stroke?.targetSpace?.kind !== "ERP_GLOBAL") continue;
-
-      const layerKind = String(stroke?.layerKind || "paint");
-      const toolKind = String(stroke?.toolKind || "pen");
-      const isEraser = toolKind === "eraser";
-
-      if (layerKind === "mask") {
-        const desc = maskTarget.descriptor;
-        if (isEraser) {
-          _eraserTmp = resizeSurface(_eraserTmp, desc.width, desc.height);
-          clearSurface(_eraserTmp);
-          drawStrokeToSurface(_eraserTmp.ctx, stroke, desc);
-          applyEraserToSurface(maskTarget.committedMask.ctx, _eraserTmp.canvas);
-        } else {
-          drawStrokeToSurface(maskTarget.committedMask.ctx, stroke, desc);
-        }
-        continue;
-      }
-
-      if (isEraser) {
-        _eraserTmp = resizeSurface(_eraserTmp, ERP_DESC.width, ERP_DESC.height);
-        clearSurface(_eraserTmp);
-        drawStrokeToSurface(_eraserTmp.ctx, stroke, ERP_DESC);
-        for (const group of groupTargets.values()) {
-          applyEraserToSurface(group.committedPaint.ctx, _eraserTmp.canvas);
-          group.displayDirty = true;
-        }
+    // Each group's strokes: its own paint strokes and the paint erasers after its first one (an eraser before it
+    // erases nothing of it).
+    const lists = new Map([...groupTargets.keys()].map((gid) => [gid, []]));
+    for (const stroke of paint) {
+      if (String(stroke?.toolKind || "pen") === "eraser") {
+        for (const list of lists.values()) if (list.length) list.push(stroke);
       } else {
-        // Paint strokes → per-group target, keyed by actionGroupId.
-        const actionGroupId = String(stroke?.actionGroupId || "__default__");
-        const group = ensureGroupTarget(actionGroupId);
-        const desc = group.descriptor;
-        drawStrokeToSurface(group.committedPaint.ctx, stroke, desc);
-        group.displayDirty = true;
+        const gid = String(stroke?.actionGroupId || "__default__");
+        ensureGroupTarget(gid);
+        if (!lists.has(gid)) lists.set(gid, []);
+        lists.get(gid).push(stroke);
       }
     }
+    for (const [gid, list] of lists) {
+      const group = groupTargets.get(gid);
+      const values = list.map((stroke) => strokeValues(stroke));
+      const same = group.changed !== null && group.changed.length === 0
+        && values.length === group.drawn.length && values.every((item, index) => sameValues(item, group.drawn[index].values));
+      if (same) continue;
+      const { drawn } = drawStrokes(group.committedPaint, list, ERP_DESC);
+      const ink = drawn.filter((item) => !item.eraser).reduce((all, item) => joinRects(all, item.rects), []);
+      // Without paint before or after, a pixel is empty whatever the erasers.
+      const rects = joinRects(group.changed, intersectRects(changedBetween(group.drawn, drawn), joinRects(group.ink, ink), ERP_W, ERP_H));
+      group.drawn = drawn;
+      group.changed = [];
+      group.ink = ink;
+      group.display.mark(rects);
+    }
 
-    composeAllLayers([...groupTargets.keys()]);
+    const maskValues = mask.map((stroke) => strokeValues(stroke));
+    const maskSame = maskTarget.changed !== null && maskTarget.changed.length === 0
+      && maskValues.length === maskTarget.drawn.length && maskValues.every((item, index) => sameValues(item, maskTarget.drawn[index].values));
+    if (!maskSame) {
+      const { drawn, painted } = drawStrokes(maskTarget.committedMask, mask, maskTarget.descriptor);
+      const rects = joinRects(maskTarget.changed, changedBetween(maskTarget.drawn, drawn));
+      maskTarget.drawn = drawn;
+      maskTarget.changed = [];
+      maskTarget.painted = painted;
+      maskTarget.damage.mark(rects);
+    }
   }
 
   // ─── Stroke Lifecycle ────────────────────────────────────────────────────────
@@ -1131,20 +1307,24 @@ export function createPaintEngineManager(options = {}) {
     activeLayerKind = String(stroke?.layerKind || "");
     const isEraser = String(stroke?.toolKind || "") === "eraser";
 
+    clearStroke();
     if (activeLayerKind === "mask") {
       activeGroupId = null;
-      clearSurface(maskTarget.currentStroke);
       maskTarget.activeStroke = null;
-      maskTarget.displayDirty = true;
+      markDirty(maskTarget);
     } else {
       const group = isEraser
         ? paintScratchTarget
         : ensureGroupTarget(String(stroke?.actionGroupId || "__default__"));
       activeGroupId = isEraser ? "" : String(stroke?.actionGroupId || "__default__");
-      clearSurface(group.currentStroke);
       group.activeStroke = null;
-      group.displayDirty = true;
+      markDirty(group);
     }
+  }
+
+  // One point of the active freehand stroke into the shared stroke canvas (appendStrokePoint).
+  function appendPoint(target, x, y, stroke) {
+    inkStroke(appendStrokePoint(target, x, y, stroke));
   }
 
   function commitActiveStroke(stroke, descriptor) {
@@ -1166,35 +1346,51 @@ export function createPaintEngineManager(options = {}) {
         stampTex: as.stampTex, radiusPx: as.radiusPx, spacingPx: as.spacingPx,
         desc: targetDesc, aspect: as.aspect, angle: as.angle,
         stampKind: as.stampKind, scatter: as.scatter, latitudeCorrection: as.latitudeCorrection,
+        bounds: [],
       };
       if (as.pointCount === 2) {
         _walkLinearStamps(sc, as.lastMidX, as.lastMidY, as.prev.x, as.prev.y, as.distSinceStamp);
       } else {
         _walkCRStamps(sc, as.pprev, { x: as.lastMidX, y: as.lastMidY }, as.prev, as.prev, as.distSinceStamp);
       }
+      inkStroke(sc.bounds);
     }
 
     // Redraw lasso fill at full opacity before merging (preview was at 50%).
     if (target.lassoPreviewActive) {
-      clearSurface(target.currentStroke);
-      drawLassoFillNative(target.currentStroke.ctx, stroke, targetDesc);
+      clearStroke();
+      inkStroke(drawLassoFillNative(target.currentStroke.ctx, stroke, targetDesc));
       target.lassoPreviewActive = false;
     }
 
+    // The committed surfaces take the whole stroke canvas; they change only where it has pixels.
     const surface = layerKind === "mask" ? maskTarget.committedMask : target.committedPaint;
     if (isEraser && layerKind === "paint") {
       for (const group of groupTargets.values()) {
         applyEraserToSurface(group.committedPaint.ctx, target.currentStroke.canvas);
-        group.displayDirty = true;
+        endPreview(group);
+        commitChanged(group, strokeInk);
+        markDirty(group);
       }
     } else if (isEraser) {
       applyEraserToSurface(surface.ctx, target.currentStroke.canvas);
+      target.changed = joinRects(target.changed, strokeInk);
+      target.damage.mark(strokeInk);
     } else {
+      if (layerKind === "mask") maskTarget.painted = true;
       const opacity = Math.max(0, Math.min(1, as?.strokeOpacity ?? 1));
       surface.ctx.save();
       surface.ctx.globalAlpha = opacity;
       surface.ctx.drawImage(target.currentStroke.canvas, 0, 0);
       surface.ctx.restore();
+      if (layerKind === "mask") {
+        target.changed = joinRects(target.changed, strokeInk);
+        target.damage.mark(strokeInk);
+      } else {
+        endPreview(target);
+        commitChanged(target, strokeInk);
+        target.ink = joinRects(target.ink, strokeInk);
+      }
     }
 
     if (panoPaintDebugEnabled()) {
@@ -1211,38 +1407,35 @@ export function createPaintEngineManager(options = {}) {
       });
     }
 
-    clearSurface(target.currentStroke);
+    clearStroke();
     target.activeStroke = null;
-    target.displayDirty = true;
+    markDirty(target);
     activeGroupId = null;
     activeLayerKind = "";
-
-    composeAllLayers([...groupTargets.keys()]);
   }
 
   function cancelActiveStroke(descriptor) {
     if (activeLayerKind === "mask") {
-      clearSurface(maskTarget.currentStroke);
       maskTarget.activeStroke = null;
       maskTarget.lassoPreviewActive = false;
-      maskTarget.displayDirty = true;
+      markDirty(maskTarget);
     } else if (activeLayerKind === "paint" && !activeGroupId) {
-      clearSurface(paintScratchTarget.currentStroke);
       paintScratchTarget.activeStroke = null;
       paintScratchTarget.lassoPreviewActive = false;
-      paintScratchTarget.displayDirty = true;
+      markDirty(paintScratchTarget);
     } else if (activeGroupId) {
       const group = groupTargets.get(activeGroupId);
       if (group) {
-        clearSurface(group.currentStroke);
         group.activeStroke = null;
         group.lassoPreviewActive = false;
-        group.displayDirty = true;
+        markDirty(group);
       }
     }
+    // The groups show their committed paint again.
+    for (const group of groupTargets.values()) endPreview(group);
+    clearStroke();
     activeGroupId = null;
     activeLayerKind = "";
-    composeAllLayers([...groupTargets.keys()]);
   }
 
   // Full-redraw path for lasso fill preview (polygon is short, O(n) acceptable).
@@ -1252,22 +1445,21 @@ export function createPaintEngineManager(options = {}) {
     if (kind !== "lasso_fill") return;
 
     if (activeLayerKind === "mask") {
-      clearSurface(maskTarget.currentStroke);
-      drawLassoFillNative(maskTarget.currentStroke.ctx, stroke, maskTarget.descriptor);
+      clearStroke();
+      inkStroke(drawLassoFillNative(maskTarget.currentStroke.ctx, stroke, maskTarget.descriptor));
       maskTarget.lassoPreviewActive = true;
-      maskTarget.displayDirty = true;
+      markDirty(maskTarget);
     } else {
       const isEraser = String(stroke?.toolKind || "") === "eraser";
       const group = isEraser
         ? paintScratchTarget
         : ensureGroupTarget(String(stroke?.actionGroupId || activeGroupId || "__default__"));
       activeGroupId = isEraser ? "" : String(stroke?.actionGroupId || activeGroupId || "__default__");
-      clearSurface(group.currentStroke);
-      drawLassoFillNative(group.currentStroke.ctx, stroke, group.descriptor);
+      clearStroke();
+      inkStroke(drawLassoFillNative(group.currentStroke.ctx, stroke, group.descriptor));
       group.lassoPreviewActive = true;
-      group.displayDirty = true;
+      markDirty(group);
     }
-    composeAllLayers([...groupTargets.keys()]);
   }
 
   // Returns a view compatible with the old single-target interface:
@@ -1289,70 +1481,125 @@ export function createPaintEngineManager(options = {}) {
     return groupTargets.get(String(actionGroupId)) ?? null;
   }
 
-  function getAllGroupIds() {
-    return [...groupTargets.keys()];
+  // Which rectangles of a display drawn from a committed surface (whose changes `committed` logs, or null when it
+  // does not change while the display shows the stroke) and the stroke canvas changed since `seen` (null: none
+  // drawn yet, the display shows the committed pixels; then it changes where the stroke canvas has pixels).
+  // Where the stroke canvas has no pixels, the display is the committed surface's whatever the mode, so a change
+  // of mode or of showsStroke draws it again where the stroke canvas has pixels or changed.
+  function displayChanges(seen, committed, showsStroke, mode) {
+    if (!seen) return strokeInk;
+    let rects = committed ? committed.since(seen.committed) : [];
+    if (showsStroke || seen.showsStroke) rects = joinRects(rects, strokeDamage.since(seen.stroke));
+    if (showsStroke !== seen.showsStroke || mode !== seen.mode) rects = joinRects(rects, strokeInk);
+    return rects;
   }
 
-  function getGroupDisplayCanvas(actionGroupId) {
+  // A display canvas as a paint layer source (pano_paint_layers.js): its media, its revision, and where it
+  // changed since a revision before (changed(revision), pano_paint_damage.js).
+  function displayLayer(canvas, damage) {
+    return { media: canvas, revision: damage.revision, changed: damage.since };
+  }
+
+  // A paint group as the views draw it ({ media, revision, changed }, or null without the group): its committed
+  // paint, or a canvas with the live stroke over it while it is drawn in this group or while the paint eraser
+  // crosses the group's paint (a group the eraser does not reach shows its committed paint, which is what the
+  // eraser would leave of it). The canvas with the stroke is drawn whole when the stroke starts showing, as
+  // the committed paint with the stroke, and then again only where the stroke's pixels changed.
+  function getGroupDisplay(actionGroupId) {
     const group = groupTargets.get(String(actionGroupId));
     if (!group) return null;
     const isActive = activeLayerKind === "paint" && activeGroupId === group.actionGroupId;
     const activePaintStroke = activeLayerKind === "paint"
       ? ((activeGroupId ? groupTargets.get(activeGroupId) : paintScratchTarget)?.activeStroke || null)
       : null;
-    if (activePaintStroke?.isEraser) {
-      _groupPreviewTmp = resizeSurface(_groupPreviewTmp, ERP_W, ERP_H);
-      clearSurface(_groupPreviewTmp);
-      _groupPreviewTmp.ctx.drawImage(group.committedPaint.canvas, 0, 0);
-      applyEraserToSurface(_groupPreviewTmp.ctx, sharedCurrentStroke.canvas);
-      return _groupPreviewTmp.canvas;
-    }
+    const eraser = !!activePaintStroke?.isEraser;
     const as = isActive ? group.activeStroke : null;
-    if (!as) return group.committedPaint.canvas;
-    _groupPreviewTmp = resizeSurface(_groupPreviewTmp, ERP_W, ERP_H);
-    clearSurface(_groupPreviewTmp);
-    _groupPreviewTmp.ctx.drawImage(group.committedPaint.canvas, 0, 0);
-    const opacity = group.lassoPreviewActive
-      ? 0.5
-      : Math.max(0, Math.min(1, as.strokeOpacity ?? 1));
-    _groupPreviewTmp.ctx.save();
-    _groupPreviewTmp.ctx.globalAlpha = opacity;
-    _groupPreviewTmp.ctx.drawImage(sharedCurrentStroke.canvas, 0, 0);
-    _groupPreviewTmp.ctx.restore();
-    return _groupPreviewTmp.canvas;
+    if (!(as || (eraser && rectsOverlap(group.ink, strokeInk)))) {
+      endPreview(group);
+      return displayLayer(group.committedPaint.canvas, group.display);
+    }
+    const alpha = eraser ? 1 : (group.lassoPreviewActive ? 0.5 : Math.max(0, Math.min(1, as?.strokeOpacity ?? 1)));
+    const mode = eraser ? "erase" : `paint:${alpha}`;
+    let rects = null;
+    if (!group.preview) {
+      group.preview = { surface: createCanvasSurface(ERP_W, ERP_H), seen: null };
+      // It differs from the committed paint the display showed only where the stroke canvas has pixels.
+      group.display.mark(strokeInk);
+    } else {
+      rects = displayChanges(group.preview.seen, null, true, mode);
+    }
+    const { ctx } = group.preview.surface;
+    if (rects === null || rects.length) {
+      for (const rect of rects ?? [ERP_RECT]) {
+        clearRect(ctx, rect);
+        drawRect(ctx, group.committedPaint.canvas, rect);
+        ctx.save();
+        if (eraser) ctx.globalCompositeOperation = "destination-out";
+        else ctx.globalAlpha = alpha;
+        drawRect(ctx, sharedCurrentStroke.canvas, rect);
+        ctx.restore();
+      }
+      if (rects) group.display.mark(rects);
+    }
+    group.preview.seen = { stroke: strokeDamage.revision, showsStroke: true, mode };
+    return displayLayer(group.preview.surface.canvas, group.display);
   }
 
-  function getMaskDisplayCanvas() {
-    _maskPreviewTmp = resizeSurface(_maskPreviewTmp, ERP_W, ERP_H);
-    clearSurface(_maskPreviewTmp);
-    drawMaskTint(_maskPreviewTmp.ctx, maskTarget.committedMask.canvas);
-    if (activeLayerKind === "mask" && maskTarget.activeStroke) {
-      if (maskTarget.activeStroke.isEraser) {
-        _eraserTmp = resizeSurface(_eraserTmp, ERP_W, ERP_H);
-        clearSurface(_eraserTmp);
-        _eraserTmp.ctx.drawImage(maskTarget.committedMask.canvas, 0, 0);
-        applyEraserToSurface(_eraserTmp.ctx, sharedCurrentStroke.canvas);
-        clearSurface(_maskPreviewTmp);
-        drawMaskTint(_maskPreviewTmp.ctx, _eraserTmp.canvas);
-      } else {
-        drawMaskTint(_maskPreviewTmp.ctx, sharedCurrentStroke.canvas);
-      }
+  function getGroupDisplayCanvas(actionGroupId) {
+    return getGroupDisplay(actionGroupId)?.media ?? null;
+  }
+
+  // The mask as the views draw it (hatched), with its live stroke ({ media, revision, changed }), or null
+  // without a mask. The canvas is drawn again only where the mask's or its live stroke's pixels changed.
+  function getMaskDisplay() {
+    const stroke = activeLayerKind === "mask" ? maskTarget.activeStroke : null;
+    if (!maskTarget.painted && (!stroke || stroke.isEraser)) {
+      maskDisplay = null;
+      return null;
     }
-    return _maskPreviewTmp.canvas;
+    const erase = !!stroke?.isEraser;
+    const showsStroke = !!stroke;
+    const mode = erase ? "erase" : "paint";
+    const record = maskDisplay ?? { surface: createCanvasSurface(ERP_W, ERP_H), damage: createDamageLog(), seen: null };
+    const rects = record.seen ? displayChanges(record.seen, maskTarget.damage, showsStroke, mode) : null;
+    if (rects === null || rects.length) {
+      const { ctx } = record.surface;
+      for (const rect of rects ?? [ERP_RECT]) {
+        clearRect(ctx, rect);
+        if (erase) {
+          _eraserTmp = resizeSurface(_eraserTmp, ERP_W, ERP_H);
+          clearRect(_eraserTmp.ctx, rect);
+          drawRect(_eraserTmp.ctx, maskTarget.committedMask.canvas, rect);
+          _eraserTmp.ctx.save();
+          _eraserTmp.ctx.globalCompositeOperation = "destination-out";
+          drawRect(_eraserTmp.ctx, sharedCurrentStroke.canvas, rect);
+          _eraserTmp.ctx.restore();
+          drawMaskTint(ctx, _eraserTmp.canvas, rect);
+        } else {
+          drawMaskTint(ctx, maskTarget.committedMask.canvas, rect);
+          if (stroke) drawMaskTint(ctx, sharedCurrentStroke.canvas, rect);
+        }
+      }
+      record.damage.mark(rects);
+    }
+    record.seen = { committed: maskTarget.damage.revision, stroke: strokeDamage.revision, showsStroke, mode };
+    maskDisplay = record;
+    return displayLayer(record.surface.canvas, record.damage);
   }
 
   return {
+    descriptor: ERP_DESC,
     rebuildCommitted,
     beginStroke,
-    appendStrokePoint,
+    appendStrokePoint: appendPoint,
     updateActiveStroke,
     commitActiveStroke,
     cancelActiveStroke,
     getErpTarget,
     ensureTarget,
     getGroupTarget,
+    getGroupDisplay,
     getGroupDisplayCanvas,
-    getMaskDisplayCanvas,
-    getAllGroupIds,
+    getMaskDisplay,
   };
 }

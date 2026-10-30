@@ -1,21 +1,21 @@
 from pathlib import Path
 import unittest
 
+from editor_source import editor_source
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestCutoutCameraModalContract(unittest.TestCase):
-    def test_cutout_editor_uses_shared_camera_adapter(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
-        self.assertIn('from "./pano_cutout_camera.js"', editor_js)
-        self.assertIn("const cutoutPreviewCamera = type === \"cutout\"", editor_js)
-        self.assertIn("cutoutPreviewCamera.renderShotToContext", editor_js)
+    def test_cutout_editor_draws_frame_and_camera_preview_with_the_editor_view(self):
+        editor_js = editor_source()
+        self.assertNotIn("pano_cutout_camera", editor_js)
         self.assertIn('uiState.outputPreviewToggle.visible = editor.mode !== "frame" && !!getActiveCutoutShot();', editor_js)
-        self.assertIn('const drew = renderCutoutPreviewToContext(ctx, contextRect, contextShot, { quality: previewQuality }) === true;', editor_js)
+        self.assertIn('export const CAMERA_PREVIEW_OWNER = "camera_preview";', editor_js)
 
     def test_cutout_frame_entry_points_are_not_stubbed(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         self.assertNotIn("function isShotItem(item) {\n    return false;\n  }", editor_js)
         self.assertNotIn("function getActiveCutoutShot() {\n    if (type !== \"cutout\") return null;\n    return null;\n  }", editor_js)
         self.assertNotIn("function addCutoutFrame() {\n    return;\n  }", editor_js)
@@ -24,7 +24,6 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("if (!itemIsSticker && !itemIsShot) {", editor_js)
         self.assertIn('const activeShot = editor.mode === "frame" && supportsFramePainting() ? getActiveCutoutShot() : null;', editor_js)
         self.assertIn('kind: "pan_frame",', editor_js)
-        self.assertIn('shot.hFOV_deg = next.hFOV_deg;', editor_js)
         self.assertNotIn('frameView: { zoom: 1, panX: 0, panY: 0 }', editor_js)
         frame_rect_body = editor_js.split("function getFrameViewRect", 1)[1].split("function supportsFramePainting", 1)[0]
         self.assertNotIn("getBoundingClientRect", frame_rect_body)
@@ -40,8 +39,14 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("function applyGateAspectAtCurrentScale(selected, ratio)", editor_js)
         self.assertIn("applyGateAspectAtCurrentScale(selected, inverted)", editor_js)
         self.assertIn("frameRailBounds.width > 0 && frameRailBounds.height > 0", editor_js)
-        self.assertIn('disabled: readOnly || frameMode,', editor_js)
-        self.assertIn('if (editor.mode === "frame") return;\n      startViewTween', editor_js)
+        # Reset View and the grid toggle do nothing in the Frame view, so they are disabled there (the rule
+        # lives in floatingRightState, which the editor feeds with the Frame view's mode).
+        ui_state_js = (REPO_ROOT / "web_src" / "pano_editor_ui_state.js").read_text(encoding="utf-8")
+        floating_body = ui_state_js.split("export function floatingRightState(", 1)[1].split("\nexport function ", 1)[0]
+        self.assertIn('"reset-view": { disabled: !!readOnly || !!frameMode },', floating_body)
+        self.assertIn("disabled: !!readOnly || !!frameMode,", floating_body.split('"toggle-grid"', 1)[1])
+        self.assertIn('frameMode: shotEditor && editor.mode === "frame",', editor_js)
+        self.assertIn('if (action === "reset-view") {\n      if (editor.mode === "frame") return;', editor_js)
         self.assertIn('if (editor.mode === "frame") return;\n      editor.showGrid = !editor.showGrid;', editor_js)
         self.assertIn("function drawCutoutPanoPassepartout()", editor_js)
         dim_target_body = editor_js.split("function getCutoutPanoDimTarget()", 1)[1].split("function drawCutoutPanoPassepartout()", 1)[0]
@@ -52,18 +57,18 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("editor.cutoutPanoDimCorners = liveCorners", editor_js)
         self.assertIn("cutoutPanoFrameVisual: null", editor_js)
         self.assertIn("cutoutPanoFrameAlpha: 0", editor_js)
-        self.assertIn('const nextFrameTarget = type === "cutout" && getActiveCutoutShot() ? 1 : 0;', editor_js)
+        self.assertIn('const nextFrameTarget = shotEditor && getActiveCutoutShot() ? 1 : 0;', editor_js)
         self.assertIn("drawCameraFrameBody(visual.geom, visual.selected, visual.locked)", editor_js)
         self.assertIn('kind: "roll_frame"', editor_js)
         self.assertIn('shortestAngleDeltaRad(angle, interaction.lastAngle)', editor_js)
-        self.assertIn('editor.interaction?.kind === "pan_frame" || editor.interaction?.kind === "roll_frame"', editor_js)
+        self.assertIn('["pan_frame", "roll_frame", "frame_pan", "frame_orbit"].includes(editor.interaction?.kind)', editor_js)
         roll_overlay = editor_js.split("function drawFrameRollOverlay", 1)[1].split("function ", 1)[0]
         self.assertNotIn("fillText", roll_overlay)
         self.assertNotIn("function drawFrameRollHandles", editor_js)
         self.assertIn("frameRollKnob:", editor_js)
         self.assertIn("frameRollAngleForEvent(event, center)", editor_js)
         self.assertIn('uiState.tooltip.variant = "roll"', editor_js)
-        self.assertIn("clearTimeout(tooltip.timer)", editor_js)
+        self.assertIn("timers.clear(tooltip.timer)", editor_js)
         self.assertIn('if (it.source === "knob") return;', editor_js)
         self.assertIn('ended?.kind === "roll_frame" && ended.source === "knob"', editor_js)
         self.assertIn("frameRollOverlayAlpha:", editor_js)
@@ -79,7 +84,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn('variant = "frame-rail"', editor_js)
 
     def test_panorama_view_is_never_moved_by_tab_switch(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         view_branch = editor_js.split('const viewTarget = ev.target.closest("[data-view]");', 1)[1]
         view_branch = view_branch.split("const actionTarget", 1)[0]
         # A tab switch is navigation, not an edit; a round trip must be a no-op.
@@ -87,7 +92,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
             self.assertNotIn(forbidden, view_branch)
 
     def test_offscreen_frame_indicator_is_not_reintroduced(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         modal_vue = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
         # Look At Frame already provides this action; do not duplicate it.
         self.assertNotIn("offscreenFrameIndicator", editor_js)
@@ -96,7 +101,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertFalse((REPO_ROOT / "web_src" / "components" / "PanoOffscreenFrameIndicator.vue").exists())
 
     def test_panorama_passepartout_does_not_reuse_stale_corners(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         body = editor_js.split("function drawCutoutPanoPassepartout", 1)[1]
         body = body.split("function ", 1)[0]
         # Stale corners would leave a bright hole when the live frame is offscreen.
@@ -104,7 +109,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("fadingOut", body)
 
     def test_frame_safe_rect_is_independent_of_the_active_shot(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         measure_body = editor_js.split("function measureFrameSafeRect", 1)[1].split("function getFrameViewLayout", 1)[0]
         # The gate scale is derived from the safe rect, so measuring any chrome
         # whose size follows the shot closes a feedback loop and makes the ERP
@@ -112,10 +117,10 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn("[paintDockEl, videoTransportEl].forEach", measure_body)
         self.assertNotIn("floatingRightEl].forEach", measure_body)
         self.assertIn("FLOATING_RIGHT_RESERVED_PX", measure_body)
-        self.assertIn('uiState.cameraPreview.visible = editor.mode !== "frame";', editor_js)
+        self.assertIn('uiState.cameraPreview.visible = editor.mode !== "frame" && cameraPreviewShown();', editor_js)
 
     def test_vue_shell_hosts_camera_preview(self):
-        editor_js = (REPO_ROOT / "web_src" / "pano_editor.js").read_text(encoding="utf-8")
+        editor_js = editor_source()
         modal_vue = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
         frame_rail_vue = (REPO_ROOT / "web_src" / "components" / "PanoFrameRail.vue").read_text(encoding="utf-8")
         roll_knob_vue = (REPO_ROOT / "web_src" / "components" / "PanoFrameRollKnob.vue").read_text(encoding="utf-8")
@@ -142,9 +147,7 @@ class TestCutoutCameraModalContract(unittest.TestCase):
 
     def test_cutout_node_preview_uses_live_camera_render_before_output_exists(self):
         preview_js = (REPO_ROOT / "web_src" / "pano_preview_runtime.js").read_text(encoding="utf-8")
-        self.assertIn('buildPanoramaCompositeDescriptor', preview_js)
-        self.assertIn('buildCutoutViewParamsFromShot(shot)', preview_js)
-        self.assertIn('const liveCutoutDrawn = runtimeCore.renderToContext(', preview_js)
+        self.assertIn("drawView(contextLayout.rect, shotCamera(contextLayout.shot))", preview_js)
         self.assertNotIn('} else if (bgReady) {\n        statusType = "empty";\n        hintText = "Open editor or run node";', preview_js)
 
     def test_linked_input_preview_cache_keeps_ready_image_during_reload(self):
@@ -154,10 +157,9 @@ class TestCutoutCameraModalContract(unittest.TestCase):
         self.assertIn('return (preserveReadyWhilePending && cacheEntry.img && (cacheEntry.img.complete || cacheEntry.img.naturalWidth || cacheEntry.img.width))', preview_js)
 
     def test_cutout_preview_paint_workspace_does_not_follow_linked_image_aspect(self):
-        preview_js = (REPO_ROOT / "web_src" / "pano_preview_runtime.js").read_text(encoding="utf-8")
-        self.assertIn("function getDesiredPreviewPaintDescriptor(node, state) {", preview_js)
-        self.assertIn("const presetWidth = Math.max(1, Number(state?.output_preset || 2048));", preview_js)
-        self.assertIn("height: Math.max(1, Math.round(presetWidth * 0.5)),", preview_js)
+        preview_js = (REPO_ROOT / "web_src" / "pano_surface_paint.js").read_text(encoding="utf-8")
+        self.assertIn("const width = Math.max(1, Number(state.output_preset || 2048));", preview_js)
+        self.assertIn('const descriptor = { kind: "ERP_GLOBAL", width, height: Math.max(1, Math.round(width * 0.5)) };', preview_js)
         self.assertNotIn("const connectedWidth = Number(connected?.naturalWidth || connected?.width || 0);", preview_js)
         self.assertNotIn("const connectedHeight = Number(connected?.naturalHeight || connected?.height || 0);", preview_js)
         self.assertNotIn("width: Math.max(1, Math.round(connectedWidth)),", preview_js)

@@ -7,10 +7,12 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 test("Preview node surface exposes only one fullscreen action", async () => {
   const component = await read("../web_src/components/PanoPreviewNodeSurface.vue");
 
-  assert.ok(component.includes('import PanoIconButton from "./PanoIconButton.vue"'));
+  assert.ok(component.includes('import PanoIconButton from "./shared/PanoIconButton.vue"'));
   assert.ok(component.includes("ICON.fullscreen"));
   assert.ok(component.includes("ICON.fullscreen_close"));
-  assert.match(component, /type:\s*'toggle-fullscreen'/);
+  assert.match(component, /type:\s*"toggle-fullscreen"/);
+  // docs/preview-node.md "ノード上": the one button opens the new Preview window instead when it takes the node.
+  assert.match(component, /type:\s*"open-viewer"/);
   assert.equal((component.match(/<PanoIconButton/g) || []).length, 1);
   for (const excluded of ["FOV", "Reset", "Play", "Pause", "Help", "Full Editor"]) {
     assert.ok(!component.includes(excluded), `unexpected Preview surface action: ${excluded}`);
@@ -25,7 +27,7 @@ test("dedicated Preview runtime mounts and tears down the Vue fullscreen surface
   assert.ok(runtime.includes("createPreviewFullscreenController"));
   assert.ok(runtime.includes('this.surfaceHost.className = "pano-preview-node-surface-host"'));
   assert.match(runtime, /createApp\(PanoPreviewNodeSurface/);
-  assert.match(runtime, /this\.node\.__panoPreviewNodeSurface\s*=/);
+  assert.match(runtime, /previewNode\(this\.node\)\.surface\s*=/);
   assert.match(runtime, /this\.surfaceApp\?\.unmount\?\.\(\)/);
   assert.match(runtime, /this\.fullscreenController\?\.destroy\?\.\(\)/);
   assert.match(runtime, /this\.wheelCaptureCleanup\?\.\(\)/);

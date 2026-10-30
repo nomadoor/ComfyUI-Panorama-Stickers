@@ -2,8 +2,9 @@
 import { ICON } from "../icons.js";
 import PanoCutoutAspectPicker from "./PanoCutoutAspectPicker.vue";
 import PanoCutoutNodeHelp from "./PanoCutoutNodeHelp.vue";
-import PanoIconButton from "./PanoIconButton.vue";
-import SvgIcon from "./SvgIcon.vue";
+import PanoIconButton from "./shared/PanoIconButton.vue";
+import PanoViewUnavailable from "./shared/PanoViewUnavailable.vue";
+import SvgIcon from "./shared/SvgIcon.vue";
 
 const props = defineProps({
   model: { type: Object, default: () => ({}) },
@@ -76,5 +77,6 @@ function emitAction(action) {
     >
       Choose a view · + Add Frame
     </div>
+    <PanoViewUnavailable v-if="model.viewUnavailable" />
   </div>
 </template>

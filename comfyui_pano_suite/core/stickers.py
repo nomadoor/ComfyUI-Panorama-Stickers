@@ -1,13 +1,14 @@
 import base64
+import hashlib
 import io
 import math
-from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from .math import DEG2RAD, camera_basis
+from .cache import CACHE
+from .math import DEG2RAD, camera_basis, unit_float
 
 try:
     import folder_paths
@@ -25,14 +26,74 @@ def _hex_to_rgb01(hex_color: str) -> np.ndarray:
     return np.array([r, g, b], dtype=np.float32) / 255.0
 
 
-@lru_cache(maxsize=32)
-def _load_dataurl_cached(v: str) -> np.ndarray:
-    payload = v.split(",", 1)[1]
-    raw = base64.b64decode(payload)
-    img = Image.open(io.BytesIO(raw)).convert("RGBA")
-    arr = np.asarray(img, dtype=np.float32) / 255.0
-    arr.flags.writeable = False
-    return arr
+def _decode_rgba8(source) -> np.ndarray:
+    """An image as RGBA uint8. An image that cannot be decoded raises OSError or ValueError; PIL's decompression bomb
+    error is raised as ValueError, so that every reader turns it into "cannot be read"."""
+    try:
+        with Image.open(source) as image:
+            return np.asarray(image.convert("RGBA"))
+    except Image.DecompressionBombError as error:
+        raise ValueError(str(error)) from error
+
+
+def read_image_file_rgba8(path: Path) -> np.ndarray:
+    """An image file as straight-alpha RGBA uint8 (h, w, 4), decoded once per version of the file (its path,
+    modification time, and size) and kept read-only in the shared cache (`cache.py`)."""
+    stat = path.stat()
+    return CACHE.get_or_put("image_file", (str(path), stat.st_mtime_ns, stat.st_size), lambda: _decode_rgba8(path))
+
+
+def _load_dataurl_rgba8(v: str) -> np.ndarray:
+    """A data URL image as `read_image_file_rgba8` reads a file, keyed by the hash of the URL. A URL without data
+    raises ValueError, as one whose base64 or image cannot be decoded does."""
+    _header, comma, data = v.partition(",")
+    if not comma:
+        raise ValueError("The data URL has no data.")
+    key = hashlib.sha1(v.encode("utf-8")).hexdigest()
+    return CACHE.get_or_put("image_data_url", key, lambda: _decode_rgba8(io.BytesIO(base64.b64decode(data))))
+
+
+def comfy_file_path(filename: str, subfolder: str, storage: str) -> Path | None:
+    """The path of a file in ComfyUI's input, output, or temp directory, or None for a path outside it or a file
+    that is not there."""
+    if folder_paths is None:
+        return None
+    filename = str(filename or "").strip()
+    if not filename:
+        return None
+    subfolder = str(subfolder or "").strip().strip("/\\")
+    storage = str(storage or "input").strip().lower()
+    if storage == "output":
+        base = Path(folder_paths.get_output_directory())
+    elif storage == "temp":
+        base = Path(folder_paths.get_temp_directory())
+    else:
+        base = Path(folder_paths.get_input_directory())
+    p = (base / subfolder / filename).resolve() if subfolder else (base / filename).resolve()
+    try:
+        p.relative_to(base.resolve())
+    except Exception:
+        return None
+    if not p.exists() or not p.is_file():
+        return None
+    return p
+
+
+def _load_comfy_file_rgba8(filename: str, subfolder: str, storage: str) -> np.ndarray | None:
+    """Read an image from ComfyUI's input, output, or temp directory; paths outside it are refused."""
+    path = comfy_file_path(filename, subfolder, storage)
+    return None if path is None else read_image_file_rgba8(path)
+
+
+def load_source_rgba(source: dict) -> np.ndarray | None:
+    """Read a state v2 `file` Source as straight-alpha RGBA uint8 (h, w, 4), read-only, or None when it cannot be
+    read."""
+    try:
+        if "data_url" in source:
+            return _load_dataurl_rgba8(source["data_url"])
+        return _load_comfy_file_rgba8(source["filename"], source["subfolder"], source["storage"])
+    except (OSError, ValueError):
+        return None
 
 
 def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarray | None:
@@ -45,7 +106,7 @@ def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarr
             v = str(asset_info.get("value") or "")
             if not v.startswith("data:image"):
                 return None
-            return _load_dataurl_cached(v)
+            return unit_float(_load_dataurl_rgba8(v))
 
         if t == "path":
             v = str(asset_info.get("value") or asset_info.get("path") or "").strip()
@@ -72,27 +133,9 @@ def _load_asset_rgba(asset_info: dict, base_dir: Path | None = None) -> np.ndarr
             img = Image.open(p).convert("RGBA")
             return np.asarray(img, dtype=np.float32) / 255.0
 
-        if t == "comfy_image" and folder_paths is not None:
-            filename = str(asset_info.get("filename") or "").strip()
-            if not filename:
-                return None
-            subfolder = str(asset_info.get("subfolder") or "").strip().strip("/\\")
-            storage = str(asset_info.get("storage") or "input").strip().lower()
-            if storage == "output":
-                base = Path(folder_paths.get_output_directory())
-            elif storage == "temp":
-                base = Path(folder_paths.get_temp_directory())
-            else:
-                base = Path(folder_paths.get_input_directory())
-            p = (base / subfolder / filename).resolve() if subfolder else (base / filename).resolve()
-            try:
-                p.relative_to(base.resolve())
-            except Exception:
-                return None
-            if not p.exists() or not p.is_file():
-                return None
-            img = Image.open(p).convert("RGBA")
-            return np.asarray(img, dtype=np.float32) / 255.0
+        if t == "comfy_image":
+            rgba = _load_comfy_file_rgba8(asset_info.get("filename"), asset_info.get("subfolder"), asset_info.get("storage"))
+            return None if rgba is None else unit_float(rgba)
     except Exception:
         return None
     return None

@@ -8,7 +8,7 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: "web_src/pano_editor.js",
+      entry: "web_src/main.js",
       formats: ["es"],
       fileName: () => "panorama_suite.js",
     },
@@ -16,6 +16,11 @@ export default defineConfig({
     emptyOutDir: false,
     rollupOptions: {
       external: [/^\.\.\/\.\.\/scripts\//],
+      output: {
+        // ComfyUI loads every web/**/*.js as an extension but skips dot folders, so chunks loaded on
+        // demand (three.js) go to web/.lazy/.
+        chunkFileNames: ".lazy/[name]-[hash].js",
+      },
     },
     assetsInlineLimit: 0,
   },

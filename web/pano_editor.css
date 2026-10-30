@@ -1,9 +1,60 @@
+/* Design tokens (docs/design.md). Every name has the --pano- prefix, so they are defined once here and reach
+   the editor modal and every node surface. A --pano-node-* token holds a value the node surfaces use where
+   the editor uses another, so one name always means one value. */
+:root {
+  --pano-font-family: "Plus Jakarta Sans", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+  --pano-node-font-family: "Plus Jakarta Sans", Geist, system-ui, sans-serif;
+  --pano-font-family-compact: "Plus Jakarta Sans", Geist, sans-serif;
+  --pano-surface-0: #0a0a0a;
+  --pano-surface-1: #0f0f10;
+  --pano-surface-2: #1a1a1a;
+  --pano-surface-3: #3d3d3f;
+  --pano-surface-hover: #222224;
+  --pano-muted: #787878;
+  --pano-muted-strong: #a0a0a0;
+  --pano-space-xs: 4px;
+  --pano-space-sm: 6px;
+  --pano-space-md: 8px;
+  --pano-space-lg: 12px;
+  --pano-space-xl: 14px;
+  --pano-space-2xl: 24px;
+  --pano-radius-xs: 4px;
+  --pano-radius-md: 8px;
+  --pano-radius-lg: 12px;
+  --pano-bg-base: var(--pano-surface-0);
+  --pano-bg-panel: var(--pano-surface-0);
+  --pano-bg-control: var(--pano-surface-2);
+  --pano-border: rgba(255, 255, 255, 0.09);
+  --pano-divider: rgba(255, 255, 255, 0.08);
+  --pano-text: #f5f5f5;
+  --pano-text-secondary: var(--pano-muted);
+  --pano-text-tertiary: #5e5e5e;
+  --pano-accent: var(--pano-theme-accent, #0070f3);
+  --pano-emphasis-bg: #185fb8;
+  --pano-emphasis-bg-hover: #2672d2;
+  --pano-emphasis-bg-active: #114f9d;
+  --pano-emphasis-text: #ffffff;
+  --pano-keyframe: #f5b544;
+  --pano-frame-yellow: rgb(255, 221, 87);
+  --pano-frame-yellow-edge: rgba(255, 221, 87, 0.62);
+  --pano-float-pad: var(--pano-space-xs);
+  --pano-float-gap: var(--pano-space-sm);
+  --pano-float-radius: 10px;
+  --pano-float-bg: rgba(10, 10, 10, 0.88);
+  --pano-float-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  --pano-popover-bg: rgba(10, 10, 10, 0.92);
+  --pano-node-text-secondary: #a1a1aa;
+  --pano-node-text-tertiary: #71717a;
+  --pano-node-float-bg: rgba(10, 10, 10, 0.82);
+  --pano-node-float-radius: 8px;
+  --pano-node-frame-bg: #070707;
+  --pano-node-frame-border: rgba(63, 63, 70, 1);
+}
 
 .pano-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.62);
-  backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.7);
   z-index: 99999;
   display: flex;
   align-items: center;
@@ -30,40 +81,7 @@
   box-sizing: border-box;
   overflow: hidden;
   position: relative;
-  font-family: "Plus Jakarta Sans", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
-  --pano-surface-0: #0a0a0a;
-  --pano-surface-1: #0f0f10;
-  --pano-surface-2: #1a1a1a;
-  --pano-surface-3: #3d3d3f;
-  --pano-surface-hover: #222224;
-  --pano-muted: #787878;
-  --pano-muted-strong: #a0a0a0;
-  --pano-space-xs: 4px;
-  --pano-space-sm: 6px;
-  --pano-space-md: 8px;
-  --pano-space-lg: 12px;
-  --pano-space-xl: 14px;
-  --pano-space-2xl: 24px;
-  --pano-bg-base: var(--pano-surface-0);
-  --pano-bg-panel: var(--pano-surface-0);
-  --pano-bg-control: var(--pano-surface-2);
-  --pano-border: rgba(255, 255, 255, 0.09);
-  --pano-text: #f5f5f5;
-  --pano-text-secondary: var(--pano-muted);
-  --pano-text-tertiary: #5e5e5e;
-  --pano-text-reversed: #ffffff;
-  --pano-accent: var(--pano-theme-accent, #0070f3);
-  --pano-accent-dimmed: color-mix(in srgb, var(--pano-accent) 34%, transparent);
-  --pano-accent-dark: var(--pano-theme-accent-dark, #0366d6);
-  --pano-accent-extra-dark: var(--pano-theme-accent-extra-dark, #0059bc);
-  --pano-emphasis-bg: #185fb8;
-  --pano-emphasis-bg-hover: #2672d2;
-  --pano-emphasis-bg-active: #114f9d;
-  --pano-emphasis-text: #ffffff;
-  --pano-float-pad: var(--pano-space-xs);
-  --pano-float-gap: var(--pano-space-sm);
-  --pano-float-radius: 10px;
-  --pano-float-bg: rgba(10, 10, 10, 0.74);
+  font-family: var(--pano-font-family);
 }
 .pano-modal:focus,
 .pano-modal:focus-visible {
@@ -87,7 +105,6 @@
 .pano-modal.pano-modal-fullscreen .pano-floating-right,
 .pano-modal.pano-modal-fullscreen .pano-camera-preview-anchor,
 .pano-modal.pano-modal-fullscreen .pano-selection-menu,
-.pano-modal.pano-modal-fullscreen .pano-output-preview-toggle,
 .pano-modal.pano-modal-fullscreen .pano-tooltip {
   display: none !important;
 }
@@ -99,8 +116,16 @@
 .pano-modal button {
   cursor: pointer;
 }
+.pano-stage-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pano-space-md);
+  min-width: 0;
+  min-height: 0;
+}
 .pano-stage-wrap {
   position: relative;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
@@ -153,7 +178,7 @@
   background: transparent;
 }
 .pano-stage-wrap.drop-active .pano-stage {
-  filter: blur(2px) brightness(0.76);
+  filter: brightness(0.76);
 }
 .pano-stage-loading {
   position: absolute;
@@ -162,7 +187,7 @@
   border-radius: 10px;
   overflow: hidden;
   pointer-events: none;
-  background: var(--pano-bg-base, #0a0a0a);
+  background: var(--pano-bg-base);
   transition: opacity 220ms ease;
 }
 .pano-stage-loading::after {
@@ -244,8 +269,7 @@
   border-radius: var(--pano-float-radius);
   padding: 4px;
   gap: 0;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
-  backdrop-filter: blur(12px);
+  box-shadow: var(--pano-float-shadow);
   overflow: hidden;
 }
 .pano-view-toggle::before {
@@ -317,20 +341,19 @@
 .pano-view-toggle[data-selected="frame"] .pano-view-btn[data-view="frame"] {
   color: var(--pano-text);
 }
-.pano-view-toggle[data-selected="pano"] .pano-view-btn[data-view="unwrap"]:hover,
-.pano-view-toggle[data-selected="pano"] .pano-view-btn[data-view="frame"]:hover,
-.pano-view-toggle[data-selected="unwrap"] .pano-view-btn[data-view="pano"]:hover,
-.pano-view-toggle[data-selected="unwrap"] .pano-view-btn[data-view="frame"]:hover,
-.pano-view-toggle[data-selected="frame"] .pano-view-btn[data-view="pano"]:hover,
-.pano-view-toggle[data-selected="frame"] .pano-view-btn[data-view="unwrap"]:hover {
+.pano-view-toggle[data-selected="pano"] .pano-view-btn[data-view="unwrap"]:not([aria-disabled="true"]):hover,
+.pano-view-toggle[data-selected="pano"] .pano-view-btn[data-view="frame"]:not([aria-disabled="true"]):hover,
+.pano-view-toggle[data-selected="unwrap"] .pano-view-btn[data-view="pano"]:not([aria-disabled="true"]):hover,
+.pano-view-toggle[data-selected="unwrap"] .pano-view-btn[data-view="frame"]:not([aria-disabled="true"]):hover,
+.pano-view-toggle[data-selected="frame"] .pano-view-btn[data-view="pano"]:not([aria-disabled="true"]):hover,
+.pano-view-toggle[data-selected="frame"] .pano-view-btn[data-view="unwrap"]:not([aria-disabled="true"]):hover {
   color: var(--pano-muted-strong);
 }
-.pano-view-btn:disabled {
+.pano-view-btn[aria-disabled="true"] {
   color: var(--pano-text-tertiary);
   cursor: default;
   opacity: 0.5;
 }
-.pano-floating-bottom,
 .pano-floating-right,
 .pano-floating-left,
 .pano-frame-rail,
@@ -338,25 +361,12 @@
   padding: var(--pano-float-pad);
   border-radius: var(--pano-float-radius);
 }
-.pano-floating-bottom .pano-btn-icon,
 .pano-floating-right .pano-btn-icon,
 .pano-floating-left .pano-btn-icon,
 .pano-frame-rail .pano-btn-icon,
 .pano-selection-menu .pano-btn-icon {
   margin: 0;
   border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad));
-}
-.pano-floating-bottom {
-  position: absolute;
-  left: 50%;
-  bottom: var(--pano-space-2xl);
-  transform: translateX(-50%);
-  display: flex;
-  gap: var(--pano-float-gap);
-  border: 0;
-  background: var(--pano-float-bg);
-  backdrop-filter: blur(12px);
-  z-index: 2;
 }
 .pano-floating-right {
   position: absolute;
@@ -368,7 +378,6 @@
   min-height: 40px;
   border: 0;
   background: var(--pano-float-bg);
-  backdrop-filter: blur(12px);
   z-index: 2;
   color: var(--pano-text-secondary);
   font-size: 12px;
@@ -478,6 +487,10 @@
   opacity: 0;
   pointer-events: none;
 }
+/* requestVideoFrameCallback only runs for a rendered video; opacity keeps it out of sight. */
+.pano-video-transport.is-hidden .pano-video-source {
+  visibility: visible;
+}
 .pano-video-transport-shell {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -488,7 +501,6 @@
   border-radius: var(--pano-float-radius);
   background: var(--pano-float-bg);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(12px);
 }
 .pano-video-controls-left,
 .pano-video-controls-right {
@@ -682,9 +694,8 @@
   justify-content: center;
   padding: 8px 0;
   border-radius: 12px;
-  background: rgba(10, 10, 10, 0.92);
+  background: var(--pano-popover-bg);
   box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(12px);
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, -8px);
@@ -711,8 +722,6 @@
   cursor: pointer;
 }
 .pano-video-volume-slider::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 999px;
   background: linear-gradient(
     to right,
     var(--pano-accent) 0%,
@@ -722,34 +731,13 @@
 }
 .pano-video-volume-slider::-webkit-slider-thumb {
   appearance: none;
-  -webkit-appearance: none;
-  width: 11px;
-  height: 11px;
-  margin-top: -4px;
-  border-radius: 999px;
-  border: none;
-  background: #ffffff;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
   cursor: pointer;
 }
 .pano-video-volume-slider::-moz-range-track {
-  height: 3px;
   border: 0;
-  border-radius: 999px;
   background: rgba(255, 255, 255, 0.16);
 }
-.pano-video-volume-slider::-moz-range-progress {
-  height: 3px;
-  border-radius: 999px;
-  background: var(--pano-accent);
-}
 .pano-video-volume-slider::-moz-range-thumb {
-  width: 11px;
-  height: 11px;
-  border: none;
-  border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
   cursor: pointer;
 }
 .pano-selection-menu {
@@ -758,7 +746,6 @@
   gap: 4px;
   border: 0;
   background: var(--pano-float-bg);
-  backdrop-filter: blur(12px);
   box-shadow: 0 2px 4px rgba(0,0,0,0.15);
   z-index: 3;
 }
@@ -766,6 +753,76 @@
   width: 35px;
   min-width: 35px;
   height: 35px;
+}
+/* The space group at the left end of the bottom-right buttons (#71): the 3DoF | 6DoF icon buttons, the
+   chosen one marked as .active, and Frame Content. It shows or hides as a whole (PanoFloatingRight.vue). */
+.pano-floating-space,
+.pano-space-modes {
+  display: flex;
+  align-items: center;
+  gap: var(--pano-float-gap);
+}
+.pano-space-modes {
+  gap: 2px;
+}
+/* A small segmented control of text segments (PanoSegments.vue): Move | Rotate | Scale in a world
+   Sticker's selection menu (#72). Its segments are as wide as the widest one, so the marker slides by
+   whole segments. Its items are not .pano-segment, which the side panel's settings use. */
+.pano-segments {
+  --pano-segment-pad: 3px;
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  height: 40px;
+  padding: var(--pano-segment-pad);
+  box-sizing: border-box;
+  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad));
+  background: var(--pano-bg-control);
+}
+.pano-selection-menu .pano-segments {
+  height: 35px;
+}
+.pano-segments::before {
+  content: "";
+  position: absolute;
+  top: var(--pano-segment-pad);
+  bottom: var(--pano-segment-pad);
+  left: var(--pano-segment-pad);
+  width: calc((100% - var(--pano-segment-pad) * 2) / var(--pano-segment-count, 2));
+  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad) - var(--pano-segment-pad));
+  background: var(--pano-surface-3);
+  transform: translateX(calc(var(--pano-segment-index, 0) * 100%));
+  transition: transform 170ms cubic-bezier(0.2, 0, 0, 1);
+  pointer-events: none;
+}
+.pano-segments-item {
+  position: relative;
+  z-index: 1;
+  min-width: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--pano-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: color 100ms ease;
+}
+.pano-segments-item:not(.active):hover {
+  color: var(--pano-muted-strong);
+}
+.pano-segments-item.active {
+  color: var(--pano-text);
+}
+.pano-segments-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--pano-accent);
+  border-radius: calc(var(--pano-float-radius) - var(--pano-float-pad) - var(--pano-segment-pad));
 }
 .pano-floating-left .pano-btn.pano-btn-icon.pano-btn-icon-accent {
   color: var(--pano-emphasis-text);
@@ -775,24 +832,6 @@
 .pano-floating-left .pano-btn.pano-btn-icon.pano-btn-icon-accent.active {
   color: var(--pano-emphasis-text);
   background: var(--pano-emphasis-bg-hover);
-}
-.pano-output-preview-toggle {
-  position: absolute;
-  z-index: 3;
-  border-radius: 999px;
-  padding: 0;
-  background: rgba(10, 10, 10, 0.72);
-  color: rgba(250, 250, 250, 0.92);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
-}
-.pano-output-preview-toggle.pano-btn-icon {
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-}
-.pano-output-preview-toggle svg {
-  width: 14px;
-  height: 14px;
 }
 .pano-cutout-menu {
   position: relative;
@@ -809,8 +848,7 @@
   width: max-content;
   padding: 8px;
   border-radius: 10px;
-  background: rgba(10, 10, 10, 0.92);
-  backdrop-filter: blur(12px);
+  background: var(--pano-popover-bg);
   box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
   z-index: 4;
 }
@@ -822,7 +860,7 @@
   left: 0;
   top: 0;
   padding: 6px 8px;
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   background: color-mix(in srgb, var(--pano-surface-1) 92%, black);
   color: var(--pano-text);
   font-size: 11px;
@@ -851,7 +889,7 @@
 .pano-tooltip.pano-tooltip-tool-rail,
 .pano-tooltip.pano-tooltip-frame-rail {
   padding: 7px 10px;
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   background: color-mix(in srgb, var(--pano-surface-1) 94%, black);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
 }
@@ -864,8 +902,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.5);
   z-index: 5;
 }
 .pano-canvas-confirm-card {
@@ -880,7 +917,7 @@
 .pano-canvas-confirm-title {
   font-size: 13px;
   font-weight: 600;
-  color: #f5f5f5;
+  color: var(--pano-text);
 }
 .pano-canvas-confirm-text {
   font-size: 12px;
@@ -896,7 +933,7 @@
   background: var(--pano-bg-control);
   color: var(--pano-text-secondary);
   border: 0;
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   height: 40px;
   padding: 0 var(--pano-space-lg);
   font-size: 12px;
@@ -930,7 +967,7 @@
   padding: var(--pano-space-md);
   font-size: 14px;
   line-height: 1.1;
-  border-radius: var(--pano-space-xs);
+  border-radius: var(--pano-radius-xs);
 }
 .pano-btn-texticon .label {
   font-size: 12px;
@@ -1039,8 +1076,7 @@
   gap: 4px;
   background: var(--pano-float-bg);
   border: 0;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
-  backdrop-filter: blur(12px);
+  box-shadow: var(--pano-float-shadow);
 }
 .pano-floating-left .pano-btn-icon {
   width: 40px;
@@ -1091,7 +1127,6 @@
   border-radius: var(--pano-float-radius);
   border: 0;
   background: var(--pano-float-bg);
-  backdrop-filter: blur(12px);
   transition: none;
 }
 .pano-paint-footer-group {
@@ -1109,9 +1144,8 @@
   gap: 7px;
   padding: 7px 9px;
   border-radius: 999px;
-  background: rgba(18, 20, 26, 0.4);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
-  backdrop-filter: blur(12px);
+  background: rgba(18, 20, 26, 0.88);
+  box-shadow: var(--pano-float-shadow);
   transition: none;
 }
 .pano-paint-color-float[hidden] {
@@ -1182,7 +1216,7 @@
   padding: 12px;
   border-radius: 14px;
   background: rgba(20, 20, 23, 0.98);
-  box-shadow: 0 16px 40px rgba(0,0,0,0.42), inset 0 0 0 1px rgba(255,255,255,0.08);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.42), inset 0 0 0 1px var(--pano-divider);
   display: grid;
   gap: 10px;
   z-index: 6;
@@ -1223,7 +1257,7 @@
   background:
     linear-gradient(to top, #000, transparent),
     linear-gradient(to right, #fff, var(--picker-hue-color, #00ff00));
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+  box-shadow: inset 0 0 0 1px var(--pano-divider);
 }
 .pano-paint-sv-panel::after {
   content: "";
@@ -1250,7 +1284,7 @@
   height: 14px;
   border-radius: 999px;
   background: linear-gradient(90deg, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+  box-shadow: inset 0 0 0 1px var(--pano-divider);
   cursor: pointer;
 }
 .pano-paint-hue-handle {
@@ -1310,12 +1344,6 @@
 .pano-paint-color-history-dot.empty:hover {
   transform: none;
 }
-.pano-paint-footer-note {
-  color: var(--pano-text-secondary);
-  font-size: 11px;
-  margin-left: 6px;
-  white-space: nowrap;
-}
 .pano-paint-size-row {
   display: flex;
   align-items: center;
@@ -1333,20 +1361,9 @@
 .pano-paint-size-slider {
   width: 88px;
   cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-  background: linear-gradient(to right, var(--pano-accent) 0%, var(--pano-accent) var(--v, 50%), rgba(255,255,255,0.16) var(--v, 50%));
-  height: 3px;
-  border-radius: 999px;
-  padding: 0;
 }
 .pano-paint-size-row.disabled .pano-paint-size-slider {
   cursor: default;
-}
-.pano-paint-size-slider::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 999px;
-  background: transparent;
 }
 .pano-paint-size-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1357,16 +1374,6 @@
   background: radial-gradient(circle at center, var(--pano-accent) 0 5.5px, transparent 6px);
   margin-top: -8px;
 }
-.pano-paint-size-slider::-moz-range-track {
-  height: 3px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.1);
-}
-.pano-paint-size-slider::-moz-range-progress {
-  height: 3px;
-  border-radius: 999px;
-  background: var(--pano-accent);
-}
 .pano-paint-size-slider::-moz-range-thumb {
   width: 19px;
   height: 19px;
@@ -1376,10 +1383,11 @@
 }
 .pano-paint-size-slider:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 .pano-paint-size-value {
   font-size: 11px;
-  color: var(--pano-text-primary, #fff);
+  color: #fff;
   min-width: 22px;
   text-align: right;
 }
@@ -1394,7 +1402,7 @@
   height: auto;
   align-items: center;
   padding: var(--pano-space-lg) 0 var(--pano-space-xl);
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid var(--pano-divider);
   background: var(--pano-surface-0);
 }
 .pano-frame-rail {
@@ -1406,9 +1414,10 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  background: var(--pano-float-bg);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
-  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--pano-float-bg) 92%, var(--pano-frame-yellow));
+  box-shadow:
+    inset 0 0 0 2px var(--pano-frame-yellow-edge),
+    var(--pano-float-shadow);
   visibility: visible;
   pointer-events: auto;
   opacity: 1;
@@ -1421,12 +1430,6 @@
   opacity: 0;
   transition: opacity 220ms ease, visibility 0s linear 220ms;
 }
-.pano-frame-rail {
-  background: color-mix(in srgb, var(--pano-float-bg) 92%, rgb(255, 221, 87));
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 221, 87, 0.62),
-    0 8px 30px rgba(0,0,0,0.35);
-}
 .pano-frame-roll-knob {
   position: relative;
   width: 40px;
@@ -1438,7 +1441,7 @@
   user-select: none;
 }
 .pano-frame-roll-knob.dragging { cursor: grabbing; }
-.pano-frame-roll-knob.armed { color: rgb(255, 221, 87); }
+.pano-frame-roll-knob.armed { color: var(--pano-frame-yellow); }
 .pano-frame-roll-knob svg { width: 28px; height: 28px; }
 .pano-frame-roll-knob-ring { fill: none; stroke: currentcolor; stroke-width: 1; opacity: 0.42; }
 .pano-frame-roll-knob-tick { stroke: currentcolor; stroke-width: 1; opacity: 0.55; }
@@ -1464,8 +1467,7 @@
   padding: 6px;
   border-radius: var(--pano-float-radius);
   background: var(--pano-float-bg);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
-  backdrop-filter: blur(12px);
+  box-shadow: var(--pano-float-shadow);
 }
 .pano-frame-aspect-choice {
   min-width: 54px;
@@ -1473,8 +1475,8 @@
   padding: 0 8px;
 }
 .pano-frame-aspect-choice.active {
-  color: var(--pano-text, #f5f5f5);
-  background: var(--pano-surface-3, #3d3d3f);
+  color: var(--pano-text);
+  background: var(--pano-surface-3);
 }
 .pano-side-head {
   display: flex;
@@ -1509,7 +1511,7 @@
 .pano-divider {
   flex: 0 0 auto;
   height: 1px;
-  background: rgba(255,255,255,0.08);
+  background: var(--pano-divider);
   display: block;
   margin: 0 calc(var(--pano-space-lg) * -1);
 }
@@ -1551,76 +1553,6 @@
   opacity: 0.42;
   filter: saturate(0.7);
 }
-.pano-visibility-section {
-  padding: 0 0 var(--pano-space-md);
-}
-.pano-visibility-stack {
-  display: flex;
-  flex-direction: column;
-}
-.pano-visibility-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 28px;
-  padding: 0;
-}
-.pano-visibility-row.is-hidden .pano-visibility-name {
-  color: var(--pano-muted);
-  opacity: 0.72;
-}
-.pano-visibility-row.is-disabled {
-  opacity: 0.42;
-}
-.pano-visibility-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--pano-muted);
-}
-.pano-visibility-name-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  color: inherit;
-}
-.pano-visibility-name-icon svg {
-  width: 14px;
-  height: 14px;
-}
-.pano-visibility-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--pano-muted);
-  cursor: pointer;
-}
-.pano-visibility-toggle:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.pano-visibility-toggle:hover,
-.pano-visibility-toggle.active {
-  color: var(--pano-muted-strong);
-}
-.pano-visibility-toggle:disabled:hover,
-.pano-visibility-toggle:disabled.active {
-  color: var(--pano-muted);
-}
-.pano-visibility-toggle svg {
-  width: 14px;
-  height: 14px;
-}
 .pano-field {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr) auto;
@@ -1661,7 +1593,7 @@
   background: var(--pano-bg-control);
   border: 0;
   color: var(--pano-text);
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   height: 30px;
   padding: 0 var(--pano-space-md);
   font-family: inherit;
@@ -1697,34 +1629,13 @@
   overflow: auto;
   background: var(--pano-surface-1);
   border: 0;
-  border-radius: var(--pano-space-lg);
+  border-radius: var(--pano-radius-lg);
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.5);
   padding: var(--pano-space-sm);
-}
-.pano-aspect-row {
-  height: auto;
-  align-items: start;
-  margin-bottom: 4px;
-}
-.pano-cutout-aspect-inline {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  width: 100%;
-  align-items: stretch;
 }
 .pano-cutout-aspect-picker {
   position: relative;
   min-width: 0;
-}
-.pano-cutout-aspect-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.pano-cutout-aspect-label svg {
-  width: 15px;
-  height: 15px;
 }
 .pano-cutout-aspect-pop {
   box-sizing: border-box;
@@ -1745,7 +1656,7 @@
   background: var(--pano-bg-control);
   color: var(--pano-text);
   border: 0;
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   padding: 0 8px;
   box-sizing: border-box;
 }
@@ -1762,7 +1673,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  color: var(--pano-text, #f5f5f5);
+  color: var(--pano-text);
   font-variant-numeric: tabular-nums;
 }
 .pano-cutout-aspect-trigger > svg {
@@ -1773,7 +1684,7 @@
 .pano-cutout-aspect-trigger .pano-cutout-aspect-caret {
   width: 12px;
   height: 12px;
-  color: var(--pano-text-tertiary, #71717a);
+  color: var(--pano-node-text-tertiary);
   transition: transform 140ms ease;
 }
 .pano-cutout-aspect-trigger[aria-expanded="true"] .pano-cutout-aspect-caret {
@@ -1783,11 +1694,6 @@
   top: calc(100% + 6px);
   right: auto;
   left: 0;
-}
-.pano-cutout-aspect-rotate {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
 }
 .pano-picker-pop[hidden] {
   display: none;
@@ -1802,7 +1708,7 @@
   background: transparent;
   border: 0;
   color: var(--pano-muted);
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   height: 32px;
   padding: 0 var(--pano-space-md);
   overflow: hidden;
@@ -1832,16 +1738,8 @@
 }
 .pano-picker-item.active {
   background: var(--pano-surface-3);
-  color: #f5f5f5;
+  color: var(--pano-text);
   box-shadow: none;
-}
-.is-selected {
-  background: var(--pano-accent-dimmed);
-  box-shadow: inset 0 0 0 1px var(--pano-accent);
-}
-.pano-inline-tools {
-  display: flex;
-  justify-content: flex-end;
 }
 .pano-btn.subtle {
   background: transparent;
@@ -1870,7 +1768,7 @@
 }
 .pano-ui-settings {
   margin: var(--pano-space-md) 0 0;
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   background: var(--pano-surface-1);
   overflow: visible;
 }
@@ -1885,8 +1783,8 @@
   justify-content: space-between;
   font-size: 11px;
   font-weight: 600;
-  color: #f5f5f5;
-  border-radius: var(--pano-space-md);
+  color: var(--pano-text);
+  border-radius: var(--pano-radius-md);
 }
 .pano-ui-summary-label {
   display: inline-flex;
@@ -1935,7 +1833,7 @@
   position: relative;
   display: inline-flex;
   background: var(--pano-surface-1);
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   padding: 2px;
   gap: 0;
   overflow: hidden;
@@ -1947,7 +1845,7 @@
   bottom: 2px;
   left: 2px;
   width: calc(50% - 2px);
-  border-radius: calc(var(--pano-space-md) - 2px);
+  border-radius: calc(var(--pano-radius-md) - 2px);
   background: var(--pano-surface-3);
   transition: transform 170ms cubic-bezier(0.2, 0, 0, 1);
   pointer-events: none;
@@ -1971,21 +1869,6 @@
   -webkit-appearance: none;
 }
 .pano-segment-btn[aria-pressed="true"] {
-  color: #f5f5f5;
-}
-.pano-ui-picker {
-  width: 126px;
-  position: relative;
-}
-.pano-ui-picker .pano-picker-trigger {
-  height: 28px;
-  border-radius: calc(var(--pano-space-md) - 2px);
-  font-size: 11px;
-  color: var(--pano-muted);
-  background: var(--pano-surface-2);
-}
-.pano-ui-picker .pano-picker-trigger:hover {
-  background: var(--pano-surface-hover);
   color: var(--pano-text);
 }
 .pano-field input {
@@ -1993,13 +1876,31 @@
   background: var(--pano-bg-control);
   border: 0;
   color: var(--pano-text);
-  border-radius: var(--pano-space-md);
+  border-radius: var(--pano-radius-md);
   height: 28px;
   padding: 0 var(--pano-space-md);
   width: 100%;
   min-width: 0;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+/* A row of choices (an animated 3D file's Clip) spans the slider and the number. */
+.pano-field select {
+  grid-column: 2 / -1;
+  box-sizing: border-box;
+  background: var(--pano-bg-control);
+  border: 0;
+  color: var(--pano-text);
+  border-radius: var(--pano-radius-md);
+  height: 28px;
+  padding: 0 var(--pano-space-md);
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+}
+.pano-field select:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--pano-accent);
 }
 .pano-field label,
 .pano-field-wide label {
@@ -2012,6 +1913,9 @@
   outline: none;
   box-shadow: inset 0 0 0 1px var(--pano-accent);
 }
+/* The sliders (a value row's range input, the paint size, the video volume) share a 3px track filled with
+   the accent up to --v, and the value row and the volume share an 11px white thumb. */
+.pano-paint-size-slider,
 .pano-field input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -2020,11 +1924,17 @@
   border-radius: 999px;
   padding: 0;
 }
+.pano-video-volume-slider::-webkit-slider-runnable-track,
+.pano-paint-size-slider::-webkit-slider-runnable-track,
 .pano-field input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 999px;
+}
+.pano-paint-size-slider::-webkit-slider-runnable-track,
+.pano-field input[type="range"]::-webkit-slider-runnable-track {
   background: transparent;
 }
+.pano-video-volume-slider::-webkit-slider-thumb,
 .pano-field input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 11px;
@@ -2041,16 +1951,24 @@
 .pano-field input[type="range"]:active::-webkit-slider-thumb {
   transform: scale(1.2);
 }
+.pano-video-volume-slider::-moz-range-track,
+.pano-paint-size-slider::-moz-range-track,
 .pano-field input[type="range"]::-moz-range-track {
   height: 3px;
   border-radius: 999px;
+}
+.pano-paint-size-slider::-moz-range-track,
+.pano-field input[type="range"]::-moz-range-track {
   background: rgba(255,255,255,0.1);
 }
+.pano-video-volume-slider::-moz-range-progress,
+.pano-paint-size-slider::-moz-range-progress,
 .pano-field input[type="range"]::-moz-range-progress {
   height: 3px;
   border-radius: 999px;
   background: var(--pano-accent);
 }
+.pano-video-volume-slider::-moz-range-thumb,
 .pano-field input[type="range"]::-moz-range-thumb {
   width: 11px;
   height: 11px;
@@ -2059,8 +1977,10 @@
   background: #fff;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
 }
+/* Not the inputs' inset ring, which on a 3px track looks like a full fill (docs/design.md "フォーカスと無効"). */
 .pano-field input[type="range"]:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 .pano-field input[type="range"]:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 1.5px rgba(0,0,0,0.5);
@@ -2090,6 +2010,49 @@
 .pano-field input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+/* A row of grouped fields (Position, Rotation, FOV): three equal columns, so a field keeps its width
+   whatever its digits, and the fields of rows of two line up with those of rows of three. */
+.pano-field.pano-field-group {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+.pano-field-group-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 0;
+}
+.pano-axis-field {
+  position: relative;
+  min-width: 0;
+}
+.pano-field.pano-field-group input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px 0 16px;
+}
+.pano-axis {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  font-size: 10px;
+  color: var(--pano-muted);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+.pano-axis:hover {
+  color: var(--pano-text);
+}
+.pano-axis.disabled {
+  opacity: 0.62;
+  cursor: default;
 }
 
 @media (max-width: 860px) {
@@ -2129,34 +2092,19 @@
 
 /* PanoramaCutout node frame surface */
 .pano-cutout-node-surface {
-  --pano-surface-0: #0a0a0a;
-  --pano-surface-1: #0f0f10;
-  --pano-surface-2: #1a1a1a;
-  --pano-surface-3: #3d3d3f;
-  --pano-bg-control: var(--pano-surface-2);
-  --pano-text: #f5f5f5;
-  --pano-text-secondary: #a1a1aa;
-  --pano-text-tertiary: #71717a;
-  --pano-space-md: 8px;
-  --pano-space-lg: 12px;
-  --pano-space-xl: 14px;
-  --pano-emphasis-bg: #185fb8;
-  --pano-emphasis-bg-hover: #2672d2;
-  --pano-emphasis-bg-active: #114f9d;
-  --pano-emphasis-text: #fff;
-  --pano-float-bg: rgba(10, 10, 10, 0.82);
-  --pano-float-radius: 8px;
-
   box-sizing: border-box;
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   color: var(--pano-text);
-  font: 500 11px/1 "Plus Jakarta Sans", Geist, system-ui, sans-serif;
+  font: 500 11px/1 var(--pano-node-font-family);
   user-select: none;
   pointer-events: none;
 }
+/* The toolbars of the PanoramaStickers and PanoramaCutout node surfaces share their frame and buttons; only
+   their columns and the Cutout icon buttons' height differ. */
+.pano-stickers-node-toolbar,
 .pano-cutout-node-toolbar {
   position: absolute;
   top: 6px;
@@ -2164,15 +2112,22 @@
   left: 8px;
   z-index: 4;
   display: grid;
-  grid-template-columns: minmax(82px, 1.25fr) 28px minmax(86px, 1.1fr) 60px 28px 28px;
   align-items: center;
   gap: 4px;
   height: 26px;
   pointer-events: none;
 }
+.pano-stickers-node-toolbar {
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr) repeat(5, 28px);
+}
+.pano-cutout-node-toolbar {
+  grid-template-columns: minmax(82px, 1.25fr) 28px minmax(86px, 1.1fr) 60px 28px 28px;
+}
+.pano-stickers-node-toolbar > *,
 .pano-cutout-node-toolbar > * {
   pointer-events: auto;
 }
+.pano-stickers-node-toolbar .pano-btn,
 .pano-cutout-node-toolbar .pano-btn {
   height: 24px;
   border-radius: 6px;
@@ -2180,23 +2135,30 @@
   color: rgba(255, 255, 255, 0.62);
   box-shadow: none;
 }
+.pano-stickers-node-toolbar .pano-btn:hover:not(:disabled),
 .pano-cutout-node-toolbar .pano-btn:hover:not(:disabled) {
   color: rgba(255, 255, 255, 0.94);
   background: #252932;
 }
+.pano-stickers-node-toolbar .pano-btn:active,
 .pano-cutout-node-toolbar .pano-btn:active {
   transform: none;
 }
+.pano-stickers-node-toolbar .pano-btn:disabled,
 .pano-cutout-node-toolbar .pano-btn:disabled {
   opacity: 0.42;
   cursor: default;
 }
+.pano-stickers-node-toolbar .pano-btn-icon,
 .pano-cutout-node-toolbar .pano-btn-icon {
   width: 100%;
-  height: 26px;
   min-width: 0;
   padding: 0;
 }
+.pano-cutout-node-toolbar .pano-btn-icon {
+  height: 26px;
+}
+.pano-stickers-node-toolbar .pano-btn-icon svg,
 .pano-cutout-node-toolbar .pano-btn-icon svg {
   width: 16px;
   height: 16px;
@@ -2255,12 +2217,9 @@
   box-shadow: none !important;
 }
 .pano-cutout-node-toolbar .pano-frame-aspect-popover {
-  background: var(--pano-float-bg);
+  border-radius: var(--pano-node-float-radius);
+  background: var(--pano-node-float-bg);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.46);
-  backdrop-filter: blur(12px);
-}
-.pano-cutout-node-toolbar .pano-frame-aspect-trigger {
-  height: 24px;
 }
 .pano-cutout-node-toolbar .pano-frame-aspect-control.is-node,
 .pano-cutout-node-toolbar .pano-cutout-aspect-trigger {
@@ -2288,11 +2247,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pano-stickers-node-help,
 .pano-cutout-node-help {
   position: relative;
   width: 100%;
   height: 24px;
 }
+.pano-stickers-node-empty-note,
 .pano-cutout-node-empty-note {
   position: absolute;
   left: 50%;
@@ -2300,9 +2261,9 @@
   z-index: 3;
   max-width: calc(100% - 24px);
   padding: 5px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--pano-divider);
   border-radius: 999px;
-  background: rgba(10, 10, 10, 0.7);
+  background: rgba(10, 10, 10, 0.85);
   color: rgba(255, 255, 255, 0.68);
   font-size: 10px;
   font-weight: 550;
@@ -2310,9 +2271,11 @@
   letter-spacing: 0.01em;
   white-space: nowrap;
   transform: translateX(-50%);
-  backdrop-filter: blur(8px);
   pointer-events: none;
 }
+/* The help popovers of the PanoramaStickers and PanoramaCutout node surfaces differ only in width, text
+   color, and the Cutout keys' tabular digits. */
+.pano-stickers-node-help-popover,
 .pano-cutout-node-help-popover {
   position: absolute;
   top: calc(100% + 7px);
@@ -2320,38 +2283,52 @@
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 7px 12px;
-  width: 230px;
   padding: 10px;
-  border-radius: var(--pano-float-radius);
+  border-radius: var(--pano-node-float-radius);
   background: rgba(10, 10, 10, 0.96);
-  color: var(--pano-text-secondary);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.46);
   opacity: 0;
   visibility: hidden;
-  transform: none;
   transition: opacity 120ms ease, visibility 120ms ease;
   pointer-events: none;
 }
+.pano-stickers-node-help-popover {
+  width: 220px;
+  color: var(--pano-text-secondary);
+}
+.pano-cutout-node-help-popover {
+  width: 230px;
+  color: var(--pano-node-text-secondary);
+  transform: none;
+}
+.pano-stickers-node-help:hover .pano-stickers-node-help-popover,
+.pano-stickers-node-help.is-pinned .pano-stickers-node-help-popover,
 .pano-cutout-node-help:hover .pano-cutout-node-help-popover,
 .pano-cutout-node-help.is-pinned .pano-cutout-node-help-popover {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
 }
+.pano-stickers-node-help-title,
 .pano-cutout-node-help-title {
   grid-column: 1 / -1;
   color: var(--pano-text);
   font-weight: 650;
 }
+.pano-stickers-node-help-row,
 .pano-cutout-node-help-row {
   display: contents;
 }
+.pano-stickers-node-help-row kbd,
 .pano-cutout-node-help-row kbd {
   color: var(--pano-text);
   font: inherit;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.pano-cutout-node-help-row kbd {
+  font-variant-numeric: tabular-nums;
+}
+.pano-stickers-node-help-row span,
 .pano-cutout-node-help-row span {
   line-height: 1.25;
   white-space: nowrap;
@@ -2363,7 +2340,27 @@
   box-shadow: none;
 }
 
+/* The frame around a node's picture: the wrap of PanoramaStudio, PanoramaStickers and PanoramaCutout
+   (pano_preview_runtime.js) and the root of PanoramaPreview (pano_preview_previewnode.js). */
+.pano-node-frame {
+  border-radius: var(--pano-radius-md);
+  border: 1px solid var(--pano-node-frame-border);
+  background: var(--pano-node-frame-bg);
+}
+
 /* PanoramaPreview node surface */
+.pano-view-unavailable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  color: rgba(236, 236, 242, 0.92);
+  font: 600 13px var(--pano-font-family-compact);
+  text-align: center;
+  pointer-events: none;
+}
 .pano-preview-node-surface-host {
   position: absolute;
   inset: 0;
@@ -2371,21 +2368,20 @@
   pointer-events: none;
 }
 .pano-preview-node-surface {
-  --pano-text: #f5f5f5;
-
   box-sizing: border-box;
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   color: var(--pano-text);
-  font: 500 11px/1 "Plus Jakarta Sans", Geist, system-ui, sans-serif;
+  font: 500 11px/1 var(--pano-node-font-family);
   pointer-events: none;
 }
+/* The small round-cornered buttons of the node surfaces: PanoramaPreview's fullscreen and PanoramaStickers'
+   play. They differ only in where they sit. */
+.pano-stickers-node-play,
 .pano-preview-node-fullscreen {
   position: absolute;
-  top: 8px;
-  right: 8px;
   width: 26px;
   min-width: 26px;
   height: 26px;
@@ -2396,14 +2392,32 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
   pointer-events: auto;
 }
+.pano-stickers-node-play {
+  left: 8px;
+  bottom: 8px;
+  z-index: 4;
+}
+.pano-preview-node-fullscreen {
+  top: 8px;
+  right: 8px;
+}
+.pano-stickers-node-play:hover,
+.pano-stickers-node-play:focus-visible,
 .pano-preview-node-fullscreen:hover:not(:disabled),
 .pano-preview-node-fullscreen:focus-visible {
   background: rgba(37, 41, 50, 0.96);
   color: rgba(255, 255, 255, 0.96);
 }
+/* The node surfaces show no focus ring on these buttons. */
+.pano-stickers-node-play:focus-visible,
+.pano-preview-node-fullscreen:focus-visible {
+  box-shadow: none;
+}
+.pano-stickers-node-play:active,
 .pano-preview-node-fullscreen:active {
   transform: none;
 }
+.pano-stickers-node-play svg,
 .pano-preview-node-fullscreen svg {
   width: 16px;
   height: 16px;
@@ -2418,67 +2432,15 @@
   pointer-events: none;
 }
 .pano-stickers-node-surface {
-  --pano-text: #f5f5f5;
-  --pano-text-secondary: #787878;
-  --pano-emphasis-bg: #185fb8;
-  --pano-emphasis-bg-hover: #2672d2;
-  --pano-emphasis-bg-active: #114f9d;
-  --pano-float-bg: rgba(10, 10, 10, 0.82);
-  --pano-float-radius: 8px;
-
   box-sizing: border-box;
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   color: var(--pano-text);
-  font: 500 11px/1 "Plus Jakarta Sans", Geist, system-ui, sans-serif;
+  font: 500 11px/1 var(--pano-node-font-family);
   user-select: none;
   pointer-events: none;
-}
-.pano-stickers-node-toolbar {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  left: 8px;
-  z-index: 4;
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr) repeat(5, 28px);
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  pointer-events: none;
-}
-.pano-stickers-node-toolbar > * {
-  pointer-events: auto;
-}
-.pano-stickers-node-toolbar .pano-btn {
-  height: 24px;
-  border-radius: 6px;
-  background: #1b1e25;
-  color: rgba(255, 255, 255, 0.62);
-  box-shadow: none;
-}
-.pano-stickers-node-toolbar .pano-btn:hover:not(:disabled) {
-  color: rgba(255, 255, 255, 0.94);
-  background: #252932;
-}
-.pano-stickers-node-toolbar .pano-btn:active {
-  transform: none;
-}
-.pano-stickers-node-toolbar .pano-btn:disabled {
-  opacity: 0.42;
-  cursor: default;
-}
-.pano-stickers-node-toolbar .pano-btn-icon {
-  width: 100%;
-  min-width: 0;
-  padding: 0;
-}
-.pano-stickers-node-toolbar .pano-btn-icon svg {
-  width: 16px;
-  height: 16px;
-  stroke-width: 2.3px;
 }
 .pano-stickers-node-full-editor {
   width: 100%;
@@ -2518,26 +2480,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pano-stickers-node-empty-note {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  z-index: 3;
-  max-width: calc(100% - 24px);
-  padding: 5px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  background: rgba(10, 10, 10, 0.7);
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 10px;
-  font-weight: 550;
-  line-height: 1;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  transform: translateX(-50%);
-  backdrop-filter: blur(8px);
-  pointer-events: none;
-}
 .pano-stickers-node-drop-cue {
   position: absolute;
   inset: 40px 10px 10px;
@@ -2559,57 +2501,599 @@
   color: #fff !important;
   background: var(--pano-emphasis-bg-active) !important;
 }
-.pano-stickers-node-help {
-  position: relative;
-  width: 100%;
-  height: 24px;
-}
-.pano-stickers-node-help-popover {
-  position: absolute;
-  top: calc(100% + 7px);
-  right: 0;
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 7px 12px;
-  width: 220px;
-  padding: 10px;
-  border-radius: var(--pano-float-radius);
-  background: rgba(10, 10, 10, 0.96);
-  color: var(--pano-text-secondary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.46);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 120ms ease, visibility 120ms ease;
-  pointer-events: none;
-}
-.pano-stickers-node-help:hover .pano-stickers-node-help-popover,
-.pano-stickers-node-help.is-pinned .pano-stickers-node-help-popover {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-}
-.pano-stickers-node-help-title {
-  grid-column: 1 / -1;
-  color: var(--pano-text);
-  font-weight: 650;
-}
-.pano-stickers-node-help-row {
-  display: contents;
-}
-.pano-stickers-node-help-row kbd {
-  color: var(--pano-text);
-  font: inherit;
-  white-space: nowrap;
-}
-.pano-stickers-node-help-row span {
-  line-height: 1.25;
-  white-space: nowrap;
-}
 .pano-node-preview--preview:fullscreen {
   width: 100vw !important;
   height: 100vh !important;
   min-height: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
-  background: #070707;
+  background: var(--pano-node-frame-bg);
+}
+
+/* Timeline (PanoTimeline.vue) under the stage of the PanoramaStickersNode editor. */
+.pano-timeline {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pano-space-xs);
+  font-size: 11px;
+  color: var(--pano-text-secondary);
+  user-select: none;
+}
+.pano-timeline-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pano-space-md);
+}
+.pano-timeline-play.pano-btn-icon,
+.pano-timeline-mute.pano-btn-icon {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+}
+.pano-timeline-length-reset.pano-btn-icon {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  margin-left: calc(-1 * var(--pano-space-xs));
+}
+.pano-timeline-play svg,
+.pano-timeline-mute svg,
+.pano-timeline-length-reset svg,
+.pano-timeline-toggle svg,
+.pano-timeline-name svg,
+.pano-timeline-eye svg,
+.pano-timeline-open svg,
+.pano-timeline-key svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+}
+.pano-timeline-time {
+  color: var(--pano-text);
+  font-variant-numeric: tabular-nums;
+}
+.pano-timeline-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pano-space-xs);
+  color: var(--pano-text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.pano-timeline-setting input {
+  box-sizing: border-box;
+  width: calc(6ch + 12px);
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--pano-radius-md);
+  background: var(--pano-bg-control);
+  color: var(--pano-text);
+  font: inherit;
+  text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+/* Wide enough for an 8-digit length (TIMELINE_LENGTH_MAX), so the bar does not move with the number. */
+.pano-timeline-length input {
+  width: calc(9ch + 12px);
+}
+.pano-timeline-setting input::-webkit-outer-spin-button,
+.pano-timeline-setting input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pano-timeline-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pano-space-xs);
+  height: 28px;
+  padding: 0 var(--pano-space-md);
+  border: 0;
+  border-radius: var(--pano-radius-md);
+  background: transparent;
+  color: var(--pano-text-secondary);
+  font-size: 11px;
+}
+.pano-timeline-toggle svg {
+  transform: rotate(180deg);
+  transition: transform 150ms ease;
+}
+.pano-timeline.expanded .pano-timeline-toggle svg {
+  transform: none;
+}
+.pano-timeline-body {
+  height: 0;
+  overflow: hidden;
+  border-radius: var(--pano-radius-md);
+  background: var(--pano-surface-1);
+  transition: height 180ms ease-out;
+}
+.pano-timeline-body.open {
+  height: min(var(--pano-timeline-rows), 34vh);
+  overflow-y: auto;
+}
+.pano-timeline-body.sliding {
+  overflow-y: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pano-timeline-body {
+    transition: none;
+  }
+}
+.pano-timeline-grid {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr);
+}
+.pano-timeline-corner,
+.pano-timeline-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 22px;
+  background: var(--pano-surface-2);
+}
+.pano-timeline-ruler {
+  margin-right: var(--pano-space-md);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.pano-timeline-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 4px 0 0 3px;
+  border-left: 1px solid var(--pano-surface-3);
+  color: var(--pano-muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.pano-timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--pano-accent);
+  pointer-events: none;
+  z-index: 1;
+}
+.pano-timeline-head {
+  padding: 0 var(--pano-space-md);
+  border-top: 1px solid var(--pano-border);
+}
+.pano-timeline-head.selected,
+.pano-timeline-track.selected {
+  background: rgba(255, 255, 255, 0.04);
+}
+.pano-timeline-name,
+.pano-timeline-lane-head,
+.pano-timeline-row-line,
+.pano-timeline-lane {
+  height: 20px;
+}
+.pano-timeline-name {
+  display: flex;
+  align-items: center;
+  gap: var(--pano-space-xs);
+  overflow: hidden;
+  color: var(--pano-text);
+  white-space: nowrap;
+}
+.pano-timeline-select {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--pano-space-xs);
+  min-width: 0;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pano-timeline-select svg {
+  flex: 0 0 auto;
+}
+.pano-timeline-name span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pano-timeline-lane-head {
+  display: flex;
+  align-items: center;
+  padding-left: 60px;
+}
+.pano-timeline-head.is-hidden .pano-timeline-select {
+  opacity: 0.5;
+}
+.pano-timeline-eye {
+  flex: 0 0 auto;
+}
+.pano-timeline-eye[aria-pressed="true"] {
+  color: var(--pano-muted-strong);
+}
+.pano-timeline-eye,
+.pano-timeline-open,
+.pano-timeline-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--pano-text-tertiary);
+}
+.pano-timeline-key.keyed {
+  color: var(--pano-keyframe);
+}
+.pano-timeline-open svg {
+  transform: rotate(-90deg);
+  transition: transform 150ms ease;
+}
+.pano-timeline-open[aria-expanded="true"] svg {
+  transform: none;
+}
+.pano-timeline-open:disabled,
+.pano-timeline-eye:disabled,
+.pano-timeline-key:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+/* An upstream layer's rows (ADR 0030): a header across the names and the tracks, and a slot on each row that
+   marks an override, kept while there is none so the key button never moves. */
+.pano-timeline-group {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--pano-space-sm);
+  height: 20px;
+  padding: 0 var(--pano-space-md);
+  border-top: 1px solid var(--pano-border);
+  overflow: hidden;
+  color: var(--pano-muted);
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.pano-timeline-group-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pano-timeline-group-action {
+  flex: none;
+  height: 18px;
+  padding: 0 var(--pano-space-sm);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--pano-muted);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+/* "Restore deleted (n)" keeps its width as n grows, so "Revert" next to it never moves. */
+.pano-timeline-group-action.is-restore {
+  min-width: 17ch;
+}
+.pano-timeline-group-action:hover {
+  color: var(--pano-text);
+  background: color-mix(in srgb, var(--pano-bg-control) 55%, transparent);
+}
+.pano-timeline-group-action:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.pano-timeline-name .pano-timeline-override {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.pano-timeline-name .pano-timeline-override.on {
+  background: var(--pano-accent);
+}
+.pano-timeline-track {
+  position: relative;
+  margin-right: var(--pano-space-md);
+  border-top: 1px solid var(--pano-border);
+}
+.pano-timeline-row-line,
+.pano-timeline-lane {
+  position: relative;
+}
+.pano-timeline-clip {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--pano-accent) 55%, transparent);
+  cursor: grab;
+  touch-action: none;
+}
+.pano-timeline-clip.open {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pano-accent) 55%, transparent) 70%, transparent);
+}
+.pano-timeline-trim {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+.pano-timeline-trim.start {
+  left: 0;
+  border-left: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 4px 0 0 4px;
+}
+.pano-timeline-trim.end {
+  right: 0;
+  border-right: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 0 4px 4px 0;
+}
+.pano-timeline-pin {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  background: #d4d4d8;
+  transform: rotate(45deg);
+  cursor: pointer;
+  touch-action: none;
+  z-index: 2;
+}
+.pano-timeline-pin.selected {
+  background: var(--pano-keyframe);
+}
+.pano-timeline-pin:focus-visible,
+.pano-timeline-eye:focus-visible,
+.pano-timeline-select:focus-visible,
+.pano-timeline-open:focus-visible,
+.pano-timeline-key:focus-visible {
+  outline: 2px solid var(--pano-accent);
+  outline-offset: 1px;
+}
+.pano-timeline-pin.partial {
+  background: linear-gradient(135deg, #d4d4d8 50%, rgba(0, 0, 0, 0.35) 50%);
+}
+.pano-timeline-pin.partial.selected {
+  background: linear-gradient(135deg, var(--pano-keyframe) 50%, rgba(0, 0, 0, 0.35) 50%);
+}
+.pano-timeline-pin.cluster {
+  width: 16px;
+  height: 14px;
+  margin: -7px 0 0 -8px;
+  border-radius: 7px;
+  transform: none;
+  color: #111;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+}
+.pano-easing {
+  display: grid;
+  gap: var(--pano-space-md);
+  margin-top: var(--pano-space-lg);
+}
+.pano-easing-range {
+  color: var(--pano-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.pano-easing-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--pano-radius-md);
+  background: var(--pano-surface-1);
+}
+.pano-easing-mode {
+  height: 26px;
+  border: 0;
+  border-radius: calc(var(--pano-radius-md) - 2px);
+  background: transparent;
+  color: var(--pano-muted);
+  font-size: 11px;
+}
+.pano-easing-mode[aria-pressed="true"] {
+  background: var(--pano-surface-3);
+  color: var(--pano-text);
+}
+.pano-easing-graph {
+  width: 100%;
+  max-width: 220px;
+  justify-self: center;
+  overflow: visible;
+}
+.pano-easing-square {
+  fill: var(--pano-surface-1);
+  stroke: var(--pano-surface-3);
+}
+.pano-easing-diagonal {
+  stroke: var(--pano-surface-3);
+  stroke-dasharray: 3 3;
+}
+.pano-easing-curve {
+  fill: none;
+  stroke: var(--pano-accent);
+  stroke-width: 2;
+}
+.pano-easing-arm {
+  stroke: var(--pano-keyframe);
+  stroke-width: 1;
+}
+.pano-easing-handle {
+  fill: var(--pano-keyframe);
+  stroke: #111;
+  cursor: grab;
+}
+.pano-easing-note {
+  color: var(--pano-muted);
+  font-size: 11px;
+}
+.pano-upstream-lanes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+}
+.pano-upstream-lanes .pano-btn {
+  padding: 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The Preview's viewer of a Scene (docs/preview-node.md "`PANO_SCENE` を見る"). */
+/* The window: the stage alone, with a close button at its top right. */
+.pano-modal.pano-modal-viewer {
+  grid-template-columns: minmax(0, 1fr);
+}
+.pano-viewer-close {
+  position: absolute;
+  top: var(--pano-space-xl, 12px);
+  right: var(--pano-space-xl, 12px);
+  z-index: 5;
+  display: inline-flex;
+  padding: var(--pano-float-pad);
+  border-radius: var(--pano-float-radius);
+  background: var(--pano-float-bg);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+}
+/* The playback bar: play and pause, seek and the time, no filmstrip. */
+.pano-video-transport-playback .pano-video-filmstrip {
+  min-height: 24px;
+}
+/* On the node. */
+.pano-scene-viewer-dom {
+  background: var(--pano-node-frame-bg, #111);
+  outline: none;
+}
+.pano-scene-viewer-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--pano-text);
+  font: 500 11px/1 var(--pano-node-font-family);
+}
+.pano-scene-viewer-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.pano-scene-viewer-buttons {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: inline-flex;
+  gap: 4px;
+}
+.pano-scene-viewer-buttons .pano-btn {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  background: rgba(27, 30, 37, 0.9);
+  color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+.pano-scene-viewer-buttons .pano-btn:hover,
+.pano-scene-viewer-buttons .pano-btn:focus-visible {
+  background: rgba(37, 41, 50, 0.96);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: none;
+}
+.pano-scene-viewer-buttons .pano-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.3px;
+}
+/* The play / pause cue of a double click, shown for a moment in the middle. */
+.pano-scene-viewer-cue {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+  animation: pano-scene-viewer-cue 600ms ease-out forwards;
+}
+.pano-scene-viewer-cue svg {
+  width: 24px;
+  height: 24px;
+}
+@keyframes pano-scene-viewer-cue {
+  0% { opacity: 0; transform: scale(0.8); }
+  20% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.1); }
+}
+.pano-scene-viewer-bar {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  z-index: 4;
+}
+.pano-scene-viewer-bar .pano-video-transport {
+  position: static;
+  width: 100%;
+  transform: none;
+}
+.pano-scene-viewer-bar .pano-video-transport-shell {
+  min-height: 30px;
+  padding: 3px;
+  gap: 4px;
+}
+/* The window's bottom row: the playback bar takes the room the view buttons leave. */
+.pano-viewer-bottom {
+  position: absolute;
+  left: var(--pano-space-xl);
+  right: var(--pano-space-xl);
+  bottom: var(--pano-space-2xl);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: var(--pano-float-gap);
+  pointer-events: none;
+}
+.pano-viewer-bottom > * {
+  pointer-events: auto;
+}
+.pano-viewer-bottom .pano-video-transport {
+  position: static;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  transform: none;
+}
+.pano-viewer-bottom .pano-floating-right {
+  position: static;
+  flex: none;
 }

@@ -1,0 +1,233 @@
+{
+  "state": {
+    "version": 2,
+    "id": "scene_a",
+    "timeline": {
+      "fps": 24,
+      "length": 48
+    },
+    "scene": {
+      "clip": {
+        "start": 2,
+        "in": 1,
+        "duration": 20
+      },
+      "visible": false,
+      "animation": {
+        "clip": "a",
+        "speed": 2
+      },
+      "rotation": {
+        "keyframes": [
+          {
+            "frame": 3,
+            "value": {
+              "yaw_deg": 10
+            }
+          }
+        ]
+      }
+    },
+    "stickers": [
+      {
+        "id": "robot",
+        "placement": "world",
+        "source": {
+          "kind": "file",
+          "filename": "robot.glb",
+          "subfolder": "3d"
+        },
+        "clip": {
+          "start": 4,
+          "in": 0,
+          "duration": 10
+        },
+        "animation": {
+          "clip": "Dance",
+          "speed": 0.5
+        },
+        "opacity": {
+          "keyframes": [
+            {
+              "frame": 5,
+              "value": 0.5
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "fps": 48,
+  "expected": {
+    "version": 2,
+    "id": "scene_a",
+    "timeline": {
+      "fps": 48.0,
+      "length": 96
+    },
+    "camera": {
+      "aspect": 1.7777777777777777,
+      "projection": "erp",
+      "erp_range": 360,
+      "visible": true,
+      "locked": false,
+      "position": {
+        "value": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "keyframes": []
+      },
+      "rotation": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0
+        },
+        "keyframes": []
+      },
+      "fov": {
+        "value": 90.0,
+        "keyframes": []
+      },
+      "curve": {
+        "value": 1.0,
+        "keyframes": []
+      }
+    },
+    "scene": {
+      "clip": {
+        "start": 4,
+        "in": 2,
+        "duration": 40
+      },
+      "visible": false,
+      "position": {
+        "value": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "keyframes": []
+      },
+      "rotation": {
+        "value": {
+          "yaw_deg": 0.0,
+          "pitch_deg": 0.0,
+          "roll_deg": 0.0
+        },
+        "keyframes": [
+          {
+            "frame": 6,
+            "value": {
+              "yaw_deg": 10.0,
+              "pitch_deg": 0.0,
+              "roll_deg": 0.0
+            },
+            "easing": [
+              0.42,
+              0.0,
+              0.58,
+              1.0
+            ]
+          }
+        ]
+      },
+      "scale": {
+        "value": 1.0,
+        "keyframes": []
+      },
+      "animation": {
+        "clip": "a",
+        "speed": 2.0
+      }
+    },
+    "stickers": [
+      {
+        "id": "robot",
+        "placement": "world",
+        "source": {
+          "kind": "file",
+          "filename": "robot.glb",
+          "subfolder": "3d",
+          "storage": "input"
+        },
+        "clip": {
+          "start": 8,
+          "in": 0,
+          "duration": 20
+        },
+        "visible": true,
+        "locked": false,
+        "crop": {
+          "x0": 0.0,
+          "y0": 0.0,
+          "x1": 1.0,
+          "y1": 1.0
+        },
+        "position": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "keyframes": []
+        },
+        "rotation": {
+          "value": {
+            "yaw_deg": 0.0,
+            "pitch_deg": 0.0,
+            "roll_deg": 0.0
+          },
+          "keyframes": []
+        },
+        "scale": {
+          "value": 1.0,
+          "keyframes": []
+        },
+        "opacity": {
+          "value": 1.0,
+          "keyframes": [
+            {
+              "frame": 10,
+              "value": 0.5,
+              "easing": [
+                0.42,
+                0.0,
+                0.58,
+                1.0
+              ]
+            }
+          ]
+        },
+        "animation": {
+          "clip": "Dance",
+          "speed": 0.5
+        }
+      }
+    ],
+    "next_sticker_id": 1,
+    "painting": {
+      "version": 1,
+      "groups": [],
+      "paint": {
+        "strokes": []
+      },
+      "mask": {
+        "strokes": []
+      },
+      "raster_objects": []
+    },
+    "painting_layer": null,
+    "painting_visible": true,
+    "upstream": [],
+    "background": {
+      "clip": {
+        "start": 0,
+        "in": 0,
+        "duration": null
+      }
+    }
+  }
+}

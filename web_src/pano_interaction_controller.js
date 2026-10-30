@@ -8,8 +8,6 @@ export const PANO_WHEEL_STEP = PANO_FOV_WHEEL_STEP_DEG;
 export const PANO_FOV_MIN = 35;
 export const PANO_FOV_MAX = 140;
 export const PANO_INITIAL_FOV = 100;
-export const PANO_INERTIA_BLEND_OLD = 0.4;
-export const PANO_INERTIA_BLEND_INST = 0.6;
 export const PANO_INERTIA_DAMPING = 5.5;
 export const PANO_INERTIA_START_SPEED = 20;
 export const PANO_INERTIA_STOP_SPEED = 0.8;
@@ -216,17 +214,3 @@ export function createPanoInteractionController(options = {}) {
     resetView,
   };
 }
-
-export const PANO_MODAL_PARITY_CONSTANTS = {
-  dragSensitivity: PANO_DRAG_SENSITIVITY,
-  wheelStep: PANO_WHEEL_STEP,
-  fovMin: PANO_FOV_MIN,
-  fovMax: PANO_FOV_MAX,
-  initialFov: PANO_INITIAL_FOV,
-  inertiaBlendOld: PANO_INERTIA_BLEND_OLD,
-  inertiaBlendInst: PANO_INERTIA_BLEND_INST,
-  inertiaDamping: PANO_INERTIA_DAMPING,
-  inertiaStartSpeed: PANO_INERTIA_START_SPEED,
-  inertiaStopSpeed: PANO_INERTIA_STOP_SPEED,
-  rad2deg: 1 / DEG2RAD,
-};

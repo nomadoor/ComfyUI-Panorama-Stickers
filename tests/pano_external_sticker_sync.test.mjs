@@ -32,3 +32,19 @@ test("external sticker sync reveals the preceding live owner after normal teardo
 
   removeSurface();
 });
+
+test("the editor's sync wins while it is open, even when the node surface attaches again after it", () => {
+  const node = {};
+  const calls = [];
+  const removeSurface = registerExternalStickerSync(node, (reason) => calls.push(`surface:${reason}`));
+  const removeModal = registerExternalStickerSync(node, (reason) => calls.push(`modal:${reason}`), { editor: true });
+
+  removeSurface();
+  const removeReattached = registerExternalStickerSync(node, (reason) => calls.push(`reattached:${reason}`));
+  runExternalStickerSync(node, "executed");
+  removeModal();
+  runExternalStickerSync(node, "executed");
+
+  assert.deepEqual(calls, ["modal:executed", "reattached:executed"]);
+  removeReattached();
+});

@@ -1,50 +1,11 @@
 import hashlib
 import json
 import math
-from collections import OrderedDict
-import threading
 
 import numpy as np
 
+from .cache import CACHE
 from .math import DEG2RAD, camera_basis, dir_to_lon_lat, lon_lat_to_erp, sample_erp_bilinear
-
-
-_CUTOUT_SAMPLING_MAP_CACHE: "OrderedDict[str, dict]" = OrderedDict()
-_CUTOUT_SAMPLING_MAP_CACHE_LIMIT = 8
-_CUTOUT_SAMPLING_MAP_CACHE_LOCK = threading.Lock()
-
-
-def _cutout_sampling_cache_get(key: str) -> dict | None:
-    with _CUTOUT_SAMPLING_MAP_CACHE_LOCK:
-        entry = _CUTOUT_SAMPLING_MAP_CACHE.get(key)
-        if entry is None:
-            return None
-        _CUTOUT_SAMPLING_MAP_CACHE.move_to_end(key)
-        return {
-            "u": entry["u"].copy(),
-            "v": entry["v"].copy(),
-            "valid": entry.get("valid").copy() if isinstance(entry.get("valid"), np.ndarray) else entry.get("valid"),
-            "out_w": int(entry["out_w"]),
-            "out_h": int(entry["out_h"]),
-            "erp_w": int(entry.get("erp_w", 0)),
-            "erp_h": int(entry.get("erp_h", 0)),
-        }
-
-
-def _cutout_sampling_cache_put(key: str, sampling_map: dict) -> None:
-    with _CUTOUT_SAMPLING_MAP_CACHE_LOCK:
-        _CUTOUT_SAMPLING_MAP_CACHE[key] = {
-            "u": sampling_map["u"].copy(),
-            "v": sampling_map["v"].copy(),
-            "valid": sampling_map.get("valid").copy() if isinstance(sampling_map.get("valid"), np.ndarray) else sampling_map.get("valid"),
-            "out_w": int(sampling_map["out_w"]),
-            "out_h": int(sampling_map["out_h"]),
-            "erp_w": int(sampling_map.get("erp_w", 0)),
-            "erp_h": int(sampling_map.get("erp_h", 0)),
-        }
-        _CUTOUT_SAMPLING_MAP_CACHE.move_to_end(key)
-        while len(_CUTOUT_SAMPLING_MAP_CACHE) > _CUTOUT_SAMPLING_MAP_CACHE_LIMIT:
-            _CUTOUT_SAMPLING_MAP_CACHE.popitem(last=False)
 
 
 def _cutout_sampling_cache_key(
@@ -102,7 +63,7 @@ def build_cutout_sampling_map(
         out_h,
         coverage,
     )
-    cached = _cutout_sampling_cache_get(cache_key)
+    cached = CACHE.get("cutout_sampling_map", cache_key)
     if cached is not None:
         return cached
 
@@ -144,8 +105,7 @@ def build_cutout_sampling_map(
         "erp_w": erp_w,
         "erp_h": erp_h,
     }
-    _cutout_sampling_cache_put(cache_key, sampling_map)
-    return sampling_map
+    return CACHE.put("cutout_sampling_map", cache_key, sampling_map)
 
 
 def sample_cutout_from_sampling_map(erp_layer: np.ndarray, sampling_map: dict) -> np.ndarray:

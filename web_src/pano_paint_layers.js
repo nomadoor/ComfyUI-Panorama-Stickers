@@ -1,0 +1,72 @@
+// The paint of a state as its Sky layers, in the order the node draws them (core/render.py `_sky_layers`,
+// docs/scene-state-v2.md "Sky の重なり順"). The editor, the on-node surfaces and the upstream layers each draw
+// the pixels with a paint engine of their own; this decides which layers there are and where they go.
+
+// The paint of `state` ({ painting, painting_visible, stickers }) as { id, media, revision, changed?, opacity, zIndex } from
+// back to front, for skyLayers (pano_editor_view.js) to put among the sky Stickers by zIndex, Stickers first on ties:
+// the stroke groups and the paint raster objects at their z_index (groups first on ties, each in list order), then
+// the strokes of no group of the painting, and the mask over everything. None while the painting is hidden.
+// The sources give a layer's { media, revision, changed? }, or null when it has nothing to draw (`changed`, when a
+// source knows it, gives where the media changed since a revision before: pano_paint_damage.js); group(actionGroupId) a
+// stroke group's canvas (null when the engine has no strokes of the group), raster(item) a raster object's ERP
+// canvas, and mask() the mask's display (null without a mask, or where the mask is not shown).
+export function skyPaintLayers(state, { group, raster, mask = () => null }) {
+  if (state.painting_visible === false) return [];
+  const { groups, paint, raster_objects: rasters } = state.painting;
+  const listed = new Set(groups.map(groupId));
+  const ordered = [
+    ...groups.map((item) => ({ id: `paint_group:${groupId(item)}`, zIndex: zIndexOf(item), shown: () => group(groupId(item)) })),
+    ...rasters.filter((item) => item.layerKind === "paint")
+      .map((item) => ({ id: `raster:${item.id}`, zIndex: zIndexOf(item), shown: () => raster(item) })),
+  ].sort((a, b) => a.zIndex - b.zIndex);
+  const layers = [];
+  const add = (id, zIndex, shown) => {
+    if (!shown) return;
+    const layer = { id, media: shown.media, revision: shown.revision, opacity: 1, zIndex };
+    if (shown.changed) layer.changed = shown.changed;
+    layers.push(layer);
+  };
+  for (const entry of ordered) add(entry.id, entry.zIndex, entry.shown());
+  const top = Math.max(-1, ...layers.map((layer) => layer.zIndex), ...state.stickers.map(zIndexOf)) + 1;
+  const loose = new Set(paint.strokes.map((stroke) => stroke.actionGroupId).filter((id) => !listed.has(id)));
+  for (const id of loose) add(`paint_group:${id}`, top, group(id));
+  add("mask_display", top, mask());
+  return layers;
+}
+
+// The mask display of a paint engine (pano_paint_engine.js getMaskDisplay) as a skyPaintLayers source.
+export function engineMask(engine) {
+  return engine?.getMaskDisplay() ?? null;
+}
+
+function groupId(item) {
+  return String(item.actionGroupId || item.id || "");
+}
+
+// As the node's display list reads it (core/display_list.py `_safe_int`): a raster object's z_index may be fractional.
+function zIndexOf(item) {
+  return Math.trunc(Number(item.z_index) || 0);
+}
+
+// Draws the raster object `item` (its image `img`, its bbox in ERP uv and its transform) on the ERP canvas context `ctx`
+// of width x height, wrapped across the seam.
+export function drawRasterObjectErp(ctx, img, item, width, height) {
+  const bbox = item.bbox;
+  const tf = item.transform || {};
+  const px = Number(bbox.u0 || 0) * width;
+  const py = Number(bbox.v0 || 0) * height;
+  const pw = Math.max(1, (Number(bbox.u1 || 0) - Number(bbox.u0 || 0)) * width);
+  const ph = Math.max(1, (Number(bbox.v1 || 0) - Number(bbox.v0 || 0)) * height);
+  const cx = px + pw * 0.5 + (Number(tf.du || 0) * width);
+  const cy = py + ph * 0.5 + (Number(tf.dv || 0) * height);
+  const rot = Number(tf.rot_deg || 0) * (Math.PI / 180);
+  const scale = Math.max(0.01, Number(tf.scale || 1));
+  for (const wrapOffset of [-width, 0, width]) {
+    ctx.save();
+    ctx.translate(cx + wrapOffset, cy);
+    ctx.rotate(rot);
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, -pw * 0.5, -ph * 0.5, pw, ph);
+    ctx.restore();
+  }
+}

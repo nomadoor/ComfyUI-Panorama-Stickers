@@ -3,42 +3,14 @@ import hashlib
 import io
 import json
 import math
-from collections import OrderedDict
-import threading
 
 import numpy as np
 from PIL import Image, ImageDraw
 
+from .cache import CACHE
 from .cutout import build_cutout_sampling_map, cutout_from_erp, sample_cutout_from_sampling_map
+from .math import unit_float
 from .paint_state import normalize_painting_state
-
-
-_ERP_RENDER_CACHE: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]" = OrderedDict()
-_CUTOUT_RENDER_CACHE: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]" = OrderedDict()
-_PAINTING_LAYER_PAYLOAD_CACHE: "OrderedDict[str, dict]" = OrderedDict()
-_RENDER_CACHE_LIMIT = 8
-_PAYLOAD_CACHE_LOCK = threading.Lock()
-
-
-def _clone_render_pair(pair: tuple[np.ndarray, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
-    paint, mask = pair
-    return paint.copy(), mask.copy()
-
-
-def _clone_painting_layer_payload(payload: dict) -> dict:
-    paint = payload.get("paint")
-    mask = payload.get("mask")
-    groups = payload.get("groups")
-    return {
-        "paint": paint.copy() if isinstance(paint, np.ndarray) else None,
-        "mask": mask.copy() if isinstance(mask, np.ndarray) else None,
-        "groups": {
-            key: value.copy()
-            for key, value in (groups.items() if isinstance(groups, dict) else [])
-            if isinstance(value, np.ndarray)
-        },
-        "revision": str(payload.get("revision") or ""),
-    }
 
 
 def _composite_group_layers_to_rgba(groups: dict | None, width: int, height: int) -> np.ndarray | None:
@@ -53,7 +25,7 @@ def _composite_group_layers_to_rgba(groups: dict | None, width: int, height: int
             continue
         if canvas is None:
             canvas = _empty_rgba(width, height)
-        src = np.clip(src.astype(np.float32), 0.0, 1.0)
+        src = np.clip(unit_float(src), 0.0, 1.0)
         dst = canvas
         sa = src[..., 3:4]
         da = dst[..., 3:4]
@@ -62,38 +34,6 @@ def _composite_group_layers_to_rgba(groups: dict | None, width: int, height: int
         dst[..., :3] = (src[..., :3] * sa + dst[..., :3] * da * (1.0 - sa)) / safe
         dst[..., 3:4] = out_a
     return canvas
-
-
-def _cache_get(cache: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]", key: str) -> tuple[np.ndarray, np.ndarray] | None:
-    pair = cache.get(key)
-    if pair is None:
-        return None
-    cache.move_to_end(key)
-    return _clone_render_pair(pair)
-
-
-def _cache_put(cache: "OrderedDict[str, tuple[np.ndarray, np.ndarray]]", key: str, pair: tuple[np.ndarray, np.ndarray]) -> None:
-    cache[key] = _clone_render_pair(pair)
-    cache.move_to_end(key)
-    while len(cache) > _RENDER_CACHE_LIMIT:
-        cache.popitem(last=False)
-
-
-def _payload_cache_get(cache: "OrderedDict[str, dict]", key: str) -> dict | None:
-    with _PAYLOAD_CACHE_LOCK:
-        value = cache.get(key)
-        if value is None:
-            return None
-        cache.move_to_end(key)
-        return _clone_painting_layer_payload(value)
-
-
-def _payload_cache_put(cache: "OrderedDict[str, dict]", key: str, value: dict) -> None:
-    with _PAYLOAD_CACHE_LOCK:
-        cache[key] = _clone_painting_layer_payload(value)
-        cache.move_to_end(key)
-        while len(cache) > _RENDER_CACHE_LIMIT:
-            cache.popitem(last=False)
 
 
 def _hash_render_payload(payload) -> str:
@@ -308,10 +248,17 @@ def _build_chisel_stamp_alpha(radius_px: float, hardness: float, aspect: float =
     return np.clip(alpha, 0.0, 1.0)
 
 
+def _brush_value(stroke: dict, key: str, default: float) -> float:
+    """A stroke's brush value, `default` only when it is missing or None (as the editor's paint engine reads it: 0 is
+    a value, not the default)."""
+    value = stroke.get(key)
+    return default if value is None else float(value)
+
+
 def _get_stamp_alpha(stroke: dict, radius_px: float) -> np.ndarray:
     stamp_kind = str(stroke.get("stampKind") or "round")
-    hardness = max(0.0, min(1.0, float(stroke.get("hardness") or 0.9)))
-    aspect = max(0.1, float(stroke.get("aspect") or 1.0))
+    hardness = max(0.0, min(1.0, _brush_value(stroke, "hardness", 0.9)))
+    aspect = max(0.1, _brush_value(stroke, "aspect", 1.0))
     angle = stroke.get("angle") or {}
     angle_rad = float(angle.get("value", 0.0)) if str(angle.get("kind") or "fixed") == "fixed" else 0.0
     if stamp_kind == "chisel":
@@ -400,15 +347,16 @@ def _stroke_freehand_alpha(stroke: dict, width: int, height: int) -> np.ndarray:
     radius_px = _stroke_radius_px(stroke, width, height)
     spacing_px = _stroke_spacing_px(stroke, radius_px)
     base_alpha = _get_stamp_alpha(stroke, radius_px)
-    stamp_alpha = np.clip(base_alpha * max(0.0, min(1.0, float(stroke.get("flow") or 1.0))), 0.0, 1.0)
+    stamp_alpha = np.clip(base_alpha * max(0.0, min(1.0, _brush_value(stroke, "flow", 1.0))), 0.0, 1.0)
     stroke_alpha = np.zeros((height, width), dtype=np.float32)
     half_h = stamp_alpha.shape[0] // 2
     half_w = stamp_alpha.shape[1] // 2
     for group in _stroke_point_paths_for_erp_geometry(stroke):
         coords = [(float(pt["u"]) * width, float(pt["v"]) * height) for pt in group]
         for x, y in _stamp_positions_for_path(coords, spacing_px):
-            left = int(round(x)) - half_w
-            top = int(round(y)) - half_h
+            # The stamp's center goes on the pixel whose center (i + 0.5) is nearest to (x, y).
+            left = math.floor(x) - half_w
+            top = math.floor(y) - half_h
             _blend_alpha_mask(stroke_alpha, stamp_alpha, left, top)
             _blend_alpha_mask(stroke_alpha, stamp_alpha, left - width, top)
             _blend_alpha_mask(stroke_alpha, stamp_alpha, left + width, top)
@@ -416,6 +364,7 @@ def _stroke_freehand_alpha(stroke: dict, width: int, height: int) -> np.ndarray:
 
 
 def _polygon_alpha_mask(segments: list[list[tuple[float, float]]], width: int, height: int) -> np.ndarray:
+    # Pillow floors the vertices and fills the pixels on them, which already puts point x on pixel floor(x), as the stamps.
     img = Image.new("L", (max(1, width), max(1, height)), 0)
     draw = ImageDraw.Draw(img, "L")
     for coords in segments:
@@ -675,6 +624,11 @@ def painting_state_has_mask_renderables(painting_state: dict | None) -> bool:
 
 
 def render_painting_to_erp(painting_state: dict, width: int, height: int) -> tuple[np.ndarray, np.ndarray]:
+    """The paint (RGBA) and mask of the strokes and raster objects of `painting_state` drawn into an ERP, read-only.
+
+    The result is kept in the shared cache (`cache.py`): one render pass draws the same paint more than once (the
+    paint and the mask are asked for apart, as are the groups), and an execution renders more than one pass (the
+    first frame, then each read of the `video` output)."""
     if not painting_state_has_renderables(painting_state):
         return _empty_rgba(width, height), _empty_mask(width, height)
     normalized = normalize_painting_state(painting_state)
@@ -684,7 +638,7 @@ def render_painting_to_erp(painting_state: dict, width: int, height: int) -> tup
         "height": int(height),
         "painting": normalized,
     })
-    cached = _cache_get(_ERP_RENDER_CACHE, cache_key)
+    cached = CACHE.get("painting_erp", cache_key)
     if cached is not None:
         return cached
     paint = _empty_rgba(width, height)
@@ -694,12 +648,10 @@ def render_painting_to_erp(painting_state: dict, width: int, height: int) -> tup
             _composite_one_raster_object(paint, mask, entry["item"], width, height)
         else:
             _composite_one_erp_stroke(paint, mask, entry["item"], width, height)
-    result = (
+    return CACHE.put("painting_erp", cache_key, (
         np.clip(paint, 0.0, 1.0).astype(np.float32),
         np.clip(mask, 0.0, 1.0).astype(np.float32),
-    )
-    _cache_put(_ERP_RENDER_CACHE, cache_key, result)
-    return _clone_render_pair(result)
+    ))
 
 
 def _warp_erp_layer_to_cutout(
@@ -748,36 +700,34 @@ def _warp_erp_layer_to_cutout(
     return _empty_rgba(width, height) if erp_layer.ndim == 3 else _empty_mask(width, height)
 
 
-def _resize_rgba_layer(layer: np.ndarray | None, width: int, height: int) -> np.ndarray | None:
-    if layer is None:
-        return None
-    if layer.ndim != 3 or layer.shape[-1] != 4:
-        return None
+def _resize_layer(layer: np.ndarray, width: int, height: int, mode: str) -> np.ndarray:
+    """A layer (0..1 float, or uint8 as an 8-bit image is read) at `width` x `height`, bilinear through 8 bits as the
+    editor's uploads are. An 8-bit layer stays 8-bit (the same size is the layer itself); a float one is float."""
     target_w = max(1, int(width))
     target_h = max(1, int(height))
+    if layer.dtype == np.uint8:
+        if layer.shape[1] == target_w and layer.shape[0] == target_h:
+            return layer
+        return np.asarray(Image.fromarray(layer, mode=mode).resize((target_w, target_h), Image.BILINEAR))
     if layer.shape[1] == target_w and layer.shape[0] == target_h:
         return np.clip(layer.astype(np.float32), 0.0, 1.0)
-    resized = Image.fromarray((np.clip(layer, 0.0, 1.0) * 255.0).astype(np.uint8), mode="RGBA").resize(
+    resized = Image.fromarray((np.clip(layer, 0.0, 1.0) * 255.0).astype(np.uint8), mode=mode).resize(
         (target_w, target_h),
         Image.BILINEAR,
     )
     return np.asarray(resized, dtype=np.float32) / 255.0
+
+
+def _resize_rgba_layer(layer: np.ndarray | None, width: int, height: int) -> np.ndarray | None:
+    if layer is None or layer.ndim != 3 or layer.shape[-1] != 4:
+        return None
+    return _resize_layer(layer, width, height, "RGBA")
 
 
 def _resize_mask_layer(layer: np.ndarray | None, width: int, height: int) -> np.ndarray | None:
-    if layer is None:
+    if layer is None or layer.ndim != 2:
         return None
-    if layer.ndim != 2:
-        return None
-    target_w = max(1, int(width))
-    target_h = max(1, int(height))
-    if layer.shape[1] == target_w and layer.shape[0] == target_h:
-        return np.clip(layer.astype(np.float32), 0.0, 1.0)
-    resized = Image.fromarray((np.clip(layer, 0.0, 1.0) * 255.0).astype(np.uint8), mode="L").resize(
-        (target_w, target_h),
-        Image.BILINEAR,
-    )
-    return np.asarray(resized, dtype=np.float32) / 255.0
+    return _resize_layer(layer, width, height, "L")
 
 
 def load_painting_layer_payload(
@@ -786,22 +736,14 @@ def load_painting_layer_payload(
     erp_width: int | None = None,
     erp_height: int | None = None,
 ) -> dict | None:
+    """The uploaded paint rasters of `painting_layer` (`paint` RGBA, `mask`, and `groups` RGBA by action group), at
+    `erp_width` x `erp_height` when given. Rasters read from 8-bit images stay uint8 (`unit_float` reads them); the
+    arrays are those of `painting_layer` when no size changes and must not be written to."""
     if not isinstance(painting_layer, dict):
         return None
     revision = str(painting_layer.get("revision") or "").strip()
     target_w = int(erp_width) if erp_width is not None else None
     target_h = int(erp_height) if erp_height is not None else None
-    cache_key = ""
-    if revision:
-        cache_key = _hash_render_payload({
-            "kind": "painting_layer_payload",
-            "revision": revision,
-            "width": target_w,
-            "height": target_h,
-        })
-        cached_payload = _payload_cache_get(_PAINTING_LAYER_PAYLOAD_CACHE, cache_key)
-        if cached_payload is not None:
-            return cached_payload
     paint_erp = painting_layer.get("paint") if isinstance(painting_layer.get("paint"), np.ndarray) else None
     mask_erp = painting_layer.get("mask") if isinstance(painting_layer.get("mask"), np.ndarray) else None
     if target_w is not None and target_h is not None:
@@ -821,15 +763,12 @@ def load_painting_layer_payload(
 
     if paint_erp is None and mask_erp is None and not groups:
         return None
-    result = {
+    return {
         "paint": paint_erp,
         "mask": mask_erp,
         "groups": groups,
         "revision": revision,
     }
-    if cache_key:
-        _payload_cache_put(_PAINTING_LAYER_PAYLOAD_CACHE, cache_key, result)
-    return result
 
 
 def render_painting_to_cutout(
@@ -877,8 +816,8 @@ def render_painting_to_cutout(
         or bool(payload.get("groups"))
     )
     if payload_has_layers:
-        paint_erp = payload.get("paint")
-        mask_erp = payload.get("mask")
+        paint_erp = None if payload.get("paint") is None else unit_float(payload["paint"])
+        mask_erp = None if payload.get("mask") is None else unit_float(payload["mask"])
         group_paint_erp = _composite_group_layers_to_rgba(payload.get("groups"), erp_width, erp_height)
         if paint_erp is None and isinstance(group_paint_erp, np.ndarray):
             paint_erp = group_paint_erp
@@ -892,24 +831,6 @@ def render_painting_to_cutout(
     if not painting_state_has_renderables(painting_state):
         return _empty_rgba(width, height), _empty_mask(width, height)
     normalized = normalize_painting_state(painting_state)
-    cache_key = _hash_render_payload({
-        "kind": "cutout",
-        "width": int(width),
-        "height": int(height),
-        "erp_width": int(erp_width),
-        "erp_height": int(erp_height),
-        "shot": {
-            "yaw_deg": float(shot.get("yaw_deg", 0.0)),
-            "pitch_deg": float(shot.get("pitch_deg", 0.0)),
-            "roll_deg": float(shot.get("roll_deg", 0.0)),
-            "hFOV_deg": float(shot.get("hFOV_deg", 90.0)),
-            "vFOV_deg": float(shot.get("vFOV_deg", 60.0)),
-        },
-        "painting": normalized,
-    })
-    cached = _cache_get(_CUTOUT_RENDER_CACHE, cache_key)
-    if cached is not None:
-        return cached
     # Render from stroke records with 2× supersampling for antialiasing.
     ss_w = min(max(64, int(erp_width)) * 2, 8192)
     ss_h = min(max(32, int(erp_height)) * 2, 4096)
@@ -929,9 +850,7 @@ def render_painting_to_cutout(
     paint_erp, mask_erp = render_painting_to_erp(normalized, ss_w, ss_h)
     paint = _warp_erp_layer_to_cutout(paint_erp, shot, width, height, coverage_value, sampling_map=ss_sampling_map)
     mask = _warp_erp_layer_to_cutout(mask_erp, shot, width, height, coverage_value, sampling_map=ss_sampling_map)
-    result = (paint.astype(np.float32), mask.astype(np.float32))
-    _cache_put(_CUTOUT_RENDER_CACHE, cache_key, result)
-    return _clone_render_pair(result)
+    return paint.astype(np.float32), mask.astype(np.float32)
 
 
 def alpha_composite_over_rgb(base_rgb: np.ndarray, paint_rgba: np.ndarray) -> np.ndarray:

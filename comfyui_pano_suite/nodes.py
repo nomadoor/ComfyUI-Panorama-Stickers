@@ -1,5 +1,11 @@
+import bisect
+import hashlib
 import json
 import math
+import os
+from collections import Counter
+from dataclasses import dataclass, replace
+from fractions import Fraction
 from pathlib import Path
 import logging
 
@@ -7,10 +13,15 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from comfy_api.latest import io
+import comfy.model_management
+import folder_paths
+from comfy_api.latest import ComfyExtension, Input, Types, io
+from typing_extensions import override
 
 from .comfy_image_resolver import resolve_painting_layer_payload
 from .node_runtime import PREVIEW_UI_KEYS, NodeProgress, create_default_runtime
+from .progress import loop_progress
+from .core.cache import nbytes
 from .core.cutout import build_cutout_sampling_map, sample_cutout_from_sampling_map
 from .core.display_list import (
     alpha_composite_over_rgba as _alpha_composite_over_rgba,
@@ -28,14 +39,55 @@ from .core.math import (
     calculate_dimensions_from_megapixels,
     calculate_output_dimensions,
     finite_float,
+    lens_radius,
+    unit_float,
+    vfov_from_hfov,
 )
+from .core.paint_state import empty_painting_state
 from .core.painting import (
     alpha_composite_over_rgb,
     painting_state_has_mask_renderables,
     painting_state_has_renderables,
     render_painting_to_erp,
 )
+from .core.render import Projection, RenderLayer, SceneSources, StickerSource, render_frame
+from .core.scene_eval import FRAME_EPSILON, clip_active, evaluate_scene_state
+from .core.scene_inherit import apply_upstream_overrides
+from .core.scene_state import CAMERA_LANES, DEFAULT_CLIP, DEFAULT_EASING, STICKER_NUMBER_MAX, STICKER_STATE_KIND, is_3d_file_source, load_scene_state, load_sticker_state
 from .core.state import merge_state, normalize_coverage, parse_sticker_state
+from .core.stickers import comfy_file_path, load_source_rgba
+from .core.video import (
+    editor_ready,
+    encode_editor_mp4,
+    entry_from_path,
+    make_frames_ui_payload,
+    make_video_ui_payload,
+    mp4_has_audio,
+    save_editor_frames,
+    save_video_to_mp4,
+)
+from .core.video_source import MaterializedVideo, StreamedVideo
+from .core.world import FIT_3D_MIN_DISTANCE, box_sphere, fit_3d_position, world_rotation
+from .core.gltf_animation import clip_time
+from .core.world_render import ContentSource, SceneContent
+from .scene_files import write_editor_files
+from .scene_mesh import (
+    check_da3,
+    da3_device_bytes,
+    da3_key,
+    depth_grid_intrinsics,
+    is_da3,
+    is_mesh_file,
+    is_moge,
+    is_unlit,
+    mesh_animation,
+    moge_uses_depth_grid,
+    needs_default_k,
+    read_mesh_file,
+)
+from .scene_video import SceneVideo
+from .splat_render import read_splat_file
+from .sticker_media import OPENED_VIDEOS, PortMedia, batch_index, content_box, content_of, is_3d_media, open_video, stream_video
 _log = logging.getLogger(__name__)
 NODE_RUNTIME = create_default_runtime(logger=_log)
 
@@ -181,6 +233,8 @@ def _external_sticker_id(slot_key: str) -> str:
 
 
 def _hash_text(value) -> str:
+    """The FNV-1a hash of `sticker_state` that the editor stores with the external Sticker and computes the same way
+    (`hashStringSimple`), so it must not change. Only for short texts; larger ones are keyed by `hashlib`."""
     text = str(value or "")
     h = 2166136261
     for ch in text:
@@ -387,7 +441,7 @@ def _resolve_cutout_source_batch(erp_image) -> np.ndarray:
     return _images_to_numpy_batch(erp_image, None, fallback_shape=(1, 512, 1024, 3))
 
 
-def _estimate_sticker_cuda_chunk_size(
+def _estimate_sticker_chunk_size(
     batch_size: int,
     out_h: int,
     out_w: int,
@@ -396,10 +450,9 @@ def _estimate_sticker_cuda_chunk_size(
     in_h: int = 0,
     in_w: int = 0,
 ) -> int:
-    if device is None or device.type != "cuda":
+    if device is None or comfy.model_management.is_device_cpu(device):
         return max(1, int(batch_size))
-    device_index = device.index if device.index is not None else torch.cuda.current_device()
-    free_bytes, _total_bytes = torch.cuda.mem_get_info(device_index)
+    free_bytes = comfy.model_management.get_free_memory(device)
     # Account for both input and output tensors: input (float32 BCHW) + output (float32 BCHW)
     # plus overlay broadcast and intermediate buffers. Use 4x multiplier for safety margin.
     eff_in_h = max(int(in_h or out_h), int(out_h))
@@ -418,7 +471,7 @@ def _render_sticker_output_batches(
     out_w: int,
     bg_hex: str,
     overlay_rgba: np.ndarray | None,
-    cuda_device: torch.device | None,
+    device: torch.device | None,
     progress_callback=None,
 ):
     if bg_erp is None:
@@ -435,27 +488,8 @@ def _render_sticker_output_batches(
     batch_size = int(bg_erp.shape[0]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else 1
     in_h = int(bg_erp.shape[1]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else out_h
     in_w = int(bg_erp.shape[2]) if hasattr(bg_erp, "shape") and len(bg_erp.shape) == 4 else out_w
-    bg_cache_identity = _tensor_cache_identity(bg_erp)
-    bg_cache_key = ("stickers_bg", bg_cache_identity, int(out_h), int(out_w))
-    if bg_cache_identity is not None:
-        cached_bg_batch = NODE_RUNTIME.cache.get("stickers_bg", bg_cache_key)
-        if cached_bg_batch is not None:
-            bg_batch = cached_bg_batch
-            bg_rgb_batch = bg_batch.astype(np.float32) / 255.0
-            if overlay_rgba is not None:
-                alpha = overlay_rgba[None, ..., 3:4].astype(np.float32, copy=False)
-                rgb = overlay_rgba[None, ..., :3].astype(np.float32, copy=False)
-                out_batch = np.clip(rgb * alpha + bg_rgb_batch * (1.0 - alpha), 0.0, 1.0)
-            else:
-                out_batch = bg_rgb_batch
-            if progress_callback is not None:
-                try:
-                    progress_callback(batch_size, batch_size)
-                except Exception:
-                    pass
-            return out_batch.astype(np.float32, copy=False), bg_batch
-    compute_device = cuda_device if cuda_device is not None else bg_erp.device
-    chunk_size = _estimate_sticker_cuda_chunk_size(batch_size, out_h, out_w, compute_device, in_h=in_h, in_w=in_w)
+    compute_device = device if device is not None else bg_erp.device
+    chunk_size = _estimate_sticker_chunk_size(batch_size, out_h, out_w, compute_device, in_h=in_h, in_w=in_w)
     overlay_cache = {}
     start = 0
 
@@ -496,8 +530,6 @@ def _render_sticker_output_batches(
 
             out_batch[start:end] = out_chunk.contiguous().cpu().numpy()
             del chunk, bg_chunk, out_chunk
-            if compute_device.type == "cuda":
-                torch.cuda.empty_cache()
             if progress_callback is not None:
                 try:
                     progress_callback(end, batch_size)
@@ -505,18 +537,19 @@ def _render_sticker_output_batches(
                     pass
             start = end
         except torch.OutOfMemoryError:
-            if compute_device.type == "cuda" and chunk_size > 1:
+            on_device = not comfy.model_management.is_device_cpu(compute_device)
+            if on_device:
+                comfy.model_management.soft_empty_cache()
+            if on_device and chunk_size > 1:
                 chunk_size = max(1, chunk_size // 2)
-                torch.cuda.empty_cache()
                 continue
-            if compute_device.type == "cuda":
+            if on_device:
                 logging.getLogger(__name__).warning(
-                    "PanoramaStickers background CUDA path ran out of memory; falling back to CPU chunks."
+                    "PanoramaStickers background device path ran out of memory; falling back to CPU chunks."
                 )
                 compute_device = torch.device("cpu")
                 chunk_size = 1
                 overlay_cache.clear()
-                torch.cuda.empty_cache()
                 continue
             raise MemoryError(
                 f"PanoramaStickers: not enough RAM to process a single frame "
@@ -524,21 +557,11 @@ def _render_sticker_output_batches(
                 "Reduce output resolution or batch size."
             ) from None
 
-    if bg_cache_identity is not None:
-        NODE_RUNTIME.cache.put("stickers_bg", bg_cache_key, bg_batch)
     return out_batch, bg_batch
 
 
 def _first_image_tensor(image):
     return NODE_RUNTIME._first_image(image)
-
-
-def _vfov_from_hfov(hfov_deg: float, image_w: int, image_h: int) -> float:
-    width = max(1, int(image_w))
-    height = max(1, int(image_h))
-    hfov = float(np.clip(hfov_deg, 0.1, 179.0))
-    vfov = 2.0 * math.degrees(math.atan(math.tan(math.radians(hfov) * 0.5) * (height / width)))
-    return float(np.clip(vfov, 0.1, 179.0))
 
 
 def _default_pose_for_sticker(image_w: int, image_h: int) -> dict:
@@ -547,7 +570,7 @@ def _default_pose_for_sticker(image_w: int, image_h: int) -> dict:
         "yaw_deg": 0.0,
         "pitch_deg": 0.0,
         "hFOV_deg": hfov,
-        "vFOV_deg": _vfov_from_hfov(hfov, image_w, image_h),
+        "vFOV_deg": vfov_from_hfov(hfov, image_w, image_h),
         "rot_deg": 0.0,
     }
 
@@ -567,7 +590,7 @@ def _pose_from_sticker_state(parsed_state: dict | None, image_w: int, image_h: i
         "yaw_deg": finite_float(parsed_state.get("yaw_deg", default_pose["yaw_deg"]), default_pose["yaw_deg"]),
         "pitch_deg": finite_float(parsed_state.get("pitch_deg", default_pose["pitch_deg"]), default_pose["pitch_deg"]),
         "hFOV_deg": hfov,
-        "vFOV_deg": _vfov_from_hfov(hfov, image_w, image_h),
+        "vFOV_deg": vfov_from_hfov(hfov, image_w, image_h),
         "rot_deg": finite_float(parsed_state.get("roll_deg", default_pose["rot_deg"]), default_pose["rot_deg"]),
     }
 
@@ -598,7 +621,7 @@ def _build_runtime_external_sticker(
     if parsed_pose is not None and str(runtime_sticker.get("source_state_hash", "")) != payload_state_hash:
         runtime_sticker.update(parsed_pose)
     else:
-        runtime_sticker["vFOV_deg"] = _vfov_from_hfov(
+        runtime_sticker["vFOV_deg"] = vfov_from_hfov(
             runtime_sticker.get("hFOV_deg", 30.0),
             image_w,
             image_h,
@@ -671,7 +694,9 @@ def _build_overlay_erp_rgba_and_mask(
                 overlay_rgba = _alpha_composite_over_rgba(overlay_rgba, remaining_flat_rgba)
     else:
         paint_rgba = painting_payload.get("paint") if isinstance(painting_payload, dict) else None
-        if paint_rgba is None:
+        if paint_rgba is not None:
+            paint_rgba = unit_float(paint_rgba)
+        else:
             if warning_key and isinstance(ui_ret, dict) and painting_state_has_renderables(painting_state):
                 _push_ui_warning(
                     ui_ret,
@@ -686,7 +711,9 @@ def _build_overlay_erp_rgba_and_mask(
                 overlay_rgba = _alpha_composite_over_rgba(overlay_rgba, paint_rgba)
 
     mask_bw = painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-    if mask_bw is None:
+    if mask_bw is not None:
+        mask_bw = unit_float(mask_bw)
+    else:
         if warning_key and isinstance(ui_ret, dict) and painting_state_has_mask_renderables(painting_state):
             _push_ui_warning(
                 ui_ret,
@@ -828,7 +855,8 @@ class PanoramaStickersNode(io.ComfyNode):
         progress.set(0)
         progress.stage("Preparing sticker inputs")
 
-        _cuda_device = torch.device("cuda") if torch.cuda.is_available() else None
+        torch_device = comfy.model_management.get_torch_device()
+        render_device = None if comfy.model_management.is_device_cpu(torch_device) else torch_device
 
         state["output_preset"] = out_w
         state["bg_color"] = bg_hex
@@ -938,7 +966,7 @@ class PanoramaStickersNode(io.ComfyNode):
             out_w=out_w,
             bg_hex=bg_hex,
             overlay_rgba=overlay_rgba,
-            cuda_device=_cuda_device,
+            device=render_device,
             progress_callback=progress.frame_callback(render_start, render_span),
         )
         progress.set(render_start + render_span)
@@ -983,8 +1011,1275 @@ class PanoramaStickersNode(io.ComfyNode):
         return io.NodeOutput(out_t, mask_t, ui=ui_ret)
 
 
+MoGeGeometry = io.Custom("MOGE_GEOMETRY")
+DA3Geometry = io.Custom("DA3_GEOMETRY")
+PanoScene = io.Custom("PANO_SCENE")
+MESH_FILE_TYPES = [io.File3DGLB, io.File3DGLTF, io.File3DFBX, io.File3DOBJ, io.File3DSTL, io.File3DUSDZ, io.File3DAny]
+SPLAT_FILE_TYPES = [io.File3DPLY, io.File3DSPLAT, io.File3DSPZ, io.File3DKSPLAT, io.File3DSplatAny]
+
+
+@dataclass(frozen=True, eq=False)
+class SceneLayer:
+    """One Panorama Studio's own part of a Scene (ADR 0029): its state bound to its inputs.
+
+    `state` is the loaded `state_json` with the port Sticker appended when missing, and `sources` its Sticker
+    sources read into memory; the port Sticker's source is a template holding the first frame of `port`, the
+    media on the sticker input (None without one), whose frames come from `port.frames()` at `port.index_at`.
+    3D media has no template: `port.frames()` is its content, and `_port_source_at` the item to draw. `scene` is
+    the 3D media on the `scene` input (None without one), a 3D file as the SPLAT or MESH read from it
+    (`_read_scene_file`), as is the 3D media in `port`. `media_ui` is the part of the execution `ui` that shows the
+    layer's own media in an editor (the `sticker` media and the `scene` and 3D Sticker editor files); the files are
+    the producing node's and are not written again.
+    """
+
+    state: dict
+    sources: SceneSources
+    port: PortMedia | None
+    scene: object
+    media_ui: dict
+
+
+@dataclass(frozen=True, eq=False)
+class PanoSceneValue:
+    """The PANO_SCENE output: a Scene derived on each execution from the states and inputs of a chain of nodes
+    (ADR 0025, ADR 0029).
+
+    `layers` holds a `SceneLayer` for each node of the chain, from the farthest upstream to the node that made it,
+    flat: a PANO_SCENE never holds another. `bg_media` (IMAGE, VIDEO, or None) is the input as given, `coverage`
+    its span, and `bg_color` 0..1 RGB, all from the farthest upstream node that has a `bg_media`. `bg_ui` is the
+    `ui` that shows that `bg_media` in an editor, and `bg_clip` its Clip range (`background.clip`) with the
+    `timeline.fps` of that node's state, or None without `bg_media`. The output size is not part of it; each
+    consumer sets its own. `rate` is the Timeline fps as the fraction (a)
+    decided (`fps` as a float), `times` each output frame's time in seconds (Fraction), and `time_base` the step
+    those times are rounded to (0: exact). `frames` holds per output frame the `bg_media` frame to draw and, for
+    each layer, the Timeline frame of its state to evaluate, the `port` frame, and the `scene` item, as
+    `_decide_timeline` returns them. `media_ui` is the part of the producing node's execution `ui` that shows its
+    media in an editor (with the upstream layers, `docs/studio-node.md`); a consumer passes it on in its own
+    `ui`. Consumers must not modify it; the same value reaches every node linked to the output.
+    """
+
+    layers: tuple
+    bg_media: object
+    coverage: int
+    bg_color: tuple
+    rate: Fraction
+    times: tuple
+    time_base: Fraction
+    frames: tuple
+    bg_ui: dict
+    media_ui: dict
+    bg_clip: tuple | None = None
+
+    @property
+    def fps(self) -> float:
+        return float(self.rate)
+
+
+def _scene_content(scene) -> SceneContent | None:
+    """The `scene` input as World content, or None without one."""
+    return None if scene is None else content_of(scene)
+
+
+# Why a 3D file that neither reader takes is not read (`docs/studio-node.md`, "3D ファイルの `file` の Source").
+NEITHER_3D_READER = "neither a splat file (a PLY with 3DGS properties, SPLAT, SPZ, KSPLAT) nor a mesh file (GLB, GLTF, OBJ, STL)"
+# Why a 3D file `file` Source outside ComfyUI's folders, or not there, is not read.
+FILE_NOT_FOUND = "the file was not found"
+
+
+def _read_scene_file(scene, name: str | None):
+    """A 3D file on the `scene` or `sticker` input (`name`) as what is read from it: a splat file (told by its
+    contents, as Load3D does) as its SPLAT, else a mesh file (by its format) as its MESH; other inputs as given. A 3D
+    file that neither reads (a PLY without 3DGS properties, a non-splat file without a format) is a ValueError naming
+    the input, or for a 3D file `file` Source (`name` None) a ValueError of the reason alone.
+    What is read is kept per file (on disk by its path and modification, else by the object) in the cache of its
+    kind, so the same file is not parsed again and keeps its editor files; concurrent readers of one file (a prompt
+    and the editor's route) read it once."""
+    if not isinstance(scene, Types.File3D):
+        return scene
+    if scene.is_disk_backed:
+        stat = os.stat(scene.get_source())
+        cache_key = (scene.get_source(), stat.st_mtime_ns, stat.st_size)
+    else:
+        cache_key = NODE_RUNTIME.object_identity(scene)
+    mesh = NODE_RUNTIME.cache.get("mesh_files", cache_key)
+    if mesh is not None:
+        return mesh
+    splat = NODE_RUNTIME.cache.get_or_put("splat_files", cache_key, lambda: read_splat_file(scene))
+    if splat is not None:
+        return splat
+    if not is_mesh_file(scene):
+        if name is None:
+            raise ValueError(f"it is {NEITHER_3D_READER}")
+        raise ValueError(f"Panorama Stickers: the 3D file on the {name} input is {NEITHER_3D_READER}.")
+    return NODE_RUNTIME.cache.get_or_put("mesh_files", cache_key, lambda: read_mesh_file(scene))
+
+
+def _check_da3_inputs(*inputs):
+    """At the entry, as for an unreadable 3D file: refuse a multiview DA3_GEOMETRY without poses (`check_da3`), and
+    say once per run when a mono one is drawn with the core's default K."""
+    da3 = [value for value in inputs if is_da3(value)]
+    for geometry in da3:
+        check_da3(geometry)
+    if any(needs_default_k(geometry) for geometry in da3):
+        _log.warning("Panorama Stickers: a DA3_GEOMETRY has no intrinsics (a mono model), so its meshes use the core's default "
+                     "camera of about 71 degrees across; if the photo's field of view differs, the shapes stretch in depth.")
+
+
+def _check_moge_inputs(*inputs):
+    """Say once per run why a MOGE_GEOMETRY goes to the editor as GLB, not as a depth grid (`moge_uses_depth_grid`):
+    it is drawn all the same, the editor only plays it slower."""
+    reasons = [reason for value in inputs if is_moge(value) for uses, reason in [moge_uses_depth_grid(value)] if not uses]
+    if reasons:
+        _log.warning("Panorama Stickers: a MOGE_GEOMETRY goes to the editor as one GLB per frame, not as a depth grid, because "
+                     + "; ".join(dict.fromkeys(reasons)) + ". It is drawn the same; the editor plays it slower.")
+
+
+def _file_3d_error(source: dict, reason: str) -> str:
+    """The text that says why a 3D file `file` Source is not read, for the node's warning and the route's error."""
+    name = f"{source['subfolder']}/{source['filename']}" if source.get("subfolder") else source["filename"]
+    reason = str(reason).strip()
+    return f"Could not read the 3D file {name}: {reason}{'' if reason.endswith(('.', '!', '?')) else '.'}"
+
+
+def _read_file_3d(source: dict) -> tuple[object, str | None]:
+    """A 3D file `file` Source read as `scene` and `sticker` read theirs (`_read_scene_file`): its SPLAT or MESH and
+    None, or None and why it was not read: a path outside ComfyUI's folders or no file there, or the reader's
+    ValueError or OSError. Other errors are raised."""
+    path = comfy_file_path(source["filename"], source["subfolder"], source["storage"])
+    if path is None:
+        return None, FILE_NOT_FOUND
+    try:
+        return _read_scene_file(Types.File3D(str(path)), None), None
+    except (ValueError, OSError) as error:
+        return None, str(error)
+
+
+def _take_sticker_id(state: dict) -> str:
+    """A new Sticker id from the state's `next_sticker_id` counter, which it advances, as the editor does. Like the
+    normalization of the ids (`_stickers`, core/scene_state.py), a number whose id is in use is skipped (ids past
+    STICKER_NUMBER_MAX are not counted, so the counter can stop on one), and the counter stays at most
+    STICKER_NUMBER_MAX."""
+    used = {sticker["id"] for sticker in state["stickers"]}
+    number = state["next_sticker_id"]
+    while f"sticker_{number}" in used:
+        number += 1
+    state["next_sticker_id"] = min(number + 1, STICKER_NUMBER_MAX)
+    return f"sticker_{number}"
+
+
+def _nearest_turn(angle: float, previous: float) -> float:
+    return previous + (angle - previous + 180.0) % 360.0 - 180.0
+
+
+def _in_hold(keyframes: list[dict], frame: float) -> bool:
+    """Whether `frame` is in a segment that holds its value until the next Keyframe (a cut)."""
+    if not keyframes[0]["frame"] - FRAME_EPSILON <= frame < keyframes[-1]["frame"] - FRAME_EPSILON:
+        return False
+    return [key for key in keyframes if key["frame"] <= frame + FRAME_EPSILON][-1]["easing"] == "hold"
+
+
+def _lane_numbers(value) -> tuple:
+    if isinstance(value, dict):
+        return tuple(value.values())
+    return tuple(value) if isinstance(value, list) else (value,)
+
+
+def _handoff_lanes(sticker_state: dict, fps: float) -> tuple[str, dict]:
+    """The placement and Lanes of the port Sticker that put it back where the Camera of `sticker_state` shot it
+    (Pose handoff), at the Timeline `fps` of the state. The Sticker's clip frame is the time of its media.
+
+    A Camera that stays at the World origin hands a `sky` Sticker (direction, roll and size). A Camera whose
+    position leaves the origin in any evaluated frame hands a `world` one (ADR 0030): 2 ahead of the Camera, with
+    its rotation, as wide as its hFOV at that distance, so that seen from the Camera it covers the shot.
+
+    A Camera that moves is read at every Timeline frame over its Keyframes and baked into `auto` Keyframes,
+    because a Camera rotation and a Sticker direction interpolate differently between Keyframes.
+    A frame inside a `hold` segment of the Camera is a `hold` Keyframe, so a cut stays a cut. A Lane that the
+    Camera does not move is a static value.
+    """
+    camera = sticker_state["camera"]
+    ratio = sticker_state["fps"] / fps
+    shot = load_scene_state({"version": 2, "timeline": {"fps": sticker_state["fps"]}, "camera": {name: {"keyframes": keys} for name, keys in camera.items()}})
+    first = min(keys[0]["frame"] for keys in camera.values())
+    last = max(keys[-1]["frame"] for keys in camera.values())
+    frames = range(math.floor(first / ratio), math.ceil(last / ratio) + 1)
+    shots = []
+    for frame in frames:
+        # A long bake stops at Cancel.
+        comfy.model_management.throw_exception_if_processing_interrupted()
+        value = evaluate_scene_state(shot, frame * ratio)["camera"]
+        if shots:
+            # Yaw and roll keep turning past 180 instead of jumping back a whole turn between Keyframes.
+            value = {**value, "yaw_deg": _nearest_turn(value["yaw_deg"], shots[-1]["yaw_deg"]), "roll_deg": _nearest_turn(value["roll_deg"], shots[-1]["roll_deg"])}
+        shots.append(value)
+    if any(math.hypot(*value["position"]) > 1e-9 for value in shots):
+        placement = "world"
+        position, rotation, scale = [], [], []
+        for value in shots:
+            forward = -world_rotation(value["yaw_deg"], value["pitch_deg"], value["roll_deg"])[:, 2]
+            position.append((np.asarray(value["position"], dtype=np.float64) + 2.0 * forward).tolist())
+            rotation.append({name: value[name] for name in ("yaw_deg", "pitch_deg", "roll_deg")})
+            # As wide as the shot at distance 2: 2 · 2 · g(hFOV / 2), g the lens curve's `lens_radius` (tan for a pinhole).
+            scale.append(4.0 * lens_radius(math.radians(value["hFOV_deg"]) / 2.0, value["curve"]))
+        series = [("position", position, ("position",)), ("rotation", rotation, ("rotation",)), ("scale", scale, ("fov", "curve"))]
+        if any(value["curve"] != 1.0 for value in shots):
+            # Through a lens other than a pinhole the Sticker is the part of the sphere of radius 2 around the Camera
+            # that the shot saw (ADR 0042); a pinhole-only shot stays today's plane.
+            series.append(("lens", [{"curve": value["curve"], "hFOV_deg": value["hFOV_deg"]} for value in shots], ("fov", "curve")))
+    else:
+        placement = "sky"
+        direction = [{"yaw_deg": value["yaw_deg"], "pitch_deg": value["pitch_deg"]} for value in shots]
+        roll = [value["roll_deg"] for value in shots]
+        # A port Sticker's vFOV follows its media (`derive_vfov`); stored, it is hFOV (docs/scene-state-v2.md).
+        size = [{"hFOV_deg": value["hFOV_deg"], "vFOV_deg": value["hFOV_deg"]} for value in shots]
+        curve = [value["curve"] for value in shots]
+        series = [("direction", direction, ("rotation",)), ("roll", roll, ("rotation",)), ("size", size, ("fov",)), ("curve", curve, ("curve",))]
+    lanes = {}
+    for name, values, sources in series:
+        moves = any(abs(a - b) > 1e-9 for value in values for a, b in zip(_lane_numbers(value), _lane_numbers(values[0])))
+        keyframes = [
+            {"frame": frame, "value": value, "easing": "hold" if any(_in_hold(camera[source], frame * ratio) for source in sources) else "auto"}
+            for frame, value in zip(frames, values)
+        ] if moves else []
+        lanes[name] = {"value": values[0], "keyframes": keyframes}
+    return placement, lanes
+
+
+# The view a 3D port Sticker that the node adds is fitted to (docs/editor-interaction.md, "3D の Sticker を収めて
+# 置く"): the editor's default horizontal 100 degrees on a 16:9 view, vertically. The node has no view of its own.
+PORT_3D_FIT_FOV_DEG = math.degrees(2.0 * math.atan(math.tan(math.radians(50.0)) * 9.0 / 16.0))
+
+
+def _world_port_sticker(state: dict, media, sticker_id: str | None = None) -> dict:
+    """The port Sticker for 3D media: `world`, with rotation 0 and scale 1 (the content keeps its own orientation
+    and its front (+Z) faces the origin), placed so that the whole content (`content_box`, every item) fits the
+    front of the ERP taken from the World origin at rotation 0 (`fit_3d_position` with PORT_3D_FIT_FOV_DEG);
+    without content its origin goes NEW_WORLD_STICKER_DISTANCE ahead along -Z."""
+    sphere = box_sphere(content_box(media))
+    center, radius = sphere if sphere is not None else (None, None)
+    rotation = {"yaw_deg": 0.0, "pitch_deg": 0.0, "roll_deg": 0.0}
+    position = fit_3d_position([0.0, 0.0, 0.0], [0.0, 0.0, -1.0], center, radius, rotation, PORT_3D_FIT_FOV_DEG, FIT_3D_MIN_DISTANCE, PORT_3D_FIT_FOV_DEG)
+    raw = {"id": sticker_id or _take_sticker_id(state), "placement": "world", "source": {"kind": "port"}, "position": {"value": position}}
+    return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
+
+
+def _top_sky_z_index(state: dict) -> int:
+    """Above every other sky Sticker, as the legacy node placed the port Sticker (paint layers are not counted)."""
+    return max((sticker["z_index"] for sticker in state["stickers"] if sticker["placement"] == "sky"), default=-1) + 1
+
+
+def _port_sticker(state: dict, handoff: tuple[str, dict] | None) -> dict:
+    """The port Sticker appended when the state has none, placed by the `handoff` (`_handoff_lanes`) when given."""
+    placement, lanes = handoff or ("sky", {"direction": {"value": {"yaw_deg": 0.0, "pitch_deg": 0.0}}, "roll": {"value": 0.0}, "size": {"value": {"hFOV_deg": 30.0, "vFOV_deg": 30.0}}})
+    raw = {"id": _take_sticker_id(state), "placement": placement, "source": {"kind": "port"}, **lanes}
+    if placement == "sky":
+        raw["z_index"] = _top_sky_z_index(state)
+    return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
+
+
+def _inherit_handoff(state: dict, stored: dict, placement: str, lanes: dict) -> dict:
+    """The stored port Sticker with the Lanes of the handoff (`_handoff_lanes`), except those in its
+    `handoff_overrides`, which keep their stored value (ADR 0030). The placement follows the handoff: a stored
+    Sticker of the other placement is replaced under the same id, keeping its Clip range, visibility, lock, crop,
+    opacity, and the `handoff_overrides` of Lanes the new placement has; its other Lanes and overrides are dropped."""
+    if stored["placement"] == placement:
+        raw = {**stored, **{name: lane for name, lane in lanes.items() if name not in stored["handoff_overrides"]}}
+        if "lens" not in lanes:
+            # A shot through a pinhole alone hands today's plane, whatever lens an earlier shot handed.
+            raw.pop("lens", None)
+    else:
+        kept = {key: stored[key] for key in ("id", "source", "clip", "visible", "locked", "crop", "opacity", "handoff_overrides")}
+        raw = {**kept, "placement": placement, **lanes}
+        if placement == "sky":
+            raw["z_index"] = _top_sky_z_index(state)
+    return load_scene_state({"version": 2, "stickers": [raw]})["stickers"][0]
+
+
+def _port_rgba(image: torch.Tensor) -> np.ndarray:
+    image = image.detach().cpu().float().clamp(0.0, 1.0).numpy()
+    alpha = image[..., 3:4] if image.shape[-1] == 4 else np.ones((*image.shape[:2], 1), dtype=np.float32)
+    return np.concatenate([image[..., :3], alpha], axis=-1)
+
+
+def _port_media(state: dict, sticker, sticker_state, warnings: list[str]) -> tuple[PortMedia | None, tuple[str, dict] | None]:
+    """The media on the sticker input, on the port Sticker, and the handoff (`_handoff_lanes`) it got from
+    `sticker_state` (None without one, or for 3D media).
+
+    With 2D media and a `sticker_state`, the handoff is computed on every run and placed on the port Sticker,
+    appended to `state` when it is missing, else inherited by the stored one (`_inherit_handoff`).
+    Without a `sticker_state`, a missing port Sticker is appended at the default pose, and a stored one is kept.
+    3D media (SPLAT or MESH), which Pose handoff does not place, appends a `world` port Sticker when it is missing;
+    a stored `sky` port Sticker with 3D media is replaced in `state` by the `world` one under the same id, keeping
+    its Clip range, visibility and lock (its sky Lanes do not apply to a world Sticker)."""
+    if sticker is None:
+        return None, None
+    is_3d = is_3d_media(sticker)
+    parsed = load_sticker_state(sticker_state)
+    handoff = None if is_3d or parsed is None else _handoff_lanes(parsed, state["timeline"]["fps"])
+    index = next((i for i, item in enumerate(state["stickers"]) if item["source"]["kind"] == "port"), None)
+    if index is None:
+        if is_3d and parsed is not None:
+            warnings.append("sticker_state places only 2D Stickers; the 3D Sticker is placed in front of the origin to fit the view.")
+        state["stickers"].append(_world_port_sticker(state, sticker) if is_3d else _port_sticker(state, handoff))
+        index = len(state["stickers"]) - 1
+    elif handoff is not None:
+        state["stickers"][index] = _inherit_handoff(state, state["stickers"][index], *handoff)
+    elif is_3d and state["stickers"][index]["placement"] == "sky":
+        stored = state["stickers"][index]
+        state["stickers"][index] = {**_world_port_sticker(state, sticker, stored["id"]), **{key: stored[key] for key in ("clip", "visible", "locked", "animation") if key in stored}}
+    port = state["stickers"][index]
+    return PortMedia(port["id"], port["clip"], sticker, state["timeline"]["fps"]), handoff
+
+
+def _resolve_sources(state: dict, port: PortMedia | None, warnings: list[str]) -> SceneSources:
+    """Read every Sticker source into memory; the port Sticker's source holds the first frame of `port`, and
+    3D media has none (`_render_frames` makes it for each pass). A 3D file `file` Source is read as its SPLAT or MESH
+    into `contents`, for a `world` Sticker only. A hidden painting (`painting_visible`) is not drawn, its mask
+    included. A source that cannot be read adds to `warnings`, and its Sticker is not drawn."""
+    stickers, contents = {}, {}
+    port_image = None if port is None or port.is_3d else _port_rgba(port.first_frame)
+    for item in state["stickers"]:
+        source = item["source"]
+        if source["kind"] == "port":
+            if port_image is not None:
+                stickers[item["id"]] = StickerSource(port_image, item["crop"], item.get("z_index", 0), derive_vfov=True)
+            continue
+        if is_3d_file_source(source):
+            content, reason = (None, "a sky Sticker cannot show a 3D file") if item["placement"] == "sky" else _read_file_3d(source)
+            if content is None:
+                warnings.append(f"{_file_3d_error(source, reason)} Sticker {item['id']} is not drawn.")
+            else:
+                contents[item["id"]] = content
+            continue
+        rgba = load_source_rgba(source)
+        if rgba is None:
+            warnings.append(f"Could not read the source of Sticker {item['id']}; it is not drawn.")
+            continue
+        stickers[item["id"]] = StickerSource(rgba, item["crop"], item.get("z_index", 0))
+    return _painting_sources(state, stickers, contents)
+
+
+def _painting_sources(state: dict, stickers: dict, contents: dict | None = None) -> SceneSources:
+    """`SceneSources` of the Sticker sources `stickers`, the 3D files read for Stickers (`contents`), and the
+    painting of `state`, empty when it is hidden."""
+    contents = {} if contents is None else contents
+    if not state["painting_visible"]:
+        return SceneSources(stickers, empty_painting_state(), contents=contents)
+    return SceneSources(stickers, state["painting"], resolve_painting_layer_payload(state["painting_layer"]), contents)
+
+
+def _override_layers(upstream: PanoSceneValue, records: list[dict], warnings: list[str]) -> tuple[tuple, list[tuple]]:
+    """The layers of the Scene `upstream` with this state's overrides (`upstream` records, ADR 0030) applied, and
+    the ends of the Clip ranges the overrides set, as (Timeline frame of the layer, its `timeline.fps`); a port
+    Sticker's Clip range without a duration ends with its media at the Timeline fps (`upstream.rate`).
+
+    A record applies to the layer whose state has its `id`; with several such layers (a duplicated Studio), only to
+    the nearest downstream one, with a warning. A layer that no record changes is the same `SceneLayer`."""
+    ids = [layer.state["id"] for layer in upstream.layers]
+    counts = Counter(ids)
+    layers = list(upstream.layers)
+    ends = []
+    for record in records:
+        if record["layer"] not in counts:
+            continue
+        if counts[record["layer"]] > 1:
+            warnings.append(f"Scene id {record['layer']} is on {counts[record['layer']]} upstream Panorama Studio nodes; its overrides apply to the nearest one only.")
+        index = len(ids) - 1 - ids[::-1].index(record["layer"])
+        layers[index], layer_ends = _override_layer(layers[index], record, float(upstream.rate))
+        ends += layer_ends
+    return tuple(layers), ends
+
+
+def _override_layer(layer: SceneLayer, record: dict, rate: float) -> tuple[SceneLayer, list[tuple]]:
+    """`layer` with the override `record` applied (`apply_upstream_overrides`), its sources and port following the
+    applied state, and the ends of the Clip ranges the record set (`_override_layers`). Neither input is changed."""
+    state = apply_upstream_overrides(layer.state, record)
+    if state is layer.state:
+        return layer, []
+    fps = state["timeline"]["fps"]
+    stickers = {item["id"]: item for item in state["stickers"]}
+    # `crop` and `z_index` are drawn from the source; a deleted Sticker has none.
+    sources = {}
+    for sticker_id, source in layer.sources.stickers.items():
+        item = stickers.get(sticker_id)
+        if item is not None:
+            crop, z_index = item["crop"], item.get("z_index", 0)
+            sources[sticker_id] = source if (crop, z_index) == (source.crop, source.z_index) else replace(source, crop=crop, z_index=z_index)
+    # A deleted Sticker keeps no 3D file either.
+    contents = {sticker_id: content for sticker_id, content in layer.sources.contents.items() if sticker_id in stickers}
+    if state["painting_visible"] == layer.state["painting_visible"]:
+        sources = replace(layer.sources, stickers=sources, contents=contents)
+    else:
+        sources = _painting_sources(state, sources, contents)
+    port = layer.port
+    if port is not None and port.sticker_id not in stickers:
+        port = None
+    elif port is not None and stickers[port.sticker_id]["clip"] != port.clip:
+        # The media starts where the overridden Clip range puts it.
+        port = port.with_clip(stickers[port.sticker_id]["clip"])
+    overridden = {override["id"] for override in record["stickers"]
+                  if "clip" in override and override["id"] in stickers and stickers[override["id"]]["placement"] == override["placement"]}
+    clips = [stickers[sticker_id]["clip"] for sticker_id in overridden]
+    if "clip" in record["scene"]:
+        clips.append(state["scene"]["clip"])
+    ends = [(clip["start"] + clip["duration"], fps) for clip in clips if clip["duration"] is not None]
+    if port is not None and port.sticker_id in overridden and port.clip["duration"] is None:
+        # Without a duration, the port Sticker ends with media that has frames, as in `_decide_timeline`.
+        port_end = port.end(rate)
+        if port_end is not None:
+            ends.append((port_end, fps))
+    return replace(layer, state=state, sources=sources, port=port), ends
+
+
+def _timing_video(bg, port: PortMedia | None):
+    """The VIDEO that sets the Timeline fps and the output frames' times (ADR 0024): the opened background VIDEO,
+    else the port's VIDEO, else None. Either has `frame_rate`, `times`, and `time_base`."""
+    if isinstance(bg, OPENED_VIDEOS):
+        return bg
+    if port is not None and port.times is not None:
+        return port
+    return None
+
+
+def _timeline_rate(state: dict, timing) -> Fraction:
+    """The Timeline fps as a fraction: the rate of the VIDEO that sets the Timeline, or the recorded `timeline.fps`."""
+    return Fraction(state["timeline"]["fps"] if timing is None else timing.frame_rate).limit_denominator(1_000_000)
+
+
+def _output_times(given, rate: Fraction, length: int) -> list[Fraction]:
+    """Each output frame's time in seconds, which (a) evaluates and the `video` output saves: the `given` times (the
+    PTS of the VIDEO that sets the Timeline, or the upstream Scene's times), continuing at the Timeline fps `rate`
+    after them, or evenly spaced without any."""
+    if not given:
+        return [index / rate for index in range(length)]
+    times = list(given[:length])
+    return times + [times[-1] + index / rate for index in range(1, length - len(times) + 1)]
+
+
+def _timeline_frame(time, stored_fps: float, time_base) -> float:
+    """The Timeline frame of a state recorded at `stored_fps` at `time` seconds. PTS are rounded to the time base,
+    so a frame within half of it of a whole Timeline frame is that frame."""
+    frame = float(time * Fraction(stored_fps))
+    return float(round(frame)) if abs(frame - round(frame)) <= float(time_base) / 2 * stored_fps else frame
+
+
+def _layer_frames(state: dict, port: PortMedia | None, scene: SceneContent | None, times, fps: float, time_base) -> list[tuple]:
+    """Per output frame at `times` (seconds), the Timeline frame of `state` to evaluate, the frame of its port media
+    (`port.index_at`), and the item of its `scene` content (`batch_index`; None without `scene`). Times are read at
+    the state's recorded `timeline.fps`, so its Keyframes keep their seconds at any Timeline `fps`; the state is not
+    rebased."""
+    stored_fps = state["timeline"]["fps"]
+    tolerance = float(time_base) / 2 * stored_fps
+    clip = state["scene"]["clip"]
+    origin = clip["start"] - clip["in"]
+    frames = []
+    for time in times:
+        # A long Timeline stops at Cancel while it is decided.
+        comfy.model_management.throw_exception_if_processing_interrupted()
+        frame = _timeline_frame(time, stored_fps, time_base)
+        frames.append((
+            frame,
+            None if port is None else port.index_at(frame, fps, tolerance),
+            None if scene is None else batch_index(frame - origin, scene.count, fps, stored_fps),
+        ))
+    return frames
+
+
+def _bg_place(bg, clip: dict, stored_fps: float) -> PortMedia | None:
+    """The opened bg_media placed on the Timeline by its Clip range `clip` (`background.clip` of the state recorded at
+    `stored_fps`) as the port Sticker's media is placed (`PortMedia`), or None for the default Clip range, with which
+    its frames map as they did before the Clip range (`_bg_frames`)."""
+    if bg is None or clip == DEFAULT_CLIP:
+        return None
+    return PortMedia("background", clip, bg, stored_fps, video=None if isinstance(bg, torch.Tensor) else bg)
+
+
+def _bg_frames(bg, times, time_base, timing: bool, place: PortMedia | None, fps: float) -> list[int | None]:
+    """The bg_media frame to draw at each of `times`, or None. An IMAGE batch maps one to one to the output frames
+    and ends there; a single image shows throughout. A VIDEO that set the Timeline (`timing`) maps one to one too;
+    another (an upstream Scene set it) shows its last frame that starts at or before each time, within half the time
+    base of either, and nothing after its last frame has lasted one frame at its average rate.
+
+    With a `place` (`_bg_place`), each time shows the frame `place` shows at the Timeline frame of the state that
+    owns bg_media, at the Timeline `fps`, and nothing outside its Clip range."""
+    if bg is None:
+        return [None] * len(times)
+    if place is not None:
+        stored_fps = place.stored_fps
+        tolerance = float(time_base) / 2 * stored_fps
+        frames = [_timeline_frame(time, stored_fps, time_base) for time in times]
+        return [place.index_at(frame, fps, tolerance) if clip_active(place.clip, frame) else None for frame in frames]
+    if not isinstance(bg, OPENED_VIDEOS):
+        batch = int(bg.shape[0])
+        return [index if index < batch else (0 if batch == 1 else None) for index in range(len(times))]
+    if timing:
+        return [index if index < len(bg.times) else None for index in range(len(times))]
+    starts = [*bg.times, bg.times[-1] + 1 / bg.frame_rate]
+    tolerance = max(Fraction(time_base), Fraction(bg.time_base)) / 2
+    indices = [bisect.bisect_right(starts, time + tolerance) - 1 for time in times]
+    return [index if 0 <= index < len(bg.times) else None for index in indices]
+
+
+# A 3D file's animation when its state has none (ADR 0043): the first clip at speed 1.
+DEFAULT_ANIMATION = {"clip": None, "speed": 1.0}
+
+
+def _clip_of(animation, setting: dict | None):
+    """The clip (`Clip`) that the stored `animation` setting plays of the glTF `animation`: the one it names, else
+    the first."""
+    index = animation.clip_index((setting or DEFAULT_ANIMATION)["clip"])
+    return animation.clips[0 if index is None else index]
+
+
+def _animation_pose(animation, setting: dict | None, clip_frame: float, stored_fps: float) -> tuple | None:
+    """(clip index, seconds in the clip) of the glTF `animation` at `clip_frame` (the element's material time in
+    Timeline frames of a state at `stored_fps`), played as the stored `setting` says (`clip_time`); None without one."""
+    if animation is None or not animation.clips:
+        return None
+    setting = setting or DEFAULT_ANIMATION
+    clip = _clip_of(animation, setting)
+    return animation.clips.index(clip), clip_time(clip_frame / stored_fps, setting["speed"], clip.duration)
+
+
+def _animation_end(animation, owner: dict, stored_fps: float) -> float | None:
+    """Where an animated element (`owner`: a Sticker or `scene` of the state, at `stored_fps`) without a duration ends:
+    one cycle of its clip after its material starts, `start − in + ⌈duration ÷ speed × timeline.fps⌉`; None without
+    clips or for a clip of no duration."""
+    if animation is None or not animation.clips:
+        return None
+    setting = owner.get("animation") or DEFAULT_ANIMATION
+    duration = _clip_of(animation, setting).duration
+    if duration <= 0.0:
+        return None
+    clip = owner["clip"]
+    return clip["start"] - clip["in"] + math.ceil(duration / setting["speed"] * stored_fps)
+
+
+def _decide_timeline(state: dict, bg, port: PortMedia | None, scene: SceneContent | None = None, *,
+                     upstream: PanoSceneValue | None = None, overridden_ends=(), contents=None,
+                     inherited_bg: bool = False) -> tuple[Fraction, list[Fraction], Fraction, tuple]:
+    """(a) Timeline: the Timeline fps as a fraction, each output frame's time in seconds, the time base those times
+    are rounded to (0: exact), and per output frame the bg_media frame to draw and, for each layer (those of
+    `upstream`, then `state` with its `port` and `scene`), the Timeline frame to evaluate, its port media frame, and
+    its `scene` item (`_layer_frames`). A `scene` batch, like an IMAGE batch on the port, ends its Clip range without a duration.
+    The state's Camera, when it has one, shoots the frames and its Keyframes count for the length.
+
+    `bg` is the bg_media IMAGE batch, an opened VIDEO, or None; `inherited_bg` says it is the upstream Scene's
+    (ADR 0048: the node's own background, when connected, takes its place). Without `upstream`, the output frames follow the PTS
+    of the VIDEO that sets the Timeline fps: the background VIDEO, or else the sticker VIDEO. With `upstream` (a
+    Scene on the `scene` input, ADR 0029), they follow the upstream Scene's: its fps and times, continued at its fps
+    when this state is longer. The length is then the longer of the upstream's and this state's own, or the state's
+    `timeline.length` when it has one. Only this node's own `bg_media` counts for its own length; an upstream
+    background is already in the upstream's. Without the `timeline.length`, the Clip ranges this state overrides in
+    the upstream layers (`overridden_ends`, from `_override_layers`) count too; the others are already in the
+    upstream's length. `upstream` holds the layers with the overrides applied.
+
+    The own `bg_media` is placed by the state's `background.clip`, an upstream background by the Clip range of the
+    Studio it came from (`PanoSceneValue.bg_clip`); a Clip range other than the default ends the background where it
+    ends (`_bg_place`, `_bg_frames`), but the length still counts the media's own frames.
+
+    An animated 3D file (ADR 0043) without a duration, the `scene`, the port's 3D media, or a 3D file Sticker read into
+    `contents` (Sticker id -> its SPLAT or MESH), ends one cycle of its clip after its material starts
+    (`_animation_end`).
+    """
+    stored_fps = state["timeline"]["fps"]
+    if upstream is None:
+        timing = _timing_video(bg, port)
+        rate = _timeline_rate(state, timing)
+        given, time_base = ([], 0) if timing is None else (timing.times, timing.time_base)
+    else:
+        rate, given, time_base = upstream.rate, upstream.times, upstream.time_base
+    fps = float(rate)
+    # An upstream background does not set the length: the upstream Scene's length already counts it.
+    own_bg = None if inherited_bg else bg
+    video = isinstance(own_bg, OPENED_VIDEOS)
+    batch = 0 if own_bg is None or video else int(own_bg.shape[0])
+    bg_clip = state["background"]["clip"]
+    if own_bg is not None:
+        place = _bg_place(own_bg, bg_clip, stored_fps)
+    else:
+        place = None if bg is None or upstream.bg_clip is None else _bg_place(bg, *upstream.bg_clip)
+
+    def output_frames(frame):
+        return math.floor(frame * fps / stored_fps + 0.5)
+
+    clips = [state["scene"]["clip"], *(sticker["clip"] for sticker in state["stickers"])]
+    clip_ends = [clip["start"] + clip["duration"] for clip in clips if clip["duration"] is not None]
+    if port is not None and port.clip["duration"] is None:
+        # Without a duration, the port Sticker ends with media that has frames.
+        port_end = port.end(fps)
+        if port_end is not None:
+            clip_ends.append(port_end)
+    if batch == 1 and bg_clip["duration"] is not None:
+        # A single background image ends with its Clip range, as a Sticker's image does.
+        clip_ends.append(bg_clip["start"] + bg_clip["duration"])
+    scene_clip = state["scene"]["clip"]
+    if scene is not None and scene.count > 1 and scene_clip["duration"] is None:
+        clip_ends.append(scene_clip["start"] - scene_clip["in"] + scene.count * stored_fps / fps)
+    # One cycle of an animated 3D file's clip, as a VIDEO's media.
+    animated = [(state["scene"], None if scene is None else scene.animation)]
+    for sticker in state["stickers"]:
+        if sticker["source"]["kind"] == "port":
+            animated.append((sticker, None if port is None or not port.is_3d else mesh_animation(port.media)))
+        elif contents and sticker["id"] in contents:
+            animated.append((sticker, mesh_animation(contents[sticker["id"]])))
+    for owner, animation in animated:
+        end = None if owner["clip"]["duration"] is not None else _animation_end(animation, owner, stored_fps)
+        if end is not None:
+            clip_ends.append(end)
+    # The latest Keyframe over the Camera's Lanes.
+    last_key = None
+    if state["camera"] is not None:
+        last_key = max((state["camera"][name]["keyframes"][-1]["frame"] for name, _value in CAMERA_LANES if state["camera"][name]["keyframes"]), default=None)
+    if state["timeline"]["length"]:
+        length = max(1, output_frames(state["timeline"]["length"]))
+    else:
+        # The background media's own frames set the length whatever its Clip range: moving or trimming it keeps
+        # the length, and the frames it leaves show bg_color.
+        if video:
+            # A background VIDEO that does not set the Timeline lasts until its last frame ends.
+            length = len(own_bg.times) if upstream is None else max(1, math.floor(float(own_bg.times[-1] + 1 / own_bg.frame_rate) * fps + 0.5))
+        elif batch > 1:
+            length = batch
+        elif clip_ends:
+            length = max(1, output_frames(max(clip_ends)))
+        elif last_key is not None:
+            length = max(1, output_frames(last_key) + 1)
+        else:
+            length = 1
+        if upstream is not None:
+            length = max([length, len(upstream.frames), *(math.floor(end * fps / layer_fps + 0.5) for end, layer_fps in overridden_ends)])
+
+    times = _output_times(given, rate, length)
+    layers = [] if upstream is None else [(layer.state, layer.port, _scene_content(layer.scene)) for layer in upstream.layers]
+    layers.append((state, port, scene))
+    per_layer = [_layer_frames(layer_state, layer_port, content, times, fps, time_base) for layer_state, layer_port, content in layers]
+    frames = tuple(zip(_bg_frames(bg, times, time_base, upstream is None, place, fps), zip(*per_layer)))
+    return rate, times, time_base, frames
+
+
+def _port_source_at(active: bool, index: int | None, frames, template: StickerSource | None, current):
+    """The port Sticker's source showing frame `index` of `frames` (item `index` of 3D content), or None where it
+    is not drawn. `current` is the previous result, kept while the frame repeats so that it is not converted again."""
+    if not active or index is None:
+        return None
+    if current is not None and current.frame == index:
+        return current
+    if isinstance(frames, SceneContent):
+        return ContentSource(frames, index)
+    image = frames[index]
+    return None if image is None else replace(template, rgba=_port_rgba(image), frame=index)
+
+
+# Floats per output pixel that a frame keeps on the device at once beyond its sources: the rays and where they look,
+# the Sky's layers' samples with their footprints and filter weights, the background's samples, the World layer, and
+# the color, mask, and depth. The value is a measured peak with a margin: the measurement is in docs/legacy-baselines.md,
+# "デバイスのメモリの見積もり（`_render_memory`）".
+RENDER_FLOATS_PER_PIXEL = 32
+# A source on the device is float32 with the ripmap levels `_sample_filtered` makes, up to three times its size.
+DEVICE_SOURCE_FACTOR = 4
+
+
+def _render_memory(built: PanoSceneValue, bg, size: tuple[int, int]) -> int:
+    """The bytes a render pass of `built` at `size` (width, height) needs on the device, by `docs/runtime-resources.md`:
+    the per-pixel working set of a frame, and every source it uploads as float32 with its ripmap levels (one
+    background frame, the Sticker sources, the uploaded paint layers) or as given (the 3D media, the 3D files of
+    Stickers included)."""
+    sources = 0
+    if bg is not None:
+        frame = bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg[0]
+        sources += frame.shape[0] * frame.shape[1] * 3 * 4
+    media = 0
+    for layer in built.layers:
+        sources += sum(source.rgba.shape[0] * source.rgba.shape[1] * 4 * 4 for source in layer.sources.stickers.values())
+        sources += sum(array.size * 4 for array in _payload_arrays(layer.sources.painting_layer))
+        media += _media_bytes(layer.scene) + (_media_bytes(layer.port.media) if layer.port is not None and layer.port.is_3d else 0)
+        media += sum(nbytes(content) for content in layer.sources.contents.values())
+    return size[0] * size[1] * RENDER_FLOATS_PER_PIXEL * 4 + sources * DEVICE_SOURCE_FACTOR + media
+
+
+def _media_bytes(media) -> int:
+    """What 3D media takes on the device: its tensors, but for a DA3_GEOMETRY the meshes made from it
+    (`da3_device_bytes`)."""
+    return da3_device_bytes(media) if is_da3(media) else nbytes(media)
+
+
+def _payload_arrays(payload: dict | None) -> list:
+    """The rasters of a painting payload (`resolve_painting_layer_payload`)."""
+    if not payload:
+        return []
+    return [array for array in (payload.get("paint"), payload.get("mask"), *payload.get("groups", {}).values()) if array is not None]
+
+
+def _render_frames(built: PanoSceneValue, bg, capture, device, size: tuple[int, int]):
+    """(b) Render each output frame of the Scene `built` with the shared render function: each layer's state evaluated
+    at its Timeline frame, its port Sticker's source at the frame of its `port` and its `scene` item that (a) chose,
+    as one `RenderLayer` each. `capture` maps the evaluated state of the last layer (the node that shoots) to the
+    Camera value and the Projection to draw it with; the Projection's size is the same for every frame.
+    `bg` is the bg_media IMAGE, an opened VIDEO, or None; the port media (and its content when 3D), the 3D files of
+    `world` Stickers (`SceneSources.contents`, item 0 drawn at every frame), and the `scene` content are opened for
+    this pass, so nothing they put on `device` outlives it.
+    Yields the color (H, W, 3) and mask (H, W) of each frame on `device`; a frame that `render_frame` reused is
+    the same tensors as the previous one. Before the first frame, when `device` has less free memory than the pass
+    needs (`_render_memory` at the output `size`), ComfyUI frees that much, unloading models only as far as it takes."""
+    if not comfy.model_management.is_device_cpu(device):
+        required = _render_memory(built, bg, size)
+        if comfy.model_management.get_free_memory(device) < required:
+            comfy.model_management.free_memory(required, device)
+    bg_width = None
+    if bg is not None:
+        bg_width = (bg.first_frame if isinstance(bg, OPENED_VIDEOS) else bg).shape[-2]
+    opened = []
+    for layer in built.layers:
+        port = layer.port
+        port_frames = None if port is None else port.frames()
+        others = layer.sources.stickers if port is None else {key: value for key, value in layer.sources.stickers.items() if key != port.sticker_id}
+        world = {item["id"] for item in layer.state["stickers"] if item["placement"] == "world"}
+        files = {key: ContentSource(_scene_content(value), 0) for key, value in layer.sources.contents.items() if key in world}
+        if files:
+            others = {**others, **files}
+        # The 3D file Stickers with glTF clips, posed at each frame.
+        animated = {key: source for key, source in files.items() if source.content.animation is not None}
+        opened.append((port_frames, others, _scene_content(layer.scene), animated))
+    cache = {}
+    port_sources = [None] * len(built.layers)
+    for bg_index, entries in built.frames:
+        # Reading the `video` output renders in another node; Cancel stops it between frames.
+        comfy.model_management.throw_exception_if_processing_interrupted()
+        drawn = []
+        for index, (layer, (port_frames, others, content, animated), (frame, port_index, scene_index)) in enumerate(zip(built.layers, opened, entries)):
+            evaluated = evaluate_scene_state(layer.state, frame)
+            stored_fps = layer.state["timeline"]["fps"]
+            if animated:
+                items = {item["id"]: item for item in layer.state["stickers"]}
+                clip_frames = {item["id"]: item["clip_frame"] for item in evaluated["stickers"]}
+                posed = {**others, **{key: replace(source, pose=_animation_pose(source.content.animation, items[key].get("animation"), clip_frames[key], stored_fps))
+                                      for key, source in animated.items()}}
+            else:
+                posed = others
+            sources = layer.sources if posed is layer.sources.stickers else replace(layer.sources, stickers=posed)
+            port = layer.port
+            if port is not None:
+                item = next(item for item in evaluated["stickers"] if item["id"] == port.sticker_id)
+                port_sources[index] = _port_source_at(item["active"], port_index, port_frames, layer.sources.stickers.get(port.sticker_id), port_sources[index])
+                if isinstance(port_sources[index], ContentSource) and port_frames.animation is not None:
+                    setting = next(stored.get("animation") for stored in layer.state["stickers"] if stored["id"] == port.sticker_id)
+                    port_sources[index] = replace(port_sources[index], pose=_animation_pose(port_frames.animation, setting, item["clip_frame"], stored_fps))
+                sources = replace(sources, stickers=posed if port_sources[index] is None else {**posed, port.sticker_id: port_sources[index]})
+            scene_pose = None
+            if content is not None and content.animation is not None:
+                scene_pose = _animation_pose(content.animation, layer.state["scene"].get("animation"), evaluated["scene"]["clip_frame"], stored_fps)
+            drawn.append(RenderLayer(evaluated, sources, content, scene_index, scene_pose))
+        camera, projection = capture(drawn[-1].evaluated)
+        color, mask, _depth = render_frame(
+            drawn,
+            camera,
+            projection,
+            bg=None if bg_index is None else bg[bg_index],
+            bg_key=bg_index,
+            bg_color=built.bg_color,
+            device=device,
+            cache=cache,
+            bg_width=bg_width,
+        )
+        yield color, mask
+
+
+def _open_media(media, name: str):
+    """bg_media as `_decide_timeline` and `_render_frames` read it: a VIDEO opened by `open_video`, else as given."""
+    return open_video(media, name) if isinstance(media, Input.Video) else media
+
+
+def _bg_audio(bg, bg_clip: tuple | None, frames: int, rate: Fraction) -> dict | None:
+    """The audio of the opened background VIDEO `bg` under an output of `frames` at the Timeline fps `rate`, or None
+    without one: from the start of its trim window, or placed by its Clip range (`PanoSceneValue.bg_clip`) other
+    than the default as its frames are, silent outside the Clip range and outside the media."""
+    if not isinstance(bg, OPENED_VIDEOS):
+        return None
+    if bg_clip is None or bg_clip[0] == DEFAULT_CLIP:
+        return bg.audio(frames / float(rate))
+    clip, stored_fps = bg_clip
+    seconds, stored_fps = frames / rate, Fraction(stored_fps)
+    start = clip["start"] / stored_fps
+    end = seconds if clip["duration"] is None else min(seconds, (clip["start"] + clip["duration"]) / stored_fps)
+    origin = (clip["start"] - clip["in"]) / stored_fps
+    audio = bg.audio(float(end - origin)) if end > start else None
+    if audio is None:
+        return None
+    sample_rate = audio["sample_rate"]
+    waveform = audio["waveform"]
+    placed = waveform.new_zeros((*waveform.shape[:-1], int(seconds * sample_rate)))
+    # The media's sample i plays at output sample i + shift.
+    shift = math.floor(origin * sample_rate + Fraction(1, 2))
+    first = max(int(start * sample_rate), shift)
+    last = min(int(end * sample_rate), shift + waveform.shape[-1], placed.shape[-1])
+    if last > first:
+        placed[..., first:last] = waveform[..., first - shift:last - shift]
+    return {"waveform": placed, "sample_rate": sample_rate}
+
+
+def _render_outputs(built: PanoSceneValue, bg, capture, size: tuple[int, int]):
+    """(c) The first output frame's IMAGE and MASK of the Scene `built`, rendered now from the opened `bg`, and the
+    `video` of every frame, rendered when it is read with `bg_media` and the `scene` content opened again for
+    each pass."""
+    color, mask = next(_render_frames(built, bg, capture, comfy.model_management.get_torch_device(), size))
+    audio = _bg_audio(bg, built.bg_clip, len(built.frames), built.rate)
+
+    def render(device):
+        return _render_frames(built, _open_media(built.bg_media, "bg_media"), capture, device, size)
+
+    video = SceneVideo(render, *size, built.rate, list(built.times), built.time_base, audio)
+    return color[None].to("cpu", copy=True), mask[None].to("cpu", copy=True), video
+
+
+def _bg_media_ui(bg_media, bg, fps: float) -> dict:
+    """The `ui` of `bg_media`: its first frame, and an MP4 when it has two or more frames. `bg` is the opened VIDEO;
+    an IMAGE batch plays at `fps`. The MP4 is made once per input and reused while the input stays the same."""
+    contract = _get_preview_ui_contract("stickers_bg")
+    if isinstance(bg_media, Input.Video):
+        return _video_ui(bg_media, bg, float(bg.frame_rate), len(bg.times), contract)
+    ui_ret = _init_ui_preview(bg_media, key=contract["image"])
+    if bg_media.shape[0] > 1:
+        _merge_ui_payload(ui_ret, _batch_mp4_ui(bg_media, "bg_media", fps, contract))
+    return ui_ret
+
+
+def _batch_mp4_ui(images: torch.Tensor, name: str, fps: float, contract: dict) -> dict:
+    """The `ui` of the editor MP4 of an IMAGE batch, evenly spaced at `fps`, made once per batch and fps."""
+    batch = MaterializedVideo(Types.VideoComponents(images=images, frame_rate=Fraction(round(fps * 1000), 1000)), name)
+    cache_key = ("editor_mp4", _tensor_cache_identity(images), float(fps))
+    return _editor_mp4_ui(cache_key, lambda: encode_editor_mp4(batch, loop_progress()), fps, len(batch.times), contract)
+
+
+def _editor_frames_ui(images: torch.Tensor, fps: float, contract: dict) -> dict:
+    """The `ui` of an RGBA IMAGE batch as one PNG per image, saved once per batch and reused while the files are
+    there. Each image is a file of its own, so a long batch costs a PNG per image in temp."""
+    cache_key = ("editor_frames", _tensor_cache_identity(images))
+    paths = NODE_RUNTIME.cache.get("video", cache_key)
+    if paths is None or not all(path.exists() for path in paths):
+        paths = save_editor_frames(images, loop_progress())
+        NODE_RUNTIME.cache.put("video", cache_key, paths)
+    return make_frames_ui_payload(paths, fps, frames_key=contract["frames"], meta_key=contract["meta"])
+
+
+def _port_media_ui(port: PortMedia, fps: float, time_base) -> dict:
+    """The `ui` of the sticker media: its first frame, and an MP4 for the editor to follow the Timeline with when it
+    has two or more frames (a one-frame VIDEO has the meta only), made like the bg_media one. An RGBA IMAGE batch is PNGs instead (`_editor_frames_ui`),
+    since an MP4 drops the alpha that the `video` output keeps. The meta tells how a Timeline frame maps to the MP4 as
+    `PortMedia.index_at` maps it: `kind`, `duration` (where the media ends), and for a VIDEO `pts_tolerance`, the
+    seconds before a PTS that count as its frame (half the time base of the media or `time_base`, that of the
+    Timeline's times). 3D media is its editor files instead (`_scene_ui`)."""
+    if port.is_3d:
+        return _scene_ui(port.media, "pano_sticker_files", "pano_sticker_meta", fps=fps)
+    contract = _get_preview_ui_contract("stickers_input")
+    ui_ret = _init_ui_preview(port.first_frame[None], key=contract["image"])
+    video = port.media
+    if port.times is None:
+        if video.shape[0] < 2:
+            return ui_ret
+        payload = _editor_frames_ui(video, fps, contract) if video.shape[-1] == 4 else _batch_mp4_ui(video, "sticker", fps, contract)
+        payload[contract["meta"]][0]["kind"] = "IMAGE"
+    else:
+        if len(port.times) < 2:
+            # No MP4 for one frame, but the meta tells the editor where the media ends (`PortMedia.end`).
+            end = float(port.times[-1] + 1 / port.frame_rate)
+            meta = {"kind": "VIDEO", "fps": float(port.frame_rate), "frames": 1, "duration": end, "has_audio": False}
+            return {**ui_ret, contract["meta"]: [meta]}
+        # The VIDEO is opened again only to make the MP4; PortMedia does not keep it open.
+        cache_key = ("editor_mp4", _video_cache_identity(video, port.streamed))
+        payload = _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, open_video(video, "sticker")), float(port.frame_rate), len(port.times), contract)
+        time_base = max(port.time_base, time_base)
+        payload[contract["meta"]][0].update(kind="VIDEO", duration=float(port.times[-1] + 1 / port.frame_rate), pts_tolerance=float(time_base) / 2)
+    return _merge_ui_payload(ui_ret, payload)
+
+
+SCENE_FILE_TYPES = {"ply": "application/ply", "glb": "model/gltf-binary", "f32": "application/octet-stream"}
+
+
+def _editor_paths(paths: list) -> list:
+    """Every file of the items' editor files: an item is None, a path, or a list of paths (DA3_GEOMETRY multiview)."""
+    return [view for path in paths if path is not None for view in (path if isinstance(path, list) else [path])]
+
+
+def _scene_ui(scene, files_key: str = "pano_scene_files", meta_key: str = "pano_scene_meta", *, in_execution: bool = True, fps: float | None = None) -> dict:
+    """The `ui` of the `scene` input, or of 3D media on the `sticker` input under the given keys: a temp file per
+    item for the editor (`write_editor_files`; a list of files for a DA3_GEOMETRY multiview), None for an empty item,
+    and the kind it loads with, for a mesh,
+    whether it is `unlit`. The files are written once per input and reused while they are there, keyed by the input
+    and the tensors it is read from (a MOGE_GEOMETRY is a dict), so the same SPLAT or MESH on both inputs, or read
+    for the editor's route, shares them; concurrent callers write them once. Outside an execution (the route) the
+    writing reports no progress and checks no Cancel."""
+    if is_da3(scene):
+        cache_key = da3_key(scene)
+    elif isinstance(scene, dict):
+        cache_key = tuple((key, _tensor_cache_identity(scene[key])) for key in ("points", "mask", "image", "intrinsics") if key in scene)
+    else:
+        positions = scene.positions if isinstance(scene, Types.SPLAT) else scene.vertices
+        cache_key = (NODE_RUNTIME.object_identity(scene), _tensor_cache_identity(positions))
+    saved = NODE_RUNTIME.cache.get_or_put(
+        "scene_files", cache_key,
+        lambda: write_editor_files(scene, loop_progress() if in_execution else None),
+        valid=lambda saved: all(path.exists() for path in _editor_paths(saved[1])),
+    )
+    kind, paths = saved
+
+    def entry(path):
+        return entry_from_path(path, media_type=SCENE_FILE_TYPES[path.suffix[1:]])
+
+    # A DA3_GEOMETRY multiview item is the list of its views' files.
+    files = [None if path is None else [entry(view) for view in path] if isinstance(path, list) else entry(path) for path in paths]
+    meta = {"kind": kind} if kind == "splat" else {"kind": kind, "unlit": is_unlit(scene)}
+    if kind == "depth_grid":
+        meta.update(_depth_grid_meta(scene, fps))
+    animation = _animation_meta(scene)
+    if animation is not None:
+        meta["animation"] = animation
+    return {files_key: files, meta_key: [meta]}
+
+
+# The media types of the original glTF the editor plays an animation from.
+GLTF_TYPES = {".glb": "model/gltf-binary", ".gltf": "model/gltf+json"}
+
+
+def _animation_meta(media) -> dict | None:
+    """What the editor plays the glTF clips of `media` with (docs/studio-node.md, "glTF のアニメーションのエディタ用ファイル"):
+    the original file's `ui` entry, the clips in the file's order, and the content's box (`content_box`: the first
+    clip's pose at time 0), `{"source", "clips": [{"name", "duration"}], "box": {"min", "max"}}`;
+    None without clips, or when the browser cannot load the original whole (outside ComfyUI's folders, or a GLTF with
+    an external buffer, which also logs a warning). The editor then draws the still GLB."""
+    animation = mesh_animation(media)
+    if animation is None or not animation.clips:
+        return None
+    if not media.self_contained:
+        _log.warning("Panorama Stickers: %s keeps its data in another file, so the editor shows it still; the output plays its animation.",
+                     Path(media.source).name if media.source else "a glTF")
+        return None
+    entry = None if media.source is None else _view_entry(media.source, GLTF_TYPES.get(Path(media.source).suffix.lower(), "model/gltf-binary"))
+    if entry is None:
+        return None
+    return {"source": entry, "clips": [{"name": clip.name, "duration": clip.duration} for clip in animation.clips], "box": content_box(media)}
+
+
+def _view_entry(path, media_type: str) -> dict | None:
+    """The `ui` entry of a file in ComfyUI's input, output, or temp directory, which `/view` serves, or None for a
+    file elsewhere."""
+    target = Path(path).resolve()
+    for storage, directory in (("input", folder_paths.get_input_directory), ("output", folder_paths.get_output_directory), ("temp", folder_paths.get_temp_directory)):
+        try:
+            rel = target.relative_to(Path(directory()).resolve())
+        except ValueError:
+            continue
+        subfolder = rel.parent.as_posix()
+        return {"filename": rel.name, "subfolder": "" if subfolder == "." else subfolder, "type": storage, "storage": storage, "format": media_type}
+    return None
+
+
+
+def _depth_grid_meta(geometry: dict, fps: float) -> dict:
+    """The meta of the depth files of a DA3_GEOMETRY mono or a MOGE_GEOMETRY perspective sequence (docs/studio-node.md,
+    "`DA3_GEOMETRY` mono のエディタ用ファイル"): the grid's size, the files' layout, each frame's K of pixel numbers
+    (row order, `depth_grid_intrinsics`), and the color proxy MP4 of the frames' `image` at the Timeline `fps` (frame
+    i at i / fps), made as an IMAGE batch's."""
+    if fps is None:
+        raise ValueError("_scene_ui needs the Timeline fps for a depth grid: its color proxy plays at that fps.")
+    # The size of the depth files: the points' (MoGe) or the depth's (DA3), not the image's.
+    count, height, width = (geometry["points"] if is_moge(geometry) else geometry["depth"]).shape[:3]
+    proxy = _batch_mp4_ui(geometry["image"], "scene", fps, {"video": "video", "meta": "meta"})
+    return {
+        "width": int(width), "height": int(height),
+        "depth": {"dtype": "float32", "byte_order": "little", "bytes": int(width * height * 4)},
+        "intrinsics": depth_grid_intrinsics(geometry),
+        "video": proxy["video"][0], "video_fps": float(fps), "frames": int(count),
+    }
+
+
+def _build_scene(state_json: str, background, world, scene, sticker, sticker_state, background_color, background_range, warnings: list[str]):
+    """The Scene that Studio builds from its inputs, as the PANO_SCENE value: the state with the port Sticker
+    appended when missing, its sources, the Timeline (counting the state's Camera), and the media `ui` for the
+    editors. Also returns the opened background and the port Sticker the state stored before (None without one).
+    A source that cannot be read adds to `warnings`.
+
+    `world` is the place's base 3D, drawn as this layer's `scene` content. A Scene on the `scene` input (ADR 0029,
+    only a PANO_SCENE: ADR 0048) puts its layers under this state's, with the state's overrides of them (`upstream`,
+    ADR 0030) applied (`_override_layers`), and sets the Timeline fps; its base 3D and `world` are drawn together.
+    The editor `ui` shows the upstream layers as they came, without these overrides.
+    The node's own `background`, when connected, is used with its `background_range` and `background_color`, in
+    place of the upstream Scene's (ADR 0048); else the upstream background, when it has one, with its range and
+    color, is passed on."""
+    if scene is not None and not isinstance(scene, PanoSceneValue):
+        raise TypeError("Panorama Studio: scene takes only the scene output (PANO_SCENE) of another Panorama Studio; "
+                        f"connect 3D to world instead, not {type(scene).__name__}.")
+    upstream = scene
+    world = _read_scene_file(world, "world")
+    sticker = _read_scene_file(sticker, "sticker")
+    _check_da3_inputs(world, sticker)
+    _check_moge_inputs(world, sticker)
+    state = load_scene_state(state_json)
+    stored_port = next((item for item in state["stickers"] if item["source"]["kind"] == "port"), None)
+    port, handoff = _port_media(state, sticker, sticker_state, warnings)
+    sources = _resolve_sources(state, port, warnings)
+    inherited_bg = background is None and upstream is not None and upstream.bg_media is not None
+    if inherited_bg:
+        bg_media, coverage, bg_rgb = upstream.bg_media, upstream.coverage, upstream.bg_color
+    else:
+        bg_media, coverage = background, normalize_coverage(background_range)
+        bg_rgb = tuple(_hex_color_to_rgb01(PanoramaStickersNode._normalize_hex_color(background_color)).tolist())
+    bg = _open_media(bg_media, "background")
+    # The upstream with this state's overrides applied (ADR 0030), which is drawn and passed on.
+    applied, overridden_ends = upstream, []
+    if upstream is not None:
+        layers, overridden_ends = _override_layers(upstream, state["upstream"], warnings)
+        applied = replace(upstream, layers=layers)
+    _animation_warnings(state, world, port, sources.contents, warnings)
+    rate, times, time_base, frames = _decide_timeline(state, bg, port, _scene_content(world), upstream=applied, overridden_ends=overridden_ends,
+                                                      contents=sources.contents, inherited_bg=inherited_bg)
+    fps = float(rate)
+    # The `ui` shows the input media in the editor and on the node, under the legacy node's keys.
+    layer_ui = {}
+    if world is not None:
+        _merge_ui_payload(layer_ui, _scene_ui(world, fps=fps))
+    if port is not None:
+        _merge_ui_payload(layer_ui, _port_media_ui(port, fps, time_base))
+    if inherited_bg:
+        bg_ui = upstream.bg_ui
+    else:
+        bg_ui = {} if bg_media is None else _bg_media_ui(bg_media, bg, fps)
+    media_ui = {**layer_ui}
+    if handoff is not None:
+        # What sticker_state hands to the port Sticker on this run, for the editor to show apart from the overrides.
+        media_ui["pano_sticker_handoff"] = [{"placement": handoff[0], "lanes": handoff[1], "fps": state["timeline"]["fps"]}]
+    if upstream is None:
+        _merge_ui_payload(media_ui, bg_ui)
+        if _timing_video(bg, port) is not None:
+            # The editor rebases the state to this fps and does not let it be edited (ADR 0024).
+            media_ui["pano_timeline_fps"] = [fps]
+    else:
+        _merge_ui_payload(media_ui, _upstream_ui(upstream, bg_ui if inherited_bg else None))
+        if not inherited_bg:
+            _merge_ui_payload(media_ui, bg_ui)
+        # The upstream Scene sets the Timeline fps; the editor shows its length too.
+        media_ui["pano_timeline_fps"] = [fps]
+        media_ui["pano_timeline_frames"] = [len(frames)]
+    layer = SceneLayer(state, sources, port, world, layer_ui)
+    layers = (layer,) if upstream is None else (*applied.layers, layer)
+    if inherited_bg:
+        bg_clip = upstream.bg_clip
+    else:
+        bg_clip = None if bg_media is None else (state["background"]["clip"], state["timeline"]["fps"])
+    built = PanoSceneValue(layers, bg_media, coverage, bg_rgb, rate, tuple(times), time_base, frames, bg_ui, media_ui, bg_clip)
+    return built, bg, stored_port
+
+
+def _animation_warnings(state: dict, world, port: PortMedia | None, contents: dict, warnings: list[str]):
+    """Say which animated 3D files are asked for a clip they do not have; they play their first clip."""
+    owners = [("the world input", state["scene"], world)]
+    for item in state["stickers"]:
+        media = port.media if item["source"]["kind"] == "port" and port is not None and port.is_3d else contents.get(item["id"])
+        owners.append((f"Sticker {item['id']}", item, media))
+    for name, owner, media in owners:
+        animation = mesh_animation(media)
+        clip = (owner.get("animation") or DEFAULT_ANIMATION)["clip"]
+        if animation is not None and animation.clips and animation.clip_index(clip) is None:
+            warnings.append(f"The 3D file of {name} has no clip named {clip!r}; it plays its first clip, {animation.clips[0].name!r}.")
+
+
+def _upstream_ui(upstream: PanoSceneValue, bg_ui: dict | None) -> dict:
+    """The `ui` that shows the layers of the Scene on the `scene` input in the editor, apart from the node's own
+    media: `pano_upstream_layers` with each layer's state (with its Scene `id`, ADR 0030) and media `ui` from the
+    farthest upstream, its output frame count (`pano_upstream_frames`, which the editor's Auto length counts),
+    its coverage and color (`pano_upstream_coverage`, `pano_upstream_bg_color`, given with or without a background:
+    the Preview, which has none of its own, draws with them), and the upstream background (`bg_ui`, None when it has
+    none) under `pano_upstream_` keys with its Clip range (`pano_upstream_bg_clip`: the `background.clip` of the
+    Studio it came from, with that state's `timeline.fps`)."""
+    ui = {
+        "pano_upstream_layers": [{"state": layer.state, "ui": layer.media_ui} for layer in upstream.layers],
+        "pano_upstream_frames": [len(upstream.frames)],
+        "pano_upstream_coverage": [upstream.coverage],
+        "pano_upstream_bg_color": [list(upstream.bg_color)],
+    }
+    if bg_ui is not None:
+        ui.update({key.replace("pano_", "pano_upstream_", 1): value for key, value in bg_ui.items()})
+        if upstream.bg_clip is not None:
+            ui["pano_upstream_bg_clip"] = [{"clip": upstream.bg_clip[0], "fps": upstream.bg_clip[1]}]
+    return ui
+
+
+def _scene_output(built: PanoSceneValue) -> PanoSceneValue:
+    """The `scene` output of Studio: `built` with its own layer's state without the Camera (ADR 0029) and without
+    its overrides of the upstream layers (`upstream`), which the layers before it already have applied: downstream
+    receives the applied form (ADR 0030). The state keeps its `id`, which downstream keys its own overrides to."""
+    layer = built.layers[-1]
+    return replace(built, layers=(*built.layers[:-1], replace(layer, state={**layer.state, "camera": None, "upstream": []})))
+
+
+def _port_pose_ui(state: dict, port: PortMedia | None, stored_port: dict | None) -> dict:
+    """The `ui` with the pose the port Sticker was added at, for the editor to add it to the state the same way:
+    with the Keyframes of a Camera that moved (Pose handoff), or the transform of a 3D one, `replace` when it
+    replaced a stored port Sticker of the other placement. Empty when the state already had the port Sticker in
+    the placement it is drawn in (an inherited handoff is in `pano_sticker_handoff`)."""
+    if port is None:
+        return {}
+    added = next(item for item in state["stickers"] if item["id"] == port.sticker_id)
+    if stored_port is not None and stored_port["placement"] == added["placement"]:
+        return {}
+    if added["placement"] == "world":
+        pose = {"placement": "world", **{name: added[name]["value"] for name in ("position", "rotation", "scale")}}
+        if not port.is_3d:
+            pose["keyframes"] = {name: added[name]["keyframes"] for name in ("position", "rotation", "scale")}
+    else:
+        pose = {
+            **added["direction"]["value"],
+            "roll_deg": added["roll"]["value"],
+            "hFOV_deg": added["size"]["value"]["hFOV_deg"],
+            "keyframes": {name: added[name]["keyframes"] for name in ("direction", "roll", "size")},
+        }
+    if stored_port is not None:
+        pose["replace"] = True
+    return {"pano_sticker_input_pose": [pose]}
+
+
+def _camera_sticker_state(state: dict, width: int, height: int) -> str:
+    """`sticker_state` v2: each Lane of the state's Camera as its Keyframes at the fps the state records them at
+    (not rebased to the Timeline fps, which would move them by up to half a frame), or its value as one Keyframe."""
+    camera = state["camera"]
+    lanes = {
+        name: camera[name]["keyframes"] or [{"frame": 0, "value": camera[name]["value"], "easing": list(DEFAULT_EASING)}]
+        for name, _value in CAMERA_LANES
+    }
+    payload = {"kind": STICKER_STATE_KIND, "version": 2, "fps": state["timeline"]["fps"], "camera": lanes, "source_aspect": width / height}
+    return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+
+
+# The longest side of Panorama Studio's output (ADR 0048): 16 MP at 4 : 1 is 8192 x 2048.
+STUDIO_MAX_OUTPUT_SIDE = 8192
+
+
+def _to_multiple(value: float, multiple: int) -> int:
+    """`value` rounded to a multiple of `multiple` (Python's round, as ComfyUI's Resolution Selector), at least one."""
+    return max(multiple, round(value / multiple) * multiple)
+
+
+def _studio_output_size(state: dict, megapixels: float, multiple: int, warnings: list[str]) -> tuple[int, int, tuple | None]:
+    """The Studio output's size (ADR 0048; docs/studio-node.md "出力の大きさ"): `megapixels` x 1024 x 1024 pixels in
+    sides that are multiples of `multiple`, by the state's Camera. A Panorama (`erp`) Camera keeps 2 : 1 (an
+    `erp_range` of 180: 1 : 1) exactly: the height is rounded first and the width is that times the ratio. A Frame
+    (`perspective`) Camera is `aspect` : 1 with each side rounded, as the Resolution Selector does. The FOV, the lens
+    curve and the Keyframes do not count. A longest side past STUDIO_MAX_OUTPUT_SIDE is brought to the largest
+    multiple under it, keeping the ratio, with a warning. web_src/pano_studio_status.js `studioOutputSize` gives the
+    same (tests/fixtures/studio_output_size.json). Returns the width, the height, and the size before that reduction
+    (None when it was not reduced)."""
+    camera = state["camera"]
+    total = megapixels * 1024 * 1024
+    if camera["projection"] == "erp":
+        ratio = 1 if camera["erp_range"] == 180 else 2
+        height = _to_multiple(math.sqrt(total / ratio), multiple)
+        size = (height * ratio, height)
+        if height * ratio <= STUDIO_MAX_OUTPUT_SIDE:
+            return *size, None
+        reduced_height = max(multiple, STUDIO_MAX_OUTPUT_SIDE // (ratio * multiple) * multiple)
+        reduced = (reduced_height * ratio, reduced_height)
+    else:
+        aspect = camera["aspect"]
+        scale = math.sqrt(total / aspect)
+        size = (_to_multiple(aspect * scale, multiple), _to_multiple(scale, multiple))
+        if max(size) <= STUDIO_MAX_OUTPUT_SIDE:
+            return *size, None
+        # The longest side at the cap (the largest multiple under it), the other at the same ratio.
+        longest = STUDIO_MAX_OUTPUT_SIDE // multiple * multiple
+        fit = STUDIO_MAX_OUTPUT_SIDE / max(aspect * scale, scale)
+        reduced = (longest, _to_multiple(scale * fit, multiple)) if aspect >= 1 else (_to_multiple(aspect * scale * fit, multiple), longest)
+    warnings.append(f"The output would be {size[0]}x{size[1]}; it is reduced to {reduced[0]}x{reduced[1]} "
+                    f"(the longest side is at most {STUDIO_MAX_OUTPUT_SIDE}).")
+    return *reduced, size
+
+
+def _key_number(value) -> str:
+    """A widget number as JS writes it (String(Number(value))): a whole float without ".0"."""
+    number = float(value)
+    return str(int(number)) if number.is_integer() else repr(number)
+
+
+def _studio_run_key(state_json: str, megapixels, multiple, background_range: str, background_color: str) -> str:
+    """The key of the inputs a Studio run's size and output came from: FNV-1a (32 bit) over the code points of the
+    five values joined by NUL, as `studioRunKey` (web_src/pano_studio_status.js) makes it, so that the node surface
+    shows the run's size and output only while they are unchanged."""
+    value = 0x811C9DC5
+    for char in f"{state_json}\0{_key_number(megapixels)}\0{_key_number(multiple)}\0{background_range}\0{background_color}":
+        value = ((value ^ ord(char)) * 0x01000193) & 0xFFFFFFFF
+    return f"{value:08x}"
+
+
+class PanoramaStudioNode(io.ComfyNode):
+    """Builds the Scene and shoots it (ADR 0029) through the state's Camera, which is always there (ADR 0048): an ERP
+    from its position and rotation (Panorama, `erp`), or its image (Frame, `perspective`)."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="PanoramaStudio",
+            display_name="Panorama Studio",
+            category="Panorama Suite",
+            # By role (ADR 0048): the Scene it carries on, then from the far background to the things placed.
+            inputs=[
+                PanoScene.Input("scene", optional=True),
+                io.MultiType.Input(io.Image.Input("background"), types=[io.Video], optional=True),
+                io.MultiType.Input("world", types=[io.Splat, io.Mesh, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry, DA3Geometry], optional=True),
+                io.MultiType.Input(io.Image.Input("sticker"), types=[io.Video, io.Mesh, io.Splat, *MESH_FILE_TYPES, *SPLAT_FILE_TYPES, MoGeGeometry, DA3Geometry], optional=True),
+                io.String.Input("sticker_state", default="", multiline=False, dynamic_prompts=False, optional=True, force_input=True),
+                io.Color.Input("background_color", default="#00ff00"),
+                io.Combo.Input("background_range", options=["360", "180"], default="360"),
+                io.Float.Input("megapixels", default=2.0, min=0.1, max=16.0, step=0.1),
+                io.Int.Input("multiple", default=8, min=8, max=128, step=4, advanced=True),
+                io.String.Input("state_json", default="", multiline=True, dynamic_prompts=False, advanced=True),
+            ],
+            # Mirroring the inputs, with `scene` on top so that the links between Studios run straight.
+            outputs=[
+                PanoScene.Output("scene"),
+                io.Image.Output("first_frame"),
+                io.Mask.Output("first_frame_mask"),
+                io.Video.Output("video"),
+                io.String.Output("sticker_state"),
+            ],
+            # An output node runs on every queue, so the editor receives the media in the `ui` even
+            # when nothing downstream consumes the outputs.
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, background_color="#00ff00", background_range="360", megapixels=2.0, multiple=8, state_json="",
+                scene=None, background=None, world=None, sticker=None, sticker_state=""):
+        warnings = []
+        built, bg, stored_port = _build_scene(state_json, background, world, scene, sticker, sticker_state, background_color, background_range, warnings)
+        state = built.layers[-1].state
+        camera = state["camera"]
+        width, height, reduced_from = _studio_output_size(state, megapixels, multiple, warnings)
+        # The Camera shoots whether it is shown or hidden (ADR 0048); `built.coverage` is the background's range.
+        if camera["projection"] == "erp":
+            projection = Projection.erp(width, height, camera["erp_range"], built.coverage)
+
+            def capture(evaluated):
+                return evaluated["camera"], projection
+        else:
+            def capture(evaluated):
+                return evaluated["camera"], Projection.perspective(width, height, evaluated["camera"]["hFOV_deg"], built.coverage, evaluated["camera"]["curve"])
+
+        image, mask, video = _render_outputs(built, bg, capture, (width, height))
+        # Only a Frame Camera hands its pose to a Sticker (Pose handoff).
+        handoff = _camera_sticker_state(state, width, height) if camera["projection"] == "perspective" else ""
+        ui_ret = {**built.media_ui, **_port_pose_ui(state, built.layers[-1].port, stored_port)}
+        # The size the run gave, which media and an upstream Scene can make differ from what the surface works out.
+        ui_ret["pano_output_size"] = [{"width": width, "height": height, "capped": reduced_from is not None,
+                                       "reduced_from": None if reduced_from is None else list(reduced_from),
+                                       "key": _studio_run_key(state_json, megapixels, multiple, background_range, background_color)}]
+        _flush_warnings(ui_ret, "pano_sticker_warnings", warnings)
+        # The `scene` output is the World that is shot, without the Camera (ADR 0029).
+        return io.NodeOutput(_scene_output(built), image, mask, video, handoff, ui=ui_ret)
+
+
+CUTOUT_MAX_OUTPUT_SIDE = 4096
+
+
 class PanoramaCutoutNode(io.ComfyNode):
-    MAX_OUTPUT_SIDE = 4096
     DEFAULT_LONG_SIDE = 1024
 
     @classmethod
@@ -1024,7 +2319,7 @@ class PanoramaCutoutNode(io.ComfyNode):
             hfov_deg=hfov_val,
             vfov_deg=vfov_val,
             long_side=cls.DEFAULT_LONG_SIDE,
-            max_side=cls.MAX_OUTPUT_SIDE,
+            max_side=CUTOUT_MAX_OUTPUT_SIDE,
         )
 
     @staticmethod
@@ -1142,7 +2437,7 @@ class PanoramaCutoutNode(io.ComfyNode):
         vfov = float(np.clip(finite_float(shot.get("vFOV_deg", 60.0), 60.0), 1.0, 179.0))
         roll = finite_float(shot.get("roll_deg", 0.0), 0.0)
         ow, oh = calculate_dimensions_from_megapixels(
-            output_megapixels, hfov, vfov, max_side=cls.MAX_OUTPUT_SIDE
+            output_megapixels, hfov, vfov, max_side=CUTOUT_MAX_OUTPUT_SIDE
         )
 
         sticker_state_json = _build_sticker_state_json(shot, ow, oh)
@@ -1153,7 +2448,7 @@ class PanoramaCutoutNode(io.ComfyNode):
             source_identity = _tensor_cache_identity(erp_image)
             cutout_render_signature = (
                 source_identity,
-                _hash_text(state_json),
+                hashlib.sha1(str(state_json or "").encode("utf-8")).hexdigest(),
                 int(coverage_value),
                 int(ow),
                 int(oh),
@@ -1193,13 +2488,8 @@ class PanoramaCutoutNode(io.ComfyNode):
                 overlay_cutout = _sample_overlay_rgba_from_sampling_map(overlay_rgba, sampling_map)
                 for index in range(batch_frames):
                     out_batch[index] = alpha_composite_over_rgb(out_batch[index], overlay_cutout)
-            selected_mask = overlay_mask_bw if isinstance(overlay_mask_bw, np.ndarray) else (
-                painting_payload.get("mask") if isinstance(painting_payload, dict) else None
-            )
-            if isinstance(selected_mask, np.ndarray):
-                mask_bw = sample_cutout_from_sampling_map(selected_mask, sampling_map)
-            else:
-                mask_bw = np.zeros((oh, ow), dtype=np.float32)
+            # The mask is the uploaded one as float (`_build_overlay_erp_rgba_and_mask`), else the state's strokes drawn.
+            mask_bw = sample_cutout_from_sampling_map(overlay_mask_bw, sampling_map)
             encode_start = progress.value
             out_t, mask_t, _out_batch_unused = _make_batched_image_and_mask_outputs(out_batch, mask_bw)
             if video_span > 0:
@@ -1237,8 +2527,11 @@ class PanoramaPreviewNode(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="PanoramaPreview",
-            display_name="Panorama Preview",
+            display_name="Panorama Preview (legacy)",
             category="Panorama Suite",
+            # Replaced by Panorama Preview (`PanoramaPreviewNode`): it stays registered, so saved workflows load it,
+            # but the node search no longer offers it (docs/preview-node.md).
+            is_deprecated=True,
             inputs=[
                 io.Image.Input("erp_image"),
                 io.Combo.Input(
@@ -1257,32 +2550,151 @@ class PanoramaPreviewNode(io.ComfyNode):
     @classmethod
     def execute(cls, erp_image, coverage="360", fps=24.0, audio=None, unique_id=None):
         ui_ret = {}
-        warnings = []
-        fps_value = max(1.0, finite_float(fps, 24.0))
         if erp_image is not None:
-            preview_contract = _get_preview_ui_contract("default")
-            ui_ret = _init_ui_preview(erp_image, key=preview_contract["image"])
-            frame_count = int(erp_image.shape[0]) if hasattr(erp_image, "shape") and erp_image.ndim == 4 else 1
-            video_span = frame_count if frame_count > 1 else 0
-            progress = _NodeProgress(unique_id, 1 + video_span + 1, label="PanoramaPreview")
-            progress.advance(1)
-            if video_span > 0:
-                progress.stage("Encoding preview video")
-            _append_preview_video_from_batch(
-                ui_ret,
-                erp_image,
-                fps_value,
-                audio,
-                warning_key="pano_preview_warnings",
-                video_key=preview_contract["video"],
-                meta_key=preview_contract["meta"],
-                progress_callback=progress.frame_callback(progress.value, video_span) if video_span > 0 else None,
-            )
-            progress.set(1 + video_span)
-            progress.stage("Done")
-            progress.finish()
-        _flush_warnings(ui_ret, "pano_preview_warnings", warnings)
+            ui_ret = _preview_ui(erp_image, max(1.0, finite_float(fps, 24.0)), audio, unique_id)
         return io.NodeOutput(erp_image, ui=ui_ret)
+
+
+def _preview_ui(images: torch.Tensor, fps: float, audio, unique_id) -> dict:
+    """The execution `ui` of a Preview: the first image, and an MP4 of a batch of two or more."""
+    preview_contract = _get_preview_ui_contract("default")
+    ui_ret = _init_ui_preview(images, key=preview_contract["image"])
+    frame_count = int(images.shape[0]) if hasattr(images, "shape") and images.ndim == 4 else 1
+    video_span = frame_count if frame_count > 1 else 0
+    progress = _NodeProgress(unique_id, 1 + video_span + 1, label="PanoramaPreview")
+    progress.advance(1)
+    if video_span > 0:
+        progress.stage("Encoding preview video")
+    _append_preview_video_from_batch(
+        ui_ret,
+        images,
+        fps,
+        audio,
+        warning_key="pano_preview_warnings",
+        video_key=preview_contract["video"],
+        meta_key=preview_contract["meta"],
+        progress_callback=progress.frame_callback(progress.value, video_span) if video_span > 0 else None,
+    )
+    progress.set(1 + video_span)
+    progress.stage("Done")
+    progress.finish()
+    return ui_ret
+
+
+def _video_cache_identity(video, streamed: bool) -> tuple:
+    """A VIDEO that `open_video` streams from its file (so without a crop) is its file and trim window; any other
+    VIDEO is the object itself."""
+    if streamed:
+        source = video.get_stream_source()
+        if isinstance(source, str):
+            return ("file", source, os.stat(source).st_mtime_ns, video.get_active_trim_window())
+    return NODE_RUNTIME.object_identity(video)
+
+
+def _editor_mp4(video, opened) -> tuple[Path, bool]:
+    """The MP4 the editor plays for a VIDEO opened by `open_video` as `opened`, and whether it has audio. A file the
+    core copies into an MP4 that seeks fast already (`editor_ready`) is copied, or played as it is when it is an MP4
+    in the input directory; a Studio `video` shows
+    its stream source when that seeks fast. Otherwise a proxy is encoded (`encode_editor_mp4`), from the file
+    again for a VIDEO read from its file, since `opened` has moved on, so the frames are never all in memory."""
+    if isinstance(video, SceneVideo):
+        # Its stream source is an MP4 in temp already, kept by the video itself, and is what SaveVideo copies.
+        source = video.get_stream_source()
+        if editor_ready(source):
+            return Path(source), mp4_has_audio(source)
+        return encode_editor_mp4(stream_video(source, 0, 0, "source"), loop_progress())
+    if isinstance(opened, StreamedVideo):
+        source, trim = video.get_stream_source(), video.get_active_trim_window()
+        # The core copies the streams only without a trim window, and reads a file in memory as it is.
+        if isinstance(source, str) and not any(trim) and editor_ready(source):
+            # An MP4 in the input directory is played from there; the browser is served it by its extension.
+            if _input_entry(source) is not None and Path(source).suffix.lower() == ".mp4":
+                return Path(source), mp4_has_audio(source)
+            return save_video_to_mp4(video, Types.VideoContainer.MP4, Types.VideoCodec.H264)
+        return encode_editor_mp4(stream_video(source, *trim, "source"), loop_progress())
+    return encode_editor_mp4(opened, loop_progress())
+
+
+def _input_entry(path) -> dict | None:
+    """The `ui` entry of an MP4 in ComfyUI's input directory, or None for a file elsewhere."""
+    entry = _view_entry(path, "video/mp4")
+    return entry if entry is not None and entry["type"] == "input" else None
+
+
+def _editor_mp4_ui(cache_key: tuple, make, fps: float, frame_count: int, contract: dict) -> dict:
+    """The `ui` of the editor MP4 that `make()` saves, made once per `cache_key` and reused while the file is there.
+    The MP4 is a temp file, or the input file itself (`_editor_mp4`)."""
+    saved = NODE_RUNTIME.cache.get("video", cache_key)
+    if saved is None or not saved[0].exists():
+        saved = make()
+        NODE_RUNTIME.cache.put("video", cache_key, saved)
+    path, has_audio = saved
+    payload = make_video_ui_payload(path, fps, frame_count, video_key=contract["video"], meta_key=contract["meta"], video_entry=_input_entry(path))
+    payload[contract["meta"]][0]["has_audio"] = has_audio
+    return payload
+
+
+def _video_ui(video, opened, fps: float, frame_count: int, contract: dict) -> dict:
+    """The `ui` of a VIDEO opened by `open_video`: its first frame, and the editor MP4 (`_editor_mp4`) when it has
+    two or more frames. The frames are not read into one batch (ADR 0018), and the MP4 is reused while the VIDEO
+    stays the same."""
+    ui_ret = _init_ui_preview(opened.first_frame[None], key=contract["image"])
+    if frame_count > 1:
+        cache_key = ("editor_mp4", _video_cache_identity(video, isinstance(opened, StreamedVideo)))
+        _merge_ui_payload(ui_ret, _editor_mp4_ui(cache_key, lambda: _editor_mp4(video, opened), fps, frame_count, contract))
+    return ui_ret
+
+
+def _preview_scene_ui(scene: PanoSceneValue) -> dict:
+    """The Preview `ui` of a PANO_SCENE (ADR 0041; docs/preview-node.md, "`PANO_SCENE` を見る"): the keys Studio gives
+    for the same Scene upstream (`_upstream_ui`), and its Timeline (`pano_timeline_fps`, `pano_timeline_frames`).
+    Nothing is drawn or written; the files are those the Studio that made the Scene wrote."""
+    ui = _upstream_ui(scene, scene.bg_ui if scene.bg_media is not None else None)
+    ui["pano_timeline_fps"] = [scene.fps]
+    ui["pano_timeline_frames"] = [len(scene.frames)]
+    return ui
+
+
+def _video_preview_ui(video) -> dict:
+    """The Preview `ui` of a VIDEO, with the Timeline fps decided as in Studio."""
+    bg = open_video(video, "source")
+    rate, _times, _time_base, frames = _decide_timeline(load_scene_state(None), bg, None)
+    return _video_ui(video, bg, float(rate), len(frames), _get_preview_ui_contract("default"))
+
+
+class PanoramaPreviewSceneNode(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        template = io.MatchType.Template("source", [io.Image, io.Video, PanoScene])
+        return io.Schema(
+            node_id="PanoramaPreviewNode",
+            display_name="Panorama Preview",
+            category="Panorama Suite",
+            inputs=[
+                io.MatchType.Input("source", template=template),
+                io.Combo.Input("background_range", options=["360", "180"], default="360"),
+            ],
+            outputs=[
+                io.MatchType.Output(template=template, id="output", display_name="output"),
+            ],
+            hidden=[io.Hidden.unique_id],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, source, background_range="360", unique_id=None):
+        # `background_range` is read by the node's widget on the frontend (ADR 0048). A PANO_SCENE carries its own.
+        if isinstance(source, PanoSceneValue):
+            return io.NodeOutput(source, ui=_preview_scene_ui(source))
+        # IMAGE and VIDEO give the legacy Preview's keys, which its node display reads.
+        if isinstance(source, Input.Video):
+            return io.NodeOutput(source, ui=_video_preview_ui(source))
+        # MatchType is not checked by the backend, so an API prompt can send another type.
+        if not isinstance(source, torch.Tensor) or source.ndim != 4:
+            shape = f" of shape {tuple(source.shape)}" if isinstance(source, torch.Tensor) else ""
+            raise TypeError(f"Panorama Preview: source must be an IMAGE, a VIDEO, or a PANO_SCENE, not {type(source).__name__}{shape}.")
+        fps = float(_decide_timeline(load_scene_state(None), source, None)[0])
+        return io.NodeOutput(source, ui=_preview_ui(source, fps, None, unique_id))
 
 
 class PanoramaSeamPrepNode(io.ComfyNode):
@@ -1396,16 +2808,18 @@ class PanoramaSeamPrepNode(io.ComfyNode):
         return io.NodeOutput(prepared, mask, mask_blurred)
 
 
-NODE_CLASS_MAPPINGS = {
-    "PanoramaStickers": PanoramaStickersNode,
-    "PanoramaCutout": PanoramaCutoutNode,
-    "PanoramaPreview": PanoramaPreviewNode,
-    "PanoramaSeamPrep": PanoramaSeamPrepNode,
-}
+class PanoramaSuiteExtension(ComfyExtension):
+    @override
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        return [
+            PanoramaStickersNode,
+            PanoramaCutoutNode,
+            PanoramaPreviewNode,
+            PanoramaPreviewSceneNode,
+            PanoramaStudioNode,
+            PanoramaSeamPrepNode,
+        ]
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "PanoramaStickers": "Panorama Stickers",
-    "PanoramaCutout": "Panorama Cutout",
-    "PanoramaPreview": "Panorama Preview",
-    "PanoramaSeamPrep": "Panorama Seam Prep",
-}
+
+async def comfy_entrypoint() -> PanoramaSuiteExtension:
+    return PanoramaSuiteExtension()

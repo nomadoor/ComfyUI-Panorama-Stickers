@@ -1,0 +1,135 @@
+{
+  "state": {
+    "version": 2,
+    "stickers": [
+      {
+        "id": "sticker_2",
+        "source": {
+          "kind": "port"
+        },
+        "z_index": 1,
+        "curve": {
+          "value": 0.8
+        },
+        "size": {
+          "value": {
+            "hFOV_deg": 20,
+            "vFOV_deg": 20
+          }
+        },
+        "handoff_overrides": [
+          "size"
+        ]
+      }
+    ]
+  },
+  "handoff": {
+    "placement": "sky",
+    "lanes": {
+      "direction": {
+        "value": {
+          "yaw_deg": 10.0,
+          "pitch_deg": 5.0
+        },
+        "keyframes": []
+      },
+      "roll": {
+        "value": 0.0,
+        "keyframes": []
+      },
+      "size": {
+        "value": {
+          "hFOV_deg": 140.0,
+          "vFOV_deg": 140.0
+        },
+        "keyframes": []
+      },
+      "curve": {
+        "value": 0.5,
+        "keyframes": [
+          {
+            "frame": 0,
+            "value": 0.5,
+            "easing": "auto"
+          },
+          {
+            "frame": 1,
+            "value": 1.0,
+            "easing": "auto"
+          },
+          {
+            "frame": 2,
+            "value": 0.8,
+            "easing": "hold"
+          }
+        ]
+      }
+    }
+  },
+  "expected": {
+    "id": "sticker_2",
+    "placement": "sky",
+    "source": {
+      "kind": "port"
+    },
+    "clip": {
+      "start": 0,
+      "in": 0,
+      "duration": null
+    },
+    "visible": true,
+    "locked": false,
+    "crop": {
+      "x0": 0.0,
+      "y0": 0.0,
+      "x1": 1.0,
+      "y1": 1.0
+    },
+    "direction": {
+      "value": {
+        "yaw_deg": 10.0,
+        "pitch_deg": 5.0
+      },
+      "keyframes": []
+    },
+    "roll": {
+      "value": 0.0,
+      "keyframes": []
+    },
+    "size": {
+      "value": {
+        "hFOV_deg": 20.0,
+        "vFOV_deg": 20.0
+      },
+      "keyframes": []
+    },
+    "opacity": {
+      "value": 1.0,
+      "keyframes": []
+    },
+    "curve": {
+      "value": 0.5,
+      "keyframes": [
+        {
+          "frame": 0,
+          "value": 0.5,
+          "easing": "auto"
+        },
+        {
+          "frame": 1,
+          "value": 1.0,
+          "easing": "auto"
+        },
+        {
+          "frame": 2,
+          "value": 0.8,
+          "easing": "hold"
+        }
+      ]
+    },
+    "z_index": 1,
+    "handoff_overrides": [
+      "size"
+    ]
+  }
+}

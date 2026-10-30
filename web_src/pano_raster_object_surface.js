@@ -1,3 +1,5 @@
+import { createPanoCanvas } from "./pano_diagnostics.js";
+
 function finite(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -105,7 +107,7 @@ export function createRasterObjectSurfaceCache() {
     const imageWidth = Number(image.naturalWidth || image.width || 0);
     const imageHeight = Number(image.naturalHeight || image.height || 0);
     if (!image.complete || imageWidth < 1 || imageHeight < 1) return null;
-    const canvas = document.createElement("canvas");
+    const canvas = createPanoCanvas({ label: "raster-object" });
     canvas.width = Math.max(1, Math.round(erpWidth));
     canvas.height = Math.max(1, Math.round(erpHeight));
     const context = canvas.getContext("2d");
