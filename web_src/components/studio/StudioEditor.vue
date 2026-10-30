@@ -1,9 +1,16 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { VIEW_UNAVAILABLE_MESSAGE } from "../../pano_preview_view.js";
+import { cameraOf } from "../../studio/defaults.js";
+import { liveErpRatio } from "../../studio/erp_preview.js";
+import { cameraRulers, rulerEdit } from "../../studio/frame_layout.js";
+import { buildInspectorModel } from "../../studio/inspector_model.js";
 import { TIMELINE_BAR_HEIGHT, loadTimelineHeight, saveTimelineHeight, timelineHeight } from "../../studio/layout.js";
 import { selectionBar } from "../../studio/selection_bar.js";
 import { inspectorSelection } from "../../studio/session.js";
+import { timecode } from "../../studio/timeline_model.js";
+import StudioCameraFrame from "./StudioCameraFrame.vue";
+import StudioEdgeRuler from "./StudioEdgeRuler.vue";
 import StudioInspector from "./StudioInspector.vue";
 import StudioNavWidget from "./StudioNavWidget.vue";
 import StudioNotice from "./StudioNotice.vue";
@@ -55,18 +62,73 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", fitTimeline);
 });
 
-// --- The top-center line: a notice before what the stage waits for, before the hint of an empty stage.
+// --- The top-center line: a notice before what the stage waits for; in the Camera tab the timecode before the hint of
+// an empty stage (docs/studio-ui.md "画面の区画": the timecode hides only while a notice or a loading line shows).
+const cameraTab = computed(() => props.view.tab === "camera");
 const line = computed(() => {
   if (props.ui.notice) return { kind: "notice", text: props.ui.notice };
   if (props.ui.view === "loading") return { kind: "loading", text: "Loading the 3D view…" };
   if (props.ui.background === "loading") return { kind: "loading", text: "Loading background…" };
   if (props.ui.background === "failed") return { kind: "notice", text: "The background could not be loaded" };
+  if (cameraTab.value) {
+    const fps = props.view.state.timeline.fps;
+    return { kind: "timecode", text: `${timecode(props.view.playhead, fps)} · ${props.view.playhead} / ${props.view.span}` };
+  }
   if (props.ui.empty) return { kind: "hint", text: "Drop an image or a 3D file, or press Add" };
   return { kind: "notice", text: "" };
 });
 
-// --- The bar at the bottom center: the selected object's (none while nothing is selected).
-const bar = computed(() => selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly }));
+// --- The bar at the bottom center: the selected object's (none while nothing is selected, nor in the Camera tab).
+const bar = computed(() => (cameraTab.value ? null : selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly })));
+
+// --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
+// with the edge rulers, which are the Camera card's rows and send the inspector's edits.
+const CAMERA_TAB_TIP = "Not available in the Camera view";
+const camera = computed(() => cameraOf(props.view.state));
+const panorama = computed(() => camera.value.projection === "erp");
+const frameAspect = computed(() => (panorama.value ? liveErpRatio(camera.value.erp_range === 180 ? 180 : 360) : camera.value.aspect));
+const rulers = computed(() => (cameraTab.value
+  ? cameraRulers(buildInspectorModel({ state: props.view.state, tab: "camera", playhead: props.view.playhead, readOnly: props.view.readOnly }).cards[0])
+  : null));
+// The Lens row's lensStart where a Lens drag began (a κ edit keeps the image's center scale from there).
+let lensStart = null;
+function onRuler(which, event, value) {
+  if (!rulers.value) return;
+  if (which === "lens" && event === "input" && !lensStart) lensStart = rulers.value.lens.lensStart;
+  const edit = rulerEdit(rulers.value, which, event, value, lensStart);
+  if (event !== "input") lensStart = null;
+  if (edit) props.controller.inspectorEdit(edit);
+}
+// The stage's knobs: nothing moves in Panorama mode, nor a locked Camera or a read-only editor's in the Camera tab.
+const navOff = computed(() => {
+  if (!cameraTab.value) return "";
+  if (panorama.value) return "Nothing moves in Panorama mode";
+  if (props.view.readOnly) return "Read-only";
+  if (camera.value.locked === true) return "Locked";
+  return "";
+});
+const erpCanvas = ref(null);
+watch(erpCanvas, (element) => props.controller.erpCanvas?.(element ?? null));
+
+// --- The Output window's picture (docs/studio-ui.md "Output の小窓"): the stage draws the Camera's output on these
+// canvases while the window is open (a "bitmaprenderer" one in Frame mode, the live ERP's 2D one in Panorama mode).
+const outputFrame = ref(null);
+const outputErp = ref(null);
+let outputObserver = null;
+function reportOutput() {
+  props.controller.output?.({ frame: outputFrame.value ?? null, erp: outputErp.value ?? null });
+}
+watch([outputFrame, outputErp], ([frame, erp]) => {
+  outputObserver?.disconnect();
+  outputObserver = null;
+  const shown = frame ?? erp;
+  if (shown && typeof ResizeObserver === "function") {
+    outputObserver = new ResizeObserver(reportOutput);
+    outputObserver.observe(shown);
+  }
+  reportOutput();
+});
+onBeforeUnmount(() => outputObserver?.disconnect());
 
 // --- The stage's buttons.
 function setGrid(shown) {
@@ -126,21 +188,98 @@ function setCollapsed(value) {
           <canvas ref="overlay" class="pano-studio-stage-overlay" data-stage-overlay aria-hidden="true" />
           <div v-if="ui.view === 'failed'" class="pano-studio-stage-failed pano-studio-cap">{{ VIEW_UNAVAILABLE_MESSAGE }}</div>
 
-          <StudioTabs class="pano-studio-at-tabs" value="3d" camera-disabled camera-tip="Camera view · in development" />
+          <StudioCameraFrame v-if="cameraTab && rulers" :aspect="frameAspect" @rect="(rect) => controller.frameRect?.(rect)">
+            <template #default="{ rollWidth }">
+              <canvas v-if="panorama" ref="erpCanvas" class="pano-studio-camera-erp" data-erp aria-hidden="true" />
+              <StudioEdgeRuler
+                class="pano-studio-at-edge-left"
+                orientation="vertical"
+                side="left"
+                :name="rulers.fov.name"
+                :value="rulers.fov.value"
+                :min="rulers.fov.min"
+                :max="rulers.fov.max"
+                :unit-px="rulers.fov.scale.unitPx"
+                :minor="rulers.fov.scale.minor"
+                :major="rulers.fov.scale.major"
+                :label-precision="rulers.fov.scale.precision"
+                :precision="rulers.fov.precision"
+                :value-text="rulers.fov.valueText"
+                :key-state="rulers.fov.keyState"
+                :disabled="rulers.fov.disabled"
+                :tip="rulers.fov.tip"
+                @input="(value) => onRuler('fov', 'input', value)"
+                @change="(value) => onRuler('fov', 'change', value)"
+                @cancel="onRuler('fov', 'cancel')"
+                @key="onRuler('fov', 'key')"
+              />
+              <StudioEdgeRuler
+                class="pano-studio-at-edge-right"
+                orientation="vertical"
+                side="right"
+                :name="rulers.lens.name"
+                :value="rulers.lens.value"
+                :min="rulers.lens.min"
+                :max="rulers.lens.max"
+                :unit-px="rulers.lens.scale.unitPx"
+                :minor="rulers.lens.scale.minor"
+                :major="rulers.lens.scale.major"
+                :label-precision="rulers.lens.scale.precision"
+                :precision="rulers.lens.precision"
+                :value-text="rulers.lens.valueText"
+                :key-state="rulers.lens.keyState"
+                :disabled="rulers.lens.disabled"
+                :tip="rulers.lens.tip"
+                @input="(value) => onRuler('lens', 'input', value)"
+                @change="(value) => onRuler('lens', 'change', value)"
+                @cancel="onRuler('lens', 'cancel')"
+                @key="onRuler('lens', 'key')"
+              />
+              <StudioEdgeRuler
+                class="pano-studio-at-edge-bottom"
+                :style="{ width: `${rollWidth}px` }"
+                orientation="horizontal"
+                :name="rulers.roll.name"
+                :value="rulers.roll.value"
+                :min="rulers.roll.min"
+                :max="rulers.roll.max"
+                :unit-px="rulers.roll.scale.unitPx"
+                :minor="rulers.roll.scale.minor"
+                :major="rulers.roll.scale.major"
+                :label-precision="rulers.roll.scale.precision"
+                :precision="rulers.roll.precision"
+                :value-text="rulers.roll.valueText"
+                :key-state="rulers.roll.keyState"
+                :disabled="rulers.roll.disabled"
+                :tip="rulers.roll.tip"
+                @input="(value) => onRuler('roll', 'input', value)"
+                @change="(value) => onRuler('roll', 'change', value)"
+                @cancel="onRuler('roll', 'cancel')"
+                @key="onRuler('roll', 'key')"
+              />
+            </template>
+          </StudioCameraFrame>
+
+          <StudioTabs class="pano-studio-at-tabs" :value="view.tab" @select="(tab) => controller.setTab(tab)" />
           <StudioToolRail
             class="pano-studio-at-rail"
             :can-undo="view.canUndo"
             :can-redo="view.canRedo"
+            :camera-tab="cameraTab"
             @press="(key) => controller.rail(key)"
           />
           <div class="pano-studio-at-notice">
-            <StudioNotice :text="line.text" :kind="line.kind" />
+            <span v-if="line.kind === 'timecode'" class="pano-studio-timecode pano-studio-cap" data-timecode>{{ line.text }}</span>
+            <StudioNotice v-else :text="line.text" :kind="line.kind" />
           </div>
           <div class="pano-studio-at-output">
-            <StudioOutputPreview :storage="storage" />
+            <StudioOutputPreview :storage="storage" :ratio="frameAspect">
+              <canvas v-if="!panorama" ref="outputFrame" class="pano-studio-output-picture" data-output-picture="frame" aria-hidden="true" />
+              <canvas v-else ref="outputErp" class="pano-studio-output-picture" data-output-picture="erp" aria-hidden="true" />
+            </StudioOutputPreview>
           </div>
           <div class="pano-studio-at-nav">
-            <StudioNavWidget :lit="ui.lit" @knob="(knob, event) => stage?.knobDown(knob, event)" />
+            <StudioNavWidget :lit="ui.lit" :disabled="!!navOff" :disabled-tip="navOff" @knob="(knob, event) => stage?.knobDown(knob, event)" />
           </div>
           <div class="pano-studio-at-bar" data-region="bar">
             <StudioSelectionBar v-if="bar" :model="bar" @press="(key) => controller.bar(key)" />
@@ -148,6 +287,11 @@ function setCollapsed(value) {
           <StudioViewButtons
             class="pano-studio-at-buttons"
             :grid-shown="!ui.gridHidden"
+            :reset-disabled="cameraTab"
+            :reset-tip="CAMERA_TAB_TIP"
+            :frame-tip="cameraTab ? 'Frame selected · Moves the camera' : ''"
+            :frame-disabled="!!navOff"
+            :frame-disabled-tip="navOff"
             @frame-selected="stage?.frameSelected()"
             @reset-view="stage?.resetView()"
             @grid="setGrid"
@@ -193,7 +337,7 @@ function setCollapsed(value) {
         data-region="inspector"
         :state="view.state"
         :selection="selected"
-        tab="3d"
+        :tab="view.tab"
         :playhead="view.playhead"
         :node-name="nodeTitle"
         :read-only="view.readOnly"

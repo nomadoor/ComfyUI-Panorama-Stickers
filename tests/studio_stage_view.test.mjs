@@ -21,7 +21,7 @@ import {
   saveTimelineHeight,
   timelineHeight,
 } from "../web_src/studio/layout.js";
-import { STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, groundDepth, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
+import { STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameView, groundDepth, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
 import { ORIGIN_MARK_RADIUS, eyeHeight, eyeLengths } from "../web_src/studio/view_scale.js";
 
 const close = (actual, expected, eps = 1e-9) => assert.ok(Math.abs(actual - expected) <= eps, `${actual} != ${expected}`);
@@ -144,4 +144,37 @@ test("the stage draws STAGE_RENDER_SCALE times the device pixels, its longer sid
   const big = stageRenderSize(2000, 1000, 2, 2560, 1440);
   assert.equal(big.width, STAGE_RENDER_MAX_SIDE);
   assert.equal(big.height, STAGE_RENDER_MAX_SIDE / 2);
+});
+
+test("the Camera tab's Frame view spans a box centered on the frame, the frame keeping the Camera's FOV, past the stage's far edges", async () => {
+  const { cameraShot } = await import("../web_src/pano_editor_state.js");
+  const state = loadSceneState({ version: 2, camera: { aspect: 16 / 9, position: { value: [0.5, 0, 1] }, rotation: { value: { yaw_deg: 20, pitch_deg: 5, roll_deg: -4 } }, fov: { value: 60 } } });
+  const shot = cameraShot(state.camera, 0);
+  const frame = { x: 120, y: 61, width: 568, height: 320 };
+  const view = cameraFrameView({ shot, frame, width: 808, height: 505, distance: 2, radius: 40 });
+  // Centered on the frame's middle, reaching both far edges of the stage.
+  assert.equal(view.rect.x + view.rect.w / 2, 404);
+  assert.equal(view.rect.y + view.rect.h / 2, 221);
+  assert.ok(view.rect.x <= 0 && view.rect.x + view.rect.w >= 808 && view.rect.y <= 0 && view.rect.y + view.rect.h >= 505);
+  // The frame's edges are the Camera's H FOV: a point on the Camera's axis turned by half the H FOV lands on the frame's
+  // right edge.
+  const axis = (yaw) => [Math.sin(yaw * Math.PI / 180), 0, -Math.cos(yaw * Math.PI / 180)];
+  const flat = cameraFrameView({ shot: cameraShot(loadSceneState({ version: 2, camera: { aspect: 16 / 9, position: { value: [0, 0, 0] }, rotation: { value: { yaw_deg: 0, pitch_deg: 0, roll_deg: 0 } }, fov: { value: 60 } } }).camera, 0), frame, width: 808, height: 505, distance: 2, radius: 40 });
+  const p = projectPoint(flat.camera, axis(30).map((v) => v * 5), flat.rect.w, flat.rect.h);
+  assert.ok(Math.abs(p.x + flat.rect.x - (frame.x + frame.width)) < 0.5);
+  assert.equal(view.lens, null);
+  assert.deepEqual(view.camera.position, [0.5, 0, 1]);
+  // A lens Camera (κ ≠ 1) draws its image over the stage through the lens pass.
+  const lens = loadSceneState({ version: 2, camera: { aspect: 16 / 9, fov: { value: 120 }, curve: { value: 0.5 } } });
+  const bent = cameraFrameView({ shot: cameraShot(lens.camera, 0), frame, width: 808, height: 505, distance: 2, radius: 40 });
+  assert.equal(bent.lens.curve, 0.5);
+});
+
+test("the stage's render input takes a part of the canvas, a lens pass and an owner of its own", () => {
+  const input = stageRenderInput({ camera: {}, canvasWidth: 100, canvasHeight: 50, background: null, ground: -1.6, gridHidden: true, rect: { x: -5, y: 0, w: 110, h: 50 }, lens: { kind: "pinhole" }, owner: "studio-output" });
+  assert.deepEqual(input.rect, { x: -5, y: 0, w: 110, h: 50 });
+  assert.deepEqual(input.lens, { kind: "pinhole" });
+  assert.equal(input.owner, "studio-output");
+  assert.equal(input.space.ground, null);
+  assert.equal(stageRenderInput({ camera: {}, canvasWidth: 1, canvasHeight: 1, background: null, ground: 0, gridHidden: false }).lens, undefined);
 });

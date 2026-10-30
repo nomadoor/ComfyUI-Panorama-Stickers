@@ -42,12 +42,13 @@ function dot(ctx, point, radius) {
 }
 
 // Draws `scene` (stage_objects.js overlay()) on the 2D context `ctx` of a canvas covering a width x height CSS px stage
-// at `ratio` device px per CSS px, seen from `camera` (stage_view.js stageCamera()).
-export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, scene }) {
+// at `ratio` device px per CSS px, seen from `camera` (stage_view.js stageCamera()). `origin` is where the view of
+// width x height starts on the stage (the Camera tab's Frame view spans a box of its own, stage_view.js cameraFrameView).
+export function drawStageOverlay(ctx, { camera, width, height, ratio = 1, origin = { x: 0, y: 0 }, scene }) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (!scene) return;
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.setTransform(ratio, 0, 0, ratio, ratio * origin.x, ratio * origin.y);
   // Normal ones first, so a hovered or selected outline lies over them.
   const order = { normal: 0, hover: 1, selected: 2 };
   const lines = [...scene.guides, ...(scene.camera ? [scene.camera] : [])].sort((a, b) => order[a.look] - order[b.look]);

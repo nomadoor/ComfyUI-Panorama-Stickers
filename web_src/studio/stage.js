@@ -3,16 +3,30 @@
 // (pano_editor_view.js createEditorView). It owns the render loop (pano_frame_scheduler.js), which moves the eased
 // actions, the joystick and the movement keys, and draws. It builds no DOM: StudioEditor.vue renders the stage and
 // hands over its canvas and root, and reads `ui` (a Vue reactive object) for the notice, the cursor and the knobs.
-import { createEditorView } from "../pano_editor_view.js";
+import { createEditorView, deviceLens, shotCamera, shotLensImage } from "../pano_editor_view.js";
 import { DRAW_REASON, createFrameScheduler } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { isMoveKey } from "../pano_view_keys.js";
 import { createStageObjects } from "./stage_objects.js";
 import { drawStageOverlay } from "./stage_overlay.js";
-import { STAGE_CLEAR_COLOR, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
+import { placedCamera } from "../pano_space.js";
+import { shortestYawDelta } from "../pano_camera_math.js";
+import { liveErpSize, liveErpView } from "./erp_preview.js";
+import { STAGE_CLEAR_COLOR, cameraFrameView, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
 import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, navigationAction, stageCursor } from "./view_input.js";
-import { BOUND_NOTICE_SECONDS, frameSeconds } from "./view_scale.js";
+import { BOUND_NOTICE_SECONDS, PITCH_LIMIT, eyeHeight, frameSeconds } from "./view_scale.js";
+
+// The owners (pano_three_view.js) the live ERP of the Camera tab's Panorama mode, the Output window's Frame picture and
+// its live ERP draw for.
+export const LIVE_ERP_OWNER = "studio-live-erp";
+export const OUTPUT_OWNER = "studio-output";
+export const OUTPUT_ERP_OWNER = "studio-output-erp";
+// The reasons that leave the Output window's picture as it is: the stage's view, its overlay, its own Spark sort.
+const OUTPUT_KEEPS = new Set([DRAW_REASON.VIEW, DRAW_REASON.OVERLAY, DRAW_REASON.SPLAT_STAGE]);
+// A run of wheel steps in the Camera tab's Frame view is one Undo step, taken once the wheel has rested this long
+// (docs/space-and-view.md "Frame 表示" "記録"; the old Frame view's 180 ms, editor/frame_view.js).
+export const FRAME_WHEEL_REST_MS = 180;
 
 // The fields of `ui` the stage writes (the shell reads them).
 export function stageUi() {
@@ -43,10 +57,20 @@ export function stageUi() {
 // overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the sky image's handles; null draws none).
 // objects: what selecting and editing the objects needs (stage_objects.js createStageObjects: state, playhead,
 // selection, select, edits, mode, tab, readOnly); without it the stage does not touch objects.
+// cameraTab: the Camera tab (docs/studio-ui.md "Camera タブ", docs/space-and-view.md "Frame 表示"), read at each frame:
+// tab() ("3d" or "camera"), mode() ("frame" or "panorama": the Camera's projection), shot() (the Camera at the
+// playhead, pano_editor_state.js cameraShot), erpRange() (360 or 180), frame() (the frame box in the stage's CSS px,
+// frame_layout.js frameRect, or null before it is laid out), erpCanvas() (the 2D canvas in the frame that shows the
+// live ERP, or null), movable() (the Camera may move: not locked, not read-only), backgroundColor() (the node's
+// background color, a hex RGB: past a lens's reach), output() (the Output window's canvases while it is open:
+// { frame, erp }, a "bitmaprenderer" canvas for Frame mode and a 2D one for the live ERP, or null), and edits ({ live(pose), commit(), cancel() }: the Frame view's
+// moves of the Camera, pose { position, yaw_deg, pitch_deg }, written to its Lanes by the editor). Without it the
+// stage shows the 3D tab only.
 export function createStage({
   canvas,
   overlay = null,
   objects: objectDeps = null,
+  cameraTab = null,
   root,
   opening,
   output,
@@ -92,7 +116,7 @@ export function createStage({
       ui.view = "failed";
     },
     onUpdate: () => scheduler.requestDraw(DRAW_REASON.MEDIA),
-    onSplats: () => scheduler.requestDraw(DRAW_REASON.SPLAT_STAGE),
+    onSplats: (owner) => scheduler.requestDraw(owner === OUTPUT_OWNER || owner === OUTPUT_ERP_OWNER ? DRAW_REASON.SPLAT_PREVIEW : DRAW_REASON.SPLAT_STAGE),
     onRestored: () => {
       resize();
       scheduler.requestDraw(DRAW_REASON.CONTEXT);
@@ -109,17 +133,132 @@ export function createStage({
   const objects = objectDeps ? createStageObjects({
     ...objectDeps,
     editorView,
-    camera: () => cameraNow(),
-    size: () => size,
+    camera: () => viewport().camera,
+    size: () => {
+      const { width, height } = viewport();
+      return { width, height };
+    },
     content: () => content(),
     ground: () => world.ground,
   }) : null;
 
-  // --- Drawing.
+  // --- The Camera tab: the Frame view, where the viewpoint is the Camera itself (a viewpoint of its own, whose moves
+  // go to the Camera's Lanes), and Panorama mode, where the frame shows the live ERP and nothing moves.
 
-  function cameraNow() {
-    return stageCamera(camera.pose(), size.width, size.height, camera.bound());
+  // The Frame view's viewpoint (view_camera.js, `frame`), made when the Frame view first shows.
+  let frameCamera = null;
+  // The Frame view's change not yet one Undo step: "drag", "keys" or "wheel" (the editor holds it live), or null.
+  let frameGesture = null;
+  let wheelTimer = 0;
+  // The kind of lens image the Frame view drew last (pano_lens.js lensRenderPlan's `previous`).
+  let lensKind = null;
+  // The mode the last frame drew ("space", "frame", "erp"), and the live ERP's last result (for the tests).
+  let lastMode = "space";
+  let liveErp = null;
+
+  // What the stage shows: "space" (the 3D tab), "frame" (the Camera tab in Frame mode) or "erp" (in Panorama mode).
+  function viewMode() {
+    if (!cameraTab || cameraTab.tab() !== "camera") return "space";
+    return cameraTab.mode() === "panorama" ? "erp" : "frame";
   }
+
+  // The pose the Frame view takes of the Camera (its pitch within the view's PITCH_LIMIT, as enter() keeps it).
+  function cameraPose(shot) {
+    const pitch = Math.min(PITCH_LIMIT, Math.max(-PITCH_LIMIT, shot.pitch_deg));
+    return { position: [...shot.position], yaw_deg: shot.yaw_deg, pitch_deg: pitch, roll_deg: shot.roll_deg ?? 0 };
+  }
+
+  function samePose(a, b) {
+    const close = (x, y) => Math.abs(x - y) < 1e-6;
+    return a.position.every((value, axis) => close(value, b.position[axis]))
+      && close(shortestYawDelta(a.yaw_deg, b.yaw_deg), 0) && close(a.pitch_deg, b.pitch_deg) && close(a.roll_deg ?? 0, b.roll_deg ?? 0);
+  }
+
+  // The Frame view's viewpoint follows the Camera (an Undo, the playhead, a ruler, the inspector), from its first T,
+  // except while one of its own moves is under way.
+  function syncFrameCamera(shot, frame) {
+    const want = cameraPose(shot);
+    if (!frameCamera) {
+      frameCamera = createViewCamera({ pose: { ...want, target: want.position }, frame: true });
+      frameCamera.setWorld({ ground: world.ground, boxes: [], content: content()?.sphere ?? null, camera: null });
+      frameCamera.enter(want);
+    }
+    frameCamera.setScreen({ width: frame.width, height: frame.height, hFOV_deg: shot.hFOV_deg });
+    if (!frameGesture && !drag && !keysMoving && !samePose(frameCamera.pose(), want)) frameCamera.enter(want);
+  }
+
+  // Where and how the stage is seen now: { camera, x, y, width, height, lens, shot } — the three.js camera of the view
+  // (stage_view.js stageCamera(), or the Frame view's cameraFrameView()) and the box it spans in the stage's CSS px.
+  // Pointer points are in that box (local()) for the hits, the guides and the objects.
+  function viewport() {
+    if (viewMode() === "frame") {
+      const shot = cameraTab.shot();
+      const frame = cameraTab.frame();
+      if (frame?.width > 0 && frame?.height > 0) {
+        syncFrameCamera(shot, frame);
+        const pose = frameCamera.pose();
+        const distance = Math.hypot(...pose.target.map((value, axis) => value - pose.position[axis]));
+        const view = cameraFrameView({ shot, frame, width: size.width, height: size.height, distance, radius: frameCamera.bound() });
+        return { camera: view.camera, x: view.rect.x, y: view.rect.y, width: view.rect.w, height: view.rect.h, lens: view.lens, shot: view.shot };
+      }
+    }
+    return { camera: stageCamera(camera.pose(), size.width, size.height, camera.bound()), x: 0, y: 0, width: size.width, height: size.height, lens: null, shot: null };
+  }
+
+  function local(point, view = viewport()) {
+    return { x: point.x - view.x, y: point.y - view.y };
+  }
+
+  // Objects are selected (and edited, in the 3D tab) on the 3D tab and the Frame view of a pinhole Camera. A lens
+  // Camera's picture is bent, so the pinhole hits and guides would not lie on it (lensPickWindow is not wired yet).
+  function objectsOn() {
+    const mode = viewMode();
+    return !!objects && (mode === "space" || (mode === "frame" && !viewport().lens));
+  }
+
+  // The viewpoint the stage's operations move now, or null where nothing moves (Panorama mode, a locked Camera, a
+  // read-only editor, a frame not laid out yet).
+  function navCamera() {
+    const mode = viewMode();
+    if (mode === "space") return camera;
+    if (mode !== "frame" || !cameraTab.movable()) return null;
+    const frame = cameraTab.frame();
+    if (!(frame?.width > 0 && frame?.height > 0)) return null;
+    syncFrameCamera(cameraTab.shot(), frame);
+    return frameCamera;
+  }
+
+  // A move of the Frame view goes to the Camera, held live as `kind` until it is one Undo step.
+  // The gesture that started the change keeps it: keys or a wheel step during a drag join the drag's step.
+  function writeFrame(kind) {
+    const pose = frameCamera.pose();
+    cameraTab.edits.live({ position: pose.position, yaw_deg: pose.yaw_deg, pitch_deg: pose.pitch_deg });
+    frameGesture ??= kind;
+  }
+
+  function commitFrame() {
+    clearTimeout(wheelTimer);
+    wheelTimer = 0;
+    if (!frameGesture) return;
+    frameGesture = null;
+    cameraTab.edits.commit();
+  }
+
+  function cancelFrame() {
+    clearTimeout(wheelTimer);
+    wheelTimer = 0;
+    if (!frameGesture) return;
+    frameGesture = null;
+    cameraTab.edits.cancel();
+  }
+
+  // A move's result on `moved` (the viewpoint that moved): the notice, and the Camera's Lanes in the Frame view.
+  function moved(view, result, kind) {
+    report(result);
+    if (view === frameCamera && frameCamera && result?.moved) writeFrame(kind);
+  }
+
+  // --- Drawing.
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -132,32 +271,211 @@ export function createStage({
     editorView.resize(device.width, device.height);
   }
 
-  function draw(ts) {
+  function draw(ts, reasons = new Set()) {
     const seconds = lastFrame ? frameSeconds((ts - lastFrame) / 1000) : 0;
     lastFrame = ts;
     camera.step(seconds);
     const motion = input.keyMotion(ts);
-    if (keysMoving && !motion && !drag) camera.endGesture();
+    if (keysMoving && !motion && !drag) endKeys();
     keysMoving = !!motion;
-    if (motion) report(camera.keys(motion.direction, motion.seconds, motion.fast));
-    if (drag?.action === "joystick" && seconds > 0) report(camera.joystick(drag.offset, seconds));
+    // Keys still held across a change of mode go on with the viewpoint that moves now.
+    if (motion && !keysCamera && !drag) {
+      keysCamera = navCamera();
+      keysCamera?.beginKeys();
+    }
+    if (motion && keysCamera) moved(keysCamera, keysCamera.keys(motion.direction, motion.seconds, motion.fast), "keys");
+    if (drag?.action === "joystick" && seconds > 0 && drag.camera) moved(drag.camera, drag.camera.joystick(drag.offset, seconds), "drag");
     if (!camera.animating() && !motion && drag?.action !== "joystick") lastFrame = 0;
     if (!editorView.ready) return;
     const shown = content();
     camera.setWorld({ ground: world.ground, camera: world.camera ?? null, content: shown?.sphere ?? null });
+    frameCamera?.setWorld({ ground: world.ground, camera: null, content: shown?.sphere ?? null });
+    const mode = viewMode();
+    if (mode !== lastMode) changeMode(mode);
+    // The Output window's Frame picture goes first, in a corner of the canvas the stage's frame then covers.
+    const output = outputTarget();
+    if (output?.kind === "frame") drawOutputFrame(shown, output, reasons);
+    if (mode === "erp") drawLiveErp(shown);
+    else drawStage(shown, mode);
+    if (output?.kind === "erp") drawOutputErp(shown, output, reasons);
+    drawOverlay();
+    syncUi();
+  }
+
+  // The mode changed (a tab, the Camera's projection): what was under way ends, the live ERP lets go when it hides.
+  function changeMode(mode) {
+    if (drag) end(true);
+    if (keysMoving) endKeys();
+    commitFrame();
+    if (lastMode === "erp") {
+      editorView.releaseSplats(LIVE_ERP_OWNER);
+      liveErp = null;
+    }
+    // Entering the Frame view starts from the Camera's first T (docs/space-and-view.md "Frame 表示").
+    if (mode === "frame") frameCamera = null;
+    lastMode = mode;
+  }
+
+  // --- The Output window (docs/studio-ui.md "Output の小窓"): the Camera's output, drawn at the window's device
+  // pixels only when what it shows can have changed (a reason other than OUTPUT_KEEPS, a new size or kind).
+
+  let outputDrawn = null;
+  let outputLensKind = null;
+  let outputFrames = 0;
+  let outputFailed = false;
+
+  // What the Output window shows now: { kind: "frame" | "erp", canvas, width, height } (device px), or null while it
+  // is folded. What it held before lets go when that changes.
+  function outputTarget() {
+    const canvases = cameraTab?.output?.() ?? null;
+    const kind = cameraTab ? (cameraTab.mode() === "panorama" ? "erp" : "frame") : null;
+    const target = canvases && kind ? canvases[kind] : null;
+    const box = target?.getBoundingClientRect();
+    if (!target || !(box?.width > 0 && box?.height > 0)) {
+      releaseOutput();
+      return null;
+    }
+    if (outputDrawn && outputDrawn.kind !== kind) releaseOutput();
+    const dpr = win.devicePixelRatio || 1;
+    return { kind, canvas: target, width: Math.max(1, Math.round(box.width * dpr)), height: Math.max(1, Math.round(box.height * dpr)) };
+  }
+
+  function releaseOutput() {
+    if (!outputDrawn) return;
+    editorView.releaseSplats(outputDrawn.kind === "erp" ? OUTPUT_ERP_OWNER : OUTPUT_OWNER);
+    outputDrawn = null;
+  }
+
+  function outputStale(target, reasons) {
+    return !outputDrawn || outputDrawn.canvas !== target.canvas || outputDrawn.width !== target.width || outputDrawn.height !== target.height
+      || [...reasons].some((reason) => !OUTPUT_KEEPS.has(reason));
+  }
+
+  // Frame mode: the Camera's picture as the output shoots it (no grid), drawn in the canvas's bottom left corner and
+  // taken as an ImageBitmap for the window's "bitmaprenderer" canvas (docs/threejs-spark-integration.md "エディタの描画を
+  // 直接表示する", the camera preview's way: no 2D canvas, no copy on each frame).
+  function drawOutputFrame(shown, target, reasons) {
+    if (outputFailed || !outputStale(target, reasons)) return;
+    const fit = Math.min(1, canvas.width / target.width, canvas.height / target.height);
+    const width = Math.max(1, Math.floor(target.width * fit));
+    const height = Math.max(1, Math.floor(target.height * fit));
+    const shot = cameraTab.shot();
+    const view = placedCamera(shotCamera(shot), shot.position, eyeHeight(world.ground), { center: [0, 0, 0], radius: camera.bound() });
+    const lens = shotLensImage(shot, width, height, cameraTab.backgroundColor(), null, outputLensKind);
+    outputLensKind = lens?.kind ?? null;
+    const surface = editorView.render(stageRenderInput({
+      camera: view,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      background: background(),
+      ground: world.ground,
+      gridHidden: true,
+      content: shown,
+      rect: { x: 0, y: canvas.height - height, w: width, h: height },
+      lens,
+      owner: OUTPUT_OWNER,
+    }));
+    if (!surface) return;
+    outputDrawn = { kind: "frame", canvas: target.canvas, width: target.width, height: target.height };
+    const request = ++outputFrames;
+    const shownOn = target.canvas;
+    createImageBitmap(surface.canvas, surface.x, surface.y, surface.width, surface.height).then((bitmap) => {
+      if (request !== outputFrames || disposed) {
+        bitmap.close();
+        return;
+      }
+      shownOn.getContext("bitmaprenderer")?.transferFromImageBitmap(bitmap);
+    }).catch((error) => {
+      if (request !== outputFrames || disposed || outputFailed) return;
+      outputFailed = true;
+      outputDrawn = null;
+      console.error("[PanoramaStickers] the Output window's picture failed", error);
+    });
+  }
+
+  // Panorama mode: the live ERP from the Camera's position at the window's pixels, without the ground grid (an edit
+  // guide; the Camera tab's frame draws its own ERP with it).
+  function drawOutputErp(shown, target, reasons) {
+    const pixels = liveErpSize(target.width / (win.devicePixelRatio || 1), target.height / (win.devicePixelRatio || 1), win.devicePixelRatio || 1, cameraTab.erpRange());
+    if (!outputStale(target, reasons)) return;
+    const shot = cameraTab.shot();
+    const planes = placedCamera({}, shot.position, eyeHeight(world.ground), { center: [0, 0, 0], radius: camera.bound() });
+    const input = stageRenderInput({ camera: null, canvasWidth: 1, canvasHeight: 1, background: background(), ground: world.ground, gridHidden: true, content: shown });
+    const drawn = editorView.renderLiveErp({
+      owner: OUTPUT_ERP_OWNER,
+      canvas: target.canvas,
+      view: liveErpView(shot, cameraTab.erpRange()),
+      width: pixels.width,
+      height: pixels.height,
+      near: planes.near,
+      far: planes.far,
+      background: input.background,
+      layers: input.layers,
+      space: input.space,
+      clearColor: STAGE_CLEAR_COLOR,
+    });
+    if (drawn) outputDrawn = { kind: "erp", canvas: target.canvas, width: target.width, height: target.height };
+  }
+
+  // The 3D tab's view over the whole canvas, or the Camera tab's Frame view through the Camera into its rect.
+  function drawStage(shown, mode) {
+    const view = viewport();
+    const clearColor = ui.background === "loading" ? null : STAGE_CLEAR_COLOR;
+    let rect = null;
+    let lens = null;
+    if (mode === "frame") {
+      editorView.clear(clearColor);
+      if (!view.shot) return;
+      const sx = canvas.width / size.width;
+      const sy = canvas.height / size.height;
+      rect = { x: view.x * sx, y: view.y * sy, w: view.width * sx, h: view.height * sy };
+      lens = view.lens ? shotLensImage(view.shot, rect.w, rect.h, cameraTab.backgroundColor(), deviceLens(view.lens, sx), lensKind) : null;
+      lensKind = lens?.kind ?? null;
+    }
     editorView.render(stageRenderInput({
-      camera: cameraNow(),
+      camera: view.camera,
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
       background: background(),
       ground: world.ground,
       gridHidden: ui.gridHidden,
-      clearColor: ui.background === "loading" ? null : STAGE_CLEAR_COLOR,
+      clearColor,
       content: shown,
-      gizmo: objects ? objects.gizmo() : null,
+      gizmo: objects && mode === "space" ? objects.gizmo() : null,
+      rect,
+      lens,
     }));
-    drawOverlay();
-    syncUi();
+  }
+
+  // Panorama mode: the live ERP from the Camera's position in the frame's canvas, at the frame's device pixels
+  // (docs/threejs-spark-integration.md "Panorama モードの ERP の表示"); the stage's own canvas is cleared. The ground
+  // grid is drawn into it unless it is hidden, so the place shows here too (docs/space-and-view.md "地面のグリッドと原点の
+  // 印"; the Output window's ERP has none).
+  function drawLiveErp(shown) {
+    editorView.clear(STAGE_CLEAR_COLOR);
+    const frame = cameraTab.frame();
+    const target = cameraTab.erpCanvas();
+    if (!(frame?.width > 0 && frame?.height > 0) || !target) return;
+    const shot = cameraTab.shot();
+    const range = cameraTab.erpRange();
+    const pixels = liveErpSize(frame.width, frame.height, win.devicePixelRatio || 1, range);
+    const planes = placedCamera({}, shot.position, eyeHeight(world.ground), { center: [0, 0, 0], radius: camera.bound() });
+    const input = stageRenderInput({ camera: null, canvasWidth: 1, canvasHeight: 1, background: background(), ground: world.ground, gridHidden: ui.gridHidden, content: shown });
+    const drawn = editorView.renderLiveErp({
+      owner: LIVE_ERP_OWNER,
+      canvas: target,
+      view: liveErpView(shot, range),
+      width: pixels.width,
+      height: pixels.height,
+      near: planes.near,
+      far: planes.far,
+      background: input.background,
+      layers: input.layers,
+      space: input.space,
+      clearColor: STAGE_CLEAR_COLOR,
+    });
+    // What drew: the last call's, and the time of the last one that drew the faces.
+    if (drawn && (drawn.faces || drawn.pass)) liveErp = { ...drawn, facesMs: drawn.faces ? drawn.ms : liveErp?.facesMs ?? null };
   }
 
   // The 2D overlay, at the canvas's CSS size times the device pixel ratio.
@@ -172,12 +490,14 @@ export function createStage({
     }
     const ctx = overlay.getContext("2d");
     if (!ctx) return;
+    const view = viewport();
     drawStageOverlay(ctx, {
-      camera: cameraNow(),
-      width: size.width,
-      height: size.height,
+      camera: view.camera,
+      width: view.width,
+      height: view.height,
+      origin: { x: view.x, y: view.y },
       ratio,
-      scene: objects ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null,
+      scene: objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null,
     });
   }
 
@@ -212,15 +532,20 @@ export function createStage({
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
 
+  // The middle of the view (the Frame view's frame), in the stage's CSS px.
   function center() {
-    return { x: size.width / 2, y: size.height / 2 };
+    const view = viewport();
+    return { x: view.x + view.width / 2, y: view.y + view.height / 2 };
   }
 
-  // The surface hit under (x, y): the GPU pick of the World content (pano_three_view.js pick) and the ground.
-  function hitAt({ x, y }) {
-    const view = cameraNow();
-    const picked = editorView.pick(view, x, y, size.width, size.height);
-    return surfaceHit(view, x, y, size.width, size.height, { ground: world.ground, picked });
+  // The surface hit under `point` (the stage's CSS px): the GPU pick of the World content (pano_three_view.js pick) and
+  // the ground. A lens Camera's bent picture is not hit (lensPickWindow is not wired yet): its moves use T.
+  function hitAt(point) {
+    const view = viewport();
+    if (view.lens) return null;
+    const { x, y } = local(point, view);
+    const picked = editorView.pick(view.camera, x, y, view.width, view.height);
+    return surfaceHit(view.camera, x, y, view.width, view.height, { ground: world.ground, picked });
   }
 
   // What the pointer is over (stage_objects.js hover, the CPU test): the cursor, and a redraw when a guide or the
@@ -228,7 +553,8 @@ export function createStage({
   function hoverAt(point) {
     pointer = point;
     if (!objects || !editorView.ready) return;
-    const { cursor, changed } = point ? objects.hover(point, { altHeld: input.altHeld() }) : { cursor: null, changed: objects.leave() };
+    const on = point && objectsOn();
+    const { cursor, changed } = on ? objects.hover(local(point), { altHeld: input.altHeld() }) : { cursor: null, changed: objects.leave() };
     objectCursor = cursor;
     if (changed) requestDraw();
   }
@@ -240,21 +566,24 @@ export function createStage({
   // --- Gestures.
 
   function begin(action, point, pointerId, knob = null) {
+    const view = navCamera();
+    if (view === frameCamera) commitFrame();
+    const frame = view === frameCamera;
     switch (action) {
       case "orbit":
-        camera.beginOrbit(orbitCenter({ selection: selected() }));
+        view?.beginOrbit(orbitCenter({ selection: frame ? objectSelection() : selected(), frame }));
         break;
       case "pan":
-        camera.beginPan(hitAt(knob ? center() : point));
+        view?.beginPan(hitAt(knob ? center() : point));
         break;
       case "joystick":
-        camera.beginJoystick();
+        view?.beginJoystick();
         break;
       default:
         break;
     }
     input.beginGesture(action);
-    drag = { action, pointerId, last: point, start: point, offset: 0, knob };
+    drag = { action, pointerId, last: point, start: point, offset: 0, knob, camera: view };
     syncUi();
     requestDraw();
   }
@@ -276,9 +605,11 @@ export function createStage({
       return;
     }
     if (!dx && !dy) return;
-    if (drag.action === "look") report(camera.look(dx, dy));
-    else if (drag.action === "orbit") report(camera.orbit(dx, dy));
-    else if (drag.action === "pan") report(camera.pan(dx, dy));
+    const view = drag.camera;
+    if (!view) return;
+    if (drag.action === "look") moved(view, view.look(dx, dy), "drag");
+    else if (drag.action === "orbit") moved(view, view.orbit(dx, dy), "drag");
+    else if (drag.action === "pan") moved(view, view.pan(dx, dy), "drag");
     requestDraw();
   }
 
@@ -296,11 +627,30 @@ export function createStage({
       requestDraw();
       return;
     }
-    if (!cancel && ended.click && !ended.moved) objectDeps?.select(null);
+    if (!cancel && ended.click && !ended.moved && viewMode() !== "erp") objectDeps?.select(null);
     input.endGesture();
-    if (!keysMoving) camera.endGesture();
+    if (!keysMoving) ended.camera?.endGesture();
+    if (ended.camera === frameCamera && frameCamera) {
+      if (cancel) cancelFrame();
+      else commitFrame();
+    }
     syncUi();
     requestDraw();
+  }
+
+  // The movement keys started on `keysCamera` and all of them are let go: the gesture ends (one Undo step in the
+  // Frame view).
+  let keysCamera = null;
+  function endKeys() {
+    keysCamera?.endGesture();
+    if (keysCamera === frameCamera && frameCamera && frameGesture === "keys") commitFrame();
+    keysCamera = null;
+  }
+
+  // The selection the Camera tab's orbit and Frame Selected use: a World object only (the Camera itself does not count).
+  function objectSelection() {
+    const selection = selected();
+    return selection?.kind === "object" ? selection : null;
   }
 
   // --- The stage's events.
@@ -310,7 +660,17 @@ export function createStage({
     input.modifiers(event);
     const point = pointOf(event);
     const plainLeft = event.button === 0 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
-    const handler = plainLeft && objects && editorView.ready ? objects.press(point) : null;
+    // Panorama mode's frame only shows: nothing on the stage moves or selects there.
+    if (viewMode() === "erp") return;
+    // In the Camera tab a press on an object selects it, and the drag still moves the Camera (docs/space-and-view.md
+    // "Frame 表示"); a press on nothing lets the selection go on its click.
+    let pressedObject = false;
+    let handler = plainLeft && objectsOn() && editorView.ready ? objects.press(local(point)) : null;
+    if (handler && viewMode() !== "space") {
+      handler.end();
+      handler = null;
+      pressedObject = true;
+    }
     if (handler) {
       event.preventDefault();
       canvas.setPointerCapture?.(event.pointerId);
@@ -325,7 +685,7 @@ export function createStage({
     event.preventDefault();
     canvas.setPointerCapture?.(event.pointerId);
     begin(action, point, event.pointerId);
-    if (drag && plainLeft) drag.click = true;
+    if (drag && plainLeft && !pressedObject) drag.click = true;
   }
 
   // The middle button's press would start the browser's autoscroll.
@@ -343,7 +703,8 @@ export function createStage({
       }
       return;
     }
-    move(drag.knob ? { x: event.clientX, y: event.clientY } : pointOf(event), event);
+    const point = drag.knob ? { x: event.clientX, y: event.clientY } : pointOf(event);
+    move(drag.action === "object" ? local(point) : point, event);
   }
 
   function onPointerUp(event) {
@@ -354,13 +715,23 @@ export function createStage({
     event.preventDefault();
     const step = wheelSteps.push(event);
     if (!step) return;
-    report(camera.wheel(step, hitAt(pointOf(event))));
+    const view = navCamera();
+    if (!view) return;
+    // A wheel run in the Frame view is a gesture of its own: another one under way is one step first (one during a
+    // drag joins the drag's).
+    if (view === frameCamera && frameGesture && frameGesture !== "wheel" && !drag) commitFrame();
+    moved(view, view.wheel(step, hitAt(pointOf(event))), "wheel");
+    if (view === frameCamera && frameGesture === "wheel" && !drag) {
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(commitFrame, FRAME_WHEEL_REST_MS);
+    }
     requestDraw();
   }
 
-  // A double click turns the view to what is under the pointer (World image planes included, the one exception).
+  // A double click turns the view to what is under the pointer (World image planes included, the one exception). Not in
+  // the Camera tab (docs/space-and-view.md "Frame 表示").
   function onDoubleClick(event) {
-    if (event.button !== 0 || event.altKey) return;
+    if (event.button !== 0 || event.altKey || viewMode() !== "space") return;
     report(camera.focus(hitAt(pointOf(event))));
     requestDraw();
   }
@@ -410,7 +781,10 @@ export function createStage({
     event.preventDefault();
     event.stopPropagation();
     if (input.keyDown(event, now()) && !keysMoving) {
-      if (!drag) camera.beginKeys();
+      const view = navCamera();
+      if (view === frameCamera && frameGesture && frameGesture !== "keys" && !drag) commitFrame();
+      if (!drag) view?.beginKeys();
+      keysCamera = view;
       keysMoving = true;
     }
     syncUi();
@@ -448,9 +822,14 @@ export function createStage({
       drag = null;
       ended.handler.cancel();
     } else if (drag) {
+      const ended = drag;
       drag = null;
-      camera.endGesture();
+      ended.camera?.endGesture();
+      // A drag of the Frame view ends as if let go: what it moved is one Undo step (docs/space-and-view.md "ウィンドウが
+      // フォーカスを失ったとき").
     }
+    endKeys();
+    commitFrame();
     if (objects?.leave()) requestDraw();
     objectCursor = null;
     camera.endGesture();
@@ -497,21 +876,33 @@ export function createStage({
     // screen center. Its moves come through the window's pointer events.
     knobDown(knob, event) {
       const action = knobAction(knob);
-      if (!action || drag || event.button !== 0) return;
+      if (!action || drag || event.button !== 0 || !navCamera()) return;
       event.preventDefault();
       event.currentTarget?.setPointerCapture?.(event.pointerId);
       input.modifiers(event);
       begin(action, { x: event.clientX, y: event.clientY }, event.pointerId, knob);
     },
-    // Reset View: to the output view the editor opened with.
+    // The Frame view's change still waiting (a wheel run) becomes one Undo step now: before another edit or a step.
+    settle() {
+      if (!drag && !keysMoving) commitFrame();
+    },
+    // Reset View: to the output view the editor opened with. Not in the Camera tab.
     resetView() {
+      if (viewMode() !== "space") return;
       report(camera.reset(output));
       requestDraw();
     },
     // Frame Selected: the selected object (selected(), or `selection` when given: a Timeline row's double click), else
-    // the whole World content; with nothing to frame it says so.
+    // the whole World content; with nothing to frame it says so. In the Frame view it moves the Camera at once, as one
+    // Undo step (a selected Camera does not count there); in Panorama mode nothing moves.
     frameSelected(selection = selected()) {
-      report(camera.frameSelected(frameSelectedSphere({ selection, content: content()?.sphere ?? null, ground: world.ground })));
+      const view = navCamera();
+      if (!view) return;
+      const frame = view === frameCamera;
+      if (frame) commitFrame();
+      const chosen = frame ? (selection?.kind === "object" ? selection : null) : selection;
+      moved(view, view.frameSelected(frameSelectedSphere({ selection: chosen, content: content()?.sphere ?? null, ground: world.ground })), "drag");
+      if (frame) commitFrame();
       requestDraw();
     },
     // The shell changed something the stage draws (the grid switch, a background that loaded).
@@ -523,9 +914,20 @@ export function createStage({
     // The pose to remember on close: where an eased move goes.
     destination: () => camera.destination(),
     pose: () => camera.pose(),
+    // The live ERP's last draw that drew something ({ faces, pass, counts, ms, facesMs }, pano_three_view.js
+    // renderLiveErp) while Panorama mode shows, else null; and what the stage shows ("space", "frame", "erp").
+    liveErp: () => liveErp,
+    mode: () => viewMode(),
+    // The Frame view's viewport in the stage's CSS px ({ camera, x, y, width, height }), for the tests.
+    viewport: () => {
+      const { camera: view, x, y, width, height } = viewport();
+      return { camera: view, x, y, width, height };
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
+      commitFrame();
+      outputFrames += 1;
       camera.stop();
       clearTimeout(noticeTimer);
       scheduler.stop();

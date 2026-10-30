@@ -121,7 +121,9 @@ test("the shell has its regions, the stage draws the background and the grid, an
   for (const tool of ["paint", "mask", "add", "camera", "undo", "redo"]) {
     await expect(page.locator(`[data-tool="${tool}"]`)).toHaveAttribute("aria-disabled", "true");
   }
-  await expect(page.locator('.pano-studio-tabs [data-value="camera"]')).toHaveAttribute("aria-disabled", "true");
+  // The 3D tab is chosen; the Camera tab can be chosen (tests/browser/studio_camera_wired.spec.js).
+  await expect(page.locator('.pano-studio-tabs [data-value="3d"]')).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator('.pano-studio-tabs [data-value="camera"]')).not.toHaveAttribute("aria-disabled", "true");
 
   const shown = await settled(page);
   expect(spread(shown)).toBeGreaterThan(120);

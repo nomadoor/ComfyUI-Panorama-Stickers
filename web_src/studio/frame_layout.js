@@ -73,3 +73,55 @@ export function rulerDragValue(start, deltaPx, unitPx, { fine = false, min = -In
   const next = start - (deltaPx / unitPx) * (fine ? fineFactor : 1);
   return Math.min(max, Math.max(min, next));
 }
+
+// The edge rulers of the Camera tab from the Camera card (inspector_model.js buildInspectorModel with tab "camera"): the
+// FOV ruler is its H FOV row, Lens its Lens row, Roll the Roll of its Rotation row, so their values, ranges, the
+// Keyframe dots' states (docs/timeline-ui.md "インスペクタの Keyframe のポチ": `fov`, `curve`, `rotation`) and what is
+// grayed (Panorama mode, a locked Camera, a read-only editor) are the card's. Each ruler: { name, row, field, value,
+// min, max, precision, valueText, keyState, disabled, tip, scale (CAMERA_RULERS') }; `lensStart` is the Lens row's
+// (a κ edit keeps the image's center scale from where it began). Null without the Camera card.
+export const ROLL_RULER_RANGE = Object.freeze({ min: -180, max: 180 });
+
+export function cameraRulers(card) {
+  if (card?.kind !== "camera") return null;
+  const row = (id) => card.rows.find((item) => item.id === id);
+  const ruler = (name, source, field, extra) => {
+    const box = source.fields.find((item) => item.field === field);
+    return {
+      name,
+      row: source.id,
+      field,
+      value: box.value,
+      min: box.min,
+      max: box.max,
+      keyState: source.keyState ?? "",
+      disabled: !!source.disabled,
+      tip: source.disabled ? source.tip : "",
+      ...extra,
+    };
+  };
+  const hfov = row("hfov");
+  const lens = row("lens");
+  const rotation = row("rotation");
+  const roll = ruler("Roll", rotation, "roll_deg", { ...ROLL_RULER_RANGE, precision: 1, scale: CAMERA_RULERS.roll });
+  return {
+    target: card.target,
+    fov: ruler("FOV", hfov, "hFOV_deg", { precision: 1, scale: CAMERA_RULERS.fov, valueText: `${rulerLabel(hfov.fields[0].value, 0)}°` }),
+    lens: ruler("Lens", lens, "curve", { precision: 3, scale: CAMERA_RULERS.lens, valueText: rulerLabel(lens.fields[0].value, 2), lensStart: lens.lensStart }),
+    roll: { ...roll, valueText: `${rulerLabel(roll.value, 0)}°` },
+  };
+}
+
+// The inspector edit (inspector_actions.js applyInspectorEdit) of a ruler's event: "input" (a value on the way),
+// "change" (the drag or the key press ended: one Undo step), "cancel" (Escape, or a press that moved nothing), "key"
+// (its Keyframe dot). `lensStart` is the Lens row's lensStart where the drag began.
+export function rulerEdit(rulers, which, event, value, lensStart = null) {
+  const ruler = rulers[which];
+  const target = rulers.target;
+  if (event === "key") return { type: "key", target, row: ruler.row };
+  const phase = { input: "input", change: "commit", cancel: "cancel" }[event];
+  if (!phase) return null;
+  const edit = { type: "field", target, field: ruler.field, value, phase };
+  if (ruler.field === "curve") edit.start = lensStart ?? ruler.lensStart;
+  return edit;
+}

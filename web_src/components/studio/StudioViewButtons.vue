@@ -12,13 +12,23 @@ defineProps({
   resetTip: { type: String, default: "" },
   // Frame Selected's tooltip (the Camera tab's moves the camera, docs/studio-ui.md "Camera タブ").
   frameTip: { type: String, default: "" },
+  // Frame Selected stays in its place but cannot be pressed (the Camera tab in Panorama mode), `frameDisabledTip` says why.
+  frameDisabled: { type: Boolean, default: false },
+  frameDisabledTip: { type: String, default: "" },
 });
 const emit = defineEmits(["frame-selected", "reset-view", "grid"]);
 </script>
 
 <template>
   <StudioFloatGroup layout="row" label="View">
-    <StudioIconButton data-action="frame-selected" :icon="ICON.focus" label="Frame selected" :tip="frameTip" @press="emit('frame-selected')" />
+    <StudioIconButton
+      data-action="frame-selected"
+      :icon="ICON.focus"
+      label="Frame selected"
+      :tip="frameDisabled && frameDisabledTip ? frameDisabledTip : frameTip"
+      :disabled="frameDisabled"
+      @press="emit('frame-selected')"
+    />
     <StudioIconButton
       data-action="reset-view"
       :icon="ICON.reset"
