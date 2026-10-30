@@ -54,19 +54,6 @@ class TestVueModalBoundary(unittest.TestCase):
         self.assertNotIn("function pickImageFile(", editor_js)
         self.assertNotIn('document.createElement("input")', editor_js)
 
-    def test_editor_no_longer_builds_side_panel_or_selection_menu_html(self):
-        editor_js = editor_source()
-        self.assertNotIn("side.innerHTML =", editor_js)
-        self.assertNotIn("selectionMenu.innerHTML =", editor_js)
-        self.assertNotIn('layer.className = "pano-canvas-confirm"', editor_js)
-        self.assertNotIn("installTooltipHandlers(", editor_js)
-        self.assertNotIn("selectionMenu.addEventListener(", editor_js)
-        self.assertNotIn(".onclick =", editor_js)
-        self.assertIn("uiState.sidePanel =", editor_js)
-        self.assertIn("uiState.selectionMenu =", editor_js)
-        self.assertIn("uiState.tooltip", editor_js)
-        self.assertIn("uiState.confirmDialog =", editor_js)
-
     def test_modal_shell_uses_vue_components_for_side_panel_and_selection_menu(self):
         modal_vue = (REPO_ROOT / "web_src" / "components" / "PanoModal.vue").read_text(encoding="utf-8")
         self.assertIn('import PanoSelectionMenu from "./PanoSelectionMenu.vue";', modal_vue)

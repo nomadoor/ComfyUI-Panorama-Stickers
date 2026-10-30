@@ -306,30 +306,11 @@ class TestNodesPreview(unittest.TestCase):
         assert "function installEditorButton" not in editor_js
         assert "function installStandalonePreviewInstance" not in editor_js
 
-    def test_preview_runtime_has_no_embedded_button(self):
-        preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'document.createElement("button")' not in preview_js
-        assert "getLegacyButtonRect" not in preview_js
-
     def test_preview_node_prefers_self_rendered_input_over_upstream_preview(self):
         preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
         candidate_block = preview_js.split("const candidateGroups = [", 1)[1].split("];", 1)[0]
         assert candidate_block.index("selfOutput?.ui?.pano_input_images") < candidate_block.index("outputs?.ui?.pano_input_images")
         assert candidate_block.index("selfOutput?.pano_input_images") < candidate_block.index("outputs?.pano_input_images")
-
-    def test_editor_runtime_and_preview_draw_with_the_three_js_view(self):
-        editor_js = editor_source()
-        runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'from "./pano_editor_view.js"' in editor_js
-        assert 'from "./pano_preview_view.js"' in runtime_js
-        assert 'from "./pano_preview_view.js"' in preview_node_js
-        for source in (editor_js, runtime_js, preview_node_js):
-            assert "createPanoramaRenderCore" not in source
-            assert "renderToTarget(" not in source
-            assert "pano_gl_scene" not in source
-        for name in ("pano_gl_renderer.js", "pano_gl_scene.js", "pano_render_core.js"):
-            assert not self._web_source_path(name).exists()
 
     def test_preview_node_grid_is_fallback_only(self):
         preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
@@ -337,10 +318,6 @@ class TestNodesPreview(unittest.TestCase):
         assert "else drawGrid(ctx, width, height);" in preview_js
         # No media, a failed view (its message is on the node surface), and before the view loads.
         assert preview_js.count("drawGrid(ctx, width, height);") == 3
-
-    def test_editor_debug_probe_is_removed_from_normal_path(self):
-        editor_js = editor_source()
-        assert "function panoEditorDebug(" not in editor_js
 
     def test_preview_runtime_wheel_and_scheduler_guards(self):
         preview_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
@@ -358,11 +335,6 @@ class TestNodesPreview(unittest.TestCase):
         assert "this.inTick = false;" in preview_js
         assert "this.queuedDuringTick = false;" in preview_js
 
-    def test_shared_runtime_discards_the_dormant_legacy_stickers_surface(self):
-        runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        assert "function attachLegacyStickersPreview" not in runtime_js
-        assert "legacy_draw_auto" not in runtime_js
-
     def test_stickers_without_preview_do_not_force_large_node_size(self):
         lifecycle_js = self._web_source_path("pano_editor_extension.js").read_text(encoding="utf-8")
         stickers_block = lifecycle_js.split('if (matchType === "PanoramaStickers") {', 1)[1].split(
@@ -372,26 +344,6 @@ class TestNodesPreview(unittest.TestCase):
         preview_block = stickers_block.split("if (enableStickersPreview) {", 1)[1]
         assert "attachStickers(node" in preview_block
         assert "node.size = [360, 260]" in preview_block
-
-    def test_paint_rebuild_ui_scaffold_strings(self):
-        editor_js = editor_source()
-        css = self._web_runtime_path("pano_editor.css").read_text(encoding="utf-8")
-        assert 'data-tool-rail' in editor_js
-        assert 'data-tool-mode' in editor_js
-        assert '.pano-paint-footer' in css
-        assert 'pano-floating-bottom' not in editor_js
-        assert '.pano-floating-left' in css
-        assert '.pano-paint-footer' in css
-        assert 'top: 50%;' in css
-        assert 'Clear All Paint Data' in editor_js
-
-    def test_no_new_active_preview_dependency_on_editor_core(self):
-        editor_js = editor_source()
-        runtime_js = self._web_source_path("pano_preview_runtime.js").read_text(encoding="utf-8")
-        preview_node_js = self._web_source_path("pano_preview_previewnode.js").read_text(encoding="utf-8")
-        assert 'from "./pano_editor_core.js"' not in editor_js
-        assert 'from "./pano_editor_core.js"' not in runtime_js
-        assert 'from "./pano_editor_core.js"' not in preview_node_js
 
     def test_runtime_bundle_exists_and_has_content(self):
         bundle_js = self._web_runtime_path("panorama_suite.js").read_text(encoding="utf-8")

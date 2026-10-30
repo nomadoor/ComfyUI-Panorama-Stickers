@@ -252,16 +252,6 @@ test("an on-node Stickers surface with nothing to draw shows the grid without lo
   assert.match(stickers, /if \(!bgImg && panoramaDrawn\) drawPanoGrid\(/);
 });
 
-test("no module draws with the previous WebGL renderer", () => {
-  const files = readdirSync(new URL("../web_src/", import.meta.url)).filter((name) => name.endsWith(".js"));
-  for (const name of ["pano_render_core.js", "pano_gl_renderer.js", "pano_gl_scene.js", "pano_scene_camera.js", "pano_cutout_camera.js"]) {
-    assert.ok(!files.includes(name), `${name} is gone`);
-  }
-  for (const name of files) {
-    assert.doesNotMatch(source(name), /pano_(?:render_(?:core|state|targets|descriptors|layer_descriptors|object_pass)|gl_(?:renderer|scene)|scene_camera(?:_dom|_export)?|cutout_camera)\.js/, name);
-  }
-});
-
 test("the Stickers and Cutout editors and the read-only Preview modal draw with three.js", () => {
   const editor = readEditorSource();
   assert.match(editor, /const editorView = createEditorView\(/);

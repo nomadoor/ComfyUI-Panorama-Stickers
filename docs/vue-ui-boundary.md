@@ -12,7 +12,7 @@ DOM を組み立てる書き方の禁止）は `AGENTS.md` の Non-negotiables 6
 | 規則 | Python | JS | test |
 |---|---|---|---|
 | モーダルの外枠と部品は Vue のコンポーネント（ペイントのオーバーレイ、画像の選択、サイドパネル、選択メニュー、確認のダイアログ、ツールチップ、タイムライン） | — | `web_src/components/PanoModal.vue`・`PanoPaintOverlays.vue`・`PanoImageFilePicker.vue`・`PanoSidePanel.vue`・`PanoSelectionMenu.vue`・`PanoConfirmDialog.vue`・`PanoTooltip.vue`・`PanoTimeline.vue` | `tests/test_vue_modal_boundary.py` |
-| エディタはそれらを DOM で作らず、Vue の ref と `uiState` を通して使う | — | `web_src/pano_editor.js`、`web_src/editor/*.js`（`getPaintOverlayRefs`・`openImagePicker`・`uiState.sidePanel` など） | `tests/test_vue_modal_boundary.py`（`tests/editor_source.py` で `pano_editor.js` と `web_src/editor/*.js` を読む） |
+| エディタはペイントのオーバーレイと画像の選択を DOM で作らず、Vue の ref と `uiState` を通して使う（サイドパネル・選択メニュー・確認のダイアログ・ツールチップをエディタが作らないことは、上の行の shell の test が、Vue の部品の組み込みの側から守る） | — | `web_src/pano_editor.js`、`web_src/editor/*.js`（`getPaintOverlayRefs`・`openImagePicker`・`uiState.sidePanel` など） | `tests/test_vue_modal_boundary.py`（`tests/editor_source.py` で `pano_editor.js` と `web_src/editor/*.js` を読む） |
 | Vue に渡す UI のモデルは `pano_editor_ui_state.js` の data builder に置く | — | `web_src/pano_editor_ui_state.js` `buildPaintDockModel`・`buildEditorSidePanelModel`・`buildPreviewSidePanelModel`・`buildSelectionMenuModel` | `tests/test_vue_modal_boundary.py`、`tests/pano_editor_ui_state.test.mjs` |
 
 ## Vue-only UI surface

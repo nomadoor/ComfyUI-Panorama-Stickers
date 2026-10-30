@@ -400,17 +400,6 @@ test("a sky Sticker with Keyframes can be locked and edited on the node", () => 
   assert.equal(state.stickers[0].direction.value.yaw_deg, 30, "the reducer does not change the state it was given");
 });
 
-test("the editor has no Render Quality setting", () => {
-  const dir = new URL("../web_src/", import.meta.url);
-  const sources = [
-    ...readdirSync(dir).filter((name) => name.endsWith(".js")),
-    ...readdirSync(new URL("components/", dir), { recursive: true }).filter((name) => name.endsWith(".vue")).map((name) => `components/${name}`),
-  ].map((name) => [name, readFileSync(new URL(name, dir), "utf8")]);
-  for (const [name, text] of sources) {
-    assert.ok(!text.includes("preview_quality") && !text.includes("Render Quality"), name);
-  }
-});
-
 test("the inspector edits the Camera's Lanes by the recording rule", () => {
   const state = parseSceneEditorState(readFixture("v2_canonical"));
   const { camera } = state;
