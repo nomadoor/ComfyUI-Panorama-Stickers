@@ -54,7 +54,8 @@ import {
   WebGLRenderer,
 } from "three";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, pickCacheKey, pickRay, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
+import { PICK_FRAGMENT, PICK_VERTEX, nearestHit, nearestSquareHit, pickCacheKey, pickRay, pickSquareWindow, pickWindow, pointAt, rayBoxDepth, readPickBytes, readPickFloat } from "./pano_pick.js";
+import { itemCoarseGrid } from "./pano_coarse_grid.js";
 import { createSceneItems } from "./pano_scene_items.js";
 import { disposeObject, disposeSceneItem, loadSceneItem, loadSpark, poseAnimation } from "./pano_scene_loaders.js";
 import { createSparkViews } from "./pano_spark_views.js";
@@ -898,6 +899,9 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // After a float target failed picks use RGBA8; after that failed too only the SPLAT boxes are picked.
   let pickFloat = true;
   let pickFailed = false;
+  // A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"): the target of the square picks of the
+  // "pixels" object hit test (pickStickerNear), and its side.
+  let squareTarget = null;
   const pickCamera = new PerspectiveCamera();
   const pickMaterials = [];
   // Spark's module once it has loaded (when a SPLAT first shows), and per view that draws SPLATs a renderer
@@ -1808,6 +1812,92 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return pickAt(camera, x, y, width, height)?.stickerId ?? null;
   }
 
+  // A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"), for the "pixels" object hit test
+  // (web_src/studio/hit_test.js): the id of the world or 3D Sticker drawn nearest (x, y) within `radius` px, as
+  // pickSticker takes it (a SPLAT on its box along the pointer's ray, a plane before a nearer box), or null. The square
+  // draws the ids only; on an RGBA8 target its hit has no depth and is taken before a SPLAT's box. With `async` it
+  // returns a promise: the square is drawn now and read back without waiting for the GPU
+  // (readRenderTargetPixelsAsync).
+  function pickStickerNear(camera, x, y, width, height, { radius = 0, async = false } = {}) {
+    const finish = (square) => {
+      const hits = [];
+      const entry = square && pickable[square.id - 1];
+      if (entry) hits.push({ depth: square.depth ?? camera.near, stickerId: entry.stickerId, plane: entry.plane });
+      const ray = pickRay(camera, x, y, width, height);
+      for (const { object, box, stickerId } of pickBoxes) {
+        if (!box) continue;
+        const inverse = new Matrix4().copy(object.matrixWorld).invert();
+        const origin = new Vector3(...ray.origin).applyMatrix4(inverse).toArray();
+        const direction = new Vector3(...ray.direction).applyMatrix3(new Matrix3().setFromMatrix4(inverse)).toArray();
+        const depth = rayBoxDepth(origin, direction, box);
+        if (depth !== null) hits.push({ depth, stickerId, box: true });
+      }
+      return nearestHit(hits, camera, (each) => each.plane)?.stickerId ?? null;
+    };
+    world.updateMatrixWorld();
+    if (!pickable.length || pickFailed) return async ? Promise.resolve(finish(null)) : finish(null);
+    const side = 2 * radius + 1;
+    const float = pickFloat && renderer.extensions.has("EXT_color_buffer_float");
+    if (!squareTarget || squareTarget.width !== side || (squareTarget.texture.type === FloatType) !== float) {
+      squareTarget?.dispose();
+      squareTarget = new WebGLRenderTarget(side, side, {
+        type: float ? FloatType : UnsignedByteType,
+        format: RGBAFormat,
+        minFilter: NearestFilter,
+        magFilter: NearestFilter,
+        generateMipmaps: false,
+        depthBuffer: true,
+      });
+    }
+    const target = squareTarget;
+    setCamera(pickCamera, camera);
+    const offset = pickSquareWindow(x, y, width, height, radius);
+    pickCamera.setViewOffset(offset.fullWidth, offset.fullHeight, offset.x, offset.y, offset.width, offset.height);
+    const pixels = float ? new Float32Array(side * side * 4) : new Uint8Array(side * side * 4);
+    const mode = float ? 0 : 1;
+    const draw = () => {
+      pickMaterials.forEach((material) => {
+        material.uniforms.pickMode.value = mode;
+        material.uniforms.far.value = camera.far;
+      });
+      pickShared.pickMode.value = mode;
+      pickShared.far.value = camera.far;
+      renderer.setRenderTarget(target);
+      try {
+        renderer.render(world, pickCamera);
+      } finally {
+        renderer.setRenderTarget(null);
+      }
+      if (async) return renderer.readRenderTargetPixelsAsync(target, 0, 0, side, side, pixels);
+      renderer.readRenderTargetPixels(target, 0, 0, side, side, pixels);
+      return pixels;
+    };
+    try {
+      const read = pickPass(world, pickable, pickMaterial, draw);
+      if (!async) return finish(nearestSquareHit(pixels, side, float));
+      return read.then(() => finish(nearestSquareHit(pixels, side, float)), (error) => {
+        console.error("[PanoramaStickers] Picking on the GPU failed", error);
+        return null;
+      });
+    } catch (error) {
+      console.error("[PanoramaStickers] Picking on the GPU failed", error);
+      return async ? Promise.resolve(null) : null;
+    }
+  }
+
+  // A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"), for the "coarse" object hit test: the
+  // coarse occupancy grid of the loaded `scene` or 3D Sticker item at url (pano_coarse_grid.js itemCoarseGrid, in the
+  // `scene` glTF frame), built the first time it is asked and kept with the item, or null while it loads.
+  function sceneGrid(url) {
+    for (const items of [sceneItems, stickerItems, ...upstreamItems.values()]) {
+      const item = items.items.get(url);
+      if (item?.state !== "loaded") continue;
+      if (item.coarseGrid === undefined) item.coarseGrid = itemCoarseGrid(item);
+      return item.coarseGrid;
+    }
+    return null;
+  }
+
   // The pointer at (x, y) of a width x height view from camera (a spaceCamera()) on the gizmo of the last
   // space render (createGizmo's pointer).
   function gizmoPointer(phase, camera, x, y, width, height) {
@@ -1891,6 +1981,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     panorama.lensSticker.forEach((mesh) => mesh.material.dispose());
     pickMaterials.forEach((material) => material.dispose());
     pickTarget?.dispose();
+    squareTarget?.dispose();
     lensTargets.forEach((targets) => targets.forEach((target) => target.dispose()));
     lensQuad.material.dispose();
     liveErps.forEach((entry) => entry.erp.dispose());
@@ -1910,5 +2001,5 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     if (!lost) renderer.forceContextLoss();
   }
 
-  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneItemError, pick, pickSurface, pickSticker, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
+  return { canvas, render, renderLiveErp, renderUnwrap, resize, clear, sceneBox, sceneGrid, sceneItemError, pick, pickSurface, pickSticker, pickStickerNear, gizmoPointer, contentRevision: () => contentRevision, release, releaseSplats, stats, dispose };
 }
