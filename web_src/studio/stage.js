@@ -38,6 +38,8 @@ export function stageUi() {
     lit: [],
     // A knob is being dragged: the whole editor shows the grabbing cursor.
     knobDrag: false,
+    // A loading guide's band of light runs on the overlay (load_reveal.js; the overlay is marked data-loading-guide).
+    loadingGuide: false,
     // The Hide Grid switch: the grid is hidden (the shell writes it).
     gridHidden: false,
   };
@@ -64,6 +66,8 @@ export function stageUi() {
 // { frame, erp }, a "bitmaprenderer" canvas for Frame mode and a 2D one for the live ERP, or null), and edits ({ live(pose), commit(), cancel() }: the Frame view's
 // moves of the Camera, pose { position, yaw_deg, pitch_deg }, written to its Lanes by the editor). Without it the
 // stage shows the 3D tab only.
+// motion: what moves on its own besides the view (load_reveal.js createLoadReveal()'s animating(), revealing()): while
+// animating() the stage draws each frame, and while revealing() an item fades in, so the Output window draws again too.
 export function createStage({
   canvas,
   overlay = null,
@@ -78,6 +82,7 @@ export function createStage({
   selected = () => null,
   ui,
   onEscape = () => {},
+  motion: ownMotion = null,
   view: makeView = createEditorView,
   win = window,
   now = () => performance.now(),
@@ -125,7 +130,7 @@ export function createStage({
     requestAnimationFrame: (callback) => win.requestAnimationFrame(callback),
     cancelAnimationFrame: (id) => win.cancelAnimationFrame(id),
     draw,
-    animating: () => camera.animating() || drag?.action === "joystick" || keysMoving,
+    animating: () => camera.animating() || drag?.action === "joystick" || keysMoving || !!ownMotion?.animating(),
   });
 
   const objects = objectDeps ? createStageObjects({
@@ -270,6 +275,7 @@ export function createStage({
   }
 
   function draw(ts, reasons = new Set()) {
+    if (ownMotion?.revealing()) reasons.add(DRAW_REASON.MEDIA);
     const seconds = lastFrame ? frameSeconds((ts - lastFrame) / 1000) : 0;
     lastFrame = ts;
     camera.step(seconds);
@@ -489,18 +495,26 @@ export function createStage({
     const ctx = overlay.getContext("2d");
     if (!ctx) return;
     const view = viewport();
+    const scene = objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null;
     drawStageOverlay(ctx, {
       camera: view.camera,
       width: view.width,
       height: view.height,
       origin: { x: view.x, y: view.y },
       ratio,
-      scene: objectsOn() ? objects.overlay({ altHeld: input.altHeld(), gridHidden: ui.gridHidden }) : null,
+      scene,
     });
+    const loading = !!scene?.loading;
+    if (ui.loadingGuide !== loading) ui.loadingGuide = loading;
   }
 
+  // A change of size (the stage's canvas, the Camera tab's frame box or its ERP canvas, the Output window) draws at once,
+  // before the browser paints: a resized canvas is cleared and would otherwise show so, or stretched, for a frame
+  // (docs/timeline-ui.md: the view is drawn again at its new size in the same frame).
   function requestDraw(reason = DRAW_REASON.VIEW) {
-    if (!disposed) scheduler.requestDraw(reason);
+    if (disposed) return;
+    scheduler.requestDraw(reason);
+    if (reason === DRAW_REASON.RESIZE) scheduler.flush(now());
   }
 
   // --- The notice, the cursor and the knobs.

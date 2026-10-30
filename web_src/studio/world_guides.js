@@ -7,12 +7,16 @@ import { boxCorners, planeCorners, planeOutlineSegments, projectPoint, sceneCont
 import { quaternionToRotation } from "../pano_world.js";
 
 // The looks of a guide (docs/design.md "新しい UI の見た目"): a light line over a dark line 2px wider, so it shows on
-// a light and a dark picture alike. The selected look's color is the soft yellow of the drop mark.
+// a light and a dark picture alike. The selected look's color is the soft yellow of the World drop mark; a selected
+// sky image's frame and handles (stage_overlay.js) take the ice of the Sky drop mark, so the color tells where a thing
+// is (docs/design.md "色").
 export const SELECTED_GUIDE_COLOR = "#e8cf74";
+export const SKY_SELECTED_COLOR = "#aecedb";
 export const GUIDE_LOOKS = Object.freeze({
   normal: Object.freeze({ light: "rgba(255, 255, 255, 0.32)", dark: "rgba(0, 0, 0, 0.32)", width: 1 }),
   hover: Object.freeze({ light: "rgba(255, 255, 255, 0.9)", dark: "rgba(0, 0, 0, 0.6)", width: 1.5 }),
   selected: Object.freeze({ light: SELECTED_GUIDE_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
+  skySelected: Object.freeze({ light: SKY_SELECTED_COLOR, dark: "rgba(0, 0, 0, 0.7)", width: 1.5 }),
 });
 // How much wider the dark line under a guide is than the light one.
 export const GUIDE_UNDER_EXTRA = 2;
@@ -28,11 +32,13 @@ function loop(points) {
 }
 
 // The World objects that have a guide in `content` (stage_content.js stageContent(): the shown world image planes and
-// the shown 3D Stickers' items) of `state`: [{ id, kind ("plane" | "box"), locked, segments, corners, center }] in
-// World units. `sceneBox(url)` is the box of a loaded item (null while it loads: that object has no guide yet).
-// Hidden objects and those outside their Clip range are not in `content`; the `scene` content and the Camera have
-// no guide.
-export function worldGuideItems(state, content, sceneBox = () => null) {
+// the shown 3D Stickers' items) of `state`: [{ id, kind ("plane" | "box"), locked, loading, segments, corners, center }]
+// in World units. `center` is where the object's gizmo sits too (docs/studio-ui.md "ギズモ" "物の中心"). `sceneBox(url)`
+// is the box of a loaded item (null while it loads: that object has no guide yet). `pendingBox(id)` is the box in its
+// own frame of a 3D file just placed whose item has not drawn yet (load_reveal.js: DROP_PREVIEW_BOX, then the route's
+// box), or null: such an object has a guide of that box, `loading`. Hidden objects and those outside their Clip range
+// are not in `content`; the `scene` content and the Camera have no guide.
+export function worldGuideItems(state, content, sceneBox = () => null, pendingBox = () => null) {
   if (!content) return [];
   const byId = new Map(state.stickers.map((sticker) => [sticker.id, sticker]));
   const items = [];
@@ -50,20 +56,33 @@ export function worldGuideItems(state, content, sceneBox = () => null) {
       center: [...plane.position],
     });
   }
+  const boxItem = (sticker, box, value, loading) => {
+    const corners = boxCorners(box).map((point) => transformPoint(value, point));
+    return {
+      id: sticker.id,
+      kind: "box",
+      locked: sticker.locked === true,
+      loading,
+      segments: BOX_EDGES.map(([a, b]) => [corners[a], corners[b]]),
+      corners,
+      center: transformPoint(value, box.min.map((v, axis) => (v + box.max[axis]) / 2)),
+    };
+  };
+  const boxed = new Set();
   for (const request of content.space?.fileStickers ?? []) {
     const sticker = byId.get(request.id);
     const box = sticker ? sceneContentBox(request, sceneBox(request.url)) : null;
     if (!box) continue;
-    const corners = boxCorners(box).map((point) => transformPoint(request.value, point));
-    items.push({
-      id: request.id,
-      kind: "box",
-      locked: sticker.locked === true,
-      segments: BOX_EDGES.map(([a, b]) => [corners[a], corners[b]]),
-      corners,
-      center: transformPoint(request.value, box.min.map((value, axis) => (value + box.max[axis]) / 2)),
-    });
+    boxed.add(sticker.id);
+    items.push(boxItem(sticker, box, request.value, false));
   }
+  // A placed 3D file still loading: the stand-in box at its value now (shown at the playhead only).
+  state.stickers.forEach((sticker, index) => {
+    if (boxed.has(sticker.id) || sticker.placement !== "world") return;
+    const box = pendingBox(sticker.id);
+    const value = content.evaluated?.stickers?.[index];
+    if (box && value?.active) items.push(boxItem(sticker, box, value, true));
+  });
   return items;
 }
 
