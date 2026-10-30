@@ -3,6 +3,14 @@
 // new UI has them.
 // web_src/main.js puts this together with the two editors.
 
+// The Preview's read-only opening of an IMAGE or a VIDEO source goes to the new window (a PANO_SCENE source opens
+// through the Scene viewer's opener instead, which web_src/main.js hands to the new window: pano_editor.js
+// oldEditorHooks.takeSceneViewer).
+// type: the class of the node, sourceType: the type linked to its `source` input.
+export function previewUsesNewWindow({ type, sourceType }) {
+  return type === "PanoramaPreviewNode" && (sourceType === "IMAGE" || sourceType === "VIDEO");
+}
+
 export const NEW_UI_SETTING_ID = "PanoramaSuite.Editor.NewUI";
 
 // The ComfyUI setting (an extension's `settings`). On by default (docs/studio-ui.md "入口").
@@ -29,10 +37,13 @@ export function createStudioPreloader({ newUiOn, preload, whenIdle }) {
 
 // openEditor(node, type, options) for the node registration. newUiOn(): whether the setting is on.
 // openOld(node, type, options): the old UI's editor. openStudio(node): the new UI's Panorama Studio editor.
-export function createEditorChooser({ newUiOn, openOld, openStudio }) {
+// openPreview(node): the new UI's Preview window (docs/studio-ui.md "Preview のウィンドウ"); previewTakes(node): whether
+// it shows this node's read-only opening (the Panorama Preview node with what the window shows so far linked).
+export function createEditorChooser({ newUiOn, openOld, openStudio, openPreview = null, previewTakes = () => false }) {
   return (node, type, options = {}) => {
     const studio = node?.__panoStudio === true && type === "stickers" && !options.readOnly;
     if (studio && newUiOn() === true) return openStudio(node);
+    if (openPreview && type === "stickers" && options.readOnly && newUiOn() === true && previewTakes(node)) return openPreview(node);
     return openOld(node, type, options);
   };
 }

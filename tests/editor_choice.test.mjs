@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createEditorChooser, createStudioPreloader, NEW_UI_SETTING, NEW_UI_SETTING_ID } from "../web_src/editor_choice.js";
+import { createEditorChooser, createStudioPreloader, NEW_UI_SETTING, NEW_UI_SETTING_ID, previewUsesNewWindow } from "../web_src/editor_choice.js";
 
 function chooser(on) {
   const calls = [];
@@ -67,4 +67,32 @@ test("the new editor preloads once, when the page is idle, only while the settin
   assert.equal(loads, 0);
   idle[0]();
   assert.equal(loads, 1);
+});
+
+test("with the setting on, the Preview's read-only opening goes to the new window only when it takes the node", () => {
+  for (const on of [true, false]) {
+    const calls = [];
+    const previewNode = { comfyClass: "PanoramaPreviewNode" };
+    const openEditor = createEditorChooser({
+      newUiOn: () => on,
+      openOld: (...args) => calls.push(["old", ...args]),
+      openStudio: (...args) => calls.push(["studio", ...args]),
+      openPreview: (...args) => calls.push(["preview", ...args]),
+      previewTakes: (node) => node === previewNode,
+    });
+    openEditor(previewNode, "stickers", { readOnly: true, hideSidebar: false });
+    openEditor(stickersNode, "stickers", { readOnly: true, hideSidebar: false });
+    assert.deepEqual(calls, [
+      on ? ["preview", previewNode] : ["old", previewNode, "stickers", { readOnly: true, hideSidebar: false }],
+      ["old", stickersNode, "stickers", { readOnly: true, hideSidebar: false }],
+    ]);
+  }
+});
+
+test("the new Preview window takes the Panorama Preview node with an IMAGE or a VIDEO source only", () => {
+  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "IMAGE" }), true);
+  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "VIDEO" }), true);
+  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "PANO_SCENE" }), false);
+  assert.equal(previewUsesNewWindow({ type: "PanoramaPreviewNode", sourceType: "" }), false);
+  assert.equal(previewUsesNewWindow({ type: "PanoramaStickerPreview", sourceType: "IMAGE" }), false);
 });

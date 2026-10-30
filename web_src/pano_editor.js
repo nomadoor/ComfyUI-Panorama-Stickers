@@ -997,7 +997,10 @@ const sceneViewerMedia = {
   editorFile: (sticker) => file3dEditorFileOf(sceneViewerFiles, sticker, mediaSource),
   refreshFile: (source) => sceneViewerFiles.refresh(source),
 };
-const openSceneViewer = (node) => openSceneViewerWindow(node, sceneViewerMedia);
+// The new UI's window may take the opening (web_src/main.js sets it, ADR 0044): a function that returns true when it
+// opened its own window for `node`; otherwise this old window opens.
+let sceneViewerTakeover = () => false;
+const openSceneViewer = (node) => (sceneViewerTakeover(node) ? null : openSceneViewerWindow(node, sceneViewerMedia));
 
 // What the old UI gives the node registration (createPanoEditorExtension). web_src/main.js registers it and
 // decides which editor opens (ADR 0044).
@@ -1008,6 +1011,9 @@ export const oldEditorHooks = Object.freeze({
   attachPreview: attachPreviewNode,
   attachSceneViewer: (node) => attachSceneViewerNode(node, { ...sceneViewerMedia, openViewer: openSceneViewer }),
   openSceneViewer,
+  takeSceneViewer: (takeover) => {
+    sceneViewerTakeover = typeof takeover === "function" ? takeover : () => false;
+  },
   onSceneViewerExecuted: touchSceneViewer,
   restoreOutput: restoreNodeOutput,
   enableStickersPreview: ENABLE_STICKERS_NODE_PREVIEW,
