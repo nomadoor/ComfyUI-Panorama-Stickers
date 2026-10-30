@@ -1,6 +1,7 @@
 // The one line at the top center of the stage (docs/studio-ui.md "画面の区画", "読み込み中と空の画面", "一行の知らせの
 // 種類"): which line shows, one at a time, and its kind, which sets the mark on its left. A notice of an operation
 // that did nothing comes before one that was done, before what the stage waits for, before a warning that stays, before the empty stage's hint.
+import { DEPTH_VIDEO_LOADING } from "../pano_depth_color.js";
 import { STUDIO_BACKGROUND_INPUT_NAMES } from "../pano_preview_video.js";
 import { VIEW_UNAVAILABLE_MESSAGE } from "../pano_preview_view.js";
 import { ADD_TEXT } from "./add_files.js";
@@ -44,15 +45,18 @@ export function stageEmpty({ background = "none", stickers = 0, paint = 0, linke
 // (why the last file could not be placed, or null); the editor's `stateUnreadable` (the node's state_json cannot be
 // read, docs/studio-ui.md "閉じ方"); `done` the short notice of an operation that was done (the left column's Camera
 // button, docs/studio-ui.md "左の列の Camera のボタン"), null without one; `upstreamPending`, a Scene linked to `scene` that the node's result does not have
-// yet (studio/upstream.js pending). Returns { kind, text }; text "" shows nothing.
+// yet (studio/upstream.js pending); `depthNotice`, the line of the depth grids drawn (pano_depth_color.js depthGridNotice:
+// DEPTH_VIDEO_LOADING while one waits for its colors, else why one is too large for the GPU, else ""). Returns { kind, text }; text "" shows nothing.
 export function topLine(ui) {
   if (ui.notice) return { kind: "stopped", text: String(ui.notice) };
   if (ui.done) return { kind: "done", text: String(ui.done) };
   if (ui.view === "loading") return { kind: "loading", text: LINE_TEXT.viewLoading };
   if (ui.background === "loading") return { kind: "loading", text: LINE_TEXT.backgroundLoading };
   if (ui.adding) return { kind: "loading", text: LINE_TEXT.addLoading };
+  if (ui.depthNotice === DEPTH_VIDEO_LOADING) return { kind: "loading", text: DEPTH_VIDEO_LOADING };
   if (ui.stateUnreadable) return { kind: "warning", text: LINE_TEXT.stateUnreadable };
   if (ui.view === "failed") return { kind: "warning", text: LINE_TEXT.viewFailed };
+  if (ui.depthNotice) return { kind: "warning", text: String(ui.depthNotice) };
   if (ui.background === "failed") return { kind: "warning", text: LINE_TEXT.backgroundFailed };
   if (ui.addWarning) return { kind: "warning", text: String(ui.addWarning) };
   if (ui.upstreamPending) return { kind: "info", text: LINE_TEXT.upstreamPending };

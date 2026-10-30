@@ -65,6 +65,17 @@ export function createDepthColors({ createVideo, createCanvas, releaseCanvas, on
   };
 }
 
+// `request` (sceneRequest's) with the colors of the depth grid input `slot` (an input's name: "scene", "sticker" or an
+// upstream layer's slot), which keys its one color texture (pano_three_view.js createDepthColorTextures):
+// picture(slot, video) is the proxy's picture (createDepthColors picture()) or null while it has none, and `slot` goes
+// into `slots` (the inputs whose videos are kept, retain()). A request of another kind comes back as it is.
+export function withDepthColor(request, slot, picture, slots) {
+  if (request?.kind !== "depth_grid") return request;
+  slots.push(slot);
+  const color = picture(slot, request.video);
+  return { ...request, color: color && { ...color, slot } };
+}
+
 // The stage's line while a depth grid waits for its colors (docs/agents/ux-principles.md: say what it waits for).
 export const DEPTH_VIDEO_LOADING = "Loading depth video…";
 
