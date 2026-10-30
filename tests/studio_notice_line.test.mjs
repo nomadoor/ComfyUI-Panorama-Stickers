@@ -1,7 +1,7 @@
 // docs/studio-ui.md "一行の知らせの種類": which line shows at the top center and its kind.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LINE_TEXT, NOTICE_KINDS, topLine } from "../web_src/studio/notice_line.js";
+import { LINE_TEXT, NOTICE_KINDS, stageEmpty, topLine } from "../web_src/studio/notice_line.js";
 
 const ui = (fields = {}) => ({ notice: null, view: "ready", background: "none", empty: false, ...fields });
 
@@ -26,7 +26,7 @@ test("a background that cannot be read and a 3D view that cannot be made are war
   assert.deepEqual(topLine(ui({ view: "failed", background: "failed" })), { kind: "warning", text: LINE_TEXT.viewFailed });
 });
 
-test("the empty stage's hint has no mark, and nothing else shows nothing", () => {
+test("the empty stage's hint is the info kind (a neutral dot), and nothing else shows nothing", () => {
   assert.deepEqual(topLine(ui({ empty: true })), { kind: "info", text: LINE_TEXT.empty });
   assert.deepEqual(topLine(ui({ background: "ready" })), { kind: "info", text: "" });
 });
@@ -60,4 +60,27 @@ test("a state_json that cannot be read is a warning before the other warnings, a
   assert.equal(topLine(ui({ stateUnreadable: true, background: "loading" })).kind, "loading");
   assert.equal(topLine(ui({ stateUnreadable: true, notice: "Nothing to frame" })).kind, "stopped");
   assert.equal(LINE_TEXT.stateUnreadable, "This node's saved state can't be read, so changes won't be saved");
+});
+
+// docs/studio-ui.md "読み込み中と空の画面": the stage is empty only when nothing is drawn and no input brings anything.
+const nothing = { background: "none", stickers: 0, paint: 0, linked: [], worldItems: 0, upstream: 0 };
+
+test("a stage with nothing of its own and no input linked is empty and shows the hint", () => {
+  assert.equal(stageEmpty(nothing), true);
+  assert.deepEqual(topLine(ui({ empty: stageEmpty(nothing) })), { kind: "info", text: LINE_TEXT.empty });
+});
+
+test("a linked `world` input is not an empty stage: its 3D content arrives through the input", () => {
+  assert.equal(stageEmpty({ ...nothing, linked: ["world"] }), false);
+  assert.deepEqual(topLine(ui({ empty: stageEmpty({ ...nothing, linked: ["world"] }) })), { kind: "info", text: "" });
+});
+
+test("everything drawn or brought by an input counts", () => {
+  for (const name of ["world", "background", "sticker", "scene"]) assert.equal(stageEmpty({ ...nothing, linked: [name] }), false, name);
+  assert.equal(stageEmpty({ ...nothing, linked: ["camera_state"] }), true);
+  for (const background of ["loading", "ready", "failed"]) assert.equal(stageEmpty({ ...nothing, background }), false, background);
+  assert.equal(stageEmpty({ ...nothing, stickers: 1 }), false);
+  assert.equal(stageEmpty({ ...nothing, paint: 1 }), false);
+  assert.equal(stageEmpty({ ...nothing, worldItems: 1 }), false);
+  assert.equal(stageEmpty({ ...nothing, upstream: 2 }), false);
 });

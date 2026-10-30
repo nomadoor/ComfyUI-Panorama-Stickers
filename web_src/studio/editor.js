@@ -48,7 +48,7 @@ import {
   setBrushSize, setCustomColor,
 } from "./paint_bar.js";
 import { createPortMedia } from "./port_media.js";
-import { LINE_TEXT } from "./notice_line.js";
+import { LINE_TEXT, stageEmpty as emptyStage } from "./notice_line.js";
 import { createStudioUpstream, upstreamBackground, upstreamNodeName } from "./upstream.js";
 import { gizmoModeOfKey, selectedKind } from "./selection_bar.js";
 import { createStudioSession } from "./session.js";
@@ -496,9 +496,18 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     else ui.background = image === "ready" || !backgroundVideo.failed ? image : "failed";
     ui.empty = stageEmpty();
   }
-  // [inputs] The stage is empty with no background, no object of its own and no upstream layer.
+  // The stage is empty with nothing drawn and no input bringing anything (notice_line.js stageEmpty). The paint's
+  // layers are read once the paint tools exist (below).
+  let paintLayers = () => [];
   function stageEmpty() {
-    return ui.background === "none" && !session.state.stickers.length && !view.upstream.length;
+    return emptyStage({
+      background: ui.background,
+      stickers: session.state.stickers.length,
+      paint: paintLayers().length,
+      linked: (node?.inputs ?? []).filter((input) => input?.link != null).map((input) => input.name),
+      worldItems: sceneFiles()?.urls.length ?? 0,
+      upstream: view.upstream.length,
+    });
   }
   syncBackground();
   let noticeTimer = 0;
@@ -559,6 +568,8 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     onStart: () => playback.stop(),
     onChange: () => redraw(DRAW_REASON.PAINT),
   });
+  paintLayers = () => paint.layers();
+  ui.empty = stageEmpty();
   const paintDeps = {
     active: () => paintingTool(tools),
     press: (point, dirAt, samples) => (readOnly ? null : paint.press(point, dirAt, samples)),
