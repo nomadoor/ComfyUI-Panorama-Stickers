@@ -67,8 +67,10 @@ void main() {
   float away = length(vWorld.xz - viewPosition.xz);
   float minorKeep = 1.0 - smoothstep(minorFade.x, minorFade.y, away);
   float majorKeep = 1.0 - smoothstep(majorFade.x, majorFade.y, away);
-  vec4 color = vec4(minorColor.rgb, minorColor.a * lines(vWorld.xz, 1.0) * minorKeep);
-  color = over(vec4(majorColor.rgb, majorColor.a * lines(vWorld.xz, 10.0) * majorKeep), color);
+  // Where a 10-unit line lies the 1-unit line under it is left out, so the 10-unit lines stay the fainter ones.
+  float major = lines(vWorld.xz, 10.0);
+  vec4 color = vec4(minorColor.rgb, minorColor.a * lines(vWorld.xz, 1.0) * minorKeep * (1.0 - major));
+  color = over(vec4(majorColor.rgb, majorColor.a * major * majorKeep), color);
   color = over(vec4(axisXColor.rgb, axisXColor.a * axis(vWorld.z) * majorKeep), color);
   color = over(vec4(axisZColor.rgb, axisZColor.a * axis(vWorld.x) * majorKeep), color);
   if (color.a <= 0.002) discard;

@@ -2,6 +2,7 @@
 // opens for each node. It is the only module that imports both the old UI (pano_editor.js) and the new UI
 // (web_src/studio/), ADR 0044 "新旧の境".
 import { app } from "../../scripts/app.js";
+import { api } from "../../scripts/api.js";
 import { createEditorChooser, NEW_UI_SETTING, NEW_UI_SETTING_ID } from "./editor_choice.js";
 import { createPanoEditorExtension } from "./pano_editor_extension.js";
 import { oldEditorHooks } from "./pano_editor.js";
@@ -10,7 +11,7 @@ import { openStudioEditor } from "./studio/editor.js";
 const openEditor = createEditorChooser({
   newUiOn: () => app?.ui?.settings?.getSettingValue?.(NEW_UI_SETTING_ID),
   openOld: oldEditorHooks.openEditor,
-  openStudio: openStudioEditor,
+  openStudio: (node) => openStudioEditor(node, { app, api }),
 });
 
 const extension = createPanoEditorExtension({
