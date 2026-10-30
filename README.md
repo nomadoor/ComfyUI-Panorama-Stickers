@@ -58,6 +58,10 @@ https://github.com/user-attachments/assets/bf74e953-8ceb-4c7f-afa2-1c805f12c7af
 - Panorama image workflows
   - [flux-2-klein-4B-360-erp-outpaint.json](./example_workflows/flux-2-klein-4B-360-erp-outpaint.json)
   - [flux-2-klein-9B-360-erp-outpaint.json](./example_workflows/flux-2-klein-9B-360-erp-outpaint.json)
+  - [qwen-image-2.1-360-erp-outpaint.json](./example_workflows/qwen-image-2.1-360-erp-outpaint.json) (Qwen-Image 2.1, with Panorama Studio)
+- Panorama Studio: lift an image into 3D and shoot it from another angle
+  - Estimates the image's geometry with MoGe 3, places it in Panorama Studio, shoots a new angle with the Camera, and refines it with Qwen-Image 2.1.
+  - [qwen-image-2.1-moge3-anyangle.json](./example_workflows/qwen-image-2.1-moge3-anyangle.json)
 - 360 panoramic video workflow
   - By using the [LTX2.3_360vr](https://civitai.com/models/2327337/360-degree-panoramic-shot-ltx-23) LoRA created by the author of that model, you can generate 360 panoramic video from text.
   - [LTX-2.3_360vr_distilled_3stage.json](./example_workflows/LTX-2.3_360vr_distilled_3stage.json)
