@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   CAMERA_FRAME_MARGIN,
   CAMERA_RULERS,
+  RULER_HEADS,
   RULER_HEAD_ROOM,
   frameRect,
   rulerStrips,
@@ -22,7 +23,9 @@ test("the margins and the rulers' lengths and value widths are the design's", ()
   assert.deepEqual({ ...CAMERA_FRAME_MARGIN }, { left: 150, right: 150, top: 88, bottom: 84 });
   assert.deepEqual([CAMERA_RULERS.fov.length, CAMERA_RULERS.lens.length, CAMERA_RULERS.roll.length], [200, 200, 320]);
   assert.deepEqual([CAMERA_RULERS.fov.valueChars, CAMERA_RULERS.lens.valueChars, CAMERA_RULERS.roll.valueChars], [4, 4, 5]);
-  assert.equal(RULER_HEAD_ROOM, 52);
+  // The heads: name and value above (30 + 8), the dot and the reset below (42 + 4); the strip leaves the larger at both ends.
+  assert.deepEqual(JSON.parse(JSON.stringify(RULER_HEADS)), { label: { height: 30, gap: 8 }, acts: { height: 42, gap: 4 } });
+  assert.equal(RULER_HEAD_ROOM, 46);
 });
 
 test("the frame is the largest box of the ratio in the area, centered in it", () => {
@@ -55,6 +58,11 @@ test("each tick strip keeps its fixed length, its middle on the middle of the fr
   assert.ok(Number.isInteger(odd.roll.offset) && Number.isInteger(odd.vertical.offset));
   assert.ok(Math.abs(middle(odd.roll) - 250.5) <= 0.5);
   assert.ok(Math.abs(middle(odd.vertical) - 200.5) <= 0.5);
+  // 1440 x 860 at 16:9 (a 286px tall frame): both heads fit inside the frame's height, the strip 194px.
+  const wide = rulerStrips({ x: 0, y: 0, width: 508, height: 286 });
+  assert.equal(wide.vertical.length, 194);
+  assert.ok(wide.vertical.offset >= RULER_HEADS.label.height + RULER_HEADS.label.gap);
+  assert.ok(286 - wide.vertical.offset - wide.vertical.length >= RULER_HEADS.acts.height + RULER_HEADS.acts.gap);
   // An empty frame: nothing to place.
   assert.equal(rulerStrips({ x: 0, y: 0, width: 0, height: 0 }).vertical.length, 0);
 });

@@ -986,6 +986,32 @@
   overflow-y: auto;
 }
 
+/* The Timeline's scrollbar: a thin thumb on a clear track (docs/design.md "大きさ"). Chromium reads the
+   ::-webkit-scrollbar rules only while scrollbar-width / scrollbar-color are unset, so those go to Firefox alone. */
+.pano-studio-tl-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pano-studio-tl-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pano-studio-tl-body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--studio-fg) 22%, transparent);
+}
+
+.pano-studio-tl-body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--studio-fg) 40%, transparent);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .pano-studio-tl-body {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--studio-fg) 22%, transparent) transparent;
+  }
+}
+
 .pano-studio-tl-line {
   display: grid;
   grid-template-columns: var(--studio-tl-head) minmax(0, 1fr);
@@ -1448,7 +1474,7 @@
   right: 0;
   box-sizing: border-box;
   display: flex;
-  padding: 8px 10px;
+  overflow: hidden;
   background: var(--studio-float);
   border-radius: var(--studio-r-box);
   transform-origin: top right;
@@ -1617,8 +1643,10 @@
 .pano-studio-at-edge-right { position: absolute; left: calc(100% + 14px); }
 .pano-studio-at-edge-bottom { position: absolute; top: calc(100% + 12px); }
 
-/* Edge ruler: the element is the tick strip (a 22px scale under a fixed middle mark); the head (name, value, Keyframe
-   dot, reset) is placed outside it, above a vertical strip and left of Roll, so it never moves the ticks. */
+/* Edge ruler: the element is the tick strip (a 22px scale under a fixed middle mark); its heads are placed outside its
+   two ends, so they never move the ticks: the name and value above a vertical strip (left of Roll), the Keyframe dot
+   and the reset below it, stacked (right of Roll). Gaps and sizes: docs/design.md "大きさ"; the vertical ones are
+   studio/frame_layout.js RULER_HEADS, which sizes the strip. */
 .pano-studio-edge-ruler {
   --studio-ruler-hit: 12px;
   --studio-focus-fill: rgb(255 255 255 / 10%);
@@ -1635,37 +1663,54 @@
   height: 22px;
 }
 
-.pano-studio-edge-ruler-head {
+.pano-studio-edge-ruler-head,
+.pano-studio-edge-ruler-acts {
   position: absolute;
   display: flex;
   align-items: center;
   white-space: nowrap;
 }
 
+/* Centered across the strip (on the tick column, left 13px + 22px / 2). */
+.pano-studio-edge-ruler.is-vertical :is(.pano-studio-edge-ruler-head, .pano-studio-edge-ruler-acts) {
+  left: 24px;
+  flex-direction: column;
+  transform: translateX(-50%);
+}
+
 .pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-head {
   bottom: calc(100% + 8px);
-  left: 50%;
-  flex-direction: column;
+  gap: 6px;
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-acts {
+  top: calc(100% + 4px);
   gap: 2px;
-  transform: translateX(-50%);
+}
+
+.pano-studio-edge-ruler.is-horizontal :is(.pano-studio-edge-ruler-head, .pano-studio-edge-ruler-acts) {
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-head {
   right: calc(100% + 10px);
-  top: 50%;
   gap: 8px;
-  transform: translateY(-50%);
 }
 
-.pano-studio-edge-ruler-acts {
-  display: inline-flex;
-  align-items: center;
+.pano-studio-edge-ruler.is-horizontal .pano-studio-edge-ruler-acts {
+  left: calc(100% + 8px);
   gap: 2px;
 }
 
 .pano-studio-edge-ruler-acts .pano-studio-keydot {
   width: 12px;
   height: var(--studio-btn-sm);
+}
+
+.pano-studio-edge-ruler.is-vertical .pano-studio-edge-ruler-acts .pano-studio-keydot {
+  width: var(--studio-btn-sm);
+  height: 18px;
 }
 
 .pano-studio-edge-ruler-acts .pano-studio-icon-btn {

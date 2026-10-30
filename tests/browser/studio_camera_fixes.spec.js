@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // The Camera tab's edge rulers and the parts around them in the new editor (tests/browser/pages/studio_camera_wired.html,
 // a real browser engine): docs/studio-ui.md "Camera タブ" (the tick strips' fixed length centered on the frame's edges,
-// the head outside the strip with a fixed-width value, the reset, the hit band, the focus) and "Output の小窓" (folded
+// the heads outside the strip's two ends with a fixed-width value, the reset, the hit band, the focus) and "Output の小窓" (folded
 // and inert in the Camera tab), and no timecode at the top center.
 
 function watch(page) {
@@ -47,7 +47,7 @@ const camera = (page) => page.evaluate(() => window.__studio.camera());
 const history = (page) => page.evaluate(() => ({ undo: window.__studio.session.canUndo, redo: window.__studio.session.canRedo }));
 
 for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=9:16&mode=frame", "aspect=16:9&mode=panorama"]) {
-  test(`the tick strips' middles are the frame's edges' middles, and the heads stay clear of the tabs (${query})`, async ({ page }) => {
+  test(`the tick strips' middles are the frame's edges' middles, and the heads sit at their ends clear of everything (${query})`, async ({ page }) => {
     const problems = await open(page, query);
     const frame = await rectOf(page, "[data-frame-box]");
     const midX = frame.x + frame.width / 2;
@@ -58,21 +58,59 @@ for (const query of ["aspect=16:9&mode=frame", "aspect=1:1&mode=frame", "aspect=
     // The middle mark is the ticks' middle too.
     const mark = await rectOf(page, '[data-ruler="Roll"] [data-ruler-mark]');
     expect(Math.abs(mark.x + mark.width / 2 - midX)).toBeLessThanOrEqual(1);
-    // The fixed lengths, shorter only where the edge is (docs/design.md "大きさ").
+    // The fixed lengths, shorter only where the edge is (docs/design.md "大きさ": both heads' larger room, 46px, at both ends).
     const roll = await strip(page, "Roll");
     const fov = await strip(page, "FOV");
     expect(roll.width).toBe(Math.min(320, frame.width));
-    expect(fov.height).toBe(Math.min(200, frame.height - 104));
-    // The heads: a vertical one above its strip within the frame's height, Roll's left of its strip; none under the tabs.
+    expect(fov.height).toBe(Math.min(200, frame.height - 92));
     const tabs = await rectOf(page, ".pano-studio-at-tabs");
+    const rail = await rectOf(page, ".pano-studio-at-rail");
+    const knobs = await rectOf(page, ".pano-studio-at-nav");
+    const stage = await rectOf(page, '[data-region="stage"]');
+    const boxes = [];
     for (const name of ["FOV", "Lens"]) {
+      const band = await strip(page, name);
+      const middle = band.x + band.width / 2;
+      // The name over the value, 8px above the strip, within the head's 30px, inside the frame's height, under the tabs.
       const head = await rectOf(page, `[data-ruler="${name}"] [data-ruler-head]`);
-      expect(head.bottom).toBeLessThanOrEqual((await strip(page, name)).y);
+      const nameBox = await rectOf(page, `[data-ruler="${name}"] .pano-studio-edge-ruler-name`);
+      const value = await rectOf(page, `[data-ruler="${name}"] [data-ruler-value]`);
+      expect(Math.abs(band.y - 8 - head.bottom)).toBeLessThanOrEqual(0.5);
+      expect(head.height).toBeLessThanOrEqual(30);
+      expect(value.y - nameBox.bottom).toBeGreaterThanOrEqual(4);
+      expect(value.y - nameBox.bottom).toBeLessThanOrEqual(6.5);
+      expect(Math.abs(head.x + head.width / 2 - middle)).toBeLessThanOrEqual(1);
       expect(head.y).toBeGreaterThanOrEqual(frame.y - 0.5);
       expect(head.y).toBeGreaterThan(tabs.bottom + 8);
+      // The dot over the reset, stacked, 4px below the strip, within 42px, inside the frame's height, above the stage's bottom.
+      const acts = await rectOf(page, `[data-ruler="${name}"] [data-ruler-acts]`);
+      const dot = await rectOf(page, `[data-ruler="${name}"] [data-ruler-acts] .pano-studio-keydot`);
+      const reset = await rectOf(page, `[data-ruler="${name}"] [aria-label="Reset ${name}"]`);
+      expect(Math.abs(acts.y - (band.bottom + 4))).toBeLessThanOrEqual(0.5);
+      expect(acts.height).toBeLessThanOrEqual(42);
+      expect(dot.bottom).toBeLessThanOrEqual(reset.y);
+      expect(Math.abs(dot.x + dot.width / 2 - middle)).toBeLessThanOrEqual(1);
+      expect(Math.abs(reset.x + reset.width / 2 - middle)).toBeLessThanOrEqual(1);
+      expect(acts.bottom).toBeLessThanOrEqual(frame.bottom + 0.5);
+      expect(acts.bottom).toBeLessThan(stage.bottom - 8);
+      boxes.push(head, acts);
     }
+    // Roll: the name and value 10px left of its strip, the dot then the reset 8px right of it, on its line.
     const rollHead = await rectOf(page, '[data-ruler="Roll"] [data-ruler-head]');
-    expect(rollHead.right).toBeLessThanOrEqual(roll.x);
+    const rollActs = await rectOf(page, '[data-ruler="Roll"] [data-ruler-acts]');
+    const rollDot = await rectOf(page, '[data-ruler="Roll"] [data-ruler-acts] .pano-studio-keydot');
+    const rollReset = await rectOf(page, '[data-ruler="Roll"] [aria-label="Reset Roll"]');
+    expect(Math.abs(roll.x - 10 - rollHead.right)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(rollActs.x - (roll.right + 8))).toBeLessThanOrEqual(0.5);
+    expect(rollDot.right).toBeLessThanOrEqual(rollReset.x);
+    for (const box of [rollHead, rollDot, rollReset]) expect(Math.abs(box.y + box.height / 2 - (roll.y + roll.height / 2))).toBeLessThanOrEqual(1);
+    boxes.push(rollHead, rollActs);
+    // No head overlaps another, the left rail, the view knobs or the tabs.
+    const overlap = (a, b) => a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
+    for (const [i, a] of boxes.entries()) {
+      for (const other of [rail, knobs, tabs]) expect(overlap(a, other)).toBe(false);
+      for (const b of boxes.slice(i + 1)) expect(overlap(a, b)).toBe(false);
+    }
     // The frame keeps clear space under the tabs.
     expect(frame.y - tabs.bottom).toBeGreaterThanOrEqual(29);
     expect(problems).toEqual([]);
@@ -84,6 +122,7 @@ test("the Roll strip and its head keep their size and place whatever the value",
   const measure = async () => ({
     strip: await strip(page, "Roll"),
     head: await rectOf(page, '[data-ruler="Roll"] [data-ruler-head]'),
+    acts: await rectOf(page, '[data-ruler="Roll"] [data-ruler-acts]'),
     value: await rectOf(page, '[data-ruler="Roll"] [data-ruler-value]'),
   });
   const setRoll = async (value) => {
@@ -112,7 +151,7 @@ test("the Roll strip and its head keep their size and place whatever the value",
 
 test("each ruler's reset returns its value as the inspector's does, one Undo step, grayed at the default", async ({ page }) => {
   const problems = await open(page);
-  const reset = (name) => page.locator(`[data-ruler="${name}"] [data-ruler-head] [aria-label="Reset ${name}"]`);
+  const reset = (name) => page.locator(`[data-ruler="${name}"] [data-ruler-acts] [aria-label="Reset ${name}"]`);
   // The page's Camera: FOV 60, Lens 1 (the default), Roll -4.
   await expect(reset("Lens")).toHaveAttribute("aria-disabled", "true");
   await expect(reset("FOV")).not.toHaveAttribute("aria-disabled", "true");

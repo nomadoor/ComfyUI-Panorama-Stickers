@@ -18,10 +18,17 @@ export const CAMERA_RULERS = Object.freeze({
   lens: Object.freeze({ unitPx: 400, minor: 0.02, major: 0.2, precision: 2, length: 200, valueChars: 4 }),
   roll: Object.freeze({ unitPx: 8, minor: 1, major: 10, precision: 0, length: 320, valueChars: 5 }),
 });
-// The room a vertical ruler's head (name, value, Keyframe dot and reset, above the strip: 44px) takes, with its 8px gap: a
-// strip shorter than the frame's height by this much on both ends keeps the head inside the frame's height, clear of
-// the tabs.
-export const RULER_HEAD_ROOM = 52;
+// A vertical ruler's two heads, in px (docs/design.md "大きさ"): above the strip, the name over the value (at most 30px
+// tall) 8px from it; below the strip, the Keyframe dot over the reset (18 + 2 + 22 = 42px) 4px from it. Values the CSS
+// (web/pano_studio.css .pano-studio-edge-ruler-head, -acts) lays out; the browser test checks the heads fit them.
+export const RULER_HEADS = Object.freeze({
+  label: Object.freeze({ height: 30, gap: 8 }),
+  acts: Object.freeze({ height: 42, gap: 4 }),
+});
+// The room a vertical strip leaves at both ends of the frame's edge: the larger head with its gap (46px), so the strip's
+// middle stays the edge's middle and both heads stay inside the frame's height (clear of the tabs above and the
+// stage's bottom below).
+export const RULER_HEAD_ROOM = Math.max(...Object.values(RULER_HEADS).map((head) => head.height + head.gap));
 
 // The frame's box in a stage of width x height: the largest box of `aspect` (width / height) inside the stage less
 // the margins, centered in that area, in whole px. Empty (zero size) when the area is.
@@ -39,7 +46,7 @@ export function frameRect(width, height, aspect, margin = CAMERA_FRAME_MARGIN) {
 
 // Where the edge rulers' tick strips sit on the frame `rect` (frameRect's): each strip is its fixed length
 // (CAMERA_RULERS), centered on the edge, shorter only when the edge is (a vertical strip also leaves RULER_HEAD_ROOM at
-// both ends). `offset` is the strip's start from the frame's top (vertical) or left (Roll), in px, so the strip's
+// both ends, for its heads above and below). `offset` is the strip's start from the frame's top (vertical) or left (Roll), in px, so the strip's
 // middle is the edge's middle. The scale (px per unit) does not change with the length.
 export function rulerStrips(rect, rulers = CAMERA_RULERS, headRoom = RULER_HEAD_ROOM) {
   // `room`: what the strip may not take at each end of the edge.
