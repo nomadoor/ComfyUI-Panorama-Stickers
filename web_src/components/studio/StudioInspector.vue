@@ -102,7 +102,7 @@ watch(() => !!model.value.easing, async (shown) => {
 <template>
   <aside ref="root" class="pano-studio-inspector pano-studio-panel" aria-label="Inspector" :data-tab="tab">
     <header ref="head" class="pano-studio-inspector-head">
-      <span class="pano-studio-inspector-title pano-studio-cap" :title="nodeName">{{ nodeName }}</span>
+      <span class="pano-studio-inspector-title" :title="nodeName">{{ nodeName }}</span>
       <StudioIconButton :icon="ICON.close" label="Close" data-action="close" @press="emit('close')" />
     </header>
     <div class="pano-studio-inspector-body" :style="{ paddingBottom: `${bodyPad}px` }">

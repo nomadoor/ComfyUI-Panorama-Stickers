@@ -12,7 +12,7 @@ export const TIMELINE_BAR_HEIGHT = 40;
 
 // The Output window's width when nothing is remembered, and its least and largest widths; its height follows the
 // output's ratio (width / height).
-export const OUTPUT_DEFAULT_WIDTH = 240;
+export const OUTPUT_DEFAULT_WIDTH = 168;
 export const OUTPUT_MIN_WIDTH = 160;
 export const OUTPUT_MAX_WIDTH = 520;
 

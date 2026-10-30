@@ -86,7 +86,7 @@ function boxProps(row, field) {
           <StudioNumberField v-bind="{ ...boxProps(row, row.fields[0]), ...on(row, row.fields[0]) }" />
           <button
             type="button"
-            class="pano-studio-text-btn pano-studio-cap"
+            class="pano-studio-text-btn"
             data-action="set-ground"
             title="Click a surface to make it the ground"
             :aria-disabled="row.disabled ? 'true' : null"
@@ -109,7 +109,7 @@ function boxProps(row, field) {
 
         <template v-else-if="row.control === 'select'">
           <select
-            class="pano-studio-select pano-studio-cap"
+            class="pano-studio-select"
             :disabled="row.disabled"
             :aria-label="row.name"
             @change="(event) => send({ type: 'choice', field: row.id, value: Number(event.target.value) })"

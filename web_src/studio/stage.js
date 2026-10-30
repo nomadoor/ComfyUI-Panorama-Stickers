@@ -3,11 +3,11 @@
 // (pano_editor_view.js createEditorView). It owns the render loop (pano_frame_scheduler.js), which moves the eased
 // actions, the joystick and the movement keys, and draws. It builds no DOM: StudioEditor.vue renders the stage and
 // hands over its canvas and root, and reads `ui` (a Vue reactive object) for the notice, the cursor and the knobs.
-import { createEditorView, screenRenderSize } from "../pano_editor_view.js";
+import { createEditorView } from "../pano_editor_view.js";
 import { DRAW_REASON, createFrameScheduler } from "../pano_frame_scheduler.js";
 import { stageOwnsKey } from "../pano_key_focus.js";
 import { isMoveKey } from "../pano_view_keys.js";
-import { STAGE_CLEAR_COLOR, stageCamera, stageRenderInput, surfaceHit } from "./stage_view.js";
+import { STAGE_CLEAR_COLOR, stageCamera, stageRenderInput, stageRenderSize, surfaceHit } from "./stage_view.js";
 import { createNotice, createViewCamera, frameSelectedSphere, orbitCenter } from "./view_camera.js";
 import { KNOB_CURSOR, createViewInput, createWheelSteps, knobAction, litKnobs, navigationAction, stageCursor } from "./view_input.js";
 import { BOUND_NOTICE_SECONDS, frameSeconds } from "./view_scale.js";
@@ -106,7 +106,7 @@ export function createStage({
     const ratio = win.devicePixelRatio || 1;
     const screenWidth = win.screen?.width || size.width;
     const screenHeight = win.screen?.height || size.height;
-    const device = screenRenderSize(size.width, size.height, ratio, Math.max(screenWidth, size.width), Math.max(screenHeight, size.height));
+    const device = stageRenderSize(size.width, size.height, ratio, Math.max(screenWidth, size.width), Math.max(screenHeight, size.height));
     editorView.resize(device.width, device.height);
   }
 

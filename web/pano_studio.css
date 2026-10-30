@@ -16,20 +16,21 @@
 
 /* Tokens. Every element of the new UI sits inside `.pano-studio`, which holds the values below; nothing outside it
    reads them. Light is the default and ComfyUI's `.dark-theme` (on <html>, set by the frontend from the palette)
-   switches to dark. The ComfyUI role colors are named only here; when ComfyUI renames them, change this block.
-   Fallbacks are the values of the design-drafts specimens, used where ComfyUI's role is missing. */
+   switches to dark. The values are the design-drafts specimens' own (docs/design.md "新しい UI の見た目" "色"); ComfyUI's
+   role colors are not read, so its bright stroke never reaches a window or a float. */
 .pano-studio {
-  /* Gray steps (Geist's roles): panel / fill / hover / pressed / line / strong line / strong fill / 2nd text / text. */
-  --studio-panel: var(--interface-panel-surface, #ffffff);
-  --studio-fill: var(--secondary-background, #f1f1f2);
-  --studio-fill-hover: var(--secondary-background-hover, #e9e9eb);
+  /* Gray steps (Geist's roles): frame / panel / fill / hover / pressed / line / strong line / strong fill / 2nd text / text. */
+  --studio-frame: #f6f6f7;
+  --studio-panel: #ffffff;
+  --studio-fill: #f1f1f2;
+  --studio-fill-hover: #e9e9eb;
   --studio-fill-active: #e0e0e3;
-  --studio-line: var(--interface-stroke, #e2e2e5);
-  --studio-line-strong: var(--border-default, #cfcfd4);
+  --studio-line: #e2e2e5;
+  --studio-line-strong: #cfcfd4;
   --studio-strong: #1b1b1d;
   --studio-on-strong: #ffffff;
-  --studio-fg-2: var(--muted-foreground, #6b6b72);
-  --studio-fg: var(--base-foreground, #161618);
+  --studio-fg-2: #6b6b72;
+  --studio-fg: #161618;
   /* Meaning colors: one point each (docs/design.md "色"). Light holds darker values. */
   --studio-coral: #d9573f;
   --studio-ice: #5f8fa3;
@@ -53,6 +54,10 @@
   --studio-r-field: 6px;
   /* Sizes (docs/design.md "大きさ"). */
   --studio-inspector-w: 320px;
+  --studio-frame-r: 16px;
+  --studio-frame-pad: 8px;
+  --studio-window-gap: 8px;
+  --studio-float-inset: 16px;
   --studio-row-gap: 8px;
   --studio-field-h: 26px;
   --studio-btn: 32px;
@@ -70,16 +75,16 @@
 
 .dark-theme .pano-studio,
 .pano-studio.dark-theme {
-  --studio-panel: var(--interface-panel-surface, #1b1c1e);
-  --studio-fill: var(--secondary-background, #2c2c2e);
-  --studio-fill-hover: var(--secondary-background-hover, #343436);
+  --studio-frame: #121314;
+  --studio-panel: #1b1c1e;
+  --studio-fill: #2c2c2e;
+  --studio-fill-hover: #343436;
   --studio-fill-active: #3c3c3f;
-  --studio-line: var(--interface-stroke, #2a2b2d);
-  --studio-line-strong: var(--border-default, #48484c);
+  --studio-line: #2a2b2d;
+  --studio-line-strong: #48484c;
   --studio-strong: #d6d6da;
   --studio-on-strong: #111112;
-  --studio-fg-2: var(--muted-foreground, #8e8f93);
-  /* 主の文字だけは ComfyUI の #fff に乗せず、まぶしさを抑えた自前の値を持つ（持ち主の決定 2026-10-30）。 */
+  --studio-fg-2: #8e8f93;
   --studio-fg: #dcdce0;
   --studio-coral: #f37159;
   --studio-ice: #aecedb;
@@ -93,8 +98,8 @@
   box-sizing: border-box;
 }
 
-.pano-studio button,
-.pano-studio input {
+/* Inherited font and color for the controls, at the least weight (:where), so a part's own color still wins. */
+.pano-studio :where(button, input, select) {
   font: inherit;
   color: inherit;
 }
@@ -112,7 +117,8 @@
 }
 
 /* Text of different sizes on one line centers on the capital height (docs/design.md "文字"). Without text-box
-   (Firefox), line-height 1 in a box of fixed height centers it closely enough. */
+   (Firefox), line-height 1 in a box of fixed height centers it closely enough. A trimmed box never clips
+   (no overflow: hidden on it): round glyphs rise above the capital height and would lose their tops. */
 .pano-studio-cap {
   line-height: 1;
 }
@@ -127,10 +133,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Containers (inspector, dialogs, the Output window, the timeline body). */
+/* Windows (inspector, timeline) and dialogs: the panel's fill, no line (docs/design.md "形と重なり"). */
 .pano-studio-panel {
   background: var(--studio-panel);
-  border: 1px solid var(--studio-line);
   border-radius: var(--studio-r-box);
 }
 
@@ -257,18 +262,19 @@
   padding: 0;
 }
 
-/* Floating parts over the stage: 85% opaque panel, 1px line, fully round, no blur and no shadow. The 2nd gray is
+/* Floating parts over the stage: 85% opaque panel, no line, fully round, no blur and no shadow. The 2nd gray is
    replaced by the text color inside, so nothing on a float uses it. */
 .pano-studio-float {
   --studio-fg-2: var(--studio-fg);
   background: var(--studio-float);
-  border: 1px solid var(--studio-line);
+  border: 0;
   border-radius: var(--studio-r-part);
   color: var(--studio-fg);
 }
 
 .pano-studio-float.pano-studio-seg {
   background: var(--studio-float);
+  border: 0;
 }
 
 .pano-studio-float.is-rail {
@@ -299,6 +305,25 @@
   padding: 3px;
 }
 
+/* The left column's and the bottom right's buttons are as large as the view knobs (controls-2.html R1): 34px with an
+   18px icon, the Add icon 22px. */
+.pano-studio-float.is-rail .pano-studio-icon-btn,
+.pano-studio-at-buttons .pano-studio-icon-btn {
+  width: var(--studio-knob);
+  height: var(--studio-knob);
+}
+
+.pano-studio-float.is-rail .pano-studio-icon-btn svg.icon,
+.pano-studio-at-buttons .pano-studio-icon-btn svg.icon {
+  width: 18px;
+  height: 18px;
+}
+
+.pano-studio-float.is-rail .pano-studio-icon-btn svg.icon-tabler-photo-box {
+  width: 22px;
+  height: 22px;
+}
+
 .pano-studio-sep {
   flex: none;
   background: var(--studio-line);
@@ -327,13 +352,13 @@
   white-space: nowrap;
 }
 
-/* Inspector card: a section with a heading and rows; sections are divided by a line. */
+/* Inspector card: a section with a heading and rows; sections are divided by space, not by a line. */
 .pano-studio-card {
-  padding: 12px 14px 12px;
+  padding: 12px 14px 8px;
 }
 
 .pano-studio-card + .pano-studio-card {
-  border-top: 1px solid var(--studio-line);
+  padding-top: 20px;
 }
 
 .pano-studio-card-title {
@@ -473,7 +498,6 @@
 .pano-studio-field-value {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   color: var(--studio-fg);
   font-size: var(--studio-text-md);
   text-align: right;
@@ -611,7 +635,6 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border-left: 1px solid var(--studio-line);
   background: var(--studio-panel);
 }
 
@@ -622,7 +645,6 @@
   gap: 8px;
   height: 44px;
   padding: 0 6px 0 14px;
-  border-bottom: 1px solid var(--studio-line);
 }
 
 .pano-studio-inspector-title {
@@ -712,7 +734,6 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px 14px 14px;
-  border-top: 1px solid var(--studio-line);
   background: var(--studio-panel);
 }
 
@@ -818,7 +839,6 @@
   height: 100%;
   overflow: hidden;
   background: var(--studio-panel);
-  border: 1px solid var(--studio-line);
   border-radius: var(--studio-r-box);
   font-size: var(--studio-text-xs);
   outline: none;
@@ -854,60 +874,10 @@
   transform: rotate(180deg);
 }
 
-/* The loop switch: its knob's side shows on and off. */
-.pano-studio-tl-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--studio-r-part);
-  background: transparent;
-  color: var(--studio-fg-2);
-  cursor: pointer;
-}
-
-.pano-studio-tl-switch:hover {
-  background: var(--studio-fill-hover);
-  color: var(--studio-fg);
-}
-
-.pano-studio-tl-switch-track {
-  position: relative;
-  width: 22px;
-  height: 12px;
-  border-radius: var(--studio-r-part);
-  background: var(--studio-line-strong);
-}
-
-.pano-studio-tl-switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--studio-panel);
-}
-
-.pano-studio-tl-switch[aria-checked="true"] {
-  color: var(--studio-fg);
-}
-
-.pano-studio-tl-switch[aria-checked="true"] .pano-studio-tl-switch-track {
-  background: var(--studio-strong);
-}
-
-.pano-studio-tl-switch[aria-checked="true"] .pano-studio-tl-switch-knob {
-  left: 12px;
-  background: var(--studio-on-strong);
-}
-
 .pano-studio-tl-time {
   display: inline-flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   margin-left: 6px;
   white-space: nowrap;
 }
@@ -919,26 +889,44 @@
 
 .pano-studio-tl-frame {
   color: var(--studio-fg-2);
-  font-size: var(--studio-text-sm);
+  font-size: var(--studio-text-xs);
 }
 
 .pano-studio-tl-spacer {
   flex: 1;
 }
 
+/* fps and Length: the name and the number together, filled while hovered (timeline-2.html ".fld"). */
 .pano-studio-tl-field {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  height: var(--studio-field-h);
+  padding: 0 0 0 8px;
+  border-radius: var(--studio-r-field);
   font-size: var(--studio-text-sm);
+}
+
+.pano-studio-tl-field:hover {
+  background: var(--studio-fill);
 }
 
 .pano-studio-tl-field-name {
   color: var(--studio-fg-2);
 }
 
-.pano-studio-tl-field .pano-studio-num {
-  min-width: 48px;
+.pano-studio-tl-field .pano-studio-field {
+  padding: 0 8px 0 6px;
+  background: transparent;
+}
+
+.pano-studio-tl-field .pano-studio-field-value,
+.pano-studio-tl-field .pano-studio-field-input {
+  font-size: var(--studio-text-sm);
+  text-align: left;
+}
+
+.pano-studio-tl-field .pano-studio-field-input {
+  width: 4ch;
 }
 
 .pano-studio-tl-body {
@@ -975,6 +963,7 @@
   padding: 0 4px 0 6px;
   border-right: 1px solid var(--studio-line);
   border-bottom: 1px solid var(--studio-line);
+  font-size: var(--studio-text-sm);
 }
 
 .pano-studio-tl-head.is-lane {
@@ -1011,13 +1000,21 @@
   height: 14px;
 }
 
-/* ▶ closed, ▼ open. */
-.pano-studio-tl-expand svg.icon {
-  transform: rotate(-90deg);
+/* ▶ closed, ▼ open: a small filled triangle (timeline-2.html). */
+.pano-studio-tl-tri {
+  width: 0;
+  height: 0;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 6px solid currentColor;
 }
 
-.pano-studio-tl-expand.is-open svg.icon {
-  transform: none;
+.pano-studio-tl-expand[aria-disabled="true"] .pano-studio-tl-tri {
+  visibility: hidden;
+}
+
+.pano-studio-tl-expand.is-open .pano-studio-tl-tri {
+  transform: rotate(90deg);
 }
 
 .pano-studio-tl-head svg.pano-studio-tl-head-icon {
@@ -1088,6 +1085,16 @@
   width: 1px;
   height: 5px;
   background: var(--studio-line-strong);
+}
+
+.pano-studio-tl-minor {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 5px;
+  margin-left: -0.5px;
+  background: var(--studio-line-strong);
+  pointer-events: none;
 }
 
 /* The playhead's ▼, on the ruler only. */
@@ -1242,15 +1249,34 @@
 .pano-studio-tl-chip:hover {
   background: var(--studio-fill-hover);
 }
-/* --- The editor's shell (docs/studio-ui.md "画面の区画"): no header; the stage and the timeline in the left column,
-   the inspector down the right one. Parts float over the stage in fixed places and never push each other. */
-.pano-studio-editor {
+/* --- The editor's shell (docs/studio-ui.md "画面の区画", docs/design.md "形と重なり"): a modal like the old editor's,
+   over a dimmed page. One frame wraps everything; on it float three windows 8px apart: the stage (top left), the
+   timeline (under the stage only) and the inspector (the right column, top to bottom). No lines: the windows and
+   the frame differ by their fills. Parts float over the stage in fixed places and never push each other. */
+.pano-studio-backdrop {
   position: fixed;
   inset: 0;
   z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 70%);
+}
+
+.pano-studio-editor {
+  position: relative;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--studio-inspector-w);
-  background: var(--studio-panel);
+  gap: var(--studio-window-gap);
+  width: max(720px, 80vw);
+  height: max(520px, 82vh);
+  max-width: 96vw;
+  max-height: 94vh;
+  padding: var(--studio-frame-pad);
+  border-radius: var(--studio-frame-r);
+  background: var(--studio-frame);
+  outline: none;
 }
 
 .pano-studio-editor.is-knob-drag,
@@ -1270,6 +1296,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  border-radius: var(--studio-r-box);
   background: #070707;
   user-select: none;
 }
@@ -1305,14 +1332,14 @@
   font-size: var(--studio-text-md);
 }
 
-/* The fixed places over the stage. */
-.pano-studio-at-tabs { position: absolute; left: 12px; top: 12px; }
-.pano-studio-at-rail { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); }
-.pano-studio-at-notice { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); pointer-events: none; }
-.pano-studio-at-output { position: absolute; right: 12px; top: 12px; }
-.pano-studio-at-nav { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
-.pano-studio-at-bar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); }
-.pano-studio-at-buttons { position: absolute; right: 12px; bottom: 12px; }
+/* The fixed places over the stage, 16px from its edges. */
+.pano-studio-at-tabs { position: absolute; left: var(--studio-float-inset); top: var(--studio-float-inset); }
+.pano-studio-at-rail { position: absolute; left: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
+.pano-studio-at-notice { position: absolute; left: 50%; top: var(--studio-float-inset); transform: translateX(-50%); pointer-events: none; }
+.pano-studio-at-output { position: absolute; right: var(--studio-float-inset); top: var(--studio-float-inset); }
+.pano-studio-at-nav { position: absolute; right: var(--studio-float-inset); top: 50%; transform: translateY(-50%); }
+.pano-studio-at-bar { position: absolute; left: 50%; bottom: var(--studio-float-inset); transform: translateX(-50%); }
+.pano-studio-at-buttons { position: absolute; right: var(--studio-float-inset); bottom: var(--studio-float-inset); }
 
 /* The view knobs' column and "?" below it. */
 .pano-studio-nav {
@@ -1348,7 +1375,6 @@
   align-items: flex-end;
   padding: 8px 10px;
   background: var(--studio-float);
-  border: 1px solid var(--studio-line);
   border-radius: var(--studio-r-box);
   color: var(--studio-fg);
 }
@@ -1369,6 +1395,7 @@
 }
 
 .pano-studio-output-label {
+  color: var(--studio-fg-2);
   font-size: var(--studio-text-sm);
 }
 
@@ -1389,8 +1416,8 @@
 /* The corner dragged for the size: faint until the pointer is over the window. */
 .pano-studio-output-grip {
   position: absolute;
-  left: -1px;
-  bottom: -1px;
+  left: 0;
+  bottom: 0;
   width: 14px;
   height: 14px;
   border-left: 2px solid var(--studio-fg);
@@ -1405,97 +1432,42 @@
   opacity: 0.7;
 }
 
-/* The on / off switch: a track whose thumb sits right and fills when on, then its name. */
-.pano-studio-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--studio-btn);
-  padding: 0 10px 0 8px;
-  border: 0;
-  border-radius: var(--studio-r-part);
-  background: transparent;
-  color: var(--studio-fg);
-  font-size: var(--studio-text-sm);
-  font-weight: var(--studio-weight-head);
-  cursor: pointer;
-}
-
-.pano-studio-switch:hover {
-  background: var(--studio-fill-hover);
-}
-
-.pano-studio-switch-track {
-  position: relative;
-  width: 24px;
-  height: 14px;
-  flex: none;
-  border: 1.5px solid var(--studio-fg-2);
-  border-radius: var(--studio-r-part);
-}
-
-.pano-studio-switch-thumb {
-  position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--studio-fg-2);
-}
-
-.pano-studio-switch-label {
-  white-space: nowrap;
-}
-
-.pano-studio-switch.is-on .pano-studio-switch-track {
-  border-color: var(--studio-strong);
-  background: var(--studio-strong);
-}
-
-.pano-studio-switch.is-on .pano-studio-switch-thumb {
-  left: 12px;
-  background: var(--studio-on-strong);
-}
-
-.pano-studio-switch[aria-disabled="true"] {
-  opacity: 0.35;
-  cursor: default;
-}
-
-/* The border between the stage and the timeline, dragged for the timeline's height. */
+/* The 8px gap between the stage and the timeline, dragged for the timeline's height; a grip in its middle. */
 .pano-studio-splitter {
   position: relative;
+  display: flex;
   flex: none;
-  height: 5px;
-  margin: -2px 0;
-  z-index: 1;
+  align-items: center;
+  justify-content: center;
+  height: var(--studio-window-gap);
   cursor: row-resize;
   touch-action: none;
 }
 
 .pano-studio-splitter::after {
   content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 2px;
-  height: 1px;
-  background: var(--studio-line);
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--studio-line-strong);
 }
 
 .pano-studio-splitter:hover::after {
-  background: var(--studio-line-strong);
+  background: var(--studio-fg-2);
 }
 
 .pano-studio-splitter.is-collapsed {
   cursor: default;
 }
 
+.pano-studio-splitter.is-collapsed::after {
+  visibility: hidden;
+}
+
 .pano-studio-timeline {
   flex: none;
   min-height: 0;
   overflow: hidden;
+  border-radius: var(--studio-r-box);
   background: var(--studio-panel);
 }
-
