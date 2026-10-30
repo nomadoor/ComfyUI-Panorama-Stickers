@@ -180,7 +180,14 @@ export function makePaintId(prefix) {
   return `${prefix}_${Math.random().toString(16).slice(2, 10)}`;
 }
 
-export function getWidget(node, name) { return node.widgets?.find((w) => w.name === name) || null; }
+// The widget named `name`, or the first of the names `name` (a list) the node has, or null.
+export function getWidget(node, name) {
+  for (const each of Array.isArray(name) ? name : [name]) {
+    const widget = node.widgets?.find((w) => w.name === each);
+    if (widget) return widget;
+  }
+  return null;
+}
 export function getEditorNodeTitle(node, type) {
   const rawType = String(node?.comfyClass || node?.type || node?.title || "").trim();
   const titleMap = {

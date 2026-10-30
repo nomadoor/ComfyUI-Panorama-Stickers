@@ -30,7 +30,7 @@ import {
   videoMetaEntry,
 } from "../pano_media_session.js";
 import { backgroundBarEnd, backgroundPlace, backgroundShownAt, bgColorBackground } from "../pano_port_media.js";
-import { isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
+import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent, linkedInputType, videoLinked } from "../pano_preview_video.js";
 import { evaluateCamera } from "../pano_scene_eval.js";
 import { PANO_SCENE_TYPE } from "../pano_upstream.js";
 import { loadSceneState } from "../pano_scene_state.js";
@@ -55,9 +55,8 @@ import { spanOf } from "./timeline_model.js";
 import { openingView, rememberView } from "./view_camera.js";
 import { BOUND_NOTICE_SECONDS } from "./view_scale.js";
 
-// The node's inputs that carry its background, the first linked one shown (the input is `background` after the
-// rename in docs/studio-node.md, `bg_media` before it).
-const BACKGROUND_INPUTS = ["background", "bg_media"];
+// The node's inputs that carry its background, the first linked one shown.
+const BACKGROUND_INPUTS = STUDIO_BACKGROUND_INPUT_NAMES;
 
 // The nodes whose editor is open, so a second open does not stack a second window.
 const openNodes = new WeakSet();
@@ -271,15 +270,17 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     view.imageSizes = { ...addFiles.sizes(state), ...stageMedia.imageSizes(state) };
   }
 
-  // The stage's world: the ground height and the Camera's position at the playhead.
-  const world = { ground: groundOf(session.state), camera: outputView(session.state, 0).position };
+  // The stage's world: the ground height (an upstream layer's while the state has none) and the Camera's position at
+  // the playhead.
+  const groundNow = () => groundOf(session.state, upstream.working());
+  const world = { ground: groundNow(), camera: outputView(session.state, 0).position };
 
   function sync() {
     view.state = session.state;
     view.selection = session.selection;
     view.canUndo = session.canUndo;
     view.canRedo = session.canRedo;
-    world.ground = groundOf(session.state);
+    world.ground = groundNow();
     world.camera = outputView(session.state, view.playhead).position;
     syncMedia();
     ui.empty = stageEmpty();
@@ -501,7 +502,7 @@ export async function openStudioEditor(node, { app = null, api = null, storage =
     session,
     ui,
     view: () => stage?.landing ?? null,
-    ground: () => groundOf(session.state),
+    ground: () => groundNow(),
     content: () => content(),
     sceneBox,
     playhead: () => view.playhead,

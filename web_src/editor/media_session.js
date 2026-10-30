@@ -18,7 +18,7 @@ import {
   stageImageStatus,
 } from "../pano_image_state.js";
 import { createFrameSequence, portMediaMeta, portMediaSource, portMediaTime } from "../pano_port_media.js";
-import { isNodeOutputMediaCurrent } from "../pano_preview_video.js";
+import { STUDIO_BACKGROUND_INPUT_NAMES, isNodeOutputMediaCurrent } from "../pano_preview_video.js";
 import { is3dFileSource } from "../pano_scene_state.js";
 import { sceneFilesOf, stickerAnimationClips } from "../pano_space.js";
 import { upstreamBackgroundOf } from "../pano_upstream.js";
@@ -652,7 +652,7 @@ export function createMediaSession(deps) {
     const hasEpr = inputNames.includes("erp_image");
     const hasBg = inputNames.includes("bg_erp");
     if (readOnly && (hasEpr || hasBg)) return hasEpr ? ["erp_image", "bg_erp"] : ["bg_erp", "erp_image"];
-    return type === "stickers" ? ["bg_media", "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
+    return type === "stickers" ? [...STUDIO_BACKGROUND_INPUT_NAMES, "bg_erp", "erp_image"] : ["erp_image", "bg_erp"];
   }
 
   function getStageImageStatus() {
