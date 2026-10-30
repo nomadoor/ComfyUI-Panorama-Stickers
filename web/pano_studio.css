@@ -402,16 +402,14 @@
   border: 0;
 }
 
-.pano-studio-float.is-rail {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px;
-}
-
+/* The vertical columns (the left column, the view knobs' column). Every button sits on the column's center line, also
+   one narrower than the rest ("?" under the knobs); the rows below center theirs on the row's middle (docs/design.md
+   "新しい UI の見た目", the floats' centering rule). */
+.pano-studio-float.is-rail,
 .pano-studio-float.is-knobs {
   display: inline-flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
   padding: 6px;
 }
@@ -456,6 +454,7 @@
 
 .is-rail > .pano-studio-sep,
 .is-knobs > .pano-studio-sep {
+  align-self: stretch;
   height: 1px;
   margin: 4px 6px;
 }
