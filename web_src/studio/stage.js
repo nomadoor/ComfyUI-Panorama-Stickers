@@ -40,7 +40,8 @@ export function stageUi() {
 // stageContent()) or null. selected(): what is selected for the orbit's center and Frame Selected (view_camera.js
 // orbitCenter: null, { kind: "object", sphere } or { kind: "camera", position }). ui: stageUi()'s fields, reactive.
 // onEscape(): Escape with no view drag to let go; the editor takes back one thing or closes (docs/studio-ui.md "閉じ方").
-// overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the sky image's handles; null draws none).
+// overlay: the 2D canvas over the stage's (the guides, the Camera's mark, the gizmo, the sky image's handles; null draws
+// none).
 // objects: what selecting and editing the objects needs (stage_objects.js createStageObjects: state, playhead,
 // selection, select, edits, mode, tab, readOnly); without it the stage does not touch objects.
 export function createStage({
@@ -154,7 +155,6 @@ export function createStage({
       gridHidden: ui.gridHidden,
       clearColor: ui.background === "loading" ? null : STAGE_CLEAR_COLOR,
       content: shown,
-      gizmo: objects ? objects.gizmo() : null,
     }));
     drawOverlay();
     syncUi();

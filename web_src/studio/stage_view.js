@@ -85,8 +85,8 @@ export function surfaceHit(camera, x, y, width, height, { ground, picked = null 
 // the ground grid (hidden with `gridHidden`) and the working state's content at the playhead (`content`,
 // stage_content.js stageContent(): its sky layers and its World part; null draws none). Where nothing draws the canvas is
 // `clearColor`, or see-through with null (the stage's loading gradient shows behind while the background loads).
-// `gizmo` is the selected object's gizmo (pano_three_view.js createGizmo show's { mode, transform, colors }) or null.
-export function stageRenderInput({ camera, canvasWidth, canvasHeight, background, ground, gridHidden, clearColor = STAGE_CLEAR_COLOR, content = null, gizmo = null }) {
+// The three.js view draws no gizmo: the new UI's is on the 2D overlay (gizmo_overlay.js).
+export function stageRenderInput({ camera, canvasWidth, canvasHeight, background, ground, gridHidden, clearColor = STAGE_CLEAR_COLOR, content = null }) {
   const grid = groundGrid({ ground, hidden: gridHidden });
   return {
     rect: { x: 0, y: 0, w: canvasWidth, h: canvasHeight },
@@ -110,7 +110,7 @@ export function stageRenderInput({ camera, canvasWidth, canvasHeight, background
       upstreamItems: [],
       upstreamStickers: [],
       ...(content?.space ?? {}),
-      gizmo,
+      gizmo: null,
     },
   };
 }

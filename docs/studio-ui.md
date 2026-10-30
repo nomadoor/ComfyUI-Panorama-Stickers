@@ -33,8 +33,8 @@ Python はこの文書の規則を持たない（列は `—`）。「（新し�
 | 左の列の中身と並び、タブごとの無効 | — | `web_src/components/studio/StudioToolRail.vue`（今は Cursor と Undo・Redo だけが働き、ほかは席に置いて無効。Undo・Redo は `web_src/studio/session.js` の履歴）。タブごとの無効は（未実装） | `tests/browser/studio_editor.spec.js`、（未作成）タブごとの無効の test |
 | インスペクタの組み立て（タブと選択で何を出すか）、行の格子、欄、スライダー、リセット、Keyframe のポチの置き場所、Easing のパネル、種類ごとの中身 | — | データは `web_src/studio/inspector_model.js` `buildInspectorModel`、編集を状態に当てるのは `web_src/studio/inspector_actions.js` `applyInspectorEdit`、画面は `web_src/components/studio/StudioInspector.vue`・`StudioInspectorCard.vue`・`StudioInspectorRow.vue`・`StudioEasingPanel.vue`（欄とスライダーの部品は `StudioNumberField.vue`・`StudioSlider.vue`・`StudioAspectSlider.vue`・`StudioResetButton.vue`・`StudioKeyDot.vue`、Camera のカードの撮り方の札は `StudioModeTiles.vue`）。Aspect のスライダーが止まる既定の比は `web_src/studio/ui_aspect.js` `ASPECT_PRESETS`・`snapAspectPos`、矢印キーの移り先は `stepAspect`。Sky の画像の FOV の行のリセット先は `inspector_model.js` `skyPlacedSize`。エディタの中でインスペクタとタイムラインが共有する選択は `web_src/studio/session.js` `inspectorSelection` | `tests/studio_inspector_model.test.mjs`、`tests/studio_inspector_actions.test.mjs`、`tests/studio_ui_helpers.test.mjs`（Aspect のスライダーの止まる所）、`tests/browser/studio_inspector.spec.js`、`tests/browser/studio_ui.spec.js`、`tests/studio_session.test.mjs`、`tests/browser/studio_session.spec.js` |
 | 右の中央の列（視点の操作のつまみ）と右下のボタン群（Frame Selected、Reset View、グリッドのボタン）の並び | — | `web_src/components/studio/StudioNavWidget.vue`、`StudioViewButtons.vue`（つまみの働きは `docs/space-and-view.md`） | `tests/browser/studio_editor.spec.js` |
-| 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、Camera の Lock（`camera.locked` を読み込みがまだ読まない、`docs/scene-state-v2.md`）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/browser/studio_select.spec.js` |
-| エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | （新しい UI、未実装）`web_src/studio/camera_ui.js`、描く部品は `pano_three_view.js`（`docs/threejs-spark-integration.md`） | （未作成）`tests/studio_camera_ui.test.mjs`、`tests/browser/` の場面 |
+| 下の中央のバーの中身 | — | `web_src/studio/selection_bar.js` `selectionBar`・`gizmoModeOfKey`、`web_src/components/studio/StudioSelectionBar.vue`、ボタンの働きは `web_src/studio/session.js`（`toggleLock`・`duplicateSelected`・`orderSelected`・`revertSelected`・`deleteSelectedObject`）、ステージの選択とギズモと Sky の画像のハンドルは `web_src/studio/stage_objects.js`（ギズモの形・当たり・ドラッグの動きは `web_src/studio/gizmo_overlay.js`、描くのは `web_src/studio/stage_overlay.js`）。未実装：Replace（古い UI の下にファイルを選ぶ部品が無い）、Camera の Lock（`camera.locked` を読み込みがまだ読まない、`docs/scene-state-v2.md`）、ペイントのまとまりと複数選択のバー | `tests/studio_selection_bar.test.mjs`、`tests/studio_session.test.mjs`、`tests/studio_stage_objects.test.mjs`、`tests/studio_gizmo_overlay.test.mjs`、`tests/browser/studio_select.spec.js` |
+| エディタの中の Camera の見せ方（Camera のボタン、Camera のカード、3D の見た目） | — | 3D の見た目は `web_src/studio/camera_marker.js`（形・塗り・見え方）、描くのは `web_src/studio/stage_overlay.js`。Camera のボタンとカードは（新しい UI、未実装）`web_src/studio/camera_ui.js` | `tests/studio_camera_marker.test.mjs`、`tests/browser/studio_select.spec.js`、（未作成）`tests/studio_camera_ui.test.mjs` |
 | Camera タブの画面（フレームの収め方、枠の外、辺の目盛り、無効にする部品） | — | 収め方と目盛りの計算は `web_src/studio/frame_layout.js`（`frameRect`・`rollRulerWidth`・`rulerMarks`・`rulerDragValue`、目盛りの縮尺 `CAMERA_RULERS`）、画面の部品は `web_src/components/studio/StudioCameraFrame.vue`（枠と枠の外）・`StudioEdgeRuler.vue`（辺の目盛り）、無効にする部品は `StudioToolRail.vue` の `cameraTab`・`StudioViewButtons.vue` の `resetDisabled`・`frameTip`。ステージへの組み込み、タイムコードの席、構図の目安とそのスイッチは（未実装） | `tests/studio_frame_layout.test.mjs`、`tests/browser/studio_camera_tab.spec.js` |
 | Add のアイコンと、画像を Add したときの Sky / World の二択、ドラッグ中の印の見た目とラベル | — | （新しい UI、未実装）`web_src/components/studio/StudioPlaceChoice.vue`、`web_src/studio/landing.js`（着く所は `docs/space-and-view.md`） | （未作成）`tests/browser/` の場面 |
 | 読み込み中と空の画面、一行の知らせとその種類 | — | どれを出すかと種類は `web_src/studio/notice_line.js` `topLine`（シェルの `StudioEditor.vue` が呼ぶ）、画面は `web_src/components/studio/StudioNotice.vue`。開く前に three.js のチャンクと stylesheet を読んでおくのは `web_src/pano_editor_view.js` `preloadEditorView`・`web_src/studio/editor.js` `preloadStudioEditor`、いつ始めるかは `web_src/editor_choice.js` `createStudioPreloader`（組み立ては `web_src/main.js`）。上流の警告と 3D ファイルの読み込みの失敗の知らせは、出す元がまだ無い（未実装） | `tests/studio_notice_line.test.mjs`、`tests/editor_choice.test.mjs`、`tests/browser/studio_editor.spec.js` |
@@ -254,6 +254,30 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   `startMove`・`startScale`・`startAxisScale`・`startRotate` にあり、当たりの順は `docs/editor-interaction.md` の「`world` の Sticker の操作」の
   選択の順。古い UI の文書には独立した節が無いので、切り替えのときにこの文書へ規則として書き起こす。見た目の値は `docs/design.md`）。
 
+### ギズモ
+
+選んだ World の物（画像の板、3D）と Camera に、3D タブでだけ出す（出す条件は `web_src/studio/stage_objects.js`）。ステージの上の 2D の層に、
+物の中心から画面の上で決まった大きさで描く（物が遠くても近くても同じ px）。形は見本 `specimen-11.html` の Move に揃え、Rotate と Scale は
+同じ線の太さと色で作る（値は `docs/design.md` の「新しい UI の見た目」）。古い UI のギズモ（`docs/editor-interaction.md`）は変えない。
+
+- Move：中心から World の X・Y・Z の向きに三本の棒、棒の先に丸い玉、中心に白い点。棒か玉をドラッグすると、物はその軸の上だけを動く
+  （ポインタの光線に最も近い軸の上の点へ。つかんだ点との差を保つ）。その点が視点の前に無いとき（軸の消失点より先を指したとき）は
+  動かさず、前の位置に留める。中心の白い点をドラッグすると、つかんだときの視線に垂直な面の上を
+  ポインタについて動く。
+- Rotate：World の X・Y・Z の軸のまわりの三つの輪。輪の手前の半分を濃く、奥の半分を薄く描き、当たりは手前の半分だけ。輪をドラッグ
+  すると、物はその軸のまわりに回る（つかんだ点の輪の接線の向きにポインタを動かした px を、輪の半径の px で割った角度）。
+- Scale：物の向きの三本の棒、棒の先に小さな角丸の四角、中心に白い点。棒の当たりは中心から `pointHit` より外だけ（中心の近くで
+  つかむと比が乱れるため）。棒か四角をドラッグすると、つかんだ点と中心の、その軸の上の
+  画面の距離の比で、大きさを一様に変える（`pano_space.js` `uniformScale`）。
+- Rotate と Scale の中心の白い点は形だけで、当たらない。
+- 視線とほぼ平行になった軸（Move と Scale の棒の画面の長さが届く長さの `GIZMO_HIDE_RATIO` 未満）は描かず、当たりにも数えない。
+- 軸の取っ手（Move と Scale の棒と玉と四角、Rotate の輪）をドラッグしている間は、つかんだときの物の中心を通る、その軸の向きの
+  ガイドの線をステージの端から端まで描く（色はその軸の色。Move の中心の点のドラッグでは描かない）。
+- ポインタの下の取っ手と、ドラッグしている取っ手を白にする。Alt を押している間は白にしない（Alt のドラッグは必ずオービット）。
+- 重なり：奥の取っ手から先に描く。当たりは、玉・四角・中心の点を棒と輪より先に見て、その中で画面の上で最も近いものを選ぶ。
+- ドラッグはモードの Lane だけを記録の規則で書く（`pano_space.js` `gizmoDragLanes`）。一つのドラッグが Undo の 1 段で、Escape と
+  ウィンドウのフォーカスを失ったときは取り消す。ドラッグの間、取っ手の軸と比べる元の値は、つかんだときのものを使う。
+
 ## エディタの中の Camera
 
 - Camera はいつも一台あり、消せない。撮り方は Panorama / Frame のモードで、既定は Panorama（規則は `docs/studio-node.md`）。
@@ -264,10 +288,14 @@ Camera タブでは、Undo・Redo のほかは同じ席に出したまま無効�
   - Camera をロックしている間と、読み取り専用のエディタでは、隠さずに無効にし、tooltip で理由を示す。
 - 撮り方のモードを変えても、Camera は動かさない。
 - 目のアイコンで Camera を隠すのは表示だけで、出力は変えない。
-- 3D タブでの見た目（値は `docs/design.md`）：
-  - Frame モード：視錐台（三角錐）を線で描き、面を薄く塗る。枠の上辺に上の向きを示す小さな三角。奥に隠れる辺は薄く描く。
-  - Panorama モード：Camera の位置に小さな球を薄く塗って描き、赤道に輪を一本、正面（出来上がる ERP の中心）の向きに短い矢印。
+- 3D タブでの見た目（見本 `camera-1.html`。値は `docs/design.md`）：
+  - Frame モード：視錐台（三角錐）の面を薄く塗り、辺を線で描く。枠の上辺に、上の向きを示す小さな塗った三角。錐の頂点（Camera の
+    位置）に白い点。奥に隠れる辺は薄く描く。
+  - Panorama モード：Camera の位置に小さな球を薄く塗って輪郭を線で描き、赤道に輪を一本、正面（出来上がる ERP の中心）の向きに
+    球の外へ短い矢印、球の中心に白い点。
+  - 線は明るい線の下に暗い線を重ね、明るい背景でも地面のグリッドの上でもまぎれないようにする。
   - 選んでいるときは、線を選択の色にし、塗りを少し濃くする。
+  - 塗った面のどこを押しても選べる（線の上だけではない。当たりは `docs/space-and-view.md` の「ホバーの判定」）。
 - 3D タブで Camera を選んでからオービットすると、Camera の位置のまわりを回る（`docs/space-and-view.md` の「回る中心」）。
 
 ## Camera タブ

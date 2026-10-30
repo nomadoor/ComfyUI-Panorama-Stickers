@@ -774,28 +774,48 @@ export function gridSpec(radius) {
 // --- Camera guides: a Camera's frustum and its trajectory over the Timeline. Panorama Studio's editor
 // draws them with renderSpace's `lines`.
 
-// Line segments [a, b] of a Camera value's frustum `length` ahead: the four edges from its position,
-// the far rectangle at its hFOV and aspect, and a triangle above the rectangle that marks its up.
-export function cameraFrustumSegments(camera, length) {
+// The shape of a Camera value's frustum `length` ahead: { apex, outline, spokes, top }. `apex` is its position,
+// `outline` the far edge as a closed loop of World points (the four corners of the rectangle at its hFOV and aspect,
+// or a lens Camera's image edge, null where a point is past 180° off the axis), `spokes` the indices of the outline
+// points joined to the apex, and `top` the triangle above the top edge that marks its up (null when a point of it is
+// past 180°).
+export function cameraFrustumShape(camera, length) {
   const rotation = worldRotation(camera.yaw_deg, camera.pitch_deg, camera.roll_deg);
-  if (camera.curve !== undefined && camera.curve !== 1) return lensFrustumSegments(camera, rotation, length);
+  if (camera.curve !== undefined && camera.curve !== 1) return lensFrustumShape(camera, rotation, length);
   const halfW = Math.tan(camera.hFOV_deg * 0.5 * DEG2RAD) * length;
   const halfH = halfW / camera.aspect;
   const at = (x, y, z) => add(camera.position, apply(rotation, [x, y, z]));
-  const corners = [at(-halfW, -halfH, -length), at(halfW, -halfH, -length), at(halfW, halfH, -length), at(-halfW, halfH, -length)];
-  const segments = corners.map((corner) => [camera.position, corner]);
-  corners.forEach((corner, index) => segments.push([corner, corners[(index + 1) % 4]]));
+  const outline = [at(-halfW, -halfH, -length), at(halfW, -halfH, -length), at(halfW, halfH, -length), at(-halfW, halfH, -length)];
   const top = [at(-halfW * 0.5, halfH * 1.1, -length), at(0, halfH * 1.5, -length), at(halfW * 0.5, halfH * 1.1, -length)];
-  segments.push([top[0], top[1]], [top[1], top[2]], [top[2], top[0]]);
+  return { apex: [...camera.position], outline, spokes: [0, 1, 2, 3], top, lens: false };
+}
+
+// Line segments [a, b] of a Camera value's frustum `length` ahead (cameraFrustumShape): the four edges from its
+// position, the far rectangle at its hFOV and aspect, and a triangle above the rectangle that marks its up. A lens
+// Camera's has its image edge with lines from the Camera to the corners and the edges' middles.
+export function cameraFrustumSegments(camera, length) {
+  const { apex, outline, spokes, top, lens } = cameraFrustumShape(camera, length);
+  const segments = [];
+  if (lens) {
+    outline.forEach((point, index) => {
+      const next = outline[(index + 1) % outline.length];
+      if (point && next) segments.push([point, next]);
+      if (point && spokes.includes(index)) segments.push([apex, point]);
+    });
+  } else {
+    for (const index of spokes) segments.push([apex, outline[index]]);
+    outline.forEach((corner, index) => segments.push([corner, outline[(index + 1) % outline.length]]));
+  }
+  if (top) segments.push([top[0], top[1]], [top[1], top[2]], [top[2], top[0]]);
   return segments;
 }
 
 // A lens Camera's frustum (ADR 0042): its image's edges as the rays they shoot (pano_lens.js lensFilmDirection),
-// `length` out, with lines from the Camera to the corners and the edges' middles, and the mark above the top. An
-// edge point past 180° off the axis is left out.
+// `length` out, joined to the Camera at the corners and the edges' middles, and the mark above the top. An edge
+// point past 180° off the axis is null.
 const LENS_FRUSTUM_STEPS = 8;
 
-function lensFrustumSegments(camera, rotation, length) {
+function lensFrustumShape(camera, rotation, length) {
   const halfX = lensRadius(camera.hFOV_deg * 0.5 * DEG2RAD, camera.curve);
   const halfY = halfX / camera.aspect;
   const at = (x, y) => {
@@ -811,15 +831,9 @@ function lensFrustumSegments(camera, rotation, length) {
       outline.push(at((x0 + (x1 - x0) * t) * halfX, (y0 + (y1 - y0) * t) * halfY));
     }
   });
-  const segments = [];
-  outline.forEach((point, index) => {
-    const next = outline[(index + 1) % outline.length];
-    if (point && next) segments.push([point, next]);
-    if (point && index % (LENS_FRUSTUM_STEPS / 2) === 0) segments.push([camera.position, point]);
-  });
+  const spokes = outline.map((_, index) => index).filter((index) => index % (LENS_FRUSTUM_STEPS / 2) === 0);
   const top = [at(-halfX * 0.5, halfY * 1.1), at(0, halfY * 1.5), at(halfX * 0.5, halfY * 1.1)];
-  if (top.every(Boolean)) segments.push([top[0], top[1]], [top[1], top[2]], [top[2], top[0]]);
-  return segments;
+  return { apex: [...camera.position], outline, spokes, top: top.every(Boolean) ? top : null, lens: true };
 }
 
 // Whether the canvas point p is within `tolerance` pixels of one of the World segments (a Camera's
