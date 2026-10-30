@@ -13,6 +13,7 @@
 import { createEditorHistory, duplicateSceneSticker, editorStateWrite, restoredHistoryState, takeStickerId } from "../pano_editor_state.js";
 import { rebaseSceneState, stickerCounter } from "../pano_scene_state.js";
 import { isUpstreamSticker } from "../pano_upstream.js";
+import { normalizePaintingState } from "../pano_paint_types.js";
 import { cameraToView as moveCameraToView } from "./camera_ui.js";
 import { defaultCamera } from "./defaults.js";
 import { applyInspectorEdit } from "./inspector_actions.js";
@@ -297,10 +298,12 @@ export function createStudioSession({ state: opening, readOnly = false }) {
 
   // The left column's Camera button (docs/studio-ui.md "エディタの中の Camera"): the Camera to the view `pose` at the
   // Timeline frame `playhead` (camera_ui.js cameraToView, Panorama mode switching to Frame), as one Undo step. Not
-  // while the Camera is locked. The selection stays.
+  // while the Camera is locked. A move selects the Camera (the inspector shows its card); nothing moved changes nothing.
   function cameraToView(pose, playhead) {
     if (state.camera?.locked === true) return result(false);
-    return editCamera((camera) => moveCameraToView(camera, playhead, pose));
+    const outcome = editCamera((camera) => moveCameraToView(camera, playhead, pose));
+    if (outcome.changed) selection = { row: "camera", keys: [] };
+    return outcome;
   }
 
   // Duplicate: a copy of the selected Sticker under a new id, selected. A sky image's copy is turned 8° to the right
@@ -334,6 +337,42 @@ export function createStudioSession({ state: opening, readOnly = false }) {
         item.z_index = index;
       });
       return sky.some((item, index) => item.z_index !== before[index]);
+    });
+  }
+
+  // --- The painting (docs/studio-ui.md "ペイントの道具"): a stroke and a Clear are one Undo step each.
+
+  // An edit of the painting: apply(draft) changes a copy of the state (its `painting`, made when missing) and returns
+  // whether it changed it. A changed painting drops the uploaded `painting_layer` (the node draws from `painting`).
+  function editPainting(apply) {
+    if (readOnly || gestureBase) return result(false);
+    const draft = structuredClone(state);
+    draft.painting ??= normalizePaintingState(null);
+    if (!apply(draft)) return result(false);
+    draft.painting_layer = null;
+    state = draft;
+    keepSelection();
+    record();
+    return result(true, { history: true, stopPlayback: true });
+  }
+
+  // Whether the layer `layerKind` ("paint" or "mask") has anything to clear: strokes or raster objects.
+  function paintingHas(layerKind) {
+    const painting = state.painting;
+    if (!painting) return false;
+    return (painting[layerKind]?.strokes?.length ?? 0) > 0 || (painting.raster_objects ?? []).some((item) => (item.layerKind || "paint") === layerKind);
+  }
+
+  // Clear paint / Clear mask: the layer's strokes and raster objects go (the paint's stroke groups too), as one step.
+  function clearPainting(layerKind) {
+    const kind = layerKind === "mask" ? "mask" : "paint";
+    if (!paintingHas(kind)) return result(false);
+    return editPainting((draft) => {
+      const { painting } = draft;
+      painting[kind] = { ...(painting[kind] ?? {}), strokes: [] };
+      painting.raster_objects = (painting.raster_objects ?? []).filter((item) => String(item?.layerKind || "paint") !== kind);
+      if (kind === "paint") painting.groups = [];
+      return true;
     });
   }
 
@@ -418,6 +457,9 @@ export function createStudioSession({ state: opening, readOnly = false }) {
     duplicateSelected,
     orderSelected,
     revertSelected,
+    editPainting,
+    paintingHas,
+    clearPainting,
     applyInspector,
     applyTimeline,
     deleteSelectedObject,

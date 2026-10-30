@@ -255,9 +255,10 @@ test("a read-only upstream layer keeps its name and disables its rows and action
   assert.equal(row(model, "sticker_1").dot.disabled, false);
 });
 
-test("the node's own scene row does not show while an upstream Scene is there", () => {
+test("the node's own scene row (the `world` content) shows with an upstream Scene, last of the own rows", () => {
   const model = view(ctxOf(studioState(), { sceneRow: true, upstream: [upstreamLayer({ scene: true })] }));
-  assert.equal(model.rows.some((item) => item.id === "scene"), false);
+  assert.equal(model.rows.at(-1).id, "scene");
+  assert.equal(model.rows.at(-1).clipEditable, true);
   assert.deepEqual(model.groups[0].rows.map((item) => item.id), ["upstream:scene_up:sticker_1", "upstream:scene_up:scene"]);
 });
 

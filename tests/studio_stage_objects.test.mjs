@@ -133,16 +133,31 @@ test("the selected World object's gizmo shows on the overlay and is pressed firs
   const drag = objects.press(ball);
   drag.move({ x: ball.x + 100, y: ball.y + 40 });
   assert.equal(objects.overlay().gizmo.active, "x", "the dragged handle stays lit");
-  const guide = objects.overlay().gizmo.guide;
-  assert.equal(guide.name, "x", "the X guide line shows while it is dragged");
+  const guides = objects.overlay().gizmo.guides;
+  assert.deepEqual(guides.map((line) => line.name), ["x"], "the X guide line shows while it is dragged");
+  const [guide] = guides;
   assert.ok(Math.abs(guide.a.y - guide.b.y) < 1e-6 && Math.abs(guide.a.y - H / 2) < 1e-6, "level through the grabbed center");
   drag.end();
-  assert.equal(objects.overlay().gizmo.guide, null, "and goes when it is let go");
+  assert.deepEqual(objects.overlay().gizmo.guides, [], "and goes when it is let go");
   const position = evaluateLane(session.state.stickers[1], "position", 0);
   assert.ok(position[0] > 3.5, "it moved along X");
   assert.ok(Math.abs(position[1]) < 1e-9 && Math.abs(position[2] + 5) < 1e-9, "and only along X");
   session.undo();
   assert.deepEqual(evaluateLane(session.state.stickers[1], "position", 0), [3, 0, -5]);
+});
+
+test("while a plane square of the gizmo is dragged, both of its axis guide lines run across the stage, and go when it is let go", () => {
+  const { session, objects } = setup();
+  session.selectObject("board");
+  const plane = handlesOf(objects).planes.find((entry) => entry.shown);
+  assert.ok(plane, "a plane square shows from this view");
+  const grip = { x: plane.points.reduce((sum, p) => sum + p.x, 0) / 4, y: plane.points.reduce((sum, p) => sum + p.y, 0) / 4 };
+  const drag = objects.press(grip);
+  drag.move({ x: grip.x + 30, y: grip.y + 10 });
+  const guides = objects.overlay().gizmo.guides;
+  assert.deepEqual(guides.map((line) => line.name), plane.name.split(""), "the plane's two axes");
+  drag.end();
+  assert.deepEqual(objects.overlay().gizmo.guides, []);
 });
 
 test("a gizmo drag given up puts the object back", () => {
@@ -219,6 +234,20 @@ test("in the Camera tab a press only selects: no gizmo, no handles, no drag, and
   assert.equal(scene.gizmo, null);
   assert.equal(scene.camera, null, "the Camera's mark is the 3D tab's");
   assert.deepEqual(scene.guides.map((guide) => guide.look), ["selected"]);
+});
+
+test("a press through another view (a lens Camera's cube face) tests the World objects and the sky images in that view", () => {
+  // docs/space-and-view.md "レンズの Camera の当たり": the stage hands the face's pinhole and its pixel.
+  const { session, objects } = setup({ tab: "camera" });
+  const turned = stageCamera({ position: [0, 0, 0], yaw_deg: 90, pitch_deg: 0, roll_deg: 0, target: [5, 0, 0] }, 64, 64, 50);
+  assert.equal(objects.press({ x: 32, y: 32 }, { camera: turned, width: 64, height: 64 }), null, "the sky image at yaw 0 is not under the face's center");
+  const ahead = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] }, 64, 64, 50);
+  assert.ok(objects.press({ x: 32, y: 32 }, { camera: ahead, width: 64, height: 64 }));
+  assert.equal(session.selection.row, "sky");
+  // The board at (3, 0, -5) under the center of a face turned to it: selected by the same test as the hover.
+  const toBoard = stageCamera({ position: [0, 0, 0], yaw_deg: Math.atan2(3, 5) * 180 / Math.PI, pitch_deg: 0, roll_deg: 0, target: [3, 0, -5] }, 64, 64, 50);
+  objects.press({ x: 32, y: 32 }, { camera: toBoard, width: 64, height: 64 });
+  assert.equal(session.selection.row, "board");
 });
 
 test("the overlay draws every World guide, the hovered one bright and the selected one yellow; Alt keeps it from lighting up", () => {

@@ -43,14 +43,13 @@ const KNOBS = [
         :disabled="disabled"
         @pointerdown="!disabled && emit('knob', knob.key, $event)"
       />
-    </StudioFloatGroup>
-    <StudioFloatGroup layout="knobs" label="Help">
+      <span class="pano-studio-sep" />
       <StudioIconButton
         ref="help"
         data-action="shortcuts"
         :icon="ICON.help"
         label="Shortcuts"
-        tip="Shortcuts (?)"
+        tip="Shortcuts"
         :lit="helpOpen"
         :aria-expanded="helpOpen ? 'true' : 'false'"
         aria-controls="pano-studio-shortcuts"

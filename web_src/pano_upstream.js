@@ -114,6 +114,13 @@ export function upstreamRowId(key, part) {
   return upstreamId(key, part);
 }
 
+// Whether the node's own 3D content is linked, which shows its own `scene` row (docs/timeline-ui.md): `world`, or a
+// 3D on `scene` from before that rename. An upstream Scene on `scene` is not the node's own content, but it does not
+// hide the row either: the own `world` is drawn over the upstream layers (ADR 0048), so its row shows with them.
+export function ownSceneLinked({ world, scene, upstream }) {
+  return !!world || (!!scene && !upstream);
+}
+
 // Whether a Sticker is a working copy's (upstreamWorkingLayers): the node's own never have an `origin`.
 export function isUpstreamSticker(item) {
   return !!item && typeof item === "object" && !!item.origin;

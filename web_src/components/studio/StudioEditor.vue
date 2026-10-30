@@ -16,11 +16,13 @@ import { inspectorSelection } from "../../studio/session.js";
 import { WORLD_FILE_ACCEPT } from "../../pano_sticker_file_import.js";
 import StudioDropMarker from "./StudioDropMarker.vue";
 import StudioCameraFrame from "./StudioCameraFrame.vue";
+import StudioConfirm from "./StudioConfirm.vue";
 import StudioEdgeRuler from "./StudioEdgeRuler.vue";
 import StudioInspector from "./StudioInspector.vue";
 import StudioNavWidget from "./StudioNavWidget.vue";
 import StudioNotice from "./StudioNotice.vue";
 import StudioOutputPreview from "./StudioOutputPreview.vue";
+import StudioPaintBar from "./StudioPaintBar.vue";
 import StudioPlaceChoice from "./StudioPlaceChoice.vue";
 import StudioSelectionBar from "./StudioSelectionBar.vue";
 import StudioShortcuts from "./StudioShortcuts.vue";
@@ -58,8 +60,12 @@ let stage = null;
 // The focus look shows only while the keyboard works the editor (docs/design.md "フォーカス").
 let stopInputMode = null;
 
-// The inspector's selection follows the Timeline's (studio/session.js).
-const selected = computed(() => inspectorSelection(props.view.selection));
+// The inspector's selection follows the Timeline's (studio/session.js); while Paint or Mask is chosen and nothing is
+// selected, it shows the Paint card (docs/studio-ui.md "種類ごとの中身").
+const selected = computed(() => {
+  const selection = inspectorSelection(props.view.selection);
+  return props.view.paint && !selection.ids.length ? { ...selection, paint: true } : selection;
+});
 
 onMounted(() => {
   stopInputMode = trackInputMode(root.value);
@@ -89,7 +95,9 @@ function onBackdropUp(event) {
   if (backdrop.up(event)) props.controller.close();
 }
 
-// --- The bar at the bottom center: the selected object's (none while nothing is selected, nor in the Camera tab).
+// --- The bar at the bottom center: the paint tools while Paint or Mask is chosen, else the selected object's (none
+// while nothing is selected, nor in the Camera tab).
+const paintModel = computed(() => (cameraTab.value ? null : props.view.paint));
 const bar = computed(() => (cameraTab.value ? null : selectionBar({ state: props.view.state, row: props.view.selection?.row ?? null, mode: props.view.gizmoMode, readOnly: props.view.readOnly })));
 
 // --- The Camera tab (docs/studio-ui.md "Camera タブ"): the frame of the output's ratio (the ERP's in Panorama mode)
@@ -239,6 +247,8 @@ function setCollapsed(value) {
             aria-hidden="true"
           />
           <StudioDropMarker v-if="ui.drop" :mark="ui.drop" />
+          <!-- The Camera button's light band (docs/design.md "動き"): a CSS layer, run once per new count. -->
+          <div v-if="ui.sweep" :key="ui.sweep" class="pano-studio-sweep" data-sweep aria-hidden="true" />
 
           <StudioCameraFrame v-if="cameraTab && rulers" :aspect="frameAspect" @rect="(rect) => controller.frameRect?.(rect)">
             <template #default="{ rulers: place }">
@@ -330,6 +340,8 @@ function setCollapsed(value) {
             :can-undo="view.canUndo"
             :can-redo="view.canRedo"
             :can-add="!view.readOnly"
+            :tool="view.tool"
+            :can-paint="!view.readOnly"
             :camera-tab="cameraTab"
             :camera-button="cameraRailButton"
             @press="onRail"
@@ -338,6 +350,13 @@ function setCollapsed(value) {
           <div v-if="ui.choice" class="pano-studio-place-layer">
             <StudioPlaceChoice @choose="(side) => controller.place(side)" @cancel="controller.cancelPlace()" />
           </div>
+          <StudioConfirm
+            v-if="view.confirm"
+            :title="view.confirm.title"
+            :body="view.confirm.body"
+            :confirm="view.confirm.confirm"
+            @answer="(ok) => controller.confirm(ok)"
+          />
           <div class="pano-studio-at-notice">
             <StudioNotice :text="line.text" :kind="line.kind" />
           </div>
@@ -362,7 +381,8 @@ function setCollapsed(value) {
             <StudioShortcuts :groups="shortcuts" :toggle="helpButton" @close="controller.shortcuts(false)" />
           </div>
           <div class="pano-studio-at-bar" data-region="bar">
-            <StudioSelectionBar v-if="bar" :model="bar" @press="(key) => controller.bar(key)" />
+            <StudioPaintBar v-if="paintModel" :model="paintModel" @edit="(event) => controller.paint(event)" />
+            <StudioSelectionBar v-else-if="bar" :model="bar" @press="(key) => controller.bar(key)" />
           </div>
           <StudioViewButtons
             class="pano-studio-at-buttons"

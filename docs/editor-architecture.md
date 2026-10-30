@@ -20,7 +20,9 @@ Panorama のエディタ（Stickers、Cutout、Panorama Studio、Preview のモ�
 | キャンバスのポインターの操作の振り分け（押したときに始める操作を決める順、`editor.interaction.kind` ごとの動き・離す・取り消す、操作ごとのモジュール） | — | `web_src/editor/pointer_input.js`、`web_src/editor/pointer_*.js` | `tests/editor_pointer_input.test.mjs` |
 | 描き直しは `requestDraw` からだけ頼む | — | `web_src/editor/render_loop.js` `requestDraw`・`tickFrame`・`drawScene` | — |
 | エディタのタイマーと閉じるときの片付け（タイマーを全部止める、閉じた後の `requestDraw` は何もしない、背景の VIDEO の `src` を放す） | — | `web_src/pano_timers.js` `createTimers`、`web_src/pano_editor.js` の閉じる処理、`editor/render_loop.js` `stopRenderLoop`、`editor/media_session.js` `disposeMediaSession` | — |
+| ストロークの記録と確定（筆の色、記録の形、点の間引きと `processedPoints`、ラスタ化、ストロークのまとまりと `z_index`、消しゴムがラスタに変えること）。古い UI と新しい UI が同じ関数で書くので、二つが書く `painting` は同じ形 | 比べ先は `core/painting.py`（同じ `painting` を描く） | `web_src/pano_paint_strokes.js`（古い UI は `editor/paint_input.js`・`paint_strokes.js`・`items.js` が、新しい UI は `studio/paint.js` が呼ぶ） | `tests/pano_paint_strokes.test.mjs`、`tests/editor_paint.test.mjs` |
 | ペイントの層をフロントで並べる部品（3 か所が同じ関数を使う、素材の渡し方、`painting` の正規化、表示が変わった矩形） | 比べ先は `core/render.py` `_sky_layers` | `web_src/pano_paint_layers.js` `skyPaintLayers`・`engineMask`、`web_src/pano_paint_damage.js`、`web_src/pano_raster_eraser.js`、`web_src/pano_paint_engine.js` `getGroupDisplay`・`getMaskDisplay`、`web_src/editor/paint_layers.js` `buildEditorViewPaintLayers`、`web_src/pano_surface_paint.js` `surfacePaintLayers`、`web_src/pano_upstream_layers.js` `paintLayers` | `tests/pano_paint_layers.test.mjs`、`tests/pano_paint_damage.test.mjs`、`tests/pano_raster_eraser.test.mjs`、`tests/test_paint_layers_parity.py`、`tests/pano_surface_paint.test.mjs`、`tests/pano_stickers_node_surface_contract.test.mjs` |
+| ノードへ送るペイントの層のアップロード（送る画像とファイル名、置き場所、`painting_layer` の形）。古い UI と新しい UI が同じ関数で送る | 読むのは `comfy_image_resolver.py` `resolve_painting_layer_payload` | `web_src/pano_paint_upload.js`（古い UI は `editor/paint_layers.js` `syncPaintingLayerAsync`、新しい UI は `studio/paint_upload.js`） | `tests/pano_paint_upload.test.mjs` |
 | ノードごとの実行時の状態は node bridge に置く（グループ、片付け、許可する `__pano*` の一覧） | — | `web_src/pano_node_bridge.js`、`web_src/pano_editor_extension.js` の `onRemoved` | `tests/pano_node_bridge.test.mjs`、`tests/pano_editor_extension.test.mjs` |
 
 エディタのソースの形を確かめるテストは、`tests/editor_source.mjs`（`readEditorSource()`）・
@@ -116,7 +118,7 @@ export function createHistory(deps) {
 | `editor/projection.js` | ビューの射影、Unwrap の矩形、画面・方向・ERP・Frame の変換 |
 | `editor/object_geometry.js` | 品目の画面上の形（オーバーレイと当たり判定が読む） |
 | `editor/paint_layers.js` | ペイントの表示の層（並びは `pano_paint_layers.js`。下記「Paint layers」）、ラスターの画像とアルファ、消しゴムのプレビュー、ノードへ送る塗りの層 |
-| `editor/paint_strokes.js` | 筆跡の点・半径・ラスター化、ペイントエンジンと表示のキャッシュの revision |
+| `editor/paint_strokes.js` | ペイントエンジンと表示のキャッシュの revision（筆跡の点・ラスター化は下の `pano_paint_strokes.js`） |
 | `editor/external_stickers.js` | `sticker` 入力から来る Sticker の姿勢と状態の更新 |
 | `editor/space.js` | 3DoF / 6DoF、Viewport のカメラの視点と遷移、空間の操作（キーの移動 `stepKeyMove`）、閉じたときの視点の記憶と復元（`saveView`・`restoreView`） |
 | `editor/view_input.js` | three.js のビューが描く入力をフレームに一度作り、ビュー・shot・Unwrap を描く |
@@ -132,7 +134,7 @@ export function createHistory(deps) {
 | `editor/sticker_import.js` | 画像の追加・置き換え・アップロード、3D ファイルの追加（アップロード・経路への問い合わせ・待つ間と失敗の知らせ）、drop |
 | `editor/camera.js` | Cutout / Studio の Camera（`syncCutoutShot`、追加・削除、アスペクト、ロールのつまみ） |
 | `editor/frame_view.js` | Frame のビュー（ゲート、パン・ドラッグ・ホイール、キーの移動 `moveFrameByKeys`・`endFrameKeyMove`） |
-| `editor/paint_input.js` | ペイントの入力、カーソル、筆跡と投げ縄の記録、消しゴム |
+| `editor/paint_input.js` | ペイントの入力、カーソル、Frame の端の区切り（記録・確定・消しゴムの規則は下の `pano_paint_strokes.js`） |
 | `editor/hit_test.js` | ポインターの下の品目（上流の `sky` の Sticker は自分のものの後）、選択の矩形、カーソル |
 | `editor/selection_menu.js` | 選択メニューとツールチップ |
 | `editor/pointer_input.js` | キャンバスのポインターとホイールの入口：押したときにどのジェスチャーを始めるか（決まった順で確かめ、最初に当てはまったもの。品目のクリックでの選択と空のクリックでの選択の解除、Ctrl / Meta の範囲選択の開始を含む）、動かす・離す・取り消すを `editor.interaction.kind` のジェスチャーへ回す、再生中の編集の最初の動きで止めて止まったフレームからやり直す（`restartEditAtStoppedFrame`）、ホイール |

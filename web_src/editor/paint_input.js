@@ -1,20 +1,23 @@
 // Painting with the pointer: the paint and mask tools, the brush cursor and size preview, the stroke and
 // lasso records a drag builds, the eraser, and committing a stroke to the painting.
-import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID, applyPresetToStroke } from "../pano_brush_presets.js";
+import { BRUSH_PRESETS, DEFAULT_BRUSH_PRESET_ID } from "../pano_brush_presets.js";
 import { clamp } from "../pano_math.js";
-import { normalizePaintingState } from "../pano_paint_types.js";
+import {
+  brushPresetIdForTool, commitPaintStroke, freehandStrokeRecord, lassoFillStrokeRecord, paintingLayerStrokes,
+  statePainting, strokeSample, takesStrokePoint,
+} from "../pano_paint_strokes.js";
 import { LASSO_CURSOR_HOTSPOT_X, LASSO_CURSOR_HOTSPOT_Y, LASSO_CURSOR_SIZE, RAD2DEG } from "./constants.js";
-import { cloneColor, colorToCss, getLassoCursorBackground, logPaintDebug, makePaintId } from "./helpers.js";
+import { cloneColor, colorToCss, getLassoCursorBackground } from "./helpers.js";
 
 export function createPaintInput(deps) {
   const {
     editor, paintCursorEl, paintSizePreviewEl, paintSizePreviewSampleEl, state, timers,
   } = deps;
   // Bound by connect() to the other modules and showEditor.
-  let buildRasterObjectEditCanvas, clearSelection, createRasterFrozenObjectsFromCanvas, createRasterSurface,
+  let buildRasterObjectEditCanvas, clearSelection,
     ensureGroupFrame, ensurePaintingGroupEntry, getActiveCutoutShot, getActivePaintTargetDescriptor,
-    getDisplayListObjects, getPaintingGroupList, getRasterObjectList, getStrokeGroupStrokes,
-    processFreehandPoints, rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, screenPosToErpPoint,
+    getDisplayListObjects, getStrokeGroupStrokes,
+    rebuildPaintEngineIfNeeded, screenPosToErpPoint,
     screenPosToFrameAsErpPoint, supportsFramePainting, takeGestureSnapshot;
 
   let paintSizePreviewTimer = 0;
@@ -30,20 +33,13 @@ export function createPaintInput(deps) {
     return editor.mode === "pano" || editor.mode === "unwrap";
   }
 
-  function captureStrokeRadiusSpec(targetSpace, sizePx) {
-    const r = Number(sizePx || 0) * 0.5;
-    // ERP: normalize against 2048 (full equirectangular canvas reference width).
-    return {
-      radiusModel: "erp_uv_norm",
-      radiusValue: Math.max(1e-6, r / 2048),
-    };
+  function getBrushPresetIdForTool(toolKind) {
+    return brushPresetIdForTool(toolKind, editor.activeBrushPresetId);
   }
 
-  function getBrushPresetIdForTool(toolKind) {
-    const kind = String(toolKind || "").trim();
-    if (kind === "eraser") return DEFAULT_BRUSH_PRESET_ID;
-    if (BRUSH_PRESETS[kind]) return kind;
-    return editor.activeBrushPresetId || DEFAULT_BRUSH_PRESET_ID;
+  // The tools' settings a stroke's record takes (pano_paint_strokes.js).
+  function brushSettings() {
+    return { brushSizes: editor.brushSizes, activePresetId: editor.activeBrushPresetId, paintColor: editor.paintColor, viewMode: editor.mode || "pano" };
   }
 
   function isPaintCursorEnabled() {
@@ -226,99 +222,15 @@ export function createPaintInput(deps) {
   }
 
   function buildFreehandStrokeRecord(layerKind, toolKind, points, targetSpace) {
-    const presetId = getBrushPresetIdForTool(toolKind);
-    const preset = BRUSH_PRESETS[presetId] || BRUSH_PRESETS[DEFAULT_BRUSH_PRESET_ID];
-    const rawSize = editor.brushSizes[presetId] ?? 10;
-    const size = Math.max(1, rawSize) * Math.max(0.1, preset.sizeScale ?? 1);
-    const radiusSpec = captureStrokeRadiusSpec(targetSpace, size);
-    const preparedPoints = points.map((pt) => ({
-      ...pt,
-      t: Number(pt?.t || 0),
-      widthScale: Number.isFinite(Number(pt?.widthScale)) ? Math.max(0, Number(pt.widthScale)) : 1,
-      pressureLike: Number.isFinite(Number(pt?.pressureLike)) ? Math.max(0, Number(pt.pressureLike)) : 1,
-    }));
-    const stroke = {
-      id: makePaintId(layerKind),
-      actionGroupId: makePaintId("ag"),
-      targetSpace: targetSpace && typeof targetSpace === "object"
-        ? { ...targetSpace, viewMode: String(editor.mode || "pano") }
-        : { kind: "ERP_GLOBAL", viewMode: String(editor.mode || "pano") },
-      layerKind,
-      toolKind,
-      size,
-      createdAt: Date.now(),
-      color: layerKind === "paint" ? { ...editor.paintColor } : { r: 0, g: 0, b: 0, a: 1 },
-      radiusModel: radiusSpec.radiusModel,
-      radiusValue: radiusSpec.radiusValue,
-      geometry: {
-        geometryKind: "freehand_open",
-        rawPoints: preparedPoints.map((pt) => ({ ...pt })),
-        points: preparedPoints.map((pt) => ({ ...pt })),
-      },
-    };
-    applyPresetToStroke(stroke, preset);
-    logPaintDebug("stroke-created", {
-      mode: editor.mode,
-      layerKind,
-      toolKind,
-      presetId,
-      presetAspect: Number(preset.aspect ?? 1),
-      strokeAspect: Number(stroke.aspect ?? 1),
-      stampKind: String(stroke.stampKind || ""),
-      size: Number(stroke.size || 0),
-      radiusModel: String(stroke.radiusModel || ""),
-      radiusValue: Number(stroke.radiusValue || 0),
-      targetSpace: { ...stroke.targetSpace },
-    });
-    return stroke;
+    return freehandStrokeRecord(layerKind, toolKind, points, targetSpace, brushSettings());
   }
 
   function buildLassoFillStrokeRecord(layerKind, toolKind, points, targetSpace) {
-    const preparedPoints = points.map((pt) => ({
-      ...pt,
-      t: Number(pt?.t || 0),
-      widthScale: Number.isFinite(Number(pt?.widthScale)) ? Math.max(0, Number(pt.widthScale)) : 1,
-      pressureLike: Number.isFinite(Number(pt?.pressureLike)) ? Math.max(0, Number(pt.pressureLike)) : 1,
-    }));
-    const presetId = getBrushPresetIdForTool(toolKind);
-    const preset = BRUSH_PRESETS[presetId] || BRUSH_PRESETS[DEFAULT_BRUSH_PRESET_ID];
-    const stroke = {
-      id: makePaintId(layerKind),
-      actionGroupId: makePaintId("ag"),
-      targetSpace: targetSpace && typeof targetSpace === "object"
-        ? { ...targetSpace, viewMode: String(editor.mode || "pano") }
-        : { kind: "ERP_GLOBAL", viewMode: String(editor.mode || "pano") },
-      layerKind,
-      toolKind,
-      size: 10,
-      createdAt: Date.now(),
-      color: layerKind === "paint" ? { ...editor.paintColor } : { r: 0, g: 0, b: 0, a: 1 },
-      radiusModel: null,
-      radiusValue: null,
-      geometry: {
-        geometryKind: "lasso_fill",
-        points: preparedPoints.map((pt) => ({ ...pt })),
-      },
-    };
-    applyPresetToStroke(stroke, preset);
-    logPaintDebug("lasso-created", {
-      mode: editor.mode,
-      layerKind,
-      toolKind,
-      presetId,
-      presetAspect: Number(preset.aspect ?? 1),
-      strokeAspect: Number(stroke.aspect ?? 1),
-      stampKind: String(stroke.stampKind || ""),
-      targetSpace: { ...stroke.targetSpace },
-    });
-    return stroke;
+    return lassoFillStrokeRecord(layerKind, toolKind, points, targetSpace, brushSettings());
   }
 
   function getPaintingLayerList(layerKind) {
-    const root = state.painting || (state.painting = normalizePaintingState(null));
-    const layer = root[layerKind] || (root[layerKind] = { strokes: [] });
-    if (!Array.isArray(layer.strokes)) layer.strokes = [];
-    return layer.strokes;
+    return paintingLayerStrokes(statePainting(state), layerKind);
   }
 
   function appendPaintPoint(interaction, pos, ts = performance.now()) {
@@ -337,18 +249,8 @@ export function createPaintInput(deps) {
     const rawPoints = interaction.stroke.geometry.rawPoints || interaction.stroke.geometry.points;
     const points = interaction.stroke.geometry.points;
     // Dedup against raw coords so OEF smoothing doesn't cause points to be incorrectly skipped
-    const prevRaw = rawPoints[rawPoints.length - 1];
-    if (prevRaw) {
-      const du = Math.abs(Number(next.u ?? next.x ?? 0) - Number(prevRaw.u ?? prevRaw.x ?? 0));
-      const dv = Math.abs(Number(next.v ?? next.y ?? 0) - Number(prevRaw.v ?? prevRaw.y ?? 0));
-      if (du < 0.0015 && dv < 0.0015) return false;
-    }
-    const sample = {
-      ...next,
-      t: Number(next?.t || 0),
-      widthScale: 1,
-      pressureLike: 1,
-    };
+    if (!takesStrokePoint(rawPoints[rawPoints.length - 1], next)) return false;
+    const sample = strokeSample(next);
     rawPoints.push({ ...sample });
     points.push({ ...sample });
     // Incremental rendering: send raw point to engine (O(1), no full re-render)
@@ -371,197 +273,23 @@ export function createPaintInput(deps) {
     }
     const points = interaction?.stroke?.geometry?.points;
     if (!next || !Array.isArray(points)) return false;
-    const prev = points[points.length - 1];
-    if (prev) {
-      const du = Math.abs(Number(next.u ?? next.x ?? 0) - Number(prev.u ?? prev.x ?? 0));
-      const dv = Math.abs(Number(next.v ?? next.y ?? 0) - Number(prev.v ?? prev.y ?? 0));
-      if (du < 0.0015 && dv < 0.0015) return false;
-    }
-    points.push({
-      ...next,
-      t: Number(next?.t || 0),
-      widthScale: 1,
-      pressureLike: 1,
-    });
+    if (!takesStrokePoint(points[points.length - 1], next)) return false;
+    points.push(strokeSample(next));
     return true;
   }
 
-  function applyPaintEraserInteraction(interaction) {
-    const eraserStroke = interaction?.stroke || null;
-    if (!eraserStroke || interaction?.layerKind !== "paint" || String(eraserStroke?.toolKind || "") !== "eraser") return false;
+  // The paint eraser's sources (pano_paint_strokes.js erasePaint): the engine's committed group canvases and the
+  // raster objects' ERP canvases.
+  function paintEraserSources() {
     rebuildPaintEngineIfNeeded();
-    const erpDesc = getActivePaintTargetDescriptor();
-    const eraserSurface = createRasterSurface(erpDesc.width, erpDesc.height);
-    if (!rasterizeStrokeToSurface(eraserSurface, eraserStroke, { w: erpDesc.width, h: erpDesc.height })) return false;
-    const eraserData = eraserSurface.ctx?.getImageData(0, 0, erpDesc.width, erpDesc.height)?.data || null;
-    if (!eraserData) return false;
-
-    const groupMeta = new Map(getPaintingGroupList().map((group) => [String(group?.actionGroupId || group?.id || "").trim(), group ? { ...group } : null]));
-    const nextStrokes = [];
-    const nextGroups = [];
-    const nextRasterObjects = [...getRasterObjectList().filter((item) => String(item?.layerKind || "paint") !== "paint")];
-    let changed = false;
-    let nextReplacementZ = getDisplayListObjects().reduce((max, entry) => Math.max(max, Number(entry?.z_index || 0)), -1) + 1;
-
-    function getAlphaBoundsFromData(alphaData, width, height, threshold = 8) {
-      let minX = width;
-      let minY = height;
-      let maxX = -1;
-      let maxY = -1;
-      for (let y = 0; y < height; y += 1) {
-        for (let x = 0; x < width; x += 1) {
-          if (alphaData[(y * width + x) * 4 + 3] <= threshold) continue;
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
-        }
-      }
-      if (maxX < minX || maxY < minY) return null;
-      return { minX, minY, maxX, maxY };
-    }
-
-    const eraserBoundsPx = getAlphaBoundsFromData(eraserData, erpDesc.width, erpDesc.height, 8);
-    if (!eraserBoundsPx) return false;
-
-    function boxesIntersect(a, b) {
-      if (!a || !b) return false;
-      return !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
-    }
-
-    function getGroupApproxBoundsPx(group, strokes) {
-      const frame = ensureGroupFrame(group?.actionGroupId || group?.id || "", "paint", strokes);
-      if (!frame) return null;
-      const minU = frame.centerUv.u - frame.halfW;
-      const maxU = frame.centerUv.u + frame.halfW;
-      const minV = frame.centerUv.v - frame.halfH;
-      const maxV = frame.centerUv.v + frame.halfH;
-      const width = erpDesc.width;
-      const height = erpDesc.height;
-      return {
-        minX: Math.floor(((minU % 1 + 1) % 1) * width),
-        maxX: Math.ceil((((maxU % 1 + 1) % 1) * width)),
-        minY: Math.floor(clamp(minV, 0, 1) * height),
-        maxY: Math.ceil(clamp(maxV, 0, 1) * height),
-        wraps: (maxU - minU) >= 1 || minU < 0 || maxU > 1,
-      };
-    }
-
-    function getRasterApproxBoundsPx(item) {
-      const bbox = item?.bbox || null;
-      if (!bbox) return null;
-      const tf = item?.transform || {};
-      const width = erpDesc.width;
-      const height = erpDesc.height;
-      const u0 = Number(bbox.u0 || 0) + Number(tf.du || 0);
-      const u1 = Number(bbox.u1 || 0) + Number(tf.du || 0);
-      const v0 = Number(bbox.v0 || 0) + Number(tf.dv || 0);
-      const v1 = Number(bbox.v1 || 0) + Number(tf.dv || 0);
-      return {
-        minX: Math.floor((((u0 % 1) + 1) % 1) * width),
-        maxX: Math.ceil((((u1 % 1) + 1) % 1) * width),
-        minY: Math.floor(clamp(v0, 0, 1) * height),
-        maxY: Math.ceil(clamp(v1, 0, 1) * height),
-        wraps: (u1 - u0) >= 1 || u0 < 0 || u1 > 1,
-      };
-    }
-
-    function approxBoundsHit(bounds) {
-      if (!bounds) return true;
-      if (bounds.wraps) {
-        return boxesIntersect(eraserBoundsPx, { minX: 0, maxX: bounds.maxX, minY: bounds.minY, maxY: bounds.maxY })
-          || boxesIntersect(eraserBoundsPx, { minX: bounds.minX, maxX: erpDesc.width - 1, minY: bounds.minY, maxY: bounds.maxY });
-      }
-      return boxesIntersect(eraserBoundsPx, bounds);
-    }
-
-    function eraseCanvasAndDetectTouch(sourceCanvas) {
-      if (!sourceCanvas) return { touched: false, canvas: null };
-      const working = createRasterSurface(erpDesc.width, erpDesc.height, { readback: true });
-      working.ctx.drawImage(sourceCanvas, 0, 0);
-      const beforeData = working.ctx.getImageData(0, 0, erpDesc.width, erpDesc.height);
-      working.ctx.save();
-      working.ctx.globalCompositeOperation = "destination-out";
-      working.ctx.drawImage(eraserSurface.canvas, 0, 0);
-      working.ctx.restore();
-      const afterData = working.ctx.getImageData(0, 0, erpDesc.width, erpDesc.height);
-      for (let i = 0; i < erpDesc.width * erpDesc.height; i += 1) {
-        const eraserAlpha = eraserData[i * 4 + 3];
-        if (eraserAlpha <= 8) continue;
-        const beforeAlpha = beforeData.data[i * 4 + 3];
-        const afterAlpha = afterData.data[i * 4 + 3];
-        if (beforeAlpha > afterAlpha) {
-          return { touched: true, canvas: working.canvas };
-        }
-      }
-      return { touched: false, canvas: null };
-    }
-
-    function createReplacementObjects(canvas, layerKind, baseMeta) {
-      const baseZ = Number(baseMeta?.z_index);
-      const created = createRasterFrozenObjectsFromCanvas(canvas, layerKind, baseMeta).map((item, index) => ({
-        ...item,
-        z_index: Number.isFinite(baseZ) ? baseZ + (index * 0.001) : nextReplacementZ + (index * 0.001),
-      }));
-      if (created.length) {
-        nextReplacementZ = Math.max(nextReplacementZ, ...created.map((item) => Number(item?.z_index || 0))) + 1;
-      }
-      return created;
-    }
-
-    for (const group of getPaintingGroupList()) {
-      const gid = String(group?.actionGroupId || group?.id || "").trim();
-      if (!gid) continue;
-      const groupStrokes = getStrokeGroupStrokes(gid, "paint");
-      if (!approxBoundsHit(getGroupApproxBoundsPx(group, groupStrokes))) {
-        nextGroups.push(group);
-        nextStrokes.push(...groupStrokes);
-        continue;
-      }
-      const groupTarget = editor.paintEngine?.getGroupTarget?.(gid) || null;
-      const groupCanvas = groupTarget?.committedPaint?.canvas || null;
-      if (!groupCanvas) {
-        nextGroups.push(group);
-        nextStrokes.push(...groupStrokes);
-        continue;
-      }
-      const erased = eraseCanvasAndDetectTouch(groupCanvas);
-      if (!erased.touched || !erased.canvas) {
-        nextGroups.push(group);
-        nextStrokes.push(...groupStrokes);
-        continue;
-      }
-      changed = true;
-      const created = createReplacementObjects(erased.canvas, "paint", groupMeta.get(gid) || group || {});
-      nextRasterObjects.push(...created);
-    }
-
-    for (const rasterObject of getRasterObjectList().filter((item) => String(item?.layerKind || "paint") === "paint")) {
-      if (!approxBoundsHit(getRasterApproxBoundsPx(rasterObject))) {
-        nextRasterObjects.push(rasterObject);
-        continue;
-      }
-      const rasterCanvas = buildRasterObjectEditCanvas(rasterObject, null);
-      if (!rasterCanvas) {
-        nextRasterObjects.push(rasterObject);
-        continue;
-      }
-      const erased = eraseCanvasAndDetectTouch(rasterCanvas);
-      if (!erased.touched || !erased.canvas) {
-        nextRasterObjects.push(rasterObject);
-        continue;
-      }
-      changed = true;
-      const created = createReplacementObjects(erased.canvas, "paint", rasterObject);
-      nextRasterObjects.push(...created);
-    }
-
-    if (!changed) return false;
-    state.painting.paint.strokes = nextStrokes;
-    state.painting.groups = nextGroups.sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0));
-    state.painting.raster_objects = nextRasterObjects.sort((a, b) => Number(a?.z_index || 0) - Number(b?.z_index || 0));
-    clearSelection({ preservePanelValues: false });
-    return true;
+    return {
+      descriptor: getActivePaintTargetDescriptor(),
+      groupStrokes: (gid) => getStrokeGroupStrokes(gid, "paint"),
+      groupFrame: (group, strokes) => ensureGroupFrame(group?.actionGroupId || group?.id || "", "paint", strokes),
+      groupCanvas: (gid) => editor.paintEngine?.getGroupTarget?.(gid)?.committedPaint?.canvas || null,
+      rasterCanvas: (item) => buildRasterObjectEditCanvas(item, null),
+      topZ: () => getDisplayListObjects().reduce((max, entry) => Math.max(max, Number(entry?.z_index || 0)), -1),
+    };
   }
 
   // Commit the current frame-stroke segment to state and start a fresh stroke with the
@@ -618,39 +346,22 @@ export function createPaintInput(deps) {
   }
 
   function commitPaintInteraction(interaction) {
-    const geometry = interaction?.stroke?.geometry || null;
-    if (!geometry) return false;
-    const toolKind = String(interaction?.stroke?.toolKind || "pen");
-    if (interaction.layerKind === "paint" && toolKind === "eraser") {
-      if (geometry.geometryKind !== "lasso_fill") {
-        geometry.processedPoints = processFreehandPoints(geometry.rawPoints || geometry.points || [], interaction.stroke.targetSpace, true);
-      }
-      return applyPaintEraserInteraction(interaction);
-    }
-    const shouldCreatePaintGroup = interaction.layerKind === "paint" && toolKind !== "eraser";
-    if (geometry.geometryKind === "lasso_fill") {
-      const points = Array.isArray(geometry.points) ? geometry.points : [];
-      if (points.length < 3) return false;
-      if (shouldCreatePaintGroup) ensurePaintingGroupEntry(interaction.stroke?.actionGroupId);
-      getPaintingLayerList(interaction.layerKind).push(interaction.stroke);
-      return true;
-    }
-    const rawPoints = geometry.rawPoints || geometry.points || [];
-    if (rawPoints.length < 1) return false;
-    // ADR 0006: processedPoints is durable; rasterizer (Python) uses it directly.
-    geometry.processedPoints = processFreehandPoints(rawPoints, interaction.stroke.targetSpace, true);
-    if (shouldCreatePaintGroup) ensurePaintingGroupEntry(interaction.stroke?.actionGroupId);
-    getPaintingLayerList(interaction.layerKind).push(interaction.stroke);
-    return true;
+    const changed = commitPaintStroke(statePainting(state), interaction?.layerKind, interaction?.stroke, {
+      ensureGroup: ensurePaintingGroupEntry,
+      eraser: paintEraserSources,
+    });
+    const erased = changed && interaction.layerKind === "paint" && String(interaction?.stroke?.toolKind || "") === "eraser";
+    if (erased) clearSelection({ preservePanelValues: false });
+    return changed;
   }
 
   return {
     connect(api) {
       ({
-        buildRasterObjectEditCanvas, clearSelection, createRasterFrozenObjectsFromCanvas, createRasterSurface,
+        buildRasterObjectEditCanvas, clearSelection,
         ensureGroupFrame, ensurePaintingGroupEntry, getActiveCutoutShot, getActivePaintTargetDescriptor,
-        getDisplayListObjects, getPaintingGroupList, getRasterObjectList, getStrokeGroupStrokes,
-        processFreehandPoints, rasterizeStrokeToSurface, rebuildPaintEngineIfNeeded, screenPosToErpPoint,
+        getDisplayListObjects, getStrokeGroupStrokes,
+        rebuildPaintEngineIfNeeded, screenPosToErpPoint,
         screenPosToFrameAsErpPoint, supportsFramePainting, takeGestureSnapshot,
       } = api);
     },
