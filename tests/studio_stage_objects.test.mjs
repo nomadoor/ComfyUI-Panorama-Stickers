@@ -1,6 +1,6 @@
 // Selecting and editing objects on the stage (web_src/studio/stage_objects.js): the press order of
 // docs/editor-interaction.md "`world` の Sticker の操作" (the gizmo, the selected sky image's handles, the World object
-// by the GPU pick, the Camera's mark, a sky image), what a drag writes by the recording rule, the Camera tab's
+// by the hover's test (hit_test.js coarseUnder), the Camera's mark, a sky image), what a drag writes by the recording rule, the Camera tab's
 // select-only presses, and what the overlay draws. The three.js view is a stand-in; the gizmo is the overlay's
 // (gizmo_overlay.js), hit and dragged on screen.
 import assert from "node:assert/strict";
@@ -21,7 +21,7 @@ const H = 500;
 const file = (filename) => ({ kind: "file", filename, subfolder: "", storage: "input" });
 const image = { naturalWidth: 100, naturalHeight: 100, complete: true };
 
-function setup({ tab = "3d", picked = null, stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate" } = {}) {
+function setup({ tab = "3d", stickers = null, sceneBox = () => null, editorFile = () => null, mode = "translate" } = {}) {
   const session = createStudioSession({
     state: loadSceneState({
       version: 2,
@@ -34,13 +34,10 @@ function setup({ tab = "3d", picked = null, stickers = null, sceneBox = () => nu
   });
   const pose = { position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] };
   const camera = stageCamera(pose, W, H, 50);
-  const picks = [];
+  // The GPU pick is not used to select: a call to it fails the test.
   const editorView = {
     sceneBox,
-    pickSticker: (...args) => {
-      picks.push(args);
-      return picked;
-    },
+    pickSticker: () => assert.fail("the GPU pick is read"),
   };
   let cached = null;
   const content = () => {
@@ -61,7 +58,7 @@ function setup({ tab = "3d", picked = null, stickers = null, sceneBox = () => nu
     tab: () => tab,
     mode: () => gizmoMode.value,
   });
-  return { session, objects, camera, gizmoMode, picks };
+  return { session, objects, camera, gizmoMode };
 }
 
 const center = { x: W / 2, y: H / 2 };
@@ -104,8 +101,13 @@ test("the selected sky image's corner scales both FOVs and its edge one, before 
   assert.ok(Math.abs(after.vFOV_deg - 60) < 1e-6, "and keeps the V FOV");
 });
 
-test("a World object under the pointer (the GPU pick) is selected before the sky behind it, and its drag moves nothing", () => {
-  const { session, objects } = setup({ picked: "board" });
+test("a World object under the pointer (its outline, as the hover) is selected before the sky behind it, and its drag moves nothing", () => {
+  const { session, objects } = setup({
+    stickers: [
+      { id: "sky", placement: "sky", source: file("poster.png"), direction: { value: { yaw_deg: 0, pitch_deg: 0 } }, size: { value: { hFOV_deg: 30, vFOV_deg: 30 } } },
+      { id: "board", placement: "world", source: file("board.png"), position: { value: [0, 0, -5] } },
+    ],
+  });
   const before = session.state;
   const drag = objects.press(center);
   assert.equal(session.selection.row, "board");
@@ -234,15 +236,18 @@ test("in the Camera tab a press only selects: no gizmo, no handles, no drag, and
   assert.deepEqual(scene.guides.map((guide) => guide.look), ["selected"]);
 });
 
-test("a press through another view (a lens Camera's cube face) picks and tests the sky images in that view", () => {
+test("a press through another view (a lens Camera's cube face) tests the World objects and the sky images in that view", () => {
   // docs/space-and-view.md "レンズの Camera の当たり": the stage hands the face's pinhole and its pixel.
-  const { session, objects, picks } = setup({ tab: "camera" });
+  const { session, objects } = setup({ tab: "camera" });
   const turned = stageCamera({ position: [0, 0, 0], yaw_deg: 90, pitch_deg: 0, roll_deg: 0, target: [5, 0, 0] }, 64, 64, 50);
   assert.equal(objects.press({ x: 32, y: 32 }, { camera: turned, width: 64, height: 64 }), null, "the sky image at yaw 0 is not under the face's center");
-  assert.deepEqual(picks.at(-1), [turned, 32, 32, 64, 64]);
   const ahead = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] }, 64, 64, 50);
   assert.ok(objects.press({ x: 32, y: 32 }, { camera: ahead, width: 64, height: 64 }));
   assert.equal(session.selection.row, "sky");
+  // The board at (3, 0, -5) under the center of a face turned to it: selected by the same test as the hover.
+  const toBoard = stageCamera({ position: [0, 0, 0], yaw_deg: Math.atan2(3, 5) * 180 / Math.PI, pitch_deg: 0, roll_deg: 0, target: [3, 0, -5] }, 64, 64, 50);
+  objects.press({ x: 32, y: 32 }, { camera: toBoard, width: 64, height: 64 });
+  assert.equal(session.selection.row, "board");
 });
 
 test("the overlay draws every World guide, the hovered one bright and the selected one yellow; Alt keeps it from lighting up", () => {

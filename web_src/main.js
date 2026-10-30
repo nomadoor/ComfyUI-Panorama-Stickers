@@ -8,7 +8,6 @@ import { createPanoEditorExtension } from "./pano_editor_extension.js";
 import { oldEditorHooks } from "./pano_editor.js";
 import { linkedInputType } from "./pano_preview_video.js";
 import { openStudioEditor, preloadStudioEditor } from "./studio/editor.js";
-import { HIT_TEST_SETTING } from "./studio/hit_test.js";
 import { openPreviewWindow } from "./studio/preview_window.js";
 
 const newUiOn = () => app?.ui?.settings?.getSettingValue?.(NEW_UI_SETTING_ID);
@@ -46,7 +45,5 @@ extension.setup = async function (...args) {
   await setup?.apply(this, args);
   preloadStudio();
 };
-// HIT_TEST_SETTING is a temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"); it goes once the owner
-// has chosen.
-extension.settings = [...extension.settings, { ...NEW_UI_SETTING, onChange: (value) => value === true && setTimeout(preloadStudio) }, HIT_TEST_SETTING];
+extension.settings = [...extension.settings, { ...NEW_UI_SETTING, onChange: (value) => value === true && setTimeout(preloadStudio) }];
 app.registerExtension(extension);

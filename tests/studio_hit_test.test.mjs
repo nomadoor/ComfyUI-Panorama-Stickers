@@ -1,26 +1,24 @@
-// A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"): the modes of finding the World object
-// under the pointer (web_src/studio/hit_test.js), the coarse grid they march (web_src/pano_coarse_grid.js), the square
-// GPU pick's choice (web_src/pano_pick.js nearestSquareHit), and that the stage's hover and press agree in every mode
-// (web_src/studio/stage_objects.js objectUnder). The three.js view is a stand-in.
+// Finding the World object under the pointer (docs/space-and-view.md "ホバーの判定"): the ray through the coarse
+// grid of each 3D item (web_src/studio/hit_test.js), the grid and its building ahead of time in idle slices
+// (web_src/pano_coarse_grid.js), and that the stage's hover and press agree and read no GPU
+// (web_src/studio/stage_objects.js). The three.js view is a stand-in.
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { COARSE_GRID_CELLS, createCoarseGrid, itemCoarseGrid, markPoint, markTriangle } from "../web_src/pano_coarse_grid.js";
-import { nearestSquareHit, packPick24, pickSquareWindow } from "../web_src/pano_pick.js";
+import {
+  COARSE_GRID_CELLS,
+  COARSE_GRID_SLICE_MS,
+  coarseGridBuilder,
+  coarseGridKey,
+  createCoarseGrid,
+  createCoarseGridBuilds,
+  itemCoarseGrid,
+  markPoint,
+  markTriangle,
+} from "../web_src/pano_coarse_grid.js";
 import { loadSceneState } from "../web_src/pano_scene_state.js";
 import { boxCorners, projectPoint, transformPoint } from "../web_src/pano_space.js";
-import {
-  BOX_SCREEN_SHARE,
-  HIT_TEST_SETTING,
-  boxFallsBack,
-  boxUnder,
-  cameraRay,
-  coarseUnder,
-  createHoverPicker,
-  hitTestMode,
-  marchCoarseGrid,
-  viewInsideBox,
-} from "../web_src/studio/hit_test.js";
+import { cameraRay, coarseUnder, marchCoarseGrid } from "../web_src/studio/hit_test.js";
 import { createStudioSession } from "../web_src/studio/session.js";
 import { stageContent } from "../web_src/studio/stage_content.js";
 import { createStageObjects } from "../web_src/studio/stage_objects.js";
@@ -31,6 +29,7 @@ const H = 500;
 const camera = stageCamera({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -5] }, W, H, 50);
 const unit = { min: [-1, -1, -1], max: [1, 1, 1] };
 const placed = (position, scale = 1) => ({ position, scale, yaw_deg: 0, pitch_deg: 0, roll_deg: 0 });
+const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 // A box guide as world_guides.js worldGuideItems makes one.
 function boxGuide(id, box, value, url = null) {
@@ -46,44 +45,6 @@ function hollowGrid() {
   return grid;
 }
 
-test("the setting names four modes, today's by default; an unknown value is today's", () => {
-  assert.deepEqual(HIT_TEST_SETTING.options, ["current", "box", "pixels", "coarse"]);
-  assert.equal(HIT_TEST_SETTING.defaultValue, "current");
-  assert.equal(hitTestMode("coarse"), "coarse");
-  assert.equal(hitTestMode(undefined), "current");
-  assert.equal(hitTestMode("nope"), "current");
-});
-
-test("box: a small box ahead is hit inside its screen rectangle, even where nothing of it is", () => {
-  const item = boxGuide("a", unit, placed([0, 0, -10]));
-  assert.equal(boxFallsBack(item, camera, W, H), false);
-  assert.deepEqual(boxUnder([item], camera, { x: W / 2, y: H / 2 }, W, H), { id: "a", fallback: false });
-  assert.deepEqual(boxUnder([item], camera, { x: 10, y: 10 }, W, H), { id: null, fallback: false });
-});
-
-test("box: a box the view stands in, one with a corner behind the view, and one covering most of the stage fall back", () => {
-  const around = boxGuide("in", unit, placed([0, 0, 0], 3));
-  assert.equal(viewInsideBox(around, camera), true);
-  assert.equal(boxFallsBack(around, camera, W, H), true);
-  const behind = boxGuide("behind", unit, placed([0, 0, -1.5]));
-  assert.equal(viewInsideBox(behind, camera), false);
-  assert.equal(boxFallsBack(behind, camera, W, H), true, "its near corners are behind the view");
-  // Just ahead of the view and wide: its rectangle covers the stage, though the view is outside it.
-  const wide = boxGuide("wide", unit, placed([0, 0, -2.2]));
-  const projected = wide.corners.map((p) => projectPoint(camera, p, W, H));
-  assert.ok(projected.every(Boolean));
-  assert.equal(boxFallsBack(wide, camera, W, H), true);
-  // Farther off, the same box covers less than BOX_SCREEN_SHARE.
-  const far = boxGuide("far", unit, placed([0, 0, -6]));
-  assert.equal(boxFallsBack(far, camera, W, H), false);
-  assert.ok(BOX_SCREEN_SHARE > 0 && BOX_SCREEN_SHARE < 1);
-  // A plane never falls back.
-  assert.equal(boxFallsBack({ ...far, kind: "plane" }, camera, W, H), false);
-  // The box that falls back is not hit by the box test; the miss is asked of the pixels.
-  assert.deepEqual(boxUnder([around, far], camera, { x: 10, y: 10 }, W, H), { id: null, fallback: true });
-  assert.deepEqual(boxUnder([around, far], camera, { x: W / 2, y: H / 2 }, W, H), { id: "far", fallback: true });
-});
-
 test("the camera ray's point at t lies at depth t on the screen point it was made for", () => {
   const point = { x: 730, y: 120 };
   const ray = cameraRay(camera, point, W, H);
@@ -93,7 +54,7 @@ test("the camera ray's point at t lies at depth t on the screen point it was mad
   assert.ok(Math.abs(projected.z - 7) < 1e-9);
 });
 
-test("coarse: a ray is stopped at the first solid cell it enters, passes empty ones, and starts in a solid one at once", () => {
+test("a ray is stopped at the first solid cell it enters, passes empty ones, and starts in a solid one at once", () => {
   const grid = createCoarseGrid({ min: [0, 0, 0], max: [4, 4, 4] }, 4);
   markPoint(grid, [2.5, 0.5, 0.5]);
   // Along +X at y = z = 0.5: through cells 0 and 1, into cell 2 at x = 2, from x = -1.
@@ -111,7 +72,7 @@ test("coarse: a ray is stopped at the first solid cell it enters, passes empty o
   assert.ok(t !== null && Math.abs(t - 2) < 1e-9);
 });
 
-test("coarse: a grid marks the cells a triangle passes through, not only its corners", () => {
+test("a grid marks the cells a triangle passes through, not only its corners", () => {
   const grid = createCoarseGrid({ min: [0, 0, 0], max: [8, 8, 8] }, 8);
   markTriangle(grid, [0.5, 0.5, 0.5], [7.5, 0.5, 0.5], [0.5, 7.5, 0.5]);
   const solid = (x, y, z) => grid.cells[x + 8 * (y + 8 * z)] === 1;
@@ -121,7 +82,7 @@ test("coarse: a grid marks the cells a triangle passes through, not only its cor
   assert.equal(solid(2, 2, 1), false, "off its plane");
 });
 
-test("coarse: an item's grid from a mesh's triangles (in their place under the root) and from a SPLAT's centers (turned from 3DGS)", () => {
+test("an item's grid from a mesh's triangles (in their place under the root) and from a SPLAT's centers (turned from 3DGS)", () => {
   const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const attribute = (values) => ({ count: values.length / 3, getX: (i) => values[i * 3], getY: (i) => values[i * 3 + 1], getZ: (i) => values[i * 3 + 2] });
   // One small triangle near (0.9, 0.9, 0.9) of the unit box, its mesh moved by +0.5 in X under the root.
@@ -149,7 +110,7 @@ test("coarse: an item's grid from a mesh's triangles (in their place under the r
   assert.equal(itemCoarseGrid({ kind: "mesh", object: root, box: null }), null);
 });
 
-test("coarse: the empty middle of a box is not hit, its solid corner is, and a box without a grid is hit by its rectangle", () => {
+test("the empty middle of a box is not hit, its solid corner is, and a box without a grid is hit by its rectangle", () => {
   const value = placed([0, 0, -6]);
   const item = boxGuide("model", unit, value, "file3d:model");
   const grids = { "file3d:model": hollowGrid() };
@@ -169,31 +130,72 @@ test("coarse: the empty middle of a box is not hit, its solid corner is, and a b
   assert.equal(coarseUnder([item, back], gridOf, camera, corner, W, H), "model");
 });
 
-test("pixels: the square pick takes the drawn pixel nearest the pointer, on a float and an RGBA8 target", () => {
-  const side = 5;
-  const float = new Float32Array(side * side * 4);
-  // Id 3 at the corner (0, 0), id 7 one pixel right of the center (row 2, col 3).
-  float[0] = 3;
-  float[1] = 9;
-  float[(2 * side + 3) * 4] = 7;
-  float[(2 * side + 3) * 4 + 1] = 4;
-  assert.deepEqual(nearestSquareHit(float, side, true), { id: 7, depth: 4 });
-  const bytes = new Uint8Array(side * side * 4);
-  bytes.set(packPick24(300), (4 * side + 4) * 4);
-  assert.deepEqual(nearestSquareHit(bytes, side, false), { id: 300, depth: null });
-  assert.equal(nearestSquareHit(new Float32Array(side * side * 4), side, true), null);
-  assert.deepEqual(pickSquareWindow(100, 50, 800, 600, 2), { fullWidth: 800, fullHeight: 600, x: 97.5, y: 47.5, width: 5, height: 5 });
+// A stand-in clock: now() is the time spent; reading a vertex costs `cost` ms of it (the work of building a grid).
+function workClock(cost) {
+  let time = 0;
+  return { now: () => time, spend: () => (time += cost), advance: (ms) => (time += ms) };
+}
+
+// A mesh item of `count` small triangles spread over `unit` (a position attribute read through getX/getY/getZ, which
+// spends the clock's time), its root and mesh in place.
+function meshItem(count, clock = null, extra = {}) {
+  const values = [];
+  for (let k = 0; k < count; k += 1) {
+    const x = ((k * 37) % 101) / 101 * 1.8 - 0.9;
+    const y = ((k * 53) % 89) / 89 * 1.8 - 0.9;
+    const z = ((k * 71) % 97) / 97 * 1.8 - 0.9;
+    values.push(x, y, z, x + 0.01, y, z, x, y + 0.01, z);
+  }
+  const read = (offset) => (i) => {
+    clock?.spend();
+    return values[i * 3 + offset];
+  };
+  const position = { count: values.length / 3, getX: read(0), getY: read(1), getZ: read(2) };
+  const mesh = { isMesh: true, geometry: { attributes: { position }, index: null }, matrixWorld: { elements: [...IDENTITY] } };
+  const root = { matrixWorld: { elements: [...IDENTITY] }, updateMatrixWorld() {}, traverse: (visit) => [root, mesh].forEach(visit) };
+  return { kind: "mesh", object: root, box: unit, mesh, ...extra };
+}
+
+test("a grid built in steps is the grid built at once, and each step stops soon after its time is up", () => {
+  const whole = itemCoarseGrid(meshItem(20000));
+  const clock = workClock(0.002);
+  const builder = coarseGridBuilder(meshItem(20000, clock));
+  let steps = 0;
+  let longest = 0;
+  for (;;) {
+    const start = clock.now();
+    const end = start + COARSE_GRID_SLICE_MS;
+    const done = builder.step(() => clock.now() >= end);
+    longest = Math.max(longest, clock.now() - start);
+    steps += 1;
+    if (done) break;
+  }
+  assert.ok(steps > 10, `it took ${steps} steps`);
+  // A step looks at the clock after about 512 points (here 0.002 ms a vertex read, 3 reads a point): ~3 ms late at most.
+  assert.ok(longest <= COARSE_GRID_SLICE_MS + 3.5, `the longest step took ${longest} ms`);
+  assert.deepEqual(builder.grid.cells, whole.cells);
+  assert.ok(whole.cells.some(Boolean));
 });
 
-// A stand-in for requestAnimationFrame: run() runs the frame's callbacks.
-function frames() {
+test("a mesh is taken in the pose it has when its building is asked for, not as it moves while it is built", () => {
+  const item = meshItem(2000);
+  const still = itemCoarseGrid(meshItem(2000));
+  const builder = coarseGridBuilder(item);
+  // An animation moves the mesh after the building was asked for.
+  item.mesh.matrixWorld.elements[12] = 0.5;
+  builder.step();
+  assert.deepEqual(builder.grid.cells, still.cells);
+});
+
+// Stand-ins for requestIdleCallback: run() runs the asked slices.
+function idle() {
   let queue = [];
   return {
-    requestFrame: (callback) => queue.push(callback),
+    schedule: (run) => queue.push(run),
     run() {
       const now = queue;
       queue = [];
-      now.forEach((callback) => callback());
+      now.forEach((run) => run());
       return now.length;
     },
     get pending() {
@@ -201,56 +203,97 @@ function frames() {
     },
   };
 }
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-test("pixels: the hover's pick runs at most once a frame and one at a time, for the newest pointer, and is not waited for", async () => {
-  const clock = frames();
-  const results = [];
-  const picker = createHoverPicker({ requestFrame: clock.requestFrame, onResult: (changed) => results.push(changed) });
-  const asked = [];
-  const pick = (id) => () => {
-    asked.push(id);
-    return Promise.resolve(id);
-  };
-  // Three moves in one frame: nothing is known yet, and one frame is asked for.
-  assert.equal(picker.request("a", pick("A")), null);
-  assert.equal(picker.request("b", pick("B")), null);
-  assert.equal(picker.request("c", pick("C")), null);
-  assert.equal(clock.pending, 1);
-  clock.run();
-  assert.deepEqual(asked, ["C"], "only the newest pointer is picked");
-  // While it runs, a new move asks for no frame.
-  assert.equal(picker.request("d", pick("D")), null, "the hover goes on with what it knows: the pick is not waited for");
-  assert.equal(clock.pending, 0);
-  await settle();
-  assert.deepEqual(results, [true]);
-  assert.equal(picker.request("c", pick("C")), "C", "the id found for that pointer");
-  // The ended pick asked for the next frame for "d" — but "c" came back meanwhile and is known: nothing more runs.
-  clock.run();
-  assert.deepEqual(asked, ["C"]);
-  // A new pointer: the last id shows until its pick ends.
-  assert.equal(picker.request("e", pick(null)), "C");
-  clock.run();
-  await settle();
-  assert.equal(picker.request("e", pick(null)), null);
-  assert.deepEqual(results, [true, true]);
-  // A pick that ends after clear() (the pointer left) is dropped.
-  picker.request("f", pick("F"));
-  clock.run();
-  picker.clear();
-  await settle();
-  assert.deepEqual(results, [true, true]);
-  assert.equal(picker.request("f", pick("F")), null);
+test("the grids are built in idle slices of at most the slice's time, in order, and asking for one never builds it", () => {
+  const clock = workClock(0.002);
+  const slices = idle();
+  const ready = [];
+  const builds = createCoarseGridBuilds({ schedule: slices.schedule, now: clock.now, onReady: () => ready.push(clock.now()) });
+  const big = { ...meshItem(30000, clock), state: "loaded" };
+  const small = { ...meshItem(10, clock), state: "loaded" };
+  builds.want("big", big);
+  builds.want("small", small);
+  builds.want("big", big);
+  assert.equal(slices.pending, 1, "one slice asked for");
+  assert.equal(clock.now(), 0, "nothing is built when it is asked for");
+  // Asking for the grid before it is done returns nothing and does no work.
+  for (let i = 0; i < 100; i += 1) assert.equal(builds.get("big"), null);
+  assert.equal(clock.now(), 0);
+  let count = 0;
+  let longest = 0;
+  while (slices.pending) {
+    const start = clock.now();
+    slices.run();
+    longest = Math.max(longest, clock.now() - start);
+    count += 1;
+    // Between slices the page draws its frames.
+    clock.advance(16);
+  }
+  assert.ok(count > 10, `${count} slices`);
+  assert.ok(longest <= COARSE_GRID_SLICE_MS + 3.5, `the longest slice took ${longest} ms`);
+  assert.equal(ready.length, 2);
+  assert.deepEqual(builds.get("big").cells, itemCoarseGrid(meshItem(30000)).cells);
+  assert.deepEqual(builds.get("small").cells, itemCoarseGrid(meshItem(10)).cells);
+  // Asked for again, or for another item of the same key (the next frame of a batch): kept, not built again.
+  builds.want("big", big);
+  builds.want("big", { ...meshItem(5), state: "loaded" });
+  assert.equal(slices.pending, 0);
 });
 
-// --- The stage: hover and press agree in every mode.
+test("an item let go while it waits is dropped, one without a box has no grid, and close() stops the slices", () => {
+  const slices = idle();
+  const builds = createCoarseGridBuilds({ schedule: slices.schedule, now: () => 0 });
+  const gone = { ...meshItem(100), state: "loaded" };
+  const boxless = { ...meshItem(100), box: null, state: "loaded" };
+  builds.want("gone", gone);
+  builds.want("boxless", boxless);
+  gone.state = "queued";
+  slices.run();
+  assert.equal(builds.get("gone"), null);
+  assert.equal(builds.get("boxless"), null);
+  // The key let go may be asked for again, from another item.
+  builds.want("gone", { ...meshItem(100), state: "loaded" });
+  slices.run();
+  assert.ok(builds.get("gone"));
+  const later = { ...meshItem(100), state: "loaded" };
+  builds.want("later", later);
+  builds.close();
+  slices.run();
+  assert.equal(builds.get("later"), null);
+  assert.equal(slices.pending, 0);
+});
+
+test("the frames of a batch share one grid key; another Sticker, kind, file or batch gets its own", () => {
+  const batch = { id: "port", kind: "mesh", urls: ["/f0.glb", "/f1.glb", "/f2.glb"] };
+  assert.equal(coarseGridKey({ ...batch, url: "/f0.glb" }), coarseGridKey({ ...batch, url: "/f2.glb" }));
+  assert.notEqual(coarseGridKey(batch), coarseGridKey({ ...batch, id: "other" }));
+  assert.notEqual(coarseGridKey(batch), coarseGridKey({ ...batch, kind: "splat" }));
+  assert.notEqual(coarseGridKey(batch), coarseGridKey({ ...batch, urls: ["/g0.glb", "/f1.glb", "/f2.glb"] }));
+  const file = { id: "model", kind: "mesh", url: "file3d:1:model", urls: ["file3d:1:model"], src: "/view/a.glb" };
+  assert.notEqual(coarseGridKey(file), coarseGridKey({ ...file, src: "/view/b.glb" }));
+  assert.notEqual(coarseGridKey(file), coarseGridKey({ ...file, url: "file3d:2:model", urls: ["file3d:2:model"] }));
+});
+
+test("a SPLAT with packed splats is built a part at a time, the same as through forEachSplat", () => {
+  const centers = Array.from({ length: 5000 }, (_, i) => ({ x: (i % 50) / 50, y: ((i * 7) % 50) / 50, z: ((i * 13) % 50) / 50 }));
+  const box = { min: [0, 0, 0], max: [1, 1, 1] };
+  const all = itemCoarseGrid({ kind: "splat", box, object: { forEachSplat: (callback) => centers.forEach((center, i) => callback(i, center)) } });
+  let reads = 0;
+  const packed = { numSplats: centers.length, getSplat: (i) => (reads += 1, { center: centers[i] }) };
+  const builder = coarseGridBuilder({ kind: "splat", box, object: { packedSplats: packed, forEachSplat() { throw new Error("not this way"); } } });
+  let calls = 0;
+  builder.step(() => (calls += 1) >= 1);
+  assert.ok(reads < centers.length, "the first step stopped part way");
+  builder.step();
+  assert.deepEqual(builder.grid.cells, all.cells);
+});
+
+// --- The stage: the hover and the press agree, and neither reads the GPU.
 
 const MODEL_VALUE = placed([0, 0, -6]);
-// What the stand-in GPU draws of the model: its two solid corners, 30 px around each.
-const DRAWN = [[-0.95, -0.95, 0.95], [0.95, 0.95, 0.95]].map((p) => projectPoint(camera, transformPoint(MODEL_VALUE, p), W, H));
-const drawnAt = (x, y, radius = 0) => (DRAWN.some((p) => Math.hypot(p.x - x, p.y - y) <= 30 + radius) ? "model" : null);
+const CORNERS = [[-0.95, -0.95, 0.95], [0.95, 0.95, 0.95]].map((p) => projectPoint(camera, transformPoint(MODEL_VALUE, p), W, H));
 
-function stageSetup(mode) {
+function stageSetup({ grid = true } = {}) {
   const session = createStudioSession({
     state: loadSceneState({
       version: 2,
@@ -260,25 +303,18 @@ function stageSetup(mode) {
   });
   const sceneBox = (url) => (url.startsWith("file3d:") ? unit : null);
   const editorFile = () => ({ kind: "mesh", unlit: true, url: "/view/model.glb", generation: 1 });
-  const clock = frames();
-  const counts = { sync: 0, async: 0, grid: 0 };
+  const counts = { gpu: 0 };
+  const hollow = hollowGrid();
   const editorView = {
     sceneBox,
-    sceneGrid: (url) => {
-      counts.grid += 1;
-      return url.startsWith("file3d:") ? hollowGrid() : null;
+    sceneGrid: (url) => (grid && url.startsWith("file3d:") ? hollow : null),
+    pickSticker: () => {
+      counts.gpu += 1;
+      return "model";
     },
-    pickSticker: (view, x, y) => {
-      counts.sync += 1;
-      return drawnAt(x, y);
-    },
-    pickStickerNear: (view, x, y, width, height, { radius = 0, async = false } = {}) => {
-      if (async) {
-        counts.async += 1;
-        return Promise.resolve(drawnAt(x, y, radius));
-      }
-      counts.sync += 1;
-      return drawnAt(x, y, radius);
+    pick: () => {
+      counts.gpu += 1;
+      return null;
     },
   };
   let cached = null;
@@ -286,7 +322,6 @@ function stageSetup(mode) {
     if (!cached || cached.state !== session.state) cached = { state: session.state, value: stageContent(session.state, 0, { media: () => null, editorFile, sceneBox }) };
     return cached.value;
   };
-  let hoverAgain = 0;
   const objects = createStageObjects({
     editorView,
     camera: () => camera,
@@ -297,91 +332,31 @@ function stageSetup(mode) {
     selection: () => session.selection.row,
     select: (row) => session.selectObject(row),
     edits: { live: (apply) => session.gesture(apply), commit: () => session.commitGesture(), cancel: () => session.cancelGesture() },
-    hitMode: () => mode,
-    onHover: () => (hoverAgain += 1),
-    requestFrame: clock.requestFrame,
   });
   // The guide's look: whether the hover lit it.
   const lit = () => objects.overlay().guides.some((guide) => guide.look === "hover");
-  return { session, objects, clock, counts, lit, hoverAgain: () => hoverAgain };
-}
-
-// The hover at `point` once its pick (if any) has ended: whether the guide is lit and the cursor shows an object.
-async function hoverSettled(setup, point) {
-  setup.objects.hover(point);
-  setup.clock.run();
-  await settle();
-  const { cursor } = setup.objects.hover(point);
-  return { lit: setup.lit(), cursor };
+  return { session, objects, counts, lit };
 }
 
 const MIDDLE = { x: W / 2, y: H / 2 };
-const SOLID = DRAWN[0];
-const NEAR_EDGE = { x: DRAWN[0].x + 32, y: DRAWN[0].y };
 const OUTSIDE = { x: 20, y: 20 };
 
-for (const [mode, want] of Object.entries({
-  // Where the hover lights the guide / where a press selects, at the empty middle of the box, on what is drawn, a few px
-  // off what is drawn, and outside the box.
-  current: { middle: [true, false], solid: [true, true], edge: [true, false], outside: [false, false] },
-  box: { middle: [true, true], solid: [true, true], edge: [true, true], outside: [false, false] },
-  pixels: { middle: [false, false], solid: [true, true], edge: [true, true], outside: [false, false] },
-  coarse: { middle: [false, false], solid: [true, true], edge: null, outside: [false, false] },
-})) {
-  test(`stage, "${mode}": the hover and the press ${mode === "current" ? "disagree in the empty middle of the box (today's)" : "agree"}`, async () => {
-    const points = { middle: MIDDLE, solid: SOLID, edge: NEAR_EDGE, outside: OUTSIDE };
-    for (const [name, point] of Object.entries(points)) {
-      if (!want[name]) continue;
-      const setup = stageSetup(mode);
-      const hovered = await hoverSettled(setup, point);
-      assert.equal(hovered.lit, want[name][0], `${name}: hover lit`);
-      assert.equal(hovered.cursor !== null, want[name][0], `${name}: the cursor`);
+for (const [name, grid, want] of [
+  // [hover lights it, press selects] at the empty middle of the box, on a solid corner, and outside the box.
+  ["with its grid", true, { middle: false, solid: true, outside: false }],
+  ["before its grid is built (by its box)", false, { middle: true, solid: true, outside: false }],
+]) {
+  test(`stage, a 3D file ${name}: the hover and the press agree, and neither reads the GPU`, () => {
+    for (const [where, point] of Object.entries({ middle: MIDDLE, solid: CORNERS[0], outside: OUTSIDE })) {
+      const setup = stageSetup({ grid });
+      const { cursor } = setup.objects.hover(point);
+      assert.equal(setup.lit(), want[where], `${where}: hover lit`);
+      assert.equal(cursor !== null, want[where], `${where}: the cursor`);
       setup.objects.leave();
-      setup.objects.press(point);
-      assert.equal(setup.session.selection.row === "model", want[name][1], `${name}: press selects`);
-      if (mode !== "current") assert.equal(want[name][0], want[name][1], `${name}: hover and press agree`);
+      const drag = setup.objects.press(point);
+      assert.equal(setup.session.selection.row === "model", want[where], `${where}: press selects`);
+      assert.equal(drag === null, !want[where], `${where}: a press on nothing touches nothing`);
+      assert.equal(setup.counts.gpu, 0, `${where}: no GPU read`);
     }
   });
 }
-
-test("stage: only the pixels mode reads the GPU on a hover, never synchronously, and asks the stage to hover again", async () => {
-  for (const mode of ["current", "box", "coarse"]) {
-    const setup = stageSetup(mode);
-    await hoverSettled(setup, SOLID);
-    assert.deepEqual([setup.counts.sync, setup.counts.async], [0, 0], `${mode}: no GPU read on a hover`);
-  }
-  const setup = stageSetup("pixels");
-  setup.objects.hover(SOLID);
-  assert.equal(setup.lit(), false, "not lit before the pick ends");
-  setup.objects.hover({ x: SOLID.x + 1, y: SOLID.y });
-  setup.clock.run();
-  await settle();
-  assert.deepEqual([setup.counts.sync, setup.counts.async], [0, 1], "one pick for two moves in a frame");
-  assert.equal(setup.hoverAgain(), 1);
-  setup.objects.hover({ x: SOLID.x + 1, y: SOLID.y });
-  assert.equal(setup.lit(), true);
-});
-
-test("stage, box: a box the view stands in falls back to the pixels, so a click on nothing inside it lets go", async () => {
-  const setup = stageSetup("box");
-  const inside = stageCamera({ position: [0, 0, -6], yaw_deg: 0, pitch_deg: 0, roll_deg: 0, target: [0, 0, -11] }, W, H, 50);
-  // The view stands in the model's box: the stand-in GPU draws nothing there.
-  setup.objects.press(MIDDLE);
-  assert.equal(setup.session.selection.row, "model", "from outside, the box's middle selects");
-  setup.session.selectObject(null);
-  const near = createStageObjects({
-    editorView: { sceneBox: () => unit, pickSticker: () => null, pickStickerNear: () => Promise.resolve(null) },
-    camera: () => inside,
-    size: () => ({ width: W, height: H }),
-    state: () => setup.session.state,
-    content: () => stageContent(setup.session.state, 0, { media: () => null, editorFile: () => ({ kind: "mesh", unlit: true, url: "/view/model.glb", generation: 1 }), sceneBox: () => unit }),
-    playhead: () => 0,
-    selection: () => setup.session.selection.row,
-    select: (row) => setup.session.selectObject(row),
-    edits: { live() {}, commit() {}, cancel() {} },
-    hitMode: () => "box",
-    requestFrame: setup.clock.requestFrame,
-  });
-  assert.equal(near.press(MIDDLE), null, "from inside, a press on nothing touches nothing (the stage looks around and lets go)");
-  assert.equal(setup.session.selection.row, null);
-});

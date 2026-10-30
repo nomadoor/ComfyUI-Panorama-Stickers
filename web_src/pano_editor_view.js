@@ -336,14 +336,7 @@ export function createEditorView({ canvas, onReady, onFailed, onUpdate = () => {
     pickSticker(camera, x, y, width, height) {
       return view && !editorView.lost ? view.pickSticker(camera, x, y, width, height) : null;
     },
-    // A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"): the Sticker drawn nearest (x, y)
-    // within a few px (pano_three_view.js pickStickerNear; a promise with `async`), and an item's coarse grid
-    // (pano_three_view.js sceneGrid).
-    pickStickerNear(camera, x, y, width, height, options = {}) {
-      const ok = view && !editorView.lost;
-      if (!ok) return options.async ? Promise.resolve(null) : null;
-      return view.pickStickerNear(camera, x, y, width, height, options);
-    },
+    // The hit grid of a loaded 3D Sticker item, once built (pano_three_view.js sceneGrid), or null.
     sceneGrid(url) {
       return view ? view.sceneGrid(url) : null;
     },

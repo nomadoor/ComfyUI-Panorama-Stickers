@@ -1,16 +1,14 @@
-// A temporary dev comparison (docs/space-and-view.md "比べるための仮の設定"): the new editor (web_src/studio/editor.js)
-// on a stand-in Panorama Studio node with one 3D file Sticker whose GLB is two small cubes at opposite corners of its
-// box, so the middle of its box is empty, for tests/browser/studio_hit.spec.js. `?mode=` is the hit test setting
-// (web_src/studio/hit_test.js HIT_TEST_SETTING_ID). ComfyUI is not used: the page stands in for the node's 3D file
-// route and serves the GLB from a blob URL. The page reports through window.__studio.
+// The new editor (web_src/studio/editor.js) on a stand-in Panorama Studio node with one 3D file Sticker whose GLB is two
+// small cubes at opposite corners of its box, so the middle of its box is empty, for tests/browser/studio_hit.spec.js
+// (docs/space-and-view.md "ホバーの判定"). ComfyUI is not used: the page stands in for the node's 3D file route and
+// serves the GLB from a blob URL. The page reports through window.__studio.
 import { BoxGeometry, Mesh, MeshBasicMaterial, Scene, SphereGeometry } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { itemCoarseGrid } from "/web_src/pano_coarse_grid.js";
+import { COARSE_GRID_IDLE_TIMEOUT_MS, createCoarseGridBuilds, itemCoarseGrid } from "/web_src/pano_coarse_grid.js";
 import { editorSession } from "/web_src/pano_node_bridge.js";
 import { evaluateSticker } from "/web_src/pano_scene_eval.js";
 import { projectPoint, transformPoint } from "/web_src/pano_space.js";
-import { HIT_TEST_SETTING_ID } from "/web_src/studio/hit_test.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
 
@@ -20,7 +18,6 @@ HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
 };
 
 const params = new URLSearchParams(location.search);
-const mode = params.get("mode") ?? "current";
 // `?heavy=1`: the cubes are spheres of about 240k triangles each, for the measurement.
 const heavy = params.get("heavy") === "1";
 
@@ -66,19 +63,66 @@ const STATE = {
   ],
 };
 
-const studio = (window.__studio = { ready: false, error: null, mode });
+const studio = (window.__studio = { ready: false, error: null, heavy });
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 
 try {
   const bytes = await pairGlb();
   const glb = URL.createObjectURL(new Blob([bytes], { type: "model/gltf-binary" }));
-  // The time (ms) the coarse grid of this GLB takes to build, on a copy parsed here (the view builds its own once).
-  studio.gridBuildMs = async () => {
-    const gltf = await new GLTFLoader().parseAsync(bytes.buffer.slice(0), "");
+  // The building of this GLB's grid on a copy parsed here (the view builds its own once), measured: at once
+  // (itemCoarseGrid), and in idle slices as the view builds it (createCoarseGridBuilds with requestIdleCallback) while
+  // frames are drawn: the longest slice, the longest gap between two frames, and the time from asking to ready (ms).
+  studio.gridBuild = async () => {
+    const parse = async () => (await new GLTFLoader().parseAsync(bytes.buffer.slice(0), "")).scene;
+    const object = await parse();
+    const startAll = performance.now();
+    const whole = itemCoarseGrid({ kind: "mesh", object, box: BOX });
+    const allMs = performance.now() - startAll;
+    const sliced = await parse();
+    let longestSlice = 0;
+    let slices = 0;
+    const schedule = (run) => requestIdleCallback(() => {
+      const start = performance.now();
+      run();
+      longestSlice = Math.max(longestSlice, performance.now() - start);
+      slices += 1;
+    }, { timeout: COARSE_GRID_IDLE_TIMEOUT_MS });
+    let done = null;
+    const ready = new Promise((resolve) => (done = resolve));
+    const builds = createCoarseGridBuilds({ schedule, now: () => performance.now(), onReady: () => done(performance.now()) });
+    let longestFrame = 0;
+    let last = null;
+    let frames = 0;
+    let running = true;
+    const tick = (time) => {
+      if (last !== null) longestFrame = Math.max(longestFrame, time - last);
+      last = time;
+      frames += 1;
+      if (running) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const asked = performance.now();
+    const item = { kind: "mesh", object: sliced, box: BOX, state: "loaded" };
+    builds.want("pair", item);
+    const readyAt = await ready;
+    running = false;
+    const cells = builds.get("pair").cells;
+    const same = cells.every((value, index) => value === whole.cells[index]);
+    const solid = cells.reduce((total, value) => total + value, 0);
+    return { allMs, readyMs: readyAt - asked, longestSlice, slices, longestFrame, frames, same, solid };
+  };
+  // A pointer move over the stage to the page point `point`, timed: { ms (its handlers), cursor (once the editor's UI
+  // has caught up) }.
+  studio.move = async (point) => {
+    const canvas = document.querySelector("[data-stage-canvas]");
+    const event = new PointerEvent("pointermove", { clientX: point.x, clientY: point.y, pointerType: "mouse", pointerId: 1, bubbles: true });
     const start = performance.now();
-    itemCoarseGrid({ kind: "mesh", object: gltf.scene, box: BOX });
-    return performance.now() - start;
+    canvas.dispatchEvent(event);
+    const ms = performance.now() - start;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { ms, cursor: canvas.style.cursor };
   };
   const api = {
     apiURL: (route) => route,
@@ -98,7 +142,7 @@ try {
     getInputLink: () => null,
     getInputNode: () => null,
   };
-  const app = { getNodeImageUrls: () => [], nodeOutputs: {}, ui: { settings: { getSettingValue: (id) => (id === HIT_TEST_SETTING_ID ? mode : undefined) } } };
+  const app = { getNodeImageUrls: () => [], nodeOutputs: {}, ui: { settings: { getSettingValue: () => undefined } } };
   editorSession(node).view = rememberView({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, target: [0, 0, -6] }, "panorama");
   const editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
   studio.session = editor.session;
@@ -119,45 +163,6 @@ try {
     return { x: rect.left + q.x, y: rect.top + q.y };
   };
   studio.cubes = CUBES;
-  // The cost (ms) of deciding what is under the pointer in this page's mode (stage_objects.js objectUnder), over `n`
-  // points across the stage: per hover and per press; the first hover (a coarse grid is built then); and for
-  // "pixels" the square pick the hover draws once a frame (its part in the frame, and until its read back ends).
-  studio.measure = async (n = 400) => {
-    const { objects, view } = editor.stage().hitTest;
-    const target = objects();
-    const landing = editor.stage().landing;
-    const { width, height } = landing.size();
-    const points = Array.from({ length: n }, (_, i) => ({ x: ((i * 37) % 97) / 97 * width, y: ((i * 53) % 89) / 89 * height }));
-    const first = performance.now();
-    target.objectUnder(points[0], "hover");
-    const firstMs = performance.now() - first;
-    const time = (purpose) => {
-      const start = performance.now();
-      for (const point of points) target.objectUnder(point, purpose);
-      return (performance.now() - start) / n;
-    };
-    const hoverMs = time("hover");
-    const pressMs = time("press");
-    let asyncDrawMs = null;
-    let asyncReadMs = null;
-    if (mode === "pixels") {
-      const camera = landing.camera();
-      let draw = 0;
-      let read = 0;
-      const m = 40;
-      for (let i = 0; i < m; i += 1) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        const start = performance.now();
-        const promise = view().pickStickerNear(camera, points[i].x, points[i].y, width, height, { radius: 3, async: true });
-        draw += performance.now() - start;
-        await promise;
-        read += performance.now() - start;
-      }
-      asyncDrawMs = draw / m;
-      asyncReadMs = read / m;
-    }
-    return { mode, heavy, firstMs, hoverMs, pressMs, asyncDrawMs, asyncReadMs };
-  };
   studio.cursor = () => document.querySelector("[data-stage-canvas]").style.cursor;
   studio.ready = true;
 } catch (error) {

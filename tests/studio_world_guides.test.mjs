@@ -73,3 +73,21 @@ test("a segment passing behind the view is cut at the near plane; one wholly beh
   assert.ok(cut[1].y > cut[0].y, "it runs down toward the view");
   assert.equal(screenSegment(camera, [[0, 0, 1], [1, 0, 2]], W, H), null);
 });
+
+test("the port Sticker's 3D media has a box guide of its item at the playhead, with its item's key for the hit grid", () => {
+  const portState = loadSceneState({
+    version: 2,
+    stickers: [{ id: "port3d", placement: "world", source: { kind: "port" }, position: { value: [0, 0, -6] } }],
+  });
+  const value = { position: [0, 0, -6], scale: 1, yaw_deg: 0, pitch_deg: 0, roll_deg: 0 };
+  const request = { id: "port3d", kind: "mesh", url: "/f1.glb", urls: ["/f0.glb", "/f1.glb"], value };
+  const content = { space: { stickers: [], fileStickers: [], sticker: request } };
+  const box = { min: [-1, -1, -1], max: [1, 1, 1] };
+  const [item] = worldGuideItems(portState, content, (url) => (url === "/f1.glb" ? box : null));
+  assert.equal(item.id, "port3d");
+  assert.equal(item.kind, "box");
+  assert.equal(item.url, "/f1.glb");
+  assert.deepEqual(item.center, [0, 0, -6]);
+  // Its item at the playhead not loaded yet: no guide.
+  assert.deepEqual(worldGuideItems(portState, content, () => null), []);
+});
