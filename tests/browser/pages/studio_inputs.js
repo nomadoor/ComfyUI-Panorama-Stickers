@@ -8,8 +8,8 @@
 //   upstream-world  the same with the node's own `world` linked too (its own `scene` row shows with the group)
 //   upstream-pending  a Scene linked to `scene`, the node not run yet
 //   moge      a MOGE_GEOMETRY VIDEO batch on `world` as the node writes it (a depth grid: a depth file per frame, a K per
-//             frame, a color proxy video); the `scene` clip starts at item 2, the only frame whose depth is above 0
-//   moge-empty  the same with the clip at item 0, whose depth is 0 everywhere (nothing is drawn)
+//             frame, a color proxy video); the `scene` clip starts at item 2, a plane across the view
+//   moge-item0  the same with the clip at item 0, whose depth is above 0 only in its left quarter
 //   world     an empty state with only `world` linked, the node not run yet
 //   empty     an empty state with nothing linked
 // The page reports through window.__studio.
@@ -117,13 +117,15 @@ function upstreamCase(own, world = false) {
 
 // A MOGE_GEOMETRY VIDEO batch on `world` (docs/studio-node.md "`MOGE_GEOMETRY` の透視投影の列のエディタ用ファイル"): the
 // meta's form as a run leaves it (`intrinsics` a K by rows per frame, the files in frame order). Item 2 is a plane 3
-// ahead across the view; the other items have depth 0 everywhere. The proxy video is one color.
+// ahead across the view; item 0 only its left quarter (x < 8); the others have depth 0 everywhere. The proxy video is one
+// color.
 async function mogeCase(firstItem) {
   const W = 33;
   const H = 33;
   const frames = 4;
   const files = Array.from({ length: frames }, (_, index) => {
     const values = new Float32Array(W * H).fill(index === 2 ? 3 : 0);
+    if (index === 0) for (let y = 0; y < H; y += 1) values.fill(3, y * W, y * W + 8);
     return URL.createObjectURL(new Blob([values.buffer]));
   });
   // A K per frame (the focal length differs a little, as MoGe's does): the grid covers about ±25° at depth 3.
@@ -151,7 +153,7 @@ function worldCase(linked) {
 try {
   const setup = which === "port" ? portCase()
     : which === "port3d" ? await port3dCase()
-    : which === "moge" || which === "moge-empty" ? await mogeCase(which === "moge" ? 2 : 0)
+    : which === "moge" || which === "moge-item0" ? await mogeCase(which === "moge" ? 2 : 0)
     : which === "world" || which === "empty" ? worldCase(which === "world")
     : upstreamCase(which === "upstream-own", which === "upstream-world");
   if (which === "upstream-pending") setup.result = {};

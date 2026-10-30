@@ -129,7 +129,7 @@ export async function openPreviewWindow(node, { app = null, api = null, storage 
       editorFile: stageMedia.editorFile,
       sceneBox: (url) => stage?.sceneBox(url) ?? null,
       upstream: upstream.viewInput(playbackView.frame),
-      depthColor: (slot, video) => depthColors.picture(slot, video, playbackView.playing),
+      depthColor: (slot, video) => depthColors.picture(slot, video, !!backgroundVideo?.playback.advancing),
     });
     depthColors.retain(value.space.depthSlots);
     return value;

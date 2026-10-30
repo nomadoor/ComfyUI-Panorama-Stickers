@@ -37766,7 +37766,7 @@ async function u2(e, { app: t = null, api: n = null, storage: r = globalThis.loc
       editorFile: w.editorFile,
       sceneBox: (ae) => (o == null ? void 0 : o.sceneBox(ae)) ?? null,
       upstream: M.viewInput(m.frame),
-      depthColor: (ae, Q) => N.picture(ae, Q, m.playing)
+      depthColor: (ae, Q) => N.picture(ae, Q, !!(Z != null && Z.playback.advancing))
     });
     return N.retain($.space.depthSlots), $;
   }

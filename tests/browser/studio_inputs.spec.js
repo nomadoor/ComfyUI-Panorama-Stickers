@@ -161,9 +161,10 @@ test("a MoGe VIDEO batch on world draws the depth grid item of the playhead's fr
   await shot(page, "moge");
   expect(problems).toEqual([]);
 
-  // The clip at item 0, whose depth is 0 everywhere: nothing is drawn there.
-  problems = await open(page, testInfo, "moge-empty");
-  await page.waitForTimeout(1500);
+  // The clip at item 0, whose depth is above 0 only in its left quarter: once its left part is drawn, the middle is not.
+  problems = await open(page, testInfo, "moge-item0");
+  const { world: [left] } = await places(page, { world: [[-1.05, 0, -3]] });
+  await expect.poll(() => stageAt(page, left).then((rgb) => near(rgb, colors.depth)), { timeout: 15_000 }).toBe(true);
   expect(near(await stageAt(page, center), colors.depth)).toBe(false);
   expect(problems).toEqual([]);
 });
