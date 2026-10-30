@@ -37,7 +37,7 @@ function onKeydown(event) {
     role="radiogroup"
     :aria-label="label"
     :aria-disabled="disabled ? 'true' : null"
-    :title="tip || null"
+    :data-tip="tip || null"
     @keydown="onKeydown"
   >
     <button

@@ -151,3 +151,57 @@ test("closing writes state_json once with the edit, and opening and closing with
   expect(await page.evaluate(() => window.__studio.writes)).toBe(1);
   expect(problems).toEqual([]);
 });
+
+// docs/studio-ui.md "ショートカットの一覧" and "閉じ方" (step 4): the list opens with "?" (the button and the key) and
+// closes with it, with Escape before the selection is let go, and with a press outside it.
+test("the list of shortcuts opens and closes with ?, Escape closes it before the selection, a press outside closes it", async ({ page }, testInfo) => {
+  const problems = await open(page, testInfo);
+  const help = page.locator('[data-action="shortcuts"]');
+  const list = page.locator("[data-shortcuts]");
+  await expect(help).toHaveAttribute("aria-expanded", "false");
+  await expect(help).not.toHaveAttribute("aria-disabled", "true");
+
+  // The button opens it: the four groups, in order; the button is lit and expanded; the list has the focus.
+  await help.click();
+  await expect(list).toBeVisible();
+  await expect(list.locator(".pano-studio-shortcuts-title")).toHaveText(["View", "Objects", "Timeline", "Editor"]);
+  await expect(help).toHaveAttribute("aria-expanded", "true");
+  await expect(help).toHaveClass(/is-lit/);
+  await expect(list).toBeFocused();
+  await expect(list.locator(".pano-studio-shortcuts-row", { hasText: "Undo" }).locator("kbd")).toHaveText(["Ctrl", "Z"]);
+  // The button again closes it.
+  await help.click();
+  await expect(list).toHaveCount(0);
+  await expect(help).toHaveAttribute("aria-expanded", "false");
+
+  // The ? key opens and closes it while the stage has the keys.
+  await page.locator(".pano-studio-editor").focus();
+  await page.keyboard.press("Shift+Slash");
+  await expect(list).toBeVisible();
+  await page.keyboard.press("Shift+Slash");
+  await expect(list).toHaveCount(0);
+
+  // Escape's order: with an object selected and the list open, Escape closes the list and keeps the selection; the
+  // next Escape lets the selection go; the editor stays open. The focus goes back to the "?" button.
+  await rowName(page, "sticker_2").click();
+  const selected = await cardTitle(page).textContent();
+  expect(selected).not.toBe("Scene");
+  await help.click();
+  await expect(list).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  await expect(cardTitle(page)).toHaveText(selected);
+  await expect(help).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(cardTitle(page)).toHaveText("Scene");
+  await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+
+  // A press outside the list (the inspector's empty space) closes it; the editor stays open.
+  await help.click();
+  await expect(list).toBeVisible();
+  const box = await inspector(page).boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 12);
+  await expect(list).toHaveCount(0);
+  await expect(page.locator(".pano-studio-editor")).toHaveCount(1);
+  expect(problems).toEqual([]);
+});

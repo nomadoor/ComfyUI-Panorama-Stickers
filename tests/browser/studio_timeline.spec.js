@@ -291,7 +291,7 @@ test("the read-only Timeline changes nothing", async ({ page }) => {
   const light = page.locator('[data-theme-col="light"]');
   // Disabled, not hidden: they stay in place and say why.
   await expect(light.locator('[data-head="camera"] [data-part="dot"]')).toHaveAttribute("aria-disabled", "true");
-  await expect(light.locator('[data-head="camera"] [data-part="dot"]')).toHaveAttribute("title", "Read-only");
+  await expect(light.locator('[data-head="camera"] [data-part="dot"]')).toHaveAttribute("data-tip", "Read-only");
   await light.locator('[data-head="camera"] [data-part="dot"]').click({ force: true });
   await light.locator('[data-head="sticker_2"] [data-part="eye"]').click({ force: true });
   expect((await events(page)).filter((event) => event.name === "edit")).toEqual([]);

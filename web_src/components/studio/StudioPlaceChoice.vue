@@ -46,7 +46,7 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", onWindowDown, tr
       class="pano-studio-place-tile"
       :class="`is-${option.side}`"
       :data-place="option.side"
-      :title="option.tip"
+      :data-tip="option.tip"
       @click="emit('choose', option.side)"
     >
       <!-- Sky: the upper half of the sphere over the horizon, an image laid on it, bent with it. -->
