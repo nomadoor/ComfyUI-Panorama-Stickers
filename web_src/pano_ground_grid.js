@@ -1,22 +1,17 @@
-// The ground grid and the origin mark of the new UI's space view (what to draw, at which height and where it fades:
-// docs/space-and-view.md "地面のグリッドと原点の印", web_src/studio/grid.js; how it is drawn: docs/threejs-spark-integration.md).
+// The ground grid of the new UI's space view (what to draw, at which height and where it fades:
+// docs/space-and-view.md "地面のグリッド", web_src/studio/grid.js; how it is drawn: docs/threejs-spark-integration.md).
 // pano_three_view.js draws it for a render's `space.ground` and imports this into its chunk, so three.js stays out
 // of the bundle that loads at once.
 //
 // The grid is one plane on y = ground under the view, as wide as the farthest fade, whose fragment shader draws the
 // 1-unit and 10-unit lines and the X and Z axes at about one pixel, each faded by its horizontal distance from the
 // view and faded where the lines crowd closer than a few pixels (so they do not flicker). It does not write depth,
-// so the World's objects draw over it in their own depth order. The origin mark is a ring of lines at (0, ground, 0).
+// so the World's objects draw over it in their own depth order.
 import {
-  BufferGeometry,
   DoubleSide,
-  Float32BufferAttribute,
   Group,
-  LineBasicMaterial,
-  LineLoop,
   Mesh,
   PlaneGeometry,
-  SRGBColorSpace,
   ShaderMaterial,
   Vector2,
   Vector3,
@@ -86,12 +81,10 @@ void main() {
   gl_FragColor = linearOutput ? vec4(sRGBTransferEOTF(vec4(color.rgb, 1.0)).rgb, color.a) : color;
 }`;
 
-const RING_SEGMENTS = 64;
-
 const vec4Of = (rgba) => new Vector4(rgba[0], rgba[1], rgba[2], rgba[3]);
 
-// The grid and the ring as one group. show(ground) places them for `ground` (web_src/studio/grid.js groundGrid():
-// { y, minorFade, majorFade, originRadius, colors: { minor, major, axisX, axisZ, origin } }, colors as sRGB
+// The grid in a group. show(ground) places it for `ground` (web_src/studio/grid.js groundGrid():
+// { y, minorFade, majorFade, colors: { minor, major, axisX, axisZ } }, colors as sRGB
 // [r, g, b, a] in 0..1, and linePx: the lines' width in render pixels, 1 when missing) and returns the group to put
 // in the World. linearOutput: the view's shared { value } that is true while it draws into a target of linear light
 // (pano_three_view.js, the lens and live ERP faces).
@@ -127,19 +120,8 @@ export function createGroundGrid({ linearOutput = { value: false } } = {}) {
     plane.updateMatrixWorld();
   };
 
-  const ringPoints = [];
-  for (let index = 0; index < RING_SEGMENTS; index += 1) {
-    const angle = (index / RING_SEGMENTS) * Math.PI * 2;
-    ringPoints.push(Math.cos(angle), 0, Math.sin(angle));
-  }
-  const ringGeometry = new BufferGeometry();
-  ringGeometry.setAttribute("position", new Float32BufferAttribute(ringPoints, 3));
-  const ringMaterial = new LineBasicMaterial({ transparent: true, depthWrite: false, depthTest: true });
-  const ring = new LineLoop(ringGeometry, ringMaterial);
-  ring.renderOrder = 1;
-
   const group = new Group();
-  group.add(plane, ring);
+  group.add(plane);
 
   return {
     group,
@@ -153,18 +135,11 @@ export function createGroundGrid({ linearOutput = { value: false } } = {}) {
       uniforms.axisXColor.value.copy(vec4Of(ground.colors.axisX));
       uniforms.axisZColor.value.copy(vec4Of(ground.colors.axisZ));
       uniforms.linePx.value = ground.linePx ?? 1;
-      const [r, g, b, a] = ground.colors.origin;
-      ringMaterial.color.setRGB(r, g, b, SRGBColorSpace);
-      ringMaterial.opacity = a;
-      ring.position.set(0, ground.y, 0);
-      ring.scale.setScalar(ground.originRadius);
       return group;
     },
     dispose() {
       plane.geometry.dispose();
       material.dispose();
-      ringGeometry.dispose();
-      ringMaterial.dispose();
     },
   };
 }

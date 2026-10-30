@@ -890,7 +890,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
     return new Mesh(planeGeometry, material);
   };
   let guides = null;
-  // The new UI's ground grid and origin mark (pano_ground_grid.js), made the first time a space asks for it.
+  // The new UI's ground grid (pano_ground_grid.js), made the first time a space asks for it.
   let groundGrid = null;
   // The default lights, always in the World (they change nothing that is not lit).
   const lights = createDefaultLights();
@@ -1557,7 +1557,7 @@ export function createThreeView({ onUpdate = () => {}, onSplats = () => {}, crea
   // With `space`, the view stands at camera.position (a spaceCamera(), pano_space.js) and draws the World
   // over the Sky, which stays at infinity: space is { grid, sceneUrls, scene, stickerUrls, sticker, fileStickers, fileStickerKeys,
   // stickers, lines }. sceneUrls are the item URLs of the `scene` input; loaded items of other URLs are
-  // dropped. grid is a gridSpec() or null; ground is the new UI's ground grid and origin mark (web_src/studio/grid.js
+  // dropped. grid is a gridSpec() or null; ground is the new UI's ground grid (web_src/studio/grid.js
   // groundGrid(), drawn by pano_ground_grid.js) or null. scene is null or { kind ("splat" or "mesh"), url, urls (every item of the input), prefetch
   // (urls to load ahead), transform ({ position, quaternion, scale }), itemQuaternion (the item's turn into
   // the `scene` frame), unlit (its meshes draw without light; false: lit by the default lights) }. sticker is the

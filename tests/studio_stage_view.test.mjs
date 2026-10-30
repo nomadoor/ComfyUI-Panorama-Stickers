@@ -1,6 +1,6 @@
 // The new UI's stage (web_src/studio/stage_view.js, grid.js, layout.js): the output view the editor opens with, the
 // three.js camera of the view, the surface hit (GPU pick and ground), what a render draws (docs/space-and-view.md
-// "地面のグリッドと原点の印"), and the sizes of the regions the user drags (docs/studio-ui.md "画面の区画").
+// "地面のグリッド"), and the sizes of the regions the user drags (docs/studio-ui.md "画面の区画").
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -22,7 +22,7 @@ import {
   timelineHeight,
 } from "../web_src/studio/layout.js";
 import { STAGE_CLEAR_COLOR, STAGE_RENDER_MAX_SIDE, STAGE_RENDER_SCALE, cameraFrameView, groundDepth, outputView, stageCamera, stageRay, stageRenderInput, stageRenderSize, surfaceHit } from "../web_src/studio/stage_view.js";
-import { ORIGIN_MARK_RADIUS, eyeHeight, eyeLengths } from "../web_src/studio/view_scale.js";
+import { eyeHeight, eyeLengths } from "../web_src/studio/view_scale.js";
 
 const close = (actual, expected, eps = 1e-9) => assert.ok(Math.abs(actual - expected) <= eps, `${actual} != ${expected}`);
 const closeVec = (actual, expected, eps = 1e-9) => actual.forEach((value, index) => close(value, expected[index], eps));
@@ -72,12 +72,13 @@ test("the surface hit is the nearer of the GPU pick and the ground; over the sky
   closeVec(surfaceHit(camera, 500, 50, 1000, 500, { ground: -1.6, picked: sky }), sky);
 });
 
-test("the grid lies on the ground, fades by the eye height's distances, marks the origin, and hides with Hide Grid", () => {
+test("the grid lies on the ground, fades by the eye height's distances, has no origin mark, and hides with Hide Grid", () => {
   const grid = groundGrid({ ground: -1.6 });
   assert.equal(grid.y, -1.6);
   closeVec(grid.minorFade, [12.8, 38.4], 1e-9);
   closeVec(grid.majorFade, [25.6, 48], 1e-9);
-  assert.equal(grid.originRadius, ORIGIN_MARK_RADIUS);
+  assert.equal(grid.originRadius, undefined);
+  assert.equal(grid.colors.origin, undefined);
   assert.equal(grid.colors, GRID_COLORS);
   // The axes take the gizmo's colors: X coral #f37159, Z ice #aecedb (docs/design.md 地面のグリッドの軸).
   closeVec(GRID_COLORS.axisX, [0xf3 / 255, 0x71 / 255, 0x59 / 255, 0.75], 1e-9);

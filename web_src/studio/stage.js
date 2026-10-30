@@ -41,7 +41,7 @@ export function stageUi() {
     lit: [],
     // A knob is being dragged: the whole editor shows the grabbing cursor.
     knobDrag: false,
-    // The Hide Grid switch: the grid and the origin mark are hidden (the shell writes it).
+    // The Hide Grid switch: the grid is hidden (the shell writes it).
     gridHidden: false,
   };
 }

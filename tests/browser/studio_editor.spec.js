@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // The new editor's shell and stage (web_src/studio/editor.js, stage.js, components/studio/StudioEditor.vue) on
 // tests/browser/pages/studio_editor.html: docs/studio-ui.md "画面の区画" and docs/space-and-view.md "マウスとキー",
-// "視点の操作の部品", "地面のグリッドと原点の印", "ウィンドウがフォーカスを失ったとき", "視点の記憶". The stage draws
+// "視点の操作の部品", "地面のグリッド", "ウィンドウがフォーカスを失ったとき", "視点の記憶". The stage draws
 // the background with the ground grid through the lower three.js view, in a real browser engine.
 
 function watch(page) {
