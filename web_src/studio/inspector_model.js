@@ -144,6 +144,14 @@ export function keyframeOwner(state, upstream, id) {
   return findSticker(state, upstream, id);
 }
 
+// The Lanes of each row of each card (docs/timeline-ui.md "インスペクタの Keyframe のポチ"): its dot keys them, its
+// reset returns them. A row not here has no Lane, and no dot.
+export const ROW_LANES = Object.freeze({
+  sky: { rotation: ["direction", "roll"], fov: ["size"], opacity: ["opacity"] },
+  world: { position: ["position"], rotation: ["rotation"], scale: ["scale"], opacity: ["opacity"] },
+  camera: { hfov: ["fov"], lens: ["curve"], position: ["position"], rotation: ["rotation"] },
+});
+
 const AXES = ["X", "Y", "Z"];
 const POSITION_FIELDS = ["position_x", "position_y", "position_z"];
 const ROTATION = [["yaw_deg", "Y"], ["pitch_deg", "P"], ["roll_deg", "R"]];
@@ -178,7 +186,7 @@ function opacityRow(percent) {
     name: "Opacity",
     layout: "single",
     control: "slider",
-    lanes: ["opacity"],
+    lanes: ROW_LANES.world.opacity, // the same as ROW_LANES.sky.opacity
     slider: { field: "opacity", min: 0, max: 100, step: 1 },
     fields: [{ field: "opacity", value: percent, unit: "%", step: 0.5, precision: 0, min: 0, max: 100 }],
   };
@@ -191,13 +199,13 @@ function skyRows(sticker, playhead, portSize) {
   const port = sticker.source.kind === "port";
   const vfov = skyStickerVfov(sticker, value, portSize);
   return [
-    { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ["direction", "roll"], fields: rotationFields(value, "rot_deg") },
+    { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ROW_LANES.sky.rotation, fields: rotationFields(value, "rot_deg") },
     {
       id: "fov",
       name: "FOV",
       layout: "multi",
       control: "fields",
-      lanes: ["size"],
+      lanes: ROW_LANES.sky.fov,
       fields: [
         { field: "hFOV_deg", axis: "H", value: value.hFOV_deg, unit: "°", step: 0.25, precision: 1, min: 0.1, max: limit },
         // A port Sticker's vFOV follows its media (docs/scene-state-v2.md): shown, not edited.
@@ -212,14 +220,14 @@ function skyRows(sticker, playhead, portSize) {
 function worldRows(sticker, playhead, clips) {
   const value = evaluateSticker(sticker, playhead);
   const rows = [
-    { id: "position", name: "Position", layout: "multi", control: "fields", lanes: ["position"], fields: positionFields(value.position) },
-    { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ["rotation"], fields: rotationFields(value) },
+    { id: "position", name: "Position", layout: "multi", control: "fields", lanes: ROW_LANES.world.position, fields: positionFields(value.position) },
+    { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ROW_LANES.world.rotation, fields: rotationFields(value) },
     {
       id: "scale",
       name: "Scale",
       layout: "single",
       control: "slider",
-      lanes: ["scale"],
+      lanes: ROW_LANES.world.scale,
       slider: { field: "scale", min: WORLD_MIN_SCALE, max: scaleSliderMax(value.scale), step: 0.01 },
       fields: [{ field: "scale", value: value.scale, step: 0.01, precision: 2, min: WORLD_MIN_SCALE }],
     },
@@ -293,7 +301,7 @@ function cameraRows(camera, playhead) {
       name: "H FOV",
       layout: "single",
       control: "slider",
-      lanes: ["fov"],
+      lanes: ROW_LANES.camera.hfov,
       slider: { field: "hFOV_deg", min: 1, max: lensFovLimit(value.curve), step: 1 },
       fields: [{ field: "hFOV_deg", value: value.hFOV_deg, unit: "°", step: 0.25, precision: 1, min: 1, max: lensFovLimit(value.curve) }],
       ...frameOnly,
@@ -303,7 +311,7 @@ function cameraRows(camera, playhead) {
       name: "Lens",
       layout: "single",
       control: "slider",
-      lanes: ["curve"],
+      lanes: ROW_LANES.camera.lens,
       slider: { field: "curve", min: LENS_CURVE_MIN, max: LENS_CURVE_MAX, step: 0.01 },
       fields: [{ field: "curve", value: value.curve, step: 0.005, precision: 2, min: LENS_CURVE_MIN, max: LENS_CURVE_MAX }],
       // The κ edit keeps the image's center scale (pano_editor_state.js setCameraCurveKeepingCenter): the edit carries
@@ -311,8 +319,8 @@ function cameraRows(camera, playhead) {
       lensStart: { hFOV_deg: value.hFOV_deg, aspect: camera.aspect, curve: value.curve },
       ...(erp ? frameOnly : { tip: "0 is a fisheye. Keeps the center's size; the H FOV follows." }),
     },
-    { id: "position", name: "Position", layout: "multi", control: "fields", lanes: ["position"], fields: positionFields(value.position) },
-    { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ["rotation"], fields: rotationFields(value) },
+    { id: "position", name: "Position", layout: "multi", control: "fields", lanes: ROW_LANES.camera.position, fields: positionFields(value.position) },
+    { id: "rotation", name: "Rotation", layout: "multi", control: "fields", lanes: ROW_LANES.camera.rotation, fields: rotationFields(value) },
   ];
 }
 
