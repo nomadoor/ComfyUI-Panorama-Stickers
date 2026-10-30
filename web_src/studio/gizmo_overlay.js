@@ -233,8 +233,9 @@ function multiply(a, b) {
 
 // A drag of the handle `name` (gizmoHit) of the gizmo `gizmo` (as gizmoHandles takes it) grabbed at the CSS px point
 // `point` of a width x height stage seen from `camera`, or null when the handle cannot be dragged from here. Its
-// `guide` ({ name, origin, dir }, or none for Move's center dot) is the axis guide line to draw while it lasts
-// (gizmoGuideSegment). Its move(camera, point, width, height) gives the transform the drag has taken the gizmo to ({ position, quaternion,
+// `guides` ([{ name, origin, dir }]: one for an axis handle, the plane's two axes for a Move plane square, none for
+// Move's center dot) are the axis guide lines to draw while it lasts (gizmoGuideSegment). Its move(camera, point,
+// width, height) gives the transform the drag has taken the gizmo to ({ position, quaternion,
 // scale: [x, y, z] }, what pano_space.js gizmoDragLanes reads), or null to keep the last one. Every move is measured
 // from where the drag began. A Rotate move given { snap } (degrees, 0 for none) stops at multiples of it (docs/studio-ui.md
 // "ギズモ" Rotate's Shift).
@@ -262,6 +263,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     if (!grabbed) return null;
     return {
       name,
+      guides: [],
       move(view, next, w, h) {
         const at = hitPlane(ray(view, next, w, h));
         return at ? result({ position: add(start.position, sub(at, grabbed)) }) : null;
@@ -278,6 +280,8 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     if (!grabbed) return null;
     return {
       name,
+      // Both of the plane's axis guide lines through the center where it was grabbed, along the World axes it moves on.
+      guides: plane.axes.map((index) => ({ name: AXIS_NAMES[index], origin: [...pivot], dir: [...WORLD_AXES[index]] })),
       move(view, next, w, h) {
         const at = hitPlane(ray(view, next, w, h), view.near);
         return at ? result({ position: add(start.position, sub(at, grabbed)) }) : null;
@@ -287,13 +291,13 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   const axis = handles.axes.find((entry) => entry.name === name);
   if (!axis) return null;
   // The axis guide line the drag shows: through the center where it was grabbed, along the axis.
-  const guide = { name, origin: [...pivot], dir: axis.dir };
+  const guides = [{ name, origin: [...pivot], dir: axis.dir }];
   if (handles.mode === "translate") {
     const t0 = lineParameter(pivot, axis.dir, ray(camera, point, width, height), camera.near);
     if (t0 === null) return null;
     return {
       name,
-      guide,
+      guides,
       move(view, next, w, h) {
         const t = lineParameter(pivot, axis.dir, ray(view, next, w, h), view.near);
         return t === null ? null : result({ position: add(start.position, scale(axis.dir, t - t0)) });
@@ -307,7 +311,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
     const index = AXIS_NAMES.indexOf(name);
     return {
       name,
-      guide,
+      guides,
       move(_view, next) {
         const scaled = [start.scale, start.scale, start.scale];
         scaled[index] = start.scale * (reach(next) / from);
@@ -338,7 +342,7 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   const base = quaternionToRotation(start.quaternion);
   return {
     name,
-    guide,
+    guides,
     move(_view, next, _w, _h, { snap = 0 } = {}) {
       const pixels = (next.x - point.x) * unitDirection[0] + (next.y - point.y) * unitDirection[1];
       const angle = pixels / GIZMO_LOOK.reach;
@@ -360,8 +364,8 @@ export function gizmoDrag(gizmo, name, camera, point, width, height) {
   };
 }
 
-// The axis guide line `guide` (a gizmoDrag's) as a World segment reaching far past the stage's edges both ways: the
-// overlay cuts it at the near plane (world_guides.js screenSegment). `camera` is a stageCamera().
+// The axis guide line `guide` (one of a gizmoDrag's `guides`) as a World segment reaching far past the stage's edges
+// both ways: the overlay cuts it at the near plane (world_guides.js screenSegment). `camera` is a stageCamera().
 export function gizmoGuideSegment(guide, camera) {
   const reach = Math.max(camera.far, 1);
   return [sub(guide.origin, scale(guide.dir, reach)), add(guide.origin, scale(guide.dir, reach))];

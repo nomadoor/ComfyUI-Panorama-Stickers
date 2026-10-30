@@ -67,8 +67,20 @@ for (const [mode, projection, tip] of [["frame", "perspective", "Camera to view"
     expect((await camera(page)).projection).toBe("perspective");
     await expectAtView(page);
     expect(await view(page)).toEqual(before);
-    expect(await page.evaluate(() => window.__studio.session.selection.row)).toBeNull();
+    // The Camera is selected (its card in the inspector) and the top center says it moved, with no mark.
+    expect(await page.evaluate(() => window.__studio.session.selection.row)).toBe("camera");
+    await expect(page.locator('[data-card="camera"]')).toHaveCount(1);
+    const line = page.locator(".pano-studio-notice");
+    await expect(line).toHaveText("Camera moved to this view");
+    await expect(line).toHaveAttribute("data-notice", "info");
     await expect(rail(page)).toHaveAttribute("data-tip", "Camera to view");
+    // Pressed again at the same view: nothing moves, no Undo step; the notice hides on its own.
+    await expect(line).toHaveCount(0, { timeout: 5_000 });
+    await page.evaluate(() => window.__studio.session.select({ row: null }));
+    await rail(page).click();
+    expect(await page.evaluate(() => window.__studio.session.selection.row)).toBeNull();
+    await page.waitForTimeout(200);
+    await expect(line).toHaveCount(0);
     await page.locator('[data-tool="undo"]').click();
     await expectOpening(page, projection);
     expect(await canUndo(page)).toBe(false);
@@ -76,6 +88,36 @@ for (const [mode, projection, tip] of [["frame", "perspective", "Camera to view"
     expect(problems).toEqual([]);
   });
 }
+
+// docs/design.md "動き": a move runs the soft yellow light band across the stage once (a CSS layer); with reduced
+// motion only the line shows.
+async function sweepFrame(page, at) {
+  return page.evaluate((ms) => {
+    const animation = document.getAnimations().find((item) => item.animationName === "pano-studio-sweep");
+    if (!animation) return null;
+    animation.pause();
+    animation.currentTime = ms;
+    return getComputedStyle(document.querySelector("[data-sweep]")).display;
+  }, at);
+}
+
+test("a move runs the light band across the stage once; reduced motion shows only the line", async ({ page }) => {
+  const problems = await load(page, "mode=frame");
+  await rail(page).click();
+  await expect(page.locator("[data-sweep]")).toHaveCount(1);
+  for (const at of [120, 225]) {
+    expect(await sweepFrame(page, at)).toBe("block");
+    await page.screenshot({ path: `${SHOTS}/camera-button-flash-${at}ms.png` });
+  }
+  await page.evaluate(() => document.getAnimations().find((item) => item.animationName === "pano-studio-sweep")?.finish());
+  await page.locator('[data-tool="undo"]').click();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await rail(page).click();
+  await expect(page.locator(".pano-studio-notice")).toHaveText("Camera moved to this view");
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector("[data-sweep]")).display)).toBe("none");
+  await page.screenshot({ path: `${SHOTS}/camera-button-flash-reduced-motion.png` });
+  expect(problems).toEqual([]);
+});
 
 test("the Camera button is off in the Camera tab, saying why", async ({ page }) => {
   const problems = await load(page, "mode=frame");

@@ -131,16 +131,31 @@ test("the selected World object's gizmo shows on the overlay and is pressed firs
   const drag = objects.press(ball);
   drag.move({ x: ball.x + 100, y: ball.y + 40 });
   assert.equal(objects.overlay().gizmo.active, "x", "the dragged handle stays lit");
-  const guide = objects.overlay().gizmo.guide;
-  assert.equal(guide.name, "x", "the X guide line shows while it is dragged");
+  const guides = objects.overlay().gizmo.guides;
+  assert.deepEqual(guides.map((line) => line.name), ["x"], "the X guide line shows while it is dragged");
+  const [guide] = guides;
   assert.ok(Math.abs(guide.a.y - guide.b.y) < 1e-6 && Math.abs(guide.a.y - H / 2) < 1e-6, "level through the grabbed center");
   drag.end();
-  assert.equal(objects.overlay().gizmo.guide, null, "and goes when it is let go");
+  assert.deepEqual(objects.overlay().gizmo.guides, [], "and goes when it is let go");
   const position = evaluateLane(session.state.stickers[1], "position", 0);
   assert.ok(position[0] > 3.5, "it moved along X");
   assert.ok(Math.abs(position[1]) < 1e-9 && Math.abs(position[2] + 5) < 1e-9, "and only along X");
   session.undo();
   assert.deepEqual(evaluateLane(session.state.stickers[1], "position", 0), [3, 0, -5]);
+});
+
+test("while a plane square of the gizmo is dragged, both of its axis guide lines run across the stage, and go when it is let go", () => {
+  const { session, objects } = setup();
+  session.selectObject("board");
+  const plane = handlesOf(objects).planes.find((entry) => entry.shown);
+  assert.ok(plane, "a plane square shows from this view");
+  const grip = { x: plane.points.reduce((sum, p) => sum + p.x, 0) / 4, y: plane.points.reduce((sum, p) => sum + p.y, 0) / 4 };
+  const drag = objects.press(grip);
+  drag.move({ x: grip.x + 30, y: grip.y + 10 });
+  const guides = objects.overlay().gizmo.guides;
+  assert.deepEqual(guides.map((line) => line.name), plane.name.split(""), "the plane's two axes");
+  drag.end();
+  assert.deepEqual(objects.overlay().gizmo.guides, []);
 });
 
 test("a gizmo drag given up puts the object back", () => {

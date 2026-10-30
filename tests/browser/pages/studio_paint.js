@@ -1,7 +1,8 @@
 // The new editor (web_src/studio/editor.js) on a stand-in Panorama Studio node whose state has a sky image, over an ERP
 // made in the page, for tests/browser/studio_paint.spec.js (the Paint and Mask tools: docs/studio-ui.md "ペイントの道具").
 // ComfyUI is not used. The page reports through window.__studio. The old editor's stroke record (web_src/editor/
-// paint_input.js) is made here too, so the test compares the formats the two write.
+// paint_input.js) is made here too, so the test compares the formats the two write. ComfyUI's upload API is a stand-in
+// that keeps what it is sent (studio.uploads: { name, type, subfolder, overwrite, url }), for the paint layer.
 import { editorSession } from "/web_src/pano_node_bridge.js";
 import { openStudioEditor } from "/web_src/studio/editor.js";
 import { rememberView } from "/web_src/studio/view_camera.js";
@@ -52,7 +53,22 @@ export const STATE = {
   ],
 };
 
-const studio = (window.__studio = { ready: false, error: null });
+const studio = (window.__studio = { ready: false, error: null, uploads: [] });
+
+const dataUrlOf = (blob) => new Promise((resolve) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.readAsDataURL(blob);
+});
+const api = {
+  async fetchApi(path, { body }) {
+    const image = body.get("image");
+    const upload = { path, name: image.name, type: body.get("type"), subfolder: body.get("subfolder"), overwrite: body.get("overwrite") };
+    upload.url = await dataUrlOf(image);
+    studio.uploads.push(upload);
+    return { status: 200, json: async () => ({ name: image.name, subfolder: upload.subfolder, type: upload.type }) };
+  },
+};
 const storage = new Map();
 const memoryStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) };
 
@@ -72,10 +88,22 @@ try {
   };
   const app = { getNodeImageUrls: (target) => (target === origin ? [url] : []), nodeOutputs: {} };
   editorSession(node).view = rememberView({ position: [0, 0, 0], yaw_deg: 0, pitch_deg: 0, target: [0, 0, -2] }, "panorama");
-  const editor = await openStudioEditor(node, { app, api: null, storage: memoryStorage });
+  const editor = await openStudioEditor(node, { app, api, storage: memoryStorage });
   studio.session = editor.session;
   studio.node = node;
   studio.close = () => editor.close();
+  // The pixel at (x, y) of an uploaded PNG (data URL): [r, g, b, a], and its size.
+  studio.pngAt = async (url, x, y) => {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+    return { width: canvas.width, height: canvas.height, pixel: Array.from(ctx.getImageData(x, y, 1, 1).data) };
+  };
   // The stage's pixels at (x, y) CSS px of the stage: [r, g, b, a].
   studio.stageAt = (x, y) => {
     const canvas = document.querySelector("[data-stage-canvas]");
