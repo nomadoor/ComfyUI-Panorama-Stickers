@@ -29609,14 +29609,17 @@ function z_(e, t, { box: n, transform: r = null }) {
   return fb(a(qt(e, r.position)), a(t), n);
 }
 function Bp(e, t, n = jp(t)) {
-  const r = fr(t.ground), i = oo(e), o = [];
-  Math.abs(i[1]) > As && o.push((t.ground - e.position[1]) / i[1]);
-  for (const l of t.boxes ?? []) o.push(z_(e.position, i, l));
-  let a = null;
-  for (const l of o)
-    l === null || !(l >= 0) || Xt(jr(e.position, i, l)) > n || (a === null || l < a) && (a = l);
-  const s = a ?? Yr(r).TARGET_DEFAULT_DISTANCE;
-  return Cs(e.position, jr(e.position, i, s), r, i);
+  const r = fr(t.ground), { TARGET_DEFAULT_DISTANCE: i } = Yr(r), o = oo(e), a = [];
+  if (Math.abs(o[1]) > As) {
+    const u = (t.ground - e.position[1]) / o[1];
+    u <= i && a.push(u);
+  }
+  for (const u of t.boxes ?? []) a.push(z_(e.position, o, u));
+  let s = null;
+  for (const u of a)
+    u === null || !(u >= 0) || Xt(jr(e.position, o, u)) > n || (s === null || u < s) && (s = u);
+  const l = s ?? i;
+  return Cs(e.position, jr(e.position, o, l), r, o);
 }
 function oV({ selection: e, frame: t = !1 }) {
   return (e == null ? void 0 : e.kind) === "object" ? e.sphere ? [...e.sphere.center] : null : (e == null ? void 0 : e.kind) === "camera" && !t ? [...e.position] : null;
