@@ -5,20 +5,14 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
-// web_src imports ComfyUI's `../../scripts/app.js` and `api.js`; the pages get the stand-ins in pages/comfy/.
-const comfyStandIns = {
-  name: "comfy-stand-ins",
-  enforce: "pre",
-  resolveId(source) {
-    const match = /(?:^|\/)scripts\/(app|api)\.js$/.exec(source);
-    return match ? fileURLToPath(new URL(`./pages/comfy/${match[1]}.js`, import.meta.url)) : null;
-  },
-};
-
 export default defineConfig({
   root: fileURLToPath(new URL("../..", import.meta.url)),
   // The new UI's scene page (studio_ui.html) mounts Vue components.
-  plugins: [comfyStandIns, vue()],
+  plugins: [vue()],
+  // The node runtime imports ComfyUI's scripts (../../scripts/app.js from web_src); the pages get stand-ins.
+  resolve: {
+    alias: [{ find: /^(?:\.\.\/)+scripts\/(app|api)\.js$/, replacement: fileURLToPath(new URL("./pages/comfy/$1.js", import.meta.url)) }],
+  },
   optimizeDeps: {
     entries: ["tests/browser/pages/*.html"],
     include: ["@sparkjsdev/spark"],

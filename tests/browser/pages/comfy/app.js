@@ -1,7 +1,8 @@
-// A stand-in for ComfyUI's `scripts/app.js` (tests/browser/vite.config.js points web_src's imports of it here), so a
-// page can load the bundle's entry (web_src/main.js) and drive the extension it registers the way ComfyUI does.
-// window.__comfySettings: the values of settings that were set (the others read as their defaultValue, as ComfyUI's
-// settings store does).
+// A stand-in for ComfyUI's scripts/app.js for the browser pages that load the node runtime or the bundle's entry
+// (tests/browser/vite.config.js points `../../scripts/app.js` here). A page fills in what it needs (graph, canvas).
+// registerExtension keeps what web_src/main.js registers, so a page can drive the extension the way ComfyUI does.
+// window.__comfySettings: the values of settings that were set; the others read as their defaultValue, as
+// ComfyUI's settings store does.
 const defaults = {};
 const setting = (id) => {
   const settings = window.__comfySettings ?? {};
@@ -9,13 +10,15 @@ const setting = (id) => {
 };
 
 export const app = {
-  extensions: [],
+  graph: null,
+  canvas: { setDirty() {} },
   nodeOutputs: {},
-  canvas: { graph: null, setDirty() {} },
+  extensions: [],
   ui: { settings: { getSettingValue: (id) => setting(id) } },
   registerExtension(extension) {
-    for (const setting of extension.settings ?? []) defaults[setting.id] = setting.defaultValue;
+    for (const entry of extension.settings ?? []) defaults[entry.id] = entry.defaultValue;
     this.extensions.push(extension);
   },
   getNodeImageUrls: () => [],
 };
+export const ANIM_PREVIEW_WIDGET = "$$comfy_animation_preview";

@@ -14,7 +14,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 
 この文書が持たない規則：どのボタンがどこに出て何をするか・ツールチップの文言・ボタンの位置を動かさない規則
 （`docs/editor-interaction.md`）、タイムラインの行と再生の振る舞い（`docs/timeline-ui.md`）、Panorama Studio の
-ノード上の表示の構成と bar の中身（`docs/studio-node-surface.md`）、旧ノードの toolbar の寸法と色と layout
+ノード上の表示の構成（`docs/studio-node-surface.md`）、旧ノードの toolbar の寸法と色と layout
 （`docs/legacy-node-surfaces.md` の Layout Contract。`.pano-cutout-node-toolbar`・`.pano-stickers-node-toolbar` の値はそちらが owner）、どの UI を Vue のコンポーネントが持つか（`docs/vue-ui-boundary.md`）。
 
 ## この文書が owner である規則
@@ -72,7 +72,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 
 | property | 値 | 使われ方 |
 |---|---|---|
-| `--pano-node-text-secondary` | `#a1a1aa` | `PanoramaCutout` の help のポップオーバーの文字、Studio の bar の注記（`.pano-studio-node-note`） |
+| `--pano-node-text-secondary` | `#a1a1aa` | `PanoramaCutout` の help のポップオーバーの文字 |
 | `--pano-node-text-tertiary` | `#71717a` | `PanoramaCutout` の aspect の trigger の caret |
 | `--pano-node-float-bg` | `rgba(10,10,10,0.82)` | `PanoramaCutout` の toolbar の aspect のポップオーバーの地 |
 | `--pano-node-float-radius` | `8px` | `PanoramaCutout` の aspect のポップオーバー、`PanoramaStickers`・`PanoramaCutout` の help のポップオーバーの角丸 |
@@ -104,7 +104,6 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | `rgba(10,10,10,0.58)` | ドロップの案内（`.pano-stage-drop-hint-text`）の地 |
 | `rgba(255,255,255,0.84)` | 動画の時刻（`.pano-video-time`） |
 | `rgba(0,112,243,0.88)`・`rgba(0,32,72,0.58)` | `PanoramaStickers` の drop の案内（`.pano-stickers-node-drop-cue`）の破線と地 |
-| `rgba(10,10,10,0.72)` | Studio の bar の状態（`.pano-studio-node-status`）の地 |
 | `rgba(236,236,242,0.92)` | `.pano-view-unavailable` の文字 |
 
 ## 文字
@@ -164,7 +163,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | 値 | 使われ方 |
 |---|---|
 | 4px | `.pano-aspect-choice`（`--pano-radius-xs`）、タイムラインの小さいボタンと clip |
-| 6px | HUD の中のアイコンのボタン・roll の knob・`.pano-segments`（`calc(var(--pano-float-radius) - var(--pano-float-pad))`）、Studio の bar、ノードの小さいボタン、`.pano-segment` の印と Easing の項目（`calc(var(--pano-radius-md) - 2px)`） |
+| 6px | HUD の中のアイコンのボタン・roll の knob・`.pano-segments`（`calc(var(--pano-float-radius) - var(--pano-float-pad))`）、ノードの小さいボタン、`.pano-segment` の印と Easing の項目（`calc(var(--pano-radius-md) - 2px)`） |
 | 8px | `.pano-btn`・入力・選択肢の trigger と項目・ツールチップ・設定・`.pano-segment`・タイムラインの本体（`--pano-radius-md`）、表示の切り替えの印、ステージの読み込みの失敗、ノード上の表示の枠（`--pano-radius-md`）、`PanoramaCutout` の aspect のポップオーバーとノードの help（`--pano-node-float-radius`） |
 | 10px | HUD（`--pano-float-radius`）、ステージ、サイドパネル、確認のダイアログ、ドロップの案内、aspect のポップオーバー、色の SV の面 |
 | 12px | モーダル本体、選択肢のポップオーバー（`--pano-radius-lg`）、音量のポップオーバー |
@@ -182,7 +181,7 @@ inline の `style` と custom property（`--pano-segment-count`・`--pano-timeli
 | 30px | 選択肢の trigger、`.pano-field-wide`、aspect の trigger |
 | 28px | `.pano-field` とその入力、`.pano-segment-btn`、aspect の自由入力とそのボタン、タイムラインの再生・消音・開閉のボタン |
 | 26px | Easing の項目、ノードの小さいボタン |
-| 24px | タイムラインの設定の入力と長さを戻すボタン、Studio の bar のコントロール |
+| 24px | タイムラインの設定の入力と長さを戻すボタン |
 | 20px / 18px | タイムラインの行（20px）、行の目・開閉・鍵のボタン（20×18） |
 
 ## 共有の部品
@@ -347,7 +346,7 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 - フォーカスの輪：ボタンと `.pano-segments` の項目は `box-shadow: 0 0 0 1px var(--pano-accent)`、入力と選択肢の trigger は
   `inset 0 0 0 1px var(--pano-accent)`、タイムラインのボタンと印は `outline: 2px solid var(--pano-accent)`（offset 1px）。
   表示の切り替えのボタンとスライダーには輪を出さない（値の行のスライダーは thumb の影が `0 0 0 1.5px rgba(0,0,0,0.5)` になる）。
-  ノード上の表示のボタンにも輪を出さない（toolbar のボタンは `box-shadow: none`、小さいボタンと Studio の Open Editor は `:focus-visible` で `box-shadow: none`）。
+  ノード上の表示のボタンにも輪を出さない（toolbar のボタンは `box-shadow: none`、小さいボタンは `:focus-visible` で `box-shadow: none`）。
 - 無効の opacity は class ごとに違う：`.pano-btn` 0.46、`.pano-btn-primary` と表示の切り替え 0.5、入力・選択肢の trigger・軸 0.62、
   `.pano-btn.subtle` とタイムラインの層の操作 0.38、`.pano-params` と色の float 0.42、ペイントの太さ 0.45、
   タイムラインの小さいボタン 0.35、音声の無い音量 0.48。
@@ -368,7 +367,7 @@ padding `7px 10px`、地 94%、影 `0 12px 28px rgba(0,0,0,0.34)`。footer の�
 | 11 | ペイントの太さのプレビュー |
 | 12 | ペイントのカーソル（`PanoPaintOverlays.vue` の inline の style）、`.pano-cutout-aspect-pop` |
 
-スクリム（`.pano-modal-overlay`）は 99999。ノード上の表示は host が 3、toolbar と bar が 4、注記と drop の案内が 3。
+スクリム（`.pano-modal-overlay`）は 99999。ノード上の表示は host が 3、toolbar が 4、注記と drop の案内が 3。
 
 ## 状態の class
 
@@ -570,6 +569,20 @@ OS で動きを減らす設定（`prefers-reduced-motion: reduce`）のときは
   描く先の `STAGE_RENDER_SCALE` 画素（縮めて出したときに端末の 1 画素）、X と Z の軸はその 1.5 倍。
 - 新しい UI のステージは、描く先を端末の画素の `STAGE_RENDER_SCALE`（1.5）倍の大きさで描き、ブラウザが縮めて出す（3D の物の縁の
   ぎざぎざを減らす）。一辺は WebGL の最大のテクスチャの大きさと 4096px の小さい方を超えない。古い UI の描画は変えない。
+
+### Panorama Studio のノード上の表示
+
+Panorama Studio のノード上の表示（構成と振る舞いは `docs/studio-node-surface.md`）は、新しい UI の値を使う（持ち主の決定、2026-10-30。見本
+`node-1.html` の案 B）。overlay の root に `.pano-studio` を付け、`web/pano_studio.css` の値を読む。旧ノードのノード上の表示は上の節の値のまま。
+
+| 対象 | 値 |
+|---|---|
+| 絵 | 角丸 `STUDIO_PICTURE_RADIUS` 8px、縁の線なし。絵の外は透かす（ノードの地）。view の読み込み前と読み込めないときの絵の箱の地 `STUDIO_PICTURE_EMPTY` は `#070707`（ステージの何も無い所と同じ） |
+| 絵の下の一行 | 高さ `STUDIO_LINE_HEIGHT` 16px、絵との間 `STUDIO_LINE_GAP` 6px、絵と同じ幅。文字 11px。左の撮り方は二次の文字の色・太さ 500、アイコン 16px（線 1.75）と文字の間 4px。右の大きさは主の文字の色・太さ 600・`tabular-nums` |
+| Open Studio のボタン | 浮かせる部品（地は窓の地の 85%、縁の線なし、影なし、角丸 999px）。高さ 30px、左の余白 10px・右の余白 14px、アイコン 16px と文字の間 6px、文字 12px・600、主の文字の色。絵の下の辺から `STUDIO_BUTTON_INSET` 8px 上、左右の中央。hover は地を hover の灰の 85%、押したときは押したときの灰の 85% |
+
+値の置き場所：色と文字とボタンは `web/pano_studio.css` の `.pano-studio-node-*`、絵と一行の置き方の数値（`STUDIO_*`）は
+`web_src/pano_studio_surface.js`（canvas に描く絵の置き場所と overlay の置き場所を一つの関数 `studioSurfaceLayout` が決める）。
 
 ### まだ決めていないこと（spec ではない）
 

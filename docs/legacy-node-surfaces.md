@@ -37,7 +37,7 @@ DOM surface（`web_src/pano_preview_runtime.js` の `attachPanoramaPreviewImpl`�
 - external stickerを別種のUI objectとして扱わず、通常stickerと同じ選択・変形経路を使う。
 - 次の規則は Panorama Studio の表示と同じで、`docs/studio-node-surface.md` の「表示の構成」に置く：
   Node 2.0とLegacy node rendererで同じDOM surface実装を使う、canvasはnodeの利用可能領域を満たし縦横resizeへ追従する、
-  hidden overlay領域はcanvas操作を遮らない、camera viewは一時状態とし、workflowへ保存しない。
+  hidden overlay領域はcanvas操作を遮らない。camera viewは一時状態とし、workflowへ保存しない（「見回し」）。
 
 ### Surface Contract
 

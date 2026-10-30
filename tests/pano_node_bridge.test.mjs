@@ -77,8 +77,6 @@ test("disposeNodeRuntime clears the timers and calls the teardown of every group
   };
   surface.rasterCache = { dispose: () => calls.push("raster") };
   previewNode(node).runtime = { teardown: () => calls.push("preview") };
-  const runImage = fakeImage();
-  mediaCache(node).studioRunImage = { src: "erp.png", image: runImage, ready: true };
   mediaCache(node).ownOutputVideo = { key: "k", player: { destroy: () => calls.push("video") } };
   editorSession(node).flushBeforeQueue = () => {};
   stateSync(node).liveState = { stickers: [] };
@@ -88,7 +86,6 @@ test("disposeNodeRuntime clears the timers and calls the teardown of every group
 
   assert.deepEqual(fired, []);
   assert.deepEqual(calls, ["restore", "raster", "preview", "video"]);
-  assert.deepEqual(runImage.removed, ["src"]);
   assert.notEqual(nodeSurface(node), surface);
   assert.equal(nodeSurface(node).restore, null);
   assert.equal(editorSession(node).flushBeforeQueue, null);
@@ -139,7 +136,6 @@ const ALLOWED_PANO_PROPERTIES = {
   __panoHidden: "widget: hidden by hideWidget",
   __panoComputeSizeBeforeHide: "widget: its computeSize before hideWidget",
   __panoQueueBarrierInstalled: "widget: state_json waits for state producers before it serializes",
-  __panoPreviewPatchedCb: "widget: the node surface's callback wrapper",
   __panoLoadState: "image: load state (pano_image_state.js)",
   __panoLoadSource: "image: the source the load state is for",
   __panoSrc: "image: the source of a UI image (pano_comfy_media.js)",

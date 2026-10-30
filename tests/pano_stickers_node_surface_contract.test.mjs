@@ -144,7 +144,8 @@ test("Stickers surface draws the ordered Sky layers over the current image or vi
   const draw = runtime.slice(drawStart, branchStart);
   const branch = runtime.slice(branchStart, branchEnd);
 
-  assert.match(draw, /\["pano_input_videos"\]/);
+  assert.match(draw, /surfaceBackgroundMedia\(node\)/);
+  assert.match(runtime, /function surfaceBackgroundMedia\(node\) \{[\s\S]*?\["pano_input_videos"\]/);
   assert.match(draw, /ctx\.fillStyle = "#070707"/);
   assert.match(branch, /if \(!bgImg \|\| bgReady\) \{/);
   assert.match(branch, /drawView\(rect, previewNodeCamera\(surface\.view, surfW, surfH\)\)/);
@@ -354,10 +355,7 @@ test("DOM teardown retains the mount record, unregisters widgets, and restores o
   assert.match(teardown, /dom\.root\?\.remove\?\.\(\)/);
   assert.match(teardown, /if \(w === dom\?\.widget\) return true/);
   assert.match(teardown, /removable\.forEach\(\(widget\) => removeNodeWidget\(node, widget\)\)/);
-  assert.match(restore, /sw\?\.callback === swCallbackWrapper/);
-  assert.match(restore, /delete sw\.__panoPreviewPatchedCb/);
-  assert.match(restore, /bgw\?\.callback === bgwCallbackWrapper/);
-  assert.match(restore, /delete bgw\.__panoPreviewPatchedCb/);
+  assert.match(restore, /widgetRestores\.forEach\(\(restore\) => restore\(\)\)/);
 });
 
 test("Stickers teardown commits an active gesture before destroying the surface session", async () => {
@@ -524,7 +522,7 @@ test("node playback pauses for edits and the editor, follows the node, and is re
   assert.match(runtime, /const shown = surfaceShown\(wrap, !!node\.flags\?\.collapsed, editorOpen\(node\)\);/);
   // The surface's Timeline is the output's length: what the result gives of the inputs counts as in the editor.
   assert.match(runtime, /const sticker = shown \? portStickerMedia\(node\) : null;\s*const state = getCachedState\(node\);\s*const playable = playback\.follow\(\{\s*shown,\s*sources: shown \? backgroundVideoSources\(node\) : \[\],\s*state,\s*sticker,\s*media: shown \? surfaceTimelineMedia\(node, state\) : \{\},/);
-  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);[\s\S]*?if \(!node\.flags\?\.collapsed && !editorOpen\(node\)\) drawCanvas\(node, canvas, surfaceView, run\);\s*else surfaceView\.release\(\);/);
+  assert.match(runtime, /if \(surfacePlayback\) syncSurfacePlayback\(\);\s*else syncLegacyVideo\(\);[\s\S]*?if \(node\.flags\?\.collapsed \|\| editorOpen\(node\)\) surfaceView\.release\(\);/);
   assert.match(runtime, /new ResizeObserver\(\(\) => \{\s*if \(surfacePlayback\) syncSurfacePlayback\(\);\s*requestDraw\(\);/);
   assert.match(restore, /surfacePlayback\.playback\.dispose\(\);\s*surfacePlayback\.video\.remove\(\);\s*surfacePlayback\.stickerVideo\.remove\(\);\s*releasePanoCanvas\(surfacePlayback\.still\);\s*releasePanoCanvas\(surfacePlayback\.stickerStill\);/);
   // The editor marks itself open on the node while it covers the surface, and the surface draws again on close.
