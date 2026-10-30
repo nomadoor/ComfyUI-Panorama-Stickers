@@ -1,6 +1,19 @@
 /* The new UI's stylesheet (ADR 0044; values: docs/design.md "新しい UI の見た目"). Loaded by
    web_src/studio/stylesheet.js. The old UI's web/pano_editor.css is not changed for the new UI. */
 
+/* Plus Jakarta Sans (SIL OFL 1.1, web/fonts/OFL.txt): one variable woff2 with the Latin glyphs only, as Google Fonts
+   serves it for the Latin range (fonts.gstatic.com/s/plusjakartasans/v12/, 2026-10-30; the project is
+   github.com/tokotype/PlusJakartaSans). The UI uses weights 500, 600 and 700. Text outside the range falls back. */
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url("./fonts/PlusJakartaSans-Latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 .pano-studio-editor {
   position: fixed;
   inset: 0;
