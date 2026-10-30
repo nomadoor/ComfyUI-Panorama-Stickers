@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { stickerVfovFromAspect } from "../web_src/pano_editor_state.js";
 import { evaluateLane } from "../web_src/pano_scene_eval.js";
+import { NEW_STICKER_HFOV } from "../web_src/pano_space.js";
 import { DEFAULT_EASING, loadSceneState } from "../web_src/pano_scene_state.js";
 import { upstreamWorkingLayers } from "../web_src/pano_upstream.js";
 import { applyInspectorEdit } from "../web_src/studio/inspector_actions.js";
@@ -186,6 +188,25 @@ test("the Camera's Aspect reset returns to 16:9; Ground's reset leaves the state
   assert.equal(Object.hasOwn(state, "ground"), false);
   applyInspectorEdit(state, { type: "field", target: { kind: "scene", id: "scene" }, field: "ground", value: -1.2, phase: "commit" }, { playhead: 0 });
   assert.equal(state.ground, -1.2);
+});
+
+test("a sky image's FOV reset returns the size it was placed at: H NEW_STICKER_HFOV, V from its image's aspect", () => {
+  const state = load({ stickers: [sky("sticker_1", { size: { value: { hFOV_deg: 50, vFOV_deg: 10 } } })] });
+  const result = applyInspectorEdit(state, { type: "reset", target: sticker, row: "fov" }, { playhead: 0, imageSizes: { sticker_1: { width: 400, height: 200 } } });
+  assert.equal(result.history, true);
+  assert.equal(NEW_STICKER_HFOV, 30);
+  assert.deepEqual(state.stickers[0].size.value, { hFOV_deg: 30, vFOV_deg: stickerVfovFromAspect(30, 400, 200) });
+  // The row is then at the value its reset returns to.
+  const fov = buildInspectorModel({ state, selection: { ids: ["sticker_1"] }, imageSizes: { sticker_1: { width: 400, height: 200 } } }).cards[0].rows.find((item) => item.id === "fov");
+  assert.equal(fov.atDefault, true);
+});
+
+test("a sky image's FOV reset before its image has a size keeps the aspect it is drawn at", () => {
+  const state = load({ stickers: [sky("sticker_1", { size: { value: { hFOV_deg: 60, vFOV_deg: 2 * Math.atan(Math.tan(30 * Math.PI / 180) / 2) * 180 / Math.PI } } })] });
+  applyInspectorEdit(state, { type: "reset", target: sticker, row: "fov" }, { playhead: 0 });
+  const { hFOV_deg, vFOV_deg } = state.stickers[0].size.value;
+  assert.equal(hFOV_deg, 30);
+  assert.ok(Math.abs(vFOV_deg - stickerVfovFromAspect(30, 2, 1)) < 1e-9, `${vFOV_deg}`);
 });
 
 test("a port sky Sticker's FOV reset returns its hFOV only", () => {

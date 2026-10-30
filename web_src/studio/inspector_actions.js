@@ -33,7 +33,7 @@ import { deleteKeyframes, keyLanes, rowLaneNames, setLaneValue, setSegmentEasing
 import { isUpstreamSticker, upstreamRevertedRecords, upstreamStickerEditable } from "../pano_upstream.js";
 import { revertHandoffLane } from "../pano_port_handoff.js";
 import { DEFAULT_CAMERA_RAW, defaultCamera } from "./defaults.js";
-import { ROW_LANES, findSticker, inheritedSticker, keyframeOwner, ownerFrame } from "./inspector_model.js";
+import { ROW_LANES, findSticker, inheritedSticker, keyframeOwner, ownerFrame, skyPlacedSize } from "./inspector_model.js";
 
 const SKY_POSE_FIELDS = new Set(["yaw_deg", "pitch_deg", "rot_deg", "hFOV_deg", "vFOV_deg"]);
 
@@ -189,8 +189,10 @@ function applyReset(state, found, row, context) {
   const list = sticker.placement === "world" ? WORLD_STICKER_LANES : SKY_STICKER_LANES;
   for (const name of resetHandoff(state, sticker, lanes, context.handoff)) {
     let value = laneDefault(list, name);
-    // A port sky Sticker's vFOV follows its media: only its hFOV is stored.
+    // A port sky Sticker's vFOV follows its media: only its hFOV is stored. Another sky image goes back to the size
+    // it was placed at (docs/studio-ui.md "種類ごとの中身").
     if (name === "size" && sticker.source.kind === "port") value = { hFOV_deg: value.hFOV_deg };
+    else if (name === "size") value = skyPlacedSize(evaluateLane(sticker, "size", frame), context.imageSizes?.[sticker.id]);
     setLaneValue(sticker, name, frame, value);
   }
   return { done: true };
@@ -207,7 +209,8 @@ function applyEasing(state, keyframes, easing, upstream) {
 }
 
 // Applies `edit` to the working `state`. `context`: { playhead, readOnly, upstream (working layers), animations
-// (clips by Sticker id), handoff (the port Sticker's Pose handoff, pano_port_handoff.js portHandoff) }.
+// (clips by Sticker id), handoff (the port Sticker's Pose handoff, pano_port_handoff.js portHandoff), imageSizes (the
+// Stickers' image sizes by id, { width, height } px) }.
 export function applyInspectorEdit(state, edit, context = {}) {
   const ctx = { playhead: 0, readOnly: false, upstream: [], animations: {}, handoff: null, ...context };
   if (edit.phase === "cancel") return result(false, { cancel: true });
